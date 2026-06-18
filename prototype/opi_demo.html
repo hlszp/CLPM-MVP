@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OPI生产运营指标管理平台</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft Yahei",sans-serif;}
+        :root{
+            --primary:#0F4C81;/*化工主深蓝*/
+            --primary-light:#1967b3;
+            --success:#00B42A;/*P0优先级绿*/
+            --warning:#FF7D00;/*P1优先级橙*/
+            --danger:#F53F3F;/*P2优先级红*/
+            --gray1:#f5f7fa;
+            --gray2:#e5e6eb;
+            --gray3:#c9cdd4;
+            --text1:#1d2129;
+            --text2:#4e5969;
+            --text3:#86909c;
+        }
+        body{background:var(--gray1);color:var(--text1);overflow:hidden;}
+        /*全局布局*/
+        .layout{display:flex;height:100vh;}
+        /*侧边菜单栏*/
+        .sidebar{width:240px;background:var(--primary);color:#fff;overflow-y:auto;}
+        .sidebar-logo{padding:20px;border-bottom:1px solid #2b6096;}
+        .sidebar-logo h2{font-size:18px;}
+        .sidebar-menu{padding:15px 0;}
+        .menu-item{padding:12px 20px;cursor:pointer;font-size:14px;border-left:3px solid transparent;}
+        .menu-item.active{background:#1967b3;border-left:3px solid #fff;}
+        .menu-sub{padding-left:25px;font-size:13px;color:#d0dfff;}
+        .menu-sub-item{padding:10px 15px;cursor:pointer;border-radius:4px;margin:2px 10px;}
+        .menu-sub-item:hover,.menu-sub-item.active{background:rgba(255,255,255,0.15);}
+        /*主内容区*/
+        .main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+        .header{height:60px;background:#fff;border-bottom:1px solid var(--gray2);display:flex;align-items:center;justify-content:space-between;padding:0 20px;}
+        .page-title{font-size:16px;font-weight:600;}
+        .user-info{display:flex;align-items:center;gap:10px;}
+        /*页面容器*/
+        .page-container{flex:1;padding:20px;overflow-y:auto;}
+        .page{display:none;}
+        .page.active{display:block;}
+        /*卡片通用样式*/
+        .card{background:#fff;border-radius:6px;padding:16px;margin-bottom:16px;border:1px solid var(--gray2);}
+        .card-title{font-size:15px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--gray2);}
+        /*标签优先级*/
+        .tag-p0{background:#e6ffed;color:var(--success);padding:2px 6px;border-radius:3px;font-size:12px;}
+        .tag-p1{background:#fff7e6;color:var(--warning);padding:2px 6px;border-radius:3px;font-size:12px;}
+        .tag-p2{background:#ffeef0;color:var(--danger);padding:2px 6px;border-radius:3px;font-size:12px;}
+        /*表格样式*/
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th,td{border:1px solid var(--gray2);padding:10px;text-align:center;}
+        th{background:var(--gray1);font-weight:600;color:var(--text2);}
+        /*表单样式*/
+        .form-row{display:flex;gap:15px;flex-wrap:wrap;margin-bottom:15px;}
+        .form-item{display:flex;align-items:center;gap:8px;}
+        input,select{border:1px solid var(--gray3);padding:6px 10px;border-radius:4px;outline:none;}
+        input:focus,select:focus{border-color:var(--primary);}
+        /*代码公式框*/
+        .code-box{background:#f0f2f5;padding:12px;border-radius:4px;border-left:4px solid var(--primary);font-family:Consolas;font-size:13px;line-height:1.6;margin:10px 0;}
+        /*看板数据卡片*/
+        .board-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;}
+        .board-card{background:linear-gradient(135deg,var(--primary),#2b6096);color:#fff;padding:16px;border-radius:6px;}
+        .board-num{font-size:24px;font-weight:bold;margin:8px 0;}
+        /*按钮*/
+        .btn{padding:6px 14px;border-radius:4px;border:none;cursor:pointer;font-size:13px;}
+        .btn-primary{background:var(--primary);color:#fff;}
+        .btn-default{background:var(--gray2);color:var(--text2);}
+    </style>
+</head>
+<body>
+<div class="layout">
+    <!-- 侧边导航栏 完全匹配文档菜单结构 -->
+    <div class="sidebar">
+        <div class="sidebar-logo">
+            <h2>OPI生产运营指标平台</h2>
+            <p style="font-size:12px;color:#d0dfff;margin-top:4px">南京EO工厂一期版</p>
+        </div>
+        <div class="sidebar-menu">
+            <div class="menu-item active" onclick="switchPage('page-dashboard')">📊 OPI工作台</div>
+            <div class="menu-sub">
+                <div class="menu-sub-item active" onclick="switchPage('page-dashboard')">装置OPI驾驶舱</div>
+                <div class="menu-sub-item" onclick="switchPage('page-abnormal')">指标异常总览</div>
+                <div class="menu-sub-item" onclick="switchPage('page-dataquality')">数据质量总览</div>
+            </div>
+            <div class="menu-item">📈 指标中心</div>
+            <div class="menu-sub">
+                <div class="menu-sub-item" onclick="switchPage('page-metricdict')">指标字典</div>
+                <div class="menu-sub-item" onclick="switchPage('page-metricadd')">自定义指标</div>
+                <div class="menu-sub-item" onclick="switchPage('page-formula')">公式配置</div>
+                <div class="menu-sub-item" onclick="switchPage('page-threshold')">目标与阈值</div>
+            </div>
+            <div class="menu-item">💾 数据中心</div>
+            <div class="menu-sub">
+                <div class="menu-sub-item" onclick="switchPage('page-datasource')">数据源管理</div>
+                <div class="menu-sub-item" onclick="switchPage('page-tag')">Tag资产管理</div>
+                <div class="menu-sub-item" onclick="switchPage('page-object')">工业对象模型</div>
+                <div class="menu-sub-item" onclick="switchPage('page-working')">工况管理</div>
+                <div class="menu-sub-item" onclick="switchPage('page-ledger')">轻量台账</div>
+            </div>
+            <div class="menu-item">⚙️ 计算中心</div>
+            <div class="menu-sub">
+                <div class="menu-sub-item" onclick="switchPage('page-task')">计算任务管理</div>
+                <div class="menu-sub-item" onclick="switchPage('page-blood')">数据血缘追溯</div>
+            </div>
+            <div class="menu-item">📄 报表中心</div>
+            <div class="menu-sub">
+                <div class="menu-sub-item" onclick="switchPage('page-report')">标准日报报表</div>
+                <div class="menu-sub-item" onclick="switchPage('page-report-custom')">自定义报表</div>
+            </div>
+            <div class="menu-item">🏭 专业应用</div>
+            <div class="menu-sub">
+                <div class="menu-sub-item" onclick="switchPage('page-eo-eff')">EO工艺效率分析</div>
+                <div class="menu-sub-item" onclick="switchPage('page-eo-stable')">工艺平稳分析</div>
+                <div class="menu-sub-item" onclick="switchPage('page-catalyst')">催化剂诊断</div>
+                <div class="menu-sub-item" onclick="switchPage('page-aas')">AAS报警保障</div>
+            </div>
+            <div class="menu-item">✅ 闭环管理</div>
+            <div class="menu-sub">
+                <div class="menu-sub-item" onclick="switchPage('page-problem')">问题台账整改</div>
+                <div class="menu-sub-item" onclick="switchPage('page-knowledge')">工艺知识库</div>
+            </div>
+            <div class="menu-item">🔐 系统管理</div>
+            <div class="menu-sub">
+                <div class="menu-sub-item" onclick="switchPage('page-permission')">角色权限配置</div>
+                <div class="menu-sub-item" onclick="switchPage('page-audit')">操作审计日志</div>
+            </div>
+        </div>
+    </div>
+    <!-- 主内容区域 -->
+    <div class="main">
+        <div class="header">
+            <div class="page-title" id="nowTitle">EO装置OPI驾驶舱首页</div>
+            <div class="user-info">
+                <span>工艺管理员｜南京EO工厂</span>
+            </div>
+        </div>
+        <div class="page-container">
+            <!-- 1.OPI驾驶舱首页 -->
+            <div class="page active" id="page-dashboard">
+                <div class="board-row">
+                    <div class="board-card">
+                        <div>综合OPI指数</div>
+                        <div class="board-num">92.6</div>
+                        <div style="font-size:12px;opacity:0.8">较昨日+1.2｜正常达标</div>
+                    </div>
+                    <div class="board-card">
+                        <div>工艺平稳指数</div>
+                        <div class="board-num">94.1</div>
+                        <div style="font-size:12px;opacity:0.8">工况：正常运行</div>
+                    </div>
+                    <div class="board-card">
+                        <div>工艺效率指数</div>
+                        <div class="board-num">89.3</div>
+                        <div style="font-size:12px;opacity:0.8">EO选择性91.7%</div>
+                    </div>
+                    <div class="board-card">
+                        <div>今日异常条数</div>
+                        <div class="board-num">3</div>
+                        <div style="font-size:12px;opacity:0.8">2条整改中｜1条待分派</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">今日核心指标一览（EO装置）</div>
+                    <table>
+                        <tr>
+                            <th>指标名称</th>
+                            <th>实时值</th>
+                            <th>目标值</th>
+                            <th>状态</th>
+                            <th>统计窗口</th>
+                            <th>优先级</th>
+                        </tr>
+                        <tr>
+                            <td>EO选择性</td>
+                            <td>91.7%</td>
+                            <td>≥92%</td>
+                            <td style="color:#FF7D00">预警</td>
+                            <td>日统计</td>
+                            <td><span class="tag-p0">P0</span></td>
+                        </tr>
+                        <tr>
+                            <td>乙烯转化率</td>
+                            <td>78.2%</td>
+                            <td>≥78%</td>
+                            <td style="color:var(--success)">正常</td>
+                            <td>日统计</td>
+                            <td><span class="tag-p0">P0</span></td>
+                        </tr>
+                        <tr>
+                            <td>工艺平稳率</td>
+                            <td>94.1%</td>
+                            <td>≥93%</td>
+                            <td style="color:var(--success)">正常</td>
+                            <td>班次统计</td>
+                            <td><span class="tag-p0">P0</span></td>
+                        </tr>
+                        <tr>
+                            <td>报警发生率</td>
+                            <td>0.6条/日</td>
+                            <td>≤1条/日</td>
+                            <td style="color:var(--success)">正常</td>
+                            <td>日统计</td>
+                            <td><span class="tag-p0">P0</span></td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="card">
+                    <div class="card-title">当前装置工况信息</div>
+                    <div class="form-row">
+                        <div class="form-item">工况类型：<input value="正常运行工况" disabled style="width:180px"></div>
+                        <div class="form-item">数据过滤规则：<input value="剔除开车/停车校准数据" disabled style="width:220px"></div>
+                        <div class="form-item">数据对账偏差：<input value="0.08%（合规）" disabled style="width:160px"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- 2.指标字典页面 -->
+            <div class="page" id="page-metricdict">
+                <div class="card">
+                    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+                        <span>全量指标字典管理</span>
+                        <button class="btn btn-primary">新增自定义指标</button>
+                    </div>
+                    <div class="form-row" style="margin-bottom:20px">
+                        <div class="form-item">指标名称：<input placeholder="请输入指标名称"></div>
+                        <div class="form-item">指标分类：<select><option>工艺效率类</option><option>平稳保障类</option><option>仪控报警类</option></select></div>
+                        <div class="form-item">适用装置：<select><option>南京EO装置</option><option>MTO装置</option></select></div>
+                        <button class="btn btn-primary">查询筛选</button>
+                    </div>
+                    <table>
+                        <tr>
+                            <th>指标编码</th>
+                            <th>指标名称</th>
+                            <th>指标层级</th>
+                            <th>单位</th>
+                            <th>生效状态</th>
+                            <th>归属模块</th>
+                            <th>一期优先级</th>
+                            <th>操作</th>
+                        </tr>
+                        <tr>
+                            <td>MET_EO_001</td>
+                            <td>EO选择性</td>
+                            <td>基础指标</td>
+                            <td>%</td>
+                            <td>已发布</td>
+                            <td>工艺效率</td>
+                            <td><span class="tag-p0">P0</span></td>
+                            <td><button class="btn btn-default" style="padding:2px 8px;font-size:12px">编辑公式</button></td>
+                        </tr>
+                        <tr>
+                            <td>MET_EO_002</td>
+                            <td>乙烯转化率</td>
+                            <td>基础指标</td>
+                            <td>%</td>
+                            <td>已发布</td>
+                            <td>工艺效率</td>
+                            <td><span class="tag-p0">P0</span></td>
+                            <td><button class="btn btn-default" style="padding:2px 8px;font-size:12px">编辑公式</button></td>
+                        </tr>
+                        <tr>
+                            <td>MET_EO_003</td>
+                            <td>工艺平稳率</td>
+                            <td>基础指标</td>
+                            <td>%</td>
+                            <td>已发布</td>
+                            <td>平稳保障</td>
+                            <td><span class="tag-p0">P0</span></td>
+                            <td><button class="btn btn-default" style="padding:2px 8px;font-size:12px">编辑公式</button></td>
+                        </tr>
+                        <tr>
+                            <td>MET_AAS_001</td>
+                            <td>报警发生率</td>
+                            <td>基础指标</td>
+                            <td>条/日</td>
+                            <td>已发布</td>
+                            <td>仪控保障</td>
+                            <td><span class="tag-p0">P0</span></td>
+                            <td><button class="btn btn-default" style="padding:2px 8px;font-size:12px">编辑公式</button></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            <!-- 3.公式配置页面 复用文档公式样例 -->
+            <div class="page" id="page-formula">
+                <div class="card">
+                    <div class="card-title">可视化公式编辑器（一期禁用自定义SQL脚本）</div>
+                    <div class="form-row">
+                        <div class="form-item">绑定指标：<input value="EO选择性(MET_EO_001)" disabled style="width:260px"></div>
+                        <div class="form-item">公式版本：<input value="V1.0 正式版" disabled style="width:140px"></div>
+                        <div class="form-item">适配工况：<select><option>仅正常运行工况</option><option>开车工况</option><option>停车工况</option></select></div>
+                    </div>
+                    <div class="code-box">指标：EO选择性
+公式：eo_formed_mol / ethylene_consumed_mol × 100
+变量：
+  eo_formed_mol = integral(温压补偿(EO生成量流量, T, P, T0, P0) × 摩尔浓度)
+  ethylene_consumed_mol = integral(乙烯入口摩尔流量 - 乙烯出口摩尔流量)
+  所有分析仪变量滞后补偿：3分钟
+窗口：小时、日</div>
+                    <div class="form-row" style="margin-top:15px">
+                        <button class="btn btn-primary">公式试算校验</button>
+                        <button class="btn btn-default">查看变更影响范围</button>
+                        <button class="btn btn-default">保存新版本公式</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">一期可用公式类型汇总</div>
+                    <table>
+                        <tr>
+                            <th>公式类型</th>
+                            <th>功能示例</th>
+                            <th>优先级</th>
+                        </tr>
+                        <tr>
+                            <td>算术公式</td>
+                            <td>A / B × 100%</td>
+                            <td><span class="tag-p0">P0</span></td>
+                        </tr>
+                        <tr>
+                            <td>化工专用函数</td>
+                            <td>温压补偿、滞后补偿、时序重采样</td>
+                            <td><span class="tag-p0">P0</span></td>
+                        </tr>
+                        <tr>
+                            <td>分段工况公式</td>
+                            <td>不同工况适配不同计算口径</td>
+                            <td><span class="tag-p1">P1</span></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            <!-- 4.数据源管理页面 完全匹配文档接入标准 -->
+            <div class="page" id="page-datasource">
+                <div class="card">
+                    <div class="card-title">南京EO一期接入数据源管理</div>
+                    <table>
+                        <tr>
+                            <th>数据源名称</th>
+                            <th>接入内容</th>
+                            <th>对账偏差标准</th>
+                            <th>同步状态</th>
+                            <th>优先级</th>
+                            <th>操作</th>
+                        </tr>
+                        <tr>
+                            <td>Historian</td>
+                            <td>DCS历史Tag、质量码、采样时间</td>
+                            <td>≤0.1%</td>
+                            <td style="color:var(--success)">正常同步</td>
+                            <td><span class="tag-p0">P0</span></td>
+                            <td><button class="btn btn-default" style="font-size:12px">数据对账</button></td>
+                        </tr>
+                        <tr>
+                            <td>AAS报警系统</td>
+                            <td>报警发生率、高频报警、响应时长</td>
+                            <td>≤1条/日</td>
+                            <td style="color:var(--success)">正常同步</td>
+                            <td><span class="tag-p0">P0</span></td>
+                            <td><button class="btn btn-default" style="font-size:12px">数据对账</button></td>
+                        </tr>
+                        <tr>
+                            <td>在线分析系统</td>
+                            <td>乙烯、EO、CO2、循环气组分</td>
+                            <td>≤0.5%</td>
+                            <td style="color:var(--success)">正常同步</td>
+                            <td><span class="tag-p0">P0</span></td>
+                            <td><button class="btn btn-default" style="font-size:12px">数据对账</button></td>
+                        </tr>
+                        <tr>
+                            <td>CLPM回路系统</td>
+                            <td>回路投用率、振荡率、性能评分</td>
+                            <td>≤1%</td>
+                            <td style="color:#FF7D00">二阶段接入</td>
+                            <td><span class="tag-p1">P1</span></td>
+                            <td><button class="btn btn-default" style="font-size:12px">配置接入</button></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            <!-- 5.问题闭环台账页面 -->
+            <div class="page" id="page-problem">
+                <div class="card">
+                    <div class="card-title">指标异常问题闭环台账</div>
+                    <table>
+                        <tr>
+                            <th>问题编号</th>
+                            <th>关联指标</th>
+                            <th>异常等级</th>
+                            <th>影响Top3因子</th>
+                            <th>分派责任人</th>
+                            <th>整改状态</th>
+                            <th>复测校验规则</th>
+                        </tr>
+                        <tr>
+                            <td>PRO_20260616_01</td>
+                            <td>EO选择性偏低</td>
+                            <td style="color:#FF7D00">预警</td>
+                            <td>反应器温度、氧气配比、催化剂活性</td>
+                            <td>工艺班组-张工</td>
+                            <td>整改中</td>
+                            <td>连续72小时≥92%达标</td>
+                        </tr>
+                        <tr>
+                            <td>PRO_20260616_02</td>
+                            <td>TIC_R101越限波动</td>
+                            <td style="color:var(--danger)">严重异常</td>
+                            <td>回路整定、负荷波动、仪表漂移</td>
+                            <td>仪控班组-李工</td>
+                            <td>待分派</td>
+                            <td>1小时平稳无越限</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            <!-- 其余页面预留结构，可一键切换 -->
+            <div class="page" id="page-abnormal"><div class="card"><div class="card-title">全装置指标异常总览</div><p style="padding:20px">联动指标影响矩阵，自动拆解异常贡献权重，支撑根因排查</p></div></div>
+            <div class="page" id="page-dataquality"><div class="card"><div class="card-title">全量数据源质量评分总览</div><p style="padding:20px">统计Tag完整率、坏值率、冻结率、指标可信等级，自动生成数据整改工单</p></div></div>
+            <div class="page" id="page-metricadd"><div class="card"><div class="card-title">新增自定义指标表单</div><p style="padding:20px">填写指标编码、业务定义、适用对象、工况阈值、聚合模式，提交审批发布</p></div></div>
+            <div class="page" id="page-threshold"><div class="card"><div class="card-title">指标工况阈值配置</div><p style="padding:20px">分正常/开车/停车工况配置目标值、预警阈值、异常阈值，版本留痕</p></div></div>
+            <div class="page" id="page-tag"><div class="card"><div class="card-title">Tag资产分级管理（P0/P1/P2分级）</div></div></div>
+            <div class="page" id="page-object"><div class="card"><div class="card-title">工厂-装置-单元-设备工业对象树维护</div><div class="code-box">指标 -> 公式元素 -> 工业对象 -> Tag/字段/接口 -> 工况过滤规则</div></div></div>
+            <div class="page" id="page-working"><div class="card"><div class="card-title">装置工况字典管理</div></div></div>
+            <div class="page" id="page-ledger"><div class="card"><div class="card-title">轻量台账录入（生产/化验/运行事件）</div></div></div>
+            <div class="page" id="page-task"><div class="card"><div class="card-title">定时计算/手工重算任务管理</div></div></div>
+            <div class="page" id="page-blood"><div class="card"><div class="card-title">指标全链路血缘追溯</div></div></div>
+            <div class="page" id="page-report"><div class="card"><div class="card-title">一期标准日报（OPI/平稳/效率/报警/质量）</div></div></div>
+            <div class="page" id="page-report-custom"><div class="card"><div class="card-title">自定义报表拖拽配置页面</div></div></div>
+            <div class="page" id="page-eo-eff"><div class="card"><div class="card-title">EO工艺效率专项分析</div></div></div>
+            <div class="page" id="page-eo-stable"><div class="card"><div class="card-title">工艺平稳率波动贡献分解</div></div></div>
+            <div class="page" id="page-catalyst"><div class="card"><div class="card-title">催化剂活性衰减趋势诊断</div></div></div>
+            <div class="page" id="page-aas"><div class="card"><div class="card-title">AAS高频报警专项分析</div></div></div>
+            <div class="page" id="page-knowledge"><div class="card"><div class="card-title">工艺故障结构化知识库</div></div></div>
+            <div class="page" id="page-permission"><div class="card"><div class="card-title">角色+功能+数据三层权限配置</div></div></div>
+            <div class="page" id="page-audit"><div class="card"><div class="card-title">公式变更/数据修改/指标发布全操作审计</div></div></div>
+        </div>
+    </div>
+</div>
+<script>
+//页面切换逻辑
+function switchPage(pageId){
+    //切换页面
+    document.querySelectorAll('.page').forEach(item=>{
+        item.classList.remove('active');
+    })
+    document.getElementById(pageId).classList.add('active');
+    //侧边子菜单高亮
+    document.querySelectorAll('.menu-sub-item').forEach(item=>{
+        item.classList.remove('active');
+    })
+    event.target.classList.add('active');
+    //修改顶部标题
+    let titleMap = {
+        'page-dashboard':'EO装置OPI驾驶舱首页',
+        'page-abnormal':'指标异常总览',
+        'page-dataquality':'数据质量总览',
+        'page-metricdict':'指标字典管理',
+        'page-metricadd':'自定义指标新增',
+        'page-formula':'可视化公式配置',
+        'page-threshold':'指标目标阈值配置',
+        'page-datasource':'多源数据源管理',
+        'page-tag':'Tag资产分级管理',
+        'page-object':'工业对象模型管理',
+        'page-working':'装置工况字典管理',
+        'page-ledger':'轻量台账录入管理',
+        'page-task':'计算任务调度管理',
+        'page-blood':'指标数据血缘追溯',
+        'page-report':'标准生产日报',
+        'page-report-custom':'自定义报表设计',
+        'page-eo-eff':'EO工艺效率专项分析',
+        'page-eo-stable':'工艺平稳专项分析',
+        'page-catalyst':'催化剂性能诊断',
+        'page-aas':'AAS报警保障分析',
+        'page-problem':'异常问题闭环台账',
+        'page-knowledge':'工艺故障知识库',
+        'page-permission':'系统角色权限配置',
+        'page-audit':'全流程操作审计日志'
+    }
+    document.getElementById('nowTitle').innerText = titleMap[pageId];
+}
+</script>
+</body>
+</html>

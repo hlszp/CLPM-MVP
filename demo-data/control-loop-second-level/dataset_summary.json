@@ -1,0 +1,41 @@
+{
+  "dataset_id": "CLPM-DEMO-SECOND-LEVEL-20260616",
+  "csv_file": "control_loop_second_level_24loops_1h.csv",
+  "metadata_file": "loops_metadata.json",
+  "events_file": "events.csv",
+  "sample_start_time": "2026-06-16T08:00:00+08:00",
+  "sample_end_time": "2026-06-16T09:00:00+08:00",
+  "duration_seconds": 3600,
+  "sample_interval_seconds": 1,
+  "loop_count": 24,
+  "row_count": 86424,
+  "fields": [
+    "timestamp",
+    "second",
+    "loop_id",
+    "loop_tag",
+    "unit_name",
+    "loop_group",
+    "control_type",
+    "scenario",
+    "pv",
+    "sp",
+    "op",
+    "mode",
+    "p",
+    "i",
+    "d",
+    "engineering_unit",
+    "quality",
+    "event_marker"
+  ],
+  "scenario_summary": {
+    "normal": 6,
+    "oscillation": 3,
+    "valve_stiction": 3,
+    "manual_mode": 3,
+    "data_quality_issue": 3,
+    "disturbance": 3,
+    "tuning_candidate": 3
+  }
+}

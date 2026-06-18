@@ -1,0 +1,25 @@
+:root {
+  --font-sans: "Inter", "Noto Sans SC", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", monospace;
+  --bg-page: #f6f7f9;
+  --bg-panel: #ffffff;
+  --bg-muted: #eef1f4;
+  --text-primary: #1f2937;
+  --text-secondary: #4b5563;
+  --border-default: #d5dae1;
+  --accent-blue: #2563eb;
+  --status-ok: #0f766e;
+  --status-info: #0369a1;
+  --status-warning: #b45309;
+  --status-danger: #b91c1c;
+  --status-neutral: #6b7280;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
