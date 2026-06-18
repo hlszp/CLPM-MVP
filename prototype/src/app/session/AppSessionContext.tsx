@@ -20,6 +20,7 @@ export function AppSessionProvider({ children }: { children: ReactNode }) {
       role,
       defaultRoute: getDefaultRouteForRole(role),
       workflow,
+      currentLoopId: workflow.selectedLoopId,
       currentSample,
       currentPackage,
       setRole: (nextRole) => setRoleState(nextRole),

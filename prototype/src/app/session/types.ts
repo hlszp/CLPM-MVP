@@ -10,6 +10,7 @@ export interface AppSessionValue {
   role: UserRole;
   defaultRoute: string;
   workflow: WorkflowState;
+  currentLoopId: string;
   currentSample?: SampleBatch;
   currentPackage?: EvidencePackage;
   setRole: (role: UserRole) => void;

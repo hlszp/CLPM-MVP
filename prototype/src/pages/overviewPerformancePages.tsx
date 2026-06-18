@@ -1,73 +1,16 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
-import { useState } from 'react';
-import { LoopCardList, LoopTable, MetricCard, StatusBadge, StatusMetric } from '../components/ui';
-import { TrendChart } from '../components/TrendChart';
+import { LoopTable, MetricCard } from '../components/ui';
 import { currentBatch, dataLineage, evidencePackageView, evidenceWindows, kpis, ledgerVersions, loops, primaryLoopId, sampleScaleNote, valveCheckLoopId } from '../data/mockData';
 import { deliveryVerification } from '../data/deliveryStatus';
 import type { NavigationItem } from '../types';
-import { ActionList, PageHeader } from './pageShared';
+import { PageHeader } from './pageShared';
+import { HomeWorkbench } from './home/HomeWorkbench';
 
 export function HomePage({ route }: { route: NavigationItem }) {
-  const priorityLoops = loops.filter((loop) => ['可诊断', '需现场核实', '可整定', '数据不足'].includes(loop.status)).slice(0, 6);
-  const [selectedId, setSelectedId] = useState(primaryLoopId);
-  const selected = loops.find((loop) => loop.id === selectedId) ?? loops.find((loop) => loop.id === primaryLoopId) ?? loops[0];
-  const evidence = evidenceWindows.find((item) => item.loopId === selected.id) ?? evidenceWindows[0];
   return (
     <>
       <PageHeader route={route} />
-      <section className="mission-strip" aria-label="当前治理任务">
-        <StatusMetric label="当前样本" value={`${currentBatch.loopCount} 回路`} tone="neutral" />
-        <StatusMetric label="优先对象" value={selected.id} tone={selected.risk === 'high' ? 'danger' : selected.risk === 'medium' ? 'warning' : 'ok'} />
-        <StatusMetric label="证据包" value={evidencePackageView.packageStatus} tone="warning" />
-        <StatusMetric label="下一步" value={selected.status === '需现场核实' ? '现场核实' : '提交审核'} tone="warning" />
-      </section>
-      <section className="workspace-layout">
-        <section className="panel task-queue" aria-label="低性能优先级清单">
-          <div className="section-heading">
-            <div>
-              <h2>今日优先处理队列</h2>
-              <p>选中回路后，证据与动作在同屏更新，不打断工程师判断。</p>
-            </div>
-            <Link className="text-link" to="/performance/ranking">完整排行</Link>
-          </div>
-          <LoopCardList loops={priorityLoops} selectedId={selected.id} onSelect={(loop) => setSelectedId(loop.id)} />
-        </section>
-        <section className="panel evidence-workspace" aria-label="选中回路证据工作区">
-          <div className="object-header">
-            <div>
-              <span className="eyebrow">当前回路</span>
-              <h2>{selected.id} 证据摘要</h2>
-            </div>
-            <div className="object-badges">
-              <StatusBadge value={selected.status} />
-              <span className={`risk-badge risk-${selected.risk}`}>评分 {selected.score}</span>
-            </div>
-          </div>
-          {evidence ? <TrendChart evidence={evidence} /> : <p>当前回路暂无趋势证据，不会伪装为完整证据链。</p>}
-          <div className="evidence-rules">
-            {(evidence?.rules ?? ['当前回路暂无规则命中']).map((rule) => <span key={rule}>✓ {rule}</span>)}
-          </div>
-          <Link className="button" to={`/diagnosis/loop/${selected.id}`}>进入证据链 <ArrowRight size={16}/></Link>
-        </section>
-        <aside className="action-drawer" aria-label="动作与状态影响">
-          <h2>动作与待办</h2>
-          <ActionList />
-          <div className="state-machine-mini">
-            <span className="active">诊断</span>
-            <span>审核</span>
-            <span>实施</span>
-            <span>复评</span>
-            <span>证据包</span>
-          </div>
-          <div className="impact-note">
-            <strong>选择“需补证据”会保持 partial</strong>
-            <p>实施、复评和 Sponsor 汇报不会被伪装为完成闭环。</p>
-          </div>
-          <Link className="button secondary" to="/closure/review">进入闭环治理</Link>
-          <Link className="button ghost" to="/samples/readiness">进入样本验证</Link>
-        </aside>
-      </section>
+      <HomeWorkbench />
     </>
   );
 }

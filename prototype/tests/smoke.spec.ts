@@ -199,6 +199,13 @@ test.describe('CLPM prototype smoke', () => {
     await expect(page.getByRole('heading', { name: /TIC-1115/ })).toBeVisible();
   });
 
+  test('updates home workbench context when selecting another priority loop', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /LIC-1143/i }).click();
+    await expect(page.getByText(/当前回路：LIC-1143/i)).toBeVisible();
+    await expect(page.getByRole('link', { name: /进入证据链/i })).toHaveAttribute('href', '/diagnosis/loop/LIC-1143');
+  });
+
   test('keeps display-only loop tables out of empty keyboard actions', async ({ page }) => {
     await page.goto('/loops');
     const rows = page.getByRole('row');
