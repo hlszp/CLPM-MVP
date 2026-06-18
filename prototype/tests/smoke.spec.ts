@@ -199,6 +199,16 @@ test.describe('CLPM prototype smoke', () => {
     await expect(page.getByRole('heading', { name: /TIC-1115/ })).toBeVisible();
   });
 
+  test('filters ranking table and keeps selected loop context in sync', async ({ page }) => {
+    await page.goto('/performance/ranking');
+    await page.getByLabel('风险等级').selectOption('high');
+    await expect(page.getByRole('row', { name: /TIC-1115/i })).toBeVisible();
+    await expect(page.getByRole('row', { name: /FIC-1101/i })).toHaveCount(0);
+
+    await page.getByRole('checkbox', { name: /选择 TIC-1115/i }).check();
+    await expect(page.getByText(/批量已选：1 条/i)).toBeVisible();
+  });
+
   test('updates home workbench context when selecting another priority loop', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: /LIC-1143/i }).click();
