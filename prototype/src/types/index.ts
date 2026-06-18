@@ -6,6 +6,8 @@ export type NavigationStage = 'foundation' | 'workflow' | 'reporting' | 'system'
 export type LoopStatus = '可评估' | '可诊断' | '可整定' | '需现场核实' | '数据不足' | '不可判定';
 export type RiskLevel = 'high' | 'medium' | 'low';
 export type StateKind = 'loading' | 'empty' | 'error' | 'success' | 'partial';
+export type SampleImportMethod = 'historian' | 'csv' | 'opc';
+export type SampleReadinessState = 'draft' | 'importing' | 'validating' | 'ready' | 'partial' | 'frozen';
 
 export interface NavigationItem {
   id: string;
@@ -33,6 +35,14 @@ export interface SampleBatch {
   goodValueRate: number;
   readiness: 'ready' | 'partial' | 'blocked';
   risks: string[];
+}
+
+export interface MappingFieldStatus {
+  source: string;
+  target: string;
+  coverage: string;
+  status: '已映射' | '缺失需确认' | '部分可用';
+  note: string;
 }
 
 export interface LoopRecord {

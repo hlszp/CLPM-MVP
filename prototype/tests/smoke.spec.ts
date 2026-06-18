@@ -206,6 +206,17 @@ test.describe('CLPM prototype smoke', () => {
     await expect(page.getByRole('link', { name: /进入证据链/i })).toHaveAttribute('href', '/diagnosis/loop/LIC-1143');
   });
 
+  test('switches sample import method and freezes sample', async ({ page }) => {
+    await page.goto('/samples/import');
+    await page.getByRole('button', { name: /OPC 只读连接/i }).click();
+    await expect(page.getByText(/当前导入方式：OPC 只读连接/i)).toBeVisible();
+
+    await page.goto('/samples/readiness');
+    await page.getByRole('button', { name: /冻结样本/i }).click();
+    await expect(page.getByText(/当前状态：frozen/i)).toBeVisible();
+    await expect(page.getByText(/样本已冻结，字段映射只读/i)).toBeVisible();
+  });
+
   test('keeps display-only loop tables out of empty keyboard actions', async ({ page }) => {
     await page.goto('/loops');
     const rows = page.getByRole('row');

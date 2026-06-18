@@ -1,4 +1,4 @@
-import type { LoopLedger, Reevaluation, ReviewRecord } from '../types';
+import type { LoopLedger, MappingFieldStatus, Reevaluation, ReviewRecord } from '../types';
 import { demoDataLineage, demoEvidencePackage, demoEvidenceWindows, demoFindings, demoKpis, demoLoops, demoSampleBatch, demoTuningCase } from './demoData.generated';
 
 export const currentBatch = demoSampleBatch;
@@ -44,13 +44,21 @@ export const dataLineage = demoDataLineage;
 
 export const tuningCase = demoTuningCase;
 
-export const ledgerMappings = [
+export const ledgerMappings: MappingFieldStatus[] = [
   { source: 'pv', target: 'LoopLedger.pvTag', coverage: '100%', status: '已映射', note: '过程量进入趋势、偏差与质量校核' },
   { source: 'sp', target: 'LoopLedger.spTag', coverage: '100%', status: '已映射', note: '设定值用于偏差与振荡判断' },
   { source: 'op', target: 'LoopLedger.opTag', coverage: '100%', status: '已映射', note: '输出量用于动作频繁、阀门粘滞证据' },
   { source: 'mode', target: 'LoopLedger.modeTag', coverage: '91%', status: '缺失需确认', note: '缺 MODE 不进入有效自控率强结论' },
   { source: 'quality', target: 'LoopLedger.qualityRule', coverage: '91%', status: '部分可用', note: 'BAD/FROZEN 触发数据不足或排除规则' },
 ];
+
+export const sampleImportMethods = [
+  { id: 'historian', label: 'Historian 导出', detail: '适合离线导出后导入样本窗口。', availability: 'ready' },
+  { id: 'csv', label: 'CSV 模拟数据', detail: '当前 demo-data 已接入并可用于工作流演示。', availability: 'active' },
+  { id: 'opc', label: 'OPC 只读连接', detail: '只读接入，不写 DCS，不改变现场参数。', availability: 'ready' },
+] as const;
+
+export const sampleMappingMatrix = ledgerMappings;
 
 export const mappingGaps = [
   { field: 'MODE', scope: 'manual_mode 场景', action: '工艺确认手动原因与投用定义' },
