@@ -9,6 +9,13 @@ export type StateKind = 'loading' | 'empty' | 'error' | 'success' | 'partial';
 export type SampleImportMethod = 'historian' | 'csv' | 'opc';
 export type SampleReadinessState = 'draft' | 'importing' | 'validating' | 'ready' | 'partial' | 'frozen';
 
+export interface PerformanceRankingFilters {
+  risk: 'all' | 'high' | 'medium' | 'low';
+  status: 'all' | '可评估' | '可诊断' | '可整定' | '需现场核实';
+  keyword: string;
+  sortBy: 'score' | 'risk' | 'loop';
+}
+
 export interface NavigationItem {
   id: string;
   label: string;

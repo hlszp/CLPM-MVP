@@ -1,6 +1,6 @@
 import { currentBatch, evidencePackage, primaryLoopId } from '../../data/mockData';
 import type { UserRole } from '../../types';
-import type { SampleReadinessWorkflow, WorkflowState } from './types';
+import type { PerformanceRankingState, SampleReadinessWorkflow, WorkflowState } from './types';
 
 export const initialRole: UserRole = 'engineer';
 
@@ -15,4 +15,14 @@ export const initialSampleReadinessState: SampleReadinessWorkflow = {
   readinessState: 'partial',
   selectedMappingField: 'mode',
   isFrozen: false,
+};
+
+export const initialPerformanceRankingState: PerformanceRankingState = {
+  filters: {
+    risk: 'all',
+    status: 'all',
+    keyword: '',
+    sortBy: 'score',
+  },
+  selectedLoopIds: [],
 };

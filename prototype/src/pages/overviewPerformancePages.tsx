@@ -1,10 +1,23 @@
-import { Link, useNavigate } from 'react-router-dom';
-import { LoopTable, MetricCard } from '../components/ui';
-import { currentBatch, dataLineage, evidencePackageView, evidenceWindows, kpis, ledgerVersions, loops, primaryLoopId, sampleScaleNote, valveCheckLoopId } from '../data/mockData';
+import { Link } from 'react-router-dom';
+import { MetricCard } from '../components/ui';
+import {
+  currentBatch,
+  dataLineage,
+  evidencePackageView,
+  evidenceWindows,
+  kpis,
+  ledgerVersions,
+  performanceSummaryCards,
+  primaryLoopId,
+  sampleScaleNote,
+  valveCheckLoopId,
+} from '../data/mockData';
 import { deliveryVerification } from '../data/deliveryStatus';
 import type { NavigationItem } from '../types';
 import { PageHeader } from './pageShared';
 import { HomeWorkbench } from './home/HomeWorkbench';
+import { PerformanceOverviewBoard } from './performance/PerformanceOverviewBoard';
+import { PerformanceRankingWorkbench } from './performance/PerformanceRankingWorkbench';
 
 export function HomePage({ route }: { route: NavigationItem }) {
   return (
@@ -19,8 +32,35 @@ export function RiskOverviewPage({ route }: { route: NavigationItem }) { return 
 
 export function TodoPage({ route }: { route: NavigationItem }) { return <><PageHeader route={route} /><section className="grid two"><section className="panel"><h2>待办队列</h2><ol className="task-list"><li><strong>审核 {primaryLoopId} 建议</strong><span>负责人：工艺 / 仪表 / 安全 · 截止：2026-06-17</span></li><li><strong>补齐 {valveCheckLoopId} 现场核实</strong><span>负责人：仪表 · 截止：2026-06-18</span></li><li><strong>复评上一轮实施记录</strong><span>负责人：控制工程师 · 截止：2026-06-20</span></li></ol></section><section className="panel"><h2>下一步动作</h2><p>优先完成 {primaryLoopId} 审核，再进入人工实施记录；缺证据任务不会阻塞其他可判定回路。</p><Link className="button" to="/closure/review">进入建议审核</Link></section></section></>; }
 
-export function PerformancePage({ route }: { route: NavigationItem }) { return <><PageHeader route={route} state="success"/><section className="grid four">{kpis.map((kpi) => <MetricCard key={kpi.key} label={kpi.label} value={kpi.value} delta={kpi.delta}/>)}</section><section className="panel"><h2>相关低性能回路</h2><LoopTable loops={loops.slice(0,3)}/><Link className="button" to="/performance/ranking">查看排行</Link><Link className="button ghost" to="/performance/lineage">查看溯源</Link></section></>; }
-export function RankingPage({ route }: { route: NavigationItem }) { const navigate = useNavigate(); const rankedLoops = loops.filter((loop) => ['可评估', '可诊断', '可整定', '需现场核实'].includes(loop.status)).sort((a,b)=>a.score-b.score); const heldOutLoops = loops.filter((loop) => ['数据不足', '不可判定'].includes(loop.status)); return <><PageHeader route={route} /><section className="panel"><h2>低效排行</h2><p>仅对可评估、可诊断、可整定、需现场核实对象排序；数据不足与不可判定不会被当作真实 0 分。</p><LoopTable loops={rankedLoops} onSelect={(loop) => navigate(`/diagnosis/loop/${loop.id}`)}/></section><section className="panel warning-panel"><h2>未参与真实排序对象</h2><div className="table-wrap"><table><thead><tr><th>回路</th><th>状态</th><th>原因</th></tr></thead><tbody>{heldOutLoops.map((loop) => <tr key={loop.id}><th scope="row">{loop.id}</th><td>{loop.status}</td><td>{loop.nextAction}</td></tr>)}</tbody></table></div></section></>; }
+export function PerformancePage({ route }: { route: NavigationItem }) {
+  return (
+    <>
+      <PageHeader route={route} state="success" />
+      <PerformanceOverviewBoard cards={performanceSummaryCards} />
+      <section className="panel">
+        <h2>相关低性能回路</h2>
+        <p>继续进入排行工作台查看筛选、批量选择与当前回路上下文。</p>
+        <div className="top-actions">
+          <Link className="button" to="/performance/ranking">
+            查看排行
+          </Link>
+          <Link className="button ghost" to="/performance/lineage">
+            查看溯源
+          </Link>
+        </div>
+      </section>
+    </>
+  );
+}
+
+export function RankingPage({ route }: { route: NavigationItem }) {
+  return (
+    <>
+      <PageHeader route={route} />
+      <PerformanceRankingWorkbench />
+    </>
+  );
+}
 export function LineagePage({ route }: { route: NavigationItem }) { return <><PageHeader route={route} state="success"/><section className="panel"><h2>KPI 口径来源</h2><dl className="detail-list"><div><dt>样本自控率</dt><dd>AUTO/CAS 行数 ÷ 总行数 = {kpis[0]?.value}</dd></div><div><dt>有效自控率</dt><dd>可评估 / 可诊断 / 可整定回路占比 = {kpis[1]?.value}</dd></div><div><dt>平稳率</dt><dd>评分 ≥ 70 的回路占比 = {kpis[2]?.value}</dd></div><div><dt>闭环候选率</dt><dd>可诊断 / 需现场核实 / 可整定回路占比 = {kpis[3]?.value}</dd></div></dl><p>数据集来源：{dataLineage.datasetId}，采样窗口 {dataLineage.sampleWindow}，采样间隔 {dataLineage.sampleIntervalSeconds}s。</p></section><section className="panel"><h2>公式、阈值与版本引用</h2><div className="table-wrap"><table><thead><tr><th>版本</th><th>类型</th><th>用途</th></tr></thead><tbody>{ledgerVersions.filter((item) => ['formula', 'threshold', 'quality rule', 'mode mapping'].includes(item.type)).map((item) => <tr key={item.version}><th scope="row">{item.version}</th><td>{item.type}</td><td>{item.change}</td></tr>)}</tbody></table></div><p>输入数据：PV/SP/OP/MODE/quality/event_marker；窗口：{dataLineage.sampleWindow}。</p></section></>; }
 export function TrendPage({ route }: { route: NavigationItem }) { const windows = evidenceWindows.slice(0, 3); return <><PageHeader route={route} state="success"/><section className="panel"><h2>趋势分析工作台</h2><p>按 demo-data 秒级样本展示 PV/SP/OP/MODE 关键窗口，只用于识别证据，不自动写 DCS 或生成强整定结论。</p><div className="table-wrap"><table><thead><tr><th>回路</th><th>趋势摘要</th><th>诊断边界</th><th>下一步</th></tr></thead><tbody>{windows.map((window) => <tr key={window.loopId}><th scope="row">{window.loopId}</th><td>{window.summary}</td><td>{window.rules.join('；')}</td><td><Link to={`/diagnosis/loop/${window.loopId}`}>查看证据链</Link></td></tr>)}</tbody></table></div></section><section className="grid three"><article className="panel"><h2>PV/SP</h2><p>用于确认偏差是否长期存在，不能单独证明控制器参数错误。</p></article><article className="panel"><h2>OP 动作</h2><p>用于识别频繁动作、饱和或疑似阀门问题，需结合质量码和事件线。</p></article><article className="panel warning-panel"><h2>安全边界</h2><p>趋势分析只读、可追溯、可审计；现场实施必须经过人工审核和回退方案。</p></article></section></>; }
 export function SponsorPage({ route }: { route: NavigationItem }) {

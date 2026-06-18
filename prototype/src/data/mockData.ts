@@ -32,6 +32,13 @@ export const valveCheckLoopId = loops.find((loop) => loop.status === '需现场�
 
 export const kpis = demoKpis;
 
+export const performanceSummaryCards = [
+  { key: 'auto', label: '样本自控率', value: '94.5%', delta: '24 回路 / 1h 窗口 / 1s 采样' },
+  { key: 'effective', label: '有效自控率', value: '62.5%', delta: '6 条诊断样例' },
+  { key: 'smooth', label: '平稳率', value: '62.5%', delta: '9 条低效' },
+  { key: 'closure', label: '闭环候选率', value: '50%', delta: '3 条需现场核实' },
+] as const;
+
 export const reviews: ReviewRecord[] = [
   { id: 'R-001', loopId: primaryLoopId, role: '工艺', decision: '通过', note: '认可低效判断，建议小窗口实施。' },
   { id: 'R-002', loopId: primaryLoopId, role: '仪表', decision: '需补证据', note: '需补一次阀门行程核实记录。' },

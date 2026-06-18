@@ -1,5 +1,6 @@
 import type {
   EvidencePackage,
+  PerformanceRankingFilters,
   SampleBatch,
   SampleImportMethod,
   SampleReadinessState,
@@ -19,6 +20,11 @@ export interface SampleReadinessWorkflow {
   isFrozen: boolean;
 }
 
+export interface PerformanceRankingState {
+  filters: PerformanceRankingFilters;
+  selectedLoopIds: string[];
+}
+
 export interface AppSessionValue {
   role: UserRole;
   defaultRoute: string;
@@ -27,10 +33,14 @@ export interface AppSessionValue {
   currentSample?: SampleBatch;
   currentPackage?: EvidencePackage;
   sampleReadiness: SampleReadinessWorkflow;
+  performanceRanking: PerformanceRankingState;
   setRole: (role: UserRole) => void;
   selectLoop: (loopId: string) => void;
   setCurrentPackage: (packageId: string) => void;
   setImportMethod: (method: SampleImportMethod) => void;
   setReadinessState: (state: SampleReadinessState) => void;
   freezeSample: () => void;
+  setPerformanceFilters: (filters: Partial<PerformanceRankingFilters>) => void;
+  toggleRankedLoopSelection: (loopId: string) => void;
+  clearRankedLoopSelection: () => void;
 }

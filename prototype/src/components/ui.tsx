@@ -20,28 +20,80 @@ export function MetricCard({ label, value, delta }: { label: string; value: stri
   );
 }
 
-export function LoopTable({ loops, onSelect, selectedId }: { loops: LoopRecord[]; onSelect?: (loop: LoopRecord) => void; selectedId?: string }) {
+export function LoopTable({
+  loops,
+  onSelect,
+  selectedId,
+  selectedIds = [],
+  onToggleSelection,
+  showSelection = false,
+}: {
+  loops: LoopRecord[];
+  onSelect?: (loop: LoopRecord) => void;
+  selectedId?: string;
+  selectedIds?: string[];
+  onToggleSelection?: (loopId: string) => void;
+  showSelection?: boolean;
+}) {
   return (
     <div className="table-wrap" role="region" aria-label="回路清单表格">
       <table>
         <thead>
-          <tr><th>回路</th><th>装置</th><th>类型</th><th>状态</th><th>风险</th><th>评分</th><th>下一步</th></tr>
+          <tr>
+            {showSelection ? <th>选择</th> : null}
+            <th>回路</th>
+            <th>装置</th>
+            <th>类型</th>
+            <th>状态</th>
+            <th>风险</th>
+            <th>评分</th>
+            <th>下一步</th>
+          </tr>
         </thead>
         <tbody>
           {loops.map((loop) => {
-            const interactiveProps = onSelect ? {
-              onClick: () => onSelect(loop),
-              onKeyDown: (event: React.KeyboardEvent<HTMLTableRowElement>) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onSelect(loop);
+            const interactiveProps = onSelect
+              ? {
+                  onClick: () => onSelect(loop),
+                  onKeyDown: (event: React.KeyboardEvent<HTMLTableRowElement>) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelect(loop);
+                    }
+                  },
+                  tabIndex: 0,
                 }
-              },
-              tabIndex: 0,
-            } : {};
+              : {};
             return (
-              <tr key={loop.id} className={selectedId === loop.id ? 'selected-row' : undefined} aria-selected={selectedId === loop.id ? 'true' : undefined} {...interactiveProps}>
-                <th scope="row">{loop.id}</th><td>{loop.device}</td><td>{loop.type}</td><td><StatusBadge value={loop.status} /></td><td><RiskBadge value={loop.risk} /></td><td>{loop.score}</td><td>{loop.nextAction}</td>
+              <tr
+                key={loop.id}
+                className={selectedId === loop.id ? 'selected-row' : undefined}
+                aria-selected={selectedId === loop.id ? 'true' : undefined}
+                {...interactiveProps}
+              >
+                {showSelection ? (
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`选择 ${loop.id}`}
+                      checked={selectedIds.includes(loop.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      onChange={() => onToggleSelection?.(loop.id)}
+                    />
+                  </td>
+                ) : null}
+                <th scope="row">{loop.id}</th>
+                <td>{loop.device}</td>
+                <td>{loop.type}</td>
+                <td>
+                  <StatusBadge value={loop.status} />
+                </td>
+                <td>
+                  <RiskBadge value={loop.risk} />
+                </td>
+                <td>{loop.score}</td>
+                <td>{loop.nextAction}</td>
               </tr>
             );
           })}
