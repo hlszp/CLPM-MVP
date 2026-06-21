@@ -2,7 +2,7 @@
 
 日期：2026-06-18
 状态：approved-baseline
-适用范围：`prototype/` 高保真原型重构第一阶段
+适用范围：`docs/设计文档/prototype/` 高保真原型重构第一阶段
 
 ## 1. 目标
 
@@ -84,7 +84,7 @@ CLPM 是“控制回路绩效治理与优化闭环平台”，不是通用 SaaS 
 - `default_entry`，代码字段映射为 `defaultEntry`
 - `is_deep_page`，代码字段映射为 `isDeepPage`
 
-`prototype/src/routes/menuConfig.ts` 是菜单结构的唯一事实来源，设计文档、类型声明和实现配置必须保持一致，不得派生第二份独立菜单真相。
+`docs/设计文档/prototype/src/routes/menuConfig.ts` 是菜单结构的唯一事实来源，设计文档、类型声明和实现配置必须保持一致，不得派生第二份独立菜单真相。
 
 ## 6. 视觉系统
 

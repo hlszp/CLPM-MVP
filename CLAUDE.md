@@ -50,6 +50,16 @@
 - `archive/product-requirements-specification-v0.2-2026-06-16.md`
 - `archive/prs-adjustment-assessment-2026-06-15.md`
 - `archive/tender-requirements-gap-assessment-2026-06-16.md`
+- `docs/归档文档/project-assessment-report.md`（项目现状评估，重构建议已落地）
+- `docs/归档文档/prototype-design-spec.md`（被 `DESIGN.md` 取代）
+- `docs/归档文档/full-prototype-planning.md`（被 `docs/过程文档/superpowers/plans/` 取代）
+- `docs/归档文档/prototype-visual-tokens-v0.1-2026-06-16.md`（被 `06-UIUX/ui-ux-design-guidelines.md` §3 覆盖）
+- `docs/归档文档/prototype-responsive-accessibility-v0.1-2026-06-16.md`（被 `06-UIUX/ui-ux-design-guidelines.md` §2 覆盖）
+
+以下 v0.1 文件已于 2026-06-20 删除（概念体系冲突，有价值内容已吸收进 `06-UIUX/ui-ux-design-guidelines.md` v3.0）：
+- `docs/设计文档/prototype-state-spec-v0.1-2026-06-16.md`
+- `docs/设计文档/prototype-interaction-detail-v0.1-2026-06-16.md`
+- `docs/设计文档/prototype-page-wireframes-v0.1-2026-06-16.md`
 
 这些文件只用于历史追溯。
 
