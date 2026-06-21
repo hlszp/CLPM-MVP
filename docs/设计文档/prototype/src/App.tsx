@@ -1,103 +1,45 @@
 /**
- * CLPM Prototype Baseline Skeleton
- * 唯一设计输入：docs/设计文档/06-UIUX/ui-ux-design-guidelines.md (v3.0)
+ * CLPM Prototype Baseline Skeleton (v4.0)
  *
- * 本文件仅提供壳层布局 + 路由骨架 + 页面占位。
- * 各页面具体实现按 UI/UX 文档 §6（页面规范）与 §7（核心组件）逐步展开。
+ * 唯一设计输入：docs/设计文档/06-UIUX/ui-ux-design-guidelines.md (v4.0)
+ *
+ * 本文件提供壳层布局 + 路由骨架 + 页面占位。
+ * - 菜单结构单一来源：src/routes/menuConfig.ts
+ * - 25 条路由对齐 UI/UX §12.2
+ * - 5 角色权限过滤对齐 UI/UX §5.2
+ * - 角色默认首页对齐 UI/UX §5.1 + §12.4
+ *
+ * 各页面具体实现按 UI/UX §6（页面规范）与 §7（核心组件）逐步展开。
  */
 
-import { useState } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Bell, UserCircle } from 'lucide-react';
 import {
-  LayoutDashboard,
-  Network,
-  BarChart3,
-  Activity,
-  ListChecks,
-  Settings2,
-  ShieldCheck,
-  ScrollText,
-  UserCircle,
-  Bell,
-  type LucideIcon,
-} from 'lucide-react';
+  ROLES,
+  ROLE_DEFAULT_HOME,
+  getVisibleMenuGroups,
+  canAccess,
+  type Role,
+} from './routes/menuConfig';
 
-/** 角色定义（UI/UX §5.1） */
-type Role = '仪控工程师' | '工艺/设备工程师' | 'Sponsor' | '系统管理员' | '外部专家';
-
-/** 菜单项定义（UI/UX §4.2 主导航菜单结构） */
-interface MenuItem {
-  label: string;
-  path: string;
-  icon: LucideIcon;
-  phase: 1 | 2 | 3;
-  /** 可见角色；undefined 表示全角色可见 */
-  roles?: Role[];
-}
-
-interface MenuGroup {
-  group: string;
-  items: MenuItem[];
-}
-
-const MENU: MenuGroup[] = [
-  {
-    group: '工作台',
-    items: [
-      { label: '性能总览首页', path: '/', icon: LayoutDashboard, phase: 1 },
-    ],
-  },
-  {
-    group: '工厂模型',
-    items: [
-      { label: '层级与回路台账', path: '/plant', icon: Network, phase: 1, roles: ['系统管理员', '仪控工程师'] },
-      { label: '位号映射', path: '/plant/mapping', icon: Network, phase: 1, roles: ['系统管理员', '仪控工程师'] },
-      { label: '引擎规则配置', path: '/plant/rules', icon: Network, phase: 1, roles: ['系统管理员'] },
-    ],
-  },
-  {
-    group: '性能评估',
-    items: [
-      { label: '全局看板', path: '/performance', icon: BarChart3, phase: 1 },
-      { label: '低效回路排行', path: '/performance/ranking', icon: BarChart3, phase: 1 },
-      { label: '报表中心', path: '/performance/reports', icon: BarChart3, phase: 1 },
-    ],
-  },
-  {
-    group: '诊断中心',
-    items: [
-      { label: '诊断列表', path: '/diagnosis', icon: Activity, phase: 1, roles: ['仪控工程师', '工艺/设备工程师', '系统管理员', '外部专家'] },
-      { label: '回路诊断详情', path: '/diagnosis/:loopId', icon: Activity, phase: 1, roles: ['仪控工程师', '工艺/设备工程师', '系统管理员', '外部专家'] },
-    ],
-  },
-  {
-    group: '异常跟踪',
-    items: [
-      { label: 'Action Tracker', path: '/tracker', icon: ListChecks, phase: 1, roles: ['仪控工程师'] },
-    ],
-  },
-  {
-    group: '回路整定',
-    items: [
-      { label: '整定与仿真', path: '/tuning', icon: Settings2, phase: 2, roles: ['仪控工程师', '外部专家'] },
-    ],
-  },
-  {
-    group: '系统管理',
-    items: [
-      { label: '用户与角色', path: '/system/users', icon: UserCircle, phase: 1, roles: ['系统管理员'] },
-      { label: '审计日志', path: '/system/audit', icon: ScrollText, phase: 1, roles: ['系统管理员'] },
-      { label: '安全边界说明', path: '/system/safety', icon: ShieldCheck, phase: 1 },
-    ],
-  },
-];
-
-/** 页面占位组件 */
-function PagePlaceholder({ title, module, section }: { title: string; module: string; section: string }) {
+/** 页面占位组件（基线用，后续按 UI/UX §6 各模块规范实现） */
+function PagePlaceholder({
+  title,
+  module,
+  section,
+  note,
+}: {
+  title: string;
+  module: string;
+  section: string;
+  note?: string;
+}) {
   return (
     <div className="page-placeholder">
       <h2>{title}</h2>
-      <p>本页面为基线占位，待按 UI/UX 设计规范实现。</p>
+      <p>本页面为 v4.0 基线占位，待按 UI/UX 设计规范实现。</p>
+      {note && <p className="ref">{note}</p>}
       <p className="ref">
         参考规范：ui-ux-design-guidelines.md {section}（{module}）
       </p>
@@ -105,52 +47,54 @@ function PagePlaceholder({ title, module, section }: { title: string; module: st
   );
 }
 
-/** 侧边栏导航 */
+/** 侧边栏导航（UI/UX §4.1） */
 function Sidebar({ role }: { role: Role }) {
   const location = useLocation();
-
-  const isVisible = (item: MenuItem) => {
-    if (!item.roles) return true;
-    return item.roles.includes(role);
-  };
+  const groups = getVisibleMenuGroups(role);
 
   return (
     <nav className="app-sidebar-nav">
-      {MENU.map((group) => {
-        const visibleItems = group.items.filter(isVisible);
-        if (visibleItems.length === 0) return null;
-        return (
-          <div key={group.group}>
-            <div className="app-nav-group-label">{group.group}</div>
-            {visibleItems.map((item) => {
-              const Icon = item.icon;
-              const isActive =
-                item.path === '/'
-                  ? location.pathname === '/'
-                  : location.pathname.startsWith(item.path.split('/:')[0]);
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path === '/diagnosis/:loopId' ? '/diagnosis/demo-loop' : item.path}
-                  className={`app-nav-item ${isActive ? 'active' : ''}`}
-                >
-                  <Icon size={18} />
-                  <span>{item.label}</span>
-                  {item.phase !== 1 && <span className="phase-tag">P{item.phase}</span>}
-                </Link>
-              );
-            })}
-          </div>
-        );
-      })}
+      {groups.map((group) => (
+        <div key={group.group}>
+          <div className="app-nav-group-label">{group.group}</div>
+          {group.items.map((item) => {
+            const Icon = item.icon;
+            const basePath = item.path.split('/:')[0];
+            const isActive =
+              item.path === '/'
+                ? location.pathname === '/'
+                : location.pathname === basePath || location.pathname.startsWith(basePath + '/');
+            return (
+              <Link
+                key={item.path}
+                to={item.path.includes(':loopId') ? item.path.replace(':loopId', 'demo-loop') : item.path}
+                className={`app-nav-item ${isActive ? 'active' : ''}`}
+              >
+                <Icon size={18} />
+                <span>{item.label}</span>
+                {item.phase !== 1 && <span className="phase-tag">P{item.phase}</span>}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }
 
 /** 顶部状态栏（UI/UX §4.1） */
-function TopBar({ role, setRole }: { role: Role; setRole: (r: Role) => void }) {
+function TopBar({
+  role,
+  setRole,
+}: {
+  role: Role;
+  setRole: (r: Role) => void;
+}) {
   const location = useLocation();
-  const breadcrumb = location.pathname === '/' ? '工厂模型 / 加氢联合车间 / 全局看板' : location.pathname;
+  const breadcrumb =
+    location.pathname === '/'
+      ? '工厂模型 / 加氢联合车间 / 性能总览'
+      : `工厂模型 / 加氢联合车间 ${location.pathname}`;
 
   return (
     <div className="app-topbar">
@@ -161,13 +105,18 @@ function TopBar({ role, setRole }: { role: Role; setRole: (r: Role) => void }) {
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as Role)}
-            style={{ padding: '2px 6px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}
+            style={{
+              padding: '2px 6px',
+              marginLeft: 'var(--space-1)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-default)',
+            }}
           >
-            <option>仪控工程师</option>
-            <option>工艺/设备工程师</option>
-            <option>Sponsor</option>
-            <option>系统管理员</option>
-            <option>外部专家</option>
+            {ROLES.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
           </select>
         </span>
         <Bell size={18} color="var(--text-muted)" style={{ cursor: 'pointer' }} />
@@ -178,7 +127,25 @@ function TopBar({ role, setRole }: { role: Role; setRole: (r: Role) => void }) {
 }
 
 export default function App() {
-  const [role, setRole] = useState<Role>('仪控工程师');
+  const [role, setRoleState] = useState<Role>('仪控工程师');
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  /** 切换角色时跳转到该角色默认首页（UI/UX §12.4） */
+  const setRole = (r: Role) => {
+    setRoleState(r);
+    const home = ROLE_DEFAULT_HOME[r];
+    if (location.pathname !== home) {
+      navigate(home);
+    }
+  };
+
+  /** 路由守卫：当前角色无权限访问时跳转默认首页 */
+  useEffect(() => {
+    if (!canAccess(role, location.pathname)) {
+      navigate(ROLE_DEFAULT_HOME[role]);
+    }
+  }, [role, location.pathname, navigate]);
 
   return (
     <div className="app-shell">
@@ -190,20 +157,117 @@ export default function App() {
         <TopBar role={role} setRole={setRole} />
         <main className="app-content">
           <Routes>
-            <Route path="/" element={<PagePlaceholder title="性能总览首页" module="模块 A：性能总览首页" section="§6.1" />} />
-            <Route path="/plant" element={<PagePlaceholder title="层级与回路台账" module="模块 B：工厂模型配置" section="§6.2" />} />
-            <Route path="/plant/mapping" element={<PagePlaceholder title="位号映射" module="模块 B：工厂模型配置" section="§6.2" />} />
-            <Route path="/plant/rules" element={<PagePlaceholder title="引擎规则配置" module="模块 B：工厂模型配置" section="§6.2" />} />
-            <Route path="/performance" element={<PagePlaceholder title="全局看板" module="模块 C：性能评估看板" section="§6.3" />} />
-            <Route path="/performance/ranking" element={<PagePlaceholder title="低效回路排行" module="模块 C：性能评估看板" section="§6.3" />} />
-            <Route path="/performance/reports" element={<PagePlaceholder title="报表中心" module="模块 F：报表中心" section="§6.6" />} />
-            <Route path="/diagnosis" element={<PagePlaceholder title="诊断列表" module="模块 D：诊断中心" section="§6.4" />} />
-            <Route path="/diagnosis/:loopId" element={<PagePlaceholder title="回路诊断详情" module="模块 D：诊断中心" section="§6.4" />} />
-            <Route path="/tracker" element={<PagePlaceholder title="Action Tracker" module="模块 E：Action Tracker" section="§6.5" />} />
-            <Route path="/tuning" element={<PagePlaceholder title="整定与仿真" module="模块 G：回路整定与仿真（Phase 2）" section="§6.7" />} />
-            <Route path="/system/users" element={<PagePlaceholder title="用户与角色" module="模块 H：系统管理" section="§6.8" />} />
-            <Route path="/system/audit" element={<PagePlaceholder title="审计日志" module="模块 H：系统管理" section="§6.8" />} />
-            <Route path="/system/safety" element={<PagePlaceholder title="安全边界说明" module="模块 I：安全边界" section="§6.9" />} />
+            {/* 工作台（门户）— UI/UX §6.1 */}
+            <Route
+              path="/"
+              element={<PagePlaceholder title="性能总览首页" module="工作台" section="§6.1.1" note="上中下三行布局：KPI 卡片 + 低效回路列表 + 组合趋势" />}
+            />
+
+            {/* 回路管理 — UI/UX §6.2 */}
+            <Route
+              path="/loop/factory"
+              element={<PagePlaceholder title="工厂层级配置" module="回路管理" section="§6.2.1" note="配置页：左树（工厂→装置→单元）+ 右表单" />}
+            />
+            <Route
+              path="/loop/ledger"
+              element={<PagePlaceholder title="回路台账" module="回路管理" section="§6.2.2" note="数据表页：用户创建回路，7 槽位 Tag 关联状态，运行态只读" />}
+            />
+            <Route
+              path="/loop/mapping"
+              element={<PagePlaceholder title="Tag 关联管理" module="回路管理" section="§6.2.3 + §7.7" note="配置页：左 AAS Tag 列表 + 右 7 槽位（PV/SP/OP/MODE/PID_P/PID_I/PID_D），拖拽 + 下拉双模式" />}
+            />
+            <Route
+              path="/loop/monitor"
+              element={<PagePlaceholder title="回路监控列表" module="回路管理" section="§6.2.4" note="数据表页：PV 当前值含质量徽章，列表/卡片双视图" />}
+            />
+            <Route
+              path="/loop/monitor/:loopId"
+              element={<PagePlaceholder title="回路运行详情" module="回路管理" section="§6.2.5" note="工作台页：Tag 关联信息 + PV/SP/OP 时序波形（PV 按质量码断线）+ KPI 摘要" />}
+            />
+
+            {/* 性能评估 — UI/UX §6.3 */}
+            <Route
+              path="/performance"
+              element={<PagePlaceholder title="全局看板" module="性能评估" section="§6.3.1" note="6 项 KPI 卡片 + 全厂平稳率趋势 + 装置评分排名 + Partial 警告横幅" />}
+            />
+            <Route
+              path="/performance/ranking"
+              element={<PagePlaceholder title="低效回路排行" module="性能评估" section="§6.3.2" note="数据表页：按 score 升序，行级抽屉滑出回路摘要" />}
+            />
+            <Route
+              path="/performance/metrics"
+              element={<PagePlaceholder title="性能指标配置" module="性能评估" section="§6.3.3" note="配置页：6 大 KPI 指标，权重总和须 100%，保存弹确认弹窗" />}
+            />
+            <Route
+              path="/performance/rules"
+              element={<PagePlaceholder title="引擎规则配置" module="性能评估" section="§6.3.4" note="配置页：计算周期/数据拉取/调度参数" />}
+            />
+            <Route
+              path="/performance/analytics"
+              element={<PagePlaceholder title="性能统计报表" module="性能评估" section="§6.3.5" note="数据表页 + 图表区：KPI 趋势对比/装置排名/差等生分布" />}
+            />
+
+            {/* 诊断中心 — UI/UX §6.4 */}
+            <Route
+              path="/diagnosis"
+              element={<PagePlaceholder title="诊断列表" module="诊断中心" section="§6.4.1" note="数据表页：按预诊标签分组，置信度进度条" />}
+            />
+            <Route
+              path="/diagnosis/metrics"
+              element={<PagePlaceholder title="诊断指标配置" module="诊断中心" section="§6.4.2" note="配置页：振荡检测 FFT/粘滞检测散点拟合/参数过激检测/质量码规则" />}
+            />
+            <Route
+              path="/diagnosis/:loopId"
+              element={<PagePlaceholder title="回路诊断详情" module="诊断中心" section="§6.4.3 + §7.3" note="工作台页：时序波形（PV 按质量码断线）+ PV-OP 散点图 + 诊断结论卡片" />}
+            />
+            <Route
+              path="/diagnosis/tracker"
+              element={<PagePlaceholder title="异常跟踪" module="诊断中心" section="§6.4.4" note="数据表页 + 抽屉：Action Tracker 状态流转 PENDING→IN_PROGRESS→RESOLVED/IGNORED，RESOLVED 触发 A/B 对比" />}
+            />
+            <Route
+              path="/diagnosis/analytics"
+              element={<PagePlaceholder title="诊断统计报表" module="诊断中心" section="§6.4.5" note="数据表页 + 图表区：预诊标签分布/处理效率趋势/闭环时长分布" />}
+            />
+
+            {/* 回路整定（Phase 2 原型）— UI/UX §6.5 */}
+            <Route
+              path="/tuning"
+              element={<PagePlaceholder title="整定工作台" module="回路整定（Phase 2 原型）" section="§6.5.1" note="工作台页：左待整定回路列表 + 右整定状态概览，推荐状态 待辨识→已辨识→已整定→已仿真" />}
+            />
+            <Route
+              path="/tuning/identification"
+              element={<PagePlaceholder title="模型辨识" module="回路整定（Phase 2 原型）" section="§6.5.2" note="配置页：左参数（FOPDT/SOPDT/IPDT）+ 右结果（传递函数 + 阶跃响应对比）" />}
+            />
+            <Route
+              path="/tuning/algorithm"
+              element={<PagePlaceholder title="整定算法" module="回路整定（Phase 2 原型）" section="§6.5.3" note="配置页：IMC/Lambda/Z-N/Cohen-Coon，推荐 PID 参数对比，安全边界强调" />}
+            />
+            <Route
+              path="/tuning/simulation"
+              element={<PagePlaceholder title="闭环仿真" module="回路整定（Phase 2 原型）" section="§6.5.4" note="工作台页：当前 PID vs 推荐 PID 双波形对比 + 性能指标对比表" />}
+            />
+            <Route
+              path="/tuning/analytics"
+              element={<PagePlaceholder title="整定效果统计" module="回路整定（Phase 2 原型）" section="§6.5.5" note="审计页：整定前后 KPI 对比 + 风险说明（不下写 DCS）" />}
+            />
+
+            {/* 系统管理 — UI/UX §6.6 */}
+            <Route
+              path="/system/users"
+              element={<PagePlaceholder title="用户与角色" module="系统管理" section="§6.6.1" note="配置页：左用户列表 + 右表单，角色限定 5 种" />}
+            />
+            <Route
+              path="/system/audit"
+              element={<PagePlaceholder title="审计日志" module="系统管理" section="§6.6.2" note="数据表页：仅查询不可物理删除，操作类型颜色编码" />}
+            />
+            <Route
+              path="/system/reports"
+              element={<PagePlaceholder title="自动报表管理" module="系统管理" section="§6.6.3" note="数据表页：班/日/周/月报表生成配置 + 记录表格" />}
+            />
+            <Route
+              path="/system/safety"
+              element={<PagePlaceholder title="安全边界说明" module="系统管理" section="§6.6.4" note="审计页：能做/不能做矩阵 + 风险说明，全角色可见" />}
+            />
           </Routes>
         </main>
       </div>
