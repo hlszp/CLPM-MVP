@@ -1,11 +1,14 @@
 -- =============================================================================
 -- 数据库名: clpm
--- 脚本版本: v3.0
+-- 脚本版本: v1.1
 -- 创建日期: 2026-06-20
 -- 对应 DDS 版本: DDS v3.0 (产品化架构重构版)
--- 设计依据: PRD v3.0, FDS v3.0, ADS v3.0
+-- 设计依据: PRD v3.0, FDS v3.0, ADS v3.0, 关键算法设计说明 v1.0
 -- 说明: 本脚本遵循 ADS v3.0 "存算分离" 原则，承载关系型业务域数据模型。
 --       共 14 张表（DDS v3.0 中 13 张 + 新增 sys_user 认证表）。
+-- 变更记录:
+--   v1.0 2026-06-20: 初始版本（DDS v3.0 14 张表）
+--   v1.1 2026-06-22: 算法设计同步DDL变更（metric_config/kpi_snapshot_hourly/diagnosis_config/tuning_record 4表字段调整）
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -157,12 +160,14 @@ CREATE TABLE IF NOT EXISTS metric_config (
     metric_name     VARCHAR(100)    NOT NULL,
     formula         TEXT,
     weight          DECIMAL(5,2),
-    threshold       DECIMAL(5,2),
+    threshold       JSONB,
+    control_type    VARCHAR(20)     DEFAULT 'STABLE',
     is_enabled      BOOLEAN         DEFAULT TRUE,
     updated_by      VARCHAR(50),
     updated_at      TIMESTAMP,
     version         INT             DEFAULT 1,
-    CONSTRAINT uk_metric_config_code UNIQUE (metric_code)
+    CONSTRAINT uk_metric_config_code UNIQUE (metric_code),
+    CONSTRAINT ck_metric_config_control_type CHECK (control_type IN ('STABLE', 'SLOW', 'FAST', 'LOGIC'))
 );
 
 COMMENT ON TABLE  metric_config IS '性能指标配置（6 大核心 KPI 及变体指标的可配置元数据）';
@@ -171,7 +176,8 @@ COMMENT ON COLUMN metric_config.metric_code IS '指标代码（如：GOOD_VALUE_
 COMMENT ON COLUMN metric_config.metric_name IS '指标名称（如：好值率）';
 COMMENT ON COLUMN metric_config.formula IS '计算公式（支持用户自定义表达式）';
 COMMENT ON COLUMN metric_config.weight IS '权重（总和须为 100%）';
-COMMENT ON COLUMN metric_config.threshold IS '阈值（用于触发诊断）';
+COMMENT ON COLUMN metric_config.threshold IS '阈值JSONB结构 {min, max, alert}';
+COMMENT ON COLUMN metric_config.control_type IS '控制类型 STABLE/SLOW/FAST/LOGIC';
 COMMENT ON COLUMN metric_config.is_enabled IS '是否启用';
 COMMENT ON COLUMN metric_config.updated_by IS '最后更新人';
 COMMENT ON COLUMN metric_config.updated_at IS '最后更新时间';
@@ -185,8 +191,9 @@ CREATE TABLE IF NOT EXISTS diagnosis_config (
     diag_code       VARCHAR(50)     NOT NULL,
     diag_name       VARCHAR(100)    NOT NULL,
     algorithm_type  VARCHAR(50)     NOT NULL,
+    calc_method     VARCHAR(50),
     params          JSON,
-    threshold       DECIMAL(5,2),
+    threshold       JSONB,
     is_enabled      BOOLEAN         DEFAULT TRUE,
     updated_by      VARCHAR(50),
     updated_at      TIMESTAMP,
@@ -199,8 +206,9 @@ COMMENT ON COLUMN diagnosis_config.id IS '诊断指标主键';
 COMMENT ON COLUMN diagnosis_config.diag_code IS '诊断代码（如：OSCILLATION_FFT/STICTION_SCATTER/OVERAGGRESSIVE/QUALITY_CODE）';
 COMMENT ON COLUMN diagnosis_config.diag_name IS '诊断指标名称（如：振荡检测-FFT）';
 COMMENT ON COLUMN diagnosis_config.algorithm_type IS '算法类型（如：FFT/SCATTER_FIT/THRESHOLD）';
+COMMENT ON COLUMN diagnosis_config.calc_method IS '计算方法 IAE_ZERO_CROSSING/FFT_WELCH/CHOUDHURY_NGI_NLI/KANO_STATISTICAL/EXPERT_RULE';
 COMMENT ON COLUMN diagnosis_config.params IS '算法参数（如：FFT 窗口长度、散点拟合阶数）';
-COMMENT ON COLUMN diagnosis_config.threshold IS '诊断阈值（超过则触发预诊标签）';
+COMMENT ON COLUMN diagnosis_config.threshold IS '阈值JSONB结构 {min, max, alert}';
 COMMENT ON COLUMN diagnosis_config.is_enabled IS '是否启用';
 COMMENT ON COLUMN diagnosis_config.updated_by IS '最后更新人';
 COMMENT ON COLUMN diagnosis_config.updated_at IS '最后更新时间';
@@ -244,7 +252,9 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     good_value_rate     DECIMAL(5,2),
     auto_mode_rate      DECIMAL(5,2),
     steady_rate         DECIMAL(5,2),
+    accuracy_rate       DECIMAL(5,2),
     oscillation_rate    DECIMAL(5,2),
+    saturation_rate     DECIMAL(5,2),
     status              VARCHAR(20)     NOT NULL,
     CONSTRAINT fk_kpi_snapshot_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_snapshot_status  CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
@@ -260,7 +270,9 @@ COMMENT ON COLUMN kpi_snapshot_hourly.score IS '综合评分（0-100）';
 COMMENT ON COLUMN kpi_snapshot_hourly.good_value_rate IS '好值率（%），基于 PV 质量码统计';
 COMMENT ON COLUMN kpi_snapshot_hourly.auto_mode_rate IS '自控率（%）';
 COMMENT ON COLUMN kpi_snapshot_hourly.steady_rate IS '平稳率（%）';
+COMMENT ON COLUMN kpi_snapshot_hourly.accuracy_rate IS '准确率(%)';
 COMMENT ON COLUMN kpi_snapshot_hourly.oscillation_rate IS '振荡率（%）';
+COMMENT ON COLUMN kpi_snapshot_hourly.saturation_rate IS '饱和率(%)';
 COMMENT ON COLUMN kpi_snapshot_hourly.status IS '计算状态：SUCCESS/INCONCLUSIVE/PARTIAL';
 
 -- =============================================================================
@@ -324,6 +336,7 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     algorithm           VARCHAR(50)     NOT NULL,
     recommended_pid     JSON,
     simulation_result   JSON,
+    fitting_score       DECIMAL(5,2),
     status              VARCHAR(20)     NOT NULL,
     created_by          VARCHAR(50),
     created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
@@ -341,6 +354,7 @@ COMMENT ON COLUMN tuning_record.model_params IS '模型参数（如：{"K": 1.2,
 COMMENT ON COLUMN tuning_record.algorithm IS '整定算法：IMC/LAMBDA/ZN/COHEN_COON';
 COMMENT ON COLUMN tuning_record.recommended_pid IS '推荐 PID 参数（如：{"P": 1.5, "I": 0.8, "D": 0.2}）';
 COMMENT ON COLUMN tuning_record.simulation_result IS '闭环仿真结果（含阶跃响应曲线、性能指标对比）';
+COMMENT ON COLUMN tuning_record.fitting_score IS '模型拟合度评分(0-100)';
 COMMENT ON COLUMN tuning_record.status IS '整定状态：PENDING/IDENTIFIED/SIMULATED/APPLIED/VERIFIED';
 COMMENT ON COLUMN tuning_record.created_by IS '创建人';
 COMMENT ON COLUMN tuning_record.created_at IS '创建时间';

@@ -1,9 +1,9 @@
 # CLPM 接口设计规范说明书 (IDS)
 
 **文档状态**: 正式版
-**当前版本**: v3.1 (认证授权与统一响应规范补充版)
-**发布日期**: 2026-06-21
-**设计依据**: PRD (v3.0), FDS (v3.0), ADS (v3.0), DDS (v3.0)
+**当前版本**: v3.2 (算法对齐与算法服务接口补充版)
+**发布日期**: 2026-06-22
+**设计依据**: PRD (v3.0), FDS (v3.0), ADS (v3.0), DDS (v3.0), 关键算法设计说明 (v1.0)
 
 ---
 
@@ -15,6 +15,7 @@
 | v2.0 | 2026-06-19 | 全面重构：基于 PRD v2.2 重新设计，移除繁重工单审批流，重塑为"自动评估+轻量跟踪"架构，定义性能看板、波形查询、异常跟踪三类核心 API。 | 系统设计团队 |
 | v3.0 | 2026-06-20 | 产品化架构重构：①对齐 6 模块 + 1 门户结构（工作台/回路管理/性能评估/诊断中心/回路整定/系统管理）；②引入 AAS Tag 模型（7 个 OPC tag：PV/SP/OP/MODE/PID_P/PID_I/PID_D），PID 参数从 tag 只读，数据质量主要针对 PV；③新增工作台、回路管理（含 AAS 同步/回路 CRUD/tag 关联/回路监控）、回路整定（Phase 2 占位）、系统管理 API 组；④扩展性能评估与诊断中心 API（指标配置/引擎规则/统计报表）；⑤波形 API 响应增加 `pv_quality` 数组，明确仅 PV 携带质量码；⑥补充新错误码（ERR_TAG_NOT_FOUND/ERR_LOOP_TAG_REQUIRED/ERR_METRIC_WEIGHT_SUM/ERR_CONFIG_FORBIDDEN）。 | 系统设计团队 |
 | v3.1 | 2026-06-21 | 认证授权与统一响应规范补充：①新增 §5 认证与授权 API（登录/登出/Token 刷新/获取当前用户/修改密码），定义 JWT Bearer Token 方案、Access/Refresh Token 双 Token 机制、黑名单策略、权限列表枚举；②新增 §6 统一响应规范（成功/错误/分页/异步任务响应 envelope 格式、HTTP 状态码使用规则、4 位业务错误码分段定义、前端 Axios 拦截器对接规范）；③补充 ERR_TOKEN_EXPIRED/ERR_TOKEN_INVALID/ERR_INVALID_CREDENTIALS/ERR_ACCOUNT_DISABLED/ERR_TOO_MANY_ATTEMPTS/ERR_PASSWORD_SAME/ERR_USER_NOT_FOUND/ERR_USER_DUPLICATE 等认证相关错误码。 | 系统设计团队 |
+| v3.2 | 2026-06-22 | 算法对齐与算法服务接口补充（依据《关键算法设计说明》v1.0）：①统一 6 大 KPI 清单（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate），所有 KPI 接口响应包含全部 6 个 KPI 字段 + composite_score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version；②统一诊断标签为 8 类（OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW），诊断结果结构含 label/confidence/evidence/algorithm，新增 fused_confidence（Dempster-Shafer 融合置信度）；③整定接口新增 fitting_score 字段、method 枚举（IMC/LAMBDA/ZIEGLER_NICHOLS/COHEN_COON/SIMC），响应包含 model_params/pid_params/simulation_result/fitting_score；④新增 §2.7 算法服务接口（4 个异步 API：KPI 计算/诊断分析/整定计算/任务查询）；⑤新增 §2.8 指标配置接口与 §2.9 诊断配置接口（批量 GET/PUT，calc_method/threshold JSONB/control_type）；⑥对齐 C1-C7 跨文档差距修正。 | 系统设计团队 |
 
 ---
 
@@ -63,13 +64,24 @@
       },
       "kpiCards": [
         {
+          "metricKey": "good_value_rate",
+          "metricName": "好值率",
+          "value": 96.8,
+          "unit": "%",
+          "delta": 0.5,
+          "trend": "UP",
+          "miniTrend": [96.0, 96.3, 96.5, 96.8],
+          "status": "GOOD"
+        },
+        {
           "metricKey": "auto_mode_rate",
-          "metricName": "自控投用率",
+          "metricName": "自控率",
           "value": 92.5,
           "unit": "%",
           "delta": 1.2,
           "trend": "UP",
-          "miniTrend": [91.0, 91.5, 92.0, 92.5]
+          "miniTrend": [91.0, 91.5, 92.0, 92.5],
+          "status": "GOOD"
         },
         {
           "metricKey": "steady_rate",
@@ -78,52 +90,68 @@
           "unit": "%",
           "delta": -0.8,
           "trend": "DOWN",
-          "miniTrend": [86.1, 85.9, 85.5, 85.3]
+          "miniTrend": [86.1, 85.9, 85.5, 85.3],
+          "status": "WARNING"
         },
         {
-          "metricKey": "score",
+          "metricKey": "accuracy_rate",
+          "metricName": "准确率",
+          "value": 88.1,
+          "unit": "%",
+          "delta": 0.3,
+          "trend": "UP",
+          "miniTrend": [87.5, 87.8, 88.0, 88.1],
+          "status": "GOOD"
+        },
+        {
+          "metricKey": "oscillation_rate",
+          "metricName": "振荡率",
+          "value": 12.4,
+          "unit": "%",
+          "delta": -1.5,
+          "trend": "DOWN",
+          "miniTrend": [14.0, 13.5, 13.0, 12.4],
+          "status": "WARNING"
+        },
+        {
+          "metricKey": "saturation_rate",
+          "metricName": "饱和率",
+          "value": 5.2,
+          "unit": "%",
+          "delta": -0.3,
+          "trend": "DOWN",
+          "miniTrend": [6.0, 5.8, 5.5, 5.2],
+          "status": "GOOD"
+        },
+        {
+          "metricKey": "composite_score",
           "metricName": "综合评分",
           "value": 78.6,
           "unit": "",
           "delta": 2.1,
           "trend": "UP",
-          "miniTrend": [76.5, 77.0, 78.0, 78.6]
-        },
-        {
-          "metricKey": "alarm_count",
-          "metricName": "报警次数",
-          "value": 12,
-          "unit": "次",
-          "delta": -3,
-          "trend": "DOWN",
-          "miniTrend": [15, 14, 13, 12]
-        },
-        {
-          "metricKey": "operation_freq",
-          "metricName": "操作频次",
-          "value": 45,
-          "unit": "次",
-          "delta": 5,
-          "trend": "UP",
-          "miniTrend": [40, 42, 43, 45]
-        },
-        {
-          "metricKey": "good_value_rate",
-          "metricName": "好值率",
-          "value": 96.8,
-          "unit": "%",
-          "delta": 0.5,
-          "trend": "UP",
-          "miniTrend": [96.0, 96.3, 96.5, 96.8]
+          "miniTrend": [76.5, 77.0, 78.0, 78.6],
+          "status": "WARNING"
         }
       ],
+      "kpiSummary": {
+        "good_value_rate": 96.8,
+        "auto_mode_rate": 92.5,
+        "steady_rate": 85.3,
+        "accuracy_rate": 88.1,
+        "oscillation_rate": 12.4,
+        "saturation_rate": 5.2,
+        "composite_score": 78.6,
+        "status": "WARNING",
+        "algorithm_version": "KPI_CALC_v1.0"
+      },
       "badActors": [
         {
           "loopId": "uuid-xxx",
           "tagName": "101-FC-1023",
           "score": 45.2,
           "steadyRate": 60.5,
-          "status": "SUCCESS",
+          "status": "POOR",
           "preDiagnosis": "疑似阀门粘滞"
         }
       ],
@@ -150,7 +178,7 @@
     }
   }
   ```
-* **说明**：KPI 卡片固定返回 6 项核心指标（自控投用率/平稳率/综合评分/报警次数/操作频次/好值率）；`badActors` 默认返回 Top 10 低效回路；`loopTrendSummary` 返回选中回路近 24h 趋势摘要；数据为空时对应字段返回 `null` 或空数组，前端展示"--"。
+* **说明**：KPI 卡片固定返回 7 项（6 大 KPI + 综合评分），6 大 KPI 严格对齐《关键算法设计说明》§4.0：好值率/自控率/平稳率/准确率/振荡率/饱和率；每卡 `status` 枚举值为 `GOOD`/`WARNING`/`POOR`/`INCONCLUSIVE`；`kpiSummary` 汇总 6 大 KPI 数值 + `composite_score`（综合评分，0-100）+ `status`（整体状态）+ `algorithm_version`（算法版本号，格式 `<算法类别>v<主版本>.<次版本>`）；`badActors` 默认返回 Top 10 低效回路；`loopTrendSummary` 返回选中回路近 24h 趋势摘要；数据为空时对应字段返回 `null` 或空数组，前端展示"--"。
 
 ---
 
@@ -707,17 +735,21 @@
         "pvQuality": ["Good", "Good", "Bad"]
       },
       "kpiSummary": {
-        "score": 78.6,
-        "steadyRate": 85.3,
-        "goodValueRate": 96.8,
-        "autoModeRate": 92.5,
-        "calculatedAt": "2026-06-20T09:00:00Z",
-        "status": "SUCCESS"
+        "good_value_rate": 96.8,
+        "auto_mode_rate": 92.5,
+        "steady_rate": 85.3,
+        "accuracy_rate": 88.1,
+        "oscillation_rate": 12.4,
+        "saturation_rate": 5.2,
+        "composite_score": 78.6,
+        "status": "WARNING",
+        "algorithm_version": "KPI_CALC_v1.0",
+        "calculatedAt": "2026-06-20T09:00:00Z"
       }
     }
   }
   ```
-* **说明**：`currentValues` 为当前最新值快照；`trend` 为趋势数据，`pvQuality` 数组与 `pv` 数组等长，仅 PV 携带质量码；`kpiSummary` 为近期 KPI 摘要。回路处于 `INCONCLUSIVE` 时，`kpiSummary.status` 为 `INCONCLUSIVE`，波形区灰色虚线断线。
+* **说明**：`currentValues` 为当前最新值快照；`trend` 为趋势数据，`pvQuality` 数组与 `pv` 数组等长，仅 PV 携带质量码；`kpiSummary` 包含全部 6 大 KPI（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate）+ composite_score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version。回路处于 `INCONCLUSIVE` 时，`kpiSummary.status` 为 `INCONCLUSIVE`，波形区灰色虚线断线。
 
 #### 2.2.15 回路监控列表 (List Loop Monitor)
 
@@ -791,44 +823,69 @@
           "metricName": "好值率",
           "value": 96.8,
           "unit": "%",
-          "status": "SUCCESS"
+          "status": "GOOD",
+          "algorithmVersion": "KPI_CALC_v1.0"
         },
         {
           "metricKey": "auto_mode_rate",
           "metricName": "自控率",
           "value": 92.5,
           "unit": "%",
-          "status": "SUCCESS"
+          "status": "GOOD",
+          "algorithmVersion": "KPI_CALC_v1.0"
         },
         {
           "metricKey": "steady_rate",
           "metricName": "平稳率",
           "value": 85.3,
           "unit": "%",
-          "status": "SUCCESS"
+          "status": "WARNING",
+          "algorithmVersion": "KPI_CALC_v1.0"
         },
         {
           "metricKey": "accuracy_rate",
           "metricName": "准确率",
           "value": 88.1,
           "unit": "%",
-          "status": "SUCCESS"
+          "status": "GOOD",
+          "algorithmVersion": "KPI_CALC_v1.0"
         },
         {
           "metricKey": "oscillation_rate",
           "metricName": "振荡率",
           "value": 12.4,
           "unit": "%",
-          "status": "SUCCESS"
+          "status": "WARNING",
+          "algorithmVersion": "KPI_CALC_v1.0"
         },
         {
           "metricKey": "saturation_rate",
           "metricName": "饱和率",
           "value": 5.2,
           "unit": "%",
-          "status": "SUCCESS"
+          "status": "GOOD",
+          "algorithmVersion": "KPI_CALC_v1.0"
+        },
+        {
+          "metricKey": "composite_score",
+          "metricName": "综合评分",
+          "value": 78.6,
+          "unit": "",
+          "status": "WARNING",
+          "algorithmVersion": "SCORE_CALC_v1.0"
         }
       ],
+      "kpiSummary": {
+        "good_value_rate": 96.8,
+        "auto_mode_rate": 92.5,
+        "steady_rate": 85.3,
+        "accuracy_rate": 88.1,
+        "oscillation_rate": 12.4,
+        "saturation_rate": 5.2,
+        "composite_score": 78.6,
+        "status": "WARNING",
+        "algorithm_version": "KPI_CALC_v1.0"
+      },
       "steadyRateTrend": {
         "timestamps": ["2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"],
         "values": [86.1, 85.9, 85.5, 85.3]
@@ -842,7 +899,7 @@
     }
   }
   ```
-* **说明**：KPI 卡片固定返回 6 项核心指标；指标停用后对应卡片 `status` 为 `INCONCLUSIVE`；`partialWarning` 在存在 `INCONCLUSIVE` 或 `Partial` 回路时激活，强制显示黄色警告横幅。
+* **说明**：KPI 卡片固定返回 7 项（6 大 KPI + 综合评分），6 大 KPI 严格对齐《关键算法设计说明》§4.0：好值率/自控率/平稳率/准确率/振荡率/饱和率；每卡 `status` 枚举值为 `GOOD`/`WARNING`/`POOR`/`INCONCLUSIVE`，对应绿/黄/红/灰；`algorithmVersion` 标识该 KPI 计算所用的算法版本号；`kpiSummary` 汇总 6 大 KPI + composite_score + status + algorithm_version；指标停用后对应卡片 `status` 为 `INCONCLUSIVE`；`partialWarning` 在存在 `INCONCLUSIVE` 或 `Partial` 回路时激活，强制显示黄色警告横幅。
 
 #### 2.3.2 获取低效回路排行 (Get Performance Ranking)
 
@@ -863,17 +920,22 @@
         "loopId": "uuid-xxx",
         "tagName": "101-FC-1023",
         "unitName": "常减压装置-单元A",
-        "score": 45.2,
-        "steadyRate": 60.5,
+        "compositeScore": 45.2,
         "goodValueRate": 75.0,
-        "status": "SUCCESS",
+        "autoModeRate": 80.0,
+        "steadyRate": 60.5,
+        "accuracyRate": 65.0,
+        "oscillationRate": 35.0,
+        "saturationRate": 8.0,
+        "status": "POOR",
+        "algorithmVersion": "KPI_CALC_v1.0",
         "preDiagnosis": "疑似阀门粘滞",
         "actionStatus": "PENDING"
       }
     ]
   }
   ```
-* **说明**：默认按评分升序返回 Top N 低效回路；`actionStatus` 来自异常跟踪子模块（待处理/处理中/已实施/已忽略）。
+* **说明**：默认按评分升序返回 Top N 低效回路；响应包含全部 6 大 KPI 字段 + composite_score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithmVersion；`actionStatus` 来自异常跟踪子模块（待处理/处理中/已实施/已忽略）。
 
 #### 2.3.3 获取性能指标配置列表 (List Performance Metrics)
 
@@ -895,8 +957,10 @@
             "max": 100,
             "alert": 80
           },
+          "controlType": "STABLE",
           "isEnabled": true,
           "description": "剔除通讯中断、超量程、冻结等无效数据后的时长占比，基于 PV tag 质量码统计",
+          "algorithmVersion": "KPI_CALC_v1.0",
           "updatedAt": "2026-06-19T10:00:00Z",
           "updatedBy": "admin"
         },
@@ -907,8 +971,10 @@
           "formula": "sum(mode in [Auto, Cascade]) / count(*) * 100",
           "weight": 20,
           "threshold": { "min": 0, "max": 100, "alert": 90 },
+          "controlType": "STABLE",
           "isEnabled": true,
           "description": "控制器处于自动或串级模式的时长占比",
+          "algorithmVersion": "KPI_CALC_v1.0",
           "updatedAt": "2026-06-19T10:00:00Z",
           "updatedBy": "admin"
         }
@@ -918,7 +984,7 @@
     }
   }
   ```
-* **说明**：返回 6 大核心 KPI（好值率/自控率/平稳率/准确率/振荡率/饱和率）的配置；`totalWeight` 标识当前权重总和，`weightValid` 标识是否为 100%。
+* **说明**：返回 6 大核心 KPI（好值率/自控率/平稳率/准确率/振荡率/饱和率）的配置；`threshold` 字段为 JSONB 对象 `{min: number, max: number, alert: string}`（对齐《关键算法设计说明》§10.1 C3 修正）；`controlType` 枚举值为 `STABLE`（稳定型）/`SLOW`（慢速型）/`FAST`（快速型）/`LOGIC`（逻辑型），用于权重模板选择（对齐§4.7.3 默认权重配置）；`algorithmVersion` 标识算法版本号；`totalWeight` 标识当前权重总和，`weightValid` 标识是否为 100%。
 
 #### 2.3.4 更新性能指标配置 (Update Performance Metric)
 
@@ -936,6 +1002,7 @@
       "max": 100,
       "alert": 85
     },
+    "controlType": "STABLE",
     "isEnabled": true,
     "description": "更新好值率公式与权重"
   }
@@ -950,8 +1017,10 @@
       "formula": "sum(quality==Good) / count(*) * 100",
       "weight": 25,
       "threshold": { "min": 0, "max": 100, "alert": 85 },
+      "controlType": "STABLE",
       "isEnabled": true,
       "description": "更新好值率公式与权重",
+      "algorithmVersion": "KPI_CALC_v1.0",
       "updatedAt": "2026-06-20T10:30:00Z",
       "updatedBy": "admin"
     }
@@ -959,6 +1028,9 @@
   ```
 * **说明**：
   * 配置变更即时生效，无需重启服务。
+  * `threshold` 为 JSONB 对象，结构 `{min, max, alert}`（对齐 C3 修正）。
+  * `controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`，用于权重模板选择。
+  * `formula` 字段表达式引擎采用 `simpleeval` 安全沙箱（对齐《关键算法设计说明》§4.9 C7），可用变量：pv/sp/op/mode/pv_quality/timestamps/pv_range/n；可用函数：sum/mean/std/count/count_if/abs/sqrt/min/max/duration；禁止 import/exec/eval/属性访问，表达式长度限制 500 字符，执行超时 5 秒。
   * 后端二次校验权重总和：若本次变更导致 6 项指标权重总和 ≠ 100%，返回 `ERR_METRIC_WEIGHT_SUM`。
   * 指标停用后相关 KPI 显示 `INCONCLUSIVE`，不参与综合评分计算。
   * 变更记录审计日志（操作人/时间/变更前后值）。
@@ -1108,7 +1180,7 @@
 * **权限**: 查看层及以上（所有角色可访问）
 * **Query Parameters**:
   * `plantNodeId` (UUID, optional): 按装置/单元筛选
-  * `preDiagnosis` (String, optional): 按预诊标签筛选（如 `疑似阀门粘滞`）
+  * `diagnosisLabel` (String, optional): 按诊断标签筛选，枚举值 `OSCILLATION`, `VALVE_STICTION`, `OVERAGGRESSIVE`, `OVERCONSERVATIVE`, `EXTERNAL_DISTURBANCE`, `QUALITY_ABNORMAL`, `OUTPUT_SATURATION`, `MANUAL_REVIEW`
   * `actionStatus` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `RESOLVED`, `IGNORED`
   * `timeWindow` (String, default=`last_7_days`): 时间窗，枚举值 `today`, `yesterday`, `last_7_days`, `last_30_days`
   * `page` (Integer, default=1): 页码
@@ -1122,13 +1194,15 @@
           "loopId": "uuid-xxx",
           "tagName": "101-FC-1023",
           "unitName": "常减压装置-单元A",
-          "score": 45.2,
-          "preDiagnosis": "疑似阀门粘滞",
-          "diagnosisLabel": "Stiction",
+          "compositeScore": 45.2,
+          "diagnosisLabel": "VALVE_STICTION",
+          "labelName": "阀门粘滞",
           "confidence": 0.85,
+          "fusedConfidence": 0.82,
+          "algorithm": "STICTION_CH_v1.0",
           "actionStatus": "PENDING",
           "diagnosedAt": "2026-06-20T08:00:00Z",
-          "algorithmVersion": "v1.2.0"
+          "algorithmVersion": "STICTION_CH_v1.0"
         }
       ],
       "total": 23,
@@ -1137,7 +1211,7 @@
     }
   }
   ```
-* **说明**：返回评分跌破阈值的回路诊断列表；`confidence` 为诊断算法置信度；`algorithmVersion` 用于追溯诊断所依据的算法版本号。
+* **说明**：返回评分跌破阈值的回路诊断列表；`diagnosisLabel` 枚举为 8 类（对齐《关键算法设计说明》§5.0 C6 修正）：`OSCILLATION`（振荡）/`VALVE_STICTION`（阀门粘滞）/`OVERAGGRESSIVE`（参数过激）/`OVERCONSERVATIVE`（参数过保守）/`EXTERNAL_DISTURBANCE`（外扰频繁）/`QUALITY_ABNORMAL`（PV 质量异常）/`OUTPUT_SATURATION`（输出饱和）/`MANUAL_REVIEW`（人工复核）；`confidence` 为单算法置信度（0-1）；`fusedConfidence` 为 Dempster-Shafer 证据理论融合后的置信度（0-1，对齐§5.7）；`algorithm`/`algorithmVersion` 用于追溯诊断所依据的算法版本号。
 
 #### 2.4.2 获取回路诊断详情 (Get Loop Diagnosis Detail)
 
@@ -1153,16 +1227,34 @@
     "data": {
       "loopId": "uuid-xxx",
       "tagName": "101-FC-1023",
-      "score": 45.2,
-      "preDiagnosis": "疑似阀门粘滞",
+      "compositeScore": 45.2,
       "diagnosisLabels": [
         {
-          "label": "Stiction",
+          "label": "VALVE_STICTION",
           "labelName": "阀门粘滞",
           "confidence": 0.85,
-          "evidence": "PV-OP 散点图呈现椭圆轨迹，拟合度 0.92"
+          "evidence": {
+            "stiction_index": 0.78,
+            "fitting_score": 0.92,
+            "scatter_plot": "/api/v1/timeseries/uuid-xxx/scatter?startTime=...&endTime=...",
+            "reasoning": "PV-OP 散点图呈现椭圆轨迹，拟合度 0.92，粘滞指数 0.78"
+          },
+          "algorithm": "STICTION_CH_v1.0"
+        },
+        {
+          "label": "OSCILLATION",
+          "labelName": "振荡",
+          "confidence": 0.72,
+          "evidence": {
+            "oscillation_period": 60.5,
+            "dominant_frequency": 0.0165,
+            "iae_similarity": 0.78,
+            "reasoning": "IAE 零交叉相似率 0.78，振荡周期 60.5s"
+          },
+          "algorithm": "OSC_IAE_v1.0"
         }
       ],
+      "fusedConfidence": 0.82,
       "featureValues": {
         "oscillation_amplitude": 2.3,
         "oscillation_frequency": 0.05,
@@ -1177,12 +1269,12 @@
         },
         "reasoning": "PV-OP 散点图呈现椭圆轨迹，结合振荡频率 0.05Hz，判定为阀门粘滞"
       },
-      "algorithmVersion": "v1.2.0",
+      "algorithmVersion": "STICTION_CH_v1.0",
       "diagnosedAt": "2026-06-20T08:00:00Z"
     }
   }
   ```
-* **说明**：返回诊断详情，含预诊标签、特征值、证据链（波形 URL/PV-OP 散点图/推理过程）；数据不足时返回 `ERR_DATA_INCONCLUSIVE`。
+* **说明**：返回诊断详情，含 8 类诊断标签数组（每项含 `label`/`confidence`(0-1)/`evidence`(对象)/`algorithm`）、融合置信度 `fusedConfidence`（Dempster-Shafer 证据理论融合，对齐《关键算法设计说明》§5.7）、特征值、证据链（波形 URL/PV-OP 散点图/推理过程）；数据不足时返回 `ERR_DATA_INCONCLUSIVE`。诊断标签枚举为 8 类：`OSCILLATION`/`VALVE_STICTION`/`OVERAGGRESSIVE`/`OVERCONSERVATIVE`/`EXTERNAL_DISTURBANCE`/`QUALITY_ABNORMAL`/`OUTPUT_SATURATION`/`MANUAL_REVIEW`。
 
 #### 2.4.3 获取诊断指标配置列表 (List Diagnosis Metrics)
 
@@ -1197,7 +1289,9 @@
           "diagId": "uuid-xxx",
           "diagKey": "oscillation_fft",
           "diagName": "振荡检测 FFT",
+          "label": "OSCILLATION",
           "algorithmType": "FFT",
+          "calcMethod": "auto_correlation",
           "params": {
             "windowSize": 1024,
             "overlap": 0.5,
@@ -1208,8 +1302,8 @@
             "amplitude": 1.5,
             "confidence": 0.7
           },
-          "calcMethod": "auto_correlation",
           "isEnabled": true,
+          "algorithmVersion": "OSC_FFT_v1.0",
           "updatedAt": "2026-06-19T10:00:00Z",
           "updatedBy": "admin"
         },
@@ -1217,7 +1311,9 @@
           "diagId": "uuid-yyy",
           "diagKey": "stiction_scatter",
           "diagName": "粘滞检测散点拟合",
+          "label": "VALVE_STICTION",
           "algorithmType": "ScatterFitting",
+          "calcMethod": "pv_op_scatter",
           "params": {
             "fittingType": "ellipse",
             "minPoints": 100
@@ -1226,8 +1322,8 @@
             "stictionIndex": 0.6,
             "fittingScore": 0.8
           },
-          "calcMethod": "pv_op_scatter",
           "isEnabled": true,
+          "algorithmVersion": "STICTION_CH_v1.0",
           "updatedAt": "2026-06-19T10:00:00Z",
           "updatedBy": "admin"
         }
@@ -1235,7 +1331,7 @@
     }
   }
   ```
-* **说明**：返回诊断指标列表（振荡检测 FFT、粘滞检测散点拟合、参数过激检测、质量码规则等）的算法类型、参数阈值、启用/停止、计算方法配置。
+* **说明**：返回诊断指标列表（8 类诊断标签对应的算法配置）；`label` 枚举为 8 类（OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW，对齐 C6 修正）；`calcMethod` 字段标识计算方法（如 `auto_correlation`/`pv_op_scatter`/`fft`/`iae_zero_crossing`，对齐 C4 修正）；`threshold` 为 JSONB 对象（对齐 C3 修正）；`algorithmVersion` 标识算法版本号。
 
 #### 2.4.4 更新诊断指标配置 (Update Diagnosis Metric)
 
@@ -1246,7 +1342,9 @@
 * **Request Body**:
   ```json
   {
+    "label": "OSCILLATION",
     "algorithmType": "FFT",
+    "calcMethod": "auto_correlation",
     "params": {
       "windowSize": 2048,
       "overlap": 0.5,
@@ -1257,7 +1355,6 @@
       "amplitude": 1.8,
       "confidence": 0.75
     },
-    "calcMethod": "auto_correlation",
     "isEnabled": true
   }
   ```
@@ -1268,7 +1365,9 @@
       "diagId": "uuid-xxx",
       "diagKey": "oscillation_fft",
       "diagName": "振荡检测 FFT",
+      "label": "OSCILLATION",
       "algorithmType": "FFT",
+      "calcMethod": "auto_correlation",
       "params": {
         "windowSize": 2048,
         "overlap": 0.5,
@@ -1276,8 +1375,8 @@
         "maxFrequency": 1.0
       },
       "threshold": { "amplitude": 1.8, "confidence": 0.75 },
-      "calcMethod": "auto_correlation",
       "isEnabled": true,
+      "algorithmVersion": "OSC_FFT_v1.0",
       "updatedAt": "2026-06-20T10:30:00Z",
       "updatedBy": "admin"
     }
@@ -1285,7 +1384,10 @@
   ```
 * **说明**：
   * 配置变更即时生效，无需重启服务。
-  * 指标停用后相关预诊标签不再生成。
+  * `label` 枚举为 8 类诊断标签（对齐 C6 修正）。
+  * `calcMethod` 字段标识计算方法（对齐 C4 修正）。
+  * `threshold` 为 JSONB 对象（对齐 C3 修正）。
+  * 指标停用后相关诊断标签不再生成。
   * 变更记录审计日志（操作人/时间/变更前后值）。
 
 #### 2.4.5 获取高频波形数据 (Get Timeseries Waveform)
@@ -1386,7 +1488,7 @@
   * `startTime` (ISO8601, required): 开始时间
   * `endTime` (ISO8601, required): 结束时间
   * `plantNodeId` (UUID, optional): 按装置/单元筛选
-  * `preDiagnosis` (String, optional): 按预诊标签筛选
+  * `diagnosisLabel` (String, optional): 按诊断标签筛选，枚举值 `OSCILLATION`, `VALVE_STICTION`, `OVERAGGRESSIVE`, `OVERCONSERVATIVE`, `EXTERNAL_DISTURBANCE`, `QUALITY_ABNORMAL`, `OUTPUT_SATURATION`, `MANUAL_REVIEW`
   * `actionStatus` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `RESOLVED`, `IGNORED`
   * `granularity` (String, default=`day`): 统计粒度，枚举值 `day`, `week`, `month`
 * **Response (200 OK)**:
@@ -1397,15 +1499,15 @@
         "startTime": "2026-06-01T00:00:00Z",
         "endTime": "2026-06-20T00:00:00Z",
         "plantNodeId": null,
-        "preDiagnosis": null,
+        "diagnosisLabel": null,
         "actionStatus": null,
         "granularity": "day"
       },
       "labelDistribution": [
-        { "label": "疑似阀门粘滞", "count": 8 },
-        { "label": "参数过激", "count": 5 },
-        { "label": "振荡", "count": 3 },
-        { "label": "原因不明(需人工介入)", "count": 2 }
+        { "label": "VALVE_STICTION", "labelName": "阀门粘滞", "count": 8 },
+        { "label": "OVERAGGRESSIVE", "labelName": "参数过激", "count": 5 },
+        { "label": "OSCILLATION", "labelName": "振荡", "count": 3 },
+        { "label": "MANUAL_REVIEW", "labelName": "人工复核", "count": 2 }
       ],
       "efficiencyTrend": {
         "timestamps": ["2026-06-01", "2026-06-02", "2026-06-03"],
@@ -1420,7 +1522,7 @@
     }
   }
   ```
-* **说明**：返回预诊标签分布饼图、处理效率趋势折线、闭环时长分布柱状图所需数据；筛选结果为空时对应字段返回空数组。
+* **说明**：返回诊断标签分布饼图（8 类标签）、处理效率趋势折线、闭环时长分布柱状图所需数据；筛选结果为空时对应字段返回空数组。
 
 #### 2.4.9 导出诊断统计报表 (Export Diagnosis Analytics)
 
@@ -1432,7 +1534,7 @@
     "startTime": "2026-06-01T00:00:00Z",
     "endTime": "2026-06-20T00:00:00Z",
     "plantNodeId": null,
-    "preDiagnosis": null,
+    "diagnosisLabel": null,
     "actionStatus": null,
     "granularity": "day",
     "format": "xlsx"
@@ -1478,10 +1580,27 @@
           "tagName": "101-FC-1023",
           "status": "COMPLETED",
           "modelType": "FOPDT",
-          "algorithm": "IMC",
-          "recommendedPid": { "p": 1.5, "i": 0.4, "d": 0.0 },
+          "method": "IMC",
+          "modelParams": {
+            "K": 1.2,
+            "tau": 30.5,
+            "theta": 5.0
+          },
+          "pidParams": {
+            "Kp": 1.5,
+            "Ti": 33.0,
+            "Td": 2.27
+          },
+          "fittingScore": 0.92,
+          "simulationResult": {
+            "riseTime": 12.5,
+            "overshoot": 8.3,
+            "settlingTime": 45.0,
+            "itae": 1250.5
+          },
           "beforeScore": 45.2,
           "afterScore": 82.5,
+          "algorithmVersion": "IMC_TUNE_v1.0",
           "createdAt": "2026-06-15T10:00:00Z",
           "completedAt": "2026-06-15T12:00:00Z"
         }
@@ -1492,7 +1611,7 @@
     }
   }
   ```
-* **说明**：Phase 1 原型阶段返回占位数据；Phase 2 返回真实整定记录。
+* **说明**：Phase 1 原型阶段返回占位数据；Phase 2 返回真实整定记录。响应包含 `modelParams`（FOPDT 模型参数 K/tau/theta 或 SOPDT 模型参数 K/T1/T2/theta）、`pidParams`（推荐 PID 参数 Kp/Ti/Td）、`simulationResult`（仿真性能指标 rise_time/overshoot/settling_time/itae）、`fittingScore`（模型拟合度 R²，0-1，对齐《关键算法设计说明》§6.1.5 C5 修正）、`method`（整定方法枚举：`IMC`/`LAMBDA`/`ZIEGLER_NICHOLS`/`COHEN_COON`/`SIMC`，对齐§6.3-§6.7）、`algorithmVersion`（算法版本号）。
 
 #### 2.5.2 触发模型辨识 (Trigger Model Identification) [Phase 2]
 
@@ -1507,7 +1626,8 @@
       "endTime": "2026-06-15T06:00:00Z"
     },
     "samplePeriod": 1,
-    "modelType": "FOPDT"
+    "modelType": "FOPDT",
+    "method": "TWO_POINT"
   }
   ```
 * **Response (202 Accepted)**:
@@ -1520,7 +1640,7 @@
     }
   }
   ```
-* **说明**：Phase 2 实现模型辨识算法（FOPDT/SOPDT/IPDT），输出传递函数参数（K/T/τ）、拟合度、阶跃响应对比曲线。Phase 1 原型阶段返回 `501 Not Implemented`。
+* **说明**：Phase 2 实现模型辨识算法（FOPDT/SOPDT/IPDT），输出传递函数参数（K/T/τ）、拟合度（fitting_score R²）、阶跃响应对比曲线。`method` 枚举值 `TWO_POINT`（两点法）/`AREA`（面积法）/`COMBINED`（组合法，对齐《关键算法设计说明》§6.1.4）；`modelType` 枚举值 `FOPDT`/`SOPDT`/`IPDT`。任务完成后通过 `/api/v1/algorithms/tasks/{task_id}` 查询结果，结果包含 `modelParams`（K/tau/theta 或 K/T1/T2/theta）+ `fittingScore`（R² 拟合度，0-1）+ `algorithmVersion`（如 `FOPDT_ID_v1.0`）。Phase 1 原型阶段返回 `501 Not Implemented`。
 
 #### 2.5.3 计算整定参数 (Calculate Tuning Parameters) [Phase 2]
 
@@ -1531,7 +1651,7 @@
   {
     "loopId": "uuid-xxx",
     "identificationRecordId": "uuid-xxx",
-    "algorithm": "IMC",
+    "method": "IMC",
     "params": {
       "lambda": 3.0
     }
@@ -1547,7 +1667,7 @@
     }
   }
   ```
-* **说明**：Phase 2 实现整定算法（IMC/Lambda/Ziegler-Nichols/Cohen-Coon），推荐 PID 参数表（P/I/D 三组对比）、性能预测指标。Phase 1 原型阶段返回 `501 Not Implemented`。
+* **说明**：Phase 2 实现整定算法，`method` 枚举值 `IMC`/`LAMBDA`/`ZIEGLER_NICHOLS`/`COHEN_COON`/`SIMC`（对齐《关键算法设计说明》§6.3-§6.7）。任务完成后通过 `/api/v1/algorithms/tasks/{task_id}` 查询结果，结果包含 `modelParams`（FOPDT/SOPDT 模型参数）+ `pidParams`（推荐 PID 参数 Kp/Ti/Td）+ `simulationResult`（仿真性能指标）+ `fittingScore`（拟合度 R²）+ `algorithmVersion`（如 `IMC_TUNE_v1.0`）。Phase 1 原型阶段返回 `501 Not Implemented`。
 
 #### 2.5.4 执行闭环仿真 (Run Closed-Loop Simulation) [Phase 2]
 
@@ -1573,7 +1693,7 @@
     }
   }
   ```
-* **说明**：Phase 2 执行闭环仿真，输出阶跃响应双波形对比、性能指标对比表（上升时间/超调/settling time/ITAE）。Phase 1 原型阶段返回 `501 Not Implemented`。
+* **说明**：Phase 2 执行闭环仿真，输出阶跃响应双波形对比、性能指标对比表（上升时间/超调/settling time/ITAE/IAE，对齐《关键算法设计说明》§6.8.2）。任务完成后通过 `/api/v1/algorithms/tasks/{task_id}` 查询结果，结果包含 `simulationResult`（current_response/recommended_response/metrics_comparison）。Phase 1 原型阶段返回 `501 Not Implemented`。
 
 #### 2.5.5 获取整定效果统计 (Get Tuning Analytics)
 
@@ -1773,6 +1893,687 @@
 
 ---
 
+### 2.7 算法服务接口 (Algorithm Services)
+
+本组 API 提供算法引擎的异步任务能力，包括 KPI 计算、诊断分析、整定计算三类算法任务的触发与查询。所有算法接口采用异步模式（202 Accepted + task_id 轮询），对齐《关键算法设计说明》v1.0 §7 输入输出参数定义。任务查询统一通过 §2.7.4 算法任务查询接口获取结果。
+
+#### 2.7.1 触发 KPI 计算 (Trigger KPI Calculation)
+
+* **URL**: `POST /api/v1/algorithms/kpi/calculate`
+* **权限**: 管理层（系统管理员），越权返回 `ERR_CONFIG_FORBIDDEN`
+* **Request Body**:
+  ```json
+  {
+    "loopIds": ["uuid-xxx", "uuid-yyy"],
+    "startTime": "2026-06-20T00:00:00Z",
+    "endTime": "2026-06-20T08:00:00Z",
+    "metrics": ["good_value_rate", "auto_mode_rate", "steady_rate", "accuracy_rate", "oscillation_rate", "saturation_rate"],
+    "forceRecalculate": false
+  }
+  ```
+* **Response (202 Accepted)**:
+  ```json
+  {
+    "data": {
+      "taskId": "task-uuid-xxx",
+      "taskType": "KPI_CALCULATION",
+      "status": "PROCESSING",
+      "checkUrl": "/api/v1/algorithms/tasks/task-uuid-xxx",
+      "estimatedSeconds": 60
+    }
+  }
+  ```
+* **说明**：
+  * 触发指定回路的 6 大 KPI 计算（对齐《关键算法设计说明》§4 KPI 算法，C1 修正）。
+  * `loopIds` 为空数组时表示对所有启用回路进行计算；`metrics` 为空数组时表示计算全部 6 项 KPI。
+  * `forceRecalculate=true` 时强制重算（忽略缓存），默认 `false` 复用已有快照。
+  * 任务完成后通过 §2.7.4 查询结果，结果结构包含 `kpiResults`（每回路的 6 大 KPI 值 + `composite_score` + `status` + `algorithm_version`）。
+  * `algorithmVersion` 固定为 `KPI_CALC_v1.0`（对齐§4.10 算法版本号规范）。
+  * 计算失败时任务状态标记为 `FAILED`，`error` 字段包含错误码与详情。
+
+#### 2.7.2 触发诊断分析 (Trigger Diagnosis Analysis)
+
+* **URL**: `POST /api/v1/algorithms/diagnosis/analyze`
+* **权限**: 管理层（系统管理员），越权返回 `ERR_CONFIG_FORBIDDEN`
+* **Request Body**:
+  ```json
+  {
+    "loopIds": ["uuid-xxx", "uuid-yyy"],
+    "startTime": "2026-06-20T00:00:00Z",
+    "endTime": "2026-06-20T08:00:00Z",
+    "labels": ["OSCILLATION", "VALVE_STICTION", "OVERAGGRESSIVE", "OVERCONSERVATIVE", "EXTERNAL_DISTURBANCE", "QUALITY_ABNORMAL", "OUTPUT_SATURATION"],
+    "enableFusion": true
+  }
+  ```
+* **Response (202 Accepted)**:
+  ```json
+  {
+    "data": {
+      "taskId": "task-uuid-xxx",
+      "taskType": "DIAGNOSIS_ANALYSIS",
+      "status": "PROCESSING",
+      "checkUrl": "/api/v1/algorithms/tasks/task-uuid-xxx",
+      "estimatedSeconds": 120
+    }
+  }
+  ```
+* **说明**：
+  * 触发指定回路的诊断分析，输出 8 类诊断标签结果（对齐《关键算法设计说明》§5 诊断算法，C6 修正）。
+  * `loopIds` 为空数组时表示对所有评分跌破阈值的回路进行分析。
+  * `labels` 指定启用的诊断标签子集（8 类枚举：`OSCILLATION`/`VALVE_STICTION`/`OVERAGGRESSIVE`/`OVERCONSERVATIVE`/`EXTERNAL_DISTURBANCE`/`QUALITY_ABNORMAL`/`OUTPUT_SATURATION`/`MANUAL_REVIEW`）；为空数组时启用全部（`MANUAL_REVIEW` 除外，由系统自动标记）。
+  * `enableFusion=true` 时启用 Dempster-Shafer 证据理论融合（对齐§5.7），输出 `fused_confidence`；默认 `true`。
+  * 任务完成后通过 §2.7.4 查询结果，结果结构包含 `diagnosisResults`（每回路的 `diagnosisLabels` 数组，每项含 `label`/`confidence`(0-1)/`evidence`(对象)/`algorithm` + `fusedConfidence`）。
+  * 各诊断标签对应的 `algorithmVersion` 见《关键算法设计说明》§5（如 `OSC_FFT_v1.0`/`STICTION_CH_v1.0`/`OVERAGGRESSIVE_PID_v1.0` 等）。
+
+#### 2.7.3 触发整定计算 (Trigger Tuning Calculation)
+
+* **URL**: `POST /api/v1/algorithms/tuning/calculate`
+* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
+* **Request Body**:
+  ```json
+  {
+    "loopId": "uuid-xxx",
+    "identificationParams": {
+      "dataSegment": {
+        "startTime": "2026-06-15T00:00:00Z",
+        "endTime": "2026-06-15T06:00:00Z"
+      },
+      "samplePeriod": 1,
+      "modelType": "FOPDT",
+      "method": "TWO_POINT"
+    },
+    "tuningParams": {
+      "method": "IMC",
+      "params": {
+        "lambda": 3.0
+      }
+    },
+    "enableSimulation": true,
+    "simulationConfig": {
+      "disturbanceType": "step",
+      "simulationDuration": 300
+    }
+  }
+  ```
+* **Response (202 Accepted)**:
+  ```json
+  {
+    "data": {
+      "taskId": "task-uuid-xxx",
+      "taskType": "TUNING_CALCULATION",
+      "status": "PROCESSING",
+      "checkUrl": "/api/v1/algorithms/tasks/task-uuid-xxx",
+      "estimatedSeconds": 90
+    }
+  }
+  ```
+* **说明**：
+  * 触发整定计算流程，包含模型辨识 → PID 参数计算 → 闭环仿真三阶段（对齐《关键算法设计说明》§6 整定算法）。
+  * `identificationParams.method` 枚举值 `TWO_POINT`（两点法）/`AREA`（面积法）/`COMBINED`（组合法，对齐§6.1.4）；`modelType` 枚举值 `FOPDT`/`SOPDT`/`IPDT`。
+  * `tuningParams.method` 枚举值 `IMC`/`LAMBDA`/`ZIEGLER_NICHOLS`/`COHEN_COON`/`SIMC`（对齐§6.3-§6.7）。
+  * `enableSimulation=true` 时执行闭环仿真（对齐§6.8.2），输出 `simulationResult`。
+  * 任务完成后通过 §2.7.4 查询结果，结果结构包含：
+    * `modelParams`：FOPDT（K/tau/theta）或 SOPDT（K/T1/T2/theta）模型参数
+    * `fittingScore`：模型拟合度 R²（0-1，对齐§6.1.5 C5 修正）
+    * `pidParams`：推荐 PID 参数（Kp/Ti/Td）
+    * `simulationResult`：仿真性能指标（riseTime/overshoot/settlingTime/itae）
+    * `algorithmVersion`：如 `IMC_TUNE_v1.0`/`FOPDT_ID_v1.0`
+  * Phase 1 原型阶段返回 `501 Not Implemented`；Phase 2 实现完整算法链路。
+
+#### 2.7.4 查询算法任务状态 (Get Algorithm Task Status)
+
+* **URL**: `GET /api/v1/algorithms/tasks/{task_id}`
+* **权限**: 触发任务的角色层级及以上（按 `taskType` 校验：KPI/诊断任务需管理层，整定任务需执行层及以上）
+* **Path Parameters**:
+  * `task_id` (String, required): 任务 ID（由 §2.7.1/§2.7.2/§2.7.3 返回的 `taskId`）
+* **Response (200 OK - 处理中)**:
+  ```json
+  {
+    "data": {
+      "taskId": "task-uuid-xxx",
+      "taskType": "KPI_CALCULATION",
+      "status": "PROCESSING",
+      "progress": 45,
+      "startedAt": "2026-06-20T10:00:00Z",
+      "estimatedRemainingSeconds": 30
+    }
+  }
+  ```
+* **Response (200 OK - KPI 计算完成)**:
+  ```json
+  {
+    "data": {
+      "taskId": "task-uuid-xxx",
+      "taskType": "KPI_CALCULATION",
+      "status": "SUCCESS",
+      "progress": 100,
+      "startedAt": "2026-06-20T10:00:00Z",
+      "completedAt": "2026-06-20T10:01:00Z",
+      "result": {
+        "algorithmVersion": "KPI_CALC_v1.0",
+        "kpiResults": [
+          {
+            "loopId": "uuid-xxx",
+            "tagName": "101-FC-1023",
+            "kpi": {
+              "good_value_rate": 95.2,
+              "auto_mode_rate": 88.5,
+              "steady_rate": 76.8,
+              "accuracy_rate": 82.1,
+              "oscillation_rate": 12.3,
+              "saturation_rate": 5.4
+            },
+            "compositeScore": 78.5,
+            "status": "GOOD",
+            "calculatedAt": "2026-06-20T10:00:30Z"
+          }
+        ],
+        "failedLoops": []
+      }
+    }
+  }
+  ```
+* **Response (200 OK - 诊断分析完成)**:
+  ```json
+  {
+    "data": {
+      "taskId": "task-uuid-xxx",
+      "taskType": "DIAGNOSIS_ANALYSIS",
+      "status": "SUCCESS",
+      "progress": 100,
+      "startedAt": "2026-06-20T10:00:00Z",
+      "completedAt": "2026-06-20T10:02:00Z",
+      "result": {
+        "diagnosisResults": [
+          {
+            "loopId": "uuid-xxx",
+            "tagName": "101-FC-1023",
+            "diagnosisLabels": [
+              {
+                "label": "VALVE_STICTION",
+                "labelName": "阀门粘滞",
+                "confidence": 0.85,
+                "evidence": {
+                  "stiction_index": 0.78,
+                  "fitting_score": 0.92,
+                  "scatter_plot": "/api/v1/timeseries/uuid-xxx/scatter?startTime=...&endTime=...",
+                  "reasoning": "PV-OP 散点图呈现椭圆轨迹，拟合度 0.92，粘滞指数 0.78"
+                },
+                "algorithm": "STICTION_CH_v1.0"
+              }
+            ],
+            "fusedConfidence": 0.82,
+            "diagnosedAt": "2026-06-20T10:01:30Z"
+          }
+        ],
+        "failedLoops": []
+      }
+    }
+  }
+  ```
+* **Response (200 OK - 整定计算完成)**:
+  ```json
+  {
+    "data": {
+      "taskId": "task-uuid-xxx",
+      "taskType": "TUNING_CALCULATION",
+      "status": "SUCCESS",
+      "progress": 100,
+      "startedAt": "2026-06-20T10:00:00Z",
+      "completedAt": "2026-06-20T10:01:30Z",
+      "result": {
+        "loopId": "uuid-xxx",
+        "tagName": "101-FC-1023",
+        "modelType": "FOPDT",
+        "method": "IMC",
+        "modelParams": { "K": 1.2, "tau": 30.5, "theta": 5.0 },
+        "fittingScore": 0.92,
+        "pidParams": { "Kp": 1.5, "Ti": 33.0, "Td": 2.27 },
+        "simulationResult": {
+          "riseTime": 12.5,
+          "overshoot": 8.3,
+          "settlingTime": 45.0,
+          "itae": 1250.5
+        },
+        "algorithmVersion": "IMC_TUNE_v1.0",
+        "completedAt": "2026-06-20T10:01:30Z"
+      }
+    }
+  }
+  ```
+* **Response (200 OK - 任务失败)**:
+  ```json
+  {
+    "data": {
+      "taskId": "task-uuid-xxx",
+      "taskType": "KPI_CALCULATION",
+      "status": "FAILED",
+      "progress": 45,
+      "startedAt": "2026-06-20T10:00:00Z",
+      "failedAt": "2026-06-20T10:00:30Z",
+      "error": {
+        "errorCode": "ERR_ALGORITHM_DATA_INSUFFICIENT",
+        "message": "回路 uuid-xxx 在指定时间窗内有效数据点不足（<100），无法计算 KPI",
+        "details": {
+          "loopId": "uuid-xxx",
+          "validPointCount": 50,
+          "requiredPointCount": 100
+        }
+      }
+    }
+  }
+  ```
+* **说明**：
+  * 统一查询 §2.7.1/§2.7.2/§2.7.3 提交的算法任务状态与结果。
+  * `taskType` 枚举值 `KPI_CALCULATION`/`DIAGNOSIS_ANALYSIS`/`TUNING_CALCULATION`。
+  * `status` 枚举值 `PROCESSING`（处理中）/`SUCCESS`（成功）/`FAILED`（失败），对齐§6.6 异步任务响应格式。
+  * `progress` 为 0-100 的整数百分比；任务完成后 `result` 字段按 `taskType` 返回不同结构。
+  * 任务结果保留 7 天，超期查询返回 `ERR_TASK_NOT_FOUND`。
+  * 前端轮询建议间隔 3 秒，任务完成后停止轮询并渲染结果。
+
+---
+
+### 2.8 指标配置接口 (Metric Config Batch Operations)
+
+本组 API 提供指标配置的批量读写能力，便于前端配置界面一次性加载/保存全部 6 大 KPI 配置。与 §2.3.3/§2.3.4 单条操作接口互补，批量保存时后端事务化处理，任一项校验失败则全部回滚。
+
+#### 2.8.1 批量获取指标配置 (Batch Get Metric Config)
+
+* **URL**: `GET /api/v1/configs/metrics`
+* **权限**: 查看层及以上（所有角色可查看配置，仅系统管理员可编辑）
+* **Response (200 OK)**:
+  ```json
+  {
+    "data": {
+      "items": [
+        {
+          "metricId": "uuid-xxx",
+          "metricKey": "good_value_rate",
+          "metricName": "好值率",
+          "formula": "sum(quality==Good) / count(*) * 100",
+          "weight": 20,
+          "threshold": { "min": 0, "max": 100, "alert": 80 },
+          "controlType": "STABLE",
+          "isEnabled": true,
+          "description": "剔除通讯中断、超量程、冻结等无效数据后的时长占比，基于 PV tag 质量码统计",
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "metricId": "uuid-yyy",
+          "metricKey": "auto_mode_rate",
+          "metricName": "自控率",
+          "formula": "sum(mode in [Auto, Cascade]) / count(*) * 100",
+          "weight": 20,
+          "threshold": { "min": 0, "max": 100, "alert": 90 },
+          "controlType": "STABLE",
+          "isEnabled": true,
+          "description": "控制器处于自动或串级模式的时长占比",
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "metricId": "uuid-zzz",
+          "metricKey": "steady_rate",
+          "metricName": "平稳率",
+          "formula": "duration(abs(pv - sp) <= pv_range * 0.02) / duration(*) * 100",
+          "weight": 20,
+          "threshold": { "min": 0, "max": 100, "alert": 85 },
+          "controlType": "STABLE",
+          "isEnabled": true,
+          "description": "PV 偏离 SP 在 2% 量程内的时长占比",
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "metricId": "uuid-www",
+          "metricKey": "accuracy_rate",
+          "metricName": "准确率",
+          "formula": "duration(abs(pv - sp) <= pv_range * 0.05) / duration(*) * 100",
+          "weight": 15,
+          "threshold": { "min": 0, "max": 100, "alert": 80 },
+          "controlType": "STABLE",
+          "isEnabled": true,
+          "description": "PV 偏离 SP 在 5% 量程内的时长占比（对齐 C1 修正）",
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "metricId": "uuid-vvv",
+          "metricKey": "oscillation_rate",
+          "metricName": "振荡率",
+          "formula": "duration(oscillation_detected == true) / duration(*) * 100",
+          "weight": 15,
+          "threshold": { "min": 0, "max": 100, "alert": 20 },
+          "controlType": "STABLE",
+          "isEnabled": true,
+          "description": "检测到振荡的时长占比（对齐 C1 修正）",
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "metricId": "uuid-uuu",
+          "metricKey": "saturation_rate",
+          "metricName": "饱和率",
+          "formula": "duration(op >= 95 OR op <= 5) / duration(*) * 100",
+          "weight": 10,
+          "threshold": { "min": 0, "max": 100, "alert": 15 },
+          "controlType": "STABLE",
+          "isEnabled": true,
+          "description": "OP 输出饱和（≥95% 或 ≤5%）的时长占比（对齐 C1 修正）",
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        }
+      ],
+      "totalWeight": 100,
+      "weightValid": true
+    }
+  }
+  ```
+* **说明**：返回全部 6 大 KPI 配置（对齐 C1 修正）；`threshold` 为 JSONB 对象 `{min, max, alert}`（对齐 C3 修正）；`controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`（对齐§4.7.3 默认权重配置）；`formula` 字段表达式引擎采用 `simpleeval` 安全沙箱（对齐 C7 修正）。
+
+#### 2.8.2 批量更新指标配置 (Batch Update Metric Config)
+
+* **URL**: `PUT /api/v1/configs/metrics`
+* **权限**: 管理层（系统管理员），越权返回 `ERR_CONFIG_FORBIDDEN`
+* **Request Body**:
+  ```json
+  {
+    "items": [
+      {
+        "metricId": "uuid-xxx",
+        "formula": "sum(quality==Good) / count(*) * 100",
+        "weight": 25,
+        "threshold": { "min": 0, "max": 100, "alert": 85 },
+        "controlType": "STABLE",
+        "isEnabled": true,
+        "description": "更新好值率公式与权重"
+      },
+      {
+        "metricId": "uuid-yyy",
+        "formula": "sum(mode in [Auto, Cascade]) / count(*) * 100",
+        "weight": 20,
+        "threshold": { "min": 0, "max": 100, "alert": 90 },
+        "controlType": "STABLE",
+        "isEnabled": true
+      }
+    ]
+  }
+  ```
+* **Response (200 OK)**:
+  ```json
+  {
+    "data": {
+      "updatedCount": 2,
+      "items": [
+        {
+          "metricId": "uuid-xxx",
+          "metricKey": "good_value_rate",
+          "metricName": "好值率",
+          "formula": "sum(quality==Good) / count(*) * 100",
+          "weight": 25,
+          "threshold": { "min": 0, "max": 100, "alert": 85 },
+          "controlType": "STABLE",
+          "isEnabled": true,
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-20T10:30:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "metricId": "uuid-yyy",
+          "metricKey": "auto_mode_rate",
+          "metricName": "自控率",
+          "formula": "sum(mode in [Auto, Cascade]) / count(*) * 100",
+          "weight": 20,
+          "threshold": { "min": 0, "max": 100, "alert": 90 },
+          "controlType": "STABLE",
+          "isEnabled": true,
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-20T10:30:00Z",
+          "updatedBy": "admin"
+        }
+      ],
+      "totalWeight": 100,
+      "weightValid": true
+    }
+  }
+  ```
+* **说明**：
+  * 批量更新指标配置，事务化处理：任一项校验失败则全部回滚，返回 `ERR_METRIC_WEIGHT_SUM` 或对应字段错误码。
+  * 后端二次校验权重总和：若本次变更导致 6 项指标权重总和 ≠ 100%，返回 `ERR_METRIC_WEIGHT_SUM`。
+  * `threshold` 为 JSONB 对象（对齐 C3 修正）；`controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`。
+  * `formula` 字段表达式引擎采用 `simpleeval` 安全沙箱（对齐 C7 修正），可用变量：pv/sp/op/mode/pv_quality/timestamps/pv_range/n；可用函数：sum/mean/std/count/count_if/abs/sqrt/min/max/duration；禁止 import/exec/eval/属性访问，表达式长度限制 500 字符，执行超时 5 秒。
+  * 配置变更即时生效，无需重启服务；变更记录审计日志（操作人/时间/变更前后值）。
+
+---
+
+### 2.9 诊断配置接口 (Diagnosis Config Batch Operations)
+
+本组 API 提供诊断配置的批量读写能力，便于前端配置界面一次性加载/保存全部 8 类诊断标签配置。与 §2.4.3/§2.4.4 单条操作接口互补，批量保存时后端事务化处理，任一项校验失败则全部回滚。
+
+#### 2.9.1 批量获取诊断配置 (Batch Get Diagnosis Config)
+
+* **URL**: `GET /api/v1/configs/diagnosis`
+* **权限**: 查看层及以上（所有角色可查看配置，仅系统管理员可编辑）
+* **Response (200 OK)**:
+  ```json
+  {
+    "data": {
+      "items": [
+        {
+          "diagId": "uuid-xxx",
+          "diagKey": "oscillation_fft",
+          "diagName": "振荡检测 FFT",
+          "label": "OSCILLATION",
+          "algorithmType": "FFT",
+          "calcMethod": "auto_correlation",
+          "params": {
+            "windowSize": 1024,
+            "overlap": 0.5,
+            "minFrequency": 0.01,
+            "maxFrequency": 1.0
+          },
+          "threshold": { "amplitude": 1.5, "confidence": 0.7 },
+          "isEnabled": true,
+          "algorithmVersion": "OSC_FFT_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "diagId": "uuid-yyy",
+          "diagKey": "stiction_scatter",
+          "diagName": "粘滞检测散点拟合",
+          "label": "VALVE_STICTION",
+          "algorithmType": "ScatterFitting",
+          "calcMethod": "pv_op_scatter",
+          "params": { "fittingType": "ellipse", "minPoints": 100 },
+          "threshold": { "stictionIndex": 0.6, "fittingScore": 0.8 },
+          "isEnabled": true,
+          "algorithmVersion": "STICTION_CH_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "diagId": "uuid-zzz",
+          "diagKey": "overaggressive_pid",
+          "diagName": "参数过激检测",
+          "label": "OVERAGGRESSIVE",
+          "algorithmType": "PIDAnalysis",
+          "calcMethod": "pid_gain_analysis",
+          "params": { "gainMarginThreshold": 0.5, "phaseMarginThreshold": 30 },
+          "threshold": { "gainDeviation": 0.3, "oscillationIndex": 0.4 },
+          "isEnabled": true,
+          "algorithmVersion": "OVERAGGRESSIVE_PID_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "diagId": "uuid-www",
+          "diagKey": "overconservative_pid",
+          "diagName": "参数过保守检测",
+          "label": "OVERCONSERVATIVE",
+          "algorithmType": "PIDAnalysis",
+          "calcMethod": "pid_gain_analysis",
+          "params": { "responseTimeThreshold": 60, "settlingTimeThreshold": 120 },
+          "threshold": { "riseTimeDeviation": 0.5, "settlingTimeDeviation": 0.5 },
+          "isEnabled": true,
+          "algorithmVersion": "OVERCONSERVATIVE_PID_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "diagId": "uuid-vvv",
+          "diagKey": "external_disturbance",
+          "diagName": "外扰频繁检测",
+          "label": "EXTERNAL_DISTURBANCE",
+          "algorithmType": "DisturbanceAnalysis",
+          "calcMethod": "spectral_analysis",
+          "params": { "windowSize": 2048, "frequencyBand": [0.01, 0.5] },
+          "threshold": { "disturbanceIndex": 0.5, "frequencyConcentration": 0.6 },
+          "isEnabled": true,
+          "algorithmVersion": "DISTURBANCE_SPEC_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "diagId": "uuid-uuu",
+          "diagKey": "quality_abnormal",
+          "diagName": "PV 质量异常检测",
+          "label": "QUALITY_ABNORMAL",
+          "algorithmType": "QualityCheck",
+          "calcMethod": "quality_code_stats",
+          "params": { "windowSize": 3600 },
+          "threshold": { "badRate": 0.1, "uncertainRate": 0.2 },
+          "isEnabled": true,
+          "algorithmVersion": "QUALITY_CHECK_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "diagId": "uuid-ttt",
+          "diagKey": "output_saturation",
+          "diagName": "输出饱和检测",
+          "label": "OUTPUT_SATURATION",
+          "algorithmType": "SaturationCheck",
+          "calcMethod": "op_range_stats",
+          "params": { "highThreshold": 95, "lowThreshold": 5, "minDuration": 60 },
+          "threshold": { "saturationRate": 0.15 },
+          "isEnabled": true,
+          "algorithmVersion": "SATURATION_CHECK_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "diagId": "uuid-sss",
+          "diagKey": "manual_review",
+          "diagName": "人工复核",
+          "label": "MANUAL_REVIEW",
+          "algorithmType": "Manual",
+          "calcMethod": "manual_trigger",
+          "params": {},
+          "threshold": { "compositeScore": 40 },
+          "isEnabled": true,
+          "algorithmVersion": "MANUAL_REVIEW_v1.0",
+          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedBy": "admin"
+        }
+      ]
+    }
+  }
+  ```
+* **说明**：返回全部 8 类诊断标签配置（对齐 C6 修正）；`label` 枚举为 8 类（OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW）；`calcMethod` 字段标识计算方法（对齐 C4 修正）；`threshold` 为 JSONB 对象（对齐 C3 修正）；`algorithmVersion` 标识算法版本号。
+
+#### 2.9.2 批量更新诊断配置 (Batch Update Diagnosis Config)
+
+* **URL**: `PUT /api/v1/configs/diagnosis`
+* **权限**: 管理层（系统管理员），越权返回 `ERR_CONFIG_FORBIDDEN`
+* **Request Body**:
+  ```json
+  {
+    "items": [
+      {
+        "diagId": "uuid-xxx",
+        "label": "OSCILLATION",
+        "algorithmType": "FFT",
+        "calcMethod": "auto_correlation",
+        "params": {
+          "windowSize": 2048,
+          "overlap": 0.5,
+          "minFrequency": 0.01,
+          "maxFrequency": 1.0
+        },
+        "threshold": { "amplitude": 1.8, "confidence": 0.75 },
+        "isEnabled": true
+      },
+      {
+        "diagId": "uuid-yyy",
+        "label": "VALVE_STICTION",
+        "algorithmType": "ScatterFitting",
+        "calcMethod": "pv_op_scatter",
+        "params": { "fittingType": "ellipse", "minPoints": 200 },
+        "threshold": { "stictionIndex": 0.65, "fittingScore": 0.85 },
+        "isEnabled": true
+      }
+    ]
+  }
+  ```
+* **Response (200 OK)**:
+  ```json
+  {
+    "data": {
+      "updatedCount": 2,
+      "items": [
+        {
+          "diagId": "uuid-xxx",
+          "diagKey": "oscillation_fft",
+          "diagName": "振荡检测 FFT",
+          "label": "OSCILLATION",
+          "algorithmType": "FFT",
+          "calcMethod": "auto_correlation",
+          "params": {
+            "windowSize": 2048,
+            "overlap": 0.5,
+            "minFrequency": 0.01,
+            "maxFrequency": 1.0
+          },
+          "threshold": { "amplitude": 1.8, "confidence": 0.75 },
+          "isEnabled": true,
+          "algorithmVersion": "OSC_FFT_v1.0",
+          "updatedAt": "2026-06-20T10:30:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "diagId": "uuid-yyy",
+          "diagKey": "stiction_scatter",
+          "diagName": "粘滞检测散点拟合",
+          "label": "VALVE_STICTION",
+          "algorithmType": "ScatterFitting",
+          "calcMethod": "pv_op_scatter",
+          "params": { "fittingType": "ellipse", "minPoints": 200 },
+          "threshold": { "stictionIndex": 0.65, "fittingScore": 0.85 },
+          "isEnabled": true,
+          "algorithmVersion": "STICTION_CH_v1.0",
+          "updatedAt": "2026-06-20T10:30:00Z",
+          "updatedBy": "admin"
+        }
+      ]
+    }
+  }
+  ```
+* **说明**：
+  * 批量更新诊断配置，事务化处理：任一项校验失败则全部回滚，返回对应字段错误码。
+  * `label` 枚举为 8 类诊断标签（对齐 C6 修正）；`calcMethod` 字段标识计算方法（对齐 C4 修正）；`threshold` 为 JSONB 对象（对齐 C3 修正）。
+  * 配置变更即时生效，无需重启服务；指标停用后相关诊断标签不再生成。
+  * 变更记录审计日志（操作人/时间/变更前后值）。
+
+---
+
 ## 3. 标准错误码与异常响应 (Error Handling)
 
 所有的非 2xx 响应必须遵循统一的错误格式：
@@ -1804,7 +2605,19 @@
 | `ERR_METRIC_WEIGHT_SUM` | 400 | 性能指标权重总和不为 100% | 更新性能指标配置时，6 项指标权重总和 ≠ 100%；或更新回路扩展配置时 `scoreWeights` 总和 ≠ 100%。 |
 | `ERR_CONFIG_FORBIDDEN` | 403 | 越权修改配置 | 非系统管理员角色尝试调用配置类 API（性能指标配置/诊断指标配置/引擎规则配置的更新接口）。 |
 
-### 3.3 错误响应示例
+### 3.3 v3.2 新增错误码（算法服务相关）
+
+| 错误码 | HTTP 状态 | 错误说明 | 触发场景 |
+|---|---|---|---|
+| `ERR_TASK_NOT_FOUND` | 404 | 算法任务未找到 | 查询算法任务状态时，`task_id` 不存在或已超过 7 天保留期。 |
+| `ERR_ALGORITHM_DATA_INSUFFICIENT` | 422 | 算法数据不足 | KPI 计算/诊断分析时，回路在指定时间窗内有效数据点不足（<100），无法执行算法。 |
+| `ERR_ALGORITHM_TIMEOUT` | 504 | 算法执行超时 | 算法任务执行超过最大允许时长（KPI 5 分钟/诊断 10 分钟/整定 15 分钟），任务标记为 FAILED。 |
+| `ERR_ALGORITHM_INVALID_PARAMS` | 400 | 算法参数无效 | 算法任务请求参数校验失败（如 `modelType` 不在 FOPDT/SOPDT/IPDT 枚举内、`method` 不在允许枚举内、`lambda` 为负数等）。 |
+| `ERR_FORMULA_INVALID` | 400 | 表达式语法错误 | 性能指标 `formula` 字段无法通过 `simpleeval` 安全沙箱解析（语法错误/禁用函数/超长/超时）。 |
+| `ERR_LABEL_INVALID` | 400 | 诊断标签枚举无效 | 诊断配置/分析请求中 `label` 字段不在 8 类枚举（OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW）内。 |
+| `ERR_CONTROL_TYPE_INVALID` | 400 | 控制类型枚举无效 | 性能指标配置中 `controlType` 字段不在 STABLE/SLOW/FAST/LOGIC 枚举内。 |
+
+### 3.4 错误响应示例
 
 **越权修改配置**：
 ```json

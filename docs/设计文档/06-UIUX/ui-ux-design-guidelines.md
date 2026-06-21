@@ -1,10 +1,19 @@
 # CLPM UI/UX 可视化设计与用户体验规范
 
 **文档状态**: 正式版
-**当前版本**: v4.0（产品化架构重构版，整合 PRD/FDS/ADS/DDS/IDS v3.0）
-**发布日期**: 2026-06-20
-**设计依据**: PRD (v3.0), FDS (v3.0), ADS (v3.0), DDS (v3.0), IDS (v3.0)
-**权威声明**: 本文档是后续原型系统开发与正式软件开发的**唯一 UI/UX 输入性文件**。所有视觉、交互、组件、页面设计决策以本文档为准；与历史 v0.1 草稿、v3.0 旧版冲突时以本文档为准。
+**当前版本**: v4.1（算法对齐与算法配置界面补充版，对齐《关键算法设计说明》v1.0 与 IDS v3.2）
+**发布日期**: 2026-06-22
+**设计依据**: PRD (v3.0), FDS (v3.0), ADS (v3.0), DDS (v3.0), IDS (v3.2), 关键算法设计说明 (v1.0)
+**权威声明**: 本文档是后续原型系统开发与正式软件开发的**唯一 UI/UX 输入性文件**。所有视觉、交互、组件、页面设计决策以本文档为准；与历史 v0.1 草稿、v3.0/v4.0 旧版冲突时以本文档为准。
+
+---
+
+## 0. 文档变更记录
+
+| 版本 | 日期 | 变更说明 | 作者 |
+|---|---|---|---|
+| v4.0 | 2026-06-20 | 产品化架构重构版，整合 PRD/FDS/ADS/DDS/IDS v3.0：①6 模块 + 门户 25 页面架构；②引入 AAS Tag 模型（7 个 OPC tag）、PV 质量码三态处理、产品化配置 UI、Tag 关联拖拽交互、配置变更确认交互；③定义设计系统（色彩/字体/间距/圆角/动效）、信息架构与导航、角色权限驱动 UI、25 页面设计规范、9 类核心组件、8 类状态机、交互模式规范、数据可视化规范、响应式与无障碍、原型实现指引。 | 系统设计团队 |
+| v4.1 | 2026-06-22 | 算法对齐与算法配置界面补充（依据《关键算法设计说明》v1.0 与 IDS v3.2）：①新增 §6.7 算法配置界面设计（指标配置/公式编辑器/诊断配置/整定配置 4 类子页面）；②新增 §7.10 诊断结果展示组件（8 类诊断标签 + 融合置信度 + 证据链卡片）；③新增 §7.11 整定参数展示组件（模型参数/PID 参数/仿真结果/拟合度）；④新增 §7.12 综合评分展示组件（6 大 KPI 雷达图 + 评分构成分解）；⑤新增 §7.13 算法任务状态组件（异步任务进度/轮询/结果渲染）；⑥更新 §6.3.3 性能指标配置交互（双滑块阈值/百分比权重/单选按钮组控制类型）；⑦对齐 C1-C7 跨文档差距修正（6 大 KPI/8 类诊断标签/JSONB 阈值/calc_method/fitting_score/simpleeval 表达式引擎）。 | 系统设计团队 |
 
 ---
 
@@ -12,7 +21,7 @@
 
 ### 1.1 文档目的
 
-本文档将 PRD v3.0 的产品需求、FDS v3.0 的功能规格、ADS v3.0 的系统架构、DDS v3.0 的数据模型、IDS v3.0 的接口契约收敛为一份**面向实现的设计规范**，定义 CLPM 平台所有模块与页面的视觉系统、信息架构、组件标准、交互模式与状态表达。
+本文档将 PRD v3.0 的产品需求、FDS v3.0 的功能规格、ADS v3.0 的系统架构、DDS v3.0 的数据模型、IDS v3.2 的接口契约、《关键算法设计说明》v1.0 的算法规范收敛为一份**面向实现的设计规范**，定义 CLPM 平台所有模块与页面的视觉系统、信息架构、组件标准、交互模式与状态表达。
 
 ### 1.2 产品定位
 
@@ -587,19 +596,37 @@ v4.0 定义 **4 类页面结构模式**：
 **分期**：Phase 1
 
 **页面内容**：
-- **左侧指标列表**：6 大核心 KPI（好值率/自控率/平稳率/准确率/振荡率/饱和率），每项显示名称 + 启用状态
+- **左侧指标列表**：6 大核心 KPI（好值率/自控率/平稳率/准确率/振荡率/饱和率），每项显示名称 + 启用状态 + 当前权重
 - **右侧表单**：选中指标时展示
-  - 计算公式（可编辑文本框，支持公式编辑器）
-  - 权重（数值输入，0-100%）
-  - 阈值（优良/关注/低效三档阈值）
-  - 启用状态（开关）
-  - 计算方法说明（只读）
+  - **计算公式**（公式编辑器，支持变量插入与语法校验，详见 §6.7.2）
+  - **权重**（百分比数值输入，0-100%，带实时总和显示与校验）
+  - **阈值**（双滑块组件，min/max/alert 三档，详见下方交互规范）
+  - **控制类型**（单选按钮组：STABLE 稳定型 / SLOW 慢速型 / FAST 快速型 / LOGIC 逻辑型，对齐§4.7.3 默认权重配置）
+  - **启用状态**（开关）
+  - **算法版本号**（只读，如 `KPI_CALC_v1.0`）
+  - **计算方法说明**（只读）
 
 **设计要点**：
-- **权重约束**：6 项指标权重总和须为 100%，保存时校验，不足/超出时弹窗提示"权重总和须为 100%，当前为 X%"
-- 指标停用后，相关 KPI 显示 `INCONCLUSIVE`
-- 配置变更需确认弹窗，填写变更说明，记录审计日志
-- 公式编辑器支持变量插入（PV/SP/OP/MODE/质量码）
+- **权重约束**：6 项指标权重总和须为 100%，顶部固定显示"当前权重总和：X%"实时进度条，不足/超出时标红 + 保存按钮置灰，提示"权重总和须为 100%，当前为 X%"
+- **阈值双滑块交互**（v4.1 新增，对齐 C3 JSONB 阈值对象）：
+  - 单滑轨上三个把手：`min`（最小值）、`alert`（告警阈值）、`max`（最大值）
+  - 拖动把手时实时显示数值 tooltip
+  - `min` ≤ `alert` ≤ `max` 约束，违反时把手抖动反馈 + 红色边框
+  - 滑轨分段着色：`[min, alert]` 绿色（优良区）、`[alert, max]` 琥珀（关注区）、超 `max` 红色（低效区）
+  - 对于反向指标（如振荡率/饱和率，值越低越好），滑轨方向反转：`[min, alert]` 红色（低效区）、`[alert, max]` 琥珀（关注区），并在标签处标注"↓ 越低越好"
+- **控制类型单选按钮组**（v4.1 新增）：
+  - 4 个按钮横向排列：`STABLE 稳定型` / `SLOW 慢速型` / `FAST 快速型` / `LOGIC 逻辑型`
+  - 选中态：品牌色填充 + 白色文字；未选中态：白底灰边
+  - 切换控制类型时弹窗提示"切换控制类型将应用对应默认权重模板，是否继续？"
+  - 控制类型决定权重模板（对齐《关键算法设计说明》§4.7.3）
+- **公式编辑器**：支持变量插入（pv/sp/op/mode/pv_quality/timestamps/pv_range/n）与函数插入（sum/mean/std/count/count_if/abs/sqrt/min/max/duration），实时语法校验（simpleeval 安全沙箱，对齐 C7），错误标红 + 提示
+- 指标停用后，相关 KPI 显示 `INCONCLUSIVE`，不参与综合评分计算
+- 配置变更需确认弹窗（§7.8），填写变更说明，记录审计日志
+- **批量保存**：支持调用 `PUT /api/v1/configs/metrics` 批量保存全部 6 项配置（对齐 IDS v3.2 §2.8.2），事务化处理
+
+**API 对接**：
+- 加载：`GET /api/v1/configs/metrics`（批量获取，对齐 IDS v3.2 §2.8.1）
+- 保存：`PUT /api/v1/configs/metrics`（批量更新，对齐 IDS v3.2 §2.8.2）或 `PUT /api/v1/performance/metrics/{metricId}`（单条更新，对齐 IDS v3.2 §2.3.4）
 
 #### 6.3.4 引擎规则配置 `/performance/rules`
 
@@ -662,17 +689,36 @@ v4.0 定义 **4 类页面结构模式**：
 **分期**：Phase 1
 
 **页面内容**：
-- **左侧指标列表**：诊断指标项（振荡检测 FFT/粘滞检测散点拟合/参数过激检测/质量码规则等）
+- **左侧指标列表**：8 类诊断标签对应的算法配置（对齐 C6 修正）：
+  - `OSCILLATION` 振荡检测（FFT/自相关）
+  - `VALVE_STICTION` 阀门粘滞检测（散点拟合）
+  - `OVERAGGRESSIVE` 参数过激检测（PID 增益分析）
+  - `OVERCONSERVATIVE` 参数过保守检测（PID 增益分析）
+  - `EXTERNAL_DISTURBANCE` 外扰频繁检测（频谱分析）
+  - `QUALITY_ABNORMAL` PV 质量异常检测（质量码统计）
+  - `OUTPUT_SATURATION` 输出饱和检测（OP 范围统计）
+  - `MANUAL_REVIEW` 人工复核（综合评分阈值触发）
+  - 每项显示标签名 + 算法类型 + 启用状态
 - **右侧表单**：
-  - 算法类型（下拉选择）
-  - 参数阈值（多个数值输入，如 FFT 主频范围/粘滞拟合度阈值）
-  - 启用状态（开关）
-  - 计算方法（下拉：自相关/FFT/散点拟合等）
-  - 说明（只读）
+  - **诊断标签**（只读，如 `OSCILLATION` 振荡检测）
+  - **算法类型**（下拉选择：FFT/ScatterFitting/PIDAnalysis/DisturbanceAnalysis/QualityCheck/SaturationCheck/Manual）
+  - **计算方法**（下拉选择，对齐 C4 修正：`auto_correlation` 自相关 / `fft` 快速傅里叶变换 / `pv_op_scatter` PV-OP 散点拟合 / `pid_gain_analysis` PID 增益分析 / `spectral_analysis` 频谱分析 / `quality_code_stats` 质量码统计 / `op_range_stats` OP 范围统计 / `manual_trigger` 人工触发）
+  - **算法参数**（JSON 编辑器，如 FFT 的 windowSize/overlap/minFrequency/maxFrequency）
+  - **阈值**（JSONB 对象编辑器，对齐 C3 修正，如 `{amplitude: 1.5, confidence: 0.7}`）
+  - **启用状态**（开关）
+  - **算法版本号**（只读，如 `OSC_FFT_v1.0`）
+  - **说明**（只读）
 
 **设计要点**：
-- 指标停用后，相关预诊标签不再生成
-- 配置变更需确认弹窗，填写变更说明，记录审计日志
+- 8 类诊断标签使用颜色编码徽章（对齐 §7.10 诊断结果展示组件）
+- 阈值编辑器根据算法类型动态渲染表单字段（如 FFT 显示 amplitude/confidence 两个数值输入，粘滞检测显示 stictionIndex/fittingScore）
+- 指标停用后，相关诊断标签不再生成
+- 配置变更需确认弹窗（§7.8），填写变更说明，记录审计日志
+- **批量保存**：支持调用 `PUT /api/v1/configs/diagnosis` 批量保存全部 8 项配置（对齐 IDS v3.2 §2.9.2），事务化处理
+
+**API 对接**：
+- 加载：`GET /api/v1/configs/diagnosis`（批量获取，对齐 IDS v3.2 §2.9.1）
+- 保存：`PUT /api/v1/configs/diagnosis`（批量更新，对齐 IDS v3.2 §2.9.2）或 `PUT /api/v1/diagnosis/metrics/{diagId}`（单条更新，对齐 IDS v3.2 §2.4.4）
 
 #### 6.4.3 回路诊断详情 `/diagnosis/:loopId`（隐藏路由）
 
@@ -696,24 +742,26 @@ v4.0 定义 **4 类页面结构模式**：
 ```
 
 **页面内容**：
-- **顶部**：回路位号 | 当前判断（预诊标签）| 风险等级 | 处理状态 | 责任角色 | 下一步动作
+- **顶部**：回路位号 | 当前判断（8 类诊断标签，对齐 C6）| 风险等级 | 处理状态 | 责任角色 | 下一步动作
 - **中上**：时序波形（PV/SP 主轴 + OP 副轴 + MODE 背景带）+ 时间窗选择器
 - **中下左**：PV-OP 散点图（拟合椭圆/平行四边形）
-- **中下右**：诊断结论卡片（预诊标签/置信度/规则命中说明/建议动作）
+- **中下右**：诊断结论卡片（8 类诊断标签数组 + 融合置信度 + 证据链 + 建议动作，详见 §7.10）
 - **右侧**：建议动作 | 导出建议单 | 进入异常跟踪 | （整定样例 Phase 2）
 
-**波形区规范**（详见 §8.3）：
+**波形区规范**（详见 §7.3）：
 - 时间窗选择器，最大跨度 30 天（超限提示 `ERR_TS_001`）
 - 默认开启 LTTB 降采样，`maxPoints=2000`
 - **PV 线根据质量码显示**：Good 实线正常 / Bad 灰色虚线断线 + 悬浮提示"PV 数据质量不可信" / Uncertain 琥珀虚线 + 悬浮提示"PV 数据质量不确定"
 - **SP/OP 线正常显示**，不受 PV 质量码影响
 - `mode` 分段背景带：Manual 红、Auto 绿、Cascade 蓝
 
-**诊断结论卡片**：
-- 预诊标签（`diagnosis_label`，如"疑似阀门粘滞"）
-- 置信度（算法匹配度，进度条 + 数值）
-- 规则命中说明（阈值、影响）
-- 建议动作
+**诊断结论卡片**（v4.1 更新，对齐 C6/C7 + IDS v3.2 §2.4.2）：
+- **诊断标签数组**（`diagnosisLabels`）：每项含 `label`（8 类枚举）/`labelName`（中文名）/`confidence`（单算法置信度 0-1，进度条 + 数值）/`evidence`（证据对象，含特征值/散点图 URL/推理过程）/`algorithm`（算法版本号）
+- **融合置信度**（`fusedConfidence`）：Dempster-Shafer 证据理论融合后的置信度（0-1），醒目展示在卡片顶部
+- **特征值**（`featureValues`）：振荡幅度/振荡频率/粘滞指数/输出饱和率等
+- **证据链**（`evidenceChain`）：波形 URL + PV-OP 散点图数据 + 推理过程文本
+- **算法版本号**（`algorithmVersion`）：如 `STICTION_CH_v1.0`
+- **建议动作**：基于诊断标签生成的处置建议
 
 #### 6.4.4 异常跟踪 `/diagnosis/tracker`
 
@@ -812,17 +860,22 @@ PENDING（待处理） → IN_PROGRESS（处理中） → RESOLVED（已实施�
 - **左侧参数配置**：
   - 数据段选择（时间范围 + 回路）
   - 采样周期
-  - 模型类型（FOPDT/SOPDT/IPDT 单选）
-  - 辨识算法（最小二乘/辅助变量法等下拉）
-  - [开始辨识] 按钮
-- **右侧结果展示**：
-  - 传递函数参数（K 增益/T 时间常数/τ 纯滞后）
-  - 拟合度（百分比 + 评级）
-  - 阶跃响应对比曲线（实测 vs 模型双波形）
+  - 模型类型（单选按钮组：FOPDT 一阶 / SOPDT 二阶 / IPDT 积分，对齐§6.1）
+  - 辨识方法（下拉选择，对齐§6.1.4：`TWO_POINT` 两点法 / `AREA` 面积法 / `COMBINED` 组合法）
+  - [开始辨识] 按钮（触发 `POST /api/v1/algorithms/tuning/calculate`，异步任务，详见 §6.7.4）
+- **右侧结果展示**（对齐 C5 + IDS v3.2 §2.7.4 整定计算完成结果）：
+  - **模型参数表**（`modelParams`，等宽字体）：
+    - FOPDT：K（增益）/ tau（时间常数）/ theta（纯滞后）
+    - SOPDT：K / T1 / T2 / theta
+    - IPDT：K / theta
+  - **拟合度**（`fittingScore`，R² 0-1，百分比 + 评级徽章：≥0.9 优 / 0.8-0.9 良 / 0.6-0.8 中 / <0.6 差，对齐 C5）
+  - **阶跃响应对比曲线**（实测 vs 模型双波形，ECharts）
+  - **算法版本号**（`algorithmVersion`，只读，如 `FOPDT_ID_v1.0`）
 
 **设计要点**：
-- 辨识过程显示进度条
-- 结果参数表使用等宽字体
+- 辨识过程显示算法任务进度条（对齐 §7.13 算法任务状态组件），轮询 `GET /api/v1/algorithms/tasks/{task_id}`
+- 结果参数表使用等宽字体，数值保留 2 位小数
+- 拟合度 < 0.6 时标红 + 提示"模型拟合度不足，建议更换辨识方法或调整数据段"
 - 原型阶段结果为 mock 数据
 
 #### 6.5.3 整定算法 `/tuning/algorithm`
@@ -833,17 +886,25 @@ PENDING（待处理） → IN_PROGRESS（处理中） → RESOLVED（已实施�
 
 **页面内容**：
 - **左侧参数配置**：
-  - 算法选择（IMC/Lambda/Ziegler-Nichols/Cohen-Coon 单选）
-  - 模型来源（从模型辨识结果导入/手动输入）
-  - 算法参数（如 IMC 闭环时间常数、Lambda 期望响应时间）
-  - [计算推荐参数] 按钮
-- **右侧结果展示**：
-  - 推荐 PID 参数表（P/I/D 三组对比：当前/推荐/差异）
-  - 性能预测指标（上升时间/超调/settling time/ITAE）
+  - **整定方法**（单选按钮组，对齐§6.3-§6.7：`IMC` 内模控制 / `LAMBDA` Lambda 整定 / `ZIEGLER_NICHOLS` ZN 法 / `COHEN_COON` Cohen-Coon 法 / `SIMC` SIMC 法）
+  - 模型来源（从模型辨识结果导入 / 手动输入）
+  - 算法参数（根据方法动态渲染）：
+    - IMC：闭环时间常数 lambda（数值输入）
+    - LAMBDA：期望响应时间 lambda（数值输入）
+    - ZN/CC/SIMC：无额外参数（只读模型参数）
+  - [计算推荐参数] 按钮（触发 `POST /api/v1/algorithms/tuning/calculate`，异步任务）
+- **右侧结果展示**（对齐 IDS v3.2 §2.7.4 整定计算完成结果）：
+  - **推荐 PID 参数表**（`pidParams`，P/I/D 三组对比：当前/推荐/差异，等宽字体）：
+    - Kp（比例增益）/ Ti（积分时间）/ Td（微分时间）
+    - 差异列高亮：推荐值标绿，差异百分比标注
+  - **模型参数**（`modelParams`，只读，来自辨识结果）
+  - **拟合度**（`fittingScore`，只读，来自辨识结果）
+  - **算法版本号**（`algorithmVersion`，只读，如 `IMC_TUNE_v1.0`）
 
 **设计要点**：
-- 参数对比表高亮差异（推荐值标绿）
+- 参数对比表高亮差异（推荐值标绿，差异 > 50% 标橙提示"参数变化较大，请谨慎实施"）
 - **安全边界强调**：推荐参数仅作离线建议，UI 明确标注"参数需由授权人员人工实施，平台不下写 DCS"
+- 计算过程显示算法任务进度条（对齐 §7.13）
 - 原型阶段结果为 mock 数据
 
 #### 6.5.4 闭环仿真 `/tuning/simulation`
@@ -854,17 +915,20 @@ PENDING（待处理） → IN_PROGRESS（处理中） → RESOLVED（已实施�
 
 **页面内容**：
 - **上部参数配置**：
-  - PID 参数切换（当前 PID vs 推荐 PID 单选）
-  - 扰动类型（阶跃/脉冲/正弦下拉）
+  - PID 参数切换（单选：当前 PID vs 推荐 PID）
+  - 扰动类型（下拉：阶跃 step / 脉冲 impulse / 正弦 sine，对齐§6.8.2）
   - 扰动幅值、仿真时长
-  - [开始仿真] 按钮
-- **下部仿真结果**：
-  - 阶跃响应双波形对比（当前 PID 蓝线 vs 推荐 PID 绿线）
-  - 性能指标对比表（上升时间/超调/settling time/ITAE/IAE）
+  - [开始仿真] 按钮（触发 `POST /api/v1/algorithms/tuning/calculate`，`enableSimulation=true`，异步任务）
+- **下部仿真结果**（对齐 IDS v3.2 §2.7.4 + §6.8.2）：
+  - **阶跃响应双波形对比**（当前 PID 蓝线 vs 推荐 PID 绿线，ECharts）
+  - **性能指标对比表**（`simulationResult`，等宽字体）：
+    - riseTime（上升时间）/ overshoot（超调）/ settlingTime（settling time）/ itae（ITAE 误差积分）
+    - 改善项标绿，恶化项标红，delta 数值标注
 
 **设计要点**：
 - 双波形对比使用不同颜色 + 图例
 - 性能指标对比表高亮改善项（标绿）与恶化项（标红）
+- 仿真过程显示算法任务进度条（对齐 §7.13）
 - 原型阶段仿真结果为 mock 数据
 
 #### 6.5.5 整定效果统计 `/tuning/analytics`
@@ -947,6 +1011,102 @@ PENDING（待处理） → IN_PROGRESS（处理中） → RESOLVED（已实施�
 - "能做/不能做"使用绿色对勾/红色叉号清晰区分
 - 全角色可见，无操作按钮
 
+### 6.7 算法配置界面（v4.1 新增）
+
+> **说明**：本节定义算法配置相关的界面设计规范，对齐《关键算法设计说明》v1.0 与 IDS v3.2 §2.7-§2.9。算法配置界面分散在各模块中（性能指标配置 §6.3.3 / 诊断指标配置 §6.4.2 / 整定参数配置 §6.5），本节定义跨模块共用的配置组件与交互模式。
+
+#### 6.7.1 算法配置总览 `/config/algorithms`（导航入口）
+
+**页面结构模式**：导航卡片页
+**目标角色**：系统管理员
+**分期**：Phase 1
+
+**页面内容**：
+- **配置分类卡片**（3 类，网格布局）：
+  - **指标配置**（跳转 `/performance/metrics`）：6 大 KPI 公式/权重/阈值/控制类型
+  - **诊断配置**（跳转 `/diagnosis/metrics`）：8 类诊断标签算法/参数/阈值
+  - **整定配置**（跳转 `/tuning`，Phase 2）：模型辨识/整定算法/仿真参数
+- **算法版本信息**：每类配置卡片底部显示当前算法版本号（如 `KPI_CALC_v1.0`）
+- **最近变更记录**：每类配置卡片显示最近 3 条审计日志摘要
+
+**设计要点**：
+- 卡片采用极简风格，白底 + 灰边 + 左侧色条（指标蓝/诊断橙/整定紫）
+- 仅系统管理员可见"编辑"入口，其他角色只读查看
+
+#### 6.7.2 公式编辑器组件（Formula Editor）
+
+**适用页面**：性能指标配置 §6.3.3
+
+**组件结构**：
+```
++----------------------------------------------------------+
+| 公式编辑器                                                |
+| +------------------------------------------------------+ |
+| | sum(quality==Good) / count(*) * 100                  | |
+| |                                                      | |
+| |                                                      | |
+| +------------------------------------------------------+ |
+| 变量插入：[pv] [sp] [op] [mode] [pv_quality] [timestamps] [pv_range] [n] |
+| 函数插入：[sum] [mean] [std] [count] [count_if] [abs] [sqrt] [min] [max] [duration] |
+| 语法校验：✓ 公式有效 / ✗ 错误：[错误详情]                 |
+| 字符数：23/500  |  超时限制：5s  |  引擎：simpleeval       |
++----------------------------------------------------------+
+```
+
+**交互规范**：
+- **变量/函数插入**：点击按钮在光标位置插入对应变量/函数名，自动补全括号
+- **实时语法校验**：输入时调用 simpleeval 安全沙箱校验（对齐 C7），错误标红 + tooltip 显示错误详情
+- **字符数限制**：500 字符，超限时标红 + 禁止继续输入
+- **可用变量**：pv/sp/op/mode/pv_quality/timestamps/pv_range/n
+- **可用函数**：sum/mean/std/count/count_if/abs/sqrt/min/max/duration
+- **禁用操作**：import/exec/eval/属性访问（安全沙箱拦截）
+- **超时限制**：5 秒，超时标红 + 提示"公式执行超时，请优化"
+
+**视觉规范**：
+- 编辑器使用等宽字体（JetBrains Mono / Fira Code）
+- 变量高亮：蓝色；函数高亮：紫色；运算符：默认色
+- 校验通过：绿色对勾 + "公式有效"；校验失败：红色叉号 + 错误详情
+
+#### 6.7.3 诊断算法配置组件（Diagnosis Algorithm Config）
+
+**适用页面**：诊断指标配置 §6.4.2
+
+**组件结构**：
+- **诊断标签徽章**（只读，8 类颜色编码，对齐 §7.10）
+- **算法类型下拉**（FFT/ScatterFitting/PIDAnalysis/DisturbanceAnalysis/QualityCheck/SaturationCheck/Manual）
+- **计算方法下拉**（对齐 C4：auto_correlation/fft/pv_op_scatter/pid_gain_analysis/spectral_analysis/quality_code_stats/op_range_stats/manual_trigger）
+- **算法参数 JSON 编辑器**（根据算法类型动态渲染表单字段）
+- **阈值 JSONB 编辑器**（对齐 C3，根据算法类型动态渲染字段）
+
+**动态表单规则**：
+| 算法类型 | 算法参数字段 | 阈值字段 |
+|---|---|---|
+| FFT | windowSize/overlap/minFrequency/maxFrequency | amplitude/confidence |
+| ScatterFitting | fittingType/minPoints | stictionIndex/fittingScore |
+| PIDAnalysis | gainMarginThreshold/phaseMarginThreshold | gainDeviation/oscillationIndex |
+| DisturbanceAnalysis | windowSize/frequencyBand | disturbanceIndex/frequencyConcentration |
+| QualityCheck | windowSize | badRate/uncertainRate |
+| SaturationCheck | highThreshold/lowThreshold/minDuration | saturationRate |
+| Manual | （无） | compositeScore |
+
+#### 6.7.4 整定参数配置组件（Tuning Params Config）
+
+**适用页面**：模型辨识 §6.5.2 / 整定算法 §6.5.3 / 闭环仿真 §6.5.4
+
+**组件结构**：
+- **模型类型单选按钮组**（FOPDT/SOPDT/IPDT）
+- **辨识方法下拉**（TWO_POINT/AREA/COMBINED）
+- **整定方法单选按钮组**（IMC/LAMBDA/ZIEGLER_NICHOLS/COHEN_COON/SIMC）
+- **算法参数动态表单**（根据整定方法渲染：IMC/LAMBDA 显示 lambda 输入，其他方法无额外参数）
+- **仿真参数表单**（扰动类型/幅值/仿真时长）
+
+**算法任务触发交互**（对齐 §7.13）：
+- 点击"开始辨识/计算/仿真"按钮 → 调用 `POST /api/v1/algorithms/tuning/calculate`
+- 返回 202 + `taskId` → 显示算法任务进度条组件
+- 前端轮询 `GET /api/v1/algorithms/tasks/{task_id}`（间隔 3 秒）
+- 任务完成后渲染结果（模型参数/PID 参数/仿真结果）
+- 任务失败时显示错误信息 + 重试按钮
+
 ---
 
 ## 7. 核心组件规范
@@ -1009,13 +1169,20 @@ PENDING（待处理） → IN_PROGRESS（处理中） → RESOLVED（已实施�
 | `Bad` | `--status-danger` 警示红 | Bad | ✖ |
 | `Uncertain` | `--status-warning` 琥珀 | Uncertain | ? |
 
-#### 7.2.5 诊断预诊标签（`diagnosis_label`，自由文本）
+#### 7.2.5 诊断标签（`diagnosis_label`，8 类枚举，v4.1 更新对齐 C6）
 
-| 示例值 | 颜色 | 图标 |
-|---|---|---|
-| 疑似阀门粘滞 | `--status-warning` 琥珀 | ⚠ |
-| 参数过激 | `--status-danger` 警示红 | ✖ |
-| 原因不明(需人工介入) | `--status-neutral` 冷灰 | ? |
+| 标签值 | 中文名 | 颜色 | 图标 |
+|---|---|---|---|
+| `OSCILLATION` | 振荡 | `--status-warning` 琥珀 | 〰 |
+| `VALVE_STICTION` | 阀门粘滞 | `--status-danger` 警示红 | ⚠ |
+| `OVERAGGRESSIVE` | 参数过激 | `--status-danger` 警示红 | ⚡ |
+| `OVERCONSERVATIVE` | 参数过保守 | `--status-info` 深蓝 | 🐢 |
+| `EXTERNAL_DISTURBANCE` | 外扰频繁 | `--status-warning` 琥珀 | ↯ |
+| `QUALITY_ABNORMAL` | PV 质量异常 | `--status-neutral` 冷灰 | ? |
+| `OUTPUT_SATURATION` | 输出饱和 | `--status-warning` 琥珀 | ⛔ |
+| `MANUAL_REVIEW` | 人工复核 | `--status-neutral` 冷灰 | ✋ |
+
+*说明：v4.1 对齐《关键算法设计说明》§5 C6 修正，诊断标签从自由文本改为 8 类固定枚举，颜色编码详见 §7.10。*
 
 ### 7.3 时序波形 (Time-Series Waveform)
 
@@ -1112,6 +1279,182 @@ Tag 关联管理页面使用的核心组件。
 - 越权操作：全局 Toast"无权限"
 - 网络异常：标准错误态 + 重试按钮
 
+### 7.10 诊断结果展示组件（v4.1 新增）
+
+诊断详情页（§6.4.3）与诊断列表（§6.4.1）使用的核心组件，对齐 C6（8 类诊断标签）+ IDS v3.2 §2.4.2。
+
+**8 类诊断标签颜色编码**：
+
+| 标签 | 中文名 | 颜色 | 图标 |
+|---|---|---|---|
+| `OSCILLATION` | 振荡 | `--status-warning` 琥珀 | 〰 |
+| `VALVE_STICTION` | 阀门粘滞 | `--status-danger` 警示红 | ⚠ |
+| `OVERAGGRESSIVE` | 参数过激 | `--status-danger` 警示红 | ⚡ |
+| `OVERCONSERVATIVE` | 参数过保守 | `--status-info` 深蓝 | 🐢 |
+| `EXTERNAL_DISTURBANCE` | 外扰频繁 | `--status-warning` 琥珀 | ↯ |
+| `QUALITY_ABNORMAL` | PV 质量异常 | `--status-neutral` 冷灰 | ? |
+| `OUTPUT_SATURATION` | 输出饱和 | `--status-warning` 琥珀 | ⛔ |
+| `MANUAL_REVIEW` | 人工复核 | `--status-neutral` 冷灰 | ✋ |
+
+**诊断结论卡片结构**：
+```
++----------------------------------------------------------+
+| 融合置信度：82%  ████████████░░░░░░  (fusedConfidence)    |
++----------------------------------------------------------+
+| 诊断标签：                                                |
+| [⚠ 阀门粘滞 85%]  [〰 振荡 72%]  (diagnosisLabels 数组)   |
++----------------------------------------------------------+
+| 证据链：                                                  |
+| • 粘滞指数：0.78 (≥0.6 阈值命中)                          |
+| • 拟合度：0.92 (椭圆拟合)                                 |
+| • PV-OP 散点图：[查看]                                    |
+| • 推理：PV-OP 散点图呈现椭圆轨迹，拟合度 0.92             |
++----------------------------------------------------------+
+| 算法版本：STICTION_CH_v1.0  |  诊断时间：2026-06-20 08:00 |
++----------------------------------------------------------+
+```
+
+**组件字段映射**（对齐 IDS v3.2 §2.4.2）：
+- `fusedConfidence`：融合置信度（0-1），醒目展示在卡片顶部，进度条 + 百分比
+- `diagnosisLabels[]`：诊断标签数组，每项含：
+  - `label`：8 类枚举值，渲染为颜色编码徽章
+  - `labelName`：中文名
+  - `confidence`：单算法置信度（0-1），进度条 + 数值
+  - `evidence`：证据对象（特征值/散点图 URL/推理过程），可展开查看
+  - `algorithm`：算法版本号
+- `featureValues`：特征值对象（oscillation_amplitude/oscillation_frequency/stiction_index/output_saturation_rate）
+- `evidenceChain`：证据链（waveformUrl/scatterPlot/reasoning）
+- `algorithmVersion`：算法版本号
+- `diagnosedAt`：诊断时间
+
+**交互**：
+- 点击诊断标签徽章 → 展开该标签的证据详情（特征值/散点图/推理过程）
+- 点击"查看散点图" → 跳转或弹窗显示 PV-OP 散点图
+- 融合置信度 < 0.5 时标橙提示"置信度较低，建议人工复核"
+
+### 7.11 整定参数展示组件（v4.1 新增）
+
+整定模块（§6.5）使用的核心组件，对齐 C5（fitting_score）+ IDS v3.2 §2.5.1/§2.7.4。
+
+**模型参数表**（`modelParams`，等宽字体）：
+
+| 模型类型 | 参数字段 | 示例值 |
+|---|---|---|
+| FOPDT | K / tau / theta | 1.20 / 30.50 / 5.00 |
+| SOPDT | K / T1 / T2 / theta | 1.20 / 20.00 / 15.00 / 5.00 |
+| IPDT | K / theta | 0.05 / 5.00 |
+
+**拟合度展示**（`fittingScore`，R² 0-1，对齐 C5）：
+- 进度条 + 百分比数值
+- 评级徽章：≥0.9 优（绿）/ 0.8-0.9 良（蓝）/ 0.6-0.8 中（琥珀）/ <0.6 差（红）
+- <0.6 时附加提示"模型拟合度不足，建议更换辨识方法或调整数据段"
+
+**PID 参数对比表**（`pidParams`）：
+
+| 参数 | 当前值 | 推荐值 | 差异 |
+|---|---|---|---|
+| Kp | 1.20 | 1.50 | +25% ↑ |
+| Ti | 50.00 | 33.00 | -34% ↓ |
+| Td | 0.00 | 2.27 | +2.27 ↑ |
+
+- 推荐值标绿，差异 > 50% 标橙提示"参数变化较大，请谨慎实施"
+- 差异百分比标注（↑ 增加 / ↓ 减少）
+
+**仿真结果对比表**（`simulationResult`）：
+
+| 指标 | 当前 PID | 推荐 PID | 改善 |
+|---|---|---|---|
+| 上升时间 (s) | 18.5 | 12.5 | -32% ↑ 改善 |
+| 超调 (%) | 15.2 | 8.3 | -45% ↑ 改善 |
+| Settling time (s) | 65.0 | 45.0 | -31% ↑ 改善 |
+| ITAE | 2100.0 | 1250.5 | -40% ↑ 改善 |
+
+- 改善项标绿，恶化项标红，delta 数值标注
+
+**算法版本号**（`algorithmVersion`）：只读展示，如 `IMC_TUNE_v1.0` / `FOPDT_ID_v1.0`
+
+### 7.12 综合评分展示组件（v4.1 新增）
+
+工作台（§6.1.1）/ 全局看板（§6.3.1）/ 低效排行（§6.3.2）使用的核心组件，对齐 C1（6 大 KPI）+ §4.7 综合评分。
+
+**6 大 KPI 雷达图**（ECharts）：
+- 6 个维度：好值率 / 自控率 / 平稳率 / 准确率 / 振荡率 / 饱和率
+- 振荡率/饱和率为反向指标（值越低越好），雷达图上显示为"100 - 实际值"
+- 支持双图层叠加：当前值（实线）vs 目标值（虚线）
+- 悬浮显示具体数值
+
+**评分构成分解**（水平堆叠条）：
+```
+综合评分：78.5  [GOOD]
+├── 好值率 (20%): 95.2 × 0.20 = 19.04  ████████░░
+├── 自控率 (20%): 88.5 × 0.20 = 17.70  ████████░░
+├── 平稳率 (20%): 76.8 × 0.20 = 15.36  ███████░░░
+├── 准确率 (15%): 82.1 × 0.15 = 12.32  ██████░░░░
+├── 振荡率 (15%): 87.7 × 0.15 = 13.16  ██████░░░░  (100-12.3=87.7)
+└── 饱和率 (10%): 94.6 × 0.10 = 9.46   █████░░░░░  (100-5.4=94.6)
+```
+
+**状态标签**（`status`，对齐 IDS v3.2）：
+| 状态 | 颜色 | 文本 | 图标 | 条件 |
+|---|---|---|---|---|
+| `GOOD` | `--status-ok` 青绿 | 优良 | ✓ | score ≥ 80 |
+| `WARNING` | `--status-warning` 琥珀 | 关注 | ⚠ | 60 ≤ score < 80 |
+| `POOR` | `--status-danger` 警示红 | 低效 | ✖ | score < 60 |
+| `INCONCLUSIVE` | `--status-neutral` 冷灰 | 数据不足 | ? | 数据不足，显示"—" |
+
+**算法版本号**（`algorithmVersion`）：只读展示，如 `KPI_CALC_v1.0`
+
+### 7.13 算法任务状态组件（v4.1 新增）
+
+整定模块（§6.5）与算法配置界面（§6.7）使用的核心组件，对齐 IDS v3.2 §2.7 算法服务接口。
+
+**任务状态枚举**：
+| 状态 | 颜色 | 文本 | 图标 |
+|---|---|---|---|
+| `PROCESSING` | `--status-info` 深蓝 | 处理中 | ⟳ |
+| `SUCCESS` | `--status-ok` 青绿 | 成功 | ✓ |
+| `FAILED` | `--status-danger` 警示红 | 失败 | ✖ |
+
+**任务类型枚举**（`taskType`）：
+- `KPI_CALCULATION`：KPI 计算
+- `DIAGNOSIS_ANALYSIS`：诊断分析
+- `TUNING_CALCULATION`：整定计算
+
+**进度条组件**：
+```
++----------------------------------------------------------+
+| 整定计算任务                          状态：处理中 ⟳       |
+| 任务ID：task-uuid-xxx                                     |
+| 进度：██████████░░░░░░░░░░  45%                          |
+| 预计剩余：30s    开始时间：2026-06-20 10:00:00            |
++----------------------------------------------------------+
+```
+
+**交互规范**：
+- **任务提交**：调用 `POST /api/v1/algorithms/{type}` → 返回 202 + `taskId`
+- **任务轮询**：前端每 3 秒调用 `GET /api/v1/algorithms/tasks/{task_id}` 获取状态
+- **进度更新**：`progress` 字段（0-100）实时更新进度条
+- **任务完成**：`status=SUCCESS` 时停止轮询，渲染 `result` 字段（按 `taskType` 不同结构）
+- **任务失败**：`status=FAILED` 时停止轮询，显示 `error` 字段（errorCode/message/details）+ 重试按钮
+- **任务超时**：轮询超过 15 分钟未完成，提示"任务执行超时，请稍后查看任务历史"
+- **任务取消**：支持"取消"按钮（仅 `PROCESSING` 状态可用），调用取消接口
+
+**结果渲染规则**（按 `taskType`）：
+- `KPI_CALCULATION`：渲染 6 大 KPI 值 + compositeScore + status（对齐 §7.12）
+- `DIAGNOSIS_ANALYSIS`：渲染诊断标签数组 + fusedConfidence（对齐 §7.10）
+- `TUNING_CALCULATION`：渲染 modelParams + fittingScore + pidParams + simulationResult（对齐 §7.11）
+
+**错误处理**：
+| 错误码 | UI 响应 |
+|---|---|
+| `ERR_TASK_NOT_FOUND` | Toast"任务不存在或已过期" + 返回上一页 |
+| `ERR_ALGORITHM_DATA_INSUFFICIENT` | 提示"数据点不足（50/100），请扩大时间窗" |
+| `ERR_ALGORITHM_TIMEOUT` | 提示"算法执行超时，请重试或联系管理员" |
+| `ERR_ALGORITHM_INVALID_PARAMS` | 标红对应参数字段 + tooltip 错误详情 |
+| `ERR_FORMULA_INVALID` | 公式编辑器标红 + 错误详情 |
+| `ERR_LABEL_INVALID` | 标签字段标红 + 提示"诊断标签不在 8 类枚举内" |
+| `ERR_CONTROL_TYPE_INVALID` | 控制类型字段标红 + 提示"控制类型不在 STABLE/SLOW/FAST/LOGIC 枚举内" |
+
 ---
 
 ## 8. 状态机与状态表达规范
@@ -1170,10 +1513,17 @@ PENDING/IN_PROGRESS → IGNORED
 - 每次变更记录 `updated_by` + `updated_at`
 - 标记 RESOLVED 后截取 `[T-7天,T]` vs `[T,T+7天]` 窗口
 
-#### 8.2.4 诊断预诊标签
-- `疑似粘滞`（散点拟合命中椭圆/平行四边形）
-- `参数过激`（FFT 检测高频震荡）
-- `原因不明(需人工介入)`（算法匹配度低）
+#### 8.2.4 诊断标签（v4.1 更新，8 类枚举对齐 C6）
+- `OSCILLATION` 振荡（FFT/自相关检测，振荡周期/频率特征命中）
+- `VALVE_STICTION` 阀门粘滞（PV-OP 散点拟合命中椭圆/平行四边形）
+- `OVERAGGRESSIVE` 参数过激（PID 增益分析，增益偏差/振荡指数超阈值）
+- `OVERCONSERVATIVE` 参数过保守（PID 增益分析，响应时间/settling time 超阈值）
+- `EXTERNAL_DISTURBANCE` 外扰频繁（频谱分析，扰动指数/频率集中度超阈值）
+- `QUALITY_ABNORMAL` PV 质量异常（质量码统计，Bad/Uncertain 占比超阈值）
+- `OUTPUT_SATURATION` 输出饱和（OP 范围统计，饱和时长占比超阈值）
+- `MANUAL_REVIEW` 人工复核（综合评分 < 40，算法置信度低，需人工介入）
+
+*说明：v4.1 对齐《关键算法设计说明》§5 C6 修正，诊断标签从自由文本改为 8 类固定枚举。多标签可共存（如同时存在振荡+阀门粘滞），通过 Dempster-Shafer 证据理论融合置信度（`fusedConfidence`）。*
 
 #### 8.2.5 PV 数据质量状态（v4.0 新增）
 ```
@@ -1319,12 +1669,14 @@ SP/OP 线不受 PV 质量码影响，始终正常显示
 
 综合评分 `score`（0-100）动态映射，阈值由算法配置决定：
 
-| 区间（默认） | 颜色 | 表现 |
-|---|---|---|
-| `>= 80` | 青绿 `--status-ok` | 优良 |
-| `60-79` | 琥珀 `--status-warning` | 关注 |
-| `< 60` | 警示红 `--status-danger` | 低效 |
-| `INCONCLUSIVE` | 冷灰 `--status-neutral` | 显示"—"非 0 |
+| 区间（默认） | 颜色 | 表现 | status 枚举（v4.1） |
+|---|---|---|---|
+| `>= 80` | 青绿 `--status-ok` | 优良 | `GOOD` |
+| `60-79` | 琥珀 `--status-warning` | 关注 | `WARNING` |
+| `< 60` | 警示红 `--status-danger` | 低效 | `POOR` |
+| 数据不足 | 冷灰 `--status-neutral` | 显示"—"非 0 | `INCONCLUSIVE` |
+
+*说明：v4.1 对齐 IDS v3.2，评分状态从仅 `SUCCESS/INCONCLUSIVE/PARTIAL` 扩展为 `GOOD/WARNING/POOR/INCONCLUSIVE` 四态，对齐§7.12 综合评分展示组件。*
 
 ### 10.2 趋势折线图
 
@@ -1520,13 +1872,20 @@ const routes = [
 |---|---|---|---|
 | `loop_tag` | `loop_ledger` | 全局表格主列 | 等宽字体，可点击 |
 | `description` | `loop_ledger` | 台账表格 | 普通文本 |
-| `score` | `kpi_snapshot_hourly` | 排行/看板/诊断 | 评分色块 + 数值 |
-| `good_value_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡 | 百分比 |
-| `auto_mode_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡 | 百分比 |
-| `steady_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡/排行 | 百分比 |
-| `oscillation_rate` | `kpi_snapshot_hourly` | 诊断详情 | 百分比 |
-| `status` | `kpi_snapshot_hourly` | 全局状态标签 | SUCCESS/INCONCLUSIVE/PARTIAL 三维标签 |
-| `diagnosis_label` | `action_tracker` | 诊断列表/详情 | 预诊标签徽章 |
+| `composite_score` | `kpi_snapshot_hourly` | 排行/看板/诊断 | 评分色块 + 数值（v4.1：原 `score`） |
+| `good_value_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡/雷达图 | 百分比 |
+| `auto_mode_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡/雷达图 | 百分比 |
+| `steady_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡/排行/雷达图 | 百分比 |
+| `accuracy_rate` | `kpi_snapshot_hourly`（v4.1 新增，对齐 C1/C2） | 看板 KPI 卡/雷达图 | 百分比 |
+| `oscillation_rate` | `kpi_snapshot_hourly` | 诊断详情/雷达图 | 百分比（反向指标） |
+| `saturation_rate` | `kpi_snapshot_hourly`（v4.1 新增，对齐 C1/C2） | 诊断详情/雷达图 | 百分比（反向指标） |
+| `status` | `kpi_snapshot_hourly` | 全局状态标签 | GOOD/WARNING/POOR/INCONCLUSIVE 四维标签（v4.1 更新） |
+| `algorithm_version` | `kpi_snapshot_hourly`（v4.1 新增） | 看板/配置页 | 只读等宽字体（如 `KPI_CALC_v1.0`） |
+| `diagnosis_label` | `diagnosis_result`（v4.1：8 类枚举） | 诊断列表/详情 | 8 类颜色编码徽章（对齐 §7.10） |
+| `confidence` | `diagnosis_result`（v4.1 新增） | 诊断详情 | 单算法置信度进度条 + 数值（0-1） |
+| `fused_confidence` | `diagnosis_result`（v4.1 新增，对齐 C6） | 诊断详情卡片顶部 | 融合置信度进度条 + 百分比 |
+| `evidence` | `diagnosis_result`（v4.1 新增） | 诊断详情证据链 | 可展开证据对象（特征值/散点图 URL/推理过程） |
+| `algorithm` | `diagnosis_result`（v4.1 新增） | 诊断详情 | 算法版本号只读标签 |
 | `action_status` | `action_tracker` | Tracker/排行 | PENDING/IN_PROGRESS/IGNORED/RESOLVED 标签 |
 | `updated_by` | `action_tracker` | Tracker 时间线 | 操作人 |
 | `updated_at` | `action_tracker` | Tracker 时间线 | 时间戳（等宽） |
@@ -1541,6 +1900,14 @@ const routes = [
 | `tag_name` | `tag_registry` | Tag 关联管理左侧列表 | 等宽字体 |
 | `quality` | `tag_registry` | Tag 关联管理左侧列表 | Good/Bad/Uncertain 徽章 |
 | `last_sync_at` | `tag_registry` | 台账/Tag 关联 | 时间戳（等宽） |
+| `model_params` | `tuning_record`（v4.1 新增） | 整定结果展示 | 等宽字体参数表（K/tau/theta 等） |
+| `pid_params` | `tuning_record`（v4.1 新增） | 整定结果展示 | P/I/D 三组对比表 |
+| `fitting_score` | `tuning_record`（v4.1 新增，对齐 C5） | 整定结果展示 | R² 拟合度进度条 + 评级徽章 |
+| `simulation_result` | `tuning_record`（v4.1 新增） | 闭环仿真结果 | 性能指标对比表 + 双波形图 |
+| `method` | `tuning_record`（v4.1 新增） | 整定算法配置 | 单选按钮组（IMC/LAMBDA/ZN/CC/SIMC） |
+| `calc_method` | `diagnosis_config`（v4.1 新增，对齐 C4） | 诊断指标配置 | 下拉选择 |
+| `control_type` | `metric_config`（v4.1 新增） | 性能指标配置 | 单选按钮组（STABLE/SLOW/FAST/LOGIC） |
+| `threshold` | `metric_config`/`diagnosis_config`（v4.1：JSONB，对齐 C3） | 配置页 | 双滑块/动态表单字段 |
 
 ### 13.2 API 接口与 UI 对接速查
 
@@ -1558,15 +1925,21 @@ const routes = [
 | 回路运行详情 | GET | `/api/v1/loops/{loopId}/monitor` | 回路运行详情加载 | 全角色 |
 | KPI 快照 | GET | `/api/v1/dashboard/overview` | 工作台/全局看板加载 | 全角色 |
 | 低效排行 | GET | `/api/v1/performance/ranking` | 排行页加载 | 查看层+ |
-| 性能指标配置 | GET/PUT | `/api/v1/performance/metrics` | 性能指标配置页 | 系统管理员 |
+| 性能指标配置（单条） | GET/PUT | `/api/v1/performance/metrics` / `/{metricId}` | 性能指标配置页 | 系统管理员 |
+| 性能指标配置（批量，v4.1） | GET/PUT | `/api/v1/configs/metrics` | 性能指标配置页批量保存 | 系统管理员 |
 | 引擎规则配置 | GET/PUT | `/api/v1/performance/rules` | 引擎规则配置页 | 系统管理员 |
 | 性能统计报表 | GET | `/api/v1/performance/analytics` | 性能统计报表页 | 全角色 |
 | 诊断列表 | GET | `/api/v1/diagnosis/list` | 诊断列表加载 | 执行层+ |
-| 诊断指标配置 | GET/PUT | `/api/v1/diagnosis/metrics` | 诊断指标配置页 | 系统管理员 |
+| 诊断指标配置（单条） | GET/PUT | `/api/v1/diagnosis/metrics` / `/{diagId}` | 诊断指标配置页 | 系统管理员 |
+| 诊断指标配置（批量，v4.1） | GET/PUT | `/api/v1/configs/diagnosis` | 诊断指标配置页批量保存 | 系统管理员 |
 | 波形数据 | GET | `/api/v1/timeseries/{loopId}/waveform` | 诊断详情/运行详情加载 | 执行层+ |
 | 更新状态 | PATCH | `/api/v1/tracker/{loopId}/status` | Tracker 状态变更 | 仅仪控工程师 |
 | 导出建议书 | POST | `/api/v1/tracker/{loopId}/export` | 导出按钮 | 执行层+ |
 | 诊断统计报表 | GET | `/api/v1/diagnosis/analytics` | 诊断统计报表页 | 执行层+ |
+| 触发 KPI 计算（v4.1） | POST | `/api/v1/algorithms/kpi/calculate` | 算法配置页/手动重算 | 系统管理员 |
+| 触发诊断分析（v4.1） | POST | `/api/v1/algorithms/diagnosis/analyze` | 算法配置页/手动重算 | 系统管理员 |
+| 触发整定计算（v4.1） | POST | `/api/v1/algorithms/tuning/calculate` | 整定模块各页面 | 执行层+ |
+| 查询算法任务状态（v4.1） | GET | `/api/v1/algorithms/tasks/{task_id}` | 算法任务进度轮询 | 触发者角色+ |
 | 用户列表 | GET | `/api/v1/system/users` | 用户与角色页 | 系统管理员 |
 | 审计日志 | GET | `/api/v1/system/audit` | 审计日志页 | 系统管理员 |
 | 报表记录 | GET | `/api/v1/system/reports` | 自动报表管理页 | 系统管理员 |
@@ -1584,6 +1957,13 @@ const routes = [
 | `ERR_LOOP_TAG_REQUIRED` | 回路必填 tag 缺失 | 回路标红 + tooltip 提示"PV/SP/OP/MODE 必填 tag 缺失" |
 | `ERR_METRIC_WEIGHT_SUM` | 指标权重总和不为 100% | 弹窗提示"权重总和须为 100%，当前为 X%" |
 | `ERR_CONFIG_FORBIDDEN` | 越权修改配置 | Toast"仅系统管理员可修改配置" |
+| `ERR_TASK_NOT_FOUND`（v4.1） | 算法任务未找到 | Toast"任务不存在或已过期" + 返回上一页 |
+| `ERR_ALGORITHM_DATA_INSUFFICIENT`（v4.1） | 算法数据不足 | 提示"数据点不足（50/100），请扩大时间窗" |
+| `ERR_ALGORITHM_TIMEOUT`（v4.1） | 算法执行超时 | 提示"算法执行超时，请重试或联系管理员" |
+| `ERR_ALGORITHM_INVALID_PARAMS`（v4.1） | 算法参数无效 | 标红对应参数字段 + tooltip 错误详情 |
+| `ERR_FORMULA_INVALID`（v4.1） | 表达式语法错误 | 公式编辑器标红 + 错误详情 |
+| `ERR_LABEL_INVALID`（v4.1） | 诊断标签枚举无效 | 标签字段标红 + 提示"诊断标签不在 8 类枚举内" |
+| `ERR_CONTROL_TYPE_INVALID`（v4.1） | 控制类型枚举无效 | 控制类型字段标红 + 提示"控制类型不在 STABLE/SLOW/FAST/LOGIC 枚举内" |
 
 ### 13.4 文档引用关系
 
@@ -1593,7 +1973,8 @@ const routes = [
 | FDS v3.0 | 各模块 UI 形态强制约束、业务流程、状态流转、异常分支、配置变更确认流程 |
 | ADS v3.0 | 技术选型（React 19/ECharts/dnd-kit）、性能边界、部署架构 |
 | DDS v3.0 | 数据字段、枚举值、状态定义、PV 质量码阈值、AAS Tag 模型 |
-| IDS v3.0 | 接口路径、参数、分页/降采样默认值、错误码 |
+| IDS v3.2（v4.1 更新） | 接口路径、参数、分页/降采样默认值、错误码、算法服务接口（§2.7）、批量配置接口（§2.8/§2.9） |
+| 关键算法设计说明 v1.0（v4.1 新增） | 6 大 KPI 算法（§4）、8 类诊断标签（§5）、整定算法（§6）、综合评分（§4.7）、表达式引擎（§4.9）、C1-C7 跨文档差距修正 |
 | DESIGN.md | 原型设计基线、菜单结构声明、状态机原则 |
 
 ### 13.5 与历史版本的关系
@@ -1602,23 +1983,27 @@ const routes = [
 |---|---|
 | v0.1 草稿（2026-06-16） | 历史 `prototype-*-v0.1-2026-06-16.md` 文件基于 approved 产品化架构的 P0 治理闭环验证包，与 PRD/FDS 正式版存在根本性概念冲突。v0.1 文件已于 2026-06-20 清理删除。 |
 | v3.0（2026-06-20） | 基于 PRD v2.2/FDS v2.0 等，5 模块 14 页面架构。本文档 v4.0 已吸收 v3.0 中有价值的页面级交互明细与状态矩阵，映射到 v4.0 的 6 模块 25 页面体系。 |
-| **v4.0（2026-06-20）** | **当前权威版本**。基于 PRD v3.0/FDS v3.0/ADS v3.0/DDS v3.0/IDS v3.0，6 模块 + 门户 25 页面架构，引入 AAS Tag 模型、PV 质量码处理、产品化配置 UI、Tag 关联拖拽交互、配置变更确认交互。本文档为唯一 UI/UX 事实来源。 |
+| v4.0（2026-06-20） | 基于 PRD v3.0/FDS v3.0/ADS v3.0/DDS v3.0/IDS v3.0，6 模块 + 门户 25 页面架构，引入 AAS Tag 模型、PV 质量码处理、产品化配置 UI、Tag 关联拖拽交互、配置变更确认交互。 |
+| **v4.1（2026-06-22）** | **当前权威版本**。基于《关键算法设计说明》v1.0 与 IDS v3.2，新增算法配置界面（§6.7）、诊断结果展示组件（§7.10）、整定参数展示组件（§7.11）、综合评分展示组件（§7.12）、算法任务状态组件（§7.13），更新性能指标配置交互（双滑块/百分比/单选按钮组），对齐 C1-C7 跨文档差距修正。本文档为唯一 UI/UX 事实来源。 |
 
-### 13.6 v4.0 核心变更摘要
+### 13.6 v4.1 核心变更摘要
 
-| 变更项 | v3.0 | v4.0 |
+| 变更项 | v4.0 | v4.1 |
 |---|---|---|
-| 模块结构 | 5 模块 14 页面 | 6 模块 + 门户 25 页面 |
-| AAS Tag 模型 | 回路直接同步 | AAS 同步 tag 位号，回路由用户创建并关联 tag |
-| 典型回路 Tag | 4 个（PV/SP/OP/MODE） | 7 个（PV/SP/OP/MODE/PID_P/PID_I/PID_D） |
-| PID 参数 | 未明确 | 从 PID tag 只读读取，不可编辑 |
-| 控制方式 | 未明确来源 | 从 MODE tag 只读读取 |
-| PV 质量码 | 简单处理 | Good/Bad/Uncertain 三态，波形分段渲染 |
-| 性能总览首页 | 三栏工作台 | 上中下三行 + 顶部筛选栏 |
-| 配置功能 | 集中在工厂模型 | 各模块自包含配置页面 |
-| 统计分析 | 集中在报表中心 | 分散到各模块（性能/诊断/整定） |
-| 回路整定 | Phase 2 占位 | 原型先行设计，5 个子模块页面 |
-| 角色默认首页 | 部分明确 | 全部 5 角色明确 |
-| 配置变更交互 | 未明确 | 弹确认弹窗 + 填写变更说明 + 审计日志 |
-| Tag 关联交互 | 表格编辑 | 拖拽 + 下拉双模式，7 槽位 |
-| 技术栈 | React + ECharts | React 19 + ECharts + dnd-kit |
+| 6 大 KPI 清单 | 部分缺失（accuracy_rate/saturation_rate） | 完整 6 项（对齐 C1/C2） |
+| 诊断标签 | 自由文本（3 类示例） | 8 类固定枚举 + 融合置信度（对齐 C6） |
+| 阈值类型 | DECIMAL 数值 | JSONB 对象 `{min, max, alert}`（对齐 C3） |
+| 诊断配置 calc_method | 未明确 | 新增 calc_method 字段（对齐 C4） |
+| 整定 fitting_score | 未明确 | 新增 fitting_score R² 拟合度（对齐 C5） |
+| 表达式引擎 | 未明确 | simpleeval 安全沙箱（对齐 C7） |
+| 评分状态枚举 | SUCCESS/INCONCLUSIVE/PARTIAL | GOOD/WARNING/POOR/INCONCLUSIVE 四态 |
+| 算法服务接口 | 无 | 新增 4 个异步 API（KPI/诊断/整定/任务查询） |
+| 批量配置接口 | 仅单条 GET/PUT | 新增批量 GET/PUT（/api/v1/configs/metrics、/api/v1/configs/diagnosis） |
+| 算法配置界面 | 无 | 新增 §6.7（总览/公式编辑器/诊断配置/整定配置） |
+| 诊断结果展示 | 简单卡片 | 新增 §7.10 组件（8 类标签 + 融合置信度 + 证据链） |
+| 整定参数展示 | 简单表格 | 新增 §7.11 组件（模型参数/PID 对比/拟合度/仿真结果） |
+| 综合评分展示 | 数值 + 色块 | 新增 §7.12 组件（6 大 KPI 雷达图 + 评分构成分解） |
+| 算法任务状态 | 无 | 新增 §7.13 组件（异步任务进度/轮询/结果渲染） |
+| 性能指标配置交互 | 数值输入 | 双滑块阈值 + 百分比权重 + 单选按钮组控制类型 |
+| 整定方法枚举 | IMC/Lambda/ZN/CC | IMC/LAMBDA/ZIEGLER_NICHOLS/COHEN_COON/SIMC（5 类） |
+| 错误码 | 9 类 | 新增 7 类算法相关错误码（共 16 类） |
