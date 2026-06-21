@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLPM 工作台布局草图 — v4.0 预览</title>
+<style>
+  /* ============================================================
+   * 设计令牌（对齐 index.css CSS 变量）
+   * ============================================================ */
+  :root {
+    --bg-app: #F5F5F5;
+    --bg-panel: #FFFFFF;
+    --bg-muted: #F0F0F0;
+    --bg-sidebar: #1E2A3A;
+    --bg-sidebar-hover: #2D3E54;
+    --bg-sidebar-active: #0D6EFD;
+    --text-primary: #1A1A1A;
+    --text-secondary: #4A4A4A;
+    --text-muted: #8A8A8A;
+    --text-sidebar: #C0C8D0;
+    --text-sidebar-active: #FFFFFF;
+    --border-default: #E0E0E0;
+    --accent-blue: #0D6EFD;
+    --accent-blue-bg: rgba(13, 110, 253, 0.08);
+    --status-success: #198754;
+    --status-warning: #FFC107;
+    --status-danger: #DC3545;
+    --status-info: #0DCAF0;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --text-h1: 20px;
+    --text-h2: 16px;
+    --text-h3: 14px;
+    --text-body: 13px;
+    --text-small: 12px;
+    --text-mono: 11px;
+    --sidebar-width: 220px;
+    --sidebar-collapsed: 48px;
+    --topbar-height: 48px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: var(--text-body);
+    color: var(--text-primary);
+    background: var(--bg-app);
+    overflow: hidden;
+  }
+
+  /* ============================================================
+   * 顶部导航栏
+   * ============================================================ */
+  .topbar {
+    height: var(--topbar-height);
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border-default);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-4);
+    gap: var(--space-4);
+    position: relative;
+    z-index: 100;
+  }
+
+  .topbar-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 700;
+    font-size: var(--text-h2);
+    color: var(--accent-blue);
+    white-space: nowrap;
+  }
+
+  .topbar-logo span { color: var(--text-primary); }
+
+  .topbar-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-small);
+    color: var(--text-muted);
+  }
+
+  .topbar-breadcrumb .sep { color: var(--border-default); }
+
+  .topbar-spacer { flex: 1; }
+
+  /* 角色切换器 */
+  .role-switcher {
+    position: relative;
+  }
+
+  .role-switcher-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-panel);
+    cursor: pointer;
+    font-size: var(--text-small);
+    color: var(--text-primary);
+  }
+
+  .role-switcher-btn:hover {
+    border-color: var(--accent-blue);
+  }
+
+  .role-switcher-btn .badge {
+    background: var(--accent-blue-bg);
+    color: var(--accent-blue);
+    padding: 1px var(--space-2);
+    border-radius: 10px;
+    font-size: var(--text-mono);
+  }
+
+  .role-switcher-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 180px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    z-index: 200;
+  }
+
+  .role-switcher-dropdown.open { display: block; }
+
+  .role-switcher-dropdown .item {
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+    font-size: var(--text-small);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .role-switcher-dropdown .item:hover {
+    background: var(--bg-muted);
+  }
+
+  .role-switcher-dropdown .item.active {
+    background: var(--accent-blue-bg);
+    color: var(--accent-blue);
+    font-weight: 600;
+  }
+
+  .role-switcher-dropdown .item .check {
+    margin-left: auto;
+    color: var(--accent-blue);
+  }
+
+  .role-switcher-dropdown .divider {
+    height: 1px;
+    background: var(--border-default);
+    margin: var(--space-1) 0;
+  }
+
+  .role-switcher-dropdown .hint {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-mono);
+    color: var(--text-muted);
+  }
+
+  /* 用户菜单 */
+  .topbar-user {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+  }
+
+  .topbar-user:hover { background: var(--bg-muted); }
+
+  .topbar-user .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-small);
+    font-weight: 600;
+  }
+
+  .topbar-user .name { font-size: var(--text-small); }
+
+  /* ============================================================
+   * 侧边栏
+   * ============================================================ */
+  .sidebar {
+    width: var(--sidebar-width);
+    background: var(--bg-sidebar);
+    color: var(--text-sidebar);
+    display: flex;
+    flex-direction: column;
+    transition: width 200ms;
+    overflow: hidden;
+  }
+
+  .sidebar.collapsed { width: var(--sidebar-collapsed); }
+
+  .sidebar-collapse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--text-small);
+  }
+
+  .sidebar-collapse-btn:hover { background: var(--bg-sidebar-hover); color: #fff; }
+
+  .sidebar.collapsed .sidebar-collapse-btn::after { content: '▶'; }
+  .sidebar:not(.collapsed) .sidebar-collapse-btn::after { content: '◀'; }
+
+  .sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-2) 0;
+  }
+
+  .menu-group { margin-bottom: var(--space-1); }
+
+  .menu-group-title {
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-mono);
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+
+  .sidebar.collapsed .menu-group-title { display: none; }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    cursor: pointer;
+    font-size: var(--text-body);
+    color: var(--text-sidebar);
+    white-space: nowrap;
+    transition: background 100ms;
+    position: relative;
+  }
+
+  .menu-item:hover { background: var(--bg-sidebar-hover); }
+
+  .menu-item.active {
+    background: var(--bg-sidebar-active);
+    color: var(--text-sidebar-active);
+    font-weight: 500;
+  }
+
+  .menu-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #fff;
+  }
+
+  .menu-item .icon {
+    width: 16px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .menu-item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+  .menu-item .tag {
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.6);
+  }
+
+  .menu-item .tag.p2 {
+    background: rgba(255, 193, 7, 0.2);
+    color: var(--status-warning);
+  }
+
+  .sidebar.collapsed .menu-item .label,
+  .sidebar.collapsed .menu-item .tag { display: none; }
+  .sidebar.collapsed .menu-item { justify-content: center; padding: var(--space-2); }
+
+  /* ============================================================
+   * 主内容区
+   * ============================================================ */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-4);
+  }
+
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
+  }
+
+  .page-header h1 {
+    font-size: var(--text-h1);
+    font-weight: 700;
+  }
+
+  .page-header .subtitle {
+    font-size: var(--text-small);
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* Partial 警告横幅 */
+  .partial-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: var(--radius-md);
+    color: #B8860B;
+    font-size: var(--text-body);
+    margin-bottom: var(--space-4);
+  }
+
+  .partial-banner .action {
+    margin-left: auto;
+    padding: 2px var(--space-2);
+    font-size: var(--text-small);
+    color: var(--accent-blue);
+    background: transparent;
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  /* KPI 卡片网格 */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .kpi-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+  }
+
+  .kpi-card .label {
+    font-size: var(--text-small);
+    color: var(--text-muted);
+    margin-bottom: var(--space-1);
+  }
+
+  .kpi-card .value {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .kpi-card .value.success { color: var(--status-success); }
+  .kpi-card .value.warning { color: var(--status-warning); }
+  .kpi-card .value.danger { color: var(--status-danger); }
+
+  .kpi-card .delta {
+    font-size: var(--text-mono);
+    color: var(--text-muted);
+    margin-top: var(--space-1);
+  }
+
+  .kpi-card .delta .up { color: var(--status-danger); }
+  .kpi-card .delta .down { color: var(--status-success); }
+
+  /* 两列布局 */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+
+  .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .card-header h3 {
+    font-size: var(--text-h3);
+    font-weight: 600;
+  }
+
+  .card-header .more {
+    font-size: var(--text-small);
+    color: var(--accent-blue);
+    cursor: pointer;
+  }
+
+  .card-body { padding: var(--space-3) var(--space-4); }
+
+  /* 趋势图占位 */
+  .chart-placeholder {
+    height: 180px;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    padding: var(--space-2);
+  }
+
+  .chart-placeholder .bar {
+    flex: 1;
+    background: var(--accent-blue);
+    border-radius: 2px 2px 0 0;
+    opacity: 0.7;
+    position: relative;
+  }
+
+  .chart-placeholder .bar.low {
+    background: var(--status-danger);
+    opacity: 0.5;
+  }
+
+  .chart-placeholder .bar::after {
+    content: attr(data-date);
+    position: absolute;
+    bottom: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: var(--text-muted);
+  }
+
+  /* 低效回路列表 */
+  .loop-list { list-style: none; }
+
+  .loop-list li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-default);
+    font-size: var(--text-small);
+  }
+
+  .loop-list li:last-child { border-bottom: none; }
+
+  .loop-list .rank {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-mono);
+    font-weight: 600;
+    background: var(--bg-muted);
+    color: var(--text-muted);
+  }
+
+  .loop-list .rank.top { background: var(--status-danger); color: #fff; }
+
+  .loop-list .name { flex: 1; }
+
+  .loop-list .score {
+    font-weight: 600;
+    font-family: "SF Mono", monospace;
+  }
+
+  .loop-list .score.low { color: var(--status-danger); }
+
+  /* 诊断标签分布 */
+  .diag-stats { display: flex; flex-direction: column; gap: var(--space-2); }
+
+  .diag-stats .row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-small);
+  }
+
+  .diag-stats .label { width: 80px; }
+
+  .diag-stats .bar-bg {
+    flex: 1;
+    height: 16px;
+    background: var(--bg-muted);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .diag-stats .bar-fill {
+    height: 100%;
+    border-radius: var(--radius-sm);
+  }
+
+  .diag-stats .count { width: 20px; text-align: right; font-weight: 600; }
+
+  /* 异常跟踪摘要 */
+  .tracker-summary { display: flex; gap: var(--space-3); }
+
+  .tracker-stat {
+    flex: 1;
+    text-align: center;
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--bg-muted);
+  }
+
+  .tracker-stat .num { font-size: 24px; font-weight: 700; }
+  .tracker-stat .label { font-size: var(--text-mono); color: var(--text-muted); margin-top: 2px; }
+
+  .tracker-stat.pending .num { color: var(--status-warning); }
+  .tracker-stat.progress .num { color: var(--accent-blue); }
+  .tracker-stat.resolved .num { color: var(--status-success); }
+
+  /* 布局容器 */
+  .layout {
+    display: flex;
+    height: 100vh;
+  }
+
+  /* 标注框（草图专用） */
+  .annotation {
+    position: fixed;
+    bottom: var(--space-4);
+    right: var(--space-4);
+    background: rgba(13, 110, 253, 0.95);
+    color: #fff;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    font-size: var(--text-small);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    z-index: 999;
+    max-width: 320px;
+  }
+
+  .annotation strong { display: block; margin-bottom: 2px; }
+
+  /* 状态徽章 */
+  .badge-sm {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-mono);
+    font-weight: 500;
+  }
+
+  .badge-sm.good { background: rgba(25, 135, 84, 0.12); color: var(--status-success); }
+  .badge-sm.bad { background: rgba(220, 53, 69, 0.12); color: var(--status-danger); }
+  .badge-sm.uncertain { background: rgba(255, 193, 7, 0.12); color: #B8860B; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- ============================================================
+       侧边栏
+       ============================================================ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-collapse-btn" onclick="toggleSidebar()"></div>
+    <nav class="sidebar-nav" id="sidebarNav">
+      <!-- 菜单由 JS 动态渲染（角色过滤） -->
+    </nav>
+  </aside>
+
+  <!-- ============================================================
+       主内容区
+       ============================================================ -->
+  <div class="main">
+    <!-- 顶部导航栏 -->
+    <header class="topbar">
+      <div class="topbar-logo">CLPM <span>控制回路性能监测</span></div>
+      <div class="topbar-breadcrumb">
+        <span>加氢联合车间</span>
+        <span class="sep">/</span>
+        <span>工作台</span>
+      </div>
+      <div class="topbar-spacer"></div>
+
+      <!-- 角色切换器 -->
+      <div class="role-switcher">
+        <button class="role-switcher-btn" onclick="toggleRoleDropdown(event)">
+          <span>视角：</span>
+          <span class="badge" id="currentRoleLabel">仪控工程师</span>
+          <span>▼</span>
+        </button>
+        <div class="role-switcher-dropdown" id="roleDropdown">
+          <div class="hint">切换角色后菜单与默认首页联动</div>
+          <div class="divider"></div>
+          <div class="item active" data-role="仪控工程师" data-home="/">
+            <span>🔧</span> 仪控工程师
+            <span class="check">✓</span>
+          </div>
+          <div class="item" data-role="工艺/设备工程师" data-home="/performance">
+            <span>⚙️</span> 工艺/设备工程师
+          </div>
+          <div class="item" data-role="Sponsor" data-home="/performance">
+            <span>📊</span> Sponsor
+          </div>
+          <div class="item" data-role="系统管理员" data-home="/loop/factory">
+            <span>🛠️</span> 系统管理员
+          </div>
+          <div class="item" data-role="外部专家" data-home="/diagnosis">
+            <span>🎓</span> 外部专家
+          </div>
+        </div>
+      </div>
+
+      <!-- 用户菜单 -->
+      <div class="topbar-user">
+        <div class="avatar">张</div>
+        <span class="name">张工</span>
+      </div>
+    </header>
+
+    <!-- 工作台内容区 -->
+    <div class="content">
+      <div class="page-header">
+        <div>
+          <h1>工作台</h1>
+          <div class="subtitle">2026-06-21 10:30 · 加氢联合车间 · 数据快照 10:00</div>
+        </div>
+      </div>
+
+      <!-- Partial 警告横幅 -->
+      <div class="partial-banner">
+        <span>⚠️</span>
+        <span>当前有 <strong>2</strong> 个回路 KPI 计算结果为 PARTIAL（部分指标数据不足），评分仅供参考</span>
+        <button class="action">查看详情 →</button>
+      </div>
+
+      <!-- KPI 摘要卡片 -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="label">回路总数</div>
+          <div class="value">17</div>
+          <div class="delta">自动 14 · 手动 1 · 串级 2</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">平均评分</div>
+          <div class="value success">71.2</div>
+          <div class="delta"><span class="up">↑ 2.3</span> 较昨日</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">低效回路（&lt;60分）</div>
+          <div class="value danger">4</div>
+          <div class="delta">L003 · L004 · L009 · L014</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">PV 质量异常</div>
+          <div class="value warning">3</div>
+          <div class="delta">Bad 1 · Uncertain 2</div>
+        </div>
+      </div>
+
+      <!-- 两列：趋势 + 低效排行 -->
+      <div class="two-col">
+        <div class="card">
+          <div class="card-header">
+            <h3>7 天评分趋势</h3>
+            <span class="more">查看大图 →</span>
+          </div>
+          <div class="card-body">
+            <div class="chart-placeholder">
+              <div class="bar" style="height: 70%" data-date="06-15"></div>
+              <div class="bar" style="height: 75%" data-date="06-16"></div>
+              <div class="bar" style="height: 72%" data-date="06-17"></div>
+              <div class="bar" style="height: 68%" data-date="06-18"></div>
+              <div class="bar" style="height: 73%" data-date="06-19"></div>
+              <div class="bar" style="height: 76%" data-date="06-20"></div>
+              <div class="bar" style="height: 71%" data-date="06-21"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:24px;font-size:11px;color:var(--text-muted)">
+              <span>— 平均分</span>
+              <span>低效回路数：12-15 个/天</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>低效回路 Top 5</h3>
+            <span class="more">全部回路 →</span>
+          </div>
+          <div class="card-body">
+            <ul class="loop-list">
+              <li>
+                <span class="rank top">1</span>
+                <span class="name">L004 C-101 塔顶压力</span>
+                <span class="badge-sm bad">Bad</span>
+                <span class="score low">—</span>
+              </li>
+              <li>
+                <span class="rank top">2</span>
+                <span class="name">L014 C-202 回流量</span>
+                <span class="badge-sm good">Good</span>
+                <span class="score low">42</span>
+              </li>
+              <li>
+                <span class="rank top">3</span>
+                <span class="name">L003 F-101 加热炉出口温度</span>
+                <span class="badge-sm uncertain">Uncertain</span>
+                <span class="score low">45</span>
+              </li>
+              <li>
+                <span class="rank">4</span>
+                <span class="name">L009 R-201 反应器床层温度</span>
+                <span class="badge-sm good">Good</span>
+                <span class="score low">52</span>
+              </li>
+              <li>
+                <span class="rank">5</span>
+                <span class="name">L011 C-201 塔顶压力</span>
+                <span class="badge-sm uncertain">Uncertain</span>
+                <span class="score low">58</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- 两列：诊断摘要 + 异常跟踪 -->
+      <div class="two-col">
+        <div class="card">
+          <div class="card-header">
+            <h3>诊断标签分布</h3>
+            <span class="more">诊断中心 →</span>
+          </div>
+          <div class="card-body">
+            <div class="diag-stats">
+              <div class="row">
+                <span class="label">振荡</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:28%;background:var(--status-danger)"></div></div>
+                <span class="count">2</span>
+              </div>
+              <div class="row">
+                <span class="label">粘滞阀</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:14%;background:var(--status-warning)"></div></div>
+                <span class="count">1</span>
+              </div>
+              <div class="row">
+                <span class="label">参数过激</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:14%;background:var(--status-warning)"></div></div>
+                <span class="count">1</span>
+              </div>
+              <div class="row">
+                <span class="label">参数过保守</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:14%;background:#6C757D"></div></div>
+                <span class="count">1</span>
+              </div>
+              <div class="row">
+                <span class="label">PV 质量异常</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:28%;background:var(--status-danger)"></div></div>
+                <span class="count">2</span>
+              </div>
+              <div class="row">
+                <span class="label">外扰频繁</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:14%;background:#6C757D"></div></div>
+                <span class="count">1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>异常跟踪摘要</h3>
+            <span class="more">全部 Tracker →</span>
+          </div>
+          <div class="card-body">
+            <div class="tracker-summary">
+              <div class="tracker-stat pending">
+                <div class="num">2</div>
+                <div class="label">待处理</div>
+              </div>
+              <div class="tracker-stat progress">
+                <div class="num">1</div>
+                <div class="label">进行中</div>
+              </div>
+              <div class="tracker-stat resolved">
+                <div class="num">1</div>
+                <div class="label">已解决</div>
+              </div>
+              <div class="tracker-stat">
+                <div class="num">1</div>
+                <div class="label">已忽略</div>
+              </div>
+            </div>
+            <div style="margin-top:16px;padding:8px;background:var(--bg-muted);border-radius:4px;font-size:12px;color:var(--text-muted)">
+              <strong style="color:var(--text-secondary)">最近闭环：</strong><br>
+              AT004 L014 C-202 回流量 · 参数过激<br>
+              PID 调整后超调量 18%→8% · 闭环时长 30h
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 草图标注 -->
+<div class="annotation">
+  <strong>📋 布局草图预览</strong>
+  此为工作台布局草图，用于确认导航/侧边栏交互逻辑。<br>
+  点击右上角"视角"切换角色，观察菜单联动。<br>
+  点击侧边栏顶部 ◀ 折叠菜单。
+</div>
+
+<script>
+  // ============================================================
+  // 菜单数据（对齐 menuConfig.ts）
+  // ============================================================
+  const MENU = [
+    {
+      group: '工作台',
+      items: [
+        { icon: '🏠', label: '工作台', path: '/', roles: ['仪控工程师', '工艺/设备工程师', 'Sponsor', '系统管理员'] }
+      ]
+    },
+    {
+      group: '回路管理',
+      items: [
+        { icon: '🏭', label: '工厂层级配置', path: '/loop/factory', roles: ['仪控工程师', '系统管理员'] },
+        { icon: '📋', label: '回路台账', path: '/loop/ledger', roles: ['仪控工程师', '工艺/设备工程师', '系统管理员'] },
+        { icon: '🔗', label: 'Tag 关联管理', path: '/loop/mapping', roles: ['仪控工程师', '系统管理员'] },
+        { icon: '📊', label: '回路监控列表', path: '/loop/monitor', roles: ['仪控工程师', '工艺/设备工程师', '系统管理员'] },
+      ]
+    },
+    {
+      group: '性能评估',
+      items: [
+        { icon: '📈', label: 'KPI 看板', path: '/performance', roles: ['仪控工程师', '工艺/设备工程师', 'Sponsor', '系统管理员'] },
+        { icon: '⚙️', label: '指标配置', path: '/performance/config', roles: ['系统管理员'] },
+        { icon: '🔧', label: '引擎规则配置', path: '/performance/engine', roles: ['系统管理员'] },
+        { icon: '📜', label: '评估历史', path: '/performance/history', roles: ['仪控工程师', '系统管理员'] },
+      ]
+    },
+    {
+      group: '诊断中心',
+      items: [
+        { icon: '🔍', label: '诊断结果列表', path: '/diagnosis', roles: ['仪控工程师', '外部专家'] },
+        { icon: '📈', label: '波形分析', path: '/diagnosis/waveform', roles: ['仪控工程师', '外部专家'] },
+        { icon: '📍', label: '异常跟踪', path: '/diagnosis/tracker', roles: ['仪控工程师', '工艺/设备工程师', '外部专家'] },
+        { icon: '⚖️', label: 'A/B 对比', path: '/diagnosis/ab-compare', roles: ['仪控工程师', '外部专家'] },
+        { icon: '⚙️', label: '诊断配置', path: '/diagnosis/config', roles: ['系统管理员'] },
+      ]
+    },
+    {
+      group: '回路整定',
+      items: [
+        { icon: '🧪', label: '整定原型', path: '/tuning/prototype', roles: ['仪控工程师', '外部专家'], tag: 'P2' },
+        { icon: '🔬', label: '模型辨识', path: '/tuning/identify', roles: ['仪控工程师', '外部专家'], tag: 'P2' },
+        { icon: '🎛️', label: '整定算法', path: '/tuning/algorithm', roles: ['仪控工程师', '外部专家'], tag: 'P2' },
+        { icon: '🔄', label: '闭环仿真', path: '/tuning/simulation', roles: ['仪控工程师', '外部专家'], tag: 'P2' },
+        { icon: '📊', label: '整定效果统计', path: '/tuning/stats', roles: ['仪控工程师', 'Sponsor', '外部专家'], tag: 'P2' },
+      ]
+    },
+    {
+      group: '系统管理',
+      items: [
+        { icon: '👥', label: '用户与角色', path: '/system/users', roles: ['系统管理员'] },
+        { icon: '🔐', label: '权限矩阵', path: '/system/permissions', roles: ['系统管理员'] },
+        { icon: '📜', label: '审计日志', path: '/system/audit', roles: ['系统管理员'] },
+        { icon: '📑', label: '自动报表', path: '/system/reports', roles: ['系统管理员'] },
+        { icon: '🔌', label: 'AAS 连接', path: '/system/aas', roles: ['系统管理员'] },
+      ]
+    },
+  ];
+
+  let currentRole = '仪控工程师';
+
+  // 渲染侧边栏菜单
+  function renderSidebar() {
+    const nav = document.getElementById('sidebarNav');
+    let html = '';
+    MENU.forEach(group => {
+      const visibleItems = group.items.filter(item => item.roles.includes(currentRole));
+      if (visibleItems.length === 0) return;
+
+      html += `<div class="menu-group">`;
+      html += `<div class="menu-group-title">${group.group}</div>`;
+      visibleItems.forEach((item, idx) => {
+        const isActive = group.group === '工作台' && idx === 0;
+        const tagHtml = item.tag ? `<span class="tag ${item.tag === 'P2' ? 'p2' : ''}">${item.tag}</span>` : '';
+        html += `<div class="menu-item ${isActive ? 'active' : ''}" onclick="selectMenu(this)">
+          <span class="icon">${item.icon}</span>
+          <span class="label">${item.label}</span>
+          ${tagHtml}
+        </div>`;
+      });
+      html += `</div>`;
+    });
+    nav.innerHTML = html;
+  }
+
+  // 菜单选中
+  function selectMenu(el) {
+    document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  // 折叠侧边栏
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('collapsed');
+  }
+
+  // 角色切换下拉
+  function toggleRoleDropdown(e) {
+    e.stopPropagation();
+    document.getElementById('roleDropdown').classList.toggle('open');
+  }
+
+  // 角色切换
+  document.querySelectorAll('.role-switcher-dropdown .item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const role = item.dataset.role;
+      currentRole = role;
+
+      // 更新下拉选中态
+      document.querySelectorAll('.role-switcher-dropdown .item').forEach(i => {
+        i.classList.remove('active');
+        const check = i.querySelector('.check');
+        if (check) check.remove();
+      });
+      item.classList.add('active');
+      if (!item.querySelector('.check')) {
+        const check = document.createElement('span');
+        check.className = 'check';
+        check.textContent = '✓';
+        item.appendChild(check);
+      }
+
+      // 更新按钮标签
+      document.getElementById('currentRoleLabel').textContent = role;
+
+      // 关闭下拉
+      document.getElementById('roleDropdown').classList.remove('open');
+
+      // 重新渲染菜单
+      renderSidebar();
+    });
+  });
+
+  // 点击外部关闭下拉
+  document.addEventListener('click', () => {
+    document.getElementById('roleDropdown').classList.remove('open');
+  });
+
+  // 初始渲染
+  renderSidebar();
+</script>
+
+</body>
+</html>

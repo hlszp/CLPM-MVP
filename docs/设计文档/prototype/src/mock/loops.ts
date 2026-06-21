@@ -107,9 +107,11 @@ export function getLoopStats() {
   const partial = loops.filter((l) => l.computeStatus === 'PARTIAL').length;
   const inconclusive = loops.filter((l) => l.computeStatus === 'INCONCLUSIVE').length;
   const lowPerf = loops.filter((l) => l.score !== null && l.score < 60).length;
+  const midPerf = loops.filter((l) => l.score !== null && l.score >= 60 && l.score < 80).length;
+  const highPerf = loops.filter((l) => l.score !== null && l.score >= 80).length;
   const avgScore = loops.reduce((sum, l) => sum + (l.score ?? 0), 0) / total;
   const pvBad = loops.filter((l) => l.pvQuality === 'Bad').length;
   const pvUncertain = loops.filter((l) => l.pvQuality === 'Uncertain').length;
   const manualMode = loops.filter((l) => l.controlMode === 'Manual').length;
-  return { total, success, partial, inconclusive, lowPerf, avgScore: Math.round(avgScore * 10) / 10, pvBad, pvUncertain, manualMode };
+  return { total, success, partial, inconclusive, lowPerf, midPerf, highPerf, avgScore: Math.round(avgScore * 10) / 10, pvBad, pvUncertain, manualMode };
 }

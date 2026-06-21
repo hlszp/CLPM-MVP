@@ -1248,3 +1248,857 @@ body {
 .toast-close:hover {
   opacity: 1;
 }
+
+/* ============================================================
+ * 页面级布局（工作台 + 列表页 + 详情页通用）
+ * ============================================================ */
+.page-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.page-header h1 {
+  font-size: var(--text-h1);
+  font-weight: 700;
+  margin: 0;
+}
+
+.page-subtitle {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* KPI 卡片网格 */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.kpi-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.kpi-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.kpi-card-label {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.kpi-card-icon {
+  opacity: 0.7;
+}
+
+.kpi-card-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-family: "SF Mono", "Menlo", monospace;
+}
+
+.kpi-card-delta {
+  font-size: var(--text-mono);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
+/* 两列网格 */
+.two-col-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+/* 通用卡片 */
+.card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.card-header h3 {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  margin: 0;
+}
+
+.card-more-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--text-small);
+  color: var(--accent-blue);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.card-more-link:hover {
+  text-decoration: underline;
+}
+
+.card-body {
+  padding: var(--space-3) var(--space-4);
+}
+
+/* 低效回路排行列表 */
+.loop-rank-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.loop-rank-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-default);
+  cursor: pointer;
+  transition: background 100ms;
+}
+
+.loop-rank-item:hover {
+  background: var(--bg-muted);
+  margin: 0 calc(-1 * var(--space-4));
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+
+.loop-rank-item:last-child {
+  border-bottom: none;
+}
+
+.loop-rank-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-mono);
+  font-weight: 600;
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.loop-rank-num.top {
+  background: var(--status-danger);
+  color: #fff;
+}
+
+.loop-rank-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.loop-rank-name {
+  font-size: var(--text-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loop-rank-node {
+  font-size: var(--text-mono);
+  color: var(--text-muted);
+}
+
+.loop-rank-score {
+  font-weight: 600;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: var(--text-body);
+  min-width: 32px;
+  text-align: right;
+}
+
+.loop-rank-score.low {
+  color: var(--status-danger);
+}
+
+/* 诊断标签分布 */
+.diag-stats-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.diag-stat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+}
+
+.diag-stat-label {
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.diag-stat-bar-bg {
+  flex: 1;
+  height: 16px;
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.diag-stat-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  transition: width 300ms;
+}
+
+.diag-stat-count {
+  width: 20px;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* 异常跟踪摘要 */
+.tracker-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+
+.tracker-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.tracker-stat-item svg {
+  opacity: 0.7;
+}
+
+.tracker-stat-item.pending svg { color: var(--status-warning); }
+.tracker-stat-item.progress svg { color: var(--accent-blue); }
+.tracker-stat-item.resolved svg { color: var(--status-success); }
+.tracker-stat-item.ignored svg { color: var(--text-muted); }
+
+.tracker-stat-num {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: "SF Mono", "Menlo", monospace;
+}
+
+.tracker-stat-item.pending .num { color: var(--status-warning); }
+.tracker-stat-item.progress .num { color: var(--accent-blue); }
+.tracker-stat-item.resolved .num { color: var(--status-success); }
+
+.tracker-stat-label {
+  font-size: var(--text-mono);
+  color: var(--text-muted);
+}
+
+.tracker-closure-note {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tracker-closure-note strong {
+  color: var(--text-primary);
+}
+
+/* ============================================================
+ * 详情页通用布局
+ * ============================================================ */
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+  gap: var(--space-4);
+}
+
+.detail-title-block {
+  flex: 1;
+}
+
+.detail-title-block h1 {
+  font-size: var(--text-h1);
+  font-weight: 700;
+  margin: 0 0 var(--space-1) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.detail-title-block .subtitle {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.detail-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* 详情页元信息行 */
+.detail-meta-row {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.detail-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-meta-item .label {
+  font-size: var(--text-mono);
+  color: var(--text-muted);
+}
+
+.detail-meta-item .value {
+  font-size: var(--text-body);
+  font-weight: 500;
+}
+
+/* 标签页 */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border-default);
+  margin-bottom: var(--space-4);
+}
+
+.tab {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 100ms;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab.active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+  font-weight: 600;
+}
+
+/* 左树右表布局（工厂层级/Tag关联） */
+.tree-table-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--space-4);
+  height: calc(100vh - 180px);
+}
+
+.tree-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.tree-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: var(--space-2);
+}
+
+.tree-panel-header h3 {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  margin: 0;
+}
+
+.table-panel {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 表单布局（配置页） */
+.form-section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+}
+
+.form-section-header {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.form-section-header h3 {
+  font-size: var(--text-h3);
+  font-weight: 600;
+  margin: 0;
+}
+
+.form-section-body {
+  padding: var(--space-4);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--space-3);
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.form-row label {
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.form-row input,
+.form-row select,
+.form-row textarea {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-body);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+}
+
+.form-row input:focus,
+.form-row select:focus,
+.form-row textarea:focus {
+  border-color: var(--accent-blue);
+}
+
+.form-row .hint {
+  font-size: var(--text-mono);
+  color: var(--text-muted);
+  grid-column: 2;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+/* 空状态居中 */
+.page-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+/* ===== 回路运行详情页 ===== */
+
+.detail-header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex: 1;
+}
+
+.detail-header-left h1 {
+  font-size: var(--text-h1);
+  font-weight: 700;
+  margin: 0 0 var(--space-1) 0;
+}
+
+.detail-header-badges {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  cursor: pointer;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.back-btn:hover {
+  border-color: var(--info);
+  color: var(--info);
+}
+
+/* Tag 关联信息表 */
+.tag-slot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body);
+}
+
+.tag-slot-table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-default);
+  font-weight: 500;
+}
+
+.tag-slot-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.tag-slot-table tr:last-child td {
+  border-bottom: none;
+}
+
+.tag-linked {
+  color: var(--status-ok);
+  font-weight: 500;
+}
+
+.tag-unlinked {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.required-mark {
+  color: var(--status-danger);
+  font-size: var(--text-small);
+  font-weight: 500;
+}
+
+.mapping-status {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-small);
+  font-weight: 500;
+}
+
+.mapping-status.complete {
+  background: rgba(25, 135, 84, 0.1);
+  color: var(--status-ok);
+}
+
+.mapping-status.incomplete {
+  background: rgba(220, 53, 69, 0.1);
+  color: var(--status-danger);
+}
+
+/* 当前运行状态 */
+.current-values-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.current-value-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.cv-label {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.cv-value {
+  font-size: var(--text-h3);
+  font-weight: 700;
+}
+
+/* 诊断摘要框 */
+.diagnosis-summary-box {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: rgba(13, 110, 253, 0.04);
+  border: 1px solid rgba(13, 110, 253, 0.15);
+  border-radius: var(--radius-md);
+}
+
+.ds-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.ds-body {
+  font-size: var(--text-body);
+}
+
+.ds-body strong {
+  color: var(--status-danger);
+}
+
+.ds-detail {
+  margin: var(--space-2) 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.ds-suggestion {
+  margin: var(--space-1) 0 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* KPI 分项卡片网格 */
+.kpi-items-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.kpi-item-card {
+  padding: var(--space-3);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.kpi-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.kpi-item-name {
+  font-size: var(--text-body);
+  font-weight: 500;
+}
+
+.kpi-item-category {
+  font-size: var(--text-mono);
+  color: var(--text-muted);
+  padding: 1px 6px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.kpi-item-value {
+  font-size: var(--text-h3);
+  font-weight: 700;
+  margin-bottom: var(--space-1);
+}
+
+.kpi-item-unit {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.kpi-item-score {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ===== 低效回路排行页 ===== */
+
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: var(--text-small);
+  font-weight: 600;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.rank-badge.top {
+  background: rgba(255, 193, 7, 0.15);
+  color: #B8860B;
+}
+
+.rank-badge.danger {
+  background: rgba(220, 53, 69, 0.1);
+  color: var(--status-danger);
+}
+
+/* 行操作按钮 */
+.row-actions {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.btn-icon:hover {
+  border-color: var(--info);
+  color: var(--info);
+  background: rgba(13, 110, 253, 0.04);
+}
+
+/* ===== 抽屉内容通用样式 ===== */
+
+.drawer-body-content {
+  padding: var(--space-4);
+}
+
+.drawer-body-content .form-section {
+  margin-bottom: var(--space-4);
+}
+
+.drawer-body-content .detail-meta-row {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  margin-bottom: 0;
+  font-size: var(--text-body);
+  align-items: center;
+}
+
+.drawer-body-content .detail-meta-row span:first-child {
+  color: var(--text-muted);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.form-section-title {
+  font-size: var(--text-body);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary);
+}
+
+/* KPI 详情表（抽屉内） */
+.kpi-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body);
+}
+
+.kpi-detail-table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-default);
+  font-weight: 500;
+}
+
+.kpi-detail-table td {
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.kpi-detail-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 诊断框（抽屉内） */
+.diagnosis-box {
+  padding: var(--space-3);
+  background: rgba(220, 53, 69, 0.04);
+  border: 1px solid rgba(220, 53, 69, 0.15);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+.diagnosis-box strong {
+  color: var(--status-danger);
+}
+
+.diagnosis-box p {
+  margin: var(--space-1) 0 0 0;
+  color: var(--text-secondary);
+}
