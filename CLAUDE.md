@@ -18,9 +18,9 @@ PRD v3.0 是后续所有设计、研发、原型与投标响应的**唯一事实
 | 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v3.0 |
 | API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v3.0 |
 | UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | v4.0 |
-| 原型设计基线 | `DESIGN.md` | 待复核（仍含旧 SampleBatch/EvidencePackage 模型） |
+| 原型设计基线 | `DESIGN.md` | v2.0（对齐 v3.0/v4.0） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
-| 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | 待更新 |
+| 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v2.0（对齐 v3.0/v4.0） |
 | 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` | 历史参考 |
 | CEO 评审结论 | `/Users/zhangping/.gstack/projects/CLPM/ceo-plans/2026-06-16-clpm-productization-validation.md` | 历史参考 |
 | 工程评审结论 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-eng-review-20260616-093500.md` | 历史参考 |
@@ -66,11 +66,19 @@ PRD v3.0 是后续所有设计、研发、原型与投标响应的**唯一事实
 - `docs/归档文档/full-prototype-planning.md`（被 `docs/过程文档/superpowers/plans/` 取代）
 - `docs/归档文档/prototype-visual-tokens-v0.1-2026-06-16.md`（被 `06-UIUX/ui-ux-design-guidelines.md` §3 覆盖）
 - `docs/归档文档/prototype-responsive-accessibility-v0.1-2026-06-16.md`（被 `06-UIUX/ui-ux-design-guidelines.md` §2 覆盖）
+- `product-requirements-specification-v0.4-2026-06-16.md`（PRS v0.4 已被 PRD v3.0 取代）
+- `full-product-menu-ia-v0.1-2026-06-16.md`（菜单已并入 UI/UX v4.0 §5）
+- `prototype-development-freeze-v0.1-2026-06-16.md`（任务书已被 UI/UX v4.0 25 页面清单取代）
+- `p0-contract-backbone-design-v0.1-2026-06-16.md`（P0 模型已被 Phase 1/Action Tracker 模型取代）
+- `core-algorithm-confidence-design-v0.1-2026-06-16.md`（可信度设计已并入 ADS v3.0 与 DDS v3.0）
+- `DESIGN.md`（仍含旧 SampleBatch/EvidencePackage 模型，待复核后再启用）
 
-以下 v0.1 文件已于 2026-06-20 删除（概念体系冲突，有价值内容已吸收进 `06-UIUX/ui-ux-design-guidelines.md` v3.0）：
+以下 v0.1 文件已于 2026-06-20 删除（概念体系冲突，有价值内容已吸收进 `06-UIUX/ui-ux-design-guidelines.md` v4.0）：
 - `docs/设计文档/prototype-state-spec-v0.1-2026-06-16.md`
 - `docs/设计文档/prototype-interaction-detail-v0.1-2026-06-16.md`
 - `docs/设计文档/prototype-page-wireframes-v0.1-2026-06-16.md`
+
+**v2.x 文档已全部被 v3.0 取代**（2026-06-20 修订）：PRD v2.2、FDS v2.0、ADS v2.0、DDS v2.0、IDS v2.0、UI/UX v3.0 不再作为有效输入；如需追溯历史版本，请使用 git 历史。
 
 这些文件只用于历史追溯。
 

@@ -12,7 +12,7 @@
 | 数据模型设计 | `docs/设计文档/04-DDS/DDS.md` |
 | API 接口设计 | `docs/设计文档/05-IDS/IDS.md` |
 | UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
-| 原型设计基线 | `DESIGN.md` |
+| 原型设计基线 | `DESIGN.md`（v2.0，对齐 v3.0/v4.0） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 | 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` |
 | 原型开发冻结任务书 | `docs/过程文档/prototype-development-freeze-v0.1-2026-06-16.md` |
@@ -55,7 +55,7 @@
 | `docs/设计文档/04-DDS/DDS.md` | 当前系统数据模型设计 |
 | `docs/设计文档/05-IDS/IDS.md` | 当前系统 API 接口设计 |
 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | 当前可视化设计与用户体验规范 |
-| `DESIGN.md` | 原型重构设计基线（第一阶段 1:1 还原标准） |
+| `DESIGN.md` | 原型设计基线 v2.0（视觉/布局/组件/验收横切约束，对齐 v3.0/v4.0） |
 | `docs/过程文档/prototype-development-freeze-v0.1-2026-06-16.md` | 原型开发任务书、页面清单、样例数据和技术栈冻结 |
 | `docs/设计文档/prototype/README.md` | 原型系统代码库入口说明 |
 
