@@ -71,7 +71,6 @@ PRD v3.0 是后续所有设计、研发、原型与投标响应的**唯一事实
 - `prototype-development-freeze-v0.1-2026-06-16.md`（任务书已被 UI/UX v4.0 25 页面清单取代）
 - `p0-contract-backbone-design-v0.1-2026-06-16.md`（P0 模型已被 Phase 1/Action Tracker 模型取代）
 - `core-algorithm-confidence-design-v0.1-2026-06-16.md`（可信度设计已并入 ADS v3.0 与 DDS v3.0）
-- `DESIGN.md`（仍含旧 SampleBatch/EvidencePackage 模型，待复核后再启用）
 
 以下 v0.1 文件已于 2026-06-20 删除（概念体系冲突，有价值内容已吸收进 `06-UIUX/ui-ux-design-guidelines.md` v4.0）：
 - `docs/设计文档/prototype-state-spec-v0.1-2026-06-16.md`

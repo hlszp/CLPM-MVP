@@ -221,9 +221,22 @@
 - `docs/过程文档/clpm-p0-prototype-remediation-brief-2026-06-16.md`
 - `docs/过程文档/superpowers/plans/` 与 `docs/过程文档/superpowers/specs/`（历史过程记录，含旧 P0/SampleBatch 模型）
 
-### 6.3 待重绘的架构图
+### 6.3 架构图（已重绘）
 
-`diagrams/` 目录下的 `.mmd`/`.excalidraw`/`.svg` 文件部分仍含旧 P0/SampleBatch/EvidencePackage 模型，待后续按 v3.0/v4.0 基线重绘。在此之前不作为现行架构输入。
+`diagrams/` 目录下的 8 个 `.mmd` 架构图已于 2026-06-21 按 v3.0/v4.0 基线重绘，移除所有 P0/SampleBatch/EvidencePackage 旧模型引用。旧 `.excalidraw` 手绘文件和过时的 `.svg`/`.png` 已删除。
+
+`.mmd` 是唯一来源。如需生成 `.svg`/`.png`，在本地运行：
+
+```bash
+cd diagrams
+for f in *.mmd; do
+  name="${f%.mmd}"
+  mmdc -i "$f" -o "$name.svg" -b transparent
+  mmdc -i "$f" -o "$name.png" -b white -w 1600
+done
+```
+
+注意：`clpm-p0-closed-loop.mmd` 文件名保留历史命名（避免引用断裂），内容已改为"Phase 1 治理闭环"。
 
 ### 6.4 v2.x 设计文档（已被 v3.0 取代）
 
@@ -235,3 +248,4 @@ PRD v2.2、FDS v2.0、ADS v2.0、DDS v2.0、IDS v2.0、UI/UX v3.0 不再作为�
 |---|---|---|
 | 2026-06-16 | v1.0 | 初版索引，定义 PRS v0.4 为有效主文档，P0 契约主干为核心 |
 | 2026-06-21 | v2.0 | 对齐 v3.0/v4.0 基线：PRD/FDS/ADS/DDS/IDS v3.0 + UI/UX v4.0 为唯一有效文档体系；PRS v0.4、P0 契约、菜单定稿、原型冻结任务书等全部降级为历史追溯；新增 6 模块+门户、AAS Tag 模型、Phase 1 范围等决策；阅读顺序与评审引用规则全面更新 |
+| 2026-06-21 | v2.1 | 架构图已重绘：8 个 .mmd 全部对齐 v3.0/v4.0，.excalidraw 已删除，.svg/.png 已重新生成 |
