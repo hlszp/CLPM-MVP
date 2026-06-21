@@ -1,25 +1,41 @@
 # CLPM 数据模型设计说明书 (DDS)
 
 **文档状态**: 正式版
-**当前版本**: v2.0
-**发布日期**: 2026-06-19
-**设计依据**: PRD (v2.2), FDS (v2.0), ADS (v2.0)
+**当前版本**: v3.0 (产品化架构重构版)
+**发布日期**: 2026-06-20
+**设计依据**: PRD (v3.0), FDS (v3.0), ADS (v3.0)
 
 ---
 
 ## 1. 设计原则
 
-遵循 ADS (v2.0) 规定的“存算分离”原则，系统数据模型严格拆分为两大独立域：
-1. **关系型业务域 (PostgreSQL)**：承载工厂拓扑模型、配置元数据、算法快照结果及轻量级状态追踪记录。要求强一致性 (ACID)。
-2. **高频时序域 (TDengine)**：承载原始海量秒级运行数据。要求极高写入吞吐与降采样查询性能。
+遵循 ADS (v3.0) 规定的"存算分离"原则，系统数据模型严格拆分为两大独立域：
+
+1. **关系型业务域 (PostgreSQL)**：承载工厂拓扑模型、AAS Tag 注册表、回路台账、回路-Tag 关联、性能/诊断/引擎等可配置元数据、算法快照结果、整定记录、报表记录及轻量级状态追踪记录。要求强一致性 (ACID)。
+2. **高频时序域 (TDengine)**：承载原始海量秒级运行数据（PV/SP/OP/MODE/PID_P/PID_I/PID_D 及 PV 质量码）。要求极高写入吞吐与降采样查询性能。
+
+### 1.1 产品化配置原则
+
+为支撑 PRD v3.0 确立的"产品化、工具化、模块内聚自包含、配置驱动"四大设计原则，本 DDS 在数据模型层面落实以下产品化配置原则：
+
+| 配置原则 | 数据模型落地说明 |
+|---|---|
+| **配置驱动** | 性能指标 (`metric_config`)、诊断指标 (`diagnosis_config`)、引擎规则 (`engine_rule`) 均独立为可配置表，支持用户自助编辑公式/阈值/权重/启停，无需开发介入。 |
+| **配置即时生效** | 配置表变更通过版本号 (`version`) 字段记录，配合审计日志 (`sys_audit_log`) 实现变更追溯与回滚，无需重启服务。 |
+| **配置审计留痕** | 所有配置表均含 `updated_by` / `updated_at` 字段，变更记录写入 `sys_audit_log`，不可物理删除。 |
+| **实体内聚** | 回路作为核心实体，其配置态（`loop_ledger` 台账 + `loop_tag_mapping` Tag 关联）与运行态（`kpi_snapshot_hourly` 快照）归属同一逻辑域，便于回路管理模块自包含管理。 |
+| **AAS Tag 模型** | AAS 同步对象为 **Tag 位号**（非回路实体），回路由用户在 CLPM 系统中创建并关联 7 个 OPC Tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D）。Tag 注册表 (`tag_registry`) 与回路解耦，支持多对多关联。 |
 
 ---
 
 ## 2. 关系型业务模型 (PostgreSQL)
 
-### 2.1 工厂拓扑与台账 (Plant Model)
+### 2.1 工厂拓扑 (plant_node)
 
 **表名: `plant_node` (工厂节点)**
+
+承载工厂 → 装置 → 单元的多级层级树，v3.0 保持不变。
+
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
 | id | UUID | 节点主键 | PK |
@@ -27,21 +43,123 @@
 | type | VARCHAR(20) | 节点类型: `FACTORY`, `UNIT`, `EQUIPMENT` | NOT NULL |
 | parent_id | UUID | 父节点 ID | FK -> plant_node.id |
 
+### 2.2 回路台账 (loop_ledger)
+
 **表名: `loop_ledger` (回路台账)**
+
+回路作为系统核心实体，由用户在 CLPM 系统中创建并关联 Tag。v3.0 移除原 `mapping_pv/sp/op/mode` 字段（迁移至 `loop_tag_mapping` 表），新增描述、评分权重、AAS 同步时间、回路状态等扩展字段。
+
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
 | id | UUID | 回路主键 | PK |
-| tag_name | VARCHAR(100)| 唯一位号标识 (如: 101-FC-1023) | UNIQUE, NOT NULL |
+| tag_name | VARCHAR(100) | 唯一位号标识 (如: 101-FC-1023) | UNIQUE, NOT NULL |
+| description | VARCHAR(255) | 回路描述 (如: 常顶塔顶温度调节回路) | |
 | unit_id | UUID | 所属工艺单元 ID | FK -> plant_node.id |
-| mapping_pv | VARCHAR(100)| PV 对应的时序点名 | NOT NULL |
-| mapping_sp | VARCHAR(100)| SP 对应的时序点名 | NOT NULL |
-| mapping_op | VARCHAR(100)| OP 对应的时序点名 | NOT NULL |
-| mapping_mode | VARCHAR(100)| MODE 对应的时序点名 | NOT NULL |
+| score_weight | DECIMAL(5,2) | 评分权重 (用于装置/单元级聚合时的加权计算) | |
 | is_active | BOOLEAN | 是否启用全量评估计算 | DEFAULT TRUE |
+| last_aas_sync_at | TIMESTAMP | 最后 AAS 同步时间 | |
+| status | VARCHAR(20) | 回路状态: `READY`(就绪), `PARTIAL`(部分就绪), `INACTIVE`(未启用) | NOT NULL, DEFAULT 'PARTIAL' |
 
-### 2.2 评估快照与追踪 (Evaluation & Tracking)
+**状态语义**：
+* `READY`：PV/SP/OP/MODE 四个必填 Tag 全部关联成功，回路进入评估流程。
+* `PARTIAL`：必填 Tag 缺失，回路标红提示，不参与评估计算。
+* `INACTIVE`：`is_active=FALSE`，回路被手动停用，不参与评估计算。
+
+### 2.3 AAS Tag 注册表 (tag_registry)
+
+**表名: `tag_registry` (AAS Tag 注册表)** [v3.0 新增]
+
+AAS Integration Service 定期从 AAS 同步所有 OPC Tag 位号信息，写入本表。同步对象为 Tag 位号（非回路实体），与回路解耦。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | Tag 主键 | PK |
+| tag_name | VARCHAR(100) | Tag 位号名 (OPC Item ID) | UNIQUE, NOT NULL |
+| tag_description | VARCHAR(255) | Tag 描述 (来自 AAS) | |
+| tag_type | VARCHAR(20) | Tag 类型: `PV`, `SP`, `OP`, `MODE`, `PID_P`, `PID_I`, `PID_D`, `OTHER` | NOT NULL |
+| current_value | FLOAT | 当前值 (最近一次同步快照) | |
+| quality | VARCHAR(20) | 数据质量码: `GOOD`, `BAD`, `UNCERTAIN` | |
+| last_sync_at | TIMESTAMP | 最后同步时间 | NOT NULL |
+| is_linked | BOOLEAN | 是否已关联到回路 | DEFAULT FALSE |
+
+### 2.4 回路-Tag 关联 (loop_tag_mapping)
+
+**表名: `loop_tag_mapping` (回路-Tag 关联)** [v3.0 新增]
+
+记录回路与 7 个 OPC Tag 的关联关系。一个典型控制回路关联 7 个 Tag：PV/SP/OP/MODE/PID_P/PID_I/PID_D。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 关联主键 | PK |
+| loop_id | UUID | 关联回路 ID | FK -> loop_ledger.id, NOT NULL |
+| tag_id | UUID | 关联 Tag ID | FK -> tag_registry.id, NOT NULL |
+| tag_role | VARCHAR(20) | Tag 角色: `PV`, `SP`, `OP`, `MODE`, `PID_P`, `PID_I`, `PID_D` | NOT NULL |
+| is_required | BOOLEAN | 是否必填 Tag (PV/SP/OP/MODE 为 TRUE，PID_* 为 FALSE) | NOT NULL |
+| created_at | TIMESTAMP | 关联创建时间 | NOT NULL |
+
+**唯一约束**: `(loop_id, tag_role)` —— 同一回路同一角色仅能关联一个 Tag。
+
+### 2.5 性能指标配置 (metric_config)
+
+**表名: `metric_config` (性能指标配置)** [v3.0 新增]
+
+承载 6 大核心 KPI（好值率、自控率、平稳率、准确率、振荡率、饱和率）及变体指标的可配置元数据。权重总和约束 100%。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 指标主键 | PK |
+| metric_code | VARCHAR(50) | 指标代码: `GOOD_VALUE_RATE`, `AUTO_MODE_RATE`, `STEADY_RATE`, `IAE`, `ISE`, `OVERSHOOT` 等 | UNIQUE, NOT NULL |
+| metric_name | VARCHAR(100) | 指标名称 (如: 好值率) | NOT NULL |
+| formula | TEXT | 计算公式 (支持用户自定义表达式) | |
+| weight | DECIMAL(5,2) | 权重 (总和须为 100%) | |
+| threshold | DECIMAL(5,2) | 阈值 (用于触发诊断) | |
+| is_enabled | BOOLEAN | 是否启用 | DEFAULT TRUE |
+| updated_by | VARCHAR(50) | 最后更新人 | |
+| updated_at | TIMESTAMP | 最后更新时间 | |
+| version | INT | 配置版本号 (用于变更追溯与回滚) | DEFAULT 1 |
+
+### 2.6 诊断指标配置 (diagnosis_config)
+
+**表名: `diagnosis_config` (诊断指标配置)** [v3.0 新增]
+
+承载诊断指标（振荡检测 FFT、粘滞检测散点拟合、参数过激检测、质量码规则等）的可配置元数据。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 诊断指标主键 | PK |
+| diag_code | VARCHAR(50) | 诊断代码: `OSCILLATION_FFT`, `STICTION_SCATTER`, `OVERAGGRESSIVE`, `QUALITY_CODE` 等 | UNIQUE, NOT NULL |
+| diag_name | VARCHAR(100) | 诊断指标名称 (如: 振荡检测-FFT) | NOT NULL |
+| algorithm_type | VARCHAR(50) | 算法类型 (如: FFT, SCATTER_FIT, THRESHOLD) | NOT NULL |
+| params | JSON | 算法参数 (如: FFT 窗口长度、散点拟合阶数) | |
+| threshold | DECIMAL(5,2) | 诊断阈值 (超过则触发预诊标签) | |
+| is_enabled | BOOLEAN | 是否启用 | DEFAULT TRUE |
+| updated_by | VARCHAR(50) | 最后更新人 | |
+| updated_at | TIMESTAMP | 最后更新时间 | |
+| version | INT | 配置版本号 | DEFAULT 1 |
+
+### 2.7 引擎规则配置 (engine_rule)
+
+**表名: `engine_rule` (引擎规则配置)** [v3.0 新增]
+
+承载评估引擎/诊断引擎的计算周期、数据拉取规则、调度参数等可配置规则。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 规则主键 | PK |
+| rule_code | VARCHAR(50) | 规则代码 (如: `EVAL_CALC_CYCLE`, `DATA_FETCH_WINDOW`, `SCHEDULE_CONCURRENCY`) | UNIQUE, NOT NULL |
+| rule_name | VARCHAR(100) | 规则名称 (如: 评估计算周期) | NOT NULL |
+| rule_type | VARCHAR(20) | 规则类型: `CALC_CYCLE`(计算周期), `DATA_FETCH`(数据拉取), `SCHEDULE`(调度参数) | NOT NULL |
+| params | JSON | 规则参数 (如: `{"cycle_minutes": 60, "concurrency": 16}`) | |
+| is_enabled | BOOLEAN | 是否启用 | DEFAULT TRUE |
+| updated_by | VARCHAR(50) | 最后更新人 | |
+| updated_at | TIMESTAMP | 最后更新时间 | |
+
+### 2.8 评估快照 (kpi_snapshot_hourly)
 
 **表名: `kpi_snapshot_hourly` (每小时性能评估快照)**
+
+v3.0 保持表结构不变，但明确**好值率 (`good_value_rate`) 基于 PV 质量码 (`pv_quality`) 统计**：PV 质量码为 `Good` 的时段计入好值，`Bad` / `Uncertain` 时段不计入。
+
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
 | id | UUID | 快照主键 | PK |
@@ -49,59 +167,172 @@
 | ts_start | TIMESTAMP | 评估窗口起始时间 | NOT NULL |
 | ts_end | TIMESTAMP | 评估窗口结束时间 | NOT NULL |
 | score | DECIMAL(5,2) | 综合评分 (0-100) | |
-| good_value_rate | DECIMAL(5,2) | 好值率 (%) | |
+| good_value_rate | DECIMAL(5,2) | 好值率 (%)，基于 PV 质量码统计 | |
 | auto_mode_rate | DECIMAL(5,2) | 自控率 (%) | |
 | steady_rate | DECIMAL(5,2) | 平稳率 (%) | |
-| oscillation_rate| DECIMAL(5,2) | 振荡率 (%) | |
+| oscillation_rate | DECIMAL(5,2) | 振荡率 (%) | |
 | status | VARCHAR(20) | 计算状态: `SUCCESS`, `INCONCLUSIVE`, `PARTIAL` | NOT NULL |
 
+### 2.9 异常追踪 (action_tracker)
+
 **表名: `action_tracker` (轻量级异常追踪记录)**
+
+v3.0 中 Action Tracker 降级为诊断中心子模块，表结构保持不变。
+
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
 | id | UUID | 追踪记录主键 | PK |
 | loop_id | UUID | 关联回路 ID | FK -> loop_ledger.id |
-| diagnosis_label| VARCHAR(100)| 自动预诊结论 (如: 疑似阀门粘滞) | |
+| diagnosis_label | VARCHAR(100) | 自动预诊结论 (如: 疑似阀门粘滞) | |
 | action_status | VARCHAR(20) | 处理状态: `PENDING`(待处理), `IN_PROGRESS`(处理中), `IGNORED`(已忽略), `RESOLVED`(已实施) | NOT NULL, DEFAULT 'PENDING' |
-| evidence_url | VARCHAR(255)| 导出的《诊断建议书》PDF S3 存储路径 | |
+| evidence_url | VARCHAR(255) | 导出的《诊断建议书》PDF S3 存储路径 | |
 | updated_by | VARCHAR(50) | 最后操作人 (仪控工程师) | |
 | updated_at | TIMESTAMP | 状态变更时间戳 | |
+
+### 2.10 诊断结果 (diagnosis_result)
+
+**表名: `diagnosis_result` (诊断结果表)** [v3.0 新增]
+
+承载诊断引擎对回路的自动预诊结果，包括预诊标签、置信度、特征值、证据链引用及算法版本号，为诊断中心与异常跟踪子模块提供数据支撑。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 诊断结果主键 | PK |
+| loop_id | UUID | 关联回路 ID | FK -> loop_ledger.id |
+| diag_label | VARCHAR(100) | 预诊标签（如：疑似阀门粘滞、参数过激、原因不明需人工介入） | |
+| confidence | DECIMAL(5,2) | 置信度（0-100） | |
+| feature_values | JSON | 特征值（FFT 主频、散点拟合参数等） | |
+| evidence_chain | JSON | 证据链引用（波形时间段、散点图数据引用等） | |
+| algorithm_version | VARCHAR(50) | 算法版本号 | |
+| diagnosed_at | TIMESTAMP | 诊断时间 | NOT NULL |
+
+### 2.11 整定记录 (tuning_record)
+
+**表名: `tuning_record` (整定记录)** [v3.0 新增，Phase 2]
+
+承载回路整定任务记录，包括模型辨识参数、推荐 PID 参数、仿真结果与效果对比。Phase 1 仅建表，Phase 2 实现算法。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 整定记录主键 | PK |
+| loop_id | UUID | 关联回路 ID | FK -> loop_ledger.id, NOT NULL |
+| model_type | VARCHAR(20) | 模型类型: `FOPDT`(一阶惯性加纯滞后), `SOPDT`(二阶惯性加纯滞后), `IPDT`(积分加纯滞后) | NOT NULL |
+| model_params | JSON | 模型参数 (如: `{"K": 1.2, "T": 30.5, "tau": 5.0}`) | |
+| algorithm | VARCHAR(50) | 整定算法: `IMC`, `LAMBDA`, `ZN`, `COHEN_COON` | NOT NULL |
+| recommended_pid | JSON | 推荐 PID 参数 (如: `{"P": 1.5, "I": 0.8, "D": 0.2}`) | |
+| simulation_result | JSON | 闭环仿真结果 (含阶跃响应曲线、性能指标对比) | |
+| status | VARCHAR(20) | 整定状态: `PENDING`, `IDENTIFIED`, `SIMULATED`, `APPLIED`, `VERIFIED` | NOT NULL |
+| created_by | VARCHAR(50) | 创建人 | |
+| created_at | TIMESTAMP | 创建时间 | NOT NULL |
+
+### 2.12 报表记录 (report_record)
+
+**表名: `report_record` (自动报表记录)** [v3.0 新增]
+
+承载系统按班/日/周/月自动生成的《控制回路性能评估报告》归档记录。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 报表记录主键 | PK |
+| report_period | VARCHAR(20) | 报表周期: `SHIFT`(班), `DAILY`(日), `WEEKLY`(周), `MONTHLY`(月) | NOT NULL |
+| generated_at | TIMESTAMP | 生成时间 | NOT NULL |
+| status | VARCHAR(20) | 生成状态: `PROCESSING`(生成中), `COMPLETED`(成功), `FAILED`(失败) | NOT NULL |
+| file_url | VARCHAR(255) | 报表文件存储路径 (S3/MinIO) | |
+| created_at | TIMESTAMP | 记录创建时间 | NOT NULL |
+
+### 2.13 审计日志 (sys_audit_log)
+
+**表名: `sys_audit_log` (系统审计日志)**
+
+v3.0 保持不变。所有配置变更（性能指标/诊断指标/引擎规则/角色分配等）均落入本表，不可物理删除。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 日志主键 | PK |
+| operator | VARCHAR(50) | 操作人 | NOT NULL |
+| operation_type | VARCHAR(50) | 操作类型 (如: `METRIC_CONFIG_UPDATE`, `ROLE_ASSIGN`, `LOOP_CREATE`) | NOT NULL |
+| target_type | VARCHAR(50) | 操作对象类型 (如: `loop_ledger`, `metric_config`) | |
+| target_id | VARCHAR(36) | 操作对象 ID | |
+| before_value | TEXT | 变更前值 (JSON 序列化) | |
+| after_value | TEXT | 变更后值 (JSON 序列化) | |
+| operated_at | TIMESTAMP | 操作时间 | NOT NULL |
 
 ---
 
 ## 3. 高频时序模型 (TDengine)
 
-采用 TDengine 推荐的“一个设备一张表，一类设备一个超级表”设计模式。
+采用 TDengine 推荐的"一个设备一张表，一类设备一个超级表"设计模式。v3.0 对超级表字段进行扩展，对齐 7 个 OPC Tag 模型，并将原 `quality` 字段重命名为 `pv_quality`，明确仅针对 PV 值。
 
 ### 3.1 超级表定义 (Super Table)
 
 **超级表名: `st_loop_data`**
-该超级表定义了所有控制回路时序数据的标准 Schema。
+
+该超级表定义了所有控制回路时序数据的标准 Schema，覆盖 7 个 OPC Tag 的原始秒级数据及 PV 质量码。
 
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
 | ts | TIMESTAMP | 采样时间戳 | 主键 (时间列) |
-| pv | FLOAT | 过程变量测量值 | |
-| sp | FLOAT | 设定值 | |
-| op | FLOAT | 控制器输出值 (0-100) | |
-| mode | TINYINT | 控制模式 (0=Manual, 1=Auto, 2=Cascade) | |
-| quality | TINYINT | OPC 数据质量码 (0=Bad, 1=Good) | |
+| pv | FLOAT | 过程变量测量值 (来自 PV Tag) | |
+| sp | FLOAT | 设定值 (来自 SP Tag) | |
+| op | FLOAT | 控制器输出值 (0-100，来自 OP Tag) | |
+| mode | TINYINT | 控制模式 (0=Manual, 1=Auto, 2=Cascade，来自 MODE Tag) | |
+| pid_p | FLOAT | 比例参数 (来自 PID_P Tag，只读) | |
+| pid_i | FLOAT | 积分参数 (来自 PID_I Tag，只读) | |
+| pid_d | FLOAT | 微分参数 (来自 PID_D Tag，只读) | |
+| pv_quality | TINYINT | **PV 数据质量码** (0=Bad, 1=Good, 2=Uncertain)，仅 PV Tag 携带质量码 | |
+
+> **v3.0 变更说明**：
+> 1. 新增 `pid_p`, `pid_i`, `pid_d` 三个字段，对齐 7 个 OPC Tag 模型，PID 参数从 Tag 只读读取。
+> 2. 原 `quality` 字段重命名为 `pv_quality`，明确数据质量仅针对 PV 值（PV Tag 携带质量码，其余 Tag 不携带）。
 
 **超级表标签 (Tags)**
-用于快速过滤与聚合查询。
+
+用于快速过滤与聚合查询，保持不变。
+
 | 标签名 | 类型 | 说明 |
 |---|---|---|
 | loop_id | BINARY(36) | 关联关系库的 loop_ledger.id |
 | unit_id | BINARY(36) | 关联的单元 ID，用于按单元降采样聚合 |
 
 ### 3.2 子表实例化
+
 系统每同步接入一条新回路，将自动执行建表操作：
-`CREATE TABLE d_loop_101_fc_1023 USING st_loop_data TAGS ('uuid-xxx', 'uuid-yyy');`
+
+```sql
+CREATE TABLE d_loop_101_fc_1023 USING st_loop_data TAGS ('uuid-xxx', 'uuid-yyy');
+```
+
+子表命名规范：`d_loop_<位号去分隔符小写>`，如位号 `101-FC-1023` 对应子表 `d_loop_101_fc_1023`。
 
 ---
 
 ## 4. 数据容错与清洗规则
 
-1. **质量码过滤**：在写入 `kpi_snapshot_hourly` 前，计算引擎必须首先扫描 `quality` 字段。若某时间窗内 `quality=1 (Good)` 的记录占比低于配置阈值（默认 20%），则跳过各项 KPI 计算，直接将快照状态置为 `INCONCLUSIVE`，各 KPI 字段留空（NULL），**严禁写入 0 分**。
-2. **时序数据留存期 (Retention)**：
-   * TDengine 原始秒级数据默认保留周期配置为 `KEEP 365` (1年)。
-   * PostgreSQL 中的 `kpi_snapshot_hourly` 快照记录永久保留，支撑 P2 规划中的 5 年任意查询及趋势回溯。
+CLPM 系统的核心设计理念是**"绝对真实，不掩盖数据缺失"**。v3.0 明确 PV 质量码处理逻辑。
+
+### 4.1 PV 质量码过滤
+
+1. **质量码字段**：基于 TDengine 超级表 `st_loop_data` 的 `pv_quality` 字段（TINYINT：0=Bad, 1=Good, 2=Uncertain）进行过滤。
+2. **好值率统计**：在写入 `kpi_snapshot_hourly` 前，计算引擎必须首先扫描 `pv_quality` 字段。某时间窗内 `pv_quality=1 (Good)` 的记录占比即为**好值率**，写入 `good_value_rate` 字段。
+3. **Inconclusive 触发**：若某时间窗内 `pv_quality=1 (Good)` 的记录占比低于配置阈值（默认 20%，阈值可通过 `engine_rule` 配置），则跳过各项 KPI 计算，直接将快照状态置为 `INCONCLUSIVE`，各 KPI 字段留空（NULL），**严禁写入 0 分**。
+4. **Uncertain 处理**：`pv_quality=2 (Uncertain)` 的数据段在计算时按既定策略降权或剔除，不掩盖数据缺失，通过 `Inconclusive` 状态显式反馈。
+
+### 4.2 PV 质量码可视化
+
+* **波形渲染**：前端渲染 PV 时序波形时，根据 `pv_quality` 分段着色：
+  * `Good` (1)：实线，正常颜色。
+  * `Bad` (0)：灰色虚线断线。
+  * `Uncertain` (2)：黄色虚线。
+* **数据点缺失**：数据点缺失时断线展示，悬浮提示缺失时段。
+
+### 4.3 时序数据留存期 (Retention)
+
+* **TDengine 原始秒级数据**：默认保留周期配置为 `KEEP 365` (1 年)，覆盖 7 个 OPC Tag 字段及 `pv_quality`。
+* **PostgreSQL 快照记录**：`kpi_snapshot_hourly` 快照记录永久保留，支撑 P2/P3 规划中的 5 年任意查询及趋势回溯。
+* **配置表版本**：`metric_config` / `diagnosis_config` / `engine_rule` 的历史版本通过 `version` 字段及 `sys_audit_log` 永久保留，支持配置回滚。
+
+### 4.4 AAS 同步容错
+
+* AAS Tag 同步服务具备断线重连与增量同步能力。
+* 同步失败时保留 `tag_registry` 上一周期有效数据并告警，不阻塞回路监控页面读取。
+* `tag_registry.last_sync_at` 字段用于展示最后同步时间，便于运维排查。

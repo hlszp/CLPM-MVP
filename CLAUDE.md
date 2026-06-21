@@ -4,43 +4,54 @@
 
 ## 必读入口
 
-先读：`design-documents-index-2026-06-16.md`。
+先读：`README.md`（当前共识与目录说明）与 `docs/设计文档/01-PRD/PRD.md` v3.0。
 
-该索引定义当前有效文档、历史文档、阅读顺序和下一阶段评审引用规则。
+PRD v3.0 是后续所有设计、研发、原型与投标响应的**唯一事实来源**；UI/UX v4.0 是原型与正式研发的**唯一 UI/UX 输入性文件**。其他设计文档（FDS/ADS/DDS/IDS）均从 PRD 派生并对齐。
 
-## 当前基线
+## 当前基线（2026-06-20 修订）
 
-| 类型 | 文件 |
-|---|---|
-| 当前 PRS | `product-requirements-specification-v0.4-2026-06-16.md` |
-| 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` |
-| 完整菜单定稿 | `full-product-menu-ia-v0.1-2026-06-16.md` |
-| 原型开发冻结任务书 | `prototype-development-freeze-v0.1-2026-06-16.md` |
-| P0 契约主干设计 | `p0-contract-backbone-design-v0.1-2026-06-16.md` |
-| 核心算法可信度设计 | `core-algorithm-confidence-design-v0.1-2026-06-16.md` |
-| 文档索引 | `design-documents-index-2026-06-16.md` |
-| CEO 评审结论 | `/Users/zhangping/.gstack/projects/CLPM/ceo-plans/2026-06-16-clpm-productization-validation.md` |
-| 工程评审结论 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-eng-review-20260616-093500.md` |
-| 设计评审结论 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-review-20260616-100500.md` |
+| 类型 | 文件 | 版本 |
+|---|---|---|
+| 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v3.0 |
+| 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v3.0 |
+| 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v3.0 |
+| 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v3.0 |
+| API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v3.0 |
+| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | v4.0 |
+| 原型设计基线 | `DESIGN.md` | 待复核（仍含旧 SampleBatch/EvidencePackage 模型） |
+| 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
+| 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | 待更新 |
+| 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` | 历史参考 |
+| CEO 评审结论 | `/Users/zhangping/.gstack/projects/CLPM/ceo-plans/2026-06-16-clpm-productization-validation.md` | 历史参考 |
+| 工程评审结论 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-eng-review-20260616-093500.md` | 历史参考 |
+| 设计评审结论 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-review-20260616-100500.md` | 历史参考 |
 
 ## 核心决策
 
 | 决策 | 当前口径 |
 |---|---|
-| 产品定位 | 控制回路性能治理与优化闭环平台，不是单机 PID 调参工具 |
+| 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统；用户（管理员/工程师）可自助完成配置组态，减少开发团队介入 |
+| 模块架构 | 6 模块 + 1 门户：工作台 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理；各业务模块遵循"配置→运行→分析"三态自包含原则，减少跨模块依赖 |
+| AAS 数据模型 | AAS 同步 tag 位号（非回路实体）；回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D）；PID 参数与控制模式从关联 tag 只读读取；数据质量主要针对 PV 值（Good/Bad/Uncertain 质量码） |
+| Action Tracker | 降级为诊断中心子模块（子菜单路由），状态机 PENDING → IN_PROGRESS → RESOLVED/IGNORED |
+| 统计分析 | 不设独立模块，分散到各业务模块的"分析"态；自动报表归入系统管理 |
+| 回路整定 | Phase 2 落地，Phase 1 仅完成原型页面设计；含工作台/模型辨识/整定算法/闭环仿真 4 子模块 |
 | 技术护城河 | 可信数据 + 可解释诊断 + 可验证整定 + 安全闭环 + 规模化交付 |
 | 安全边界 | 平台不直接修改 DCS 的 P/I/D 参数，只输出建议、证据、风险和回退方案；参数由授权人员人工实施并留痕 |
-| 首版主线 | P0 治理闭环验证版，目标是证明产品不是报表工具 |
-| 菜单结构 | 已形成 `full-product-menu-ia-v0.1-2026-06-16.md`，作为用户视角信息架构，不等同于 P0 交付范围 |
-| 原型开发 | 已形成 `prototype-development-freeze-v0.1-2026-06-16.md`，技术栈冻结为 React + Vite + TypeScript，本地 mock data，不接真实 DCS |
+| 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
+| 原型开发 | React 19 + Vite + TypeScript，本地 mock data，不接真实 DCS；菜单结构以 `prototype/src/routes/menuConfig.ts` 为单一事实来源 |
+| 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
+| 文档权威性 | PRD v3.0 为唯一事实来源；UI/UX v4.0 为唯一 UI/UX 输入；FDS/ADS/DDS/IDS v3.0 与 PRD/UI-UX 完全对齐，跨文档术语/路由/API/数据字段已通过一致性校验 |
 
 ## 下阶段规则
 
 | 阶段 | 先读 |
 |---|---|
-| `/plan-eng-review` | approved 产品化架构 → PRS v0.4 → 完整菜单定稿 → 原型开发冻结任务书 → P0 契约主干设计 → 核心算法可信度设计 → 工程评审结论 |
-| `/plan-design-review` | approved 产品化架构的 User-Facing Information Architecture → PRS v0.4 页面与状态约束 → 完整菜单定稿 → 原型开发冻结任务书 → 设计评审结论 → 竞品对比 |
-| PRS 后续修订 | approved 产品化架构 → PRS v0.4 → 核心算法可信度设计 → CEO/工程/设计评审结论 |
+| `/plan-eng-review` | PRD v3.0 → ADS v3.0 → DDS v3.0 → IDS v3.0 → FDS v3.0 |
+| `/plan-design-review` | PRD v3.0 → UI/UX v4.0 → FDS v3.0 |
+| `/plan-ceo-review` | PRD v3.0 → README.md（当前共识） |
+| PRD 后续修订 | PRD v3.0 → FDS/ADS/DDS/IDS v3.0 → UI/UX v4.0（保持派生关系） |
+| 原型开发 | UI/UX v4.0 → `prototype/src/routes/menuConfig.ts` → `DESIGN.md`（注意 DESIGN.md 待复核） |
 
 ## Stale docs 防护
 
