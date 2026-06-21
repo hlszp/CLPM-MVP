@@ -1,8 +1,8 @@
 # CLPM 接口设计规范说明书 (IDS)
 
 **文档状态**: 正式版
-**当前版本**: v3.0 (产品化架构重构版)
-**发布日期**: 2026-06-20
+**当前版本**: v3.1 (认证授权与统一响应规范补充版)
+**发布日期**: 2026-06-21
 **设计依据**: PRD (v3.0), FDS (v3.0), ADS (v3.0), DDS (v3.0)
 
 ---
@@ -14,6 +14,7 @@
 | v1.0 | 2026-06-16 | 初始版本（基于旧版 PRS 拆解） | 产品团队 |
 | v2.0 | 2026-06-19 | 全面重构：基于 PRD v2.2 重新设计，移除繁重工单审批流，重塑为"自动评估+轻量跟踪"架构，定义性能看板、波形查询、异常跟踪三类核心 API。 | 系统设计团队 |
 | v3.0 | 2026-06-20 | 产品化架构重构：①对齐 6 模块 + 1 门户结构（工作台/回路管理/性能评估/诊断中心/回路整定/系统管理）；②引入 AAS Tag 模型（7 个 OPC tag：PV/SP/OP/MODE/PID_P/PID_I/PID_D），PID 参数从 tag 只读，数据质量主要针对 PV；③新增工作台、回路管理（含 AAS 同步/回路 CRUD/tag 关联/回路监控）、回路整定（Phase 2 占位）、系统管理 API 组；④扩展性能评估与诊断中心 API（指标配置/引擎规则/统计报表）；⑤波形 API 响应增加 `pv_quality` 数组，明确仅 PV 携带质量码；⑥补充新错误码（ERR_TAG_NOT_FOUND/ERR_LOOP_TAG_REQUIRED/ERR_METRIC_WEIGHT_SUM/ERR_CONFIG_FORBIDDEN）。 | 系统设计团队 |
+| v3.1 | 2026-06-21 | 认证授权与统一响应规范补充：①新增 §5 认证与授权 API（登录/登出/Token 刷新/获取当前用户/修改密码），定义 JWT Bearer Token 方案、Access/Refresh Token 双 Token 机制、黑名单策略、权限列表枚举；②新增 §6 统一响应规范（成功/错误/分页/异步任务响应 envelope 格式、HTTP 状态码使用规则、4 位业务错误码分段定义、前端 Axios 拦截器对接规范）；③补充 ERR_TOKEN_EXPIRED/ERR_TOKEN_INVALID/ERR_INVALID_CREDENTIALS/ERR_ACCOUNT_DISABLED/ERR_TOO_MANY_ATTEMPTS/ERR_PASSWORD_SAME/ERR_USER_NOT_FOUND/ERR_USER_DUPLICATE 等认证相关错误码。 | 系统设计团队 |
 
 ---
 
@@ -1879,3 +1880,579 @@
 * PV 质量码为 `Bad` 时，对应 `pv` 值为 `null`，前端按灰色虚线断线渲染。
 * PV 质量码为 `Uncertain` 时，前端按黄色虚线渲染。
 * KPI 好值率基于 PV 质量码统计，`Bad`/`Uncertain` 时段不计入好值。
+
+---
+
+## 5. 认证与授权 API
+
+本章节定义系统认证与授权相关接口，为所有业务 API 的前置依赖。认证采用 JWT Bearer Token 方案，Access Token 有效期 30 分钟，Refresh Token 有效期 7 天。
+
+### 5.1 用户登录 (Login)
+
+* **URL**: `POST /api/v1/auth/login`
+* **权限**: 公开（无需 Token）
+* **描述**: 用户通过用户名/密码登录，获取 Access Token 和 Refresh Token。
+
+**请求头**:
+
+| Header | 值 | 说明 |
+|---|---|---|
+| Content-Type | application/json | 请求体编码格式 |
+
+**请求参数 (Request Body)**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| username | String | 是 | 用户名（3-50 字符） |
+| password | String | 是 | 密码（明文传输，HTTPS 加密通道保护，6-64 字符） |
+| rememberMe | Boolean | 否 | 是否记住登录（true 时 Refresh Token 有效期延长至 30 天），默认 false |
+
+**请求示例**:
+```json
+{
+  "username": "admin",
+  "password": "admin123",
+  "rememberMe": false
+}
+```
+
+**成功响应 (200 OK)**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "tokenType": "Bearer",
+    "expiresIn": 1800,
+    "user": {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "username": "admin",
+      "displayName": "系统管理员",
+      "email": "admin@clpm.local",
+      "role": "ADMIN",
+      "permissions": [
+        "dashboard:view",
+        "loop:*",
+        "performance:*",
+        "diagnosis:*",
+        "tuning:*",
+        "system:*"
+      ]
+    }
+  }
+}
+```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| code | Integer | 业务状态码，0 表示成功（见 §6 统一响应规范） |
+| message | String | 状态描述 |
+| data.accessToken | String | JWT Access Token，有效期 30 分钟 |
+| data.refreshToken | String | JWT Refresh Token，有效期 7 天（rememberMe=true 时 30 天） |
+| data.tokenType | String | Token 类型，固定为 "Bearer" |
+| data.expiresIn | Integer | Access Token 过期时间（秒），固定 1800 |
+| data.user.id | String (UUID) | 用户唯一标识 |
+| data.user.username | String | 用户名 |
+| data.user.displayName | String | 显示名称 |
+| data.user.email | String | 邮箱 |
+| data.user.role | String | 角色枚举：ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR / EXPERT |
+| data.user.permissions | Array<String> | 权限列表（模块:操作格式，* 表示通配） |
+
+**错误响应**:
+
+| HTTP 状态码 | errorCode | errorMessage | 触发条件 |
+|---|---|---|---|
+| 400 | ERR_VALIDATION | 请求参数校验失败 | username/password 为空或格式不符 |
+| 401 | ERR_INVALID_CREDENTIALS | 用户名或密码错误 | 用户名不存在或密码不匹配 |
+| 403 | ERR_ACCOUNT_DISABLED | 账户已禁用 | sys_user.is_active = false |
+| 429 | ERR_TOO_MANY_ATTEMPTS | 登录尝试次数过多 | 5 分钟内连续失败 5 次，锁定 15 分钟 |
+
+---
+
+### 5.2 刷新 Token (Refresh Token)
+
+* **URL**: `POST /api/v1/auth/refresh`
+* **权限**: 公开（需携带有效的 Refresh Token）
+* **描述**: 使用 Refresh Token 获取新的 Access Token。
+
+**请求头**:
+
+| Header | 值 | 说明 |
+|---|---|---|
+| Content-Type | application/json | 请求体编码格式 |
+
+**请求参数 (Request Body)**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| refreshToken | String | 是 | 登录时获取的 Refresh Token |
+
+**请求示例**:
+```json
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**成功响应 (200 OK)**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "tokenType": "Bearer",
+    "expiresIn": 1800
+  }
+}
+```
+
+**错误响应**:
+
+| HTTP 状态码 | errorCode | errorMessage | 触发条件 |
+|---|---|---|---|
+| 401 | ERR_TOKEN_EXPIRED | Token 已过期 | Refresh Token 已过期，需重新登录 |
+| 401 | ERR_TOKEN_INVALID | Token 无效 | Refresh Token 签名错误或已被吊销 |
+
+---
+
+### 5.3 用户登出 (Logout)
+
+* **URL**: `POST /api/v1/auth/logout`
+* **权限**: 已认证（需携带 Access Token）
+* **描述**: 登出当前会话，吊销 Access Token 和 Refresh Token。
+
+**请求头**:
+
+| Header | 值 | 说明 |
+|---|---|---|
+| Authorization | Bearer {accessToken} | JWT Access Token |
+
+**请求参数**: 无
+
+**成功响应 (200 OK)**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": null
+}
+```
+
+**说明**: 登出后，当前 Access Token 和 Refresh Token 加入 Redis 黑名单，直至自然过期。
+
+---
+
+### 5.4 获取当前用户信息 (Get Current User)
+
+* **URL**: `GET /api/v1/auth/me`
+* **权限**: 已认证（需携带 Access Token）
+* **描述**: 获取当前登录用户的完整信息，包括角色和权限列表。前端路由守卫和菜单渲染依赖此接口。
+
+**请求头**:
+
+| Header | 值 | 说明 |
+|---|---|---|
+| Authorization | Bearer {accessToken} | JWT Access Token |
+
+**请求参数**: 无
+
+**成功响应 (200 OK)**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000002",
+    "username": "ic_engineer",
+    "displayName": "张三（仪控工程师）",
+    "email": "zhangsan@clpm.local",
+    "role": "IC_ENGINEER",
+    "permissions": [
+      "dashboard:view",
+      "loop:view",
+      "loop:edit",
+      "loop:tag_mapping",
+      "performance:view",
+      "diagnosis:view",
+      "diagnosis:tracker:edit",
+      "tuning:view"
+    ],
+    "lastLoginAt": "2026-06-21T08:30:00Z",
+    "defaultHome": "/dashboard"
+  }
+}
+```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| data.role | String | 角色枚举（同 §5.1） |
+| data.permissions | Array<String> | 权限列表，格式为 `模块:操作`，用于前端路由守卫和按钮级权限控制 |
+| data.lastLoginAt | String (ISO8601) | 最后登录时间 |
+| data.defaultHome | String | 角色默认首页路径（对齐 UI/UX v4.0 §5.1） |
+
+**权限列表枚举**:
+
+| 权限标识 | 角色 | 说明 |
+|---|---|---|
+| dashboard:view | 全部角色 | 查看工作台 |
+| loop:view | IC_ENGINEER, PE_ENGINEER, ADMIN | 查看回路管理 |
+| loop:edit | IC_ENGINEER, ADMIN | 编辑回路/工厂层级 |
+| loop:tag_mapping | IC_ENGINEER, ADMIN | Tag 关联管理 |
+| performance:view | 全部角色 | 查看性能评估 |
+| performance:config | ADMIN | 性能指标/引擎规则配置 |
+| diagnosis:view | 全部角色 | 查看诊断中心 |
+| diagnosis:tracker:edit | IC_ENGINEER, EXPERT | 异常跟踪状态变更 |
+| diagnosis:config | ADMIN | 诊断指标配置 |
+| tuning:view | IC_ENGINEER, EXPERT, ADMIN | 查看回路整定（P2） |
+| system:user:manage | ADMIN | 用户与角色管理 |
+| system:config | ADMIN | 系统配置 |
+| system:audit:view | ADMIN | 审计日志查看 |
+
+---
+
+### 5.5 修改密码 (Change Password)
+
+* **URL**: `PUT /api/v1/auth/password`
+* **权限**: 已认证（需携带 Access Token）
+* **描述**: 当前用户修改自己的密码。
+
+**请求头**:
+
+| Header | 值 | 说明 |
+|---|---|---|
+| Authorization | Bearer {accessToken} | JWT Access Token |
+| Content-Type | application/json | 请求体编码格式 |
+
+**请求参数 (Request Body)**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| oldPassword | String | 是 | 当前密码（明文，HTTPS 保护） |
+| newPassword | String | 是 | 新密码（6-64 字符，需包含字母+数字） |
+
+**请求示例**:
+```json
+{
+  "oldPassword": "admin123",
+  "newPassword": "Admin@2026"
+}
+```
+
+**成功响应 (200 OK)**:
+```json
+{
+  "code": 0,
+  "message": "密码修改成功，请重新登录",
+  "data": null
+}
+```
+
+**错误响应**:
+
+| HTTP 状态码 | errorCode | errorMessage | 触发条件 |
+|---|---|---|---|
+| 400 | ERR_VALIDATION | 新密码不符合复杂度要求 | 少于 6 字符或缺少字母/数字 |
+| 401 | ERR_INVALID_CREDENTIALS | 当前密码错误 | oldPassword 不匹配 |
+| 400 | ERR_PASSWORD_SAME | 新密码不能与旧密码相同 | newPassword == oldPassword |
+
+**说明**: 修改成功后，当前 Access Token 和 Refresh Token 立即失效，前端需跳转登录页。
+
+---
+
+### 5.6 JWT Token 结构
+
+**Access Token Payload**:
+```json
+{
+  "sub": "00000000-0000-0000-0000-000000000002",
+  "username": "ic_engineer",
+  "role": "IC_ENGINEER",
+  "type": "access",
+  "iat": 1718950800,
+  "exp": 1718952600,
+  "jti": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
+```
+
+**Refresh Token Payload**:
+```json
+{
+  "sub": "00000000-0000-0000-0000-000000000002",
+  "type": "refresh",
+  "iat": 1718950800,
+  "exp": 1719528800,
+  "jti": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+}
+```
+
+**字段说明**:
+
+| 字段 | 说明 |
+|---|---|
+| sub | 用户 ID (UUID) |
+| username | 用户名（仅 Access Token） |
+| role | 角色枚举（仅 Access Token） |
+| type | Token 类型：access / refresh |
+| iat | 签发时间（Unix 时间戳） |
+| exp | 过期时间（Unix 时间戳） |
+| jti | Token 唯一标识，用于黑名单吊销 |
+
+**Token 安全策略**:
+
+| 策略 | 说明 |
+|---|---|
+| 签名算法 | HS256 |
+| 密钥 | 通过环境变量 `JWT_SECRET_KEY` 配置，至少 32 字符 |
+| Access Token 有效期 | 30 分钟（1800 秒） |
+| Refresh Token 有效期 | 7 天（604800 秒），rememberMe=true 时 30 天 |
+| 黑名单机制 | 登出/改密时将 jti 写入 Redis，TTL 等于 Token 剩余有效期 |
+| 载荷最小化 | Refresh Token 不携带 role/username，仅用于换取新 Access Token |
+
+---
+
+## 6. 统一响应规范
+
+本章节定义所有 API 接口的统一响应格式，前后端开发必须严格遵循。
+
+### 6.1 成功响应格式
+
+所有成功响应（HTTP 2xx）使用统一的 envelope 包装：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": { ... }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| code | Integer | 是 | 业务状态码，0 表示成功 |
+| message | String | 是 | 状态描述，成功时为 "success" |
+| data | Any | 否 | 业务数据，可为对象/数组/null |
+
+**单对象响应示例**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "loopId": "00000000-0000-0000-0000-000000000001",
+    "loopName": "R-101 反应器入口温度",
+    "score": 85.5
+  }
+}
+```
+
+**无数据响应（DELETE/PUT 操作）**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": null
+}
+```
+
+### 6.2 分页响应格式
+
+所有列表类接口（GET 列表）使用统一的分页包装：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "items": [ ... ],
+    "total": 150,
+    "page": 1,
+    "pageSize": 20,
+    "totalPages": 8
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| data.items | Array | 当前页数据列表 |
+| data.total | Integer | 总记录数 |
+| data.page | Integer | 当前页码（从 1 开始） |
+| data.pageSize | Integer | 每页条数（默认 20，最大 100） |
+| data.totalPages | Integer | 总页数 |
+
+**分页请求参数（Query String）**:
+
+| 参数 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| page | Integer | 1 | 页码，从 1 开始 |
+| pageSize | Integer | 20 | 每页条数，1-100 |
+| sortBy | String | — | 排序字段 |
+| sortOrder | String | asc | 排序方向：asc / desc |
+
+### 6.3 错误响应格式
+
+所有错误响应（HTTP 4xx/5xx）使用统一的错误 envelope：
+
+```json
+{
+  "code": 4001,
+  "message": "用户名或密码错误",
+  "errorCode": "ERR_INVALID_CREDENTIALS",
+  "errorMessage": "Invalid username or password",
+  "details": "请检查用户名和密码是否正确",
+  "timestamp": "2026-06-21T10:30:00Z",
+  "path": "/api/v1/auth/login"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| code | Integer | 是 | 业务错误码（4 位数字，见 §6.5） |
+| message | String | 是 | 错误描述（中文，面向用户） |
+| errorCode | String | 是 | 错误码标识（大写下划线，面向开发者） |
+| errorMessage | String | 否 | 错误码英文描述 |
+| details | String | 否 | 错误详情（调试用，生产环境可关闭） |
+| timestamp | String | 是 | 错误发生时间（ISO8601） |
+| path | String | 是 | 请求路径 |
+
+### 6.4 HTTP 状态码使用规则
+
+| HTTP 状态码 | 使用场景 | 示例 |
+|---|---|---|
+| 200 OK | GET/PUT/PATCH/DELETE 成功 | 获取回路列表成功 |
+| 201 Created | POST 创建资源成功 | 新建回路成功 |
+| 202 Accepted | 异步任务已接受 | 报表导出任务已提交 |
+| 204 No Content | DELETE 成功且无响应体 | 删除回路成功（可选，也可用 200） |
+| 400 Bad Request | 请求参数校验失败 | 必填字段缺失、格式错误 |
+| 401 Unauthorized | 未认证或 Token 失效 | 未携带 Token / Token 过期 |
+| 403 Forbidden | 已认证但无权限 | 仪控工程师尝试访问用户管理 |
+| 404 Not Found | 资源不存在 | 回路 ID 不存在 |
+| 409 Conflict | 资源冲突 | 用户名已存在 |
+| 422 Unprocessable Entity | 业务规则校验失败 | 权重总和不等于 100% |
+| 429 Too Many Requests | 请求频率超限 | 登录失败 5 次锁定 |
+| 500 Internal Server Error | 服务器内部错误 | 未捕获异常 |
+| 502 Bad Gateway | 上游服务错误 | AAS 服务不可达 |
+| 503 Service Unavailable | 服务不可用 | 维护中 |
+
+### 6.5 业务错误码定义
+
+业务错误码为 4 位数字，按模块分段：
+
+| 码段 | 模块 | 示例 |
+|---|---|---|
+| 1000-1999 | 通用/认证 | 1001=参数校验失败, 1002=未认证, 1003=无权限 |
+| 2000-2999 | 回路管理 | 2001=回路不存在, 2002=Tag 关联不完整 |
+| 3000-3999 | 性能评估 | 3001=权重总和错误, 3002=指标不存在 |
+| 4000-4999 | 诊断中心 | 4001=诊断结果不存在, 4002=跟踪状态非法 |
+| 5000-5999 | 回路整定 | 5001=整定任务不存在 |
+| 6000-6999 | 系统管理 | 6001=用户不存在, 6002=账户已禁用 |
+| 9000-9999 | 系统错误 | 9001=数据库错误, 9002=AAS 连接失败 |
+
+**与 errorCode 的映射关系**:
+
+| code | errorCode | message | HTTP |
+|---|---|---|---|
+| 0 | — | success | 200 |
+| 1001 | ERR_VALIDATION | 请求参数校验失败 | 400 |
+| 1002 | ERR_UNAUTHORIZED | 未认证，请先登录 | 401 |
+| 1003 | ERR_TOKEN_EXPIRED | Token 已过期 | 401 |
+| 1004 | ERR_TOKEN_INVALID | Token 无效 | 401 |
+| 1005 | ERR_FORBIDDEN | 无权限访问 | 403 |
+| 1006 | ERR_CONFIG_FORBIDDEN | 仅系统管理员可执行配置操作 | 403 |
+| 1007 | ERR_TOO_MANY_ATTEMPTS | 操作过于频繁 | 429 |
+| 1008 | ERR_INVALID_CREDENTIALS | 用户名或密码错误 | 401 |
+| 1009 | ERR_ACCOUNT_DISABLED | 账户已禁用 | 403 |
+| 1010 | ERR_PASSWORD_SAME | 新密码不能与旧密码相同 | 400 |
+| 2001 | ERR_LOOP_NOT_FOUND | 回路不存在 | 404 |
+| 2002 | ERR_LOOP_TAG_REQUIRED | 必填 Tag（PV/SP/OP/MODE）缺失 | 422 |
+| 2003 | ERR_TAG_NOT_FOUND | Tag 不存在 | 404 |
+| 2004 | ERR_LOOP_DUPLICATE | 回路位号已存在 | 409 |
+| 3001 | ERR_METRIC_WEIGHT_SUM | 指标权重总和不等于 100% | 422 |
+| 3002 | ERR_METRIC_NOT_FOUND | 性能指标不存在 | 404 |
+| 4001 | ERR_DIAGNOSIS_NOT_FOUND | 诊断结果不存在 | 404 |
+| 4002 | ERR_TRACKER_STATUS_INVALID | 跟踪状态变更不合法 | 422 |
+| 6001 | ERR_USER_NOT_FOUND | 用户不存在 | 404 |
+| 6002 | ERR_USER_DUPLICATE | 用户名已存在 | 409 |
+| 9001 | ERR_DATABASE | 数据库错误 | 500 |
+| 9002 | ERR_AAS_CONNECTION | AAS 连接失败 | 502 |
+
+### 6.6 异步任务响应格式
+
+异步任务（报表导出/AAS 同步/评估计算）统一采用 202 + 轮询模式：
+
+**任务提交响应 (202 Accepted)**:
+```json
+{
+  "code": 0,
+  "message": "任务已提交",
+  "data": {
+    "taskId": "task-2026-06-21-001",
+    "taskType": "REPORT_EXPORT",
+    "status": "PROCESSING",
+    "checkUrl": "/api/v1/tasks/task-2026-06-21-001",
+    "estimatedSeconds": 30
+  }
+}
+```
+
+**任务状态查询响应 (200 OK)**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "taskId": "task-2026-06-21-001",
+    "taskType": "REPORT_EXPORT",
+    "status": "SUCCESS",
+    "progress": 100,
+    "result": {
+      "downloadUrl": "/api/v1/reports/task-2026-06-21-001/download"
+    },
+    "startedAt": "2026-06-21T10:00:00Z",
+    "completedAt": "2026-06-21T10:00:25Z"
+  }
+}
+```
+
+**任务状态枚举**: `PROCESSING`（处理中）, `SUCCESS`（成功）, `FAILED`（失败）
+
+**任务失败响应**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "taskId": "task-2026-06-21-001",
+    "status": "FAILED",
+    "error": {
+      "errorCode": "ERR_AAS_CONNECTION",
+      "message": "AAS 服务连接超时"
+    },
+    "startedAt": "2026-06-21T10:00:00Z",
+    "failedAt": "2026-06-21T10:00:05Z"
+  }
+}
+```
+
+### 6.7 前端 Axios 拦截器对接规范
+
+前端 Axios 请求/响应拦截器应按以下规范实现：
+
+**请求拦截器**:
+- 自动在 Header 中注入 `Authorization: Bearer {accessToken}`
+- Token 过期时自动调用 `/api/v1/auth/refresh` 刷新，并重发原请求
+- 刷新失败（Refresh Token 也过期）时跳转登录页
+
+**响应拦截器**:
+- `code === 0`：正常返回 `data`
+- `code !== 0` 且 HTTP 401：Token 失效，触发刷新流程
+- `code !== 0` 且 HTTP 403：权限不足，提示用户
+- `code !== 0` 且 HTTP 4xx：业务错误，弹出 Toast 提示 `message`
+- `code !== 0` 且 HTTP 5xx：系统错误，弹出错误提示并记录日志
