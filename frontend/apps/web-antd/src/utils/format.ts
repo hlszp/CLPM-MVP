@@ -23,7 +23,7 @@ export interface TreeNode {
   id: string;
   name: string;
   children?: TreeNode[];
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /** 诊断标签中文映射 */

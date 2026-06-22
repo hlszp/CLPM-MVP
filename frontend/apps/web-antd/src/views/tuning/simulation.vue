@@ -76,7 +76,9 @@ const form = reactive({
 });
 
 /** 根据模型类型返回需要显示的模型参数字段 */
-const modelParamFields = computed<{ key: string; label: string }[]>(() => {
+const modelParamFields = computed<
+  { key: keyof TuningApi.ModelParams; label: string }[]
+>(() => {
   switch (form.modelType) {
     case 'FOPDT': {
       return [
@@ -201,7 +203,7 @@ function isImproved(val: null | number | undefined): boolean | null {
 }
 
 /** 从 URL query 解析 JSON 参数 */
-function parseJsonQuery(key: string): any {
+function parseJsonQuery(key: string): unknown {
   const raw = route.query[key] as string | undefined;
   if (!raw) return null;
   try {
@@ -236,12 +238,12 @@ async function handleSimulate() {
   // 校验模型参数
   const params: TuningApi.ModelParams = {};
   for (const f of modelParamFields.value) {
-    const v = (form.modelParams as any)[f.key];
+    const v = form.modelParams[f.key];
     if (v === null || v === undefined || Number.isNaN(v)) {
       message.warning(`请填写模型参数：${f.label}`);
       return;
     }
-    (params as any)[f.key] = v;
+    params[f.key] = v;
   }
   // 校验 PID 参数
   if (
@@ -377,7 +379,7 @@ function renderChart() {
     tooltip: {
       axisPointer: { type: 'cross' },
       trigger: 'axis',
-      valueFormatter: (val: any) =>
+      valueFormatter: (val) =>
         val === null || val === undefined ? '—' : Number(val).toFixed(4),
     },
     xAxis: {
@@ -424,7 +426,7 @@ async function handleSave() {
     // 构造模型参数（仅包含当前模型类型所需字段）
     const modelParams: TuningApi.ModelParams = {};
     for (const f of modelParamFields.value) {
-      (modelParams as any)[f.key] = (form.modelParams as any)[f.key];
+      modelParams[f.key] = form.modelParams[f.key];
     }
 
     await createTuningTaskApi({
@@ -442,10 +444,7 @@ async function handleSave() {
         ti: form.currentPid.ti,
         td: form.currentPid.td || 0,
       },
-      simulationResult: simulationResult.value as unknown as Record<
-        string,
-        any
-      >,
+      simulationResult: simulationResult.value as TuningApi.SimulationResult,
       status: 'SIMULATED',
     });
     message.success('仿真结果已保存');
@@ -599,7 +598,7 @@ onMounted(() => {
         :columns="metricColumns"
         :data-source="metricRows"
         :pagination="false"
-        :row-key="(record: any) => record.name"
+        :row-key="(record: { name: string }) => record.name"
         size="middle"
       >
         <template #bodyCell="{ column, record }">

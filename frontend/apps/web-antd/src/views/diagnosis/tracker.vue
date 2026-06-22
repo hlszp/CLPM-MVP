@@ -328,7 +328,7 @@ onMounted(() => {
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :row-key="(record: any) => record.loopId"
+        :row-key="(record: DiagnosisApi.TrackerItem) => record.loopId"
         :scroll="{ x: 1400 }"
         size="middle"
         @change="handleTableChange"

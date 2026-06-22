@@ -367,7 +367,7 @@ onMounted(() => {
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :row-key="(record: any) => record.loopId"
+        :row-key="(record: LoopApi.LoopListItem) => record.loopId"
         :scroll="{ x: 1200 }"
         size="middle"
         @change="handleTableChange"

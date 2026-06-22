@@ -226,11 +226,11 @@ onUnmounted(() => {
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :row-key="(record: any) => record.loopId"
+        :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
         :scroll="{ x: 1300 }"
         size="middle"
         :custom-row="
-          (record: any) => ({
+          (record: LoopApi.MonitorListItem) => ({
             onClick: () => handleRowClick(record),
             style: { cursor: 'pointer' },
           })

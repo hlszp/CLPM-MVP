@@ -114,7 +114,7 @@ function render() {
     tooltip: {
       axisPointer: { type: 'cross' },
       trigger: 'axis',
-      valueFormatter: (val: any) =>
+      valueFormatter: (val) =>
         val === null || val === undefined ? '—' : Number(val).toFixed(3),
     },
     xAxis: {

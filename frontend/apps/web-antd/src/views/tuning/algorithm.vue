@@ -78,7 +78,7 @@ const form = reactive({
   // 算法
   algorithm: 'IMC' as TuningApi.Algorithm,
   // 算法参数（动态）
-  algorithmParams: {} as Record<string, any>,
+  algorithmParams: {} as Record<string, number>,
   // 回路 ID（从 model 页跳转来时携带）
   loopId: '' as string,
 });
@@ -160,9 +160,9 @@ async function loadMethods() {
 
 /** 初始化算法参数为默认值 */
 function initAlgorithmParams(method: TuningApi.MethodInfo) {
-  const params: Record<string, any> = {};
+  const params: Record<string, number> = {};
   for (const p of method.params) {
-    params[p.name] = p.default;
+    params[p.name] = Number(p.default);
   }
   form.algorithmParams = params;
 }

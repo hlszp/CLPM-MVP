@@ -129,7 +129,7 @@ async function loadList() {
 
 /** 将对象转为键值对数组 */
 function objectToKv(
-  obj: Record<string, any>,
+  obj: Record<string, number>,
 ): { key: string; value: string }[] {
   if (!obj || typeof obj !== 'object') return [];
   return Object.entries(obj).map(([k, v]) => ({
@@ -139,12 +139,12 @@ function objectToKv(
 }
 
 /** 将键值对数组转为对象 */
-function kvToObject(kv: { key: string; value: string }[]): Record<string, any> {
-  const result: Record<string, any> = {};
+function kvToObject(kv: { key: string; value: string }[]): Record<string, number> {
+  const result: Record<string, number> = {};
   for (const item of kv) {
     if (!item.key) continue;
     const num = Number(item.value);
-    result[item.key] = Number.isNaN(num) ? item.value : num;
+    result[item.key] = num;
   }
   return result;
 }
@@ -227,7 +227,7 @@ function formatTime(t: string): string {
 }
 
 /** 格式化对象为字符串 */
-function formatObject(obj: Record<string, any>): string {
+function formatObject(obj: Record<string, number>): string {
   if (!obj || Object.keys(obj).length === 0) return '—';
   return Object.entries(obj)
     .map(([k, v]) => `${k}=${v}`)
@@ -258,7 +258,7 @@ onMounted(() => {
         :data-source="metricList"
         :loading="loading"
         :pagination="false"
-        :row-key="(record: any) => record.diagId"
+        :row-key="(record: DiagnosisApi.MetricItem) => record.diagId"
         :scroll="{ x: 1500 }"
         size="middle"
       >

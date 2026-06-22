@@ -403,11 +403,11 @@ onMounted(() => {
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :row-key="(record: any) => record.loopId"
+        :row-key="(record: MetricApi.RankingItem) => record.loopId"
         :scroll="{ x: 1500 }"
         size="middle"
         :custom-row="
-          (record: any) => ({
+          (record: MetricApi.RankingItem) => ({
             onClick: () => handleRowClick(record),
             style: { cursor: 'pointer' },
           })

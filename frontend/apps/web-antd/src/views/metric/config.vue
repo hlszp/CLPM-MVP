@@ -214,7 +214,7 @@ onMounted(() => {
         :data-source="metricList"
         :loading="loading"
         :pagination="false"
-        :row-key="(record: any) => record.metricId"
+        :row-key="(record: MetricApi.MetricItem) => record.metricId"
         :scroll="{ x: 1300 }"
         size="middle"
       >

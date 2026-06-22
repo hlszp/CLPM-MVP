@@ -154,7 +154,7 @@ function renderTrendChart() {
     tooltip: {
       axisPointer: { type: 'cross' },
       trigger: 'axis',
-      valueFormatter: (val: any) =>
+      valueFormatter: (val) =>
         val === null || val === undefined ? '—' : Number(val).toFixed(1),
     },
     xAxis: {
@@ -203,7 +203,7 @@ function renderUnitChart() {
     tooltip: {
       axisPointer: { type: 'shadow' },
       trigger: 'axis',
-      valueFormatter: (val: any) =>
+      valueFormatter: (val) =>
         val === null || val === undefined ? '—' : Number(val).toFixed(1),
     },
     xAxis: {

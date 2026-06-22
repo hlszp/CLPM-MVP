@@ -85,7 +85,7 @@ export namespace TuningApi {
     modelType: ModelType;
     modelParams: ModelParams;
     algorithm: Algorithm;
-    algorithmParams?: Record<string, any>;
+    algorithmParams?: Record<string, number>;
     currentPid?: PidParams;
     loopId?: string;
   }
@@ -95,7 +95,7 @@ export namespace TuningApi {
     algorithm: Algorithm;
     recommendedPid: PidParams;
     currentPid?: PidParams;
-    algorithmParams?: Record<string, any>;
+    algorithmParams?: Record<string, number>;
     algorithmVersion: string;
     notes?: string;
   }
@@ -151,9 +151,9 @@ export namespace TuningApi {
     loopId: string;
     tagName?: null | string;
     modelType: ModelType;
-    modelParams?: Record<string, any> | null;
+    modelParams?: ModelParams | null;
     algorithm: Algorithm;
-    recommendedPid?: Record<string, any> | null;
+    recommendedPid?: PidParams | null;
     fittingScore?: null | number;
     status: TaskStatus;
     createdBy?: null | string;
@@ -162,8 +162,8 @@ export namespace TuningApi {
 
   /** 整定任务详情 */
   export interface TuningTaskDetail extends TuningTaskItem {
-    simulationResult?: Record<string, any> | null;
-    currentPid?: Record<string, any> | null;
+    simulationResult?: SimulationResult | null;
+    currentPid?: PidParams | null;
   }
 
   /** 创建整定任务请求 */
@@ -175,7 +175,7 @@ export namespace TuningApi {
     recommendedPid: PidParams;
     currentPid?: PidParams;
     fittingScore?: null | number;
-    simulationResult?: Record<string, any> | null;
+    simulationResult?: SimulationResult | null;
     status?: TaskStatus;
   }
 
@@ -201,7 +201,7 @@ export namespace TuningApi {
   export interface MethodParam {
     name: string;
     label: string;
-    default: any;
+    default: number | string;
     min?: number;
     max?: number;
     options?: string[];

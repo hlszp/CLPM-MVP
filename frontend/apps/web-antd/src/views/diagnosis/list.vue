@@ -290,11 +290,11 @@ onMounted(() => {
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :row-key="(record: any) => record.loopId"
+        :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
         :scroll="{ x: 1300 }"
         size="middle"
         :custom-row="
-          (record: any) => ({
+          (record: DiagnosisApi.DiagnosisListItem) => ({
             onClick: () => handleViewDetail(record.loopId),
             style: { cursor: 'pointer' },
           })

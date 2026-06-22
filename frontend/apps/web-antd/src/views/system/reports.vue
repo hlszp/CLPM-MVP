@@ -339,7 +339,7 @@ onUnmounted(() => {
         :data-source="reportList"
         :loading="loading"
         :pagination="false"
-        :row-key="(record: any) => record.id"
+        :row-key="(record: SystemApi.ReportConfig) => record.id"
         :scroll="{ x: 1400 }"
         size="middle"
       >

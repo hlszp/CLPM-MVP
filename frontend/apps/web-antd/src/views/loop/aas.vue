@@ -12,6 +12,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
  * - Tag 列表表格（分页、搜索、质量码筛选）
  */
 import type { AasApi } from '#/api/aas';
+import type { LoopApi } from '#/api/loop';
 
 import { onMounted, reactive, ref } from 'vue';
 
@@ -387,7 +388,7 @@ onMounted(() => {
             showSizeChanger: true,
             showTotal: (t: number) => `共 ${t} 条`,
           }"
-          :row-key="(record: any) => record.tagId"
+          :row-key="(record: LoopApi.LoopTagDetail) => record.tagId ?? ''"
           size="middle"
           @change="handleTableChange"
         >

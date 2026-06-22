@@ -1,6 +1,4 @@
 <script lang="ts" setup>
-import type { TreeProps } from 'ant-design-vue';
-
 /**
  * S2-LOOP-007 工厂层级配置页
  *
@@ -39,7 +37,14 @@ import {
 
 defineOptions({ name: 'LoopFactory' });
 
-const treeData = ref<TreeProps['treeData']>([]);
+interface TreeNode {
+  children?: TreeNode[];
+  key: string | number;
+  node: PlantNodeApi.PlantNode;
+  title: string;
+}
+
+const treeData = ref<TreeNode[]>([]);
 const selectedNode = ref<null | PlantNodeApi.PlantNode>(null);
 const loading = ref(false);
 
@@ -67,7 +72,7 @@ const nodeTypeLabel: Record<PlantNodeApi.NodeType, string> = {
 };
 
 /** 将后端 PlantNode 转为 Ant Design Tree 节点 */
-function toTreeNode(node: PlantNodeApi.PlantNode): any {
+function toTreeNode(node: PlantNodeApi.PlantNode): TreeNode {
   return {
     children: node.children?.map((child) => toTreeNode(child)),
     key: node.id,
@@ -93,7 +98,7 @@ async function loadTree() {
 function onSelect(keys: any[], info: any) {
   selectedNode.value =
     keys.length > 0 && info.selectedNodes?.[0]
-      ? (info.selectedNodes[0] as any).node
+      ? (info.selectedNodes[0] as any)?.node ?? null
       : null;
 }
 
@@ -193,7 +198,7 @@ function findNodePath(
 
 const nodePath = computed(() => {
   if (!selectedNode.value) return [];
-  const allNodes = (treeData.value || []).map((n: any) => n.node);
+  const allNodes = (treeData.value || []).map((n) => n.node);
   return findNodePath(allNodes, selectedNode.value.id) || [];
 });
 

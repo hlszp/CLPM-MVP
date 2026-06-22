@@ -185,7 +185,7 @@ function formatTime(t: null | string): string {
 }
 
 /** 格式化证据对象 */
-function formatEvidence(evidence: Record<string, any>): string {
+function formatEvidence(evidence: Record<string, unknown>): string {
   if (!evidence || Object.keys(evidence).length === 0) return '—';
   return Object.entries(evidence)
     .map(([k, v]) => {

@@ -50,8 +50,8 @@ export namespace DiagnosisApi {
     label: DiagnosisLabel;
     algorithmType: string;
     calcMethod: string;
-    params: Record<string, any>;
-    threshold: Record<string, any>;
+    params: Record<string, number>;
+    threshold: Record<string, number>;
     isEnabled: boolean;
     algorithmVersion: string;
     updatedAt: string;
@@ -68,8 +68,8 @@ export namespace DiagnosisApi {
     label: DiagnosisLabel;
     algorithmType: string;
     calcMethod: string;
-    params: Record<string, any>;
-    threshold: Record<string, any>;
+    params: Record<string, number>;
+    threshold: Record<string, number>;
     isEnabled: boolean;
   }
 
@@ -104,7 +104,7 @@ export namespace DiagnosisApi {
     label: DiagnosisLabel;
     labelName: string;
     confidence: number;
-    evidence: Record<string, any>;
+    evidence: Record<string, unknown>;
     algorithm: string;
   }
 

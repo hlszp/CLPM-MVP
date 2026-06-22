@@ -408,7 +408,7 @@ onMounted(() => {
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :row-key="(record: any) => record.id"
+        :row-key="(record: TuningApi.TuningTaskItem) => record.id"
         :scroll="{ x: 1100 }"
         size="middle"
         @change="handleTableChange"
