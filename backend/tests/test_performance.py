@@ -1,0 +1,828 @@
+"""Performance evaluation API tests (S3-METRIC-001~006).
+
+Covers:
+- GET /api/v1/performance/metrics (list)
+- PUT /api/v1/performance/metrics/{id} (update, ERR_METRIC_WEIGHT_SUM check)
+- GET /api/v1/performance/rules (list)
+- PUT /api/v1/performance/rules/{id} (update)
+- GET /api/v1/performance/board (dashboard)
+- GET /api/v1/performance/ranking (ranking)
+- GET /api/v1/performance/analytics (analytics)
+- POST /api/v1/performance/analytics/export (CSV export)
+- RBAC: 非 ADMIN 不能修改配置
+- KPI 计算引擎单元测试
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from tests.conftest import TEST_USERS, mock_current_user
+
+# ---------------------------------------------------------------------------
+# 测试数据
+# ---------------------------------------------------------------------------
+
+
+def _make_metric_config(
+    metric_id: str = "00000000-0000-0000-0000-000000000301",
+    metric_code: str = "good_value_rate",
+    metric_name: str = "好值率",
+    weight: Decimal = Decimal("20"),
+    is_enabled: bool = True,
+    threshold: dict | None = None,
+) -> MagicMock:
+    """构造 MetricConfig mock。"""
+    c = MagicMock()
+    c.id = metric_id
+    c.metric_code = metric_code
+    c.metric_name = metric_name
+    c.formula = "sum(quality==Good) / count(*) * 100"
+    c.weight = weight
+    c.threshold = threshold or {"min": 0, "max": 100, "alert": 80}
+    c.control_type = "STABLE"
+    c.is_enabled = is_enabled
+    c.updated_by = "admin"
+    c.updated_at = datetime.now(UTC)
+    c.version = 1
+    return c
+
+
+def _make_engine_rule(
+    rule_id: str = "00000000-0000-0000-0000-000000000401",
+    rule_code: str = "calc_cycle",
+    rule_name: str = "计算周期",
+    rule_type: str = "CALC_CYCLE",
+    params: dict | None = None,
+    is_enabled: bool = True,
+) -> MagicMock:
+    """构造 EngineRule mock。"""
+    r = MagicMock()
+    r.id = rule_id
+    r.rule_code = rule_code
+    r.rule_name = rule_name
+    r.rule_type = rule_type
+    r.params = params or {"cycle": "hourly"}
+    r.is_enabled = is_enabled
+    r.updated_by = "admin"
+    r.updated_at = datetime.now(UTC)
+    return r
+
+
+def _make_snapshot(
+    loop_id: str = "00000000-0000-0000-0000-000000000201",
+    score: Decimal = Decimal("78.60"),
+    good_value_rate: Decimal = Decimal("96.80"),
+    auto_mode_rate: Decimal = Decimal("90.00"),
+    steady_rate: Decimal = Decimal("85.00"),
+    accuracy_rate: Decimal = Decimal("80.00"),
+    oscillation_rate: Decimal = Decimal("15.00"),
+    saturation_rate: Decimal = Decimal("8.00"),
+    status: str = "SUCCESS",
+    ts_start: datetime | None = None,
+) -> MagicMock:
+    """构造 KpiSnapshotHourly mock。"""
+    s = MagicMock()
+    s.id = "00000000-0000-0000-0000-000000000501"
+    s.loop_id = loop_id
+    s.ts_start = ts_start or datetime.now(UTC)
+    s.ts_end = s.ts_start
+    s.score = score
+    s.good_value_rate = good_value_rate
+    s.auto_mode_rate = auto_mode_rate
+    s.steady_rate = steady_rate
+    s.accuracy_rate = accuracy_rate
+    s.oscillation_rate = oscillation_rate
+    s.saturation_rate = saturation_rate
+    s.status = status
+    return s
+
+
+def _make_scalars_mock(items: list) -> MagicMock:
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = items
+    return result
+
+
+def _make_scalar_one_or_none_mock(value) -> MagicMock:
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = value
+    return result
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-001: 指标配置 CRUD
+# ---------------------------------------------------------------------------
+
+
+class TestMetricConfigList:
+    """GET /api/v1/performance/metrics tests."""
+
+    def test_list_metrics_success(self, client, mock_db, fake_redis) -> None:
+        """认证用户可以获取指标配置列表。"""
+        configs = [
+            _make_metric_config(metric_code="good_value_rate", metric_name="好值率"),
+            _make_metric_config(
+                metric_id="00000000-0000-0000-0000-000000000302",
+                metric_code="auto_mode_rate",
+                metric_name="自控率",
+                weight=Decimal("20"),
+            ),
+        ]
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock(configs))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/metrics",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert len(body["data"]) == 2
+        assert body["data"][0]["metricCode"] == "good_value_rate"
+        assert body["data"][0]["metricName"] == "好值率"
+
+    def test_list_metrics_no_token(self, client) -> None:
+        """未认证请求返回 401。"""
+        resp = client.get("/api/v1/performance/metrics")
+        assert resp.status_code == 401
+
+
+class TestMetricConfigUpdate:
+    """PUT /api/v1/performance/metrics/{id} tests."""
+
+    def test_update_metric_success(self, client, mock_db, fake_redis) -> None:
+        """ADMIN 可以更新指标配置。"""
+        config = _make_metric_config(weight=Decimal("20"))
+        # 6 大 KPI 配置（权重总和 100，good_value_rate 已更新为 25）
+        all_configs = [
+            _make_metric_config(metric_code="good_value_rate", weight=Decimal("25")),
+            _make_metric_config(
+                metric_id="id2",
+                metric_code="auto_mode_rate",
+                weight=Decimal("20"),
+            ),
+            _make_metric_config(
+                metric_id="id3",
+                metric_code="steady_rate",
+                weight=Decimal("20"),
+            ),
+            _make_metric_config(
+                metric_id="id4",
+                metric_code="accuracy_rate",
+                weight=Decimal("15"),
+            ),
+            _make_metric_config(
+                metric_id="id5",
+                metric_code="oscillation_rate",
+                weight=Decimal("10"),
+            ),
+            _make_metric_config(
+                metric_id="id6",
+                metric_code="saturation_rate",
+                weight=Decimal("10"),
+            ),
+        ]
+        # 第一次查目标指标，第二次查所有指标做权重校验
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(config)
+            return _make_scalars_mock(all_configs)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/performance/metrics/{config.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"metricName": "好值率（更新）", "weight": 25},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"]["metricName"] == "好值率（更新）"
+
+    def test_update_metric_not_found(self, client, mock_db, fake_redis) -> None:
+        """指标不存在返回 404。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                "/api/v1/performance/metrics/nonexistent",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"weight": 25},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_METRIC_NOT_FOUND"
+
+    def test_update_metric_sponsor_forbidden(self, client, mock_db, fake_redis) -> None:
+        """SPONSOR 不能修改指标配置（403）。"""
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.put(
+                "/api/v1/performance/metrics/some-id",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"weight": 25},
+            )
+        assert resp.status_code == 403
+
+    def test_update_metric_ic_engineer_forbidden(self, client, mock_db, fake_redis) -> None:
+        """IC_ENGINEER 不能修改指标配置（403，仅 ADMIN）。"""
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.put(
+                "/api/v1/performance/metrics/some-id",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"weight": 25},
+            )
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-002: 引擎规则 CRUD
+# ---------------------------------------------------------------------------
+
+
+class TestEngineRuleList:
+    """GET /api/v1/performance/rules tests."""
+
+    def test_list_rules_success(self, client, mock_db, fake_redis) -> None:
+        """认证用户可以获取引擎规则列表。"""
+        rules = [_make_engine_rule()]
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock(rules))
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.get(
+                "/api/v1/performance/rules",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert len(body["data"]) == 1
+        assert body["data"][0]["ruleCode"] == "calc_cycle"
+
+
+class TestEngineRuleUpdate:
+    """PUT /api/v1/performance/rules/{id} tests."""
+
+    def test_update_rule_success(self, client, mock_db, fake_redis) -> None:
+        """ADMIN 可以更新引擎规则。"""
+        rule = _make_engine_rule()
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(rule))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/performance/rules/{rule.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"ruleName": "计算周期（更新）"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"]["ruleName"] == "计算周期（更新）"
+
+    def test_update_rule_not_found(self, client, mock_db, fake_redis) -> None:
+        """规则不存在返回 404。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                "/api/v1/performance/rules/nonexistent",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"ruleName": "更新"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_RULE_NOT_FOUND"
+
+    def test_update_rule_expert_forbidden(self, client, mock_db, fake_redis) -> None:
+        """EXPERT 不能修改引擎规则（403）。"""
+        with mock_current_user(TEST_USERS["expert"]):
+            resp = client.put(
+                "/api/v1/performance/rules/some-id",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"ruleName": "更新"},
+            )
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-004: 全局看板
+# ---------------------------------------------------------------------------
+
+
+class TestBoard:
+    """GET /api/v1/performance/board tests."""
+
+    def test_get_board_success(self, client, mock_db, fake_redis) -> None:
+        """认证用户可以获取全局看板。"""
+        snapshots = [_make_snapshot()]
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock(snapshots))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/board",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        data = body["data"]
+        assert "filterScope" in data
+        assert "kpiCards" in data
+        assert "kpiSummary" in data
+        assert "steadyRateTrend" in data
+        assert "partialWarning" in data
+        # 7 张卡片（6 大 KPI + 综合评分）
+        assert len(data["kpiCards"]) == 7
+
+    def test_get_board_with_plant_node(self, client, mock_db, fake_redis) -> None:
+        """按装置筛选看板数据。"""
+        snapshots = [_make_snapshot()]
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock(snapshots))
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.get(
+                "/api/v1/performance/board?plantNodeId=00000000-0000-0000-0000-000000000111",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_get_board_no_token(self, client) -> None:
+        """未认证请求返回 401。"""
+        resp = client.get("/api/v1/performance/board")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-005: 低效回路排行
+# ---------------------------------------------------------------------------
+
+
+class TestRanking:
+    """GET /api/v1/performance/ranking tests."""
+
+    def test_get_ranking_success(self, client, mock_db, fake_redis) -> None:
+        """认证用户可以获取低效回路排行。"""
+        snapshot = _make_snapshot(score=Decimal("45.20"))
+        loop = MagicMock()
+        loop.id = snapshot.loop_id
+        loop.tag_name = "101-FC-1023"
+        loop.unit_id = "00000000-0000-0000-0000-000000000111"
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalars_mock([snapshot])
+            if call_count[0] == 2:
+                return _make_scalars_mock([loop])
+            if call_count[0] == 3:
+                # PlantNode 查询
+                node = MagicMock()
+                node.id = loop.unit_id
+                node.name = "常减压装置-单元A"
+                return _make_scalars_mock([node])
+            # ActionTracker 查询
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/ranking",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        data = body["data"]
+        assert isinstance(data, list)
+        if data:
+            assert "rank" in data[0]
+            assert "loopId" in data[0]
+            assert "tagName" in data[0]
+            assert "compositeScore" in data[0]
+
+    def test_get_ranking_with_limit(self, client, mock_db, fake_redis) -> None:
+        """limit 参数限制返回条数。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/ranking?limit=5",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_get_ranking_no_token(self, client) -> None:
+        """未认证请求返回 401。"""
+        resp = client.get("/api/v1/performance/ranking")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-006: 统计报表
+# ---------------------------------------------------------------------------
+
+
+class TestAnalytics:
+    """GET /api/v1/performance/analytics tests."""
+
+    def test_get_analytics_success(self, client, mock_db, fake_redis) -> None:
+        """认证用户可以获取统计报表。"""
+        snapshots = [_make_snapshot()]
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalars_mock(snapshots)
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/analytics",
+                headers={"Authorization": "Bearer fake-token"},
+                params={
+                    "startTime": "2026-06-01T00:00:00",
+                    "endTime": "2026-06-22T00:00:00",
+                    "metricKey": "score",
+                    "granularity": "day",
+                },
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        data = body["data"]
+        assert "filterScope" in data
+        assert "kpiTrend" in data
+        assert "unitRanking" in data
+        assert "badActorDistribution" in data
+
+    def test_get_analytics_no_token(self, client) -> None:
+        """未认证请求返回 401。"""
+        resp = client.get("/api/v1/performance/analytics")
+        assert resp.status_code == 401
+
+
+class TestAnalyticsExport:
+    """POST /api/v1/performance/analytics/export tests."""
+
+    def test_export_csv_success(self, client, mock_db, fake_redis) -> None:
+        """认证用户可以导出 CSV 报表。"""
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalars_mock([_make_snapshot()])
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/performance/analytics/export",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "startTime": "2026-06-01T00:00:00",
+                    "endTime": "2026-06-22T00:00:00",
+                    "metricKey": "score",
+                    "granularity": "day",
+                    "format": "csv",
+                },
+            )
+        assert resp.status_code == 200
+        assert "text/csv" in resp.headers.get("content-type", "")
+        # CSV 内容应包含表头
+        assert "section" in resp.text or "filterScope" in resp.text
+
+    def test_export_csv_no_token(self, client) -> None:
+        """未认证请求返回 401。"""
+        resp = client.post(
+            "/api/v1/performance/analytics/export",
+            json={
+                "startTime": "2026-06-01T00:00:00",
+                "endTime": "2026-06-22T00:00:00",
+            },
+        )
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# 权重校验单元测试
+# ---------------------------------------------------------------------------
+
+
+class TestWeightSumValidator:
+    """权重总和校验测试。"""
+
+    def test_weight_sum_ok(self) -> None:
+        """权重总和为 100 通过校验。"""
+        from app.schemas.performance import WeightSumValidator
+
+        # 不抛异常即通过
+        WeightSumValidator.validate(
+            [
+                Decimal("20"), Decimal("20"), Decimal("20"),
+                Decimal("15"), Decimal("15"), Decimal("10"),
+            ]
+        )
+
+    def test_weight_sum_invalid(self) -> None:
+        """权重总和不为 100 抛出 ERR_METRIC_WEIGHT_SUM。"""
+        from app.core.exceptions import BizError
+        from app.schemas.performance import WeightSumValidator
+
+        with pytest.raises(BizError) as exc_info:
+            WeightSumValidator.validate([Decimal("20"), Decimal("20"), Decimal("20")])
+        assert exc_info.value.code == "ERR_METRIC_WEIGHT_SUM"
+        assert exc_info.value.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# KPI 计算引擎单元测试
+# ---------------------------------------------------------------------------
+
+
+class TestKpiCalcEngine:
+    """KPI 计算引擎单元测试。"""
+
+    def test_compute_kpis_basic(self) -> None:
+        """测试 6 大 KPI 计算基础逻辑。"""
+        from app.tasks.kpi_calc import _compute_kpis
+
+        # 构造对齐的时序数据：10 个点，全部 Auto 模式，PV=SP
+        aligned = [
+            {
+                "ts": f"2026-06-22T08:00:{i:02d}",
+                "pv": 50.0,
+                "sp": 50.0,
+                "op": 50.0,
+                "mode": 1,  # Auto
+            }
+            for i in range(10)
+        ]
+        metric_configs: dict = {}
+        kpis = _compute_kpis(aligned, metric_configs)
+        # 全部 Good → good_value_rate = 100
+        assert kpis["good_value_rate"] == Decimal("100.00")
+        # 全部 Auto → auto_mode_rate = 100
+        assert kpis["auto_mode_rate"] == Decimal("100.00")
+        # PV == SP → steady_rate = 100
+        assert kpis["steady_rate"] == Decimal("100.00")
+        # PV == SP → accuracy_rate = 100
+        assert kpis["accuracy_rate"] == Decimal("100.00")
+        # op = 50 → saturation_rate = 0
+        assert kpis["saturation_rate"] == Decimal("0.00")
+
+    def test_compute_kpis_empty(self) -> None:
+        """空数据返回所有 None。"""
+        from app.tasks.kpi_calc import _compute_kpis
+
+        kpis = _compute_kpis([], {})
+        for code in (
+            "good_value_rate",
+            "auto_mode_rate",
+            "steady_rate",
+            "accuracy_rate",
+            "oscillation_rate",
+            "saturation_rate",
+        ):
+            assert kpis[code] is None
+
+    def test_compute_composite_score(self) -> None:
+        """测试综合评分计算。"""
+        from app.tasks.kpi_calc import _compute_composite_score
+
+        # 构造指标配置
+        configs = {
+            "good_value_rate": _make_metric_config(
+                metric_code="good_value_rate", weight=Decimal("20")
+            ),
+            "auto_mode_rate": _make_metric_config(
+                metric_id="id2",
+                metric_code="auto_mode_rate",
+                weight=Decimal("20"),
+            ),
+            "steady_rate": _make_metric_config(
+                metric_id="id3",
+                metric_code="steady_rate",
+                weight=Decimal("20"),
+            ),
+            "accuracy_rate": _make_metric_config(
+                metric_id="id4",
+                metric_code="accuracy_rate",
+                weight=Decimal("15"),
+            ),
+            "oscillation_rate": _make_metric_config(
+                metric_id="id5",
+                metric_code="oscillation_rate",
+                weight=Decimal("15"),
+            ),
+            "saturation_rate": _make_metric_config(
+                metric_id="id6",
+                metric_code="saturation_rate",
+                weight=Decimal("10"),
+            ),
+        }
+
+        kpi_values = {
+            "good_value_rate": Decimal("100"),
+            "auto_mode_rate": Decimal("100"),
+            "steady_rate": Decimal("100"),
+            "accuracy_rate": Decimal("100"),
+            "oscillation_rate": Decimal("0"),
+            "saturation_rate": Decimal("0"),
+        }
+
+        score = _compute_composite_score(kpi_values, configs)
+        # 所有指标归一化为 1，权重和 100，R_auto = 1
+        # Score = 100 * 1 = 100
+        assert score == Decimal("100.00")
+
+    def test_compute_composite_score_disabled_metric(self) -> None:
+        """停用的指标不参与评分。"""
+        from app.tasks.kpi_calc import _compute_composite_score
+
+        configs = {
+            "good_value_rate": _make_metric_config(
+                metric_code="good_value_rate", weight=Decimal("20"), is_enabled=False
+            ),
+            "auto_mode_rate": _make_metric_config(
+                metric_id="id2",
+                metric_code="auto_mode_rate",
+                weight=Decimal("20"),
+                is_enabled=True,
+            ),
+        }
+        kpi_values = {
+            "good_value_rate": Decimal("100"),
+            "auto_mode_rate": Decimal("100"),
+        }
+        score = _compute_composite_score(kpi_values, configs)
+        # good_value_rate 停用，仅 auto_mode_rate 参与
+        # weighted_sum = 20 * 1 = 20
+        # R_auto = 1
+        # Score = 20 * 1 = 20
+        assert score == Decimal("20.00")
+
+    def test_is_auto_mode(self) -> None:
+        """测试 Auto 模式判定。"""
+        from app.tasks.kpi_calc import _is_auto_mode
+
+        assert _is_auto_mode(1) is True  # Auto
+        assert _is_auto_mode(2) is True  # Cascade
+        assert _is_auto_mode(3) is True  # Cascade
+        assert _is_auto_mode(0) is False  # Manual
+        assert _is_auto_mode(None) is False
+        assert _is_auto_mode("invalid") is False
+
+    def test_detect_oscillation(self) -> None:
+        """测试振荡检测。"""
+        from app.tasks.kpi_calc import _detect_oscillation
+
+        # 单调递增 → 无振荡
+        aligned_up = [{"pv": float(i)} for i in range(5)]
+        assert _detect_oscillation(aligned_up) == 0
+
+        # 交替变化 → 振荡
+        aligned_osc = [{"pv": v} for v in [1.0, 2.0, 1.0, 2.0, 1.0]]
+        assert _detect_oscillation(aligned_osc) > 0
+
+    def test_align_timeseries(self) -> None:
+        """测试时序对齐。"""
+        from app.tasks.kpi_calc import _align_timeseries
+
+        pv_data = [
+            {"ts": "t1", "value": 10.0, "quality": "GOOD"},
+            {"ts": "t2", "value": 20.0, "quality": "GOOD"},
+        ]
+        sp_data = [{"ts": "t1", "value": 11.0}, {"ts": "t2", "value": 21.0}]
+        op_data = [{"ts": "t1", "value": 50.0}]
+        mode_data = [{"ts": "t1", "value": 1}]
+
+        aligned = _align_timeseries(pv_data, sp_data, op_data, mode_data)
+        assert len(aligned) == 2
+        assert aligned[0]["pv"] == 10.0
+        assert aligned[0]["sp"] == 11.0
+        assert aligned[0]["op"] == 50.0
+        assert aligned[0]["mode"] == 1
+        # t2 的 op/mode 缺失
+        assert aligned[1]["op"] is None
+        assert aligned[1]["mode"] is None
+
+
+# ---------------------------------------------------------------------------
+# Celery Beat 调度测试
+# ---------------------------------------------------------------------------
+
+
+class TestCeleryBeatSchedule:
+    """Celery Beat 调度配置测试。"""
+
+    def test_beat_schedule_has_kpi_calc(self) -> None:
+        """Beat 调度应包含 KPI 计算任务。"""
+        # 触发 kpi_calc 模块加载（注册 beat_schedule）
+        import app.tasks.kpi_calc  # noqa: F401
+        from app.tasks.celery_app import celery_app
+
+        beat = celery_app.conf.beat_schedule
+        assert "kpi-calc-hourly" in beat
+        assert beat["kpi-calc-hourly"]["task"] == "app.tasks.kpi_calc.calculate_hourly_kpi"
+        assert beat["kpi-calc-hourly"]["schedule"] == 3600.0
+
+
+# ---------------------------------------------------------------------------
+# 服务层单元测试
+# ---------------------------------------------------------------------------
+
+
+class TestPerformanceService:
+    """Performance service 单元测试。"""
+
+    async def test_list_metric_configs(self) -> None:
+        """list_metric_configs 返回配置列表。"""
+        from app.services.performance import list_metric_configs
+
+        db = AsyncMock()
+        configs = [_make_metric_config()]
+        db.execute = AsyncMock(return_value=_make_scalars_mock(configs))
+        result = await list_metric_configs(db)
+        assert len(result) == 1
+        assert result[0]["metricCode"] == "good_value_rate"
+
+    async def test_list_engine_rules(self) -> None:
+        """list_engine_rules 返回规则列表。"""
+        from app.services.performance import list_engine_rules
+
+        db = AsyncMock()
+        rules = [_make_engine_rule()]
+        db.execute = AsyncMock(return_value=_make_scalars_mock(rules))
+        result = await list_engine_rules(db)
+        assert len(result) == 1
+        assert result[0]["ruleCode"] == "calc_cycle"
+
+    async def test_update_metric_config_not_found(self) -> None:
+        """更新不存在的指标返回 ERR_METRIC_NOT_FOUND。"""
+        from app.core.exceptions import BizError
+        from app.services.performance import update_metric_config
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with pytest.raises(BizError) as exc_info:
+            await update_metric_config(db, "nonexistent", "admin", weight=Decimal("25"))
+        assert exc_info.value.code == "ERR_METRIC_NOT_FOUND"
+
+    async def test_update_engine_rule_not_found(self) -> None:
+        """更新不存在的规则返回 ERR_RULE_NOT_FOUND。"""
+        from app.core.exceptions import BizError
+        from app.services.performance import update_engine_rule
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with pytest.raises(BizError) as exc_info:
+            await update_engine_rule(db, "nonexistent", "admin", rule_name="更新")
+        assert exc_info.value.code == "ERR_RULE_NOT_FOUND"
+
+    async def test_get_board_empty(self) -> None:
+        """无快照数据时看板返回空 KPI 卡片。"""
+        from app.services.performance import get_board
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
+        with patch("app.services.performance.redis_client") as mock_redis:
+            mock_redis.get = AsyncMock(return_value=None)
+            mock_redis.setex = AsyncMock(return_value=None)
+            result = await get_board(db, plant_node_id=None, time_window="today")
+        assert len(result["kpiCards"]) == 7
+        assert all(c["status"] == "INCONCLUSIVE" for c in result["kpiCards"])
+
+    async def test_get_ranking_empty(self) -> None:
+        """无快照数据时排行返回空列表。"""
+        from app.services.performance import get_ranking
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
+        result = await get_ranking(db)
+        assert result == []
+
+    async def test_export_analytics_csv(self) -> None:
+        """导出 CSV 包含表头和分区。"""
+        from app.services.performance import export_analytics_csv
+
+        db = AsyncMock()
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalars_mock([_make_snapshot()])
+            return _make_scalars_mock([])
+
+        db.execute = AsyncMock(side_effect=execute_side_effect)
+        csv_content = await export_analytics_csv(
+            db,
+            start_time="2026-06-01T00:00:00",
+            end_time="2026-06-22T00:00:00",
+        )
+        assert "section" in csv_content
+        assert "filterScope" in csv_content
