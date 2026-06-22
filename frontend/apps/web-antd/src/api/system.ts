@@ -155,10 +155,7 @@ export namespace SystemApi {
   }
 
   /** 报表任务状态 */
-  export type ReportTaskStatus =
-    | 'FAILED'
-    | 'RUNNING'
-    | 'SUCCESS';
+  export type ReportTaskStatus = 'FAILED' | 'RUNNING' | 'SUCCESS';
 
   /** 报表任务状态查询响应 */
   export interface ReportTaskResult {
@@ -211,9 +208,7 @@ export function resetUserPasswordApi(
 /**
  * 分页查询审计日志 — IDS v3.2 §2.6
  */
-export function getAuditLogListApi(
-  params: SystemApi.AuditLogListQueryParams,
-) {
+export function getAuditLogListApi(params: SystemApi.AuditLogListQueryParams) {
   return requestClient.get<SystemApi.AuditLogListResult>('/audit-logs', {
     params,
   });

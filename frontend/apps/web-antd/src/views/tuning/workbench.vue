@@ -306,10 +306,16 @@ onMounted(() => {
               </span>
             </template>
             <template v-else-if="column.key === 'modelType'">
-              {{ modelTypeNameMap[record.modelType as TuningApi.ModelType] || record.modelType }}
+              {{
+                modelTypeNameMap[record.modelType as TuningApi.ModelType] ||
+                record.modelType
+              }}
             </template>
             <template v-else-if="column.key === 'algorithm'">
-              {{ algorithmNameMap[record.algorithm as TuningApi.Algorithm] || record.algorithm }}
+              {{
+                algorithmNameMap[record.algorithm as TuningApi.Algorithm] ||
+                record.algorithm
+              }}
             </template>
             <template v-else-if="column.key === 'fittingScore'">
               <span
@@ -322,8 +328,13 @@ onMounted(() => {
               </span>
             </template>
             <template v-else-if="column.key === 'status'">
-              <Tag :color="statusColorMap[record.status as TuningApi.TaskStatus]">
-                {{ statusNameMap[record.status as TuningApi.TaskStatus] || record.status }}
+              <Tag
+                :color="statusColorMap[record.status as TuningApi.TaskStatus]"
+              >
+                {{
+                  statusNameMap[record.status as TuningApi.TaskStatus] ||
+                  record.status
+                }}
               </Tag>
             </template>
             <template v-else-if="column.key === 'createdAt'">

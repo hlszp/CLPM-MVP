@@ -301,10 +301,7 @@ onMounted(() => {
 
     <Spin :spinning="loading">
       <!-- 结果区 -->
-      <div
-        v-if="identifyResult"
-        class="grid grid-cols-1 gap-4 lg:grid-cols-3"
-      >
+      <div v-if="identifyResult" class="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <!-- 左侧：模型参数卡片 -->
         <Card title="模型参数" class="lg:col-span-1">
           <Descriptions :column="1" bordered size="small">
@@ -375,11 +372,7 @@ onMounted(() => {
             辨识完成，可使用此模型进行 PID 整定或闭环仿真。
           </span>
           <div class="flex gap-2">
-            <Button
-              type="primary"
-              size="large"
-              @click="handleUseForTuning"
-            >
+            <Button type="primary" size="large" @click="handleUseForTuning">
               使用此模型进行整定 →
             </Button>
           </div>

@@ -82,18 +82,13 @@ describe('关键交互逻辑测试', () => {
 
   // UT-INTERACT-004: v-permission指令-无权限时元素隐藏
   it('UT-INTERACT-004: 无权限时元素被移除', () => {
-    const wrapper = createPermissionTestComponent('loop:delete', [
-      'loop:view',
-    ]);
+    const wrapper = createPermissionTestComponent('loop:delete', ['loop:view']);
     expect(wrapper.find('button').exists()).toBe(false);
   });
 
   // UT-INTERACT-005: v-permission-通配符（["*"] 时任意权限可见）
   it('UT-INTERACT-005: 通配符 "*" 时任意权限可见', () => {
-    const wrapper = createPermissionTestComponent(
-      'system:user:delete',
-      ['*'],
-    );
+    const wrapper = createPermissionTestComponent('system:user:delete', ['*']);
     expect(wrapper.find('button').exists()).toBe(true);
   });
 

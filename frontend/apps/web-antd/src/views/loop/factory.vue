@@ -98,7 +98,7 @@ async function loadTree() {
 function onSelect(keys: any[], info: any) {
   selectedNode.value =
     keys.length > 0 && info.selectedNodes?.[0]
-      ? (info.selectedNodes[0] as any)?.node ?? null
+      ? ((info.selectedNodes[0] as any)?.node ?? null)
       : null;
 }
 

@@ -139,7 +139,9 @@ function objectToKv(
 }
 
 /** 将键值对数组转为对象 */
-function kvToObject(kv: { key: string; value: string }[]): Record<string, number> {
+function kvToObject(
+  kv: { key: string; value: string }[],
+): Record<string, number> {
   const result: Record<string, number> = {};
   for (const item of kv) {
     if (!item.key) continue;

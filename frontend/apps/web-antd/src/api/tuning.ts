@@ -18,12 +18,7 @@ export namespace TuningApi {
   export type IdentifyMethod = 'AREA' | 'COMBINED' | 'TWO_POINT';
 
   /** 整定算法 */
-  export type Algorithm =
-    | 'COHEN_COON'
-    | 'IMC'
-    | 'LAMBDA'
-    | 'SIMC'
-    | 'ZN';
+  export type Algorithm = 'COHEN_COON' | 'IMC' | 'LAMBDA' | 'SIMC' | 'ZN';
 
   /** 任务状态 */
   export type TaskStatus = 'APPLIED' | 'FAILED' | 'SIMULATED';

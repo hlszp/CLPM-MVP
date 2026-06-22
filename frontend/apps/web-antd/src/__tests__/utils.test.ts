@@ -57,13 +57,7 @@ describe('工具函数测试', () => {
     ];
     const result = flattenNodes(tree);
     expect(result).toHaveLength(5);
-    expect(result.map((n) => n.id)).toEqual([
-      '1',
-      '1-1',
-      '1-2',
-      '1-2-1',
-      '2',
-    ]);
+    expect(result.map((n) => n.id)).toEqual(['1', '1-1', '1-2', '1-2-1', '2']);
   });
 
   // UT-UTIL-006: labelName-标签映射（OSCILLATION → "振荡"）

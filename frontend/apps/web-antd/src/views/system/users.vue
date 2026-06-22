@@ -31,10 +31,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  CLPM_ROLES,
-  ROLE_LABELS,
-} from '#/api/auth';
+import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
 import {
   createUserApi,
   deleteUserApi,
@@ -418,12 +415,7 @@ onMounted(() => {
       width="560px"
       @ok="handleSubmit"
     >
-      <Form
-        ref="formRef"
-        :model="formState"
-        layout="vertical"
-        class="pt-4"
-      >
+      <Form ref="formRef" :model="formState" layout="vertical" class="pt-4">
         <FormItem
           name="username"
           label="用户名"

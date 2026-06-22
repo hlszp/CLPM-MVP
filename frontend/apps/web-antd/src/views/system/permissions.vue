@@ -78,7 +78,10 @@ interface MatrixRow {
  * 行：角色，列：模块
  * null 表示无权限
  */
-const PERMISSION_MATRIX: Record<ClpmRole, Record<string, PermissionLevel | null>> = {
+const PERMISSION_MATRIX: Record<
+  ClpmRole,
+  Record<string, PermissionLevel | null>
+> = {
   ADMIN: {
     dashboard: 'MANAGE',
     diagnosis: 'MANAGE',
@@ -164,8 +167,8 @@ function getCellPermission(
     <Card>
       <div class="mb-4">
         <p class="text-sm text-gray-500">
-          5 种角色 × 6 大模块访问权限矩阵 · 权限级别：查看 / 协同 / 执行 / 管理 / 服务 ·
-          系统预设，不可自定义修改
+          5 种角色 × 6 大模块访问权限矩阵 · 权限级别：查看 / 协同 / 执行 / 管理
+          / 服务 · 系统预设，不可自定义修改
         </p>
       </div>
 
@@ -198,9 +201,17 @@ function getCellPermission(
               >
                 <Tag
                   v-if="getCellPermission(row, m.key)"
-                  :color="permissionColorMap[getCellPermission(row, m.key) as PermissionLevel]"
+                  :color="
+                    permissionColorMap[
+                      getCellPermission(row, m.key) as PermissionLevel
+                    ]
+                  "
                 >
-                  {{ permissionLabelMap[getCellPermission(row, m.key) as PermissionLevel] }}
+                  {{
+                    permissionLabelMap[
+                      getCellPermission(row, m.key) as PermissionLevel
+                    ]
+                  }}
                 </Tag>
                 <span v-else class="text-gray-300">—</span>
               </td>
@@ -218,8 +229,8 @@ function getCellPermission(
           <ul class="mt-2 list-disc pl-6 text-sm text-gray-500">
             <li>权限矩阵为系统预设，遵循产品化原则，不可自定义修改。</li>
             <li>
-              权限级别从低到高：查看（只读）→ 协同（评论/标记）→
-              执行（操作）→ 管理（含配置）→ 服务（系统级运维）。
+              权限级别从低到高：查看（只读）→ 协同（评论/标记）→ 执行（操作）→
+              管理（含配置）→ 服务（系统级运维）。
             </li>
             <li>
               系统管理员拥有全部模块权限（服务级）；外部专家仅可访问诊断中心与回路整定模块。

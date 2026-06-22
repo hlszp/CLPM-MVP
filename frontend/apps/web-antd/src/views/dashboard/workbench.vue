@@ -18,7 +18,15 @@ import type { DashboardApi } from '#/api/dashboard';
 import type { DiagnosisLabel } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -166,7 +174,9 @@ const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 分钟
 let refreshTimer: null | ReturnType<typeof setInterval> = null;
 
 /** 待处理异常 */
-const pendingAlerts = computed(() => overviewData.value?.pending_alerts ?? null);
+const pendingAlerts = computed(
+  () => overviewData.value?.pending_alerts ?? null,
+);
 
 /** 低效回路列表 */
 const inefficientLoops = computed(
@@ -217,10 +227,7 @@ function handleGranularityChange() {
 }
 
 /** 判断趋势是否为"好" */
-function isTrendGood(
-  trend: DashboardApi.Trend,
-  goodWhenUp: boolean,
-): boolean {
+function isTrendGood(trend: DashboardApi.Trend, goodWhenUp: boolean): boolean {
   if (trend === 'stable') return true;
   if (goodWhenUp) return trend === 'up';
   return trend === 'down';
@@ -234,10 +241,7 @@ function trendArrow(trend: DashboardApi.Trend): string {
 }
 
 /** 趋势颜色 */
-function trendColor(
-  trend: DashboardApi.Trend,
-  goodWhenUp: boolean,
-): string {
+function trendColor(trend: DashboardApi.Trend, goodWhenUp: boolean): string {
   if (trend === 'stable') return '#6c757d';
   return isTrendGood(trend, goodWhenUp) ? '#198754' : '#dc3545';
 }
@@ -511,9 +515,7 @@ onUnmounted(() => {
               v-if="overviewData"
               class="font-mono text-2xl font-bold"
               :style="{
-                color: scoreColor(
-                  overviewData.kpi_cards[cfg.key].value,
-                ),
+                color: scoreColor(overviewData.kpi_cards[cfg.key].value),
               }"
             >
               {{ overviewData.kpi_cards[cfg.key].value.toFixed(1) }}
@@ -532,7 +534,12 @@ onUnmounted(() => {
               }"
             >
               {{ trendArrow(overviewData.kpi_cards[cfg.key].trend) }}
-              {{ formatDelta(overviewData.kpi_cards[cfg.key].delta, overviewData.kpi_cards[cfg.key].unit) }}
+              {{
+                formatDelta(
+                  overviewData.kpi_cards[cfg.key].delta,
+                  overviewData.kpi_cards[cfg.key].unit,
+                )
+              }}
             </span>
           </div>
         </div>
@@ -579,7 +586,11 @@ onUnmounted(() => {
               </span>
             </template>
             <template v-else-if="column.key === 'diagnosis_labels'">
-              <template v-if="record.diagnosis_labels && record.diagnosis_labels.length > 0">
+              <template
+                v-if="
+                  record.diagnosis_labels && record.diagnosis_labels.length > 0
+                "
+              >
                 <Tag
                   v-for="label in record.diagnosis_labels"
                   :key="label"
@@ -652,7 +663,13 @@ onUnmounted(() => {
           </div>
 
           <!-- 预诊标签 -->
-          <div v-if="selectedLoop.diagnosis_labels && selectedLoop.diagnosis_labels.length > 0" class="mt-3">
+          <div
+            v-if="
+              selectedLoop.diagnosis_labels &&
+              selectedLoop.diagnosis_labels.length > 0
+            "
+            class="mt-3"
+          >
             <div class="mb-1 text-xs text-gray-500">预诊标签</div>
             <Tag
               v-for="label in selectedLoop.diagnosis_labels"
@@ -695,6 +712,7 @@ onUnmounted(() => {
 :deep(.row-low-score) {
   background-color: #fff1f0;
 }
+
 :deep(.row-low-score:hover) {
   background-color: #ffe7e5;
 }

@@ -116,8 +116,7 @@ export namespace DashboardApi {
 export function getDashboardOverviewApi(
   params?: DashboardApi.OverviewQueryParams,
 ) {
-  return requestClient.get<DashboardApi.OverviewResult>(
-    '/dashboard/overview',
-    { params },
-  );
+  return requestClient.get<DashboardApi.OverviewResult>('/dashboard/overview', {
+    params,
+  });
 }

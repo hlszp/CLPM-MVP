@@ -272,7 +272,11 @@ function renderPieChart() {
 /** 渲染状态分布柱状图 */
 function renderBarChart() {
   const byStatus = historyStats.value?.byStatus || {};
-  const statusOrder: TuningApi.TaskStatus[] = ['SIMULATED', 'APPLIED', 'FAILED'];
+  const statusOrder: TuningApi.TaskStatus[] = [
+    'SIMULATED',
+    'APPLIED',
+    'FAILED',
+  ];
   const colorMap: Record<string, string> = {
     SIMULATED: '#1890ff',
     APPLIED: '#52c41a',

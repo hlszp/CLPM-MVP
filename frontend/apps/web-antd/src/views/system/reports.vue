@@ -238,10 +238,7 @@ function startPolling() {
           progress: taskResult.progress ?? 0,
           message: taskResult.message || '',
         });
-        if (
-          taskResult.status === 'SUCCESS' ||
-          taskResult.status === 'FAILED'
-        ) {
+        if (taskResult.status === 'SUCCESS' || taskResult.status === 'FAILED') {
           if (taskResult.status === 'SUCCESS') {
             message.success(`报表「${recordName(configId)}」生成完成`);
           } else {
@@ -414,12 +411,7 @@ onUnmounted(() => {
       width="600px"
       @ok="handleSubmit"
     >
-      <Form
-        ref="formRef"
-        :model="formState"
-        layout="vertical"
-        class="pt-4"
-      >
+      <Form ref="formRef" :model="formState" layout="vertical" class="pt-4">
         <FormItem
           name="name"
           label="报表名称"

@@ -121,11 +121,7 @@ function buildModelParams(): TuningApi.ModelParams {
 
 /** 构建当前 PID 参数（若有任一参数则返回） */
 function buildCurrentPid(): TuningApi.PidParams | undefined {
-  if (
-    form.kp === undefined &&
-    form.ti === undefined &&
-    form.td === undefined
-  ) {
+  if (form.kp === undefined && form.ti === undefined && form.td === undefined) {
     return undefined;
   }
   return {
@@ -141,7 +137,10 @@ async function loadMethods() {
     const data = await getTuningMethodsApi();
     methods.value = data || [];
     // 初始化第一个算法的默认参数
-    if (data.length > 0 && !methods.value.find((m) => m.code === form.algorithm)) {
+    if (
+      data.length > 0 &&
+      !methods.value.find((m) => m.code === form.algorithm)
+    ) {
       const first = data[0];
       if (first) {
         form.algorithm = first.code;
@@ -281,7 +280,9 @@ function initFromQuery() {
   }
   if (q.modelParams) {
     try {
-      const params = JSON.parse(q.modelParams as string) as TuningApi.ModelParams;
+      const params = JSON.parse(
+        q.modelParams as string,
+      ) as TuningApi.ModelParams;
       if (params.K !== undefined && params.K !== null) {
         form.K = params.K;
       }
@@ -529,18 +530,10 @@ onMounted(() => {
 
         <!-- 操作按钮 -->
         <div class="mt-4 flex gap-2">
-          <Button
-            type="primary"
-            size="large"
-            @click="handleGoSimulation"
-          >
+          <Button type="primary" size="large" @click="handleGoSimulation">
             进行闭环仿真 →
           </Button>
-          <Button
-            size="large"
-            :loading="saving"
-            @click="handleSaveTask"
-          >
+          <Button size="large" :loading="saving" @click="handleSaveTask">
             保存为整定任务
           </Button>
         </div>

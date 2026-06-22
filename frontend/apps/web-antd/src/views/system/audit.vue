@@ -242,22 +242,32 @@ onMounted(() => {
           <template v-else-if="column.key === 'operation_type'">
             <Tag
               :color="
-                operationColorMap[record.operation_type as SystemApi.OperationType]
+                operationColorMap[
+                  record.operation_type as SystemApi.OperationType
+                ]
               "
             >
-              {{ operationLabel(record.operation_type as SystemApi.OperationType) }}
+              {{
+                operationLabel(record.operation_type as SystemApi.OperationType)
+              }}
             </Tag>
           </template>
           <template v-else-if="column.key === 'resource_type'">
             <Tag color="default">
-              {{ resourceLabel(record.resource_type as SystemApi.ResourceType) }}
+              {{
+                resourceLabel(record.resource_type as SystemApi.ResourceType)
+              }}
             </Tag>
           </template>
           <template v-else-if="column.key === 'resource_id'">
-            <span class="font-mono text-xs">{{ record.resource_id || '—' }}</span>
+            <span class="font-mono text-xs">{{
+              record.resource_id || '—'
+            }}</span>
           </template>
           <template v-else-if="column.key === 'ip_address'">
-            <span class="font-mono text-xs">{{ record.ip_address || '—' }}</span>
+            <span class="font-mono text-xs">{{
+              record.ip_address || '—'
+            }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Button
@@ -285,7 +295,9 @@ onMounted(() => {
             <span class="font-mono">{{ selectedLog.id }}</span>
           </DescriptionsItem>
           <DescriptionsItem label="操作时间">
-            <span class="font-mono">{{ formatTime(selectedLog.operated_at) }}</span>
+            <span class="font-mono">{{
+              formatTime(selectedLog.operated_at)
+            }}</span>
           </DescriptionsItem>
           <DescriptionsItem label="用户">
             {{ selectedLog.username }}
@@ -300,9 +312,7 @@ onMounted(() => {
 
         <Descriptions title="操作信息" bordered :column="1" size="small">
           <DescriptionsItem label="操作类型">
-            <Tag
-              :color="operationColorMap[selectedLog.operation_type]"
-            >
+            <Tag :color="operationColorMap[selectedLog.operation_type]">
               {{ operationLabel(selectedLog.operation_type) }}
             </Tag>
           </DescriptionsItem>
@@ -319,16 +329,26 @@ onMounted(() => {
           <div class="mb-2 font-medium">变更前后值对比</div>
           <div class="grid grid-cols-2 gap-3">
             <div class="rounded border border-gray-200">
-              <div class="border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium">
+              <div
+                class="border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium"
+              >
                 变更前
               </div>
-              <pre class="max-h-80 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all">{{ formatJsonValue(selectedLog.before_value) }}</pre>
+              <pre
+                class="max-h-80 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all"
+                >{{ formatJsonValue(selectedLog.before_value) }}</pre
+              >
             </div>
             <div class="rounded border border-gray-200">
-              <div class="border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium">
+              <div
+                class="border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium"
+              >
                 变更后
               </div>
-              <pre class="max-h-80 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all">{{ formatJsonValue(selectedLog.after_value) }}</pre>
+              <pre
+                class="max-h-80 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all"
+                >{{ formatJsonValue(selectedLog.after_value) }}</pre
+              >
             </div>
           </div>
         </div>

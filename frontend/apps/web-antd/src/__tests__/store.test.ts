@@ -7,7 +7,6 @@
  * - hasPermission：通配符 / 精确匹配
  */
 
-
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -83,9 +82,8 @@ vi.mock('#/api/core', () => ({
 // Mock resetAllStores
 const resetAllStoresMock = vi.fn();
 vi.mock('@vben/stores', async () => {
-  const actual = await vi.importActual<typeof import('@vben/stores')>(
-    '@vben/stores',
-  );
+  const actual =
+    await vi.importActual<typeof import('@vben/stores')>('@vben/stores');
   return {
     ...actual,
     resetAllStores: (...args: any[]) => resetAllStoresMock(...args),
@@ -140,10 +138,7 @@ const testRoutes: any[] = [
  * 模拟 generateRoutes 逻辑：
  * 根据用户角色过滤路由（对齐 @vben/access 的 accessible 模式）
  */
-function generateRoutesForRole(
-  routes: any[],
-  roles: string[],
-): any[] {
+function generateRoutesForRole(routes: any[], roles: string[]): any[] {
   const isAdmin = roles.includes('ADMIN');
   // ADMIN 拥有所有路由
   if (isAdmin) return routes;
