@@ -1,0 +1,582 @@
+"""S7 回路整定模块测试 — 模型辨识 + PID 整定 + 闭环仿真 + API."""
+
+from __future__ import annotations
+
+import math
+from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock
+
+from app.services.tuning_algorithms import (
+    PIDParams,
+    identify_fopdt,
+    identify_ipdt,
+    identify_sopdt,
+    simulate_closed_loop,
+    tune_cohen_coon,
+    tune_imc,
+    tune_lambda,
+    tune_simc,
+    tune_zn,
+)
+from tests.conftest import TEST_USERS, mock_current_user
+
+# ---------------------------------------------------------------------------
+# 辅助函数
+# ---------------------------------------------------------------------------
+
+
+def _generate_fopdt_step_response(
+    K: float, tau: float, theta: float, mv_step: float, duration: float = 300, dt: float = 1.0
+) -> tuple[list[float], list[float]]:
+    """生成 FOPDT 阶跃响应仿真数据。"""
+    pv_values = []
+    timestamps = []
+    n = int(duration / dt)
+    for i in range(n):
+        t = i * dt
+        timestamps.append(t)
+        if t < theta:
+            pv_values.append(0.0)
+        else:
+            pv_values.append(K * mv_step * (1.0 - math.exp(-(t - theta) / tau)))
+    return pv_values, timestamps
+
+
+def _make_loop_mock(
+    loop_id: str = "00000000-0000-0000-0000-0000000000a1",
+    tag_name: str = "TIC-101",
+) -> MagicMock:
+    """构造 LoopLedger mock。"""
+    loop = MagicMock()
+    loop.id = loop_id
+    loop.tag_name = tag_name
+    loop.description = "测试回路"
+    loop.status = "READY"
+    return loop
+
+
+def _make_scalar_one_or_none_mock(item) -> MagicMock:
+    """构造返回单行或 None 的 mock。"""
+    result = MagicMock()
+    result.scalar_one_or_none = MagicMock(return_value=item)
+    result.first = MagicMock(return_value=(item, "TIC-101") if item else None)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 模型辨识算法测试
+# ---------------------------------------------------------------------------
+
+
+class TestFOPDTIdentification:
+    """FOPDT 模型辨识测试。"""
+
+    def test_fopdt_known_params(self):
+        """已知参数 FOPDT 模型辨识，误差应 < 15%。"""
+        K_true, tau_true, theta_true = 1.0, 30.0, 5.0
+        mv_step = 10.0
+        pv_values, timestamps = _generate_fopdt_step_response(
+            K_true, tau_true, theta_true, mv_step, duration=300
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="COMBINED")
+
+        assert result["K"] is not None
+        assert result["tau"] is not None
+        assert result["theta"] is not None
+        assert result["fitting_score"] > 90.0
+
+        # 误差 < 15%
+        assert abs(result["K"] - K_true) / K_true < 0.15
+        assert abs(result["tau"] - tau_true) / tau_true < 0.2
+
+    def test_fopdt_two_point_method(self):
+        """两点法辨识。"""
+        K_true, tau_true, theta_true = 2.0, 50.0, 10.0
+        mv_step = 5.0
+        pv_values, timestamps = _generate_fopdt_step_response(
+            K_true, tau_true, theta_true, mv_step, duration=500
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
+
+        assert result["K"] is not None
+        assert result["fitting_score"] > 80.0
+
+    def test_fopdt_area_method(self):
+        """面积法辨识。"""
+        K_true, tau_true, theta_true = 0.5, 60.0, 8.0
+        mv_step = 20.0
+        pv_values, timestamps = _generate_fopdt_step_response(
+            K_true, tau_true, theta_true, mv_step, duration=500
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="AREA")
+
+        assert result["K"] is not None
+        assert result["fitting_score"] > 80.0
+
+    def test_fopdt_insufficient_data(self):
+        """数据不足时返回零值。"""
+        result = identify_fopdt([1.0, 2.0], [0.0, 1.0], 10.0)
+        assert result["K"] is None
+        assert result["fitting_score"] == 0.0
+
+    def test_fopdt_zero_mv_step(self):
+        """MV 阶跃为零时返回零值。"""
+        pv_values = [float(i) for i in range(50)]
+        timestamps = [float(i) for i in range(50)]
+        result = identify_fopdt(pv_values, timestamps, 0.0)
+        assert result["K"] is None
+
+
+class TestSOPDTIdentification:
+    """SOPDT 模型辨识测试。"""
+
+    def test_sopdt_identification(self):
+        """SOPDT 辨识应返回合理参数。"""
+        K_true, tau_true, theta_true = 1.0, 30.0, 5.0
+        mv_step = 10.0
+        pv_values, timestamps = _generate_fopdt_step_response(
+            K_true, tau_true, theta_true, mv_step, duration=300
+        )
+
+        result = identify_sopdt(pv_values, timestamps, mv_step)
+
+        assert result["K"] is not None
+        assert result["T1"] is not None
+        assert result["T2"] is not None
+        assert result["fitting_score"] > 70.0
+
+    def test_sopdt_insufficient_data(self):
+        """数据不足时返回零值。"""
+        result = identify_sopdt([1.0, 2.0], [0.0, 1.0], 10.0)
+        assert result["K"] is None
+
+
+class TestIPDTIdentification:
+    """IPDT 模型辨识测试。"""
+
+    def test_ipdt_identification(self):
+        """IPDT 辨识：积分过程 PV 线性增长。"""
+        K_true, theta_true = 0.1, 5.0
+        mv_step = 10.0
+        pv_values = []
+        timestamps = []
+        for i in range(200):
+            t = float(i)
+            timestamps.append(t)
+            if t < theta_true:
+                pv_values.append(0.0)
+            else:
+                pv_values.append(K_true * mv_step * (t - theta_true))
+
+        result = identify_ipdt(pv_values, timestamps, mv_step)
+
+        assert result["K"] is not None
+        assert result["theta"] is not None
+        assert result["fitting_score"] > 90.0
+        assert abs(result["K"] - K_true) / K_true < 0.1
+
+
+# ---------------------------------------------------------------------------
+# PID 整定算法测试
+# ---------------------------------------------------------------------------
+
+
+class TestPIDTuning:
+    """PID 整定算法测试。"""
+
+    def test_imc_tuning(self):
+        """IMC 整定公式验证。"""
+        K, tau, theta = 1.0, 30.0, 5.0
+        pid = tune_imc(K, tau, theta, lambda_ratio=1.0)
+
+        lam = 5.0
+        expected_kp = (tau + theta / 2.0) / (K * lam)
+        expected_ti = tau + theta / 2.0
+        expected_td = (tau * theta) / (2.0 * (tau + theta / 2.0))
+
+        assert abs(pid.kp - expected_kp) < 0.001
+        assert abs(pid.ti - expected_ti) < 0.001
+        assert abs(pid.td - expected_td) < 0.001
+
+    def test_lambda_tuning(self):
+        """Lambda 整定公式验证。"""
+        K, tau, theta = 1.0, 30.0, 5.0
+        pid = tune_lambda(K, tau, theta, lambda_ratio=1.0)
+
+        lam = 30.0
+        expected_kc = tau / (K * (lam + theta))
+        expected_ti = tau
+
+        assert abs(pid.kp - expected_kc) < 0.001
+        assert abs(pid.ti - expected_ti) < 0.001
+        assert pid.td == 0.0
+
+    def test_zn_tuning_pid(self):
+        """Z-N 开环法 PID 整定。"""
+        K, tau, theta = 1.0, 30.0, 5.0
+        pid = tune_zn(K, tau, theta, controller_type="PID")
+
+        R = K / tau
+        expected_kp = 1.2 / (R * theta)
+        expected_ti = 2.0 * theta
+        expected_td = 0.5 * theta
+
+        assert abs(pid.kp - expected_kp) < 0.001
+        assert abs(pid.ti - expected_ti) < 0.001
+        assert abs(pid.td - expected_td) < 0.001
+
+    def test_zn_tuning_pi(self):
+        """Z-N 开环法 PI 整定。"""
+        K, tau, theta = 1.0, 30.0, 5.0
+        pid = tune_zn(K, tau, theta, controller_type="PI")
+
+        R = K / tau
+        expected_kp = 0.9 / (R * theta)
+        expected_ti = theta / 0.3
+
+        assert abs(pid.kp - expected_kp) < 0.001
+        assert abs(pid.ti - expected_ti) < 0.001
+        assert pid.td == 0.0
+
+    def test_cohen_coon_tuning(self):
+        """Cohen-Coon PID 整定。"""
+        K, tau, theta = 1.0, 30.0, 5.0
+        pid = tune_cohen_coon(K, tau, theta, controller_type="PID")
+
+        ratio = theta / tau
+        expected_kp = (1.0 / K) * (tau / theta) * (1.35 + ratio / 3.0)
+        expected_ti = theta * (32.0 + 6.0 * ratio) / (13.0 + 8.0 * ratio)
+        expected_td = theta * 4.0 / (11.0 + 2.0 * ratio)
+
+        assert abs(pid.kp - expected_kp) < 0.001
+        assert abs(pid.ti - expected_ti) < 0.001
+        assert abs(pid.td - expected_td) < 0.001
+
+    def test_simc_tuning(self):
+        """SIMC PID 整定。"""
+        K, tau, theta = 1.0, 30.0, 5.0
+        pid = tune_simc(K, tau, theta, tau_c_ratio=1.0)
+
+        tau_c = 5.0
+        expected_kc = (1.0 / K) * tau / (theta + tau_c)
+        expected_ti = tau
+        expected_td = theta
+
+        assert abs(pid.kp - expected_kc) < 0.001
+        assert abs(pid.ti - expected_ti) < 0.001
+        assert abs(pid.td - expected_td) < 0.001
+
+    def test_imc_zero_k_handling(self):
+        """K=0 时的兜底处理。"""
+        pid = tune_imc(0, 30, 5)
+        assert pid.kp > 0
+
+    def test_zn_zero_theta_handling(self):
+        """theta=0 时的兜底处理。"""
+        pid = tune_zn(1.0, 30.0, 0)
+        assert pid.kp > 0
+
+
+# ---------------------------------------------------------------------------
+# 闭环仿真测试
+# ---------------------------------------------------------------------------
+
+
+class TestClosedLoopSimulation:
+    """闭环仿真测试。"""
+
+    def test_simulation_basic(self):
+        """基本仿真：应返回完整响应数据。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 5.0}
+        current_pid = PIDParams(kp=0.5, ti=20.0, td=0.0)
+        recommended_pid = PIDParams(kp=2.0, ti=15.0, td=2.0)
+
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=200.0,
+            sim_step=1.0,
+            setpoint_step=1.0,
+        )
+
+        assert "timestamps" in result
+        assert "currentResponse" in result
+        assert "recommendedResponse" in result
+        assert "currentMetrics" in result
+        assert "recommendedMetrics" in result
+        assert "improvement" in result
+
+        assert len(result["timestamps"]) == 201
+        assert len(result["currentResponse"]["pv"]) == 201
+        assert len(result["recommendedResponse"]["pv"]) == 201
+
+    def test_simulation_metrics_extraction(self):
+        """仿真性能指标提取。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 5.0}
+        current_pid = PIDParams(kp=0.3, ti=50.0, td=0.0)
+        recommended_pid = PIDParams(kp=1.5, ti=20.0, td=1.0)
+
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=300.0,
+            sim_step=1.0,
+            setpoint_step=1.0,
+        )
+
+        rec_metrics = result["recommendedMetrics"]
+        assert rec_metrics["overshoot"] is not None
+
+    def test_simulation_improvement(self):
+        """改善幅度计算。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 5.0}
+        current_pid = PIDParams(kp=0.3, ti=50.0, td=0.0)
+        recommended_pid = PIDParams(kp=1.5, ti=20.0, td=1.0)
+
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=300.0,
+        )
+
+        improvement = result["improvement"]
+        assert "riseTime" in improvement
+        assert "overshoot" in improvement
+        assert "settlingTime" in improvement
+        assert "itae" in improvement
+
+
+# ---------------------------------------------------------------------------
+# API 端点测试
+# ---------------------------------------------------------------------------
+
+
+class TestTuningAPI:
+    """整定 API 端点测试。"""
+
+    def test_get_methods_no_token(self, client) -> None:
+        """未认证访问应返回 401。"""
+        resp = client.get("/api/v1/tuning/methods")
+        assert resp.status_code == 401
+
+    def test_get_methods_authorized(self, client) -> None:
+        """认证后应返回整定方法列表。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tuning/methods",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == "0"
+        methods = data["data"]
+        assert len(methods) == 5
+        codes = [m["code"] for m in methods]
+        assert "IMC" in codes
+        assert "LAMBDA" in codes
+        assert "ZN" in codes
+        assert "COHEN_COON" in codes
+        assert "SIMC" in codes
+
+    def test_tune_pid_api(self, client) -> None:
+        """PID 整定 API。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tuning/tune",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "modelType": "FOPDT",
+                    "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+                    "algorithm": "IMC",
+                    "algorithmParams": {"lambdaRatio": 1.0},
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == "0"
+        result = data["data"]
+        assert result["algorithm"] == "IMC"
+        assert "kp" in result["recommendedPid"]
+        assert "ti" in result["recommendedPid"]
+        assert "td" in result["recommendedPid"]
+
+    def test_simulate_api(self, client) -> None:
+        """闭环仿真 API。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tuning/simulate",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "modelType": "FOPDT",
+                    "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+                    "currentPid": {"kp": 0.5, "ti": 30.0, "td": 0.0},
+                    "recommendedPid": {"kp": 2.0, "ti": 15.0, "td": 2.0},
+                    "simDuration": 100.0,
+                    "simStep": 1.0,
+                    "setpointStep": 1.0,
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == "0"
+        result = data["data"]
+        assert "timestamps" in result
+        assert "currentResponse" in result
+        assert "recommendedResponse" in result
+
+    def test_tune_invalid_algorithm(self, client) -> None:
+        """无效算法应返回错误。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tuning/tune",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "modelType": "FOPDT",
+                    "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+                    "algorithm": "INVALID_ALGO",
+                },
+            )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert data["code"] == "ERR_INVALID_ALGORITHM"
+
+    def test_tune_missing_k(self, client) -> None:
+        """K 缺失应返回错误。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tuning/tune",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "modelType": "FOPDT",
+                    "modelParams": {"tau": 30.0, "theta": 5.0},
+                    "algorithm": "IMC",
+                },
+            )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert data["code"] == "ERR_MODEL_PARAMS_MISSING"
+
+    def test_list_tasks_empty(self, client, mock_db) -> None:
+        """空任务列表。"""
+        count_result = MagicMock()
+        count_result.scalar = MagicMock(return_value=0)
+        list_result = MagicMock()
+        list_result.all = MagicMock(return_value=[])
+
+        mock_db.execute = AsyncMock(side_effect=[count_result, list_result])
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tuning/tasks",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == "0"
+        assert "items" in data["data"]
+        assert "total" in data["data"]
+
+    def test_history_stats(self, client, mock_db) -> None:
+        """整定历史统计。"""
+        total_result = MagicMock()
+        total_result.scalar = MagicMock(return_value=5)
+
+        algo_result = MagicMock()
+        algo_result.all = MagicMock(return_value=[("IMC", 3), ("ZN", 2)])
+
+        status_result = MagicMock()
+        status_result.all = MagicMock(return_value=[("SIMULATED", 5)])
+
+        avg_result = MagicMock()
+        avg_result.scalar = MagicMock(return_value=Decimal("92.50"))
+
+        recent_result = MagicMock()
+        recent_result.all = MagicMock(return_value=[])
+
+        mock_db.execute = AsyncMock(
+            side_effect=[total_result, algo_result, status_result, avg_result, recent_result]
+        )
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tuning/history",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == "0"
+        assert "totalTasks" in data["data"]
+        assert "byAlgorithm" in data["data"]
+
+    def test_identify_loop_not_found(self, client, mock_db) -> None:
+        """模型辨识：回路不存在。"""
+        mock_db.execute = AsyncMock(
+            return_value=_make_scalar_one_or_none_mock(None)
+        )
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tuning/identify",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopId": "00000000-0000-0000-0000-000000000000",
+                    "startTime": "2026-01-01T00:00:00",
+                    "endTime": "2026-01-01T01:00:00",
+                    "modelType": "FOPDT",
+                },
+            )
+        assert resp.status_code == 404
+        data = resp.json()
+        assert data["code"] == "ERR_LOOP_NOT_FOUND"
+
+    def test_tune_sponsor_forbidden(self, client) -> None:
+        """SPONSOR 角色不能整定（403）。"""
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.post(
+                "/api/v1/tuning/tune",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "modelType": "FOPDT",
+                    "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+                    "algorithm": "IMC",
+                },
+            )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
+
+    def test_create_task_success(self, client, mock_db) -> None:
+        """保存整定任务。"""
+        loop = _make_loop_mock()
+        mock_db.execute = AsyncMock(
+            return_value=_make_scalar_one_or_none_mock(loop)
+        )
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        mock_db.refresh = AsyncMock()
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tuning/tasks",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopId": "00000000-0000-0000-0000-0000000000a1",
+                    "modelType": "FOPDT",
+                    "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+                    "algorithm": "IMC",
+                    "recommendedPid": {"kp": 6.5, "ti": 32.5, "td": 2.31},
+                    "fittingScore": 95.5,
+                    "status": "SIMULATED",
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == "0"

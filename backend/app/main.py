@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     performance,
     plant_nodes,
     reports,
+    tuning,
     users,
 )
 from app.core.config import settings
@@ -92,6 +93,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(users.router)
     v1_router.include_router(audit_logs.router)
     v1_router.include_router(reports.router)
+    # S7 回路整定：模型辨识、PID 整定、闭环仿真
+    v1_router.include_router(tuning.router)
     app.include_router(v1_router)
 
     return app
