@@ -226,5 +226,18 @@ INSERT INTO tuning_record (id, loop_id, model_type, model_params, algorithm, rec
 ('00000000-0000-0000-0000-000000000901', '00000000-0000-0000-0000-000000000201', 'FOPDT', '{"K": 1.20, "tau": 30.50, "theta": 5.00}'::json, 'IMC', '{"Kp": 5.08, "Ti": 33.00, "Td": 2.27}'::json, '{"overshoot": 4.50, "settling_time": 132, "itae": 1850, "rise_time": 18.5}'::json, 95.30, 'SIMULATED', 'admin', NOW());
 
 -- =============================================================================
+-- 11. 系统配置 (sys_config) [S2-LOOP-003 新增]
+-- =============================================================================
+-- AAS 连接配置默认值（运行时可由管理员通过 API 修改）
+-- =============================================================================
+
+INSERT INTO sys_config (key, value, description, updated_by, updated_at) VALUES
+('aas.endpoint', 'opc.tcp://localhost:4840', 'AAS OPC UA 端点', 'system', NOW()),
+('aas.sync_interval_seconds', '300', 'AAS 同步周期（秒）', 'system', NOW()),
+('aas.sync_enabled', 'true', 'AAS 同步启停状态', 'system', NOW()),
+('aas.security_mode', 'None', 'AAS 安全模式：None/Sign/SignAndEncrypt', 'system', NOW())
+ON CONFLICT (key) DO NOTHING;
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================

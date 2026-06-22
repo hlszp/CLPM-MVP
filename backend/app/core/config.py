@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
+    # ---- AAS (OPC UA) ----
+    AAS_ENDPOINT: str = "opc.tcp://localhost:4840"
+    AAS_MOCK_MODE: bool = True
+    AAS_SYNC_INTERVAL_SECONDS: int = 300  # 5 分钟
+    AAS_SYNC_ENABLED: bool = True
+    AAS_CONNECT_TIMEOUT_SECONDS: int = 10
+    AAS_REQUEST_TIMEOUT_SECONDS: int = 30
+    AAS_SECURITY_MODE: str = "None"  # None/Sign/SignAndEncrypt
+
     # ---- CORS ----
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 

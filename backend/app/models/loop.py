@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -41,6 +42,10 @@ class LoopLedger(Base):
         DateTime, default=func.now(), onupdate=func.now(), nullable=False
     )
     created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # S2-LOOP-004 新增字段
+    score_weights: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    remark: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     __table_args__ = (
         CheckConstraint(

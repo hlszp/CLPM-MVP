@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints import auth, health
+from app.api.v1.endpoints import aas, auth, health, loops, plant_nodes
 from app.core.config import settings
 from app.core.db import dispose_engine
 from app.core.exceptions import register_exception_handlers
@@ -66,6 +66,9 @@ def create_app() -> FastAPI:
 
     v1_router = APIRouter(prefix="/api/v1")
     v1_router.include_router(auth.router)
+    v1_router.include_router(plant_nodes.router)
+    v1_router.include_router(loops.router)
+    v1_router.include_router(aas.router)
     app.include_router(v1_router)
 
     return app

@@ -6,6 +6,7 @@ run without external dependencies (no PostgreSQL/Redis required).
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -195,3 +196,26 @@ def login_as(client: TestClient, username: str = "admin", password: str = TEST_P
     resp = client.post("/api/v1/auth/login", json={"username": username, "password": password})
     assert resp.status_code == 200, f"Login failed: {resp.json()}"
     return resp.json()["data"]
+
+
+@contextmanager
+def mock_current_user(user: MagicMock):
+    """Override ``get_current_user`` via FastAPI dependency_overrides.
+
+    ``patch("app.api.deps.get_current_user", ...)`` does NOT work because
+    ``Depends(get_current_user)`` captures the function object at route
+    registration time. FastAPI's ``dependency_overrides`` is the correct
+    mechanism — it also cascades into ``require_roles`` which internally
+    depends on ``get_current_user``.
+    """
+    from app.api.deps import get_current_user
+    from app.main import app
+
+    async def _override() -> MagicMock:
+        return user
+
+    app.dependency_overrides[get_current_user] = _override
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

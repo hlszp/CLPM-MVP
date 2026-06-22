@@ -14,6 +14,7 @@ from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly, MetricConfig
 from app.models.plant_node import PlantNode
 from app.models.report import ReportRecord
+from app.models.sys_config import SysConfig
 from app.models.sys_user import SysUser
 from app.models.tag import TagRegistry
 from app.models.tracker import ActionTracker
@@ -36,4 +37,5 @@ __all__ = [
     "TuningRecord",
     "ReportRecord",
     "SysAuditLog",
+    "SysConfig",
 ]

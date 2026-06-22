@@ -82,6 +82,9 @@ CREATE TABLE IF NOT EXISTS loop_ledger (
     created_at      TIMESTAMP       DEFAULT NOW(),
     updated_at      TIMESTAMP       DEFAULT NOW(),
     created_by      VARCHAR(50),
+    score_weights   JSONB,
+    remark          VARCHAR(500),
+    updated_by      VARCHAR(50),
     CONSTRAINT uk_loop_ledger_tag_name UNIQUE (tag_name),
     CONSTRAINT fk_loop_ledger_unit_id  FOREIGN KEY (unit_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
     CONSTRAINT ck_loop_ledger_status   CHECK (status IN ('READY', 'PARTIAL', 'INACTIVE'))
@@ -99,6 +102,9 @@ COMMENT ON COLUMN loop_ledger.status IS '回路状态：READY/PARTIAL/INACTIVE';
 COMMENT ON COLUMN loop_ledger.created_at IS '创建时间';
 COMMENT ON COLUMN loop_ledger.updated_at IS '更新时间';
 COMMENT ON COLUMN loop_ledger.created_by IS '创建人';
+COMMENT ON COLUMN loop_ledger.score_weights IS '6 大 KPI 评分权重 JSONB（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate）';
+COMMENT ON COLUMN loop_ledger.remark IS '备注（最长 500 字符）';
+COMMENT ON COLUMN loop_ledger.updated_by IS '最后更新人';
 
 -- =============================================================================
 -- 4. tag_registry (AAS Tag 注册表)
@@ -404,6 +410,24 @@ COMMENT ON COLUMN sys_audit_log.target_id IS '操作对象 ID';
 COMMENT ON COLUMN sys_audit_log.before_value IS '变更前值（JSON 序列化）';
 COMMENT ON COLUMN sys_audit_log.after_value IS '变更后值（JSON 序列化）';
 COMMENT ON COLUMN sys_audit_log.operated_at IS '操作时间';
+
+-- =============================================================================
+-- 15. sys_config (系统配置 key-value 表) [S2-LOOP-003 新增]
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS sys_config (
+    key             VARCHAR(100)    PRIMARY KEY,
+    value           TEXT,
+    description     VARCHAR(255),
+    updated_by      VARCHAR(50),
+    updated_at      TIMESTAMP       DEFAULT NOW()
+);
+
+COMMENT ON TABLE  sys_config IS '系统配置 key-value 表（运行时可变配置存储）';
+COMMENT ON COLUMN sys_config.key IS '配置键（如 aas.endpoint）';
+COMMENT ON COLUMN sys_config.value IS '配置值（文本）';
+COMMENT ON COLUMN sys_config.description IS '配置描述';
+COMMENT ON COLUMN sys_config.updated_by IS '最后更新人';
+COMMENT ON COLUMN sys_config.updated_at IS '最后更新时间';
 
 -- =============================================================================
 -- 索引（高频查询字段）
