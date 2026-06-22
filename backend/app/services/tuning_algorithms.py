@@ -488,6 +488,8 @@ def tune_lambda(
 
     lambda = lambda_ratio * tau（默认 lambda_ratio=1.0，即 lambda=tau）
     """
+    if tau <= 0:
+        tau = 1.0
     lam = lambda_ratio * tau if tau > 0 else 1.0
     if lam <= 0:
         lam = 1.0

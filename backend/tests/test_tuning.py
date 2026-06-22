@@ -6,6 +6,7 @@ import math
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
+from app.services.tuning import _estimate_mv_step
 from app.services.tuning_algorithms import (
     PIDParams,
     identify_fopdt,
@@ -580,3 +581,296 @@ class TestTuningAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert data["code"] == "0"
+
+
+# ---------------------------------------------------------------------------
+# 边界条件与异常场景测试
+# ---------------------------------------------------------------------------
+
+
+class TestBoundaryConditions:
+    """整定模块边界条件与异常场景覆盖测试。"""
+
+    # ---- FOPDT 辨识边界 ----
+
+    def test_fopdt_constant_pv(self):
+        """PV 恒定不变（delta_pv=0, K=0）应返回兜底值而非崩溃。"""
+        pv_values = [50.0] * 100
+        timestamps = [float(i) for i in range(100)]
+        result = identify_fopdt(pv_values, timestamps, 10.0)
+        # K=0 时应安全返回，不抛异常
+        assert result["K"] is not None
+        assert result["fitting_score"] >= 0.0
+
+    def test_fopdt_negative_mv_step(self):
+        """负 MV 阶跃（反向作用过程）应正确辨识。"""
+        K_true, tau_true, theta_true = -1.0, 30.0, 5.0
+        mv_step = 10.0
+        pv_values = []
+        timestamps = []
+        for i in range(300):
+            t = float(i)
+            timestamps.append(t)
+            if t < theta_true:
+                pv_values.append(0.0)
+            else:
+                pv_values.append(K_true * mv_step * (1.0 - math.exp(-(t - theta_true) / tau_true)))
+        result = identify_fopdt(pv_values, timestamps, mv_step)
+        assert result["K"] is not None
+        # 反向作用 K 应为负
+        assert result["K"] < 0
+
+    def test_fopdt_large_dead_time(self):
+        """大纯滞后（theta 接近数据时长一半）应安全辨识。"""
+        K_true, tau_true, theta_true = 1.0, 20.0, 100.0
+        mv_step = 10.0
+        pv_values = []
+        timestamps = []
+        for i in range(300):
+            t = float(i)
+            timestamps.append(t)
+            if t < theta_true:
+                pv_values.append(0.0)
+            else:
+                pv_values.append(K_true * mv_step * (1.0 - math.exp(-(t - theta_true) / tau_true)))
+        result = identify_fopdt(pv_values, timestamps, mv_step)
+        assert result["K"] is not None
+        assert result["theta"] is not None
+
+    def test_fopdt_empty_data(self):
+        """空数据应返回零值。"""
+        result = identify_fopdt([], [], 10.0)
+        assert result["K"] is None
+        assert result["fitting_score"] == 0.0
+
+    def test_fopdt_single_point(self):
+        """单点数据应返回零值。"""
+        result = identify_fopdt([50.0], [0.0], 10.0)
+        assert result["K"] is None
+
+    # ---- SOPDT 辨识边界 ----
+
+    def test_sopdt_critical_damping(self):
+        """SOPDT 临界阻尼（T1 ≈ T2）应安全辨识。"""
+        K_true, T_true, theta_true = 1.0, 30.0, 5.0
+        mv_step = 10.0
+        pv_values = []
+        timestamps = []
+        for i in range(300):
+            t = float(i)
+            timestamps.append(t)
+            if t < theta_true:
+                pv_values.append(0.0)
+            else:
+                td = t - theta_true
+                # 临界阻尼解析解：y = K*ΔMV*(1 - (1 + t/T)*exp(-t/T))
+                response = 1.0 - (1.0 + td / T_true) * math.exp(-td / T_true)
+                pv_values.append(K_true * mv_step * response)
+        result = identify_sopdt(pv_values, timestamps, mv_step)
+        assert result["K"] is not None
+        assert result["T1"] is not None
+        assert result["T2"] is not None
+
+    def test_sopdt_empty_data(self):
+        """SOPDT 空数据应返回零值。"""
+        result = identify_sopdt([], [], 10.0)
+        assert result["K"] is None
+
+    # ---- IPDT 辨识边界 ----
+
+    def test_ipdt_insufficient_response(self):
+        """IPDT 响应段数据不足（≤2 点）应使用 K=1.0 兜底。"""
+        pv_values = [0.0] * 15
+        timestamps = [float(i) for i in range(15)]
+        result = identify_ipdt(pv_values, timestamps, 10.0)
+        # 响应段不足时 K 兜底为 1.0
+        assert result["K"] is not None
+
+    def test_ipdt_empty_data(self):
+        """IPDT 空数据应返回零值。"""
+        result = identify_ipdt([], [], 10.0)
+        assert result["K"] is None
+
+    # ---- PID 整定算法边界 ----
+
+    def test_lambda_zero_k_handling(self):
+        """Lambda 整定 K=0 兜底。"""
+        pid = tune_lambda(0, 30, 5)
+        assert pid.kp > 0
+
+    def test_lambda_zero_tau_handling(self):
+        """Lambda 整定 tau=0 兜底。"""
+        pid = tune_lambda(1.0, 0, 5)
+        assert pid.kp > 0
+
+    def test_cohen_coon_zero_theta_handling(self):
+        """Cohen-Coon theta=0 兜底。"""
+        pid = tune_cohen_coon(1.0, 30.0, 0)
+        assert pid.kp > 0
+
+    def test_cohen_coon_zero_k_handling(self):
+        """Cohen-Coon K=0 兜底。"""
+        pid = tune_cohen_coon(0, 30.0, 5.0)
+        assert pid.kp > 0
+
+    def test_simc_zero_theta_handling(self):
+        """SIMC theta=0 兜底。"""
+        pid = tune_simc(1.0, 30.0, 0)
+        assert pid.kp > 0
+
+    def test_simc_zero_k_handling(self):
+        """SIMC K=0 兜底。"""
+        pid = tune_simc(0, 30.0, 5.0)
+        assert pid.kp > 0
+
+    def test_zn_p_controller(self):
+        """Z-N P 控制器类型。"""
+        pid = tune_zn(1.0, 30.0, 5.0, controller_type="P")
+        assert pid.kp > 0
+        assert pid.ti == 0.0
+        assert pid.td == 0.0
+
+    def test_cohen_coon_p_controller(self):
+        """Cohen-Coon P 控制器类型。"""
+        pid = tune_cohen_coon(1.0, 30.0, 5.0, controller_type="P")
+        assert pid.kp > 0
+        assert pid.ti == 0.0
+        assert pid.td == 0.0
+
+    def test_cohen_coon_pi_controller(self):
+        """Cohen-Coon PI 控制器类型。"""
+        pid = tune_cohen_coon(1.0, 30.0, 5.0, controller_type="PI")
+        assert pid.kp > 0
+        assert pid.ti > 0
+        assert pid.td == 0.0
+
+    def test_imc_negative_lambda_ratio(self):
+        """IMC 负 lambda_ratio 兜底为 0.1。"""
+        pid = tune_imc(1.0, 30.0, 5.0, lambda_ratio=-1.0)
+        assert pid.kp > 0
+
+    def test_all_algorithms_negative_k(self):
+        """所有算法对负 K（反向作用）应安全返回。"""
+        for tune_fn in [tune_imc, tune_lambda, tune_simc]:
+            pid = tune_fn(-1.0, 30.0, 5.0)
+            assert isinstance(pid.kp, float)
+        for tune_fn in [tune_zn, tune_cohen_coon]:
+            pid = tune_fn(-1.0, 30.0, 5.0)
+            assert isinstance(pid.kp, float)
+
+    # ---- 闭环仿真边界 ----
+
+    def test_simulation_p_only_controller(self):
+        """纯 P 控制器（ti=0）应安全仿真。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 5.0}
+        current_pid = PIDParams(kp=0.5, ti=0.0, td=0.0)
+        recommended_pid = PIDParams(kp=2.0, ti=0.0, td=0.0)
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=100.0,
+        )
+        assert len(result["timestamps"]) > 0
+        assert len(result["currentResponse"]["pv"]) == len(result["timestamps"])
+
+    def test_simulation_zero_setpoint(self):
+        """零设定值阶跃应安全返回（指标为空）。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 5.0}
+        current_pid = PIDParams(kp=0.5, ti=20.0, td=0.0)
+        recommended_pid = PIDParams(kp=2.0, ti=15.0, td=1.0)
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=100.0,
+            setpoint_step=0.0,
+        )
+        # setpoint=0 时指标应为 None
+        assert result["currentMetrics"]["riseTime"] is None
+
+    def test_simulation_negative_k(self):
+        """负 K（反向作用过程）应安全仿真。"""
+        model_params = {"K": -1.0, "tau": 30.0, "theta": 5.0}
+        current_pid = PIDParams(kp=0.5, ti=20.0, td=0.0)
+        recommended_pid = PIDParams(kp=2.0, ti=15.0, td=1.0)
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=100.0,
+        )
+        assert len(result["timestamps"]) > 0
+
+    def test_simulation_zero_tau(self):
+        """tau=0 兜底为 1.0 应安全仿真。"""
+        model_params = {"K": 1.0, "tau": 0.0, "theta": 5.0}
+        current_pid = PIDParams(kp=0.5, ti=20.0, td=0.0)
+        recommended_pid = PIDParams(kp=2.0, ti=15.0, td=1.0)
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=100.0,
+        )
+        assert len(result["timestamps"]) > 0
+
+    def test_simulation_large_dead_time(self):
+        """大纯滞后（theta > 仿真时长一半）应安全仿真。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 80.0}
+        current_pid = PIDParams(kp=0.5, ti=20.0, td=0.0)
+        recommended_pid = PIDParams(kp=2.0, ti=15.0, td=1.0)
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=200.0,
+        )
+        assert len(result["timestamps"]) > 0
+
+    def test_simulation_op_saturation(self):
+        """OP 输出饱和限幅（[-100, 100]）验证。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 5.0}
+        # 极大 kp 触发 OP 饱和
+        current_pid = PIDParams(kp=1000.0, ti=1.0, td=0.0)
+        recommended_pid = PIDParams(kp=2000.0, ti=1.0, td=0.0)
+        result = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=50.0,
+        )
+        op_values = result["currentResponse"]["op"]
+        assert all(-100.0 <= op <= 100.0 for op in op_values)
+
+    # ---- MV 阶跃估算边界 ----
+
+    def test_estimate_mv_step_empty(self):
+        """空 OP 数据应返回 0。"""
+        assert _estimate_mv_step([]) == 0.0
+
+    def test_estimate_mv_step_single_value(self):
+        """单值 OP 数据应返回 0。"""
+        assert _estimate_mv_step([50.0]) == 0.0
+
+    def test_estimate_mv_step_with_none(self):
+        """含 None 的 OP 数据应过滤后估算。"""
+        assert _estimate_mv_step([None, None, None]) == 0.0
+
+    def test_estimate_mv_step_normal(self):
+        """正常 OP 阶跃估算。"""
+        ops = [50.0] * 20 + [70.0] * 20
+        step = _estimate_mv_step(ops)
+        assert step == 20.0
+
+    def test_estimate_mv_step_decreasing(self):
+        """OP 下降阶跃估算。"""
+        ops = [80.0] * 20 + [40.0] * 20
+        step = _estimate_mv_step(ops)
+        assert step == 40.0
