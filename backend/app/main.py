@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     aas,
     audit_logs,
     auth,
+    dashboard,
     diagnosis,
     health,
     loops,
@@ -81,6 +82,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(loops.router)
     v1_router.include_router(aas.router)
     v1_router.include_router(performance.router)
+    # S6 工作台门户：BFF 聚合层
+    v1_router.include_router(dashboard.router)
     # S4 诊断中心：诊断、波形、Tracker（三个 router 共享 v1 前缀，各自有子前缀）
     v1_router.include_router(diagnosis.router)
     v1_router.include_router(diagnosis.timeseries_router)
