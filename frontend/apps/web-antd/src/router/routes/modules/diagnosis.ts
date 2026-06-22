@@ -3,8 +3,8 @@ import type { RouteRecordRaw } from 'vue-router';
 /**
  * 诊断中心路由模块
  *
- * 对齐 UI/UX v4.1 §4.2 + PRD §4.4
- * - 诊断配置 / 诊断列表 / 波形查看 / 异常跟踪 / A/B 对比 / 诊断统计
+ * 对齐 UI/UX v4.1 §4.2 + PRD §4.4 + IDS v3.2 §2.4
+ * - 诊断配置 / 诊断列表 / 诊断详情 / 波形查看 / 异常跟踪 / A/B 对比 / 诊断统计
  *
  * 角色权限（PRD §3）：
  * - ADMIN：全部（含配置）
@@ -16,7 +16,7 @@ import type { RouteRecordRaw } from 'vue-router';
 const routes: RouteRecordRaw[] = [
   {
     meta: {
-      icon: 'lucide:activity',
+      icon: 'lucide:stethoscope',
       order: 4,
       title: '诊断中心',
     },
@@ -24,22 +24,21 @@ const routes: RouteRecordRaw[] = [
     path: '/diagnosis',
     children: [
       {
-        name: 'DiagnosisConfig',
-        path: '/diagnosis/config',
-        component: () => import('#/views/diagnosis/config.vue'),
-        meta: {
-          authority: ['ADMIN'],
-          icon: 'lucide:sliders-horizontal',
-          title: '诊断配置',
-        },
-      },
-      {
         name: 'DiagnosisList',
         path: '/diagnosis/list',
         component: () => import('#/views/diagnosis/list.vue'),
         meta: {
-          icon: 'lucide:activity',
+          icon: 'lucide:list',
           title: '诊断列表',
+        },
+      },
+      {
+        name: 'DiagnosisDetail',
+        path: '/diagnosis/detail/:loopId',
+        component: () => import('#/views/diagnosis/detail.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '诊断详情',
         },
       },
       {
@@ -47,8 +46,8 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/waveform',
         component: () => import('#/views/diagnosis/waveform.vue'),
         meta: {
-          icon: 'lucide:line-chart',
-          title: '波形查看',
+          icon: 'lucide:activity',
+          title: '波形分析',
         },
       },
       {
@@ -57,16 +56,17 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/diagnosis/tracker.vue'),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
-          icon: 'lucide:list-checks',
+          icon: 'lucide:clipboard-check',
           title: '异常跟踪',
         },
       },
       {
-        name: 'DiagnosisAbCompare',
+        name: 'DiagnosisABCompare',
         path: '/diagnosis/ab-compare',
         component: () => import('#/views/diagnosis/ab-compare.vue'),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'EXPERT'],
+          hideInMenu: true,
           icon: 'lucide:git-compare',
           title: 'A/B 对比',
         },
@@ -76,8 +76,18 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/statistics',
         component: () => import('#/views/diagnosis/statistics.vue'),
         meta: {
-          icon: 'lucide:file-bar-chart',
-          title: '诊断统计',
+          icon: 'lucide:bar-chart-3',
+          title: '统计报表',
+        },
+      },
+      {
+        name: 'DiagnosisConfig',
+        path: '/diagnosis/config',
+        component: () => import('#/views/diagnosis/config.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:settings-2',
+          title: '诊断配置',
         },
       },
     ],

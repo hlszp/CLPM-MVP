@@ -14,7 +14,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints import aas, auth, health, loops, performance, plant_nodes
+from app.api.v1.endpoints import (
+    aas,
+    auth,
+    diagnosis,
+    health,
+    loops,
+    performance,
+    plant_nodes,
+)
 from app.core.config import settings
 from app.core.db import dispose_engine
 from app.core.exceptions import register_exception_handlers
@@ -70,6 +78,10 @@ def create_app() -> FastAPI:
     v1_router.include_router(loops.router)
     v1_router.include_router(aas.router)
     v1_router.include_router(performance.router)
+    # S4 诊断中心：诊断、波形、Tracker（三个 router 共享 v1 前缀，各自有子前缀）
+    v1_router.include_router(diagnosis.router)
+    v1_router.include_router(diagnosis.timeseries_router)
+    v1_router.include_router(diagnosis.tracker_router)
     app.include_router(v1_router)
 
     return app

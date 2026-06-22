@@ -19,6 +19,8 @@ dependencies = [
     "python-multipart>=0.0.9",
     "asyncua>=1.7.0",
     "simpleeval>=1.0.7",
+    "numpy>=2.5.0",
+    "scipy>=1.18.0",
 ]
 
 [project.optional-dependencies]
