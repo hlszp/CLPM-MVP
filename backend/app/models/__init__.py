@@ -1,0 +1,39 @@
+"""SQLAlchemy 2.0 ORM models for CLPM.
+
+Imports all model modules so that ``Base.metadata`` is fully populated when
+``app.models`` is imported (required by Alembic autogenerate).
+"""
+
+from __future__ import annotations
+
+from app.models.audit import SysAuditLog
+from app.models.base import Base, TimestampMixin
+from app.models.diagnosis import DiagnosisConfig, DiagnosisResult
+from app.models.engine import EngineRule
+from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.metric import KpiSnapshotHourly, MetricConfig
+from app.models.plant_node import PlantNode
+from app.models.report import ReportRecord
+from app.models.sys_user import SysUser
+from app.models.tag import TagRegistry
+from app.models.tracker import ActionTracker
+from app.models.tuning import TuningRecord
+
+__all__ = [
+    "Base",
+    "TimestampMixin",
+    "SysUser",
+    "PlantNode",
+    "LoopLedger",
+    "LoopTagMapping",
+    "TagRegistry",
+    "MetricConfig",
+    "DiagnosisConfig",
+    "EngineRule",
+    "KpiSnapshotHourly",
+    "ActionTracker",
+    "DiagnosisResult",
+    "TuningRecord",
+    "ReportRecord",
+    "SysAuditLog",
+]

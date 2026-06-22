@@ -1,0 +1,101 @@
+# CLPM 开发环境容器编排
+# 使用 Orbstack 作为容器运行时
+# 启动: docker compose -f deploy/docker/docker-compose.dev.yml up -d
+# 停止: docker compose -f deploy/docker/docker-compose.dev.yml down
+# 重置: docker compose -f deploy/docker/docker-compose.dev.yml down -v
+
+name: clpm-dev
+
+services:
+  # ============================================================
+  # PostgreSQL 16 - 关系型业务数据
+  # ============================================================
+  postgres:
+    image: postgres:16
+    container_name: clpm-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: clpm
+      POSTGRES_PASSWORD: clpm_dev_2026
+      POSTGRES_DB: clpm
+      TZ: Asia/Shanghai
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../../db/postgresql/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../../db/postgresql/02_seed_data.sql:/docker-entrypoint-initdb.d/02_seed_data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clpm -d clpm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # TDengine 3.x - 时序数据存储
+  # ============================================================
+  tdengine:
+    image: tdengine/tdengine:3.3.6.0
+    container_name: clpm-tdengine
+    restart: unless-stopped
+    ports:
+      - "6030:6030"
+      - "6041:6041"
+    environment:
+      TAOS_FQDN: clpm-tdengine
+      TZ: Asia/Shanghai
+    volumes:
+      - td_data:/var/lib/taos
+      - ../../db/tdengine/01_supertable.sql:/root/init/01_supertable.sql:ro
+    healthcheck:
+      test: ["CMD", "taos", "-s", "SELECT SERVER_VERSION();"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # Redis 7 - 缓存与消息队列
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: clpm-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - clpm-net
+
+# ============================================================
+# 数据卷
+# ============================================================
+volumes:
+  pg_data:
+    name: clpm_pg_data
+  td_data:
+    name: clpm_td_data
+  redis_data:
+    name: clpm_redis_data
+
+# ============================================================
+# 网络
+# ============================================================
+networks:
+  clpm-net:
+    name: clpm-dev-net
+    driver: bridge
