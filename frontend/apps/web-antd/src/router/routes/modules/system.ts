@@ -3,16 +3,17 @@ import type { RouteRecordRaw } from 'vue-router';
 /**
  * 系统管理路由模块
  *
- * 对齐 UI/UX v4.1 §4.2 + PRD §4.6
+ * 对齐 UI/UX v4.1 §4.2 + §5.2 + PRD §4.6
  * - 用户管理 / 审计日志 / 权限矩阵 / 自动报表
  *
- * 角色权限（PRD §3）：
- * - 仅 ADMIN 可见
+ * 角色权限（PRD §3 + UI/UX §5.2）：
+ * - 用户管理 / 审计日志：仅 ADMIN
+ * - 权限矩阵：所有角色可查看
+ * - 自动报表：ADMIN + IC_ENGINEER
  */
 const routes: RouteRecordRaw[] = [
   {
     meta: {
-      authority: ['ADMIN'],
       icon: 'lucide:settings',
       order: 6,
       title: '系统管理',
@@ -45,7 +46,6 @@ const routes: RouteRecordRaw[] = [
         path: '/system/permissions',
         component: () => import('#/views/system/permissions.vue'),
         meta: {
-          authority: ['ADMIN'],
           icon: 'lucide:shield-check',
           title: '权限矩阵',
         },
@@ -55,7 +55,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/reports',
         component: () => import('#/views/system/reports.vue'),
         meta: {
-          authority: ['ADMIN'],
+          authority: ['ADMIN', 'IC_ENGINEER'],
           icon: 'lucide:file-text',
           title: '自动报表',
         },

@@ -16,12 +16,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.endpoints import (
     aas,
+    audit_logs,
     auth,
     diagnosis,
     health,
     loops,
     performance,
     plant_nodes,
+    reports,
+    users,
 )
 from app.core.config import settings
 from app.core.db import dispose_engine
@@ -82,6 +85,10 @@ def create_app() -> FastAPI:
     v1_router.include_router(diagnosis.router)
     v1_router.include_router(diagnosis.timeseries_router)
     v1_router.include_router(diagnosis.tracker_router)
+    # S5 系统管理：用户管理、审计日志、报表配置
+    v1_router.include_router(users.router)
+    v1_router.include_router(audit_logs.router)
+    v1_router.include_router(reports.router)
     app.include_router(v1_router)
 
     return app

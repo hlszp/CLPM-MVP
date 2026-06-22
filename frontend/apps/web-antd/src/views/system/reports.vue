@@ -1,20 +1,464 @@
 <script lang="ts" setup>
+/**
+ * S5-SYS-007 自动报表管理页
+ *
+ * 对齐 IDS v3.2 §2.6 + PRD §4.6 + UI/UX v4.1 §6.6.3
+ * - 表格展示报表配置列表（名称/周期/接收人/状态）
+ * - 新增/编辑配置弹窗
+ * - "立即生成"按钮触发异步任务
+ * - 任务进度查询（轮询 taskId）
+ * - ADMIN + IC_ENGINEER 可见
+ */
+import type { TableColumnsType } from 'ant-design-vue';
+
+import type { SystemApi } from '#/api/system';
+
+import { onMounted, onUnmounted, reactive, ref } from 'vue';
+
 import { Page } from '@vben/common-ui';
 
+import {
+  Button,
+  Card,
+  Form,
+  FormItem,
+  Input,
+  message,
+  Modal,
+  Progress,
+  Select,
+  Switch,
+  Table,
+  Tag,
+} from 'ant-design-vue';
+
+import {
+  createReportConfigApi,
+  generateReportApi,
+  getReportConfigListApi,
+  getReportTaskStatusApi,
+  updateReportConfigApi,
+} from '#/api/system';
+
 defineOptions({ name: 'SystemReports' });
+
+const loading = ref(false);
+const reportList = ref<SystemApi.ReportConfig[]>([]);
+
+/** 报表周期选项 */
+const periodOptions = [
+  { label: '班报', value: 'SHIFT' },
+  { label: '日报', value: 'DAILY' },
+  { label: '周报', value: 'WEEKLY' },
+  { label: '月报', value: 'MONTHLY' },
+];
+
+const columns: TableColumnsType = [
+  {
+    title: '报表名称',
+    dataIndex: 'name',
+    key: 'name',
+    width: 200,
+  },
+  {
+    title: '报表周期',
+    dataIndex: 'reportPeriod',
+    key: 'reportPeriod',
+    width: 120,
+  },
+  {
+    title: '收件人',
+    dataIndex: 'recipients',
+    key: 'recipients',
+    width: 240,
+    ellipsis: true,
+  },
+  {
+    title: '状态',
+    dataIndex: 'isEnabled',
+    key: 'isEnabled',
+    width: 90,
+    align: 'center',
+  },
+  {
+    title: '更新时间',
+    dataIndex: 'updatedAt',
+    key: 'updatedAt',
+    width: 170,
+  },
+  {
+    title: '生成进度',
+    key: 'task_progress',
+    width: 180,
+  },
+  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+];
+
+// 新增/编辑 Modal
+const modalVisible = ref(false);
+const modalLoading = ref(false);
+const editingReport = ref<SystemApi.ReportConfig | null>(null);
+const formRef = ref();
+const formState = reactive({
+  name: '',
+  reportPeriod: 'DAILY',
+  recipients_text: '',
+  isEnabled: true,
+});
+
+// 任务进度跟踪
+interface TaskProgress {
+  taskId: string;
+  configId: string;
+  status: SystemApi.ReportTaskStatus;
+  progress: number;
+  message: string;
+}
+
+const taskProgressMap = ref<Map<string, TaskProgress>>(new Map());
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 加载报表配置列表 */
+async function loadList() {
+  loading.value = true;
+  try {
+    const data = await getReportConfigListApi();
+    reportList.value = data || [];
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    loading.value = false;
+  }
+}
+
+/** 打开新增弹窗 */
+function handleOpenAdd() {
+  editingReport.value = null;
+  formState.name = '';
+  formState.reportPeriod = 'DAILY';
+  formState.recipients_text = '';
+  formState.isEnabled = true;
+  modalVisible.value = true;
+}
+
+/** 打开编辑弹窗 */
+function handleOpenEdit(record: SystemApi.ReportConfig) {
+  editingReport.value = record;
+  formState.name = record.name;
+  formState.reportPeriod = record.reportPeriod;
+  formState.recipients_text = record.recipients.join('\n');
+  formState.isEnabled = record.isEnabled;
+  modalVisible.value = true;
+}
+
+/** 提交新增/编辑 */
+function handleSubmit() {
+  formRef.value?.validate().then(async () => {
+    const recipients = formState.recipients_text
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (recipients.length === 0) {
+      message.warning('至少需要一个收件人');
+      return;
+    }
+    modalLoading.value = true;
+    try {
+      if (editingReport.value) {
+        await updateReportConfigApi(editingReport.value.id, {
+          name: formState.name,
+          reportPeriod: formState.reportPeriod,
+          recipients,
+          isEnabled: formState.isEnabled,
+        });
+        message.success('报表配置更新成功');
+      } else {
+        await createReportConfigApi({
+          name: formState.name,
+          reportPeriod: formState.reportPeriod,
+          recipients,
+          isEnabled: formState.isEnabled,
+        });
+        message.success('报表配置创建成功');
+      }
+      modalVisible.value = false;
+      await loadList();
+    } catch {
+      // 错误已由拦截器处理
+    } finally {
+      modalLoading.value = false;
+    }
+  });
+}
+
+/** 切换启用状态 */
+async function handleToggleEnabled(record: SystemApi.ReportConfig) {
+  try {
+    await updateReportConfigApi(record.id, { isEnabled: !record.isEnabled });
+    message.success(`报表已${record.isEnabled ? '停用' : '启用'}`);
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
+
+/** 立即生成报表 */
+async function handleGenerate(record: SystemApi.ReportConfig) {
+  try {
+    const result = await generateReportApi(record.id);
+    message.success(`生成任务已提交，任务 ID：${result.taskId}`);
+    taskProgressMap.value.set(record.id, {
+      taskId: result.taskId,
+      configId: record.id,
+      status: 'RUNNING',
+      progress: 0,
+      message: '任务已提交，等待执行...',
+    });
+    startPolling();
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
+
+/** 开始轮询任务状态 */
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => {
+    if (taskProgressMap.value.size === 0) {
+      stopPolling();
+      return;
+    }
+    const entries = Array.from(taskProgressMap.value.entries());
+    for (const [configId, progress] of entries) {
+      try {
+        const taskResult = await getReportTaskStatusApi(progress.taskId);
+        taskProgressMap.value.set(configId, {
+          ...progress,
+          status: taskResult.status,
+          progress: taskResult.progress ?? 0,
+          message: taskResult.message || '',
+        });
+        if (
+          taskResult.status === 'SUCCESS' ||
+          taskResult.status === 'FAILED'
+        ) {
+          if (taskResult.status === 'SUCCESS') {
+            message.success(`报表「${recordName(configId)}」生成完成`);
+          } else {
+            message.error(`报表「${recordName(configId)}」生成失败`);
+          }
+          taskProgressMap.value.delete(configId);
+          await loadList();
+        }
+      } catch {
+        // 轮询失败，跳过本次
+      }
+    }
+    if (taskProgressMap.value.size === 0) {
+      stopPolling();
+    }
+  }, 3000);
+}
+
+/** 停止轮询 */
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+/** 根据 configId 获取报表名称 */
+function recordName(configId: string): string {
+  const report = reportList.value.find((r) => r.id === configId);
+  return report?.name || configId;
+}
+
+/** 获取任务进度 */
+function getTaskProgress(configId: string): TaskProgress | undefined {
+  return taskProgressMap.value.get(configId);
+}
+
+/** 任务状态颜色 */
+function taskStatusColor(status: SystemApi.ReportTaskStatus): string {
+  const map: Record<SystemApi.ReportTaskStatus, string> = {
+    FAILED: 'red',
+    RUNNING: 'blue',
+    SUCCESS: 'green',
+  };
+  return map[status] || 'default';
+}
+
+/** 任务状态标签 */
+function taskStatusLabel(status: SystemApi.ReportTaskStatus): string {
+  const map: Record<SystemApi.ReportTaskStatus, string> = {
+    FAILED: '失败',
+    RUNNING: '生成中',
+    SUCCESS: '完成',
+  };
+  return map[status] || status;
+}
+
+function formatTime(t?: string): string {
+  if (!t) return '—';
+  try {
+    return new Date(t).toLocaleString('zh-CN');
+  } catch {
+    return t;
+  }
+}
+
+function periodLabel(period: string): string {
+  return periodOptions.find((t) => t.value === period)?.label || period;
+}
+
+onMounted(() => {
+  loadList();
+});
+
+onUnmounted(() => {
+  stopPolling();
+});
 </script>
 
 <template>
-  <Page title="自动报表">
-    <div class="flex h-full items-center justify-center">
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-muted-foreground">
-          自动报表 - 开发中
-        </h2>
-        <p class="mt-2 text-sm text-muted-foreground">
-          自动报表管理：班/日/周/月报表配置、归档、下载。
+  <Page title="自动报表管理">
+    <Card>
+      <div class="mb-4 flex items-center justify-between">
+        <p class="text-sm text-gray-500">
+          管理班报/日报/周报/月报配置 · 支持手动触发生成与进度查询
         </p>
+        <div class="flex gap-2">
+          <Button :loading="loading" @click="loadList">刷新</Button>
+          <Button type="primary" @click="handleOpenAdd">新增报表</Button>
+        </div>
       </div>
-    </div>
+
+      <Table
+        :columns="columns"
+        :data-source="reportList"
+        :loading="loading"
+        :pagination="false"
+        :row-key="(record: any) => record.id"
+        :scroll="{ x: 1400 }"
+        size="middle"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'recipients'">
+            <span class="text-xs font-mono">
+              {{ (record.recipients || []).join(', ') }}
+            </span>
+            <Tag class="ml-1" size="small">
+              {{ (record.recipients || []).length }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'reportPeriod'">
+            <Tag color="blue">{{ periodLabel(record.reportPeriod) }}</Tag>
+          </template>
+          <template v-else-if="column.key === 'isEnabled'">
+            <Tag :color="record.isEnabled ? 'green' : 'default'">
+              {{ record.isEnabled ? '启用' : '停用' }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'updatedAt'">
+            {{ formatTime(record.updatedAt) }}
+          </template>
+          <template v-else-if="column.key === 'task_progress'">
+            <div v-if="getTaskProgress(record.id)">
+              <Tag :color="taskStatusColor(getTaskProgress(record.id)!.status)">
+                {{ taskStatusLabel(getTaskProgress(record.id)!.status) }}
+              </Tag>
+              <Progress
+                v-if="getTaskProgress(record.id)!.status === 'RUNNING'"
+                :percent="getTaskProgress(record.id)!.progress"
+                size="small"
+              />
+            </div>
+            <span v-else class="text-gray-300">—</span>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <div class="flex gap-1">
+              <Button
+                type="link"
+                size="small"
+                @click="handleOpenEdit(record as SystemApi.ReportConfig)"
+              >
+                编辑
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                :disabled="!record.isEnabled || !!getTaskProgress(record.id)"
+                @click="handleGenerate(record as SystemApi.ReportConfig)"
+              >
+                立即生成
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                @click="handleToggleEnabled(record as SystemApi.ReportConfig)"
+              >
+                {{ record.isEnabled ? '停用' : '启用' }}
+              </Button>
+            </div>
+          </template>
+        </template>
+      </Table>
+    </Card>
+
+    <!-- 新增/编辑 Modal -->
+    <Modal
+      v-model:open="modalVisible"
+      :title="editingReport ? `编辑报表 - ${editingReport.name}` : '新增报表'"
+      :confirm-loading="modalLoading"
+      width="600px"
+      @ok="handleSubmit"
+    >
+      <Form
+        ref="formRef"
+        :model="formState"
+        layout="vertical"
+        class="pt-4"
+      >
+        <FormItem
+          name="name"
+          label="报表名称"
+          :rules="[{ required: true, message: '请输入报表名称' }]"
+        >
+          <Input
+            v-model:value="formState.name"
+            placeholder="如：加氢联合车间日报"
+          />
+        </FormItem>
+
+        <FormItem
+          name="reportPeriod"
+          label="报表周期"
+          :rules="[{ required: true, message: '请选择报表周期' }]"
+        >
+          <Select
+            v-model:value="formState.reportPeriod"
+            :options="periodOptions"
+            placeholder="选择报表周期"
+          />
+        </FormItem>
+
+        <FormItem
+          name="recipients_text"
+          label="收件人列表"
+          :rules="[{ required: true, message: '请输入至少一个收件人' }]"
+        >
+          <Input.TextArea
+            v-model:value="formState.recipients_text"
+            placeholder="每行一个邮箱地址"
+            :rows="4"
+          />
+        </FormItem>
+
+        <FormItem name="isEnabled" label="启用状态">
+          <Switch v-model:checked="formState.isEnabled" />
+        </FormItem>
+      </Form>
+    </Modal>
   </Page>
 </template>
