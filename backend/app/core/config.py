@@ -56,7 +56,12 @@ class Settings(BaseSettings):
     AAS_SECURITY_MODE: str = "None"  # None/Sign/SignAndEncrypt
 
     # ---- CORS ----
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:5174"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5666",
+        "http://127.0.0.1:5666",
+    ]
 
     @property
     def postgres_dsn(self) -> str:
