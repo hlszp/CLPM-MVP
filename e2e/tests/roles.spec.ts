@@ -21,21 +21,22 @@ import { test, expect } from '../fixtures/auth.js';
 /** 等待菜单渲染完成 */
 async function waitForMenu(page: import('@playwright/test').Page) {
   await page.waitForLoadState('networkidle');
-  // Vben Admin 菜单容器
+  // Vben Admin 菜单容器：.vben-menu
   await page
-    .locator('.vben-menu, .ant-menu, [class*="menu"]')
+    .locator('.vben-menu')
     .first()
     .waitFor({ state: 'visible', timeout: 15_000 })
     .catch(() => {
       // 菜单可能采用不同 class，兜底等待任意菜单项出现
     });
+  await page.waitForTimeout(1000);
 }
 
-/** 获取侧边栏可见菜单文本列表 */
+/** 获取侧边栏可见菜单文本列表（含 submenu 标题和叶子项） */
 async function getMenuTexts(page: import('@playwright/test').Page): Promise<string[]> {
-  // Vben BasicLayout 侧边栏菜单项
+  // Vben Menu: .vben-menu-item（叶子项）+ .vben-sub-menu-content__title（父级标题）
   const items = page.locator(
-    '.vben-menu .vben-menu-item, .ant-menu .ant-menu-item, .vben-menu-submenu-title, .ant-menu-submenu-title',
+    '.vben-menu-item, .vben-sub-menu-content__title, .vben-sub-menu-title',
   );
   const count = await items.count();
   const texts: string[] = [];
@@ -67,7 +68,7 @@ test.describe('多角色权限验证 E2E', () => {
     expect(menuText).not.toContain('系统管理');
   });
 
-  test('E2E-ROLE-002: SPONSOR 直接访问受限页 → 403 或重定向', async ({
+  test('E2E-ROLE-002: SPONSOR 直接访问受限页 → 403/404 或重定向', async ({
     page,
     loginAs,
   }) => {
@@ -76,8 +77,9 @@ test.describe('多角色权限验证 E2E', () => {
     // 手动访问 /loop/ledger（SPONSOR 无权限）
     await page.goto('/loop/ledger');
 
-    // 预期：跳转 403 页面 或 重定向到默认首页
+    // 预期：跳转 403/404 页面 或 重定向到默认首页
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
     const url = page.url();
     const bodyText = (await page.locator('body').innerText()).toLowerCase();
 
@@ -87,9 +89,15 @@ test.describe('多角色权限验证 E2E', () => {
       bodyText.includes('403') ||
       bodyText.includes('无权') ||
       bodyText.includes('禁止访问');
+    const is404 =
+      url.includes('/404') ||
+      bodyText.includes('404') ||
+      bodyText.includes('未找到') ||
+      bodyText.includes('not found');
     const isRedirected = url.includes('/dashboard') || url.includes('/auth/login');
 
-    expect(is403 || isRedirected).toBeTruthy();
+    // SPONSOR 无权限访问受限页，应显示 403/404 或重定向
+    expect(is403 || is404 || isRedirected).toBeTruthy();
   });
 
   test('E2E-ROLE-003: PE_ENGINEER 无整定菜单', async ({ page, loginAs }) => {

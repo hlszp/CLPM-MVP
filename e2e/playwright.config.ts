@@ -45,7 +45,7 @@ export default defineConfig({
   webServer: {
     command: 'cd ../frontend/apps/web-antd && pnpm dev',
     url: 'http://localhost:5666',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
     timeout: 120_000,
     cwd: process.cwd(),
   },

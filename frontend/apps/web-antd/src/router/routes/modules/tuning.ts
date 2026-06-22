@@ -15,6 +15,7 @@ import type { RouteRecordRaw } from 'vue-router';
 const routes: RouteRecordRaw[] = [
   {
     meta: {
+      authority: ['ADMIN', 'IC_ENGINEER', 'EXPERT'],
       badge: 'P2',
       badgeVariants: 'warning',
       icon: 'lucide:settings-2',

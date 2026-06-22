@@ -14,6 +14,7 @@ import type { RouteRecordRaw } from 'vue-router';
 const routes: RouteRecordRaw[] = [
   {
     meta: {
+      authority: ['ADMIN', 'IC_ENGINEER'],
       icon: 'lucide:settings',
       order: 6,
       title: '系统管理',
