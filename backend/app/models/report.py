@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     func,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -21,7 +22,9 @@ class ReportRecord(Base):
 
     __tablename__ = "report_record"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     report_period: Mapped[str] = mapped_column(String(20), nullable=False)
     generated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)

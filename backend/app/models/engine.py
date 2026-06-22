@@ -12,7 +12,7 @@ from sqlalchemy import (
     Index,
     String,
 )
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -23,7 +23,9 @@ class EngineRule(Base):
 
     __tablename__ = "engine_rule"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     rule_code: Mapped[str] = mapped_column(String(50), nullable=False)
     rule_name: Mapped[str] = mapped_column(String(100), nullable=False)
     rule_type: Mapped[str] = mapped_column(String(20), nullable=False)

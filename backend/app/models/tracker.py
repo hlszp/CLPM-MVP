@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     String,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -22,9 +23,11 @@ class ActionTracker(Base):
 
     __tablename__ = "action_tracker"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     loop_id: Mapped[str | None] = mapped_column(
-        String(36),
+        UUID(as_uuid=False),
         ForeignKey("loop_ledger.id", ondelete="CASCADE"),
         nullable=True,
     )

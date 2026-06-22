@@ -16,7 +16,7 @@ from sqlalchemy import (
     String,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -27,11 +27,13 @@ class LoopLedger(Base):
 
     __tablename__ = "loop_ledger"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     tag_name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     unit_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("plant_node.id", ondelete="RESTRICT"), nullable=True
+        UUID(as_uuid=False), ForeignKey("plant_node.id", ondelete="RESTRICT"), nullable=True
     )
     score_weight: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     is_active: Mapped[bool | None] = mapped_column(Boolean, default=True, nullable=True)
@@ -64,14 +66,16 @@ class LoopTagMapping(Base):
 
     __tablename__ = "loop_tag_mapping"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     loop_id: Mapped[str] = mapped_column(
-        String(36),
+        UUID(as_uuid=False),
         ForeignKey("loop_ledger.id", ondelete="CASCADE"),
         nullable=False,
     )
     tag_id: Mapped[str] = mapped_column(
-        String(36),
+        UUID(as_uuid=False),
         ForeignKey("tag_registry.id", ondelete="RESTRICT"),
         nullable=False,
     )

@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     String,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -23,7 +24,9 @@ class TagRegistry(Base):
 
     __tablename__ = "tag_registry"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     tag_name: Mapped[str] = mapped_column(String(100), nullable=False)
     tag_description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tag_type: Mapped[str] = mapped_column(String(20), nullable=False)

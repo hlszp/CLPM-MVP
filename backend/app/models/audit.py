@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Index, String, Text, func
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -16,11 +17,13 @@ class SysAuditLog(Base):
 
     __tablename__ = "sys_audit_log"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     operator: Mapped[str] = mapped_column(String(50), nullable=False)
     operation_type: Mapped[str] = mapped_column(String(50), nullable=False)
     target_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    target_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
     before_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     after_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     operated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
