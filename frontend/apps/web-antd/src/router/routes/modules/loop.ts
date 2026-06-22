@@ -1,0 +1,91 @@
+import type { RouteRecordRaw } from 'vue-router';
+
+/**
+ * 回路管理路由模块
+ *
+ * 对齐 UI/UX v4.1 §4.2 + PRD §4.2
+ * - 工厂层级配置 / AAS 连接配置 / 回路台账 / Tag 关联管理 / 回路监控 / 回路详情（隐藏）
+ *
+ * 角色权限（PRD §3）：
+ * - ADMIN：全部
+ * - IC_ENGINEER：全部
+ * - PE_ENGINEER：查看
+ * - SPONSOR / EXPERT：不可见
+ */
+const routes: RouteRecordRaw[] = [
+  {
+    meta: {
+      icon: 'lucide:network',
+      order: 2,
+      title: '回路管理',
+    },
+    name: 'Loop',
+    path: '/loop',
+    children: [
+      {
+        name: 'LoopFactory',
+        path: '/loop/factory',
+        component: () => import('#/views/loop/factory.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:network',
+          title: '工厂层级配置',
+        },
+      },
+      {
+        name: 'LoopAas',
+        path: '/loop/aas',
+        component: () => import('#/views/loop/aas.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER'],
+          icon: 'lucide:plug',
+          title: 'AAS 连接配置',
+        },
+      },
+      {
+        name: 'LoopLedger',
+        path: '/loop/ledger',
+        component: () => import('#/views/loop/ledger.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:book-open',
+          title: '回路台账',
+        },
+      },
+      {
+        name: 'LoopTagMapping',
+        path: '/loop/tag-mapping',
+        component: () => import('#/views/loop/tag-mapping.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER'],
+          icon: 'lucide:link',
+          title: 'Tag 关联管理',
+        },
+      },
+      {
+        name: 'LoopMonitor',
+        path: '/loop/monitor',
+        component: () => import('#/views/loop/monitor.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:gauge',
+          title: '回路监控',
+        },
+      },
+      {
+        name: 'LoopDetail',
+        path: '/loop/detail/:id',
+        component: () => import('#/views/loop/detail.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          hideInMenu: true,
+          hideInTab: false,
+          activePath: '/loop/monitor',
+          title: '回路详情',
+        },
+      },
+    ],
+  },
+];
+
+export default routes;

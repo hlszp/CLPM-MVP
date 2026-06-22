@@ -1,60 +1,50 @@
 /**
- * CLPM 认证 API（占位模块）
+ * CLPM 认证 API（业务扩展模块）
  *
- * 对齐 IDS v3.2 接口契约，仅定义类型与函数签名，具体实现待后续补充。
- * 注意：框架核心认证 API 位于 `#/api/core/auth`，本模块为 CLPM 业务扩展。
+ * 对齐 IDS v3.2 接口契约。核心认证 API 位于 `#/api/core/auth`，
+ * 本模块提供 CLPM 业务侧的类型再导出与便捷方法。
+ *
+ * 注意：为避免与 `./core/auth` 同名函数冲突，本模块不从此处导出 loginApi 等函数，
+ * 使用时请直接 `import from '#/api/core'`。
  */
-import type { UserInfo } from '@vben/types';
-
-import { requestClient } from '#/api/request';
-
-export namespace ClpmAuthApi {
-  /** 登录参数 */
-  export interface LoginParams {
-    username: string;
-    password: string;
-  }
-
-  /** 登录返回结果 */
-  export interface LoginResult {
-    accessToken: string;
-    refreshToken: string;
-    user: UserInfo;
-  }
-
-  /** 刷新 Token 返回结果 */
-  export interface RefreshTokenResult {
-    accessToken: string;
-    refreshToken: string;
-  }
-}
+export type { AuthApi } from './core/auth';
 
 /**
- * 登录
+ * CLPM 角色枚举（对齐 IDS v3.2 §5.1 / PRD §3）
+ * - ADMIN：系统管理员
+ * - IC_ENGINEER：仪控工程师
+ * - PE_ENGINEER：工艺/设备工程师
+ * - SPONSOR：生产技术/Sponsor
+ * - EXPERT：外部专家
  */
-export function loginApi(data: ClpmAuthApi.LoginParams) {
-  return requestClient.post<ClpmAuthApi.LoginResult>('/auth/login', data);
-}
+export const CLPM_ROLES = [
+  'ADMIN',
+  'IC_ENGINEER',
+  'PE_ENGINEER',
+  'SPONSOR',
+  'EXPERT',
+] as const;
+
+export type ClpmRole = (typeof CLPM_ROLES)[number];
 
 /**
- * 刷新 accessToken
+ * 角色默认首页映射（对齐 PRD §3 + UI/UX v4.1 §5.1）
  */
-export function refreshTokenApi(refreshToken: string) {
-  return requestClient.post<ClpmAuthApi.RefreshTokenResult>('/auth/refresh', {
-    refreshToken,
-  });
-}
+export const ROLE_DEFAULT_HOME: Record<ClpmRole, string> = {
+  ADMIN: '/dashboard',
+  EXPERT: '/diagnosis/list',
+  IC_ENGINEER: '/dashboard',
+  PE_ENGINEER: '/dashboard',
+  SPONSOR: '/dashboard',
+};
 
 /**
- * 退出登录
+ * 角色中文名称映射
  */
-export function logoutApi() {
-  return requestClient.post('/auth/logout');
-}
-
-/**
- * 获取用户权限码
- */
-export function getAccessCodesApi() {
-  return requestClient.get<string[]>('/auth/codes');
-}
+export const ROLE_LABELS: Record<ClpmRole, string> = {
+  ADMIN: '系统管理员',
+  EXPERT: '外部专家',
+  IC_ENGINEER: '仪控工程师',
+  PE_ENGINEER: '工艺/设备工程师',
+  SPONSOR: '生产技术/Sponsor',
+};

@@ -21,43 +21,62 @@ export const useAuthStore = defineStore('auth', () => {
   const loginLoading = ref(false);
 
   /**
-   * 异步处理登录操作
-   * Asynchronously handle the login process
-   * @param params 登录表单数据
+   * 异步处理登录操作（对齐 IDS v3.2 §5.1）
+   * @param params 登录表单数据（username, password, rememberMe）
+   * @param onSuccess 登录成功回调（可选）
    */
   async function authLogin(
     params: Recordable<any>,
     onSuccess?: () => Promise<void> | void,
   ) {
-    // 异步处理用户登录操作并获取 accessToken
     let userInfo: null | UserInfo = null;
     try {
       loginLoading.value = true;
-      const { accessToken } = await loginApi(params);
 
-      // 如果成功获取到 accessToken
+      // 1. 调用登录接口，获取 accessToken + refreshToken + 基础用户信息
+      const loginResult = await loginApi({
+        password: params.password,
+        rememberMe: params.rememberMe ?? false,
+        username: params.username,
+      });
+
+      const { accessToken, refreshToken, user: loginUser } = loginResult;
+
       if (accessToken) {
+        // 2. 存储 accessToken 和 refreshToken（持久化到 localStorage）
         accessStore.setAccessToken(accessToken);
+        accessStore.setRefreshToken(refreshToken);
 
-        // 获取用户信息并存储到 accessStore 中
-        const [fetchUserInfoResult, accessCodes] = await Promise.all([
-          fetchUserInfo(),
-          getAccessCodesApi(),
+        // 3. 获取完整用户信息（/auth/me），包含 permissions 和 defaultHome
+        const [currentUser, accessCodes] = await Promise.all([
+          getUserInfoApi(),
+          fetchAccessCodes(loginUser.permissions),
         ]);
 
-        userInfo = fetchUserInfoResult;
+        // 4. 转换为框架 UserInfo 并存储
+        userInfo = {
+          avatar: '',
+          desc: currentUser.email,
+          homePath: currentUser.defaultHome || '/dashboard',
+          realName: currentUser.displayName,
+          roles: [currentUser.role],
+          token: accessToken,
+          userId: currentUser.id,
+          username: currentUser.username,
+        };
 
         userStore.setUserInfo(userInfo);
         accessStore.setAccessCodes(accessCodes);
 
+        // 5. 跳转首页或回调
         if (accessStore.loginExpired) {
           accessStore.setLoginExpired(false);
         } else {
-          onSuccess
-            ? await onSuccess?.()
-            : await router.push(
+          await (onSuccess
+            ? onSuccess()
+            : router.push(
                 userInfo.homePath || preferences.app.defaultHomePath,
-              );
+              ));
         }
 
         if (userInfo?.realName) {
@@ -77,6 +96,25 @@ export const useAuthStore = defineStore('auth', () => {
     };
   }
 
+  /**
+   * 获取权限码
+   * 优先使用登录返回的 permissions，若为空则回退到 /auth/codes 接口
+   */
+  async function fetchAccessCodes(permissions?: string[]): Promise<string[]> {
+    if (permissions && permissions.length > 0) {
+      return permissions;
+    }
+    try {
+      return await getAccessCodesApi();
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 登出（对齐 IDS v3.2 §5.3）
+   * 清空 Store + localStorage，跳转登录页
+   */
   async function logout(redirect: boolean = true) {
     try {
       await logoutApi();
@@ -97,9 +135,24 @@ export const useAuthStore = defineStore('auth', () => {
     });
   }
 
+  /**
+   * 获取用户信息（对齐 IDS v3.2 §5.4）
+   * 用于路由守卫中按需刷新用户信息
+   */
   async function fetchUserInfo() {
-    const userInfo = await getUserInfoApi();
+    const currentUser = await getUserInfoApi();
+    const userInfo: UserInfo = {
+      avatar: '',
+      desc: currentUser.email,
+      homePath: currentUser.defaultHome || '/dashboard',
+      realName: currentUser.displayName,
+      roles: [currentUser.role],
+      token: accessStore.accessToken || '',
+      userId: currentUser.id,
+      username: currentUser.username,
+    };
     userStore.setUserInfo(userInfo);
+    accessStore.setAccessCodes(currentUser.permissions || []);
     return userInfo;
   }
 

@@ -1,0 +1,406 @@
+"""Authentication business logic.
+
+Handles login, token refresh, logout, password change, and role-permission
+mapping. Uses Redis for login-failure counting, token blacklist, and
+user-token tracking.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import BizError
+from app.core.redis import redis_client
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_token_remaining_ttl,
+    hash_password,
+    verify_password,
+)
+from app.models.sys_user import SysUser
+from app.schemas.auth import AuthTokens
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+LOGIN_FAIL_MAX_ATTEMPTS = 5
+LOGIN_FAIL_WINDOW_MINUTES = 15
+
+# Redis key templates.
+KEY_LOGIN_FAIL = "login_fail:{username}"
+KEY_TOKEN_BLACKLIST = "token_blacklist:{jti}"
+KEY_USER_TOKENS = "user_tokens:{user_id}"
+
+# ---------------------------------------------------------------------------
+# Role → permissions mapping (aligned with PRD §3 and IDS §5.4).
+# ---------------------------------------------------------------------------
+
+ROLE_PERMISSIONS: dict[str, list[str]] = {
+    "ADMIN": ["*"],
+    "IC_ENGINEER": [
+        "loop:*",
+        "metric:*",
+        "diagnosis:*",
+        "tuning:*",
+        "portal:view",
+    ],
+    "PE_ENGINEER": [
+        "loop:view",
+        "metric:view",
+        "diagnosis:view",
+        "portal:view",
+        "tracker:*",
+    ],
+    "SPONSOR": [
+        "portal:view",
+        "metric:view",
+        "diagnosis:view",
+    ],
+    "EXPERT": [
+        "portal:view",
+        "metric:view",
+        "diagnosis:view",
+        "tracker:review",
+    ],
+}
+
+ROLE_DEFAULT_HOME: dict[str, str] = {
+    "ADMIN": "/dashboard",
+    "IC_ENGINEER": "/dashboard",
+    "PE_ENGINEER": "/dashboard",
+    "SPONSOR": "/dashboard",
+    "EXPERT": "/dashboard",
+}
+
+
+def get_permissions(role: str) -> list[str]:
+    """Return the permission list for a role."""
+    return ROLE_PERMISSIONS.get(role, [])
+
+
+def get_default_home(role: str) -> str:
+    """Return the default home path for a role."""
+    return ROLE_DEFAULT_HOME.get(role, "/dashboard")
+
+
+# ---------------------------------------------------------------------------
+# Redis helpers
+# ---------------------------------------------------------------------------
+
+
+async def _check_login_lock(username: str) -> int:
+    """Return current failure count. Raises BizError if locked."""
+    key = KEY_LOGIN_FAIL.format(username=username)
+    count_str = await redis_client.get(key)
+    count = int(count_str) if count_str else 0
+    if count >= LOGIN_FAIL_MAX_ATTEMPTS:
+        ttl = await redis_client.ttl(key)
+        raise BizError(
+            code="ERR_TOO_MANY_ATTEMPTS",
+            message=f"登录失败次数过多，请 {max(ttl, 0) // 60 + 1} 分钟后再试",
+            status_code=429,
+        )
+    return count
+
+
+async def _record_login_fail(username: str) -> int:
+    """Increment failure counter. Returns new count."""
+    key = KEY_LOGIN_FAIL.format(username=username)
+    count = await redis_client.incr(key)
+    if count == 1:
+        await redis_client.expire(key, LOGIN_FAIL_WINDOW_MINUTES * 60)
+    return count
+
+
+async def _clear_login_fails(username: str) -> None:
+    """Clear failure counter on successful login."""
+    key = KEY_LOGIN_FAIL.format(username=username)
+    await redis_client.delete(key)
+
+
+async def _is_token_blacklisted(jti: str) -> bool:
+    """Check if a token jti is in the blacklist."""
+    key = KEY_TOKEN_BLACKLIST.format(jti=jti)
+    return bool(await redis_client.exists(key))
+
+
+async def _blacklist_token(jti: str, ttl: int) -> None:
+    """Add a token jti to the blacklist with the given TTL (seconds)."""
+    key = KEY_TOKEN_BLACKLIST.format(jti=jti)
+    await redis_client.setex(key, ttl, "1")
+
+
+async def _track_user_token(user_id: str, jti: str, ttl: int) -> None:
+    """Track a jti under the user's token set (for batch revocation)."""
+    key = KEY_USER_TOKENS.format(user_id=user_id)
+    await redis_client.sadd(key, jti)
+    await redis_client.expire(key, ttl)
+
+
+async def _revoke_all_user_tokens(user_id: str) -> None:
+    """Blacklist all tracked jtis for a user (used on password change)."""
+    key = KEY_USER_TOKENS.format(user_id=user_id)
+    jtis = await redis_client.smembers(key)
+    for jti_str in jtis:
+        jti = jti_str if isinstance(jti_str, str) else jti_str.decode()
+        # Use a fixed TTL (max refresh token lifetime) since we may not have
+        # the original payload handy.
+        await _blacklist_token(jti, 7 * 24 * 3600)
+    await redis_client.delete(key)
+
+
+# ---------------------------------------------------------------------------
+# Core auth operations
+# ---------------------------------------------------------------------------
+
+
+async def authenticate(
+    db: AsyncSession,
+    username: str,
+    password: str,
+    remember_me: bool = False,
+) -> tuple[SysUser, AuthTokens]:
+    """Authenticate a user and return ``(user, tokens)``.
+
+    Raises ``BizError`` with appropriate error codes on failure.
+    """
+    # Check lock before querying DB.
+    await _check_login_lock(username)
+
+    # Query user.
+    result = await db.execute(select(SysUser).where(SysUser.username == username))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        await _record_login_fail(username)
+        raise BizError(
+            code="ERR_USER_NOT_FOUND",
+            message="用户不存在",
+            status_code=404,
+        )
+
+    # Verify password.
+    if not verify_password(password, user.password_hash):
+        await _record_login_fail(username)
+        raise BizError(
+            code="ERR_INVALID_CREDENTIALS",
+            message="用户名或密码错误",
+            status_code=401,
+        )
+
+    # Check if account is active.
+    if not user.is_active:
+        raise BizError(
+            code="ERR_ACCOUNT_DISABLED",
+            message="账户已禁用，请联系管理员",
+            status_code=403,
+        )
+
+    # Success — clear failure counter.
+    await _clear_login_fails(username)
+
+    # Issue tokens.
+    tokens = await _issue_tokens(user, remember_me)
+
+    # Update last_login_at (DB column is TIMESTAMP WITHOUT TIME ZONE).
+    await db.execute(
+        update(SysUser)
+        .where(SysUser.id == str(user.id))
+        .values(last_login_at=datetime.now(UTC).replace(tzinfo=None))
+    )
+    await db.commit()
+
+    return user, tokens
+
+
+async def _issue_tokens(user: SysUser, remember_me: bool = False) -> AuthTokens:
+    """Issue access + refresh tokens and track them in Redis."""
+    user_id = str(user.id)
+    access_token, access_jti, expires_in = create_access_token(
+        subject=user_id, username=user.username, role=user.role
+    )
+    refresh_token, refresh_jti, _ = create_refresh_token(subject=user_id, remember_me=remember_me)
+
+    # Track jtis for batch revocation.
+    refresh_ttl = 30 * 24 * 3600 if remember_me else 7 * 24 * 3600
+    await _track_user_token(user_id, access_jti, expires_in)
+    await _track_user_token(user_id, refresh_jti, refresh_ttl)
+
+    return AuthTokens(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        access_jti=access_jti,
+        refresh_jti=refresh_jti,
+        expires_in=expires_in,
+    )
+
+
+async def refresh_tokens(refresh_token_str: str) -> AuthTokens:
+    """Validate a refresh token and issue a new token pair.
+
+    Raises ``BizError`` with ``ERR_TOKEN_EXPIRED`` or ``ERR_TOKEN_INVALID``.
+    """
+    from app.core.security import JWTError
+
+    try:
+        payload = decode_token(refresh_token_str)
+    except JWTError as exc:
+        # jose raises ExpiredSignatureError (subclass of JWTError) for expired.
+        err_code = "ERR_TOKEN_EXPIRED" if "expired" in str(exc).lower() else "ERR_TOKEN_INVALID"
+        msg = (
+            "Refresh Token 已过期，请重新登录" if err_code == "ERR_TOKEN_EXPIRED" else "Token 无效"
+        )
+        raise BizError(
+            code=err_code,
+            message=msg,
+            status_code=401,
+        ) from exc
+
+    if payload.get("type") != "refresh":
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 类型错误，非 Refresh Token",
+            status_code=401,
+        )
+
+    jti = payload.get("jti", "")
+    if not jti:
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 缺少 jti",
+            status_code=401,
+        )
+
+    if await _is_token_blacklisted(jti):
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 已被吊销",
+            status_code=401,
+        )
+
+    user_id = payload.get("sub", "")
+    if not user_id:
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 缺少用户信息",
+            status_code=401,
+        )
+
+    # We need the user's role/username for the new access token.
+    # Query the DB to get fresh user info.
+    from app.core.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(SysUser).where(SysUser.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise BizError(
+                code="ERR_USER_NOT_FOUND",
+                message="用户不存在",
+                status_code=404,
+            )
+        if not user.is_active:
+            raise BizError(
+                code="ERR_ACCOUNT_DISABLED",
+                message="账户已禁用",
+                status_code=403,
+            )
+
+        # Blacklist old refresh token.
+        old_ttl = get_token_remaining_ttl(payload)
+        await _blacklist_token(jti, old_ttl)
+
+        # Issue new tokens.
+        tokens = await _issue_tokens(user, remember_me=False)
+        return tokens
+
+
+async def logout(access_token_str: str) -> None:
+    """Blacklist the current access token (and its paired refresh if tracked).
+
+    Raises ``BizError`` if the token is invalid.
+    """
+    from app.core.security import JWTError
+
+    try:
+        payload = decode_token(access_token_str)
+    except JWTError as exc:
+        err_code = "ERR_TOKEN_EXPIRED" if "expired" in str(exc).lower() else "ERR_TOKEN_INVALID"
+        raise BizError(
+            code=err_code,
+            message="Token 已过期" if err_code == "ERR_TOKEN_EXPIRED" else "Token 无效",
+            status_code=401,
+        ) from exc
+
+    jti = payload.get("jti", "")
+    if not jti:
+        return
+
+    ttl = get_token_remaining_ttl(payload)
+    await _blacklist_token(jti, ttl)
+
+
+async def change_password(
+    db: AsyncSession,
+    user: SysUser,
+    old_password: str,
+    new_password: str,
+) -> None:
+    """Change the current user's password and revoke all existing tokens.
+
+    Raises ``BizError`` with ``ERR_INVALID_CREDENTIALS`` or ``ERR_PASSWORD_SAME``.
+    """
+    # Verify old password.
+    if not verify_password(old_password, user.password_hash):
+        raise BizError(
+            code="ERR_INVALID_CREDENTIALS",
+            message="当前密码错误",
+            status_code=401,
+        )
+
+    # Check new != old.
+    if old_password == new_password:
+        raise BizError(
+            code="ERR_PASSWORD_SAME",
+            message="新密码不能与旧密码相同",
+            status_code=400,
+        )
+
+    # Update password.
+    new_hash = hash_password(new_password)
+    user_id_str = str(user.id)
+    await db.execute(
+        update(SysUser).where(SysUser.id == user_id_str).values(password_hash=new_hash)
+    )
+    await db.commit()
+
+    # Revoke all existing tokens for this user.
+    await _revoke_all_user_tokens(user_id_str)
+
+
+async def is_token_blacklisted(jti: str) -> bool:
+    """Public accessor for the blacklist check (used by deps)."""
+    return await _is_token_blacklisted(jti)
+
+
+__all__ = [
+    "KEY_LOGIN_FAIL",
+    "KEY_TOKEN_BLACKLIST",
+    "KEY_USER_TOKENS",
+    "LOGIN_FAIL_MAX_ATTEMPTS",
+    "ROLE_DEFAULT_HOME",
+    "ROLE_PERMISSIONS",
+    "authenticate",
+    "change_password",
+    "get_default_home",
+    "get_permissions",
+    "is_token_blacklisted",
+    "logout",
+    "refresh_tokens",
+]

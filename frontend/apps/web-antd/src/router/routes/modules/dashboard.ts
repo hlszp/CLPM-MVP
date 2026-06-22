@@ -1,37 +1,25 @@
 import type { RouteRecordRaw } from 'vue-router';
 
-import { $t } from '#/locales';
-
+/**
+ * 工作台（门户）路由模块
+ *
+ * 对齐 UI/UX v4.1 §4.2 + PRD §4.1
+ * - 性能总览首页：全角色日常作业入口
+ * - 聚合性能评估、诊断中心、Action Tracker 多模块数据
+ *
+ * 角色权限：全部角色可见
+ */
 const routes: RouteRecordRaw[] = [
   {
-    meta: {
-      icon: 'lucide:layout-dashboard',
-      order: -1,
-      title: $t('page.dashboard.title'),
-    },
     name: 'Dashboard',
     path: '/dashboard',
-    children: [
-      {
-        name: 'Analytics',
-        path: '/analytics',
-        component: () => import('#/views/dashboard/analytics/index.vue'),
-        meta: {
-          affixTab: true,
-          icon: 'lucide:area-chart',
-          title: $t('page.dashboard.analytics'),
-        },
-      },
-      {
-        name: 'Workspace',
-        path: '/workspace',
-        component: () => import('#/views/dashboard/workspace/index.vue'),
-        meta: {
-          icon: 'carbon:workspace',
-          title: $t('page.dashboard.workspace'),
-        },
-      },
-    ],
+    component: () => import('#/views/dashboard/index.vue'),
+    meta: {
+      affixTab: true,
+      icon: 'lucide:layout-dashboard',
+      order: 1,
+      title: '工作台',
+    },
   },
 ];
 

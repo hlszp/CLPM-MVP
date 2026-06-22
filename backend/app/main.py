@@ -16,19 +16,23 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.endpoints import auth, health
 from app.core.config import settings
+from app.core.db import dispose_engine
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import get_logger, setup_logging
+from app.core.redis import close_redis
 
 logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan: initialise logging on startup."""
+    """Application lifespan: initialise resources on startup, clean up on shutdown."""
     setup_logging()
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
     yield
     logger.info("Shutting down %s", settings.APP_NAME)
+    await dispose_engine()
+    await close_redis()
 
 
 def create_app() -> FastAPI:

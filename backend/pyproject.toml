@@ -45,6 +45,8 @@ select = ["E", "W", "F", "I", "B", "C4", "UP"]
 # Alembic migration scripts always import ``op`` and ``sa`` from the template,
 # but individual migrations may not reference them.
 "alembic/versions/*.py" = ["F401"]
+# FastAPI uses ``Depends()`` in argument defaults as its standard DI pattern.
+"app/api/**/*.py" = ["B008"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

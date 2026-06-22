@@ -11,6 +11,7 @@ Revises:
 Create Date: 2026-06-22 09:01:52.573493
 
 """
+
 from collections.abc import Sequence
 
 # revision identifiers, used by Alembic.

@@ -35,6 +35,7 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     const accessStore = useAccessStore();
     const authStore = useAuthStore();
     accessStore.setAccessToken(null);
+    accessStore.setRefreshToken(null);
     if (
       preferences.app.loginExpiredMode === 'modal' &&
       accessStore.isAccessChecked
@@ -46,12 +47,17 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   }
 
   /**
-   * 刷新token逻辑
+   * 刷新 token 逻辑（对齐 IDS v3.2 §5.2）
+   * 使用存储的 refreshToken 调用 /auth/refresh 获取新的 accessToken
    */
   async function doRefreshToken() {
     const accessStore = useAccessStore();
-    const resp = await refreshTokenApi();
-    const newToken = resp.data;
+    const refreshToken = accessStore.refreshToken;
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+    const resp = await refreshTokenApi(refreshToken);
+    const newToken = resp.accessToken;
     accessStore.setAccessToken(newToken);
     return newToken;
   }

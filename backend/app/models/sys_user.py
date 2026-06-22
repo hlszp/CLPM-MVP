@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, func
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -16,7 +17,9 @@ class SysUser(Base):
 
     __tablename__ = "sys_user"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
