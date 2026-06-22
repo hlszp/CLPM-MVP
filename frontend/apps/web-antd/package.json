@@ -20,10 +20,22 @@
     "build:analyze": "pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development",
     "preview": "vite preview",
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:run": "vitest run",
     "typecheck": "vue-tsc --noEmit --skipLibCheck"
   },
   "imports": {
     "#/*": "./src/*"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.9",
+    "@vue/test-utils": "catalog:",
+    "axios": "catalog:",
+    "axios-mock-adapter": "catalog:",
+    "jsdom": "^25.0.1",
+    "vitest": "^4.1.9",
+    "zod": "catalog:"
   },
   "dependencies": {
     "@vben/access": "workspace:*",

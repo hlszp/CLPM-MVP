@@ -1,0 +1,6 @@
+locust>=2.20.0
+httpx>=0.24.0
+psycopg2-binary>=2.9.0
+taospy>=2.8.0
+redis>=5.0.0
+playwright>=1.40.0

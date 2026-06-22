@@ -1,0 +1,58 @@
+# ============================================================
+# CLPM Docker 构建忽略文件
+# 减小构建上下文体积，加速镜像构建
+# ============================================================
+
+# ---- Python ----
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.coverage
+**/htmlcov
+**/.venv
+**/venv
+
+# ---- Node.js ----
+**/node_modules
+**/dist
+**/.turbo
+**/.nitro
+**/coverage
+
+# ---- 版本控制 ----
+**/.git
+**/.gitignore
+**/.gitattributes
+**/.gitconfig
+
+# ---- 环境配置（敏感文件不进入镜像）----
+**/.env
+**/.env.local
+**/.env.*.local
+
+# ---- 文档与测试（生产镜像不需要）----
+**/*.md
+**/docs
+**/e2e
+**/perf
+**/diagrams
+**/demo-data
+
+# ---- 部署脚本（不需要进入镜像，但保留 nginx.conf 供前端构建使用）----
+deploy/deploy.sh
+deploy/rollback.sh
+deploy/docker/
+
+# ---- IDE 配置 ----
+**/.vscode
+**/.idea
+**/*.swp
+**/*.swo
+**/.DS_Store
+
+# ---- Docker 自身文件 ----
+**/Dockerfile*
+**/docker-compose*.yml
+**/.dockerignore

@@ -13,5 +13,9 @@ playwright-report/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 !**/.env.development
 !**/.env.production
+
+# Docker
+.env.prod

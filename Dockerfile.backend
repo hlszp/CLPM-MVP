@@ -1,0 +1,69 @@
+# syntax=docker/dockerfile:1.7
+# CLPM 后端镜像 - 多阶段构建
+# Builder: 安装依赖到 .venv
+# Runtime: 仅拷贝 .venv 与源码，非 root 用户运行
+
+# ============================================================
+# Stage 1: Builder
+# ============================================================
+FROM python:3.12-slim AS builder
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv
+
+WORKDIR /app
+
+# 安装 uv
+RUN pip install --no-cache-dir uv
+
+# 先拷贝依赖描述文件以利用 Docker 层缓存
+COPY backend/pyproject.toml backend/uv.lock backend/README.md ./
+
+# 同步依赖到 .venv（--frozen 严格按 lockfile 安装）
+RUN uv sync --frozen --no-install-project
+
+# 拷贝源码并安装当前项目
+COPY backend/ ./
+RUN uv sync --frozen
+
+# ============================================================
+# Stage 2: Runtime
+# ============================================================
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.venv/bin:$PATH" \
+    TZ=Asia/Shanghai
+
+# 安装运行时所需系统依赖（curl 用于 healthcheck，libpq5 用于 asyncpg）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 创建非 root 用户
+RUN groupadd --system --gid 1001 clpm \
+    && useradd --system --uid 1001 --gid clpm --home-dir /app --shell /sbin/nologin clpm
+
+WORKDIR /app
+
+# 从 builder 拷贝虚拟环境与源码
+COPY --from=builder --chown=clpm:clpm /app/.venv /app/.venv
+COPY --from=builder --chown=clpm:clpm /app/app /app/app
+COPY --from=builder --chown=clpm:clpm /app/alembic /app/alembic
+COPY --from=builder --chown=clpm:clpm /app/alembic.ini /app/alembic.ini
+COPY --from=builder --chown=clpm:clpm /app/pyproject.toml /app/pyproject.toml
+
+USER clpm
+
+EXPOSE 8001
+
+# 健康检查：FastAPI /health 端点
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -fsS http://localhost:8001/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

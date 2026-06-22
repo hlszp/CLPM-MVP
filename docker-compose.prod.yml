@@ -1,0 +1,196 @@
+# ============================================================
+# CLPM 生产环境 Docker Compose 编排
+# 启动: docker compose -f docker-compose.prod.yml up -d
+# 停止: docker compose -f docker-compose.prod.yml down
+# 重置: docker compose -f docker-compose.prod.yml down -v
+# 查看日志: docker compose -f docker-compose.prod.yml logs -f
+# ============================================================
+
+name: clpm-prod
+
+services:
+  # ============================================================
+  # 后端 API 服务（FastAPI + Uvicorn）
+  # ============================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: clpm-backend:latest
+    container_name: clpm-backend
+    ports:
+      - "8001:8001"
+    env_file: .env.prod
+    environment:
+      TZ: Asia/Shanghai
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tdengine:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # 前端服务（Nginx 静态托管 + 反向代理）
+  # ============================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: clpm-frontend:latest
+    container_name: clpm-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # PostgreSQL 16 - 关系型业务数据
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: clpm-postgres
+    env_file: .env.prod
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/postgresql/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/postgresql/02_seed_data.sql:/docker-entrypoint-initdb.d/02_seed_data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # TDengine 3.x - 时序数据存储
+  # ============================================================
+  tdengine:
+    image: tdengine/tdengine:3.3.6.0
+    container_name: clpm-tdengine
+    environment:
+      TAOS_FQDN: clpm-tdengine
+      TZ: Asia/Shanghai
+    volumes:
+      - tdengine_data:/var/lib/taos
+    ports:
+      - "6030:6030"
+      - "6041:6041"
+    healthcheck:
+      test: ["CMD", "taos", "-s", "SHOW DATABASES"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # Redis 7 - 缓存与消息队列
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: clpm-redis
+    command: redis-server --appendonly yes
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # Celery Worker - 异步任务执行（KPI 计算、诊断引擎、报表生成）
+  # ============================================================
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: clpm-backend:latest
+    container_name: clpm-celery-worker
+    command: uv run celery -A app.tasks.celery_app worker -l info
+    env_file: .env.prod
+    environment:
+      TZ: Asia/Shanghai
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      tdengine:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # Celery Beat - 定时任务调度（AAS 同步、KPI 快照）
+  # ============================================================
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: clpm-backend:latest
+    container_name: clpm-celery-beat
+    command: uv run celery -A app.tasks.celery_app beat -l info
+    env_file: .env.prod
+    environment:
+      TZ: Asia/Shanghai
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+# ============================================================
+# 数据卷
+# ============================================================
+volumes:
+  postgres_data:
+    name: clpm_postgres_data
+  tdengine_data:
+    name: clpm_tdengine_data
+  redis_data:
+    name: clpm_redis_data
+
+# ============================================================
+# 网络
+# ============================================================
+networks:
+  clpm-net:
+    name: clpm-prod-net
+    driver: bridge

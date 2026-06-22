@@ -34,6 +34,7 @@ overrides:
   clsx: 'catalog:'
   pinia: 'catalog:'
   vue: 'catalog:'
+  form-data: ^4.0.6
 
 catalog:
   '@ast-grep/napi': ^0.42.3
