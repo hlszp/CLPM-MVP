@@ -7,9 +7,11 @@ import jwt from 'jsonwebtoken';
 
 import { MOCK_USERS } from './mock-data';
 
-// TODO: Replace with your own secret key
-const ACCESS_TOKEN_SECRET = 'access_token_secret';
-const REFRESH_TOKEN_SECRET = 'refresh_token_secret';
+// 从环境变量读取密钥，开发时使用默认值
+const ACCESS_TOKEN_SECRET =
+  process.env.MOCK_ACCESS_TOKEN_SECRET || 'mock-access-token-secret-dev-only';
+const REFRESH_TOKEN_SECRET =
+  process.env.MOCK_REFRESH_TOKEN_SECRET || 'mock-refresh-token-secret-dev-only';
 
 export interface UserPayload extends UserInfo {
   iat: number;

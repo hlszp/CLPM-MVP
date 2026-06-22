@@ -17,5 +17,9 @@ playwright-report/
 !**/.env.development
 !**/.env.production
 
+# E2E 调试脚本（临时工具，不入库）
+e2e/check_*.ts
+e2e/debug_*.ts
+
 # Docker
 .env.prod

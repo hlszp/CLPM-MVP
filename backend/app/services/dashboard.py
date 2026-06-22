@@ -202,8 +202,8 @@ def _build_kpi_cards(
         "auto_mode_rate": _make_card(cur_auto, prev_auto, unit="%"),
         "steady_rate": _make_card(cur_steady, prev_steady, unit="%"),
         "composite_score": _make_card(cur_score, prev_score, unit="分"),
-        "alarm_count": _make_card(0, 0, unit="次"),  # 占位，异步填充
-        "operation_count": _make_card(0, 0, unit="次"),  # 占位，异步填充
+        "alarm_count": _make_card(0, 0, unit="次"),  # 同步初始化，异步填充
+        "operation_count": _make_card(0, 0, unit="次"),  # 同步初始化，异步填充
         "good_value_rate": _make_card(cur_good, prev_good, unit="%"),
     }
 

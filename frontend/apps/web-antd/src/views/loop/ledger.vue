@@ -219,8 +219,7 @@ function handleEdit(record: LoopApi.LoopListItem) {
   formState.unitId = record.unitId;
   formState.isActive = record.isActive;
   formState.remark = '';
-  // 需要从详情获取完整 scoreWeights，这里先用列表数据占位
-  // 实际编辑时需要调用 getLoopDetailApi 获取完整权重
+  // 编辑时需要完整 scoreWeights，通过详情接口获取
   loadLoopDetailForEdit(record.loopId);
   modalVisible.value = true;
 }

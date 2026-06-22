@@ -1,7 +1,7 @@
 /**
- * CLPM 工作台 API（占位模块）
+ * CLPM 工作台 API
  *
- * 对齐 IDS v3.2 接口契约，仅定义类型与函数签名，具体实现待后续补充。
+ * 对齐 IDS v3.2 接口契约。
  */
 import { requestClient } from '#/api/request';
 
