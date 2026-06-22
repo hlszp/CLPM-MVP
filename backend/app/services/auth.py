@@ -191,7 +191,7 @@ async def authenticate(
         raise BizError(
             code="ERR_INVALID_CREDENTIALS",
             message="用户名或密码错误",
-            status_code=401,
+            status_code=400,
         )
 
     # Check if account is active.
@@ -361,7 +361,7 @@ async def change_password(
         raise BizError(
             code="ERR_INVALID_CREDENTIALS",
             message="当前密码错误",
-            status_code=401,
+            status_code=400,
         )
 
     # Check new != old.

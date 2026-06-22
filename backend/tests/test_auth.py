@@ -84,13 +84,13 @@ class TestLogin:
         assert body["code"] == "ERR_USER_NOT_FOUND"
 
     def test_login_wrong_password(self, client, mock_db, fake_redis) -> None:
-        """Wrong password returns ERR_INVALID_CREDENTIALS (401)."""
+        """Wrong password returns ERR_INVALID_CREDENTIALS (400)."""
         mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
         resp = client.post(
             "/api/v1/auth/login",
             json={"username": "admin", "password": "wrongpass"},
         )
-        assert resp.status_code == 401
+        assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_INVALID_CREDENTIALS"
 
     def test_login_account_disabled(self, client, mock_db, fake_redis) -> None:
@@ -116,7 +116,7 @@ class TestLogin:
                 "/api/v1/auth/login",
                 json={"username": "admin", "password": "wrongpass"},
             )
-            assert resp.status_code == 401
+            assert resp.status_code == 400
         # 6th attempt — even with correct password — should be locked.
         resp = client.post(
             "/api/v1/auth/login",
@@ -146,7 +146,7 @@ class TestLogin:
                 "/api/v1/auth/login",
                 json={"username": "admin", "password": "wrong"},
             )
-            assert resp.status_code == 401
+            assert resp.status_code == 400
 
     def test_login_remember_me(self, client, mock_db, fake_redis) -> None:
         """rememberMe=true still returns valid tokens."""
@@ -340,7 +340,7 @@ class TestChangePassword:
             headers={"Authorization": f"Bearer {access_token}"},
             json={"oldPassword": "wrongold", "newPassword": "NewPass2026"},
         )
-        assert resp.status_code == 401
+        assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_INVALID_CREDENTIALS"
 
     def test_change_password_same(self, client, mock_db, fake_redis) -> None:
