@@ -55,25 +55,19 @@ async def check_tdengine_freshness(threshold_minutes: int = 30) -> dict[str, Any
         数据陈旧: {"status": "stale", "threshold_minutes": N, "last_data_time": None}
         检查失败: {"status": "fail", "error": "..."}
     """
-    from app.core.tdengine import _pool
+    from app.core.tdengine import execute_sql
 
     # 校验 threshold 为整数，防止 SQL 注入（TDengine 不支持参数化占位符）
     threshold = int(threshold_minutes)
 
-    conn = None
-    healthy = True
     try:
-        conn = await _pool.acquire()
         # threshold 已校验为整数，db 来自可信配置，安全拼接
         sql = (
-            f"SELECT COUNT(*) FROM {settings.TDENGINE_DB}.st_loop_data "
+            f"SELECT COUNT(*) as cnt FROM {settings.TDENGINE_DB}.st_loop_data "
             f"WHERE ts >= NOW - {threshold}m"
         )
-        result = await conn.query(sql)
-        count = 0
-        for row in result:
-            count = int(row[0]) if row[0] is not None else 0
-            break
+        rows = await execute_sql(sql)
+        count = int(rows[0].get("cnt", 0)) if rows else 0
 
         if count == 0:
             logger.warning("TDengine 数据不新鲜：最近 %d 分钟无数据", threshold)
@@ -89,11 +83,7 @@ async def check_tdengine_freshness(threshold_minutes: int = 30) -> dict[str, Any
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("TDengine 数据新鲜度检查失败: %s", exc)
-        healthy = False
         return {"status": "fail", "error": str(exc)}
-    finally:
-        if conn is not None:
-            await _pool.release(conn, healthy=healthy)
 
 
 async def run_data_link_check() -> dict[str, Any]:

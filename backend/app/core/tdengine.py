@@ -1,6 +1,6 @@
-"""TDengine async connection module.
+"""TDengine async query module.
 
-使用 taospy 异步连接 TDengine 查询波形数据。
+使用 TDengine REST API（httpx）查询波形数据。
 开发环境 TDengine 可能无数据，返回空数组 + 明确状态标识，不报错。
 
 安全：tag_name 白名单校验 + start_time/end_time ISO 格式校验，防止 SQL 注入。
@@ -11,19 +11,17 @@ DDL 对齐（db/tdengine/01_supertable.sql v3.0）：
 - TAGS: loop_id, unit_id（非 tag_name）
 - 子表命名: d_loop_<位号小写连字符转下划线>
 
-连接池（S1-C1）：
-- 复用 WebSocket 连接，避免频繁建连
-- 最大 5 个并发连接，LIFO 策略
-- 连接异常时自动丢弃
+连接复用：httpx.AsyncClient 单例，避免频繁建连。
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from datetime import datetime
 from typing import Any
+
+import httpx
 
 from app.core.config import settings
 
@@ -54,8 +52,8 @@ _QUALITY_COLUMN_MAP: dict[str, str | None] = {
     "PID_D": None,
 }
 
-# 连接池最大连接数
-_MAX_POOL_SIZE = 5
+# TDengine REST API 端口（原生端口 + 11）
+_TD_REST_PORT = 6041
 
 
 def _validate_tag_name(tag_name: str) -> str:
@@ -98,73 +96,62 @@ def _parse_tag_to_table_column(tag_name: str) -> tuple[str, str, str | None]:
 
 
 # ---------------------------------------------------------------------------
-# 连接池（S1-C1）
+# httpx.AsyncClient 单例（连接复用）
 # ---------------------------------------------------------------------------
 
+_client: httpx.AsyncClient | None = None
 
-class _TDengineConnectionPool:
-    """TDengine WebSocket 连接池。
 
-    - LIFO 策略：优先复用最近归还的连接
-    - 连接异常时丢弃，不归还到池中
-    - 池为空时创建新连接
-    """
-
-    def __init__(self, max_size: int = _MAX_POOL_SIZE) -> None:
-        self._max_size = max_size
-        self._pool: asyncio.LifoQueue = asyncio.LifoQueue(maxsize=max_size)
-        self._lock = asyncio.Lock()
-
-    async def acquire(self) -> Any:
-        """从池中获取连接，池为空时创建新连接。"""
-        try:
-            conn = self._pool.get_nowait()
-            return conn
-        except asyncio.QueueEmpty:
-            return await self._create_connection()
-
-    async def _create_connection(self) -> Any:
-        """创建新的 TDengine WebSocket 连接。"""
-        import taosws
-
-        dsn = f"ws://{settings.TDENGINE_HOST}:{settings.TDENGINE_PORT + 1000}/rest/ws"
-        conn = await taosws.connect(
-            url=dsn,
-            user=settings.TDENGINE_USER,
-            password=settings.TDENGINE_PASSWORD,
-            database=settings.TDENGINE_DB,
+async def _get_client() -> httpx.AsyncClient:
+    """获取全局 httpx.AsyncClient 单例。"""
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(
+            base_url=f"http://{settings.TDENGINE_HOST}:{_TD_REST_PORT}",
+            auth=(settings.TDENGINE_USER, settings.TDENGINE_PASSWORD),
+            timeout=httpx.Timeout(10.0, connect=5.0),
         )
-        return conn
-
-    async def release(self, conn: Any, healthy: bool = True) -> None:
-        """归还连接到池中。不健康的连接直接丢弃。"""
-        if not healthy:
-            try:
-                await conn.close()
-            except Exception:  # noqa: BLE001
-                pass
-            return
-        try:
-            self._pool.put_nowait(conn)
-        except asyncio.QueueFull:
-            # 池已满，关闭多余连接
-            try:
-                await conn.close()
-            except Exception:  # noqa: BLE001
-                pass
-
-    async def close_all(self) -> None:
-        """关闭池中所有连接（应用关闭时调用）。"""
-        while not self._pool.empty():
-            try:
-                conn = self._pool.get_nowait()
-                await conn.close()
-            except Exception:  # noqa: BLE001
-                pass
+    return _client
 
 
-# 全局连接池实例
-_pool = _TDengineConnectionPool()
+async def close_client() -> None:
+    """关闭全局 httpx.AsyncClient（应用关闭时调用）。"""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
+
+async def execute_sql(sql: str) -> list[dict[str, Any]]:
+    """执行任意 TDengine SQL（仅供内部可信调用，如健康检查、监控）。
+
+    Args:
+        sql: SQL 语句（调用方需自行确保安全，不接受外部输入）
+
+    Returns:
+        行列表，每项 {column: value}。失败返回空列表。
+    """
+    try:
+        client = await _get_client()
+        resp = await client.post("/rest/sql", content=sql)
+        if resp.status_code != 200:
+            logger.warning(
+                "TDengine REST API 返回 %s: %s",
+                resp.status_code,
+                resp.text[:200],
+            )
+            return []
+        payload = resp.json()
+        if payload.get("code") != 0:
+            logger.warning("TDengine 执行错误: %s", payload.get("message", ""))
+            return []
+        column_meta = payload.get("column_meta", [])
+        col_names = [c[0] for c in column_meta]
+        data_rows = payload.get("data", [])
+        return [dict(zip(col_names, row, strict=False)) for row in data_rows]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("TDengine 执行失败（返回空列表）: %s", exc)
+        return []
 
 
 async def query_trend_data(
@@ -193,57 +180,51 @@ async def query_trend_data(
     # 解析 tag_name → 子表名 + 列名
     subtable, data_column, quality_column = _parse_tag_to_table_column(safe_tag_name)
 
-    try:
-        # 延迟导入，避免开发环境未安装/无法连接 TDengine 时报错
-        import taosws  # noqa: F401
-    except ImportError:
-        logger.warning("taosws 未安装，跳过 TDengine 查询")
-        return []
+    # 构建查询 SQL：从子表查询指定列
+    # 子表名和列名通过白名单映射生成，不含用户输入，安全拼接
+    if quality_column:
+        sql = (
+            f"SELECT ts, {data_column}, {quality_column} "
+            f"FROM {settings.TDENGINE_DB}.{subtable} "
+            f"WHERE ts >= '{safe_start}' AND ts <= '{safe_end}' "
+            f"ORDER BY ts ASC"
+        )
+    else:
+        sql = (
+            f"SELECT ts, {data_column} "
+            f"FROM {settings.TDENGINE_DB}.{subtable} "
+            f"WHERE ts >= '{safe_start}' AND ts <= '{safe_end}' "
+            f"ORDER BY ts ASC"
+        )
 
-    # 从连接池获取连接
-    conn = None
-    healthy = True
     try:
-        conn = await _pool.acquire()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("TDengine 连接获取失败: %s", exc)
-        return []
-
-    try:
-        # 构建查询 SQL：从子表查询指定列
-        # 子表名和列名通过白名单映射生成，不含用户输入，安全拼接
-        if quality_column:
-            sql = (
-                f"SELECT ts, {data_column}, {quality_column} "
-                f"FROM {settings.TDENGINE_DB}.{subtable} "
-                f"WHERE ts >= '{safe_start}' AND ts <= '{safe_end}' "
-                f"ORDER BY ts ASC"
+        client = await _get_client()
+        resp = await client.post("/rest/sql", content=sql)
+        if resp.status_code != 200:
+            logger.warning(
+                "TDengine REST API 返回 %s: %s",
+                resp.status_code,
+                resp.text[:200],
             )
-        else:
-            sql = (
-                f"SELECT ts, {data_column} "
-                f"FROM {settings.TDENGINE_DB}.{subtable} "
-                f"WHERE ts >= '{safe_start}' AND ts <= '{safe_end}' "
-                f"ORDER BY ts ASC"
-            )
-        result = await conn.query(sql)
+            return []
+        payload = resp.json()
+        # TDengine REST 响应：{"code":0,"data":[[...]],"column_meta":[...]}
+        if payload.get("code") != 0:
+            logger.warning("TDengine 查询错误: %s", payload.get("message", ""))
+            return []
+        data_rows = payload.get("data", [])
         rows: list[dict[str, Any]] = []
-        for row in result:
-            rows.append(
-                {
-                    "ts": str(row[0]),
-                    "value": float(row[1]) if row[1] is not None else None,
-                    "quality": str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD",
-                }
+        for row in data_rows:
+            ts_val = row[0]
+            value = float(row[1]) if len(row) > 1 and row[1] is not None else None
+            quality = (
+                str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
             )
+            rows.append({"ts": str(ts_val), "value": value, "quality": quality})
         return rows
     except Exception as exc:  # noqa: BLE001
         logger.warning("TDengine 查询失败（返回空数组）: %s", exc)
-        healthy = False
         return []
-    finally:
-        if conn is not None:
-            await _pool.release(conn, healthy=healthy)
 
 
-__all__ = ["query_trend_data"]
+__all__ = ["query_trend_data", "execute_sql", "close_client"]

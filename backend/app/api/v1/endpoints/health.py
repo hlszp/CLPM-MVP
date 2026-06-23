@@ -54,14 +54,10 @@ async def health_ready() -> dict[str, object]:
 
     # 3. TDengine（轻量级连接探测）
     try:
-        from app.core.tdengine import _pool
+        from app.core.tdengine import execute_sql
 
-        conn = await _pool.acquire()
-        try:
-            await conn.execute("SHOW DATABASES")
-            checks["tdengine"] = "ok"
-        finally:
-            await _pool.release(conn)
+        rows = await execute_sql("SHOW DATABASES")
+        checks["tdengine"] = "ok" if rows is not None else "fail: empty"
     except Exception as exc:
         logger.warning("健康检查 TDengine 失败: %s", exc)
         checks["tdengine"] = f"fail: {exc.__class__.__name__}"
