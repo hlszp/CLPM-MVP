@@ -46,16 +46,20 @@ const modelTypeNameMap: Record<TuningApi.ModelType, string> = {
 
 /** 任务状态显示名映射 */
 const statusNameMap: Record<TuningApi.TaskStatus, string> = {
+  PENDING: '待辨识',
+  IDENTIFIED: '已辨识',
   SIMULATED: '已仿真',
   APPLIED: '已应用',
-  FAILED: '失败',
+  VERIFIED: '已验证',
 };
 
 /** 任务状态颜色映射 */
 const statusColorMap: Record<TuningApi.TaskStatus, string> = {
+  PENDING: 'default',
+  IDENTIFIED: 'cyan',
   SIMULATED: 'blue',
   APPLIED: 'green',
-  FAILED: 'red',
+  VERIFIED: 'success',
 };
 
 /** 整定流程导航卡片配置 */

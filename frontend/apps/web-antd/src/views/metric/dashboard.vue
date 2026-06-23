@@ -44,17 +44,15 @@ const timeWindowOptions = [
 
 // 状态色映射
 const statusColorMap: Record<KpiStatus, string> = {
-  GOOD: '#52c41a',
+  SUCCESS: '#52c41a',
   INCONCLUSIVE: '#d9d9d9',
-  POOR: '#ff4d4f',
-  WARNING: '#faad14',
+  PARTIAL: '#faad14',
 };
 
 const statusLabelMap: Record<KpiStatus, string> = {
-  GOOD: '良好',
+  SUCCESS: '良好',
   INCONCLUSIVE: '不确定',
-  POOR: '差',
-  WARNING: '警告',
+  PARTIAL: '部分',
 };
 
 // ECharts 趋势图

@@ -7,10 +7,10 @@
 import { requestClient } from '#/api/request';
 
 /** KPI 状态色标 */
-export type KpiStatus = 'GOOD' | 'INCONCLUSIVE' | 'POOR' | 'WARNING';
+export type KpiStatus = 'SUCCESS' | 'INCONCLUSIVE' | 'PARTIAL';
 
 /** 控制类型 */
-export type ControlType = 'FAST' | 'SLOW' | 'STABLE';
+export type ControlType = 'STABLE' | 'SLOW' | 'FAST' | 'LOGIC';
 
 /** 时间窗枚举 */
 export type TimeWindow = 'last_7_days' | 'last_30_days' | 'today' | 'yesterday';
@@ -22,7 +22,7 @@ export type Granularity = 'day' | 'hour' | 'month' | 'week';
 export type ExecutionStatus = 'FAILED' | 'RUNNING' | 'SUCCESS';
 
 /** 处理状态 */
-export type ActionStatus = 'PENDING' | 'PROCESSING' | 'RESOLVED';
+export type ActionStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'IGNORED';
 
 export namespace MetricApi {
   /** 指标阈值 */

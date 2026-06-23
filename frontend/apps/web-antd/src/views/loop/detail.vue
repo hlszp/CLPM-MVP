@@ -79,10 +79,9 @@ const kpiItems: {
 ];
 
 const kpiStatusMap: Record<string, { color: string; label: string }> = {
-  GOOD: { color: 'green', label: '良好' },
+  SUCCESS: { color: 'green', label: '良好' },
   INCONCLUSIVE: { color: 'default', label: '未确定' },
-  POOR: { color: 'red', label: '差' },
-  WARNING: { color: 'orange', label: '警告' },
+  PARTIAL: { color: 'orange', label: '部分' },
 };
 
 const pageTitle = computed(() => {

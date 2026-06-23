@@ -70,10 +70,10 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> dict:
     )
     return success(
         data={
-            "accessToken": tokens.access_token,
-            "refreshToken": tokens.refresh_token,
+            "accessToken": tokens.accessToken,
+            "refreshToken": tokens.refreshToken,
             "tokenType": "Bearer",
-            "expiresIn": tokens.expires_in,
+            "expiresIn": tokens.expiresIn,
             "user": _build_user_info(user),
         }
     )
@@ -85,10 +85,10 @@ async def refresh(body: RefreshRequest) -> dict:
     tokens = await refresh_tokens(body.refreshToken)
     return success(
         data={
-            "accessToken": tokens.access_token,
-            "refreshToken": tokens.refresh_token,
+            "accessToken": tokens.accessToken,
+            "refreshToken": tokens.refreshToken,
             "tokenType": "Bearer",
-            "expiresIn": tokens.expires_in,
+            "expiresIn": tokens.expiresIn,
         }
     )
 

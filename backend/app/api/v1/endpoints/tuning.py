@@ -187,7 +187,7 @@ async def get_task_detail_endpoint(
     return success(data=data)
 
 
-@router.post("/tasks")
+@router.post("/tasks", status_code=201)
 async def create_task_endpoint(
     body: CreateTuningTaskRequest,
     db: AsyncSession = Depends(get_db),

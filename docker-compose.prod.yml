@@ -11,6 +11,7 @@ name: clpm-prod
 services:
   # ============================================================
   # 后端 API 服务（FastAPI + Uvicorn）
+  # S2-B3: 不暴露 8001 端口到宿主机，仅通过 nginx 反向代理访问
   # ============================================================
   backend:
     build:
@@ -18,8 +19,9 @@ services:
       dockerfile: Dockerfile.backend
     image: clpm-backend:latest
     container_name: clpm-backend
-    ports:
-      - "8001:8001"
+    # S2-B3: 端口不映射到宿主机，仅容器间网络可达
+    expose:
+      - "8001"
     env_file: .env.prod
     environment:
       TZ: Asia/Shanghai
@@ -36,12 +38,25 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    # S2-B1: 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+    # S2-B2: 日志轮转
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     networks:
       - clpm-net
 
   # ============================================================
   # 前端服务（Nginx 静态托管 + 反向代理）
+  # S2-B3: 仅暴露 80/443 到宿主机
   # ============================================================
   frontend:
     build:
@@ -64,12 +79,25 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    # S2-B1: 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    # S2-B2: 日志轮转
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     networks:
       - clpm-net
 
   # ============================================================
   # PostgreSQL 16 - 关系型业务数据
+  # S2-B3: 不暴露端口到宿主机
   # ============================================================
   postgres:
     image: postgres:16-alpine
@@ -88,12 +116,25 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    # S2-B1: 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    # S2-B2: 日志轮转
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     networks:
       - clpm-net
 
   # ============================================================
   # TDengine 3.x - 时序数据存储
+  # S2-B3: 不暴露 6030/6041 端口到宿主机，仅容器间网络可达
   # ============================================================
   tdengine:
     image: tdengine/tdengine:3.3.6.0
@@ -103,21 +144,35 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - tdengine_data:/var/lib/taos
-    ports:
-      - "6030:6030"
-      - "6041:6041"
+    # S2-B3: 端口不映射到宿主机
+    expose:
+      - "6030"
+      - "6041"
     healthcheck:
       test: ["CMD", "taos", "-s", "SHOW DATABASES"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 30s
+    # S2-B1: 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+    # S2-B2: 日志轮转
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     networks:
       - clpm-net
 
   # ============================================================
   # Redis 7 - 缓存与消息队列
+  # S2-B3: 不暴露端口到宿主机
   # ============================================================
   redis:
     image: redis:7-alpine
@@ -127,12 +182,27 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - redis_data:/data
+    # S2-B3: 端口不映射到宿主机
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
+    # S2-B1: 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+    # S2-B2: 日志轮转
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     networks:
       - clpm-net
@@ -146,7 +216,7 @@ services:
       dockerfile: Dockerfile.backend
     image: clpm-backend:latest
     container_name: clpm-celery-worker
-    command: uv run celery -A app.tasks.celery_app worker -l info
+    command: uv run celery -A app.tasks.celery_app worker -l info -Q default
     env_file: .env.prod
     environment:
       TZ: Asia/Shanghai
@@ -157,12 +227,25 @@ services:
         condition: service_healthy
       tdengine:
         condition: service_healthy
+    # S2-B1: 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+    # S2-B2: 日志轮转
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     networks:
       - clpm-net
 
   # ============================================================
   # Celery Beat - 定时任务调度（AAS 同步、KPI 快照）
+  # S2-A6: 死信队列消费者（可选，取消注释启用）
   # ============================================================
   celery-beat:
     build:
@@ -177,9 +260,52 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # S2-B1: 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    # S2-B2: 日志轮转
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     networks:
       - clpm-net
+
+  # ============================================================
+  # 死信队列消费者（S2-A6）— 消费 dead_letter 队列，记录永久失败任务
+  # 启用：取消注释以下服务
+  # ============================================================
+  # celery-dead-letter:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.backend
+  #   image: clpm-backend:latest
+  #   container_name: clpm-celery-dead-letter
+  #   command: uv run celery -A app.tasks.celery_app worker -l info -Q dead_letter
+  #   env_file: .env.prod
+  #   environment:
+  #     TZ: Asia/Shanghai
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 256M
+  #         cpus: "0.5"
+  #   logging:
+  #     driver: json-file
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #   restart: unless-stopped
+  #   networks:
+  #     - clpm-net
 
 # ============================================================
 # 数据卷

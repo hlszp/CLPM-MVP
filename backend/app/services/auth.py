@@ -268,11 +268,11 @@ async def _issue_tokens(user: SysUser, remember_me: bool = False) -> AuthTokens:
     await _track_user_token(user_id, refresh_jti, refresh_ttl)
 
     return AuthTokens(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        access_jti=access_jti,
-        refresh_jti=refresh_jti,
-        expires_in=expires_in,
+        accessToken=access_token,
+        refreshToken=refresh_token,
+        accessJti=access_jti,
+        refreshJti=refresh_jti,
+        expiresIn=expires_in,
     )
 
 

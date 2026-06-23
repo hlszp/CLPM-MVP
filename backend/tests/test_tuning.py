@@ -579,7 +579,7 @@ class TestTuningAPI:
                     "status": "SIMULATED",
                 },
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
         assert data["code"] == "0"
 

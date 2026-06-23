@@ -41,9 +41,11 @@ const algorithmOptions: { label: string; value: TuningApi.Algorithm }[] = [
 
 /** 状态选项 */
 const statusOptions: { label: string; value: TuningApi.TaskStatus }[] = [
+  { label: '待辨识', value: 'PENDING' },
+  { label: '已辨识', value: 'IDENTIFIED' },
   { label: '已仿真', value: 'SIMULATED' },
   { label: '已应用', value: 'APPLIED' },
-  { label: '失败', value: 'FAILED' },
+  { label: '已验证', value: 'VERIFIED' },
 ];
 
 /** 查询参数 */
@@ -116,14 +118,20 @@ function statusName(status: TuningApi.TaskStatus): string {
 /** 状态颜色映射 */
 function statusColor(status: TuningApi.TaskStatus): string {
   switch (status) {
+    case 'PENDING': {
+      return 'default';
+    }
+    case 'IDENTIFIED': {
+      return 'cyan';
+    }
     case 'SIMULATED': {
       return 'blue';
     }
     case 'APPLIED': {
       return 'green';
     }
-    case 'FAILED': {
-      return 'red';
+    case 'VERIFIED': {
+      return 'success';
     }
     default: {
       return 'default';
@@ -273,14 +281,18 @@ function renderPieChart() {
 function renderBarChart() {
   const byStatus = historyStats.value?.byStatus || {};
   const statusOrder: TuningApi.TaskStatus[] = [
+    'PENDING',
+    'IDENTIFIED',
     'SIMULATED',
     'APPLIED',
-    'FAILED',
+    'VERIFIED',
   ];
   const colorMap: Record<string, string> = {
+    PENDING: '#d9d9d9',
+    IDENTIFIED: '#13c2c2',
     SIMULATED: '#1890ff',
     APPLIED: '#52c41a',
-    FAILED: '#ff4d4f',
+    VERIFIED: '#389e0d',
   };
 
   const hasData = statusOrder.some((s) => (byStatus[s] || 0) > 0);

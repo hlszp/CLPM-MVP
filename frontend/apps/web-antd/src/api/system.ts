@@ -155,7 +155,7 @@ export namespace SystemApi {
   }
 
   /** 报表任务状态 */
-  export type ReportTaskStatus = 'FAILED' | 'RUNNING' | 'SUCCESS';
+  export type ReportTaskStatus = 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
   /** 报表任务状态查询响应 */
   export interface ReportTaskResult {

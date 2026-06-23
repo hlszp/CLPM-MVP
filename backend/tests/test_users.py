@@ -166,7 +166,7 @@ class TestCreateUser:
                     "role": "IC_ENGINEER",
                 },
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         body = resp.json()
         assert body["code"] == "0"
         assert body["data"]["username"] == "newuser"

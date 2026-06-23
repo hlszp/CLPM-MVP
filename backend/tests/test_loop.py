@@ -103,7 +103,7 @@ class TestLoopCreate:
                     "isActive": True,
                 },
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         body = resp.json()
         assert body["code"] == "0"
         assert body["data"]["tagName"] == "NEW-LOOP-001"
@@ -151,7 +151,7 @@ class TestLoopCreate:
                     },
                 },
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
 
 class TestLoopDetail:

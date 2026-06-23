@@ -67,7 +67,7 @@ const tagList = ref<AasApi.AasTag[]>([]);
 const tagTotal = ref(0);
 const tagQuery = reactive({
   keyword: '',
-  quality: undefined as 'Bad' | 'Good' | 'Uncertain' | undefined,
+  quality: undefined as 'BAD' | 'GOOD' | 'UNCERTAIN' | undefined,
   associated: undefined as boolean | undefined,
   page: 1,
   pageSize: 20,
@@ -77,9 +77,9 @@ const tagSyncStatus = ref<AasApi.SyncStatus | null>(null);
 
 const qualityOptions = [
   { label: '全部', value: undefined },
-  { label: 'Good', value: 'Good' },
-  { label: 'Bad', value: 'Bad' },
-  { label: 'Uncertain', value: 'Uncertain' },
+  { label: 'Good', value: 'GOOD' },
+  { label: 'Bad', value: 'BAD' },
+  { label: 'Uncertain', value: 'UNCERTAIN' },
 ];
 
 const associatedOptions = [

@@ -9,7 +9,7 @@ import { requestClient } from '#/api/request';
 
 export namespace AasApi {
   /** 质量码 */
-  export type Quality = 'Bad' | 'Good' | 'Uncertain' | null;
+  export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
   /** 同步状态 */
   export type SyncStatus = 'FAILED' | 'PROCESSING' | 'SUCCESS';
@@ -29,7 +29,7 @@ export namespace AasApi {
   /** AAS Tag 列表查询参数（IDS v3.2 §2.2.5） */
   export interface AasTagQueryParams extends PageQuery {
     keyword?: string;
-    quality?: 'Bad' | 'Good' | 'Uncertain';
+    quality?: 'BAD' | 'GOOD' | 'UNCERTAIN';
     associated?: boolean;
   }
 

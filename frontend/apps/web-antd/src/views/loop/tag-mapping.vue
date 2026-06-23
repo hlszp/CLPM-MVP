@@ -209,9 +209,9 @@ async function handleSave() {
       pid_d: slotState.pid_d ?? null,
     });
     tagData.value = result;
-    if (result.status === 'Partial') {
+    if (result.status === 'PARTIAL') {
       message.warning('保存成功，但回路状态为「部分关联」，请检查必填 Tag');
-    } else if (result.status === 'Ready') {
+    } else if (result.status === 'READY') {
       message.success('保存成功，回路状态已更新为「就绪」');
     } else {
       message.success('保存成功');

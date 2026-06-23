@@ -5,10 +5,10 @@
  * 为避免命名冲突，`./auth` 不从此处导出，使用时请直接 `import from '#/api/auth'`。
  */
 export * from './core';
+export * from './dashboard';
 export * from './diagnosis';
 export * from './loop';
 export * from './metric';
-export * from './portal';
 export * from './system';
 export * from './tuning';
 export * from './types';

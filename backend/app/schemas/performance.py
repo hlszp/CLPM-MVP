@@ -5,14 +5,16 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from app.schemas.base import CamelModel
 
 # ---------------------------------------------------------------------------
 # S3-METRIC-001: 指标配置
 # ---------------------------------------------------------------------------
 
 
-class MetricThreshold(BaseModel):
+class MetricThreshold(CamelModel):
     """指标阈值配置。"""
 
     min: float | None = None
@@ -20,7 +22,7 @@ class MetricThreshold(BaseModel):
     alert: float | None = None
 
 
-class MetricConfigItem(BaseModel):
+class MetricConfigItem(CamelModel):
     """指标配置项（响应）。"""
 
     metricId: str
@@ -36,7 +38,7 @@ class MetricConfigItem(BaseModel):
     version: int = 1
 
 
-class MetricConfigUpdate(BaseModel):
+class MetricConfigUpdate(CamelModel):
     """PUT /performance/metrics/{metricId} 请求体。"""
 
     metricName: str | None = Field(None, max_length=100)
@@ -52,7 +54,7 @@ class MetricConfigUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class EngineRuleItem(BaseModel):
+class EngineRuleItem(CamelModel):
     """引擎规则项（响应）。"""
 
     ruleId: str
@@ -65,7 +67,7 @@ class EngineRuleItem(BaseModel):
     updatedAt: str | None = None
 
 
-class EngineRuleUpdate(BaseModel):
+class EngineRuleUpdate(CamelModel):
     """PUT /performance/rules/{ruleId} 请求体。"""
 
     ruleName: str | None = Field(None, max_length=100)
@@ -78,7 +80,7 @@ class EngineRuleUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class BoardFilterScope(BaseModel):
+class BoardFilterScope(CamelModel):
     """看板筛选范围。"""
 
     plantNodeId: str | None = None
@@ -86,7 +88,7 @@ class BoardFilterScope(BaseModel):
     timeWindow: str = "today"
 
 
-class KpiCard(BaseModel):
+class KpiCard(CamelModel):
     """看板 KPI 卡片。"""
 
     metricKey: str
@@ -97,7 +99,7 @@ class KpiCard(BaseModel):
     algorithmVersion: str = "KPI_CALC_v1.0"
 
 
-class KpiSummary(BaseModel):
+class KpiSummary(CamelModel):
     """看板 KPI 汇总。"""
 
     good_value_rate: float | None = None
@@ -111,14 +113,14 @@ class KpiSummary(BaseModel):
     algorithm_version: str = "KPI_CALC_v1.0"
 
 
-class TrendSeries(BaseModel):
+class TrendSeries(CamelModel):
     """趋势数据。"""
 
     timestamps: list[str] = Field(default_factory=list)
     values: list[float | None] = Field(default_factory=list)
 
 
-class PartialWarning(BaseModel):
+class PartialWarning(CamelModel):
     """部分数据警告。"""
 
     active: bool = False
@@ -127,7 +129,7 @@ class PartialWarning(BaseModel):
     message: str | None = None
 
 
-class BoardData(BaseModel):
+class BoardData(CamelModel):
     """看板响应 data 块。"""
 
     filterScope: BoardFilterScope
@@ -142,7 +144,7 @@ class BoardData(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class RankingItem(BaseModel):
+class RankingItem(CamelModel):
     """低效回路排行项。"""
 
     rank: int
@@ -167,7 +169,7 @@ class RankingItem(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class AnalyticsFilterScope(BaseModel):
+class AnalyticsFilterScope(CamelModel):
     """报表筛选范围。"""
 
     startTime: str
@@ -177,7 +179,7 @@ class AnalyticsFilterScope(BaseModel):
     granularity: str = "day"
 
 
-class KpiTrendSeries(BaseModel):
+class KpiTrendSeries(CamelModel):
     """报表 KPI 趋势单条序列。"""
 
     metricKey: str
@@ -185,14 +187,14 @@ class KpiTrendSeries(BaseModel):
     values: list[float | None] = Field(default_factory=list)
 
 
-class KpiTrend(BaseModel):
+class KpiTrend(CamelModel):
     """报表 KPI 趋势。"""
 
     timestamps: list[str] = Field(default_factory=list)
     series: list[KpiTrendSeries] = Field(default_factory=list)
 
 
-class UnitRankingItem(BaseModel):
+class UnitRankingItem(CamelModel):
     """单元排名项。"""
 
     unitId: str
@@ -201,14 +203,14 @@ class UnitRankingItem(BaseModel):
     loopCount: int = 0
 
 
-class BadActorItem(BaseModel):
+class BadActorItem(CamelModel):
     """坏演员分布项。"""
 
     label: str
     count: int = 0
 
 
-class AnalyticsData(BaseModel):
+class AnalyticsData(CamelModel):
     """报表响应 data 块。"""
 
     filterScope: AnalyticsFilterScope
@@ -217,7 +219,7 @@ class AnalyticsData(BaseModel):
     badActorDistribution: list[BadActorItem] = Field(default_factory=list)
 
 
-class ExportRequest(BaseModel):
+class ExportRequest(CamelModel):
     """POST /performance/analytics/export 请求体。"""
 
     startTime: str

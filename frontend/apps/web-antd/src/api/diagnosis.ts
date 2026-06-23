@@ -25,7 +25,7 @@ export type DiagnosisLabel =
   | 'VALVE_STICTION';
 
 /** 质量码 */
-export type Quality = 'Bad' | 'Good' | 'Uncertain' | null;
+export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
 export namespace DiagnosisApi {
   /** 处理状态枚举（IDS v3.2 §2.4） */
@@ -353,10 +353,11 @@ export function updateTrackerStatusApi(
 
 /**
  * 获取 Tracker 列表 — IDS v3.2 §2.4
+ * 后端无 /tracker 列表端点，复用 /diagnosis/list 接口获取数据。
  */
 export function getTrackerListApi(params: DiagnosisApi.TrackerListQueryParams) {
   return requestClient.get<PaginatedResponse<DiagnosisApi.TrackerItem>>(
-    '/tracker',
+    '/diagnosis/list',
     { params },
   );
 }

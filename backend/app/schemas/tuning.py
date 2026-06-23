@@ -10,14 +10,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from app.schemas.base import CamelModel
 
 # ---------------------------------------------------------------------------
 # 模型辨识
 # ---------------------------------------------------------------------------
 
 
-class ModelIdentifyRequest(BaseModel):
+class ModelIdentifyRequest(CamelModel):
     """POST /tuning/identify 请求体。"""
 
     loopId: str = Field(..., description="回路 ID")
@@ -27,7 +29,7 @@ class ModelIdentifyRequest(BaseModel):
     method: str | None = Field(None, description="辨识方法: TWO_POINT/AREA/COMBINED（仅 FOPDT）")
 
 
-class ModelParams(BaseModel):
+class ModelParams(CamelModel):
     """模型参数。"""
 
     K: float | None = Field(None, description="过程增益")
@@ -37,7 +39,7 @@ class ModelParams(BaseModel):
     T2: float | None = Field(None, description="SOPDT 第二时间常数（秒）")
 
 
-class ModelIdentifyResult(BaseModel):
+class ModelIdentifyResult(CamelModel):
     """模型辨识结果。"""
 
     modelType: str
@@ -56,7 +58,7 @@ class ModelIdentifyResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class PidParams(BaseModel):
+class PidParams(CamelModel):
     """PID 参数。"""
 
     kp: float = Field(..., description="比例增益")
@@ -64,7 +66,7 @@ class PidParams(BaseModel):
     td: float = Field(0.0, description="微分时间（秒）")
 
 
-class TuneRequest(BaseModel):
+class TuneRequest(CamelModel):
     """POST /tuning/tune 请求体。"""
 
     modelType: str = Field(..., description="模型类型: FOPDT/SOPDT/IPDT")
@@ -77,7 +79,7 @@ class TuneRequest(BaseModel):
     loopId: str | None = Field(None, description="回路 ID（可选，用于记录）")
 
 
-class TuneResult(BaseModel):
+class TuneResult(CamelModel):
     """PID 整定结果。"""
 
     algorithm: str
@@ -93,7 +95,7 @@ class TuneResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class SimulateRequest(BaseModel):
+class SimulateRequest(CamelModel):
     """POST /tuning/simulate 请求体。"""
 
     modelType: str = Field("FOPDT", description="模型类型")
@@ -106,7 +108,7 @@ class SimulateRequest(BaseModel):
     disturbanceType: str = Field("step", description="扰动类型: step/none")
 
 
-class SimulationMetrics(BaseModel):
+class SimulationMetrics(CamelModel):
     """仿真性能指标。"""
 
     riseTime: float | None = Field(None, description="上升时间（秒）")
@@ -115,7 +117,7 @@ class SimulationMetrics(BaseModel):
     itae: float | None = Field(None, description="ITAE 积分")
 
 
-class SimulationResult(BaseModel):
+class SimulationResult(CamelModel):
     """闭环仿真结果。"""
 
     timestamps: list[float]
@@ -131,7 +133,7 @@ class SimulationResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TuningTaskItem(BaseModel):
+class TuningTaskItem(CamelModel):
     """整定任务列表项。"""
 
     id: str
@@ -154,7 +156,7 @@ class TuningTaskDetail(TuningTaskItem):
     currentPid: dict[str, Any] | None = None
 
 
-class CreateTuningTaskRequest(BaseModel):
+class CreateTuningTaskRequest(CamelModel):
     """创建整定任务（保存整定结果）。"""
 
     loopId: str
@@ -173,7 +175,7 @@ class CreateTuningTaskRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TuningHistoryStats(BaseModel):
+class TuningHistoryStats(CamelModel):
     """整定历史统计。"""
 
     totalTasks: int
@@ -188,7 +190,7 @@ class TuningHistoryStats(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TuningMethodInfo(BaseModel):
+class TuningMethodInfo(CamelModel):
     """整定方法信息。"""
 
     code: str

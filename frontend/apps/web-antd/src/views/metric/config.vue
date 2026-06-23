@@ -46,6 +46,7 @@ const controlTypeOptions = [
   { label: '稳定型', value: 'STABLE' },
   { label: '快速型', value: 'FAST' },
   { label: '慢速型', value: 'SLOW' },
+  { label: '逻辑型', value: 'LOGIC' },
 ];
 
 const columns: TableColumnsType = [

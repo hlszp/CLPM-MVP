@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from app.schemas.base import CamelModel
 
 
-class TagRegistryInfo(BaseModel):
+class TagRegistryInfo(CamelModel):
     """Tag registry info."""
 
     tagId: str
@@ -18,7 +20,7 @@ class TagRegistryInfo(BaseModel):
     isLinked: bool = False
 
 
-class TagSyncStats(BaseModel):
+class TagSyncStats(CamelModel):
     """AAS 同步统计结果。"""
 
     total: int = Field(0, description="AAS 读取的 Tag 总数")

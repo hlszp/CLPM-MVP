@@ -37,7 +37,7 @@ function buildPvData(
     const q = pvQuality[i];
     const v = pv[i] ?? null;
     // Bad 质量时段断线
-    if (q === 'Bad') return [ts, null];
+    if (q === 'BAD') return [ts, null];
     return [ts, v];
   });
 }

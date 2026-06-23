@@ -33,6 +33,7 @@ from app.core.db import dispose_engine
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import get_logger, setup_logging
 from app.core.redis import close_redis
+from app.middleware.rate_limit import RateLimitMiddleware
 
 logger = get_logger(__name__)
 
@@ -68,6 +69,8 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Accept"],
     )
+    # S2-C5: 敏感端点速率限制
+    app.add_middleware(RateLimitMiddleware)
 
     register_exception_handlers(app)
 

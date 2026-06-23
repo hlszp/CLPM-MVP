@@ -21,7 +21,12 @@ export namespace TuningApi {
   export type Algorithm = 'COHEN_COON' | 'IMC' | 'LAMBDA' | 'SIMC' | 'ZN';
 
   /** 任务状态 */
-  export type TaskStatus = 'APPLIED' | 'FAILED' | 'SIMULATED';
+  export type TaskStatus =
+    | 'PENDING'
+    | 'IDENTIFIED'
+    | 'SIMULATED'
+    | 'APPLIED'
+    | 'VERIFIED';
 
   /** 扰动类型 */
   export type DisturbanceType = 'none' | 'step';

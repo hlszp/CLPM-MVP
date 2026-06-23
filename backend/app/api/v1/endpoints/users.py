@@ -55,7 +55,7 @@ async def list_users_endpoint(
     return success(data=data)
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_user_endpoint(
     body: UserCreateRequest,
     db: AsyncSession = Depends(get_db),

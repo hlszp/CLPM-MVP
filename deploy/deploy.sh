@@ -102,7 +102,8 @@ echo ""
 # 9. API 健康检查
 # ------------------------------------------------------------
 echo "6. API 健康检查..."
-if curl -fsS http://localhost:8001/health >/dev/null 2>&1; then
+# S2-B3: 后端端口不暴露到宿主机，通过 docker exec 检查
+if docker compose -f "$COMPOSE_FILE" exec -T backend curl -fsS http://localhost:8001/health >/dev/null 2>&1; then
     echo "  [OK] 后端 API 健康"
 else
     echo "  [FAIL] 后端 API 健康检查失败"
@@ -126,12 +127,13 @@ echo "=== 部署完成 ==="
 echo ""
 echo "服务访问地址："
 echo "  前端：        http://localhost"
-echo "  后端 API：    http://localhost:8001"
-echo "  API 文档：    http://localhost:8001/docs"
-echo "  OpenAPI JSON：http://localhost:8001/openapi.json"
+echo "  后端 API：    http://localhost/api/v1（通过 nginx 反向代理）"
+echo "  API 文档：    http://localhost/api/docs（生产环境建议关闭）"
 echo ""
 echo "常用运维命令："
 echo "  查看日志：    docker compose -f $COMPOSE_FILE logs -f"
 echo "  查看状态：    docker compose -f $COMPOSE_FILE ps"
 echo "  停止服务：    docker compose -f $COMPOSE_FILE down"
 echo "  重启服务：    docker compose -f $COMPOSE_FILE restart"
+echo "  数据备份：    ./deploy/backup.sh"
+echo "  数据回滚：    ./deploy/rollback.sh"

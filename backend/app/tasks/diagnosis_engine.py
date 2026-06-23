@@ -23,14 +23,13 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-from celery import Task
 from sqlalchemy import delete, select
 
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
-from app.tasks.celery_app import celery_app
+from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -45,20 +44,6 @@ CONCURRENCY = 5
 
 # 数据最少点数
 MIN_DATA_POINTS = 32
-
-
-class AsyncTask(Task):
-    """Base task that runs an async function in a fresh event loop."""
-
-    abstract = True
-
-    def run_async(self, coro):
-        """Run a coroutine in a fresh event loop."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
 
 
 # ---------------------------------------------------------------------------

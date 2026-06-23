@@ -210,7 +210,7 @@ async function handleGenerate(record: SystemApi.ReportConfig) {
     taskProgressMap.value.set(record.id, {
       taskId: result.taskId,
       configId: record.id,
-      status: 'RUNNING',
+      status: 'PROCESSING',
       progress: 0,
       message: '任务已提交，等待执行...',
     });
@@ -238,8 +238,8 @@ function startPolling() {
           progress: taskResult.progress ?? 0,
           message: taskResult.message || '',
         });
-        if (taskResult.status === 'SUCCESS' || taskResult.status === 'FAILED') {
-          if (taskResult.status === 'SUCCESS') {
+        if (taskResult.status === 'COMPLETED' || taskResult.status === 'FAILED') {
+          if (taskResult.status === 'COMPLETED') {
             message.success(`报表「${recordName(configId)}」生成完成`);
           } else {
             message.error(`报表「${recordName(configId)}」生成失败`);
@@ -279,9 +279,9 @@ function getTaskProgress(configId: string): TaskProgress | undefined {
 /** 任务状态颜色 */
 function taskStatusColor(status: SystemApi.ReportTaskStatus): string {
   const map: Record<SystemApi.ReportTaskStatus, string> = {
+    PROCESSING: 'blue',
+    COMPLETED: 'green',
     FAILED: 'red',
-    RUNNING: 'blue',
-    SUCCESS: 'green',
   };
   return map[status] || 'default';
 }
@@ -289,9 +289,9 @@ function taskStatusColor(status: SystemApi.ReportTaskStatus): string {
 /** 任务状态标签 */
 function taskStatusLabel(status: SystemApi.ReportTaskStatus): string {
   const map: Record<SystemApi.ReportTaskStatus, string> = {
+    PROCESSING: '生成中',
+    COMPLETED: '完成',
     FAILED: '失败',
-    RUNNING: '生成中',
-    SUCCESS: '完成',
   };
   return map[status] || status;
 }
@@ -366,7 +366,7 @@ onUnmounted(() => {
                 {{ taskStatusLabel(getTaskProgress(record.id)!.status) }}
               </Tag>
               <Progress
-                v-if="getTaskProgress(record.id)!.status === 'RUNNING'"
+                v-if="getTaskProgress(record.id)!.status === 'PROCESSING'"
                 :percent="getTaskProgress(record.id)!.progress"
                 size="small"
               />

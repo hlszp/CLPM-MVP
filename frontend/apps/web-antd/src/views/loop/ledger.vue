@@ -63,9 +63,9 @@ const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 
 const statusOptions = [
   { label: '全部', value: undefined },
-  { label: '就绪', value: 'Ready' },
-  { label: '部分关联', value: 'Partial' },
-  { label: '未确定', value: 'INCONCLUSIVE' },
+  { label: '就绪', value: 'READY' },
+  { label: '部分关联', value: 'PARTIAL' },
+  { label: '未启用', value: 'INACTIVE' },
 ];
 
 const columns: TableColumnsType = [

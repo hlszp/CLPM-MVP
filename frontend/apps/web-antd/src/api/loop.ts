@@ -9,7 +9,7 @@ import { requestClient } from '#/api/request';
 
 export namespace LoopApi {
   /** 回路状态（IDS v3.2 §2.2.7） */
-  export type LoopStatus = 'INCONCLUSIVE' | 'Partial' | 'Ready';
+  export type LoopStatus = 'READY' | 'PARTIAL' | 'INACTIVE';
 
   /** 控制方式（IDS v3.2 §2.2.7） */
   export type ControlMode = 'Auto' | 'Cascade' | 'Manual';
@@ -25,13 +25,13 @@ export namespace LoopApi {
     | 'SP';
 
   /** 质量码（IDS v3.2 §2.2.5） */
-  export type Quality = 'Bad' | 'Good' | 'Uncertain' | null;
+  export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
   /** 趋势时间窗（IDS v3.2 §2.2.14） */
   export type TrendWindow = 'last_1_hour' | 'last_7_days' | 'last_24_hours';
 
   /** KPI 状态（IDS v3.2 §2.2.14） */
-  export type KpiStatus = 'GOOD' | 'INCONCLUSIVE' | 'POOR' | 'WARNING';
+  export type KpiStatus = 'SUCCESS' | 'INCONCLUSIVE' | 'PARTIAL';
 
   /** 评分权重（6 大 KPI，总和须 100） */
   export interface ScoreWeights {

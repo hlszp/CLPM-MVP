@@ -43,7 +43,7 @@ async def list_configs_endpoint(
     return success(data=data)
 
 
-@router.post("/configs")
+@router.post("/configs", status_code=201)
 async def create_config_endpoint(
     body: ReportConfigCreateRequest,
     db: AsyncSession = Depends(get_db),

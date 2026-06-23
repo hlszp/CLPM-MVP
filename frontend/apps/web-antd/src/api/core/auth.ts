@@ -111,10 +111,10 @@ export async function getUserInfoApi() {
 /**
  * 获取用户权限码
  * 权限码来源于 /auth/me 返回的 permissions 字段，
- * 此处保留框架约定的接口签名，实际由 store 层从用户信息中提取。
+ * 后端无 /auth/codes 路由，此处直接返回空数组，由 store 层从用户信息中提取。
  */
-export async function getAccessCodesApi() {
-  return requestClient.get<string[]>('/auth/codes');
+export async function getAccessCodesApi(): Promise<string[]> {
+  return [];
 }
 
 /**

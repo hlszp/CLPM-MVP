@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
+
+from app.schemas.base import CamelModel
 
 # ---------------------------------------------------------------------------
 # Password policy (S1-B4)
@@ -70,7 +72,7 @@ def validate_password_strength(v: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-class LoginRequest(BaseModel):
+class LoginRequest(CamelModel):
     """POST /api/v1/auth/login request body."""
 
     username: str = Field(..., min_length=1, max_length=50, description="用户名")
@@ -78,7 +80,7 @@ class LoginRequest(BaseModel):
     rememberMe: bool = Field(False, description="记住登录（延长 Refresh Token 至 30 天）")
 
 
-class UserInfo(BaseModel):
+class UserInfo(CamelModel):
     """User info block returned in login / me responses."""
 
     id: str
@@ -91,7 +93,7 @@ class UserInfo(BaseModel):
     lastLoginAt: str | None = None
 
 
-class LoginData(BaseModel):
+class LoginData(CamelModel):
     """Login response ``data`` block."""
 
     accessToken: str
@@ -106,13 +108,13 @@ class LoginData(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class RefreshRequest(BaseModel):
+class RefreshRequest(CamelModel):
     """POST /api/v1/auth/refresh request body."""
 
     refreshToken: str = Field(..., description="有效的 Refresh Token")
 
 
-class RefreshData(BaseModel):
+class RefreshData(CamelModel):
     """Refresh response ``data`` block."""
 
     accessToken: str
@@ -126,7 +128,7 @@ class RefreshData(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class ChangePasswordRequest(BaseModel):
+class ChangePasswordRequest(CamelModel):
     """PUT /api/v1/auth/password request body."""
 
     oldPassword: str = Field(..., min_length=1, max_length=128)
@@ -144,14 +146,14 @@ class ChangePasswordRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class AuthTokens(BaseModel):
+class AuthTokens(CamelModel):
     """Token pair issued by the auth service."""
 
-    access_token: str
-    refresh_token: str
-    access_jti: str
-    refresh_jti: str
-    expires_in: int
+    accessToken: str
+    refreshToken: str
+    accessJti: str
+    refreshJti: str
+    expiresIn: int
 
 
 __all__ = [

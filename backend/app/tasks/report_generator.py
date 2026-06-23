@@ -7,9 +7,8 @@ Design:
 - Updates ``ReportRecord`` to COMPLETED with file_url, or FAILED on error
 - Writes an audit log entry
 
-Note: PDF generation uses reportlab for simplicity. This can be replaced with
-a Headless Browser (e.g. Playwright/Puppeteer) rendering an HTML template to
-PDF for richer formatting — see DDS §2.12 and S5-SYS-003 design notes.
+S2-A4: 区分可重试/不可重试异常 — 业务错误（NonRetryableError）不重试，
+       系统错误（DB/网络等）自动重试 3 次。
 """
 
 from __future__ import annotations
@@ -19,30 +18,17 @@ import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from celery import Task
 from sqlalchemy import select
 
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
-from app.tasks.celery_app import celery_app
+from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
 
 
-class AsyncTask(Task):
-    """Base task that runs an async function in a fresh event loop."""
-
-    abstract = True
-
-    def run_async(self, coro):
-        """Run a coroutine in a fresh event loop."""
-        import asyncio
-
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+class NonRetryableError(Exception):
+    """业务错误，不应重试（如配置缺失、周期参数非法等）。"""
 
 
 # ---------------------------------------------------------------------------
@@ -54,8 +40,7 @@ class AsyncTask(Task):
     name="app.tasks.report_generator.generate_report_task",
     bind=True,
     base=AsyncTask,
-    autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 60},
+    max_retries=3,
     retry_backoff=True,
     retry_backoff_max=600,
     retry_jitter=True,
@@ -68,6 +53,8 @@ def generate_report_task(
 ) -> dict:
     """Generate a report asynchronously.
 
+    S2-A4: 业务错误（NonRetryableError）不重试；系统错误自动重试 3 次。
+
     Args:
         task_id: Optional task ID (used as ReportRecord ID)
         config_id: Optional report config ID
@@ -78,9 +65,14 @@ def generate_report_task(
         result = self.run_async(_do_generate(task_id, config_id, report_period))
         logger.info("报表生成任务完成: %s", result)
         return result
-    except Exception:
-        logger.exception("报表生成任务失败")
+    except NonRetryableError as exc:
+        # 业务错误：不重试，直接记录失败
+        logger.error("报表生成业务错误（不重试）: %s", exc)
         raise
+    except Exception as exc:
+        # 系统错误：自动重试
+        logger.exception("报表生成系统错误（将重试）")
+        raise self.retry(exc=exc, countdown=60) from None
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +122,13 @@ async def _do_generate(
     """Execute the report generation logic."""
     from app.core.db import AsyncSessionLocal
 
+    # S2-A4: 业务参数校验 — 非法周期不重试
+    valid_periods = {"SHIFT", "DAILY", "WEEKLY", "MONTHLY"}
+    if report_period not in valid_periods:
+        raise NonRetryableError(
+            f"非法报表周期: {report_period}，允许值: {valid_periods}"
+        )
+
     record_id = task_id or str(uuid4())
 
     async with AsyncSessionLocal() as db:
@@ -138,6 +137,9 @@ async def _do_generate(
         if config_id:
             result = await db.execute(select(ReportConfig).where(ReportConfig.id == config_id))
             config = result.scalar_one_or_none()
+            # S2-A4: 配置缺失为业务错误，不重试
+            if config is None:
+                raise NonRetryableError(f"报表配置不存在: config_id={config_id}")
 
         # Create ReportRecord with PROCESSING status
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -252,5 +254,6 @@ def _parse_content_template(value: str | None) -> dict | None:
 
 __all__ = [
     "AsyncTask",
+    "NonRetryableError",
     "generate_report_task",
 ]

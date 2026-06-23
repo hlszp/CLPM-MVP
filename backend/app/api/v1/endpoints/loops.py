@@ -67,7 +67,7 @@ async def list_loops_endpoint(
     return success(data=data)
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_loop_endpoint(
     body: LoopCreate,
     db: AsyncSession = Depends(get_db),

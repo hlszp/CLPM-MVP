@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from app.schemas.base import CamelModel
 
 # ---------------------------------------------------------------------------
 # S4-DIAG-001: 诊断指标配置
 # ---------------------------------------------------------------------------
 
 
-class DiagnosisConfigItem(BaseModel):
+class DiagnosisConfigItem(CamelModel):
     """诊断指标配置项（响应）。"""
 
     diagId: str
@@ -27,7 +29,7 @@ class DiagnosisConfigItem(BaseModel):
     version: int = 1
 
 
-class DiagnosisConfigUpdate(BaseModel):
+class DiagnosisConfigUpdate(CamelModel):
     """PUT /diagnosis/metrics/{diagId} 请求体。"""
 
     diagName: str | None = Field(None, max_length=100)
@@ -43,7 +45,7 @@ class DiagnosisConfigUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class DiagnosisListItem(BaseModel):
+class DiagnosisListItem(CamelModel):
     """诊断列表项。"""
 
     loopId: str
@@ -60,7 +62,7 @@ class DiagnosisListItem(BaseModel):
     algorithmVersion: str | None = None
 
 
-class DiagnosisListData(BaseModel):
+class DiagnosisListData(CamelModel):
     """诊断列表响应 data 块。"""
 
     items: list[DiagnosisListItem] = Field(default_factory=list)
@@ -69,15 +71,15 @@ class DiagnosisListData(BaseModel):
     pageSize: int = 20
 
 
-class DiagnosisEvidence(BaseModel):
+class DiagnosisEvidence(CamelModel):
     """诊断证据。"""
 
-    scatter_plot: str | None = None
+    scatterPlot: str | None = None
     reasoning: str | None = None
     # 其他动态特征字段
 
 
-class DiagnosisLabelDetail(BaseModel):
+class DiagnosisLabelDetail(CamelModel):
     """诊断详情中的单个标签。"""
 
     label: str
@@ -87,7 +89,7 @@ class DiagnosisLabelDetail(BaseModel):
     algorithm: str | None = None
 
 
-class EvidenceChain(BaseModel):
+class EvidenceChain(CamelModel):
     """证据链。"""
 
     waveformUrl: str | None = None
@@ -95,7 +97,7 @@ class EvidenceChain(BaseModel):
     reasoning: str | None = None
 
 
-class DiagnosisDetail(BaseModel):
+class DiagnosisDetail(CamelModel):
     """诊断详情响应 data 块。"""
 
     loopId: str
@@ -114,14 +116,14 @@ class DiagnosisDetail(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class WaveformTimeRange(BaseModel):
+class WaveformTimeRange(CamelModel):
     """波形时间范围。"""
 
     startTime: str
     endTime: str
 
 
-class WaveformData(BaseModel):
+class WaveformData(CamelModel):
     """波形响应 data 块。"""
 
     loopId: str
@@ -142,7 +144,7 @@ class WaveformData(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TrackerStatusUpdate(BaseModel):
+class TrackerStatusUpdate(CamelModel):
     """PATCH /tracker/{loopId}/status 请求体。"""
 
     status: str = Field(..., pattern="^(PENDING|IN_PROGRESS|RESOLVED|IGNORED)$")
@@ -150,7 +152,7 @@ class TrackerStatusUpdate(BaseModel):
     remark: str | None = None
 
 
-class TrackerStatusData(BaseModel):
+class TrackerStatusData(CamelModel):
     """Tracker 状态更新响应 data 块。"""
 
     loopId: str
@@ -162,7 +164,7 @@ class TrackerStatusData(BaseModel):
     abComparison: dict[str, Any] | None = None
 
 
-class TrackerExportData(BaseModel):
+class TrackerExportData(CamelModel):
     """Tracker PDF 导出响应 data 块。"""
 
     taskId: str
@@ -174,7 +176,7 @@ class TrackerExportData(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class AnalyticsFilterScope(BaseModel):
+class AnalyticsFilterScope(CamelModel):
     """报表筛选范围。"""
 
     startTime: str
@@ -185,7 +187,7 @@ class AnalyticsFilterScope(BaseModel):
     granularity: str = "day"
 
 
-class LabelDistributionItem(BaseModel):
+class LabelDistributionItem(CamelModel):
     """标签分布项。"""
 
     label: str
@@ -193,7 +195,7 @@ class LabelDistributionItem(BaseModel):
     count: int = 0
 
 
-class EfficiencyTrend(BaseModel):
+class EfficiencyTrend(CamelModel):
     """效率趋势。"""
 
     timestamps: list[str] = Field(default_factory=list)
@@ -201,14 +203,14 @@ class EfficiencyTrend(BaseModel):
     avgCloseDurationHours: list[float | None] = Field(default_factory=list)
 
 
-class CloseDurationItem(BaseModel):
+class CloseDurationItem(CamelModel):
     """闭环时长分布项。"""
 
     range: str
     count: int = 0
 
 
-class DiagnosisAnalyticsData(BaseModel):
+class DiagnosisAnalyticsData(CamelModel):
     """诊断统计报表响应 data 块。"""
 
     filterScope: AnalyticsFilterScope
@@ -217,7 +219,7 @@ class DiagnosisAnalyticsData(BaseModel):
     closeDurationDistribution: list[CloseDurationItem] = Field(default_factory=list)
 
 
-class AnalyticsExportRequest(BaseModel):
+class AnalyticsExportRequest(CamelModel):
     """POST /diagnosis/analytics/export 请求体。"""
 
     startTime: str
@@ -229,7 +231,7 @@ class AnalyticsExportRequest(BaseModel):
     format: str = Field("pdf", pattern="^(pdf|csv)$")
 
 
-class AnalyticsExportData(BaseModel):
+class AnalyticsExportData(CamelModel):
     """统计报表导出响应 data 块。"""
 
     taskId: str

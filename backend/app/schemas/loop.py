@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
+
+from app.schemas.base import CamelModel
 
 
-class ScoreWeights(BaseModel):
+class ScoreWeights(CamelModel):
     """回路评分权重（6 大 KPI 权重，总和须为 100）。"""
 
     good_value_rate: int = Field(0, ge=0, le=100)
@@ -30,7 +32,7 @@ class ScoreWeights(BaseModel):
         return self
 
 
-class LoopCreate(BaseModel):
+class LoopCreate(CamelModel):
     """POST /api/v1/loops 请求体。"""
 
     tagName: str = Field(..., min_length=1, max_length=100, description="回路位号（唯一）")
@@ -41,7 +43,7 @@ class LoopCreate(BaseModel):
     remark: str | None = Field(None, max_length=500, description="备注")
 
 
-class LoopUpdate(BaseModel):
+class LoopUpdate(CamelModel):
     """PUT /api/v1/loops/{id} 请求体。"""
 
     description: str | None = Field(None, max_length=255)
@@ -50,7 +52,7 @@ class LoopUpdate(BaseModel):
     remark: str | None = Field(None, max_length=500)
 
 
-class TagMappingSlot(BaseModel):
+class TagMappingSlot(CamelModel):
     """回路详情中单个 Tag 槽位状态。"""
 
     tagId: str | None = None
@@ -59,7 +61,7 @@ class TagMappingSlot(BaseModel):
     associated: bool
 
 
-class TagMappingStatus(BaseModel):
+class TagMappingStatus(CamelModel):
     """回路列表中 7 Tag 关联状态摘要。"""
 
     pv: bool = False
@@ -71,7 +73,7 @@ class TagMappingStatus(BaseModel):
     pid_d: bool = False
 
 
-class LoopListItem(BaseModel):
+class LoopListItem(CamelModel):
     """回路列表项。"""
 
     loopId: str
@@ -87,7 +89,7 @@ class LoopListItem(BaseModel):
     tagMappingStatus: TagMappingStatus
 
 
-class LoopListData(BaseModel):
+class LoopListData(CamelModel):
     """回路列表响应 data 块。"""
 
     items: list[LoopListItem]
@@ -96,7 +98,7 @@ class LoopListData(BaseModel):
     pageSize: int
 
 
-class LoopBasicInfo(BaseModel):
+class LoopBasicInfo(CamelModel):
     """回路详情 basicInfo 块。"""
 
     loopId: str
@@ -114,7 +116,7 @@ class LoopBasicInfo(BaseModel):
     updatedBy: str | None = None
 
 
-class LoopTagMappingDetail(BaseModel):
+class LoopTagMappingDetail(CamelModel):
     """回路详情 tagMapping 中单个角色。"""
 
     tagId: str | None = None
@@ -123,7 +125,7 @@ class LoopTagMappingDetail(BaseModel):
     associated: bool
 
 
-class LoopTagMappingBlock(BaseModel):
+class LoopTagMappingBlock(CamelModel):
     """回路详情 tagMapping 块（7 个角色）。"""
 
     pv: LoopTagMappingDetail
@@ -135,7 +137,7 @@ class LoopTagMappingBlock(BaseModel):
     pid_d: LoopTagMappingDetail
 
 
-class LoopRuntimeParams(BaseModel):
+class LoopRuntimeParams(CamelModel):
     """回路详情 runtimeParams 块。"""
 
     controlMode: str | None = None
@@ -145,14 +147,14 @@ class LoopRuntimeParams(BaseModel):
     readAt: str | None = None
 
 
-class LoopAasSyncStatus(BaseModel):
+class LoopAasSyncStatus(CamelModel):
     """回路详情 aasSyncStatus 块。"""
 
     lastSyncAt: str | None = None
     associatedTagCount: int = 0
 
 
-class LoopDetailData(BaseModel):
+class LoopDetailData(CamelModel):
     """回路详情响应 data 块。"""
 
     basicInfo: LoopBasicInfo
@@ -161,7 +163,7 @@ class LoopDetailData(BaseModel):
     aasSyncStatus: LoopAasSyncStatus
 
 
-class LoopUpdateResult(BaseModel):
+class LoopUpdateResult(CamelModel):
     """回路更新响应。"""
 
     loopId: str
@@ -173,7 +175,7 @@ class LoopUpdateResult(BaseModel):
     updatedBy: str | None = None
 
 
-class LoopDeleteResult(BaseModel):
+class LoopDeleteResult(CamelModel):
     """回路删除响应。"""
 
     loopId: str
@@ -186,7 +188,7 @@ class LoopDeleteResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class LoopTagMappingUpdate(BaseModel):
+class LoopTagMappingUpdate(CamelModel):
     """PUT /api/v1/loops/{id}/tags 请求体。
 
     7 个 Tag 角色与 tag_registry 中 tagId 的映射，未关联的角色传 null。
@@ -201,7 +203,7 @@ class LoopTagMappingUpdate(BaseModel):
     pid_d: str | None = None
 
 
-class LoopTagSlotInfo(BaseModel):
+class LoopTagSlotInfo(CamelModel):
     """回路 Tag 关联详情中单个槽位。"""
 
     role: str
@@ -215,7 +217,7 @@ class LoopTagSlotInfo(BaseModel):
     lastSyncAt: str | None = None
 
 
-class LoopTagMappingResponse(BaseModel):
+class LoopTagMappingResponse(CamelModel):
     """GET /api/v1/loops/{id}/tags 响应。"""
 
     loopId: str
@@ -224,7 +226,7 @@ class LoopTagMappingResponse(BaseModel):
     tags: list[LoopTagSlotInfo]
 
 
-class LoopTagMappingUpdateResponse(BaseModel):
+class LoopTagMappingUpdateResponse(CamelModel):
     """PUT /api/v1/loops/{id}/tags 响应。"""
 
     loopId: str

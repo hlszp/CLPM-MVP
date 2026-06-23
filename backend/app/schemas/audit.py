@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from app.schemas.base import CamelModel
 
 
-class AuditLogItem(BaseModel):
+class AuditLogItem(CamelModel):
     """Audit log item in list responses."""
 
     logId: str
@@ -21,7 +21,7 @@ class AuditLogItem(BaseModel):
     clientIp: str | None = None
 
 
-class AuditLogListData(BaseModel):
+class AuditLogListData(CamelModel):
     """Paginated audit log list response data."""
 
     items: list[AuditLogItem]

@@ -155,11 +155,12 @@ def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
     from app.core.db import get_db
     from app.main import app
 
-    # Patch the redis_client used by the auth/dashboard services.
+    # Patch the redis_client used by the auth/dashboard services and rate limit middleware.
     with (
         patch("app.core.redis.redis_client", fake_redis),
         patch("app.services.auth.redis_client", fake_redis),
         patch("app.services.dashboard.redis_client", fake_redis),
+        patch("app.middleware.rate_limit.redis_client", fake_redis),
     ):
         # Override DB dependency to return our mock session.
         async def _override_db():

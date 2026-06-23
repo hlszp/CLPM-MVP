@@ -17,27 +17,26 @@ defineOptions({ name: 'LoopStatusBadge' });
 
 const props = defineProps<{
   isActive?: boolean;
-  status?: 'INACTIVE' | LoopApi.LoopStatus;
+  status?: LoopApi.LoopStatus;
 }>();
 
 const statusMap = {
   INACTIVE: { color: 'default', label: '未启用', status: 'default' as const },
-  INCONCLUSIVE: {
-    color: 'default',
-    label: '未确定',
-    status: 'default' as const,
+  PARTIAL: {
+    color: 'red',
+    label: '部分关联',
+    status: 'error' as const,
   },
-  Partial: { color: 'red', label: '部分关联', status: 'error' as const },
-  Ready: { color: 'green', label: '就绪', status: 'success' as const },
+  READY: { color: 'green', label: '就绪', status: 'success' as const },
 };
 
-const defaultStatus = statusMap.INCONCLUSIVE;
+const defaultStatus = statusMap.INACTIVE;
 
 const current = computed(() => {
   if (props.isActive === false) {
     return statusMap.INACTIVE ?? defaultStatus;
   }
-  return statusMap[props.status ?? 'INCONCLUSIVE'] ?? defaultStatus;
+  return statusMap[props.status ?? 'INACTIVE'] ?? defaultStatus;
 });
 </script>
 

@@ -37,7 +37,7 @@ async def list_plant_nodes(
     return success(data=tree)
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_plant_node_endpoint(
     body: PlantNodeCreate,
     db: AsyncSession = Depends(get_db),

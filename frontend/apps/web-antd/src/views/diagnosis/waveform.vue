@@ -185,21 +185,21 @@ function buildPvSeriesByQuality(
     const q = pvQuality[i];
     const v = pv[i] ?? null;
     switch (q) {
-      case 'Bad': {
+      case 'BAD': {
         goodData.push(null);
         badData.push(v);
         uncertainData.push(null);
 
         break;
       }
-      case 'Good': {
+      case 'GOOD': {
         goodData.push(v);
         badData.push(null);
         uncertainData.push(null);
 
         break;
       }
-      case 'Uncertain': {
+      case 'UNCERTAIN': {
         goodData.push(null);
         badData.push(null);
         uncertainData.push(v);

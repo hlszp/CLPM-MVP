@@ -83,23 +83,22 @@ const sortOrderOptions = [
 
 // 状态色映射
 const statusColorMap: Record<KpiStatus, string> = {
-  GOOD: 'green',
+  SUCCESS: 'green',
   INCONCLUSIVE: 'default',
-  POOR: 'red',
-  WARNING: 'orange',
+  PARTIAL: 'orange',
 };
 
 const statusLabelMap: Record<KpiStatus, string> = {
-  GOOD: '良好',
+  SUCCESS: '良好',
   INCONCLUSIVE: '不确定',
-  POOR: '差',
-  WARNING: '警告',
+  PARTIAL: '部分',
 };
 
 const actionStatusLabel: Record<string, string> = {
   PENDING: '待处理',
-  PROCESSING: '处理中',
+  IN_PROGRESS: '处理中',
   RESOLVED: '已解决',
+  IGNORED: '已忽略',
 };
 
 const columns: TableColumnsType = [
@@ -187,7 +186,7 @@ const stats = computed(() => {
   let sum = 0;
   let min = 100;
   for (const item of list) {
-    if (item.status === 'POOR') badCount++;
+    if (item.status === 'PARTIAL') badCount++;
     sum += Number(item.compositeScore) || 0;
     const score = Number(item.compositeScore) || 100;
     if (score < min) min = score;
