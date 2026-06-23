@@ -35,6 +35,17 @@ async function bootstrap(namespace: string) {
 
   const app = createApp(App);
 
+  // Sentry 错误上报初始化（仅生产环境且配置了 DSN 时启用）
+  if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
+    const Sentry = await import('@sentry/vue');
+    Sentry.init({
+      app,
+      dsn: import.meta.env.VITE_SENTRY_DSN,
+      integrations: [Sentry.browserTracingIntegration()],
+      tracesSampleRate: 0.1,
+    });
+  }
+
   // 注册v-loading指令
   registerLoadingDirective(app, {
     loading: 'loading', // 在这里可以自定义指令名称，也可以明确提供false表示不注册这个指令

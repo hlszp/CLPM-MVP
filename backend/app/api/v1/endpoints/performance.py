@@ -20,11 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.schemas.performance import (
+    AnalyticsData,
+    EngineRuleItem,
     EngineRuleUpdate,
     ExportRequest,
+    MetricConfigItem,
     MetricConfigUpdate,
+    RankingItem,
 )
 from app.services.performance import (
     export_analytics_csv,
@@ -45,7 +49,7 @@ router = APIRouter(prefix="/performance", tags=["performance"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/metrics")
+@router.get("/metrics", response_model=ApiResponse[list[MetricConfigItem]])
 async def list_metrics_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -55,7 +59,7 @@ async def list_metrics_endpoint(
     return success(data=data)
 
 
-@router.put("/metrics/{metric_id}")
+@router.put("/metrics/{metric_id}", response_model=ApiResponse[MetricConfigItem])
 async def update_metric_endpoint(
     metric_id: str,
     body: MetricConfigUpdate,
@@ -85,7 +89,7 @@ async def update_metric_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/rules")
+@router.get("/rules", response_model=ApiResponse[list[EngineRuleItem]])
 async def list_rules_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -95,7 +99,7 @@ async def list_rules_endpoint(
     return success(data=data)
 
 
-@router.put("/rules/{rule_id}")
+@router.put("/rules/{rule_id}", response_model=ApiResponse[EngineRuleItem])
 async def update_rule_endpoint(
     rule_id: str,
     body: EngineRuleUpdate,
@@ -119,7 +123,7 @@ async def update_rule_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/board")
+@router.get("/board", response_model=ApiResponse[dict])
 async def get_board_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     timeWindow: str = Query(
@@ -142,7 +146,7 @@ async def get_board_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/ranking")
+@router.get("/ranking", response_model=ApiResponse[list[RankingItem]])
 async def get_ranking_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     timeWindow: str = Query(
@@ -171,7 +175,7 @@ async def get_ranking_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/analytics")
+@router.get("/analytics", response_model=ApiResponse[AnalyticsData])
 async def get_analytics_endpoint(
     startTime: str = Query(..., description="开始时间（ISO 8601）"),
     endTime: str = Query(..., description="结束时间（ISO 8601）"),

@@ -27,6 +27,12 @@ import {
   getDiagnosisAnalyticsApi,
 } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import {
+  DIAGNOSIS_LABEL_COLOR_HEX_MAP,
+  DIAGNOSIS_LABEL_OPTIONS,
+} from '#/constants/diagnosis';
+import { $t } from '#/locales';
+import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'DiagnosisStatistics' });
 
@@ -47,28 +53,10 @@ const filter = reactive({
 });
 
 /** 8 类诊断标签选项 */
-const labelOptions: { label: string; value: DiagnosisLabel }[] = [
-  { label: '振荡', value: 'OSCILLATION' },
-  { label: '阀门粘滞', value: 'VALVE_STICTION' },
-  { label: '参数过激', value: 'OVERAGGRESSIVE' },
-  { label: '参数过保守', value: 'OVERCONSERVATIVE' },
-  { label: '外扰频繁', value: 'EXTERNAL_DISTURBANCE' },
-  { label: 'PV 质量异常', value: 'QUALITY_ABNORMAL' },
-  { label: '输出饱和', value: 'OUTPUT_SATURATION' },
-  { label: '人工复核', value: 'MANUAL_REVIEW' },
-];
+const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
 
 /** 标签颜色映射（用于饼图） */
-const labelColorHexMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: '#ff4d4f',
-  VALVE_STICTION: '#fa8c16',
-  OVERAGGRESSIVE: '#722ed1',
-  OVERCONSERVATIVE: '#1890ff',
-  EXTERNAL_DISTURBANCE: '#13c2c2',
-  QUALITY_ABNORMAL: '#8c8c8c',
-  OUTPUT_SATURATION: '#faad14',
-  MANUAL_REVIEW: '#d9d9d9',
-};
+const labelColorHexMap = DIAGNOSIS_LABEL_COLOR_HEX_MAP;
 
 /** 处理状态选项 */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
@@ -94,20 +82,6 @@ const barChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderPie } = useEcharts(pieChartRef);
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 const { renderEcharts: renderBar } = useEcharts(barChartRef);
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -369,7 +343,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="诊断统计报表">
+  <Page :title="$t('diagnosis.statistics.title')">
     <!-- 筛选栏 -->
     <Card class="mb-4">
       <div class="flex flex-wrap items-center gap-3">
@@ -381,7 +355,7 @@ onMounted(() => {
         />
         <Select
           v-model:value="filter.plantNodeId"
-          placeholder="装置/单元筛选"
+          :placeholder="$t('diagnosis.list.plantNodePlaceholder')"
           style="width: 220px"
           allow-clear
           :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
@@ -389,7 +363,7 @@ onMounted(() => {
         />
         <Select
           v-model:value="filter.diagnosisLabel"
-          placeholder="诊断标签"
+          :placeholder="$t('diagnosis.list.labelPlaceholder')"
           style="width: 160px"
           allow-clear
           :options="labelOptions"
@@ -416,18 +390,28 @@ onMounted(() => {
     </Card>
 
     <!-- 标签分布饼图 -->
-    <Card title="预诊标签分布" class="mb-4" :loading="loading">
+    <Card
+      :title="$t('diagnosis.statistics.labelDistribution')"
+      class="mb-4"
+      :loading="loading"
+    >
       <EchartsUI ref="pieChartRef" height="360px" />
     </Card>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- 处理效率趋势折线图 -->
-      <Card title="处理效率趋势" :loading="loading">
+      <Card
+        :title="$t('diagnosis.statistics.efficiencyTrend')"
+        :loading="loading"
+      >
         <EchartsUI ref="trendChartRef" height="320px" />
       </Card>
 
       <!-- 闭环时长分布柱状图 -->
-      <Card title="闭环时长分布" :loading="loading">
+      <Card
+        :title="$t('diagnosis.statistics.closeDuration')"
+        :loading="loading"
+      >
         <EchartsUI ref="barChartRef" height="320px" />
       </Card>
     </div>

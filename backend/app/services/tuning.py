@@ -94,7 +94,7 @@ async def identify_model(
 
     # 调用辨识算法
     if model_type == "FOPDT":
-        result = identify_fopdt(pv_values, timestamps, mv_step, method or "COMBINED")
+        result = identify_fopdt(pv_values, timestamps, mv_step, method or "TWO_POINT")
         params = {"K": result["K"], "tau": result["tau"], "theta": result["theta"]}
     elif model_type == "SOPDT":
         result = identify_sopdt(pv_values, timestamps, mv_step)

@@ -14,8 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
-from app.schemas.plant_node import PlantNodeCreate, PlantNodeUpdate
+from app.schemas.common import ApiResponse, success
+from app.schemas.plant_node import PlantNodeCreate, PlantNodeInfo, PlantNodeTree, PlantNodeUpdate
 from app.services.plant_node import (
     create_plant_node,
     delete_plant_node,
@@ -26,7 +26,7 @@ from app.services.plant_node import (
 router = APIRouter(prefix="/plant-nodes", tags=["plant-node"])
 
 
-@router.get("")
+@router.get("", response_model=ApiResponse[list[PlantNodeTree]])
 async def list_plant_nodes(
     parentId: str | None = Query(None, description="父节点 ID，不传则返回顶层节点及其完整子树"),
     db: AsyncSession = Depends(get_db),
@@ -37,7 +37,7 @@ async def list_plant_nodes(
     return success(data=tree)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=ApiResponse[PlantNodeInfo])
 async def create_plant_node_endpoint(
     body: PlantNodeCreate,
     db: AsyncSession = Depends(get_db),
@@ -54,7 +54,7 @@ async def create_plant_node_endpoint(
     return success(data=data, message="创建成功")
 
 
-@router.put("/{node_id}")
+@router.put("/{node_id}", response_model=ApiResponse[PlantNodeInfo])
 async def update_plant_node_endpoint(
     node_id: str,
     body: PlantNodeUpdate,
@@ -71,7 +71,7 @@ async def update_plant_node_endpoint(
     return success(data=data, message="更新成功")
 
 
-@router.delete("/{node_id}")
+@router.delete("/{node_id}", response_model=ApiResponse[dict])
 async def delete_plant_node_endpoint(
     node_id: str,
     db: AsyncSession = Depends(get_db),

@@ -38,7 +38,7 @@ class TestIdentifyFopdtNanInf:
 
         # 不应抛出未捕获异常
         try:
-            result = identify_fopdt(pv_values, timestamps, 10.0, method="COMBINED")
+            result = identify_fopdt(pv_values, timestamps, 10.0, method="TWO_POINT")
             # 应返回字典结构（即使 K/tau/theta 可能为 None 或异常值）
             assert isinstance(result, dict)
             assert "K" in result

@@ -11,7 +11,7 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
+import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -29,6 +29,10 @@ import {
 } from 'ant-design-vue';
 
 import { getDiagnosisDetailApi } from '#/api/diagnosis';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
 
 defineOptions({ name: 'DiagnosisDetail' });
 
@@ -47,27 +51,9 @@ const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
 ];
 
 /** 8 类诊断标签颜色映射 */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
-const labelNameMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: '振荡',
-  VALVE_STICTION: '阀门粘滞',
-  OVERAGGRESSIVE: '参数过激',
-  OVERCONSERVATIVE: '参数过保守',
-  EXTERNAL_DISTURBANCE: '外扰频繁',
-  QUALITY_ABNORMAL: 'PV 质量异常',
-  OUTPUT_SATURATION: '输出饱和',
-  MANUAL_REVIEW: '人工复核',
-};
+const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 
 // 散点图 ECharts
 const scatterChartRef = ref<EchartsUIType>();

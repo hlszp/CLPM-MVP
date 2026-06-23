@@ -969,6 +969,50 @@ class TestDiagnosisEngine:
         # 相同标签融合后置信度应更高
         assert result >= 0.8
 
+    def test_align_timeseries_tolerance_numeric(self) -> None:
+        """测试时序对齐：数值时间戳容差匹配（±500ms）。"""
+        from app.tasks.diagnosis_engine import _align_timeseries
+
+        pv_data = [
+            {"ts": 1000.0, "value": 10.0, "quality": "GOOD"},
+            {"ts": 1001.0, "value": 20.0, "quality": "GOOD"},
+        ]
+        # 偏差 200ms / 100ms，在容差内
+        sp_data = [{"ts": 1000.2, "value": 11.0}, {"ts": 1001.1, "value": 21.0}]
+        op_data = [{"ts": 1000.3, "value": 50.0}]  # 偏差 300ms
+        mode_data = [{"ts": 1000.4, "value": 1}]  # 偏差 400ms
+
+        aligned = _align_timeseries(pv_data, sp_data, op_data, mode_data)
+        assert len(aligned) == 2
+        assert aligned[0]["pv"] == 10.0
+        assert aligned[0]["sp"] == 11.0
+        assert aligned[0]["op"] == 50.0
+        assert aligned[0]["mode"] == 1
+        assert aligned[1]["sp"] == 21.0
+        assert aligned[1]["op"] is None
+        assert aligned[1]["mode"] is None
+
+    def test_align_timeseries_tolerance_out_of_range(self) -> None:
+        """测试时序对齐：超出容差范围（>500ms）不匹配。"""
+        from app.tasks.diagnosis_engine import _align_timeseries
+
+        pv_data = [{"ts": 1000.0, "value": 10.0, "quality": "GOOD"}]
+        # 偏差 600ms，超出容差
+        sp_data = [{"ts": 1000.6, "value": 11.0}]
+
+        aligned = _align_timeseries(pv_data, sp_data, [], [])
+        assert aligned[0]["sp"] is None
+
+    def test_align_timeseries_exact_string(self) -> None:
+        """测试时序对齐：字符串 ts 精确匹配（向后兼容）。"""
+        from app.tasks.diagnosis_engine import _align_timeseries
+
+        pv_data = [{"ts": "t1", "value": 10.0, "quality": "GOOD"}]
+        sp_data = [{"ts": "t1", "value": 11.0}]
+
+        aligned = _align_timeseries(pv_data, sp_data, [], [])
+        assert aligned[0]["sp"] == 11.0
+
 
 # ---------------------------------------------------------------------------
 # Celery Beat 调度测试

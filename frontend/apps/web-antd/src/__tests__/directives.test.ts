@@ -31,7 +31,7 @@ describe('关键交互逻辑测试', () => {
   };
 
   // UT-INTERACT-001: 登录表单-空用户名校验
-  it('UT-INTERACT-001: 空用户名校验失败', () => {
+  it('uT-INTERACT-001: 空用户名校验失败', () => {
     const result = loginSchema.username.safeParse('');
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -40,7 +40,7 @@ describe('关键交互逻辑测试', () => {
   });
 
   // UT-INTERACT-002: 登录表单-空密码校验
-  it('UT-INTERACT-002: 空密码校验失败', () => {
+  it('uT-INTERACT-002: 空密码校验失败', () => {
     const result = loginSchema.password.safeParse('');
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -72,7 +72,7 @@ describe('关键交互逻辑测试', () => {
   }
 
   // UT-INTERACT-003: v-permission指令-有权限时元素可见
-  it('UT-INTERACT-003: 有权限时元素可见', () => {
+  it('uT-INTERACT-003: 有权限时元素可见', () => {
     const wrapper = createPermissionTestComponent('loop:create', [
       'loop:create',
       'loop:edit',
@@ -81,13 +81,13 @@ describe('关键交互逻辑测试', () => {
   });
 
   // UT-INTERACT-004: v-permission指令-无权限时元素隐藏
-  it('UT-INTERACT-004: 无权限时元素被移除', () => {
+  it('uT-INTERACT-004: 无权限时元素被移除', () => {
     const wrapper = createPermissionTestComponent('loop:delete', ['loop:view']);
     expect(wrapper.find('button').exists()).toBe(false);
   });
 
   // UT-INTERACT-005: v-permission-通配符（["*"] 时任意权限可见）
-  it('UT-INTERACT-005: 通配符 "*" 时任意权限可见', () => {
+  it('uT-INTERACT-005: 通配符 "*" 时任意权限可见', () => {
     const wrapper = createPermissionTestComponent('system:user:delete', ['*']);
     expect(wrapper.find('button').exists()).toBe(true);
   });
@@ -103,7 +103,7 @@ describe('关键交互逻辑测试', () => {
   // ===== 表格分页交互测试 =====
 
   // UT-INTERACT-006: 表格分页-页码切换触发 loadList
-  it('UT-INTERACT-006: 页码切换触发 loadList 重新加载', async () => {
+  it('uT-INTERACT-006: 页码切换触发 loadList 重新加载', async () => {
     const loadListSpy = vi.fn();
 
     // 模拟表格分页逻辑

@@ -16,10 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.schemas.report import (
     ReportConfigCreateRequest,
+    ReportConfigItem,
     ReportConfigUpdateRequest,
+    ReportGenerateData,
     ReportGenerateRequest,
 )
 from app.services.report import (
@@ -33,7 +35,7 @@ from app.services.report import (
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-@router.get("/configs")
+@router.get("/configs", response_model=ApiResponse[list[ReportConfigItem]])
 async def list_configs_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
@@ -43,7 +45,7 @@ async def list_configs_endpoint(
     return success(data=data)
 
 
-@router.post("/configs", status_code=201)
+@router.post("/configs", status_code=201, response_model=ApiResponse[ReportConfigItem])
 async def create_config_endpoint(
     body: ReportConfigCreateRequest,
     db: AsyncSession = Depends(get_db),
@@ -62,7 +64,7 @@ async def create_config_endpoint(
     return success(data=data, message="报表配置创建成功")
 
 
-@router.put("/configs/{config_id}")
+@router.put("/configs/{config_id}", response_model=ApiResponse[ReportConfigItem])
 async def update_config_endpoint(
     config_id: str,
     body: ReportConfigUpdateRequest,
@@ -83,7 +85,7 @@ async def update_config_endpoint(
     return success(data=data, message="报表配置更新成功")
 
 
-@router.post("/generate")
+@router.post("/generate", response_model=ApiResponse[ReportGenerateData])
 async def generate_report_endpoint(
     body: ReportGenerateRequest,
     db: AsyncSession = Depends(get_db),
@@ -99,7 +101,7 @@ async def generate_report_endpoint(
     return success(data=data, message="任务已提交")
 
 
-@router.get("/tasks/{task_id}")
+@router.get("/tasks/{task_id}", response_model=ApiResponse[dict])
 async def get_task_status_endpoint(
     task_id: str,
     db: AsyncSession = Depends(get_db),

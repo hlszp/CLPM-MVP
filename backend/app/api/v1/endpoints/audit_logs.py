@@ -14,13 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.audit import AuditLogListData
+from app.schemas.common import ApiResponse, success
 from app.services.audit import list_audit_logs
 
 router = APIRouter(prefix="/audit-logs", tags=["audit-logs"])
 
 
-@router.get("")
+@router.get("", response_model=ApiResponse[AuditLogListData])
 async def list_audit_logs_endpoint(
     operator: str | None = Query(None, description="按操作人筛选"),
     operationType: str | None = Query(None, description="按操作类型筛选"),

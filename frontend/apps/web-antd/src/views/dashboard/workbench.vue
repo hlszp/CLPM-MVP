@@ -46,6 +46,10 @@ import type { TableColumnsType } from 'ant-design-vue';
 
 import { getDashboardOverviewApi } from '#/api/dashboard';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
 
 defineOptions({ name: 'DashboardWorkbench' });
 
@@ -83,28 +87,10 @@ const kpiConfig: Array<{
 ];
 
 /** 诊断标签颜色映射（对齐 diagnosis/list.vue） */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
 /** 诊断标签中文名 */
-const labelNameMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: '振荡',
-  VALVE_STICTION: '阀门粘滞',
-  OVERAGGRESSIVE: '参数过激',
-  OVERCONSERVATIVE: '参数过保守',
-  EXTERNAL_DISTURBANCE: '外扰频繁',
-  QUALITY_ABNORMAL: 'PV质量异常',
-  OUTPUT_SATURATION: '输出饱和',
-  MANUAL_REVIEW: '人工复核',
-};
+const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 
 /** 低效回路表格列定义 */
 const columns: TableColumnsType = [

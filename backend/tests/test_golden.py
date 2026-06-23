@@ -109,7 +109,7 @@ class TestGoldenFOPDT:
     def test_fopdt_baseline(self, golden_path: Path) -> None:
         """对比 identify_fopdt 输出与 golden file 基线。"""
         pv_values, timestamps, mv_step = _make_fopdt_input()
-        result = identify_fopdt(pv_values, timestamps, mv_step, method="COMBINED")
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
 
         # golden file 不存在时自动生成并 skip
         if not golden_path.exists():

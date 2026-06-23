@@ -1019,10 +1019,31 @@ def _align_timeseries(
     op_data: list[dict],
     mode_data: list[dict],
 ) -> list[dict[str, Any]]:
-    """按 ts 对齐 PV/SP/OP/MODE 时序数据。"""
+    """按 ts 对齐 PV/SP/OP/MODE 时序数据。
+
+    对齐策略：
+    1. 优先精确时间戳匹配（兼容字符串 ts 如 "t1"）
+    2. 若 ts 可转为数值，使用 bisect 最近邻匹配，容差 ±500ms
+
+    辅助函数复用 kpi_calc 模块实现，保持两处对齐逻辑一致。
+    """
+    from app.tasks.kpi_calc import (
+        _build_ts_index,
+        _find_nearest_value,
+    )
+
+    # 精确映射（兼容字符串 ts）
     sp_map = {d.get("ts"): d.get("value") for d in sp_data}
     op_map = {d.get("ts"): d.get("value") for d in op_data}
     mode_map = {d.get("ts"): d.get("value") for d in mode_data}
+
+    # 数值索引（用于容差匹配）
+    sp_ts_floats, sp_ts_orig = _build_ts_index(sp_data)
+    op_ts_floats, op_ts_orig = _build_ts_index(op_data)
+    mode_ts_floats, mode_ts_orig = _build_ts_index(mode_data)
+    sp_values = [sp_map[t] for t in sp_ts_orig] if sp_ts_floats else None
+    op_values = [op_map[t] for t in op_ts_orig] if op_ts_floats else None
+    mode_values = [mode_map[t] for t in mode_ts_orig] if mode_ts_floats else None
 
     aligned: list[dict[str, Any]] = []
     for d in pv_data:
@@ -1032,9 +1053,11 @@ def _align_timeseries(
             {
                 "ts": ts,
                 "pv": pv,
-                "sp": sp_map.get(ts),
-                "op": op_map.get(ts),
-                "mode": mode_map.get(ts),
+                "sp": _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values),
+                "op": _find_nearest_value(ts, op_ts_floats, op_map, op_values),
+                "mode": _find_nearest_value(
+                    ts, mode_ts_floats, mode_map, mode_values
+                ),
             }
         )
     return aligned

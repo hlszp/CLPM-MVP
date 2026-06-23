@@ -34,6 +34,7 @@ import {
 
 import { getRankingApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'MetricRanking' });
 
@@ -199,20 +200,6 @@ const stats = computed(() => {
     minScore: Number(min.toFixed(1)),
   };
 });
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {

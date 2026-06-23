@@ -17,7 +17,7 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { DiagnosisApi, DiagnosisLabel, Quality } from '#/api/diagnosis';
+import type { DiagnosisApi, Quality } from '#/api/diagnosis';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -40,6 +40,10 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisDetailApi, getWaveformApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
 
 defineOptions({ name: 'DiagnosisWaveform' });
 
@@ -63,27 +67,9 @@ const filter = reactive({
 const activeTab = ref<'scatter' | 'waveform'>('waveform');
 
 /** 8 类诊断标签颜色映射 */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
-const labelNameMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: '振荡',
-  VALVE_STICTION: '阀门粘滞',
-  OVERAGGRESSIVE: '参数过激',
-  OVERCONSERVATIVE: '参数过保守',
-  EXTERNAL_DISTURBANCE: '外扰频繁',
-  QUALITY_ABNORMAL: 'PV 质量异常',
-  OUTPUT_SATURATION: '输出饱和',
-  MANUAL_REVIEW: '人工复核',
-};
+const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 
 // ECharts refs
 const waveformChartRef = ref<EchartsUIType>();

@@ -10,18 +10,22 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, oauth2_scheme, require_roles
 from app.core.db import get_db
+from app.core.security import get_client_ip
 from app.models.sys_user import SysUser
 from app.schemas.auth import (
     ChangePasswordRequest,
+    LoginData,
     LoginRequest,
+    RefreshData,
     RefreshRequest,
+    UserInfo,
 )
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.services.auth import (
     authenticate,
     change_password,
@@ -59,14 +63,18 @@ def _build_user_info(user: SysUser) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/login")
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> dict:
+@router.post("/login", response_model=ApiResponse[LoginData])
+async def login(
+    body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)
+) -> dict:
     """User login — returns access + refresh tokens and user info."""
+    client_ip = get_client_ip(request)
     user, tokens = await authenticate(
         db=db,
         username=body.username,
         password=body.password,
         remember_me=body.rememberMe,
+        device_ip=client_ip,
     )
     return success(
         data={
@@ -79,10 +87,11 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> dict:
     )
 
 
-@router.post("/refresh")
-async def refresh(body: RefreshRequest) -> dict:
+@router.post("/refresh", response_model=ApiResponse[RefreshData])
+async def refresh(body: RefreshRequest, request: Request) -> dict:
     """Refresh access token using a valid refresh token."""
-    tokens = await refresh_tokens(body.refreshToken)
+    client_ip = get_client_ip(request)
+    tokens = await refresh_tokens(body.refreshToken, device_ip=client_ip)
     return success(
         data={
             "accessToken": tokens.accessToken,
@@ -93,7 +102,7 @@ async def refresh(body: RefreshRequest) -> dict:
     )
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=ApiResponse[dict])
 async def logout_endpoint(
     token: str | None = Depends(oauth2_scheme),
     user: SysUser = Depends(get_current_user),
@@ -104,13 +113,13 @@ async def logout_endpoint(
     return success(data=None)
 
 
-@router.get("/me")
+@router.get("/me", response_model=ApiResponse[UserInfo])
 async def me(user: SysUser = Depends(get_current_user)) -> dict:
     """Get current user info including permissions and default home."""
     return success(data=_build_user_info(user))
 
 
-@router.put("/password")
+@router.put("/password", response_model=ApiResponse[dict])
 async def change_password_endpoint(
     body: ChangePasswordRequest,
     user: SysUser = Depends(get_current_user),
@@ -126,7 +135,7 @@ async def change_password_endpoint(
     return success(data=None, message="密码修改成功，请重新登录")
 
 
-@router.get("/rbac-test")
+@router.get("/rbac-test", response_model=ApiResponse[dict])
 async def rbac_test(
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:

@@ -38,6 +38,11 @@ import {
   getTrackerListApi,
   updateTrackerStatusApi,
 } from '#/api/diagnosis';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_OPTIONS,
+  getDiagnosisLabelName,
+} from '#/constants/diagnosis';
 
 import AbCompare from './ab-compare.vue';
 
@@ -58,28 +63,10 @@ const query = reactive({
 });
 
 /** 8 类诊断标签选项 */
-const labelOptions: { label: string; value: DiagnosisLabel }[] = [
-  { label: '振荡', value: 'OSCILLATION' },
-  { label: '阀门粘滞', value: 'VALVE_STICTION' },
-  { label: '参数过激', value: 'OVERAGGRESSIVE' },
-  { label: '参数过保守', value: 'OVERCONSERVATIVE' },
-  { label: '外扰频繁', value: 'EXTERNAL_DISTURBANCE' },
-  { label: 'PV 质量异常', value: 'QUALITY_ABNORMAL' },
-  { label: '输出饱和', value: 'OUTPUT_SATURATION' },
-  { label: '人工复核', value: 'MANUAL_REVIEW' },
-];
+const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
 
 /** 标签颜色映射 */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
 /** 处理状态选项 */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
@@ -273,7 +260,7 @@ function formatTime(t: string): string {
 }
 
 function labelName(label: DiagnosisLabel): string {
-  return labelOptions.find((o) => o.value === label)?.label || label;
+  return getDiagnosisLabelName(label);
 }
 
 function statusName(status: DiagnosisApi.ActionStatus): string {

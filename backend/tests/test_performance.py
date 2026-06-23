@@ -745,6 +745,102 @@ class TestKpiCalcEngine:
         assert aligned[1]["op"] is None
         assert aligned[1]["mode"] is None
 
+    def test_align_timeseries_tolerance_numeric(self) -> None:
+        """测试时序对齐：数值时间戳容差匹配（±500ms）。"""
+        from app.tasks.kpi_calc import _align_timeseries
+
+        # PV 时间戳与 SP/OP 略有偏差（200ms），应在容差范围内匹配
+        pv_data = [
+            {"ts": 1000.0, "value": 10.0, "quality": "GOOD"},
+            {"ts": 1001.0, "value": 20.0, "quality": "GOOD"},
+        ]
+        sp_data = [
+            {"ts": 1000.2, "value": 11.0},  # 偏差 200ms
+            {"ts": 1001.1, "value": 21.0},  # 偏差 100ms
+        ]
+        op_data = [{"ts": 1000.3, "value": 50.0}]  # 偏差 300ms
+        mode_data = [{"ts": 1000.4, "value": 1}]  # 偏差 400ms
+
+        aligned = _align_timeseries(pv_data, sp_data, op_data, mode_data)
+        assert len(aligned) == 2
+        assert aligned[0]["pv"] == 10.0
+        assert aligned[0]["sp"] == 11.0
+        assert aligned[0]["op"] == 50.0
+        assert aligned[0]["mode"] == 1
+        # 第二个点只有 sp 在容差内
+        assert aligned[1]["sp"] == 21.0
+        assert aligned[1]["op"] is None
+        assert aligned[1]["mode"] is None
+
+    def test_align_timeseries_tolerance_out_of_range(self) -> None:
+        """测试时序对齐：超出容差范围（>500ms）不匹配。"""
+        from app.tasks.kpi_calc import _align_timeseries
+
+        pv_data = [{"ts": 1000.0, "value": 10.0, "quality": "GOOD"}]
+        # 偏差 600ms，超出容差
+        sp_data = [{"ts": 1000.6, "value": 11.0}]
+
+        aligned = _align_timeseries(pv_data, sp_data, [], [])
+        assert aligned[0]["sp"] is None
+
+    def test_align_timeseries_iso_string_tolerance(self) -> None:
+        """测试时序对齐：ISO 字符串时间戳容差匹配。"""
+        from app.tasks.kpi_calc import _align_timeseries
+
+        pv_data = [
+            {"ts": "2026-06-22T08:00:00.000Z", "value": 10.0, "quality": "GOOD"},
+        ]
+        # 偏差 200ms
+        sp_data = [{"ts": "2026-06-22T08:00:00.200Z", "value": 11.0}]
+
+        aligned = _align_timeseries(pv_data, sp_data, [], [])
+        assert aligned[0]["sp"] == 11.0
+
+    def test_detect_oscillation_amplitude_threshold(self) -> None:
+        """S4-B2: 振荡检测振幅阈值过滤噪声。"""
+        from app.tasks.kpi_calc import _detect_oscillation
+
+        # 微小幅度交替变化（噪声级），应被振幅阈值过滤
+        aligned_noise = [{"pv": v} for v in [50.0, 50.001, 50.0, 50.001, 50.0]]
+        assert _detect_oscillation(aligned_noise) == 0
+
+        # 大幅度交替变化（真实振荡），应被检测到
+        aligned_osc = [{"pv": v} for v in [50.0, 55.0, 50.0, 55.0, 50.0]]
+        assert _detect_oscillation(aligned_osc) > 0
+
+    def test_good_value_rate_before_filtering(self) -> None:
+        """S4-B6: good_value_rate 在过滤前计算，反映真实数据质量。"""
+        from decimal import Decimal
+
+        from app.tasks.kpi_calc import _compute_kpis
+
+        # 构造对齐数据（已过滤 Bad 质量码）
+        aligned = [
+            {
+                "ts": f"t{i}",
+                "pv": 50.0,
+                "sp": 50.0,
+                "op": 50.0,
+                "mode": 1,
+            }
+            for i in range(10)
+        ]
+        # 好值率 80% 表示原始数据有 20% Bad 质量码（已过滤）
+        kpis = _compute_kpis(aligned, {}, good_value_rate=Decimal("80.00"))
+        assert kpis["good_value_rate"] == Decimal("80.00")
+
+    def test_good_value_rate_defaults_to_100(self) -> None:
+        """S4-B6: good_value_rate=None 时默认 100（向后兼容）。"""
+        from decimal import Decimal
+
+        from app.tasks.kpi_calc import _compute_kpis
+
+        aligned = [
+            {"ts": "t0", "pv": 50.0, "sp": 50.0, "op": 50.0, "mode": 1}
+        ]
+        kpis = _compute_kpis(aligned, {}, good_value_rate=None)
+        assert kpis["good_value_rate"] == Decimal("100.00")
+
 
 # ---------------------------------------------------------------------------
 # Celery Beat 调度测试

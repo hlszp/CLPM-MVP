@@ -64,7 +64,7 @@ vi.mock('#/api/core', () => ({
 import { useAccessStore } from '@vben/stores';
 import { requestClient } from '#/api/request';
 
-describe('Axios 拦截器测试', () => {
+describe('axios 拦截器测试', () => {
   let mock: MockAdapter;
 
   beforeEach(() => {
@@ -80,7 +80,7 @@ describe('Axios 拦截器测试', () => {
   });
 
   // UT-HTTP-001: 请求拦截-Token注入（已登录时 Header 含 Authorization）
-  it('UT-HTTP-001: 已登录时请求头包含 Authorization Bearer token', async () => {
+  it('uT-HTTP-001: 已登录时请求头包含 Authorization Bearer token', async () => {
     const accessStore = useAccessStore();
     accessStore.setAccessToken('test-access-token');
 
@@ -95,7 +95,7 @@ describe('Axios 拦截器测试', () => {
   });
 
   // UT-HTTP-002: 请求拦截-无Token（未登录时无 Authorization Header）
-  it('UT-HTTP-002: 未登录时请求头 Authorization 为 null', async () => {
+  it('uT-HTTP-002: 未登录时请求头 Authorization 为 null', async () => {
     const accessStore = useAccessStore();
     accessStore.setAccessToken(null);
 
@@ -110,7 +110,7 @@ describe('Axios 拦截器测试', () => {
   });
 
   // UT-HTTP-003: 响应拦截-200成功（返回 response.data）
-  it('UT-HTTP-003: 成功响应返回 data 字段', async () => {
+  it('uT-HTTP-003: 成功响应返回 data 字段', async () => {
     mock.onGet('/test/success').reply(200, {
       code: '0',
       message: 'success',
@@ -124,7 +124,7 @@ describe('Axios 拦截器测试', () => {
   });
 
   // UT-HTTP-004: 响应拦截-401触发刷新（accessToken 过期自动调用 refreshToken）
-  it('UT-HTTP-004: 401 响应触发 refreshToken 刷新', async () => {
+  it('uT-HTTP-004: 401 响应触发 refreshToken 刷新', async () => {
     const accessStore = useAccessStore();
     accessStore.setAccessToken('expired-token');
     accessStore.setRefreshToken('valid-refresh-token');
@@ -158,7 +158,7 @@ describe('Axios 拦截器测试', () => {
   });
 
   // UT-HTTP-005: 响应拦截-刷新失败跳登录（refreshToken 也过期时清空 store 跳转）
-  it('UT-HTTP-005: refreshToken 刷新失败时触发登出', async () => {
+  it('uT-HTTP-005: refreshToken 刷新失败时触发登出', async () => {
     const accessStore = useAccessStore();
     accessStore.setAccessToken('expired-token');
     accessStore.setRefreshToken('expired-refresh-token');
@@ -181,7 +181,7 @@ describe('Axios 拦截器测试', () => {
   });
 
   // UT-HTTP-006: 响应拦截-400业务错误（message.error 显示错误）
-  it('UT-HTTP-006: 业务错误时 message.error 显示错误信息', async () => {
+  it('uT-HTTP-006: 业务错误时 message.error 显示错误信息', async () => {
     mock.onGet('/test/biz-error').reply(200, {
       code: 'ERR_VALIDATION',
       message: '参数校验失败',
@@ -193,7 +193,7 @@ describe('Axios 拦截器测试', () => {
   });
 
   // UT-HTTP-007: 响应拦截-403权限拒绝（message.error "权限不足"）
-  it('UT-HTTP-007: 403 响应触发 message.error 提示无权限', async () => {
+  it('uT-HTTP-007: 403 响应触发 message.error 提示无权限', async () => {
     mock.onGet('/test/403').reply(403, {
       code: '403',
       message: 'Forbidden',
@@ -209,7 +209,7 @@ describe('Axios 拦截器测试', () => {
   });
 
   // UT-HTTP-008: 响应拦截-网络错误（message.error "网络异常"）
-  it('UT-HTTP-008: 网络错误时 message.error 提示网络异常', async () => {
+  it('uT-HTTP-008: 网络错误时 message.error 提示网络异常', async () => {
     mock.onGet('/test/network-error').networkError();
 
     await expect(requestClient.get('/test/network-error')).rejects.toBeTruthy();

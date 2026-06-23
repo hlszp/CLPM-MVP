@@ -40,6 +40,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@sentry/vue": "^10.59.0",
     "@vben/access": "workspace:*",
     "@vben/common-ui": "workspace:*",
     "@vben/constants": "workspace:*",

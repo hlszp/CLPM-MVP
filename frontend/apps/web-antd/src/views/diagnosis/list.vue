@@ -24,6 +24,13 @@ import { Button, Card, Progress, Select, Table, Tag } from 'ant-design-vue';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_OPTIONS,
+  getDiagnosisLabelName,
+} from '#/constants/diagnosis';
+import { $t } from '#/locales';
+import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'DiagnosisList' });
 
@@ -44,28 +51,10 @@ const query = reactive({
 });
 
 /** 8 类诊断标签选项 */
-const labelOptions: { label: string; value: DiagnosisLabel }[] = [
-  { label: '振荡', value: 'OSCILLATION' },
-  { label: '阀门粘滞', value: 'VALVE_STICTION' },
-  { label: '参数过激', value: 'OVERAGGRESSIVE' },
-  { label: '参数过保守', value: 'OVERCONSERVATIVE' },
-  { label: '外扰频繁', value: 'EXTERNAL_DISTURBANCE' },
-  { label: 'PV 质量异常', value: 'QUALITY_ABNORMAL' },
-  { label: '输出饱和', value: 'OUTPUT_SATURATION' },
-  { label: '人工复核', value: 'MANUAL_REVIEW' },
-];
+const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
 
 /** 标签颜色映射 */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
 /** 处理状态选项 */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
@@ -142,20 +131,6 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 110, fixed: 'right' },
 ];
 
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
-
 /** 加载工厂节点 */
 async function loadPlantNodes() {
   try {
@@ -220,7 +195,7 @@ function confidenceColor(val: number): string {
 }
 
 function labelName(label: DiagnosisLabel): string {
-  return labelOptions.find((o) => o.value === label)?.label || label;
+  return getDiagnosisLabelName(label);
 }
 
 function statusName(status: DiagnosisApi.ActionStatus): string {
@@ -240,13 +215,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="诊断列表">
+  <Page :title="$t('diagnosis.list.title')">
     <Card>
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
           v-model:value="query.plantNodeId"
-          placeholder="装置/单元筛选"
+          :placeholder="$t('diagnosis.list.plantNodePlaceholder')"
           style="width: 220px"
           allow-clear
           :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
@@ -254,7 +229,7 @@ onMounted(() => {
         />
         <Select
           v-model:value="query.diagnosisLabel"
-          placeholder="诊断标签"
+          :placeholder="$t('diagnosis.list.labelPlaceholder')"
           style="width: 160px"
           allow-clear
           :options="labelOptions"

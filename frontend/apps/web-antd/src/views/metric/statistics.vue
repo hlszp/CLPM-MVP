@@ -25,6 +25,7 @@ import dayjs from 'dayjs';
 
 import { exportAnalyticsApi, getAnalyticsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'MetricStatistics' });
 
@@ -68,20 +69,6 @@ const badActorChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 const { renderEcharts: renderUnit } = useEcharts(unitChartRef);
 const { renderEcharts: renderBadActor } = useEcharts(badActorChartRef);
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {

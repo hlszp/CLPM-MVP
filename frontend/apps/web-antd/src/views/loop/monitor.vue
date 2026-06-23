@@ -33,6 +33,7 @@ import { getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import StatusBadge from '#/components/loop/status-badge.vue';
+import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopMonitor' });
 
@@ -73,20 +74,6 @@ const columns: TableColumnsType = [
   { title: '状态', key: 'status', width: 110 },
   { title: '读取时间', dataIndex: 'readAt', key: 'readAt', width: 170 },
 ];
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {

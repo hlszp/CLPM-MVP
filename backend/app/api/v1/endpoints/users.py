@@ -16,10 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.schemas.user import (
     ResetPasswordRequest,
     UserCreateRequest,
+    UserItem,
+    UserListData,
     UserUpdateRequest,
 )
 from app.services.user import (
@@ -33,7 +35,7 @@ from app.services.user import (
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("")
+@router.get("", response_model=ApiResponse[UserListData])
 async def list_users_endpoint(
     keyword: str | None = Query(None, description="按用户名/姓名模糊查询"),
     role: str | None = Query(None, description="按角色筛选"),
@@ -55,7 +57,7 @@ async def list_users_endpoint(
     return success(data=data)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=ApiResponse[UserItem])
 async def create_user_endpoint(
     body: UserCreateRequest,
     db: AsyncSession = Depends(get_db),
@@ -74,7 +76,7 @@ async def create_user_endpoint(
     return success(data=data, message="用户创建成功")
 
 
-@router.put("/{user_id}")
+@router.put("/{user_id}", response_model=ApiResponse[UserItem])
 async def update_user_endpoint(
     user_id: str,
     body: UserUpdateRequest,
@@ -94,7 +96,7 @@ async def update_user_endpoint(
     return success(data=data, message="用户更新成功")
 
 
-@router.delete("/{user_id}")
+@router.delete("/{user_id}", response_model=ApiResponse[UserItem])
 async def disable_user_endpoint(
     user_id: str,
     db: AsyncSession = Depends(get_db),
@@ -109,7 +111,7 @@ async def disable_user_endpoint(
     return success(data=data, message="用户已禁用")
 
 
-@router.put("/{user_id}/reset-password")
+@router.put("/{user_id}/reset-password", response_model=ApiResponse[dict])
 async def reset_password_endpoint(
     user_id: str,
     body: ResetPasswordRequest,

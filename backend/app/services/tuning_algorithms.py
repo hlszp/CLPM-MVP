@@ -86,7 +86,7 @@ def identify_fopdt(
     pv_values: list[float],
     timestamps: list[float],
     mv_step: float,
-    method: str = "COMBINED",
+    method: str = "TWO_POINT",
 ) -> dict[str, Any]:
     """FOPDT 模型辨识。
 
@@ -94,7 +94,7 @@ def identify_fopdt(
         pv_values: 阶跃响应 PV 数据
         timestamps: 时间戳数组（秒）
         mv_step: 阶跃输入幅值 ΔMV
-        method: 辨识方法 TWO_POINT/AREA/COMBINED
+        method: 辨识方法 TWO_POINT/AREA（默认 TWO_POINT）
 
     Returns:
         {K, tau, theta, fitting_score, fitted_pv}
@@ -125,39 +125,11 @@ def identify_fopdt(
     # 面积法
     result_area = _fopdt_area_method(pv, ts, pv_initial, pv_final, delta_pv, mv_step)
 
-    # 选择方法
-    if method == "TWO_POINT":
-        params = result_two_point
-    elif method == "AREA":
+    # 选择方法（支持 TWO_POINT / AREA，未知方法默认 TWO_POINT）
+    if method == "AREA":
         params = result_area
-    else:  # COMBINED
-        # 两种方法各计算一次，取拟合度高的
-        fitted_two = _fopdt_simulate_curve(
-            K, result_two_point["tau"], result_two_point["theta"], ts, pv_initial, mv_step
-        )
-        score_two = _calc_r2(pv, fitted_two)
-
-        fitted_area = _fopdt_simulate_curve(
-            K, result_area["tau"], result_area["theta"], ts, pv_initial, mv_step
-        )
-        score_area = _calc_r2(pv, fitted_area)
-
-        if score_two >= score_area:
-            params = result_two_point
-            fitted_pv = fitted_two
-            fitting_score = score_two
-        else:
-            params = result_area
-            fitted_pv = fitted_area
-            fitting_score = score_area
-
-        return {
-            "K": round(K, 6),
-            "tau": round(params["tau"], 4),
-            "theta": round(params["theta"], 4),
-            "fitting_score": round(fitting_score * 100, 2),
-            "fitted_pv": fitted_pv.tolist(),
-        }
+    else:  # TWO_POINT 或未知方法默认两点法
+        params = result_two_point
 
     fitted_pv = _fopdt_simulate_curve(
         K, params["tau"], params["theta"], ts, pv_initial, mv_step
@@ -212,10 +184,16 @@ def _fopdt_area_method(
     pv_final: float,
     delta_pv: float,
     mv_step: float,
+    pv_final_points: int = 10,
 ) -> dict[str, float]:
-    """面积法：积分响应曲线下面积。"""
-    # A1 = integral(y(inf) - y(t)) dt
-    y_inf = pv_final
+    """面积法：积分响应曲线下面积。
+
+    Args:
+        pv_final_points: 计算稳态终值使用的末尾采样点数（均值），减少漂移影响。
+    """
+    # 使用最后 N 个点的均值作为 pv_final，减少漂移影响
+    n_final = min(pv_final_points, len(pv))
+    y_inf = float(np.mean(pv[-n_final:]))
     diff = y_inf - pv
     # 梯形积分
     dt = np.diff(ts)
@@ -567,6 +545,13 @@ def tune_cohen_coon(
 
     ratio = theta / tau
 
+    # Cohen-Coon 在 θ/τ 超出 [0.1, 2.0] 范围时精度较差，记录警告
+    if ratio < 0.1 or ratio > 2.0:
+        logger.warning(
+            "Cohen-Coon 整定 θ/τ=%.4f 超出推荐范围 [0.1, 2.0]，整定精度可能下降",
+            ratio,
+        )
+
     if controller_type == "P":
         kp = (1.0 / K) * (tau / theta) * (1.0 + ratio / 3.0)
         ti = 0.0
@@ -711,13 +696,34 @@ def _simulate_pid_response(
     if theta < 0:
         theta = 0.0
 
+    # SOPDT 参数：阻尼比 xi（默认 1.0 即临界阻尼）
+    xi = float(model_params.get("xi", 1.0))
+    if xi < 0:
+        xi = 0.0
+    is_sopdt = model_type == "SOPDT"
+    # SOPDT 辅助常量（在循环外计算）
+    tau_sq = tau * tau if is_sopdt else 1.0
+
     # 死区步数
     theta_steps = max(0, int(round(theta / sim_step)))
     # 延迟队列
     op_delay_queue: list[float] = [0.0] * (theta_steps + 1)
 
-    # 被控对象状态（一阶系统）
-    x = 0.0  # 状态变量
+    # 被控对象状态
+    x1 = 0.0  # SOPDT 第一状态（输出）
+    x2 = 0.0  # SOPDT 第二状态（输出导数）
+    x = 0.0   # FOPDT 状态变量
+
+    # 导数函数在循环外定义（避免 B023 闭包警告）
+    def _deriv_sopdt(state1: float, state2: float, u: float) -> tuple[float, float]:
+        """SOPDT 状态空间导数: x1' = x2, x2' = (-x1 - 2τξ*x2 + K*u) / τ²."""
+        d1 = state2
+        d2 = (-state1 - 2.0 * tau * xi * state2 + K * u) / tau_sq
+        return d1, d2
+
+    def _deriv_fopdt(state: float, u: float) -> float:
+        """FOPDT 导数: dx/dt = (-x + K*u) / tau."""
+        return (-state + K * u) / tau
 
     for k in range(1, n_steps + 1):
         # 误差
@@ -747,18 +753,31 @@ def _simulate_pid_response(
             op_delay_queue.pop(0)
         delayed_op = op_delay_queue[0] if op_delay_queue else op[k]
 
-        # 被控对象：一阶系统 dx/dt = (-x + K*u) / tau
-        # RK4 积分
-        def _deriv(state: float, u: float) -> float:
-            return (-state + K * u) / tau
-
-        k1 = _deriv(x, delayed_op)
-        k2 = _deriv(x + 0.5 * sim_step * k1, delayed_op)
-        k3 = _deriv(x + 0.5 * sim_step * k2, delayed_op)
-        k4 = _deriv(x + sim_step * k3, delayed_op)
-        x = x + sim_step / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
-
-        pv[k] = x
+        if is_sopdt:
+            # SOPDT: G(s) = K / (τ²s² + 2τξs + 1) * e^(-θs)
+            # RK4 积分
+            k1_1, k1_2 = _deriv_sopdt(x1, x2, delayed_op)
+            k2_1, k2_2 = _deriv_sopdt(
+                x1 + 0.5 * sim_step * k1_1, x2 + 0.5 * sim_step * k1_2, delayed_op
+            )
+            k3_1, k3_2 = _deriv_sopdt(
+                x1 + 0.5 * sim_step * k2_1, x2 + 0.5 * sim_step * k2_2, delayed_op
+            )
+            k4_1, k4_2 = _deriv_sopdt(
+                x1 + sim_step * k3_1, x2 + sim_step * k3_2, delayed_op
+            )
+            x1 = x1 + sim_step / 6.0 * (k1_1 + 2 * k2_1 + 2 * k3_1 + k4_1)
+            x2 = x2 + sim_step / 6.0 * (k1_2 + 2 * k2_2 + 2 * k3_2 + k4_2)
+            pv[k] = x1
+        else:
+            # FOPDT: dx/dt = (-x + K*u) / tau
+            # RK4 积分
+            k1 = _deriv_fopdt(x, delayed_op)
+            k2 = _deriv_fopdt(x + 0.5 * sim_step * k1, delayed_op)
+            k3 = _deriv_fopdt(x + 0.5 * sim_step * k2, delayed_op)
+            k4 = _deriv_fopdt(x + sim_step * k3, delayed_op)
+            x = x + sim_step / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+            pv[k] = x
 
         # 更新误差历史
         e_prev2 = e_prev

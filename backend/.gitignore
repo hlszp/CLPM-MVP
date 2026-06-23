@@ -24,6 +24,9 @@ htmlcov/
 build/
 dist/
 
+# Generated OpenAPI spec (via scripts/export_openapi.py)
+openapi.json
+
 # IDE
 .idea/
 .vscode/

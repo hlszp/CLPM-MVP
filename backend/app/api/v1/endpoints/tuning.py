@@ -23,12 +23,18 @@ from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.schemas.tuning import (
     CreateTuningTaskRequest,
     ModelIdentifyRequest,
+    ModelIdentifyResult,
     SimulateRequest,
+    SimulationResult,
     TuneRequest,
+    TuneResult,
+    TuningHistoryStats,
+    TuningMethodInfo,
+    TuningTaskDetail,
 )
 from app.services.tuning import (
     create_tuning_task,
@@ -49,7 +55,7 @@ router = APIRouter(prefix="/tuning", tags=["tuning"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/methods")
+@router.get("/methods", response_model=ApiResponse[list[TuningMethodInfo]])
 async def get_methods_endpoint(
     _: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -63,7 +69,7 @@ async def get_methods_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/identify")
+@router.post("/identify", response_model=ApiResponse[ModelIdentifyResult])
 async def identify_model_endpoint(
     body: ModelIdentifyRequest,
     db: AsyncSession = Depends(get_db),
@@ -89,7 +95,7 @@ async def identify_model_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/tune")
+@router.post("/tune", response_model=ApiResponse[TuneResult])
 async def tune_pid_endpoint(
     body: TuneRequest,
     db: AsyncSession = Depends(get_db),
@@ -127,7 +133,7 @@ async def tune_pid_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/simulate")
+@router.post("/simulate", response_model=ApiResponse[SimulationResult])
 async def simulate_endpoint(
     body: SimulateRequest,
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
@@ -154,7 +160,7 @@ async def simulate_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/tasks")
+@router.get("/tasks", response_model=ApiResponse[dict])
 async def list_tasks_endpoint(
     loopId: str | None = Query(None, description="回路 ID 筛选"),
     algorithm: str | None = Query(None, description="算法筛选"),
@@ -176,7 +182,7 @@ async def list_tasks_endpoint(
     return success(data=data)
 
 
-@router.get("/tasks/{task_id}")
+@router.get("/tasks/{task_id}", response_model=ApiResponse[TuningTaskDetail])
 async def get_task_detail_endpoint(
     task_id: str,
     db: AsyncSession = Depends(get_db),
@@ -187,7 +193,7 @@ async def get_task_detail_endpoint(
     return success(data=data)
 
 
-@router.post("/tasks", status_code=201)
+@router.post("/tasks", status_code=201, response_model=ApiResponse[dict])
 async def create_task_endpoint(
     body: CreateTuningTaskRequest,
     db: AsyncSession = Depends(get_db),
@@ -227,7 +233,7 @@ async def create_task_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/history")
+@router.get("/history", response_model=ApiResponse[TuningHistoryStats])
 async def get_history_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),

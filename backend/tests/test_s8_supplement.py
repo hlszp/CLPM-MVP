@@ -384,7 +384,7 @@ class TestTuningServiceEdgeCases:
     """整定服务边界条件测试。"""
 
     def test_tune_invalid_algorithm(self, client, mock_db) -> None:
-        """UT-TUNE-004: 无效算法返回 400。"""
+        """UT-TUNE-004: 无效算法返回 422（S4-C3 枚举约束）。"""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/tuning/tune",
@@ -396,8 +396,8 @@ class TestTuningServiceEdgeCases:
                     "currentPid": {"kp": 1.0, "ti": 10.0, "td": 0.0},
                 },
             )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "ERR_INVALID_ALGORITHM"
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "ERR_VALIDATION"
 
     def test_identify_data_insufficient(self, client, mock_db) -> None:
         """UT-TUNE-002: 数据不足返回 400。"""

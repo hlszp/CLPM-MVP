@@ -238,7 +238,10 @@ function startPolling() {
           progress: taskResult.progress ?? 0,
           message: taskResult.message || '',
         });
-        if (taskResult.status === 'COMPLETED' || taskResult.status === 'FAILED') {
+        if (
+          taskResult.status === 'COMPLETED' ||
+          taskResult.status === 'FAILED'
+        ) {
           if (taskResult.status === 'COMPLETED') {
             message.success(`报表「${recordName(configId)}」生成完成`);
           } else {

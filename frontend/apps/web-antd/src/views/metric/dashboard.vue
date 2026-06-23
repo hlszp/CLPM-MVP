@@ -23,6 +23,7 @@ import { Alert, Button, Card, Select } from 'ant-design-vue';
 
 import { getBoardApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'MetricDashboard' });
 
@@ -62,20 +63,6 @@ const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 // 自动刷新
 const refreshInterval = 5 * 60; // 5 分钟
 let refreshTimer: null | ReturnType<typeof setInterval> = null;
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {

@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from app.schemas.base import CamelModel
+
+# ---------------------------------------------------------------------------
+# 枚举类型定义（S4-C3）
+# 与业务代码保持一致（app/services/tracker.py VALID_STATUSES）
+# ---------------------------------------------------------------------------
+
+# 处理状态：PENDING/IN_PROGRESS/RESOLVED/IGNORED
+ActionStatus = Literal["PENDING", "IN_PROGRESS", "RESOLVED", "IGNORED"]
 
 # ---------------------------------------------------------------------------
 # S4-DIAG-001: 诊断指标配置
@@ -57,7 +65,7 @@ class DiagnosisListItem(CamelModel):
     confidence: float
     fusedConfidence: float | None = None
     algorithm: str | None = None
-    actionStatus: str = "PENDING"
+    actionStatus: ActionStatus = "PENDING"
     diagnosedAt: str
     algorithmVersion: str | None = None
 
@@ -147,7 +155,7 @@ class WaveformData(CamelModel):
 class TrackerStatusUpdate(CamelModel):
     """PATCH /tracker/{loopId}/status 请求体。"""
 
-    status: str = Field(..., pattern="^(PENDING|IN_PROGRESS|RESOLVED|IGNORED)$")
+    status: ActionStatus = Field(..., description="处理状态")
     evidenceUrl: str | None = Field(None, max_length=255)
     remark: str | None = None
 
@@ -157,7 +165,7 @@ class TrackerStatusData(CamelModel):
 
     loopId: str
     diagnosisLabel: str | None = None
-    actionStatus: str
+    actionStatus: ActionStatus
     evidenceUrl: str | None = None
     updatedBy: str | None = None
     updatedAt: str | None = None
@@ -183,7 +191,7 @@ class AnalyticsFilterScope(CamelModel):
     endTime: str
     plantNodeId: str | None = None
     diagnosisLabel: str | None = None
-    actionStatus: str | None = None
+    actionStatus: ActionStatus | None = None
     granularity: str = "day"
 
 
@@ -226,7 +234,7 @@ class AnalyticsExportRequest(CamelModel):
     endTime: str
     plantNodeId: str | None = None
     diagnosisLabel: str | None = None
-    actionStatus: str | None = None
+    actionStatus: ActionStatus | None = None
     granularity: str = "day"
     format: str = Field("pdf", pattern="^(pdf|csv)$")
 

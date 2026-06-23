@@ -222,6 +222,7 @@ def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
         patch("app.services.auth.redis_client", fake_redis),
         patch("app.services.dashboard.redis_client", fake_redis),
         patch("app.middleware.rate_limit.redis_client", fake_redis),
+        patch("app.middleware.idempotency.redis_client", fake_redis),
         patch("app.services.dashboard.AsyncSessionLocal") as mock_session_local,
     ):
         # 配置 AsyncSessionLocal mock：每次 async with 返回 mock_parallel_session

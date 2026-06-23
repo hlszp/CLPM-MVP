@@ -1,4 +1,10 @@
-import { BarChart, LineChart, PieChart, RadarChart, ScatterChart } from 'echarts/charts';
+import {
+  BarChart,
+  LineChart,
+  PieChart,
+  RadarChart,
+  ScatterChart,
+} from 'echarts/charts';
 import {
   DatasetComponent,
   GridComponent,

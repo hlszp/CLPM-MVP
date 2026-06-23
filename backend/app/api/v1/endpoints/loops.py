@@ -21,8 +21,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
-from app.schemas.loop import LoopCreate, LoopTagMappingUpdate, LoopUpdate
+from app.schemas.common import ApiResponse, success
+from app.schemas.loop import (
+    LoopCreate,
+    LoopDeleteResult,
+    LoopListData,
+    LoopTagMappingResponse,
+    LoopTagMappingUpdate,
+    LoopTagMappingUpdateResponse,
+    LoopUpdate,
+    LoopUpdateResult,
+)
 from app.services.loop import (
     create_loop,
     delete_loop,
@@ -41,7 +50,7 @@ router = APIRouter(prefix="/loops", tags=["loop"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("")
+@router.get("", response_model=ApiResponse[LoopListData])
 async def list_loops_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     controlMode: str | None = Query(None, description="按控制方式筛选：Manual/Auto/Cascade"),
@@ -67,7 +76,7 @@ async def list_loops_endpoint(
     return success(data=data)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=ApiResponse[dict])
 async def create_loop_endpoint(
     body: LoopCreate,
     db: AsyncSession = Depends(get_db),
@@ -95,7 +104,7 @@ async def create_loop_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/monitor")
+@router.get("/monitor", response_model=ApiResponse[dict])
 async def list_loop_monitor_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     view: str = Query("list", description="视图模式：list/card"),
@@ -122,7 +131,7 @@ async def list_loop_monitor_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{loop_id}")
+@router.get("/{loop_id}", response_model=ApiResponse[dict])
 async def get_loop_detail_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
@@ -133,7 +142,7 @@ async def get_loop_detail_endpoint(
     return success(data=data)
 
 
-@router.put("/{loop_id}")
+@router.put("/{loop_id}", response_model=ApiResponse[LoopUpdateResult])
 async def update_loop_endpoint(
     loop_id: str,
     body: LoopUpdate,
@@ -156,7 +165,7 @@ async def update_loop_endpoint(
     return success(data=data, message="更新成功")
 
 
-@router.delete("/{loop_id}")
+@router.delete("/{loop_id}", response_model=ApiResponse[LoopDeleteResult])
 async def delete_loop_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
@@ -175,7 +184,7 @@ async def delete_loop_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{loop_id}/tags")
+@router.get("/{loop_id}/tags", response_model=ApiResponse[LoopTagMappingResponse])
 async def get_loop_tags_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
@@ -186,7 +195,7 @@ async def get_loop_tags_endpoint(
     return success(data=data)
 
 
-@router.put("/{loop_id}/tags")
+@router.put("/{loop_id}/tags", response_model=ApiResponse[LoopTagMappingUpdateResponse])
 async def update_loop_tags_endpoint(
     loop_id: str,
     body: LoopTagMappingUpdate,
@@ -220,7 +229,7 @@ async def update_loop_tags_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{loop_id}/monitor")
+@router.get("/{loop_id}/monitor", response_model=ApiResponse[dict])
 async def get_loop_monitor_detail_endpoint(
     loop_id: str,
     trendWindow: str = Query(

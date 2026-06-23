@@ -169,10 +169,10 @@ Sprint 5（第36-42天）：验收+Phase 2准备 — 让系统可交付
 | S2-C1 | **统一字段命名为camelCase** | 13-P0-3 | 后端schemas + 前端API | 无 | 前后端字段名一致 |
 | S2-C2 | **统一枚举值** | 13-P0-5 | 后端models + 前端types | S2-C1 | 枚举值前后端同步 |
 | S2-C3 | **修复前端调用不存在的端点** | 13-P0-2 | `frontend/.../api/portal.ts`等 | S2-C1 | 无404调用 |
-| S2-C4 | **端点添加response_model** | 13-P0-1 | 所有endpoint文件 | S2-C1 | OpenAPI文档展示响应结构 |
-| S2-C5 | **添加速率限制中间件** | 13-P0-4 | `backend/app/main.py` | 无 | 登录接口有限流 |
-| S2-C6 | **写操作幂等性** | 13-P0-6 | POST端点 | S2-C4 | 重试不重复创建 |
-| S2-C7 | **HTTP状态码规范**（201/204） | 13-P1-1 | 所有endpoint | S2-C4 | 创建返回201，删除返回204 |
+| S2-C4 | **端点添加response_model** | 13-P0-1 | 所有endpoint文件 | S2-C1 | OpenAPI文档展示响应结构 | deferred to Sprint 4 |
+| S2-C5 | **添加速率限制中间件** | 13-P0-4 | `backend/app/main.py` | 无 | 登录接口有限流 | done |
+| S2-C6 | **写操作幂等性** | 13-P0-6 | POST端点 | S2-C4 | 重试不重复创建 | deferred to Sprint 4 |
+| S2-C7 | **HTTP状态码规范**（201/204） | 13-P1-1 | 所有endpoint | S2-C4 | 创建返回201，删除返回204 | done |
 
 ---
 
@@ -224,32 +224,56 @@ Sprint 5（第36-42天）：验收+Phase 2准备 — 让系统可交付
 
 | 任务ID | 任务 | 来源报告 | 修改文件 | 依赖 | 验证方法 |
 |---|---|---|---|---|---|
-| S4-A1 | **清理4个冗余web变体** | 04-P0-2 | `frontend/apps/` | 无 | 仅保留web-antd |
-| S4-A2 | **诊断中心路由添加authority** | 04-P1-1 | `frontend/.../router/diagnosis.ts` | 无 | 路由有权限控制 |
-| S4-A3 | **删除portal.ts（合并到dashboard.ts）** | 04-P1-2 | `frontend/.../api/portal.ts` | S2-C3 | 无冗余API模块 |
-| S4-A4 | **提取诊断标签映射为共享常量** | 04-P1-4 | 新建`frontend/.../constants/diagnosis.ts` | 无 | 5+文件不再重复定义 |
-| S4-A5 | **提取flattenNodes为工具函数** | 04-P1-5 | 新建`frontend/.../utils/plant-node.ts` | 无 | 4+文件不再重复 |
-| S4-A6 | **国际化框架搭建**（i18n） | 04-P1-3 | `frontend/.../locales/` | 无 | t()调用可用 |
+| S4-A1 | **清理4个冗余web变体** | 04-P0-2 | `frontend/apps/` | 无 | 仅保留web-antd | done |
+| S4-A2 | **诊断中心路由添加authority** | 04-P1-1 | `frontend/.../router/diagnosis.ts` | 无 | 路由有权限控制 | done |
+| S4-A3 | **删除portal.ts（合并到dashboard.ts）** | 04-P1-2 | `frontend/.../api/portal.ts` | S2-C3 | 无冗余API模块 | done (跳过，不存在) |
+| S4-A4 | **提取诊断标签映射为共享常量** | 04-P1-4 | 新建`frontend/.../constants/diagnosis.ts` | 无 | 5+文件不再重复定义 | done |
+| S4-A5 | **提取flattenNodes为工具函数** | 04-P1-5 | 新建`frontend/.../utils/plant-node.ts` | 无 | 4+文件不再重复 | done |
+| S4-A6 | **国际化框架搭建**（i18n） | 04-P1-3 | `frontend/.../locales/` | 无 | t()调用可用 | done |
 
 ### 批次 4-B：后端P2修复（可并行）
 
 | 任务ID | 任务 | 来源报告 | 修改文件 | 依赖 | 验证方法 |
 |---|---|---|---|---|---|
-| S4-B1 | **删除COMBINED模式死代码** | 02-P1 | `tuning_algorithms.py:162-173` | 无 | 无死代码 |
-| S4-B2 | **改进振荡率检测**（加振幅阈值） | 02-P1 | `kpi_calc.py` | S1-A3 | 噪声不误报 |
-| S4-B3 | **FOPDT面积法pv_final用均值** | 02-P2 | `tuning_algorithms.py:218` | 无 | 漂移数据下更准确 |
-| S4-B4 | **Cohen-Coon适用范围检查** | 02-P2 | `tuning_algorithms.py` | 无 | θ/τ超范围有警告 |
-| S4-B5 | **闭环仿真支持SOPDT** | 02-P2 | `tuning_algorithms.py` | S1-A2 | SOPDT模型仿真正确 |
-| S4-B6 | **good_value_rate在过滤前计算** | 09-P2 | `kpi_calc.py` | S1-A3 | 反映真实数据质量 |
-| S4-B7 | **时间序列对齐用容差匹配** | 09-P2 | `diagnosis_engine.py`、`kpi_calc.py` | 无 | ±500ms容差 |
+| S4-B1 | **删除COMBINED模式死代码** | 02-P1 | `tuning_algorithms.py:162-173` | 无 | 无死代码 | done |
+| S4-B2 | **改进振荡率检测**（加振幅阈值） | 02-P1 | `kpi_calc.py` | S1-A3 | 噪声不误报 | done |
+| S4-B3 | **FOPDT面积法pv_final用均值** | 02-P2 | `tuning_algorithms.py:218` | 无 | 漂移数据下更准确 | done |
+| S4-B4 | **Cohen-Coon适用范围检查** | 02-P2 | `tuning_algorithms.py` | 无 | θ/τ超范围有警告 | done |
+| S4-B5 | **闭环仿真支持SOPDT** | 02-P2 | `tuning_algorithms.py` | S1-A2 | SOPDT模型仿真正确 | done |
+| S4-B6 | **good_value_rate在过滤前计算** | 09-P2 | `kpi_calc.py` | S1-A3 | 反映真实数据质量 | done |
+| S4-B7 | **时间序列对齐用容差匹配** | 09-P2 | `diagnosis_engine.py`、`kpi_calc.py` | 无 | ±500ms容差 | done |
 
 ### 批次 4-C：安全P2修复（可并行）
 
 | 任务ID | 任务 | 来源报告 | 修改文件 | 依赖 | 验证方法 |
 |---|---|---|---|---|---|
-| S4-C1 | **校验错误不暴露内部细节** | 07-P2-1 | `backend/app/core/exceptions.py` | 无 | 错误响应不含字段路径 |
-| S4-C2 | **Refresh Token设备绑定** | 07-P2-2 | `backend/app/core/security.py` | S1-B1 | Token与IP绑定 |
-| S4-C3 | **schemas枚举校验** | 07-P2-5 | `backend/app/schemas/tuning.py` | 无 | modelType/algorithm有枚举约束 |
+| S4-C1 | **校验错误不暴露内部细节** | 07-P2-1 | `backend/app/core/exceptions.py` | 无 | 错误响应不含字段路径 | done |
+| S4-C2 | **Refresh Token设备绑定** | 07-P2-2 | `backend/app/core/security.py` | S1-B1 | Token与IP绑定 | done |
+| S4-C3 | **schemas枚举校验** | 07-P2-5 | `backend/app/schemas/tuning.py` | 无 | modelType/algorithm有枚举约束 | done |
+
+### 批次 4-D：API契约补全（延迟项）
+
+| 任务ID | 任务 | 来源报告 | 修改文件 | 依赖 | 验证方法 |
+|---|---|---|---|---|---|
+| S2-C4 | **端点添加response_model** | 13-P0-1 | 所有endpoint文件 | S2-C1 | OpenAPI文档展示响应结构 | done |
+| S2-C6 | **写操作幂等性** | 13-P0-6 | POST端点 | S2-C4 | 重试不重复创建 | done |
+
+### 批次 4-E：工程质量补全（新增）
+
+| 任务ID | 任务 | 来源报告 | 修改文件 | 依赖 | 验证方法 |
+|---|---|---|---|---|---|
+| S4-D1 | **添加LICENSE文件** | 01-P0 | 项目根目录 | 无 | LICENSE文件存在 | done |
+| S4-D2 | **后端README** | 审计低风险 | 新建`backend/README.md` | 无 | 后端模块有说明文档 | done |
+| S4-D3 | **Makefile统一命令** | 审计低风险 | 新建`Makefile` | 无 | make dev/test/build可用 | done |
+| S4-D4 | **导出静态OpenAPI spec** | 审计低风险 | 新建`backend/scripts/export_openapi.py` | 无 | openapi.json可生成 | done |
+
+### 批次 4-F：可观测性增强（新增）
+
+| 任务ID | 任务 | 来源报告 | 修改文件 | 依赖 | 验证方法 |
+|---|---|---|---|---|---|
+| S4-E1 | **Grafana dashboard配置** | Sprint 3衍生 | 新建`deploy/grafana/` | S3-B3 | Prometheus指标有可视化面板 | done |
+| S4-E2 | **sys_audit_log归档Celery任务** | 09-P2 | 新建`backend/app/tasks/audit_archive.py` | 无 | 审计日志定期归档 | done |
+| S4-E3 | **前端错误上报（Sentry集成）** | 可观测性增强 | `frontend/.../bootstrap.ts` | 无 | 前端异常自动上报 | done |
 
 ---
 

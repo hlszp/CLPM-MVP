@@ -20,11 +20,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.schemas.diagnosis import (
+    AnalyticsExportData,
     AnalyticsExportRequest,
+    DiagnosisAnalyticsData,
+    DiagnosisConfigItem,
     DiagnosisConfigUpdate,
+    DiagnosisListData,
+    TrackerExportData,
+    TrackerStatusData,
     TrackerStatusUpdate,
+    WaveformData,
 )
 from app.services.diagnosis import (
     get_diagnosis_analytics,
@@ -51,7 +58,7 @@ tracker_router = APIRouter(prefix="/tracker", tags=["tracker"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/metrics")
+@router.get("/metrics", response_model=ApiResponse[list[DiagnosisConfigItem]])
 async def list_metrics_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -61,7 +68,7 @@ async def list_metrics_endpoint(
     return success(data=data)
 
 
-@router.put("/metrics/{diag_id}")
+@router.put("/metrics/{diag_id}", response_model=ApiResponse[DiagnosisConfigItem])
 async def update_metric_endpoint(
     diag_id: str,
     body: DiagnosisConfigUpdate,
@@ -88,7 +95,7 @@ async def update_metric_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/list")
+@router.get("/list", response_model=ApiResponse[DiagnosisListData])
 async def list_diagnosis_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     diagnosisLabel: str | None = Query(None, description="按诊断标签筛选"),
@@ -114,7 +121,7 @@ async def list_diagnosis_endpoint(
     return success(data=data)
 
 
-@router.get("/analytics")
+@router.get("/analytics", response_model=ApiResponse[DiagnosisAnalyticsData])
 async def get_analytics_endpoint(
     startTime: str = Query(..., description="开始时间（ISO 8601）"),
     endTime: str = Query(..., description="结束时间（ISO 8601）"),
@@ -138,7 +145,7 @@ async def get_analytics_endpoint(
     return success(data=data)
 
 
-@router.post("/analytics/export")
+@router.post("/analytics/export", response_model=ApiResponse[AnalyticsExportData])
 async def export_analytics_endpoint(
     body: AnalyticsExportRequest,
     db: AsyncSession = Depends(get_db),
@@ -153,7 +160,7 @@ async def export_analytics_endpoint(
     return success(data=data, message="导出任务已提交")
 
 
-@router.get("/{loop_id}")
+@router.get("/{loop_id}", response_model=ApiResponse[dict])
 async def get_diagnosis_detail_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
@@ -169,7 +176,7 @@ async def get_diagnosis_detail_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@timeseries_router.get("/{loop_id}/waveform")
+@timeseries_router.get("/{loop_id}/waveform", response_model=ApiResponse[WaveformData])
 async def get_waveform_endpoint(
     loop_id: str,
     startTime: str = Query(..., description="开始时间（ISO 8601）"),
@@ -199,7 +206,7 @@ async def get_waveform_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@tracker_router.patch("/{loop_id}/status")
+@tracker_router.patch("/{loop_id}/status", response_model=ApiResponse[TrackerStatusData])
 async def update_tracker_status_endpoint(
     loop_id: str,
     body: TrackerStatusUpdate,
@@ -222,7 +229,7 @@ async def update_tracker_status_endpoint(
     return success(data=data, message="状态更新成功")
 
 
-@tracker_router.post("/{loop_id}/export")
+@tracker_router.post("/{loop_id}/export", response_model=ApiResponse[TrackerExportData])
 async def export_tracker_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from bisect import bisect_left
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -314,6 +315,9 @@ async def _calculate_loop_kpi(
         )
         return snap
 
+    # 好值率：在过滤前计算，反映真实数据质量
+    good_value_rate = Decimal(good_points) / Decimal(total_points) * Decimal("100")
+
     # 按 ts 对齐 PV/SP/OP/MODE
     aligned = _align_timeseries(pv_data_filtered, sp_data, op_data, mode_data)
     if not aligned:
@@ -326,8 +330,8 @@ async def _calculate_loop_kpi(
         )
         return snap
 
-    # 计算 6 大 KPI
-    kpi_values = _compute_kpis(aligned, metric_configs)
+    # 计算 6 大 KPI（好值率在过滤前计算，其余指标基于过滤后数据）
+    kpi_values = _compute_kpis(aligned, metric_configs, good_value_rate=good_value_rate)
 
     # 计算综合评分 Score = (Σ wᵢ × ηᵢ_norm) × R_auto
     score = _compute_composite_score(kpi_values, metric_configs)
@@ -371,17 +375,112 @@ def _get_tag_name(
     return tag.tag_name
 
 
+def _ts_to_float(ts: Any) -> float | None:
+    """将时间戳转换为浮点数（秒级 epoch）。
+
+    支持 int/float/datetime/ISO 字符串；无法转换时返回 None。
+    """
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    if isinstance(ts, datetime):
+        return float(ts.timestamp())
+    # 字符串：先尝试数值，再尝试 ISO 解析
+    s = str(ts)
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return float(dt.timestamp())
+    except (ValueError, TypeError):
+        return None
+
+
+# 时间戳容差（秒）：±500ms 内视为同一时间点
+_TS_TOLERANCE_SEC = 0.5
+
+
+def _build_ts_index(data: list[dict]) -> tuple[list[float], list[Any]]:
+    """构建数值时间戳索引（用于 bisect 最近邻查找）。
+
+    Returns:
+        (sorted_ts_floats, sorted_original_ts) — 同序排列；
+        若任意 ts 无法转数值，返回空列表。
+    """
+    pairs: list[tuple[float, Any]] = []
+    for d in data:
+        ts_orig = d.get("ts")
+        ts_f = _ts_to_float(ts_orig)
+        if ts_f is None:
+            return [], []  # 退化为精确匹配模式
+        pairs.append((ts_f, ts_orig))
+    pairs.sort(key=lambda p: p[0])
+    return [p[0] for p in pairs], [p[1] for p in pairs]
+
+
+def _find_nearest_value(
+    target_ts: Any,
+    sorted_ts_floats: list[float],
+    exact_map: dict[Any, Any],
+    sorted_values: list[Any] | None = None,
+) -> Any:
+    """查找目标时间戳对应的值：先精确匹配，再容差最近邻匹配。
+
+    Args:
+        target_ts: 目标时间戳（任意类型）
+        sorted_ts_floats: 已排序的数值时间戳列表
+        exact_map: 原始 ts → value 的精确映射
+        sorted_values: 与 sorted_ts_floats 同序的值列表（容差匹配用）
+    """
+    # 1. 精确匹配（兼容字符串 ts 如 "t1"）
+    if target_ts in exact_map:
+        return exact_map[target_ts]
+    # 2. 数值容差匹配
+    target_f = _ts_to_float(target_ts)
+    if target_f is None or not sorted_ts_floats or sorted_values is None:
+        return None
+    idx = bisect_left(sorted_ts_floats, target_f)
+    best_idx = -1
+    best_diff = float("inf")
+    # 检查 idx 和 idx-1 两个候选（bisect_left 返回插入点）
+    for cand in (idx - 1, idx):
+        if 0 <= cand < len(sorted_ts_floats):
+            diff = abs(sorted_ts_floats[cand] - target_f)
+            if diff < best_diff:
+                best_diff = diff
+                best_idx = cand
+    if best_idx >= 0 and best_diff <= _TS_TOLERANCE_SEC:
+        return sorted_values[best_idx]
+    return None
+
+
 def _align_timeseries(
     pv_data: list[dict],
     sp_data: list[dict],
     op_data: list[dict],
     mode_data: list[dict],
 ) -> list[dict[str, Any]]:
-    """按 ts 对齐 PV/SP/OP/MODE 时序数据。"""
-    # 构建 ts → value 映射
+    """按 ts 对齐 PV/SP/OP/MODE 时序数据。
+
+    对齐策略：
+    1. 优先精确时间戳匹配（兼容字符串 ts 如 "t1"）
+    2. 若 ts 可转为数值，使用 bisect 最近邻匹配，容差 ±500ms
+    """
+    # 精确映射（兼容字符串 ts）
     sp_map = {d.get("ts"): d.get("value") for d in sp_data}
     op_map = {d.get("ts"): d.get("value") for d in op_data}
     mode_map = {d.get("ts"): d.get("value") for d in mode_data}
+
+    # 数值索引（用于容差匹配）
+    sp_ts_floats, sp_ts_orig = _build_ts_index(sp_data)
+    op_ts_floats, op_ts_orig = _build_ts_index(op_data)
+    mode_ts_floats, mode_ts_orig = _build_ts_index(mode_data)
+    sp_values = [sp_map[t] for t in sp_ts_orig] if sp_ts_floats else None
+    op_values = [op_map[t] for t in op_ts_orig] if op_ts_floats else None
+    mode_values = [mode_map[t] for t in mode_ts_orig] if mode_ts_floats else None
 
     aligned: list[dict[str, Any]] = []
     for d in pv_data:
@@ -391,9 +490,11 @@ def _align_timeseries(
             {
                 "ts": ts,
                 "pv": pv,
-                "sp": sp_map.get(ts),
-                "op": op_map.get(ts),
-                "mode": mode_map.get(ts),
+                "sp": _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values),
+                "op": _find_nearest_value(ts, op_ts_floats, op_map, op_values),
+                "mode": _find_nearest_value(
+                    ts, mode_ts_floats, mode_map, mode_values
+                ),
             }
         )
     return aligned
@@ -402,8 +503,15 @@ def _align_timeseries(
 def _compute_kpis(
     aligned: list[dict[str, Any]],
     metric_configs: dict[str, MetricConfig],
+    good_value_rate: Decimal | None = None,
 ) -> dict[str, Decimal | None]:
     """计算 6 大 KPI。
+
+    Args:
+        aligned: 对齐后的时序数据（已过滤 Bad 质量码）
+        metric_configs: 指标配置字典
+        good_value_rate: 好值率（在过滤前计算，反映真实数据质量）。
+            None 时默认 100.0（向后兼容）。
 
     Returns:
         {metric_code: Decimal value or None}
@@ -421,9 +529,8 @@ def _compute_kpis(
             )
         )
 
-    # 好值率：sum(quality==Good) / count(*) * 100
-    # 注：quality 已在调用前过滤，aligned 中所有点都是 Good
-    good_value_rate = Decimal("100.0")
+    # 好值率：在过滤前计算，反映真实数据质量（由调用方传入）
+    good_value_rate_val = good_value_rate if good_value_rate is not None else Decimal("100.0")
 
     # 自控率：sum(mode in [Auto, Cascade]) / count(*) * 100
     # mode 值：0=Manual, 1=Auto, 2/3=Cascade
@@ -495,7 +602,7 @@ def _compute_kpis(
     saturation_rate = Decimal(saturation_count) / Decimal(total) * Decimal("100")
 
     return {
-        "good_value_rate": _quantize(good_value_rate),
+        "good_value_rate": _quantize(good_value_rate_val),
         "auto_mode_rate": _quantize(auto_mode_rate),
         "steady_rate": _quantize(steady_rate) if steady_rate is not None else None,
         "accuracy_rate": _quantize(accuracy_rate) if accuracy_rate is not None else None,
@@ -514,16 +621,30 @@ def _is_auto_mode(mode_value: Any) -> bool:
 
 
 def _detect_oscillation(aligned: list[dict[str, Any]]) -> int:
-    """检测振荡点数（简化：相邻 PV 差值符号变化次数）。"""
+    """检测振荡点数（相邻 PV 差值符号变化次数，含振幅阈值过滤）。
+
+    振幅阈值：取 2% PV 量程和 0.5% PV 均值中的较大值，
+    仅当 PV 变化幅度超过阈值时才计入振荡，避免噪声误报。
+    """
     pv_values = [d.get("pv") for d in aligned if d.get("pv") is not None]
     if len(pv_values) < 3:
         return 0
+
+    # 计算振幅阈值：2% 量程 或 0.5% 均值，取较大值使噪声过滤更有效
+    pv_arr = np.array(pv_values, dtype=float)
+    pv_span = float(np.max(pv_arr) - np.min(pv_arr))
+    pv_mean_abs = abs(float(np.mean(pv_arr)))
+    threshold_span = 0.02 * pv_span
+    threshold_mean = 0.005 * pv_mean_abs
+    # 取两个阈值中较大者（变化幅度需同时超过两者才算有效振荡）
+    amp_threshold = max(threshold_span, threshold_mean, 1e-9)
 
     oscillation_count = 0
     prev_diff = None
     for i in range(1, len(pv_values)):
         diff = pv_values[i] - pv_values[i - 1]
-        if diff == 0:
+        # 振幅小于阈值视为噪声，不计入振荡
+        if abs(diff) < amp_threshold:
             continue
         sign = 1 if diff > 0 else -1
         if prev_diff is not None and sign != prev_diff:

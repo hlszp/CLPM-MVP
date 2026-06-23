@@ -22,6 +22,7 @@ from app.core.security import (
     get_token_remaining_ttl,
     hash_password,
     verify_password,
+    verify_refresh_token,
 )
 from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
@@ -167,10 +168,14 @@ async def authenticate(
     username: str,
     password: str,
     remember_me: bool = False,
+    device_ip: str | None = None,
 ) -> tuple[SysUser, AuthTokens]:
     """Authenticate a user and return ``(user, tokens)``.
 
     Raises ``BizError`` with appropriate error codes on failure.
+
+    Args:
+        device_ip: 客户端 IP 地址（用于 Refresh Token 设备绑定 S4-C2）
     """
     # Check lock before querying DB.
     await _check_login_lock(username)
@@ -231,7 +236,7 @@ async def authenticate(
     await _clear_login_fails(username)
 
     # Issue tokens.
-    tokens = await _issue_tokens(user, remember_me)
+    tokens = await _issue_tokens(user, remember_me, device_ip=device_ip)
 
     # Update last_login_at (DB column is TIMESTAMP WITHOUT TIME ZONE).
     await db.execute(
@@ -254,13 +259,21 @@ async def authenticate(
     return user, tokens
 
 
-async def _issue_tokens(user: SysUser, remember_me: bool = False) -> AuthTokens:
-    """Issue access + refresh tokens and track them in Redis."""
+async def _issue_tokens(
+    user: SysUser, remember_me: bool = False, device_ip: str | None = None
+) -> AuthTokens:
+    """Issue access + refresh tokens and track them in Redis.
+
+    Args:
+        device_ip: 客户端 IP 地址（绑定到 Refresh Token，S4-C2）
+    """
     user_id = str(user.id)
     access_token, access_jti, expires_in = create_access_token(
         subject=user_id, username=user.username, role=user.role
     )
-    refresh_token, refresh_jti, _ = create_refresh_token(subject=user_id, remember_me=remember_me)
+    refresh_token, refresh_jti, _ = create_refresh_token(
+        subject=user_id, remember_me=remember_me, device_ip=device_ip
+    )
 
     # Track jtis for batch revocation.
     refresh_ttl = 30 * 24 * 3600 if remember_me else 7 * 24 * 3600
@@ -276,15 +289,22 @@ async def _issue_tokens(user: SysUser, remember_me: bool = False) -> AuthTokens:
     )
 
 
-async def refresh_tokens(refresh_token_str: str) -> AuthTokens:
+async def refresh_tokens(
+    refresh_token_str: str,
+    device_ip: str | None = None,
+) -> AuthTokens:
     """Validate a refresh token and issue a new token pair.
 
     Raises ``BizError`` with ``ERR_TOKEN_EXPIRED`` or ``ERR_TOKEN_INVALID``.
+
+    Args:
+        device_ip: 当前请求的客户端 IP（用于设备绑定校验 S4-C2，
+            为 None 时跳过校验，向后兼容）
     """
     from app.core.security import JWTError
 
     try:
-        payload = decode_token(refresh_token_str)
+        payload = verify_refresh_token(refresh_token_str, device_ip=device_ip)
     except JWTError as exc:
         # pyjwt raises ExpiredSignatureError (subclass of PyJWTError) for expired.
         err_code = "ERR_TOKEN_EXPIRED" if "expired" in str(exc).lower() else "ERR_TOKEN_INVALID"
@@ -296,13 +316,12 @@ async def refresh_tokens(refresh_token_str: str) -> AuthTokens:
             message=msg,
             status_code=401,
         ) from exc
-
-    if payload.get("type") != "refresh":
+    except ValueError:
         raise BizError(
             code="ERR_TOKEN_INVALID",
             message="Token 类型错误，非 Refresh Token",
             status_code=401,
-        )
+        ) from None
 
     jti = payload.get("jti", "")
     if not jti:
@@ -351,8 +370,8 @@ async def refresh_tokens(refresh_token_str: str) -> AuthTokens:
         old_ttl = get_token_remaining_ttl(payload)
         await _blacklist_token(jti, old_ttl)
 
-        # Issue new tokens.
-        tokens = await _issue_tokens(user, remember_me=False)
+        # Issue new tokens（继承设备绑定）.
+        tokens = await _issue_tokens(user, remember_me=False, device_ip=device_ip)
         return tokens
 
 

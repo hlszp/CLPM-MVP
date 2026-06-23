@@ -43,6 +43,7 @@ import {
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import StatusBadge from '#/components/loop/status-badge.vue';
+import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopLedger' });
 
@@ -134,20 +135,6 @@ const weightTotal = computed(() => {
 });
 
 const weightValid = computed(() => weightTotal.value === 100);
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {

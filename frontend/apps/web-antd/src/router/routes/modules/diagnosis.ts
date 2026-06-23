@@ -16,6 +16,7 @@ import type { RouteRecordRaw } from 'vue-router';
 const routes: RouteRecordRaw[] = [
   {
     meta: {
+      authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:stethoscope',
       order: 4,
       title: '诊断中心',
@@ -28,6 +29,13 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/list',
         component: () => import('#/views/diagnosis/list.vue'),
         meta: {
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
           icon: 'lucide:list',
           title: '诊断列表',
         },
@@ -37,6 +45,13 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/detail/:loopId',
         component: () => import('#/views/diagnosis/detail.vue'),
         meta: {
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
           hideInMenu: true,
           title: '诊断详情',
         },
@@ -46,6 +61,13 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/waveform',
         component: () => import('#/views/diagnosis/waveform.vue'),
         meta: {
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
           icon: 'lucide:activity',
           title: '波形分析',
         },
@@ -76,6 +98,13 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/statistics',
         component: () => import('#/views/diagnosis/statistics.vue'),
         meta: {
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
           icon: 'lucide:bar-chart-3',
           title: '统计报表',
         },
