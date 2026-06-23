@@ -136,6 +136,7 @@ async def _do_run_diagnosis() -> dict:
     ts_end = now.replace(minute=0, second=0, microsecond=0)
     ts_start = ts_end - timedelta(hours=1)
 
+    # 主 session 仅用于查询待诊断回路列表和诊断配置（只读，无并发）
     async with AsyncSessionLocal() as db:
         # 1. 查询最近一小时评分跌破阈值的回路
         snapshot_stmt = (
@@ -162,42 +163,49 @@ async def _do_run_diagnosis() -> dict:
         )
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
 
-        # 3. 并发诊断（信号量限制并发数）
-        sem = asyncio.Semaphore(CONCURRENCY)
+    # 3. 并发诊断（信号量限制并发数，每协程独立 session 避免并发共享）
+    sem = asyncio.Semaphore(CONCURRENCY)
 
-        async def _diag_with_sem(loop_id: str) -> dict | None:
-            async with sem:
-                return await _diagnose_loop(
-                    db=db,
-                    loop_id=loop_id,
-                    diag_configs=diag_configs,
-                    ts_start=ts_start,
-                    ts_end=ts_end,
-                    query_trend_fn=query_trend_data,
-                )
+    async def _diag_with_sem(loop_id: str) -> dict | None:
+        async with sem:
+            # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
+            async with AsyncSessionLocal() as worker_db:
+                try:
+                    result = await _diagnose_loop(
+                        db=worker_db,
+                        loop_id=loop_id,
+                        diag_configs=diag_configs,
+                        ts_start=ts_start,
+                        ts_end=ts_end,
+                        query_trend_fn=query_trend_data,
+                    )
+                    await worker_db.commit()
+                    return result
+                except Exception:
+                    await worker_db.rollback()
+                    raise
 
-        tasks = [asyncio.create_task(_diag_with_sem(lid)) for lid in loop_ids]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    tasks = [asyncio.create_task(_diag_with_sem(lid)) for lid in loop_ids]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        diagnosed_count = 0
-        failed_count = 0
-        for r in results:
-            if isinstance(r, Exception):
-                failed_count += 1
-                logger.warning("回路诊断失败: %s", r)
-            elif r is None:
-                failed_count += 1
-            else:
-                diagnosed_count += 1
+    diagnosed_count = 0
+    failed_count = 0
+    for r in results:
+        if isinstance(r, Exception):
+            failed_count += 1
+            logger.warning("回路诊断失败: %s", r)
+        elif r is None:
+            failed_count += 1
+        else:
+            diagnosed_count += 1
 
-        await db.commit()
-        return {
-            "total": len(loop_ids),
-            "diagnosed": diagnosed_count,
-            "failed": failed_count,
-            "ts_start": ts_start.isoformat(),
-            "ts_end": ts_end.isoformat(),
-        }
+    return {
+        "total": len(loop_ids),
+        "diagnosed": diagnosed_count,
+        "failed": failed_count,
+        "ts_start": ts_start.isoformat(),
+        "ts_end": ts_end.isoformat(),
+    }
 
 
 async def _do_diagnose_single_loop(loop_id: str, ts_start: str | None = None) -> dict:

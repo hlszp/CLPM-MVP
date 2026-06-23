@@ -55,9 +55,9 @@ def create_app() -> FastAPI:
         version=settings.APP_VERSION,
         description="Control Loop Performance Monitoring backend API",
         debug=settings.DEBUG,
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url="/docs" if settings.DEBUG else None,
+        redoc_url="/redoc" if settings.DEBUG else None,
+        openapi_url="/openapi.json" if settings.DEBUG else None,
         lifespan=lifespan,
     )
 

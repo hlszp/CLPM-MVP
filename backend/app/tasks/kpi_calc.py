@@ -132,6 +132,7 @@ async def _do_calculate() -> dict:
     ts_end = now.replace(minute=0, second=0, microsecond=0)
     ts_start = ts_end - timedelta(hours=1)
 
+    # 主 session 仅用于查询回路列表和指标配置（只读，无并发）
     async with AsyncSessionLocal() as db:
         # 1. 查询所有 ACTIVE/READY 状态回路
         loop_result = await db.execute(
@@ -150,46 +151,53 @@ async def _do_calculate() -> dict:
         metric_result = await db.execute(select(MetricConfig))
         metric_configs = {c.metric_code: c for c in metric_result.scalars().all()}
 
-        # 3. 并发计算（信号量限制并发数）
-        sem = asyncio.Semaphore(CONCURRENCY)
+    # 3. 并发计算（信号量限制并发数，每协程独立 session 避免并发共享）
+    sem = asyncio.Semaphore(CONCURRENCY)
 
-        async def _calc_with_sem(loop: LoopLedger) -> dict | None:
-            async with sem:
-                return await _calculate_loop_kpi(
-                    db=db,
-                    loop=loop,
-                    metric_configs=metric_configs,
-                    ts_start=ts_start,
-                    ts_end=ts_end,
-                    query_trend_fn=query_trend_data,
-                )
+    async def _calc_with_sem(loop: LoopLedger) -> dict | None:
+        async with sem:
+            # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
+            async with AsyncSessionLocal() as worker_db:
+                try:
+                    result = await _calculate_loop_kpi(
+                        db=worker_db,
+                        loop=loop,
+                        metric_configs=metric_configs,
+                        ts_start=ts_start,
+                        ts_end=ts_end,
+                        query_trend_fn=query_trend_data,
+                    )
+                    await worker_db.commit()
+                    return result
+                except Exception:
+                    await worker_db.rollback()
+                    raise
 
-        tasks = [asyncio.create_task(_calc_with_sem(loop)) for loop in loops]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    tasks = [asyncio.create_task(_calc_with_sem(loop)) for loop in loops]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        success_count = 0
-        inconclusive_count = 0
-        failed_count = 0
-        for r in results:
-            if isinstance(r, Exception):
-                failed_count += 1
-                logger.warning("回路计算失败: %s", r)
-            elif r is None:
-                failed_count += 1
-            elif r.get("status") == "INCONCLUSIVE":
-                inconclusive_count += 1
-            else:
-                success_count += 1
+    success_count = 0
+    inconclusive_count = 0
+    failed_count = 0
+    for r in results:
+        if isinstance(r, Exception):
+            failed_count += 1
+            logger.warning("回路计算失败: %s", r)
+        elif r is None:
+            failed_count += 1
+        elif r.get("status") == "INCONCLUSIVE":
+            inconclusive_count += 1
+        else:
+            success_count += 1
 
-        await db.commit()
-        return {
-            "total": len(loops),
-            "success": success_count,
-            "inconclusive": inconclusive_count,
-            "failed": failed_count,
-            "ts_start": ts_start.isoformat(),
-            "ts_end": ts_end.isoformat(),
-        }
+    return {
+        "total": len(loops),
+        "success": success_count,
+        "inconclusive": inconclusive_count,
+        "failed": failed_count,
+        "ts_start": ts_start.isoformat(),
+        "ts_end": ts_end.isoformat(),
+    }
 
 
 async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -> dict:
