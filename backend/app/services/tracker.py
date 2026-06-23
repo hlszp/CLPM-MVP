@@ -109,7 +109,7 @@ async def update_tracker_status(
     if evidence_url is not None:
         tracker.evidence_url = evidence_url
     tracker.updated_by = operator
-    tracker.updated_at = datetime.utcnow()
+    tracker.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
     after_json = json.dumps(
         {
@@ -131,7 +131,7 @@ async def update_tracker_status(
         target_id=str(tracker.id),
         before_value=before_json,
         after_value=after_json,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(audit_log)
 
@@ -171,7 +171,7 @@ async def _generate_ab_comparison(
     )
     diag = diag_result.scalar_one_or_none()
 
-    resolved_at = tracker.updated_at or datetime.utcnow()
+    resolved_at = tracker.updated_at or datetime.now(UTC).replace(tzinfo=None)
     if resolved_at.tzinfo is None:
         resolved_at = resolved_at.replace(tzinfo=UTC)
 

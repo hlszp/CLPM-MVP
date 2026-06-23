@@ -75,7 +75,7 @@ async def _write_audit(
         target_id=target_id,
         before_value=before_value,
         after_value=after_value,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
 
@@ -137,7 +137,7 @@ async def update_diagnosis_config(
         config.is_enabled = is_enabled
 
     config.updated_by = operator
-    config.updated_at = datetime.utcnow()
+    config.updated_at = datetime.now(UTC).replace(tzinfo=None)
     config.version = (config.version or 1) + 1
 
     after = _config_to_dict(config)
@@ -512,7 +512,7 @@ def _build_time_window_condition(time_window: str | None):
     """
     if not time_window:
         return None
-    now = datetime.utcnow()
+    now = datetime.now(UTC).replace(tzinfo=None)
     delta_map = {
         "last_24_hours": timedelta(hours=24),
         "last_7_days": timedelta(days=7),

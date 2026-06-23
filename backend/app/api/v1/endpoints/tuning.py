@@ -13,11 +13,15 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
 from app.schemas.common import success
 from app.schemas.tuning import (
@@ -88,6 +92,7 @@ async def identify_model_endpoint(
 @router.post("/tune")
 async def tune_pid_endpoint(
     body: TuneRequest,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """PID 整定（ADMIN/IC_ENGINEER/EXPERT）。
@@ -102,6 +107,18 @@ async def tune_pid_endpoint(
         current_pid=body.currentPid.model_dump() if body.currentPid else None,
         loop_id=body.loopId,
     )
+    # 审计日志（S1-B7）
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="TUNE_PID",
+        target_type="Loop",
+        target_id=body.loopId,
+        after_value=f"algorithm={body.algorithm}, modelType={body.modelType}",
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
     return success(data=data)
 
 
@@ -190,6 +207,18 @@ async def create_task_endpoint(
         status=body.status,
         created_by=user.username,
     )
+    # 审计日志（S1-B7）
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="CREATE_TUNING_TASK",
+        target_type="TuningTask",
+        target_id=data.get("taskId"),
+        after_value=f"algorithm={body.algorithm}, status={body.status}",
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
     return success(data=data)
 
 

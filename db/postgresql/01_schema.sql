@@ -452,6 +452,9 @@ CREATE INDEX IF NOT EXISTS idx_loop_tag_mapping_tag_id  ON loop_tag_mapping (tag
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_loop_id  ON kpi_snapshot_hourly (loop_id);
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_start ON kpi_snapshot_hourly (ts_start);
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_status   ON kpi_snapshot_hourly (status);
+-- 复合索引（S1-C2）：优化常见查询模式
+CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_loop_ts          ON kpi_snapshot_hourly (loop_id, ts_start);
+CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_status_score  ON kpi_snapshot_hourly (ts_start, status, score);
 
 -- action_tracker 索引
 CREATE INDEX IF NOT EXISTS idx_action_tracker_loop_id       ON action_tracker (loop_id);

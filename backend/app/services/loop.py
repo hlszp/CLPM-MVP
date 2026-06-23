@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import delete, func, or_, select
@@ -55,7 +55,7 @@ async def _write_audit(
         target_id=target_id,
         before_value=before_value,
         after_value=after_value,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
 
@@ -551,7 +551,7 @@ async def delete_loop(
     return {
         "loopId": loop_id,
         "deleted": True,
-        "deletedAt": datetime.utcnow().isoformat(),
+        "deletedAt": datetime.now(UTC).replace(tzinfo=None).isoformat(),
     }
 
 

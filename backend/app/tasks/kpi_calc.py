@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
+import numpy as np
 from celery import Task
 from sqlalchemy import select
 
@@ -447,26 +449,44 @@ def _compute_kpis(
     )
     auto_mode_rate = Decimal(auto_count) / Decimal(total) * Decimal("100")
 
-    # 平稳率：duration(abs(pv - sp) <= pv_range * 0.02) / duration(*) * 100
-    # 简化：按点数计算（假设采样均匀）
-    pv_values = [d["pv"] for d in aligned if d.get("pv") is not None and d.get("sp") is not None]
-    if pv_values:
-        pv_range = max(pv_values) - min(pv_values) if len(pv_values) > 1 else 1.0
-        if pv_range == 0:
-            pv_range = 1.0
-        steady_count = sum(
-            1
-            for d in aligned
-            if d.get("pv") is not None
-            and d.get("sp") is not None
-            and abs(d["pv"] - d["sp"]) <= pv_range * 0.02
-        )
-        steady_rate = Decimal(steady_count) / Decimal(total) * Decimal("100")
+    # 振荡率（需在稳定率之前计算，因为稳定率公式依赖振荡率）
+    # 简化：检测连续反向变化（相邻点 PV 差值符号变化超过阈值）
+    oscillation_count = _detect_oscillation(aligned)
+    oscillation_rate = Decimal(oscillation_count) / Decimal(total) * Decimal("100")
+    # 振荡率（0-1 尺度，用于稳定率公式）
+    osc_ratio = float(oscillation_count) / float(total) if total > 0 else 0.0
+
+    # 平稳率：按 GB/T 44693.2 实现
+    # 公式: R_steady = exp(-σ/(0.05×U)) × (1-Osc) × 100
+    # 其中: σ = PV-SP 误差的标准差, U = SP 量程, Osc = 振荡率(0-1)
+    pv_sp_pairs = [
+        (d["pv"], d["sp"])
+        for d in aligned
+        if d.get("pv") is not None and d.get("sp") is not None
+    ]
+    if pv_sp_pairs:
+        errors = [pv - sp for pv, sp in pv_sp_pairs]
+        sp_values = [sp for _, sp in pv_sp_pairs]
+        sigma = float(np.std(errors)) if len(errors) > 1 else 0.0
+        # U = SP 量程（max - min），SP 不变时用 PV 量程兜底
+        sp_span = max(sp_values) - min(sp_values)
+        if sp_span <= 0:
+            pv_vals = [pv for pv, _ in pv_sp_pairs]
+            sp_span = max(pv_vals) - min(pv_vals) if len(pv_vals) > 1 else 1.0
+        if sp_span <= 0:
+            sp_span = 1.0
+
+        # GB/T 44693.2: exp(-σ/(0.05×U)) × (1-Osc) × 100
+        exponent = -sigma / (0.05 * sp_span)
+        steady_factor = math.exp(max(-700, min(700, exponent)))  # 防 overflow
+        steady_rate = Decimal(str(steady_factor)) * Decimal(str(1.0 - osc_ratio)) * Decimal("100")
+        steady_rate = max(Decimal("0"), min(Decimal("100"), steady_rate))
     else:
         steady_rate = None
 
     # 准确率：duration(abs(pv - sp) <= pv_range * 0.05) / duration(*) * 100
-    if pv_values:
+    if pv_sp_pairs:
+        pv_values = [pv for pv, _ in pv_sp_pairs]
         pv_range = max(pv_values) - min(pv_values) if len(pv_values) > 1 else 1.0
         if pv_range == 0:
             pv_range = 1.0
@@ -480,11 +500,6 @@ def _compute_kpis(
         accuracy_rate = Decimal(accuracy_count) / Decimal(total) * Decimal("100")
     else:
         accuracy_rate = None
-
-    # 振荡率：duration(oscillation_detected == true) / duration(*) * 100
-    # 简化：检测连续反向变化（相邻点 PV 差值符号变化超过阈值）
-    oscillation_count = _detect_oscillation(aligned)
-    oscillation_rate = Decimal(oscillation_count) / Decimal(total) * Decimal("100")
 
     # 饱和率：duration(op >= 95 OR op <= 5) / duration(*) * 100
     saturation_count = sum(

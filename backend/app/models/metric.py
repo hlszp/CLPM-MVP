@@ -84,4 +84,7 @@ class KpiSnapshotHourly(Base):
         Index("idx_kpi_snapshot_loop_id", "loop_id"),
         Index("idx_kpi_snapshot_ts_start", "ts_start"),
         Index("idx_kpi_snapshot_status", "status"),
+        # 复合索引（S1-C2）：优化常见查询模式
+        Index("idx_kpi_snapshot_loop_ts", "loop_id", "ts_start"),
+        Index("idx_kpi_snapshot_ts_status_score", "ts_start", "status", "score"),
     )

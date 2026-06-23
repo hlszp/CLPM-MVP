@@ -11,7 +11,6 @@ Loads environment variables from `.env` (case-sensitive).
 from __future__ import annotations
 
 import logging
-import os
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -29,6 +28,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "CLPM"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    ENV: str = "development"  # development / production
 
     # ---- PostgreSQL ----
     POSTGRES_HOST: str = "localhost"
@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     AAS_SYNC_ENABLED: bool = True
     AAS_CONNECT_TIMEOUT_SECONDS: int = 10
     AAS_REQUEST_TIMEOUT_SECONDS: int = 30
-    AAS_SECURITY_MODE: str = "None"  # None/Sign/SignAndEncrypt
+    AAS_SECURITY_MODE: str = "SignAndEncrypt"  # None/Sign/SignAndEncrypt
 
     # ---- CORS ----
     CORS_ORIGINS: list[str] = [
@@ -111,8 +111,8 @@ class Settings(BaseSettings):
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/2"
 
     def validate_security(self) -> None:
-        """生产环境安全校验：DEBUG=False 时强制校验密钥和密码安全性。"""
-        if self.DEBUG:
+        """生产环境安全校验：ENV=production 时强制校验密钥、密码和 AAS 安全模式。"""
+        if self.ENV != "production":
             return
 
         # JWT 密钥校验
@@ -137,12 +137,17 @@ class Settings(BaseSettings):
         if not self.REDIS_PASSWORD:
             raise RuntimeError("生产环境必须通过环境变量 REDIS_PASSWORD 设置 Redis 密码。")
 
+        # AAS OPC UA 安全模式校验
+        if self.AAS_SECURITY_MODE == "None":
+            raise RuntimeError(
+                "生产环境 AAS_SECURITY_MODE 不得为 None，必须使用 Sign 或 SignAndEncrypt。"
+            )
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
 
 settings = Settings()
 
-# 启动时执行安全校验（测试环境跳过）
-if os.environ.get("CLPM_ENV") != "test" and not os.environ.get("PYTEST_CURRENT_TEST"):
-    settings.validate_security()
+# 启动时执行安全校验（仅生产环境）
+settings.validate_security()
 

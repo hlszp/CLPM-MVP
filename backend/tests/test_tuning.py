@@ -189,12 +189,13 @@ class TestPIDTuning:
     """PID 整定算法测试。"""
 
     def test_imc_tuning(self):
-        """IMC 整定公式验证。"""
+        """IMC 整定公式验证（Morari & Zafiriou Padé-based IMC）。"""
         K, tau, theta = 1.0, 30.0, 5.0
         pid = tune_imc(K, tau, theta, lambda_ratio=1.0)
 
         lam = 5.0
-        expected_kp = (tau + theta / 2.0) / (K * lam)
+        # 正确公式：Kp = (τ + θ/2) / (K · (λ + θ/2))
+        expected_kp = (tau + theta / 2.0) / (K * (lam + theta / 2.0))
         expected_ti = tau + theta / 2.0
         expected_td = (tau * theta) / (2.0 * (tau + theta / 2.0))
 
@@ -257,14 +258,14 @@ class TestPIDTuning:
         assert abs(pid.td - expected_td) < 0.001
 
     def test_simc_tuning(self):
-        """SIMC PID 整定。"""
+        """SIMC PID 整定（Skogestad 2001 — FOPDT 使用 PI，Td=0）。"""
         K, tau, theta = 1.0, 30.0, 5.0
         pid = tune_simc(K, tau, theta, tau_c_ratio=1.0)
 
         tau_c = 5.0
         expected_kc = (1.0 / K) * tau / (theta + tau_c)
         expected_ti = tau
-        expected_td = theta
+        expected_td = 0.0  # FOPDT 时 SIMC 使用 PI 控制，Td=0
 
         assert abs(pid.kp - expected_kc) < 0.001
         assert abs(pid.ti - expected_ti) < 0.001

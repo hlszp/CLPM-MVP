@@ -8,6 +8,7 @@ user-token tracking.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
 from app.schemas.auth import AuthTokens
 
@@ -179,15 +181,38 @@ async def authenticate(
 
     if user is None:
         await _record_login_fail(username)
+        # 登录失败审计日志（S1-B8）
+        db.add(SysAuditLog(
+            id=str(uuid4()),
+            operator=username,
+            operation_type="LOGIN_FAILED",
+            target_type="User",
+            target_id=None,
+            after_value="reason=user_not_found",
+            operated_at=datetime.now(UTC).replace(tzinfo=None),
+        ))
+        await db.commit()
+        # 统一错误信息，防止用户名枚举攻击（S1-B6）
         raise BizError(
-            code="ERR_USER_NOT_FOUND",
-            message="用户不存在",
-            status_code=404,
+            code="ERR_INVALID_CREDENTIALS",
+            message="用户名或密码错误",
+            status_code=400,
         )
 
     # Verify password.
     if not verify_password(password, user.password_hash):
         await _record_login_fail(username)
+        # 登录失败审计日志（S1-B8）
+        db.add(SysAuditLog(
+            id=str(uuid4()),
+            operator=username,
+            operation_type="LOGIN_FAILED",
+            target_type="User",
+            target_id=str(user.id),
+            after_value="reason=wrong_password",
+            operated_at=datetime.now(UTC).replace(tzinfo=None),
+        ))
+        await db.commit()
         raise BizError(
             code="ERR_INVALID_CREDENTIALS",
             message="用户名或密码错误",
@@ -214,6 +239,16 @@ async def authenticate(
         .where(SysUser.id == str(user.id))
         .values(last_login_at=datetime.now(UTC).replace(tzinfo=None))
     )
+    # 登录成功审计日志（S1-B8）
+    db.add(SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="LOGIN",
+        target_type="User",
+        target_id=str(user.id),
+        after_value=f"role={user.role}",
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    ))
     await db.commit()
 
     return user, tokens
@@ -251,7 +286,7 @@ async def refresh_tokens(refresh_token_str: str) -> AuthTokens:
     try:
         payload = decode_token(refresh_token_str)
     except JWTError as exc:
-        # jose raises ExpiredSignatureError (subclass of JWTError) for expired.
+        # pyjwt raises ExpiredSignatureError (subclass of PyJWTError) for expired.
         err_code = "ERR_TOKEN_EXPIRED" if "expired" in str(exc).lower() else "ERR_TOKEN_INVALID"
         msg = (
             "Refresh Token 已过期，请重新登录" if err_code == "ERR_TOKEN_EXPIRED" else "Token 无效"

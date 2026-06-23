@@ -10,10 +10,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, oauth2_scheme, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.auth import (
@@ -94,10 +94,11 @@ async def refresh(body: RefreshRequest) -> dict:
 
 
 @router.post("/logout")
-async def logout_endpoint(request: Request) -> dict:
-    """Logout — blacklist the current access token."""
-    auth_header = request.headers.get("Authorization", "")
-    token = auth_header.removeprefix("Bearer ").strip() if auth_header else ""
+async def logout_endpoint(
+    token: str | None = Depends(oauth2_scheme),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """Logout — blacklist the current access token (requires authentication)."""
     if token:
         await logout(token)
     return success(data=None)

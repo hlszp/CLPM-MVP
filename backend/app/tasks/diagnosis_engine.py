@@ -24,7 +24,7 @@ from uuid import uuid4
 
 import numpy as np
 from celery import Task
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult
 from app.models.loop import LoopLedger, LoopTagMapping
@@ -326,8 +326,11 @@ async def _diagnose_loop(
     sp_values = np.array([d["sp"] for d in aligned if d.get("sp") is not None], dtype=float)
     op_values = np.array([d["op"] for d in aligned if d.get("op") is not None], dtype=float)
 
+    # 计算采样间隔（秒），用于 FFT 频率换算
+    sample_interval = _compute_sample_interval(aligned)
+
     # 1. FFT 频域分析（振荡检测）
-    osc_result = _detect_oscillation_fft(pv_values)
+    osc_result = _detect_oscillation_fft(pv_values, sample_interval)
 
     # 2. PV-OP 散点拟合（阀门粘滞检测）
     stiction_result = _detect_valve_stiction(pv_values, op_values)
@@ -336,7 +339,7 @@ async def _diagnose_loop(
     pid_result = _analyze_pid_params(pv_values, sp_values)
 
     # 4. 外扰频繁检测
-    disturbance_result = _detect_external_disturbance(pv_values)
+    disturbance_result = _detect_external_disturbance(pv_values, sample_interval)
 
     # 5. PV 质量码统计
     quality_result = _analyze_quality(pv_data)
@@ -496,8 +499,17 @@ async def _diagnose_loop(
         [(r["label"], r["confidence"]) for r in algorithm_results]
     )
 
+    # 幂等性（S1-C3）：删除该回路在当前时间窗内的旧诊断记录，避免重复写入
+    await db.execute(
+        delete(DiagnosisResult).where(
+            DiagnosisResult.loop_id == loop_id,
+            DiagnosisResult.diagnosed_at >= ts_start,
+            DiagnosisResult.diagnosed_at <= ts_end + timedelta(hours=1),
+        )
+    )
+
     # 写入诊断结果（每个标签一条记录）
-    diagnosed_at = datetime.utcnow()
+    diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
     for result in algorithm_results:
         confidence_decimal = Decimal(str(round(result["confidence"] * 100, 2)))
         evidence_chain = {
@@ -553,8 +565,14 @@ def _empty_stiction_result() -> dict[str, Any]:
     }
 
 
-def _detect_oscillation_fft(pv_values: np.ndarray) -> dict[str, Any]:
+def _detect_oscillation_fft(
+    pv_values: np.ndarray, sample_interval: float = 1.0
+) -> dict[str, Any]:
     """FFT 频域分析检测振荡。
+
+    Args:
+        pv_values: PV 数据数组
+        sample_interval: 采样间隔（秒），用于频率换算
 
     Returns:
         {detected, confidence, amplitude, frequency, index}
@@ -563,6 +581,8 @@ def _detect_oscillation_fft(pv_values: np.ndarray) -> dict[str, Any]:
         return _empty_osc_result()
 
     try:
+        N = len(pv_values)
+        fs = 1.0 / sample_interval if sample_interval > 0 else 1.0  # 采样频率 (Hz)
         # 去均值
         pv_centered = pv_values - np.mean(pv_values)
         # FFT
@@ -572,8 +592,9 @@ def _detect_oscillation_fft(pv_values: np.ndarray) -> dict[str, Any]:
         if len(fft_magnitude) <= 1:
             return _empty_osc_result()
         peak_idx = int(np.argmax(fft_magnitude[1:])) + 1
-        amplitude = float(fft_magnitude[peak_idx] / len(pv_values))
-        frequency = float(peak_idx / len(pv_values))
+        amplitude = float(fft_magnitude[peak_idx] / N)
+        # 频率 = peak_idx * fs / N（标准 FFT 频率换算公式）
+        frequency = float(peak_idx * fs / N)
 
         # 振荡指数：主频能量占比
         total_energy = float(np.sum(fft_magnitude[1:] ** 2))
@@ -665,6 +686,9 @@ def _detect_valve_stiction(pv_values: np.ndarray, op_values: np.ndarray) -> dict
 def _analyze_pid_params(pv_values: np.ndarray, sp_values: np.ndarray) -> dict[str, Any]:
     """PID 增益分析（参数过激/过保守）。
 
+    过冲检测：仅在 SP 阶跃后计算真正过冲（PV 超过新 SP 的幅度），
+    稳态数据不误报过冲。
+
     Returns:
         {overaggressive, overconservative, confidence, overshoot, settling_time,
          response_time, steady_state_error}
@@ -686,9 +710,40 @@ def _analyze_pid_params(pv_values: np.ndarray, sp_values: np.ndarray) -> dict[st
         sp = sp_values[:min_len]
         error = pv - sp
 
-        # 过冲：PV 超过 SP 的最大幅度
+        # SP 量程
         sp_range = float(np.max(sp) - np.min(sp)) or 1.0
-        overshoot = float(np.max(np.abs(error)) / sp_range)
+
+        # 检测 SP 阶跃点（SP 变化超过 SP 量程的 5%）
+        sp_diff = np.abs(np.diff(sp))
+        step_threshold = sp_range * 0.05
+        step_indices = np.where(sp_diff > step_threshold)[0]
+
+        # 计算过冲：仅在 SP 阶跃后计算
+        overshoot = 0.0
+        if len(step_indices) > 0:
+            for step_idx in step_indices:
+                step_size = sp[step_idx + 1] - sp[step_idx]
+                if abs(step_size) < 1e-9:
+                    continue
+                new_sp = sp[step_idx + 1]
+                # 在阶跃后的窗口内寻找 PV 峰值
+                window_end = min(step_idx + 1 + min_len // 4, min_len)
+                pv_window = pv[step_idx + 1 : window_end]
+                if len(pv_window) == 0:
+                    continue
+                if step_size > 0:
+                    # 上升阶跃：过冲 = (PV_peak - new_SP) / step_size
+                    pv_peak = float(np.max(pv_window))
+                    if pv_peak > new_sp:
+                        overshoot = max(overshoot, (pv_peak - new_sp) / step_size)
+                else:
+                    # 下降阶跃：过冲 = (new_SP - PV_trough) / |step_size|
+                    pv_trough = float(np.min(pv_window))
+                    if pv_trough < new_sp:
+                        overshoot = max(overshoot, (new_sp - pv_trough) / abs(step_size))
+        else:
+            # 无 SP 阶跃：稳态数据，无过冲
+            overshoot = 0.0
 
         # 稳定时间：误差收敛到 5% SP 范围内的时间
         threshold = sp_range * 0.05
@@ -699,23 +754,27 @@ def _analyze_pid_params(pv_values: np.ndarray, sp_values: np.ndarray) -> dict[st
                 break
         settling_time = float(settling_idx) / max(min_len, 1)
 
-        # 响应时间：PV 首次到达 90% SP 的时间
-        target = sp[0] + 0.9 * (sp[-1] - sp[0]) if len(sp) > 1 else sp[0]
-        response_idx = 0
-        for i in range(min_len):
-            if abs(pv[i] - target) < threshold:
-                response_idx = i
-                break
-        response_time = float(response_idx) / max(min_len, 1)
+        # 响应时间：PV 首次到达 90% SP 的比例时间（仅在 SP 有变化时有意义）
+        if len(step_indices) > 0:
+            step_idx = step_indices[0]
+            target = sp[step_idx] + 0.9 * (sp[step_idx + 1] - sp[step_idx])
+            response_idx = step_idx
+            for i in range(step_idx + 1, min_len):
+                if abs(pv[i] - target) < threshold:
+                    response_idx = i
+                    break
+            response_time = float(response_idx - step_idx) / max(min_len, 1)
+        else:
+            response_time = 0.0
 
         # 稳态误差：最后 10% 数据的平均误差
         tail_len = max(1, min_len // 10)
         steady_state_error = float(np.mean(np.abs(error[-tail_len:])))
 
         # 过激判定：过冲 > 20%
-        overaggressive = overshoot > 0.2
+        overaggressive = bool(overshoot > 0.2)
         # 过保守判定：响应时间 > 0.5 且稳态误差 > 5% SP 范围
-        overconservative = response_time > 0.5 and steady_state_error > sp_range * 0.05
+        overconservative = bool(response_time > 0.5 and steady_state_error > sp_range * 0.05)
 
         confidence = 0.0
         if overaggressive:
@@ -745,8 +804,14 @@ def _analyze_pid_params(pv_values: np.ndarray, sp_values: np.ndarray) -> dict[st
         }
 
 
-def _detect_external_disturbance(pv_values: np.ndarray) -> dict[str, Any]:
+def _detect_external_disturbance(
+    pv_values: np.ndarray, sample_interval: float = 1.0
+) -> dict[str, Any]:
     """频谱分析检测外扰频繁。
+
+    Args:
+        pv_values: PV 数据数组
+        sample_interval: 采样间隔（秒），用于频率换算
 
     Returns:
         {detected, confidence, frequency, amplitude}
@@ -755,6 +820,8 @@ def _detect_external_disturbance(pv_values: np.ndarray) -> dict[str, Any]:
         return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
 
     try:
+        N = len(pv_values)
+        fs = 1.0 / sample_interval if sample_interval > 0 else 1.0  # 采样频率 (Hz)
         pv_centered = pv_values - np.mean(pv_values)
         fft_vals = np.fft.rfft(pv_centered)
         fft_magnitude = np.abs(fft_vals)
@@ -772,8 +839,9 @@ def _detect_external_disturbance(pv_values: np.ndarray) -> dict[str, Any]:
 
         high_freq_ratio = high_freq_energy / total_energy
         peak_idx = int(np.argmax(fft_magnitude[3:])) + 3
-        amplitude = float(fft_magnitude[peak_idx] / len(pv_values))
-        frequency = float(peak_idx / len(pv_values))
+        amplitude = float(fft_magnitude[peak_idx] / N)
+        # 频率 = peak_idx * fs / N（标准 FFT 频率换算公式）
+        frequency = float(peak_idx * fs / N)
 
         # 外扰判定：高频能量占比 > 0.5
         detected = high_freq_ratio > 0.5
@@ -874,7 +942,11 @@ def _analyze_saturation(op_values: np.ndarray) -> dict[str, Any]:
 
 
 def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
-    """Dempster-Shafer 证据理论融合多算法置信度。
+    """多算法置信度融合（noisy-OR 加权模型）。
+
+    替代原 D-S 证据理论的简化实现。原实现固定 target_label 导致多标签场景
+    融合结果不合理，改为 noisy-OR 模型：假设各算法独立，融合置信度为
+    P(A|e1,e2,...) = 1 - ∏(1 - P(A|ei))
 
     Args:
         evidence: [(label, confidence), ...] 每个算法的标签和置信度
@@ -887,51 +959,14 @@ def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
     if len(evidence) == 1:
         return evidence[0][1]
 
-    # 简化实现：使用 Dempster 组合规则
-    # 每个证据的 mass 函数：m(label) = confidence, m(Θ) = 1 - confidence
-    # 组合规则：m_combined(A) = Σ m_i(A) * m_j(A) / (1 - K)
-    # 其中 K = Σ m_i(A) * m_j(B), A ∩ B = ∅
+    # noisy-OR: 融合独立证据
+    # P(异常|所有证据) = 1 - ∏(1 - conf_i)
+    prob_not = 1.0
+    for _, conf in evidence:
+        prob_not *= max(0.0, 1.0 - conf)
+    fused = 1.0 - prob_not
 
-    # 取最高置信度的标签作为目标
-    target_label = max(evidence, key=lambda x: x[1])[0]
-    target_mass = 0.0
-    other_mass = 0.0
-    uncertainty = 1.0
-
-    for label, conf in evidence:
-        if label == target_label:
-            # 组合到目标
-            new_target = target_mass * conf + target_mass * (1 - conf) + uncertainty * conf
-            new_other = other_mass * (1 - conf)
-            new_uncertainty = uncertainty * (1 - conf)
-            # 归一化
-            k = other_mass * conf  # 冲突
-            norm = 1 - k
-            if norm > 0:
-                target_mass = new_target / norm
-                other_mass = new_other / norm
-                uncertainty = new_uncertainty / norm
-            else:
-                target_mass = new_target
-                other_mass = new_other
-                uncertainty = new_uncertainty
-        else:
-            # 组合到其他
-            new_target = target_mass * (1 - conf)
-            new_other = other_mass * conf + other_mass * (1 - conf) + uncertainty * conf
-            new_uncertainty = uncertainty * (1 - conf)
-            k = target_mass * conf  # 冲突
-            norm = 1 - k
-            if norm > 0:
-                target_mass = new_target / norm
-                other_mass = new_other / norm
-                uncertainty = new_uncertainty / norm
-            else:
-                target_mass = new_target
-                other_mass = new_other
-                uncertainty = new_uncertainty
-
-    return max(0.0, min(1.0, target_mass))
+    return max(0.0, min(1.0, fused))
 
 
 # ---------------------------------------------------------------------------
@@ -952,6 +987,45 @@ def _get_tag_name(
     if not tag:
         return None
     return tag.tag_name
+
+
+def _compute_sample_interval(aligned: list[dict[str, Any]]) -> float:
+    """从对齐后的时序数据计算平均采样间隔（秒）。
+
+    Args:
+        aligned: 对齐后的数据列表，每个元素含 "ts" 字段
+
+    Returns:
+        平均采样间隔（秒），默认 1.0
+    """
+    ts_values: list[float] = []
+    for d in aligned:
+        ts = d.get("ts")
+        if ts is None:
+            continue
+        if isinstance(ts, (int, float)):
+            ts_values.append(float(ts))
+        elif hasattr(ts, "timestamp"):
+            # datetime 对象
+            ts_values.append(float(ts.timestamp()))
+        else:
+            # 尝试解析 ISO 格式字符串
+            try:
+                from datetime import datetime
+
+                dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                ts_values.append(float(dt.timestamp()))
+            except (ValueError, TypeError):
+                continue
+
+    if len(ts_values) < 2:
+        return 1.0
+
+    diffs = [ts_values[i + 1] - ts_values[i] for i in range(len(ts_values) - 1)]
+    diffs = [d for d in diffs if d > 0]
+    if not diffs:
+        return 1.0
+    return sum(diffs) / len(diffs)
 
 
 def _align_timeseries(

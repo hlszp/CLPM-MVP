@@ -456,13 +456,14 @@ def identify_ipdt(
 def tune_imc(
     K: float, tau: float, theta: float, lambda_ratio: float = 1.0
 ) -> PIDParams:
-    """IMC 整定算法（§6.3）。
+    """IMC 整定算法（§6.3）— 基于 Morari & Zafiriou 内模控制原理。
 
-    Kp = (tau + theta/2) / (K * lambda)
-    Ti = tau + theta/2
-    Td = (tau * theta) / (2 * (tau + theta/2))
+    使用一阶 Padé 近似迟延，FOPDT 模型 G(s)=K·exp(-θs)/(τs+1) 的 IMC-PID 整定：
+    Kp = (τ + θ/2) / (K · (λ + θ/2))
+    Ti = τ + θ/2
+    Td = (τ · θ) / (2·(τ + θ/2))
 
-    lambda = lambda_ratio * theta（默认 lambda_ratio=1.0）
+    λ = lambda_ratio × θ（默认 lambda_ratio=1.0）
     """
     lam = lambda_ratio * theta if theta > 0 else 0.1
     if lam <= 0:
@@ -470,7 +471,11 @@ def tune_imc(
     if K == 0:
         K = 1.0
 
-    kp = (tau + theta / 2.0) / (K * lam)
+    # Padé 近似后的 IMC 公式：分母必须含 θ/2 项
+    denom = lam + theta / 2.0
+    if denom <= 0:
+        denom = 0.1
+    kp = (tau + theta / 2.0) / (K * denom)
     ti = tau + theta / 2.0
     td = (tau * theta) / (2.0 * (tau + theta / 2.0)) if (tau + theta / 2.0) > 0 else 0.0
 
@@ -581,14 +586,14 @@ def tune_cohen_coon(
 def tune_simc(
     K: float, tau: float, theta: float, tau_c_ratio: float = 1.0
 ) -> PIDParams:
-    """SIMC 整定算法（§6.7）— Skogestad 简化 IMC。
+    """SIMC 整定算法（§6.7）— Skogestad 2001 简化 IMC。
 
-    PID:
-    Kc = (1/K) * tau / (theta + tau_c)
-    Ti = tau
-    Td = theta
+    FOPDT 模型 G(s)=K·exp(-θs)/(τs+1) 的 SIMC-PI 整定规则：
+    Kc = (1/K) · τ / (θ + τc)
+    Ti = τ
+    Td = 0  （FOPDT 使用 PI 控制，无微分项）
 
-    tau_c = tau_c_ratio * theta（默认 tau_c_ratio=1.0）
+    τc = tau_c_ratio × θ（默认 tau_c_ratio=1.0）
     """
     if tau <= 0:
         tau = 1.0
@@ -603,7 +608,7 @@ def tune_simc(
 
     kc = (1.0 / K) * tau / (theta + tau_c)
     ti = tau
-    td = theta
+    td = 0.0  # FOPDT 时 SIMC 使用 PI 控制，Td=0（Skogestad 2001）
 
     return PIDParams(kp=round(kc, 6), ti=round(ti, 4), td=round(td, 4))
 

@@ -160,7 +160,7 @@ class TestCreateUser:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "username": "newuser",
-                    "password": "Pass1234",
+                    "password": "Pass@1234",
                     "displayName": "新用户",
                     "email": "newuser@clpm.local",
                     "role": "IC_ENGINEER",
@@ -184,7 +184,7 @@ class TestCreateUser:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "username": "existing",
-                    "password": "Pass1234",
+                    "password": "Pass@1234",
                     "displayName": "重复用户",
                     "role": "IC_ENGINEER",
                 },
@@ -200,7 +200,7 @@ class TestCreateUser:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "username": "newuser",
-                    "password": "Pass1234",
+                    "password": "Pass@1234",
                     "displayName": "新用户",
                     "role": "IC_ENGINEER",
                 },
@@ -208,7 +208,7 @@ class TestCreateUser:
         assert resp.status_code == 403
 
     def test_create_user_weak_password(self, client, mock_db, fake_redis) -> None:
-        """Password without letters+digits is rejected (422)."""
+        """Password without required complexity is rejected (422)."""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/users",
@@ -230,7 +230,7 @@ class TestCreateUser:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "username": "newuser",
-                    "password": "Pass1234",
+                    "password": "Pass@1234",
                     "displayName": "新用户",
                     "role": "INVALID_ROLE",
                 },
@@ -344,7 +344,7 @@ class TestResetPassword:
             resp = client.put(
                 f"/api/v1/users/{user.id}/reset-password",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"newPassword": "NewPass2026"},
+                json={"newPassword": "NewPass@2026"},
             )
         assert resp.status_code == 200
         body = resp.json()
@@ -358,7 +358,7 @@ class TestResetPassword:
             resp = client.put(
                 "/api/v1/users/nonexistent/reset-password",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"newPassword": "NewPass2026"},
+                json={"newPassword": "NewPass@2026"},
             )
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_USER_NOT_FOUND"
@@ -369,7 +369,7 @@ class TestResetPassword:
             resp = client.put(
                 "/api/v1/users/some-id/reset-password",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"newPassword": "NewPass2026"},
+                json={"newPassword": "NewPass@2026"},
             )
         assert resp.status_code == 403
 

@@ -10,10 +10,16 @@ DDL 对齐（db/tdengine/01_supertable.sql v3.0）：
 - 列: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality（非 val/quality）
 - TAGS: loop_id, unit_id（非 tag_name）
 - 子表命名: d_loop_<位号小写连字符转下划线>
+
+连接池（S1-C1）：
+- 复用 WebSocket 连接，避免频繁建连
+- 最大 5 个并发连接，LIFO 策略
+- 连接异常时自动丢弃
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime
@@ -47,6 +53,9 @@ _QUALITY_COLUMN_MAP: dict[str, str | None] = {
     "PID_I": None,
     "PID_D": None,
 }
+
+# 连接池最大连接数
+_MAX_POOL_SIZE = 5
 
 
 def _validate_tag_name(tag_name: str) -> str:
@@ -88,6 +97,76 @@ def _parse_tag_to_table_column(tag_name: str) -> tuple[str, str, str | None]:
     return subtable, column, quality_col
 
 
+# ---------------------------------------------------------------------------
+# 连接池（S1-C1）
+# ---------------------------------------------------------------------------
+
+
+class _TDengineConnectionPool:
+    """TDengine WebSocket 连接池。
+
+    - LIFO 策略：优先复用最近归还的连接
+    - 连接异常时丢弃，不归还到池中
+    - 池为空时创建新连接
+    """
+
+    def __init__(self, max_size: int = _MAX_POOL_SIZE) -> None:
+        self._max_size = max_size
+        self._pool: asyncio.LifoQueue = asyncio.LifoQueue(maxsize=max_size)
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> Any:
+        """从池中获取连接，池为空时创建新连接。"""
+        try:
+            conn = self._pool.get_nowait()
+            return conn
+        except asyncio.QueueEmpty:
+            return await self._create_connection()
+
+    async def _create_connection(self) -> Any:
+        """创建新的 TDengine WebSocket 连接。"""
+        import taosws
+
+        dsn = f"ws://{settings.TDENGINE_HOST}:{settings.TDENGINE_PORT + 1000}/rest/ws"
+        conn = await taosws.connect(
+            url=dsn,
+            user=settings.TDENGINE_USER,
+            password=settings.TDENGINE_PASSWORD,
+            database=settings.TDENGINE_DB,
+        )
+        return conn
+
+    async def release(self, conn: Any, healthy: bool = True) -> None:
+        """归还连接到池中。不健康的连接直接丢弃。"""
+        if not healthy:
+            try:
+                await conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        try:
+            self._pool.put_nowait(conn)
+        except asyncio.QueueFull:
+            # 池已满，关闭多余连接
+            try:
+                await conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def close_all(self) -> None:
+        """关闭池中所有连接（应用关闭时调用）。"""
+        while not self._pool.empty():
+            try:
+                conn = self._pool.get_nowait()
+                await conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+# 全局连接池实例
+_pool = _TDengineConnectionPool()
+
+
 async def query_trend_data(
     tag_name: str,
     start_time: str,
@@ -116,50 +195,55 @@ async def query_trend_data(
 
     try:
         # 延迟导入，避免开发环境未安装/无法连接 TDengine 时报错
-        import taosws
+        import taosws  # noqa: F401
     except ImportError:
         logger.warning("taosws 未安装，跳过 TDengine 查询")
         return []
 
+    # 从连接池获取连接
+    conn = None
+    healthy = True
     try:
-        dsn = f"ws://{settings.TDENGINE_HOST}:{settings.TDENGINE_PORT + 1000}/rest/ws"
-        # taosws 使用 WebSocket 端口（默认 6041）
-        async with await taosws.connect(
-            url=dsn,
-            user=settings.TDENGINE_USER,
-            password=settings.TDENGINE_PASSWORD,
-            database=settings.TDENGINE_DB,
-        ) as conn:
-            # 构建查询 SQL：从子表查询指定列
-            # 子表名和列名通过白名单映射生成，不含用户输入，安全拼接
-            if quality_column:
-                sql = (
-                    f"SELECT ts, {data_column}, {quality_column} "
-                    f"FROM {settings.TDENGINE_DB}.{subtable} "
-                    f"WHERE ts >= '{safe_start}' AND ts <= '{safe_end}' "
-                    f"ORDER BY ts ASC"
-                )
-            else:
-                sql = (
-                    f"SELECT ts, {data_column} "
-                    f"FROM {settings.TDENGINE_DB}.{subtable} "
-                    f"WHERE ts >= '{safe_start}' AND ts <= '{safe_end}' "
-                    f"ORDER BY ts ASC"
-                )
-            result = await conn.query(sql)
-            rows: list[dict[str, Any]] = []
-            for row in result:
-                rows.append(
-                    {
-                        "ts": str(row[0]),
-                        "value": float(row[1]) if row[1] is not None else None,
-                        "quality": str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD",
-                    }
-                )
-            return rows
+        conn = await _pool.acquire()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("TDengine 连接获取失败: %s", exc)
+        return []
+
+    try:
+        # 构建查询 SQL：从子表查询指定列
+        # 子表名和列名通过白名单映射生成，不含用户输入，安全拼接
+        if quality_column:
+            sql = (
+                f"SELECT ts, {data_column}, {quality_column} "
+                f"FROM {settings.TDENGINE_DB}.{subtable} "
+                f"WHERE ts >= '{safe_start}' AND ts <= '{safe_end}' "
+                f"ORDER BY ts ASC"
+            )
+        else:
+            sql = (
+                f"SELECT ts, {data_column} "
+                f"FROM {settings.TDENGINE_DB}.{subtable} "
+                f"WHERE ts >= '{safe_start}' AND ts <= '{safe_end}' "
+                f"ORDER BY ts ASC"
+            )
+        result = await conn.query(sql)
+        rows: list[dict[str, Any]] = []
+        for row in result:
+            rows.append(
+                {
+                    "ts": str(row[0]),
+                    "value": float(row[1]) if row[1] is not None else None,
+                    "quality": str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD",
+                }
+            )
+        return rows
     except Exception as exc:  # noqa: BLE001
         logger.warning("TDengine 查询失败（返回空数组）: %s", exc)
+        healthy = False
         return []
+    finally:
+        if conn is not None:
+            await _pool.release(conn, healthy=healthy)
 
 
 __all__ = ["query_trend_data"]

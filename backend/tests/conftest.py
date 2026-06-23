@@ -21,7 +21,7 @@ from app.core.security import hash_password
 # In-memory test users
 # ---------------------------------------------------------------------------
 
-TEST_PASSWORD = "admin123"
+TEST_PASSWORD = "Admin@123"
 TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
 
 

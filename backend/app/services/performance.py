@@ -94,7 +94,7 @@ async def _write_audit(
         target_id=target_id,
         before_value=before_value,
         after_value=after_value,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
 
@@ -180,7 +180,7 @@ async def update_metric_config(
         config.is_enabled = is_enabled
 
     config.updated_by = operator
-    config.updated_at = datetime.utcnow()
+    config.updated_at = datetime.now(UTC).replace(tzinfo=None)
     config.version = (config.version or 1) + 1
 
     # 权重总和校验：仅校验启用状态的 6 大 KPI
@@ -260,7 +260,7 @@ async def update_engine_rule(
         rule.is_enabled = is_enabled
 
     rule.updated_by = operator
-    rule.updated_at = datetime.utcnow()
+    rule.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
     after = _engine_rule_to_dict(rule)
     after_json = json.dumps(after, ensure_ascii=False, default=str)

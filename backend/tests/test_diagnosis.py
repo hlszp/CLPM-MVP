@@ -886,16 +886,17 @@ class TestDiagnosisEngine:
         assert result["overconservative"] is False
 
     def test_analyze_pid_params_overaggressive(self) -> None:
-        """测试 PID 增益分析：参数过激（有过冲）。"""
+        """测试 PID 增益分析：参数过激（SP 阶跃后有过冲）。"""
         import numpy as np
 
         from app.tasks.diagnosis_engine import _analyze_pid_params
 
-        # PV 有明显过冲
-        sp = np.array([50.0] * 100, dtype=float)
+        # SP 从 0 阶跃到 50，PV 过冲到 70 后稳定到 50（过冲 40%）
+        sp = np.zeros(100)
+        sp[10:] = 50.0  # 第 10 个点 SP 阶跃到 50
         pv = np.zeros(100)
-        pv[0:30] = 70.0  # 过冲 40%
-        pv[30:] = 50.0
+        pv[10:40] = 70.0  # 阶跃后过冲到 70（过冲 = (70-50)/50 = 0.4）
+        pv[40:] = 50.0  # 稳定到 50
         result = _analyze_pid_params(pv, sp)
         assert result["overaggressive"] is True
 

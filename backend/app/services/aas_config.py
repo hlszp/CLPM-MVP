@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -45,13 +45,13 @@ async def _set_config_value(
             value=value,
             description=description,
             updated_by=operator,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(UTC).replace(tzinfo=None),
         )
         db.add(cfg)
     else:
         cfg.value = value
         cfg.updated_by = operator
-        cfg.updated_at = datetime.utcnow()
+        cfg.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
 
 async def _write_audit(
@@ -72,7 +72,7 @@ async def _write_audit(
         target_id=target_id,
         before_value=before_value,
         after_value=after_value,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
 
