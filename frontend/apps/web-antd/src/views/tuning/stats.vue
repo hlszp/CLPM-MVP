@@ -178,7 +178,7 @@ function formatTime(t: string): string {
 /** 拟合度格式化 */
 function formatFitting(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
-  return `${val.toFixed(2)}%`;
+  return `${val?.toFixed(2) ?? '0.00'}%`;
 }
 
 /** 已应用任务数 */

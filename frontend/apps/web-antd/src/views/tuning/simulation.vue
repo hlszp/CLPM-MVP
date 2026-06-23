@@ -173,10 +173,10 @@ function formatMetric(
   switch (key) {
     case 'riseTime':
     case 'settlingTime': {
-      return `${val.toFixed(1)} 秒`;
+      return `${val?.toFixed(1) ?? '0.0'} 秒`;
     }
     case 'overshoot': {
-      return `${val.toFixed(1)}%`;
+      return `${val?.toFixed(1) ?? '0.0'}%`;
     }
     case 'itae': {
       return val.toExponential(3);
@@ -192,7 +192,7 @@ function formatImprovement(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
   const pct = val * 100;
   const sign = pct >= 0 ? '+' : '';
-  return `${sign}${pct.toFixed(1)}%`;
+  return `${sign}${pct?.toFixed(1) ?? '0.0'}%`;
 }
 
 /** 判断是否改善（减小为改善） */

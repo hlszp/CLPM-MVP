@@ -241,7 +241,7 @@ onUnmounted(() => {
               class="text-2xl font-bold"
               :style="{ color: statusColorMap[card.status] }"
             >
-              {{ card.value.toFixed(1) }}
+              {{ card.value?.toFixed(1) ?? '--' }}
             </span>
             <span class="text-xs text-gray-400">{{ card.unit }}</span>
           </div>

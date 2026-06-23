@@ -196,8 +196,8 @@ const stats = computed(() => {
   return {
     total,
     badCount,
-    avgScore: Number(avg.toFixed(1)),
-    minScore: Number(min.toFixed(1)),
+    avgScore: Number(avg?.toFixed(1) ?? 0),
+    minScore: Number(min?.toFixed(1) ?? 0),
   };
 });
 

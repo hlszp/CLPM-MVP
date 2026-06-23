@@ -138,7 +138,7 @@ async def _aggregate_dashboard(
     d. 待处理异常（_build_pending_alerts）
     e. 低效回路（_build_inefficient_loops，SPONSOR 跳过）
     """
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     delta = GRANULARITY_DELTA.get(granularity, timedelta(hours=24))
     current_start = now - delta
     previous_start = current_start - delta

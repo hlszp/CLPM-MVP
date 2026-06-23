@@ -125,7 +125,7 @@ const selectedLoop = computed(() =>
 async function loadLoopList() {
   loopLoading.value = true;
   try {
-    const data = await getLoopListApi({ page: 1, pageSize: 200 });
+    const data = await getLoopListApi({ page: 1, pageSize: 100 });
     loopList.value = data.items;
     // 如果 URL 带了 loopId 或默认选第一个
     if (!selectedLoopId.value && data.items.length > 0) {

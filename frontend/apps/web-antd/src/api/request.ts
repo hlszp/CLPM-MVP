@@ -49,6 +49,9 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   /**
    * 刷新 token 逻辑（对齐 IDS v3.2 §5.2）
    * 使用存储的 refreshToken 调用 /auth/refresh 获取新的 accessToken
+   *
+   * 标记 __isRetryRequest: true 防止 /auth/refresh 自身返回 401 时
+   * 进入 refreshToken 队列导致死锁（请求挂起永不返回）。
    */
   async function doRefreshToken() {
     const accessStore = useAccessStore();
@@ -56,7 +59,9 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     if (!refreshToken) {
       throw new Error('No refresh token available');
     }
-    const resp = await refreshTokenApi(refreshToken);
+    const resp = await refreshTokenApi(refreshToken, {
+      __isRetryRequest: true,
+    });
     const newToken = resp.accessToken;
     accessStore.setAccessToken(newToken);
     return newToken;

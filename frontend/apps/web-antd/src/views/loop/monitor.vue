@@ -257,7 +257,7 @@ onUnmounted(() => {
           </template>
           <template v-else-if="column.key === 'score'">
             <span v-if="record.score != null" class="font-medium">
-              {{ record.score.toFixed(1) }}
+              {{ record.score?.toFixed(1) ?? '--' }}
             </span>
             <span v-else class="text-gray-400">—</span>
           </template>

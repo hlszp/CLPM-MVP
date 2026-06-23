@@ -306,7 +306,7 @@ async def get_board(
         logger.warning("读取看板缓存失败: %s", exc)
 
     # 计算 time_window 对应的时间范围
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     if time_window == "today":
         start = now - timedelta(hours=24)
     elif time_window == "yesterday":
@@ -393,7 +393,7 @@ async def get_ranking(
         sort_by: 排序字段 score/steady_rate/good_value_rate
         sort_order: asc/desc（默认 asc，分数最低的在前）
     """
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     if time_window == "today":
         start = now - timedelta(hours=24)
     elif time_window == "yesterday":

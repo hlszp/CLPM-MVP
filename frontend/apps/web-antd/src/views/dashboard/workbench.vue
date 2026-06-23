@@ -343,15 +343,15 @@ function renderMiniChart() {
         data: [
           {
             itemStyle: { color: scoreColor(loop.composite_score) },
-            value: Number(loop.composite_score.toFixed(1)),
+            value: Number(loop.composite_score?.toFixed(1) ?? 0),
           },
           {
             itemStyle: { color: '#0D6EFD' },
-            value: Number(loop.key_metric.auto_mode_rate.toFixed(1)),
+            value: Number(loop.key_metric?.auto_mode_rate?.toFixed(1) ?? 0),
           },
           {
             itemStyle: { color: '#198754' },
-            value: Number(loop.key_metric.steady_rate.toFixed(1)),
+            value: Number(loop.key_metric?.steady_rate?.toFixed(1) ?? 0),
           },
         ],
         itemStyle: { borderRadius: [2, 2, 0, 0] },
@@ -504,7 +504,7 @@ onUnmounted(() => {
                 color: scoreColor(overviewData.kpi_cards[cfg.key].value),
               }"
             >
-              {{ overviewData.kpi_cards[cfg.key].value.toFixed(1) }}
+              {{ overviewData.kpi_cards[cfg.key].value?.toFixed(1) ?? '--' }}
             </span>
             <span v-if="overviewData" class="text-xs text-gray-400">
               {{ overviewData.kpi_cards[cfg.key].unit }}

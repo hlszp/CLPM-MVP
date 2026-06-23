@@ -86,11 +86,19 @@ export async function loginApi(data: AuthApi.LoginParams) {
 
 /**
  * 刷新 accessToken（对齐 IDS v3.2 §5.2）
+ *
+ * 支持传递额外 config（如 __isRetryRequest 标记），避免 /auth/refresh
+ * 自身返回 401 时进入 refreshToken 队列导致死锁。
  */
-export async function refreshTokenApi(refreshToken: string) {
-  return requestClient.post<AuthApi.RefreshTokenResult>('/auth/refresh', {
-    refreshToken,
-  });
+export async function refreshTokenApi(
+  refreshToken: string,
+  config?: Record<string, any>,
+) {
+  return requestClient.post<AuthApi.RefreshTokenResult>(
+    '/auth/refresh',
+    { refreshToken },
+    config,
+  );
 }
 
 /**

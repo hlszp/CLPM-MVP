@@ -205,7 +205,7 @@ function statusName(status: DiagnosisApi.ActionStatus): string {
 /** Progress 格式化函数（兼容 number | undefined） */
 function formatPercent(p: number | undefined): string {
   if (p === undefined || p === null || Number.isNaN(p)) return '—';
-  return `${p.toFixed(2)}%`;
+  return `${p?.toFixed(2) ?? '0.00'}%`;
 }
 
 onMounted(() => {

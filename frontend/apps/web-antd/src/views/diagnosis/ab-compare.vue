@@ -87,7 +87,7 @@ const pageTitle = computed(() => {
 /** 加载回路下拉选项 */
 async function loadLoopOptions() {
   try {
-    const data = await getLoopListApi({ page: 1, pageSize: 1000 });
+    const data = await getLoopListApi({ page: 1, pageSize: 100 });
     const list = data.items || [];
     loopOptions.value = list.map((l) => ({
       label: l.tagName,

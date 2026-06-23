@@ -326,7 +326,7 @@ onMounted(() => {
                         monitorDetail.kpiSummary.composite_score < 60,
                     }"
                   >
-                    {{ monitorDetail.kpiSummary.composite_score.toFixed(1) }}
+                    {{ monitorDetail.kpiSummary.composite_score?.toFixed(1) ?? '--' }}
                   </div>
                 </div>
                 <div class="text-right">
@@ -363,7 +363,7 @@ onMounted(() => {
                   <div class="text-xs text-gray-400">{{ item.label }}</div>
                   <div class="mt-1 text-xl font-medium">
                     {{
-                      (monitorDetail.kpiSummary[item.key] as number).toFixed(1)
+                      (monitorDetail.kpiSummary[item.key] as number | null)?.toFixed(1) ?? '--'
                     }}{{ item.unit }}
                   </div>
                   <div class="mt-1 text-xs text-gray-400">{{ item.desc }}</div>
