@@ -66,7 +66,7 @@ async def check_tdengine_freshness(threshold_minutes: int = 30) -> dict[str, Any
         conn = await _pool.acquire()
         # threshold 已校验为整数，db 来自可信配置，安全拼接
         sql = (
-            f"SELECT COUNT(*) FROM {settings.TDENGINE_DB}.tag_data "
+            f"SELECT COUNT(*) FROM {settings.TDENGINE_DB}.st_loop_data "
             f"WHERE ts >= NOW - {threshold}m"
         )
         result = await conn.query(sql)
