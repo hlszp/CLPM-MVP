@@ -1,24 +1,37 @@
 """Plant node endpoints (IDS v3.2 §2.2.1~2.2.4).
 
+路由顺序：固定路径（/export、/import）必须在 {node_id} 之前声明。
+
 - GET    /api/v1/plant-nodes          — List plant node tree
 - POST   /api/v1/plant-nodes          — Create plant node (ADMIN)
+- GET    /api/v1/plant-nodes/export   — 导出工厂层级 Excel
+- POST   /api/v1/plant-nodes/import   — 批量导入工厂层级 Excel
 - PUT    /api/v1/plant-nodes/{nodeId} — Update plant node name (ADMIN)
 - DELETE /api/v1/plant-nodes/{nodeId} — Delete plant node (ADMIN)
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
-from app.schemas.plant_node import PlantNodeCreate, PlantNodeInfo, PlantNodeTree, PlantNodeUpdate
+from app.schemas.plant_node import (
+    PlantNodeCreate,
+    PlantNodeImportResult,
+    PlantNodeInfo,
+    PlantNodeTree,
+    PlantNodeUpdate,
+)
 from app.services.plant_node import (
     create_plant_node,
     delete_plant_node,
+    export_plant_nodes,
+    import_plant_nodes,
     list_plant_tree,
     update_plant_node,
 )
@@ -52,6 +65,51 @@ async def create_plant_node_endpoint(
         operator=user.username,
     )
     return success(data=data, message="创建成功")
+
+
+# ---------------------------------------------------------------------------
+# Plant Node Export / Import (固定路径，必须在 {node_id} 之前)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/export")
+async def export_plant_nodes_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+) -> StreamingResponse:
+    """导出工厂层级为 Excel 文件（.xlsx）。
+
+    列结构（4 列）：节点名称 / 节点类型 / 父节点名称 / 层级路径。
+    """
+    content = await export_plant_nodes(db=db)
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename=plant_nodes_export.xlsx",
+        },
+    )
+
+
+@router.post("/import", response_model=ApiResponse[PlantNodeImportResult])
+async def import_plant_nodes_endpoint(
+    file: UploadFile = File(..., description="Excel 文件 (.xlsx)"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """批量导入工厂层级（Excel .xlsx）。
+
+    逐行处理：节点名称 + 父节点已存在则更新，否则新建。
+    返回 {total, inserted, updated, failed, errors[]}。
+    """
+    file_bytes = await file.read()
+    data = await import_plant_nodes(db=db, file_bytes=file_bytes, operator=user.username)
+    return success(data=data, message="导入完成")
+
+
+# ---------------------------------------------------------------------------
+# Plant Node CRUD by ID
+# ---------------------------------------------------------------------------
 
 
 @router.put("/{node_id}", response_model=ApiResponse[PlantNodeInfo])

@@ -1,17 +1,21 @@
 <script lang="ts" setup>
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+import type { UploadProps } from 'ant-design-vue';
 
 /**
  * S2-LOOP-009 回路台账页
  *
- * 对齐 D06 §6 + IDS v3.2 §2.2.7 ~ §2.2.11
- * - Table 展示回路列表（位号/描述/装置/状态/评分/操作）
+ * 对齐 D06 §6 + IDS v3.2 §2.2.7 ~ §2.2.13
+ * - Table 展示回路列表（位号/描述/装置/状态/评分/Tag 关联完整性/最后评分/操作）
  * - 状态徽章：Ready 绿 / Partial 红 / INCONCLUSIVE 灰
  * - 支持按装置/状态/关键字筛选
  * - 新增/编辑回路 Modal 表单（含 scoreWeights 6 个 KPI 权重，总和须 100%）
  * - 删除二次确认
+ * - Tag 关联：点击操作列「Tag 关联」按钮打开右侧 Drawer，编辑 7 个 Tag 槽位
+ * - 导入/导出：Excel 批量导入导出
  * - RBAC: ADMIN/IC_ENGINEER 可写
  */
+import type { AasApi } from '#/api/aas';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
@@ -22,6 +26,7 @@ import { Page } from '@vben/common-ui';
 import {
   Button,
   Card,
+  Drawer,
   Form,
   FormItem,
   Input,
@@ -30,17 +35,23 @@ import {
   Modal,
   Popconfirm,
   Select,
+  Spin,
   Switch,
   Table,
   Tag,
+  Upload,
 } from 'ant-design-vue';
 
+import { getAasTagsApi } from '#/api/aas';
 import {
   createLoopApi,
   deleteLoopApi,
   getLoopListApi,
+  getLoopTagsApi,
   updateLoopApi,
+  updateLoopTagMappingApi,
 } from '#/api/loop';
+import { requestClient } from '#/api/request';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import StatusBadge from '#/components/loop/status-badge.vue';
 import { flattenNodes } from '#/utils/plant-node';
@@ -93,7 +104,7 @@ const columns: TableColumnsType = [
     key: 'lastScoreAt',
     width: 170,
   },
-  { title: '操作', key: 'action', width: 180, fixed: 'right' },
+  { title: '操作', key: 'action', width: 240, fixed: 'right' },
 ];
 
 // Modal state
@@ -135,6 +146,92 @@ const weightTotal = computed(() => {
 });
 
 const weightValid = computed(() => weightTotal.value === 100);
+
+// ===== Tag 关联 Drawer state =====
+const tagDrawerVisible = ref(false);
+const tagDrawerLoading = ref(false);
+const tagSaving = ref(false);
+const currentLoopForTag = ref<LoopApi.LoopListItem | null>(null);
+const tagData = ref<LoopApi.LoopTagsResult | null>(null);
+
+// Available tags from AAS registry
+const availableTags = ref<AasApi.AasTag[]>([]);
+const tagSearchLoading = ref(false);
+
+// 7 slot mapping state (uses undefined for Select compatibility, converts to null on save)
+const slotState = reactive({
+  pv: undefined as string | undefined,
+  sp: undefined as string | undefined,
+  op: undefined as string | undefined,
+  mode: undefined as string | undefined,
+  pid_p: undefined as string | undefined,
+  pid_i: undefined as string | undefined,
+  pid_d: undefined as string | undefined,
+});
+
+interface SlotConfig {
+  key: keyof typeof slotState;
+  label: string;
+  required: boolean;
+  color: string;
+  description: string;
+}
+
+const slotConfigs: SlotConfig[] = [
+  {
+    color: 'blue',
+    description: '过程变量测量值',
+    key: 'pv',
+    label: 'PV',
+    required: true,
+  },
+  {
+    color: 'green',
+    description: '设定值',
+    key: 'sp',
+    label: 'SP',
+    required: true,
+  },
+  {
+    color: 'orange',
+    description: '控制器输出值',
+    key: 'op',
+    label: 'OP',
+    required: true,
+  },
+  {
+    color: 'purple',
+    description: '控制模式',
+    key: 'mode',
+    label: 'MODE',
+    required: true,
+  },
+  {
+    color: 'cyan',
+    description: '比例参数',
+    key: 'pid_p',
+    label: 'PID_P',
+    required: false,
+  },
+  {
+    color: 'cyan',
+    description: '积分参数',
+    key: 'pid_i',
+    label: 'PID_I',
+    required: false,
+  },
+  {
+    color: 'cyan',
+    description: '微分参数',
+    key: 'pid_d',
+    label: 'PID_D',
+    required: false,
+  },
+];
+
+// ===== 导入导出 state =====
+const importing = ref(false);
+const exporting = ref(false);
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -299,6 +396,178 @@ const tagMappingRoles: {
   { key: 'pid_d', label: 'D' },
 ];
 
+// ===== Tag 关联 Drawer 方法 =====
+
+/** 打开 Tag 关联 Drawer */
+function handleOpenTagMapping(record: LoopApi.LoopListItem) {
+  currentLoopForTag.value = record;
+  tagData.value = null;
+  // 重置 7 个槽位
+  slotState.pv = undefined;
+  slotState.sp = undefined;
+  slotState.op = undefined;
+  slotState.mode = undefined;
+  slotState.pid_p = undefined;
+  slotState.pid_i = undefined;
+  slotState.pid_d = undefined;
+  tagDrawerVisible.value = true;
+  // 加载可用 Tag 与当前回路已关联的 Tag
+  loadAvailableTags();
+  loadLoopTags(record.loopId);
+}
+
+/** 加载可用 Tag 列表 */
+async function loadAvailableTags(keyword?: string) {
+  tagSearchLoading.value = true;
+  try {
+    const data = await getAasTagsApi({
+      keyword: keyword || undefined,
+      page: 1,
+      pageSize: 100,
+    });
+    availableTags.value = data.items;
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    tagSearchLoading.value = false;
+  }
+}
+
+/** 加载回路 Tag 关联详情 */
+async function loadLoopTags(loopId: string) {
+  tagDrawerLoading.value = true;
+  try {
+    const data = await getLoopTagsApi(loopId);
+    tagData.value = data;
+    // 填充 slotState
+    for (const tag of data.tags) {
+      const key = tag.role.toLowerCase() as keyof typeof slotState;
+      slotState[key] = tag.tagId ?? undefined;
+    }
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    tagDrawerLoading.value = false;
+  }
+}
+
+/** Tag 下拉搜索 */
+function handleTagSearch(value: string) {
+  loadAvailableTags(value);
+}
+
+/** 清空某个槽位 */
+function clearSlot(key: keyof typeof slotState) {
+  slotState[key] = undefined;
+}
+
+/** 保存 Tag 关联 */
+async function handleSaveTagMapping() {
+  if (!currentLoopForTag.value) return;
+
+  // 前端校验必填项
+  const missing: string[] = [];
+  for (const cfg of slotConfigs) {
+    if (cfg.required && !slotState[cfg.key]) {
+      missing.push(cfg.label);
+    }
+  }
+  if (missing.length > 0) {
+    message.warning(`以下必填 Tag 未关联：${missing.join('、')}`);
+    return;
+  }
+
+  tagSaving.value = true;
+  try {
+    const result = await updateLoopTagMappingApi(
+      currentLoopForTag.value.loopId,
+      {
+        pv: slotState.pv ?? null,
+        sp: slotState.sp ?? null,
+        op: slotState.op ?? null,
+        mode: slotState.mode ?? null,
+        pid_p: slotState.pid_p ?? null,
+        pid_i: slotState.pid_i ?? null,
+        pid_d: slotState.pid_d ?? null,
+      },
+    );
+    tagData.value = result;
+    if (result.status === 'PARTIAL') {
+      message.warning('保存成功，但回路状态为「部分关联」，请检查必填 Tag');
+    } else if (result.status === 'READY') {
+      message.success('保存成功，回路状态已更新为「就绪」');
+    } else {
+      message.success('保存成功');
+    }
+    // 刷新回路列表以更新状态
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    tagSaving.value = false;
+  }
+}
+
+// ===== 导入导出方法 =====
+
+/** 导出回路台账 Excel */
+async function handleExport() {
+  exporting.value = true;
+  try {
+    const blob = await requestClient.download<Blob>('/loops/export', {
+      params: {
+        plantNodeId: query.plantNodeId,
+        status: query.status,
+        keyword: query.keyword || undefined,
+      },
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `回路台账_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    message.success('导出成功');
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    exporting.value = false;
+  }
+}
+
+/** 导入回路台账 Excel（Upload beforeUpload 钩子） */
+function handleImportBeforeUpload(file: File): boolean {
+  importing.value = true;
+  const formData = new FormData();
+  formData.append('file', file);
+  requestClient
+    .post('/loops/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    .then(() => {
+      message.success('导入成功');
+      loadList();
+    })
+    .catch(() => {
+      // 错误已由拦截器处理
+    })
+    .finally(() => {
+      importing.value = false;
+    });
+  // 返回 false 阻止 Upload 组件默认上传行为
+  return false;
+}
+
+const uploadAccept = '.xlsx,.xls';
+
+const uploadProps: UploadProps = {
+  accept: uploadAccept,
+  showUploadList: false,
+  beforeUpload: handleImportBeforeUpload as UploadProps['beforeUpload'],
+};
+
 onMounted(() => {
   loadPlantNodes();
   loadList();
@@ -341,6 +610,24 @@ onMounted(() => {
         >
           新增回路
         </Button>
+        <!-- 导入导出 -->
+        <div class="ml-auto flex items-center gap-2">
+          <Upload v-bind="uploadProps">
+            <Button
+              v-permission="['ADMIN', 'IC_ENGINEER']"
+              :loading="importing"
+            >
+              导入
+            </Button>
+          </Upload>
+          <Button
+            v-permission="['ADMIN', 'IC_ENGINEER']"
+            :loading="exporting"
+            @click="handleExport"
+          >
+            导出
+          </Button>
+        </div>
       </div>
 
       <Table
@@ -355,7 +642,7 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: LoopApi.LoopListItem) => record.loopId"
-        :scroll="{ x: 1200 }"
+        :scroll="{ x: 1280 }"
         size="middle"
         @change="handleTableChange"
       >
@@ -393,6 +680,16 @@ onMounted(() => {
                 @click="handleEdit(record as LoopApi.LoopListItem)"
               >
                 编辑
+              </Button>
+              <Button
+                v-permission="['ADMIN', 'IC_ENGINEER']"
+                type="link"
+                size="small"
+                @click="
+                  handleOpenTagMapping(record as LoopApi.LoopListItem)
+                "
+              >
+                Tag 关联
               </Button>
               <Popconfirm
                 v-permission="['ADMIN']"
@@ -498,5 +795,97 @@ onMounted(() => {
         </FormItem>
       </Form>
     </Modal>
+
+    <!-- Tag 关联 Drawer -->
+    <Drawer
+      v-model:open="tagDrawerVisible"
+      title="Tag 关联配置"
+      placement="right"
+      width="600px"
+    >
+      <Spin :spinning="tagDrawerLoading">
+        <div v-if="currentLoopForTag" class="mb-4">
+          <div class="text-sm text-gray-500">当前回路：</div>
+          <div class="mt-1 flex items-center gap-2">
+            <span class="font-medium">{{ currentLoopForTag.tagName }}</span>
+            <span v-if="currentLoopForTag.description" class="text-gray-500">
+              — {{ currentLoopForTag.description }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 7 槽位配置（2 列布局） -->
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div
+            v-for="cfg in slotConfigs"
+            :key="cfg.key"
+            class="rounded border p-3"
+            :class="cfg.required ? 'border-red-200' : 'border-gray-200'"
+          >
+            <div class="mb-2 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <Tag :color="cfg.color" class="m-0">{{ cfg.label }}</Tag>
+                <span v-if="cfg.required" class="text-red-500">*</span>
+                <span class="text-xs text-gray-400">{{ cfg.description }}</span>
+              </div>
+              <Button
+                v-if="slotState[cfg.key]"
+                type="link"
+                size="small"
+                danger
+                @click="clearSlot(cfg.key)"
+              >
+                清除
+              </Button>
+            </div>
+            <Select
+              v-model:value="slotState[cfg.key]"
+              show-search
+              allow-clear
+              placeholder="选择 Tag"
+              style="width: 100%"
+              :loading="tagSearchLoading"
+              :options="
+                availableTags.map((t) => ({
+                  label: `${t.tagName}${t.description ? ` (${t.description})` : ''}`,
+                  value: t.tagId,
+                }))
+              "
+              :filter-option="false"
+              @search="handleTagSearch"
+            />
+            <!-- 当前关联信息 -->
+            <div v-if="tagData" class="mt-2 text-xs text-gray-400">
+              <template v-for="t in tagData.tags" :key="t.role">
+                <div v-if="t.role.toLowerCase() === cfg.key">
+                  <span v-if="t.associated">
+                    已关联：{{ t.tagName }}
+                    <span v-if="t.currentValue != null" class="ml-2">
+                      当前值：{{ t.currentValue }}
+                    </span>
+                  </span>
+                  <span v-else>未关联</span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </Spin>
+
+      <!-- 底部操作区 -->
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <Button @click="tagDrawerVisible = false">取消</Button>
+          <Button
+            v-permission="['ADMIN', 'IC_ENGINEER']"
+            type="primary"
+            :loading="tagSaving"
+            @click="handleSaveTagMapping"
+          >
+            保存关联
+          </Button>
+        </div>
+      </template>
+    </Drawer>
   </Page>
 </template>

@@ -236,12 +236,37 @@ class LoopTagMappingUpdateResponse(CamelModel):
     updatedBy: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# 批量导入导出 schemas
+# ---------------------------------------------------------------------------
+
+
+class LoopImportError(CamelModel):
+    """回路导入单行错误。"""
+
+    row: int
+    tagName: str | None = None
+    message: str
+
+
+class LoopImportResult(CamelModel):
+    """POST /api/v1/loops/import 响应。"""
+
+    total: int
+    inserted: int
+    updated: int
+    failed: int
+    errors: list[LoopImportError] = []
+
+
 __all__ = [
     "LoopAasSyncStatus",
     "LoopBasicInfo",
     "LoopCreate",
     "LoopDeleteResult",
     "LoopDetailData",
+    "LoopImportError",
+    "LoopImportResult",
     "LoopListItem",
     "LoopListData",
     "LoopRuntimeParams",

@@ -5,11 +5,14 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
  * S2-LOOP-011 回路监控列表页
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.15
- * - Table 展示回路实时状态（位号/PV/SP/OP/MODE/质量码/评分/状态）
+ * - 沿用回路台账列表风格（筛选区 + Table + 分页）
+ * - Table 列：回路位号 / 描述 / 所属单元 / PV / SP / OP / MODE / PID_P / PID_I / PID_D / PV质量 / 评分 / 状态 / 读取时间 / 操作
+ * - 实时值显示：PV/SP/OP 数值、MODE Tag 颜色（Auto 绿 / Manual 橙 / Cascade 蓝）
  * - PV 质量码渲染：Good 绿 / Bad 红虚线 / Uncertain 黄
+ * - PID 参数：当前监控列表接口未返回，统一显示 "—" 占位
  * - 点击行跳转回路详情页 /loop/detail/:id
- * - 支持按装置/状态筛选
- * - 30 秒自动刷新（可配置开关）
+ * - 支持按装置/关键字筛选
+ * - 30 秒自动刷新（Switch 开关 + 倒计时）
  */
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
@@ -46,7 +49,7 @@ const query = reactive({
   plantNodeId: undefined as string | undefined,
   keyword: '',
   page: 1,
-  pageSize: 20,
+  pageSize: 100,
 });
 
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
@@ -54,7 +57,9 @@ const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 // Auto refresh
 const autoRefresh = ref(true);
 const refreshInterval = 30; // seconds
+const countdown = ref(refreshInterval);
 let refreshTimer: null | ReturnType<typeof setInterval> = null;
+let countdownTimer: null | ReturnType<typeof setInterval> = null;
 
 const columns: TableColumnsType = [
   { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 160 },
@@ -65,15 +70,50 @@ const columns: TableColumnsType = [
     ellipsis: true,
   },
   { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 140 },
-  { title: 'PV', key: 'pv', width: 120 },
+  { title: 'PV', key: 'pv', width: 100 },
   { title: 'SP', key: 'sp', width: 100 },
   { title: 'OP', key: 'op', width: 100 },
   { title: 'MODE', key: 'mode', width: 100 },
+  { title: 'PID_P', key: 'pidP', width: 90 },
+  { title: 'PID_I', key: 'pidI', width: 90 },
+  { title: 'PID_D', key: 'pidD', width: 90 },
   { title: 'PV 质量', key: 'pvQuality', width: 110 },
   { title: '评分', dataIndex: 'score', key: 'score', width: 80 },
   { title: '状态', key: 'status', width: 110 },
-  { title: '读取时间', dataIndex: 'readAt', key: 'readAt', width: 170 },
+  { title: '读取时间', key: 'readAt', width: 170 },
+  { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ];
+
+/** MODE 颜色映射：Auto=绿 / Manual=橙 / Cascade=蓝 */
+function modeColor(modeLabel: string): string {
+  if (modeLabel === 'Auto') return 'green';
+  if (modeLabel === 'Manual') return 'orange';
+  if (modeLabel === 'Cascade') return 'blue';
+  return 'default';
+}
+
+/** MODE 中文标签映射：0=手动, 1=自动, 2=串级 */
+function modeText(record: LoopApi.MonitorListItem): string {
+  const label = record.currentValues?.modeLabel;
+  if (label) return label;
+  const mode = record.currentValues?.mode;
+  if (mode === 0) return 'Manual';
+  if (mode === 1) return 'Auto';
+  if (mode === 2) return 'Cascade';
+  return '—';
+}
+
+/** 数值格式化，空值返回 '—' */
+function formatNumber(val: null | number | undefined, digits = 2): string {
+  if (val == null || Number.isNaN(val)) return '—';
+  return val.toFixed(digits);
+}
+
+/** OP 值格式化，带 % 后缀 */
+function formatOp(val: null | number | undefined): string {
+  if (val == null || Number.isNaN(val)) return '—';
+  return `${val.toFixed(2)}%`;
+}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -111,7 +151,7 @@ function handleSearch() {
 
 function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
-  query.pageSize = pagination.pageSize || 20;
+  query.pageSize = pagination.pageSize || 100;
   loadList();
 }
 
@@ -120,7 +160,12 @@ function handleRowClick(record: LoopApi.MonitorListItem) {
   router.push(`/loop/detail/${record.loopId}`);
 }
 
-function formatTime(t: string): string {
+/** 点击查看详情按钮 */
+function handleViewDetail(record: LoopApi.MonitorListItem) {
+  router.push(`/loop/detail/${record.loopId}`);
+}
+
+function formatTime(t: null | string | undefined): string {
   if (!t) return '—';
   try {
     return new Date(t).toLocaleString('zh-CN');
@@ -133,9 +178,14 @@ function formatTime(t: string): string {
 function startAutoRefresh() {
   stopAutoRefresh();
   if (autoRefresh.value) {
+    countdown.value = refreshInterval;
     refreshTimer = setInterval(() => {
       loadList();
+      countdown.value = refreshInterval;
     }, refreshInterval * 1000);
+    countdownTimer = setInterval(() => {
+      if (countdown.value > 0) countdown.value -= 1;
+    }, 1000);
   }
 }
 
@@ -144,6 +194,10 @@ function stopAutoRefresh() {
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = null;
+  }
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
   }
 }
 
@@ -196,6 +250,13 @@ onUnmounted(() => {
             自动刷新（{{ refreshInterval }}s）
           </span>
           <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
+          <span
+            v-if="autoRefresh"
+            class="text-xs text-gray-400"
+            style="min-width: 56px"
+          >
+            {{ countdown }}s 后刷新
+          </span>
           <Button size="small" :loading="loading" @click="loadList">
             手动刷新
           </Button>
@@ -211,10 +272,11 @@ onUnmounted(() => {
           pageSize: query.pageSize,
           total,
           showSizeChanger: true,
+          pageSizeOptions: ['20', '50', '100'],
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
-        :scroll="{ x: 1300 }"
+        :scroll="{ x: 1700 }"
         size="middle"
         :custom-row="
           (record: LoopApi.MonitorListItem) => ({
@@ -227,30 +289,35 @@ onUnmounted(() => {
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'pv'">
             <span class="font-medium text-blue-600">
-              {{ record.currentValues.pv ?? '—' }}
+              {{ formatNumber(record.currentValues?.pv) }}
             </span>
           </template>
           <template v-else-if="column.key === 'sp'">
-            {{ record.currentValues.sp ?? '—' }}
+            {{ formatNumber(record.currentValues?.sp) }}
           </template>
           <template v-else-if="column.key === 'op'">
-            {{ record.currentValues.op ?? '—' }}
+            {{ formatOp(record.currentValues?.op) }}
           </template>
           <template v-else-if="column.key === 'mode'">
             <Tag
-              :color="
-                record.currentValues.modeLabel === 'Auto'
-                  ? 'green'
-                  : record.currentValues.modeLabel === 'Manual'
-                    ? 'orange'
-                    : 'blue'
-              "
+              v-if="record.currentValues?.modeLabel || record.currentValues?.mode != null"
+              :color="modeColor(record.currentValues?.modeLabel)"
             >
-              {{ record.currentValues.modeLabel || '—' }}
+              {{ modeText(record as LoopApi.MonitorListItem) }}
             </Tag>
+            <span v-else class="text-gray-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'pidP'">
+            <span class="text-gray-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'pidI'">
+            <span class="text-gray-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'pidD'">
+            <span class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'pvQuality'">
-            <QualityTag :quality="record.currentValues.pvQuality" />
+            <QualityTag :quality="record.currentValues?.pvQuality" />
           </template>
           <template v-else-if="column.key === 'status'">
             <StatusBadge :status="record.status" :is-active="record.isActive" />
@@ -262,7 +329,16 @@ onUnmounted(() => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'readAt'">
-            {{ formatTime(record.readAt) }}
+            {{ formatTime(record.currentValues?.readAt ?? record.readAt) }}
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <Button
+              type="link"
+              size="small"
+              @click.stop="handleViewDetail(record as LoopApi.MonitorListItem)"
+            >
+              查看详情
+            </Button>
           </template>
         </template>
       </Table>

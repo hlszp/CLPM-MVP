@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import io
 import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import openpyxl
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -555,6 +557,333 @@ async def delete_loop(
     }
 
 
+# ---------------------------------------------------------------------------
+# 批量导入导出 (S2-LOOP-009)
+# ---------------------------------------------------------------------------
+
+# Excel 列头（11 列，对齐 loopList.xlsx）
+EXPORT_HEADERS = [
+    "自控回路编号",
+    "自控回路名称",
+    "设定值位号",
+    "测量值位号",
+    "输出值位号",
+    "控制方式位号",
+    "所属区域编号",
+    "是否启用",
+    "比例带",
+    "积分时间",
+    "微分时间",
+]
+
+# 导入时列索引 → Tag 角色（索引从 0 开始）
+_IMPORT_ROLE_COLUMNS: dict[int, str] = {
+    2: "SP",
+    3: "PV",
+    4: "OP",
+    5: "MODE",
+    8: "PID_P",
+    9: "PID_I",
+    10: "PID_D",
+}
+
+
+def _cell_str(value: object) -> str:
+    """将 Excel 单元格值转为去除首尾空白的字符串，None/空返回空串。"""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+async def export_loops(
+    db: AsyncSession,
+    plant_node_id: str | None = None,
+    status: str | None = None,
+    keyword: str | None = None,
+) -> bytes:
+    """导出所有回路为 Excel 文件（.xlsx），返回文件字节。
+
+    支持按 plantNodeId/status/keyword 筛选（可选）。
+    """
+    conditions = []
+    if plant_node_id:
+        conditions.append(LoopLedger.unit_id == plant_node_id)
+    if status:
+        conditions.append(func.upper(LoopLedger.status) == status.upper())
+    if keyword:
+        kw = f"%{keyword}%"
+        conditions.append(
+            or_(
+                LoopLedger.tag_name.ilike(kw),
+                LoopLedger.description.ilike(kw),
+            )
+        )
+
+    stmt = select(LoopLedger).order_by(LoopLedger.tag_name)
+    for cond in conditions:
+        stmt = stmt.where(cond)
+    result = await db.execute(stmt)
+    loops = result.scalars().all()
+
+    loop_ids = [str(loop.id) for loop in loops]
+    unit_ids = [str(loop.unit_id) for loop in loops if loop.unit_id]
+
+    # 批量查询 unit_name
+    unit_map: dict[str, str] = {}
+    if unit_ids:
+        u_result = await db.execute(select(PlantNode).where(PlantNode.id.in_(unit_ids)))
+        for node in u_result.scalars().all():
+            unit_map[str(node.id)] = node.name
+
+    # 批量查询 Tag 关联 + Tag 名称
+    tag_name_map: dict[str, dict[str, str]] = {}
+    if loop_ids:
+        m_result = await db.execute(
+            select(LoopTagMapping, TagRegistry)
+            .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+            .where(LoopTagMapping.loop_id.in_(loop_ids))
+        )
+        for mapping, tag in m_result:
+            tag_name_map.setdefault(str(mapping.loop_id), {})[mapping.tag_role] = tag.tag_name
+
+    # 构建 Excel
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "回路台账"
+    ws.append(EXPORT_HEADERS)
+
+    for loop in loops:
+        tags = tag_name_map.get(str(loop.id), {})
+        unit_name = unit_map.get(str(loop.unit_id)) if loop.unit_id else ""
+        is_active_str = "是" if loop.is_active else "否"
+        ws.append(
+            [
+                loop.tag_name,
+                loop.description or "",
+                tags.get("SP", ""),
+                tags.get("PV", ""),
+                tags.get("OP", ""),
+                tags.get("MODE", ""),
+                unit_name,
+                is_active_str,
+                tags.get("PID_P", ""),
+                tags.get("PID_I", ""),
+                tags.get("PID_D", ""),
+            ]
+        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def import_loops(
+    db: AsyncSession,
+    file_bytes: bytes,
+    operator: str,
+) -> dict:
+    """批量导入回路（Excel .xlsx）。
+
+    逐行处理：回路编号已存在则更新，否则新建。
+    返回 {total, inserted, updated, failed, errors[]}。
+    """
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001
+        raise BizError(
+            code="ERR_FILE_PARSE",
+            message=f"Excel 文件解析失败: {exc}",
+            status_code=400,
+        ) from exc
+
+    ws = wb.active
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+
+    total = 0
+    inserted = 0
+    updated = 0
+    failed = 0
+    errors: list[dict] = []
+
+    # 缓存：plant_node name → id，tag name → id
+    plant_node_cache: dict[str, str] = {}
+    tag_cache: dict[str, str] = {}
+
+    for row_idx, row in enumerate(rows, start=2):  # 第 1 行为表头
+        total += 1
+        tag_name = _cell_str(row[0]) if len(row) > 0 else ""
+
+        if not tag_name:
+            errors.append({"row": row_idx, "message": "回路编号不能为空"})
+            failed += 1
+            continue
+
+        # 解析单元格（不涉及 DB，放在 savepoint 外）
+        description = _cell_str(row[1]) if len(row) > 1 else ""
+        role_tag_values: dict[str, str] = {}
+        for col_idx, role in _IMPORT_ROLE_COLUMNS.items():
+            role_tag_values[role] = _cell_str(row[col_idx]) if len(row) > col_idx else ""
+        unit_name = _cell_str(row[6]) if len(row) > 6 else ""
+        is_active_str = _cell_str(row[7]) if len(row) > 7 else "是"
+        is_active = is_active_str in ("是", "true", "True", "1", "YES", "yes", "Y", "y")
+
+        is_update = False
+        try:
+            # 使用 SAVEPOINT 保证单行失败不影响其他行
+            async with db.begin_nested():
+                is_update = await _import_one_row(
+                    db=db,
+                    tag_name=tag_name,
+                    description=description,
+                    unit_name=unit_name,
+                    is_active=is_active,
+                    role_tag_values=role_tag_values,
+                    operator=operator,
+                    plant_node_cache=plant_node_cache,
+                    tag_cache=tag_cache,
+                )
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            errors.append({"row": row_idx, "tagName": tag_name, "message": str(exc)})
+            continue
+
+        if is_update:
+            updated += 1
+        else:
+            inserted += 1
+
+    await db.commit()
+
+    return {
+        "total": total,
+        "inserted": inserted,
+        "updated": updated,
+        "failed": failed,
+        "errors": errors,
+    }
+
+
+async def _import_one_row(
+    db: AsyncSession,
+    tag_name: str,
+    description: str,
+    unit_name: str,
+    is_active: bool,
+    role_tag_values: dict[str, str],
+    operator: str,
+    plant_node_cache: dict[str, str],
+    tag_cache: dict[str, str],
+) -> bool:
+    """处理单行导入，返回是否为更新（True）或新建（False）。
+
+    在调用方的 SAVEPOINT 内执行，异常会触发回滚至 SAVEPOINT。
+    """
+    # 查找/创建 plant_node
+    unit_id: str | None = None
+    if unit_name:
+        if unit_name in plant_node_cache:
+            unit_id = plant_node_cache[unit_name]
+        else:
+            p_result = await db.execute(
+                select(PlantNode).where(PlantNode.name == unit_name)
+            )
+            node = p_result.scalar_one_or_none()
+            if node is None:
+                node = PlantNode(
+                    id=str(uuid4()),
+                    name=unit_name,
+                    type="UNIT",
+                )
+                db.add(node)
+                await db.flush()
+            unit_id = str(node.id)
+            plant_node_cache[unit_name] = unit_id
+
+    # 查找/创建回路
+    result = await db.execute(select(LoopLedger).where(LoopLedger.tag_name == tag_name))
+    loop = result.scalar_one_or_none()
+    is_update = loop is not None
+
+    if is_update:
+        loop.description = description or loop.description
+        loop.unit_id = unit_id
+        loop.is_active = is_active
+        loop.updated_by = operator
+        # 删除现有关联 Tag
+        await db.execute(
+            delete(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id))
+        )
+    else:
+        loop = LoopLedger(
+            id=str(uuid4()),
+            tag_name=tag_name,
+            description=description or None,
+            unit_id=unit_id,
+            is_active=is_active,
+            status="PARTIAL",
+            created_by=operator,
+            updated_by=operator,
+        )
+        db.add(loop)
+        await db.flush()
+
+    # 创建 Tag 关联
+    new_mappings: dict[str, LoopTagMapping] = {}
+    for role, t_name in role_tag_values.items():
+        if not t_name:
+            continue
+        if t_name in tag_cache:
+            tag_id = tag_cache[t_name]
+        else:
+            t_result = await db.execute(
+                select(TagRegistry).where(TagRegistry.tag_name == t_name)
+            )
+            tag = t_result.scalar_one_or_none()
+            if tag is None:
+                tag = TagRegistry(
+                    id=str(uuid4()),
+                    tag_name=t_name,
+                    tag_type=role,
+                    last_sync_at=datetime.now(UTC).replace(tzinfo=None),
+                    is_linked=True,
+                )
+                db.add(tag)
+                await db.flush()
+            else:
+                tag.is_linked = True
+            tag_id = str(tag.id)
+            tag_cache[t_name] = tag_id
+
+        mapping = LoopTagMapping(
+            id=str(uuid4()),
+            loop_id=str(loop.id),
+            tag_id=tag_id,
+            tag_role=role,
+            is_required=role in REQUIRED_ROLES,
+        )
+        db.add(mapping)
+        new_mappings[role] = mapping
+
+    # 推导 status
+    new_status = await derive_loop_status(db, loop, mappings=new_mappings)
+    loop.status = new_status
+
+    await _write_audit(
+        db=db,
+        operator=operator,
+        operation_type="LOOP_IMPORT_UPDATE" if is_update else "LOOP_IMPORT",
+        target_type="loop_ledger",
+        target_id=str(loop.id),
+        after_value=json.dumps(
+            {"tagName": tag_name, "status": new_status, "isActive": is_active},
+            ensure_ascii=False,
+        ),
+    )
+
+    await db.flush()
+    return is_update
+
+
 __all__ = [
     "ALL_ROLES",
     "REQUIRED_ROLES",
@@ -562,7 +891,9 @@ __all__ = [
     "create_loop",
     "delete_loop",
     "derive_loop_status",
+    "export_loops",
     "get_loop_detail",
+    "import_loops",
     "list_loops",
     "update_loop",
 ]

@@ -1,10 +1,12 @@
 """Loop ledger endpoints (IDS v3.2 §2.2.7~2.2.15).
 
-路由顺序：固定路径（/monitor）必须在 {loop_id} 之前声明。
+路由顺序：固定路径（/monitor、/export、/import）必须在 {loop_id} 之前声明。
 
 - GET    /api/v1/loops              — 分页查询回路列表
 - POST   /api/v1/loops              — 创建回路
 - GET    /api/v1/loops/monitor      — 回路监控列表
+- GET    /api/v1/loops/export       — 导出回路 Excel
+- POST   /api/v1/loops/import       — 批量导入回路 Excel
 - GET    /api/v1/loops/{id}         — 回路详情
 - PUT    /api/v1/loops/{id}         — 更新回路
 - DELETE /api/v1/loops/{id}         — 删除回路
@@ -15,7 +17,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
@@ -25,6 +28,7 @@ from app.schemas.common import ApiResponse, success
 from app.schemas.loop import (
     LoopCreate,
     LoopDeleteResult,
+    LoopImportResult,
     LoopListData,
     LoopTagMappingResponse,
     LoopTagMappingUpdate,
@@ -35,7 +39,9 @@ from app.schemas.loop import (
 from app.services.loop import (
     create_loop,
     delete_loop,
+    export_loops,
     get_loop_detail,
+    import_loops,
     list_loops,
     update_loop,
 )
@@ -124,6 +130,51 @@ async def list_loop_monitor_endpoint(
         page_size=pageSize,
     )
     return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# Loop Export / Import (固定路径，必须在 {loop_id} 之前)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/export")
+async def export_loops_endpoint(
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    status: str | None = Query(None, description="按回路状态筛选：READY/PARTIAL/INACTIVE"),
+    keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+) -> StreamingResponse:
+    """导出回路台账为 Excel 文件（.xlsx）。"""
+    content = await export_loops(
+        db=db,
+        plant_node_id=plantNodeId,
+        status=status,
+        keyword=keyword,
+    )
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename=loops_export.xlsx",
+        },
+    )
+
+
+@router.post("/import", response_model=ApiResponse[LoopImportResult])
+async def import_loops_endpoint(
+    file: UploadFile = File(..., description="Excel 文件 (.xlsx)"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """批量导入回路台账（Excel .xlsx）。
+
+    逐行处理：回路编号已存在则更新，否则新建。
+    返回 {total, inserted, updated, failed, errors[]}。
+    """
+    file_bytes = await file.read()
+    data = await import_loops(db=db, file_bytes=file_bytes, operator=user.username)
+    return success(data=data, message="导入完成")
 
 
 # ---------------------------------------------------------------------------

@@ -45,9 +45,34 @@ class PlantNodeTree(PlantNodeInfo):
 PlantNodeTree.model_rebuild()
 
 
+# ---------------------------------------------------------------------------
+# 批量导入导出 schemas
+# ---------------------------------------------------------------------------
+
+
+class PlantNodeImportError(CamelModel):
+    """工厂节点导入单行错误。"""
+
+    row: int
+    name: str | None = None
+    message: str
+
+
+class PlantNodeImportResult(CamelModel):
+    """POST /api/v1/plant-nodes/import 响应。"""
+
+    total: int
+    inserted: int
+    updated: int
+    failed: int
+    errors: list[PlantNodeImportError] = []
+
+
 __all__ = [
     "PlantNodeBase",
     "PlantNodeCreate",
+    "PlantNodeImportError",
+    "PlantNodeImportResult",
     "PlantNodeInfo",
     "PlantNodeTree",
     "PlantNodeUpdate",

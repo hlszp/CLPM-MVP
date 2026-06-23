@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import io
+import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import openpyxl
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -249,9 +252,278 @@ async def delete_plant_node(
     return {"success": True}
 
 
+# ---------------------------------------------------------------------------
+# 批量导入导出
+# ---------------------------------------------------------------------------
+
+# Excel 列头（4 列）
+EXPORT_HEADERS = ["节点名称", "节点类型", "父节点名称", "层级路径"]
+
+
+def _cell_str(value: object) -> str:
+    """将 Excel 单元格值转为去除首尾空白的字符串，None/空返回空串。"""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+async def export_plant_nodes(db: AsyncSession) -> bytes:
+    """导出所有工厂节点为 Excel 文件（.xlsx），返回文件字节。
+
+    列结构（4 列）：节点名称 / 节点类型 / 父节点名称 / 层级路径。
+    节点按层级顺序输出（父节点在子节点之前），便于导入。
+    """
+    result = await db.execute(select(PlantNode))
+    all_nodes = result.scalars().all()
+
+    # id → node 映射
+    node_map: dict[str, PlantNode] = {str(n.id): n for n in all_nodes}
+
+    # 构建父子映射，用于层级排序
+    children_map: dict[str | None, list[PlantNode]] = {}
+    for node in all_nodes:
+        key = str(node.parent_id) if node.parent_id else None
+        children_map.setdefault(key, []).append(node)
+
+    # 递归构建层级路径（带 memoization）
+    path_cache: dict[str, str] = {}
+
+    def build_path(node_id: str) -> str:
+        if node_id in path_cache:
+            return path_cache[node_id]
+        node = node_map.get(node_id)
+        if node is None:
+            return ""
+        if node.parent_id is None:
+            path = node.name
+        else:
+            parent_path = build_path(str(node.parent_id))
+            path = f"{parent_path}/{node.name}" if parent_path else node.name
+        path_cache[node_id] = path
+        return path
+
+    # DFS 遍历，确保父节点在子节点之前
+    ordered_nodes: list[PlantNode] = []
+
+    def traverse(pid: str | None) -> None:
+        for node in children_map.get(pid, []):
+            ordered_nodes.append(node)
+            traverse(str(node.id))
+
+    traverse(None)
+
+    # 构建 Excel
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "工厂层级"
+    ws.append(EXPORT_HEADERS)
+
+    for node in ordered_nodes:
+        parent_name = ""
+        if node.parent_id:
+            parent = node_map.get(str(node.parent_id))
+            if parent:
+                parent_name = parent.name
+        path = build_path(str(node.id))
+        ws.append([node.name, node.type, parent_name, path])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def import_plant_nodes(
+    db: AsyncSession,
+    file_bytes: bytes,
+    operator: str,
+) -> dict:
+    """批量导入工厂节点（Excel .xlsx）。
+
+    逐行处理：按 name + parent 查找节点，存在则更新类型，不存在则新建。
+    返回 {total, inserted, updated, failed, errors[]}。
+    """
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001
+        raise BizError(
+            code="ERR_FILE_PARSE",
+            message=f"Excel 文件解析失败: {exc}",
+            status_code=400,
+        ) from exc
+
+    ws = wb.active
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+
+    total = 0
+    inserted = 0
+    updated = 0
+    failed = 0
+    errors: list[dict] = []
+
+    # 缓存：parent_name → parent_id，避免重复查询
+    parent_cache: dict[str, str] = {}
+
+    for row_idx, row in enumerate(rows, start=2):  # 第 1 行为表头
+        total += 1
+        name = _cell_str(row[0]) if len(row) > 0 else ""
+
+        if not name:
+            errors.append({"row": row_idx, "message": "节点名称不能为空"})
+            failed += 1
+            continue
+
+        node_type = _cell_str(row[1]) if len(row) > 1 else ""
+        parent_name = _cell_str(row[2]) if len(row) > 2 else ""
+        # 第 4 列（层级路径）仅用于展示，导入时不使用
+
+        # 节点类型校验
+        if node_type not in VALID_NODE_TYPES:
+            errors.append(
+                {
+                    "row": row_idx,
+                    "name": name,
+                    "message": f"节点类型非法，必须为 {','.join(VALID_NODE_TYPES)}",
+                }
+            )
+            failed += 1
+            continue
+
+        try:
+            # 使用 SAVEPOINT 保证单行失败不影响其他行
+            async with db.begin_nested():
+                is_update = await _import_one_node(
+                    db=db,
+                    name=name,
+                    node_type=node_type,
+                    parent_name=parent_name,
+                    operator=operator,
+                    parent_cache=parent_cache,
+                )
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            errors.append({"row": row_idx, "name": name, "message": str(exc)})
+            continue
+
+        if is_update:
+            updated += 1
+        else:
+            inserted += 1
+
+    await db.commit()
+
+    return {
+        "total": total,
+        "inserted": inserted,
+        "updated": updated,
+        "failed": failed,
+        "errors": errors,
+    }
+
+
+async def _import_one_node(
+    db: AsyncSession,
+    name: str,
+    node_type: str,
+    parent_name: str,
+    operator: str,
+    parent_cache: dict[str, str],
+) -> bool:
+    """处理单行导入，返回是否为更新（True）或新建（False）。
+
+    在调用方的 SAVEPOINT 内执行，异常会触发回滚至 SAVEPOINT。
+    """
+    # 查找父节点
+    parent_id: str | None = None
+    if parent_name:
+        if parent_name in parent_cache:
+            parent_id = parent_cache[parent_name]
+        else:
+            p_result = await db.execute(
+                select(PlantNode).where(PlantNode.name == parent_name)
+            )
+            parent = p_result.scalars().first()
+            if parent is None:
+                raise ValueError(f"父节点 '{parent_name}' 不存在")
+            parent_id = str(parent.id)
+            parent_cache[parent_name] = parent_id
+
+    # FACTORY 类型必须为顶层节点
+    if node_type == "FACTORY" and parent_id:
+        raise ValueError("FACTORY 类型节点必须为顶层节点（无父节点）")
+
+    # 按 name + parent 查找节点是否已存在
+    if parent_id:
+        result = await db.execute(
+            select(PlantNode).where(
+                PlantNode.name == name,
+                PlantNode.parent_id == parent_id,
+            )
+        )
+    else:
+        result = await db.execute(
+            select(PlantNode).where(
+                PlantNode.name == name,
+                PlantNode.parent_id.is_(None),
+            )
+        )
+    node = result.scalars().first()
+    is_update = node is not None
+
+    if is_update:
+        before_value = json.dumps(
+            {
+                "name": node.name,
+                "type": node.type,
+                "parentId": str(node.parent_id) if node.parent_id else None,
+            },
+            ensure_ascii=False,
+        )
+        node.type = node_type
+        after_value = json.dumps(
+            {"name": name, "type": node_type, "parentId": parent_id},
+            ensure_ascii=False,
+        )
+        await _write_audit(
+            db=db,
+            operator=operator,
+            operation_type="PLANT_NODE_IMPORT_UPDATE",
+            target_type="plant_node",
+            target_id=str(node.id),
+            before_value=before_value,
+            after_value=after_value,
+        )
+    else:
+        node = PlantNode(
+            id=str(uuid4()),
+            name=name,
+            type=node_type,
+            parent_id=parent_id,
+        )
+        db.add(node)
+        await db.flush()
+        # 缓存新建节点，供后续行作为父节点查找
+        parent_cache[name] = str(node.id)
+        await _write_audit(
+            db=db,
+            operator=operator,
+            operation_type="PLANT_NODE_IMPORT",
+            target_type="plant_node",
+            target_id=str(node.id),
+            after_value=json.dumps(
+                {"name": name, "type": node_type, "parentId": parent_id},
+                ensure_ascii=False,
+            ),
+        )
+
+    await db.flush()
+    return is_update
+
+
 __all__ = [
     "create_plant_node",
     "delete_plant_node",
+    "export_plant_nodes",
+    "import_plant_nodes",
     "list_plant_tree",
     "update_plant_node",
 ]
