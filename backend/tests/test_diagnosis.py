@@ -736,9 +736,7 @@ class TestDiagnosisAnalytics:
         diag = _make_diag_result()
         tracker = _make_tracker(action_status="RESOLVED")
 
-        mock_db.execute = AsyncMock(
-            return_value=_make_rows_mock([(diag, loop, tracker)])
-        )
+        mock_db.execute = AsyncMock(return_value=_make_rows_mock([(diag, loop, tracker)]))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/diagnosis/analytics",
@@ -960,18 +958,14 @@ class TestDiagnosisEngine:
         """测试 DS 证据理论融合：多条证据。"""
         from app.tasks.diagnosis_engine import _dempster_shafer_fusion
 
-        result = _dempster_shafer_fusion(
-            [("OSCILLATION", 0.8), ("VALVE_STICTION", 0.6)]
-        )
+        result = _dempster_shafer_fusion([("OSCILLATION", 0.8), ("VALVE_STICTION", 0.6)])
         assert 0.0 <= result <= 1.0
 
     def test_dempster_shafer_fusion_same_label(self) -> None:
         """测试 DS 证据理论融合：相同标签。"""
         from app.tasks.diagnosis_engine import _dempster_shafer_fusion
 
-        result = _dempster_shafer_fusion(
-            [("OSCILLATION", 0.8), ("OSCILLATION", 0.6)]
-        )
+        result = _dempster_shafer_fusion([("OSCILLATION", 0.8), ("OSCILLATION", 0.6)])
         # 相同标签融合后置信度应更高
         assert result >= 0.8
 
@@ -1103,3 +1097,195 @@ class TestWaveformService:
             )
         assert exc_info.value.code == "ERR_TS_001"
         assert exc_info.value.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# S3-C4: FFT 频率精度验证测试
+# ---------------------------------------------------------------------------
+
+
+class TestFFTPrecision:
+    """FFT 频率精度验证测试 — 使用已知频率的正弦波数据。
+
+    验证 _detect_oscillation_fft 检测到的主频与已知输入频率的偏差 < 1%。
+    """
+
+    @staticmethod
+    def _generate_sine_wave(
+        frequency: float,
+        sample_rate: float,
+        duration: float,
+        amplitude: float = 10.0,
+        offset: float = 50.0,
+    ):
+        """生成已知频率的正弦波数据。
+
+        Args:
+            frequency: 信号频率（Hz）
+            sample_rate: 采样率（Hz）
+            duration: 信号时长（秒）
+            amplitude: 振幅
+            offset: 直流偏置
+
+        Returns:
+            (pv_values, sample_interval)
+        """
+        import numpy as np
+
+        n = int(duration * sample_rate)
+        t = np.linspace(0, duration, n, endpoint=False)
+        pv_values = offset + amplitude * np.sin(2.0 * np.pi * frequency * t)
+        sample_interval = 1.0 / sample_rate
+        return pv_values, sample_interval
+
+    def test_fft_precision_0_5hz(self) -> None:
+        """0.5 Hz 正弦波频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        pv_values, sample_interval = self._generate_sine_wave(
+            frequency=0.5, sample_rate=10.0, duration=10.0
+        )
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        assert result["detected"] is True, "0.5 Hz 正弦波应被检测为振荡"
+        assert result["frequency"] > 0, "检测到的频率应大于 0"
+
+        # 频率误差 < 1%
+        freq_err = abs(result["frequency"] - 0.5) / 0.5
+        assert freq_err < 0.01, (
+            f"0.5 Hz 频率检测误差 {freq_err:.2%} 超过 1%（检测值={result['frequency']:.4f} Hz）"
+        )
+
+    def test_fft_precision_1_0hz(self) -> None:
+        """1.0 Hz 正弦波频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        pv_values, sample_interval = self._generate_sine_wave(
+            frequency=1.0, sample_rate=20.0, duration=10.0
+        )
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        assert result["detected"] is True, "1.0 Hz 正弦波应被检测为振荡"
+        assert result["frequency"] > 0
+
+        freq_err = abs(result["frequency"] - 1.0) / 1.0
+        assert freq_err < 0.01, (
+            f"1.0 Hz 频率检测误差 {freq_err:.2%} 超过 1%（检测值={result['frequency']:.4f} Hz）"
+        )
+
+    def test_fft_precision_2_0hz(self) -> None:
+        """2.0 Hz 正弦波频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        pv_values, sample_interval = self._generate_sine_wave(
+            frequency=2.0, sample_rate=50.0, duration=5.0
+        )
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        assert result["detected"] is True, "2.0 Hz 正弦波应被检测为振荡"
+        assert result["frequency"] > 0
+
+        freq_err = abs(result["frequency"] - 2.0) / 2.0
+        assert freq_err < 0.01, (
+            f"2.0 Hz 频率检测误差 {freq_err:.2%} 超过 1%（检测值={result['frequency']:.4f} Hz）"
+        )
+
+    def test_fft_precision_different_sample_rates(self) -> None:
+        """不同采样率下频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        # 测试多种采样率
+        test_cases = [
+            (1.0, 10.0, 10.0),  # 1 Hz 信号，10 Hz 采样，10 秒
+            (1.0, 20.0, 5.0),  # 1 Hz 信号，20 Hz 采样，5 秒
+            (0.5, 5.0, 20.0),  # 0.5 Hz 信号，5 Hz 采样，20 秒
+        ]
+
+        for freq, sample_rate, duration in test_cases:
+            pv_values, sample_interval = self._generate_sine_wave(
+                frequency=freq, sample_rate=sample_rate, duration=duration
+            )
+            result = _detect_oscillation_fft(pv_values, sample_interval)
+
+            assert result["detected"] is True, (
+                f"频率 {freq} Hz、采样率 {sample_rate} Hz 应被检测为振荡"
+            )
+            assert result["frequency"] > 0
+
+            freq_err = abs(result["frequency"] - freq) / freq
+            assert freq_err < 0.01, (
+                f"频率 {freq} Hz、采样率 {sample_rate} Hz 检测误差 {freq_err:.2%} 超过 1%"
+                f"（检测值={result['frequency']:.4f} Hz）"
+            )
+
+    def test_fft_precision_different_data_lengths(self) -> None:
+        """不同数据长度下频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        # 固定频率和采样率，变化数据长度
+        frequency = 1.0
+        sample_rate = 20.0
+        durations = [5.0, 10.0, 20.0, 50.0]
+
+        for duration in durations:
+            pv_values, sample_interval = self._generate_sine_wave(
+                frequency=frequency, sample_rate=sample_rate, duration=duration
+            )
+            result = _detect_oscillation_fft(pv_values, sample_interval)
+
+            assert result["detected"] is True, (
+                f"时长 {duration} 秒的 {frequency} Hz 信号应被检测为振荡"
+            )
+
+            freq_err = abs(result["frequency"] - frequency) / frequency
+            assert freq_err < 0.01, (
+                f"时长 {duration} 秒检测误差 {freq_err:.2%} 超过 1%"
+                f"（检测值={result['frequency']:.4f} Hz）"
+            )
+
+    def test_fft_precision_with_noise(self) -> None:
+        """噪声干扰下频率检测精度应仍 < 5%（放宽阈值）。"""
+        import numpy as np
+
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        # 使用固定随机种子保证测试可复现
+        rng = np.random.default_rng(seed=42)
+        frequency = 1.0
+        sample_rate = 50.0
+        duration = 10.0
+        n = int(duration * sample_rate)
+        t = np.linspace(0, duration, n, endpoint=False)
+
+        # 信噪比约 10dB 的噪声
+        signal = 10.0 * np.sin(2.0 * np.pi * frequency * t)
+        noise = rng.normal(0, 1.0, n)  # 标准差 1.0 的噪声
+        pv_values = 50.0 + signal + noise
+
+        sample_interval = 1.0 / sample_rate
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        assert result["detected"] is True, "含噪声的 1.0 Hz 信号应被检测为振荡"
+
+        # 噪声环境下放宽阈值至 5%
+        freq_err = abs(result["frequency"] - frequency) / frequency
+        assert freq_err < 0.05, (
+            f"含噪声频率检测误差 {freq_err:.2%} 超过 5%（检测值={result['frequency']:.4f} Hz）"
+        )
+
+    def test_fft_amplitude_precision(self) -> None:
+        """FFT 振幅检测应接近真实振幅。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        amplitude = 10.0
+        pv_values, sample_interval = self._generate_sine_wave(
+            frequency=1.0, sample_rate=50.0, duration=10.0, amplitude=amplitude
+        )
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        # 振幅检测应大于 0（具体值取决于 FFT 实现，这里只验证合理性）
+        assert result["amplitude"] > 0, "检测到的振幅应大于 0"
+        # 振幅应在合理范围内（0.1 * amplitude ~ 2 * amplitude）
+        assert result["amplitude"] < 2 * amplitude, (
+            f"检测振幅 {result['amplitude']} 异常偏大（真实振幅 {amplitude}）"
+        )

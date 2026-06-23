@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     AAS_REQUEST_TIMEOUT_SECONDS: int = 30
     AAS_SECURITY_MODE: str = "SignAndEncrypt"  # None/Sign/SignAndEncrypt
 
+    # ---- Alerting ----
+    ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志
+
     # ---- CORS ----
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",

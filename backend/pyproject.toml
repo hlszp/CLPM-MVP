@@ -22,6 +22,7 @@ dependencies = [
     "numpy>=2.5.0",
     "scipy>=1.18.0",
     "reportlab>=4.0",
+    "prometheus_client>=0.20",
 ]
 
 [project.optional-dependencies]

@@ -19,6 +19,8 @@
     "build": "pnpm vite build --mode production",
     "build:analyze": "pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install --with-deps chromium",
     "preview": "vite preview",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",

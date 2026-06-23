@@ -32,8 +32,10 @@ from app.core.config import settings
 from app.core.db import dispose_engine
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import get_logger, setup_logging
+from app.core.metrics import MetricsMiddleware, setup_metrics
 from app.core.redis import close_redis
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.request_id import RequestIdMiddleware
 
 logger = get_logger(__name__)
 
@@ -71,6 +73,13 @@ def create_app() -> FastAPI:
     )
     # S2-C5: 敏感端点速率限制
     app.add_middleware(RateLimitMiddleware)
+    # S3-B3: Prometheus 指标采集中间件
+    app.add_middleware(MetricsMiddleware)
+    # S3-B4: request_id 请求追踪（最外层，最先执行）
+    app.add_middleware(RequestIdMiddleware)
+
+    # S3-B3: 挂载 /metrics 端点
+    setup_metrics(app)
 
     register_exception_handlers(app)
 

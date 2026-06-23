@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -187,20 +188,21 @@ async def get_waveform(
         for t in t_result.scalars().all():
             tags_map[str(t.id)] = t
 
-    # 查询各角色的趋势数据
-    role_data: dict[str, list[dict]] = {}
-    for role in ("PV", "SP", "OP", "MODE"):
+    # 查询各角色的趋势数据（S3-A5: 并行查询 4 个 Tag）
+    async def _fetch_role(role: str) -> tuple[str, list[dict]]:
         mapping = mappings.get(role)
-        if mapping and str(mapping.tag_id) in tags_map:
-            tag = tags_map[str(mapping.tag_id)]
-            try:
-                raw = await query_trend_data(tag.tag_name, start_time, end_time)
-                role_data[role] = raw
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("查询 %s 趋势数据失败: %s", role, exc)
-                role_data[role] = []
-        else:
-            role_data[role] = []
+        if not mapping or str(mapping.tag_id) not in tags_map:
+            return role, []
+        tag = tags_map[str(mapping.tag_id)]
+        try:
+            raw = await query_trend_data(tag.tag_name, start_time, end_time)
+            return role, raw
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("查询 %s 趋势数据失败: %s", role, exc)
+            return role, []
+
+    results = await asyncio.gather(*[_fetch_role(r) for r in ("PV", "SP", "OP", "MODE")])
+    role_data: dict[str, list[dict]] = dict(results)
 
     # 以 PV 的时间戳为基准对齐
     pv_data = role_data.get("PV", [])

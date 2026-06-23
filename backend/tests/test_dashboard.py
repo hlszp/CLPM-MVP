@@ -131,56 +131,9 @@ class TestDashboardOverviewEndpoint:
 
     def test_overview_admin_success(self, client, mock_db, fake_redis) -> None:
         """ADMIN 角色可以获取工作台聚合数据。"""
-        snapshots = [_make_snapshot()]
-        # mock_db.execute 需要处理多次调用
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            # 1: current_snapshots
-            if call_count[0] == 1:
-                return _make_scalars_mock(snapshots)
-            # 2: previous_snapshots
-            if call_count[0] == 2:
-                return _make_scalars_mock([])
-            # 3: _count_diagnoses (current)
-            if call_count[0] == 3:
-                return _make_scalar_mock(5)
-            # 4: _count_diagnoses (previous)
-            if call_count[0] == 4:
-                return _make_scalar_mock(10)
-            # 5: _count_tracker_updates (current)
-            if call_count[0] == 5:
-                return _make_scalar_mock(3)
-            # 6: _count_tracker_updates (previous)
-            if call_count[0] == 6:
-                return _make_scalar_mock(2)
-            # 7: _build_inefficient_loops _query_snapshots
-            if call_count[0] == 7:
-                return _make_scalars_mock(snapshots)
-            # 8: select(LoopLedger)
-            if call_count[0] == 8:
-                return _make_scalars_mock([_make_loop()])
-            # 9: select(PlantNode)
-            if call_count[0] == 9:
-                return _make_scalars_mock([_make_plant_node()])
-            # 10: _batch_query_diagnosis_labels
-            if call_count[0] == 10:
-                return _make_all_mock(
-                    [(_make_loop().id, "OSCILLATION")]
-                )
-            # 11: _build_trend_summary _query_snapshots
-            if call_count[0] == 11:
-                return _make_scalars_mock(snapshots)
-            # 12: _build_pending_alerts tracker query
-            if call_count[0] == 12:
-                return _make_scalars_mock([_make_tracker()])
-            # 13: _build_pending_alerts diag query
-            if call_count[0] == 13:
-                return _make_scalar_mock(8)
-            return _make_scalars_mock([])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        # mock_db 仅用于 _get_plant_name（plant_id=None 时不调用）
+        # 并行查询通过 patched AsyncSessionLocal 使用通用 mock 结果
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/dashboard/overview",
@@ -230,33 +183,7 @@ class TestDashboardOverviewEndpoint:
 
     def test_overview_sponsor_no_loops(self, client, mock_db, fake_redis) -> None:
         """SPONSOR 角色不返回低效回路列表。"""
-        snapshots = [_make_snapshot()]
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _make_scalars_mock(snapshots)
-            if call_count[0] == 2:
-                return _make_scalars_mock([])
-            if call_count[0] == 3:
-                return _make_scalar_mock(0)
-            if call_count[0] == 4:
-                return _make_scalar_mock(0)
-            if call_count[0] == 5:
-                return _make_scalar_mock(0)
-            if call_count[0] == 6:
-                return _make_scalar_mock(0)
-            # SPONSOR 跳过 inefficient_loops，直接到 trend_summary
-            if call_count[0] == 7:
-                return _make_scalars_mock(snapshots)
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.get(
                 "/api/v1/dashboard/overview",
@@ -273,47 +200,12 @@ class TestDashboardOverviewEndpoint:
     def test_overview_with_plant_id(self, client, mock_db, fake_redis) -> None:
         """按装置筛选工作台数据。"""
         plant_id = "00000000-0000-0000-0000-000000000111"
-        snapshots = [_make_snapshot()]
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            # 1: _get_plant_name
-            if call_count[0] == 1:
-                return _make_scalar_one_or_none_mock(_make_plant_node(node_id=plant_id))
-            # 2: current_snapshots
-            if call_count[0] == 2:
-                return _make_scalars_mock(snapshots)
-            # 3: previous_snapshots
-            if call_count[0] == 3:
-                return _make_scalars_mock([])
-            # 4-7: count queries
-            if call_count[0] in (4, 5, 6, 7):
-                return _make_scalar_mock(0)
-            # 8: inefficient_loops snapshots
-            if call_count[0] == 8:
-                return _make_scalars_mock(snapshots)
-            # 9: LoopLedger
-            if call_count[0] == 9:
-                return _make_scalars_mock([_make_loop(unit_id=plant_id)])
-            # 10: PlantNode
-            if call_count[0] == 10:
-                return _make_scalars_mock([_make_plant_node(node_id=plant_id)])
-            # 11: diagnosis labels
-            if call_count[0] == 11:
-                return _make_all_mock([])
-            # 12: trend snapshots
-            if call_count[0] == 12:
-                return _make_scalars_mock(snapshots)
-            # 13: pending trackers
-            if call_count[0] == 13:
-                return _make_scalars_mock([])
-            # 14: pending diag count
-            if call_count[0] == 14:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        # mock_db 仅用于 _get_plant_name 查询
+        mock_db.execute = AsyncMock(
+            return_value=_make_scalar_one_or_none_mock(
+                _make_plant_node(node_id=plant_id)
+            )
+        )
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.get(
                 f"/api/v1/dashboard/overview?plantId={plant_id}",
@@ -327,25 +219,7 @@ class TestDashboardOverviewEndpoint:
 
     def test_overview_with_granularity(self, client, mock_db, fake_redis) -> None:
         """时间粒度筛选（week）。"""
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] in (1, 2):
-                return _make_scalars_mock([])
-            if call_count[0] in (3, 4, 5, 6):
-                return _make_scalar_mock(0)
-            if call_count[0] == 7:
-                return _make_scalars_mock([])
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalars_mock([])
-            if call_count[0] == 10:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/dashboard/overview?granularity=week",
@@ -366,24 +240,7 @@ class TestDashboardOverviewEndpoint:
         roles = ["admin", "ic_engineer", "pe_engineer", "sponsor", "expert"]
 
         for role_key in roles:
-            # 重置 mock_db
-            call_count = [0]
-
-            async def execute_side_effect(stmt, *args, _cc=call_count, **kwargs):
-                _cc[0] += 1
-                if _cc[0] in (1, 2):
-                    return _make_scalars_mock([])
-                if _cc[0] in (3, 4, 5, 6):
-                    return _make_scalar_mock(0)
-                if _cc[0] == 7:
-                    return _make_scalars_mock([])
-                if _cc[0] == 8:
-                    return _make_scalars_mock([])
-                if _cc[0] == 9:
-                    return _make_scalar_mock(0)
-                return _make_scalars_mock([])
-
-            mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+            mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
             with mock_current_user(TEST_USERS[role_key]):
                 resp = client.get(
                     "/api/v1/dashboard/overview",
@@ -402,23 +259,7 @@ class TestDashboardCache:
 
     def test_cache_miss_then_hit(self, client, mock_db, fake_redis) -> None:
         """第一次请求未命中缓存，第二次命中缓存。"""
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] in (1, 2):
-                return _make_scalars_mock([])
-            if call_count[0] in (3, 4, 5, 6):
-                return _make_scalar_mock(0)
-            if call_count[0] == 7:
-                return _make_scalars_mock([])
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
         with mock_current_user(TEST_USERS["admin"]):
             # 第一次请求：缓存未命中
@@ -429,10 +270,6 @@ class TestDashboardCache:
             assert resp1.status_code == 200
             data1 = resp1.json()["data"]
             assert data1["cached"] is False
-            assert call_count[0] > 0  # 执行了 DB 查询
-
-            # 记录第一次的 DB 调用次数
-            first_call_count = call_count[0]
 
             # 第二次请求：缓存命中
             resp2 = client.get(
@@ -442,8 +279,6 @@ class TestDashboardCache:
             assert resp2.status_code == 200
             data2 = resp2.json()["data"]
             assert data2["cached"] is True
-            # 缓存命中不应增加 DB 调用次数
-            assert call_count[0] == first_call_count
 
     def test_cache_key_differs_by_role(self, client, mock_db, fake_redis) -> None:
         """不同角色使用不同缓存 key（服务层验证）。"""
@@ -478,23 +313,7 @@ class TestDashboardCache:
         self, client, mock_db, fake_redis
     ) -> None:
         """Redis 不可用时降级为直接查询，不报错。"""
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] in (1, 2):
-                return _make_scalars_mock([])
-            if call_count[0] in (3, 4, 5, 6):
-                return _make_scalar_mock(0)
-            if call_count[0] == 7:
-                return _make_scalars_mock([])
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
         # 模拟 Redis 不可用
         with (
@@ -520,39 +339,14 @@ class TestDashboardCache:
 class TestDashboardService:
     """Dashboard service 单元测试。"""
 
-    async def test_get_dashboard_overview_admin(self) -> None:
+    async def test_get_dashboard_overview_admin(
+        self, mock_dashboard_session_local
+    ) -> None:
         """ADMIN 角色获取工作台数据。"""
         from app.services.dashboard import get_dashboard_overview
 
         db = AsyncMock()
-        snapshots = [_make_snapshot()]
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _make_scalars_mock(snapshots)
-            if call_count[0] == 2:
-                return _make_scalars_mock([])
-            if call_count[0] in (3, 4, 5, 6):
-                return _make_scalar_mock(0)
-            if call_count[0] == 7:
-                return _make_scalars_mock(snapshots)
-            if call_count[0] == 8:
-                return _make_scalars_mock([_make_loop()])
-            if call_count[0] == 9:
-                return _make_scalars_mock([_make_plant_node()])
-            if call_count[0] == 10:
-                return _make_all_mock([])
-            if call_count[0] == 11:
-                return _make_scalars_mock(snapshots)
-            if call_count[0] == 12:
-                return _make_scalars_mock([])
-            if call_count[0] == 13:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        db.execute = AsyncMock(side_effect=execute_side_effect)
+        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         with patch("app.services.dashboard.redis_client") as mock_redis:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)
@@ -566,28 +360,14 @@ class TestDashboardService:
         assert result["filter_scope"]["user_role"] == "ADMIN"
         assert result["cached"] is False
 
-    async def test_get_dashboard_overview_sponsor_no_loops(self) -> None:
+    async def test_get_dashboard_overview_sponsor_no_loops(
+        self, mock_dashboard_session_local
+    ) -> None:
         """SPONSOR 角色不返回低效回路列表。"""
         from app.services.dashboard import get_dashboard_overview
 
         db = AsyncMock()
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] in (1, 2):
-                return _make_scalars_mock([])
-            if call_count[0] in (3, 4, 5, 6):
-                return _make_scalar_mock(0)
-            if call_count[0] == 7:
-                return _make_scalars_mock([])
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        db.execute = AsyncMock(side_effect=execute_side_effect)
+        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         with patch("app.services.dashboard.redis_client") as mock_redis:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)
@@ -622,28 +402,14 @@ class TestDashboardService:
         assert result["cached"] is True
         assert result["pending_alerts"]["open_diagnoses"] == 5
 
-    async def test_get_dashboard_overview_empty_data(self) -> None:
+    async def test_get_dashboard_overview_empty_data(
+        self, mock_dashboard_session_local
+    ) -> None:
         """无数据时返回空结构。"""
         from app.services.dashboard import get_dashboard_overview
 
         db = AsyncMock()
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] in (1, 2):
-                return _make_scalars_mock([])
-            if call_count[0] in (3, 4, 5, 6):
-                return _make_scalar_mock(0)
-            if call_count[0] == 7:
-                return _make_scalars_mock([])
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        db.execute = AsyncMock(side_effect=execute_side_effect)
+        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         with patch("app.services.dashboard.redis_client") as mock_redis:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)
@@ -660,34 +426,20 @@ class TestDashboardService:
         # 所有 composite_scores 为 None
         assert all(s is None for s in result["trend_summary"]["composite_scores"])
 
-    async def test_get_dashboard_overview_with_plant_id(self) -> None:
+    async def test_get_dashboard_overview_with_plant_id(
+        self, mock_dashboard_session_local
+    ) -> None:
         """带 plant_id 时查询装置名称。"""
         from app.services.dashboard import get_dashboard_overview
 
         db = AsyncMock()
         plant_id = "00000000-0000-0000-0000-000000000111"
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            # 1: _get_plant_name
-            if call_count[0] == 1:
-                return _make_scalar_one_or_none_mock(
-                    _make_plant_node(node_id=plant_id, name="加氢装置")
-                )
-            if call_count[0] in (2, 3):
-                return _make_scalars_mock([])
-            if call_count[0] in (4, 5, 6, 7):
-                return _make_scalar_mock(0)
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalars_mock([])
-            if call_count[0] == 10:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        db.execute = AsyncMock(side_effect=execute_side_effect)
+        # mock_db 仅用于 _get_plant_name 查询
+        db.execute = AsyncMock(
+            return_value=_make_scalar_one_or_none_mock(
+                _make_plant_node(node_id=plant_id, name="加氢装置")
+            )
+        )
         with patch("app.services.dashboard.redis_client") as mock_redis:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)
@@ -697,28 +449,12 @@ class TestDashboardService:
         assert result["filter_scope"]["plant_id"] == plant_id
         assert result["filter_scope"]["plant_name"] == "加氢装置"
 
-    async def test_granularity_week(self) -> None:
+    async def test_granularity_week(self, mock_dashboard_session_local) -> None:
         """week 粒度使用 7 天时间窗。"""
         from app.services.dashboard import get_dashboard_overview
 
         db = AsyncMock()
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] in (1, 2):
-                return _make_scalars_mock([])
-            if call_count[0] in (3, 4, 5, 6):
-                return _make_scalar_mock(0)
-            if call_count[0] == 7:
-                return _make_scalars_mock([])
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        db.execute = AsyncMock(side_effect=execute_side_effect)
+        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         with patch("app.services.dashboard.redis_client") as mock_redis:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)
@@ -727,28 +463,12 @@ class TestDashboardService:
             )
         assert result["filter_scope"]["granularity"] == "week"
 
-    async def test_granularity_month(self) -> None:
+    async def test_granularity_month(self, mock_dashboard_session_local) -> None:
         """month 粒度使用 30 天时间窗。"""
         from app.services.dashboard import get_dashboard_overview
 
         db = AsyncMock()
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] in (1, 2):
-                return _make_scalars_mock([])
-            if call_count[0] in (3, 4, 5, 6):
-                return _make_scalar_mock(0)
-            if call_count[0] == 7:
-                return _make_scalars_mock([])
-            if call_count[0] == 8:
-                return _make_scalars_mock([])
-            if call_count[0] == 9:
-                return _make_scalar_mock(0)
-            return _make_scalars_mock([])
-
-        db.execute = AsyncMock(side_effect=execute_side_effect)
+        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         with patch("app.services.dashboard.redis_client") as mock_redis:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)

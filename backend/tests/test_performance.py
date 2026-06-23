@@ -114,6 +114,41 @@ def _make_scalar_one_or_none_mock(value) -> MagicMock:
     return result
 
 
+def _make_aggregate_row_mock(cnt: int = 0, **fields) -> MagicMock:
+    """构造返回聚合查询结果的 row（用于 result.one()）。
+
+    cnt=0 且所有字段为 None 时，模拟无快照数据的聚合结果。
+    """
+    row = MagicMock()
+    row.cnt = cnt
+    # 显式设置所有 KPI 字段为 None（覆盖 MagicMock 自动创建）
+    for code in (
+        "good_value_rate",
+        "auto_mode_rate",
+        "steady_rate",
+        "accuracy_rate",
+        "oscillation_rate",
+        "saturation_rate",
+        "score",
+    ):
+        setattr(row, code, fields.get(code))
+    return row
+
+
+def _make_one_result_mock(row) -> MagicMock:
+    """构造 result.one() 返回 row 的 execute 结果。"""
+    result = MagicMock()
+    result.one.return_value = row
+    return result
+
+
+def _make_all_rows_mock(rows: list) -> MagicMock:
+    """构造返回 all() 的 execute 结果（用于元组/聚合行查询）。"""
+    result = MagicMock()
+    result.all.return_value = rows
+    return result
+
+
 # ---------------------------------------------------------------------------
 # S3-METRIC-001: 指标配置 CRUD
 # ---------------------------------------------------------------------------
@@ -788,7 +823,20 @@ class TestPerformanceService:
         from app.services.performance import get_board
 
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
+        # get_board 在 plant_node_id=None 时跳过装置名查询，依次调用：
+        # 1. _aggregate_kpi_cards → result.one() 期望 row.cnt=0
+        # 2. _aggregate_kpi_summary → result.one() 期望 row.cnt=0
+        # 3. _aggregate_steady_trend → result.all() 期望空列表
+        # 4. count_stmt (partialWarning) → result.all() 期望空列表
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] in (1, 2):
+                return _make_one_result_mock(_make_aggregate_row_mock(cnt=0))
+            return _make_all_rows_mock([])
+
+        db.execute = AsyncMock(side_effect=execute_side_effect)
         with patch("app.services.performance.redis_client") as mock_redis:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)

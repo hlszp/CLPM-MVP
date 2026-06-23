@@ -521,9 +521,7 @@ class TestTuningAPI:
 
     def test_identify_loop_not_found(self, client, mock_db) -> None:
         """模型辨识：回路不存在。"""
-        mock_db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(None)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
@@ -558,9 +556,7 @@ class TestTuningAPI:
     def test_create_task_success(self, client, mock_db) -> None:
         """保存整定任务。"""
         loop = _make_loop_mock()
-        mock_db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(loop)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
         mock_db.refresh = AsyncMock()
@@ -875,3 +871,125 @@ class TestBoundaryConditions:
         ops = [80.0] * 20 + [40.0] * 20
         step = _estimate_mv_step(ops)
         assert step == 40.0
+
+
+# ---------------------------------------------------------------------------
+# S3-C1: 算法对标验证测试（Åström-Hägglund 基准）
+# ---------------------------------------------------------------------------
+
+
+class TestAlgorithmBenchmark:
+    """算法对标验证测试 — 使用 Åström-Hägglund 基准 FOPDT 模型。
+
+    基准原理：给定已知 FOPDT 参数 K、tau、theta，生成阶跃响应数据，
+    调用 identify_fopdt 辨识参数，验证辨识精度。
+    """
+
+    @staticmethod
+    def _generate_fopdt_response(
+        K: float, tau: float, theta: float, mv_step: float, duration: float, dt: float = 1.0
+    ) -> tuple[list[float], list[float]]:
+        """生成 FOPDT 阶跃响应仿真数据（用于基准对标）。"""
+        pv_values: list[float] = []
+        timestamps: list[float] = []
+        n = int(duration / dt)
+        for i in range(n):
+            t = i * dt
+            timestamps.append(t)
+            if t < theta:
+                pv_values.append(0.0)
+            else:
+                pv_values.append(K * mv_step * (1.0 - math.exp(-(t - theta) / tau)))
+        return pv_values, timestamps
+
+    def test_benchmark_case_1(self):
+        """基准案例 1：K=1.0, tau=10.0, theta=2.0（Åström-Hägglund 经典参数）。"""
+        K_true, tau_true, theta_true = 1.0, 10.0, 2.0
+        mv_step = 10.0
+        # 仿真时长需远大于 tau 以保证响应充分进入稳态
+        pv_values, timestamps = self._generate_fopdt_response(
+            K_true, tau_true, theta_true, mv_step, duration=200.0, dt=0.5
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="COMBINED")
+
+        assert result["K"] is not None, "K 辨识失败"
+        assert result["tau"] is not None, "tau 辨识失败"
+        assert result["theta"] is not None, "theta 辨识失败"
+
+        # K 误差 < 5%
+        K_err = abs(result["K"] - K_true) / abs(K_true)
+        assert K_err < 0.05, f"K 误差 {K_err:.2%} 超过 5%（辨识值={result['K']}，真值={K_true}）"
+
+        # tau 误差 < 5%
+        tau_err = abs(result["tau"] - tau_true) / abs(tau_true)
+        assert tau_err < 0.05, (
+            f"tau 误差 {tau_err:.2%} 超过 5%（辨识值={result['tau']}，真值={tau_true}）"
+        )
+
+        # theta 误差 < 10%
+        theta_err = abs(result["theta"] - theta_true) / abs(theta_true)
+        assert theta_err < 0.10, (
+            f"theta 误差 {theta_err:.2%} 超过 10%（辨识值={result['theta']}，真值={theta_true}）"
+        )
+
+    def test_benchmark_case_2(self):
+        """基准案例 2：K=2.0, tau=20.0, theta=4.0（大增益大滞后）。"""
+        K_true, tau_true, theta_true = 2.0, 20.0, 4.0
+        mv_step = 5.0
+        pv_values, timestamps = self._generate_fopdt_response(
+            K_true, tau_true, theta_true, mv_step, duration=400.0, dt=0.5
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="COMBINED")
+
+        assert result["K"] is not None
+        assert result["tau"] is not None
+        assert result["theta"] is not None
+
+        K_err = abs(result["K"] - K_true) / abs(K_true)
+        assert K_err < 0.05, f"K 误差 {K_err:.2%} 超过 5%"
+
+        tau_err = abs(result["tau"] - tau_true) / abs(tau_true)
+        assert tau_err < 0.05, f"tau 误差 {tau_err:.2%} 超过 5%"
+
+        theta_err = abs(result["theta"] - theta_true) / abs(theta_true)
+        assert theta_err < 0.10, f"theta 误差 {theta_err:.2%} 超过 10%"
+
+    def test_benchmark_case_3(self):
+        """基准案例 3：K=0.5, tau=50.0, theta=5.0（慢过程）。"""
+        K_true, tau_true, theta_true = 0.5, 50.0, 5.0
+        mv_step = 20.0
+        pv_values, timestamps = self._generate_fopdt_response(
+            K_true, tau_true, theta_true, mv_step, duration=800.0, dt=1.0
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="COMBINED")
+
+        assert result["K"] is not None
+        assert result["tau"] is not None
+        assert result["theta"] is not None
+
+        K_err = abs(result["K"] - K_true) / abs(K_true)
+        assert K_err < 0.05, f"K 误差 {K_err:.2%} 超过 5%"
+
+        tau_err = abs(result["tau"] - tau_true) / abs(tau_true)
+        assert tau_err < 0.05, f"tau 误差 {tau_err:.2%} 超过 5%"
+
+        theta_err = abs(result["theta"] - theta_true) / abs(theta_true)
+        assert theta_err < 0.10, f"theta 误差 {theta_err:.2%} 超过 10%"
+
+    def test_benchmark_fitting_score(self):
+        """基准案例：拟合度应 > 95%（理想无噪声数据）。"""
+        K_true, tau_true, theta_true = 1.0, 10.0, 2.0
+        mv_step = 10.0
+        pv_values, timestamps = self._generate_fopdt_response(
+            K_true, tau_true, theta_true, mv_step, duration=200.0, dt=0.5
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="COMBINED")
+
+        # 无噪声理想数据，拟合度应非常高
+        assert result["fitting_score"] > 95.0, (
+            f"拟合度 {result['fitting_score']} 低于 95%（理想无噪声数据应 > 95%）"
+        )

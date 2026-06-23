@@ -73,8 +73,14 @@ class FakeRedis:
     async def get(self, key: str) -> str | None:
         return self._strings.get(key)
 
-    async def set(self, key: str, value: str, **kwargs: Any) -> None:
+    async def set(self, key: str, value: str, **kwargs: Any) -> str | None:
+        """Set a key. Supports nx (only if not exists) and ex (TTL) kwargs."""
+        if kwargs.get("nx") and key in self._strings:
+            return None
         self._strings[key] = value
+        if "ex" in kwargs:
+            self._ttls[key] = float(kwargs["ex"])
+        return value
 
     async def setex(self, key: str, ttl: int, value: str) -> None:
         self._strings[key] = value
@@ -128,6 +134,40 @@ class FakeRedis:
 # ---------------------------------------------------------------------------
 
 
+def _make_universal_db_result() -> MagicMock:
+    """构造通用 DB execute 结果，支持所有结果访问方式。
+
+    用于 dashboard 并行查询的 mock session，返回空/零/None 默认值。
+    各方法返回值：
+    - scalars().all() → []（空列表，用于 _build_inefficient_loops / _build_pending_alerts）
+    - scalar() → 0（用于 _build_pending_alerts diag count）
+    - scalar_one_or_none() → None（用于 _get_plant_name）
+    - one() → 空聚合行（cnt=0，所有字段 None，用于 _aggregate_kpi_cards_sql /
+      _aggregate_counts_sql）
+    - all() → []（空列表，用于 _aggregate_trend_summary_sql /
+      _batch_query_diagnosis_labels）
+    """
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    result.scalar.return_value = 0
+    result.scalar_one_or_none.return_value = None
+    # 空聚合行：所有 cur_/prev_ 字段为 None，cnt 为 0
+    empty_row = MagicMock()
+    empty_row.cur_cnt = 0
+    empty_row.prev_cnt = 0
+    empty_row.cur_score = None
+    empty_row.prev_score = None
+    empty_row.cur_auto_mode_rate = None
+    empty_row.prev_auto_mode_rate = None
+    empty_row.cur_steady_rate = None
+    empty_row.prev_steady_rate = None
+    empty_row.cur_good_value_rate = None
+    empty_row.prev_good_value_rate = None
+    result.one.return_value = empty_row
+    result.all.return_value = []
+    return result
+
+
 @pytest.fixture
 def fake_redis() -> FakeRedis:
     """Provide a fresh FakeRedis instance."""
@@ -146,14 +186,35 @@ def mock_db() -> AsyncMock:
 
 
 @pytest.fixture
+def mock_dashboard_session_local() -> AsyncMock:
+    """Patch app.services.dashboard.AsyncSessionLocal for service-layer tests.
+
+    Yields the mock parallel session whose execute returns a universal result.
+    """
+    universal_result = _make_universal_db_result()
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=universal_result)
+    with patch("app.services.dashboard.AsyncSessionLocal") as mock_factory:
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+        yield mock_session
+
+
+@pytest.fixture
 def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
     """Provide a TestClient with DB and Redis mocked out.
 
     The mock Redis is installed at module level so all auth service functions
     pick it up. The mock DB is injected via FastAPI dependency override.
+    AsyncSessionLocal is patched so dashboard parallel queries use a mock session.
     """
     from app.core.db import get_db
     from app.main import app
+
+    # 构造通用 DB 结果 mock（用于 dashboard 并行查询的独立 session）
+    universal_result = _make_universal_db_result()
+    mock_parallel_session = AsyncMock()
+    mock_parallel_session.execute = AsyncMock(return_value=universal_result)
 
     # Patch the redis_client used by the auth/dashboard services and rate limit middleware.
     with (
@@ -161,7 +222,14 @@ def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
         patch("app.services.auth.redis_client", fake_redis),
         patch("app.services.dashboard.redis_client", fake_redis),
         patch("app.middleware.rate_limit.redis_client", fake_redis),
+        patch("app.services.dashboard.AsyncSessionLocal") as mock_session_local,
     ):
+        # 配置 AsyncSessionLocal mock：每次 async with 返回 mock_parallel_session
+        mock_session_local.return_value.__aenter__ = AsyncMock(
+            return_value=mock_parallel_session
+        )
+        mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
+
         # Override DB dependency to return our mock session.
         async def _override_db():
             yield mock_db

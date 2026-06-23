@@ -18,8 +18,9 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.exceptions import BizError
 from app.core.redis import redis_client
@@ -323,24 +324,24 @@ async def get_board(
         if node:
             plant_node_name = node.name
 
-    # 查询时间窗内的快照数据
-    snapshots = await _query_snapshots(
-        db=db,
+    # 聚合 KPI 卡片（SQL 聚合）
+    kpi_cards = await _aggregate_kpi_cards(db, plant_node_id, start, now)
+    kpi_summary = await _aggregate_kpi_summary(db, plant_node_id, start, now)
+
+    # 平稳率趋势（SQL 按小时聚合）
+    steady_trend = await _aggregate_steady_trend(db, plant_node_id, start, now)
+
+    # 部分数据警告（SQL 按状态分组计数）
+    count_stmt = _apply_snapshot_filters(
+        select(KpiSnapshotHourly.status, func.count().label("cnt")),
         plant_node_id=plant_node_id,
         start=start,
         end=now,
-    )
-
-    # 聚合 KPI 卡片
-    kpi_cards = _aggregate_kpi_cards(snapshots)
-    kpi_summary = _aggregate_kpi_summary(snapshots)
-
-    # 平稳率趋势（按小时聚合）
-    steady_trend = _aggregate_steady_trend(snapshots)
-
-    # 部分数据警告
-    inconclusive_count = sum(1 for s in snapshots if s.status == "INCONCLUSIVE")
-    partial_count = sum(1 for s in snapshots if s.status == "PARTIAL")
+    ).group_by(KpiSnapshotHourly.status)
+    count_result = await db.execute(count_stmt)
+    status_counts = {r.status: r.cnt for r in count_result.all()}
+    inconclusive_count = status_counts.get("INCONCLUSIVE", 0)
+    partial_count = status_counts.get("PARTIAL", 0)
     partial_warning = {
         "active": inconclusive_count > 0 or partial_count > 0,
         "inconclusiveCount": inconclusive_count,
@@ -402,26 +403,45 @@ async def get_ranking(
         delta = TIME_WINDOWS.get(time_window, timedelta(days=1))
         start = now - delta
 
-    # 查询快照（仅 SUCCESS 状态，INCONCLUSIVE 不参与排行）
-    snapshots = await _query_snapshots(
-        db=db,
+    # 排序字段白名单（防止 SQL 注入：不直接拼接用户输入到 SQL）
+    sort_field_map = {
+        "score": "score",
+        "steady_rate": "steady_rate",
+        "good_value_rate": "good_value_rate",
+    }
+    sort_field_name = sort_field_map.get(sort_by, "score")
+
+    # 子查询：每个回路最新一条 SUCCESS 快照（PostgreSQL DISTINCT ON）
+    base = (
+        select(KpiSnapshotHourly)
+        .distinct(KpiSnapshotHourly.loop_id)
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+    )
+    base = _apply_snapshot_filters(
+        base,
         plant_node_id=plant_node_id,
         start=start,
         end=now,
         status_filter="SUCCESS",
     )
+    subquery = base.subquery()
+    snapshot_alias = aliased(KpiSnapshotHourly, subquery)
 
-    # 按回路聚合（取最新一条快照）
-    loop_latest: dict[str, KpiSnapshotHourly] = {}
-    for snap in snapshots:
-        loop_id = str(snap.loop_id) if snap.loop_id else ""
-        if not loop_id:
-            continue
-        if loop_id not in loop_latest or snap.ts_start > loop_latest[loop_id].ts_start:
-            loop_latest[loop_id] = snap
+    # 外层查询：按排序字段排序（NULLS LAST）并截断
+    sort_column = getattr(snapshot_alias, sort_field_name)
+    if sort_order.lower() == "desc":
+        order_expr = sort_column.desc().nulls_last()
+    else:
+        order_expr = sort_column.asc().nulls_last()
+
+    stmt = select(snapshot_alias).order_by(order_expr).limit(limit)
+    result = await db.execute(stmt)
+    snapshots = result.scalars().all()
+
+    # 收集 loop_id
+    loop_ids = [str(s.loop_id) for s in snapshots if s.loop_id]
 
     # 查询回路基础信息
-    loop_ids = list(loop_latest.keys())
     loop_map: dict[str, LoopLedger] = {}
     unit_map: dict[str, str] = {}
     if loop_ids:
@@ -450,9 +470,12 @@ async def get_ranking(
             if lid and tracker.action_status:
                 action_status_map[lid] = tracker.action_status
 
-    # 构建排行项
+    # 构建排行项（SQL 已完成去重、排序、截断）
     items: list[dict] = []
-    for loop_id, snap in loop_latest.items():
+    for snap in snapshots:
+        loop_id = str(snap.loop_id) if snap.loop_id else ""
+        if not loop_id:
+            continue
         loop = loop_map.get(loop_id)
         if not loop:
             continue
@@ -475,21 +498,7 @@ async def get_ranking(
             }
         )
 
-    # 排序
-    sort_field_map = {
-        "score": "compositeScore",
-        "steady_rate": "steadyRate",
-        "good_value_rate": "goodValueRate",
-    }
-    sort_field = sort_field_map.get(sort_by, "compositeScore")
-    reverse = sort_order.lower() == "desc"
-    items.sort(
-        key=lambda x: (x.get(sort_field) is None, x.get(sort_field) or 0),
-        reverse=reverse,
-    )
-
-    # 截断并打排名
-    items = items[:limit]
+    # 打排名
     for idx, item in enumerate(items, start=1):
         item["rank"] = idx
 
@@ -526,13 +535,14 @@ async def get_analytics(
         end=end_dt,
     )
 
-    # KPI 趋势
-    kpi_trend = _aggregate_kpi_trend(
-        snapshots=snapshots,
-        metric_key=metric_key,
-        granularity=granularity,
+    # KPI 趋势（SQL 聚合）
+    kpi_trend = await _aggregate_kpi_trend(
+        db=db,
+        plant_node_id=plant_node_id,
         start=start_dt,
         end=end_dt,
+        metric_key=metric_key,
+        granularity=granularity,
     )
 
     # 单元排名
@@ -647,15 +657,14 @@ def _engine_rule_to_dict(r: EngineRule) -> dict:
     }
 
 
-async def _query_snapshots(
-    db: AsyncSession,
+def _apply_snapshot_filters(
+    stmt,
     plant_node_id: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
     status_filter: str | None = None,
-) -> list[KpiSnapshotHourly]:
-    """查询快照数据，可选按装置/时间/状态过滤。"""
-    stmt = select(KpiSnapshotHourly)
+):
+    """为快照查询添加时间/状态/装置过滤条件。"""
     if start is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start >= start)
     if end is not None:
@@ -667,7 +676,24 @@ async def _query_snapshots(
         stmt = stmt.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id).where(
             LoopLedger.unit_id == plant_node_id
         )
-    stmt = stmt.order_by(KpiSnapshotHourly.ts_start.asc())
+    return stmt
+
+
+async def _query_snapshots(
+    db: AsyncSession,
+    plant_node_id: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    status_filter: str | None = None,
+) -> list[KpiSnapshotHourly]:
+    """查询快照数据，可选按装置/时间/状态过滤。"""
+    stmt = _apply_snapshot_filters(
+        select(KpiSnapshotHourly),
+        plant_node_id=plant_node_id,
+        start=start,
+        end=end,
+        status_filter=status_filter,
+    ).order_by(KpiSnapshotHourly.ts_start.asc())
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
@@ -715,25 +741,31 @@ def _kpi_status(metric_code: str, value: float | None, threshold: dict | None) -
     return "POOR"
 
 
-def _aggregate_kpi_cards(snapshots: list[KpiSnapshotHourly]) -> list[dict]:
-    """聚合 KPI 卡片（6 大 KPI + 综合评分 = 7 张卡片）。"""
-    if not snapshots:
-        return _empty_kpi_cards()
+async def _aggregate_kpi_cards(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+) -> list[dict]:
+    """聚合 KPI 卡片（6 大 KPI + 综合评分 = 7 张卡片）— SQL 聚合。"""
+    fields = (*KPI_METRIC_CODES, "score")
+    avg_cols = [func.avg(getattr(KpiSnapshotHourly, f)).label(f) for f in fields]
+    stmt = _apply_snapshot_filters(
+        select(func.count().label("cnt"), *avg_cols),
+        plant_node_id=plant_node_id,
+        start=start,
+        end=end,
+        status_filter="SUCCESS",
+    )
+    result = await db.execute(stmt)
+    row = result.one()
 
-    # 仅 SUCCESS 状态参与聚合
-    valid = [s for s in snapshots if s.status == "SUCCESS"]
-    if not valid:
+    if row.cnt == 0:
         return _empty_kpi_cards()
-
-    def avg(field: str) -> float | None:
-        vals = [getattr(s, field) for s in valid if getattr(s, field) is not None]
-        if not vals:
-            return None
-        return float(sum(vals) / len(vals))
 
     cards: list[dict] = []
     for code in KPI_METRIC_CODES:
-        val = avg(code)
+        val = _to_float(getattr(row, code))
         cards.append(
             {
                 "metricKey": code,
@@ -746,7 +778,7 @@ def _aggregate_kpi_cards(snapshots: list[KpiSnapshotHourly]) -> list[dict]:
         )
 
     # 综合评分卡片
-    score_avg = avg("score")
+    score_avg = _to_float(row.score)
     cards.append(
         {
             "metricKey": "composite_score",
@@ -800,106 +832,136 @@ def _default_threshold(metric_code: str) -> dict:
     return defaults.get(metric_code, {})
 
 
-def _aggregate_kpi_summary(snapshots: list[KpiSnapshotHourly]) -> dict:
-    """聚合 KPI 汇总。"""
-    valid = [s for s in snapshots if s.status == "SUCCESS"]
-    if not valid:
-        return {
-            "good_value_rate": None,
-            "auto_mode_rate": None,
-            "steady_rate": None,
-            "accuracy_rate": None,
-            "oscillation_rate": None,
-            "saturation_rate": None,
-            "composite_score": None,
-            "status": "INCONCLUSIVE",
-            "algorithm_version": ALGORITHM_VERSION,
-        }
+async def _aggregate_kpi_summary(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+) -> dict:
+    """聚合 KPI 汇总 — SQL 聚合。"""
+    fields = (*KPI_METRIC_CODES, "score")
+    avg_cols = [func.avg(getattr(KpiSnapshotHourly, f)).label(f) for f in fields]
+    stmt = _apply_snapshot_filters(
+        select(func.count().label("cnt"), *avg_cols),
+        plant_node_id=plant_node_id,
+        start=start,
+        end=end,
+        status_filter="SUCCESS",
+    )
+    result = await db.execute(stmt)
+    row = result.one()
 
-    def avg(field: str) -> float | None:
-        vals = [getattr(s, field) for s in valid if getattr(s, field) is not None]
-        if not vals:
-            return None
-        return round(float(sum(vals) / len(vals)), 2)
+    empty = {
+        "good_value_rate": None,
+        "auto_mode_rate": None,
+        "steady_rate": None,
+        "accuracy_rate": None,
+        "oscillation_rate": None,
+        "saturation_rate": None,
+        "composite_score": None,
+        "status": "INCONCLUSIVE",
+        "algorithm_version": ALGORITHM_VERSION,
+    }
+    if row.cnt == 0:
+        return empty
 
-    score_avg = avg("score")
+    def avg_value(field: str) -> float | None:
+        val = _to_float(getattr(row, field))
+        return round(val, 2) if val is not None else None
+
+    score_avg = avg_value("score")
     return {
-        "good_value_rate": avg("good_value_rate"),
-        "auto_mode_rate": avg("auto_mode_rate"),
-        "steady_rate": avg("steady_rate"),
-        "accuracy_rate": avg("accuracy_rate"),
-        "oscillation_rate": avg("oscillation_rate"),
-        "saturation_rate": avg("saturation_rate"),
+        "good_value_rate": avg_value("good_value_rate"),
+        "auto_mode_rate": avg_value("auto_mode_rate"),
+        "steady_rate": avg_value("steady_rate"),
+        "accuracy_rate": avg_value("accuracy_rate"),
+        "oscillation_rate": avg_value("oscillation_rate"),
+        "saturation_rate": avg_value("saturation_rate"),
         "composite_score": score_avg,
         "status": _score_to_status(score_avg),
         "algorithm_version": ALGORITHM_VERSION,
     }
 
 
-def _aggregate_steady_trend(snapshots: list[KpiSnapshotHourly]) -> dict:
-    """聚合平稳率趋势（按小时聚合）。"""
-    if not snapshots:
-        return {"timestamps": [], "values": []}
-
-    # 按小时分组
-    hourly: dict[str, list[float]] = {}
-    for s in snapshots:
-        if s.steady_rate is None:
-            continue
-        hour_key = s.ts_start.strftime("%Y-%m-%dT%H:00:00")
-        hourly.setdefault(hour_key, []).append(float(s.steady_rate))
-
-    timestamps = sorted(hourly.keys())
-    values = [round(sum(hourly[k]) / len(hourly[k]), 2) for k in timestamps]
-    return {"timestamps": timestamps, "values": values}
-
-
-def _aggregate_kpi_trend(
-    snapshots: list[KpiSnapshotHourly],
-    metric_key: str,
-    granularity: str,
+async def _aggregate_steady_trend(
+    db: AsyncSession,
+    plant_node_id: str | None,
     start: datetime,
     end: datetime,
 ) -> dict:
-    """聚合 KPI 趋势（按粒度分组）。"""
-    if not snapshots:
-        return {"timestamps": [], "series": []}
+    """聚合平稳率趋势（按小时聚合）— SQL date_trunc + GROUP BY + AVG。"""
+    hour_col = func.date_trunc("hour", KpiSnapshotHourly.ts_start).label("hour")
+    avg_col = func.avg(KpiSnapshotHourly.steady_rate).label("avg_steady")
+    stmt = (
+        _apply_snapshot_filters(
+            select(hour_col, avg_col),
+            plant_node_id=plant_node_id,
+            start=start,
+            end=end,
+        )
+        .group_by(hour_col)
+        .order_by(hour_col.asc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    timestamps = [r.hour.strftime("%Y-%m-%dT%H:00:00") for r in rows]
+    values = [
+        round(float(r.avg_steady), 2) if r.avg_steady is not None else None for r in rows
+    ]
+    return {"timestamps": timestamps, "values": values}
 
+
+async def _aggregate_kpi_trend(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+    metric_key: str,
+    granularity: str,
+) -> dict:
+    """聚合 KPI 趋势（按粒度分组）— SQL date_trunc + GROUP BY + AVG。"""
     field_map = {
-        "score": "score",
-        "good_value_rate": "good_value_rate",
-        "auto_mode_rate": "auto_mode_rate",
-        "steady_rate": "steady_rate",
-        "accuracy_rate": "accuracy_rate",
-        "oscillation_rate": "oscillation_rate",
-        "saturation_rate": "saturation_rate",
+        "score": KpiSnapshotHourly.score,
+        "good_value_rate": KpiSnapshotHourly.good_value_rate,
+        "auto_mode_rate": KpiSnapshotHourly.auto_mode_rate,
+        "steady_rate": KpiSnapshotHourly.steady_rate,
+        "accuracy_rate": KpiSnapshotHourly.accuracy_rate,
+        "oscillation_rate": KpiSnapshotHourly.oscillation_rate,
+        "saturation_rate": KpiSnapshotHourly.saturation_rate,
     }
-    field = field_map.get(metric_key, "score")
+    column = field_map.get(metric_key, KpiSnapshotHourly.score)
     metric_name = KPI_NAME_MAP.get(metric_key, metric_key)
 
-    def bucket_key(ts: datetime) -> str:
+    # 粒度白名单校验（date_trunc 第一参数为绑定参数，安全）
+    if granularity not in ("hour", "day", "week", "month"):
+        granularity = "day"
+
+    bucket_col = func.date_trunc(granularity, KpiSnapshotHourly.ts_start).label("bucket")
+    avg_col = func.avg(column).label("avg_value")
+    stmt = (
+        _apply_snapshot_filters(
+            select(bucket_col, avg_col),
+            plant_node_id=plant_node_id,
+            start=start,
+            end=end,
+        )
+        .group_by(bucket_col)
+        .order_by(bucket_col.asc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    def format_bucket(dt: datetime) -> str:
         if granularity == "hour":
-            return ts.strftime("%Y-%m-%dT%H:00:00")
-        if granularity == "day":
-            return ts.strftime("%Y-%m-%d")
-        if granularity == "week":
-            # ISO 周一为起始
-            monday = ts - timedelta(days=ts.weekday())
-            return monday.strftime("%Y-%m-%d")
+            return dt.strftime("%Y-%m-%dT%H:00:00")
         if granularity == "month":
-            return ts.strftime("%Y-%m")
-        return ts.strftime("%Y-%m-%d")
+            return dt.strftime("%Y-%m")
+        return dt.strftime("%Y-%m-%d")
 
-    grouped: dict[str, list[float]] = {}
-    for s in snapshots:
-        val = getattr(s, field, None)
-        if val is None:
-            continue
-        key = bucket_key(s.ts_start)
-        grouped.setdefault(key, []).append(float(val))
-
-    timestamps = sorted(grouped.keys())
-    values = [round(sum(grouped[k]) / len(grouped[k]), 2) for k in timestamps]
+    timestamps = [format_bucket(r.bucket) for r in rows]
+    values = [
+        round(float(r.avg_value), 2) if r.avg_value is not None else None for r in rows
+    ]
     return {
         "timestamps": timestamps,
         "series": [
