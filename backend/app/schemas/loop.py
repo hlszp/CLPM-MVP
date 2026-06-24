@@ -94,6 +94,7 @@ class LoopListItem(CamelModel):
     isActive: bool = True
     status: str = "PARTIAL"
     loopType: str | None = None
+    level: int | None = None
     score: float | None = None
     lastScoreAt: str | None = None
     tagMappingStatus: TagMappingStatus

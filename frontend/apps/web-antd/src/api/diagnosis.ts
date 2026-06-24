@@ -275,6 +275,35 @@ export namespace DiagnosisApi {
     afterStartTime: string;
     afterEndTime: string;
   }
+
+  /** 解决方案推荐项（SVC-11） */
+  export interface RecommendationItem {
+    label: string;
+    labelName: string;
+    priority: number;
+    action: string;
+    description: string;
+    targetModule: string;
+  }
+
+  /** 解决方案推荐响应（SVC-11） */
+  export interface RecommendationResult {
+    loopId: string;
+    recommendations: RecommendationItem[];
+    totalCount: number;
+  }
+
+  /** 诊断建议书 PDF 生成请求（SVC-12） */
+  export interface DiagnosisReportParams {
+    tagCodes?: string[];
+  }
+
+  /** 诊断统计 CSV 导出参数（SVC-13） */
+  export interface StatisticsExportParams {
+    startDate: string;
+    endDate: string;
+    plantNodeId?: string;
+  }
 }
 
 /**
@@ -402,4 +431,48 @@ export function getAbCompareApi(params: DiagnosisApi.AbCompareQueryParams) {
     '/diagnosis/ab-compare',
     { params },
   );
+}
+
+/**
+ * 获取解决方案推荐 — SVC-11
+ *
+ * 根据诊断标签返回标准化解决方案推荐。不传 tagCodes 时从数据库读取该回路最新诊断标签。
+ */
+export function getRecommendationsApi(
+  loopId: string,
+  tagCodes?: string[],
+) {
+  const params = tagCodes?.length ? { tagCodes: tagCodes.join(',') } : {};
+  return requestClient.get<DiagnosisApi.RecommendationResult>(
+    `/diagnosis/${loopId}/recommendations`,
+    { params },
+  );
+}
+
+/**
+ * 生成并下载诊断建议书 PDF — SVC-12
+ *
+ * 返回 Blob，前端通过 URL.createObjectURL 触发下载。
+ */
+export function generateDiagnosisReportApi(
+  loopId: string,
+  data?: DiagnosisApi.DiagnosisReportParams,
+) {
+  return requestClient.download<Blob>(`/diagnosis/${loopId}/report`, {
+    data,
+    method: 'POST',
+  });
+}
+
+/**
+ * 导出诊断统计 CSV — SVC-13
+ *
+ * 返回 Blob（UTF-8 with BOM），前端通过 URL.createObjectURL 触发下载。
+ */
+export function exportDiagnosisStatisticsApi(
+  params: DiagnosisApi.StatisticsExportParams,
+) {
+  return requestClient.download<Blob>('/diagnosis/statistics/export', {
+    params,
+  });
 }

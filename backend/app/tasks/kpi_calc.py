@@ -89,9 +89,11 @@ def calculate_loop_kpi(loop_id: str, ts_start: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Beat 调度配置：每小时执行一次
+# Beat 调度配置：每小时执行一次 + 每日 00:05 + 每月 1 日 00:10
 # ---------------------------------------------------------------------------
 
+
+from celery.schedules import crontab  # noqa: E402
 
 _beat_entry = {
     "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
@@ -101,6 +103,16 @@ _beat_entry = {
 # 合并到 celery_app 的 beat_schedule（与 aas_sync 的 beat 共存）
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
 _existing_beat["kpi-calc-hourly"] = _beat_entry
+# 节点级日聚合：每日 00:05 执行（聚合前一天的数据）
+_existing_beat["node-kpi-daily"] = {
+    "task": "app.tasks.kpi_calc.calculate_daily_kpi",
+    "schedule": crontab(hour=0, minute=5),
+}
+# 节点级月聚合：每月 1 日 00:10 执行（聚合上一个月的数据）
+_existing_beat["node-kpi-monthly"] = {
+    "task": "app.tasks.kpi_calc.calculate_monthly_kpi",
+    "schedule": crontab(hour=0, minute=10, day_of_month=1),
+}
 celery_app.conf.beat_schedule = _existing_beat
 celery_app.conf.timezone = "Asia/Shanghai"
 
@@ -1360,8 +1372,10 @@ async def _save_snapshot(
 __all__ = [
     "ALGORITHM_VERSION",
     "AsyncTask",
+    "calculate_daily_kpi",
     "calculate_hourly_kpi",
     "calculate_loop_kpi",
+    "calculate_monthly_kpi",
     "calculate_node_kpi",
     "calculate_node_kpi_hourly",
 ]
@@ -1516,3 +1530,112 @@ async def _do_calculate_single_node(
 
 # 节点级聚合不再使用独立 Beat 调度，改为回路级任务 _do_calculate() 完成后级联触发
 # calculate_node_kpi_hourly.delay()，消除时序竞态（原 node-kpi-hourly Beat 已移除）
+
+
+# ---------------------------------------------------------------------------
+# 节点级日/月聚合任务（GB/T 44693.2-2024 §6.4 多级时间聚合）
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_daily_kpi",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_daily_kpi(self: AsyncTask, stat_date: str | None = None) -> dict:
+    """每日节点级日聚合任务（Beat: 每日 00:05 触发）。
+
+    遍历所有 is_kpi_enabled=True 的 PlantNode 节点，
+    按 loop_count 加权聚合当天 24 条小时快照，
+    写入 kpi_node_snapshot_daily。
+
+    Args:
+        stat_date: 统计日期（ISO 8601），None 表示昨天（Beat 00:05 触发时聚合前一天数据）
+    """
+    logger.info("节点级日聚合任务开始, task_id=%s, stat_date=%s", self.request.id, stat_date)
+    try:
+        result = self.run_async(_do_calculate_daily(stat_date))
+        logger.info("节点级日聚合任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("节点级日聚合任务失败")
+        raise
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_monthly_kpi",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_monthly_kpi(self: AsyncTask, stat_month: str | None = None) -> dict:
+    """每月节点级月聚合任务（Beat: 每月 1 日 00:10 触发）。
+
+    遍历所有 is_kpi_enabled=True 的 PlantNode 节点，
+    按 loop_count 加权聚合当月所有日快照，
+    写入 kpi_node_snapshot_monthly。
+
+    Args:
+        stat_month: 统计月份（ISO 8601，月初），None 表示上个月（Beat 1 日 00:10 触发时聚合上个月数据）
+    """
+    logger.info("节点级月聚合任务开始, task_id=%s, stat_month=%s", self.request.id, stat_month)
+    try:
+        result = self.run_async(_do_calculate_monthly(stat_month))
+        logger.info("节点级月聚合任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("节点级月聚合任务失败")
+        raise
+
+
+async def _do_calculate_daily(stat_date: str | None = None) -> dict:
+    """执行节点级日聚合的实际 async 逻辑。"""
+    from datetime import date
+
+    from app.services.node_aggregation import aggregate_all_nodes_daily
+
+    # 默认聚合昨天（Beat 00:05 触发时，前一天的数据已完整）
+    if stat_date:
+        try:
+            stat_date_dt = datetime.fromisoformat(stat_date.replace("Z", "+00:00")).date()
+        except ValueError:
+            stat_date_dt = date.fromisoformat(stat_date)
+    else:
+        now = datetime.now(UTC)
+        stat_date_dt = (now - timedelta(days=1)).date()
+
+    return await aggregate_all_nodes_daily(stat_date_dt)
+
+
+async def _do_calculate_monthly(stat_month: str | None = None) -> dict:
+    """执行节点级月聚合的实际 async 逻辑。"""
+    from datetime import date
+
+    from app.services.node_aggregation import aggregate_all_nodes_monthly
+
+    # 默认聚合上个月（Beat 1 日 00:10 触发时，上个月的数据已完整）
+    if stat_month:
+        try:
+            stat_month_dt = datetime.fromisoformat(stat_month.replace("Z", "+00:00")).date()
+        except ValueError:
+            stat_month_dt = date.fromisoformat(stat_month)
+        # 规范化为月初
+        stat_month_dt = stat_month_dt.replace(day=1)
+    else:
+        now = datetime.now(UTC)
+        # 上个月月初
+        if now.month == 1:
+            stat_month_dt = date(now.year - 1, 12, 1)
+        else:
+            stat_month_dt = date(now.year, now.month - 1, 1)
+
+    return await aggregate_all_nodes_monthly(stat_month_dt)

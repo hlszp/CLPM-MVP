@@ -138,10 +138,17 @@ async def list_loops(
     status: str | None = None,
     keyword: str | None = None,
     loop_type: str | None = None,
+    level: int | None = None,
+    monitor_status: bool | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    """分页查询回路列表。"""
+    """分页查询回路列表。
+
+    Args:
+        level: 按回路级别筛选（1/2/3）
+        monitor_status: 按监控状态筛选（True=is_active=True，False=is_active=False）
+    """
     conditions = []
     if plant_node_id:
         # 递归获取所有子孙节点 ID，包含自身
@@ -154,6 +161,12 @@ async def list_loops(
         conditions.append(func.upper(LoopLedger.status) == status.upper())
     if loop_type:
         conditions.append(func.upper(LoopLedger.loop_type) == loop_type.upper())
+    if level is not None:
+        conditions.append(LoopLedger.level == level)
+    if monitor_status is not None:
+        # monitor_status=True → is_active=True（在监控中）
+        # monitor_status=False → is_active=False（已停用监控）
+        conditions.append(LoopLedger.is_active.is_(monitor_status))
     if keyword:
         kw = f"%{keyword}%"
         conditions.append(
@@ -222,6 +235,7 @@ async def list_loops(
                 "isActive": bool(loop.is_active),
                 "status": loop.status,
                 "loopType": loop.loop_type,
+                "level": loop.level,
                 "score": float(loop.score_weight) if loop.score_weight else None,
                 "lastScoreAt": (
                     loop.last_aas_sync_at.isoformat() if loop.last_aas_sync_at else None

@@ -22,6 +22,7 @@ from app.schemas.common import ApiResponse, success
 from app.schemas.node_performance import (
     NodeCalculateRequest,
     NodeCalculateResult,
+    NodeMonitorData,
     NodeOverviewData,
     NodeRankingItem,
     NodeSnapshotItem,
@@ -29,6 +30,7 @@ from app.schemas.node_performance import (
 )
 from app.services.node_performance import (
     get_node_latest_snapshot,
+    get_node_monitor_data,
     get_node_ranking,
     get_node_trend,
     get_nodes_overview,
@@ -205,6 +207,52 @@ async def get_nodes_overview_endpoint(
     """全厂总览：所有启用 KPI 评估的节点最新快照汇总（所有角色）。"""
     start, end = _parse_time_window(time_window=timeWindow)
     data = await get_nodes_overview(db, start, end)
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# GET /nodes/{nodeId}/monitor — 节点多维度监控（hour/day/month）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{node_id}/monitor", response_model=ApiResponse[NodeMonitorData])
+async def get_node_monitor_endpoint(
+    node_id: str,
+    dimension: str = Query("hour", description="维度：hour/day/month"),
+    start: str = Query(..., description="起始时间（ISO 8601，date 或 datetime）"),
+    end: str = Query(..., description="结束时间（ISO 8601，date 或 datetime）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取节点多维度监控数据（hour/day/month，所有角色）。
+
+    - dimension=hour：读 kpi_node_snapshot_hourly（按 ts_start 过滤）
+    - dimension=day：读 kpi_node_snapshot_daily（按 stat_date 过滤）
+    - dimension=month：读 kpi_node_snapshot_monthly（按 stat_month 过滤）
+    """
+    if dimension not in ("hour", "day", "month"):
+        return success(
+            data=None,
+            message=f"不支持的维度: {dimension}，可选值: hour/day/month",
+        )
+
+    # 解析时间参数（兼容带 Z 后缀的 ISO 8601 和纯日期）
+    def _parse_dt(s: str) -> datetime:
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return datetime.fromisoformat(s)
+
+    start_dt = _parse_dt(start)
+    end_dt = _parse_dt(end)
+
+    data = await get_node_monitor_data(
+        db=db,
+        plant_node_id=node_id,
+        dimension=dimension,
+        start=start_dt,
+        end=end_dt,
+    )
     return success(data=data)
 
 

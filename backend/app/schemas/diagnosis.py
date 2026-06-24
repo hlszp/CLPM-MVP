@@ -246,6 +246,56 @@ class AnalyticsExportData(CamelModel):
     status: str = "PENDING"
 
 
+# ---------------------------------------------------------------------------
+# SVC-11: 诊断解决方案推荐
+# ---------------------------------------------------------------------------
+
+
+class RecommendationItem(CamelModel):
+    """单条解决方案推荐。"""
+
+    label: str = Field(..., description="标签码（归一化后的 8 类标签之一）")
+    labelName: str = Field(..., description="标签中文名")
+    priority: int = Field(..., ge=1, le=3, description="优先级：1=高、2=中、3=低")
+    action: str = Field(..., description="行动项")
+    description: str = Field(..., description="详细描述")
+    targetModule: str = Field(..., description="目标模块：整定/跟踪/none")
+
+
+class RecommendationData(CamelModel):
+    """解决方案推荐响应 data 块。"""
+
+    loopId: str
+    recommendations: list[RecommendationItem] = Field(default_factory=list)
+    totalCount: int = 0
+
+
+# ---------------------------------------------------------------------------
+# SVC-12: 诊断建议书 PDF 生成
+# ---------------------------------------------------------------------------
+
+
+class DiagnosisReportRequest(CamelModel):
+    """POST /diagnosis/{loopId}/report 请求体（可选，默认使用最新诊断结果）。"""
+
+    tagCodes: list[str] | None = Field(
+        None, description="诊断标签列表（可选，默认从数据库读取）"
+    )
+
+
+# ---------------------------------------------------------------------------
+# SVC-13: 诊断统计 CSV 导出
+# ---------------------------------------------------------------------------
+
+
+class DiagnosisStatisticsExportParams(CamelModel):
+    """GET /diagnosis/statistics/export 查询参数。"""
+
+    startDate: str = Field(..., description="开始日期（ISO 8601）")
+    endDate: str = Field(..., description="结束日期（ISO 8601）")
+    plantNodeId: str | None = Field(None, description="按装置/单元筛选")
+
+
 __all__ = [
     "AnalyticsExportData",
     "AnalyticsExportRequest",
@@ -259,9 +309,13 @@ __all__ = [
     "DiagnosisLabelDetail",
     "DiagnosisListData",
     "DiagnosisListItem",
+    "DiagnosisReportRequest",
+    "DiagnosisStatisticsExportParams",
     "EfficiencyTrend",
     "EvidenceChain",
     "LabelDistributionItem",
+    "RecommendationData",
+    "RecommendationItem",
     "TrackerExportData",
     "TrackerStatusData",
     "TrackerStatusUpdate",

@@ -1,20 +1,24 @@
-"""Diagnosis center endpoints (IDS v3.2 §2.4 — S4-DIAG-001~006).
+"""Diagnosis center endpoints (IDS v3.2 §2.4 — S4-DIAG-001~006 + SVC-11/12/13).
 
 路由清单：
-- GET    /api/v1/diagnosis/metrics             — 获取诊断指标配置列表
-- PUT    /api/v1/diagnosis/metrics/{diagId}    — 更新诊断指标配置（仅 ADMIN）
-- GET    /api/v1/diagnosis/list                — 诊断列表（分页 + 筛选）
-- GET    /api/v1/diagnosis/{loopId}            — 诊断详情
-- PATCH  /api/v1/tracker/{loopId}/status       — 更新处理状态（仅 IC_ENGINEER）
-- POST   /api/v1/tracker/{loopId}/export       — 导出诊断建议书 PDF
-- GET    /api/v1/diagnosis/analytics           — 诊断统计报表
-- POST   /api/v1/diagnosis/analytics/export    — 导出统计报表
-- GET    /api/v1/timeseries/{loopId}/waveform  — 波形数据
+- GET    /api/v1/diagnosis/metrics                       — 获取诊断指标配置列表
+- PUT    /api/v1/diagnosis/metrics/{diagId}              — 更新诊断指标配置（仅 ADMIN）
+- GET    /api/v1/diagnosis/list                          — 诊断列表（分页 + 筛选）
+- GET    /api/v1/diagnosis/{loopId}                      — 诊断详情
+- GET    /api/v1/diagnosis/{loopId}/recommendations      — 获取解决方案推荐（SVC-11）
+- POST   /api/v1/diagnosis/{loopId}/report               — 生成并下载 PDF 建议书（SVC-12）
+- GET    /api/v1/diagnosis/statistics/export             — 导出诊断统计 CSV（SVC-13）
+- PATCH  /api/v1/tracker/{loopId}/status                 — 更新处理状态（仅 IC_ENGINEER）
+- POST   /api/v1/tracker/{loopId}/export                 — 导出诊断建议书 PDF
+- GET    /api/v1/diagnosis/analytics                     — 诊断统计报表
+- POST   /api/v1/diagnosis/analytics/export              — 导出统计报表
+- GET    /api/v1/timeseries/{loopId}/waveform            — 波形数据
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
@@ -28,6 +32,8 @@ from app.schemas.diagnosis import (
     DiagnosisConfigItem,
     DiagnosisConfigUpdate,
     DiagnosisListData,
+    DiagnosisReportRequest,
+    RecommendationData,
     TrackerExportData,
     TrackerStatusData,
     TrackerStatusUpdate,
@@ -39,6 +45,14 @@ from app.services.diagnosis import (
     list_diagnosis,
     list_diagnosis_configs,
     update_diagnosis_config,
+)
+from app.services.diagnosis_recommendation import (
+    get_recommendations,
+    get_recommendations_for_loop,
+)
+from app.services.diagnosis_report import (
+    export_diagnosis_statistics,
+    generate_diagnosis_report,
 )
 from app.services.tracker import export_tracker_pdf, update_tracker_status
 from app.services.waveform import get_waveform
@@ -160,6 +174,39 @@ async def export_analytics_endpoint(
     return success(data=data, message="导出任务已提交")
 
 
+# ---------------------------------------------------------------------------
+# SVC-13: 诊断统计 CSV 导出
+# ---------------------------------------------------------------------------
+
+
+@router.get("/statistics/export")
+async def export_statistics_csv_endpoint(
+    startDate: str = Query(..., description="开始日期（ISO 8601）"),
+    endDate: str = Query(..., description="结束日期（ISO 8601）"),
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> Response:
+    """导出诊断统计 CSV（SVC-13）。
+
+    统计各标签数量、分布、趋势，返回 CSV 文件（UTF-8 with BOM）。
+    """
+    csv_bytes = await export_diagnosis_statistics(
+        db=db,
+        start_date=startDate,
+        end_date=endDate,
+        plant_node_id=plantNodeId,
+    )
+    filename = f"diagnosis_statistics_{startDate[:10]}_{endDate[:10]}.csv"
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
 @router.get("/{loop_id}", response_model=ApiResponse[dict])
 async def get_diagnosis_detail_endpoint(
     loop_id: str,
@@ -169,6 +216,81 @@ async def get_diagnosis_detail_endpoint(
     """诊断详情（含 8 类标签数组 + 证据链 + 特征值）。"""
     data = await get_diagnosis_detail(db=db, loop_id=loop_id)
     return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# SVC-11: 诊断解决方案推荐
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{loop_id}/recommendations",
+    response_model=ApiResponse[RecommendationData],
+)
+async def get_recommendations_endpoint(
+    loop_id: str,
+    tagCodes: str | None = Query(
+        None,
+        description="诊断标签列表（逗号分隔，可选。不传则从数据库读取该回路最新诊断标签）",
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取解决方案推荐（SVC-11）。
+
+    根据诊断标签返回标准化解决方案推荐，每条建议包含优先级、行动项、描述和目标模块。
+    """
+    if tagCodes:
+        tag_list = [t.strip() for t in tagCodes.split(",") if t.strip()]
+        data = get_recommendations(loop_id, tag_list)
+    else:
+        data = await get_recommendations_for_loop(db=db, loop_id=loop_id)
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# SVC-12: 诊断建议书 PDF 生成
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{loop_id}/report")
+async def generate_report_endpoint(
+    loop_id: str,
+    body: DiagnosisReportRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(
+        require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")
+    ),
+) -> Response:
+    """生成并下载 PDF 建议书（SVC-12）。
+
+    内容：回路信息 + 诊断结果 + 性能指标 + 可能原因 + 解决方案推荐 + 生成时间。
+    返回 PDF 文件 bytes。
+    """
+    # 1. 获取诊断详情作为快照数据
+    snapshot_data = await get_diagnosis_detail(db=db, loop_id=loop_id)
+
+    # 2. 获取推荐方案
+    if body and body.tag_codes:
+        recommendations = get_recommendations(loop_id, body.tag_codes)
+    else:
+        recommendations = await get_recommendations_for_loop(db=db, loop_id=loop_id)
+
+    # 3. 生成 PDF
+    pdf_bytes = generate_diagnosis_report(
+        loop_id=loop_id,
+        snapshot_data=snapshot_data,
+        recommendations=recommendations,
+    )
+
+    filename = f"diagnosis_report_{loop_id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

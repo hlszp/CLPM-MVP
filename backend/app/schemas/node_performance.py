@@ -112,9 +112,46 @@ class NodeCalculateResult(CamelModel):
     reason: str | None = None
 
 
+class NodeMonitorSnapshot(CamelModel):
+    """节点监控快照项（兼容 hour/day/month 三种维度）。"""
+
+    plantNodeId: str
+    plantNodeName: str | None = None
+    dimension: str
+    tsStart: str | None = None
+    tsEnd: str | None = None
+    score: float | None = None
+    goodValueRate: float | None = None
+    autoModeRate: float | None = None
+    effectiveAutoRate: float | None = None
+    steadyRate: float | None = None
+    accuracyRate: float | None = None
+    fastResponseRate: float | None = None
+    oscillationRate: float | None = None
+    saturationRate: float | None = None
+    autoLoopRatio: float | None = None
+    realtimeAutoRate: float | None = None
+    loopCount: int = 0
+    status: str
+    algorithmVersion: str | None = None
+
+
+class NodeMonitorData(CamelModel):
+    """节点多维度监控数据。"""
+
+    plantNodeId: str
+    plantNodeName: str | None = None
+    dimension: str
+    start: str | None = None
+    end: str | None = None
+    snapshots: list[NodeMonitorSnapshot] = []
+
+
 __all__ = [
     "NodeCalculateRequest",
     "NodeCalculateResult",
+    "NodeMonitorData",
+    "NodeMonitorSnapshot",
     "NodeOverviewData",
     "NodeOverviewItem",
     "NodeRankingItem",

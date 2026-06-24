@@ -6,18 +6,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -71,4 +73,108 @@ class KpiNodeSnapshotHourly(Base):
     )
 
 
-__all__ = ["KpiNodeSnapshotHourly"]
+class KpiNodeSnapshotDaily(Base):
+    """节点级日性能评估快照（DDL §9.2）。
+
+    按 loop_count 加权聚合当天 24 条小时快照；
+    realtime_auto_rate 取当天最后一次小时快照的值（非聚合）。
+    """
+
+    __tablename__ = "kpi_node_snapshot_daily"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    plant_node_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("plant_node.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    stat_date: Mapped[date] = mapped_column(Date, nullable=False)
+    score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    good_value_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    auto_mode_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    steady_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    auto_loop_ratio: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    realtime_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    loop_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    algorithm_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')",
+            name="ck_kpi_node_snapshot_daily_status",
+        ),
+        UniqueConstraint(
+            "plant_node_id", "stat_date",
+            name="uk_kpi_node_snapshot_daily_node_date",
+        ),
+        Index("idx_kpi_node_snapshot_daily_node_id", "plant_node_id"),
+        Index("idx_kpi_node_snapshot_daily_stat_date", "stat_date"),
+        Index("idx_kpi_node_snapshot_daily_status", "status"),
+        Index("idx_kpi_node_snapshot_daily_node_date", "plant_node_id", "stat_date"),
+    )
+
+
+class KpiNodeSnapshotMonthly(Base):
+    """节点级月性能评估快照（DDL §9.3）。
+
+    按 loop_count 加权聚合当月所有日快照；
+    realtime_auto_rate 取当月最后一次小时快照的值（非聚合）。
+    """
+
+    __tablename__ = "kpi_node_snapshot_monthly"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    plant_node_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("plant_node.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    stat_month: Mapped[date] = mapped_column(Date, nullable=False)
+    score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    good_value_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    auto_mode_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    steady_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    auto_loop_ratio: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    realtime_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    loop_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    algorithm_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')",
+            name="ck_kpi_node_snapshot_monthly_status",
+        ),
+        UniqueConstraint(
+            "plant_node_id", "stat_month",
+            name="uk_kpi_node_snapshot_monthly_node_month",
+        ),
+        Index("idx_kpi_node_snapshot_monthly_node_id", "plant_node_id"),
+        Index("idx_kpi_node_snapshot_monthly_stat_month", "stat_month"),
+        Index("idx_kpi_node_snapshot_monthly_status", "status"),
+        Index("idx_kpi_node_snapshot_monthly_node_month", "plant_node_id", "stat_month"),
+    )
+
+
+__all__ = [
+    "KpiNodeSnapshotDaily",
+    "KpiNodeSnapshotHourly",
+    "KpiNodeSnapshotMonthly",
+]

@@ -13,6 +13,11 @@ from app.models.engine import EngineRule
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
 from app.models.metric import KpiSnapshotHourly, MetricConfig
+from app.models.node_kpi import (
+    KpiNodeSnapshotDaily,
+    KpiNodeSnapshotHourly,
+    KpiNodeSnapshotMonthly,
+)
 from app.models.plant_node import PlantNode
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
@@ -37,6 +42,9 @@ __all__ = [
     "DiagnosisConfig",
     "EngineRule",
     "KpiSnapshotHourly",
+    "KpiNodeSnapshotHourly",
+    "KpiNodeSnapshotDaily",
+    "KpiNodeSnapshotMonthly",
     "ActionTracker",
     "DiagnosisResult",
     "TuningRecord",

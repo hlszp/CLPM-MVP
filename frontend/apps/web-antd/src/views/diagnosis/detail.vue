@@ -1,12 +1,14 @@
 <script lang="ts" setup>
 /**
- * S4-DIAG 诊断详情页
+ * S4-DIAG 诊断详情页（FE-12 三段式重构）
  *
  * 对齐 FDS §5.4 + IDS v3.2 §2.4 + PRD §4.4
- * - 上下分栏结构（FDS §5.4）：
- *   - 上部（时序分析区）：内嵌时序波形（PV/SP/OP）+ PV-OP 散点图
- *   - 下部（诊断结论区）：诊断标签 + 证据链（推理过程）+ 特征值
+ * - 三段式结构（FE-12）：
+ *   1. 问题定位路径：诊断标签 + 置信度 + 推理过程
+ *   2. 证据链：时序波形 + PV-OP 散点图 + 特征值
+ *   3. 解决方案推荐：优先级排序的建议列表（FE-13）
  * - 顶部：回路基本信息 + 综合评分 + 融合置信度 + 时间窗切换
+ * - FE-14：诊断建议书 PDF 导出按钮
  * - 异常跟踪以 Drawer 形式打开（与 P1-2 约定接口）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
@@ -24,12 +26,20 @@ import {
   Card,
   Descriptions,
   DescriptionsItem,
+  message,
   Spin,
+  Steps,
   Tag,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisDetailApi, getWaveformApi } from '#/api/diagnosis';
+import {
+  generateDiagnosisReportApi,
+  getDiagnosisDetailApi,
+  getRecommendationsApi,
+  getWaveformApi,
+} from '#/api/diagnosis';
+import Recommendations from '#/components/diagnosis/recommendations.vue';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
@@ -45,8 +55,11 @@ const loopId = route.params.loopId as string;
 
 const loading = ref(false);
 const waveformLoading = ref(false);
+const recommendationsLoading = ref(false);
+const reportGenerating = ref(false);
 const detail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
 const waveform = ref<DiagnosisApi.WaveformResult | null>(null);
+const recommendations = ref<DiagnosisApi.RecommendationItem[]>([]);
 const timeWindow = ref<DiagnosisApi.TimeWindow>('last_24_hours');
 
 /** 异常跟踪 Drawer 可见性 */
@@ -78,6 +91,48 @@ const pageTitle = computed(() => {
   return '诊断详情';
 });
 
+/** FE-12 三段式：问题定位路径 Steps */
+const problemPathSteps = computed(() => {
+  if (!detail.value || !detail.value.diagnosisLabels.length) {
+    return [
+      {
+        title: '数据采集',
+        description: '采集 PV/SP/OP 时序数据',
+      },
+      {
+        title: '特征提取',
+        description: 'FFT/散点拟合/质量码统计',
+      },
+      {
+        title: '暂无诊断结论',
+        description: '未检测到异常标签',
+      },
+    ];
+  }
+  const steps: { title: string; description: string }[] = [
+    {
+      title: '数据采集',
+      description: '采集 PV/SP/OP 时序数据',
+    },
+    {
+      title: '特征提取',
+      description: 'FFT/散点拟合/质量码统计',
+    },
+  ];
+  for (const item of detail.value.diagnosisLabels) {
+    steps.push({
+      title: item.labelName || labelNameMap[item.label] || item.label,
+      description: `置信度 ${(item.confidence * 100).toFixed(1)}%`,
+    });
+  }
+  return steps;
+});
+
+/** 当前 Step 索引（指向最后一个，即结论） */
+const currentStep = computed(() => {
+  return Math.max(0, problemPathSteps.value.length - 1);
+});
+
 /** 时间窗映射为 [startTime, endTime]（dayjs） */
 function getTimeRange(
   tw: DiagnosisApi.TimeWindow,
@@ -103,8 +158,9 @@ async function loadDetail() {
     const data = await getDiagnosisDetailApi(loopId, timeWindow.value);
     detail.value = data;
     renderScatterChart();
-    // 详情加载成功后并行加载波形数据
+    // 详情加载成功后并行加载波形数据和推荐方案
     loadWaveform();
+    loadRecommendations();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -130,6 +186,42 @@ async function loadWaveform() {
     // 错误已由拦截器处理
   } finally {
     waveformLoading.value = false;
+  }
+}
+
+/** 加载解决方案推荐（FE-13） */
+async function loadRecommendations() {
+  if (!loopId) return;
+  recommendationsLoading.value = true;
+  try {
+    const data = await getRecommendationsApi(loopId);
+    recommendations.value = data.recommendations ?? [];
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    recommendationsLoading.value = false;
+  }
+}
+
+/** FE-14: 生成并下载诊断建议书 PDF */
+async function handleGenerateReport() {
+  if (!loopId) return;
+  reportGenerating.value = true;
+  try {
+    const blob = await generateDiagnosisReportApi(loopId);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `诊断建议书_${detail.value?.tagName ?? loopId}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    message.success('诊断建议书已生成');
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    reportGenerating.value = false;
   }
 }
 
@@ -339,6 +431,13 @@ onMounted(() => {
                 button-style="solid"
                 size="small"
               />
+              <Button
+                type="primary"
+                :loading="reportGenerating"
+                @click="handleGenerateReport"
+              >
+                下载建议书 PDF
+              </Button>
             </div>
           </template>
           <Descriptions
@@ -372,25 +471,20 @@ onMounted(() => {
           </Descriptions>
         </Card>
 
-        <!-- 上部：时序分析区（FDS §5.4） -->
-        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card title="时序波形">
-            <Spin :spinning="waveformLoading">
-              <EchartsUI ref="waveformChartRef" height="320px" />
-            </Spin>
-          </Card>
-          <Card title="PV-OP 散点图">
-            <EchartsUI ref="scatterChartRef" height="320px" />
-          </Card>
-        </div>
-
-        <!-- 下部：诊断结论区（FDS §5.4） -->
-        <!-- 诊断标签数组 -->
-        <Card title="诊断标签">
+        <!-- FE-12 第一段：问题定位路径 -->
+        <Card title="一、问题定位路径">
+          <Steps
+            :current="currentStep"
+            :items="problemPathSteps"
+            direction="vertical"
+            size="small"
+          />
+          <!-- 诊断标签数组 -->
           <div
             v-if="detail && detail.diagnosisLabels.length > 0"
-            class="space-y-3"
+            class="mt-4 space-y-3"
           >
+            <div class="text-sm font-medium text-gray-600">诊断标签详情：</div>
             <div
               v-for="(item, idx) in detail.diagnosisLabels"
               :key="idx"
@@ -418,13 +512,24 @@ onMounted(() => {
               </div>
             </div>
           </div>
-          <div v-else class="py-8 text-center text-gray-400">暂无诊断标签</div>
         </Card>
 
-        <!-- 证据链（推理过程） -->
-        <Card title="证据链">
-          <div v-if="detail" class="space-y-3">
-            <!-- 推理过程 -->
+        <!-- FE-12 第二段：证据链 -->
+        <Card title="二、证据链">
+          <!-- 时序分析区 -->
+          <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card title="时序波形" :bordered="false" size="small">
+              <Spin :spinning="waveformLoading">
+                <EchartsUI ref="waveformChartRef" height="320px" />
+              </Spin>
+            </Card>
+            <Card title="PV-OP 散点图" :bordered="false" size="small">
+              <EchartsUI ref="scatterChartRef" height="320px" />
+            </Card>
+          </div>
+
+          <!-- 推理过程 -->
+          <div v-if="detail" class="mt-4 space-y-3">
             <div v-if="detail.evidenceChain?.reasoning">
               <div class="mb-2 font-medium">推理过程</div>
               <div class="rounded border bg-gray-50 p-3 text-sm">
@@ -435,27 +540,35 @@ onMounted(() => {
               暂无推理过程
             </div>
           </div>
-          <div v-else class="py-8 text-center text-gray-400">暂无证据链</div>
-        </Card>
 
-        <!-- 特征值 -->
-        <Card title="特征值">
-          <div v-if="detail && featureEntries(detail.featureValues).length > 0">
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              <div
-                v-for="item in featureEntries(detail.featureValues)"
-                :key="item.key"
-                class="rounded border p-3 text-center"
-              >
-                <div class="text-xs text-gray-500">{{ item.key }}</div>
-                <div class="mt-1 text-lg font-medium">
-                  {{ Number(item.value).toFixed(4) }}
+          <!-- 特征值 -->
+          <div class="mt-4">
+            <div class="mb-2 font-medium">特征值</div>
+            <div
+              v-if="detail && featureEntries(detail.featureValues).length > 0"
+            >
+              <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                <div
+                  v-for="item in featureEntries(detail.featureValues)"
+                  :key="item.key"
+                  class="rounded border p-3 text-center"
+                >
+                  <div class="text-xs text-gray-500">{{ item.key }}</div>
+                  <div class="mt-1 text-lg font-medium">
+                    {{ Number(item.value).toFixed(4) }}
+                  </div>
                 </div>
               </div>
             </div>
+            <div v-else class="py-4 text-center text-gray-400">暂无特征值</div>
           </div>
-          <div v-else class="py-8 text-center text-gray-400">暂无特征值</div>
         </Card>
+
+        <!-- FE-12 第三段 & FE-13：解决方案推荐 -->
+        <Recommendations
+          :recommendations="recommendations"
+          :loading="recommendationsLoading"
+        />
 
         <!-- 操作按钮 -->
         <div class="flex justify-center gap-3">

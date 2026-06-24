@@ -252,6 +252,7 @@ class TestListLoopMonitor:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
+                _make_scalars_mock([]),  # _get_descendant_node_ids 查询
                 _make_count_mock(1),
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([_make_plant_node()]),
@@ -261,7 +262,7 @@ class TestListLoopMonitor:
         result = await list_loop_monitor(db, plant_node_id="unit-001")
         assert result["total"] == 1
         assert len(result["items"]) == 1
-        assert db.execute.await_count == 4
+        assert db.execute.await_count == 5
 
     async def test_with_keyword_filter(self) -> None:
         """带 keyword 过滤时正确返回空列表。"""
@@ -415,6 +416,17 @@ class TestGetLoopMonitorDetail:
             _make_mapping(tag_role="PID_I", tag_id="tag-pidi"),
             _make_mapping(tag_role="PID_D", tag_id="tag-pidd"),
         ]
+        # KPI 快照 mock
+        snap = MagicMock()
+        snap.score = Decimal("85.50")
+        snap.status = "GOOD"
+        snap.algorithm_version = "KPI_CALC_v1.0"
+        snap.good_value_rate = Decimal("96.80")
+        snap.auto_mode_rate = Decimal("90.00")
+        snap.steady_rate = Decimal("85.00")
+        snap.accuracy_rate = Decimal("80.00")
+        snap.oscillation_rate = Decimal("15.00")
+        snap.saturation_rate = Decimal("8.00")
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
@@ -423,6 +435,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock(
                     [pv_tag, sp_tag, op_tag, mode_tag, pid_p_tag, pid_i_tag, pid_d_tag]
                 ),
+                _make_scalar_one_or_none_mock(snap),  # KPI 快照查询
             ]
         )
         pv_trend = [
@@ -455,13 +468,14 @@ class TestGetLoopMonitorDetail:
         assert result["kpiSummary"]["algorithm_version"] == "KPI_CALC_v1.0"
 
     async def test_no_tags(self) -> None:
-        """回路无 Tag 关联时 current_values 全为 None，trendStatus=EMPTY。"""
+        """回路无 Tag 关联时 current_values 全为 None，trendStatus=MOCK。"""
         loop = _make_loop()
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
+                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -472,13 +486,12 @@ class TestGetLoopMonitorDetail:
         assert result["currentValues"]["modeLabel"] is None
         assert result["currentValues"]["pvQuality"] is None
         assert result["currentValues"]["readAt"] is None
-        assert result["trendStatus"] == "EMPTY"
-        assert result["trend"]["timestamps"] == []
+        assert result["trendStatus"] == "MOCK"
         assert result["runtimeParams"]["controlMode"] is None
         assert result["runtimeParams"]["pidP"] is None
 
     async def test_trend_query_failure(self) -> None:
-        """趋势数据查询失败时 trendStatus=EMPTY（异常被捕获）。"""
+        """趋势数据查询失败时 trendStatus=MOCK（异常被捕获，生成模拟数据）。"""
         loop = _make_loop()
         pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC-101.PV")
         mappings = [_make_mapping(tag_role="PV", tag_id="tag-pv")]
@@ -488,13 +501,13 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
+                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
         with patch("app.services.monitor.query_trend_data", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = RuntimeError("TDengine 连接失败")
             result = await get_loop_monitor_detail(db, "loop-001")
-        assert result["trendStatus"] == "EMPTY"
-        assert result["trend"]["timestamps"] == []
+        assert result["trendStatus"] == "MOCK"
         # current_values 仍然从 Tag 当前值填充
         assert result["currentValues"]["pv"] == 50.0
 
@@ -507,10 +520,11 @@ class TestGetLoopMonitorDetail:
                 side_effect=[
                     _make_scalar_one_or_none_mock(loop),
                     _make_scalars_mock([]),
+                    _make_scalar_one_or_none_mock(None),  # KPI 快照查询
                 ]
             )
             result = await get_loop_monitor_detail(db, "loop-001", trend_window=window)
-            assert result["trendStatus"] == "EMPTY"
+            assert result["trendStatus"] == "MOCK"
 
     async def test_non_ready_status(self) -> None:
         """回路状态非 READY 时 KPI 状态为 INCONCLUSIVE。"""
@@ -520,6 +534,7 @@ class TestGetLoopMonitorDetail:
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
+                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -534,6 +549,7 @@ class TestGetLoopMonitorDetail:
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
+                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -550,6 +566,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([sp_tag]),
+                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
         sp_trend = [{"ts": "2026-06-22T08:00:00Z", "value": 52.0, "quality": "GOOD"}]
@@ -571,6 +588,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([op_tag]),
+                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
         op_trend = [{"ts": "2026-06-22T08:00:00Z", "value": 55.0, "quality": "GOOD"}]
@@ -592,6 +610,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
+                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
         with patch("app.services.monitor.query_trend_data", new_callable=AsyncMock) as mock_query:

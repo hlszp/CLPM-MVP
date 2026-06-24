@@ -55,6 +55,7 @@ import {
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
 import StatusBadge from '#/components/loop/status-badge.vue';
 import {
+  batchConfigLoopsApi,
   createLoopApi,
   deleteLoopApi,
   getLoopDetailApi,
@@ -171,6 +172,7 @@ const query = reactive({
   controlType: undefined as 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE' | undefined,
   level: undefined as 1 | 2 | 3 | undefined,
   status: undefined as LoopApi.LoopStatus | undefined,
+  monitorStatus: undefined as boolean | undefined,
   keyword: '',
   page: 1,
   pageSize: 20,
@@ -264,6 +266,7 @@ async function loadList() {
       controlType: query.controlType,
       level: query.level,
       status: query.status,
+      monitorStatus: query.monitorStatus,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -295,18 +298,125 @@ const rowSelection = computed(() => ({
   },
 }));
 
-/** 批量配置（简化：弹窗提示选择） */
+// ===== 批量配置 =====
+const batchModalVisible = ref(false);
+const batchSaving = ref(false);
+const batchForm = reactive({
+  isMonitored: undefined as boolean | undefined,
+  isStatEnabled: undefined as boolean | undefined,
+  level: undefined as 1 | 2 | 3 | undefined,
+});
+
+const monitorStatusOptions: { label: string; value: any }[] = [
+  { label: '全部', value: undefined },
+  { label: '监控中', value: true },
+  { label: '已停用', value: false },
+];
+
+// ant-design-vue Select 的 SelectValue 不接受 boolean，使用 computed 代理做类型转换
+const queryMonitorStatus = computed({
+  get: () => query.monitorStatus as any,
+  set: (val: any) => {
+    query.monitorStatus = val;
+  },
+});
+const batchIsMonitored = computed({
+  get: () => batchForm.isMonitored as any,
+  set: (val: any) => {
+    batchForm.isMonitored = val;
+  },
+});
+const batchIsStatEnabled = computed({
+  get: () => batchForm.isStatEnabled as any,
+  set: (val: any) => {
+    batchForm.isStatEnabled = val;
+  },
+});
+
+const batchMonitoredOptions: { label: string; value: any }[] = [
+  { label: '启用监控', value: true },
+  { label: '停用监控', value: false },
+];
+const batchStatEnabledOptions: { label: string; value: any }[] = [
+  { label: '纳入统计', value: true },
+  { label: '不纳入统计', value: false },
+];
+
+/** 打开批量配置弹窗 */
 function handleBatchConfig() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先勾选要批量配置的回路');
     return;
   }
+  batchForm.isMonitored = undefined;
+  batchForm.isStatEnabled = undefined;
+  batchForm.level = undefined;
+  batchModalVisible.value = true;
+}
+
+/** 提交批量配置（更新模式） */
+async function handleBatchConfigSubmit() {
+  // 至少配置一项
+  if (
+    batchForm.isMonitored === undefined &&
+    batchForm.isStatEnabled === undefined &&
+    batchForm.level === undefined
+  ) {
+    message.warning('请至少配置一项批量更新字段');
+    return;
+  }
+  batchSaving.value = true;
+  try {
+    const updates: LoopApi.LoopBatchUpdates = {};
+    if (batchForm.isMonitored !== undefined) {
+      updates.isMonitored = batchForm.isMonitored;
+    }
+    if (batchForm.isStatEnabled !== undefined) {
+      updates.isStatEnabled = batchForm.isStatEnabled;
+    }
+    if (batchForm.level !== undefined) {
+      updates.level = batchForm.level;
+    }
+    const result = await batchConfigLoopsApi({
+      loopIds: selectedRowKeys.value,
+      updates,
+    });
+    message.success(`批量更新成功，共影响 ${result.affected} 个回路`);
+    batchModalVisible.value = false;
+    selectedRowKeys.value = [];
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchSaving.value = false;
+  }
+}
+
+/** 批量软删除（确认弹窗） */
+function handleBatchDelete() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选要批量删除的回路');
+    return;
+  }
   Modal.confirm({
-    title: '批量配置',
-    content: `已选择 ${selectedRowKeys.value.length} 个回路，批量配置功能开发中。`,
-    okText: '知道了',
+    title: '批量软删除确认',
+    content: `确认将选中的 ${selectedRowKeys.value.length} 个回路软删除（停用监控）？此操作可通过重新启用恢复。`,
+    okText: '确认删除',
+    okType: 'danger',
     cancelText: '取消',
-    onOk: () => {},
+    onOk: async () => {
+      try {
+        const result = await batchConfigLoopsApi({
+          loopIds: selectedRowKeys.value,
+          action: 'delete',
+        });
+        message.success(`批量软删除成功，共影响 ${result.affected} 个回路`);
+        selectedRowKeys.value = [];
+        await loadList();
+      } catch {
+        // 错误已由拦截器处理
+      }
+    },
   });
 }
 
@@ -803,6 +913,37 @@ watch(
           </span>
         </div>
 
+        <!-- 批量操作工具栏（选中回路后浮现） -->
+        <div
+          v-if="selectedRowKeys.length > 0"
+          class="mb-3 flex flex-wrap items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2"
+        >
+          <span class="text-sm font-medium text-blue-700">
+            已选择 {{ selectedRowKeys.length }} 个回路
+          </span>
+          <div class="ml-auto flex gap-2">
+            <Button
+              v-permission="['ADMIN']"
+              size="small"
+              type="primary"
+              @click="handleBatchConfig"
+            >
+              批量设置
+            </Button>
+            <Button
+              v-permission="['ADMIN']"
+              size="small"
+              danger
+              @click="handleBatchDelete"
+            >
+              批量删除
+            </Button>
+            <Button size="small" type="link" @click="selectedRowKeys = []">
+              清除选择
+            </Button>
+          </div>
+        </div>
+
         <!-- 筛选区 -->
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <Select
@@ -824,8 +965,17 @@ watch(
             @change="handleSearch"
           />
           <Select
-            v-model:value="query.status"
+            v-model:value="queryMonitorStatus"
             placeholder="监控状态"
+            style="width: 140px"
+            size="small"
+            allow-clear
+            :options="monitorStatusOptions"
+            @change="handleSearch"
+          />
+          <Select
+            v-model:value="query.status"
+            placeholder="回路状态"
             style="width: 140px"
             size="small"
             allow-clear
@@ -1174,6 +1324,47 @@ watch(
         </Tabs>
       </Spin>
     </Drawer>
+
+    <!-- 批量配置弹窗 -->
+    <Modal
+      v-model:open="batchModalVisible"
+      title="批量配置回路"
+      width="520px"
+      :confirm-loading="batchSaving"
+      ok-text="确认批量更新"
+      cancel-text="取消"
+      @ok="handleBatchConfigSubmit"
+    >
+      <div class="mb-3 text-sm text-gray-500">
+        将对已选中的 <span class="font-medium text-blue-600">{{ selectedRowKeys.length }}</span> 个回路批量应用以下配置（留空表示不修改）：
+      </div>
+      <Form layout="vertical" class="pt-2">
+        <FormItem label="是否监控">
+          <Select
+            v-model:value="batchIsMonitored"
+            placeholder="不修改"
+            allow-clear
+            :options="batchMonitoredOptions"
+          />
+        </FormItem>
+        <FormItem label="是否纳入统计">
+          <Select
+            v-model:value="batchIsStatEnabled"
+            placeholder="不修改"
+            allow-clear
+            :options="batchStatEnabledOptions"
+          />
+        </FormItem>
+        <FormItem label="回路级别">
+          <Select
+            v-model:value="batchForm.level"
+            placeholder="不修改"
+            allow-clear
+            :options="levelOptions.filter((o) => o.value)"
+          />
+        </FormItem>
+      </Form>
+    </Modal>
   </Page>
 </template>
 

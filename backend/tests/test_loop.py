@@ -33,6 +33,8 @@ LOOP_001.created_by = "admin"
 LOOP_001.updated_by = None
 LOOP_001.score_weights = None
 LOOP_001.remark = None
+LOOP_001.loop_type = "TEMPERATURE"
+LOOP_001.level = 3
 
 
 def _make_scalars_mock(items: list) -> MagicMock:
@@ -142,10 +144,10 @@ class TestLoopCreate:
                     "tagName": "NEW-LOOP-002",
                     "isActive": True,
                     "scoreWeights": {
-                        "good_value_rate": 50,
                         "auto_mode_rate": 50,
                         "steady_rate": 0,
                         "accuracy_rate": 0,
+                        "fast_response_rate": 50,
                         "oscillation_rate": 0,
                         "saturation_rate": 0,
                     },

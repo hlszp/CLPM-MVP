@@ -24,7 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.loop import LoopLedger
 from app.models.loop_config import LoopLevelWeight
 from app.models.metric import KpiSnapshotHourly
-from app.models.node_kpi import KpiNodeSnapshotHourly
+from app.models.node_kpi import (
+    KpiNodeSnapshotDaily,
+    KpiNodeSnapshotHourly,
+    KpiNodeSnapshotMonthly,
+)
 from app.models.plant_node import PlantNode
 from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_status
 
@@ -623,11 +627,135 @@ async def get_nodes_overview(
     }
 
 
+# ---------------------------------------------------------------------------
+# 多维度监控查询（hour / day / month）
+# ---------------------------------------------------------------------------
+
+
+def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None) -> dict:
+    """监控快照对象转字典（兼容 hour/day/month 三种维度）。"""
+    def to_float(v):
+        return float(v) if v is not None else None
+
+    # 时间字段：hour 用 ts_start/ts_end，day 用 stat_date，month 用 stat_month
+    if dimension == "hour":
+        time_label = snap.ts_start.isoformat() if snap.ts_start else None
+        time_end = snap.ts_end.isoformat() if snap.ts_end else None
+    elif dimension == "day":
+        time_label = snap.stat_date.isoformat() if snap.stat_date else None
+        time_end = None
+    else:  # month
+        time_label = snap.stat_month.isoformat() if snap.stat_month else None
+        time_end = None
+
+    return {
+        "plantNodeId": str(snap.plant_node_id),
+        "plantNodeName": node_name,
+        "dimension": dimension,
+        "tsStart": time_label,
+        "tsEnd": time_end,
+        "score": to_float(snap.score),
+        "goodValueRate": to_float(snap.good_value_rate),
+        "autoModeRate": to_float(snap.auto_mode_rate),
+        "effectiveAutoRate": to_float(snap.effective_auto_rate),
+        "steadyRate": to_float(snap.steady_rate),
+        "accuracyRate": to_float(snap.accuracy_rate),
+        "fastResponseRate": to_float(snap.fast_response_rate),
+        "oscillationRate": to_float(snap.oscillation_rate),
+        "saturationRate": to_float(snap.saturation_rate),
+        "autoLoopRatio": to_float(snap.auto_loop_ratio),
+        "realtimeAutoRate": to_float(snap.realtime_auto_rate),
+        "loopCount": snap.loop_count,
+        "status": snap.status,
+        "algorithmVersion": snap.algorithm_version,
+    }
+
+
+async def get_node_monitor_data(
+    db: AsyncSession,
+    plant_node_id: str,
+    dimension: str,
+    start: datetime,
+    end: datetime,
+) -> dict:
+    """获取节点多维度监控数据（hour/day/month）。
+
+    Args:
+        db: 异步数据库会话
+        plant_node_id: 工厂节点 ID
+        dimension: 维度 hour/day/month
+        start: 起始时间（datetime，day/month 维度会取 .date()）
+        end: 结束时间（datetime，day/month 维度会取 .date()）
+
+    Returns:
+        {plantNodeId, plantNodeName, dimension, start, end, snapshots: [...]}
+    """
+    # 查节点名
+    node_result = await db.execute(select(PlantNode).where(PlantNode.id == plant_node_id))
+    node = node_result.scalar_one_or_none()
+    node_name = node.name if node else None
+
+    if dimension == "hour":
+        stmt = (
+            select(KpiNodeSnapshotHourly)
+            .where(
+                KpiNodeSnapshotHourly.plant_node_id == plant_node_id,
+                KpiNodeSnapshotHourly.ts_start >= start,
+                KpiNodeSnapshotHourly.ts_start <= end,
+            )
+            .order_by(KpiNodeSnapshotHourly.ts_start.asc())
+        )
+        time_col = "ts_start"
+    elif dimension == "day":
+        start_date = start.date() if isinstance(start, datetime) else start
+        end_date = end.date() if isinstance(end, datetime) else end
+        stmt = (
+            select(KpiNodeSnapshotDaily)
+            .where(
+                KpiNodeSnapshotDaily.plant_node_id == plant_node_id,
+                KpiNodeSnapshotDaily.stat_date >= start_date,
+                KpiNodeSnapshotDaily.stat_date <= end_date,
+            )
+            .order_by(KpiNodeSnapshotDaily.stat_date.asc())
+        )
+        time_col = "stat_date"
+    elif dimension == "month":
+        start_month = start.date().replace(day=1) if isinstance(start, datetime) else start.replace(day=1)
+        end_month = end.date().replace(day=1) if isinstance(end, datetime) else end.replace(day=1)
+        stmt = (
+            select(KpiNodeSnapshotMonthly)
+            .where(
+                KpiNodeSnapshotMonthly.plant_node_id == plant_node_id,
+                KpiNodeSnapshotMonthly.stat_month >= start_month,
+                KpiNodeSnapshotMonthly.stat_month <= end_month,
+            )
+            .order_by(KpiNodeSnapshotMonthly.stat_month.asc())
+        )
+        time_col = "stat_month"
+    else:
+        raise ValueError(f"不支持的维度: {dimension}，可选值: hour/day/month")
+
+    result = await db.execute(stmt)
+    snaps = result.scalars().all()
+
+    snapshots = [_monitor_snapshot_to_dict(s, dimension, node_name) for s in snaps]
+
+    return {
+        "plantNodeId": plant_node_id,
+        "plantNodeName": node_name,
+        "dimension": dimension,
+        "start": start.isoformat() if isinstance(start, datetime) else str(start),
+        "end": end.isoformat() if isinstance(end, datetime) else str(end),
+        "snapshots": snapshots,
+    }
+
+
 __all__ = [
     "aggregate_node_snapshot",
     "calculate_and_save_node_snapshot",
     "collect_descendant_loop_ids",
     "get_node_latest_snapshot",
+    "get_node_monitor_data",
     "get_node_ranking",
     "get_node_trend",
     "get_nodes_overview",

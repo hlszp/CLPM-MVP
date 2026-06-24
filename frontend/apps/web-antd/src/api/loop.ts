@@ -106,6 +106,8 @@ export namespace LoopApi {
     controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
     /** 级别筛选 */
     level?: 1 | 2 | 3;
+    /** 监控状态筛选（true=监控中/false=已停用） */
+    monitorStatus?: boolean;
     isActive?: boolean;
     status?: LoopStatus;
     keyword?: string;
@@ -383,6 +385,36 @@ export namespace LoopApi {
   export interface UpdateModeMappingParams {
     items: ModeMappingItem[];
   }
+
+  /** 批量配置更新字段（至少一个非空） */
+  export interface LoopBatchUpdates {
+    /** 是否监控（is_active=True 表示启用监控） */
+    isMonitored?: boolean;
+    /** 是否纳入统计 */
+    isStatEnabled?: boolean;
+    /** 回路级别 1/2/3 */
+    level?: 1 | 2 | 3;
+  }
+
+  /** 批量配置请求（更新模式 / 删除模式互斥） */
+  export interface LoopBatchConfigParams {
+    /** 回路 ID 列表（不能为空） */
+    loopIds: string[];
+    /** 批量更新字段（与 action 互斥） */
+    updates?: LoopBatchUpdates;
+    /** 批量动作：delete=软删除（与 updates 互斥） */
+    action?: 'delete';
+  }
+
+  /** 批量配置响应 */
+  export interface LoopBatchConfigResult {
+    /** 受影响的回路数量 */
+    affected: number;
+    /** 执行的动作：update/delete */
+    action: 'delete' | 'update';
+    /** 受影响的回路 ID 列表 */
+    loopIds: string[];
+  }
 }
 
 /**
@@ -481,6 +513,22 @@ export function updateLoopModeMappingApi(
 ) {
   return requestClient.put<LoopApi.ModeMappingResult>(
     `/loops/${loopId}/mode-mapping`,
+    data,
+  );
+}
+
+/**
+ * 批量配置回路（监控/统计/级别 / 批量软删除） — 配置增强
+ *
+ * 两种模式（互斥）：
+ * - 更新模式：提供 updates 字段
+ * - 删除模式：action="delete"
+ *
+ * 仅 ADMIN 可调用。
+ */
+export function batchConfigLoopsApi(data: LoopApi.LoopBatchConfigParams) {
+  return requestClient.post<LoopApi.LoopBatchConfigResult>(
+    '/loops/batch-config',
     data,
   );
 }

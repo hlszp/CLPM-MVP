@@ -11,6 +11,8 @@
 --   v1.1 2026-06-22: 算法设计同步DDL变更（metric_config/kpi_snapshot_hourly/diagnosis_config/tuning_record 4表字段调整）
 --   v1.2 2026-06-24: 重构方案 P0 — 新增 loop_mode_mapping/loop_type_weight/loop_level_weight 三表 + loop_ledger 加 level/modeattr_tag_id/data_retention_days 字段
 --   v1.3 2026-06-24: kpi_snapshot_hourly 加 3 个故障诊断指标字段（stiction_coeff/steady_state_time/output_travel_index，nullable 向后兼容）
+--   v1.4 2026-06-24: 新增 kpi_node_snapshot_daily / kpi_node_snapshot_monthly 两表（节点级日/月聚合快照）
+--   v1.5 2026-06-24: plant_node 加 monitor_tag_id/monitor_trigger_value 字段（SVC-10 位号触发监控）
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -51,15 +53,18 @@ COMMENT ON COLUMN sys_user.updated_at IS '更新时间';
 -- 2. plant_node (工厂节点)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS plant_node (
-    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name            VARCHAR(100)    NOT NULL,
-    type            VARCHAR(20)     NOT NULL,
-    parent_id       UUID,
-    is_kpi_enabled  BOOLEAN         DEFAULT FALSE,
-    created_at      TIMESTAMP       DEFAULT NOW(),
-    updated_at      TIMESTAMP       DEFAULT NOW(),
-    CONSTRAINT fk_plant_node_parent FOREIGN KEY (parent_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
-    CONSTRAINT ck_plant_node_type   CHECK (type IN ('FACTORY', 'UNIT', 'EQUIPMENT'))
+    id                      UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name                    VARCHAR(100)    NOT NULL,
+    type                    VARCHAR(20)     NOT NULL,
+    parent_id               UUID,
+    is_kpi_enabled          BOOLEAN         DEFAULT FALSE,
+    monitor_tag_id          UUID,
+    monitor_trigger_value   VARCHAR(20),
+    created_at              TIMESTAMP       DEFAULT NOW(),
+    updated_at              TIMESTAMP       DEFAULT NOW(),
+    CONSTRAINT fk_plant_node_parent        FOREIGN KEY (parent_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_plant_node_monitor_tag   FOREIGN KEY (monitor_tag_id) REFERENCES tag_registry(id) ON DELETE RESTRICT,
+    CONSTRAINT ck_plant_node_type          CHECK (type IN ('FACTORY', 'UNIT', 'EQUIPMENT'))
 );
 
 COMMENT ON TABLE  plant_node IS '工厂节点（工厂 → 装置 → 单元多级层级树）';
@@ -68,6 +73,8 @@ COMMENT ON COLUMN plant_node.name IS '节点名称（如：常减压装置）';
 COMMENT ON COLUMN plant_node.type IS '节点类型：FACTORY/UNIT/EQUIPMENT';
 COMMENT ON COLUMN plant_node.parent_id IS '父节点 ID（自引用）';
 COMMENT ON COLUMN plant_node.is_kpi_enabled IS '是否纳入性能评估（TRUE 时生成节点级 KPI 快照）';
+COMMENT ON COLUMN plant_node.monitor_tag_id IS '位号触发监控的位号 ID（NULL 表示默认监控，FK→tag_registry）';
+COMMENT ON COLUMN plant_node.monitor_trigger_value IS '触发监控的位号值（如 "true"/"1"/"ON"），值匹配时该节点下回路应监控';
 COMMENT ON COLUMN plant_node.created_at IS '创建时间';
 COMMENT ON COLUMN plant_node.updated_at IS '更新时间';
 
@@ -355,6 +362,104 @@ COMMENT ON COLUMN kpi_node_snapshot_hourly.algorithm_version IS '算法版本号
 COMMENT ON COLUMN kpi_node_snapshot_hourly.created_at IS '创建时间';
 
 -- =============================================================================
+-- 9.2 kpi_node_snapshot_daily (节点级日性能评估快照) [v1.4 新增]
+--   按 loop_count 加权聚合当天 24 条小时快照
+--   realtime_auto_rate 取当天最后一次小时快照的值（非聚合）
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS kpi_node_snapshot_daily (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    plant_node_id       UUID            NOT NULL,
+    stat_date           DATE            NOT NULL,
+    score               DECIMAL(5,2),
+    good_value_rate     DECIMAL(5,2),
+    auto_mode_rate      DECIMAL(5,2),
+    effective_auto_rate DECIMAL(5,2),
+    steady_rate         DECIMAL(5,2),
+    accuracy_rate       DECIMAL(5,2),
+    fast_response_rate  DECIMAL(5,2),
+    oscillation_rate    DECIMAL(5,2),
+    saturation_rate     DECIMAL(5,2),
+    auto_loop_ratio     DECIMAL(5,2),
+    realtime_auto_rate  DECIMAL(5,2),
+    loop_count          INTEGER         NOT NULL DEFAULT 0,
+    status              VARCHAR(20)     NOT NULL,
+    algorithm_version   VARCHAR(30),
+    created_at          TIMESTAMP       DEFAULT NOW(),
+    CONSTRAINT fk_kpi_node_snapshot_daily_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
+    CONSTRAINT ck_kpi_node_snapshot_daily_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
+    CONSTRAINT uk_kpi_node_snapshot_daily_node_date UNIQUE (plant_node_id, stat_date)
+);
+
+COMMENT ON TABLE  kpi_node_snapshot_daily IS '节点级日性能评估快照（按 loop_count 加权聚合当天小时快照，对齐 GB/T 44693.2-2024 §6.4）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.id IS '快照主键';
+COMMENT ON COLUMN kpi_node_snapshot_daily.plant_node_id IS '工厂节点 ID（FACTORY/UNIT/EQUIPMENT 任意层级）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.stat_date IS '统计日期（DATE）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.score IS '加权综合评分（0-100）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.good_value_rate IS '好值率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.auto_mode_rate IS '自控率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.effective_auto_rate IS '有效自控率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.steady_rate IS '平稳率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.accuracy_rate IS '准确率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.fast_response_rate IS '快速率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.oscillation_rate IS '振荡率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.saturation_rate IS '饱和率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.auto_loop_ratio IS '投自动回路占比加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.realtime_auto_rate IS '实时自控率（%）：取当天最后一次小时快照的值（非聚合）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.loop_count IS '参与聚合的回路数（取当天最大值）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.status IS '节点级定级：EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE';
+COMMENT ON COLUMN kpi_node_snapshot_daily.algorithm_version IS '算法版本号';
+COMMENT ON COLUMN kpi_node_snapshot_daily.created_at IS '创建时间';
+
+-- =============================================================================
+-- 9.3 kpi_node_snapshot_monthly (节点级月性能评估快照) [v1.4 新增]
+--   按 loop_count 加权聚合当月所有日快照
+--   realtime_auto_rate 取当月最后一次小时快照的值（非聚合）
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS kpi_node_snapshot_monthly (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    plant_node_id       UUID            NOT NULL,
+    stat_month          DATE            NOT NULL,
+    score               DECIMAL(5,2),
+    good_value_rate     DECIMAL(5,2),
+    auto_mode_rate      DECIMAL(5,2),
+    effective_auto_rate DECIMAL(5,2),
+    steady_rate         DECIMAL(5,2),
+    accuracy_rate       DECIMAL(5,2),
+    fast_response_rate  DECIMAL(5,2),
+    oscillation_rate    DECIMAL(5,2),
+    saturation_rate     DECIMAL(5,2),
+    auto_loop_ratio     DECIMAL(5,2),
+    realtime_auto_rate  DECIMAL(5,2),
+    loop_count          INTEGER         NOT NULL DEFAULT 0,
+    status              VARCHAR(20)     NOT NULL,
+    algorithm_version   VARCHAR(30),
+    created_at          TIMESTAMP       DEFAULT NOW(),
+    CONSTRAINT fk_kpi_node_snapshot_monthly_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
+    CONSTRAINT ck_kpi_node_snapshot_monthly_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
+    CONSTRAINT uk_kpi_node_snapshot_monthly_node_month UNIQUE (plant_node_id, stat_month)
+);
+
+COMMENT ON TABLE  kpi_node_snapshot_monthly IS '节点级月性能评估快照（按 loop_count 加权聚合当月日快照，对齐 GB/T 44693.2-2024 §6.4）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.id IS '快照主键';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.plant_node_id IS '工厂节点 ID（FACTORY/UNIT/EQUIPMENT 任意层级）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.stat_month IS '统计月份（DATE，月初）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.score IS '加权综合评分（0-100）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.good_value_rate IS '好值率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.auto_mode_rate IS '自控率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.effective_auto_rate IS '有效自控率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.steady_rate IS '平稳率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.accuracy_rate IS '准确率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.fast_response_rate IS '快速率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.oscillation_rate IS '振荡率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.saturation_rate IS '饱和率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.auto_loop_ratio IS '投自动回路占比加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.realtime_auto_rate IS '实时自控率（%）：取当月最后一次小时快照的值（非聚合）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.loop_count IS '参与聚合的回路数（取当月最大值）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.status IS '节点级定级：EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.algorithm_version IS '算法版本号';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.created_at IS '创建时间';
+
+-- =============================================================================
 -- 10. action_tracker (轻量级异常追踪记录)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS action_tracker (
@@ -634,6 +739,18 @@ CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_status    ON kpi_node_snapshot_
 CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_node_ts   ON kpi_node_snapshot_hourly (plant_node_id, ts_start);
 CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_ts_status ON kpi_node_snapshot_hourly (ts_start, status, score);
 
+-- kpi_node_snapshot_daily 索引（v1.4 新增）
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_daily_node_id    ON kpi_node_snapshot_daily (plant_node_id);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_daily_stat_date  ON kpi_node_snapshot_daily (stat_date);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_daily_status     ON kpi_node_snapshot_daily (status);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_daily_node_date  ON kpi_node_snapshot_daily (plant_node_id, stat_date);
+
+-- kpi_node_snapshot_monthly 索引（v1.4 新增）
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_monthly_node_id    ON kpi_node_snapshot_monthly (plant_node_id);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_monthly_stat_month ON kpi_node_snapshot_monthly (stat_month);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_monthly_status     ON kpi_node_snapshot_monthly (status);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_monthly_node_month ON kpi_node_snapshot_monthly (plant_node_id, stat_month);
+
 -- action_tracker 索引
 CREATE INDEX IF NOT EXISTS idx_action_tracker_loop_id       ON action_tracker (loop_id);
 CREATE INDEX IF NOT EXISTS idx_action_tracker_action_status ON action_tracker (action_status);
@@ -656,6 +773,9 @@ CREATE INDEX IF NOT EXISTS idx_loop_ledger_level ON loop_ledger (level);
 
 -- loop_mode_mapping 索引（重构方案 v1.2）
 CREATE INDEX IF NOT EXISTS idx_loop_mode_mapping_loop_id ON loop_mode_mapping (loop_id);
+
+-- plant_node 索引（SVC-10 位号触发监控）
+CREATE INDEX IF NOT EXISTS idx_plant_node_monitor_tag_id ON plant_node (monitor_tag_id);
 
 -- =============================================================================
 -- 脚本结束
