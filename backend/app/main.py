@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     performance,
     plant_nodes,
     reports,
+    tags,
     tuning,
     users,
 )
@@ -96,6 +97,7 @@ def create_app() -> FastAPI:
     v1_router.include_router(auth.router)
     v1_router.include_router(plant_nodes.router)
     v1_router.include_router(loops.router)
+    v1_router.include_router(tags.router)
     v1_router.include_router(aas.router)
     v1_router.include_router(performance.router)
     # S6 工作台门户：BFF 聚合层

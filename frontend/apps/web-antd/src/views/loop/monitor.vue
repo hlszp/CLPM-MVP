@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 /**
@@ -6,47 +7,157 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.15
  * - 沿用回路台账列表风格（筛选区 + Table + 分页）
- * - Table 列：回路位号 / 描述 / 所属单元 / PV / SP / OP / MODE / PID_P / PID_I / PID_D / PV质量 / 评分 / 状态 / 读取时间 / 操作
- * - 实时值显示：PV/SP/OP 数值、MODE Tag 颜色（Auto 绿 / Manual 橙 / Cascade 蓝）
- * - PV 质量码渲染：Good 绿 / Bad 红虚线 / Uncertain 黄
- * - PID 参数：当前监控列表接口未返回，统一显示 "—" 占位
- * - 点击行跳转回路详情页 /loop/detail/:id
- * - 支持按装置/关键字筛选
+ * - 筛选：装置/单元层级路径 + 回路类型 + 关键字
+ * - Table 列：回路编号 / 名称 / 类型 / SP / PV / OP / MODE / 性能指数 / 操作
+ * - 操作列：趋势 / 性能 / 详情
+ * - 趋势 Modal：ECharts 展示 SP/PV/OP/MODE 趋势，竖直虚线标记 MODE 切换点
+ * - 性能 Modal：ECharts 仪表盘 + 6 大 KPI 卡片（含权重）
  * - 30 秒自动刷新（Switch 开关 + 倒计时）
  */
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
   Card,
   Input,
+  Modal,
+  RadioGroup,
   Select,
+  Spin,
   Switch,
   Table,
   Tag,
 } from 'ant-design-vue';
 
-import { getLoopMonitorListApi } from '#/api/loop';
+import {
+  getLoopDetailApi,
+  getLoopMonitorDetailApi,
+  getLoopMonitorListApi,
+} from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import QualityTag from '#/components/loop/quality-tag.vue';
-import StatusBadge from '#/components/loop/status-badge.vue';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopMonitor' });
 
 const router = useRouter();
 
+// ===== 常量 =====
+
+/** 回路类型映射（label + color） */
+const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
+  TEMPERATURE: { label: '温度', color: 'red' },
+  PRESSURE: { label: '压力', color: 'blue' },
+  LEVEL: { label: '液位', color: 'green' },
+  FLOW: { label: '流量', color: 'cyan' },
+  ANALYSIS: { label: '分析', color: 'purple' },
+  SPEED: { label: '速度', color: 'orange' },
+  OTHER: { label: '其他', color: 'default' },
+};
+
+const loopTypeOptions = [
+  { label: '全部', value: undefined },
+  ...Object.entries(LOOP_TYPE_MAP).map(([value, { label }]) => ({
+    label,
+    value,
+  })),
+];
+
+/** 趋势时间窗选项 */
+const trendWindowOptions: { label: string; value: LoopApi.TrendWindow }[] = [
+  { label: '1h', value: 'last_1_hour' },
+  { label: '2h', value: 'last_2_hours' },
+  { label: '4h', value: 'last_4_hours' },
+  { label: '8h', value: 'last_8_hours' },
+  { label: '24h', value: 'last_24_hours' },
+  { label: '72h', value: 'last_72_hours' },
+];
+
+/** KPI 状态映射 */
+const kpiStatusMap: Record<string, { color: string; label: string }> = {
+  SUCCESS: { color: 'green', label: '良好' },
+  INCONCLUSIVE: { color: 'default', label: '未确定' },
+  PARTIAL: { color: 'orange', label: '部分' },
+};
+
+/** 6 大 KPI 配置（含权重 key） */
+const kpiItems: {
+  desc: string;
+  key: keyof LoopApi.KpiSummary;
+  label: string;
+  unit: string;
+  weightKey?: keyof LoopApi.ScoreWeights;
+}[] = [
+  {
+    desc: '自动模式率',
+    key: 'auto_mode_rate',
+    label: '自控率',
+    unit: '%',
+    weightKey: 'auto_mode_rate',
+  },
+  {
+    desc: '有效自控率',
+    key: 'effective_auto_rate',
+    label: '有效自控率',
+    unit: '%',
+  },
+  {
+    desc: '稳定率',
+    key: 'steady_rate',
+    label: '平稳率',
+    unit: '%',
+    weightKey: 'steady_rate',
+  },
+  {
+    desc: '准确度',
+    key: 'accuracy_rate',
+    label: '准确率',
+    unit: '%',
+    weightKey: 'accuracy_rate',
+  },
+  {
+    desc: '快速率',
+    key: 'fast_response_rate',
+    label: '快速率',
+    unit: '%',
+    weightKey: 'fast_response_rate',
+  },
+  {
+    desc: '振荡率',
+    key: 'oscillation_rate',
+    label: '振荡率',
+    unit: '%',
+    weightKey: 'oscillation_rate',
+  },
+  {
+    desc: '饱和率',
+    key: 'saturation_rate',
+    label: '饱和率',
+    unit: '%',
+    weightKey: 'saturation_rate',
+  },
+  {
+    desc: '优良值率',
+    key: 'good_value_rate',
+    label: '好值率',
+    unit: '%',
+  },
+];
+
+// ===== 列表状态 =====
+
 const loading = ref(false);
 const monitorList = ref<LoopApi.MonitorListItem[]>([]);
 const total = ref(0);
 const query = reactive({
   plantNodeId: undefined as string | undefined,
+  loopType: undefined as string | undefined,
   keyword: '',
   page: 1,
   pageSize: 100,
@@ -54,35 +165,77 @@ const query = reactive({
 
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 
-// Auto refresh
+/** 工厂节点层级选项（显示完整路径：工厂A / 装置B / 单元C） */
+const plantNodeOptions = computed(() => {
+  const nodeMap = new Map<string, PlantNodeApi.PlantNode>();
+  for (const node of plantNodes.value) {
+    nodeMap.set(node.id, node);
+  }
+  return plantNodes.value.map((node) => {
+    const path: string[] = [];
+    let current: PlantNodeApi.PlantNode | undefined = node;
+    while (current) {
+      path.unshift(current.name);
+      current = current.parentId
+        ? nodeMap.get(current.parentId)
+        : undefined;
+    }
+    return {
+      label: path.join(' / '),
+      value: node.id,
+    };
+  });
+});
+
+const columns: TableColumnsType = [
+  { title: '回路编号', dataIndex: 'tagName', key: 'tagName', width: 160 },
+  {
+    title: '名称',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
+  { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 100 },
+  { title: '设定值 SP', key: 'sp', width: 120 },
+  { title: '测量值 PV', key: 'pv', width: 120 },
+  { title: '输出值 OP', key: 'op', width: 120 },
+  { title: '控制方式', key: 'mode', width: 110 },
+  { title: '性能指数', dataIndex: 'score', key: 'score', width: 100 },
+  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+];
+
+// ===== 自动刷新 =====
+
 const autoRefresh = ref(true);
 const refreshInterval = 30; // seconds
 const countdown = ref(refreshInterval);
 let refreshTimer: null | ReturnType<typeof setInterval> = null;
 let countdownTimer: null | ReturnType<typeof setInterval> = null;
 
-const columns: TableColumnsType = [
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 160 },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    key: 'description',
-    ellipsis: true,
-  },
-  { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 140 },
-  { title: 'PV', key: 'pv', width: 100 },
-  { title: 'SP', key: 'sp', width: 100 },
-  { title: 'OP', key: 'op', width: 100 },
-  { title: 'MODE', key: 'mode', width: 100 },
-  { title: 'PID_P', key: 'pidP', width: 90 },
-  { title: 'PID_I', key: 'pidI', width: 90 },
-  { title: 'PID_D', key: 'pidD', width: 90 },
-  { title: 'PV 质量', key: 'pvQuality', width: 110 },
-  { title: '评分', dataIndex: 'score', key: 'score', width: 80 },
-  { title: '状态', key: 'status', width: 110 },
-  { title: '读取时间', key: 'readAt', width: 170 },
-  { title: '操作', key: 'action', width: 100, fixed: 'right' },
-];
+// ===== 趋势 Modal =====
+
+const trendModalVisible = ref(false);
+const trendLoading = ref(false);
+const trendDetail = ref<LoopApi.MonitorDetail | null>(null);
+const trendWindow = ref<LoopApi.TrendWindow>('last_4_hours');
+const trendChartRef = ref<EchartsUIType>();
+const { renderEcharts: renderTrendChart } = useEcharts(trendChartRef);
+
+// ===== 性能 Modal =====
+
+const perfModalVisible = ref(false);
+const perfLoading = ref(false);
+const perfDetail = ref<LoopApi.MonitorDetail | null>(null);
+const perfWindow = ref<LoopApi.TrendWindow>('last_24_hours');
+const loopDetailForWeights = ref<LoopApi.LoopDetail | null>(null);
+const gaugeChartRef = ref<EchartsUIType>();
+const { renderEcharts: renderGaugeChart } = useEcharts(gaugeChartRef);
+
+// ===== 当前操作的回路 =====
+
+const currentRecord = ref<LoopApi.MonitorListItem | null>(null);
+
+// ===== 工具函数 =====
 
 /** MODE 颜色映射：Auto=绿 / Manual=橙 / Cascade=蓝 */
 function modeColor(modeLabel: string): string {
@@ -92,7 +245,7 @@ function modeColor(modeLabel: string): string {
   return 'default';
 }
 
-/** MODE 中文标签映射：0=手动, 1=自动, 2=串级 */
+/** MODE 中文标签映射：0=Manual, 1=Auto, 2=Cascade */
 function modeText(record: LoopApi.MonitorListItem): string {
   const label = record.currentValues?.modeLabel;
   if (label) return label;
@@ -103,17 +256,33 @@ function modeText(record: LoopApi.MonitorListItem): string {
   return '—';
 }
 
-/** 数值格式化，空值返回 '—' */
-function formatNumber(val: null | number | undefined, digits = 2): string {
-  if (val == null || Number.isNaN(val)) return '—';
-  return val.toFixed(digits);
-}
-
 /** OP 值格式化，带 % 后缀 */
 function formatOp(val: null | number | undefined): string {
   if (val == null || Number.isNaN(val)) return '—';
   return `${val.toFixed(2)}%`;
 }
+
+/** 数值 + 单位格式化 */
+function formatValueWithUnit(
+  val: null | number | undefined,
+  unit?: string,
+  digits = 2,
+): string {
+  if (val == null || Number.isNaN(val)) return '—';
+  const formatted = val.toFixed(digits);
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function formatTime(t: null | string | undefined): string {
+  if (!t) return '—';
+  try {
+    return new Date(t).toLocaleString('zh-CN');
+  } catch {
+    return t;
+  }
+}
+
+// ===== 数据加载 =====
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -131,6 +300,7 @@ async function loadList() {
   try {
     const data = await getLoopMonitorListApi({
       plantNodeId: query.plantNodeId,
+      loopType: query.loopType as LoopApi.LoopType | undefined,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -155,26 +325,242 @@ function handleTableChange(pagination: TablePaginationConfig) {
   loadList();
 }
 
-/** 点击行跳转详情 */
-function handleRowClick(record: LoopApi.MonitorListItem) {
-  router.push(`/loop/detail/${record.loopId}`);
+// ===== 趋势 Modal =====
+
+/** 打开趋势 Modal */
+async function openTrend(record: LoopApi.MonitorListItem) {
+  currentRecord.value = record;
+  trendModalVisible.value = true;
+  trendWindow.value = 'last_4_hours';
+  trendDetail.value = null;
+  await loadTrendDetail();
 }
 
-/** 点击查看详情按钮 */
-function handleViewDetail(record: LoopApi.MonitorListItem) {
-  router.push(`/loop/detail/${record.loopId}`);
-}
-
-function formatTime(t: null | string | undefined): string {
-  if (!t) return '—';
+/** 加载趋势详情 */
+async function loadTrendDetail() {
+  if (!currentRecord.value) return;
+  trendLoading.value = true;
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    trendDetail.value = await getLoopMonitorDetailApi(
+      currentRecord.value.loopId,
+      trendWindow.value,
+    );
+    await nextTick();
+    renderTrend();
   } catch {
-    return t;
+    // 错误已由拦截器处理
+  } finally {
+    trendLoading.value = false;
   }
 }
 
-/** 启动自动刷新 */
+/** 查找 MODE 切换时间点 */
+function findModeChangePoints(
+  timestamps: number[],
+  modes: (null | number)[],
+): number[] {
+  const changes: number[] = [];
+  let prevMode: null | number = null;
+  for (let i = 0; i < modes.length; i++) {
+    const m = modes[i] ?? null;
+    if (m !== prevMode) {
+      changes.push(timestamps[i]!);
+      prevMode = m;
+    }
+  }
+  return changes;
+}
+
+/** 渲染趋势图 */
+function renderTrend() {
+  const trend = trendDetail.value?.trend;
+  if (!trend || !trend.timestamps || trend.timestamps.length === 0) return;
+
+  const { timestamps, pv, sp, op, mode } = trend;
+  const pvData = timestamps.map((ts, i) => [ts, pv[i] ?? null] as [number, null | number]);
+  const spData = timestamps.map((ts, i) => [ts, sp[i] ?? null] as [number, null | number]);
+  const opData = timestamps.map((ts, i) => [ts, op[i] ?? null] as [number, null | number]);
+  const modeData = timestamps.map((ts, i) => [ts, mode[i] ?? null] as [number, null | number]);
+  const modeChanges = findModeChangePoints(timestamps, mode);
+  const enableDataZoom = timestamps.length > 5000;
+
+  renderTrendChart({
+    backgroundColor: 'transparent',
+    dataZoom: enableDataZoom
+      ? [
+          { end: 100, start: 0, type: 'inside' },
+          { end: 100, start: 0, type: 'slider' },
+        ]
+      : [],
+    grid: {
+      bottom: enableDataZoom ? 60 : 40,
+      containLabel: true,
+      left: '3%',
+      right: '3%',
+      top: 60,
+    },
+    legend: { data: ['PV', 'SP', 'OP', 'MODE'], top: 5 },
+    series: [
+      {
+        connectNulls: false,
+        data: pvData,
+        itemStyle: { color: '#0D6EFD' },
+        lineStyle: { width: 2 },
+        name: 'PV',
+        showSymbol: false,
+        type: 'line',
+        markLine: {
+          data: modeChanges.map((ts) => ({ xAxis: ts })),
+          lineStyle: { color: '#999', type: 'dashed', width: 1 },
+          silent: true,
+          symbol: 'none',
+        },
+      },
+      {
+        connectNulls: false,
+        data: spData,
+        itemStyle: { color: '#52c41a' },
+        lineStyle: { type: 'dashed', width: 1.5 },
+        name: 'SP',
+        showSymbol: false,
+        type: 'line',
+      },
+      {
+        connectNulls: false,
+        data: opData,
+        itemStyle: { color: '#fa8c16' },
+        lineStyle: { width: 1.5 },
+        name: 'OP',
+        showSymbol: false,
+        type: 'line',
+      },
+      {
+        data: modeData,
+        itemStyle: { color: '#ff4d4f' },
+        lineStyle: { type: 'dotted', width: 1.5 },
+        name: 'MODE',
+        showSymbol: false,
+        step: 'end',
+        type: 'line',
+        yAxisIndex: 1,
+      },
+    ],
+    tooltip: {
+      axisPointer: { type: 'cross' },
+      trigger: 'axis',
+      valueFormatter: (val) =>
+        val === null || val === undefined ? '—' : Number(val).toFixed(3),
+    },
+    xAxis: {
+      axisLabel: {
+        formatter: (val: number) => {
+          const d = new Date(val);
+          const mo = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mi = String(d.getMinutes()).padStart(2, '0');
+          return `${mo}-${dd} ${hh}:${mi}`;
+        },
+      },
+      type: 'time',
+    },
+    yAxis: [
+      {
+        axisLabel: { formatter: '{value}' },
+        name: '数值',
+        type: 'value',
+      },
+      {
+        axisLabel: {
+          formatter: (val: number) => {
+            if (val === 0) return 'Manual';
+            if (val === 1) return 'Auto';
+            if (val === 2) return 'Cascade';
+            return '';
+          },
+        },
+        max: 2.5,
+        min: -0.5,
+        name: 'MODE',
+        splitLine: { show: false },
+        type: 'value',
+      },
+    ],
+  });
+}
+
+function handleTrendWindowChange() {
+  loadTrendDetail();
+}
+
+// ===== 性能 Modal =====
+
+/** 打开性能 Modal */
+async function openPerformance(record: LoopApi.MonitorListItem) {
+  currentRecord.value = record;
+  perfModalVisible.value = true;
+  perfWindow.value = 'last_24_hours';
+  perfDetail.value = null;
+  loopDetailForWeights.value = null;
+  await loadPerfDetail();
+}
+
+/** 加载性能详情 */
+async function loadPerfDetail() {
+  if (!currentRecord.value) return;
+  perfLoading.value = true;
+  try {
+    const [detail, loopDetail] = await Promise.all([
+      getLoopMonitorDetailApi(currentRecord.value.loopId, perfWindow.value),
+      getLoopDetailApi(currentRecord.value.loopId),
+    ]);
+    perfDetail.value = detail;
+    loopDetailForWeights.value = loopDetail;
+    await nextTick();
+    renderGauge();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    perfLoading.value = false;
+  }
+}
+
+/** 渲染仪表盘 */
+function renderGauge() {
+  const score = perfDetail.value?.kpiSummary.composite_score;
+  if (score == null) return;
+
+  renderGaugeChart({
+    series: [
+      {
+        axisLine: { lineStyle: { color: [[0.6, '#ff4d4f'], [0.8, '#faad14'], [1, '#52c41a']], width: 18 } },
+        axisTick: { show: false },
+        data: [{ name: '综合性能指数', value: score }],
+        detail: { fontSize: 28, formatter: '{value}', offsetCenter: [0, '50%'] },
+        max: 100,
+        min: 0,
+        pointer: { itemStyle: { color: 'auto' } },
+        progress: { show: true, width: 18 },
+        splitLine: { length: 18 },
+        title: { fontSize: 14, offsetCenter: [0, '80%'] },
+        type: 'gauge',
+      },
+    ],
+  });
+}
+
+function handlePerfWindowChange() {
+  loadPerfDetail();
+}
+
+// ===== 详情跳转 =====
+
+function viewDetail(record: LoopApi.MonitorListItem) {
+  router.push(`/loop/detail/${record.loopId}`);
+}
+
+// ===== 自动刷新 =====
+
 function startAutoRefresh() {
   stopAutoRefresh();
   if (autoRefresh.value) {
@@ -189,7 +575,6 @@ function startAutoRefresh() {
   }
 }
 
-/** 停止自动刷新 */
 function stopAutoRefresh() {
   if (refreshTimer) {
     clearInterval(refreshTimer);
@@ -201,7 +586,6 @@ function stopAutoRefresh() {
   }
 }
 
-/** 切换自动刷新 */
 function handleToggleAutoRefresh(val: any) {
   autoRefresh.value = !!val;
   if (autoRefresh.value) {
@@ -210,6 +594,8 @@ function handleToggleAutoRefresh(val: any) {
     stopAutoRefresh();
   }
 }
+
+// ===== 生命周期 =====
 
 onMounted(() => {
   loadPlantNodes();
@@ -231,9 +617,21 @@ onUnmounted(() => {
           <Select
             v-model:value="query.plantNodeId"
             placeholder="按装置/单元筛选"
-            style="width: 220px"
+            style="width: 260px"
             allow-clear
-            :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
+            show-search
+            :options="plantNodeOptions"
+            :filter-option="
+              (input: string, option: any) => option.label.includes(input)
+            "
+            @change="handleSearch"
+          />
+          <Select
+            v-model:value="query.loopType"
+            placeholder="按回路类型筛选"
+            style="width: 160px"
+            allow-clear
+            :options="loopTypeOptions"
             @change="handleSearch"
           />
           <Input
@@ -276,72 +674,260 @@ onUnmounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
-        :scroll="{ x: 1700 }"
+        :scroll="{ x: 1200 }"
         size="middle"
-        :custom-row="
-          (record: LoopApi.MonitorListItem) => ({
-            onClick: () => handleRowClick(record),
-            style: { cursor: 'pointer' },
-          })
-        "
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'pv'">
-            <span class="font-medium text-blue-600">
-              {{ formatNumber(record.currentValues?.pv) }}
-            </span>
+          <template v-if="column.key === 'loopType'">
+            <Tag
+              :color="
+                LOOP_TYPE_MAP[(record as LoopApi.MonitorListItem).loopType ?? 'OTHER']?.color ?? 'default'
+              "
+              class="m-0"
+            >
+              {{
+                LOOP_TYPE_MAP[(record as LoopApi.MonitorListItem).loopType ?? 'OTHER']?.label ?? '其他'
+              }}
+            </Tag>
           </template>
           <template v-else-if="column.key === 'sp'">
-            {{ formatNumber(record.currentValues?.sp) }}
+            {{ formatValueWithUnit((record as LoopApi.MonitorListItem).currentValues?.sp, (record as LoopApi.MonitorListItem).currentValues?.unit) }}
+          </template>
+          <template v-else-if="column.key === 'pv'">
+            <span class="font-medium text-blue-600">
+              {{ formatValueWithUnit((record as LoopApi.MonitorListItem).currentValues?.pv, (record as LoopApi.MonitorListItem).currentValues?.unit) }}
+            </span>
           </template>
           <template v-else-if="column.key === 'op'">
-            {{ formatOp(record.currentValues?.op) }}
+            {{ formatOp((record as LoopApi.MonitorListItem).currentValues?.op) }}
           </template>
           <template v-else-if="column.key === 'mode'">
             <Tag
-              v-if="record.currentValues?.modeLabel || record.currentValues?.mode != null"
-              :color="modeColor(record.currentValues?.modeLabel)"
+              v-if="(record as LoopApi.MonitorListItem).currentValues?.modeLabel || (record as LoopApi.MonitorListItem).currentValues?.mode != null"
+              :color="modeColor((record as LoopApi.MonitorListItem).currentValues?.modeLabel)"
             >
               {{ modeText(record as LoopApi.MonitorListItem) }}
             </Tag>
             <span v-else class="text-gray-400">—</span>
           </template>
-          <template v-else-if="column.key === 'pidP'">
-            <span class="text-gray-400">—</span>
-          </template>
-          <template v-else-if="column.key === 'pidI'">
-            <span class="text-gray-400">—</span>
-          </template>
-          <template v-else-if="column.key === 'pidD'">
-            <span class="text-gray-400">—</span>
-          </template>
-          <template v-else-if="column.key === 'pvQuality'">
-            <QualityTag :quality="record.currentValues?.pvQuality" />
-          </template>
-          <template v-else-if="column.key === 'status'">
-            <StatusBadge :status="record.status" :is-active="record.isActive" />
-          </template>
           <template v-else-if="column.key === 'score'">
-            <span v-if="record.score != null" class="font-medium">
-              {{ record.score?.toFixed(1) ?? '--' }}
+            <span
+              v-if="(record as LoopApi.MonitorListItem).score != null"
+              class="font-medium"
+            >
+              {{ (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—' }}
             </span>
             <span v-else class="text-gray-400">—</span>
           </template>
-          <template v-else-if="column.key === 'readAt'">
-            {{ formatTime(record.currentValues?.readAt ?? record.readAt) }}
-          </template>
           <template v-else-if="column.key === 'action'">
-            <Button
-              type="link"
-              size="small"
-              @click.stop="handleViewDetail(record as LoopApi.MonitorListItem)"
-            >
-              查看详情
-            </Button>
+            <div class="flex gap-1">
+              <Button
+                type="link"
+                size="small"
+                @click="openTrend(record as LoopApi.MonitorListItem)"
+              >
+                趋势
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                @click="openPerformance(record as LoopApi.MonitorListItem)"
+              >
+                性能
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                @click="viewDetail(record as LoopApi.MonitorListItem)"
+              >
+                详情
+              </Button>
+            </div>
           </template>
         </template>
       </Table>
     </Card>
+
+    <!-- 趋势 Modal -->
+    <Modal
+      v-model:open="trendModalVisible"
+      :title="`趋势 - ${currentRecord?.tagName ?? ''}`"
+      width="1100px"
+      :footer="null"
+      destroy-on-close
+    >
+      <Spin :spinning="trendLoading">
+        <div v-if="currentRecord" class="space-y-3">
+          <!-- 时间范围 + 当前 MODE -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-gray-500">时间范围：</span>
+              <RadioGroup
+                v-model:value="trendWindow"
+                :options="trendWindowOptions"
+                option-type="button"
+                button-style="solid"
+                size="small"
+                @change="handleTrendWindowChange"
+              />
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-gray-500">当前控制方式：</span>
+              <Tag
+                v-if="trendDetail?.currentValues?.modeLabel"
+                :color="modeColor(trendDetail.currentValues.modeLabel)"
+              >
+                {{ trendDetail.currentValues.modeLabel }}
+              </Tag>
+              <span v-else class="text-gray-400">—</span>
+            </div>
+          </div>
+
+          <!-- 当前值快照 -->
+          <div
+            v-if="trendDetail"
+            class="flex flex-wrap items-center gap-4 rounded border p-3"
+          >
+            <div>
+              <span class="text-xs text-gray-400">PV</span>
+              <span class="ml-2 font-medium text-blue-600">
+                {{
+                  formatValueWithUnit(
+                    trendDetail.currentValues.pv,
+                    trendDetail.currentValues.unit,
+                  )
+                }}
+              </span>
+            </div>
+            <div>
+              <span class="text-xs text-gray-400">SP</span>
+              <span class="ml-2 font-medium">
+                {{
+                  formatValueWithUnit(
+                    trendDetail.currentValues.sp,
+                    trendDetail.currentValues.unit,
+                  )
+                }}
+              </span>
+            </div>
+            <div>
+              <span class="text-xs text-gray-400">OP</span>
+              <span class="ml-2 font-medium">
+                {{ formatOp(trendDetail.currentValues.op) }}
+              </span>
+            </div>
+            <div>
+              <span class="text-xs text-gray-400">读取时间</span>
+              <span class="ml-2 text-sm">
+                {{ formatTime(trendDetail.currentValues.readAt) }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 趋势图 -->
+          <div v-if="trendDetail">
+            <EchartsUI ref="trendChartRef" height="400px" />
+          </div>
+          <div v-else class="py-12 text-center text-gray-400">
+            暂无趋势数据
+          </div>
+        </div>
+      </Spin>
+    </Modal>
+
+    <!-- 性能 Modal -->
+    <Modal
+      v-model:open="perfModalVisible"
+      :title="`性能 - ${currentRecord?.tagName ?? ''}`"
+      width="900px"
+      :footer="null"
+      destroy-on-close
+    >
+      <Spin :spinning="perfLoading">
+        <div v-if="perfDetail" class="space-y-4">
+          <!-- 时间范围 -->
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-500">时间范围：</span>
+            <RadioGroup
+              v-model:value="perfWindow"
+              :options="trendWindowOptions"
+              option-type="button"
+              button-style="solid"
+              size="small"
+              @change="handlePerfWindowChange"
+            />
+          </div>
+
+          <!-- 综合评分 + 仪表盘 -->
+          <div class="flex items-center gap-6 rounded border p-4">
+            <div style="height: 240px; width: 240px">
+              <EchartsUI ref="gaugeChartRef" height="240px" />
+            </div>
+            <div class="flex-1">
+              <div class="text-sm text-gray-500">
+                综合性能指数（composite_score）
+              </div>
+              <div
+                class="mt-1 text-3xl font-bold"
+                :class="{
+                  'text-green-600':
+                    perfDetail.kpiSummary.composite_score >= 80,
+                  'text-orange-500':
+                    perfDetail.kpiSummary.composite_score >= 60 &&
+                    perfDetail.kpiSummary.composite_score < 80,
+                  'text-red-500':
+                    perfDetail.kpiSummary.composite_score < 60,
+                }"
+              >
+                {{ perfDetail.kpiSummary.composite_score?.toFixed(1) ?? '—' }}
+              </div>
+              <div class="mt-2 flex items-center gap-2">
+                <span class="text-xs text-gray-400">KPI 状态：</span>
+                <Tag :color="kpiStatusMap[perfDetail.kpiSummary.status]?.color">
+                  {{
+                    kpiStatusMap[perfDetail.kpiSummary.status]?.label ||
+                    perfDetail.kpiSummary.status
+                  }}
+                </Tag>
+              </div>
+              <div class="mt-1 text-xs text-gray-400">
+                算法版本：{{ perfDetail.kpiSummary.algorithm_version }}
+              </div>
+              <div class="text-xs text-gray-400">
+                计算时间：{{ formatTime(perfDetail.kpiSummary.calculatedAt) }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 6 大 KPI 卡片（含权重） -->
+          <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <div
+              v-for="item in kpiItems"
+              :key="item.key"
+              class="rounded border p-3"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-medium">{{ item.label }}</span>
+                <span class="text-xs text-gray-400">
+                  权重：{{
+                    item.weightKey
+                      ? (loopDetailForWeights?.basicInfo.scoreWeights[item.weightKey] ?? '—')
+                      : '—'
+                  }}%
+                </span>
+              </div>
+              <div class="mt-1 text-xl font-medium">
+                {{
+                  (perfDetail.kpiSummary[item.key] as null | number)?.toFixed(1) ?? '—'
+                }}{{ item.unit }}
+              </div>
+              <div class="mt-1 text-xs text-gray-400">{{ item.desc }}</div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="py-12 text-center text-gray-400">暂无性能数据</div>
+      </Spin>
+    </Modal>
   </Page>
 </template>

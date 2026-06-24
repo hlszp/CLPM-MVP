@@ -1,9 +1,9 @@
 <script lang="ts" setup>
 /**
- * S2-LOOP-007 工厂层级配置页
+ * S2-LOOP-007 工厂模型配置页
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.1 ~ §2.2.4
- * - 左侧 Ant Design Tree 展示工厂层级（工厂→装置→单元）
+ * - 左侧 Ant Design Tree 展示工厂模型（工厂→装置→单元）
  * - 右侧显示选中节点详情（名称/类型/层级路径）
  * - 支持新增/编辑/删除节点（Modal + Form）
  * - 删除有子节点时弹窗提示
@@ -90,7 +90,7 @@ function toTreeNode(node: PlantNodeApi.PlantNode): TreeNode {
   };
 }
 
-/** 加载工厂层级树 */
+/** 加载工厂模型树 */
 async function loadTree() {
   loading.value = true;
   try {
@@ -218,7 +218,7 @@ const nodePathText = computed(() =>
 
 // ===== 导入导出方法 =====
 
-/** 导出工厂层级 Excel */
+/** 导出工厂模型 Excel */
 async function handleExport() {
   exporting.value = true;
   try {
@@ -226,7 +226,7 @@ async function handleExport() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `工厂层级_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.download = `工厂模型_${new Date().toISOString().slice(0, 10)}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -239,7 +239,7 @@ async function handleExport() {
   }
 }
 
-/** 导入工厂层级 Excel（Upload beforeUpload 钩子） */
+/** 导入工厂模型 Excel（Upload beforeUpload 钩子） */
 function handleImportBeforeUpload(file: File): boolean {
   importing.value = true;
   const formData = new FormData();
@@ -276,7 +276,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="工厂层级配置">
+  <Page title="工厂模型">
     <!-- 顶部操作区：导入导出 -->
     <div class="mb-4 flex items-center justify-end gap-2">
       <Upload v-bind="uploadProps">
@@ -293,7 +293,7 @@ onMounted(() => {
 
     <div class="flex gap-4" style="height: calc(100vh - 200px)">
       <!-- 左侧树 -->
-      <Card class="w-1/2 min-w-300px" title="工厂层级">
+      <Card class="w-1/2 min-w-300px" title="工厂模型">
         <template #extra>
           <Button
             v-permission="['ADMIN']"
@@ -356,7 +356,7 @@ onMounted(() => {
           v-if="!loading && (!treeData || treeData.length === 0)"
           class="py-8 text-center text-gray-400"
         >
-          暂无工厂层级数据，请点击"新增顶层节点"创建
+          暂无工厂模型数据，请点击"新增顶层节点"创建
         </div>
       </Card>
 

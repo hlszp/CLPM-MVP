@@ -352,8 +352,10 @@ async def _calculate_loop_kpi(
         score=score,
         good_value_rate=kpi_values.get("good_value_rate"),
         auto_mode_rate=kpi_values.get("auto_mode_rate"),
+        effective_auto_rate=kpi_values.get("effective_auto_rate"),
         steady_rate=kpi_values.get("steady_rate"),
         accuracy_rate=kpi_values.get("accuracy_rate"),
+        fast_response_rate=kpi_values.get("fast_response_rate"),
         oscillation_rate=kpi_values.get("oscillation_rate"),
         saturation_rate=kpi_values.get("saturation_rate"),
     )
@@ -505,7 +507,7 @@ def _compute_kpis(
     metric_configs: dict[str, MetricConfig],
     good_value_rate: Decimal | None = None,
 ) -> dict[str, Decimal | None]:
-    """计算 6 大 KPI。
+    """计算 7 大 KPI（对齐 GB/T 44693.2-2024）。
 
     Args:
         aligned: 对齐后的时序数据（已过滤 Bad 质量码）
@@ -515,6 +517,16 @@ def _compute_kpis(
 
     Returns:
         {metric_code: Decimal value or None}
+
+    KPI 列表：
+        - good_value_rate: 好值率（仅显示，不参与综合评分加权）
+        - auto_mode_rate: 自控率（参与加权）
+        - effective_auto_rate: 有效自控率（作为乘数因子 R_auto）
+        - steady_rate: 平稳率（参与加权）
+        - accuracy_rate: 准确率（参与加权）
+        - fast_response_rate: 快速率（参与加权）
+        - oscillation_rate: 振荡率（参与加权）
+        - saturation_rate: 饱和率（参与加权）
     """
     total = len(aligned)
     if total == 0:
@@ -522,8 +534,10 @@ def _compute_kpis(
             (
                 "good_value_rate",
                 "auto_mode_rate",
+                "effective_auto_rate",
                 "steady_rate",
                 "accuracy_rate",
+                "fast_response_rate",
                 "oscillation_rate",
                 "saturation_rate",
             )
@@ -540,6 +554,9 @@ def _compute_kpis(
         if d.get("mode") is not None and _is_auto_mode(d["mode"])
     )
     auto_mode_rate = Decimal(auto_count) / Decimal(total) * Decimal("100")
+
+    # 有效自控率 = 自控率 × 好值率 / 100（作为综合评分乘数因子 R_auto）
+    effective_auto_rate = auto_mode_rate * good_value_rate_val / Decimal("100")
 
     # 振荡率（需在稳定率之前计算，因为稳定率公式依赖振荡率）
     # 简化：检测连续反向变化（相邻点 PV 差值符号变化超过阈值）
@@ -593,6 +610,10 @@ def _compute_kpis(
     else:
         accuracy_rate = None
 
+    # 快速率：控制回路对设定值变化的响应速度
+    # 统计 SP 发生显著变化（超过量程 5%）后，PV 跟随到 SP ±5% 量程范围内的时间占比
+    fast_response_rate = _compute_fast_response_rate(aligned)
+
     # 饱和率：duration(op >= 95 OR op <= 5) / duration(*) * 100
     saturation_count = sum(
         1
@@ -604,8 +625,10 @@ def _compute_kpis(
     return {
         "good_value_rate": _quantize(good_value_rate_val),
         "auto_mode_rate": _quantize(auto_mode_rate),
+        "effective_auto_rate": _quantize(effective_auto_rate),
         "steady_rate": _quantize(steady_rate) if steady_rate is not None else None,
         "accuracy_rate": _quantize(accuracy_rate) if accuracy_rate is not None else None,
+        "fast_response_rate": _quantize(fast_response_rate),
         "oscillation_rate": _quantize(oscillation_rate),
         "saturation_rate": _quantize(saturation_rate),
     }
@@ -653,24 +676,118 @@ def _detect_oscillation(aligned: list[dict[str, Any]]) -> int:
     return oscillation_count
 
 
+# 快速率响应时间阈值（秒）：SP 变化后 PV 跟随到 ±5% 量程内的允许时间
+FAST_RESPONSE_THRESHOLD_SEC = 300.0
+# SP 显著变化阈值：SP 变化幅度超过量程的 5% 视为显著变化
+SP_CHANGE_RATIO = 0.05
+
+
+def _compute_fast_response_rate(aligned: list[dict[str, Any]]) -> Decimal:
+    """计算快速率：控制回路对设定值变化的响应速度。
+
+    定义：统计 SP 发生显著变化（超过量程 5%）后，PV 跟随到 SP ±5% 量程范围内
+    且响应时间 <= 阈值（300 秒）的次数占比。
+
+    公式：fast_response_rate = count(response_time <= threshold) / count(sp_changes) × 100
+
+    如果统计期内无 SP 显著变化，快速率设为 100（无需响应）。
+
+    Args:
+        aligned: 对齐后的时序数据（已过滤 Bad 质量码）
+
+    Returns:
+        快速率（0-100）
+    """
+    # 提取有效的 PV/SP 序列
+    pv_sp_seq = [
+        (d.get("ts"), d.get("pv"), d.get("sp"))
+        for d in aligned
+        if d.get("pv") is not None and d.get("sp") is not None
+    ]
+    if len(pv_sp_seq) < 2:
+        return Decimal("100.0")
+
+    sp_values = [sp for _, _, sp in pv_sp_seq]
+    sp_span = max(sp_values) - min(sp_values)
+    if sp_span <= 0:
+        # SP 无变化，无需响应
+        return Decimal("100.0")
+
+    # SP 显著变化阈值
+    sp_change_threshold = sp_span * SP_CHANGE_RATIO
+
+    # 检测 SP 显著变化点
+    sp_changes: list[int] = []  # 记录 SP 变化点在 pv_sp_seq 中的索引
+    for i in range(1, len(pv_sp_seq)):
+        sp_diff = abs(pv_sp_seq[i][2] - pv_sp_seq[i - 1][2])
+        if sp_diff >= sp_change_threshold:
+            sp_changes.append(i)
+
+    if not sp_changes:
+        # 无 SP 显著变化，快速率设为 100
+        return Decimal("100.0")
+
+    # PV 跟随判定阈值：SP ±5% 量程
+    follow_threshold = sp_span * SP_CHANGE_RATIO
+
+    fast_count = 0
+    for change_idx in sp_changes:
+        target_sp = pv_sp_seq[change_idx][2]
+        change_ts = _ts_to_float(pv_sp_seq[change_idx][0])
+
+        # 从变化点向后搜索 PV 跟随到 SP ±5% 范围内的时刻
+        response_time = None
+        for j in range(change_idx, len(pv_sp_seq)):
+            pv = pv_sp_seq[j][1]
+            if abs(pv - target_sp) <= follow_threshold:
+                follow_ts = _ts_to_float(pv_sp_seq[j][0])
+                if change_ts is not None and follow_ts is not None:
+                    response_time = follow_ts - change_ts
+                else:
+                    # 无法计算时间差时，按采样点数估算（每点视为 1 秒）
+                    response_time = float(j - change_idx)
+                break
+
+        # 响应时间 <= 阈值视为快速响应
+        if response_time is not None and response_time <= FAST_RESPONSE_THRESHOLD_SEC:
+            fast_count += 1
+
+    fast_response_rate = Decimal(fast_count) / Decimal(len(sp_changes)) * Decimal("100")
+    return max(Decimal("0"), min(Decimal("100"), fast_response_rate))
+
+
 def _compute_composite_score(
     kpi_values: dict[str, Decimal | None],
     metric_configs: dict[str, MetricConfig],
 ) -> Decimal:
-    """计算综合评分 Score = (Σ wᵢ × ηᵢ_norm) × R_auto。
+    """计算综合评分 Score = (Σ wᵢ × ηᵢ_norm) × R_auto（对齐 GB/T 44693.2-2024）。
 
     - wᵢ = 指标 i 的权重（仅启用指标参与）
     - ηᵢ_norm = 归一化后的指标值（0-1）
-    - R_auto = 自控率（0-1），作为乘数因子
+    - R_auto = 有效自控率（0-1），作为乘数因子
+
+    参与加权的指标：自控率、准确率、快速率、稳定率、振荡率、饱和率
+    不参与加权：好值率（仅显示）、有效自控率（作为乘数因子）
     """
-    # 自控率作为乘数
+    # 有效自控率作为乘数因子 R_auto（回退到自控率）
+    effective_auto_rate = kpi_values.get("effective_auto_rate")
     auto_mode_rate = kpi_values.get("auto_mode_rate")
-    r_auto = (auto_mode_rate / Decimal("100")) if auto_mode_rate is not None else Decimal("0")
+    if effective_auto_rate is not None:
+        r_auto = effective_auto_rate / Decimal("100")
+    elif auto_mode_rate is not None:
+        r_auto = auto_mode_rate / Decimal("100")
+    else:
+        r_auto = Decimal("0")
+
+    # 好值率和有效自控率不参与加权求和
+    excluded_codes = {"good_value_rate", "effective_auto_rate"}
 
     # 归一化：oscillation_rate / saturation_rate 越低越好，归一化为 (100 - value) / 100
     # 其他指标越高越好，归一化为 value / 100
     weighted_sum = Decimal("0")
     for code, value in kpi_values.items():
+        if code in excluded_codes:
+            continue
         if value is None:
             continue
         config = metric_configs.get(code)
@@ -704,8 +821,10 @@ async def _save_snapshot(
     score: Decimal | None = None,
     good_value_rate: Decimal | None = None,
     auto_mode_rate: Decimal | None = None,
+    effective_auto_rate: Decimal | None = None,
     steady_rate: Decimal | None = None,
     accuracy_rate: Decimal | None = None,
+    fast_response_rate: Decimal | None = None,
     oscillation_rate: Decimal | None = None,
     saturation_rate: Decimal | None = None,
 ) -> dict:
@@ -726,8 +845,10 @@ async def _save_snapshot(
         existing.score = score
         existing.good_value_rate = good_value_rate
         existing.auto_mode_rate = auto_mode_rate
+        existing.effective_auto_rate = effective_auto_rate
         existing.steady_rate = steady_rate
         existing.accuracy_rate = accuracy_rate
+        existing.fast_response_rate = fast_response_rate
         existing.oscillation_rate = oscillation_rate
         existing.saturation_rate = saturation_rate
         snapshot_id = str(existing.id)
@@ -743,8 +864,10 @@ async def _save_snapshot(
             score=score,
             good_value_rate=good_value_rate,
             auto_mode_rate=auto_mode_rate,
+            effective_auto_rate=effective_auto_rate,
             steady_rate=steady_rate,
             accuracy_rate=accuracy_rate,
+            fast_response_rate=fast_response_rate,
             oscillation_rate=oscillation_rate,
             saturation_rate=saturation_rate,
         )

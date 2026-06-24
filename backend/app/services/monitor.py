@@ -160,18 +160,34 @@ async def _get_loop_tag_values(
     return tags_map, mappings
 
 
+async def _get_descendant_node_ids(db: AsyncSession, parent_id: str) -> list[str]:
+    """递归获取所有子孙节点 ID。"""
+    result = await db.execute(select(PlantNode.id).where(PlantNode.parent_id == parent_id))
+    child_ids = [str(row[0]) for row in result]
+    all_ids = list(child_ids)
+    for child_id in child_ids:
+        all_ids.extend(await _get_descendant_node_ids(db, child_id))
+    return all_ids
+
+
 async def list_loop_monitor(
     db: AsyncSession,
     plant_node_id: str | None = None,
     view: str = "list",
     keyword: str | None = None,
+    loop_type: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
     """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分）。"""
     conditions = []
     if plant_node_id:
-        conditions.append(LoopLedger.unit_id == plant_node_id)
+        # 递归获取所有子孙节点 ID，包含自身
+        all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
+        all_node_ids.append(plant_node_id)
+        conditions.append(LoopLedger.unit_id.in_(all_node_ids))
+    if loop_type:
+        conditions.append(func.upper(LoopLedger.loop_type) == loop_type.upper())
     if keyword:
         kw = f"%{keyword}%"
         conditions.append(
@@ -267,6 +283,7 @@ async def list_loop_monitor(
                 "controlMode": control_mode,
                 "score": float(loop.score_weight) if loop.score_weight else None,
                 "status": loop.status,
+                "loopType": loop.loop_type,
                 "isActive": bool(loop.is_active),
                 "readAt": read_at,
             }

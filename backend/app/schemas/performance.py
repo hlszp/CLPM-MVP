@@ -104,8 +104,10 @@ class KpiSummary(CamelModel):
 
     good_value_rate: float | None = None
     auto_mode_rate: float | None = None
+    effective_auto_rate: float | None = None
     steady_rate: float | None = None
     accuracy_rate: float | None = None
+    fast_response_rate: float | None = None
     oscillation_rate: float | None = None
     saturation_rate: float | None = None
     composite_score: float | None = None
@@ -154,8 +156,10 @@ class RankingItem(CamelModel):
     compositeScore: float | None = None
     goodValueRate: float | None = None
     autoModeRate: float | None = None
+    effectiveAutoRate: float | None = None
     steadyRate: float | None = None
     accuracyRate: float | None = None
+    fastResponseRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
     status: str = "INCONCLUSIVE"

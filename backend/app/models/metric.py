@@ -73,6 +73,8 @@ class KpiSnapshotHourly(Base):
     accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
 
     __table_args__ = (

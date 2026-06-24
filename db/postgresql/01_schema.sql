@@ -257,8 +257,10 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     score               DECIMAL(5,2),
     good_value_rate     DECIMAL(5,2),
     auto_mode_rate      DECIMAL(5,2),
+    effective_auto_rate DECIMAL(5,2),
     steady_rate         DECIMAL(5,2),
     accuracy_rate       DECIMAL(5,2),
+    fast_response_rate  DECIMAL(5,2),
     oscillation_rate    DECIMAL(5,2),
     saturation_rate     DECIMAL(5,2),
     status              VARCHAR(20)     NOT NULL,
@@ -267,16 +269,18 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     CONSTRAINT ck_kpi_snapshot_window  CHECK (ts_end > ts_start)
 );
 
-COMMENT ON TABLE  kpi_snapshot_hourly IS '每小时性能评估快照（好值率基于 PV 质量码统计）';
+COMMENT ON TABLE  kpi_snapshot_hourly IS '每小时性能评估快照（好值率基于 PV 质量码统计，对齐 GB/T 44693.2-2024）';
 COMMENT ON COLUMN kpi_snapshot_hourly.id IS '快照主键';
 COMMENT ON COLUMN kpi_snapshot_hourly.loop_id IS '关联回路 ID';
 COMMENT ON COLUMN kpi_snapshot_hourly.ts_start IS '评估窗口起始时间';
 COMMENT ON COLUMN kpi_snapshot_hourly.ts_end IS '评估窗口结束时间';
 COMMENT ON COLUMN kpi_snapshot_hourly.score IS '综合评分（0-100）';
-COMMENT ON COLUMN kpi_snapshot_hourly.good_value_rate IS '好值率（%），基于 PV 质量码统计';
+COMMENT ON COLUMN kpi_snapshot_hourly.good_value_rate IS '好值率（%），仅显示不参与综合评分加权';
 COMMENT ON COLUMN kpi_snapshot_hourly.auto_mode_rate IS '自控率（%）';
+COMMENT ON COLUMN kpi_snapshot_hourly.effective_auto_rate IS '有效自控率（%），作为综合评分乘数因子';
 COMMENT ON COLUMN kpi_snapshot_hourly.steady_rate IS '平稳率（%）';
 COMMENT ON COLUMN kpi_snapshot_hourly.accuracy_rate IS '准确率(%)';
+COMMENT ON COLUMN kpi_snapshot_hourly.fast_response_rate IS '快速率（%），控制回路对设定值变化的响应速度';
 COMMENT ON COLUMN kpi_snapshot_hourly.oscillation_rate IS '振荡率（%）';
 COMMENT ON COLUMN kpi_snapshot_hourly.saturation_rate IS '饱和率(%)';
 COMMENT ON COLUMN kpi_snapshot_hourly.status IS '计算状态：SUCCESS/INCONCLUSIVE/PARTIAL';

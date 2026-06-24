@@ -163,15 +163,36 @@ NEW_PLANT_NODES = [
     },
 ]
 
-# 场景 → KPI 范围
+# 场景 → KPI 范围（对齐 GB/T 44693.2-2024，新增 frr 快速率）
 SCENARIO_KPI: dict[str, dict[str, tuple[float, float]]] = {
-    "normal":           {"gvr": (95, 99), "amr": (95, 100), "sr": (85, 95), "ar": (85, 95), "or": (1, 5),  "sat": (0, 3)},
-    "oscillation":      {"gvr": (95, 99), "amr": (95, 100), "sr": (25, 40), "ar": (50, 65), "or": (40, 60), "sat": (1, 5)},
-    "valve_stiction":   {"gvr": (95, 99), "amr": (95, 100), "sr": (40, 55), "ar": (60, 75), "or": (20, 35), "sat": (2, 8)},
-    "op_saturation":    {"gvr": (95, 99), "amr": (95, 100), "sr": (50, 65), "ar": (55, 70), "or": (5, 15),  "sat": (30, 45)},
-    "overconservative": {"gvr": (95, 99), "amr": (95, 100), "sr": (70, 85), "ar": (55, 70), "or": (3, 10),  "sat": (1, 5)},
-    "overaggressive":   {"gvr": (95, 99), "amr": (95, 100), "sr": (35, 50), "ar": (60, 75), "or": (25, 40), "sat": (2, 8)},
-    "manual":           {"gvr": (95, 99), "amr": (0, 5),    "sr": (65, 80), "ar": (70, 85), "or": (3, 10),  "sat": (1, 5)},
+    "normal": {
+        "gvr": (95, 99), "amr": (95, 100), "sr": (85, 95),
+        "ar": (85, 95), "or": (1, 5), "sat": (0, 3), "frr": (85, 95),
+    },
+    "oscillation": {
+        "gvr": (95, 99), "amr": (95, 100), "sr": (25, 40),
+        "ar": (50, 65), "or": (40, 60), "sat": (1, 5), "frr": (60, 75),
+    },
+    "valve_stiction": {
+        "gvr": (95, 99), "amr": (95, 100), "sr": (40, 55),
+        "ar": (60, 75), "or": (20, 35), "sat": (2, 8), "frr": (40, 60),
+    },
+    "op_saturation": {
+        "gvr": (95, 99), "amr": (95, 100), "sr": (50, 65),
+        "ar": (55, 70), "or": (5, 15), "sat": (30, 45), "frr": (50, 70),
+    },
+    "overconservative": {
+        "gvr": (95, 99), "amr": (95, 100), "sr": (70, 85),
+        "ar": (55, 70), "or": (3, 10), "sat": (1, 5), "frr": (30, 50),
+    },
+    "overaggressive": {
+        "gvr": (95, 99), "amr": (95, 100), "sr": (35, 50),
+        "ar": (60, 75), "or": (25, 40), "sat": (2, 8), "frr": (80, 95),
+    },
+    "manual": {
+        "gvr": (95, 99), "amr": (0, 5), "sr": (65, 80),
+        "ar": (70, 85), "or": (3, 10), "sat": (1, 5), "frr": (100, 100),
+    },
 }
 
 # 诊断结果配置
@@ -770,13 +791,34 @@ async def write_all_tdengine_data(client: httpx.AsyncClient, start: datetime, en
 # KPI 快照生成
 # ============================================================================
 
-def calc_score(gvr: float, amr: float, sr: float, ar: float, or_: float, sat: float) -> float:
-    """根据 6 项 KPI 计算综合评分（权重 10/10/30/15/20/15）。"""
-    score = (
-        10 * gvr + 10 * amr + 30 * sr + 15 * ar
-        + 20 * (100 - or_) + 15 * (100 - sat)
-    ) / 100
-    return round(clamp(score, 0, 100), 2)
+def calc_score(
+    gvr: float, amr: float, sr: float, ar: float, or_: float, sat: float, frr: float
+) -> tuple[float, float]:
+    """根据 KPI 计算综合评分（对齐 GB/T 44693.2-2024）。
+
+    新公式：Score = (Σ wᵢ × ηᵢ_norm) × R_auto
+    - 参与加权：自控率(10)/平稳率(30)/准确率(15)/快速率(10)/振荡率(20)/饱和率(15)
+    - 好值率仅显示不参与加权
+    - R_auto = 有效自控率 = 自控率 × 好值率 / 100
+
+    Returns:
+        (score, effective_auto_rate)
+    """
+    # 有效自控率作为乘数因子
+    effective_auto_rate = amr * gvr / 100.0
+    r_auto = effective_auto_rate / 100.0
+
+    # 归一化：振荡率/饱和率越低越好 → (100 - value) / 100
+    weighted_sum = (
+        10 * (amr / 100.0)
+        + 30 * (sr / 100.0)
+        + 15 * (ar / 100.0)
+        + 10 * (frr / 100.0)
+        + 20 * ((100.0 - or_) / 100.0)
+        + 15 * ((100.0 - sat) / 100.0)
+    )
+    score = weighted_sum * r_auto
+    return round(clamp(score, 0, 100), 2), round(effective_auto_rate, 2)
 
 
 async def generate_kpi_snapshots(start: datetime, end: datetime) -> int:
@@ -802,7 +844,8 @@ async def generate_kpi_snapshots(start: datetime, end: datetime) -> int:
                 ar = round(random.uniform(*kpi_range["ar"]), 2)
                 or_ = round(random.uniform(*kpi_range["or"]), 2)
                 sat = round(random.uniform(*kpi_range["sat"]), 2)
-                score = calc_score(gvr, amr, sr, ar, or_, sat)
+                frr = round(random.uniform(*kpi_range["frr"]), 2)
+                score, effective_auto_rate = calc_score(gvr, amr, sr, ar, or_, sat, frr)
 
                 # 状态：95% SUCCESS, 5% PARTIAL
                 status = "PARTIAL" if random.random() < 0.05 else "SUCCESS"
@@ -811,7 +854,8 @@ async def generate_kpi_snapshots(start: datetime, end: datetime) -> int:
                 batch_values.append(
                     f"('{snap_id}', '{loop_id}', '{ts_start.strftime('%Y-%m-%d %H:%M:%S')}', "
                     f"'{ts_end.strftime('%Y-%m-%d %H:%M:%S')}', {score}, {gvr}, {amr}, "
-                    f"{sr}, {ar}, {or_}, {sat}, '{status}')"
+                    f"{effective_auto_rate}, {sr}, {ar}, {frr}, {or_}, {sat}, "
+                    f"'{status}')"
                 )
 
                 # 每 100 条批量插入
@@ -819,7 +863,8 @@ async def generate_kpi_snapshots(start: datetime, end: datetime) -> int:
                     sql = (
                         "INSERT INTO kpi_snapshot_hourly "
                         "(id, loop_id, ts_start, ts_end, score, good_value_rate, "
-                        "auto_mode_rate, steady_rate, accuracy_rate, oscillation_rate, "
+                        "auto_mode_rate, effective_auto_rate, steady_rate, "
+                        "accuracy_rate, fast_response_rate, oscillation_rate, "
                         "saturation_rate, status) VALUES " + ",".join(batch_values)
                     )
                     await session.execute(text(sql))
@@ -833,7 +878,8 @@ async def generate_kpi_snapshots(start: datetime, end: datetime) -> int:
                 sql = (
                     "INSERT INTO kpi_snapshot_hourly "
                     "(id, loop_id, ts_start, ts_end, score, good_value_rate, "
-                    "auto_mode_rate, steady_rate, accuracy_rate, oscillation_rate, "
+                    "auto_mode_rate, effective_auto_rate, steady_rate, "
+                    "accuracy_rate, fast_response_rate, oscillation_rate, "
                     "saturation_rate, status) VALUES " + ",".join(batch_values)
                 )
                 await session.execute(text(sql))

@@ -4,7 +4,7 @@ import type { RouteRecordRaw } from 'vue-router';
  * 回路管理路由模块
  *
  * 对齐 UI/UX v4.1 §4.2 + PRD §4.2
- * - 工厂层级配置 / 回路台账（含 Tag 关联）/ 回路监控 / 回路详情（隐藏）
+ * - 工厂模型 / 回路台账（含 Tag 关联）/ 回路监控 / 回路详情（隐藏）
  *
  * 角色权限（PRD §3）：
  * - ADMIN：全部
@@ -30,7 +30,17 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:network',
-          title: '工厂层级配置',
+          title: '工厂模型',
+        },
+      },
+      {
+        name: 'TagList',
+        path: '/tag/list',
+        component: () => import('#/views/tag/list.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:list',
+          title: '测点清单',
         },
       },
       {

@@ -39,6 +39,12 @@ class LoopLedger(Base):
     is_active: Mapped[bool | None] = mapped_column(Boolean, default=True, nullable=True)
     last_aas_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="PARTIAL")
+    loop_type: Mapped[str | None] = mapped_column(
+        String(20),
+        default="OTHER",
+        nullable=True,
+        comment="回路类型: TEMPERATURE/PRESSURE/LEVEL/FLOW/ANALYSIS/SPEED/OTHER",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now(), nullable=False
@@ -53,6 +59,11 @@ class LoopLedger(Base):
         CheckConstraint(
             "status IN ('READY', 'PARTIAL', 'INACTIVE')",
             name="ck_loop_ledger_status",
+        ),
+        CheckConstraint(
+            "loop_type IN ('TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', "
+            "'ANALYSIS', 'SPEED', 'OTHER')",
+            name="ck_loop_ledger_loop_type",
         ),
         Index("uk_loop_ledger_tag_name", "tag_name", unique=True),
         Index("idx_loop_ledger_unit_id", "unit_id"),

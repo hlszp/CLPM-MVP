@@ -111,12 +111,14 @@ export namespace MetricApi {
     algorithmVersion: string;
   }
 
-  /** KPI 摘要 */
+  /** KPI 摘要（对齐 GB/T 44693.2-2024） */
   export interface KpiSummary {
     good_value_rate: number;
     auto_mode_rate: number;
+    effective_auto_rate: number;
     steady_rate: number;
     accuracy_rate: number;
+    fast_response_rate: number;
     oscillation_rate: number;
     saturation_rate: number;
     composite_score: number;
@@ -147,7 +149,7 @@ export namespace MetricApi {
     partialWarning: PartialWarning;
   }
 
-  /** 排行项 */
+  /** 排行项（对齐 GB/T 44693.2-2024） */
   export interface RankingItem {
     rank: number;
     loopId: string;
@@ -156,8 +158,10 @@ export namespace MetricApi {
     compositeScore: number;
     goodValueRate: number;
     autoModeRate: number;
+    effectiveAutoRate: number;
     steadyRate: number;
     accuracyRate: number;
+    fastResponseRate: number;
     oscillationRate: number;
     saturationRate: number;
     status: KpiStatus;

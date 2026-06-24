@@ -34,6 +34,18 @@ class TagRegistry(Base):
     quality: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_sync_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     is_linked: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    # 扩展字段：量程/单位/测点类型/TDengine tag ID
+    range_min: Mapped[float | None] = mapped_column(Float, nullable=True, comment="量程下限")
+    range_max: Mapped[float | None] = mapped_column(Float, nullable=True, comment="量程上限")
+    unit: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="工程单位")
+    measure_type: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="测点类型: TEMPERATURE/PRESSURE/LEVEL/FLOW/ANALYSIS/SPEED/OTHER",
+    )
+    tdengine_tag_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="TDengine 中的 tag ID"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -43,6 +55,11 @@ class TagRegistry(Base):
         CheckConstraint(
             "quality IS NULL OR quality IN ('GOOD', 'BAD', 'UNCERTAIN')",
             name="ck_tag_registry_quality",
+        ),
+        CheckConstraint(
+            "measure_type IS NULL OR measure_type IN "
+            "('TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', 'ANALYSIS', 'SPEED', 'OTHER')",
+            name="ck_tag_registry_measure_type",
         ),
         Index("uk_tag_registry_tag_name", "tag_name", unique=True),
         Index("idx_tag_registry_tag_name", "tag_name"),

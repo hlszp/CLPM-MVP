@@ -1,4 +1,4 @@
-"""Tag registry schemas (IDS v3.2 §2.2.5)."""
+"""Tag registry schemas — 测点清单 (IDS §测点管理)."""
 
 from __future__ import annotations
 
@@ -7,27 +7,105 @@ from pydantic import Field
 from app.schemas.base import CamelModel
 
 
-class TagRegistryInfo(CamelModel):
-    """Tag registry info."""
+class TagLoopInfo(CamelModel):
+    """测点关联的回路信息（通过 loop_tag_mapping 间接关联）。"""
 
-    tagId: str
+    loopId: str
+    loopTagName: str
+    loopDescription: str | None = None
+
+
+class TagListItem(CamelModel):
+    """测点列表项。"""
+
+    id: str
     tagName: str
-    description: str | None = None
-    tagType: str | None = None
+    tagDescription: str | None = None
+    tagType: str
     currentValue: float | None = None
     quality: str | None = None
     lastSyncAt: str | None = None
-    isLinked: bool = False
+    isLinked: bool | None = None
+    rangeMin: float | None = None
+    rangeMax: float | None = None
+    unit: str | None = None
+    measureType: str | None = None
+    tdengineTagId: str | None = None
+    loop: TagLoopInfo | None = None
 
 
-class TagSyncStats(CamelModel):
-    """AAS 同步统计结果。"""
+class TagListData(CamelModel):
+    """测点列表响应 data 块。"""
 
-    total: int = Field(0, description="AAS 读取的 Tag 总数")
-    inserted: int = Field(0, description="新增 Tag 数")
-    updated: int = Field(0, description="更新 Tag 数")
-    unchanged: int = Field(0, description="未变化 Tag 数")
-    duration_ms: int = Field(0, description="同步耗时（毫秒）")
+    items: list[TagListItem]
+    total: int
+    page: int
+    pageSize: int
 
 
-__all__ = ["TagRegistryInfo", "TagSyncStats"]
+class TagDetail(CamelModel):
+    """测点详情。"""
+
+    id: str
+    tagName: str
+    tagDescription: str | None = None
+    tagType: str
+    currentValue: float | None = None
+    quality: str | None = None
+    lastSyncAt: str | None = None
+    isLinked: bool | None = None
+    rangeMin: float | None = None
+    rangeMax: float | None = None
+    unit: str | None = None
+    measureType: str | None = None
+    tdengineTagId: str | None = None
+    loop: TagLoopInfo | None = None
+
+
+class TagUpdate(CamelModel):
+    """PUT /api/v1/tags/{id} 请求体。"""
+
+    tagDescription: str | None = Field(None, max_length=255)
+    rangeMin: float | None = None
+    rangeMax: float | None = None
+    unit: str | None = Field(None, max_length=20)
+    measureType: str | None = None
+    tdengineTagId: str | None = Field(None, max_length=100)
+
+
+class TagDeleteResult(CamelModel):
+    """测点删除响应。"""
+
+    id: str
+    deleted: bool = True
+    deletedAt: str
+
+
+class TagImportError(CamelModel):
+    """测点导入单行错误。"""
+
+    row: int
+    tagName: str | None = None
+    message: str
+
+
+class TagImportResult(CamelModel):
+    """POST /api/v1/tags/import 响应。"""
+
+    total: int
+    inserted: int
+    updated: int
+    failed: int
+    errors: list[TagImportError] = []
+
+
+__all__ = [
+    "TagDeleteResult",
+    "TagDetail",
+    "TagImportError",
+    "TagImportResult",
+    "TagListData",
+    "TagListItem",
+    "TagLoopInfo",
+    "TagUpdate",
+]

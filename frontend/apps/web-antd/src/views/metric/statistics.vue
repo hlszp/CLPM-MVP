@@ -48,8 +48,10 @@ const metricOptions = [
   { label: '综合评分', value: 'score' },
   { label: '好值率', value: 'good_value_rate' },
   { label: '自控率', value: 'auto_mode_rate' },
+  { label: '有效自控率', value: 'effective_auto_rate' },
   { label: '平稳率', value: 'steady_rate' },
   { label: '准确率', value: 'accuracy_rate' },
+  { label: '快速率', value: 'fast_response_rate' },
   { label: '振荡率', value: 'oscillation_rate' },
   { label: '饱和率', value: 'saturation_rate' },
 ];

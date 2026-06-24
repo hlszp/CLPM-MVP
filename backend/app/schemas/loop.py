@@ -8,22 +8,29 @@ from app.schemas.base import CamelModel
 
 
 class ScoreWeights(CamelModel):
-    """回路评分权重（6 大 KPI 权重，总和须为 100）。"""
+    """回路评分权重（6 大 KPI 权重，总和须为 100）。
 
-    good_value_rate: int = Field(0, ge=0, le=100)
-    auto_mode_rate: int = Field(0, ge=0, le=100)
-    steady_rate: int = Field(0, ge=0, le=100)
-    accuracy_rate: int = Field(0, ge=0, le=100)
-    oscillation_rate: int = Field(0, ge=0, le=100)
-    saturation_rate: int = Field(0, ge=0, le=100)
+    对齐 GB/T 44693.2-2024：
+    - 好值率仅作为显示指标，不参与综合评分加权
+    - 新增快速率（fast_response_rate）参与加权
+    - 有效自控率作为乘数因子（单独显示）
+    - 向后兼容：读取时忽略已有的 good_value_rate 字段
+    """
+
+    auto_mode_rate: int = Field(10, ge=0, le=100)
+    steady_rate: int = Field(30, ge=0, le=100)
+    accuracy_rate: int = Field(15, ge=0, le=100)
+    fast_response_rate: int = Field(10, ge=0, le=100)
+    oscillation_rate: int = Field(20, ge=0, le=100)
+    saturation_rate: int = Field(15, ge=0, le=100)
 
     @model_validator(mode="after")
     def check_sum(self) -> ScoreWeights:
         total = (
-            self.good_value_rate
-            + self.auto_mode_rate
+            self.auto_mode_rate
             + self.steady_rate
             + self.accuracy_rate
+            + self.fast_response_rate
             + self.oscillation_rate
             + self.saturation_rate
         )
@@ -41,6 +48,7 @@ class LoopCreate(CamelModel):
     scoreWeights: ScoreWeights | None = Field(None, description="评分权重")
     isActive: bool = Field(True, description="是否启用")
     remark: str | None = Field(None, max_length=500, description="备注")
+    loopType: str | None = Field(None, description="回路类型")
 
 
 class LoopUpdate(CamelModel):
@@ -50,6 +58,7 @@ class LoopUpdate(CamelModel):
     scoreWeights: ScoreWeights | None = None
     isActive: bool | None = None
     remark: str | None = Field(None, max_length=500)
+    loopType: str | None = Field(None, description="回路类型")
 
 
 class TagMappingSlot(CamelModel):
@@ -84,6 +93,7 @@ class LoopListItem(CamelModel):
     controlMode: str | None = None
     isActive: bool = True
     status: str = "PARTIAL"
+    loopType: str | None = None
     score: float | None = None
     lastScoreAt: str | None = None
     tagMappingStatus: TagMappingStatus
@@ -108,6 +118,7 @@ class LoopBasicInfo(CamelModel):
     unitName: str | None = None
     isActive: bool = True
     status: str = "PARTIAL"
+    loopType: str | None = None
     scoreWeights: dict | None = None
     remark: str | None = None
     createdAt: str | None = None
@@ -171,6 +182,7 @@ class LoopUpdateResult(CamelModel):
     scoreWeights: dict | None = None
     isActive: bool | None = None
     remark: str | None = None
+    loopType: str | None = None
     updatedAt: str | None = None
     updatedBy: str | None = None
 

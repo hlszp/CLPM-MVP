@@ -42,12 +42,14 @@ METRIC_CONFIG_CACHE_KEY = "clpm:metric_config"
 DASHBOARD_CACHE_KEY_TEMPLATE = "clpm:dashboard:{plant_node_id}:{time_window}"
 DASHBOARD_CACHE_TTL = 300  # 5 分钟
 
-# 6 大 KPI metric_code 列表（固定顺序）
+# 7 大 KPI metric_code 列表（固定顺序，对齐 GB/T 44693.2-2024）
 KPI_METRIC_CODES = (
     "good_value_rate",
     "auto_mode_rate",
+    "effective_auto_rate",
     "steady_rate",
     "accuracy_rate",
+    "fast_response_rate",
     "oscillation_rate",
     "saturation_rate",
 )
@@ -56,8 +58,10 @@ KPI_METRIC_CODES = (
 KPI_NAME_MAP = {
     "good_value_rate": "好值率",
     "auto_mode_rate": "自控率",
+    "effective_auto_rate": "有效自控率",
     "steady_rate": "平稳率",
     "accuracy_rate": "准确率",
+    "fast_response_rate": "快速率",
     "oscillation_rate": "振荡率",
     "saturation_rate": "饱和率",
     "composite_score": "综合评分",
@@ -408,6 +412,7 @@ async def get_ranking(
         "score": "score",
         "steady_rate": "steady_rate",
         "good_value_rate": "good_value_rate",
+        "fast_response_rate": "fast_response_rate",
     }
     sort_field_name = sort_field_map.get(sort_by, "score")
 
@@ -487,8 +492,10 @@ async def get_ranking(
                 "compositeScore": _to_float(snap.score),
                 "goodValueRate": _to_float(snap.good_value_rate),
                 "autoModeRate": _to_float(snap.auto_mode_rate),
+                "effectiveAutoRate": _to_float(snap.effective_auto_rate),
                 "steadyRate": _to_float(snap.steady_rate),
                 "accuracyRate": _to_float(snap.accuracy_rate),
+                "fastResponseRate": _to_float(snap.fast_response_rate),
                 "oscillationRate": _to_float(snap.oscillation_rate),
                 "saturationRate": _to_float(snap.saturation_rate),
                 "status": _score_to_status(snap.score),
@@ -824,8 +831,10 @@ def _default_threshold(metric_code: str) -> dict:
     defaults = {
         "good_value_rate": {"min": 0, "max": 100, "alert": 80},
         "auto_mode_rate": {"min": 0, "max": 100, "alert": 90},
+        "effective_auto_rate": {"min": 0, "max": 100, "alert": 90},
         "steady_rate": {"min": 0, "max": 100, "alert": 85},
         "accuracy_rate": {"min": 0, "max": 100, "alert": 80},
+        "fast_response_rate": {"min": 0, "max": 100, "alert": 80},
         "oscillation_rate": {"min": 0, "max": 100, "alert": 20},
         "saturation_rate": {"min": 0, "max": 100, "alert": 15},
     }
@@ -854,8 +863,10 @@ async def _aggregate_kpi_summary(
     empty = {
         "good_value_rate": None,
         "auto_mode_rate": None,
+        "effective_auto_rate": None,
         "steady_rate": None,
         "accuracy_rate": None,
+        "fast_response_rate": None,
         "oscillation_rate": None,
         "saturation_rate": None,
         "composite_score": None,
@@ -873,8 +884,10 @@ async def _aggregate_kpi_summary(
     return {
         "good_value_rate": avg_value("good_value_rate"),
         "auto_mode_rate": avg_value("auto_mode_rate"),
+        "effective_auto_rate": avg_value("effective_auto_rate"),
         "steady_rate": avg_value("steady_rate"),
         "accuracy_rate": avg_value("accuracy_rate"),
+        "fast_response_rate": avg_value("fast_response_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
         "composite_score": score_avg,
@@ -924,8 +937,10 @@ async def _aggregate_kpi_trend(
         "score": KpiSnapshotHourly.score,
         "good_value_rate": KpiSnapshotHourly.good_value_rate,
         "auto_mode_rate": KpiSnapshotHourly.auto_mode_rate,
+        "effective_auto_rate": KpiSnapshotHourly.effective_auto_rate,
         "steady_rate": KpiSnapshotHourly.steady_rate,
         "accuracy_rate": KpiSnapshotHourly.accuracy_rate,
+        "fast_response_rate": KpiSnapshotHourly.fast_response_rate,
         "oscillation_rate": KpiSnapshotHourly.oscillation_rate,
         "saturation_rate": KpiSnapshotHourly.saturation_rate,
     }

@@ -71,8 +71,10 @@ const sortByOptions = [
   { label: '综合评分', value: 'compositeScore' },
   { label: '好值率', value: 'goodValueRate' },
   { label: '自控率', value: 'autoModeRate' },
+  { label: '有效自控率', value: 'effectiveAutoRate' },
   { label: '平稳率', value: 'steadyRate' },
   { label: '准确率', value: 'accuracyRate' },
+  { label: '快速率', value: 'fastResponseRate' },
   { label: '振荡率', value: 'oscillationRate' },
   { label: '饱和率', value: 'saturationRate' },
 ];

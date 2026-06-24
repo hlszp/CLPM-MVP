@@ -28,21 +28,28 @@ export namespace LoopApi {
   export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
   /** 趋势时间窗（IDS v3.2 §2.2.14） */
-  export type TrendWindow = 'last_1_hour' | 'last_7_days' | 'last_24_hours';
+  export type TrendWindow =
+    | 'last_1_hour'
+    | 'last_2_hours'
+    | 'last_4_hours'
+    | 'last_8_hours'
+    | 'last_24_hours'
+    | 'last_72_hours'
+    | 'last_7_days';
 
   /** KPI 状态（IDS v3.2 §2.2.14） */
   export type KpiStatus = 'SUCCESS' | 'INCONCLUSIVE' | 'PARTIAL';
 
-  /** 评分权重（6 大 KPI，总和须 100） */
+  /** 评分权重（6 大 KPI，总和须 100，对齐 GB/T 44693.2-2024） */
   export interface ScoreWeights {
-    /** 优良值率权重 */
-    good_value_rate: number;
     /** 自动模式率权重 */
     auto_mode_rate: number;
     /** 稳定率权重 */
     steady_rate: number;
     /** 准确度权重 */
     accuracy_rate: number;
+    /** 快速率权重 */
+    fast_response_rate: number;
     /** 振荡率权重 */
     oscillation_rate: number;
     /** 饱和率权重 */
@@ -60,6 +67,16 @@ export namespace LoopApi {
     pid_d: boolean;
   }
 
+  /** 回路类型（TEMPERATURE/PRESSURE/LEVEL/FLOW/ANALYSIS/SPEED/OTHER） */
+  export type LoopType =
+    | 'ANALYSIS'
+    | 'FLOW'
+    | 'LEVEL'
+    | 'OTHER'
+    | 'PRESSURE'
+    | 'SPEED'
+    | 'TEMPERATURE';
+
   /** 回路列表项（IDS v3.2 §2.2.7） */
   export interface LoopListItem {
     loopId: string;
@@ -68,6 +85,7 @@ export namespace LoopApi {
     unitId: string;
     unitName: string;
     controlMode: ControlMode;
+    loopType?: LoopType;
     isActive: boolean;
     status: LoopStatus;
     score: number;
@@ -79,6 +97,7 @@ export namespace LoopApi {
   export interface LoopQueryParams extends PageQuery {
     plantNodeId?: string;
     controlMode?: ControlMode;
+    loopType?: LoopType;
     isActive?: boolean;
     status?: LoopStatus;
     keyword?: string;
@@ -89,6 +108,7 @@ export namespace LoopApi {
     tagName: string;
     description?: string;
     unitId: string;
+    loopType?: LoopType;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -97,6 +117,8 @@ export namespace LoopApi {
   /** 更新回路参数（IDS v3.2 §2.2.10） */
   export interface UpdateLoopParams {
     description?: string;
+    unitId?: string;
+    loopType?: LoopType;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -234,6 +256,8 @@ export namespace LoopApi {
     modeLabel: string;
     pvQuality: Quality;
     readAt?: string;
+    /** 工程单位（从 Tag 关联获取，如 °C、MPa、% 等） */
+    unit?: string;
   }
 
   /** 回路监控列表项（IDS v3.2 §2.2.15） */
@@ -244,6 +268,7 @@ export namespace LoopApi {
     unitName: string;
     currentValues: MonitorCurrentValues;
     controlMode: ControlMode;
+    loopType?: LoopType;
     score: number;
     status: LoopStatus;
     isActive: boolean;
@@ -254,6 +279,7 @@ export namespace LoopApi {
   export interface MonitorQueryParams extends PageQuery {
     plantNodeId?: string;
     view?: 'card' | 'list';
+    loopType?: LoopType;
     keyword?: string;
   }
 
@@ -280,8 +306,10 @@ export namespace LoopApi {
   export interface KpiSummary {
     good_value_rate: number;
     auto_mode_rate: number;
+    effective_auto_rate: number;
     steady_rate: number;
     accuracy_rate: number;
+    fast_response_rate: number;
     oscillation_rate: number;
     saturation_rate: number;
     composite_score: number;

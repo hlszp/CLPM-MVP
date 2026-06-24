@@ -63,7 +63,7 @@ const tagSlots: {
   { key: 'pid_d', label: 'PID_D', required: false },
 ];
 
-/** 6 大 KPI 配置 */
+/** 8 大 KPI 配置（对齐 GB/T 44693.2-2024） */
 const kpiItems: {
   desc: string;
   key: keyof LoopApi.KpiSummary;
@@ -72,8 +72,10 @@ const kpiItems: {
 }[] = [
   { desc: '优良值率', key: 'good_value_rate', label: '优良值率', unit: '%' },
   { desc: '自动模式率', key: 'auto_mode_rate', label: '自动模式率', unit: '%' },
+  { desc: '有效自控率', key: 'effective_auto_rate', label: '有效自控率', unit: '%' },
   { desc: '稳定率', key: 'steady_rate', label: '稳定率', unit: '%' },
   { desc: '准确度', key: 'accuracy_rate', label: '准确度', unit: '%' },
+  { desc: '快速率', key: 'fast_response_rate', label: '快速率', unit: '%' },
   { desc: '振荡率', key: 'oscillation_rate', label: '振荡率', unit: '%' },
   { desc: '饱和率', key: 'saturation_rate', label: '饱和率', unit: '%' },
 ];

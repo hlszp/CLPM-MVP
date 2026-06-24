@@ -63,6 +63,7 @@ async def list_loops_endpoint(
     isActive: bool | None = Query(None, description="按启用状态筛选"),
     status: str | None = Query(None, description="按回路状态筛选：READY/PARTIAL/INACTIVE"),
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
+    loopType: str | None = Query(None, description="按回路类型筛选"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -76,6 +77,7 @@ async def list_loops_endpoint(
         is_active=isActive,
         status=status,
         keyword=keyword,
+        loop_type=loopType,
         page=page,
         page_size=pageSize,
     )
@@ -101,6 +103,7 @@ async def create_loop_endpoint(
         is_active=body.isActive,
         remark=body.remark,
         operator=user.username,
+        loop_type=body.loopType,
     )
     return success(data=data, message="创建成功")
 
@@ -115,6 +118,7 @@ async def list_loop_monitor_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     view: str = Query("list", description="视图模式：list/card"),
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
+    loopType: str | None = Query(None, description="按回路类型筛选"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -126,6 +130,7 @@ async def list_loop_monitor_endpoint(
         plant_node_id=plantNodeId,
         view=view,
         keyword=keyword,
+        loop_type=loopType,
         page=page,
         page_size=pageSize,
     )
@@ -200,7 +205,7 @@ async def update_loop_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注）。"""
+    """更新回路（描述/评分权重/启用状态/备注/回路类型）。"""
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
@@ -212,6 +217,7 @@ async def update_loop_endpoint(
         score_weights=score_weights,
         is_active=body.isActive,
         remark=body.remark,
+        loop_type=body.loopType,
     )
     return success(data=data, message="更新成功")
 

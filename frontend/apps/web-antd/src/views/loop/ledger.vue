@@ -39,6 +39,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Upload,
 } from 'ant-design-vue';
 
@@ -65,6 +66,7 @@ const total = ref(0);
 const query = reactive({
   plantNodeId: undefined as string | undefined,
   status: undefined as LoopApi.LoopStatus | undefined,
+  loopType: undefined as string | undefined,
   keyword: '',
   page: 1,
   pageSize: 20,
@@ -73,12 +75,60 @@ const query = reactive({
 // Plant nodes for filter (flattened)
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 
+/** 工厂节点层级选项（显示完整路径：工厂A / 装置B / 单元C） */
+const plantNodeOptions = computed(() => {
+  const nodeMap = new Map<string, PlantNodeApi.PlantNode>();
+  for (const node of plantNodes.value) {
+    nodeMap.set(node.id, node);
+  }
+  return plantNodes.value.map((node) => {
+    const path: string[] = [];
+    let current: PlantNodeApi.PlantNode | undefined = node;
+    while (current) {
+      path.unshift(current.name);
+      current = current.parentId
+        ? nodeMap.get(current.parentId)
+        : undefined;
+    }
+    return {
+      label: path.join(' / '),
+      value: node.id,
+    };
+  });
+});
+
 const statusOptions = [
   { label: '全部', value: undefined },
   { label: '就绪', value: 'READY' },
   { label: '部分关联', value: 'PARTIAL' },
   { label: '未启用', value: 'INACTIVE' },
 ];
+
+/** 回路类型映射（label + color） */
+const LOOP_TYPE_MAP: Record<string, { label: string; color: string }> = {
+  TEMPERATURE: { label: '温度', color: 'red' },
+  PRESSURE: { label: '压力', color: 'blue' },
+  LEVEL: { label: '液位', color: 'green' },
+  FLOW: { label: '流量', color: 'cyan' },
+  ANALYSIS: { label: '分析', color: 'purple' },
+  SPEED: { label: '速度', color: 'orange' },
+  OTHER: { label: '其他', color: 'default' },
+};
+
+const loopTypeOptions = [
+  { label: '全部', value: undefined },
+  ...Object.entries(LOOP_TYPE_MAP).map(([value, { label }]) => ({
+    label,
+    value,
+  })),
+];
+
+/** 状态说明文案 */
+const statusHelpText = [
+  'INACTIVE（未启用）：回路未激活，不参与监控和评分',
+  'PARTIAL（部分关联）：回路已激活，但 PV/SP/OP/MODE 四个必填 Tag 未完全关联',
+  'READY（就绪）：回路已激活且四个必填 Tag 全部关联，可正常监控和评分',
+].join('\n');
 
 const columns: TableColumnsType = [
   { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 160 },
@@ -90,12 +140,19 @@ const columns: TableColumnsType = [
   },
   { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 160 },
   {
+    title: '回路类型',
+    dataIndex: 'loopType',
+    key: 'loopType',
+    width: 100,
+  },
+  {
     title: '控制方式',
     dataIndex: 'controlMode',
     key: 'controlMode',
     width: 100,
   },
   { title: '状态', dataIndex: 'status', key: 'status', width: 110 },
+  { title: '启用', dataIndex: 'isActive', key: 'isActive', width: 80 },
   { title: '评分', dataIndex: 'score', key: 'score', width: 80 },
   { title: 'Tag 关联', key: 'tagMapping', width: 200 },
   {
@@ -104,7 +161,7 @@ const columns: TableColumnsType = [
     key: 'lastScoreAt',
     width: 170,
   },
-  { title: '操作', key: 'action', width: 240, fixed: 'right' },
+  { title: '操作', key: 'action', width: 260, fixed: 'right' },
 ];
 
 // Modal state
@@ -117,23 +174,24 @@ const formState = reactive({
   tagName: '',
   description: '',
   unitId: undefined as string | undefined,
+  loopType: 'OTHER' as string | undefined,
   isActive: true,
   remark: '',
   scoreWeights: {
-    good_value_rate: 20,
-    auto_mode_rate: 20,
-    steady_rate: 20,
+    auto_mode_rate: 10,
+    steady_rate: 30,
     accuracy_rate: 15,
-    oscillation_rate: 15,
-    saturation_rate: 10,
+    fast_response_rate: 10,
+    oscillation_rate: 20,
+    saturation_rate: 15,
   } as LoopApi.ScoreWeights,
 });
 
 const weightItems: { key: keyof LoopApi.ScoreWeights; label: string }[] = [
-  { key: 'good_value_rate', label: '优良值率' },
   { key: 'auto_mode_rate', label: '自动模式率' },
   { key: 'steady_rate', label: '稳定率' },
   { key: 'accuracy_rate', label: '准确度' },
+  { key: 'fast_response_rate', label: '快速率' },
   { key: 'oscillation_rate', label: '振荡率' },
   { key: 'saturation_rate', label: '饱和率' },
 ];
@@ -250,6 +308,7 @@ async function loadList() {
     const data = await getLoopListApi({
       plantNodeId: query.plantNodeId,
       status: query.status,
+      loopType: query.loopType as LoopApi.LoopType | undefined,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -281,15 +340,16 @@ function handleAdd() {
   formState.tagName = '';
   formState.description = '';
   formState.unitId = undefined;
+  formState.loopType = 'OTHER';
   formState.isActive = true;
   formState.remark = '';
   formState.scoreWeights = {
     accuracy_rate: 15,
-    auto_mode_rate: 20,
-    good_value_rate: 20,
-    oscillation_rate: 15,
-    saturation_rate: 10,
-    steady_rate: 20,
+    auto_mode_rate: 10,
+    fast_response_rate: 10,
+    oscillation_rate: 20,
+    saturation_rate: 15,
+    steady_rate: 30,
   };
   modalVisible.value = true;
 }
@@ -301,6 +361,7 @@ function handleEdit(record: LoopApi.LoopListItem) {
   formState.tagName = record.tagName;
   formState.description = record.description;
   formState.unitId = record.unitId;
+  formState.loopType = record.loopType ?? 'OTHER';
   formState.isActive = record.isActive;
   formState.remark = '';
   // 编辑时需要完整 scoreWeights，通过详情接口获取
@@ -339,6 +400,7 @@ async function handleSubmit() {
         tagName: formState.tagName,
         description: formState.description,
         unitId: formState.unitId,
+        loopType: formState.loopType as LoopApi.LoopType | undefined,
         scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
@@ -347,6 +409,8 @@ async function handleSubmit() {
     } else if (editingLoop.value) {
       await updateLoopApi(editingLoop.value.loopId, {
         description: formState.description,
+        unitId: formState.unitId,
+        loopType: formState.loopType as LoopApi.LoopType | undefined,
         scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
@@ -367,6 +431,24 @@ async function handleDelete(record: LoopApi.LoopListItem) {
   try {
     await deleteLoopApi(record.loopId);
     message.success('回路删除成功');
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
+
+/** 列表行内启用/禁用切换 */
+async function handleToggleActive(
+  record: LoopApi.LoopListItem,
+  checked: boolean,
+) {
+  if (checked && record.status !== 'READY') {
+    message.warning('回路 Tag 未完全关联（PV/SP/OP/MODE），无法启用');
+    return;
+  }
+  try {
+    await updateLoopApi(record.loopId, { isActive: checked });
+    message.success(checked ? '回路已启用' : '回路已禁用');
     await loadList();
   } catch {
     // 错误已由拦截器处理
@@ -508,6 +590,85 @@ async function handleSaveTagMapping() {
   }
 }
 
+// ===== 自动匹配 Tag =====
+const autoMatching = ref(false);
+
+/** 后缀 → 槽位映射规则 */
+const suffixSlotRules: { suffixes: string[]; key: keyof typeof slotState }[] = [
+  { suffixes: ['_PV'], key: 'pv' },
+  { suffixes: ['_SP'], key: 'sp' },
+  { suffixes: ['_OUT', '_OP'], key: 'op' },
+  { suffixes: ['_MODE'], key: 'mode' },
+  { suffixes: ['_KP', '_PID_P'], key: 'pid_p' },
+  { suffixes: ['_TI', '_PID_I'], key: 'pid_i' },
+  { suffixes: ['_TD', '_PID_D'], key: 'pid_d' },
+];
+
+/** 自动匹配：根据回路位号前缀搜索测点并按后缀匹配到槽位 */
+async function handleAutoMatch() {
+  if (!currentLoopForTag.value) return;
+  const prefix = currentLoopForTag.value.tagName.toUpperCase();
+  autoMatching.value = true;
+  try {
+    const data = await getAasTagsApi({
+      keyword: currentLoopForTag.value.tagName,
+      page: 1,
+      pageSize: 200,
+    });
+    // 仅保留以回路位号为前缀的测点
+    const matchedTags = data.items.filter((t) =>
+      t.tagName.toUpperCase().startsWith(prefix),
+    );
+
+    // 合并到 availableTags，确保下拉可选
+    const existingIds = new Set(availableTags.value.map((t) => t.tagId));
+    for (const t of matchedTags) {
+      if (!existingIds.has(t.tagId)) {
+        availableTags.value.push(t);
+      }
+    }
+
+    // 重置槽位
+    slotState.pv = undefined;
+    slotState.sp = undefined;
+    slotState.op = undefined;
+    slotState.mode = undefined;
+    slotState.pid_p = undefined;
+    slotState.pid_i = undefined;
+    slotState.pid_d = undefined;
+
+    // 按后缀匹配
+    let matchedCount = 0;
+    for (const tag of matchedTags) {
+      const name = tag.tagName.toUpperCase();
+      for (const rule of suffixSlotRules) {
+        if (rule.suffixes.some((s) => name.endsWith(s))) {
+          // 仅在槽位为空时填充，避免重复覆盖
+          if (!slotState[rule.key]) {
+            slotState[rule.key] = tag.tagId;
+            matchedCount++;
+          }
+          break;
+        }
+      }
+    }
+
+    if (matchedCount > 0) {
+      message.success(
+        `自动匹配完成，共匹配 ${matchedCount} 个测点，请检查后保存`,
+      );
+    } else {
+      message.warning(
+        `未找到以「${currentLoopForTag.value.tagName}」为前缀的匹配测点`,
+      );
+    }
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    autoMatching.value = false;
+  }
+}
+
 // ===== 导入导出方法 =====
 
 /** 导出回路台账 Excel */
@@ -518,6 +679,7 @@ async function handleExport() {
       params: {
         plantNodeId: query.plantNodeId,
         status: query.status,
+        loopType: query.loopType,
         keyword: query.keyword || undefined,
       },
     });
@@ -582,9 +744,13 @@ onMounted(() => {
         <Select
           v-model:value="query.plantNodeId"
           placeholder="按装置/单元筛选"
-          style="width: 220px"
+          style="width: 260px"
           allow-clear
-          :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
+          show-search
+          :options="plantNodeOptions"
+          :filter-option="
+            (input: string, option: any) => option.label.includes(input)
+          "
           @change="handleSearch"
         />
         <Select
@@ -593,6 +759,14 @@ onMounted(() => {
           style="width: 160px"
           allow-clear
           :options="statusOptions"
+          @change="handleSearch"
+        />
+        <Select
+          v-model:value="query.loopType"
+          placeholder="按回路类型筛选"
+          style="width: 160px"
+          allow-clear
+          :options="loopTypeOptions"
           @change="handleSearch"
         />
         <Input
@@ -642,13 +816,54 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: LoopApi.LoopListItem) => record.loopId"
-        :scroll="{ x: 1280 }"
+        :scroll="{ x: 1400 }"
         size="middle"
         @change="handleTableChange"
       >
+        <template #headerCell="{ column }">
+          <template v-if="column.key === 'status'">
+            <Tooltip :title="statusHelpText" placement="topLeft">
+              <span>状态 ？</span>
+            </Tooltip>
+          </template>
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'status'">
             <StatusBadge :status="record.status" :is-active="record.isActive" />
+          </template>
+          <template v-else-if="column.key === 'loopType'">
+            <Tag
+              :color="
+                LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.color ?? 'default'
+              "
+              class="m-0"
+            >
+              {{ LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.label ?? '其他' }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'isActive'">
+            <Tooltip
+              :title="
+                record.status !== 'READY' && !record.isActive
+                  ? '回路 Tag 未完全关联（PV/SP/OP/MODE），无法启用'
+                  : '切换启用状态'
+              "
+            >
+              <span>
+                <Switch
+                  :checked="record.isActive"
+                  :disabled="record.status !== 'READY' && !record.isActive"
+                  size="small"
+                  @change="
+                    (checked) =>
+                      handleToggleActive(
+                        record as LoopApi.LoopListItem,
+                        !!checked,
+                      )
+                  "
+                />
+              </span>
+            </Tooltip>
           </template>
           <template v-else-if="column.key === 'score'">
             <span v-if="record.score != null" class="font-medium">
@@ -677,19 +892,19 @@ onMounted(() => {
                 v-permission="['ADMIN', 'IC_ENGINEER']"
                 type="link"
                 size="small"
-                @click="handleEdit(record as LoopApi.LoopListItem)"
+                @click="
+                  handleOpenTagMapping(record as LoopApi.LoopListItem)
+                "
               >
-                编辑
+                Tag关联
               </Button>
               <Button
                 v-permission="['ADMIN', 'IC_ENGINEER']"
                 type="link"
                 size="small"
-                @click="
-                  handleOpenTagMapping(record as LoopApi.LoopListItem)
-                "
+                @click="handleEdit(record as LoopApi.LoopListItem)"
               >
-                Tag 关联
+                编辑
               </Button>
               <Popconfirm
                 v-permission="['ADMIN']"
@@ -740,21 +955,35 @@ onMounted(() => {
             <Select
               v-model:value="formState.unitId"
               placeholder="请选择所属单元"
-              :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
-              :disabled="modalMode === 'edit'"
+              :options="plantNodeOptions"
               show-search
+              allow-clear
               :filter-option="
                 (input: string, option: any) => option.label.includes(input)
               "
             />
           </FormItem>
         </div>
-        <FormItem name="description" label="回路描述">
-          <Input
-            v-model:value="formState.description"
-            placeholder="请输入回路描述"
-          />
-        </FormItem>
+        <div class="grid grid-cols-2 gap-4">
+          <FormItem name="description" label="回路描述">
+            <Input
+              v-model:value="formState.description"
+              placeholder="请输入回路描述"
+            />
+          </FormItem>
+          <FormItem name="loopType" label="回路类型">
+            <Select
+              v-model:value="formState.loopType"
+              placeholder="请选择回路类型"
+              :options="
+                Object.entries(LOOP_TYPE_MAP).map(([value, { label }]) => ({
+                  label,
+                  value,
+                }))
+              "
+            />
+          </FormItem>
+        </div>
 
         <!-- 评分权重 -->
         <div class="mb-2 font-medium">
@@ -799,7 +1028,7 @@ onMounted(() => {
     <!-- Tag 关联 Drawer -->
     <Drawer
       v-model:open="tagDrawerVisible"
-      title="Tag 关联配置"
+      title="Tag关联"
       placement="right"
       width="600px"
     >
@@ -811,6 +1040,26 @@ onMounted(() => {
             <span v-if="currentLoopForTag.description" class="text-gray-500">
               — {{ currentLoopForTag.description }}
             </span>
+          </div>
+        </div>
+
+        <!-- 自动匹配操作区 -->
+        <div class="mb-4 rounded border border-blue-100 bg-blue-50 p-3">
+          <div class="mb-1 flex items-center justify-between">
+            <span class="text-sm font-medium text-blue-700">自动匹配</span>
+            <Button
+              v-permission="['ADMIN', 'IC_ENGINEER']"
+              type="primary"
+              size="small"
+              :loading="autoMatching"
+              @click="handleAutoMatch"
+            >
+              执行匹配
+            </Button>
+          </div>
+          <div class="text-xs text-gray-500">
+            根据回路位号前缀搜索测点，按后缀（_PV/_SP/_OUT/_MODE/_KP/_TI/_TD
+            等）自动匹配到对应槽位，匹配后可手动调整。
           </div>
         </div>
 
