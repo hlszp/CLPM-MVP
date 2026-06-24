@@ -13,8 +13,8 @@ from app.schemas.base import CamelModel
 # 与业务代码保持一致（app/services/tracker.py VALID_STATUSES）
 # ---------------------------------------------------------------------------
 
-# 处理状态：PENDING/IN_PROGRESS/RESOLVED/IGNORED
-ActionStatus = Literal["PENDING", "IN_PROGRESS", "RESOLVED", "IGNORED"]
+# 处理状态：PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED（FDS §5.4.4 "已实施"）
+ActionStatus = Literal["PENDING", "IN_PROGRESS", "IMPLEMENTED", "IGNORED"]
 
 # ---------------------------------------------------------------------------
 # S4-DIAG-001: 诊断指标配置

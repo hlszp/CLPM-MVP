@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import logging
+import math
+import random
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -19,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BizError
 from app.core.tdengine import query_trend_data
 from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
 
@@ -31,8 +34,11 @@ LTTB_TARGET_POINTS = 2000
 # 趋势时间窗映射
 TREND_WINDOWS: dict[str, timedelta] = {
     "last_1_hour": timedelta(hours=1),
+    "last_2_hours": timedelta(hours=2),
+    "last_4_hours": timedelta(hours=4),
+    "last_8_hours": timedelta(hours=8),
     "last_24_hours": timedelta(hours=24),
-    "last_7_days": timedelta(days=7),
+    "last_72_hours": timedelta(hours=72),
 }
 
 
@@ -424,13 +430,90 @@ async def get_loop_monitor_detail(
             if pv_trend:
                 trend_data["pvQuality"] = [d.get("quality", "GOOD") for d in pv_trend]
 
-    # KPI 摘要（从 loop.score_weight 读取，简化处理）
-    kpi_summary: dict[str, Any] = {
-        "composite_score": float(loop.score_weight) if loop.score_weight else None,
-        "status": "INCONCLUSIVE" if loop.status != "READY" else "GOOD",
-        "algorithm_version": "KPI_CALC_v1.0",
-        "calculatedAt": read_at,
-    }
+    # TDengine 无数据时生成模拟趋势数据（开发演示用）
+    if trend_status == "EMPTY":
+        trend_status = "MOCK"
+        seed = hash(loop.tag_name) % 1000
+        rng = random.Random(seed)
+        base_pv = 50.0 + rng.uniform(-20, 20)
+        base_sp = base_pv + rng.uniform(-5, 5)
+        interval_sec = max(int(delta.total_seconds() / 200), 10)
+        point_count = int(delta.total_seconds() / interval_sec)
+        ts_list: list[int] = []
+        pv_list: list[float] = []
+        sp_list: list[float] = []
+        op_list: list[float] = []
+        mode_list: list[int] = []
+        current_mode = rng.choice([0, 1, 2])
+        for i in range(point_count):
+            t = now - delta + timedelta(seconds=i * interval_sec)
+            ts_list.append(int(t.timestamp() * 1000))
+            progress = i / max(point_count - 1, 1)
+            # PV：正弦波 + 噪声，围绕 SP 波动
+            wave = math.sin(progress * math.pi * 8) * 3.0
+            noise = rng.uniform(-1.5, 1.5)
+            pv_list.append(round(base_pv + wave + noise, 2))
+            # SP：偶尔阶跃
+            if i > 0 and i % max(point_count // 4, 1) == 0:
+                base_sp = base_pv + rng.uniform(-8, 8)
+            sp_list.append(round(base_sp, 2))
+            # OP：0-100% 之间波动
+            op_val = 40 + math.sin(progress * math.pi * 6) * 20 + rng.uniform(-5, 5)
+            op_list.append(round(op_val, 2))
+            # MODE：偶尔切换
+            if i > 0 and rng.random() < 0.05:
+                current_mode = rng.choice([0, 1, 2])
+            mode_list.append(current_mode)
+        trend_data["timestamps"] = ts_list
+        trend_data["pv"] = pv_list
+        trend_data["sp"] = sp_list
+        trend_data["op"] = op_list
+        trend_data["mode"] = mode_list
+        trend_data["pvQuality"] = ["GOOD"] * point_count
+
+    # KPI 摘要：从 kpi_snapshot_hourly 读取最新快照
+    snapshot = await db.execute(
+        select(KpiSnapshotHourly)
+        .where(KpiSnapshotHourly.loop_id == loop_id)
+        .order_by(KpiSnapshotHourly.ts_end.desc())
+        .limit(1)
+    )
+    snap = snapshot.scalar_one_or_none()
+
+    def _rate(val) -> float | None:
+        """Decimal → float，None 保持 None。"""
+        return float(val) if val is not None else None
+
+    if snap:
+        kpi_summary: dict[str, Any] = {
+            "composite_score": _rate(snap.score),
+            "auto_mode_rate": _rate(snap.auto_mode_rate),
+            "effective_auto_rate": _rate(snap.effective_auto_rate),
+            "steady_rate": _rate(snap.steady_rate),
+            "accuracy_rate": _rate(snap.accuracy_rate),
+            "fast_response_rate": _rate(snap.fast_response_rate),
+            "oscillation_rate": _rate(snap.oscillation_rate),
+            "saturation_rate": _rate(snap.saturation_rate),
+            "good_value_rate": _rate(snap.good_value_rate),
+            "status": snap.status,
+            "algorithm_version": "KPI_CALC_v1.0",
+            "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else read_at,
+        }
+    else:
+        kpi_summary = {
+            "composite_score": None,
+            "auto_mode_rate": None,
+            "effective_auto_rate": None,
+            "steady_rate": None,
+            "accuracy_rate": None,
+            "fast_response_rate": None,
+            "oscillation_rate": None,
+            "saturation_rate": None,
+            "good_value_rate": None,
+            "status": "INCONCLUSIVE" if loop.status != "READY" else "GOOD",
+            "algorithm_version": "KPI_CALC_v1.0",
+            "calculatedAt": read_at,
+        }
 
     return {
         "loopId": str(loop.id),

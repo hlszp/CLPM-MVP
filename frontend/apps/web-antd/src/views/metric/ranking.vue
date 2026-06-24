@@ -100,7 +100,7 @@ const statusLabelMap: Record<KpiStatus, string> = {
 const actionStatusLabel: Record<string, string> = {
   PENDING: '待处理',
   IN_PROGRESS: '处理中',
-  RESOLVED: '已解决',
+  IMPLEMENTED: '已实施',
   IGNORED: '已忽略',
 };
 

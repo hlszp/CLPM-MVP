@@ -19,7 +19,7 @@ from app.tasks.diagnosis_engine import (
     _analyze_pid_params,
     _analyze_quality,
     _analyze_saturation,
-    _build_scatter_plot_url,
+    _build_scatter_plot_data,
     _compute_sample_interval,
     _dempster_shafer_fusion,
     _detect_external_disturbance,
@@ -238,18 +238,45 @@ class TestGetTagName:
         assert result is None
 
 
-class TestBuildScatterPlotUrl:
-    """测试 _build_scatter_plot_url() URL 构建。"""
+class TestBuildScatterPlotData:
+    """测试 _build_scatter_plot_data() 坐标数据构建。"""
 
-    def test_url_format(self) -> None:
-        """URL 应包含 loop_id 和时间范围。"""
-        ts_start = datetime(2026, 1, 1, 0, 0, 0)
-        ts_end = datetime(2026, 1, 1, 1, 0, 0)
-        url = _build_scatter_plot_url("loop-001", ts_start, ts_end)
-        assert "loop-001" in url
-        assert "scatter" in url
-        assert ts_start.isoformat() in url
-        assert ts_end.isoformat() in url
+    def test_empty_aligned(self) -> None:
+        """空数据应返回空坐标数组。"""
+        result = _build_scatter_plot_data([])
+        assert result == {"x": [], "y": []}
+
+    def test_normal_data(self) -> None:
+        """正常数据应返回 PV-OP 坐标对。"""
+        aligned = [
+            {"pv": 10.0, "op": 50.0},
+            {"pv": 12.0, "op": 55.0},
+            {"pv": 11.0, "op": 52.0},
+        ]
+        result = _build_scatter_plot_data(aligned)
+        assert len(result["x"]) == 3
+        assert len(result["y"]) == 3
+        assert result["x"] == [10.0, 12.0, 11.0]
+        assert result["y"] == [50.0, 55.0, 52.0]
+
+    def test_skip_none_values(self) -> None:
+        """pv 或 op 为 None 的点应被跳过。"""
+        aligned = [
+            {"pv": 10.0, "op": 50.0},
+            {"pv": None, "op": 55.0},
+            {"pv": 11.0, "op": None},
+            {"pv": 12.0, "op": 52.0},
+        ]
+        result = _build_scatter_plot_data(aligned)
+        assert len(result["x"]) == 2
+        assert result["x"] == [10.0, 12.0]
+
+    def test_downsample_large_data(self) -> None:
+        """数据量超过 500 点时应降采样到 500 点。"""
+        aligned = [{"pv": float(i), "op": float(i) * 2} for i in range(1000)]
+        result = _build_scatter_plot_data(aligned)
+        assert len(result["x"]) == 500
+        assert len(result["y"]) == 500
 
 
 # ===========================================================================

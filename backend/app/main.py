@@ -22,6 +22,7 @@ from app.api.v1.endpoints import (
     diagnosis,
     health,
     loops,
+    node_performance,
     performance,
     plant_nodes,
     reports,
@@ -100,6 +101,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(tags.router)
     v1_router.include_router(aas.router)
     v1_router.include_router(performance.router)
+    # S3-METRIC 节点级性能评估（GB/T 44693.2-2024 §6.4 综合评估）
+    v1_router.include_router(node_performance.router)
     # S6 工作台门户：BFF 聚合层
     v1_router.include_router(dashboard.router)
     # S4 诊断中心：诊断、波形、Tracker（三个 router 共享 v1 前缀，各自有子前缀）

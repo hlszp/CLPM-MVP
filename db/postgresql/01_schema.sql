@@ -49,12 +49,13 @@ COMMENT ON COLUMN sys_user.updated_at IS '更新时间';
 -- 2. plant_node (工厂节点)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS plant_node (
-    id          UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name        VARCHAR(100)    NOT NULL,
-    type        VARCHAR(20)     NOT NULL,
-    parent_id   UUID,
-    created_at  TIMESTAMP       DEFAULT NOW(),
-    updated_at  TIMESTAMP       DEFAULT NOW(),
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name            VARCHAR(100)    NOT NULL,
+    type            VARCHAR(20)     NOT NULL,
+    parent_id       UUID,
+    is_kpi_enabled  BOOLEAN         DEFAULT FALSE,
+    created_at      TIMESTAMP       DEFAULT NOW(),
+    updated_at      TIMESTAMP       DEFAULT NOW(),
     CONSTRAINT fk_plant_node_parent FOREIGN KEY (parent_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
     CONSTRAINT ck_plant_node_type   CHECK (type IN ('FACTORY', 'UNIT', 'EQUIPMENT'))
 );
@@ -64,6 +65,7 @@ COMMENT ON COLUMN plant_node.id IS '节点主键';
 COMMENT ON COLUMN plant_node.name IS '节点名称（如：常减压装置）';
 COMMENT ON COLUMN plant_node.type IS '节点类型：FACTORY/UNIT/EQUIPMENT';
 COMMENT ON COLUMN plant_node.parent_id IS '父节点 ID（自引用）';
+COMMENT ON COLUMN plant_node.is_kpi_enabled IS '是否纳入性能评估（TRUE 时生成节点级 KPI 快照）';
 COMMENT ON COLUMN plant_node.created_at IS '创建时间';
 COMMENT ON COLUMN plant_node.updated_at IS '更新时间';
 
@@ -286,6 +288,57 @@ COMMENT ON COLUMN kpi_snapshot_hourly.saturation_rate IS '饱和率(%)';
 COMMENT ON COLUMN kpi_snapshot_hourly.status IS '计算状态：SUCCESS/INCONCLUSIVE/PARTIAL';
 
 -- =============================================================================
+-- 9.1 kpi_node_snapshot_hourly (节点级每小时性能评估快照)
+--   对齐 GB/T 44693.2-2024 §6.4 综合评估：企业级/装置级/单元级 KPI 加权聚合
+--   按 plant_node 递归收集下属回路，以 score_weight 加权聚合回路级快照
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS kpi_node_snapshot_hourly (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    plant_node_id       UUID            NOT NULL,
+    ts_start            TIMESTAMP       NOT NULL,
+    ts_end              TIMESTAMP       NOT NULL,
+    score               DECIMAL(5,2),
+    good_value_rate     DECIMAL(5,2),
+    auto_mode_rate      DECIMAL(5,2),
+    effective_auto_rate DECIMAL(5,2),
+    steady_rate         DECIMAL(5,2),
+    accuracy_rate       DECIMAL(5,2),
+    fast_response_rate  DECIMAL(5,2),
+    oscillation_rate    DECIMAL(5,2),
+    saturation_rate     DECIMAL(5,2),
+    auto_loop_ratio     DECIMAL(5,2),
+    realtime_auto_rate  DECIMAL(5,2),
+    loop_count          INTEGER         NOT NULL DEFAULT 0,
+    status              VARCHAR(20)     NOT NULL,
+    algorithm_version   VARCHAR(30),
+    created_at          TIMESTAMP       DEFAULT NOW(),
+    CONSTRAINT fk_kpi_node_snapshot_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
+    CONSTRAINT ck_kpi_node_snapshot_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
+    CONSTRAINT ck_kpi_node_snapshot_window CHECK (ts_end > ts_start)
+);
+
+COMMENT ON TABLE  kpi_node_snapshot_hourly IS '节点级每小时性能评估快照（按 plant_node 递归聚合，对齐 GB/T 44693.2-2024 §6.4）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.id IS '快照主键';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.plant_node_id IS '工厂节点 ID（FACTORY/UNIT/EQUIPMENT 任意层级）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.ts_start IS '评估窗口起始时间';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.ts_end IS '评估窗口结束时间';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.score IS '加权综合评分（0-100）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.good_value_rate IS '好值率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.auto_mode_rate IS '自控率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.effective_auto_rate IS '有效自控率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.steady_rate IS '平稳率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.accuracy_rate IS '准确率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.fast_response_rate IS '快速率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.oscillation_rate IS '振荡率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.saturation_rate IS '饱和率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.auto_loop_ratio IS '投自动回路占比（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.realtime_auto_rate IS '实时自控率（%）：当前时刻处于自动模式的回路占比';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.loop_count IS '参与聚合的回路数';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.status IS '节点级定级：EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.algorithm_version IS '算法版本号';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.created_at IS '创建时间';
+
+-- =============================================================================
 -- 10. action_tracker (轻量级异常追踪记录)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS action_tracker (
@@ -297,14 +350,14 @@ CREATE TABLE IF NOT EXISTS action_tracker (
     updated_by      VARCHAR(50),
     updated_at      TIMESTAMP,
     CONSTRAINT fk_action_tracker_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
-    CONSTRAINT ck_action_tracker_status  CHECK (action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'RESOLVED'))
+    CONSTRAINT ck_action_tracker_status  CHECK (action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED'))
 );
 
 COMMENT ON TABLE  action_tracker IS '轻量级异常追踪记录（诊断中心子模块）';
 COMMENT ON COLUMN action_tracker.id IS '追踪记录主键';
 COMMENT ON COLUMN action_tracker.loop_id IS '关联回路 ID';
 COMMENT ON COLUMN action_tracker.diagnosis_label IS '自动预诊结论（如：疑似阀门粘滞）';
-COMMENT ON COLUMN action_tracker.action_status IS '处理状态：PENDING/IN_PROGRESS/IGNORED/RESOLVED';
+COMMENT ON COLUMN action_tracker.action_status IS '处理状态：PENDING/IN_PROGRESS/IGNORED/IMPLEMENTED（FDS §5.4.4 "已实施"）';
 COMMENT ON COLUMN action_tracker.evidence_url IS '《诊断建议书》PDF S3 存储路径';
 COMMENT ON COLUMN action_tracker.updated_by IS '最后操作人（仪控工程师）';
 COMMENT ON COLUMN action_tracker.updated_at IS '状态变更时间戳';
@@ -459,6 +512,13 @@ CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_status   ON kpi_snapshot_hourly (sta
 -- 复合索引（S1-C2）：优化常见查询模式
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_loop_ts          ON kpi_snapshot_hourly (loop_id, ts_start);
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_status_score  ON kpi_snapshot_hourly (ts_start, status, score);
+
+-- kpi_node_snapshot_hourly 索引
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_node_id    ON kpi_node_snapshot_hourly (plant_node_id);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_ts_start   ON kpi_node_snapshot_hourly (ts_start);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_status    ON kpi_node_snapshot_hourly (status);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_node_ts   ON kpi_node_snapshot_hourly (plant_node_id, ts_start);
+CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_ts_status ON kpi_node_snapshot_hourly (ts_start, status, score);
 
 -- action_tracker 索引
 CREATE INDEX IF NOT EXISTS idx_action_tracker_loop_id       ON action_tracker (loop_id);

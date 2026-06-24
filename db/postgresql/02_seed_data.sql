@@ -73,23 +73,25 @@ INSERT INTO plant_node (id, name, type, parent_id, created_at, updated_at) VALUE
 -- =============================================================================
 -- 3. 性能指标配置 (metric_config)
 -- =============================================================================
--- 7 项核心 KPI（对齐 GB/T 44693.2-2024 附录 B/F）：
+-- 8 项核心 KPI（对齐 GB/T 44693.2-2024 附录 B/F）：
 --   好值率/自控率/有效自控率/平稳率/准确率/快速率/振荡率/饱和率
--- 好值率仅作为显示指标，不参与综合评分加权（weight=0）
--- 有效自控率作为综合评分乘数因子（weight=NULL，不参与加权求和）
--- 参与加权的指标权重总和 = 10 + 30 + 15 + 10 + 20 + 15 = 100%（稳定型控制回路默认权重）
+-- 国标 4 分项指标加法关系：P = (λA·A + λF·F + λS·S + λR·R) / (λA+λF+λS+λR)
+--   参与评分的 4 指标：准确率(A)/快速率(F)/平稳率(S)/有效自控率(R)
+--   仅显示不参与评分：好值率/自控率/振荡率/饱和率（weight=0）
+-- 参与评分的 4 指标权重总和 = 30 + 20 + 30 + 20 = 100%（稳定型控制回路默认权重）
 -- threshold 使用 JSONB 结构 {min, max, alert}
 -- control_type 对齐算法设计说明 §4.7.3 默认权重模板
 -- =============================================================================
 
 INSERT INTO metric_config (id, metric_code, metric_name, formula, weight, threshold, control_type, is_enabled, updated_by, updated_at, version) VALUES
 ('00000000-0000-0000-0000-000000000401', 'GOOD_VALUE_RATE',    '好值率',     'count(pv_quality=Good) / count(*) * 100',                            0.00,  '{"min": 80, "max": 100, "alert": "warning"}'::jsonb,  'STABLE', TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000402', 'AUTO_MODE_RATE',     '自控率',     'count(mode IN (Auto,Cascade,Remote)) / count(*) * 100',             10.00, '{"min": 90, "max": 100, "alert": "warning"}'::jsonb,  'STABLE', TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000402', 'AUTO_MODE_RATE',     '自控率',     'count(mode IN (Auto,Cascade,Remote)) / count(*) * 100',             0.00,  '{"min": 90, "max": 100, "alert": "warning"}'::jsonb,  'STABLE', TRUE, 'admin', NOW(), 1),
 ('00000000-0000-0000-0000-000000000403', 'STEADY_RATE',        '平稳率',     'max(0, (1 - osc_rate - k*std_norm) / (1 - osc_rate)) * 100',        30.00, '{"min": 85, "max": 100, "alert": "warning"}'::jsonb,  'STABLE', TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000404', 'ACCURACY_RATE',      '准确率',     'max(0, (1 - mean_abs_error / e_max)) * 100',                        15.00, '{"min": 80, "max": 100, "alert": "warning"}'::jsonb,  'STABLE', TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000405', 'OSCILLATION_RATE',   '振荡率',     'min(S_A, S_B) * 100',                                                20.00, '{"min": 0, "max": 5, "alert": "warning"}'::jsonb,     'SLOW',   TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000406', 'SATURATION_RATE',    '饱和率',     'saturated_duration / total_duration * 100',                         15.00, '{"min": 0, "max": 5, "alert": "warning"}'::jsonb,     'STABLE', TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000407', 'FAST_RESPONSE_RATE', '快速率',     'count(response_time <= threshold) / count(sp_changes) * 100',       10.00, '{"min": 80, "max": 100, "alert": "warning"}'::jsonb,  'FAST',   TRUE, 'admin', NOW(), 1);
+('00000000-0000-0000-0000-000000000404', 'ACCURACY_RATE',      '准确率',     'max(0, (1 - mean_abs_error / e_max)) * 100',                        30.00, '{"min": 80, "max": 100, "alert": "warning"}'::jsonb,  'STABLE', TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000405', 'OSCILLATION_RATE',   '振荡率',     'min(S_A, S_B) * 100',                                                0.00,  '{"min": 0, "max": 5, "alert": "warning"}'::jsonb,     'SLOW',   TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000406', 'SATURATION_RATE',    '饱和率',     'saturated_duration / total_duration * 100',                          0.00,  '{"min": 0, "max": 5, "alert": "warning"}'::jsonb,     'STABLE', TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000407', 'FAST_RESPONSE_RATE', '快速率',     'min(ideal_settling / actual_settling, 1.0) * 100',                   20.00, '{"min": 80, "max": 100, "alert": "warning"}'::jsonb,  'FAST',   TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000408', 'EFFECTIVE_AUTO_RATE','有效自控率', 'count(auto AND op NOT saturated AND pv_quality=Good) / count(*) * 100', 20.00, '{"min": 90, "max": 100, "alert": "warning"}'::jsonb, 'STABLE', TRUE, 'admin', NOW(), 1);
 
 -- =============================================================================
 -- 4. 诊断指标配置 (diagnosis_config)

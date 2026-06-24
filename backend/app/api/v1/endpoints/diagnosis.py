@@ -215,8 +215,8 @@ async def update_tracker_status_endpoint(
 ) -> dict:
     """更新处理状态（仅 IC_ENGINEER）。
 
-    - status 枚举: PENDING/IN_PROGRESS/RESOLVED/IGNORED
-    - 标记 RESOLVED 后自动生成 A/B 对比视图
+    - status 枚举: PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED
+    - 标记 IMPLEMENTED 后自动生成 A/B 对比视图
     """
     data = await update_tracker_status(
         db=db,

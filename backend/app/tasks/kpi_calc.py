@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 from bisect import bisect_left
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -137,7 +136,7 @@ async def _do_calculate() -> dict:
 
         # 2. 加载指标配置
         metric_result = await db.execute(select(MetricConfig))
-        metric_configs = {c.metric_code: c for c in metric_result.scalars().all()}
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
 
     # 3. 并发计算（信号量限制并发数，每协程独立 session 避免并发共享）
     sem = asyncio.Semaphore(CONCURRENCY)
@@ -178,6 +177,13 @@ async def _do_calculate() -> dict:
         else:
             success_count += 1
 
+    # 级联触发节点级 KPI 聚合（确保回路快照已写入后再聚合，消除时序竞态）
+    try:
+        calculate_node_kpi_hourly.delay()
+        logger.info("已触发节点级 KPI 聚合任务（回路级计算完成后级联）")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("触发节点级 KPI 聚合任务失败: %s", exc)
+
     return {
         "total": len(loops),
         "success": success_count,
@@ -213,7 +219,7 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
         ts_end_dt = ts_start_dt + timedelta(hours=1)
 
         metric_result = await db.execute(select(MetricConfig))
-        metric_configs = {c.metric_code: c for c in metric_result.scalars().all()}
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
 
         snap = await _calculate_loop_kpi(
             db=db,
@@ -555,19 +561,28 @@ def _compute_kpis(
     )
     auto_mode_rate = Decimal(auto_count) / Decimal(total) * Decimal("100")
 
-    # 有效自控率 = 自控率 × 好值率 / 100（作为综合评分乘数因子 R_auto）
-    effective_auto_rate = auto_mode_rate * good_value_rate_val / Decimal("100")
+    # 有效自控率 R = AutoRealTime / AllTime × 100
+    # 国标 B.2：自控状态下输出不饱和且控制有效的时长占比
+    # pv_quality 质量码兼容两种约定：TDengine schema (1=Good) 和 OPC DA (192=Good)
+    effective_auto_count = sum(
+        1
+        for d in aligned
+        if d.get("mode") is not None
+        and _is_auto_mode(d["mode"])
+        and d.get("op") is not None
+        and 5 < d["op"] < 95  # 输出不饱和（非限位）
+        and _is_good_quality(d.get("pv_quality", 1))  # PV 质量码为 Good
+    )
+    effective_auto_rate = Decimal(effective_auto_count) / Decimal(total) * Decimal("100")
 
-    # 振荡率（需在稳定率之前计算，因为稳定率公式依赖振荡率）
-    # 简化：检测连续反向变化（相邻点 PV 差值符号变化超过阈值）
-    oscillation_count = _detect_oscillation(aligned)
-    oscillation_rate = Decimal(oscillation_count) / Decimal(total) * Decimal("100")
-    # 振荡率（0-1 尺度，用于稳定率公式）
-    osc_ratio = float(oscillation_count) / float(total) if total > 0 else 0.0
+    # 振荡率：IAE 零交叉相似率法（对齐 GB/T 44693.2-2024 附录 F.1）
+    # 需在平稳率之前计算，因为平稳率公式依赖振荡率
+    oscillation_rate, is_oscillating, osc_period = _compute_oscillation_rate(aligned)
+    osc_ratio = float(oscillation_rate) / 100.0
 
-    # 平稳率：按 GB/T 44693.2 实现
-    # 公式: R_steady = exp(-σ/(0.05×U)) × (1-Osc) × 100
-    # 其中: σ = PV-SP 误差的标准差, U = SP 量程, Osc = 振荡率(0-1)
+    # 平稳率：对齐 GB/T 44693.2-2024 附录 B.5
+    # 公式: S = max(0, (1-Osc-k×σ_norm)/(1-Osc)) × 100
+    # 其中: σ_norm = σ/U (偏差标准差/量程), Osc = 振荡率(0-1), k=10
     pv_sp_pairs = [
         (d["pv"], d["sp"])
         for d in aligned
@@ -585,34 +600,64 @@ def _compute_kpis(
         if sp_span <= 0:
             sp_span = 1.0
 
-        # GB/T 44693.2: exp(-σ/(0.05×U)) × (1-Osc) × 100
-        exponent = -sigma / (0.05 * sp_span)
-        steady_factor = math.exp(max(-700, min(700, exponent)))  # 防 overflow
-        steady_rate = Decimal(str(steady_factor)) * Decimal(str(1.0 - osc_ratio)) * Decimal("100")
+        # GB/T 44693.2 B.5: max(0, (1-Osc-k×σ_norm)/(1-Osc)) × 100
+        sigma_norm = sigma / sp_span
+        k = 10.0
+        if osc_ratio < 1.0:
+            steady_val = max(
+                0.0,
+                (1.0 - osc_ratio - k * sigma_norm) / (1.0 - osc_ratio),
+            ) * 100
+        else:
+            steady_val = 0.0
+        steady_rate = Decimal(str(steady_val))
         steady_rate = max(Decimal("0"), min(Decimal("100"), steady_rate))
+
+        # ── 日志：记录平稳率中间计算值 ──
+        logger.debug(
+            "[平稳率] σ=%.6f, U(sp_span)=%.4f, σ_norm=%.6f, "
+            "osc_ratio=%.4f, k=%.1f, steady_rate=%.2f",
+            sigma, sp_span, sigma_norm,
+            osc_ratio, k, float(steady_rate),
+        )
     else:
         steady_rate = None
 
-    # 准确率：duration(abs(pv - sp) <= pv_range * 0.05) / duration(*) * 100
+    # 准确率：对齐 GB/T 44693.2-2024 附录 B.3
+    # 公式: A = (1 - |Ē| / |E|max) × 100
+    # 其中: |Ē| = 偏差绝对值均值, |E|max = 偏差绝对值最大值
     if pv_sp_pairs:
-        pv_values = [pv for pv, _ in pv_sp_pairs]
-        pv_range = max(pv_values) - min(pv_values) if len(pv_values) > 1 else 1.0
-        if pv_range == 0:
-            pv_range = 1.0
-        accuracy_count = sum(
-            1
-            for d in aligned
-            if d.get("pv") is not None
-            and d.get("sp") is not None
-            and abs(d["pv"] - d["sp"]) <= pv_range * 0.05
+        abs_errors = [abs(pv - sp) for pv, sp in pv_sp_pairs]
+        mean_abs_error = sum(abs_errors) / len(abs_errors)
+        max_abs_error = max(abs_errors) if abs_errors else 0.0
+
+        if max_abs_error <= 0:
+            # 所有偏差为 0，准确率 100%
+            accuracy_rate = Decimal("100")
+        else:
+            accuracy_val = (1 - mean_abs_error / max_abs_error) * 100
+            accuracy_rate = Decimal(str(accuracy_val))
+            accuracy_rate = max(Decimal("0"), min(Decimal("100"), accuracy_rate))
+
+        # ── 日志：记录准确率中间计算值 ──
+        logger.debug(
+            "[准确率] |Ē|=%.6f, |E|max=%.6f, "
+            "比值=%.4f, accuracy_rate=%.2f",
+            mean_abs_error, max_abs_error,
+            mean_abs_error / max_abs_error if max_abs_error > 0 else 0.0,
+            float(accuracy_rate),
         )
-        accuracy_rate = Decimal(accuracy_count) / Decimal(total) * Decimal("100")
     else:
         accuracy_rate = None
 
-    # 快速率：控制回路对设定值变化的响应速度
-    # 统计 SP 发生显著变化（超过量程 5%）后，PV 跟随到 SP ±5% 量程范围内的时间占比
-    fast_response_rate = _compute_fast_response_rate(aligned)
+    # 快速率：对齐 GB/T 44693.2-2024 附录 B.4 + F.4
+    # F = 理想稳态时间 / 实际稳态时间 × 100
+    # 实际稳态时间基于 ARMA Green 函数计算
+    pv_vals = [d["pv"] for d in aligned if d.get("pv") is not None]
+    pv_range = max(pv_vals) - min(pv_vals) if len(pv_vals) > 1 else 1.0
+    if pv_range == 0:
+        pv_range = 1.0
+    fast_response_rate = _compute_fast_response_rate(aligned, pv_range)
 
     # 饱和率：duration(op >= 95 OR op <= 5) / duration(*) * 100
     saturation_count = sum(
@@ -622,7 +667,8 @@ def _compute_kpis(
     )
     saturation_rate = Decimal(saturation_count) / Decimal(total) * Decimal("100")
 
-    return {
+    # ── 日志：记录全部 KPI 计算结果汇总 ──
+    result = {
         "good_value_rate": _quantize(good_value_rate_val),
         "auto_mode_rate": _quantize(auto_mode_rate),
         "effective_auto_rate": _quantize(effective_auto_rate),
@@ -632,6 +678,20 @@ def _compute_kpis(
         "oscillation_rate": _quantize(oscillation_rate),
         "saturation_rate": _quantize(saturation_rate),
     }
+    logger.debug(
+        "[KPI计算] 汇总: total=%d, gvr=%.2f, amr=%.2f, ear=%.2f, sr=%s, ar=%s, "
+        "frr=%.2f, or=%.2f, sat=%.2f",
+        total,
+        float(result["good_value_rate"]),
+        float(result["auto_mode_rate"]),
+        float(result["effective_auto_rate"]),
+        float(result["steady_rate"]) if result["steady_rate"] else "None",
+        float(result["accuracy_rate"]) if result["accuracy_rate"] else "None",
+        float(result["fast_response_rate"]),
+        float(result["oscillation_rate"]),
+        float(result["saturation_rate"]),
+    )
+    return result
 
 
 def _is_auto_mode(mode_value: Any) -> bool:
@@ -643,168 +703,282 @@ def _is_auto_mode(mode_value: Any) -> bool:
         return False
 
 
-def _detect_oscillation(aligned: list[dict[str, Any]]) -> int:
-    """检测振荡点数（相邻 PV 差值符号变化次数，含振幅阈值过滤）。
+def _is_good_quality(pv_quality: Any) -> bool:
+    """判断 PV 质量码是否为 Good。
 
-    振幅阈值：取 2% PV 量程和 0.5% PV 均值中的较大值，
-    仅当 PV 变化幅度超过阈值时才计入振荡，避免噪声误报。
+    兼容两种约定：
+        - TDengine schema: 1 = Good
+        - OPC DA: 192 (0xC0) = Good
+    缺省值（None）视为 Good（容错）。
     """
-    pv_values = [d.get("pv") for d in aligned if d.get("pv") is not None]
-    if len(pv_values) < 3:
-        return 0
-
-    # 计算振幅阈值：2% 量程 或 0.5% 均值，取较大值使噪声过滤更有效
-    pv_arr = np.array(pv_values, dtype=float)
-    pv_span = float(np.max(pv_arr) - np.min(pv_arr))
-    pv_mean_abs = abs(float(np.mean(pv_arr)))
-    threshold_span = 0.02 * pv_span
-    threshold_mean = 0.005 * pv_mean_abs
-    # 取两个阈值中较大者（变化幅度需同时超过两者才算有效振荡）
-    amp_threshold = max(threshold_span, threshold_mean, 1e-9)
-
-    oscillation_count = 0
-    prev_diff = None
-    for i in range(1, len(pv_values)):
-        diff = pv_values[i] - pv_values[i - 1]
-        # 振幅小于阈值视为噪声，不计入振荡
-        if abs(diff) < amp_threshold:
-            continue
-        sign = 1 if diff > 0 else -1
-        if prev_diff is not None and sign != prev_diff:
-            oscillation_count += 1
-        prev_diff = sign
-    return oscillation_count
+    if pv_quality is None:
+        return True
+    try:
+        v = int(float(pv_quality))
+        return v in (1, 192)
+    except (ValueError, TypeError):
+        return False
 
 
-# 快速率响应时间阈值（秒）：SP 变化后 PV 跟随到 ±5% 量程内的允许时间
-FAST_RESPONSE_THRESHOLD_SEC = 300.0
-# SP 显著变化阈值：SP 变化幅度超过量程的 5% 视为显著变化
-SP_CHANGE_RATIO = 0.05
+def _compute_oscillation_rate(
+    aligned: list[dict[str, Any]],
+) -> tuple[Decimal, bool, float | None]:
+    """计算振荡率 — IAE 零交叉相似率法（对齐 GB/T 44693.2-2024 附录 F.1）。
 
-
-def _compute_fast_response_rate(aligned: list[dict[str, Any]]) -> Decimal:
-    """计算快速率：控制回路对设定值变化的响应速度。
-
-    定义：统计 SP 发生显著变化（超过量程 5%）后，PV 跟随到 SP ±5% 量程范围内
-    且响应时间 <= 阈值（300 秒）的次数占比。
-
-    公式：fast_response_rate = count(response_time <= threshold) / count(sp_changes) × 100
-
-    如果统计期内无 SP 显著变化，快速率设为 100（无需响应）。
-
-    Args:
-        aligned: 对齐后的时序数据（已过滤 Bad 质量码）
+    算法步骤：
+        1. 计算控制偏差 E = PV - SP
+        2. 识别零交叉点（偏差符号变化时刻）
+        3. 计算相邻零交叉间的 IAE（积分绝对误差）
+        4. 分别对正值段/负值段计算面积相似率 + 持续时间相似率
+        5. 振荡率 = min(面积相似率) × 100
 
     Returns:
-        快速率（0-100）
+        (oscillation_rate, is_oscillating, oscillation_period)
     """
-    # 提取有效的 PV/SP 序列
-    pv_sp_seq = [
-        (d.get("ts"), d.get("pv"), d.get("sp"))
-        for d in aligned
-        if d.get("pv") is not None and d.get("sp") is not None
-    ]
-    if len(pv_sp_seq) < 2:
+    pv_sp = [(d["pv"], d["sp"]) for d in aligned
+             if d.get("pv") is not None and d.get("sp") is not None]
+    n = len(pv_sp)
+
+    logger.debug("[振荡率] 输入: 总点数=%d, 有效PV-SP对=%d", len(aligned), n)
+
+    if n < 4:
+        logger.debug("[振荡率] 有效点数 < 4，返回 0（数据不足）")
+        return Decimal("0"), False, None
+
+    errors = np.array([pv - sp for pv, sp in pv_sp], dtype=float)
+
+    # 步骤 2：识别零交叉点
+    zero_crossings: list[int] = []
+    for i in range(1, n):
+        if errors[i - 1] * errors[i] < 0:
+            zero_crossings.append(i)
+        elif errors[i - 1] == 0 and errors[i] != 0:
+            zero_crossings.append(i)
+
+    logger.debug("[振荡率] 零交叉点数=%d", len(zero_crossings))
+
+    if len(zero_crossings) < 4:
+        logger.debug("[振荡率] 零交叉点 < 4（不足 2 个周期），返回 0")
+        return Decimal("0"), False, None
+
+    # 步骤 3：计算相邻零交叉间的 IAE
+    segments: list[tuple[float, float, int]] = []
+    prev_cross = 0
+    for cross in zero_crossings + [n]:
+        seg = errors[prev_cross:cross]
+        if len(seg) == 0:
+            prev_cross = cross
+            continue
+        iae = float(np.sum(np.abs(seg)))
+        duration = float(cross - prev_cross)
+        sign = 1 if np.mean(seg) > 0 else -1
+        segments.append((iae, duration, sign))
+        prev_cross = cross
+
+    pos_iae = [s[0] for s in segments if s[2] > 0]
+    neg_iae = [s[0] for s in segments if s[2] < 0]
+
+    if not pos_iae or not neg_iae:
+        logger.debug("[振荡率] 正值段或负值段为空，返回 0")
+        return Decimal("0"), False, None
+
+    # 步骤 4：计算相似率（最小距离法）
+    def _similarity(values: list[float]) -> float:
+        if len(values) < 2:
+            return 0.0
+        arr = np.array(values)
+        best_j = 0
+        best_dist = float('inf')
+        for j in range(len(arr)):
+            dist = float(np.sum((arr - arr[j]) ** 2))
+            if dist < best_dist:
+                best_dist = dist
+                best_j = j
+        avg = arr[best_j]
+        if avg == 0:
+            return 0.0
+        cleaned = arr[(np.abs(arr / avg) >= 0.05) & (np.abs(arr / avg) <= 15)]
+        if len(cleaned) == 0:
+            return 0.0
+        new_avg = float(np.mean(cleaned))
+        similarity = 1.0 - abs(min(new_avg, float(avg)) - float(avg)) / abs(float(avg))
+        return max(0.0, min(1.0, similarity))
+
+    s_a = _similarity(pos_iae)
+    s_b = _similarity(neg_iae)
+
+    # 步骤 5：综合振荡率
+    osc_value = min(s_a, s_b) * 100
+    is_osc = s_a >= 0.4 and s_b >= 0.4
+
+    period = None
+    if is_osc and len(zero_crossings) >= 3:
+        intervals = [zero_crossings[i + 1] - zero_crossings[i]
+                     for i in range(len(zero_crossings) - 1)]
+        period = float(np.median(intervals)) * 2
+
+    logger.debug(
+        "[振荡率] s_a(正面积相似率)=%.4f, s_b(负面积相似率)=%.4f, "
+        "osc_rate=%.2f, is_osc=%s, period=%s",
+        s_a, s_b, osc_value, is_osc,
+        f"{period:.1f}s" if period else "None",
+    )
+
+    return _quantize(Decimal(str(osc_value))), is_osc, period
+
+
+def _compute_fast_response_rate(
+    aligned: list[dict[str, Any]],
+    pv_range: float = 1.0,
+) -> Decimal:
+    """计算快速率 F = 理想稳态时间 / 实际稳态时间 × 100。
+
+    对齐 GB/T 44693.2-2024 附录 B.4 + F.4。
+
+    算法：
+        1. 提取 PV 偏差序列（PV - SP，去均值）
+        2. ARMA(p,q) 模型辨识 → Green 函数（单位脉冲响应）
+        3. 实际稳态时间 = Green 函数衰减到 5% 的时刻
+        4. 理想稳态时间 = 按控制类型取默认值
+        5. F = min(理想 / 实际, 1.0) × 100
+    """
+    from app.tasks.arma import compute_ideal_settling_time, compute_settling_time
+
+    pv_sp = [(d["pv"], d["sp"]) for d in aligned
+             if d.get("pv") is not None and d.get("sp") is not None]
+
+    logger.debug("[快速率] 输入: 点数=%d, pv_range=%.4f", len(pv_sp), pv_range)
+
+    if len(pv_sp) < 30:
+        logger.debug("[快速率] 数据不足（%d < 30），返回 100（不惩罚）", len(pv_sp))
         return Decimal("100.0")
 
-    sp_values = [sp for _, _, sp in pv_sp_seq]
-    sp_span = max(sp_values) - min(sp_values)
-    if sp_span <= 0:
-        # SP 无变化，无需响应
+    # 偏差序列（PV - SP），去均值
+    errors = np.array([pv - sp for pv, sp in pv_sp], dtype=float)
+    errors = errors - np.mean(errors)
+
+    if np.std(errors) < 1e-9:
+        logger.debug("[快速率] 偏差恒定，返回 100（已处于稳态）")
         return Decimal("100.0")
 
-    # SP 显著变化阈值
-    sp_change_threshold = sp_span * SP_CHANGE_RATIO
+    # ARMA 辨识 + Green 函数 → 实际稳态时间
+    actual_settling = compute_settling_time(errors, sample_interval_sec=1.0, threshold=0.05)
 
-    # 检测 SP 显著变化点
-    sp_changes: list[int] = []  # 记录 SP 变化点在 pv_sp_seq 中的索引
-    for i in range(1, len(pv_sp_seq)):
-        sp_diff = abs(pv_sp_seq[i][2] - pv_sp_seq[i - 1][2])
-        if sp_diff >= sp_change_threshold:
-            sp_changes.append(i)
+    logger.debug("[快速率] 实际稳态时间=%.1f 秒", actual_settling)
 
-    if not sp_changes:
-        # 无 SP 显著变化，快速率设为 100
+    if actual_settling <= 0:
+        logger.debug("[快速率] 稳态时间=0，返回 100")
         return Decimal("100.0")
 
-    # PV 跟随判定阈值：SP ±5% 量程
-    follow_threshold = sp_span * SP_CHANGE_RATIO
+    # 理想稳态时间
+    ideal_settling = compute_ideal_settling_time(pv_range, "STABLE")
+    fast_rate = min(ideal_settling / actual_settling, 1.0) * 100
 
-    fast_count = 0
-    for change_idx in sp_changes:
-        target_sp = pv_sp_seq[change_idx][2]
-        change_ts = _ts_to_float(pv_sp_seq[change_idx][0])
+    logger.debug(
+        "[快速率] 理想稳态时间=%.1f, 实际=%.1f, fast_rate=%.2f",
+        ideal_settling, actual_settling, fast_rate,
+    )
 
-        # 从变化点向后搜索 PV 跟随到 SP ±5% 范围内的时刻
-        response_time = None
-        for j in range(change_idx, len(pv_sp_seq)):
-            pv = pv_sp_seq[j][1]
-            if abs(pv - target_sp) <= follow_threshold:
-                follow_ts = _ts_to_float(pv_sp_seq[j][0])
-                if change_ts is not None and follow_ts is not None:
-                    response_time = follow_ts - change_ts
-                else:
-                    # 无法计算时间差时，按采样点数估算（每点视为 1 秒）
-                    response_time = float(j - change_idx)
-                break
-
-        # 响应时间 <= 阈值视为快速响应
-        if response_time is not None and response_time <= FAST_RESPONSE_THRESHOLD_SEC:
-            fast_count += 1
-
-    fast_response_rate = Decimal(fast_count) / Decimal(len(sp_changes)) * Decimal("100")
-    return max(Decimal("0"), min(Decimal("100"), fast_response_rate))
+    return _quantize(Decimal(str(fast_rate)))
 
 
 def _compute_composite_score(
     kpi_values: dict[str, Decimal | None],
     metric_configs: dict[str, MetricConfig],
 ) -> Decimal:
-    """计算综合评分 Score = (Σ wᵢ × ηᵢ_norm) × R_auto（对齐 GB/T 44693.2-2024）。
+    """计算综合评分 P = (Σ λᵢ × ηᵢ) / (Σ λᵢ) × 100（对齐 GB/T 44693.2-2024）。
 
-    - wᵢ = 指标 i 的权重（仅启用指标参与）
-    - ηᵢ_norm = 归一化后的指标值（0-1）
-    - R_auto = 有效自控率（0-1），作为乘数因子
+    国标 4 分项指标加法关系：
+        P = (λA·A + λF·F + λS·S + λR·R) / (λA + λF + λS + λR)
 
-    参与加权的指标：自控率、准确率、快速率、稳定率、振荡率、饱和率
-    不参与加权：好值率（仅显示）、有效自控率（作为乘数因子）
+    - A = accuracy_rate（准确率）
+    - F = fast_response_rate（快速率）
+    - S = steady_rate（平稳率）
+    - R = effective_auto_rate（有效自控率，平等参与加权，不再作为乘数）
+
+    不参与评分：好值率（仅显示）、自控率（仅显示）、振荡率/饱和率（已并入平稳率）
+    缺失指标按权重 0 处理（仅启用且配置了权重的指标参与）。
     """
-    # 有效自控率作为乘数因子 R_auto（回退到自控率）
-    effective_auto_rate = kpi_values.get("effective_auto_rate")
-    auto_mode_rate = kpi_values.get("auto_mode_rate")
-    if effective_auto_rate is not None:
-        r_auto = effective_auto_rate / Decimal("100")
-    elif auto_mode_rate is not None:
-        r_auto = auto_mode_rate / Decimal("100")
-    else:
-        r_auto = Decimal("0")
+    # ── 日志：记录输入参数 ──
+    logger.debug(
+        "[综合评分] 输入 KPI 值: %s",
+        {k: float(v) if v is not None else None for k, v in kpi_values.items()},
+    )
 
-    # 好值率和有效自控率不参与加权求和
-    excluded_codes = {"good_value_rate", "effective_auto_rate"}
+    # 国标 4 分项指标（全部为"越高越好"，无需反向归一化）
+    score_metrics = (
+        "accuracy_rate",        # A 准确率
+        "fast_response_rate",   # F 快速率
+        "steady_rate",          # S 平稳率
+        "effective_auto_rate",  # R 有效自控率
+    )
 
-    # 归一化：oscillation_rate / saturation_rate 越低越好，归一化为 (100 - value) / 100
-    # 其他指标越高越好，归一化为 value / 100
     weighted_sum = Decimal("0")
-    for code, value in kpi_values.items():
-        if code in excluded_codes:
-            continue
+    weight_total = Decimal("0")
+    weight_details: list[str] = []
+
+    for code in score_metrics:
+        value = kpi_values.get(code)
         if value is None:
+            logger.debug("[综合评分] 指标 %s: 跳过（值为 None）", code)
             continue
         config = metric_configs.get(code)
         if not config or not config.is_enabled or config.weight is None:
+            logger.debug(
+                "[综合评分] 指标 %s: 跳过（config=%s, enabled=%s, weight=%s）",
+                code,
+                bool(config),
+                config.is_enabled if config else None,
+                config.weight if config else None,
+            )
             continue
+        # 精度保护：确保 value 和 weight 均为 Decimal，防止 float 混入导致精度丢失
+        if not isinstance(value, Decimal):
+            logger.debug(
+                "[综合评分] 指标 %s: value 非 Decimal（%s），转换为 Decimal",
+                code, type(value).__name__,
+            )
+            value = Decimal(str(value))
         w = config.weight
-        if code in ("oscillation_rate", "saturation_rate"):
-            eta_norm = (Decimal("100") - value) / Decimal("100")
-        else:
-            eta_norm = value / Decimal("100")
-        # 限制在 [0, 1]
+        if not isinstance(w, Decimal):
+            logger.debug(
+                "[综合评分] 指标 %s: weight 非 Decimal（%s），转换为 Decimal",
+                code, type(w).__name__,
+            )
+            w = Decimal(str(w))
+        # 归一化到 [0, 1]（4 指标均为正向：值/100）
+        eta_norm = value / Decimal("100")
         eta_norm = max(Decimal("0"), min(Decimal("1"), eta_norm))
-        weighted_sum += w * eta_norm
+        contribution = w * eta_norm
+        weighted_sum += contribution
+        weight_total += w
+        weight_details.append(
+            f"{code}: value={float(value):.2f}, weight={float(w):.2f}, "
+            f"eta_norm={float(eta_norm):.4f}(正向), contribution={float(contribution):.4f}"
+        )
 
-    # Score = weighted_sum × R_auto（权重总和为 100，所以 weighted_sum 已是 0-100）
-    score = weighted_sum * r_auto
-    return _quantize(score)
+    # ── 日志：记录各指标加权明细 ──
+    for detail in weight_details:
+        logger.debug("[综合评分] 加权明细 → %s", detail)
+
+    if weight_total <= 0:
+        logger.warning("[综合评分] 所有权重总和为 0，无法计算评分，返回 0")
+        return Decimal("0.00")
+
+    # P = (Σ λᵢ × ηᵢ) / (Σ λᵢ) × 100（加法关系，R 平等参与加权）
+    score = weighted_sum / weight_total * Decimal("100")
+    # 精度日志：记录 weighted_sum 和 weight_total 的有效精度位数
+    logger.debug(
+        "[综合评分] weighted_sum=%s (digits=%d), weight_total=%s (digits=%d), "
+        "score=%.6f",
+        weighted_sum, len(weighted_sum.as_tuple().digits),
+        weight_total, len(weight_total.as_tuple().digits),
+        float(score),
+    )
+
+    result = _quantize(score)
+    logger.debug("[综合评分] 最终评分: %.2f", float(result))
+    return result
 
 
 def _quantize(value: Decimal) -> Decimal:
@@ -889,4 +1063,157 @@ __all__ = [
     "AsyncTask",
     "calculate_hourly_kpi",
     "calculate_loop_kpi",
+    "calculate_node_kpi",
+    "calculate_node_kpi_hourly",
 ]
+
+
+# ---------------------------------------------------------------------------
+# 节点级性能评估任务（GB/T 44693.2-2024 §6.4 综合评估）
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_node_kpi_hourly",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_node_kpi_hourly(self: AsyncTask) -> dict:
+    """每小时节点级聚合任务（在回路级 KPI 计算完成后级联触发）。
+
+    遍历所有 is_kpi_enabled=True 的 PlantNode 节点，
+    递归收集下属回路，按 score_weight 加权聚合回路级快照，
+    写入 kpi_node_snapshot_hourly。
+    """
+    logger.info("节点级 KPI 聚合任务开始, task_id=%s", self.request.id)
+    try:
+        result = self.run_async(_do_calculate_node_kpi())
+        logger.info("节点级 KPI 聚合任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("节点级 KPI 聚合任务失败")
+        raise
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_node_kpi",
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_node_kpi(plant_node_id: str, ts_start: str | None = None, ts_end: str | None = None) -> dict:
+    """单节点 KPI 聚合（可手动触发，支持指定时间段）。
+
+    Args:
+        plant_node_id: 工厂节点 ID
+        ts_start: 起始时间（ISO 8601），None 表示上一个完整小时
+        ts_end: 结束时间（ISO 8601），None 表示 ts_start + 1 小时
+    """
+    logger.info("单节点 KPI 聚合, plant_node_id=%s, ts_start=%s, ts_end=%s",
+                plant_node_id, ts_start, ts_end)
+    return AsyncTask().run_async(_do_calculate_single_node(plant_node_id, ts_start, ts_end))
+
+
+async def _do_calculate_node_kpi() -> dict:
+    """执行节点级 KPI 聚合的实际 async 逻辑。"""
+    from app.core.db import AsyncSessionLocal
+    from app.models.plant_node import PlantNode
+    from app.services.node_performance import calculate_and_save_node_snapshot
+
+    # 时间窗：上一个完整小时（与回路级一致）
+    now = datetime.now(UTC)
+    ts_end = now.replace(minute=0, second=0, microsecond=0)
+    ts_start = ts_end - timedelta(hours=1)
+
+    async with AsyncSessionLocal() as db:
+        # 查询所有启用 KPI 评估的节点
+        node_result = await db.execute(
+            select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
+        )
+        nodes = list(node_result.scalars().all())
+
+        if not nodes:
+            logger.info("无启用 KPI 评估的节点，跳过节点级聚合")
+            return {"total": 0, "success": 0, "skipped": 0}
+
+        logger.info("待聚合节点数: %d", len(nodes))
+
+        success_count = 0
+        skipped_count = 0
+        for node in nodes:
+            try:
+                snap = await calculate_and_save_node_snapshot(
+                    db=db,
+                    plant_node_id=str(node.id),
+                    ts_start=ts_start,
+                    ts_end=ts_end,
+                )
+                if snap is None:
+                    skipped_count += 1
+                    logger.debug("节点 %s 无数据，跳过", node.name)
+                else:
+                    success_count += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("节点 %s 聚合失败: %s", node.name, exc)
+
+        await db.commit()
+
+    return {
+        "total": len(nodes),
+        "success": success_count,
+        "skipped": skipped_count,
+        "ts_start": ts_start.isoformat(),
+        "ts_end": ts_end.isoformat(),
+    }
+
+
+async def _do_calculate_single_node(
+    plant_node_id: str,
+    ts_start: str | None = None,
+    ts_end: str | None = None,
+) -> dict:
+    """单节点 KPI 聚合（支持指定时间段）。"""
+    from app.core.db import AsyncSessionLocal
+    from app.services.node_performance import calculate_and_save_node_snapshot
+
+    now = datetime.now(UTC)
+    if ts_start:
+        try:
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+        except ValueError:
+            ts_start_dt = datetime.fromisoformat(ts_start)
+    else:
+        ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+
+    if ts_end:
+        try:
+            ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+        except ValueError:
+            ts_end_dt = datetime.fromisoformat(ts_end)
+    else:
+        ts_end_dt = ts_start_dt + timedelta(hours=1)
+
+    async with AsyncSessionLocal() as db:
+        snap = await calculate_and_save_node_snapshot(
+            db=db,
+            plant_node_id=plant_node_id,
+            ts_start=ts_start_dt,
+            ts_end=ts_end_dt,
+        )
+        await db.commit()
+
+    if snap is None:
+        return {"plantNodeId": plant_node_id, "status": "SKIPPED", "reason": "无下属回路数据"}
+    return {"plantNodeId": plant_node_id, "status": "SUCCESS", "snapshot": snap}
+
+
+# 节点级聚合不再使用独立 Beat 调度，改为回路级任务 _do_calculate() 完成后级联触发
+# calculate_node_kpi_hourly.delay()，消除时序竞态（原 node-kpi-hourly Beat 已移除）

@@ -368,7 +368,7 @@ async def _diagnose_loop(
                         f"PV-OP 散点图呈现椭圆轨迹，拟合度 {stiction_result['fitting_score']:.3f}，"
                         f"粘滞指数 {stiction_result['stiction_index']:.3f}"
                     ),
-                    "scatter_plot": _build_scatter_plot_url(loop_id, ts_start, ts_end),
+                    "scatter_plot": _build_scatter_plot_data(aligned),
                 },
             }
         )
@@ -1063,12 +1063,33 @@ def _align_timeseries(
     return aligned
 
 
-def _build_scatter_plot_url(loop_id: str, ts_start: datetime, ts_end: datetime) -> str:
-    """构建散点图 URL。"""
-    return (
-        f"/api/v1/timeseries/{loop_id}/scatter"
-        f"?startTime={ts_start.isoformat()}&endTime={ts_end.isoformat()}"
-    )
+def _build_scatter_plot_data(aligned: list[dict[str, Any]]) -> dict[str, list[float]]:
+    """构建 PV-OP 散点图坐标数据。
+
+    从对齐的时序数据中提取 PV(x) 和 OP(y) 坐标，降采样到最多 500 点。
+    """
+    max_points = 500
+    points: list[tuple[float, float]] = []
+    for d in aligned:
+        pv = d.get("pv")
+        op = d.get("op")
+        if pv is None or op is None:
+            continue
+        try:
+            points.append((float(pv), float(op)))
+        except (TypeError, ValueError):
+            continue
+
+    if not points:
+        return {"x": [], "y": []}
+
+    # 均匀降采样
+    if len(points) > max_points:
+        step = len(points) / max_points
+        indices = [int(i * step) for i in range(max_points)]
+        points = [points[i] for i in indices]
+
+    return {"x": [p[0] for p in points], "y": [p[1] for p in points]}
 
 
 __all__ = [

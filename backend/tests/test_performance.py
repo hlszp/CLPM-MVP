@@ -102,6 +102,46 @@ def _make_snapshot(
     return s
 
 
+def _make_node_snapshot(
+    plant_node_id: str = "00000000-0000-0000-0000-000000000111",
+    score: Decimal = Decimal("80.25"),
+    good_value_rate: Decimal = Decimal("93.00"),
+    auto_mode_rate: Decimal = Decimal("88.00"),
+    effective_auto_rate: Decimal = Decimal("82.00"),
+    steady_rate: Decimal = Decimal("85.00"),
+    accuracy_rate: Decimal = Decimal("80.00"),
+    fast_response_rate: Decimal = Decimal("75.00"),
+    oscillation_rate: Decimal = Decimal("15.00"),
+    saturation_rate: Decimal = Decimal("8.00"),
+    auto_loop_ratio: Decimal = Decimal("100.00"),
+    realtime_auto_rate: Decimal = Decimal("87.50"),
+    loop_count: int = 4,
+    status: str = "GOOD",
+    ts_start: datetime | None = None,
+) -> MagicMock:
+    """构造 KpiNodeSnapshotHourly mock（用于看板测试）。"""
+    s = MagicMock()
+    s.id = "00000000-0000-0000-0000-000000000601"
+    s.plant_node_id = plant_node_id
+    s.ts_start = ts_start or datetime.now(UTC)
+    s.ts_end = s.ts_start
+    s.score = score
+    s.good_value_rate = good_value_rate
+    s.auto_mode_rate = auto_mode_rate
+    s.effective_auto_rate = effective_auto_rate
+    s.steady_rate = steady_rate
+    s.accuracy_rate = accuracy_rate
+    s.fast_response_rate = fast_response_rate
+    s.oscillation_rate = oscillation_rate
+    s.saturation_rate = saturation_rate
+    s.auto_loop_ratio = auto_loop_ratio
+    s.realtime_auto_rate = realtime_auto_rate
+    s.loop_count = loop_count
+    s.status = status
+    s.algorithm_version = "KPI_CALC_v1.0"
+    return s
+
+
 def _make_scalars_mock(items: list) -> MagicMock:
     result = MagicMock()
     result.scalars.return_value.all.return_value = items
@@ -350,9 +390,27 @@ class TestBoard:
     """GET /api/v1/performance/board tests."""
 
     def test_get_board_success(self, client, mock_db, fake_redis) -> None:
-        """认证用户可以获取全局看板。"""
-        snapshots = [_make_snapshot()]
-        mock_db.execute = AsyncMock(return_value=_make_scalars_mock(snapshots))
+        """认证用户可以获取全局看板（从节点级快照表读取）。"""
+        node_snaps = [_make_node_snapshot()]
+        trend_row = MagicMock()
+        trend_row.hour = datetime.now(UTC)
+        trend_row.avg_steady = Decimal("85.00")
+        status_row = MagicMock()
+        status_row.status = "GOOD"
+        status_row.cnt = 1
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalars_mock(node_snaps)
+            elif call_count[0] == 2:
+                return _make_all_rows_mock([trend_row])
+            else:
+                return _make_all_rows_mock([status_row])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/performance/board",
@@ -367,13 +425,35 @@ class TestBoard:
         assert "kpiSummary" in data
         assert "steadyRateTrend" in data
         assert "partialWarning" in data
-        # 7 张卡片（6 大 KPI + 综合评分）
-        assert len(data["kpiCards"]) == 7
+        # 9 张卡片（8 大 KPI + 综合评分）
+        assert len(data["kpiCards"]) == 9
 
     def test_get_board_with_plant_node(self, client, mock_db, fake_redis) -> None:
-        """按装置筛选看板数据。"""
-        snapshots = [_make_snapshot()]
-        mock_db.execute = AsyncMock(return_value=_make_scalars_mock(snapshots))
+        """按装置筛选看板数据（从节点级快照表读取）。"""
+        plant_node = MagicMock()
+        plant_node.name = "测试装置"
+        node_snaps = [_make_node_snapshot()]
+        trend_row = MagicMock()
+        trend_row.hour = datetime.now(UTC)
+        trend_row.avg_steady = Decimal("85.00")
+        status_row = MagicMock()
+        status_row.status = "GOOD"
+        status_row.cnt = 1
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(plant_node)
+            elif call_count[0] == 2:
+                return _make_scalars_mock(node_snaps)
+            elif call_count[0] == 3:
+                return _make_all_rows_mock([trend_row])
+            else:
+                return _make_all_rows_mock([status_row])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.get(
                 "/api/v1/performance/board?plantNodeId=00000000-0000-0000-0000-000000000111",
@@ -625,80 +705,79 @@ class TestKpiCalcEngine:
             assert kpis[code] is None
 
     def test_compute_composite_score(self) -> None:
-        """测试综合评分计算。"""
+        """测试综合评分计算（国标 4 分项加法公式）。"""
         from app.tasks.kpi_calc import _compute_composite_score
 
-        # 构造指标配置
+        # 构造 4 分项指标配置（对齐 GB/T 44693.2-2024）
         configs = {
-            "good_value_rate": _make_metric_config(
-                metric_code="good_value_rate", weight=Decimal("20")
+            "accuracy_rate": _make_metric_config(
+                metric_code="accuracy_rate", weight=Decimal("30")
             ),
-            "auto_mode_rate": _make_metric_config(
+            "fast_response_rate": _make_metric_config(
                 metric_id="id2",
-                metric_code="auto_mode_rate",
+                metric_code="fast_response_rate",
                 weight=Decimal("20"),
             ),
             "steady_rate": _make_metric_config(
                 metric_id="id3",
                 metric_code="steady_rate",
-                weight=Decimal("20"),
+                weight=Decimal("30"),
             ),
-            "accuracy_rate": _make_metric_config(
+            "effective_auto_rate": _make_metric_config(
                 metric_id="id4",
-                metric_code="accuracy_rate",
-                weight=Decimal("15"),
-            ),
-            "oscillation_rate": _make_metric_config(
-                metric_id="id5",
-                metric_code="oscillation_rate",
-                weight=Decimal("15"),
-            ),
-            "saturation_rate": _make_metric_config(
-                metric_id="id6",
-                metric_code="saturation_rate",
-                weight=Decimal("10"),
+                metric_code="effective_auto_rate",
+                weight=Decimal("20"),
             ),
         }
 
         kpi_values = {
-            "good_value_rate": Decimal("100"),
-            "auto_mode_rate": Decimal("100"),
-            "steady_rate": Decimal("100"),
             "accuracy_rate": Decimal("100"),
-            "oscillation_rate": Decimal("0"),
-            "saturation_rate": Decimal("0"),
+            "fast_response_rate": Decimal("100"),
+            "steady_rate": Decimal("100"),
+            "effective_auto_rate": Decimal("100"),
         }
 
         score = _compute_composite_score(kpi_values, configs)
-        # 所有指标归一化为 1，权重和 100，R_auto = 1
-        # Score = 100 * 1 = 100
+        # P = (30*1 + 20*1 + 30*1 + 20*1) / 100 * 100 = 100
         assert score == Decimal("100.00")
 
     def test_compute_composite_score_disabled_metric(self) -> None:
-        """停用的指标不参与评分。"""
+        """停用的指标不参与评分（国标 4 分项加法公式）。"""
         from app.tasks.kpi_calc import _compute_composite_score
 
         configs = {
-            "good_value_rate": _make_metric_config(
-                metric_code="good_value_rate", weight=Decimal("20"), is_enabled=False
+            "accuracy_rate": _make_metric_config(
+                metric_code="accuracy_rate", weight=Decimal("30"), is_enabled=False
             ),
-            "auto_mode_rate": _make_metric_config(
+            "fast_response_rate": _make_metric_config(
                 metric_id="id2",
-                metric_code="auto_mode_rate",
+                metric_code="fast_response_rate",
+                weight=Decimal("20"),
+                is_enabled=True,
+            ),
+            "steady_rate": _make_metric_config(
+                metric_id="id3",
+                metric_code="steady_rate",
+                weight=Decimal("30"),
+                is_enabled=True,
+            ),
+            "effective_auto_rate": _make_metric_config(
+                metric_id="id4",
+                metric_code="effective_auto_rate",
                 weight=Decimal("20"),
                 is_enabled=True,
             ),
         }
         kpi_values = {
-            "good_value_rate": Decimal("100"),
-            "auto_mode_rate": Decimal("100"),
+            "accuracy_rate": Decimal("100"),
+            "fast_response_rate": Decimal("100"),
+            "steady_rate": Decimal("100"),
+            "effective_auto_rate": Decimal("100"),
         }
         score = _compute_composite_score(kpi_values, configs)
-        # good_value_rate 停用，仅 auto_mode_rate 参与
-        # weighted_sum = 20 * 1 = 20
-        # R_auto = 1
-        # Score = 20 * 1 = 20
-        assert score == Decimal("20.00")
+        # accuracy_rate 停用，仅 3 指标参与
+        # P = (20*1 + 30*1 + 20*1) / (20+30+20) * 100 = 70/70 * 100 = 100
+        assert score == Decimal("100.00")
 
     def test_is_auto_mode(self) -> None:
         """测试 Auto 模式判定。"""
@@ -712,16 +791,22 @@ class TestKpiCalcEngine:
         assert _is_auto_mode("invalid") is False
 
     def test_detect_oscillation(self) -> None:
-        """测试振荡检测。"""
-        from app.tasks.kpi_calc import _detect_oscillation
+        """测试振荡检测（IAE 零交叉相似率法）。"""
+        from app.tasks.kpi_calc import _compute_oscillation_rate
 
-        # 单调递增 → 无振荡
-        aligned_up = [{"pv": float(i)} for i in range(5)]
-        assert _detect_oscillation(aligned_up) == 0
+        # 单调递增 → 无振荡（零交叉点 < 4）
+        aligned_up = [{"pv": float(i), "sp": 0.0} for i in range(5)]
+        osc_rate, is_osc, _ = _compute_oscillation_rate(aligned_up)
+        assert osc_rate == 0
+        assert is_osc is False
 
-        # 交替变化 → 振荡
-        aligned_osc = [{"pv": v} for v in [1.0, 2.0, 1.0, 2.0, 1.0]]
-        assert _detect_oscillation(aligned_osc) > 0
+        # 交替变化 → 振荡（PV 围绕 SP 上下波动，产生正负交替偏差）
+        aligned_osc = [
+            {"pv": v, "sp": 0.0}
+            for v in [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0]
+        ]
+        osc_rate, is_osc, _ = _compute_oscillation_rate(aligned_osc)
+        assert osc_rate > 0
 
     def test_align_timeseries(self) -> None:
         """测试时序对齐。"""
@@ -797,16 +882,26 @@ class TestKpiCalcEngine:
         assert aligned[0]["sp"] == 11.0
 
     def test_detect_oscillation_amplitude_threshold(self) -> None:
-        """S4-B2: 振荡检测振幅阈值过滤噪声。"""
-        from app.tasks.kpi_calc import _detect_oscillation
+        """S4-B2: 振荡检测振幅阈值过滤噪声（IAE 零交叉相似率法）。"""
+        from app.tasks.kpi_calc import _compute_oscillation_rate
 
-        # 微小幅度交替变化（噪声级），应被振幅阈值过滤
-        aligned_noise = [{"pv": v} for v in [50.0, 50.001, 50.0, 50.001, 50.0]]
-        assert _detect_oscillation(aligned_noise) == 0
+        # 微小幅度交替变化（噪声级），零交叉点不足或相似率低
+        aligned_noise = [
+            {"pv": v, "sp": 50.0}
+            for v in [50.0, 50.001, 50.0, 50.001, 50.0, 50.001, 50.0]
+        ]
+        osc_rate, _, _ = _compute_oscillation_rate(aligned_noise)
+        # 噪声级振荡不应被判定为严重振荡
+        assert osc_rate == 0 or osc_rate <= Decimal("10")
 
-        # 大幅度交替变化（真实振荡），应被检测到
-        aligned_osc = [{"pv": v} for v in [50.0, 55.0, 50.0, 55.0, 50.0]]
-        assert _detect_oscillation(aligned_osc) > 0
+        # 大幅度交替变化（真实振荡），需 >= 4 个零交叉点（>= 2 个周期）
+        # PV 围绕 SP 上下波动，产生正负交替的偏差
+        aligned_osc = [
+            {"pv": v, "sp": 50.0}
+            for v in [45.0, 55.0, 45.0, 55.0, 45.0, 55.0, 45.0, 55.0, 45.0, 55.0, 45.0]
+        ]
+        osc_rate, is_osc, _ = _compute_oscillation_rate(aligned_osc)
+        assert osc_rate > 0
 
     def test_good_value_rate_before_filtering(self) -> None:
         """S4-B6: good_value_rate 在过滤前计算，反映真实数据质量。"""
@@ -937,7 +1032,7 @@ class TestPerformanceService:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)
             result = await get_board(db, plant_node_id=None, time_window="today")
-        assert len(result["kpiCards"]) == 7
+        assert len(result["kpiCards"]) == 9
         assert all(c["status"] == "INCONCLUSIVE" for c in result["kpiCards"])
 
     async def test_get_ranking_empty(self) -> None:

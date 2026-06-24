@@ -580,7 +580,7 @@ def _aggregate_efficiency_trend(
             continue
         key = bucket_key(ts)
         bucket = buckets.setdefault(key, {"resolved": 0, "durations": []})
-        if tracker and tracker.action_status == "RESOLVED":
+        if tracker and tracker.action_status == "IMPLEMENTED":
             bucket["resolved"] += 1
             # 计算闭环时长
             if tracker.updated_at and ts:
@@ -609,7 +609,7 @@ def _aggregate_close_duration_distribution(rows: list) -> list[dict]:
     """聚合闭环时长分布。"""
     counts = {bucket[0]: 0 for bucket in CLOSE_DURATION_BUCKETS}
     for diag_result, _loop, tracker in rows:
-        if not tracker or tracker.action_status != "RESOLVED":
+        if not tracker or tracker.action_status != "IMPLEMENTED":
             continue
         if not tracker.updated_at or not diag_result.diagnosed_at:
             continue

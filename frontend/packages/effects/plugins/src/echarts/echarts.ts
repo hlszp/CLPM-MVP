@@ -1,14 +1,17 @@
 import {
   BarChart,
+  GaugeChart,
   LineChart,
   PieChart,
   RadarChart,
   ScatterChart,
 } from 'echarts/charts';
 import {
+  DataZoomComponent,
   DatasetComponent,
   GridComponent,
   LegendComponent,
+  MarkLineComponent,
   TitleComponent,
   ToolboxComponent,
   TooltipComponent,
@@ -33,12 +36,15 @@ echarts.use([
   BarChart,
   LineChart,
   ScatterChart,
+  GaugeChart,
   LabelLayout,
   LegacyGridContainLabel,
   UniversalTransition,
   CanvasRenderer,
   LegendComponent,
   ToolboxComponent,
+  DataZoomComponent,
+  MarkLineComponent,
 ]);
 export type { ECOption } from './types';
 

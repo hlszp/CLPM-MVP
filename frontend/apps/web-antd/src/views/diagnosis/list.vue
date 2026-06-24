@@ -32,6 +32,8 @@ import {
 import { $t } from '#/locales';
 import { flattenNodes } from '#/utils/plant-node';
 
+import Tracker from './tracker.vue';
+
 defineOptions({ name: 'DiagnosisList' });
 
 const router = useRouter();
@@ -40,6 +42,10 @@ const loading = ref(false);
 const diagnosisList = ref<DiagnosisApi.DiagnosisListItem[]>([]);
 const total = ref(0);
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
+
+/** 异常跟踪抽屉状态（FDS §5.4：从诊断列表页右侧滑出） */
+const trackerDrawerVisible = ref(false);
+const trackerLoopId = ref('');
 
 const query = reactive({
   plantNodeId: undefined as string | undefined,
@@ -60,7 +66,7 @@ const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '待处理', value: 'PENDING' },
   { label: '处理中', value: 'IN_PROGRESS' },
-  { label: '已解决', value: 'RESOLVED' },
+  { label: '已实施', value: 'IMPLEMENTED' },
   { label: '已忽略', value: 'IGNORED' },
 ];
 
@@ -68,14 +74,12 @@ const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
 const statusColorMap: Record<DiagnosisApi.ActionStatus, string> = {
   PENDING: 'gold',
   IN_PROGRESS: 'blue',
-  RESOLVED: 'green',
+  IMPLEMENTED: 'green',
   IGNORED: 'default',
 };
 
-/** 时间窗选项 */
+/** 时间窗选项（对齐后端 _build_time_window_condition 支持的值） */
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
-  { label: '今天', value: 'today' },
-  { label: '昨天', value: 'yesterday' },
   { label: '近 24 小时', value: 'last_24_hours' },
   { label: '近 7 天', value: 'last_7_days' },
   { label: '近 30 天', value: 'last_30_days' },
@@ -128,7 +132,7 @@ const columns: TableColumnsType = [
     key: 'diagnosedAt',
     width: 170,
   },
-  { title: '操作', key: 'action', width: 110, fixed: 'right' },
+  { title: '操作', key: 'action', width: 180, fixed: 'right' },
 ];
 
 /** 加载工厂节点 */
@@ -176,6 +180,12 @@ function handleTableChange(pagination: TablePaginationConfig) {
 /** 跳转诊断详情 */
 function handleViewDetail(loopId: string) {
   router.push(`/diagnosis/detail/${loopId}`);
+}
+
+/** 打开异常跟踪抽屉（FDS §5.4） */
+function handleOpenTracker(loopId: string) {
+  trackerLoopId.value = loopId;
+  trackerDrawerVisible.value = true;
 }
 
 function formatTime(t: string): string {
@@ -266,7 +276,7 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
-        :scroll="{ x: 1300 }"
+        :scroll="{ x: 1370 }"
         size="middle"
         :custom-row="
           (record: DiagnosisApi.DiagnosisListItem) => ({
@@ -323,9 +333,24 @@ onMounted(() => {
             >
               查看详情
             </Button>
+            <Button
+              type="link"
+              size="small"
+              @click.stop="handleOpenTracker(record.loopId)"
+            >
+              异常跟踪
+            </Button>
           </template>
         </template>
       </Table>
     </Card>
+
+    <!-- 异常跟踪抽屉（FDS §5.4：从右侧滑出） -->
+    <Tracker
+      v-if="trackerDrawerVisible"
+      :drawer-mode="true"
+      :loop-id="trackerLoopId"
+      @close="trackerDrawerVisible = false"
+    />
   </Page>
 </template>

@@ -7,7 +7,7 @@
  * - ECharts 饼图：预诊标签分布（8 类标签）
  * - ECharts 折线图：处理效率趋势（resolvedCount + avgCloseDurationHours 双 Y 轴）
  * - ECharts 柱状图：闭环时长分布（0-24h/24-72h/72h+）
- * - 支持导出 CSV 按钮
+ * - 支持导出 PNG/Excel 按钮（FDS §5.4.5）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
@@ -62,7 +62,7 @@ const labelColorHexMap = DIAGNOSIS_LABEL_COLOR_HEX_MAP;
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '待处理', value: 'PENDING' },
   { label: '处理中', value: 'IN_PROGRESS' },
-  { label: '已解决', value: 'RESOLVED' },
+  { label: '已实施', value: 'IMPLEMENTED' },
   { label: '已忽略', value: 'IGNORED' },
 ];
 
@@ -79,9 +79,12 @@ const pieChartRef = ref<EchartsUIType>();
 const trendChartRef = ref<EchartsUIType>();
 const barChartRef = ref<EchartsUIType>();
 
-const { renderEcharts: renderPie } = useEcharts(pieChartRef);
-const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
-const { renderEcharts: renderBar } = useEcharts(barChartRef);
+const { renderEcharts: renderPie, getChartInstance: getPieInstance } =
+  useEcharts(pieChartRef);
+const { renderEcharts: renderTrend, getChartInstance: getTrendInstance } =
+  useEcharts(trendChartRef);
+const { renderEcharts: renderBar, getChartInstance: getBarInstance } =
+  useEcharts(barChartRef);
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -295,8 +298,40 @@ function renderBarChart() {
   });
 }
 
-/** 导出 CSV */
-async function handleExport() {
+/** 生成导出文件名（FDS §5.4.5 规范：CLPM-诊断统计报表-[装置]-[日期范围]） */
+function buildExportName(ext: string): string {
+  const [start, end] = filter.timeRange;
+  const plantName =
+    plantNodes.value.find((n) => n.id === filter.plantNodeId)?.name ?? '全部装置';
+  const startStr = start?.format('YYYYMMDD') ?? '';
+  const endStr = end?.format('YYYYMMDD') ?? '';
+  return `CLPM-诊断统计报表-${plantName}-${startStr}_${endStr}.${ext}`;
+}
+
+/** 导出 PNG（FDS §5.4.5：使用 ECharts getDataURL） */
+function handleExportPng() {
+  const instances = [
+    { inst: getPieInstance(), name: '标签分布' },
+    { inst: getTrendInstance(), name: '处理效率趋势' },
+    { inst: getBarInstance(), name: '闭环时长分布' },
+  ];
+  for (const { inst, name } of instances) {
+    if (!inst) continue;
+    const url = inst.getDataURL({
+      type: 'png',
+      pixelRatio: 2,
+      backgroundColor: '#fff',
+    });
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${buildExportName('png').replace('.png', '')}-${name}.png`;
+    link.click();
+  }
+  message.success('PNG 导出完成');
+}
+
+/** 导出 Excel（FDS §5.4.5） */
+async function handleExportExcel() {
   if (!filter.timeRange || filter.timeRange.length !== 2) {
     message.warning('请选择时间范围');
     return;
@@ -316,7 +351,7 @@ async function handleExport() {
       actionStatus: filter.actionStatus,
       granularity: filter.granularity,
     });
-    message.success('导出任务已提交');
+    message.success(`Excel 导出任务已提交，文件名：${buildExportName('xlsx')}`);
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -385,7 +420,10 @@ onMounted(() => {
         <Button type="primary" :loading="loading" @click="handleSearch">
           查询
         </Button>
-        <Button :loading="exporting" @click="handleExport"> 导出 CSV </Button>
+        <Button @click="handleExportPng"> 导出 PNG </Button>
+        <Button :loading="exporting" @click="handleExportExcel">
+          导出 Excel
+        </Button>
       </div>
     </Card>
 

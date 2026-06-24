@@ -290,7 +290,8 @@ async def update_loop_tags_endpoint(
 async def get_loop_monitor_detail_endpoint(
     loop_id: str,
     trendWindow: str = Query(
-        "last_24_hours", description="趋势数据时间窗：last_1_hour/last_24_hours/last_7_days"
+        "last_24_hours",
+        description="趋势数据时间窗：last_1_hour/last_2_hours/last_4_hours/last_8_hours/last_24_hours/last_72_hours",
     ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),

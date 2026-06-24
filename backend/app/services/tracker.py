@@ -1,9 +1,9 @@
 """Action Tracker service (IDS v3.2 §2.4.6~2.4.7 — S4-DIAG-005).
 
 业务逻辑：
-- 状态管理（PENDING/IN_PROGRESS/RESOLVED/IGNORED）
+- 状态管理（PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED）
 - 状态变更记录审计日志
-- RESOLVED 状态时自动生成 A/B 对比视图
+- IMPLEMENTED 状态时自动生成 A/B 对比视图
 - PDF 导出为异步任务（Phase 1 返回模拟任务 ID）
 """
 
@@ -27,7 +27,7 @@ from app.models.tracker import ActionTracker
 logger = logging.getLogger(__name__)
 
 # 有效状态枚举
-VALID_STATUSES = ("PENDING", "IN_PROGRESS", "RESOLVED", "IGNORED")
+VALID_STATUSES = ("PENDING", "IN_PROGRESS", "IMPLEMENTED", "IGNORED")
 
 
 async def update_tracker_status(
@@ -42,7 +42,7 @@ async def update_tracker_status(
     """更新 Action Tracker 状态。
 
     - 仅 IC_ENGINEER 可操作（在 endpoint 层鉴权）
-    - 标记 RESOLVED 后自动生成 A/B 对比视图
+    - 标记 IMPLEMENTED 后自动生成 A/B 对比视图
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_TRACKER_NOT_FOUND
@@ -137,9 +137,9 @@ async def update_tracker_status(
 
     await db.commit()
 
-    # RESOLVED 状态时自动生成 A/B 对比视图
+    # IMPLEMENTED 状态时自动生成 A/B 对比视图
     ab_comparison = None
-    if status == "RESOLVED":
+    if status == "IMPLEMENTED":
         ab_comparison = await _generate_ab_comparison(db, loop_id, tracker)
 
     return {

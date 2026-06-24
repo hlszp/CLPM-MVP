@@ -29,15 +29,13 @@ export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
 export namespace DiagnosisApi {
   /** 处理状态枚举（IDS v3.2 §2.4） */
-  export type ActionStatus = 'IGNORED' | 'IN_PROGRESS' | 'PENDING' | 'RESOLVED';
+  export type ActionStatus = 'IGNORED' | 'IMPLEMENTED' | 'IN_PROGRESS' | 'PENDING';
 
   /** 时间窗枚举 */
   export type TimeWindow =
     | 'last_7_days'
     | 'last_24_hours'
-    | 'last_30_days'
-    | 'today'
-    | 'yesterday';
+    | 'last_30_days';
 
   /** 报表粒度 */
   export type Granularity = 'day' | 'month' | 'week';

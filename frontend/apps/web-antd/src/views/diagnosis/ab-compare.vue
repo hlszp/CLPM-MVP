@@ -21,6 +21,7 @@ import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
+  Alert,
   Button,
   Card,
   DatePicker,
@@ -42,10 +43,13 @@ const props = withDefaults(
     drawerMode?: boolean;
     /** 指定回路 ID（抽屉模式） */
     loopId?: string;
+    /** 实施时间点 T（FDS §5.4.4：标记"已实施"后自动截取 [T-7天,T] 与 [T,T+7天]） */
+    implementedAt?: string;
   }>(),
   {
     drawerMode: false,
     loopId: '',
+    implementedAt: '',
   },
 );
 
@@ -69,6 +73,27 @@ const filter = reactive({
     dayjs.Dayjs,
     dayjs.Dayjs,
   ],
+});
+
+/** FDS §5.4.4：标记"已实施"后自动截取 [T-7天,T] 与 [T,T+7天] */
+function autoSetWindows(implementedAtStr: string) {
+  if (!implementedAtStr) return;
+  const t = dayjs(implementedAtStr);
+  if (!t.isValid()) return;
+  filter.beforeRange = [t.subtract(7, 'day'), t];
+  filter.afterRange = [t, t.add(7, 'day')];
+}
+
+/** After 窗口数据是否不足 24h（FDS §5.4.4 提示"评估数据采集中"） */
+const isAfterDataInsufficient = computed(() => {
+  if (!filter.afterRange || filter.afterRange.length !== 2) return false;
+  const [aStart, aEnd] = filter.afterRange;
+  if (!aStart || !aEnd) return false;
+  // After 窗口结束时间超过当前时间 → 数据尚未采集完整
+  const now = dayjs();
+  const actualEnd = aEnd.isAfter(now) ? now : aEnd;
+  const durationHours = actualEnd.diff(aStart, 'hour');
+  return durationHours < 24;
 });
 
 // ECharts refs
@@ -303,6 +328,10 @@ watch(
   (val) => {
     if (val) {
       filter.loopId = val;
+      // 有 implementedAt 时自动截取窗口
+      if (props.implementedAt) {
+        autoSetWindows(props.implementedAt);
+      }
       loadData();
     }
   },
@@ -310,6 +339,10 @@ watch(
 );
 
 onMounted(() => {
+  // 有 implementedAt 时自动截取窗口（FDS §5.4.4）
+  if (props.implementedAt) {
+    autoSetWindows(props.implementedAt);
+  }
   if (!props.drawerMode) {
     loadLoopOptions().then(() => {
       if (filter.loopId) {
@@ -359,6 +392,16 @@ onMounted(() => {
           </Button>
         </div>
       </Card>
+
+      <!-- 数据不足提示（FDS §5.4.4） -->
+      <Alert
+        v-if="isAfterDataInsufficient"
+        class="mb-4"
+        type="warning"
+        show-icon
+        message="评估数据采集中，请稍后查看"
+        description="处置后数据不足 24 小时，A/B 对比结果可能不准确。建议等待数据采集完整后再进行评估。"
+      />
 
       <!-- 统计摘要 -->
       <Card v-if="compareData" class="mb-4" title="改善摘要">
@@ -442,6 +485,16 @@ onMounted(() => {
         </Button>
       </div>
     </Card>
+
+    <!-- 数据不足提示（FDS §5.4.4） -->
+    <Alert
+      v-if="isAfterDataInsufficient"
+      class="mb-4"
+      type="warning"
+      show-icon
+      message="评估数据采集中，请稍后查看"
+      description="处置后数据不足 24 小时，A/B 对比结果可能不准确。建议等待数据采集完整后再进行评估。"
+    />
 
     <!-- 统计摘要 -->
     <Card v-if="compareData" class="mb-4" title="改善摘要">

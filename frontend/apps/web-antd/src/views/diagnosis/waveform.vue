@@ -203,6 +203,95 @@ function buildPvSeriesByQuality(
   return { badData, goodData, uncertainData };
 }
 
+/**
+ * LTTB（Largest Triangle Three Buckets）降采样算法
+ * 对齐 FDS §5.4.3 前端二次降采样要求
+ *
+ * 算法要点：
+ * - 保留首尾两个点
+ * - 将数据分桶，每个桶内选择与前后点构成最大三角形面积的点
+ * - 时间复杂度 O(n)
+ *
+ * @param data 时序数据数组，每项为 [x, y]（x 通常为时间戳，y 为数值）
+ * @param targetPoints 目标点数，默认 2000
+ * @returns 降采样后保留点的原始索引数组（按时间升序）
+ */
+function lttbDownsample(
+  data: [number, number][],
+  targetPoints = 2000,
+): number[] {
+  const n = data.length;
+  // 数据量未超过目标点数或目标点数过小，无需降采样
+  if (n <= targetPoints || targetPoints < 3) {
+    return Array.from({ length: n }, (_, i) => i);
+  }
+
+  const sampled: number[] = [];
+  // 除首尾两点外，中间数据按桶划分，每个桶选取一个代表点
+  const bucketSize = (n - 2) / (targetPoints - 2);
+  // a 为上一个被选中点的索引，初始为首点
+  let a = 0;
+  sampled.push(0);
+
+  for (let i = 0; i < targetPoints - 2; i++) {
+    // 当前桶的索引范围（左闭右开）
+    const bucketStart = Math.floor((i + 1) * bucketSize) + 1;
+    const bucketEnd = Math.min(Math.floor((i + 2) * bucketSize) + 1, n - 1);
+
+    // 计算下一个桶的平均点，作为三角形第三个顶点的参考
+    let avgX = 0;
+    let avgY = 0;
+    let avgCount = 0;
+    for (let j = bucketStart; j < bucketEnd; j++) {
+      const point = data[j];
+      if (!point) {
+        continue;
+      }
+      const [x, y] = point;
+      avgX += x;
+      avgY += y;
+      avgCount++;
+    }
+
+    const pointA = data[a];
+    // 下一个桶为空或上一个选中点缺失时，退化为取当前桶起始点
+    if (avgCount === 0 || !pointA) {
+      const fallback = Math.min(bucketStart, n - 1);
+      sampled.push(fallback);
+      a = fallback;
+      continue;
+    }
+
+    avgX /= avgCount;
+    avgY /= avgCount;
+    const [ax, ay] = pointA;
+
+    // 在当前桶内寻找与点 a、下一桶平均点构成最大三角形面积的点
+    let maxArea = -1;
+    let maxIdx = bucketStart;
+    for (let j = bucketStart; j < bucketEnd; j++) {
+      const point = data[j];
+      if (!point) {
+        continue;
+      }
+      const [px, py] = point;
+      // 三角形面积 = |x_a*(y - avgY) + x*(avgY - y_a) + avgX*(y_a - y)| / 2
+      const area =
+        Math.abs(ax * (py - avgY) + px * (avgY - ay) + avgX * (ay - py)) / 2;
+      if (area > maxArea) {
+        maxArea = area;
+        maxIdx = j;
+      }
+    }
+    sampled.push(maxIdx);
+    a = maxIdx;
+  }
+
+  // 保留尾点
+  sampled.push(n - 1);
+  return sampled;
+}
+
 /** 渲染波形图 */
 function renderWaveformChart() {
   const data = waveform.value;
@@ -213,7 +302,27 @@ function renderWaveformChart() {
     return;
   }
 
-  const { timestamps, pv, sp, op, pvQuality } = data;
+  let { timestamps, pv, sp, op, pvQuality } = data;
+
+  // 前端 LTTB 二次降采样（FDS §5.4.3）：数据点数超过阈值时降采样，避免渲染卡顿
+  const LTTB_THRESHOLD = 2000;
+  if (timestamps.length > LTTB_THRESHOLD) {
+    // 以 PV 为主信号构建 LTTB 输入，null 值用 0 占位（仅用于选点，不影响原始数据）
+    const lttbData: [number, number][] = timestamps.map((t, i) => [
+      t,
+      pv[i] ?? 0,
+    ]);
+    const sampledIndices = lttbDownsample(lttbData, LTTB_THRESHOLD);
+    // 按选中的索引重建各序列，保持时间对齐
+    timestamps = sampledIndices
+      .map((i) => timestamps[i])
+      .filter((v): v is number => v !== undefined);
+    pv = sampledIndices.map((i) => pv[i] ?? null);
+    sp = sampledIndices.map((i) => sp[i] ?? null);
+    op = sampledIndices.map((i) => op[i] ?? null);
+    pvQuality = sampledIndices.map((i) => pvQuality[i] ?? null);
+  }
+
   const { goodData, badData, uncertainData } = buildPvSeriesByQuality(
     timestamps,
     pv,

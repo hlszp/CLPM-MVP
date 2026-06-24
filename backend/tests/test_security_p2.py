@@ -376,7 +376,7 @@ class TestEnumValidation:
 
     def test_valid_action_statuses_accepted(self) -> None:
         """合法 actionStatus 被接受。"""
-        for status in ("PENDING", "IN_PROGRESS", "RESOLVED", "IGNORED"):
+        for status in ("PENDING", "IN_PROGRESS", "IMPLEMENTED", "IGNORED"):
             req = TrackerStatusUpdate(status=status)
             assert req.status == status
 

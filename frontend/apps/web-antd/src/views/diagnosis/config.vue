@@ -15,6 +15,8 @@ import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 
 import { onMounted, reactive, ref } from 'vue';
 
+import { useRouter } from 'vue-router';
+
 import { Page } from '@vben/common-ui';
 
 import {
@@ -43,8 +45,13 @@ import {
 
 defineOptions({ name: 'DiagnosisConfig' });
 
+const router = useRouter();
+
 const loading = ref(false);
 const metricList = ref<DiagnosisApi.MetricItem[]>([]);
+
+/** 当前正在切换启用状态的指标 ID（用于 Switch loading 态） */
+const togglingId = ref<string | null>(null);
 
 /** 8 类诊断标签选项 */
 const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
@@ -84,7 +91,7 @@ const columns: TableColumnsType = [
     width: 140,
   },
   { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 170 },
-  { title: '操作', key: 'action', width: 100, fixed: 'right' },
+  { title: '操作', key: 'action', width: 180, fixed: 'right' },
 ];
 
 // Modal state
@@ -148,6 +155,46 @@ function handleEdit(record: DiagnosisApi.MetricItem) {
   formState.threshold = objectToKv(record.threshold || {});
   formState.isEnabled = record.isEnabled;
   modalVisible.value = true;
+}
+
+/** 切换启用状态（带二次确认 Modal） */
+function handleToggleEnabled(
+  record: DiagnosisApi.MetricItem,
+  checked: boolean,
+) {
+  Modal.confirm({
+    title: '确认变更启用状态',
+    content: `即将${checked ? '启用' : '禁用'}诊断指标「${record.diagName}」，保存后立即生效。是否继续？`,
+    okText: '确认',
+    cancelText: '取消',
+    onOk: async () => {
+      togglingId.value = record.diagId;
+      try {
+        await updateDiagnosisMetricApi(record.diagId, {
+          label: record.label,
+          algorithmType: record.algorithmType,
+          calcMethod: record.calcMethod,
+          params: record.params || {},
+          threshold: record.threshold || {},
+          isEnabled: checked,
+        });
+        record.isEnabled = checked;
+        message.success('启用状态更新成功');
+      } catch {
+        // 错误已由拦截器处理
+      } finally {
+        togglingId.value = null;
+      }
+    },
+  });
+}
+
+/** 跳转到审计日志页（预筛选诊断配置） */
+function handleViewAuditLog() {
+  router.push({
+    path: '/system/audit',
+    query: { target_type: 'diagnosis_config' },
+  });
 }
 
 /** 添加参数项 */
@@ -264,9 +311,18 @@ onMounted(() => {
             <span class="text-xs">{{ formatObject(record.params) }}</span>
           </template>
           <template v-else-if="column.key === 'isEnabled'">
-            <Tag :color="record.isEnabled ? 'green' : 'default'">
-              {{ record.isEnabled ? '启用' : '禁用' }}
-            </Tag>
+            <Switch
+              :checked="record.isEnabled"
+              :loading="togglingId === record.diagId"
+              size="small"
+              @change="
+                (checked: boolean | number | string) =>
+                  handleToggleEnabled(
+                    record as DiagnosisApi.MetricItem,
+                    !!checked,
+                  )
+              "
+            />
           </template>
           <template v-else-if="column.key === 'updatedAt'">
             {{ formatTime(record.updatedAt) }}
@@ -279,6 +335,14 @@ onMounted(() => {
               @click="handleEdit(record as DiagnosisApi.MetricItem)"
             >
               编辑
+            </Button>
+            <Button
+              v-permission="['ADMIN']"
+              type="link"
+              size="small"
+              @click="handleViewAuditLog"
+            >
+              审计日志
             </Button>
           </template>
         </template>
@@ -300,10 +364,12 @@ onMounted(() => {
             label="诊断标签"
             :rules="[{ required: true, message: '请选择诊断标签' }]"
           >
+            <!-- 每个指标对应固定标签，标签不可编辑（FDS §5.4.1） -->
             <Select
               v-model:value="formState.label"
               :options="labelOptions"
               placeholder="请选择诊断标签"
+              disabled
             />
           </FormItem>
           <FormItem

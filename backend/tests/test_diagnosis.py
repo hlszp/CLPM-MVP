@@ -596,7 +596,7 @@ class TestTrackerStatusUpdate:
                 return _make_scalar_one_or_none_mock(loop)
             if call_count[0] == 2:
                 return _make_scalar_one_or_none_mock(tracker)
-            # RESOLVED 时查询 diag
+            # IMPLEMENTED 时查询 diag
             return _make_scalar_one_or_none_mock(diag)
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
@@ -612,7 +612,7 @@ class TestTrackerStatusUpdate:
         assert body["data"]["actionStatus"] == "IN_PROGRESS"
 
     def test_update_status_resolved(self, client, mock_db, fake_redis) -> None:
-        """RESOLVED 状态时自动生成 A/B 对比视图。"""
+        """IMPLEMENTED 状态时自动生成 A/B 对比视图。"""
         loop = _make_loop()
         tracker = _make_tracker()
         diag = _make_diag_result()
@@ -632,12 +632,12 @@ class TestTrackerStatusUpdate:
             resp = client.patch(
                 f"/api/v1/tracker/{loop.id}/status",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"status": "RESOLVED"},
+                json={"status": "IMPLEMENTED"},
             )
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"
-        assert body["data"]["actionStatus"] == "RESOLVED"
+        assert body["data"]["actionStatus"] == "IMPLEMENTED"
         assert body["data"]["abComparison"] is not None
         assert "beforeWindow" in body["data"]["abComparison"]
         assert "afterWindow" in body["data"]["abComparison"]
@@ -734,7 +734,7 @@ class TestDiagnosisAnalytics:
         """认证用户可以获取诊断统计报表。"""
         loop = _make_loop()
         diag = _make_diag_result()
-        tracker = _make_tracker(action_status="RESOLVED")
+        tracker = _make_tracker(action_status="IMPLEMENTED")
 
         mock_db.execute = AsyncMock(return_value=_make_rows_mock([(diag, loop, tracker)]))
         with mock_current_user(TEST_USERS["admin"]):

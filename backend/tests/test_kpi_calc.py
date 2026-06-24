@@ -105,14 +105,21 @@ def _make_trend_point(ts: object, value: float, quality: str = "GOOD") -> dict:
 
 
 def _make_full_metric_configs() -> dict[str, MagicMock]:
-    """构造完整的 6 大 KPI 指标配置。"""
+    """构造完整的 8 大 KPI 指标配置（对齐国标 4 分项评分公式）。
+
+    参与评分的 4 指标（weight > 0）：
+        accuracy_rate(30) + fast_response_rate(20) + steady_rate(30) + effective_auto_rate(20) = 100
+    仅显示的指标（weight = 0）：好值率/自控率/振荡率/饱和率
+    """
     return {
-        "good_value_rate": _make_metric_config("good_value_rate", Decimal("20")),
-        "auto_mode_rate": _make_metric_config("auto_mode_rate", Decimal("20")),
-        "steady_rate": _make_metric_config("steady_rate", Decimal("20")),
-        "accuracy_rate": _make_metric_config("accuracy_rate", Decimal("15")),
-        "oscillation_rate": _make_metric_config("oscillation_rate", Decimal("15")),
-        "saturation_rate": _make_metric_config("saturation_rate", Decimal("10")),
+        "good_value_rate": _make_metric_config("good_value_rate", Decimal("0")),
+        "auto_mode_rate": _make_metric_config("auto_mode_rate", Decimal("0")),
+        "effective_auto_rate": _make_metric_config("effective_auto_rate", Decimal("20")),
+        "steady_rate": _make_metric_config("steady_rate", Decimal("30")),
+        "accuracy_rate": _make_metric_config("accuracy_rate", Decimal("30")),
+        "fast_response_rate": _make_metric_config("fast_response_rate", Decimal("20")),
+        "oscillation_rate": _make_metric_config("oscillation_rate", Decimal("0")),
+        "saturation_rate": _make_metric_config("saturation_rate", Decimal("0")),
     }
 
 
@@ -884,47 +891,112 @@ class TestCeleryTasks:
 
 
 class TestComputeCompositeScoreEdgeCases:
-    """测试 _compute_composite_score() 边界场景。"""
+    """测试 _compute_composite_score() 边界场景（国标 4 分项加法公式）。"""
 
-    def test_none_auto_mode_rate(self) -> None:
-        """auto_mode_rate 为 None 时 R_auto=0，score=0。"""
-        configs = {"good_value_rate": _make_metric_config(weight=Decimal("20"))}
-        kpi_values = {"good_value_rate": Decimal("100"), "auto_mode_rate": None}
-        score = _compute_composite_score(kpi_values, configs)
-        assert score == Decimal("0.00")
-
-    def test_none_value_skipped(self) -> None:
-        """KPI 值为 None 的指标不参与评分。"""
+    def test_all_four_metrics_full_score(self) -> None:
+        """4 分项指标全部 100 时，综合评分 = 100。"""
         configs = {
-            "good_value_rate": _make_metric_config(weight=Decimal("20")),
-            "auto_mode_rate": _make_metric_config(
-                metric_code="auto_mode_rate", weight=Decimal("20")
+            "accuracy_rate": _make_metric_config(
+                metric_code="accuracy_rate", weight=Decimal("30")
+            ),
+            "fast_response_rate": _make_metric_config(
+                metric_code="fast_response_rate", weight=Decimal("20")
+            ),
+            "steady_rate": _make_metric_config(
+                metric_code="steady_rate", weight=Decimal("30")
+            ),
+            "effective_auto_rate": _make_metric_config(
+                metric_code="effective_auto_rate", weight=Decimal("20")
             ),
         }
         kpi_values = {
-            "good_value_rate": None,
-            "auto_mode_rate": Decimal("100"),
+            "accuracy_rate": Decimal("100"),
+            "fast_response_rate": Decimal("100"),
+            "steady_rate": Decimal("100"),
+            "effective_auto_rate": Decimal("100"),
         }
         score = _compute_composite_score(kpi_values, configs)
-        # 仅 auto_mode_rate 参与：20 * 1 * 1 = 20
-        assert score == Decimal("20.00")
+        # P = (30*1 + 20*1 + 30*1 + 20*1) / 100 * 100 = 100
+        assert score == Decimal("100.00")
+
+    def test_none_value_skipped(self) -> None:
+        """KPI 值为 None 的指标不参与评分（仅有效指标加权平均）。"""
+        configs = {
+            "accuracy_rate": _make_metric_config(
+                metric_code="accuracy_rate", weight=Decimal("30")
+            ),
+            "fast_response_rate": _make_metric_config(
+                metric_code="fast_response_rate", weight=Decimal("20")
+            ),
+            "steady_rate": _make_metric_config(
+                metric_code="steady_rate", weight=Decimal("30")
+            ),
+            "effective_auto_rate": _make_metric_config(
+                metric_code="effective_auto_rate", weight=Decimal("20")
+            ),
+        }
+        kpi_values = {
+            "accuracy_rate": Decimal("100"),
+            "fast_response_rate": None,  # 跳过
+            "steady_rate": Decimal("100"),
+            "effective_auto_rate": Decimal("100"),
+        }
+        score = _compute_composite_score(kpi_values, configs)
+        # P = (30*1 + 30*1 + 20*1) / (30+30+20) * 100 = 80/80 * 100 = 100
+        assert score == Decimal("100.00")
 
     def test_none_weight_skipped(self) -> None:
         """weight 为 None 的指标不参与评分。"""
-        configs = {"good_value_rate": _make_metric_config(weight=None)}
+        configs = {
+            "accuracy_rate": _make_metric_config(
+                metric_code="accuracy_rate", weight=None
+            ),
+            "fast_response_rate": _make_metric_config(
+                metric_code="fast_response_rate", weight=Decimal("20")
+            ),
+        }
         kpi_values = {
-            "good_value_rate": Decimal("100"),
-            "auto_mode_rate": Decimal("100"),
+            "accuracy_rate": Decimal("100"),
+            "fast_response_rate": Decimal("80"),
         }
         score = _compute_composite_score(kpi_values, configs)
-        assert score == Decimal("0.00")
+        # 仅 fast_response_rate 参与：20 * 0.8 / 20 * 100 = 80
+        assert score == Decimal("80.00")
 
     def test_missing_config_skipped(self) -> None:
         """metric_configs 中不存在的指标不参与评分。"""
         configs = {}
         kpi_values = {
-            "good_value_rate": Decimal("100"),
-            "auto_mode_rate": Decimal("100"),
+            "accuracy_rate": Decimal("100"),
+            "fast_response_rate": Decimal("100"),
         }
         score = _compute_composite_score(kpi_values, configs)
+        # 所有权重总和为 0，返回 0
         assert score == Decimal("0.00")
+
+    def test_weighted_average_calculation(self) -> None:
+        """验证加权平均计算：P = (λA·A + λF·F + λS·S + λR·R) / (Σλ) × 100。"""
+        configs = {
+            "accuracy_rate": _make_metric_config(
+                metric_code="accuracy_rate", weight=Decimal("30")
+            ),
+            "fast_response_rate": _make_metric_config(
+                metric_code="fast_response_rate", weight=Decimal("20")
+            ),
+            "steady_rate": _make_metric_config(
+                metric_code="steady_rate", weight=Decimal("30")
+            ),
+            "effective_auto_rate": _make_metric_config(
+                metric_code="effective_auto_rate", weight=Decimal("20")
+            ),
+        }
+        kpi_values = {
+            "accuracy_rate": Decimal("90"),    # A = 90
+            "fast_response_rate": Decimal("80"),  # F = 80
+            "steady_rate": Decimal("70"),      # S = 70
+            "effective_auto_rate": Decimal("60"),  # R = 60
+        }
+        score = _compute_composite_score(kpi_values, configs)
+        # P = (30*0.9 + 20*0.8 + 30*0.7 + 20*0.6) / 100 * 100
+        #   = (27 + 16 + 21 + 12) / 100 * 100 = 76.00
+        assert score == Decimal("76.00")

@@ -25,6 +25,7 @@ class PlantNodeUpdate(CamelModel):
     """PUT /api/v1/plant-nodes/{id} request body."""
 
     name: str = Field(..., min_length=1, max_length=100, description="节点名称")
+    isKpiEnabled: bool | None = Field(None, description="是否纳入性能评估")
 
 
 class PlantNodeInfo(CamelModel):
@@ -34,6 +35,7 @@ class PlantNodeInfo(CamelModel):
     name: str
     type: str
     parentId: str | None = None
+    isKpiEnabled: bool | None = None
 
 
 class PlantNodeTree(PlantNodeInfo):

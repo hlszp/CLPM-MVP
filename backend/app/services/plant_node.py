@@ -50,6 +50,7 @@ def _node_to_dict(node: PlantNode) -> dict:
         "name": node.name,
         "type": node.type,
         "parentId": str(node.parent_id) if node.parent_id else None,
+        "isKpiEnabled": bool(node.is_kpi_enabled) if node.is_kpi_enabled is not None else False,
     }
 
 
@@ -158,8 +159,9 @@ async def update_plant_node(
     node_id: str,
     name: str,
     operator: str,
+    is_kpi_enabled: bool | None = None,
 ) -> dict:
-    """更新工厂节点名称。
+    """更新工厂节点（名称 + 是否纳入性能评估）。
 
     Raises:
         BizError: ERR_NODE_NOT_FOUND (节点不存在)
@@ -173,9 +175,11 @@ async def update_plant_node(
             status_code=404,
         )
 
-    before_value = f'{{"name":"{node.name}"}}'
+    before_value = f'{{"name":"{node.name}","isKpiEnabled":{node.is_kpi_enabled}}}'
     node.name = name
-    after_value = f'{{"name":"{name}"}}'
+    if is_kpi_enabled is not None:
+        node.is_kpi_enabled = is_kpi_enabled
+    after_value = f'{{"name":"{name}","isKpiEnabled":{node.is_kpi_enabled}}}'
 
     await _write_audit(
         db=db,

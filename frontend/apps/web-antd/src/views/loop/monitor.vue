@@ -219,7 +219,28 @@ const trendLoading = ref(false);
 const trendDetail = ref<LoopApi.MonitorDetail | null>(null);
 const trendWindow = ref<LoopApi.TrendWindow>('last_4_hours');
 const trendChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderTrendChart } = useEcharts(trendChartRef);
+const { renderEcharts: renderTrendChart, resize: resizeTrendChart } =
+  useEcharts(trendChartRef);
+const trendFullscreen = ref(false);
+
+const trendModalWidth = computed(() =>
+  trendFullscreen.value ? '100vw' : '1100px',
+);
+const trendChartHeight = computed(() =>
+  trendFullscreen.value ? 'calc(100vh - 220px)' : '400px',
+);
+const trendBodyStyle = computed(() =>
+  trendFullscreen.value
+    ? { height: 'calc(100vh - 55px)', overflow: 'auto', padding: '16px' }
+    : { maxHeight: 'calc(100vh - 120px)', overflow: 'auto' },
+);
+
+function toggleTrendFullscreen() {
+  trendFullscreen.value = !trendFullscreen.value;
+  nextTick(() => {
+    setTimeout(() => resizeTrendChart(), 100);
+  });
+}
 
 // ===== 性能 Modal =====
 
@@ -382,21 +403,22 @@ function renderTrend() {
   const opData = timestamps.map((ts, i) => [ts, op[i] ?? null] as [number, null | number]);
   const modeData = timestamps.map((ts, i) => [ts, mode[i] ?? null] as [number, null | number]);
   const modeChanges = findModeChangePoints(timestamps, mode);
-  const enableDataZoom = timestamps.length > 5000;
 
   renderTrendChart({
     backgroundColor: 'transparent',
-    dataZoom: enableDataZoom
-      ? [
-          { end: 100, start: 0, type: 'inside' },
-          { end: 100, start: 0, type: 'slider' },
-        ]
-      : [],
+    dataZoom: [
+      // 底部时间轴滑块（X 轴）
+      { end: 100, start: 0, type: 'inside', xAxisIndex: 0 },
+      { end: 100, start: 0, type: 'slider', xAxisIndex: 0, bottom: 8, height: 20 },
+      // 右侧量程滑块（Y 轴）
+      { end: 100, start: 0, type: 'inside', yAxisIndex: 0 },
+      { end: 100, start: 0, type: 'slider', yAxisIndex: 0, right: 8, width: 20 },
+    ],
     grid: {
-      bottom: enableDataZoom ? 60 : 40,
+      bottom: 50,
       containLabel: true,
       left: '3%',
-      right: '3%',
+      right: 60,
       top: 60,
     },
     legend: { data: ['PV', 'SP', 'OP', 'MODE'], top: 5 },
@@ -752,11 +774,25 @@ onUnmounted(() => {
     <!-- 趋势 Modal -->
     <Modal
       v-model:open="trendModalVisible"
-      :title="`趋势 - ${currentRecord?.tagName ?? ''}`"
-      width="1100px"
+      :width="trendModalWidth"
+      :body-style="trendBodyStyle"
       :footer="null"
       destroy-on-close
+      :style="trendFullscreen ? { top: 0, paddingBottom: 0 } : {}"
+      @cancel="trendFullscreen = false"
     >
+      <template #title>
+        <div class="flex items-center justify-between pr-8">
+          <span>趋势 - {{ currentRecord?.tagName ?? '' }}</span>
+          <Button
+            type="text"
+            size="small"
+            @click="toggleTrendFullscreen"
+          >
+            {{ trendFullscreen ? '退出全屏' : '全屏' }}
+          </Button>
+        </div>
+      </template>
       <Spin :spinning="trendLoading">
         <div v-if="currentRecord" class="space-y-3">
           <!-- 时间范围 + 当前 MODE -->
@@ -827,7 +863,7 @@ onUnmounted(() => {
 
           <!-- 趋势图 -->
           <div v-if="trendDetail">
-            <EchartsUI ref="trendChartRef" height="400px" />
+            <EchartsUI ref="trendChartRef" :height="trendChartHeight" />
           </div>
           <div v-else class="py-12 text-center text-gray-400">
             暂无趋势数据
@@ -862,7 +898,10 @@ onUnmounted(() => {
           <!-- 综合评分 + 仪表盘 -->
           <div class="flex items-center gap-6 rounded border p-4">
             <div style="height: 240px; width: 240px">
-              <EchartsUI ref="gaugeChartRef" height="240px" />
+              <EchartsUI v-if="perfDetail.kpiSummary.composite_score != null" ref="gaugeChartRef" height="240px" />
+              <div v-else class="flex h-full items-center justify-center text-gray-400">
+                暂无评分
+              </div>
             </div>
             <div class="flex-1">
               <div class="text-sm text-gray-500">
@@ -872,12 +911,12 @@ onUnmounted(() => {
                 class="mt-1 text-3xl font-bold"
                 :class="{
                   'text-green-600':
-                    perfDetail.kpiSummary.composite_score >= 80,
+                    (perfDetail.kpiSummary.composite_score ?? 0) >= 80,
                   'text-orange-500':
-                    perfDetail.kpiSummary.composite_score >= 60 &&
-                    perfDetail.kpiSummary.composite_score < 80,
+                    (perfDetail.kpiSummary.composite_score ?? 0) >= 60 &&
+                    (perfDetail.kpiSummary.composite_score ?? 0) < 80,
                   'text-red-500':
-                    perfDetail.kpiSummary.composite_score < 60,
+                    (perfDetail.kpiSummary.composite_score ?? 0) < 60,
                 }"
               >
                 {{ perfDetail.kpiSummary.composite_score?.toFixed(1) ?? '—' }}
@@ -912,7 +951,7 @@ onUnmounted(() => {
                 <span class="text-xs text-gray-400">
                   权重：{{
                     item.weightKey
-                      ? (loopDetailForWeights?.basicInfo.scoreWeights[item.weightKey] ?? '—')
+                      ? (loopDetailForWeights?.basicInfo.scoreWeights?.[item.weightKey] ?? '—')
                       : '—'
                   }}%
                 </span>

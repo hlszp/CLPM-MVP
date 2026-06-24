@@ -2,12 +2,12 @@
 /**
  * S4-DIAG 诊断详情页
  *
- * 对齐 IDS v3.2 §2.4 + PRD §4.4
- * - 顶部：回路基本信息 + 综合评分 + 融合置信度
- * - 中部：诊断标签数组（含每个标签的置信度、证据、算法）
- * - 证据链展示（波形 URL、散点图、推理过程）
- * - 特征值展示
- * - 底部：跳转波形查看 / Action Tracker
+ * 对齐 FDS §5.4 + IDS v3.2 §2.4 + PRD §4.4
+ * - 上下分栏结构（FDS §5.4）：
+ *   - 上部（时序分析区）：内嵌时序波形（PV/SP/OP）+ PV-OP 散点图
+ *   - 下部（诊断结论区）：诊断标签 + 证据链（推理过程）+ 特征值
+ * - 顶部：回路基本信息 + 综合评分 + 融合置信度 + 时间窗切换
+ * - 异常跟踪以 Drawer 形式打开（与 P1-2 约定接口）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
@@ -27,12 +27,15 @@ import {
   Spin,
   Tag,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
-import { getDiagnosisDetailApi } from '#/api/diagnosis';
+import { getDiagnosisDetailApi, getWaveformApi } from '#/api/diagnosis';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
+
+import Tracker from './tracker.vue';
 
 defineOptions({ name: 'DiagnosisDetail' });
 
@@ -41,8 +44,13 @@ const router = useRouter();
 const loopId = route.params.loopId as string;
 
 const loading = ref(false);
+const waveformLoading = ref(false);
 const detail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
+const waveform = ref<DiagnosisApi.WaveformResult | null>(null);
 const timeWindow = ref<DiagnosisApi.TimeWindow>('last_24_hours');
+
+/** 异常跟踪 Drawer 可见性 */
+const trackerDrawerVisible = ref(false);
 
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
   { label: '近 24 小时', value: 'last_24_hours' },
@@ -59,12 +67,34 @@ const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 const scatterChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderScatter } = useEcharts(scatterChartRef);
 
+// 时序波形 ECharts
+const waveformChartRef = ref<EchartsUIType>();
+const { renderEcharts: renderWaveform } = useEcharts(waveformChartRef);
+
 const pageTitle = computed(() => {
   if (detail.value?.tagName) {
     return `诊断详情 - ${detail.value.tagName}`;
   }
   return '诊断详情';
 });
+
+/** 时间窗映射为 [startTime, endTime]（dayjs） */
+function getTimeRange(
+  tw: DiagnosisApi.TimeWindow,
+): [dayjs.Dayjs, dayjs.Dayjs] {
+  switch (tw) {
+    case 'last_7_days': {
+      return [dayjs().subtract(7, 'day'), dayjs()];
+    }
+    case 'last_30_days': {
+      return [dayjs().subtract(30, 'day'), dayjs()];
+    }
+    case 'last_24_hours':
+    default: {
+      return [dayjs().subtract(24, 'hour'), dayjs()];
+    }
+  }
+}
 
 /** 加载诊断详情 */
 async function loadDetail() {
@@ -73,11 +103,122 @@ async function loadDetail() {
     const data = await getDiagnosisDetailApi(loopId, timeWindow.value);
     detail.value = data;
     renderScatterChart();
+    // 详情加载成功后并行加载波形数据
+    loadWaveform();
   } catch {
     // 错误已由拦截器处理
   } finally {
     loading.value = false;
   }
+}
+
+/** 加载时序波形数据 */
+async function loadWaveform() {
+  if (!loopId) return;
+  waveformLoading.value = true;
+  try {
+    const [start, end] = getTimeRange(timeWindow.value);
+    const data = await getWaveformApi(loopId, {
+      startTime: start.format('YYYY-MM-DD HH:mm:ss'),
+      endTime: end.format('YYYY-MM-DD HH:mm:ss'),
+      downsample: true,
+      maxPoints: 2000,
+    });
+    waveform.value = data;
+    renderWaveformChart();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    waveformLoading.value = false;
+  }
+}
+
+/** 渲染时序波形图（PV/SP/OP 三条线） */
+function renderWaveformChart() {
+  const data = waveform.value;
+  if (!data || !data.timestamps || data.timestamps.length === 0) {
+    renderWaveform({
+      title: { left: 'center', text: '暂无波形数据' },
+    });
+    return;
+  }
+
+  const { timestamps, pv, sp, op } = data;
+  const enableDataZoom = timestamps.length > 1000;
+
+  renderWaveform({
+    backgroundColor: 'transparent',
+    dataZoom: enableDataZoom
+      ? [
+          { end: 100, start: 0, type: 'inside' },
+          { end: 100, start: 0, type: 'slider' },
+        ]
+      : [],
+    grid: {
+      bottom: enableDataZoom ? 60 : 30,
+      containLabel: true,
+      left: '2%',
+      right: '2%',
+      top: 50,
+    },
+    legend: {
+      data: ['PV', 'SP', 'OP'],
+      top: 5,
+    },
+    series: [
+      {
+        connectNulls: false,
+        data: pv,
+        itemStyle: { color: '#ff4d4f' },
+        lineStyle: { width: 2 },
+        name: 'PV',
+        showSymbol: false,
+        type: 'line',
+      },
+      {
+        connectNulls: false,
+        data: sp,
+        itemStyle: { color: '#1890ff' },
+        lineStyle: { width: 1.5 },
+        name: 'SP',
+        showSymbol: false,
+        type: 'line',
+      },
+      {
+        connectNulls: false,
+        data: op,
+        itemStyle: { color: '#52c41a' },
+        lineStyle: { width: 1.5 },
+        name: 'OP',
+        showSymbol: false,
+        type: 'line',
+      },
+    ],
+    tooltip: {
+      axisPointer: { type: 'cross' },
+      trigger: 'axis',
+      valueFormatter: (val) =>
+        val === null || val === undefined ? '—' : Number(val).toFixed(3),
+    },
+    xAxis: {
+      axisLabel: {
+        formatter: (val: string) => {
+          const d = new Date(Number(val));
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mm = String(d.getMinutes()).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const mo = String(d.getMonth() + 1).padStart(2, '0');
+          return `${mo}-${dd} ${hh}:${mm}`;
+        },
+      },
+      data: timestamps,
+      type: 'category',
+    },
+    yAxis: {
+      axisLabel: { formatter: '{value}' },
+      type: 'value',
+    },
+  });
 }
 
 /** 渲染散点图（证据链中的 PV-OP 散点） */
@@ -139,24 +280,6 @@ function renderScatterChart() {
   });
 }
 
-function handleTimeWindowChange() {
-  loadDetail();
-}
-
-function handleViewWaveform() {
-  router.push({
-    path: '/diagnosis/waveform',
-    query: { loopId },
-  });
-}
-
-function handleViewTracker() {
-  router.push({
-    path: '/diagnosis/tracker',
-    query: { loopId },
-  });
-}
-
 function handleBack() {
   router.back();
 }
@@ -215,7 +338,6 @@ onMounted(() => {
                 option-type="button"
                 button-style="solid"
                 size="small"
-                @change="handleTimeWindowChange"
               />
             </div>
           </template>
@@ -250,6 +372,19 @@ onMounted(() => {
           </Descriptions>
         </Card>
 
+        <!-- 上部：时序分析区（FDS §5.4） -->
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card title="时序波形">
+            <Spin :spinning="waveformLoading">
+              <EchartsUI ref="waveformChartRef" height="320px" />
+            </Spin>
+          </Card>
+          <Card title="PV-OP 散点图">
+            <EchartsUI ref="scatterChartRef" height="320px" />
+          </Card>
+        </div>
+
+        <!-- 下部：诊断结论区（FDS §5.4） -->
         <!-- 诊断标签数组 -->
         <Card title="诊断标签">
           <div
@@ -286,15 +421,9 @@ onMounted(() => {
           <div v-else class="py-8 text-center text-gray-400">暂无诊断标签</div>
         </Card>
 
-        <!-- 证据链 -->
+        <!-- 证据链（推理过程） -->
         <Card title="证据链">
           <div v-if="detail" class="space-y-3">
-            <!-- 散点图 -->
-            <div>
-              <div class="mb-2 font-medium">PV-OP 散点图</div>
-              <EchartsUI ref="scatterChartRef" height="320px" />
-            </div>
-
             <!-- 推理过程 -->
             <div v-if="detail.evidenceChain?.reasoning">
               <div class="mb-2 font-medium">推理过程</div>
@@ -302,17 +431,8 @@ onMounted(() => {
                 {{ detail.evidenceChain.reasoning }}
               </div>
             </div>
-
-            <!-- 波形 URL -->
-            <div v-if="detail.evidenceChain?.waveformUrl">
-              <div class="mb-2 font-medium">波形 URL</div>
-              <a
-                :href="detail.evidenceChain.waveformUrl"
-                target="_blank"
-                class="text-blue-600 underline"
-              >
-                {{ detail.evidenceChain.waveformUrl }}
-              </a>
+            <div v-else class="py-4 text-center text-gray-400">
+              暂无推理过程
             </div>
           </div>
           <div v-else class="py-8 text-center text-gray-400">暂无证据链</div>
@@ -340,10 +460,17 @@ onMounted(() => {
         <!-- 操作按钮 -->
         <div class="flex justify-center gap-3">
           <Button @click="handleBack">返回</Button>
-          <Button type="primary" @click="handleViewWaveform"> 查看波形 </Button>
-          <Button @click="handleViewTracker">异常跟踪</Button>
+          <Button @click="trackerDrawerVisible = true">异常跟踪</Button>
         </div>
       </div>
     </Spin>
+
+    <!-- 异常跟踪 Drawer（与 P1-2 约定接口） -->
+    <Tracker
+      v-if="trackerDrawerVisible"
+      :drawer-mode="true"
+      :loop-id="loopId"
+      @close="trackerDrawerVisible = false"
+    />
   </Page>
 </template>

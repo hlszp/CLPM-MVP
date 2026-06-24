@@ -119,12 +119,13 @@ async def update_plant_node_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
-    """更新工厂节点名称（仅 ADMIN）。"""
+    """更新工厂节点（名称 + 是否纳入性能评估，仅 ADMIN）。"""
     data = await update_plant_node(
         db=db,
         node_id=node_id,
         name=body.name,
         operator=user.username,
+        is_kpi_enabled=body.isKpiEnabled,
     )
     return success(data=data, message="更新成功")
 

@@ -15,9 +15,9 @@ import type { UploadProps } from 'ant-design-vue';
  * - 导入/导出：Excel 批量导入导出
  * - RBAC: ADMIN/IC_ENGINEER 可写
  */
-import type { AasApi } from '#/api/aas';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { TagApi } from '#/api/tag';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
@@ -43,7 +43,7 @@ import {
   Upload,
 } from 'ant-design-vue';
 
-import { getAasTagsApi } from '#/api/aas';
+import { getTagListApi } from '#/api/tag';
 import {
   createLoopApi,
   deleteLoopApi,
@@ -213,7 +213,7 @@ const currentLoopForTag = ref<LoopApi.LoopListItem | null>(null);
 const tagData = ref<LoopApi.LoopTagsResult | null>(null);
 
 // Available tags from AAS registry
-const availableTags = ref<AasApi.AasTag[]>([]);
+const availableTags = ref<TagApi.TagItem[]>([]);
 const tagSearchLoading = ref(false);
 
 // 7 slot mapping state (uses undefined for Select compatibility, converts to null on save)
@@ -502,7 +502,7 @@ function handleOpenTagMapping(record: LoopApi.LoopListItem) {
 async function loadAvailableTags(keyword?: string) {
   tagSearchLoading.value = true;
   try {
-    const data = await getAasTagsApi({
+    const data = await getTagListApi({
       keyword: keyword || undefined,
       page: 1,
       pageSize: 100,
@@ -593,27 +593,27 @@ async function handleSaveTagMapping() {
 // ===== 自动匹配 Tag =====
 const autoMatching = ref(false);
 
-/** 后缀 → 槽位映射规则 */
-const suffixSlotRules: { suffixes: string[]; key: keyof typeof slotState }[] = [
-  { suffixes: ['_PV'], key: 'pv' },
-  { suffixes: ['_SP'], key: 'sp' },
-  { suffixes: ['_OUT', '_OP'], key: 'op' },
-  { suffixes: ['_MODE'], key: 'mode' },
-  { suffixes: ['_KP', '_PID_P'], key: 'pid_p' },
-  { suffixes: ['_TI', '_PID_I'], key: 'pid_i' },
-  { suffixes: ['_TD', '_PID_D'], key: 'pid_d' },
-];
+/** tagType → 槽位映射（/tags 端点返回的 tagType 字段直接对应槽位） */
+const tagTypeSlotMap: Record<string, keyof typeof slotState> = {
+  PV: 'pv',
+  SP: 'sp',
+  OP: 'op',
+  MODE: 'mode',
+  PID_P: 'pid_p',
+  PID_I: 'pid_i',
+  PID_D: 'pid_d',
+};
 
-/** 自动匹配：根据回路位号前缀搜索测点并按后缀匹配到槽位 */
+/** 自动匹配：根据回路位号前缀搜索测点并按 tagType 匹配到槽位 */
 async function handleAutoMatch() {
   if (!currentLoopForTag.value) return;
   const prefix = currentLoopForTag.value.tagName.toUpperCase();
   autoMatching.value = true;
   try {
-    const data = await getAasTagsApi({
+    const data = await getTagListApi({
       keyword: currentLoopForTag.value.tagName,
       page: 1,
-      pageSize: 200,
+      pageSize: 100,
     });
     // 仅保留以回路位号为前缀的测点
     const matchedTags = data.items.filter((t) =>
@@ -621,9 +621,9 @@ async function handleAutoMatch() {
     );
 
     // 合并到 availableTags，确保下拉可选
-    const existingIds = new Set(availableTags.value.map((t) => t.tagId));
+    const existingIds = new Set(availableTags.value.map((t) => t.id));
     for (const t of matchedTags) {
-      if (!existingIds.has(t.tagId)) {
+      if (!existingIds.has(t.id)) {
         availableTags.value.push(t);
       }
     }
@@ -637,19 +637,13 @@ async function handleAutoMatch() {
     slotState.pid_i = undefined;
     slotState.pid_d = undefined;
 
-    // 按后缀匹配
+    // 按 tagType 直接匹配到槽位
     let matchedCount = 0;
     for (const tag of matchedTags) {
-      const name = tag.tagName.toUpperCase();
-      for (const rule of suffixSlotRules) {
-        if (rule.suffixes.some((s) => name.endsWith(s))) {
-          // 仅在槽位为空时填充，避免重复覆盖
-          if (!slotState[rule.key]) {
-            slotState[rule.key] = tag.tagId;
-            matchedCount++;
-          }
-          break;
-        }
+      const slotKey = tagTypeSlotMap[tag.tagType];
+      if (slotKey && !slotState[slotKey]) {
+        slotState[slotKey] = tag.id;
+        matchedCount++;
       }
     }
 
@@ -1096,8 +1090,8 @@ onMounted(() => {
               :loading="tagSearchLoading"
               :options="
                 availableTags.map((t) => ({
-                  label: `${t.tagName}${t.description ? ` (${t.description})` : ''}`,
-                  value: t.tagId,
+                  label: `${t.tagName}${t.tagDescription ? ` (${t.tagDescription})` : ''}`,
+                  value: t.id,
                 }))
               "
               :filter-option="false"

@@ -22,7 +22,7 @@ export type Granularity = 'day' | 'hour' | 'month' | 'week';
 export type ExecutionStatus = 'FAILED' | 'RUNNING' | 'SUCCESS';
 
 /** 处理状态 */
-export type ActionStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'IGNORED';
+export type ActionStatus = 'PENDING' | 'IN_PROGRESS' | 'IMPLEMENTED' | 'IGNORED';
 
 export namespace MetricApi {
   /** 指标阈值 */

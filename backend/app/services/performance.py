@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -28,6 +28,7 @@ from app.models.audit import SysAuditLog
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly, MetricConfig
+from app.models.node_kpi import KpiNodeSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.tracker import ActionTracker
 from app.schemas.performance import WeightSumValidator
@@ -65,6 +66,7 @@ KPI_NAME_MAP = {
     "oscillation_rate": "振荡率",
     "saturation_rate": "饱和率",
     "composite_score": "综合评分",
+    "auto_loop_ratio": "投自动回路占比",
 }
 
 # 时间窗映射（基于"今天"为基准）
@@ -328,31 +330,38 @@ async def get_board(
         if node:
             plant_node_name = node.name
 
-    # 聚合 KPI 卡片（SQL 聚合）
-    kpi_cards = await _aggregate_kpi_cards(db, plant_node_id, start, now)
-    kpi_summary = await _aggregate_kpi_summary(db, plant_node_id, start, now)
+    # --- 统一数据通路：从节点级快照表读取（与 /nodes/* API 一致） ---
+    kpi_cards, kpi_summary = await _aggregate_node_board(db, plant_node_id, start, now)
 
-    # 平稳率趋势（SQL 按小时聚合）
-    steady_trend = await _aggregate_steady_trend(db, plant_node_id, start, now)
+    # 平稳率趋势（从节点级快照按小时聚合）
+    steady_trend = await _aggregate_node_steady_trend(db, plant_node_id, start, now)
 
-    # 部分数据警告（SQL 按状态分组计数）
-    count_stmt = _apply_snapshot_filters(
-        select(KpiSnapshotHourly.status, func.count().label("cnt")),
-        plant_node_id=plant_node_id,
-        start=start,
-        end=now,
-    ).group_by(KpiSnapshotHourly.status)
-    count_result = await db.execute(count_stmt)
+    # 部分数据警告（从节点级快照状态计数）
+    node_count_stmt = select(KpiNodeSnapshotHourly.status, func.count().label("cnt"))
+    if plant_node_id:
+        node_count_stmt = node_count_stmt.where(
+            KpiNodeSnapshotHourly.plant_node_id == plant_node_id
+        )
+    else:
+        # 全厂：仅统计 is_kpi_enabled 的节点
+        enabled_ids = select(PlantNode.id).where(PlantNode.is_kpi_enabled.is_(True))
+        node_count_stmt = node_count_stmt.where(
+            KpiNodeSnapshotHourly.plant_node_id.in_(enabled_ids)
+        )
+    node_count_stmt = node_count_stmt.where(
+        KpiNodeSnapshotHourly.ts_start >= start,
+        KpiNodeSnapshotHourly.ts_start <= now,
+    ).group_by(KpiNodeSnapshotHourly.status)
+    count_result = await db.execute(node_count_stmt)
     status_counts = {r.status: r.cnt for r in count_result.all()}
     inconclusive_count = status_counts.get("INCONCLUSIVE", 0)
-    partial_count = status_counts.get("PARTIAL", 0)
     partial_warning = {
-        "active": inconclusive_count > 0 or partial_count > 0,
+        "active": inconclusive_count > 0,
         "inconclusiveCount": inconclusive_count,
-        "partialCount": partial_count,
+        "partialCount": 0,
         "message": (
-            f"存在 {inconclusive_count} 个不确定结果、{partial_count} 个部分结果"
-            if inconclusive_count > 0 or partial_count > 0
+            f"存在 {inconclusive_count} 个不确定结果"
+            if inconclusive_count > 0
             else None
         ),
     }
@@ -376,6 +385,187 @@ async def get_board(
         logger.warning("写入看板缓存失败: %s", exc)
 
     return data
+
+
+# ---------------------------------------------------------------------------
+# 看板辅助函数（统一从节点级快照表读取）
+# ---------------------------------------------------------------------------
+
+
+def _node_kpi_fields() -> tuple[str, ...]:
+    """节点级快照中的 KPI 字段列表。"""
+    return (
+        "good_value_rate",
+        "auto_mode_rate",
+        "effective_auto_rate",
+        "steady_rate",
+        "accuracy_rate",
+        "fast_response_rate",
+        "oscillation_rate",
+        "saturation_rate",
+    )
+
+
+async def _aggregate_node_board(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+) -> tuple[list[dict], dict]:
+    """从节点级快照表聚合看板 KPI 卡片和汇总。
+
+    统一数据通路：与 /performance/nodes/* API 读取同一张 kpi_node_snapshot_hourly 表。
+
+    - 指定 plant_node_id：取该节点最新快照
+    - 未指定：取所有 is_kpi_enabled 节点的最新快照，按 loop_count 加权平均
+    """
+    # 构建基础查询：取每个节点在时间窗内最新一条快照
+    base = (
+        select(KpiNodeSnapshotHourly)
+        .where(
+            KpiNodeSnapshotHourly.ts_start >= start,
+            KpiNodeSnapshotHourly.ts_start <= end,
+        )
+        .distinct(KpiNodeSnapshotHourly.plant_node_id)
+        .order_by(
+            KpiNodeSnapshotHourly.plant_node_id,
+            KpiNodeSnapshotHourly.ts_start.desc(),
+        )
+    )
+
+    if plant_node_id:
+        base = base.where(KpiNodeSnapshotHourly.plant_node_id == plant_node_id)
+    else:
+        # 全厂：仅 is_kpi_enabled 的节点
+        enabled_ids = select(PlantNode.id).where(PlantNode.is_kpi_enabled.is_(True))
+        base = base.where(KpiNodeSnapshotHourly.plant_node_id.in_(enabled_ids))
+
+    result = await db.execute(base)
+    snaps = result.scalars().all()
+
+    if not snaps:
+        return _empty_kpi_cards(), _empty_kpi_summary()
+
+    # 聚合 KPI 值（多节点时按 loop_count 加权平均）
+    fields = _node_kpi_fields()
+    total_weight = sum(s.loop_count or 1 for s in snaps)
+
+    def weighted_avg(field: str) -> float | None:
+        numerator = sum(
+            (getattr(s, field) or 0) * (s.loop_count or 1)
+            for s in snaps
+            if getattr(s, field) is not None
+        )
+        denominator = sum(
+            (s.loop_count or 1) for s in snaps if getattr(s, field) is not None
+        )
+        if denominator == 0:
+            return None
+        return round(float(numerator) / denominator, 2)
+
+    # 构建 KPI 卡片
+    cards: list[dict] = []
+    for code in KPI_METRIC_CODES:
+        val = weighted_avg(code)
+        cards.append({
+            "metricKey": code,
+            "metricName": KPI_NAME_MAP.get(code, code),
+            "value": val,
+            "unit": "%",
+            "status": _kpi_status(code, val, _default_threshold(code)),
+            "algorithmVersion": ALGORITHM_VERSION,
+        })
+
+    # 综合评分卡片
+    score_avg = weighted_avg("score")
+    cards.append({
+        "metricKey": "composite_score",
+        "metricName": KPI_NAME_MAP["composite_score"],
+        "value": score_avg,
+        "unit": "",
+        "status": _score_to_status(score_avg),
+        "algorithmVersion": ALGORITHM_VERSION,
+    })
+
+    # 构建 KPI 汇总
+    auto_loop_ratio = weighted_avg("auto_loop_ratio")
+    realtime_auto_rate = weighted_avg("realtime_auto_rate")
+    summary = {
+        "good_value_rate": weighted_avg("good_value_rate"),
+        "auto_mode_rate": weighted_avg("auto_mode_rate"),
+        "effective_auto_rate": weighted_avg("effective_auto_rate"),
+        "steady_rate": weighted_avg("steady_rate"),
+        "accuracy_rate": weighted_avg("accuracy_rate"),
+        "fast_response_rate": weighted_avg("fast_response_rate"),
+        "oscillation_rate": weighted_avg("oscillation_rate"),
+        "saturation_rate": weighted_avg("saturation_rate"),
+        "composite_score": score_avg,
+        "auto_loop_ratio": auto_loop_ratio,
+        "realtime_auto_rate": realtime_auto_rate,
+        "loop_count": total_weight,
+        "node_count": len(snaps),
+        "status": _score_to_status(score_avg),
+        "algorithm_version": ALGORITHM_VERSION,
+    }
+
+    return cards, summary
+
+
+def _empty_kpi_summary() -> dict:
+    """空 KPI 汇总。"""
+    return {
+        "good_value_rate": None,
+        "auto_mode_rate": None,
+        "effective_auto_rate": None,
+        "steady_rate": None,
+        "accuracy_rate": None,
+        "fast_response_rate": None,
+        "oscillation_rate": None,
+        "saturation_rate": None,
+        "composite_score": None,
+        "auto_loop_ratio": None,
+        "realtime_auto_rate": None,
+        "loop_count": 0,
+        "node_count": 0,
+        "status": "INCONCLUSIVE",
+        "algorithm_version": ALGORITHM_VERSION,
+    }
+
+
+async def _aggregate_node_steady_trend(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+) -> dict:
+    """从节点级快照表聚合平稳率趋势（按小时分组）。"""
+    hour_col = func.date_trunc("hour", KpiNodeSnapshotHourly.ts_start).label("hour")
+    avg_col = func.avg(KpiNodeSnapshotHourly.steady_rate).label("avg_steady")
+
+    stmt = (
+        select(hour_col, avg_col)
+        .where(
+            KpiNodeSnapshotHourly.ts_start >= start,
+            KpiNodeSnapshotHourly.ts_start <= end,
+        )
+        .group_by(hour_col)
+        .order_by(hour_col.asc())
+    )
+
+    if plant_node_id:
+        stmt = stmt.where(KpiNodeSnapshotHourly.plant_node_id == plant_node_id)
+    else:
+        enabled_ids = select(PlantNode.id).where(PlantNode.is_kpi_enabled.is_(True))
+        stmt = stmt.where(KpiNodeSnapshotHourly.plant_node_id.in_(enabled_ids))
+
+    result = await db.execute(stmt)
+    rows = result.all()
+    timestamps = [r.hour.strftime("%Y-%m-%dT%H:00:00") for r in rows]
+    values = [
+        round(float(r.avg_steady), 2) if r.avg_steady is not None else None
+        for r in rows
+    ]
+    return {"timestamps": timestamps, "values": values}
 
 
 # ---------------------------------------------------------------------------
@@ -706,12 +896,24 @@ async def _query_snapshots(
 
 
 def _score_to_status(score: Decimal | float | None) -> str:
-    """综合评分 → 状态枚举。"""
+    """综合评分 → 5 级状态枚举（对齐 GB/T 44693.2-2024 §6.3 性能分级）。
+
+    5 级划分：
+        - EXCELLENT (优):  score >= 90
+        - GOOD (良):       80 <= score < 90
+        - FAIR (中):       70 <= score < 80
+        - WARNING (差):    60 <= score < 70
+        - POOR (劣):       score < 60
+    """
     if score is None:
         return "INCONCLUSIVE"
     s = float(score)
+    if s >= 90:
+        return "EXCELLENT"
     if s >= 80:
         return "GOOD"
+    if s >= 70:
+        return "FAIR"
     if s >= 60:
         return "WARNING"
     return "POOR"
@@ -847,11 +1049,45 @@ async def _aggregate_kpi_summary(
     start: datetime,
     end: datetime,
 ) -> dict:
-    """聚合 KPI 汇总 — SQL 聚合。"""
+    """聚合 KPI 汇总 — 按回路重要度加权聚合（对齐 GB/T 44693.2-2024 §6.2）。
+
+    P0#12: 装置级加权聚合 — 使用 LoopLedger.score_weight 作为权重，
+           加权平均公式: weighted_avg = Σ(value_i × w_i) / Σ(w_i)
+           权重为 NULL 时按 1.0 处理（等权）。
+
+    P0#11: 投自动回路占比 — 统计 auto_mode_rate > 0 的回路数占比，
+           反映装置内有多少回路实际投入自动控制。
+    """
     fields = (*KPI_METRIC_CODES, "score")
-    avg_cols = [func.avg(getattr(KpiSnapshotHourly, f)).label(f) for f in fields]
+    # 使用 COALESCE 处理 NULL 权重（默认 1.0），确保不丢失数据点
+    weight_col = func.coalesce(LoopLedger.score_weight, Decimal("1.0")).label("w")
+    # SUM(weight) 可能因所有权重显式为 0 而等于 0，使用 NULLIF 避免 SQL 除零
+    weight_sum_col = func.nullif(func.sum(weight_col), 0).label("weight_sum")
+
+    # 加权聚合：Σ(value × w) / Σ(w)
+    # NULLIF 确保 SUM(w)=0 时返回 NULL 而非抛除零错误
+    weighted_cols = []
+    for f in fields:
+        col = getattr(KpiSnapshotHourly, f)
+        # SUM(value * w) / NULLIF(SUM(w), 0)
+        weighted_cols.append(
+            (func.sum(col * weight_col) / weight_sum_col).label(f)
+        )
+
+    # 投自动回路占比：COUNT(auto_mode_rate > 0) / COUNT(*)
+    auto_loop_count = func.sum(
+        func.coalesce(
+            func.cast(
+                KpiSnapshotHourly.auto_mode_rate > 0,
+                Integer,
+            ),
+            0,
+        )
+    ).label("auto_loop_count")
+    total_count = func.count().label("cnt")
+
     stmt = _apply_snapshot_filters(
-        select(func.count().label("cnt"), *avg_cols),
+        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols),
         plant_node_id=plant_node_id,
         start=start,
         end=end,
@@ -870,10 +1106,21 @@ async def _aggregate_kpi_summary(
         "oscillation_rate": None,
         "saturation_rate": None,
         "composite_score": None,
+        "auto_loop_ratio": None,
         "status": "INCONCLUSIVE",
         "algorithm_version": ALGORITHM_VERSION,
     }
     if row.cnt == 0:
+        return empty
+
+    # 除零保护：SUM(weight)=0（所有权重显式为 0）时返回空结果
+    weight_sum_val = _to_float(row.weight_sum)
+    if weight_sum_val is None or weight_sum_val == 0:
+        logger.warning(
+            "[装置级聚合] plant_node_id=%s, SUM(weight)=%s（为 0 或 NULL），"
+            "无法计算加权平均，返回 INCONCLUSIVE",
+            plant_node_id, weight_sum_val,
+        )
         return empty
 
     def avg_value(field: str) -> float | None:
@@ -881,6 +1128,17 @@ async def _aggregate_kpi_summary(
         return round(val, 2) if val is not None else None
 
     score_avg = avg_value("score")
+    # 投自动回路占比 = auto_loop_count / total_count × 100
+    auto_loop_count_val = _to_float(row.auto_loop_count) or 0.0
+    auto_loop_ratio = round(auto_loop_count_val / float(row.cnt) * 100, 2)
+
+    logger.debug(
+        "[装置级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%.0f, "
+        "投自动回路占比=%.2f%%, SUM(weight)=%.4f, 加权综合评分=%s",
+        plant_node_id, row.cnt, auto_loop_count_val,
+        auto_loop_ratio, weight_sum_val, score_avg,
+    )
+
     return {
         "good_value_rate": avg_value("good_value_rate"),
         "auto_mode_rate": avg_value("auto_mode_rate"),
@@ -891,6 +1149,7 @@ async def _aggregate_kpi_summary(
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
         "composite_score": score_avg,
+        "auto_loop_ratio": auto_loop_ratio,
         "status": _score_to_status(score_avg),
         "algorithm_version": ALGORITHM_VERSION,
     }
