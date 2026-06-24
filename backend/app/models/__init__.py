@@ -11,6 +11,7 @@ from app.models.base import Base, TimestampMixin
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
 from app.models.metric import KpiSnapshotHourly, MetricConfig
 from app.models.plant_node import PlantNode
 from app.models.report import ReportRecord
@@ -28,6 +29,9 @@ __all__ = [
     "PlantNode",
     "LoopLedger",
     "LoopTagMapping",
+    "LoopModeMapping",
+    "LoopTypeWeight",
+    "LoopLevelWeight",
     "TagRegistry",
     "MetricConfig",
     "DiagnosisConfig",

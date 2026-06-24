@@ -7,8 +7,9 @@
 -- 说明: 本脚本遵循 ADS v3.0 "存算分离" 原则，承载关系型业务域数据模型。
 --       共 14 张表（DDS v3.0 中 13 张 + 新增 sys_user 认证表）。
 -- 变更记录:
---   v1.0 2026-06-20: 初始版本（DDS v3.0 14 张表）
+-- v1.0 2026-06-20: 初始版本（DDS v3.0 14 张表）
 --   v1.1 2026-06-22: 算法设计同步DDL变更（metric_config/kpi_snapshot_hourly/diagnosis_config/tuning_record 4表字段调整）
+--   v1.2 2026-06-24: 重构方案 P0 — 新增 loop_mode_mapping/loop_type_weight/loop_level_weight 三表 + loop_ledger 加 level/modeattr_tag_id/data_retention_days 字段
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -87,9 +88,14 @@ CREATE TABLE IF NOT EXISTS loop_ledger (
     score_weights   JSONB,
     remark          VARCHAR(500),
     updated_by      VARCHAR(50),
+    level           SMALLINT       DEFAULT 3,
+    modeattr_tag_id UUID,
+    data_retention_days INTEGER,
     CONSTRAINT uk_loop_ledger_tag_name UNIQUE (tag_name),
     CONSTRAINT fk_loop_ledger_unit_id  FOREIGN KEY (unit_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
-    CONSTRAINT ck_loop_ledger_status   CHECK (status IN ('READY', 'PARTIAL', 'INACTIVE'))
+    CONSTRAINT fk_loop_ledger_modeattr FOREIGN KEY (modeattr_tag_id) REFERENCES tag_registry(id) ON DELETE RESTRICT,
+    CONSTRAINT ck_loop_ledger_status   CHECK (status IN ('READY', 'PARTIAL', 'INACTIVE')),
+    CONSTRAINT ck_loop_ledger_level    CHECK (level IS NULL OR level IN (1, 2, 3))
 );
 
 COMMENT ON TABLE  loop_ledger IS '回路台账（系统核心实体）';
@@ -107,6 +113,9 @@ COMMENT ON COLUMN loop_ledger.created_by IS '创建人';
 COMMENT ON COLUMN loop_ledger.score_weights IS '6 大 KPI 评分权重 JSONB（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate）';
 COMMENT ON COLUMN loop_ledger.remark IS '备注（最长 500 字符）';
 COMMENT ON COLUMN loop_ledger.updated_by IS '最后更新人';
+COMMENT ON COLUMN loop_ledger.level IS '回路级别 1/2/3（默认3，对齐 GB/T 44693.2-2024 附表2，用于装置级聚合加权）';
+COMMENT ON COLUMN loop_ledger.modeattr_tag_id IS 'APC 识别位号 ID（位号值为 program 时算自动控制，影响有效自控率和投用率）';
+COMMENT ON COLUMN loop_ledger.data_retention_days IS '数据保存周期（天），NULL 表示用系统默认';
 
 -- =============================================================================
 -- 4. tag_registry (AAS Tag 注册表)
@@ -487,6 +496,104 @@ COMMENT ON COLUMN sys_config.updated_by IS '最后更新人';
 COMMENT ON COLUMN sys_config.updated_at IS '最后更新时间';
 
 -- =============================================================================
+-- 16. loop_mode_mapping (回路投用定义) [重构方案 v1.2 新增]
+--   MODE 值到控制模式的映射，用于实时自控率/有效自控率/投用率计算
+--   不硬编码 {1,2,3}=自动，由用户按 DCS 实际语义配置
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS loop_mode_mapping (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    loop_id         UUID            NOT NULL,
+    mode_value      INTEGER         NOT NULL,
+    mode_label      VARCHAR(20)     NOT NULL,
+    is_auto         BOOLEAN         NOT NULL DEFAULT FALSE,
+    is_effective    BOOLEAN         NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_loop_mode_mapping_loop_mode UNIQUE (loop_id, mode_value),
+    CONSTRAINT fk_loop_mode_mapping_loop_id   FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT ck_loop_mode_mapping_label    CHECK (mode_label IN ('AUTO', 'CAS', 'REMOTE', 'APC', 'MANUAL'))
+);
+
+COMMENT ON TABLE  loop_mode_mapping IS '回路投用定义（MODE 值到控制模式的映射，用于实时自控率/有效自控率计算）';
+COMMENT ON COLUMN loop_mode_mapping.id IS '主键';
+COMMENT ON COLUMN loop_mode_mapping.loop_id IS '关联回路 ID';
+COMMENT ON COLUMN loop_mode_mapping.mode_value IS 'DCS 返回的 MODE 值（整数）';
+COMMENT ON COLUMN loop_mode_mapping.mode_label IS '控制模式：AUTO/CAS/REMOTE/APC/MANUAL';
+COMMENT ON COLUMN loop_mode_mapping.is_auto IS '是否算自动控制（AUTO/CAS/REMOTE/APC 为 TRUE）';
+COMMENT ON COLUMN loop_mode_mapping.is_effective IS '是否算有效自动（不饱和的自动模式为 TRUE）';
+COMMENT ON COLUMN loop_mode_mapping.created_at IS '创建时间';
+
+-- =============================================================================
+-- 17. loop_type_weight (回路类型权重) [重构方案 v1.2 新增]
+--   对齐 GB/T 44693.2-2024 附表1，用于回路级综合评分加权
+--   公式：P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS loop_type_weight (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    loop_type       VARCHAR(20)     NOT NULL,
+    type_name       VARCHAR(50)     NOT NULL,
+    weight_a        DECIMAL(3,2)    NOT NULL,
+    weight_f        DECIMAL(3,2)    NOT NULL,
+    weight_s        DECIMAL(3,2)    NOT NULL,
+    description     TEXT,
+    updated_by      VARCHAR(50),
+    updated_at      TIMESTAMP       DEFAULT NOW(),
+    CONSTRAINT uk_loop_type_weight_type UNIQUE (loop_type),
+    CONSTRAINT ck_loop_type_weight_type  CHECK (loop_type IN ('STABLE', 'SLOW', 'FAST', 'LOGIC'))
+);
+
+COMMENT ON TABLE  loop_type_weight IS '回路类型权重（对齐 GB/T 44693.2-2024 附表1，用于回路级综合评分）';
+COMMENT ON COLUMN loop_type_weight.id IS '主键';
+COMMENT ON COLUMN loop_type_weight.loop_type IS '回路类型：STABLE/SLOW/FAST/LOGIC';
+COMMENT ON COLUMN loop_type_weight.type_name IS '类型名称（稳定型/慢速型/快速型/逻辑型）';
+COMMENT ON COLUMN loop_type_weight.weight_a IS '准确率权重 a';
+COMMENT ON COLUMN loop_type_weight.weight_f IS '快速率权重 f';
+COMMENT ON COLUMN loop_type_weight.weight_s IS '平稳率权重 s';
+COMMENT ON COLUMN loop_type_weight.description IS '类型描述';
+COMMENT ON COLUMN loop_type_weight.updated_by IS '最后更新人';
+COMMENT ON COLUMN loop_type_weight.updated_at IS '最后更新时间';
+
+-- 初始数据（国标附表1）
+INSERT INTO loop_type_weight (loop_type, type_name, weight_a, weight_f, weight_s, description) VALUES
+    ('STABLE', '稳定型', 0.2, 0.3, 0.5, '温度/压力控制，a/f/s 相似'),
+    ('SLOW',   '慢速型', 0.3, 0.1, 0.6, '缓慢调节，f 偏小'),
+    ('FAST',   '快速型', 0.2, 0.5, 0.3, '副回路/速度控制，f 偏大'),
+    ('LOGIC',  '逻辑型', 0.0, 0.5, 0.6, '逻辑规则控制，a 偏小')
+ON CONFLICT (loop_type) DO NOTHING;
+
+-- =============================================================================
+-- 18. loop_level_weight (回路级别权重) [重构方案 v1.2 新增]
+--   对齐 GB/T 44693.2-2024 附表2，用于装置级聚合加权
+--   公式：装置平均性能评分 = Σ(w_i * P_i) / Σw_i
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS loop_level_weight (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    level           INTEGER         NOT NULL,
+    level_name      VARCHAR(50)     NOT NULL,
+    weight          DECIMAL(3,1)    NOT NULL,
+    description     TEXT,
+    updated_by      VARCHAR(50),
+    updated_at      TIMESTAMP       DEFAULT NOW(),
+    CONSTRAINT uk_loop_level_weight_level UNIQUE (level),
+    CONSTRAINT ck_loop_level_weight_level  CHECK (level IN (1, 2, 3))
+);
+
+COMMENT ON TABLE  loop_level_weight IS '回路级别权重（对齐 GB/T 44693.2-2024 附表2，用于装置级聚合加权）';
+COMMENT ON COLUMN loop_level_weight.id IS '主键';
+COMMENT ON COLUMN loop_level_weight.level IS '回路级别：1/2/3';
+COMMENT ON COLUMN loop_level_weight.level_name IS '级别名称（一级/二级/三级）';
+COMMENT ON COLUMN loop_level_weight.weight IS '级别权重：3.0/2.0/1.0';
+COMMENT ON COLUMN loop_level_weight.description IS '级别描述';
+COMMENT ON COLUMN loop_level_weight.updated_by IS '最后更新人';
+COMMENT ON COLUMN loop_level_weight.updated_at IS '最后更新时间';
+
+-- 初始数据（国标附表2）
+INSERT INTO loop_level_weight (level, level_name, weight, description) VALUES
+    (1, '一级', 3.0, '决定性影响：负荷控制/联锁相关'),
+    (2, '二级', 2.0, '辅助保障：稳定性/设备安全'),
+    (3, '三级', 1.0, '次要辅助：维持辅助设备运行')
+ON CONFLICT (level) DO NOTHING;
+
+-- =============================================================================
 -- 索引（高频查询字段）
 -- =============================================================================
 
@@ -536,6 +643,12 @@ CREATE INDEX IF NOT EXISTS idx_sys_audit_log_target_type     ON sys_audit_log (t
 
 -- sys_user 索引（username/email 已由唯一约束自动创建索引）
 CREATE INDEX IF NOT EXISTS idx_sys_user_is_active ON sys_user (is_active);
+
+-- loop_ledger 新增字段索引（重构方案 v1.2）
+CREATE INDEX IF NOT EXISTS idx_loop_ledger_level ON loop_ledger (level);
+
+-- loop_mode_mapping 索引（重构方案 v1.2）
+CREATE INDEX IF NOT EXISTS idx_loop_mode_mapping_loop_id ON loop_mode_mapping (loop_id);
 
 -- =============================================================================
 -- 脚本结束

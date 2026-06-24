@@ -649,6 +649,7 @@ class TestDoCalculate:
             side_effect=[
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([_make_metric_config()]),
+                _make_scalars_mock([]),  # loop_type_weight 查询（v2 算法）
             ]
         )
         mock_session.commit = AsyncMock()
@@ -680,6 +681,7 @@ class TestDoCalculate:
             side_effect=[
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([_make_metric_config()]),
+                _make_scalars_mock([]),  # loop_type_weight 查询（v2 算法）
             ]
         )
         mock_session.commit = AsyncMock()
@@ -710,6 +712,7 @@ class TestDoCalculate:
             side_effect=[
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([_make_metric_config()]),
+                _make_scalars_mock([]),  # loop_type_weight 查询（v2 算法）
             ]
         )
         mock_session.commit = AsyncMock()
@@ -768,6 +771,7 @@ class TestDoCalculateSingleLoop:
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([_make_metric_config()]),
+                _make_scalars_mock([]),  # loop_type_weight 查询（v2 算法）
             ]
         )
         mock_session.commit = AsyncMock()
@@ -796,6 +800,7 @@ class TestDoCalculateSingleLoop:
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([_make_metric_config()]),
+                _make_scalars_mock([]),  # loop_type_weight 查询（v2 算法）
             ]
         )
         mock_session.commit = AsyncMock()
@@ -826,6 +831,7 @@ class TestDoCalculateSingleLoop:
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([_make_metric_config()]),
+                _make_scalars_mock([]),  # loop_type_weight 查询（v2 算法）
             ]
         )
         mock_session.commit = AsyncMock()

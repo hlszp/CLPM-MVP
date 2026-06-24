@@ -33,7 +33,8 @@ from app.tasks.celery_app import AsyncTask, celery_app
 logger = logging.getLogger(__name__)
 
 # 算法版本号
-ALGORITHM_VERSION = "KPI_CALC_v1.0"
+ALGORITHM_VERSION = "KPI_CALC_v2.0"
+ALGORITHM_VERSION_V1 = "KPI_CALC_v1.0"  # 向后兼容回退
 
 # 数据不足阈值：Good 数据占比 < 20% 视为 INCONCLUSIVE
 MIN_GOOD_RATIO = 0.20
@@ -138,6 +139,11 @@ async def _do_calculate() -> dict:
         metric_result = await db.execute(select(MetricConfig))
         metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
 
+        # 2.1 批量加载回路类型权重（v2 算法用）
+        from app.services.loop_config import get_loop_type_weights_map
+        type_weights = await get_loop_type_weights_map(db)
+        logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
+
     # 3. 并发计算（信号量限制并发数，每协程独立 session 避免并发共享）
     sem = asyncio.Semaphore(CONCURRENCY)
 
@@ -153,6 +159,7 @@ async def _do_calculate() -> dict:
                         ts_start=ts_start,
                         ts_end=ts_end,
                         query_trend_fn=query_trend_data,
+                        type_weights=type_weights,
                     )
                     await worker_db.commit()
                     return result
@@ -221,6 +228,10 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
         metric_result = await db.execute(select(MetricConfig))
         metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
 
+        # 加载回路类型权重（v2 算法用）
+        from app.services.loop_config import get_loop_type_weights_map
+        type_weights = await get_loop_type_weights_map(db)
+
         snap = await _calculate_loop_kpi(
             db=db,
             loop=loop,
@@ -228,6 +239,7 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
             ts_start=ts_start_dt,
             ts_end=ts_end_dt,
             query_trend_fn=query_trend_data,
+            type_weights=type_weights,
         )
         await db.commit()
         return snap or {"loopId": loop_id, "status": "FAILED"}
@@ -240,6 +252,7 @@ async def _calculate_loop_kpi(
     ts_start: datetime,
     ts_end: datetime,
     query_trend_fn,
+    type_weights: dict[str, dict] | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（幂等）。
 
@@ -250,6 +263,7 @@ async def _calculate_loop_kpi(
         ts_start: 时间窗起始
         ts_end: 时间窗结束
         query_trend_fn: TDengine 查询函数（注入便于测试）
+        type_weights: 回路类型权重映射（v2 算法用），None 时回退 v1
 
     Returns:
         快照字典，包含 status 字段
@@ -339,8 +353,11 @@ async def _calculate_loop_kpi(
     # 计算 6 大 KPI（好值率在过滤前计算，其余指标基于过滤后数据）
     kpi_values = _compute_kpis(aligned, metric_configs, good_value_rate=good_value_rate)
 
-    # 计算综合评分 Score = (Σ wᵢ × ηᵢ_norm) × R_auto
-    score = _compute_composite_score(kpi_values, metric_configs)
+    # 计算综合评分 — v2 按回路类型加权（对齐国标 GB/T 44693.2-2024）
+    # P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R
+    from app.services.loop_config import infer_score_type
+    score_type = infer_score_type(loop.loop_type)
+    score = _compute_composite_score_v2(kpi_values, type_weights, score_type)
 
     # 判定状态
     status = "SUCCESS"
@@ -978,6 +995,94 @@ def _compute_composite_score(
 
     result = _quantize(score)
     logger.debug("[综合评分] 最终评分: %.2f", float(result))
+    return result
+
+
+def _compute_composite_score_v2(
+    kpi_values: dict[str, Decimal | None],
+    type_weights: dict[str, dict] | None,
+    score_type: str,
+) -> Decimal:
+    """计算综合评分 v2 — 按回路类型加权（对齐 GB/T 44693.2-2024 附表1）。
+
+    国标公式：P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R
+
+    - A = accuracy_rate（准确率）
+    - F = fast_response_rate（快速率）
+    - S = steady_rate（平稳率）
+    - R = effective_auto_rate（有效自控率，作为乘数）
+    - a/f/s = 按 score_type 查 loop_type_weight 获取
+
+    与 v1 的区别：
+    - v1：4 指标平等加权，权重来自 metric_config
+    - v2：3 指标按回路类型加权，R 作为乘数，权重来自 loop_type_weight
+
+    缺失指标按权重 0 处理（该指标不参与，但分母仍含其权重）。
+    若 type_weights 无配置或 score_type 未找到，回退到 v1 逻辑。
+
+    Args:
+        kpi_values: KPI 值字典
+        type_weights: {score_type: {weight_a, weight_f, weight_s}} 映射
+        score_type: 回路评分类型（STABLE/SLOW/FAST/LOGIC）
+
+    Returns:
+        综合评分（Decimal，2 位小数）
+    """
+    # 回退：无类型权重配置时用 v1 的平等加权
+    if not type_weights or score_type not in type_weights:
+        logger.debug(
+            "[综合评分v2] score_type=%s 无权重配置，回退平等加权", score_type
+        )
+        # 平等加权：a=f=s=1/3，R 作为乘数
+        a = f = s = Decimal("0.3333")
+    else:
+        w = type_weights[score_type]
+        a = w["weight_a"] if isinstance(w["weight_a"], Decimal) else Decimal(str(w["weight_a"]))
+        f = w["weight_f"] if isinstance(w["weight_f"], Decimal) else Decimal(str(w["weight_f"]))
+        s = w["weight_s"] if isinstance(w["weight_s"], Decimal) else Decimal(str(w["weight_s"]))
+
+    A = kpi_values.get("accuracy_rate")
+    F = kpi_values.get("fast_response_rate")
+    S = kpi_values.get("steady_rate")
+    R = kpi_values.get("effective_auto_rate")
+
+    logger.debug(
+        "[综合评分v2] score_type=%s, a=%s, f=%s, s=%s, A=%s, F=%s, S=%s, R=%s",
+        score_type, a, f, s, A, F, S, R,
+    )
+
+    # 计算加权分子：(A*a + F*f + S*s)，缺失指标按 0 处理
+    weighted_sum = Decimal("0")
+    for val, w in [(A, a), (F, f), (S, s)]:
+        if val is not None:
+            if not isinstance(val, Decimal):
+                val = Decimal(str(val))
+            # 归一化到 [0, 1]
+            eta = max(Decimal("0"), min(Decimal("1"), val / Decimal("100")))
+            weighted_sum += w * eta
+
+    # 分母：a + f + s（固定，不因缺失指标而变化）
+    weight_total = a + f + s
+    if weight_total <= 0:
+        logger.warning("[综合评分v2] 权重总和为 0，返回 0")
+        return Decimal("0.00")
+
+    # 基础评分 = (A*a + F*f + S*s) / (a+f+s) * 100
+    base_score = weighted_sum / weight_total * Decimal("100")
+
+    # R 作为乘数：P = base_score * R/100
+    if R is not None:
+        if not isinstance(R, Decimal):
+            R = Decimal(str(R))
+        r_norm = max(Decimal("0"), min(Decimal("1"), R / Decimal("100")))
+        score = base_score * r_norm
+    else:
+        # R 缺失时，评分降级（仅用基础评分的 60%）
+        logger.debug("[综合评分v2] R 缺失，评分降级为基础评分的 60%%")
+        score = base_score * Decimal("0.6")
+
+    result = _quantize(score)
+    logger.debug("[综合评分v2] 最终评分: %.2f", float(result))
     return result
 
 

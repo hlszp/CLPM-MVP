@@ -12,7 +12,9 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
+    SmallInteger,
     String,
     func,
 )
@@ -54,6 +56,24 @@ class LoopLedger(Base):
     score_weights: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     remark: Mapped[str | None] = mapped_column(String(500), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # 重构方案 v1.2 新增字段（对齐国标 GB/T 44693.2-2024）
+    level: Mapped[int | None] = mapped_column(
+        SmallInteger,
+        nullable=True,
+        default=3,
+        comment="回路级别 1/2/3（默认3，对齐附表2，用于装置级聚合加权）",
+    )
+    modeattr_tag_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tag_registry.id", ondelete="RESTRICT"),
+        nullable=True,
+        comment="APC 识别位号 ID（位号值为 program 时算自动控制）",
+    )
+    data_retention_days: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="数据保存周期（天），NULL 表示用系统默认",
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -65,10 +85,15 @@ class LoopLedger(Base):
             "'ANALYSIS', 'SPEED', 'OTHER')",
             name="ck_loop_ledger_loop_type",
         ),
+        CheckConstraint(
+            "level IS NULL OR level IN (1, 2, 3)",
+            name="ck_loop_ledger_level",
+        ),
         Index("uk_loop_ledger_tag_name", "tag_name", unique=True),
         Index("idx_loop_ledger_unit_id", "unit_id"),
         Index("idx_loop_ledger_status", "status"),
         Index("idx_loop_ledger_tag_name", "tag_name"),
+        Index("idx_loop_ledger_level", "level"),
     )
 
 

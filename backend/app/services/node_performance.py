@@ -88,7 +88,8 @@ async def query_realtime_auto_rate(
     """查询当前时刻处于自动模式的回路占比（实时自控率）。
 
     从 TDengine 查询每个回路的最新 MODE 值，
-    MODE ∈ {1, 2, 3} 视为自动模式（CAS/AUTO/RAMP）。
+    根据该回路的投用定义（loop_mode_mapping）判断是否算自动模式。
+    无投用定义的回路回退到默认 {1, 2, 3}（向后兼容）。
 
     Args:
         db: 异步数据库会话
@@ -102,9 +103,22 @@ async def query_realtime_auto_rate(
 
     from app.core.tdengine import query_trend_data
     from app.models.loop import LoopTagMapping
+    from app.models.loop_config import LoopModeMapping
     from app.models.tag import TagRegistry
 
-    # 查询每个回路的 MODE tag 映射
+    # --- 1. 批量查询投用定义，构建 {loop_id: set(auto_mode_values)} ---
+    mm_result = await db.execute(
+        select(LoopModeMapping.loop_id, LoopModeMapping.mode_value)
+        .where(
+            LoopModeMapping.loop_id.in_(loop_ids),
+            LoopModeMapping.is_auto.is_(True),
+        )
+    )
+    auto_mode_map: dict[str, set[int]] = {}
+    for row in mm_result.all():
+        auto_mode_map.setdefault(row.loop_id, set()).add(row.mode_value)
+
+    # --- 2. 查询每个回路的 MODE tag 映射 ---
     result = await db.execute(
         select(LoopTagMapping.loop_id, TagRegistry.tag_name)
         .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
@@ -119,12 +133,12 @@ async def query_realtime_auto_rate(
         logger.debug("[实时自控率] 无 MODE tag 映射，跳过")
         return None
 
-    # 查询时间窗：最近 5 分钟
+    # --- 3. 查询时间窗：最近 5 分钟 ---
     now = datetime.now(UTC)
     end_time = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     start_time = (now - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 并发查询所有回路的最新 MODE 值
+    # --- 4. 并发查询所有回路的最新 MODE 值 ---
     async def _get_latest_mode(tag_name: str) -> int | None:
         try:
             data = await query_trend_data(tag_name, start_time, end_time)
@@ -137,17 +151,28 @@ async def query_realtime_auto_rate(
     tasks = [_get_latest_mode(row.tag_name) for row in rows]
     mode_values = await asyncio.gather(*tasks)
 
-    # 仅统计有有效数据的回路
-    valid_modes = [v for v in mode_values if v is not None]
-    if not valid_modes:
+    # --- 5. 按回路投用定义判断是否算自动 ---
+    DEFAULT_AUTO_MODES = {1, 2, 3}  # 向后兼容默认值
+    auto_count = 0
+    valid_count = 0
+
+    for row, mode_val in zip(rows, mode_values, strict=False):
+        if mode_val is None:
+            continue
+        valid_count += 1
+        # 取该回路的自动 MODE 集合，无配置时回退到默认
+        auto_modes = auto_mode_map.get(row.loop_id, DEFAULT_AUTO_MODES)
+        if mode_val in auto_modes:
+            auto_count += 1
+
+    if valid_count == 0:
         logger.debug("[实时自控率] TDengine 无可用 MODE 数据")
         return None
 
-    auto_count = sum(1 for v in valid_modes if v in (1, 2, 3))
-    rate = round(auto_count / len(valid_modes) * 100, 2)
+    rate = round(auto_count / valid_count * 100, 2)
     logger.debug(
         "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%",
-        len(valid_modes), auto_count, rate,
+        valid_count, auto_count, rate,
     )
     return Decimal(str(rate))
 
