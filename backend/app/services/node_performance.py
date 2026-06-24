@@ -89,7 +89,7 @@ async def collect_descendant_loop_ids(
 async def query_realtime_auto_rate(
     db: AsyncSession,
     loop_ids: list[str],
-) -> Decimal | None:
+) -> dict | None:
     """查询当前时刻处于自动模式的回路占比（实时自控率）。
 
     从 TDengine 查询每个回路的最新 MODE 值，
@@ -101,7 +101,13 @@ async def query_realtime_auto_rate(
         loop_ids: 回路 ID 列表
 
     Returns:
-        实时自控率（%），TDengine 不可用或无数据时返回 None
+        实时自控率统计结果 dict：
+        - rate: 自控率百分比（Decimal）
+        - auto_count: 自动模式回路数
+        - manual_count: 手动模式回路数
+        - total_count: 有效回路总数
+        - read_at: 统计时间（ISO 字符串）
+        TDengine 不可用或无数据时返回 None
     """
     if not loop_ids:
         return None
@@ -179,7 +185,13 @@ async def query_realtime_auto_rate(
         "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%",
         valid_count, auto_count, rate,
     )
-    return Decimal(str(rate))
+    return {
+        "rate": Decimal(str(rate)),
+        "auto_count": auto_count,
+        "manual_count": valid_count - auto_count,
+        "total_count": valid_count,
+        "read_at": now.isoformat(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +293,8 @@ async def aggregate_node_snapshot(
     status = _score_to_status(score_avg)
 
     # 查询实时自控率（TDengine 不可用时返回 None，不影响聚合流程）
-    realtime_auto_rate = await query_realtime_auto_rate(db, loop_ids)
+    _realtime_result = await query_realtime_auto_rate(db, loop_ids)
+    realtime_auto_rate = _realtime_result["rate"] if _realtime_result else None
 
     logger.info(
         "[节点级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "

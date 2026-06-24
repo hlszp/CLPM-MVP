@@ -77,7 +77,10 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:5666",
+        "http://localhost:5667",
+        "http://localhost:5668",
         "http://127.0.0.1:5666",
+        "http://127.0.0.1:5667",
     ]
 
     @property

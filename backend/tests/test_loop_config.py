@@ -398,7 +398,13 @@ class TestAggregateNodeSnapshotLevelWeighting:
             ),
             patch(
                 "app.services.node_performance.query_realtime_auto_rate",
-                return_value=Decimal("66.67"),
+                return_value={
+                    "rate": Decimal("66.67"),
+                    "auto_count": 2,
+                    "manual_count": 1,
+                    "total_count": 3,
+                    "read_at": "2026-06-22T08:00:00Z",
+                },
             ),
         ):
             result = await aggregate_node_snapshot(
@@ -507,7 +513,11 @@ class TestRealtimeAutoRate:
         ):
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
-        assert result == Decimal("50.00")
+        assert result is not None
+        assert result["rate"] == Decimal("50.00")
+        assert result["auto_count"] == 1
+        assert result["manual_count"] == 1
+        assert result["total_count"] == 2
 
     @pytest.mark.asyncio
     async def test_realtime_auto_rate_no_config(self) -> None:
@@ -541,7 +551,10 @@ class TestRealtimeAutoRate:
         ):
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
-        assert result == Decimal("100.00")
+        assert result is not None
+        assert result["rate"] == Decimal("100.00")
+        assert result["auto_count"] == 2
+        assert result["total_count"] == 2
 
     @pytest.mark.asyncio
     async def test_realtime_auto_rate_no_loops(self) -> None:

@@ -219,4 +219,73 @@ async def export_analytics_endpoint(
     )
 
 
+# ---------------------------------------------------------------------------
+# 实时自控率 — 仪表盘组件
+# ---------------------------------------------------------------------------
+
+
+@router.get("/realtime-auto-rate", response_model=ApiResponse[dict])
+async def get_realtime_auto_rate_endpoint(
+    plantNodeId: str | None = Query(None, description="工厂节点 ID（不传则全厂）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> ApiResponse[dict]:
+    """获取实时自控率统计（用于仪表盘组件）。
+
+    返回: {plantNodeId, plantNodeName, autoCount, manualCount, totalCount, autoRate, readAt}
+    """
+    from sqlalchemy import select
+
+    from app.models.loop import LoopLedger
+    from app.models.plant_node import PlantNode
+    from app.services.node_performance import query_realtime_auto_rate
+
+    # 收集回路 ID
+    stmt = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+    plant_node_name = None
+    if plantNodeId:
+        # 递归获取子孙节点
+        from app.services.monitor import _get_descendant_node_ids
+
+        all_ids = await _get_descendant_node_ids(db, plantNodeId)
+        all_ids.append(plantNodeId)
+        stmt = stmt.where(LoopLedger.unit_id.in_(all_ids))
+        # 查节点名
+        node_result = await db.execute(
+            select(PlantNode.name).where(PlantNode.id == plantNodeId)
+        )
+        row = node_result.first()
+        if row:
+            plant_node_name = row[0]
+
+    result = await db.execute(stmt)
+    loop_ids = [str(r[0]) for r in result.all()]
+
+    # 查询实时自控率
+    rate_data = await query_realtime_auto_rate(db, loop_ids)
+
+    if rate_data is None:
+        data = {
+            "plantNodeId": plantNodeId,
+            "plantNodeName": plant_node_name,
+            "autoCount": 0,
+            "manualCount": 0,
+            "totalCount": 0,
+            "autoRate": 0,
+            "readAt": None,
+        }
+    else:
+        data = {
+            "plantNodeId": plantNodeId,
+            "plantNodeName": plant_node_name,
+            "autoCount": rate_data["auto_count"],
+            "manualCount": rate_data["manual_count"],
+            "totalCount": rate_data["total_count"],
+            "autoRate": float(rate_data["rate"]),
+            "readAt": rate_data["read_at"],
+        }
+
+    return success(data=data)
+
+
 __all__ = ["router"]
