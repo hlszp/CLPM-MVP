@@ -86,6 +86,10 @@ export namespace LoopApi {
     unitName: string;
     controlMode: ControlMode;
     loopType?: LoopType;
+    /** 控制类型（STABLE/SLOW/FAST/LOGIC），用于评分权重分类 */
+    controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+    /** 回路级别（1/2/3），用于级别权重评分 */
+    level?: 1 | 2 | 3;
     isActive: boolean;
     status: LoopStatus;
     score: number;
@@ -98,6 +102,10 @@ export namespace LoopApi {
     plantNodeId?: string;
     controlMode?: ControlMode;
     loopType?: LoopType;
+    /** 控制类型筛选 */
+    controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+    /** 级别筛选 */
+    level?: 1 | 2 | 3;
     isActive?: boolean;
     status?: LoopStatus;
     keyword?: string;
@@ -109,6 +117,10 @@ export namespace LoopApi {
     description?: string;
     unitId: string;
     loopType?: LoopType;
+    /** 控制类型 */
+    controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+    /** 回路级别 */
+    level?: 1 | 2 | 3;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -119,6 +131,10 @@ export namespace LoopApi {
     description?: string;
     unitId?: string;
     loopType?: LoopType;
+    /** 控制类型 */
+    controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+    /** 回路级别 */
+    level?: 1 | 2 | 3;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -332,6 +348,41 @@ export namespace LoopApi {
     trend: MonitorTrend;
     kpiSummary: KpiSummary;
   }
+
+  /** 投用定义控制模式（AUTO/CAS/REMOTE/APC/MANUAL） */
+  export type ModeMappingControlMode =
+    | 'APC'
+    | 'AUTO'
+    | 'CAS'
+    | 'MANUAL'
+    | 'REMOTE';
+
+  /** 投用定义条目（MODE 值 → 控制模式映射） */
+  export interface ModeMappingItem {
+    /** DCS 系统返回的 MODE 原始值（整数或字符串） */
+    modeValue: string;
+    /** 控制模式 */
+    controlMode: ModeMappingControlMode;
+    /** 是否视为自动（参与自控率统计） */
+    isAuto: boolean;
+    /** 是否有效（无效值将被忽略） */
+    isEnabled: boolean;
+    /** 备注 */
+    remark?: string;
+  }
+
+  /** 投用定义列表响应 */
+  export interface ModeMappingResult {
+    loopId: string;
+    items: ModeMappingItem[];
+    updatedAt?: string;
+    updatedBy?: string;
+  }
+
+  /** 投用定义更新参数 */
+  export interface UpdateModeMappingParams {
+    items: ModeMappingItem[];
+  }
 }
 
 /**
@@ -410,4 +461,26 @@ export function getLoopMonitorListApi(params: LoopApi.MonitorQueryParams) {
   return requestClient.get<LoopApi.MonitorListResult>('/loops/monitor', {
     params,
   });
+}
+
+/**
+ * 获取回路投用定义（MODE → 控制模式映射） — IDS v3.2 §2.2.13
+ */
+export function getLoopModeMappingApi(loopId: string) {
+  return requestClient.get<LoopApi.ModeMappingResult>(
+    `/loops/${loopId}/mode-mapping`,
+  );
+}
+
+/**
+ * 更新回路投用定义（MODE → 控制模式映射） — IDS v3.2 §2.2.13
+ */
+export function updateLoopModeMappingApi(
+  loopId: string,
+  data: LoopApi.UpdateModeMappingParams,
+) {
+  return requestClient.put<LoopApi.ModeMappingResult>(
+    `/loops/${loopId}/mode-mapping`,
+    data,
+  );
 }

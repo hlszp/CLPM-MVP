@@ -21,6 +21,9 @@ from app.api.v1.endpoints import (
     dashboard,
     diagnosis,
     health,
+    loop_level_weight,
+    loop_mode_mapping,
+    loop_type_weight,
     loops,
     node_performance,
     performance,
@@ -115,6 +118,10 @@ def create_app() -> FastAPI:
     v1_router.include_router(reports.router)
     # S7 回路整定：模型辨识、PID 整定、闭环仿真
     v1_router.include_router(tuning.router)
+    # 重构方案 v1.2：回路配置 CRUD（投用定义、类型权重、级别权重）
+    v1_router.include_router(loop_mode_mapping.router)
+    v1_router.include_router(loop_type_weight.router)
+    v1_router.include_router(loop_level_weight.router)
     app.include_router(v1_router)
 
     return app

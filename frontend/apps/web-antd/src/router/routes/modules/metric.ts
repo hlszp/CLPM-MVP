@@ -4,7 +4,7 @@ import type { RouteRecordRaw } from 'vue-router';
  * 性能评估路由模块
  *
  * 对齐 UI/UX v4.1 §4.2 + PRD §4.3 + IDS v3.2 §2.3
- * - 指标配置 / 引擎规则 / 性能看板 / 低效排行 / 统计报表
+ * - 指标配置 / 引擎规则 / 类型权重 / 级别权重 / 性能看板 / 低效排行 / 统计报表
  *
  * 角色权限（PRD §3）：
  * - ADMIN：全部（含配置）
@@ -67,6 +67,28 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN'],
           icon: 'lucide:cog',
           title: '引擎配置',
+        },
+      },
+      // FE-10：回路类型权重配置
+      {
+        name: 'MetricTypeWeight',
+        path: '/metric/type-weight',
+        component: () => import('#/views/metric/type-weight.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:scale',
+          title: '类型权重',
+        },
+      },
+      // FE-11：回路级别权重配置
+      {
+        name: 'MetricLevelWeight',
+        path: '/metric/level-weight',
+        component: () => import('#/views/metric/level-weight.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:layers',
+          title: '级别权重',
         },
       },
     ],

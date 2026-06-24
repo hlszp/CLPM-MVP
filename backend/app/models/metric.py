@@ -75,6 +75,10 @@ class KpiSnapshotHourly(Base):
     saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # 故障诊断扩展指标（nullable，向后兼容；诊断中心与性能评估共享表）
+    stiction_coeff: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    steady_state_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    output_travel_index: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
 
     __table_args__ = (

@@ -353,6 +353,11 @@ async def _calculate_loop_kpi(
     # 计算 6 大 KPI（好值率在过滤前计算，其余指标基于过滤后数据）
     kpi_values = _compute_kpis(aligned, metric_configs, good_value_rate=good_value_rate)
 
+    # 故障诊断扩展指标（基于原始时序数据，简化实现）
+    kpi_values["stiction_coeff"] = _calc_stiction_coeff(op_data, mode_data)
+    kpi_values["steady_state_time"] = _calc_steady_state_time(pv_data_filtered, sp_data)
+    kpi_values["output_travel_index"] = _calc_output_travel_index(op_data)
+
     # 计算综合评分 — v2 按回路类型加权（对齐国标 GB/T 44693.2-2024）
     # P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R
     from app.services.loop_config import infer_score_type
@@ -381,6 +386,9 @@ async def _calculate_loop_kpi(
         fast_response_rate=kpi_values.get("fast_response_rate"),
         oscillation_rate=kpi_values.get("oscillation_rate"),
         saturation_rate=kpi_values.get("saturation_rate"),
+        stiction_coeff=kpi_values.get("stiction_coeff"),
+        steady_state_time=kpi_values.get("steady_state_time"),
+        output_travel_index=kpi_values.get("output_travel_index"),
     )
     return snap
 
@@ -709,6 +717,183 @@ def _compute_kpis(
         float(result["saturation_rate"]),
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# 故障诊断扩展指标（简化实现，后续可优化算法精度）
+# ---------------------------------------------------------------------------
+
+
+def _calc_stiction_coeff(
+    op_data: list[dict],
+    mode_data: list[dict],
+) -> Decimal | None:
+    """黏滞系数计算（0-100，0=无黏滞）。
+
+    简化算法：统计 OP 一阶差分方向变化频率。阀门黏滞会导致 OP 呈锯齿波，
+    方向反转频繁；反转频率越高，黏滞越严重。
+
+    Args:
+        op_data: OP 时序数据（list[dict]，含 ts/value）
+        mode_data: MODE 时序数据，用于筛选自动模式下的 OP（为空时用全部 OP）
+
+    Returns:
+        Decimal(0-100)，数据不足返回 None
+    """
+    if not op_data or len(op_data) < 3:
+        return None
+
+    # 筛选自动模式下的 OP 数据（mode_data 为空时用全部 OP）
+    if mode_data:
+        mode_map = {d.get("ts"): d.get("value") for d in mode_data}
+        op_values: list[float] = []
+        for d in op_data:
+            v = d.get("value")
+            if v is None:
+                continue
+            mode = mode_map.get(d.get("ts"))
+            if mode is not None and not _is_auto_mode(mode):
+                continue
+            op_values.append(float(v))
+    else:
+        op_values = [float(d["value"]) for d in op_data if d.get("value") is not None]
+
+    n = len(op_values)
+    if n < 3:
+        return None
+
+    # OP 一阶差分方向变化次数
+    diffs = np.diff(op_values)
+    direction_changes = 0
+    for i in range(1, len(diffs)):
+        if diffs[i - 1] * diffs[i] < 0:
+            direction_changes += 1
+
+    # 方向变化频率 = 方向变化次数 / (n-2)，归一化到 0-100
+    reversal_rate = direction_changes / max(n - 2, 1)
+    stiction = min(reversal_rate * 100, 100.0)
+
+    logger.debug(
+        "[黏滞系数] OP 点数=%d, 方向变化次数=%d, reversal_rate=%.4f, stiction=%.2f",
+        n, direction_changes, reversal_rate, stiction,
+    )
+    return _quantize(Decimal(str(stiction)))
+
+
+def _calc_steady_state_time(
+    pv_data: list[dict],
+    sp_data: list[dict],
+) -> Decimal | None:
+    """稳态时间计算（秒）。
+
+    算法：PV 与 SP 偏差在 ±2% 范围内的时间占比 × 时间窗总时长（秒）。
+    偏差阈值取 |SP| 的 2%；SP 为 0 时取 PV 量程的 2% 兜底。
+
+    Args:
+        pv_data: PV 时序数据（list[dict]，含 ts/value）
+        sp_data: SP 时序数据
+
+    Returns:
+        Decimal（秒），数据不足返回 None
+    """
+    if not pv_data or not sp_data:
+        return None
+
+    # 对齐 PV/SP（复用容差匹配逻辑）
+    sp_map = {d.get("ts"): d.get("value") for d in sp_data}
+    sp_ts_floats, sp_ts_orig = _build_ts_index(sp_data)
+    sp_values = [sp_map[t] for t in sp_ts_orig] if sp_ts_floats else None
+
+    pairs: list[tuple[float, float, float]] = []  # (ts_float, pv, sp)
+    for d in pv_data:
+        pv = d.get("value")
+        if pv is None:
+            continue
+        ts = d.get("ts")
+        sp = _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values)
+        if sp is None:
+            continue
+        ts_f = _ts_to_float(ts)
+        pairs.append((ts_f if ts_f is not None else 0.0, float(pv), float(sp)))
+
+    if len(pairs) < 2:
+        return None
+
+    # 计算时间窗时长（秒）：优先用时间戳差值，无法解析时按点数 × 1s 兜底
+    ts_floats = [p[0] for p in pairs]
+    window_duration = max(ts_floats) - min(ts_floats) if max(ts_floats) > min(ts_floats) else len(pairs) * 1.0
+
+    # PV 量程兜底（SP 为 0 时用）
+    pv_vals = [p[1] for p in pairs]
+    pv_span = max(pv_vals) - min(pv_vals) if len(pv_vals) > 1 else 1.0
+    if pv_span <= 0:
+        pv_span = 1.0
+
+    # 偏差在 ±2% 范围内的点数
+    in_band = 0
+    for _, pv, sp in pairs:
+        threshold = abs(sp) * 0.02 if abs(sp) > 1e-9 else pv_span * 0.02
+        if abs(pv - sp) <= threshold:
+            in_band += 1
+
+    steady_ratio = in_band / len(pairs)
+    steady_time = steady_ratio * window_duration
+
+    logger.debug(
+        "[稳态时间] 对齐点数=%d, in_band=%d, window=%.1fs, steady_time=%.2f",
+        len(pairs), in_band, window_duration, steady_time,
+    )
+    return _quantize(Decimal(str(steady_time)))
+
+
+def _calc_output_travel_index(op_data: list[dict]) -> Decimal | None:
+    """输出值行程指数计算（0-100）。
+
+    算法：OP 值变化总行程 / (时间窗时长 × 理论最大变化率)，归一化到 0-100。
+    理论最大变化率取 100（OP 量程 0-100，每秒最大变化 100）。
+
+    Args:
+        op_data: OP 时序数据（list[dict]，含 ts/value）
+
+    Returns:
+        Decimal(0-100)，数据不足返回 None
+    """
+    if not op_data or len(op_data) < 2:
+        return None
+
+    op_points: list[tuple[float, float]] = []  # (ts_float, op_value)
+    for d in op_data:
+        v = d.get("value")
+        if v is None:
+            continue
+        ts_f = _ts_to_float(d.get("ts"))
+        op_points.append((ts_f if ts_f is not None else 0.0, float(v)))
+
+    if len(op_points) < 2:
+        return None
+
+    op_values = [p[1] for p in op_points]
+    # OP 总行程 = Σ|Δop|
+    diffs = np.diff(op_values)
+    total_travel = float(np.sum(np.abs(diffs)))
+
+    # 时间窗时长（秒）
+    ts_floats = [p[0] for p in op_points]
+    window_duration = max(ts_floats) - min(ts_floats) if max(ts_floats) > min(ts_floats) else len(op_points) * 1.0
+
+    # 理论最大变化率：OP 范围 0-100，每秒最大变化 100
+    theoretical_max_rate = 100.0
+    max_possible = window_duration * theoretical_max_rate
+    if max_possible <= 0:
+        return None
+
+    travel_index = min(total_travel / max_possible * 100, 100.0)
+
+    logger.debug(
+        "[行程指数] OP 点数=%d, total_travel=%.4f, window=%.1fs, travel_index=%.2f",
+        len(op_points), total_travel, window_duration, travel_index,
+    )
+    return _quantize(Decimal(str(travel_index)))
 
 
 def _is_auto_mode(mode_value: Any) -> bool:
@@ -1106,6 +1291,9 @@ async def _save_snapshot(
     fast_response_rate: Decimal | None = None,
     oscillation_rate: Decimal | None = None,
     saturation_rate: Decimal | None = None,
+    stiction_coeff: Decimal | None = None,
+    steady_state_time: Decimal | None = None,
+    output_travel_index: Decimal | None = None,
 ) -> dict:
     """幂等写入快照（相同 loop_id + ts_start 不重复写入，覆盖更新）。"""
     # 检查是否已存在
@@ -1130,6 +1318,9 @@ async def _save_snapshot(
         existing.fast_response_rate = fast_response_rate
         existing.oscillation_rate = oscillation_rate
         existing.saturation_rate = saturation_rate
+        existing.stiction_coeff = stiction_coeff
+        existing.steady_state_time = steady_state_time
+        existing.output_travel_index = output_travel_index
         snapshot_id = str(existing.id)
     else:
         # 新增记录
@@ -1149,6 +1340,9 @@ async def _save_snapshot(
             fast_response_rate=fast_response_rate,
             oscillation_rate=oscillation_rate,
             saturation_rate=saturation_rate,
+            stiction_coeff=stiction_coeff,
+            steady_state_time=steady_state_time,
+            output_travel_index=output_travel_index,
         )
         db.add(snapshot)
 

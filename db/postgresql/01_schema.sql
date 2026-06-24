@@ -10,6 +10,7 @@
 -- v1.0 2026-06-20: 初始版本（DDS v3.0 14 张表）
 --   v1.1 2026-06-22: 算法设计同步DDL变更（metric_config/kpi_snapshot_hourly/diagnosis_config/tuning_record 4表字段调整）
 --   v1.2 2026-06-24: 重构方案 P0 — 新增 loop_mode_mapping/loop_type_weight/loop_level_weight 三表 + loop_ledger 加 level/modeattr_tag_id/data_retention_days 字段
+--   v1.3 2026-06-24: kpi_snapshot_hourly 加 3 个故障诊断指标字段（stiction_coeff/steady_state_time/output_travel_index，nullable 向后兼容）
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -274,6 +275,9 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     fast_response_rate  DECIMAL(5,2),
     oscillation_rate    DECIMAL(5,2),
     saturation_rate     DECIMAL(5,2),
+    stiction_coeff      DECIMAL(5,2),
+    steady_state_time   DECIMAL(8,2),
+    output_travel_index DECIMAL(8,2),
     status              VARCHAR(20)     NOT NULL,
     CONSTRAINT fk_kpi_snapshot_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_snapshot_status  CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
@@ -294,6 +298,9 @@ COMMENT ON COLUMN kpi_snapshot_hourly.accuracy_rate IS '准确率(%)';
 COMMENT ON COLUMN kpi_snapshot_hourly.fast_response_rate IS '快速率（%），控制回路对设定值变化的响应速度';
 COMMENT ON COLUMN kpi_snapshot_hourly.oscillation_rate IS '振荡率（%）';
 COMMENT ON COLUMN kpi_snapshot_hourly.saturation_rate IS '饱和率(%)';
+COMMENT ON COLUMN kpi_snapshot_hourly.stiction_coeff IS '黏滞系数（0-100，0=无黏滞）';
+COMMENT ON COLUMN kpi_snapshot_hourly.steady_state_time IS '稳态时间（秒）：PV 与 SP 偏差在 ±2% 内的时长';
+COMMENT ON COLUMN kpi_snapshot_hourly.output_travel_index IS '输出值行程指数（0-100）：OP 总行程归一化指数';
 COMMENT ON COLUMN kpi_snapshot_hourly.status IS '计算状态：SUCCESS/INCONCLUSIVE/PARTIAL';
 
 -- =============================================================================

@@ -1,5 +1,8 @@
 <script lang="ts" setup>
 /**
+ * @deprecated FE-04：本页已废弃，请使用 /loop/manage（回路管理整合页）。
+ * 路由已重定向到 /loop/manage，本文件仅保留以兼容旧链接。
+ *
  * S2-LOOP-007 工厂模型配置页
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.1 ~ §2.2.4

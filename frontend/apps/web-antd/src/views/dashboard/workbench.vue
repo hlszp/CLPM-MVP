@@ -16,6 +16,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DashboardApi } from '#/api/dashboard';
 import type { DiagnosisLabel } from '#/api/diagnosis';
+import type { MetricApi } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import {
@@ -45,6 +46,7 @@ import {
 import type { TableColumnsType } from 'ant-design-vue';
 
 import { getDashboardOverviewApi } from '#/api/dashboard';
+import { getRealtimeAutoRateApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -58,6 +60,10 @@ const router = useRouter();
 const loading = ref(false);
 const overviewData = ref<DashboardApi.OverviewResult | null>(null);
 const plantNodeTree = ref<PlantNodeApi.PlantNode[]>([]);
+
+/** 实时自控率数据（FE-15 新增卡片） */
+const realtimeAutoRate = ref<MetricApi.RealtimeAutoRateResult | null>(null);
+const realtimeAutoRateLoading = ref(false);
 
 const filter = reactive({
   plantId: undefined as string | undefined,
@@ -205,6 +211,7 @@ watch(cascaderValue, (val) => {
     filter.plantId = undefined;
   }
   loadOverview();
+  loadRealtimeAutoRate();
 });
 
 /** 粒度变更 */
@@ -251,6 +258,16 @@ function formatPercent(val: number | undefined): string {
   return `${Number(val).toFixed(1)}%`;
 }
 
+/** 格式化时间 */
+function formatTime(t?: string): string {
+  if (!t) return '—';
+  try {
+    return new Date(t).toLocaleString('zh-CN');
+  } catch {
+    return t;
+  }
+}
+
 /** 加载工厂节点树 */
 async function loadPlantNodes() {
   try {
@@ -284,6 +301,21 @@ async function loadOverview() {
     // 错误已由拦截器处理
   } finally {
     loading.value = false;
+  }
+}
+
+/** 加载实时自控率（FE-15 新增） */
+async function loadRealtimeAutoRate() {
+  realtimeAutoRateLoading.value = true;
+  try {
+    const data = await getRealtimeAutoRateApi({
+      plantNodeId: filter.plantId,
+    });
+    realtimeAutoRate.value = data;
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    realtimeAutoRateLoading.value = false;
   }
 }
 
@@ -401,6 +433,7 @@ function startAutoRefresh() {
   stopAutoRefresh();
   refreshTimer = setInterval(() => {
     loadOverview();
+    loadRealtimeAutoRate();
   }, REFRESH_INTERVAL);
 }
 
@@ -416,6 +449,7 @@ function stopAutoRefresh() {
 function handleVisibilityChange() {
   if (document.visibilityState === 'visible') {
     loadOverview();
+    loadRealtimeAutoRate();
   }
 }
 
@@ -433,6 +467,7 @@ watch(
 onMounted(() => {
   loadPlantNodes();
   loadOverview();
+  loadRealtimeAutoRate();
   startAutoRefresh();
   document.addEventListener('visibilitychange', handleVisibilityChange);
 });
@@ -531,6 +566,61 @@ onUnmounted(() => {
         </div>
       </Card>
     </div>
+
+    <!-- 实时自控率卡片（FE-15 新增） -->
+    <Card class="mb-3" size="small" :body-style="{ padding: '16px' }">
+      <div class="flex flex-wrap items-center gap-6">
+        <div class="flex flex-col">
+          <span class="mb-1 text-xs text-gray-500">实时自控率</span>
+          <div class="flex items-baseline gap-1">
+            <span
+              v-if="realtimeAutoRate"
+              class="font-mono text-2xl font-bold"
+              :style="{
+                color: scoreColor(realtimeAutoRate.autoRate),
+              }"
+            >
+              {{ realtimeAutoRate.autoRate?.toFixed(1) ?? '--' }}
+            </span>
+            <span v-if="realtimeAutoRate" class="text-xs text-gray-400">%</span>
+            <span
+              v-if="!realtimeAutoRate && !realtimeAutoRateLoading"
+              class="text-2xl font-bold text-gray-400"
+            >
+              —
+            </span>
+          </div>
+          <div v-if="realtimeAutoRate" class="mt-1 flex items-center gap-3 text-xs">
+            <span class="inline-flex items-center gap-1">
+              <span
+                class="inline-block h-2 w-2 rounded-full"
+                style="background-color: #52c41a"
+              ></span>
+              <span>自动 {{ realtimeAutoRate.autoCount }}</span>
+            </span>
+            <span class="inline-flex items-center gap-1">
+              <span
+                class="inline-block h-2 w-2 rounded-full"
+                style="background-color: #fa8c16"
+              ></span>
+              <span>手动 {{ realtimeAutoRate.manualCount }}</span>
+            </span>
+            <span class="text-gray-400">
+              总数 {{ realtimeAutoRate.totalCount }}
+            </span>
+            <span
+              v-if="realtimeAutoRate.readAt"
+              class="text-gray-400"
+            >
+              · {{ formatTime(realtimeAutoRate.readAt) }}
+            </span>
+          </div>
+        </div>
+        <div class="ml-auto text-xs text-gray-400">
+          数据每 5 分钟自动刷新
+        </div>
+      </div>
+    </Card>
 
     <!-- 中行：低效回路列表 + 选中回路摘要 -->
     <div class="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-5">

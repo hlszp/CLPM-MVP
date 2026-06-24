@@ -22,6 +22,7 @@ from sqlalchemy import Integer, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loop import LoopLedger
+from app.models.loop_config import LoopLevelWeight
 from app.models.metric import KpiSnapshotHourly
 from app.models.node_kpi import KpiNodeSnapshotHourly
 from app.models.plant_node import PlantNode
@@ -190,10 +191,10 @@ async def aggregate_node_snapshot(
 ) -> dict | None:
     """聚合指定节点在时间窗内的回路级快照，生成节点级快照。
 
-    聚合规则（对齐 GB/T 44693.2-2024 §6.4）：
+    聚合规则（对齐 GB/T 44693.2-2024 §6.4 + 附表2）：
     - 递归收集节点下属所有 active 回路
     - 取每个回路在该时间窗内最新一条 SUCCESS 快照
-    - 按 score_weight 加权平均（权重为 NULL 时按 1.0）
+    - 按回路级别加权平均（level=1→3.0, level=2→2.0, level=3→1.0）
     - 投自动回路占比 = auto_mode_rate > 0 的回路数 / 总回路数
 
     Returns:
@@ -218,8 +219,9 @@ async def aggregate_node_snapshot(
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
     ).subquery()
 
-    # 外层 JOIN loop_ledger 取 score_weight，做加权聚合
-    weight_col = func.coalesce(LoopLedger.score_weight, Decimal("1.0")).label("w")
+    # 外层 JOIN loop_ledger + loop_level_weight，按回路级别加权聚合（v2，对齐附表2）
+    # level=NULL 时 OUTER JOIN 不匹配，COALESCE 到 1.0（等同 level=3）
+    weight_col = func.coalesce(LoopLevelWeight.weight, Decimal("1.0")).label("w")
     weight_sum_col = func.nullif(func.sum(weight_col), 0).label("weight_sum")
 
     # 加权聚合列（必须引用子查询 subq.c，而非原表 KpiSnapshotHourly，避免笛卡尔积）
@@ -239,7 +241,10 @@ async def aggregate_node_snapshot(
 
     stmt = (
         select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
-        .select_from(subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id))
+        .select_from(
+            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id)
+            .outerjoin(LoopLevelWeight, LoopLedger.level == LoopLevelWeight.level)
+        )
     )
     result = await db.execute(stmt)
     row = result.one()

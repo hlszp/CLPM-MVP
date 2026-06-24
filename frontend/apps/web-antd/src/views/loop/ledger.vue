@@ -3,6 +3,9 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { UploadProps } from 'ant-design-vue';
 
 /**
+ * @deprecated FE-04：本页已废弃，请使用 /loop/manage（回路管理整合页）。
+ * 路由已重定向到 /loop/manage，本文件仅保留以兼容旧链接。
+ *
  * S2-LOOP-009 回路台账页
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.7 ~ §2.2.13

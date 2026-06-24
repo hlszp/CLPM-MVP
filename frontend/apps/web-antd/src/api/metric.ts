@@ -237,6 +237,83 @@ export namespace MetricApi {
   export interface AnalyticsExportResult {
     taskId: string;
   }
+
+  /** 回路类型权重项（STABLE/SLOW/FAST/LOGIC） */
+  export interface LoopTypeWeightItem {
+    /** 回路类型 */
+    loopType: ControlType;
+    /** 类型名称 */
+    loopTypeName?: string;
+    /** A 权重（自动模式率权重） */
+    weightA: number;
+    /** F 权重（快速率权重） */
+    weightF: number;
+    /** S 权重（稳定率权重） */
+    weightS: number;
+    /** 描述 */
+    description?: string;
+    updatedAt?: string;
+    updatedBy?: string;
+  }
+
+  /** 回路类型权重列表响应 */
+  export interface LoopTypeWeightListResult {
+    items: LoopTypeWeightItem[];
+  }
+
+  /** 回路类型权重更新参数 */
+  export interface LoopTypeWeightUpdateParams {
+    weightA: number;
+    weightF: number;
+    weightS: number;
+    description?: string;
+  }
+
+  /** 回路级别（1/2/3） */
+  export type LoopLevel = 1 | 2 | 3;
+
+  /** 回路级别权重项 */
+  export interface LoopLevelWeightItem {
+    /** 级别 */
+    level: LoopLevel;
+    /** 级别名称 */
+    levelName?: string;
+    /** 权重 */
+    weight: number;
+    /** 描述 */
+    description?: string;
+    updatedAt?: string;
+    updatedBy?: string;
+  }
+
+  /** 回路级别权重列表响应 */
+  export interface LoopLevelWeightListResult {
+    items: LoopLevelWeightItem[];
+  }
+
+  /** 回路级别权重更新参数 */
+  export interface LoopLevelWeightUpdateParams {
+    weight: number;
+    description?: string;
+  }
+
+  /** 实时自控率统计 */
+  export interface RealtimeAutoRateResult {
+    /** 工厂节点 ID（null 表示全厂） */
+    plantNodeId: null | string;
+    /** 工厂节点名称 */
+    plantNodeName?: string;
+    /** 自动回路数 */
+    autoCount: number;
+    /** 手动回路数 */
+    manualCount: number;
+    /** 总回路数 */
+    totalCount: number;
+    /** 实时自控率（百分比） */
+    autoRate: number;
+    /** 统计时间 */
+    readAt?: string;
+  }
 }
 
 const BASE = '/performance';
@@ -321,5 +398,59 @@ export function exportAnalyticsApi(data: MetricApi.AnalyticsExportParams) {
   return requestClient.post<MetricApi.AnalyticsExportResult>(
     `${BASE}/analytics/export`,
     data,
+  );
+}
+
+/**
+ * 获取回路类型权重列表 — 配置项
+ */
+export function getLoopTypeWeightsApi() {
+  return requestClient.get<MetricApi.LoopTypeWeightListResult>(
+    '/config/loop-type-weights',
+  );
+}
+
+/**
+ * 更新回路类型权重 — 仅 ADMIN
+ */
+export function updateLoopTypeWeightApi(
+  loopType: ControlType,
+  data: MetricApi.LoopTypeWeightUpdateParams,
+) {
+  return requestClient.put<MetricApi.LoopTypeWeightItem>(
+    `/config/loop-type-weights/${loopType}`,
+    data,
+  );
+}
+
+/**
+ * 获取回路级别权重列表 — 配置项
+ */
+export function getLoopLevelWeightsApi() {
+  return requestClient.get<MetricApi.LoopLevelWeightListResult>(
+    '/config/loop-level-weights',
+  );
+}
+
+/**
+ * 更新回路级别权重 — 仅 ADMIN
+ */
+export function updateLoopLevelWeightApi(
+  level: MetricApi.LoopLevel,
+  data: MetricApi.LoopLevelWeightUpdateParams,
+) {
+  return requestClient.put<MetricApi.LoopLevelWeightItem>(
+    `/config/loop-level-weights/${level}`,
+    data,
+  );
+}
+
+/**
+ * 获取实时自控率统计 — 用于仪表盘组件
+ */
+export function getRealtimeAutoRateApi(params?: { plantNodeId?: string }) {
+  return requestClient.get<MetricApi.RealtimeAutoRateResult>(
+    `${BASE}/realtime-auto-rate`,
+    { params },
   );
 }
