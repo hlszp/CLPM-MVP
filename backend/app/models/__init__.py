@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from app.models.audit import SysAuditLog
 from app.models.base import Base, TimestampMixin
-from app.models.diagnosis import DiagnosisConfig, DiagnosisResult
+from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
-from app.models.metric import KpiSnapshotHourly, MetricConfig
+from app.models.metric import KpiSnapshotCustom, KpiSnapshotHourly, MetricConfig
+from app.models.metric_data_requirement import ClpmMetricDataRequirement
 from app.models.node_kpi import (
     KpiNodeSnapshotDaily,
     KpiNodeSnapshotHourly,
@@ -26,6 +27,7 @@ from app.models.sys_user import SysUser
 from app.models.tag import TagRegistry
 from app.models.tracker import ActionTracker
 from app.models.tuning import TuningRecord
+from app.models.unit_kpi_summary import UnitKpiSummary
 
 __all__ = [
     "Base",
@@ -42,6 +44,10 @@ __all__ = [
     "DiagnosisConfig",
     "EngineRule",
     "KpiSnapshotHourly",
+    "KpiSnapshotCustom",
+    "ClpmMetricDataRequirement",
+    "DiagnosisTag",
+    "UnitKpiSummary",
     "KpiNodeSnapshotHourly",
     "KpiNodeSnapshotDaily",
     "KpiNodeSnapshotMonthly",
