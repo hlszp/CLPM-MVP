@@ -27,6 +27,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contracts.data_types import DataLineage, MetricResult
 from app.models.node_kpi import (
     KpiNodeSnapshotDaily,
     KpiNodeSnapshotHourly,
@@ -509,8 +510,166 @@ async def aggregate_all_nodes_monthly(stat_month) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# 内存级回路聚合（Phase 3 任务 3.6）
+# ---------------------------------------------------------------------------
+
+
+class NodeAggregator:
+    """节点级回路聚合器（算法说明 §4.11）.
+
+    将回路级 MetricResult 按级别权重聚合为节点级 MetricResult。
+    与 ``aggregate_daily_snapshot`` / ``aggregate_monthly_snapshot`` 的区别：
+    后两者基于 DB 快照按 loop_count 加权做日/月聚合；本类在内存中
+    按回路级别权重（1/2/3 → 3/2/1）做实时聚合，供编排层直接调用。
+
+    设计依据：算法说明 §4.11；GB/T 44693.2-2024 附录 E.2
+
+    聚合公式：
+        Score_unit = Σ(w_i^level · Score_i) / Σ(w_i^level)
+
+    回路级别权重（GB/T 44693.2-2024 附录 E.2）：
+        - 一级（level=1）：权重 3（对装置整体性能/安全/经济/环保具决定性影响）
+        - 二级（level=2）：权重 2（对装置运行稳定性或主要设备安全有较大影响）
+        - 三级（level=3）：权重 1（相对次要的辅助控制回路）
+
+    INCONCLUSIVE 回路处理：
+        value=None 或 confidence_level='E' 的回路不参与聚合，单独统计数量。
+    """
+
+    #: 回路级别 → 权重映射（level 1→3, 2→2, 3→1）
+    LEVEL_WEIGHTS: dict[int, int] = {1: 3, 2: 2, 3: 1}
+
+    #: 默认级别（未指定时）
+    DEFAULT_LEVEL = 3
+
+    def aggregate(
+        self,
+        loop_scores: list[MetricResult],
+        loop_weights: dict[str, int] | None = None,
+    ) -> MetricResult:
+        """聚合回路级评分为节点级评分.
+
+        Args:
+            loop_scores: 回路级指标结果列表（metric_code 应一致，通常为 composite_score）
+            loop_weights: ``{loop_id: level}`` 映射，level 为 1/2/3；
+                None 时所有回路按默认级别 3 处理
+
+        Returns:
+            节点级 MetricResult：
+                - 所有回路 INCONCLUSIVE → value=None, confidence_level='E'
+                - 正常 → value=round2(加权平均), confidence_level 取最低
+
+        设计依据：算法说明 §4.11.2, §4.11.3
+        """
+        loop_weights = loop_weights or {}
+        valid_results: list[tuple[MetricResult, int]] = []
+        inconclusive_count = 0
+
+        for result in loop_scores:
+            # INCONCLUSIVE 判定：value=None 或 confidence_level='E'
+            if result.value is None or result.confidence_level == "E":
+                inconclusive_count += 1
+                logger.debug(
+                    "[节点聚合] 跳过 INCONCLUSIVE 回路: confidence=%s",
+                    result.confidence_level,
+                )
+                continue
+            # 回路级别（从 details.loop_level 读取，或从 loop_weights 读取）
+            level = self._resolve_level(result, loop_weights)
+            weight = self.LEVEL_WEIGHTS.get(level, self.LEVEL_WEIGHTS[self.DEFAULT_LEVEL])
+            valid_results.append((result, weight))
+
+        total_loops = len(loop_scores)
+        logger.debug(
+            "[节点聚合] total=%d, valid=%d, inconclusive=%d",
+            total_loops, len(valid_results), inconclusive_count,
+        )
+
+        # 所有回路 INCONCLUSIVE → 节点评分留空
+        if not valid_results:
+            return MetricResult(
+                metric_code="composite_score",
+                value=None,
+                confidence_level="E",
+                lineage=DataLineage(algorithm_version=ALGORITHM_VERSION),
+                details={
+                    "reason": "all_loops_inconclusive",
+                    "total_loops": total_loops,
+                    "inconclusive_count": inconclusive_count,
+                },
+            )
+
+        # 加权平均：Score_unit = Σ(w_i · Score_i) / Σ(w_i)
+        weighted_sum = sum(r.value * w for r, w in valid_results)
+        weight_total = sum(w for _, w in valid_results)
+        node_score = weighted_sum / weight_total if weight_total > 0 else 0.0
+        node_score = max(0.0, min(100.0, node_score))
+        node_score = round(node_score, 2)
+
+        # 可信度取有效回路中最低等级
+        confidence = self._min_confidence([r for r, _ in valid_results])
+
+        # 血缘取第一条有效回路（若有）
+        lineage = valid_results[0][0].lineage
+
+        logger.debug(
+            "[节点聚合] node_score=%.2f, confidence=%s, weight_total=%d",
+            node_score, confidence, weight_total,
+        )
+
+        return MetricResult(
+            metric_code="composite_score",
+            value=node_score,
+            confidence_level=confidence,
+            lineage=lineage,
+            details={
+                "total_loops": total_loops,
+                "valid_loops": len(valid_results),
+                "inconclusive_count": inconclusive_count,
+                "weight_total": weight_total,
+            },
+        )
+
+    def _resolve_level(
+        self, result: MetricResult, loop_weights: dict[str, int]
+    ) -> int:
+        """解析回路级别.
+
+        优先级：loop_weights[loop_id] > result.details.loop_level > DEFAULT_LEVEL
+        """
+        # 从 loop_weights 读取（需 loop_id，但 MetricResult 无 loop_id 字段）
+        # MetricResult.details 中可能存有 loop_id
+        loop_id = result.details.get("loop_id") if result.details else None
+        if loop_id and loop_id in loop_weights:
+            return loop_weights[loop_id]
+        # 从 details.loop_level 读取
+        if result.details:
+            level = result.details.get("loop_level")
+            if level is not None:
+                try:
+                    return int(level)
+                except (TypeError, ValueError):
+                    pass
+        return self.DEFAULT_LEVEL
+
+    @staticmethod
+    def _min_confidence(results: list[MetricResult]) -> str:
+        """取结果列表中最低的可信度等级（A 最高，E 最低）."""
+        order = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
+        worst = "A"
+        worst_rank = 0
+        for r in results:
+            rank = order.get(r.confidence_level, 4)
+            if rank > worst_rank:
+                worst_rank = rank
+                worst = r.confidence_level
+        return worst
+
+
 __all__ = [
     "AGGREGATE_FIELDS",
+    "NodeAggregator",
     "aggregate_all_nodes_daily",
     "aggregate_all_nodes_monthly",
     "aggregate_daily_snapshot",

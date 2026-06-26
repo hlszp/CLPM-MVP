@@ -1,0 +1,230 @@
+"""振荡率计算器（算法说明 §4.6）.
+
+基于控制偏差的 IAE（积分绝对误差）零交叉规律性检测振荡。
+对齐 GB/T 44693.2-2024 附录 F.1，结合 Hägglund (2005) 的 IAE 方法。
+
+算法步骤：
+    1. 计算控制偏差 E = PV - SP
+    2. 识别零交叉点（偏差符号变化时刻）
+    3. 计算相邻零交叉间的 IAE（积分绝对误差）
+    4. 分别对正值段/负值段计算面积相似率（最小距离法）
+    5. 振荡率 = min(正面积相似率, 负面积相似率) × 100
+
+设计依据：算法说明 §4.6；GB/T 44693.2-2024 附录 F.1
+
+定位：辅助诊断指标，用于稳定率修正和振荡诊断。
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import numpy as np
+
+from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.metric_calculator.base import MetricCalculatorBase
+
+logger = logging.getLogger(__name__)
+
+#: 振荡判定相似率阈值
+SIMILARITY_THRESHOLD = 0.4
+
+#: 最少零交叉点数（至少 2 个完整周期）
+MIN_ZERO_CROSSINGS = 4
+
+
+class OscillationRateCalculator(MetricCalculatorBase):
+    """振荡率计算器（算法说明 §4.6）.
+
+    基于 IAE 零交叉相似率法检测振荡。
+    振荡率用于稳定率修正：S = 1/e^(σ/0.05U) × (1-Osc) × 100。
+    """
+
+    @property
+    def metric_code(self) -> str:
+        return "oscillation_rate"
+
+    def calculate(self, bundle: MetricDataBundle) -> MetricResult:
+        """计算振荡率.
+
+        Args:
+            bundle: 指标数据包（需含 pv/sp 信号，mask 为 pv_valid && sp_valid）
+
+        Returns:
+            MetricResult：value 为振荡率 0~100，
+            details 中含 is_oscillating/oscillation_period
+        """
+        pairs = self._get_masked_pair(bundle, "pv", "sp")
+        n = len(pairs)
+
+        logger.debug("[振荡率] 输入: masked_points=%d", n)
+
+        if n < 4:
+            return self._make_result(
+                bundle, 0.0,
+                {"is_oscillating": False, "oscillation_period": 0.0, "reason": "insufficient_data"},
+            )
+
+        errors = np.array([float(pv) - float(sp) for pv, sp in pairs], dtype=float)
+
+        # 步骤 2：识别零交叉点
+        zero_crossings = self._find_zero_crossings(errors)
+        if len(zero_crossings) < MIN_ZERO_CROSSINGS:
+            logger.debug("[振荡率] 零交叉点 %d < %d，返回 0", len(zero_crossings), MIN_ZERO_CROSSINGS)
+            return self._make_result(
+                bundle, 0.0,
+                {"is_oscillating": False, "oscillation_period": 0.0, "zero_crossings": len(zero_crossings)},
+            )
+
+        # 步骤 3：计算相邻零交叉间的 IAE
+        segments = self._compute_iae_segments(errors, zero_crossings, n)
+        pos_iae = [s[0] for s in segments if s[2] > 0]
+        neg_iae = [s[0] for s in segments if s[2] < 0]
+
+        if not pos_iae or not neg_iae:
+            return self._make_result(
+                bundle, 0.0,
+                {"is_oscillating": False, "oscillation_period": 0.0, "reason": "empty_polarity"},
+            )
+
+        # 步骤 4：计算相似率（最小距离法）
+        s_a = self._similarity_rate(pos_iae)
+        s_b = self._similarity_rate(neg_iae)
+
+        # 零交叉间隔规律性检验（过滤随机噪声的误判）
+        # 真实振荡的零交叉间隔应较为均匀；随机噪声的间隔高度不规则
+        regularity = self._crossing_regularity(zero_crossings)
+
+        # 步骤 5：综合振荡率
+        osc_value = min(s_a, s_b) * regularity * 100.0
+        is_osc = (s_a >= SIMILARITY_THRESHOLD
+                  and s_b >= SIMILARITY_THRESHOLD
+                  and regularity >= 0.5)
+
+        period = 0.0
+        if is_osc and len(zero_crossings) >= 3:
+            intervals = [zero_crossings[i + 1] - zero_crossings[i]
+                         for i in range(len(zero_crossings) - 1)]
+            period = float(np.median(intervals)) * 2.0
+
+        osc_value = self._clamp(osc_value)
+
+        logger.debug(
+            "[振荡率] s_a=%.4f, s_b=%.4f, osc=%.2f%%, is_osc=%s, period=%.1f",
+            s_a, s_b, osc_value, is_osc, period,
+        )
+
+        return self._make_result(
+            bundle,
+            osc_value,
+            {
+                "is_oscillating": is_osc,
+                "oscillation_period": round(period, 2),
+                "s_a": round(s_a, 4),
+                "s_b": round(s_b, 4),
+                "zero_crossings": len(zero_crossings),
+                "positive_segments": len(pos_iae),
+                "negative_segments": len(neg_iae),
+            },
+        )
+
+    @staticmethod
+    def _find_zero_crossings(errors: np.ndarray) -> list[int]:
+        """识别零交叉点（偏差符号变化时刻）."""
+        crossings: list[int] = []
+        n = len(errors)
+        for i in range(1, n):
+            if errors[i - 1] * errors[i] < 0:
+                crossings.append(i)
+            elif errors[i - 1] == 0 and errors[i] != 0:
+                crossings.append(i)
+        return crossings
+
+    @staticmethod
+    def _compute_iae_segments(
+        errors: np.ndarray, zero_crossings: list[int], n: int
+    ) -> list[tuple[float, float, int]]:
+        """计算相邻零交叉间的 IAE 段.
+
+        Returns:
+            [(iae, duration, sign), ...] 每段的 IAE/时长/符号
+        """
+        segments: list[tuple[float, float, int]] = []
+        prev = 0
+        for cross in zero_crossings + [n]:
+            seg = errors[prev:cross]
+            if len(seg) == 0:
+                prev = cross
+                continue
+            iae = float(np.sum(np.abs(seg)))
+            duration = float(cross - prev)
+            sign = 1 if float(np.mean(seg)) > 0 else -1
+            segments.append((iae, duration, sign))
+            prev = cross
+        return segments
+
+    @staticmethod
+    def _similarity_rate(values: list[float]) -> float:
+        """计算相似率（最小距离法）.
+
+        算法：
+            1. 找到使 Σ(v_i - v_j)² 最小的 v_j 作为 avg
+            2. 清除不相似数据（|v/avg| < 0.05 或 > 15）
+            3. 重新计算平均值 cleaned_avg
+            4. similarity = 1 - |min(cleaned_avg, avg) - avg| / |avg|
+        """
+        if len(values) < 2:
+            return 0.0
+        arr = np.array(values, dtype=float)
+
+        # 最小距离法求平均值
+        best_j = 0
+        best_dist = float("inf")
+        for j in range(len(arr)):
+            dist = float(np.sum((arr - arr[j]) ** 2))
+            if dist < best_dist:
+                best_dist = dist
+                best_j = j
+        avg = float(arr[best_j])
+        if abs(avg) < 1e-12:
+            return 0.0
+
+        # 清除不相似数据
+        ratios = np.abs(arr / avg)
+        cleaned = arr[(ratios >= 0.05) & (ratios <= 15)]
+        if len(cleaned) == 0:
+            return 0.0
+
+        cleaned_avg = float(np.mean(cleaned))
+        similarity = 1.0 - abs(min(cleaned_avg, avg) - avg) / abs(avg)
+        return max(0.0, min(1.0, similarity))
+
+    @staticmethod
+    def _crossing_regularity(zero_crossings: list[int]) -> float:
+        """计算零交叉间隔的规律性因子.
+
+        基于间隔变异系数（CV = σ/μ）评估振荡的周期性：
+            - CV 接近 0 → 间隔均匀 → 规律性接近 1（真实振荡）
+            - CV 较大 → 间隔混乱 → 规律性接近 0（随机噪声）
+
+        Returns:
+            规律性因子 0~1；交叉点不足 2 个时返回 0
+        """
+        if len(zero_crossings) < 2:
+            return 0.0
+        intervals = np.array(
+            [zero_crossings[i + 1] - zero_crossings[i]
+             for i in range(len(zero_crossings) - 1)],
+            dtype=float,
+        )
+        mean_interval = float(np.mean(intervals))
+        if mean_interval <= 0:
+            return 0.0
+        std_interval = float(np.std(intervals))
+        cv = std_interval / mean_interval
+        # CV 越大规律性越低；CV=0 → regularity=1, CV>=1 → regularity=0
+        return max(0.0, 1.0 - cv)
+
+
+__all__ = ["OscillationRateCalculator"]
