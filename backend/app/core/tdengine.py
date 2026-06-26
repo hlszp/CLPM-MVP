@@ -227,4 +227,156 @@ async def query_trend_data(
         return []
 
 
-__all__ = ["query_trend_data", "execute_sql", "close_client"]
+# ---------------------------------------------------------------------------
+# DataPlanner 适配器（Phase 4：将 query_trend_data 包装为 DataPlanner 所需签名）
+# ---------------------------------------------------------------------------
+
+
+def make_dataplanner_query_fn(db: Any) -> Any:
+    """构造 DataPlanner 适配器函数（闭包捕获 db 会话）。
+
+    将现有 ``query_trend_data(tag_name, start, end)`` 包装为 DataPlanner
+    所需的 ``TDengineQueryFn`` 签名：
+    ``(loop_id, tag_roles, start, end, interval_s) → RawTimeSeries``
+
+    适配器职责：
+        1. 查询 LoopTagMapping + TagRegistry 获取每个 tag_role 的 tag_name
+        2. 调用 query_trend_data 查询每个 tag 的时序数据
+        3. quality 字符串转 int（GOOD→1, BAD→0），对齐预处理 quality_code 映射
+        4. 合并所有 tag 的数据为 RawTimeSeries（统一时间轴）
+
+    Args:
+        db: 异步数据库会话（用于查询 LoopTagMapping / TagRegistry）
+
+    Returns:
+        TDengineQueryFn 闭包（async callable）
+    """
+    from collections.abc import Awaitable, Callable
+
+    async def _query_fn(
+        loop_id: str,
+        tag_roles: list[str],
+        start: datetime,
+        end: datetime,
+        interval_s: int,
+    ):
+        """DataPlanner 适配器闭包：按 tag 角色列表查询 TDengine 原始时序数据。"""
+        from sqlalchemy import select
+
+        from app.contracts.data_types import RawTimeSeries
+        from app.models.loop import LoopTagMapping
+        from app.models.tag import TagRegistry
+
+        # 1. 查询 LoopTagMapping（tag_role 大写存储，DataPlanner 传入小写）
+        m_result = await db.execute(
+            select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
+        )
+        mappings = {m.tag_role.upper(): m for m in m_result.scalars().all()}
+
+        # 2. 查询 TagRegistry 获取 tag_name
+        tag_ids = [str(m.tag_id) for m in mappings.values()]
+        tags_map: dict[str, Any] = {}
+        if tag_ids:
+            t_result = await db.execute(
+                select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
+            )
+            for t in t_result.scalars().all():
+                tags_map[str(t.id)] = t
+
+        # 3. 对每个 tag_role 查询 TDengine 数据
+        start_iso = start.isoformat()
+        end_iso = end.isoformat()
+
+        # role_lower → rows（每行 {ts, value, quality}）
+        role_data: dict[str, list[dict[str, Any]]] = {}
+        for role_lower in tag_roles:
+            role_upper = role_lower.upper()
+            mapping = mappings.get(role_upper)
+            if not mapping:
+                logger.debug("适配器: 回路 %s 无 %s 角色映射，跳过", loop_id, role_upper)
+                continue
+            tag = tags_map.get(str(mapping.tag_id))
+            if not tag:
+                logger.debug("适配器: 回路 %s 的 %s tag 未找到，跳过", loop_id, role_upper)
+                continue
+            rows = await query_trend_data(tag.tag_name, start_iso, end_iso)
+            role_data[role_lower] = rows
+
+        # 4. 构建统一时间轴（所有 tag 共享同一 TDengine 子表，时间戳应一致；
+        #    但容错处理：取并集后排序，缺失点填 None）
+        ts_set: set[str] = set()
+        for rows in role_data.values():
+            for row in rows:
+                ts_set.add(str(row.get("ts")))
+        sorted_ts_str = sorted(ts_set)
+
+        timestamps = [_parse_ts_str(ts) for ts in sorted_ts_str]
+
+        # 5. 构建信号值和质量码字典
+        signals: dict[str, list[Any]] = {}
+        quality_codes: dict[str, list[int]] = {}
+
+        for role_lower, rows in role_data.items():
+            ts_to_value = {str(row.get("ts")): row.get("value") for row in rows}
+            signals[role_lower] = [ts_to_value.get(ts) for ts in sorted_ts_str]
+
+            # PV 角色附带质量码（对齐预处理 quality_code.map_quality_code 约定）
+            if role_lower.upper() == "PV":
+                quality_key = f"{role_lower}_quality"
+                ts_to_quality = {
+                    str(row.get("ts")): str(row.get("quality", "GOOD")).upper()
+                    for row in rows
+                }
+                quality_codes[quality_key] = [
+                    1 if ts_to_quality.get(ts, "GOOD") == "GOOD" else 0
+                    for ts in sorted_ts_str
+                ]
+
+        logger.debug(
+            "适配器: loop=%s, roles=%s, points=%d, signals=%s",
+            loop_id,
+            list(role_data.keys()),
+            len(timestamps),
+            {k: len(v) for k, v in signals.items()},
+        )
+
+        return RawTimeSeries(
+            timestamps=timestamps,
+            signals=signals,
+            quality_codes=quality_codes,
+        )
+
+    return _query_fn
+
+
+def _parse_ts_str(ts_str: str) -> datetime:
+    """将时间戳字符串解析为 datetime（兼容多种格式）。
+
+    Args:
+        ts_str: 时间戳字符串（ISO 8601 或 epoch）
+
+    Returns:
+        datetime 对象（解析失败时返回当前时间兜底）
+    """
+    s = ts_str.strip()
+    # 尝试 epoch 秒
+    try:
+        epoch = float(s)
+        return datetime.fromtimestamp(epoch, tz=None)
+    except (ValueError, TypeError):
+        pass
+    # 尝试 ISO 8601
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        pass
+    logger.warning("适配器: 无法解析时间戳 %r，使用当前时间兜底", s)
+    return datetime.now()
+
+
+__all__ = [
+    "query_trend_data",
+    "execute_sql",
+    "close_client",
+    "make_dataplanner_query_fn",
+]

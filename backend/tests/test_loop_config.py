@@ -23,11 +23,15 @@ from app.services.loop_config import (
     list_mode_mappings,
     replace_mode_mappings,
 )
+from app.contracts.data_types import ConfidenceLevel, DataLineage, MetricResult
+from app.services.confidence_evaluator import (
+    ALGORITHM_VERSION as CONFIDENCE_ALGORITHM_VERSION,
+)
+from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.node_performance import (
     aggregate_node_snapshot,
     query_realtime_auto_rate,
 )
-from app.tasks.kpi_calc import _compute_composite_score_v2
 
 
 # ===========================================================================
@@ -104,6 +108,75 @@ def _make_kpi_values(
         "steady_rate": steady,
         "effective_auto_rate": effective_auto,
     }
+
+
+def _compute_composite_score_v2_via_evaluator(
+    kpi_values: dict[str, Decimal | None],
+    type_weights: dict[str, dict] | None,
+    score_type: str,
+) -> Decimal | None:
+    """通过 ConfidenceEvaluator.compute_composite_score 计算 v2 综合评分。
+
+    适配旧 ``_compute_composite_score_v2(kpi_values, type_weights, score_type)``
+    签名到 Phase 4 新接口 ``ConfidenceEvaluator.compute_composite_score(
+    metric_results, weights)``。
+
+    Phase 4 重构后 ``app.tasks.kpi_calc._compute_composite_score_v2`` 已删除，
+    本函数封装新接口调用，保留旧测试用例的调用方式。
+
+    旧 kpi_values key: accuracy_rate / fast_response_rate / steady_rate /
+        effective_auto_rate
+    新 metric_results key: accuracy_rate / fast_rate / stability_rate /
+        effective_auto_rate
+
+    type_weights[score_type] = {weight_a, weight_f, weight_s}（Decimal）
+    weights = {accuracy_rate, fast_rate, stability_rate}（float）
+
+    Returns:
+        综合评分 Decimal（INCONCLUSIVE 时返回 None）
+    """
+    def _to_result(code: str, value: Decimal | None) -> MetricResult:
+        if value is None:
+            return MetricResult(
+                metric_code=code,
+                value=None,
+                confidence_level=ConfidenceLevel.E.value,
+                lineage=DataLineage(algorithm_version=CONFIDENCE_ALGORITHM_VERSION),
+            )
+        return MetricResult(
+            metric_code=code,
+            value=float(value),
+            confidence_level=ConfidenceLevel.A.value,
+            lineage=DataLineage(algorithm_version=CONFIDENCE_ALGORITHM_VERSION),
+        )
+
+    metric_results: dict[str, MetricResult] = {
+        "accuracy_rate": _to_result("accuracy_rate", kpi_values.get("accuracy_rate")),
+        "fast_rate": _to_result("fast_rate", kpi_values.get("fast_response_rate")),
+        "stability_rate": _to_result("stability_rate", kpi_values.get("steady_rate")),
+    }
+    eff_auto = kpi_values.get("effective_auto_rate")
+    if eff_auto is not None:
+        metric_results["effective_auto_rate"] = _to_result(
+            "effective_auto_rate", eff_auto
+        )
+
+    weights: dict[str, float] | None = None
+    if type_weights and score_type in type_weights:
+        w = type_weights[score_type]
+        weights = {
+            "accuracy_rate": float(w.get("weight_a", 0)),
+            "fast_rate": float(w.get("weight_f", 0)),
+            "stability_rate": float(w.get("weight_s", 0)),
+        }
+
+    result = ConfidenceEvaluator.compute_composite_score(
+        metric_results=metric_results,
+        weights=weights,
+    )
+    if result.value is None:
+        return None
+    return Decimal(str(result.value))
 
 
 def _make_agg_row(
@@ -275,7 +348,7 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("STABLE", 0.2, 0.3, 0.5)
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2(kpi_values, type_weights, "STABLE")
+        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "STABLE")
 
         assert score == Decimal("46.20")
 
@@ -287,7 +360,7 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("SLOW", 0.3, 0.1, 0.6)
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2(kpi_values, type_weights, "SLOW")
+        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "SLOW")
 
         assert score == Decimal("46.20")
 
@@ -299,7 +372,7 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("FAST", 0.2, 0.5, 0.3)
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2(kpi_values, type_weights, "FAST")
+        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "FAST")
 
         assert score == Decimal("47.40")
 
@@ -311,7 +384,7 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("LOGIC", 0.0, 0.5, 0.6)
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2(kpi_values, type_weights, "LOGIC")
+        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "LOGIC")
 
         assert score == Decimal("44.73")
 
@@ -324,21 +397,24 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("STABLE", 0.2, 0.3, 0.5)
         kpi_values = _make_kpi_values(effective_auto=None)
 
-        score = _compute_composite_score_v2(kpi_values, type_weights, "STABLE")
+        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "STABLE")
 
         assert score == Decimal("46.20")
 
     def test_score_v2_no_weights(self) -> None:
-        """无权重配置时回退平等加权（a=f=s=0.3333）。
+        """无权重配置时使用 ConfidenceEvaluator 默认权重（a=0.25, f=0.20, s=0.55）。
 
-        基础评分 = 0.3333*(0.9+0.8+0.7) / 0.9999 * 100 ≈ 80.00
-        P = 80.00 * 0.6 = 48.00
+        Phase 4 重构后，weights=None 时不再回退平等加权，而是使用
+        ConfidenceEvaluator.DEFAULT_WEIGHTS（对齐国标附录 C 稳定型）。
+
+        基础评分 = (0.25*0.9 + 0.20*0.8 + 0.55*0.7) / 1.0 * 100 = 77.00
+        P = 77.00 * 0.6 = 46.20
         """
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2(kpi_values, None, "STABLE")
+        score = _compute_composite_score_v2_via_evaluator(kpi_values, None, "STABLE")
 
-        assert score == Decimal("48.00")
+        assert score == Decimal("46.20")
 
 
 class TestInferScoreType:
