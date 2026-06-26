@@ -69,6 +69,8 @@ class FakeRedis:
         self._strings: dict[str, str] = {}
         self._sets: dict[str, set[str]] = {}
         self._ttls: dict[str, float] = {}
+        # _client attr: close_redis() accesses redis_client._client on shutdown
+        self._client = None
 
     async def get(self, key: str) -> str | None:
         return self._strings.get(key)

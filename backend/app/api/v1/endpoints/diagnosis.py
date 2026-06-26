@@ -185,14 +185,37 @@ async def get_analytics_endpoint(
 async def export_analytics_endpoint(
     body: AnalyticsExportRequest,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(get_current_user),
 ) -> dict:
-    """导出统计报表（异步任务，返回 taskId）。"""
-    # Phase 1: 返回模拟任务 ID
-    import uuid
+    """导出统计报表（异步任务，返回 taskId）。
 
-    task_id = str(uuid.uuid4())
+    设计依据：IDS §2.4 — POST /api/v1/diagnosis/analytics/export
+
+    触发 Celery 异步导出任务，返回真实 task_id。
+    任务完成后可通过 GET /api/v1/algorithms/tasks/{task_id} 查询状态。
+    """
+    from app.tasks.report_generator import export_diagnosis_statistics
+
+    # 触发 Celery 异步导出任务
+    async_result = export_diagnosis_statistics.delay(
+        start_time=body.startTime,
+        end_time=body.endTime,
+        plant_node_id=body.plantNodeId,
+        diagnosis_label=body.diagnosisLabel,
+        action_status=body.actionStatus,
+        user_id=user.id,
+        granularity=body.granularity,
+        file_format=body.format,
+    )
+    task_id = async_result.id
     data = {"taskId": task_id, "status": "PENDING"}
+    logger.info(
+        "诊断统计异步导出任务已提交, task_id=%s, user=%s, range=%s~%s",
+        task_id,
+        user.username,
+        body.startTime,
+        body.endTime,
+    )
     return success(data=data, message="导出任务已提交")
 
 

@@ -34,6 +34,7 @@ from app.contracts.data_types import (
     TimeWindow,
 )
 from app.services.cache.l1_datablock import L1DataBlockCache
+from app.services.cache.l2_bundle import L2BundleCache
 from app.services.metric_data_bundle import MetricDataBundleAssembler
 from app.services.preprocessing.pipeline import PREPROCESS_VERSION, PreprocessingPipeline
 from app.services.preprocessing.thresholds import get_threshold
@@ -91,6 +92,7 @@ class DataPlanner:
             assembler=MetricDataBundleAssembler(),
             db=session,
             config_loader=my_config_loader,
+            bundle_cache=L2BundleCache(redis_client),  # 可选，启用 L2 Bundle 缓存
         )
         bundles = await planner.request_bundles(
             loop_id="TC101",
@@ -109,6 +111,7 @@ class DataPlanner:
         assembler: MetricDataBundleAssembler,
         db: Any | None = None,
         config_loader: ConfigLoader | None = None,
+        bundle_cache: L2BundleCache | None = None,
     ) -> None:
         """初始化 DataPlanner.
 
@@ -118,12 +121,17 @@ class DataPlanner:
             assembler: MetricDataBundle 组装器
             db: 异步数据库会话（查询契约表；config_loader 为 None 时也用于加载回路配置）
             config_loader: 回路预处理配置加载器（注入便于测试，None 时用默认 db 查询）
+            bundle_cache: L2 MetricDataBundle 缓存（可选，``None`` 时禁用 L2 缓存）。
+                启用后 ``request_bundles`` 会优先查询 L2，命中则跳过查询计划与组装。
         """
         self._cache = cache
         self._query_fn = tdengine_query_fn
         self._assembler = assembler
         self._db = db
         self._config_loader = config_loader or self._default_config_loader
+        self._bundle_cache = bundle_cache
+        # 待写入 L2 缓存的 Key（request_bundles 中设置，_maybe_write_l2_cache 消费）
+        self._pending_l2_key: str | None = None
 
     # ------------------------------------------------------------------
     # 核心入口
@@ -139,13 +147,14 @@ class DataPlanner:
         """提交数据需求，返回 MetricDataBundle 列表.
 
         流程（数据流程图 §7.1）：
+            Phase 1: L2 Bundle 缓存查询（若启用，命中则直接返回，跳过组装）
             Phase 2: 读取指标数据需求契约
             Phase 3: 合并相同 tagGroup 的查询计划
             Phase 4: 查询 DataBlock 缓存
             Phase 5: 未命中 → 查询 TDengine
             Phase 6: 8 步预处理
             Phase 7: 写入缓存（Pipeline 批量）
-            Phase 8: 组装 MetricDataBundle
+            Phase 8: 组装 MetricDataBundle + 写入 L2 缓存
 
         Args:
             loop_id: 回路 ID
@@ -156,7 +165,7 @@ class DataPlanner:
         Returns:
             MetricDataBundle 列表（每个指标一个 Bundle）
 
-        设计依据：ADS §2, 数据流程图 §7.1
+        设计依据：ADS §2, §10.7.1, 数据流程图 §7.1
         """
         logger.debug(
             "DataPlanner.request_bundles: loop=%s, metrics=%s, window=%s~%s, control=%s",
@@ -166,6 +175,28 @@ class DataPlanner:
             time_window.end.isoformat(),
             control_type.value,
         )
+
+        # Phase 1: L2 Bundle 缓存查询（若启用，命中则直接返回，跳过查询与组装）
+        if self._bundle_cache is not None and metrics:
+            l2_key = L2BundleCache.build_key(
+                loop_id=loop_id,
+                metrics=metrics,
+                time_window_start=time_window.start,
+                time_window_end=time_window.end,
+                control_type=control_type.value,
+            )
+            cached_bundles = await self._bundle_cache.get(l2_key)
+            if cached_bundles is not None:
+                logger.info(
+                    "DataPlanner L2 命中，跳过查询+组装: loop=%s, bundles=%d",
+                    loop_id,
+                    len(cached_bundles),
+                )
+                return cached_bundles
+            # 未命中，记录 Key 供 Phase 8 写入使用
+            self._pending_l2_key = l2_key
+        else:
+            self._pending_l2_key = None
 
         # Phase 2: 读取指标数据需求契约
         requirements = await self._load_requirements(metrics)
@@ -197,6 +228,9 @@ class DataPlanner:
 
         # Phase 8: 按指标组装 MetricDataBundle
         bundles = self._assemble_bundles(requirements, data_blocks)
+
+        # Phase 8 (续): 写入 L2 缓存（若启用且本次未命中）
+        await self._maybe_write_l2_cache(bundles)
 
         logger.info(
             "DataPlanner 完成: loop=%s, bundles=%d, cached_blocks=%d",
@@ -587,6 +621,34 @@ class DataPlanner:
             )
             bundles.append(bundle)
         return bundles
+
+    # ------------------------------------------------------------------
+    # Phase 8 (续): 写入 L2 缓存
+    # ------------------------------------------------------------------
+
+    async def _maybe_write_l2_cache(self, bundles: list[MetricDataBundle]) -> None:
+        """将组装好的 Bundle 列表写入 L2 缓存（若启用且本次 L2 未命中）.
+
+        仅在本次 ``request_bundles`` 触发了 L2 查询且未命中时写入，
+        避免重复写入已命中的 Key。空 Bundle 列表不写入。
+
+        设计依据：ADS §10.7.1, 数据流程图 §7.1 Phase 8
+        """
+        l2_key = self._pending_l2_key
+        # 消费后立即清空，避免跨请求泄漏
+        self._pending_l2_key = None
+        if l2_key is None or self._bundle_cache is None or not bundles:
+            return
+        try:
+            await self._bundle_cache.set(l2_key, bundles)
+            logger.debug(
+                "DataPlanner L2 写入: key=%s, bundles=%d", l2_key, len(bundles)
+            )
+        except Exception:  # noqa: BLE001
+            # L2 写入失败不应影响主流程（缓存只是优化）
+            logger.warning(
+                "DataPlanner L2 写入失败，忽略: key=%s", l2_key, exc_info=True
+            )
 
     # ------------------------------------------------------------------
     # 辅助方法

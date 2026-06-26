@@ -332,6 +332,33 @@ async def _diagnose_loop(
     # 6. OP 饱和率分析
     saturation_result = _analyze_saturation(op_values)
 
+    # 7. Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测，设计依据：FDS §5.4.6）
+    choudhury_result = _detect_choudhury_nonlinearity(pv_values, op_values)
+
+    # 8. Kano 统计法粘滞检测（与 Choudhury 互为交叉验证）
+    kano_result = _detect_kano_stiction(pv_values, op_values)
+
+    # 提取时间戳数组（供阶跃响应/响应迟缓/偏差突变算法使用）
+    ts_values = np.array(
+        [_ts_to_float(d.get("ts")) for d in aligned if d.get("ts") is not None],
+        dtype=float,
+    )
+    # 若时间戳数量与 PV 不一致，回退为 None（使用等间隔假设）
+    ts_param = ts_values if len(ts_values) == len(pv_values) else None
+
+    # 9. 完整阶跃响应分析（过冲/衰减比/稳态误差）
+    step_response_result = _analyze_step_response(pv_values, sp_values, op_values, ts_param)
+
+    # 10. 响应迟缓检测（一阶滞后拟合）
+    # 控制类型从回路扩展属性获取（默认 PI）
+    control_type = getattr(loop, "control_type", None) or "PI"
+    slow_response_result = _detect_slow_response(
+        pv_values, sp_values, control_type, ts_param
+    )
+
+    # 11. 偏差突变检测（CUSUM）
+    bias_shift_result = _detect_bias_shift(pv_values, sp_values, ts_param)
+
     # 收集所有算法结果（带置信度）
     algorithm_results: list[dict[str, Any]] = []
 
@@ -462,6 +489,119 @@ async def _diagnose_loop(
                         f"高饱和 {saturation_result['high_count']} 点，"
                         f"低饱和 {saturation_result['low_count']} 点"
                     ),
+                },
+            }
+        )
+
+    # Choudhury NGI/NLI 非线性检测 → VALVE_STICTION（交叉验证）
+    if choudhury_result["detected"]:
+        algorithm_results.append(
+            {
+                "label": "VALVE_STICTION",
+                "confidence": choudhury_result["confidence"],
+                "feature_values": {
+                    "ngi": choudhury_result["ngi"],
+                    "nli": choudhury_result["nli"],
+                    "choudhury_stiction_index": choudhury_result["stiction_index"],
+                    "fitting_score": choudhury_result["fitting_score"],
+                },
+                "evidence": {
+                    "reasoning": (
+                        f"Choudhury 非线性检测：NGI={choudhury_result['ngi']:.4f}，"
+                        f"NLI={choudhury_result['nli']:.4f}，"
+                        f"椭圆拟合度={choudhury_result['fitting_score']:.3f}"
+                    ),
+                    "algorithm": "CHOUDHURY_NGI_NLI",
+                },
+            }
+        )
+
+    # Kano 统计法粘滞检测 → VALVE_STICTION（交叉验证）
+    if kano_result["detected"]:
+        algorithm_results.append(
+            {
+                "label": "VALVE_STICTION",
+                "confidence": kano_result["confidence"],
+                "feature_values": {
+                    "kano_stiction_ratio": kano_result["stiction_ratio"],
+                    "pv_op_correlation": kano_result["correlation"],
+                    "std_ratio": kano_result["std_ratio"],
+                },
+                "evidence": {
+                    "reasoning": (
+                        f"Kano 统计法：粘滞区间占比={kano_result['stiction_ratio']:.3f}，"
+                        f"PV-OP 相关系数={kano_result['correlation']:.3f}，"
+                        f"标准差比值={kano_result['std_ratio']:.3f}"
+                    ),
+                    "algorithm": "KANO_STATISTICAL",
+                },
+            }
+        )
+
+    # 完整阶跃响应分析 → OVERAGGRESSIVE
+    if step_response_result["detected"]:
+        algorithm_results.append(
+            {
+                "label": "OVERAGGRESSIVE",
+                "confidence": step_response_result["confidence"],
+                "feature_values": {
+                    "overshoot": step_response_result["overshoot"],
+                    "decay_ratio": step_response_result["decay_ratio"],
+                    "steady_state_error": step_response_result["steady_state_error"],
+                    "step_count": step_response_result["step_count"],
+                },
+                "evidence": {
+                    "reasoning": (
+                        f"阶跃响应分析：过冲={step_response_result['overshoot']:.3f}，"
+                        f"衰减比={step_response_result['decay_ratio']:.3f}，"
+                        f"稳态误差={step_response_result['steady_state_error']:.3f}，"
+                        f"阶跃次数={step_response_result['step_count']}"
+                    ),
+                    "algorithm": "STEP_RESPONSE",
+                },
+            }
+        )
+
+    # 响应迟缓检测 → OVERCONSERVATIVE
+    if slow_response_result["detected"]:
+        algorithm_results.append(
+            {
+                "label": "OVERCONSERVATIVE",
+                "confidence": slow_response_result["confidence"],
+                "feature_values": {
+                    "time_constant": slow_response_result["time_constant"],
+                    "expected_time_constant": slow_response_result["expected_time_constant"],
+                    "ratio": slow_response_result["ratio"],
+                },
+                "evidence": {
+                    "reasoning": (
+                        f"响应迟缓检测：时间常数={slow_response_result['time_constant']:.3f}，"
+                        f"期望值={slow_response_result['expected_time_constant']:.3f}，"
+                        f"比值={slow_response_result['ratio']:.2f}"
+                    ),
+                    "algorithm": "SLOW_RESPONSE",
+                },
+            }
+        )
+
+    # 偏差突变检测 → EXTERNAL_DISTURBANCE
+    if bias_shift_result["detected"]:
+        algorithm_results.append(
+            {
+                "label": "EXTERNAL_DISTURBANCE",
+                "confidence": bias_shift_result["confidence"],
+                "feature_values": {
+                    "shift_count": bias_shift_result["shift_count"],
+                    "max_cusum": bias_shift_result["max_cusum"],
+                    "shift_magnitude": bias_shift_result["shift_magnitude"],
+                },
+                "evidence": {
+                    "reasoning": (
+                        f"偏差突变检测：突变次数={bias_shift_result['shift_count']}，"
+                        f"最大 CUSUM={bias_shift_result['max_cusum']:.3f}，"
+                        f"突变幅度={bias_shift_result['shift_magnitude']:.3f}"
+                    ),
+                    "algorithm": "BIAS_SHIFT_CUSUM",
                 },
             }
         )
@@ -926,6 +1066,707 @@ def _analyze_saturation(op_values: np.ndarray) -> dict[str, Any]:
         }
 
 
+# ---------------------------------------------------------------------------
+# 扩展诊断算法（设计依据：FDS §5.4.6 / ADS §5.2-5.5）
+# ---------------------------------------------------------------------------
+
+
+def _empty_choudhury_result() -> dict[str, Any]:
+    """空 Choudhury 非线性检测结果。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "ngi": 0.0,
+        "nli": 0.0,
+        "stiction_index": 0.0,
+        "fitting_score": 0.0,
+    }
+
+
+def _empty_kano_result() -> dict[str, Any]:
+    """空 Kano 粘滞检测结果。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "stiction_ratio": 0.0,
+        "correlation": 0.0,
+        "std_ratio": 0.0,
+    }
+
+
+def _empty_step_response_result() -> dict[str, Any]:
+    """空阶跃响应分析结果。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "overshoot": 0.0,
+        "decay_ratio": 0.0,
+        "steady_state_error": 0.0,
+        "step_count": 0,
+    }
+
+
+def _empty_slow_response_result() -> dict[str, Any]:
+    """空响应迟缓检测结果。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "time_constant": 0.0,
+        "expected_time_constant": 0.0,
+        "ratio": 0.0,
+    }
+
+
+def _empty_bias_shift_result() -> dict[str, Any]:
+    """空偏差突变检测结果。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "shift_count": 0,
+        "max_cusum": 0.0,
+        "shift_magnitude": 0.0,
+    }
+
+
+def _compute_max_bicoherence(
+    signal: np.ndarray, n_seg: int = 4, n_freq: int = 16
+) -> float:
+    """计算信号的最大双相干性（NLI 近似）。
+
+    双相干性衡量信号的二次相位耦合（QPC），是非线性检测的标准指标。
+    通过分段 FFT 平均近似计算双谱方差比。
+
+    Args:
+        signal: 去均值后的信号
+        n_seg: 分段数（影响统计稳定性）
+        n_freq: 计算的频率对数量
+
+    Returns:
+        最大双相干性值（0~1）
+    """
+    N = len(signal)
+    seg_len = N // n_seg
+    if seg_len < 8:
+        return 0.0
+
+    try:
+        # 构建分段矩阵 (n_seg, seg_len) 并计算 FFT
+        segments = np.empty((n_seg, seg_len), dtype=float)
+        for i in range(n_seg):
+            seg = signal[i * seg_len : (i + 1) * seg_len]
+            segments[i] = seg - np.mean(seg)
+
+        X = np.fft.rfft(segments, axis=1)  # shape: (n_seg, n_freq_total)
+        n = X.shape[1]
+        if n < 4:
+            return 0.0
+
+        max_f = min(n_freq, n // 2)
+
+        # 构建频率对网格（向量化）
+        f1_arr = np.arange(1, max_f)
+        f2_arr = np.arange(1, max_f)
+        f1_grid, f2_grid = np.meshgrid(f1_arr, f2_arr, indexing="ij")
+        mask = (f2_grid >= f1_grid) & ((f1_grid + f2_grid) < n)
+        f1_valid = f1_grid[mask]
+        f2_valid = f2_grid[mask]
+
+        if len(f1_valid) == 0:
+            return 0.0
+
+        # 提取各频率分量（向量化）
+        X_f1 = X[:, f1_valid]  # (n_seg, n_pairs)
+        X_f2 = X[:, f2_valid]
+        X_f12 = X[:, f1_valid + f2_valid]
+
+        # 双谱（分段平均）
+        bis = np.mean(X_f1 * X_f2 * np.conj(X_f12), axis=0)
+
+        # 归一化分母
+        psd_f1 = np.mean(np.abs(X_f1) ** 2, axis=0)
+        psd_f2 = np.mean(np.abs(X_f2) ** 2, axis=0)
+        psd_f12 = np.mean(np.abs(X_f12) ** 2, axis=0)
+        denom = np.sqrt(psd_f1 * psd_f2 * psd_f12) + 1e-12
+
+        bic = (np.abs(bis) / denom) ** 2
+        return float(min(1.0, np.max(bic)))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("双相干性计算失败: %s", exc)
+        return 0.0
+
+
+def _detect_choudhury_nonlinearity(
+    pv: np.ndarray, op: np.ndarray
+) -> dict[str, Any]:
+    """Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测）。
+
+    设计依据：FDS §5.4.6 / ADS §5.2.2
+
+    基于 OP 信号的非高斯性（NGI）和非线性（NLI）指标检测阀门粘滞：
+    - NGI = |Kurtosis(x) - 3| / 6 + Skewness(x)² / 24
+    - NLI 通过最大双相干性近似（二次相位耦合指标）
+    - 当 NGI > 0.001 且 NLI > 0.01 时判定存在非线性（粘滞）
+
+    Args:
+        pv: PV 数据数组
+        op: OP 数据数组
+
+    Returns:
+        {detected, confidence, ngi, nli, stiction_index, fitting_score}
+    """
+    min_len = min(len(pv), len(op))
+    if min_len < 32:
+        return _empty_choudhury_result()
+
+    try:
+        from scipy import stats as sp_stats
+
+        op_arr = op[:min_len].astype(float)
+        pv_arr = pv[:min_len].astype(float)
+
+        # 去均值
+        op_centered = op_arr - np.mean(op_arr)
+        op_std = float(np.std(op_centered))
+        if op_std < 1e-9:
+            return _empty_choudhury_result()
+
+        # 4 阶矩统计量（Fisher 定义，正态分布 excess kurtosis=0）
+        skewness = float(sp_stats.skew(op_centered))
+        kurtosis_excess = float(sp_stats.kurtosis(op_centered, fisher=True))
+
+        # NGI: 非高斯指数（ADS §5.2.2 公式）
+        ngi = abs(kurtosis_excess) / 6.0 + (skewness ** 2) / 24.0
+
+        # NLI: 非线性指数（最大双相干性近似）
+        nli = _compute_max_bicoherence(op_centered)
+
+        # PV-OP 椭圆拟合（复用现有 _detect_valve_stiction 拟合度）
+        stiction_fit = _detect_valve_stiction(pv_arr, op_arr)
+        fitting_score = float(stiction_fit.get("fitting_score", 0.0))
+        stiction_index = float(stiction_fit.get("stiction_index", 0.0))
+
+        # 判定规则（ADS §5.2.2: NGI > 0.001 且 NLI > 0.01）
+        detected = bool(ngi > 0.001 and nli > 0.01)
+
+        # 置信度：融合 NGI、NLI 和椭圆拟合度
+        if detected:
+            confidence = min(1.0, (ngi * 50.0 + nli * 30.0 + fitting_score * 20.0) / 3.0)
+        else:
+            confidence = 0.0
+
+        return {
+            "detected": detected,
+            "confidence": confidence,
+            "ngi": ngi,
+            "nli": nli,
+            "stiction_index": stiction_index,
+            "fitting_score": fitting_score,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Choudhury 非线性检测失败: %s", exc)
+        return _empty_choudhury_result()
+
+
+def _detect_kano_stiction(
+    pv: np.ndarray, op: np.ndarray, mv: np.ndarray | None = None
+) -> dict[str, Any]:
+    """Kano 统计法阀门粘滞检测。
+
+    设计依据：FDS §5.4.6 / ADS §5.2.3
+
+    基于 OP 与 PV 的统计特性，计算粘滞区间特征：
+    - 将 OP 序列分段（单调变化区间）
+    - 计算每段 OP 变化范围 ΔOP_i 和 PV 变化范围 ΔPV_i
+    - 粘滞区间 = OP 几乎不变但 PV 大幅变化的段
+    - ρ = 粘滞区间长度 / 总区间长度
+    - ρ > 0.6 → 高概率粘滞
+
+    与 Choudhury 方法互为交叉验证。
+
+    Args:
+        pv: PV 数据数组
+        op: OP 数据数组
+        mv: 操纵变量（可选，默认与 OP 一致）
+
+    Returns:
+        {detected, confidence, stiction_ratio, correlation, std_ratio}
+    """
+    min_len = min(len(pv), len(op))
+    if min_len < 16:
+        return _empty_kano_result()
+
+    try:
+        pv_arr = pv[:min_len].astype(float)
+        op_arr = op[:min_len].astype(float)
+        mv_arr = (mv[:min_len].astype(float) if mv is not None else op_arr)
+
+        # PV 和 OP 的标准差比值
+        pv_std = float(np.std(pv_arr))
+        op_std = float(np.std(op_arr))
+        std_ratio = pv_std / (op_std + 1e-9)
+
+        # PV-OP 相关系数
+        if pv_std > 1e-9 and op_std > 1e-9:
+            correlation = float(np.corrcoef(pv_arr, op_arr)[0, 1])
+        else:
+            correlation = 0.0
+
+        # OP 单调分段：检测方向变化点
+        op_diff = np.diff(op_arr)
+        # 方向符号（+1/-1/0）
+        signs = np.sign(op_diff)
+        # 方向变化点（忽略 0）
+        nonzero_signs = signs[signs != 0]
+        if len(nonzero_signs) < 2:
+            return _empty_kano_result()
+
+        # 找到方向变化的索引
+        sign_changes = np.where(np.diff(nonzero_signs) != 0)[0]
+        # 分段边界
+        boundaries = np.concatenate([[-1], sign_changes, [len(nonzero_signs) - 1]])
+
+        total_segments = len(boundaries) - 1
+        if total_segments == 0:
+            return _empty_kano_result()
+
+        # 统计粘滞区间：OP 变化小但 PV 变化大
+        stiction_segments = 0
+        op_range = float(np.max(op_arr) - np.min(op_arr)) + 1e-9
+        pv_range = float(np.max(pv_arr) - np.min(pv_arr)) + 1e-9
+
+        for i in range(total_segments):
+            start_idx = int(boundaries[i]) + 1
+            end_idx = int(boundaries[i + 1]) + 1
+            if end_idx <= start_idx:
+                continue
+            seg_op = op_arr[start_idx:end_idx]
+            seg_pv = pv_arr[start_idx:end_idx]
+            delta_op = float(np.max(seg_op) - np.min(seg_op)) / op_range
+            delta_pv = float(np.max(seg_pv) - np.min(seg_pv)) / pv_range
+            # 粘滞区间：OP 变化 < 5% 但 PV 变化 > 20%
+            if delta_op < 0.05 and delta_pv > 0.20:
+                stiction_segments += 1
+
+        stiction_ratio = stiction_segments / total_segments
+
+        # 判定规则（ADS §5.2.3: ρ > 0.6）
+        detected = bool(stiction_ratio > 0.6)
+        confidence = min(1.0, stiction_ratio) if detected else 0.0
+
+        return {
+            "detected": detected,
+            "confidence": confidence,
+            "stiction_ratio": stiction_ratio,
+            "correlation": correlation,
+            "std_ratio": std_ratio,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Kano 粘滞检测失败: %s", exc)
+        return _empty_kano_result()
+
+
+def _analyze_step_response(
+    pv: np.ndarray,
+    sp: np.ndarray,
+    op: np.ndarray | None = None,
+    ts: np.ndarray | list[float] | None = None,
+) -> dict[str, Any]:
+    """完整阶跃响应分析（过冲/衰减比/稳态误差）。
+
+    设计依据：FDS §5.4.6 / ADS §5.3.2
+
+    检测 SP 阶跃变化，提取响应曲线并计算：
+    - 过冲 Overshoot = (PV_peak - SP_new) / (SP_new - SP_old) × 100%
+    - 衰减比 DecayRatio = A2 / A1（第二峰/第一峰）
+    - 稳态误差 = |mean(PV_tail) - SP_new|
+
+    满足 2 项及以上指标超阈值 → 输出过激判定。
+
+    Args:
+        pv: PV 数据数组
+        sp: SP 数据数组
+        op: OP 数据数组（可选，用于辅助分析）
+        ts: 时间戳数组（可选，用于时间归一化）
+
+    Returns:
+        {detected, confidence, overshoot, decay_ratio, steady_state_error, step_count}
+    """
+    min_len = min(len(pv), len(sp))
+    if min_len < 16:
+        return _empty_step_response_result()
+
+    try:
+        pv_arr = pv[:min_len].astype(float)
+        sp_arr = sp[:min_len].astype(float)
+
+        # SP 量程
+        sp_range = float(np.max(sp_arr) - np.min(sp_arr))
+        if sp_range < 1e-9:
+            return _empty_step_response_result()
+
+        # 检测 SP 阶跃点（变化超过 SP 量程的 5%）
+        sp_diff = np.diff(sp_arr)
+        step_threshold = sp_range * 0.05
+        step_indices = np.where(np.abs(sp_diff) > step_threshold)[0]
+
+        if len(step_indices) == 0:
+            return _empty_step_response_result()
+
+        # 分析第一个阶跃（最显著的）
+        step_idx = int(step_indices[0])
+        step_size = float(sp_arr[step_idx + 1] - sp_arr[step_idx])
+        if abs(step_size) < 1e-9:
+            return _empty_step_response_result()
+
+        new_sp = float(sp_arr[step_idx + 1])
+        old_sp = float(sp_arr[step_idx])
+
+        # 响应窗口：阶跃后的数据
+        response_end = min(step_idx + 1 + min_len // 2, min_len)
+        pv_response = pv_arr[step_idx + 1 : response_end]
+        if len(pv_response) < 4:
+            return _empty_step_response_result()
+
+        # 指标1：过冲
+        if step_size > 0:
+            pv_peak = float(np.max(pv_response))
+            overshoot = max(0.0, (pv_peak - new_sp) / step_size)
+        else:
+            pv_trough = float(np.min(pv_response))
+            overshoot = max(0.0, (new_sp - pv_trough) / abs(step_size))
+
+        # 指标2：衰减比（A2/A1，同方向连续峰）
+        decay_ratio = _compute_decay_ratio(pv_response, new_sp, step_size)
+
+        # 指标3：稳态误差（最后 20% 数据的均值与 SP 的偏差）
+        tail_len = max(1, len(pv_response) // 5)
+        pv_tail = pv_response[-tail_len:]
+        steady_state_error = abs(float(np.mean(pv_tail)) - new_sp) / sp_range
+
+        # 判定规则（ADS §5.3.2: 满足 2 项及以上）
+        overshoot_threshold = 0.25  # 25%
+        decay_ratio_threshold = 0.4
+        sse_threshold = 0.05  # 5% SP 量程
+
+        flags = [
+            overshoot > overshoot_threshold,
+            decay_ratio > decay_ratio_threshold,
+            steady_state_error > sse_threshold,
+        ]
+        satisfied = sum(flags)
+
+        # 过激判定：满足 2 项及以上
+        detected = bool(satisfied >= 2)
+        confidence = (satisfied / 3.0) if detected else 0.0
+
+        return {
+            "detected": detected,
+            "confidence": confidence,
+            "overshoot": overshoot,
+            "decay_ratio": decay_ratio,
+            "steady_state_error": steady_state_error,
+            "step_count": len(step_indices),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("阶跃响应分析失败: %s", exc)
+        return _empty_step_response_result()
+
+
+def _compute_decay_ratio(
+    pv_response: np.ndarray, new_sp: float, step_size: float
+) -> float:
+    """计算衰减比 A2/A1（同方向连续振荡峰）。
+
+    Args:
+        pv_response: 阶跃后的 PV 响应数据
+        new_sp: 新设定值
+        step_size: 阶跃幅度
+
+    Returns:
+        衰减比（0~1），无振荡返回 0
+    """
+    if len(pv_response) < 8:
+        return 0.0
+
+    try:
+        # 去除稳态值
+        deviation = pv_response - new_sp
+        if step_size < 0:
+            deviation = -deviation
+
+        # 寻找局部极大值（振荡峰）
+        # 使用信号处理方法寻找峰值
+        from scipy.signal import find_peaks
+
+        peaks, _ = find_peaks(deviation, prominence=np.std(deviation) * 0.1)
+        if len(peaks) < 2:
+            return 0.0
+
+        # A1 = 第一个峰幅值，A2 = 第二个峰幅值
+        a1 = float(deviation[peaks[0]])
+        a2 = float(deviation[peaks[1]])
+        if a1 < 1e-9:
+            return 0.0
+        return min(1.0, a2 / a1)
+    except Exception:
+        return 0.0
+
+
+def _detect_slow_response(
+    pv: np.ndarray,
+    sp: np.ndarray,
+    control_type: str = "PI",
+    ts: np.ndarray | list[float] | None = None,
+) -> dict[str, Any]:
+    """响应迟缓检测（Slow Response Detection）。
+
+    设计依据：FDS §5.4.6 / ADS §5.4.2
+
+    基于 PV 对 SP 变化的响应延迟：
+    - 检测 SP 阶跃变化
+    - 对 PV 响应拟合一阶滞后模型 PV(t) = K(1 - exp(-t/τ))
+    - 计算响应时间常数 τ
+    - 与期望响应时间（基于控制类型阈值）比较
+
+    Args:
+        pv: PV 数据数组
+        sp: SP 数据数组
+        control_type: 控制类型（P/PI/PID），影响期望响应时间
+        ts: 时间戳数组（秒）
+
+    Returns:
+        {detected, confidence, time_constant, expected_time_constant, ratio}
+    """
+    min_len = min(len(pv), len(sp))
+    if min_len < 16:
+        return _empty_slow_response_result()
+
+    try:
+        pv_arr = pv[:min_len].astype(float)
+        sp_arr = sp[:min_len].astype(float)
+
+        # 时间轴（归一化到 0~1）
+        if ts is not None and len(ts) >= min_len:
+            ts_arr = np.asarray(ts[:min_len], dtype=float)
+            ts_arr = ts_arr - ts_arr[0]
+            total_time = float(ts_arr[-1] - ts_arr[0])
+            if total_time < 1e-9:
+                t_norm = np.linspace(0, 1, min_len)
+            else:
+                t_norm = (ts_arr - ts_arr[0]) / total_time
+        else:
+            t_norm = np.linspace(0, 1, min_len)
+
+        # SP 量程
+        sp_range = float(np.max(sp_arr) - np.min(sp_arr))
+        if sp_range < 1e-9:
+            return _empty_slow_response_result()
+
+        # 检测 SP 阶跃点
+        sp_diff = np.diff(sp_arr)
+        step_threshold = sp_range * 0.05
+        step_indices = np.where(np.abs(sp_diff) > step_threshold)[0]
+
+        if len(step_indices) == 0:
+            # 无阶跃：基于稳态偏差和 OP 活跃度判断
+            bias = pv_arr - sp_arr
+            bias_std = float(np.std(bias))
+            # 稳态偏差大且变化缓慢 → 过保守
+            ratio = bias_std / sp_range
+            detected = bool(ratio > 0.1)
+            expected_tau = _expected_time_constant(control_type)
+            return {
+                "detected": detected,
+                "confidence": min(1.0, ratio * 5) if detected else 0.0,
+                "time_constant": 0.0,
+                "expected_time_constant": expected_tau,
+                "ratio": ratio,
+            }
+
+        # 分析第一个阶跃后的响应
+        step_idx = int(step_indices[0])
+        step_size = float(sp_arr[step_idx + 1] - sp_arr[step_idx])
+        if abs(step_size) < 1e-9:
+            return _empty_slow_response_result()
+
+        new_sp = float(sp_arr[step_idx + 1])
+        old_sp = float(sp_arr[step_idx])
+
+        # 响应窗口
+        response_end = min(step_idx + 1 + min_len // 2, min_len)
+        pv_response = pv_arr[step_idx + 1 : response_end]
+        t_response = t_norm[step_idx + 1 : response_end]
+        if len(pv_response) < 8:
+            return _empty_slow_response_result()
+
+        # 一阶滞后拟合：PV(t) = old_sp + step_size * (1 - exp(-t/τ))
+        # 归一化时间到 0~1 范围
+        if t_response[-1] > t_response[0]:
+            t_fit = (t_response - t_response[0]) / (t_response[-1] - t_response[0])
+        else:
+            t_fit = np.linspace(0, 1, len(t_response))
+
+        # 使用 scipy 曲线拟合
+        from scipy.optimize import curve_fit
+
+        def _first_order_lag(t: np.ndarray, tau: float) -> np.ndarray:
+            return old_sp + step_size * (1.0 - np.exp(-t / max(tau, 1e-6)))
+
+        try:
+            popt, _ = curve_fit(
+                _first_order_lag,
+                t_fit,
+                pv_response,
+                p0=[0.3],
+                bounds=([0.001], [10.0]),
+                maxfev=1000,
+            )
+            time_constant = float(popt[0])
+        except Exception:
+            # 拟合失败：使用 63.2% 响应时间近似
+            target = old_sp + step_size * 0.632
+            if step_size > 0:
+                reach_idx = np.where(pv_response >= target)[0]
+            else:
+                reach_idx = np.where(pv_response <= target)[0]
+            if len(reach_idx) > 0:
+                time_constant = float(t_fit[reach_idx[0]])
+            else:
+                time_constant = 1.0
+
+        # 期望时间常数（基于控制类型）
+        expected_tau = _expected_time_constant(control_type)
+
+        # 响应迟缓判定：实际时间常数 > 期望值
+        ratio = time_constant / expected_tau if expected_tau > 0 else 0.0
+        detected = bool(ratio > 2.0)  # 实际响应比期望慢 2 倍以上
+
+        confidence = min(1.0, ratio / 5.0) if detected else 0.0
+
+        return {
+            "detected": detected,
+            "confidence": confidence,
+            "time_constant": time_constant,
+            "expected_time_constant": expected_tau,
+            "ratio": ratio,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("响应迟缓检测失败: %s", exc)
+        return _empty_slow_response_result()
+
+
+def _expected_time_constant(control_type: str) -> float:
+    """根据控制类型返回期望响应时间常数（归一化值）。
+
+    基于工业实践经验：
+    - P 控制：响应较慢，期望 τ ≈ 0.5
+    - PI 控制：中等响应，期望 τ ≈ 0.3
+    - PID 控制：快速响应，期望 τ ≈ 0.2
+    """
+    defaults = {
+        "P": 0.5,
+        "PI": 0.3,
+        "PID": 0.2,
+    }
+    return defaults.get(control_type.upper(), 0.3)
+
+
+def _detect_bias_shift(
+    pv: np.ndarray,
+    sp: np.ndarray,
+    ts: np.ndarray | list[float] | None = None,
+) -> dict[str, Any]:
+    """偏差突变检测（Bias Shift Detection）。
+
+    设计依据：FDS §5.4.6 / ADS §5.5.2
+
+    检测 PV-SP 偏差的突变点：
+    - 使用 CUSUM（累积和）算法检测均值变化
+    - 统计偏差突变频率
+    - 频率 > 5 次/小时 → 外扰频繁
+
+    Args:
+        pv: PV 数据数组
+        sp: SP 数据数组
+        ts: 时间戳数组（秒）
+
+    Returns:
+        {detected, confidence, shift_count, max_cusum, shift_magnitude}
+    """
+    min_len = min(len(pv), len(sp))
+    if min_len < 16:
+        return _empty_bias_shift_result()
+
+    try:
+        pv_arr = pv[:min_len].astype(float)
+        sp_arr = sp[:min_len].astype(float)
+
+        # 计算偏差
+        bias = pv_arr - sp_arr
+
+        # 偏差统计量
+        bias_mean = float(np.mean(bias))
+        bias_std = float(np.std(bias))
+        if bias_std < 1e-9:
+            return _empty_bias_shift_result()
+
+        # CUSUM 参数
+        # k = 允许的偏移量（典型为 0.5*σ）
+        k = 0.5 * bias_std
+        # h = 检测阈值（典型为 5*σ）
+        h = 5.0 * bias_std
+
+        # 双边 CUSUM
+        bias_centered = bias - bias_mean
+        cusum_pos = np.zeros(min_len)
+        cusum_neg = np.zeros(min_len)
+        shift_points: list[int] = []
+
+        for i in range(1, min_len):
+            cusum_pos[i] = max(0.0, cusum_pos[i - 1] + bias_centered[i] - k)
+            cusum_neg[i] = min(0.0, cusum_neg[i - 1] + bias_centered[i] + k)
+            if cusum_pos[i] > h or abs(cusum_neg[i]) > h:
+                shift_points.append(i)
+                # 重置 CUSUM
+                cusum_pos[i] = 0.0
+                cusum_neg[i] = 0.0
+
+        # 计算时间窗口（秒）
+        if ts is not None and len(ts) >= min_len:
+            ts_arr = np.asarray(ts[:min_len], dtype=float)
+            total_time = float(ts_arr[-1] - ts_arr[0])
+        else:
+            # 假设 1 秒采样间隔
+            total_time = float(min_len)
+
+        total_hours = total_time / 3600.0 if total_time > 0 else 1.0
+        shift_count = len(shift_points)
+        shift_frequency = shift_count / total_hours if total_hours > 0 else 0.0
+
+        # 最大 CUSUM 值
+        max_cusum = float(max(np.max(cusum_pos), abs(np.min(cusum_neg))))
+
+        # 突变幅度
+        shift_magnitude = 0.0
+        if shift_points:
+            shift_magnitude = float(np.mean(np.abs(bias_centered[shift_points])))
+
+        # 判定规则（ADS §5.5.2: 频率 > 5 次/小时）
+        detected = bool(shift_frequency > 5.0)
+        confidence = min(1.0, shift_frequency / 10.0) if detected else 0.0
+
+        return {
+            "detected": detected,
+            "confidence": confidence,
+            "shift_count": shift_count,
+            "max_cusum": max_cusum,
+            "shift_magnitude": shift_magnitude,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("偏差突变检测失败: %s", exc)
+        return _empty_bias_shift_result()
+
+
 def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
     """多算法置信度融合（noisy-OR 加权模型）。
 
@@ -972,6 +1813,32 @@ def _get_tag_name(
     if not tag:
         return None
     return tag.tag_name
+
+
+def _ts_to_float(ts: Any) -> float | None:
+    """将时间戳转换为浮点数（秒）。
+
+    支持 int/float、datetime 对象、ISO 8601 字符串。
+
+    Args:
+        ts: 时间戳（int/float/datetime/str）
+
+    Returns:
+        浮点秒数，转换失败返回 None
+    """
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    if hasattr(ts, "timestamp"):
+        return float(ts.timestamp())
+    try:
+        from datetime import datetime
+
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        return float(dt.timestamp())
+    except (ValueError, TypeError):
+        return None
 
 
 def _compute_sample_interval(aligned: list[dict[str, Any]]) -> float:
@@ -1095,6 +1962,11 @@ def _build_scatter_plot_data(aligned: list[dict[str, Any]]) -> dict[str, list[fl
 __all__ = [
     "DIAG_ALGORITHM_VERSION",
     "AsyncTask",
+    "_analyze_step_response",
+    "_detect_bias_shift",
+    "_detect_choudhury_nonlinearity",
+    "_detect_kano_stiction",
+    "_detect_slow_response",
     "run_diagnosis_hourly",
     "run_loop_diagnosis",
 ]

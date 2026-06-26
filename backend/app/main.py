@@ -16,8 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.endpoints import (
     aas,
+    algorithms,
     audit_logs,
     auth,
+    configs,
     dashboard,
     dataplanner,
     diagnosis,
@@ -119,6 +121,10 @@ def create_app() -> FastAPI:
     v1_router.include_router(diagnosis.tracker_router)
     # v4.0: DataPlanner 内部管理接口（仅 ADMIN）
     v1_router.include_router(dataplanner.router)
+    # v4.0: 算法服务接口（IDS §2.7）
+    v1_router.include_router(algorithms.router)
+    # v4.0: 批量配置接口（IDS §2.8/§2.9）
+    v1_router.include_router(configs.router)
     # v4.0: 评估任务管理（标准/自定义）
     v1_router.include_router(eval_tasks.router)
     # S5 系统管理：用户管理、审计日志、报表配置

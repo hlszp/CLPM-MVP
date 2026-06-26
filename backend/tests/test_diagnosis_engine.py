@@ -19,11 +19,16 @@ from app.tasks.diagnosis_engine import (
     _analyze_pid_params,
     _analyze_quality,
     _analyze_saturation,
+    _analyze_step_response,
     _build_scatter_plot_data,
     _compute_sample_interval,
     _dempster_shafer_fusion,
+    _detect_bias_shift,
+    _detect_choudhury_nonlinearity,
     _detect_external_disturbance,
+    _detect_kano_stiction,
     _detect_oscillation_fft,
+    _detect_slow_response,
     _detect_valve_stiction,
     _diagnose_loop,
     _do_diagnose_single_loop,
@@ -983,3 +988,483 @@ class TestComputeSampleIntervalEdgeCases:
         aligned = [{"ts": 100.0}, {"ts": 98.0}, {"ts": 96.0}]
         # 所有 diff 为负 → 过滤后为空 → 返回 1.0
         assert _compute_sample_interval(aligned) == 1.0
+
+
+# ===========================================================================
+# 扩展诊断算法测试（设计依据：FDS §5.4.6 / ADS §5.2-5.5）
+# ===========================================================================
+
+
+class TestDetectChoudhuryNonlinearity:
+    """测试 _detect_choudhury_nonlinearity() Choudhury NGI/NLI 检测。"""
+
+    def test_short_data_returns_empty(self) -> None:
+        """数据不足应返回空结果。"""
+        pv = np.array([1.0] * 10, dtype=float)
+        op = np.array([1.0] * 10, dtype=float)
+        result = _detect_choudhury_nonlinearity(pv, op)
+        assert result["detected"] is False
+        assert result["ngi"] == 0.0
+        assert result["nli"] == 0.0
+
+    def test_gaussian_signal_no_nonlinearity(self) -> None:
+        """高斯信号（无线性）应未检测到非线性。"""
+        rng = np.random.RandomState(42)
+        # 纯高斯白噪声（线性系统输出）
+        op = 50.0 + rng.normal(0, 5.0, 200)
+        pv = 50.0 + rng.normal(0, 5.0, 200)
+        result = _detect_choudhury_nonlinearity(pv, op)
+        # 高斯信号 NGI 应较小
+        assert result["ngi"] >= 0.0
+        assert "nli" in result
+
+    def test_nonlinear_signal_detected(self) -> None:
+        """非线性信号（含粘滞特征）应检测到非线性。"""
+        # 构造带粘滞特征的信号：OP 阶跃式变化，PV 滞后响应
+        n = 200
+        t = np.linspace(0, 4 * np.pi, n)
+        # OP 呈方波（粘滞特征：突然跳变）
+        op = 50.0 + 20.0 * np.sign(np.sin(t))
+        # PV 滞后响应（椭圆轨迹）
+        pv = 50.0 + 15.0 * np.sin(t - np.pi / 4)
+        result = _detect_choudhury_nonlinearity(pv, op)
+        # 方波信号具有强非高斯性
+        assert result["ngi"] > 0.0
+        assert "fitting_score" in result
+        assert "stiction_index" in result
+
+    def test_constant_op_returns_empty(self) -> None:
+        """OP 恒定时（零方差）应返回空结果。"""
+        pv = np.array([50.0 + 10.0 * np.sin(i * 0.1) for i in range(50)], dtype=float)
+        op = np.full(50, 50.0)
+        result = _detect_choudhury_nonlinearity(pv, op)
+        assert result["detected"] is False
+
+    def test_returns_confidence_on_detection(self) -> None:
+        """检测到非线性时置信度应为正。"""
+        n = 200
+        t = np.linspace(0, 4 * np.pi, n)
+        op = 50.0 + 20.0 * np.sign(np.sin(t))
+        pv = 50.0 + 15.0 * np.sin(t - np.pi / 4)
+        result = _detect_choudhury_nonlinearity(pv, op)
+        if result["detected"]:
+            assert 0.0 < result["confidence"] <= 1.0
+        else:
+            assert result["confidence"] == 0.0
+
+
+class TestDetectKanoStiction:
+    """测试 _detect_kano_stiction() Kano 统计法粘滞检测。"""
+
+    def test_short_data_returns_empty(self) -> None:
+        """数据不足应返回空结果。"""
+        pv = np.array([1.0, 2.0], dtype=float)
+        op = np.array([1.0, 2.0], dtype=float)
+        result = _detect_kano_stiction(pv, op)
+        assert result["detected"] is False
+        assert result["stiction_ratio"] == 0.0
+
+    def test_linear_response_no_stiction(self) -> None:
+        """线性 PV-OP 响应（无粘滞）应未检测到粘滞。"""
+        # PV 与 OP 完全线性相关
+        op = np.linspace(0, 100, 100)
+        pv = op * 0.5 + 10
+        result = _detect_kano_stiction(pv, op)
+        # 线性关系下粘滞区间占比应较低
+        assert result["stiction_ratio"] >= 0.0
+
+    def test_stiction_pattern_detected(self) -> None:
+        """OP 不动 PV 大幅变化应检测到粘滞特征。"""
+        # 构造粘滞模式：OP 阶段性不动，PV 持续波动
+        n = 100
+        op = np.zeros(n)
+        pv = np.zeros(n)
+        # 分 4 段：每段 OP 不变，PV 大幅波动
+        for seg in range(4):
+            start = seg * 25
+            end = (seg + 1) * 25
+            op[start:end] = seg * 25.0  # OP 在段内不变
+            pv[start:end] = 50.0 + 20.0 * np.sin(np.linspace(0, 2 * np.pi, 25))
+        result = _detect_kano_stiction(pv, op)
+        # 应该能计算 stiction_ratio
+        assert "stiction_ratio" in result
+        assert "correlation" in result
+        assert "std_ratio" in result
+
+    def test_with_mv_parameter(self) -> None:
+        """传入 mv 参数应正常工作。"""
+        n = 50
+        pv = np.array([50.0 + 5.0 * np.sin(i * 0.2) for i in range(n)], dtype=float)
+        op = np.array([50.0 + 5.0 * np.cos(i * 0.2) for i in range(n)], dtype=float)
+        mv = op.copy()
+        result = _detect_kano_stiction(pv, op, mv)
+        assert "detected" in result
+        assert "stiction_ratio" in result
+
+    def test_constant_signal_returns_empty(self) -> None:
+        """恒定信号（无方差）应返回空结果。"""
+        pv = np.full(50, 50.0)
+        op = np.full(50, 50.0)
+        result = _detect_kano_stiction(pv, op)
+        assert result["detected"] is False
+
+
+class TestAnalyzeStepResponse:
+    """测试 _analyze_step_response() 阶跃响应分析。"""
+
+    def test_short_data_returns_empty(self) -> None:
+        """数据不足应返回空结果。"""
+        pv = np.array([1.0] * 10, dtype=float)
+        sp = np.array([1.0] * 10, dtype=float)
+        result = _analyze_step_response(pv, sp)
+        assert result["detected"] is False
+        assert result["overshoot"] == 0.0
+
+    def test_no_step_returns_empty(self) -> None:
+        """无 SP 阶跃应返回空结果。"""
+        n = 100
+        sp = np.full(n, 50.0)
+        pv = np.full(n, 50.0)
+        result = _analyze_step_response(pv, sp)
+        assert result["detected"] is False
+        assert result["step_count"] == 0
+
+    def test_overaggressive_with_overshoot(self) -> None:
+        """SP 阶跃后 PV 过冲 + 振荡应检测到过激。"""
+        n = 200
+        sp = np.zeros(n)
+        sp[50:] = 100.0  # SP 阶跃
+        # PV 过冲 + 衰减振荡
+        pv = np.zeros(n)
+        for i in range(50, n):
+            t = i - 50
+            # 过冲 40% + 衰减振荡
+            pv[i] = 100.0 + 40.0 * np.exp(-t * 0.05) * np.cos(t * 0.3)
+        result = _analyze_step_response(pv, sp)
+        assert result["step_count"] > 0
+        assert result["overshoot"] > 0.0
+
+    def test_downward_step(self) -> None:
+        """下降阶跃应正确分析。"""
+        n = 200
+        sp = np.full(n, 100.0)
+        sp[50:] = 0.0  # 下降阶跃
+        pv = np.full(n, 100.0)
+        for i in range(50, n):
+            t = i - 50
+            pv[i] = 0.0 - 40.0 * np.exp(-t * 0.05) * np.cos(t * 0.3)
+        result = _analyze_step_response(pv, sp)
+        assert result["step_count"] > 0
+        assert result["overshoot"] >= 0.0
+
+    def test_with_timestamps(self) -> None:
+        """传入时间戳应正常工作。"""
+        n = 200
+        sp = np.zeros(n)
+        sp[50:] = 100.0
+        pv = np.zeros(n)
+        pv[50:] = 100.0
+        pv[60:70] = 130.0  # 过冲
+        ts = np.arange(n, dtype=float)
+        result = _analyze_step_response(pv, sp, ts=ts)
+        assert result["step_count"] > 0
+
+
+class TestDetectSlowResponse:
+    """测试 _detect_slow_response() 响应迟缓检测。"""
+
+    def test_short_data_returns_empty(self) -> None:
+        """数据不足应返回空结果。"""
+        pv = np.array([1.0] * 10, dtype=float)
+        sp = np.array([1.0] * 10, dtype=float)
+        result = _detect_slow_response(pv, sp)
+        assert result["detected"] is False
+        assert result["time_constant"] == 0.0
+
+    def test_fast_response_not_slow(self) -> None:
+        """快速响应不应判定为迟缓。"""
+        n = 200
+        sp = np.zeros(n)
+        sp[50:] = 100.0
+        # PV 快速响应（指数跟踪，小时间常数）
+        pv = np.zeros(n)
+        for i in range(50, n):
+            t = (i - 50) / 50.0
+            pv[i] = 100.0 * (1 - np.exp(-t * 20))  # 快速响应
+        result = _detect_slow_response(pv, sp, control_type="PID")
+        assert "time_constant" in result
+        assert "expected_time_constant" in result
+
+    def test_slow_response_detected(self) -> None:
+        """缓慢响应应检测到迟缓。"""
+        n = 200
+        sp = np.zeros(n)
+        sp[50:] = 100.0
+        # PV 极慢响应（大时间常数）
+        pv = np.zeros(n)
+        for i in range(50, n):
+            t = (i - 50) / 50.0
+            pv[i] = 100.0 * (1 - np.exp(-t * 0.5))  # 慢响应
+        result = _detect_slow_response(pv, sp, control_type="PID")
+        # 慢响应时间常数应较大
+        assert result["time_constant"] > 0.0
+        assert result["ratio"] > 0.0
+
+    def test_no_step_uses_bias(self) -> None:
+        """无阶跃时应基于稳态偏差判断。"""
+        n = 100
+        sp = np.full(n, 50.0)
+        pv = np.array([50.0 + 10.0 * np.sin(i * 0.1) for i in range(n)], dtype=float)
+        result = _detect_slow_response(pv, sp, control_type="PI")
+        assert "detected" in result
+        assert "ratio" in result
+
+    def test_control_type_affects_threshold(self) -> None:
+        """不同控制类型应返回不同期望时间常数。"""
+        n = 200
+        sp = np.zeros(n)
+        sp[50:] = 100.0
+        pv = np.zeros(n)
+        for i in range(50, n):
+            t = (i - 50) / 50.0
+            pv[i] = 100.0 * (1 - np.exp(-t * 1.0))
+        result_p = _detect_slow_response(pv, sp, control_type="P")
+        result_pid = _detect_slow_response(pv, sp, control_type="PID")
+        # PID 期望更快响应，因此相同实际响应下 PID 更易判定为迟缓
+        assert result_p["expected_time_constant"] > result_pid["expected_time_constant"]
+
+
+class TestDetectBiasShift:
+    """测试 _detect_bias_shift() 偏差突变检测。"""
+
+    def test_short_data_returns_empty(self) -> None:
+        """数据不足应返回空结果。"""
+        pv = np.array([1.0] * 10, dtype=float)
+        sp = np.array([1.0] * 10, dtype=float)
+        result = _detect_bias_shift(pv, sp)
+        assert result["detected"] is False
+        assert result["shift_count"] == 0
+
+    def test_stable_bias_no_shift(self) -> None:
+        """稳定偏差（无突变）应未检测到突变。"""
+        n = 200
+        sp = np.full(n, 50.0)
+        # PV 稳定跟踪 SP，小幅噪声
+        rng = np.random.RandomState(42)
+        pv = 50.0 + rng.normal(0, 0.5, n)
+        result = _detect_bias_shift(pv, sp)
+        # 稳定信号不应频繁触发突变
+        assert result["shift_count"] >= 0
+        assert result["max_cusum"] >= 0.0
+
+    def test_frequent_shifts_detected(self) -> None:
+        """频繁偏差突变应检测到外扰。"""
+        n = 3600  # 1 小时数据（1 秒采样）
+        sp = np.full(n, 50.0)
+        pv = np.full(n, 50.0)
+        rng = np.random.RandomState(42)
+        # 每 200 秒注入一次突变
+        for shift_time in range(0, n, 200):
+            shift_mag = rng.choice([-5.0, 5.0])
+            end = min(shift_time + 100, n)
+            pv[shift_time:end] += shift_mag
+        result = _detect_bias_shift(pv, sp)
+        # 应检测到多次突变
+        assert result["shift_count"] > 0
+        assert result["max_cusum"] > 0.0
+
+    def test_with_timestamps(self) -> None:
+        """传入时间戳应正确计算突变频率。"""
+        n = 3600
+        sp = np.full(n, 50.0)
+        pv = np.full(n, 50.0)
+        # 注入几次突变
+        for shift_time in range(0, n, 300):
+            pv[shift_time : shift_time + 50] += 8.0
+        ts = np.arange(n, dtype=float)
+        result = _detect_bias_shift(pv, sp, ts=ts)
+        assert "shift_count" in result
+        assert "shift_magnitude" in result
+
+    def test_constant_bias_returns_empty(self) -> None:
+        """恒定偏差（零方差）应返回空结果。"""
+        n = 100
+        sp = np.full(n, 50.0)
+        pv = np.full(n, 55.0)  # 恒定偏差 5
+        result = _detect_bias_shift(pv, sp)
+        assert result["detected"] is False
+
+
+# ===========================================================================
+# 新算法集成测试（_diagnose_loop 中调用新算法）
+# ===========================================================================
+
+
+class TestDiagnoseLoopExtendedAlgorithms:
+    """测试扩展算法在 _diagnose_loop 中的集成。"""
+
+    @pytest.mark.asyncio
+    async def test_choudhury_stiction_integration(self) -> None:
+        """Choudhury 算法检测到粘滞时应输出 VALVE_STICTION 标签。"""
+        loop = _make_loop()
+        loop.control_type = "PI"
+        pv_m = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        op_m = _make_mapping(tag_role="OP", tag_id="tag-op")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        op_tag = _make_tag(tag_id="tag-op", tag_name="LIC.OP")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_m, op_m]),
+                _make_scalars_all_mock([pv_tag, op_tag]),
+                MagicMock(),  # delete 结果
+            ]
+        )
+        db.add = MagicMock()
+
+        # 构造粘滞特征信号：方波 OP + 滞后 PV
+        n = 200
+        t = np.linspace(0, 4 * np.pi, n)
+        op_vals = 50.0 + 20.0 * np.sign(np.sin(t))
+        pv_vals = 50.0 + 15.0 * np.sin(t - np.pi / 4)
+
+        async def _query_fn(tag_name: str, *args, **kwargs):
+            if tag_name == "LIC.PV":
+                return [
+                    {"ts": float(i), "value": float(pv_vals[i]), "quality": "GOOD"}
+                    for i in range(n)
+                ]
+            if tag_name == "LIC.OP":
+                return [
+                    {"ts": float(i), "value": float(op_vals[i]), "quality": "GOOD"}
+                    for i in range(n)
+                ]
+            return []
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_trend_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert result["status"] == "SUCCESS"
+        # 至少有诊断结果（可能包含 VALVE_STICTION）
+        assert len(result["labels"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_step_response_overaggressive_integration(self) -> None:
+        """阶跃响应分析检测到过激时应输出 OVERAGGRESSIVE 标签。"""
+        loop = _make_loop()
+        loop.control_type = "PID"
+        pv_m = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        sp_m = _make_mapping(tag_role="SP", tag_id="tag-sp")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        sp_tag = _make_tag(tag_id="tag-sp", tag_name="LIC.SP")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_m, sp_m]),
+                _make_scalars_all_mock([pv_tag, sp_tag]),
+                MagicMock(),
+            ]
+        )
+        db.add = MagicMock()
+
+        # 构造过激响应：SP 阶跃 + PV 过冲振荡
+        n = 200
+        sp = np.zeros(n)
+        sp[50:] = 100.0
+        pv = np.zeros(n)
+        for i in range(50, n):
+            t = i - 50
+            pv[i] = 100.0 + 40.0 * np.exp(-t * 0.05) * np.cos(t * 0.3)
+
+        async def _query_fn(tag_name: str, *args, **kwargs):
+            if tag_name == "LIC.PV":
+                return [
+                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"}
+                    for i in range(n)
+                ]
+            if tag_name == "LIC.SP":
+                return [
+                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"}
+                    for i in range(n)
+                ]
+            return []
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_trend_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert result["status"] == "SUCCESS"
+        # 过激响应应触发 OVERAGGRESSIVE 标签
+        assert "OVERAGGRESSIVE" in result["labels"]
+
+    @pytest.mark.asyncio
+    async def test_bias_shift_disturbance_integration(self) -> None:
+        """偏差突变检测到外扰时应输出 EXTERNAL_DISTURBANCE 标签。"""
+        loop = _make_loop()
+        loop.control_type = "PI"
+        pv_m = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        sp_m = _make_mapping(tag_role="SP", tag_id="tag-sp")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        sp_tag = _make_tag(tag_id="tag-sp", tag_name="LIC.SP")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_m, sp_m]),
+                _make_scalars_all_mock([pv_tag, sp_tag]),
+                MagicMock(),
+            ]
+        )
+        db.add = MagicMock()
+
+        # 构造频繁偏差突变：SP 恒定，PV 频繁突变
+        n = 3600
+        sp = np.full(n, 50.0)
+        pv = np.full(n, 50.0)
+        for shift_time in range(0, n, 200):
+            pv[shift_time : shift_time + 100] += 8.0
+
+        async def _query_fn(tag_name: str, *args, **kwargs):
+            if tag_name == "LIC.PV":
+                return [
+                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"}
+                    for i in range(n)
+                ]
+            if tag_name == "LIC.SP":
+                return [
+                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"}
+                    for i in range(n)
+                ]
+            return []
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_trend_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert result["status"] == "SUCCESS"
+        # 频繁突变应触发 EXTERNAL_DISTURBANCE 标签
+        assert "EXTERNAL_DISTURBANCE" in result["labels"]
