@@ -13,16 +13,30 @@
 - GET    /api/v1/diagnosis/analytics                     — 诊断统计报表
 - POST   /api/v1/diagnosis/analytics/export              — 导出统计报表
 - GET    /api/v1/timeseries/{loopId}/waveform            — 波形数据
+- GET    /api/v1/diagnosis/tags                          — 查询诊断标签列表（IDS §2.4.10）
+- GET    /api/v1/diagnosis/tags/{loopId}                 — 查询回路诊断标签（IDS §2.4.11）
+- PUT    /api/v1/diagnosis/tags/{tagId}/resolve          — 处理诊断标签（IDS §2.4.12）
 """
 
 from __future__ import annotations
 
+import json
+import logging
+from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.core.exceptions import BizError
+from app.models.audit import SysAuditLog
+from app.models.diagnosis import DiagnosisTag
+from app.models.loop import LoopLedger
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.diagnosis import (
@@ -33,7 +47,10 @@ from app.schemas.diagnosis import (
     DiagnosisConfigUpdate,
     DiagnosisListData,
     DiagnosisReportRequest,
+    DiagnosisTagListResponse,
+    DiagnosisTagSchema,
     RecommendationData,
+    TagResolveRequest,
     TrackerExportData,
     TrackerStatusData,
     TrackerStatusUpdate,
@@ -57,6 +74,8 @@ from app.services.diagnosis_report import (
 from app.services.tracker import export_tracker_pdf, update_tracker_status
 from app.services.waveform import get_waveform
 
+logger = logging.getLogger(__name__)
+
 # 诊断中心路由
 router = APIRouter(prefix="/diagnosis", tags=["diagnosis"])
 
@@ -65,6 +84,9 @@ timeseries_router = APIRouter(prefix="/timeseries", tags=["timeseries"])
 
 # Tracker 路由（独立前缀）
 tracker_router = APIRouter(prefix="/tracker", tags=["tracker"])
+
+# 诊断标签路由（独立前缀，IDS §2.4.10-2.4.12）
+tags_router = APIRouter(prefix="/diagnosis/tags", tags=["diagnosis-tags"])
 
 
 # ---------------------------------------------------------------------------
@@ -362,4 +384,329 @@ async def export_tracker_endpoint(
     return success(data=data, message="导出任务已提交")
 
 
-__all__ = ["router", "timeseries_router", "tracker_router"]
+# ---------------------------------------------------------------------------
+# 诊断标签管理 API (IDS §2.4.10-2.4.12, PRD §5.6)
+# ---------------------------------------------------------------------------
+
+# 有效的标签处理目标状态（resolve 接口）
+_VALID_RESOLVE_STATUSES = ("RESOLVED", "SUPPRESSED")
+
+# 有效的标签筛选值
+_VALID_TAG_TYPES = (
+    "OSCILLATION",
+    "VALVE_STICTION",
+    "OVERAGGRESSIVE",
+    "OVERCONSERVATIVE",
+    "EXTERNAL_DISTURBANCE",
+    "QUALITY_ABNORMAL",
+    "OUTPUT_SATURATION",
+    "MANUAL_REVIEW",
+)
+_VALID_SEVERITIES = ("INFO", "WARN", "ERROR", "CRITICAL")
+_VALID_TAG_STATUSES = ("ACTIVE", "RESOLVED", "SUPPRESSED")
+
+
+def _parse_iso_dt(value: str) -> datetime:
+    """解析 ISO 8601 时间字符串为 naive datetime。
+
+    Raises:
+        BizError: ERR_VALIDATION — 时间格式无效
+    """
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError) as exc:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"时间格式无效: {value}",
+            status_code=422,
+        ) from exc
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt
+
+
+def _validate_tag_query_filters(
+    tag_type: str | None,
+    severity: str | None,
+    status: str | None,
+) -> None:
+    """校验诊断标签查询筛选参数。
+
+    Raises:
+        BizError: ERR_VALIDATION — 筛选值不在允许范围内
+    """
+    if tag_type is not None and tag_type not in _VALID_TAG_TYPES:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的标签类型，必须为 {', '.join(_VALID_TAG_TYPES)} 之一",
+            status_code=422,
+        )
+    if severity is not None and severity not in _VALID_SEVERITIES:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的严重等级，必须为 {', '.join(_VALID_SEVERITIES)} 之一",
+            status_code=422,
+        )
+    if status is not None and status not in _VALID_TAG_STATUSES:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的处理状态，必须为 {', '.join(_VALID_TAG_STATUSES)} 之一",
+            status_code=422,
+        )
+
+
+def _tag_to_dict(tag: DiagnosisTag) -> dict:
+    """将 DiagnosisTag ORM 模型转换为响应字典（对齐 DiagnosisTagSchema）。"""
+    trigger_condition = tag.trigger_condition
+    if not isinstance(trigger_condition, dict):
+        trigger_condition = None
+
+    # 从 trigger_condition 中提取 threshold 数值
+    threshold = None
+    if trigger_condition and "threshold" in trigger_condition:
+        raw_threshold = trigger_condition["threshold"]
+        if isinstance(raw_threshold, (int, float, Decimal)):
+            threshold = float(raw_threshold)
+
+    trigger_value = (
+        float(tag.trigger_value) if tag.trigger_value is not None else None
+    )
+
+    return {
+        "id": str(tag.id),
+        "loop_id": str(tag.loop_id),
+        "tag_type": tag.tag_code,
+        "severity": tag.severity,
+        "status": tag.status,
+        "source_metric": tag.source_metric,
+        "trigger_condition": trigger_condition,
+        "trigger_value": trigger_value,
+        "threshold": threshold,
+        "confidence_level": None,  # 模型无独立列，由 trigger_condition 承载
+        "description": tag.tag_name,
+        "detected_at": tag.triggered_at.isoformat() if tag.triggered_at else None,
+        "resolved_at": tag.resolved_at.isoformat() if tag.resolved_at else None,
+        "resolved_by": str(tag.resolved_by) if tag.resolved_by else None,
+        "resolution_note": tag.resolution_note,
+    }
+
+
+async def _query_diagnosis_tags(
+    db: AsyncSession,
+    *,
+    loop_id: str | None = None,
+    tag_type: str | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+    plant_node_id: str | None = None,
+    ts_start: str | None = None,
+    ts_end: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """诊断标签分页查询（共享逻辑）。
+
+    通过 JOIN loop_ledger 支持按装置节点筛选（plant_node_id → loop_ledger.unit_id）。
+    """
+    conditions: list = []
+    if loop_id:
+        conditions.append(DiagnosisTag.loop_id == loop_id)
+    if tag_type:
+        conditions.append(DiagnosisTag.tag_code == tag_type)
+    if severity:
+        conditions.append(DiagnosisTag.severity == severity)
+    if status:
+        conditions.append(DiagnosisTag.status == status)
+    if ts_start:
+        conditions.append(DiagnosisTag.triggered_at >= _parse_iso_dt(ts_start))
+    if ts_end:
+        conditions.append(DiagnosisTag.triggered_at <= _parse_iso_dt(ts_end))
+
+    base_stmt = select(DiagnosisTag)
+    if plant_node_id:
+        base_stmt = base_stmt.join(
+            LoopLedger, DiagnosisTag.loop_id == LoopLedger.id
+        ).where(LoopLedger.unit_id == plant_node_id)
+    for cond in conditions:
+        base_stmt = base_stmt.where(cond)
+
+    # 计数
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    # 分页查询（按检测时间倒序）
+    stmt = (
+        base_stmt.order_by(DiagnosisTag.triggered_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    result = await db.execute(stmt)
+    tags = result.scalars().all()
+
+    items = [_tag_to_dict(t) for t in tags]
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@tags_router.get("", response_model=ApiResponse[DiagnosisTagListResponse])
+async def list_diagnosis_tags_endpoint(
+    tagType: str | None = Query(None, description="标签类型筛选（OSCILLATION/VALVE_STICTION/...）"),
+    severity: str | None = Query(None, description="严重等级筛选（INFO/WARN/ERROR/CRITICAL）"),
+    status: str | None = Query(None, description="处理状态筛选（ACTIVE/RESOLVED/SUPPRESSED）"),
+    plantNodeId: str | None = Query(None, description="装置节点 ID 筛选"),
+    tsStart: str | None = Query(None, description="时间范围开始（ISO 8601）"),
+    tsEnd: str | None = Query(None, description="时间范围结束（ISO 8601）"),
+    page: int = Query(1, ge=1, description="页码"),
+    pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """查询诊断标签列表（多条件筛选，IDS §2.4.10）。
+
+    支持按标签类型、严重等级、处理状态、装置节点、时间范围多维筛选，分页返回。
+    所有认证用户可查询。
+    """
+    _validate_tag_query_filters(tagType, severity, status)
+    data = await _query_diagnosis_tags(
+        db=db,
+        tag_type=tagType,
+        severity=severity,
+        status=status,
+        plant_node_id=plantNodeId,
+        ts_start=tsStart,
+        ts_end=tsEnd,
+        page=page,
+        page_size=pageSize,
+    )
+    return success(data=data)
+
+
+@tags_router.get("/{loop_id}", response_model=ApiResponse[DiagnosisTagListResponse])
+async def list_loop_diagnosis_tags_endpoint(
+    loop_id: str,
+    tagType: str | None = Query(None, description="标签类型筛选"),
+    severity: str | None = Query(None, description="严重等级筛选"),
+    status: str | None = Query(None, description="处理状态筛选"),
+    tsStart: str | None = Query(None, description="时间范围开始（ISO 8601）"),
+    tsEnd: str | None = Query(None, description="时间范围结束（ISO 8601）"),
+    page: int = Query(1, ge=1, description="页码"),
+    pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """查询指定回路的诊断标签（IDS §2.4.11）。
+
+    在 /diagnosis/tags 基础上增加 loop_id 固定筛选，支持标签类型/严重等级/状态/时间范围二次筛选。
+    所有认证用户可查询。
+    """
+    _validate_tag_query_filters(tagType, severity, status)
+    data = await _query_diagnosis_tags(
+        db=db,
+        loop_id=loop_id,
+        tag_type=tagType,
+        severity=severity,
+        status=status,
+        ts_start=tsStart,
+        ts_end=tsEnd,
+        page=page,
+        page_size=pageSize,
+    )
+    return success(data=data)
+
+
+@tags_router.put("/{tag_id}/resolve", response_model=ApiResponse[DiagnosisTagSchema])
+async def resolve_diagnosis_tag_endpoint(
+    tag_id: str,
+    body: TagResolveRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(
+        require_roles("IC_ENGINEER", "PE_ENGINEER", "ADMIN")
+    ),
+) -> dict:
+    """处理诊断标签（IDS §2.4.12）。
+
+    更新标签处理状态为 RESOLVED（已处理）或 SUPPRESSED（已抑制），
+    记录处理人、处理时间和处理说明，写入审计日志。
+
+    仅 IC_ENGINEER/PE_ENGINEER/ADMIN 角色可操作。处理人从认证上下文获取。
+    """
+    # 校验目标状态
+    if body.status not in _VALID_RESOLVE_STATUSES:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的处理状态，必须为 {', '.join(_VALID_RESOLVE_STATUSES)} 之一",
+            status_code=422,
+        )
+
+    # 查询标签
+    result = await db.execute(select(DiagnosisTag).where(DiagnosisTag.id == tag_id))
+    tag = result.scalar_one_or_none()
+    if tag is None:
+        raise BizError(
+            code="ERR_DIAG_TAG_NOT_FOUND",
+            message="诊断标签不存在",
+            status_code=404,
+        )
+
+    # 记录变更前快照
+    before_snapshot = json.dumps(
+        {
+            "id": str(tag.id),
+            "status": tag.status,
+            "resolvedBy": str(tag.resolved_by) if tag.resolved_by else None,
+            "resolutionNote": tag.resolution_note,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+
+    # 更新字段
+    now = datetime.now(UTC).replace(tzinfo=None)
+    tag.status = body.status
+    tag.resolved_at = now
+    tag.resolved_by = user.id
+    if body.resolution_note is not None:
+        tag.resolution_note = body.resolution_note
+
+    # 记录变更后快照
+    after_snapshot = json.dumps(
+        {
+            "id": str(tag.id),
+            "status": tag.status,
+            "resolvedBy": str(tag.resolved_by),
+            "resolvedAt": tag.resolved_at.isoformat() if tag.resolved_at else None,
+            "resolutionNote": tag.resolution_note,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+
+    # 写入审计日志
+    audit_log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="DIAG_TAG_RESOLVE",
+        target_type="diagnosis_tag",
+        target_id=str(tag.id),
+        before_value=before_snapshot,
+        after_value=after_snapshot,
+        operated_at=now,
+    )
+    db.add(audit_log)
+    await db.commit()
+
+    logger.info(
+        "诊断标签 %s 已处理: status=%s, operator=%s",
+        tag_id,
+        body.status,
+        user.username,
+    )
+
+    return success(data=_tag_to_dict(tag), message="处理成功")
+
+
+__all__ = ["router", "timeseries_router", "tracker_router", "tags_router"]

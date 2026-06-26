@@ -128,6 +128,68 @@ class FakeRedis:
         self._sets.clear()
         self._ttls.clear()
 
+    def pipeline(self):
+        """Return a mock pipeline for batch operations (L1DataBlockCache)."""
+        return _FakePipeline(self)
+
+    def scan_iter(self, match: str, count: int = 100):
+        """Synchronous scan iterator (CacheInvalidator compatibility)."""
+        import fnmatch
+        for key in list(self._strings.keys()):
+            if fnmatch.fnmatch(key, match.replace("*", "*")):
+                yield key
+
+    async def keys(self, pattern: str) -> list[str]:
+        """Pattern-matching key search (CacheInvalidator compatibility)."""
+        import fnmatch
+        return [k for k in self._strings.keys() if fnmatch.fnmatch(k, pattern)]
+
+    async def info(self, section: str | None = None) -> dict[str, Any]:
+        """Redis INFO command mock (CacheStats compatibility)."""
+        return {
+            "memory": {"used_memory": 1024 * 100, "used_memory_human": "100K"},
+            "stats": {"keyspace_hits": 10, "keyspace_misses": 5},
+        }
+
+
+class _FakePipeline:
+    """Mock Redis pipeline for batch operations."""
+
+    def __init__(self, redis: FakeRedis) -> None:
+        self._redis = redis
+        self._ops: list[tuple[str, str, Any]] = []
+
+    def set(self, key: str, value: str, ex: int | None = None) -> _FakePipeline:
+        self._ops.append(("set", key, {"value": value, "ex": ex}))
+        return self
+
+    def delete(self, key: str) -> _FakePipeline:
+        self._ops.append(("delete", key, {}))
+        return self
+
+    async def execute(self) -> list[Any]:
+        results: list[Any] = []
+        for op, key, kwargs in self._ops:
+            if op == "set":
+                self._redis._strings[key] = kwargs["value"]
+                if kwargs.get("ex"):
+                    self._redis._ttls[key] = float(kwargs["ex"])
+                results.append(True)
+            elif op == "delete":
+                deleted = 0
+                if key in self._redis._strings:
+                    del self._redis._strings[key]
+                    deleted += 1
+                results.append(deleted)
+        self._ops.clear()
+        return results
+
+    async def __aenter__(self) -> _FakePipeline:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Fixtures

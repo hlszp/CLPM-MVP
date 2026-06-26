@@ -296,6 +296,75 @@ class DiagnosisStatisticsExportParams(CamelModel):
     plantNodeId: str | None = Field(None, description="按装置/单元筛选")
 
 
+# ---------------------------------------------------------------------------
+# 诊断标签管理 (PRD §5.6, IDS §2.4.10-2.4.12)
+# ---------------------------------------------------------------------------
+
+# 诊断标签类型（8 类，对齐 PRD §5.2 诊断标签体系）
+DiagnosisTagType = Literal[
+    "OSCILLATION",
+    "VALVE_STICTION",
+    "OVERAGGRESSIVE",
+    "OVERCONSERVATIVE",
+    "EXTERNAL_DISTURBANCE",
+    "QUALITY_ABNORMAL",
+    "OUTPUT_SATURATION",
+    "MANUAL_REVIEW",
+]
+
+# 诊断标签严重等级
+DiagnosisTagSeverity = Literal["INFO", "WARN", "ERROR", "CRITICAL"]
+
+# 诊断标签处理状态
+DiagnosisTagStatus = Literal["ACTIVE", "RESOLVED", "SUPPRESSED"]
+
+
+class DiagnosisTagSchema(CamelModel):
+    """诊断标签 schema (IDS §2.4.10).
+
+    对应 ``DiagnosisTag`` 模型，承载回路级故障标签的完整管理元数据。
+    """
+
+    id: str
+    loop_id: str
+    tag_type: str = Field(..., description="标签类型：OSCILLATION/VALVE_STICTION/...")
+    severity: str = Field(..., description="严重等级：INFO/WARN/ERROR/CRITICAL")
+    status: str = Field(..., description="处理状态：ACTIVE/RESOLVED/SUPPRESSED")
+    source_metric: str | None = Field(None, description="来源指标代码")
+    trigger_condition: dict[str, Any] | None = Field(
+        None, description="触发条件快照（算法名/阈值/实际值等）"
+    )
+    trigger_value: float | None = Field(None, description="触发值")
+    threshold: float | None = Field(None, description="触发阈值")
+    confidence_level: str | None = Field(None, description="可信度等级")
+    description: str | None = Field(None, description="标签描述（中文名）")
+    detected_at: str = Field(..., description="检测时间（ISO 8601）")
+    resolved_at: str | None = Field(None, description="处理时间（ISO 8601）")
+    resolved_by: str | None = Field(None, description="处理人 ID")
+    resolution_note: str | None = Field(None, description="处理说明")
+
+
+class DiagnosisTagListResponse(CamelModel):
+    """诊断标签列表响应 data 块 (IDS §2.4.10/2.4.11)."""
+
+    items: list[DiagnosisTagSchema] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+
+
+class TagResolveRequest(CamelModel):
+    """PUT /diagnosis/tags/{tagId}/resolve 请求体 (IDS §2.4.12).
+
+    处理人 (resolved_by) 从认证上下文获取，不由客户端传入，确保审计可追溯。
+    """
+
+    status: str = Field(
+        ..., description="目标处理状态：RESOLVED（已处理）/ SUPPRESSED（已抑制）"
+    )
+    resolution_note: str | None = Field(None, description="处理说明（抑制时必填）")
+
+
 __all__ = [
     "AnalyticsExportData",
     "AnalyticsExportRequest",
@@ -311,11 +380,17 @@ __all__ = [
     "DiagnosisListItem",
     "DiagnosisReportRequest",
     "DiagnosisStatisticsExportParams",
+    "DiagnosisTagListResponse",
+    "DiagnosisTagSchema",
+    "DiagnosisTagSeverity",
+    "DiagnosisTagStatus",
+    "DiagnosisTagType",
     "EfficiencyTrend",
     "EvidenceChain",
     "LabelDistributionItem",
     "RecommendationData",
     "RecommendationItem",
+    "TagResolveRequest",
     "TrackerExportData",
     "TrackerStatusData",
     "TrackerStatusUpdate",

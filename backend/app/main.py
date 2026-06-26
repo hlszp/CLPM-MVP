@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     audit_logs,
     auth,
     dashboard,
+    dataplanner,
     diagnosis,
     health,
     loop_level_weight,
@@ -30,6 +31,7 @@ from app.api.v1.endpoints import (
     plant_nodes,
     reports,
     tags,
+    tasks as eval_tasks,
     tuning,
     users,
 )
@@ -108,10 +110,17 @@ def create_app() -> FastAPI:
     v1_router.include_router(node_performance.router)
     # S6 工作台门户：BFF 聚合层
     v1_router.include_router(dashboard.router)
-    # S4 诊断中心：诊断、波形、Tracker（三个 router 共享 v1 前缀，各自有子前缀）
+    # S4 诊断中心：诊断、波形、Tracker、诊断标签
+    # v4.0: tags_router 须在 diagnosis.router 之前注册，避免 GET /{loop_id} 拦截 /diagnosis/tags
+    v1_router.include_router(diagnosis.tags_router)
     v1_router.include_router(diagnosis.router)
     v1_router.include_router(diagnosis.timeseries_router)
+    v1_router.include_router(tags.timeseries_router)
     v1_router.include_router(diagnosis.tracker_router)
+    # v4.0: DataPlanner 内部管理接口（仅 ADMIN）
+    v1_router.include_router(dataplanner.router)
+    # v4.0: 评估任务管理（标准/自定义）
+    v1_router.include_router(eval_tasks.router)
     # S5 系统管理：用户管理、审计日志、报表配置
     v1_router.include_router(users.router)
     v1_router.include_router(audit_logs.router)
