@@ -2,17 +2,18 @@
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）。
 
-版本：**v1.0.0**（正式版）
+版本：**v4.0**（系统重构完成版 — 7 阶段重构 Phase 0-6 全部交付）
 
 ## 项目简介
 
 CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆盖"监控 → 评估 → 诊断 → 整定"全流程，提供：
 
-- **工作台门户**：6 大 KPI 看板 + 低效回路 Top10 + 趋势摘要 + 待办异常
+- **工作台门户**：8 大 KPI 看板 + 低效回路 Top10 + 趋势摘要 + 待办异常
 - **回路管理**：AAS Tag 同步 / 回路台账 / Tag 关联 / 实时监控
-- **性能评估**：指标配置 / KPI 计算引擎 / 全局看板 / 低效排行 / 统计报表
+- **性能评估**：指标配置 / KPI 计算引擎（GB/T 44693.2-2024）/ 全局看板 / 低效排行 / 可信度标识 / 统计报表
 - **诊断中心**：诊断配置 / 异常诊断（FFT 振荡检测 + D-S 证据融合）/ Action Tracker / 统计
 - **回路整定**：FOPDT/SOPDT/IPDT 模型辨识 + IMC/Lambda/Z-N/Cohen-Coon/SIMC 五种整定算法 + 闭环仿真
+- **任务管理**：标准/自定义评估任务全生命周期（触发 → 进度跟踪 → 阶段时间线 → 通知）
 - **系统管理**：用户管理 / 审计日志 / 权限矩阵 / 自动报表
 
 平台遵循"只读 DCS、只输出建议"的安全边界，不直接写入 DCS。
@@ -28,9 +29,10 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 | 时序数据库 | TDengine 3.3.6 |
 | 缓存/队列 | Redis 7 |
 | 鉴权 | JWT 双 Token（Access 30min / Refresh 7d）+ RBAC 五角色 + bcrypt + Redis 黑名单 |
-| 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4） |
+| 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
+| v4.0 核心组件 | DataPlanner（统一数据读取）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（292 用例）+ Playwright E2E（27 用例）|
+| 测试 | pytest（1239 用例）+ Playwright E2E（27 用例）|
 
 ## 快速开始（开发环境）
 
@@ -58,17 +60,26 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
 后端 API 文档：http://localhost:8001/docs
 
-### 3. 启动前端
+### 3. 启动 Celery Worker（异步任务）
+
+```bash
+cd backend
+.venv/bin/celery -A app.tasks.celery_app worker -l info -Q default
+```
+
+> **注意**：Celery worker 是独立进程，与 FastAPI（`--reload`）分开启动。后端代码更新后需重启 worker 才能生效。
+
+### 4. 启动前端
 
 ```bash
 cd frontend
 pnpm install
-pnpm run dev:antd              # 默认端口 5666
+pnpm run dev:antd              # 默认端口 5668
 ```
 
-前端访问地址：http://localhost:5666
+前端访问地址：http://localhost:5668
 
-### 4. 默认账号
+### 5. 默认账号
 
 5 个种子用户，密码统一为 `admin123`：
 
@@ -80,7 +91,7 @@ pnpm run dev:antd              # 默认端口 5666
 | expert | EXPERT | 诊断/整定 |
 | sponsor | SPONSOR | 工作台只读 |
 
-### 5. 运行测试
+### 6. 运行测试
 
 ```bash
 # 后端单元测试
@@ -128,7 +139,7 @@ cp .env.prod.example .env.prod
 部署脚本会自动完成：
 1. 校验 `.env.prod` 与 `JWT_SECRET_KEY`
 2. 构建 backend / frontend Docker 镜像（多阶段构建）
-3. 启动 6 个服务容器（backend / frontend / postgres / tdengine / redis / celery-worker / celery-beat）
+3. 启动 7 个服务容器（backend / frontend / postgres / tdengine / redis / celery-worker / celery-beat）
 4. 等待健康检查并通过
 5. 输出服务访问地址
 
@@ -189,7 +200,12 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ### HTTPS 配置
 
-生产环境建议启用 HTTPS，编辑 `deploy/nginx.conf` 取消底部 HTTPS server 块的注释，配置 SSL 证书路径后重新构建 frontend 镜像：
+当前生产 Nginx 配置默认将 HTTP 跳转到 HTTPS，并挂载以下证书文件：
+
+- `deploy/ssl/fullchain.pem`
+- `deploy/ssl/privkey.pem`
+
+生产部署前必须准备证书文件，或按内网试运行需求调整 `deploy/nginx.conf` 为 HTTP-only 配置后再启动。证书更新后重新构建 frontend 镜像：
 
 ```bash
 docker compose -f docker-compose.prod.yml build frontend
@@ -214,8 +230,10 @@ docker compose -f docker-compose.prod.yml up -d
 | 交付架构设计 | `docs/设计文档/03-ADS/ADS.md` |
 | 数据模型设计 | `docs/设计文档/04-DDS/DDS.md` |
 | API 接口设计 | `docs/设计文档/05-IDS/IDS.md` |
-| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
-| 原型设计基线 | `DESIGN.md`（v2.0，对齐 v3.0/v4.0） |
+| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md`（v5.1） |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` |
+| **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
+| 原型设计基线 | `DESIGN.md`（v2.1，对齐实现契约 v1.0） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 | 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` |
 | 原型开发冻结任务书 | `docs/过程文档/prototype-development-freeze-v0.1-2026-06-16.md` |
@@ -223,26 +241,40 @@ docker compose -f docker-compose.prod.yml up -d
 ## 推荐阅读顺序
 
 1. `docs/过程文档/design-documents-index-2026-06-16.md`
-2. `docs/设计文档/01-PRD/PRD.md`
-3. `docs/设计文档/02-FDS/FDS.md`
-4. `docs/设计文档/04-DDS/DDS.md`
-5. `docs/设计文档/05-IDS/IDS.md`
-6. `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md`
-7. 需要追溯时再读 `docs/归档文档/` 目录中的历史文档
+2. `docs/设计文档/00-BASELINE/implementation-contract.md`
+3. `docs/设计文档/01-PRD/PRD.md`
+4. `docs/设计文档/02-FDS/FDS.md`
+5. `docs/设计文档/04-DDS/DDS.md`
+6. `docs/设计文档/05-IDS/IDS.md`
+7. `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md`
+8. 需要追溯时再读 `docs/归档文档/` 目录中的历史文档
 
 ## 当前共识
 
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
+| 当前版本 | **v4.0** — 7 阶段系统重构（Phase 0-6）全部完成，后端 1239 测试用例通过 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 工作台门户、回路管理（AAS tag 同步/回路创建/tag 关联/监控）、性能评估（指标配置/引擎规则/看板/排行/统计）、诊断中心（指标配置/诊断/异常跟踪/统计）、系统管理；回路整定原型页面设计 |
-| 模块架构 | 6 模块+门户：工作台/回路管理/性能评估/诊断中心/回路整定/系统管理，各模块"配置→运行→分析"三态自包含 |
+| 模块架构 | 7 模块+门户：工作台/回路管理/性能评估/诊断中心/回路整定/**任务管理**/系统管理，各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
-| 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → RESOLVED/IGNORED），诊断中心子模块 |
-| 工程主约束 | PRD v3.0 为唯一事实来源，UI/UX v4.0 为唯一 UI/UX 输入性文件 |
+| 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED），诊断中心子模块 |
+| 工程主约束 | PRD v3.1 负责产品需求；实现契约 v1.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v5.1 负责视觉与交互 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
+
+## v4.0 重构进度（2026-06-26 全部完成）
+
+| 阶段 | 内容 | Commit |
+|---|---|---|
+| Phase 0 | ORM 模型层更新 | `02f3c5a` |
+| Phase 1 | 数据预处理模块（8步Pipeline + 8类异常值检测） | `bdde45b` |
+| Phase 2+3 | DataPlanner+Cache 与指标计算器并行开发 | `11d13e6` |
+| Phase 4 | kpi_calc.py 整合 DataPlanner + MetricCalculator | `53fc21f` |
+| Phase 5 | API 接口层扩展（波形批量/DataPlanner/任务管理/诊断标签） | `39859e5` `0dfd37b` |
+| Phase 6 | 前端适配（4层架构：类型/API → 组件 → 页面 → 路由） | `86f356c` `3516641` `4bff65b` |
+| 修复 | Celery worker 任务注册修复 | `207c882` |
 
 ## 目录说明
 
@@ -258,7 +290,8 @@ docker compose -f docker-compose.prod.yml up -d
 | `docs/设计文档/04-DDS/DDS.md` | 当前系统数据模型设计 |
 | `docs/设计文档/05-IDS/IDS.md` | 当前系统 API 接口设计 |
 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | 当前可视化设计与用户体验规范 |
-| `DESIGN.md` | 原型设计基线 v2.0（视觉/布局/组件/验收横切约束，对齐 v3.0/v4.0） |
+| `docs/设计文档/00-BASELINE/implementation-contract.md` | 重构后实现契约：IA、路由、API、权限、状态机、KPI 与阶段口径 |
+| `DESIGN.md` | 设计基线 v2.1（视觉/布局/组件/验收横切约束，对齐实现契约 v1.0） |
 | `docs/过程文档/prototype-development-freeze-v0.1-2026-06-16.md` | 原型开发任务书、页面清单、样例数据和技术栈冻结 |
 | `docs/设计文档/prototype/README.md` | 原型系统代码库入口说明 |
 | `backend/` | FastAPI 后端（API + Celery 任务 + 算法引擎） |
