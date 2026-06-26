@@ -13,7 +13,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from tests.conftest import TEST_USERS, mock_current_user
 
@@ -209,7 +209,10 @@ class TestCreateUser:
 
     def test_create_user_weak_password(self, client, mock_db, fake_redis) -> None:
         """Password without required complexity is rejected (422)."""
-        with mock_current_user(TEST_USERS["admin"]):
+        # 模拟生产环境（DEBUG=False）以测试完整密码策略
+        with mock_current_user(TEST_USERS["admin"]), patch(
+            "app.core.config.settings.DEBUG", False
+        ):
             resp = client.post(
                 "/api/v1/users",
                 headers={"Authorization": "Bearer fake-token"},
@@ -375,7 +378,10 @@ class TestResetPassword:
 
     def test_reset_password_weak(self, client, mock_db, fake_redis) -> None:
         """Weak password is rejected (422)."""
-        with mock_current_user(TEST_USERS["admin"]):
+        # 模拟生产环境（DEBUG=False）以测试完整密码策略
+        with mock_current_user(TEST_USERS["admin"]), patch(
+            "app.core.config.settings.DEBUG", False
+        ):
             resp = client.put(
                 "/api/v1/users/some-id/reset-password",
                 headers={"Authorization": "Bearer fake-token"},

@@ -32,6 +32,8 @@ _SPECIAL_CHAR_RE = re.compile(r"[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]")
 def validate_password_strength(v: str) -> str:
     """密码复杂度校验：最少 8 字符，需包含大小写字母、数字和特殊字符。
 
+    开发环境（DEBUG=True）放宽为仅校验长度 ≥ 4，便于使用 admin123 等简单密码。
+
     Args:
         v: 明文密码
 
@@ -41,6 +43,15 @@ def validate_password_strength(v: str) -> str:
     Raises:
         ValueError: 密码不符合复杂度要求
     """
+    from app.core.config import settings
+
+    # 开发环境：仅校验最小长度
+    if settings.DEBUG:
+        if len(v) < 4:
+            raise ValueError("密码长度不得少于 4 字符")
+        return v
+
+    # 生产环境：完整复杂度校验
     if len(v) < 8:
         raise ValueError("密码长度不得少于 8 字符")
 

@@ -372,11 +372,13 @@ class TestChangePassword:
         )
         access_token = login_resp.json()["data"]["accessToken"]
 
-        resp = client.put(
-            "/api/v1/auth/password",
-            headers={"Authorization": f"Bearer {access_token}"},
-            json={"oldPassword": TEST_PASSWORD, "newPassword": "12345678"},
-        )
+        # 模拟生产环境（DEBUG=False）以测试完整密码策略
+        with patch("app.core.config.settings.DEBUG", False):
+            resp = client.put(
+                "/api/v1/auth/password",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={"oldPassword": TEST_PASSWORD, "newPassword": "12345678"},
+            )
         assert resp.status_code == 422
 
     def test_change_password_too_short(self, client, mock_db, fake_redis) -> None:
