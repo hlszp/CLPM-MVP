@@ -42,6 +42,16 @@ logger = logging.getLogger(__name__)
 # 需要量程归一化的信号（连续模拟量）
 _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
 
+# 跳过冻结值检测的信号（稳态时变化小或常态为常量，冻结检测易误报）
+# SP: 操作员设定的设定值，长时间不变是正常的
+# MODE: 控制模式（AUTO/MANUAL），离散值
+# PID_P/PID_I/PID_D: PID 整定参数，工程师设定后保持不变
+# OP: 稳态时 OP 变化幅度小（std < frozen_std_pct×range），FROZEN 检测会误报；
+#     阀门粘滞由 stiction_coeff 指标单独检测，OP 饱和由 saturation_rate 单独检测
+_SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset(
+    {"sp", "op", "mode", "pid_p", "pid_i", "pid_d"}
+)
+
 PREPROCESS_VERSION = "pre_v1"
 
 
@@ -303,6 +313,7 @@ class PreprocessingPipeline:
             quality_codes = raw.quality_codes.get(qc_key)
 
             is_norm = tag_name in _NORMALIZABLE_SIGNALS
+            skip_frozen = tag_name in _SKIP_FROZEN_SIGNALS
             reasons = self.detector.detect_all(
                 tag_name=tag_name,
                 values=values,
@@ -311,6 +322,7 @@ class PreprocessingPipeline:
                 range_max=self.config.range_max,
                 quality_codes=quality_codes,
                 is_normalized=is_norm,
+                skip_frozen=skip_frozen,
             )
             result[tag_name] = reasons
         return result

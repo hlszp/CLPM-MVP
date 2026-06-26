@@ -374,6 +374,9 @@ async def calculate_and_save_node_snapshot(
     ts_end: datetime,
 ) -> dict | None:
     """聚合并保存节点级快照（一步完成）。"""
+    # 剥离 tzinfo，对齐 KpiNodeSnapshotHourly 表的 TIMESTAMP WITHOUT TIME ZONE 列
+    ts_start = ts_start.replace(tzinfo=None) if ts_start.tzinfo else ts_start
+    ts_end = ts_end.replace(tzinfo=None) if ts_end.tzinfo else ts_end
     snap_data = await aggregate_node_snapshot(db, plant_node_id, ts_start, ts_end)
     if snap_data is None:
         return None

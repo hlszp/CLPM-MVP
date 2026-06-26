@@ -100,26 +100,64 @@ def _parse_tag_to_table_column(tag_name: str) -> tuple[str, str, str | None]:
 # ---------------------------------------------------------------------------
 
 _client: httpx.AsyncClient | None = None
+_client_loop: Any = None  # 记录 client 绑定的 event loop
 
 
 async def _get_client() -> httpx.AsyncClient:
-    """获取全局 httpx.AsyncClient 单例。"""
-    global _client
-    if _client is None or _client.is_closed:
+    """获取全局 httpx.AsyncClient 单例。
+
+    Celery AsyncTask 为每个任务创建新的 event loop 并在任务结束后关闭，
+    导致跨任务复用的 httpx.AsyncClient 绑定到已关闭的 loop（"Event loop is closed"）。
+    通过检测 loop 变化/关闭自动重建 client 解决此问题。
+    """
+    import asyncio
+
+    global _client, _client_loop
+    current_loop = asyncio.get_running_loop()
+    # 检测是否需要重建：client 为空/已关闭/loop 不一致/原 loop 已关闭
+    need_recreate = (
+        _client is None
+        or _client.is_closed
+        or _client_loop is not current_loop
+        or (_client_loop is not None and getattr(_client_loop, "is_closed", False))
+    )
+    if need_recreate:
+        if _client is not None and not _client.is_closed:
+            try:
+                await _client.aclose()
+            except Exception:  # noqa: BLE001
+                pass
         _client = httpx.AsyncClient(
             base_url=f"http://{settings.TDENGINE_HOST}:{_TD_REST_PORT}",
             auth=(settings.TDENGINE_USER, settings.TDENGINE_PASSWORD),
             timeout=httpx.Timeout(10.0, connect=5.0),
+            # 禁用 keep-alive 连接池：避免 Celery 跨任务 event loop 复用
+            # 导致连接池绑定的 loop 已关闭（"Event loop is closed"）
+            limits=httpx.Limits(max_keepalive_connections=0),
         )
+        _client_loop = current_loop
     return _client
+
+
+async def _reset_client() -> None:
+    """重置全局 client（请求失败时调用，强制下次重建）。"""
+    global _client, _client_loop
+    if _client is not None and not _client.is_closed:
+        try:
+            await _client.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+    _client = None
+    _client_loop = None
 
 
 async def close_client() -> None:
     """关闭全局 httpx.AsyncClient（应用关闭时调用）。"""
-    global _client
+    global _client, _client_loop
     if _client is not None and not _client.is_closed:
         await _client.aclose()
     _client = None
+    _client_loop = None
 
 
 async def execute_sql(sql: str) -> list[dict[str, Any]]:
@@ -149,6 +187,28 @@ async def execute_sql(sql: str) -> list[dict[str, Any]]:
         col_names = [c[0] for c in column_meta]
         data_rows = payload.get("data", [])
         return [dict(zip(col_names, row, strict=False)) for row in data_rows]
+    except RuntimeError as exc:
+        # Celery 跨任务 event loop 关闭后，httpx 连接可能失效，重置后重试一次
+        if "Event loop is closed" in str(exc) or "Event loop is not running" in str(exc):
+            logger.warning("TDengine 请求失败（%s），重置 client 后重试", exc)
+            await _reset_client()
+            try:
+                client = await _get_client()
+                resp = await client.post("/rest/sql", content=sql)
+                if resp.status_code != 200:
+                    return []
+                payload = resp.json()
+                if payload.get("code") != 0:
+                    return []
+                column_meta = payload.get("column_meta", [])
+                col_names = [c[0] for c in column_meta]
+                data_rows = payload.get("data", [])
+                return [dict(zip(col_names, row, strict=False)) for row in data_rows]
+            except Exception as exc2:  # noqa: BLE001
+                logger.warning("TDengine 重试仍失败: %s", exc2)
+                return []
+        logger.warning("TDengine 执行失败（返回空列表）: %s", exc)
+        return []
     except Exception as exc:  # noqa: BLE001
         logger.warning("TDengine 执行失败（返回空列表）: %s", exc)
         return []
@@ -222,6 +282,34 @@ async def query_trend_data(
             )
             rows.append({"ts": str(ts_val), "value": value, "quality": quality})
         return rows
+    except RuntimeError as exc:
+        # Celery 跨任务 event loop 关闭后，httpx 连接可能失效，重置后重试一次
+        if "Event loop is closed" in str(exc) or "Event loop is not running" in str(exc):
+            logger.warning("TDengine 查询失败（%s），重置 client 后重试", exc)
+            await _reset_client()
+            try:
+                client = await _get_client()
+                resp = await client.post("/rest/sql", content=sql)
+                if resp.status_code != 200:
+                    return []
+                payload = resp.json()
+                if payload.get("code") != 0:
+                    return []
+                data_rows = payload.get("data", [])
+                rows: list[dict[str, Any]] = []
+                for row in data_rows:
+                    ts_val = row[0]
+                    value = float(row[1]) if len(row) > 1 and row[1] is not None else None
+                    quality = (
+                        str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
+                    )
+                    rows.append({"ts": str(ts_val), "value": value, "quality": quality})
+                return rows
+            except Exception as exc2:  # noqa: BLE001
+                logger.warning("TDengine 查询重试仍失败: %s", exc2)
+                return []
+        logger.warning("TDengine 查询失败（返回空数组）: %s", exc)
+        return []
     except Exception as exc:  # noqa: BLE001
         logger.warning("TDengine 查询失败（返回空数组）: %s", exc)
         return []
@@ -316,6 +404,10 @@ def make_dataplanner_query_fn(db: Any) -> Any:
         signals: dict[str, list[Any]] = {}
         quality_codes: dict[str, list[int]] = {}
 
+        # 质量码映射：query_trend_data 返回字符串（"0"/"1"/"2" 或 "GOOD"），
+        # 对齐 preprocessing/quality_code.py 的 _GOOD_CODES={1,2,3,192} 约定
+        _GOOD_QUALITY_STRS = {"1", "2", "3", "192", "GOOD"}
+
         for role_lower, rows in role_data.items():
             ts_to_value = {str(row.get("ts")): row.get("value") for row in rows}
             signals[role_lower] = [ts_to_value.get(ts) for ts in sorted_ts_str]
@@ -328,7 +420,7 @@ def make_dataplanner_query_fn(db: Any) -> Any:
                     for row in rows
                 }
                 quality_codes[quality_key] = [
-                    1 if ts_to_quality.get(ts, "GOOD") == "GOOD" else 0
+                    1 if ts_to_quality.get(ts, "GOOD") in _GOOD_QUALITY_STRS else 0
                     for ts in sorted_ts_str
                 ]
 

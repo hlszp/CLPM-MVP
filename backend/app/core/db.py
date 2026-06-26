@@ -9,16 +9,18 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
 # Async engine — created once at module import time.
+# 使用 NullPool：Celery AsyncTask 为每个任务创建新 event loop，
+# 连接池会跨 loop 复用连接导致 "Future attached to a different loop" 错误。
+# NullPool 每次创建新连接，避免跨 loop 问题；localhost PG 建连开销 < 1ms。
 engine = create_async_engine(
     settings.postgres_dsn,
     echo=settings.DEBUG,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    poolclass=NullPool,
 )
 
 # Session factory — use ``async with AsyncSessionLocal() as session:``.

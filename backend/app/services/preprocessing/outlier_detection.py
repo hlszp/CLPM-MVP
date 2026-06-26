@@ -440,6 +440,7 @@ class OutlierDetector:
         range_max: float,
         quality_codes: list[int] | None = None,
         is_normalized: bool = False,
+        skip_frozen: bool = False,
     ) -> dict[int, list[OutlierReason]]:
         """对单个信号执行全部 8 类异常值检测.
 
@@ -451,6 +452,7 @@ class OutlierDetector:
             range_max: 量程上限
             quality_codes: 质量码数组（仅 PV 有）
             is_normalized: 是否已归一化（归一化后量程为 0~100）
+            skip_frozen: 跳过冻结值检测（用于 SP/MODE/PID 等常态为常量的信号）
 
         Returns:
             dict[index, list[OutlierReason]]：每个异常点的异常原因码列表
@@ -477,15 +479,16 @@ class OutlierDetector:
         # 2. 超量程
         _add(detect_out_of_range(values, eff_min, eff_max))
 
-        # 3. 冻结值
-        if is_normalized:
-            _add(detect_frozen(values, self.threshold))
-        else:
-            _add(
-                detect_frozen_raw(
-                    values, self.threshold, range_min, range_max
+        # 3. 冻结值（SP/MODE/PID 等常态为常量的信号跳过）
+        if not skip_frozen:
+            if is_normalized:
+                _add(detect_frozen(values, self.threshold))
+            else:
+                _add(
+                    detect_frozen_raw(
+                        values, self.threshold, range_min, range_max
+                    )
                 )
-            )
 
         # 4. 跳变
         _add(detect_jump(values, self.threshold, range_min, range_max))

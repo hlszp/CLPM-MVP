@@ -982,18 +982,24 @@ async def _save_snapshot(
         - confidence_level: 可信度等级
         - data_lineage: 数据血缘 JSON
     """
+    # PostgreSQL kpi_snapshot_hourly 表使用 TIMESTAMP WITHOUT TIME ZONE，
+    # 而 _do_calculate 使用 datetime.now(UTC) 生成 timezone-aware datetime。
+    # 需剥离 tzinfo 避免 "can't subtract offset-naive and offset-aware datetimes" 错误。
+    ts_start_naive = ts_start.replace(tzinfo=None) if ts_start.tzinfo else ts_start
+    ts_end_naive = ts_end.replace(tzinfo=None) if ts_end.tzinfo else ts_end
+
     # 检查是否已存在
     existing_result = await db.execute(
         select(KpiSnapshotHourly).where(
             KpiSnapshotHourly.loop_id == loop_id,
-            KpiSnapshotHourly.ts_start == ts_start,
+            KpiSnapshotHourly.ts_start == ts_start_naive,
         )
     )
     existing = existing_result.scalar_one_or_none()
 
     if existing:
         # 更新已有记录
-        existing.ts_end = ts_end
+        existing.ts_end = ts_end_naive
         existing.status = status
         existing.score = score
         existing.good_value_rate = good_value_rate
@@ -1022,8 +1028,8 @@ async def _save_snapshot(
         snapshot = KpiSnapshotHourly(
             id=snapshot_id,
             loop_id=loop_id,
-            ts_start=ts_start,
-            ts_end=ts_end,
+            ts_start=ts_start_naive,
+            ts_end=ts_end_naive,
             status=status,
             score=score,
             good_value_rate=good_value_rate,
