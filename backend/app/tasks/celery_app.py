@@ -25,6 +25,14 @@ celery_app = Celery(
     "clpm",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
+    include=[
+        "app.tasks.kpi_calc",
+        "app.tasks.aas_sync",
+        "app.tasks.diagnosis_engine",
+        "app.tasks.report_generator",
+        "app.tasks.audit_archive",
+        "app.tasks.dead_letter",
+    ],
 )
 
 celery_app.conf.update(
@@ -53,8 +61,8 @@ celery_app.conf.update(
     task_default_routing_key="default",
 )
 
-# Auto-discover task modules under app.tasks (excluding the celery_app itself).
-celery_app.autodiscover_tasks(["app.tasks"])
+# Task modules are explicitly listed in the include parameter above
+# to ensure reliable registration when the worker starts.
 
 
 class AsyncTask(Task):
