@@ -10,5 +10,6 @@ export * from './diagnosis';
 export * from './loop';
 export * from './metric';
 export * from './system';
+export * from './task';
 export * from './tuning';
 export * from './types';

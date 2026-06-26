@@ -7,10 +7,16 @@
 import { requestClient } from '#/api/request';
 
 /** KPI 状态色标 */
-export type KpiStatus = 'SUCCESS' | 'INCONCLUSIVE' | 'PARTIAL';
+export type KpiStatus = 'INCONCLUSIVE' | 'PARTIAL' | 'SUCCESS';
 
-/** 控制类型 */
-export type ControlType = 'STABLE' | 'SLOW' | 'FAST' | 'LOGIC';
+/** 可信度等级（算法说明 §3.7.2，基于 valid_rate 自动判定） */
+export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
+
+/** 控制类型（指标配置用，对齐 MetricConfigUpdate.pattern） */
+export type ControlType = 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+
+/** DataPlanner 控制类型（算法层用，对齐 app.contracts.data_types.ControlType） */
+export type DataPlannerControlType = 'CC' | 'FC' | 'LC' | 'PC' | 'TC';
 
 /** 时间窗枚举 */
 export type TimeWindow = 'last_7_days' | 'last_30_days' | 'today' | 'yesterday';
@@ -22,7 +28,11 @@ export type Granularity = 'day' | 'hour' | 'month' | 'week';
 export type ExecutionStatus = 'FAILED' | 'RUNNING' | 'SUCCESS';
 
 /** 处理状态 */
-export type ActionStatus = 'PENDING' | 'IN_PROGRESS' | 'IMPLEMENTED' | 'IGNORED';
+export type ActionStatus =
+  | 'IGNORED'
+  | 'IMPLEMENTED'
+  | 'IN_PROGRESS'
+  | 'PENDING';
 
 export namespace MetricApi {
   /** 指标阈值 */
@@ -109,6 +119,20 @@ export namespace MetricApi {
     unit: string;
     status: KpiStatus;
     algorithmVersion: string;
+    /** 可信度等级（v4.0 血缘字段） */
+    confidenceLevel?: ConfidenceLevel;
+  }
+
+  /** 数据血缘信息（8 字段，对齐 DataLineageSchema） */
+  export interface DataLineage {
+    samplingFreq: string;
+    aggregationPolicy: string;
+    qualityPolicy: string;
+    tagGroup: string;
+    dataBlockIds: string[];
+    validRate: number;
+    dataPolicyVersion: string;
+    algorithmVersion: string;
   }
 
   /** KPI 摘要（对齐 GB/T 44693.2-2024） */
@@ -124,6 +148,13 @@ export namespace MetricApi {
     composite_score: number;
     status: KpiStatus;
     algorithm_version: string;
+    /** v4.0 数据血缘字段（7 个，对齐 KpiSnapshotSchema） */
+    ideal_settling_time?: null | number;
+    sampling_freq?: null | string;
+    quality_policy?: null | string;
+    valid_rate?: null | number;
+    confidence_level?: null | ConfidenceLevel;
+    data_lineage?: DataLineage | null;
   }
 
   /** 趋势数据 */
@@ -168,6 +199,13 @@ export namespace MetricApi {
     algorithmVersion: string;
     preDiagnosis?: string;
     actionStatus: ActionStatus;
+    /** v4.0 数据血缘字段（对齐后端 RankingItem schema） */
+    confidenceLevel?: null | ConfidenceLevel;
+    validRate?: null | number;
+    samplingFreq?: null | string;
+    qualityPolicy?: null | string;
+    idealSettlingTime?: null | number;
+    dataLineage?: DataLineage | null;
   }
 
   /** 排行查询参数 */

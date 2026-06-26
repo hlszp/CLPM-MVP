@@ -29,13 +29,14 @@ export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
 export namespace DiagnosisApi {
   /** 处理状态枚举（IDS v3.2 §2.4） */
-  export type ActionStatus = 'IGNORED' | 'IMPLEMENTED' | 'IN_PROGRESS' | 'PENDING';
+  export type ActionStatus =
+    | 'IGNORED'
+    | 'IMPLEMENTED'
+    | 'IN_PROGRESS'
+    | 'PENDING';
 
   /** 时间窗枚举 */
-  export type TimeWindow =
-    | 'last_7_days'
-    | 'last_24_hours'
-    | 'last_30_days';
+  export type TimeWindow = 'last_7_days' | 'last_24_hours' | 'last_30_days';
 
   /** 报表粒度 */
   export type Granularity = 'day' | 'month' | 'week';
@@ -126,7 +127,7 @@ export namespace DiagnosisApi {
     diagnosedAt: string;
   }
 
-  /** 波形数据（IDS v3.2 §2.4） */
+  /** 波形数据（IDS v3.2 §2.4，Phase 5 扩展血缘字段） */
   export interface WaveformResult {
     loopId: string;
     tagName: string;
@@ -137,14 +138,25 @@ export namespace DiagnosisApi {
     op: (null | number)[];
     mode: (null | number)[];
     pvQuality: Quality[];
+    /** v4.0 血缘字段（Phase 5 扩展） */
+    samplingFreq?: string;
+    qualityPolicy?: string;
+    validRate?: number;
+    confidenceLevel?: string;
+    downsampled?: boolean;
+    pointCount?: number;
   }
 
-  /** 波形查询参数 */
+  /** 波形查询参数（Phase 5 扩展 tagGroup/includeValidMask/maxPoints） */
   export interface WaveformQueryParams {
     startTime: string;
     endTime: string;
     downsample?: boolean;
     maxPoints?: number;
+    /** Phase 5: 按标签组筛选（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF） */
+    tagGroup?: string;
+    /** Phase 5: 是否返回 valid_mask（逐点有效性标记） */
+    includeValidMask?: boolean;
   }
 
   /** Tracker 状态更新参数（仅 IC_ENGINEER） */
@@ -174,6 +186,7 @@ export namespace DiagnosisApi {
     plantNodeId?: string;
     diagnosisLabel?: DiagnosisLabel;
     actionStatus?: ActionStatus;
+    loopId?: string;
     timeWindow?: TimeWindow;
     page?: number;
     pageSize?: number;
@@ -303,6 +316,66 @@ export namespace DiagnosisApi {
     startDate: string;
     endDate: string;
     plantNodeId?: string;
+  }
+
+  // -----------------------------------------------------------------------
+  // 诊断标签管理（Phase 5 — IDS §2.4.10-2.4.12）
+  // -----------------------------------------------------------------------
+
+  /** 诊断标签类型（8 类，对齐 DiagnosisTagType） */
+  export type TagType = DiagnosisLabel;
+
+  /** 诊断标签严重等级 */
+  export type TagSeverity = 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
+
+  /** 诊断标签处理状态（区别于旧版 ActionStatus） */
+  export type TagStatus = 'ACTIVE' | 'RESOLVED' | 'SUPPRESSED';
+
+  /** 诊断标签项（对齐 DiagnosisTagSchema，驼峰序列化） */
+  export interface DiagnosisTagItem {
+    id: string;
+    loopId: string;
+    tagType: TagType;
+    severity: TagSeverity;
+    status: TagStatus;
+    sourceMetric?: null | string;
+    triggerCondition?: null | Record<string, unknown>;
+    triggerValue?: null | number;
+    threshold?: null | number;
+    confidenceLevel?: null | string;
+    description?: null | string;
+    detectedAt: string;
+    resolvedAt?: null | string;
+    resolvedBy?: null | string;
+    resolutionNote?: null | string;
+  }
+
+  /** 诊断标签列表响应 */
+  export interface DiagnosisTagListResult {
+    items: DiagnosisTagItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }
+
+  /** 诊断标签查询参数 */
+  export interface DiagnosisTagQueryParams {
+    loopId?: string;
+    tagType?: TagType;
+    status?: TagStatus;
+    severity?: TagSeverity;
+    startTime?: string;
+    endTime?: string;
+    page?: number;
+    pageSize?: number;
+  }
+
+  /** 标签处理参数（PUT /diagnosis/tags/{tagId}/resolve） */
+  export interface TagResolveParams {
+    /** 目标状态：RESOLVED（已处理）/ SUPPRESSED（已抑制） */
+    status: 'RESOLVED' | 'SUPPRESSED';
+    /** 处理说明（抑制时必填） */
+    resolutionNote?: string;
   }
 }
 
@@ -438,10 +511,7 @@ export function getAbCompareApi(params: DiagnosisApi.AbCompareQueryParams) {
  *
  * 根据诊断标签返回标准化解决方案推荐。不传 tagCodes 时从数据库读取该回路最新诊断标签。
  */
-export function getRecommendationsApi(
-  loopId: string,
-  tagCodes?: string[],
-) {
+export function getRecommendationsApi(loopId: string, tagCodes?: string[]) {
   const params = tagCodes?.length ? { tagCodes: tagCodes.join(',') } : {};
   return requestClient.get<DiagnosisApi.RecommendationResult>(
     `/diagnosis/${loopId}/recommendations`,
@@ -475,4 +545,46 @@ export function exportDiagnosisStatisticsApi(
   return requestClient.download<Blob>('/diagnosis/statistics/export', {
     params,
   });
+}
+
+// ---------------------------------------------------------------------------
+// 诊断标签管理 API（Phase 5 — IDS §2.4.10-2.4.12）
+// ---------------------------------------------------------------------------
+
+/**
+ * 查询诊断标签列表 — IDS §2.4.10
+ *
+ * 支持按标签类型、处理状态、严重等级、时间范围等多条件筛选。
+ */
+export function getDiagnosisTagsApi(
+  params: DiagnosisApi.DiagnosisTagQueryParams,
+) {
+  return requestClient.get<DiagnosisApi.DiagnosisTagListResult>(
+    '/diagnosis/tags',
+    { params },
+  );
+}
+
+/**
+ * 获取诊断标签详情 — IDS §2.4.10
+ */
+export function getDiagnosisTagDetailApi(tagId: string) {
+  return requestClient.get<DiagnosisApi.DiagnosisTagItem>(
+    `/diagnosis/tags/${tagId}`,
+  );
+}
+
+/**
+ * 更新诊断标签处理状态 — IDS §2.4.12（IC_ENGINEER/PE_ENGINEER/ADMIN）
+ *
+ * 状态流转：ACTIVE → RESOLVED（已处理）/ ACTIVE → SUPPRESSED（已抑制）
+ */
+export function updateDiagnosisTagStatusApi(
+  tagId: string,
+  data: DiagnosisApi.TagResolveParams,
+) {
+  return requestClient.put<DiagnosisApi.DiagnosisTagItem>(
+    `/diagnosis/tags/${tagId}/resolve`,
+    data,
+  );
 }
