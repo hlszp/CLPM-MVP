@@ -28,15 +28,17 @@ from tests.conftest import TEST_USERS, mock_current_user
 
 
 class FakeTaskRedis:
-    """In-memory Redis mock supporting hash and sorted set operations.
+    """In-memory Redis mock supporting hash, sorted set, and list operations.
 
     FakeRedis in conftest.py only supports string/set operations.
     Task endpoints need hset/hgetall/zadd/zrange/zrevrange.
+    Notification endpoints need lpush/lrange/ltrim/delete.
     """
 
     def __init__(self) -> None:
         self._hashes: dict[str, dict[str, str]] = {}
         self._zsets: dict[str, dict[str, float]] = {}
+        self._lists: dict[str, list[str]] = {}
 
     async def hset(self, key: str, mapping: dict | None = None, **kwargs) -> int:
         if key not in self._hashes:
@@ -69,12 +71,55 @@ class FakeTaskRedis:
             return members[start:]
         return members[start : end + 1]
 
+    async def lpush(self, key: str, *values: str) -> int:
+        """List push to head (newest first)."""
+        lst = self._lists.setdefault(key, [])
+        for v in values:
+            lst.insert(0, v)
+        return len(lst)
+
+    async def lrange(self, key: str, start: int, end: int) -> list[str]:
+        lst = self._lists.get(key, [])
+        if end == -1:
+            return lst[start:]
+        return lst[start : end + 1]
+
+    async def ltrim(self, key: str, start: int, end: int) -> None:
+        """Trim list to [start, end] range."""
+        lst = self._lists.get(key, [])
+        if end == -1:
+            self._lists[key] = lst[start:]
+        else:
+            self._lists[key] = lst[start : end + 1]
+
+    async def delete(self, *keys: str) -> int:
+        """Delete keys from all stores."""
+        deleted = 0
+        for key in keys:
+            if key in self._hashes:
+                del self._hashes[key]
+                deleted += 1
+            if key in self._zsets:
+                del self._zsets[key]
+                deleted += 1
+            if key in self._lists:
+                del self._lists[key]
+                deleted += 1
+        return deleted
+
 
 @pytest.fixture
 def task_redis() -> FakeTaskRedis:
-    """Patch redis_client in tasks endpoint with FakeTaskRedis."""
+    """Patch redis_client in tasks endpoint AND task_tracker service.
+
+    通知端点调用 task_tracker 服务，task_tracker 内部使用自己的
+    redis_client 导入。两个位置都需要 patch 才能生效。
+    """
     fake = FakeTaskRedis()
-    with patch("app.api.v1.endpoints.tasks.redis_client", fake):
+    with (
+        patch("app.api.v1.endpoints.tasks.redis_client", fake),
+        patch("app.services.task_tracker.redis_client", fake),
+    ):
         yield fake
 
 
@@ -640,3 +685,334 @@ class TestDataLineageSchema:
         assert lineage.validRate == 0.0
         assert lineage.dataPolicyVersion == "pre_v1"
         assert lineage.algorithmVersion == "KPI_CALC_v2.0"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/tasks/notifications — 任务通知查询（Phase 5 补齐）
+# ---------------------------------------------------------------------------
+
+
+class TestListNotifications:
+    """GET /api/v1/tasks/notifications tests."""
+
+    def test_list_notifications_empty(
+        self, client, task_redis, fake_redis
+    ) -> None:
+        """无通知时返回空列表."""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tasks/notifications",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["items"] == []
+        assert data["total"] == 0
+
+    def test_list_notifications_with_data(
+        self, client, task_redis, fake_redis
+    ) -> None:
+        """查询到任务完成通知."""
+        import json as _json
+
+        user_id = "00000000-0000-0000-0000-000000000001"
+        notification = {
+            "task_id": "task-notify-001",
+            "task_type": "STANDARD",
+            "status": "SUCCESS",
+            "created_by": "admin",
+            "finished_at": "2026-06-26T10:00:00+00:00",
+            "error_message": "",
+            "notification_time": "2026-06-26T10:00:01+00:00",
+        }
+        task_redis._lists[f"task:notifications:{user_id}"] = [
+            _json.dumps(notification)
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tasks/notifications",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        assert data["items"][0]["task_id"] == "task-notify-001"
+        assert data["items"][0]["status"] == "SUCCESS"
+
+    def test_list_notifications_with_limit(
+        self, client, task_redis, fake_redis
+    ) -> None:
+        """limit 参数控制返回条数."""
+        import json as _json
+
+        user_id = "00000000-0000-0000-0000-000000000002"
+        notifications = []
+        for i in range(5):
+            notifications.append(
+                _json.dumps({"task_id": f"task-{i}", "status": "SUCCESS"})
+            )
+        task_redis._lists[f"task:notifications:{user_id}"] = notifications
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.get(
+                "/api/v1/tasks/notifications?limit=3",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data["items"]) == 3
+
+    def test_list_notifications_invalid_limit(
+        self, client, task_redis, fake_redis
+    ) -> None:
+        """limit 超出范围返回 422."""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tasks/notifications?limit=0",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 422
+
+    def test_list_notifications_no_token(self, client) -> None:
+        """未认证返回 401."""
+        resp = client.get("/api/v1/tasks/notifications")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/tasks/notifications/{taskId}/read — 标记通知已读
+# ---------------------------------------------------------------------------
+
+
+class TestMarkNotificationRead:
+    """POST /api/v1/tasks/notifications/{taskId}/read tests."""
+
+    def test_mark_read_success(self, client, task_redis, fake_redis) -> None:
+        """标记通知已读成功."""
+        import json as _json
+
+        user_id = "00000000-0000-0000-0000-000000000001"
+        notification = {"task_id": "task-read-001", "status": "SUCCESS"}
+        task_redis._lists[f"task:notifications:{user_id}"] = [
+            _json.dumps(notification)
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tasks/notifications/task-read-001/read",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["taskId"] == "task-read-001"
+        assert data["read"] is True
+        # 验证通知已从列表移除
+        assert f"task:notifications:{user_id}" not in task_redis._lists or (
+            len(task_redis._lists[f"task:notifications:{user_id}"]) == 0
+        )
+
+    def test_mark_read_not_found(self, client, task_redis, fake_redis) -> None:
+        """通知不存在返回 404."""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tasks/notifications/nonexistent-task/read",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_NOTIFICATION_NOT_FOUND"
+
+    def test_mark_read_no_token(self, client) -> None:
+        """未认证返回 401."""
+        resp = client.post(
+            "/api/v1/tasks/notifications/some-task/read"
+        )
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# 路由顺序验证：GET /tasks/notifications 不被 GET /tasks/{taskId} 拦截
+# ---------------------------------------------------------------------------
+
+
+class TestNotificationRouteOrder:
+    """验证 /notifications 路由不被 /{task_id} 拦截."""
+
+    def test_notifications_route_not_intercepted(
+        self, client, task_redis, fake_redis
+    ) -> None:
+        """GET /tasks/notifications 应命中通知端点，而非 /{task_id}."""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tasks/notifications",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        # 若被 /{task_id} 拦截，会返回 404 (ERR_TASK_NOT_FOUND)
+        # 正确行为：返回 200 + 空通知列表
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "0"
+
+
+# ---------------------------------------------------------------------------
+# task_tracker 服务层单元测试
+# ---------------------------------------------------------------------------
+
+
+class TestTaskTrackerService:
+    """task_tracker 服务层核心功能测试."""
+
+    async def test_create_task_returns_uuid(self, task_redis) -> None:
+        """create_task 返回 UUID 字符串."""
+        from app.schemas.task import TaskType
+        from app.services import task_tracker
+
+        task_id = await task_tracker.create_task(
+            task_type=TaskType.STANDARD,
+            created_by="admin",
+            created_by_id="user-001",
+            celery_task_id="celery-001",
+            triggered_by="user",
+        )
+        assert task_id
+        assert len(task_id) == 36  # UUID format
+
+    async def test_update_status_to_success_sends_notification(
+        self, task_redis
+    ) -> None:
+        """任务进入 SUCCESS 时自动发送通知."""
+        from app.schemas.task import TaskStatus, TaskType
+        from app.services import task_tracker
+
+        task_id = await task_tracker.create_task(
+            task_type=TaskType.CUSTOM,
+            created_by="ic_engineer",
+            created_by_id="user-002",
+            celery_task_ids=["celery-002"],
+        )
+        # 初始状态 PENDING → 更新为 SUCCESS（终态转换）
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.SUCCESS,
+            finished_at=task_tracker._now_iso(),
+            progress=1.0,
+        )
+        # 验证通知已写入
+        notifications = await task_tracker.get_notifications("user-002")
+        assert len(notifications) == 1
+        assert notifications[0]["task_id"] == task_id
+        assert notifications[0]["status"] == "SUCCESS"
+
+    async def test_update_status_running_no_notification(
+        self, task_redis
+    ) -> None:
+        """任务进入 RUNNING（非终态）不发送通知."""
+        from app.schemas.task import TaskStatus, TaskType
+        from app.services import task_tracker
+
+        task_id = await task_tracker.create_task(
+            task_type=TaskType.STANDARD,
+            created_by="admin",
+            created_by_id="user-003",
+            celery_task_id="celery-003",
+        )
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            started_at=task_tracker._now_iso(),
+            progress=0.5,
+        )
+        notifications = await task_tracker.get_notifications("user-003")
+        assert len(notifications) == 0
+
+    async def test_update_status_failed_sends_notification(
+        self, task_redis
+    ) -> None:
+        """任务进入 FAILED 时自动发送通知."""
+        from app.schemas.task import TaskStatus, TaskType
+        from app.services import task_tracker
+
+        task_id = await task_tracker.create_task(
+            task_type=TaskType.CUSTOM,
+            created_by="pe_engineer",
+            created_by_id="user-004",
+            celery_task_ids=["celery-004"],
+        )
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.FAILED,
+            finished_at=task_tracker._now_iso(),
+            error_message="计算失败",
+        )
+        notifications = await task_tracker.get_notifications("user-004")
+        assert len(notifications) == 1
+        assert notifications[0]["status"] == "FAILED"
+        assert notifications[0]["error_message"] == "计算失败"
+
+    async def test_system_task_no_notification(self, task_redis) -> None:
+        """系统任务（created_by_id 为空）不发送通知."""
+        from app.schemas.task import TaskStatus, TaskType
+        from app.services import task_tracker
+
+        task_id = await task_tracker.create_task(
+            task_type=TaskType.STANDARD,
+            created_by="system",
+            created_by_id="",  # 系统任务无用户
+            celery_task_id="celery-system",
+            triggered_by="system",
+        )
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.SUCCESS,
+            finished_at=task_tracker._now_iso(),
+            progress=1.0,
+        )
+        # 系统任务不通知个人用户
+        notifications = await task_tracker.get_notifications("")
+        assert len(notifications) == 0
+
+    async def test_mark_notification_read(self, task_redis) -> None:
+        """标记通知已读后从列表移除."""
+        from app.schemas.task import TaskStatus, TaskType
+        from app.services import task_tracker
+
+        task_id = await task_tracker.create_task(
+            task_type=TaskType.CUSTOM,
+            created_by="admin",
+            created_by_id="user-005",
+            celery_task_ids=["celery-005"],
+        )
+        await task_tracker.update_status(
+            task_id, TaskStatus.SUCCESS, finished_at=task_tracker._now_iso()
+        )
+        # 标记已读
+        removed = await task_tracker.mark_notification_read("user-005", task_id)
+        assert removed is True
+        # 验证已移除
+        notifications = await task_tracker.get_notifications("user-005")
+        assert len(notifications) == 0
+
+    async def test_mark_notification_read_not_found(self, task_redis) -> None:
+        """标记不存在的通知返回 False."""
+        from app.services import task_tracker
+
+        result = await task_tracker.mark_notification_read("user-006", "nonexistent")
+        assert result is False
+
+    async def test_notification_max_limit(self, task_redis) -> None:
+        """通知列表不超过 _NOTIFICATION_MAX 条."""
+        from app.schemas.task import TaskStatus, TaskType
+        from app.services import task_tracker
+
+        # 创建 105 个任务并全部完成，触发 105 次通知
+        for i in range(105):
+            task_id = await task_tracker.create_task(
+                task_type=TaskType.CUSTOM,
+                created_by="admin",
+                created_by_id="user-007",
+                celery_task_ids=[f"celery-{i}"],
+            )
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.SUCCESS,
+                finished_at=task_tracker._now_iso(),
+            )
+        # 验证通知列表被 ltrim 到 _NOTIFICATION_MAX 条
+        notifications = await task_tracker.get_notifications("user-007", limit=200)
+        assert len(notifications) == task_tracker._NOTIFICATION_MAX

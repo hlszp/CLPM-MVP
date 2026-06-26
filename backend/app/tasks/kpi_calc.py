@@ -126,14 +126,74 @@ def calculate_hourly_kpi(self: AsyncTask) -> dict:
     """每小时全量计算所有 ACTIVE 回路的 KPI 快照。
 
     失败自动重试 3 次，指数退避。
+
+    Phase 5 补齐：集成 task_tracker，定时触发时创建任务记录，
+    使定时任务在 ``GET /tasks`` 列表可见（``triggered_by=system``）。
+    任务跟踪失败不影响计算本身。
     """
     logger.info("KPI 计算任务开始, task_id=%s", self.request.id)
     try:
-        result = self.run_async(_do_calculate())
+        result = self.run_async(_track_hourly_calculation(self.request.id))
         logger.info("KPI 计算任务完成: %s", result)
         return result
     except Exception:
         logger.exception("KPI 计算任务失败")
+        raise
+
+
+async def _track_hourly_calculation(celery_task_id: str) -> dict:
+    """包装 _do_calculate，加入任务跟踪记录（cron 定时触发专用）.
+
+    创建任务记录 → 标记 RUNNING → 执行计算 → 标记 SUCCESS/FAILED。
+    跟踪失败时降级为直接执行 _do_calculate（不影响计算本身）。
+
+    Args:
+        celery_task_id: Celery 任务 ID
+
+    Returns:
+        _do_calculate 的返回值
+    """
+    from app.schemas.task import TaskStatus, TaskType
+    from app.services import task_tracker
+
+    tracker_id: str | None = None
+    try:
+        tracker_id = await task_tracker.create_task(
+            task_type=TaskType.STANDARD,
+            created_by="system",
+            created_by_id="",  # 系统任务无对应用户
+            celery_task_id=celery_task_id,
+            triggered_by="system",
+            current_stage="初始化",
+        )
+        await task_tracker.update_status(
+            tracker_id,
+            TaskStatus.RUNNING,
+            started_at=task_tracker._now_iso(),
+            progress=0.0,
+        )
+    except Exception:
+        logger.warning("任务跟踪记录创建失败，降级为直接执行计算", exc_info=True)
+        return await _do_calculate()
+
+    try:
+        result = await _do_calculate()
+        await task_tracker.update_status(
+            tracker_id,
+            TaskStatus.SUCCESS,
+            finished_at=task_tracker._now_iso(),
+            progress=1.0,
+            loops_total=result.get("total"),
+            loops_done=result.get("success", 0),
+        )
+        return result
+    except Exception as exc:
+        await task_tracker.update_status(
+            tracker_id,
+            TaskStatus.FAILED,
+            finished_at=task_tracker._now_iso(),
+            error_message=str(exc),
+        )
         raise
 
 

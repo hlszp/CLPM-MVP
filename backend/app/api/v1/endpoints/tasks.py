@@ -273,6 +273,15 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
     if updates:
         await redis_client.hset(_task_key(task_id), mapping=updates)
         data.update(updates)
+        # 终态转换时发送通知（Phase 5 补齐）
+        new_status = updates.get("status", "")
+        if new_status in _TERMINAL_STATUSES and current_status not in _TERMINAL_STATUSES:
+            try:
+                from app.services import task_tracker
+
+                await task_tracker._send_notification(data)
+            except Exception:
+                logger.warning("任务通知发送失败: task_id=%s", task_id, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +441,52 @@ async def trigger_custom_evaluation(
 
 
 # ---------------------------------------------------------------------------
+# 接口：查询任务通知（Phase 5 补齐）
+# ---------------------------------------------------------------------------
+# 注意：本组端点必须注册在 GET /{task_id} 之前，否则 /notifications
+# 会被 /{task_id} 路径参数拦截（task_id="notifications"）。
+
+
+@router.get("/notifications", response_model=ApiResponse[dict])
+async def list_notifications(
+    limit: int = Query(20, ge=1, le=100, description="返回条数（最多 100）"),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """查询当前用户的任务完成通知.
+
+    任务进入终态（SUCCESS/FAILED/CANCELLED）时自动推送通知到用户通知列表。
+    通知按时间倒序排列（最新在前），每用户最多保留 100 条。
+
+    设计依据：IDS §2.7.6, PRD §4.3.7
+    """
+    from app.services import task_tracker
+
+    notifications = await task_tracker.get_notifications(str(user.id), limit=limit)
+    return success(data={"items": notifications, "total": len(notifications)})
+
+
+@router.post("/notifications/{task_id}/read", response_model=ApiResponse[dict])
+async def mark_notification_read(
+    task_id: str,
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """标记指定任务的通知为已读（从通知列表移除）.
+
+    设计依据：IDS §2.7.6
+    """
+    from app.services import task_tracker
+
+    removed = await task_tracker.mark_notification_read(str(user.id), task_id)
+    if not removed:
+        raise BizError(
+            code="ERR_NOTIFICATION_NOT_FOUND",
+            message=f"通知不存在或已读: {task_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    return success(data={"taskId": task_id, "read": True}, message="通知已标记为已读")
+
+
+# ---------------------------------------------------------------------------
 # 接口：查询单个任务状态
 # ---------------------------------------------------------------------------
 
@@ -570,6 +625,14 @@ async def cancel_task(
     }
     await redis_client.hset(_task_key(task_id), mapping=updates)
     data.update(updates)
+
+    # 取消是终态转换，发送通知（Phase 5 补齐）
+    try:
+        from app.services import task_tracker
+
+        await task_tracker._send_notification(data)
+    except Exception:
+        logger.warning("任务取消通知发送失败: task_id=%s", task_id, exc_info=True)
 
     logger.info("任务已取消: task_id=%s, user=%s", task_id, user.username)
 
