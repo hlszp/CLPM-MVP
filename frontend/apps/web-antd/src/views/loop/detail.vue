@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { DiagnosisApi } from '#/api/diagnosis';
 /**
  * S2-LOOP-012 回路详情页
  *
@@ -11,7 +12,6 @@
  * - FE-05：增加"智能诊断"Tab（展示诊断结果+可能原因+优化建议）
  */
 import type { LoopApi } from '#/api/loop';
-import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -19,6 +19,7 @@ import { useRoute } from 'vue-router';
 import { Page } from '@vben/common-ui';
 
 import {
+  Alert,
   Button,
   Card,
   Descriptions,
@@ -30,12 +31,12 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { getLoopDetailApi, getLoopMonitorDetailApi } from '#/api/loop';
 import {
   generateDiagnosisReportApi,
   getDiagnosisDetailApi,
   getRecommendationsApi,
 } from '#/api/diagnosis';
+import { getLoopDetailApi, getLoopMonitorDetailApi } from '#/api/loop';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import StatusBadge from '#/components/loop/status-badge.vue';
@@ -58,7 +59,7 @@ const monitorDetail = ref<LoopApi.MonitorDetail | null>(null);
 const trendWindow = ref<LoopApi.TrendWindow>('last_24_hours');
 
 /** FE-05: 智能诊断 Tab 相关状态 */
-const activeTab = ref<'overview' | 'diagnosis'>('overview');
+const activeTab = ref<'diagnosis' | 'overview'>('overview');
 const diagnosisLoading = ref(false);
 const recommendationsLoading = ref(false);
 const reportGenerating = ref(false);
@@ -95,7 +96,12 @@ const kpiItems: {
 }[] = [
   { desc: '优良值率', key: 'good_value_rate', label: '优良值率', unit: '%' },
   { desc: '自动模式率', key: 'auto_mode_rate', label: '自动模式率', unit: '%' },
-  { desc: '有效自控率', key: 'effective_auto_rate', label: '有效自控率', unit: '%' },
+  {
+    desc: '有效自控率',
+    key: 'effective_auto_rate',
+    label: '有效自控率',
+    unit: '%',
+  },
   { desc: '稳定率', key: 'steady_rate', label: '稳定率', unit: '%' },
   { desc: '准确度', key: 'accuracy_rate', label: '准确度', unit: '%' },
   { desc: '快速率', key: 'fast_response_rate', label: '快速率', unit: '%' },
@@ -108,6 +114,11 @@ const kpiStatusMap: Record<string, { color: string; label: string }> = {
   INCONCLUSIVE: { color: 'default', label: '未确定' },
   PARTIAL: { color: 'orange', label: '部分' },
 };
+
+/** KPI 结果是否为 INCONCLUSIVE（数据不足，结果不确定） */
+const isInconclusive = computed(
+  () => monitorDetail.value?.kpiSummary.status === 'INCONCLUSIVE',
+);
 
 const pageTitle = computed(() => {
   if (loopDetail.value) {
@@ -171,9 +182,9 @@ async function handleGenerateReport() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `诊断建议书_${loopDetail.value?.basicInfo.tagName ?? loopId}.pdf`;
-    document.body.appendChild(a);
+    document.body.append(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     URL.revokeObjectURL(url);
   } catch {
     // 错误已由拦截器处理
@@ -196,8 +207,12 @@ function formatTime(t: null | string): string {
 }
 
 /** FE-05: Tab 切换时按需加载诊断数据 */
-function handleTabChange(key: string | number) {
-  if (key === 'diagnosis' && !diagnosisDetail.value && !diagnosisLoading.value) {
+function handleTabChange(key: number | string) {
+  if (
+    key === 'diagnosis' &&
+    !diagnosisDetail.value &&
+    !diagnosisLoading.value
+  ) {
     loadDiagnosis();
   }
 }
@@ -214,6 +229,17 @@ onMounted(() => {
 
 <template>
   <Page :title="pageTitle">
+    <!-- 顶部返回导航（建议 3） -->
+    <div class="mb-3 flex items-center gap-3">
+      <Button size="small" @click="$router.back()">返回</Button>
+      <nav class="text-sm text-gray-400">
+        <a class="cursor-pointer hover:text-blue-500" @click="$router.push('/dashboard')">工作台</a>
+        <span class="mx-1">/</span>
+        <a class="cursor-pointer hover:text-blue-500" @click="$router.push('/loop/manage')">回路管理</a>
+        <span class="mx-1">/</span>
+        <span class="text-gray-600">回路详情</span>
+      </nav>
+    </div>
     <Spin :spinning="loading">
       <Tabs v-model:active-key="activeTab" @change="handleTabChange">
         <!-- 概览 Tab -->
@@ -323,7 +349,9 @@ onMounted(() => {
               <Spin :spinning="monitorLoading">
                 <div v-if="monitorDetail" class="space-y-3">
                   <!-- 当前值快照 -->
-                  <div class="flex flex-wrap items-center gap-4 rounded border p-3">
+                  <div
+                    class="flex flex-wrap items-center gap-4 rounded border p-3"
+                  >
                     <div>
                       <span class="text-xs text-gray-400">PV</span>
                       <span class="ml-2 font-medium text-blue-600">
@@ -380,9 +408,20 @@ onMounted(() => {
             <Card title="KPI 摘要">
               <Spin :spinning="monitorLoading">
                 <div v-if="monitorDetail">
+                  <!-- INCONCLUSIVE 警告 -->
+                  <Alert
+                    v-if="isInconclusive"
+                    class="mb-4"
+                    type="warning"
+                    show-icon
+                    message="该回路本期评估数据不足，结果不确定"
+                    description="有效数据率低于 20%，KPI 数值仅供参考，不参与评级与排行。"
+                  />
+
                   <!-- 综合评分 -->
                   <div
                     class="mb-4 flex items-center justify-between rounded border p-4"
+                    :class="{ 'opacity-60': isInconclusive }"
                   >
                     <div>
                       <div class="text-xs text-gray-400">
@@ -390,17 +429,25 @@ onMounted(() => {
                       </div>
                       <div
                         class="mt-1 text-3xl font-bold"
-                        :class="{
-                          'text-green-600':
-                            monitorDetail.kpiSummary.composite_score >= 80,
-                          'text-orange-500':
-                            monitorDetail.kpiSummary.composite_score >= 60 &&
-                            monitorDetail.kpiSummary.composite_score < 80,
-                          'text-red-500':
-                            monitorDetail.kpiSummary.composite_score < 60,
-                        }"
+                        :class="
+                          isInconclusive
+                            ? 'text-gray-400'
+                            : {
+                                'text-green-600':
+                                  monitorDetail.kpiSummary.composite_score >= 80,
+                                'text-orange-500':
+                                  monitorDetail.kpiSummary.composite_score >= 60 &&
+                                  monitorDetail.kpiSummary.composite_score < 80,
+                                'text-red-500':
+                                  monitorDetail.kpiSummary.composite_score < 60,
+                              }
+                        "
                       >
-                        {{ monitorDetail.kpiSummary.composite_score?.toFixed(1) ?? '--' }}
+                        {{
+                          monitorDetail.kpiSummary.composite_score?.toFixed(
+                            1,
+                          ) ?? '--'
+                        }}
                       </div>
                     </div>
                     <div class="text-right">
@@ -412,12 +459,14 @@ onMounted(() => {
                         class="mt-1"
                       >
                         {{
-                          kpiStatusMap[monitorDetail.kpiSummary.status]?.label ||
-                          monitorDetail.kpiSummary.status
+                          kpiStatusMap[monitorDetail.kpiSummary.status]
+                            ?.label || monitorDetail.kpiSummary.status
                         }}
                       </Tag>
                       <div class="mt-1 text-xs text-gray-400">
-                        算法版本：{{ monitorDetail.kpiSummary.algorithm_version }}
+                        算法版本：{{
+                          monitorDetail.kpiSummary.algorithm_version
+                        }}
                       </div>
                       <div class="text-xs text-gray-400">
                         计算时间：{{
@@ -428,7 +477,10 @@ onMounted(() => {
                   </div>
 
                   <!-- 6 大 KPI 网格 -->
-                  <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+                  <div
+                    class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6"
+                    :class="{ 'opacity-60': isInconclusive }"
+                  >
                     <div
                       v-for="item in kpiItems"
                       :key="item.key"
@@ -437,10 +489,14 @@ onMounted(() => {
                       <div class="text-xs text-gray-400">{{ item.label }}</div>
                       <div class="mt-1 text-xl font-medium">
                         {{
-                          (monitorDetail.kpiSummary[item.key] as number | null)?.toFixed(1) ?? '--'
+                          (
+                            monitorDetail.kpiSummary[item.key] as number | null
+                          )?.toFixed(1) ?? '--'
                         }}{{ item.unit }}
                       </div>
-                      <div class="mt-1 text-xs text-gray-400">{{ item.desc }}</div>
+                      <div class="mt-1 text-xs text-gray-400">
+                        {{ item.desc }}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -495,7 +551,9 @@ onMounted(() => {
                   v-if="diagnosisDetail.diagnosisLabels.length > 0"
                   class="mt-4 space-y-3"
                 >
-                  <div class="text-sm font-medium text-gray-600">诊断标签：</div>
+                  <div class="text-sm font-medium text-gray-600">
+                    诊断标签：
+                  </div>
                   <div
                     v-for="(item, idx) in diagnosisDetail.diagnosisLabels"
                     :key="idx"
@@ -503,7 +561,9 @@ onMounted(() => {
                   >
                     <div class="mb-2 flex items-center gap-3">
                       <Tag :color="DIAGNOSIS_LABEL_COLOR_MAP[item.label]">
-                        {{ item.labelName || DIAGNOSIS_LABEL_NAME_MAP[item.label] }}
+                        {{
+                          item.labelName || DIAGNOSIS_LABEL_NAME_MAP[item.label]
+                        }}
                       </Tag>
                       <span class="text-sm text-gray-500">
                         置信度：
@@ -536,11 +596,6 @@ onMounted(() => {
           </Spin>
         </TabPane>
       </Tabs>
-
-      <!-- 返回按钮 -->
-      <div class="mt-4 flex justify-center">
-        <Button @click="$router.back()">返回</Button>
-      </div>
     </Spin>
   </Page>
 </template>

@@ -34,6 +34,7 @@ import {
 
 import { getRankingApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'MetricRanking' });
@@ -164,6 +165,13 @@ const columns: TableColumnsType = [
     align: 'right',
   },
   { title: '状态', dataIndex: 'status', key: 'status', width: 90 },
+  {
+    title: '可信度',
+    dataIndex: 'confidenceLevel',
+    key: 'confidenceLevel',
+    width: 110,
+    align: 'center',
+  },
   {
     title: '预诊',
     dataIndex: 'preDiagnosis',
@@ -392,7 +400,7 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: MetricApi.RankingItem) => record.loopId"
-        :scroll="{ x: 1500 }"
+        :scroll="{ x: 1610 }"
         size="middle"
         :custom-row="
           (record: MetricApi.RankingItem) => ({
@@ -446,6 +454,13 @@ onMounted(() => {
             <Tag :color="statusColorMap[record.status as KpiStatus]">
               {{ statusLabelMap[record.status as KpiStatus] }}
             </Tag>
+          </template>
+          <template v-else-if="column.key === 'confidenceLevel'">
+            <ConfidenceBadge
+              :level="record.confidenceLevel"
+              :valid-rate="record.validRate"
+              size="small"
+            />
           </template>
           <template v-else-if="column.key === 'preDiagnosis'">
             <Tag v-if="record.preDiagnosis" color="orange">
@@ -534,6 +549,18 @@ onMounted(() => {
           <div class="flex justify-between border-b pb-2">
             <span class="text-gray-500">算法版本</span>
             <span>{{ selectedLoop.algorithmVersion }}</span>
+          </div>
+          <div class="flex justify-between border-b pb-2">
+            <span class="text-gray-500">可信度</span>
+            <ConfidenceBadge
+              :level="selectedLoop.confidenceLevel"
+              :valid-rate="selectedLoop.validRate"
+              size="small"
+            />
+          </div>
+          <div v-if="selectedLoop.samplingFreq" class="flex justify-between border-b pb-2">
+            <span class="text-gray-500">采样频率</span>
+            <span>{{ selectedLoop.samplingFreq }}</span>
           </div>
         </div>
         <div class="mt-6">

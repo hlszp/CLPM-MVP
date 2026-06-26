@@ -1,6 +1,7 @@
 <script lang="ts" setup>
-import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+
+import type { EchartsUIType } from '@vben/plugins/echarts';
 
 /**
  * S2-LOOP-011 回路监控列表页
@@ -24,6 +25,7 @@ import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
+  Alert,
   Button,
   Card,
   Input,
@@ -85,6 +87,11 @@ const kpiStatusMap: Record<string, { color: string; label: string }> = {
   INCONCLUSIVE: { color: 'default', label: '未确定' },
   PARTIAL: { color: 'orange', label: '部分' },
 };
+
+/** 性能 Modal 中 KPI 结果是否为 INCONCLUSIVE */
+const isPerfInconclusive = computed(
+  () => perfDetail.value?.kpiSummary.status === 'INCONCLUSIVE',
+);
 
 /** 6 大 KPI 配置（含权重 key） */
 const kpiItems: {
@@ -176,9 +183,7 @@ const plantNodeOptions = computed(() => {
     let current: PlantNodeApi.PlantNode | undefined = node;
     while (current) {
       path.unshift(current.name);
-      current = current.parentId
-        ? nodeMap.get(current.parentId)
-        : undefined;
+      current = current.parentId ? nodeMap.get(current.parentId) : undefined;
     }
     return {
       label: path.join(' / '),
@@ -279,7 +284,7 @@ function modeText(record: LoopApi.MonitorListItem): string {
 
 /** OP 值格式化，带 % 后缀 */
 function formatOp(val: null | number | undefined): string {
-  if (val == null || Number.isNaN(val)) return '—';
+  if (val === null || val === undefined || Number.isNaN(val)) return '—';
   return `${val.toFixed(2)}%`;
 }
 
@@ -289,7 +294,7 @@ function formatValueWithUnit(
   unit?: string,
   digits = 2,
 ): string {
-  if (val == null || Number.isNaN(val)) return '—';
+  if (val === null || val === undefined || Number.isNaN(val)) return '—';
   const formatted = val.toFixed(digits);
   return unit ? `${formatted} ${unit}` : formatted;
 }
@@ -382,10 +387,10 @@ function findModeChangePoints(
 ): number[] {
   const changes: number[] = [];
   let prevMode: null | number = null;
-  for (let i = 0; i < modes.length; i++) {
-    const m = modes[i] ?? null;
+  for (const [i, mode] of modes.entries()) {
+    const m = mode ?? null;
     if (m !== prevMode) {
-      changes.push(timestamps[i]!);
+      changes.push(timestamps[i] ?? 0);
       prevMode = m;
     }
   }
@@ -398,10 +403,18 @@ function renderTrend() {
   if (!trend || !trend.timestamps || trend.timestamps.length === 0) return;
 
   const { timestamps, pv, sp, op, mode } = trend;
-  const pvData = timestamps.map((ts, i) => [ts, pv[i] ?? null] as [number, null | number]);
-  const spData = timestamps.map((ts, i) => [ts, sp[i] ?? null] as [number, null | number]);
-  const opData = timestamps.map((ts, i) => [ts, op[i] ?? null] as [number, null | number]);
-  const modeData = timestamps.map((ts, i) => [ts, mode[i] ?? null] as [number, null | number]);
+  const pvData = timestamps.map(
+    (ts, i) => [ts, pv[i] ?? null] as [number, null | number],
+  );
+  const spData = timestamps.map(
+    (ts, i) => [ts, sp[i] ?? null] as [number, null | number],
+  );
+  const opData = timestamps.map(
+    (ts, i) => [ts, op[i] ?? null] as [number, null | number],
+  );
+  const modeData = timestamps.map(
+    (ts, i) => [ts, mode[i] ?? null] as [number, null | number],
+  );
   const modeChanges = findModeChangePoints(timestamps, mode);
 
   renderTrendChart({
@@ -409,10 +422,24 @@ function renderTrend() {
     dataZoom: [
       // 底部时间轴滑块（X 轴）
       { end: 100, start: 0, type: 'inside', xAxisIndex: 0 },
-      { end: 100, start: 0, type: 'slider', xAxisIndex: 0, bottom: 8, height: 20 },
+      {
+        end: 100,
+        start: 0,
+        type: 'slider',
+        xAxisIndex: 0,
+        bottom: 8,
+        height: 20,
+      },
       // 右侧量程滑块（Y 轴）
       { end: 100, start: 0, type: 'inside', yAxisIndex: 0 },
-      { end: 100, start: 0, type: 'slider', yAxisIndex: 0, right: 8, width: 20 },
+      {
+        end: 100,
+        start: 0,
+        type: 'slider',
+        yAxisIndex: 0,
+        right: 8,
+        width: 20,
+      },
     ],
     grid: {
       bottom: 50,
@@ -550,15 +577,28 @@ async function loadPerfDetail() {
 /** 渲染仪表盘 */
 function renderGauge() {
   const score = perfDetail.value?.kpiSummary.composite_score;
-  if (score == null) return;
+  if (score === null || score === undefined) return;
 
   renderGaugeChart({
     series: [
       {
-        axisLine: { lineStyle: { color: [[0.6, '#ff4d4f'], [0.8, '#faad14'], [1, '#52c41a']], width: 18 } },
+        axisLine: {
+          lineStyle: {
+            color: [
+              [0.6, '#ff4d4f'],
+              [0.8, '#faad14'],
+              [1, '#52c41a'],
+            ],
+            width: 18,
+          },
+        },
         axisTick: { show: false },
         data: [{ name: '综合性能指数', value: score }],
-        detail: { fontSize: 28, formatter: '{value}', offsetCenter: [0, '50%'] },
+        detail: {
+          fontSize: 28,
+          formatter: '{value}',
+          offsetCenter: [0, '50%'],
+        },
         max: 100,
         min: 0,
         pointer: { itemStyle: { color: 'auto' } },
@@ -704,30 +744,53 @@ onUnmounted(() => {
           <template v-if="column.key === 'loopType'">
             <Tag
               :color="
-                LOOP_TYPE_MAP[(record as LoopApi.MonitorListItem).loopType ?? 'OTHER']?.color ?? 'default'
+                LOOP_TYPE_MAP[
+                  (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
+                ]?.color ?? 'default'
               "
               class="m-0"
             >
               {{
-                LOOP_TYPE_MAP[(record as LoopApi.MonitorListItem).loopType ?? 'OTHER']?.label ?? '其他'
+                LOOP_TYPE_MAP[
+                  (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
+                ]?.label ?? '其他'
               }}
             </Tag>
           </template>
           <template v-else-if="column.key === 'sp'">
-            {{ formatValueWithUnit((record as LoopApi.MonitorListItem).currentValues?.sp, (record as LoopApi.MonitorListItem).currentValues?.unit) }}
+            {{
+              formatValueWithUnit(
+                (record as LoopApi.MonitorListItem).currentValues?.sp,
+                (record as LoopApi.MonitorListItem).currentValues?.unit,
+              )
+            }}
           </template>
           <template v-else-if="column.key === 'pv'">
             <span class="font-medium text-blue-600">
-              {{ formatValueWithUnit((record as LoopApi.MonitorListItem).currentValues?.pv, (record as LoopApi.MonitorListItem).currentValues?.unit) }}
+              {{
+                formatValueWithUnit(
+                  (record as LoopApi.MonitorListItem).currentValues?.pv,
+                  (record as LoopApi.MonitorListItem).currentValues?.unit,
+                )
+              }}
             </span>
           </template>
           <template v-else-if="column.key === 'op'">
-            {{ formatOp((record as LoopApi.MonitorListItem).currentValues?.op) }}
+            {{
+              formatOp((record as LoopApi.MonitorListItem).currentValues?.op)
+            }}
           </template>
           <template v-else-if="column.key === 'mode'">
             <Tag
-              v-if="(record as LoopApi.MonitorListItem).currentValues?.modeLabel || (record as LoopApi.MonitorListItem).currentValues?.mode != null"
-              :color="modeColor((record as LoopApi.MonitorListItem).currentValues?.modeLabel)"
+              v-if="
+                (record as LoopApi.MonitorListItem).currentValues?.modeLabel ||
+                (record as LoopApi.MonitorListItem).currentValues?.mode != null
+              "
+              :color="
+                modeColor(
+                  (record as LoopApi.MonitorListItem).currentValues?.modeLabel,
+                )
+              "
             >
               {{ modeText(record as LoopApi.MonitorListItem) }}
             </Tag>
@@ -784,11 +847,7 @@ onUnmounted(() => {
       <template #title>
         <div class="flex items-center justify-between pr-8">
           <span>趋势 - {{ currentRecord?.tagName ?? '' }}</span>
-          <Button
-            type="text"
-            size="small"
-            @click="toggleTrendFullscreen"
-          >
+          <Button type="text" size="small" @click="toggleTrendFullscreen">
             {{ trendFullscreen ? '退出全屏' : '全屏' }}
           </Button>
         </div>
@@ -865,9 +924,7 @@ onUnmounted(() => {
           <div v-if="trendDetail">
             <EchartsUI ref="trendChartRef" :height="trendChartHeight" />
           </div>
-          <div v-else class="py-12 text-center text-gray-400">
-            暂无趋势数据
-          </div>
+          <div v-else class="py-12 text-center text-gray-400">暂无趋势数据</div>
         </div>
       </Spin>
     </Modal>
@@ -895,11 +952,31 @@ onUnmounted(() => {
             />
           </div>
 
+          <!-- INCONCLUSIVE 警告 -->
+          <Alert
+            v-if="isPerfInconclusive"
+            class="mb-4"
+            type="warning"
+            show-icon
+            message="该回路本期评估数据不足，结果不确定"
+            description="有效数据率低于 20%，KPI 数值仅供参考，不参与评级与排行。"
+          />
+
           <!-- 综合评分 + 仪表盘 -->
-          <div class="flex items-center gap-6 rounded border p-4">
-            <div style="height: 240px; width: 240px">
-              <EchartsUI v-if="perfDetail.kpiSummary.composite_score != null" ref="gaugeChartRef" height="240px" />
-              <div v-else class="flex h-full items-center justify-center text-gray-400">
+          <div
+            class="flex items-center gap-6 rounded border p-4"
+            :class="{ 'opacity-60': isPerfInconclusive }"
+          >
+            <div style="width: 240px; height: 240px">
+              <EchartsUI
+                v-if="perfDetail.kpiSummary.composite_score != null"
+                ref="gaugeChartRef"
+                height="240px"
+              />
+              <div
+                v-else
+                class="flex h-full items-center justify-center text-gray-400"
+              >
                 暂无评分
               </div>
             </div>
@@ -909,15 +986,19 @@ onUnmounted(() => {
               </div>
               <div
                 class="mt-1 text-3xl font-bold"
-                :class="{
-                  'text-green-600':
-                    (perfDetail.kpiSummary.composite_score ?? 0) >= 80,
-                  'text-orange-500':
-                    (perfDetail.kpiSummary.composite_score ?? 0) >= 60 &&
-                    (perfDetail.kpiSummary.composite_score ?? 0) < 80,
-                  'text-red-500':
-                    (perfDetail.kpiSummary.composite_score ?? 0) < 60,
-                }"
+                :class="
+                  isPerfInconclusive
+                    ? 'text-gray-400'
+                    : {
+                        'text-green-600':
+                          (perfDetail.kpiSummary.composite_score ?? 0) >= 80,
+                        'text-orange-500':
+                          (perfDetail.kpiSummary.composite_score ?? 0) >= 60 &&
+                          (perfDetail.kpiSummary.composite_score ?? 0) < 80,
+                        'text-red-500':
+                          (perfDetail.kpiSummary.composite_score ?? 0) < 60,
+                      }
+                "
               >
                 {{ perfDetail.kpiSummary.composite_score?.toFixed(1) ?? '—' }}
               </div>
@@ -940,7 +1021,10 @@ onUnmounted(() => {
           </div>
 
           <!-- 6 大 KPI 卡片（含权重） -->
-          <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+          <div
+            class="grid grid-cols-2 gap-3 md:grid-cols-3"
+            :class="{ 'opacity-60': isPerfInconclusive }"
+          >
             <div
               v-for="item in kpiItems"
               :key="item.key"
@@ -951,14 +1035,18 @@ onUnmounted(() => {
                 <span class="text-xs text-gray-400">
                   权重：{{
                     item.weightKey
-                      ? (loopDetailForWeights?.basicInfo.scoreWeights?.[item.weightKey] ?? '—')
+                      ? (loopDetailForWeights?.basicInfo.scoreWeights?.[
+                          item.weightKey
+                        ] ?? '—')
                       : '—'
                   }}%
                 </span>
               </div>
               <div class="mt-1 text-xl font-medium">
                 {{
-                  (perfDetail.kpiSummary[item.key] as null | number)?.toFixed(1) ?? '—'
+                  (perfDetail.kpiSummary[item.key] as null | number)?.toFixed(
+                    1,
+                  ) ?? '—'
                 }}{{ item.unit }}
               </div>
               <div class="mt-1 text-xs text-gray-400">{{ item.desc }}</div>
