@@ -26,7 +26,7 @@ defineOptions({ name: 'TuningWorkbench' });
 const router = useRouter();
 
 const loading = ref(false);
-const historyStats = ref<TuningApi.HistoryStats | null>(null);
+const historyStats = ref<null | TuningApi.HistoryStats>(null);
 
 /** 算法显示名映射 */
 const algorithmNameMap: Record<TuningApi.Algorithm, string> = {

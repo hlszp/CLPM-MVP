@@ -10,7 +10,7 @@ import type { RouteRecordRaw } from 'vue-router';
  * - ADMIN：全部（含配置）
  * - IC_ENGINEER：全部（含异常跟踪编辑）
  * - PE_ENGINEER：查看 + 异常跟踪
- * - SPONSOR：查看
+ * - SPONSOR：仅统计报表与诊断列表汇总，不可进入单回路诊断详情/波形证据
  * - EXPERT：查看 + 异常跟踪
  */
 const routes: RouteRecordRaw[] = [
@@ -45,13 +45,7 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/detail/:loopId',
         component: () => import('#/views/diagnosis/detail.vue'),
         meta: {
-          authority: [
-            'ADMIN',
-            'EXPERT',
-            'IC_ENGINEER',
-            'PE_ENGINEER',
-            'SPONSOR',
-          ],
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '诊断详情',
         },
@@ -61,13 +55,7 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/waveform',
         component: () => import('#/views/diagnosis/waveform.vue'),
         meta: {
-          authority: [
-            'ADMIN',
-            'EXPERT',
-            'IC_ENGINEER',
-            'PE_ENGINEER',
-            'SPONSOR',
-          ],
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:activity',
           title: '波形分析',
         },

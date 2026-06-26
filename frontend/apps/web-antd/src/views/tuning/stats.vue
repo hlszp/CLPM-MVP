@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+
 /**
  * S7-TUNE-005 效果统计页
  *
@@ -8,8 +10,6 @@
  * - 底部任务列表（筛选 + 表格 + 分页）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
-
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { TuningApi } from '#/api/tuning';
 
@@ -26,7 +26,7 @@ defineOptions({ name: 'TuningStats' });
 
 const loading = ref(false);
 const historyLoading = ref(false);
-const historyStats = ref<TuningApi.HistoryStats | null>(null);
+const historyStats = ref<null | TuningApi.HistoryStats>(null);
 const taskList = ref<TuningApi.TuningTaskItem[]>([]);
 const total = ref(0);
 
@@ -118,17 +118,17 @@ function statusName(status: TuningApi.TaskStatus): string {
 /** 状态颜色映射 */
 function statusColor(status: TuningApi.TaskStatus): string {
   switch (status) {
-    case 'PENDING': {
-      return 'default';
+    case 'APPLIED': {
+      return 'green';
     }
     case 'IDENTIFIED': {
       return 'cyan';
     }
+    case 'PENDING': {
+      return 'default';
+    }
     case 'SIMULATED': {
       return 'blue';
-    }
-    case 'APPLIED': {
-      return 'green';
     }
     case 'VERIFIED': {
       return 'success';
@@ -145,11 +145,11 @@ function modelTypeName(type: TuningApi.ModelType): string {
     case 'FOPDT': {
       return 'FOPDT 一阶加纯滞后';
     }
-    case 'SOPDT': {
-      return 'SOPDT 二阶加纯滞后';
-    }
     case 'IPDT': {
       return 'IPDT 积分加纯滞后';
+    }
+    case 'SOPDT': {
+      return 'SOPDT 二阶加纯滞后';
     }
     default: {
       return type;

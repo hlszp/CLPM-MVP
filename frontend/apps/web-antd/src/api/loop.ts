@@ -9,7 +9,7 @@ import { requestClient } from '#/api/request';
 
 export namespace LoopApi {
   /** 回路状态（IDS v3.2 §2.2.7） */
-  export type LoopStatus = 'READY' | 'PARTIAL' | 'INACTIVE';
+  export type LoopStatus = 'INACTIVE' | 'PARTIAL' | 'READY';
 
   /** 控制方式（IDS v3.2 §2.2.7） */
   export type ControlMode = 'Auto' | 'Cascade' | 'Manual';
@@ -32,13 +32,13 @@ export namespace LoopApi {
     | 'last_1_hour'
     | 'last_2_hours'
     | 'last_4_hours'
+    | 'last_7_days'
     | 'last_8_hours'
     | 'last_24_hours'
-    | 'last_72_hours'
-    | 'last_7_days';
+    | 'last_72_hours';
 
   /** KPI 状态（IDS v3.2 §2.2.14） */
-  export type KpiStatus = 'SUCCESS' | 'INCONCLUSIVE' | 'PARTIAL';
+  export type KpiStatus = 'INCONCLUSIVE' | 'PARTIAL' | 'SUCCESS';
 
   /** 评分权重（6 大 KPI，总和须 100，对齐 GB/T 44693.2-2024） */
   export interface ScoreWeights {

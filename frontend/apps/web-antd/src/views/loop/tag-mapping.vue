@@ -145,7 +145,7 @@ async function loadAvailableTags(keyword?: string) {
     const data = await getAasTagsApi({
       keyword: keyword || undefined,
       page: 1,
-      pageSize: 100,
+      pageSize: 10000, // 加载所有测点以支持自动关联
     });
     availableTags.value = data.items;
   } catch {
@@ -228,6 +228,47 @@ async function handleSave() {
 /** 清空某个槽位 */
 function clearSlot(key: keyof typeof slotState) {
   slotState[key] = undefined;
+}
+
+/** 自动关联：根据回路位号匹配测点 */
+async function handleAutoLink() {
+  if (!selectedLoop.value?.tagName || !availableTags.value.length) {
+    message.warning('请先选择回路并加载可用测点');
+    return;
+  }
+
+  const loopTagName = selectedLoop.value.tagName;
+  const roleToTagType: Record<string, string> = {
+    pv: 'PV',
+    sp: 'SP',
+    op: 'OP',
+    mode: 'MODE',
+    pid_p: 'KP',
+    pid_i: 'TI',
+    pid_d: 'TD',
+  };
+
+  let matchedCount = 0;
+  for (const key of Object.keys(slotState) as (keyof typeof slotState)[]) {
+    const tagType = roleToTagType[key];
+    if (!tagType) continue;
+
+    const expectedTagName = `${loopTagName}_${tagType}`;
+    const tag = availableTags.value.find(
+      (t) => t.tagName === expectedTagName,
+    );
+
+    if (tag) {
+      slotState[key] = tag.tagId;
+      matchedCount++;
+    }
+  }
+
+  if (matchedCount > 0) {
+    message.success(`自动关联成功！匹配到 ${matchedCount} 个测点`);
+  } else {
+    message.info('未找到匹配的测点，请手动关联');
+  }
 }
 
 watch(selectedLoopId, () => {
@@ -346,6 +387,13 @@ onMounted(() => {
           v-if="selectedLoopId"
           class="mt-4 flex justify-end gap-2 border-t pt-4"
         >
+          <Button
+            v-permission="['ADMIN', 'IC_ENGINEER']"
+            type="default"
+            @click="handleAutoLink"
+          >
+            自动关联
+          </Button>
           <Button
             v-permission="['ADMIN', 'IC_ENGINEER']"
             type="primary"

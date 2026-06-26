@@ -38,7 +38,7 @@ const route = useRoute();
 
 const loading = ref(false);
 const saving = ref(false);
-const simulationResult = ref<TuningApi.SimulationResult | null>(null);
+const simulationResult = ref<null | TuningApi.SimulationResult>(null);
 const loopId = ref<string>((route.query.loopId as string) || '');
 
 /** 模型类型选项 */
@@ -71,7 +71,7 @@ const form = reactive({
   recommendedPid: { kp: 1.2, ti: 8, td: 0.5 } as TuningApi.PidParams,
   simDuration: 600,
   simStep: 1,
-  setpointStep: 1.0,
+  setpointStep: 1,
   disturbanceType: 'none' as TuningApi.DisturbanceType,
 });
 
@@ -87,17 +87,17 @@ const modelParamFields = computed<
         { key: 'theta', label: 'θ (死区时间)' },
       ];
     }
+    case 'IPDT': {
+      return [
+        { key: 'K', label: 'K (增益)' },
+        { key: 'theta', label: 'θ (死区时间)' },
+      ];
+    }
     case 'SOPDT': {
       return [
         { key: 'K', label: 'K (增益)' },
         { key: 'T1', label: 'T1 (时间常数1)' },
         { key: 'T2', label: 'T2 (时间常数2)' },
-        { key: 'theta', label: 'θ (死区时间)' },
-      ];
-    }
-    case 'IPDT': {
-      return [
-        { key: 'K', label: 'K (增益)' },
         { key: 'theta', label: 'θ (死区时间)' },
       ];
     }
@@ -171,15 +171,15 @@ function formatMetric(
 ): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
   switch (key) {
-    case 'riseTime':
-    case 'settlingTime': {
-      return `${val?.toFixed(1) ?? '0.0'} 秒`;
+    case 'itae': {
+      return val.toExponential(3);
     }
     case 'overshoot': {
       return `${val?.toFixed(1) ?? '0.0'}%`;
     }
-    case 'itae': {
-      return val.toExponential(3);
+    case 'riseTime':
+    case 'settlingTime': {
+      return `${val?.toFixed(1) ?? '0.0'} 秒`;
     }
     default: {
       return String(val);

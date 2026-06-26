@@ -32,8 +32,8 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { identifyModelApi } from '#/api/tuning';
 import { getLoopListApi } from '#/api/loop';
+import { identifyModelApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningModel' });
 
@@ -41,7 +41,7 @@ const router = useRouter();
 
 const loading = ref(false);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
-const identifyResult = ref<TuningApi.IdentifyResult | null>(null);
+const identifyResult = ref<null | TuningApi.IdentifyResult>(null);
 
 /** 筛选表单状态 */
 const filter = reactive({

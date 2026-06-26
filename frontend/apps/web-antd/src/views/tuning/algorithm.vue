@@ -44,7 +44,7 @@ const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
 const methods = ref<TuningApi.MethodInfo[]>([]);
-const tuneResult = ref<TuningApi.TuneResult | null>(null);
+const tuneResult = ref<null | TuningApi.TuneResult>(null);
 
 /** 模型类型选项 */
 const modelTypeOptions: { label: string; value: TuningApi.ModelType }[] = [
@@ -105,13 +105,13 @@ function buildModelParams(): TuningApi.ModelParams {
       params.theta = form.theta ?? null;
       break;
     }
-    case 'SOPDT': {
-      params.T1 = form.T1 ?? null;
-      params.T2 = form.T2 ?? null;
+    case 'IPDT': {
       params.theta = form.theta ?? null;
       break;
     }
-    case 'IPDT': {
+    case 'SOPDT': {
+      params.T1 = form.T1 ?? null;
+      params.T2 = form.T2 ?? null;
       params.theta = form.theta ?? null;
       break;
     }
@@ -139,7 +139,7 @@ async function loadMethods() {
     // 初始化第一个算法的默认参数
     if (
       data.length > 0 &&
-      !methods.value.find((m) => m.code === form.algorithm)
+      !methods.value.some((m) => m.code === form.algorithm)
     ) {
       const first = data[0];
       if (first) {
@@ -181,11 +181,12 @@ async function handleTune() {
     message.warning('请输入过程增益 K');
     return;
   }
-  if (form.modelType === 'FOPDT') {
-    if (form.tau === undefined || form.tau === null) {
-      message.warning('请输入时间常数 τ');
-      return;
-    }
+  if (
+    form.modelType === 'FOPDT' &&
+    (form.tau === undefined || form.tau === null)
+  ) {
+    message.warning('请输入时间常数 τ');
+    return;
   }
   if (form.modelType === 'SOPDT') {
     if (form.T1 === undefined || form.T1 === null) {
@@ -245,6 +246,8 @@ function handleSaveTask() {
     return;
   }
 
+  const result = tuneResult.value;
+
   Modal.confirm({
     title: '确认保存整定任务',
     content: `将使用算法「${algorithmNameMap[form.algorithm] || form.algorithm}」的推荐 PID 参数保存为整定任务，是否继续？`,
@@ -258,7 +261,7 @@ function handleSaveTask() {
           modelType: form.modelType,
           modelParams: buildModelParams(),
           algorithm: form.algorithm,
-          recommendedPid: tuneResult.value!.recommendedPid,
+          recommendedPid: result.recommendedPid,
           currentPid: buildCurrentPid(),
           status: 'SIMULATED',
         });

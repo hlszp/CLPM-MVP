@@ -7,10 +7,13 @@
  * - hasPermission：通配符 / 精确匹配
  */
 
+import { useAccessStore, useUserStore } from '@vben/stores';
+
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useAccessStore, useUserStore } from '@vben/stores';
+import { hasPermission } from '#/directives/permission';
+import { useAuthStore } from '#/store';
 
 // ===== Mock 依赖 =====
 const routerPushSpy = vi.fn();
@@ -89,9 +92,6 @@ vi.mock('@vben/stores', async () => {
     resetAllStores: (...args: any[]) => resetAllStoresMock(...args),
   };
 });
-
-import { useAuthStore } from '#/store';
-import { hasPermission } from '#/directives/permission';
 
 // 测试用路由数据（模拟 CLPM 路由模块）
 const testRoutes: any[] = [

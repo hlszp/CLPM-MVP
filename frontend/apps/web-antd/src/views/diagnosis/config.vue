@@ -14,7 +14,6 @@ import type { TableColumnsType } from 'ant-design-vue';
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 
 import { onMounted, reactive, ref } from 'vue';
-
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -51,7 +50,7 @@ const loading = ref(false);
 const metricList = ref<DiagnosisApi.MetricItem[]>([]);
 
 /** 当前正在切换启用状态的指标 ID（用于 Switch loading 态） */
-const togglingId = ref<string | null>(null);
+const togglingId = ref<null | string>(null);
 
 /** 8 类诊断标签选项 */
 const labelOptions = DIAGNOSIS_LABEL_OPTIONS;

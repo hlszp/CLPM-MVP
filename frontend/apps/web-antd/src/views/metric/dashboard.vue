@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+
 /**
  * 性能总览页（FE-06 重构）
  *
@@ -10,12 +12,11 @@
  * - 5 分钟自动刷新
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { KpiStatus, MetricApi, TimeWindow } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -26,97 +27,26 @@ import {
   Card,
   Input,
   Select,
-  Spin,
   Table,
   Tag,
-  Tree,
 } from 'ant-design-vue';
 
-import AutoRateGauge from '#/components/metric/auto-rate-gauge.vue';
 import {
   getBoardApi,
   getRankingApi,
   getRealtimeAutoRateApi,
 } from '#/api/metric';
-import { getPlantNodeTreeApi } from '#/api/plant-node';
+import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
+import AutoRateGauge from '#/components/metric/auto-rate-gauge.vue';
 
 defineOptions({ name: 'MetricDashboard' });
 
-// ===== 树 =====
-interface TreeNode {
-  children?: TreeNode[];
-  key: string | number;
-  node: PlantNodeApi.PlantNode;
-  title: string;
-}
-
-const treeData = ref<TreeNode[]>([]);
-const treeLoading = ref(false);
-const treeSearchKeyword = ref('');
-const expandedKeys = ref<(number | string)[]>([]);
-const autoExpandParent = ref(true);
-
-function toTreeNode(node: PlantNodeApi.PlantNode): TreeNode {
-  return {
-    children: node.children?.map((child) => toTreeNode(child)),
-    key: node.id,
-    node,
-    title: node.name,
-  };
-}
-
-async function loadTree() {
-  treeLoading.value = true;
-  try {
-    const data = await getPlantNodeTreeApi();
-    treeData.value = data.map((node) => toTreeNode(node));
-    expandedKeys.value = treeData.value.map((n) => n.key);
-  } catch {
-    // 错误已由拦截器处理
-  } finally {
-    treeLoading.value = false;
-  }
-}
-
-const filteredTreeData = computed(() => {
-  if (!treeSearchKeyword.value) return treeData.value;
-  const kw = treeSearchKeyword.value.toLowerCase();
-  function filterNodes(nodes: TreeNode[]): TreeNode[] {
-    return nodes
-      .map((n) => {
-        const children = n.children ? filterNodes(n.children) : [];
-        const matched =
-          n.title.toLowerCase().includes(kw) || children.length > 0;
-        if (matched) return { ...n, children };
-        return null as unknown as TreeNode;
-      })
-      .filter(Boolean);
-  }
-  return filterNodes(treeData.value);
-});
-
-watch(treeSearchKeyword, (val) => {
-  if (val) {
-    const allKeys: (number | string)[] = [];
-    function collectKeys(nodes: TreeNode[]) {
-      for (const n of nodes) {
-        allKeys.push(n.key);
-        if (n.children) collectKeys(n.children);
-      }
-    }
-    collectKeys(treeData.value);
-    expandedKeys.value = allKeys;
-    autoExpandParent.value = true;
-  }
-});
-
-const selectedPlantNodeId = ref<undefined | string>(undefined);
+// ===== 树（使用统一组件 PlantNodeTree）=====
+const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref<string>('全厂');
 
-function onTreeSelect(keys: any[], info: any) {
-  const node = keys.length > 0 && info.selectedNodes?.[0]
-    ? ((info.selectedNodes[0] as any)?.node ?? null)
-    : null;
+/** 选中树节点（由 PlantNodeTree emit 触发） */
+function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
   if (node) {
     selectedPlantNodeId.value = node.id;
     selectedPlantNodeName.value = node.name;
@@ -176,12 +106,48 @@ const levelOptions = [
 
 const rankingColumns: TableColumnsType = [
   { title: '排名', dataIndex: 'rank', key: 'rank', width: 70, align: 'center' },
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 140, ellipsis: true },
-  { title: '装置', dataIndex: 'unitName', key: 'unitName', width: 140, ellipsis: true },
-  { title: '综合评分', dataIndex: 'compositeScore', key: 'compositeScore', width: 100, align: 'right' },
-  { title: '自控率', dataIndex: 'autoModeRate', key: 'autoModeRate', width: 90, align: 'right' },
-  { title: '平稳率', dataIndex: 'steadyRate', key: 'steadyRate', width: 90, align: 'right' },
-  { title: '状态', dataIndex: 'status', key: 'status', width: 90, align: 'center' },
+  {
+    title: '回路位号',
+    dataIndex: 'tagName',
+    key: 'tagName',
+    width: 140,
+    ellipsis: true,
+  },
+  {
+    title: '装置',
+    dataIndex: 'unitName',
+    key: 'unitName',
+    width: 140,
+    ellipsis: true,
+  },
+  {
+    title: '综合评分',
+    dataIndex: 'compositeScore',
+    key: 'compositeScore',
+    width: 100,
+    align: 'right',
+  },
+  {
+    title: '自控率',
+    dataIndex: 'autoModeRate',
+    key: 'autoModeRate',
+    width: 90,
+    align: 'right',
+  },
+  {
+    title: '平稳率',
+    dataIndex: 'steadyRate',
+    key: 'steadyRate',
+    width: 90,
+    align: 'right',
+  },
+  {
+    title: '状态',
+    dataIndex: 'status',
+    key: 'status',
+    width: 90,
+    align: 'center',
+  },
 ];
 
 // ECharts 趋势图
@@ -359,7 +325,6 @@ watch(
 );
 
 onMounted(() => {
-  loadTree();
   loadAll();
   startAutoRefresh();
 });
@@ -382,58 +347,12 @@ onUnmounted(() => {
     />
 
     <div class="flex gap-3" style="min-height: calc(100vh - 160px)">
-      <!-- 左侧工厂树 -->
-      <Card class="w-260px shrink-0" size="small" :body-style="{ padding: '8px' }">
-        <template #title>
-          <span class="text-sm">工厂导航</span>
-        </template>
-        <div class="mb-2 px-1">
-          <Input
-            v-model:value="treeSearchKeyword"
-            placeholder="搜索工厂/装置/单元"
-            allow-clear
-            size="small"
-          />
-        </div>
-        <Spin :spinning="treeLoading">
-          <div class="overflow-auto" style="max-height: calc(100vh - 260px)">
-            <Tree
-              v-if="filteredTreeData.length > 0"
-              :tree-data="filteredTreeData"
-              :expanded-keys="expandedKeys"
-              :auto-expand-parent="autoExpandParent"
-              :show-line="true"
-              @select="onTreeSelect"
-              @expand="
-                (keys) => {
-                  expandedKeys = keys;
-                  autoExpandParent = false;
-                }
-              "
-            >
-              <template #title="nodeData">
-                <span class="inline-flex items-center gap-1">
-                  <span>{{ nodeData.title }}</span>
-                  <span class="text-xs text-gray-400">
-                    {{
-                      ({
-                        EQUIPMENT: '设备',
-                        FACTORY: '工厂',
-                        UNIT: '装置/单元',
-                      } as Record<string, string>)[
-                        (nodeData as any).node?.type
-                      ] || ''
-                    }}
-                  </span>
-                </span>
-              </template>
-            </Tree>
-            <div v-else class="py-8 text-center text-xs text-gray-400">
-              暂无工厂模型数据
-            </div>
-          </div>
-        </Spin>
-      </Card>
+      <!-- 左侧工厂树（统一组件） -->
+      <PlantNodeTree
+        card-title="工厂导航"
+        :width="260"
+        @select="onTreeSelect"
+      />
 
       <!-- 右侧主区域 -->
       <div class="flex flex-1 flex-col gap-3">
@@ -448,7 +367,12 @@ onUnmounted(() => {
               :options="timeWindowOptions"
               @change="handleTimeWindowChange"
             />
-            <Button type="primary" size="small" :loading="loading" @click="loadAll">
+            <Button
+              type="primary"
+              size="small"
+              :loading="loading"
+              @click="loadAll"
+            >
               刷新
             </Button>
             <span class="ml-auto text-xs text-gray-400">每 5 分钟自动刷新</span>
@@ -473,7 +397,11 @@ onUnmounted(() => {
           </div>
 
           <!-- 整点 KPI 卡片 -->
-          <Card class="lg:col-span-2" size="small" :body-style="{ padding: '12px' }">
+          <Card
+            class="lg:col-span-2"
+            size="small"
+            :body-style="{ padding: '12px' }"
+          >
             <div class="mb-2 text-sm font-medium">整点 KPI</div>
             <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
               <div
@@ -483,7 +411,9 @@ onUnmounted(() => {
                 :body-style="{ padding: '8px' }"
               >
                 <div class="mb-1 flex items-center justify-between">
-                  <span class="text-xs text-gray-500">{{ card.metricName }}</span>
+                  <span class="text-xs text-gray-500">{{
+                    card.metricName
+                  }}</span>
                   <span
                     class="inline-block h-2 w-2 rounded-full"
                     :style="{ backgroundColor: statusColorMap[card.status] }"
@@ -505,7 +435,9 @@ onUnmounted(() => {
                   >
                     {{ statusLabelMap[card.status] }}
                   </span>
-                  <span class="text-xs text-gray-400">{{ card.algorithmVersion }}</span>
+                  <span class="text-xs text-gray-400">{{
+                    card.algorithmVersion
+                  }}</span>
                 </div>
               </div>
               <!-- 实时自控率卡片 -->
@@ -529,8 +461,8 @@ onUnmounted(() => {
                   <span class="text-xs text-gray-400">%</span>
                 </div>
                 <div class="mt-1 text-xs text-gray-500">
-                  自动 {{ realtimeAutoRate?.autoCount ?? 0 }} /
-                  总 {{ realtimeAutoRate?.totalCount ?? 0 }}
+                  自动 {{ realtimeAutoRate?.autoCount ?? 0 }} / 总
+                  {{ realtimeAutoRate?.totalCount ?? 0 }}
                 </div>
               </div>
             </div>
@@ -589,7 +521,9 @@ onUnmounted(() => {
               <template v-if="column.key === 'rank'">
                 <Tag
                   v-if="record.rank <= 3"
-                  :color="['red', 'orange', 'gold'][record.rank - 1] ?? 'default'"
+                  :color="
+                    ['red', 'orange', 'gold'][record.rank - 1] ?? 'default'
+                  "
                   class="m-0"
                 >
                   {{ record.rank }}
@@ -625,7 +559,9 @@ onUnmounted(() => {
                   "
                   class="m-0"
                 >
-                  {{ statusLabelMap[record.status as KpiStatus] || record.status }}
+                  {{
+                    statusLabelMap[record.status as KpiStatus] || record.status
+                  }}
                 </Tag>
               </template>
             </template>
@@ -637,7 +573,5 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.w-260px {
-  width: 260px;
-}
+/* 树组件样式由 PlantNodeTree 组件内部管理 */
 </style>

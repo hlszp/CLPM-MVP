@@ -28,10 +28,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  getLoopTypeWeightsApi,
-  updateLoopTypeWeightApi,
-} from '#/api/metric';
+import { getLoopTypeWeightsApi, updateLoopTypeWeightApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricTypeWeight' });
 
@@ -51,22 +48,57 @@ const CONTROL_TYPE_MAP: Record<
 
 /** 编辑态：以 loopType 为 key 存储编辑中的值 */
 const editState = reactive<
-  Record<string, { weightA: number; weightF: number; weightS: number; description: string }>
+  Record<
+    string,
+    { description: string; weightA: number; weightF: number; weightS: number }
+  >
 >({});
 
 /** 获取编辑态（保证非 undefined，用于模板 v-model） */
-function editStateOf(loopType: string): { weightA: number; weightF: number; weightS: number; description: string } {
+function editStateOf(loopType: string): {
+  description: string;
+  weightA: number;
+  weightF: number;
+  weightS: number;
+} {
   if (!editState[loopType]) {
-    editState[loopType] = { weightA: 0, weightF: 0, weightS: 0, description: '' };
+    editState[loopType] = {
+      weightA: 0,
+      weightF: 0,
+      weightS: 0,
+      description: '',
+    };
   }
-  return editState[loopType]!;
+  return (
+    editState[loopType] ?? {
+      weightA: 0,
+      weightF: 0,
+      weightS: 0,
+      description: '',
+    }
+  );
 }
 
 const columns: TableColumnsType = [
   { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 120 },
-  { title: 'weightA（自动模式率）', dataIndex: 'weightA', key: 'weightA', width: 180 },
-  { title: 'weightF（快速率）', dataIndex: 'weightF', key: 'weightF', width: 160 },
-  { title: 'weightS（稳定率）', dataIndex: 'weightS', key: 'weightS', width: 160 },
+  {
+    title: 'weightA（自动模式率）',
+    dataIndex: 'weightA',
+    key: 'weightA',
+    width: 180,
+  },
+  {
+    title: 'weightF（快速率）',
+    dataIndex: 'weightF',
+    key: 'weightF',
+    width: 160,
+  },
+  {
+    title: 'weightS（稳定率）',
+    dataIndex: 'weightS',
+    key: 'weightS',
+    width: 160,
+  },
   { title: '描述', dataIndex: 'description', key: 'description' },
   { title: '操作', key: 'action', width: 120, fixed: 'right', align: 'center' },
 ];
@@ -89,7 +121,7 @@ async function loadList() {
     // 补全 4 种类型（后端可能未返回全部）
     const types: ControlType[] = ['STABLE', 'SLOW', 'FAST', 'LOGIC'];
     for (const t of types) {
-      if (!list.value.find((it) => it.loopType === t)) {
+      if (!list.value.some((it) => it.loopType === t)) {
         const placeholder: MetricApi.LoopTypeWeightItem = {
           loopType: t,
           loopTypeName: CONTROL_TYPE_MAP[t].label,
@@ -175,8 +207,16 @@ onMounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'loopType'">
-            <Tag :color="CONTROL_TYPE_MAP[record.loopType as ControlType]?.color ?? 'default'">
-              {{ CONTROL_TYPE_MAP[record.loopType as ControlType]?.label ?? record.loopType }}
+            <Tag
+              :color="
+                CONTROL_TYPE_MAP[record.loopType as ControlType]?.color ??
+                'default'
+              "
+            >
+              {{
+                CONTROL_TYPE_MAP[record.loopType as ControlType]?.label ??
+                record.loopType
+              }}
             </Tag>
             <div class="mt-1 text-xs text-gray-400">{{ record.loopType }}</div>
           </template>

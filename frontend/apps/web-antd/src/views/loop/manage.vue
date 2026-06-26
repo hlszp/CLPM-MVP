@@ -13,20 +13,18 @@
  *
  * 整合 loop/factory.vue + loop/ledger.vue 功能，废弃旧页面。
  */
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
-import type { UploadProps } from 'ant-design-vue';
+import type {
+  TableColumnsType,
+  TablePaginationConfig,
+  UploadProps,
+} from 'ant-design-vue';
 
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 import type { TagApi } from '#/api/tag';
 
-import {
-  computed,
-  onMounted,
-  reactive,
-  ref,
-  watch,
-} from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -45,15 +43,13 @@ import {
   Spin,
   Switch,
   Table,
-  Tabs,
   TabPane,
+  Tabs,
   Tag,
-  Tree,
+  Tooltip,
   Upload,
 } from 'ant-design-vue';
 
-import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
-import StatusBadge from '#/components/loop/status-badge.vue';
 import {
   batchConfigLoopsApi,
   createLoopApi,
@@ -66,94 +62,27 @@ import {
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
-import { getTagListApi } from '#/api/tag';
+import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
+import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
+import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
+import StatusBadge from '#/components/loop/status-badge.vue';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopManage' });
 
-// ===== 树 =====
-interface TreeNode {
-  children?: TreeNode[];
-  key: string | number;
-  node: PlantNodeApi.PlantNode;
-  title: string;
+const router = useRouter();
+
+/** 查看回路详情 */
+function handleViewDetail(record: LoopApi.LoopListItem) {
+  router.push(`/loop/detail/${record.loopId}`);
 }
 
-const treeData = ref<TreeNode[]>([]);
-const treeLoading = ref(false);
-const treeSearchKeyword = ref('');
-const expandedKeys = ref<(number | string)[]>([]);
-const autoExpandParent = ref(true);
-
-/** 将后端 PlantNode 转为 Ant Design Tree 节点 */
-function toTreeNode(node: PlantNodeApi.PlantNode): TreeNode {
-  return {
-    children: node.children?.map((child) => toTreeNode(child)),
-    key: node.id,
-    node,
-    title: node.name,
-  };
-}
-
-/** 加载工厂模型树 */
-async function loadTree() {
-  treeLoading.value = true;
-  try {
-    const data = await getPlantNodeTreeApi();
-    treeData.value = data.map((node) => toTreeNode(node));
-    // 默认展开第一层
-    expandedKeys.value = treeData.value.map((n) => n.key);
-  } catch {
-    // 错误已由拦截器处理
-  } finally {
-    treeLoading.value = false;
-  }
-}
-
-/** 树搜索过滤 */
-const filteredTreeData = computed(() => {
-  if (!treeSearchKeyword.value) return treeData.value;
-  const kw = treeSearchKeyword.value.toLowerCase();
-  function filterNodes(nodes: TreeNode[]): TreeNode[] {
-    return nodes
-      .map((n) => {
-        const children = n.children ? filterNodes(n.children) : [];
-        const matched =
-          n.title.toLowerCase().includes(kw) || children.length > 0;
-        if (matched) {
-          return { ...n, children };
-        }
-        return null as unknown as TreeNode;
-      })
-      .filter(Boolean);
-  }
-  return filterNodes(treeData.value);
-});
-
-watch(treeSearchKeyword, (val) => {
-  if (val) {
-    // 搜索时展开所有
-    const allKeys: (number | string)[] = [];
-    function collectKeys(nodes: TreeNode[]) {
-      for (const n of nodes) {
-        allKeys.push(n.key);
-        if (n.children) collectKeys(n.children);
-      }
-    }
-    collectKeys(treeData.value);
-    expandedKeys.value = allKeys;
-    autoExpandParent.value = true;
-  }
-});
-
-/** 选中树节点 */
-const selectedPlantNodeId = ref<undefined | string>(undefined);
+// ===== 树（使用统一组件 PlantNodeTree）=====
+const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNode = ref<null | PlantNodeApi.PlantNode>(null);
 
-function onTreeSelect(keys: any[], info: any) {
-  const node = keys.length > 0 && info.selectedNodes?.[0]
-    ? ((info.selectedNodes[0] as any)?.node ?? null)
-    : null;
+/** 选中树节点（由 PlantNodeTree emit 触发） */
+function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
   selectedPlantNode.value = node;
   selectedPlantNodeId.value = node?.id;
   query.plantNodeId = node?.id;
@@ -237,17 +166,42 @@ const LEVEL_LABEL: Record<number, string> = { 1: '1 级', 2: '2 级', 3: '3 级'
 
 const columns: TableColumnsType = [
   { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
-  { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+  {
+    title: '描述',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
   { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 90 },
-  { title: '控制类型', dataIndex: 'controlType', key: 'controlType', width: 100 },
-  { title: '级别', dataIndex: 'level', key: 'level', width: 80, align: 'center' },
+  {
+    title: '控制类型',
+    dataIndex: 'controlType',
+    key: 'controlType',
+    width: 100,
+  },
+  {
+    title: '级别',
+    dataIndex: 'level',
+    key: 'level',
+    width: 80,
+    align: 'center',
+  },
   { title: '监控状态', dataIndex: 'status', key: 'status', width: 110 },
-  { title: '评分', dataIndex: 'score', key: 'score', width: 80, align: 'right' },
+  {
+    title: '评分',
+    dataIndex: 'score',
+    key: 'score',
+    width: 80,
+    align: 'right',
+  },
   { title: 'Tag 状态', key: 'tagMapping', width: 180 },
   { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ];
 
-const tagMappingRoles: { key: keyof LoopApi.TagMappingStatus; label: string }[] = [
+const tagMappingRoles: {
+  key: keyof LoopApi.TagMappingStatus;
+  label: string;
+}[] = [
   { key: 'pv', label: 'PV' },
   { key: 'sp', label: 'SP' },
   { key: 'op', label: 'OP' },
@@ -293,7 +247,7 @@ function handleTableChange(pagination: TablePaginationConfig) {
 
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
-  onChange: (keys: (string | number)[]) => {
+  onChange: (keys: (number | string)[]) => {
     selectedRowKeys.value = keys as string[];
   },
 }));
@@ -440,9 +394,9 @@ async function handleExport() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `回路管理_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    document.body.appendChild(a);
+    document.body.append(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     URL.revokeObjectURL(url);
     message.success('导出成功');
   } catch {
@@ -483,7 +437,7 @@ const uploadProps: UploadProps = {
 const drawerVisible = ref(false);
 const drawerLoading = ref(false);
 const drawerSaving = ref(false);
-const activeTab = ref<'basic' | 'tags' | 'params' | 'mode'>('basic');
+const activeTab = ref<'basic' | 'mode' | 'params' | 'tags'>('basic');
 const editingLoop = ref<LoopApi.LoopListItem | null>(null);
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
 
@@ -540,19 +494,61 @@ const slotState = reactive({
 });
 
 const slotConfigs: {
+  color: string;
+  description: string;
   key: keyof typeof slotState;
   label: string;
   required: boolean;
-  color: string;
-  description: string;
 }[] = [
-  { color: 'blue', description: '过程变量测量值', key: 'pv', label: 'PV', required: true },
-  { color: 'green', description: '设定值', key: 'sp', label: 'SP', required: true },
-  { color: 'orange', description: '控制器输出值', key: 'op', label: 'OP', required: true },
-  { color: 'purple', description: '控制模式', key: 'mode', label: 'MODE', required: true },
-  { color: 'cyan', description: '比例参数', key: 'pid_p', label: 'PID_P', required: false },
-  { color: 'cyan', description: '积分参数', key: 'pid_i', label: 'PID_I', required: false },
-  { color: 'cyan', description: '微分参数', key: 'pid_d', label: 'PID_D', required: false },
+  {
+    color: 'blue',
+    description: '过程变量测量值',
+    key: 'pv',
+    label: 'PV',
+    required: true,
+  },
+  {
+    color: 'green',
+    description: '设定值',
+    key: 'sp',
+    label: 'SP',
+    required: true,
+  },
+  {
+    color: 'orange',
+    description: '控制器输出值',
+    key: 'op',
+    label: 'OP',
+    required: true,
+  },
+  {
+    color: 'purple',
+    description: '控制模式',
+    key: 'mode',
+    label: 'MODE',
+    required: true,
+  },
+  {
+    color: 'cyan',
+    description: '比例参数',
+    key: 'pid_p',
+    label: 'PID_P',
+    required: false,
+  },
+  {
+    color: 'cyan',
+    description: '积分参数',
+    key: 'pid_i',
+    label: 'PID_I',
+    required: false,
+  },
+  {
+    color: 'cyan',
+    description: '微分参数',
+    key: 'pid_d',
+    label: 'PID_D',
+    required: false,
+  },
 ];
 
 /** 打开新建回路 */
@@ -625,8 +621,11 @@ async function handleEdit(record: LoopApi.LoopListItem) {
 async function loadAvailableTags(keyword?: string) {
   tagSearchLoading.value = true;
   try {
+    // 如果有回路位号，按前缀搜索相关测点
+    const searchKeyword =
+      keyword || (editingLoop.value?.tagName ? editingLoop.value.tagName : undefined);
     const data = await getTagListApi({
-      keyword: keyword || undefined,
+      keyword: searchKeyword,
       page: 1,
       pageSize: 100,
     });
@@ -665,6 +664,47 @@ function handleTagSearch(value: string) {
 
 function clearSlot(key: keyof typeof slotState) {
   slotState[key] = undefined;
+}
+
+/** 自动关联：根据回路位号匹配测点 */
+async function handleAutoLink() {
+  if (!editingLoop.value?.tagName) {
+    message.warning('请先保存基础信息');
+    return;
+  }
+
+  const loopTagName = editingLoop.value.tagName;
+
+  try {
+    const matchedTags = await matchTagsForLoopApi(loopTagName);
+
+    if (!matchedTags.length) {
+      message.info('未找到匹配的测点，请手动关联');
+      return;
+    }
+
+    // 填充槽位
+    const roleToSlot: Record<string, keyof typeof slotState> = {
+      PV: 'pv',
+      SP: 'sp',
+      OP: 'op',
+      MODE: 'mode',
+      KP: 'pid_p',
+      TI: 'pid_i',
+      TD: 'pid_d',
+    };
+
+    for (const tag of matchedTags) {
+      const slotKey = roleToSlot[tag.role];
+      if (slotKey) {
+        slotState[slotKey] = tag.tagId;
+      }
+    }
+
+    message.success(`自动关联成功！匹配到 ${matchedTags.length} 个测点`);
+  } catch {
+    message.error('自动关联失败，请手动关联');
+  }
 }
 
 /** 保存 Tag 关联 */
@@ -799,7 +839,6 @@ async function loadPlantNodes() {
 }
 
 onMounted(() => {
-  loadTree();
   loadPlantNodes();
   loadList();
 });
@@ -815,62 +854,15 @@ watch(
 <template>
   <Page title="回路管理">
     <div class="flex gap-3" style="height: calc(100vh - 160px)">
-      <!-- 左侧工厂树 -->
-      <Card class="w-280px shrink-0" size="small" :body-style="{ padding: '8px' }">
-        <template #title>
-          <span class="text-sm">工厂模型</span>
-        </template>
-        <div class="mb-2 px-1">
-          <Input
-            v-model:value="treeSearchKeyword"
-            placeholder="搜索工厂/装置/单元"
-            allow-clear
-            size="small"
-          />
-        </div>
-        <Spin :spinning="treeLoading">
-          <div class="overflow-auto" style="max-height: calc(100vh - 260px)">
-            <Tree
-              v-if="filteredTreeData.length > 0"
-              :tree-data="filteredTreeData"
-              :expanded-keys="expandedKeys"
-              :auto-expand-parent="autoExpandParent"
-              :show-line="true"
-              class="loop-manage-tree"
-              @select="onTreeSelect"
-              @expand="
-                (keys) => {
-                  expandedKeys = keys;
-                  autoExpandParent = false;
-                }
-              "
-            >
-              <template #title="nodeData">
-                <span class="inline-flex items-center gap-1">
-                  <span>{{ nodeData.title }}</span>
-                  <span class="text-xs text-gray-400">
-                    {{
-                      ({
-                        EQUIPMENT: '设备',
-                        FACTORY: '工厂',
-                        UNIT: '装置/单元',
-                      } as Record<string, string>)[
-                        (nodeData as any).node?.type
-                      ] || ''
-                    }}
-                  </span>
-                </span>
-              </template>
-            </Tree>
-            <div
-              v-else
-              class="py-8 text-center text-xs text-gray-400"
-            >
-              暂无工厂模型数据
-            </div>
-          </div>
-        </Spin>
-      </Card>
+      <!-- 左侧工厂树（统一组件） -->
+      <PlantNodeTree
+        card-title="工厂模型"
+        :width="280"
+        :show-crud-buttons="true"
+        :default-expand-level="2"
+        max-height="calc(100vh - 160px)"
+        @select="onTreeSelect"
+      />
 
       <!-- 右侧回路表格 -->
       <Card class="flex-1" size="small" :body-style="{ padding: '12px' }">
@@ -909,7 +901,9 @@ watch(
             导出
           </Button>
           <span class="ml-auto text-xs text-gray-400">
-            {{ selectedPlantNode ? `当前节点：${selectedPlantNode.name}` : '全厂' }}
+            {{
+              selectedPlantNode ? `当前节点：${selectedPlantNode.name}` : '全厂'
+            }}
           </span>
         </div>
 
@@ -990,7 +984,9 @@ watch(
             style="width: 220px"
             @press-enter="handleSearch"
           />
-          <Button type="primary" size="small" @click="handleSearch">查询</Button>
+          <Button type="primary" size="small" @click="handleSearch">
+            查询
+          </Button>
           <Button
             v-if="selectedRowKeys.length > 0"
             size="small"
@@ -1015,13 +1011,15 @@ watch(
           }"
           :row-key="(record: LoopApi.LoopListItem) => record.loopId"
           :scroll="{ x: 1200 }"
-          size="small"
+          size="middle"
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'loopType'">
               <Tag
-                :color="LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.color ?? 'default'"
+                :color="
+                  LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.color ?? 'default'
+                "
                 class="m-0"
               >
                 {{ LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.label ?? '其他' }}
@@ -1030,10 +1028,15 @@ watch(
             <template v-else-if="column.key === 'controlType'">
               <Tag
                 v-if="record.controlType"
-                :color="CONTROL_TYPE_MAP[record.controlType]?.color ?? 'default'"
+                :color="
+                  CONTROL_TYPE_MAP[record.controlType]?.color ?? 'default'
+                "
                 class="m-0"
               >
-                {{ CONTROL_TYPE_MAP[record.controlType]?.label ?? record.controlType }}
+                {{
+                  CONTROL_TYPE_MAP[record.controlType]?.label ??
+                  record.controlType
+                }}
               </Tag>
               <span v-else class="text-gray-400">—</span>
             </template>
@@ -1044,7 +1047,10 @@ watch(
               <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'status'">
-              <StatusBadge :status="record.status" :is-active="record.isActive" />
+              <StatusBadge
+                :status="record.status"
+                :is-active="record.isActive"
+              />
             </template>
             <template v-else-if="column.key === 'score'">
               <span v-if="record.score != null" class="font-mono font-medium">
@@ -1057,7 +1063,9 @@ watch(
                 <Tag
                   v-for="role in tagMappingRoles"
                   :key="role.key"
-                  :color="record.tagMappingStatus[role.key] ? 'green' : 'default'"
+                  :color="
+                    record.tagMappingStatus[role.key] ? 'green' : 'default'
+                  "
                   class="m-0"
                 >
                   {{ role.label }}
@@ -1066,26 +1074,40 @@ watch(
             </template>
             <template v-else-if="column.key === 'action'">
               <div class="flex gap-1">
-                <Button
-                  type="link"
-                  size="small"
-                  @click="handleEdit(record as LoopApi.LoopListItem)"
-                >
-                  编辑
-                </Button>
-                <Popconfirm
-                  v-permission="['ADMIN']"
-                  title="确认删除该回路？"
-                  @confirm="handleDelete(record as LoopApi.LoopListItem)"
-                >
+                <Tooltip title="查看回路详情">
                   <Button
-                    v-permission="['ADMIN']"
                     type="link"
                     size="small"
-                    danger
+                    @click="handleViewDetail(record as LoopApi.LoopListItem)"
                   >
-                    删除
+                    查看
                   </Button>
+                </Tooltip>
+                <Tooltip title="编辑回路信息">
+                  <Button
+                    v-permission="['ADMIN', 'IC_ENGINEER']"
+                    type="link"
+                    size="small"
+                    @click="handleEdit(record as LoopApi.LoopListItem)"
+                  >
+                    编辑
+                  </Button>
+                </Tooltip>
+                <Popconfirm
+                  v-permission="['ADMIN']"
+                  title="确认删除该回路？删除后监控将停止，可通过重新启用恢复。"
+                  @confirm="handleDelete(record as LoopApi.LoopListItem)"
+                >
+                  <Tooltip title="删除回路（软删除）">
+                    <Button
+                      v-permission="['ADMIN']"
+                      type="link"
+                      size="small"
+                      danger
+                    >
+                      删除
+                    </Button>
+                  </Tooltip>
                 </Popconfirm>
               </div>
             </template>
@@ -1100,6 +1122,7 @@ watch(
       :title="editingLoop ? `编辑回路 - ${editingLoop.tagName}` : '新建回路'"
       placement="right"
       width="780px"
+      :mask-closable="true"
     >
       <Spin :spinning="drawerLoading">
         <Tabs v-model:active-key="activeTab">
@@ -1135,7 +1158,8 @@ watch(
                     show-search
                     allow-clear
                     :filter-option="
-                      (input: string, option: any) => option.label.includes(input)
+                      (input: string, option: any) =>
+                        option.label.includes(input)
                     "
                   />
                 </FormItem>
@@ -1152,16 +1176,22 @@ watch(
                     v-model:value="formState.loopType"
                     placeholder="请选择回路类型"
                     :options="
-                      Object.entries(LOOP_TYPE_MAP).map(([value, { label }]) => ({
-                        label,
-                        value,
-                      }))
+                      Object.entries(LOOP_TYPE_MAP).map(
+                        ([value, { label }]) => ({
+                          label,
+                          value,
+                        }),
+                      )
                     "
                   />
                 </FormItem>
               </div>
               <div class="grid grid-cols-2 gap-3">
-                <FormItem name="controlType" label="控制类型">
+                <FormItem
+                  name="controlType"
+                  label="控制类型"
+                  tooltip="稳定型：温度/液位回路；慢速型：流量回路；快速型：快速响应回路；逻辑型：开关量回路"
+                >
                   <Select
                     v-model:value="formState.controlType"
                     placeholder="请选择控制类型"
@@ -1169,7 +1199,11 @@ watch(
                     :options="controlTypeOptions.filter((o) => o.value)"
                   />
                 </FormItem>
-                <FormItem name="level" label="回路级别">
+                <FormItem
+                  name="level"
+                  label="回路级别"
+                  tooltip="1 级：关键回路（直接影响生产安全）；2 级：重要回路（影响产品质量）；3 级：一般回路（辅助控制）"
+                >
                   <Select
                     v-model:value="formState.level"
                     placeholder="请选择回路级别"
@@ -1204,10 +1238,17 @@ watch(
           <!-- Tag 关联 -->
           <TabPane key="tags" tab="Tag 关联" :disabled="!editingLoop">
             <div v-if="editingLoop">
-              <div class="mb-3 rounded border border-blue-100 bg-blue-50 p-3 text-xs text-gray-600">
-                当前回路：<span class="font-medium">{{ editingLoop.tagName }}</span>
+              <div
+                class="mb-3 rounded border border-blue-100 bg-blue-50 p-3 text-xs text-gray-600"
+              >
+                当前回路：<span class="font-medium">{{
+                  editingLoop.tagName
+                }}</span>
                 <span v-if="tagData" class="ml-2">
-                  状态：<StatusBadge :status="tagData.status" :is-active="editingLoop.isActive" />
+                  状态：<StatusBadge
+                    :status="tagData.status"
+                    :is-active="editingLoop.isActive"
+                  />
                 </span>
               </div>
               <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -1221,7 +1262,9 @@ watch(
                     <div class="flex items-center gap-2">
                       <Tag :color="cfg.color" class="m-0">{{ cfg.label }}</Tag>
                       <span v-if="cfg.required" class="text-red-500">*</span>
-                      <span class="text-xs text-gray-400">{{ cfg.description }}</span>
+                      <span class="text-xs text-gray-400">{{
+                        cfg.description
+                      }}</span>
                     </div>
                     <Button
                       v-if="slotState[cfg.key]"
@@ -1251,7 +1294,14 @@ watch(
                   />
                 </div>
               </div>
-              <div class="mt-4 flex justify-end">
+              <div class="mt-4 flex justify-end gap-2">
+                <Button
+                  v-permission="['ADMIN', 'IC_ENGINEER']"
+                  type="default"
+                  @click="handleAutoLink"
+                >
+                  自动关联
+                </Button>
                 <Button
                   v-permission="['ADMIN', 'IC_ENGINEER']"
                   type="primary"
@@ -1336,7 +1386,11 @@ watch(
       @ok="handleBatchConfigSubmit"
     >
       <div class="mb-3 text-sm text-gray-500">
-        将对已选中的 <span class="font-medium text-blue-600">{{ selectedRowKeys.length }}</span> 个回路批量应用以下配置（留空表示不修改）：
+        将对已选中的
+        <span class="font-medium text-blue-600">{{
+          selectedRowKeys.length
+        }}</span>
+        个回路批量应用以下配置（留空表示不修改）：
       </div>
       <Form layout="vertical" class="pt-2">
         <FormItem label="是否监控">
@@ -1369,11 +1423,5 @@ watch(
 </template>
 
 <style scoped>
-.w-280px {
-  width: 280px;
-}
-
-.loop-manage-tree :deep(.ant-tree-node-content-wrapper) {
-  flex: 1;
-}
+/* 树组件样式由 PlantNodeTree 组件内部管理 */
 </style>

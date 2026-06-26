@@ -19,19 +19,16 @@ import { Card, Empty, Spin, Tag } from 'ant-design-vue';
 defineOptions({ name: 'DiagnosisRecommendations' });
 
 const props = defineProps<{
-  /** 推荐数据 */
-  recommendations?: DiagnosisApi.RecommendationItem[];
-  /** 加载中 */
-  loading?: boolean;
   /** 是否显示卡片边框（嵌入 Tab 时可关闭） */
   bordered?: boolean;
+  /** 加载中 */
+  loading?: boolean;
+  /** 推荐数据 */
+  recommendations?: DiagnosisApi.RecommendationItem[];
 }>();
 
 /** 优先级配置 */
-const priorityConfig: Record<
-  number,
-  { color: string; label: string }
-> = {
+const priorityConfig: Record<number, { color: string; label: string }> = {
   1: { color: 'red', label: '高' },
   2: { color: 'orange', label: '中' },
   3: { color: 'blue', label: '低' },
@@ -78,17 +75,12 @@ const totalCount = computed(() => props.recommendations?.length ?? 0);
     title="解决方案推荐"
   >
     <template #extra>
-      <span class="text-sm text-gray-500">
-        共 {{ totalCount }} 条建议
-      </span>
+      <span class="text-sm text-gray-500"> 共 {{ totalCount }} 条建议 </span>
     </template>
 
     <Spin :spinning="loading">
       <div v-if="totalCount > 0" class="space-y-4">
-        <div
-          v-for="priority in [1, 2, 3]"
-          :key="priority"
-        >
+        <div v-for="priority in [1, 2, 3]" :key="priority">
           <div
             v-if="groupedRecommendations[priority]?.length"
             class="mb-2 flex items-center gap-2"

@@ -28,10 +28,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  getLoopLevelWeightsApi,
-  updateLoopLevelWeightApi,
-} from '#/api/metric';
+import { getLoopLevelWeightsApi, updateLoopLevelWeightApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricLevelWeight' });
 
@@ -39,22 +36,25 @@ const loading = ref(false);
 const saving = ref<Record<number, boolean>>({});
 const list = ref<MetricApi.LoopLevelWeightItem[]>([]);
 
-const LEVEL_MAP: Record<number, { color: string; desc: string; label: string }> = {
+const LEVEL_MAP: Record<
+  number,
+  { color: string; desc: string; label: string }
+> = {
   1: { label: '1 级', color: 'red', desc: '关键回路（影响生产安全/质量）' },
   2: { label: '2 级', color: 'orange', desc: '重要回路（影响装置稳定）' },
   3: { label: '3 级', color: 'blue', desc: '一般回路（辅助/常规）' },
 };
 
 const editState = reactive<
-  Record<number, { weight: number; description: string }>
+  Record<number, { description: string; weight: number }>
 >({});
 
 /** 获取编辑态（保证非 undefined，用于模板 v-model） */
-function editStateOf(level: number): { weight: number; description: string } {
+function editStateOf(level: number): { description: string; weight: number } {
   if (!editState[level]) {
     editState[level] = { weight: 0, description: '' };
   }
-  return editState[level]!;
+  return editState[level] ?? { weight: 0, description: '' };
 }
 
 const columns: TableColumnsType = [
@@ -79,16 +79,16 @@ async function loadList() {
     // 补全 3 个级别
     const levels: MetricApi.LoopLevel[] = [1, 2, 3];
     for (const lv of levels) {
-      if (!list.value.find((it) => it.level === lv)) {
+      if (!list.value.some((it) => it.level === lv)) {
         list.value.push({
           level: lv,
-          levelName: LEVEL_MAP[lv]!.label,
+          levelName: LEVEL_MAP[lv]?.label ?? `${lv} 级`,
           weight: 0,
-          description: LEVEL_MAP[lv]!.desc,
+          description: LEVEL_MAP[lv]?.desc ?? '',
         });
         editState[lv] = {
           weight: 0,
-          description: LEVEL_MAP[lv]!.desc,
+          description: LEVEL_MAP[lv]?.desc ?? '',
         };
       }
     }

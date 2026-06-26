@@ -1,6 +1,9 @@
 <script lang="ts" setup>
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
-import type { UploadProps } from 'ant-design-vue';
+import type {
+  TableColumnsType,
+  TablePaginationConfig,
+  UploadProps,
+} from 'ant-design-vue';
 
 /**
  * @deprecated FE-04：本页已废弃，请使用 /loop/manage（回路管理整合页）。
@@ -46,7 +49,6 @@ import {
   Upload,
 } from 'ant-design-vue';
 
-import { getTagListApi } from '#/api/tag';
 import {
   createLoopApi,
   deleteLoopApi,
@@ -55,8 +57,9 @@ import {
   updateLoopApi,
   updateLoopTagMappingApi,
 } from '#/api/loop';
-import { requestClient } from '#/api/request';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { requestClient } from '#/api/request';
+import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
 import StatusBadge from '#/components/loop/status-badge.vue';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -89,9 +92,7 @@ const plantNodeOptions = computed(() => {
     let current: PlantNodeApi.PlantNode | undefined = node;
     while (current) {
       path.unshift(current.name);
-      current = current.parentId
-        ? nodeMap.get(current.parentId)
-        : undefined;
+      current = current.parentId ? nodeMap.get(current.parentId) : undefined;
     }
     return {
       label: path.join(' / '),
@@ -108,7 +109,7 @@ const statusOptions = [
 ];
 
 /** 回路类型映射（label + color） */
-const LOOP_TYPE_MAP: Record<string, { label: string; color: string }> = {
+const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
   TEMPERATURE: { label: '温度', color: 'red' },
   PRESSURE: { label: '压力', color: 'blue' },
   LEVEL: { label: '液位', color: 'green' },
@@ -505,8 +506,11 @@ function handleOpenTagMapping(record: LoopApi.LoopListItem) {
 async function loadAvailableTags(keyword?: string) {
   tagSearchLoading.value = true;
   try {
+    // 如果有回路位号，按前缀搜索相关测点
+    const searchKeyword =
+      keyword || (currentLoopForTag.value?.tagName ? currentLoopForTag.value.tagName : undefined);
     const data = await getTagListApi({
-      keyword: keyword || undefined,
+      keyword: searchKeyword,
       page: 1,
       pageSize: 100,
     });
@@ -544,6 +548,47 @@ function handleTagSearch(value: string) {
 /** 清空某个槽位 */
 function clearSlot(key: keyof typeof slotState) {
   slotState[key] = undefined;
+}
+
+/** 自动关联：根据回路位号匹配测点 */
+async function handleAutoLink() {
+  if (!currentLoopForTag.value?.tagName) {
+    message.warning('请先选择回路');
+    return;
+  }
+
+  const loopTagName = currentLoopForTag.value.tagName;
+
+  try {
+    const matchedTags = await matchTagsForLoopApi(loopTagName);
+
+    if (!matchedTags.length) {
+      message.info('未找到匹配的测点，请手动关联');
+      return;
+    }
+
+    // 填充槽位
+    const roleToSlot: Record<string, keyof typeof slotState> = {
+      PV: 'pv',
+      SP: 'sp',
+      OP: 'op',
+      MODE: 'mode',
+      KP: 'pid_p',
+      TI: 'pid_i',
+      TD: 'pid_d',
+    };
+
+    for (const tag of matchedTags) {
+      const slotKey = roleToSlot[tag.role];
+      if (slotKey) {
+        slotState[slotKey] = tag.tagId;
+      }
+    }
+
+    message.success(`自动关联成功！匹配到 ${matchedTags.length} 个测点`);
+  } catch {
+    message.error('自动关联失败，请手动关联');
+  }
 }
 
 /** 保存 Tag 关联 */
@@ -684,9 +729,9 @@ async function handleExport() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `回路台账_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    document.body.appendChild(a);
+    document.body.append(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     URL.revokeObjectURL(url);
     message.success('导出成功');
   } catch {
@@ -889,9 +934,7 @@ onMounted(() => {
                 v-permission="['ADMIN', 'IC_ENGINEER']"
                 type="link"
                 size="small"
-                @click="
-                  handleOpenTagMapping(record as LoopApi.LoopListItem)
-                "
+                @click="handleOpenTagMapping(record as LoopApi.LoopListItem)"
               >
                 Tag关联
               </Button>
@@ -1122,6 +1165,13 @@ onMounted(() => {
       <template #footer>
         <div class="flex justify-end gap-2">
           <Button @click="tagDrawerVisible = false">取消</Button>
+          <Button
+            v-permission="['ADMIN', 'IC_ENGINEER']"
+            type="default"
+            @click="handleAutoLink"
+          >
+            自动关联
+          </Button>
           <Button
             v-permission="['ADMIN', 'IC_ENGINEER']"
             type="primary"

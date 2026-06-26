@@ -97,7 +97,7 @@ const columns: TableColumnsType = [
 // 新增/编辑 Modal
 const modalVisible = ref(false);
 const modalLoading = ref(false);
-const editingReport = ref<SystemApi.ReportConfig | null>(null);
+const editingReport = ref<null | SystemApi.ReportConfig>(null);
 const formRef = ref();
 const formState = reactive({
   name: '',
@@ -116,7 +116,7 @@ interface TaskProgress {
 }
 
 const taskProgressMap = ref<Map<string, TaskProgress>>(new Map());
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: null | ReturnType<typeof setInterval> = null;
 
 /** 加载报表配置列表 */
 async function loadList() {
@@ -228,7 +228,7 @@ function startPolling() {
       stopPolling();
       return;
     }
-    const entries = Array.from(taskProgressMap.value.entries());
+    const entries = [...taskProgressMap.value.entries()];
     for (const [configId, progress] of entries) {
       try {
         const taskResult = await getReportTaskStatusApi(progress.taskId);

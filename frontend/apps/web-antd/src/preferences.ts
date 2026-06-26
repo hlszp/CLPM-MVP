@@ -11,6 +11,48 @@ interface WebAntdPreferencesExtension {
 }
 
 /**
+ * 全局色彩语义规范（对齐 UI/UX v4.1 §3.3 设计令牌）
+ *
+ * 统一全系统的状态色彩编码，确保 KPI 卡片、徽章、图表、标签等元素
+ * 使用一致的色彩语义。所有页面应优先引用这些常量，避免硬编码颜色值。
+ */
+export const THEME_COLORS = {
+  /** 成功 / 优秀 / 已完成（Ant Design green-6） */
+  SUCCESS: '#52c41a',
+  /** 警告 / 待处理 / 需关注（Ant Design gold-6） */
+  WARNING: '#faad14',
+  /** 错误 / 差 / 失败 / 危险操作（Ant Design red-5） */
+  DANGER: '#ff4d4f',
+  /** 信息 / 进行中 / 品牌主色（工业蓝 #0D6EFD） */
+  INFO: '#0d6efd',
+  /** 中性 / 未知 / 未分类（Ant Design gray-5） */
+  NEUTRAL: '#8c8c8c',
+} as const;
+
+/**
+ * KPI 状态 → 色彩映射
+ * 用于性能等级（优秀/良好/合格/差）及综合评估结果的色彩编码
+ */
+export const KPI_COLOR_MAP = {
+  EXCELLENT: THEME_COLORS.SUCCESS,
+  GOOD: '#73d13d',
+  PASS: THEME_COLORS.WARNING,
+  FAIL: THEME_COLORS.DANGER,
+  UNKNOWN: THEME_COLORS.NEUTRAL,
+} as const;
+
+/**
+ * 行动状态 → 色彩映射
+ * 用于诊断建议的 actionStatus 字段色彩编码
+ */
+export const ACTION_STATUS_COLOR_MAP = {
+  PENDING: THEME_COLORS.WARNING,
+  IN_PROGRESS: THEME_COLORS.INFO,
+  IMPLEMENTED: THEME_COLORS.SUCCESS,
+  IGNORED: THEME_COLORS.NEUTRAL,
+} as const;
+
+/**
  * @description CLPM 项目配置文件
  * 对齐 UI/UX v4.1 §2 设计基调与 §3 设计令牌
  * - 品牌主色：工业蓝（#0D6EFD / hsl(211 98% 52%)）

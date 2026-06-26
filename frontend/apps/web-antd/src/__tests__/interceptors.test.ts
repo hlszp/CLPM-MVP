@@ -7,10 +7,13 @@
  */
 import type { AxiosInstance } from 'axios';
 
+import { useAccessStore } from '@vben/stores';
+
+import MockAdapter from 'axios-mock-adapter';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import MockAdapter from 'axios-mock-adapter';
+import { requestClient } from '#/api/request';
 
 // Mock 依赖模块（必须在 import requestClient 之前声明）
 vi.mock('@vben/hooks', () => ({
@@ -61,8 +64,6 @@ vi.mock('#/api/core', () => ({
 }));
 
 // 导入被测模块（在 mock 声明之后）
-import { useAccessStore } from '@vben/stores';
-import { requestClient } from '#/api/request';
 
 describe('axios 拦截器测试', () => {
   let mock: MockAdapter;
@@ -150,7 +151,9 @@ describe('axios 拦截器测试', () => {
 
     const result = await requestClient.get('/test/401');
     // refreshToken 应被调用
-    expect(refreshTokenApiMock).toHaveBeenCalledWith('valid-refresh-token');
+    expect(refreshTokenApiMock).toHaveBeenCalledWith('valid-refresh-token', {
+      __isRetryRequest: true,
+    });
     // accessToken 应被更新
     expect(accessStore.accessToken).toBe('new-access-token');
     // 应返回重试后的数据
@@ -175,7 +178,9 @@ describe('axios 拦截器测试', () => {
     // 请求应被拒绝
     await expect(requestClient.get('/test/refresh-fail')).rejects.toBeTruthy();
     // refreshToken 应被调用
-    expect(refreshTokenApiMock).toHaveBeenCalledWith('expired-refresh-token');
+    expect(refreshTokenApiMock).toHaveBeenCalledWith('expired-refresh-token', {
+      __isRetryRequest: true,
+    });
     // 应触发登出流程
     expect(logoutSpy).toHaveBeenCalled();
   });

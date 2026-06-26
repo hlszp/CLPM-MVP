@@ -47,7 +47,7 @@ defineOptions({ name: 'LoopFactory' });
 
 interface TreeNode {
   children?: TreeNode[];
-  key: string | number;
+  key: number | string;
   node: PlantNodeApi.PlantNode;
   title: string;
 }
@@ -230,9 +230,9 @@ async function handleExport() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `工厂模型_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    document.body.appendChild(a);
+    document.body.append(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     URL.revokeObjectURL(url);
     message.success('导出成功');
   } catch {

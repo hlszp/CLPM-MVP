@@ -1,3 +1,8 @@
+import { mount } from '@vue/test-utils';
+import { defineComponent, h, ref } from 'vue';
+
+import { useAccessStore } from '@vben/stores';
+
 /**
  * 关键交互逻辑单元测试
  *
@@ -8,12 +13,7 @@
  */
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { mount } from '@vue/test-utils';
-import { defineComponent, h, ref } from 'vue';
 import { z } from 'zod';
-
-import { useAccessStore } from '@vben/stores';
 
 import { hasPermission, permissionDirective } from '#/directives/permission';
 
@@ -34,18 +34,14 @@ describe('关键交互逻辑测试', () => {
   it('uT-INTERACT-001: 空用户名校验失败', () => {
     const result = loginSchema.username.safeParse('');
     expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0]?.message).toBe('请输入用户名');
-    }
+    expect(result.error?.issues[0]?.message).toBe('请输入用户名');
   });
 
   // UT-INTERACT-002: 登录表单-空密码校验
   it('uT-INTERACT-002: 空密码校验失败', () => {
     const result = loginSchema.password.safeParse('');
     expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0]?.message).toBe('请输入密码');
-    }
+    expect(result.error?.issues[0]?.message).toBe('请输入密码');
   });
 
   // ===== v-permission 指令测试 =====

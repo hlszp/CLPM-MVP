@@ -22,16 +22,16 @@ const props = withDefaults(
   defineProps<{
     /** 自动回路数 */
     autoCount?: number;
-    /** 手动回路数 */
-    manualCount?: number;
-    /** 加载中 */
-    loading?: boolean;
-    /** 标题 */
-    title?: string;
-    /** 副标题（统计时间等） */
-    subtitle?: string;
     /** 高度 */
     height?: string;
+    /** 加载中 */
+    loading?: boolean;
+    /** 手动回路数 */
+    manualCount?: number;
+    /** 副标题（统计时间等） */
+    subtitle?: string;
+    /** 标题 */
+    title?: string;
   }>(),
   {
     autoCount: 0,
@@ -87,7 +87,8 @@ function render() {
     tooltip: {
       formatter: (params: any) => {
         const v = params?.value ?? 0;
-        const pct = total.value > 0 ? ((v / total.value) * 100).toFixed(1) : '0.0';
+        const pct =
+          total.value > 0 ? ((v / total.value) * 100).toFixed(1) : '0.0';
         return `${params?.name ?? ''}: ${v} 个 (${pct}%)`;
       },
       trigger: 'item',

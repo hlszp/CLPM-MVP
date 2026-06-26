@@ -11,8 +11,8 @@
  */
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
-import type { SystemApi } from '#/api/system';
 import type { ClpmRole } from '#/api/auth';
+import type { SystemApi } from '#/api/system';
 
 import { onMounted, reactive, ref } from 'vue';
 
@@ -117,7 +117,7 @@ const columns: TableColumnsType = [
 // 新增/编辑 Modal
 const modalVisible = ref(false);
 const modalLoading = ref(false);
-const editingUser = ref<SystemApi.User | null>(null);
+const editingUser = ref<null | SystemApi.User>(null);
 const formRef = ref();
 const formState = reactive({
   username: '',
@@ -131,7 +131,7 @@ const formState = reactive({
 // 重置密码 Modal
 const resetModalVisible = ref(false);
 const resetModalLoading = ref(false);
-const resetTarget = ref<SystemApi.User | null>(null);
+const resetTarget = ref<null | SystemApi.User>(null);
 const resetForm = reactive({
   new_password: '',
 });
@@ -140,12 +140,12 @@ const resetForm = reactive({
 async function loadList() {
   loading.value = true;
   try {
-    const isActiveParam: boolean | undefined =
-      query.is_active === 'true'
-        ? true
-        : query.is_active === 'false'
-          ? false
-          : undefined;
+    let isActiveParam: boolean | undefined;
+    if (query.is_active === 'true') {
+      isActiveParam = true;
+    } else if (query.is_active === 'false') {
+      isActiveParam = false;
+    }
     const data = await getUserListApi({
       page: query.page,
       page_size: query.page_size,

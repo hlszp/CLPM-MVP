@@ -41,10 +41,10 @@ const props = withDefaults(
   defineProps<{
     /** 抽屉模式（从 Tracker 页打开） */
     drawerMode?: boolean;
-    /** 指定回路 ID（抽屉模式） */
-    loopId?: string;
     /** 实施时间点 T（FDS §5.4.4：标记"已实施"后自动截取 [T-7天,T] 与 [T,T+7天]） */
     implementedAt?: string;
+    /** 指定回路 ID（抽屉模式） */
+    loopId?: string;
   }>(),
   {
     drawerMode: false,

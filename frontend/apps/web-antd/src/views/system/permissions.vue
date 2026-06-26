@@ -70,7 +70,7 @@ const permissionColorMap: Record<PermissionLevel, string> = {
 /** 矩阵行数据 */
 interface MatrixRow {
   role: ClpmRole;
-  permissions: Record<string, PermissionLevel | null>;
+  permissions: Record<string, null | PermissionLevel>;
 }
 
 /**
@@ -80,7 +80,7 @@ interface MatrixRow {
  */
 const PERMISSION_MATRIX: Record<
   ClpmRole,
-  Record<string, PermissionLevel | null>
+  Record<string, null | PermissionLevel>
 > = {
   ADMIN: {
     dashboard: 'MANAGE',
@@ -155,7 +155,7 @@ function roleColor(role: ClpmRole): string {
 function getCellPermission(
   row: MatrixRow,
   moduleKey: string,
-): PermissionLevel | null {
+): null | PermissionLevel {
   const val = row.permissions[moduleKey];
   if (val === undefined || val === null) return null;
   return val;

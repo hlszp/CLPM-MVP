@@ -22,10 +22,10 @@ export namespace TuningApi {
 
   /** 任务状态 */
   export type TaskStatus =
-    | 'PENDING'
-    | 'IDENTIFIED'
-    | 'SIMULATED'
     | 'APPLIED'
+    | 'IDENTIFIED'
+    | 'PENDING'
+    | 'SIMULATED'
     | 'VERIFIED';
 
   /** 扰动类型 */
@@ -74,9 +74,9 @@ export namespace TuningApi {
     dataPoints: number;
     /** 拟合曲线 {timestamps: [], pv: [], fitted: []} */
     fittedCurve?: {
-      timestamps: number[];
-      pv: number[];
       fitted: number[];
+      pv: number[];
+      timestamps: number[];
     };
   }
 
@@ -153,7 +153,7 @@ export namespace TuningApi {
     modelType: ModelType;
     modelParams?: ModelParams | null;
     algorithm: Algorithm;
-    recommendedPid?: PidParams | null;
+    recommendedPid?: null | PidParams;
     fittingScore?: null | number;
     status: TaskStatus;
     createdBy?: null | string;
@@ -162,8 +162,8 @@ export namespace TuningApi {
 
   /** 整定任务详情 */
   export interface TuningTaskDetail extends TuningTaskItem {
-    simulationResult?: SimulationResult | null;
-    currentPid?: PidParams | null;
+    simulationResult?: null | SimulationResult;
+    currentPid?: null | PidParams;
   }
 
   /** 创建整定任务请求 */
@@ -175,7 +175,7 @@ export namespace TuningApi {
     recommendedPid: PidParams;
     currentPid?: PidParams;
     fittingScore?: null | number;
-    simulationResult?: SimulationResult | null;
+    simulationResult?: null | SimulationResult;
     status?: TaskStatus;
   }
 

@@ -77,6 +77,7 @@ const total = ref(0);
 const query = reactive({
   diagnosisLabel: undefined as DiagnosisLabel | undefined,
   actionStatus: undefined as DiagnosisApi.ActionStatus | undefined,
+  loopId: props.loopId || undefined,
   timeWindow: 'last_7_days' as DiagnosisApi.TimeWindow,
   page: 1,
   pageSize: 20,
@@ -195,8 +196,8 @@ const exportStates = ref<Record<string, ExportTaskState>>({});
 const exportTimers: Record<
   string,
   {
-    interval: ReturnType<typeof setInterval>;
     fallback: ReturnType<typeof setTimeout>;
+    interval: ReturnType<typeof setInterval>;
   }
 > = {};
 
@@ -207,6 +208,7 @@ async function loadList() {
     const data = await getTrackerListApi({
       diagnosisLabel: query.diagnosisLabel,
       actionStatus: query.actionStatus,
+      loopId: query.loopId,
       timeWindow: query.timeWindow,
       page: query.page,
       pageSize: query.pageSize,
@@ -282,7 +284,7 @@ function buildExportFileName(tagName: string): string {
  */
 async function fetchExportStatus(
   taskId: string,
-): Promise<{ downloadUrl?: string; status?: string } | null> {
+): Promise<null | { downloadUrl?: string; status?: string }> {
   try {
     return await requestClient.get(`/tracker/export/${taskId}/status`);
   } catch {
@@ -570,7 +572,9 @@ onBeforeUnmount(() => {
                   v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
                   type="link"
                   size="small"
-                  @click="handleOpenAbCompare(record as DiagnosisApi.TrackerItem)"
+                  @click="
+                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
+                  "
                 >
                   A/B 对比
                 </Button>
@@ -763,7 +767,9 @@ onBeforeUnmount(() => {
                   v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
                   type="link"
                   size="small"
-                  @click="handleOpenAbCompare(record as DiagnosisApi.TrackerItem)"
+                  @click="
+                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
+                  "
                 >
                   A/B 对比
                 </Button>

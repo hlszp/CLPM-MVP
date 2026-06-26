@@ -302,7 +302,8 @@ function renderBarChart() {
 function buildExportName(ext: string): string {
   const [start, end] = filter.timeRange;
   const plantName =
-    plantNodes.value.find((n) => n.id === filter.plantNodeId)?.name ?? '全部装置';
+    plantNodes.value.find((n) => n.id === filter.plantNodeId)?.name ??
+    '全部装置';
   const startStr = start?.format('YYYYMMDD') ?? '';
   const endStr = end?.format('YYYYMMDD') ?? '';
   return `CLPM-诊断统计报表-${plantName}-${startStr}_${endStr}.${ext}`;

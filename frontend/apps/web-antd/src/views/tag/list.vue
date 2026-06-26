@@ -1,7 +1,11 @@
 <script lang="ts" setup>
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
-import type { UploadProps } from 'ant-design-vue';
+import type {
+  TableColumnsType,
+  TablePaginationConfig,
+  UploadProps,
+} from 'ant-design-vue';
 
+import type { PlantNodeApi } from '#/api/plant-node';
 /**
  * 测点清单页
  *
@@ -16,7 +20,6 @@ import type { UploadProps } from 'ant-design-vue';
  * - RBAC: ADMIN/IC_ENGINEER 可写，PE_ENGINEER 只读
  */
 import type { TagApi } from '#/api/tag';
-import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
@@ -41,9 +44,9 @@ import {
   Upload,
 } from 'ant-design-vue';
 
-import { deleteTagApi, getTagListApi, updateTagApi } from '#/api/tag';
-import { requestClient } from '#/api/request';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { requestClient } from '#/api/request';
+import { deleteTagApi, getTagListApi, updateTagApi } from '#/api/tag';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -77,9 +80,7 @@ const plantNodeOptions = computed(() => {
     let current: PlantNodeApi.PlantNode | undefined = node;
     while (current) {
       path.unshift(current.name);
-      current = current.parentId
-        ? nodeMap.get(current.parentId)
-        : undefined;
+      current = current.parentId ? nodeMap.get(current.parentId) : undefined;
     }
     return {
       label: path.join(' / '),
@@ -89,13 +90,13 @@ const plantNodeOptions = computed(() => {
 });
 
 /** 测点类型映射（label + color） */
-const MEASURE_TYPE_MAP: Record<string, { label: string; color: string }> = {
+const MEASURE_TYPE_MAP: Record<string, { color: string; label: string }> = {
   TEMPERATURE: { label: '温度', color: 'red' },
   PRESSURE: { label: '压力', color: 'blue' },
   LEVEL: { label: '液位', color: 'green' },
   FLOW: { label: '流量', color: 'cyan' },
   ANALYSIS: { label: '分析', color: 'purple' },
-  SPEED: { label: '速度', color: 'orange' },
+  POSITION: { label: '阀位', color: 'orange' },
   OTHER: { label: '其他', color: 'default' },
 };
 
@@ -108,15 +109,14 @@ const measureTypeOptions = [
 ];
 
 /** 参数类型映射（label + color） */
-const TAG_TYPE_MAP: Record<string, { label: string; color: string }> = {
+const TAG_TYPE_MAP: Record<string, { color: string; label: string }> = {
   PV: { label: 'PV', color: 'blue' },
   SP: { label: 'SP', color: 'green' },
   OP: { label: 'OP', color: 'orange' },
   MODE: { label: 'MODE', color: 'purple' },
-  PID_P: { label: 'PID_P', color: 'cyan' },
-  PID_I: { label: 'PID_I', color: 'cyan' },
-  PID_D: { label: 'PID_D', color: 'cyan' },
-  OTHER: { label: 'OTHER', color: 'default' },
+  KP: { label: 'KP', color: 'cyan' },
+  TI: { label: 'TI', color: 'cyan' },
+  TD: { label: 'TD', color: 'cyan' },
 };
 
 const tagTypeOptions = [
@@ -150,33 +150,43 @@ const columns: TableColumnsType = [
   },
   { title: '量程下限', dataIndex: 'rangeMin', key: 'rangeMin', width: 100 },
   { title: '量程上限', dataIndex: 'rangeMax', key: 'rangeMax', width: 100 },
-  { title: '实时值', dataIndex: 'currentValue', key: 'currentValue', width: 100 },
+  {
+    title: '实时值',
+    dataIndex: 'currentValue',
+    key: 'currentValue',
+    width: 100,
+  },
   { title: '单位', dataIndex: 'unit', key: 'unit', width: 80 },
   { title: '质量戳', dataIndex: 'quality', key: 'quality', width: 110 },
   { title: '参数类型', dataIndex: 'tagType', key: 'tagType', width: 100 },
   { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 160 },
-  { title: '原始ID', dataIndex: 'tdengineTagId', key: 'tdengineTagId', width: 160 },
+  {
+    title: '原始ID',
+    dataIndex: 'tdengineTagId',
+    key: 'tdengineTagId',
+    width: 160,
+  },
   { title: '操作', key: 'action', width: 200, fixed: 'right' },
 ];
 
 // Modal state
 const modalVisible = ref(false);
 const modalLoading = ref(false);
-const editingTag = ref<TagApi.TagItem | null>(null);
+const editingTag = ref<null | TagApi.TagItem>(null);
 const formState = reactive({
   tagDescription: '',
   measureType: 'OTHER' as TagApi.MeasureType | undefined,
   rangeMin: undefined as number | undefined,
   rangeMax: undefined as number | undefined,
   unit: '',
-  tagType: 'OTHER' as TagApi.TagType | undefined,
+  tagType: 'PV' as TagApi.TagType | undefined,
   tdengineTagId: '',
 });
 
 // Detail Drawer state
 const detailVisible = ref(false);
 const detailLoading = ref(false);
-const detailData = ref<TagApi.TagItem | null>(null);
+const detailData = ref<null | TagApi.TagItem>(null);
 
 // ===== 导入导出 state =====
 const importing = ref(false);
@@ -322,9 +332,9 @@ async function handleExport() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `测点清单_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    document.body.appendChild(a);
+    document.body.append(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     URL.revokeObjectURL(url);
     message.success('导出成功');
   } catch {
@@ -452,15 +462,15 @@ onMounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'tagDescription'">
-            <span v-if="record.tagDescription">{{ record.tagDescription }}</span>
+            <span v-if="record.tagDescription">{{
+              record.tagDescription
+            }}</span>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'measureType'">
             <Tag
               v-if="record.measureType"
-              :color="
-                MEASURE_TYPE_MAP[record.measureType]?.color ?? 'default'
-              "
+              :color="MEASURE_TYPE_MAP[record.measureType]?.color ?? 'default'"
               class="m-0"
             >
               {{ MEASURE_TYPE_MAP[record.measureType]?.label ?? '其他' }}
@@ -691,7 +701,9 @@ onMounted(() => {
           </Tag>
         </DescriptionsItem>
         <DescriptionsItem label="关联回路">
-          <span v-if="detailData.loopTagName">{{ detailData.loopTagName }}</span>
+          <span v-if="detailData.loopTagName">{{
+            detailData.loopTagName
+          }}</span>
           <span v-else class="text-gray-400">—</span>
         </DescriptionsItem>
         <DescriptionsItem label="回路描述">

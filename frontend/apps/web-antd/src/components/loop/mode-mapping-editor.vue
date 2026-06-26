@@ -23,10 +23,7 @@ import {
   Table,
 } from 'ant-design-vue';
 
-import {
-  getLoopModeMappingApi,
-  updateLoopModeMappingApi,
-} from '#/api/loop';
+import { getLoopModeMappingApi, updateLoopModeMappingApi } from '#/api/loop';
 
 defineOptions({ name: 'ModeMappingEditor' });
 
@@ -67,9 +64,26 @@ const controlModeLabel: Record<LoopApi.ModeMappingControlMode, string> = {
 
 const columns: TableColumnsType = [
   { title: 'MODE 值', dataIndex: 'modeValue', key: 'modeValue', width: 140 },
-  { title: '控制模式', dataIndex: 'controlMode', key: 'controlMode', width: 160 },
-  { title: '是否自动', dataIndex: 'isAuto', key: 'isAuto', width: 100, align: 'center' },
-  { title: '是否有效', dataIndex: 'isEnabled', key: 'isEnabled', width: 100, align: 'center' },
+  {
+    title: '控制模式',
+    dataIndex: 'controlMode',
+    key: 'controlMode',
+    width: 160,
+  },
+  {
+    title: '是否自动',
+    dataIndex: 'isAuto',
+    key: 'isAuto',
+    width: 100,
+    align: 'center',
+  },
+  {
+    title: '是否有效',
+    dataIndex: 'isEnabled',
+    key: 'isEnabled',
+    width: 100,
+    align: 'center',
+  },
   { title: '备注', dataIndex: 'remark', key: 'remark' },
   { title: '操作', key: 'action', width: 80, fixed: 'right', align: 'center' },
 ];
@@ -239,7 +253,11 @@ watch(
           >
             <Button type="link" size="small" danger>删除</Button>
           </Popconfirm>
-          <span v-else class="text-gray-400">{{ controlModeLabel[record.controlMode as LoopApi.ModeMappingControlMode] }}</span>
+          <span v-else class="text-gray-400">{{
+            controlModeLabel[
+              record.controlMode as LoopApi.ModeMappingControlMode
+            ]
+          }}</span>
         </template>
       </template>
     </Table>

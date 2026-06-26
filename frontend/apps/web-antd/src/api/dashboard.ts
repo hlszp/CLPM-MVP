@@ -107,7 +107,7 @@ export namespace DashboardApi {
   /** 工作台概览查询参数 */
   export interface OverviewQueryParams {
     /** 工厂节点 ID（全厂/装置/单元） */
-    plant_id?: string;
+    plantId?: string;
     /** 统计粒度 */
     granularity?: Granularity;
   }

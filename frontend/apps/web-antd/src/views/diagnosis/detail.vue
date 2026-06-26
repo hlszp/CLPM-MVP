@@ -93,7 +93,7 @@ const pageTitle = computed(() => {
 
 /** FE-12 三段式：问题定位路径 Steps */
 const problemPathSteps = computed(() => {
-  if (!detail.value || !detail.value.diagnosisLabels.length) {
+  if (!detail.value || detail.value.diagnosisLabels.length === 0) {
     return [
       {
         title: '数据采集',
@@ -109,7 +109,7 @@ const problemPathSteps = computed(() => {
       },
     ];
   }
-  const steps: { title: string; description: string }[] = [
+  const steps: { description: string; title: string }[] = [
     {
       title: '数据采集',
       description: '采集 PV/SP/OP 时序数据',
@@ -134,9 +134,7 @@ const currentStep = computed(() => {
 });
 
 /** 时间窗映射为 [startTime, endTime]（dayjs） */
-function getTimeRange(
-  tw: DiagnosisApi.TimeWindow,
-): [dayjs.Dayjs, dayjs.Dayjs] {
+function getTimeRange(tw: DiagnosisApi.TimeWindow): [dayjs.Dayjs, dayjs.Dayjs] {
   switch (tw) {
     case 'last_7_days': {
       return [dayjs().subtract(7, 'day'), dayjs()];
@@ -144,7 +142,6 @@ function getTimeRange(
     case 'last_30_days': {
       return [dayjs().subtract(30, 'day'), dayjs()];
     }
-    case 'last_24_hours':
     default: {
       return [dayjs().subtract(24, 'hour'), dayjs()];
     }
@@ -213,9 +210,9 @@ async function handleGenerateReport() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `诊断建议书_${detail.value?.tagName ?? loopId}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
-    document.body.appendChild(a);
+    document.body.append(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     URL.revokeObjectURL(url);
     message.success('诊断建议书已生成');
   } catch {
@@ -417,6 +414,17 @@ onMounted(() => {
 
 <template>
   <Page :title="pageTitle">
+    <!-- 顶部返回导航（建议 3） -->
+    <div class="mb-3 flex items-center gap-3">
+      <Button size="small" @click="handleBack">返回</Button>
+      <nav class="text-sm text-gray-400">
+        <a class="cursor-pointer hover:text-blue-500" @click="router.push('/diagnosis/list')">诊断中心</a>
+        <span class="mx-1">/</span>
+        <a class="cursor-pointer hover:text-blue-500" @click="router.push('/diagnosis/list')">诊断列表</a>
+        <span class="mx-1">/</span>
+        <span class="text-gray-600">诊断详情</span>
+      </nav>
+    </div>
     <Spin :spinning="loading">
       <div class="space-y-4">
         <!-- 顶部：基本信息 -->
@@ -572,7 +580,6 @@ onMounted(() => {
 
         <!-- 操作按钮 -->
         <div class="flex justify-center gap-3">
-          <Button @click="handleBack">返回</Button>
           <Button @click="trackerDrawerVisible = true">异常跟踪</Button>
         </div>
       </div>

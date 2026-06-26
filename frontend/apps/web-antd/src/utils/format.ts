@@ -9,11 +9,11 @@
  * 此处通过 re-export 保持向后兼容。
  */
 
+export type { DiagnosisLabel } from '#/api/diagnosis';
 export {
   DIAGNOSIS_LABEL_NAME_MAP,
   getDiagnosisLabelName as labelName,
 } from '#/constants/diagnosis';
-export type { DiagnosisLabel } from '#/api/diagnosis';
 
 export { flattenNodes } from '#/utils/plant-node';
 export type { TreeNode } from '#/utils/plant-node';

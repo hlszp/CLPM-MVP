@@ -1,21 +1,17 @@
 <script lang="ts" setup>
 /**
  * S6-PORTAL-002 工作台性能总览首页
+ * UI/UX v4.2 §6.1.1 规范实现
  *
- * 对齐 UI/UX v4.1 §6.1.1 + PRD §4.1 + IDS v3.2 §2.1
- * - 顶部筛选栏：全厂/装置/单元级联 + 日/周/月粒度 + 刷新按钮
- * - 6 大 KPI 卡片区（自控投用率/平稳率/综合评分/报警次数/操作频次/好值率）
- * - 低效回路列表（位号/评分/预诊标签/关键指标）+ 选中回路小趋势缩略图
- * - 趋势摘要：ECharts 折线图（最近 7 天综合评分趋势）
- * - 待处理异常：待处理诊断数 + 待处理 Tracker 数
- * - 5 分钟自动刷新（页面可见时）
- *
- * 反 AI Slop：高密度表格 + 侧栏详情，非卡片瀑布流。
+ * 布局（上中下三行）：
+ * - 左侧：PlantNodeTree 工厂导航树
+ * - 右侧上行（20%）：6 项 KPI 卡片
+ * - 右侧中行（50%）：左低效回路列表 | 右选中回路摘要
+ * - 右侧下行（30%）：自控投用率 + 平稳率双轴折线趋势
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DashboardApi } from '#/api/dashboard';
-import type { DiagnosisLabel } from '#/api/diagnosis';
 import type { MetricApi } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
@@ -24,319 +20,323 @@ import {
   nextTick,
   onMounted,
   onUnmounted,
-  reactive,
   ref,
   watch,
 } from 'vue';
-import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
-  Alert,
   Button,
   Card,
-  Cascader,
   RadioGroup,
-  Statistic,
   Table,
   Tag,
 } from 'ant-design-vue';
-import type { TableColumnsType } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
+import { KPI_COLOR_MAP, THEME_COLORS } from '#/preferences';
+import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
+
+// ============ API 接口 ============
 import { getDashboardOverviewApi } from '#/api/dashboard';
-import { getRealtimeAutoRateApi } from '#/api/metric';
-import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
-  DIAGNOSIS_LABEL_COLOR_MAP,
-  DIAGNOSIS_LABEL_NAME_MAP,
-} from '#/constants/diagnosis';
+  getAnalyticsApi,
+  getRealtimeAutoRateApi,
+} from '#/api/metric';
 
-defineOptions({ name: 'DashboardWorkbench' });
+// ============ 工厂树导航 ============
+const selectedPlantNodeId = ref<string | undefined>(undefined);
+const selectedPlantNodeName = ref<string>('全厂');
+const apiTreeData = ref<PlantNodeApi.PlantNode[]>([]);
 
-const router = useRouter();
+function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
+  if (node) {
+    selectedPlantNodeId.value = node.id;
+    selectedPlantNodeName.value = node.name;
+  } else {
+    selectedPlantNodeId.value = undefined;
+    selectedPlantNodeName.value = '全厂';
+  }
+  loadAll();
+}
 
-const loading = ref(false);
-const overviewData = ref<DashboardApi.OverviewResult | null>(null);
-const plantNodeTree = ref<PlantNodeApi.PlantNode[]>([]);
+function onTreeLoadComplete(treeData: PlantNodeApi.PlantNode[]) {
+  apiTreeData.value = treeData;
+}
 
-/** 实时自控率数据（FE-15 新增卡片） */
-const realtimeAutoRate = ref<MetricApi.RealtimeAutoRateResult | null>(null);
-const realtimeAutoRateLoading = ref(false);
+// ============ 筛选区 ============
+type GranularityType = 'day' | 'week' | 'month';
+type TrendGranularityType = 'day' | 'hour';
 
-const filter = reactive({
-  plantId: undefined as string | undefined,
-  granularity: 'day' as DashboardApi.Granularity,
-});
+const granularity = ref<GranularityType>('day');
+const trendGranularity = ref<TrendGranularityType>('day');
 
-/** 粒度选项 */
 const granularityOptions = [
   { label: '日', value: 'day' as const },
   { label: '周', value: 'week' as const },
   { label: '月', value: 'month' as const },
 ];
 
-/** KPI 卡片配置（key 对应 KpiCards 字段） */
-const kpiConfig: Array<{
-  key: keyof DashboardApi.KpiCards;
-  title: string;
-  /** true=上升为好；false=下降为好（报警/操作次数） */
-  goodWhenUp: boolean;
-}> = [
-  { key: 'auto_mode_rate', title: '自控投用率', goodWhenUp: true },
-  { key: 'steady_rate', title: '平稳率', goodWhenUp: true },
-  { key: 'composite_score', title: '综合评分', goodWhenUp: true },
-  { key: 'alarm_count', title: '报警次数', goodWhenUp: false },
-  { key: 'operation_count', title: '操作频次', goodWhenUp: false },
-  { key: 'good_value_rate', title: '好值率', goodWhenUp: true },
+const trendGranularityOptions = [
+  { label: '日', value: 'day' as const },
+  { label: '小时', value: 'hour' as const },
 ];
 
-/** 诊断标签颜色映射（对齐 diagnosis/list.vue） */
-const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
+// ============ 数据加载 ============
+const loading = ref(false);
+const overviewData = ref<DashboardApi.OverviewResult | null>(null);
+const realtimeAutoRate = ref<MetricApi.RealtimeAutoRateResult | null>(null);
+const analyticsData = ref<MetricApi.AnalyticsResult | null>(null);
 
-/** 诊断标签中文名 */
-const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
-
-/** 低效回路表格列定义 */
-const columns: TableColumnsType = [
-  {
-    title: '回路位号',
-    dataIndex: 'loop_tag',
-    key: 'loop_tag',
-    width: 130,
-    ellipsis: true,
-  },
-  {
-    title: '回路名称',
-    dataIndex: 'loop_name',
-    key: 'loop_name',
-    width: 160,
-    ellipsis: true,
-  },
-  {
-    title: '装置',
-    dataIndex: 'plant_name',
-    key: 'plant_name',
-    width: 140,
-    ellipsis: true,
-  },
-  {
-    title: '综合评分',
-    dataIndex: 'composite_score',
-    key: 'composite_score',
-    width: 100,
-    align: 'right',
-  },
-  {
-    title: '预诊标签',
-    dataIndex: 'diagnosis_labels',
-    key: 'diagnosis_labels',
-    width: 160,
-  },
-  {
-    title: '自控率',
-    dataIndex: 'key_metric.auto_mode_rate',
-    key: 'auto_mode_rate',
-    width: 90,
-    align: 'right',
-  },
-  {
-    title: '平稳率',
-    dataIndex: 'key_metric.steady_rate',
-    key: 'steady_rate',
-    width: 90,
-    align: 'right',
-  },
-];
-
-/** 选中回路 */
+// 选中的低效回路
 const selectedLoop = ref<DashboardApi.InefficientLoop | null>(null);
 
-/** ECharts 趋势图 */
-const trendChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
-
-/** ECharts 选中回路小趋势缩略图 */
-const miniChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderMini } = useEcharts(miniChartRef);
-
-/** 自动刷新定时器 */
-const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 分钟
-let refreshTimer: null | ReturnType<typeof setInterval> = null;
-
-/** 待处理异常 */
-const pendingAlerts = computed(
-  () => overviewData.value?.pending_alerts ?? null,
-);
-
-/** 低效回路列表 */
-const inefficientLoops = computed(
-  () => overviewData.value?.inefficient_loops ?? [],
-);
-
-/** Cascader 选项递归类型 */
-interface CascaderNodeOption {
-  value: string;
-  label: string;
-  children?: CascaderNodeOption[];
-}
-
-/** 工厂节点树转 Cascader 选项 */
-function toCascaderOptions(
-  nodes: PlantNodeApi.PlantNode[],
-): CascaderNodeOption[] {
-  return nodes.map((node) => {
-    const option: CascaderNodeOption = {
-      value: node.id,
-      label: node.name,
-    };
-    if (node.children && node.children.length > 0) {
-      option.children = toCascaderOptions(node.children);
-    }
-    return option;
-  });
-}
-
-const cascaderOptions = computed(() => toCascaderOptions(plantNodeTree.value));
-
-/** 级联选择值（v-model 绑定） */
-const cascaderValue = ref<string[]>([]);
-
-/** 监听级联选择变更 */
-watch(cascaderValue, (val) => {
-  if (val && val.length > 0) {
-    filter.plantId = val[val.length - 1];
-  } else {
-    filter.plantId = undefined;
-  }
-  loadOverview();
-  loadRealtimeAutoRate();
-});
-
-/** 粒度变更 */
-function handleGranularityChange() {
-  loadOverview();
-}
-
-/** 判断趋势是否为"好" */
-function isTrendGood(trend: DashboardApi.Trend, goodWhenUp: boolean): boolean {
-  if (trend === 'stable') return true;
-  if (goodWhenUp) return trend === 'up';
-  return trend === 'down';
-}
-
-/** 趋势箭头 */
-function trendArrow(trend: DashboardApi.Trend): string {
-  if (trend === 'up') return '↑';
-  if (trend === 'down') return '↓';
-  return '→';
-}
-
-/** 趋势颜色 */
-function trendColor(trend: DashboardApi.Trend, goodWhenUp: boolean): string {
-  if (trend === 'stable') return '#6c757d';
-  return isTrendGood(trend, goodWhenUp) ? '#198754' : '#dc3545';
-}
-
-/** 格式化 delta */
-function formatDelta(delta: number, unit: string): string {
-  const sign = delta > 0 ? '+' : '';
-  return `${sign}${delta}${unit}`;
-}
-
-/** 评分颜色（对齐 UI/UX v4.1 §3.1.4） */
-function scoreColor(score: number): string {
-  if (score >= 80) return '#198754';
-  if (score >= 60) return '#ffc107';
-  return '#dc3545';
-}
-
-/** 格式化百分比 */
-function formatPercent(val: number | undefined): string {
-  if (val === null || val === undefined || Number.isNaN(val)) return '—';
-  return `${Number(val).toFixed(1)}%`;
-}
-
-/** 格式化时间 */
-function formatTime(t?: string): string {
-  if (!t) return '—';
-  try {
-    return new Date(t).toLocaleString('zh-CN');
-  } catch {
-    return t;
-  }
-}
-
-/** 加载工厂节点树 */
-async function loadPlantNodes() {
-  try {
-    const tree = await getPlantNodeTreeApi();
-    plantNodeTree.value = tree || [];
-  } catch {
-    // 错误已由拦截器处理
-  }
-}
-
-/** 加载工作台概览数据 */
 async function loadOverview() {
-  loading.value = true;
+  const res = await getDashboardOverviewApi({
+    plantId: selectedPlantNodeId.value,
+    granularity: granularity.value,
+  });
+  overviewData.value = res;
+}
+
+async function loadRealtimeAutoRate() {
   try {
-    const data = await getDashboardOverviewApi({
-      plant_id: filter.plantId,
-      granularity: filter.granularity,
+    const res = await getRealtimeAutoRateApi({
+      plantNodeId: selectedPlantNodeId.value,
     });
-    overviewData.value = data;
-    // 默认选中第一个低效回路
-    if (data.inefficient_loops && data.inefficient_loops.length > 0) {
-      if (!selectedLoop.value) {
-        selectedLoop.value = data.inefficient_loops[0] ?? null;
-      }
-    } else {
-      selectedLoop.value = null;
-    }
-    renderTrendChart();
-    renderMiniChart();
+    realtimeAutoRate.value = res;
   } catch {
-    // 错误已由拦截器处理
+    // 实时自控率接口可能无数据，不影响整体页面
+    realtimeAutoRate.value = null;
+  }
+}
+
+async function loadAnalytics() {
+  const days = granularity.value === 'day' ? 7 : granularity.value === 'week' ? 30 : 90;
+  const startTime = dayjs().subtract(days, 'day').format('YYYY-MM-DD HH:mm:ss');
+  const endTime = dayjs().format('YYYY-MM-DD HH:mm:ss');
+
+  // 分别请求自控投用率和平稳率的趋势数据
+  const [autoRes, steadyRes] = await Promise.all([
+    getAnalyticsApi({
+      plantNodeId: selectedPlantNodeId.value,
+      startTime,
+      endTime,
+      granularity: trendGranularity.value,
+      metricKey: 'auto_mode_rate',
+    }),
+    getAnalyticsApi({
+      plantNodeId: selectedPlantNodeId.value,
+      startTime,
+      endTime,
+      granularity: trendGranularity.value,
+      metricKey: 'steady_rate',
+    }),
+  ]);
+
+  // 合并两个指标的趋势数据
+  const timestamps = autoRes.kpiTrend?.timestamps ?? steadyRes.kpiTrend?.timestamps ?? [];
+  const series: MetricApi.AnalyticsSeries[] = [
+    ...(autoRes.kpiTrend?.series ?? []),
+    ...(steadyRes.kpiTrend?.series ?? []),
+  ];
+
+  analyticsData.value = {
+    filterScope: autoRes.filterScope,
+    kpiTrend: { timestamps, series },
+    unitRanking: autoRes.unitRanking ?? [],
+    badActorDistribution: autoRes.badActorDistribution ?? [],
+  };
+}
+
+async function loadAll() {
+  loading.value = true;
+  selectedLoop.value = null;
+  try {
+    await Promise.all([
+      loadOverview(),
+      loadRealtimeAutoRate(),
+      loadAnalytics(),
+    ]);
   } finally {
     loading.value = false;
+    await nextTick();
+    renderTrendChart();
   }
 }
 
-/** 加载实时自控率（FE-15 新增） */
-async function loadRealtimeAutoRate() {
-  realtimeAutoRateLoading.value = true;
-  try {
-    const data = await getRealtimeAutoRateApi({
-      plantNodeId: filter.plantId,
-    });
-    realtimeAutoRate.value = data;
-  } catch {
-    // 错误已由拦截器处理
-  } finally {
-    realtimeAutoRateLoading.value = false;
-  }
+// ============ 上行：6 KPI 卡片 ============
+interface KpiCardItem {
+  key: keyof DashboardApi.KpiCards;
+  label: string;
+  value: number;
+  unit: string;
+  trend: DashboardApi.Trend;
+  delta: number;
+  goodWhenUp: boolean;
 }
 
-/** 渲染趋势摘要图（7 天综合评分趋势） */
+const kpiCards = computed<KpiCardItem[]>(() => {
+  const kpi = overviewData.value?.kpi_cards;
+  if (!kpi) {
+    return [
+      { key: 'auto_mode_rate', label: '自控投用率', value: 0, unit: '%', trend: 'stable', delta: 0, goodWhenUp: true },
+      { key: 'steady_rate', label: '平稳率', value: 0, unit: '%', trend: 'stable', delta: 0, goodWhenUp: true },
+      { key: 'composite_score', label: '综合评分', value: 0, unit: '分', trend: 'stable', delta: 0, goodWhenUp: true },
+      { key: 'alarm_count', label: '报警次数', value: 0, unit: '次', trend: 'stable', delta: 0, goodWhenUp: false },
+      { key: 'operation_count', label: '操作频次', value: 0, unit: '次', trend: 'stable', delta: 0, goodWhenUp: false },
+      { key: 'good_value_rate', label: '好值率', value: 0, unit: '%', trend: 'stable', delta: 0, goodWhenUp: true },
+    ];
+  }
+  return [
+    {
+      key: 'auto_mode_rate',
+      label: '自控投用率',
+      value: kpi.auto_mode_rate?.value ?? 0,
+      unit: kpi.auto_mode_rate?.unit ?? '%',
+      trend: kpi.auto_mode_rate?.trend ?? 'stable',
+      delta: kpi.auto_mode_rate?.delta ?? 0,
+      goodWhenUp: true,
+    },
+    {
+      key: 'steady_rate',
+      label: '平稳率',
+      value: kpi.steady_rate?.value ?? 0,
+      unit: kpi.steady_rate?.unit ?? '%',
+      trend: kpi.steady_rate?.trend ?? 'stable',
+      delta: kpi.steady_rate?.delta ?? 0,
+      goodWhenUp: true,
+    },
+    {
+      key: 'composite_score',
+      label: '综合评分',
+      value: kpi.composite_score?.value ?? 0,
+      unit: kpi.composite_score?.unit ?? '分',
+      trend: kpi.composite_score?.trend ?? 'stable',
+      delta: kpi.composite_score?.delta ?? 0,
+      goodWhenUp: true,
+    },
+    {
+      key: 'alarm_count',
+      label: '报警次数',
+      value: kpi.alarm_count?.value ?? 0,
+      unit: kpi.alarm_count?.unit ?? '次',
+      trend: kpi.alarm_count?.trend ?? 'stable',
+      delta: kpi.alarm_count?.delta ?? 0,
+      goodWhenUp: false,
+    },
+    {
+      key: 'operation_count',
+      label: '操作频次',
+      value: kpi.operation_count?.value ?? 0,
+      unit: kpi.operation_count?.unit ?? '次',
+      trend: kpi.operation_count?.trend ?? 'stable',
+      delta: kpi.operation_count?.delta ?? 0,
+      goodWhenUp: false,
+    },
+    {
+      key: 'good_value_rate',
+      label: '好值率',
+      value: kpi.good_value_rate?.value ?? 0,
+      unit: kpi.good_value_rate?.unit ?? '%',
+      trend: kpi.good_value_rate?.trend ?? 'stable',
+      delta: kpi.good_value_rate?.delta ?? 0,
+      goodWhenUp: true,
+    },
+  ];
+});
+
+// ============ 中行左：低效回路列表 ============
+const inefficientLoopColumns = [
+  { dataIndex: 'loop_tag', key: 'loop_tag', title: '位号', width: 140, ellipsis: true },
+  {
+    dataIndex: 'composite_score',
+    key: 'composite_score',
+    title: '评分',
+    width: 70,
+    align: 'right' as const,
+  },
+  {
+    dataIndex: 'plant_name',
+    key: 'plant_name',
+    title: '所属装置',
+    width: 100,
+    ellipsis: true,
+  },
+  {
+    dataIndex: 'key_metric',
+    key: 'key_metric',
+    title: '自控率/平稳率',
+    width: 120,
+    align: 'right' as const,
+  },
+];
+
+const inefficientLoops = computed(() => {
+  return overviewData.value?.inefficient_loops ?? [];
+});
+
+function handleLoopSelect(record: DashboardApi.InefficientLoop) {
+  selectedLoop.value = record;
+}
+
+// ============ 中行右：选中回路摘要 ============
+const loopSummary = computed(() => selectedLoop.value);
+
+// ============ 下行：趋势图 ============
+const trendChartRef = ref<InstanceType<EchartsUIType> | null>(null);
+const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
+
 function renderTrendChart() {
-  const trend = overviewData.value?.trend_summary;
-  if (!trend || !trend.dates || trend.dates.length === 0) return;
+  const analytics = analyticsData.value;
+  if (!analytics?.kpiTrend?.timestamps?.length) {
+    renderTrend({
+      title: {
+        left: 'center',
+        text: '暂无趋势数据',
+        textStyle: { color: '#8c8c8c', fontSize: 12, fontWeight: 'normal' },
+        top: 'center',
+      },
+      xAxis: { type: 'category', data: [] },
+      yAxis: { type: 'value' },
+      series: [],
+    });
+    return;
+  }
+
+  const { timestamps, series } = analytics.kpiTrend;
+  const labels = timestamps.map((t) => {
+    const d = dayjs(t);
+    return trendGranularity.value === 'hour' ? d.format('HH:00') : d.format('MM-DD');
+  });
+
+  const autoSeries = series.find((s) => s.metricKey === 'auto_mode_rate');
+  const steadySeries = series.find((s) => s.metricKey === 'steady_rate');
 
   renderTrend({
-    grid: { bottom: 30, containLabel: true, left: '2%', right: '2%', top: 40 },
-    legend: { data: ['综合评分'], top: 5 },
+    color: [THEME_COLORS.INFO, THEME_COLORS.SUCCESS],
+    grid: { bottom: 40, containLabel: true, left: 48, right: 48, top: 50 },
+    legend: { data: ['自控投用率', '平稳率'], top: 8 },
     series: [
       {
-        areaStyle: { opacity: 0.1 },
-        data: trend.composite_scores,
-        itemStyle: { color: '#0D6EFD' },
-        lineStyle: { width: 2 },
-        name: '综合评分',
+        data: autoSeries?.values ?? [],
+        itemStyle: { color: THEME_COLORS.INFO },
+        lineStyle: { width: 2.5 },
+        name: '自控投用率',
         smooth: true,
         symbol: 'circle',
-        symbolSize: 6,
+        symbolSize: 5,
+        type: 'line',
+      },
+      {
+        data: steadySeries?.values ?? [],
+        itemStyle: { color: THEME_COLORS.SUCCESS },
+        lineStyle: { width: 2.5 },
+        name: '平稳率',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 5,
         type: 'line',
       },
     ],
@@ -345,451 +345,285 @@ function renderTrendChart() {
       trigger: 'axis',
       valueFormatter: (val: unknown) => {
         if (val === null || val === undefined) return '—';
-        return Number(val).toFixed(1);
+        return Number(val).toFixed(1) + '%';
       },
     },
     xAxis: {
+      axisLabel: { color: '#8c8c8c', fontSize: 11 },
       boundaryGap: false,
-      data: trend.dates,
+      data: labels,
       type: 'category',
     },
-    yAxis: {
-      max: 100,
-      min: 0,
-      splitLine: { lineStyle: { color: '#E5E5E5', type: 'dashed' } },
-      type: 'value',
-    },
-  });
-}
-
-/** 渲染选中回路小趋势缩略图（关键指标柱状） */
-function renderMiniChart() {
-  const loop = selectedLoop.value;
-  if (!loop) return;
-
-  renderMini({
-    grid: { bottom: 24, containLabel: true, left: '2%', right: '2%', top: 24 },
-    series: [
+    yAxis: [
       {
-        barWidth: '40%',
-        data: [
-          {
-            itemStyle: { color: scoreColor(loop.composite_score) },
-            value: Number(loop.composite_score?.toFixed(1) ?? 0),
-          },
-          {
-            itemStyle: { color: '#0D6EFD' },
-            value: Number(loop.key_metric?.auto_mode_rate?.toFixed(1) ?? 0),
-          },
-          {
-            itemStyle: { color: '#198754' },
-            value: Number(loop.key_metric?.steady_rate?.toFixed(1) ?? 0),
-          },
-        ],
-        itemStyle: { borderRadius: [2, 2, 0, 0] },
-        type: 'bar',
+        axisLabel: { color: '#8c8c8c', fontSize: 11 },
+        max: 100,
+        min: 0,
+        name: '百分比 (%)',
+        nameTextStyle: { color: '#8c8c8c', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#E5E5E5', type: 'dashed' } },
+        type: 'value',
       },
     ],
-    tooltip: {
-      trigger: 'axis',
-      valueFormatter: (val: unknown) => {
-        if (val === null || val === undefined) return '—';
-        return `${Number(val).toFixed(1)}`;
-      },
-    },
-    xAxis: {
-      axisLabel: { fontSize: 11, color: '#6C757D' },
-      data: ['综合评分', '自控率', '平稳率'],
-      type: 'category',
-    },
-    yAxis: {
-      axisLabel: { fontSize: 11, color: '#6C757D' },
-      max: 100,
-      min: 0,
-      splitLine: { lineStyle: { color: '#E5E5E5', type: 'dashed' } },
-      type: 'value',
-    },
   });
 }
 
-/** 点击低效回路行 */
-function handleRowClick(record: DashboardApi.InefficientLoop) {
-  selectedLoop.value = record;
-  nextTick(() => renderMiniChart());
+// ============ 辅助函数 ============
+function scoreColor(score: number, isRate: boolean = true): string {
+  const threshold = isRate ? 80 : 60;
+  const good = isRate ? 90 : 80;
+  if (score >= good) return KPI_COLOR_MAP.EXCELLENT;
+  if (score >= threshold) return KPI_COLOR_MAP.PASS;
+  return KPI_COLOR_MAP.FAIL;
 }
 
-/** 跳转诊断详情 */
-function handleGoDiagnosis(loopId: string) {
-  router.push(`/diagnosis/detail/${loopId}`);
+function trendArrow(trend: DashboardApi.Trend): string {
+  if (trend === 'up') return '↑';
+  if (trend === 'down') return '↓';
+  return '→';
 }
 
-/** 跳转异常跟踪 */
-function handleGoTracker() {
-  router.push('/diagnosis/tracker');
+function trendColor(trend: DashboardApi.Trend, goodWhenUp: boolean): string {
+  if (trend === 'stable') return '#6c757d';
+  const isGood = goodWhenUp ? trend === 'up' : trend === 'down';
+  return isGood ? KPI_COLOR_MAP.EXCELLENT : KPI_COLOR_MAP.FAIL;
 }
 
-/** 启动自动刷新 */
-function startAutoRefresh() {
-  stopAutoRefresh();
-  refreshTimer = setInterval(() => {
-    loadOverview();
-    loadRealtimeAutoRate();
-  }, REFRESH_INTERVAL);
+function formatDelta(delta: number, unit: string): string {
+  if (delta === 0) return '—';
+  const sign = delta > 0 ? '+' : '';
+  return `${sign}${delta.toFixed(1)}${unit}`;
 }
 
-/** 停止自动刷新 */
-function stopAutoRefresh() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
+function scoreLevelColor(score: number): string {
+  if (score >= 80) return '#52c41a';
+  if (score >= 60) return '#faad14';
+  return '#ff4d4f';
 }
 
-/** 页面可见性变化 — 切回可见时立即刷新 */
-function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') {
-    loadOverview();
-    loadRealtimeAutoRate();
-  }
-}
-
-watch(
-  () => overviewData.value?.trend_summary,
-  () => renderTrendChart(),
-  { deep: true },
-);
-
-watch(
-  () => selectedLoop.value,
-  () => renderMiniChart(),
-);
-
+// ============ 生命周期 ============
 onMounted(() => {
-  loadPlantNodes();
-  loadOverview();
-  loadRealtimeAutoRate();
-  startAutoRefresh();
-  document.addEventListener('visibilitychange', handleVisibilityChange);
+  loadAll();
 });
 
-onUnmounted(() => {
-  stopAutoRefresh();
-  document.removeEventListener('visibilitychange', handleVisibilityChange);
-});
+onUnmounted(() => {});
 </script>
 
 <template>
-  <Page title="性能总览首页">
-    <!-- 待处理异常横幅 -->
-    <Alert
-      v-if="pendingAlerts"
-      class="mb-3"
-      type="warning"
-      show-icon
-      :message="`待处理诊断 ${pendingAlerts.open_diagnoses} 项 · 待处理 Tracker ${pendingAlerts.open_trackers} 项`"
-    >
-      <template #action>
-        <Button type="link" size="small" @click="handleGoTracker">
-          前往异常跟踪
-        </Button>
-      </template>
-    </Alert>
+  <div class="flex gap-3 h-[calc(100vh-130px)]">
+    <!-- 左侧工厂导航树 -->
+    <PlantNodeTree
+      card-title="工厂导航"
+      :width="260"
+      :show-collapse-buttons="true"
+      :default-expand-level="3"
+      max-height="calc(100vh - 160px)"
+      @select="onTreeSelect"
+      @load-complete="onTreeLoadComplete"
+    />
 
-    <!-- 顶部筛选栏 -->
-    <Card class="mb-3" size="small" :body-style="{ padding: '12px 16px' }">
-      <div class="flex flex-wrap items-center gap-3">
-        <Cascader
-          v-model:value="cascaderValue"
-          :options="cascaderOptions"
-          placeholder="全厂 / 装置 / 单元"
-          style="width: 280px"
-          allow-clear
-          change-on-select
-        />
-        <RadioGroup
-          v-model:value="filter.granularity"
-          :options="granularityOptions"
-          option-type="button"
-          button-style="solid"
-          @change="handleGranularityChange"
-        />
-        <Button type="primary" :loading="loading" @click="loadOverview">
-          刷新
-        </Button>
-        <span class="ml-auto text-xs text-gray-400">每 5 分钟自动刷新</span>
+    <!-- 右侧主显示区 -->
+    <div class="min-w-0 flex-1 flex flex-col gap-3">
+      <!-- ====== 筛选区 ====== -->
+      <Card size="small" :body-style="{ padding: '10px 16px' }">
+        <div class="flex flex-wrap items-center gap-3">
+          <Tag color="processing">{{ selectedPlantNodeName }}</Tag>
+          <RadioGroup
+            v-model:value="granularity"
+            :options="granularityOptions"
+            option-type="button"
+            button-style="solid"
+            size="small"
+            @change="loadAll"
+          />
+        </div>
+      </Card>
+
+      <!-- ====== 上行：6 KPI 卡片 ====== -->
+      <div class="grid grid-cols-6 gap-3 flex-shrink-0">
+        <Card
+          v-for="card in kpiCards"
+          :key="card.key"
+          size="small"
+          :loading="loading"
+          :body-style="{ padding: '12px 14px' }"
+        >
+          <div class="flex flex-col">
+            <span class="text-xs text-gray-400 mb-1">{{ card.label }}</span>
+            <div class="flex items-baseline gap-1">
+              <span
+                class="text-xl font-bold font-mono"
+                :style="{ color: scoreColor(card.value, card.unit === '%') }"
+              >
+                {{ card.unit === '%' ? card.value.toFixed(1) : card.value }}
+              </span>
+              <span class="text-xs text-gray-400">{{ card.unit }}</span>
+            </div>
+            <div
+              v-if="card.delta !== 0"
+              class="mt-1 flex items-center gap-1 text-xs"
+              :style="{ color: trendColor(card.trend, card.goodWhenUp) }"
+            >
+              <span>{{ trendArrow(card.trend) }}</span>
+              <span>{{ formatDelta(card.delta, card.unit) }}</span>
+            </div>
+          </div>
+        </Card>
       </div>
-    </Card>
 
-    <!-- 6 大 KPI 卡片区 -->
-    <div class="mb-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+      <!-- ====== 中行：低效回路列表 | 选中回路摘要 ====== -->
+      <div class="flex gap-3 flex-1 min-h-0">
+        <!-- 中行左：低效回路列表（60%） -->
+        <Card
+          class="flex-1 min-w-0"
+          title="低效回路列表"
+          size="small"
+          :loading="loading"
+          :body-style="{ padding: '8px', height: '100%' }"
+        >
+          <Table
+            :columns="inefficientLoopColumns"
+            :data-source="inefficientLoops"
+            :pagination="false"
+            :scroll="{ y: 'calc(100% - 40px)' }"
+            size="small"
+            :row-class-name="(record) => selectedLoop?.loop_id === record.loop_id ? 'ant-table-row-selected' : ''"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'loop_tag'">
+                <span class="font-mono text-sm">{{ record.loop_tag }}</span>
+              </template>
+              <template v-else-if="column.key === 'composite_score'">
+                <span
+                  class="font-mono font-bold"
+                  :style="{ color: scoreLevelColor(record.composite_score) }"
+                >
+                  {{ record.composite_score.toFixed(0) }}
+                </span>
+              </template>
+              <template v-else-if="column.key === 'plant_name'">
+                <span class="text-xs text-gray-500">{{ record.plant_name }}</span>
+              </template>
+              <template v-else-if="column.key === 'key_metric'">
+                <div class="flex flex-col items-end text-xs">
+                  <span class="font-mono">
+                    自控 {{ record.key_metric?.auto_mode_rate?.toFixed(1) ?? '—' }}%
+                  </span>
+                  <span class="font-mono text-gray-500">
+                    平稳 {{ record.key_metric?.steady_rate?.toFixed(1) ?? '—' }}%
+                  </span>
+                </div>
+              </template>
+            </template>
+          </Table>
+        </Card>
+
+        <!-- 中行右：选中回路摘要（40%） -->
+        <Card
+          class="w-[40%] min-w-0"
+          title="回路摘要"
+          size="small"
+          :loading="loading && !selectedLoop"
+          :body-style="{ padding: '12px', height: '100%' }"
+        >
+          <div v-if="loopSummary" class="flex flex-col h-full">
+            <!-- 回路基本信息 -->
+            <div class="mb-3">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="font-mono text-base font-bold">{{ loopSummary.loop_tag }}</span>
+                <Tag
+                  :color="
+                    loopSummary.composite_score >= 80
+                      ? 'success'
+                      : loopSummary.composite_score >= 60
+                        ? 'warning'
+                        : 'error'
+                  "
+                >
+                  {{ loopSummary.composite_score.toFixed(0) }}分
+                </Tag>
+              </div>
+              <div class="text-xs text-gray-400">
+                {{ loopSummary.loop_name }}
+              </div>
+              <div class="text-xs text-gray-400">{{ loopSummary.plant_name }}</div>
+            </div>
+
+            <!-- 关键指标 -->
+            <div class="mb-3 grid grid-cols-2 gap-2">
+              <div class="bg-gray-50 rounded p-2 text-center">
+                <div class="text-xs text-gray-400">自控率</div>
+                <div
+                  class="text-lg font-mono font-bold"
+                  :style="{ color: scoreColor(loopSummary.key_metric?.auto_mode_rate ?? 0) }"
+                >
+                  {{ loopSummary.key_metric?.auto_mode_rate?.toFixed(1) ?? '—' }}%
+                </div>
+              </div>
+              <div class="bg-gray-50 rounded p-2 text-center">
+                <div class="text-xs text-gray-400">平稳率</div>
+                <div
+                  class="text-lg font-mono font-bold"
+                  :style="{ color: scoreColor(loopSummary.key_metric?.steady_rate ?? 0) }"
+                >
+                  {{ loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—' }}%
+                </div>
+              </div>
+            </div>
+
+            <!-- 预诊标签 -->
+            <div class="mb-3" v-if="loopSummary.diagnosis_labels?.length">
+              <div class="text-xs text-gray-400 mb-1">预诊标签</div>
+              <div class="flex flex-wrap gap-1">
+                <Tag
+                  v-for="label in loopSummary.diagnosis_labels"
+                  :key="label"
+                  color="warning"
+                  size="small"
+                >
+                  {{ label }}
+                </Tag>
+              </div>
+            </div>
+
+            <!-- 小趋势占位 -->
+            <div class="mb-3 flex-1 bg-gray-50 rounded p-2 flex items-center justify-center">
+              <span class="text-sm text-gray-400">PV/SP/OP 趋势图（待接入）</span>
+            </div>
+
+            <!-- 快捷动作 -->
+            <div class="flex gap-2">
+              <Button size="small" type="primary">进入诊断</Button>
+              <Button size="small">回路详情</Button>
+            </div>
+          </div>
+          <div v-else class="h-full flex items-center justify-center">
+            <span class="text-sm text-gray-400">请选择一个低效回路查看详情</span>
+          </div>
+        </Card>
+      </div>
+
+      <!-- ====== 下行：关键指标组合趋势 ====== -->
       <Card
-        v-for="cfg in kpiConfig"
-        :key="cfg.key"
+        class="flex-shrink-0"
+        title="关键指标组合趋势"
         size="small"
         :loading="loading"
-        :body-style="{ padding: '16px' }"
+        :body-style="{ padding: '8px' }"
       >
-        <div class="flex flex-col">
-          <span class="mb-1 text-xs text-gray-500">{{ cfg.title }}</span>
-          <div class="flex items-baseline gap-1">
-            <span
-              v-if="overviewData"
-              class="font-mono text-2xl font-bold"
-              :style="{
-                color: scoreColor(overviewData.kpi_cards[cfg.key].value),
-              }"
-            >
-              {{ overviewData.kpi_cards[cfg.key].value?.toFixed(1) ?? '--' }}
-            </span>
-            <span v-if="overviewData" class="text-xs text-gray-400">
-              {{ overviewData.kpi_cards[cfg.key].unit }}
-            </span>
-          </div>
-          <div v-if="overviewData" class="mt-1 flex items-center gap-1 text-xs">
-            <span
-              :style="{
-                color: trendColor(
-                  overviewData.kpi_cards[cfg.key].trend,
-                  cfg.goodWhenUp,
-                ),
-              }"
-            >
-              {{ trendArrow(overviewData.kpi_cards[cfg.key].trend) }}
-              {{
-                formatDelta(
-                  overviewData.kpi_cards[cfg.key].delta,
-                  overviewData.kpi_cards[cfg.key].unit,
-                )
-              }}
-            </span>
-          </div>
+        <div class="mb-2 flex items-center gap-2">
+          <span class="text-xs text-gray-400">粒度：</span>
+          <RadioGroup
+            v-model:value="trendGranularity"
+            :options="trendGranularityOptions"
+            option-type="button"
+            button-style="outline"
+            size="small"
+            @change="loadAnalytics"
+          />
         </div>
+        <EchartsUI ref="trendChartRef" height="220px" />
       </Card>
     </div>
-
-    <!-- 实时自控率卡片（FE-15 新增） -->
-    <Card class="mb-3" size="small" :body-style="{ padding: '16px' }">
-      <div class="flex flex-wrap items-center gap-6">
-        <div class="flex flex-col">
-          <span class="mb-1 text-xs text-gray-500">实时自控率</span>
-          <div class="flex items-baseline gap-1">
-            <span
-              v-if="realtimeAutoRate"
-              class="font-mono text-2xl font-bold"
-              :style="{
-                color: scoreColor(realtimeAutoRate.autoRate),
-              }"
-            >
-              {{ realtimeAutoRate.autoRate?.toFixed(1) ?? '--' }}
-            </span>
-            <span v-if="realtimeAutoRate" class="text-xs text-gray-400">%</span>
-            <span
-              v-if="!realtimeAutoRate && !realtimeAutoRateLoading"
-              class="text-2xl font-bold text-gray-400"
-            >
-              —
-            </span>
-          </div>
-          <div v-if="realtimeAutoRate" class="mt-1 flex items-center gap-3 text-xs">
-            <span class="inline-flex items-center gap-1">
-              <span
-                class="inline-block h-2 w-2 rounded-full"
-                style="background-color: #52c41a"
-              ></span>
-              <span>自动 {{ realtimeAutoRate.autoCount }}</span>
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <span
-                class="inline-block h-2 w-2 rounded-full"
-                style="background-color: #fa8c16"
-              ></span>
-              <span>手动 {{ realtimeAutoRate.manualCount }}</span>
-            </span>
-            <span class="text-gray-400">
-              总数 {{ realtimeAutoRate.totalCount }}
-            </span>
-            <span
-              v-if="realtimeAutoRate.readAt"
-              class="text-gray-400"
-            >
-              · {{ formatTime(realtimeAutoRate.readAt) }}
-            </span>
-          </div>
-        </div>
-        <div class="ml-auto text-xs text-gray-400">
-          数据每 5 分钟自动刷新
-        </div>
-      </div>
-    </Card>
-
-    <!-- 中行：低效回路列表 + 选中回路摘要 -->
-    <div class="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-5">
-      <!-- 低效回路列表（占 3/5） -->
-      <Card class="lg:col-span-3" title="低效回路列表" size="small">
-        <Table
-          :columns="columns"
-          :data-source="inefficientLoops"
-          :loading="loading"
-          :pagination="false"
-          :row-key="(record: DashboardApi.InefficientLoop) => record.loop_id"
-          :scroll="{ x: 870 }"
-          size="small"
-          :row-class-name="
-            (record: DashboardApi.InefficientLoop) =>
-              record.composite_score < 60 ? 'row-low-score' : ''
-          "
-          :custom-row="
-            (record: DashboardApi.InefficientLoop) => ({
-              onClick: () => handleRowClick(record),
-              style: { cursor: 'pointer' },
-            })
-          "
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'loop_tag'">
-              <span class="font-mono text-xs font-medium">
-                {{ record.loop_tag }}
-              </span>
-            </template>
-            <template v-else-if="column.key === 'composite_score'">
-              <span
-                class="font-mono font-bold"
-                :style="{
-                  color: scoreColor(record.composite_score),
-                }"
-              >
-                {{ Number(record.composite_score).toFixed(1) }}
-              </span>
-            </template>
-            <template v-else-if="column.key === 'diagnosis_labels'">
-              <template
-                v-if="
-                  record.diagnosis_labels && record.diagnosis_labels.length > 0
-                "
-              >
-                <Tag
-                  v-for="label in record.diagnosis_labels"
-                  :key="label"
-                  :color="labelColorMap[label as DiagnosisLabel]"
-                  class="mr-1"
-                >
-                  {{ labelNameMap[label as DiagnosisLabel] || label }}
-                </Tag>
-              </template>
-              <span v-else class="text-gray-400">—</span>
-            </template>
-            <template v-else-if="column.key === 'auto_mode_rate'">
-              <span class="font-mono text-xs">
-                {{ formatPercent(record.key_metric.auto_mode_rate) }}
-              </span>
-            </template>
-            <template v-else-if="column.key === 'steady_rate'">
-              <span class="font-mono text-xs">
-                {{ formatPercent(record.key_metric.steady_rate) }}
-              </span>
-            </template>
-          </template>
-        </Table>
-      </Card>
-
-      <!-- 选中回路摘要（占 2/5） -->
-      <Card class="lg:col-span-2" title="选中回路摘要" size="small">
-        <template v-if="selectedLoop">
-          <div class="mb-3">
-            <div class="flex items-center justify-between">
-              <div>
-                <span class="font-mono text-base font-semibold">
-                  {{ selectedLoop.loop_tag }}
-                </span>
-                <span class="ml-2 text-sm text-gray-500">
-                  {{ selectedLoop.loop_name }}
-                </span>
-              </div>
-              <span
-                class="font-mono text-xl font-bold"
-                :style="{ color: scoreColor(selectedLoop.composite_score) }"
-              >
-                {{ Number(selectedLoop.composite_score).toFixed(1) }}
-              </span>
-            </div>
-            <div class="mt-1 text-xs text-gray-400">
-              {{ selectedLoop.plant_name }}
-            </div>
-          </div>
-
-          <!-- 小趋势缩略图 -->
-          <EchartsUI ref="miniChartRef" height="180px" />
-
-          <!-- 关键指标 -->
-          <div class="mt-3 grid grid-cols-2 gap-2">
-            <Statistic
-              title="自控率"
-              :value="selectedLoop.key_metric.auto_mode_rate"
-              :precision="1"
-              suffix="%"
-              :value-style="{ fontSize: '18px' }"
-            />
-            <Statistic
-              title="平稳率"
-              :value="selectedLoop.key_metric.steady_rate"
-              :precision="1"
-              suffix="%"
-              :value-style="{ fontSize: '18px' }"
-            />
-          </div>
-
-          <!-- 预诊标签 -->
-          <div
-            v-if="
-              selectedLoop.diagnosis_labels &&
-              selectedLoop.diagnosis_labels.length > 0
-            "
-            class="mt-3"
-          >
-            <div class="mb-1 text-xs text-gray-500">预诊标签</div>
-            <Tag
-              v-for="label in selectedLoop.diagnosis_labels"
-              :key="label"
-              :color="labelColorMap[label as DiagnosisLabel]"
-              class="mr-1"
-            >
-              {{ labelNameMap[label as DiagnosisLabel] || label }}
-            </Tag>
-          </div>
-
-          <!-- 快捷动作 -->
-          <div class="mt-4 flex gap-2">
-            <Button
-              type="primary"
-              size="small"
-              @click="handleGoDiagnosis(selectedLoop.loop_id)"
-            >
-              进入诊断
-            </Button>
-            <Button size="small" @click="handleGoTracker">
-              进入异常跟踪
-            </Button>
-          </div>
-        </template>
-        <div v-else class="flex h-64 items-center justify-center text-gray-400">
-          请从左侧列表选择回路
-        </div>
-      </Card>
-    </div>
-
-    <!-- 下行：趋势摘要 -->
-    <Card title="综合评分趋势" size="small" :loading="loading">
-      <EchartsUI ref="trendChartRef" height="280px" />
-    </Card>
-  </Page>
+  </div>
 </template>
-
-<style scoped>
-:deep(.row-low-score) {
-  background-color: #fff1f0;
-}
-
-:deep(.row-low-score:hover) {
-  background-color: #ffe7e5;
-}
-</style>

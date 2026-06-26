@@ -8,26 +8,25 @@ import type { PageQuery, PaginatedResponse } from '#/api/types';
 import { requestClient } from '#/api/request';
 
 export namespace TagApi {
-  /** 测点类型（温度/压力/液位/流量/分析/速度/其他） */
+  /** 测点类型（温度/压力/液位/流量/分析/阀位/其他） */
   export type MeasureType =
     | 'ANALYSIS'
     | 'FLOW'
     | 'LEVEL'
     | 'OTHER'
     | 'PRESSURE'
-    | 'SPEED'
+    | 'POSITION'
     | 'TEMPERATURE';
 
-  /** 参数类型（PV/SP/OP/MODE/PID_P/PID_I/PID_D/OTHER） */
+  /** 参数类型（PV/SP/OP/KP/TI/TD/MODE） */
   export type TagType =
     | 'MODE'
     | 'OP'
-    | 'OTHER'
-    | 'PID_D'
-    | 'PID_I'
-    | 'PID_P'
     | 'PV'
-    | 'SP';
+    | 'SP'
+    | 'KP'
+    | 'TI'
+    | 'TD';
 
   /** 质量戳（GOOD/BAD/UNCERTAIN） */
   export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN';
@@ -45,7 +44,7 @@ export namespace TagApi {
     rangeMin?: null | number;
     rangeMax?: null | number;
     unit?: string;
-    measureType?: null | MeasureType;
+    measureType?: MeasureType | null;
     tdengineTagId?: string;
     loopId?: string;
     loopTagName?: string;
@@ -101,5 +100,24 @@ export function updateTagApi(tagId: string, data: TagApi.UpdateTagParams) {
  * 删除测点
  */
 export function deleteTagApi(tagId: string) {
-  return requestClient.delete<void>(`/tags/${tagId}`);
+  return requestClient.delete<null>(`/tags/${tagId}`);
+}
+
+/**
+ * 根据回路位号自动匹配测点
+ */
+export function matchTagsForLoopApi(loopTagName: string) {
+  return requestClient.get<
+    Array<{
+      role: string;
+      tagId: string;
+      tagName: string;
+      tagDescription?: string;
+      tagType: string;
+      measureType?: string;
+      unit?: string;
+    }>
+  >('/tags/match-loop', {
+    params: { loopTagName },
+  });
 }
