@@ -2,10 +2,12 @@
 
 将不同来源的原始质量码统一映射为 Good/Bad/Unknown 三态。
 
-支持两种质量码 schema（项目约束）：
-    - TDengine schema: 1 = Good, 0 = Bad
+支持的质量码 schema（项目约束）：
+    - TDengine schema: 1 = Good, 0 = Bad（当前主数据源）
     - OPC DA: 192 (0xC0) = Good
-    - OPC UA（算法说明 §4.1.2）: 2 = Good, 3 = Good_Cascaded, 1 = Uncertain, 0 = Bad
+    - OPC UA（算法说明 §4.1.2）: 2 = Good, 3 = Good_Cascaded, 0 = Bad
+      注：OPC UA 中 1 = Uncertain，但本项目 TDengine 为主数据源（1 = Good），
+      故 1 统一归入 Good 集合，参见下方 _GOOD_CODES 说明。
 
 设计依据：算法说明 §4.1.2, PRD §5.5.1, FDS §5.3.1.2
 """
@@ -17,10 +19,15 @@ from typing import Any
 
 from app.contracts.data_types import QualityStatus
 
-# Good 质量码集合：兼容 TDengine(1) / OPC DA(192) / OPC UA(2,3)
+# Good 质量码集合：
+#   1   — TDengine Good（主数据源）
+#   2   — OPC UA Good
+#   3   — OPC UA Good_Cascaded
+#   192 — OPC DA Good (0xC0)
 _GOOD_CODES: frozenset[int] = frozenset({1, 2, 3, 192})
 
-# Bad 质量码集合：TDengine(0) / OPC UA(0)
+# Bad 质量码集合：
+#   0   — TDengine Bad / OPC UA Bad
 _BAD_CODES: frozenset[int] = frozenset({0})
 
 
