@@ -27,7 +27,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import {
   Alert,
   Button,
-  Card,
   Input,
   Modal,
   RadioGroup,
@@ -43,6 +42,14 @@ import {
   getLoopMonitorDetailApi,
   getLoopMonitorListApi,
 } from '#/api/loop';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  type KpiStripItem,
+  type SummaryItem,
+} from '#/components/clpm';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { flattenNodes } from '#/utils/plant-node';
@@ -259,6 +266,51 @@ const { renderEcharts: renderGaugeChart } = useEcharts(gaugeChartRef);
 // ===== 当前操作的回路 =====
 
 const currentRecord = ref<LoopApi.MonitorListItem | null>(null);
+const selectedLoop = ref<LoopApi.MonitorListItem | null>(null);
+
+const summaryItems = computed<SummaryItem[]>(() => {
+  if (!selectedLoop.value) return [];
+  return [
+    {
+      key: 'mode',
+      label: '控制方式',
+      value: modeText(selectedLoop.value),
+      status: modeText(selectedLoop.value) === 'Auto' ? 'success' : 'warning',
+    },
+    {
+      key: 'score',
+      label: '性能指数',
+      value: selectedLoop.value.score?.toFixed(1) ?? '—',
+      status:
+        selectedLoop.value.score >= 80
+          ? 'success'
+          : selectedLoop.value.score >= 60
+            ? 'warning'
+            : 'danger',
+    },
+    {
+      key: 'readAt',
+      label: '最近读取',
+      value: formatTime(selectedLoop.value.readAt),
+      status: 'neutral',
+    },
+  ];
+});
+
+const monitorKpiItems = computed<KpiStripItem[]>(() => {
+  if (!selectedLoop.value?.kpiSummary) return [];
+  const summary = selectedLoop.value.kpiSummary;
+  return [
+    { key: 'good', label: '好值率', value: summary.good_value_rate?.toFixed(1) ?? '—', unit: '%', status: summary.good_value_rate >= 80 ? 'success' : summary.good_value_rate >= 60 ? 'warning' : 'danger' },
+    { key: 'auto', label: '自控率', value: summary.auto_mode_rate?.toFixed(1) ?? '—', unit: '%', status: summary.auto_mode_rate >= 80 ? 'success' : summary.auto_mode_rate >= 60 ? 'warning' : 'danger' },
+    { key: 'effective', label: '有效自控率', value: summary.effective_auto_rate?.toFixed(1) ?? '—', unit: '%', status: summary.effective_auto_rate >= 80 ? 'success' : summary.effective_auto_rate >= 60 ? 'warning' : 'danger' },
+    { key: 'steady', label: '平稳率', value: summary.steady_rate?.toFixed(1) ?? '—', unit: '%', status: summary.steady_rate >= 80 ? 'success' : summary.steady_rate >= 60 ? 'warning' : 'danger' },
+  ];
+});
+
+function handleSelectLoop(record: LoopApi.MonitorListItem) {
+  selectedLoop.value = record;
+}
 
 // ===== 工具函数 =====
 
@@ -514,10 +566,9 @@ onUnmounted(() => {
 
 <template>
   <Page title="回路监控">
-    <Card>
-      <!-- 筛选区 -->
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-3">
+    <div class="flex min-h-[calc(100vh-160px)] gap-3">
+      <ClpmDataCanvas class="w-[320px] flex-shrink-0" title="筛选与刷新">
+        <ClpmPageToolbar title="回路监控" subtitle="列表 + 摘要 + 趋势主画布" compact>
           <Select
             v-model:value="query.plantNodeId"
             placeholder="按装置/单元筛选"
@@ -525,9 +576,7 @@ onUnmounted(() => {
             allow-clear
             show-search
             :options="plantNodeOptions"
-            :filter-option="
-              (input: string, option: any) => option.label.includes(input)
-            "
+            :filter-option="(input: string, option: any) => option.label.includes(input)"
             @change="handleSearch"
           />
           <Select
@@ -542,139 +591,151 @@ onUnmounted(() => {
             v-model:value="query.keyword"
             placeholder="搜索位号/描述"
             allow-clear
-            style="width: 240px"
+            style="width: 220px"
             @press-enter="handleSearch"
           />
-          <Button type="primary" @click="handleSearch">查询</Button>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-500">
-            自动刷新（{{ refreshInterval }}s）
-          </span>
+          <template #actions>
+            <Button type="primary" @click="handleSearch">查询</Button>
+            <Button size="small" :loading="loading" @click="loadList">刷新</Button>
+          </template>
+        </ClpmPageToolbar>
+        <div class="mt-3 flex items-center gap-2 text-sm text-gray-500">
+          <span>自动刷新（{{ refreshInterval }}s）</span>
           <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
-          <span
-            v-if="autoRefresh"
-            class="text-xs text-gray-400"
-            style="min-width: 56px"
+          <span v-if="autoRefresh" class="text-xs text-gray-400">{{ countdown }}s 后刷新</span>
+        </div>
+      </ClpmDataCanvas>
+
+      <div class="flex min-w-0 flex-1 flex-col gap-3">
+        <div class="flex min-h-0 flex-1 gap-3">
+          <ClpmDataCanvas class="min-w-0 flex-1" title="回路列表" :loading="loading">
+            <Table
+              :columns="columns"
+              :data-source="monitorList"
+              :loading="loading"
+              :pagination="{
+                current: query.page,
+                pageSize: query.pageSize,
+                total,
+                showSizeChanger: true,
+                pageSizeOptions: ['20', '50', '100'],
+                showTotal: (t: number) => `共 ${t} 条`,
+              }"
+              :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
+              :scroll="{ x: 1200 }"
+              size="middle"
+              :row-class-name="(record) => selectedLoop?.loopId === record.loopId ? 'ant-table-row-selected cursor-pointer' : 'cursor-pointer'"
+              :custom-row="(record) => ({ onClick: () => handleSelectLoop(record as LoopApi.MonitorListItem) })"
+              @change="handleTableChange"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'loopType'">
+                  <Tag
+                    :color="
+                      LOOP_TYPE_MAP[
+                        (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
+                      ]?.color ?? 'default'
+                    "
+                    class="m-0"
+                  >
+                    {{
+                      LOOP_TYPE_MAP[
+                        (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
+                      ]?.label ?? '其他'
+                    }}
+                  </Tag>
+                </template>
+                <template v-else-if="column.key === 'sp'">
+                  {{
+                    formatValueWithUnit(
+                      (record as LoopApi.MonitorListItem).currentValues?.sp,
+                      (record as LoopApi.MonitorListItem).currentValues?.unit,
+                    )
+                  }}
+                </template>
+                <template v-else-if="column.key === 'pv'">
+                  <span class="font-medium text-blue-600">
+                    {{
+                      formatValueWithUnit(
+                        (record as LoopApi.MonitorListItem).currentValues?.pv,
+                        (record as LoopApi.MonitorListItem).currentValues?.unit,
+                      )
+                    }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'op'">
+                  {{ formatOp((record as LoopApi.MonitorListItem).currentValues?.op) }}
+                </template>
+                <template v-else-if="column.key === 'mode'">
+                  <Tag
+                    v-if="
+                      (record as LoopApi.MonitorListItem).currentValues?.modeLabel ||
+                      (record as LoopApi.MonitorListItem).currentValues?.mode != null
+                    "
+                    :color="modeColor((record as LoopApi.MonitorListItem).currentValues?.modeLabel)"
+                  >
+                    {{ modeText(record as LoopApi.MonitorListItem) }}
+                  </Tag>
+                  <span v-else class="text-gray-400">—</span>
+                </template>
+                <template v-else-if="column.key === 'score'">
+                  <span
+                    v-if="(record as LoopApi.MonitorListItem).score != null"
+                    class="font-medium"
+                  >
+                    {{ (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—' }}
+                  </span>
+                  <span v-else class="text-gray-400">—</span>
+                </template>
+                <template v-else-if="column.key === 'action'">
+                  <div class="flex gap-1">
+                    <Button
+                      type="link"
+                      size="small"
+                      @click="openTrend(record as LoopApi.MonitorListItem)"
+                    >
+                      趋势
+                    </Button>
+                    <Button
+                      type="link"
+                      size="small"
+                      @click="openPerformance(record as LoopApi.MonitorListItem)"
+                    >
+                      性能
+                    </Button>
+                    <Button
+                      type="link"
+                      size="small"
+                      @click="viewDetail(record as LoopApi.MonitorListItem)"
+                    >
+                      详情
+                    </Button>
+                  </div>
+                </template>
+              </template>
+            </Table>
+          </ClpmDataCanvas>
+
+          <ClpmDataCanvas
+            class="w-[420px] min-w-0"
+            title="选中回路摘要"
+            :empty="!selectedLoop"
+            empty-text="点击左侧回路查看摘要"
           >
-            {{ countdown }}s 后刷新
-          </span>
-          <Button size="small" :loading="loading" @click="loadList">
-            手动刷新
-          </Button>
+            <template v-if="selectedLoop">
+              <ClpmObjectSummaryBar
+                :title="selectedLoop.tagName"
+                :subtitle="`${selectedLoop.description} · ${selectedLoop.unitName}`"
+                :items="summaryItems"
+              />
+              <div v-if="monitorKpiItems.length" class="mt-3">
+                <ClpmKpiStrip :items="monitorKpiItems" />
+              </div>
+            </template>
+          </ClpmDataCanvas>
         </div>
       </div>
-
-      <Table
-        :columns="columns"
-        :data-source="monitorList"
-        :loading="loading"
-        :pagination="{
-          current: query.page,
-          pageSize: query.pageSize,
-          total,
-          showSizeChanger: true,
-          pageSizeOptions: ['20', '50', '100'],
-          showTotal: (t: number) => `共 ${t} 条`,
-        }"
-        :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
-        :scroll="{ x: 1200 }"
-        size="middle"
-        @change="handleTableChange"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'loopType'">
-            <Tag
-              :color="
-                LOOP_TYPE_MAP[
-                  (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
-                ]?.color ?? 'default'
-              "
-              class="m-0"
-            >
-              {{
-                LOOP_TYPE_MAP[
-                  (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
-                ]?.label ?? '其他'
-              }}
-            </Tag>
-          </template>
-          <template v-else-if="column.key === 'sp'">
-            {{
-              formatValueWithUnit(
-                (record as LoopApi.MonitorListItem).currentValues?.sp,
-                (record as LoopApi.MonitorListItem).currentValues?.unit,
-              )
-            }}
-          </template>
-          <template v-else-if="column.key === 'pv'">
-            <span class="font-medium text-blue-600">
-              {{
-                formatValueWithUnit(
-                  (record as LoopApi.MonitorListItem).currentValues?.pv,
-                  (record as LoopApi.MonitorListItem).currentValues?.unit,
-                )
-              }}
-            </span>
-          </template>
-          <template v-else-if="column.key === 'op'">
-            {{
-              formatOp((record as LoopApi.MonitorListItem).currentValues?.op)
-            }}
-          </template>
-          <template v-else-if="column.key === 'mode'">
-            <Tag
-              v-if="
-                (record as LoopApi.MonitorListItem).currentValues?.modeLabel ||
-                (record as LoopApi.MonitorListItem).currentValues?.mode != null
-              "
-              :color="
-                modeColor(
-                  (record as LoopApi.MonitorListItem).currentValues?.modeLabel,
-                )
-              "
-            >
-              {{ modeText(record as LoopApi.MonitorListItem) }}
-            </Tag>
-            <span v-else class="text-gray-400">—</span>
-          </template>
-          <template v-else-if="column.key === 'score'">
-            <span
-              v-if="(record as LoopApi.MonitorListItem).score != null"
-              class="font-medium"
-            >
-              {{ (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—' }}
-            </span>
-            <span v-else class="text-gray-400">—</span>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <div class="flex gap-1">
-              <Button
-                type="link"
-                size="small"
-                @click="openTrend(record as LoopApi.MonitorListItem)"
-              >
-                趋势
-              </Button>
-              <Button
-                type="link"
-                size="small"
-                @click="openPerformance(record as LoopApi.MonitorListItem)"
-              >
-                性能
-              </Button>
-              <Button
-                type="link"
-                size="small"
-                @click="viewDetail(record as LoopApi.MonitorListItem)"
-              >
-                详情
-              </Button>
-            </div>
-          </template>
-        </template>
-      </Table>
-    </Card>
+    </div>
 
     <!-- 趋势 Modal -->
     <Modal

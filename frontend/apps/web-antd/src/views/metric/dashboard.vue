@@ -16,7 +16,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { KpiStatus, MetricApi, TimeWindow } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -24,7 +24,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import {
   Alert,
   Button,
-  Card,
   Input,
   Select,
   Table,
@@ -36,6 +35,12 @@ import {
   getRankingApi,
   getRealtimeAutoRateApi,
 } from '#/api/metric';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+  type KpiStripItem,
+} from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import AutoRateGauge from '#/components/metric/auto-rate-gauge.vue';
 
@@ -73,12 +78,6 @@ const timeWindowOptions = [
 const filter = reactive({
   timeWindow: 'today' as TimeWindow,
 });
-
-const statusColorMap: Record<KpiStatus, string> = {
-  SUCCESS: '#52c41a',
-  INCONCLUSIVE: '#d9d9d9',
-  PARTIAL: '#faad14',
-};
 
 const statusLabelMap: Record<KpiStatus, string> = {
   SUCCESS: '良好',
@@ -149,6 +148,21 @@ const rankingColumns: TableColumnsType = [
     align: 'center',
   },
 ];
+
+const kpiStripItems = computed<KpiStripItem[]>(() =>
+  (boardData.value?.kpiCards || []).map((card) => ({
+    key: card.metricKey,
+    label: card.metricName,
+    status:
+      card.status === 'SUCCESS'
+        ? 'success'
+        : card.status === 'PARTIAL'
+          ? 'warning'
+          : 'neutral',
+    unit: card.unit,
+    value: card.value?.toFixed(1) ?? '--',
+  })),
+);
 
 // ECharts 趋势图
 const trendChartRef = ref<EchartsUIType>();
@@ -336,7 +350,6 @@ onUnmounted(() => {
 
 <template>
   <Page title="性能看板">
-    <!-- Partial 警告横幅 -->
     <Alert
       v-if="boardData?.partialWarning?.active"
       class="mb-3"
@@ -347,41 +360,33 @@ onUnmounted(() => {
     />
 
     <div class="flex gap-3" style="min-height: calc(100vh - 160px)">
-      <!-- 左侧工厂树（统一组件） -->
       <PlantNodeTree
         card-title="工厂导航"
         :width="260"
         @select="onTreeSelect"
       />
 
-      <!-- 右侧主区域 -->
       <div class="flex flex-1 flex-col gap-3">
-        <!-- 顶部：时间窗 + 节点信息 -->
-        <Card size="small" :body-style="{ padding: '8px 12px' }">
-          <div class="flex flex-wrap items-center gap-3">
-            <span class="text-sm font-medium">{{ selectedPlantNodeName }}</span>
-            <Select
-              v-model:value="filter.timeWindow"
-              style="width: 140px"
-              size="small"
-              :options="timeWindowOptions"
-              @change="handleTimeWindowChange"
-            />
-            <Button
-              type="primary"
-              size="small"
-              :loading="loading"
-              @click="loadAll"
-            >
+        <ClpmPageToolbar
+          title="性能驾驶舱"
+          :subtitle="`${selectedPlantNodeName} · ${timeWindowOptions.find((o) => o.value === filter.timeWindow)?.label ?? '今天'}`"
+        >
+          <Select
+            v-model:value="filter.timeWindow"
+            style="width: 140px"
+            size="small"
+            :options="timeWindowOptions"
+            @change="handleTimeWindowChange"
+          />
+          <template #actions>
+            <Button type="primary" size="small" :loading="loading" @click="loadAll">
               刷新
             </Button>
-            <span class="ml-auto text-xs text-gray-400">每 5 分钟自动刷新</span>
-          </div>
-        </Card>
+            <span class="text-xs text-gray-400">每 5 分钟自动刷新</span>
+          </template>
+        </ClpmPageToolbar>
 
-        <!-- 右上：实时自控率仪表盘 + KPI 卡片 -->
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <!-- 仪表盘 -->
           <div class="lg:col-span-1">
             <AutoRateGauge
               :auto-count="realtimeAutoRate?.autoCount ?? 0"
@@ -396,90 +401,22 @@ onUnmounted(() => {
             />
           </div>
 
-          <!-- 整点 KPI 卡片 -->
-          <Card
+          <ClpmDataCanvas
             class="lg:col-span-2"
-            size="small"
-            :body-style="{ padding: '12px' }"
+            title="整点 KPI"
+            description="核心指标按当前时间窗聚合展示，支持部分有效和不确定状态。"
+            :loading="loading"
           >
-            <div class="mb-2 text-sm font-medium">整点 KPI</div>
-            <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
-              <div
-                v-for="card in boardData?.kpiCards || []"
-                :key="card.metricKey"
-                class="rounded border p-2"
-                :body-style="{ padding: '8px' }"
-              >
-                <div class="mb-1 flex items-center justify-between">
-                  <span class="text-xs text-gray-500">{{
-                    card.metricName
-                  }}</span>
-                  <span
-                    class="inline-block h-2 w-2 rounded-full"
-                    :style="{ backgroundColor: statusColorMap[card.status] }"
-                  ></span>
-                </div>
-                <div class="flex items-baseline gap-1">
-                  <span
-                    class="text-xl font-bold"
-                    :style="{ color: statusColorMap[card.status] }"
-                  >
-                    {{ card.value?.toFixed(1) ?? '--' }}
-                  </span>
-                  <span class="text-xs text-gray-400">{{ card.unit }}</span>
-                </div>
-                <div class="mt-1 flex items-center justify-between">
-                  <span
-                    class="text-xs"
-                    :style="{ color: statusColorMap[card.status] }"
-                  >
-                    {{ statusLabelMap[card.status] }}
-                  </span>
-                  <span class="text-xs text-gray-400">{{
-                    card.algorithmVersion
-                  }}</span>
-                </div>
-              </div>
-              <!-- 实时自控率卡片 -->
-              <div class="rounded border border-blue-100 bg-blue-50 p-2">
-                <div class="mb-1 flex items-center justify-between">
-                  <span class="text-xs text-gray-500">实时自控率</span>
-                  <span
-                    class="inline-block h-2 w-2 rounded-full"
-                    style="background-color: #52c41a"
-                  ></span>
-                </div>
-                <div class="flex items-baseline gap-1">
-                  <span
-                    class="text-xl font-bold"
-                    :style="{
-                      color: scoreColor(realtimeAutoRate?.autoRate ?? 0),
-                    }"
-                  >
-                    {{ realtimeAutoRate?.autoRate?.toFixed(1) ?? '--' }}
-                  </span>
-                  <span class="text-xs text-gray-400">%</span>
-                </div>
-                <div class="mt-1 text-xs text-gray-500">
-                  自动 {{ realtimeAutoRate?.autoCount ?? 0 }} / 总
-                  {{ realtimeAutoRate?.totalCount ?? 0 }}
-                </div>
-              </div>
-            </div>
-          </Card>
+            <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
+          </ClpmDataCanvas>
         </div>
 
-        <!-- 右中：平稳率趋势 -->
-        <Card title="平稳率趋势" size="small" :loading="loading">
+        <ClpmDataCanvas title="平稳率趋势" :loading="loading">
           <EchartsUI ref="trendChartRef" height="240px" />
-        </Card>
+        </ClpmDataCanvas>
 
-        <!-- 右下：详细列表 -->
-        <Card size="small" :body-style="{ padding: '12px' }">
-          <template #title>
-            <span class="text-sm">详细列表</span>
-          </template>
-          <div class="mb-3 flex flex-wrap items-center gap-2">
+        <ClpmDataCanvas title="详细列表" :loading="rankingLoading">
+          <template #extra>
             <Select
               v-model:value="rankingQuery.level"
               placeholder="等级筛选"
@@ -500,7 +437,7 @@ onUnmounted(() => {
             <Button type="primary" size="small" @click="handleRankingSearch">
               查询
             </Button>
-          </div>
+          </template>
           <Table
             :columns="rankingColumns"
             :data-source="rankingList"
@@ -521,9 +458,7 @@ onUnmounted(() => {
               <template v-if="column.key === 'rank'">
                 <Tag
                   v-if="record.rank <= 3"
-                  :color="
-                    ['red', 'orange', 'gold'][record.rank - 1] ?? 'default'
-                  "
+                  :color="['red', 'orange', 'gold'][record.rank - 1] ?? 'default'"
                   class="m-0"
                 >
                   {{ record.rank }}
@@ -559,14 +494,12 @@ onUnmounted(() => {
                   "
                   class="m-0"
                 >
-                  {{
-                    statusLabelMap[record.status as KpiStatus] || record.status
-                  }}
+                  {{ statusLabelMap[record.status as KpiStatus] || record.status }}
                 </Tag>
               </template>
             </template>
           </Table>
-        </Card>
+        </ClpmDataCanvas>
       </div>
     </div>
   </Page>
