@@ -1,13 +1,12 @@
 <script lang="ts" setup>
 /**
- * S4-DIAG 诊断详情页（FE-12 三段式重构）
+ * S4-DIAG 诊断详情页（C3 布局重构）
  *
  * 对齐 FDS §5.4 + IDS v3.2 §2.4 + PRD §4.4
- * - 三段式结构（FE-12）：
- *   1. 问题定位路径：诊断标签 + 置信度 + 推理过程
- *   2. 证据链：时序波形 + PV-OP 散点图 + 特征值
- *   3. 解决方案推荐：优先级排序的建议列表（FE-13）
- * - 顶部：回路基本信息 + 综合评分 + 融合置信度 + 时间窗切换
+ * - 主区 65/35 左右分栏：
+ *   - 左侧 65%：趋势图（WaveformChart）+ PV-OP 散点图 + 证据链
+ *   - 右侧 35%：问题定位路径 + 推荐动作 + 跟踪状态
+ * - 顶部：回路基本信息 + 综合评分 + 融合置信度 + 风险等级 + 处理状态 + 时间窗切换
  * - FE-14：诊断建议书 PDF 导出按钮
  * - 异常跟踪以 Drawer 形式打开（与 P1-2 约定接口）
  */
@@ -21,28 +20,26 @@ import { useRoute, useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import {
-  Button,
-  message,
-  Spin,
-  Steps,
-  Tag,
-} from 'ant-design-vue';
+import { message, Spin, Steps, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
   generateDiagnosisReportApi,
   getDiagnosisDetailApi,
   getRecommendationsApi,
+  getTrackerListApi,
   getWaveformApi,
 } from '#/api/diagnosis';
 import {
   ClpmDataCanvas,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
+  ClpmToolbarButton,
+  type SummaryAction,
   type SummaryItem,
 } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
+import WaveformChart from '#/components/loop/waveform-chart.vue';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
@@ -63,6 +60,7 @@ const reportGenerating = ref(false);
 const detail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
 const waveform = ref<DiagnosisApi.WaveformResult | null>(null);
 const recommendations = ref<DiagnosisApi.RecommendationItem[]>([]);
+const trackerStatus = ref<DiagnosisApi.ActionStatus | null>(null);
 const timeWindow = ref<DiagnosisApi.TimeWindow>('last_24_hours');
 
 /** 异常跟踪 Drawer 可见性 */
@@ -83,15 +81,48 @@ const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 const scatterChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderScatter } = useEcharts(scatterChartRef);
 
-// 时序波形 ECharts
-const waveformChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderWaveform } = useEcharts(waveformChartRef);
-
 const pageTitle = computed(() => {
   if (detail.value?.tagName) {
     return `诊断详情 - ${detail.value.tagName}`;
   }
   return '诊断详情';
+});
+
+/** 风险等级：基于综合评分推导（< 60 HIGH，60-80 MEDIUM，>= 80 LOW） */
+const riskLevel = computed<{
+  label: string;
+  status: SummaryItem['status'];
+}>(() => {
+  const score = detail.value?.compositeScore ?? 0;
+  if (score < 60) return { label: 'HIGH', status: 'danger' };
+  if (score < 80) return { label: 'MEDIUM', status: 'warning' };
+  return { label: 'LOW', status: 'primary' };
+});
+
+/** 处理状态文案与色彩 */
+const trackerStatusTag = computed<{
+  label: string;
+  status: SummaryItem['status'];
+}>(() => {
+  const labelMap: Record<DiagnosisApi.ActionStatus, string> = {
+    PENDING: '待处理',
+    IN_PROGRESS: '处理中',
+    IMPLEMENTED: '已实施',
+    IGNORED: '已忽略',
+  };
+  const statusMap: Record<DiagnosisApi.ActionStatus, SummaryItem['status']> = {
+    PENDING: 'warning',
+    IN_PROGRESS: 'primary',
+    IMPLEMENTED: 'success',
+    IGNORED: 'neutral',
+  };
+  if (!trackerStatus.value) {
+    return { label: '未跟踪', status: 'neutral' };
+  }
+  return {
+    label: labelMap[trackerStatus.value],
+    status: statusMap[trackerStatus.value],
+  };
 });
 
 const summaryItems = computed<SummaryItem[]>(() => {
@@ -120,10 +151,34 @@ const summaryItems = computed<SummaryItem[]>(() => {
             : 'danger',
     },
     {
+      key: 'risk',
+      label: '风险等级',
+      value: riskLevel.value.label,
+      status: riskLevel.value.status,
+    },
+    {
+      key: 'trackerStatus',
+      label: '处理状态',
+      value: trackerStatusTag.value.label,
+      status: trackerStatusTag.value.status,
+    },
+    {
       key: 'time',
       label: '诊断时间',
       value: formatTime(detail.value.diagnosedAt),
       status: 'neutral',
+    },
+  ];
+});
+
+/** 摘要条右侧操作（异常跟踪） */
+const summaryActions = computed<SummaryAction[]>(() => {
+  return [
+    {
+      key: 'track',
+      label: '异常跟踪',
+      icon: 'ant-design:flag-outlined',
+      type: 'primary',
     },
   ];
 });
@@ -192,9 +247,10 @@ async function loadDetail() {
     const data = await getDiagnosisDetailApi(loopId, timeWindow.value);
     detail.value = data;
     renderScatterChart();
-    // 详情加载成功后并行加载波形数据和推荐方案
+    // 详情加载成功后并行加载波形数据、推荐方案、跟踪状态
     loadWaveform();
     loadRecommendations();
+    loadTrackerStatus();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -215,7 +271,6 @@ async function loadWaveform() {
       maxPoints: 2000,
     });
     waveform.value = data;
-    renderWaveformChart();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -234,6 +289,17 @@ async function loadRecommendations() {
     // 错误已由拦截器处理
   } finally {
     recommendationsLoading.value = false;
+  }
+}
+
+/** 加载异常跟踪状态（复用 /diagnosis/list 端点） */
+async function loadTrackerStatus() {
+  if (!loopId) return;
+  try {
+    const res = await getTrackerListApi({ loopId, page: 1, pageSize: 1 });
+    trackerStatus.value = res.items[0]?.actionStatus ?? null;
+  } catch {
+    // 错误已由拦截器处理
   }
 }
 
@@ -259,92 +325,22 @@ async function handleGenerateReport() {
   }
 }
 
-/** 渲染时序波形图（PV/SP/OP 三条线） */
-function renderWaveformChart() {
-  const data = waveform.value;
-  if (!data || !data.timestamps || data.timestamps.length === 0) {
-    renderWaveform({
-      title: { left: 'center', text: '暂无波形数据' },
-    });
-    return;
+/** 刷新（重新加载全部数据） */
+function handleRefresh() {
+  loadDetail();
+}
+
+/** 摘要条操作点击 */
+function handleSummaryAction(key: string) {
+  if (key === 'track') {
+    trackerDrawerVisible.value = true;
   }
+}
 
-  const { timestamps, pv, sp, op } = data;
-  const enableDataZoom = timestamps.length > 1000;
-
-  renderWaveform({
-    backgroundColor: 'transparent',
-    dataZoom: enableDataZoom
-      ? [
-          { end: 100, start: 0, type: 'inside' },
-          { end: 100, start: 0, type: 'slider' },
-        ]
-      : [],
-    grid: {
-      bottom: enableDataZoom ? 60 : 30,
-      containLabel: true,
-      left: '2%',
-      right: '2%',
-      top: 50,
-    },
-    legend: {
-      data: ['PV', 'SP', 'OP'],
-      top: 5,
-    },
-    series: [
-      {
-        connectNulls: false,
-        data: pv,
-        itemStyle: { color: '#ff4d4f' },
-        lineStyle: { width: 2 },
-        name: 'PV',
-        showSymbol: false,
-        type: 'line',
-      },
-      {
-        connectNulls: false,
-        data: sp,
-        itemStyle: { color: '#1890ff' },
-        lineStyle: { width: 1.5 },
-        name: 'SP',
-        showSymbol: false,
-        type: 'line',
-      },
-      {
-        connectNulls: false,
-        data: op,
-        itemStyle: { color: '#52c41a' },
-        lineStyle: { width: 1.5 },
-        name: 'OP',
-        showSymbol: false,
-        type: 'line',
-      },
-    ],
-    tooltip: {
-      axisPointer: { type: 'cross' },
-      trigger: 'axis',
-      valueFormatter: (val) =>
-        val === null || val === undefined ? '—' : Number(val).toFixed(3),
-    },
-    xAxis: {
-      axisLabel: {
-        formatter: (val: string) => {
-          const d = new Date(Number(val));
-          const hh = String(d.getHours()).padStart(2, '0');
-          const mm = String(d.getMinutes()).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          const mo = String(d.getMonth() + 1).padStart(2, '0');
-          return `${mo}-${dd} ${hh}:${mm}`;
-        },
-      },
-      data: timestamps,
-      type: 'category',
-    },
-    yAxis: {
-      axisLabel: { formatter: '{value}' },
-      type: 'value',
-    },
-  });
+/** 跟踪 Drawer 关闭后刷新跟踪状态 */
+function handleTrackerClose() {
+  trackerDrawerVisible.value = false;
+  loadTrackerStatus();
 }
 
 /** 渲染散点图（证据链中的 PV-OP 散点） */
@@ -451,7 +447,10 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar :title="pageTitle" :subtitle="detail?.tagName || '诊断证据与处置'">
+    <ClpmPageToolbar
+      :title="pageTitle"
+      :subtitle="detail?.tagName || '诊断证据与处置'"
+    >
       <a-radio-group
         v-model:value="timeWindow"
         :options="timeWindowOptions"
@@ -460,11 +459,20 @@ onMounted(() => {
         size="small"
       />
       <template #actions>
-        <Button size="small" @click="handleBack">返回</Button>
-        <Button size="small" @click="router.push('/diagnosis/list')">诊断列表</Button>
-        <Button type="primary" :loading="reportGenerating" @click="handleGenerateReport">
-          下载建议书 PDF
-        </Button>
+        <ClpmToolbarButton
+          icon="track"
+          label="加入跟踪"
+          variant="primary"
+          @click="trackerDrawerVisible = true"
+        />
+        <ClpmToolbarButton
+          icon="export"
+          label="导出报告"
+          :loading="reportGenerating"
+          @click="handleGenerateReport"
+        />
+        <ClpmToolbarButton icon="refresh" label="刷新" @click="handleRefresh" />
+        <ClpmToolbarButton icon="back" label="返回" @click="handleBack" />
       </template>
     </ClpmPageToolbar>
     <Spin :spinning="loading">
@@ -474,98 +482,149 @@ onMounted(() => {
           :title="detail.tagName"
           :subtitle="`回路 ID ${detail.loopId} · 算法 ${detail.algorithmVersion}`"
           :items="summaryItems"
-        >
-          <template #actions>
-            <Button type="primary" @click="trackerDrawerVisible = true">异常跟踪</Button>
-          </template>
-        </ClpmObjectSummaryBar>
+          :actions="summaryActions"
+          @action="handleSummaryAction"
+        />
 
-        <ClpmDataCanvas title="问题定位路径" description="诊断标签、置信度和推理证据按定位路径组织。">
-          <Steps
-            :current="currentStep"
-            :items="problemPathSteps"
-            direction="vertical"
-            size="small"
-          />
-          <div
-            v-if="detail && detail.diagnosisLabels.length > 0"
-            class="mt-4 space-y-3"
-          >
-            <div
-              v-for="(item, idx) in detail.diagnosisLabels"
-              :key="idx"
-              class="rounded border p-3"
+        <!-- 主区 65/35 左右分栏 -->
+        <div class="flex gap-4">
+          <!-- 左侧 65%：趋势图 + PV-OP 散点图 + 证据链 -->
+          <div class="w-2/3 min-w-0 space-y-4">
+            <ClpmDataCanvas
+              title="证据链"
+              description="时序波形与 PV-OP 散点图优先展示算法证据。"
             >
-              <div class="mb-2 flex items-center gap-3">
-                <Tag :color="labelColorMap[item.label]">
-                  {{ item.labelName || labelNameMap[item.label] }}
-                </Tag>
-                <span class="text-sm text-gray-500">
-                  置信度：
-                  <span class="font-medium text-blue-600">
-                    {{ Number(item.confidence).toFixed(2) }}
-                  </span>
-                </span>
-                <span class="text-sm text-gray-500">算法：{{ item.algorithm }}</span>
-              </div>
-              <div class="text-xs text-gray-500">
-                <span class="font-medium">证据：</span>
-                <pre class="mt-1 whitespace-pre-wrap text-xs">{{
-                  formatEvidence(item.evidence)
-                }}</pre>
-              </div>
-            </div>
-          </div>
-        </ClpmDataCanvas>
+              <ClpmDataCanvas title="时序波形" :loading="waveformLoading">
+                <WaveformChart
+                  v-if="waveform"
+                  :trend="waveform"
+                  height="320px"
+                />
+                <div v-else class="py-12 text-center text-gray-400">
+                  暂无波形数据
+                </div>
+              </ClpmDataCanvas>
 
-        <ClpmDataCanvas title="证据链" description="时序波形与 PV-OP 散点图优先展示算法证据。">
-          <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ClpmDataCanvas title="时序波形" :loading="waveformLoading">
-              <EchartsUI ref="waveformChartRef" height="320px" />
-            </ClpmDataCanvas>
-            <ClpmDataCanvas title="PV-OP 散点图">
-              <EchartsUI ref="scatterChartRef" height="320px" />
-            </ClpmDataCanvas>
-          </div>
+              <ClpmDataCanvas title="PV-OP 散点图" class="mt-4">
+                <EchartsUI ref="scatterChartRef" height="320px" />
+              </ClpmDataCanvas>
 
-          <div v-if="detail" class="mt-4 space-y-3">
-            <div v-if="detail.evidenceChain?.reasoning">
-              <div class="mb-2 font-medium">推理过程</div>
-              <div class="rounded border bg-gray-50 p-3 text-sm">
-                {{ detail.evidenceChain.reasoning }}
+              <div v-if="detail" class="mt-4 space-y-3">
+                <div v-if="detail.evidenceChain?.reasoning">
+                  <div class="mb-2 font-medium">推理过程</div>
+                  <div class="rounded border bg-gray-50 p-3 text-sm">
+                    {{ detail.evidenceChain.reasoning }}
+                  </div>
+                </div>
+                <div v-else class="py-4 text-center text-gray-400">
+                  暂无推理过程
+                </div>
               </div>
-            </div>
-            <div v-else class="py-4 text-center text-gray-400">暂无推理过程</div>
-          </div>
 
-          <div class="mt-4">
-            <div class="mb-2 font-medium">特征值</div>
-            <div v-if="detail && featureEntries(detail.featureValues).length > 0">
-              <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+              <div class="mt-4">
+                <div class="mb-2 font-medium">特征值</div>
                 <div
-                  v-for="item in featureEntries(detail.featureValues)"
-                  :key="item.key"
-                  class="rounded border p-3 text-center"
+                  v-if="detail && featureEntries(detail.featureValues).length > 0"
                 >
-                  <div class="text-xs text-gray-500">{{ item.key }}</div>
-                  <div class="mt-1 text-lg font-medium">
-                    {{ Number(item.value).toFixed(4) }}
+                  <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                    <div
+                      v-for="item in featureEntries(detail.featureValues)"
+                      :key="item.key"
+                      class="rounded border p-3 text-center"
+                    >
+                      <div class="text-xs text-gray-500">{{ item.key }}</div>
+                      <div class="mt-1 text-lg font-medium">
+                        {{ Number(item.value).toFixed(4) }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="py-4 text-center text-gray-400">
+                  暂无特征值
+                </div>
+              </div>
+            </ClpmDataCanvas>
+          </div>
+
+          <!-- 右侧 35%：诊断结论 + 推荐动作 + 跟踪状态 -->
+          <div class="w-1/3 min-w-0 space-y-4">
+            <ClpmDataCanvas
+              title="问题定位路径"
+              description="诊断标签、置信度和推理证据按定位路径组织。"
+            >
+              <Steps
+                :current="currentStep"
+                :items="problemPathSteps"
+                direction="vertical"
+                size="small"
+              />
+              <div
+                v-if="detail && detail.diagnosisLabels.length > 0"
+                class="mt-4 space-y-3"
+              >
+                <div
+                  v-for="(item, idx) in detail.diagnosisLabels"
+                  :key="idx"
+                  class="rounded border p-3"
+                >
+                  <div class="mb-2 flex flex-wrap items-center gap-3">
+                    <Tag :color="labelColorMap[item.label]">
+                      {{ item.labelName || labelNameMap[item.label] }}
+                    </Tag>
+                    <span class="text-sm text-gray-500">
+                      置信度：
+                      <span class="font-medium text-blue-600">
+                        {{ Number(item.confidence).toFixed(2) }}
+                      </span>
+                    </span>
+                    <span class="text-sm text-gray-500">
+                      算法：{{ item.algorithm }}
+                    </span>
+                  </div>
+                  <div class="text-xs text-gray-500">
+                    <span class="font-medium">证据：</span>
+                    <pre class="mt-1 whitespace-pre-wrap text-xs">{{
+                      formatEvidence(item.evidence)
+                    }}</pre>
                   </div>
                 </div>
               </div>
-            </div>
-            <div v-else class="py-4 text-center text-gray-400">暂无特征值</div>
+            </ClpmDataCanvas>
+
+            <Recommendations
+              :recommendations="recommendations"
+              :loading="recommendationsLoading"
+            />
+
+            <ClpmDataCanvas
+              title="跟踪状态"
+              description="异常处置跟踪与状态记录。"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-xs text-gray-500">当前状态</div>
+                  <div
+                    class="mt-1 text-lg font-medium"
+                    :class="{
+                      'text-red-500': trackerStatusTag.status === 'danger',
+                      'text-orange-500': trackerStatusTag.status === 'warning',
+                      'text-blue-500': trackerStatusTag.status === 'primary',
+                      'text-green-500': trackerStatusTag.status === 'success',
+                      'text-gray-500': trackerStatusTag.status === 'neutral',
+                    }"
+                  >
+                    {{ trackerStatusTag.label }}
+                  </div>
+                </div>
+                <ClpmToolbarButton
+                  icon="track"
+                  label="异常跟踪"
+                  variant="primary"
+                  @click="trackerDrawerVisible = true"
+                />
+              </div>
+            </ClpmDataCanvas>
           </div>
-        </ClpmDataCanvas>
-
-        <Recommendations
-          :recommendations="recommendations"
-          :loading="recommendationsLoading"
-        />
-
-        <!-- 操作按钮 -->
-        <div class="flex justify-center gap-3">
-          <Button @click="trackerDrawerVisible = true">异常跟踪</Button>
         </div>
       </div>
     </Spin>
@@ -575,7 +634,7 @@ onMounted(() => {
       v-if="trackerDrawerVisible"
       :drawer-mode="true"
       :loop-id="loopId"
-      @close="trackerDrawerVisible = false"
+      @close="handleTrackerClose"
     />
   </Page>
 </template>

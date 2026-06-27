@@ -4,24 +4,27 @@
  *
  * 对齐 IDS v3.2 §2.4 + PRD §4.4
  * - 表格展示跟踪记录列表（回路位号/诊断标签/状态/创建时间/更新时间/操作）
- * - 状态标签颜色：PENDING(黄)/IN_PROGRESS(蓝)/RESOLVED(绿)/IGNORED(灰)
- * - 状态更新下拉菜单（仅 IC_ENGINEER 可操作）
+ * - 状态标签颜色：PENDING(default)/IN_PROGRESS(processing)/IMPLEMENTED(success)/IGNORED(warning)
+ * - 顶部 KpiStrip：待处理 / 处理中 / 已实施 / 已忽略 各状态计数
+ * - 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略
+ * - 状态更新下拉菜单（仅 IC_ENGINEER 可操作），Modal 含"变更说明"审计字段
  * - "A/B 对比"按钮打开抽屉展示处置前后 KPI 对比图表
  * - "导出 PDF"按钮触发异步导出任务，并轮询任务状态，完成后提供下载链接（FDS §5.4.4）
  * - 筛选栏（状态/标签/时间）
+ * - 抽屉模式与独立页模式统一使用 CLPM 组件
  */
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
+import type { KpiStripItem } from '#/components/clpm';
 
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Drawer,
   Dropdown,
   Form,
@@ -43,7 +46,9 @@ import {
 import { requestClient } from '#/api/request';
 import {
   ClpmDataCanvas,
+  ClpmKpiStrip,
   ClpmPageToolbar,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -101,12 +106,12 @@ const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '已忽略', value: 'IGNORED' },
 ];
 
-/** 处理状态颜色映射 */
+/** 处理状态颜色映射（对齐状态机可视化：default/processing/success/warning） */
 const statusColorMap: Record<DiagnosisApi.ActionStatus, string> = {
-  PENDING: 'gold',
-  IN_PROGRESS: 'blue',
-  IMPLEMENTED: 'green',
-  IGNORED: 'default',
+  PENDING: 'default',
+  IN_PROGRESS: 'processing',
+  IMPLEMENTED: 'success',
+  IGNORED: 'warning',
 };
 
 /** 时间窗选项（对齐后端 _build_time_window_condition 支持的值） */
@@ -166,6 +171,52 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 260, fixed: 'right' },
 ];
 
+/** KpiStrip 摘要指标：各状态计数 */
+const kpiStripItems = computed<KpiStripItem[]>(() => {
+  const pendingCount = trackerList.value.filter(
+    (item) => item.actionStatus === 'PENDING',
+  ).length;
+  const inProgressCount = trackerList.value.filter(
+    (item) => item.actionStatus === 'IN_PROGRESS',
+  ).length;
+  const implementedCount = trackerList.value.filter(
+    (item) => item.actionStatus === 'IMPLEMENTED',
+  ).length;
+  const ignoredCount = trackerList.value.filter(
+    (item) => item.actionStatus === 'IGNORED',
+  ).length;
+  return [
+    {
+      key: 'pending',
+      label: '待处理',
+      value: pendingCount,
+      unit: '条',
+      status: 'warning',
+    },
+    {
+      key: 'in_progress',
+      label: '处理中',
+      value: inProgressCount,
+      unit: '条',
+      status: 'primary',
+    },
+    {
+      key: 'implemented',
+      label: '已实施',
+      value: implementedCount,
+      unit: '条',
+      status: 'success',
+    },
+    {
+      key: 'ignored',
+      label: '已忽略',
+      value: ignoredCount,
+      unit: '条',
+      status: 'neutral',
+    },
+  ];
+});
+
 // 状态更新 Modal
 const statusModalVisible = ref(false);
 const statusModalLoading = ref(false);
@@ -173,6 +224,7 @@ const editingItem = ref<DiagnosisApi.TrackerItem | null>(null);
 const statusForm = reactive({
   status: 'PENDING' as DiagnosisApi.ActionStatus,
   comment: '',
+  changeRemark: '',
 });
 
 // A/B 对比抽屉
@@ -237,14 +289,19 @@ function handleTableChange(pagination: TablePaginationConfig) {
   loadList();
 }
 
-/** 提交状态更新 */
+/** 提交状态更新（含变更说明审计字段） */
 async function handleSubmitStatus() {
   if (!editingItem.value) return;
+  if (!statusForm.changeRemark.trim()) {
+    message.warning('请填写变更说明');
+    return;
+  }
   statusModalLoading.value = true;
   try {
     await updateTrackerStatusApi(editingItem.value.loopId, {
       status: statusForm.status,
       comment: statusForm.comment,
+      changeRemark: statusForm.changeRemark,
     });
     message.success('状态更新成功');
     statusModalVisible.value = false;
@@ -272,6 +329,7 @@ function handleStatusMenuClick(
   editingItem.value = record;
   statusForm.status = key as DiagnosisApi.ActionStatus;
   statusForm.comment = record.comment || '';
+  statusForm.changeRemark = '';
   statusModalVisible.value = true;
 }
 
@@ -432,6 +490,21 @@ function handleViewDetail(loopId: string) {
   router.push(`/diagnosis/detail/${loopId}`);
 }
 
+/** 工具栏：刷新 */
+function handleRefresh() {
+  loadList();
+}
+
+/** 工具栏：导出 */
+function handleExport() {
+  message.info('导出功能开发中');
+}
+
+/** 工具栏：批量处理 */
+function handleBatchProcess() {
+  message.info('批量处理功能开发中');
+}
+
 function formatTime(t: string): string {
   if (!t) return '—';
   try {
@@ -469,36 +542,69 @@ onBeforeUnmount(() => {
     placement="right"
     @close="emit('close')"
   >
-    <Card>
-      <!-- 筛选栏 -->
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <Select
-          v-model:value="query.diagnosisLabel"
-          placeholder="诊断标签"
-          style="width: 160px"
-          allow-clear
-          :options="labelOptions"
-          @change="handleSearch"
+    <ClpmPageToolbar
+      compact
+      subtitle="状态、标签、时间窗统一筛选"
+    >
+      <Select
+        v-model:value="query.diagnosisLabel"
+        placeholder="诊断标签"
+        style="width: 160px"
+        allow-clear
+        :options="labelOptions"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="query.actionStatus"
+        placeholder="处理状态"
+        style="width: 140px"
+        allow-clear
+        :options="statusOptions"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="query.timeWindow"
+        style="width: 140px"
+        :options="timeWindowOptions"
+        @change="handleSearch"
+      />
+      <template #actions>
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="handleRefresh"
         />
-        <Select
-          v-model:value="query.actionStatus"
-          placeholder="处理状态"
-          style="width: 140px"
-          allow-clear
-          :options="statusOptions"
-          @change="handleSearch"
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          @click="handleExport"
         />
-        <Select
-          v-model:value="query.timeWindow"
-          style="width: 140px"
-          :options="timeWindowOptions"
-          @change="handleSearch"
+        <ClpmToolbarButton
+          icon="ant-design:thunderbolt-outlined"
+          label="批量处理"
+          variant="primary"
+          @click="handleBatchProcess"
         />
-        <Button type="primary" :loading="loading" @click="handleSearch">
-          查询
-        </Button>
-      </div>
+      </template>
+    </ClpmPageToolbar>
 
+    <!-- KpiStrip：各状态计数 -->
+    <ClpmKpiStrip class="mt-3" :items="kpiStripItems" :loading="loading" />
+
+    <!-- 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略 -->
+    <div class="status-flow-bar mt-3">
+      <span class="status-flow-bar__label">状态流转</span>
+      <Tag color="default">待处理</Tag>
+      <span class="status-flow-bar__arrow">→</span>
+      <Tag color="processing">处理中</Tag>
+      <span class="status-flow-bar__arrow">→</span>
+      <Tag color="success">已实施</Tag>
+      <span class="status-flow-bar__alt">/</span>
+      <Tag color="warning">已忽略</Tag>
+    </div>
+
+    <ClpmDataCanvas class="mt-3" title="异常跟踪列表" :loading="loading">
       <Table
         :columns="columns"
         :data-source="trackerList"
@@ -625,14 +731,14 @@ onBeforeUnmount(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
-    <!-- 状态更新 Modal -->
+    <!-- 状态更新 Modal（含变更说明审计字段） -->
     <Modal
       v-model:open="statusModalVisible"
       title="更新处理状态"
       :confirm-loading="statusModalLoading"
-      width="480px"
+      width="520px"
       @ok="handleSubmitStatus"
     >
       <Form :model="statusForm" layout="vertical" class="pt-4">
@@ -641,6 +747,15 @@ onBeforeUnmount(() => {
         </FormItem>
         <FormItem label="处理状态" required>
           <Select v-model:value="statusForm.status" :options="statusOptions" />
+        </FormItem>
+        <FormItem label="变更说明" required>
+          <Input.TextArea
+            v-model:value="statusForm.changeRemark"
+            placeholder="请说明本次状态变更的原因或依据，例如：经现场确认阀门存在粘滞，已安排检修"
+            :rows="3"
+            :maxlength="500"
+            show-count
+          />
         </FormItem>
         <FormItem label="处理备注">
           <Input.TextArea
@@ -664,38 +779,75 @@ onBeforeUnmount(() => {
 
   <!-- 独立页面模式（直接路由访问 /diagnosis/tracker） -->
   <Page v-else>
-    <ClpmDataCanvas title="异常跟踪列表" :loading="loading">
-      <template #extra>
-        <ClpmPageToolbar compact title="异常跟踪" subtitle="状态、标签、时间窗统一筛选">
-          <Select
-            v-model:value="query.diagnosisLabel"
-            placeholder="诊断标签"
-            style="width: 160px"
-            allow-clear
-            :options="labelOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="query.actionStatus"
-            placeholder="处理状态"
-            style="width: 140px"
-            allow-clear
-            :options="statusOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="query.timeWindow"
-            style="width: 140px"
-            :options="timeWindowOptions"
-            @change="handleSearch"
-          />
-          <template #actions>
-            <Button type="primary" :loading="loading" @click="handleSearch">
-              查询
-            </Button>
-          </template>
-        </ClpmPageToolbar>
+    <ClpmPageToolbar
+      title="异常跟踪"
+      subtitle="状态、标签、时间窗统一筛选，跟踪异常处置闭环"
+    >
+      <template #actions>
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="handleRefresh"
+        />
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          @click="handleExport"
+        />
+        <ClpmToolbarButton
+          icon="ant-design:thunderbolt-outlined"
+          label="批量处理"
+          variant="primary"
+          @click="handleBatchProcess"
+        />
       </template>
+    </ClpmPageToolbar>
+
+    <!-- KpiStrip：各状态计数 -->
+    <ClpmKpiStrip class="mt-4" :items="kpiStripItems" :loading="loading" />
+
+    <!-- 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略 -->
+    <div class="status-flow-bar mt-3">
+      <span class="status-flow-bar__label">状态流转</span>
+      <Tag color="default">待处理</Tag>
+      <span class="status-flow-bar__arrow">→</span>
+      <Tag color="processing">处理中</Tag>
+      <span class="status-flow-bar__arrow">→</span>
+      <Tag color="success">已实施</Tag>
+      <span class="status-flow-bar__alt">/</span>
+      <Tag color="warning">已忽略</Tag>
+    </div>
+
+    <ClpmDataCanvas class="mt-3" title="异常跟踪列表" :loading="loading">
+      <!-- 筛选栏 -->
+      <div class="mb-4 flex flex-wrap items-center gap-3">
+        <Select
+          v-model:value="query.diagnosisLabel"
+          placeholder="诊断标签"
+          style="width: 160px"
+          allow-clear
+          :options="labelOptions"
+          @change="handleSearch"
+        />
+        <Select
+          v-model:value="query.actionStatus"
+          placeholder="处理状态"
+          style="width: 140px"
+          allow-clear
+          :options="statusOptions"
+          @change="handleSearch"
+        />
+        <Select
+          v-model:value="query.timeWindow"
+          style="width: 140px"
+          :options="timeWindowOptions"
+          @change="handleSearch"
+        />
+        <Button type="primary" :loading="loading" @click="handleSearch">
+          查询
+        </Button>
+      </div>
 
       <Table
         :columns="columns"
@@ -731,7 +883,9 @@ onBeforeUnmount(() => {
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
-              :color="statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]"
+              :color="
+                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
+              "
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>
@@ -818,12 +972,12 @@ onBeforeUnmount(() => {
       </Table>
     </ClpmDataCanvas>
 
-    <!-- 状态更新 Modal -->
+    <!-- 状态更新 Modal（含变更说明审计字段） -->
     <Modal
       v-model:open="statusModalVisible"
       title="更新处理状态"
       :confirm-loading="statusModalLoading"
-      width="480px"
+      width="520px"
       @ok="handleSubmitStatus"
     >
       <Form :model="statusForm" layout="vertical" class="pt-4">
@@ -832,6 +986,15 @@ onBeforeUnmount(() => {
         </FormItem>
         <FormItem label="处理状态" required>
           <Select v-model:value="statusForm.status" :options="statusOptions" />
+        </FormItem>
+        <FormItem label="变更说明" required>
+          <Input.TextArea
+            v-model:value="statusForm.changeRemark"
+            placeholder="请说明本次状态变更的原因或依据，例如：经现场确认阀门存在粘滞，已安排检修"
+            :rows="3"
+            :maxlength="500"
+            show-count
+          />
         </FormItem>
         <FormItem label="处理备注">
           <Input.TextArea
@@ -853,3 +1016,36 @@ onBeforeUnmount(() => {
     />
   </Page>
 </template>
+
+<style scoped>
+/* 状态机可视化条 */
+.status-flow-bar {
+  align-items: center;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.status-flow-bar__label {
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.status-flow-bar__arrow {
+  color: hsl(var(--muted-foreground));
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.status-flow-bar__alt {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  margin: 0 2px;
+}
+</style>

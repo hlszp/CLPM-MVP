@@ -163,6 +163,8 @@ export namespace DiagnosisApi {
   export interface TrackerStatusUpdateParams {
     status: ActionStatus;
     comment?: string;
+    /** 变更说明（审计字段，预留） */
+    changeRemark?: string;
   }
 
   /** Tracker 记录项 */

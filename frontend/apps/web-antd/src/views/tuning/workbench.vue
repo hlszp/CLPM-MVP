@@ -14,15 +14,17 @@ import type { TuningApi } from '#/api/tuning';
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { IconifyIcon } from '@vben/icons';
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, Spin, Table, Tag } from 'ant-design-vue';
+import { Alert, Button, Card, message, Spin, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
   ClpmDataCanvas,
   ClpmKpiStrip,
   ClpmPageToolbar,
+  ClpmToolbarButton,
   type KpiStripItem,
 } from '#/components/clpm';
 import { getTuningHistoryApi } from '#/api/tuning';
@@ -68,34 +70,34 @@ const statusColorMap: Record<TuningApi.TaskStatus, string> = {
   VERIFIED: 'success',
 };
 
-/** 整定流程导航卡片配置 */
+/** 整定流程导航卡片配置（统一使用 ant-design 图标集） */
 const navCards = [
   {
     key: 'model',
     title: '模型辨识',
     description: '基于历史数据辨识回路 FOPDT/SOPDT/IPDT 模型',
-    icon: 'lucide:git-branch',
+    icon: 'ant-design:apartment-outlined',
     path: '/tuning/model',
   },
   {
     key: 'algorithm',
     title: '整定算法',
     description: '基于模型参数计算推荐 PID（ZN/Cohen-Coon/IMC/Lambda/SIMC）',
-    icon: 'lucide:cpu',
+    icon: 'ant-design:calculator-outlined',
     path: '/tuning/algorithm',
   },
   {
     key: 'simulation',
     title: '闭环仿真',
     description: '对比当前 PID 与推荐 PID 的闭环响应性能',
-    icon: 'lucide:play-circle',
+    icon: 'ant-design:experiment-outlined',
     path: '/tuning/simulation',
   },
   {
     key: 'stats',
     title: '效果统计',
     description: '查看整定历史统计与效果分析',
-    icon: 'lucide:file-bar-chart',
+    icon: 'ant-design:bar-chart-outlined',
     path: '/tuning/stats',
   },
 ];
@@ -179,6 +181,32 @@ const kpiStripItems = computed<KpiStripItem[]>(() => [
   { key: 'recent', label: '近 7 天任务数', value: recent7DaysCount.value, status: 'neutral' },
 ]);
 
+/** 待整定数（PENDING + IDENTIFIED） */
+const pendingTuningCount = computed(() => {
+  const byStatus = historyStats.value?.byStatus || {};
+  return (byStatus.PENDING || 0) + (byStatus.IDENTIFIED || 0);
+});
+
+/**
+ * 风险任务数（高整定风险回路数）
+ * 后端暂未直接提供风险标记接口，使用 0 占位，待整定风险接口接入后替换
+ */
+const highRiskCount = computed(() => 0);
+
+/**
+ * 超阈值任务数（PID 参数超推荐范围）
+ * 后端暂未直接提供超阈值标记接口，使用 0 占位，待整定风险接口接入后替换
+ */
+const overThresholdCount = computed(() => 0);
+
+/** 风险相关 KPI 指标 */
+const riskKpiItems = computed<KpiStripItem[]>(() => [
+  { key: 'highRisk', label: '风险任务数', value: highRiskCount.value, status: 'danger' },
+  { key: 'overThreshold', label: '超阈值任务数', value: overThresholdCount.value, status: 'warning' },
+  { key: 'pending', label: '待整定数', value: pendingTuningCount.value, status: 'neutral' },
+  { key: 'completed', label: '已完成数', value: completedCount.value, status: 'success' },
+]);
+
 /** 加载整定历史统计 */
 async function loadHistory() {
   loading.value = true;
@@ -203,6 +231,21 @@ function handleViewDetail(record: TuningApi.TuningTaskItem) {
     path: '/tuning/stats',
     query: { taskId: record.id },
   });
+}
+
+/** 工具栏：刷新 */
+function handleRefresh() {
+  loadHistory();
+}
+
+/** 工具栏：导出（占位，待导出接口接入） */
+function handleExport() {
+  message.info('导出功能开发中');
+}
+
+/** 工具栏：新建整定，跳转模型辨识 */
+function handleCreate() {
+  router.push('/tuning/model');
 }
 
 /** 时间格式化 */
@@ -237,9 +280,45 @@ onMounted(() => {
 <template>
   <Page>
     <Spin :spinning="loading">
-      <ClpmPageToolbar title="整定工作台" subtitle="模型辨识、算法、仿真与效果统计的统一入口" />
+      <ClpmPageToolbar title="整定工作台" subtitle="模型辨识、算法、仿真与效果统计的统一入口">
+        <template #actions>
+          <ClpmToolbarButton
+            icon="refresh"
+            label="刷新"
+            :loading="loading"
+            @click="handleRefresh"
+          />
+          <ClpmToolbarButton
+            icon="export"
+            label="导出"
+            @click="handleExport"
+          />
+          <ClpmToolbarButton
+            icon="create"
+            label="新建整定"
+            variant="primary"
+            @click="handleCreate"
+          />
+        </template>
+      </ClpmPageToolbar>
+
+      <!-- 常驻风险提示横幅：不可关闭 -->
+      <Alert
+        class="mt-3"
+        type="warning"
+        show-icon
+        banner
+        :closable="false"
+        message="平台只输出整定建议、证据和风险，不直接修改 DCS 参数。参数由授权人员人工实施并留痕。"
+      />
+
       <div class="mb-4 mt-4">
         <ClpmKpiStrip :items="kpiStripItems" />
+      </div>
+
+      <!-- 风险相关 KPI 指标 -->
+      <div class="mb-4">
+        <ClpmKpiStrip :items="riskKpiItems" />
       </div>
 
       <ClpmDataCanvas title="整定流程" class="mb-4">
@@ -257,7 +336,7 @@ onMounted(() => {
               <div
                 class="mb-3 flex h-10 w-10 items-center justify-center rounded bg-blue-50 text-xl text-blue-600"
               >
-                <span class="font-bold">{{ item.title.charAt(0) }}</span>
+                <IconifyIcon :icon="item.icon" />
               </div>
               <div class="text-base font-semibold text-gray-800">
                 {{ item.title }}
