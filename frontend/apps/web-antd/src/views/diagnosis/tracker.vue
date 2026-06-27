@@ -42,6 +42,10 @@ import {
 } from '#/api/diagnosis';
 import { requestClient } from '#/api/request';
 import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
+import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
@@ -660,35 +664,38 @@ onBeforeUnmount(() => {
 
   <!-- 独立页面模式（直接路由访问 /diagnosis/tracker） -->
   <Page v-else title="异常跟踪">
-    <Card>
-      <!-- 筛选栏 -->
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <Select
-          v-model:value="query.diagnosisLabel"
-          placeholder="诊断标签"
-          style="width: 160px"
-          allow-clear
-          :options="labelOptions"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="query.actionStatus"
-          placeholder="处理状态"
-          style="width: 140px"
-          allow-clear
-          :options="statusOptions"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="query.timeWindow"
-          style="width: 140px"
-          :options="timeWindowOptions"
-          @change="handleSearch"
-        />
-        <Button type="primary" :loading="loading" @click="handleSearch">
-          查询
-        </Button>
-      </div>
+    <ClpmDataCanvas title="异常跟踪列表" :loading="loading">
+      <template #extra>
+        <ClpmPageToolbar compact title="异常跟踪" subtitle="状态、标签、时间窗统一筛选">
+          <Select
+            v-model:value="query.diagnosisLabel"
+            placeholder="诊断标签"
+            style="width: 160px"
+            allow-clear
+            :options="labelOptions"
+            @change="handleSearch"
+          />
+          <Select
+            v-model:value="query.actionStatus"
+            placeholder="处理状态"
+            style="width: 140px"
+            allow-clear
+            :options="statusOptions"
+            @change="handleSearch"
+          />
+          <Select
+            v-model:value="query.timeWindow"
+            style="width: 140px"
+            :options="timeWindowOptions"
+            @change="handleSearch"
+          />
+          <template #actions>
+            <Button type="primary" :loading="loading" @click="handleSearch">
+              查询
+            </Button>
+          </template>
+        </ClpmPageToolbar>
+      </template>
 
       <Table
         :columns="columns"
@@ -724,9 +731,7 @@ onBeforeUnmount(() => {
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
-              :color="
-                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
-              "
+              :color="statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>
@@ -767,9 +772,7 @@ onBeforeUnmount(() => {
                   v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
                   type="link"
                   size="small"
-                  @click="
-                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
-                  "
+                  @click="handleOpenAbCompare(record as DiagnosisApi.TrackerItem)"
                 >
                   A/B 对比
                 </Button>
@@ -777,15 +780,12 @@ onBeforeUnmount(() => {
                   v-permission="['IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
                   type="link"
                   size="small"
-                  :disabled="
-                    getExportState(record.loopId)?.status === 'exporting'
-                  "
+                  :disabled="getExportState(record.loopId)?.status === 'exporting'"
                   @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
                 >
                   导出 PDF
                 </Button>
               </div>
-              <!-- 导出状态指示器（FDS §5.4.4） -->
               <div
                 v-if="getExportState(record.loopId)"
                 class="flex items-center gap-1"
@@ -816,7 +816,7 @@ onBeforeUnmount(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 状态更新 Modal -->
     <Modal

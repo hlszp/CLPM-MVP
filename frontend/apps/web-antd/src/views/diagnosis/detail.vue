@@ -23,9 +23,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
-  Card,
-  Descriptions,
-  DescriptionsItem,
   message,
   Spin,
   Steps,
@@ -39,6 +36,12 @@ import {
   getRecommendationsApi,
   getWaveformApi,
 } from '#/api/diagnosis';
+import {
+  ClpmDataCanvas,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  type SummaryItem,
+} from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -89,6 +92,40 @@ const pageTitle = computed(() => {
     return `诊断详情 - ${detail.value.tagName}`;
   }
   return '诊断详情';
+});
+
+const summaryItems = computed<SummaryItem[]>(() => {
+  if (!detail.value) return [];
+  return [
+    {
+      key: 'score',
+      label: '综合评分',
+      value: Number(detail.value.compositeScore).toFixed(2),
+      status:
+        detail.value.compositeScore >= 80
+          ? 'success'
+          : detail.value.compositeScore >= 60
+            ? 'warning'
+            : 'danger',
+    },
+    {
+      key: 'confidence',
+      label: '融合置信度',
+      value: Number(detail.value.fusedConfidence).toFixed(2),
+      status:
+        detail.value.fusedConfidence >= 0.8
+          ? 'success'
+          : detail.value.fusedConfidence >= 0.5
+            ? 'warning'
+            : 'danger',
+    },
+    {
+      key: 'time',
+      label: '诊断时间',
+      value: formatTime(detail.value.diagnosedAt),
+      status: 'neutral',
+    },
+  ];
 });
 
 /** FE-12 三段式：问题定位路径 Steps */
@@ -414,85 +451,46 @@ onMounted(() => {
 
 <template>
   <Page :title="pageTitle">
-    <!-- 顶部返回导航（建议 3） -->
-    <div class="mb-3 flex items-center gap-3">
-      <Button size="small" @click="handleBack">返回</Button>
-      <nav class="text-sm text-gray-400">
-        <a class="cursor-pointer hover:text-blue-500" @click="router.push('/diagnosis/list')">诊断中心</a>
-        <span class="mx-1">/</span>
-        <a class="cursor-pointer hover:text-blue-500" @click="router.push('/diagnosis/list')">诊断列表</a>
-        <span class="mx-1">/</span>
-        <span class="text-gray-600">诊断详情</span>
-      </nav>
-    </div>
+    <ClpmPageToolbar :title="pageTitle" :subtitle="detail?.tagName || '诊断证据与处置'">
+      <a-radio-group
+        v-model:value="timeWindow"
+        :options="timeWindowOptions"
+        option-type="button"
+        button-style="solid"
+        size="small"
+      />
+      <template #actions>
+        <Button size="small" @click="handleBack">返回</Button>
+        <Button size="small" @click="router.push('/diagnosis/list')">诊断列表</Button>
+        <Button type="primary" :loading="reportGenerating" @click="handleGenerateReport">
+          下载建议书 PDF
+        </Button>
+      </template>
+    </ClpmPageToolbar>
     <Spin :spinning="loading">
       <div class="space-y-4">
-        <!-- 顶部：基本信息 -->
-        <Card title="回路基本信息">
-          <template #extra>
-            <div class="flex items-center gap-2">
-              <span class="text-sm text-gray-500">时间窗：</span>
-              <a-radio-group
-                v-model:value="timeWindow"
-                :options="timeWindowOptions"
-                option-type="button"
-                button-style="solid"
-                size="small"
-              />
-              <Button
-                type="primary"
-                :loading="reportGenerating"
-                @click="handleGenerateReport"
-              >
-                下载建议书 PDF
-              </Button>
-            </div>
+        <ClpmObjectSummaryBar
+          v-if="detail"
+          :title="detail.tagName"
+          :subtitle="`回路 ID ${detail.loopId} · 算法 ${detail.algorithmVersion}`"
+          :items="summaryItems"
+        >
+          <template #actions>
+            <Button type="primary" @click="trackerDrawerVisible = true">异常跟踪</Button>
           </template>
-          <Descriptions
-            v-if="detail"
-            :column="{ xs: 1, sm: 2, md: 3 }"
-            bordered
-            size="small"
-          >
-            <DescriptionsItem label="回路位号">
-              {{ detail.tagName }}
-            </DescriptionsItem>
-            <DescriptionsItem label="综合评分">
-              <span class="font-medium text-blue-600">
-                {{ Number(detail.compositeScore).toFixed(2) }}
-              </span>
-            </DescriptionsItem>
-            <DescriptionsItem label="融合置信度">
-              <span class="font-medium">
-                {{ Number(detail.fusedConfidence).toFixed(2) }}
-              </span>
-            </DescriptionsItem>
-            <DescriptionsItem label="算法版本">
-              {{ detail.algorithmVersion }}
-            </DescriptionsItem>
-            <DescriptionsItem label="诊断时间">
-              {{ formatTime(detail.diagnosedAt) }}
-            </DescriptionsItem>
-            <DescriptionsItem label="回路 ID">
-              {{ detail.loopId }}
-            </DescriptionsItem>
-          </Descriptions>
-        </Card>
+        </ClpmObjectSummaryBar>
 
-        <!-- FE-12 第一段：问题定位路径 -->
-        <Card title="一、问题定位路径">
+        <ClpmDataCanvas title="问题定位路径" description="诊断标签、置信度和推理证据按定位路径组织。">
           <Steps
             :current="currentStep"
             :items="problemPathSteps"
             direction="vertical"
             size="small"
           />
-          <!-- 诊断标签数组 -->
           <div
             v-if="detail && detail.diagnosisLabels.length > 0"
             class="mt-4 space-y-3"
           >
-            <div class="text-sm font-medium text-gray-600">诊断标签详情：</div>
             <div
               v-for="(item, idx) in detail.diagnosisLabels"
               :key="idx"
@@ -508,9 +506,7 @@ onMounted(() => {
                     {{ Number(item.confidence).toFixed(2) }}
                   </span>
                 </span>
-                <span class="text-sm text-gray-500">
-                  算法：{{ item.algorithm }}
-                </span>
+                <span class="text-sm text-gray-500">算法：{{ item.algorithm }}</span>
               </div>
               <div class="text-xs text-gray-500">
                 <span class="font-medium">证据：</span>
@@ -520,23 +516,18 @@ onMounted(() => {
               </div>
             </div>
           </div>
-        </Card>
+        </ClpmDataCanvas>
 
-        <!-- FE-12 第二段：证据链 -->
-        <Card title="二、证据链">
-          <!-- 时序分析区 -->
+        <ClpmDataCanvas title="证据链" description="时序波形与 PV-OP 散点图优先展示算法证据。">
           <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card title="时序波形" :bordered="false" size="small">
-              <Spin :spinning="waveformLoading">
-                <EchartsUI ref="waveformChartRef" height="320px" />
-              </Spin>
-            </Card>
-            <Card title="PV-OP 散点图" :bordered="false" size="small">
+            <ClpmDataCanvas title="时序波形" :loading="waveformLoading">
+              <EchartsUI ref="waveformChartRef" height="320px" />
+            </ClpmDataCanvas>
+            <ClpmDataCanvas title="PV-OP 散点图">
               <EchartsUI ref="scatterChartRef" height="320px" />
-            </Card>
+            </ClpmDataCanvas>
           </div>
 
-          <!-- 推理过程 -->
           <div v-if="detail" class="mt-4 space-y-3">
             <div v-if="detail.evidenceChain?.reasoning">
               <div class="mb-2 font-medium">推理过程</div>
@@ -544,17 +535,12 @@ onMounted(() => {
                 {{ detail.evidenceChain.reasoning }}
               </div>
             </div>
-            <div v-else class="py-4 text-center text-gray-400">
-              暂无推理过程
-            </div>
+            <div v-else class="py-4 text-center text-gray-400">暂无推理过程</div>
           </div>
 
-          <!-- 特征值 -->
           <div class="mt-4">
             <div class="mb-2 font-medium">特征值</div>
-            <div
-              v-if="detail && featureEntries(detail.featureValues).length > 0"
-            >
+            <div v-if="detail && featureEntries(detail.featureValues).length > 0">
               <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
                 <div
                   v-for="item in featureEntries(detail.featureValues)"
@@ -570,9 +556,8 @@ onMounted(() => {
             </div>
             <div v-else class="py-4 text-center text-gray-400">暂无特征值</div>
           </div>
-        </Card>
+        </ClpmDataCanvas>
 
-        <!-- FE-12 第三段 & FE-13：解决方案推荐 -->
         <Recommendations
           :recommendations="recommendations"
           :loading="recommendationsLoading"
