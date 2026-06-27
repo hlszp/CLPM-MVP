@@ -34,6 +34,14 @@ import {
 
 import { getRankingApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  type KpiStripItem,
+  type SummaryItem,
+} from '#/components/clpm';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -182,11 +190,22 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 110, fixed: 'right' },
 ];
 
-// 抽屉状态
-const drawerVisible = ref(false);
-const selectedLoop = ref<MetricApi.RankingItem | null>(null);
+const kpiStripItems = computed<KpiStripItem[]>(() => [
+  { key: 'total', label: '总回路数', value: stats.value.total, status: 'neutral' },
+  { key: 'bad', label: '低效回路数', value: stats.value.badCount, status: 'danger' },
+  { key: 'avg', label: '平均评分', value: stats.value.avgScore.toFixed(1), status: stats.value.avgScore >= 80 ? 'success' : stats.value.avgScore >= 60 ? 'warning' : 'danger' },
+  { key: 'min', label: '最低评分', value: stats.value.minScore.toFixed(1), status: 'danger' },
+]);
 
-/** 统计 KPI */
+const drawerSummaryItems = computed<SummaryItem[]>(() => {
+  if (!selectedLoop.value) return [];
+  return [
+    { key: 'score', label: '综合评分', value: Number(selectedLoop.value.compositeScore).toFixed(1), status: selectedLoop.value.compositeScore >= 80 ? 'success' : selectedLoop.value.compositeScore >= 60 ? 'warning' : 'danger' },
+    { key: 'status', label: '状态', value: statusLabelMap[selectedLoop.value.status], status: selectedLoop.value.status === 'SUCCESS' ? 'success' : selectedLoop.value.status === 'PARTIAL' ? 'warning' : 'neutral' },
+    { key: 'confidence', label: '可信度', value: selectedLoop.value.confidenceLevel || '—', status: 'neutral' },
+  ];
+});
+
 const stats = computed(() => {
   const list = rankingList.value;
   if (list.length === 0) {
@@ -300,37 +319,12 @@ onMounted(() => {
 
 <template>
   <Page title="低效回路排行">
-    <!-- 顶部统计 KPI 卡片 -->
-    <div class="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-      <Card size="small" :loading="loading">
-        <Statistic title="总回路数" :value="stats.total" />
-      </Card>
-      <Card size="small" :loading="loading">
-        <Statistic
-          title="低效回路数"
-          :value="stats.badCount"
-          :value-style="{ color: '#ff4d4f' }"
-        />
-      </Card>
-      <Card size="small" :loading="loading">
-        <Statistic
-          title="平均评分"
-          :value="stats.avgScore"
-          :precision="1"
-          suffix=""
-        />
-      </Card>
-      <Card size="small" :loading="loading">
-        <Statistic
-          title="最低评分"
-          :value="stats.minScore"
-          :precision="1"
-          :value-style="{ color: '#ff4d4f' }"
-        />
-      </Card>
+    <ClpmPageToolbar title="低效回路排行" subtitle="按综合评分和核心 KPI 识别最需要优先治理的回路。" />
+    <div class="mb-4 mt-4">
+      <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
     </div>
 
-    <Card>
+    <ClpmDataCanvas title="排行筛选与列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -479,7 +473,7 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 侧边抽屉 -->
     <Drawer
