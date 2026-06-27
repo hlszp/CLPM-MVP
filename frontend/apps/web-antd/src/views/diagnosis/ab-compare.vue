@@ -32,6 +32,10 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { getAbCompareApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 
@@ -445,8 +449,8 @@ onMounted(() => {
 
   <!-- 独立页面模式 -->
   <Page v-else :title="pageTitle">
-    <!-- 时间范围选择 -->
-    <Card class="mb-4">
+    <ClpmPageToolbar :title="pageTitle" subtitle="处置前后趋势与 KPI 对比，用于验证措施效果。" />
+    <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex items-center gap-2">
           <span class="text-sm text-gray-500">回路：</span>
@@ -484,7 +488,7 @@ onMounted(() => {
           查询
         </Button>
       </div>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 数据不足提示（FDS §5.4.4） -->
     <Alert
@@ -497,7 +501,7 @@ onMounted(() => {
     />
 
     <!-- 统计摘要 -->
-    <Card v-if="compareData" class="mb-4" title="改善摘要">
+    <ClpmDataCanvas v-if="compareData" class="mb-4" title="改善摘要">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <div
           v-for="kpi in compareData.kpiComparison"
@@ -522,20 +526,20 @@ onMounted(() => {
           </div>
         </div>
       </div>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- PV 趋势叠加图 -->
-    <Card title="PV 趋势对比" class="mb-4">
+    <ClpmDataCanvas title="PV 趋势对比" class="mb-4">
       <Spin :spinning="loading">
         <EchartsUI ref="trendChartRef" height="360px" />
       </Spin>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- KPI 柱状对比图 -->
-    <Card title="KPI 对比">
+    <ClpmDataCanvas title="KPI 对比">
       <Spin :spinning="loading">
         <EchartsUI ref="kpiChartRef" height="360px" />
       </Spin>
-    </Card>
+    </ClpmDataCanvas>
   </Page>
 </template>

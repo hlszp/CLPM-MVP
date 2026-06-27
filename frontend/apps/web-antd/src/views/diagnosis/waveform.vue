@@ -27,7 +27,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
-  Card,
   DatePicker,
   message,
   Select,
@@ -38,6 +37,10 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { getDiagnosisDetailApi, getWaveformApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import {
@@ -525,8 +528,8 @@ onMounted(() => {
 
 <template>
   <Page :title="pageTitle">
-    <!-- 筛选栏 -->
-    <Card class="mb-4">
+    <ClpmPageToolbar :title="pageTitle" subtitle="波形趋势与 PV-OP 散点用于查看诊断证据细节。" />
+    <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex items-center gap-2">
           <span class="text-sm text-gray-500">回路：</span>
@@ -559,10 +562,10 @@ onMounted(() => {
           查询
         </Button>
       </div>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 诊断标签卡片区域 -->
-    <Card v-if="diagnosisDetail" class="mb-4" title="诊断结果">
+    <ClpmDataCanvas v-if="diagnosisDetail" class="mb-4" title="诊断结果">
       <Spin :spinning="detailLoading">
         <div class="flex flex-wrap items-center gap-3">
           <div class="text-sm text-gray-500">回路位号：</div>
@@ -587,10 +590,10 @@ onMounted(() => {
           </Tag>
         </div>
       </Spin>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 波形/散点图 Tab -->
-    <Card>
+    <ClpmDataCanvas title="证据波形与散点图">
       <Tabs v-model:active-key="activeTab">
         <Tabs.TabPane key="waveform" tab="波形趋势">
           <Spin :spinning="loading">
@@ -603,6 +606,6 @@ onMounted(() => {
           </Spin>
         </Tabs.TabPane>
       </Tabs>
-    </Card>
+    </ClpmDataCanvas>
   </Page>
 </template>
