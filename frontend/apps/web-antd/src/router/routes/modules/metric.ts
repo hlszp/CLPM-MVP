@@ -72,6 +72,16 @@ const routes: RouteRecordRaw[] = [
             },
           },
           {
+            name: 'MetricWeightConfig',
+            path: '/metric/weight-config',
+            component: () => import('#/views/metric/weight-config.vue'),
+            meta: {
+              authority: ['ADMIN'],
+              icon: 'lucide:scale',
+              title: '权重配置',
+            },
+          },
+          {
             name: 'MetricEngineConfig',
             path: '/metric/engine-config',
             component: () => import('#/views/metric/engine-config.vue'),
@@ -81,20 +91,20 @@ const routes: RouteRecordRaw[] = [
               title: '引擎规则',
             },
           },
-          // FE-10：回路类型权重配置
+          // B2.5 新增：任务策略
           {
-            name: 'MetricTypeWeight',
-            path: '/metric/type-weight',
-            component: () => import('#/views/metric/type-weight.vue'),
+            name: 'MetricTaskStrategy',
+            path: '/metric/task-strategy',
+            component: () => import('#/views/metric/task-strategy.vue'),
             meta: {
               authority: ['ADMIN'],
-              icon: 'lucide:scale',
-              title: '类型权重',
+              icon: 'lucide:calendar-clock',
+              title: '任务策略',
             },
           },
-          // FE-11：回路级别权重配置
+          // 执行记录（任务列表）
           {
-            name: 'MetricTaskList',
+            name: 'MetricTaskRecords',
             path: '/metric/tasks',
             component: () => import('#/views/task/list.vue'),
             meta: {

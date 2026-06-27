@@ -33,6 +33,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import { ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
 import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { getMetricsApi, updateMetricApi } from '#/api/metric';
 
@@ -137,6 +138,49 @@ function handleEdit(record: MetricApi.MetricItem) {
   modalVisible.value = true;
 }
 
+/** 变更确认弹窗状态 */
+const confirmVisible = ref(false);
+const confirmLoading = ref(false);
+const changeRemark = ref('');
+
+/** 变更摘要 */
+const changeSummary = computed(() => {
+  const m = editingMetric.value;
+  if (!m) return [];
+  const summary: { field: string; from: string; to: string }[] = [];
+  if (m.formula !== formState.formula) {
+    summary.push({ field: '计算公式', from: m.formula || '—', to: formState.formula || '—' });
+  }
+  if (m.weight !== formState.weight) {
+    summary.push({ field: '权重', from: `${m.weight}%`, to: `${formState.weight}%` });
+  }
+  if (m.controlType !== formState.controlType) {
+    summary.push({ field: '控制类型', from: m.controlType, to: formState.controlType });
+  }
+  if (m.isEnabled !== formState.isEnabled) {
+    summary.push({ field: '启用状态', from: m.isEnabled ? '启用' : '禁用', to: formState.isEnabled ? '启用' : '禁用' });
+  }
+  if (
+    m.threshold.min !== formState.threshold.min ||
+    m.threshold.max !== formState.threshold.max ||
+    m.threshold.alert !== formState.threshold.alert
+  ) {
+    summary.push({
+      field: '阈值',
+      from: `${m.threshold.min}~${m.threshold.max} (告警 ${m.threshold.alert})`,
+      to: `${formState.threshold.min}~${formState.threshold.max} (告警 ${formState.threshold.alert})`,
+    });
+  }
+  return summary;
+});
+
+/** 影响范围 */
+const impactScope = computed(() => {
+  const m = editingMetric.value;
+  if (!m) return '';
+  return `指标「${m.metricName}」配置变更后，所有回路下次评估将使用新公式/权重/阈值计算该指标。`;
+});
+
 /** 提交表单（含二次确认） */
 function handleSubmit() {
   formRef.value?.validate().then(() => {
@@ -144,15 +188,22 @@ function handleSubmit() {
       message.warning(`权重总和须为 100%，当前为 ${editWeightTotal.value}%`);
       return;
     }
-    // 配置变更二次确认
-    Modal.confirm({
-      title: '确认变更指标配置',
-      content: `即将更新指标「${editingMetric.value?.metricName}」的配置，保存后立即生效。是否继续？`,
-      okText: '确认保存',
-      cancelText: '取消',
-      onOk: doSubmit,
-    });
+    changeRemark.value = '';
+    confirmVisible.value = true;
   });
+}
+
+/** 确认变更 */
+async function confirmSubmit() {
+  confirmLoading.value = true;
+  try {
+    await doSubmit();
+    confirmVisible.value = false;
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    confirmLoading.value = false;
+  }
 }
 
 /** 实际提交 */
@@ -203,13 +254,22 @@ onMounted(() => {
 <template>
   <Page title="指标定义">
     <ConfigTabs />
-    <Card>
+    <ClpmPageToolbar
+      title="指标定义"
+      subtitle="管理 6 大核心 KPI 的计算公式、权重、阈值、启用状态"
+    />
+    <Card class="mt-4">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
           管理 6 大核心
           KPI（好值率、自控率、平稳率、准确率、振荡率、饱和率）的计算公式、权重、阈值、启用状态。
         </p>
-        <Button :loading="loading" @click="loadList">刷新</Button>
+        <ClpmToolbarButton
+          icon="ant-design:reload-outlined"
+          :loading="loading"
+          label="刷新"
+          @click="loadList"
+        />
       </div>
 
       <Table
@@ -362,6 +422,54 @@ onMounted(() => {
           />
         </FormItem>
       </Form>
+    </Modal>
+
+    <!-- 配置变更确认弹窗（B2.5） -->
+    <Modal
+      v-model:open="confirmVisible"
+      title="确认变更指标配置"
+      :confirm-loading="confirmLoading"
+      ok-text="确认保存"
+      cancel-text="取消"
+      width="600px"
+      @ok="confirmSubmit"
+    >
+      <div class="space-y-3 py-2">
+        <div class="text-sm">
+          <div class="mb-2 font-medium">变更摘要</div>
+          <div v-if="changeSummary.length === 0" class="text-gray-400">
+            无变更
+          </div>
+          <div v-else class="rounded border border-gray-200 bg-gray-50 p-3">
+            <div
+              v-for="(c, idx) in changeSummary"
+              :key="idx"
+              class="mb-1 flex justify-between text-xs"
+            >
+              <span class="text-gray-600">{{ c.field }}</span>
+              <span class="font-mono">
+                <span class="text-gray-400 line-through">{{ c.from }}</span>
+                <span class="mx-1 text-gray-400">→</span>
+                <span class="font-medium text-blue-600">{{ c.to }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="text-sm">
+          <div class="mb-1 font-medium">影响范围</div>
+          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
+            {{ impactScope }}
+          </p>
+        </div>
+        <div class="text-sm">
+          <div class="mb-1 font-medium">变更说明（可选）</div>
+          <Input.TextArea
+            v-model:value="changeRemark"
+            placeholder="请简要说明本次变更原因，便于追溯"
+            :rows="2"
+          />
+        </div>
+      </div>
     </Modal>
   </Page>
 </template>

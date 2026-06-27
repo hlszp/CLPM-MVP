@@ -19,6 +19,7 @@ import {
   Card,
   Form,
   FormItem,
+  Input,
   InputNumber,
   message,
   Modal,
@@ -254,14 +255,10 @@ onMounted(() => {
         </div>
         <div class="text-sm">
           <div class="mb-1 font-medium">变更说明（可选）</div>
-          <InputNumber
-            v-show="false"
-            :value="0"
-          />
-          <input
-            v-model="changeRemark"
-            class="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          <Input.TextArea
+            v-model:value="changeRemark"
             placeholder="请简要说明本次变更原因，便于追溯"
+            :rows="2"
           />
         </div>
       </div>
