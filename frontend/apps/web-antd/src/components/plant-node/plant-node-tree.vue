@@ -211,7 +211,7 @@ function openCreateModal(parentNode?: TreeNode) {
   crudFormName.value = '';
   crudFormParentId.value = parentNode?.key as string ?? null;
   // 根据父节点类型设置默认子节点类型
-  const parentType = parentNode?.node?.type;
+  const parentType: string | undefined = parentNode?.node?.type;
   if (parentType === 'FACTORY') {
     crudFormType.value = 'AREA';
   } else if (parentType === 'AREA') {
@@ -244,7 +244,7 @@ async function handleCrudSubmit() {
     if (crudModalMode.value === 'create') {
       await createPlantNodeApi({
         name: crudFormName.value.trim(),
-        type: crudFormType.value,
+        type: crudFormType.value as PlantNodeApi.NodeType,
         parentId: crudFormParentId.value,
       });
       message.success('创建成功');
@@ -303,11 +303,6 @@ async function handleImport(options: any) {
   } catch {
     // 错误已由拦截器处理
   }
-}
-
-/** 右键菜单 */
-function onRightClick({ node }: any) {
-  selectedNode.value = node;
 }
 
 onMounted(() => {

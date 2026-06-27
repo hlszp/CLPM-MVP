@@ -265,11 +265,13 @@
 作为技术设计的首个事实来源，本节界定产品必须支持的底层算法指标池范围。所有指标均支持用户自助配置（公式/权重/阈值/启停）。
 
 ### 5.1 性能评估指标池 (Performance Metrics)
-系统需内置并支持 3+1+8 指标体系结构的计算与配置，严格对齐 GB/T 44693.2-2024 附录 B（性能评估指标）与附录 F（故障诊断指标）以及《关键算法设计说明 v2.0》。所有指标均支持用户自助配置（公式/权重/阈值/启停/控制类型）。
+系统需内置并支持 3+1+7 指标体系结构的计算与配置，严格对齐 GB/T 44693.2-2024 附录 B（性能评估指标）与附录 F（故障诊断指标）以及《关键算法设计说明 v2.0》。所有指标均支持用户自助配置（公式/权重/阈值/启停/控制类型）。
 
-#### 5.1.1 指标体系结构（3+1+8）
+#### 5.1.1 指标体系结构（3+1+7）
 
-指标体系由三组共 12 项指标构成，分别承担"参与综合评分"、"投用系数修正"与"辅助诊断/可信度修正"三类职责：
+指标体系由三组共 11 项指标构成，分别承担"参与综合评分"、"投用系数修正"与"辅助诊断/可信度修正"三类职责。
+
+> **命名规范说明（v4.0 同步）**：辅助诊断指标的 `metric_code` 以《关键算法设计说明 v2.0》和数据库列名为准。原 PRD v3.x 中的 `VALVE_STICTION_RATE`/`OVERAGGRESSIVE_RATE`/`OVERCONSERVATIVE_RATE`/`EXTERNAL_DISTURBANCE_RATE`/`QUALITY_ABNORMAL_RATE` 已调整：前四项迁入诊断标签体系（详见 §5.2），`VALVE_STICTION_RATE` 更名为 `STICTION_COEFF`（粘滞系数），新增 `OUTPUT_TRAVEL_INDEX`/`STEADY_STATE_TIME`/`IDEAL_SETTLING_TIME` 三项算法指标。
 
 **A. 3 核心质量指标 (Core Quality Metrics) — 参与综合评分**
 
@@ -285,7 +287,7 @@
 |---|---|---|---|---|---|---|---|---|
 | 4 | 自控率 | Auto Mode Rate | R | `AUTO_MODE_RATE` | 评估时段内控制器处于 AUTO/CAS/Remote 模式的累计时长占比 | 0~100% | 正向（越高越好） | 附录 B.1 (Auto) |
 
-**C. 8 辅助诊断指标 (Auxiliary Diagnostic Metrics) — 不直接参与综合评分**
+**C. 7 辅助诊断指标 (Auxiliary Diagnostic Metrics) — 不直接参与综合评分**
 
 辅助诊断指标用于诊断增强、排序辅助与指标可信度修正。其中**好值率不直接参与综合评分，而是影响指标可信度**（详见 §5.4 数据质量与可信度需求）。
 
@@ -294,11 +296,12 @@
 | 5 | 好值率 | Good Value Rate | `GOOD_VALUE_RATE` | 评估时段内 PV 质量码为 Good 且数值在有效量程范围内的累计时长占比 | 0~100% | 正向 | **影响指标可信度**，不参与评分 |
 | 6 | 振荡率 | Oscillation Rate | `OSCILLATION_RATE` | 基于 IAE 零交叉相似率法检测的振荡规律性强度 | 0~100% | 反向（越低越好） | 诊断辅助 |
 | 7 | 饱和率 | Saturation Rate | `SATURATION_RATE` | 评估时段内 OP 处于限位（0% 或 100%）的累计时长占比（仅自控模式） | 0~100% | 反向 | 诊断辅助 |
-| 8 | 阀门粘滞率 | Valve Stiction Rate | `VALVE_STICTION_RATE` | 基于散点拟合检测的阀门粘滞特征强度 | 0~100% | 反向 | 诊断辅助 |
-| 9 | 过激率 | Overaggressive Rate | `OVERAGGRESSIVE_RATE` | PID 参数过于灵敏导致超调过大或持续振荡的特征强度 | 0~100% | 反向 | 诊断辅助 |
-| 10 | 过保守率 | Overconservative Rate | `OVERCONSERVATIVE_RATE` | PID 参数过于迟缓导致响应慢、偏差长时间不收敛的特征强度 | 0~100% | 反向 | 诊断辅助 |
-| 11 | 外扰率 | External Disturbance Rate | `EXTERNAL_DISTURBANCE_RATE` | 回路频繁受到外部扰动、PV 突变与 SP 变更无关的特征强度 | 0~100% | 反向 | 诊断辅助 |
-| 12 | 质量异常率 | Quality Abnormal Rate | `QUALITY_ABNORMAL_RATE` | PV 质量码异常（通信中断/仪表故障/数据冻结/超量程）的累计时长占比 | 0~100% | 反向 | 诊断辅助 |
+| 8 | 粘滞系数 | Stiction Coefficient | `STICTION_COEFF` | 基于 PV-OP 散点拟合（椭圆法/Choudhury NGI/Kano 统计法）检测的阀门粘滞特征强度 | 0~1 | 反向 | 诊断辅助 |
+| 9 | 行程指数 | Output Travel Index | `OUTPUT_TRAVEL_INDEX` | 评估时段内 OP 变化行程总和占量程的归一化值，反映阀门动作频繁度 | 0~∞ | 反向 | 诊断辅助 |
+| 10 | 稳态时间 | Steady State Time | `STEADY_STATE_TIME` | 基于 ARMA 模型辨识和 Green 函数计算的回路从扰动到恢复稳态的响应时间（秒） | ≥0 | 反向 | 诊断辅助 |
+| 11 | 理想稳态时间 | Ideal Settling Time | `IDEAL_SETTLING_TIME` | 基于控制类型阈值和模型参数计算的理论期望稳态时间（秒），用于与实际稳态时间对比 | ≥0 | 反向 | 诊断辅助 |
+
+> **已迁入诊断标签的指标**（v4.0 调整）：原 v3.x 的 `OVERAGGRESSIVE_RATE`/`OVERCONSERVATIVE_RATE`/`EXTERNAL_DISTURBANCE_RATE`/`QUALITY_ABNORMAL_RATE` 不再作为独立指标计算，改为诊断标签体系（§5.2）中的 `OVERAGGRESSIVE`/`OVERCONSERVATIVE`/`EXTERNAL_DISTURBANCE`/`QUALITY_ABNORMAL` 标签，由诊断引擎基于多指标特征综合判定。
 
 #### 5.1.2 综合评分模型
 
@@ -453,7 +456,7 @@ P = (A·a + F·f + S·s) / (a + f + s) × R
 #### 5.6.1 标签元数据要求
 每个诊断标签实例除标签代码（详见 §5.2 表）外，必须记录以下管理元数据：
 * **严重等级 (Severity)**：分为 INFO / WARN / ERROR / CRITICAL 四级，由诊断算法基于特征强度自动判定，支持人工修正。
-* **来源指标 (Source Metric)**：触发该标签的来源指标（metric_code，如 `OSCILLATION_RATE`、`VALVE_STICTION_RATE`），用于证据链追溯。
+* **来源指标 (Source Metric)**：触发该标签的来源指标（metric_code，如 `OSCILLATION_RATE`、`STICTION_COEFF`），用于证据链追溯。
 * **触发条件 (Trigger Condition)**：触发该标签的具体条件快照（算法名/阈值/实际值/置信度），支持详情页下钻查看。
 * **首次触发时间 / 最近触发时间**：标签首次出现与最近一次出现的时间戳。
 * **关联回路 / 关联评估快照**：标签所属回路与触发时的评估快照 ID。

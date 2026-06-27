@@ -1732,13 +1732,13 @@
 
 ---
 
-### 2.5 回路整定 API (Tuning - Phase 2 原型占位)
+### 2.5 回路整定 API (Tuning)
 
-本组 API 为 **Phase 2** 功能，Phase 1 仅完成原型页面设计，API 路径与契约预先定义，但实际算法在 Phase 2 实现。Phase 1 调用返回占位数据或 `501 Not Implemented`。
+> **v4.0 路径同步说明**：原 Phase 2 原型占位路径已正式实现，URL 命名从名词式（records/identification/algorithm/simulation）调整为动词式（tasks/identify/tune/simulate），与实际代码对齐。新增 `GET /tuning/methods` 获取可用整定方法列表。
 
-#### 2.5.1 获取整定记录列表 (List Tuning Records)
+#### 2.5.1 获取整定记录列表 (List Tuning Tasks)
 
-* **URL**: `GET /api/v1/tuning/records`
+* **URL**: `GET /api/v1/tuning/tasks`
 * **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
 * **Query Parameters**:
   * `loopId` (UUID, optional): 按回路筛选
@@ -1791,9 +1791,9 @@
   ```
 * **说明**：Phase 1 原型阶段返回占位数据；Phase 2 返回真实整定记录。响应包含 `modelParams`（FOPDT 模型参数 K/tau/theta 或 SOPDT 模型参数 K/T1/T2/theta）、`pidParams`（推荐 PID 参数 Kp/Ti/Td）、`simulationResult`（仿真性能指标 rise_time/overshoot/settling_time/itae）、`fittingScore`（模型拟合度 R²，0-1，对齐《关键算法设计说明》§6.1.5 C5 修正）、`method`（整定方法枚举：`IMC`/`LAMBDA`/`ZIEGLER_NICHOLS`/`COHEN_COON`/`SIMC`，对齐§6.3-§6.7）、`algorithmVersion`（算法版本号）。
 
-#### 2.5.2 触发模型辨识 (Trigger Model Identification) [Phase 2]
+#### 2.5.2 触发模型辨识 (Trigger Model Identification)
 
-* **URL**: `POST /api/v1/tuning/identification`
+* **URL**: `POST /api/v1/tuning/identify`
 * **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
 * **Request Body**:
   ```json
@@ -1820,9 +1820,9 @@
   ```
 * **说明**：Phase 2 实现模型辨识算法（FOPDT/SOPDT/IPDT），输出传递函数参数（K/T/τ）、拟合度（fitting_score R²）、阶跃响应对比曲线。`method` 枚举值 `TWO_POINT`（两点法）/`AREA`（面积法）/`COMBINED`（组合法，对齐《关键算法设计说明》§6.1.4）；`modelType` 枚举值 `FOPDT`/`SOPDT`/`IPDT`。任务完成后通过 `/api/v1/algorithms/tasks/{task_id}` 查询结果，结果包含 `modelParams`（K/tau/theta 或 K/T1/T2/theta）+ `fittingScore`（R² 拟合度，0-1）+ `algorithmVersion`（如 `FOPDT_ID_v1.0`）。Phase 1 原型阶段返回 `501 Not Implemented`。
 
-#### 2.5.3 计算整定参数 (Calculate Tuning Parameters) [Phase 2]
+#### 2.5.3 计算整定参数 (Calculate Tuning Parameters)
 
-* **URL**: `POST /api/v1/tuning/algorithm`
+* **URL**: `POST /api/v1/tuning/tune`
 * **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
 * **Request Body**:
   ```json
@@ -1847,9 +1847,9 @@
   ```
 * **说明**：Phase 2 实现整定算法，`method` 枚举值 `IMC`/`LAMBDA`/`ZIEGLER_NICHOLS`/`COHEN_COON`/`SIMC`（对齐《关键算法设计说明》§6.3-§6.7）。任务完成后通过 `/api/v1/algorithms/tasks/{task_id}` 查询结果，结果包含 `modelParams`（FOPDT/SOPDT 模型参数）+ `pidParams`（推荐 PID 参数 Kp/Ti/Td）+ `simulationResult`（仿真性能指标）+ `fittingScore`（拟合度 R²）+ `algorithmVersion`（如 `IMC_TUNE_v1.0`）。Phase 1 原型阶段返回 `501 Not Implemented`。
 
-#### 2.5.4 执行闭环仿真 (Run Closed-Loop Simulation) [Phase 2]
+#### 2.5.4 执行闭环仿真 (Run Closed-Loop Simulation)
 
-* **URL**: `POST /api/v1/tuning/simulation`
+* **URL**: `POST /api/v1/tuning/simulate`
 * **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
 * **Request Body**:
   ```json
@@ -1873,7 +1873,7 @@
   ```
 * **说明**：Phase 2 执行闭环仿真，输出阶跃响应双波形对比、性能指标对比表（上升时间/超调/settling time/ITAE/IAE，对齐《关键算法设计说明》§6.8.2）。任务完成后通过 `/api/v1/algorithms/tasks/{task_id}` 查询结果，结果包含 `simulationResult`（current_response/recommended_response/metrics_comparison）。Phase 1 原型阶段返回 `501 Not Implemented`。
 
-#### 2.5.5 获取整定效果统计 (Get Tuning Analytics)
+#### 2.5.5 获取整定效果统计 (Get Tuning Analytics) [待实现]
 
 * **URL**: `GET /api/v1/tuning/analytics`
 * **权限**: 查看层及以上（所有角色可访问）

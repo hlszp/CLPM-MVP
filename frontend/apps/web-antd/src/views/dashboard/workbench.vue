@@ -21,7 +21,6 @@ import {
   onMounted,
   onUnmounted,
   ref,
-  watch,
 } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -277,15 +276,11 @@ const inefficientLoops = computed(() => {
   return overviewData.value?.inefficient_loops ?? [];
 });
 
-function handleLoopSelect(record: DashboardApi.InefficientLoop) {
-  selectedLoop.value = record;
-}
-
 // ============ 中行右：选中回路摘要 ============
 const loopSummary = computed(() => selectedLoop.value);
 
 // ============ 下行：趋势图 ============
-const trendChartRef = ref<InstanceType<EchartsUIType> | null>(null);
+const trendChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 
 function renderTrendChart() {
