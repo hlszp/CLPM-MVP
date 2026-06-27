@@ -27,7 +27,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Descriptions,
   DescriptionsItem,
   Drawer,
@@ -383,7 +382,7 @@ onMounted(() => {
 
 <template>
   <Page title="测点清单">
-    <Card>
+    <ClpmDataCanvas title="测点清单" :loading="loading">
       <!-- 筛选区 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -557,7 +556,7 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 编辑 Modal -->
     <Modal

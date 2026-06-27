@@ -437,7 +437,7 @@ onUnmounted(() => {
           ghost
           @click="handleTriggerStandard"
         >
-          手动触发标准评估
+          手动触发标准评估任务
         </Button>
         <Button
           v-if="activeTab === 'custom'"

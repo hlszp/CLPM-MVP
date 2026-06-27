@@ -19,7 +19,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
-  Card,
   DatePicker,
   Descriptions,
   DescriptionsItem,
@@ -33,6 +32,10 @@ import {
 import dayjs from 'dayjs';
 
 import { getLoopListApi } from '#/api/loop';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { identifyModelApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningModel' });
@@ -252,8 +255,8 @@ onMounted(() => {
 
 <template>
   <Page title="模型辨识">
-    <!-- 顶部筛选表单 -->
-    <Card class="mb-4">
+    <ClpmPageToolbar title="模型辨识" subtitle="选择回路、时间窗和模型类型，产出用于整定的辨识模型。" />
+    <ClpmDataCanvas class="mb-4 mt-4" title="辨识筛选条件">
       <Form layout="inline">
         <FormItem label="回路选择">
           <Select
@@ -297,13 +300,12 @@ onMounted(() => {
           </Button>
         </FormItem>
       </Form>
-    </Card>
+    </ClpmDataCanvas>
 
     <Spin :spinning="loading">
       <!-- 结果区 -->
       <div v-if="identifyResult" class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <!-- 左侧：模型参数卡片 -->
-        <Card title="模型参数" class="lg:col-span-1">
+        <ClpmDataCanvas title="模型参数" class="lg:col-span-1">
           <Descriptions :column="1" bordered size="small">
             <DescriptionsItem label="模型类型">
               {{ identifyResult.modelType }}
@@ -350,23 +352,20 @@ onMounted(() => {
               {{ identifyResult.algorithmVersion }}
             </DescriptionsItem>
           </Descriptions>
-        </Card>
+        </ClpmDataCanvas>
 
-        <!-- 右侧：拟合曲线图 -->
-        <Card title="拟合曲线" class="lg:col-span-2">
+        <ClpmDataCanvas title="拟合曲线" class="lg:col-span-2">
           <EchartsUI ref="chartRef" height="420px" />
-        </Card>
+        </ClpmDataCanvas>
       </div>
 
-      <!-- 空状态 -->
-      <Card v-else>
+      <ClpmDataCanvas v-else title="模型辨识结果">
         <div class="flex h-64 items-center justify-center text-gray-400">
           请选择回路和时间范围，点击「开始辨识」进行模型辨识
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
-      <!-- 底部操作按钮区 -->
-      <Card v-if="identifyResult" class="mt-4">
+      <ClpmDataCanvas v-if="identifyResult" class="mt-4" title="下一步动作">
         <div class="flex items-center justify-between">
           <span class="text-sm text-gray-500">
             辨识完成，可使用此模型进行 PID 整定或闭环仿真。
@@ -377,7 +376,7 @@ onMounted(() => {
             </Button>
           </div>
         </div>
-      </Card>
+      </ClpmDataCanvas>
     </Spin>
   </Page>
 </template>
