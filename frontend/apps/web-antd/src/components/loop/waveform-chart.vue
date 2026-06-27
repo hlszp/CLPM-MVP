@@ -13,7 +13,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { LoopApi } from '#/api/loop';
 
-import { ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
@@ -293,6 +293,11 @@ watch(
   () => render(),
   { deep: true, immediate: true },
 );
+
+// useEcharts 的 isActiveRef 在 onMounted 才置 true，
+// watch immediate 在 setup 阶段触发时 renderEcharts 会跳过，
+// 需在 onMounted 后重新渲染一次
+onMounted(() => render());
 </script>
 
 <template>
