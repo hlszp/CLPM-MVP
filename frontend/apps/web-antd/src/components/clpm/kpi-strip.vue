@@ -10,8 +10,8 @@ export interface KpiStripItem {
   label: string;
   /** 趋势小图数据（数值数组），如 [10, 12, 8, 15, 11] */
   sparkline?: number[];
-  /** 状态色：success/warning/danger/neutral */
-  status?: 'danger' | 'neutral' | 'success' | 'warning';
+  /** 状态色：success/warning/danger/neutral/primary */
+  status?: 'danger' | 'neutral' | 'primary' | 'success' | 'warning';
   /** 单位 */
   unit?: string;
   /** 主值 */
@@ -95,6 +95,9 @@ function getSparklineColor(status?: string): string {
     }
     case 'danger': {
       return 'hsl(0 84% 60%)';
+    }
+    case 'primary': {
+      return 'hsl(211 98% 52%)';
     }
     default: {
       return 'hsl(211 98% 52%)';
@@ -284,6 +287,7 @@ function getSparklineColor(status?: string): string {
 .is-warning { color: hsl(var(--warning)); }
 .is-danger { color: hsl(var(--destructive)); }
 .is-neutral { color: hsl(var(--foreground)); }
+.is-primary { color: hsl(211 98% 52%); }
 
 /* 骨架屏 */
 .clpm-kpi-strip__skeleton {

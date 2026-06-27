@@ -3,7 +3,9 @@
  * S4-DIAG-008 诊断列表页
  *
  * 对齐 IDS v3.2 §2.4 + PRD §4.4
- * - 筛选栏（装置选择/诊断标签选择/处理状态选择/时间窗选择）
+ * - 顶部 KpiStrip：待处理 / 处理中 / 近 7 天新增
+ * - Partial 警告横幅：INCONCLUSIVE 回路提示
+ * - 筛选栏（装置/诊断标签/处理状态/可信度等级/时间窗）
  * - 表格展示诊断列表（回路位号/装置/评分/诊断标签/置信度/处理状态/诊断时间/操作）
  * - 诊断标签使用 Tag 组件，按颜色区分
  * - 置信度使用进度条显示
@@ -15,18 +17,22 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Progress, Select, Table, Tag } from 'ant-design-vue';
+import { Alert, Button, message, Progress, Select, Table, Tag } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
+  ClpmKpiStrip,
   ClpmPageToolbar,
+  ClpmToolbarButton,
+  type KpiStripItem,
 } from '#/components/clpm';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -39,6 +45,9 @@ import { flattenNodes } from '#/utils/plant-node';
 import Tracker from './tracker.vue';
 
 defineOptions({ name: 'DiagnosisList' });
+
+/** 可信度等级（对齐 ConfidenceEvaluator A/B/C/D/E） */
+type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
 
 const router = useRouter();
 
@@ -55,6 +64,7 @@ const query = reactive({
   plantNodeId: undefined as string | undefined,
   diagnosisLabel: undefined as DiagnosisLabel | undefined,
   actionStatus: undefined as DiagnosisApi.ActionStatus | undefined,
+  confidenceLevel: undefined as ConfidenceLevel | undefined,
   timeWindow: 'last_7_days' as DiagnosisApi.TimeWindow,
   page: 1,
   pageSize: 20,
@@ -87,6 +97,15 @@ const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
   { label: '近 24 小时', value: 'last_24_hours' },
   { label: '近 7 天', value: 'last_7_days' },
   { label: '近 30 天', value: 'last_30_days' },
+];
+
+/** 可信度等级选项（对齐 ConfidenceEvaluator A/B/C/D/E，valid_rate 阈值 95/80/60/20%） */
+const confidenceLevelOptions: { label: string; value: ConfidenceLevel }[] = [
+  { label: 'A级（≥95%）', value: 'A' },
+  { label: 'B级（80~95%）', value: 'B' },
+  { label: 'C级（60~80%）', value: 'C' },
+  { label: 'D级（20~60%）', value: 'D' },
+  { label: 'E级（<20%，不确定）', value: 'E' },
 ];
 
 const columns: TableColumnsType = [
@@ -192,6 +211,97 @@ function handleOpenTracker(loopId: string) {
   trackerDrawerVisible.value = true;
 }
 
+/** 工具栏：刷新 */
+function handleRefresh() {
+  loadList();
+}
+
+/** 工具栏：导出 */
+function handleExport() {
+  message.info('导出功能开发中');
+}
+
+/** 工具栏：批量处理 */
+function handleBatchProcess() {
+  message.info('批量处理功能开发中');
+}
+
+/**
+ * 根据诊断 confidence（0~1）推导可信度等级
+ * 对齐 ConfidenceEvaluator A/B/C/D/E 阈值（95/80/60/20%）
+ *
+ * 注：DiagnosisListItem 暂无 good_value_rate 字段，使用 confidence 作为代理
+ */
+function deriveConfidenceLevel(confidence: number): ConfidenceLevel | '—' {
+  const rate = confidence * 100;
+  if (rate >= 95) return 'A';
+  if (rate >= 80) return 'B';
+  if (rate >= 60) return 'C';
+  if (rate >= 20) return 'D';
+  if (rate > 0) return 'E';
+  return '—';
+}
+
+/** KpiStrip 摘要指标：待处理 / 处理中 / 近 7 天新增 */
+const kpiStripItems = computed<KpiStripItem[]>(() => {
+  const pendingCount = diagnosisList.value.filter(
+    (item) => item.actionStatus === 'PENDING',
+  ).length;
+  const inProgressCount = diagnosisList.value.filter(
+    (item) => item.actionStatus === 'IN_PROGRESS',
+  ).length;
+  const sevenDaysAgo = dayjs().subtract(7, 'day');
+  const recentNewCount = diagnosisList.value.filter((item) =>
+    item.diagnosedAt ? dayjs(item.diagnosedAt).isAfter(sevenDaysAgo) : false,
+  ).length;
+
+  return [
+    {
+      key: 'pending',
+      label: '待处理',
+      value: pendingCount,
+      unit: '条',
+      status: 'warning',
+    },
+    {
+      key: 'in_progress',
+      label: '处理中',
+      value: inProgressCount,
+      unit: '条',
+      status: 'primary',
+    },
+    {
+      key: 'recent_new',
+      label: '近 7 天新增',
+      value: recentNewCount,
+      unit: '条',
+      status: 'neutral',
+    },
+  ];
+});
+
+/** INCONCLUSIVE 回路数（可信度等级为 E，即 valid_rate < 20%） */
+const inconclusiveCount = computed(
+  () =>
+    diagnosisList.value.filter(
+      (item) => deriveConfidenceLevel(item.confidence) === 'E',
+    ).length,
+);
+
+/** 是否显示 INCONCLUSIVE 警告横幅 */
+const showInconclusiveAlert = computed(() => inconclusiveCount.value > 0);
+
+/**
+ * 按可信度等级前端过滤（后端暂不支持该筛选条件）
+ * 注意：仅过滤当前页数据，分页总数仍为 API 返回值
+ */
+const filteredDiagnosisList = computed(() => {
+  if (!query.confidenceLevel) return diagnosisList.value;
+  return diagnosisList.value.filter(
+    (item) => deriveConfidenceLevel(item.confidence) === query.confidenceLevel,
+  );
+});
+
 function formatTime(t: string): string {
   if (!t) return '—';
   try {
@@ -230,8 +340,48 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar :title="$t('diagnosis.list.title')" subtitle="按诊断标签、状态和时间窗查看异常对象，并快速进入详情或异常跟踪。" />
-    <ClpmDataCanvas class="mt-4" title="诊断列表" :loading="loading">
+    <ClpmPageToolbar
+      :title="$t('diagnosis.list.title')"
+      subtitle="按诊断标签、状态和时间窗查看异常对象，并快速进入详情或异常跟踪。"
+    >
+      <template #actions>
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="handleRefresh"
+        />
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          @click="handleExport"
+        />
+        <ClpmToolbarButton
+          icon="ant-design:thunderbolt-outlined"
+          label="批量处理"
+          variant="primary"
+          @click="handleBatchProcess"
+        />
+      </template>
+    </ClpmPageToolbar>
+
+    <!-- 顶部 KpiStrip：待处理 / 处理中 / 近 7 天新增 -->
+    <ClpmKpiStrip
+      class="mt-4"
+      :items="kpiStripItems"
+      :loading="loading"
+    />
+
+    <!-- Partial 警告横幅：INCONCLUSIVE 回路提示 -->
+    <Alert
+      v-if="showInconclusiveAlert"
+      class="mt-3"
+      type="warning"
+      show-icon
+      :message="`当前有 ${inconclusiveCount} 个回路评估结果为不确定（INCONCLUSIVE），建议检查数据质量后重新评估`"
+    />
+
+    <ClpmDataCanvas class="mt-3" title="诊断列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -259,6 +409,13 @@ onMounted(() => {
           @change="handleSearch"
         />
         <Select
+          v-model:value="query.confidenceLevel"
+          placeholder="可信度等级"
+          style="width: 180px"
+          allow-clear
+          :options="confidenceLevelOptions"
+        />
+        <Select
           v-model:value="query.timeWindow"
           style="width: 140px"
           :options="timeWindowOptions"
@@ -271,7 +428,7 @@ onMounted(() => {
 
       <Table
         :columns="columns"
-        :data-source="diagnosisList"
+        :data-source="filteredDiagnosisList"
         :loading="loading"
         :pagination="{
           current: query.page,

@@ -6,13 +6,20 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
  *
  * 对齐 IDS v3.2 §2.7.6 + PRD §4.3.7
  * - Tab 双轨：标准评估任务（只读）/ 自定义评估任务（可新建/取消）
- * - 顶部统计摘要：今日执行数 / 成功率 / 平均耗时
- * - 筛选栏：状态 / 时间窗
+ * - 顶部 KPI Strip：任务总数 / 成功 / 失败 / 运行中
+ * - 状态机可视化：PENDING → RUNNING → SUCCESS/FAILED/CANCELLED
+ * - 筛选栏：状态
  * - 表格：任务ID / 类型 / 状态 / 进度 / 当前阶段 / 回路进度 / 创建时间 / 操作
- * - 行点击：展开右侧详情抽屉
+ * - 行点击：展开右侧详情抽屉（ClpmObjectSummaryBar）
+ * - 新建任务：提交前弹出配置变更确认弹窗
  * - 自动轮询：有活跃任务时每 10s 刷新
  */
 import type { TaskApi } from '#/api/task';
+import type {
+  KpiStripItem,
+  SummaryAction,
+  SummaryItem,
+} from '#/components/clpm';
 
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -21,17 +28,17 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   DatePicker,
   Drawer,
   Form,
   FormItem,
+  Input,
   message,
+  Modal,
   Popconfirm,
   Progress,
   Select,
   Space,
-  Statistic,
   Table,
   Tabs,
   Tag,
@@ -45,6 +52,13 @@ import {
   triggerStandardEvaluateApi,
 } from '#/api/task';
 import { getLoopListApi } from '#/api/loop';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 
 defineOptions({ name: 'TaskList' });
 
@@ -61,6 +75,7 @@ const pagination = reactive({
   pageSize: 20,
   total: 0,
 });
+const lastRefresh = ref('');
 
 const filter = reactive({
   status: undefined as TaskApi.TaskStatus | undefined,
@@ -83,6 +98,17 @@ const statusNameMap: Record<TaskApi.TaskStatus, string> = {
   CANCELLED: '已取消',
 };
 
+const statusSummaryMap: Record<
+  TaskApi.TaskStatus,
+  'danger' | 'neutral' | 'primary' | 'success' | 'warning'
+> = {
+  PENDING: 'neutral',
+  RUNNING: 'primary',
+  SUCCESS: 'success',
+  FAILED: 'danger',
+  CANCELLED: 'warning',
+};
+
 const stageNameMap: Record<string, string> = {
   FETCH_DATA: '取数',
   PREPROCESS: '预处理',
@@ -90,13 +116,25 @@ const stageNameMap: Record<string, string> = {
   CONFIDENCE: '可信度判定',
 };
 
+// 状态机流转节点
+const stateFlow: {
+  color: string;
+  key: TaskApi.TaskStatus;
+  label: string;
+}[] = [
+  { key: 'PENDING', label: '待执行', color: 'default' },
+  { key: 'RUNNING', label: '执行中', color: 'processing' },
+  { key: 'SUCCESS', label: '成功', color: 'success' },
+  { key: 'FAILED', label: '失败', color: 'error' },
+  { key: 'CANCELLED', label: '已取消', color: 'warning' },
+];
+
 // ---- 选中任务详情抽屉 ----
 const drawerVisible = ref(false);
 const selectedTask = ref<TaskApi.TaskItem | null>(null);
 
 // ---- 新建自定义评估任务抽屉 ----
 const createDrawerVisible = ref(false);
-const createLoading = ref(false);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
 const metricOptions = [
   { label: '好值率', value: 'good_value_rate' },
@@ -119,6 +157,11 @@ const createForm = reactive<{
   timeRange: undefined,
 });
 
+// ---- 配置变更确认弹窗 ----
+const confirmModalVisible = ref(false);
+const confirmLoading = ref(false);
+const changeDescription = ref('');
+
 // ---- 轮询 ----
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -126,29 +169,125 @@ const hasActiveTasks = computed(() =>
   taskList.value.some((t) => t.status === 'PENDING' || t.status === 'RUNNING'),
 );
 
-// ---- 统计摘要 ----
-const stats = computed(() => {
+// ---- KPI Strip 派生 ----
+const kpiStripItems = computed<KpiStripItem[]>(() => {
   const list = taskList.value;
-  if (list.length === 0) {
-    return { total: 0, successRate: 0, avgDuration: 0 };
-  }
   const total = list.length;
   const successCount = list.filter((t) => t.status === 'SUCCESS').length;
-  const finished = list.filter(
-    (t) => t.startedAt && t.finishedAt,
-  );
-  let avgDuration = 0;
-  if (finished.length > 0) {
-    const sum = finished.reduce((acc, t) => {
-      const diff = dayjs(t.finishedAt!).diff(dayjs(t.startedAt!), 'second');
-      return acc + diff;
-    }, 0);
-    avgDuration = sum / finished.length;
-  }
+  const failedCount = list.filter((t) => t.status === 'FAILED').length;
+  const runningCount = list.filter(
+    (t) => t.status === 'RUNNING' || t.status === 'PENDING',
+  ).length;
+  return [
+    { key: 'total', label: '任务总数', value: total, status: 'neutral' },
+    { key: 'success', label: '成功数', value: successCount, status: 'success' },
+    { key: 'failed', label: '失败数', value: failedCount, status: 'danger' },
+    { key: 'running', label: '运行中', value: runningCount, status: 'primary' },
+  ];
+});
+
+// ---- 详情 Drawer：ObjectSummaryBar 派生 ----
+const summaryPrimaryItem = computed<SummaryItem | null>(() => {
+  if (!selectedTask.value) return null;
+  const t = selectedTask.value;
   return {
-    total,
-    successRate: Number(((successCount / total) * 100).toFixed(1)),
-    avgDuration: Math.round(avgDuration),
+    key: 'status',
+    label: statusNameMap[t.status],
+    value: t.taskId.slice(-8).toUpperCase(),
+    status: statusSummaryMap[t.status],
+  };
+});
+
+const summaryItems = computed<SummaryItem[]>(() => {
+  if (!selectedTask.value) return [];
+  const t = selectedTask.value;
+  const items: SummaryItem[] = [];
+  if (t.startedAt) {
+    items.push({
+      key: 'startedAt',
+      label: '开始时间',
+      value: formatTime(t.startedAt),
+    });
+  }
+  if (t.finishedAt) {
+    items.push({
+      key: 'finishedAt',
+      label: '结束时间',
+      value: formatTime(t.finishedAt),
+    });
+  }
+  if (t.startedAt) {
+    items.push({
+      key: 'duration',
+      label: '耗时',
+      value: formatDuration(t.startedAt, t.finishedAt),
+    });
+  }
+  if (t.currentStage) {
+    items.push({
+      key: 'stage',
+      label: '当前阶段',
+      value: stageNameMap[t.currentStage] || t.currentStage,
+    });
+  }
+  if (t.loopsTotal) {
+    items.push({
+      key: 'loops',
+      label: '回路进度',
+      value: `${t.loopsDone || 0} / ${t.loopsTotal}`,
+    });
+  }
+  return items;
+});
+
+const summaryActions = computed<SummaryAction[]>(() => {
+  if (!selectedTask.value) return [];
+  const actions: SummaryAction[] = [
+    {
+      key: 'viewLog',
+      label: '查看日志',
+      icon: 'ant-design:file-text-outlined',
+      type: 'default',
+    },
+    {
+      key: 'rerun',
+      label: '重新运行',
+      icon: 'ant-design:reload-outlined',
+      type: 'primary',
+    },
+  ];
+  if (
+    selectedTask.value.status === 'PENDING' ||
+    selectedTask.value.status === 'RUNNING'
+  ) {
+    actions.push({
+      key: 'cancel',
+      label: '取消任务',
+      icon: 'ant-design:close-outlined',
+      danger: true,
+    });
+  }
+  return actions;
+});
+
+// ---- 变更确认弹窗：摘要派生 ----
+const changeSummary = computed(() => {
+  const metrics =
+    createForm.metrics.length > 0
+      ? createForm.metrics
+          .map((m) => metricOptions.find((o) => o.value === m)?.label || m)
+          .join('、')
+      : '全部指标';
+  const timeRange =
+    createForm.timeRange && createForm.timeRange.length === 2
+      ? `${createForm.timeRange[0]!.format('YYYY-MM-DD HH:mm')} ~ ${createForm.timeRange[1]!.format('YYYY-MM-DD HH:mm')}`
+      : '—';
+  return {
+    taskType: '自定义评估任务',
+    target: `${createForm.loopIds.length} 个回路`,
+    metrics,
+    timeRange,
+    impact: `将触发 ${createForm.loopIds.length} 个回路的 KPI 评估任务`,
   };
 });
 
@@ -216,6 +355,7 @@ async function loadList() {
     });
     taskList.value = data.items || [];
     pagination.total = data.total ?? 0;
+    lastRefresh.value = dayjs().format('HH:mm:ss');
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -267,6 +407,37 @@ async function handleCancel(taskId: string) {
   }
 }
 
+async function handleCancelFromDrawer(taskId: string) {
+  try {
+    await cancelTaskApi(taskId);
+    message.success('任务已取消');
+    drawerVisible.value = false;
+    loadList();
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
+
+function handleSummaryAction(key: string) {
+  if (!selectedTask.value) return;
+  const task = selectedTask.value;
+  if (key === 'viewLog') {
+    handleViewDetail(task.taskId);
+  } else if (key === 'rerun') {
+    if (task.taskType === 'STANDARD') {
+      handleTriggerStandard();
+      drawerVisible.value = false;
+    } else {
+      message.info('自定义任务请通过"新建任务"重新配置');
+      drawerVisible.value = false;
+      activeTab.value = 'custom';
+      openCreateDrawer();
+    }
+  } else if (key === 'cancel') {
+    handleCancelFromDrawer(task.taskId);
+  }
+}
+
 function openCreateDrawer() {
   createForm.loopIds = [];
   createForm.metrics = [];
@@ -277,7 +448,8 @@ function openCreateDrawer() {
   }
 }
 
-async function handleCreateTask() {
+// 提交按钮：先校验，再弹出变更确认弹窗
+function openConfirmModal() {
   if (createForm.loopIds.length === 0) {
     message.warning('请至少选择 1 个回路');
     return;
@@ -297,8 +469,16 @@ async function handleCreateTask() {
     message.warning('时间跨度不能超过 30 天');
     return;
   }
+  changeDescription.value = '';
+  confirmModalVisible.value = true;
+}
 
-  createLoading.value = true;
+async function handleConfirmSubmit() {
+  if (!createForm.timeRange || createForm.timeRange.length !== 2) return;
+  const tsStart = createForm.timeRange[0]!.format('YYYY-MM-DDTHH:mm:ss');
+  const tsEnd = createForm.timeRange[1]!.format('YYYY-MM-DDTHH:mm:ss');
+
+  confirmLoading.value = true;
   try {
     await triggerCustomEvaluateApi({
       loopIds: createForm.loopIds,
@@ -310,6 +490,7 @@ async function handleCreateTask() {
       tsEnd,
     });
     message.success('自定义评估任务已提交');
+    confirmModalVisible.value = false;
     createDrawerVisible.value = false;
     activeTab.value = 'custom';
     pagination.page = 1;
@@ -317,7 +498,7 @@ async function handleCreateTask() {
   } catch {
     // 错误已由拦截器处理
   } finally {
-    createLoading.value = false;
+    confirmLoading.value = false;
   }
 }
 
@@ -330,6 +511,49 @@ async function handleTriggerStandard() {
   } catch {
     // 错误已由拦截器处理
   }
+}
+
+// ---- 导出 CSV ----
+function handleExport() {
+  if (taskList.value.length === 0) {
+    message.warning('暂无数据可导出');
+    return;
+  }
+  const headers = [
+    '任务ID',
+    '类型',
+    '状态',
+    '进度',
+    '当前阶段',
+    '回路进度',
+    '创建时间',
+  ];
+  const rows = taskList.value.map((t) => [
+    t.taskId,
+    t.taskType === 'STANDARD' ? '标准' : '自定义',
+    statusNameMap[t.status],
+    `${formatProgress(t.progress)}%`,
+    t.currentStage ? (stageNameMap[t.currentStage] || t.currentStage) : '',
+    t.loopsTotal ? `${t.loopsDone || 0}/${t.loopsTotal}` : '',
+    formatTime(t.createdAt),
+  ]);
+  const csv = [headers, ...rows]
+    .map((r) =>
+      r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','),
+    )
+    .join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `评估任务列表_${dayjs().format('YYYYMMDD_HHmmss')}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  message.success('导出成功');
 }
 
 // ---- 轮询管理 ----
@@ -388,67 +612,92 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Page title="评估任务">
-    <!-- 统计摘要 -->
-    <div class="mb-4 grid grid-cols-3 gap-3">
-      <Card size="small" :loading="loading">
-        <Statistic title="任务总数" :value="stats.total" />
-      </Card>
-      <Card size="small" :loading="loading">
-        <Statistic
-          title="成功率"
-          :value="stats.successRate"
-          suffix="%"
-          :value-style="{ color: '#52c41a' }"
+  <Page>
+    <!-- 顶部工具栏 -->
+    <ClpmPageToolbar
+      title="评估任务"
+      subtitle="监控标准/自定义评估任务的执行状态与进度"
+      :loading="loading"
+      :last-refresh="lastRefresh"
+    >
+      <template #actions>
+        <ClpmToolbarButton
+          icon="ant-design:reload-outlined"
+          label="刷新"
+          :loading="loading"
+          @click="loadList"
         />
-      </Card>
-      <Card size="small" :loading="loading">
-        <Statistic
-          title="平均耗时"
-          :value="stats.avgDuration"
-          suffix="s"
+        <ClpmToolbarButton
+          v-if="activeTab === 'standard'"
+          icon="ant-design:play-circle-outlined"
+          label="触发标准评估"
+          variant="primary"
+          @click="handleTriggerStandard"
         />
-      </Card>
+        <ClpmToolbarButton
+          v-if="activeTab === 'custom'"
+          icon="ant-design:plus-outlined"
+          label="新建任务"
+          variant="primary"
+          @click="openCreateDrawer"
+        />
+        <ClpmToolbarButton
+          icon="ant-design:download-outlined"
+          label="导出"
+          @click="handleExport"
+        />
+      </template>
+    </ClpmPageToolbar>
+
+    <!-- KPI Strip：任务统计 -->
+    <ClpmKpiStrip class="mt-3" :items="kpiStripItems" :loading="loading" />
+
+    <!-- 状态机可视化：PENDING → RUNNING → SUCCESS/FAILED/CANCELLED -->
+    <div
+      class="mt-3 flex flex-wrap items-center gap-2 rounded border bg-card p-3 text-sm"
+    >
+      <span class="text-muted-foreground">状态流转：</span>
+      <template v-for="(s, idx) in stateFlow" :key="s.key">
+        <Tag :color="s.color">{{ s.label }}</Tag>
+        <span
+          v-if="idx < stateFlow.length - 1"
+          class="text-muted-foreground"
+        >
+          →
+        </span>
+      </template>
     </div>
 
-    <Card>
-      <Tabs v-model:active-key="activeTab">
-        <TabPane key="standard" tab="标准评估任务" />
-        <TabPane key="custom" tab="自定义评估任务" />
-      </Tabs>
+    <!-- 任务列表数据画布 -->
+    <ClpmDataCanvas class="mt-3" title="任务列表">
+      <template #extra>
+        <Tabs v-model:active-key="activeTab" size="small">
+          <TabPane key="standard" tab="标准评估任务" />
+          <TabPane key="custom" tab="自定义评估任务" />
+        </Tabs>
+      </template>
 
       <!-- 筛选栏 -->
-      <div class="mb-4 flex flex-wrap items-center gap-3">
+      <div class="mb-3 flex flex-wrap items-center gap-3">
         <Select
           v-model:value="filter.status"
           placeholder="状态筛选"
           style="width: 140px"
           allow-clear
-          :options="Object.entries(statusNameMap).map(([value, label]) => ({ label, value }))"
+          :options="
+            Object.entries(statusNameMap).map(([value, label]) => ({
+              label,
+              value,
+            }))
+          "
           @change="handleSearch"
         />
         <Button type="primary" :loading="loading" @click="handleSearch">
           查询
         </Button>
-        <div class="flex-1"></div>
-        <Button
-          v-if="activeTab === 'standard'"
-          type="primary"
-          ghost
-          @click="handleTriggerStandard"
-        >
-          手动触发标准评估任务
-        </Button>
-        <Button
-          v-if="activeTab === 'custom'"
-          type="primary"
-          @click="openCreateDrawer"
-        >
-          + 新建自定义评估任务
-        </Button>
       </div>
 
-      <!-- 任务列表 -->
+      <!-- 任务列表表格 -->
       <Table
         :columns="columns"
         :data-source="taskList"
@@ -531,12 +780,7 @@ onUnmounted(() => {
                 cancel-text="取消"
                 @confirm="handleCancel(record.taskId)"
               >
-                <Button
-                  type="link"
-                  size="small"
-                  danger
-                  @click.stop
-                >
+                <Button type="link" size="small" danger @click.stop>
                   取消
                 </Button>
               </Popconfirm>
@@ -544,25 +788,33 @@ onUnmounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 任务详情抽屉 -->
     <Drawer
       v-model:open="drawerVisible"
       title="任务摘要"
-      width="520"
+      width="560"
       placement="right"
     >
       <template v-if="selectedTask">
-        <div class="mb-4">
-          <h3 class="text-lg font-semibold">
-            {{ selectedTask.taskType === 'STANDARD' ? '标准评估任务' : '自定义评估任务' }}
-          </h3>
-          <p class="font-mono text-xs text-gray-500">{{ selectedTask.taskId }}</p>
-        </div>
+        <!-- ObjectSummaryBar：任务摘要 + 操作 -->
+        <ClpmObjectSummaryBar
+          :title="
+            selectedTask.taskType === 'STANDARD'
+              ? '标准评估任务'
+              : '自定义评估任务'
+          "
+          :subtitle="selectedTask.taskId"
+          :primary-item="summaryPrimaryItem"
+          :items="summaryItems"
+          :actions="summaryActions"
+          @action="handleSummaryAction"
+        />
 
-        <div class="mb-4">
-          <div class="mb-1 text-xs text-gray-500">进度</div>
+        <!-- 进度条 -->
+        <div class="mt-4">
+          <div class="mb-1 text-xs text-gray-500">执行进度</div>
           <Progress
             :percent="formatProgress(selectedTask.progress)"
             :status="
@@ -575,21 +827,8 @@ onUnmounted(() => {
           />
         </div>
 
-        <div class="space-y-2">
-          <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">状态</span>
-            <Tag :color="statusColorMap[selectedTask.status]">
-              {{ statusNameMap[selectedTask.status] }}
-            </Tag>
-          </div>
-          <div v-if="selectedTask.currentStage" class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">当前阶段</span>
-            <span>{{ stageNameMap[selectedTask.currentStage] || selectedTask.currentStage }}</span>
-          </div>
-          <div v-if="selectedTask.loopsTotal" class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">回路进度</span>
-            <span>{{ selectedTask.loopsDone || 0 }} / {{ selectedTask.loopsTotal }}</span>
-          </div>
+        <!-- 补充信息 -->
+        <div class="mt-4 space-y-2">
           <div class="flex justify-between border-b pb-2">
             <span class="text-gray-500">创建人</span>
             <span>{{ selectedTask.createdBy }}</span>
@@ -598,34 +837,12 @@ onUnmounted(() => {
             <span class="text-gray-500">创建时间</span>
             <span>{{ formatTime(selectedTask.createdAt) }}</span>
           </div>
-          <div v-if="selectedTask.startedAt" class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">开始时间</span>
-            <span>{{ formatTime(selectedTask.startedAt) }}</span>
-          </div>
-          <div v-if="selectedTask.finishedAt" class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">完成时间</span>
-            <span>{{ formatTime(selectedTask.finishedAt) }}</span>
-          </div>
-          <div v-if="selectedTask.startedAt" class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">耗时</span>
-            <span>{{ formatDuration(selectedTask.startedAt, selectedTask.finishedAt) }}</span>
-          </div>
           <div v-if="selectedTask.errorMessage" class="border-b pb-2">
             <div class="mb-1 text-gray-500">错误信息</div>
             <div class="rounded bg-red-50 p-2 text-sm text-red-600">
               {{ selectedTask.errorMessage }}
             </div>
           </div>
-        </div>
-
-        <div class="mt-6">
-          <Button
-            type="primary"
-            block
-            @click="handleViewDetail(selectedTask.taskId)"
-          >
-            查看任务详情
-          </Button>
         </div>
       </template>
     </Drawer>
@@ -677,13 +894,71 @@ onUnmounted(() => {
         <Button @click="createDrawerVisible = false">取消</Button>
         <Button
           type="primary"
-          :loading="createLoading"
           :disabled="createForm.loopIds.length === 0 || !createForm.timeRange"
-          @click="handleCreateTask"
+          @click="openConfirmModal"
         >
           提交任务
         </Button>
       </div>
     </Drawer>
+
+    <!-- 配置变更确认弹窗 -->
+    <Modal
+      v-model:open="confirmModalVisible"
+      title="配置变更确认"
+      width="520"
+      :confirm-loading="confirmLoading"
+      ok-text="确认提交"
+      cancel-text="取消"
+      @ok="handleConfirmSubmit"
+    >
+      <div class="space-y-3">
+        <!-- 变更摘要 -->
+        <div>
+          <div class="mb-1 text-xs text-gray-500">变更摘要</div>
+          <div class="rounded bg-gray-50 p-3 text-sm">
+            <div class="mb-1">
+              <span class="text-gray-500">任务类型：</span>
+              <span class="font-medium">{{ changeSummary.taskType }}</span>
+            </div>
+            <div class="mb-1">
+              <span class="text-gray-500">目标对象：</span>
+              <span class="font-medium">{{ changeSummary.target }}</span>
+            </div>
+            <div class="mb-1">
+              <span class="text-gray-500">评估指标：</span>
+              <span class="font-medium">{{ changeSummary.metrics }}</span>
+            </div>
+            <div>
+              <span class="text-gray-500">时间窗：</span>
+              <span class="font-mono text-xs">
+                {{ changeSummary.timeRange }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 影响范围 -->
+        <div>
+          <div class="mb-1 text-xs text-gray-500">影响范围</div>
+          <div class="rounded bg-blue-50 p-3 text-sm text-blue-700">
+            <span class="mr-1">⚠</span>
+            {{ changeSummary.impact }}
+          </div>
+        </div>
+
+        <!-- 变更说明 -->
+        <div>
+          <div class="mb-1 text-xs text-gray-500">
+            变更说明（可选）
+          </div>
+          <Input.TextArea
+            v-model:value="changeDescription"
+            placeholder="请填写本次变更的说明、原因或备注"
+            :rows="3"
+          />
+        </div>
+      </div>
+    </Modal>
   </Page>
 </template>
