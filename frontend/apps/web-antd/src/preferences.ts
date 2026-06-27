@@ -11,6 +11,25 @@ interface WebAntdPreferencesExtension {
 }
 
 /**
+ * CLPM Industrial Light 语义色（基于 vue-vben-admin 主题能力扩展）
+ *
+ * 这些常量只描述业务语义；真正的主题切换、主色、圆角、明暗模式仍交给
+ * vben preferences + Ant Design Vue ConfigProvider 管理。
+ */
+export const CLPM_INDUSTRIAL_TOKENS = {
+  BORDER_STRONG: '#cbd5e1',
+  CONTROL_PRIMARY: '#0d6efd',
+  DATA_LINE_MODE: '#722ed1',
+  DATA_LINE_OP: '#fa8c16',
+  DATA_LINE_PV: '#0d6efd',
+  DATA_LINE_SP: '#52c41a',
+  SURFACE_CANVAS: '#f4f7fb',
+  SURFACE_PANEL: '#ffffff',
+  TEXT_PRIMARY: '#0f172a',
+  TEXT_SECONDARY: '#475569',
+} as const;
+
+/**
  * 全局色彩语义规范（对齐 UI/UX v4.1 §3.3 设计令牌）
  *
  * 统一全系统的状态色彩编码，确保 KPI 卡片、徽章、图表、标签等元素
@@ -113,10 +132,12 @@ export const overridesPreferences = defineOverridesPreferences({
     colorPrimary: 'hsl(211 98% 52%)',
     // 圆角：克制（对齐 UI/UX §3.5 --radius-sm 4px）
     radius: '0.25',
-    // 默认浅色模式
+    // 默认浅色模式，后续通过 vben themeToggle 支持中控深色
     mode: 'light',
+    // 默认保留浅色头部，避免与既有 vben 顶栏功能冲突
     semiDarkHeader: false,
-    semiDarkSidebar: false,
+    // 半深色侧栏增强工业桌面端质感，同时仍允许用户在设置中切换
+    semiDarkSidebar: true,
   },
   widget: {
     fullscreen: true,

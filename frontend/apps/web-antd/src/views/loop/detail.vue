@@ -14,12 +14,11 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import {
-  Alert,
   Button,
   Card,
   Descriptions,
@@ -37,9 +36,17 @@ import {
   getRecommendationsApi,
 } from '#/api/diagnosis';
 import { getLoopDetailApi, getLoopMonitorDetailApi } from '#/api/loop';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  ClpmTagAssociationBadge,
+  type KpiStripItem,
+  type SummaryItem,
+} from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import QualityTag from '#/components/loop/quality-tag.vue';
-import StatusBadge from '#/components/loop/status-badge.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -49,6 +56,7 @@ import {
 defineOptions({ name: 'LoopDetail' });
 
 const route = useRoute();
+const router = useRouter();
 const loopId = route.params.id as string;
 
 const loading = ref(false);
@@ -73,21 +81,6 @@ const trendWindowOptions: { label: string; value: LoopApi.TrendWindow }[] = [
   { label: '8h', value: 'last_8_hours' },
   { label: '24h', value: 'last_24_hours' },
   { label: '72h', value: 'last_72_hours' },
-];
-
-/** 7 Tag 槽位配置 */
-const tagSlots: {
-  key: keyof LoopApi.LoopTagMapping;
-  label: string;
-  required: boolean;
-}[] = [
-  { key: 'pv', label: 'PV', required: true },
-  { key: 'sp', label: 'SP', required: true },
-  { key: 'op', label: 'OP', required: true },
-  { key: 'mode', label: 'MODE', required: true },
-  { key: 'pid_p', label: 'PID_P', required: false },
-  { key: 'pid_i', label: 'PID_I', required: false },
-  { key: 'pid_d', label: 'PID_D', required: false },
 ];
 
 /** 8 大 KPI 配置（对齐 GB/T 44693.2-2024） */
@@ -122,6 +115,83 @@ const kpiStatusMap: Record<string, { color: string; label: string }> = {
 const isInconclusive = computed(
   () => monitorDetail.value?.kpiSummary.status === 'INCONCLUSIVE',
 );
+
+const summaryItems = computed<SummaryItem[]>(() => {
+  if (!loopDetail.value || !monitorDetail.value) return [];
+  return [
+    {
+      key: 'mode',
+      label: '控制方式',
+      value: monitorDetail.value.currentValues.modeLabel || loopDetail.value.runtimeParams.controlMode,
+      status:
+        monitorDetail.value.currentValues.modeLabel === 'Auto' ? 'success' : 'warning',
+    },
+    {
+      key: 'score',
+      label: '综合评分',
+      value: isInconclusive.value
+        ? '—'
+        : monitorDetail.value.kpiSummary.composite_score?.toFixed(1) ?? '—',
+      status: isInconclusive.value
+        ? 'neutral'
+        : monitorDetail.value.kpiSummary.composite_score >= 80
+          ? 'success'
+          : monitorDetail.value.kpiSummary.composite_score >= 60
+            ? 'warning'
+            : 'danger',
+    },
+    {
+      key: 'read_at',
+      label: '最近读取',
+      value: formatTime(monitorDetail.value.currentValues.readAt),
+      status: 'neutral',
+    },
+  ];
+});
+
+const summaryTags = computed<SummaryItem[]>(() => {
+  if (!loopDetail.value) return [];
+  return [
+    {
+      key: 'status',
+      label: '状态',
+      value: loopDetail.value.basicInfo.isActive ? '运行中' : '未启用',
+      status: loopDetail.value.basicInfo.isActive ? 'success' : 'warning',
+    },
+    {
+      key: 'unit',
+      label: '单元',
+      value: loopDetail.value.basicInfo.unitName,
+      status: 'neutral',
+    },
+  ];
+});
+
+const loopKpiStripItems = computed<KpiStripItem[]>(() => {
+  const detail = monitorDetail.value;
+  if (!detail) return [];
+  return kpiItems.map((item) => {
+    const metricValue = (detail.kpiSummary[item.key] as number | null) ?? 0;
+    return {
+      key: item.key,
+      label: item.label,
+      status: isInconclusive.value
+        ? 'neutral'
+        : metricValue >= 80
+          ? 'success'
+          : metricValue >= 60
+            ? 'warning'
+            : 'danger',
+      unit: item.unit,
+      value: metricValue.toFixed(1),
+    };
+  });
+});
+
+const pageSubtitle = computed(() => {
+  if (!loopDetail.value) return '回路对象分析';
+  return `${loopDetail.value.basicInfo.unitName} · Tag 关联 ${loopDetail.value.aasSyncStatus.associatedTagCount}/7`;
+});
 
 const pageTitle = computed(() => {
   if (loopDetail.value) {
@@ -209,7 +279,6 @@ function formatTime(t: null | string): string {
   }
 }
 
-/** FE-05: Tab 切换时按需加载诊断数据 */
 function handleTabChange(key: number | string) {
   if (
     key === 'diagnosis' &&
@@ -232,282 +301,157 @@ onMounted(() => {
 
 <template>
   <Page :title="pageTitle">
-    <!-- 顶部返回导航（建议 3） -->
-    <div class="mb-3 flex items-center gap-3">
-      <Button size="small" @click="$router.back()">返回</Button>
-      <nav class="text-sm text-gray-400">
-        <a class="cursor-pointer hover:text-blue-500" @click="$router.push('/dashboard')">工作台</a>
-        <span class="mx-1">/</span>
-        <a class="cursor-pointer hover:text-blue-500" @click="$router.push('/loop/manage')">回路管理</a>
-        <span class="mx-1">/</span>
-        <span class="text-gray-600">回路详情</span>
-      </nav>
-    </div>
+    <ClpmPageToolbar :title="pageTitle" :subtitle="pageSubtitle">
+      <template #actions>
+        <Button size="small" @click="router.back()">返回</Button>
+        <Button size="small" @click="router.push('/dashboard')">工作台</Button>
+        <Button size="small" @click="router.push('/loop/manage')">回路管理</Button>
+      </template>
+    </ClpmPageToolbar>
     <Spin :spinning="loading">
       <Tabs v-model:active-key="activeTab" @change="handleTabChange">
         <!-- 概览 Tab -->
         <TabPane key="overview" tab="回路概览">
           <div class="space-y-4">
-            <!-- 顶部：基本信息 + Tag 关联状态 -->
-            <Card title="回路基本信息">
-              <Descriptions
-                v-if="loopDetail"
-                :column="{ xs: 1, sm: 2, md: 3 }"
-                bordered
-                size="small"
-              >
-                <DescriptionsItem label="回路位号">
-                  {{ loopDetail.basicInfo.tagName }}
-                </DescriptionsItem>
-                <DescriptionsItem label="描述">
-                  {{ loopDetail.basicInfo.description }}
-                </DescriptionsItem>
-                <DescriptionsItem label="所属单元">
-                  {{ loopDetail.basicInfo.unitName }}
-                </DescriptionsItem>
-                <DescriptionsItem label="状态">
-                  <StatusBadge
-                    :status="loopDetail.basicInfo.status"
-                    :is-active="loopDetail.basicInfo.isActive"
-                  />
-                </DescriptionsItem>
-                <DescriptionsItem label="控制方式">
-                  {{ loopDetail.runtimeParams.controlMode }}
-                </DescriptionsItem>
-                <DescriptionsItem label="PID 参数">
-                  P={{ loopDetail.runtimeParams.pidP }}, I={{
-                    loopDetail.runtimeParams.pidI
-                  }}, D={{ loopDetail.runtimeParams.pidD }}
-                </DescriptionsItem>
-                <DescriptionsItem label="创建时间">
-                  {{ formatTime(loopDetail.basicInfo.createdAt) }}
-                </DescriptionsItem>
-                <DescriptionsItem label="创建人">
-                  {{ loopDetail.basicInfo.createdBy }}
-                </DescriptionsItem>
-                <DescriptionsItem label="更新时间">
-                  {{ formatTime(loopDetail.basicInfo.updatedAt) }}
-                </DescriptionsItem>
-                <DescriptionsItem label="AAS 最后同步">
-                  {{ formatTime(loopDetail.aasSyncStatus.lastSyncAt) }}
-                </DescriptionsItem>
-                <DescriptionsItem label="关联 Tag 数">
-                  {{ loopDetail.aasSyncStatus.associatedTagCount }}
-                </DescriptionsItem>
-                <DescriptionsItem label="备注">
-                  {{ loopDetail.basicInfo.remark || '—' }}
-                </DescriptionsItem>
-              </Descriptions>
-            </Card>
-
-            <!-- Tag 关联状态 -->
-            <Card title="Tag 关联状态">
-              <div
-                v-if="loopDetail"
-                class="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7"
-              >
-                <div
-                  v-for="slot in tagSlots"
-                  :key="slot.key"
-                  class="rounded border p-3 text-center"
-                  :class="
-                    loopDetail.tagMapping[slot.key].associated
-                      ? 'border-green-200 bg-green-50'
-                      : slot.required
-                        ? 'border-red-200 bg-red-50'
-                        : 'border-gray-200 bg-gray-50'
-                  "
-                >
-                  <div class="mb-1 flex items-center justify-center gap-1">
-                    <span class="font-medium">{{ slot.label }}</span>
-                    <span v-if="slot.required" class="text-red-500">*</span>
-                  </div>
-                  <div
-                    v-if="loopDetail.tagMapping[slot.key].associated"
-                    class="text-xs text-green-600"
-                  >
-                    {{ loopDetail.tagMapping[slot.key].tagName }}
-                  </div>
-                  <div v-else class="text-xs text-gray-400">未关联</div>
-                </div>
-              </div>
-            </Card>
+            <ClpmObjectSummaryBar
+              v-if="loopDetail"
+              :title="loopDetail.basicInfo.tagName"
+              :subtitle="loopDetail.basicInfo.description || '回路对象分析'"
+              :items="summaryItems"
+              :tags="summaryTags"
+            >
+              <template #actions>
+                <ClpmTagAssociationBadge :mapping="loopDetail.tagMapping" />
+              </template>
+            </ClpmObjectSummaryBar>
 
             <!-- 中部：波形图 -->
-            <Card title="PV/SP/OP 趋势波形">
+            <ClpmDataCanvas
+              title="PV/SP/OP 趋势波形"
+              description="主趋势图优先展示回路当前运行质量、模式切换和关键变量变化。"
+              :loading="monitorLoading"
+              :empty="!monitorDetail"
+              empty-text="暂无趋势数据"
+            >
               <template #extra>
-                <div class="flex items-center gap-2">
-                  <span class="text-sm text-gray-500">时间范围：</span>
-                  <a-radio-group
-                    v-model:value="trendWindow"
-                    :options="trendWindowOptions"
-                    option-type="button"
-                    button-style="solid"
-                    size="small"
-                    @change="handleTrendWindowChange"
-                  />
-                </div>
+                <span class="text-sm text-gray-500">时间范围：</span>
+                <a-radio-group
+                  v-model:value="trendWindow"
+                  :options="trendWindowOptions"
+                  option-type="button"
+                  button-style="solid"
+                  size="small"
+                  @change="handleTrendWindowChange"
+                />
               </template>
 
-              <Spin :spinning="monitorLoading">
-                <div v-if="monitorDetail" class="space-y-3">
-                  <!-- 当前值快照 -->
-                  <div
-                    class="flex flex-wrap items-center gap-4 rounded border p-3"
-                  >
-                    <div>
-                      <span class="text-xs text-gray-400">PV</span>
-                      <span class="ml-2 font-medium text-blue-600">
-                        {{ monitorDetail.currentValues.pv ?? '—' }}
-                      </span>
-                      <QualityTag
-                        :quality="monitorDetail.currentValues.pvQuality"
-                        class="ml-2"
-                      />
-                    </div>
-                    <div>
-                      <span class="text-xs text-gray-400">SP</span>
-                      <span class="ml-2 font-medium">
-                        {{ monitorDetail.currentValues.sp ?? '—' }}
-                      </span>
-                    </div>
-                    <div>
-                      <span class="text-xs text-gray-400">OP</span>
-                      <span class="ml-2 font-medium">
-                        {{ monitorDetail.currentValues.op ?? '—' }}
-                      </span>
-                    </div>
-                    <div>
-                      <span class="text-xs text-gray-400">MODE</span>
-                      <Tag
-                        class="ml-2"
-                        :color="
-                          monitorDetail.currentValues.modeLabel === 'Auto'
-                            ? 'green'
-                            : 'orange'
-                        "
-                      >
-                        {{ monitorDetail.currentValues.modeLabel || '—' }}
-                      </Tag>
-                    </div>
-                    <div>
-                      <span class="text-xs text-gray-400">读取时间</span>
-                      <span class="ml-2 text-sm">
-                        {{ formatTime(monitorDetail.currentValues.readAt) }}
-                      </span>
-                    </div>
+              <div v-if="monitorDetail" class="space-y-3">
+                <!-- 当前值快照 -->
+                <div class="flex flex-wrap items-center gap-4 rounded border p-3">
+                  <div>
+                    <span class="text-xs text-gray-400">PV</span>
+                    <span class="ml-2 font-medium text-blue-600">
+                      {{ monitorDetail.currentValues.pv ?? '—' }}
+                    </span>
+                    <QualityTag
+                      :quality="monitorDetail.currentValues.pvQuality"
+                      class="ml-2"
+                    />
                   </div>
+                  <div>
+                    <span class="text-xs text-gray-400">SP</span>
+                    <span class="ml-2 font-medium">
+                      {{ monitorDetail.currentValues.sp ?? '—' }}
+                    </span>
+                  </div>
+                  <div>
+                    <span class="text-xs text-gray-400">OP</span>
+                    <span class="ml-2 font-medium">
+                      {{ monitorDetail.currentValues.op ?? '—' }}
+                    </span>
+                  </div>
+                  <div>
+                    <span class="text-xs text-gray-400">MODE</span>
+                    <Tag
+                      class="ml-2"
+                      :color="
+                        monitorDetail.currentValues.modeLabel === 'Auto'
+                          ? 'green'
+                          : 'orange'
+                      "
+                    >
+                      {{ monitorDetail.currentValues.modeLabel || '—' }}
+                    </Tag>
+                  </div>
+                  <div>
+                    <span class="text-xs text-gray-400">读取时间</span>
+                    <span class="ml-2 text-sm">
+                      {{ formatTime(monitorDetail.currentValues.readAt) }}
+                    </span>
+                  </div>
+                </div>
 
-                  <!-- 波形图 -->
-                  <WaveformChart :trend="monitorDetail.trend" height="360px" />
-                </div>
-                <div v-else class="py-12 text-center text-gray-400">
-                  暂无趋势数据
-                </div>
-              </Spin>
-            </Card>
+                <WaveformChart :trend="monitorDetail.trend" height="360px" />
+              </div>
+            </ClpmDataCanvas>
 
             <!-- 底部：KPI 摘要 -->
-            <Card title="KPI 摘要">
-              <Spin :spinning="monitorLoading">
-                <div v-if="monitorDetail">
-                  <!-- INCONCLUSIVE 警告 -->
-                  <Alert
-                    v-if="isInconclusive"
-                    class="mb-4"
-                    type="warning"
-                    show-icon
-                    message="该回路本期评估数据不足，结果不确定"
-                    description="有效数据率低于 20%，KPI 数值仅供参考，不参与评级与排行。"
-                  />
-
-                  <!-- 综合评分 -->
-                  <div
-                    class="mb-4 flex items-center justify-between rounded border p-4"
-                    :class="{ 'opacity-60': isInconclusive }"
-                  >
-                    <div>
-                      <div class="text-xs text-gray-400">
-                        综合评分（composite_score）
-                      </div>
-                      <div
-                        class="mt-1 text-3xl font-bold"
-                        :class="
-                          isInconclusive
-                            ? 'text-gray-400'
-                            : {
-                                'text-green-600':
-                                  monitorDetail.kpiSummary.composite_score >= 80,
-                                'text-orange-500':
-                                  monitorDetail.kpiSummary.composite_score >= 60 &&
-                                  monitorDetail.kpiSummary.composite_score < 80,
-                                'text-red-500':
-                                  monitorDetail.kpiSummary.composite_score < 60,
-                              }
-                        "
-                      >
-                        {{
-                          monitorDetail.kpiSummary.composite_score?.toFixed(
-                            1,
-                          ) ?? '--'
-                        }}
-                      </div>
-                    </div>
-                    <div class="text-right">
-                      <div class="text-xs text-gray-400">KPI 状态</div>
-                      <Tag
-                        :color="
-                          kpiStatusMap[monitorDetail.kpiSummary.status]?.color
-                        "
-                        class="mt-1"
-                      >
-                        {{
-                          kpiStatusMap[monitorDetail.kpiSummary.status]
-                            ?.label || monitorDetail.kpiSummary.status
-                        }}
-                      </Tag>
-                      <div class="mt-1 text-xs text-gray-400">
-                        算法版本：{{
-                          monitorDetail.kpiSummary.algorithm_version
-                        }}
-                      </div>
-                      <div class="text-xs text-gray-400">
-                        计算时间：{{
-                          formatTime(monitorDetail.kpiSummary.calculatedAt)
-                        }}
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 6 大 KPI 网格 -->
-                  <div
-                    class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6"
-                    :class="{ 'opacity-60': isInconclusive }"
-                  >
+            <ClpmDataCanvas
+              title="KPI 摘要"
+              :loading="monitorLoading"
+              :empty="!monitorDetail"
+              empty-text="暂无 KPI 数据"
+              :partial="isInconclusive"
+              partial-text="该回路本期评估数据不足，结果不确定。有效数据率低于 20%，KPI 仅供参考。"
+            >
+              <div v-if="monitorDetail" class="space-y-4">
+                <div
+                  class="flex items-center justify-between rounded border p-4"
+                  :class="{ 'opacity-60': isInconclusive }"
+                >
+                  <div>
+                    <div class="text-xs text-gray-400">综合评分（composite_score）</div>
                     <div
-                      v-for="item in kpiItems"
-                      :key="item.key"
-                      class="rounded border p-3 text-center"
+                      class="mt-1 text-3xl font-bold"
+                      :class="
+                        isInconclusive
+                          ? 'text-gray-400'
+                          : {
+                              'text-green-600': monitorDetail.kpiSummary.composite_score >= 80,
+                              'text-orange-500':
+                                monitorDetail.kpiSummary.composite_score >= 60 &&
+                                monitorDetail.kpiSummary.composite_score < 80,
+                              'text-red-500': monitorDetail.kpiSummary.composite_score < 60,
+                            }
+                      "
                     >
-                      <div class="text-xs text-gray-400">{{ item.label }}</div>
-                      <div class="mt-1 text-xl font-medium">
-                        {{
-                          (
-                            monitorDetail.kpiSummary[item.key] as number | null
-                          )?.toFixed(1) ?? '--'
-                        }}{{ item.unit }}
-                      </div>
-                      <div class="mt-1 text-xs text-gray-400">
-                        {{ item.desc }}
-                      </div>
+                      {{
+                        isInconclusive
+                          ? '—'
+                          : monitorDetail.kpiSummary.composite_score?.toFixed(1) ?? '--'
+                      }}
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-xs text-gray-400">KPI 状态</div>
+                    <Tag :color="kpiStatusMap[monitorDetail.kpiSummary.status]?.color" class="mt-1">
+                      {{
+                        kpiStatusMap[monitorDetail.kpiSummary.status]?.label ||
+                        monitorDetail.kpiSummary.status
+                      }}
+                    </Tag>
+                    <div class="mt-1 text-xs text-gray-400">
+                      算法版本：{{ monitorDetail.kpiSummary.algorithm_version }}
+                    </div>
+                    <div class="text-xs text-gray-400">
+                      计算时间：{{ formatTime(monitorDetail.kpiSummary.calculatedAt) }}
                     </div>
                   </div>
                 </div>
-                <div v-else class="py-12 text-center text-gray-400">
-                  暂无 KPI 数据
-                </div>
-              </Spin>
-            </Card>
+
+                <ClpmKpiStrip :items="loopKpiStripItems" :loading="monitorLoading" />
+              </div>
+            </ClpmDataCanvas>
           </div>
         </TabPane>
 

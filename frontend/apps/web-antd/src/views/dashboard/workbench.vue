@@ -22,6 +22,7 @@ import {
   onUnmounted,
   ref,
 } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
@@ -34,7 +35,18 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { KPI_COLOR_MAP, THEME_COLORS } from '#/preferences';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
+import { THEME_COLORS } from '#/preferences';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  type KpiStripItem,
+} from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 
 // ============ API 接口 ============
@@ -43,6 +55,8 @@ import {
   getAnalyticsApi,
   getRealtimeAutoRateApi,
 } from '#/api/metric';
+
+const router = useRouter();
 
 // ============ 工厂树导航 ============
 const selectedPlantNodeId = ref<string | undefined>(undefined);
@@ -246,6 +260,17 @@ const kpiCards = computed<KpiCardItem[]>(() => {
   ];
 });
 
+const kpiStripItems = computed<KpiStripItem[]>(() =>
+  kpiCards.value.map((card) => ({
+    delta: card.delta === 0 ? '' : `${trendArrow(card.trend)} ${formatDelta(card.delta, card.unit)}`,
+    key: String(card.key),
+    label: card.label,
+    status: kpiStatus(card.value, card.unit === '%'),
+    unit: card.unit,
+    value: card.unit === '%' ? card.value.toFixed(1) : card.value,
+  })),
+);
+
 // ============ 中行左：低效回路列表 ============
 const inefficientLoopColumns = [
   { dataIndex: 'loop_tag', key: 'loop_tag', title: '位号', width: 140, ellipsis: true },
@@ -278,6 +303,20 @@ const inefficientLoops = computed(() => {
 
 // ============ 中行右：选中回路摘要 ============
 const loopSummary = computed(() => selectedLoop.value);
+
+function handleLoopRowClick(record: DashboardApi.InefficientLoop) {
+  selectedLoop.value = record;
+}
+
+function handleGoLoopDetail(loopId?: string) {
+  if (!loopId) return;
+  router.push(`/loop/detail/${loopId}`);
+}
+
+function handleGoDiagnosis(loopId?: string) {
+  if (!loopId) return;
+  router.push(`/diagnosis/detail/${loopId}`);
+}
 
 // ============ 下行：趋势图 ============
 const trendChartRef = ref<EchartsUIType>();
@@ -364,24 +403,18 @@ function renderTrendChart() {
 }
 
 // ============ 辅助函数 ============
-function scoreColor(score: number, isRate: boolean = true): string {
+function kpiStatus(score: number, isRate: boolean = true): KpiStripItem['status'] {
   const threshold = isRate ? 80 : 60;
   const good = isRate ? 90 : 80;
-  if (score >= good) return KPI_COLOR_MAP.EXCELLENT;
-  if (score >= threshold) return KPI_COLOR_MAP.PASS;
-  return KPI_COLOR_MAP.FAIL;
+  if (score >= good) return 'success';
+  if (score >= threshold) return 'warning';
+  return 'danger';
 }
 
 function trendArrow(trend: DashboardApi.Trend): string {
   if (trend === 'up') return '↑';
   if (trend === 'down') return '↓';
   return '→';
-}
-
-function trendColor(trend: DashboardApi.Trend, goodWhenUp: boolean): string {
-  if (trend === 'stable') return '#6c757d';
-  const isGood = goodWhenUp ? trend === 'up' : trend === 'down';
-  return isGood ? KPI_COLOR_MAP.EXCELLENT : KPI_COLOR_MAP.FAIL;
 }
 
 function formatDelta(delta: number, unit: string): string {
@@ -419,52 +452,25 @@ onUnmounted(() => {});
 
     <!-- 右侧主显示区 -->
     <div class="min-w-0 flex-1 flex flex-col gap-3">
-      <!-- ====== 筛选区 ====== -->
-      <Card size="small" :body-style="{ padding: '10px 16px' }">
-        <div class="flex flex-wrap items-center gap-3">
-          <Tag color="processing">{{ selectedPlantNodeName }}</Tag>
-          <RadioGroup
-            v-model:value="granularity"
-            :options="granularityOptions"
-            option-type="button"
-            button-style="solid"
-            size="small"
-            @change="loadAll"
-          />
-        </div>
-      </Card>
-
-      <!-- ====== 上行：6 KPI 卡片 ====== -->
-      <div class="grid grid-cols-6 gap-3 flex-shrink-0">
-        <Card
-          v-for="card in kpiCards"
-          :key="card.key"
+      <ClpmPageToolbar
+        title="控制回路治理工作台"
+        :subtitle="`${selectedPlantNodeName} · ${granularityOptions.find((o) => o.value === granularity)?.label ?? '日'}视图`"
+      >
+        <Tag color="processing">{{ selectedPlantNodeName }}</Tag>
+        <RadioGroup
+          v-model:value="granularity"
+          :options="granularityOptions"
+          option-type="button"
+          button-style="solid"
           size="small"
-          :loading="loading"
-          :body-style="{ padding: '12px 14px' }"
-        >
-          <div class="flex flex-col">
-            <span class="text-xs text-gray-400 mb-1">{{ card.label }}</span>
-            <div class="flex items-baseline gap-1">
-              <span
-                class="text-xl font-bold font-mono"
-                :style="{ color: scoreColor(card.value, card.unit === '%') }"
-              >
-                {{ card.unit === '%' ? card.value.toFixed(1) : card.value }}
-              </span>
-              <span class="text-xs text-gray-400">{{ card.unit }}</span>
-            </div>
-            <div
-              v-if="card.delta !== 0"
-              class="mt-1 flex items-center gap-1 text-xs"
-              :style="{ color: trendColor(card.trend, card.goodWhenUp) }"
-            >
-              <span>{{ trendArrow(card.trend) }}</span>
-              <span>{{ formatDelta(card.delta, card.unit) }}</span>
-            </div>
-          </div>
-        </Card>
-      </div>
+          @change="loadAll"
+        />
+        <template #actions>
+          <Button size="small" :loading="loading" @click="loadAll">刷新</Button>
+        </template>
+      </ClpmPageToolbar>
+
+      <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
 
       <!-- ====== 中行：低效回路列表 | 选中回路摘要 ====== -->
       <div class="flex gap-3 flex-1 min-h-0">
@@ -482,7 +488,8 @@ onUnmounted(() => {});
             :pagination="false"
             :scroll="{ y: 'calc(100% - 40px)' }"
             size="small"
-            :row-class-name="(record) => selectedLoop?.loop_id === record.loop_id ? 'ant-table-row-selected' : ''"
+            :row-class-name="(record) => selectedLoop?.loop_id === record.loop_id ? 'ant-table-row-selected cursor-pointer' : 'cursor-pointer'"
+            :custom-row="(record) => ({ onClick: () => handleLoopRowClick(record as DashboardApi.InefficientLoop) })"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'loop_tag'">
@@ -514,99 +521,80 @@ onUnmounted(() => {});
         </Card>
 
         <!-- 中行右：选中回路摘要（40%） -->
-        <Card
+        <ClpmDataCanvas
           class="w-[40%] min-w-0"
           title="回路摘要"
-          size="small"
           :loading="loading && !selectedLoop"
-          :body-style="{ padding: '12px', height: '100%' }"
+          :empty="!loopSummary"
+          empty-text="点击左侧回路查看摘要"
         >
-          <div v-if="loopSummary" class="flex flex-col h-full">
-            <!-- 回路基本信息 -->
-            <div class="mb-3">
-              <div class="flex items-center gap-2 mb-2">
-                <span class="font-mono text-base font-bold">{{ loopSummary.loop_tag }}</span>
-                <Tag
-                  :color="
-                    loopSummary.composite_score >= 80
-                      ? 'success'
-                      : loopSummary.composite_score >= 60
-                        ? 'warning'
-                        : 'error'
-                  "
+          <template v-if="loopSummary">
+            <ClpmObjectSummaryBar
+              :title="loopSummary.loop_tag"
+              :subtitle="`${loopSummary.loop_name} · ${loopSummary.plant_name}`"
+              :items="[
+                {
+                  key: 'auto_rate',
+                  label: '自控率',
+                  value: (loopSummary.key_metric?.auto_mode_rate?.toFixed(1) ?? '—') + '%',
+                  status: kpiStatus(loopSummary.key_metric?.auto_mode_rate ?? 0),
+                },
+                {
+                  key: 'steady_rate',
+                  label: '平稳率',
+                  value: (loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—') + '%',
+                  status: kpiStatus(loopSummary.key_metric?.steady_rate ?? 0),
+                },
+                {
+                  key: 'score',
+                  label: '综合评分',
+                  value: loopSummary.composite_score.toFixed(0),
+                  status: kpiStatus(loopSummary.composite_score, false),
+                },
+              ]"
+            >
+              <template #actions>
+                <Button
+                  size="small"
+                  type="primary"
+                  @click="handleGoDiagnosis(loopSummary.loop_id)"
                 >
-                  {{ loopSummary.composite_score.toFixed(0) }}分
-                </Tag>
-              </div>
-              <div class="text-xs text-gray-400">
-                {{ loopSummary.loop_name }}
-              </div>
-              <div class="text-xs text-gray-400">{{ loopSummary.plant_name }}</div>
-            </div>
-
-            <!-- 关键指标 -->
-            <div class="mb-3 grid grid-cols-2 gap-2">
-              <div class="bg-gray-50 rounded p-2 text-center">
-                <div class="text-xs text-gray-400">自控率</div>
-                <div
-                  class="text-lg font-mono font-bold"
-                  :style="{ color: scoreColor(loopSummary.key_metric?.auto_mode_rate ?? 0) }"
+                  进入诊断
+                </Button>
+                <Button
+                  size="small"
+                  @click="handleGoLoopDetail(loopSummary.loop_id)"
                 >
-                  {{ loopSummary.key_metric?.auto_mode_rate?.toFixed(1) ?? '—' }}%
-                </div>
-              </div>
-              <div class="bg-gray-50 rounded p-2 text-center">
-                <div class="text-xs text-gray-400">平稳率</div>
-                <div
-                  class="text-lg font-mono font-bold"
-                  :style="{ color: scoreColor(loopSummary.key_metric?.steady_rate ?? 0) }"
-                >
-                  {{ loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—' }}%
-                </div>
-              </div>
-            </div>
+                  回路详情
+                </Button>
+              </template>
+            </ClpmObjectSummaryBar>
 
             <!-- 预诊标签 -->
-            <div class="mb-3" v-if="loopSummary.diagnosis_labels?.length">
-              <div class="text-xs text-gray-400 mb-1">预诊标签</div>
+            <div v-if="loopSummary.diagnosis_labels?.length" class="mt-3">
+              <div class="mb-1 text-xs text-gray-400">预诊标签</div>
               <div class="flex flex-wrap gap-1">
                 <Tag
                   v-for="label in loopSummary.diagnosis_labels"
                   :key="label"
-                  color="warning"
+                  :color="DIAGNOSIS_LABEL_COLOR_MAP[label] || 'warning'"
                   size="small"
                 >
-                  {{ label }}
+                  {{ DIAGNOSIS_LABEL_NAME_MAP[label] || label }}
                 </Tag>
               </div>
             </div>
-
-            <!-- 小趋势占位 -->
-            <div class="mb-3 flex-1 bg-gray-50 rounded p-2 flex items-center justify-center">
-              <span class="text-sm text-gray-400">PV/SP/OP 趋势图（待接入）</span>
-            </div>
-
-            <!-- 快捷动作 -->
-            <div class="flex gap-2">
-              <Button size="small" type="primary">进入诊断</Button>
-              <Button size="small">回路详情</Button>
-            </div>
-          </div>
-          <div v-else class="h-full flex items-center justify-center">
-            <span class="text-sm text-gray-400">请选择一个低效回路查看详情</span>
-          </div>
-        </Card>
+          </template>
+        </ClpmDataCanvas>
       </div>
 
       <!-- ====== 下行：关键指标组合趋势 ====== -->
-      <Card
+      <ClpmDataCanvas
         class="flex-shrink-0"
         title="关键指标组合趋势"
-        size="small"
-        :loading="loading"
-        :body-style="{ padding: '8px' }"
+        description="自控投用率与平稳率的组合趋势，用于观察近期运行质量变化。"
       >
-        <div class="mb-2 flex items-center gap-2">
+        <template #extra>
           <span class="text-xs text-gray-400">粒度：</span>
           <RadioGroup
             v-model:value="trendGranularity"
@@ -616,9 +604,9 @@ onUnmounted(() => {});
             size="small"
             @change="loadAnalytics"
           />
-        </div>
+        </template>
         <EchartsUI ref="trendChartRef" height="220px" />
-      </Card>
+      </ClpmDataCanvas>
     </div>
   </div>
 </template>
