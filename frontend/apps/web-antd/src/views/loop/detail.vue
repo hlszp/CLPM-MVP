@@ -56,7 +56,7 @@ const monitorLoading = ref(false);
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
 const monitorDetail = ref<LoopApi.MonitorDetail | null>(null);
 
-const trendWindow = ref<LoopApi.TrendWindow>('last_24_hours');
+const trendWindow = ref<LoopApi.TrendWindow>('last_4_hours');
 
 /** FE-05: 智能诊断 Tab 相关状态 */
 const activeTab = ref<'diagnosis' | 'overview'>('overview');
@@ -67,9 +67,12 @@ const diagnosisDetail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
 const recommendations = ref<DiagnosisApi.RecommendationItem[]>([]);
 
 const trendWindowOptions: { label: string; value: LoopApi.TrendWindow }[] = [
-  { label: '近 1 小时', value: 'last_1_hour' },
-  { label: '近 24 小时', value: 'last_24_hours' },
-  { label: '近 7 天', value: 'last_7_days' },
+  { label: '1h', value: 'last_1_hour' },
+  { label: '2h', value: 'last_2_hours' },
+  { label: '4h', value: 'last_4_hours' },
+  { label: '8h', value: 'last_8_hours' },
+  { label: '24h', value: 'last_24_hours' },
+  { label: '72h', value: 'last_72_hours' },
 ];
 
 /** 7 Tag 槽位配置 */

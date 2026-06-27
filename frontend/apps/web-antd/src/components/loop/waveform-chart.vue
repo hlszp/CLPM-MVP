@@ -1,13 +1,14 @@
 <script lang="ts" setup>
 /**
- * ECharts 波形图组件
+ * ECharts 波形图组件（统一版）
  *
- * 对齐 D06 §6 + IDS v3.2 §2.2.14 + UIUX §10.5 PV 质量码波形处理：
- * - 展示 PV/SP/OP 趋势线
+ * 对齐 D06 §6 + IDS v3.2 §2.2.14 + UIUX §10.5：
+ * - 展示 PV/SP/OP/MODE 趋势线（MODE 阶梯线绑右轴）
+ * - MODE 切换竖直虚线（markLine）
  * - PV 质量码渲染：
  *   - 无 validMask（向后兼容）：Bad 质量时段置 null 实现断线（connectNulls: false）
  *   - 有 validMask（Phase 5）：无效时段用灰色虚线保留连线 + markArea 标识无效区间
- * - 数据超过 1 万点时启用 dataZoom 平滑渲染
+ * - 始终启用 X+Y 双轴 dataZoom（inside + slider）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
@@ -19,17 +20,25 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 defineOptions({ name: 'WaveformChart' });
 
-const props = defineProps<{
-  height?: string;
-  /** Phase 5：逐点异常原因码（如 'FROZEN,JUMP'） */
-  outlierReasons?: string[];
-  trend: LoopApi.MonitorTrend;
-  /** Phase 5：逐点有效性标记（true=有效，false=无效）。存在时优先于 pvQuality */
-  validMask?: boolean[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    height?: string;
+    /** Phase 5：逐点异常原因码（如 'FROZEN,JUMP'） */
+    outlierReasons?: string[];
+    /** 是否显示 MODE 阶梯线 + 切换标记（默认 true） */
+    showMode?: boolean;
+    trend: LoopApi.MonitorTrend;
+    /** Phase 5：逐点有效性标记（true=有效，false=无效）。存在时优先于 pvQuality */
+    validMask?: boolean[];
+  }>(),
+  { showMode: true },
+);
 
 const chartRef = ref<EchartsUIType>();
-const { renderEcharts } = useEcharts(chartRef);
+const { renderEcharts, resize } = useEcharts(chartRef);
+
+/** 暴露 resize 给父组件（全屏切换时调用） */
+defineExpose({ resize });
 
 /**
  * 构建 PV 数据（向后兼容模式）：Bad 质量时段置 null，实现断线效果
@@ -140,13 +149,36 @@ function buildSimpleData(
   return timestamps.map((ts, i) => [ts, values[i] ?? null]);
 }
 
+/** 查找 MODE 切换时间点（用于 markLine 竖直虚线） */
+function findModeChangePoints(
+  timestamps: number[],
+  modes: (null | number)[],
+): number[] {
+  const changes: number[] = [];
+  let prevMode: null | number = null;
+  for (const [i, mode] of modes.entries()) {
+    const m = mode ?? null;
+    if (m !== prevMode) {
+      changes.push(timestamps[i] ?? 0);
+      prevMode = m;
+    }
+  }
+  return changes;
+}
+
 function render() {
-  const { timestamps, pv, sp, op, pvQuality } = props.trend;
+  const { timestamps, pv, sp, op, mode, pvQuality } = props.trend;
   if (!timestamps || timestamps.length === 0) return;
 
   const spData = buildSimpleData(timestamps, sp);
   const opData = buildSimpleData(timestamps, op);
-  const enableDataZoom = timestamps.length > 10_000;
+  const showMode = props.showMode && mode && mode.length > 0;
+  const modeData = showMode
+    ? buildSimpleData(timestamps, mode)
+    : [];
+  const modeChanges = showMode
+    ? findModeChangePoints(timestamps, mode)
+    : [];
 
   // Phase 5：validMask 存在且长度匹配时优先使用，否则回退到 pvQuality 断线逻辑
   const useValidMask =
@@ -173,6 +205,14 @@ function render() {
           itemStyle: { color: 'rgba(200,200,200,0.15)' },
           silent: true,
         },
+        markLine: showMode
+          ? {
+              data: modeChanges.map((ts) => ({ xAxis: ts })),
+              lineStyle: { color: '#999', type: 'dashed', width: 1 },
+              silent: true,
+              symbol: 'none',
+            }
+          : undefined,
         name: 'PV',
         showSymbol: false,
         type: 'line',
@@ -196,6 +236,14 @@ function render() {
         data: pvData,
         itemStyle: { color: '#0D6EFD' },
         lineStyle: { width: 2 },
+        markLine: showMode
+          ? {
+              data: modeChanges.map((ts) => ({ xAxis: ts })),
+              lineStyle: { color: '#999', type: 'dashed', width: 1 },
+              silent: true,
+              symbol: 'none',
+            }
+          : undefined,
         name: 'PV',
         showSymbol: false,
         type: 'line',
@@ -210,6 +258,14 @@ function render() {
         data: pvData,
         itemStyle: { color: '#0D6EFD' },
         lineStyle: { width: 2 },
+        markLine: showMode
+          ? {
+              data: modeChanges.map((ts) => ({ xAxis: ts })),
+              lineStyle: { color: '#999', type: 'dashed', width: 1 },
+              silent: true,
+              symbol: 'none',
+            }
+          : undefined,
         name: 'PV',
         showSymbol: false,
         type: 'line',
@@ -217,51 +273,115 @@ function render() {
     ];
   }
 
+  const series: any[] = [
+    ...pvSeries,
+    {
+      connectNulls: false,
+      data: spData,
+      itemStyle: { color: '#52c41a' },
+      lineStyle: { type: 'dashed', width: 1.5 },
+      name: 'SP',
+      showSymbol: false,
+      type: 'line',
+    },
+    {
+      connectNulls: false,
+      data: opData,
+      itemStyle: { color: '#fa8c16' },
+      lineStyle: { width: 1.5 },
+      name: 'OP',
+      showSymbol: false,
+      type: 'line',
+    },
+  ];
+
+  if (showMode) {
+    series.push({
+      data: modeData,
+      itemStyle: { color: '#ff4d4f' },
+      lineStyle: { type: 'dotted', width: 1.5 },
+      name: 'MODE',
+      showSymbol: false,
+      step: 'end',
+      type: 'line',
+      yAxisIndex: 1,
+    });
+  }
+
+  // Y 轴配置：showMode 时双轴（数值 + MODE），否则单轴
+  const yAxis: any[] = [
+    {
+      axisLabel: { formatter: '{value}' },
+      name: '数值',
+      type: 'value',
+    },
+  ];
+  if (showMode) {
+    yAxis.push({
+      axisLabel: {
+        formatter: (val: number) => {
+          if (val === 0) return 'Manual';
+          if (val === 1) return 'Auto';
+          if (val === 2) return 'Cascade';
+          return '';
+        },
+      },
+      max: 2.5,
+      min: -0.5,
+      name: 'MODE',
+      splitLine: { show: false },
+      type: 'value',
+    });
+  }
+
   renderEcharts({
     backgroundColor: 'transparent',
-    dataZoom: enableDataZoom
+    dataZoom: showMode
       ? [
-          { end: 100, start: 0, type: 'inside' },
+          // X 轴：滚轮 + 滑块
+          { end: 100, start: 0, type: 'inside', xAxisIndex: 0 },
           {
             end: 100,
-            handleSize: '100%',
             start: 0,
             type: 'slider',
+            xAxisIndex: 0,
+            bottom: 8,
+            height: 20,
+          },
+          // Y 轴：滚轮 + 滑块（量程缩放）
+          { end: 100, start: 0, type: 'inside', yAxisIndex: 0 },
+          {
+            end: 100,
+            start: 0,
+            type: 'slider',
+            yAxisIndex: 0,
+            right: 8,
+            width: 20,
           },
         ]
-      : [],
+      : [
+          { end: 100, start: 0, type: 'inside', xAxisIndex: 0 },
+          {
+            end: 100,
+            start: 0,
+            type: 'slider',
+            xAxisIndex: 0,
+            bottom: 8,
+            height: 20,
+          },
+        ],
     grid: {
-      bottom: enableDataZoom ? 60 : 30,
+      bottom: 50,
       containLabel: true,
-      left: '2%',
-      right: '2%',
-      top: 40,
+      left: '3%',
+      right: showMode ? 60 : '3%',
+      top: 60,
     },
     legend: {
-      data: ['PV', 'SP', 'OP'],
+      data: showMode ? ['PV', 'SP', 'OP', 'MODE'] : ['PV', 'SP', 'OP'],
       top: 5,
     },
-    series: [
-      ...pvSeries,
-      {
-        connectNulls: false,
-        data: spData,
-        itemStyle: { color: '#52c41a' },
-        lineStyle: { type: 'dashed', width: 1.5 },
-        name: 'SP',
-        showSymbol: false,
-        type: 'line',
-      },
-      {
-        connectNulls: false,
-        data: opData,
-        itemStyle: { color: '#fa8c16' },
-        lineStyle: { width: 1.5 },
-        name: 'OP',
-        showSymbol: false,
-        type: 'line',
-      },
-    ],
+    series,
     tooltip: {
       axisPointer: { type: 'cross' },
       trigger: 'axis',
@@ -281,15 +401,12 @@ function render() {
       },
       type: 'time',
     },
-    yAxis: {
-      axisLabel: { formatter: '{value}' },
-      type: 'value',
-    },
+    yAxis,
   });
 }
 
 watch(
-  () => [props.trend, props.validMask, props.outlierReasons],
+  () => [props.trend, props.validMask, props.outlierReasons, props.showMode],
   () => render(),
   { deep: true, immediate: true },
 );

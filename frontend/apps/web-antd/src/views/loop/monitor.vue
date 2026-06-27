@@ -11,7 +11,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
  * - 筛选：装置/单元层级路径 + 回路类型 + 关键字
  * - Table 列：回路编号 / 名称 / 类型 / SP / PV / OP / MODE / 性能指数 / 操作
  * - 操作列：趋势 / 性能 / 详情
- * - 趋势 Modal：ECharts 展示 SP/PV/OP/MODE 趋势，竖直虚线标记 MODE 切换点
+ * - 趋势 Modal：复用 WaveformChart 组件（与回路详情页风格统一）
  * - 性能 Modal：ECharts 仪表盘 + 6 大 KPI 卡片（含权重）
  * - 30 秒自动刷新（Switch 开关 + 倒计时）
  */
@@ -43,6 +43,7 @@ import {
   getLoopMonitorDetailApi,
   getLoopMonitorListApi,
 } from '#/api/loop';
+import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -223,9 +224,7 @@ const trendModalVisible = ref(false);
 const trendLoading = ref(false);
 const trendDetail = ref<LoopApi.MonitorDetail | null>(null);
 const trendWindow = ref<LoopApi.TrendWindow>('last_4_hours');
-const trendChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderTrendChart, resize: resizeTrendChart } =
-  useEcharts(trendChartRef);
+const waveformChartRef = ref<InstanceType<typeof WaveformChart>>();
 const trendFullscreen = ref(false);
 
 const trendModalWidth = computed(() =>
@@ -243,7 +242,7 @@ const trendBodyStyle = computed(() =>
 function toggleTrendFullscreen() {
   trendFullscreen.value = !trendFullscreen.value;
   nextTick(() => {
-    setTimeout(() => resizeTrendChart(), 100);
+    setTimeout(() => waveformChartRef.value?.resize(), 100);
   });
 }
 
@@ -371,171 +370,14 @@ async function loadTrendDetail() {
       currentRecord.value.loopId,
       trendWindow.value,
     );
+    // WaveformChart 组件内置 watch(trend) 自动渲染，只需在 DOM 更新后触发 resize 修正尺寸
     await nextTick();
-    renderTrend();
+    waveformChartRef.value?.resize();
   } catch {
     // 错误已由拦截器处理
   } finally {
     trendLoading.value = false;
   }
-}
-
-/** 查找 MODE 切换时间点 */
-function findModeChangePoints(
-  timestamps: number[],
-  modes: (null | number)[],
-): number[] {
-  const changes: number[] = [];
-  let prevMode: null | number = null;
-  for (const [i, mode] of modes.entries()) {
-    const m = mode ?? null;
-    if (m !== prevMode) {
-      changes.push(timestamps[i] ?? 0);
-      prevMode = m;
-    }
-  }
-  return changes;
-}
-
-/** 渲染趋势图 */
-function renderTrend() {
-  const trend = trendDetail.value?.trend;
-  if (!trend || !trend.timestamps || trend.timestamps.length === 0) return;
-
-  const { timestamps, pv, sp, op, mode } = trend;
-  const pvData = timestamps.map(
-    (ts, i) => [ts, pv[i] ?? null] as [number, null | number],
-  );
-  const spData = timestamps.map(
-    (ts, i) => [ts, sp[i] ?? null] as [number, null | number],
-  );
-  const opData = timestamps.map(
-    (ts, i) => [ts, op[i] ?? null] as [number, null | number],
-  );
-  const modeData = timestamps.map(
-    (ts, i) => [ts, mode[i] ?? null] as [number, null | number],
-  );
-  const modeChanges = findModeChangePoints(timestamps, mode);
-
-  renderTrendChart({
-    backgroundColor: 'transparent',
-    dataZoom: [
-      // 底部时间轴滑块（X 轴）
-      { end: 100, start: 0, type: 'inside', xAxisIndex: 0 },
-      {
-        end: 100,
-        start: 0,
-        type: 'slider',
-        xAxisIndex: 0,
-        bottom: 8,
-        height: 20,
-      },
-      // 右侧量程滑块（Y 轴）
-      { end: 100, start: 0, type: 'inside', yAxisIndex: 0 },
-      {
-        end: 100,
-        start: 0,
-        type: 'slider',
-        yAxisIndex: 0,
-        right: 8,
-        width: 20,
-      },
-    ],
-    grid: {
-      bottom: 50,
-      containLabel: true,
-      left: '3%',
-      right: 60,
-      top: 60,
-    },
-    legend: { data: ['PV', 'SP', 'OP', 'MODE'], top: 5 },
-    series: [
-      {
-        connectNulls: false,
-        data: pvData,
-        itemStyle: { color: '#0D6EFD' },
-        lineStyle: { width: 2 },
-        name: 'PV',
-        showSymbol: false,
-        type: 'line',
-        markLine: {
-          data: modeChanges.map((ts) => ({ xAxis: ts })),
-          lineStyle: { color: '#999', type: 'dashed', width: 1 },
-          silent: true,
-          symbol: 'none',
-        },
-      },
-      {
-        connectNulls: false,
-        data: spData,
-        itemStyle: { color: '#52c41a' },
-        lineStyle: { type: 'dashed', width: 1.5 },
-        name: 'SP',
-        showSymbol: false,
-        type: 'line',
-      },
-      {
-        connectNulls: false,
-        data: opData,
-        itemStyle: { color: '#fa8c16' },
-        lineStyle: { width: 1.5 },
-        name: 'OP',
-        showSymbol: false,
-        type: 'line',
-      },
-      {
-        data: modeData,
-        itemStyle: { color: '#ff4d4f' },
-        lineStyle: { type: 'dotted', width: 1.5 },
-        name: 'MODE',
-        showSymbol: false,
-        step: 'end',
-        type: 'line',
-        yAxisIndex: 1,
-      },
-    ],
-    tooltip: {
-      axisPointer: { type: 'cross' },
-      trigger: 'axis',
-      valueFormatter: (val) =>
-        val === null || val === undefined ? '—' : Number(val).toFixed(3),
-    },
-    xAxis: {
-      axisLabel: {
-        formatter: (val: number) => {
-          const d = new Date(val);
-          const mo = String(d.getMonth() + 1).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          const hh = String(d.getHours()).padStart(2, '0');
-          const mi = String(d.getMinutes()).padStart(2, '0');
-          return `${mo}-${dd} ${hh}:${mi}`;
-        },
-      },
-      type: 'time',
-    },
-    yAxis: [
-      {
-        axisLabel: { formatter: '{value}' },
-        name: '数值',
-        type: 'value',
-      },
-      {
-        axisLabel: {
-          formatter: (val: number) => {
-            if (val === 0) return 'Manual';
-            if (val === 1) return 'Auto';
-            if (val === 2) return 'Cascade';
-            return '';
-          },
-        },
-        max: 2.5,
-        min: -0.5,
-        name: 'MODE',
-        splitLine: { show: false },
-        type: 'value',
-      },
-    ],
-  });
 }
 
 function handleTrendWindowChange() {
@@ -920,9 +762,13 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 趋势图 -->
+          <!-- 趋势图（复用 WaveformChart 组件，与回路详情页风格统一） -->
           <div v-if="trendDetail">
-            <EchartsUI ref="trendChartRef" :height="trendChartHeight" />
+            <WaveformChart
+              ref="waveformChartRef"
+              :trend="trendDetail.trend"
+              :height="trendChartHeight"
+            />
           </div>
           <div v-else class="py-12 text-center text-gray-400">暂无趋势数据</div>
         </div>
