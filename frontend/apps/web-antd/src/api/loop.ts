@@ -11,6 +11,9 @@ export namespace LoopApi {
   /** 回路状态（IDS v3.2 §2.2.7） */
   export type LoopStatus = 'INACTIVE' | 'PARTIAL' | 'READY';
 
+  /** 可信度等级（A-E） */
+  export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
+
   /** 控制方式（IDS v3.2 §2.2.7） */
   export type ControlMode = 'Auto' | 'Cascade' | 'Manual';
 
@@ -289,6 +292,9 @@ export namespace LoopApi {
     loopType?: LoopType;
     score: number;
     status: LoopStatus;
+    confidenceLevel?: ConfidenceLevel;
+    effectiveAutoRate?: number;
+    kpiSummary?: KpiSummary;
     isActive: boolean;
     readAt: string;
   }

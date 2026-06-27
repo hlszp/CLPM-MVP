@@ -245,9 +245,26 @@ async def list_loop_monitor(
         for t in t_result.scalars().all():
             tags_map[str(t.id)] = t
 
+    # 批量查每个回路的最新 KPI 快照（DISTINCT ON 取每个 loop_id 的最新一条）
+    snapshot_map: dict[str, KpiSnapshotHourly] = {}
+    if loop_ids:
+        # PostgreSQL DISTINCT ON 语法：按 loop_id 分组取 ts_end 最大的一条
+        s_stmt = (
+            select(KpiSnapshotHourly)
+            .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+            .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+        )
+        s_result = await db.execute(s_stmt)
+        for snap in s_result.scalars().all():
+            # 只保留每个 loop 的第一条（最新）
+            key = str(snap.loop_id)
+            if key not in snapshot_map:
+                snapshot_map[key] = snap
+
     items = []
     for loop in loops:
         loop_mappings = mappings_map.get(str(loop.id), {})
+        snap = snapshot_map.get(str(loop.id))
         # 构建当前值快照
         current_values: dict[str, Any] = {
             "pv": None,
@@ -279,6 +296,36 @@ async def list_loop_monitor(
                     if read_at is None or ts > read_at:
                         read_at = ts
 
+        # KPI 摘要：从最新快照读取（无快照则返回 None）
+        def _rate(val) -> float | None:
+            """Decimal → float，None 保持 None。"""
+            return float(val) if val is not None else None
+
+        if snap:
+            kpi_summary: dict[str, Any] = {
+                "composite_score": _rate(snap.score),
+                "effective_auto_rate": _rate(snap.effective_auto_rate),
+                "auto_mode_rate": _rate(snap.auto_mode_rate),
+                "steady_rate": _rate(snap.steady_rate),
+                "accuracy_rate": _rate(snap.accuracy_rate),
+                "fast_response_rate": _rate(snap.fast_response_rate),
+                "oscillation_rate": _rate(snap.oscillation_rate),
+                "saturation_rate": _rate(snap.saturation_rate),
+                "good_value_rate": _rate(snap.good_value_rate),
+                "valid_rate": _rate(snap.valid_rate),
+                "confidence_level": snap.confidence_level,
+                "status": snap.status,
+                "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else None,
+            }
+            list_score = _rate(snap.score)
+            list_status = snap.status
+            confidence_level = snap.confidence_level
+        else:
+            kpi_summary = None
+            list_score = None
+            list_status = None
+            confidence_level = None
+
         items.append(
             {
                 "loopId": str(loop.id),
@@ -287,8 +334,11 @@ async def list_loop_monitor(
                 "unitName": unit_map.get(str(loop.unit_id)) if loop.unit_id else None,
                 "currentValues": current_values,
                 "controlMode": control_mode,
-                "score": float(loop.score_weight) if loop.score_weight else None,
-                "status": loop.status,
+                "score": list_score,
+                "status": list_status,
+                "confidenceLevel": confidence_level,
+                "effectiveAutoRate": _rate(snap.effective_auto_rate) if snap else None,
+                "kpiSummary": kpi_summary,
                 "loopType": loop.loop_type,
                 "isActive": bool(loop.is_active),
                 "readAt": read_at,
@@ -385,10 +435,12 @@ async def get_loop_monitor_detail(
     trend_status = "EMPTY"  # EMPTY / OK / PARTIAL
 
     # 计算时间范围
+    # TDengine REST API 不支持 ISO 8601 时区后缀（+00:00 / Z），
+    # 需转换为无时区的字符串格式
     delta = TREND_WINDOWS.get(trend_window, timedelta(hours=24))
     now = datetime.now(UTC)
-    start_time = (now - delta).isoformat()
-    end_time = now.isoformat()
+    start_time = (now - delta).replace(tzinfo=None).isoformat()
+    end_time = now.replace(tzinfo=None).isoformat()
 
     # 查询 PV/SP/OP/MODE 的趋势数据
     pv_trend: list[dict[str, Any]] = []

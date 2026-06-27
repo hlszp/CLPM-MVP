@@ -372,8 +372,10 @@ def make_dataplanner_query_fn(db: Any) -> Any:
                 tags_map[str(t.id)] = t
 
         # 3. 对每个 tag_role 查询 TDengine 数据
-        start_iso = start.isoformat()
-        end_iso = end.isoformat()
+        # TDengine REST API 不支持 ISO 8601 时区后缀（+00:00 / Z），
+        # 需转换为无时区的字符串格式（如 2026-06-26T15:30:00）
+        start_iso = start.replace(tzinfo=None).isoformat() if start.tzinfo else start.isoformat()
+        end_iso = end.replace(tzinfo=None).isoformat() if end.tzinfo else end.isoformat()
 
         # role_lower → rows（每行 {ts, value, quality}）
         role_data: dict[str, list[dict[str, Any]]] = {}

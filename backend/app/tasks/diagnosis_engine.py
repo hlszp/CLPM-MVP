@@ -250,6 +250,15 @@ async def _diagnose_loop(
     Returns:
         诊断结果字典
     """
+    # 统一转换为 naive datetime：
+    # - TDengine REST API 不支持 ISO 8601 时区后缀（+00:00 / Z）
+    # - PostgreSQL diagnosis_result.diagnosed_at 列为 TIMESTAMP WITHOUT TIME ZONE
+    #   asyncpg 不允许 tz-aware datetime 传入 naive 列
+    if ts_start.tzinfo is not None:
+        ts_start = ts_start.replace(tzinfo=None)
+    if ts_end.tzinfo is not None:
+        ts_end = ts_end.replace(tzinfo=None)
+
     # 查询回路
     loop_result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = loop_result.scalar_one_or_none()
@@ -280,6 +289,8 @@ async def _diagnose_loop(
         return None
 
     # 从 TDengine 拉取数据
+    # ts_start/ts_end 已在函数入口转换为 naive datetime，
+    # isoformat() 不会带时区后缀，符合 TDengine REST API 要求
     start_iso = ts_start.isoformat()
     end_iso = ts_end.isoformat()
 

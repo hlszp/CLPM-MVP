@@ -498,11 +498,18 @@ def _to_float(value: Decimal | float | None) -> float | None:
 
 
 def _parse_iso_datetime(s: str) -> datetime:
-    """解析 ISO 8601 时间字符串。"""
+    """解析 ISO 8601 时间字符串，返回 naive datetime。
+
+    diagnosis_result.diagnosed_at 列为 TIMESTAMP WITHOUT TIME ZONE，
+    asyncpg 不允许 tz-aware datetime 传入 naive 列，因此统一剥离 tzinfo。
+    """
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s)
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt
 
 
 def _build_time_window_condition(time_window: str | None):
