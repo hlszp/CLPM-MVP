@@ -26,13 +26,7 @@ import { useRouter } from 'vue-router';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import {
-  Button,
-  Card,
-  RadioGroup,
-  Table,
-  Tag,
-} from 'ant-design-vue';
+import { RadioGroup, Switch, Table, Tag, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -45,6 +39,7 @@ import {
   ClpmKpiStrip,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
+  ClpmToolbarButton,
   type KpiStripItem,
 } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
@@ -104,6 +99,90 @@ const analyticsData = ref<MetricApi.AnalyticsResult | null>(null);
 
 // 选中的低效回路
 const selectedLoop = ref<DashboardApi.InefficientLoop | null>(null);
+
+// ============ 自动刷新 + 状态反馈 ============
+const autoRefresh = ref(false);
+const autoRefreshInterval = ref(60); // 秒
+const lastRefreshAt = ref<Date | null>(null);
+let autoRefreshTimer: null | ReturnType<typeof setInterval> = null;
+
+const lastRefreshText = computed(() => {
+  if (!lastRefreshAt.value) return '尚未刷新';
+  const diff = dayjs().diff(lastRefreshAt.value, 'second');
+  if (diff < 60) return `${diff} 秒前`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+  return dayjs(lastRefreshAt.value).format('HH:mm:ss');
+});
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  if (autoRefresh.value) {
+    autoRefreshTimer = setInterval(() => {
+      loadAll();
+    }, autoRefreshInterval.value * 1000);
+  }
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+}
+
+function toggleAutoRefresh(val: boolean | number | string) {
+  const enabled = typeof val === 'boolean' ? val : val === 'true';
+  autoRefresh.value = enabled;
+  if (enabled) {
+    startAutoRefresh();
+  } else {
+    stopAutoRefresh();
+  }
+}
+
+// ============ 数据质量摘要（用于环形图 + StatusFooter） ============
+const dataQualitySummary = computed(() => {
+  const rate = overviewData.value?.kpi_cards?.good_value_rate?.value ?? 0;
+  // 简化：好值率作为 Good，剩余均分为 Bad 和 Uncertain（实际需要后端返回明细）
+  const good = rate;
+  const bad = (100 - rate) / 2;
+  const uncertain = 100 - rate - bad;
+  return { good, bad, uncertain, validRate: rate };
+});
+
+// ============ 综合健康分（用于仪表盘） ============
+const compositeScore = computed(
+  () => overviewData.value?.kpi_cards?.composite_score?.value ?? 0,
+);
+
+// ============ 导出日报 ============
+const exporting = ref(false);
+async function handleExportDailyReport() {
+  exporting.value = true;
+  try {
+    // 模拟导出（实际可调用后端 /dashboard/daily-report 接口）
+    const ts = dayjs().format('YYYY-MM-DD_HHmm');
+    const filename = `CLPM日报_${selectedPlantNodeName.value}_${ts}.xlsx`;
+    // 简单生成 CSV 占位
+    const csv = [
+      ['指标', '数值', '单位'],
+      ...kpiCards.value.map((c) => [c.label, c.value, c.unit]),
+    ]
+      .map((row) => row.join(','))
+      .join('\n');
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename.replace('.xlsx', '.csv');
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } finally {
+    exporting.value = false;
+  }
+}
 
 async function loadOverview() {
   const res = await getDashboardOverviewApi({
@@ -174,8 +253,11 @@ async function loadAll() {
     ]);
   } finally {
     loading.value = false;
+    lastRefreshAt.value = new Date();
     await nextTick();
     renderTrendChart();
+    renderHealthGauge();
+    renderQualityDonut();
   }
 }
 
@@ -308,19 +390,30 @@ function handleLoopRowClick(record: DashboardApi.InefficientLoop) {
   selectedLoop.value = record;
 }
 
-function handleGoLoopDetail(loopId?: string) {
+/** 选中回路摘要条动作分发 */
+function onSummaryAction(key: string) {
+  const loopId = selectedLoop.value?.loop_id;
   if (!loopId) return;
-  router.push(`/loop/detail/${loopId}`);
-}
-
-function handleGoDiagnosis(loopId?: string) {
-  if (!loopId) return;
-  router.push(`/diagnosis/detail/${loopId}`);
+  if (key === 'diagnosis') {
+    router.push(`/diagnosis/detail/${loopId}`);
+  } else if (key === 'detail') {
+    router.push(`/loop/detail/${loopId}`);
+  } else if (key === 'tuning') {
+    router.push(`/tuning/workbench?loopId=${loopId}`);
+  }
 }
 
 // ============ 下行：趋势图 ============
 const trendChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
+
+// ============ 综合健康仪表盘 ============
+const healthGaugeRef = ref<EchartsUIType>();
+const { renderEcharts: renderHealthGaugeEcharts } = useEcharts(healthGaugeRef);
+
+// ============ 数据质量环形图 ============
+const qualityDonutRef = ref<EchartsUIType>();
+const { renderEcharts: renderQualityDonutEcharts } = useEcharts(qualityDonutRef);
 
 function renderTrendChart() {
   const analytics = analyticsData.value;
@@ -402,6 +495,108 @@ function renderTrendChart() {
   });
 }
 
+// ============ 综合健康仪表盘（半圆 Gauge） ============
+function renderHealthGauge() {
+  const score = compositeScore.value;
+  const color =
+    score >= 80
+      ? THEME_COLORS.SUCCESS
+      : score >= 60
+        ? THEME_COLORS.WARNING
+        : THEME_COLORS.DANGER;
+  renderHealthGaugeEcharts({
+    series: [
+      {
+        axisLabel: { show: false },
+        axisLine: {
+          lineStyle: {
+            color: [[1, '#f0f0f0']],
+            width: 12,
+          },
+        },
+        axisTick: { show: false },
+        data: [{ value: score }],
+        detail: {
+          color,
+          fontFamily: 'ui-monospace, Menlo, Consolas',
+          fontSize: 28,
+          fontWeight: 'bolder',
+          formatter: '{value}',
+          offsetCenter: [0, '30%'],
+        },
+        max: 100,
+        min: 0,
+        pointer: {
+          itemStyle: { color },
+          length: '60%',
+          width: 4,
+        },
+        progress: {
+          itemStyle: { color },
+          roundCap: true,
+          show: true,
+          width: 12,
+        },
+        radius: '95%',
+        startAngle: 180,
+        endAngle: 0,
+        splitLine: { show: false },
+        title: {
+          color: '#8c8c8c',
+          fontSize: 12,
+          offsetCenter: [0, '70%'],
+        },
+        type: 'gauge',
+      },
+    ],
+    title: { show: false },
+  });
+}
+
+// ============ 数据质量环形图 ============
+function renderQualityDonut() {
+  const { good, bad, uncertain } = dataQualitySummary.value;
+  renderQualityDonutEcharts({
+    legend: {
+      bottom: 0,
+      data: ['Good', 'Bad', 'Uncertain'],
+      icon: 'circle',
+      itemHeight: 8,
+      itemWidth: 8,
+      textStyle: { color: '#8c8c8c', fontSize: 11 },
+    },
+    series: [
+      {
+        avoidLabelOverlap: true,
+        center: ['50%', '45%'],
+        data: [
+          { itemStyle: { color: THEME_COLORS.SUCCESS }, name: 'Good', value: good },
+          { itemStyle: { color: THEME_COLORS.DANGER }, name: 'Bad', value: bad },
+          { itemStyle: { color: THEME_COLORS.WARNING }, name: 'Uncertain', value: uncertain },
+        ],
+        emphasis: {
+          label: { fontSize: 14, fontWeight: 'bold', show: true },
+        },
+        itemStyle: { borderColor: '#fff', borderRadius: 4, borderWidth: 2 },
+        label: {
+          color: '#0f172a',
+          fontFamily: 'ui-monospace, Menlo, Consolas',
+          fontSize: 16,
+          fontWeight: 'bold',
+          formatter: '{d}%',
+          show: true,
+        },
+        radius: ['52%', '78%'],
+        type: 'pie',
+      },
+    ],
+    tooltip: {
+      formatter: '{b}: {c} ({d}%)',
+      trigger: 'item',
+    },
+  });
+}
+
 // ============ 辅助函数 ============
 function kpiStatus(score: number, isRate: boolean = true): KpiStripItem['status'] {
   const threshold = isRate ? 80 : 60;
@@ -434,7 +629,9 @@ onMounted(() => {
   loadAll();
 });
 
-onUnmounted(() => {});
+onUnmounted(() => {
+  stopAutoRefresh();
+});
 </script>
 
 <template>
@@ -455,6 +652,9 @@ onUnmounted(() => {});
       <ClpmPageToolbar
         title="控制回路治理工作台"
         :subtitle="`${selectedPlantNodeName} · ${granularityOptions.find((o) => o.value === granularity)?.label ?? '日'}视图`"
+        :loading="loading"
+        :status="loading ? 'loading' : 'success'"
+        :last-refresh="lastRefreshText"
       >
         <Tag color="processing">{{ selectedPlantNodeName }}</Tag>
         <RadioGroup
@@ -466,21 +666,68 @@ onUnmounted(() => {});
           @change="loadAll"
         />
         <template #actions>
-          <Button size="small" :loading="loading" @click="loadAll">刷新</Button>
+          <Tooltip :title="autoRefresh ? `自动刷新开启（${autoRefreshInterval}s）` : '开启自动刷新'">
+            <Switch
+              :checked="autoRefresh"
+              size="small"
+              @change="toggleAutoRefresh"
+            />
+          </Tooltip>
+          <ClpmToolbarButton
+            icon="auto-refresh"
+            :active="autoRefresh"
+            icon-only
+            size="small"
+            :tooltip="autoRefresh ? `自动刷新中（${autoRefreshInterval}s）` : '开启自动刷新'"
+            @click="toggleAutoRefresh(!autoRefresh)"
+          />
+          <ClpmToolbarButton
+            icon="refresh"
+            :loading="loading"
+            icon-only
+            size="small"
+            tooltip="刷新数据"
+            @click="loadAll"
+          />
+          <ClpmToolbarButton
+            icon="export"
+            :loading="exporting"
+            size="small"
+            @click="handleExportDailyReport"
+          >
+            导出日报
+          </ClpmToolbarButton>
         </template>
       </ClpmPageToolbar>
 
-      <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
+      <!-- ====== 上行：综合健康仪表盘 + 数据质量环形图 + KPI Strip ====== -->
+      <div class="flex gap-3 flex-shrink-0">
+        <ClpmDataCanvas
+          class="w-[240px]"
+          title="综合健康"
+          description="全厂综合评分"
+        >
+          <EchartsUI ref="healthGaugeRef" height="160px" />
+        </ClpmDataCanvas>
+        <ClpmDataCanvas
+          class="w-[260px]"
+          title="数据质量"
+          description="Good / Bad / Uncertain"
+        >
+          <EchartsUI ref="qualityDonutRef" height="160px" />
+        </ClpmDataCanvas>
+        <div class="flex-1 min-w-0">
+          <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
+        </div>
+      </div>
 
       <!-- ====== 中行：低效回路列表 | 选中回路摘要 ====== -->
       <div class="flex gap-3 flex-1 min-h-0">
         <!-- 中行左：低效回路列表（60%） -->
-        <Card
+        <ClpmDataCanvas
           class="flex-1 min-w-0"
           title="低效回路列表"
-          size="small"
           :loading="loading"
-          :body-style="{ padding: '8px', height: '100%' }"
         >
           <Table
             :columns="inefficientLoopColumns"
@@ -518,7 +765,7 @@ onUnmounted(() => {});
               </template>
             </template>
           </Table>
-        </Card>
+        </ClpmDataCanvas>
 
         <!-- 中行右：选中回路摘要（40%） -->
         <ClpmDataCanvas
@@ -532,6 +779,12 @@ onUnmounted(() => {});
             <ClpmObjectSummaryBar
               :title="loopSummary.loop_tag"
               :subtitle="`${loopSummary.loop_name} · ${loopSummary.plant_name}`"
+              :primary-item="{
+                key: 'score',
+                label: '综合评分',
+                value: loopSummary.composite_score.toFixed(0),
+                status: kpiStatus(loopSummary.composite_score, false),
+              }"
               :items="[
                 {
                   key: 'auto_rate',
@@ -545,30 +798,14 @@ onUnmounted(() => {});
                   value: (loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—') + '%',
                   status: kpiStatus(loopSummary.key_metric?.steady_rate ?? 0),
                 },
-                {
-                  key: 'score',
-                  label: '综合评分',
-                  value: loopSummary.composite_score.toFixed(0),
-                  status: kpiStatus(loopSummary.composite_score, false),
-                },
               ]"
-            >
-              <template #actions>
-                <Button
-                  size="small"
-                  type="primary"
-                  @click="handleGoDiagnosis(loopSummary.loop_id)"
-                >
-                  进入诊断
-                </Button>
-                <Button
-                  size="small"
-                  @click="handleGoLoopDetail(loopSummary.loop_id)"
-                >
-                  回路详情
-                </Button>
-              </template>
-            </ClpmObjectSummaryBar>
+              :actions="[
+                { key: 'diagnosis', label: '进入诊断', type: 'primary', icon: 'ant-design:experiment-outlined' },
+                { key: 'detail', label: '回路详情', icon: 'ant-design:profile-outlined' },
+                { key: 'tuning', label: '整定建议', icon: 'ant-design:sliders-outlined' },
+              ]"
+              @action="onSummaryAction"
+            />
 
             <!-- 预诊标签 -->
             <div v-if="loopSummary.diagnosis_labels?.length" class="mt-3">
@@ -605,8 +842,100 @@ onUnmounted(() => {});
             @change="loadAnalytics"
           />
         </template>
-        <EchartsUI ref="trendChartRef" height="220px" />
+        <EchartsUI ref="trendChartRef" height="200px" />
       </ClpmDataCanvas>
+
+      <!-- ====== StatusFooter：数据延迟/最近刷新/数据质量 ====== -->
+      <div class="clpm-status-footer">
+        <div class="clpm-status-footer__item">
+          <span class="clpm-status-footer__label">最近刷新</span>
+          <span class="clpm-status-footer__value">{{ lastRefreshText }}</span>
+        </div>
+        <div class="clpm-status-footer__divider"></div>
+        <div class="clpm-status-footer__item">
+          <span class="clpm-status-footer__label">数据质量</span>
+          <span
+            class="clpm-status-footer__value"
+            :class="`is-${kpiStatus(dataQualitySummary.validRate)}`"
+          >
+            Good {{ dataQualitySummary.good.toFixed(1) }}%
+          </span>
+        </div>
+        <div class="clpm-status-footer__divider"></div>
+        <div class="clpm-status-footer__item">
+          <span class="clpm-status-footer__label">综合评分</span>
+          <span
+            class="clpm-status-footer__value"
+            :class="`is-${kpiStatus(compositeScore, false)}`"
+          >
+            {{ compositeScore.toFixed(1) }}
+          </span>
+        </div>
+        <div class="clpm-status-footer__divider"></div>
+        <div class="clpm-status-footer__item">
+          <span class="clpm-status-footer__label">自动刷新</span>
+          <span
+            class="clpm-status-footer__value"
+            :class="autoRefresh ? 'is-success' : 'is-neutral'"
+          >
+            {{ autoRefresh ? `开启（${autoRefreshInterval}s）` : '关闭' }}
+          </span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.clpm-status-footer {
+  align-items: center;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
+  color: hsl(var(--muted-foreground));
+  display: flex;
+  flex-shrink: 0;
+  font-size: 12px;
+  gap: 14px;
+  padding: 8px 14px;
+}
+
+.clpm-status-footer__item {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.clpm-status-footer__label {
+  color: hsl(var(--muted-foreground));
+}
+
+.clpm-status-footer__value {
+  color: hsl(var(--foreground));
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.clpm-status-footer__value.is-success {
+  color: hsl(var(--success));
+}
+
+.clpm-status-footer__value.is-warning {
+  color: hsl(var(--warning));
+}
+
+.clpm-status-footer__value.is-danger {
+  color: hsl(var(--destructive));
+}
+
+.clpm-status-footer__value.is-neutral {
+  color: hsl(var(--muted-foreground));
+}
+
+.clpm-status-footer__divider {
+  background: hsl(var(--border));
+  height: 12px;
+  width: 1px;
+}
+</style>
