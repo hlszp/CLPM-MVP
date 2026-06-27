@@ -17,7 +17,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Descriptions,
   DescriptionsItem,
   Form,
@@ -30,6 +29,10 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import {
   createTuningTaskApi,
   getTuningMethodsApi,
@@ -326,9 +329,9 @@ onMounted(() => {
 
 <template>
   <Page title="整定算法">
+    <ClpmPageToolbar title="整定算法" subtitle="基于辨识模型选择整定算法并生成推荐 PID 参数。" />
     <Spin :spinning="loading">
-      <!-- 顶部：模型参数输入区 -->
-      <Card title="模型参数" class="mb-4">
+      <ClpmDataCanvas class="mb-4 mt-4" title="模型参数">
         <Form layout="inline">
           <FormItem label="模型类型">
             <Select
@@ -391,10 +394,10 @@ onMounted(() => {
             />
           </FormItem>
         </Form>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 当前 PID 参数（可选） -->
-      <Card title="当前 PID 参数（可选）" class="mb-4">
+      <ClpmDataCanvas title="当前 PID 参数（可选）" class="mb-4">
         <Form layout="inline">
           <FormItem label="比例增益 Kp">
             <InputNumber
@@ -423,10 +426,10 @@ onMounted(() => {
             />
           </FormItem>
         </Form>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 中部：算法选择区 -->
-      <Card title="整定算法" class="mb-4">
+      <ClpmDataCanvas title="整定算法" class="mb-4">
         <Form layout="inline">
           <FormItem label="算法选择">
             <Select
@@ -490,10 +493,10 @@ onMounted(() => {
             执行整定
           </Button>
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 底部结果区 -->
-      <Card v-if="tuneResult" title="整定结果">
+      <ClpmDataCanvas v-if="tuneResult" title="整定结果">
         <Descriptions :column="{ xs: 1, sm: 2, md: 3 }" bordered size="small">
           <DescriptionsItem label="算法">
             {{ algorithmNameMap[tuneResult.algorithm] || tuneResult.algorithm }}
@@ -540,14 +543,14 @@ onMounted(() => {
             保存为整定任务
           </Button>
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 空状态 -->
-      <Card v-else>
+      <ClpmDataCanvas v-else title="整定结果">
         <div class="flex h-40 items-center justify-center text-gray-400">
           请输入模型参数并选择算法，点击「执行整定」计算推荐 PID 参数
         </div>
-      </Card>
+      </ClpmDataCanvas>
     </Spin>
   </Page>
 </template>

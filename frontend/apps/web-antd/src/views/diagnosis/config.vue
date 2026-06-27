@@ -20,7 +20,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Form,
   FormItem,
   Input,
@@ -32,6 +31,10 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import {
   getDiagnosisMetricsApi,
   updateDiagnosisMetricApi,
@@ -280,7 +283,8 @@ onMounted(() => {
 
 <template>
   <Page title="诊断指标配置">
-    <Card>
+    <ClpmPageToolbar title="诊断指标配置" subtitle="管理诊断规则、阈值、算法参数和启用状态。" />
+    <ClpmDataCanvas class="mt-4" title="诊断指标列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
           管理诊断指标配置：诊断规则、算法参数、阈值、启用状态。
@@ -346,7 +350,7 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 编辑 Modal -->
     <Modal

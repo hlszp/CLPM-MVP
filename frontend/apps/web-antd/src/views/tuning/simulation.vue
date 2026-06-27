@@ -20,7 +20,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
-  Card,
   Form,
   FormItem,
   InputNumber,
@@ -30,6 +29,10 @@ import {
   Table,
 } from 'ant-design-vue';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningSimulation' });
@@ -462,8 +465,8 @@ onMounted(() => {
 
 <template>
   <Page title="闭环仿真">
-    <!-- 顶部参数输入区 -->
-    <Card class="mb-4" title="参数配置">
+    <ClpmPageToolbar title="闭环仿真" subtitle="比较当前 PID 与推荐 PID 的响应曲线和性能指标。" />
+    <ClpmDataCanvas class="mb-4 mt-4" title="参数配置">
       <Form layout="vertical">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <!-- 左列：模型配置 -->
@@ -583,17 +586,17 @@ onMounted(() => {
           </Button>
         </div>
       </Form>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 仿真结果区 -->
-    <Card v-if="simulationResult" class="mb-4" title="仿真对比图">
+    <ClpmDataCanvas v-if="simulationResult" class="mb-4" title="仿真对比图">
       <Spin :spinning="loading">
         <EchartsUI ref="chartRef" height="420px" />
       </Spin>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 性能指标对比表格 -->
-    <Card v-if="simulationResult" class="mb-4" title="性能指标对比">
+    <ClpmDataCanvas v-if="simulationResult" class="mb-4" title="性能指标对比">
       <Table
         :columns="metricColumns"
         :data-source="metricRows"
@@ -619,10 +622,10 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 底部操作按钮 -->
-    <Card v-if="simulationResult" title="保存仿真结果">
+    <ClpmDataCanvas v-if="simulationResult" title="保存仿真结果">
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-sm text-gray-500">回路 ID：</span>
         <InputNumber
@@ -634,6 +637,6 @@ onMounted(() => {
           保存仿真结果
         </Button>
       </div>
-    </Card>
+    </ClpmDataCanvas>
   </Page>
 </template>

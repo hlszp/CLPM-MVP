@@ -18,8 +18,14 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Card, Select, Statistic, Table, Tag } from 'ant-design-vue';
+import { Button, Select, Table, Tag } from 'ant-design-vue';
 
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+  type KpiStripItem,
+} from '#/components/clpm';
 import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningStats' });
@@ -98,6 +104,17 @@ const columns: TableColumnsType = [
   },
   { title: '操作', key: 'action', width: 110, fixed: 'right' },
 ];
+
+const kpiStripItems = computed<KpiStripItem[]>(() => {
+  const totalTasksValue = historyStats.value?.totalTasks || 0;
+  const avgFittingValue = avgFitting.value;
+  return [
+    { key: 'total', label: '总任务数', value: totalTasksValue, status: 'neutral' },
+    { key: 'applied', label: '已应用数', value: appliedCount.value, status: 'success' },
+    { key: 'fitting', label: '平均拟合度', value: avgFittingValue.toFixed(2), unit: '%', status: avgFittingValue >= 80 ? 'success' : avgFittingValue >= 60 ? 'warning' : 'danger' },
+    { key: 'algorithms', label: '算法种类数', value: algorithmCount.value, status: 'neutral' },
+  ];
+});
 
 // ECharts refs
 const pieChartRef = ref<EchartsUIType>();
@@ -354,44 +371,23 @@ onMounted(() => {
 
 <template>
   <Page title="效果统计">
-    <!-- 顶部统计卡片区 -->
-    <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Card :loading="historyLoading">
-        <Statistic title="总任务数" :value="historyStats?.totalTasks || 0" />
-      </Card>
-      <Card :loading="historyLoading">
-        <Statistic
-          title="已应用数"
-          :value="appliedCount"
-          :value-style="{ color: '#52c41a' }"
-        />
-      </Card>
-      <Card :loading="historyLoading">
-        <Statistic
-          title="平均拟合度"
-          :value="avgFitting"
-          :precision="2"
-          suffix="%"
-          :value-style="{ color: '#1890ff' }"
-        />
-      </Card>
-      <Card :loading="historyLoading">
-        <Statistic title="算法种类数" :value="algorithmCount" />
-      </Card>
+    <ClpmPageToolbar title="效果统计" subtitle="查看整定任务分布、拟合质量与历史效果。" />
+    <div class="mb-4 mt-4">
+      <ClpmKpiStrip :items="kpiStripItems" :loading="historyLoading" />
     </div>
 
     <!-- 中部图表区 -->
     <div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <Card title="算法分布" :loading="historyLoading">
+      <ClpmDataCanvas title="算法分布" :loading="historyLoading">
         <EchartsUI ref="pieChartRef" height="320px" />
-      </Card>
-      <Card title="状态分布" :loading="historyLoading">
+      </ClpmDataCanvas>
+      <ClpmDataCanvas title="状态分布" :loading="historyLoading">
         <EchartsUI ref="barChartRef" height="320px" />
-      </Card>
+      </ClpmDataCanvas>
     </div>
 
     <!-- 底部任务列表 -->
-    <Card title="整定任务列表">
+    <ClpmDataCanvas title="整定任务列表">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -457,6 +453,6 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
   </Page>
 </template>
