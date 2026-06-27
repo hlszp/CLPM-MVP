@@ -3,13 +3,13 @@ import type { RouteRecordRaw } from 'vue-router';
 /**
  * 性能评估路由模块
  *
- * 对齐 UI/UX v4.1 §4.2 + PRD §4.3 + IDS v3.2 §2.3
- * - 指标配置 / 引擎规则 / 类型权重 / 级别权重 / 性能看板 / 低效排行 / 统计报表
+ * 对齐 UIUX 改造方案：以“性能看板 / 低效排行 / 统计报表 / 指标配置”作为主结构，
+ * 将任务能力收口为性能评估执行体系的一部分。
  *
  * 角色权限（PRD §3）：
  * - ADMIN：全部（含配置）
  * - IC_ENGINEER：全部
- * - PE_ENGINEER / SPONSOR / EXPERT：查看（看板/排行/报表）
+ * - PE_ENGINEER / SPONSOR / EXPERT：查看（看板/排行/报表/任务记录）
  */
 const routes: RouteRecordRaw[] = [
   {
@@ -50,7 +50,7 @@ const routes: RouteRecordRaw[] = [
           title: '统计报表',
         },
       },
-      // —— 系统配置（仅 ADMIN 可见，折叠子菜单）——
+      // —— 指标配置（仅 ADMIN 可见，折叠子菜单）——
       {
         name: 'MetricConfigGroup',
         path: '/metric/config-group',
@@ -58,7 +58,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['ADMIN'],
           icon: 'lucide:settings',
-          title: '系统配置',
+          title: '指标配置',
         },
         children: [
           {
@@ -68,7 +68,7 @@ const routes: RouteRecordRaw[] = [
             meta: {
               authority: ['ADMIN'],
               icon: 'lucide:settings-2',
-              title: '指标配置',
+              title: '指标定义',
             },
           },
           {
@@ -78,7 +78,7 @@ const routes: RouteRecordRaw[] = [
             meta: {
               authority: ['ADMIN'],
               icon: 'lucide:cog',
-              title: '引擎配置',
+              title: '引擎规则',
             },
           },
           // FE-10：回路类型权重配置
@@ -94,13 +94,13 @@ const routes: RouteRecordRaw[] = [
           },
           // FE-11：回路级别权重配置
           {
-            name: 'MetricLevelWeight',
-            path: '/metric/level-weight',
-            component: () => import('#/views/metric/level-weight.vue'),
+            name: 'MetricTaskList',
+            path: '/metric/tasks',
+            component: () => import('#/views/task/list.vue'),
             meta: {
-              authority: ['ADMIN'],
-              icon: 'lucide:layers',
-              title: '级别权重',
+              authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+              icon: 'lucide:list-checks',
+              title: '执行记录',
             },
           },
         ],

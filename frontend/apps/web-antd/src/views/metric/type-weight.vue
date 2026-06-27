@@ -28,6 +28,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { getLoopTypeWeightsApi, updateLoopTypeWeightApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricTypeWeight' });
@@ -186,6 +187,7 @@ onMounted(() => {
 
 <template>
   <Page title="回路类型权重配置">
+    <ConfigTabs />
     <Card>
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">

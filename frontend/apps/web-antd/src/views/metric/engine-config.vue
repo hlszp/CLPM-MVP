@@ -30,6 +30,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { getRulesApi, updateRuleApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricEngineConfig' });
@@ -149,7 +150,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="引擎规则配置">
+  <Page title="引擎规则">
+    <ConfigTabs />
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- 规则配置表单 -->
       <Card title="规则配置" :loading="loading">

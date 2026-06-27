@@ -33,6 +33,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { getMetricsApi, updateMetricApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricConfig' });
@@ -200,7 +201,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="指标配置">
+  <Page title="指标定义">
+    <ConfigTabs />
     <Card>
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">

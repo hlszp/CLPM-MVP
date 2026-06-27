@@ -28,6 +28,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { getLoopLevelWeightsApi, updateLoopLevelWeightApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricLevelWeight' });
@@ -139,6 +140,7 @@ onMounted(() => {
 
 <template>
   <Page title="回路级别权重配置">
+    <ConfigTabs />
     <Card>
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
