@@ -17,6 +17,7 @@
 | v4.2 | 2026-06-25 | 重构后实现契约追认版：①以 implementation-contract v1.0 固化当前 Vue 前端 IA、路由、API、权限、状态机、KPI 与阶段口径；②旧 25 页面清单降为历史来源；③性能评估保留 `/metric/*`，回路管理保留 `/loop/manage` 聚合页，诊断中心承认 7 页面结构；④Action Tracker 标准枚举统一为 `IMPLEMENTED`；⑤整定接口标注为 Phase 1 实验/辅助能力，不代表 DCS 自动下写。 | 系统设计团队 |
 | v5.0 | 2026-06-26 | v4.0 架构对齐版（依据 PRD/FDS/ADS/DDS/IDS v4.0 + 关键算法设计说明 v2.0）：①指标体系从 6 大 KPI 平等加权重构为 3+1+8 结构（3 核心质量指标 A/F/S 加权 + 1 投用指标 R 作折扣因子 + 8 辅助诊断指标不参与评分）；②综合评分公式更新为 P=(A·a+F·f+S·s)/(a+f+s)×R；③新增指标可信度 A/B/C/D/E 五级展示（基于 valid_rate 自动判定，E 级标记 INCONCLUSIVE 且评分留空）；④新增数据血缘下钻展示（8 字段：sampling_freq/quality_policy/tag_group/valid_rate 等）；⑤PV 质量码波形从"断线"改为"灰色虚线保留连线"+ pvValid 标记；⑥术语变更：平稳率→稳定率、跟随率→快速率；⑦指标配置页从 6 项平等权重改为 3 核心权重+1 投用折扣因子+8 辅助无权重；⑧诊断标签状态从 PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED 更新为 ACTIVE/RESOLVED/SUPPRESSED + severity 四级；⑨新增任务管理页面设计（标准任务+自定义任务双轨）；⑩新增 §7.14 数据血缘展示组件 + §7.15 可信度标识组件。 | 系统设计团队 |
 | v5.2-draft | 2026-06-27 | 新增 `CLPM_UIUX_工业桌面端改造方案_v1.0.md`，作为后续 UI/UX 优化基线：①基于 vue-vben-admin 5.7 主题能力定义 CLPM Industrial Light；②统一 PageToolbar / ObjectSummaryBar / KpiStrip / DataCanvas 等工业桌面端组件；③明确工作台、回路管理、性能评估、诊断中心、回路整定全模块改造方向；④将任务管理归入性能评估执行体系；⑤补充前后端接口影响评估。 | 系统设计团队 |
+| v5.2 | 2026-06-27 | 第一轮工业桌面端 UI/UX 样板页与 IA 收口完成：①新增 `frontend/apps/web-antd/src/components/clpm/` 共享组件层；②完成工作台、回路详情、回路监控、性能看板、诊断详情、异常跟踪样板页改造；③性能评估“系统配置”收口为“指标配置”，新增配置 Tabs 与 `/metric/tasks` 执行记录入口；④任务口径统一为“评估任务/执行记录”；⑤整定工作台接入同风格组件，并通过 typecheck / unit tests / build 验证。 | 系统设计团队 |
 
 ---
 

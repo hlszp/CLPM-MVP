@@ -20,6 +20,7 @@ PRD v3.1 是产品需求的事实来源；实现契约 v1.0 是重构后 IA/路�
 | 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v3.0（待按实现契约追认） |
 | API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v3.0（待按实现契约追认） |
 | UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v5.1**（已对齐 v4.0 代码） |
+| **工业桌面端 UI/UX 改造基线** | `docs/设计文档/06-UIUX/CLPM_UIUX_工业桌面端改造方案_v1.0.md` | v1.0（2026-06-27，新 UI/UX 收口基线） |
 | 设计基线 | `DESIGN.md` | v2.1（对齐实现契约） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v2.0（对齐 v3.0/v4.0） |
@@ -113,6 +114,7 @@ v4.0 重构已完成，后续工作方向：
 |---|---|---|
 | Bug 修复 / 功能增强 | README.md → CLAUDE.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
 | 前端 lint/格式化整理 | 当前工作区有 50+ 未提交的前端格式化改动 | 可考虑统一 `pnpm run lint --fix` 后提交 |
+| **工业桌面端 UI/UX 优化** | `docs/设计文档/06-UIUX/CLPM_UIUX_工业桌面端改造方案_v1.0.md` → `frontend/apps/web-antd/src/components/clpm/` → 各业务页面 | 已落地共享组件、工作台/回路/诊断/性能看板样板页与性能评估 IA 收口；后续继续按基线扩展到剩余页面 |
 | E2E 测试补充 | `e2e/` 目录 → UI/UX v5.1 → v4.0 新增页面 | 任务管理页面、可信度徽章、INCONCLUSIVE 展示需补 E2E |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
 | 文档追认 | FDS/ADS/DDS/IDS v3.0 → 实现契约 v1.0 → v4.0 实际代码 | FDS/ADS/DDS/IDS 仍标注"待追认"，需按 v4.0 代码校准 |
