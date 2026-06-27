@@ -19,7 +19,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   DatePicker,
   Descriptions,
   DescriptionsItem,
@@ -193,7 +192,8 @@ onMounted(() => {
 
 <template>
   <Page title="审计日志">
-    <Card>
+    <ClpmPageToolbar title="审计日志" subtitle="按操作类型、时间和资源查看关键变更记录。" />
+    <ClpmDataCanvas class="mt-4" title="审计日志列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -280,7 +280,7 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 详情抽屉 -->
     <Drawer

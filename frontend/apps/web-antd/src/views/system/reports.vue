@@ -19,7 +19,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Form,
   FormItem,
   Input,
@@ -323,7 +322,8 @@ onUnmounted(() => {
 
 <template>
   <Page title="自动报表管理">
-    <Card>
+    <ClpmPageToolbar title="自动报表管理" subtitle="配置日报/周报/月报，手动触发生成并跟踪执行进度。" />
+    <ClpmDataCanvas class="mt-4" title="报表配置列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
           管理班报/日报/周报/月报配置 · 支持手动触发生成与进度查询
@@ -404,7 +404,7 @@ onUnmounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 新增/编辑 Modal -->
     <Modal
