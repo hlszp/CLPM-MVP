@@ -20,9 +20,13 @@ import { onMounted, reactive, ref, watch } from 'vue';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Card, DatePicker, message, Select } from 'ant-design-vue';
+import { Button, DatePicker, message, Select } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { exportAnalyticsApi, getAnalyticsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { flattenNodes } from '#/utils/plant-node';
@@ -285,8 +289,8 @@ onMounted(() => {
 
 <template>
   <Page title="性能统计报表">
-    <!-- 筛选栏 -->
-    <Card class="mb-4">
+    <ClpmPageToolbar title="性能统计报表" subtitle="趋势、装置评分和差等生分布的统一分析入口。" />
+    <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <DatePicker.RangePicker
           v-model:value="filter.timeRange"
@@ -318,23 +322,23 @@ onMounted(() => {
         </Button>
         <Button :loading="exporting" @click="handleExport"> 导出 CSV </Button>
       </div>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- KPI 趋势折线图 -->
-    <Card title="KPI 趋势" class="mb-4" :loading="loading">
+    <ClpmDataCanvas title="KPI 趋势" class="mb-4" :loading="loading">
       <EchartsUI ref="trendChartRef" height="360px" />
-    </Card>
+    </ClpmDataCanvas>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- 装置评分对比柱状图 -->
-      <Card title="装置评分对比" :loading="loading">
+      <ClpmDataCanvas title="装置评分对比" :loading="loading">
         <EchartsUI ref="unitChartRef" height="320px" />
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 差等生分布饼图 -->
-      <Card title="差等生分布" :loading="loading">
+      <ClpmDataCanvas title="差等生分布" :loading="loading">
         <EchartsUI ref="badActorChartRef" height="320px" />
-      </Card>
+      </ClpmDataCanvas>
     </div>
   </Page>
 </template>

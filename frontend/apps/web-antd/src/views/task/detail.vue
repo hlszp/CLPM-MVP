@@ -205,11 +205,11 @@ onUnmounted(() => {
 
 <template>
   <Page title="评估任务详情">
-    <div class="mb-4">
-      <Button type="link" @click="handleBack">
-        ← 返回评估任务列表
-      </Button>
-    </div>
+    <ClpmPageToolbar title="评估任务详情" subtitle="执行阶段、错误信息、通知和结果摘要。">
+      <template #actions>
+        <Button type="link" @click="handleBack">← 返回评估任务列表</Button>
+      </template>
+    </ClpmPageToolbar>
 
     <!-- 任务摘要 -->
     <Card class="mb-4" :loading="loading">
