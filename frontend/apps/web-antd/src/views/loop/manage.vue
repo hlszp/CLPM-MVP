@@ -1,17 +1,15 @@
 <script lang="ts" setup>
 /**
- * 回路管理整合页（FE-01）
+ * 回路管理整合页（FE-01）— C1 重构
  *
  * 对齐 UI/UX v4.1 §4.2 + PRD §4.2
- * - 左侧：工厂树（复用 PlantNode 树组件，支持搜索/折叠/选中）
- * - 右侧：回路表格（选中树节点联动，显示该节点下所有回路）
- * - 工具栏：新建回路、批量配置、导入、导出
- * - 筛选：控制类型、级别、监控状态、搜索
- * - 表格列：复选框、Tag、描述、类型、级别、监控状态、评分、Tag状态、操作
- * - 右侧抽屉：点击回路行滑出详情/编辑抽屉
- *   （Tab: 基础信息 / Tag关联 / 评估参数 / 投用定义）
- *
- * 整合 loop/factory.vue + loop/ledger.vue 功能，废弃旧页面。
+ * - 4 Tab 结构：工厂结构 / 回路台账 / Tag 关联 / 批量配置
+ * - 工厂结构 Tab：左侧工厂树 + 右侧回路表格（主体功能）
+ * - 回路台账 Tab：纯表格视图（无工厂树，全量回路浏览）
+ * - Tag 关联 Tab：各回路 Tag 关联状态概览
+ * - 批量配置 Tab：批量配置入口（影响回路数提示）
+ * - 工具栏：ClpmToolbarButton 图标化按钮
+ * - 变更确认弹窗：编辑保存 / Tag 关联 / 批量配置
  */
 import type {
   TableColumnsType,
@@ -29,6 +27,7 @@ import { useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 
 import {
+  Alert,
   Button,
   Drawer,
   Form,
@@ -66,6 +65,7 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmTagAssociationBadge,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
@@ -80,6 +80,9 @@ const router = useRouter();
 function handleViewDetail(record: LoopApi.LoopListItem) {
   router.push(`/loop/detail/${record.loopId}`);
 }
+
+// ===== 主 Tab 结构 =====
+const activeMainTab = ref<'batch' | 'factory' | 'ledger' | 'tags'>('factory');
 
 // ===== 树（使用统一组件 PlantNodeTree）=====
 const selectedPlantNodeId = ref<string | undefined>(undefined);
@@ -202,6 +205,50 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ];
 
+/** Tag 关联 Tab 列 */
+const tagColumns: TableColumnsType = [
+  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
+  {
+    title: '描述',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
+  { title: '监控状态', dataIndex: 'status', key: 'status', width: 110 },
+  { title: 'Tag 关联', key: 'tagMapping', width: 180 },
+  { title: '关联详情', key: 'tagDetail' },
+  { title: '操作', key: 'action', width: 100, fixed: 'right' },
+];
+
+/** 批量配置 Tab 已选回路列 */
+const selectedLoopColumns: TableColumnsType = [
+  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
+  {
+    title: '描述',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
+  {
+    title: '控制类型',
+    dataIndex: 'controlType',
+    key: 'controlType',
+    width: 100,
+  },
+  { title: '级别', dataIndex: 'level', key: 'level', width: 80 },
+];
+
+/** Tag 槽位标签 */
+const SLOT_LABELS: Record<string, string> = {
+  pv: 'PV',
+  sp: 'SP',
+  op: 'OP',
+  mode: 'MODE',
+  pid_p: 'P',
+  pid_i: 'I',
+  pid_d: 'D',
+};
+
 /** 加载回路列表 */
 async function loadList() {
   loading.value = true;
@@ -242,6 +289,192 @@ const rowSelection = computed(() => ({
     selectedRowKeys.value = keys as string[];
   },
 }));
+
+/** 已选中的回路列表（当前页内） */
+const selectedLoops = computed(() =>
+  loopList.value.filter((l) => selectedRowKeys.value.includes(l.loopId)),
+);
+
+// ===== 变更确认弹窗（通用） =====
+type ConfirmContextType = 'batch' | 'tagMapping' | 'update';
+interface DiffEntry {
+  field: string;
+  from: string;
+  to: string;
+}
+const confirmVisible = ref(false);
+const confirmLoading = ref(false);
+const confirmContextType = ref<ConfirmContextType | null>(null);
+const changeRemark = ref('');
+
+const confirmTitle = computed(() => {
+  switch (confirmContextType.value) {
+    case 'update': {
+      return '确认变更回路信息';
+    }
+    case 'tagMapping': {
+      return '确认变更 Tag 关联';
+    }
+    case 'batch': {
+      return '确认批量配置';
+    }
+    default: {
+      return '确认变更';
+    }
+  }
+});
+
+/** 变更摘要（diff 摘要） */
+const changeSummary = computed<DiffEntry[]>(() => {
+  if (confirmContextType.value === 'update' && editingLoop.value) {
+    const summary: DiffEntry[] = [];
+    const orig = editingLoop.value;
+    if ((orig.description ?? '') !== (formState.description ?? '')) {
+      summary.push({
+        field: '回路描述',
+        from: orig.description || '—',
+        to: formState.description || '—',
+      });
+    }
+    const origLoopType = orig.loopType ?? 'OTHER';
+    const newLoopType = formState.loopType ?? 'OTHER';
+    if (origLoopType !== newLoopType) {
+      summary.push({
+        field: '回路类型',
+        from: LOOP_TYPE_MAP[origLoopType]?.label ?? origLoopType,
+        to: LOOP_TYPE_MAP[newLoopType]?.label ?? newLoopType,
+      });
+    }
+    if (
+      (orig.controlType ?? undefined) !== (formState.controlType ?? undefined)
+    ) {
+      summary.push({
+        field: '控制类型',
+        from: orig.controlType
+          ? (CONTROL_TYPE_MAP[orig.controlType]?.label ?? orig.controlType)
+          : '—',
+        to: formState.controlType
+          ? (CONTROL_TYPE_MAP[formState.controlType]?.label ??
+            formState.controlType)
+          : '—',
+      });
+    }
+    if ((orig.level ?? undefined) !== (formState.level ?? undefined)) {
+      summary.push({
+        field: '回路级别',
+        from: orig.level ? (LEVEL_LABEL[orig.level] ?? String(orig.level)) : '—',
+        to: formState.level
+          ? (LEVEL_LABEL[formState.level] ?? String(formState.level))
+          : '—',
+      });
+    }
+    if ((orig.unitId ?? undefined) !== (formState.unitId ?? undefined)) {
+      const origLabel =
+        plantNodeOptions.value.find((o) => o.value === orig.unitId)?.label ??
+        orig.unitId ??
+        '—';
+      const newLabel =
+        plantNodeOptions.value.find((o) => o.value === formState.unitId)
+          ?.label ??
+        formState.unitId ??
+        '—';
+      summary.push({ field: '所属单元', from: origLabel, to: newLabel });
+    }
+    if (loopDetail.value) {
+      const origW = loopDetail.value.basicInfo.scoreWeights;
+      for (const item of weightItems) {
+        if ((origW[item.key] ?? 0) !== (formState.scoreWeights[item.key] ?? 0)) {
+          summary.push({
+            field: `权重·${item.label}`,
+            from: `${origW[item.key]}%`,
+            to: `${formState.scoreWeights[item.key]}%`,
+          });
+        }
+      }
+    }
+    return summary;
+  }
+  if (confirmContextType.value === 'tagMapping' && tagData.value) {
+    const summary: DiffEntry[] = [];
+    const origMap: Record<string, string | null> = {};
+    for (const t of tagData.value.tags) {
+      origMap[t.role.toLowerCase()] = t.tagId;
+    }
+    for (const cfg of slotConfigs) {
+      const orig = origMap[cfg.key] ?? null;
+      const now = slotState[cfg.key] ?? null;
+      if (orig !== now) {
+        summary.push({
+          field: cfg.label,
+          from: orig ? '已关联' : '未关联',
+          to: now ? '已关联' : '未关联',
+        });
+      }
+    }
+    return summary;
+  }
+  if (confirmContextType.value === 'batch') {
+    const summary: DiffEntry[] = [];
+    if (batchForm.isMonitored !== undefined) {
+      summary.push({
+        field: '监控状态',
+        from: '保持原值',
+        to: batchForm.isMonitored ? '启用监控' : '停用监控',
+      });
+    }
+    if (batchForm.isStatEnabled !== undefined) {
+      summary.push({
+        field: '统计纳入',
+        from: '保持原值',
+        to: batchForm.isStatEnabled ? '纳入统计' : '不纳入统计',
+      });
+    }
+    if (batchForm.level !== undefined) {
+      summary.push({
+        field: '回路级别',
+        from: '保持原值',
+        to: LEVEL_LABEL[batchForm.level] ?? String(batchForm.level),
+      });
+    }
+    return summary;
+  }
+  return [];
+});
+
+/** 影响范围 */
+const impactScope = computed(() => {
+  if (confirmContextType.value === 'update' && editingLoop.value) {
+    return `回路「${editingLoop.value.tagName}」的配置将更新，评分权重变更将在下次评估时生效。`;
+  }
+  if (confirmContextType.value === 'tagMapping' && editingLoop.value) {
+    return `回路「${editingLoop.value.tagName}」的 Tag 关联将更新，系统将根据关联完整性重新计算回路状态（READY/PARTIAL/INACTIVE）。`;
+  }
+  if (confirmContextType.value === 'batch') {
+    return `本次将影响 ${selectedRowKeys.value.length} 个回路，批量应用上述配置后立即生效。`;
+  }
+  return '';
+});
+
+/** 确认变更（根据上下文分发到对应执行函数） */
+async function confirmSave() {
+  if (!confirmContextType.value) return;
+  confirmLoading.value = true;
+  try {
+    if (confirmContextType.value === 'update') {
+      await doSaveBasic();
+    } else if (confirmContextType.value === 'tagMapping') {
+      await doSaveTagMapping();
+    } else if (confirmContextType.value === 'batch') {
+      await doBatchConfigSubmit();
+      batchModalVisible.value = false;
+    }
+    confirmVisible.value = false;
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    confirmLoading.value = false;
+  }
+}
 
 // ===== 批量配置 =====
 const batchModalVisible = ref(false);
@@ -299,7 +532,7 @@ function handleBatchConfig() {
   batchModalVisible.value = true;
 }
 
-/** 提交批量配置（更新模式） */
+/** 批量配置提交（打开变更确认弹窗） */
 async function handleBatchConfigSubmit() {
   // 至少配置一项
   if (
@@ -310,6 +543,13 @@ async function handleBatchConfigSubmit() {
     message.warning('请至少配置一项批量更新字段');
     return;
   }
+  confirmContextType.value = 'batch';
+  changeRemark.value = '';
+  confirmVisible.value = true;
+}
+
+/** 执行批量配置（确认后调用） */
+async function doBatchConfigSubmit() {
   batchSaving.value = true;
   try {
     const updates: LoopApi.LoopBatchUpdates = {};
@@ -327,7 +567,6 @@ async function handleBatchConfigSubmit() {
       updates,
     });
     message.success(`批量更新成功，共影响 ${result.affected} 个回路`);
-    batchModalVisible.value = false;
     selectedRowKeys.value = [];
     await loadList();
   } catch {
@@ -337,7 +576,7 @@ async function handleBatchConfigSubmit() {
   }
 }
 
-/** 批量软删除（确认弹窗） */
+/** 批量软删除（独立危险确认弹窗） */
 function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先勾选要批量删除的回路');
@@ -698,7 +937,7 @@ async function handleAutoLink() {
   }
 }
 
-/** 保存 Tag 关联 */
+/** 保存 Tag 关联（打开变更确认弹窗） */
 async function handleSaveTagMapping() {
   if (!editingLoop.value) return;
   const missing: string[] = [];
@@ -709,6 +948,14 @@ async function handleSaveTagMapping() {
     message.warning(`以下必填 Tag 未关联：${missing.join('、')}`);
     return;
   }
+  confirmContextType.value = 'tagMapping';
+  changeRemark.value = '';
+  confirmVisible.value = true;
+}
+
+/** 执行保存 Tag 关联（确认后调用） */
+async function doSaveTagMapping() {
+  if (!editingLoop.value) return;
   tagSaving.value = true;
   try {
     const result = await updateLoopTagMappingApi(editingLoop.value.loopId, {
@@ -736,13 +983,26 @@ async function handleSaveTagMapping() {
   }
 }
 
-/** 保存基础信息 + 评估参数 */
+/** 保存基础信息 + 评估参数（编辑模式打开变更确认弹窗） */
 async function handleSaveBasic() {
   await formRef.value?.validate();
   if (!weightValid.value) {
     message.warning(`权重总和须为 100%，当前为 ${weightTotal.value}%`);
     return;
   }
+  if (editingLoop.value) {
+    // 编辑模式：打开变更确认弹窗
+    confirmContextType.value = 'update';
+    changeRemark.value = '';
+    confirmVisible.value = true;
+  } else {
+    // 新建模式：直接保存
+    await doSaveBasic();
+  }
+}
+
+/** 执行保存基础信息（确认后 / 新建时调用） */
+async function doSaveBasic() {
   drawerSaving.value = true;
   try {
     if (editingLoop.value) {
@@ -805,7 +1065,7 @@ async function handleSaveBasic() {
   }
 }
 
-/** 删除回路 */
+/** 删除回路（独立 Popconfirm 确认，红色危险样式） */
 async function handleDelete(record: LoopApi.LoopListItem) {
   try {
     await deleteLoopApi(record.loopId);
@@ -840,58 +1100,93 @@ watch(
     query.page = 1;
   },
 );
+
+// 切换到回路台账 Tab 时清除工厂节点筛选，展示全量回路
+watch(activeMainTab, (tab) => {
+  if (tab === 'ledger' && query.plantNodeId) {
+    query.plantNodeId = undefined;
+    selectedPlantNodeId.value = undefined;
+    selectedPlantNode.value = null;
+    query.page = 1;
+    loadList();
+  }
+});
 </script>
 
 <template>
   <Page>
-    <ClpmPageToolbar title="回路管理" subtitle="工厂结构、回路台账、Tag 关联与批量配置的统一入口。" />
-    <div class="mt-4 flex gap-3" style="height: calc(100vh - 160px)">
-      <!-- 左侧工厂树（统一组件） -->
+    <ClpmPageToolbar
+      title="回路管理"
+      subtitle="工厂结构、回路台账、Tag 关联与批量配置的统一入口。"
+    />
+
+    <!-- 主 Tab 结构 -->
+    <Tabs
+      v-model:active-key="activeMainTab"
+      class="mt-3"
+      type="line"
+      :tab-bar-style="{ marginBottom: '12px' }"
+    >
+      <TabPane key="factory" tab="工厂结构" />
+      <TabPane key="ledger" tab="回路台账" />
+      <TabPane key="tags" tab="Tag 关联" />
+      <TabPane key="batch" tab="批量配置" />
+    </Tabs>
+
+    <!-- 工厂结构 / 回路台账 共享表格区 -->
+    <div
+      v-show="activeMainTab === 'factory' || activeMainTab === 'ledger'"
+      class="flex gap-3"
+      style="height: calc(100vh - 220px)"
+    >
+      <!-- 左侧工厂树（仅工厂结构 Tab 可见） -->
       <PlantNodeTree
+        v-show="activeMainTab === 'factory'"
         card-title="工厂模型"
         :width="280"
         :show-crud-buttons="true"
         :default-expand-level="2"
-        max-height="calc(100vh - 160px)"
+        max-height="calc(100vh - 220px)"
         @select="onTreeSelect"
       />
 
       <!-- 右侧回路表格 -->
       <ClpmDataCanvas class="flex-1" title="回路台账" :loading="loading">
-        <!-- 工具栏 -->
+        <!-- 工具栏（图标化） -->
         <div class="mb-3 flex flex-wrap items-center gap-2">
-          <Button
+          <ClpmToolbarButton
             v-permission="['ADMIN', 'IC_ENGINEER']"
-            type="primary"
-            size="small"
+            icon="create"
+            label="新建回路"
             @click="handleAdd"
-          >
-            新建回路
-          </Button>
-          <Button
+          />
+          <ClpmToolbarButton
             v-permission="['ADMIN', 'IC_ENGINEER']"
-            size="small"
+            icon="ant-design:setting-outlined"
+            label="批量配置"
             @click="handleBatchConfig"
-          >
-            批量配置
-          </Button>
+          />
           <Upload v-bind="uploadProps">
-            <Button
+            <ClpmToolbarButton
               v-permission="['ADMIN', 'IC_ENGINEER']"
-              size="small"
+              icon="import"
+              label="导入"
               :loading="importing"
-            >
-              导入
-            </Button>
+            />
           </Upload>
-          <Button
+          <ClpmToolbarButton
             v-permission="['ADMIN', 'IC_ENGINEER']"
-            size="small"
+            icon="export"
+            label="导出"
             :loading="exporting"
             @click="handleExport"
-          >
-            导出
-          </Button>
+          />
+          <ClpmToolbarButton
+            icon="refresh"
+            label="刷新"
+            :loading="loading"
+            @click="loadList"
+          />
           <span class="ml-auto text-xs text-gray-400">
             {{
               selectedPlantNode ? `当前节点：${selectedPlantNode.name}` : '全厂'
@@ -908,22 +1203,19 @@ watch(
             已选择 {{ selectedRowKeys.length }} 个回路
           </span>
           <div class="ml-auto flex gap-2">
-            <Button
+            <ClpmToolbarButton
               v-permission="['ADMIN']"
-              size="small"
-              type="primary"
+              icon="ant-design:setting-outlined"
+              label="批量设置"
+              variant="primary"
               @click="handleBatchConfig"
-            >
-              批量设置
-            </Button>
-            <Button
+            />
+            <ClpmToolbarButton
               v-permission="['ADMIN']"
-              size="small"
-              danger
+              icon="delete"
+              label="批量删除"
               @click="handleBatchDelete"
-            >
-              批量删除
-            </Button>
+            />
             <Button size="small" type="link" @click="selectedRowKeys = []">
               清除选择
             </Button>
@@ -1079,6 +1371,9 @@ watch(
                 <Popconfirm
                   v-permission="['ADMIN']"
                   title="确认删除该回路？删除后监控将停止，可通过重新启用恢复。"
+                  ok-text="确认删除"
+                  cancel-text="取消"
+                  ok-type="danger"
                   @confirm="handleDelete(record as LoopApi.LoopListItem)"
                 >
                   <Tooltip title="删除回路（软删除）">
@@ -1098,6 +1393,158 @@ watch(
         </Table>
       </ClpmDataCanvas>
     </div>
+
+    <!-- Tag 关联概览 Tab -->
+    <ClpmDataCanvas
+      v-if="activeMainTab === 'tags'"
+      title="Tag 关联概览"
+      :loading="loading"
+    >
+      <div class="mb-3 flex items-center justify-between">
+        <p class="text-sm text-gray-500">
+          浏览各回路的 Tag 关联状态，点击「编辑」进入抽屉管理 Tag 关联。
+        </p>
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="loadList"
+        />
+      </div>
+      <Table
+        :columns="tagColumns"
+        :data-source="loopList"
+        :loading="loading"
+        :pagination="{
+          current: query.page,
+          pageSize: query.pageSize,
+          total,
+          showSizeChanger: true,
+          showTotal: (t: number) => `共 ${t} 条`,
+        }"
+        :row-key="(record: LoopApi.LoopListItem) => record.loopId"
+        :scroll="{ x: 900 }"
+        size="middle"
+        @change="handleTableChange"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'status'">
+            <StatusBadge
+              :status="record.status"
+              :is-active="record.isActive"
+            />
+          </template>
+          <template v-else-if="column.key === 'tagMapping'">
+            <ClpmTagAssociationBadge
+              :status="(record as LoopApi.LoopListItem).tagMappingStatus"
+            />
+          </template>
+          <template v-else-if="column.key === 'tagDetail'">
+            <div class="flex flex-wrap gap-1">
+              <Tag
+                v-for="(val, key) in (record as LoopApi.LoopListItem)
+                  .tagMappingStatus"
+                :key="key"
+                :color="val ? 'green' : 'default'"
+                class="m-0 text-xs"
+              >
+                {{ SLOT_LABELS[key] ?? key }}: {{ val ? '✓' : '✗' }}
+              </Tag>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <Button
+              v-permission="['ADMIN', 'IC_ENGINEER']"
+              type="link"
+              size="small"
+              @click="handleEdit(record as LoopApi.LoopListItem)"
+            >
+              编辑
+            </Button>
+          </template>
+        </template>
+      </Table>
+    </ClpmDataCanvas>
+
+    <!-- 批量配置 Tab -->
+    <ClpmDataCanvas
+      v-if="activeMainTab === 'batch'"
+      title="批量配置"
+      :loading="false"
+    >
+      <Alert
+        v-if="selectedRowKeys.length === 0"
+        type="info"
+        show-icon
+        message="请先选择回路"
+        description="切换到「工厂结构」或「回路台账」Tab，勾选要批量配置的回路后返回此处。"
+      />
+      <template v-else>
+        <Alert
+          type="warning"
+          show-icon
+          :message="`本次将影响 ${selectedRowKeys.length} 个回路`"
+          description="批量配置将立即生效，请仔细确认操作范围。点击「打开批量配置」后系统会弹出变更确认对话框。"
+        />
+        <div class="mt-4 flex items-center gap-3">
+          <ClpmToolbarButton
+            v-permission="['ADMIN']"
+            icon="ant-design:setting-outlined"
+            label="打开批量配置"
+            variant="primary"
+            @click="handleBatchConfig"
+          />
+          <ClpmToolbarButton
+            v-permission="['ADMIN']"
+            icon="delete"
+            label="批量删除"
+            @click="handleBatchDelete"
+          />
+          <Button size="small" type="link" @click="selectedRowKeys = []">
+            清除选择
+          </Button>
+        </div>
+
+        <!-- 已选回路列表 -->
+        <div class="mt-4">
+          <div class="mb-2 text-sm font-medium">
+            已选回路（{{ selectedLoops.length }} /
+            {{ selectedRowKeys.length }}，仅显示当前页内）
+          </div>
+          <Table
+            :columns="selectedLoopColumns"
+            :data-source="selectedLoops"
+            :pagination="false"
+            :row-key="(record: LoopApi.LoopListItem) => record.loopId"
+            size="small"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'controlType'">
+                <Tag
+                  v-if="record.controlType"
+                  :color="
+                    CONTROL_TYPE_MAP[record.controlType]?.color ?? 'default'
+                  "
+                  class="m-0"
+                >
+                  {{
+                    CONTROL_TYPE_MAP[record.controlType]?.label ??
+                    record.controlType
+                  }}
+                </Tag>
+                <span v-else class="text-gray-400">—</span>
+              </template>
+              <template v-else-if="column.key === 'level'">
+                <span v-if="record.level" class="font-mono">
+                  {{ LEVEL_LABEL[record.level] ?? record.level }}
+                </span>
+                <span v-else class="text-gray-400">—</span>
+              </template>
+            </template>
+          </Table>
+        </div>
+      </template>
+    </ClpmDataCanvas>
 
     <!-- 编辑抽屉 -->
     <Drawer
@@ -1401,6 +1848,54 @@ watch(
           />
         </FormItem>
       </Form>
+    </Modal>
+
+    <!-- 变更确认弹窗（通用） -->
+    <Modal
+      v-model:open="confirmVisible"
+      :title="confirmTitle"
+      :confirm-loading="confirmLoading"
+      ok-text="确认保存"
+      cancel-text="取消"
+      width="560px"
+      @ok="confirmSave"
+    >
+      <div class="space-y-3 py-2">
+        <div class="text-sm">
+          <div class="mb-2 font-medium">变更摘要</div>
+          <div v-if="changeSummary.length === 0" class="text-gray-400">
+            无变更
+          </div>
+          <div v-else class="rounded border border-gray-200 bg-gray-50 p-3">
+            <div
+              v-for="(c, idx) in changeSummary"
+              :key="idx"
+              class="mb-1 flex justify-between text-xs"
+            >
+              <span class="text-gray-600">{{ c.field }}</span>
+              <span class="font-mono">
+                <span class="text-gray-400 line-through">{{ c.from }}</span>
+                <span class="mx-1 text-gray-400">→</span>
+                <span class="font-medium text-blue-600">{{ c.to }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="text-sm">
+          <div class="mb-1 font-medium">影响范围</div>
+          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
+            {{ impactScope }}
+          </p>
+        </div>
+        <div class="text-sm">
+          <div class="mb-1 font-medium">变更说明（可选）</div>
+          <Input.TextArea
+            v-model:value="changeRemark"
+            placeholder="请简要说明本次变更原因，便于追溯"
+            :rows="2"
+          />
+        </div>
+      </div>
     </Modal>
   </Page>
 </template>
