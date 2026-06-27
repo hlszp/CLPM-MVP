@@ -204,10 +204,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Page title="任务详情">
+  <Page title="评估任务详情">
     <div class="mb-4">
       <Button type="link" @click="handleBack">
-        ← 返回任务列表
+        ← 返回评估任务列表
       </Button>
     </div>
 

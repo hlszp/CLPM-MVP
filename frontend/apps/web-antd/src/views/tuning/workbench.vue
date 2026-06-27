@@ -16,9 +16,15 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, Spin, Statistic, Table, Tag } from 'ant-design-vue';
+import { Button, Card, Spin, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+  type KpiStripItem,
+} from '#/components/clpm';
 import { getTuningHistoryApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningWorkbench' });
@@ -166,6 +172,13 @@ const totalTasks = computed(() => {
   return historyStats.value?.totalTasks ?? 0;
 });
 
+const kpiStripItems = computed<KpiStripItem[]>(() => [
+  { key: 'total', label: '总任务数', value: totalTasks.value, status: 'neutral' },
+  { key: 'completed', label: '已完成', value: completedCount.value, status: 'success' },
+  { key: 'fitting', label: '平均拟合度', value: (avgFittingScore.value ?? 0).toFixed(2), unit: '%', status: (avgFittingScore.value ?? 0) >= 80 ? 'success' : (avgFittingScore.value ?? 0) >= 60 ? 'warning' : 'danger' },
+  { key: 'recent', label: '近 7 天任务数', value: recent7DaysCount.value, status: 'neutral' },
+]);
+
 /** 加载整定历史统计 */
 async function loadHistory() {
   loading.value = true;
@@ -224,44 +237,12 @@ onMounted(() => {
 <template>
   <Page title="整定工作台">
     <Spin :spinning="loading">
-      <!-- 顶部统计卡片 -->
-      <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card size="small" :body-style="{ padding: '20px' }">
-          <Statistic
-            title="总任务数"
-            :value="totalTasks"
-            :value-style="{ color: '#1890ff' }"
-          />
-        </Card>
-        <Card size="small" :body-style="{ padding: '20px' }">
-          <Statistic
-            title="已完成（应用+仿真）"
-            :value="completedCount"
-            :value-style="{ color: '#52c41a' }"
-          />
-        </Card>
-        <Card size="small" :body-style="{ padding: '20px' }">
-          <Statistic
-            title="平均拟合度"
-            :value="avgFittingScore ?? 0"
-            :precision="2"
-            suffix="%"
-            :value-style="{
-              color: fittingScoreColor(avgFittingScore),
-            }"
-          />
-        </Card>
-        <Card size="small" :body-style="{ padding: '20px' }">
-          <Statistic
-            title="近 7 天任务数"
-            :value="recent7DaysCount"
-            :value-style="{ color: '#722ed1' }"
-          />
-        </Card>
+      <ClpmPageToolbar title="整定工作台" subtitle="模型辨识、算法、仿真与效果统计的统一入口" />
+      <div class="mb-4 mt-4">
+        <ClpmKpiStrip :items="kpiStripItems" />
       </div>
 
-      <!-- 整定流程导航卡片 -->
-      <Card title="整定流程" class="mb-4">
+      <ClpmDataCanvas title="整定流程" class="mb-4">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card
             v-for="item in navCards"
@@ -290,10 +271,10 @@ onMounted(() => {
             </div>
           </Card>
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 最近整定任务表格 -->
-      <Card title="最近整定任务">
+      <ClpmDataCanvas title="最近整定任务">
         <Table
           :columns="columns"
           :data-source="recentTasks"
@@ -355,7 +336,7 @@ onMounted(() => {
             </template>
           </template>
         </Table>
-      </Card>
+      </ClpmDataCanvas>
     </Spin>
   </Page>
 </template>

@@ -388,7 +388,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Page title="任务管理">
+  <Page title="评估任务">
     <!-- 统计摘要 -->
     <div class="mb-4 grid grid-cols-3 gap-3">
       <Card size="small" :loading="loading">
@@ -413,8 +413,8 @@ onUnmounted(() => {
 
     <Card>
       <Tabs v-model:active-key="activeTab">
-        <TabPane key="standard" tab="标准任务" />
-        <TabPane key="custom" tab="自定义任务" />
+        <TabPane key="standard" tab="标准评估任务" />
+        <TabPane key="custom" tab="自定义评估任务" />
       </Tabs>
 
       <!-- 筛选栏 -->
