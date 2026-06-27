@@ -21,30 +21,45 @@ const SLOT_META: Array<{
 
 defineOptions({ name: 'ClpmTagAssociationBadge' });
 
-const props = defineProps<{
+interface Props {
+  /** 完整 mapping（含 tagName），与 status 二选一；同时提供时优先 mapping */
   mapping?: LoopApi.LoopTagMapping | null;
-}>();
+  /** 简化状态（仅 associated booleans），列表行使用 */
+  status?: LoopApi.TagMappingStatus | null;
+}
+
+const props = defineProps<Props>();
 
 const detailOpen = ref(false);
 
+/** 统一的 slot 视图模型 */
 const slots = computed(() =>
-  SLOT_META.map((slot) => ({
-    ...slot,
-    item: props.mapping?.[slot.key],
-    associated: props.mapping?.[slot.key]?.associated === true,
-  })),
+  SLOT_META.map((slot) => {
+    const mappingItem = props.mapping?.[slot.key];
+    const statusBool = props.status?.[slot.key];
+    const associated = mappingItem?.associated === true || statusBool === true;
+    return {
+      ...slot,
+      associated,
+      tagName: mappingItem?.tagName ?? null,
+    };
+  }),
 );
 
 const associatedCount = computed(() => slots.value.filter((s) => s.associated).length);
 const requiredMissing = computed(() => slots.value.filter((s) => s.required && !s.associated).length);
-const statusColor = computed(() => {
-  if (!props.mapping) return 'default';
+
+const hasData = computed(() => !!props.mapping || !!props.status);
+
+const statusColor = computed<'default' | 'error' | 'success' | 'warning'>(() => {
+  if (!hasData.value) return 'default';
   if (requiredMissing.value > 0) return 'error';
   if (associatedCount.value < slots.value.length) return 'warning';
   return 'success';
 });
+
 const statusText = computed(() => {
-  if (!props.mapping) return 'Tag 关联 —';
+  if (!hasData.value) return 'Tag 关联 —';
   if (requiredMissing.value > 0) return `${associatedCount.value}/7，缺 ${requiredMissing.value} 个必填`;
   if (associatedCount.value < slots.value.length) return `${associatedCount.value}/7 部分关联`;
   return '7/7 已关联';
@@ -54,7 +69,7 @@ const statusText = computed(() => {
 <template>
   <span class="clpm-tag-association">
     <Tag :color="statusColor" class="m-0 cursor-pointer" @click="detailOpen = true">
-      Tag 关联 {{ statusText }}
+      {{ statusText }}
     </Tag>
     <button class="clpm-tag-association__link" type="button" @click="detailOpen = true">
       查看
@@ -77,7 +92,9 @@ const statusText = computed(() => {
             <Tag v-else color="default" class="m-0">可选</Tag>
           </div>
           <div class="clpm-tag-association__slot-value">
-            {{ slot.item?.tagName || '未关联' }}
+            <template v-if="slot.tagName">{{ slot.tagName }}</template>
+            <template v-else-if="slot.associated">已关联</template>
+            <template v-else>未关联</template>
           </div>
         </div>
       </div>

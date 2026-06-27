@@ -408,7 +408,7 @@ onMounted(() => {
       />
 
       <!-- 统计摘要 -->
-      <Card v-if="compareData" class="mb-4" title="改善摘要">
+      <ClpmDataCanvas v-if="compareData" class="mb-4" title="改善摘要">
         <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
           <div
             v-for="kpi in compareData.kpiComparison"
@@ -433,17 +433,17 @@ onMounted(() => {
             </div>
           </div>
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- PV 趋势叠加图 -->
-      <Card title="PV 趋势对比" class="mb-4">
+      <ClpmDataCanvas title="PV 趋势对比" class="mb-4">
         <EchartsUI ref="trendChartRef" height="360px" />
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- KPI 柱状对比图 -->
-      <Card title="KPI 对比">
+      <ClpmDataCanvas title="KPI 对比">
         <EchartsUI ref="kpiChartRef" height="360px" />
-      </Card>
+      </ClpmDataCanvas>
     </Spin>
   </Drawer>
 

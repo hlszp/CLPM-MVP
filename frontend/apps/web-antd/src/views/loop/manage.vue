@@ -66,6 +66,7 @@ import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import StatusBadge from '#/components/loop/status-badge.vue';
+import { ClpmTagAssociationBadge } from '#/components/clpm';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopManage' });
@@ -196,19 +197,6 @@ const columns: TableColumnsType = [
   },
   { title: 'Tag 状态', key: 'tagMapping', width: 180 },
   { title: '操作', key: 'action', width: 160, fixed: 'right' },
-];
-
-const tagMappingRoles: {
-  key: keyof LoopApi.TagMappingStatus;
-  label: string;
-}[] = [
-  { key: 'pv', label: 'PV' },
-  { key: 'sp', label: 'SP' },
-  { key: 'op', label: 'OP' },
-  { key: 'mode', label: 'MODE' },
-  { key: 'pid_p', label: 'P' },
-  { key: 'pid_i', label: 'I' },
-  { key: 'pid_d', label: 'D' },
 ];
 
 /** 加载回路列表 */
@@ -1059,18 +1047,9 @@ watch(
               <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'tagMapping'">
-              <div class="flex flex-wrap gap-1">
-                <Tag
-                  v-for="role in tagMappingRoles"
-                  :key="role.key"
-                  :color="
-                    record.tagMappingStatus[role.key] ? 'green' : 'default'
-                  "
-                  class="m-0"
-                >
-                  {{ role.label }}
-                </Tag>
-              </div>
+              <ClpmTagAssociationBadge
+                :status="(record as LoopApi.LoopListItem).tagMappingStatus"
+              />
             </template>
             <template v-else-if="column.key === 'action'">
               <div class="flex gap-1">

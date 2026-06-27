@@ -20,10 +20,14 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, Progress, Select, Table, Tag } from 'ant-design-vue';
+import { Button, Progress, Select, Table, Tag } from 'ant-design-vue';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -226,7 +230,8 @@ onMounted(() => {
 
 <template>
   <Page :title="$t('diagnosis.list.title')">
-    <Card>
+    <ClpmPageToolbar :title="$t('diagnosis.list.title')" subtitle="按诊断标签、状态和时间窗查看异常对象，并快速进入详情或异常跟踪。" />
+    <ClpmDataCanvas class="mt-4" title="诊断列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -343,7 +348,7 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 异常跟踪抽屉（FDS §5.4：从右侧滑出） -->
     <Tracker
