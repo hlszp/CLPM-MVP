@@ -21,7 +21,6 @@ import { Page } from '@vben/common-ui';
 import {
   Badge,
   Button,
-  Card,
   Form,
   FormItem,
   Input,
@@ -39,6 +38,10 @@ import {
   triggerAasSyncApi,
   updateAasConfigApi,
 } from '#/api/aas';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 
 defineOptions({ name: 'LoopAas' });
@@ -184,11 +187,12 @@ async function handleTestConnection() {
       syncInterval: configForm.syncInterval,
       enabled: configForm.enabled,
     });
-    testResult.value = await testAasConfigApi();
-    if (testResult.value.success) {
-      message.success(`连接成功，延迟 ${testResult.value.latency}ms`);
+    const result = await testAasConfigApi();
+    testResult.value = result;
+    if (result.success) {
+      message.success(`连接成功，延迟 ${result.latency}ms`);
     } else {
-      message.error(`连接失败：${testResult.value.message}`);
+      message.error(`连接失败：${result.message}`);
     }
   } catch {
     // 错误已由拦截器处理
@@ -256,9 +260,10 @@ onMounted(() => {
 
 <template>
   <Page title="AAS 连接配置">
-    <div class="space-y-4">
+    <ClpmPageToolbar title="AAS 连接配置" subtitle="配置连接、测试连接并查看同步后的 Tag 列表。" />
+    <div class="mt-4 space-y-4">
       <!-- 配置卡片 -->
-      <Card title="连接配置" :loading="configLoading">
+      <ClpmDataCanvas title="连接配置" :loading="configLoading">
         <Form :model="configForm" layout="vertical">
           <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
             <FormItem label="AAS Endpoint" name="endpoint">
@@ -333,10 +338,10 @@ onMounted(() => {
             </div>
           </div>
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- Tag 列表 -->
-      <Card title="Tag 列表">
+      <ClpmDataCanvas title="Tag 列表">
         <template #extra>
           <div class="flex items-center gap-2 text-xs text-gray-400">
             <span>同步时间：{{ formatTime(tagLastSyncAt) }}</span>
@@ -410,7 +415,7 @@ onMounted(() => {
             </template>
           </template>
         </Table>
-      </Card>
+      </ClpmDataCanvas>
     </div>
   </Page>
 </template>

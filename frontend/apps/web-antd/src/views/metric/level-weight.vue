@@ -19,7 +19,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Input,
   InputNumber,
   message,
@@ -28,6 +27,10 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { getLoopLevelWeightsApi, updateLoopLevelWeightApi } from '#/api/metric';
 
@@ -141,7 +144,8 @@ onMounted(() => {
 <template>
   <Page title="回路级别权重配置">
     <ConfigTabs />
-    <Card>
+    <ClpmPageToolbar title="回路级别权重配置" subtitle="定义 1/2/3 级回路在装置与工厂聚合评分时的加权影响。" />
+    <ClpmDataCanvas class="mt-4" title="级别权重列表">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
           配置 3 个回路级别（1/2/3）的评分权重。级别越高，对综合评分的影响越大。
@@ -195,6 +199,6 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
   </Page>
 </template>
