@@ -250,7 +250,7 @@ onMounted(() => {
             hoverable
             size="small"
             :body-style="{ padding: '20px' }"
-            class="cursor-pointer transition-all hover:shadow-md"
+            class="cursor-pointer transition-shadow duration-200 hover:shadow-md"
             @click="handleNavigate(item.path)"
           >
             <div class="flex flex-col items-start">

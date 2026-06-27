@@ -7,9 +7,9 @@ import type { RouteRecordRaw } from 'vue-router';
  * 保留 `/tasks/*` 路由兼容详情跳转，但菜单归属后续收敛到性能评估。
  *
  * 角色权限（PRD §3 + UI/UX §6.8.5）：
- * - 查看标准任务：全角色
- * - 查看自定义任务：创建人 + ADMIN
- * - 新建/取消自定义任务：IC_ENGINEER / PE_ENGINEER / ADMIN
+ * - 查看标准评估任务：全角色
+ * - 查看自定义评估任务：创建人 + ADMIN
+ * - 新建/取消自定义评估任务：IC_ENGINEER / PE_ENGINEER / ADMIN
  */
 const routes: RouteRecordRaw[] = [
   {
@@ -17,7 +17,7 @@ const routes: RouteRecordRaw[] = [
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
       icon: 'lucide:list-checks',
       order: 3.5,
-      title: '任务管理',
+      title: '评估任务',
     },
     name: 'Task',
     path: '/tasks',

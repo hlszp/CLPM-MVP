@@ -7,7 +7,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
  * 对齐 UI/UX v4.1 §6.1.1 + PRD §4.3 + IDS v3.2 §2.3
  * - 左侧：工厂树导航
  * - 右上：实时自控率仪表盘（ECharts 环形图）
- * - 右中：整点 KPI 卡片（评分/自控率/平稳率/实时自控率）
+ * - 右中：整点 KPI 条（评分/自控率/平稳率/实时自控率）
  * - 右下：详细列表（等级筛选 + 参数搜索）
  * - 5 分钟自动刷新
  */

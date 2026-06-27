@@ -2,10 +2,10 @@
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 /**
- * 任务管理列表页（UIUX §6.8.1-6.8.3）
+ * 评估任务列表页（UIUX §6.8.1-6.8.3）
  *
  * 对齐 IDS v3.2 §2.7.6 + PRD §4.3.7
- * - Tab 双轨：标准任务（只读）/ 自定义任务（可新建/取消）
+ * - Tab 双轨：标准评估任务（只读）/ 自定义评估任务（可新建/取消）
  * - 顶部统计摘要：今日执行数 / 成功率 / 平均耗时
  * - 筛选栏：状态 / 时间窗
  * - 表格：任务ID / 类型 / 状态 / 进度 / 当前阶段 / 回路进度 / 创建时间 / 操作
@@ -94,7 +94,7 @@ const stageNameMap: Record<string, string> = {
 const drawerVisible = ref(false);
 const selectedTask = ref<TaskApi.TaskItem | null>(null);
 
-// ---- 新建自定义任务抽屉 ----
+// ---- 新建自定义评估任务抽屉 ----
 const createDrawerVisible = ref(false);
 const createLoading = ref(false);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
@@ -444,7 +444,7 @@ onUnmounted(() => {
           type="primary"
           @click="openCreateDrawer"
         >
-          + 新建自定义任务
+          + 新建自定义评估任务
         </Button>
       </div>
 
@@ -630,7 +630,7 @@ onUnmounted(() => {
       </template>
     </Drawer>
 
-    <!-- 新建自定义任务抽屉 -->
+    <!-- 新建自定义评估任务抽屉 -->
     <Drawer
       v-model:open="createDrawerVisible"
       title="新建自定义评估任务"
@@ -670,7 +670,7 @@ onUnmounted(() => {
       </Form>
 
       <div class="mb-4 rounded bg-amber-50 p-3 text-sm text-amber-700">
-        ⚠ 自定义任务结果不参与装置级聚合，仅独立展示
+        ⚠ 自定义评估任务结果不参与装置级聚合，仅独立展示
       </div>
 
       <div class="flex justify-end gap-2">
