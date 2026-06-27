@@ -1,22 +1,27 @@
 <script lang="ts" setup>
-import type { DiagnosisApi } from '#/api/diagnosis';
 /**
  * S2-LOOP-012 回路详情页
  *
- * 对齐 D06 §6 + IDS v3.2 §2.2.9 + §2.2.14
- * - 顶部：回路基本信息 + 7 Tag 关联状态
- * - 中部：ECharts 波形图展示 PV/SP/OP 趋势（PV 线按质量码断线渲染）
- * - 底部：6 大 KPI 摘要网格 + composite_score
- * - 支持时间范围切换（1h/24h/7d）
- * - 波形数据超过 1 万点时前端平滑渲染（ECharts dataZoom）
- * - FE-05：增加"智能诊断"Tab（展示诊断结果+可能原因+优化建议）
+ * 对齐 D06 §6 + IDS v3.2 §2.2.9 + §2.2.14 + UI/UX 改造方案 §8.4
+ * - 顶部 PageToolbar：返回/导出/进入诊断/整定建议（带图标+功能色）+ 状态反馈
+ * - 摘要条 ObjectSummaryBar：综合评分 primaryItem + actions（详情/诊断/整定）
+ * - 设备/机泵信息区（后端字段待补，占位实现）
+ * - 主趋势图（占比 45%+，height=460px）
+ * - 数据质量摘要区（环形图 + Good/Bad/Uncertain 占比）
+ * - KPI 摘要（ClpmKpiStrip + composite_score）
+ * - StatusFooter：最近刷新/数据延迟/可信度等级/KPI 状态
+ * - 智能诊断 Tab（FE-05）
  */
+import type { EchartsUIType } from '@vben/plugins/echarts';
+
+import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
@@ -24,11 +29,13 @@ import {
   Descriptions,
   DescriptionsItem,
   Empty,
+  message,
   Spin,
   TabPane,
   Tabs,
   Tag,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import {
   generateDiagnosisReportApi,
@@ -42,7 +49,9 @@ import {
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
   ClpmTagAssociationBadge,
+  ClpmToolbarButton,
   type KpiStripItem,
+  type SummaryAction,
   type SummaryItem,
 } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
@@ -52,6 +61,7 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
+import { THEME_COLORS } from '#/preferences';
 
 defineOptions({ name: 'LoopDetail' });
 
@@ -73,6 +83,25 @@ const recommendationsLoading = ref(false);
 const reportGenerating = ref(false);
 const diagnosisDetail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
 const recommendations = ref<DiagnosisApi.RecommendationItem[]>([]);
+
+/** 状态反馈：最近刷新时间 + 数据延迟 */
+const lastRefreshAt = ref<Date | null>(null);
+const lastRefreshText = computed(() => {
+  if (!lastRefreshAt.value) return '';
+  const diff = dayjs().diff(lastRefreshAt.value, 'second');
+  if (diff < 60) return `${diff} 秒前`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+  return dayjs(lastRefreshAt.value).format('HH:mm:ss');
+});
+
+const dataDelayText = computed(() => {
+  const readAt = monitorDetail.value?.currentValues?.readAt;
+  if (!readAt) return '';
+  const diff = dayjs().diff(dayjs(readAt), 'minute');
+  if (diff < 1) return '<1m';
+  if (diff < 60) return `${diff}m`;
+  return `${Math.floor(diff / 60)}h`;
+});
 
 const trendWindowOptions: { label: string; value: LoopApi.TrendWindow }[] = [
   { label: '1h', value: 'last_1_hour' },
@@ -116,6 +145,17 @@ const isInconclusive = computed(
   () => monitorDetail.value?.kpiSummary.status === 'INCONCLUSIVE',
 );
 
+/** 可信度等级（基于 good_value_rate 推导，对齐 ConfidenceEvaluator A/B/C/D/E） */
+const confidenceLevel = computed<'A' | 'B' | 'C' | 'D' | 'E' | '—'>(() => {
+  const rate = monitorDetail.value?.kpiSummary.good_value_rate ?? 0;
+  if (rate >= 95) return 'A';
+  if (rate >= 80) return 'B';
+  if (rate >= 60) return 'C';
+  if (rate >= 20) return 'D';
+  if (rate > 0) return 'E';
+  return '—';
+});
+
 const summaryItems = computed<SummaryItem[]>(() => {
   if (!loopDetail.value || !monitorDetail.value) return [];
   return [
@@ -125,20 +165,6 @@ const summaryItems = computed<SummaryItem[]>(() => {
       value: monitorDetail.value.currentValues.modeLabel || loopDetail.value.runtimeParams.controlMode,
       status:
         monitorDetail.value.currentValues.modeLabel === 'Auto' ? 'success' : 'warning',
-    },
-    {
-      key: 'score',
-      label: '综合评分',
-      value: isInconclusive.value
-        ? '—'
-        : monitorDetail.value.kpiSummary.composite_score?.toFixed(1) ?? '—',
-      status: isInconclusive.value
-        ? 'neutral'
-        : monitorDetail.value.kpiSummary.composite_score >= 80
-          ? 'success'
-          : monitorDetail.value.kpiSummary.composite_score >= 60
-            ? 'warning'
-            : 'danger',
     },
     {
       key: 'read_at',
@@ -164,8 +190,63 @@ const summaryTags = computed<SummaryItem[]>(() => {
       value: loopDetail.value.basicInfo.unitName,
       status: 'neutral',
     },
+    {
+      key: 'confidence',
+      label: '可信度',
+      value: confidenceLevel.value,
+      status:
+        confidenceLevel.value === 'A' || confidenceLevel.value === 'B'
+          ? 'success'
+          : confidenceLevel.value === 'C'
+            ? 'warning'
+            : 'danger',
+    },
   ];
 });
+
+/** 主指标：综合评分（突出展示） */
+const primaryItem = computed<SummaryItem | null>(() => {
+  if (!monitorDetail.value) return null;
+  return {
+    key: 'score',
+    label: '综合评分',
+    value: isInconclusive.value
+      ? '—'
+      : (monitorDetail.value.kpiSummary.composite_score?.toFixed(1) ?? '—'),
+    status: isInconclusive.value
+      ? 'neutral'
+      : monitorDetail.value.kpiSummary.composite_score >= 80
+        ? 'success'
+        : monitorDetail.value.kpiSummary.composite_score >= 60
+          ? 'warning'
+          : 'danger',
+  };
+});
+
+/** 摘要条 actions（带图标） */
+const summaryActions = computed<SummaryAction[]>(() => [
+  {
+    key: 'diagnosis',
+    label: '进入诊断',
+    icon: 'ant-design:medicine-box-outlined',
+    type: 'primary',
+  },
+  {
+    key: 'tuning',
+    label: '整定建议',
+    icon: 'ant-design:tool-outlined',
+    type: 'default',
+  },
+]);
+
+/** 摘要条动作分发 */
+function onSummaryAction(key: string) {
+  if (key === 'diagnosis') {
+    router.push(`/diagnosis/detail/${loopId}`);
+  } else if (key === 'tuning') {
+    router.push(`/tuning/workbench?loopId=${loopId}`);
+  }
+}
 
 const loopKpiStripItems = computed<KpiStripItem[]>(() => {
   const detail = monitorDetail.value;
@@ -200,6 +281,83 @@ const pageTitle = computed(() => {
   return '回路详情';
 });
 
+/** 设备/机泵信息（后端字段待补，先用可获取字段 + 占位） */
+const equipmentInfo = computed(() => {
+  const basic = loopDetail.value?.basicInfo;
+  if (!basic) {
+    return null;
+  }
+  return {
+    equipmentName: '—',
+    equipmentType: '—',
+    pumpNo: '—',
+    medium: '—',
+    workingCondition: '—',
+    responsibilityUnit: basic.unitName || '—',
+  };
+});
+
+/** 数据质量摘要（基于 good_value_rate 推导 Good/Bad/Uncertain 占比） */
+const dataQualitySummary = computed(() => {
+  const rate = monitorDetail.value?.kpiSummary.good_value_rate ?? 0;
+  const good = rate;
+  const bad = (100 - rate) / 2;
+  const uncertain = 100 - rate - bad;
+  return { bad, good, uncertain, validRate: rate };
+});
+
+// ============ 数据质量环形图 ============
+const qualityDonutRef = ref<EchartsUIType>();
+const { renderEcharts: renderQualityDonutEcharts } = useEcharts(qualityDonutRef);
+
+function renderQualityDonut() {
+  const q = dataQualitySummary.value;
+  renderQualityDonutEcharts({
+    color: [THEME_COLORS.SUCCESS, THEME_COLORS.DANGER, THEME_COLORS.NEUTRAL],
+    legend: {
+      bottom: 0,
+      data: ['Good', 'Bad', 'Uncertain'],
+      icon: 'circle',
+      itemHeight: 8,
+      itemWidth: 8,
+      textStyle: { fontSize: 11 },
+    },
+    series: [
+      {
+        avoidLabelOverlap: false,
+        center: ['50%', '45%'],
+        data: [
+          { value: q.good, name: 'Good' },
+          { value: q.bad, name: 'Bad' },
+          { value: q.uncertain, name: 'Uncertain' },
+        ],
+        label: {
+          position: 'center',
+          formatter: `{a|${q.validRate.toFixed(1)}%}\n{b|好值率}`,
+          rich: {
+            a: {
+              color: THEME_COLORS.SUCCESS,
+              fontSize: 22,
+              fontWeight: 700,
+              lineHeight: 28,
+            },
+            b: { color: '#8c8c8c', fontSize: 12, lineHeight: 18 },
+          },
+          show: true,
+        },
+        labelLine: { show: false },
+        name: '数据质量',
+        radius: ['55%', '78%'],
+        type: 'pie',
+      },
+    ],
+    tooltip: {
+      formatter: '{b}: {c} ({d}%)',
+      trigger: 'item',
+    },
+  });
+}
+
 /** 加载回路详情 */
 async function loadDetail() {
   loading.value = true;
@@ -224,6 +382,9 @@ async function loadMonitorDetail() {
     // 错误已由拦截器处理
   } finally {
     monitorLoading.value = false;
+    lastRefreshAt.value = new Date();
+    await nextTick();
+    renderQualityDonut();
   }
 }
 
@@ -266,6 +427,11 @@ async function handleGenerateReport() {
   }
 }
 
+/** 导出（占位，待后端接口） */
+function handleExport() {
+  message.info('回路详情导出功能待后端接口支持');
+}
+
 function handleTrendWindowChange() {
   loadMonitorDetail();
 }
@@ -301,11 +467,36 @@ onMounted(() => {
 
 <template>
   <Page :title="pageTitle">
-    <ClpmPageToolbar :title="pageTitle" :subtitle="pageSubtitle">
+    <ClpmPageToolbar
+      :title="pageTitle"
+      :subtitle="pageSubtitle"
+      :loading="monitorLoading"
+      :last-refresh="lastRefreshText"
+      :data-delay="dataDelayText"
+      status-type="info"
+    >
       <template #actions>
-        <Button size="small" @click="router.back()">返回</Button>
-        <Button size="small" @click="router.push('/dashboard')">工作台</Button>
-        <Button size="small" @click="router.push('/loop/manage')">回路管理</Button>
+        <ClpmToolbarButton
+          icon="back"
+          label="返回"
+          icon-only
+          @click="router.back()"
+        />
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          @click="handleExport"
+        />
+        <ClpmToolbarButton
+          icon="diagnosis"
+          label="进入诊断"
+          @click="router.push(`/diagnosis/detail/${loopId}`)"
+        />
+        <ClpmToolbarButton
+          icon="tuning"
+          label="整定建议"
+          @click="router.push(`/tuning/workbench?loopId=${loopId}`)"
+        />
       </template>
     </ClpmPageToolbar>
     <Spin :spinning="loading">
@@ -313,19 +504,50 @@ onMounted(() => {
         <!-- 概览 Tab -->
         <TabPane key="overview" tab="回路概览">
           <div class="space-y-4">
+            <!-- 摘要条：主指标突出 + actions（详情/诊断/整定）+ Tag 关联徽章 -->
             <ClpmObjectSummaryBar
               v-if="loopDetail"
               :title="loopDetail.basicInfo.tagName"
               :subtitle="loopDetail.basicInfo.description || '回路对象分析'"
               :items="summaryItems"
               :tags="summaryTags"
+              :primary-item="primaryItem"
+              :actions="summaryActions"
+              @action="onSummaryAction"
             >
               <template #actions>
                 <ClpmTagAssociationBadge :mapping="loopDetail.tagMapping" />
               </template>
             </ClpmObjectSummaryBar>
 
-            <!-- 中部：波形图 -->
+            <!-- 设备/机泵信息区（后端字段待补，占位实现） -->
+            <Card size="small" title="设备/机泵信息" class="clpm-info-card">
+              <Descriptions :column="{ xs: 1, sm: 2, md: 3 }" size="small" bordered>
+                <DescriptionsItem label="设备名称">
+                  {{ equipmentInfo?.equipmentName }}
+                </DescriptionsItem>
+                <DescriptionsItem label="设备类型">
+                  {{ equipmentInfo?.equipmentType }}
+                </DescriptionsItem>
+                <DescriptionsItem label="机泵编号">
+                  {{ equipmentInfo?.pumpNo }}
+                </DescriptionsItem>
+                <DescriptionsItem label="介质">
+                  {{ equipmentInfo?.medium }}
+                </DescriptionsItem>
+                <DescriptionsItem label="工况">
+                  {{ equipmentInfo?.workingCondition }}
+                </DescriptionsItem>
+                <DescriptionsItem label="责任单元">
+                  {{ equipmentInfo?.responsibilityUnit }}
+                </DescriptionsItem>
+              </Descriptions>
+              <div class="clpm-info-hint">
+                提示：设备/机泵字段后端接口待补全，当前显示为占位。
+              </div>
+            </Card>
+
+            <!-- 主趋势图（占比主体 45%+，height=460px） -->
             <ClpmDataCanvas
               title="PV/SP/OP 趋势波形"
               description="主趋势图优先展示回路当前运行质量、模式切换和关键变量变化。"
@@ -391,67 +613,108 @@ onMounted(() => {
                   </div>
                 </div>
 
-                <WaveformChart :trend="monitorDetail.trend" height="360px" />
+                <WaveformChart :trend="monitorDetail.trend" height="460px" />
               </div>
             </ClpmDataCanvas>
 
-            <!-- 底部：KPI 摘要 -->
-            <ClpmDataCanvas
-              title="KPI 摘要"
-              :loading="monitorLoading"
-              :empty="!monitorDetail"
-              empty-text="暂无 KPI 数据"
-              :partial="isInconclusive"
-              partial-text="该回路本期评估数据不足，结果不确定。有效数据率低于 20%，KPI 仅供参考。"
-            >
-              <div v-if="monitorDetail" class="space-y-4">
-                <div
-                  class="flex items-center justify-between rounded border p-4"
-                  :class="{ 'opacity-60': isInconclusive }"
-                >
-                  <div>
-                    <div class="text-xs text-gray-400">综合评分（composite_score）</div>
-                    <div
-                      class="mt-1 text-3xl font-bold"
-                      :class="
-                        isInconclusive
-                          ? 'text-gray-400'
-                          : {
-                              'text-green-600': monitorDetail.kpiSummary.composite_score >= 80,
-                              'text-orange-500':
-                                monitorDetail.kpiSummary.composite_score >= 60 &&
-                                monitorDetail.kpiSummary.composite_score < 80,
-                              'text-red-500': monitorDetail.kpiSummary.composite_score < 60,
-                            }
-                      "
-                    >
-                      {{
-                        isInconclusive
-                          ? '—'
-                          : monitorDetail.kpiSummary.composite_score?.toFixed(1) ?? '--'
-                      }}
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <div class="text-xs text-gray-400">KPI 状态</div>
-                    <Tag :color="kpiStatusMap[monitorDetail.kpiSummary.status]?.color" class="mt-1">
-                      {{
-                        kpiStatusMap[monitorDetail.kpiSummary.status]?.label ||
-                        monitorDetail.kpiSummary.status
-                      }}
-                    </Tag>
-                    <div class="mt-1 text-xs text-gray-400">
-                      算法版本：{{ monitorDetail.kpiSummary.algorithm_version }}
-                    </div>
-                    <div class="text-xs text-gray-400">
-                      计算时间：{{ formatTime(monitorDetail.kpiSummary.calculatedAt) }}
-                    </div>
-                  </div>
+            <!-- 数据质量摘要 + KPI 摘要 并排 -->
+            <div class="clpm-bottom-grid">
+              <!-- 数据质量环形图 -->
+              <Card size="small" title="数据质量摘要" class="clpm-quality-card">
+                <EchartsUI ref="qualityDonutRef" height="220px" />
+                <div class="clpm-quality-meta">
+                  <Tag :color="THEME_COLORS.SUCCESS">
+                    Good {{ dataQualitySummary.good.toFixed(1) }}%
+                  </Tag>
+                  <Tag :color="THEME_COLORS.DANGER">
+                    Bad {{ dataQualitySummary.bad.toFixed(1) }}%
+                  </Tag>
+                  <Tag :color="THEME_COLORS.NEUTRAL">
+                    Uncertain {{ dataQualitySummary.uncertain.toFixed(1) }}%
+                  </Tag>
                 </div>
+              </Card>
 
-                <ClpmKpiStrip :items="loopKpiStripItems" :loading="monitorLoading" />
-              </div>
-            </ClpmDataCanvas>
+              <!-- KPI 摘要 -->
+              <ClpmDataCanvas
+                title="KPI 摘要"
+                :loading="monitorLoading"
+                :empty="!monitorDetail"
+                empty-text="暂无 KPI 数据"
+                :partial="isInconclusive"
+                partial-text="该回路本期评估数据不足，结果不确定。有效数据率低于 20%，KPI 仅供参考。"
+              >
+                <div v-if="monitorDetail" class="space-y-4">
+                  <div
+                    class="flex items-center justify-between rounded border p-4"
+                    :class="{ 'opacity-60': isInconclusive }"
+                  >
+                    <div>
+                      <div class="text-xs text-gray-400">
+                        综合评分（composite_score）
+                      </div>
+                      <div
+                        class="mt-1 text-3xl font-bold"
+                        :class="
+                          isInconclusive
+                            ? 'text-gray-400'
+                            : {
+                                'text-green-600':
+                                  monitorDetail.kpiSummary.composite_score >= 80,
+                                'text-orange-500':
+                                  monitorDetail.kpiSummary.composite_score >= 60 &&
+                                  monitorDetail.kpiSummary.composite_score < 80,
+                                'text-red-500':
+                                  monitorDetail.kpiSummary.composite_score < 60,
+                              }
+                        "
+                      >
+                        {{
+                          isInconclusive
+                            ? '—'
+                            : (monitorDetail.kpiSummary.composite_score?.toFixed(1) ?? '--')
+                        }}
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <div class="text-xs text-gray-400">KPI 状态</div>
+                      <Tag
+                        :color="kpiStatusMap[monitorDetail.kpiSummary.status]?.color"
+                        class="mt-1"
+                      >
+                        {{
+                          kpiStatusMap[monitorDetail.kpiSummary.status]?.label ||
+                          monitorDetail.kpiSummary.status
+                        }}
+                      </Tag>
+                      <div class="mt-1 text-xs text-gray-400">
+                        算法版本：{{ monitorDetail.kpiSummary.algorithm_version }}
+                      </div>
+                      <div class="text-xs text-gray-400">
+                        计算时间：{{ formatTime(monitorDetail.kpiSummary.calculatedAt) }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <ClpmKpiStrip :items="loopKpiStripItems" :loading="monitorLoading" />
+                </div>
+              </ClpmDataCanvas>
+            </div>
+
+            <!-- StatusFooter：最近刷新/数据延迟/可信度/KPI 状态 -->
+            <div class="clpm-status-footer">
+              <span>最近刷新：{{ lastRefreshText || '尚未刷新' }}</span>
+              <span class="clpm-status-footer__divider">·</span>
+              <span>数据延迟：{{ dataDelayText || '—' }}</span>
+              <span class="clpm-status-footer__divider">·</span>
+              <span>
+                可信度等级：<strong>{{ confidenceLevel }}</strong>
+              </span>
+              <span class="clpm-status-footer__divider">·</span>
+              <span>
+                KPI 状态：{{ monitorDetail?.kpiSummary?.status ?? '—' }}
+              </span>
+            </div>
           </div>
         </TabPane>
 
@@ -546,3 +809,65 @@ onMounted(() => {
     </Spin>
   </Page>
 </template>
+
+<style scoped>
+.clpm-info-card {
+  margin-bottom: 0;
+}
+
+.clpm-info-hint {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.clpm-bottom-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 320px 1fr;
+}
+
+.clpm-quality-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.clpm-quality-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.clpm-status-footer {
+  align-items: center;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
+  color: hsl(var(--muted-foreground));
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.clpm-status-footer__divider {
+  color: hsl(var(--border));
+}
+
+.clpm-status-footer strong {
+  color: hsl(var(--primary));
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+@media (max-width: 1024px) {
+  .clpm-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
