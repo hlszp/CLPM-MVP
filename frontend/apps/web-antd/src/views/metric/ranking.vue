@@ -22,12 +22,10 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Drawer,
   Input,
   InputNumber,
   Select,
-  Statistic,
   Table,
   Tag,
 } from 'ant-design-vue';
@@ -189,6 +187,9 @@ const columns: TableColumnsType = [
   },
   { title: '操作', key: 'action', width: 110, fixed: 'right' },
 ];
+
+const drawerVisible = ref(false);
+const selectedLoop = ref<MetricApi.RankingItem | null>(null);
 
 const kpiStripItems = computed<KpiStripItem[]>(() => [
   { key: 'total', label: '总回路数', value: stats.value.total, status: 'neutral' },
@@ -483,24 +484,11 @@ onMounted(() => {
       placement="right"
     >
       <template v-if="selectedLoop">
-        <div class="mb-4">
-          <h3 class="text-lg font-semibold">{{ selectedLoop.tagName }}</h3>
-          <p class="text-sm text-gray-500">{{ selectedLoop.unitName }}</p>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <Card size="small">
-            <div class="text-xs text-gray-500">综合评分</div>
-            <div class="text-2xl font-bold text-blue-600">
-              {{ Number(selectedLoop.compositeScore).toFixed(1) }}
-            </div>
-          </Card>
-          <Card size="small">
-            <div class="text-xs text-gray-500">状态</div>
-            <Tag :color="statusColorMap[selectedLoop.status]" class="mt-1">
-              {{ statusLabelMap[selectedLoop.status] }}
-            </Tag>
-          </Card>
-        </div>
+        <ClpmObjectSummaryBar
+          :title="selectedLoop.tagName"
+          :subtitle="selectedLoop.unitName"
+          :items="drawerSummaryItems"
+        />
         <div class="mt-4 space-y-2">
           <div class="flex justify-between border-b pb-2">
             <span class="text-gray-500">好值率</span>
