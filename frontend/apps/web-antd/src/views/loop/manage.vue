@@ -30,7 +30,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Drawer,
   Form,
   FormItem,
@@ -63,10 +62,14 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
 import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmTagAssociationBadge,
+} from '#/components/clpm';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import StatusBadge from '#/components/loop/status-badge.vue';
-import { ClpmTagAssociationBadge } from '#/components/clpm';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopManage' });
@@ -841,7 +844,8 @@ watch(
 
 <template>
   <Page title="回路管理">
-    <div class="flex gap-3" style="height: calc(100vh - 160px)">
+    <ClpmPageToolbar title="回路管理" subtitle="工厂结构、回路台账、Tag 关联与批量配置的统一入口。" />
+    <div class="mt-4 flex gap-3" style="height: calc(100vh - 160px)">
       <!-- 左侧工厂树（统一组件） -->
       <PlantNodeTree
         card-title="工厂模型"
@@ -853,7 +857,7 @@ watch(
       />
 
       <!-- 右侧回路表格 -->
-      <Card class="flex-1" size="small" :body-style="{ padding: '12px' }">
+      <ClpmDataCanvas class="flex-1" title="回路台账" :loading="loading">
         <!-- 工具栏 -->
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <Button
@@ -1092,7 +1096,7 @@ watch(
             </template>
           </template>
         </Table>
-      </Card>
+      </ClpmDataCanvas>
     </div>
 
     <!-- 编辑抽屉 -->

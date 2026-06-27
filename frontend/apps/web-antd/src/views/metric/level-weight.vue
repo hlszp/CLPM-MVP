@@ -13,9 +13,7 @@ import type { TableColumnsType } from 'ant-design-vue';
 
 import type { MetricApi } from '#/api/metric';
 
-import { onMounted, reactive, ref } from 'vue';
-
-import { Page } from '@vben/common-ui';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import {
   Button,
@@ -27,14 +25,10 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
-import ConfigTabs from '#/components/metric/config-tabs.vue';
+import { ClpmToolbarButton } from '#/components/clpm';
 import { getLoopLevelWeightsApi, updateLoopLevelWeightApi } from '#/api/metric';
 
-defineOptions({ name: 'MetricLevelWeight' });
+defineOptions({ name: 'MetricLevelWeightContent' });
 
 const loading = ref(false);
 const saving = ref<Record<number, boolean>>({});
@@ -105,17 +99,56 @@ async function loadList() {
   }
 }
 
-/** 保存单行 */
+/** 变更确认弹窗状态 */
+const confirmVisible = ref(false);
+const confirmLoading = ref(false);
+const confirmTarget = ref<MetricApi.LoopLevelWeightItem | null>(null);
+const changeRemark = ref('');
+
+/** 变更摘要 */
+const changeSummary = computed(() => {
+  const item = confirmTarget.value;
+  if (!item) return [];
+  const state = editState[item.level];
+  if (!state) return [];
+  const summary: { field: string; from: string; to: string }[] = [];
+  if (item.weight !== state.weight) {
+    summary.push({ field: 'weight（权重）', from: `${item.weight}%`, to: `${state.weight}%` });
+  }
+  if ((item.description ?? '') !== state.description) {
+    summary.push({ field: '描述', from: item.description ?? '—', to: state.description || '—' });
+  }
+  return summary;
+});
+
+/** 影响范围 */
+const impactScope = computed(() => {
+  const item = confirmTarget.value;
+  if (!item) return '';
+  return `级别为「${LEVEL_MAP[item.level]?.label ?? item.level}」的所有回路在装置/工厂聚合评分时将使用新权重。`;
+});
+
+/** 打开变更确认弹窗 */
 function handleSave(item: MetricApi.LoopLevelWeightItem) {
   const state = editState[item.level];
   if (!state) return;
-  Modal.confirm({
-    title: '确认变更级别权重',
-    content: `即将更新「${LEVEL_MAP[item.level]?.label}」的权重配置，保存后立即生效。是否继续？`,
-    okText: '确认保存',
-    cancelText: '取消',
-    onOk: () => doSave(item.level),
-  });
+  confirmTarget.value = item;
+  changeRemark.value = '';
+  confirmVisible.value = true;
+}
+
+/** 确认变更 */
+async function confirmSave() {
+  if (!confirmTarget.value) return;
+  confirmLoading.value = true;
+  try {
+    await doSave(confirmTarget.value.level);
+    confirmVisible.value = false;
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    confirmLoading.value = false;
+  }
 }
 
 async function doSave(level: MetricApi.LoopLevel) {
@@ -142,63 +175,112 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="回路级别权重配置">
-    <ConfigTabs />
-    <ClpmPageToolbar title="回路级别权重配置" subtitle="定义 1/2/3 级回路在装置与工厂聚合评分时的加权影响。" />
-    <ClpmDataCanvas class="mt-4" title="级别权重列表">
-      <div class="mb-4 flex items-center justify-between">
-        <p class="text-sm text-gray-500">
-          配置 3 个回路级别（1/2/3）的评分权重。级别越高，对综合评分的影响越大。
-          用于在装置/工厂聚合评分时按级别加权。
-        </p>
-        <Button :loading="loading" @click="loadList">刷新</Button>
-      </div>
-
-      <Table
-        :columns="columns"
-        :data-source="list"
+  <div class="metric-level-weight-content">
+    <div class="mb-3 flex items-center justify-between">
+      <p class="text-sm text-gray-500">
+        配置 3 个回路级别（1/2/3）的评分权重。级别越高，对综合评分的影响越大。
+        用于在装置/工厂聚合评分时按级别加权。
+      </p>
+      <ClpmToolbarButton
+        icon="ant-design:reload-outlined"
         :loading="loading"
-        :pagination="false"
-        :row-key="(record: MetricApi.LoopLevelWeightItem) => record.level"
-        :scroll="{ x: 700 }"
-        size="middle"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'level'">
-            <Tag :color="LEVEL_MAP[record.level as number]?.color ?? 'default'">
-              {{ LEVEL_MAP[record.level as number]?.label ?? record.level }}
-            </Tag>
-          </template>
-          <template v-else-if="column.key === 'weight'">
-            <InputNumber
-              v-model:value="editStateOf(record.level).weight"
-              :min="0"
-              :max="100"
-              size="small"
-              addon-after="%"
-              style="width: 140px"
-            />
-          </template>
-          <template v-else-if="column.key === 'description'">
-            <Input
-              v-model:value="editStateOf(record.level).description"
-              placeholder="描述"
-              size="small"
-            />
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <Button
-              v-permission="['ADMIN']"
-              type="link"
-              size="small"
-              :loading="saving[record.level]"
-              @click="handleSave(record as MetricApi.LoopLevelWeightItem)"
-            >
-              保存
-            </Button>
-          </template>
+        label="刷新"
+        @click="loadList"
+      />
+    </div>
+
+    <Table
+      :columns="columns"
+      :data-source="list"
+      :loading="loading"
+      :pagination="false"
+      :row-key="(record: MetricApi.LoopLevelWeightItem) => record.level"
+      :scroll="{ x: 700 }"
+      size="middle"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'level'">
+          <Tag :color="LEVEL_MAP[record.level as number]?.color ?? 'default'">
+            {{ LEVEL_MAP[record.level as number]?.label ?? record.level }}
+          </Tag>
         </template>
-      </Table>
-    </ClpmDataCanvas>
-  </Page>
+        <template v-else-if="column.key === 'weight'">
+          <InputNumber
+            v-model:value="editStateOf(record.level).weight"
+            :min="0"
+            :max="100"
+            size="small"
+            addon-after="%"
+            style="width: 140px"
+          />
+        </template>
+        <template v-else-if="column.key === 'description'">
+          <Input
+            v-model:value="editStateOf(record.level).description"
+            placeholder="描述"
+            size="small"
+          />
+        </template>
+        <template v-else-if="column.key === 'action'">
+          <Button
+            v-permission="['ADMIN']"
+            type="link"
+            size="small"
+            :loading="saving[record.level]"
+            @click="handleSave(record as MetricApi.LoopLevelWeightItem)"
+          >
+            保存
+          </Button>
+        </template>
+      </template>
+    </Table>
+
+    <!-- 配置变更确认弹窗 -->
+    <Modal
+      v-model:open="confirmVisible"
+      title="确认变更级别权重"
+      :confirm-loading="confirmLoading"
+      ok-text="确认保存"
+      cancel-text="取消"
+      width="560px"
+      @ok="confirmSave"
+    >
+      <div class="space-y-3 py-2">
+        <div class="text-sm">
+          <div class="mb-2 font-medium">变更摘要</div>
+          <div v-if="changeSummary.length === 0" class="text-gray-400">
+            无变更
+          </div>
+          <div v-else class="rounded border border-gray-200 bg-gray-50 p-3">
+            <div
+              v-for="(c, idx) in changeSummary"
+              :key="idx"
+              class="mb-1 flex justify-between text-xs"
+            >
+              <span class="text-gray-600">{{ c.field }}</span>
+              <span class="font-mono">
+                <span class="text-gray-400 line-through">{{ c.from }}</span>
+                <span class="mx-1 text-gray-400">→</span>
+                <span class="font-medium text-blue-600">{{ c.to }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="text-sm">
+          <div class="mb-1 font-medium">影响范围</div>
+          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
+            {{ impactScope }}
+          </p>
+        </div>
+        <div class="text-sm">
+          <div class="mb-1 font-medium">变更说明（可选）</div>
+          <Input.TextArea
+            v-model:value="changeRemark"
+            placeholder="请简要说明本次变更原因，便于追溯"
+            :rows="2"
+          />
+        </div>
+      </div>
+    </Modal>
+  </div>
 </template>

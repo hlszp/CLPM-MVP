@@ -13,13 +13,10 @@ import type { TableColumnsType } from 'ant-design-vue';
 
 import type { ControlType, MetricApi } from '#/api/metric';
 
-import { onMounted, reactive, ref } from 'vue';
-
-import { Page } from '@vben/common-ui';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import {
   Button,
-  Card,
   Input,
   InputNumber,
   message,
@@ -28,10 +25,10 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import ConfigTabs from '#/components/metric/config-tabs.vue';
+import { ClpmToolbarButton } from '#/components/clpm';
 import { getLoopTypeWeightsApi, updateLoopTypeWeightApi } from '#/api/metric';
 
-defineOptions({ name: 'MetricTypeWeight' });
+defineOptions({ name: 'MetricTypeWeightContent' });
 
 const loading = ref(false);
 const saving = ref<Record<string, boolean>>({});
@@ -147,17 +144,62 @@ async function loadList() {
   }
 }
 
-/** 保存单行 */
+/** 变更确认弹窗状态 */
+const confirmVisible = ref(false);
+const confirmLoading = ref(false);
+const confirmTarget = ref<MetricApi.LoopTypeWeightItem | null>(null);
+const changeRemark = ref('');
+
+/** 变更摘要（diff 摘要） */
+const changeSummary = computed(() => {
+  const item = confirmTarget.value;
+  if (!item) return [];
+  const state = editState[item.loopType];
+  if (!state) return [];
+  const summary: { field: string; from: string; to: string }[] = [];
+  if (item.weightA !== state.weightA) {
+    summary.push({ field: 'weightA（自动模式率）', from: `${item.weightA}%`, to: `${state.weightA}%` });
+  }
+  if (item.weightF !== state.weightF) {
+    summary.push({ field: 'weightF（快速率）', from: `${item.weightF}%`, to: `${state.weightF}%` });
+  }
+  if (item.weightS !== state.weightS) {
+    summary.push({ field: 'weightS（稳定率）', from: `${item.weightS}%`, to: `${state.weightS}%` });
+  }
+  if ((item.description ?? '') !== state.description) {
+    summary.push({ field: '描述', from: item.description ?? '—', to: state.description || '—' });
+  }
+  return summary;
+});
+
+/** 影响范围 */
+const impactScope = computed(() => {
+  const item = confirmTarget.value;
+  if (!item) return '';
+  return `类型为「${CONTROL_TYPE_MAP[item.loopType].label}」的所有回路在下次评估时将使用新权重计算综合评分。`;
+});
+
+/** 打开变更确认弹窗 */
 function handleSave(item: MetricApi.LoopTypeWeightItem) {
   const state = editState[item.loopType];
   if (!state) return;
-  Modal.confirm({
-    title: '确认变更类型权重',
-    content: `即将更新「${CONTROL_TYPE_MAP[item.loopType].label}」的权重配置，保存后立即生效。是否继续？`,
-    okText: '确认保存',
-    cancelText: '取消',
-    onOk: () => doSave(item.loopType),
-  });
+  confirmTarget.value = item;
+  changeRemark.value = '';
+  confirmVisible.value = true;
+}
+
+/** 确认变更 */
+async function confirmSave() {
+  if (!confirmTarget.value) return;
+  confirmLoading.value = true;
+  try {
+    await doSave(confirmTarget.value.loopType);
+    confirmVisible.value = false;
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    confirmLoading.value = false;
+  }
 }
 
 async function doSave(loopType: ControlType) {
@@ -186,92 +228,141 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="回路类型权重配置">
-    <ConfigTabs />
-    <Card>
-      <div class="mb-4 flex items-center justify-between">
-        <p class="text-sm text-gray-500">
-          配置 4 种回路类型（STABLE/SLOW/FAST/LOGIC）的评分权重：
-          weightA（自动模式率）、weightF（快速率）、weightS（稳定率）。
-          不同类型在综合评分中各 KPI 的权重不同。
-        </p>
-        <Button :loading="loading" @click="loadList">刷新</Button>
-      </div>
-
-      <Table
-        :columns="columns"
-        :data-source="list"
+  <div class="metric-type-weight-content">
+    <div class="mb-3 flex items-center justify-between">
+      <p class="text-sm text-gray-500">
+        配置 4 种回路类型（STABLE/SLOW/FAST/LOGIC）的评分权重：
+        weightA（自动模式率）、weightF（快速率）、weightS（稳定率）。
+      </p>
+      <ClpmToolbarButton
+        icon="ant-design:reload-outlined"
         :loading="loading"
-        :pagination="false"
-        :row-key="(record: MetricApi.LoopTypeWeightItem) => record.loopType"
-        :scroll="{ x: 900 }"
-        size="middle"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'loopType'">
-            <Tag
-              :color="
-                CONTROL_TYPE_MAP[record.loopType as ControlType]?.color ??
-                'default'
-              "
-            >
-              {{
-                CONTROL_TYPE_MAP[record.loopType as ControlType]?.label ??
-                record.loopType
-              }}
-            </Tag>
-            <div class="mt-1 text-xs text-gray-400">{{ record.loopType }}</div>
-          </template>
-          <template v-else-if="column.key === 'weightA'">
-            <InputNumber
-              v-model:value="editStateOf(record.loopType).weightA"
-              :min="0"
-              :max="100"
-              size="small"
-              addon-after="%"
-              style="width: 120px"
-            />
-          </template>
-          <template v-else-if="column.key === 'weightF'">
-            <InputNumber
-              v-model:value="editStateOf(record.loopType).weightF"
-              :min="0"
-              :max="100"
-              size="small"
-              addon-after="%"
-              style="width: 120px"
-            />
-          </template>
-          <template v-else-if="column.key === 'weightS'">
-            <InputNumber
-              v-model:value="editStateOf(record.loopType).weightS"
-              :min="0"
-              :max="100"
-              size="small"
-              addon-after="%"
-              style="width: 120px"
-            />
-          </template>
-          <template v-else-if="column.key === 'description'">
-            <Input
-              v-model:value="editStateOf(record.loopType).description"
-              placeholder="描述"
-              size="small"
-            />
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <Button
-              v-permission="['ADMIN']"
-              type="link"
-              size="small"
-              :loading="saving[record.loopType]"
-              @click="handleSave(record as MetricApi.LoopTypeWeightItem)"
-            >
-              保存
-            </Button>
-          </template>
+        label="刷新"
+        @click="loadList"
+      />
+    </div>
+
+    <Table
+      :columns="columns"
+      :data-source="list"
+      :loading="loading"
+      :pagination="false"
+      :row-key="(record: MetricApi.LoopTypeWeightItem) => record.loopType"
+      :scroll="{ x: 900 }"
+      size="middle"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'loopType'">
+          <Tag
+            :color="
+              CONTROL_TYPE_MAP[record.loopType as ControlType]?.color ??
+              'default'
+            "
+          >
+            {{
+              CONTROL_TYPE_MAP[record.loopType as ControlType]?.label ??
+              record.loopType
+            }}
+          </Tag>
+          <div class="mt-1 text-xs text-gray-400">{{ record.loopType }}</div>
         </template>
-      </Table>
-    </Card>
-  </Page>
+        <template v-else-if="column.key === 'weightA'">
+          <InputNumber
+            v-model:value="editStateOf(record.loopType).weightA"
+            :min="0"
+            :max="100"
+            size="small"
+            addon-after="%"
+            style="width: 120px"
+          />
+        </template>
+        <template v-else-if="column.key === 'weightF'">
+          <InputNumber
+            v-model:value="editStateOf(record.loopType).weightF"
+            :min="0"
+            :max="100"
+            size="small"
+            addon-after="%"
+            style="width: 120px"
+          />
+        </template>
+        <template v-else-if="column.key === 'weightS'">
+          <InputNumber
+            v-model:value="editStateOf(record.loopType).weightS"
+            :min="0"
+            :max="100"
+            size="small"
+            addon-after="%"
+            style="width: 120px"
+          />
+        </template>
+        <template v-else-if="column.key === 'description'">
+          <Input
+            v-model:value="editStateOf(record.loopType).description"
+            placeholder="描述"
+            size="small"
+          />
+        </template>
+        <template v-else-if="column.key === 'action'">
+          <Button
+            v-permission="['ADMIN']"
+            type="link"
+            size="small"
+            :loading="saving[record.loopType]"
+            @click="handleSave(record as MetricApi.LoopTypeWeightItem)"
+          >
+            保存
+          </Button>
+        </template>
+      </template>
+    </Table>
+
+    <!-- 配置变更确认弹窗 -->
+    <Modal
+      v-model:open="confirmVisible"
+      title="确认变更类型权重"
+      :confirm-loading="confirmLoading"
+      ok-text="确认保存"
+      cancel-text="取消"
+      width="560px"
+      @ok="confirmSave"
+    >
+      <div class="space-y-3 py-2">
+        <div class="text-sm">
+          <div class="mb-2 font-medium">变更摘要</div>
+          <div v-if="changeSummary.length === 0" class="text-gray-400">
+            无变更
+          </div>
+          <div v-else class="rounded border border-gray-200 bg-gray-50 p-3">
+            <div
+              v-for="(c, idx) in changeSummary"
+              :key="idx"
+              class="mb-1 flex justify-between text-xs"
+            >
+              <span class="text-gray-600">{{ c.field }}</span>
+              <span class="font-mono">
+                <span class="text-gray-400 line-through">{{ c.from }}</span>
+                <span class="mx-1 text-gray-400">→</span>
+                <span class="font-medium text-blue-600">{{ c.to }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="text-sm">
+          <div class="mb-1 font-medium">影响范围</div>
+          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
+            {{ impactScope }}
+          </p>
+        </div>
+        <div class="text-sm">
+          <div class="mb-1 font-medium">变更说明（可选）</div>
+          <Input.TextArea
+            v-model:value="changeRemark"
+            placeholder="请简要说明本次变更原因，便于追溯"
+            :rows="2"
+          />
+        </div>
+      </div>
+    </Modal>
+  </div>
 </template>

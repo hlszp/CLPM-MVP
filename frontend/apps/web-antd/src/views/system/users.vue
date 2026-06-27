@@ -20,7 +20,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Form,
   FormItem,
   Input,
@@ -31,6 +30,10 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
 import {
   createUserApi,
@@ -310,7 +313,8 @@ onMounted(() => {
 
 <template>
   <Page title="用户管理">
-    <Card>
+    <ClpmPageToolbar title="用户管理" subtitle="管理账号、角色、密码重置与启用状态。" />
+    <ClpmDataCanvas class="mt-4" title="用户列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Input
@@ -405,7 +409,7 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 新增/编辑 Modal -->
     <Modal

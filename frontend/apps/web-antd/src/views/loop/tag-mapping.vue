@@ -18,7 +18,7 @@ import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, message, Select, Spin, Tag } from 'ant-design-vue';
+import { Button, message, Select, Spin, Tag } from 'ant-design-vue';
 
 import { getAasTagsApi } from '#/api/aas';
 import {
@@ -26,6 +26,10 @@ import {
   getLoopTagsApi,
   updateLoopTagMappingApi,
 } from '#/api/loop';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import StatusBadge from '#/components/loop/status-badge.vue';
 
 defineOptions({ name: 'LoopTagMapping' });
@@ -286,9 +290,10 @@ onMounted(() => {
 
 <template>
   <Page title="Tag 关联管理">
-    <div class="space-y-4">
+    <ClpmPageToolbar title="Tag 关联管理" subtitle="按回路管理 7 个核心 Tag 槽位，并校验必填关联。" />
+    <div class="mt-4 space-y-4">
       <!-- 回路选择区 -->
-      <Card>
+      <ClpmDataCanvas title="回路选择">
         <div class="flex items-center gap-4">
           <span class="whitespace-nowrap font-medium">选择回路：</span>
           <Select
@@ -315,10 +320,10 @@ onMounted(() => {
             />
           </div>
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 7 槽位配置 -->
-      <Card title="Tag 关联配置">
+      <ClpmDataCanvas title="Tag 关联配置">
         <Spin :spinning="tagLoading">
           <div
             v-if="selectedLoopId"
@@ -403,7 +408,7 @@ onMounted(() => {
             保存关联
           </Button>
         </div>
-      </Card>
+      </ClpmDataCanvas>
     </div>
   </Page>
 </template>
