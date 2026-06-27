@@ -50,6 +50,55 @@ def _mode_value_to_label(value: float | None) -> str | None:
     return mapping.get(int(value), "Unknown")
 
 
+def _ts_to_ms(ts: Any) -> int:
+    """将时间戳（字符串或 datetime）转为毫秒数字（前端 ECharts time 轴要求）。
+
+    TDengine REST API 返回的 ts 为字符串（如 '2026-06-25T17:29:22.000Z'），
+    前端 MonitorTrend.timestamps 类型为 number[]（毫秒），需统一转换。
+    """
+    if isinstance(ts, (int, float)):
+        return int(ts)
+    if isinstance(ts, str):
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            return int(dt.timestamp() * 1000)
+        except (ValueError, TypeError):
+            try:
+                return int(float(ts))
+            except (ValueError, TypeError):
+                return 0
+    if hasattr(ts, "timestamp"):
+        return int(ts.timestamp() * 1000)
+    return 0
+
+
+def _quality_code_to_label(q: Any) -> str:
+    """质量码 → 前端标签（GOOD/BAD/UNCERTAIN）。
+
+    兼容两种 schema：
+    - TDengine: 1=Good, 0=Bad
+    - OPC DA: 192=Good
+    - 已是 GOOD/BAD 字符串则原样返回（向后兼容 MOCK 数据）
+    """
+    if q is None:
+        return "GOOD"
+    if isinstance(q, str):
+        if q in ("GOOD", "BAD", "UNCERTAIN"):
+            return q
+        try:
+            q = int(q)
+        except (ValueError, TypeError):
+            return "UNCERTAIN"
+    if isinstance(q, (int, float)):
+        # TDengine: 1=Good; OPC DA: 192=Good; 0=Bad
+        if q in (1, 192):
+            return "GOOD"
+        if q == 0:
+            return "BAD"
+        return "UNCERTAIN"
+    return "UNCERTAIN"
+
+
 def lttb_downsample(
     data: list[dict[str, Any]],
     threshold: int = LTTB_THRESHOLD,
@@ -473,14 +522,17 @@ async def get_loop_monitor_detail(
         # 简化处理：以 PV 的时间戳为基准（如有），否则用 SP
         base_trend = pv_trend if pv_trend else (sp_trend if sp_trend else op_trend)
         if base_trend:
-            trend_data["timestamps"] = [d.get("ts") for d in base_trend]
+            # timestamps 统一转为毫秒数字（前端 ECharts time 轴要求 number[]）
+            trend_data["timestamps"] = [_ts_to_ms(d.get("ts")) for d in base_trend]
             trend_data["pv"] = [d.get("value") for d in pv_trend] if pv_trend else []
             trend_data["sp"] = [d.get("value") for d in sp_trend] if sp_trend else []
             trend_data["op"] = [d.get("value") for d in op_trend] if op_trend else []
             trend_data["mode"] = [d.get("value") for d in mode_trend] if mode_trend else []
-            # PV 质量码数组（与 pv 等长）
+            # PV 质量码数组：数字码 → GOOD/BAD/UNCERTAIN（前端 Quality 类型）
             if pv_trend:
-                trend_data["pvQuality"] = [d.get("quality", "GOOD") for d in pv_trend]
+                trend_data["pvQuality"] = [
+                    _quality_code_to_label(d.get("quality", "GOOD")) for d in pv_trend
+                ]
 
     # TDengine 无数据时生成模拟趋势数据（开发演示用）
     if trend_status == "EMPTY":
