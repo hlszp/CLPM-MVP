@@ -24,7 +24,7 @@ const activeTab = ref<'level' | 'type'>('type');
 </script>
 
 <template>
-  <Page title="权重配置">
+  <Page>
     <ConfigTabs />
     <ClpmPageToolbar
       title="权重配置"

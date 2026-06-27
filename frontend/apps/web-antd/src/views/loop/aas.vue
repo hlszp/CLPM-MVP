@@ -259,7 +259,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="AAS 连接配置">
+  <Page>
     <ClpmPageToolbar title="AAS 连接配置" subtitle="配置连接、测试连接并查看同步后的 Tag 列表。" />
     <div class="mt-4 space-y-4">
       <!-- 配置卡片 -->

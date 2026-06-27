@@ -191,7 +191,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="审计日志">
+  <Page>
     <ClpmPageToolbar title="审计日志" subtitle="按操作类型、时间和资源查看关键变更记录。" />
     <ClpmDataCanvas class="mt-4" title="审计日志列表" :loading="loading">
       <!-- 筛选栏 -->

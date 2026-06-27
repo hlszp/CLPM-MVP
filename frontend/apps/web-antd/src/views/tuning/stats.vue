@@ -370,7 +370,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="效果统计">
+  <Page>
     <ClpmPageToolbar title="效果统计" subtitle="查看整定任务分布、拟合质量与历史效果。" />
     <div class="mb-4 mt-4">
       <ClpmKpiStrip :items="kpiStripItems" :loading="historyLoading" />

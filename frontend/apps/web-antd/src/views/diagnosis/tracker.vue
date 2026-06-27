@@ -663,7 +663,7 @@ onBeforeUnmount(() => {
   </Drawer>
 
   <!-- 独立页面模式（直接路由访问 /diagnosis/tracker） -->
-  <Page v-else title="异常跟踪">
+  <Page v-else>
     <ClpmDataCanvas title="异常跟踪列表" :loading="loading">
       <template #extra>
         <ClpmPageToolbar compact title="异常跟踪" subtitle="状态、标签、时间窗统一筛选">

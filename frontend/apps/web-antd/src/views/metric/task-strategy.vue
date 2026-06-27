@@ -124,7 +124,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="任务策略">
+  <Page>
     <ConfigTabs />
     <ClpmPageToolbar
       title="任务策略"

@@ -235,7 +235,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="整定工作台">
+  <Page>
     <Spin :spinning="loading">
       <ClpmPageToolbar title="整定工作台" subtitle="模型辨识、算法、仿真与效果统计的统一入口" />
       <div class="mb-4 mt-4">

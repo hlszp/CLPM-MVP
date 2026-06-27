@@ -289,7 +289,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="Tag 关联管理">
+  <Page>
     <ClpmPageToolbar title="Tag 关联管理" subtitle="按回路管理 7 个核心 Tag 槽位，并校验必填关联。" />
     <div class="mt-4 space-y-4">
       <!-- 回路选择区 -->

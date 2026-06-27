@@ -448,7 +448,7 @@ onMounted(() => {
   </Drawer>
 
   <!-- 独立页面模式 -->
-  <Page v-else :title="pageTitle">
+  <Page v-else>
     <ClpmPageToolbar :title="pageTitle" subtitle="处置前后趋势与 KPI 对比，用于验证措施效果。" />
     <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">

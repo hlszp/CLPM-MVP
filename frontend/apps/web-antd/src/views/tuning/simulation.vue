@@ -464,7 +464,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="闭环仿真">
+  <Page>
     <ClpmPageToolbar title="闭环仿真" subtitle="比较当前 PID 与推荐 PID 的响应曲线和性能指标。" />
     <ClpmDataCanvas class="mb-4 mt-4" title="参数配置">
       <Form layout="vertical">

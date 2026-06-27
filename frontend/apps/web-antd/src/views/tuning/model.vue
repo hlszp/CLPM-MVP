@@ -254,7 +254,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="模型辨识">
+  <Page>
     <ClpmPageToolbar title="模型辨识" subtitle="选择回路、时间窗和模型类型，产出用于整定的辨识模型。" />
     <ClpmDataCanvas class="mb-4 mt-4" title="辨识筛选条件">
       <Form layout="inline">

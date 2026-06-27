@@ -204,7 +204,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Page title="评估任务详情">
+  <Page>
     <ClpmPageToolbar title="评估任务详情" subtitle="执行阶段、错误信息、通知和结果摘要。">
       <template #actions>
         <Button type="link" @click="handleBack">← 返回评估任务列表</Button>

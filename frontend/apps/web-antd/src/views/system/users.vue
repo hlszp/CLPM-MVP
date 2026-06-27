@@ -312,7 +312,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="用户管理">
+  <Page>
     <ClpmPageToolbar title="用户管理" subtitle="管理账号、角色、密码重置与启用状态。" />
     <ClpmDataCanvas class="mt-4" title="用户列表" :loading="loading">
       <!-- 筛选栏 -->

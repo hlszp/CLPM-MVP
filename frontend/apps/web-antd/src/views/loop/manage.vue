@@ -843,7 +843,7 @@ watch(
 </script>
 
 <template>
-  <Page title="回路管理">
+  <Page>
     <ClpmPageToolbar title="回路管理" subtitle="工厂结构、回路台账、Tag 关联与批量配置的统一入口。" />
     <div class="mt-4 flex gap-3" style="height: calc(100vh - 160px)">
       <!-- 左侧工厂树（统一组件） -->

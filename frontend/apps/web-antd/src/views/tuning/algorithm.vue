@@ -328,7 +328,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="整定算法">
+  <Page>
     <ClpmPageToolbar title="整定算法" subtitle="基于辨识模型选择整定算法并生成推荐 PID 参数。" />
     <Spin :spinning="loading">
       <ClpmDataCanvas class="mb-4 mt-4" title="模型参数">

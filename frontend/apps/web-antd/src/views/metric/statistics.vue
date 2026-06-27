@@ -288,7 +288,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="性能统计报表">
+  <Page>
     <ClpmPageToolbar title="性能统计报表" subtitle="趋势、装置评分和差等生分布的统一分析入口。" />
     <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">

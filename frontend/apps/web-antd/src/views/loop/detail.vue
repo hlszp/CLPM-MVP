@@ -466,7 +466,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page :title="pageTitle">
+  <Page>
     <ClpmPageToolbar
       :title="pageTitle"
       :subtitle="pageSubtitle"

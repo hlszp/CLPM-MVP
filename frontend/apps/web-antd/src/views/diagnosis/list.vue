@@ -229,7 +229,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page :title="$t('diagnosis.list.title')">
+  <Page>
     <ClpmPageToolbar :title="$t('diagnosis.list.title')" subtitle="按诊断标签、状态和时间窗查看异常对象，并快速进入详情或异常跟踪。" />
     <ClpmDataCanvas class="mt-4" title="诊断列表" :loading="loading">
       <!-- 筛选栏 -->

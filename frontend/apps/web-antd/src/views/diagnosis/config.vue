@@ -282,7 +282,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="诊断指标配置">
+  <Page>
     <ClpmPageToolbar title="诊断指标配置" subtitle="管理诊断规则、阈值、算法参数和启用状态。" />
     <ClpmDataCanvas class="mt-4" title="诊断指标列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">

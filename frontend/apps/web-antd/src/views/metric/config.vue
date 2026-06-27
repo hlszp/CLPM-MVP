@@ -252,7 +252,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="指标定义">
+  <Page>
     <ConfigTabs />
     <ClpmPageToolbar
       title="指标定义"

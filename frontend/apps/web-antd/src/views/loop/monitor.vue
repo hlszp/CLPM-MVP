@@ -689,7 +689,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Page title="回路监控">
+  <Page>
     <div class="flex min-h-[calc(100vh-160px)] gap-3">
       <ClpmDataCanvas class="w-[320px] flex-shrink-0" title="筛选与刷新">
         <ClpmPageToolbar title="回路监控" subtitle="列表 + 摘要 + 趋势主画布" compact>

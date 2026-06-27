@@ -680,7 +680,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Page title="性能看板">
+  <Page>
     <Alert
       v-if="boardData?.partialWarning?.active"
       class="mb-3"
@@ -699,7 +699,7 @@ onUnmounted(() => {
 
       <div class="flex flex-1 flex-col gap-3">
         <ClpmPageToolbar
-          title="性能驾驶舱"
+          title="性能看板"
           :subtitle="`${selectedPlantNodeName} · ${timeWindowOptions.find((o) => o.value === filter.timeWindow)?.label ?? '今天'}`"
           :loading="loading"
           :last-refresh="lastRefreshText"

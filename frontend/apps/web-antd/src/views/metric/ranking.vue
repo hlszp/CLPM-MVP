@@ -319,7 +319,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="低效回路排行">
+  <Page>
     <ClpmPageToolbar title="低效回路排行" subtitle="按综合评分和核心 KPI 识别最需要优先治理的回路。" />
     <div class="mb-4 mt-4">
       <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />

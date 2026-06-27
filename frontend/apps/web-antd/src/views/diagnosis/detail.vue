@@ -450,7 +450,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page :title="pageTitle">
+  <Page>
     <ClpmPageToolbar :title="pageTitle" :subtitle="detail?.tagName || '诊断证据与处置'">
       <a-radio-group
         v-model:value="timeWindow"

@@ -153,7 +153,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="引擎规则">
+  <Page>
     <ConfigTabs />
     <ClpmPageToolbar title="引擎规则" subtitle="管理计算周期、数据拉取窗口、并发度和执行状态。" />
     <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
