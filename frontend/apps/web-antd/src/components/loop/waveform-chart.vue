@@ -25,19 +25,70 @@ defineOptions({ name: 'WaveformChart' });
 const props = withDefaults(
   defineProps<{
     height?: string;
+    /** 是否启用时间点选择（默认 false）。启用后点击图表可选中最近时间点并 emit time-select */
+    enableTimeSelect?: boolean;
     /** Phase 5：逐点异常原因码（如 'FROZEN,JUMP'） */
     outlierReasons?: string[];
+    /** 外部设置的选中时间点（timestamp 字符串）。传入后在图表上以 markLine 标记 */
+    selectedTimestamp?: null | string;
     /** 是否显示 MODE 阶梯线 + 切换标记（默认 true） */
     showMode?: boolean;
     trend: LoopApi.MonitorTrend;
     /** Phase 5：逐点有效性标记（true=有效，false=无效）。存在时优先于 pvQuality */
     validMask?: boolean[];
   }>(),
-  { showMode: true },
+  { enableTimeSelect: false, selectedTimestamp: null, showMode: true },
 );
 
+const emit = defineEmits<{
+  (e: 'time-select', payload: { index: number; timestamp: string }): void;
+}>();
+
 const chartRef = ref<EchartsUIType>();
-const { renderEcharts, resize } = useEcharts(chartRef);
+const { renderEcharts, resize, getChartInstance } = useEcharts(chartRef);
+
+// ===== 时间点选择：点击事件绑定（D2 多图联动）=====
+// 通过 zrender 级别 click 事件捕获画布点击，转换为最近时间点
+let boundZr: any = null;
+let clickHandler: ((params: any) => void) | null = null;
+
+function bindClickEvent() {
+  if (!props.enableTimeSelect) return;
+  const chart = getChartInstance();
+  if (!chart) return;
+  const zr = chart.getZr();
+  if (!zr) return;
+  // 同一 zr 实例已绑定，避免重复
+  if (boundZr === zr && clickHandler) return;
+  // 清理旧 zr 上的 handler
+  if (boundZr && clickHandler) {
+    boundZr.off('click', clickHandler);
+  }
+  clickHandler = (params: any) => {
+    const timestamps = props.trend?.timestamps;
+    if (!timestamps || timestamps.length === 0) return;
+    const point = [params.offsetX, params.offsetY];
+    const xValue = chart.convertFromPixel({ xAxisIndex: 0 }, point[0]);
+    if (xValue === null || xValue === undefined || Number.isNaN(xValue))
+      return;
+    // 找到最近的时间点索引
+    let nearestIdx = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < timestamps.length; i++) {
+      const dist = Math.abs(timestamps[i]! - xValue);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestIdx = i;
+      }
+    }
+    emit('time-select', {
+      timestamp: String(timestamps[nearestIdx]),
+      index: nearestIdx,
+    });
+  };
+  zr.on('click', clickHandler);
+  boundZr = zr;
+}
 
 const {
   isDark,
@@ -293,6 +344,46 @@ function render() {
     ];
   }
 
+  // D2 多图联动：在首个 PV series 上叠加选中时间点 markLine
+  if (props.selectedTimestamp && pvSeries[0]) {
+    const selTs = Number(props.selectedTimestamp);
+    if (!Number.isNaN(selTs)) {
+      const firstPv = pvSeries[0];
+      const selItem = {
+        xAxis: selTs,
+        label: {
+          color: themeColors.value.DANGER,
+          fontSize: 11,
+          formatter: '选中',
+          position: 'end',
+          show: true,
+        },
+        lineStyle: {
+          color: themeColors.value.DANGER,
+          type: 'solid',
+          width: 2,
+        },
+      };
+      if (firstPv.markLine) {
+        firstPv.markLine.data = [
+          ...(firstPv.markLine.data || []),
+          selItem,
+        ];
+      } else {
+        firstPv.markLine = {
+          data: [selItem],
+          lineStyle: {
+            color: themeColors.value.DANGER,
+            type: 'solid',
+            width: 2,
+          },
+          silent: true,
+          symbol: 'none',
+        };
+      }
+    }
+  }
+
   const series: any[] = [
     ...pvSeries,
     {
@@ -429,11 +520,20 @@ function render() {
       type: 'time',
     },
     yAxis,
+  }).then(() => {
+    bindClickEvent();
   });
 }
 
 watch(
-  () => [props.trend, props.validMask, props.outlierReasons, props.showMode],
+  () => [
+    props.trend,
+    props.validMask,
+    props.outlierReasons,
+    props.showMode,
+    props.selectedTimestamp,
+    props.enableTimeSelect,
+  ],
   () => render(),
   { deep: true, immediate: true },
 );

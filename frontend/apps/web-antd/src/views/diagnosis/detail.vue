@@ -19,8 +19,9 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+import { IconifyIcon } from '@vben/icons';
 
-import { message, Spin, Steps, Tag } from 'ant-design-vue';
+import { Button, message, Spin, Steps, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -69,6 +70,13 @@ const timeWindow = ref<DiagnosisApi.TimeWindow>('last_24_hours');
 /** 异常跟踪 Drawer 可见性 */
 const trackerDrawerVisible = ref(false);
 
+// ===== D2 多图联动：趋势图 ↔ 散点图 =====
+/** 当前选中时间点（由趋势图或散点图点击触发） */
+const selectedTime = ref<{ index: number; timestamp: string } | null>(null);
+
+/** 传递给 WaveformChart 的选中时间戳 */
+const selectedTimestamp = computed(() => selectedTime.value?.timestamp ?? null);
+
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
   { label: '近 24 小时', value: 'last_24_hours' },
   { label: '近 7 天', value: 'last_7_days' },
@@ -82,7 +90,8 @@ const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 
 // 散点图 ECharts
 const scatterChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderScatter } = useEcharts(scatterChartRef);
+const { renderEcharts: renderScatter, getChartInstance: getScatterInstance } =
+  useEcharts(scatterChartRef);
 
 const pageTitle = computed(() => {
   if (detail.value?.tagName) {
@@ -346,7 +355,7 @@ function handleTrackerClose() {
   loadTrackerStatus();
 }
 
-/** 渲染散点图（证据链中的 PV-OP 散点） */
+/** 渲染散点图（证据链中的 PV-OP 散点，支持 D2 联动高亮） */
 function renderScatterChart() {
   const scatter = detail.value?.evidenceChain?.scatterPlot;
   if (!scatter || !scatter.x || scatter.x.length === 0) {
@@ -356,10 +365,37 @@ function renderScatterChart() {
     return;
   }
 
-  const data: [number, number][] = scatter.x.map((x, i) => [
-    x,
-    scatter.y[i] ?? 0,
-  ]);
+  // D2 联动：计算 ±30s 窗口内的高亮索引集合
+  const highlightedSet = new Set<number>();
+  if (selectedTime.value && waveform.value) {
+    const ts = waveform.value.timestamps;
+    // 散点与波形数据按索引对齐时才启用时间窗口高亮
+    if (ts.length === scatter.x.length) {
+      const selectedTs = Number(selectedTime.value.timestamp);
+      const WINDOW = 30_000; // 30 秒（ms）
+      for (let i = 0; i < ts.length; i++) {
+        if (Math.abs(ts[i]! - selectedTs) <= WINDOW) {
+          highlightedSet.add(i);
+        }
+      }
+    }
+  }
+
+  const dangerColor = themeColors.value.DANGER;
+  const infoColor = themeColors.value.INFO;
+
+  // 使用 per-point itemStyle 实现高亮（保留 dataIndex 与原始索引一致）
+  const data = scatter.x.map((x, i) => {
+    const isHi = highlightedSet.has(i);
+    return {
+      itemStyle: {
+        color: isHi ? dangerColor : infoColor,
+        opacity: isHi ? 1 : 0.4,
+      },
+      symbolSize: isHi ? 10 : 5,
+      value: [x, scatter.y[i] ?? 0],
+    };
+  });
 
   renderScatter({
     backgroundColor: 'transparent',
@@ -373,12 +409,7 @@ function renderScatterChart() {
     series: [
       {
         data,
-        itemStyle: {
-          color: themeColors.value.INFO,
-          opacity: 0.5,
-        },
         name: 'PV-OP',
-        symbolSize: 5,
         type: 'scatter',
       },
     ],
@@ -402,7 +433,55 @@ function renderScatterChart() {
       nameLocation: 'middle',
       type: 'value',
     },
+  }).then(() => {
+    bindScatterClick();
   });
+}
+
+/** 散点图点击事件 handler（D2 反向联动：散点 → 趋势图） */
+function scatterClickHandler(params: any) {
+  if (
+    params.componentType === 'series' &&
+    params.seriesType === 'scatter'
+  ) {
+    const idx = params.dataIndex;
+    const scatter = detail.value?.evidenceChain?.scatterPlot;
+    if (!scatter || !waveform.value) return;
+    const ts = waveform.value.timestamps;
+    // 散点与波形数据按索引对齐时才触发反向联动
+    if (ts.length === scatter.x.length && idx >= 0 && idx < ts.length) {
+      selectedTime.value = { timestamp: String(ts[idx]), index: idx };
+    }
+  }
+}
+
+/** 绑定散点图点击事件（off+on 模式，兼容主题切换后实例重建） */
+function bindScatterClick() {
+  const chart = getScatterInstance();
+  if (!chart) return;
+  chart.off('click', scatterClickHandler);
+  chart.on('click', scatterClickHandler);
+}
+
+/** D2 联动：趋势图选中时间点 → 高亮散点图 ±30s 窗口 */
+function onTrendTimeSelect(payload: { index: number; timestamp: string }) {
+  selectedTime.value = payload;
+}
+
+/** D2 联动：清除选中 */
+function clearSelection() {
+  selectedTime.value = null;
+}
+
+/** 格式化选中时间戳为可读字符串 */
+function formatSelectedTime(ts: string): string {
+  const n = Number(ts);
+  if (Number.isNaN(n)) return ts;
+  try {
+    return new Date(n).toLocaleString('zh-CN');
+  } catch {
+    return ts;
+  }
 }
 
 function handleBack() {
@@ -441,6 +520,11 @@ function featureEntries(
 
 watch(timeWindow, () => {
   loadDetail();
+});
+
+// D2 联动：选中时间变化时重渲散点图（更新高亮 ±30s 窗口）
+watch(selectedTime, () => {
+  nextTick(() => renderScatterChart());
 });
 
 // ===== 主题切换重渲图表 =====
@@ -504,11 +588,25 @@ onMounted(() => {
               title="证据链"
               description="时序波形与 PV-OP 散点图优先展示算法证据。"
             >
+              <!-- D2 多图联动状态指示条 -->
+              <div v-if="selectedTime" class="clpm-linkage-bar">
+                <IconifyIcon icon="ant-design:link-outlined" />
+                <span>
+                  联动已激活：选中时间 {{ formatSelectedTime(selectedTime.timestamp) }}
+                </span>
+                <Button type="link" size="small" @click="clearSelection">
+                  清除
+                </Button>
+              </div>
+
               <ClpmDataCanvas title="时序波形" :loading="waveformLoading">
                 <WaveformChart
                   v-if="waveform"
                   :trend="waveform"
+                  :enable-time-select="true"
+                  :selected-timestamp="selectedTimestamp"
                   height="320px"
+                  @time-select="onTrendTimeSelect"
                 />
                 <div v-else class="py-12 text-center text-gray-400">
                   暂无波形数据
@@ -648,3 +746,18 @@ onMounted(() => {
     />
   </Page>
 </template>
+
+<style scoped>
+.clpm-linkage-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  background: hsl(var(--primary) / 8%);
+  border: 1px solid hsl(var(--primary) / 20%);
+  border-radius: 4px;
+  font-size: 13px;
+  color: hsl(var(--primary));
+}
+</style>

@@ -24,9 +24,11 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+import { IconifyIcon } from '@vben/icons';
 
 import {
   Alert,
+  Button,
   Card,
   Input,
   message,
@@ -288,7 +290,14 @@ const dataQualitySummary = computed(() => {
 
 // ECharts 趋势图
 const trendChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
+const { renderEcharts: renderTrend, getChartInstance: getTrendInstance } =
+  useEcharts(trendChartRef);
+
+// ===== D2 多图联动：趋势图 → 排行表 =====
+/** 趋势图选中的时间点 */
+const selectedTrendTime = ref<string | null>(null);
+/** 排行表中高亮的回路 ID */
+const selectedLoopId = ref<string | null>(null);
 
 // 综合健康仪表盘
 const healthGaugeRef = ref<EchartsUIType>();
@@ -394,6 +403,10 @@ function handleRankingTableChange(pagination: TablePaginationConfig) {
 function renderTrendChart() {
   const trend = boardData.value?.steadyRateTrend;
   if (!trend || !trend.timestamps || trend.timestamps.length === 0) return;
+
+  // D2 联动：选中时间点 markLine
+  const selTs = selectedTrendTime.value;
+
   renderTrend({
     grid: { bottom: 30, containLabel: true, left: '2%', right: '2%', top: 40 },
     legend: { data: ['平稳率'], top: 5 },
@@ -403,6 +416,24 @@ function renderTrendChart() {
         data: trend.values,
         itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
+        markLine: selTs
+          ? {
+              data: [{ xAxis: selTs }],
+              label: {
+                color: themeColors.value.DANGER,
+                formatter: '选中',
+                position: 'end',
+                show: true,
+              },
+              lineStyle: {
+                color: themeColors.value.DANGER,
+                type: 'solid',
+                width: 2,
+              },
+              silent: true,
+              symbol: 'none',
+            }
+          : undefined,
         name: '平稳率',
         smooth: true,
         type: 'line',
@@ -439,7 +470,92 @@ function renderTrendChart() {
       min: 0,
       type: 'value',
     },
+  }).then(() => {
+    bindTrendClickEvent();
   });
+}
+
+// ===== D2 多图联动：趋势图点击事件 =====
+let trendBoundZr: any = null;
+let trendClickHandler: ((params: any) => void) | null = null;
+
+function bindTrendClickEvent() {
+  const chart = getTrendInstance();
+  if (!chart) return;
+  const zr = chart.getZr();
+  if (!zr) return;
+  // 同一 zr 实例已绑定，避免重复
+  if (trendBoundZr === zr && trendClickHandler) return;
+  if (trendBoundZr && trendClickHandler) {
+    trendBoundZr.off('click', trendClickHandler);
+  }
+  trendClickHandler = (params: any) => {
+    const trend = boardData.value?.steadyRateTrend;
+    if (!trend || !trend.timestamps || trend.timestamps.length === 0) return;
+    const point = [params.offsetX, params.offsetY];
+    const xVal = chart.convertFromPixel({ xAxisIndex: 0 }, point[0]);
+    if (xVal === null || xVal === undefined || Number.isNaN(xVal)) return;
+    const idx = Math.round(xVal);
+    if (idx < 0 || idx >= trend.timestamps.length) return;
+    onTrendTimeSelect(trend.timestamps[idx]!);
+  };
+  zr.on('click', trendClickHandler);
+  trendBoundZr = zr;
+}
+
+/** D2 联动：趋势图选中时间点 → 排行表高亮评分最低回路 */
+function onTrendTimeSelect(timestamp: string) {
+  selectedTrendTime.value = timestamp;
+  // 排行表已按 compositeScore 升序排列，第一项为评分最低回路
+  if (rankingList.value.length > 0) {
+    const lowest = rankingList.value[0]!;
+    selectedLoopId.value = lowest.loopId;
+    // 滚动到选中行
+    nextTick(() => scrollToSelectedRow());
+  }
+}
+
+/** D2 联动：清除选中 */
+function clearTrendSelection() {
+  selectedTrendTime.value = null;
+  selectedLoopId.value = null;
+}
+
+/** 滚动到排行表选中行 */
+function scrollToSelectedRow() {
+  if (!selectedLoopId.value) return;
+  const row = document.querySelector(
+    `tr[data-loop-id="${selectedLoopId.value}"]`,
+  );
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+/** 排行表行样式：高亮选中回路 */
+function rankingRowClassName(record: MetricApi.RankingItem): string {
+  return record.loopId === selectedLoopId.value ? 'clpm-row-selected' : '';
+}
+
+/** 排行表 customRow：附加 data-loop-id 便于 DOM 查询 */
+function rankingCustomRow(record: MetricApi.RankingItem): any {
+  return {
+    'data-loop-id': record.loopId,
+  };
+}
+
+/** 格式化选中时间戳为可读字符串 */
+function formatSelectedTime(ts: string): string {
+  try {
+    const d = new Date(ts);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `${mm}-${dd} ${hh}:${mi}`;
+  } catch {
+    return ts;
+  }
 }
 
 /** 综合健康仪表盘（半圆 Gauge） */
@@ -681,6 +797,11 @@ watch(
   { deep: true },
 );
 
+// D2 联动：选中时间变化时重渲趋势图（更新 markLine）
+watch(selectedTrendTime, () => {
+  nextTick(() => renderTrendChart());
+});
+
 // ===== 主题切换重渲图表 =====
 watch(isDark, () => {
   nextTick(() => {
@@ -801,6 +922,16 @@ onUnmounted(() => {
         </div>
 
         <ClpmDataCanvas title="平稳率趋势" :loading="loading">
+          <!-- D2 多图联动状态指示条 -->
+          <div v-if="selectedTrendTime" class="clpm-linkage-bar">
+            <IconifyIcon icon="ant-design:link-outlined" />
+            <span>
+              联动已激活：选中时间 {{ formatSelectedTime(selectedTrendTime) }}
+            </span>
+            <Button type="link" size="small" @click="clearTrendSelection">
+              清除
+            </Button>
+          </div>
           <EchartsUI ref="trendChartRef" height="240px" />
         </ClpmDataCanvas>
 
@@ -840,6 +971,8 @@ onUnmounted(() => {
               showSizeChanger: true,
               showTotal: (t: number) => `共 ${t} 条`,
             }"
+            :row-class-name="rankingRowClassName"
+            :custom-row="rankingCustomRow"
             :row-key="(record: MetricApi.RankingItem) => record.loopId"
             :scroll="{ x: 720 }"
             size="small"
@@ -934,6 +1067,25 @@ onUnmounted(() => {
 
 .clpm-status-footer__divider {
   color: hsl(var(--border));
+}
+
+/* D2 多图联动状态指示条 */
+.clpm-linkage-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  background: hsl(var(--primary) / 8%);
+  border: 1px solid hsl(var(--primary) / 20%);
+  border-radius: 4px;
+  font-size: 13px;
+  color: hsl(var(--primary));
+}
+
+/* D2 多图联动：排行表选中行高亮 */
+:deep(.clpm-row-selected) td {
+  background-color: hsl(var(--primary) / 8%) !important;
 }
 
 @media (max-width: 1024px) {
