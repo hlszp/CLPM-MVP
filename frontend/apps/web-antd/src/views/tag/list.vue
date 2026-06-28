@@ -63,7 +63,7 @@ const query = reactive({
   isLinked: undefined as string | undefined,
   keyword: '',
   page: 1,
-  pageSize: 100,
+  pageSize: 20,
 });
 
 // Plant nodes for filter (flattened)
@@ -232,7 +232,7 @@ function handleSearch() {
 
 function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
-  query.pageSize = pagination.pageSize || 100;
+  query.pageSize = pagination.pageSize || 20;
   loadList();
 }
 
@@ -453,6 +453,7 @@ onMounted(() => {
           pageSize: query.pageSize,
           total,
           showSizeChanger: true,
+          pageSizeOptions: ['20', '50', '100'],
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: TagApi.TagItem) => record.id"

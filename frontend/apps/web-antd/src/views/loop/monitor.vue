@@ -7,9 +7,9 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
  * S2-LOOP-011 回路监控列表页
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.15 + UI/UX 改造方案 §8.3
- * - 左侧筛选区：装置/单元 + 类型 + 关键字 + 自动刷新开关
- * - 中部：回路列表 Table（点击行联动右侧摘要）
- * - 右侧选中回路区：摘要条 + 趋势预览小图 + KPI 摘要 + 风险标签 + 下一步动作
+ * - 顶部工具栏：装置/单元 + 类型 + 关键字 + 自动刷新开关 + 查询/刷新/导出
+ * - 主区左侧：回路列表 Table（点击行联动右侧摘要）
+ * - 主区右侧（440px）：摘要条 + 趋势预览小图 + KPI 摘要 + 风险标签 + 下一步动作
  * - 趋势 Modal：复用 WaveformChart 组件（与回路详情页风格统一）
  * - 性能 Modal：ECharts 仪表盘 + 6 大 KPI 卡片（含权重）
  * - 30 秒自动刷新（Switch 开关 + 倒计时）
@@ -30,6 +30,7 @@ import {
   Input,
   message,
   Modal,
+  Popover,
   RadioGroup,
   Select,
   Spin,
@@ -199,7 +200,7 @@ const query = reactive({
   loopType: undefined as string | undefined,
   keyword: '',
   page: 1,
-  pageSize: 100,
+  pageSize: 20,
 });
 
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
@@ -823,287 +824,288 @@ onUnmounted(() => {
 
 <template>
   <Page>
-    <div class="flex min-h-[calc(100vh-160px)] gap-3">
-      <ClpmDataCanvas class="w-[320px] flex-shrink-0" title="筛选与刷新">
-        <ClpmPageToolbar title="回路监控" subtitle="列表 + 摘要 + 趋势主画布" compact>
-          <Select
-            v-model:value="query.plantNodeId"
-            placeholder="按装置/单元筛选"
-            style="width: 260px"
-            allow-clear
-            show-search
-            :options="plantNodeOptions"
-            :filter-option="(input: string, option: any) => option.label.includes(input)"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="query.loopType"
-            placeholder="按回路类型筛选"
-            style="width: 160px"
-            allow-clear
-            :options="loopTypeOptions"
-            @change="handleSearch"
-          />
-          <Input
-            v-model:value="query.keyword"
-            placeholder="搜索位号/描述"
-            allow-clear
-            style="width: 220px"
-            @press-enter="handleSearch"
-          />
-          <template #actions>
-            <ClpmToolbarButton icon="search" label="查询" @click="handleSearch" />
-            <ClpmToolbarButton icon="refresh" label="刷新" :loading="loading" @click="loadList" />
-            <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
-          </template>
-        </ClpmPageToolbar>
-        <div class="mt-3 flex items-center gap-2 text-sm text-gray-500">
-          <span>自动刷新（{{ refreshInterval }}s）</span>
-          <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
-          <span v-if="autoRefresh" class="text-xs text-gray-400">{{ countdown }}s 后刷新</span>
-        </div>
+    <!-- 顶部工具栏：筛选条件 + 操作按钮 + 自动刷新 -->
+    <ClpmPageToolbar title="回路监控" subtitle="列表 + 摘要 + 趋势主画布">
+      <Select
+        v-model:value="query.plantNodeId"
+        placeholder="按装置/单元筛选"
+        style="width: 220px"
+        allow-clear
+        show-search
+        :options="plantNodeOptions"
+        :filter-option="(input: string, option: any) => option.label.includes(input)"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="query.loopType"
+        placeholder="按回路类型筛选"
+        style="width: 140px"
+        allow-clear
+        :options="loopTypeOptions"
+        @change="handleSearch"
+      />
+      <Input
+        v-model:value="query.keyword"
+        placeholder="搜索位号/描述"
+        allow-clear
+        style="width: 200px"
+        @press-enter="handleSearch"
+      />
+      <div class="flex items-center gap-2 text-sm text-gray-500">
+        <span>自动刷新（{{ refreshInterval }}s）</span>
+        <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
+        <span v-if="autoRefresh" class="text-xs text-gray-400">{{ countdown }}s 后刷新</span>
+      </div>
+      <template #actions>
+        <ClpmToolbarButton icon="search" label="查询" @click="handleSearch" />
+        <ClpmToolbarButton icon="refresh" label="刷新" :loading="loading" @click="loadList" />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+      </template>
+    </ClpmPageToolbar>
 
-        <!-- 筛选预设区 -->
-        <div class="mt-3">
-          <div class="mb-1 flex items-center justify-between">
-            <span class="text-xs text-gray-500">筛选预设</span>
-            <Button type="link" size="small" class="!px-0" @click="handleSavePreset">
-              保存当前筛选
-            </Button>
-          </div>
-          <div v-if="preferences.savedFilters?.length" class="flex flex-wrap gap-1">
-            <Tag
-              v-for="preset in preferences.savedFilters"
-              :key="preset.id"
-              class="m-0 cursor-pointer"
-              @click="handleApplyPreset(preset)"
-            >
-              {{ preset.name }}
-              <span
-                class="ml-1 text-gray-400 hover:text-red-500"
-                @click.stop="handleDeletePreset(preset.id)"
-              >
-                ×
-              </span>
-            </Tag>
-          </div>
-          <div v-else class="text-xs text-gray-400">暂无保存的预设</div>
-        </div>
-
-        <!-- 重置偏好 -->
-        <div class="mt-2">
-          <Button
-            type="link"
-            size="small"
-            class="!px-0"
-            @click="handleResetPreferences"
-          >
-            重置页面偏好
-          </Button>
-        </div>
-      </ClpmDataCanvas>
-
-      <div class="flex min-w-0 flex-1 flex-col gap-3">
-        <div class="flex min-h-0 flex-1 gap-3">
-          <ClpmDataCanvas class="min-w-0 flex-1" title="回路列表" :loading="loading">
-            <template #extra>
-              <ClpmColumnSettings
-                :columns="columnConfigs"
-                @update:columns="handleUpdateColumns"
-                @reset="handleResetColumns"
-              />
-            </template>
-            <Table
-              :columns="visibleColumns"
-              :data-source="monitorList"
-              :loading="loading"
-              :pagination="{
-                current: query.page,
-                pageSize: query.pageSize,
-                total,
-                showSizeChanger: true,
-                pageSizeOptions: ['20', '50', '100'],
-                showTotal: (t: number) => `共 ${t} 条`,
-              }"
-              :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
-              :scroll="{ x: 1200 }"
-              size="middle"
-              :row-class-name="(record) => selectedLoop?.loopId === record.loopId ? 'ant-table-row-selected cursor-pointer' : 'cursor-pointer'"
-              :custom-row="(record) => ({ onClick: () => handleSelectLoop(record as LoopApi.MonitorListItem) })"
-              @change="handleTableChange"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'loopType'">
+    <!-- 主区：回路列表 + 选中回路摘要（水平两栏） -->
+    <div class="mt-3 flex min-h-[calc(100vh-220px)] gap-3">
+      <ClpmDataCanvas class="min-w-0 flex-1" title="回路列表" :loading="loading">
+        <template #extra>
+          <ClpmColumnSettings
+            :columns="columnConfigs"
+            @update:columns="handleUpdateColumns"
+            @reset="handleResetColumns"
+          />
+          <!-- 筛选预设与重置偏好（折叠区） -->
+          <Popover placement="bottomRight" trigger="click">
+            <template #content>
+              <div class="w-64">
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-xs text-gray-500">筛选预设</span>
+                  <Button type="link" size="small" class="!px-0" @click="handleSavePreset">
+                    保存当前筛选
+                  </Button>
+                </div>
+                <div v-if="preferences.savedFilters?.length" class="flex flex-wrap gap-1">
                   <Tag
-                    :color="
-                      LOOP_TYPE_MAP[
-                        (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
-                      ]?.color ?? 'default'
-                    "
-                    class="m-0"
+                    v-for="preset in preferences.savedFilters"
+                    :key="preset.id"
+                    class="m-0 cursor-pointer"
+                    @click="handleApplyPreset(preset)"
                   >
-                    {{
-                      LOOP_TYPE_MAP[
-                        (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
-                      ]?.label ?? '其他'
-                    }}
+                    {{ preset.name }}
+                    <span
+                      class="ml-1 text-gray-400 hover:text-red-500"
+                      @click.stop="handleDeletePreset(preset.id)"
+                    >
+                      ×
+                    </span>
                   </Tag>
-                </template>
-                <template v-else-if="column.key === 'sp'">
-                  {{
-                    formatValueWithUnit(
-                      (record as LoopApi.MonitorListItem).currentValues?.sp,
-                      (record as LoopApi.MonitorListItem).currentValues?.unit,
-                    )
-                  }}
-                </template>
-                <template v-else-if="column.key === 'pv'">
-                  <span class="font-medium text-blue-600">
-                    {{
-                      formatValueWithUnit(
-                        (record as LoopApi.MonitorListItem).currentValues?.pv,
-                        (record as LoopApi.MonitorListItem).currentValues?.unit,
-                      )
-                    }}
-                  </span>
-                </template>
-                <template v-else-if="column.key === 'op'">
-                  {{ formatOp((record as LoopApi.MonitorListItem).currentValues?.op) }}
-                </template>
-                <template v-else-if="column.key === 'mode'">
-                  <Tag
-                    v-if="
-                      (record as LoopApi.MonitorListItem).currentValues?.modeLabel ||
-                      (record as LoopApi.MonitorListItem).currentValues?.mode != null
-                    "
-                    :color="modeColor((record as LoopApi.MonitorListItem).currentValues?.modeLabel)"
-                  >
-                    {{ modeText(record as LoopApi.MonitorListItem) }}
-                  </Tag>
-                  <span v-else class="text-gray-400">—</span>
-                </template>
-                <template v-else-if="column.key === 'score'">
-                  <span
-                    v-if="(record as LoopApi.MonitorListItem).score != null"
-                    class="font-medium"
-                  >
-                    {{ (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—' }}
-                  </span>
-                  <span v-else class="text-gray-400">—</span>
-                </template>
-                <template v-else-if="column.key === 'action'">
-                  <div class="flex gap-1">
-                    <Button
-                      type="link"
-                      size="small"
-                      @click="openTrend(record as LoopApi.MonitorListItem)"
-                    >
-                      趋势
-                    </Button>
-                    <Button
-                      type="link"
-                      size="small"
-                      @click="openPerformance(record as LoopApi.MonitorListItem)"
-                    >
-                      性能
-                    </Button>
-                    <Button
-                      type="link"
-                      size="small"
-                      @click="viewDetail(record as LoopApi.MonitorListItem)"
-                    >
-                      详情
-                    </Button>
-                  </div>
-                </template>
-              </template>
-            </Table>
-          </ClpmDataCanvas>
-
-          <ClpmDataCanvas
-            class="w-[440px] min-w-0"
-            title="选中回路摘要"
-            :empty="!selectedLoop"
-            empty-text="点击左侧回路查看摘要"
-          >
-            <template v-if="selectedLoop">
-              <ClpmObjectSummaryBar
-                :title="selectedLoop.tagName"
-                :subtitle="`${selectedLoop.description} · ${selectedLoop.unitName}`"
-                :items="summaryItems"
-                :primary-item="primaryItem"
-                :actions="summaryActions"
-                @action="onSummaryAction"
-              />
-
-              <!-- 风险标签区 -->
-              <div v-if="riskTags.length" class="mt-3 flex flex-wrap gap-1">
-                <span class="text-xs text-gray-500">风险标签：</span>
-                <Tooltip
-                  v-for="tag in riskTags"
-                  :key="tag.key"
-                  :title="`基于 KPI 实时推导：${tag.label}`"
-                >
-                  <Tag :color="tag.color" class="m-0">{{ tag.label }}</Tag>
-                </Tooltip>
-              </div>
-              <div v-else class="mt-3 flex items-center gap-1">
-                <span class="text-xs text-gray-500">风险标签：</span>
-                <Tag color="green" class="m-0">运行正常</Tag>
-              </div>
-
-              <!-- 趋势预览小图（1h 窗口） -->
-              <div class="mt-3">
-                <div class="mb-1 flex items-center justify-between">
-                  <span class="text-xs text-gray-500">趋势预览（近 1h）</span>
+                </div>
+                <div v-else class="text-xs text-gray-400">暂无保存的预设</div>
+                <div class="mt-3 border-t border-gray-100 pt-2">
                   <Button
                     type="link"
                     size="small"
                     class="!px-0"
-                    @click="openTrend(selectedLoop!)"
+                    @click="handleResetPreferences"
                   >
-                    展开大图
+                    重置页面偏好
                   </Button>
                 </div>
-                <Spin :spinning="previewLoading" size="small">
-                  <WaveformChart
-                    v-if="previewTrend"
-                    ref="previewWaveformRef"
-                    :trend="previewTrend.trend"
-                    height="160px"
-                  />
-                  <div
-                    v-else
-                    class="flex h-[160px] items-center justify-center text-xs text-gray-400"
-                  >
-                    暂无趋势数据
-                  </div>
-                </Spin>
-              </div>
-
-              <div v-if="monitorKpiItems.length" class="mt-3">
-                <ClpmKpiStrip :items="monitorKpiItems" />
               </div>
             </template>
-          </ClpmDataCanvas>
-        </div>
+            <Button type="text" size="small" class="!px-2">
+              <template #icon><span class="text-sm">⚙</span></template>
+              偏好
+            </Button>
+          </Popover>
+        </template>
+        <Table
+          :columns="visibleColumns"
+          :data-source="monitorList"
+          :loading="loading"
+          :pagination="{
+            current: query.page,
+            pageSize: query.pageSize,
+            total,
+            showSizeChanger: true,
+            pageSizeOptions: ['20', '50', '100'],
+            showTotal: (t: number) => `共 ${t} 条`,
+          }"
+          :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
+          :scroll="{ x: 1200 }"
+          size="middle"
+          :row-class-name="(record) => selectedLoop?.loopId === record.loopId ? 'ant-table-row-selected cursor-pointer' : 'cursor-pointer'"
+          :custom-row="(record) => ({ onClick: () => handleSelectLoop(record as LoopApi.MonitorListItem) })"
+          @change="handleTableChange"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'loopType'">
+              <Tag
+                :color="
+                  LOOP_TYPE_MAP[
+                    (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
+                  ]?.color ?? 'default'
+                "
+                class="m-0"
+              >
+                {{
+                  LOOP_TYPE_MAP[
+                    (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
+                  ]?.label ?? '其他'
+                }}
+              </Tag>
+            </template>
+            <template v-else-if="column.key === 'sp'">
+              {{
+                formatValueWithUnit(
+                  (record as LoopApi.MonitorListItem).currentValues?.sp,
+                  (record as LoopApi.MonitorListItem).currentValues?.unit,
+                )
+              }}
+            </template>
+            <template v-else-if="column.key === 'pv'">
+              <span class="font-medium text-blue-600">
+                {{
+                  formatValueWithUnit(
+                    (record as LoopApi.MonitorListItem).currentValues?.pv,
+                    (record as LoopApi.MonitorListItem).currentValues?.unit,
+                  )
+                }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'op'">
+              {{ formatOp((record as LoopApi.MonitorListItem).currentValues?.op) }}
+            </template>
+            <template v-else-if="column.key === 'mode'">
+              <Tag
+                v-if="
+                  (record as LoopApi.MonitorListItem).currentValues?.modeLabel ||
+                  (record as LoopApi.MonitorListItem).currentValues?.mode != null
+                "
+                :color="modeColor((record as LoopApi.MonitorListItem).currentValues?.modeLabel)"
+              >
+                {{ modeText(record as LoopApi.MonitorListItem) }}
+              </Tag>
+              <span v-else class="text-gray-400">—</span>
+            </template>
+            <template v-else-if="column.key === 'score'">
+              <span
+                v-if="(record as LoopApi.MonitorListItem).score != null"
+                class="font-medium"
+              >
+                {{ (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—' }}
+              </span>
+              <span v-else class="text-gray-400">—</span>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <div class="flex gap-1">
+                <Button
+                  type="link"
+                  size="small"
+                  @click="openTrend(record as LoopApi.MonitorListItem)"
+                >
+                  趋势
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  @click="openPerformance(record as LoopApi.MonitorListItem)"
+                >
+                  性能
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  @click="viewDetail(record as LoopApi.MonitorListItem)"
+                >
+                  详情
+                </Button>
+              </div>
+            </template>
+          </template>
+        </Table>
+      </ClpmDataCanvas>
 
-        <!-- StatusFooter：最近刷新/数据延迟/自动刷新状态/选中回路 -->
-        <div class="clpm-status-footer">
-          <span>最近刷新：{{ lastRefreshText || '尚未刷新' }}</span>
-          <span class="clpm-status-footer__divider">·</span>
-          <span>数据延迟：{{ dataDelayText || '—' }}</span>
-          <span class="clpm-status-footer__divider">·</span>
-          <span>
-            自动刷新：
-            <strong :class="autoRefresh ? 'is-active' : 'is-muted'">
-              {{ autoRefresh ? `开启（${countdown}s）` : '关闭' }}
-            </strong>
-          </span>
-          <span class="clpm-status-footer__divider">·</span>
-          <span>选中回路：{{ selectedLoop?.tagName ?? '—' }}</span>
-        </div>
-      </div>
+      <ClpmDataCanvas
+        class="w-[440px] min-w-0"
+        title="选中回路摘要"
+        :empty="!selectedLoop"
+        empty-text="点击左侧回路查看摘要"
+      >
+        <template v-if="selectedLoop">
+          <ClpmObjectSummaryBar
+            :title="selectedLoop.tagName"
+            :subtitle="`${selectedLoop.description} · ${selectedLoop.unitName}`"
+            :items="summaryItems"
+            :primary-item="primaryItem"
+            :actions="summaryActions"
+            @action="onSummaryAction"
+          />
+
+          <!-- 风险标签区 -->
+          <div v-if="riskTags.length" class="mt-3 flex flex-wrap gap-1">
+            <span class="text-xs text-gray-500">风险标签：</span>
+            <Tooltip
+              v-for="tag in riskTags"
+              :key="tag.key"
+              :title="`基于 KPI 实时推导：${tag.label}`"
+            >
+              <Tag :color="tag.color" class="m-0">{{ tag.label }}</Tag>
+            </Tooltip>
+          </div>
+          <div v-else class="mt-3 flex items-center gap-1">
+            <span class="text-xs text-gray-500">风险标签：</span>
+            <Tag color="green" class="m-0">运行正常</Tag>
+          </div>
+
+          <!-- 趋势预览小图（1h 窗口） -->
+          <div class="mt-3">
+            <div class="mb-1 flex items-center justify-between">
+              <span class="text-xs text-gray-500">趋势预览（近 1h）</span>
+              <Button
+                type="link"
+                size="small"
+                class="!px-0"
+                @click="openTrend(selectedLoop!)"
+              >
+                展开大图
+              </Button>
+            </div>
+            <Spin :spinning="previewLoading" size="small">
+              <WaveformChart
+                v-if="previewTrend"
+                ref="previewWaveformRef"
+                :trend="previewTrend.trend"
+                height="160px"
+              />
+              <div
+                v-else
+                class="flex h-[160px] items-center justify-center text-xs text-gray-400"
+              >
+                暂无趋势数据
+              </div>
+            </Spin>
+          </div>
+
+          <div v-if="monitorKpiItems.length" class="mt-3">
+            <ClpmKpiStrip :items="monitorKpiItems" />
+          </div>
+        </template>
+      </ClpmDataCanvas>
+    </div>
+
+    <!-- StatusFooter：最近刷新/数据延迟/自动刷新状态/选中回路 -->
+    <div class="clpm-status-footer">
+      <span>最近刷新：{{ lastRefreshText || '尚未刷新' }}</span>
+      <span class="clpm-status-footer__divider">·</span>
+      <span>数据延迟：{{ dataDelayText || '—' }}</span>
+      <span class="clpm-status-footer__divider">·</span>
+      <span>
+        自动刷新：
+        <strong :class="autoRefresh ? 'is-active' : 'is-muted'">
+          {{ autoRefresh ? `开启（${countdown}s）` : '关闭' }}
+        </strong>
+      </span>
+      <span class="clpm-status-footer__divider">·</span>
+      <span>选中回路：{{ selectedLoop?.tagName ?? '—' }}</span>
     </div>
 
     <!-- 趋势 Modal -->
