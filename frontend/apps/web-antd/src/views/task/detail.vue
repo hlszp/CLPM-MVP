@@ -31,6 +31,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import { ClpmPageToolbar } from '#/components/clpm';
 import {
   cancelTaskApi,
   getTaskDetailApi,

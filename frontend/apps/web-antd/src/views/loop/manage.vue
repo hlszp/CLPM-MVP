@@ -1376,16 +1376,14 @@ watch(activeMainTab, (tab) => {
                   ok-type="danger"
                   @confirm="handleDelete(record as LoopApi.LoopListItem)"
                 >
-                  <Tooltip title="删除回路（软删除）">
-                    <Button
-                      v-permission="['ADMIN']"
-                      type="link"
-                      size="small"
-                      danger
-                    >
-                      删除
-                    </Button>
-                  </Tooltip>
+                  <Button
+                    v-permission="['ADMIN']"
+                    type="link"
+                    size="small"
+                    danger
+                  >
+                    删除
+                  </Button>
                 </Popconfirm>
               </div>
             </template>

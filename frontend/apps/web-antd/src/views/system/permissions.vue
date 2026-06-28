@@ -12,8 +12,12 @@ import type { ClpmRole } from '#/api/auth';
 
 import { Page } from '@vben/common-ui';
 
-import { Tag } from 'ant-design-vue';
+import { Card, Tag } from 'ant-design-vue';
 
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
 
 defineOptions({ name: 'SystemPermissions' });

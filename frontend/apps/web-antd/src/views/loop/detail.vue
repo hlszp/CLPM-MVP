@@ -30,6 +30,7 @@ import {
   DescriptionsItem,
   Empty,
   message,
+  RadioGroup,
   Spin,
   TabPane,
   Tabs,
@@ -567,7 +568,7 @@ onMounted(() => {
             >
               <template #extra>
                 <span class="text-sm text-gray-500">时间范围：</span>
-                <a-radio-group
+                <RadioGroup
                   v-model:value="trendWindow"
                   :options="trendWindowOptions"
                   option-type="button"

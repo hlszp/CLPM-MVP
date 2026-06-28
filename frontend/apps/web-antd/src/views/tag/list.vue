@@ -46,6 +46,7 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
 import { deleteTagApi, getTagListApi, updateTagApi } from '#/api/tag';
+import { ClpmDataCanvas } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { flattenNodes } from '#/utils/plant-node';
 

@@ -21,7 +21,7 @@ import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, message, Spin, Steps, Tag } from 'ant-design-vue';
+import { Button, message, RadioGroup, Spin, Steps, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -545,7 +545,7 @@ onMounted(() => {
       :title="pageTitle"
       :subtitle="detail?.tagName || '诊断证据与处置'"
     >
-      <a-radio-group
+      <RadioGroup
         v-model:value="timeWindow"
         :options="timeWindowOptions"
         option-type="button"

@@ -26,6 +26,7 @@ import {
   Input,
   InputNumber,
   message,
+  Select,
   Switch,
   Table,
   Tag,
@@ -71,7 +72,7 @@ const tagTotal = ref(0);
 const tagQuery = reactive({
   keyword: '',
   quality: undefined as 'BAD' | 'GOOD' | 'UNCERTAIN' | undefined,
-  associated: undefined as boolean | undefined,
+  associated: undefined as 'associated' | 'unassociated' | undefined,
   page: 1,
   pageSize: 20,
 });
@@ -87,8 +88,8 @@ const qualityOptions = [
 
 const associatedOptions = [
   { label: '全部', value: undefined },
-  { label: '已关联', value: true },
-  { label: '未关联', value: false },
+  { label: '已关联', value: 'associated' },
+  { label: '未关联', value: 'unassociated' },
 ];
 
 const columns: TableColumnsType = [
@@ -226,7 +227,10 @@ async function loadTags() {
     const data = await getAasTagsApi({
       keyword: tagQuery.keyword || undefined,
       quality: tagQuery.quality,
-      associated: tagQuery.associated,
+      associated:
+        tagQuery.associated === undefined
+          ? undefined
+          : tagQuery.associated === 'associated',
       page: tagQuery.page,
       pageSize: tagQuery.pageSize,
     });
@@ -363,7 +367,7 @@ onMounted(() => {
             style="width: 240px"
             @press-enter="handleSearch"
           />
-          <a-select
+          <Select
             v-model:value="tagQuery.quality"
             :options="qualityOptions"
             placeholder="质量码"
@@ -371,7 +375,7 @@ onMounted(() => {
             allow-clear
             @change="handleSearch"
           />
-          <a-select
+          <Select
             v-model:value="tagQuery.associated"
             :options="associatedOptions"
             placeholder="关联状态"

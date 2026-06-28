@@ -32,6 +32,10 @@ import {
 } from 'ant-design-vue';
 
 import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
+import {
   createReportConfigApi,
   generateReportApi,
   getReportConfigListApi,
