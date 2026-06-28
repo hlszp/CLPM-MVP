@@ -1,5 +1,6 @@
 import {
   BarChart,
+  CustomChart,
   GaugeChart,
   LineChart,
   PieChart,
@@ -9,9 +10,12 @@ import {
 import {
   DataZoomComponent,
   DatasetComponent,
+  GraphicComponent,
   GridComponent,
   LegendComponent,
+  MarkAreaComponent,
   MarkLineComponent,
+  MarkPointComponent,
   TitleComponent,
   ToolboxComponent,
   TooltipComponent,
@@ -37,6 +41,7 @@ echarts.use([
   LineChart,
   ScatterChart,
   GaugeChart,
+  CustomChart,
   LabelLayout,
   LegacyGridContainLabel,
   UniversalTransition,
@@ -45,6 +50,9 @@ echarts.use([
   ToolboxComponent,
   DataZoomComponent,
   MarkLineComponent,
+  MarkAreaComponent,
+  MarkPointComponent,
+  GraphicComponent,
 ]);
 export type { ECOption } from './types';
 
