@@ -8,8 +8,8 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.15 + UI/UX 改造方案 §8.3
  * - 顶部工具栏：装置/单元 + 类型 + 关键字 + 自动刷新开关 + 查询/刷新/导出
- * - 主区左侧：回路列表 Table（点击行联动右侧摘要）
- * - 主区右侧（440px）：摘要条 + 趋势预览小图 + KPI 摘要 + 风险标签 + 下一步动作
+ * - 主区：回路列表 Table（全宽，行内提供 趋势/性能/详情 三个操作入口）
+ * - 详情展示交由详情页：避免与 /loop/detail/:id 内容重合
  * - 趋势 Modal：复用 WaveformChart 组件（与回路详情页风格统一）
  * - 性能 Modal：ECharts 仪表盘 + 6 大 KPI 卡片（含权重）
  * - 30 秒自动刷新（Switch 开关 + 倒计时）
@@ -37,7 +37,6 @@ import {
   Switch,
   Table,
   Tag,
-  Tooltip,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -49,13 +48,8 @@ import {
 import {
   ClpmColumnSettings,
   ClpmDataCanvas,
-  ClpmKpiStrip,
-  ClpmObjectSummaryBar,
   ClpmPageToolbar,
   ClpmToolbarButton,
-  type KpiStripItem,
-  type SummaryAction,
-  type SummaryItem,
 } from '#/components/clpm';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
@@ -353,11 +347,6 @@ const { renderEcharts: renderGaugeChart } = useEcharts(gaugeChartRef);
 const currentRecord = ref<LoopApi.MonitorListItem | null>(null);
 const selectedLoop = ref<LoopApi.MonitorListItem | null>(null);
 
-// ===== 选中回路趋势预览（右侧小图） =====
-const previewTrend = ref<LoopApi.MonitorDetail | null>(null);
-const previewLoading = ref(false);
-const previewWaveformRef = ref<InstanceType<typeof WaveformChart>>();
-
 // ===== 状态反馈：最近刷新 + 数据延迟 =====
 const lastRefreshAt = ref<Date | null>(null);
 const lastRefreshText = computed(() => {
@@ -377,137 +366,9 @@ const dataDelayText = computed(() => {
   return `${Math.floor(diff / 60)}h`;
 });
 
-const summaryItems = computed<SummaryItem[]>(() => {
-  if (!selectedLoop.value) return [];
-  return [
-    {
-      key: 'mode',
-      label: '控制方式',
-      value: modeText(selectedLoop.value),
-      status: modeText(selectedLoop.value) === 'Auto' ? 'success' : 'warning',
-    },
-    {
-      key: 'readAt',
-      label: '最近读取',
-      value: formatTime(selectedLoop.value.readAt),
-      status: 'neutral',
-    },
-  ];
-});
-
-/** 主指标：性能指数 */
-const primaryItem = computed<SummaryItem | null>(() => {
-  if (!selectedLoop.value) return null;
-  return {
-    key: 'score',
-    label: '性能指数',
-    value: selectedLoop.value.score?.toFixed(1) ?? '—',
-    status:
-      selectedLoop.value.score >= 80
-        ? 'success'
-        : selectedLoop.value.score >= 60
-          ? 'warning'
-          : 'danger',
-  };
-});
-
-/** 风险标签：基于 KPI 状态与有效自控率推导 */
-const riskTags = computed<{ color: string; key: string; label: string }[]>(() => {
-  if (!selectedLoop.value?.kpiSummary) return [];
-  const kpi = selectedLoop.value.kpiSummary;
-  const tags: { color: string; key: string; label: string }[] = [];
-  // KPI 状态标签
-  if (kpi.status === 'INCONCLUSIVE') {
-    tags.push({ key: 'inconclusive', label: '数据不足', color: 'default' });
-  } else if (kpi.status === 'PARTIAL') {
-    tags.push({ key: 'partial', label: '部分评估', color: 'orange' });
-  }
-  // 振荡风险
-  if (kpi.oscillation_rate >= 30) {
-    tags.push({ key: 'oscillation', label: `振荡风险 ${kpi.oscillation_rate.toFixed(0)}%`, color: 'red' });
-  }
-  // 饱和风险
-  if (kpi.saturation_rate >= 30) {
-    tags.push({ key: 'saturation', label: `OP 饱和 ${kpi.saturation_rate.toFixed(0)}%`, color: 'volcano' });
-  }
-  // 未投自动
-  if ((kpi.auto_mode_rate ?? 0) < 50) {
-    tags.push({ key: 'manual', label: '自动率低', color: 'gold' });
-  }
-  // 低效
-  if ((selectedLoop.value.score ?? 100) < 60) {
-    tags.push({ key: 'loweff', label: '低效回路', color: 'magenta' });
-  }
-  return tags;
-});
-
-/** 摘要条 actions（下一步动作，带图标） */
-const summaryActions = computed<SummaryAction[]>(() => {
-  if (!selectedLoop.value) return [];
-  return [
-    {
-      key: 'detail',
-      label: '查看详情',
-      icon: 'ant-design:profile-outlined',
-      type: 'default',
-    },
-    {
-      key: 'diagnosis',
-      label: '进入诊断',
-      icon: 'ant-design:medicine-box-outlined',
-      type: 'primary',
-    },
-    {
-      key: 'tuning',
-      label: '整定建议',
-      icon: 'ant-design:tool-outlined',
-      type: 'default',
-    },
-  ];
-});
-
-/** 摘要条动作分发 */
-function onSummaryAction(key: string) {
-  const loopId = selectedLoop.value?.loopId;
-  if (!loopId) return;
-  if (key === 'detail') {
-    router.push(`/loop/detail/${loopId}`);
-  } else if (key === 'diagnosis') {
-    router.push(`/diagnosis/detail/${loopId}`);
-  } else if (key === 'tuning') {
-    router.push(`/tuning/workbench?loopId=${loopId}`);
-  }
-}
-
-const monitorKpiItems = computed<KpiStripItem[]>(() => {
-  if (!selectedLoop.value?.kpiSummary) return [];
-  const summary = selectedLoop.value.kpiSummary;
-  return [
-    { key: 'good', label: '好值率', value: summary.good_value_rate?.toFixed(1) ?? '—', unit: '%', status: summary.good_value_rate >= 80 ? 'success' : summary.good_value_rate >= 60 ? 'warning' : 'danger' },
-    { key: 'auto', label: '自控率', value: summary.auto_mode_rate?.toFixed(1) ?? '—', unit: '%', status: summary.auto_mode_rate >= 80 ? 'success' : summary.auto_mode_rate >= 60 ? 'warning' : 'danger' },
-    { key: 'effective', label: '有效自控率', value: summary.effective_auto_rate?.toFixed(1) ?? '—', unit: '%', status: summary.effective_auto_rate >= 80 ? 'success' : summary.effective_auto_rate >= 60 ? 'warning' : 'danger' },
-    { key: 'steady', label: '平稳率', value: summary.steady_rate?.toFixed(1) ?? '—', unit: '%', status: summary.steady_rate >= 80 ? 'success' : summary.steady_rate >= 60 ? 'warning' : 'danger' },
-  ];
-});
-
-/** 选中回路：联动加载趋势预览 */
+/** 选中回路：仅记录选中状态（用于表格行高亮 + StatusFooter 显示） */
 function handleSelectLoop(record: LoopApi.MonitorListItem) {
   selectedLoop.value = record;
-  loadPreviewTrend(record.loopId);
-}
-
-/** 加载右侧趋势预览（小图，固定 1h 窗口） */
-async function loadPreviewTrend(loopId: string) {
-  previewLoading.value = true;
-  try {
-    previewTrend.value = await getLoopMonitorDetailApi(loopId, 'last_1_hour');
-    await nextTick();
-    previewWaveformRef.value?.resize();
-  } catch {
-    previewTrend.value = null;
-  } finally {
-    previewLoading.value = false;
-  }
 }
 
 // ===== 工具函数 =====
@@ -863,9 +724,9 @@ onUnmounted(() => {
       </template>
     </ClpmPageToolbar>
 
-    <!-- 主区：回路列表 + 选中回路摘要（水平两栏） -->
-    <div class="mt-3 flex min-h-[calc(100vh-220px)] gap-3">
-      <ClpmDataCanvas class="min-w-0 flex-1" title="回路列表" :loading="loading">
+    <!-- 主区：回路列表（全宽，详情/趋势/性能通过 Modal 与跳转访问） -->
+    <div class="mt-3 min-h-[calc(100vh-220px)]">
+      <ClpmDataCanvas title="回路列表" :loading="loading">
         <template #extra>
           <ClpmColumnSettings
             :columns="columnConfigs"
@@ -1022,73 +883,6 @@ onUnmounted(() => {
             </template>
           </template>
         </Table>
-      </ClpmDataCanvas>
-
-      <ClpmDataCanvas
-        class="w-[440px] min-w-0"
-        title="选中回路摘要"
-        :empty="!selectedLoop"
-        empty-text="点击左侧回路查看摘要"
-      >
-        <template v-if="selectedLoop">
-          <ClpmObjectSummaryBar
-            :title="selectedLoop.tagName"
-            :subtitle="`${selectedLoop.description} · ${selectedLoop.unitName}`"
-            :items="summaryItems"
-            :primary-item="primaryItem"
-            :actions="summaryActions"
-            @action="onSummaryAction"
-          />
-
-          <!-- 风险标签区 -->
-          <div v-if="riskTags.length" class="mt-3 flex flex-wrap gap-1">
-            <span class="text-xs text-gray-500">风险标签：</span>
-            <Tooltip
-              v-for="tag in riskTags"
-              :key="tag.key"
-              :title="`基于 KPI 实时推导：${tag.label}`"
-            >
-              <Tag :color="tag.color" class="m-0">{{ tag.label }}</Tag>
-            </Tooltip>
-          </div>
-          <div v-else class="mt-3 flex items-center gap-1">
-            <span class="text-xs text-gray-500">风险标签：</span>
-            <Tag color="green" class="m-0">运行正常</Tag>
-          </div>
-
-          <!-- 趋势预览小图（1h 窗口） -->
-          <div class="mt-3">
-            <div class="mb-1 flex items-center justify-between">
-              <span class="text-xs text-gray-500">趋势预览（近 1h）</span>
-              <Button
-                type="link"
-                size="small"
-                class="!px-0"
-                @click="openTrend(selectedLoop!)"
-              >
-                展开大图
-              </Button>
-            </div>
-            <Spin :spinning="previewLoading" size="small">
-              <WaveformChart
-                v-if="previewTrend"
-                ref="previewWaveformRef"
-                :trend="previewTrend.trend"
-                height="160px"
-              />
-              <div
-                v-else
-                class="flex h-[160px] items-center justify-center text-xs text-gray-400"
-              >
-                暂无趋势数据
-              </div>
-            </Spin>
-          </div>
-
-          <div v-if="monitorKpiItems.length" class="mt-3">
-            <ClpmKpiStrip :items="monitorKpiItems" />
-          </div>
-        </template>
       </ClpmDataCanvas>
     </div>
 
