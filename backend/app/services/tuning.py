@@ -69,7 +69,7 @@ async def identify_model(
 
     # 过滤 None 值（Bad 质量码）
     pv_values: list[float] = []
-    timestamps: list[float] = []
+    timestamps: list[float] = []  # 绝对 Unix 时间戳（秒），用于响应绘图
     for i, pv in enumerate(pv_values_raw):
         if pv is not None and i < len(timestamps_raw):
             pv_values.append(float(pv))
@@ -84,6 +84,14 @@ async def identify_model(
             status_code=400,
         )
 
+    # 辨识算法需要相对时间（从 0 开始），不能用绝对 Unix 时间戳
+    # 否则两点法 theta = t2 - tau ≈ 1.78e9 秒，仿真曲线全为 pv_initial
+    if timestamps:
+        t0 = timestamps[0]
+        timestamps_rel = [t - t0 for t in timestamps]
+    else:
+        timestamps_rel = []
+
     # 估算 MV 阶跃幅值（从 OP 数据）
     op_values_raw = waveform.get("op", [])
     mv_step = _estimate_mv_step(op_values_raw)
@@ -92,12 +100,12 @@ async def identify_model(
         mv_step = max(pv_values[-1] - pv_values[0], 1.0)
         logger.info("无法从 OP 估算 MV 阶跃，使用默认值: %s", mv_step)
 
-    # 调用辨识算法
+    # 调用辨识算法（传入相对时间戳，算法内部期望从 0 开始）
     if model_type == "FOPDT":
-        result = identify_fopdt(pv_values, timestamps, mv_step, method or "TWO_POINT")
+        result = identify_fopdt(pv_values, timestamps_rel, mv_step, method or "TWO_POINT")
         params = {"K": result["K"], "tau": result["tau"], "theta": result["theta"]}
     elif model_type == "SOPDT":
-        result = identify_sopdt(pv_values, timestamps, mv_step)
+        result = identify_sopdt(pv_values, timestamps_rel, mv_step)
         params = {
             "K": result["K"],
             "T1": result["T1"],
@@ -105,7 +113,7 @@ async def identify_model(
             "theta": result["theta"],
         }
     elif model_type == "IPDT":
-        result = identify_ipdt(pv_values, timestamps, mv_step)
+        result = identify_ipdt(pv_values, timestamps_rel, mv_step)
         params = {"K": result["K"], "theta": result["theta"]}
     else:
         raise BizError(

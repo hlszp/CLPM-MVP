@@ -177,6 +177,11 @@ async def get_waveform(
             status_code=400,
         )
 
+    # TDengine REST API 不支持 ISO 8601 时区后缀（+00:00 / Z），
+    # 需转换为无时区的字符串格式（与 data_planner 适配器一致）
+    td_start = start_dt.replace(tzinfo=None).isoformat() if start_dt.tzinfo else start_dt.isoformat()
+    td_end = end_dt.replace(tzinfo=None).isoformat() if end_dt.tzinfo else end_dt.isoformat()
+
     # 查询回路 Tag 关联
     m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
     mappings = {m.tag_role: m for m in m_result.scalars().all()}
@@ -195,7 +200,7 @@ async def get_waveform(
             return role, []
         tag = tags_map[str(mapping.tag_id)]
         try:
-            raw = await query_trend_data(tag.tag_name, start_time, end_time)
+            raw = await query_trend_data(tag.tag_name, td_start, td_end)
             return role, raw
         except Exception as exc:  # noqa: BLE001
             logger.warning("查询 %s 趋势数据失败: %s", role, exc)
