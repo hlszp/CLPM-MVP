@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -252,14 +253,30 @@ async def export_statistics_csv_endpoint(
     )
 
 
+@router.get("/ab-compare")
+async def ab_compare_endpoint(
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """A/B 对比（尚未实现，P1 待补）。
+
+    前端调用 ``GET /api/v1/diagnosis/ab-compare``，后端尚未实现该端点。
+    显式返回 501 Not Implemented，避免被 ``/{loop_id}`` 路由捕获导致 500 错误。
+    """
+    raise BizError(
+        code="ERR_NOT_IMPLEMENTED",
+        message="A/B 对比功能尚未实现",
+        status_code=501,
+    )
+
+
 @router.get("/{loop_id}", response_model=ApiResponse[dict])
 async def get_diagnosis_detail_endpoint(
-    loop_id: str,
+    loop_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """诊断详情（含 8 类标签数组 + 证据链 + 特征值）。"""
-    data = await get_diagnosis_detail(db=db, loop_id=loop_id)
+    data = await get_diagnosis_detail(db=db, loop_id=str(loop_id))
     return success(data=data)
 
 
@@ -273,7 +290,7 @@ async def get_diagnosis_detail_endpoint(
     response_model=ApiResponse[RecommendationData],
 )
 async def get_recommendations_endpoint(
-    loop_id: str,
+    loop_id: uuid.UUID,
     tagCodes: str | None = Query(
         None,
         description="诊断标签列表（逗号分隔，可选。不传则从数据库读取该回路最新诊断标签）",
@@ -285,11 +302,12 @@ async def get_recommendations_endpoint(
 
     根据诊断标签返回标准化解决方案推荐，每条建议包含优先级、行动项、描述和目标模块。
     """
+    loop_id_str = str(loop_id)
     if tagCodes:
         tag_list = [t.strip() for t in tagCodes.split(",") if t.strip()]
-        data = get_recommendations(loop_id, tag_list)
+        data = get_recommendations(loop_id_str, tag_list)
     else:
-        data = await get_recommendations_for_loop(db=db, loop_id=loop_id)
+        data = await get_recommendations_for_loop(db=db, loop_id=loop_id_str)
     return success(data=data)
 
 
@@ -300,7 +318,7 @@ async def get_recommendations_endpoint(
 
 @router.post("/{loop_id}/report")
 async def generate_report_endpoint(
-    loop_id: str,
+    loop_id: uuid.UUID,
     body: DiagnosisReportRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(
@@ -312,23 +330,24 @@ async def generate_report_endpoint(
     内容：回路信息 + 诊断结果 + 性能指标 + 可能原因 + 解决方案推荐 + 生成时间。
     返回 PDF 文件 bytes。
     """
+    loop_id_str = str(loop_id)
     # 1. 获取诊断详情作为快照数据
-    snapshot_data = await get_diagnosis_detail(db=db, loop_id=loop_id)
+    snapshot_data = await get_diagnosis_detail(db=db, loop_id=loop_id_str)
 
     # 2. 获取推荐方案
     if body and body.tag_codes:
-        recommendations = get_recommendations(loop_id, body.tag_codes)
+        recommendations = get_recommendations(loop_id_str, body.tag_codes)
     else:
-        recommendations = await get_recommendations_for_loop(db=db, loop_id=loop_id)
+        recommendations = await get_recommendations_for_loop(db=db, loop_id=loop_id_str)
 
     # 3. 生成 PDF
     pdf_bytes = generate_diagnosis_report(
-        loop_id=loop_id,
+        loop_id=loop_id_str,
         snapshot_data=snapshot_data,
         recommendations=recommendations,
     )
 
-    filename = f"diagnosis_report_{loop_id}.pdf"
+    filename = f"diagnosis_report_{loop_id_str}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -345,7 +364,7 @@ async def generate_report_endpoint(
 
 @timeseries_router.get("/{loop_id}/waveform", response_model=ApiResponse[WaveformData])
 async def get_waveform_endpoint(
-    loop_id: str,
+    loop_id: uuid.UUID,
     startTime: str = Query(..., description="开始时间（ISO 8601）"),
     endTime: str = Query(..., description="结束时间（ISO 8601）"),
     maxPoints: int = Query(5000, ge=100, le=50000, description="最大数据点数"),
@@ -360,7 +379,7 @@ async def get_waveform_endpoint(
     """
     data = await get_waveform(
         db=db,
-        loop_id=loop_id,
+        loop_id=str(loop_id),
         start_time=startTime,
         end_time=endTime,
         max_points=maxPoints,
@@ -375,7 +394,7 @@ async def get_waveform_endpoint(
 
 @tracker_router.patch("/{loop_id}/status", response_model=ApiResponse[TrackerStatusData])
 async def update_tracker_status_endpoint(
-    loop_id: str,
+    loop_id: uuid.UUID,
     body: TrackerStatusUpdate,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("IC_ENGINEER")),
@@ -387,7 +406,7 @@ async def update_tracker_status_endpoint(
     """
     data = await update_tracker_status(
         db=db,
-        loop_id=loop_id,
+        loop_id=str(loop_id),
         operator=user.username,
         status=body.status,
         evidence_url=body.evidenceUrl,
@@ -398,12 +417,12 @@ async def update_tracker_status_endpoint(
 
 @tracker_router.post("/{loop_id}/export", response_model=ApiResponse[TrackerExportData])
 async def export_tracker_endpoint(
-    loop_id: str,
+    loop_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("IC_ENGINEER", "ADMIN", "PE_ENGINEER")),
 ) -> dict:
     """导出诊断建议书 PDF（异步任务，返回 taskId）。"""
-    data = await export_tracker_pdf(db=db, loop_id=loop_id)
+    data = await export_tracker_pdf(db=db, loop_id=str(loop_id))
     return success(data=data, message="导出任务已提交")
 
 
@@ -610,7 +629,7 @@ async def list_diagnosis_tags_endpoint(
 
 @tags_router.get("/{loop_id}", response_model=ApiResponse[DiagnosisTagListResponse])
 async def list_loop_diagnosis_tags_endpoint(
-    loop_id: str,
+    loop_id: uuid.UUID,
     tagType: str | None = Query(None, description="标签类型筛选"),
     severity: str | None = Query(None, description="严重等级筛选"),
     status: str | None = Query(None, description="处理状态筛选"),
@@ -629,7 +648,7 @@ async def list_loop_diagnosis_tags_endpoint(
     _validate_tag_query_filters(tagType, severity, status)
     data = await _query_diagnosis_tags(
         db=db,
-        loop_id=loop_id,
+        loop_id=str(loop_id),
         tag_type=tagType,
         severity=severity,
         status=status,
@@ -643,7 +662,7 @@ async def list_loop_diagnosis_tags_endpoint(
 
 @tags_router.put("/{tag_id}/resolve", response_model=ApiResponse[DiagnosisTagSchema])
 async def resolve_diagnosis_tag_endpoint(
-    tag_id: str,
+    tag_id: uuid.UUID,
     body: TagResolveRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(
@@ -666,7 +685,9 @@ async def resolve_diagnosis_tag_endpoint(
         )
 
     # 查询标签
-    result = await db.execute(select(DiagnosisTag).where(DiagnosisTag.id == tag_id))
+    result = await db.execute(
+        select(DiagnosisTag).where(DiagnosisTag.id == str(tag_id))
+    )
     tag = result.scalar_one_or_none()
     if tag is None:
         raise BizError(

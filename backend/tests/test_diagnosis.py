@@ -364,7 +364,7 @@ class TestDiagnosisDetail:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/diagnosis/nonexistent",
+                "/api/v1/diagnosis/00000000-0000-0000-0000-000000000000",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
@@ -524,7 +524,7 @@ class TestWaveform:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/timeseries/nonexistent/waveform",
+                "/api/v1/timeseries/00000000-0000-0000-0000-000000000000/waveform",
                 headers={"Authorization": "Bearer fake-token"},
                 params={
                     "startTime": "2026-06-22T08:00:00Z",
@@ -537,7 +537,7 @@ class TestWaveform:
     def test_get_waveform_no_token(self, client) -> None:
         """未认证请求返回 401。"""
         resp = client.get(
-            "/api/v1/timeseries/some-id/waveform",
+            "/api/v1/timeseries/00000000-0000-0000-0000-000000000001/waveform",
             params={"startTime": "2026-06-22T08:00:00Z", "endTime": "2026-06-22T08:00:10Z"},
         )
         assert resp.status_code == 401
@@ -646,7 +646,7 @@ class TestTrackerStatusUpdate:
         """无效状态返回 422。"""
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.patch(
-                "/api/v1/tracker/some-id/status",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000001/status",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "INVALID"},
             )
@@ -657,7 +657,7 @@ class TestTrackerStatusUpdate:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.patch(
-                "/api/v1/tracker/nonexistent/status",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000000/status",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "IN_PROGRESS"},
             )
@@ -668,7 +668,7 @@ class TestTrackerStatusUpdate:
         """ADMIN 不能更新 Tracker 状态（403，仅 IC_ENGINEER）。"""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.patch(
-                "/api/v1/tracker/some-id/status",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000000/status",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "IN_PROGRESS"},
             )
@@ -678,7 +678,7 @@ class TestTrackerStatusUpdate:
         """SPONSOR 不能更新 Tracker 状态（403）。"""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.patch(
-                "/api/v1/tracker/some-id/status",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000001/status",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "IN_PROGRESS"},
             )
@@ -687,7 +687,7 @@ class TestTrackerStatusUpdate:
     def test_update_status_no_token(self, client) -> None:
         """未认证请求返回 401。"""
         resp = client.patch(
-            "/api/v1/tracker/some-id/status",
+            "/api/v1/tracker/00000000-0000-0000-0000-000000000001/status",
             json={"status": "IN_PROGRESS"},
         )
         assert resp.status_code == 401
@@ -716,7 +716,7 @@ class TestTrackerExport:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
-                "/api/v1/tracker/nonexistent/export",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000000/export",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404

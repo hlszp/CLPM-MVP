@@ -498,21 +498,21 @@ class TestRecommendationsEndpoint:
         """通过 query 参数 tagCodes 获取推荐。"""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/diagnosis/loop-001/recommendations?tagCodes=OSCILLATION,STICTION",
+                "/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/recommendations?tagCodes=OSCILLATION,STICTION",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"
         data = body["data"]
-        assert data["loopId"] == "loop-001"
+        assert data["loopId"] == "00000000-0000-0000-0000-000000000001"
         # OSCILLATION(3) + STICTION(3) = 6
         assert data["totalCount"] == 6
         assert len(data["recommendations"]) == 6
 
     def test_get_recommendations_no_token(self, client) -> None:
         """未认证请求返回 401。"""
-        resp = client.get("/api/v1/diagnosis/loop-001/recommendations")
+        resp = client.get("/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/recommendations")
         assert resp.status_code == 401
 
     def test_get_recommendations_from_db(
@@ -553,7 +553,7 @@ class TestRecommendationsEndpoint:
         )
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/diagnosis/nonexistent/recommendations",
+                "/api/v1/diagnosis/00000000-0000-0000-0000-000000000000/recommendations",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
@@ -606,7 +606,7 @@ class TestReportEndpoint:
 
     def test_generate_report_no_token(self, client) -> None:
         """未认证请求返回 401。"""
-        resp = client.post("/api/v1/diagnosis/loop-001/report")
+        resp = client.post("/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/report")
         assert resp.status_code == 401
 
     def test_generate_report_sponsor_forbidden(
@@ -615,7 +615,7 @@ class TestReportEndpoint:
         """SPONSOR 无权限生成报告（403）。"""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.post(
-                "/api/v1/diagnosis/loop-001/report",
+                "/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/report",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 403

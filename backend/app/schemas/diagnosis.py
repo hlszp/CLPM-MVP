@@ -278,7 +278,7 @@ class RecommendationData(CamelModel):
 class DiagnosisReportRequest(CamelModel):
     """POST /diagnosis/{loopId}/report 请求体（可选，默认使用最新诊断结果）。"""
 
-    tagCodes: list[str] | None = Field(
+    tag_codes: list[str] | None = Field(
         None, description="诊断标签列表（可选，默认从数据库读取）"
     )
 

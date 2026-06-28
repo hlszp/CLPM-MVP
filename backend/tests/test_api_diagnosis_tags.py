@@ -332,7 +332,7 @@ class TestListLoopDiagnosisTags:
 
     def test_list_loop_tags_no_token(self, client) -> None:
         """未认证请求返回 401."""
-        resp = client.get("/api/v1/diagnosis/tags/some-loop-id")
+        resp = client.get("/api/v1/diagnosis/tags/00000000-0000-0000-0000-000000000001")
         assert resp.status_code == 401
 
 
@@ -414,7 +414,7 @@ class TestResolveDiagnosisTag:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.put(
-                "/api/v1/diagnosis/tags/nonexistent/resolve",
+                "/api/v1/diagnosis/tags/00000000-0000-0000-0000-000000000000/resolve",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "RESOLVED"},
             )
@@ -427,7 +427,7 @@ class TestResolveDiagnosisTag:
         """无效目标状态返回 422."""
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.put(
-                "/api/v1/diagnosis/tags/some-id/resolve",
+                "/api/v1/diagnosis/tags/00000000-0000-0000-0000-000000000001/resolve",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "ACTIVE"},
             )
@@ -440,7 +440,7 @@ class TestResolveDiagnosisTag:
         """SPONSOR 不能处理标签（403）."""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.put(
-                "/api/v1/diagnosis/tags/some-id/resolve",
+                "/api/v1/diagnosis/tags/00000000-0000-0000-0000-000000000001/resolve",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "RESOLVED"},
             )
@@ -476,7 +476,7 @@ class TestResolveDiagnosisTag:
     def test_resolve_tag_no_token(self, client) -> None:
         """未认证请求返回 401."""
         resp = client.put(
-            "/api/v1/diagnosis/tags/some-id/resolve",
+            "/api/v1/diagnosis/tags/00000000-0000-0000-0000-000000000001/resolve",
             json={"status": "RESOLVED"},
         )
         assert resp.status_code == 401
