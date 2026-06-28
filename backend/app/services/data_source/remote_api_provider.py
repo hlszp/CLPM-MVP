@@ -238,6 +238,88 @@ class RemoteApiProvider:
 
         return _query_fn
 
+    async def query_trend_data(
+        self, tag_name: str, start_time: str, end_time: str
+    ) -> list[dict[str, Any]]:
+        """查询单个 tag 的趋势数据（兼容 app.core.tdengine.query_trend_data 签名）.
+
+        调用外部 API 批量查询接口（tagCodes 只放一个 tag），
+        返回 ``list[{"ts": str, "value": float|None, "quality": int}]``。
+
+        质量码映射：外部 API(1=Good, 192=OPC DA Good) → CLPM(1=Good, 0=Bad)。
+        """
+        from app.core.config import settings
+
+        request_body = {
+            "tagCodes": [tag_name],
+            "startTime": start_time,
+            "endTime": end_time,
+            "sampleInterval": 1,
+        }
+
+        try:
+            client = await self._get_client()
+            resp = await client.post(
+                settings.HISTORY_DATA_API_URL,
+                json=request_body,
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "远程API query_trend_data 返回 %s: %s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
+                return []
+
+            payload = resp.json()
+            if payload.get("code") != 200:
+                logger.warning(
+                    "远程API query_trend_data 业务错误: %s",
+                    payload.get("message", ""),
+                )
+                return []
+
+            data = payload.get("data", {})
+            raw_timestamps: list[str] = data.get("timestamps", [])
+            series_list: list[dict] = data.get("series", [])
+            if not series_list:
+                return []
+
+            series = series_list[0]
+            values: list = series.get("values", [])
+            qualities: list = series.get("qualities", [])
+
+            rows: list[dict[str, Any]] = []
+            for i, ts_str in enumerate(raw_timestamps):
+                v_raw = values[i] if i < len(values) else ""
+                v: float | None = None
+                if v_raw not in (None, ""):
+                    try:
+                        v = float(v_raw)
+                    except (ValueError, TypeError):
+                        v = None
+
+                q_raw = qualities[i] if i < len(qualities) else 1
+                try:
+                    q_int = int(q_raw) if q_raw is not None else 0
+                except (ValueError, TypeError):
+                    q_int = 0
+                # 映射为 CLPM 内部约定（1=Good, 0=Bad）
+                q = 1 if q_int in _GOOD_QUALITY_CODES else 0
+
+                rows.append({"ts": str(ts_str), "value": v, "quality": q})
+
+            logger.debug(
+                "远程API query_trend_data: tag=%s, points=%d",
+                tag_name,
+                len(rows),
+            )
+            return rows
+
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("远程API query_trend_data 失败（返回空）: %s", exc)
+            return []
+
     async def close(self) -> None:
         """关闭 httpx 连接池."""
         if self._client is not None and not self._client.is_closed:

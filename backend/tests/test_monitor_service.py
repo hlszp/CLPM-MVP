@@ -451,8 +451,10 @@ class TestGetLoopMonitorDetail:
             {"ts": "2026-06-22T08:00:00Z", "value": 50.0, "quality": "GOOD"},
             {"ts": "2026-06-22T08:00:01Z", "value": 50.5, "quality": "GOOD"},
         ]
-        with patch("app.services.monitor.query_trend_data", new_callable=AsyncMock) as mock_query:
-            mock_query.return_value = pv_trend
+        with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
+            mock_provider = MagicMock()
+            mock_provider.query_trend_data = AsyncMock(return_value=pv_trend)
+            mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["loopId"] == "loop-001"
         assert result["tagName"] == "LIC-101"
@@ -513,8 +515,10 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
-        with patch("app.services.monitor.query_trend_data", new_callable=AsyncMock) as mock_query:
-            mock_query.side_effect = RuntimeError("TDengine 连接失败")
+        with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
+            mock_provider = MagicMock()
+            mock_provider.query_trend_data = AsyncMock(side_effect=RuntimeError("TDengine 连接失败"))
+            mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["trendStatus"] == "MOCK"
         # current_values 仍然从 Tag 当前值填充
@@ -579,8 +583,10 @@ class TestGetLoopMonitorDetail:
             ]
         )
         sp_trend = [{"ts": "2026-06-22T08:00:00Z", "value": 52.0, "quality": "GOOD"}]
-        with patch("app.services.monitor.query_trend_data", new_callable=AsyncMock) as mock_query:
-            mock_query.return_value = sp_trend
+        with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
+            mock_provider = MagicMock()
+            mock_provider.query_trend_data = AsyncMock(return_value=sp_trend)
+            mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["trendStatus"] == "OK"
         assert result["trend"]["sp"] == [52.0]
@@ -601,8 +607,10 @@ class TestGetLoopMonitorDetail:
             ]
         )
         op_trend = [{"ts": "2026-06-22T08:00:00Z", "value": 55.0, "quality": "GOOD"}]
-        with patch("app.services.monitor.query_trend_data", new_callable=AsyncMock) as mock_query:
-            mock_query.return_value = op_trend
+        with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
+            mock_provider = MagicMock()
+            mock_provider.query_trend_data = AsyncMock(return_value=op_trend)
+            mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["trendStatus"] == "OK"
         assert result["trend"]["op"] == [55.0]
@@ -622,8 +630,10 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
-        with patch("app.services.monitor.query_trend_data", new_callable=AsyncMock) as mock_query:
-            mock_query.return_value = []
+        with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
+            mock_provider = MagicMock()
+            mock_provider.query_trend_data = AsyncMock(return_value=[])
+            mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["currentValues"]["readAt"] == "2026-06-22T10:00:00"
 

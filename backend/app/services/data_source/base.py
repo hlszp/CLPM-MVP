@@ -19,6 +19,13 @@ QueryFn = Callable[
     Awaitable[RawTimeSeries],
 ]
 
+# 单 tag 趋势查询函数签名（与 app.core.tdengine.query_trend_data 一致）
+# 返回 list[dict]，每个 dict 含 {ts, value, quality}
+TrendQueryFn = Callable[
+    [str, str, str],
+    Awaitable[list[dict[str, Any]]],
+]
+
 
 @runtime_checkable
 class HistoryDataProvider(Protocol):
@@ -32,6 +39,10 @@ class HistoryDataProvider(Protocol):
         provider = get_provider()
         query_fn = provider.make_query_fn(db)
         planner = DataPlanner(tdengine_query_fn=query_fn, ...)
+
+    对于不走 DataPlanner 的遗留代码（如 monitor.py 的单 tag 趋势查询），
+    可直接调用 ``query_trend_data`` 方法，签名与
+    ``app.core.tdengine.query_trend_data`` 保持一致。
     """
 
     def make_query_fn(self, db: Any) -> QueryFn:
@@ -43,6 +54,21 @@ class HistoryDataProvider(Protocol):
         Returns:
             查询函数闭包，签名:
             ``(loop_id, tag_roles, start, end, interval_s) → RawTimeSeries``
+        """
+        ...
+
+    async def query_trend_data(
+        self, tag_name: str, start_time: str, end_time: str
+    ) -> list[dict[str, Any]]:
+        """查询单个 tag 的趋势数据（兼容 query_trend_data 签名）.
+
+        Args:
+            tag_name: Tag 位号（如 "LIC-101.PV"）
+            start_time: 开始时间（ISO 8601 字符串）
+            end_time: 结束时间（ISO 8601 字符串）
+
+        Returns:
+            趋势数据列表，每个元素为 ``{"ts": str, "value": float|None, "quality": int|str}``
         """
         ...
 

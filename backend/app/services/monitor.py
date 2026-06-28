@@ -19,7 +19,6 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
-from app.core.tdengine import query_trend_data
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
@@ -502,7 +501,12 @@ async def get_loop_monitor_detail(
         if mapping and str(mapping.tag_id) in tags_map:
             tag = tags_map[str(mapping.tag_id)]
             try:
-                raw_trend = await query_trend_data(tag.tag_name, start_time, end_time)
+                # 通过数据源工厂查询（支持 tdengine / remote_api 切换）
+                from app.services.data_source.factory import get_provider
+
+                raw_trend = await get_provider().query_trend_data(
+                    tag.tag_name, start_time, end_time
+                )
                 # LTTB 降采样
                 downsampled = lttb_downsample(raw_trend)
                 if role == "PV":

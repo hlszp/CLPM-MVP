@@ -303,18 +303,21 @@ def _parse_iso_datetime(s: str) -> datetime:
 def _build_data_planner(db: AsyncSession) -> Any:
     """构造 DataPlanner 实例（复用 Phase 2 架构）。
 
-    与 kpi_calc._build_data_planner 相同的模式：
+    通过数据源工厂获取 Provider（tdengine / remote_api），
+    支持 DATA_SOURCE_TYPE 配置切换数据源（与 kpi_calc._build_data_planner 一致）。
+
     - L1DataBlockCache（Redis zstd 压缩缓存）
-    - make_dataplanner_query_fn（TDengine 查询适配器）
+    - provider.make_query_fn（tdengine 或 remote_api 查询适配器）
     - MetricDataBundleAssembler（数据血缘组装器）
     """
     from app.core.redis import redis_client
-    from app.core.tdengine import make_dataplanner_query_fn
+    from app.services.cache.l1_datablock import L1DataBlockCache
+    from app.services.data_source.factory import get_provider
     from app.services.data_planner import DataPlanner
     from app.services.metric_data_bundle import MetricDataBundleAssembler
-    from app.services.cache.l1_datablock import L1DataBlockCache
 
-    query_fn = make_dataplanner_query_fn(db)
+    provider = get_provider()
+    query_fn = provider.make_query_fn(db)
     cache = L1DataBlockCache(redis_client)
     assembler = MetricDataBundleAssembler()
     return DataPlanner(

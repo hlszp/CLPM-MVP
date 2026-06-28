@@ -34,6 +34,14 @@ class TDengineProvider:
 
         return make_dataplanner_query_fn(db)
 
+    async def query_trend_data(
+        self, tag_name: str, start_time: str, end_time: str
+    ) -> list[dict[str, Any]]:
+        """查询单个 tag 的趋势数据（直接委托给 app.core.tdengine.query_trend_data）."""
+        from app.core.tdengine import query_trend_data
+
+        return await query_trend_data(tag_name, start_time, end_time)
+
     async def close(self) -> None:
         """关闭 TDengine httpx 连接池."""
         from app.core.tdengine import close_client
