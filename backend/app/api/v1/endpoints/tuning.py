@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -162,7 +163,7 @@ async def simulate_endpoint(
 
 @router.get("/tasks", response_model=ApiResponse[dict])
 async def list_tasks_endpoint(
-    loopId: str | None = Query(None, description="回路 ID 筛选"),
+    loopId: uuid.UUID | None = Query(None, description="回路 ID 筛选"),
     algorithm: str | None = Query(None, description="算法筛选"),
     status: str | None = Query(None, description="状态筛选"),
     page: int = Query(1, ge=1),
@@ -173,7 +174,7 @@ async def list_tasks_endpoint(
     """整定任务列表（分页 + 筛选）。"""
     data = await list_tuning_tasks(
         db=db,
-        loop_id=loopId,
+        loop_id=str(loopId) if loopId else None,
         algorithm=algorithm,
         status=status,
         page=page,
@@ -184,12 +185,12 @@ async def list_tasks_endpoint(
 
 @router.get("/tasks/{task_id}", response_model=ApiResponse[TuningTaskDetail])
 async def get_task_detail_endpoint(
-    task_id: str,
+    task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """整定任务详情。"""
-    data = await get_tuning_task_detail(db=db, task_id=task_id)
+    data = await get_tuning_task_detail(db=db, task_id=str(task_id))
     return success(data=data)
 
 
