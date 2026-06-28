@@ -215,7 +215,7 @@ class TestListLoopMonitor:
         assert db.execute.await_count == 2
 
     async def test_with_loops_no_tags(self) -> None:
-        """有回路但无 Tag 关联时，current_values 全为 None。"""
+        """有回路但无 Tag 关联时，current_values 全为 None；无 KPI 快照时 score/status 为 None。"""
         loop = _make_loop()
         db = AsyncMock()
         db.execute = AsyncMock(
@@ -224,6 +224,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # KPI 快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
@@ -241,8 +242,11 @@ class TestListLoopMonitor:
         assert item["currentValues"]["modeLabel"] is None
         assert item["currentValues"]["pvQuality"] is None
         assert item["readAt"] is None
-        assert item["score"] == 85.5
-        assert item["status"] == "READY"
+        # 无 KPI 快照时 score/status/confidenceLevel 均为 None
+        assert item["score"] is None
+        assert item["status"] is None
+        assert item["confidenceLevel"] is None
+        assert item["kpiSummary"] is None
         assert item["isActive"] is True
         assert item["controlMode"] is None
 
@@ -257,12 +261,13 @@ class TestListLoopMonitor:
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # KPI 快照查询（空）
             ]
         )
         result = await list_loop_monitor(db, plant_node_id="unit-001")
         assert result["total"] == 1
         assert len(result["items"]) == 1
-        assert db.execute.await_count == 5
+        assert db.execute.await_count == 6
 
     async def test_with_keyword_filter(self) -> None:
         """带 keyword 过滤时正确返回空列表。"""
@@ -312,6 +317,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag, sp_tag, op_tag, mode_tag]),
+                _make_scalars_mock([]),  # KPI 快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
@@ -334,16 +340,17 @@ class TestListLoopMonitor:
                 _make_count_mock(1),
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # KPI 快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
         item = result["items"][0]
         assert item["unitName"] is None
-        # count + loops + mappings = 3 次（跳过 plant node 查询）
-        assert db.execute.await_count == 3
+        # count + loops + mappings + kpi_snapshot = 4 次（跳过 plant node 查询）
+        assert db.execute.await_count == 4
 
     async def test_no_score_weight(self) -> None:
-        """回路无 score_weight 时 score 为 None。"""
+        """无 KPI 快照时 score 为 None（score 来自 KpiSnapshotHourly，非 loop.score_weight）。"""
         loop = _make_loop()
         loop.score_weight = None
         db = AsyncMock()
@@ -353,6 +360,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # KPI 快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
@@ -373,6 +381,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
+                _make_scalars_mock([]),  # KPI 快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
