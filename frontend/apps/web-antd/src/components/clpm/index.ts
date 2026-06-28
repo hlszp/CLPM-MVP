@@ -1,3 +1,4 @@
+export { default as ClpmColumnSettings } from './column-settings.vue';
 export { default as ClpmDataCanvas } from './data-canvas.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
 export { default as ClpmObjectSummaryBar } from './object-summary-bar.vue';

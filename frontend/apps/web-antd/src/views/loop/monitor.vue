@@ -46,6 +46,7 @@ import {
   getLoopMonitorListApi,
 } from '#/api/loop';
 import {
+  ClpmColumnSettings,
   ClpmDataCanvas,
   ClpmKpiStrip,
   ClpmObjectSummaryBar,
@@ -59,12 +60,27 @@ import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { flattenNodes } from '#/utils/plant-node';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import {
+  usePagePreference,
+  type ColumnConfig,
+  type FilterPreset,
+} from '#/composables/use-clpm-preferences';
 
 defineOptions({ name: 'LoopMonitor' });
 
 const { isDark, themeColors } = useClpmTheme();
 
 const router = useRouter();
+
+// ===== 用户偏好 =====
+const {
+  preferences,
+  updateColumns,
+  setDefaultTimeWindow,
+  saveFilterPreset,
+  deleteFilterPreset,
+  reset: resetPreferences,
+} = usePagePreference('loop-monitor');
 
 // ===== 常量 =====
 
@@ -225,6 +241,63 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 200, fixed: 'right' },
 ];
 
+/** 提取列 key 为字符串 */
+function getColumnKey(col: any): string {
+  if (col.key) return String(col.key);
+  if (col.dataIndex) {
+    return Array.isArray(col.dataIndex)
+      ? String(col.dataIndex[0])
+      : String(col.dataIndex);
+  }
+  return '';
+}
+
+/** 默认列配置 */
+function buildDefaultColumnConfigs(): ColumnConfig[] {
+  return columns.map((c: any, i: number) => ({
+    key: getColumnKey(c),
+    label: String(c.title ?? ''),
+    visible: true,
+    order: i,
+  }));
+}
+
+/** 表格列配置（从偏好恢复或使用默认） */
+const columnConfigs = ref<ColumnConfig[]>(
+  preferences.value.columns && preferences.value.columns.length > 0
+    ? preferences.value.columns
+    : buildDefaultColumnConfigs(),
+);
+
+/** 根据列配置计算实际显示的表格列（过滤 + 排序） */
+const visibleColumns = computed<TableColumnsType>(() => {
+  const configMap = new Map(
+    columnConfigs.value.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+  );
+  return columns
+    .filter((c: any) => {
+      const cfg = configMap.get(getColumnKey(c));
+      return cfg ? cfg.visible : true;
+    })
+    .sort((a: any, b: any) => {
+      const aOrder = configMap.get(getColumnKey(a))?.order ?? 99;
+      const bOrder = configMap.get(getColumnKey(b))?.order ?? 99;
+      return aOrder - bOrder;
+    });
+});
+
+/** 列设置变更 */
+function handleUpdateColumns(cols: ColumnConfig[]) {
+  columnConfigs.value = cols;
+  updateColumns(cols);
+}
+
+/** 恢复默认列配置 */
+function handleResetColumns() {
+  columnConfigs.value = buildDefaultColumnConfigs();
+  updateColumns(columnConfigs.value);
+}
+
 // ===== 自动刷新 =====
 
 const autoRefresh = ref(true);
@@ -238,7 +311,10 @@ let countdownTimer: null | ReturnType<typeof setInterval> = null;
 const trendModalVisible = ref(false);
 const trendLoading = ref(false);
 const trendDetail = ref<LoopApi.MonitorDetail | null>(null);
-const trendWindow = ref<LoopApi.TrendWindow>('last_4_hours');
+const trendWindow = ref<LoopApi.TrendWindow>(
+  (preferences.value.defaultTimeWindow as LoopApi.TrendWindow) ||
+    'last_4_hours',
+);
 const waveformChartRef = ref<InstanceType<typeof WaveformChart>>();
 const trendFullscreen = ref(false);
 
@@ -535,7 +611,6 @@ function handleTableChange(pagination: TablePaginationConfig) {
 async function openTrend(record: LoopApi.MonitorListItem) {
   currentRecord.value = record;
   trendModalVisible.value = true;
-  trendWindow.value = 'last_4_hours';
   trendDetail.value = null;
   await loadTrendDetail();
 }
@@ -685,6 +760,54 @@ watch(isDark, () => {
   });
 });
 
+// ===== 偏好持久化 =====
+
+/** 保存默认时间窗 */
+watch(trendWindow, (val) => setDefaultTimeWindow(val));
+
+// ===== 筛选预设 =====
+
+const presetModalVisible = ref(false);
+const presetName = ref('');
+
+function handleSavePreset() {
+  presetName.value = `预设 ${(preferences.value.savedFilters?.length ?? 0) + 1}`;
+  presetModalVisible.value = true;
+}
+
+function confirmSavePreset() {
+  if (!presetName.value.trim()) {
+    message.warning('请输入预设名称');
+    return;
+  }
+  saveFilterPreset(presetName.value.trim(), { ...query });
+  presetModalVisible.value = false;
+  message.success('预设已保存');
+}
+
+function handleApplyPreset(preset: FilterPreset) {
+  const f = preset.filters;
+  query.plantNodeId = f.plantNodeId;
+  query.loopType = f.loopType;
+  query.keyword = f.keyword ?? '';
+  query.page = 1;
+  loadList();
+  message.success(`已应用预设：${preset.name}`);
+}
+
+function handleDeletePreset(id: string) {
+  deleteFilterPreset(id);
+  message.success('预设已删除');
+}
+
+/** 重置页面偏好 */
+function handleResetPreferences() {
+  resetPreferences();
+  columnConfigs.value = buildDefaultColumnConfigs();
+  trendWindow.value = 'last_4_hours';
+  message.success('页面偏好已重置');
+}
+
 // ===== 生命周期 =====
 
 onMounted(() => {
@@ -739,13 +862,59 @@ onUnmounted(() => {
           <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
           <span v-if="autoRefresh" class="text-xs text-gray-400">{{ countdown }}s 后刷新</span>
         </div>
+
+        <!-- 筛选预设区 -->
+        <div class="mt-3">
+          <div class="mb-1 flex items-center justify-between">
+            <span class="text-xs text-gray-500">筛选预设</span>
+            <Button type="link" size="small" class="!px-0" @click="handleSavePreset">
+              保存当前筛选
+            </Button>
+          </div>
+          <div v-if="preferences.savedFilters?.length" class="flex flex-wrap gap-1">
+            <Tag
+              v-for="preset in preferences.savedFilters"
+              :key="preset.id"
+              class="m-0 cursor-pointer"
+              @click="handleApplyPreset(preset)"
+            >
+              {{ preset.name }}
+              <span
+                class="ml-1 text-gray-400 hover:text-red-500"
+                @click.stop="handleDeletePreset(preset.id)"
+              >
+                ×
+              </span>
+            </Tag>
+          </div>
+          <div v-else class="text-xs text-gray-400">暂无保存的预设</div>
+        </div>
+
+        <!-- 重置偏好 -->
+        <div class="mt-2">
+          <Button
+            type="link"
+            size="small"
+            class="!px-0"
+            @click="handleResetPreferences"
+          >
+            重置页面偏好
+          </Button>
+        </div>
       </ClpmDataCanvas>
 
       <div class="flex min-w-0 flex-1 flex-col gap-3">
         <div class="flex min-h-0 flex-1 gap-3">
           <ClpmDataCanvas class="min-w-0 flex-1" title="回路列表" :loading="loading">
+            <template #extra>
+              <ClpmColumnSettings
+                :columns="columnConfigs"
+                @update:columns="handleUpdateColumns"
+                @reset="handleResetColumns"
+              />
+            </template>
             <Table
-              :columns="columns"
+              :columns="visibleColumns"
               :data-source="monitorList"
               :loading="loading"
               :pagination="{
@@ -1162,6 +1331,27 @@ onUnmounted(() => {
         </div>
         <div v-else class="py-12 text-center text-gray-400">暂无性能数据</div>
       </Spin>
+    </Modal>
+
+    <!-- 保存筛选预设 Modal -->
+    <Modal
+      v-model:open="presetModalVisible"
+      title="保存筛选预设"
+      :footer="null"
+      destroy-on-close
+      width="400px"
+    >
+      <div class="flex flex-col gap-3">
+        <Input
+          v-model:value="presetName"
+          placeholder="请输入预设名称"
+          @press-enter="confirmSavePreset"
+        />
+        <div class="flex justify-end gap-2">
+          <Button @click="presetModalVisible = false">取消</Button>
+          <Button type="primary" @click="confirmSavePreset">确定</Button>
+        </div>
+      </div>
     </Modal>
   </Page>
 </template>

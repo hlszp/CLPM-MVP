@@ -32,6 +32,7 @@ import {
   Card,
   Input,
   message,
+  Modal,
   Select,
   Table,
   Tag,
@@ -56,6 +57,10 @@ import {
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import AutoRateGauge from '#/components/metric/auto-rate-gauge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import {
+  usePagePreference,
+  type FilterPreset,
+} from '#/composables/use-clpm-preferences';
 
 defineOptions({ name: 'MetricDashboard' });
 
@@ -68,6 +73,15 @@ const {
 } = useClpmTheme();
 
 const router = useRouter();
+
+// ===== 用户偏好 =====
+const {
+  preferences,
+  setDefaultTimeWindow,
+  saveFilterPreset,
+  deleteFilterPreset,
+  reset: resetPreferences,
+} = usePagePreference('metric-dashboard');
 
 // ===== 树（使用统一组件 PlantNodeTree）=====
 const selectedPlantNodeId = ref<string | undefined>(undefined);
@@ -99,7 +113,9 @@ const timeWindowOptions = [
 ];
 
 const filter = reactive({
-  timeWindow: 'today' as TimeWindow,
+  timeWindow:
+    (preferences.value.defaultTimeWindow as TimeWindow) ||
+    ('today' as TimeWindow),
 });
 
 const statusLabelMap: Record<KpiStatus, string> = {
@@ -812,6 +828,62 @@ watch(isDark, () => {
   });
 });
 
+// ===== 偏好持久化 =====
+
+/** 保存默认时间窗 */
+watch(
+  () => filter.timeWindow,
+  (val) => setDefaultTimeWindow(val),
+);
+
+// ===== 筛选预设 =====
+
+const presetModalVisible = ref(false);
+const presetName = ref('');
+
+function handleSavePreset() {
+  presetName.value = `预设 ${(preferences.value.savedFilters?.length ?? 0) + 1}`;
+  presetModalVisible.value = true;
+}
+
+function confirmSavePreset() {
+  if (!presetName.value.trim()) {
+    message.warning('请输入预设名称');
+    return;
+  }
+  saveFilterPreset(presetName.value.trim(), {
+    timeWindow: filter.timeWindow,
+    level: rankingQuery.level,
+    keyword: rankingQuery.keyword,
+  });
+  presetModalVisible.value = false;
+  message.success('预设已保存');
+}
+
+function handleApplyPreset(preset: FilterPreset) {
+  const f = preset.filters;
+  if (f.timeWindow) {
+    filter.timeWindow = f.timeWindow as TimeWindow;
+  }
+  rankingQuery.level = f.level;
+  rankingQuery.keyword = f.keyword ?? '';
+  rankingQuery.page = 1;
+  loadAll();
+  message.success(`已应用预设：${preset.name}`);
+}
+
+function handleDeletePreset(id: string) {
+  deleteFilterPreset(id);
+  message.success('预设已删除');
+}
+
+/** 重置页面偏好 */
+function handleResetPreferences() {
+  resetPreferences();
+  filter.timeWindow = 'today' as TimeWindow;
+  message.success('页面偏好已重置');
+}
+
 onMounted(() => {
   loadAll();
   startAutoRefresh();
@@ -868,8 +940,40 @@ onUnmounted(() => {
               label="导出"
               @click="handleExport"
             />
+            <Button type="link" size="small" @click="handleSavePreset">
+              保存预设
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              @click="handleResetPreferences"
+            >
+              重置偏好
+            </Button>
           </template>
         </ClpmPageToolbar>
+
+        <!-- 筛选预设区 -->
+        <div
+          v-if="preferences.savedFilters?.length"
+          class="clpm-preset-bar"
+        >
+          <span class="text-xs text-gray-500">筛选预设：</span>
+          <Tag
+            v-for="preset in preferences.savedFilters"
+            :key="preset.id"
+            class="m-0 cursor-pointer"
+            @click="handleApplyPreset(preset)"
+          >
+            {{ preset.name }}
+            <span
+              class="ml-1 text-gray-400 hover:text-red-500"
+              @click.stop="handleDeletePreset(preset.id)"
+            >
+              ×
+            </span>
+          </Tag>
+        </div>
 
         <!-- ObjectSummaryBar：综合评分 primaryItem + actions -->
         <ClpmObjectSummaryBar
@@ -1037,6 +1141,27 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 保存筛选预设 Modal -->
+    <Modal
+      v-model:open="presetModalVisible"
+      title="保存筛选预设"
+      :footer="null"
+      destroy-on-close
+      width="400px"
+    >
+      <div class="flex flex-col gap-3">
+        <Input
+          v-model:value="presetName"
+          placeholder="请输入预设名称"
+          @press-enter="confirmSavePreset"
+        />
+        <div class="flex justify-end gap-2">
+          <Button @click="presetModalVisible = false">取消</Button>
+          <Button type="primary" @click="confirmSavePreset">确定</Button>
+        </div>
+      </div>
+    </Modal>
   </Page>
 </template>
 
@@ -1045,6 +1170,17 @@ onUnmounted(() => {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.clpm-preset-bar {
+  align-items: center;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px;
 }
 
 .clpm-chart-card {
