@@ -530,6 +530,9 @@ async def update_loop(
         after_value=after_json,
     )
     await db.commit()
+    # 刷新对象以获取 onupdate=func.now() 生成的 updated_at（async session
+    # 不能同步 lazy load，否则触发 MissingGreenlet）
+    await db.refresh(loop)
 
     return {
         "loopId": str(loop.id),

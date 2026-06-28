@@ -140,7 +140,7 @@ async def batch_config_loops_endpoint(
     if body.action == "delete":
         affected = await batch_delete_loops(
             db=db,
-            loop_ids=body.loopIds,
+            loop_ids=body.loop_ids,
             operator=user.username,
         )
         action = "delete"
@@ -156,7 +156,7 @@ async def batch_config_loops_endpoint(
                 updates_dict["level"] = body.updates.level
         affected = await batch_update_loops(
             db=db,
-            loop_ids=body.loopIds,
+            loop_ids=body.loop_ids,
             updates=updates_dict,
             operator=user.username,
         )
@@ -165,7 +165,7 @@ async def batch_config_loops_endpoint(
     result = LoopBatchConfigResult(
         affected=affected,
         action=action,
-        loop_ids=body.loopIds,
+        loop_ids=body.loop_ids,
     )
     return success(data=result.model_dump(by_alias=True), message="批量操作成功")
 
