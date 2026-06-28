@@ -10,6 +10,8 @@ Routes:
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,7 +68,7 @@ async def create_config_endpoint(
 
 @router.put("/configs/{config_id}", response_model=ApiResponse[ReportConfigItem])
 async def update_config_endpoint(
-    config_id: str,
+    config_id: uuid.UUID,
     body: ReportConfigUpdateRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
@@ -75,7 +77,7 @@ async def update_config_endpoint(
     data = await update_config(
         db=db,
         operator=user.username,
-        config_id=config_id,
+        config_id=str(config_id),
         name=body.name,
         report_period=body.reportPeriod,
         recipients=body.recipients,
@@ -103,12 +105,12 @@ async def generate_report_endpoint(
 
 @router.get("/tasks/{task_id}", response_model=ApiResponse[dict])
 async def get_task_status_endpoint(
-    task_id: str,
+    task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
     """查询报表任务状态（仅 ADMIN，用于前端轮询）。"""
-    data = await get_task_status(db=db, task_id=task_id)
+    data = await get_task_status(db=db, task_id=str(task_id))
     return success(data=data)
 
 

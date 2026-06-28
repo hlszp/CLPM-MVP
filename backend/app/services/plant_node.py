@@ -192,7 +192,7 @@ async def update_plant_node(
     )
     await db.commit()
 
-    return {"success": True}
+    return _node_to_dict(node)
 
 
 async def delete_plant_node(

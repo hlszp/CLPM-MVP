@@ -270,7 +270,7 @@ class TestUpdateUser:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.put(
-                "/api/v1/users/nonexistent",
+                "/api/v1/users/00000000-0000-0000-0000-000000000999",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"displayName": "更新"},
             )
@@ -315,7 +315,7 @@ class TestDisableUser:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.delete(
-                "/api/v1/users/nonexistent",
+                "/api/v1/users/00000000-0000-0000-0000-000000000999",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
@@ -359,7 +359,7 @@ class TestResetPassword:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.put(
-                "/api/v1/users/nonexistent/reset-password",
+                "/api/v1/users/00000000-0000-0000-0000-000000000999/reset-password",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"newPassword": "NewPass@2026"},
             )

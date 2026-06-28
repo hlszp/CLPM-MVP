@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,12 +43,12 @@ router = APIRouter(prefix="/plant-nodes", tags=["plant-node"])
 
 @router.get("", response_model=ApiResponse[list[PlantNodeTree]])
 async def list_plant_nodes(
-    parentId: str | None = Query(None, description="父节点 ID，不传则返回顶层节点及其完整子树"),
+    parentId: uuid.UUID | None = Query(None, description="父节点 ID，不传则返回顶层节点及其完整子树"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """获取工厂层级树（递归 children）。"""
-    tree = await list_plant_tree(db=db, parent_id=parentId)
+    tree = await list_plant_tree(db=db, parent_id=str(parentId) if parentId else None)
     return success(data=tree)
 
 
@@ -114,7 +116,7 @@ async def import_plant_nodes_endpoint(
 
 @router.put("/{node_id}", response_model=ApiResponse[PlantNodeInfo])
 async def update_plant_node_endpoint(
-    node_id: str,
+    node_id: uuid.UUID,
     body: PlantNodeUpdate,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
@@ -122,7 +124,7 @@ async def update_plant_node_endpoint(
     """更新工厂节点（名称 + 是否纳入性能评估，仅 ADMIN）。"""
     data = await update_plant_node(
         db=db,
-        node_id=node_id,
+        node_id=str(node_id),
         name=body.name,
         operator=user.username,
         is_kpi_enabled=body.isKpiEnabled,
@@ -132,7 +134,7 @@ async def update_plant_node_endpoint(
 
 @router.delete("/{node_id}", response_model=ApiResponse[dict])
 async def delete_plant_node_endpoint(
-    node_id: str,
+    node_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
@@ -140,7 +142,7 @@ async def delete_plant_node_endpoint(
 
     校验：节点存在子节点 → ERR_NODE_HAS_CHILDREN；节点关联回路 → ERR_NODE_HAS_LOOPS。
     """
-    data = await delete_plant_node(db=db, node_id=node_id, operator=user.username)
+    data = await delete_plant_node(db=db, node_id=str(node_id), operator=user.username)
     return success(data=data, message="删除成功")
 
 

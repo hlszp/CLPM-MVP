@@ -198,7 +198,7 @@ class TestUpdateConfig:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.put(
-                "/api/v1/reports/configs/nonexistent",
+                "/api/v1/reports/configs/00000000-0000-0000-0000-000000000999",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"name": "更新"},
             )

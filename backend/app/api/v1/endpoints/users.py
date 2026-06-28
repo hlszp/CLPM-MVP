@@ -10,6 +10,8 @@ Routes:
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,7 +80,7 @@ async def create_user_endpoint(
 
 @router.put("/{user_id}", response_model=ApiResponse[UserItem])
 async def update_user_endpoint(
-    user_id: str,
+    user_id: uuid.UUID,
     body: UserUpdateRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
@@ -87,7 +89,7 @@ async def update_user_endpoint(
     data = await update_user(
         db=db,
         operator=user.username,
-        user_id=user_id,
+        user_id=str(user_id),
         display_name=body.displayName,
         email=body.email,
         role=body.role,
@@ -98,7 +100,7 @@ async def update_user_endpoint(
 
 @router.delete("/{user_id}", response_model=ApiResponse[UserItem])
 async def disable_user_endpoint(
-    user_id: str,
+    user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
@@ -106,14 +108,14 @@ async def disable_user_endpoint(
     data = await disable_user(
         db=db,
         operator=user.username,
-        user_id=user_id,
+        user_id=str(user_id),
     )
     return success(data=data, message="用户已禁用")
 
 
 @router.put("/{user_id}/reset-password", response_model=ApiResponse[dict])
 async def reset_password_endpoint(
-    user_id: str,
+    user_id: uuid.UUID,
     body: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
@@ -122,7 +124,7 @@ async def reset_password_endpoint(
     data = await reset_password(
         db=db,
         operator=user.username,
-        user_id=user_id,
+        user_id=str(user_id),
         new_password=body.newPassword,
     )
     return success(data=data, message="密码重置成功")
