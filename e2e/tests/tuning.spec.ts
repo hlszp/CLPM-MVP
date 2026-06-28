@@ -225,8 +225,8 @@ test.describe('回路整定 E2E', () => {
     }
 
     // 验证图表区域存在（算法分布饼图 / 状态柱状图）
-    // 图表可能因数据为空未渲染，验证容器存在即可
-    const chartContainers = page.locator('.ant-card, [class*="chart"], [class*="echarts"]');
+    // 页面使用 ClpmDataCanvas（section.clpm-data-canvas）包裹 EchartsUI（div + canvas）
+    const chartContainers = page.locator('.clpm-data-canvas, canvas, .clpm-kpi-strip');
     const chartCount = await chartContainers.count();
     expect(chartCount).toBeGreaterThan(0);
 
