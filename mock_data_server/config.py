@@ -24,6 +24,10 @@ class Config:
     # 实时数据生成间隔（秒）
     REALTIME_INTERVAL: float = float(os.getenv("REALTIME_INTERVAL", "1.0"))
 
+    # 质量码异常比例（0.0~1.0），模拟工控场景中的采集异常
+    # 0.0 = 全部 Good；0.1 = 10% Bad（工控场景典型值）
+    QUALITY_BAD_RATIO: float = float(os.getenv("QUALITY_BAD_RATIO", "0.0"))
+
     @property
     def tdengine_rest_url(self) -> str:
         """TDengine REST API base URL."""

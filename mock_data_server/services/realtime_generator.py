@@ -60,8 +60,9 @@ class RealtimeGenerator:
         value += random.uniform(-config["noise"], config["noise"])
 
         # 质量码约定与 HisDATA_API.md 一致：1=Good, 0=Bad/未知
-        # 5% 概率为 Bad（模拟真实采集场景中的偶发异常）
-        quality_code = 0 if random.random() < 0.05 else 1
+        # 异常比例由 QUALITY_BAD_RATIO 配置控制（工控场景典型值 10%）
+        from mock_data_server.config import config
+        quality_code = 0 if random.random() < config.QUALITY_BAD_RATIO else 1
 
         self._id_counter += 1
         return {

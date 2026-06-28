@@ -2,11 +2,14 @@
 
 独立实现 TDengine REST API 查询（不依赖主应用代码），
 按 tag_name 查询子表数据，返回 timestamps + values + qualities。
+
+支持通过 QUALITY_BAD_RATIO 环境变量注入异常质量码，模拟工控采集场景。
 """
 
 from __future__ import annotations
 
 import logging
+import random
 import re
 from datetime import datetime
 from typing import Any
@@ -172,6 +175,7 @@ async def query_history_data(
     sorted_timestamps = sorted(all_timestamps)
 
     # 构建 series
+    bad_ratio = config.QUALITY_BAD_RATIO
     series: list[dict[str, Any]] = []
     for tag_code in tag_codes:
         rows = tag_data.get(tag_code, [])
@@ -185,7 +189,12 @@ async def query_history_data(
             values.append("" if v is None else str(v))
             # TDengine 质量码 1=Good → 外部 API 1=Good
             q = ts_to_quality.get(ts, 1)
-            qualities.append(q if q in (0, 1, 2, 3) else 1)
+            q = q if q in (0, 1, 2, 3) else 1
+            # 按配置比例注入 Bad 质量码（模拟工控采集异常）
+            # 仅对原本 Good 的点随机降级为 Bad，不修复原本 Bad 的点
+            if q == 1 and bad_ratio > 0 and random.random() < bad_ratio:
+                q = 0
+            qualities.append(q)
 
         series.append({
             "tagCode": tag_code,
