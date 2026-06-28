@@ -59,11 +59,9 @@ class RealtimeGenerator:
         )
         value += random.uniform(-config["noise"], config["noise"])
 
-        # 5% 概率质量码为 Bad
-        quality = 0 if random.random() < 0.05 else 1
-        # 文档约定: 0=Good, 1=Bad（注意与 HisDATA_API.md 不同）
-        # RealDATA_API.md 示例中 quality=0 表示正常
-        quality_code = 0 if quality == 1 else 0  # 0=Good
+        # 质量码约定与 HisDATA_API.md 一致：1=Good, 0=Bad/未知
+        # 5% 概率为 Bad（模拟真实采集场景中的偶发异常）
+        quality_code = 0 if random.random() < 0.05 else 1
 
         self._id_counter += 1
         return {
