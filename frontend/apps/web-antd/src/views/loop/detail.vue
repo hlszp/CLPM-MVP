@@ -188,6 +188,60 @@ const controlModeText = computed(() => {
   );
 });
 
+/** 趋势图光标快照：默认最右侧数据点，鼠标悬停时动态覆盖 */
+interface CursorSnapshot {
+  mode: null | string;
+  op: null | number;
+  pv: null | number;
+  pvQuality: LoopApi.Quality;
+  sp: null | number;
+  timestamp: number;
+}
+
+/** 默认快照：趋势图最右侧（最新时刻）数据点 */
+const defaultSnapshot = computed<CursorSnapshot | null>(() => {
+  const trend = monitorDetail.value?.trend;
+  if (!trend || !trend.timestamps || trend.timestamps.length === 0) return null;
+  const i = trend.timestamps.length - 1;
+  return {
+    mode: trend.mode?.[i] ?? null,
+    op: trend.op?.[i] ?? null,
+    pv: trend.pv?.[i] ?? null,
+    pvQuality: trend.pvQuality?.[i] ?? 'GOOD',
+    sp: trend.sp?.[i] ?? null,
+    timestamp: trend.timestamps[i]!,
+  };
+});
+
+/** 鼠标悬停覆盖（null 时回退到默认快照） */
+const cursorOverride = ref<CursorSnapshot | null>(null);
+
+/** 实际显示的快照 */
+const displaySnapshot = computed<CursorSnapshot | null>(
+  () => cursorOverride.value ?? defaultSnapshot.value,
+);
+
+/** WaveformChart 光标变化回调 */
+function onCursorChange(payload: CursorSnapshot | null) {
+  cursorOverride.value = payload;
+}
+
+/** 格式化数值（保留 2 位小数，null 显示 —） */
+function fmtNum(v: null | number): string {
+  if (v === null || v === undefined) return '—';
+  return Number(v).toFixed(2);
+}
+
+/** 格式化时间戳为 HH:mm:ss */
+function fmtTime(ts: null | number): string {
+  if (!ts) return '—';
+  try {
+    return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+  } catch {
+    return '—';
+  }
+}
+
 const loopKpiStripItems = computed<KpiStripItem[]>(() => {
   const detail = monitorDetail.value;
   if (!detail) return [];
@@ -496,29 +550,29 @@ onMounted(() => {
               </template>
 
               <div v-if="monitorDetail" class="space-y-2">
-                <!-- 当前值快照（左侧 SP/PV/OP/MODE，右侧刷新时间） -->
+                <!-- 当前值快照（左侧 SP/PV/OP/MODE，右侧光标时刻/刷新时间） -->
                 <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded border px-3 py-2 text-sm">
-                  <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <div v-if="displaySnapshot" class="flex flex-wrap items-center gap-x-4 gap-y-1">
                     <span>
                       <span class="text-xs text-gray-400">SP</span>
                       <span class="ml-1.5 font-medium">
-                        {{ monitorDetail.currentValues.sp ?? '—' }}
+                        {{ fmtNum(displaySnapshot.sp) }}
                       </span>
                     </span>
                     <span>
                       <span class="text-xs text-gray-400">PV</span>
                       <span class="ml-1.5 font-medium text-blue-600">
-                        {{ monitorDetail.currentValues.pv ?? '—' }}
+                        {{ fmtNum(displaySnapshot.pv) }}
                       </span>
                       <QualityTag
-                        :quality="monitorDetail.currentValues.pvQuality"
+                        :quality="displaySnapshot.pvQuality"
                         class="ml-1.5"
                       />
                     </span>
                     <span>
                       <span class="text-xs text-gray-400">OP</span>
                       <span class="ml-1.5 font-medium">
-                        {{ monitorDetail.currentValues.op ?? '—' }}
+                        {{ fmtNum(displaySnapshot.op) }}
                       </span>
                     </span>
                     <span>
@@ -526,21 +580,25 @@ onMounted(() => {
                       <Tag
                         class="ml-1.5"
                         :color="
-                          monitorDetail.currentValues.modeLabel === 'Auto'
+                          displaySnapshot.mode === 'Auto'
                             ? 'green'
                             : 'orange'
                         "
                       >
-                        {{ monitorDetail.currentValues.modeLabel || '—' }}
+                        {{ displaySnapshot.mode || '—' }}
                       </Tag>
                     </span>
                   </div>
                   <span class="text-xs text-gray-400">
-                    刷新时间：{{ lastRefreshText || '尚未刷新' }}
+                    {{ cursorOverride ? '光标时刻：' + fmtTime(displaySnapshot?.timestamp ?? null) : '刷新时间：' + (lastRefreshText || '尚未刷新') }}
                   </span>
                 </div>
 
-                <WaveformChart :trend="monitorDetail.trend" height="380px" />
+                <WaveformChart
+                  :trend="monitorDetail.trend"
+                  height="380px"
+                  @cursor-change="onCursorChange"
+                />
               </div>
             </ClpmDataCanvas>
 

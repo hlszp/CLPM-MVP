@@ -42,6 +42,19 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: 'time-select', payload: { index: number; timestamp: string }): void;
+  /** 光标悬停时刻的值变化（鼠标移出画布时 payload 为 null，恢复默认） */
+  (
+    e: 'cursor-change',
+    payload: {
+      index: number;
+      mode: null | string;
+      op: null | number;
+      pv: null | number;
+      pvQuality: LoopApi.Quality;
+      sp: null | number;
+      timestamp: number;
+    } | null,
+  ): void;
 }>();
 
 const chartRef = ref<EchartsUIType>();
@@ -88,6 +101,55 @@ function bindClickEvent() {
   };
   zr.on('click', clickHandler);
   boundZr = zr;
+}
+
+// ===== 光标悬停联动：mousemove 找最近时间点，emit 当前时刻值 =====
+let boundZrForCursor: any = null;
+let moveHandler: ((params: any) => void) | null = null;
+let outHandler: (() => void) | null = null;
+
+function bindCursorEvent() {
+  const chart = getChartInstance();
+  if (!chart) return;
+  const zr = chart.getZr();
+  if (!zr) return;
+  if (boundZrForCursor === zr && moveHandler) return;
+  if (boundZrForCursor && moveHandler) {
+    boundZrForCursor.off('mousemove', moveHandler);
+    boundZrForCursor.off('mouseout', outHandler!);
+  }
+  moveHandler = (params: any) => {
+    const { timestamps, pv, sp, op, mode, pvQuality } = props.trend || {};
+    if (!timestamps || timestamps.length === 0) return;
+    const point = [params.offsetX, params.offsetY];
+    const xValue = chart.convertFromPixel({ xAxisIndex: 0 }, point[0]);
+    if (xValue === null || xValue === undefined || Number.isNaN(xValue)) return;
+    // 找最近时间点索引
+    let nearestIdx = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < timestamps.length; i++) {
+      const dist = Math.abs(timestamps[i]! - xValue);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestIdx = i;
+      }
+    }
+    emit('cursor-change', {
+      index: nearestIdx,
+      mode: mode?.[nearestIdx] ?? null,
+      op: op?.[nearestIdx] ?? null,
+      pv: pv?.[nearestIdx] ?? null,
+      pvQuality: pvQuality?.[nearestIdx] ?? 'GOOD',
+      sp: sp?.[nearestIdx] ?? null,
+      timestamp: timestamps[nearestIdx]!,
+    });
+  };
+  outHandler = () => {
+    emit('cursor-change', null);
+  };
+  zr.on('mousemove', moveHandler);
+  zr.on('mouseout', outHandler);
+  boundZrForCursor = zr;
 }
 
 const {
@@ -523,6 +585,7 @@ function render() {
     yAxis,
   }).then(() => {
     bindClickEvent();
+    bindCursorEvent();
   });
 }
 
