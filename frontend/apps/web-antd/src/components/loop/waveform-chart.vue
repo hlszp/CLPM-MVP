@@ -494,6 +494,7 @@ function render() {
     },
     legend: {
       data: showMode ? ['PV', 'SP', 'OP', 'MODE'] : ['PV', 'SP', 'OP'],
+      right: 10,
       textStyle: { color: chartTextColor.value },
       top: 5,
     },

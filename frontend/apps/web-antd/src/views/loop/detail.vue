@@ -5,8 +5,9 @@
  * 对齐 D06 §6 + IDS v3.2 §2.2.9 + §2.2.14 + UI/UX 改造方案 §8.4
  * - 顶部 PageToolbar：返回/导出/进入诊断/整定建议 + 状态反馈
  * - 概览 Tab 顺序：① 性能指标 → ② 趋势波形 → ③ 基本信息+数据质量
- * - ① 性能指标：综合评分主指标卡(左) + 8 大 KPI 横向条(右)
- * - ② 趋势波形：当前值快照(单行紧凑) + WaveformChart(380px)
+ * - ① 性能指标：9 项 KPI 等高卡片（综合评分/自控率/有效自控率/快速率/
+ *   稳定率/准确度/振荡率/饱和率/良值率），计算时间显示在标题栏
+ * - ② 趋势波形：当前值快照(SP/PV/OP/MODE 左侧 + 刷新时间右侧) + WaveformChart(380px)
  * - ③ 基本信息与数据质量左右分栏，压缩至底部
  * - StatusFooter：最近刷新/数据延迟/可信度等级/KPI 状态
  * - 智能诊断 Tab（FE-05）
@@ -112,26 +113,24 @@ const trendWindowOptions: { label: string; value: LoopApi.TrendWindow }[] = [
   { label: '72h', value: 'last_72_hours' },
 ];
 
-/** 8 大 KPI 配置（对齐 GB/T 44693.2-2024） */
+/** 8 大 KPI 配置（对齐 GB/T 44693.2-2024）
+ * 顺序：自控率 → 有效自控率 → 快速率 → 稳定率 → 准确度 → 振荡率 → 饱和率 → 良值率
+ * 综合评分作为首项在 loopKpiStripItems 中单独注入
+ */
 const kpiItems: {
   desc: string;
   key: keyof LoopApi.KpiSummary;
   label: string;
   unit: string;
 }[] = [
-  { desc: '优良值率', key: 'good_value_rate', label: '优良值率', unit: '%' },
-  { desc: '自动模式率', key: 'auto_mode_rate', label: '自动模式率', unit: '%' },
-  {
-    desc: '有效自控率',
-    key: 'effective_auto_rate',
-    label: '有效自控率',
-    unit: '%',
-  },
+  { desc: '自控率', key: 'auto_mode_rate', label: '自控率', unit: '%' },
+  { desc: '有效自控率', key: 'effective_auto_rate', label: '有效自控率', unit: '%' },
+  { desc: '快速率', key: 'fast_response_rate', label: '快速率', unit: '%' },
   { desc: '稳定率', key: 'steady_rate', label: '稳定率', unit: '%' },
   { desc: '准确度', key: 'accuracy_rate', label: '准确度', unit: '%' },
-  { desc: '快速率', key: 'fast_response_rate', label: '快速率', unit: '%' },
   { desc: '振荡率', key: 'oscillation_rate', label: '振荡率', unit: '%' },
   { desc: '饱和率', key: 'saturation_rate', label: '饱和率', unit: '%' },
+  { desc: '良值率', key: 'good_value_rate', label: '良值率', unit: '%' },
 ];
 
 const kpiStatusMap: Record<string, { color: string; label: string }> = {
@@ -154,15 +153,6 @@ const confidenceLevel = computed<'A' | 'B' | 'C' | 'D' | 'E' | '—'>(() => {
   if (rate >= 20) return 'D';
   if (rate > 0) return 'E';
   return '—';
-});
-
-/** 综合评分颜色（用于主指标卡数字着色） */
-const compositeScoreColor = computed(() => {
-  const score = monitorDetail.value?.kpiSummary.composite_score;
-  if (score === null || score === undefined) return 'text-gray-400';
-  if (score >= 80) return 'text-green-600';
-  if (score >= 60) return 'text-orange-500';
-  return 'text-red-500';
 });
 
 /** 可信度徽章颜色 */
@@ -201,7 +191,27 @@ const controlModeText = computed(() => {
 const loopKpiStripItems = computed<KpiStripItem[]>(() => {
   const detail = monitorDetail.value;
   if (!detail) return [];
-  return kpiItems.map((item) => {
+  // 综合评分作为首项（无单位，评分制）
+  const score = detail.kpiSummary.composite_score;
+  const scoreItem: KpiStripItem = {
+    key: 'composite_score',
+    label: '综合评分',
+    status: isInconclusive.value
+      ? 'neutral'
+      : score === null || score === undefined
+        ? 'neutral'
+        : score >= 80
+          ? 'success'
+          : score >= 60
+            ? 'warning'
+            : 'danger',
+    unit: '',
+    value:
+      isInconclusive.value || score === null || score === undefined
+        ? '—'
+        : score.toFixed(1),
+  };
+  const metricItems: KpiStripItem[] = kpiItems.map((item) => {
     const metricValue = (detail.kpiSummary[item.key] as number | null) ?? 0;
     return {
       key: item.key,
@@ -217,6 +227,7 @@ const loopKpiStripItems = computed<KpiStripItem[]>(() => {
       value: metricValue.toFixed(1),
     };
   });
+  return [scoreItem, ...metricItems];
 });
 
 const pageSubtitle = computed(() => {
@@ -454,46 +465,16 @@ onMounted(() => {
               :partial="isInconclusive"
               partial-text="该回路本期评估数据不足，结果不确定。有效数据率低于 20%，KPI 仅供参考。"
             >
-              <div v-if="monitorDetail" class="flex flex-wrap gap-4">
-                <!-- 左：综合评分主指标卡 -->
-                <div
-                  class="flex w-[200px] flex-shrink-0 flex-col justify-center rounded border p-4"
-                  :class="{ 'opacity-60': isInconclusive }"
-                >
-                  <div class="text-xs text-gray-400">综合评分</div>
-                  <div
-                    class="mt-1 text-4xl font-bold leading-tight"
-                    :class="
-                      isInconclusive
-                        ? 'text-gray-400'
-                        : compositeScoreColor
-                    "
-                  >
-                    {{
-                      isInconclusive
-                        ? '—'
-                        : (monitorDetail.kpiSummary.composite_score?.toFixed(1) ?? '--')
-                    }}
-                  </div>
-                  <div class="mt-2 flex items-center gap-2">
-                    <Tag :color="kpiStatusMap[monitorDetail.kpiSummary.status]?.color">
-                      {{
-                        kpiStatusMap[monitorDetail.kpiSummary.status]?.label ||
-                        monitorDetail.kpiSummary.status
-                      }}
-                    </Tag>
-                  </div>
-                  <div class="mt-2 space-y-0.5 text-xs text-gray-400">
-                    <div>算法版本：{{ monitorDetail.kpiSummary.algorithm_version }}</div>
-                    <div>计算时间：{{ formatTime(monitorDetail.kpiSummary.calculatedAt) }}</div>
-                  </div>
-                </div>
-
-                <!-- 右：8 大 KPI 横向条 -->
-                <div class="min-w-0 flex-1">
-                  <ClpmKpiStrip :items="loopKpiStripItems" :loading="monitorLoading" />
-                </div>
-              </div>
+              <template #extra>
+                <span class="text-xs text-gray-400">
+                  计算时间：{{ monitorDetail ? formatTime(monitorDetail.kpiSummary.calculatedAt) : '—' }}
+                </span>
+              </template>
+              <ClpmKpiStrip
+                v-if="monitorDetail"
+                :items="loopKpiStripItems"
+                :loading="monitorLoading"
+              />
             </ClpmDataCanvas>
 
             <!-- ② 趋势波形（紧随性能指标） -->
@@ -515,48 +496,47 @@ onMounted(() => {
               </template>
 
               <div v-if="monitorDetail" class="space-y-2">
-                <!-- 当前值快照（单行紧凑） -->
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded border px-3 py-2 text-sm">
-                  <span>
-                    <span class="text-xs text-gray-400">PV</span>
-                    <span class="ml-1.5 font-medium text-blue-600">
-                      {{ monitorDetail.currentValues.pv ?? '—' }}
+                <!-- 当前值快照（左侧 SP/PV/OP/MODE，右侧刷新时间） -->
+                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded border px-3 py-2 text-sm">
+                  <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span>
+                      <span class="text-xs text-gray-400">SP</span>
+                      <span class="ml-1.5 font-medium">
+                        {{ monitorDetail.currentValues.sp ?? '—' }}
+                      </span>
                     </span>
-                    <QualityTag
-                      :quality="monitorDetail.currentValues.pvQuality"
-                      class="ml-1.5"
-                    />
-                  </span>
-                  <span>
-                    <span class="text-xs text-gray-400">SP</span>
-                    <span class="ml-1.5 font-medium">
-                      {{ monitorDetail.currentValues.sp ?? '—' }}
+                    <span>
+                      <span class="text-xs text-gray-400">PV</span>
+                      <span class="ml-1.5 font-medium text-blue-600">
+                        {{ monitorDetail.currentValues.pv ?? '—' }}
+                      </span>
+                      <QualityTag
+                        :quality="monitorDetail.currentValues.pvQuality"
+                        class="ml-1.5"
+                      />
                     </span>
-                  </span>
-                  <span>
-                    <span class="text-xs text-gray-400">OP</span>
-                    <span class="ml-1.5 font-medium">
-                      {{ monitorDetail.currentValues.op ?? '—' }}
+                    <span>
+                      <span class="text-xs text-gray-400">OP</span>
+                      <span class="ml-1.5 font-medium">
+                        {{ monitorDetail.currentValues.op ?? '—' }}
+                      </span>
                     </span>
-                  </span>
-                  <span>
-                    <span class="text-xs text-gray-400">MODE</span>
-                    <Tag
-                      class="ml-1.5"
-                      :color="
-                        monitorDetail.currentValues.modeLabel === 'Auto'
-                          ? 'green'
-                          : 'orange'
-                      "
-                    >
-                      {{ monitorDetail.currentValues.modeLabel || '—' }}
-                    </Tag>
-                  </span>
-                  <span>
-                    <span class="text-xs text-gray-400">读取</span>
-                    <span class="ml-1.5">
-                      {{ formatTime(monitorDetail.currentValues.readAt) }}
+                    <span>
+                      <span class="text-xs text-gray-400">MODE</span>
+                      <Tag
+                        class="ml-1.5"
+                        :color="
+                          monitorDetail.currentValues.modeLabel === 'Auto'
+                            ? 'green'
+                            : 'orange'
+                        "
+                      >
+                        {{ monitorDetail.currentValues.modeLabel || '—' }}
+                      </Tag>
                     </span>
+                  </div>
+                  <span class="text-xs text-gray-400">
+                    刷新时间：{{ lastRefreshText || '尚未刷新' }}
                   </span>
                 </div>
 
