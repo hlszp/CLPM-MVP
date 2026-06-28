@@ -246,27 +246,27 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
 }
 
 .clpm-page-toolbar__status-meta--delay {
-  color: hsl(38 92% 50%);
+  color: hsl(var(--warning));
 }
 
 /* 状态类型颜色 */
 .clpm-page-toolbar__status--loading .clpm-page-toolbar__status-icon,
 .clpm-page-toolbar__status--loading .clpm-page-toolbar__status-text {
-  color: hsl(211 98% 52%);
+  color: hsl(var(--primary));
 }
 
 .clpm-page-toolbar__status--success .clpm-page-toolbar__status-icon,
 .clpm-page-toolbar__status--success .clpm-page-toolbar__status-text {
-  color: hsl(142 71% 45%);
+  color: hsl(var(--success));
 }
 
 .clpm-page-toolbar__status--warning .clpm-page-toolbar__status-icon,
 .clpm-page-toolbar__status--warning .clpm-page-toolbar__status-text {
-  color: hsl(38 92% 50%);
+  color: hsl(var(--warning));
 }
 
 .clpm-page-toolbar__status--error .clpm-page-toolbar__status-icon,
 .clpm-page-toolbar__status--error .clpm-page-toolbar__status-text {
-  color: hsl(0 84% 60%);
+  color: hsl(var(--destructive));
 }
 </style>

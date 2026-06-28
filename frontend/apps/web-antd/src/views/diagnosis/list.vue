@@ -39,12 +39,15 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { $t } from '#/locales';
 import { flattenNodes } from '#/utils/plant-node';
 
 import Tracker from './tracker.vue';
 
 defineOptions({ name: 'DiagnosisList' });
+
+const { themeColors } = useClpmTheme();
 
 /** 可信度等级（对齐 ConfidenceEvaluator A/B/C/D/E） */
 type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
@@ -313,9 +316,9 @@ function formatTime(t: string): string {
 
 /** 置信度颜色 */
 function confidenceColor(val: number): string {
-  if (val >= 0.8) return '#52c41a';
-  if (val >= 0.5) return '#faad14';
-  return '#ff4d4f';
+  if (val >= 0.8) return themeColors.value.SUCCESS;
+  if (val >= 0.5) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 function labelName(label: DiagnosisLabel): string {

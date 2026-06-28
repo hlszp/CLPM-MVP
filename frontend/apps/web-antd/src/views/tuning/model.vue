@@ -36,11 +36,13 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
 } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { identifyModelApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningModel' });
 
 const router = useRouter();
+const { isDark, themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
@@ -80,9 +82,9 @@ const { renderEcharts: renderChart } = useEcharts(chartRef);
 
 /** 拟合度颜色 */
 function fittingScoreColor(val: number): string {
-  if (val >= 80) return '#52c41a';
-  if (val >= 60) return '#faad14';
-  return '#ff4d4f';
+  if (val >= 80) return themeColors.value.SUCCESS;
+  if (val >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 /** 加载回路下拉选项 */
@@ -181,7 +183,7 @@ function renderFittedCurve() {
       {
         connectNulls: false,
         data: pv,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: '原始 PV',
         showSymbol: false,
@@ -190,7 +192,7 @@ function renderFittedCurve() {
       {
         connectNulls: false,
         data: fitted,
-        itemStyle: { color: '#fa8c16' },
+        itemStyle: { color: themeColors.value.WARNING },
         lineStyle: { type: 'dashed', width: 2 },
         name: '拟合曲线',
         showSymbol: false,
@@ -250,6 +252,13 @@ watch(
 
 onMounted(() => {
   loadLoopOptions();
+});
+
+/** 深色模式切换时重绘 ECharts 图表 */
+watch(isDark, () => {
+  nextTick(() => {
+    renderFittedCurve();
+  });
 });
 </script>
 

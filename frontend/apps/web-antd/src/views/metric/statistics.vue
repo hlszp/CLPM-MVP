@@ -35,8 +35,11 @@ import {
 import { exportAnalyticsApi, getAnalyticsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { flattenNodes } from '#/utils/plant-node';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricStatistics' });
+
+const { isDark, themeColors } = useClpmTheme();
 
 // 初始为 true，避免首屏闪烁空态（onMounted 立即触发 loadData）
 const loading = ref(true);
@@ -279,7 +282,7 @@ function renderUnitChart() {
       {
         barWidth: '50%',
         data: ranking.map((r) => r.score),
-        itemStyle: { color: '#0D6EFD' },
+        itemStyle: { color: themeColors.value.INFO },
         name: '评分',
         type: 'bar',
       },
@@ -370,6 +373,13 @@ watch(
     loadData();
   },
 );
+
+// ===== 主题切换重渲图表 =====
+watch(isDark, () => {
+  nextTick(() => {
+    renderAllCharts();
+  });
+});
 
 onMounted(() => {
   loadPlantNodes();

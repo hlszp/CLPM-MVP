@@ -41,9 +41,12 @@ import {
   type SummaryItem,
 } from '#/components/clpm';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'MetricRanking' });
+
+const { themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -301,9 +304,9 @@ function handleViewDetail(loopId: string) {
 
 /** 排名前 3 的颜色 */
 function rankColor(rank: number): string {
-  if (rank === 1) return '#ff4d4f'; // 红
-  if (rank === 2) return '#faad14'; // 黄
-  if (rank === 3) return '#fa8c16'; // 橙
+  if (rank === 1) return themeColors.value.DANGER; // 红
+  if (rank === 2) return themeColors.value.WARNING; // 黄
+  if (rank === 3) return themeColors.value.WARNING; // 橙
   return '';
 }
 

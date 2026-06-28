@@ -18,7 +18,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -58,8 +58,11 @@ import {
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { flattenNodes } from '#/utils/plant-node';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'LoopMonitor' });
+
+const { isDark, themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -603,9 +606,9 @@ function renderGauge() {
         axisLine: {
           lineStyle: {
             color: [
-              [0.6, '#ff4d4f'],
-              [0.8, '#faad14'],
-              [1, '#52c41a'],
+              [0.6, themeColors.value.DANGER],
+              [0.8, themeColors.value.WARNING],
+              [1, themeColors.value.SUCCESS],
             ],
             width: 18,
           },
@@ -674,6 +677,13 @@ function handleToggleAutoRefresh(val: any) {
     stopAutoRefresh();
   }
 }
+
+// ===== 主题切换重渲图表 =====
+watch(isDark, () => {
+  nextTick(() => {
+    renderGauge();
+  });
+});
 
 // ===== 生命周期 =====
 

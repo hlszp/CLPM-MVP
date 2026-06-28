@@ -15,7 +15,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { TuningApi } from '#/api/tuning';
 
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
@@ -46,11 +46,13 @@ import {
   type SummaryAction,
   type SummaryItem,
 } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningSimulation' });
 
 const route = useRoute();
+const { isDark, themeColors, chartTextColor } = useClpmTheme();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -520,7 +522,7 @@ function renderChart() {
     series: [
       {
         data: recommendedResponse.sp,
-        itemStyle: { color: '#52c41a' },
+        itemStyle: { color: themeColors.value.SUCCESS },
         lineStyle: { width: 1.5 },
         name: 'SP 设定值',
         showSymbol: false,
@@ -529,7 +531,7 @@ function renderChart() {
       },
       {
         data: currentResponse.pv,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: '当前 PID PV',
         showSymbol: false,
@@ -538,7 +540,7 @@ function renderChart() {
       },
       {
         data: recommendedResponse.pv,
-        itemStyle: { color: '#ff4d4f' },
+        itemStyle: { color: themeColors.value.DANGER },
         lineStyle: { width: 2 },
         name: '推荐 PID PV',
         showSymbol: false,
@@ -547,7 +549,7 @@ function renderChart() {
       },
       {
         data: currentResponse.op,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { type: 'dashed', width: 1.5 },
         name: '当前 PID OP',
         showSymbol: false,
@@ -556,7 +558,7 @@ function renderChart() {
       },
       {
         data: recommendedResponse.op,
-        itemStyle: { color: '#ff4d4f' },
+        itemStyle: { color: themeColors.value.DANGER },
         lineStyle: { type: 'dashed', width: 1.5 },
         name: '推荐 PID OP',
         showSymbol: false,
@@ -584,13 +586,13 @@ function renderChart() {
       {
         axisLabel: { formatter: '{value}' },
         name: 'PV / SP',
-        nameTextStyle: { color: '#1890ff' },
+        nameTextStyle: { color: chartTextColor.value },
         type: 'value',
       },
       {
         axisLabel: { formatter: '{value}' },
         name: 'OP',
-        nameTextStyle: { color: '#fa8c16' },
+        nameTextStyle: { color: chartTextColor.value },
         splitLine: { show: false },
         type: 'value',
       },
@@ -645,6 +647,13 @@ async function handleSave() {
 
 onMounted(() => {
   initFromQuery();
+  nextTick(() => {
+    renderChart();
+  });
+});
+
+/** 深色模式切换时重绘 ECharts 图表 */
+watch(isDark, () => {
   nextTick(() => {
     renderChart();
   });
@@ -743,10 +752,10 @@ onMounted(() => {
                   :style="{
                     color:
                       record.improved === null
-                        ? '#8c8c8c'
+                        ? themeColors.NEUTRAL
                         : record.improved
-                          ? '#52c41a'
-                          : '#ff4d4f',
+                          ? themeColors.SUCCESS
+                          : themeColors.DANGER,
                   }"
                 >
                   <IconifyIcon

@@ -14,7 +14,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -44,10 +44,13 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 import Tracker from './tracker.vue';
 
 defineOptions({ name: 'DiagnosisDetail' });
+
+const { isDark, themeColors } = useClpmTheme();
 
 const route = useRoute();
 const router = useRouter();
@@ -371,7 +374,7 @@ function renderScatterChart() {
       {
         data,
         itemStyle: {
-          color: '#1890ff',
+          color: themeColors.value.INFO,
           opacity: 0.5,
         },
         name: 'PV-OP',
@@ -438,6 +441,13 @@ function featureEntries(
 
 watch(timeWindow, () => {
   loadDetail();
+});
+
+// ===== 主题切换重渲图表 =====
+watch(isDark, () => {
+  nextTick(() => {
+    renderScatterChart();
+  });
 });
 
 onMounted(() => {

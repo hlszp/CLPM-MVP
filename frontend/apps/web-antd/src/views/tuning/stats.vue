@@ -13,7 +13,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { TuningApi } from '#/api/tuning';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -26,9 +26,12 @@ import {
   ClpmPageToolbar,
   type KpiStripItem,
 } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningStats' });
+
+const { isDark, themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const historyLoading = ref(false);
@@ -176,10 +179,11 @@ function modelTypeName(type: TuningApi.ModelType): string {
 
 /** 拟合度颜色 */
 function fittingColor(val: null | number | undefined): string {
-  if (val === null || val === undefined || Number.isNaN(val)) return '#ff4d4f';
-  if (val >= 80) return '#52c41a';
-  if (val >= 60) return '#faad14';
-  return '#ff4d4f';
+  if (val === null || val === undefined || Number.isNaN(val))
+    return themeColors.value.DANGER;
+  if (val >= 80) return themeColors.value.SUCCESS;
+  if (val >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 /** 时间格式化 */
@@ -214,6 +218,34 @@ const avgFitting = computed(() => {
   if (v === null || v === undefined || Number.isNaN(v)) return 0;
   return v;
 });
+
+/** 算法分类色板（响应式，深色模式下使用更亮的色值） */
+const algoColors = computed<Record<string, string>>(() =>
+  isDark.value
+    ? {
+        COHEN_COON: '#a78bfa',
+        IMC: '#60a5fa',
+        LAMBDA: '#22c55e',
+        SIMC: '#2dd4bf',
+        ZN: '#fbbf24',
+      }
+    : {
+        COHEN_COON: '#722ed1',
+        IMC: '#1890ff',
+        LAMBDA: '#52c41a',
+        SIMC: '#13c2c2',
+        ZN: '#fa8c16',
+      },
+);
+
+/** 状态分布柱状图色板（响应式） */
+const statusChartColors = computed<Record<string, string>>(() => ({
+  APPLIED: themeColors.value.SUCCESS,
+  IDENTIFIED: isDark.value ? '#2dd4bf' : '#13c2c2',
+  PENDING: isDark.value ? '#9ca3af' : '#d9d9d9',
+  SIMULATED: themeColors.value.INFO,
+  VERIFIED: isDark.value ? '#4ade80' : '#389e0d',
+}));
 
 /** 加载历史统计 */
 async function loadHistory() {
@@ -260,13 +292,7 @@ function renderPieChart() {
     return;
   }
 
-  const colorMap: Record<string, string> = {
-    IMC: '#1890ff',
-    LAMBDA: '#52c41a',
-    ZN: '#fa8c16',
-    COHEN_COON: '#722ed1',
-    SIMC: '#13c2c2',
-  };
+  const colorMap = algoColors.value;
 
   renderPie({
     legend: { bottom: 0, orient: 'horizontal' },
@@ -274,7 +300,7 @@ function renderPieChart() {
       {
         avoidLabelOverlap: false,
         data: entries.map(([code, count]) => ({
-          itemStyle: { color: colorMap[code] || '#8c8c8c' },
+          itemStyle: { color: colorMap[code] || themeColors.value.NEUTRAL },
           name: algorithmName(code as TuningApi.Algorithm),
           value: count,
         })),
@@ -304,13 +330,7 @@ function renderBarChart() {
     'APPLIED',
     'VERIFIED',
   ];
-  const colorMap: Record<string, string> = {
-    PENDING: '#d9d9d9',
-    IDENTIFIED: '#13c2c2',
-    SIMULATED: '#1890ff',
-    APPLIED: '#52c41a',
-    VERIFIED: '#389e0d',
-  };
+  const colorMap = statusChartColors.value;
 
   const hasData = statusOrder.some((s) => (byStatus[s] || 0) > 0);
   if (!hasData) {
@@ -366,6 +386,14 @@ function handleTableChange(pagination: TablePaginationConfig) {
 onMounted(() => {
   loadHistory();
   loadList();
+});
+
+/** 深色模式切换时重绘 ECharts 图表 */
+watch(isDark, () => {
+  nextTick(() => {
+    renderPieChart();
+    renderBarChart();
+  });
 });
 </script>
 

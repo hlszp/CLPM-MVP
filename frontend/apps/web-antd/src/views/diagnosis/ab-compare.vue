@@ -14,7 +14,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -38,6 +38,9 @@ import {
 } from '#/components/clpm';
 import { getAbCompareApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+
+const { isDark, themeColors } = useClpmTheme();
 
 defineOptions({ name: 'DiagnosisABCompare' });
 
@@ -205,7 +208,7 @@ function renderTrendChart() {
       {
         connectNulls: false,
         data: before.pv,
-        itemStyle: { color: '#ff4d4f' },
+        itemStyle: { color: themeColors.value.DANGER },
         lineStyle: { width: 2 },
         name: '处置前 PV',
         showSymbol: false,
@@ -214,7 +217,7 @@ function renderTrendChart() {
       {
         connectNulls: false,
         data: after.pv,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: '处置后 PV',
         showSymbol: false,
@@ -276,13 +279,13 @@ function renderKpiChart() {
       {
         barGap: 0,
         data: kpis.map((k) => k.before),
-        itemStyle: { color: '#ff4d4f' },
+        itemStyle: { color: themeColors.value.DANGER },
         name: '处置前',
         type: 'bar',
       },
       {
         data: kpis.map((k) => k.after),
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         name: '处置后',
         type: 'bar',
       },
@@ -341,6 +344,16 @@ watch(
   },
   { immediate: true },
 );
+
+// 深色模式切换时重新渲染 ECharts 图表
+watch(isDark, () => {
+  nextTick(() => {
+    if (compareData.value) {
+      renderTrendChart();
+      renderKpiChart();
+    }
+  });
+});
 
 onMounted(() => {
   // 有 implementedAt 时自动截取窗口（FDS §5.4.4）

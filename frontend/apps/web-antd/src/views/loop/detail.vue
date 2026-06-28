@@ -62,8 +62,11 @@ import {
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
 import { THEME_COLORS } from '#/preferences';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'LoopDetail' });
+
+const { isDark, themeColors, chartTextColor } = useClpmTheme();
 
 const route = useRoute();
 const router = useRouter();
@@ -313,7 +316,7 @@ const { renderEcharts: renderQualityDonutEcharts } = useEcharts(qualityDonutRef)
 function renderQualityDonut() {
   const q = dataQualitySummary.value;
   renderQualityDonutEcharts({
-    color: [THEME_COLORS.SUCCESS, THEME_COLORS.DANGER, THEME_COLORS.NEUTRAL],
+    color: [themeColors.value.SUCCESS, themeColors.value.DANGER, themeColors.value.NEUTRAL],
     legend: {
       bottom: 0,
       data: ['Good', 'Bad', 'Uncertain'],
@@ -336,12 +339,12 @@ function renderQualityDonut() {
           formatter: `{a|${q.validRate.toFixed(1)}%}\n{b|好值率}`,
           rich: {
             a: {
-              color: THEME_COLORS.SUCCESS,
+              color: themeColors.value.SUCCESS,
               fontSize: 22,
               fontWeight: 700,
               lineHeight: 28,
             },
-            b: { color: '#8c8c8c', fontSize: 12, lineHeight: 18 },
+            b: { color: chartTextColor.value, fontSize: 12, lineHeight: 18 },
           },
           show: true,
         },
@@ -457,6 +460,13 @@ function handleTabChange(key: number | string) {
 
 watch(trendWindow, () => {
   loadMonitorDetail();
+});
+
+// ============ 主题切换重渲图表 ============
+watch(isDark, () => {
+  nextTick(() => {
+    renderQualityDonut();
+  });
 });
 
 onMounted(() => {

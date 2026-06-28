@@ -174,33 +174,33 @@ const activeClass = 'clpm-toolbar-btn--active';
   line-height: 1;
 }
 
-/* 导出变体：绿色调（对齐 THEME_COLORS.SUCCESS #52c41a） */
+/* 导出变体：绿色调（对齐 THEME_COLORS.SUCCESS） */
 .clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary) {
-  border-color: #52c41a;
-  color: #389e0d;
+  border-color: hsl(var(--success));
+  color: hsl(var(--success) / 85%);
 }
 
 .clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary):hover {
-  background: #f6ffed;
-  border-color: #73d13d;
-  color: #237804;
+  background: hsl(var(--success) / 12%);
+  border-color: hsl(var(--success) / 75%);
+  color: hsl(var(--success));
 }
 
 .clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary):active {
-  background: #d9f7be;
-  border-color: #389e0d;
+  background: hsl(var(--success) / 18%);
+  border-color: hsl(var(--success) / 85%);
 }
 
 /* 激活态：主色填充（用于自动刷新开启、视图切换激活等） */
 .clpm-toolbar-btn--active:not(:disabled) {
-  background: hsl(211 98% 52%);
-  border-color: hsl(211 98% 52%);
-  color: #ffffff;
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
 }
 
 .clpm-toolbar-btn--active:not(:disabled):hover {
-  background: hsl(211 98% 46%);
-  border-color: hsl(211 98% 46%);
-  color: #ffffff;
+  background: hsl(var(--primary) / 90%);
+  border-color: hsl(var(--primary) / 90%);
+  color: hsl(var(--primary-foreground));
 }
 </style>

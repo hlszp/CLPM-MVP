@@ -14,9 +14,11 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { LoopApi } from '#/api/loop';
 
-import { onMounted, ref, watch } from 'vue';
+import { nextTick, onMounted, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'WaveformChart' });
 
@@ -36,6 +38,16 @@ const props = withDefaults(
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts, resize } = useEcharts(chartRef);
+
+const {
+  isDark,
+  themeColors,
+  chartTextColor,
+  chartSplitLineColor,
+  chartMutedFillColor,
+  chartMarkLineColor,
+  chartInvalidColor,
+} = useClpmTheme();
 
 /** 暴露 resize 给父组件（全屏切换时调用） */
 defineExpose({ resize });
@@ -185,6 +197,14 @@ function render() {
     !!props.validMask && props.validMask.length === timestamps.length;
   const hasInvalid = useValidMask && props.validMask!.includes(false);
 
+  const pvColor = themeColors.value.INFO;
+  const spColor = themeColors.value.SUCCESS;
+  const opColor = themeColors.value.WARNING;
+  const modeColor = themeColors.value.DANGER;
+  const markAreaColor = chartMutedFillColor.value;
+  const markLineColor = chartMarkLineColor.value;
+  const invalidColor = chartInvalidColor.value;
+
   let pvSeries: any[];
   if (useValidMask && hasInvalid) {
     // Phase 5 分段渲染：蓝色实线（有效）+ 灰色虚线（无效）+ markArea
@@ -198,17 +218,17 @@ function render() {
       {
         connectNulls: false,
         data: validData,
-        itemStyle: { color: '#0D6EFD' },
+        itemStyle: { color: pvColor },
         lineStyle: { width: 2 },
         markArea: {
           data: markAreas,
-          itemStyle: { color: 'rgba(200,200,200,0.15)' },
+          itemStyle: { color: markAreaColor },
           silent: true,
         },
         markLine: showMode
           ? {
               data: modeChanges.map((ts) => ({ xAxis: ts })),
-              lineStyle: { color: '#999', type: 'dashed', width: 1 },
+              lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
               silent: true,
               symbol: 'none',
             }
@@ -220,8 +240,8 @@ function render() {
       {
         connectNulls: false,
         data: invalidData,
-        itemStyle: { color: '#ccc' },
-        lineStyle: { color: '#ccc', type: 'dashed', width: 2 },
+        itemStyle: { color: invalidColor },
+        lineStyle: { color: invalidColor, type: 'dashed', width: 2 },
         name: 'PV',
         showSymbol: false,
         type: 'line',
@@ -234,12 +254,12 @@ function render() {
       {
         connectNulls: false,
         data: pvData,
-        itemStyle: { color: '#0D6EFD' },
+        itemStyle: { color: pvColor },
         lineStyle: { width: 2 },
         markLine: showMode
           ? {
               data: modeChanges.map((ts) => ({ xAxis: ts })),
-              lineStyle: { color: '#999', type: 'dashed', width: 1 },
+              lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
               silent: true,
               symbol: 'none',
             }
@@ -256,12 +276,12 @@ function render() {
       {
         connectNulls: false,
         data: pvData,
-        itemStyle: { color: '#0D6EFD' },
+        itemStyle: { color: pvColor },
         lineStyle: { width: 2 },
         markLine: showMode
           ? {
               data: modeChanges.map((ts) => ({ xAxis: ts })),
-              lineStyle: { color: '#999', type: 'dashed', width: 1 },
+              lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
               silent: true,
               symbol: 'none',
             }
@@ -278,7 +298,7 @@ function render() {
     {
       connectNulls: false,
       data: spData,
-      itemStyle: { color: '#52c41a' },
+      itemStyle: { color: spColor },
       lineStyle: { type: 'dashed', width: 1.5 },
       name: 'SP',
       showSymbol: false,
@@ -287,7 +307,7 @@ function render() {
     {
       connectNulls: false,
       data: opData,
-      itemStyle: { color: '#fa8c16' },
+      itemStyle: { color: opColor },
       lineStyle: { width: 1.5 },
       name: 'OP',
       showSymbol: false,
@@ -298,7 +318,7 @@ function render() {
   if (showMode) {
     series.push({
       data: modeData,
-      itemStyle: { color: '#ff4d4f' },
+      itemStyle: { color: modeColor },
       lineStyle: { type: 'dotted', width: 1.5 },
       name: 'MODE',
       showSymbol: false,
@@ -311,14 +331,17 @@ function render() {
   // Y 轴配置：showMode 时双轴（数值 + MODE），否则单轴
   const yAxis: any[] = [
     {
-      axisLabel: { formatter: '{value}' },
+      axisLabel: { color: chartTextColor.value, formatter: '{value}' },
       name: '数值',
+      nameTextStyle: { color: chartTextColor.value },
+      splitLine: { lineStyle: { color: chartSplitLineColor.value } },
       type: 'value',
     },
   ];
   if (showMode) {
     yAxis.push({
       axisLabel: {
+        color: chartTextColor.value,
         formatter: (val: number) => {
           if (val === 0) return 'Manual';
           if (val === 1) return 'Auto';
@@ -329,6 +352,7 @@ function render() {
       max: 2.5,
       min: -0.5,
       name: 'MODE',
+      nameTextStyle: { color: chartTextColor.value },
       splitLine: { show: false },
       type: 'value',
     });
@@ -379,6 +403,7 @@ function render() {
     },
     legend: {
       data: showMode ? ['PV', 'SP', 'OP', 'MODE'] : ['PV', 'SP', 'OP'],
+      textStyle: { color: chartTextColor.value },
       top: 5,
     },
     series,
@@ -390,6 +415,7 @@ function render() {
     },
     xAxis: {
       axisLabel: {
+        color: chartTextColor.value,
         formatter: (val: number) => {
           const d = new Date(val);
           const hh = String(d.getHours()).padStart(2, '0');
@@ -399,6 +425,7 @@ function render() {
           return `${mo}-${dd} ${hh}:${mm}`;
         },
       },
+      splitLine: { lineStyle: { color: chartSplitLineColor.value } },
       type: 'time',
     },
     yAxis,
@@ -410,6 +437,11 @@ watch(
   () => render(),
   { deep: true, immediate: true },
 );
+
+// 主题切换时重新渲染，确保 ECharts 配色跟随深/浅色模式
+watch(isDark, () => {
+  nextTick(() => render());
+});
 
 // useEcharts 的 isActiveRef 在 onMounted 才置 true，
 // watch immediate 在 setup 阶段触发时 renderEcharts 会跳过，

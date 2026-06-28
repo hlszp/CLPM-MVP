@@ -14,7 +14,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { onMounted, reactive, ref, watch } from 'vue';
+import { nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -31,8 +31,11 @@ import {
   DIAGNOSIS_LABEL_COLOR_HEX_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
 } from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { $t } from '#/locales';
 import { flattenNodes } from '#/utils/plant-node';
+
+const { isDark, themeColors } = useClpmTheme();
 
 defineOptions({ name: 'DiagnosisStatistics' });
 
@@ -195,7 +198,7 @@ function renderTrendChart() {
     series: [
       {
         data: trend.resolvedCount,
-        itemStyle: { color: '#52c41a' },
+        itemStyle: { color: themeColors.value.SUCCESS },
         name: '已解决数',
         smooth: true,
         type: 'line',
@@ -203,7 +206,7 @@ function renderTrendChart() {
       },
       {
         data: trend.avgCloseDurationHours,
-        itemStyle: { color: '#fa8c16' },
+        itemStyle: { color: themeColors.value.WARNING },
         name: '平均闭环时长',
         smooth: true,
         type: 'line',
@@ -235,13 +238,13 @@ function renderTrendChart() {
       {
         axisLabel: { formatter: '{value}' },
         name: '已解决数',
-        nameTextStyle: { color: '#52c41a' },
+        nameTextStyle: { color: themeColors.value.SUCCESS },
         type: 'value',
       },
       {
         axisLabel: { formatter: '{value}h' },
         name: '平均闭环时长',
-        nameTextStyle: { color: '#fa8c16' },
+        nameTextStyle: { color: themeColors.value.WARNING },
         splitLine: { show: false },
         type: 'value',
       },
@@ -251,9 +254,9 @@ function renderTrendChart() {
 
 /** 闭环时长区间颜色 */
 function getRangeColor(range: string): string {
-  if (range === '0-24h') return '#52c41a';
-  if (range === '24-72h') return '#faad14';
-  return '#ff4d4f';
+  if (range === '0-24h') return themeColors.value.SUCCESS;
+  if (range === '24-72h') return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 /** 渲染闭环时长分布柱状图 */
@@ -371,6 +374,13 @@ watch(
     loadData();
   },
 );
+
+// 深色模式切换时重新渲染所有 ECharts 图表
+watch(isDark, () => {
+  nextTick(() => {
+    renderAllCharts();
+  });
+});
 
 onMounted(() => {
   loadPlantNodes();

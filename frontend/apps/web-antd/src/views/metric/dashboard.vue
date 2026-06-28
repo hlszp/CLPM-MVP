@@ -53,9 +53,17 @@ import {
 } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import AutoRateGauge from '#/components/metric/auto-rate-gauge.vue';
-import { THEME_COLORS } from '#/preferences';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricDashboard' });
+
+const {
+  isDark,
+  themeColors,
+  chartTextColor,
+  chartTrackColor,
+  chartMarkLineColor,
+} = useClpmTheme();
 
 const router = useRouter();
 
@@ -393,7 +401,7 @@ function renderTrendChart() {
       {
         areaStyle: { opacity: 0.15 },
         data: trend.values,
-        itemStyle: { color: '#0D6EFD' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: '平稳率',
         smooth: true,
@@ -443,9 +451,9 @@ function renderHealthGauge() {
         axisLine: {
           lineStyle: {
             color: [
-              [0.6, THEME_COLORS.DANGER],
-              [0.8, THEME_COLORS.WARNING],
-              [1, THEME_COLORS.SUCCESS],
+              [0.6, themeColors.value.DANGER],
+              [0.8, themeColors.value.WARNING],
+              [1, themeColors.value.SUCCESS],
             ],
             width: 18,
           },
@@ -497,10 +505,10 @@ function renderBulletChart() {
           itemStyle: {
             color:
               m.value >= m.target
-                ? THEME_COLORS.SUCCESS
+                ? themeColors.value.SUCCESS
                 : m.value >= m.target - 20
-                  ? THEME_COLORS.WARNING
-                  : THEME_COLORS.DANGER,
+                  ? themeColors.value.WARNING
+                  : themeColors.value.DANGER,
           },
         })),
         type: 'custom',
@@ -526,7 +534,7 @@ function renderBulletChart() {
                   x: api.coord([0, 0])[0],
                   y: barY,
                 },
-                style: { fill: '#f0f0f0' },
+                style: { fill: chartTrackColor.value },
                 type: 'rect',
               },
               // 实际值
@@ -540,10 +548,10 @@ function renderBulletChart() {
                 style: {
                   fill:
                     val >= target
-                      ? THEME_COLORS.SUCCESS
+                      ? themeColors.value.SUCCESS
                       : val >= target - 20
-                        ? THEME_COLORS.WARNING
-                        : THEME_COLORS.DANGER,
+                        ? themeColors.value.WARNING
+                        : themeColors.value.DANGER,
                 },
                 type: 'rect',
               },
@@ -555,7 +563,7 @@ function renderBulletChart() {
                   x: targetPos[0] - 1,
                   y: barY - 3,
                 },
-                style: { fill: '#475569' },
+                style: { fill: chartMarkLineColor.value },
                 type: 'rect',
               },
             ],
@@ -584,7 +592,11 @@ function renderBulletChart() {
 function renderQualityDonut() {
   const q = dataQualitySummary.value;
   renderQualityDonutEcharts({
-    color: [THEME_COLORS.SUCCESS, THEME_COLORS.DANGER, THEME_COLORS.NEUTRAL],
+    color: [
+      themeColors.value.SUCCESS,
+      themeColors.value.DANGER,
+      themeColors.value.NEUTRAL,
+    ],
     legend: {
       bottom: 0,
       data: ['Good', 'Bad', 'Uncertain'],
@@ -607,12 +619,12 @@ function renderQualityDonut() {
           formatter: `{a|${q.validRate.toFixed(1)}%}\n{b|好值率}`,
           rich: {
             a: {
-              color: THEME_COLORS.SUCCESS,
+              color: themeColors.value.SUCCESS,
               fontSize: 22,
               fontWeight: 700,
               lineHeight: 28,
             },
-            b: { color: '#8c8c8c', fontSize: 12, lineHeight: 18 },
+            b: { color: chartTextColor.value, fontSize: 12, lineHeight: 18 },
           },
           show: true,
         },
@@ -658,9 +670,9 @@ function formatPercent(val: number | undefined): string {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 80) return '#198754';
-  if (score >= 60) return '#ffc107';
-  return '#dc3545';
+  if (score >= 80) return themeColors.value.SUCCESS;
+  if (score >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 watch(
@@ -668,6 +680,16 @@ watch(
   () => renderTrendChart(),
   { deep: true },
 );
+
+// ===== 主题切换重渲图表 =====
+watch(isDark, () => {
+  nextTick(() => {
+    renderTrendChart();
+    renderHealthGauge();
+    renderBulletChart();
+    renderQualityDonut();
+  });
+});
 
 onMounted(() => {
   loadAll();

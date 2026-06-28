@@ -10,11 +10,13 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { Card, Spin } from 'ant-design-vue';
+
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'AutoRateGauge' });
 
@@ -46,6 +48,14 @@ const props = withDefaults(
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
+const {
+  isDark,
+  themeColors,
+  chartTextColor,
+  chartTextStrongColor,
+  chartBorderColor,
+} = useClpmTheme();
+
 const total = computed(() => props.autoCount + props.manualCount);
 const autoRate = computed(() => {
   if (total.value === 0) return 0;
@@ -58,7 +68,7 @@ function render() {
     series: [
       {
         avoidLabelOverlap: true,
-        color: ['#52c41a', '#fa8c16'],
+        color: [themeColors.value.SUCCESS, themeColors.value.WARNING],
         data: [
           { name: '自动', value: props.autoCount },
           { name: '手动', value: props.manualCount },
@@ -69,12 +79,12 @@ function render() {
           label: { show: true, fontSize: 16, fontWeight: 'bold' },
         },
         itemStyle: {
-          borderColor: '#fff',
+          borderColor: chartBorderColor.value,
           borderRadius: 4,
           borderWidth: 2,
         },
         label: {
-          color: '#1a1a1a',
+          color: chartTextStrongColor.value,
           fontSize: 12,
           formatter: '{b}\n{c}',
           show: true,
@@ -97,7 +107,7 @@ function render() {
       {
         left: 'center',
         style: {
-          fill: '#1a1a1a',
+          fill: chartTextStrongColor.value,
           font: 'bold 22px sans-serif',
           text: `${autoRate.value}%`,
           textAlign: 'center',
@@ -109,7 +119,7 @@ function render() {
       {
         left: 'center',
         style: {
-          fill: '#6c757d',
+          fill: chartTextColor.value,
           font: '12px sans-serif',
           text: `自动 ${props.autoCount} / 总 ${total.value}`,
           textAlign: 'center',
@@ -127,6 +137,11 @@ watch(
   () => render(),
   { immediate: true, deep: true },
 );
+
+// 主题切换时重新渲染，确保 ECharts 配色跟随深/浅色模式
+watch(isDark, () => {
+  nextTick(() => render());
+});
 </script>
 
 <template>
@@ -138,17 +153,11 @@ watch(
       </div>
       <div class="flex items-center gap-3 text-xs">
         <span class="inline-flex items-center gap-1">
-          <span
-            class="inline-block h-2 w-2 rounded-full"
-            style="background-color: #52c41a"
-          ></span>
+          <span class="legend-dot legend-dot--auto"></span>
           <span>自动 {{ autoCount }}</span>
         </span>
         <span class="inline-flex items-center gap-1">
-          <span
-            class="inline-block h-2 w-2 rounded-full"
-            style="background-color: #fa8c16"
-          ></span>
+          <span class="legend-dot legend-dot--manual"></span>
           <span>手动 {{ manualCount }}</span>
         </span>
       </div>
@@ -158,3 +167,20 @@ watch(
     </Spin>
   </Card>
 </template>
+
+<style scoped>
+.legend-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+
+.legend-dot--auto {
+  background-color: hsl(var(--success));
+}
+
+.legend-dot--manual {
+  background-color: hsl(var(--warning));
+}
+</style>

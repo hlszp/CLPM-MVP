@@ -19,7 +19,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DiagnosisApi, Quality } from '#/api/diagnosis';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -47,8 +47,11 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'DiagnosisWaveform' });
+
+const { isDark, themeColors, chartInvalidColor } = useClpmTheme();
 
 const route = useRoute();
 
@@ -361,7 +364,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: goodData,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: 'PV (Good)',
         showSymbol: false,
@@ -370,7 +373,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: badData,
-        itemStyle: { color: '#d9d9d9' },
+        itemStyle: { color: chartInvalidColor.value },
         lineStyle: { type: 'dashed', width: 1.5 },
         name: 'PV (Bad)',
         showSymbol: false,
@@ -379,7 +382,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: uncertainData,
-        itemStyle: { color: '#faad14' },
+        itemStyle: { color: themeColors.value.WARNING },
         lineStyle: { type: 'dashed', width: 1.5 },
         name: 'PV (Uncertain)',
         showSymbol: false,
@@ -388,7 +391,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: sp,
-        itemStyle: { color: '#52c41a' },
+        itemStyle: { color: themeColors.value.SUCCESS },
         lineStyle: { width: 1.5 },
         name: 'SP',
         showSymbol: false,
@@ -397,7 +400,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: op,
-        itemStyle: { color: '#fa8c16' },
+        itemStyle: { color: themeColors.value.WARNING },
         lineStyle: { width: 1.5 },
         name: 'OP',
         showSymbol: false,
@@ -464,7 +467,7 @@ function renderScatterChart() {
       {
         data: scatterData,
         itemStyle: {
-          color: '#1890ff',
+          color: themeColors.value.INFO,
           opacity: 0.5,
         },
         name: 'PV-OP',
@@ -516,6 +519,17 @@ watch(
     }
   },
 );
+
+// 深色模式切换时重新渲染当前 Tab 的 ECharts 图表
+watch(isDark, () => {
+  nextTick(() => {
+    if (activeTab.value === 'scatter') {
+      renderScatterChart();
+    } else {
+      renderWaveformChart();
+    }
+  });
+});
 
 onMounted(() => {
   loadLoopOptions().then(() => {

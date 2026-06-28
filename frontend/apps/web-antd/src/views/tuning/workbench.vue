@@ -27,9 +27,12 @@ import {
   ClpmToolbarButton,
   type KpiStripItem,
 } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getTuningHistoryApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningWorkbench' });
+
+const { themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -267,9 +270,9 @@ function formatFittingScore(val: null | number | undefined): string {
 /** 拟合度颜色 */
 function fittingScoreColor(val: null | number | undefined): string {
   if (val === null || val === undefined) return '';
-  if (val >= 80) return '#52c41a';
-  if (val >= 60) return '#faad14';
-  return '#ff4d4f';
+  if (val >= 80) return themeColors.value.SUCCESS;
+  if (val >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 onMounted(() => {

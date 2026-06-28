@@ -21,6 +21,7 @@ import {
   onMounted,
   onUnmounted,
   ref,
+  watch,
 } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -33,7 +34,6 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
-import { THEME_COLORS } from '#/preferences';
 import {
   ClpmDataCanvas,
   ClpmKpiStrip,
@@ -43,6 +43,17 @@ import {
   type KpiStripItem,
 } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+
+const {
+  isDark,
+  themeColors,
+  chartTextColor,
+  chartSplitLineColor,
+  chartTrackColor,
+  chartBorderColor,
+  chartTextStrongColor,
+} = useClpmTheme();
 
 // ============ API 接口 ============
 import { getDashboardOverviewApi } from '#/api/dashboard';
@@ -422,7 +433,7 @@ function renderTrendChart() {
       title: {
         left: 'center',
         text: '暂无趋势数据',
-        textStyle: { color: '#8c8c8c', fontSize: 12, fontWeight: 'normal' },
+        textStyle: { color: chartTextColor.value, fontSize: 12, fontWeight: 'normal' },
         top: 'center',
       },
       xAxis: { type: 'category', data: [] },
@@ -442,13 +453,13 @@ function renderTrendChart() {
   const steadySeries = series.find((s) => s.metricKey === 'steady_rate');
 
   renderTrend({
-    color: [THEME_COLORS.INFO, THEME_COLORS.SUCCESS],
+    color: [themeColors.value.INFO, themeColors.value.SUCCESS],
     grid: { bottom: 40, containLabel: true, left: 48, right: 48, top: 50 },
     legend: { data: ['自控投用率', '平稳率'], top: 8 },
     series: [
       {
         data: autoSeries?.values ?? [],
-        itemStyle: { color: THEME_COLORS.INFO },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2.5 },
         name: '自控投用率',
         smooth: true,
@@ -458,7 +469,7 @@ function renderTrendChart() {
       },
       {
         data: steadySeries?.values ?? [],
-        itemStyle: { color: THEME_COLORS.SUCCESS },
+        itemStyle: { color: themeColors.value.SUCCESS },
         lineStyle: { width: 2.5 },
         name: '平稳率',
         smooth: true,
@@ -476,19 +487,19 @@ function renderTrendChart() {
       },
     },
     xAxis: {
-      axisLabel: { color: '#8c8c8c', fontSize: 11 },
+      axisLabel: { color: chartTextColor.value, fontSize: 11 },
       boundaryGap: false,
       data: labels,
       type: 'category',
     },
     yAxis: [
       {
-        axisLabel: { color: '#8c8c8c', fontSize: 11 },
+        axisLabel: { color: chartTextColor.value, fontSize: 11 },
         max: 100,
         min: 0,
         name: '百分比 (%)',
-        nameTextStyle: { color: '#8c8c8c', fontSize: 11 },
-        splitLine: { lineStyle: { color: '#E5E5E5', type: 'dashed' } },
+        nameTextStyle: { color: chartTextColor.value, fontSize: 11 },
+        splitLine: { lineStyle: { color: chartSplitLineColor.value, type: 'dashed' } },
         type: 'value',
       },
     ],
@@ -500,17 +511,17 @@ function renderHealthGauge() {
   const score = compositeScore.value;
   const color =
     score >= 80
-      ? THEME_COLORS.SUCCESS
+      ? themeColors.value.SUCCESS
       : score >= 60
-        ? THEME_COLORS.WARNING
-        : THEME_COLORS.DANGER;
+        ? themeColors.value.WARNING
+        : themeColors.value.DANGER;
   renderHealthGaugeEcharts({
     series: [
       {
         axisLabel: { show: false },
         axisLine: {
           lineStyle: {
-            color: [[1, '#f0f0f0']],
+            color: [[1, chartTrackColor.value]],
             width: 12,
           },
         },
@@ -542,7 +553,7 @@ function renderHealthGauge() {
         endAngle: 0,
         splitLine: { show: false },
         title: {
-          color: '#8c8c8c',
+          color: chartTextColor.value,
           fontSize: 12,
           offsetCenter: [0, '70%'],
         },
@@ -563,23 +574,23 @@ function renderQualityDonut() {
       icon: 'circle',
       itemHeight: 8,
       itemWidth: 8,
-      textStyle: { color: '#8c8c8c', fontSize: 11 },
+      textStyle: { color: chartTextColor.value, fontSize: 11 },
     },
     series: [
       {
         avoidLabelOverlap: true,
         center: ['50%', '45%'],
         data: [
-          { itemStyle: { color: THEME_COLORS.SUCCESS }, name: 'Good', value: good },
-          { itemStyle: { color: THEME_COLORS.DANGER }, name: 'Bad', value: bad },
-          { itemStyle: { color: THEME_COLORS.WARNING }, name: 'Uncertain', value: uncertain },
+          { itemStyle: { color: themeColors.value.SUCCESS }, name: 'Good', value: good },
+          { itemStyle: { color: themeColors.value.DANGER }, name: 'Bad', value: bad },
+          { itemStyle: { color: themeColors.value.WARNING }, name: 'Uncertain', value: uncertain },
         ],
         emphasis: {
           label: { fontSize: 14, fontWeight: 'bold', show: true },
         },
-        itemStyle: { borderColor: '#fff', borderRadius: 4, borderWidth: 2 },
+        itemStyle: { borderColor: chartBorderColor.value, borderRadius: 4, borderWidth: 2 },
         label: {
-          color: '#0f172a',
+          color: chartTextStrongColor.value,
           fontFamily: 'ui-monospace, Menlo, Consolas',
           fontSize: 16,
           fontWeight: 'bold',
@@ -619,10 +630,19 @@ function formatDelta(delta: number, unit: string): string {
 }
 
 function scoreLevelColor(score: number): string {
-  if (score >= 80) return '#52c41a';
-  if (score >= 60) return '#faad14';
-  return '#ff4d4f';
+  if (score >= 80) return themeColors.value.SUCCESS;
+  if (score >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
+
+// ============ 主题切换重渲图表 ============
+watch(isDark, () => {
+  nextTick(() => {
+    renderTrendChart();
+    renderHealthGauge();
+    renderQualityDonut();
+  });
+});
 
 // ============ 生命周期 ============
 onMounted(() => {

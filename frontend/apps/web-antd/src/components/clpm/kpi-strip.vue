@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+
 export interface KpiStripItem {
   /** 变化量：数字或字符串。数字时自动判断方向，字符串原样显示 */
   delta?: number | string;
@@ -84,23 +86,25 @@ function buildSparklinePath(data: number[], width = 80, height = 28): string {
   return `M ${points.join(' L ')}`;
 }
 
+const { themeColors } = useClpmTheme();
+
 /** sparkline 描边色 */
 function getSparklineColor(status?: string): string {
   switch (status) {
     case 'success': {
-      return 'hsl(142 71% 45%)';
+      return themeColors.value.SUCCESS;
     }
     case 'warning': {
-      return 'hsl(38 92% 50%)';
+      return themeColors.value.WARNING;
     }
     case 'danger': {
-      return 'hsl(0 84% 60%)';
+      return themeColors.value.DANGER;
     }
     case 'primary': {
-      return 'hsl(211 98% 52%)';
+      return themeColors.value.INFO;
     }
     default: {
-      return 'hsl(211 98% 52%)';
+      return themeColors.value.NEUTRAL;
     }
   }
 }
@@ -206,7 +210,7 @@ function getSparklineColor(status?: string): string {
 }
 
 .clpm-kpi-strip__item.is-clickable:hover {
-  background: hsl(210 30% 96%);
+  background: hsl(var(--accent));
 }
 
 .clpm-kpi-strip__label {
@@ -271,11 +275,11 @@ function getSparklineColor(status?: string): string {
 }
 
 .clpm-kpi-strip__delta--up {
-  color: hsl(142 71% 45%);
+  color: hsl(var(--success));
 }
 
 .clpm-kpi-strip__delta--down {
-  color: hsl(0 84% 60%);
+  color: hsl(var(--destructive));
 }
 
 .clpm-kpi-strip__delta--flat {
@@ -287,7 +291,7 @@ function getSparklineColor(status?: string): string {
 .is-warning { color: hsl(var(--warning)); }
 .is-danger { color: hsl(var(--destructive)); }
 .is-neutral { color: hsl(var(--foreground)); }
-.is-primary { color: hsl(211 98% 52%); }
+.is-primary { color: hsl(var(--primary)); }
 
 /* 骨架屏 */
 .clpm-kpi-strip__skeleton {
