@@ -486,8 +486,8 @@ class TestSaveSnapshot:
         )
 
         db.add.assert_not_called()
-        # 字段被更新
-        assert existing.ts_end == ts_end
+        # 字段被更新（_save_snapshot 剥离 tzinfo 适配 PG TIMESTAMP WITHOUT TIME ZONE）
+        assert existing.ts_end == ts_end.replace(tzinfo=None)
         assert existing.status == "INCONCLUSIVE"
         assert result["snapshotId"] == "existing-snapshot-id"
         assert result["status"] == "INCONCLUSIVE"
