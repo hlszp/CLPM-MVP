@@ -336,6 +336,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "taospy" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
     { name = "zstandard" },
 ]
 
@@ -383,6 +384,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "taospy", specifier = ">=2.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+    { name = "websockets", specifier = ">=12.0" },
     { name = "zstandard", specifier = ">=0.22" },
 ]
 provides-extras = ["dev"]

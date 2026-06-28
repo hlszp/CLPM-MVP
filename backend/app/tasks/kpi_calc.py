@@ -632,8 +632,8 @@ def _loop_type_to_control_type(loop_type: str | None) -> ControlType:
 def _build_data_planner(db) -> DataPlanner:
     """构造 DataPlanner 实例。
 
-    使用现有的 redis_client 和 make_dataplanner_query_fn 适配器，
-    将 Phase 2 DataPlanner 与现有 TDengine 查询层对接。
+    通过数据源工厂获取 Provider（tdengine / remote_api），
+    支持 DATA_SOURCE_TYPE 配置切换数据源。
 
     Args:
         db: 异步数据库会话
@@ -642,10 +642,11 @@ def _build_data_planner(db) -> DataPlanner:
         DataPlanner 实例
     """
     from app.core.redis import redis_client
-    from app.core.tdengine import make_dataplanner_query_fn
     from app.services.cache.l1_datablock import L1DataBlockCache
+    from app.services.data_source.factory import get_provider
 
-    query_fn = make_dataplanner_query_fn(db)
+    provider = get_provider()
+    query_fn = provider.make_query_fn(db)
     cache = L1DataBlockCache(redis_client)
     assembler = MetricDataBundleAssembler()
 

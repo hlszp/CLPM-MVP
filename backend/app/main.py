@@ -31,6 +31,7 @@ from app.api.v1.endpoints import (
     node_performance,
     performance,
     plant_nodes,
+    realtime,
     reports,
     tags,
     tasks as eval_tasks,
@@ -55,8 +56,27 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: initialise resources on startup, clean up on shutdown."""
     setup_logging()
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
+    logger.info("数据源类型: %s", settings.DATA_SOURCE_TYPE)
+
+    # 启动实时数据订阅（如已启用）
+    from app.services.data_source.realtime_subscriber import start_subscriber
+
+    await start_subscriber()
+
     yield
+
     logger.info("Shutting down %s", settings.APP_NAME)
+
+    # 停止实时数据订阅
+    from app.services.data_source.realtime_subscriber import stop_subscriber
+
+    await stop_subscriber()
+
+    # 关闭数据源 Provider
+    from app.services.data_source.factory import close_provider
+
+    await close_provider()
+
     await dispose_engine()
     await close_redis()
 
@@ -137,6 +157,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(loop_mode_mapping.router)
     v1_router.include_router(loop_type_weight.router)
     v1_router.include_router(loop_level_weight.router)
+    # 实时数据查询（从 Redis 缓存读取 SignalR 订阅数据）
+    v1_router.include_router(realtime.router)
     app.include_router(v1_router)
 
     return app

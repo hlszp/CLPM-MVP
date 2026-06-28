@@ -69,6 +69,20 @@ class Settings(BaseSettings):
     AAS_REQUEST_TIMEOUT_SECONDS: int = 30
     AAS_SECURITY_MODE: str = "SignAndEncrypt"  # None/Sign/SignAndEncrypt
 
+    # ---- 数据源切换 ----
+    # tdengine: 直接查 TDengine（默认）；remote_api: 通过外部 HTTP API 查询
+    DATA_SOURCE_TYPE: str = "tdengine"
+
+    # ---- 外部历史数据 API（HistoryDataAppService）----
+    HISTORY_DATA_API_URL: str = ""  # 如 http://localhost:8100/api/services/v1/HistoryData/Get
+    HISTORY_DATA_API_TOKEN: str = ""  # Bearer Token（可选）
+    HISTORY_DATA_API_TIMEOUT: float = 30.0  # 请求超时（秒）
+
+    # ---- 实时数据 SignalR/WebSocket ----
+    SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:8100/signalr/realValueForClpmHub
+    SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
+    SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连间隔（秒）
+
     # ---- Alerting ----
     ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志
 

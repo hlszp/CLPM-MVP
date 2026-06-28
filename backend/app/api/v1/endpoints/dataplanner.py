@@ -67,11 +67,12 @@ def _build_data_planner(db: AsyncSession) -> DataPlanner:
     Returns:
         DataPlanner 实例
     """
-    from app.core.tdengine import make_dataplanner_query_fn
     from app.services.cache.l1_datablock import L1DataBlockCache
+    from app.services.data_source.factory import get_provider
     from app.services.metric_data_bundle import MetricDataBundleAssembler
 
-    query_fn = make_dataplanner_query_fn(db)
+    provider = get_provider()
+    query_fn = provider.make_query_fn(db)
     cache = L1DataBlockCache(redis_client)
     assembler = MetricDataBundleAssembler()
     return DataPlanner(

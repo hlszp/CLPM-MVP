@@ -105,6 +105,64 @@ cd e2e && pnpm install && pnpm exec playwright install chromium
 pnpm exec playwright test
 ```
 
+### 7. 外部数据源对接（可选）
+
+CLPM 支持两种历史数据源模式，通过 `DATA_SOURCE_TYPE` 配置切换：
+
+| 模式 | 配置值 | 适用场景 |
+|---|---|---|
+| 直连 TDengine | `tdengine`（默认） | TDengine 部署在同机房，直接查询 |
+| 外部 API | `remote_api` | 对接工控数采系统，通过 HTTP API 查询 |
+
+#### 7.1 直连 TDengine（默认）
+
+无需额外配置，后端直接查询本地 TDengine。
+
+#### 7.2 外部 API 模式
+
+修改 `backend/.env`：
+
+```bash
+DATA_SOURCE_TYPE=remote_api
+HISTORY_DATA_API_URL=http://localhost:8100/api/services/v1/HistoryData/Get
+HISTORY_DATA_API_TOKEN=           # 可选，Bearer Token
+HISTORY_DATA_API_TIMEOUT=30.0
+```
+
+对接接口规范见 `docs/设计文档/05-IDS/HisDATA_API.md`。
+
+#### 7.3 实时数据订阅（SignalR/WebSocket）
+
+```bash
+SIGNALR_HUB_URL=ws://localhost:8100/signalr/realValueForClpmHub
+SIGNALR_ENABLED=True             # 启用实时数据订阅
+SIGNALR_RECONNECT_INTERVAL=5     # 断线重连间隔（秒）
+```
+
+对接接口规范见 `docs/设计文档/05-IDS/RealDATA_API.md`。
+实时值查询 API：`GET /api/v1/realtime?tagCodes=LIC-101.PV,TIC-101.PV`
+
+#### 7.4 模拟远端数据服务（mock_data_server）
+
+开发环境提供模拟远端数据服务，完全模拟工程场景的数据链路：
+
+```bash
+# 方式 1：Docker（推荐，随基础设施一起启动）
+docker compose -f deploy/docker/docker-compose.dev.yml up -d mock-data-server
+
+# 方式 2：本地运行
+cd mock_data_server
+pip install -r requirements.txt
+PYTHONPATH=/path/to/CLPM python -m uvicorn mock_data_server.main:app --host 0.0.0.0 --port 8100
+```
+
+服务启动后：
+- 历史数据 API：`POST http://localhost:8100/api/services/v1/HistoryData/Get`（查 TDengine）
+- 实时数据 Hub：`WS ws://localhost:8100/signalr/realValueForClpmHub`（正弦波模拟）
+- 健康检查：`GET http://localhost:8100/health`
+
+> **注意**：`mock_data_server/` 是独立目录，正式项目可整体删除，不影响主应用。
+
 ## 生产部署
 
 ### 环境要求
