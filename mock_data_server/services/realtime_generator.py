@@ -20,12 +20,19 @@ class RealtimeGenerator:
     """实时数据生成器.
 
     为每个 tagCode 生成正弦波 + 噪声的模拟实时值。
+    MODE 角色生成离散值 0/1/2，至少 4 小时变化一次。
     生成频率可配置（默认 1Hz）。
     """
+
+    # MODE 切换间隔（秒），实际工程至少 4 小时变化一次
+    _MODE_CHANGE_INTERVAL = 4 * 3600  # 4 小时
+    # MODE 离散值：0=Manual, 1=Auto, 2=Cascade
+    _MODE_VALUES = [0, 1, 2]
 
     def __init__(self, interval: float = 1.0) -> None:
         self._interval = interval
         self._tag_configs: dict[str, dict] = {}  # tagCode → {base, amplitude, phase, noise}
+        self._mode_states: dict[str, dict] = {}  # tagCode → {current, rng, offset, last_period}
         self._id_counter = 1000
         self._lock = asyncio.Lock()
 
@@ -44,20 +51,52 @@ class RealtimeGenerator:
             }
         return self._tag_configs[tag_code]
 
+    def _generate_mode_value(self, tag_code: str, now: float) -> int:
+        """生成 MODE 离散值 0/1/2，至少 4 小时变化一次.
+
+        使用 tag_code hash 确定初始模式和相位偏移，
+        确保不同回路的 MODE 变化时刻不同但可复现。
+        """
+        if tag_code not in self._mode_states:
+            seed = hash(tag_code) % 1000
+            rng = random.Random(seed)
+            self._mode_states[tag_code] = {
+                "current": rng.choice(self._MODE_VALUES),
+                "rng": rng,
+                "offset": rng.uniform(0, self._MODE_CHANGE_INTERVAL),
+                "last_period": None,
+            }
+        state = self._mode_states[tag_code]
+        # 按（时间 + 偏移）/ 4小时 判断是否进入新周期
+        period = int((now + state["offset"]) // self._MODE_CHANGE_INTERVAL)
+        if period != state["last_period"]:
+            state["last_period"] = period
+            # 切换到不同的模式（不重复当前模式）
+            choices = [v for v in self._MODE_VALUES if v != state["current"]]
+            state["current"] = state["rng"].choice(choices)
+        return state["current"]
+
     def generate_value(self, tag_code: str) -> dict:
         """生成单个 tag 的实时值.
+
+        MODE 角色：离散值 0/1/2，至少 4 小时变化一次。
+        其他角色：正弦波 + 噪声。
 
         Returns:
             {"id": int, "tagCode": str, "value": str, "quality": int, "collectTime": str}
         """
-        config = self._get_tag_config(tag_code)
         now = time.time()
 
-        # 正弦波 + 噪声
-        value = config["base"] + config["amplitude"] * math.sin(
-            2 * math.pi * now / config["period"] + config["phase"]
-        )
-        value += random.uniform(-config["noise"], config["noise"])
+        # MODE 角色：生成离散值，不随正弦波变化
+        if tag_code.upper().endswith(".MODE"):
+            value = self._generate_mode_value(tag_code, now)
+        else:
+            config = self._get_tag_config(tag_code)
+            # 正弦波 + 噪声
+            value = config["base"] + config["amplitude"] * math.sin(
+                2 * math.pi * now / config["period"] + config["phase"]
+            )
+            value += random.uniform(-config["noise"], config["noise"])
 
         # 质量码约定与 HisDATA_API.md 一致：1=Good, 0=Bad/未知
         # 异常比例由 QUALITY_BAD_RATIO 配置控制（工控场景典型值 10%）

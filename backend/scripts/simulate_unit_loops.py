@@ -268,16 +268,34 @@ def generate_pid_schedule(cfg: dict, start: datetime, end: datetime) -> list[tup
 
 
 def generate_mode_schedule(scenario: str, start: datetime, end: datetime) -> list[tuple[datetime, int]]:
-    """MODE 调度：manual 场景始终 0；其他场景默认 1，偶尔短暂切手动。"""
+    """MODE 调度：实际工程至少 4 小时变化一次。
+
+    语义：0=Manual, 1=Auto, 2=Cascade
+    - manual 场景：始终 0
+    - 其他场景：在 Auto(1) ↔ Cascade(2) 之间切换，每 4-8 小时一次；
+      偶尔短暂切 Manual(0) 维护（约 10% 概率，持续 15-30 分钟）。
+    """
     if scenario == "manual":
         return [(start, 0)]
-    schedule = [(start, 1)]
+
+    schedule: list[tuple[datetime, int]] = [(start, 1)]
     t = start
     while t < end:
-        t += timedelta(seconds=random.randint(24 * 3600, 72 * 3600))
+        # 主切换间隔：4-8 小时
+        t += timedelta(seconds=random.randint(4 * 3600, 8 * 3600))
         if t >= end:
             break
-        new_mode = 0 if schedule[-1][1] == 1 else 1
+        cur = schedule[-1][1]
+        # 10% 概率短暂切 Manual 维护
+        if random.random() < 0.10:
+            schedule.append((t, 0))
+            maintenance_end = t + timedelta(seconds=random.randint(15 * 60, 30 * 60))
+            if maintenance_end < end:
+                schedule.append((maintenance_end, 1))
+                t = maintenance_end
+            continue
+        # 在 Auto(1) ↔ Cascade(2) 之间切换
+        new_mode = 2 if cur == 1 else 1
         schedule.append((t, new_mode))
     return schedule
 
@@ -594,24 +612,30 @@ async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> No
     loop_ids = [c["id"] for c in loops]
     async with AsyncSessionLocal() as session:
         if clean:
-            # 清理旧映射与旧 tag_registry
+            # 1. 先删除这些回路的 loop_tag_mapping（解除外键引用）
             await session.execute(text(
                 "DELETE FROM loop_tag_mapping WHERE loop_id = ANY(:ids)"
             ), {"ids": loop_ids})
-            # 删除这些回路的 7 角色 tag
-            for cfg in loops:
-                for role in TAG_ROLES:
-                    await session.execute(text(
-                        "DELETE FROM tag_registry WHERE tag_name = :tn"
-                    ), {"tn": f"{cfg['tag_name']}.{role}"})
+            # 2. 删除 tag_registry 中不再被任何 loop_tag_mapping 引用的 tag
+            #    （只删除这些回路的 7 角色 tag，且确认无其他回路引用）
+            tag_names_to_clean = [
+                f"{cfg['tag_name']}.{role}"
+                for cfg in loops
+                for role in TAG_ROLES
+            ]
+            await session.execute(text(
+                "DELETE FROM tag_registry "
+                "WHERE tag_name = ANY(:tns) "
+                "AND id NOT IN (SELECT tag_id FROM loop_tag_mapping)"
+            ), {"tns": tag_names_to_clean})
+            await session.commit()
             print(f"  ✓ 清理旧 tag 映射（{len(loops)} 回路）")
 
-        # 创建 tag_registry + loop_tag_mapping
+        # 创建 tag_registry + loop_tag_mapping（使用 RETURNING 获取实际 tag_id，避免 FK 冲突）
         n_tags = 0
         n_mappings = 0
         for cfg in loops:
             for role in TAG_ROLES:
-                tag_id = str(uuid.uuid4())
                 tag_name = f"{cfg['tag_name']}.{role}"
                 tag_desc = f"{cfg['description']} {role}"
 
@@ -644,7 +668,8 @@ async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> No
                 else:
                     range_min, range_max, unit = 0.0, cfg["pv_range"] * 1.2, ""
 
-                await session.execute(text("""
+                # upsert tag_registry 并 RETURNING 实际 id（无论新建还是已存在都返回正确 id）
+                result = await session.execute(text("""
                     INSERT INTO tag_registry
                         (id, tag_name, tag_description, tag_type, current_value, quality,
                          last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id)
@@ -661,14 +686,16 @@ async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> No
                         range_max = EXCLUDED.range_max,
                         unit = EXCLUDED.unit,
                         tdengine_tag_id = EXCLUDED.tdengine_tag_id
+                    RETURNING id
                 """), {
-                    "id": tag_id, "tn": tag_name, "desc": tag_desc, "type": role,
+                    "id": str(uuid.uuid4()), "tn": tag_name, "desc": tag_desc, "type": role,
                     "val": cur_val, "rmin": range_min, "rmax": range_max, "unit": unit,
                     "mtype": ctype, "tdtag": subtable_name(cfg["tag_name"]),
                 })
+                actual_tag_id = result.scalar()
                 n_tags += 1
 
-                mapping_id = str(uuid.uuid4())
+                # 用实际 tag_id upsert loop_tag_mapping，FK 约束不会冲突
                 is_required = role in REQUIRED_ROLES
                 await session.execute(text("""
                     INSERT INTO loop_tag_mapping (id, loop_id, tag_id, tag_role, is_required, created_at)
@@ -677,7 +704,7 @@ async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> No
                         tag_id = EXCLUDED.tag_id,
                         is_required = EXCLUDED.is_required
                 """), {
-                    "id": mapping_id, "loop_id": cfg["id"], "tag_id": tag_id,
+                    "id": str(uuid.uuid4()), "loop_id": cfg["id"], "tag_id": actual_tag_id,
                     "role": role, "req": is_required,
                 })
                 n_mappings += 1
@@ -846,11 +873,11 @@ async def main() -> None:
     for uname, tags in units_seen.items():
         print(f"    {uname}: {len(tags)} 回路")
 
-    # 2. PostgreSQL 元数据补全
+    # 2. PostgreSQL 元数据补全（始终用 upsert，不删除已有 tag，避免 FK 冲突）
     print("\n📋 [2/4] 补全 PostgreSQL tag_registry / loop_tag_mapping...")
-    await setup_postgres(loops, clean=args.clean)
+    await setup_postgres(loops, clean=False)
 
-    # 3. TDengine 设置 + 数据写入
+    # 3. TDengine 设置 + 数据写入（--clean 时 DROP 旧子表重建）
     print("\n📊 [3/4] 设置 TDengine 并写入时序数据...")
     async with httpx.AsyncClient(
         auth=httpx.BasicAuth(settings.TDENGINE_USER, settings.TDENGINE_PASSWORD),

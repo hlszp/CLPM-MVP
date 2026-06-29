@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import math
 import random
@@ -52,6 +53,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+import redis.asyncio as aioredis
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -517,6 +519,9 @@ class LoopSimulator:
         self._op: float = cfg["base_op"]
         self._sp: float = cfg["base_sp"]
         self._mode: int = 0 if self.scenario == "manual" else 1
+        # MODE 切换间隔（秒），实际工程至少 4 小时变化一次
+        self._mode_change_interval = 4 * 3600  # 4 小时
+        self._next_mode_change = time.monotonic() + self._mode_change_interval
         self._pid_p: float = cfg["pid_p"]
         self._pid_i: float = cfg["pid_i"]
         self._pid_d: float = cfg["pid_d"]
@@ -676,6 +681,11 @@ class LoopSimulator:
             self._last_sp = self._sp
             self._sp_change_time = now
 
+        # 5. MODE 切换（非 manual 场景，每 4 小时在 Auto/Cascade 之间切换）
+        if self.scenario != "manual" and now >= self._next_mode_change:
+            self._mode = 2 if self._mode == 1 else 1  # Auto(1) ↔ Cascade(2)
+            self._next_mode_change = now + self._mode_change_interval
+
         return (
             round(self._pv, 4),
             round(self._sp, 4),
@@ -709,6 +719,19 @@ async def load_loops_from_db(
         """), {"unit_ids": TARGET_UNIT_IDS})
         rows = r.fetchall()
 
+        # 查询各回路的 tag_name 映射（PV/SP/OP/MODE 各角色的 tag_name）
+        loop_ids = [str(row[0]) for row in rows]
+        tag_map: dict[str, dict[str, str]] = {}
+        if loop_ids:
+            r2 = await s.execute(text("""
+                SELECT m.loop_id, m.tag_role, t.tag_name
+                FROM loop_tag_mapping m
+                JOIN tag_registry t ON t.id = m.tag_id
+                WHERE m.loop_id = ANY(:loop_ids)
+            """), {"loop_ids": loop_ids})
+            for lid, role, tname in r2.fetchall():
+                tag_map.setdefault(str(lid), {})[role] = tname
+
         for loop_id, tag_name, desc, unit_id, unit_name in rows:
             ctype = infer_control_type(tag_name)
             params = TYPE_PARAMS[ctype]
@@ -729,6 +752,7 @@ async def load_loops_from_db(
             loops_raw.append({
                 "id": str(loop_id),
                 "tag_name": tag_name,
+                "tag_names": tag_map.get(str(loop_id), {}),  # 各角色 tag_name（用于 Redis 写入）
                 "description": desc or f"{tag_name} 控制回路",
                 "unit_id": str(unit_id),
                 "unit_name": unit_name,
@@ -871,6 +895,41 @@ async def write_batch_to_tdengine(
     return result is not None
 
 
+async def write_to_redis(
+    redis_client: aioredis.Redis,
+    loops: list[LoopSimulator],
+    batch: list[tuple[float, float, float, int, float, float, float, int]],
+    ts: datetime,
+) -> None:
+    """写入 Redis 实时缓存 + 发布 Pub/Sub 推送（支持前端 WebSocket）。
+
+    - 写 realtime:{tag_name} = JSON({tagCode, value, quality, collectTime})，TTL 60s
+      （key 前缀与后端 RealtimeSubscriber.get_cached_values 保持一致）
+    - 发布 realtime:updates 频道，后端 WebSocket 端点订阅后推送给前端
+    """
+    ts_iso = ts.isoformat()
+    updates: list[str] = []
+    for sim, data in zip(loops, batch):
+        pv, sp, op, mode, pid_p, pid_i, pid_d, quality = data
+        tag_names = sim.cfg.get("tag_names", {})
+        role_values = {"PV": (pv, quality), "SP": (sp, 1), "OP": (op, 1), "MODE": (mode, 1)}
+        for role, (value, q) in role_values.items():
+            tag_name = tag_names.get(role)
+            if not tag_name or value is None:
+                continue
+            msg = json.dumps({
+                "tagCode": tag_name,
+                "value": f"{value:.3f}",
+                "quality": q,
+                "collectTime": ts_iso,
+            })
+            # key 前缀 realtime: 与后端 RealtimeSubscriber._REDIS_KEY_PREFIX 一致
+            await redis_client.set(f"realtime:{tag_name}", msg, ex=60)
+            updates.append(msg)
+    if updates:
+        await redis_client.publish("realtime:updates", json.dumps(updates))
+
+
 # ============================================================================
 # 主循环
 # ============================================================================
@@ -916,6 +975,16 @@ async def run(
         # 确保 TDengine 表就绪
         await setup_tdengine(client, loops_cfg)
 
+        # 初始化 Redis 客户端（写实时缓存 + Pub/Sub 推送，支持前端 WebSocket）
+        redis_client = aioredis.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=settings.REDIS_PASSWORD or None,
+            db=settings.REDIS_DB,
+            decode_responses=True,
+        )
+        logger.info("Redis 连接成功 (%s:%s)", settings.REDIS_HOST, settings.REDIS_PORT)
+
         start_time = time.monotonic()
         total_written = 0
         total_failed = 0
@@ -945,7 +1014,13 @@ async def run(
             else:
                 total_failed += len(batch)
 
-            # 3. 进度日志
+            # 3. 写入 Redis（实时缓存 + Pub/Sub 推送，支持前端 WebSocket）
+            try:
+                await write_to_redis(redis_client, loops, batch, ts)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Redis 写入失败: %s", exc)
+
+            # 4. 进度日志
             if verbose and tick_count % 5 == 0:
                 elapsed = time.monotonic() - start_time
                 rate = total_written / elapsed if elapsed > 0 else 0
@@ -983,6 +1058,9 @@ async def run(
         logger.info("  平均写入速率:  %.1f 行/秒",
                     total_written / elapsed_total if elapsed_total > 0 else 0)
         logger.info("=" * 60)
+
+        # 关闭 Redis
+        await redis_client.aclose()
 
     await engine.dispose()
 

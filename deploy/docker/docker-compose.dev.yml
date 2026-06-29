@@ -86,8 +86,12 @@ services:
   # Mock Data Server - 模拟远端数据源服务（仅开发环境）
   # 提供 HistoryDataAppService API + SignalR Hub 模拟
   # 正式项目可整体移除，不影响主应用
+  # ⚠️ 已停用：数据仿真改由 backend/scripts/realtime_simulator.py 独立运行
+  #    （launchd 开机自启），直接写 TDengine + Redis，不再经由 WebSocket Hub。
+  #    如需临时启用：docker compose --profile mock up -d mock-data-server
   # ============================================================
   mock-data-server:
+    profiles: ["mock"]
     build:
       context: ../..
       dockerfile: deploy/docker/mock_data_server.Dockerfile
