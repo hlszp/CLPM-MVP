@@ -524,6 +524,14 @@ function render() {
             xAxisIndex: 0,
             bottom: 8,
             height: 20,
+            labelFormatter: (val: number) => {
+              const d = new Date(val);
+              const mo = String(d.getMonth() + 1).padStart(2, '0');
+              const dd = String(d.getDate()).padStart(2, '0');
+              const hh = String(d.getHours()).padStart(2, '0');
+              const mm = String(d.getMinutes()).padStart(2, '0');
+              return `${mo}-${dd} ${hh}:${mm}`;
+            },
           },
           // Y 轴：滚轮 + 滑块（量程缩放）
           { end: 100, start: 0, type: 'inside', yAxisIndex: 0 },
@@ -545,6 +553,14 @@ function render() {
             xAxisIndex: 0,
             bottom: 8,
             height: 20,
+            labelFormatter: (val: number) => {
+              const d = new Date(val);
+              const mo = String(d.getMonth() + 1).padStart(2, '0');
+              const dd = String(d.getDate()).padStart(2, '0');
+              const hh = String(d.getHours()).padStart(2, '0');
+              const mm = String(d.getMinutes()).padStart(2, '0');
+              return `${mo}-${dd} ${hh}:${mm}`;
+            },
           },
         ],
     grid: {
@@ -563,6 +579,25 @@ function render() {
     series,
     tooltip: {
       axisPointer: { type: 'cross' },
+      formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return '';
+        const p0 = params[0];
+        const d = new Date(p0.axisValue);
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        const title = `${mo}-${dd} ${hh}:${mm}:${ss}`;
+        const lines = params.map((p: any) => {
+          const v =
+            p.value === null || p.value === undefined
+              ? '—'
+              : Number(p.value).toFixed(3);
+          return `${p.marker} ${p.seriesName}: ${v}`;
+        });
+        return [title, ...lines].join('<br/>');
+      },
       trigger: 'axis',
       valueFormatter: (val) =>
         val === null || val === undefined ? '—' : Number(val).toFixed(3),
