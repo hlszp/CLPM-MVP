@@ -158,16 +158,32 @@ const changeSummary = computed(() => {
   if (!state) return [];
   const summary: { field: string; from: string; to: string }[] = [];
   if (item.weightA !== state.weightA) {
-    summary.push({ field: 'weightA（自动模式率）', from: `${item.weightA}%`, to: `${state.weightA}%` });
+    summary.push({
+      field: 'weightA（自动模式率）',
+      from: `${item.weightA}%`,
+      to: `${state.weightA}%`,
+    });
   }
   if (item.weightF !== state.weightF) {
-    summary.push({ field: 'weightF（快速率）', from: `${item.weightF}%`, to: `${state.weightF}%` });
+    summary.push({
+      field: 'weightF（快速率）',
+      from: `${item.weightF}%`,
+      to: `${state.weightF}%`,
+    });
   }
   if (item.weightS !== state.weightS) {
-    summary.push({ field: 'weightS（稳定率）', from: `${item.weightS}%`, to: `${state.weightS}%` });
+    summary.push({
+      field: 'weightS（稳定率）',
+      from: `${item.weightS}%`,
+      to: `${state.weightS}%`,
+    });
   }
   if ((item.description ?? '') !== state.description) {
-    summary.push({ field: '描述', from: item.description ?? '—', to: state.description || '—' });
+    summary.push({
+      field: '描述',
+      from: item.description ?? '—',
+      to: state.description || '—',
+    });
   }
   return summary;
 });

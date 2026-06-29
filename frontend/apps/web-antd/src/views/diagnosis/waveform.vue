@@ -37,10 +37,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { getDiagnosisDetailApi, getWaveformApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import {
@@ -550,7 +547,10 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar :title="pageTitle" subtitle="波形趋势与 PV-OP 散点用于查看诊断证据细节。" />
+    <ClpmPageToolbar
+      :title="pageTitle"
+      subtitle="波形趋势与 PV-OP 散点用于查看诊断证据细节。"
+    />
     <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex items-center gap-2">

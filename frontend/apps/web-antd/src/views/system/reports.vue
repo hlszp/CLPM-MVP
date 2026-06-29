@@ -31,10 +31,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import {
   createReportConfigApi,
   generateReportApi,
@@ -326,7 +323,10 @@ onUnmounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar title="自动报表管理" subtitle="配置日报/周报/月报，手动触发生成并跟踪执行进度。" />
+    <ClpmPageToolbar
+      title="自动报表管理"
+      subtitle="配置日报/周报/月报，手动触发生成并跟踪执行进度。"
+    />
     <ClpmDataCanvas class="mt-4" title="报表配置列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">

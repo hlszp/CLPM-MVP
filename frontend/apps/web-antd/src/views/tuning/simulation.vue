@@ -38,14 +38,8 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  ClpmDataCanvas,
-  ClpmObjectSummaryBar,
-  ClpmPageToolbar,
-  ClpmToolbarButton,
-  type SummaryAction,
-  type SummaryItem,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import type { SummaryAction, SummaryItem } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
 
@@ -679,11 +673,7 @@ watch(isDark, () => {
           label="重置"
           @click="handleReset"
         />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          @click="handleExport"
-        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
       </template>
     </ClpmPageToolbar>
 
@@ -766,10 +756,7 @@ watch(isDark, () => {
                     v-else-if="record.improved === false"
                     icon="ant-design:fall-outlined"
                   />
-                  <IconifyIcon
-                    v-else
-                    icon="ant-design:minus-outlined"
-                  />
+                  <IconifyIcon v-else icon="ant-design:minus-outlined" />
                   <span>{{ record.improvementLabel }}</span>
                   <span class="text-gray-500">{{ record.improvement }}</span>
                 </span>
@@ -780,10 +767,7 @@ watch(isDark, () => {
       </div>
 
       <!-- 右侧：参数表单（30%） -->
-      <div
-        class="flex flex-col gap-4 lg:w-1/3"
-        style="min-width: 320px"
-      >
+      <div class="flex flex-col gap-4 lg:w-1/3" style="min-width: 320px">
         <ClpmDataCanvas title="参数配置">
           <Form layout="vertical">
             <div class="mb-2 text-sm font-medium text-gray-700">模型配置</div>
@@ -908,12 +892,7 @@ watch(isDark, () => {
                 placeholder="请输入回路 ID"
               />
             </FormItem>
-            <Button
-              type="primary"
-              :loading="saving"
-              block
-              @click="handleSave"
-            >
+            <Button type="primary" :loading="saving" block @click="handleSave">
               保存仿真结果
             </Button>
           </div>

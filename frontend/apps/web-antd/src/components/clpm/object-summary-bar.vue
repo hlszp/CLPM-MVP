@@ -81,7 +81,11 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
         <div class="clpm-summary-bar__skeleton-subtitle"></div>
       </div>
       <div class="clpm-summary-bar__skeleton-items">
-        <div v-for="i in 4" :key="i" class="clpm-summary-bar__skeleton-item"></div>
+        <div
+          v-for="i in 4"
+          :key="i"
+          class="clpm-summary-bar__skeleton-item"
+        ></div>
       </div>
     </template>
 
@@ -90,12 +94,16 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
       <div class="clpm-summary-bar__main">
         <div class="clpm-summary-bar__identity">
           <div class="clpm-summary-bar__title">{{ title }}</div>
-          <div v-if="subtitle" class="clpm-summary-bar__subtitle">{{ subtitle }}</div>
+          <div v-if="subtitle" class="clpm-summary-bar__subtitle">
+            {{ subtitle }}
+          </div>
         </div>
 
         <!-- 主指标突出展示 -->
         <div v-if="primaryItem" class="clpm-summary-bar__primary">
-          <span class="clpm-summary-bar__primary-label">{{ primaryItem.label }}</span>
+          <span class="clpm-summary-bar__primary-label">{{
+            primaryItem.label
+          }}</span>
           <span
             class="clpm-summary-bar__primary-value"
             :class="`is-${primaryItem.status || 'neutral'}`"
@@ -118,7 +126,11 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
       </div>
 
       <div v-if="items.length" class="clpm-summary-bar__items">
-        <div v-for="item in items" :key="item.key" class="clpm-summary-bar__item">
+        <div
+          v-for="item in items"
+          :key="item.key"
+          class="clpm-summary-bar__item"
+        >
           <span class="clpm-summary-bar__item-label">{{ item.label }}</span>
           <span
             class="clpm-summary-bar__item-value"
@@ -139,12 +151,19 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
             v-for="action in visibleActions"
             :key="action.key"
             class="clpm-summary-bar__action"
-            :class="[`is-${action.type || 'default'}`, { 'is-danger': action.danger }]"
+            :class="[
+              `is-${action.type || 'default'}`,
+              { 'is-danger': action.danger },
+            ]"
             :disabled="action.disabled"
             type="button"
             @click="emit('action', action.key)"
           >
-            <IconifyIcon v-if="action.icon" :icon="action.icon" class="clpm-summary-bar__action-icon" />
+            <IconifyIcon
+              v-if="action.icon"
+              :icon="action.icon"
+              class="clpm-summary-bar__action-icon"
+            />
             {{ action.label }}
           </button>
 
@@ -152,7 +171,10 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
           <Dropdown v-if="hasMoreActions" placement="bottomRight">
             <button class="clpm-summary-bar__action is-default" type="button">
               更多
-              <IconifyIcon icon="ant-design:down-outlined" class="clpm-summary-bar__action-icon" />
+              <IconifyIcon
+                icon="ant-design:down-outlined"
+                class="clpm-summary-bar__action-icon"
+              />
             </button>
             <template #overlay>
               <Menu>
@@ -163,7 +185,11 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
                   :disabled="action.disabled"
                   @click="emit('action', action.key)"
                 >
-                  <IconifyIcon v-if="action.icon" :icon="action.icon" class="clpm-summary-bar__action-icon" />
+                  <IconifyIcon
+                    v-if="action.icon"
+                    :icon="action.icon"
+                    class="clpm-summary-bar__action-icon"
+                  />
                   <span>{{ action.label }}</span>
                 </Menu.Item>
               </Menu>
@@ -177,13 +203,17 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
 
 <style scoped>
 .clpm-summary-bar {
-  align-items: stretch;
-  background: linear-gradient(180deg, hsl(var(--card)) 0%, hsl(var(--muted) / 35%) 100%);
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1px);
   display: flex;
   gap: 14px;
+  align-items: stretch;
   padding: 10px 12px;
+  background: linear-gradient(
+    180deg,
+    hsl(var(--card)) 0%,
+    hsl(var(--muted) / 35%) 100%
+  );
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
 }
 
 .clpm-summary-bar__main {
@@ -199,84 +229,100 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
 }
 
 .clpm-summary-bar__title {
-  color: hsl(var(--foreground));
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 16px;
   font-weight: 700;
   line-height: 22px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: hsl(var(--foreground));
   white-space: nowrap;
 }
 
 .clpm-summary-bar__subtitle {
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
-  line-height: 18px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
 /* 主指标突出展示 */
 .clpm-summary-bar__primary {
-  align-items: baseline;
   display: flex;
   gap: 8px;
+  align-items: baseline;
 }
 
 .clpm-summary-bar__primary-label {
-  color: hsl(var(--muted-foreground));
   font-size: 13px;
+  color: hsl(var(--muted-foreground));
 }
 
 .clpm-summary-bar__primary-value {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-feature-settings: 'tnum';
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace
+  );
   font-size: 26px;
-  font-variant-numeric: tabular-nums;
   font-weight: 800;
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
   line-height: 32px;
 }
 
 .clpm-summary-bar__tags,
 .clpm-summary-bar__items,
 .clpm-summary-bar__actions {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 
 .clpm-summary-bar__tag {
-  align-items: center;
-  border: 1px solid hsl(var(--border));
-  border-radius: 999px;
   display: inline-flex;
   gap: 5px;
+  align-items: center;
   min-height: 24px;
   padding: 2px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
 }
 
 .clpm-summary-bar__tag-label,
 .clpm-summary-bar__item-label {
-  color: hsl(var(--muted-foreground));
   font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .clpm-summary-bar__tag-value,
 .clpm-summary-bar__item-value {
-  color: hsl(var(--foreground));
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-feature-settings: 'tnum';
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace
+  );
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
   font-weight: 700;
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
 }
 
 .clpm-summary-bar__items {
-  border-left: 1px solid hsl(var(--border));
   flex: 0 0 auto;
   padding-left: 14px;
+  border-left: 1px solid hsl(var(--border));
 }
 
 .clpm-summary-bar__item {
@@ -290,43 +336,43 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
 }
 
 .clpm-summary-bar__actions {
-  border-left: 1px solid hsl(var(--border));
   flex: 0 0 auto;
   padding-left: 14px;
+  border-left: 1px solid hsl(var(--border));
 }
 
 .clpm-summary-bar__action {
-  align-items: center;
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1px);
-  color: hsl(var(--foreground));
-  cursor: pointer;
   display: inline-flex;
-  font-size: 12px;
   gap: 4px;
+  align-items: center;
   height: 28px;
   padding: 0 10px;
+  font-size: 12px;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
 }
 
 .clpm-summary-bar__action:hover:not(:disabled) {
-  border-color: hsl(var(--primary) / 50%);
   color: hsl(var(--primary));
+  border-color: hsl(var(--primary) / 50%);
 }
 
 .clpm-summary-bar__action.is-primary {
+  color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
   border-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
 }
 
 .clpm-summary-bar__action.is-primary:hover:not(:disabled) {
-  background: hsl(var(--primary) / 90%);
   color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary) / 90%);
 }
 
 .clpm-summary-bar__action.is-danger {
-  border-color: hsl(var(--destructive) / 50%);
   color: hsl(var(--destructive));
+  border-color: hsl(var(--destructive) / 50%);
 }
 
 .clpm-summary-bar__action.is-danger:hover:not(:disabled) {
@@ -338,11 +384,25 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
   font-size: 13px;
 }
 
-.is-success { color: hsl(var(--success)); }
-.is-warning { color: hsl(var(--warning)); }
-.is-danger { color: hsl(var(--destructive)); }
-.is-primary { color: hsl(var(--primary)); }
-.is-neutral { color: hsl(var(--muted-foreground)); }
+.is-success {
+  color: hsl(var(--success));
+}
+
+.is-warning {
+  color: hsl(var(--warning));
+}
+
+.is-danger {
+  color: hsl(var(--destructive));
+}
+
+.is-primary {
+  color: hsl(var(--primary));
+}
+
+.is-neutral {
+  color: hsl(var(--muted-foreground));
+}
 
 /* 骨架屏 */
 .clpm-summary-bar.is-loading {
@@ -351,7 +411,6 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
 
 .clpm-summary-bar__skeleton,
 .clpm-summary-bar__skeleton-items {
-  animation: clpm-summary-skeleton 1.5s ease-in-out infinite;
   background: linear-gradient(
     90deg,
     hsl(var(--muted)) 25%,
@@ -360,6 +419,7 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
   );
   background-size: 400% 100%;
   border-radius: 2px;
+  animation: clpm-summary-skeleton 1.5s ease-in-out infinite;
 }
 
 .clpm-summary-bar__skeleton {
@@ -367,14 +427,14 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
 }
 
 .clpm-summary-bar__skeleton-title {
+  width: 50%;
   height: 18px;
   margin-bottom: 8px;
-  width: 50%;
 }
 
 .clpm-summary-bar__skeleton-subtitle {
-  height: 14px;
   width: 30%;
+  height: 14px;
 }
 
 .clpm-summary-bar__skeleton-items {
@@ -385,15 +445,16 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
 }
 
 .clpm-summary-bar__skeleton-item {
-  background: hsl(var(--card) / 50%);
-  height: 40px;
   width: 80px;
+  height: 40px;
+  background: hsl(var(--card) / 50%);
 }
 
 @keyframes clpm-summary-skeleton {
   0% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0 50%;
   }

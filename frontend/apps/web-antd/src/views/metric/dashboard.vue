@@ -19,7 +19,15 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { KpiStatus, MetricApi, TimeWindow } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -44,23 +52,13 @@ import {
   getRankingApi,
   getRealtimeAutoRateApi,
 } from '#/api/metric';
-import {
-  ClpmDataCanvas,
-  ClpmKpiStrip,
-  ClpmObjectSummaryBar,
-  ClpmPageToolbar,
-  ClpmToolbarButton,
-  type KpiStripItem,
-  type SummaryAction,
-  type SummaryItem,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import type { KpiStripItem, SummaryAction, SummaryItem } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import AutoRateGauge from '#/components/metric/auto-rate-gauge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import {
-  usePagePreference,
-  type FilterPreset,
-} from '#/composables/use-clpm-preferences';
+import { usePagePreference } from '#/composables/use-clpm-preferences';
+import type { FilterPreset } from '#/composables/use-clpm-preferences';
 
 defineOptions({ name: 'MetricDashboard' });
 
@@ -234,8 +232,7 @@ const primaryItem = computed<SummaryItem | null>(() => {
     key: 'composite',
     label: '综合评分',
     value: score.toFixed(1),
-    status:
-      score >= 80 ? 'success' : score >= 60 ? 'warning' : 'danger',
+    status: score >= 80 ? 'success' : score >= 60 ? 'warning' : 'danger',
   };
 });
 
@@ -325,7 +322,8 @@ const { renderEcharts: renderBulletEcharts } = useEcharts(bulletRef);
 
 // 数据质量环形图
 const qualityDonutRef = ref<EchartsUIType>();
-const { renderEcharts: renderQualityDonutEcharts } = useEcharts(qualityDonutRef);
+const { renderEcharts: renderQualityDonutEcharts } =
+  useEcharts(qualityDonutRef);
 
 // 自动刷新
 const REFRESH_INTERVAL = 5 * 60 * 1000;
@@ -654,7 +652,7 @@ function renderBulletChart() {
           const valEnd = api.coord([val, idx]);
           const targetPos = api.coord([target, idx]);
           const barHeight = (yStart[1] - yEnd[1]) * 0.55;
-          const barY = yEnd[1] + ((yStart[1] - yEnd[1]) - barHeight) / 2;
+          const barY = yEnd[1] + (yStart[1] - yEnd[1] - barHeight) / 2;
           return {
             type: 'group',
             children: [
@@ -943,21 +941,14 @@ onUnmounted(() => {
             <Button type="link" size="small" @click="handleSavePreset">
               保存预设
             </Button>
-            <Button
-              type="link"
-              size="small"
-              @click="handleResetPreferences"
-            >
+            <Button type="link" size="small" @click="handleResetPreferences">
               重置偏好
             </Button>
           </template>
         </ClpmPageToolbar>
 
         <!-- 筛选预设区 -->
-        <div
-          v-if="preferences.savedFilters?.length"
-          class="clpm-preset-bar"
-        >
+        <div v-if="preferences.savedFilters?.length" class="clpm-preset-bar">
           <span class="text-xs text-gray-500">筛选预设：</span>
           <Tag
             v-for="preset in preferences.savedFilters"
@@ -1086,7 +1077,9 @@ onUnmounted(() => {
               <template v-if="column.key === 'rank'">
                 <Tag
                   v-if="record.rank <= 3"
-                  :color="['red', 'orange', 'gold'][record.rank - 1] ?? 'default'"
+                  :color="
+                    ['red', 'orange', 'gold'][record.rank - 1] ?? 'default'
+                  "
                   class="m-0"
                 >
                   {{ record.rank }}
@@ -1122,7 +1115,9 @@ onUnmounted(() => {
                   "
                   class="m-0"
                 >
-                  {{ statusLabelMap[record.status as KpiStatus] || record.status }}
+                  {{
+                    statusLabelMap[record.status as KpiStatus] || record.status
+                  }}
                 </Tag>
               </template>
             </template>
@@ -1168,19 +1163,19 @@ onUnmounted(() => {
 <style scoped>
 .clpm-top-grid {
   display: grid;
-  gap: 12px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .clpm-preset-bar {
-  align-items: center;
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1px);
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
   padding: 6px 12px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
 }
 
 .clpm-chart-card {
@@ -1189,16 +1184,16 @@ onUnmounted(() => {
 }
 
 .clpm-status-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-  color: hsl(var(--muted-foreground));
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  gap: 8px;
-  padding: 8px 12px;
 }
 
 .clpm-status-footer__divider {
@@ -1208,15 +1203,15 @@ onUnmounted(() => {
 /* D2 多图联动状态指示条 */
 .clpm-linkage-bar {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 6px 12px;
   margin-bottom: 12px;
+  font-size: 13px;
+  color: hsl(var(--primary));
   background: hsl(var(--primary) / 8%);
   border: 1px solid hsl(var(--primary) / 20%);
   border-radius: 4px;
-  font-size: 13px;
-  color: hsl(var(--primary));
 }
 
 /* D2 多图联动：排行表选中行高亮 */

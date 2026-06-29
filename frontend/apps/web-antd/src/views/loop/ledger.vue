@@ -508,7 +508,10 @@ async function loadAvailableTags(keyword?: string) {
   try {
     // 如果有回路位号，按前缀搜索相关测点
     const searchKeyword =
-      keyword || (currentLoopForTag.value?.tagName ? currentLoopForTag.value.tagName : undefined);
+      keyword ||
+      (currentLoopForTag.value?.tagName
+        ? currentLoopForTag.value.tagName
+        : undefined);
     const data = await getTagListApi({
       keyword: searchKeyword,
       page: 1,

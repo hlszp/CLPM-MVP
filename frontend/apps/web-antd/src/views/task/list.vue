@@ -533,14 +533,12 @@ function handleExport() {
     t.taskType === 'STANDARD' ? '标准' : '自定义',
     statusNameMap[t.status],
     `${formatProgress(t.progress)}%`,
-    t.currentStage ? (stageNameMap[t.currentStage] || t.currentStage) : '',
+    t.currentStage ? stageNameMap[t.currentStage] || t.currentStage : '',
     t.loopsTotal ? `${t.loopsDone || 0}/${t.loopsTotal}` : '',
     formatTime(t.createdAt),
   ]);
   const csv = [headers, ...rows]
-    .map((r) =>
-      r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','),
-    )
+    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n');
   const blob = new Blob([`\uFEFF${csv}`], {
     type: 'text/csv;charset=utf-8;',
@@ -659,10 +657,7 @@ onUnmounted(() => {
       <span class="text-muted-foreground">状态流转：</span>
       <template v-for="(s, idx) in stateFlow" :key="s.key">
         <Tag :color="s.color">{{ s.label }}</Tag>
-        <span
-          v-if="idx < stateFlow.length - 1"
-          class="text-muted-foreground"
-        >
+        <span v-if="idx < stateFlow.length - 1" class="text-muted-foreground">
           →
         </span>
       </template>
@@ -949,9 +944,7 @@ onUnmounted(() => {
 
         <!-- 变更说明 -->
         <div>
-          <div class="mb-1 text-xs text-gray-500">
-            变更说明（可选）
-          </div>
+          <div class="mb-1 text-xs text-gray-500">变更说明（可选）</div>
           <Input.TextArea
             v-model:value="changeDescription"
             placeholder="请填写本次变更的说明、原因或备注"

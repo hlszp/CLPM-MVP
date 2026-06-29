@@ -86,9 +86,7 @@ function savePreferences(prefs: Record<string, PagePreference>) {
  * @param pageKey 页面标识，如 'loop-monitor'、'metric-dashboard'
  */
 export function usePagePreference(pageKey: string) {
-  const preferences = ref<PagePreference>(
-    loadPreferences()[pageKey] || {},
-  );
+  const preferences = ref<PagePreference>(loadPreferences()[pageKey] || {});
 
   // 自动保存
   watch(

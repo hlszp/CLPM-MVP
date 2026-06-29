@@ -149,16 +149,32 @@ const changeSummary = computed(() => {
   if (!m) return [];
   const summary: { field: string; from: string; to: string }[] = [];
   if (m.formula !== formState.formula) {
-    summary.push({ field: '计算公式', from: m.formula || '—', to: formState.formula || '—' });
+    summary.push({
+      field: '计算公式',
+      from: m.formula || '—',
+      to: formState.formula || '—',
+    });
   }
   if (m.weight !== formState.weight) {
-    summary.push({ field: '权重', from: `${m.weight}%`, to: `${formState.weight}%` });
+    summary.push({
+      field: '权重',
+      from: `${m.weight}%`,
+      to: `${formState.weight}%`,
+    });
   }
   if (m.controlType !== formState.controlType) {
-    summary.push({ field: '控制类型', from: m.controlType, to: formState.controlType });
+    summary.push({
+      field: '控制类型',
+      from: m.controlType,
+      to: formState.controlType,
+    });
   }
   if (m.isEnabled !== formState.isEnabled) {
-    summary.push({ field: '启用状态', from: m.isEnabled ? '启用' : '禁用', to: formState.isEnabled ? '启用' : '禁用' });
+    summary.push({
+      field: '启用状态',
+      from: m.isEnabled ? '启用' : '禁用',
+      to: formState.isEnabled ? '启用' : '禁用',
+    });
   }
   if (
     m.threshold.min !== formState.threshold.min ||

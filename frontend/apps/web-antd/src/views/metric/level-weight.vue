@@ -113,10 +113,18 @@ const changeSummary = computed(() => {
   if (!state) return [];
   const summary: { field: string; from: string; to: string }[] = [];
   if (item.weight !== state.weight) {
-    summary.push({ field: 'weight（权重）', from: `${item.weight}%`, to: `${state.weight}%` });
+    summary.push({
+      field: 'weight（权重）',
+      from: `${item.weight}%`,
+      to: `${state.weight}%`,
+    });
   }
   if ((item.description ?? '') !== state.description) {
-    summary.push({ field: '描述', from: item.description ?? '—', to: state.description || '—' });
+    summary.push({
+      field: '描述',
+      from: item.description ?? '—',
+      to: state.description || '—',
+    });
   }
   return summary;
 });

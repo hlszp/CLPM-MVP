@@ -39,7 +39,9 @@ const emit = defineEmits<{
 }>();
 
 /** 解析 delta 方向：up/down/flat */
-function getDeltaDirection(delta: number | string | undefined): 'down' | 'flat' | 'up' {
+function getDeltaDirection(
+  delta: number | string | undefined,
+): 'down' | 'flat' | 'up' {
   if (delta === undefined || delta === '') return 'flat';
   const num = typeof delta === 'number' ? delta : Number.parseFloat(delta);
   if (Number.isNaN(num)) return 'flat';
@@ -119,9 +121,15 @@ function getSparklineColor(status?: string): string {
         :key="`skeleton-${i}`"
         class="clpm-kpi-strip__item clpm-kpi-strip__skeleton"
       >
-        <div class="clpm-kpi-strip__skeleton-line clpm-kpi-strip__skeleton-line--label"></div>
-        <div class="clpm-kpi-strip__skeleton-line clpm-kpi-strip__skeleton-line--value"></div>
-        <div class="clpm-kpi-strip__skeleton-line clpm-kpi-strip__skeleton-line--delta"></div>
+        <div
+          class="clpm-kpi-strip__skeleton-line clpm-kpi-strip__skeleton-line--label"
+        ></div>
+        <div
+          class="clpm-kpi-strip__skeleton-line clpm-kpi-strip__skeleton-line--value"
+        ></div>
+        <div
+          class="clpm-kpi-strip__skeleton-line clpm-kpi-strip__skeleton-line--delta"
+        ></div>
       </div>
     </template>
 
@@ -140,10 +148,15 @@ function getSparklineColor(status?: string): string {
         <div class="clpm-kpi-strip__label">{{ item.label }}</div>
         <div class="clpm-kpi-strip__main">
           <div class="clpm-kpi-strip__value-row">
-            <span class="clpm-kpi-strip__value" :class="`is-${item.status || 'neutral'}`">
+            <span
+              class="clpm-kpi-strip__value"
+              :class="`is-${item.status || 'neutral'}`"
+            >
               {{ item.value }}
             </span>
-            <span v-if="item.unit" class="clpm-kpi-strip__unit">{{ item.unit }}</span>
+            <span v-if="item.unit" class="clpm-kpi-strip__unit">{{
+              item.unit
+            }}</span>
           </div>
           <!-- sparkline 趋势小图 -->
           <svg
@@ -172,10 +185,14 @@ function getSparklineColor(status?: string): string {
         >
           <span class="clpm-kpi-strip__delta-arrow">
             <template v-if="getDeltaDirection(item.delta) === 'up'">↑</template>
-            <template v-else-if="getDeltaDirection(item.delta) === 'down'">↓</template>
+            <template v-else-if="getDeltaDirection(item.delta) === 'down'"
+              >↓</template
+            >
             <template v-else>→</template>
           </span>
-          <span class="clpm-kpi-strip__delta-text">{{ getDeltaText(item.delta) }}</span>
+          <span class="clpm-kpi-strip__delta-text">{{
+            getDeltaText(item.delta)
+          }}</span>
         </div>
       </div>
     </template>
@@ -184,20 +201,20 @@ function getSparklineColor(status?: string): string {
 
 <style scoped>
 .clpm-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 0;
+  overflow: hidden;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-  display: grid;
-  gap: 0;
-  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
-  overflow: hidden;
 }
 
 .clpm-kpi-strip__item {
-  border-right: 1px solid hsl(var(--border));
-  cursor: default;
   min-width: 0;
   padding: 10px 12px;
+  cursor: default;
+  border-right: 1px solid hsl(var(--border));
   transition: background 0.15s;
 }
 
@@ -214,43 +231,51 @@ function getSparklineColor(status?: string): string {
 }
 
 .clpm-kpi-strip__label {
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
-  line-height: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 16px;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
 .clpm-kpi-strip__main {
-  align-items: flex-end;
   display: flex;
   gap: 8px;
+  align-items: flex-end;
   justify-content: space-between;
   margin-top: 3px;
 }
 
 .clpm-kpi-strip__value-row {
-  align-items: baseline;
   display: flex;
   flex: 1 1 auto;
   gap: 4px;
+  align-items: baseline;
   min-width: 0;
 }
 
 .clpm-kpi-strip__value {
-  color: hsl(var(--foreground));
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-feature-settings: 'tnum';
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace
+  );
   font-size: 20px;
   font-weight: 800;
+  font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
   line-height: 24px;
+  color: hsl(var(--foreground));
 }
 
 .clpm-kpi-strip__unit {
-  color: hsl(var(--muted-foreground));
   font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 /* sparkline */
@@ -261,11 +286,11 @@ function getSparklineColor(status?: string): string {
 
 /* delta 变化量 */
 .clpm-kpi-strip__delta {
-  align-items: center;
   display: flex;
-  font-size: 12px;
   gap: 2px;
+  align-items: center;
   margin-top: 2px;
+  font-size: 12px;
 }
 
 .clpm-kpi-strip__delta-arrow {
@@ -287,11 +312,25 @@ function getSparklineColor(status?: string): string {
 }
 
 /* 状态色 */
-.is-success { color: hsl(var(--success)); }
-.is-warning { color: hsl(var(--warning)); }
-.is-danger { color: hsl(var(--destructive)); }
-.is-neutral { color: hsl(var(--foreground)); }
-.is-primary { color: hsl(var(--primary)); }
+.is-success {
+  color: hsl(var(--success));
+}
+
+.is-warning {
+  color: hsl(var(--warning));
+}
+
+.is-danger {
+  color: hsl(var(--destructive));
+}
+
+.is-neutral {
+  color: hsl(var(--foreground));
+}
+
+.is-primary {
+  color: hsl(var(--primary));
+}
 
 /* 骨架屏 */
 .clpm-kpi-strip__skeleton {
@@ -299,7 +338,6 @@ function getSparklineColor(status?: string): string {
 }
 
 .clpm-kpi-strip__skeleton-line {
-  animation: clpm-kpi-skeleton 1.5s ease-in-out infinite;
   background: linear-gradient(
     90deg,
     hsl(var(--muted)) 25%,
@@ -308,29 +346,31 @@ function getSparklineColor(status?: string): string {
   );
   background-size: 400% 100%;
   border-radius: 2px;
+  animation: clpm-kpi-skeleton 1.5s ease-in-out infinite;
 }
 
 .clpm-kpi-strip__skeleton-line--label {
+  width: 60%;
   height: 12px;
   margin-bottom: 8px;
-  width: 60%;
 }
 
 .clpm-kpi-strip__skeleton-line--value {
+  width: 80%;
   height: 20px;
   margin-bottom: 6px;
-  width: 80%;
 }
 
 .clpm-kpi-strip__skeleton-line--delta {
-  height: 12px;
   width: 40%;
+  height: 12px;
 }
 
 @keyframes clpm-kpi-skeleton {
   0% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0 50%;
   }

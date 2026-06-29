@@ -86,17 +86,15 @@ const rowSelection = computed(() => ({
 /** 选中项中可删除的数量（未关联回路） */
 const selectedDeletableCount = computed(() => {
   const selectedSet = new Set(selectedRowKeys.value);
-  return tagList.value.filter(
-    (t) => selectedSet.has(t.id) && !t.isLinked,
-  ).length;
+  return tagList.value.filter((t) => selectedSet.has(t.id) && !t.isLinked)
+    .length;
 });
 
 /** 选中项中已关联（不可删除）的数量 */
 const selectedLinkedCount = computed(() => {
   const selectedSet = new Set(selectedRowKeys.value);
-  return tagList.value.filter(
-    (t) => selectedSet.has(t.id) && t.isLinked,
-  ).length;
+  return tagList.value.filter((t) => selectedSet.has(t.id) && t.isLinked)
+    .length;
 });
 
 // Plant nodes for filter (flattened)
@@ -498,11 +496,7 @@ onMounted(() => {
             "
             @confirm="handleBatchDelete"
           >
-            <Button
-              v-permission="['ADMIN']"
-              danger
-              :loading="batchDeleting"
-            >
+            <Button v-permission="['ADMIN']" danger :loading="batchDeleting">
               批量删除<template v-if="selectedRowKeys.length > 0">
                 ({{ selectedRowKeys.length }})
               </template>

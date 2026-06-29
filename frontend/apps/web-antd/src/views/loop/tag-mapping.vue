@@ -26,10 +26,7 @@ import {
   getLoopTagsApi,
   updateLoopTagMappingApi,
 } from '#/api/loop';
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import StatusBadge from '#/components/loop/status-badge.vue';
 
 defineOptions({ name: 'LoopTagMapping' });
@@ -258,9 +255,7 @@ async function handleAutoLink() {
     if (!tagType) continue;
 
     const expectedTagName = `${loopTagName}_${tagType}`;
-    const tag = availableTags.value.find(
-      (t) => t.tagName === expectedTagName,
-    );
+    const tag = availableTags.value.find((t) => t.tagName === expectedTagName);
 
     if (tag) {
       slotState[key] = tag.tagId;
@@ -290,7 +285,10 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar title="Tag 关联管理" subtitle="按回路管理 7 个核心 Tag 槽位，并校验必填关联。" />
+    <ClpmPageToolbar
+      title="Tag 关联管理"
+      subtitle="按回路管理 7 个核心 Tag 槽位，并校验必填关联。"
+    />
     <div class="mt-4 space-y-4">
       <!-- 回路选择区 -->
       <ClpmDataCanvas title="回路选择">

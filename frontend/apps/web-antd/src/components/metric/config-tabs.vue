@@ -42,7 +42,11 @@ function handleChange(key: Key) {
 </script>
 
 <template>
-  <Tabs :active-key="activeKey" class="metric-config-tabs" @change="handleChange">
+  <Tabs
+    :active-key="activeKey"
+    class="metric-config-tabs"
+    @change="handleChange"
+  >
     <TabPane key="definition" tab="指标定义" />
     <TabPane key="weight" tab="权重配置" />
     <TabPane key="engine" tab="引擎规则" />

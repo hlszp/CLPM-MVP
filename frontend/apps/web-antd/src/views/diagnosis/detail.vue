@@ -31,14 +31,8 @@ import {
   getTrackerListApi,
   getWaveformApi,
 } from '#/api/diagnosis';
-import {
-  ClpmDataCanvas,
-  ClpmObjectSummaryBar,
-  ClpmPageToolbar,
-  ClpmToolbarButton,
-  type SummaryAction,
-  type SummaryItem,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import type { SummaryAction, SummaryItem } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import {
@@ -440,10 +434,7 @@ function renderScatterChart() {
 
 /** 散点图点击事件 handler（D2 反向联动：散点 → 趋势图） */
 function scatterClickHandler(params: any) {
-  if (
-    params.componentType === 'series' &&
-    params.seriesType === 'scatter'
-  ) {
+  if (params.componentType === 'series' && params.seriesType === 'scatter') {
     const idx = params.dataIndex;
     const scatter = detail.value?.evidenceChain?.scatterPlot;
     if (!scatter || !waveform.value) return;
@@ -592,7 +583,8 @@ onMounted(() => {
               <div v-if="selectedTime" class="clpm-linkage-bar">
                 <IconifyIcon icon="ant-design:link-outlined" />
                 <span>
-                  联动已激活：选中时间 {{ formatSelectedTime(selectedTime.timestamp) }}
+                  联动已激活：选中时间
+                  {{ formatSelectedTime(selectedTime.timestamp) }}
                 </span>
                 <Button type="link" size="small" @click="clearSelection">
                   清除
@@ -632,9 +624,13 @@ onMounted(() => {
               <div class="mt-4">
                 <div class="mb-2 font-medium">特征值</div>
                 <div
-                  v-if="detail && featureEntries(detail.featureValues).length > 0"
+                  v-if="
+                    detail && featureEntries(detail.featureValues).length > 0
+                  "
                 >
-                  <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                  <div
+                    class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4"
+                  >
                     <div
                       v-for="item in featureEntries(detail.featureValues)"
                       :key="item.key"
@@ -750,14 +746,14 @@ onMounted(() => {
 <style scoped>
 .clpm-linkage-bar {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 6px 12px;
   margin-bottom: 12px;
+  font-size: 13px;
+  color: hsl(var(--primary));
   background: hsl(var(--primary) / 8%);
   border: 1px solid hsl(var(--primary) / 20%);
   border-radius: 4px;
-  font-size: 13px;
-  color: hsl(var(--primary));
 }
 </style>

@@ -362,7 +362,9 @@ const changeSummary = computed<DiffEntry[]>(() => {
     if ((orig.level ?? undefined) !== (formState.level ?? undefined)) {
       summary.push({
         field: '回路级别',
-        from: orig.level ? (LEVEL_LABEL[orig.level] ?? String(orig.level)) : '—',
+        from: orig.level
+          ? (LEVEL_LABEL[orig.level] ?? String(orig.level))
+          : '—',
         to: formState.level
           ? (LEVEL_LABEL[formState.level] ?? String(formState.level))
           : '—',
@@ -383,7 +385,9 @@ const changeSummary = computed<DiffEntry[]>(() => {
     if (loopDetail.value) {
       const origW = loopDetail.value.basicInfo.scoreWeights;
       for (const item of weightItems) {
-        if ((origW[item.key] ?? 0) !== (formState.scoreWeights[item.key] ?? 0)) {
+        if (
+          (origW[item.key] ?? 0) !== (formState.scoreWeights[item.key] ?? 0)
+        ) {
           summary.push({
             field: `权重·${item.label}`,
             from: `${origW[item.key]}%`,
@@ -853,7 +857,8 @@ async function loadAvailableTags(keyword?: string) {
   try {
     // 如果有回路位号，按前缀搜索相关测点
     const searchKeyword =
-      keyword || (editingLoop.value?.tagName ? editingLoop.value.tagName : undefined);
+      keyword ||
+      (editingLoop.value?.tagName ? editingLoop.value.tagName : undefined);
     const data = await getTagListApi({
       keyword: searchKeyword,
       page: 1,
@@ -1427,10 +1432,7 @@ watch(activeMainTab, (tab) => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'status'">
-            <StatusBadge
-              :status="record.status"
-              :is-active="record.isActive"
-            />
+            <StatusBadge :status="record.status" :is-active="record.isActive" />
           </template>
           <template v-else-if="column.key === 'tagMapping'">
             <ClpmTagAssociationBadge

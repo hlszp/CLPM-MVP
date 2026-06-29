@@ -52,10 +52,15 @@ const emit = defineEmits<{
       [`is-loading-${loadingVariant}`]: loading,
     }"
   >
-    <header v-if="title || description || $slots.extra" class="clpm-data-canvas__header">
+    <header
+      v-if="title || description || $slots.extra"
+      class="clpm-data-canvas__header"
+    >
       <div class="clpm-data-canvas__title-block">
         <div v-if="title" class="clpm-data-canvas__title">{{ title }}</div>
-        <div v-if="description" class="clpm-data-canvas__description">{{ description }}</div>
+        <div v-if="description" class="clpm-data-canvas__description">
+          {{ description }}
+        </div>
       </div>
       <div v-if="$slots.extra" class="clpm-data-canvas__extra">
         <slot name="extra"></slot>
@@ -64,7 +69,10 @@ const emit = defineEmits<{
 
     <!-- partial 提示（partial + error 可共存） -->
     <div v-if="partial" class="clpm-data-canvas__notice is-partial">
-      <IconifyIcon icon="ant-design:warning-outlined" class="clpm-data-canvas__notice-icon" />
+      <IconifyIcon
+        icon="ant-design:warning-outlined"
+        class="clpm-data-canvas__notice-icon"
+      />
       <span class="clpm-data-canvas__notice-text">{{ partialText }}</span>
       <a
         v-if="showPartialDetail"
@@ -80,7 +88,10 @@ const emit = defineEmits<{
     <!-- 错误态（优先于 empty 和 loading body） -->
     <div v-if="error" class="clpm-data-canvas__state is-error">
       <slot name="error">
-        <IconifyIcon icon="ant-design:close-circle-outlined" class="clpm-data-canvas__state-icon" />
+        <IconifyIcon
+          icon="ant-design:close-circle-outlined"
+          class="clpm-data-canvas__state-icon"
+        />
         <div class="clpm-data-canvas__state-text">
           {{ errorText }}
           <button
@@ -95,12 +106,18 @@ const emit = defineEmits<{
     </div>
     <div v-else-if="empty" class="clpm-data-canvas__state is-empty">
       <slot name="empty">
-        <IconifyIcon icon="ant-design:inbox-outlined" class="clpm-data-canvas__state-icon" />
+        <IconifyIcon
+          icon="ant-design:inbox-outlined"
+          class="clpm-data-canvas__state-icon"
+        />
         <div class="clpm-data-canvas__state-text">{{ emptyText }}</div>
       </slot>
     </div>
     <!-- 骨架屏 -->
-    <div v-else-if="loading && loadingVariant === 'skeleton'" class="clpm-data-canvas__skeleton">
+    <div
+      v-else-if="loading && loadingVariant === 'skeleton'"
+      class="clpm-data-canvas__skeleton"
+    >
       <div
         v-for="i in skeletonRows"
         :key="i"
@@ -109,12 +126,22 @@ const emit = defineEmits<{
       ></div>
     </div>
     <!-- 旋转 spinner -->
-    <div v-else-if="loading && loadingVariant === 'spinner'" class="clpm-data-canvas__state is-spinner">
-      <IconifyIcon icon="ant-design:loading-outlined" class="clpm-data-canvas__spinner" />
+    <div
+      v-else-if="loading && loadingVariant === 'spinner'"
+      class="clpm-data-canvas__state is-spinner"
+    >
+      <IconifyIcon
+        icon="ant-design:loading-outlined"
+        class="clpm-data-canvas__spinner"
+      />
       <div class="clpm-data-canvas__state-text">加载中…</div>
     </div>
     <!-- 透明度 loading（保留原有行为） -->
-    <div v-else class="clpm-data-canvas__body" :class="{ 'is-dimmed': loading }">
+    <div
+      v-else
+      class="clpm-data-canvas__body"
+      :class="{ 'is-dimmed': loading }"
+    >
       <slot></slot>
     </div>
   </section>
@@ -122,23 +149,23 @@ const emit = defineEmits<{
 
 <style scoped>
 .clpm-data-canvas {
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1px);
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
 }
 
 .clpm-data-canvas__header {
-  align-items: center;
-  background: hsl(var(--muted) / 42%);
-  border-bottom: 1px solid hsl(var(--border));
   display: flex;
   gap: 12px;
+  align-items: center;
   min-height: 38px;
   padding: 8px 12px;
+  background: hsl(var(--muted) / 42%);
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .clpm-data-canvas__title-block {
@@ -147,38 +174,38 @@ const emit = defineEmits<{
 }
 
 .clpm-data-canvas__title {
-  color: hsl(var(--foreground));
   font-size: 14px;
   font-weight: 700;
   line-height: 18px;
+  color: hsl(var(--foreground));
 }
 
 .clpm-data-canvas__description {
-  color: hsl(var(--muted-foreground));
   font-size: 12px;
   line-height: 16px;
+  color: hsl(var(--muted-foreground));
 }
 
 .clpm-data-canvas__extra {
-  align-items: center;
   display: flex;
   flex: 0 0 auto;
   gap: 8px;
+  align-items: center;
 }
 
 /* partial 提示 */
 .clpm-data-canvas__notice {
-  align-items: center;
-  border-bottom: 1px solid hsl(var(--border));
   display: flex;
-  font-size: 12px;
   gap: 6px;
+  align-items: center;
   padding: 7px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .clpm-data-canvas__notice.is-partial {
-  background: hsl(var(--warning) / 10%);
   color: hsl(var(--warning));
+  background: hsl(var(--warning) / 10%);
 }
 
 .clpm-data-canvas__notice-icon {
@@ -191,12 +218,12 @@ const emit = defineEmits<{
 }
 
 .clpm-data-canvas__notice-link {
-  align-items: center;
-  color: hsl(var(--primary));
   display: inline-flex;
   flex: 0 0 auto;
-  font-weight: 600;
   gap: 2px;
+  align-items: center;
+  font-weight: 600;
+  color: hsl(var(--primary));
 }
 
 .clpm-data-canvas__notice-link:hover {
@@ -216,15 +243,15 @@ const emit = defineEmits<{
 
 /* 状态展示 */
 .clpm-data-canvas__state {
-  align-items: center;
-  color: hsl(var(--muted-foreground));
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   gap: 10px;
+  align-items: center;
   justify-content: center;
   min-height: 160px;
   padding: 24px;
+  color: hsl(var(--muted-foreground));
   text-align: center;
 }
 
@@ -245,23 +272,23 @@ const emit = defineEmits<{
 }
 
 .clpm-data-canvas__state-text {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
-  font-size: 13px;
   gap: 8px;
+  align-items: center;
   justify-content: center;
+  font-size: 13px;
 }
 
 .clpm-data-canvas__retry {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: hsl(var(--primary));
+  cursor: pointer;
   background: transparent;
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-  color: hsl(var(--primary));
-  cursor: pointer;
-  font-size: 12px;
-  height: 24px;
-  padding: 0 10px;
 }
 
 .clpm-data-canvas__retry:hover:not(:disabled) {
@@ -271,8 +298,8 @@ const emit = defineEmits<{
 
 /* spinner */
 .clpm-data-canvas__spinner {
-  animation: clpm-data-canvas-spin 1s linear infinite;
   font-size: 32px;
+  animation: clpm-data-canvas-spin 1s linear infinite;
 }
 
 .clpm-data-canvas__state.is-spinner {
@@ -283,6 +310,7 @@ const emit = defineEmits<{
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }
@@ -299,7 +327,7 @@ const emit = defineEmits<{
 }
 
 .clpm-data-canvas__skeleton-row {
-  animation: clpm-data-canvas-skeleton 1.5s ease-in-out infinite;
+  height: 14px;
   background: linear-gradient(
     90deg,
     hsl(var(--muted)) 25%,
@@ -308,13 +336,14 @@ const emit = defineEmits<{
   );
   background-size: 400% 100%;
   border-radius: 3px;
-  height: 14px;
+  animation: clpm-data-canvas-skeleton 1.5s ease-in-out infinite;
 }
 
 @keyframes clpm-data-canvas-skeleton {
   0% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0 50%;
   }

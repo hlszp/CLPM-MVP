@@ -141,13 +141,8 @@ export function triggerStandardEvaluateApi(
  * 用户按需选定回路/指标/时间范围触发评估。
  * 结果写入 kpi_snapshot_custom，不参与装置级聚合。
  */
-export function triggerCustomEvaluateApi(
-  data: TaskApi.CustomTaskCreateParams,
-) {
-  return requestClient.post<TaskApi.TaskItem>(
-    `${BASE}/custom/evaluate`,
-    data,
-  );
+export function triggerCustomEvaluateApi(data: TaskApi.CustomTaskCreateParams) {
+  return requestClient.post<TaskApi.TaskItem>(`${BASE}/custom/evaluate`, data);
 }
 
 /**

@@ -32,14 +32,8 @@ import {
 
 import { getRankingApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import {
-  ClpmDataCanvas,
-  ClpmKpiStrip,
-  ClpmObjectSummaryBar,
-  ClpmPageToolbar,
-  type KpiStripItem,
-  type SummaryItem,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmObjectSummaryBar, ClpmPageToolbar } from '#/components/clpm';
+import type { KpiStripItem, SummaryItem } from '#/components/clpm';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { flattenNodes } from '#/utils/plant-node';
@@ -195,18 +189,68 @@ const drawerVisible = ref(false);
 const selectedLoop = ref<MetricApi.RankingItem | null>(null);
 
 const kpiStripItems = computed<KpiStripItem[]>(() => [
-  { key: 'total', label: '总回路数', value: stats.value.total, status: 'neutral' },
-  { key: 'bad', label: '低效回路数', value: stats.value.badCount, status: 'danger' },
-  { key: 'avg', label: '平均评分', value: stats.value.avgScore.toFixed(1), status: stats.value.avgScore >= 80 ? 'success' : stats.value.avgScore >= 60 ? 'warning' : 'danger' },
-  { key: 'min', label: '最低评分', value: stats.value.minScore.toFixed(1), status: 'danger' },
+  {
+    key: 'total',
+    label: '总回路数',
+    value: stats.value.total,
+    status: 'neutral',
+  },
+  {
+    key: 'bad',
+    label: '低效回路数',
+    value: stats.value.badCount,
+    status: 'danger',
+  },
+  {
+    key: 'avg',
+    label: '平均评分',
+    value: stats.value.avgScore.toFixed(1),
+    status:
+      stats.value.avgScore >= 80
+        ? 'success'
+        : stats.value.avgScore >= 60
+          ? 'warning'
+          : 'danger',
+  },
+  {
+    key: 'min',
+    label: '最低评分',
+    value: stats.value.minScore.toFixed(1),
+    status: 'danger',
+  },
 ]);
 
 const drawerSummaryItems = computed<SummaryItem[]>(() => {
   if (!selectedLoop.value) return [];
   return [
-    { key: 'score', label: '综合评分', value: Number(selectedLoop.value.compositeScore).toFixed(1), status: selectedLoop.value.compositeScore >= 80 ? 'success' : selectedLoop.value.compositeScore >= 60 ? 'warning' : 'danger' },
-    { key: 'status', label: '状态', value: statusLabelMap[selectedLoop.value.status], status: selectedLoop.value.status === 'SUCCESS' ? 'success' : selectedLoop.value.status === 'PARTIAL' ? 'warning' : 'neutral' },
-    { key: 'confidence', label: '可信度', value: selectedLoop.value.confidenceLevel || '—', status: 'neutral' },
+    {
+      key: 'score',
+      label: '综合评分',
+      value: Number(selectedLoop.value.compositeScore).toFixed(1),
+      status:
+        selectedLoop.value.compositeScore >= 80
+          ? 'success'
+          : selectedLoop.value.compositeScore >= 60
+            ? 'warning'
+            : 'danger',
+    },
+    {
+      key: 'status',
+      label: '状态',
+      value: statusLabelMap[selectedLoop.value.status],
+      status:
+        selectedLoop.value.status === 'SUCCESS'
+          ? 'success'
+          : selectedLoop.value.status === 'PARTIAL'
+            ? 'warning'
+            : 'neutral',
+    },
+    {
+      key: 'confidence',
+      label: '可信度',
+      value: selectedLoop.value.confidenceLevel || '—',
+      status: 'neutral',
+    },
   ];
 });
 
@@ -323,7 +367,10 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar title="低效回路排行" subtitle="按综合评分和核心 KPI 识别最需要优先治理的回路。" />
+    <ClpmPageToolbar
+      title="低效回路排行"
+      subtitle="按综合评分和核心 KPI 识别最需要优先治理的回路。"
+    />
     <div class="mb-4 mt-4">
       <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
     </div>
@@ -543,7 +590,10 @@ onMounted(() => {
               size="small"
             />
           </div>
-          <div v-if="selectedLoop.samplingFreq" class="flex justify-between border-b pb-2">
+          <div
+            v-if="selectedLoop.samplingFreq"
+            class="flex justify-between border-b pb-2"
+          >
             <span class="text-gray-500">采样频率</span>
             <span>{{ selectedLoop.samplingFreq }}</span>
           </div>

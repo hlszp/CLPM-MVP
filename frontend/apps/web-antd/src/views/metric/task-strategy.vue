@@ -136,13 +136,22 @@ onMounted(() => {
         <Form ref="formRef" :model="formState" layout="vertical" class="pt-2">
           <div class="grid grid-cols-2 gap-4">
             <FormItem label="计算周期" name="calcPeriod">
-              <Select v-model:value="formState.calcPeriod" :options="calcPeriodOptions" />
+              <Select
+                v-model:value="formState.calcPeriod"
+                :options="calcPeriodOptions"
+              />
             </FormItem>
             <FormItem label="数据拉取窗口" name="dataFetchWindow">
-              <Select v-model:value="formState.dataFetchWindow" :options="dataFetchWindowOptions" />
+              <Select
+                v-model:value="formState.dataFetchWindow"
+                :options="dataFetchWindowOptions"
+              />
             </FormItem>
             <FormItem label="默认时间窗" name="defaultTimeWindow">
-              <Select v-model:value="formState.defaultTimeWindow" :options="defaultTimeWindowOptions" />
+              <Select
+                v-model:value="formState.defaultTimeWindow"
+                :options="defaultTimeWindowOptions"
+              />
             </FormItem>
             <FormItem label="整点自动触发" name="hourlyTrigger">
               <Switch v-model:checked="formState.hourlyTrigger" />
@@ -158,7 +167,10 @@ onMounted(() => {
       <Card title="自动触发策略">
         <Form :model="formState" layout="vertical">
           <div class="grid grid-cols-2 gap-4">
-            <FormItem label="低效回路自动重评阈值（综合评分）" name="autoRerevaluateThreshold">
+            <FormItem
+              label="低效回路自动重评阈值（综合评分）"
+              name="autoRerevaluateThreshold"
+            >
               <InputNumber
                 v-model:value="formState.autoRerevaluateThreshold"
                 :min="0"
@@ -185,10 +197,20 @@ onMounted(() => {
         <Form :model="formState" layout="vertical">
           <div class="grid grid-cols-2 gap-4">
             <FormItem label="失败重试次数" name="retryMaxAttempts">
-              <InputNumber v-model:value="formState.retryMaxAttempts" :min="0" :max="10" class="w-full" />
+              <InputNumber
+                v-model:value="formState.retryMaxAttempts"
+                :min="0"
+                :max="10"
+                class="w-full"
+              />
             </FormItem>
             <FormItem label="重试间隔（秒）" name="retryInterval">
-              <InputNumber v-model:value="formState.retryInterval" :min="5" :max="3600" class="w-full" />
+              <InputNumber
+                v-model:value="formState.retryInterval"
+                :min="5"
+                :max="3600"
+                class="w-full"
+              />
             </FormItem>
           </div>
         </Form>
@@ -199,10 +221,20 @@ onMounted(() => {
         <Form :model="formState" layout="vertical">
           <div class="grid grid-cols-2 gap-4">
             <FormItem label="调度并发数" name="scheduleConcurrency">
-              <InputNumber v-model:value="formState.scheduleConcurrency" :min="1" :max="100" class="w-full" />
+              <InputNumber
+                v-model:value="formState.scheduleConcurrency"
+                :min="1"
+                :max="100"
+                class="w-full"
+              />
             </FormItem>
             <FormItem label="排队超时（秒）" name="queueTimeout">
-              <InputNumber v-model:value="formState.queueTimeout" :min="60" :max="3600" class="w-full" />
+              <InputNumber
+                v-model:value="formState.queueTimeout"
+                :min="60"
+                :max="3600"
+                class="w-full"
+              />
             </FormItem>
             <FormItem label="按级别优先" name="priorityByLevel">
               <Switch v-model:checked="formState.priorityByLevel" />

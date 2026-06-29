@@ -14,10 +14,7 @@ import { Page } from '@vben/common-ui';
 
 import { Card, Tag } from 'ant-design-vue';
 
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
 
 defineOptions({ name: 'SystemPermissions' });
@@ -168,7 +165,10 @@ function getCellPermission(
 
 <template>
   <Page>
-    <ClpmPageToolbar title="权限矩阵" subtitle="查看 5 种角色在 6 大模块中的系统预设权限级别。" />
+    <ClpmPageToolbar
+      title="权限矩阵"
+      subtitle="查看 5 种角色在 6 大模块中的系统预设权限级别。"
+    />
     <ClpmDataCanvas class="mt-4" title="权限矩阵">
       <div class="mb-4">
         <p class="text-sm text-gray-500">

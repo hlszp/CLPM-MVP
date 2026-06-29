@@ -15,14 +15,7 @@ import type { DashboardApi } from '#/api/dashboard';
 import type { MetricApi } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import {
-  computed,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  ref,
-  watch,
-} from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -34,14 +27,8 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
-import {
-  ClpmDataCanvas,
-  ClpmKpiStrip,
-  ClpmObjectSummaryBar,
-  ClpmPageToolbar,
-  ClpmToolbarButton,
-  type KpiStripItem,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import type { KpiStripItem } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
@@ -57,10 +44,7 @@ const {
 
 // ============ API 接口 ============
 import { getDashboardOverviewApi } from '#/api/dashboard';
-import {
-  getAnalyticsApi,
-  getRealtimeAutoRateApi,
-} from '#/api/metric';
+import { getAnalyticsApi, getRealtimeAutoRateApi } from '#/api/metric';
 
 const router = useRouter();
 
@@ -216,7 +200,8 @@ async function loadRealtimeAutoRate() {
 }
 
 async function loadAnalytics() {
-  const days = granularity.value === 'day' ? 7 : granularity.value === 'week' ? 30 : 90;
+  const days =
+    granularity.value === 'day' ? 7 : granularity.value === 'week' ? 30 : 90;
   const startTime = dayjs().subtract(days, 'day').format('YYYY-MM-DD HH:mm:ss');
   const endTime = dayjs().format('YYYY-MM-DD HH:mm:ss');
 
@@ -239,7 +224,8 @@ async function loadAnalytics() {
   ]);
 
   // 合并两个指标的趋势数据
-  const timestamps = autoRes.kpiTrend?.timestamps ?? steadyRes.kpiTrend?.timestamps ?? [];
+  const timestamps =
+    autoRes.kpiTrend?.timestamps ?? steadyRes.kpiTrend?.timestamps ?? [];
   const series: MetricApi.AnalyticsSeries[] = [
     ...(autoRes.kpiTrend?.series ?? []),
     ...(steadyRes.kpiTrend?.series ?? []),
@@ -287,12 +273,60 @@ const kpiCards = computed<KpiCardItem[]>(() => {
   const kpi = overviewData.value?.kpi_cards;
   if (!kpi) {
     return [
-      { key: 'auto_mode_rate', label: '自控投用率', value: 0, unit: '%', trend: 'stable', delta: 0, goodWhenUp: true },
-      { key: 'steady_rate', label: '平稳率', value: 0, unit: '%', trend: 'stable', delta: 0, goodWhenUp: true },
-      { key: 'composite_score', label: '综合评分', value: 0, unit: '分', trend: 'stable', delta: 0, goodWhenUp: true },
-      { key: 'alarm_count', label: '报警次数', value: 0, unit: '次', trend: 'stable', delta: 0, goodWhenUp: false },
-      { key: 'operation_count', label: '操作频次', value: 0, unit: '次', trend: 'stable', delta: 0, goodWhenUp: false },
-      { key: 'good_value_rate', label: '好值率', value: 0, unit: '%', trend: 'stable', delta: 0, goodWhenUp: true },
+      {
+        key: 'auto_mode_rate',
+        label: '自控投用率',
+        value: 0,
+        unit: '%',
+        trend: 'stable',
+        delta: 0,
+        goodWhenUp: true,
+      },
+      {
+        key: 'steady_rate',
+        label: '平稳率',
+        value: 0,
+        unit: '%',
+        trend: 'stable',
+        delta: 0,
+        goodWhenUp: true,
+      },
+      {
+        key: 'composite_score',
+        label: '综合评分',
+        value: 0,
+        unit: '分',
+        trend: 'stable',
+        delta: 0,
+        goodWhenUp: true,
+      },
+      {
+        key: 'alarm_count',
+        label: '报警次数',
+        value: 0,
+        unit: '次',
+        trend: 'stable',
+        delta: 0,
+        goodWhenUp: false,
+      },
+      {
+        key: 'operation_count',
+        label: '操作频次',
+        value: 0,
+        unit: '次',
+        trend: 'stable',
+        delta: 0,
+        goodWhenUp: false,
+      },
+      {
+        key: 'good_value_rate',
+        label: '好值率',
+        value: 0,
+        unit: '%',
+        trend: 'stable',
+        delta: 0,
+        goodWhenUp: true,
+      },
     ];
   }
   return [
@@ -355,7 +389,10 @@ const kpiCards = computed<KpiCardItem[]>(() => {
 
 const kpiStripItems = computed<KpiStripItem[]>(() =>
   kpiCards.value.map((card) => ({
-    delta: card.delta === 0 ? '' : `${trendArrow(card.trend)} ${formatDelta(card.delta, card.unit)}`,
+    delta:
+      card.delta === 0
+        ? ''
+        : `${trendArrow(card.trend)} ${formatDelta(card.delta, card.unit)}`,
     key: String(card.key),
     label: card.label,
     status: kpiStatus(card.value, card.unit === '%'),
@@ -366,7 +403,13 @@ const kpiStripItems = computed<KpiStripItem[]>(() =>
 
 // ============ 中行左：低效回路列表 ============
 const inefficientLoopColumns = [
-  { dataIndex: 'loop_tag', key: 'loop_tag', title: '位号', width: 140, ellipsis: true },
+  {
+    dataIndex: 'loop_tag',
+    key: 'loop_tag',
+    title: '位号',
+    width: 140,
+    ellipsis: true,
+  },
   {
     dataIndex: 'composite_score',
     key: 'composite_score',
@@ -424,7 +467,8 @@ const { renderEcharts: renderHealthGaugeEcharts } = useEcharts(healthGaugeRef);
 
 // ============ 数据质量环形图 ============
 const qualityDonutRef = ref<EchartsUIType>();
-const { renderEcharts: renderQualityDonutEcharts } = useEcharts(qualityDonutRef);
+const { renderEcharts: renderQualityDonutEcharts } =
+  useEcharts(qualityDonutRef);
 
 function renderTrendChart() {
   const analytics = analyticsData.value;
@@ -433,7 +477,11 @@ function renderTrendChart() {
       title: {
         left: 'center',
         text: '暂无趋势数据',
-        textStyle: { color: chartTextColor.value, fontSize: 12, fontWeight: 'normal' },
+        textStyle: {
+          color: chartTextColor.value,
+          fontSize: 12,
+          fontWeight: 'normal',
+        },
         top: 'center',
       },
       xAxis: { type: 'category', data: [] },
@@ -446,7 +494,9 @@ function renderTrendChart() {
   const { timestamps, series } = analytics.kpiTrend;
   const labels = timestamps.map((t) => {
     const d = dayjs(t);
-    return trendGranularity.value === 'hour' ? d.format('HH:00') : d.format('MM-DD');
+    return trendGranularity.value === 'hour'
+      ? d.format('HH:00')
+      : d.format('MM-DD');
   });
 
   const autoSeries = series.find((s) => s.metricKey === 'auto_mode_rate');
@@ -483,7 +533,7 @@ function renderTrendChart() {
       trigger: 'axis',
       valueFormatter: (val: unknown) => {
         if (val === null || val === undefined) return '—';
-        return Number(val).toFixed(1) + '%';
+        return `${Number(val).toFixed(1)  }%`;
       },
     },
     xAxis: {
@@ -499,7 +549,9 @@ function renderTrendChart() {
         min: 0,
         name: '百分比 (%)',
         nameTextStyle: { color: chartTextColor.value, fontSize: 11 },
-        splitLine: { lineStyle: { color: chartSplitLineColor.value, type: 'dashed' } },
+        splitLine: {
+          lineStyle: { color: chartSplitLineColor.value, type: 'dashed' },
+        },
         type: 'value',
       },
     ],
@@ -581,14 +633,30 @@ function renderQualityDonut() {
         avoidLabelOverlap: true,
         center: ['50%', '45%'],
         data: [
-          { itemStyle: { color: themeColors.value.SUCCESS }, name: 'Good', value: good },
-          { itemStyle: { color: themeColors.value.DANGER }, name: 'Bad', value: bad },
-          { itemStyle: { color: themeColors.value.WARNING }, name: 'Uncertain', value: uncertain },
+          {
+            itemStyle: { color: themeColors.value.SUCCESS },
+            name: 'Good',
+            value: good,
+          },
+          {
+            itemStyle: { color: themeColors.value.DANGER },
+            name: 'Bad',
+            value: bad,
+          },
+          {
+            itemStyle: { color: themeColors.value.WARNING },
+            name: 'Uncertain',
+            value: uncertain,
+          },
         ],
         emphasis: {
           label: { fontSize: 14, fontWeight: 'bold', show: true },
         },
-        itemStyle: { borderColor: chartBorderColor.value, borderRadius: 4, borderWidth: 2 },
+        itemStyle: {
+          borderColor: chartBorderColor.value,
+          borderRadius: 4,
+          borderWidth: 2,
+        },
         label: {
           color: chartTextStrongColor.value,
           fontFamily: 'ui-monospace, Menlo, Consolas',
@@ -609,7 +677,10 @@ function renderQualityDonut() {
 }
 
 // ============ 辅助函数 ============
-function kpiStatus(score: number, isRate: boolean = true): KpiStripItem['status'] {
+function kpiStatus(
+  score: number,
+  isRate: boolean = true,
+): KpiStripItem['status'] {
   const threshold = isRate ? 80 : 60;
   const good = isRate ? 90 : 80;
   if (score >= good) return 'success';
@@ -686,7 +757,13 @@ onUnmounted(() => {
           @change="loadAll"
         />
         <template #actions>
-          <Tooltip :title="autoRefresh ? `自动刷新开启（${autoRefreshInterval}s）` : '开启自动刷新'">
+          <Tooltip
+            :title="
+              autoRefresh
+                ? `自动刷新开启（${autoRefreshInterval}s）`
+                : '开启自动刷新'
+            "
+          >
             <Switch
               :checked="autoRefresh"
               size="small"
@@ -698,7 +775,11 @@ onUnmounted(() => {
             :active="autoRefresh"
             icon-only
             size="small"
-            :tooltip="autoRefresh ? `自动刷新中（${autoRefreshInterval}s）` : '开启自动刷新'"
+            :tooltip="
+              autoRefresh
+                ? `自动刷新中（${autoRefreshInterval}s）`
+                : '开启自动刷新'
+            "
             @click="toggleAutoRefresh(!autoRefresh)"
           />
           <ClpmToolbarButton
@@ -755,8 +836,18 @@ onUnmounted(() => {
             :pagination="false"
             :scroll="{ y: 'calc(100% - 40px)' }"
             size="small"
-            :row-class-name="(record) => selectedLoop?.loop_id === record.loop_id ? 'ant-table-row-selected cursor-pointer' : 'cursor-pointer'"
-            :custom-row="(record) => ({ onClick: () => handleLoopRowClick(record as DashboardApi.InefficientLoop) })"
+            :row-class-name="
+              (record) =>
+                selectedLoop?.loop_id === record.loop_id
+                  ? 'ant-table-row-selected cursor-pointer'
+                  : 'cursor-pointer'
+            "
+            :custom-row="
+              (record) => ({
+                onClick: () =>
+                  handleLoopRowClick(record as DashboardApi.InefficientLoop),
+              })
+            "
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'loop_tag'">
@@ -771,15 +862,19 @@ onUnmounted(() => {
                 </span>
               </template>
               <template v-else-if="column.key === 'plant_name'">
-                <span class="text-xs text-gray-500">{{ record.plant_name }}</span>
+                <span class="text-xs text-gray-500">{{
+                  record.plant_name
+                }}</span>
               </template>
               <template v-else-if="column.key === 'key_metric'">
                 <div class="flex flex-col items-end text-xs">
                   <span class="font-mono">
-                    自控 {{ record.key_metric?.auto_mode_rate?.toFixed(1) ?? '—' }}%
+                    自控
+                    {{ record.key_metric?.auto_mode_rate?.toFixed(1) ?? '—' }}%
                   </span>
                   <span class="font-mono text-gray-500">
-                    平稳 {{ record.key_metric?.steady_rate?.toFixed(1) ?? '—' }}%
+                    平稳
+                    {{ record.key_metric?.steady_rate?.toFixed(1) ?? '—' }}%
                   </span>
                 </div>
               </template>
@@ -809,20 +904,39 @@ onUnmounted(() => {
                 {
                   key: 'auto_rate',
                   label: '自控率',
-                  value: (loopSummary.key_metric?.auto_mode_rate?.toFixed(1) ?? '—') + '%',
-                  status: kpiStatus(loopSummary.key_metric?.auto_mode_rate ?? 0),
+                  value:
+                    (loopSummary.key_metric?.auto_mode_rate?.toFixed(1) ??
+                      '—') + '%',
+                  status: kpiStatus(
+                    loopSummary.key_metric?.auto_mode_rate ?? 0,
+                  ),
                 },
                 {
                   key: 'steady_rate',
                   label: '平稳率',
-                  value: (loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—') + '%',
+                  value:
+                    (loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—') +
+                    '%',
                   status: kpiStatus(loopSummary.key_metric?.steady_rate ?? 0),
                 },
               ]"
               :actions="[
-                { key: 'diagnosis', label: '进入诊断', type: 'primary', icon: 'ant-design:experiment-outlined' },
-                { key: 'detail', label: '回路详情', icon: 'ant-design:profile-outlined' },
-                { key: 'tuning', label: '整定建议', icon: 'ant-design:sliders-outlined' },
+                {
+                  key: 'diagnosis',
+                  label: '进入诊断',
+                  type: 'primary',
+                  icon: 'ant-design:experiment-outlined',
+                },
+                {
+                  key: 'detail',
+                  label: '回路详情',
+                  icon: 'ant-design:profile-outlined',
+                },
+                {
+                  key: 'tuning',
+                  label: '整定建议',
+                  icon: 'ant-design:sliders-outlined',
+                },
               ]"
               @action="onSummaryAction"
             />
@@ -908,22 +1022,22 @@ onUnmounted(() => {
 
 <style scoped>
 .clpm-status-footer {
+  display: flex;
+  flex-shrink: 0;
+  gap: 14px;
   align-items: center;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-  color: hsl(var(--muted-foreground));
-  display: flex;
-  flex-shrink: 0;
-  font-size: 12px;
-  gap: 14px;
-  padding: 8px 14px;
 }
 
 .clpm-status-footer__item {
-  align-items: center;
   display: flex;
   gap: 6px;
+  align-items: center;
 }
 
 .clpm-status-footer__label {
@@ -931,10 +1045,18 @@ onUnmounted(() => {
 }
 
 .clpm-status-footer__value {
-  color: hsl(var(--foreground));
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-variant-numeric: tabular-nums;
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace
+  );
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
 }
 
 .clpm-status-footer__value.is-success {
@@ -954,8 +1076,8 @@ onUnmounted(() => {
 }
 
 .clpm-status-footer__divider {
-  background: hsl(var(--border));
-  height: 12px;
   width: 1px;
+  height: 12px;
+  background: hsl(var(--border));
 }
 </style>

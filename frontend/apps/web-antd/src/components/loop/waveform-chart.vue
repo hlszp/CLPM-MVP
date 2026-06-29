@@ -111,8 +111,7 @@ function bindClickEvent() {
     if (!timestamps || timestamps.length === 0) return;
     const point = [params.offsetX, params.offsetY];
     const xValue = chart.convertFromPixel({ xAxisIndex: 0 }, point[0]);
-    if (xValue === null || xValue === undefined || Number.isNaN(xValue))
-      return;
+    if (xValue === null || xValue === undefined || Number.isNaN(xValue)) return;
     // 找到最近的时间点索引
     let nearestIdx = 0;
     let minDist = Infinity;
@@ -327,12 +326,8 @@ function render() {
   const spData = buildSimpleData(timestamps, sp);
   const opData = buildSimpleData(timestamps, op);
   const showMode = props.showMode && mode && mode.length > 0;
-  const modeData = showMode
-    ? buildSimpleData(timestamps, mode)
-    : [];
-  const modeChanges = showMode
-    ? findModeChangePoints(timestamps, mode)
-    : [];
+  const modeData = showMode ? buildSimpleData(timestamps, mode) : [];
+  const modeChanges = showMode ? findModeChangePoints(timestamps, mode) : [];
 
   // Phase 5：validMask 存在且长度匹配时优先使用，否则回退到 pvQuality 断线逻辑
   const useValidMask =
@@ -476,10 +471,7 @@ function render() {
         },
       };
       if (firstPv.markLine) {
-        firstPv.markLine.data = [
-          ...(firstPv.markLine.data || []),
-          selItem,
-        ];
+        firstPv.markLine.data = [...(firstPv.markLine.data || []), selItem];
       } else {
         firstPv.markLine = {
           data: [selItem],

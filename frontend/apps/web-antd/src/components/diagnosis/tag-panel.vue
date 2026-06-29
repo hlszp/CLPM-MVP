@@ -405,7 +405,12 @@ onMounted(() => {
 
         <!-- 标签类型 -->
         <template v-else-if="column.key === 'tagType'">
-          <Tag :color="DIAGNOSIS_LABEL_COLOR_MAP[record.tagType as DiagnosisLabel] || 'default'">
+          <Tag
+            :color="
+              DIAGNOSIS_LABEL_COLOR_MAP[record.tagType as DiagnosisLabel] ||
+              'default'
+            "
+          >
             {{ getDiagnosisLabelName(record.tagType) }}
           </Tag>
         </template>
@@ -413,7 +418,10 @@ onMounted(() => {
         <!-- 严重等级 -->
         <template v-else-if="column.key === 'severity'">
           <Tag :color="getSeverityColor(record.severity)">
-            {{ severityOptions.find((o) => o.value === record.severity)?.label || record.severity }}
+            {{
+              severityOptions.find((o) => o.value === record.severity)?.label ||
+              record.severity
+            }}
           </Tag>
         </template>
 
@@ -445,7 +453,9 @@ onMounted(() => {
                 title="确认将该标签标记为已处理？"
                 ok-text="确认"
                 cancel-text="取消"
-                @confirm="handleResolve(record as DiagnosisApi.DiagnosisTagItem)"
+                @confirm="
+                  handleResolve(record as DiagnosisApi.DiagnosisTagItem)
+                "
               >
                 <Button
                   type="link"
@@ -458,7 +468,9 @@ onMounted(() => {
               <Button
                 type="link"
                 size="small"
-                @click="openSuppressModal(record as DiagnosisApi.DiagnosisTagItem)"
+                @click="
+                  openSuppressModal(record as DiagnosisApi.DiagnosisTagItem)
+                "
               >
                 抑制
               </Button>
@@ -479,9 +491,7 @@ onMounted(() => {
       @cancel="handleSuppressCancel"
     >
       <div class="py-2">
-        <div class="mb-2 text-sm text-gray-600">
-          请填写抑制原因（必填）：
-        </div>
+        <div class="mb-2 text-sm text-gray-600">请填写抑制原因（必填）：</div>
         <Input.TextArea
           v-model:value="suppressState.note"
           :rows="3"

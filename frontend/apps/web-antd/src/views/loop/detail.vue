@@ -41,14 +41,8 @@ import {
   getRecommendationsApi,
 } from '#/api/diagnosis';
 import { getLoopDetailApi, getLoopMonitorDetailApi } from '#/api/loop';
-import {
-  ClpmDataCanvas,
-  ClpmKpiStrip,
-  ClpmPageToolbar,
-  ClpmTagAssociationBadge,
-  ClpmToolbarButton,
-  type KpiStripItem,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmTagAssociationBadge, ClpmToolbarButton } from '#/components/clpm';
+import type { KpiStripItem } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
@@ -118,7 +112,12 @@ const kpiItems: {
   unit: string;
 }[] = [
   { desc: '自控率', key: 'auto_mode_rate', label: '自控率', unit: '%' },
-  { desc: '有效自控率', key: 'effective_auto_rate', label: '有效自控率', unit: '%' },
+  {
+    desc: '有效自控率',
+    key: 'effective_auto_rate',
+    label: '有效自控率',
+    unit: '%',
+  },
   { desc: '快速率', key: 'fast_response_rate', label: '快速率', unit: '%' },
   { desc: '稳定率', key: 'steady_rate', label: '稳定率', unit: '%' },
   { desc: '准确度', key: 'accuracy_rate', label: '准确度', unit: '%' },
@@ -423,11 +422,7 @@ onMounted(() => {
           icon-only
           @click="router.back()"
         />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          @click="handleExport"
-        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
         <ClpmToolbarButton
           icon="diagnosis"
           label="进入诊断"
@@ -456,7 +451,11 @@ onMounted(() => {
             >
               <template #extra>
                 <span class="text-xs text-gray-400">
-                  计算时间：{{ monitorDetail ? formatTime(monitorDetail.kpiSummary.calculatedAt) : '—' }}
+                  计算时间：{{
+                    monitorDetail
+                      ? formatTime(monitorDetail.kpiSummary.calculatedAt)
+                      : '—'
+                  }}
                 </span>
               </template>
               <ClpmKpiStrip
@@ -486,8 +485,13 @@ onMounted(() => {
 
               <div v-if="monitorDetail" class="space-y-2">
                 <!-- 当前值快照（左侧 SP/PV/OP/MODE，右侧光标时刻/刷新时间） -->
-                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded border px-3 py-2 text-sm">
-                  <div v-if="displaySnapshot" class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <div
+                  class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded border px-3 py-2 text-sm"
+                >
+                  <div
+                    v-if="displaySnapshot"
+                    class="flex flex-wrap items-center gap-x-4 gap-y-1"
+                  >
                     <span>
                       <span class="text-xs text-gray-400">SP</span>
                       <span class="ml-1.5 font-medium">
@@ -514,18 +518,19 @@ onMounted(() => {
                       <span class="text-xs text-gray-400">MODE</span>
                       <Tag
                         class="ml-1.5"
-                        :color="
-                          displaySnapshot.mode === 1
-                            ? 'green'
-                            : 'orange'
-                        "
+                        :color="displaySnapshot.mode === 1 ? 'green' : 'orange'"
                       >
                         {{ displaySnapshot.mode || '—' }}
                       </Tag>
                     </span>
                   </div>
                   <span class="text-xs text-gray-400">
-                    {{ cursorOverride ? '光标时刻：' + fmtTime(displaySnapshot?.timestamp ?? null) : '刷新时间：' + (lastRefreshText || '尚未刷新') }}
+                    {{
+                      cursorOverride
+                        ? '光标时刻：' +
+                          fmtTime(displaySnapshot?.timestamp ?? null)
+                        : '刷新时间：' + (lastRefreshText || '尚未刷新')
+                    }}
                   </span>
                 </div>
 
@@ -538,7 +543,11 @@ onMounted(() => {
             </ClpmDataCanvas>
 
             <!-- ③ 回路基本信息与数据质量（3 行 4 列，压缩至底部） -->
-            <Card size="small" title="回路基本信息与数据质量" class="clpm-info-card">
+            <Card
+              size="small"
+              title="回路基本信息与数据质量"
+              class="clpm-info-card"
+            >
               <Descriptions
                 v-if="loopDetail"
                 :column="{ xs: 1, sm: 2, md: 4 }"
@@ -555,7 +564,9 @@ onMounted(() => {
                   {{ controlModeText }}
                 </DescriptionsItem>
                 <DescriptionsItem label="运行状态">
-                  <Tag :color="loopDetail.basicInfo.isActive ? 'green' : 'default'">
+                  <Tag
+                    :color="loopDetail.basicInfo.isActive ? 'green' : 'default'"
+                  >
                     {{ loopDetail.basicInfo.isActive ? '运行中' : '未启用' }}
                   </Tag>
                 </DescriptionsItem>
@@ -699,16 +710,16 @@ onMounted(() => {
 }
 
 .clpm-status-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-  color: hsl(var(--muted-foreground));
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  gap: 8px;
-  padding: 8px 12px;
 }
 
 .clpm-status-footer__divider {
@@ -716,10 +727,18 @@ onMounted(() => {
 }
 
 .clpm-status-footer strong {
-  color: hsl(var(--primary));
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace
+  );
+  font-weight: 700;
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  color: hsl(var(--primary));
 }
 </style>

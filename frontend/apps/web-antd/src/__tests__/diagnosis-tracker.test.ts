@@ -58,7 +58,7 @@ vi.mock('../views/diagnosis/ab-compare.vue', () => ({
   default: { template: '<div />' },
 }));
 
-describe('DiagnosisTracker', () => {
+describe('diagnosisTracker', () => {
   it('passes loopId into tracker list query in drawer mode', async () => {
     getTrackerListApiMock.mockResolvedValue({ items: [], total: 0 });
 

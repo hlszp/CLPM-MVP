@@ -32,10 +32,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { getAbCompareApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -470,7 +467,10 @@ onMounted(() => {
 
   <!-- 独立页面模式 -->
   <Page v-else>
-    <ClpmPageToolbar :title="pageTitle" subtitle="处置前后趋势与 KPI 对比，用于验证措施效果。" />
+    <ClpmPageToolbar
+      :title="pageTitle"
+      subtitle="处置前后趋势与 KPI 对比，用于验证措施效果。"
+    />
     <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex items-center gap-2">

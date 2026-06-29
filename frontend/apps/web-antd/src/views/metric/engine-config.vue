@@ -30,9 +30,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmPageToolbar } from '#/components/clpm';
 import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { getRulesApi, updateRuleApi } from '#/api/metric';
 
@@ -155,7 +153,10 @@ onMounted(() => {
 <template>
   <Page>
     <ConfigTabs />
-    <ClpmPageToolbar title="引擎规则" subtitle="管理计算周期、数据拉取窗口、并发度和执行状态。" />
+    <ClpmPageToolbar
+      title="引擎规则"
+      subtitle="管理计算周期、数据拉取窗口、并发度和执行状态。"
+    />
     <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- 规则配置表单 -->
       <Card title="规则配置" :loading="loading">

@@ -29,10 +29,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { getAuditLogListApi } from '#/api/system';
 
 defineOptions({ name: 'SystemAudit' });
@@ -196,7 +193,10 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar title="审计日志" subtitle="按操作类型、时间和资源查看关键变更记录。" />
+    <ClpmPageToolbar
+      title="审计日志"
+      subtitle="按操作类型、时间和资源查看关键变更记录。"
+    />
     <ClpmDataCanvas class="mt-4" title="审计日志列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">

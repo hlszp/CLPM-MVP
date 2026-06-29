@@ -80,7 +80,9 @@ class RealtimeWebSocket {
     if (!this.token) return;
 
     try {
-      this.ws = new WebSocket(`${this.baseUrl}?token=${encodeURIComponent(this.token)}`);
+      this.ws = new WebSocket(
+        `${this.baseUrl}?token=${encodeURIComponent(this.token)}`,
+      );
     } catch {
       this._scheduleReconnect();
       return;
@@ -124,7 +126,9 @@ class RealtimeWebSocket {
       RECONNECT_INTERVAL * this.reconnectAttempts,
       MAX_RECONNECT_DELAY,
     );
-    console.log(`[RealtimeWS] ${delay}ms 后重连 (第${this.reconnectAttempts}次)`);
+    console.log(
+      `[RealtimeWS] ${delay}ms 后重连 (第${this.reconnectAttempts}次)`,
+    );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this._doConnect();

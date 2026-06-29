@@ -46,36 +46,57 @@ const slots = computed(() =>
   }),
 );
 
-const associatedCount = computed(() => slots.value.filter((s) => s.associated).length);
-const requiredMissing = computed(() => slots.value.filter((s) => s.required && !s.associated).length);
+const associatedCount = computed(
+  () => slots.value.filter((s) => s.associated).length,
+);
+const requiredMissing = computed(
+  () => slots.value.filter((s) => s.required && !s.associated).length,
+);
 
 const hasData = computed(() => !!props.mapping || !!props.status);
 
-const statusColor = computed<'default' | 'error' | 'success' | 'warning'>(() => {
-  if (!hasData.value) return 'default';
-  if (requiredMissing.value > 0) return 'error';
-  if (associatedCount.value < slots.value.length) return 'warning';
-  return 'success';
-});
+const statusColor = computed<'default' | 'error' | 'success' | 'warning'>(
+  () => {
+    if (!hasData.value) return 'default';
+    if (requiredMissing.value > 0) return 'error';
+    if (associatedCount.value < slots.value.length) return 'warning';
+    return 'success';
+  },
+);
 
 const statusText = computed(() => {
   if (!hasData.value) return 'Tag 关联 —';
-  if (requiredMissing.value > 0) return `${associatedCount.value}/7，缺 ${requiredMissing.value} 个必填`;
-  if (associatedCount.value < slots.value.length) return `${associatedCount.value}/7 部分关联`;
+  if (requiredMissing.value > 0)
+    return `${associatedCount.value}/7，缺 ${requiredMissing.value} 个必填`;
+  if (associatedCount.value < slots.value.length)
+    return `${associatedCount.value}/7 部分关联`;
   return '7/7 已关联';
 });
 </script>
 
 <template>
   <span class="clpm-tag-association">
-    <Tag :color="statusColor" class="m-0 cursor-pointer" @click="detailOpen = true">
+    <Tag
+      :color="statusColor"
+      class="m-0 cursor-pointer"
+      @click="detailOpen = true"
+    >
       {{ statusText }}
     </Tag>
-    <button class="clpm-tag-association__link" type="button" @click="detailOpen = true">
+    <button
+      class="clpm-tag-association__link"
+      type="button"
+      @click="detailOpen = true"
+    >
       查看
     </button>
 
-    <Modal v-model:open="detailOpen" title="Tag 关联详情" :footer="null" width="720px">
+    <Modal
+      v-model:open="detailOpen"
+      title="Tag 关联详情"
+      :footer="null"
+      width="720px"
+    >
       <div class="clpm-tag-association__grid">
         <div
           v-for="slot in slots"
@@ -87,7 +108,9 @@ const statusText = computed(() => {
           }"
         >
           <div class="clpm-tag-association__slot-head">
-            <span class="clpm-tag-association__slot-label">{{ slot.label }}</span>
+            <span class="clpm-tag-association__slot-label">{{
+              slot.label
+            }}</span>
             <Tag v-if="slot.required" color="blue" class="m-0">必填</Tag>
             <Tag v-else color="default" class="m-0">可选</Tag>
           </div>
@@ -104,30 +127,30 @@ const statusText = computed(() => {
 
 <style scoped>
 .clpm-tag-association {
-  align-items: center;
   display: inline-flex;
   gap: 6px;
+  align-items: center;
 }
 
 .clpm-tag-association__link {
-  background: transparent;
-  border: 0;
+  padding: 0;
+  font-size: 12px;
   color: hsl(var(--primary));
   cursor: pointer;
-  font-size: 12px;
-  padding: 0;
+  background: transparent;
+  border: 0;
 }
 
 .clpm-tag-association__grid {
   display: grid;
-  gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .clpm-tag-association__slot {
+  padding: 10px;
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-  padding: 10px;
 }
 
 .clpm-tag-association__slot.is-associated {
@@ -141,25 +164,33 @@ const statusText = computed(() => {
 }
 
 .clpm-tag-association__slot-head {
-  align-items: center;
   display: flex;
   gap: 6px;
+  align-items: center;
   justify-content: space-between;
 }
 
 .clpm-tag-association__slot-label,
 .clpm-tag-association__slot-value {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace
+  );
 }
 
 .clpm-tag-association__slot-label {
-  color: hsl(var(--foreground));
   font-weight: 700;
+  color: hsl(var(--foreground));
 }
 
 .clpm-tag-association__slot-value {
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
   margin-top: 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 </style>

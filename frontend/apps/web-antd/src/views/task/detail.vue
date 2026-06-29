@@ -80,8 +80,7 @@ const stageOrder = ['FETCH_DATA', 'PREPROCESS', 'METRIC_CALC', 'CONFIDENCE'];
 
 // ---- 计算属性 ----
 const isActive = computed(
-  () =>
-    task.value?.status === 'PENDING' || task.value?.status === 'RUNNING',
+  () => task.value?.status === 'PENDING' || task.value?.status === 'RUNNING',
 );
 
 const isFailed = computed(() => task.value?.status === 'FAILED');
@@ -206,7 +205,10 @@ onUnmounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar title="评估任务详情" subtitle="执行阶段、错误信息、通知和结果摘要。">
+    <ClpmPageToolbar
+      title="评估任务详情"
+      subtitle="执行阶段、错误信息、通知和结果摘要。"
+    >
       <template #actions>
         <Button type="link" @click="handleBack">← 返回评估任务列表</Button>
       </template>
@@ -218,7 +220,9 @@ onUnmounted(() => {
         <div class="mb-4 flex items-center justify-between">
           <div>
             <h2 class="text-xl font-semibold">
-              {{ task.taskType === 'STANDARD' ? '标准评估任务' : '自定义评估任务' }}
+              {{
+                task.taskType === 'STANDARD' ? '标准评估任务' : '自定义评估任务'
+              }}
               <Tag :color="statusColorMap[task.status]" class="ml-2">
                 {{ statusNameMap[task.status] }}
               </Tag>
@@ -292,7 +296,9 @@ onUnmounted(() => {
               进行中
             </Tag>
             <Tag
-              v-else-if="stage === task.currentStage && task.status === 'FAILED'"
+              v-else-if="
+                stage === task.currentStage && task.status === 'FAILED'
+              "
               color="error"
               size="small"
             >
@@ -337,7 +343,11 @@ onUnmounted(() => {
           {{ formatProgress(task.progress) }}%
         </DescriptionsItem>
         <DescriptionsItem label="当前阶段">
-          {{ task.currentStage ? (stageNameMap[task.currentStage] || task.currentStage) : '—' }}
+          {{
+            task.currentStage
+              ? stageNameMap[task.currentStage] || task.currentStage
+              : '—'
+          }}
         </DescriptionsItem>
         <DescriptionsItem label="回路进度">
           <span v-if="task.loopsTotal">
@@ -365,8 +375,18 @@ onUnmounted(() => {
       <Table
         :columns="[
           { title: '状态', dataIndex: 'status', key: 'status', width: 100 },
-          { title: '消息', dataIndex: 'message', key: 'message', ellipsis: true },
-          { title: '时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
+          {
+            title: '消息',
+            dataIndex: 'message',
+            key: 'message',
+            ellipsis: true,
+          },
+          {
+            title: '时间',
+            dataIndex: 'createdAt',
+            key: 'createdAt',
+            width: 180,
+          },
           { title: '操作', key: 'action', width: 100 },
         ]"
         :data-source="notifications"

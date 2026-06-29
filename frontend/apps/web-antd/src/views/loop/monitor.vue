@@ -18,7 +18,15 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -57,11 +65,8 @@ import { flattenNodes } from '#/utils/plant-node';
 import { useAccessStore } from '@vben/stores';
 import { realtimeWs } from '#/utils/realtime-ws';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import {
-  usePagePreference,
-  type ColumnConfig,
-  type FilterPreset,
-} from '#/composables/use-clpm-preferences';
+import { usePagePreference } from '#/composables/use-clpm-preferences';
+import type { ColumnConfig, FilterPreset } from '#/composables/use-clpm-preferences';
 
 defineOptions({ name: 'LoopMonitor' });
 
@@ -269,14 +274,17 @@ const columnConfigs = ref<ColumnConfig[]>(
 /** 根据列配置计算实际显示的表格列（过滤 + 排序） */
 const visibleColumns = computed<TableColumnsType>(() => {
   const configMap = new Map(
-    columnConfigs.value.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+    columnConfigs.value.map((c, i) => [
+      c.key,
+      { visible: c.visible, order: i },
+    ]),
   );
   return columns
     .filter((c: any) => {
       const cfg = configMap.get(getColumnKey(c));
       return cfg ? cfg.visible : true;
     })
-    .sort((a: any, b: any) => {
+    .toSorted((a: any, b: any) => {
       const aOrder = configMap.get(getColumnKey(a))?.order ?? 99;
       const bOrder = configMap.get(getColumnKey(b))?.order ?? 99;
       return aOrder - bOrder;
@@ -342,7 +350,14 @@ function handleRealtimeMessage(msg: {
     case 'MODE': {
       cv.mode = numValue;
       // 复用后端已有映射逻辑
-      cv.modeLabel = numValue === 0 ? 'Manual' : numValue === 1 ? 'Auto' : numValue === 2 ? 'Cascade' : 'Unknown';
+      cv.modeLabel =
+        numValue === 0
+          ? 'Manual'
+          : numValue === 1
+            ? 'Auto'
+            : numValue === 2
+              ? 'Cascade'
+              : 'Unknown';
       break;
     }
     default: {
@@ -763,7 +778,9 @@ onUnmounted(() => {
         allow-clear
         show-search
         :options="plantNodeOptions"
-        :filter-option="(input: string, option: any) => option.label.includes(input)"
+        :filter-option="
+          (input: string, option: any) => option.label.includes(input)
+        "
         @change="handleSearch"
       />
       <Select
@@ -784,11 +801,18 @@ onUnmounted(() => {
       <div class="flex items-center gap-2 text-sm text-gray-500">
         <span>自动刷新（{{ refreshInterval }}s）</span>
         <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
-        <span v-if="autoRefresh" class="text-xs text-gray-400">{{ countdown }}s 后刷新</span>
+        <span v-if="autoRefresh" class="text-xs text-gray-400"
+          >{{ countdown }}s 后刷新</span
+        >
       </div>
       <template #actions>
         <ClpmToolbarButton icon="search" label="查询" @click="handleSearch" />
-        <ClpmToolbarButton icon="refresh" label="刷新" :loading="loading" @click="loadList" />
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="loadList"
+        />
         <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
       </template>
     </ClpmPageToolbar>
@@ -808,11 +832,19 @@ onUnmounted(() => {
               <div class="w-64">
                 <div class="mb-2 flex items-center justify-between">
                   <span class="text-xs text-gray-500">筛选预设</span>
-                  <Button type="link" size="small" class="!px-0" @click="handleSavePreset">
+                  <Button
+                    type="link"
+                    size="small"
+                    class="!px-0"
+                    @click="handleSavePreset"
+                  >
                     保存当前筛选
                   </Button>
                 </div>
-                <div v-if="preferences.savedFilters?.length" class="flex flex-wrap gap-1">
+                <div
+                  v-if="preferences.savedFilters?.length"
+                  class="flex flex-wrap gap-1"
+                >
                   <Tag
                     v-for="preset in preferences.savedFilters"
                     :key="preset.id"
@@ -862,8 +894,18 @@ onUnmounted(() => {
           :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
           :scroll="{ x: 1200 }"
           size="middle"
-          :row-class-name="(record) => selectedLoop?.loopId === record.loopId ? 'ant-table-row-selected cursor-pointer' : 'cursor-pointer'"
-          :custom-row="(record) => ({ onClick: () => handleSelectLoop(record as LoopApi.MonitorListItem) })"
+          :row-class-name="
+            (record) =>
+              selectedLoop?.loopId === record.loopId
+                ? 'ant-table-row-selected cursor-pointer'
+                : 'cursor-pointer'
+          "
+          :custom-row="
+            (record) => ({
+              onClick: () =>
+                handleSelectLoop(record as LoopApi.MonitorListItem),
+            })
+          "
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
@@ -902,15 +944,24 @@ onUnmounted(() => {
               </span>
             </template>
             <template v-else-if="column.key === 'op'">
-              {{ formatOp((record as LoopApi.MonitorListItem).currentValues?.op) }}
+              {{
+                formatOp((record as LoopApi.MonitorListItem).currentValues?.op)
+              }}
             </template>
             <template v-else-if="column.key === 'mode'">
               <Tag
                 v-if="
-                  (record as LoopApi.MonitorListItem).currentValues?.modeLabel ||
-                  (record as LoopApi.MonitorListItem).currentValues?.mode != null
+                  (record as LoopApi.MonitorListItem).currentValues
+                    ?.modeLabel ||
+                  (record as LoopApi.MonitorListItem).currentValues?.mode !=
+                    null
                 "
-                :color="modeColor((record as LoopApi.MonitorListItem).currentValues?.modeLabel)"
+                :color="
+                  modeColor(
+                    (record as LoopApi.MonitorListItem).currentValues
+                      ?.modeLabel,
+                  )
+                "
               >
                 {{ modeText(record as LoopApi.MonitorListItem) }}
               </Tag>
@@ -921,7 +972,9 @@ onUnmounted(() => {
                 v-if="(record as LoopApi.MonitorListItem).score != null"
                 class="font-medium"
               >
-                {{ (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—' }}
+                {{
+                  (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—'
+                }}
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
@@ -1223,16 +1276,16 @@ onUnmounted(() => {
 
 <style scoped>
 .clpm-status-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-  color: hsl(var(--muted-foreground));
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  gap: 8px;
-  padding: 8px 12px;
 }
 
 .clpm-status-footer__divider {
@@ -1240,10 +1293,18 @@ onUnmounted(() => {
 }
 
 .clpm-status-footer strong {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-family: var(
+    --font-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace
+  );
+  font-weight: 700;
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
 }
 
 .clpm-status-footer strong.is-active {

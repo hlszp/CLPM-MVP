@@ -7,12 +7,8 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Button, Tooltip } from 'ant-design-vue';
 
-import {
-  TOOLBAR_DEFAULT_VARIANT,
-  TOOLBAR_ICON_MAP,
-  type ToolbarAction,
-  type ToolbarVariant,
-} from './toolbar-config';
+import { TOOLBAR_DEFAULT_VARIANT, TOOLBAR_ICON_MAP } from './toolbar-config';
+import type { ToolbarAction, ToolbarVariant } from './toolbar-config';
 
 defineOptions({ name: 'ClpmToolbarButton' });
 
@@ -135,8 +131,14 @@ const activeClass = 'clpm-toolbar-btn--active';
       :type="buttonType"
       @click="handleClick"
     >
-      <IconifyIcon v-if="iconName" :icon="iconName" class="clpm-toolbar-btn__icon" />
-      <span v-if="!iconOnly && label" class="clpm-toolbar-btn__label">{{ label }}</span>
+      <IconifyIcon
+        v-if="iconName"
+        :icon="iconName"
+        class="clpm-toolbar-btn__icon"
+      />
+      <span v-if="!iconOnly && label" class="clpm-toolbar-btn__label">{{
+        label
+      }}</span>
     </Button>
   </Tooltip>
   <Button
@@ -153,16 +155,22 @@ const activeClass = 'clpm-toolbar-btn--active';
     :type="buttonType"
     @click="handleClick"
   >
-    <IconifyIcon v-if="iconName" :icon="iconName" class="clpm-toolbar-btn__icon" />
-    <span v-if="!iconOnly && label" class="clpm-toolbar-btn__label">{{ label }}</span>
+    <IconifyIcon
+      v-if="iconName"
+      :icon="iconName"
+      class="clpm-toolbar-btn__icon"
+    />
+    <span v-if="!iconOnly && label" class="clpm-toolbar-btn__label">{{
+      label
+    }}</span>
   </Button>
 </template>
 
 <style scoped>
 .clpm-toolbar-btn {
-  align-items: center;
   display: inline-flex;
   gap: 4px;
+  align-items: center;
 }
 
 .clpm-toolbar-btn__icon {
@@ -176,14 +184,14 @@ const activeClass = 'clpm-toolbar-btn--active';
 
 /* 导出变体：绿色调（对齐 THEME_COLORS.SUCCESS） */
 .clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary) {
-  border-color: hsl(var(--success));
   color: hsl(var(--success) / 85%);
+  border-color: hsl(var(--success));
 }
 
 .clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary):hover {
+  color: hsl(var(--success));
   background: hsl(var(--success) / 12%);
   border-color: hsl(var(--success) / 75%);
-  color: hsl(var(--success));
 }
 
 .clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary):active {
@@ -193,14 +201,14 @@ const activeClass = 'clpm-toolbar-btn--active';
 
 /* 激活态：主色填充（用于自动刷新开启、视图切换激活等） */
 .clpm-toolbar-btn--active:not(:disabled) {
+  color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
   border-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
 }
 
 .clpm-toolbar-btn--active:not(:disabled):hover {
+  color: hsl(var(--primary-foreground));
   background: hsl(var(--primary) / 90%);
   border-color: hsl(var(--primary) / 90%);
-  color: hsl(var(--primary-foreground));
 }
 </style>

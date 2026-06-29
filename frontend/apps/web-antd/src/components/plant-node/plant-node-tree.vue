@@ -209,7 +209,7 @@ function collapseAll() {
 function openCreateModal(parentNode?: TreeNode) {
   crudModalMode.value = 'create';
   crudFormName.value = '';
-  crudFormParentId.value = parentNode?.key as string ?? null;
+  crudFormParentId.value = (parentNode?.key as string) ?? null;
   // 根据父节点类型设置默认子节点类型
   const parentType: string | undefined = parentNode?.node?.type;
   if (parentType === 'FACTORY') {
@@ -416,7 +416,10 @@ defineExpose({ loadTree, expandAll, collapseAll });
                   >
                     新增子节点
                   </MenuItem>
-                  <MenuItem key="edit" @click="openEditModal(nodeData as TreeNode)">
+                  <MenuItem
+                    key="edit"
+                    @click="openEditModal(nodeData as TreeNode)"
+                  >
                     编辑
                   </MenuItem>
                   <MenuItem key="delete">

@@ -542,10 +542,7 @@ onBeforeUnmount(() => {
     placement="right"
     @close="emit('close')"
   >
-    <ClpmPageToolbar
-      compact
-      subtitle="状态、标签、时间窗统一筛选"
-    >
+    <ClpmPageToolbar compact subtitle="状态、标签、时间窗统一筛选">
       <Select
         v-model:value="query.diagnosisLabel"
         placeholder="诊断标签"
@@ -575,11 +572,7 @@ onBeforeUnmount(() => {
           :loading="loading"
           @click="handleRefresh"
         />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          @click="handleExport"
-        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
         <ClpmToolbarButton
           icon="ant-design:thunderbolt-outlined"
           label="批量处理"
@@ -790,11 +783,7 @@ onBeforeUnmount(() => {
           :loading="loading"
           @click="handleRefresh"
         />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          @click="handleExport"
-        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
         <ClpmToolbarButton
           icon="ant-design:thunderbolt-outlined"
           label="批量处理"
@@ -926,7 +915,9 @@ onBeforeUnmount(() => {
                   v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
                   type="link"
                   size="small"
-                  @click="handleOpenAbCompare(record as DiagnosisApi.TrackerItem)"
+                  @click="
+                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
+                  "
                 >
                   A/B 对比
                 </Button>
@@ -934,7 +925,9 @@ onBeforeUnmount(() => {
                   v-permission="['IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
                   type="link"
                   size="small"
-                  :disabled="getExportState(record.loopId)?.status === 'exporting'"
+                  :disabled="
+                    getExportState(record.loopId)?.status === 'exporting'
+                  "
                   @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
                 >
                   导出 PDF
@@ -1020,32 +1013,32 @@ onBeforeUnmount(() => {
 <style scoped>
 /* 状态机可视化条 */
 .status-flow-bar {
-  align-items: center;
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1px);
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
   padding: 10px 12px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
 }
 
 .status-flow-bar__label {
-  color: hsl(var(--muted-foreground));
+  margin-right: 4px;
   font-size: 13px;
   font-weight: 600;
-  margin-right: 4px;
+  color: hsl(var(--muted-foreground));
 }
 
 .status-flow-bar__arrow {
-  color: hsl(var(--muted-foreground));
   font-size: 14px;
   font-weight: 700;
+  color: hsl(var(--muted-foreground));
 }
 
 .status-flow-bar__alt {
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
   margin: 0 2px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 </style>

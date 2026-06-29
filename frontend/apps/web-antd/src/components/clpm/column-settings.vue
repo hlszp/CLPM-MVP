@@ -49,10 +49,7 @@ function moveDown(index: number) {
           :key="col.key"
           class="flex items-center gap-2 py-1"
         >
-          <Checkbox
-            :checked="col.visible"
-            @change="toggleVisible(col.key)"
-          />
+          <Checkbox :checked="col.visible" @change="toggleVisible(col.key)" />
           <span class="flex-1 text-sm">{{ col.label }}</span>
           <Button
             type="text"

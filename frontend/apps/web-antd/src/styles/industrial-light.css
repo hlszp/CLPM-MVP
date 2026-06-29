@@ -15,14 +15,19 @@
 .light[data-theme='default'] {
   /* 页面画布底色：冷灰白 #f4f7fb → HSL(210 33% 97%) */
   --background: 210 33% 97%;
+
   /* 主体区域背景：冷灰白 */
   --background-deep: 210 33% 96%;
+
   /* 主文本：深色 #0f172a → HSL(222 47% 11%) */
   --foreground: 222 47% 11%;
+
   /* 次文本：#475569 → HSL(215 16% 31%) */
   --muted-foreground: 215 16% 31%;
+
   /* 强分割线：#cbd5e1 → HSL(213 27% 84%) */
   --border: 213 27% 84%;
+
   /* 输入框边框 */
   --input: 213 27% 84%;
 }
@@ -34,17 +39,17 @@
 .ant-table-cell-num,
 .ant-statistic-content,
 .ant-input-number-input {
-  font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
 }
 
 /* ============= 3. 表格工业风格 ============= */
 
 /* 表头：浅冷灰背景 + 字重 600 */
 .ant-table-thead > tr > th {
-  background: hsl(210 20% 94%);
-  border-bottom: 1px solid hsl(var(--border));
   font-weight: 600;
+  background: hsl(210deg 20% 94%);
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 /* 行高：紧凑 40-44px */
@@ -54,13 +59,13 @@
 
 /* hover：明确浅蓝灰底 */
 .ant-table-tbody > tr:hover > td {
-  background: hsl(210 30% 96%) !important;
+  background: hsl(210deg 30% 96%) !important;
 }
 
 /* 选中行：左侧 2px 主色线 + 浅蓝底 */
 .ant-table-tbody > tr.ant-table-row-selected > td {
-  background: hsl(211 98% 95%) !important;
-  box-shadow: inset 2px 0 0 hsl(211 98% 52%);
+  background: hsl(211deg 98% 95%) !important;
+  box-shadow: inset 2px 0 0 hsl(211deg 98% 52%);
 }
 
 /* 数字列右对齐 */
@@ -107,19 +112,19 @@ th.align-right {
 /* 细滚动条，减少视觉干扰 */
 .clpm-scroll::-webkit-scrollbar,
 .ant-table-body::-webkit-scrollbar {
-  height: 8px;
   width: 8px;
+  height: 8px;
 }
 
 .clpm-scroll::-webkit-scrollbar-thumb,
 .ant-table-body::-webkit-scrollbar-thumb {
-  background: hsl(213 20% 80%);
+  background: hsl(213deg 20% 80%);
   border-radius: 4px;
 }
 
 .clpm-scroll::-webkit-scrollbar-thumb:hover,
 .ant-table-body::-webkit-scrollbar-thumb:hover {
-  background: hsl(213 20% 70%);
+  background: hsl(213deg 20% 70%);
 }
 
 .clpm-scroll::-webkit-scrollbar-track,
@@ -131,10 +136,10 @@ th.align-right {
 
 /* Tag 紧凑化 */
 .ant-tag {
-  border-radius: calc(var(--radius) * 1px);
+  padding: 0 6px;
   font-size: 12px;
   line-height: 18px;
-  padding: 0 6px;
+  border-radius: calc(var(--radius) * 1px);
 }
 
 /* ============= 7. 按钮工业风格 ============= */
@@ -159,13 +164,13 @@ th.align-right {
 
 /* 等宽数字工具类 */
 .font-numeric {
-  font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
 }
 
 /* 强分割线 */
 .border-strong {
-  border-color: hsl(213 27% 84%) !important;
+  border-color: hsl(213deg 27% 84%) !important;
 }
 
 /* 冷灰画布底 */

@@ -22,18 +22,21 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Alert, Button, message, Progress, Select, Table, Tag } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  message,
+  Progress,
+  Select,
+  Table,
+  Tag,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import {
-  ClpmDataCanvas,
-  ClpmKpiStrip,
-  ClpmPageToolbar,
-  ClpmToolbarButton,
-  type KpiStripItem,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import type { KpiStripItem } from '#/components/clpm';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -354,11 +357,7 @@ onMounted(() => {
           :loading="loading"
           @click="handleRefresh"
         />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          @click="handleExport"
-        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
         <ClpmToolbarButton
           icon="ant-design:thunderbolt-outlined"
           label="批量处理"
@@ -369,11 +368,7 @@ onMounted(() => {
     </ClpmPageToolbar>
 
     <!-- 顶部 KpiStrip：待处理 / 处理中 / 近 7 天新增 -->
-    <ClpmKpiStrip
-      class="mt-4"
-      :items="kpiStripItems"
-      :loading="loading"
-    />
+    <ClpmKpiStrip class="mt-4" :items="kpiStripItems" :loading="loading" />
 
     <!-- Partial 警告横幅：INCONCLUSIVE 回路提示 -->
     <Alert

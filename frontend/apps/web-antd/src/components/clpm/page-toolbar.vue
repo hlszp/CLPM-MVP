@@ -99,10 +99,15 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
     :class="{ 'clpm-page-toolbar--compact': compact }"
   >
     <!-- 第 1 区：左侧上下文 -->
-    <div v-if="title || subtitle || $slots.context" class="clpm-page-toolbar__context">
+    <div
+      v-if="title || subtitle || $slots.context"
+      class="clpm-page-toolbar__context"
+    >
       <div>
         <div v-if="title" class="clpm-page-toolbar__title">{{ title }}</div>
-        <div v-if="subtitle" class="clpm-page-toolbar__subtitle">{{ subtitle }}</div>
+        <div v-if="subtitle" class="clpm-page-toolbar__subtitle">
+          {{ subtitle }}
+        </div>
       </div>
       <slot name="context"></slot>
     </div>
@@ -130,15 +135,30 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
             class="clpm-page-toolbar__status-icon"
             :class="{ 'clpm-page-toolbar__status-icon--spin': isSpinning }"
           />
-          <span class="clpm-page-toolbar__status-text">{{ resolvedStatusText }}</span>
+          <span class="clpm-page-toolbar__status-text">{{
+            resolvedStatusText
+          }}</span>
         </template>
         <template v-if="lastRefresh">
-          <span class="clpm-page-toolbar__status-divider" v-if="resolvedStatusText">·</span>
-          <span class="clpm-page-toolbar__status-meta">{{ lastRefresh }} 已刷新</span>
+          <span
+            class="clpm-page-toolbar__status-divider"
+            v-if="resolvedStatusText"
+            >·</span
+          >
+          <span class="clpm-page-toolbar__status-meta"
+            >{{ lastRefresh }} 已刷新</span
+          >
         </template>
         <template v-if="dataDelay">
-          <span class="clpm-page-toolbar__status-divider" v-if="resolvedStatusText || lastRefresh">·</span>
-          <span class="clpm-page-toolbar__status-meta clpm-page-toolbar__status-meta--delay">数据延迟 {{ dataDelay }}</span>
+          <span
+            class="clpm-page-toolbar__status-divider"
+            v-if="resolvedStatusText || lastRefresh"
+            >·</span
+          >
+          <span
+            class="clpm-page-toolbar__status-meta clpm-page-toolbar__status-meta--delay"
+            >数据延迟 {{ dataDelay }}</span
+          >
         </template>
       </slot>
     </div>
@@ -147,14 +167,14 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
 
 <style scoped>
 .clpm-page-toolbar {
+  display: flex;
+  gap: 12px;
   align-items: center;
+  min-height: 44px;
+  padding: 8px 12px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-  display: flex;
-  gap: 12px;
-  min-height: 44px;
-  padding: 8px 12px;
 }
 
 .clpm-page-toolbar--compact {
@@ -163,55 +183,55 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
 }
 
 .clpm-page-toolbar__context {
-  align-items: center;
   display: flex;
   flex: 0 0 auto;
   gap: 10px;
+  align-items: center;
   min-width: 0;
 }
 
 .clpm-page-toolbar__title {
-  color: hsl(var(--foreground));
   font-size: 15px;
   font-weight: 700;
   line-height: 20px;
+  color: hsl(var(--foreground));
   white-space: nowrap;
 }
 
 .clpm-page-toolbar__subtitle {
-  color: hsl(var(--muted-foreground));
   font-size: 12px;
   line-height: 16px;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
 .clpm-page-toolbar__controls {
-  align-items: center;
   display: flex;
   flex: 1 1 auto;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
   min-width: 0;
 }
 
 .clpm-page-toolbar__actions {
-  align-items: center;
   display: flex;
   flex: 0 0 auto;
   gap: 8px;
+  align-items: center;
   justify-content: flex-end;
 }
 
 /* 第 4 区：状态反馈 */
 .clpm-page-toolbar__status {
-  align-items: center;
-  color: hsl(var(--muted-foreground));
   display: flex;
   flex: 0 0 auto;
-  font-size: 12px;
   gap: 4px;
-  line-height: 16px;
+  align-items: center;
   margin-left: auto;
+  font-size: 12px;
+  line-height: 16px;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
@@ -227,6 +247,7 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -237,8 +258,8 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
 }
 
 .clpm-page-toolbar__status-divider {
-  color: hsl(var(--border));
   margin: 0 2px;
+  color: hsl(var(--border));
 }
 
 .clpm-page-toolbar__status-meta {

@@ -39,10 +39,7 @@ import {
   triggerAasSyncApi,
   updateAasConfigApi,
 } from '#/api/aas';
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 
 defineOptions({ name: 'LoopAas' });
@@ -264,7 +261,10 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar title="AAS 连接配置" subtitle="配置连接、测试连接并查看同步后的 Tag 列表。" />
+    <ClpmPageToolbar
+      title="AAS 连接配置"
+      subtitle="配置连接、测试连接并查看同步后的 Tag 列表。"
+    />
     <div class="mt-4 space-y-4">
       <!-- 配置卡片 -->
       <ClpmDataCanvas title="连接配置" :loading="configLoading">

@@ -62,27 +62,27 @@ const activeTab = ref<'level' | 'type'>('type');
 
 <style scoped>
 .clpm-subtab {
+  display: inline-flex;
+  gap: 6px;
   align-items: center;
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1px);
+  padding: 6px 14px;
+  font-size: 13px;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  display: inline-flex;
-  font-size: 13px;
-  gap: 6px;
-  padding: 6px 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
   transition: all 0.15s ease;
 }
 
 .clpm-subtab:hover {
-  border-color: hsl(var(--primary) / 50%);
   color: hsl(var(--primary));
+  border-color: hsl(var(--primary) / 50%);
 }
 
 .clpm-subtab.is-active {
+  font-weight: 600;
+  color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
   border-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font-weight: 600;
 }
 </style>

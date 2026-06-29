@@ -20,12 +20,8 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { Button, Select, Table, Tag } from 'ant-design-vue';
 
-import {
-  ClpmDataCanvas,
-  ClpmKpiStrip,
-  ClpmPageToolbar,
-  type KpiStripItem,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar } from '#/components/clpm';
+import type { KpiStripItem } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 
@@ -112,10 +108,36 @@ const kpiStripItems = computed<KpiStripItem[]>(() => {
   const totalTasksValue = historyStats.value?.totalTasks || 0;
   const avgFittingValue = avgFitting.value;
   return [
-    { key: 'total', label: '总任务数', value: totalTasksValue, status: 'neutral' },
-    { key: 'applied', label: '已应用数', value: appliedCount.value, status: 'success' },
-    { key: 'fitting', label: '平均拟合度', value: avgFittingValue.toFixed(2), unit: '%', status: avgFittingValue >= 80 ? 'success' : avgFittingValue >= 60 ? 'warning' : 'danger' },
-    { key: 'algorithms', label: '算法种类数', value: algorithmCount.value, status: 'neutral' },
+    {
+      key: 'total',
+      label: '总任务数',
+      value: totalTasksValue,
+      status: 'neutral',
+    },
+    {
+      key: 'applied',
+      label: '已应用数',
+      value: appliedCount.value,
+      status: 'success',
+    },
+    {
+      key: 'fitting',
+      label: '平均拟合度',
+      value: avgFittingValue.toFixed(2),
+      unit: '%',
+      status:
+        avgFittingValue >= 80
+          ? 'success'
+          : avgFittingValue >= 60
+            ? 'warning'
+            : 'danger',
+    },
+    {
+      key: 'algorithms',
+      label: '算法种类数',
+      value: algorithmCount.value,
+      status: 'neutral',
+    },
   ];
 });
 
@@ -399,7 +421,10 @@ watch(isDark, () => {
 
 <template>
   <Page>
-    <ClpmPageToolbar title="效果统计" subtitle="查看整定任务分布、拟合质量与历史效果。" />
+    <ClpmPageToolbar
+      title="效果统计"
+      subtitle="查看整定任务分布、拟合质量与历史效果。"
+    />
     <div class="mb-4 mt-4">
       <ClpmKpiStrip :items="kpiStripItems" :loading="historyLoading" />
     </div>

@@ -19,14 +19,7 @@ export namespace TagApi {
     | 'TEMPERATURE';
 
   /** 参数类型（PV/SP/OP/KP/TI/TD/MODE） */
-  export type TagType =
-    | 'MODE'
-    | 'OP'
-    | 'PV'
-    | 'SP'
-    | 'KP'
-    | 'TI'
-    | 'TD';
+  export type TagType = 'MODE' | 'OP' | 'PV' | 'SP' | 'KP' | 'TI' | 'TD';
 
   /** 质量戳（GOOD/BAD/UNCERTAIN） */
   export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN';
@@ -123,7 +116,9 @@ export interface TagBatchDeleteResult {
  * 已关联回路的测点跳过并记入 failures。
  */
 export function batchDeleteTagsApi(tagIds: string[]) {
-  return requestClient.post<TagBatchDeleteResult>('/tags/batch-delete', { tagIds });
+  return requestClient.post<TagBatchDeleteResult>('/tags/batch-delete', {
+    tagIds,
+  });
 }
 
 /**
