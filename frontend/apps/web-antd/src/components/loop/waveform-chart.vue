@@ -369,7 +369,14 @@ function render() {
         },
         markLine: showMode
           ? {
-              data: modeChanges.map((ts) => ({ xAxis: ts })),
+              data: modeChanges.map((ts) => ({
+                label: {
+                  formatter: () => fmtTimeShort(ts),
+                  position: 'insideEndTop',
+                  show: true,
+                },
+                xAxis: ts,
+              })),
               lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
               silent: true,
               symbol: 'none',
@@ -382,8 +389,8 @@ function render() {
       {
         connectNulls: false,
         data: invalidData,
-        itemStyle: { color: invalidColor },
-        lineStyle: { color: invalidColor, type: 'dashed', width: 2 },
+        itemStyle: { color: chartInvalidColor.value },
+        lineStyle: { color: chartInvalidColor.value, type: 'dashed', width: 2 },
         name: 'PV',
         showSymbol: false,
         type: 'line',
@@ -400,7 +407,14 @@ function render() {
         lineStyle: { width: 2 },
         markLine: showMode
           ? {
-              data: modeChanges.map((ts) => ({ xAxis: ts })),
+              data: modeChanges.map((ts) => ({
+                label: {
+                  formatter: () => fmtTimeShort(ts),
+                  position: 'insideEndTop',
+                  show: true,
+                },
+                xAxis: ts,
+              })),
               lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
               silent: true,
               symbol: 'none',
@@ -422,7 +436,14 @@ function render() {
         lineStyle: { width: 2 },
         markLine: showMode
           ? {
-              data: modeChanges.map((ts) => ({ xAxis: ts })),
+              data: modeChanges.map((ts) => ({
+                label: {
+                  formatter: () => fmtTimeShort(ts),
+                  position: 'insideEndTop',
+                  show: true,
+                },
+                xAxis: ts,
+              })),
               lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
               silent: true,
               symbol: 'none',
