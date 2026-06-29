@@ -127,12 +127,6 @@ const kpiItems: {
   { desc: '良值率', key: 'good_value_rate', label: '良值率', unit: '%' },
 ];
 
-const kpiStatusMap: Record<string, { color: string; label: string }> = {
-  SUCCESS: { color: 'green', label: '良好' },
-  INCONCLUSIVE: { color: 'default', label: '未确定' },
-  PARTIAL: { color: 'orange', label: '部分' },
-};
-
 /** KPI 结果是否为 INCONCLUSIVE（数据不足，结果不确定） */
 const isInconclusive = computed(
   () => monitorDetail.value?.kpiSummary.status === 'INCONCLUSIVE',
@@ -184,7 +178,7 @@ const controlModeText = computed(() => {
 
 /** 趋势图光标快照：默认最右侧数据点，鼠标悬停时动态覆盖 */
 interface CursorSnapshot {
-  mode: null | string;
+  mode: null | number;
   op: null | number;
   pv: null | number;
   pvQuality: LoopApi.Quality;
@@ -521,7 +515,7 @@ onMounted(() => {
                       <Tag
                         class="ml-1.5"
                         :color="
-                          displaySnapshot.mode === 'Auto'
+                          displaySnapshot.mode === 1
                             ? 'green'
                             : 'orange'
                         "

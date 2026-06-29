@@ -302,7 +302,6 @@ const refreshInterval = 30; // fallback 轮询间隔（秒），仅在 WS 断连
 const countdown = ref(refreshInterval);
 let refreshTimer: null | ReturnType<typeof setInterval> = null;
 let countdownTimer: null | ReturnType<typeof setInterval> = null;
-let wsConnected = ref(false);
 let wsUnsubscribe: (() => void) | null = null;
 
 /** WebSocket 实时数据：局部更新单条回路的 currentValues */

@@ -76,7 +76,7 @@ const emit = defineEmits<{
     e: 'cursor-change',
     payload: {
       index: number;
-      mode: null | string;
+      mode: null | number;
       op: null | number;
       pv: null | number;
       pvQuality: LoopApi.Quality;
@@ -345,7 +345,6 @@ function render() {
   const modeColor = themeColors.value.DANGER;
   const markAreaColor = chartMutedFillColor.value;
   const markLineColor = chartMarkLineColor.value;
-  const invalidColor = chartInvalidColor.value;
 
   let pvSeries: any[];
   if (useValidMask && hasInvalid) {

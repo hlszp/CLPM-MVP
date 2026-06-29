@@ -194,6 +194,7 @@ export namespace LoopApi {
     unitName: string;
     isActive: boolean;
     status: LoopStatus;
+    loopType?: LoopType;
     scoreWeights: ScoreWeights;
     remark?: string;
     createdAt: string;
