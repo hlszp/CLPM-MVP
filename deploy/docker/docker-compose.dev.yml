@@ -15,7 +15,7 @@ services:
     container_name: clpm-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5434:5432"
     environment:
       POSTGRES_USER: clpm
       POSTGRES_PASSWORD: clpm_dev_2026
