@@ -177,10 +177,9 @@ async def get_waveform(
             status_code=400,
         )
 
-    # TDengine REST API 不支持 ISO 8601 时区后缀（+00:00 / Z），
-    # 需转换为无时区的字符串格式（与 data_planner 适配器一致）
-    td_start = start_dt.replace(tzinfo=None).isoformat() if start_dt.tzinfo else start_dt.isoformat()
-    td_end = end_dt.replace(tzinfo=None).isoformat() if end_dt.tzinfo else end_dt.isoformat()
+    # TDengine 存储的时间带 Z 后缀（ISO 8601 UTC），查询时需保持一致
+    td_start = start_time
+    td_end = end_time
 
     # 查询回路 Tag 关联
     m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))

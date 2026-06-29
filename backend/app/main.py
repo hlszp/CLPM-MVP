@@ -37,6 +37,7 @@ from app.api.v1.endpoints import (
     tasks as eval_tasks,
     tuning,
     users,
+    ws_realtime,
 )
 from app.core.config import settings
 from app.core.db import dispose_engine
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
     v1_router.include_router(loop_level_weight.router)
     # 实时数据查询（从 Redis 缓存读取 SignalR 订阅数据）
     v1_router.include_router(realtime.router)
+    v1_router.include_router(ws_realtime.router)
     app.include_router(v1_router)
 
     return app

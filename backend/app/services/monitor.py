@@ -10,8 +10,6 @@
 from __future__ import annotations
 
 import logging
-import math
-import random
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -23,6 +21,7 @@ from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
+from app.services.data_source.realtime_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
 
@@ -309,6 +308,24 @@ async def list_loop_monitor(
             if key not in snapshot_map:
                 snapshot_map[key] = snap
 
+    # 批量从 Redis 读取实时值，优先于 PostgreSQL current_value
+    redis_cache: dict[str, dict] = {}
+    try:
+        subscriber = get_subscriber()
+        all_tag_names = [
+            tag.tag_name
+            for tag in tags_map.values()
+            if tag.tag_name
+        ]
+        if all_tag_names:
+            cached_list = await subscriber.get_cached_values(all_tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc:
+                    redis_cache[tc] = item
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+
     items = []
     for loop in loops:
         loop_mappings = mappings_map.get(str(loop.id), {})
@@ -329,13 +346,26 @@ async def list_loop_monitor(
             if mapping and str(mapping.tag_id) in tags_map:
                 tag = tags_map[str(mapping.tag_id)]
                 field = role.lower()
-                current_values[field] = tag.current_value
+                # 优先从 Redis 实时缓存读取
+                cached = redis_cache.get(tag.tag_name)
+                if cached:
+                    try:
+                        current_values[field] = float(cached.get("value"))
+                    except (TypeError, ValueError):
+                        current_values[field] = tag.current_value
+                    if role == "PV":
+                        current_values["pvQuality"] = cached.get("quality", tag.quality)
+                    if cached.get("collectTime"):
+                        read_at = cached["collectTime"]
+                else:
+                    current_values[field] = tag.current_value
+                    if role == "PV":
+                        current_values["pvQuality"] = tag.quality
                 if role == "MODE":
-                    current_values["modeLabel"] = _mode_value_to_label(tag.current_value)
+                    mode_val = current_values["mode"]
+                    current_values["modeLabel"] = _mode_value_to_label(mode_val)
                     control_mode = current_values["modeLabel"]
-                if role == "PV":
-                    current_values["pvQuality"] = tag.quality
-                if tag.last_sync_at:
+                if not cached and tag.last_sync_at:
                     ts = (
                         tag.last_sync_at.isoformat()
                         if hasattr(tag.last_sync_at, "isoformat")
@@ -483,12 +513,13 @@ async def get_loop_monitor_detail(
     trend_status = "EMPTY"  # EMPTY / OK / PARTIAL
 
     # 计算时间范围
-    # TDengine REST API 不支持 ISO 8601 时区后缀（+00:00 / Z），
-    # 需转换为无时区的字符串格式
+    # TDengine REST API 按服务器时区解释无时区的时间字符串，
+    # 必须使用带 Z 后缀的 UTC 时间格式，否则时间范围会偏移
     delta = TREND_WINDOWS.get(trend_window, timedelta(hours=24))
     now = datetime.now(UTC)
-    start_time = (now - delta).replace(tzinfo=None).isoformat()
-    end_time = now.replace(tzinfo=None).isoformat()
+    start_dt = now - delta
+    start_time = start_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{start_dt.microsecond // 1000:03d}Z"
+    end_time = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
     # 查询 PV/SP/OP/MODE 的趋势数据
     pv_trend: list[dict[str, Any]] = []
@@ -538,46 +569,8 @@ async def get_loop_monitor_detail(
                     _quality_code_to_label(d.get("quality", "GOOD")) for d in pv_trend
                 ]
 
-    # TDengine 无数据时生成模拟趋势数据（开发演示用）
-    if trend_status == "EMPTY":
-        trend_status = "MOCK"
-        seed = hash(loop.tag_name) % 1000
-        rng = random.Random(seed)
-        base_pv = 50.0 + rng.uniform(-20, 20)
-        base_sp = base_pv + rng.uniform(-5, 5)
-        interval_sec = max(int(delta.total_seconds() / 200), 10)
-        point_count = int(delta.total_seconds() / interval_sec)
-        ts_list: list[int] = []
-        pv_list: list[float] = []
-        sp_list: list[float] = []
-        op_list: list[float] = []
-        mode_list: list[int] = []
-        current_mode = rng.choice([0, 1, 2])
-        for i in range(point_count):
-            t = now - delta + timedelta(seconds=i * interval_sec)
-            ts_list.append(int(t.timestamp() * 1000))
-            progress = i / max(point_count - 1, 1)
-            # PV：正弦波 + 噪声，围绕 SP 波动
-            wave = math.sin(progress * math.pi * 8) * 3.0
-            noise = rng.uniform(-1.5, 1.5)
-            pv_list.append(round(base_pv + wave + noise, 2))
-            # SP：偶尔阶跃
-            if i > 0 and i % max(point_count // 4, 1) == 0:
-                base_sp = base_pv + rng.uniform(-8, 8)
-            sp_list.append(round(base_sp, 2))
-            # OP：0-100% 之间波动
-            op_val = 40 + math.sin(progress * math.pi * 6) * 20 + rng.uniform(-5, 5)
-            op_list.append(round(op_val, 2))
-            # MODE：偶尔切换
-            if i > 0 and rng.random() < 0.05:
-                current_mode = rng.choice([0, 1, 2])
-            mode_list.append(current_mode)
-        trend_data["timestamps"] = ts_list
-        trend_data["pv"] = pv_list
-        trend_data["sp"] = sp_list
-        trend_data["op"] = op_list
-        trend_data["mode"] = mode_list
-        trend_data["pvQuality"] = ["GOOD"] * point_count
+    # TDengine 无数据时保持 EMPTY 状态，返回空数组（不再生成模拟数据）
+    # 仿真脚本已持续向 TDengine 推送实时数据，趋势图直接展示真实历史数据
 
     # KPI 摘要：从 kpi_snapshot_hourly 读取最新快照
     snapshot = await db.execute(

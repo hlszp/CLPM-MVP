@@ -289,10 +289,9 @@ async def _diagnose_loop(
         return None
 
     # 从 TDengine 拉取数据
-    # ts_start/ts_end 已在函数入口转换为 naive datetime，
-    # isoformat() 不会带时区后缀，符合 TDengine REST API 要求
-    start_iso = ts_start.isoformat()
-    end_iso = ts_end.isoformat()
+    # TDengine 存储的时间带 Z 后缀（ISO 8601 UTC），查询时需保持一致
+    start_iso = ts_start.isoformat() + "Z"
+    end_iso = ts_end.isoformat() + "Z"
 
     try:
         pv_data = await query_trend_fn(pv_tag_name, start_iso, end_iso)

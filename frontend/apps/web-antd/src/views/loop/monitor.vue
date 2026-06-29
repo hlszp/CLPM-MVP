@@ -54,6 +54,8 @@ import {
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { flattenNodes } from '#/utils/plant-node';
+import { useAccessStore } from '@vben/stores';
+import { realtimeWs } from '#/utils/realtime-ws';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   usePagePreference,
@@ -293,13 +295,64 @@ function handleResetColumns() {
   updateColumns(columnConfigs.value);
 }
 
-// ===== 自动刷新 =====
+// ===== 自动刷新（WebSocket 实时推送 + 低频轮询 fallback）=====
 
 const autoRefresh = ref(true);
-const refreshInterval = 30; // seconds
+const refreshInterval = 30; // fallback 轮询间隔（秒），仅在 WS 断连时生效
 const countdown = ref(refreshInterval);
 let refreshTimer: null | ReturnType<typeof setInterval> = null;
 let countdownTimer: null | ReturnType<typeof setInterval> = null;
+let wsConnected = ref(false);
+let wsUnsubscribe: (() => void) | null = null;
+
+/** WebSocket 实时数据：局部更新单条回路的 currentValues */
+function handleRealtimeMessage(msg: {
+  tagCode: string;
+  value: string;
+  quality: number;
+  collectTime: string;
+}) {
+  // 解析 tagCode: "80FIC11906_PIDA.PV" → tagName="80FIC11906_PIDA", role="PV"
+  const dotIdx = msg.tagCode.lastIndexOf('.');
+  if (dotIdx < 0) return;
+  const tagName = msg.tagCode.substring(0, dotIdx);
+  const role = msg.tagCode.substring(dotIdx + 1).toUpperCase();
+
+  // 在当前列表中找到对应回路并局部更新
+  const item = monitorList.value.find((l) => l.tagName === tagName);
+  if (!item) return;
+
+  const cv = item.currentValues;
+  const numValue = Number.parseFloat(msg.value);
+  if (Number.isNaN(numValue)) return;
+
+  switch (role) {
+    case 'PV': {
+      cv.pv = numValue;
+      cv.pvQuality = msg.quality as any;
+      break;
+    }
+    case 'SP': {
+      cv.sp = numValue;
+      break;
+    }
+    case 'OP': {
+      cv.op = numValue;
+      break;
+    }
+    case 'MODE': {
+      cv.mode = numValue;
+      // 复用后端已有映射逻辑
+      cv.modeLabel = numValue === 0 ? 'Manual' : numValue === 1 ? 'Auto' : numValue === 2 ? 'Cascade' : 'Unknown';
+      break;
+    }
+    default: {
+      return; // PID_P/PID_I/PID_D 不在监控列表展示
+    }
+  }
+  cv.readAt = msg.collectTime;
+  lastRefreshAt.value = new Date();
+}
 
 // ===== 趋势 Modal =====
 
@@ -583,16 +636,27 @@ function viewDetail(record: LoopApi.MonitorListItem) {
 
 function startAutoRefresh() {
   stopAutoRefresh();
-  if (autoRefresh.value) {
-    countdown.value = refreshInterval;
-    refreshTimer = setInterval(() => {
-      loadList();
-      countdown.value = refreshInterval;
-    }, refreshInterval * 1000);
-    countdownTimer = setInterval(() => {
-      if (countdown.value > 0) countdown.value -= 1;
-    }, 1000);
+  if (!autoRefresh.value) return;
+
+  // 启动 WebSocket 实时推送
+  const accessStore = useAccessStore();
+  const token = accessStore.accessToken;
+  if (token) {
+    if (!realtimeWs.isConnected) {
+      realtimeWs.connect(token);
+    }
+    wsUnsubscribe = realtimeWs.onMessage(handleRealtimeMessage);
   }
+
+  // 低频轮询作为 fallback（WS 断连时仍能获取数据）
+  countdown.value = refreshInterval;
+  refreshTimer = setInterval(() => {
+    loadList();
+    countdown.value = refreshInterval;
+  }, refreshInterval * 1000);
+  countdownTimer = setInterval(() => {
+    if (countdown.value > 0) countdown.value -= 1;
+  }, 1000);
 }
 
 function stopAutoRefresh() {
@@ -603,6 +667,10 @@ function stopAutoRefresh() {
   if (countdownTimer) {
     clearInterval(countdownTimer);
     countdownTimer = null;
+  }
+  if (wsUnsubscribe) {
+    wsUnsubscribe();
+    wsUnsubscribe = null;
   }
 }
 
@@ -680,6 +748,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopAutoRefresh();
+  // 页面离开时断开 WebSocket（其他页面可能不需要实时数据）
+  realtimeWs.disconnect();
 });
 </script>
 
