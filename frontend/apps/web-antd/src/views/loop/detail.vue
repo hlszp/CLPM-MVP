@@ -7,21 +7,18 @@
  * - 概览 Tab 顺序：① 性能指标 → ② 趋势波形 → ③ 基本信息+数据质量
  * - ① 性能指标：9 项 KPI 等高卡片（综合评分/自控率/有效自控率/快速率/
  *   稳定率/准确度/振荡率/饱和率/良值率），计算时间显示在标题栏
- * - ② 趋势波形：当前值快照(SP/PV/OP/MODE 左侧 + 刷新时间右侧) + WaveformChart(380px)
- * - ③ 基本信息与数据质量左右分栏，压缩至底部
+ * - ② 趋势波形：当前值快照(SP/PV/OP/MODE 左侧 + 刷新时间/光标时刻右侧) + WaveformChart(460px)
+ * - ③ 基本信息与数据质量 3 行 4 列 Descriptions，压缩至底部
  * - StatusFooter：最近刷新/数据延迟/可信度等级/KPI 状态
  * - 智能诊断 Tab（FE-05）
  */
-import type { EchartsUIType } from '@vben/plugins/echarts';
-
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
-import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
@@ -60,11 +57,8 @@ import {
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
 import { THEME_COLORS } from '#/preferences';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'LoopDetail' });
-
-const { isDark, themeColors, chartTextColor } = useClpmTheme();
 
 const route = useRoute();
 const router = useRouter();
@@ -305,58 +299,6 @@ const dataQualitySummary = computed(() => {
   return { bad, good, uncertain, validRate: rate };
 });
 
-// ============ 数据质量环形图 ============
-const qualityDonutRef = ref<EchartsUIType>();
-const { renderEcharts: renderQualityDonutEcharts } = useEcharts(qualityDonutRef);
-
-function renderQualityDonut() {
-  const q = dataQualitySummary.value;
-  renderQualityDonutEcharts({
-    color: [themeColors.value.SUCCESS, themeColors.value.DANGER, themeColors.value.NEUTRAL],
-    legend: {
-      bottom: 0,
-      data: ['Good', 'Bad', 'Uncertain'],
-      icon: 'circle',
-      itemHeight: 8,
-      itemWidth: 8,
-      textStyle: { fontSize: 11 },
-    },
-    series: [
-      {
-        avoidLabelOverlap: false,
-        center: ['50%', '45%'],
-        data: [
-          { value: q.good, name: 'Good' },
-          { value: q.bad, name: 'Bad' },
-          { value: q.uncertain, name: 'Uncertain' },
-        ],
-        label: {
-          position: 'center',
-          formatter: `{a|${q.validRate.toFixed(1)}%}\n{b|好值率}`,
-          rich: {
-            a: {
-              color: themeColors.value.SUCCESS,
-              fontSize: 22,
-              fontWeight: 700,
-              lineHeight: 28,
-            },
-            b: { color: chartTextColor.value, fontSize: 12, lineHeight: 18 },
-          },
-          show: true,
-        },
-        labelLine: { show: false },
-        name: '数据质量',
-        radius: ['55%', '78%'],
-        type: 'pie',
-      },
-    ],
-    tooltip: {
-      formatter: '{b}: {c} ({d}%)',
-      trigger: 'item',
-    },
-  });
-}
-
 /** 加载回路详情 */
 async function loadDetail() {
   loading.value = true;
@@ -382,8 +324,6 @@ async function loadMonitorDetail() {
   } finally {
     monitorLoading.value = false;
     lastRefreshAt.value = new Date();
-    await nextTick();
-    renderQualityDonut();
   }
 }
 
@@ -456,13 +396,6 @@ function handleTabChange(key: number | string) {
 
 watch(trendWindow, () => {
   loadMonitorDetail();
-});
-
-// ============ 主题切换重渲图表 ============
-watch(isDark, () => {
-  nextTick(() => {
-    renderQualityDonut();
-  });
 });
 
 onMounted(() => {
@@ -596,67 +529,58 @@ onMounted(() => {
 
                 <WaveformChart
                   :trend="monitorDetail.trend"
-                  height="380px"
+                  height="460px"
                   @cursor-change="onCursorChange"
                 />
               </div>
             </ClpmDataCanvas>
 
-            <!-- ③ 回路基本信息 + 数据质量（左右分栏，压缩至底部） -->
-            <div class="detail-bottom-grid">
-              <!-- 左：回路基本信息 -->
-              <Card size="small" title="回路基本信息" class="clpm-info-card">
-                <Descriptions
-                  v-if="loopDetail"
-                  :column="{ xs: 1, sm: 2 }"
-                  size="small"
-                  bordered
-                >
-                  <DescriptionsItem label="位号">
-                    {{ loopDetail.basicInfo.tagName }}
-                  </DescriptionsItem>
-                  <DescriptionsItem label="回路类型">
-                    {{ loopTypeLabel }}
-                  </DescriptionsItem>
-                  <DescriptionsItem label="描述" :span="2">
-                    {{ loopDetail.basicInfo.description || '—' }}
-                  </DescriptionsItem>
-                  <DescriptionsItem label="所属单元">
-                    {{ loopDetail.basicInfo.unitName || '—' }}
-                  </DescriptionsItem>
-                  <DescriptionsItem label="控制方式">
-                    {{ controlModeText }}
-                  </DescriptionsItem>
-                  <DescriptionsItem label="运行状态">
-                    <Tag :color="loopDetail.basicInfo.isActive ? 'green' : 'default'">
-                      {{ loopDetail.basicInfo.isActive ? '运行中' : '未启用' }}
-                    </Tag>
-                  </DescriptionsItem>
-                  <DescriptionsItem label="可信度">
-                    <Tag :color="confidenceColor">{{ confidenceLevel }}</Tag>
-                  </DescriptionsItem>
-                  <DescriptionsItem label="Tag 关联" :span="2">
-                    <ClpmTagAssociationBadge :mapping="loopDetail.tagMapping" />
-                  </DescriptionsItem>
-                </Descriptions>
-              </Card>
-
-              <!-- 右：数据质量摘要 -->
-              <Card size="small" title="数据质量摘要" class="clpm-quality-card">
-                <EchartsUI ref="qualityDonutRef" height="180px" />
-                <div class="clpm-quality-meta">
+            <!-- ③ 回路基本信息与数据质量（3 行 4 列，压缩至底部） -->
+            <Card size="small" title="回路基本信息与数据质量" class="clpm-info-card">
+              <Descriptions
+                v-if="loopDetail"
+                :column="{ xs: 1, sm: 2, md: 4 }"
+                size="small"
+                bordered
+              >
+                <DescriptionsItem label="位号">
+                  {{ loopDetail.basicInfo.tagName }}
+                </DescriptionsItem>
+                <DescriptionsItem label="回路类型">
+                  {{ loopTypeLabel }}
+                </DescriptionsItem>
+                <DescriptionsItem label="控制方式">
+                  {{ controlModeText }}
+                </DescriptionsItem>
+                <DescriptionsItem label="运行状态">
+                  <Tag :color="loopDetail.basicInfo.isActive ? 'green' : 'default'">
+                    {{ loopDetail.basicInfo.isActive ? '运行中' : '未启用' }}
+                  </Tag>
+                </DescriptionsItem>
+                <DescriptionsItem label="描述" :span="2">
+                  {{ loopDetail.basicInfo.description || '—' }}
+                </DescriptionsItem>
+                <DescriptionsItem label="所属单元">
+                  {{ loopDetail.basicInfo.unitName || '—' }}
+                </DescriptionsItem>
+                <DescriptionsItem label="可信度">
+                  <Tag :color="confidenceColor">{{ confidenceLevel }}</Tag>
+                </DescriptionsItem>
+                <DescriptionsItem label="Tag 关联" :span="2">
+                  <ClpmTagAssociationBadge :mapping="loopDetail.tagMapping" />
+                </DescriptionsItem>
+                <DescriptionsItem label="Good">
                   <Tag :color="THEME_COLORS.SUCCESS">
-                    Good {{ dataQualitySummary.good.toFixed(1) }}%
+                    {{ dataQualitySummary.good.toFixed(1) }}%
                   </Tag>
+                </DescriptionsItem>
+                <DescriptionsItem label="Bad">
                   <Tag :color="THEME_COLORS.DANGER">
-                    Bad {{ dataQualitySummary.bad.toFixed(1) }}%
+                    {{ dataQualitySummary.bad.toFixed(1) }}%
                   </Tag>
-                  <Tag :color="THEME_COLORS.NEUTRAL">
-                    Uncertain {{ dataQualitySummary.uncertain.toFixed(1) }}%
-                  </Tag>
-                </div>
-              </Card>
-            </div>
+                </DescriptionsItem>
+              </Descriptions>
+            </Card>
 
             <!-- StatusFooter：最近刷新/数据延迟/可信度/KPI 状态 -->
             <div class="clpm-status-footer">
@@ -768,27 +692,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.detail-bottom-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 1fr 300px;
-}
-
 .clpm-info-card {
   margin-bottom: 0;
-}
-
-.clpm-quality-card {
-  display: flex;
-  flex-direction: column;
-}
-
-.clpm-quality-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: center;
-  padding-top: 4px;
 }
 
 .clpm-status-footer {
@@ -814,11 +719,5 @@ onMounted(() => {
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-}
-
-@media (max-width: 1024px) {
-  .detail-bottom-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>
