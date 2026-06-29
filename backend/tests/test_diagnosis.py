@@ -774,16 +774,20 @@ class TestAnalyticsExport:
     def test_export_analytics_success(self, client, mock_db, fake_redis) -> None:
         """认证用户可以导出统计报表。"""
         with mock_current_user(TEST_USERS["admin"]):
-            resp = client.post(
-                "/api/v1/diagnosis/analytics/export",
-                headers={"Authorization": "Bearer fake-token"},
-                json={
-                    "startTime": "2026-06-01T00:00:00Z",
-                    "endTime": "2026-06-22T00:00:00Z",
-                    "granularity": "day",
-                    "format": "csv",
-                },
-            )
+            with patch("app.api.v1.endpoints.diagnosis.export_diagnosis_statistics") as mock_task:
+                mock_result = MagicMock()
+                mock_result.id = "test-task-id"
+                mock_task.delay.return_value = mock_result
+                resp = client.post(
+                    "/api/v1/diagnosis/analytics/export",
+                    headers={"Authorization": "Bearer fake-token"},
+                    json={
+                        "startTime": "2026-06-01T00:00:00Z",
+                        "endTime": "2026-06-22T00:00:00Z",
+                        "granularity": "day",
+                        "format": "csv",
+                    },
+                )
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"

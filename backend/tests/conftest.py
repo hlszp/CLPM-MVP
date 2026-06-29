@@ -6,11 +6,16 @@ run without external dependencies (no PostgreSQL/Redis required).
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+# CI 环境兜底：确保 JWT_SECRET_KEY 和 DEBUG 在导入 app 之前已设置
+os.environ.setdefault("JWT_SECRET_KEY", "ci-test-secret-key-at-least-32-characters-long!!!")
+os.environ.setdefault("DEBUG", "true")
 
 import pytest
 from fastapi.testclient import TestClient
