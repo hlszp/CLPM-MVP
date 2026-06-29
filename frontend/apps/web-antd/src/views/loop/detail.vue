@@ -226,11 +226,16 @@ function fmtNum(v: null | number): string {
   return Number(v).toFixed(2);
 }
 
+/** 时间戳精度转换：微秒级→毫秒级 */
+function toMs(ts: number): number {
+  return ts >= 10000000000000 ? Math.floor(ts / 1000) : ts;
+}
+
 /** 格式化时间戳为 HH:mm:ss */
 function fmtTime(ts: null | number): string {
   if (!ts) return '—';
   try {
-    return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+    return new Date(toMs(ts)).toLocaleTimeString('zh-CN', { hour12: false });
   } catch {
     return '—';
   }

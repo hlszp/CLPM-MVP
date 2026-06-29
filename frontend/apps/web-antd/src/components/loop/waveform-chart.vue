@@ -1,4 +1,30 @@
 <script lang="ts" setup>
+/** 时间戳精度转换：微秒级→毫秒级 */
+function toMs(ts: number): number {
+  return ts >= 10000000000000 ? Math.floor(ts / 1000) : ts;
+}
+
+/** 格式化时间戳为 MM-DD HH:mm */
+function fmtTimeShort(ts: number): string {
+  const d = new Date(toMs(ts));
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${mo}-${dd} ${hh}:${mm}`;
+}
+
+/** 格式化时间戳为 MM-DD HH:mm:ss */
+function fmtTimeLong(ts: number): string {
+  const d = new Date(toMs(ts));
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${mo}-${dd} ${hh}:${mm}:${ss}`;
+}
+
 /**
  * ECharts 波形图组件（统一版）
  *
@@ -524,14 +550,7 @@ function render() {
             xAxisIndex: 0,
             bottom: 8,
             height: 20,
-            labelFormatter: (val: number) => {
-              const d = new Date(val);
-              const mo = String(d.getMonth() + 1).padStart(2, '0');
-              const dd = String(d.getDate()).padStart(2, '0');
-              const hh = String(d.getHours()).padStart(2, '0');
-              const mm = String(d.getMinutes()).padStart(2, '0');
-              return `${mo}-${dd} ${hh}:${mm}`;
-            },
+            labelFormatter: (val: number) => fmtTimeShort(val),
           },
           // Y 轴：滚轮 + 滑块（量程缩放）
           { end: 100, start: 0, type: 'inside', yAxisIndex: 0 },
@@ -553,14 +572,7 @@ function render() {
             xAxisIndex: 0,
             bottom: 8,
             height: 20,
-            labelFormatter: (val: number) => {
-              const d = new Date(val);
-              const mo = String(d.getMonth() + 1).padStart(2, '0');
-              const dd = String(d.getDate()).padStart(2, '0');
-              const hh = String(d.getHours()).padStart(2, '0');
-              const mm = String(d.getMinutes()).padStart(2, '0');
-              return `${mo}-${dd} ${hh}:${mm}`;
-            },
+            labelFormatter: (val: number) => fmtTimeShort(val),
           },
         ],
     grid: {
@@ -582,13 +594,7 @@ function render() {
       formatter: (params: any) => {
         if (!Array.isArray(params) || params.length === 0) return '';
         const p0 = params[0];
-        const d = new Date(p0.axisValue);
-        const mo = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mm = String(d.getMinutes()).padStart(2, '0');
-        const ss = String(d.getSeconds()).padStart(2, '0');
-        const title = `${mo}-${dd} ${hh}:${mm}:${ss}`;
+        const title = fmtTimeLong(p0.axisValue);
         const lines = params.map((p: any) => {
           // time 轴 series data: value 可能是 [timestamp, yValue] 数组
           const raw = Array.isArray(p.value) ? p.value[1] : p.value;
@@ -605,14 +611,7 @@ function render() {
     xAxis: {
       axisLabel: {
         color: chartTextColor.value,
-        formatter: (val: number) => {
-          const d = new Date(val);
-          const hh = String(d.getHours()).padStart(2, '0');
-          const mm = String(d.getMinutes()).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          const mo = String(d.getMonth() + 1).padStart(2, '0');
-          return `${mo}-${dd} ${hh}:${mm}`;
-        },
+        formatter: (val: number) => fmtTimeShort(val),
       },
       splitLine: { lineStyle: { color: chartSplitLineColor.value } },
       type: 'time',
