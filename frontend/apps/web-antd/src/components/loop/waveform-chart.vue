@@ -590,17 +590,17 @@ function render() {
         const ss = String(d.getSeconds()).padStart(2, '0');
         const title = `${mo}-${dd} ${hh}:${mm}:${ss}`;
         const lines = params.map((p: any) => {
+          // time 轴 series data: value 可能是 [timestamp, yValue] 数组
+          const raw = Array.isArray(p.value) ? p.value[1] : p.value;
           const v =
-            p.value === null || p.value === undefined
+            raw === null || raw === undefined || Number.isNaN(Number(raw))
               ? '—'
-              : Number(p.value).toFixed(3);
+              : Number(raw).toFixed(3);
           return `${p.marker} ${p.seriesName}: ${v}`;
         });
         return [title, ...lines].join('<br/>');
       },
       trigger: 'axis',
-      valueFormatter: (val) =>
-        val === null || val === undefined ? '—' : Number(val).toFixed(3),
     },
     xAxis: {
       axisLabel: {
