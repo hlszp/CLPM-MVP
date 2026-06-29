@@ -42,6 +42,14 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 const { isDark, themeColors } = useClpmTheme();
 
+/** 时间戳精度转换：纳秒/微秒级→毫秒级 */
+function toMs(ts: number): number {
+  const absTs = Math.abs(ts);
+  if (absTs >= 10000000000000000) return Math.floor(ts / 1000000);
+  if (absTs >= 10000000000000) return Math.floor(ts / 1000);
+  return ts;
+}
+
 defineOptions({ name: 'DiagnosisABCompare' });
 
 const props = withDefaults(
@@ -233,7 +241,7 @@ function renderTrendChart() {
     xAxis: {
       axisLabel: {
         formatter: (val: string) => {
-          const d = new Date(Number(val));
+          const d = new Date(toMs(Number(val)));
           const hh = String(d.getHours()).padStart(2, '0');
           const mm = String(d.getMinutes()).padStart(2, '0');
           const dd = String(d.getDate()).padStart(2, '0');

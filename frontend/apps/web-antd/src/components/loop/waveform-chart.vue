@@ -1,7 +1,10 @@
 <script lang="ts" setup>
-/** 时间戳精度转换：微秒级→毫秒级 */
+/** 时间戳精度转换：纳秒/微秒级→毫秒级 */
 function toMs(ts: number): number {
-  return ts >= 10000000000000 ? Math.floor(ts / 1000) : ts;
+  const absTs = Math.abs(ts);
+  if (absTs >= 10000000000000000) return Math.floor(ts / 1000000);
+  if (absTs >= 10000000000000) return Math.floor(ts / 1000);
+  return ts;
 }
 
 /** 格式化时间戳为 MM-DD HH:mm */
