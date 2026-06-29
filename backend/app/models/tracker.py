@@ -39,7 +39,7 @@ class ActionTracker(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'RESOLVED')",
+            "action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED')",
             name="ck_action_tracker_status",
         ),
         Index("idx_action_tracker_loop_id", "loop_id"),

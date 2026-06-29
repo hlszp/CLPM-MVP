@@ -3,32 +3,47 @@
  * S3-METRIC-011 性能统计报表页
  *
  * 对齐 IDS v3.2 §2.3 + PRD §4.3
- * - 顶部筛选栏（时间范围/装置/指标/粒度 hour/day/week/month）
+ * - 顶部 PageToolbar（时间范围/装置/指标/粒度筛选 + 刷新/导出按钮）
+ * - KpiStrip：平均评分 / 低效回路数 / 同比 / 环比
+ * - Partial 警告横幅（INCONCLUSIVE 回路时显示）
  * - ECharts 趋势图（KPI 趋势折线图，支持多指标对比）
  * - 装置评分对比柱状图
  * - 差等生分布饼图
- * - 支持导出 CSV 按钮
+ * - 图表区域用 ClpmDataCanvas 包裹，支持 empty/error/loading 状态
  * - 粒度切换时图表自动更新
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { Granularity, MetricApi } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { KpiStripItem } from '#/components/clpm';
 
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Card, DatePicker, message, Select } from 'ant-design-vue';
+import { Alert, DatePicker, message, Select } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import { exportAnalyticsApi, getAnalyticsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { flattenNodes } from '#/utils/plant-node';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricStatistics' });
 
-const loading = ref(false);
+const { isDark, themeColors } = useClpmTheme();
+
+// 初始为 true，避免首屏闪烁空态（onMounted 立即触发 loadData）
+const loading = ref(true);
+const loadError = ref(false);
 const exporting = ref(false);
 const analyticsData = ref<MetricApi.AnalyticsResult | null>(null);
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
@@ -47,8 +62,10 @@ const metricOptions = [
   { label: '综合评分', value: 'score' },
   { label: '好值率', value: 'good_value_rate' },
   { label: '自控率', value: 'auto_mode_rate' },
+  { label: '有效自控率', value: 'effective_auto_rate' },
   { label: '平稳率', value: 'steady_rate' },
   { label: '准确率', value: 'accuracy_rate' },
+  { label: '快速率', value: 'fast_response_rate' },
   { label: '振荡率', value: 'oscillation_rate' },
   { label: '饱和率', value: 'saturation_rate' },
 ];
@@ -69,19 +86,92 @@ const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 const { renderEcharts: renderUnit } = useEcharts(unitChartRef);
 const { renderEcharts: renderBadActor } = useEcharts(badActorChartRef);
 
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
+// ===== KpiStrip 派生指标 =====
+
+/** 平均评分（装置评分加权均值；无数据时返回 null） */
+const avgScore = computed(() => {
+  const ranking = analyticsData.value?.unitRanking || [];
+  if (ranking.length === 0) return null;
+  const total = ranking.reduce(
+    (sum, r) => sum + (Number(r.score) || 0) * (r.loopCount || 1),
+    0,
+  );
+  const weight = ranking.reduce((sum, r) => sum + (r.loopCount || 1), 0);
+  return weight > 0 ? total / weight : null;
+});
+
+/** 低效回路数（装置评分 < 60 的回路总数） */
+const lowPerformerCount = computed(() => {
+  const ranking = analyticsData.value?.unitRanking || [];
+  return ranking
+    .filter((r) => r.score < 60)
+    .reduce((sum, r) => sum + (r.loopCount || 0), 0);
+});
+
+/** 不确定回路数（基于差等生分布中含"不确定/INCONCLUSIVE"标签派生） */
+const inconclusiveCount = computed(() => {
+  const dist = analyticsData.value?.badActorDistribution || [];
+  const item = dist.find((d) => /不确定|INCONCLUSIVE/i.test(d.label));
+  return item?.count ?? 0;
+});
+
+const kpiStripItems = computed<KpiStripItem[]>(() => {
+  const avg = avgScore.value;
+  const avgValue = avg === null ? '—' : avg.toFixed(1);
+  const avgStatus: KpiStripItem['status'] =
+    avg === null
+      ? 'neutral'
+      : avg >= 80
+        ? 'success'
+        : avg >= 60
+          ? 'warning'
+          : 'danger';
+  const lowCount = lowPerformerCount.value;
+  return [
+    {
+      key: 'avgScore',
+      label: '平均评分',
+      value: avgValue,
+      status: avgStatus,
+    },
+    {
+      key: 'lowPerformer',
+      label: '低效回路数',
+      value: lowCount,
+      status: lowCount > 0 ? 'danger' : 'success',
+    },
+    // 同比/环比后端暂未提供，使用占位
+    {
+      key: 'yoy',
+      label: '同比',
+      value: '—',
+      status: 'neutral',
+    },
+    {
+      key: 'mom',
+      label: '环比',
+      value: '—',
+      status: 'neutral',
+    },
+  ];
+});
+
+// ===== 图表空态派生 =====
+
+const trendEmpty = computed(() => {
+  const t = analyticsData.value?.kpiTrend;
+  return !t || !t.timestamps || t.timestamps.length === 0;
+});
+
+const unitEmpty = computed(
+  () => (analyticsData.value?.unitRanking || []).length === 0,
+);
+
+const badActorEmpty = computed(
+  () => (analyticsData.value?.badActorDistribution || []).length === 0,
+);
+
+// ===== 数据加载 =====
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -105,6 +195,7 @@ async function loadData() {
     return;
   }
   loading.value = true;
+  loadError.value = false;
   try {
     const data = await getAnalyticsApi({
       startTime: start.format('YYYY-MM-DD HH:mm:ss'),
@@ -114,28 +205,29 @@ async function loadData() {
       granularity: filter.granularity,
     });
     analyticsData.value = data;
-    renderAllCharts();
   } catch {
-    // 错误已由拦截器处理
+    loadError.value = true;
   } finally {
     loading.value = false;
   }
+  // loading=false 后 EchartsUI 进入 DOM，再渲染图表
+  if (!loadError.value && analyticsData.value) {
+    await nextTick();
+    renderAllCharts();
+  }
 }
 
-/** 渲染所有图表 */
+/** 渲染所有图表（仅渲染有数据的图表，避免空态下触发 useEcharts 重试循环） */
 function renderAllCharts() {
-  renderTrendChart();
-  renderUnitChart();
-  renderBadActorChart();
+  if (!trendEmpty.value) renderTrendChart();
+  if (!unitEmpty.value) renderUnitChart();
+  if (!badActorEmpty.value) renderBadActorChart();
 }
 
 /** 渲染 KPI 趋势折线图 */
 function renderTrendChart() {
   const trend = analyticsData.value?.kpiTrend;
   if (!trend || !trend.timestamps || trend.timestamps.length === 0) {
-    renderTrend({
-      title: { left: 'center', text: '暂无数据' },
-    });
     return;
   }
 
@@ -182,12 +274,7 @@ function renderTrendChart() {
 /** 渲染装置评分柱状图 */
 function renderUnitChart() {
   const ranking = analyticsData.value?.unitRanking || [];
-  if (ranking.length === 0) {
-    renderUnit({
-      title: { left: 'center', text: '暂无数据' },
-    });
-    return;
-  }
+  if (ranking.length === 0) return;
 
   renderUnit({
     grid: { bottom: 40, containLabel: true, left: '2%', right: '2%', top: 30 },
@@ -195,7 +282,7 @@ function renderUnitChart() {
       {
         barWidth: '50%',
         data: ranking.map((r) => r.score),
-        itemStyle: { color: '#0D6EFD' },
+        itemStyle: { color: themeColors.value.INFO },
         name: '评分',
         type: 'bar',
       },
@@ -218,12 +305,7 @@ function renderUnitChart() {
 /** 渲染差等生分布饼图 */
 function renderBadActorChart() {
   const dist = analyticsData.value?.badActorDistribution || [];
-  if (dist.length === 0) {
-    renderBadActor({
-      title: { left: 'center', text: '暂无数据' },
-    });
-    return;
-  }
+  if (dist.length === 0) return;
 
   renderBadActor({
     legend: { bottom: 0, orient: 'horizontal' },
@@ -280,6 +362,10 @@ function handleSearch() {
   loadData();
 }
 
+function handleRetry() {
+  loadData();
+}
+
 // 粒度切换时图表自动更新
 watch(
   () => filter.granularity,
@@ -288,6 +374,13 @@ watch(
   },
 );
 
+// ===== 主题切换重渲图表 =====
+watch(isDark, () => {
+  nextTick(() => {
+    renderAllCharts();
+  });
+});
+
 onMounted(() => {
   loadPlantNodes();
   loadData();
@@ -295,57 +388,104 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="性能统计报表">
-    <!-- 筛选栏 -->
-    <Card class="mb-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <DatePicker.RangePicker
-          v-model:value="filter.timeRange"
-          :show-time="{ format: 'HH:mm' }"
-          format="YYYY-MM-DD HH:mm"
-          :placeholder="['开始时间', '结束时间']"
+  <Page>
+    <ClpmPageToolbar
+      title="性能统计报表"
+      subtitle="趋势、装置评分和差等生分布的统一分析入口。"
+      :loading="loading"
+    >
+      <DatePicker.RangePicker
+        v-model:value="filter.timeRange"
+        :show-time="{ format: 'HH:mm' }"
+        format="YYYY-MM-DD HH:mm"
+        :placeholder="['开始时间', '结束时间']"
+        size="small"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="filter.plantNodeId"
+        placeholder="装置/单元筛选"
+        style="width: 200px"
+        size="small"
+        allow-clear
+        :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="filter.metricKey"
+        style="width: 160px"
+        size="small"
+        :options="metricOptions"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="filter.granularity"
+        style="width: 100px"
+        size="small"
+        :options="granularityOptions"
+      />
+      <template #actions>
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="handleSearch"
         />
-        <Select
-          v-model:value="filter.plantNodeId"
-          placeholder="装置/单元筛选"
-          style="width: 220px"
-          allow-clear
-          :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
-          @change="handleSearch"
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          :loading="exporting"
+          @click="handleExport"
         />
-        <Select
-          v-model:value="filter.metricKey"
-          style="width: 160px"
-          :options="metricOptions"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="filter.granularity"
-          style="width: 120px"
-          :options="granularityOptions"
-        />
-        <Button type="primary" :loading="loading" @click="handleSearch">
-          查询
-        </Button>
-        <Button :loading="exporting" @click="handleExport"> 导出 CSV </Button>
-      </div>
-    </Card>
+      </template>
+    </ClpmPageToolbar>
+
+    <!-- KpiStrip：平均评分 / 低效回路数 / 同比 / 环比 -->
+    <ClpmKpiStrip class="mt-3" :items="kpiStripItems" :loading="loading" />
+
+    <!-- Partial 警告横幅：存在不确定回路时显示 -->
+    <Alert
+      v-if="!loading && inconclusiveCount > 0"
+      class="mt-3"
+      type="warning"
+      show-icon
+      :message="`当前有 ${inconclusiveCount} 个回路评估结果为不确定，建议检查数据质量`"
+    />
 
     <!-- KPI 趋势折线图 -->
-    <Card title="KPI 趋势" class="mb-4" :loading="loading">
+    <ClpmDataCanvas
+      title="KPI 趋势"
+      class="mt-3 mb-4"
+      :loading="loading"
+      :error="loadError"
+      :empty="!loading && !loadError && trendEmpty"
+      @retry="handleRetry"
+    >
       <EchartsUI ref="trendChartRef" height="360px" />
-    </Card>
+    </ClpmDataCanvas>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- 装置评分对比柱状图 -->
-      <Card title="装置评分对比" :loading="loading">
+      <ClpmDataCanvas
+        title="装置评分对比"
+        :loading="loading"
+        :error="loadError"
+        :empty="!loading && !loadError && unitEmpty"
+        @retry="handleRetry"
+      >
         <EchartsUI ref="unitChartRef" height="320px" />
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 差等生分布饼图 -->
-      <Card title="差等生分布" :loading="loading">
+      <ClpmDataCanvas
+        title="差等生分布"
+        :loading="loading"
+        :error="loadError"
+        :empty="!loading && !loadError && badActorEmpty"
+        @retry="handleRetry"
+      >
         <EchartsUI ref="badActorChartRef" height="320px" />
-      </Card>
+      </ClpmDataCanvas>
     </div>
   </Page>
 </template>

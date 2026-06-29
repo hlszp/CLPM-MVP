@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from app.schemas.base import CamelModel
 
 
-class AasConfigInfo(BaseModel):
+class AasConfigInfo(CamelModel):
     """AAS 连接配置信息。"""
 
     endpoint: str = Field(..., description="OPC UA 端点 URL")
@@ -15,7 +17,7 @@ class AasConfigInfo(BaseModel):
     securityMode: str = Field("None", description="安全模式：None/Sign/SignAndEncrypt")
 
 
-class AasConfigUpdate(BaseModel):
+class AasConfigUpdate(CamelModel):
     """PUT /api/v1/aas/config 请求体。"""
 
     endpoint: str | None = Field(None, description="OPC UA 端点 URL")
@@ -24,7 +26,7 @@ class AasConfigUpdate(BaseModel):
     securityMode: str | None = Field(None, description="安全模式：None/Sign/SignAndEncrypt")
 
 
-class AasConfigTestResult(BaseModel):
+class AasConfigTestResult(CamelModel):
     """POST /api/v1/aas/config/test 响应。"""
 
     success: bool
@@ -32,7 +34,7 @@ class AasConfigTestResult(BaseModel):
     message: str
 
 
-class AasSyncTriggerResult(BaseModel):
+class AasSyncTriggerResult(CamelModel):
     """POST /api/v1/aas/sync 响应。"""
 
     taskId: str
@@ -40,7 +42,7 @@ class AasSyncTriggerResult(BaseModel):
     checkUrl: str | None = None
 
 
-class AasTagItem(BaseModel):
+class AasTagItem(CamelModel):
     """AAS Tag 列表项。"""
 
     tagId: str
@@ -55,7 +57,7 @@ class AasTagItem(BaseModel):
     associatedLoopTagName: str | None = None
 
 
-class AasTagListData(BaseModel):
+class AasTagListData(CamelModel):
     """AAS Tag 列表响应 data 块。"""
 
     items: list[AasTagItem]

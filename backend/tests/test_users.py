@@ -13,7 +13,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from tests.conftest import TEST_USERS, mock_current_user
 
@@ -160,13 +160,13 @@ class TestCreateUser:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "username": "newuser",
-                    "password": "Pass1234",
+                    "password": "Pass@1234",
                     "displayName": "新用户",
                     "email": "newuser@clpm.local",
                     "role": "IC_ENGINEER",
                 },
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         body = resp.json()
         assert body["code"] == "0"
         assert body["data"]["username"] == "newuser"
@@ -184,7 +184,7 @@ class TestCreateUser:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "username": "existing",
-                    "password": "Pass1234",
+                    "password": "Pass@1234",
                     "displayName": "重复用户",
                     "role": "IC_ENGINEER",
                 },
@@ -200,7 +200,7 @@ class TestCreateUser:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "username": "newuser",
-                    "password": "Pass1234",
+                    "password": "Pass@1234",
                     "displayName": "新用户",
                     "role": "IC_ENGINEER",
                 },
@@ -208,8 +208,9 @@ class TestCreateUser:
         assert resp.status_code == 403
 
     def test_create_user_weak_password(self, client, mock_db, fake_redis) -> None:
-        """Password without letters+digits is rejected (422)."""
-        with mock_current_user(TEST_USERS["admin"]):
+        """Password without required complexity is rejected (422)."""
+        # 模拟生产环境（DEBUG=False）以测试完整密码策略
+        with mock_current_user(TEST_USERS["admin"]), patch("app.core.config.settings.DEBUG", False):
             resp = client.post(
                 "/api/v1/users",
                 headers={"Authorization": "Bearer fake-token"},
@@ -230,7 +231,7 @@ class TestCreateUser:
                 headers={"Authorization": "Bearer fake-token"},
                 json={
                     "username": "newuser",
-                    "password": "Pass1234",
+                    "password": "Pass@1234",
                     "displayName": "新用户",
                     "role": "INVALID_ROLE",
                 },
@@ -267,7 +268,7 @@ class TestUpdateUser:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.put(
-                "/api/v1/users/nonexistent",
+                "/api/v1/users/00000000-0000-0000-0000-000000000999",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"displayName": "更新"},
             )
@@ -312,7 +313,7 @@ class TestDisableUser:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.delete(
-                "/api/v1/users/nonexistent",
+                "/api/v1/users/00000000-0000-0000-0000-000000000999",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
@@ -344,7 +345,7 @@ class TestResetPassword:
             resp = client.put(
                 f"/api/v1/users/{user.id}/reset-password",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"newPassword": "NewPass2026"},
+                json={"newPassword": "NewPass@2026"},
             )
         assert resp.status_code == 200
         body = resp.json()
@@ -356,9 +357,9 @@ class TestResetPassword:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.put(
-                "/api/v1/users/nonexistent/reset-password",
+                "/api/v1/users/00000000-0000-0000-0000-000000000999/reset-password",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"newPassword": "NewPass2026"},
+                json={"newPassword": "NewPass@2026"},
             )
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_USER_NOT_FOUND"
@@ -369,13 +370,14 @@ class TestResetPassword:
             resp = client.put(
                 "/api/v1/users/some-id/reset-password",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"newPassword": "NewPass2026"},
+                json={"newPassword": "NewPass@2026"},
             )
         assert resp.status_code == 403
 
     def test_reset_password_weak(self, client, mock_db, fake_redis) -> None:
         """Weak password is rejected (422)."""
-        with mock_current_user(TEST_USERS["admin"]):
+        # 模拟生产环境（DEBUG=False）以测试完整密码策略
+        with mock_current_user(TEST_USERS["admin"]), patch("app.core.config.settings.DEBUG", False):
             resp = client.put(
                 "/api/v1/users/some-id/reset-password",
                 headers={"Authorization": "Bearer fake-token"},

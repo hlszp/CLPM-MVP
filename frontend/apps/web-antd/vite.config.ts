@@ -8,8 +8,7 @@ export default defineConfig(async () => {
         proxy: {
           '/api': {
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api/, ''),
-            // CLPM 后端开发服务器
+            // CLPM 后端开发服务器（保留 /api 前缀，后端路由为 /api/v1/...）
             target: 'http://localhost:8001',
             ws: true,
           },

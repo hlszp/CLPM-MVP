@@ -13,14 +13,12 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { SystemApi } from '#/api/system';
 
-import dayjs from 'dayjs';
 import { onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   DatePicker,
   Descriptions,
   DescriptionsItem,
@@ -29,7 +27,9 @@ import {
   Table,
   Tag,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { getAuditLogListApi } from '#/api/system';
 
 defineOptions({ name: 'SystemAudit' });
@@ -115,7 +115,7 @@ const columns: TableColumnsType = [
 
 // 详情抽屉
 const drawerVisible = ref(false);
-const selectedLog = ref<SystemApi.AuditLog | null>(null);
+const selectedLog = ref<null | SystemApi.AuditLog>(null);
 
 /** 加载审计日志列表 */
 async function loadList() {
@@ -192,8 +192,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="审计日志">
-    <Card>
+  <Page>
+    <ClpmPageToolbar
+      title="审计日志"
+      subtitle="按操作类型、时间和资源查看关键变更记录。"
+    />
+    <ClpmDataCanvas class="mt-4" title="审计日志列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -280,7 +284,7 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 详情抽屉 -->
     <Drawer
@@ -336,8 +340,8 @@ onMounted(() => {
               </div>
               <pre
                 class="max-h-80 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all"
-                >{{ formatJsonValue(selectedLog.before_value) }}</pre
-              >
+                >{{ formatJsonValue(selectedLog.before_value) }}
+              </pre>
             </div>
             <div class="rounded border border-gray-200">
               <div
@@ -347,8 +351,8 @@ onMounted(() => {
               </div>
               <pre
                 class="max-h-80 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all"
-                >{{ formatJsonValue(selectedLog.after_value) }}</pre
-              >
+                >{{ formatJsonValue(selectedLog.after_value) }}
+              </pre>
             </div>
           </div>
         </div>

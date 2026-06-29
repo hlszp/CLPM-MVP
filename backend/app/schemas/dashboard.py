@@ -9,16 +9,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pydantic import ConfigDict, Field
 
-from pydantic import BaseModel, Field
+from app.schemas.base import CamelModel
 
 # ---------------------------------------------------------------------------
 # KPI 卡片
 # ---------------------------------------------------------------------------
 
 
-class KpiCardData(BaseModel):
+class KpiCardData(CamelModel):
     """单个 KPI 卡片数据。
 
     Attributes:
@@ -34,7 +34,7 @@ class KpiCardData(BaseModel):
     delta: float | int = 0.0
 
 
-class KpiCards(BaseModel):
+class KpiCards(CamelModel):
     """6 大 KPI 卡片集合。"""
 
     auto_mode_rate: KpiCardData
@@ -50,14 +50,14 @@ class KpiCards(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class LoopKeyMetric(BaseModel):
+class LoopKeyMetric(CamelModel):
     """回路关键指标摘要。"""
 
     auto_mode_rate: float | None = None
     steady_rate: float | None = None
 
 
-class InefficientLoopItem(BaseModel):
+class InefficientLoopItem(CamelModel):
     """低效回路列表项。"""
 
     loop_id: str
@@ -74,7 +74,7 @@ class InefficientLoopItem(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TrendSummary(BaseModel):
+class TrendSummary(CamelModel):
     """回路趋势摘要（最近 7 天每日综合评分）。"""
 
     dates: list[str] = Field(default_factory=list)
@@ -86,7 +86,7 @@ class TrendSummary(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class PendingAlerts(BaseModel):
+class PendingAlerts(CamelModel):
     """待处理异常数。"""
 
     open_diagnoses: int = 0
@@ -98,7 +98,7 @@ class PendingAlerts(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class DashboardFilterScope(BaseModel):
+class DashboardFilterScope(CamelModel):
     """工作台筛选范围。"""
 
     plant_id: str | None = None
@@ -107,7 +107,7 @@ class DashboardFilterScope(BaseModel):
     user_role: str = ""
 
 
-class DashboardOverview(BaseModel):
+class DashboardOverview(CamelModel):
     """工作台聚合响应 data 块。"""
 
     filter_scope: DashboardFilterScope
@@ -117,7 +117,12 @@ class DashboardOverview(BaseModel):
     pending_alerts: PendingAlerts
     cached: bool = False
 
-    model_config: dict[str, Any] = {"extra": "allow"}
+    model_config = ConfigDict(
+        alias_generator=CamelModel.model_config["alias_generator"],
+        populate_by_name=True,
+        from_attributes=True,
+        extra="allow",
+    )
 
 
 __all__ = [

@@ -14,12 +14,12 @@ import type { TableColumnsType } from 'ant-design-vue';
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 
 import { onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Form,
   FormItem,
   Input,
@@ -31,39 +31,32 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import {
   getDiagnosisMetricsApi,
   updateDiagnosisMetricApi,
 } from '#/api/diagnosis';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_OPTIONS,
+  getDiagnosisLabelName,
+} from '#/constants/diagnosis';
 
 defineOptions({ name: 'DiagnosisConfig' });
+
+const router = useRouter();
 
 const loading = ref(false);
 const metricList = ref<DiagnosisApi.MetricItem[]>([]);
 
+/** 当前正在切换启用状态的指标 ID（用于 Switch loading 态） */
+const togglingId = ref<null | string>(null);
+
 /** 8 类诊断标签选项 */
-const labelOptions: { label: string; value: DiagnosisLabel }[] = [
-  { label: '振荡', value: 'OSCILLATION' },
-  { label: '阀门粘滞', value: 'VALVE_STICTION' },
-  { label: '参数过激', value: 'OVERAGGRESSIVE' },
-  { label: '参数过保守', value: 'OVERCONSERVATIVE' },
-  { label: '外扰频繁', value: 'EXTERNAL_DISTURBANCE' },
-  { label: 'PV 质量异常', value: 'QUALITY_ABNORMAL' },
-  { label: '输出饱和', value: 'OUTPUT_SATURATION' },
-  { label: '人工复核', value: 'MANUAL_REVIEW' },
-];
+const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
 
 /** 标签颜色映射 */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
 const columns: TableColumnsType = [
   { title: '指标名称', dataIndex: 'diagName', key: 'diagName', width: 160 },
@@ -97,7 +90,7 @@ const columns: TableColumnsType = [
     width: 140,
   },
   { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 170 },
-  { title: '操作', key: 'action', width: 100, fixed: 'right' },
+  { title: '操作', key: 'action', width: 180, fixed: 'right' },
 ];
 
 // Modal state
@@ -161,6 +154,46 @@ function handleEdit(record: DiagnosisApi.MetricItem) {
   formState.threshold = objectToKv(record.threshold || {});
   formState.isEnabled = record.isEnabled;
   modalVisible.value = true;
+}
+
+/** 切换启用状态（带二次确认 Modal） */
+function handleToggleEnabled(
+  record: DiagnosisApi.MetricItem,
+  checked: boolean,
+) {
+  Modal.confirm({
+    title: '确认变更启用状态',
+    content: `即将${checked ? '启用' : '禁用'}诊断指标「${record.diagName}」，保存后立即生效。是否继续？`,
+    okText: '确认',
+    cancelText: '取消',
+    onOk: async () => {
+      togglingId.value = record.diagId;
+      try {
+        await updateDiagnosisMetricApi(record.diagId, {
+          label: record.label,
+          algorithmType: record.algorithmType,
+          calcMethod: record.calcMethod,
+          params: record.params || {},
+          threshold: record.threshold || {},
+          isEnabled: checked,
+        });
+        record.isEnabled = checked;
+        message.success('启用状态更新成功');
+      } catch {
+        // 错误已由拦截器处理
+      } finally {
+        togglingId.value = null;
+      }
+    },
+  });
+}
+
+/** 跳转到审计日志页（预筛选诊断配置） */
+function handleViewAuditLog() {
+  router.push({
+    path: '/system/audit',
+    query: { target_type: 'diagnosis_config' },
+  });
 }
 
 /** 添加参数项 */
@@ -237,7 +270,7 @@ function formatObject(obj: Record<string, number>): string {
 }
 
 function labelName(label: DiagnosisLabel): string {
-  return labelOptions.find((o) => o.value === label)?.label || label;
+  return getDiagnosisLabelName(label);
 }
 
 onMounted(() => {
@@ -246,8 +279,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="诊断指标配置">
-    <Card>
+  <Page>
+    <ClpmPageToolbar
+      title="诊断指标配置"
+      subtitle="管理诊断规则、阈值、算法参数和启用状态。"
+    />
+    <ClpmDataCanvas class="mt-4" title="诊断指标列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
           管理诊断指标配置：诊断规则、算法参数、阈值、启用状态。
@@ -277,9 +314,18 @@ onMounted(() => {
             <span class="text-xs">{{ formatObject(record.params) }}</span>
           </template>
           <template v-else-if="column.key === 'isEnabled'">
-            <Tag :color="record.isEnabled ? 'green' : 'default'">
-              {{ record.isEnabled ? '启用' : '禁用' }}
-            </Tag>
+            <Switch
+              :checked="record.isEnabled"
+              :loading="togglingId === record.diagId"
+              size="small"
+              @change="
+                (checked: boolean | number | string) =>
+                  handleToggleEnabled(
+                    record as DiagnosisApi.MetricItem,
+                    !!checked,
+                  )
+              "
+            />
           </template>
           <template v-else-if="column.key === 'updatedAt'">
             {{ formatTime(record.updatedAt) }}
@@ -293,10 +339,18 @@ onMounted(() => {
             >
               编辑
             </Button>
+            <Button
+              v-permission="['ADMIN']"
+              type="link"
+              size="small"
+              @click="handleViewAuditLog"
+            >
+              审计日志
+            </Button>
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 编辑 Modal -->
     <Modal
@@ -313,10 +367,12 @@ onMounted(() => {
             label="诊断标签"
             :rules="[{ required: true, message: '请选择诊断标签' }]"
           >
+            <!-- 每个指标对应固定标签，标签不可编辑（FDS §5.4.1） -->
             <Select
               v-model:value="formState.label"
               :options="labelOptions"
               placeholder="请选择诊断标签"
+              disabled
             />
           </FormItem>
           <FormItem

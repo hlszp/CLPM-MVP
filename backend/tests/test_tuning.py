@@ -80,7 +80,7 @@ class TestFOPDTIdentification:
             K_true, tau_true, theta_true, mv_step, duration=300
         )
 
-        result = identify_fopdt(pv_values, timestamps, mv_step, method="COMBINED")
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
 
         assert result["K"] is not None
         assert result["tau"] is not None
@@ -189,12 +189,13 @@ class TestPIDTuning:
     """PID 整定算法测试。"""
 
     def test_imc_tuning(self):
-        """IMC 整定公式验证。"""
+        """IMC 整定公式验证（Morari & Zafiriou Padé-based IMC）。"""
         K, tau, theta = 1.0, 30.0, 5.0
         pid = tune_imc(K, tau, theta, lambda_ratio=1.0)
 
         lam = 5.0
-        expected_kp = (tau + theta / 2.0) / (K * lam)
+        # 正确公式：Kp = (τ + θ/2) / (K · (λ + θ/2))
+        expected_kp = (tau + theta / 2.0) / (K * (lam + theta / 2.0))
         expected_ti = tau + theta / 2.0
         expected_td = (tau * theta) / (2.0 * (tau + theta / 2.0))
 
@@ -257,14 +258,14 @@ class TestPIDTuning:
         assert abs(pid.td - expected_td) < 0.001
 
     def test_simc_tuning(self):
-        """SIMC PID 整定。"""
+        """SIMC PID 整定（Skogestad 2001 — FOPDT 使用 PI，Td=0）。"""
         K, tau, theta = 1.0, 30.0, 5.0
         pid = tune_simc(K, tau, theta, tau_c_ratio=1.0)
 
         tau_c = 5.0
         expected_kc = (1.0 / K) * tau / (theta + tau_c)
         expected_ti = tau
-        expected_td = theta
+        expected_td = 0.0  # FOPDT 时 SIMC 使用 PI 控制，Td=0
 
         assert abs(pid.kp - expected_kc) < 0.001
         assert abs(pid.ti - expected_ti) < 0.001
@@ -435,7 +436,7 @@ class TestTuningAPI:
         assert "recommendedResponse" in result
 
     def test_tune_invalid_algorithm(self, client) -> None:
-        """无效算法应返回错误。"""
+        """无效算法应返回校验错误（S4-C3 枚举约束 → 422）。"""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/tuning/tune",
@@ -446,9 +447,9 @@ class TestTuningAPI:
                     "algorithm": "INVALID_ALGO",
                 },
             )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         data = resp.json()
-        assert data["code"] == "ERR_INVALID_ALGORITHM"
+        assert data["code"] == "ERR_VALIDATION"
 
     def test_tune_missing_k(self, client) -> None:
         """K 缺失应返回错误。"""
@@ -520,9 +521,7 @@ class TestTuningAPI:
 
     def test_identify_loop_not_found(self, client, mock_db) -> None:
         """模型辨识：回路不存在。"""
-        mock_db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(None)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
@@ -557,9 +556,7 @@ class TestTuningAPI:
     def test_create_task_success(self, client, mock_db) -> None:
         """保存整定任务。"""
         loop = _make_loop_mock()
-        mock_db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(loop)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
         mock_db.refresh = AsyncMock()
@@ -578,7 +575,7 @@ class TestTuningAPI:
                     "status": "SIMULATED",
                 },
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
         assert data["code"] == "0"
 
@@ -874,3 +871,341 @@ class TestBoundaryConditions:
         ops = [80.0] * 20 + [40.0] * 20
         step = _estimate_mv_step(ops)
         assert step == 40.0
+
+
+# ---------------------------------------------------------------------------
+# S3-C1: 算法对标验证测试（Åström-Hägglund 基准）
+# ---------------------------------------------------------------------------
+
+
+class TestAlgorithmBenchmark:
+    """算法对标验证测试 — 使用 Åström-Hägglund 基准 FOPDT 模型。
+
+    基准原理：给定已知 FOPDT 参数 K、tau、theta，生成阶跃响应数据，
+    调用 identify_fopdt 辨识参数，验证辨识精度。
+    """
+
+    @staticmethod
+    def _generate_fopdt_response(
+        K: float, tau: float, theta: float, mv_step: float, duration: float, dt: float = 1.0
+    ) -> tuple[list[float], list[float]]:
+        """生成 FOPDT 阶跃响应仿真数据（用于基准对标）。"""
+        pv_values: list[float] = []
+        timestamps: list[float] = []
+        n = int(duration / dt)
+        for i in range(n):
+            t = i * dt
+            timestamps.append(t)
+            if t < theta:
+                pv_values.append(0.0)
+            else:
+                pv_values.append(K * mv_step * (1.0 - math.exp(-(t - theta) / tau)))
+        return pv_values, timestamps
+
+    def test_benchmark_case_1(self):
+        """基准案例 1：K=1.0, tau=10.0, theta=2.0（Åström-Hägglund 经典参数）。"""
+        K_true, tau_true, theta_true = 1.0, 10.0, 2.0
+        mv_step = 10.0
+        # 仿真时长需远大于 tau 以保证响应充分进入稳态
+        pv_values, timestamps = self._generate_fopdt_response(
+            K_true, tau_true, theta_true, mv_step, duration=200.0, dt=0.5
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
+
+        assert result["K"] is not None, "K 辨识失败"
+        assert result["tau"] is not None, "tau 辨识失败"
+        assert result["theta"] is not None, "theta 辨识失败"
+
+        # K 误差 < 5%
+        K_err = abs(result["K"] - K_true) / abs(K_true)
+        assert K_err < 0.05, f"K 误差 {K_err:.2%} 超过 5%（辨识值={result['K']}，真值={K_true}）"
+
+        # tau 误差 < 5%
+        tau_err = abs(result["tau"] - tau_true) / abs(tau_true)
+        assert tau_err < 0.05, (
+            f"tau 误差 {tau_err:.2%} 超过 5%（辨识值={result['tau']}，真值={tau_true}）"
+        )
+
+        # theta 误差 < 10%
+        theta_err = abs(result["theta"] - theta_true) / abs(theta_true)
+        assert theta_err < 0.10, (
+            f"theta 误差 {theta_err:.2%} 超过 10%（辨识值={result['theta']}，真值={theta_true}）"
+        )
+
+    def test_benchmark_case_2(self):
+        """基准案例 2：K=2.0, tau=20.0, theta=4.0（大增益大滞后）。"""
+        K_true, tau_true, theta_true = 2.0, 20.0, 4.0
+        mv_step = 5.0
+        pv_values, timestamps = self._generate_fopdt_response(
+            K_true, tau_true, theta_true, mv_step, duration=400.0, dt=0.5
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
+
+        assert result["K"] is not None
+        assert result["tau"] is not None
+        assert result["theta"] is not None
+
+        K_err = abs(result["K"] - K_true) / abs(K_true)
+        assert K_err < 0.05, f"K 误差 {K_err:.2%} 超过 5%"
+
+        tau_err = abs(result["tau"] - tau_true) / abs(tau_true)
+        assert tau_err < 0.05, f"tau 误差 {tau_err:.2%} 超过 5%"
+
+        theta_err = abs(result["theta"] - theta_true) / abs(theta_true)
+        assert theta_err < 0.10, f"theta 误差 {theta_err:.2%} 超过 10%"
+
+    def test_benchmark_case_3(self):
+        """基准案例 3：K=0.5, tau=50.0, theta=5.0（慢过程）。"""
+        K_true, tau_true, theta_true = 0.5, 50.0, 5.0
+        mv_step = 20.0
+        pv_values, timestamps = self._generate_fopdt_response(
+            K_true, tau_true, theta_true, mv_step, duration=800.0, dt=1.0
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
+
+        assert result["K"] is not None
+        assert result["tau"] is not None
+        assert result["theta"] is not None
+
+        K_err = abs(result["K"] - K_true) / abs(K_true)
+        assert K_err < 0.05, f"K 误差 {K_err:.2%} 超过 5%"
+
+        tau_err = abs(result["tau"] - tau_true) / abs(tau_true)
+        assert tau_err < 0.05, f"tau 误差 {tau_err:.2%} 超过 5%"
+
+        theta_err = abs(result["theta"] - theta_true) / abs(theta_true)
+        assert theta_err < 0.10, f"theta 误差 {theta_err:.2%} 超过 10%"
+
+    def test_benchmark_fitting_score(self):
+        """基准案例：拟合度应 > 95%（理想无噪声数据）。"""
+        K_true, tau_true, theta_true = 1.0, 10.0, 2.0
+        mv_step = 10.0
+        pv_values, timestamps = self._generate_fopdt_response(
+            K_true, tau_true, theta_true, mv_step, duration=200.0, dt=0.5
+        )
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
+
+        # 无噪声理想数据，拟合度应非常高
+        assert result["fitting_score"] > 95.0, (
+            f"拟合度 {result['fitting_score']} 低于 95%（理想无噪声数据应 > 95%）"
+        )
+
+
+# ---------------------------------------------------------------------------
+# S4-B1~B5 算法修复验证测试
+# ---------------------------------------------------------------------------
+
+
+class TestS4B1CombinedRemoved:
+    """S4-B1: COMBINED 模式死代码已删除。"""
+
+    def test_combined_method_defaults_to_two_point(self):
+        """COMBINED 方法不再存在，传入 COMBINED 应回退为 TWO_POINT。"""
+        K_true, tau_true, theta_true = 2.0, 50.0, 10.0
+        mv_step = 5.0
+        pv_values, timestamps = _generate_fopdt_step_response(
+            K_true, tau_true, theta_true, mv_step, duration=500
+        )
+
+        # 传入已删除的 COMBINED 方法，应回退为 TWO_POINT
+        result_combined = identify_fopdt(pv_values, timestamps, mv_step, method="COMBINED")
+        result_two_point = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
+
+        # 两者结果应完全一致（COMBINED 回退为 TWO_POINT）
+        assert result_combined["K"] == result_two_point["K"]
+        assert result_combined["tau"] == result_two_point["tau"]
+        assert result_combined["theta"] == result_two_point["theta"]
+
+    def test_default_method_is_two_point(self):
+        """默认方法应为 TWO_POINT。"""
+        K_true, tau_true, theta_true = 1.0, 30.0, 5.0
+        mv_step = 10.0
+        pv_values, timestamps = _generate_fopdt_step_response(
+            K_true, tau_true, theta_true, mv_step, duration=300
+        )
+
+        result_default = identify_fopdt(pv_values, timestamps, mv_step)
+        result_explicit = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
+
+        assert result_default["tau"] == result_explicit["tau"]
+        assert result_default["theta"] == result_explicit["theta"]
+
+
+class TestS4B3AreaMethodMeanPvFinal:
+    """S4-B3: FOPDT 面积法 pv_final 用均值。"""
+
+    def test_area_method_with_drift(self):
+        """带漂移的响应数据，均值法 pv_final 应更稳定。"""
+        K_true, tau_true, theta_true = 0.5, 60.0, 8.0
+        mv_step = 20.0
+        pv_values, timestamps = _generate_fopdt_step_response(
+            K_true, tau_true, theta_true, mv_step, duration=500
+        )
+
+        # 在末尾添加小幅漂移（模拟测量噪声/漂移）
+        for i in range(len(pv_values) - 10, len(pv_values)):
+            pv_values[i] += 0.5  # 末尾漂移
+
+        result = identify_fopdt(pv_values, timestamps, mv_step, method="AREA")
+
+        # 均值法应仍能给出合理的辨识结果
+        assert result["K"] is not None
+        assert result["tau"] is not None
+        # K 应接近真实值（均值法减少漂移影响）
+        assert abs(result["K"] - K_true) / K_true < 0.3
+
+    def test_area_method_pv_final_points_param(self):
+        """面积法应接受 pv_final_points 参数（默认 10）。"""
+        import numpy as np
+
+        from app.services.tuning_algorithms import _fopdt_area_method
+
+        K_true, tau_true, theta_true = 1.0, 30.0, 5.0
+        mv_step = 10.0
+        pv_values, timestamps = _generate_fopdt_step_response(
+            K_true, tau_true, theta_true, mv_step, duration=300
+        )
+        pv = np.array(pv_values, dtype=float)
+        ts = np.array(timestamps, dtype=float)
+
+        # 使用 5 个点均值
+        result = _fopdt_area_method(
+            pv, ts, pv[0], pv[-1], pv[-1] - pv[0], mv_step, pv_final_points=5
+        )
+        assert result["tau"] > 0
+        assert result["theta"] >= 0
+
+
+class TestS4B4CohenCoonRangeCheck:
+    """S4-B4: Cohen-Coon 适用范围检查。"""
+
+    def test_warning_when_ratio_too_small(self, caplog):
+        """θ/τ < 0.1 时应记录 WARNING 日志。"""
+        import logging
+
+        # theta/tau = 0.5/30 ≈ 0.017 < 0.1
+        with caplog.at_level(logging.WARNING, logger="app.services.tuning_algorithms"):
+            tune_cohen_coon(K=1.0, tau=30.0, theta=0.5, controller_type="PID")
+
+        # 应有范围超出的警告
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("超出推荐范围" in r.message for r in warnings)
+
+    def test_warning_when_ratio_too_large(self, caplog):
+        """θ/τ > 2.0 时应记录 WARNING 日志。"""
+        import logging
+
+        # theta/tau = 50/10 = 5.0 > 2.0
+        with caplog.at_level(logging.WARNING, logger="app.services.tuning_algorithms"):
+            tune_cohen_coon(K=1.0, tau=10.0, theta=50.0, controller_type="PID")
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("超出推荐范围" in r.message for r in warnings)
+
+    def test_no_warning_when_ratio_in_range(self, caplog):
+        """θ/τ 在 [0.1, 2.0] 范围内不应记录 WARNING。"""
+        import logging
+
+        # theta/tau = 5/30 ≈ 0.167，在范围内
+        with caplog.at_level(logging.WARNING, logger="app.services.tuning_algorithms"):
+            tune_cohen_coon(K=1.0, tau=30.0, theta=5.0, controller_type="PID")
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert not any("超出推荐范围" in r.message for r in warnings)
+
+
+class TestS4B5SopdtClosedLoopSimulation:
+    """S4-B5: 闭环仿真支持 SOPDT。"""
+
+    def test_sopdt_simulation_basic(self):
+        """SOPDT 闭环仿真应返回完整响应数据。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 5.0, "xi": 1.0}
+        current_pid = PIDParams(kp=0.5, ti=20.0, td=0.0)
+        recommended_pid = PIDParams(kp=2.0, ti=15.0, td=2.0)
+
+        result = simulate_closed_loop(
+            model_type="SOPDT",
+            model_params=model_params,
+            current_pid=current_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=200.0,
+            sim_step=1.0,
+            setpoint_step=1.0,
+        )
+
+        assert "timestamps" in result
+        assert "currentResponse" in result
+        assert "recommendedResponse" in result
+        assert len(result["timestamps"]) == 201
+        assert len(result["currentResponse"]["pv"]) == 201
+        assert len(result["recommendedResponse"]["pv"]) == 201
+
+    def test_sopdt_simulation_pv_converges(self):
+        """SOPDT 仿真 PV 应收敛到设定值附近。"""
+        model_params = {"K": 1.0, "tau": 20.0, "theta": 3.0, "xi": 1.0}
+        recommended_pid = PIDParams(kp=2.0, ti=15.0, td=1.0)
+
+        result = simulate_closed_loop(
+            model_type="SOPDT",
+            model_params=model_params,
+            current_pid=recommended_pid,
+            recommended_pid=recommended_pid,
+            sim_duration=500.0,
+            sim_step=1.0,
+            setpoint_step=1.0,
+        )
+
+        pv = result["recommendedResponse"]["pv"]
+        # 仿真结束时 PV 应接近设定值 1.0
+        assert abs(pv[-1] - 1.0) < 0.2, f"PV 末值 {pv[-1]} 未收敛到设定值"
+
+    def test_sopdt_vs_fopdt_different_response(self):
+        """SOPDT 和 FOPDT 仿真应产生不同的响应曲线。"""
+        model_params = {"K": 1.0, "tau": 30.0, "theta": 5.0, "xi": 0.5}
+        pid = PIDParams(kp=1.5, ti=20.0, td=1.0)
+
+        result_fopdt = simulate_closed_loop(
+            model_type="FOPDT",
+            model_params=model_params,
+            current_pid=pid,
+            recommended_pid=pid,
+            sim_duration=200.0,
+        )
+        result_sopdt = simulate_closed_loop(
+            model_type="SOPDT",
+            model_params=model_params,
+            current_pid=pid,
+            recommended_pid=pid,
+            sim_duration=200.0,
+        )
+
+        # 两种模型的 PV 响应应不同（SOPDT 有二阶动态）
+        pv_fopdt = result_fopdt["recommendedResponse"]["pv"]
+        pv_sopdt = result_sopdt["recommendedResponse"]["pv"]
+        # 至少在某些时间点上应有显著差异
+        max_diff = max(abs(f - s) for f, s in zip(pv_fopdt, pv_sopdt, strict=False))
+        assert max_diff > 0.001, "SOPDT 与 FOPDT 响应完全相同，SOPDT 分支可能未生效"
+
+    def test_sopdt_underdamped_overshoot(self):
+        """欠阻尼 SOPDT（xi < 1）应出现过冲。"""
+        model_params = {"K": 1.0, "tau": 20.0, "theta": 2.0, "xi": 0.3}
+        pid = PIDParams(kp=3.0, ti=10.0, td=0.5)
+
+        result = simulate_closed_loop(
+            model_type="SOPDT",
+            model_params=model_params,
+            current_pid=pid,
+            recommended_pid=pid,
+            sim_duration=300.0,
+            sim_step=0.5,
+            setpoint_step=1.0,
+        )
+
+        pv = result["recommendedResponse"]["pv"]
+        peak = max(pv)
+        # 欠阻尼系统应有过冲（峰值超过设定值）
+        assert peak > 1.0, f"欠阻尼 SOPDT 未出现过冲，峰值 {peak} <= 设定值 1.0"

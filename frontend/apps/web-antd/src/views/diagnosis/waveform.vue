@@ -17,9 +17,9 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { DiagnosisApi, DiagnosisLabel, Quality } from '#/api/diagnosis';
+import type { DiagnosisApi, Quality } from '#/api/diagnosis';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -27,7 +27,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
-  Card,
   DatePicker,
   message,
   Select,
@@ -38,10 +37,26 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { getDiagnosisDetailApi, getWaveformApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'DiagnosisWaveform' });
+
+const { isDark, themeColors, chartInvalidColor } = useClpmTheme();
+
+/** 时间戳精度转换：纳秒/微秒级→毫秒级 */
+function toMs(ts: number): number {
+  const absTs = Math.abs(ts);
+  if (absTs >= 10000000000000000) return Math.floor(ts / 1000000);
+  if (absTs >= 10000000000000) return Math.floor(ts / 1000);
+  return ts;
+}
 
 const route = useRoute();
 
@@ -63,27 +78,9 @@ const filter = reactive({
 const activeTab = ref<'scatter' | 'waveform'>('waveform');
 
 /** 8 类诊断标签颜色映射 */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
-const labelNameMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: '振荡',
-  VALVE_STICTION: '阀门粘滞',
-  OVERAGGRESSIVE: '参数过激',
-  OVERCONSERVATIVE: '参数过保守',
-  EXTERNAL_DISTURBANCE: '外扰频繁',
-  QUALITY_ABNORMAL: 'PV 质量异常',
-  OUTPUT_SATURATION: '输出饱和',
-  MANUAL_REVIEW: '人工复核',
-};
+const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 
 // ECharts refs
 const waveformChartRef = ref<EchartsUIType>();
@@ -101,7 +98,7 @@ const pageTitle = computed(() => {
 /** 加载回路下拉选项 */
 async function loadLoopOptions() {
   try {
-    const data = await getLoopListApi({ page: 1, pageSize: 1000 });
+    const data = await getLoopListApi({ page: 1, pageSize: 100 });
     const list = data.items || [];
     loopOptions.value = list.map((l) => ({
       label: l.tagName,
@@ -185,21 +182,21 @@ function buildPvSeriesByQuality(
     const q = pvQuality[i];
     const v = pv[i] ?? null;
     switch (q) {
-      case 'Bad': {
+      case 'BAD': {
         goodData.push(null);
         badData.push(v);
         uncertainData.push(null);
 
         break;
       }
-      case 'Good': {
+      case 'GOOD': {
         goodData.push(v);
         badData.push(null);
         uncertainData.push(null);
 
         break;
       }
-      case 'Uncertain': {
+      case 'UNCERTAIN': {
         goodData.push(null);
         badData.push(null);
         uncertainData.push(v);
@@ -217,6 +214,95 @@ function buildPvSeriesByQuality(
   return { badData, goodData, uncertainData };
 }
 
+/**
+ * LTTB（Largest Triangle Three Buckets）降采样算法
+ * 对齐 FDS §5.4.3 前端二次降采样要求
+ *
+ * 算法要点：
+ * - 保留首尾两个点
+ * - 将数据分桶，每个桶内选择与前后点构成最大三角形面积的点
+ * - 时间复杂度 O(n)
+ *
+ * @param data 时序数据数组，每项为 [x, y]（x 通常为时间戳，y 为数值）
+ * @param targetPoints 目标点数，默认 2000
+ * @returns 降采样后保留点的原始索引数组（按时间升序）
+ */
+function lttbDownsample(
+  data: [number, number][],
+  targetPoints = 2000,
+): number[] {
+  const n = data.length;
+  // 数据量未超过目标点数或目标点数过小，无需降采样
+  if (n <= targetPoints || targetPoints < 3) {
+    return Array.from({ length: n }, (_, i) => i);
+  }
+
+  const sampled: number[] = [];
+  // 除首尾两点外，中间数据按桶划分，每个桶选取一个代表点
+  const bucketSize = (n - 2) / (targetPoints - 2);
+  // a 为上一个被选中点的索引，初始为首点
+  let a = 0;
+  sampled.push(0);
+
+  for (let i = 0; i < targetPoints - 2; i++) {
+    // 当前桶的索引范围（左闭右开）
+    const bucketStart = Math.floor((i + 1) * bucketSize) + 1;
+    const bucketEnd = Math.min(Math.floor((i + 2) * bucketSize) + 1, n - 1);
+
+    // 计算下一个桶的平均点，作为三角形第三个顶点的参考
+    let avgX = 0;
+    let avgY = 0;
+    let avgCount = 0;
+    for (let j = bucketStart; j < bucketEnd; j++) {
+      const point = data[j];
+      if (!point) {
+        continue;
+      }
+      const [x, y] = point;
+      avgX += x;
+      avgY += y;
+      avgCount++;
+    }
+
+    const pointA = data[a];
+    // 下一个桶为空或上一个选中点缺失时，退化为取当前桶起始点
+    if (avgCount === 0 || !pointA) {
+      const fallback = Math.min(bucketStart, n - 1);
+      sampled.push(fallback);
+      a = fallback;
+      continue;
+    }
+
+    avgX /= avgCount;
+    avgY /= avgCount;
+    const [ax, ay] = pointA;
+
+    // 在当前桶内寻找与点 a、下一桶平均点构成最大三角形面积的点
+    let maxArea = -1;
+    let maxIdx = bucketStart;
+    for (let j = bucketStart; j < bucketEnd; j++) {
+      const point = data[j];
+      if (!point) {
+        continue;
+      }
+      const [px, py] = point;
+      // 三角形面积 = |x_a*(y - avgY) + x*(avgY - y_a) + avgX*(y_a - y)| / 2
+      const area =
+        Math.abs(ax * (py - avgY) + px * (avgY - ay) + avgX * (ay - py)) / 2;
+      if (area > maxArea) {
+        maxArea = area;
+        maxIdx = j;
+      }
+    }
+    sampled.push(maxIdx);
+    a = maxIdx;
+  }
+
+  // 保留尾点
+  sampled.push(n - 1);
+  return sampled;
+}
+
 /** 渲染波形图 */
 function renderWaveformChart() {
   const data = waveform.value;
@@ -227,7 +313,27 @@ function renderWaveformChart() {
     return;
   }
 
-  const { timestamps, pv, sp, op, pvQuality } = data;
+  let { timestamps, pv, sp, op, pvQuality } = data;
+
+  // 前端 LTTB 二次降采样（FDS §5.4.3）：数据点数超过阈值时降采样，避免渲染卡顿
+  const LTTB_THRESHOLD = 2000;
+  if (timestamps.length > LTTB_THRESHOLD) {
+    // 以 PV 为主信号构建 LTTB 输入，null 值用 0 占位（仅用于选点，不影响原始数据）
+    const lttbData: [number, number][] = timestamps.map((t, i) => [
+      t,
+      pv[i] ?? 0,
+    ]);
+    const sampledIndices = lttbDownsample(lttbData, LTTB_THRESHOLD);
+    // 按选中的索引重建各序列，保持时间对齐
+    timestamps = sampledIndices
+      .map((i) => timestamps[i])
+      .filter((v): v is number => v !== undefined);
+    pv = sampledIndices.map((i) => pv[i] ?? null);
+    sp = sampledIndices.map((i) => sp[i] ?? null);
+    op = sampledIndices.map((i) => op[i] ?? null);
+    pvQuality = sampledIndices.map((i) => pvQuality[i] ?? null);
+  }
+
   const { goodData, badData, uncertainData } = buildPvSeriesByQuality(
     timestamps,
     pv,
@@ -263,7 +369,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: goodData,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: 'PV (Good)',
         showSymbol: false,
@@ -272,7 +378,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: badData,
-        itemStyle: { color: '#d9d9d9' },
+        itemStyle: { color: chartInvalidColor.value },
         lineStyle: { type: 'dashed', width: 1.5 },
         name: 'PV (Bad)',
         showSymbol: false,
@@ -281,7 +387,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: uncertainData,
-        itemStyle: { color: '#faad14' },
+        itemStyle: { color: themeColors.value.WARNING },
         lineStyle: { type: 'dashed', width: 1.5 },
         name: 'PV (Uncertain)',
         showSymbol: false,
@@ -290,7 +396,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: sp,
-        itemStyle: { color: '#52c41a' },
+        itemStyle: { color: themeColors.value.SUCCESS },
         lineStyle: { width: 1.5 },
         name: 'SP',
         showSymbol: false,
@@ -299,7 +405,7 @@ function renderWaveformChart() {
       {
         connectNulls: false,
         data: op,
-        itemStyle: { color: '#fa8c16' },
+        itemStyle: { color: themeColors.value.WARNING },
         lineStyle: { width: 1.5 },
         name: 'OP',
         showSymbol: false,
@@ -315,7 +421,7 @@ function renderWaveformChart() {
     xAxis: {
       axisLabel: {
         formatter: (val: string) => {
-          const d = new Date(Number(val));
+          const d = new Date(toMs(Number(val)));
           const hh = String(d.getHours()).padStart(2, '0');
           const mm = String(d.getMinutes()).padStart(2, '0');
           const dd = String(d.getDate()).padStart(2, '0');
@@ -366,7 +472,7 @@ function renderScatterChart() {
       {
         data: scatterData,
         itemStyle: {
-          color: '#1890ff',
+          color: themeColors.value.INFO,
           opacity: 0.5,
         },
         name: 'PV-OP',
@@ -419,6 +525,17 @@ watch(
   },
 );
 
+// 深色模式切换时重新渲染当前 Tab 的 ECharts 图表
+watch(isDark, () => {
+  nextTick(() => {
+    if (activeTab.value === 'scatter') {
+      renderScatterChart();
+    } else {
+      renderWaveformChart();
+    }
+  });
+});
+
 onMounted(() => {
   loadLoopOptions().then(() => {
     if (filter.loopId) {
@@ -429,9 +546,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page :title="pageTitle">
-    <!-- 筛选栏 -->
-    <Card class="mb-4">
+  <Page>
+    <ClpmPageToolbar
+      :title="pageTitle"
+      subtitle="波形趋势与 PV-OP 散点用于查看诊断证据细节。"
+    />
+    <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex items-center gap-2">
           <span class="text-sm text-gray-500">回路：</span>
@@ -464,10 +584,10 @@ onMounted(() => {
           查询
         </Button>
       </div>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 诊断标签卡片区域 -->
-    <Card v-if="diagnosisDetail" class="mb-4" title="诊断结果">
+    <ClpmDataCanvas v-if="diagnosisDetail" class="mb-4" title="诊断结果">
       <Spin :spinning="detailLoading">
         <div class="flex flex-wrap items-center gap-3">
           <div class="text-sm text-gray-500">回路位号：</div>
@@ -492,10 +612,10 @@ onMounted(() => {
           </Tag>
         </div>
       </Spin>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 波形/散点图 Tab -->
-    <Card>
+    <ClpmDataCanvas title="证据波形与散点图">
       <Tabs v-model:active-key="activeTab">
         <Tabs.TabPane key="waveform" tab="波形趋势">
           <Spin :spinning="loading">
@@ -508,6 +628,6 @@ onMounted(() => {
           </Spin>
         </Tabs.TabPane>
       </Tabs>
-    </Card>
+    </ClpmDataCanvas>
   </Page>
 </template>

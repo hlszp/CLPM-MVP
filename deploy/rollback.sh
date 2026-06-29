@@ -63,27 +63,44 @@ docker tag clpm-frontend:"$PREV_TAG" clpm-frontend:latest
 echo ""
 
 # ------------------------------------------------------------
-# 5. 重启服务
+# 5. 数据库 Schema 回滚（S2-B5）
 # ------------------------------------------------------------
-echo "2. 重启服务..."
+echo "2. 数据库 Schema 回滚..."
+echo "   当前 Alembic 版本："
+docker exec clpm-backend uv run alembic current 2>/dev/null || echo "   （无法获取当前版本，跳过 DB 回滚）"
+echo ""
+read -p "是否回滚数据库 Schema（alembic downgrade -1）？(y/N) " db_confirm
+if [ "$db_confirm" = "y" ] || [ "$db_confirm" = "Y" ]; then
+    echo "   执行 alembic downgrade -1..."
+    docker exec clpm-backend uv run alembic downgrade -1
+    echo "   [OK] 数据库 Schema 已回退一个版本"
+else
+    echo "   [SKIP] 跳过数据库 Schema 回滚"
+fi
+echo ""
+
+# ------------------------------------------------------------
+# 6. 重启服务
+# ------------------------------------------------------------
+echo "3. 重启服务..."
 docker compose -f "$COMPOSE_FILE" up -d
 echo ""
 
 # ------------------------------------------------------------
-# 6. 等待健康检查
+# 7. 等待健康检查
 # ------------------------------------------------------------
-echo "3. 等待服务健康检查（30 秒）..."
+echo "4. 等待服务健康检查（30 秒）..."
 sleep 30
 echo ""
 
 # ------------------------------------------------------------
-# 7. 验证
+# 8. 验证
 # ------------------------------------------------------------
-echo "4. 验证服务状态..."
+echo "5. 验证服务状态..."
 docker compose -f "$COMPOSE_FILE" ps
 echo ""
 
-if curl -fsS http://localhost:8001/health >/dev/null 2>&1; then
+if docker exec clpm-backend curl -fsS http://localhost:8001/health >/dev/null 2>&1; then
     echo "  [OK] 后端 API 健康"
 else
     echo "  [FAIL] 后端 API 健康检查失败"

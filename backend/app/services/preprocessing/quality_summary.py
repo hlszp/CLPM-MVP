@@ -1,0 +1,143 @@
+"""QualitySummary 生成模块.
+
+计算数据块的质量摘要，包括有效数据率、无效率、缺失率等。
+质量摘要是指标可信度判定的输入（算法说明 §3.7.2）。
+
+设计依据：算法说明 §3.4.2 步骤⑧, §3.7.2
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+
+from app.contracts.data_types import QualityStatus, QualitySummary
+from app.services.preprocessing.quality_code import map_quality_code
+
+logger = logging.getLogger(__name__)
+
+
+def compute_quality_summary(
+    validity: dict[str, list[bool]],
+    timestamps: list[datetime],
+    point_count: int,
+    quality_codes: list[int] | None = None,
+    expected_interval_s: float = 1.0,
+) -> QualitySummary:
+    """生成数据质量摘要（算法说明 §3.4.2 步骤⑧）.
+
+    计算 valid_rate / bad_rate / missing_rate。
+    valid_rate 是指标可信度判定的核心输入（算法说明 §3.7.2）。
+
+    Args:
+        validity: 有效性标记字典，key 为 ``{tag}_valid``
+        timestamps: 时间戳序列
+        point_count: 数据点数
+        quality_codes: PV 质量码数组（仅 QUALITY_HF 时传入，用于好值率）
+        expected_interval_s: 期望采样间隔（秒），用于缺失检测
+
+    Returns:
+        QualitySummary 质量摘要
+
+    设计依据：算法说明 §3.4.2 步骤⑧, §3.7.2
+    """
+    total = point_count
+    if total == 0:
+        return QualitySummary()
+
+    # 取所有信号 valid 的交集作为"该时间戳是否有效"
+    # 即：该时间戳下所有 tag 的 valid 都为 True 才算有效
+    all_valid = [True] * total
+    for tag_validity in validity.values():
+        for i, v in enumerate(tag_validity):
+            if i < total:
+                all_valid[i] = all_valid[i] and v
+
+    valid_count = sum(1 for v in all_valid if v)
+    bad_count = total - valid_count
+
+    # 缺失检测：期望点数 vs 实际点数
+    expected_count = _compute_expected_count(timestamps, expected_interval_s)
+    missing_count = max(0, expected_count - total)
+
+    valid_rate = valid_count / total if total else 0.0
+    bad_rate = bad_count / total if total else 0.0
+    missing_rate = missing_count / expected_count if expected_count > total else 0.0
+
+    # 好值率（仅当有质量码时计算）
+    good_value_rate: float | None = None
+    if quality_codes is not None and len(quality_codes) > 0:
+        good_count = sum(1 for qc in quality_codes if map_quality_code(qc) == QualityStatus.GOOD)
+        good_value_rate = good_count / len(quality_codes)
+
+    summary = QualitySummary(
+        total_count=total,
+        valid_count=valid_count,
+        bad_count=bad_count,
+        missing_count=missing_count,
+        valid_rate=round(valid_rate, 4),
+        bad_rate=round(bad_rate, 4),
+        missing_rate=round(missing_rate, 4),
+        good_value_rate=round(good_value_rate, 4) if good_value_rate is not None else None,
+    )
+
+    logger.debug(
+        "QualitySummary: total=%d, valid=%d, bad=%d, missing=%d, "
+        "valid_rate=%.4f, good_value_rate=%s",
+        summary.total_count,
+        summary.valid_count,
+        summary.bad_count,
+        summary.missing_count,
+        summary.valid_rate,
+        summary.good_value_rate,
+    )
+    return summary
+
+
+def _compute_expected_count(timestamps: list[datetime], expected_interval_s: float) -> int:
+    """根据时间跨度计算期望点数.
+
+    Args:
+        timestamps: 时间戳序列
+        expected_interval_s: 期望采样间隔（秒）
+
+    Returns:
+        期望点数（至少为 len(timestamps)）
+    """
+    if len(timestamps) < 2 or expected_interval_s <= 0:
+        return len(timestamps)
+    duration = (timestamps[-1] - timestamps[0]).total_seconds()
+    expected = int(duration / expected_interval_s) + 1
+    return max(expected, len(timestamps))
+
+
+def compute_consecutive_segments(
+    all_valid: list[bool],
+    min_consecutive_points: int,
+) -> list[tuple[int, int]]:
+    """计算连续有效段（算法说明 §3.4.2 步骤⑥）.
+
+    标记连续 valid=True 的段，当缺口（valid=False）出现时切断。
+    长度不足 min_consecutive_points 的段被丢弃。
+
+    Args:
+        all_valid: 每个时间戳是否全有效（所有 tag valid 的交集）
+        min_consecutive_points: 连续有效最短段点数（算法说明 §3.4.4）
+
+    Returns:
+        连续有效段索引列表 ``[(start_idx, end_idx), ...]``（闭区间）
+    """
+    segments: list[tuple[int, int]] = []
+    n = len(all_valid)
+    i = 0
+    while i < n:
+        if all_valid[i]:
+            start = i
+            while i < n and all_valid[i]:
+                i += 1
+            end = i - 1
+            if (end - start + 1) >= min_consecutive_points:
+                segments.append((start, end))
+        else:
+            i += 1
+    return segments

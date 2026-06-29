@@ -18,7 +18,7 @@ import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, message, Select, Spin, Tag } from 'ant-design-vue';
+import { Button, message, Select, Spin, Tag } from 'ant-design-vue';
 
 import { getAasTagsApi } from '#/api/aas';
 import {
@@ -26,6 +26,7 @@ import {
   getLoopTagsApi,
   updateLoopTagMappingApi,
 } from '#/api/loop';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import StatusBadge from '#/components/loop/status-badge.vue';
 
 defineOptions({ name: 'LoopTagMapping' });
@@ -125,7 +126,7 @@ const selectedLoop = computed(() =>
 async function loadLoopList() {
   loopLoading.value = true;
   try {
-    const data = await getLoopListApi({ page: 1, pageSize: 200 });
+    const data = await getLoopListApi({ page: 1, pageSize: 100 });
     loopList.value = data.items;
     // 如果 URL 带了 loopId 或默认选第一个
     if (!selectedLoopId.value && data.items.length > 0) {
@@ -145,7 +146,7 @@ async function loadAvailableTags(keyword?: string) {
     const data = await getAasTagsApi({
       keyword: keyword || undefined,
       page: 1,
-      pageSize: 100,
+      pageSize: 10000, // 加载所有测点以支持自动关联
     });
     availableTags.value = data.items;
   } catch {
@@ -209,9 +210,9 @@ async function handleSave() {
       pid_d: slotState.pid_d ?? null,
     });
     tagData.value = result;
-    if (result.status === 'Partial') {
+    if (result.status === 'PARTIAL') {
       message.warning('保存成功，但回路状态为「部分关联」，请检查必填 Tag');
-    } else if (result.status === 'Ready') {
+    } else if (result.status === 'READY') {
       message.success('保存成功，回路状态已更新为「就绪」');
     } else {
       message.success('保存成功');
@@ -230,6 +231,45 @@ function clearSlot(key: keyof typeof slotState) {
   slotState[key] = undefined;
 }
 
+/** 自动关联：根据回路位号匹配测点 */
+async function handleAutoLink() {
+  if (!selectedLoop.value?.tagName || !availableTags.value.length) {
+    message.warning('请先选择回路并加载可用测点');
+    return;
+  }
+
+  const loopTagName = selectedLoop.value.tagName;
+  const roleToTagType: Record<string, string> = {
+    pv: 'PV',
+    sp: 'SP',
+    op: 'OP',
+    mode: 'MODE',
+    pid_p: 'KP',
+    pid_i: 'TI',
+    pid_d: 'TD',
+  };
+
+  let matchedCount = 0;
+  for (const key of Object.keys(slotState) as (keyof typeof slotState)[]) {
+    const tagType = roleToTagType[key];
+    if (!tagType) continue;
+
+    const expectedTagName = `${loopTagName}_${tagType}`;
+    const tag = availableTags.value.find((t) => t.tagName === expectedTagName);
+
+    if (tag) {
+      slotState[key] = tag.tagId;
+      matchedCount++;
+    }
+  }
+
+  if (matchedCount > 0) {
+    message.success(`自动关联成功！匹配到 ${matchedCount} 个测点`);
+  } else {
+    message.info('未找到匹配的测点，请手动关联');
+  }
+}
+
 watch(selectedLoopId, () => {
   loadLoopTags();
 });
@@ -244,10 +284,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="Tag 关联管理">
-    <div class="space-y-4">
+  <Page>
+    <ClpmPageToolbar
+      title="Tag 关联管理"
+      subtitle="按回路管理 7 个核心 Tag 槽位，并校验必填关联。"
+    />
+    <div class="mt-4 space-y-4">
       <!-- 回路选择区 -->
-      <Card>
+      <ClpmDataCanvas title="回路选择">
         <div class="flex items-center gap-4">
           <span class="whitespace-nowrap font-medium">选择回路：</span>
           <Select
@@ -274,10 +318,10 @@ onMounted(() => {
             />
           </div>
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 7 槽位配置 -->
-      <Card title="Tag 关联配置">
+      <ClpmDataCanvas title="Tag 关联配置">
         <Spin :spinning="tagLoading">
           <div
             v-if="selectedLoopId"
@@ -348,6 +392,13 @@ onMounted(() => {
         >
           <Button
             v-permission="['ADMIN', 'IC_ENGINEER']"
+            type="default"
+            @click="handleAutoLink"
+          >
+            自动关联
+          </Button>
+          <Button
+            v-permission="['ADMIN', 'IC_ENGINEER']"
             type="primary"
             :loading="saving"
             @click="handleSave"
@@ -355,7 +406,7 @@ onMounted(() => {
             保存关联
           </Button>
         </div>
-      </Card>
+      </ClpmDataCanvas>
     </div>
   </Page>
 </template>

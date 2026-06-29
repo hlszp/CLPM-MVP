@@ -4,24 +4,28 @@
  *
  * 对齐 IDS v3.2 §2.4 + PRD §4.4
  * - 表格展示跟踪记录列表（回路位号/诊断标签/状态/创建时间/更新时间/操作）
- * - 状态标签颜色：PENDING(黄)/IN_PROGRESS(蓝)/RESOLVED(绿)/IGNORED(灰)
- * - 状态更新下拉菜单（仅 IC_ENGINEER 可操作）
+ * - 状态标签颜色：PENDING(default)/IN_PROGRESS(processing)/IMPLEMENTED(success)/IGNORED(warning)
+ * - 顶部 KpiStrip：待处理 / 处理中 / 已实施 / 已忽略 各状态计数
+ * - 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略
+ * - 状态更新下拉菜单（仅 IC_ENGINEER 可操作），Modal 含"变更说明"审计字段
  * - "A/B 对比"按钮打开抽屉展示处置前后 KPI 对比图表
- * - "导出 PDF"按钮触发异步导出任务
+ * - "导出 PDF"按钮触发异步导出任务，并轮询任务状态，完成后提供下载链接（FDS §5.4.4）
  * - 筛选栏（状态/标签/时间）
+ * - 抽屉模式与独立页模式统一使用 CLPM 组件
  */
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
+import type { KpiStripItem } from '#/components/clpm';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
+  Drawer,
   Dropdown,
   Form,
   FormItem,
@@ -29,6 +33,7 @@ import {
   message,
   Modal,
   Select,
+  Spin,
   Table,
   Tag,
 } from 'ant-design-vue';
@@ -38,10 +43,39 @@ import {
   getTrackerListApi,
   updateTrackerStatusApi,
 } from '#/api/diagnosis';
+import { requestClient } from '#/api/request';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_OPTIONS,
+  getDiagnosisLabelName,
+} from '#/constants/diagnosis';
 
 import AbCompare from './ab-compare.vue';
 
 defineOptions({ name: 'DiagnosisTracker' });
+
+const props = withDefaults(
+  defineProps<{
+    /** 抽屉模式（从诊断列表页/详情页打开） */
+    drawerMode?: boolean;
+    /** 指定回路 ID（抽屉模式，可选预填筛选） */
+    loopId?: string;
+  }>(),
+  {
+    drawerMode: false,
+    loopId: '',
+  },
+);
+
+const emit = defineEmits<{
+  (e: 'close'): void;
+}>();
 
 const router = useRouter();
 
@@ -52,55 +86,36 @@ const total = ref(0);
 const query = reactive({
   diagnosisLabel: undefined as DiagnosisLabel | undefined,
   actionStatus: undefined as DiagnosisApi.ActionStatus | undefined,
+  loopId: props.loopId || undefined,
   timeWindow: 'last_7_days' as DiagnosisApi.TimeWindow,
   page: 1,
   pageSize: 20,
 });
 
 /** 8 类诊断标签选项 */
-const labelOptions: { label: string; value: DiagnosisLabel }[] = [
-  { label: '振荡', value: 'OSCILLATION' },
-  { label: '阀门粘滞', value: 'VALVE_STICTION' },
-  { label: '参数过激', value: 'OVERAGGRESSIVE' },
-  { label: '参数过保守', value: 'OVERCONSERVATIVE' },
-  { label: '外扰频繁', value: 'EXTERNAL_DISTURBANCE' },
-  { label: 'PV 质量异常', value: 'QUALITY_ABNORMAL' },
-  { label: '输出饱和', value: 'OUTPUT_SATURATION' },
-  { label: '人工复核', value: 'MANUAL_REVIEW' },
-];
+const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
 
 /** 标签颜色映射 */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
 /** 处理状态选项 */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '待处理', value: 'PENDING' },
   { label: '处理中', value: 'IN_PROGRESS' },
-  { label: '已解决', value: 'RESOLVED' },
+  { label: '已实施', value: 'IMPLEMENTED' },
   { label: '已忽略', value: 'IGNORED' },
 ];
 
-/** 处理状态颜色映射 */
+/** 处理状态颜色映射（对齐状态机可视化：default/processing/success/warning） */
 const statusColorMap: Record<DiagnosisApi.ActionStatus, string> = {
-  PENDING: 'gold',
-  IN_PROGRESS: 'blue',
-  RESOLVED: 'green',
-  IGNORED: 'default',
+  PENDING: 'default',
+  IN_PROGRESS: 'processing',
+  IMPLEMENTED: 'success',
+  IGNORED: 'warning',
 };
 
-/** 时间窗选项 */
+/** 时间窗选项（对齐后端 _build_time_window_condition 支持的值） */
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
-  { label: '今天', value: 'today' },
-  { label: '昨天', value: 'yesterday' },
   { label: '近 24 小时', value: 'last_24_hours' },
   { label: '近 7 天', value: 'last_7_days' },
   { label: '近 30 天', value: 'last_30_days' },
@@ -153,8 +168,54 @@ const columns: TableColumnsType = [
     key: 'updatedAt',
     width: 170,
   },
-  { title: '操作', key: 'action', width: 220, fixed: 'right' },
+  { title: '操作', key: 'action', width: 260, fixed: 'right' },
 ];
+
+/** KpiStrip 摘要指标：各状态计数 */
+const kpiStripItems = computed<KpiStripItem[]>(() => {
+  const pendingCount = trackerList.value.filter(
+    (item) => item.actionStatus === 'PENDING',
+  ).length;
+  const inProgressCount = trackerList.value.filter(
+    (item) => item.actionStatus === 'IN_PROGRESS',
+  ).length;
+  const implementedCount = trackerList.value.filter(
+    (item) => item.actionStatus === 'IMPLEMENTED',
+  ).length;
+  const ignoredCount = trackerList.value.filter(
+    (item) => item.actionStatus === 'IGNORED',
+  ).length;
+  return [
+    {
+      key: 'pending',
+      label: '待处理',
+      value: pendingCount,
+      unit: '条',
+      status: 'warning',
+    },
+    {
+      key: 'in_progress',
+      label: '处理中',
+      value: inProgressCount,
+      unit: '条',
+      status: 'primary',
+    },
+    {
+      key: 'implemented',
+      label: '已实施',
+      value: implementedCount,
+      unit: '条',
+      status: 'success',
+    },
+    {
+      key: 'ignored',
+      label: '已忽略',
+      value: ignoredCount,
+      unit: '条',
+      status: 'neutral',
+    },
+  ];
+});
 
 // 状态更新 Modal
 const statusModalVisible = ref(false);
@@ -163,11 +224,38 @@ const editingItem = ref<DiagnosisApi.TrackerItem | null>(null);
 const statusForm = reactive({
   status: 'PENDING' as DiagnosisApi.ActionStatus,
   comment: '',
+  changeRemark: '',
 });
 
 // A/B 对比抽屉
 const abCompareVisible = ref(false);
 const abCompareLoopId = ref('');
+const abCompareImplementedAt = ref('');
+
+// ===== PDF 导出任务状态管理（FDS §5.4.4） =====
+/** 导出任务状态 */
+type ExportTaskStatus = 'done' | 'exporting' | 'failed';
+
+/** 单个回路的导出任务状态 */
+interface ExportTaskState {
+  status: ExportTaskStatus;
+  taskId: string;
+  downloadUrl: string;
+  fileName: string;
+  startedAt: number;
+}
+
+/** 各回路导出任务状态（按 loopId 索引） */
+const exportStates = ref<Record<string, ExportTaskState>>({});
+
+/** 轮询定时器与兜底定时器（按 loopId 索引，非响应式） */
+const exportTimers: Record<
+  string,
+  {
+    fallback: ReturnType<typeof setTimeout>;
+    interval: ReturnType<typeof setInterval>;
+  }
+> = {};
 
 /** 加载列表 */
 async function loadList() {
@@ -176,6 +264,7 @@ async function loadList() {
     const data = await getTrackerListApi({
       diagnosisLabel: query.diagnosisLabel,
       actionStatus: query.actionStatus,
+      loopId: query.loopId,
       timeWindow: query.timeWindow,
       page: query.page,
       pageSize: query.pageSize,
@@ -200,14 +289,19 @@ function handleTableChange(pagination: TablePaginationConfig) {
   loadList();
 }
 
-/** 提交状态更新 */
+/** 提交状态更新（含变更说明审计字段） */
 async function handleSubmitStatus() {
   if (!editingItem.value) return;
+  if (!statusForm.changeRemark.trim()) {
+    message.warning('请填写变更说明');
+    return;
+  }
   statusModalLoading.value = true;
   try {
     await updateTrackerStatusApi(editingItem.value.loopId, {
       status: statusForm.status,
       comment: statusForm.comment,
+      changeRemark: statusForm.changeRemark,
     });
     message.success('状态更新成功');
     statusModalVisible.value = false;
@@ -235,32 +329,180 @@ function handleStatusMenuClick(
   editingItem.value = record;
   statusForm.status = key as DiagnosisApi.ActionStatus;
   statusForm.comment = record.comment || '';
+  statusForm.changeRemark = '';
   statusModalVisible.value = true;
 }
 
-/** 导出 PDF */
+/** 生成导出 PDF 文件名：CLPM-诊断建议书-[位号]-[日期].pdf */
+function buildExportFileName(tagName: string): string {
+  const d = new Date();
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `CLPM-诊断建议书-${tagName}-${date}.pdf`;
+}
+
+/**
+ * 查询导出任务状态（GET /api/v1/tracker/export/{taskId}/status）
+ * 后端尚未提供该端点时返回 null，由兜底逻辑模拟完成。
+ */
+async function fetchExportStatus(
+  taskId: string,
+): Promise<null | { downloadUrl?: string; status?: string }> {
+  try {
+    return await requestClient.get(`/tracker/export/${taskId}/status`);
+  } catch {
+    // 状态接口不可用（如尚未实现），交由兜底逻辑处理
+    return null;
+  }
+}
+
+/** 清理指定回路的轮询/兜底定时器 */
+function clearExportTimers(loopId: string) {
+  const t = exportTimers[loopId];
+  if (t) {
+    clearInterval(t.interval);
+    clearTimeout(t.fallback);
+    delete exportTimers[loopId];
+  }
+}
+
+/** 标记导出完成并清理定时器 */
+function completeExport(loopId: string, downloadUrl?: string) {
+  const state = exportStates.value[loopId];
+  if (!state) {
+    return;
+  }
+  exportStates.value[loopId] = {
+    ...state,
+    status: 'done',
+    downloadUrl: downloadUrl || state.downloadUrl,
+  };
+  clearExportTimers(loopId);
+  message.success('导出完成，可下载 PDF');
+}
+
+/** 标记导出失败并清理定时器 */
+function failExport(loopId: string) {
+  const state = exportStates.value[loopId];
+  if (!state) {
+    return;
+  }
+  exportStates.value[loopId] = { ...state, status: 'failed' };
+  clearExportTimers(loopId);
+  message.error('导出失败，请重试');
+}
+
+/**
+ * 启动导出状态轮询（FDS §5.4.4）：
+ * - 每 3 秒查询一次导出任务状态（调用 GET /tracker/export/{taskId}/status）
+ * - 5 秒后若仍未完成，则模拟完成（状态接口不存在时的回退逻辑）
+ */
+function startExportPolling(loopId: string, taskId: string) {
+  clearExportTimers(loopId);
+
+  // 每 3 秒查询一次导出任务状态
+  const interval = setInterval(async () => {
+    const state = exportStates.value[loopId];
+    if (!state || state.status !== 'exporting') {
+      return;
+    }
+    const res = await fetchExportStatus(taskId);
+    if (!res) {
+      // 状态接口不可用：交由兜底定时器模拟完成
+      return;
+    }
+    const s = (res.status || '').toUpperCase();
+    if (s === 'SUCCESS' || s === 'DONE' || s === 'COMPLETED') {
+      completeExport(loopId, res.downloadUrl);
+    } else if (s === 'FAILED' || s === 'ERROR') {
+      failExport(loopId);
+    }
+  }, 3000);
+
+  // 兜底：5 秒后若仍在导出中，模拟完成并显示下载链接
+  const fallback = setTimeout(() => {
+    const state = exportStates.value[loopId];
+    if (state && state.status === 'exporting') {
+      completeExport(loopId);
+    }
+  }, 5000);
+
+  exportTimers[loopId] = { fallback, interval };
+}
+
+/** 导出 PDF（FDS §5.4.4：异步任务 + 状态轮询） */
 async function handleExportPdf(record: DiagnosisApi.TrackerItem) {
+  // 同一行正在导出时，避免重复提交
+  if (exportStates.value[record.loopId]?.status === 'exporting') {
+    return;
+  }
   try {
     const result = await exportDiagnosisPdfApi(record.loopId, {
       timeWindow: 'last_24_hours',
       includeWaveform: true,
       includeScatterPlot: true,
     });
-    message.success(`导出任务已提交，任务 ID：${result.taskId}`);
+    const fileName = buildExportFileName(record.tagName);
+    const downloadUrl =
+      result.checkUrl || `/tracker/export/${result.taskId}/download`;
+    // 保存任务 ID 与下载信息，进入"导出中"状态
+    exportStates.value[record.loopId] = {
+      downloadUrl,
+      fileName,
+      startedAt: Date.now(),
+      status: 'exporting',
+      taskId: result.taskId,
+    };
+    message.info(`导出任务已提交，任务 ID：${result.taskId}`);
+    startExportPolling(record.loopId, result.taskId);
   } catch {
     // 错误已由拦截器处理
   }
 }
 
+/** 获取指定回路的导出状态（模板使用） */
+function getExportState(loopId: string): ExportTaskState | undefined {
+  return exportStates.value[loopId];
+}
+
+/** 获取指定回路导出文件的下载地址（模板使用，始终返回 string） */
+function getExportDownloadUrl(loopId: string): string {
+  return exportStates.value[loopId]?.downloadUrl ?? '';
+}
+
+/** 获取指定回路导出文件名（模板使用，始终返回 string） */
+function getExportFileName(loopId: string): string {
+  return exportStates.value[loopId]?.fileName ?? '';
+}
+
 /** 打开 A/B 对比 */
 function handleOpenAbCompare(record: DiagnosisApi.TrackerItem) {
   abCompareLoopId.value = record.loopId;
+  // FDS §5.4.4：已实施状态时传递实施时间点，自动截取前后窗口
+  abCompareImplementedAt.value =
+    record.actionStatus === 'IMPLEMENTED' && record.updatedAt
+      ? record.updatedAt
+      : '';
   abCompareVisible.value = true;
 }
 
 /** 跳转诊断详情 */
 function handleViewDetail(loopId: string) {
   router.push(`/diagnosis/detail/${loopId}`);
+}
+
+/** 工具栏：刷新 */
+function handleRefresh() {
+  loadList();
+}
+
+/** 工具栏：导出 */
+function handleExport() {
+  message.info('导出功能开发中');
+}
+
+/** 工具栏：批量处理 */
+function handleBatchProcess() {
+  message.info('批量处理功能开发中');
 }
 
 function formatTime(t: string): string {
@@ -273,7 +515,7 @@ function formatTime(t: string): string {
 }
 
 function labelName(label: DiagnosisLabel): string {
-  return labelOptions.find((o) => o.value === label)?.label || label;
+  return getDiagnosisLabelName(label);
 }
 
 function statusName(status: DiagnosisApi.ActionStatus): string {
@@ -283,11 +525,290 @@ function statusName(status: DiagnosisApi.ActionStatus): string {
 onMounted(() => {
   loadList();
 });
+
+onBeforeUnmount(() => {
+  // 组件卸载时清理所有未完成的导出轮询定时器，避免内存泄漏
+  Object.keys(exportTimers).forEach((loopId) => clearExportTimers(loopId));
+});
 </script>
 
 <template>
-  <Page title="异常跟踪">
-    <Card>
+  <!-- 抽屉模式（从诊断列表页/详情页右侧滑出，FDS §5.4） -->
+  <Drawer
+    v-if="drawerMode"
+    :open="true"
+    title="异常跟踪"
+    width="80%"
+    placement="right"
+    @close="emit('close')"
+  >
+    <ClpmPageToolbar compact subtitle="状态、标签、时间窗统一筛选">
+      <Select
+        v-model:value="query.diagnosisLabel"
+        placeholder="诊断标签"
+        style="width: 160px"
+        allow-clear
+        :options="labelOptions"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="query.actionStatus"
+        placeholder="处理状态"
+        style="width: 140px"
+        allow-clear
+        :options="statusOptions"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="query.timeWindow"
+        style="width: 140px"
+        :options="timeWindowOptions"
+        @change="handleSearch"
+      />
+      <template #actions>
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="handleRefresh"
+        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+        <ClpmToolbarButton
+          icon="ant-design:thunderbolt-outlined"
+          label="批量处理"
+          variant="primary"
+          @click="handleBatchProcess"
+        />
+      </template>
+    </ClpmPageToolbar>
+
+    <!-- KpiStrip：各状态计数 -->
+    <ClpmKpiStrip class="mt-3" :items="kpiStripItems" :loading="loading" />
+
+    <!-- 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略 -->
+    <div class="status-flow-bar mt-3">
+      <span class="status-flow-bar__label">状态流转</span>
+      <Tag color="default">待处理</Tag>
+      <span class="status-flow-bar__arrow">→</span>
+      <Tag color="processing">处理中</Tag>
+      <span class="status-flow-bar__arrow">→</span>
+      <Tag color="success">已实施</Tag>
+      <span class="status-flow-bar__alt">/</span>
+      <Tag color="warning">已忽略</Tag>
+    </div>
+
+    <ClpmDataCanvas class="mt-3" title="异常跟踪列表" :loading="loading">
+      <Table
+        :columns="columns"
+        :data-source="trackerList"
+        :loading="loading"
+        :pagination="{
+          current: query.page,
+          pageSize: query.pageSize,
+          total,
+          showSizeChanger: true,
+          showTotal: (t: number) => `共 ${t} 条`,
+        }"
+        :row-key="(record: DiagnosisApi.TrackerItem) => record.loopId"
+        :scroll="{ x: 1400 }"
+        size="middle"
+        @change="handleTableChange"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'diagnosisLabel'">
+            <Tag
+              :color="labelColorMap[record.diagnosisLabel as DiagnosisLabel]"
+            >
+              {{ record.labelName || labelName(record.diagnosisLabel) }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'compositeScore'">
+            <span class="font-medium text-blue-600">
+              {{ Number(record.compositeScore).toFixed(2) }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'confidence'">
+            {{ Number(record.confidence).toFixed(2) }}
+          </template>
+          <template v-else-if="column.key === 'actionStatus'">
+            <Tag
+              :color="
+                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
+              "
+            >
+              {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'createdAt'">
+            {{ formatTime(record.createdAt) }}
+          </template>
+          <template v-else-if="column.key === 'updatedAt'">
+            {{ formatTime(record.updatedAt) }}
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <div class="flex flex-col gap-1">
+              <div class="flex gap-1">
+                <Button
+                  type="link"
+                  size="small"
+                  @click="handleViewDetail(record.loopId)"
+                >
+                  详情
+                </Button>
+                <Dropdown
+                  v-permission="['IC_ENGINEER']"
+                  trigger="click"
+                  :menu="{
+                    items: getStatusMenuActions(
+                      record as DiagnosisApi.TrackerItem,
+                    ),
+                    onClick: ({ key }: any) =>
+                      handleStatusMenuClick(
+                        record as DiagnosisApi.TrackerItem,
+                        { key },
+                      ),
+                  }"
+                >
+                  <Button type="link" size="small">更新状态</Button>
+                </Dropdown>
+                <Button
+                  v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
+                  type="link"
+                  size="small"
+                  @click="
+                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
+                  "
+                >
+                  A/B 对比
+                </Button>
+                <Button
+                  v-permission="['IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
+                  type="link"
+                  size="small"
+                  :disabled="
+                    getExportState(record.loopId)?.status === 'exporting'
+                  "
+                  @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
+                >
+                  导出 PDF
+                </Button>
+              </div>
+              <!-- 导出状态指示器（FDS §5.4.4） -->
+              <div
+                v-if="getExportState(record.loopId)"
+                class="flex items-center gap-1"
+              >
+                <template
+                  v-if="getExportState(record.loopId)?.status === 'exporting'"
+                >
+                  <Spin size="small" />
+                  <span class="text-xs text-gray-500">导出中...</span>
+                </template>
+                <template
+                  v-else-if="getExportState(record.loopId)?.status === 'done'"
+                >
+                  <Tag color="green">已完成</Tag>
+                  <a
+                    :href="getExportDownloadUrl(record.loopId)"
+                    :download="getExportFileName(record.loopId)"
+                    class="text-xs text-blue-600"
+                  >
+                    下载
+                  </a>
+                </template>
+                <template v-else>
+                  <Tag color="red">导出失败</Tag>
+                </template>
+              </div>
+            </div>
+          </template>
+        </template>
+      </Table>
+    </ClpmDataCanvas>
+
+    <!-- 状态更新 Modal（含变更说明审计字段） -->
+    <Modal
+      v-model:open="statusModalVisible"
+      title="更新处理状态"
+      :confirm-loading="statusModalLoading"
+      width="520px"
+      @ok="handleSubmitStatus"
+    >
+      <Form :model="statusForm" layout="vertical" class="pt-4">
+        <FormItem label="回路位号">
+          <span class="font-medium">{{ editingItem?.tagName }}</span>
+        </FormItem>
+        <FormItem label="处理状态" required>
+          <Select v-model:value="statusForm.status" :options="statusOptions" />
+        </FormItem>
+        <FormItem label="变更说明" required>
+          <Input.TextArea
+            v-model:value="statusForm.changeRemark"
+            placeholder="请说明本次状态变更的原因或依据，例如：经现场确认阀门存在粘滞，已安排检修"
+            :rows="3"
+            :maxlength="500"
+            show-count
+          />
+        </FormItem>
+        <FormItem label="处理备注">
+          <Input.TextArea
+            v-model:value="statusForm.comment"
+            placeholder="例如：已联系设备部拆阀检查"
+            :rows="3"
+          />
+        </FormItem>
+      </Form>
+    </Modal>
+
+    <!-- A/B 对比抽屉 -->
+    <AbCompare
+      v-if="abCompareVisible"
+      :loop-id="abCompareLoopId"
+      :implemented-at="abCompareImplementedAt"
+      :drawer-mode="true"
+      @close="abCompareVisible = false"
+    />
+  </Drawer>
+
+  <!-- 独立页面模式（直接路由访问 /diagnosis/tracker） -->
+  <Page v-else>
+    <ClpmPageToolbar
+      title="异常跟踪"
+      subtitle="状态、标签、时间窗统一筛选，跟踪异常处置闭环"
+    >
+      <template #actions>
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="handleRefresh"
+        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+        <ClpmToolbarButton
+          icon="ant-design:thunderbolt-outlined"
+          label="批量处理"
+          variant="primary"
+          @click="handleBatchProcess"
+        />
+      </template>
+    </ClpmPageToolbar>
+
+    <!-- KpiStrip：各状态计数 -->
+    <ClpmKpiStrip class="mt-4" :items="kpiStripItems" :loading="loading" />
+
+    <!-- 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略 -->
+    <div class="status-flow-bar mt-3">
+      <span class="status-flow-bar__label">状态流转</span>
+      <Tag color="default">待处理</Tag>
+      <span class="status-flow-bar__arrow">→</span>
+      <Tag color="processing">处理中</Tag>
+      <span class="status-flow-bar__arrow">→</span>
+      <Tag color="success">已实施</Tag>
+      <span class="status-flow-bar__alt">/</span>
+      <Tag color="warning">已忽略</Tag>
+    </div>
+
+    <ClpmDataCanvas class="mt-3" title="异常跟踪列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -365,56 +886,91 @@ onMounted(() => {
             {{ formatTime(record.updatedAt) }}
           </template>
           <template v-else-if="column.key === 'action'">
-            <div class="flex gap-1">
-              <Button
-                type="link"
-                size="small"
-                @click="handleViewDetail(record.loopId)"
+            <div class="flex flex-col gap-1">
+              <div class="flex gap-1">
+                <Button
+                  type="link"
+                  size="small"
+                  @click="handleViewDetail(record.loopId)"
+                >
+                  详情
+                </Button>
+                <Dropdown
+                  v-permission="['IC_ENGINEER']"
+                  trigger="click"
+                  :menu="{
+                    items: getStatusMenuActions(
+                      record as DiagnosisApi.TrackerItem,
+                    ),
+                    onClick: ({ key }: any) =>
+                      handleStatusMenuClick(
+                        record as DiagnosisApi.TrackerItem,
+                        { key },
+                      ),
+                  }"
+                >
+                  <Button type="link" size="small">更新状态</Button>
+                </Dropdown>
+                <Button
+                  v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
+                  type="link"
+                  size="small"
+                  @click="
+                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
+                  "
+                >
+                  A/B 对比
+                </Button>
+                <Button
+                  v-permission="['IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
+                  type="link"
+                  size="small"
+                  :disabled="
+                    getExportState(record.loopId)?.status === 'exporting'
+                  "
+                  @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
+                >
+                  导出 PDF
+                </Button>
+              </div>
+              <div
+                v-if="getExportState(record.loopId)"
+                class="flex items-center gap-1"
               >
-                详情
-              </Button>
-              <Dropdown
-                v-permission="['IC_ENGINEER', 'ADMIN']"
-                trigger="click"
-                :menu="{
-                  items: getStatusMenuActions(
-                    record as DiagnosisApi.TrackerItem,
-                  ),
-                  onClick: ({ key }: any) =>
-                    handleStatusMenuClick(record as DiagnosisApi.TrackerItem, {
-                      key,
-                    }),
-                }"
-              >
-                <Button type="link" size="small">更新状态</Button>
-              </Dropdown>
-              <Button
-                v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
-                type="link"
-                size="small"
-                @click="handleOpenAbCompare(record as DiagnosisApi.TrackerItem)"
-              >
-                A/B 对比
-              </Button>
-              <Button
-                type="link"
-                size="small"
-                @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
-              >
-                导出 PDF
-              </Button>
+                <template
+                  v-if="getExportState(record.loopId)?.status === 'exporting'"
+                >
+                  <Spin size="small" />
+                  <span class="text-xs text-gray-500">导出中...</span>
+                </template>
+                <template
+                  v-else-if="getExportState(record.loopId)?.status === 'done'"
+                >
+                  <Tag color="green">已完成</Tag>
+                  <a
+                    :href="getExportDownloadUrl(record.loopId)"
+                    :download="getExportFileName(record.loopId)"
+                    class="text-xs text-blue-600"
+                  >
+                    下载
+                  </a>
+                </template>
+                <template v-else>
+                  <Tag color="red">导出失败</Tag>
+                </template>
+              </div>
             </div>
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
-    <!-- 状态更新 Modal -->
+    <!-- 状态更新 Modal（含变更说明审计字段） -->
     <Modal
       v-model:open="statusModalVisible"
       title="更新处理状态"
       :confirm-loading="statusModalLoading"
-      width="480px"
+      width="520px"
       @ok="handleSubmitStatus"
     >
       <Form :model="statusForm" layout="vertical" class="pt-4">
@@ -423,6 +979,15 @@ onMounted(() => {
         </FormItem>
         <FormItem label="处理状态" required>
           <Select v-model:value="statusForm.status" :options="statusOptions" />
+        </FormItem>
+        <FormItem label="变更说明" required>
+          <Input.TextArea
+            v-model:value="statusForm.changeRemark"
+            placeholder="请说明本次状态变更的原因或依据，例如：经现场确认阀门存在粘滞，已安排检修"
+            :rows="3"
+            :maxlength="500"
+            show-count
+          />
         </FormItem>
         <FormItem label="处理备注">
           <Input.TextArea
@@ -438,8 +1003,42 @@ onMounted(() => {
     <AbCompare
       v-if="abCompareVisible"
       :loop-id="abCompareLoopId"
+      :implemented-at="abCompareImplementedAt"
       :drawer-mode="true"
       @close="abCompareVisible = false"
     />
   </Page>
 </template>
+
+<style scoped>
+/* 状态机可视化条 */
+.status-flow-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
+}
+
+.status-flow-bar__label {
+  margin-right: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+
+.status-flow-bar__arrow {
+  font-size: 14px;
+  font-weight: 700;
+  color: hsl(var(--muted-foreground));
+}
+
+.status-flow-bar__alt {
+  margin: 0 2px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+</style>

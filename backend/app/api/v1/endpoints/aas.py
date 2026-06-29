@@ -18,8 +18,14 @@ from app.core.db import get_db
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.sys_user import SysUser
 from app.models.tag import TagRegistry
-from app.schemas.aas import AasConfigUpdate
-from app.schemas.common import success
+from app.schemas.aas import (
+    AasConfigInfo,
+    AasConfigTestResult,
+    AasConfigUpdate,
+    AasSyncTriggerResult,
+    AasTagListData,
+)
+from app.schemas.common import ApiResponse, success
 from app.services.aas_config import get_aas_config, update_aas_config
 from app.services.aas_sync import test_aas_connection
 
@@ -31,7 +37,7 @@ router = APIRouter(prefix="/aas", tags=["aas"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/config")
+@router.get("/config", response_model=ApiResponse[AasConfigInfo])
 async def get_aas_config_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
@@ -41,7 +47,7 @@ async def get_aas_config_endpoint(
     return success(data=data)
 
 
-@router.put("/config")
+@router.put("/config", response_model=ApiResponse[AasConfigInfo])
 async def update_aas_config_endpoint(
     body: AasConfigUpdate,
     db: AsyncSession = Depends(get_db),
@@ -59,7 +65,7 @@ async def update_aas_config_endpoint(
     return success(data=data, message="配置更新成功")
 
 
-@router.post("/config/test")
+@router.post("/config/test", response_model=ApiResponse[AasConfigTestResult])
 async def test_aas_connection_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
@@ -75,7 +81,7 @@ async def test_aas_connection_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/sync")
+@router.post("/sync", response_model=ApiResponse[AasSyncTriggerResult])
 async def trigger_aas_sync(
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
@@ -100,7 +106,7 @@ async def trigger_aas_sync(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/tags")
+@router.get("/tags", response_model=ApiResponse[AasTagListData])
 async def list_aas_tags(
     keyword: str | None = Query(None, description="按 tag 名/描述模糊查询"),
     quality: str | None = Query(None, description="按质量码筛选：GOOD/BAD/UNCERTAIN"),

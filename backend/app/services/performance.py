@@ -18,8 +18,9 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.exceptions import BizError
 from app.core.redis import redis_client
@@ -27,6 +28,7 @@ from app.models.audit import SysAuditLog
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly, MetricConfig
+from app.models.node_kpi import KpiNodeSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.tracker import ActionTracker
 from app.schemas.performance import WeightSumValidator
@@ -41,12 +43,14 @@ METRIC_CONFIG_CACHE_KEY = "clpm:metric_config"
 DASHBOARD_CACHE_KEY_TEMPLATE = "clpm:dashboard:{plant_node_id}:{time_window}"
 DASHBOARD_CACHE_TTL = 300  # 5 分钟
 
-# 6 大 KPI metric_code 列表（固定顺序）
+# 7 大 KPI metric_code 列表（固定顺序，对齐 GB/T 44693.2-2024）
 KPI_METRIC_CODES = (
     "good_value_rate",
     "auto_mode_rate",
+    "effective_auto_rate",
     "steady_rate",
     "accuracy_rate",
+    "fast_response_rate",
     "oscillation_rate",
     "saturation_rate",
 )
@@ -55,11 +59,14 @@ KPI_METRIC_CODES = (
 KPI_NAME_MAP = {
     "good_value_rate": "好值率",
     "auto_mode_rate": "自控率",
+    "effective_auto_rate": "有效自控率",
     "steady_rate": "平稳率",
     "accuracy_rate": "准确率",
+    "fast_response_rate": "快速率",
     "oscillation_rate": "振荡率",
     "saturation_rate": "饱和率",
     "composite_score": "综合评分",
+    "auto_loop_ratio": "投自动回路占比",
 }
 
 # 时间窗映射（基于"今天"为基准）
@@ -94,7 +101,7 @@ async def _write_audit(
         target_id=target_id,
         before_value=before_value,
         after_value=after_value,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
 
@@ -126,9 +133,7 @@ async def _invalidate_dashboard_cache(plant_node_id: str | None, time_window: st
 
 async def list_metric_configs(db: AsyncSession) -> list[dict]:
     """获取 6 大 KPI 指标配置列表。"""
-    result = await db.execute(
-        select(MetricConfig).order_by(MetricConfig.metric_code.asc())
-    )
+    result = await db.execute(select(MetricConfig).order_by(MetricConfig.metric_code.asc()))
     configs = result.scalars().all()
     return [_metric_config_to_dict(c) for c in configs]
 
@@ -180,7 +185,7 @@ async def update_metric_config(
         config.is_enabled = is_enabled
 
     config.updated_by = operator
-    config.updated_at = datetime.utcnow()
+    config.updated_at = datetime.now(UTC).replace(tzinfo=None)
     config.version = (config.version or 1) + 1
 
     # 权重总和校验：仅校验启用状态的 6 大 KPI
@@ -260,7 +265,7 @@ async def update_engine_rule(
         rule.is_enabled = is_enabled
 
     rule.updated_by = operator
-    rule.updated_at = datetime.utcnow()
+    rule.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
     after = _engine_rule_to_dict(rule)
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -305,7 +310,7 @@ async def get_board(
         logger.warning("读取看板缓存失败: %s", exc)
 
     # 计算 time_window 对应的时间范围
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     if time_window == "today":
         start = now - timedelta(hours=24)
     elif time_window == "yesterday":
@@ -323,33 +328,36 @@ async def get_board(
         if node:
             plant_node_name = node.name
 
-    # 查询时间窗内的快照数据
-    snapshots = await _query_snapshots(
-        db=db,
-        plant_node_id=plant_node_id,
-        start=start,
-        end=now,
-    )
+    # --- 统一数据通路：从节点级快照表读取（与 /nodes/* API 一致） ---
+    kpi_cards, kpi_summary = await _aggregate_node_board(db, plant_node_id, start, now)
 
-    # 聚合 KPI 卡片
-    kpi_cards = _aggregate_kpi_cards(snapshots)
-    kpi_summary = _aggregate_kpi_summary(snapshots)
+    # 平稳率趋势（从节点级快照按小时聚合）
+    steady_trend = await _aggregate_node_steady_trend(db, plant_node_id, start, now)
 
-    # 平稳率趋势（按小时聚合）
-    steady_trend = _aggregate_steady_trend(snapshots)
-
-    # 部分数据警告
-    inconclusive_count = sum(1 for s in snapshots if s.status == "INCONCLUSIVE")
-    partial_count = sum(1 for s in snapshots if s.status == "PARTIAL")
+    # 部分数据警告（从节点级快照状态计数）
+    node_count_stmt = select(KpiNodeSnapshotHourly.status, func.count().label("cnt"))
+    if plant_node_id:
+        node_count_stmt = node_count_stmt.where(
+            KpiNodeSnapshotHourly.plant_node_id == plant_node_id
+        )
+    else:
+        # 全厂：仅统计 is_kpi_enabled 的节点
+        enabled_ids = select(PlantNode.id).where(PlantNode.is_kpi_enabled.is_(True))
+        node_count_stmt = node_count_stmt.where(
+            KpiNodeSnapshotHourly.plant_node_id.in_(enabled_ids)
+        )
+    node_count_stmt = node_count_stmt.where(
+        KpiNodeSnapshotHourly.ts_start >= start,
+        KpiNodeSnapshotHourly.ts_start <= now,
+    ).group_by(KpiNodeSnapshotHourly.status)
+    count_result = await db.execute(node_count_stmt)
+    status_counts = {r.status: r.cnt for r in count_result.all()}
+    inconclusive_count = status_counts.get("INCONCLUSIVE", 0)
     partial_warning = {
-        "active": inconclusive_count > 0 or partial_count > 0,
+        "active": inconclusive_count > 0,
         "inconclusiveCount": inconclusive_count,
-        "partialCount": partial_count,
-        "message": (
-            f"存在 {inconclusive_count} 个不确定结果、{partial_count} 个部分结果"
-            if inconclusive_count > 0 or partial_count > 0
-            else None
-        ),
+        "partialCount": 0,
+        "message": (f"存在 {inconclusive_count} 个不确定结果" if inconclusive_count > 0 else None),
     }
 
     data = {
@@ -374,6 +382,186 @@ async def get_board(
 
 
 # ---------------------------------------------------------------------------
+# 看板辅助函数（统一从节点级快照表读取）
+# ---------------------------------------------------------------------------
+
+
+def _node_kpi_fields() -> tuple[str, ...]:
+    """节点级快照中的 KPI 字段列表。"""
+    return (
+        "good_value_rate",
+        "auto_mode_rate",
+        "effective_auto_rate",
+        "steady_rate",
+        "accuracy_rate",
+        "fast_response_rate",
+        "oscillation_rate",
+        "saturation_rate",
+    )
+
+
+async def _aggregate_node_board(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+) -> tuple[list[dict], dict]:
+    """从节点级快照表聚合看板 KPI 卡片和汇总。
+
+    统一数据通路：与 /performance/nodes/* API 读取同一张 kpi_node_snapshot_hourly 表。
+
+    - 指定 plant_node_id：取该节点最新快照
+    - 未指定：取所有 is_kpi_enabled 节点的最新快照，按 loop_count 加权平均
+    """
+    # 构建基础查询：取每个节点在时间窗内最新一条快照
+    base = (
+        select(KpiNodeSnapshotHourly)
+        .where(
+            KpiNodeSnapshotHourly.ts_start >= start,
+            KpiNodeSnapshotHourly.ts_start <= end,
+        )
+        .distinct(KpiNodeSnapshotHourly.plant_node_id)
+        .order_by(
+            KpiNodeSnapshotHourly.plant_node_id,
+            KpiNodeSnapshotHourly.ts_start.desc(),
+        )
+    )
+
+    if plant_node_id:
+        base = base.where(KpiNodeSnapshotHourly.plant_node_id == plant_node_id)
+    else:
+        # 全厂：仅 is_kpi_enabled 的节点
+        enabled_ids = select(PlantNode.id).where(PlantNode.is_kpi_enabled.is_(True))
+        base = base.where(KpiNodeSnapshotHourly.plant_node_id.in_(enabled_ids))
+
+    result = await db.execute(base)
+    snaps = result.scalars().all()
+
+    if not snaps:
+        return _empty_kpi_cards(), _empty_kpi_summary()
+
+    # 聚合 KPI 值（多节点时按 loop_count 加权平均）
+    _node_kpi_fields()
+    total_weight = sum(s.loop_count or 1 for s in snaps)
+
+    def weighted_avg(field: str) -> float | None:
+        numerator = sum(
+            (getattr(s, field) or 0) * (s.loop_count or 1)
+            for s in snaps
+            if getattr(s, field) is not None
+        )
+        denominator = sum((s.loop_count or 1) for s in snaps if getattr(s, field) is not None)
+        if denominator == 0:
+            return None
+        return round(float(numerator) / denominator, 2)
+
+    # 构建 KPI 卡片
+    cards: list[dict] = []
+    for code in KPI_METRIC_CODES:
+        val = weighted_avg(code)
+        cards.append(
+            {
+                "metricKey": code,
+                "metricName": KPI_NAME_MAP.get(code, code),
+                "value": val,
+                "unit": "%",
+                "status": _kpi_status(code, val, _default_threshold(code)),
+                "algorithmVersion": ALGORITHM_VERSION,
+            }
+        )
+
+    # 综合评分卡片
+    score_avg = weighted_avg("score")
+    cards.append(
+        {
+            "metricKey": "composite_score",
+            "metricName": KPI_NAME_MAP["composite_score"],
+            "value": score_avg,
+            "unit": "",
+            "status": _score_to_status(score_avg),
+            "algorithmVersion": ALGORITHM_VERSION,
+        }
+    )
+
+    # 构建 KPI 汇总
+    auto_loop_ratio = weighted_avg("auto_loop_ratio")
+    realtime_auto_rate = weighted_avg("realtime_auto_rate")
+    summary = {
+        "good_value_rate": weighted_avg("good_value_rate"),
+        "auto_mode_rate": weighted_avg("auto_mode_rate"),
+        "effective_auto_rate": weighted_avg("effective_auto_rate"),
+        "steady_rate": weighted_avg("steady_rate"),
+        "accuracy_rate": weighted_avg("accuracy_rate"),
+        "fast_response_rate": weighted_avg("fast_response_rate"),
+        "oscillation_rate": weighted_avg("oscillation_rate"),
+        "saturation_rate": weighted_avg("saturation_rate"),
+        "composite_score": score_avg,
+        "auto_loop_ratio": auto_loop_ratio,
+        "realtime_auto_rate": realtime_auto_rate,
+        "loop_count": total_weight,
+        "node_count": len(snaps),
+        "status": _score_to_status(score_avg),
+        "algorithm_version": ALGORITHM_VERSION,
+    }
+
+    return cards, summary
+
+
+def _empty_kpi_summary() -> dict:
+    """空 KPI 汇总。"""
+    return {
+        "good_value_rate": None,
+        "auto_mode_rate": None,
+        "effective_auto_rate": None,
+        "steady_rate": None,
+        "accuracy_rate": None,
+        "fast_response_rate": None,
+        "oscillation_rate": None,
+        "saturation_rate": None,
+        "composite_score": None,
+        "auto_loop_ratio": None,
+        "realtime_auto_rate": None,
+        "loop_count": 0,
+        "node_count": 0,
+        "status": "INCONCLUSIVE",
+        "algorithm_version": ALGORITHM_VERSION,
+    }
+
+
+async def _aggregate_node_steady_trend(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+) -> dict:
+    """从节点级快照表聚合平稳率趋势（按小时分组）。"""
+    hour_col = func.date_trunc("hour", KpiNodeSnapshotHourly.ts_start).label("hour")
+    avg_col = func.avg(KpiNodeSnapshotHourly.steady_rate).label("avg_steady")
+
+    stmt = (
+        select(hour_col, avg_col)
+        .where(
+            KpiNodeSnapshotHourly.ts_start >= start,
+            KpiNodeSnapshotHourly.ts_start <= end,
+        )
+        .group_by(hour_col)
+        .order_by(hour_col.asc())
+    )
+
+    if plant_node_id:
+        stmt = stmt.where(KpiNodeSnapshotHourly.plant_node_id == plant_node_id)
+    else:
+        enabled_ids = select(PlantNode.id).where(PlantNode.is_kpi_enabled.is_(True))
+        stmt = stmt.where(KpiNodeSnapshotHourly.plant_node_id.in_(enabled_ids))
+
+    result = await db.execute(stmt)
+    rows = result.all()
+    timestamps = [r.hour.strftime("%Y-%m-%dT%H:00:00") for r in rows]
+    values = [round(float(r.avg_steady), 2) if r.avg_steady is not None else None for r in rows]
+    return {"timestamps": timestamps, "values": values}
+
+
+# ---------------------------------------------------------------------------
 # S3-METRIC-005: 低效回路排行
 # ---------------------------------------------------------------------------
 
@@ -392,7 +580,7 @@ async def get_ranking(
         sort_by: 排序字段 score/steady_rate/good_value_rate
         sort_order: asc/desc（默认 asc，分数最低的在前）
     """
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     if time_window == "today":
         start = now - timedelta(hours=24)
     elif time_window == "yesterday":
@@ -402,26 +590,46 @@ async def get_ranking(
         delta = TIME_WINDOWS.get(time_window, timedelta(days=1))
         start = now - delta
 
-    # 查询快照（仅 SUCCESS 状态，INCONCLUSIVE 不参与排行）
-    snapshots = await _query_snapshots(
-        db=db,
+    # 排序字段白名单（防止 SQL 注入：不直接拼接用户输入到 SQL）
+    sort_field_map = {
+        "score": "score",
+        "steady_rate": "steady_rate",
+        "good_value_rate": "good_value_rate",
+        "fast_response_rate": "fast_response_rate",
+    }
+    sort_field_name = sort_field_map.get(sort_by, "score")
+
+    # 子查询：每个回路最新一条 SUCCESS 快照（PostgreSQL DISTINCT ON）
+    base = (
+        select(KpiSnapshotHourly)
+        .distinct(KpiSnapshotHourly.loop_id)
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+    )
+    base = _apply_snapshot_filters(
+        base,
         plant_node_id=plant_node_id,
         start=start,
         end=now,
         status_filter="SUCCESS",
     )
+    subquery = base.subquery()
+    snapshot_alias = aliased(KpiSnapshotHourly, subquery)
 
-    # 按回路聚合（取最新一条快照）
-    loop_latest: dict[str, KpiSnapshotHourly] = {}
-    for snap in snapshots:
-        loop_id = str(snap.loop_id) if snap.loop_id else ""
-        if not loop_id:
-            continue
-        if loop_id not in loop_latest or snap.ts_start > loop_latest[loop_id].ts_start:
-            loop_latest[loop_id] = snap
+    # 外层查询：按排序字段排序（NULLS LAST）并截断
+    sort_column = getattr(snapshot_alias, sort_field_name)
+    if sort_order.lower() == "desc":
+        order_expr = sort_column.desc().nulls_last()
+    else:
+        order_expr = sort_column.asc().nulls_last()
+
+    stmt = select(snapshot_alias).order_by(order_expr).limit(limit)
+    result = await db.execute(stmt)
+    snapshots = result.scalars().all()
+
+    # 收集 loop_id
+    loop_ids = [str(s.loop_id) for s in snapshots if s.loop_id]
 
     # 查询回路基础信息
-    loop_ids = list(loop_latest.keys())
     loop_map: dict[str, LoopLedger] = {}
     unit_map: dict[str, str] = {}
     if loop_ids:
@@ -450,9 +658,12 @@ async def get_ranking(
             if lid and tracker.action_status:
                 action_status_map[lid] = tracker.action_status
 
-    # 构建排行项
+    # 构建排行项（SQL 已完成去重、排序、截断）
     items: list[dict] = []
-    for loop_id, snap in loop_latest.items():
+    for snap in snapshots:
+        loop_id = str(snap.loop_id) if snap.loop_id else ""
+        if not loop_id:
+            continue
         loop = loop_map.get(loop_id)
         if not loop:
             continue
@@ -464,8 +675,10 @@ async def get_ranking(
                 "compositeScore": _to_float(snap.score),
                 "goodValueRate": _to_float(snap.good_value_rate),
                 "autoModeRate": _to_float(snap.auto_mode_rate),
+                "effectiveAutoRate": _to_float(snap.effective_auto_rate),
                 "steadyRate": _to_float(snap.steady_rate),
                 "accuracyRate": _to_float(snap.accuracy_rate),
+                "fastResponseRate": _to_float(snap.fast_response_rate),
                 "oscillationRate": _to_float(snap.oscillation_rate),
                 "saturationRate": _to_float(snap.saturation_rate),
                 "status": _score_to_status(snap.score),
@@ -475,21 +688,7 @@ async def get_ranking(
             }
         )
 
-    # 排序
-    sort_field_map = {
-        "score": "compositeScore",
-        "steady_rate": "steadyRate",
-        "good_value_rate": "goodValueRate",
-    }
-    sort_field = sort_field_map.get(sort_by, "compositeScore")
-    reverse = sort_order.lower() == "desc"
-    items.sort(
-        key=lambda x: (x.get(sort_field) is None, x.get(sort_field) or 0),
-        reverse=reverse,
-    )
-
-    # 截断并打排名
-    items = items[:limit]
+    # 打排名
     for idx, item in enumerate(items, start=1):
         item["rank"] = idx
 
@@ -526,13 +725,14 @@ async def get_analytics(
         end=end_dt,
     )
 
-    # KPI 趋势
-    kpi_trend = _aggregate_kpi_trend(
-        snapshots=snapshots,
-        metric_key=metric_key,
-        granularity=granularity,
+    # KPI 趋势（SQL 聚合）
+    kpi_trend = await _aggregate_kpi_trend(
+        db=db,
+        plant_node_id=plant_node_id,
         start=start_dt,
         end=end_dt,
+        metric_key=metric_key,
+        granularity=granularity,
     )
 
     # 单元排名
@@ -647,15 +847,14 @@ def _engine_rule_to_dict(r: EngineRule) -> dict:
     }
 
 
-async def _query_snapshots(
-    db: AsyncSession,
+def _apply_snapshot_filters(
+    stmt,
     plant_node_id: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
     status_filter: str | None = None,
-) -> list[KpiSnapshotHourly]:
-    """查询快照数据，可选按装置/时间/状态过滤。"""
-    stmt = select(KpiSnapshotHourly)
+):
+    """为快照查询添加时间/状态/装置过滤条件。"""
     if start is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start >= start)
     if end is not None:
@@ -667,18 +866,47 @@ async def _query_snapshots(
         stmt = stmt.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id).where(
             LoopLedger.unit_id == plant_node_id
         )
-    stmt = stmt.order_by(KpiSnapshotHourly.ts_start.asc())
+    return stmt
+
+
+async def _query_snapshots(
+    db: AsyncSession,
+    plant_node_id: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    status_filter: str | None = None,
+) -> list[KpiSnapshotHourly]:
+    """查询快照数据，可选按装置/时间/状态过滤。"""
+    stmt = _apply_snapshot_filters(
+        select(KpiSnapshotHourly),
+        plant_node_id=plant_node_id,
+        start=start,
+        end=end,
+        status_filter=status_filter,
+    ).order_by(KpiSnapshotHourly.ts_start.asc())
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
 def _score_to_status(score: Decimal | float | None) -> str:
-    """综合评分 → 状态枚举。"""
+    """综合评分 → 5 级状态枚举（对齐 GB/T 44693.2-2024 §6.3 性能分级）。
+
+    5 级划分：
+        - EXCELLENT (优):  score >= 90
+        - GOOD (良):       80 <= score < 90
+        - FAIR (中):       70 <= score < 80
+        - WARNING (差):    60 <= score < 70
+        - POOR (劣):       score < 60
+    """
     if score is None:
         return "INCONCLUSIVE"
     s = float(score)
+    if s >= 90:
+        return "EXCELLENT"
     if s >= 80:
         return "GOOD"
+    if s >= 70:
+        return "FAIR"
     if s >= 60:
         return "WARNING"
     return "POOR"
@@ -715,25 +943,31 @@ def _kpi_status(metric_code: str, value: float | None, threshold: dict | None) -
     return "POOR"
 
 
-def _aggregate_kpi_cards(snapshots: list[KpiSnapshotHourly]) -> list[dict]:
-    """聚合 KPI 卡片（6 大 KPI + 综合评分 = 7 张卡片）。"""
-    if not snapshots:
-        return _empty_kpi_cards()
+async def _aggregate_kpi_cards(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+) -> list[dict]:
+    """聚合 KPI 卡片（6 大 KPI + 综合评分 = 7 张卡片）— SQL 聚合。"""
+    fields = (*KPI_METRIC_CODES, "score")
+    avg_cols = [func.avg(getattr(KpiSnapshotHourly, f)).label(f) for f in fields]
+    stmt = _apply_snapshot_filters(
+        select(func.count().label("cnt"), *avg_cols),
+        plant_node_id=plant_node_id,
+        start=start,
+        end=end,
+        status_filter="SUCCESS",
+    )
+    result = await db.execute(stmt)
+    row = result.one()
 
-    # 仅 SUCCESS 状态参与聚合
-    valid = [s for s in snapshots if s.status == "SUCCESS"]
-    if not valid:
+    if row.cnt == 0:
         return _empty_kpi_cards()
-
-    def avg(field: str) -> float | None:
-        vals = [getattr(s, field) for s in valid if getattr(s, field) is not None]
-        if not vals:
-            return None
-        return float(sum(vals) / len(vals))
 
     cards: list[dict] = []
     for code in KPI_METRIC_CODES:
-        val = avg(code)
+        val = _to_float(getattr(row, code))
         cards.append(
             {
                 "metricKey": code,
@@ -746,7 +980,7 @@ def _aggregate_kpi_cards(snapshots: list[KpiSnapshotHourly]) -> list[dict]:
         )
 
     # 综合评分卡片
-    score_avg = avg("score")
+    score_avg = _to_float(row.score)
     cards.append(
         {
             "metricKey": "composite_score",
@@ -792,114 +1026,208 @@ def _default_threshold(metric_code: str) -> dict:
     defaults = {
         "good_value_rate": {"min": 0, "max": 100, "alert": 80},
         "auto_mode_rate": {"min": 0, "max": 100, "alert": 90},
+        "effective_auto_rate": {"min": 0, "max": 100, "alert": 90},
         "steady_rate": {"min": 0, "max": 100, "alert": 85},
         "accuracy_rate": {"min": 0, "max": 100, "alert": 80},
+        "fast_response_rate": {"min": 0, "max": 100, "alert": 80},
         "oscillation_rate": {"min": 0, "max": 100, "alert": 20},
         "saturation_rate": {"min": 0, "max": 100, "alert": 15},
     }
     return defaults.get(metric_code, {})
 
 
-def _aggregate_kpi_summary(snapshots: list[KpiSnapshotHourly]) -> dict:
-    """聚合 KPI 汇总。"""
-    valid = [s for s in snapshots if s.status == "SUCCESS"]
-    if not valid:
-        return {
-            "good_value_rate": None,
-            "auto_mode_rate": None,
-            "steady_rate": None,
-            "accuracy_rate": None,
-            "oscillation_rate": None,
-            "saturation_rate": None,
-            "composite_score": None,
-            "status": "INCONCLUSIVE",
-            "algorithm_version": ALGORITHM_VERSION,
-        }
+async def _aggregate_kpi_summary(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+) -> dict:
+    """聚合 KPI 汇总 — 按回路重要度加权聚合（对齐 GB/T 44693.2-2024 §6.2）。
 
-    def avg(field: str) -> float | None:
-        vals = [getattr(s, field) for s in valid if getattr(s, field) is not None]
-        if not vals:
-            return None
-        return round(float(sum(vals) / len(vals)), 2)
+    P0#12: 装置级加权聚合 — 使用 LoopLedger.score_weight 作为权重，
+           加权平均公式: weighted_avg = Σ(value_i × w_i) / Σ(w_i)
+           权重为 NULL 时按 1.0 处理（等权）。
 
-    score_avg = avg("score")
+    P0#11: 投自动回路占比 — 统计 auto_mode_rate > 0 的回路数占比，
+           反映装置内有多少回路实际投入自动控制。
+    """
+    fields = (*KPI_METRIC_CODES, "score")
+    # 使用 COALESCE 处理 NULL 权重（默认 1.0），确保不丢失数据点
+    weight_col = func.coalesce(LoopLedger.score_weight, Decimal("1.0")).label("w")
+    # SUM(weight) 可能因所有权重显式为 0 而等于 0，使用 NULLIF 避免 SQL 除零
+    weight_sum_col = func.nullif(func.sum(weight_col), 0).label("weight_sum")
+
+    # 加权聚合：Σ(value × w) / Σ(w)
+    # NULLIF 确保 SUM(w)=0 时返回 NULL 而非抛除零错误
+    weighted_cols = []
+    for f in fields:
+        col = getattr(KpiSnapshotHourly, f)
+        # SUM(value * w) / NULLIF(SUM(w), 0)
+        weighted_cols.append((func.sum(col * weight_col) / weight_sum_col).label(f))
+
+    # 投自动回路占比：COUNT(auto_mode_rate > 0) / COUNT(*)
+    auto_loop_count = func.sum(
+        func.coalesce(
+            func.cast(
+                KpiSnapshotHourly.auto_mode_rate > 0,
+                Integer,
+            ),
+            0,
+        )
+    ).label("auto_loop_count")
+    total_count = func.count().label("cnt")
+
+    stmt = _apply_snapshot_filters(
+        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols),
+        plant_node_id=plant_node_id,
+        start=start,
+        end=end,
+        status_filter="SUCCESS",
+    )
+    result = await db.execute(stmt)
+    row = result.one()
+
+    empty = {
+        "good_value_rate": None,
+        "auto_mode_rate": None,
+        "effective_auto_rate": None,
+        "steady_rate": None,
+        "accuracy_rate": None,
+        "fast_response_rate": None,
+        "oscillation_rate": None,
+        "saturation_rate": None,
+        "composite_score": None,
+        "auto_loop_ratio": None,
+        "status": "INCONCLUSIVE",
+        "algorithm_version": ALGORITHM_VERSION,
+    }
+    if row.cnt == 0:
+        return empty
+
+    # 除零保护：SUM(weight)=0（所有权重显式为 0）时返回空结果
+    weight_sum_val = _to_float(row.weight_sum)
+    if weight_sum_val is None or weight_sum_val == 0:
+        logger.warning(
+            "[装置级聚合] plant_node_id=%s, SUM(weight)=%s（为 0 或 NULL），"
+            "无法计算加权平均，返回 INCONCLUSIVE",
+            plant_node_id,
+            weight_sum_val,
+        )
+        return empty
+
+    def avg_value(field: str) -> float | None:
+        val = _to_float(getattr(row, field))
+        return round(val, 2) if val is not None else None
+
+    score_avg = avg_value("score")
+    # 投自动回路占比 = auto_loop_count / total_count × 100
+    auto_loop_count_val = _to_float(row.auto_loop_count) or 0.0
+    auto_loop_ratio = round(auto_loop_count_val / float(row.cnt) * 100, 2)
+
+    logger.debug(
+        "[装置级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%.0f, "
+        "投自动回路占比=%.2f%%, SUM(weight)=%.4f, 加权综合评分=%s",
+        plant_node_id,
+        row.cnt,
+        auto_loop_count_val,
+        auto_loop_ratio,
+        weight_sum_val,
+        score_avg,
+    )
+
     return {
-        "good_value_rate": avg("good_value_rate"),
-        "auto_mode_rate": avg("auto_mode_rate"),
-        "steady_rate": avg("steady_rate"),
-        "accuracy_rate": avg("accuracy_rate"),
-        "oscillation_rate": avg("oscillation_rate"),
-        "saturation_rate": avg("saturation_rate"),
+        "good_value_rate": avg_value("good_value_rate"),
+        "auto_mode_rate": avg_value("auto_mode_rate"),
+        "effective_auto_rate": avg_value("effective_auto_rate"),
+        "steady_rate": avg_value("steady_rate"),
+        "accuracy_rate": avg_value("accuracy_rate"),
+        "fast_response_rate": avg_value("fast_response_rate"),
+        "oscillation_rate": avg_value("oscillation_rate"),
+        "saturation_rate": avg_value("saturation_rate"),
         "composite_score": score_avg,
+        "auto_loop_ratio": auto_loop_ratio,
         "status": _score_to_status(score_avg),
         "algorithm_version": ALGORITHM_VERSION,
     }
 
 
-def _aggregate_steady_trend(snapshots: list[KpiSnapshotHourly]) -> dict:
-    """聚合平稳率趋势（按小时聚合）。"""
-    if not snapshots:
-        return {"timestamps": [], "values": []}
-
-    # 按小时分组
-    hourly: dict[str, list[float]] = {}
-    for s in snapshots:
-        if s.steady_rate is None:
-            continue
-        hour_key = s.ts_start.strftime("%Y-%m-%dT%H:00:00")
-        hourly.setdefault(hour_key, []).append(float(s.steady_rate))
-
-    timestamps = sorted(hourly.keys())
-    values = [round(sum(hourly[k]) / len(hourly[k]), 2) for k in timestamps]
-    return {"timestamps": timestamps, "values": values}
-
-
-def _aggregate_kpi_trend(
-    snapshots: list[KpiSnapshotHourly],
-    metric_key: str,
-    granularity: str,
+async def _aggregate_steady_trend(
+    db: AsyncSession,
+    plant_node_id: str | None,
     start: datetime,
     end: datetime,
 ) -> dict:
-    """聚合 KPI 趋势（按粒度分组）。"""
-    if not snapshots:
-        return {"timestamps": [], "series": []}
+    """聚合平稳率趋势（按小时聚合）— SQL date_trunc + GROUP BY + AVG。"""
+    hour_col = func.date_trunc("hour", KpiSnapshotHourly.ts_start).label("hour")
+    avg_col = func.avg(KpiSnapshotHourly.steady_rate).label("avg_steady")
+    stmt = (
+        _apply_snapshot_filters(
+            select(hour_col, avg_col),
+            plant_node_id=plant_node_id,
+            start=start,
+            end=end,
+        )
+        .group_by(hour_col)
+        .order_by(hour_col.asc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    timestamps = [r.hour.strftime("%Y-%m-%dT%H:00:00") for r in rows]
+    values = [round(float(r.avg_steady), 2) if r.avg_steady is not None else None for r in rows]
+    return {"timestamps": timestamps, "values": values}
 
+
+async def _aggregate_kpi_trend(
+    db: AsyncSession,
+    plant_node_id: str | None,
+    start: datetime,
+    end: datetime,
+    metric_key: str,
+    granularity: str,
+) -> dict:
+    """聚合 KPI 趋势（按粒度分组）— SQL date_trunc + GROUP BY + AVG。"""
     field_map = {
-        "score": "score",
-        "good_value_rate": "good_value_rate",
-        "auto_mode_rate": "auto_mode_rate",
-        "steady_rate": "steady_rate",
-        "accuracy_rate": "accuracy_rate",
-        "oscillation_rate": "oscillation_rate",
-        "saturation_rate": "saturation_rate",
+        "score": KpiSnapshotHourly.score,
+        "good_value_rate": KpiSnapshotHourly.good_value_rate,
+        "auto_mode_rate": KpiSnapshotHourly.auto_mode_rate,
+        "effective_auto_rate": KpiSnapshotHourly.effective_auto_rate,
+        "steady_rate": KpiSnapshotHourly.steady_rate,
+        "accuracy_rate": KpiSnapshotHourly.accuracy_rate,
+        "fast_response_rate": KpiSnapshotHourly.fast_response_rate,
+        "oscillation_rate": KpiSnapshotHourly.oscillation_rate,
+        "saturation_rate": KpiSnapshotHourly.saturation_rate,
     }
-    field = field_map.get(metric_key, "score")
+    column = field_map.get(metric_key, KpiSnapshotHourly.score)
     metric_name = KPI_NAME_MAP.get(metric_key, metric_key)
 
-    def bucket_key(ts: datetime) -> str:
+    # 粒度白名单校验（date_trunc 第一参数为绑定参数，安全）
+    if granularity not in ("hour", "day", "week", "month"):
+        granularity = "day"
+
+    bucket_col = func.date_trunc(granularity, KpiSnapshotHourly.ts_start).label("bucket")
+    avg_col = func.avg(column).label("avg_value")
+    stmt = (
+        _apply_snapshot_filters(
+            select(bucket_col, avg_col),
+            plant_node_id=plant_node_id,
+            start=start,
+            end=end,
+        )
+        .group_by(bucket_col)
+        .order_by(bucket_col.asc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    def format_bucket(dt: datetime) -> str:
         if granularity == "hour":
-            return ts.strftime("%Y-%m-%dT%H:00:00")
-        if granularity == "day":
-            return ts.strftime("%Y-%m-%d")
-        if granularity == "week":
-            # ISO 周一为起始
-            monday = ts - timedelta(days=ts.weekday())
-            return monday.strftime("%Y-%m-%d")
+            return dt.strftime("%Y-%m-%dT%H:00:00")
         if granularity == "month":
-            return ts.strftime("%Y-%m")
-        return ts.strftime("%Y-%m-%d")
+            return dt.strftime("%Y-%m")
+        return dt.strftime("%Y-%m-%d")
 
-    grouped: dict[str, list[float]] = {}
-    for s in snapshots:
-        val = getattr(s, field, None)
-        if val is None:
-            continue
-        key = bucket_key(s.ts_start)
-        grouped.setdefault(key, []).append(float(val))
-
-    timestamps = sorted(grouped.keys())
-    values = [round(sum(grouped[k]) / len(grouped[k]), 2) for k in timestamps]
+    timestamps = [format_bucket(r.bucket) for r in rows]
+    values = [round(float(r.avg_value), 2) if r.avg_value is not None else None for r in rows]
     return {
         "timestamps": timestamps,
         "series": [
@@ -987,9 +1315,7 @@ async def _aggregate_bad_actor_distribution(
     label_count: dict[str, int] = {}
     for tracker in t_result.scalars().all():
         if tracker.diagnosis_label:
-            label_count[tracker.diagnosis_label] = (
-                label_count.get(tracker.diagnosis_label, 0) + 1
-            )
+            label_count[tracker.diagnosis_label] = label_count.get(tracker.diagnosis_label, 0) + 1
 
     items = [{"label": label, "count": count} for label, count in label_count.items()]
     items.sort(key=lambda x: -x["count"])

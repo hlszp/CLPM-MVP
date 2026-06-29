@@ -14,6 +14,7 @@ import { Page } from '@vben/common-ui';
 
 import { Card, Tag } from 'ant-design-vue';
 
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
 
 defineOptions({ name: 'SystemPermissions' });
@@ -70,7 +71,7 @@ const permissionColorMap: Record<PermissionLevel, string> = {
 /** 矩阵行数据 */
 interface MatrixRow {
   role: ClpmRole;
-  permissions: Record<string, PermissionLevel | null>;
+  permissions: Record<string, null | PermissionLevel>;
 }
 
 /**
@@ -80,7 +81,7 @@ interface MatrixRow {
  */
 const PERMISSION_MATRIX: Record<
   ClpmRole,
-  Record<string, PermissionLevel | null>
+  Record<string, null | PermissionLevel>
 > = {
   ADMIN: {
     dashboard: 'MANAGE',
@@ -155,7 +156,7 @@ function roleColor(role: ClpmRole): string {
 function getCellPermission(
   row: MatrixRow,
   moduleKey: string,
-): PermissionLevel | null {
+): null | PermissionLevel {
   const val = row.permissions[moduleKey];
   if (val === undefined || val === null) return null;
   return val;
@@ -163,8 +164,12 @@ function getCellPermission(
 </script>
 
 <template>
-  <Page title="权限矩阵">
-    <Card>
+  <Page>
+    <ClpmPageToolbar
+      title="权限矩阵"
+      subtitle="查看 5 种角色在 6 大模块中的系统预设权限级别。"
+    />
+    <ClpmDataCanvas class="mt-4" title="权限矩阵">
       <div class="mb-4">
         <p class="text-sm text-gray-500">
           5 种角色 × 6 大模块访问权限矩阵 · 权限级别：查看 / 协同 / 执行 / 管理
@@ -219,7 +224,7 @@ function getCellPermission(
           </tbody>
         </table>
       </div>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 底部说明 -->
     <Card class="mt-4">

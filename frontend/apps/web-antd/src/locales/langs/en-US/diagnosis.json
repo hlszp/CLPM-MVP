@@ -1,0 +1,105 @@
+{
+  "title": "Diagnosis Center",
+  "list": {
+    "title": "Diagnosis List",
+    "plantNodePlaceholder": "Plant / Unit Filter",
+    "labelPlaceholder": "Diagnosis Label",
+    "statusPlaceholder": "Action Status",
+    "timeWindowPlaceholder": "Time Window",
+    "columns": {
+      "loopTag": "Loop Tag",
+      "unit": "Unit",
+      "score": "Composite Score",
+      "label": "Diagnosis Label",
+      "confidence": "Confidence",
+      "status": "Action Status",
+      "diagnosedAt": "Diagnosed At",
+      "action": "Action"
+    },
+    "actions": {
+      "detail": "Detail",
+      "refresh": "Refresh"
+    }
+  },
+  "detail": {
+    "title": "Diagnosis Detail",
+    "compositeScore": "Composite Score",
+    "fusedConfidence": "Fused Confidence",
+    "labels": "Diagnosis Labels",
+    "evidenceChain": "Evidence Chain",
+    "featureValues": "Feature Values",
+    "actions": {
+      "waveform": "Waveform",
+      "tracker": "Action Tracker"
+    }
+  },
+  "waveform": {
+    "title": "Waveform Analysis",
+    "loopPlaceholder": "Select Loop",
+    "timeRange": "Time Range",
+    "downsample": "Downsample",
+    "tabs": {
+      "waveform": "Waveform Trend",
+      "scatter": "PV-OP Scatter"
+    }
+  },
+  "tracker": {
+    "title": "Action Tracker",
+    "columns": {
+      "loopTag": "Loop Tag",
+      "label": "Diagnosis Label",
+      "status": "Status",
+      "createdAt": "Created At",
+      "updatedAt": "Updated At",
+      "action": "Action"
+    },
+    "actions": {
+      "abCompare": "A/B Compare",
+      "exportPdf": "Export PDF",
+      "updateStatus": "Update Status"
+    }
+  },
+  "abCompare": {
+    "title": "A/B Compare"
+  },
+  "statistics": {
+    "title": "Statistics Report",
+    "labelDistribution": "Label Distribution",
+    "efficiencyTrend": "Efficiency Trend",
+    "closeDuration": "Close Duration Distribution",
+    "export": "Export CSV"
+  },
+  "config": {
+    "title": "Diagnosis Metric Config",
+    "description": "Manage diagnosis metric config: rules, algorithm params, thresholds, enabled status.",
+    "columns": {
+      "metricName": "Metric Name",
+      "metricKey": "Metric Key",
+      "label": "Diagnosis Label",
+      "algorithmType": "Algorithm Type",
+      "calcMethod": "Calc Method",
+      "threshold": "Threshold",
+      "params": "Params",
+      "isEnabled": "Enabled",
+      "algorithmVersion": "Algorithm Version",
+      "updatedAt": "Updated At",
+      "action": "Action"
+    }
+  },
+  "labels": {
+    "OSCILLATION": "Oscillation",
+    "VALVE_STICTION": "Valve Stiction",
+    "OVERAGGRESSIVE": "Over Aggressive",
+    "OVERCONSERVATIVE": "Over Conservative",
+    "EXTERNAL_DISTURBANCE": "External Disturbance",
+    "QUALITY_ABNORMAL": "PV Quality Abnormal",
+    "OUTPUT_SATURATION": "Output Saturation",
+    "MANUAL_REVIEW": "Manual Review"
+  },
+  "status": {
+    "PENDING": "Pending",
+    "IN_PROGRESS": "In Progress",
+    "IMPLEMENTED": "Implemented",
+    "IGNORED": "Ignored"
+  }
+}

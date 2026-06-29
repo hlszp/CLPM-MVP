@@ -6,6 +6,7 @@ import { preferences } from '@vben/preferences';
 import { initStores } from '@vben/stores';
 import '@vben/styles';
 import '@vben/styles/antd';
+import '#/styles/industrial-light.css';
 
 import { useTitle } from '@vueuse/core';
 
@@ -34,6 +35,17 @@ async function bootstrap(namespace: string) {
   // });
 
   const app = createApp(App);
+
+  // Sentry 错误上报初始化（仅生产环境且配置了 DSN 时启用）
+  if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
+    const Sentry = await import('@sentry/vue');
+    Sentry.init({
+      app,
+      dsn: import.meta.env.VITE_SENTRY_DSN,
+      integrations: [Sentry.browserTracingIntegration()],
+      tracesSampleRate: 0.1,
+    });
+  }
 
   // 注册v-loading指令
   registerLoadingDirective(app, {

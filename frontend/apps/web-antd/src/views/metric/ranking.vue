@@ -22,20 +22,25 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Drawer,
   Input,
   InputNumber,
   Select,
-  Statistic,
   Table,
   Tag,
 } from 'ant-design-vue';
 
 import { getRankingApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmObjectSummaryBar, ClpmPageToolbar } from '#/components/clpm';
+import type { KpiStripItem, SummaryItem } from '#/components/clpm';
+import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'MetricRanking' });
+
+const { themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -70,8 +75,10 @@ const sortByOptions = [
   { label: '综合评分', value: 'compositeScore' },
   { label: '好值率', value: 'goodValueRate' },
   { label: '自控率', value: 'autoModeRate' },
+  { label: '有效自控率', value: 'effectiveAutoRate' },
   { label: '平稳率', value: 'steadyRate' },
   { label: '准确率', value: 'accuracyRate' },
+  { label: '快速率', value: 'fastResponseRate' },
   { label: '振荡率', value: 'oscillationRate' },
   { label: '饱和率', value: 'saturationRate' },
 ];
@@ -83,23 +90,22 @@ const sortOrderOptions = [
 
 // 状态色映射
 const statusColorMap: Record<KpiStatus, string> = {
-  GOOD: 'green',
+  SUCCESS: 'green',
   INCONCLUSIVE: 'default',
-  POOR: 'red',
-  WARNING: 'orange',
+  PARTIAL: 'orange',
 };
 
 const statusLabelMap: Record<KpiStatus, string> = {
-  GOOD: '良好',
+  SUCCESS: '良好',
   INCONCLUSIVE: '不确定',
-  POOR: '差',
-  WARNING: '警告',
+  PARTIAL: '部分',
 };
 
 const actionStatusLabel: Record<string, string> = {
   PENDING: '待处理',
-  PROCESSING: '处理中',
-  RESOLVED: '已解决',
+  IN_PROGRESS: '处理中',
+  IMPLEMENTED: '已实施',
+  IGNORED: '已忽略',
 };
 
 const columns: TableColumnsType = [
@@ -163,6 +169,13 @@ const columns: TableColumnsType = [
   },
   { title: '状态', dataIndex: 'status', key: 'status', width: 90 },
   {
+    title: '可信度',
+    dataIndex: 'confidenceLevel',
+    key: 'confidenceLevel',
+    width: 110,
+    align: 'center',
+  },
+  {
     title: '预诊',
     dataIndex: 'preDiagnosis',
     key: 'preDiagnosis',
@@ -172,11 +185,75 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 110, fixed: 'right' },
 ];
 
-// 抽屉状态
 const drawerVisible = ref(false);
 const selectedLoop = ref<MetricApi.RankingItem | null>(null);
 
-/** 统计 KPI */
+const kpiStripItems = computed<KpiStripItem[]>(() => [
+  {
+    key: 'total',
+    label: '总回路数',
+    value: stats.value.total,
+    status: 'neutral',
+  },
+  {
+    key: 'bad',
+    label: '低效回路数',
+    value: stats.value.badCount,
+    status: 'danger',
+  },
+  {
+    key: 'avg',
+    label: '平均评分',
+    value: stats.value.avgScore.toFixed(1),
+    status:
+      stats.value.avgScore >= 80
+        ? 'success'
+        : stats.value.avgScore >= 60
+          ? 'warning'
+          : 'danger',
+  },
+  {
+    key: 'min',
+    label: '最低评分',
+    value: stats.value.minScore.toFixed(1),
+    status: 'danger',
+  },
+]);
+
+const drawerSummaryItems = computed<SummaryItem[]>(() => {
+  if (!selectedLoop.value) return [];
+  return [
+    {
+      key: 'score',
+      label: '综合评分',
+      value: Number(selectedLoop.value.compositeScore).toFixed(1),
+      status:
+        selectedLoop.value.compositeScore >= 80
+          ? 'success'
+          : selectedLoop.value.compositeScore >= 60
+            ? 'warning'
+            : 'danger',
+    },
+    {
+      key: 'status',
+      label: '状态',
+      value: statusLabelMap[selectedLoop.value.status],
+      status:
+        selectedLoop.value.status === 'SUCCESS'
+          ? 'success'
+          : selectedLoop.value.status === 'PARTIAL'
+            ? 'warning'
+            : 'neutral',
+    },
+    {
+      key: 'confidence',
+      label: '可信度',
+      value: selectedLoop.value.confidenceLevel || '—',
+      status: 'neutral',
+    },
+  ];
+});
+
 const stats = computed(() => {
   const list = rankingList.value;
   if (list.length === 0) {
@@ -187,7 +264,7 @@ const stats = computed(() => {
   let sum = 0;
   let min = 100;
   for (const item of list) {
-    if (item.status === 'POOR') badCount++;
+    if (item.status === 'PARTIAL') badCount++;
     sum += Number(item.compositeScore) || 0;
     const score = Number(item.compositeScore) || 100;
     if (score < min) min = score;
@@ -196,24 +273,10 @@ const stats = computed(() => {
   return {
     total,
     badCount,
-    avgScore: Number(avg.toFixed(1)),
-    minScore: Number(min.toFixed(1)),
+    avgScore: Number(avg?.toFixed(1) ?? 0),
+    minScore: Number(min?.toFixed(1) ?? 0),
   };
 });
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -285,9 +348,9 @@ function handleViewDetail(loopId: string) {
 
 /** 排名前 3 的颜色 */
 function rankColor(rank: number): string {
-  if (rank === 1) return '#ff4d4f'; // 红
-  if (rank === 2) return '#faad14'; // 黄
-  if (rank === 3) return '#fa8c16'; // 橙
+  if (rank === 1) return themeColors.value.DANGER; // 红
+  if (rank === 2) return themeColors.value.WARNING; // 黄
+  if (rank === 3) return themeColors.value.WARNING; // 橙
   return '';
 }
 
@@ -303,38 +366,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="低效回路排行">
-    <!-- 顶部统计 KPI 卡片 -->
-    <div class="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-      <Card size="small" :loading="loading">
-        <Statistic title="总回路数" :value="stats.total" />
-      </Card>
-      <Card size="small" :loading="loading">
-        <Statistic
-          title="低效回路数"
-          :value="stats.badCount"
-          :value-style="{ color: '#ff4d4f' }"
-        />
-      </Card>
-      <Card size="small" :loading="loading">
-        <Statistic
-          title="平均评分"
-          :value="stats.avgScore"
-          :precision="1"
-          suffix=""
-        />
-      </Card>
-      <Card size="small" :loading="loading">
-        <Statistic
-          title="最低评分"
-          :value="stats.minScore"
-          :precision="1"
-          :value-style="{ color: '#ff4d4f' }"
-        />
-      </Card>
+  <Page>
+    <ClpmPageToolbar
+      title="低效回路排行"
+      subtitle="按综合评分和核心 KPI 识别最需要优先治理的回路。"
+    />
+    <div class="mb-4 mt-4">
+      <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
     </div>
 
-    <Card>
+    <ClpmDataCanvas title="排行筛选与列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -404,7 +445,7 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: MetricApi.RankingItem) => record.loopId"
-        :scroll="{ x: 1500 }"
+        :scroll="{ x: 1610 }"
         size="middle"
         :custom-row="
           (record: MetricApi.RankingItem) => ({
@@ -459,6 +500,13 @@ onMounted(() => {
               {{ statusLabelMap[record.status as KpiStatus] }}
             </Tag>
           </template>
+          <template v-else-if="column.key === 'confidenceLevel'">
+            <ConfidenceBadge
+              :level="record.confidenceLevel"
+              :valid-rate="record.validRate"
+              size="small"
+            />
+          </template>
           <template v-else-if="column.key === 'preDiagnosis'">
             <Tag v-if="record.preDiagnosis" color="orange">
               {{ record.preDiagnosis }}
@@ -476,7 +524,7 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 侧边抽屉 -->
     <Drawer
@@ -486,24 +534,11 @@ onMounted(() => {
       placement="right"
     >
       <template v-if="selectedLoop">
-        <div class="mb-4">
-          <h3 class="text-lg font-semibold">{{ selectedLoop.tagName }}</h3>
-          <p class="text-sm text-gray-500">{{ selectedLoop.unitName }}</p>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <Card size="small">
-            <div class="text-xs text-gray-500">综合评分</div>
-            <div class="text-2xl font-bold text-blue-600">
-              {{ Number(selectedLoop.compositeScore).toFixed(1) }}
-            </div>
-          </Card>
-          <Card size="small">
-            <div class="text-xs text-gray-500">状态</div>
-            <Tag :color="statusColorMap[selectedLoop.status]" class="mt-1">
-              {{ statusLabelMap[selectedLoop.status] }}
-            </Tag>
-          </Card>
-        </div>
+        <ClpmObjectSummaryBar
+          :title="selectedLoop.tagName"
+          :subtitle="selectedLoop.unitName"
+          :items="drawerSummaryItems"
+        />
         <div class="mt-4 space-y-2">
           <div class="flex justify-between border-b pb-2">
             <span class="text-gray-500">好值率</span>
@@ -546,6 +581,21 @@ onMounted(() => {
           <div class="flex justify-between border-b pb-2">
             <span class="text-gray-500">算法版本</span>
             <span>{{ selectedLoop.algorithmVersion }}</span>
+          </div>
+          <div class="flex justify-between border-b pb-2">
+            <span class="text-gray-500">可信度</span>
+            <ConfidenceBadge
+              :level="selectedLoop.confidenceLevel"
+              :valid-rate="selectedLoop.validRate"
+              size="small"
+            />
+          </div>
+          <div
+            v-if="selectedLoop.samplingFreq"
+            class="flex justify-between border-b pb-2"
+          >
+            <span class="text-gray-500">采样频率</span>
+            <span>{{ selectedLoop.samplingFreq }}</span>
           </div>
         </div>
         <div class="mt-6">

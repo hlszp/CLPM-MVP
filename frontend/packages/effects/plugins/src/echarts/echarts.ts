@@ -1,8 +1,21 @@
-import { BarChart, LineChart, PieChart, RadarChart } from 'echarts/charts';
 import {
+  BarChart,
+  CustomChart,
+  GaugeChart,
+  LineChart,
+  PieChart,
+  RadarChart,
+  ScatterChart,
+} from 'echarts/charts';
+import {
+  DataZoomComponent,
   DatasetComponent,
+  GraphicComponent,
   GridComponent,
   LegendComponent,
+  MarkAreaComponent,
+  MarkLineComponent,
+  MarkPointComponent,
   TitleComponent,
   ToolboxComponent,
   TooltipComponent,
@@ -26,12 +39,20 @@ echarts.use([
   TransformComponent,
   BarChart,
   LineChart,
+  ScatterChart,
+  GaugeChart,
+  CustomChart,
   LabelLayout,
   LegacyGridContainLabel,
   UniversalTransition,
   CanvasRenderer,
   LegendComponent,
   ToolboxComponent,
+  DataZoomComponent,
+  MarkLineComponent,
+  MarkAreaComponent,
+  MarkPointComponent,
+  GraphicComponent,
 ]);
 export type { ECOption } from './types';
 

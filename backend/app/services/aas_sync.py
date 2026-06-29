@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -249,7 +249,7 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
     Returns:
         统计信息 dict：{total, inserted, updated, unchanged, duration_ms}
     """
-    start_time = datetime.utcnow()
+    start_time = datetime.now(UTC).replace(tzinfo=None)
     provider = get_aas_provider()
 
     # 带重试地读取 AAS
@@ -259,7 +259,7 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
     result = await db.execute(select(TagRegistry))
     existing_tags = {t.tag_name: t for t in result.scalars().all()}
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC).replace(tzinfo=None)
     inserted = 0
     updated = 0
     unchanged = 0
@@ -300,7 +300,7 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
 
     await db.commit()
 
-    duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+    duration_ms = int((datetime.now(UTC).replace(tzinfo=None) - start_time).total_seconds() * 1000)
     stats = {
         "total": len(aas_tags),
         "inserted": inserted,
@@ -318,12 +318,12 @@ async def test_aas_connection(endpoint: str | None = None) -> dict[str, Any]:
     Returns:
         {success, latencyMs, message}
     """
-    start = datetime.utcnow()
+    start = datetime.now(UTC).replace(tzinfo=None)
     try:
         if settings.AAS_MOCK_MODE:
             # Mock 模式：直接返回成功
             await asyncio.sleep(0.05)
-            latency = int((datetime.utcnow() - start).total_seconds() * 1000)
+            latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
             return {
                 "success": True,
                 "latencyMs": latency,
@@ -332,21 +332,21 @@ async def test_aas_connection(endpoint: str | None = None) -> dict[str, Any]:
         # 真实模式：尝试连接 OPC UA
         provider = RealAasProvider(endpoint=endpoint)
         await _retry_async(provider.read_all_tags, max_retries=1)
-        latency = int((datetime.utcnow() - start).total_seconds() * 1000)
+        latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         return {
             "success": True,
             "latencyMs": latency,
             "message": "连接成功",
         }
     except BizError as exc:
-        latency = int((datetime.utcnow() - start).total_seconds() * 1000)
+        latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         return {
             "success": False,
             "latencyMs": latency,
             "message": exc.message,
         }
     except Exception as exc:  # pragma: no cover  noqa: BLE001
-        latency = int((datetime.utcnow() - start).total_seconds() * 1000)
+        latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         return {
             "success": False,
             "latencyMs": latency,

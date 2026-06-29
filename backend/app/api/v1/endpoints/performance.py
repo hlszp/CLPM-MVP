@@ -20,11 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.schemas.performance import (
+    AnalyticsData,
+    EngineRuleItem,
     EngineRuleUpdate,
     ExportRequest,
+    MetricConfigItem,
     MetricConfigUpdate,
+    RankingItem,
 )
 from app.services.performance import (
     export_analytics_csv,
@@ -45,7 +49,7 @@ router = APIRouter(prefix="/performance", tags=["performance"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/metrics")
+@router.get("/metrics", response_model=ApiResponse[list[MetricConfigItem]])
 async def list_metrics_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -55,7 +59,7 @@ async def list_metrics_endpoint(
     return success(data=data)
 
 
-@router.put("/metrics/{metric_id}")
+@router.put("/metrics/{metric_id}", response_model=ApiResponse[MetricConfigItem])
 async def update_metric_endpoint(
     metric_id: str,
     body: MetricConfigUpdate,
@@ -85,7 +89,7 @@ async def update_metric_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/rules")
+@router.get("/rules", response_model=ApiResponse[list[EngineRuleItem]])
 async def list_rules_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -95,7 +99,7 @@ async def list_rules_endpoint(
     return success(data=data)
 
 
-@router.put("/rules/{rule_id}")
+@router.put("/rules/{rule_id}", response_model=ApiResponse[EngineRuleItem])
 async def update_rule_endpoint(
     rule_id: str,
     body: EngineRuleUpdate,
@@ -119,7 +123,7 @@ async def update_rule_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/board")
+@router.get("/board", response_model=ApiResponse[dict])
 async def get_board_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     timeWindow: str = Query(
@@ -142,7 +146,7 @@ async def get_board_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/ranking")
+@router.get("/ranking", response_model=ApiResponse[list[RankingItem]])
 async def get_ranking_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     timeWindow: str = Query(
@@ -171,7 +175,7 @@ async def get_ranking_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/analytics")
+@router.get("/analytics", response_model=ApiResponse[AnalyticsData])
 async def get_analytics_endpoint(
     startTime: str = Query(..., description="开始时间（ISO 8601）"),
     endTime: str = Query(..., description="结束时间（ISO 8601）"),
@@ -213,6 +217,73 @@ async def export_analytics_endpoint(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=performance_analytics.csv"},
     )
+
+
+# ---------------------------------------------------------------------------
+# 实时自控率 — 仪表盘组件
+# ---------------------------------------------------------------------------
+
+
+@router.get("/realtime-auto-rate", response_model=ApiResponse[dict])
+async def get_realtime_auto_rate_endpoint(
+    plantNodeId: str | None = Query(None, description="工厂节点 ID（不传则全厂）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> ApiResponse[dict]:
+    """获取实时自控率统计（用于仪表盘组件）。
+
+    返回: {plantNodeId, plantNodeName, autoCount, manualCount, totalCount, autoRate, readAt}
+    """
+    from sqlalchemy import select
+
+    from app.models.loop import LoopLedger
+    from app.models.plant_node import PlantNode
+    from app.services.node_performance import query_realtime_auto_rate
+
+    # 收集回路 ID
+    stmt = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+    plant_node_name = None
+    if plantNodeId:
+        # 递归获取子孙节点
+        from app.services.monitor import _get_descendant_node_ids
+
+        all_ids = await _get_descendant_node_ids(db, plantNodeId)
+        all_ids.append(plantNodeId)
+        stmt = stmt.where(LoopLedger.unit_id.in_(all_ids))
+        # 查节点名
+        node_result = await db.execute(select(PlantNode.name).where(PlantNode.id == plantNodeId))
+        row = node_result.first()
+        if row:
+            plant_node_name = row[0]
+
+    result = await db.execute(stmt)
+    loop_ids = [str(r[0]) for r in result.all()]
+
+    # 查询实时自控率
+    rate_data = await query_realtime_auto_rate(db, loop_ids)
+
+    if rate_data is None:
+        data = {
+            "plantNodeId": plantNodeId,
+            "plantNodeName": plant_node_name,
+            "autoCount": 0,
+            "manualCount": 0,
+            "totalCount": 0,
+            "autoRate": 0,
+            "readAt": None,
+        }
+    else:
+        data = {
+            "plantNodeId": plantNodeId,
+            "plantNodeName": plant_node_name,
+            "autoCount": rate_data["auto_count"],
+            "manualCount": rate_data["manual_count"],
+            "totalCount": rate_data["total_count"],
+            "autoRate": float(rate_data["rate"]),
+            "readAt": rate_data["read_at"],
+        }
+
+    return success(data=data)
 
 
 __all__ = ["router"]

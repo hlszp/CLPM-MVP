@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
+
+from app.schemas.auth import validate_password_strength
+from app.schemas.base import CamelModel
 
 
-class UserCreateRequest(BaseModel):
+class UserCreateRequest(CamelModel):
     """POST /api/v1/users request body."""
 
     username: str = Field(..., min_length=1, max_length=50, description="用户名")
-    password: str = Field(..., min_length=6, max_length=64, description="密码（明文）")
+    password: str = Field(..., min_length=8, max_length=64, description="密码（明文）")
     displayName: str = Field(..., min_length=1, max_length=100, description="姓名")
     email: str | None = Field(None, max_length=255, description="邮箱")
     role: str = Field(..., description="角色：ADMIN/IC_ENGINEER/PE_ENGINEER/SPONSOR/EXPERT")
@@ -25,14 +28,11 @@ class UserCreateRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password_complexity(cls, v: str) -> str:
-        has_letter = any(c.isalpha() for c in v)
-        has_digit = any(c.isdigit() for c in v)
-        if not (has_letter and has_digit):
-            raise ValueError("密码需包含字母和数字")
-        return v
+        """密码需包含大小写字母、数字和特殊字符（S1-B4 增强）。"""
+        return validate_password_strength(v)
 
 
-class UserUpdateRequest(BaseModel):
+class UserUpdateRequest(CamelModel):
     """PUT /api/v1/users/{id} request body (partial update)."""
 
     displayName: str | None = Field(None, min_length=1, max_length=100)
@@ -51,22 +51,19 @@ class UserUpdateRequest(BaseModel):
         return v
 
 
-class ResetPasswordRequest(BaseModel):
+class ResetPasswordRequest(CamelModel):
     """PUT /api/v1/users/{id}/reset-password request body."""
 
-    newPassword: str = Field(..., min_length=6, max_length=64)
+    newPassword: str = Field(..., min_length=8, max_length=64)
 
     @field_validator("newPassword")
     @classmethod
     def validate_password_complexity(cls, v: str) -> str:
-        has_letter = any(c.isalpha() for c in v)
-        has_digit = any(c.isdigit() for c in v)
-        if not (has_letter and has_digit):
-            raise ValueError("密码需包含字母和数字")
-        return v
+        """密码需包含大小写字母、数字和特殊字符（S1-B4 增强）。"""
+        return validate_password_strength(v)
 
 
-class UserItem(BaseModel):
+class UserItem(CamelModel):
     """User item in list / detail responses."""
 
     id: str
@@ -80,7 +77,7 @@ class UserItem(BaseModel):
     updatedAt: str | None = None
 
 
-class UserListData(BaseModel):
+class UserListData(CamelModel):
     """Paginated user list response data."""
 
     items: list[UserItem]

@@ -119,7 +119,7 @@ export namespace SystemApi {
     name: string;
     reportPeriod: string;
     recipients: string[];
-    contentTemplate?: Record<string, unknown> | null;
+    contentTemplate?: null | Record<string, unknown>;
     isEnabled: boolean;
     createdBy?: string;
     updatedBy?: string;
@@ -132,7 +132,7 @@ export namespace SystemApi {
     name: string;
     reportPeriod: string;
     recipients: string[];
-    contentTemplate?: Record<string, unknown> | null;
+    contentTemplate?: null | Record<string, unknown>;
     isEnabled: boolean;
   }
 
@@ -141,7 +141,7 @@ export namespace SystemApi {
     name?: string;
     reportPeriod?: string;
     recipients?: string[];
-    contentTemplate?: Record<string, unknown> | null;
+    contentTemplate?: null | Record<string, unknown>;
     isEnabled?: boolean;
   }
 
@@ -155,15 +155,15 @@ export namespace SystemApi {
   }
 
   /** 报表任务状态 */
-  export type ReportTaskStatus = 'FAILED' | 'RUNNING' | 'SUCCESS';
+  export type ReportTaskStatus = 'COMPLETED' | 'FAILED' | 'PROCESSING';
 
   /** 报表任务状态查询响应 */
   export interface ReportTaskResult {
     taskId: string;
     status: ReportTaskStatus;
     progress: number;
-    message?: string | null;
-    downloadUrl?: string | null;
+    message?: null | string;
+    downloadUrl?: null | string;
   }
 }
 

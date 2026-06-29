@@ -114,12 +114,17 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * 登出（对齐 IDS v3.2 §5.3）
    * 清空 Store + localStorage，跳转登录页
+   *
+   * 仅在 accessToken 有效时调用后端 logout（黑名单 token）。
+   * doReAuthenticate 触发登出时 token 已被清空，跳过后端调用避免 401 循环。
    */
   async function logout(redirect: boolean = true) {
-    try {
-      await logoutApi();
-    } catch {
-      // 不做任何处理
+    if (accessStore.accessToken) {
+      try {
+        await logoutApi();
+      } catch {
+        // 不做任何处理
+      }
     }
     resetAllStores();
     accessStore.setLoginExpired(false);

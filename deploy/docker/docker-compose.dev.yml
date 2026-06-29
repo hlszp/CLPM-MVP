@@ -15,7 +15,7 @@ services:
     container_name: clpm-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5434:5432"
     environment:
       POSTGRES_USER: clpm
       POSTGRES_PASSWORD: clpm_dev_2026
@@ -50,6 +50,7 @@ services:
     volumes:
       - td_data:/var/lib/taos
       - ../../db/tdengine/01_supertable.sql:/root/init/01_supertable.sql:ro
+      - ./tdengine/taos.cfg:/etc/taos/taos.cfg:ro
     healthcheck:
       test: ["CMD", "taos", "-s", "SELECT SERVER_VERSION();"]
       interval: 10s
@@ -78,6 +79,46 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # Mock Data Server - 模拟远端数据源服务（仅开发环境）
+  # 提供 HistoryDataAppService API + SignalR Hub 模拟
+  # 正式项目可整体移除，不影响主应用
+  # ⚠️ 已停用：数据仿真改由 backend/scripts/realtime_simulator.py 独立运行
+  #    （launchd 开机自启），直接写 TDengine + Redis，不再经由 WebSocket Hub。
+  #    如需临时启用：docker compose --profile mock up -d mock-data-server
+  # ============================================================
+  mock-data-server:
+    profiles: ["mock"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/mock_data_server.Dockerfile
+    container_name: clpm-mock-data-server
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      TDENGINE_HOST: tdengine
+      TDENGINE_PORT: "6030"
+      TDENGINE_USER: root
+      TDENGINE_PASSWORD: taosdata
+      TDENGINE_DB: clpm_ts
+      MOCK_DATA_SERVER_PORT: "8100"
+      REALTIME_INTERVAL: "1.0"
+      # 质量码异常比例（0.0=全部Good, 0.1=10%Bad），模拟工控采集场景
+      QUALITY_BAD_RATIO: "0.10"
+      TZ: Asia/Shanghai
+    depends_on:
+      tdengine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - clpm-net
 

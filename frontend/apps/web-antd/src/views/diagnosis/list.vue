@@ -3,7 +3,9 @@
  * S4-DIAG-008 诊断列表页
  *
  * 对齐 IDS v3.2 §2.4 + PRD §4.4
- * - 筛选栏（装置选择/诊断标签选择/处理状态选择/时间窗选择）
+ * - 顶部 KpiStrip：待处理 / 处理中 / 近 7 天新增
+ * - Partial 警告横幅：INCONCLUSIVE 回路提示
+ * - 筛选栏（装置/诊断标签/处理状态/可信度等级/时间窗）
  * - 表格展示诊断列表（回路位号/装置/评分/诊断标签/置信度/处理状态/诊断时间/操作）
  * - 诊断标签使用 Tag 组件，按颜色区分
  * - 置信度使用进度条显示
@@ -15,17 +17,43 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, Progress, Select, Table, Tag } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  message,
+  Progress,
+  Select,
+  Table,
+  Tag,
+} from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import type { KpiStripItem } from '#/components/clpm';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_OPTIONS,
+  getDiagnosisLabelName,
+} from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { $t } from '#/locales';
+import { flattenNodes } from '#/utils/plant-node';
+
+import Tracker from './tracker.vue';
 
 defineOptions({ name: 'DiagnosisList' });
+
+const { themeColors } = useClpmTheme();
+
+/** 可信度等级（对齐 ConfidenceEvaluator A/B/C/D/E） */
+type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
 
 const router = useRouter();
 
@@ -34,44 +62,31 @@ const diagnosisList = ref<DiagnosisApi.DiagnosisListItem[]>([]);
 const total = ref(0);
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 
+/** 异常跟踪抽屉状态（FDS §5.4：从诊断列表页右侧滑出） */
+const trackerDrawerVisible = ref(false);
+const trackerLoopId = ref('');
+
 const query = reactive({
   plantNodeId: undefined as string | undefined,
   diagnosisLabel: undefined as DiagnosisLabel | undefined,
   actionStatus: undefined as DiagnosisApi.ActionStatus | undefined,
+  confidenceLevel: undefined as ConfidenceLevel | undefined,
   timeWindow: 'last_7_days' as DiagnosisApi.TimeWindow,
   page: 1,
   pageSize: 20,
 });
 
 /** 8 类诊断标签选项 */
-const labelOptions: { label: string; value: DiagnosisLabel }[] = [
-  { label: '振荡', value: 'OSCILLATION' },
-  { label: '阀门粘滞', value: 'VALVE_STICTION' },
-  { label: '参数过激', value: 'OVERAGGRESSIVE' },
-  { label: '参数过保守', value: 'OVERCONSERVATIVE' },
-  { label: '外扰频繁', value: 'EXTERNAL_DISTURBANCE' },
-  { label: 'PV 质量异常', value: 'QUALITY_ABNORMAL' },
-  { label: '输出饱和', value: 'OUTPUT_SATURATION' },
-  { label: '人工复核', value: 'MANUAL_REVIEW' },
-];
+const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
 
 /** 标签颜色映射 */
-const labelColorMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
-};
+const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 
 /** 处理状态选项 */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '待处理', value: 'PENDING' },
   { label: '处理中', value: 'IN_PROGRESS' },
-  { label: '已解决', value: 'RESOLVED' },
+  { label: '已实施', value: 'IMPLEMENTED' },
   { label: '已忽略', value: 'IGNORED' },
 ];
 
@@ -79,17 +94,24 @@ const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
 const statusColorMap: Record<DiagnosisApi.ActionStatus, string> = {
   PENDING: 'gold',
   IN_PROGRESS: 'blue',
-  RESOLVED: 'green',
+  IMPLEMENTED: 'green',
   IGNORED: 'default',
 };
 
-/** 时间窗选项 */
+/** 时间窗选项（对齐后端 _build_time_window_condition 支持的值） */
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
-  { label: '今天', value: 'today' },
-  { label: '昨天', value: 'yesterday' },
   { label: '近 24 小时', value: 'last_24_hours' },
   { label: '近 7 天', value: 'last_7_days' },
   { label: '近 30 天', value: 'last_30_days' },
+];
+
+/** 可信度等级选项（对齐 ConfidenceEvaluator A/B/C/D/E，valid_rate 阈值 95/80/60/20%） */
+const confidenceLevelOptions: { label: string; value: ConfidenceLevel }[] = [
+  { label: 'A级（≥95%）', value: 'A' },
+  { label: 'B级（80~95%）', value: 'B' },
+  { label: 'C级（60~80%）', value: 'C' },
+  { label: 'D级（20~60%）', value: 'D' },
+  { label: 'E级（<20%，不确定）', value: 'E' },
 ];
 
 const columns: TableColumnsType = [
@@ -139,22 +161,8 @@ const columns: TableColumnsType = [
     key: 'diagnosedAt',
     width: 170,
   },
-  { title: '操作', key: 'action', width: 110, fixed: 'right' },
+  { title: '操作', key: 'action', width: 180, fixed: 'right' },
 ];
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -203,6 +211,103 @@ function handleViewDetail(loopId: string) {
   router.push(`/diagnosis/detail/${loopId}`);
 }
 
+/** 打开异常跟踪抽屉（FDS §5.4） */
+function handleOpenTracker(loopId: string) {
+  trackerLoopId.value = loopId;
+  trackerDrawerVisible.value = true;
+}
+
+/** 工具栏：刷新 */
+function handleRefresh() {
+  loadList();
+}
+
+/** 工具栏：导出 */
+function handleExport() {
+  message.info('导出功能开发中');
+}
+
+/** 工具栏：批量处理 */
+function handleBatchProcess() {
+  message.info('批量处理功能开发中');
+}
+
+/**
+ * 根据诊断 confidence（0~1）推导可信度等级
+ * 对齐 ConfidenceEvaluator A/B/C/D/E 阈值（95/80/60/20%）
+ *
+ * 注：DiagnosisListItem 暂无 good_value_rate 字段，使用 confidence 作为代理
+ */
+function deriveConfidenceLevel(confidence: number): ConfidenceLevel | '—' {
+  const rate = confidence * 100;
+  if (rate >= 95) return 'A';
+  if (rate >= 80) return 'B';
+  if (rate >= 60) return 'C';
+  if (rate >= 20) return 'D';
+  if (rate > 0) return 'E';
+  return '—';
+}
+
+/** KpiStrip 摘要指标：待处理 / 处理中 / 近 7 天新增 */
+const kpiStripItems = computed<KpiStripItem[]>(() => {
+  const pendingCount = diagnosisList.value.filter(
+    (item) => item.actionStatus === 'PENDING',
+  ).length;
+  const inProgressCount = diagnosisList.value.filter(
+    (item) => item.actionStatus === 'IN_PROGRESS',
+  ).length;
+  const sevenDaysAgo = dayjs().subtract(7, 'day');
+  const recentNewCount = diagnosisList.value.filter((item) =>
+    item.diagnosedAt ? dayjs(item.diagnosedAt).isAfter(sevenDaysAgo) : false,
+  ).length;
+
+  return [
+    {
+      key: 'pending',
+      label: '待处理',
+      value: pendingCount,
+      unit: '条',
+      status: 'warning',
+    },
+    {
+      key: 'in_progress',
+      label: '处理中',
+      value: inProgressCount,
+      unit: '条',
+      status: 'primary',
+    },
+    {
+      key: 'recent_new',
+      label: '近 7 天新增',
+      value: recentNewCount,
+      unit: '条',
+      status: 'neutral',
+    },
+  ];
+});
+
+/** INCONCLUSIVE 回路数（可信度等级为 E，即 valid_rate < 20%） */
+const inconclusiveCount = computed(
+  () =>
+    diagnosisList.value.filter(
+      (item) => deriveConfidenceLevel(item.confidence) === 'E',
+    ).length,
+);
+
+/** 是否显示 INCONCLUSIVE 警告横幅 */
+const showInconclusiveAlert = computed(() => inconclusiveCount.value > 0);
+
+/**
+ * 按可信度等级前端过滤（后端暂不支持该筛选条件）
+ * 注意：仅过滤当前页数据，分页总数仍为 API 返回值
+ */
+const filteredDiagnosisList = computed(() => {
+  if (!query.confidenceLevel) return diagnosisList.value;
+  return diagnosisList.value.filter(
+    (item) => deriveConfidenceLevel(item.confidence) === query.confidenceLevel,
+  );
+});
+
 function formatTime(t: string): string {
   if (!t) return '—';
   try {
@@ -214,13 +319,13 @@ function formatTime(t: string): string {
 
 /** 置信度颜色 */
 function confidenceColor(val: number): string {
-  if (val >= 0.8) return '#52c41a';
-  if (val >= 0.5) return '#faad14';
-  return '#ff4d4f';
+  if (val >= 0.8) return themeColors.value.SUCCESS;
+  if (val >= 0.5) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 function labelName(label: DiagnosisLabel): string {
-  return labelOptions.find((o) => o.value === label)?.label || label;
+  return getDiagnosisLabelName(label);
 }
 
 function statusName(status: DiagnosisApi.ActionStatus): string {
@@ -230,7 +335,7 @@ function statusName(status: DiagnosisApi.ActionStatus): string {
 /** Progress 格式化函数（兼容 number | undefined） */
 function formatPercent(p: number | undefined): string {
   if (p === undefined || p === null || Number.isNaN(p)) return '—';
-  return `${p.toFixed(2)}%`;
+  return `${p?.toFixed(2) ?? '0.00'}%`;
 }
 
 onMounted(() => {
@@ -240,13 +345,46 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="诊断列表">
-    <Card>
+  <Page>
+    <ClpmPageToolbar
+      :title="$t('diagnosis.list.title')"
+      subtitle="按诊断标签、状态和时间窗查看异常对象，并快速进入详情或异常跟踪。"
+    >
+      <template #actions>
+        <ClpmToolbarButton
+          icon="refresh"
+          label="刷新"
+          :loading="loading"
+          @click="handleRefresh"
+        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+        <ClpmToolbarButton
+          icon="ant-design:thunderbolt-outlined"
+          label="批量处理"
+          variant="primary"
+          @click="handleBatchProcess"
+        />
+      </template>
+    </ClpmPageToolbar>
+
+    <!-- 顶部 KpiStrip：待处理 / 处理中 / 近 7 天新增 -->
+    <ClpmKpiStrip class="mt-4" :items="kpiStripItems" :loading="loading" />
+
+    <!-- Partial 警告横幅：INCONCLUSIVE 回路提示 -->
+    <Alert
+      v-if="showInconclusiveAlert"
+      class="mt-3"
+      type="warning"
+      show-icon
+      :message="`当前有 ${inconclusiveCount} 个回路评估结果为不确定（INCONCLUSIVE），建议检查数据质量后重新评估`"
+    />
+
+    <ClpmDataCanvas class="mt-3" title="诊断列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
           v-model:value="query.plantNodeId"
-          placeholder="装置/单元筛选"
+          :placeholder="$t('diagnosis.list.plantNodePlaceholder')"
           style="width: 220px"
           allow-clear
           :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
@@ -254,7 +392,7 @@ onMounted(() => {
         />
         <Select
           v-model:value="query.diagnosisLabel"
-          placeholder="诊断标签"
+          :placeholder="$t('diagnosis.list.labelPlaceholder')"
           style="width: 160px"
           allow-clear
           :options="labelOptions"
@@ -269,6 +407,13 @@ onMounted(() => {
           @change="handleSearch"
         />
         <Select
+          v-model:value="query.confidenceLevel"
+          placeholder="可信度等级"
+          style="width: 180px"
+          allow-clear
+          :options="confidenceLevelOptions"
+        />
+        <Select
           v-model:value="query.timeWindow"
           style="width: 140px"
           :options="timeWindowOptions"
@@ -281,7 +426,7 @@ onMounted(() => {
 
       <Table
         :columns="columns"
-        :data-source="diagnosisList"
+        :data-source="filteredDiagnosisList"
         :loading="loading"
         :pagination="{
           current: query.page,
@@ -291,7 +436,7 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
-        :scroll="{ x: 1300 }"
+        :scroll="{ x: 1370 }"
         size="middle"
         :custom-row="
           (record: DiagnosisApi.DiagnosisListItem) => ({
@@ -348,9 +493,24 @@ onMounted(() => {
             >
               查看详情
             </Button>
+            <Button
+              type="link"
+              size="small"
+              @click.stop="handleOpenTracker(record.loopId)"
+            >
+              异常跟踪
+            </Button>
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
+
+    <!-- 异常跟踪抽屉（FDS §5.4：从右侧滑出） -->
+    <Tracker
+      v-if="trackerDrawerVisible"
+      :drawer-mode="true"
+      :loop-id="trackerLoopId"
+      @close="trackerDrawerVisible = false"
+    />
   </Page>
 </template>

@@ -1,14 +1,20 @@
 <script lang="ts" setup>
 /**
- * S2-LOOP-007 工厂层级配置页
+ * @deprecated FE-04：本页已废弃，请使用 /loop/manage（回路管理整合页）。
+ * 路由已重定向到 /loop/manage，本文件仅保留以兼容旧链接。
+ *
+ * S2-LOOP-007 工厂模型配置页
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.1 ~ §2.2.4
- * - 左侧 Ant Design Tree 展示工厂层级（工厂→装置→单元）
- * - 右侧显示选中节点详情
+ * - 左侧 Ant Design Tree 展示工厂模型（工厂→装置→单元）
+ * - 右侧显示选中节点详情（名称/类型/层级路径）
  * - 支持新增/编辑/删除节点（Modal + Form）
  * - 删除有子节点时弹窗提示
+ * - 支持导入/导出 Excel
  * - RBAC: 仅 ADMIN 可写
  */
+import type { UploadProps } from 'ant-design-vue';
+
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onMounted, reactive, ref } from 'vue';
@@ -26,6 +32,7 @@ import {
   Popconfirm,
   Select,
   Tree,
+  Upload,
 } from 'ant-design-vue';
 
 import {
@@ -34,12 +41,13 @@ import {
   getPlantNodeTreeApi,
   updatePlantNodeApi,
 } from '#/api/plant-node';
+import { requestClient } from '#/api/request';
 
 defineOptions({ name: 'LoopFactory' });
 
 interface TreeNode {
   children?: TreeNode[];
-  key: string | number;
+  key: number | string;
   node: PlantNodeApi.PlantNode;
   title: string;
 }
@@ -71,6 +79,10 @@ const nodeTypeLabel: Record<PlantNodeApi.NodeType, string> = {
   UNIT: '装置/单元',
 };
 
+// 导入导出 state
+const importing = ref(false);
+const exporting = ref(false);
+
 /** 将后端 PlantNode 转为 Ant Design Tree 节点 */
 function toTreeNode(node: PlantNodeApi.PlantNode): TreeNode {
   return {
@@ -81,7 +93,7 @@ function toTreeNode(node: PlantNodeApi.PlantNode): TreeNode {
   };
 }
 
-/** 加载工厂层级树 */
+/** 加载工厂模型树 */
 async function loadTree() {
   loading.value = true;
   try {
@@ -202,16 +214,89 @@ const nodePath = computed(() => {
   return findNodePath(allNodes, selectedNode.value.id) || [];
 });
 
+/** 层级路径字符串 */
+const nodePathText = computed(() =>
+  nodePath.value.map((n) => n.name).join(' / '),
+);
+
+// ===== 导入导出方法 =====
+
+/** 导出工厂模型 Excel */
+async function handleExport() {
+  exporting.value = true;
+  try {
+    const blob = await requestClient.download<Blob>('/plant-nodes/export');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `工厂模型_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    message.success('导出成功');
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    exporting.value = false;
+  }
+}
+
+/** 导入工厂模型 Excel（Upload beforeUpload 钩子） */
+function handleImportBeforeUpload(file: File): boolean {
+  importing.value = true;
+  const formData = new FormData();
+  formData.append('file', file);
+  requestClient
+    .post('/plant-nodes/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    .then(() => {
+      message.success('导入成功');
+      loadTree();
+    })
+    .catch(() => {
+      // 错误已由拦截器处理
+    })
+    .finally(() => {
+      importing.value = false;
+    });
+  // 返回 false 阻止 Upload 组件默认上传行为
+  return false;
+}
+
+const uploadAccept = '.xlsx,.xls';
+
+const uploadProps: UploadProps = {
+  accept: uploadAccept,
+  showUploadList: false,
+  beforeUpload: handleImportBeforeUpload as UploadProps['beforeUpload'],
+};
+
 onMounted(() => {
   loadTree();
 });
 </script>
 
 <template>
-  <Page title="工厂层级配置">
-    <div class="flex gap-4" style="height: calc(100vh - 140px)">
+  <Page title="工厂模型">
+    <!-- 顶部操作区：导入导出 -->
+    <div class="mb-4 flex items-center justify-end gap-2">
+      <Upload v-bind="uploadProps">
+        <Button v-permission="['ADMIN']" :loading="importing">导入</Button>
+      </Upload>
+      <Button
+        v-permission="['ADMIN']"
+        :loading="exporting"
+        @click="handleExport"
+      >
+        导出
+      </Button>
+    </div>
+
+    <div class="flex gap-4" style="height: calc(100vh - 200px)">
       <!-- 左侧树 -->
-      <Card class="w-1/2 min-w-300px" title="工厂层级">
+      <Card class="w-1/2 min-w-300px" title="工厂模型">
         <template #extra>
           <Button
             v-permission="['ADMIN']"
@@ -274,38 +359,20 @@ onMounted(() => {
           v-if="!loading && (!treeData || treeData.length === 0)"
           class="py-8 text-center text-gray-400"
         >
-          暂无工厂层级数据，请点击"新增顶层节点"创建
+          暂无工厂模型数据，请点击"新增顶层节点"创建
         </div>
       </Card>
 
-      <!-- 右侧详情 -->
+      <!-- 右侧详情（简化：仅名称/类型/层级路径） -->
       <Card class="w-1/2" title="节点详情">
         <div v-if="selectedNode" class="space-y-4">
           <div class="border-b pb-3">
             <div class="mb-1 text-xs text-gray-400">节点名称</div>
             <div class="text-lg font-medium">{{ selectedNode.name }}</div>
           </div>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <div class="mb-1 text-xs text-gray-400">节点类型</div>
-              <div>{{ nodeTypeLabel[selectedNode.type] }}</div>
-            </div>
-            <div>
-              <div class="mb-1 text-xs text-gray-400">节点 ID</div>
-              <div class="break-all text-sm text-gray-600">
-                {{ selectedNode.id }}
-              </div>
-            </div>
-            <div>
-              <div class="mb-1 text-xs text-gray-400">父节点 ID</div>
-              <div class="break-all text-sm text-gray-600">
-                {{ selectedNode.parentId || '—（顶层节点）' }}
-              </div>
-            </div>
-            <div>
-              <div class="mb-1 text-xs text-gray-400">子节点数量</div>
-              <div>{{ selectedNode.children?.length || 0 }}</div>
-            </div>
+          <div>
+            <div class="mb-1 text-xs text-gray-400">节点类型</div>
+            <div>{{ nodeTypeLabel[selectedNode.type] }}</div>
           </div>
           <div>
             <div class="mb-1 text-xs text-gray-400">层级路径</div>
@@ -316,6 +383,7 @@ onMounted(() => {
                   /
                 </span>
               </template>
+              <span v-if="!nodePathText" class="text-gray-400">—</span>
             </div>
           </div>
           <div class="flex gap-2 pt-2">

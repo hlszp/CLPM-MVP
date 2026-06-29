@@ -90,12 +90,13 @@ def trigger_sync() -> dict:
 # ---------------------------------------------------------------------------
 
 
-celery_app.conf.beat_schedule = {
-    "aas-tag-sync-every-5-minutes": {
-        "task": "app.tasks.aas_sync.sync_aas_tags",
-        "schedule": 300.0,  # 5 分钟
-    },
+# 追加方式注册 Beat 任务（避免覆盖其他模块的 beat_schedule）
+_existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
+_existing_beat["aas-tag-sync-every-5-minutes"] = {
+    "task": "app.tasks.aas_sync.sync_aas_tags",
+    "schedule": 300.0,  # 5 分钟
 }
+celery_app.conf.beat_schedule = _existing_beat
 celery_app.conf.timezone = "Asia/Shanghai"
 
 

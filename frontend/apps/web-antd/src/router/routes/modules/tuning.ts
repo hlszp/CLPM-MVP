@@ -16,8 +16,8 @@ const routes: RouteRecordRaw[] = [
   {
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'EXPERT'],
-      badge: 'P2',
-      badgeVariants: 'warning',
+      badge: 'Beta',
+      badgeVariants: 'default',
       icon: 'lucide:settings-2',
       order: 5,
       title: '回路整定',

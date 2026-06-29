@@ -90,9 +90,23 @@ function setupAccessGuard(router: Router) {
       return true;
     }
 
+    // 验证 accessToken 是否有效并获取用户信息（防止 token 过期但仍在 localStorage 中）
+    let userInfo;
+    try {
+      userInfo = await authStore.fetchUserInfo();
+    } catch {
+      // token 无效或过期，清空并跳转登录页
+      accessStore.setAccessToken(null);
+      accessStore.setRefreshToken(null);
+      return {
+        path: LOGIN_PATH,
+        query: { redirect: encodeURIComponent(to.fullPath) },
+        replace: true,
+      };
+    }
+
     // 生成路由表
     // 当前登录用户拥有的角色标识列表
-    const userInfo = userStore.userInfo || (await authStore.fetchUserInfo());
     const userRoles = userInfo.roles ?? [];
 
     // 生成菜单和路由

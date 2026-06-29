@@ -1,9 +1,9 @@
 """Action Tracker service (IDS v3.2 §2.4.6~2.4.7 — S4-DIAG-005).
 
 业务逻辑：
-- 状态管理（PENDING/IN_PROGRESS/RESOLVED/IGNORED）
+- 状态管理（PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED）
 - 状态变更记录审计日志
-- RESOLVED 状态时自动生成 A/B 对比视图
+- IMPLEMENTED 状态时自动生成 A/B 对比视图
 - PDF 导出为异步任务（Phase 1 返回模拟任务 ID）
 """
 
@@ -27,7 +27,7 @@ from app.models.tracker import ActionTracker
 logger = logging.getLogger(__name__)
 
 # 有效状态枚举
-VALID_STATUSES = ("PENDING", "IN_PROGRESS", "RESOLVED", "IGNORED")
+VALID_STATUSES = ("PENDING", "IN_PROGRESS", "IMPLEMENTED", "IGNORED")
 
 
 async def update_tracker_status(
@@ -42,7 +42,7 @@ async def update_tracker_status(
     """更新 Action Tracker 状态。
 
     - 仅 IC_ENGINEER 可操作（在 endpoint 层鉴权）
-    - 标记 RESOLVED 后自动生成 A/B 对比视图
+    - 标记 IMPLEMENTED 后自动生成 A/B 对比视图
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_TRACKER_NOT_FOUND
@@ -109,7 +109,7 @@ async def update_tracker_status(
     if evidence_url is not None:
         tracker.evidence_url = evidence_url
     tracker.updated_by = operator
-    tracker.updated_at = datetime.utcnow()
+    tracker.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
     after_json = json.dumps(
         {
@@ -131,15 +131,15 @@ async def update_tracker_status(
         target_id=str(tracker.id),
         before_value=before_json,
         after_value=after_json,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(audit_log)
 
     await db.commit()
 
-    # RESOLVED 状态时自动生成 A/B 对比视图
+    # IMPLEMENTED 状态时自动生成 A/B 对比视图
     ab_comparison = None
-    if status == "RESOLVED":
+    if status == "IMPLEMENTED":
         ab_comparison = await _generate_ab_comparison(db, loop_id, tracker)
 
     return {
@@ -171,7 +171,7 @@ async def _generate_ab_comparison(
     )
     diag = diag_result.scalar_one_or_none()
 
-    resolved_at = tracker.updated_at or datetime.utcnow()
+    resolved_at = tracker.updated_at or datetime.now(UTC).replace(tzinfo=None)
     if resolved_at.tzinfo is None:
         resolved_at = resolved_at.replace(tzinfo=UTC)
 
@@ -194,8 +194,7 @@ async def _generate_ab_comparison(
             "startTime": after_start,
             "endTime": after_end,
             "waveformUrl": (
-                f"/api/v1/timeseries/{loop_id}/waveform"
-                f"?startTime={after_start}&endTime={after_end}"
+                f"/api/v1/timeseries/{loop_id}/waveform?startTime={after_start}&endTime={after_end}"
             ),
         },
         "diagnosisLabel": tracker.diagnosis_label,

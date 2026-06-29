@@ -85,3 +85,31 @@ export function deletePlantNodeApi(nodeId: string) {
     `/plant-nodes/${nodeId}`,
   );
 }
+
+/**
+ * 导出工厂节点 Excel
+ */
+export function exportPlantNodesApi() {
+  return requestClient.get<Blob>('/plant-nodes/export', {
+    responseType: 'blob',
+  });
+}
+
+/**
+ * 导入工厂节点 Excel
+ */
+export function importPlantNodesApi(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return requestClient.post<{
+    total: number;
+    inserted: number;
+    updated: number;
+    failed: number;
+    errors: string[];
+  }>('/plant-nodes/import', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+}

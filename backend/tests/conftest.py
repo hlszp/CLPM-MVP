@@ -6,11 +6,16 @@ run without external dependencies (no PostgreSQL/Redis required).
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+# CI 环境兜底：确保 JWT_SECRET_KEY 和 DEBUG 在导入 app 之前已设置
+os.environ.setdefault("JWT_SECRET_KEY", "ci-test-secret-key-at-least-32-characters-long!!!")
+os.environ.setdefault("DEBUG", "true")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,7 +26,7 @@ from app.core.security import hash_password
 # In-memory test users
 # ---------------------------------------------------------------------------
 
-TEST_PASSWORD = "admin123"
+TEST_PASSWORD = "Admin@123"
 TEST_PASSWORD_HASH = hash_password(TEST_PASSWORD)
 
 
@@ -69,12 +74,20 @@ class FakeRedis:
         self._strings: dict[str, str] = {}
         self._sets: dict[str, set[str]] = {}
         self._ttls: dict[str, float] = {}
+        # _client attr: close_redis() accesses redis_client._client on shutdown
+        self._client = None
 
     async def get(self, key: str) -> str | None:
         return self._strings.get(key)
 
-    async def set(self, key: str, value: str, **kwargs: Any) -> None:
+    async def set(self, key: str, value: str, **kwargs: Any) -> str | None:
+        """Set a key. Supports nx (only if not exists) and ex (TTL) kwargs."""
+        if kwargs.get("nx") and key in self._strings:
+            return None
         self._strings[key] = value
+        if "ex" in kwargs:
+            self._ttls[key] = float(kwargs["ex"])
+        return value
 
     async def setex(self, key: str, ttl: int, value: str) -> None:
         self._strings[key] = value
@@ -122,10 +135,108 @@ class FakeRedis:
         self._sets.clear()
         self._ttls.clear()
 
+    def pipeline(self):
+        """Return a mock pipeline for batch operations (L1DataBlockCache)."""
+        return _FakePipeline(self)
+
+    def scan_iter(self, match: str, count: int = 100):
+        """Synchronous scan iterator (CacheInvalidator compatibility)."""
+        import fnmatch
+
+        for key in list(self._strings.keys()):
+            if fnmatch.fnmatch(key, match.replace("*", "*")):
+                yield key
+
+    async def keys(self, pattern: str) -> list[str]:
+        """Pattern-matching key search (CacheInvalidator compatibility)."""
+        import fnmatch
+
+        return [k for k in self._strings.keys() if fnmatch.fnmatch(k, pattern)]
+
+    async def info(self, section: str | None = None) -> dict[str, Any]:
+        """Redis INFO command mock (CacheStats compatibility)."""
+        return {
+            "memory": {"used_memory": 1024 * 100, "used_memory_human": "100K"},
+            "stats": {"keyspace_hits": 10, "keyspace_misses": 5},
+        }
+
+
+class _FakePipeline:
+    """Mock Redis pipeline for batch operations."""
+
+    def __init__(self, redis: FakeRedis) -> None:
+        self._redis = redis
+        self._ops: list[tuple[str, str, Any]] = []
+
+    def set(self, key: str, value: str, ex: int | None = None) -> _FakePipeline:
+        self._ops.append(("set", key, {"value": value, "ex": ex}))
+        return self
+
+    def delete(self, key: str) -> _FakePipeline:
+        self._ops.append(("delete", key, {}))
+        return self
+
+    async def execute(self) -> list[Any]:
+        results: list[Any] = []
+        for op, key, kwargs in self._ops:
+            if op == "set":
+                self._redis._strings[key] = kwargs["value"]
+                if kwargs.get("ex"):
+                    self._redis._ttls[key] = float(kwargs["ex"])
+                results.append(True)
+            elif op == "delete":
+                deleted = 0
+                if key in self._redis._strings:
+                    del self._redis._strings[key]
+                    deleted += 1
+                results.append(deleted)
+        self._ops.clear()
+        return results
+
+    async def __aenter__(self) -> _FakePipeline:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+def _make_universal_db_result() -> MagicMock:
+    """构造通用 DB execute 结果，支持所有结果访问方式。
+
+    用于 dashboard 并行查询的 mock session，返回空/零/None 默认值。
+    各方法返回值：
+    - scalars().all() → []（空列表，用于 _build_inefficient_loops / _build_pending_alerts）
+    - scalar() → 0（用于 _build_pending_alerts diag count）
+    - scalar_one_or_none() → None（用于 _get_plant_name）
+    - one() → 空聚合行（cnt=0，所有字段 None，用于 _aggregate_kpi_cards_sql /
+      _aggregate_counts_sql）
+    - all() → []（空列表，用于 _aggregate_trend_summary_sql /
+      _batch_query_diagnosis_labels）
+    """
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    result.scalar.return_value = 0
+    result.scalar_one_or_none.return_value = None
+    # 空聚合行：所有 cur_/prev_ 字段为 None，cnt 为 0
+    empty_row = MagicMock()
+    empty_row.cur_cnt = 0
+    empty_row.prev_cnt = 0
+    empty_row.cur_score = None
+    empty_row.prev_score = None
+    empty_row.cur_auto_mode_rate = None
+    empty_row.prev_auto_mode_rate = None
+    empty_row.cur_steady_rate = None
+    empty_row.prev_steady_rate = None
+    empty_row.cur_good_value_rate = None
+    empty_row.prev_good_value_rate = None
+    result.one.return_value = empty_row
+    result.all.return_value = []
+    return result
 
 
 @pytest.fixture
@@ -146,21 +257,49 @@ def mock_db() -> AsyncMock:
 
 
 @pytest.fixture
+def mock_dashboard_session_local() -> AsyncMock:
+    """Patch app.services.dashboard.AsyncSessionLocal for service-layer tests.
+
+    Yields the mock parallel session whose execute returns a universal result.
+    """
+    universal_result = _make_universal_db_result()
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=universal_result)
+    with patch("app.services.dashboard.AsyncSessionLocal") as mock_factory:
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+        yield mock_session
+
+
+@pytest.fixture
 def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
     """Provide a TestClient with DB and Redis mocked out.
 
     The mock Redis is installed at module level so all auth service functions
     pick it up. The mock DB is injected via FastAPI dependency override.
+    AsyncSessionLocal is patched so dashboard parallel queries use a mock session.
     """
     from app.core.db import get_db
     from app.main import app
 
-    # Patch the redis_client used by the auth/dashboard services.
+    # 构造通用 DB 结果 mock（用于 dashboard 并行查询的独立 session）
+    universal_result = _make_universal_db_result()
+    mock_parallel_session = AsyncMock()
+    mock_parallel_session.execute = AsyncMock(return_value=universal_result)
+
+    # Patch the redis_client used by the auth/dashboard services and rate limit middleware.
     with (
         patch("app.core.redis.redis_client", fake_redis),
         patch("app.services.auth.redis_client", fake_redis),
         patch("app.services.dashboard.redis_client", fake_redis),
+        patch("app.middleware.rate_limit.redis_client", fake_redis),
+        patch("app.middleware.idempotency.redis_client", fake_redis),
+        patch("app.services.dashboard.AsyncSessionLocal") as mock_session_local,
     ):
+        # 配置 AsyncSessionLocal mock：每次 async with 返回 mock_parallel_session
+        mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_parallel_session)
+        mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
+
         # Override DB dependency to return our mock session.
         async def _override_db():
             yield mock_db

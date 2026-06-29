@@ -2,25 +2,32 @@
 /**
  * S7-TUNE-004 闭环仿真页
  *
+ * C6 改造：仿真图优先布局
+ * - 顶部工具栏：运行仿真/重置/导出（ClpmToolbarButton 图标化）
+ * - 常驻风险提示横幅
+ * - ObjectSummaryBar：PID 对比 + 改善幅度主指标
+ * - 主区域左 70%：风险提示卡 + 仿真对比图 + 性能指标表（改善/退化标识）
+ * - 主区域右 30%：参数配置表单 + 保存仿真结果
+ *
  * 对齐 IDS v3.2 §2.5 + PRD §4.5
- * - 顶部参数输入区（模型类型/模型参数/当前 PID/推荐 PID/仿真参数）
- * - 中部仿真对比图（ECharts 双 Y 轴：左 PV/SP，右 OP）
- * - 性能指标对比表格（上升时间/超调量/稳定时间/ITAE）
- * - 底部保存仿真结果（调用 createTuningTaskApi）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { TuningApi } from '#/api/tuning';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import { IconifyIcon } from '@vben/icons';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
+  Alert,
   Button,
   Card,
+  Descriptions,
+  DescriptionsItem,
   Form,
   FormItem,
   InputNumber,
@@ -28,17 +35,22 @@ import {
   Select,
   Spin,
   Table,
+  Tag,
 } from 'ant-design-vue';
 
+import { ClpmDataCanvas, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import type { SummaryAction, SummaryItem } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningSimulation' });
 
 const route = useRoute();
+const { isDark, themeColors, chartTextColor } = useClpmTheme();
 
 const loading = ref(false);
 const saving = ref(false);
-const simulationResult = ref<TuningApi.SimulationResult | null>(null);
+const simulationResult = ref<null | TuningApi.SimulationResult>(null);
 const loopId = ref<string>((route.query.loopId as string) || '');
 
 /** 模型类型选项 */
@@ -71,7 +83,7 @@ const form = reactive({
   recommendedPid: { kp: 1.2, ti: 8, td: 0.5 } as TuningApi.PidParams,
   simDuration: 600,
   simStep: 1,
-  setpointStep: 1.0,
+  setpointStep: 1,
   disturbanceType: 'none' as TuningApi.DisturbanceType,
 });
 
@@ -87,17 +99,17 @@ const modelParamFields = computed<
         { key: 'theta', label: 'θ (死区时间)' },
       ];
     }
+    case 'IPDT': {
+      return [
+        { key: 'K', label: 'K (增益)' },
+        { key: 'theta', label: 'θ (死区时间)' },
+      ];
+    }
     case 'SOPDT': {
       return [
         { key: 'K', label: 'K (增益)' },
         { key: 'T1', label: 'T1 (时间常数1)' },
         { key: 'T2', label: 'T2 (时间常数2)' },
-        { key: 'theta', label: 'θ (死区时间)' },
-      ];
-    }
-    case 'IPDT': {
-      return [
-        { key: 'K', label: 'K (增益)' },
         { key: 'theta', label: 'θ (死区时间)' },
       ];
     }
@@ -113,13 +125,13 @@ const { renderEcharts } = useEcharts(chartRef);
 
 /** 性能指标表格列 */
 const metricColumns = [
-  { title: '性能指标', dataIndex: 'name', key: 'name', width: 160 },
-  { title: '当前 PID', dataIndex: 'current', key: 'current', width: 160 },
+  { title: '性能指标', dataIndex: 'name', key: 'name', width: 120 },
+  { title: '当前 PID', dataIndex: 'current', key: 'current', width: 130 },
   {
     title: '推荐 PID',
     dataIndex: 'recommended',
     key: 'recommended',
-    width: 160,
+    width: 130,
   },
   { title: '改善幅度', dataIndex: 'improvement', key: 'improvement' },
 ];
@@ -136,6 +148,7 @@ const metricRows = computed(() => {
       recommended: formatMetric('riseTime', recommendedMetrics.riseTime),
       improvement: formatImprovement(improvement.riseTime),
       improved: isImproved(improvement.riseTime),
+      improvementLabel: getImprovementLabel(improvement.riseTime),
     },
     {
       name: '超调量',
@@ -143,6 +156,7 @@ const metricRows = computed(() => {
       recommended: formatMetric('overshoot', recommendedMetrics.overshoot),
       improvement: formatImprovement(improvement.overshoot),
       improved: isImproved(improvement.overshoot),
+      improvementLabel: getImprovementLabel(improvement.overshoot),
     },
     {
       name: '稳定时间',
@@ -153,6 +167,7 @@ const metricRows = computed(() => {
       ),
       improvement: formatImprovement(improvement.settlingTime),
       improved: isImproved(improvement.settlingTime),
+      improvementLabel: getImprovementLabel(improvement.settlingTime),
     },
     {
       name: 'ITAE',
@@ -160,6 +175,7 @@ const metricRows = computed(() => {
       recommended: formatMetric('itae', recommendedMetrics.itae),
       improvement: formatImprovement(improvement.itae),
       improved: isImproved(improvement.itae),
+      improvementLabel: getImprovementLabel(improvement.itae),
     },
   ];
 });
@@ -171,15 +187,15 @@ function formatMetric(
 ): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
   switch (key) {
-    case 'riseTime':
-    case 'settlingTime': {
-      return `${val.toFixed(1)} 秒`;
-    }
-    case 'overshoot': {
-      return `${val.toFixed(1)}%`;
-    }
     case 'itae': {
       return val.toExponential(3);
+    }
+    case 'overshoot': {
+      return `${val?.toFixed(1) ?? '0.0'}%`;
+    }
+    case 'riseTime':
+    case 'settlingTime': {
+      return `${val?.toFixed(1) ?? '0.0'} 秒`;
     }
     default: {
       return String(val);
@@ -192,7 +208,7 @@ function formatImprovement(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
   const pct = val * 100;
   const sign = pct >= 0 ? '+' : '';
-  return `${sign}${pct.toFixed(1)}%`;
+  return `${sign}${pct?.toFixed(1) ?? '0.0'}%`;
 }
 
 /** 判断是否改善（减小为改善） */
@@ -201,6 +217,150 @@ function isImproved(val: null | number | undefined): boolean | null {
   // improvement > 0 表示减小（改善）
   return val > 0;
 }
+
+/** 改善/退化/持平语义标签 */
+function getImprovementLabel(val: null | number | undefined): string {
+  if (val === null || val === undefined || Number.isNaN(val)) return '持平';
+  if (val > 0) return '改善';
+  if (val < 0) return '退化';
+  return '持平';
+}
+
+/** ObjectSummaryBar 主指标：综合改善幅度 */
+const primarySummaryItem = computed<SummaryItem | null>(() => {
+  if (!simulationResult.value) return null;
+  const imp = simulationResult.value.improvement || {};
+  const values = Object.values(imp).filter(
+    (v): v is number => v !== null && v !== undefined && !Number.isNaN(v),
+  );
+  if (values.length === 0) {
+    return {
+      key: 'improvement',
+      label: '综合改善幅度',
+      value: '—',
+      status: 'neutral',
+    };
+  }
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  const pct = avg * 100;
+  const sign = pct >= 0 ? '+' : '';
+  return {
+    key: 'improvement',
+    label: '综合改善幅度',
+    value: `${sign}${pct.toFixed(1)}%`,
+    status: pct > 0 ? 'success' : pct < 0 ? 'danger' : 'neutral',
+  };
+});
+
+/** ObjectSummaryBar items：当前 PID vs 推荐 PID（6 个字段） */
+const pidSummaryItems = computed<SummaryItem[]>(() => {
+  if (!simulationResult.value) return [];
+  const fmt = (v: number | undefined) =>
+    v === null || v === undefined || Number.isNaN(v)
+      ? '—'
+      : Number(v).toFixed(3);
+  return [
+    {
+      key: 'cur_kp',
+      label: '当前 Kp',
+      value: fmt(form.currentPid.kp),
+      status: 'neutral',
+    },
+    {
+      key: 'cur_ti',
+      label: '当前 Ti',
+      value: fmt(form.currentPid.ti),
+      status: 'neutral',
+    },
+    {
+      key: 'cur_td',
+      label: '当前 Td',
+      value: fmt(form.currentPid.td),
+      status: 'neutral',
+    },
+    {
+      key: 'rec_kp',
+      label: '推荐 Kp',
+      value: fmt(form.recommendedPid.kp),
+      status: 'primary',
+    },
+    {
+      key: 'rec_ti',
+      label: '推荐 Ti',
+      value: fmt(form.recommendedPid.ti),
+      status: 'primary',
+    },
+    {
+      key: 'rec_td',
+      label: '推荐 Td',
+      value: fmt(form.recommendedPid.td),
+      status: 'primary',
+    },
+  ];
+});
+
+/** ObjectSummaryBar actions */
+const summaryActions = computed<SummaryAction[]>(() => [
+  {
+    key: 'apply',
+    label: '应用建议',
+    icon: 'ant-design:check-outlined',
+    type: 'primary',
+  },
+  {
+    key: 'recalculate',
+    label: '重新计算',
+    icon: 'ant-design:reload-outlined',
+    type: 'default',
+  },
+  {
+    key: 'export',
+    label: '导出报告',
+    icon: 'ant-design:download-outlined',
+    type: 'default',
+  },
+]);
+
+/** 摘要条动作分发 */
+function onSummaryAction(key: string) {
+  if (key === 'apply') {
+    handleSave();
+  } else if (key === 'recalculate') {
+    handleSimulate();
+  } else if (key === 'export') {
+    handleExport();
+  }
+}
+
+/** 风险等级：根据 PID 参数变化幅度推导（后端字段待补，前端先行计算） */
+const riskLevel = computed<'HIGH' | 'LOW' | 'MEDIUM' | null>(() => {
+  if (!simulationResult.value) return null;
+  const cur = form.currentPid;
+  const rec = form.recommendedPid;
+  const kpChange = Math.abs((rec.kp - cur.kp) / (cur.kp || 1));
+  const tiChange = Math.abs((rec.ti - cur.ti) / (cur.ti || 1));
+  const tdChange = cur.td
+    ? Math.abs((rec.td - cur.td) / cur.td)
+    : Math.abs(rec.td);
+  const maxChange = Math.max(kpChange, tiChange, tdChange);
+  if (maxChange >= 0.5) return 'HIGH';
+  if (maxChange >= 0.2) return 'MEDIUM';
+  return 'LOW';
+});
+
+/** 风险等级颜色映射 */
+const riskLevelColorMap: Record<'HIGH' | 'LOW' | 'MEDIUM', string> = {
+  HIGH: 'red',
+  MEDIUM: 'orange',
+  LOW: 'green',
+};
+
+/** 风险等级中文映射 */
+const riskLevelLabelMap: Record<'HIGH' | 'LOW' | 'MEDIUM', string> = {
+  HIGH: '高风险',
+  MEDIUM: '中风险',
+  LOW: '低风险',
+};
 
 /** 从 URL query 解析 JSON 参数 */
 function parseJsonQuery(key: string): unknown {
@@ -286,6 +446,30 @@ async function handleSimulate() {
   }
 }
 
+/** 重置参数 */
+function handleReset() {
+  form.modelType = 'FOPDT';
+  form.modelParams = { K: 1, tau: 10, theta: 2, T1: 10, T2: 5 };
+  form.currentPid = { kp: 1, ti: 10, td: 0 };
+  form.recommendedPid = { kp: 1.2, ti: 8, td: 0.5 };
+  form.simDuration = 600;
+  form.simStep = 1;
+  form.setpointStep = 1;
+  form.disturbanceType = 'none';
+  simulationResult.value = null;
+  renderChart();
+  message.info('已重置参数');
+}
+
+/** 导出报告（占位，待导出接口接入） */
+function handleExport() {
+  if (!simulationResult.value) {
+    message.warning('请先执行仿真');
+    return;
+  }
+  message.info('导出功能开发中');
+}
+
 /** 渲染仿真对比图 */
 function renderChart() {
   const data = simulationResult.value;
@@ -332,7 +516,7 @@ function renderChart() {
     series: [
       {
         data: recommendedResponse.sp,
-        itemStyle: { color: '#52c41a' },
+        itemStyle: { color: themeColors.value.SUCCESS },
         lineStyle: { width: 1.5 },
         name: 'SP 设定值',
         showSymbol: false,
@@ -341,7 +525,7 @@ function renderChart() {
       },
       {
         data: currentResponse.pv,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: '当前 PID PV',
         showSymbol: false,
@@ -350,7 +534,7 @@ function renderChart() {
       },
       {
         data: recommendedResponse.pv,
-        itemStyle: { color: '#ff4d4f' },
+        itemStyle: { color: themeColors.value.DANGER },
         lineStyle: { width: 2 },
         name: '推荐 PID PV',
         showSymbol: false,
@@ -359,7 +543,7 @@ function renderChart() {
       },
       {
         data: currentResponse.op,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { type: 'dashed', width: 1.5 },
         name: '当前 PID OP',
         showSymbol: false,
@@ -368,7 +552,7 @@ function renderChart() {
       },
       {
         data: recommendedResponse.op,
-        itemStyle: { color: '#ff4d4f' },
+        itemStyle: { color: themeColors.value.DANGER },
         lineStyle: { type: 'dashed', width: 1.5 },
         name: '推荐 PID OP',
         showSymbol: false,
@@ -396,13 +580,13 @@ function renderChart() {
       {
         axisLabel: { formatter: '{value}' },
         name: 'PV / SP',
-        nameTextStyle: { color: '#1890ff' },
+        nameTextStyle: { color: chartTextColor.value },
         type: 'value',
       },
       {
         axisLabel: { formatter: '{value}' },
         name: 'OP',
-        nameTextStyle: { color: '#fa8c16' },
+        nameTextStyle: { color: chartTextColor.value },
         splitLine: { show: false },
         type: 'value',
       },
@@ -457,17 +641,135 @@ async function handleSave() {
 
 onMounted(() => {
   initFromQuery();
+  nextTick(() => {
+    renderChart();
+  });
+});
+
+/** 深色模式切换时重绘 ECharts 图表 */
+watch(isDark, () => {
+  nextTick(() => {
+    renderChart();
+  });
 });
 </script>
 
 <template>
-  <Page title="闭环仿真">
-    <!-- 顶部参数输入区 -->
-    <Card class="mb-4" title="参数配置">
-      <Form layout="vertical">
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <!-- 左列：模型配置 -->
-          <div>
+  <Page>
+    <ClpmPageToolbar
+      title="闭环仿真"
+      subtitle="比较当前 PID 与推荐 PID 的响应曲线和性能指标。"
+    >
+      <template #actions>
+        <ClpmToolbarButton
+          icon="run"
+          label="运行仿真"
+          variant="primary"
+          :loading="loading"
+          @click="handleSimulate"
+        />
+        <ClpmToolbarButton
+          icon="ant-design:undo-outlined"
+          label="重置"
+          @click="handleReset"
+        />
+        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+      </template>
+    </ClpmPageToolbar>
+
+    <!-- 常驻风险提示横幅：不可关闭 -->
+    <Alert
+      class="mt-3"
+      type="warning"
+      show-icon
+      banner
+      :closable="false"
+      message="平台只输出整定建议、证据和风险，不直接修改 DCS 参数。参数由授权人员人工实施并留痕。"
+    />
+
+    <!-- 主区域：仿真图优先（左 70%）+ 参数表单（右 30%）-->
+    <div class="mt-4 flex flex-col gap-4 lg:flex-row">
+      <!-- 左侧：仿真图 + 指标（主体） -->
+      <div class="flex flex-1 flex-col gap-4" style="min-width: 0">
+        <!-- PID 对比摘要条 -->
+        <ClpmObjectSummaryBar
+          v-if="simulationResult"
+          title="PID 整定对比"
+          subtitle="当前 PID vs 推荐 PID"
+          :primary-item="primarySummaryItem"
+          :items="pidSummaryItems"
+          :actions="summaryActions"
+          @action="onSummaryAction"
+        />
+
+        <!-- 风险提示区 -->
+        <Card v-if="simulationResult" size="small" title="风险提示">
+          <Descriptions :column="{ xs: 1, sm: 3 }" size="small">
+            <DescriptionsItem label="风险等级">
+              <Tag v-if="riskLevel" :color="riskLevelColorMap[riskLevel]">
+                {{ riskLevelLabelMap[riskLevel] }}（{{ riskLevel }}）
+              </Tag>
+              <span v-else>—</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="回退方案">—</DescriptionsItem>
+            <DescriptionsItem label="适用边界">—</DescriptionsItem>
+          </Descriptions>
+        </Card>
+
+        <!-- 仿真对比图（主体，优先展示） -->
+        <ClpmDataCanvas
+          title="仿真对比图"
+          description="双 Y 轴：左 PV/SP，右 OP。蓝色为当前 PID，红色为推荐 PID。"
+        >
+          <Spin :spinning="loading">
+            <EchartsUI ref="chartRef" height="500px" />
+          </Spin>
+        </ClpmDataCanvas>
+
+        <!-- 性能指标对比表格（改善/退化语义标识） -->
+        <ClpmDataCanvas v-if="simulationResult" title="性能指标对比">
+          <Table
+            :columns="metricColumns"
+            :data-source="metricRows"
+            :pagination="false"
+            :row-key="(record: { name: string }) => record.name"
+            size="middle"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'improvement'">
+                <span
+                  class="inline-flex items-center gap-1 font-medium"
+                  :style="{
+                    color:
+                      record.improved === null
+                        ? themeColors.NEUTRAL
+                        : record.improved
+                          ? themeColors.SUCCESS
+                          : themeColors.DANGER,
+                  }"
+                >
+                  <IconifyIcon
+                    v-if="record.improved === true"
+                    icon="ant-design:rise-outlined"
+                  />
+                  <IconifyIcon
+                    v-else-if="record.improved === false"
+                    icon="ant-design:fall-outlined"
+                  />
+                  <IconifyIcon v-else icon="ant-design:minus-outlined" />
+                  <span>{{ record.improvementLabel }}</span>
+                  <span class="text-gray-500">{{ record.improvement }}</span>
+                </span>
+              </template>
+            </template>
+          </Table>
+        </ClpmDataCanvas>
+      </div>
+
+      <!-- 右侧：参数表单（30%） -->
+      <div class="flex flex-col gap-4 lg:w-1/3" style="min-width: 320px">
+        <ClpmDataCanvas title="参数配置">
+          <Form layout="vertical">
             <div class="mb-2 text-sm font-medium text-gray-700">模型配置</div>
             <FormItem label="模型类型">
               <Select
@@ -476,7 +778,7 @@ onMounted(() => {
                 style="width: 100%"
               />
             </FormItem>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-2 gap-2">
               <FormItem
                 v-for="f in modelParamFields"
                 :key="f.key"
@@ -489,11 +791,12 @@ onMounted(() => {
                 />
               </FormItem>
             </div>
-          </div>
 
-          <!-- 右列：PID 参数 -->
-          <div>
-            <div class="mb-2 text-sm font-medium text-gray-700">PID 参数</div>
+            <div
+              class="mt-2 mb-2 border-t border-gray-100 pt-3 text-sm font-medium text-gray-700"
+            >
+              PID 参数
+            </div>
             <div class="grid grid-cols-3 gap-2">
               <FormItem label="当前 Kp">
                 <InputNumber
@@ -538,102 +841,63 @@ onMounted(() => {
                 />
               </FormItem>
             </div>
-          </div>
-        </div>
 
-        <div class="mt-2 border-t border-gray-100 pt-3">
-          <div class="mb-2 text-sm font-medium text-gray-700">仿真参数</div>
-          <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <FormItem label="仿真时长 (秒)">
-              <InputNumber
-                v-model:value="form.simDuration"
-                style="width: 100%"
-                :min="1"
-                :step="10"
-              />
-            </FormItem>
-            <FormItem label="仿真步长 (秒)">
-              <InputNumber
-                v-model:value="form.simStep"
-                style="width: 100%"
-                :min="0.1"
-                :step="0.1"
-              />
-            </FormItem>
-            <FormItem label="设定值阶跃">
-              <InputNumber
-                v-model:value="form.setpointStep"
-                style="width: 100%"
-                :step="0.1"
-              />
-            </FormItem>
-            <FormItem label="扰动类型">
-              <Select
-                v-model:value="form.disturbanceType"
-                :options="disturbanceOptions"
-                style="width: 100%"
-              />
-            </FormItem>
-          </div>
-        </div>
-
-        <div class="mt-2 flex justify-end">
-          <Button type="primary" :loading="loading" @click="handleSimulate">
-            执行仿真
-          </Button>
-        </div>
-      </Form>
-    </Card>
-
-    <!-- 仿真结果区 -->
-    <Card v-if="simulationResult" class="mb-4" title="仿真对比图">
-      <Spin :spinning="loading">
-        <EchartsUI ref="chartRef" height="420px" />
-      </Spin>
-    </Card>
-
-    <!-- 性能指标对比表格 -->
-    <Card v-if="simulationResult" class="mb-4" title="性能指标对比">
-      <Table
-        :columns="metricColumns"
-        :data-source="metricRows"
-        :pagination="false"
-        :row-key="(record: { name: string }) => record.name"
-        size="middle"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'improvement'">
-            <span
-              :style="{
-                color:
-                  record.improved === null
-                    ? ''
-                    : record.improved
-                      ? '#52c41a'
-                      : '#ff4d4f',
-                fontWeight: 500,
-              }"
+            <div
+              class="mt-2 mb-2 border-t border-gray-100 pt-3 text-sm font-medium text-gray-700"
             >
-              {{ record.improvement }}
-            </span>
-          </template>
-        </template>
-      </Table>
-    </Card>
+              仿真参数
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <FormItem label="仿真时长 (秒)">
+                <InputNumber
+                  v-model:value="form.simDuration"
+                  style="width: 100%"
+                  :min="1"
+                  :step="10"
+                />
+              </FormItem>
+              <FormItem label="仿真步长 (秒)">
+                <InputNumber
+                  v-model:value="form.simStep"
+                  style="width: 100%"
+                  :min="0.1"
+                  :step="0.1"
+                />
+              </FormItem>
+              <FormItem label="设定值阶跃">
+                <InputNumber
+                  v-model:value="form.setpointStep"
+                  style="width: 100%"
+                  :step="0.1"
+                />
+              </FormItem>
+              <FormItem label="扰动类型">
+                <Select
+                  v-model:value="form.disturbanceType"
+                  :options="disturbanceOptions"
+                  style="width: 100%"
+                />
+              </FormItem>
+            </div>
+          </Form>
+        </ClpmDataCanvas>
 
-    <!-- 底部操作按钮 -->
-    <Card v-if="simulationResult" title="保存仿真结果">
-      <div class="flex flex-wrap items-center gap-3">
-        <span class="text-sm text-gray-500">回路 ID：</span>
-        <InputNumber
-          v-model:value="loopId"
-          style="width: 240px"
-          placeholder="请输入回路 ID"
-        />
-        <Button type="primary" :loading="saving" @click="handleSave">
-          保存仿真结果
-        </Button>
+        <!-- 保存仿真结果 -->
+        <ClpmDataCanvas v-if="simulationResult" title="保存仿真结果">
+          <div class="flex flex-col gap-3">
+            <FormItem label="回路 ID">
+              <InputNumber
+                v-model:value="loopId"
+                style="width: 100%"
+                placeholder="请输入回路 ID"
+              />
+            </FormItem>
+            <Button type="primary" :loading="saving" block @click="handleSave">
+              保存仿真结果
+            </Button>
+          </div>
+        </ClpmDataCanvas>
       </div>
-    </Card>
+    </div>
   </Page>
 </template>

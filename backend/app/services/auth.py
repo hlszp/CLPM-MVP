@@ -8,6 +8,7 @@ user-token tracking.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +22,9 @@ from app.core.security import (
     get_token_remaining_ttl,
     hash_password,
     verify_password,
+    verify_refresh_token,
 )
+from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
 from app.schemas.auth import AuthTokens
 
@@ -165,10 +168,14 @@ async def authenticate(
     username: str,
     password: str,
     remember_me: bool = False,
+    device_ip: str | None = None,
 ) -> tuple[SysUser, AuthTokens]:
     """Authenticate a user and return ``(user, tokens)``.
 
     Raises ``BizError`` with appropriate error codes on failure.
+
+    Args:
+        device_ip: 客户端 IP 地址（用于 Refresh Token 设备绑定 S4-C2）
     """
     # Check lock before querying DB.
     await _check_login_lock(username)
@@ -179,15 +186,42 @@ async def authenticate(
 
     if user is None:
         await _record_login_fail(username)
+        # 登录失败审计日志（S1-B8）
+        db.add(
+            SysAuditLog(
+                id=str(uuid4()),
+                operator=username,
+                operation_type="LOGIN_FAILED",
+                target_type="User",
+                target_id=None,
+                after_value="reason=user_not_found",
+                operated_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
+        await db.commit()
+        # 统一错误信息，防止用户名枚举攻击（S1-B6）
         raise BizError(
-            code="ERR_USER_NOT_FOUND",
-            message="用户不存在",
-            status_code=404,
+            code="ERR_INVALID_CREDENTIALS",
+            message="用户名或密码错误",
+            status_code=400,
         )
 
     # Verify password.
     if not verify_password(password, user.password_hash):
         await _record_login_fail(username)
+        # 登录失败审计日志（S1-B8）
+        db.add(
+            SysAuditLog(
+                id=str(uuid4()),
+                operator=username,
+                operation_type="LOGIN_FAILED",
+                target_type="User",
+                target_id=str(user.id),
+                after_value="reason=wrong_password",
+                operated_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
+        await db.commit()
         raise BizError(
             code="ERR_INVALID_CREDENTIALS",
             message="用户名或密码错误",
@@ -206,7 +240,7 @@ async def authenticate(
     await _clear_login_fails(username)
 
     # Issue tokens.
-    tokens = await _issue_tokens(user, remember_me)
+    tokens = await _issue_tokens(user, remember_me, device_ip=device_ip)
 
     # Update last_login_at (DB column is TIMESTAMP WITHOUT TIME ZONE).
     await db.execute(
@@ -214,18 +248,38 @@ async def authenticate(
         .where(SysUser.id == str(user.id))
         .values(last_login_at=datetime.now(UTC).replace(tzinfo=None))
     )
+    # 登录成功审计日志（S1-B8）
+    db.add(
+        SysAuditLog(
+            id=str(uuid4()),
+            operator=user.username,
+            operation_type="LOGIN",
+            target_type="User",
+            target_id=str(user.id),
+            after_value=f"role={user.role}",
+            operated_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+    )
     await db.commit()
 
     return user, tokens
 
 
-async def _issue_tokens(user: SysUser, remember_me: bool = False) -> AuthTokens:
-    """Issue access + refresh tokens and track them in Redis."""
+async def _issue_tokens(
+    user: SysUser, remember_me: bool = False, device_ip: str | None = None
+) -> AuthTokens:
+    """Issue access + refresh tokens and track them in Redis.
+
+    Args:
+        device_ip: 客户端 IP 地址（绑定到 Refresh Token，S4-C2）
+    """
     user_id = str(user.id)
     access_token, access_jti, expires_in = create_access_token(
         subject=user_id, username=user.username, role=user.role
     )
-    refresh_token, refresh_jti, _ = create_refresh_token(subject=user_id, remember_me=remember_me)
+    refresh_token, refresh_jti, _ = create_refresh_token(
+        subject=user_id, remember_me=remember_me, device_ip=device_ip
+    )
 
     # Track jtis for batch revocation.
     refresh_ttl = 30 * 24 * 3600 if remember_me else 7 * 24 * 3600
@@ -233,25 +287,32 @@ async def _issue_tokens(user: SysUser, remember_me: bool = False) -> AuthTokens:
     await _track_user_token(user_id, refresh_jti, refresh_ttl)
 
     return AuthTokens(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        access_jti=access_jti,
-        refresh_jti=refresh_jti,
-        expires_in=expires_in,
+        accessToken=access_token,
+        refreshToken=refresh_token,
+        accessJti=access_jti,
+        refreshJti=refresh_jti,
+        expiresIn=expires_in,
     )
 
 
-async def refresh_tokens(refresh_token_str: str) -> AuthTokens:
+async def refresh_tokens(
+    refresh_token_str: str,
+    device_ip: str | None = None,
+) -> AuthTokens:
     """Validate a refresh token and issue a new token pair.
 
     Raises ``BizError`` with ``ERR_TOKEN_EXPIRED`` or ``ERR_TOKEN_INVALID``.
+
+    Args:
+        device_ip: 当前请求的客户端 IP（用于设备绑定校验 S4-C2，
+            为 None 时跳过校验，向后兼容）
     """
     from app.core.security import JWTError
 
     try:
-        payload = decode_token(refresh_token_str)
+        payload = verify_refresh_token(refresh_token_str, device_ip=device_ip)
     except JWTError as exc:
-        # jose raises ExpiredSignatureError (subclass of JWTError) for expired.
+        # pyjwt raises ExpiredSignatureError (subclass of PyJWTError) for expired.
         err_code = "ERR_TOKEN_EXPIRED" if "expired" in str(exc).lower() else "ERR_TOKEN_INVALID"
         msg = (
             "Refresh Token 已过期，请重新登录" if err_code == "ERR_TOKEN_EXPIRED" else "Token 无效"
@@ -261,13 +322,12 @@ async def refresh_tokens(refresh_token_str: str) -> AuthTokens:
             message=msg,
             status_code=401,
         ) from exc
-
-    if payload.get("type") != "refresh":
+    except ValueError:
         raise BizError(
             code="ERR_TOKEN_INVALID",
             message="Token 类型错误，非 Refresh Token",
             status_code=401,
-        )
+        ) from None
 
     jti = payload.get("jti", "")
     if not jti:
@@ -316,8 +376,8 @@ async def refresh_tokens(refresh_token_str: str) -> AuthTokens:
         old_ttl = get_token_remaining_ttl(payload)
         await _blacklist_token(jti, old_ttl)
 
-        # Issue new tokens.
-        tokens = await _issue_tokens(user, remember_me=False)
+        # Issue new tokens（继承设备绑定）.
+        tokens = await _issue_tokens(user, remember_me=False, device_ip=device_ip)
         return tokens
 
 

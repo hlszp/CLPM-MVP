@@ -17,10 +17,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
-from app.core.tdengine import query_trend_data
 from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
+from app.services.data_source.realtime_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,11 @@ LTTB_TARGET_POINTS = 2000
 # 趋势时间窗映射
 TREND_WINDOWS: dict[str, timedelta] = {
     "last_1_hour": timedelta(hours=1),
+    "last_2_hours": timedelta(hours=2),
+    "last_4_hours": timedelta(hours=4),
+    "last_8_hours": timedelta(hours=8),
     "last_24_hours": timedelta(hours=24),
-    "last_7_days": timedelta(days=7),
+    "last_72_hours": timedelta(hours=72),
 }
 
 
@@ -42,6 +46,55 @@ def _mode_value_to_label(value: float | None) -> str | None:
         return None
     mapping = {0: "Manual", 1: "Auto", 2: "Cascade", 3: "Cascade"}
     return mapping.get(int(value), "Unknown")
+
+
+def _ts_to_ms(ts: Any) -> int:
+    """将时间戳（字符串或 datetime）转为毫秒数字（前端 ECharts time 轴要求）。
+
+    TDengine REST API 返回的 ts 为字符串（如 '2026-06-25T17:29:22.000Z'），
+    前端 MonitorTrend.timestamps 类型为 number[]（毫秒），需统一转换。
+    """
+    if isinstance(ts, (int, float)):
+        return int(ts)
+    if isinstance(ts, str):
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            return int(dt.timestamp() * 1000)
+        except (ValueError, TypeError):
+            try:
+                return int(float(ts))
+            except (ValueError, TypeError):
+                return 0
+    if hasattr(ts, "timestamp"):
+        return int(ts.timestamp() * 1000)
+    return 0
+
+
+def _quality_code_to_label(q: Any) -> str:
+    """质量码 → 前端标签（GOOD/BAD/UNCERTAIN）。
+
+    兼容两种 schema：
+    - TDengine: 1=Good, 0=Bad
+    - OPC DA: 192=Good
+    - 已是 GOOD/BAD 字符串则原样返回（向后兼容 MOCK 数据）
+    """
+    if q is None:
+        return "GOOD"
+    if isinstance(q, str):
+        if q in ("GOOD", "BAD", "UNCERTAIN"):
+            return q
+        try:
+            q = int(q)
+        except (ValueError, TypeError):
+            return "UNCERTAIN"
+    if isinstance(q, (int, float)):
+        # TDengine: 1=Good; OPC DA: 192=Good; 0=Bad
+        if q in (1, 192):
+            return "GOOD"
+        if q == 0:
+            return "BAD"
+        return "UNCERTAIN"
+    return "UNCERTAIN"
 
 
 def lttb_downsample(
@@ -160,18 +213,34 @@ async def _get_loop_tag_values(
     return tags_map, mappings
 
 
+async def _get_descendant_node_ids(db: AsyncSession, parent_id: str) -> list[str]:
+    """递归获取所有子孙节点 ID。"""
+    result = await db.execute(select(PlantNode.id).where(PlantNode.parent_id == parent_id))
+    child_ids = [str(row[0]) for row in result]
+    all_ids = list(child_ids)
+    for child_id in child_ids:
+        all_ids.extend(await _get_descendant_node_ids(db, child_id))
+    return all_ids
+
+
 async def list_loop_monitor(
     db: AsyncSession,
     plant_node_id: str | None = None,
     view: str = "list",
     keyword: str | None = None,
+    loop_type: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
     """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分）。"""
     conditions = []
     if plant_node_id:
-        conditions.append(LoopLedger.unit_id == plant_node_id)
+        # 递归获取所有子孙节点 ID，包含自身
+        all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
+        all_node_ids.append(plant_node_id)
+        conditions.append(LoopLedger.unit_id.in_(all_node_ids))
+    if loop_type:
+        conditions.append(func.upper(LoopLedger.loop_type) == loop_type.upper())
     if keyword:
         kw = f"%{keyword}%"
         conditions.append(
@@ -223,9 +292,40 @@ async def list_loop_monitor(
         for t in t_result.scalars().all():
             tags_map[str(t.id)] = t
 
+    # 批量查每个回路的最新 KPI 快照（DISTINCT ON 取每个 loop_id 的最新一条）
+    snapshot_map: dict[str, KpiSnapshotHourly] = {}
+    if loop_ids:
+        # PostgreSQL DISTINCT ON 语法：按 loop_id 分组取 ts_end 最大的一条
+        s_stmt = (
+            select(KpiSnapshotHourly)
+            .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+            .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+        )
+        s_result = await db.execute(s_stmt)
+        for snap in s_result.scalars().all():
+            # 只保留每个 loop 的第一条（最新）
+            key = str(snap.loop_id)
+            if key not in snapshot_map:
+                snapshot_map[key] = snap
+
+    # 批量从 Redis 读取实时值，优先于 PostgreSQL current_value
+    redis_cache: dict[str, dict] = {}
+    try:
+        subscriber = get_subscriber()
+        all_tag_names = [tag.tag_name for tag in tags_map.values() if tag.tag_name]
+        if all_tag_names:
+            cached_list = await subscriber.get_cached_values(all_tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc:
+                    redis_cache[tc] = item
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+
     items = []
     for loop in loops:
         loop_mappings = mappings_map.get(str(loop.id), {})
+        snap = snapshot_map.get(str(loop.id))
         # 构建当前值快照
         current_values: dict[str, Any] = {
             "pv": None,
@@ -242,13 +342,26 @@ async def list_loop_monitor(
             if mapping and str(mapping.tag_id) in tags_map:
                 tag = tags_map[str(mapping.tag_id)]
                 field = role.lower()
-                current_values[field] = tag.current_value
+                # 优先从 Redis 实时缓存读取
+                cached = redis_cache.get(tag.tag_name)
+                if cached:
+                    try:
+                        current_values[field] = float(cached.get("value"))
+                    except (TypeError, ValueError):
+                        current_values[field] = tag.current_value
+                    if role == "PV":
+                        current_values["pvQuality"] = cached.get("quality", tag.quality)
+                    if cached.get("collectTime"):
+                        read_at = cached["collectTime"]
+                else:
+                    current_values[field] = tag.current_value
+                    if role == "PV":
+                        current_values["pvQuality"] = tag.quality
                 if role == "MODE":
-                    current_values["modeLabel"] = _mode_value_to_label(tag.current_value)
+                    mode_val = current_values["mode"]
+                    current_values["modeLabel"] = _mode_value_to_label(mode_val)
                     control_mode = current_values["modeLabel"]
-                if role == "PV":
-                    current_values["pvQuality"] = tag.quality
-                if tag.last_sync_at:
+                if not cached and tag.last_sync_at:
                     ts = (
                         tag.last_sync_at.isoformat()
                         if hasattr(tag.last_sync_at, "isoformat")
@@ -256,6 +369,36 @@ async def list_loop_monitor(
                     )
                     if read_at is None or ts > read_at:
                         read_at = ts
+
+        # KPI 摘要：从最新快照读取（无快照则返回 None）
+        def _rate(val) -> float | None:
+            """Decimal → float，None 保持 None。"""
+            return float(val) if val is not None else None
+
+        if snap:
+            kpi_summary: dict[str, Any] = {
+                "composite_score": _rate(snap.score),
+                "effective_auto_rate": _rate(snap.effective_auto_rate),
+                "auto_mode_rate": _rate(snap.auto_mode_rate),
+                "steady_rate": _rate(snap.steady_rate),
+                "accuracy_rate": _rate(snap.accuracy_rate),
+                "fast_response_rate": _rate(snap.fast_response_rate),
+                "oscillation_rate": _rate(snap.oscillation_rate),
+                "saturation_rate": _rate(snap.saturation_rate),
+                "good_value_rate": _rate(snap.good_value_rate),
+                "valid_rate": _rate(snap.valid_rate),
+                "confidence_level": snap.confidence_level,
+                "status": snap.status,
+                "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else None,
+            }
+            list_score = _rate(snap.score)
+            list_status = snap.status
+            confidence_level = snap.confidence_level
+        else:
+            kpi_summary = None
+            list_score = None
+            list_status = None
+            confidence_level = None
 
         items.append(
             {
@@ -265,8 +408,12 @@ async def list_loop_monitor(
                 "unitName": unit_map.get(str(loop.unit_id)) if loop.unit_id else None,
                 "currentValues": current_values,
                 "controlMode": control_mode,
-                "score": float(loop.score_weight) if loop.score_weight else None,
-                "status": loop.status,
+                "score": list_score,
+                "status": list_status,
+                "confidenceLevel": confidence_level,
+                "effectiveAutoRate": _rate(snap.effective_auto_rate) if snap else None,
+                "kpiSummary": kpi_summary,
+                "loopType": loop.loop_type,
                 "isActive": bool(loop.is_active),
                 "readAt": read_at,
             }
@@ -362,10 +509,13 @@ async def get_loop_monitor_detail(
     trend_status = "EMPTY"  # EMPTY / OK / PARTIAL
 
     # 计算时间范围
+    # TDengine REST API 按服务器时区解释无时区的时间字符串，
+    # 必须使用带 Z 后缀的 UTC 时间格式，否则时间范围会偏移
     delta = TREND_WINDOWS.get(trend_window, timedelta(hours=24))
     now = datetime.now(UTC)
-    start_time = (now - delta).isoformat()
-    end_time = now.isoformat()
+    start_dt = now - delta
+    start_time = start_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{start_dt.microsecond // 1000:03d}Z"
+    end_time = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
     # 查询 PV/SP/OP/MODE 的趋势数据
     pv_trend: list[dict[str, Any]] = []
@@ -378,7 +528,12 @@ async def get_loop_monitor_detail(
         if mapping and str(mapping.tag_id) in tags_map:
             tag = tags_map[str(mapping.tag_id)]
             try:
-                raw_trend = await query_trend_data(tag.tag_name, start_time, end_time)
+                # 通过数据源工厂查询（支持 tdengine / remote_api 切换）
+                from app.services.data_source.factory import get_provider
+
+                raw_trend = await get_provider().query_trend_data(
+                    tag.tag_name, start_time, end_time
+                )
                 # LTTB 降采样
                 downsampled = lttb_downsample(raw_trend)
                 if role == "PV":
@@ -398,22 +553,64 @@ async def get_loop_monitor_detail(
         # 简化处理：以 PV 的时间戳为基准（如有），否则用 SP
         base_trend = pv_trend if pv_trend else (sp_trend if sp_trend else op_trend)
         if base_trend:
-            trend_data["timestamps"] = [d.get("ts") for d in base_trend]
+            # timestamps 统一转为毫秒数字（前端 ECharts time 轴要求 number[]）
+            trend_data["timestamps"] = [_ts_to_ms(d.get("ts")) for d in base_trend]
             trend_data["pv"] = [d.get("value") for d in pv_trend] if pv_trend else []
             trend_data["sp"] = [d.get("value") for d in sp_trend] if sp_trend else []
             trend_data["op"] = [d.get("value") for d in op_trend] if op_trend else []
             trend_data["mode"] = [d.get("value") for d in mode_trend] if mode_trend else []
-            # PV 质量码数组（与 pv 等长）
+            # PV 质量码数组：数字码 → GOOD/BAD/UNCERTAIN（前端 Quality 类型）
             if pv_trend:
-                trend_data["pvQuality"] = [d.get("quality", "GOOD") for d in pv_trend]
+                trend_data["pvQuality"] = [
+                    _quality_code_to_label(d.get("quality", "GOOD")) for d in pv_trend
+                ]
 
-    # KPI 摘要（从 loop.score_weight 读取，简化处理）
-    kpi_summary: dict[str, Any] = {
-        "composite_score": float(loop.score_weight) if loop.score_weight else None,
-        "status": "INCONCLUSIVE" if loop.status != "READY" else "GOOD",
-        "algorithm_version": "KPI_CALC_v1.0",
-        "calculatedAt": read_at,
-    }
+    # TDengine 无数据时保持 EMPTY 状态，返回空数组（不再生成模拟数据）
+    # 仿真脚本已持续向 TDengine 推送实时数据，趋势图直接展示真实历史数据
+
+    # KPI 摘要：从 kpi_snapshot_hourly 读取最新快照
+    snapshot = await db.execute(
+        select(KpiSnapshotHourly)
+        .where(KpiSnapshotHourly.loop_id == loop_id)
+        .order_by(KpiSnapshotHourly.ts_end.desc())
+        .limit(1)
+    )
+    snap = snapshot.scalar_one_or_none()
+
+    def _rate(val) -> float | None:
+        """Decimal → float，None 保持 None。"""
+        return float(val) if val is not None else None
+
+    if snap:
+        kpi_summary: dict[str, Any] = {
+            "composite_score": _rate(snap.score),
+            "auto_mode_rate": _rate(snap.auto_mode_rate),
+            "effective_auto_rate": _rate(snap.effective_auto_rate),
+            "steady_rate": _rate(snap.steady_rate),
+            "accuracy_rate": _rate(snap.accuracy_rate),
+            "fast_response_rate": _rate(snap.fast_response_rate),
+            "oscillation_rate": _rate(snap.oscillation_rate),
+            "saturation_rate": _rate(snap.saturation_rate),
+            "good_value_rate": _rate(snap.good_value_rate),
+            "status": snap.status,
+            "algorithm_version": "KPI_CALC_v1.0",
+            "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else read_at,
+        }
+    else:
+        kpi_summary = {
+            "composite_score": None,
+            "auto_mode_rate": None,
+            "effective_auto_rate": None,
+            "steady_rate": None,
+            "accuracy_rate": None,
+            "fast_response_rate": None,
+            "oscillation_rate": None,
+            "saturation_rate": None,
+            "good_value_rate": None,
+            "status": "INCONCLUSIVE" if loop.status != "READY" else "GOOD",
+            "algorithm_version": "KPI_CALC_v1.0",
+            "calculatedAt": read_at,
+        }
 
     return {
         "loopId": str(loop.id),

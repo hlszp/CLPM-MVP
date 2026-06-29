@@ -73,15 +73,18 @@ class TestLogin:
                 assert "tracker:review" in perms
 
     def test_login_user_not_found(self, client, mock_db, fake_redis) -> None:
-        """Non-existent user returns ERR_USER_NOT_FOUND (404)."""
+        """Non-existent user returns ERR_INVALID_CREDENTIALS (400).
+
+        Unified error to prevent username enumeration.
+        """
         mock_db.execute = AsyncMock(return_value=make_db_execute_return(None))
         resp = client.post(
             "/api/v1/auth/login",
             json={"username": "ghost", "password": TEST_PASSWORD},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 400
         body = resp.json()
-        assert body["code"] == "ERR_USER_NOT_FOUND"
+        assert body["code"] == "ERR_INVALID_CREDENTIALS"
 
     def test_login_wrong_password(self, client, mock_db, fake_redis) -> None:
         """Wrong password returns ERR_INVALID_CREDENTIALS (400)."""
@@ -259,9 +262,9 @@ class TestLogout:
         assert resp.json()["code"] == "ERR_TOKEN_INVALID"
 
     def test_logout_no_token(self, client) -> None:
-        """Logout without a token still returns success (idempotent)."""
+        """Logout without a token returns 401 (authentication required)."""
         resp = client.post("/api/v1/auth/logout")
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
 
 # ===========================================================================
@@ -317,7 +320,7 @@ class TestChangePassword:
         resp = client.put(
             "/api/v1/auth/password",
             headers={"Authorization": f"Bearer {access_token}"},
-            json={"oldPassword": TEST_PASSWORD, "newPassword": "NewPass2026"},
+            json={"oldPassword": TEST_PASSWORD, "newPassword": "NewPass@2026"},
         )
         assert resp.status_code == 200
         assert resp.json()["message"] == "密码修改成功，请重新登录"
@@ -338,7 +341,7 @@ class TestChangePassword:
         resp = client.put(
             "/api/v1/auth/password",
             headers={"Authorization": f"Bearer {access_token}"},
-            json={"oldPassword": "wrongold", "newPassword": "NewPass2026"},
+            json={"oldPassword": "wrongold", "newPassword": "NewPass@2026"},
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_INVALID_CREDENTIALS"
@@ -361,7 +364,7 @@ class TestChangePassword:
         assert resp.json()["code"] == "ERR_PASSWORD_SAME"
 
     def test_change_password_weak_new(self, client, mock_db, fake_redis) -> None:
-        """New password without letters+digits is rejected (422)."""
+        """New password without required complexity is rejected (422)."""
         mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
         login_resp = client.post(
             "/api/v1/auth/login",
@@ -369,15 +372,17 @@ class TestChangePassword:
         )
         access_token = login_resp.json()["data"]["accessToken"]
 
-        resp = client.put(
-            "/api/v1/auth/password",
-            headers={"Authorization": f"Bearer {access_token}"},
-            json={"oldPassword": TEST_PASSWORD, "newPassword": "12345678"},
-        )
+        # 模拟生产环境（DEBUG=False）以测试完整密码策略
+        with patch("app.core.config.settings.DEBUG", False):
+            resp = client.put(
+                "/api/v1/auth/password",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={"oldPassword": TEST_PASSWORD, "newPassword": "12345678"},
+            )
         assert resp.status_code == 422
 
     def test_change_password_too_short(self, client, mock_db, fake_redis) -> None:
-        """New password < 6 chars is rejected (422)."""
+        """New password < 8 chars is rejected (422)."""
         mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
         login_resp = client.post(
             "/api/v1/auth/login",

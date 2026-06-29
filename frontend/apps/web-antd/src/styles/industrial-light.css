@@ -1,0 +1,184 @@
+/**
+ * CLPM Industrial Light 主题视觉规范
+ *
+ * 对齐 UI/UX 改造方案 §9 工业浅色主题视觉规范：
+ * - 冷灰底色、深色文字、强分割线、紧凑表格
+ * - 低饱和状态色、数字等宽、少阴影、多边界
+ *
+ * 本文件在 @vben/styles 与 @vben/styles/antd 之后导入，覆盖默认变量与组件样式
+ */
+
+/* ============= 1. CSS 变量覆盖：冷灰画布 ============= */
+
+:root,
+.light,
+.light[data-theme='default'] {
+  /* 页面画布底色：冷灰白 #f4f7fb → HSL(210 33% 97%) */
+  --background: 210 33% 97%;
+
+  /* 主体区域背景：冷灰白 */
+  --background-deep: 210 33% 96%;
+
+  /* 主文本：深色 #0f172a → HSL(222 47% 11%) */
+  --foreground: 222 47% 11%;
+
+  /* 次文本：#475569 → HSL(215 16% 31%) */
+  --muted-foreground: 215 16% 31%;
+
+  /* 强分割线：#cbd5e1 → HSL(213 27% 84%) */
+  --border: 213 27% 84%;
+
+  /* 输入框边框 */
+  --input: 213 27% 84%;
+}
+
+/* ============= 2. 等宽数字 ============= */
+
+/* 数值、位号、KPI 使用等宽数字，增强专业感 */
+.clpm-numeric,
+.ant-table-cell-num,
+.ant-statistic-content,
+.ant-input-number-input {
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============= 3. 表格工业风格 ============= */
+
+/* 表头：浅冷灰背景 + 字重 600 */
+.ant-table-thead > tr > th {
+  font-weight: 600;
+  background: hsl(210deg 20% 94%);
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+/* 行高：紧凑 40-44px */
+.ant-table-tbody > tr > td {
+  padding-block: 10px;
+}
+
+/* hover：明确浅蓝灰底 */
+.ant-table-tbody > tr:hover > td {
+  background: hsl(210deg 30% 96%) !important;
+}
+
+/* 选中行：左侧 2px 主色线 + 浅蓝底 */
+.ant-table-tbody > tr.ant-table-row-selected > td {
+  background: hsl(211deg 98% 95%) !important;
+  box-shadow: inset 2px 0 0 hsl(211deg 98% 52%);
+}
+
+/* 数字列右对齐 */
+.ant-table-tbody > tr > td[num='true'],
+.ant-table-tbody > tr > td.align-right,
+th.align-right {
+  text-align: right;
+}
+
+/* ============= 4. 面板工业风格 ============= */
+
+/* 面板：1px 明确边线，减少阴影 */
+.ant-card {
+  border: 1px solid hsl(var(--border));
+  box-shadow: none;
+}
+
+.ant-card-bordered {
+  border-color: hsl(var(--border));
+}
+
+/* 卡片标题栏：32-40px，像工业软件区域标题 */
+.ant-card-head {
+  min-height: 40px;
+  padding-inline: 14px;
+}
+
+.ant-card-head-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 紧凑内边距 */
+.ant-card-size-small .ant-card-body {
+  padding: 12px;
+}
+
+.ant-card-size-default .ant-card-body {
+  padding: 16px;
+}
+
+/* ============= 5. 滚动条工业风格 ============= */
+
+/* 细滚动条，减少视觉干扰 */
+.clpm-scroll::-webkit-scrollbar,
+.ant-table-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.clpm-scroll::-webkit-scrollbar-thumb,
+.ant-table-body::-webkit-scrollbar-thumb {
+  background: hsl(213deg 20% 80%);
+  border-radius: 4px;
+}
+
+.clpm-scroll::-webkit-scrollbar-thumb:hover,
+.ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: hsl(213deg 20% 70%);
+}
+
+.clpm-scroll::-webkit-scrollbar-track,
+.ant-table-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ============= 6. 标签/徽章工业风格 ============= */
+
+/* Tag 紧凑化 */
+.ant-tag {
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+  border-radius: calc(var(--radius) * 1px);
+}
+
+/* ============= 7. 按钮工业风格 ============= */
+
+/* 按钮紧凑化，减少圆角 SaaS 感 */
+.ant-btn {
+  border-radius: calc(var(--radius) * 1px);
+}
+
+.ant-btn-sm {
+  font-size: 13px;
+}
+
+/* ============= 8. 页面容器 ============= */
+
+/* 页面内容容器：冷灰画布底色 */
+.ant-app {
+  background: hsl(var(--background));
+}
+
+/* ============= 9. 工具类 ============= */
+
+/* 等宽数字工具类 */
+.font-numeric {
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+}
+
+/* 强分割线 */
+.border-strong {
+  border-color: hsl(213deg 27% 84%) !important;
+}
+
+/* 冷灰画布底 */
+.bg-canvas {
+  background: hsl(var(--background));
+}
+
+/* 面板底 */
+.bg-panel {
+  background: hsl(var(--card));
+}

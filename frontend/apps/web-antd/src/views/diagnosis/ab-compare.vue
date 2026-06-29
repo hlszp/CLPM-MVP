@@ -14,13 +14,14 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
+  Alert,
   Button,
   Card,
   DatePicker,
@@ -31,8 +32,20 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { getAbCompareApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+
+const { isDark, themeColors } = useClpmTheme();
+
+/** 时间戳精度转换：纳秒/微秒级→毫秒级 */
+function toMs(ts: number): number {
+  const absTs = Math.abs(ts);
+  if (absTs >= 10000000000000000) return Math.floor(ts / 1000000);
+  if (absTs >= 10000000000000) return Math.floor(ts / 1000);
+  return ts;
+}
 
 defineOptions({ name: 'DiagnosisABCompare' });
 
@@ -40,12 +53,15 @@ const props = withDefaults(
   defineProps<{
     /** 抽屉模式（从 Tracker 页打开） */
     drawerMode?: boolean;
+    /** 实施时间点 T（FDS §5.4.4：标记"已实施"后自动截取 [T-7天,T] 与 [T,T+7天]） */
+    implementedAt?: string;
     /** 指定回路 ID（抽屉模式） */
     loopId?: string;
   }>(),
   {
     drawerMode: false,
     loopId: '',
+    implementedAt: '',
   },
 );
 
@@ -71,6 +87,27 @@ const filter = reactive({
   ],
 });
 
+/** FDS §5.4.4：标记"已实施"后自动截取 [T-7天,T] 与 [T,T+7天] */
+function autoSetWindows(implementedAtStr: string) {
+  if (!implementedAtStr) return;
+  const t = dayjs(implementedAtStr);
+  if (!t.isValid()) return;
+  filter.beforeRange = [t.subtract(7, 'day'), t];
+  filter.afterRange = [t, t.add(7, 'day')];
+}
+
+/** After 窗口数据是否不足 24h（FDS §5.4.4 提示"评估数据采集中"） */
+const isAfterDataInsufficient = computed(() => {
+  if (!filter.afterRange || filter.afterRange.length !== 2) return false;
+  const [aStart, aEnd] = filter.afterRange;
+  if (!aStart || !aEnd) return false;
+  // After 窗口结束时间超过当前时间 → 数据尚未采集完整
+  const now = dayjs();
+  const actualEnd = aEnd.isAfter(now) ? now : aEnd;
+  const durationHours = actualEnd.diff(aStart, 'hour');
+  return durationHours < 24;
+});
+
 // ECharts refs
 const trendChartRef = ref<EchartsUIType>();
 const kpiChartRef = ref<EchartsUIType>();
@@ -87,7 +124,7 @@ const pageTitle = computed(() => {
 /** 加载回路下拉选项 */
 async function loadLoopOptions() {
   try {
-    const data = await getLoopListApi({ page: 1, pageSize: 1000 });
+    const data = await getLoopListApi({ page: 1, pageSize: 100 });
     const list = data.items || [];
     loopOptions.value = list.map((l) => ({
       label: l.tagName,
@@ -176,7 +213,7 @@ function renderTrendChart() {
       {
         connectNulls: false,
         data: before.pv,
-        itemStyle: { color: '#ff4d4f' },
+        itemStyle: { color: themeColors.value.DANGER },
         lineStyle: { width: 2 },
         name: '处置前 PV',
         showSymbol: false,
@@ -185,7 +222,7 @@ function renderTrendChart() {
       {
         connectNulls: false,
         data: after.pv,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: '处置后 PV',
         showSymbol: false,
@@ -201,7 +238,7 @@ function renderTrendChart() {
     xAxis: {
       axisLabel: {
         formatter: (val: string) => {
-          const d = new Date(Number(val));
+          const d = new Date(toMs(Number(val)));
           const hh = String(d.getHours()).padStart(2, '0');
           const mm = String(d.getMinutes()).padStart(2, '0');
           const dd = String(d.getDate()).padStart(2, '0');
@@ -247,13 +284,13 @@ function renderKpiChart() {
       {
         barGap: 0,
         data: kpis.map((k) => k.before),
-        itemStyle: { color: '#ff4d4f' },
+        itemStyle: { color: themeColors.value.DANGER },
         name: '处置前',
         type: 'bar',
       },
       {
         data: kpis.map((k) => k.after),
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         name: '处置后',
         type: 'bar',
       },
@@ -303,13 +340,31 @@ watch(
   (val) => {
     if (val) {
       filter.loopId = val;
+      // 有 implementedAt 时自动截取窗口
+      if (props.implementedAt) {
+        autoSetWindows(props.implementedAt);
+      }
       loadData();
     }
   },
   { immediate: true },
 );
 
+// 深色模式切换时重新渲染 ECharts 图表
+watch(isDark, () => {
+  nextTick(() => {
+    if (compareData.value) {
+      renderTrendChart();
+      renderKpiChart();
+    }
+  });
+});
+
 onMounted(() => {
+  // 有 implementedAt 时自动截取窗口（FDS §5.4.4）
+  if (props.implementedAt) {
+    autoSetWindows(props.implementedAt);
+  }
   if (!props.drawerMode) {
     loadLoopOptions().then(() => {
       if (filter.loopId) {
@@ -360,8 +415,18 @@ onMounted(() => {
         </div>
       </Card>
 
+      <!-- 数据不足提示（FDS §5.4.4） -->
+      <Alert
+        v-if="isAfterDataInsufficient"
+        class="mb-4"
+        type="warning"
+        show-icon
+        message="评估数据采集中，请稍后查看"
+        description="处置后数据不足 24 小时，A/B 对比结果可能不准确。建议等待数据采集完整后再进行评估。"
+      />
+
       <!-- 统计摘要 -->
-      <Card v-if="compareData" class="mb-4" title="改善摘要">
+      <ClpmDataCanvas v-if="compareData" class="mb-4" title="改善摘要">
         <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
           <div
             v-for="kpi in compareData.kpiComparison"
@@ -386,24 +451,27 @@ onMounted(() => {
             </div>
           </div>
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- PV 趋势叠加图 -->
-      <Card title="PV 趋势对比" class="mb-4">
+      <ClpmDataCanvas title="PV 趋势对比" class="mb-4">
         <EchartsUI ref="trendChartRef" height="360px" />
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- KPI 柱状对比图 -->
-      <Card title="KPI 对比">
+      <ClpmDataCanvas title="KPI 对比">
         <EchartsUI ref="kpiChartRef" height="360px" />
-      </Card>
+      </ClpmDataCanvas>
     </Spin>
   </Drawer>
 
   <!-- 独立页面模式 -->
-  <Page v-else :title="pageTitle">
-    <!-- 时间范围选择 -->
-    <Card class="mb-4">
+  <Page v-else>
+    <ClpmPageToolbar
+      :title="pageTitle"
+      subtitle="处置前后趋势与 KPI 对比，用于验证措施效果。"
+    />
+    <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex items-center gap-2">
           <span class="text-sm text-gray-500">回路：</span>
@@ -441,10 +509,20 @@ onMounted(() => {
           查询
         </Button>
       </div>
-    </Card>
+    </ClpmDataCanvas>
+
+    <!-- 数据不足提示（FDS §5.4.4） -->
+    <Alert
+      v-if="isAfterDataInsufficient"
+      class="mb-4"
+      type="warning"
+      show-icon
+      message="评估数据采集中，请稍后查看"
+      description="处置后数据不足 24 小时，A/B 对比结果可能不准确。建议等待数据采集完整后再进行评估。"
+    />
 
     <!-- 统计摘要 -->
-    <Card v-if="compareData" class="mb-4" title="改善摘要">
+    <ClpmDataCanvas v-if="compareData" class="mb-4" title="改善摘要">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <div
           v-for="kpi in compareData.kpiComparison"
@@ -469,20 +547,20 @@ onMounted(() => {
           </div>
         </div>
       </div>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- PV 趋势叠加图 -->
-    <Card title="PV 趋势对比" class="mb-4">
+    <ClpmDataCanvas title="PV 趋势对比" class="mb-4">
       <Spin :spinning="loading">
         <EchartsUI ref="trendChartRef" height="360px" />
       </Spin>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- KPI 柱状对比图 -->
-    <Card title="KPI 对比">
+    <ClpmDataCanvas title="KPI 对比">
       <Spin :spinning="loading">
         <EchartsUI ref="kpiChartRef" height="360px" />
       </Spin>
-    </Card>
+    </ClpmDataCanvas>
   </Page>
 </template>

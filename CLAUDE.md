@@ -1,30 +1,93 @@
 # CLPM Agent Guidance
 
-本项目当前是危化企业控制回路性能评估与优化平台的产品规划资料库。
+本项目是危化企业控制回路性能评估与优化平台（CLPM v4.0），7 阶段系统重构已全部完成。
 
 ## 必读入口
 
-先读：`README.md`（当前共识与目录说明）与 `docs/设计文档/01-PRD/PRD.md` v3.0。
+先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v3.1。
 
-PRD v3.0 是后续所有设计、研发、原型与投标响应的**唯一事实来源**；UI/UX v4.0 是原型与正式研发的**唯一 UI/UX 输入性文件**。其他设计文档（FDS/ADS/DDS/IDS）均从 PRD 派生并对齐。
+PRD v3.1 是产品需求的事实来源；实现契约 v1.0 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v5.1 是视觉与交互输入文件（已对齐 v4.0 代码）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
-## 当前基线（2026-06-20 修订）
+## 当前基线（2026-06-26 修订 — v4.0 重构完成）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
-| 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v3.0 |
-| 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v3.0 |
-| 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v3.0 |
-| 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v3.0 |
-| API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v3.0 |
-| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | v4.0 |
-| 原型设计基线 | `DESIGN.md` | v2.0（对齐 v3.0/v4.0） |
+| 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v3.1 |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | v1.0 |
+| **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` | v1.0（Phase 0-6 全部完成） |
+| 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v3.0（待按实现契约追认） |
+| 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v3.0（目标架构/待校准） |
+| 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v3.0（待按实现契约追认） |
+| API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v3.0（待按实现契约追认） |
+| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v5.1**（已对齐 v4.0 代码） |
+| **工业桌面端 UI/UX 改造基线** | `docs/设计文档/06-UIUX/CLPM_UIUX_工业桌面端改造方案_v1.0.md` | v1.0（2026-06-27，新 UI/UX 收口基线） |
+| 设计基线 | `DESIGN.md` | v2.1（对齐实现契约） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v2.0（对齐 v3.0/v4.0） |
 | 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` | 历史参考 |
-| CEO 评审结论 | `/Users/zhangping/.gstack/projects/CLPM/ceo-plans/2026-06-16-clpm-productization-validation.md` | 历史参考 |
-| 工程评审结论 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-eng-review-20260616-093500.md` | 历史参考 |
-| 设计评审结论 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-review-20260616-100500.md` | 历史参考 |
+
+## v4.0 重构完成状态（2026-06-26）
+
+7 阶段重构全部交付，后端 1239 测试用例通过：
+
+| 阶段 | 核心交付 | Commit |
+|---|---|---|
+| Phase 0 | ORM 模型层更新 | `02f3c5a` |
+| Phase 1 | 数据预处理模块（8步Pipeline + 8类异常值检测 + 180 单元测试） | `bdde45b` |
+| Phase 2+3 | DataPlanner+Cache 与 8 大 KPI 指标计算器 | `11d13e6` |
+| Phase 4 | kpi_calc.py 整合 DataPlanner + MetricCalculator | `53fc21f` |
+| Phase 5 | API 接口层扩展（17 端点 + 任务跟踪/通知 + OpenAPI 文档） | `39859e5` `0dfd37b` |
+| Phase 6 | 前端适配（4层架构：类型/API → 组件 → 页面 → 路由） | `86f356c` `3516641` `4bff65b` |
+| 修复 | Celery worker 任务注册修复（include 参数替代 autodiscover_tasks） | `207c882` |
+
+## v4.0 核心架构组件
+
+| 组件 | 路径 | 职责 |
+|---|---|---|
+| DataPlanner | `app/services/data_planner.py` | 统一历史数据读取，按控制类型自动降采样，分发 MetricDataBundle |
+| ConfidenceEvaluator | `app/services/confidence_evaluator.py` | 可信度评估 A/B/C/D/E（valid_rate 阈值 95/80/60/20%），INCONCLUSIVE 处理 |
+| TaskTracker | `app/services/task_tracker.py` | 任务全生命周期跟踪（create/update_status），Redis 状态存储 + 通知 |
+| 预处理 Pipeline | `app/services/` (quality_code/thresholds/outlier_detection/validity_mask/quality_summary/pipeline) | 8 步流水线 + 8 类异常值检测 |
+| MetricCalculator | `app/tasks/kpi_calc.py` | 8 大 KPI 独立计算器，通过 DataPlanner.request_bundles() 获取数据 |
+
+## 开发环境运行指南
+
+### 启动服务
+
+```bash
+# 1. 基础设施
+docker compose -f deploy/docker/docker-compose.dev.yml up -d
+
+# 2. 后端 API (port 8001)
+cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+# 3. Celery Worker（独立进程，必须单独启动）
+cd backend && .venv/bin/celery -A app.tasks.celery_app worker -l info -Q default
+
+# 4. 前端 (port 5668)
+cd frontend && pnpm run dev:antd
+```
+
+### 测试与验证
+
+```bash
+# 后端单元测试（1239 用例）
+cd backend && uv run pytest -q
+
+# 前端类型检查
+cd frontend && pnpm run check:type
+
+# E2E 测试
+cd e2e && pnpm exec playwright test
+```
+
+### 关键注意事项
+
+- **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker
+- **前端端口是 5668**（非 5666）
+- **前端有 6 个预存在 TypeScript 错误**（plant-node-tree.vue 3 个 + workbench.vue 3 个），与 v4.0 重构无关
+- **默认账号**：admin / admin123（5 个种子用户详见 README.md）
+- **Git 分支**：当前在 `remediation/v1.1.0` 分支
 
 ## 核心决策
 
@@ -33,25 +96,29 @@ PRD v3.0 是后续所有设计、研发、原型与投标响应的**唯一事实
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统；用户（管理员/工程师）可自助完成配置组态，减少开发团队介入 |
 | 模块架构 | 6 模块 + 1 门户：工作台 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理；各业务模块遵循"配置→运行→分析"三态自包含原则，减少跨模块依赖 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体）；回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D）；PID 参数与控制模式从关联 tag 只读读取；数据质量主要针对 PV 值（Good/Bad/Uncertain 质量码） |
-| Action Tracker | 降级为诊断中心子模块（子菜单路由），状态机 PENDING → IN_PROGRESS → RESOLVED/IGNORED |
+| Action Tracker | 诊断中心子模块（子菜单路由），状态机 PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED，中文显示为待处理/处理中/已实施/已忽略 |
 | 统计分析 | 不设独立模块，分散到各业务模块的"分析"态；自动报表归入系统管理 |
-| 回路整定 | Phase 2 落地，Phase 1 仅完成原型页面设计；含工作台/模型辨识/整定算法/闭环仿真 4 子模块 |
+| 回路整定 | Phase 1 保留页面与实验/辅助接口，只输出建议、证据、风险和回退方案；不支持 DCS 参数下写，Phase 2 再完成生产级算法闭环 |
 | 技术护城河 | 可信数据 + 可解释诊断 + 可验证整定 + 安全闭环 + 规模化交付 |
 | 安全边界 | 平台不直接修改 DCS 的 P/I/D 参数，只输出建议、证据、风险和回退方案；参数由授权人员人工实施并留痕 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
-| 原型开发 | React 19 + Vite + TypeScript，本地 mock data，不接真实 DCS；菜单结构以 `prototype/src/routes/menuConfig.ts` 为单一事实来源 |
+| 原型/前端开发 | 当前生产前端为 Vue 3 + Vite + TypeScript + vue-vben-admin；重构后路由/页面以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
-| 文档权威性 | PRD v3.0 为唯一事实来源；UI/UX v4.0 为唯一 UI/UX 输入；FDS/ADS/DDS/IDS v3.0 与 PRD/UI-UX 完全对齐，跨文档术语/路由/API/数据字段已通过一致性校验 |
+| 文档权威性 | PRD v3.1 负责产品需求；实现契约 v1.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v5.1 负责视觉与交互（已对齐 v4.0 代码）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## 下阶段规则
 
-| 阶段 | 先读 |
-|---|---|
-| `/plan-eng-review` | PRD v3.0 → ADS v3.0 → DDS v3.0 → IDS v3.0 → FDS v3.0 |
-| `/plan-design-review` | PRD v3.0 → UI/UX v4.0 → FDS v3.0 |
-| `/plan-ceo-review` | PRD v3.0 → README.md（当前共识） |
-| PRD 后续修订 | PRD v3.0 → FDS/ADS/DDS/IDS v3.0 → UI/UX v4.0（保持派生关系） |
-| 原型开发 | UI/UX v4.0 → `prototype/src/routes/menuConfig.ts` → `DESIGN.md`（注意 DESIGN.md 待复核） |
+v4.0 重构已完成，后续工作方向：
+
+| 方向 | 先读 | 关注点 |
+|---|---|---|
+| Bug 修复 / 功能增强 | README.md → CLAUDE.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
+| 前端 lint/格式化整理 | 当前工作区有 50+ 未提交的前端格式化改动 | 可考虑统一 `pnpm run lint --fix` 后提交 |
+| **工业桌面端 UI/UX 优化** | `docs/设计文档/06-UIUX/CLPM_UIUX_工业桌面端改造方案_v1.0.md` → `frontend/apps/web-antd/src/components/clpm/` → 各业务页面 | 已落地共享组件、工作台/回路/诊断/性能看板样板页与性能评估 IA 收口；后续继续按基线扩展到剩余页面 |
+| E2E 测试补充 | `e2e/` 目录 → UI/UX v5.1 → v4.0 新增页面 | 任务管理页面、可信度徽章、INCONCLUSIVE 展示需补 E2E |
+| 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
+| 文档追认 | FDS/ADS/DDS/IDS v3.0 → 实现契约 v1.0 → v4.0 实际代码 | FDS/ADS/DDS/IDS 仍标注"待追认"，需按 v4.0 代码校准 |
+| 新功能开发 | PRD v3.1 → 实现契约 v1.0 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
 
 ## Stale docs 防护
 

@@ -30,10 +30,12 @@ export namespace DashboardApi {
     delta: number;
   }
 
-  /** 6 大 KPI 卡片数据（IDS v3.2 §2.1） */
+  /** 8 大 KPI 卡片数据（IDS v3.2 §2.1，对齐 GB/T 44693.2-2024） */
   export interface KpiCards {
     /** 自控投用率 */
     auto_mode_rate: KpiCard;
+    /** 有效自控率 */
+    effective_auto_rate: KpiCard;
     /** 平稳率 */
     steady_rate: KpiCard;
     /** 综合评分 */
@@ -44,6 +46,8 @@ export namespace DashboardApi {
     operation_count: KpiCard;
     /** 好值率 */
     good_value_rate: KpiCard;
+    /** 快速率 */
+    fast_response_rate: KpiCard;
   }
 
   /** 低效回路关键指标 */
@@ -103,7 +107,7 @@ export namespace DashboardApi {
   /** 工作台概览查询参数 */
   export interface OverviewQueryParams {
     /** 工厂节点 ID（全厂/装置/单元） */
-    plant_id?: string;
+    plantId?: string;
     /** 统计粒度 */
     granularity?: Granularity;
   }

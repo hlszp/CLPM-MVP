@@ -75,7 +75,7 @@ async def _write_audit(
         target_id=target_id,
         before_value=before_value,
         after_value=after_value,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
 
@@ -87,9 +87,7 @@ async def _write_audit(
 
 async def list_diagnosis_configs(db: AsyncSession) -> list[dict]:
     """获取诊断指标配置列表。"""
-    result = await db.execute(
-        select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc())
-    )
+    result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
     configs = result.scalars().all()
     return [_config_to_dict(c) for c in configs]
 
@@ -137,7 +135,7 @@ async def update_diagnosis_config(
         config.is_enabled = is_enabled
 
     config.updated_by = operator
-    config.updated_at = datetime.utcnow()
+    config.updated_at = datetime.now(UTC).replace(tzinfo=None)
     config.version = (config.version or 1) + 1
 
     after = _config_to_dict(config)
@@ -206,8 +204,13 @@ async def list_diagnosis(
     # 主查询
     base_stmt = (
         select(DiagnosisResult, LoopLedger, ActionTracker)
-        .join(latest_sub, and_(DiagnosisResult.loop_id == latest_sub.c.loop_id,
-                                DiagnosisResult.diagnosed_at == latest_sub.c.max_diagnosed_at))
+        .join(
+            latest_sub,
+            and_(
+                DiagnosisResult.loop_id == latest_sub.c.loop_id,
+                DiagnosisResult.diagnosed_at == latest_sub.c.max_diagnosed_at,
+            ),
+        )
         .join(LoopLedger, DiagnosisResult.loop_id == LoopLedger.id, isouter=True)
         .outerjoin(ActionTracker, ActionTracker.loop_id == LoopLedger.id)
     )
@@ -221,9 +224,11 @@ async def list_diagnosis(
     total = total_result.scalar() or 0
 
     # 分页
-    stmt = base_stmt.order_by(DiagnosisResult.diagnosed_at.desc()).offset(
-        (page - 1) * page_size
-    ).limit(page_size)
+    stmt = (
+        base_stmt.order_by(DiagnosisResult.diagnosed_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     result = await db.execute(stmt)
     rows = result.all()
 
@@ -347,9 +352,9 @@ async def get_diagnosis_detail(db: AsyncSession, loop_id: str) -> dict:
     # 取最新一条诊断作为主诊断
     primary = diag_records[0]
     primary_evidence = primary.evidence_chain or {}
-    fused_confidence = primary_evidence.get("fused_confidence") if isinstance(
-        primary_evidence, dict
-    ) else None
+    fused_confidence = (
+        primary_evidence.get("fused_confidence") if isinstance(primary_evidence, dict) else None
+    )
 
     # 构建 diagnosisLabels 数组
     diagnosis_labels: list[dict] = []
@@ -378,9 +383,9 @@ async def get_diagnosis_detail(db: AsyncSession, loop_id: str) -> dict:
     waveform_url = (
         f"/api/v1/timeseries/{loop_id}/waveform?startTime={start_time}&endTime={end_time}"
     )
-    scatter_plot = primary_evidence.get("scatter_plot") if isinstance(
-        primary_evidence, dict
-    ) else None
+    scatter_plot = (
+        primary_evidence.get("scatter_plot") if isinstance(primary_evidence, dict) else None
+    )
     reasoning = primary_evidence.get("reasoning") if isinstance(primary_evidence, dict) else None
 
     evidence_chain = {
@@ -498,11 +503,18 @@ def _to_float(value: Decimal | float | None) -> float | None:
 
 
 def _parse_iso_datetime(s: str) -> datetime:
-    """解析 ISO 8601 时间字符串。"""
+    """解析 ISO 8601 时间字符串，返回 naive datetime。
+
+    diagnosis_result.diagnosed_at 列为 TIMESTAMP WITHOUT TIME ZONE，
+    asyncpg 不允许 tz-aware datetime 传入 naive 列，因此统一剥离 tzinfo。
+    """
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s)
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt
 
 
 def _build_time_window_condition(time_window: str | None):
@@ -512,7 +524,7 @@ def _build_time_window_condition(time_window: str | None):
     """
     if not time_window:
         return None
-    now = datetime.utcnow()
+    now = datetime.now(UTC).replace(tzinfo=None)
     delta_map = {
         "last_24_hours": timedelta(hours=24),
         "last_7_days": timedelta(days=7),
@@ -559,6 +571,7 @@ def _aggregate_efficiency_trend(
     end: datetime,
 ) -> dict:
     """聚合效率趋势（按粒度分桶）。"""
+
     # 按粒度分桶
     def bucket_key(ts: datetime) -> str:
         if ts.tzinfo is not None:
@@ -580,7 +593,7 @@ def _aggregate_efficiency_trend(
             continue
         key = bucket_key(ts)
         bucket = buckets.setdefault(key, {"resolved": 0, "durations": []})
-        if tracker and tracker.action_status == "RESOLVED":
+        if tracker and tracker.action_status == "IMPLEMENTED":
             bucket["resolved"] += 1
             # 计算闭环时长
             if tracker.updated_at and ts:
@@ -609,7 +622,7 @@ def _aggregate_close_duration_distribution(rows: list) -> list[dict]:
     """聚合闭环时长分布。"""
     counts = {bucket[0]: 0 for bucket in CLOSE_DURATION_BUCKETS}
     for diag_result, _loop, tracker in rows:
-        if not tracker or tracker.action_status != "RESOLVED":
+        if not tracker or tracker.action_status != "IMPLEMENTED":
             continue
         if not tracker.updated_at or not diag_result.diagnosed_at:
             continue

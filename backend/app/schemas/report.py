@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
+
+from app.schemas.base import CamelModel
 
 
-class ReportConfigCreateRequest(BaseModel):
+class ReportConfigCreateRequest(CamelModel):
     """POST /api/v1/reports/configs request body."""
 
     name: str = Field(..., min_length=1, max_length=100, description="配置名称")
@@ -25,7 +27,7 @@ class ReportConfigCreateRequest(BaseModel):
         return v
 
 
-class ReportConfigUpdateRequest(BaseModel):
+class ReportConfigUpdateRequest(CamelModel):
     """PUT /api/v1/reports/configs/{id} request body (partial update)."""
 
     name: str | None = Field(None, min_length=1, max_length=100)
@@ -45,7 +47,7 @@ class ReportConfigUpdateRequest(BaseModel):
         return v
 
 
-class ReportConfigItem(BaseModel):
+class ReportConfigItem(CamelModel):
     """Report config item in list / detail responses."""
 
     id: str
@@ -60,7 +62,7 @@ class ReportConfigItem(BaseModel):
     updatedAt: str | None = None
 
 
-class ReportGenerateRequest(BaseModel):
+class ReportGenerateRequest(CamelModel):
     """POST /api/v1/reports/generate request body."""
 
     configId: str | None = Field(None, description="报表配置 ID（可选）")
@@ -77,7 +79,7 @@ class ReportGenerateRequest(BaseModel):
         return v
 
 
-class ReportGenerateData(BaseModel):
+class ReportGenerateData(CamelModel):
     """Report generation trigger response data."""
 
     taskId: str

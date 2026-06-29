@@ -19,7 +19,6 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
   Form,
   FormItem,
   Input,
@@ -32,6 +31,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import {
   createReportConfigApi,
   generateReportApi,
@@ -97,7 +97,7 @@ const columns: TableColumnsType = [
 // 新增/编辑 Modal
 const modalVisible = ref(false);
 const modalLoading = ref(false);
-const editingReport = ref<SystemApi.ReportConfig | null>(null);
+const editingReport = ref<null | SystemApi.ReportConfig>(null);
 const formRef = ref();
 const formState = reactive({
   name: '',
@@ -116,7 +116,7 @@ interface TaskProgress {
 }
 
 const taskProgressMap = ref<Map<string, TaskProgress>>(new Map());
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: null | ReturnType<typeof setInterval> = null;
 
 /** 加载报表配置列表 */
 async function loadList() {
@@ -210,7 +210,7 @@ async function handleGenerate(record: SystemApi.ReportConfig) {
     taskProgressMap.value.set(record.id, {
       taskId: result.taskId,
       configId: record.id,
-      status: 'RUNNING',
+      status: 'PROCESSING',
       progress: 0,
       message: '任务已提交，等待执行...',
     });
@@ -228,7 +228,7 @@ function startPolling() {
       stopPolling();
       return;
     }
-    const entries = Array.from(taskProgressMap.value.entries());
+    const entries = [...taskProgressMap.value.entries()];
     for (const [configId, progress] of entries) {
       try {
         const taskResult = await getReportTaskStatusApi(progress.taskId);
@@ -238,8 +238,11 @@ function startPolling() {
           progress: taskResult.progress ?? 0,
           message: taskResult.message || '',
         });
-        if (taskResult.status === 'SUCCESS' || taskResult.status === 'FAILED') {
-          if (taskResult.status === 'SUCCESS') {
+        if (
+          taskResult.status === 'COMPLETED' ||
+          taskResult.status === 'FAILED'
+        ) {
+          if (taskResult.status === 'COMPLETED') {
             message.success(`报表「${recordName(configId)}」生成完成`);
           } else {
             message.error(`报表「${recordName(configId)}」生成失败`);
@@ -279,9 +282,9 @@ function getTaskProgress(configId: string): TaskProgress | undefined {
 /** 任务状态颜色 */
 function taskStatusColor(status: SystemApi.ReportTaskStatus): string {
   const map: Record<SystemApi.ReportTaskStatus, string> = {
+    PROCESSING: 'blue',
+    COMPLETED: 'green',
     FAILED: 'red',
-    RUNNING: 'blue',
-    SUCCESS: 'green',
   };
   return map[status] || 'default';
 }
@@ -289,9 +292,9 @@ function taskStatusColor(status: SystemApi.ReportTaskStatus): string {
 /** 任务状态标签 */
 function taskStatusLabel(status: SystemApi.ReportTaskStatus): string {
   const map: Record<SystemApi.ReportTaskStatus, string> = {
+    PROCESSING: '生成中',
+    COMPLETED: '完成',
     FAILED: '失败',
-    RUNNING: '生成中',
-    SUCCESS: '完成',
   };
   return map[status] || status;
 }
@@ -319,8 +322,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Page title="自动报表管理">
-    <Card>
+  <Page>
+    <ClpmPageToolbar
+      title="自动报表管理"
+      subtitle="配置日报/周报/月报，手动触发生成并跟踪执行进度。"
+    />
+    <ClpmDataCanvas class="mt-4" title="报表配置列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
           管理班报/日报/周报/月报配置 · 支持手动触发生成与进度查询
@@ -366,7 +373,7 @@ onUnmounted(() => {
                 {{ taskStatusLabel(getTaskProgress(record.id)!.status) }}
               </Tag>
               <Progress
-                v-if="getTaskProgress(record.id)!.status === 'RUNNING'"
+                v-if="getTaskProgress(record.id)!.status === 'PROCESSING'"
                 :percent="getTaskProgress(record.id)!.progress"
                 size="small"
               />
@@ -401,7 +408,7 @@ onUnmounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
 
     <!-- 新增/编辑 Modal -->
     <Modal

@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+
 /**
  * S7-TUNE-005 效果统计页
  *
@@ -9,24 +11,27 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
-
 import type { TuningApi } from '#/api/tuning';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Card, Select, Statistic, Table, Tag } from 'ant-design-vue';
+import { Button, Select, Table, Tag } from 'ant-design-vue';
 
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar } from '#/components/clpm';
+import type { KpiStripItem } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningStats' });
 
+const { isDark, themeColors } = useClpmTheme();
+
 const loading = ref(false);
 const historyLoading = ref(false);
-const historyStats = ref<TuningApi.HistoryStats | null>(null);
+const historyStats = ref<null | TuningApi.HistoryStats>(null);
 const taskList = ref<TuningApi.TuningTaskItem[]>([]);
 const total = ref(0);
 
@@ -41,9 +46,11 @@ const algorithmOptions: { label: string; value: TuningApi.Algorithm }[] = [
 
 /** 状态选项 */
 const statusOptions: { label: string; value: TuningApi.TaskStatus }[] = [
+  { label: '待辨识', value: 'PENDING' },
+  { label: '已辨识', value: 'IDENTIFIED' },
   { label: '已仿真', value: 'SIMULATED' },
   { label: '已应用', value: 'APPLIED' },
-  { label: '失败', value: 'FAILED' },
+  { label: '已验证', value: 'VERIFIED' },
 ];
 
 /** 查询参数 */
@@ -97,6 +104,43 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 110, fixed: 'right' },
 ];
 
+const kpiStripItems = computed<KpiStripItem[]>(() => {
+  const totalTasksValue = historyStats.value?.totalTasks || 0;
+  const avgFittingValue = avgFitting.value;
+  return [
+    {
+      key: 'total',
+      label: '总任务数',
+      value: totalTasksValue,
+      status: 'neutral',
+    },
+    {
+      key: 'applied',
+      label: '已应用数',
+      value: appliedCount.value,
+      status: 'success',
+    },
+    {
+      key: 'fitting',
+      label: '平均拟合度',
+      value: avgFittingValue.toFixed(2),
+      unit: '%',
+      status:
+        avgFittingValue >= 80
+          ? 'success'
+          : avgFittingValue >= 60
+            ? 'warning'
+            : 'danger',
+    },
+    {
+      key: 'algorithms',
+      label: '算法种类数',
+      value: algorithmCount.value,
+      status: 'neutral',
+    },
+  ];
+});
+
 // ECharts refs
 const pieChartRef = ref<EchartsUIType>();
 const barChartRef = ref<EchartsUIType>();
@@ -116,14 +160,20 @@ function statusName(status: TuningApi.TaskStatus): string {
 /** 状态颜色映射 */
 function statusColor(status: TuningApi.TaskStatus): string {
   switch (status) {
-    case 'SIMULATED': {
-      return 'blue';
-    }
     case 'APPLIED': {
       return 'green';
     }
-    case 'FAILED': {
-      return 'red';
+    case 'IDENTIFIED': {
+      return 'cyan';
+    }
+    case 'PENDING': {
+      return 'default';
+    }
+    case 'SIMULATED': {
+      return 'blue';
+    }
+    case 'VERIFIED': {
+      return 'success';
     }
     default: {
       return 'default';
@@ -137,11 +187,11 @@ function modelTypeName(type: TuningApi.ModelType): string {
     case 'FOPDT': {
       return 'FOPDT 一阶加纯滞后';
     }
-    case 'SOPDT': {
-      return 'SOPDT 二阶加纯滞后';
-    }
     case 'IPDT': {
       return 'IPDT 积分加纯滞后';
+    }
+    case 'SOPDT': {
+      return 'SOPDT 二阶加纯滞后';
     }
     default: {
       return type;
@@ -151,10 +201,11 @@ function modelTypeName(type: TuningApi.ModelType): string {
 
 /** 拟合度颜色 */
 function fittingColor(val: null | number | undefined): string {
-  if (val === null || val === undefined || Number.isNaN(val)) return '#ff4d4f';
-  if (val >= 80) return '#52c41a';
-  if (val >= 60) return '#faad14';
-  return '#ff4d4f';
+  if (val === null || val === undefined || Number.isNaN(val))
+    return themeColors.value.DANGER;
+  if (val >= 80) return themeColors.value.SUCCESS;
+  if (val >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 /** 时间格式化 */
@@ -170,7 +221,7 @@ function formatTime(t: string): string {
 /** 拟合度格式化 */
 function formatFitting(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
-  return `${val.toFixed(2)}%`;
+  return `${val?.toFixed(2) ?? '0.00'}%`;
 }
 
 /** 已应用任务数 */
@@ -189,6 +240,34 @@ const avgFitting = computed(() => {
   if (v === null || v === undefined || Number.isNaN(v)) return 0;
   return v;
 });
+
+/** 算法分类色板（响应式，深色模式下使用更亮的色值） */
+const algoColors = computed<Record<string, string>>(() =>
+  isDark.value
+    ? {
+        COHEN_COON: '#a78bfa',
+        IMC: '#60a5fa',
+        LAMBDA: '#22c55e',
+        SIMC: '#2dd4bf',
+        ZN: '#fbbf24',
+      }
+    : {
+        COHEN_COON: '#722ed1',
+        IMC: '#1890ff',
+        LAMBDA: '#52c41a',
+        SIMC: '#13c2c2',
+        ZN: '#fa8c16',
+      },
+);
+
+/** 状态分布柱状图色板（响应式） */
+const statusChartColors = computed<Record<string, string>>(() => ({
+  APPLIED: themeColors.value.SUCCESS,
+  IDENTIFIED: isDark.value ? '#2dd4bf' : '#13c2c2',
+  PENDING: isDark.value ? '#9ca3af' : '#d9d9d9',
+  SIMULATED: themeColors.value.INFO,
+  VERIFIED: isDark.value ? '#4ade80' : '#389e0d',
+}));
 
 /** 加载历史统计 */
 async function loadHistory() {
@@ -235,13 +314,7 @@ function renderPieChart() {
     return;
   }
 
-  const colorMap: Record<string, string> = {
-    IMC: '#1890ff',
-    LAMBDA: '#52c41a',
-    ZN: '#fa8c16',
-    COHEN_COON: '#722ed1',
-    SIMC: '#13c2c2',
-  };
+  const colorMap = algoColors.value;
 
   renderPie({
     legend: { bottom: 0, orient: 'horizontal' },
@@ -249,7 +322,7 @@ function renderPieChart() {
       {
         avoidLabelOverlap: false,
         data: entries.map(([code, count]) => ({
-          itemStyle: { color: colorMap[code] || '#8c8c8c' },
+          itemStyle: { color: colorMap[code] || themeColors.value.NEUTRAL },
           name: algorithmName(code as TuningApi.Algorithm),
           value: count,
         })),
@@ -273,15 +346,13 @@ function renderPieChart() {
 function renderBarChart() {
   const byStatus = historyStats.value?.byStatus || {};
   const statusOrder: TuningApi.TaskStatus[] = [
+    'PENDING',
+    'IDENTIFIED',
     'SIMULATED',
     'APPLIED',
-    'FAILED',
+    'VERIFIED',
   ];
-  const colorMap: Record<string, string> = {
-    SIMULATED: '#1890ff',
-    APPLIED: '#52c41a',
-    FAILED: '#ff4d4f',
-  };
+  const colorMap = statusChartColors.value;
 
   const hasData = statusOrder.some((s) => (byStatus[s] || 0) > 0);
   if (!hasData) {
@@ -338,48 +409,38 @@ onMounted(() => {
   loadHistory();
   loadList();
 });
+
+/** 深色模式切换时重绘 ECharts 图表 */
+watch(isDark, () => {
+  nextTick(() => {
+    renderPieChart();
+    renderBarChart();
+  });
+});
 </script>
 
 <template>
-  <Page title="效果统计">
-    <!-- 顶部统计卡片区 -->
-    <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Card :loading="historyLoading">
-        <Statistic title="总任务数" :value="historyStats?.totalTasks || 0" />
-      </Card>
-      <Card :loading="historyLoading">
-        <Statistic
-          title="已应用数"
-          :value="appliedCount"
-          :value-style="{ color: '#52c41a' }"
-        />
-      </Card>
-      <Card :loading="historyLoading">
-        <Statistic
-          title="平均拟合度"
-          :value="avgFitting"
-          :precision="2"
-          suffix="%"
-          :value-style="{ color: '#1890ff' }"
-        />
-      </Card>
-      <Card :loading="historyLoading">
-        <Statistic title="算法种类数" :value="algorithmCount" />
-      </Card>
+  <Page>
+    <ClpmPageToolbar
+      title="效果统计"
+      subtitle="查看整定任务分布、拟合质量与历史效果。"
+    />
+    <div class="mb-4 mt-4">
+      <ClpmKpiStrip :items="kpiStripItems" :loading="historyLoading" />
     </div>
 
     <!-- 中部图表区 -->
     <div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <Card title="算法分布" :loading="historyLoading">
+      <ClpmDataCanvas title="算法分布" :loading="historyLoading">
         <EchartsUI ref="pieChartRef" height="320px" />
-      </Card>
-      <Card title="状态分布" :loading="historyLoading">
+      </ClpmDataCanvas>
+      <ClpmDataCanvas title="状态分布" :loading="historyLoading">
         <EchartsUI ref="barChartRef" height="320px" />
-      </Card>
+      </ClpmDataCanvas>
     </div>
 
     <!-- 底部任务列表 -->
-    <Card title="整定任务列表">
+    <ClpmDataCanvas title="整定任务列表">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -445,6 +506,6 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
+    </ClpmDataCanvas>
   </Page>
 </template>

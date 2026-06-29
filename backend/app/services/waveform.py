@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -53,9 +54,7 @@ def lttb_downsample_multi_series(
 
     # 选择参考序列（优先 PV，否则第一个非空序列）
     ref_key = "pv"
-    if ref_key not in series_map or not any(
-        v is not None for v in series_map[ref_key]
-    ):
+    if ref_key not in series_map or not any(v is not None for v in series_map[ref_key]):
         for k, vals in series_map.items():
             if any(v is not None for v in vals):
                 ref_key = k
@@ -95,10 +94,13 @@ def lttb_downsample_multi_series(
         point_a_y = ref_numeric[a]
 
         for j in range(bucket_start, bucket_end):
-            area = abs(
-                (point_a_x - avg_x) * (ref_numeric[j] - point_a_y)
-                - (point_a_x - ts_numeric[j]) * (avg_y - point_a_y)
-            ) * 0.5
+            area = (
+                abs(
+                    (point_a_x - avg_x) * (ref_numeric[j] - point_a_y)
+                    - (point_a_x - ts_numeric[j]) * (avg_y - point_a_y)
+                )
+                * 0.5
+            )
             if area > max_area:
                 max_area = area
                 max_area_idx = j
@@ -176,6 +178,10 @@ async def get_waveform(
             status_code=400,
         )
 
+    # TDengine 存储的时间带 Z 后缀（ISO 8601 UTC），查询时需保持一致
+    td_start = start_time
+    td_end = end_time
+
     # 查询回路 Tag 关联
     m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
     mappings = {m.tag_role: m for m in m_result.scalars().all()}
@@ -187,20 +193,21 @@ async def get_waveform(
         for t in t_result.scalars().all():
             tags_map[str(t.id)] = t
 
-    # 查询各角色的趋势数据
-    role_data: dict[str, list[dict]] = {}
-    for role in ("PV", "SP", "OP", "MODE"):
+    # 查询各角色的趋势数据（S3-A5: 并行查询 4 个 Tag）
+    async def _fetch_role(role: str) -> tuple[str, list[dict]]:
         mapping = mappings.get(role)
-        if mapping and str(mapping.tag_id) in tags_map:
-            tag = tags_map[str(mapping.tag_id)]
-            try:
-                raw = await query_trend_data(tag.tag_name, start_time, end_time)
-                role_data[role] = raw
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("查询 %s 趋势数据失败: %s", role, exc)
-                role_data[role] = []
-        else:
-            role_data[role] = []
+        if not mapping or str(mapping.tag_id) not in tags_map:
+            return role, []
+        tag = tags_map[str(mapping.tag_id)]
+        try:
+            raw = await query_trend_data(tag.tag_name, td_start, td_end)
+            return role, raw
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("查询 %s 趋势数据失败: %s", role, exc)
+            return role, []
+
+    results = await asyncio.gather(*[_fetch_role(r) for r in ("PV", "SP", "OP", "MODE")])
+    role_data: dict[str, list[dict]] = dict(results)
 
     # 以 PV 的时间戳为基准对齐
     pv_data = role_data.get("PV", [])
@@ -271,9 +278,7 @@ async def get_waveform(
             "mode": mode_list,
             "pvQuality": pv_quality_list,
         }
-        timestamps, series_map = lttb_downsample_multi_series(
-            timestamps, series_map, max_points
-        )
+        timestamps, series_map = lttb_downsample_multi_series(timestamps, series_map, max_points)
         pv_list = series_map["pv"]
         sp_list = series_map["sp"]
         op_list = series_map["op"]

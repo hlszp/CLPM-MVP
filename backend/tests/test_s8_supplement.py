@@ -126,8 +126,12 @@ LOOP_001.id = "00000000-0000-0000-0000-000000000201"
 LOOP_001.tag_name = "HDS-RX-TIC-101"
 LOOP_001.description = "R-101 反应器入口温度调节回路"
 LOOP_001.unit_id = "00000000-0000-0000-0000-000000000111"
+LOOP_001.loop_type = "TEMPERATURE"
+LOOP_001.level = 3
 LOOP_001.score_weight = None
 LOOP_001.is_active = True
+LOOP_001.is_monitored = True
+LOOP_001.is_stat_enabled = True
 LOOP_001.last_aas_sync_at = None
 LOOP_001.status = "READY"
 LOOP_001.created_at = MagicMock()
@@ -351,9 +355,7 @@ class TestAuthLockUnlock:
         """UT-AUTH-005: 登录失败计数在成功登录后清零。"""
         from tests.conftest import TEST_PASSWORD, make_db_execute_return
 
-        mock_db.execute = AsyncMock(
-            return_value=make_db_execute_return(TEST_USERS["admin"])
-        )
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
         # 失败 3 次
         for _ in range(3):
             client.post(
@@ -384,7 +386,7 @@ class TestTuningServiceEdgeCases:
     """整定服务边界条件测试。"""
 
     def test_tune_invalid_algorithm(self, client, mock_db) -> None:
-        """UT-TUNE-004: 无效算法返回 400。"""
+        """UT-TUNE-004: 无效算法返回 422（S4-C3 枚举约束）。"""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/tuning/tune",
@@ -396,8 +398,8 @@ class TestTuningServiceEdgeCases:
                     "currentPid": {"kp": 1.0, "ti": 10.0, "td": 0.0},
                 },
             )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "ERR_INVALID_ALGORITHM"
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "ERR_VALIDATION"
 
     def test_identify_data_insufficient(self, client, mock_db) -> None:
         """UT-TUNE-002: 数据不足返回 400。"""

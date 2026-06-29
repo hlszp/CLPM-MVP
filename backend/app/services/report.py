@@ -281,11 +281,7 @@ async def get_task_status(db: AsyncSession, *, task_id: str) -> dict:
         )
 
     mapped_status = _STATUS_MAP.get(record.status, record.status)
-    progress = (
-        100
-        if mapped_status == "SUCCESS"
-        else (50 if mapped_status == "RUNNING" else 0)
-    )
+    progress = 100 if mapped_status == "SUCCESS" else (50 if mapped_status == "RUNNING" else 0)
 
     return {
         "downloadUrl": record.file_url if mapped_status == "SUCCESS" else None,

@@ -7,14 +7,14 @@
  * - ECharts 饼图：预诊标签分布（8 类标签）
  * - ECharts 折线图：处理效率趋势（resolvedCount + avgCloseDurationHours 双 Y 轴）
  * - ECharts 柱状图：闭环时长分布（0-24h/24-72h/72h+）
- * - 支持导出 CSV 按钮
+ * - 支持导出 PNG/Excel 按钮（FDS §5.4.5）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { onMounted, reactive, ref, watch } from 'vue';
+import { nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -27,6 +27,15 @@ import {
   getDiagnosisAnalyticsApi,
 } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import {
+  DIAGNOSIS_LABEL_COLOR_HEX_MAP,
+  DIAGNOSIS_LABEL_OPTIONS,
+} from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { $t } from '#/locales';
+import { flattenNodes } from '#/utils/plant-node';
+
+const { isDark, themeColors } = useClpmTheme();
 
 defineOptions({ name: 'DiagnosisStatistics' });
 
@@ -47,34 +56,16 @@ const filter = reactive({
 });
 
 /** 8 类诊断标签选项 */
-const labelOptions: { label: string; value: DiagnosisLabel }[] = [
-  { label: '振荡', value: 'OSCILLATION' },
-  { label: '阀门粘滞', value: 'VALVE_STICTION' },
-  { label: '参数过激', value: 'OVERAGGRESSIVE' },
-  { label: '参数过保守', value: 'OVERCONSERVATIVE' },
-  { label: '外扰频繁', value: 'EXTERNAL_DISTURBANCE' },
-  { label: 'PV 质量异常', value: 'QUALITY_ABNORMAL' },
-  { label: '输出饱和', value: 'OUTPUT_SATURATION' },
-  { label: '人工复核', value: 'MANUAL_REVIEW' },
-];
+const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
 
 /** 标签颜色映射（用于饼图） */
-const labelColorHexMap: Record<DiagnosisLabel, string> = {
-  OSCILLATION: '#ff4d4f',
-  VALVE_STICTION: '#fa8c16',
-  OVERAGGRESSIVE: '#722ed1',
-  OVERCONSERVATIVE: '#1890ff',
-  EXTERNAL_DISTURBANCE: '#13c2c2',
-  QUALITY_ABNORMAL: '#8c8c8c',
-  OUTPUT_SATURATION: '#faad14',
-  MANUAL_REVIEW: '#d9d9d9',
-};
+const labelColorHexMap = DIAGNOSIS_LABEL_COLOR_HEX_MAP;
 
 /** 处理状态选项 */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '待处理', value: 'PENDING' },
   { label: '处理中', value: 'IN_PROGRESS' },
-  { label: '已解决', value: 'RESOLVED' },
+  { label: '已实施', value: 'IMPLEMENTED' },
   { label: '已忽略', value: 'IGNORED' },
 ];
 
@@ -91,23 +82,12 @@ const pieChartRef = ref<EchartsUIType>();
 const trendChartRef = ref<EchartsUIType>();
 const barChartRef = ref<EchartsUIType>();
 
-const { renderEcharts: renderPie } = useEcharts(pieChartRef);
-const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
-const { renderEcharts: renderBar } = useEcharts(barChartRef);
-
-/** 扁平化工厂节点树 */
-function flattenNodes(
-  nodes: PlantNodeApi.PlantNode[],
-  result: PlantNodeApi.PlantNode[] = [],
-): PlantNodeApi.PlantNode[] {
-  for (const node of nodes) {
-    result.push(node);
-    if (node.children) {
-      flattenNodes(node.children, result);
-    }
-  }
-  return result;
-}
+const { renderEcharts: renderPie, getChartInstance: getPieInstance } =
+  useEcharts(pieChartRef);
+const { renderEcharts: renderTrend, getChartInstance: getTrendInstance } =
+  useEcharts(trendChartRef);
+const { renderEcharts: renderBar, getChartInstance: getBarInstance } =
+  useEcharts(barChartRef);
 
 /** 加载工厂节点 */
 async function loadPlantNodes() {
@@ -218,7 +198,7 @@ function renderTrendChart() {
     series: [
       {
         data: trend.resolvedCount,
-        itemStyle: { color: '#52c41a' },
+        itemStyle: { color: themeColors.value.SUCCESS },
         name: '已解决数',
         smooth: true,
         type: 'line',
@@ -226,7 +206,7 @@ function renderTrendChart() {
       },
       {
         data: trend.avgCloseDurationHours,
-        itemStyle: { color: '#fa8c16' },
+        itemStyle: { color: themeColors.value.WARNING },
         name: '平均闭环时长',
         smooth: true,
         type: 'line',
@@ -258,13 +238,13 @@ function renderTrendChart() {
       {
         axisLabel: { formatter: '{value}' },
         name: '已解决数',
-        nameTextStyle: { color: '#52c41a' },
+        nameTextStyle: { color: themeColors.value.SUCCESS },
         type: 'value',
       },
       {
         axisLabel: { formatter: '{value}h' },
         name: '平均闭环时长',
-        nameTextStyle: { color: '#fa8c16' },
+        nameTextStyle: { color: themeColors.value.WARNING },
         splitLine: { show: false },
         type: 'value',
       },
@@ -274,9 +254,9 @@ function renderTrendChart() {
 
 /** 闭环时长区间颜色 */
 function getRangeColor(range: string): string {
-  if (range === '0-24h') return '#52c41a';
-  if (range === '24-72h') return '#faad14';
-  return '#ff4d4f';
+  if (range === '0-24h') return themeColors.value.SUCCESS;
+  if (range === '24-72h') return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 /** 渲染闭环时长分布柱状图 */
@@ -321,8 +301,41 @@ function renderBarChart() {
   });
 }
 
-/** 导出 CSV */
-async function handleExport() {
+/** 生成导出文件名（FDS §5.4.5 规范：CLPM-诊断统计报表-[装置]-[日期范围]） */
+function buildExportName(ext: string): string {
+  const [start, end] = filter.timeRange;
+  const plantName =
+    plantNodes.value.find((n) => n.id === filter.plantNodeId)?.name ??
+    '全部装置';
+  const startStr = start?.format('YYYYMMDD') ?? '';
+  const endStr = end?.format('YYYYMMDD') ?? '';
+  return `CLPM-诊断统计报表-${plantName}-${startStr}_${endStr}.${ext}`;
+}
+
+/** 导出 PNG（FDS §5.4.5：使用 ECharts getDataURL） */
+function handleExportPng() {
+  const instances = [
+    { inst: getPieInstance(), name: '标签分布' },
+    { inst: getTrendInstance(), name: '处理效率趋势' },
+    { inst: getBarInstance(), name: '闭环时长分布' },
+  ];
+  for (const { inst, name } of instances) {
+    if (!inst) continue;
+    const url = inst.getDataURL({
+      type: 'png',
+      pixelRatio: 2,
+      backgroundColor: '#fff',
+    });
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${buildExportName('png').replace('.png', '')}-${name}.png`;
+    link.click();
+  }
+  message.success('PNG 导出完成');
+}
+
+/** 导出 Excel（FDS §5.4.5） */
+async function handleExportExcel() {
   if (!filter.timeRange || filter.timeRange.length !== 2) {
     message.warning('请选择时间范围');
     return;
@@ -342,7 +355,7 @@ async function handleExport() {
       actionStatus: filter.actionStatus,
       granularity: filter.granularity,
     });
-    message.success('导出任务已提交');
+    message.success(`Excel 导出任务已提交，文件名：${buildExportName('xlsx')}`);
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -362,6 +375,13 @@ watch(
   },
 );
 
+// 深色模式切换时重新渲染所有 ECharts 图表
+watch(isDark, () => {
+  nextTick(() => {
+    renderAllCharts();
+  });
+});
+
 onMounted(() => {
   loadPlantNodes();
   loadData();
@@ -369,7 +389,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page title="诊断统计报表">
+  <Page :title="$t('diagnosis.statistics.title')">
     <!-- 筛选栏 -->
     <Card class="mb-4">
       <div class="flex flex-wrap items-center gap-3">
@@ -381,7 +401,7 @@ onMounted(() => {
         />
         <Select
           v-model:value="filter.plantNodeId"
-          placeholder="装置/单元筛选"
+          :placeholder="$t('diagnosis.list.plantNodePlaceholder')"
           style="width: 220px"
           allow-clear
           :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
@@ -389,7 +409,7 @@ onMounted(() => {
         />
         <Select
           v-model:value="filter.diagnosisLabel"
-          placeholder="诊断标签"
+          :placeholder="$t('diagnosis.list.labelPlaceholder')"
           style="width: 160px"
           allow-clear
           :options="labelOptions"
@@ -411,23 +431,36 @@ onMounted(() => {
         <Button type="primary" :loading="loading" @click="handleSearch">
           查询
         </Button>
-        <Button :loading="exporting" @click="handleExport"> 导出 CSV </Button>
+        <Button @click="handleExportPng"> 导出 PNG </Button>
+        <Button :loading="exporting" @click="handleExportExcel">
+          导出 Excel
+        </Button>
       </div>
     </Card>
 
     <!-- 标签分布饼图 -->
-    <Card title="预诊标签分布" class="mb-4" :loading="loading">
+    <Card
+      :title="$t('diagnosis.statistics.labelDistribution')"
+      class="mb-4"
+      :loading="loading"
+    >
       <EchartsUI ref="pieChartRef" height="360px" />
     </Card>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- 处理效率趋势折线图 -->
-      <Card title="处理效率趋势" :loading="loading">
+      <Card
+        :title="$t('diagnosis.statistics.efficiencyTrend')"
+        :loading="loading"
+      >
         <EchartsUI ref="trendChartRef" height="320px" />
       </Card>
 
       <!-- 闭环时长分布柱状图 -->
-      <Card title="闭环时长分布" :loading="loading">
+      <Card
+        :title="$t('diagnosis.statistics.closeDuration')"
+        :loading="loading"
+      >
         <EchartsUI ref="barChartRef" height="320px" />
       </Card>
     </div>

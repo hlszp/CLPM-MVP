@@ -7,10 +7,16 @@
 import { requestClient } from '#/api/request';
 
 /** KPI 状态色标 */
-export type KpiStatus = 'GOOD' | 'INCONCLUSIVE' | 'POOR' | 'WARNING';
+export type KpiStatus = 'INCONCLUSIVE' | 'PARTIAL' | 'SUCCESS';
 
-/** 控制类型 */
-export type ControlType = 'FAST' | 'SLOW' | 'STABLE';
+/** 可信度等级（算法说明 §3.7.2，基于 valid_rate 自动判定） */
+export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
+
+/** 控制类型（指标配置用，对齐 MetricConfigUpdate.pattern） */
+export type ControlType = 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+
+/** DataPlanner 控制类型（算法层用，对齐 app.contracts.data_types.ControlType） */
+export type DataPlannerControlType = 'CC' | 'FC' | 'LC' | 'PC' | 'TC';
 
 /** 时间窗枚举 */
 export type TimeWindow = 'last_7_days' | 'last_30_days' | 'today' | 'yesterday';
@@ -22,7 +28,11 @@ export type Granularity = 'day' | 'hour' | 'month' | 'week';
 export type ExecutionStatus = 'FAILED' | 'RUNNING' | 'SUCCESS';
 
 /** 处理状态 */
-export type ActionStatus = 'PENDING' | 'PROCESSING' | 'RESOLVED';
+export type ActionStatus =
+  | 'IGNORED'
+  | 'IMPLEMENTED'
+  | 'IN_PROGRESS'
+  | 'PENDING';
 
 export namespace MetricApi {
   /** 指标阈值 */
@@ -109,19 +119,42 @@ export namespace MetricApi {
     unit: string;
     status: KpiStatus;
     algorithmVersion: string;
+    /** 可信度等级（v4.0 血缘字段） */
+    confidenceLevel?: ConfidenceLevel;
   }
 
-  /** KPI 摘要 */
+  /** 数据血缘信息（8 字段，对齐 DataLineageSchema） */
+  export interface DataLineage {
+    samplingFreq: string;
+    aggregationPolicy: string;
+    qualityPolicy: string;
+    tagGroup: string;
+    dataBlockIds: string[];
+    validRate: number;
+    dataPolicyVersion: string;
+    algorithmVersion: string;
+  }
+
+  /** KPI 摘要（对齐 GB/T 44693.2-2024） */
   export interface KpiSummary {
     good_value_rate: number;
     auto_mode_rate: number;
+    effective_auto_rate: number;
     steady_rate: number;
     accuracy_rate: number;
+    fast_response_rate: number;
     oscillation_rate: number;
     saturation_rate: number;
     composite_score: number;
     status: KpiStatus;
     algorithm_version: string;
+    /** v4.0 数据血缘字段（7 个，对齐 KpiSnapshotSchema） */
+    ideal_settling_time?: null | number;
+    sampling_freq?: null | string;
+    quality_policy?: null | string;
+    valid_rate?: null | number;
+    confidence_level?: null | ConfidenceLevel;
+    data_lineage?: DataLineage | null;
   }
 
   /** 趋势数据 */
@@ -147,7 +180,7 @@ export namespace MetricApi {
     partialWarning: PartialWarning;
   }
 
-  /** 排行项 */
+  /** 排行项（对齐 GB/T 44693.2-2024） */
   export interface RankingItem {
     rank: number;
     loopId: string;
@@ -156,14 +189,23 @@ export namespace MetricApi {
     compositeScore: number;
     goodValueRate: number;
     autoModeRate: number;
+    effectiveAutoRate: number;
     steadyRate: number;
     accuracyRate: number;
+    fastResponseRate: number;
     oscillationRate: number;
     saturationRate: number;
     status: KpiStatus;
     algorithmVersion: string;
     preDiagnosis?: string;
     actionStatus: ActionStatus;
+    /** v4.0 数据血缘字段（对齐后端 RankingItem schema） */
+    confidenceLevel?: null | ConfidenceLevel;
+    validRate?: null | number;
+    samplingFreq?: null | string;
+    qualityPolicy?: null | string;
+    idealSettlingTime?: null | number;
+    dataLineage?: DataLineage | null;
   }
 
   /** 排行查询参数 */
@@ -232,6 +274,83 @@ export namespace MetricApi {
   /** 报表导出响应 */
   export interface AnalyticsExportResult {
     taskId: string;
+  }
+
+  /** 回路类型权重项（STABLE/SLOW/FAST/LOGIC） */
+  export interface LoopTypeWeightItem {
+    /** 回路类型 */
+    loopType: ControlType;
+    /** 类型名称 */
+    loopTypeName?: string;
+    /** A 权重（自动模式率权重） */
+    weightA: number;
+    /** F 权重（快速率权重） */
+    weightF: number;
+    /** S 权重（稳定率权重） */
+    weightS: number;
+    /** 描述 */
+    description?: string;
+    updatedAt?: string;
+    updatedBy?: string;
+  }
+
+  /** 回路类型权重列表响应 */
+  export interface LoopTypeWeightListResult {
+    items: LoopTypeWeightItem[];
+  }
+
+  /** 回路类型权重更新参数 */
+  export interface LoopTypeWeightUpdateParams {
+    weightA: number;
+    weightF: number;
+    weightS: number;
+    description?: string;
+  }
+
+  /** 回路级别（1/2/3） */
+  export type LoopLevel = 1 | 2 | 3;
+
+  /** 回路级别权重项 */
+  export interface LoopLevelWeightItem {
+    /** 级别 */
+    level: LoopLevel;
+    /** 级别名称 */
+    levelName?: string;
+    /** 权重 */
+    weight: number;
+    /** 描述 */
+    description?: string;
+    updatedAt?: string;
+    updatedBy?: string;
+  }
+
+  /** 回路级别权重列表响应 */
+  export interface LoopLevelWeightListResult {
+    items: LoopLevelWeightItem[];
+  }
+
+  /** 回路级别权重更新参数 */
+  export interface LoopLevelWeightUpdateParams {
+    weight: number;
+    description?: string;
+  }
+
+  /** 实时自控率统计 */
+  export interface RealtimeAutoRateResult {
+    /** 工厂节点 ID（null 表示全厂） */
+    plantNodeId: null | string;
+    /** 工厂节点名称 */
+    plantNodeName?: string;
+    /** 自动回路数 */
+    autoCount: number;
+    /** 手动回路数 */
+    manualCount: number;
+    /** 总回路数 */
+    totalCount: number;
+    /** 实时自控率（百分比） */
+    autoRate: number;
+    /** 统计时间 */
+    readAt?: string;
   }
 }
 
@@ -317,5 +436,59 @@ export function exportAnalyticsApi(data: MetricApi.AnalyticsExportParams) {
   return requestClient.post<MetricApi.AnalyticsExportResult>(
     `${BASE}/analytics/export`,
     data,
+  );
+}
+
+/**
+ * 获取回路类型权重列表 — 配置项
+ */
+export function getLoopTypeWeightsApi() {
+  return requestClient.get<MetricApi.LoopTypeWeightListResult>(
+    '/config/loop-type-weights',
+  );
+}
+
+/**
+ * 更新回路类型权重 — 仅 ADMIN
+ */
+export function updateLoopTypeWeightApi(
+  loopType: ControlType,
+  data: MetricApi.LoopTypeWeightUpdateParams,
+) {
+  return requestClient.put<MetricApi.LoopTypeWeightItem>(
+    `/config/loop-type-weights/${loopType}`,
+    data,
+  );
+}
+
+/**
+ * 获取回路级别权重列表 — 配置项
+ */
+export function getLoopLevelWeightsApi() {
+  return requestClient.get<MetricApi.LoopLevelWeightListResult>(
+    '/config/loop-level-weights',
+  );
+}
+
+/**
+ * 更新回路级别权重 — 仅 ADMIN
+ */
+export function updateLoopLevelWeightApi(
+  level: MetricApi.LoopLevel,
+  data: MetricApi.LoopLevelWeightUpdateParams,
+) {
+  return requestClient.put<MetricApi.LoopLevelWeightItem>(
+    `/config/loop-level-weights/${level}`,
+    data,
+  );
+}
+
+/**
+ * 获取实时自控率统计 — 用于仪表盘组件
+ */
+export function getRealtimeAutoRateApi(params?: { plantNodeId?: string }) {
+  return requestClient.get<MetricApi.RealtimeAutoRateResult>(
+    `${BASE}/realtime-auto-rate`,
+    { params },
   );
 }

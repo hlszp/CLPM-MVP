@@ -8,26 +8,44 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from app.schemas.base import CamelModel
+
+# ---------------------------------------------------------------------------
+# 枚举类型定义（S4-C3）
+# 与数据库 CheckConstraint 保持一致（app/models/tuning.py）
+# ---------------------------------------------------------------------------
+
+# 模型类型：FOPDT/SOPDT/IPDT
+ModelType = Literal["FOPDT", "SOPDT", "IPDT"]
+
+# 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC
+TuningAlgorithm = Literal["IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"]
+
+# 整定任务状态：PENDING/IDENTIFIED/SIMULATED/APPLIED/VERIFIED
+TuningTaskStatus = Literal["PENDING", "IDENTIFIED", "SIMULATED", "APPLIED", "VERIFIED"]
 
 # ---------------------------------------------------------------------------
 # 模型辨识
 # ---------------------------------------------------------------------------
 
 
-class ModelIdentifyRequest(BaseModel):
+class ModelIdentifyRequest(CamelModel):
     """POST /tuning/identify 请求体。"""
 
     loopId: str = Field(..., description="回路 ID")
     startTime: str = Field(..., description="起始时间 ISO 8601")
     endTime: str = Field(..., description="结束时间 ISO 8601")
-    modelType: str = Field("FOPDT", description="模型类型: FOPDT/SOPDT/IPDT")
-    method: str | None = Field(None, description="辨识方法: TWO_POINT/AREA/COMBINED（仅 FOPDT）")
+    modelType: ModelType = Field("FOPDT", description="模型类型: FOPDT/SOPDT/IPDT")
+    method: str | None = Field(
+        None, description="辨识方法: TWO_POINT/AREA（仅 FOPDT，默认 TWO_POINT）"
+    )
 
 
-class ModelParams(BaseModel):
+class ModelParams(CamelModel):
     """模型参数。"""
 
     K: float | None = Field(None, description="过程增益")
@@ -37,10 +55,10 @@ class ModelParams(BaseModel):
     T2: float | None = Field(None, description="SOPDT 第二时间常数（秒）")
 
 
-class ModelIdentifyResult(BaseModel):
+class ModelIdentifyResult(CamelModel):
     """模型辨识结果。"""
 
-    modelType: str
+    modelType: ModelType
     params: ModelParams
     fittingScore: float = Field(..., description="拟合度 R²（%）")
     algorithmVersion: str
@@ -56,7 +74,7 @@ class ModelIdentifyResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class PidParams(BaseModel):
+class PidParams(CamelModel):
     """PID 参数。"""
 
     kp: float = Field(..., description="比例增益")
@@ -64,12 +82,12 @@ class PidParams(BaseModel):
     td: float = Field(0.0, description="微分时间（秒）")
 
 
-class TuneRequest(BaseModel):
+class TuneRequest(CamelModel):
     """POST /tuning/tune 请求体。"""
 
-    modelType: str = Field(..., description="模型类型: FOPDT/SOPDT/IPDT")
+    modelType: ModelType = Field(..., description="模型类型: FOPDT/SOPDT/IPDT")
     modelParams: ModelParams
-    algorithm: str = Field(..., description="整定算法: IMC/LAMBDA/ZN/COHEN_COON/SIMC")
+    algorithm: TuningAlgorithm = Field(..., description="整定算法: IMC/LAMBDA/ZN/COHEN_COON/SIMC")
     algorithmParams: dict[str, Any] | None = Field(
         None, description="算法参数（如 lambda 比例系数）"
     )
@@ -77,10 +95,10 @@ class TuneRequest(BaseModel):
     loopId: str | None = Field(None, description="回路 ID（可选，用于记录）")
 
 
-class TuneResult(BaseModel):
+class TuneResult(CamelModel):
     """PID 整定结果。"""
 
-    algorithm: str
+    algorithm: TuningAlgorithm
     recommendedPid: PidParams
     currentPid: PidParams | None = None
     algorithmParams: dict[str, Any] | None = None
@@ -93,10 +111,10 @@ class TuneResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class SimulateRequest(BaseModel):
+class SimulateRequest(CamelModel):
     """POST /tuning/simulate 请求体。"""
 
-    modelType: str = Field("FOPDT", description="模型类型")
+    modelType: ModelType = Field("FOPDT", description="模型类型")
     modelParams: ModelParams
     currentPid: PidParams
     recommendedPid: PidParams
@@ -106,7 +124,7 @@ class SimulateRequest(BaseModel):
     disturbanceType: str = Field("step", description="扰动类型: step/none")
 
 
-class SimulationMetrics(BaseModel):
+class SimulationMetrics(CamelModel):
     """仿真性能指标。"""
 
     riseTime: float | None = Field(None, description="上升时间（秒）")
@@ -115,7 +133,7 @@ class SimulationMetrics(BaseModel):
     itae: float | None = Field(None, description="ITAE 积分")
 
 
-class SimulationResult(BaseModel):
+class SimulationResult(CamelModel):
     """闭环仿真结果。"""
 
     timestamps: list[float]
@@ -131,18 +149,18 @@ class SimulationResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TuningTaskItem(BaseModel):
+class TuningTaskItem(CamelModel):
     """整定任务列表项。"""
 
     id: str
     loopId: str
     tagName: str | None = None
-    modelType: str
+    modelType: ModelType
     modelParams: dict[str, Any] | None = None
-    algorithm: str
+    algorithm: TuningAlgorithm
     recommendedPid: dict[str, Any] | None = None
     fittingScore: float | None = None
-    status: str
+    status: TuningTaskStatus
     createdBy: str | None = None
     createdAt: str
 
@@ -154,18 +172,18 @@ class TuningTaskDetail(TuningTaskItem):
     currentPid: dict[str, Any] | None = None
 
 
-class CreateTuningTaskRequest(BaseModel):
+class CreateTuningTaskRequest(CamelModel):
     """创建整定任务（保存整定结果）。"""
 
     loopId: str
-    modelType: str
+    modelType: ModelType
     modelParams: ModelParams
-    algorithm: str
+    algorithm: TuningAlgorithm
     recommendedPid: PidParams
     currentPid: PidParams | None = None
     fittingScore: float | None = None
     simulationResult: dict[str, Any] | None = None
-    status: str = Field("SIMULATED", description="任务状态")
+    status: TuningTaskStatus = Field("SIMULATED", description="任务状态")
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +191,7 @@ class CreateTuningTaskRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TuningHistoryStats(BaseModel):
+class TuningHistoryStats(CamelModel):
     """整定历史统计。"""
 
     totalTasks: int
@@ -188,7 +206,7 @@ class TuningHistoryStats(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TuningMethodInfo(BaseModel):
+class TuningMethodInfo(CamelModel):
     """整定方法信息。"""
 
     code: str

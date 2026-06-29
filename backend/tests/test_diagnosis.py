@@ -364,7 +364,7 @@ class TestDiagnosisDetail:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/diagnosis/nonexistent",
+                "/api/v1/diagnosis/00000000-0000-0000-0000-000000000000",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
@@ -524,7 +524,7 @@ class TestWaveform:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/timeseries/nonexistent/waveform",
+                "/api/v1/timeseries/00000000-0000-0000-0000-000000000000/waveform",
                 headers={"Authorization": "Bearer fake-token"},
                 params={
                     "startTime": "2026-06-22T08:00:00Z",
@@ -537,7 +537,7 @@ class TestWaveform:
     def test_get_waveform_no_token(self, client) -> None:
         """未认证请求返回 401。"""
         resp = client.get(
-            "/api/v1/timeseries/some-id/waveform",
+            "/api/v1/timeseries/00000000-0000-0000-0000-000000000001/waveform",
             params={"startTime": "2026-06-22T08:00:00Z", "endTime": "2026-06-22T08:00:10Z"},
         )
         assert resp.status_code == 401
@@ -596,7 +596,7 @@ class TestTrackerStatusUpdate:
                 return _make_scalar_one_or_none_mock(loop)
             if call_count[0] == 2:
                 return _make_scalar_one_or_none_mock(tracker)
-            # RESOLVED 时查询 diag
+            # IMPLEMENTED 时查询 diag
             return _make_scalar_one_or_none_mock(diag)
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
@@ -612,7 +612,7 @@ class TestTrackerStatusUpdate:
         assert body["data"]["actionStatus"] == "IN_PROGRESS"
 
     def test_update_status_resolved(self, client, mock_db, fake_redis) -> None:
-        """RESOLVED 状态时自动生成 A/B 对比视图。"""
+        """IMPLEMENTED 状态时自动生成 A/B 对比视图。"""
         loop = _make_loop()
         tracker = _make_tracker()
         diag = _make_diag_result()
@@ -632,12 +632,12 @@ class TestTrackerStatusUpdate:
             resp = client.patch(
                 f"/api/v1/tracker/{loop.id}/status",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"status": "RESOLVED"},
+                json={"status": "IMPLEMENTED"},
             )
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"
-        assert body["data"]["actionStatus"] == "RESOLVED"
+        assert body["data"]["actionStatus"] == "IMPLEMENTED"
         assert body["data"]["abComparison"] is not None
         assert "beforeWindow" in body["data"]["abComparison"]
         assert "afterWindow" in body["data"]["abComparison"]
@@ -646,7 +646,7 @@ class TestTrackerStatusUpdate:
         """无效状态返回 422。"""
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.patch(
-                "/api/v1/tracker/some-id/status",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000001/status",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "INVALID"},
             )
@@ -657,7 +657,7 @@ class TestTrackerStatusUpdate:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.patch(
-                "/api/v1/tracker/nonexistent/status",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000000/status",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "IN_PROGRESS"},
             )
@@ -668,7 +668,7 @@ class TestTrackerStatusUpdate:
         """ADMIN 不能更新 Tracker 状态（403，仅 IC_ENGINEER）。"""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.patch(
-                "/api/v1/tracker/some-id/status",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000000/status",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "IN_PROGRESS"},
             )
@@ -678,7 +678,7 @@ class TestTrackerStatusUpdate:
         """SPONSOR 不能更新 Tracker 状态（403）。"""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.patch(
-                "/api/v1/tracker/some-id/status",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000001/status",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"status": "IN_PROGRESS"},
             )
@@ -687,7 +687,7 @@ class TestTrackerStatusUpdate:
     def test_update_status_no_token(self, client) -> None:
         """未认证请求返回 401。"""
         resp = client.patch(
-            "/api/v1/tracker/some-id/status",
+            "/api/v1/tracker/00000000-0000-0000-0000-000000000001/status",
             json={"status": "IN_PROGRESS"},
         )
         assert resp.status_code == 401
@@ -716,7 +716,7 @@ class TestTrackerExport:
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
-                "/api/v1/tracker/nonexistent/export",
+                "/api/v1/tracker/00000000-0000-0000-0000-000000000000/export",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
@@ -734,11 +734,9 @@ class TestDiagnosisAnalytics:
         """认证用户可以获取诊断统计报表。"""
         loop = _make_loop()
         diag = _make_diag_result()
-        tracker = _make_tracker(action_status="RESOLVED")
+        tracker = _make_tracker(action_status="IMPLEMENTED")
 
-        mock_db.execute = AsyncMock(
-            return_value=_make_rows_mock([(diag, loop, tracker)])
-        )
+        mock_db.execute = AsyncMock(return_value=_make_rows_mock([(diag, loop, tracker)]))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/diagnosis/analytics",
@@ -776,16 +774,20 @@ class TestAnalyticsExport:
     def test_export_analytics_success(self, client, mock_db, fake_redis) -> None:
         """认证用户可以导出统计报表。"""
         with mock_current_user(TEST_USERS["admin"]):
-            resp = client.post(
-                "/api/v1/diagnosis/analytics/export",
-                headers={"Authorization": "Bearer fake-token"},
-                json={
-                    "startTime": "2026-06-01T00:00:00Z",
-                    "endTime": "2026-06-22T00:00:00Z",
-                    "granularity": "day",
-                    "format": "csv",
-                },
-            )
+            with patch("app.api.v1.endpoints.diagnosis.export_diagnosis_statistics") as mock_task:
+                mock_result = MagicMock()
+                mock_result.id = "test-task-id"
+                mock_task.delay.return_value = mock_result
+                resp = client.post(
+                    "/api/v1/diagnosis/analytics/export",
+                    headers={"Authorization": "Bearer fake-token"},
+                    json={
+                        "startTime": "2026-06-01T00:00:00Z",
+                        "endTime": "2026-06-22T00:00:00Z",
+                        "granularity": "day",
+                        "format": "csv",
+                    },
+                )
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"
@@ -886,16 +888,17 @@ class TestDiagnosisEngine:
         assert result["overconservative"] is False
 
     def test_analyze_pid_params_overaggressive(self) -> None:
-        """测试 PID 增益分析：参数过激（有过冲）。"""
+        """测试 PID 增益分析：参数过激（SP 阶跃后有过冲）。"""
         import numpy as np
 
         from app.tasks.diagnosis_engine import _analyze_pid_params
 
-        # PV 有明显过冲
-        sp = np.array([50.0] * 100, dtype=float)
+        # SP 从 0 阶跃到 50，PV 过冲到 70 后稳定到 50（过冲 40%）
+        sp = np.zeros(100)
+        sp[10:] = 50.0  # 第 10 个点 SP 阶跃到 50
         pv = np.zeros(100)
-        pv[0:30] = 70.0  # 过冲 40%
-        pv[30:] = 50.0
+        pv[10:40] = 70.0  # 阶跃后过冲到 70（过冲 = (70-50)/50 = 0.4）
+        pv[40:] = 50.0  # 稳定到 50
         result = _analyze_pid_params(pv, sp)
         assert result["overaggressive"] is True
 
@@ -959,20 +962,60 @@ class TestDiagnosisEngine:
         """测试 DS 证据理论融合：多条证据。"""
         from app.tasks.diagnosis_engine import _dempster_shafer_fusion
 
-        result = _dempster_shafer_fusion(
-            [("OSCILLATION", 0.8), ("VALVE_STICTION", 0.6)]
-        )
+        result = _dempster_shafer_fusion([("OSCILLATION", 0.8), ("VALVE_STICTION", 0.6)])
         assert 0.0 <= result <= 1.0
 
     def test_dempster_shafer_fusion_same_label(self) -> None:
         """测试 DS 证据理论融合：相同标签。"""
         from app.tasks.diagnosis_engine import _dempster_shafer_fusion
 
-        result = _dempster_shafer_fusion(
-            [("OSCILLATION", 0.8), ("OSCILLATION", 0.6)]
-        )
+        result = _dempster_shafer_fusion([("OSCILLATION", 0.8), ("OSCILLATION", 0.6)])
         # 相同标签融合后置信度应更高
         assert result >= 0.8
+
+    def test_align_timeseries_tolerance_numeric(self) -> None:
+        """测试时序对齐：数值时间戳容差匹配（±500ms）。"""
+        from app.tasks.diagnosis_engine import _align_timeseries
+
+        pv_data = [
+            {"ts": 1000.0, "value": 10.0, "quality": "GOOD"},
+            {"ts": 1001.0, "value": 20.0, "quality": "GOOD"},
+        ]
+        # 偏差 200ms / 100ms，在容差内
+        sp_data = [{"ts": 1000.2, "value": 11.0}, {"ts": 1001.1, "value": 21.0}]
+        op_data = [{"ts": 1000.3, "value": 50.0}]  # 偏差 300ms
+        mode_data = [{"ts": 1000.4, "value": 1}]  # 偏差 400ms
+
+        aligned = _align_timeseries(pv_data, sp_data, op_data, mode_data)
+        assert len(aligned) == 2
+        assert aligned[0]["pv"] == 10.0
+        assert aligned[0]["sp"] == 11.0
+        assert aligned[0]["op"] == 50.0
+        assert aligned[0]["mode"] == 1
+        assert aligned[1]["sp"] == 21.0
+        assert aligned[1]["op"] is None
+        assert aligned[1]["mode"] is None
+
+    def test_align_timeseries_tolerance_out_of_range(self) -> None:
+        """测试时序对齐：超出容差范围（>500ms）不匹配。"""
+        from app.tasks.diagnosis_engine import _align_timeseries
+
+        pv_data = [{"ts": 1000.0, "value": 10.0, "quality": "GOOD"}]
+        # 偏差 600ms，超出容差
+        sp_data = [{"ts": 1000.6, "value": 11.0}]
+
+        aligned = _align_timeseries(pv_data, sp_data, [], [])
+        assert aligned[0]["sp"] is None
+
+    def test_align_timeseries_exact_string(self) -> None:
+        """测试时序对齐：字符串 ts 精确匹配（向后兼容）。"""
+        from app.tasks.diagnosis_engine import _align_timeseries
+
+        pv_data = [{"ts": "t1", "value": 10.0, "quality": "GOOD"}]
+        sp_data = [{"ts": "t1", "value": 11.0}]
+
+        aligned = _align_timeseries(pv_data, sp_data, [], [])
+        assert aligned[0]["sp"] == 11.0
 
 
 # ---------------------------------------------------------------------------
@@ -1102,3 +1145,195 @@ class TestWaveformService:
             )
         assert exc_info.value.code == "ERR_TS_001"
         assert exc_info.value.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# S3-C4: FFT 频率精度验证测试
+# ---------------------------------------------------------------------------
+
+
+class TestFFTPrecision:
+    """FFT 频率精度验证测试 — 使用已知频率的正弦波数据。
+
+    验证 _detect_oscillation_fft 检测到的主频与已知输入频率的偏差 < 1%。
+    """
+
+    @staticmethod
+    def _generate_sine_wave(
+        frequency: float,
+        sample_rate: float,
+        duration: float,
+        amplitude: float = 10.0,
+        offset: float = 50.0,
+    ):
+        """生成已知频率的正弦波数据。
+
+        Args:
+            frequency: 信号频率（Hz）
+            sample_rate: 采样率（Hz）
+            duration: 信号时长（秒）
+            amplitude: 振幅
+            offset: 直流偏置
+
+        Returns:
+            (pv_values, sample_interval)
+        """
+        import numpy as np
+
+        n = int(duration * sample_rate)
+        t = np.linspace(0, duration, n, endpoint=False)
+        pv_values = offset + amplitude * np.sin(2.0 * np.pi * frequency * t)
+        sample_interval = 1.0 / sample_rate
+        return pv_values, sample_interval
+
+    def test_fft_precision_0_5hz(self) -> None:
+        """0.5 Hz 正弦波频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        pv_values, sample_interval = self._generate_sine_wave(
+            frequency=0.5, sample_rate=10.0, duration=10.0
+        )
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        assert result["detected"] is True, "0.5 Hz 正弦波应被检测为振荡"
+        assert result["frequency"] > 0, "检测到的频率应大于 0"
+
+        # 频率误差 < 1%
+        freq_err = abs(result["frequency"] - 0.5) / 0.5
+        assert freq_err < 0.01, (
+            f"0.5 Hz 频率检测误差 {freq_err:.2%} 超过 1%（检测值={result['frequency']:.4f} Hz）"
+        )
+
+    def test_fft_precision_1_0hz(self) -> None:
+        """1.0 Hz 正弦波频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        pv_values, sample_interval = self._generate_sine_wave(
+            frequency=1.0, sample_rate=20.0, duration=10.0
+        )
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        assert result["detected"] is True, "1.0 Hz 正弦波应被检测为振荡"
+        assert result["frequency"] > 0
+
+        freq_err = abs(result["frequency"] - 1.0) / 1.0
+        assert freq_err < 0.01, (
+            f"1.0 Hz 频率检测误差 {freq_err:.2%} 超过 1%（检测值={result['frequency']:.4f} Hz）"
+        )
+
+    def test_fft_precision_2_0hz(self) -> None:
+        """2.0 Hz 正弦波频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        pv_values, sample_interval = self._generate_sine_wave(
+            frequency=2.0, sample_rate=50.0, duration=5.0
+        )
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        assert result["detected"] is True, "2.0 Hz 正弦波应被检测为振荡"
+        assert result["frequency"] > 0
+
+        freq_err = abs(result["frequency"] - 2.0) / 2.0
+        assert freq_err < 0.01, (
+            f"2.0 Hz 频率检测误差 {freq_err:.2%} 超过 1%（检测值={result['frequency']:.4f} Hz）"
+        )
+
+    def test_fft_precision_different_sample_rates(self) -> None:
+        """不同采样率下频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        # 测试多种采样率
+        test_cases = [
+            (1.0, 10.0, 10.0),  # 1 Hz 信号，10 Hz 采样，10 秒
+            (1.0, 20.0, 5.0),  # 1 Hz 信号，20 Hz 采样，5 秒
+            (0.5, 5.0, 20.0),  # 0.5 Hz 信号，5 Hz 采样，20 秒
+        ]
+
+        for freq, sample_rate, duration in test_cases:
+            pv_values, sample_interval = self._generate_sine_wave(
+                frequency=freq, sample_rate=sample_rate, duration=duration
+            )
+            result = _detect_oscillation_fft(pv_values, sample_interval)
+
+            assert result["detected"] is True, (
+                f"频率 {freq} Hz、采样率 {sample_rate} Hz 应被检测为振荡"
+            )
+            assert result["frequency"] > 0
+
+            freq_err = abs(result["frequency"] - freq) / freq
+            assert freq_err < 0.01, (
+                f"频率 {freq} Hz、采样率 {sample_rate} Hz 检测误差 {freq_err:.2%} 超过 1%"
+                f"（检测值={result['frequency']:.4f} Hz）"
+            )
+
+    def test_fft_precision_different_data_lengths(self) -> None:
+        """不同数据长度下频率检测精度 < 1%。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        # 固定频率和采样率，变化数据长度
+        frequency = 1.0
+        sample_rate = 20.0
+        durations = [5.0, 10.0, 20.0, 50.0]
+
+        for duration in durations:
+            pv_values, sample_interval = self._generate_sine_wave(
+                frequency=frequency, sample_rate=sample_rate, duration=duration
+            )
+            result = _detect_oscillation_fft(pv_values, sample_interval)
+
+            assert result["detected"] is True, (
+                f"时长 {duration} 秒的 {frequency} Hz 信号应被检测为振荡"
+            )
+
+            freq_err = abs(result["frequency"] - frequency) / frequency
+            assert freq_err < 0.01, (
+                f"时长 {duration} 秒检测误差 {freq_err:.2%} 超过 1%"
+                f"（检测值={result['frequency']:.4f} Hz）"
+            )
+
+    def test_fft_precision_with_noise(self) -> None:
+        """噪声干扰下频率检测精度应仍 < 5%（放宽阈值）。"""
+        import numpy as np
+
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        # 使用固定随机种子保证测试可复现
+        rng = np.random.default_rng(seed=42)
+        frequency = 1.0
+        sample_rate = 50.0
+        duration = 10.0
+        n = int(duration * sample_rate)
+        t = np.linspace(0, duration, n, endpoint=False)
+
+        # 信噪比约 10dB 的噪声
+        signal = 10.0 * np.sin(2.0 * np.pi * frequency * t)
+        noise = rng.normal(0, 1.0, n)  # 标准差 1.0 的噪声
+        pv_values = 50.0 + signal + noise
+
+        sample_interval = 1.0 / sample_rate
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        assert result["detected"] is True, "含噪声的 1.0 Hz 信号应被检测为振荡"
+
+        # 噪声环境下放宽阈值至 5%
+        freq_err = abs(result["frequency"] - frequency) / frequency
+        assert freq_err < 0.05, (
+            f"含噪声频率检测误差 {freq_err:.2%} 超过 5%（检测值={result['frequency']:.4f} Hz）"
+        )
+
+    def test_fft_amplitude_precision(self) -> None:
+        """FFT 振幅检测应接近真实振幅。"""
+        from app.tasks.diagnosis_engine import _detect_oscillation_fft
+
+        amplitude = 10.0
+        pv_values, sample_interval = self._generate_sine_wave(
+            frequency=1.0, sample_rate=50.0, duration=10.0, amplitude=amplitude
+        )
+        result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        # 振幅检测应大于 0（具体值取决于 FFT 实现，这里只验证合理性）
+        assert result["amplitude"] > 0, "检测到的振幅应大于 0"
+        # 振幅应在合理范围内（0.1 * amplitude ~ 2 * amplitude）
+        assert result["amplitude"] < 2 * amplitude, (
+            f"检测振幅 {result['amplitude']} 异常偏大（真实振幅 {amplitude}）"
+        )

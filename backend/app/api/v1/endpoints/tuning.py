@@ -13,18 +13,29 @@
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.schemas.tuning import (
     CreateTuningTaskRequest,
     ModelIdentifyRequest,
+    ModelIdentifyResult,
     SimulateRequest,
+    SimulationResult,
     TuneRequest,
+    TuneResult,
+    TuningHistoryStats,
+    TuningMethodInfo,
+    TuningTaskDetail,
 )
 from app.services.tuning import (
     create_tuning_task,
@@ -45,7 +56,7 @@ router = APIRouter(prefix="/tuning", tags=["tuning"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/methods")
+@router.get("/methods", response_model=ApiResponse[list[TuningMethodInfo]])
 async def get_methods_endpoint(
     _: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -59,7 +70,7 @@ async def get_methods_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/identify")
+@router.post("/identify", response_model=ApiResponse[ModelIdentifyResult])
 async def identify_model_endpoint(
     body: ModelIdentifyRequest,
     db: AsyncSession = Depends(get_db),
@@ -85,9 +96,10 @@ async def identify_model_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/tune")
+@router.post("/tune", response_model=ApiResponse[TuneResult])
 async def tune_pid_endpoint(
     body: TuneRequest,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """PID 整定（ADMIN/IC_ENGINEER/EXPERT）。
@@ -102,6 +114,18 @@ async def tune_pid_endpoint(
         current_pid=body.currentPid.model_dump() if body.currentPid else None,
         loop_id=body.loopId,
     )
+    # 审计日志（S1-B7）
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="TUNE_PID",
+        target_type="Loop",
+        target_id=body.loopId,
+        after_value=f"algorithm={body.algorithm}, modelType={body.modelType}",
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
     return success(data=data)
 
 
@@ -110,7 +134,7 @@ async def tune_pid_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/simulate")
+@router.post("/simulate", response_model=ApiResponse[SimulationResult])
 async def simulate_endpoint(
     body: SimulateRequest,
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
@@ -137,9 +161,9 @@ async def simulate_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/tasks")
+@router.get("/tasks", response_model=ApiResponse[dict])
 async def list_tasks_endpoint(
-    loopId: str | None = Query(None, description="回路 ID 筛选"),
+    loopId: uuid.UUID | None = Query(None, description="回路 ID 筛选"),
     algorithm: str | None = Query(None, description="算法筛选"),
     status: str | None = Query(None, description="状态筛选"),
     page: int = Query(1, ge=1),
@@ -150,7 +174,7 @@ async def list_tasks_endpoint(
     """整定任务列表（分页 + 筛选）。"""
     data = await list_tuning_tasks(
         db=db,
-        loop_id=loopId,
+        loop_id=str(loopId) if loopId else None,
         algorithm=algorithm,
         status=status,
         page=page,
@@ -159,18 +183,18 @@ async def list_tasks_endpoint(
     return success(data=data)
 
 
-@router.get("/tasks/{task_id}")
+@router.get("/tasks/{task_id}", response_model=ApiResponse[TuningTaskDetail])
 async def get_task_detail_endpoint(
-    task_id: str,
+    task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """整定任务详情。"""
-    data = await get_tuning_task_detail(db=db, task_id=task_id)
+    data = await get_tuning_task_detail(db=db, task_id=str(task_id))
     return success(data=data)
 
 
-@router.post("/tasks")
+@router.post("/tasks", status_code=201, response_model=ApiResponse[dict])
 async def create_task_endpoint(
     body: CreateTuningTaskRequest,
     db: AsyncSession = Depends(get_db),
@@ -190,6 +214,18 @@ async def create_task_endpoint(
         status=body.status,
         created_by=user.username,
     )
+    # 审计日志（S1-B7）
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="CREATE_TUNING_TASK",
+        target_type="TuningTask",
+        target_id=data.get("taskId"),
+        after_value=f"algorithm={body.algorithm}, status={body.status}",
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
     return success(data=data)
 
 
@@ -198,7 +234,7 @@ async def create_task_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/history")
+@router.get("/history", response_model=ApiResponse[TuningHistoryStats])
 async def get_history_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),

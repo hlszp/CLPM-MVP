@@ -86,11 +86,19 @@ export async function loginApi(data: AuthApi.LoginParams) {
 
 /**
  * 刷新 accessToken（对齐 IDS v3.2 §5.2）
+ *
+ * 支持传递额外 config（如 __isRetryRequest 标记），避免 /auth/refresh
+ * 自身返回 401 时进入 refreshToken 队列导致死锁。
  */
-export async function refreshTokenApi(refreshToken: string) {
-  return requestClient.post<AuthApi.RefreshTokenResult>('/auth/refresh', {
-    refreshToken,
-  });
+export async function refreshTokenApi(
+  refreshToken: string,
+  config?: Record<string, any>,
+) {
+  return requestClient.post<AuthApi.RefreshTokenResult>(
+    '/auth/refresh',
+    { refreshToken },
+    config,
+  );
 }
 
 /**
@@ -111,10 +119,10 @@ export async function getUserInfoApi() {
 /**
  * 获取用户权限码
  * 权限码来源于 /auth/me 返回的 permissions 字段，
- * 此处保留框架约定的接口签名，实际由 store 层从用户信息中提取。
+ * 后端无 /auth/codes 路由，此处直接返回空数组，由 store 层从用户信息中提取。
  */
-export async function getAccessCodesApi() {
-  return requestClient.get<string[]>('/auth/codes');
+export async function getAccessCodesApi(): Promise<string[]> {
+  return [];
 }
 
 /**

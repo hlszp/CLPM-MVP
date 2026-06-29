@@ -9,7 +9,10 @@ import { requestClient } from '#/api/request';
 
 export namespace LoopApi {
   /** 回路状态（IDS v3.2 §2.2.7） */
-  export type LoopStatus = 'INCONCLUSIVE' | 'Partial' | 'Ready';
+  export type LoopStatus = 'INACTIVE' | 'PARTIAL' | 'READY';
+
+  /** 可信度等级（A-E） */
+  export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
 
   /** 控制方式（IDS v3.2 §2.2.7） */
   export type ControlMode = 'Auto' | 'Cascade' | 'Manual';
@@ -25,24 +28,31 @@ export namespace LoopApi {
     | 'SP';
 
   /** 质量码（IDS v3.2 §2.2.5） */
-  export type Quality = 'Bad' | 'Good' | 'Uncertain' | null;
+  export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
   /** 趋势时间窗（IDS v3.2 §2.2.14） */
-  export type TrendWindow = 'last_1_hour' | 'last_7_days' | 'last_24_hours';
+  export type TrendWindow =
+    | 'last_1_hour'
+    | 'last_2_hours'
+    | 'last_4_hours'
+    | 'last_7_days'
+    | 'last_8_hours'
+    | 'last_24_hours'
+    | 'last_72_hours';
 
   /** KPI 状态（IDS v3.2 §2.2.14） */
-  export type KpiStatus = 'GOOD' | 'INCONCLUSIVE' | 'POOR' | 'WARNING';
+  export type KpiStatus = 'INCONCLUSIVE' | 'PARTIAL' | 'SUCCESS';
 
-  /** 评分权重（6 大 KPI，总和须 100） */
+  /** 评分权重（6 大 KPI，总和须 100，对齐 GB/T 44693.2-2024） */
   export interface ScoreWeights {
-    /** 优良值率权重 */
-    good_value_rate: number;
     /** 自动模式率权重 */
     auto_mode_rate: number;
     /** 稳定率权重 */
     steady_rate: number;
     /** 准确度权重 */
     accuracy_rate: number;
+    /** 快速率权重 */
+    fast_response_rate: number;
     /** 振荡率权重 */
     oscillation_rate: number;
     /** 饱和率权重 */
@@ -60,6 +70,16 @@ export namespace LoopApi {
     pid_d: boolean;
   }
 
+  /** 回路类型（TEMPERATURE/PRESSURE/LEVEL/FLOW/ANALYSIS/SPEED/OTHER） */
+  export type LoopType =
+    | 'ANALYSIS'
+    | 'FLOW'
+    | 'LEVEL'
+    | 'OTHER'
+    | 'PRESSURE'
+    | 'SPEED'
+    | 'TEMPERATURE';
+
   /** 回路列表项（IDS v3.2 §2.2.7） */
   export interface LoopListItem {
     loopId: string;
@@ -68,6 +88,11 @@ export namespace LoopApi {
     unitId: string;
     unitName: string;
     controlMode: ControlMode;
+    loopType?: LoopType;
+    /** 控制类型（STABLE/SLOW/FAST/LOGIC），用于评分权重分类 */
+    controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+    /** 回路级别（1/2/3），用于级别权重评分 */
+    level?: 1 | 2 | 3;
     isActive: boolean;
     status: LoopStatus;
     score: number;
@@ -79,6 +104,13 @@ export namespace LoopApi {
   export interface LoopQueryParams extends PageQuery {
     plantNodeId?: string;
     controlMode?: ControlMode;
+    loopType?: LoopType;
+    /** 控制类型筛选 */
+    controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+    /** 级别筛选 */
+    level?: 1 | 2 | 3;
+    /** 监控状态筛选（true=监控中/false=已停用） */
+    monitorStatus?: boolean;
     isActive?: boolean;
     status?: LoopStatus;
     keyword?: string;
@@ -89,6 +121,11 @@ export namespace LoopApi {
     tagName: string;
     description?: string;
     unitId: string;
+    loopType?: LoopType;
+    /** 控制类型 */
+    controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+    /** 回路级别 */
+    level?: 1 | 2 | 3;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -97,6 +134,12 @@ export namespace LoopApi {
   /** 更新回路参数（IDS v3.2 §2.2.10） */
   export interface UpdateLoopParams {
     description?: string;
+    unitId?: string;
+    loopType?: LoopType;
+    /** 控制类型 */
+    controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
+    /** 回路级别 */
+    level?: 1 | 2 | 3;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -151,6 +194,7 @@ export namespace LoopApi {
     unitName: string;
     isActive: boolean;
     status: LoopStatus;
+    loopType?: LoopType;
     scoreWeights: ScoreWeights;
     remark?: string;
     createdAt: string;
@@ -234,6 +278,8 @@ export namespace LoopApi {
     modeLabel: string;
     pvQuality: Quality;
     readAt?: string;
+    /** 工程单位（从 Tag 关联获取，如 °C、MPa、% 等） */
+    unit?: string;
   }
 
   /** 回路监控列表项（IDS v3.2 §2.2.15） */
@@ -244,8 +290,12 @@ export namespace LoopApi {
     unitName: string;
     currentValues: MonitorCurrentValues;
     controlMode: ControlMode;
+    loopType?: LoopType;
     score: number;
     status: LoopStatus;
+    confidenceLevel?: ConfidenceLevel;
+    effectiveAutoRate?: number;
+    kpiSummary?: KpiSummary;
     isActive: boolean;
     readAt: string;
   }
@@ -254,6 +304,7 @@ export namespace LoopApi {
   export interface MonitorQueryParams extends PageQuery {
     plantNodeId?: string;
     view?: 'card' | 'list';
+    loopType?: LoopType;
     keyword?: string;
   }
 
@@ -280,8 +331,10 @@ export namespace LoopApi {
   export interface KpiSummary {
     good_value_rate: number;
     auto_mode_rate: number;
+    effective_auto_rate: number;
     steady_rate: number;
     accuracy_rate: number;
+    fast_response_rate: number;
     oscillation_rate: number;
     saturation_rate: number;
     composite_score: number;
@@ -303,6 +356,71 @@ export namespace LoopApi {
     };
     trend: MonitorTrend;
     kpiSummary: KpiSummary;
+  }
+
+  /** 投用定义控制模式（AUTO/CAS/REMOTE/APC/MANUAL） */
+  export type ModeMappingControlMode =
+    | 'APC'
+    | 'AUTO'
+    | 'CAS'
+    | 'MANUAL'
+    | 'REMOTE';
+
+  /** 投用定义条目（MODE 值 → 控制模式映射） */
+  export interface ModeMappingItem {
+    /** DCS 系统返回的 MODE 原始值（整数或字符串） */
+    modeValue: string;
+    /** 控制模式 */
+    controlMode: ModeMappingControlMode;
+    /** 是否视为自动（参与自控率统计） */
+    isAuto: boolean;
+    /** 是否有效（无效值将被忽略） */
+    isEnabled: boolean;
+    /** 备注 */
+    remark?: string;
+  }
+
+  /** 投用定义列表响应 */
+  export interface ModeMappingResult {
+    loopId: string;
+    items: ModeMappingItem[];
+    updatedAt?: string;
+    updatedBy?: string;
+  }
+
+  /** 投用定义更新参数 */
+  export interface UpdateModeMappingParams {
+    items: ModeMappingItem[];
+  }
+
+  /** 批量配置更新字段（至少一个非空） */
+  export interface LoopBatchUpdates {
+    /** 是否监控（is_active=True 表示启用监控） */
+    isMonitored?: boolean;
+    /** 是否纳入统计 */
+    isStatEnabled?: boolean;
+    /** 回路级别 1/2/3 */
+    level?: 1 | 2 | 3;
+  }
+
+  /** 批量配置请求（更新模式 / 删除模式互斥） */
+  export interface LoopBatchConfigParams {
+    /** 回路 ID 列表（不能为空） */
+    loopIds: string[];
+    /** 批量更新字段（与 action 互斥） */
+    updates?: LoopBatchUpdates;
+    /** 批量动作：delete=软删除（与 updates 互斥） */
+    action?: 'delete';
+  }
+
+  /** 批量配置响应 */
+  export interface LoopBatchConfigResult {
+    /** 受影响的回路数量 */
+    affected: number;
+    /** 执行的动作：update/delete */
+    action: 'delete' | 'update';
+    /** 受影响的回路 ID 列表 */
+    loopIds: string[];
   }
 }
 
@@ -382,4 +500,42 @@ export function getLoopMonitorListApi(params: LoopApi.MonitorQueryParams) {
   return requestClient.get<LoopApi.MonitorListResult>('/loops/monitor', {
     params,
   });
+}
+
+/**
+ * 获取回路投用定义（MODE → 控制模式映射） — IDS v3.2 §2.2.13
+ */
+export function getLoopModeMappingApi(loopId: string) {
+  return requestClient.get<LoopApi.ModeMappingResult>(
+    `/loops/${loopId}/mode-mapping`,
+  );
+}
+
+/**
+ * 更新回路投用定义（MODE → 控制模式映射） — IDS v3.2 §2.2.13
+ */
+export function updateLoopModeMappingApi(
+  loopId: string,
+  data: LoopApi.UpdateModeMappingParams,
+) {
+  return requestClient.put<LoopApi.ModeMappingResult>(
+    `/loops/${loopId}/mode-mapping`,
+    data,
+  );
+}
+
+/**
+ * 批量配置回路（监控/统计/级别 / 批量软删除） — 配置增强
+ *
+ * 两种模式（互斥）：
+ * - 更新模式：提供 updates 字段
+ * - 删除模式：action="delete"
+ *
+ * 仅 ADMIN 可调用。
+ */
+export function batchConfigLoopsApi(data: LoopApi.LoopBatchConfigParams) {
+  return requestClient.post<LoopApi.LoopBatchConfigResult>(
+    '/loops/batch-config',
+    data,
+  );
 }

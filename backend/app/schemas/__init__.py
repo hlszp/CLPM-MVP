@@ -9,9 +9,10 @@ from app.schemas.auth import (
     RefreshRequest,
     UserInfo,
 )
-from app.schemas.common import ResponseEnvelope, success
+from app.schemas.common import ApiResponse, ResponseEnvelope, success
 
 __all__ = [
+    "ApiResponse",
     "AuthTokens",
     "ChangePasswordRequest",
     "LoginData",

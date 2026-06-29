@@ -7,10 +7,13 @@
  * - hasPermission：通配符 / 精确匹配
  */
 
+import { useAccessStore, useUserStore } from '@vben/stores';
+
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useAccessStore, useUserStore } from '@vben/stores';
+import { hasPermission } from '#/directives/permission';
+import { useAuthStore } from '#/store';
 
 // ===== Mock 依赖 =====
 const routerPushSpy = vi.fn();
@@ -90,9 +93,6 @@ vi.mock('@vben/stores', async () => {
   };
 });
 
-import { useAuthStore } from '#/store';
-import { hasPermission } from '#/directives/permission';
-
 // 测试用路由数据（模拟 CLPM 路由模块）
 const testRoutes: any[] = [
   {
@@ -164,7 +164,7 @@ function generateRoutesForRole(routes: any[], roles: string[]): any[] {
   return result;
 }
 
-describe('Store 测试', () => {
+describe('store 测试', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     loginApiMock.mockReset();
@@ -180,7 +180,7 @@ describe('Store 测试', () => {
   // ===== useAuthStore 测试 =====
 
   // UT-STORE-001: userStore-login 成功
-  it('UT-STORE-001: authStore.authLogin 登录成功', async () => {
+  it('uT-STORE-001: authStore.authLogin 登录成功', async () => {
     loginApiMock.mockResolvedValue({
       accessToken: 'new-access-token',
       refreshToken: 'new-refresh-token',
@@ -231,7 +231,7 @@ describe('Store 测试', () => {
   });
 
   // UT-STORE-002: userStore-logout
-  it('UT-STORE-002: authStore.logout 登出清空状态并跳转登录页', async () => {
+  it('uT-STORE-002: authStore.logout 登出清空状态并跳转登录页', async () => {
     logoutApiMock.mockResolvedValue(undefined);
 
     const authStore = useAuthStore();
@@ -255,7 +255,7 @@ describe('Store 测试', () => {
   });
 
   // UT-STORE-003: userStore-refreshToken
-  it('UT-STORE-003: refreshToken 刷新 token 并更新 store', async () => {
+  it('uT-STORE-003: refreshToken 刷新 token 并更新 store', async () => {
     refreshTokenApiMock.mockResolvedValue({
       accessToken: 'refreshed-access-token',
       expiresIn: 1800,
@@ -275,7 +275,7 @@ describe('Store 测试', () => {
   });
 
   // UT-STORE-004: userStore-getUserInfo
-  it('UT-STORE-004: authStore.fetchUserInfo 获取用户信息', async () => {
+  it('uT-STORE-004: authStore.fetchUserInfo 获取用户信息', async () => {
     getUserInfoApiMock.mockResolvedValue({
       id: 'user-2',
       username: 'engineer',
@@ -309,7 +309,7 @@ describe('Store 测试', () => {
   // ===== 权限路由生成测试 =====
 
   // UT-STORE-005: permissionStore-generateRoutes-ADMIN
-  it('UT-STORE-005: ADMIN 角色生成全部路由', () => {
+  it('uT-STORE-005: ADMIN 角色生成全部路由', () => {
     const routes = generateRoutesForRole(testRoutes, ['ADMIN']);
     // ADMIN 应能访问所有路由
     expect(routes).toHaveLength(3);
@@ -322,7 +322,7 @@ describe('Store 测试', () => {
   });
 
   // UT-STORE-006: permissionStore-generateRoutes-SPONSOR
-  it('UT-STORE-006: SPONSOR 角色只能访问无 authority 限制的路由', () => {
+  it('uT-STORE-006: SPONSOR 角色只能访问无 authority 限制的路由', () => {
     const routes = generateRoutesForRole(testRoutes, ['SPONSOR']);
     // SPONSOR 只能访问无 authority 限制的路由（Dashboard）
     const routeNames = routes.map((r) => r.name);
@@ -336,7 +336,7 @@ describe('Store 测试', () => {
   // ===== hasPermission 测试 =====
 
   // UT-STORE-007: permissionStore-hasPermission-通配符
-  it('UT-STORE-007: hasPermission 通配符 "*" 匹配任意权限', () => {
+  it('uT-STORE-007: hasPermission 通配符 "*" 匹配任意权限', () => {
     const codes = new Set(['*']);
     expect(hasPermission(codes, 'loop:create')).toBe(true);
     expect(hasPermission(codes, 'system:user:delete')).toBe(true);
@@ -344,7 +344,7 @@ describe('Store 测试', () => {
   });
 
   // UT-STORE-008: permissionStore-hasPermission-精确匹配
-  it('UT-STORE-008: hasPermission 精确匹配与模块级通配', () => {
+  it('uT-STORE-008: hasPermission 精确匹配与模块级通配', () => {
     // 精确匹配
     const codes = new Set(['loop:create', 'loop:edit']);
     expect(hasPermission(codes, 'loop:create')).toBe(true);

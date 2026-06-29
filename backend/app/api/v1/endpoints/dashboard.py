@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.db import get_db
 from app.models.sys_user import SysUser
-from app.schemas.common import success
+from app.schemas.common import ApiResponse, success
 from app.services.dashboard import get_dashboard_overview
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=ApiResponse[dict])
 async def get_overview_endpoint(
     plantId: str | None = Query(None, description="按装置/单元筛选"),
     granularity: str = Query(

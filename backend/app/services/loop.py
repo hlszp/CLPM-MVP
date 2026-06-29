@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import io
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
+import openpyxl
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,7 +57,7 @@ async def _write_audit(
         target_id=target_id,
         before_value=before_value,
         after_value=after_value,
-        operated_at=datetime.utcnow(),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
 
@@ -105,6 +107,16 @@ async def _get_unit_name(db: AsyncSession, unit_id: str | None) -> str | None:
     return node.name if node else None
 
 
+async def _get_descendant_node_ids(db: AsyncSession, parent_id: str) -> list[str]:
+    """递归获取所有子孙节点 ID。"""
+    result = await db.execute(select(PlantNode.id).where(PlantNode.parent_id == parent_id))
+    child_ids = [str(row[0]) for row in result]
+    all_ids = list(child_ids)
+    for child_id in child_ids:
+        all_ids.extend(await _get_descendant_node_ids(db, child_id))
+    return all_ids
+
+
 def _build_tag_mapping_status(mappings: dict[str, LoopTagMapping]) -> dict:
     """构建 7 Tag 关联状态摘要。"""
     return {
@@ -125,17 +137,36 @@ async def list_loops(
     is_active: bool | None = None,
     status: str | None = None,
     keyword: str | None = None,
+    loop_type: str | None = None,
+    level: int | None = None,
+    monitor_status: bool | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    """分页查询回路列表。"""
+    """分页查询回路列表。
+
+    Args:
+        level: 按回路级别筛选（1/2/3）
+        monitor_status: 按监控状态筛选（True=is_active=True，False=is_active=False）
+    """
     conditions = []
     if plant_node_id:
-        conditions.append(LoopLedger.unit_id == plant_node_id)
+        # 递归获取所有子孙节点 ID，包含自身
+        all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
+        all_node_ids.append(plant_node_id)
+        conditions.append(LoopLedger.unit_id.in_(all_node_ids))
     if is_active is not None:
         conditions.append(LoopLedger.is_active.is_(is_active))
     if status:
         conditions.append(func.upper(LoopLedger.status) == status.upper())
+    if loop_type:
+        conditions.append(func.upper(LoopLedger.loop_type) == loop_type.upper())
+    if level is not None:
+        conditions.append(LoopLedger.level == level)
+    if monitor_status is not None:
+        # monitor_status=True → is_active=True（在监控中）
+        # monitor_status=False → is_active=False（已停用监控）
+        conditions.append(LoopLedger.is_active.is_(monitor_status))
     if keyword:
         kw = f"%{keyword}%"
         conditions.append(
@@ -203,6 +234,8 @@ async def list_loops(
                 "controlMode": mode_map.get(str(loop.id)),
                 "isActive": bool(loop.is_active),
                 "status": loop.status,
+                "loopType": loop.loop_type,
+                "level": loop.level,
                 "score": float(loop.score_weight) if loop.score_weight else None,
                 "lastScoreAt": (
                     loop.last_aas_sync_at.isoformat() if loop.last_aas_sync_at else None
@@ -241,6 +274,7 @@ async def create_loop(
     is_active: bool,
     remark: str | None,
     operator: str,
+    loop_type: str | None = None,
 ) -> dict:
     """创建回路。
 
@@ -276,6 +310,7 @@ async def create_loop(
         unit_id=unit_id,
         is_active=is_active,
         status=status,
+        loop_type=loop_type,
         score_weights=score_weights,
         remark=remark,
         created_by=operator,
@@ -297,6 +332,7 @@ async def create_loop(
                 "unitId": unit_id,
                 "isActive": is_active,
                 "status": status,
+                "loopType": loop_type,
             },
             ensure_ascii=False,
         ),
@@ -309,6 +345,7 @@ async def create_loop(
         "description": loop.description,
         "unitId": str(loop.unit_id) if loop.unit_id else None,
         "status": loop.status,
+        "loopType": loop.loop_type,
         "isActive": bool(loop.is_active),
         "scoreWeights": loop.score_weights,
         "remark": loop.remark,
@@ -407,6 +444,7 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             "unitName": unit_name,
             "isActive": bool(loop.is_active),
             "status": loop.status,
+            "loopType": loop.loop_type,
             "scoreWeights": loop.score_weights,
             "remark": loop.remark,
             "createdAt": loop.created_at.isoformat() if loop.created_at else None,
@@ -431,8 +469,9 @@ async def update_loop(
     score_weights: dict | None = None,
     is_active: bool | None = None,
     remark: str | None = None,
+    loop_type: str | None = None,
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注）。
+    """更新回路（描述/评分权重/启用状态/备注/回路类型）。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND
@@ -451,6 +490,7 @@ async def update_loop(
         "scoreWeights": loop.score_weights,
         "isActive": loop.is_active,
         "remark": loop.remark,
+        "loopType": loop.loop_type,
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -462,6 +502,8 @@ async def update_loop(
         loop.is_active = is_active
     if remark is not None:
         loop.remark = remark
+    if loop_type is not None:
+        loop.loop_type = loop_type
     loop.updated_by = operator
 
     # 重新推导 status
@@ -473,6 +515,7 @@ async def update_loop(
         "scoreWeights": loop.score_weights,
         "isActive": loop.is_active,
         "remark": loop.remark,
+        "loopType": loop.loop_type,
         "status": new_status,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -487,6 +530,9 @@ async def update_loop(
         after_value=after_json,
     )
     await db.commit()
+    # 刷新对象以获取 onupdate=func.now() 生成的 updated_at（async session
+    # 不能同步 lazy load，否则触发 MissingGreenlet）
+    await db.refresh(loop)
 
     return {
         "loopId": str(loop.id),
@@ -494,6 +540,7 @@ async def update_loop(
         "scoreWeights": loop.score_weights,
         "isActive": bool(loop.is_active),
         "remark": loop.remark,
+        "loopType": loop.loop_type,
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
         "updatedBy": loop.updated_by,
     }
@@ -551,8 +598,341 @@ async def delete_loop(
     return {
         "loopId": loop_id,
         "deleted": True,
-        "deletedAt": datetime.utcnow().isoformat(),
+        "deletedAt": datetime.now(UTC).replace(tzinfo=None).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# 批量导入导出 (S2-LOOP-009)
+# ---------------------------------------------------------------------------
+
+# Excel 列头（12 列，对齐 loopList.xlsx，新增"回路类型"列）
+EXPORT_HEADERS = [
+    "自控回路编号",
+    "自控回路名称",
+    "设定值位号",
+    "测量值位号",
+    "输出值位号",
+    "控制方式位号",
+    "所属区域编号",
+    "是否启用",
+    "比例带",
+    "积分时间",
+    "微分时间",
+    "回路类型",
+]
+
+# 导入时列索引 → Tag 角色（索引从 0 开始）
+_IMPORT_ROLE_COLUMNS: dict[int, str] = {
+    2: "SP",
+    3: "PV",
+    4: "OP",
+    5: "MODE",
+    8: "PID_P",
+    9: "PID_I",
+    10: "PID_D",
+}
+# 回路类型列索引（"回路类型"列）
+_LOOP_TYPE_COLUMN_INDEX = 11
+
+
+def _cell_str(value: object) -> str:
+    """将 Excel 单元格值转为去除首尾空白的字符串，None/空返回空串。"""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+async def export_loops(
+    db: AsyncSession,
+    plant_node_id: str | None = None,
+    status: str | None = None,
+    keyword: str | None = None,
+) -> bytes:
+    """导出所有回路为 Excel 文件（.xlsx），返回文件字节。
+
+    支持按 plantNodeId/status/keyword 筛选（可选）。
+    """
+    conditions = []
+    if plant_node_id:
+        conditions.append(LoopLedger.unit_id == plant_node_id)
+    if status:
+        conditions.append(func.upper(LoopLedger.status) == status.upper())
+    if keyword:
+        kw = f"%{keyword}%"
+        conditions.append(
+            or_(
+                LoopLedger.tag_name.ilike(kw),
+                LoopLedger.description.ilike(kw),
+            )
+        )
+
+    stmt = select(LoopLedger).order_by(LoopLedger.tag_name)
+    for cond in conditions:
+        stmt = stmt.where(cond)
+    result = await db.execute(stmt)
+    loops = result.scalars().all()
+
+    loop_ids = [str(loop.id) for loop in loops]
+    unit_ids = [str(loop.unit_id) for loop in loops if loop.unit_id]
+
+    # 批量查询 unit_name
+    unit_map: dict[str, str] = {}
+    if unit_ids:
+        u_result = await db.execute(select(PlantNode).where(PlantNode.id.in_(unit_ids)))
+        for node in u_result.scalars().all():
+            unit_map[str(node.id)] = node.name
+
+    # 批量查询 Tag 关联 + Tag 名称
+    tag_name_map: dict[str, dict[str, str]] = {}
+    if loop_ids:
+        m_result = await db.execute(
+            select(LoopTagMapping, TagRegistry)
+            .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+            .where(LoopTagMapping.loop_id.in_(loop_ids))
+        )
+        for mapping, tag in m_result:
+            tag_name_map.setdefault(str(mapping.loop_id), {})[mapping.tag_role] = tag.tag_name
+
+    # 构建 Excel
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "回路台账"
+    ws.append(EXPORT_HEADERS)
+
+    for loop in loops:
+        tags = tag_name_map.get(str(loop.id), {})
+        unit_name = unit_map.get(str(loop.unit_id)) if loop.unit_id else ""
+        is_active_str = "是" if loop.is_active else "否"
+        ws.append(
+            [
+                loop.tag_name,
+                loop.description or "",
+                tags.get("SP", ""),
+                tags.get("PV", ""),
+                tags.get("OP", ""),
+                tags.get("MODE", ""),
+                unit_name,
+                is_active_str,
+                tags.get("PID_P", ""),
+                tags.get("PID_I", ""),
+                tags.get("PID_D", ""),
+                loop.loop_type or "",
+            ]
+        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def import_loops(
+    db: AsyncSession,
+    file_bytes: bytes,
+    operator: str,
+) -> dict:
+    """批量导入回路（Excel .xlsx）。
+
+    逐行处理：回路编号已存在则更新，否则新建。
+    返回 {total, inserted, updated, failed, errors[]}。
+    """
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001
+        raise BizError(
+            code="ERR_FILE_PARSE",
+            message=f"Excel 文件解析失败: {exc}",
+            status_code=400,
+        ) from exc
+
+    ws = wb.active
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+
+    total = 0
+    inserted = 0
+    updated = 0
+    failed = 0
+    errors: list[dict] = []
+
+    # 缓存：plant_node name → id，tag name → id
+    plant_node_cache: dict[str, str] = {}
+    tag_cache: dict[str, str] = {}
+
+    for row_idx, row in enumerate(rows, start=2):  # 第 1 行为表头
+        total += 1
+        tag_name = _cell_str(row[0]) if len(row) > 0 else ""
+
+        if not tag_name:
+            errors.append({"row": row_idx, "message": "回路编号不能为空"})
+            failed += 1
+            continue
+
+        # 解析单元格（不涉及 DB，放在 savepoint 外）
+        description = _cell_str(row[1]) if len(row) > 1 else ""
+        role_tag_values: dict[str, str] = {}
+        for col_idx, role in _IMPORT_ROLE_COLUMNS.items():
+            role_tag_values[role] = _cell_str(row[col_idx]) if len(row) > col_idx else ""
+        unit_name = _cell_str(row[6]) if len(row) > 6 else ""
+        is_active_str = _cell_str(row[7]) if len(row) > 7 else "是"
+        is_active = is_active_str in ("是", "true", "True", "1", "YES", "yes", "Y", "y")
+        loop_type = (
+            _cell_str(row[_LOOP_TYPE_COLUMN_INDEX]) if len(row) > _LOOP_TYPE_COLUMN_INDEX else ""
+        ) or None
+
+        is_update = False
+        try:
+            # 使用 SAVEPOINT 保证单行失败不影响其他行
+            async with db.begin_nested():
+                is_update = await _import_one_row(
+                    db=db,
+                    tag_name=tag_name,
+                    description=description,
+                    unit_name=unit_name,
+                    is_active=is_active,
+                    role_tag_values=role_tag_values,
+                    operator=operator,
+                    plant_node_cache=plant_node_cache,
+                    tag_cache=tag_cache,
+                    loop_type=loop_type,
+                )
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            errors.append({"row": row_idx, "tagName": tag_name, "message": str(exc)})
+            continue
+
+        if is_update:
+            updated += 1
+        else:
+            inserted += 1
+
+    await db.commit()
+
+    return {
+        "total": total,
+        "inserted": inserted,
+        "updated": updated,
+        "failed": failed,
+        "errors": errors,
+    }
+
+
+async def _import_one_row(
+    db: AsyncSession,
+    tag_name: str,
+    description: str,
+    unit_name: str,
+    is_active: bool,
+    role_tag_values: dict[str, str],
+    operator: str,
+    plant_node_cache: dict[str, str],
+    tag_cache: dict[str, str],
+    loop_type: str | None = None,
+) -> bool:
+    """处理单行导入，返回是否为更新（True）或新建（False）。
+
+    在调用方的 SAVEPOINT 内执行，异常会触发回滚至 SAVEPOINT。
+    """
+    # 查找/创建 plant_node
+    unit_id: str | None = None
+    if unit_name:
+        if unit_name in plant_node_cache:
+            unit_id = plant_node_cache[unit_name]
+        else:
+            p_result = await db.execute(select(PlantNode).where(PlantNode.name == unit_name))
+            node = p_result.scalar_one_or_none()
+            if node is None:
+                node = PlantNode(
+                    id=str(uuid4()),
+                    name=unit_name,
+                    type="UNIT",
+                )
+                db.add(node)
+                await db.flush()
+            unit_id = str(node.id)
+            plant_node_cache[unit_name] = unit_id
+
+    # 查找/创建回路
+    result = await db.execute(select(LoopLedger).where(LoopLedger.tag_name == tag_name))
+    loop = result.scalar_one_or_none()
+    is_update = loop is not None
+
+    if is_update:
+        loop.description = description or loop.description
+        loop.unit_id = unit_id
+        loop.is_active = is_active
+        if loop_type is not None:
+            loop.loop_type = loop_type
+        loop.updated_by = operator
+        # 删除现有关联 Tag
+        await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id)))
+    else:
+        loop = LoopLedger(
+            id=str(uuid4()),
+            tag_name=tag_name,
+            description=description or None,
+            unit_id=unit_id,
+            is_active=is_active,
+            status="PARTIAL",
+            loop_type=loop_type,
+            created_by=operator,
+            updated_by=operator,
+        )
+        db.add(loop)
+        await db.flush()
+
+    # 创建 Tag 关联
+    new_mappings: dict[str, LoopTagMapping] = {}
+    for role, t_name in role_tag_values.items():
+        if not t_name:
+            continue
+        if t_name in tag_cache:
+            tag_id = tag_cache[t_name]
+        else:
+            t_result = await db.execute(select(TagRegistry).where(TagRegistry.tag_name == t_name))
+            tag = t_result.scalar_one_or_none()
+            if tag is None:
+                tag = TagRegistry(
+                    id=str(uuid4()),
+                    tag_name=t_name,
+                    tag_type=role,
+                    last_sync_at=datetime.now(UTC).replace(tzinfo=None),
+                    is_linked=True,
+                )
+                db.add(tag)
+                await db.flush()
+            else:
+                tag.is_linked = True
+            tag_id = str(tag.id)
+            tag_cache[t_name] = tag_id
+
+        mapping = LoopTagMapping(
+            id=str(uuid4()),
+            loop_id=str(loop.id),
+            tag_id=tag_id,
+            tag_role=role,
+            is_required=role in REQUIRED_ROLES,
+        )
+        db.add(mapping)
+        new_mappings[role] = mapping
+
+    # 推导 status
+    new_status = await derive_loop_status(db, loop, mappings=new_mappings)
+    loop.status = new_status
+
+    await _write_audit(
+        db=db,
+        operator=operator,
+        operation_type="LOOP_IMPORT_UPDATE" if is_update else "LOOP_IMPORT",
+        target_type="loop_ledger",
+        target_id=str(loop.id),
+        after_value=json.dumps(
+            {"tagName": tag_name, "status": new_status, "isActive": is_active},
+            ensure_ascii=False,
+        ),
+    )
+
+    await db.flush()
+    return is_update
 
 
 __all__ = [
@@ -562,7 +942,9 @@ __all__ = [
     "create_loop",
     "delete_loop",
     "derive_loop_status",
+    "export_loops",
     "get_loop_detail",
+    "import_loops",
     "list_loops",
     "update_loop",
 ]

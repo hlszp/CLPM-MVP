@@ -90,7 +90,7 @@ class TestPlantNodeCreate:
                 headers={"Authorization": "Bearer fake-token"},
                 json={"name": "新装置", "type": "UNIT", "parentId": FACTORY_NODE.id},
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         body = resp.json()
         assert body["code"] == "0"
         assert body["data"]["name"] == "新装置"

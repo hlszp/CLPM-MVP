@@ -19,7 +19,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Button,
-  Card,
   DatePicker,
   Descriptions,
   DescriptionsItem,
@@ -32,16 +31,19 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { identifyModelApi } from '#/api/tuning';
 import { getLoopListApi } from '#/api/loop';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { identifyModelApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningModel' });
 
 const router = useRouter();
+const { isDark, themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
-const identifyResult = ref<TuningApi.IdentifyResult | null>(null);
+const identifyResult = ref<null | TuningApi.IdentifyResult>(null);
 
 /** 筛选表单状态 */
 const filter = reactive({
@@ -77,15 +79,15 @@ const { renderEcharts: renderChart } = useEcharts(chartRef);
 
 /** 拟合度颜色 */
 function fittingScoreColor(val: number): string {
-  if (val >= 80) return '#52c41a';
-  if (val >= 60) return '#faad14';
-  return '#ff4d4f';
+  if (val >= 80) return themeColors.value.SUCCESS;
+  if (val >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 /** 加载回路下拉选项 */
 async function loadLoopOptions() {
   try {
-    const data = await getLoopListApi({ page: 1, pageSize: 1000 });
+    const data = await getLoopListApi({ page: 1, pageSize: 100 });
     const list = data.items || [];
     loopOptions.value = list.map((l) => ({
       label: l.tagName,
@@ -178,7 +180,7 @@ function renderFittedCurve() {
       {
         connectNulls: false,
         data: pv,
-        itemStyle: { color: '#1890ff' },
+        itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         name: '原始 PV',
         showSymbol: false,
@@ -187,7 +189,7 @@ function renderFittedCurve() {
       {
         connectNulls: false,
         data: fitted,
-        itemStyle: { color: '#fa8c16' },
+        itemStyle: { color: themeColors.value.WARNING },
         lineStyle: { type: 'dashed', width: 2 },
         name: '拟合曲线',
         showSymbol: false,
@@ -248,12 +250,22 @@ watch(
 onMounted(() => {
   loadLoopOptions();
 });
+
+/** 深色模式切换时重绘 ECharts 图表 */
+watch(isDark, () => {
+  nextTick(() => {
+    renderFittedCurve();
+  });
+});
 </script>
 
 <template>
-  <Page title="模型辨识">
-    <!-- 顶部筛选表单 -->
-    <Card class="mb-4">
+  <Page>
+    <ClpmPageToolbar
+      title="模型辨识"
+      subtitle="选择回路、时间窗和模型类型，产出用于整定的辨识模型。"
+    />
+    <ClpmDataCanvas class="mb-4 mt-4" title="辨识筛选条件">
       <Form layout="inline">
         <FormItem label="回路选择">
           <Select
@@ -297,13 +309,12 @@ onMounted(() => {
           </Button>
         </FormItem>
       </Form>
-    </Card>
+    </ClpmDataCanvas>
 
     <Spin :spinning="loading">
       <!-- 结果区 -->
       <div v-if="identifyResult" class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <!-- 左侧：模型参数卡片 -->
-        <Card title="模型参数" class="lg:col-span-1">
+        <ClpmDataCanvas title="模型参数" class="lg:col-span-1">
           <Descriptions :column="1" bordered size="small">
             <DescriptionsItem label="模型类型">
               {{ identifyResult.modelType }}
@@ -350,23 +361,20 @@ onMounted(() => {
               {{ identifyResult.algorithmVersion }}
             </DescriptionsItem>
           </Descriptions>
-        </Card>
+        </ClpmDataCanvas>
 
-        <!-- 右侧：拟合曲线图 -->
-        <Card title="拟合曲线" class="lg:col-span-2">
+        <ClpmDataCanvas title="拟合曲线" class="lg:col-span-2">
           <EchartsUI ref="chartRef" height="420px" />
-        </Card>
+        </ClpmDataCanvas>
       </div>
 
-      <!-- 空状态 -->
-      <Card v-else>
+      <ClpmDataCanvas v-else title="模型辨识结果">
         <div class="flex h-64 items-center justify-center text-gray-400">
           请选择回路和时间范围，点击「开始辨识」进行模型辨识
         </div>
-      </Card>
+      </ClpmDataCanvas>
 
-      <!-- 底部操作按钮区 -->
-      <Card v-if="identifyResult" class="mt-4">
+      <ClpmDataCanvas v-if="identifyResult" class="mt-4" title="下一步动作">
         <div class="flex items-center justify-between">
           <span class="text-sm text-gray-500">
             辨识完成，可使用此模型进行 PID 整定或闭环仿真。
@@ -377,7 +385,7 @@ onMounted(() => {
             </Button>
           </div>
         </div>
-      </Card>
+      </ClpmDataCanvas>
     </Spin>
   </Page>
 </template>
