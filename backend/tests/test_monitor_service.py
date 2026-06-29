@@ -479,7 +479,7 @@ class TestGetLoopMonitorDetail:
         assert result["kpiSummary"]["algorithm_version"] == "KPI_CALC_v1.0"
 
     async def test_no_tags(self) -> None:
-        """回路无 Tag 关联时 current_values 全为 None，trendStatus=MOCK。"""
+        """回路无 Tag 关联时 current_values 全为 None，trendStatus=EMPTY。"""
         loop = _make_loop()
         db = AsyncMock()
         db.execute = AsyncMock(
@@ -497,12 +497,12 @@ class TestGetLoopMonitorDetail:
         assert result["currentValues"]["modeLabel"] is None
         assert result["currentValues"]["pvQuality"] is None
         assert result["currentValues"]["readAt"] is None
-        assert result["trendStatus"] == "MOCK"
+        assert result["trendStatus"] == "EMPTY"
         assert result["runtimeParams"]["controlMode"] is None
         assert result["runtimeParams"]["pidP"] is None
 
     async def test_trend_query_failure(self) -> None:
-        """趋势数据查询失败时 trendStatus=MOCK（异常被捕获，生成模拟数据）。"""
+        """趋势数据查询失败时 trendStatus=EMPTY（异常被捕获，返回空数组）。"""
         loop = _make_loop()
         pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC-101.PV")
         mappings = [_make_mapping(tag_role="PV", tag_id="tag-pv")]
@@ -517,10 +517,12 @@ class TestGetLoopMonitorDetail:
         )
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.query_trend_data = AsyncMock(side_effect=RuntimeError("TDengine 连接失败"))
+            mock_provider.query_trend_data = AsyncMock(
+                side_effect=RuntimeError("TDengine 连接失败")
+            )
             mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
-        assert result["trendStatus"] == "MOCK"
+        assert result["trendStatus"] == "EMPTY"
         # current_values 仍然从 Tag 当前值填充
         assert result["currentValues"]["pv"] == 50.0
 
@@ -537,7 +539,7 @@ class TestGetLoopMonitorDetail:
                 ]
             )
             result = await get_loop_monitor_detail(db, "loop-001", trend_window=window)
-            assert result["trendStatus"] == "MOCK"
+            assert result["trendStatus"] == "EMPTY"
 
     async def test_non_ready_status(self) -> None:
         """回路状态非 READY 时 KPI 状态为 INCONCLUSIVE。"""
@@ -659,41 +661,31 @@ class TestLTTBDownsampleEdgeCases:
 
     def test_string_numeric_timestamps(self) -> None:
         """字符串数值时间戳（非 ISO 格式）回退为 float 解析。"""
-        data = [
-            {"ts": str(i), "value": float(i), "quality": "GOOD"} for i in range(15)
-        ]
+        data = [{"ts": str(i), "value": float(i), "quality": "GOOD"} for i in range(15)]
         result = lttb_downsample(data, threshold=10, target_points=5)
         assert len(result) == 5
 
     def test_invalid_string_timestamps(self) -> None:
         """无效字符串时间戳回退为 0.0。"""
-        data = [
-            {"ts": "invalid", "value": float(i), "quality": "GOOD"} for i in range(15)
-        ]
+        data = [{"ts": "invalid", "value": float(i), "quality": "GOOD"} for i in range(15)]
         result = lttb_downsample(data, threshold=10, target_points=5)
         assert len(result) == 5
 
     def test_none_timestamps(self) -> None:
         """None 时间戳回退为 0.0。"""
-        data = [
-            {"ts": None, "value": float(i), "quality": "GOOD"} for i in range(15)
-        ]
+        data = [{"ts": None, "value": float(i), "quality": "GOOD"} for i in range(15)]
         result = lttb_downsample(data, threshold=10, target_points=5)
         assert len(result) == 5
 
     def test_none_value_uses_zero(self) -> None:
         """value 为 None 时使用 0.0 替代。"""
-        data = [
-            {"ts": i, "value": None, "quality": "GOOD"} for i in range(15)
-        ]
+        data = [{"ts": i, "value": None, "quality": "GOOD"} for i in range(15)]
         result = lttb_downsample(data, threshold=10, target_points=5)
         assert len(result) == 5
 
     def test_target_points_le_2(self) -> None:
         """target_points <= 2 时返回首尾两点。"""
-        data = [
-            {"ts": i, "value": float(i), "quality": "GOOD"} for i in range(15)
-        ]
+        data = [{"ts": i, "value": float(i), "quality": "GOOD"} for i in range(15)]
         result = lttb_downsample(data, threshold=10, target_points=2)
         assert len(result) == 2
         assert result[0]["ts"] == 0

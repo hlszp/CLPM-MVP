@@ -87,9 +87,7 @@ class TuneRequest(CamelModel):
 
     modelType: ModelType = Field(..., description="模型类型: FOPDT/SOPDT/IPDT")
     modelParams: ModelParams
-    algorithm: TuningAlgorithm = Field(
-        ..., description="整定算法: IMC/LAMBDA/ZN/COHEN_COON/SIMC"
-    )
+    algorithm: TuningAlgorithm = Field(..., description="整定算法: IMC/LAMBDA/ZN/COHEN_COON/SIMC")
     algorithmParams: dict[str, Any] | None = Field(
         None, description="算法参数（如 lambda 比例系数）"
     )

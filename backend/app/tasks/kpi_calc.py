@@ -45,7 +45,6 @@ from app.services.confidence_evaluator import (
     ALGORITHM_VERSION as CONFIDENCE_ALGORITHM_VERSION,
 )
 from app.services.confidence_evaluator import (
-    DEFAULT_WEIGHTS,
     ConfidenceEvaluator,
 )
 from app.services.data_planner import DataPlanner
@@ -276,6 +275,7 @@ async def _do_calculate() -> dict:
 
         # 2.1 批量加载回路类型权重（v2 算法用）
         from app.services.loop_config import get_loop_type_weights_map
+
         type_weights = await get_loop_type_weights_map(db)
         logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
 
@@ -353,9 +353,7 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
             except ValueError:
                 ts_start_dt = datetime.fromisoformat(ts_start)
         else:
-            ts_start_dt = (now - timedelta(hours=1)).replace(
-                minute=0, second=0, microsecond=0
-            )
+            ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         ts_end_dt = ts_start_dt + timedelta(hours=1)
 
         metric_result = await db.execute(select(MetricConfig))
@@ -363,6 +361,7 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
 
         # 加载回路类型权重（v2 算法用）
         from app.services.loop_config import get_loop_type_weights_map
+
         type_weights = await get_loop_type_weights_map(db)
 
         snap = await _calculate_loop_kpi(
@@ -447,6 +446,7 @@ async def _calculate_loop_kpi(
 
     # 构造权重映射（type_weights 键为 weight_a/weight_f/weight_s，需映射到计算器代码）
     from app.services.loop_config import infer_score_type
+
     score_type = infer_score_type(loop.loop_type)
     weights = _build_weights_map(type_weights, score_type)
 
@@ -461,11 +461,7 @@ async def _calculate_loop_kpi(
     kpi_values = _extract_kpi_values(metric_results)
 
     # 提取综合评分
-    score = (
-        Decimal(str(composite_result.value))
-        if composite_result.value is not None
-        else None
-    )
+    score = Decimal(str(composite_result.value)) if composite_result.value is not None else None
 
     # 提取数据血缘信息（从 accuracy_rate 的 lineage 取，若不存在则从任意结果取）
     lineage_info = _extract_lineage_info(metric_results, composite_result)
@@ -685,9 +681,7 @@ def _build_config_bundle(
         signals={"control_type": [control_type.value]},
         validity={},
         outlier_reasons={},
-        quality_summary=QualitySummary(
-            total_count=1, valid_count=1, valid_rate=1.0
-        ),
+        quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
         config_version="v1",
         preprocess_version="config_v1",
         point_count=1,
@@ -775,9 +769,7 @@ def _compute_kpis_three_layer(
     # bundles 中的 metric_code 是数据库列名，需映射为计算器代码
     bundle_map: dict[str, MetricDataBundle] = {}
     for bundle in bundles:
-        calc_code = _DB_TO_CALCULATOR_METRIC_CODE.get(
-            bundle.metric_code, bundle.metric_code
-        )
+        calc_code = _DB_TO_CALCULATOR_METRIC_CODE.get(bundle.metric_code, bundle.metric_code)
         bundle_map[calc_code] = bundle
 
     # 添加虚拟 CONFIG bundle（ideal_settling_time）
@@ -821,9 +813,7 @@ def _compute_kpis_three_layer(
     if stability_bundle is not None:
         calc = get_calculator("stability_rate")
         if calc is not None:
-            calc.with_dependencies(
-                {"oscillation_rate": results.get("oscillation_rate")}
-            )
+            calc.with_dependencies({"oscillation_rate": results.get("oscillation_rate")})
             results["stability_rate"] = calc.calculate(stability_bundle)
             logger.debug(
                 "[三层计算] Layer2: stability_rate = %s (confidence=%s)",
@@ -1119,7 +1109,9 @@ def calculate_node_kpi_hourly(self: AsyncTask) -> dict:
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def calculate_node_kpi(plant_node_id: str, ts_start: str | None = None, ts_end: str | None = None) -> dict:
+def calculate_node_kpi(
+    plant_node_id: str, ts_start: str | None = None, ts_end: str | None = None
+) -> dict:
     """单节点 KPI 聚合（可手动触发，支持指定时间段）。
 
     Args:
@@ -1127,8 +1119,9 @@ def calculate_node_kpi(plant_node_id: str, ts_start: str | None = None, ts_end: 
         ts_start: 起始时间（ISO 8601），None 表示上一个完整小时
         ts_end: 结束时间（ISO 8601），None 表示 ts_start + 1 小时
     """
-    logger.info("单节点 KPI 聚合, plant_node_id=%s, ts_start=%s, ts_end=%s",
-                plant_node_id, ts_start, ts_end)
+    logger.info(
+        "单节点 KPI 聚合, plant_node_id=%s, ts_start=%s, ts_end=%s", plant_node_id, ts_start, ts_end
+    )
     return AsyncTask().run_async(_do_calculate_single_node(plant_node_id, ts_start, ts_end))
 
 
@@ -1145,9 +1138,7 @@ async def _do_calculate_node_kpi() -> dict:
 
     async with AsyncSessionLocal() as db:
         # 查询所有启用 KPI 评估的节点
-        node_result = await db.execute(
-            select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
-        )
+        node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
         nodes = list(node_result.scalars().all())
 
         if not nodes:
@@ -1282,7 +1273,8 @@ def calculate_monthly_kpi(self: AsyncTask, stat_month: str | None = None) -> dic
     写入 kpi_node_snapshot_monthly。
 
     Args:
-        stat_month: 统计月份（ISO 8601，月初），None 表示上个月（Beat 1 日 00:10 触发时聚合上个月数据）
+        stat_month: 统计月份（ISO 8601，月初），None 表示上个月
+            （Beat 1 日 00:10 触发时聚合上个月数据）
     """
     logger.info("节点级月聚合任务开始, task_id=%s, stat_month=%s", self.request.id, stat_month)
     try:

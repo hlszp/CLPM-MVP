@@ -67,9 +67,7 @@ class TestMaskApplication:
         """部分有效时 mask 应正确筛选."""
         assembler = MetricDataBundleAssembler()
         block = build_data_block(n=20, valid_rate=0.5)  # 前 10 有效
-        bundle = assembler.assemble(
-            "stability_rate", block, "pv_valid && sp_valid", None
-        )
+        bundle = assembler.assemble("stability_rate", block, "pv_valid && sp_valid", None)
         assert bundle.masked_indices == list(range(10))
 
 
@@ -147,11 +145,17 @@ class TestDataLineageGeneration:
         d = bundle.lineage.to_dict()
 
         import json
+
         json.dumps(d)  # 不应抛异常
         assert set(d.keys()) == {
-            "sampling_freq", "aggregation_policy", "quality_policy",
-            "tag_group", "data_block_ids", "valid_rate",
-            "data_policy_version", "algorithm_version",
+            "sampling_freq",
+            "aggregation_policy",
+            "quality_policy",
+            "tag_group",
+            "data_block_ids",
+            "valid_rate",
+            "data_policy_version",
+            "algorithm_version",
         }
 
 
@@ -189,8 +193,12 @@ class TestBundleStructure:
         """多个指标可共享同一 DataBlock（缓存复用场景）."""
         assembler = MetricDataBundleAssembler()
         block = build_data_block(n=20, valid_rate=0.9)
-        req1 = build_requirement("accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid")
-        req2 = build_requirement("stability_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid")
+        req1 = build_requirement(
+            "accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"
+        )
+        req2 = build_requirement(
+            "stability_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"
+        )
 
         b1 = assembler.assemble("accuracy_rate", block, "pv_valid && sp_valid", req1)
         b2 = assembler.assemble("stability_rate", block, "pv_valid && sp_valid", req2)

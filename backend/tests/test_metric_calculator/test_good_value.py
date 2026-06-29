@@ -13,8 +13,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.contracts.data_types import ConfidenceLevel, QualitySummary
 from app.services.metric_calculator.good_value import GoodValueRateCalculator
 
@@ -30,9 +28,7 @@ class TestGoodValueRate:
         bundle = make_bundle(
             {"pv": [50.0] * n},
             metric_code="good_value_rate",
-            quality_summary=QualitySummary(
-                total_count=n, valid_count=n, good_value_rate=1.0
-            ),
+            quality_summary=QualitySummary(total_count=n, valid_count=n, good_value_rate=1.0),
         )
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)
@@ -44,9 +40,7 @@ class TestGoodValueRate:
         bundle = make_bundle(
             {"pv": [50.0] * n},
             metric_code="good_value_rate",
-            quality_summary=QualitySummary(
-                total_count=n, valid_count=80, good_value_rate=0.8
-            ),
+            quality_summary=QualitySummary(total_count=n, valid_count=80, good_value_rate=0.8),
         )
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)
@@ -58,9 +52,7 @@ class TestGoodValueRate:
         bundle = make_bundle(
             {"pv": [50.0] * n},
             metric_code="good_value_rate",
-            quality_summary=QualitySummary(
-                total_count=n, valid_count=10, good_value_rate=0.1
-            ),
+            quality_summary=QualitySummary(total_count=n, valid_count=10, good_value_rate=0.1),
         )
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)
@@ -82,9 +74,7 @@ class TestGoodValueRate:
             {"pv": [50.0] * n},
             validity,
             metric_code="good_value_rate",
-            quality_summary=QualitySummary(
-                total_count=n, valid_count=80, good_value_rate=None
-            ),
+            quality_summary=QualitySummary(total_count=n, valid_count=80, good_value_rate=None),
         )
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)
@@ -97,9 +87,7 @@ class TestGoodValueRate:
         bundle = make_bundle(
             {"pv": [50.0] * n},
             metric_code="good_value_rate",
-            quality_summary=QualitySummary(
-                total_count=n, valid_count=20, good_value_rate=0.2
-            ),
+            quality_summary=QualitySummary(total_count=n, valid_count=20, good_value_rate=0.2),
         )
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)
@@ -112,9 +100,7 @@ class TestGoodValueRate:
         bundle = make_bundle(
             {"pv": [50.0] * n},
             metric_code="good_value_rate",
-            quality_summary=QualitySummary(
-                total_count=3, valid_count=2, good_value_rate=2 / 3
-            ),
+            quality_summary=QualitySummary(total_count=3, valid_count=2, good_value_rate=2 / 3),
         )
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)

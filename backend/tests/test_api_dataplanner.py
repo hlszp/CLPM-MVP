@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from tests.conftest import TEST_USERS, mock_current_user
 
 # ---------------------------------------------------------------------------

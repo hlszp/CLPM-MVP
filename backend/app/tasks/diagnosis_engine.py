@@ -212,9 +212,7 @@ async def _do_diagnose_single_loop(loop_id: str, ts_start: str | None = None) ->
             except ValueError:
                 ts_start_dt = datetime.fromisoformat(ts_start)
         else:
-            ts_start_dt = (now - timedelta(hours=1)).replace(
-                minute=0, second=0, microsecond=0
-            )
+            ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         ts_end_dt = ts_start_dt + timedelta(hours=1)
 
         result = await _diagnose_loop(
@@ -267,9 +265,7 @@ async def _diagnose_loop(
         return None
 
     # 查询 Tag 关联
-    m_result = await db.execute(
-        select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
-    )
+    m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
     mappings = {m.tag_role: m for m in m_result.scalars().all()}
 
     tag_ids = [str(m.tag_id) for m in mappings.values()]
@@ -362,9 +358,7 @@ async def _diagnose_loop(
     # 10. 响应迟缓检测（一阶滞后拟合）
     # 控制类型从回路扩展属性获取（默认 PI）
     control_type = getattr(loop, "control_type", None) or "PI"
-    slow_response_result = _detect_slow_response(
-        pv_values, sp_values, control_type, ts_param
-    )
+    slow_response_result = _detect_slow_response(pv_values, sp_values, control_type, ts_param)
 
     # 11. 偏差突变检测（CUSUM）
     bias_shift_result = _detect_bias_shift(pv_values, sp_values, ts_param)
@@ -700,9 +694,7 @@ def _empty_stiction_result() -> dict[str, Any]:
     }
 
 
-def _detect_oscillation_fft(
-    pv_values: np.ndarray, sample_interval: float = 1.0
-) -> dict[str, Any]:
+def _detect_oscillation_fft(pv_values: np.ndarray, sample_interval: float = 1.0) -> dict[str, Any]:
     """FFT 频域分析检测振荡。
 
     Args:
@@ -1138,9 +1130,7 @@ def _empty_bias_shift_result() -> dict[str, Any]:
     }
 
 
-def _compute_max_bicoherence(
-    signal: np.ndarray, n_seg: int = 4, n_freq: int = 16
-) -> float:
+def _compute_max_bicoherence(signal: np.ndarray, n_seg: int = 4, n_freq: int = 16) -> float:
     """计算信号的最大双相干性（NLI 近似）。
 
     双相干性衡量信号的二次相位耦合（QPC），是非线性检测的标准指标。
@@ -1205,9 +1195,7 @@ def _compute_max_bicoherence(
         return 0.0
 
 
-def _detect_choudhury_nonlinearity(
-    pv: np.ndarray, op: np.ndarray
-) -> dict[str, Any]:
+def _detect_choudhury_nonlinearity(pv: np.ndarray, op: np.ndarray) -> dict[str, Any]:
     """Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测）。
 
     设计依据：FDS §5.4.6 / ADS §5.2.2
@@ -1245,7 +1233,7 @@ def _detect_choudhury_nonlinearity(
         kurtosis_excess = float(sp_stats.kurtosis(op_centered, fisher=True))
 
         # NGI: 非高斯指数（ADS §5.2.2 公式）
-        ngi = abs(kurtosis_excess) / 6.0 + (skewness ** 2) / 24.0
+        ngi = abs(kurtosis_excess) / 6.0 + (skewness**2) / 24.0
 
         # NLI: 非线性指数（最大双相干性近似）
         nli = _compute_max_bicoherence(op_centered)
@@ -1308,7 +1296,7 @@ def _detect_kano_stiction(
     try:
         pv_arr = pv[:min_len].astype(float)
         op_arr = op[:min_len].astype(float)
-        mv_arr = (mv[:min_len].astype(float) if mv is not None else op_arr)
+        mv[:min_len].astype(float) if mv is not None else op_arr
 
         # PV 和 OP 的标准差比值
         pv_std = float(np.std(pv_arr))
@@ -1429,7 +1417,7 @@ def _analyze_step_response(
             return _empty_step_response_result()
 
         new_sp = float(sp_arr[step_idx + 1])
-        old_sp = float(sp_arr[step_idx])
+        float(sp_arr[step_idx])
 
         # 响应窗口：阶跃后的数据
         response_end = min(step_idx + 1 + min_len // 2, min_len)
@@ -1482,9 +1470,7 @@ def _analyze_step_response(
         return _empty_step_response_result()
 
 
-def _compute_decay_ratio(
-    pv_response: np.ndarray, new_sp: float, step_size: float
-) -> float:
+def _compute_decay_ratio(pv_response: np.ndarray, new_sp: float, step_size: float) -> float:
     """计算衰减比 A2/A1（同方向连续振荡峰）。
 
     Args:
@@ -1599,7 +1585,7 @@ def _detect_slow_response(
         if abs(step_size) < 1e-9:
             return _empty_slow_response_result()
 
-        new_sp = float(sp_arr[step_idx + 1])
+        float(sp_arr[step_idx + 1])
         old_sp = float(sp_arr[step_idx])
 
         # 响应窗口
@@ -1932,9 +1918,7 @@ def _align_timeseries(
                 "pv": pv,
                 "sp": _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values),
                 "op": _find_nearest_value(ts, op_ts_floats, op_map, op_values),
-                "mode": _find_nearest_value(
-                    ts, mode_ts_floats, mode_map, mode_values
-                ),
+                "mode": _find_nearest_value(ts, mode_ts_floats, mode_map, mode_values),
             }
         )
     return aligned

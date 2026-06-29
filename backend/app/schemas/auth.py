@@ -15,14 +15,25 @@ from app.schemas.base import CamelModel
 # 弱密码字典（常见易猜密码）
 _WEAK_PASSWORDS = frozenset(
     {
-        "password", "password1", "password123",
-        "12345678", "123456789", "1234567890",
-        "admin123", "admin1234", "administrator",
-        "qwerty123", "qwertyui",
-        "abc12345", "abcd1234",
-        "welcome1", "welcome123",
-        "letmein1", "letmein123",
-        "changeme1", "changeme123",
+        "password",
+        "password1",
+        "password123",
+        "12345678",
+        "123456789",
+        "1234567890",
+        "admin123",
+        "admin1234",
+        "administrator",
+        "qwerty123",
+        "qwertyui",
+        "abc12345",
+        "abcd1234",
+        "welcome1",
+        "welcome123",
+        "letmein1",
+        "letmein123",
+        "changeme1",
+        "changeme123",
     }
 )
 
@@ -77,6 +88,7 @@ def validate_password_strength(v: str) -> str:
         raise ValueError(f"密码需包含 {'、'.join(missing)}")
 
     return v
+
 
 # ---------------------------------------------------------------------------
 # Login

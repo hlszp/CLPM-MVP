@@ -54,9 +54,7 @@ def lttb_downsample_multi_series(
 
     # 选择参考序列（优先 PV，否则第一个非空序列）
     ref_key = "pv"
-    if ref_key not in series_map or not any(
-        v is not None for v in series_map[ref_key]
-    ):
+    if ref_key not in series_map or not any(v is not None for v in series_map[ref_key]):
         for k, vals in series_map.items():
             if any(v is not None for v in vals):
                 ref_key = k
@@ -96,10 +94,13 @@ def lttb_downsample_multi_series(
         point_a_y = ref_numeric[a]
 
         for j in range(bucket_start, bucket_end):
-            area = abs(
-                (point_a_x - avg_x) * (ref_numeric[j] - point_a_y)
-                - (point_a_x - ts_numeric[j]) * (avg_y - point_a_y)
-            ) * 0.5
+            area = (
+                abs(
+                    (point_a_x - avg_x) * (ref_numeric[j] - point_a_y)
+                    - (point_a_x - ts_numeric[j]) * (avg_y - point_a_y)
+                )
+                * 0.5
+            )
             if area > max_area:
                 max_area = area
                 max_area_idx = j
@@ -277,9 +278,7 @@ async def get_waveform(
             "mode": mode_list,
             "pvQuality": pv_quality_list,
         }
-        timestamps, series_map = lttb_downsample_multi_series(
-            timestamps, series_map, max_points
-        )
+        timestamps, series_map = lttb_downsample_multi_series(timestamps, series_map, max_points)
         pv_list = series_map["pv"]
         sp_list = series_map["sp"]
         op_list = series_map["op"]

@@ -146,10 +146,17 @@ class ConfidenceEvaluator:
 
         logger.debug(
             "[综合评分] 输入: A=%s, F=%s, S=%s, R=%s, weights(a=%.3f, f=%.3f, s=%.3f)",
-            metric_results.get("accuracy_rate").value if metric_results.get("accuracy_rate") else None,
+            metric_results.get("accuracy_rate").value
+            if metric_results.get("accuracy_rate")
+            else None,
             metric_results.get("fast_rate").value if metric_results.get("fast_rate") else None,
-            metric_results.get("stability_rate").value if metric_results.get("stability_rate") else None,
-            r_value, a, f, s,
+            metric_results.get("stability_rate").value
+            if metric_results.get("stability_rate")
+            else None,
+            r_value,
+            a,
+            f,
+            s,
         )
 
         # R 为 INCONCLUSIVE（None 且可信度 E）→ 评分留空
@@ -217,7 +224,10 @@ class ConfidenceEvaluator:
 
         logger.debug(
             "[综合评分] base_score=%.4f, R=%s, score=%.2f, confidence=%s",
-            base_score, r_value, score, confidence,
+            base_score,
+            r_value,
+            score,
+            confidence,
         )
 
         return MetricResult(

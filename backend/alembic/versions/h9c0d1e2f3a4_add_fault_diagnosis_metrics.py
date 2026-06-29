@@ -14,8 +14,9 @@ Create Date: 2026-06-24 18:00:00.000000
 
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "h9c0d1e2f3a4"
@@ -27,18 +28,27 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "kpi_snapshot_hourly",
-        sa.Column("stiction_coeff", sa.Numeric(5, 2), nullable=True,
-                  comment="黏滞系数（0-100，0=无黏滞）"),
+        sa.Column(
+            "stiction_coeff", sa.Numeric(5, 2), nullable=True, comment="黏滞系数（0-100，0=无黏滞）"
+        ),
     )
     op.add_column(
         "kpi_snapshot_hourly",
-        sa.Column("steady_state_time", sa.Numeric(8, 2), nullable=True,
-                  comment="稳态时间（秒）：PV 与 SP 偏差在 ±2% 内的时长"),
+        sa.Column(
+            "steady_state_time",
+            sa.Numeric(8, 2),
+            nullable=True,
+            comment="稳态时间（秒）：PV 与 SP 偏差在 ±2% 内的时长",
+        ),
     )
     op.add_column(
         "kpi_snapshot_hourly",
-        sa.Column("output_travel_index", sa.Numeric(8, 2), nullable=True,
-                  comment="输出值行程指数（0-100）：OP 总行程归一化指数"),
+        sa.Column(
+            "output_travel_index",
+            sa.Numeric(8, 2),
+            nullable=True,
+            comment="输出值行程指数（0-100）：OP 总行程归一化指数",
+        ),
     )
 
 

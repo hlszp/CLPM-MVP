@@ -17,15 +17,13 @@ Used for:
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import AsyncGenerator
 from typing import Any
 
 import redis.asyncio as aioredis
 
 from app.core.config import settings
-
-
-import inspect
 
 
 class _RedisProxy:
@@ -106,9 +104,7 @@ class _RedisProxy:
         """
         # dunder 方法直接报错，避免被误代理
         if name.startswith("__") and name.endswith("__"):
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'"
-            )
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
         # 通过临时客户端检查方法类型（Redis 实例化本身不绑定 loop）
         probe = self._client or aioredis.Redis(**self._kwargs)

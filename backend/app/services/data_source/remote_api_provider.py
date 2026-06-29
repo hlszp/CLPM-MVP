@@ -8,7 +8,8 @@
 
 响应体::
 
-    {"code": 200, "data": {"timestamps": [...], "series": [{"tagCode": "...", "values": [...], "qualities": [...]}]}}
+    {"code": 200, "data": {"timestamps": [...],
+        "series": [{"tagCode": "...", "values": [...], "qualities": [...]}]}}
 
 质量码映射（外部 API → CLPM 内部）：
 - 1 (Good) → 1
@@ -111,9 +112,7 @@ class RemoteApiProvider:
             tag_ids = [str(m.tag_id) for m in mappings.values()]
             tags_map: dict[str, Any] = {}
             if tag_ids:
-                t_result = await db.execute(
-                    select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
-                )
+                t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
                 for t in t_result.scalars().all():
                     tags_map[str(t.id)] = t
 
@@ -135,7 +134,9 @@ class RemoteApiProvider:
 
             # 3. 调用外部 API
             tag_codes = list(role_tag_names.values())
-            start_str = start.replace(tzinfo=None).isoformat() if start.tzinfo else start.isoformat()
+            start_str = (
+                start.replace(tzinfo=None).isoformat() if start.tzinfo else start.isoformat()
+            )
             end_str = end.replace(tzinfo=None).isoformat() if end.tzinfo else end.isoformat()
 
             request_body = {
@@ -176,9 +177,7 @@ class RemoteApiProvider:
             timestamps: list[datetime] = []
             for ts_str in raw_timestamps:
                 try:
-                    timestamps.append(
-                        datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
-                    )
+                    timestamps.append(datetime.fromisoformat(str(ts_str).replace("Z", "+00:00")))
                 except (ValueError, TypeError):
                     try:
                         timestamps.append(datetime.fromtimestamp(float(ts_str)))
@@ -218,9 +217,7 @@ class RemoteApiProvider:
                             q_int = int(q) if q is not None else 0
                         except (ValueError, TypeError):
                             q_int = 0
-                        mapped_qualities.append(
-                            1 if q_int in _GOOD_QUALITY_CODES else 0
-                        )
+                        mapped_qualities.append(1 if q_int in _GOOD_QUALITY_CODES else 0)
                     quality_codes[quality_key] = mapped_qualities
 
             logger.debug(

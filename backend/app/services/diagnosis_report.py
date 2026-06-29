@@ -185,9 +185,7 @@ def generate_diagnosis_report(
         diag_rows = [diag_header]
         for item in diag_labels:
             confidence = item.get("confidence")
-            conf_str = (
-                f"{float(confidence):.2f}" if confidence is not None else "—"
-            )
+            conf_str = f"{float(confidence):.2f}" if confidence is not None else "—"
             diag_rows.append(
                 [
                     Paragraph(str(item.get("label", "—")), cell_style),
@@ -207,7 +205,12 @@ def generate_diagnosis_report(
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                     ("TOPPADDING", (0, 0), (-1, -1), 4),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f5f5")]),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f5f5f5")],
+                    ),
                 ]
             )
         )
@@ -242,7 +245,12 @@ def generate_diagnosis_report(
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                     ("TOPPADDING", (0, 0), (-1, -1), 4),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f5f5")]),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f5f5f5")],
+                    ),
                 ]
             )
         )
@@ -277,7 +285,10 @@ def generate_diagnosis_report(
         for rec in rec_list:
             rec_rows.append(
                 [
-                    Paragraph(priority_names.get(rec.get("priority"), str(rec.get("priority"))), cell_style),
+                    Paragraph(
+                        priority_names.get(rec.get("priority"), str(rec.get("priority"))),
+                        cell_style,
+                    ),
                     Paragraph(str(rec.get("labelName", rec.get("label", "—"))), cell_style),
                     Paragraph(str(rec.get("action", "—")), cell_style),
                     Paragraph(str(rec.get("description", "—")), cell_style),
@@ -298,7 +309,12 @@ def generate_diagnosis_report(
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                     ("TOPPADDING", (0, 0), (-1, -1), 4),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f5f5")]),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f5f5f5")],
+                    ),
                 ]
             )
         )
@@ -379,9 +395,7 @@ async def export_diagnosis_statistics(
     # 查询装置名（如果指定了 plant_node_id）
     plant_name = "全部装置"
     if plant_node_id:
-        node_result = await db.execute(
-            select(PlantNode).where(PlantNode.id == plant_node_id)
-        )
+        node_result = await db.execute(select(PlantNode).where(PlantNode.id == plant_node_id))
         node = node_result.scalar_one_or_none()
         if node:
             plant_name = node.name
@@ -400,9 +414,9 @@ async def export_diagnosis_statistics(
         .order_by("day", DiagnosisResult.diag_label)
     )
     if plant_node_id:
-        trend_stmt = trend_stmt.join(
-            LoopLedger, DiagnosisResult.loop_id == LoopLedger.id
-        ).where(LoopLedger.unit_id == plant_node_id)
+        trend_stmt = trend_stmt.join(LoopLedger, DiagnosisResult.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id == plant_node_id
+        )
 
     trend_result = await db.execute(trend_stmt)
     trend_rows = trend_result.all()
@@ -450,9 +464,7 @@ async def export_diagnosis_statistics(
         top_label_name = DIAG_LABEL_NAMES.get(top_label, top_label)
         writer.writerow(["最多标签", f"{top_label_name} ({top_label})"])
         writer.writerow(["最多标签数量", top_count])
-        writer.writerow(
-            ["最多标签占比(%)", f"{(top_count / total) * 100:.2f}"]
-        )
+        writer.writerow(["最多标签占比(%)", f"{(top_count / total) * 100:.2f}"])
     writer.writerow([])
 
     csv_str = buffer.getvalue()

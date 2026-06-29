@@ -637,8 +637,12 @@ class TestWeightSumValidator:
         # 不抛异常即通过
         WeightSumValidator.validate(
             [
-                Decimal("20"), Decimal("20"), Decimal("20"),
-                Decimal("15"), Decimal("15"), Decimal("10"),
+                Decimal("20"),
+                Decimal("20"),
+                Decimal("20"),
+                Decimal("15"),
+                Decimal("15"),
+                Decimal("10"),
             ]
         )
 

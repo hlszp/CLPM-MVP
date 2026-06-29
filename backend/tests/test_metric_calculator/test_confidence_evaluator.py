@@ -26,14 +26,13 @@ from app.contracts.data_types import (
 )
 from app.services.confidence_evaluator import (
     ALGORITHM_VERSION,
-    ConfidenceEvaluator,
     DEFAULT_WEIGHTS,
     DISCOUNT_METRIC_CODE,
     QUALITY_POLICY,
+    ConfidenceEvaluator,
 )
 
 from .conftest import make_bundle
-
 
 # ---------------------------------------------------------------------------
 # 辅助构造
@@ -68,9 +67,7 @@ def _make_full_results(
         "accuracy_rate": _make_metric_result("accuracy_rate", a, confidence),
         "fast_rate": _make_metric_result("fast_rate", f, confidence),
         "stability_rate": _make_metric_result("stability_rate", s, confidence),
-        DISCOUNT_METRIC_CODE: _make_metric_result(
-            DISCOUNT_METRIC_CODE, r, confidence
-        ),
+        DISCOUNT_METRIC_CODE: _make_metric_result(DISCOUNT_METRIC_CODE, r, confidence),
     }
 
 
@@ -152,9 +149,7 @@ class TestBuildLineage:
             {"pv": [50.0], "sp": [50.0]},
             metric_code="accuracy_rate",
         )
-        lineage = ConfidenceEvaluator.build_lineage(
-            bundle, 1.0, algorithm_version="KPI_CALC_v3.0"
-        )
+        lineage = ConfidenceEvaluator.build_lineage(bundle, 1.0, algorithm_version="KPI_CALC_v3.0")
         assert lineage.algorithm_version == "KPI_CALC_v3.0"
 
     def test_lineage_tag_group_propagated(self):
@@ -248,9 +243,7 @@ class TestComputeCompositeScore:
     def test_confidence_takes_minimum(self):
         """可信度取核心指标 + R 中最低等级。"""
         results = _make_full_results(confidence="A")
-        results["stability_rate"] = _make_metric_result(
-            "stability_rate", 50.0, confidence="D"
-        )
+        results["stability_rate"] = _make_metric_result("stability_rate", 50.0, confidence="D")
         score = ConfidenceEvaluator.compute_composite_score(results)
         assert score.confidence_level == "D"
 
@@ -262,9 +255,7 @@ class TestComputeCompositeScore:
             algorithm_version="KPI_CALC_v2.0",
         )
         results = _make_full_results()
-        results["accuracy_rate"] = _make_metric_result(
-            "accuracy_rate", 90.0, lineage=lineage_acc
-        )
+        results["accuracy_rate"] = _make_metric_result("accuracy_rate", 90.0, lineage=lineage_acc)
         score = ConfidenceEvaluator.compute_composite_score(results)
         assert score.lineage.sampling_freq == "5s"
         assert score.lineage.tag_group == "BASE"

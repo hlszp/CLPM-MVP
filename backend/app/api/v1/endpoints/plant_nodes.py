@@ -43,7 +43,9 @@ router = APIRouter(prefix="/plant-nodes", tags=["plant-node"])
 
 @router.get("", response_model=ApiResponse[list[PlantNodeTree]])
 async def list_plant_nodes(
-    parentId: uuid.UUID | None = Query(None, description="父节点 ID，不传则返回顶层节点及其完整子树"),
+    parentId: uuid.UUID | None = Query(
+        None, description="父节点 ID，不传则返回顶层节点及其完整子树"
+    ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:

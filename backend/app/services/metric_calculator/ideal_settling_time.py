@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.contracts.data_types import ControlType, MetricDataBundle, MetricResult
 from app.services.metric_calculator.base import MetricCalculatorBase
@@ -73,7 +72,8 @@ class IdealSettlingTimeCalculator(MetricCalculatorBase):
         if manual is not None and manual > 0:
             logger.debug("[理想稳态时间] 手动配置: T'=%.1f 秒", manual)
             return self._make_result(
-                bundle, manual,
+                bundle,
+                manual,
                 {"source": "manual", "ideal_settling_time": round(manual, 2)},
             )
 
@@ -82,7 +82,8 @@ class IdealSettlingTimeCalculator(MetricCalculatorBase):
         if model_t is not None and model_t > 0:
             logger.debug("[理想稳态时间] 模型计算: T'=%.1f 秒", model_t)
             return self._make_result(
-                bundle, model_t,
+                bundle,
+                model_t,
                 {"source": "model", "ideal_settling_time": round(model_t, 2)},
             )
 
@@ -91,7 +92,8 @@ class IdealSettlingTimeCalculator(MetricCalculatorBase):
         default_t = DEFAULT_IDEAL_SETTLING.get(control_type, FALLBACK_DEFAULT)
         logger.debug("[理想稳态时间] 默认值: control_type=%s, T'=%.1f 秒", control_type, default_t)
         return self._make_result(
-            bundle, default_t,
+            bundle,
+            default_t,
             {
                 "source": "default",
                 "control_type": control_type,

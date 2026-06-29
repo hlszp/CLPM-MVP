@@ -312,11 +312,7 @@ async def list_loop_monitor(
     redis_cache: dict[str, dict] = {}
     try:
         subscriber = get_subscriber()
-        all_tag_names = [
-            tag.tag_name
-            for tag in tags_map.values()
-            if tag.tag_name
-        ]
+        all_tag_names = [tag.tag_name for tag in tags_map.values() if tag.tag_name]
         if all_tag_names:
             cached_list = await subscriber.get_cached_values(all_tag_names)
             for item in cached_list:

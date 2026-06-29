@@ -17,10 +17,7 @@
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timedelta
-
-import pytest
 
 from app.contracts.data_types import ControlType, OutlierReason
 from app.services.preprocessing.outlier_detection import (
@@ -36,7 +33,6 @@ from app.services.preprocessing.outlier_detection import (
     detect_ts_anomaly,
 )
 from app.services.preprocessing.thresholds import get_threshold
-
 
 # ---------------------------------------------------------------------------
 # 1. NaN 检测
@@ -158,7 +154,7 @@ class TestDetectFrozen:
         # 前 5 点恒定（std=0），后 5 点变化大
         values = [50.0, 50.0, 50.0, 50.0, 50.0, 80.0, 20.0, 80.0, 20.0, 80.0]
         results = detect_frozen(values, threshold)
-        indices = set(i for i, _ in results)
+        indices = {i for i, _ in results}
         # 窗口 [0:5] std=0 → 标记 0-4
         # 窗口 [1:6] 含 80.0，std 较大 → 不标记
         # 但窗口 [0:5] 标记了 0-4，后续窗口可能也标记部分

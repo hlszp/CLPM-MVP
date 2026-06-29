@@ -72,9 +72,7 @@ class TestGetRecommendations:
         """多标签返回合并建议。"""
         from app.services.diagnosis_recommendation import get_recommendations
 
-        result = get_recommendations(
-            "loop-003", ["OSCILLATION", "STICTION", "TUNING"]
-        )
+        result = get_recommendations("loop-003", ["OSCILLATION", "STICTION", "TUNING"])
         # 3 个标签 × 3 条建议 = 9 条
         assert result["totalCount"] == 9
         recs = result["recommendations"]
@@ -146,9 +144,7 @@ class TestGetRecommendations:
         """重复标签应去重。"""
         from app.services.diagnosis_recommendation import get_recommendations
 
-        result = get_recommendations(
-            "loop-009", ["OSCILLATION", "OSCILLATION", "OSCILLATION"]
-        )
+        result = get_recommendations("loop-009", ["OSCILLATION", "OSCILLATION", "OSCILLATION"])
         # 去重后只有 3 条
         assert result["totalCount"] == 3
 
@@ -304,9 +300,7 @@ class TestGenerateDiagnosisReport:
             "diagnosedAt": "2026-06-22T08:00:00Z",
             "algorithmVersion": "DIAG_ENGINE_v1.0",
         }
-        recommendations = get_recommendations(
-            "loop-multi", ["OSCILLATION", "VALVE_STICTION"]
-        )
+        recommendations = get_recommendations("loop-multi", ["OSCILLATION", "VALVE_STICTION"])
 
         pdf_bytes = generate_diagnosis_report(
             loop_id="loop-multi",
@@ -515,9 +509,7 @@ class TestRecommendationsEndpoint:
         resp = client.get("/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/recommendations")
         assert resp.status_code == 401
 
-    def test_get_recommendations_from_db(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_get_recommendations_from_db(self, client, mock_db, fake_redis) -> None:
         """不传 tagCodes 时从数据库读取。"""
         loop = _make_loop_mock()
 
@@ -544,13 +536,9 @@ class TestRecommendationsEndpoint:
         assert body["code"] == "0"
         assert body["data"]["totalCount"] == 3
 
-    def test_get_recommendations_loop_not_found(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_get_recommendations_loop_not_found(self, client, mock_db, fake_redis) -> None:
         """回路不存在返回 404。"""
-        mock_db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(None)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/diagnosis/00000000-0000-0000-0000-000000000000/recommendations",
@@ -609,9 +597,7 @@ class TestReportEndpoint:
         resp = client.post("/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/report")
         assert resp.status_code == 401
 
-    def test_generate_report_sponsor_forbidden(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_generate_report_sponsor_forbidden(self, client, mock_db, fake_redis) -> None:
         """SPONSOR 无权限生成报告（403）。"""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.post(

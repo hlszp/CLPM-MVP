@@ -278,9 +278,7 @@ class RecommendationData(CamelModel):
 class DiagnosisReportRequest(CamelModel):
     """POST /diagnosis/{loopId}/report 请求体（可选，默认使用最新诊断结果）。"""
 
-    tag_codes: list[str] | None = Field(
-        None, description="诊断标签列表（可选，默认从数据库读取）"
-    )
+    tag_codes: list[str] | None = Field(None, description="诊断标签列表（可选，默认从数据库读取）")
 
 
 # ---------------------------------------------------------------------------
@@ -359,9 +357,7 @@ class TagResolveRequest(CamelModel):
     处理人 (resolved_by) 从认证上下文获取，不由客户端传入，确保审计可追溯。
     """
 
-    status: str = Field(
-        ..., description="目标处理状态：RESOLVED（已处理）/ SUPPRESSED（已抑制）"
-    )
+    status: str = Field(..., description="目标处理状态：RESOLVED（已处理）/ SUPPRESSED（已抑制）")
     resolution_note: str | None = Field(None, description="处理说明（抑制时必填）")
 
 

@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 from app.contracts.data_types import DataLineage, MetricResult
 from app.services.metric_calculator.fast_rate import FastRateCalculator
 
@@ -51,10 +49,12 @@ class TestFastRate:
         """T < T' → 快速率 100。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
         calc = FastRateCalculator()
-        calc.with_dependencies({
-            "settling_time": _make_settling_result(30.0),
-            "ideal_settling_time": _make_ideal_result(60.0),
-        })
+        calc.with_dependencies(
+            {
+                "settling_time": _make_settling_result(30.0),
+                "ideal_settling_time": _make_ideal_result(60.0),
+            }
+        )
         result = calc.calculate(bundle)
         assert result.value == 100.0
 
@@ -62,10 +62,12 @@ class TestFastRate:
         """T = T' → 快速率 100（边界）。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
         calc = FastRateCalculator()
-        calc.with_dependencies({
-            "settling_time": _make_settling_result(60.0),
-            "ideal_settling_time": _make_ideal_result(60.0),
-        })
+        calc.with_dependencies(
+            {
+                "settling_time": _make_settling_result(60.0),
+                "ideal_settling_time": _make_ideal_result(60.0),
+            }
+        )
         result = calc.calculate(bundle)
         assert result.value == 100.0
 
@@ -73,10 +75,12 @@ class TestFastRate:
         """T > T' → F = 1/e^((T-T')/T') × 100。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
         calc = FastRateCalculator()
-        calc.with_dependencies({
-            "settling_time": _make_settling_result(120.0),
-            "ideal_settling_time": _make_ideal_result(60.0),
-        })
+        calc.with_dependencies(
+            {
+                "settling_time": _make_settling_result(120.0),
+                "ideal_settling_time": _make_ideal_result(60.0),
+            }
+        )
         result = calc.calculate(bundle)
         # ratio = (120-60)/60 = 1.0, F = 1/e^1 × 100 ≈ 36.79
         expected = round(1.0 / math.exp(1.0) * 100.0, 2)
@@ -86,10 +90,12 @@ class TestFastRate:
         """T=0（已稳态）→ 快速率 100。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
         calc = FastRateCalculator()
-        calc.with_dependencies({
-            "settling_time": _make_settling_result(0.0),
-            "ideal_settling_time": _make_ideal_result(60.0),
-        })
+        calc.with_dependencies(
+            {
+                "settling_time": _make_settling_result(0.0),
+                "ideal_settling_time": _make_ideal_result(60.0),
+            }
+        )
         result = calc.calculate(bundle)
         assert result.value == 100.0
         assert result.details["reason"] == "already_stable"
@@ -98,10 +104,12 @@ class TestFastRate:
         """T' 无效（None 或 ≤ 0）→ INCONCLUSIVE。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
         calc = FastRateCalculator()
-        calc.with_dependencies({
-            "settling_time": _make_settling_result(30.0),
-            "ideal_settling_time": _make_ideal_result(0.0),
-        })
+        calc.with_dependencies(
+            {
+                "settling_time": _make_settling_result(30.0),
+                "ideal_settling_time": _make_ideal_result(0.0),
+            }
+        )
         result = calc.calculate(bundle)
         assert result.value is None
 
@@ -109,9 +117,11 @@ class TestFastRate:
         """缺少 ideal_settling_time 依赖 → INCONCLUSIVE。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
         calc = FastRateCalculator()
-        calc.with_dependencies({
-            "settling_time": _make_settling_result(30.0),
-        })
+        calc.with_dependencies(
+            {
+                "settling_time": _make_settling_result(30.0),
+            }
+        )
         result = calc.calculate(bundle)
         assert result.value is None
 
@@ -119,10 +129,12 @@ class TestFastRate:
         """T >> T' → 快速率接近 0。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
         calc = FastRateCalculator()
-        calc.with_dependencies({
-            "settling_time": _make_settling_result(600.0),
-            "ideal_settling_time": _make_ideal_result(60.0),
-        })
+        calc.with_dependencies(
+            {
+                "settling_time": _make_settling_result(600.0),
+                "ideal_settling_time": _make_ideal_result(60.0),
+            }
+        )
         result = calc.calculate(bundle)
         # ratio = 9, F = 1/e^9 × 100 ≈ 0.012
         assert result.value is not None
@@ -132,9 +144,11 @@ class TestFastRate:
         """值限制在 [0, 100]。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
         calc = FastRateCalculator()
-        calc.with_dependencies({
-            "settling_time": _make_settling_result(30.0),
-            "ideal_settling_time": _make_ideal_result(60.0),
-        })
+        calc.with_dependencies(
+            {
+                "settling_time": _make_settling_result(30.0),
+                "ideal_settling_time": _make_ideal_result(60.0),
+            }
+        )
         result = calc.calculate(bundle)
         assert 0.0 <= result.value <= 100.0

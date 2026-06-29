@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
 
 import numpy as np
 
@@ -79,8 +78,13 @@ class StabilityRateCalculator(MetricCalculatorBase):
         if osc_factor <= 0:
             logger.debug("[稳定率] 振荡率 %.2f%% ≥ 100%%，稳定率返回 0", osc_rate_pct)
             return self._make_result(
-                bundle, 0.0,
-                {"std_error": round(std_error, 4), "oscillation_rate": round(osc_rate_pct, 2), "reason": "osc_too_high"},
+                bundle,
+                0.0,
+                {
+                    "std_error": round(std_error, 4),
+                    "oscillation_rate": round(osc_rate_pct, 2),
+                    "reason": "osc_too_high",
+                },
             )
 
         # U = PV 量程范围
@@ -95,7 +99,12 @@ class StabilityRateCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[稳定率] mean_error=%.4f, std=%.4f, U=%.1f, norm_std=%.4f, osc=%.2f%%, S=%.2f",
-            mean_error, std_error, u, normalized_std, osc_rate_pct, stability,
+            mean_error,
+            std_error,
+            u,
+            normalized_std,
+            osc_rate_pct,
+            stability,
         )
 
         return self._make_result(

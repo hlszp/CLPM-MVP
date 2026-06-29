@@ -202,9 +202,7 @@ class TestDashboardOverviewEndpoint:
         plant_id = "00000000-0000-0000-0000-000000000111"
         # mock_db 仅用于 _get_plant_name 查询
         mock_db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(
-                _make_plant_node(node_id=plant_id)
-            )
+            return_value=_make_scalar_one_or_none_mock(_make_plant_node(node_id=plant_id))
         )
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.get(
@@ -295,6 +293,7 @@ class TestDashboardCache:
         assert "ADMIN" in admin_key
         assert "EXPERT" in expert_key
         assert "IC_ENGINEER" in ic_key
+
     def test_cache_key_differs_by_plant_id(self, client, mock_db, fake_redis) -> None:
         """不同 plant_id 使用不同缓存 key（服务层验证）。"""
         from app.services.dashboard import _build_cache_key
@@ -309,9 +308,7 @@ class TestDashboardCache:
         assert "plant-1" in key_plant1
         assert "plant-2" in key_plant2
 
-    def test_redis_unavailable_degrades_gracefully(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_redis_unavailable_degrades_gracefully(self, client, mock_db, fake_redis) -> None:
         """Redis 不可用时降级为直接查询，不报错。"""
         mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
@@ -339,9 +336,7 @@ class TestDashboardCache:
 class TestDashboardService:
     """Dashboard service 单元测试。"""
 
-    async def test_get_dashboard_overview_admin(
-        self, mock_dashboard_session_local
-    ) -> None:
+    async def test_get_dashboard_overview_admin(self, mock_dashboard_session_local) -> None:
         """ADMIN 角色获取工作台数据。"""
         from app.services.dashboard import get_dashboard_overview
 
@@ -402,9 +397,7 @@ class TestDashboardService:
         assert result["cached"] is True
         assert result["pending_alerts"]["open_diagnoses"] == 5
 
-    async def test_get_dashboard_overview_empty_data(
-        self, mock_dashboard_session_local
-    ) -> None:
+    async def test_get_dashboard_overview_empty_data(self, mock_dashboard_session_local) -> None:
         """无数据时返回空结构。"""
         from app.services.dashboard import get_dashboard_overview
 
@@ -426,9 +419,7 @@ class TestDashboardService:
         # 所有 composite_scores 为 None
         assert all(s is None for s in result["trend_summary"]["composite_scores"])
 
-    async def test_get_dashboard_overview_with_plant_id(
-        self, mock_dashboard_session_local
-    ) -> None:
+    async def test_get_dashboard_overview_with_plant_id(self, mock_dashboard_session_local) -> None:
         """带 plant_id 时查询装置名称。"""
         from app.services.dashboard import get_dashboard_overview
 
@@ -486,15 +477,9 @@ class TestDashboardService:
         db = AsyncMock()
         # 3 个回路，评分分别为 50, 30, 70
         snapshots = [
-            _make_snapshot(
-                loop_id="loop-1", score=Decimal("50.00"), ts_start=datetime.now(UTC)
-            ),
-            _make_snapshot(
-                loop_id="loop-2", score=Decimal("30.00"), ts_start=datetime.now(UTC)
-            ),
-            _make_snapshot(
-                loop_id="loop-3", score=Decimal("70.00"), ts_start=datetime.now(UTC)
-            ),
+            _make_snapshot(loop_id="loop-1", score=Decimal("50.00"), ts_start=datetime.now(UTC)),
+            _make_snapshot(loop_id="loop-2", score=Decimal("30.00"), ts_start=datetime.now(UTC)),
+            _make_snapshot(loop_id="loop-3", score=Decimal("70.00"), ts_start=datetime.now(UTC)),
         ]
         loops = [
             _make_loop(loop_id="loop-1", tag_name="FIC-101"),
@@ -517,7 +502,9 @@ class TestDashboardService:
 
         db.execute = AsyncMock(side_effect=execute_side_effect)
         result = await _build_inefficient_loops(
-            db=db, plant_id=None, start=datetime.now(UTC) - timedelta(days=1),
+            db=db,
+            plant_id=None,
+            start=datetime.now(UTC) - timedelta(days=1),
             end=datetime.now(UTC),
         )
         assert len(result) == 3
@@ -557,7 +544,9 @@ class TestDashboardService:
 
         db.execute = AsyncMock(side_effect=execute_side_effect)
         result = await _build_inefficient_loops(
-            db=db, plant_id=None, start=datetime.now(UTC) - timedelta(days=1),
+            db=db,
+            plant_id=None,
+            start=datetime.now(UTC) - timedelta(days=1),
             end=datetime.now(UTC),
         )
         assert len(result) == 10
@@ -617,9 +606,7 @@ class TestDashboardService:
         # 当前周期评分 85，上一周期 80，趋势应为 up
         current = [_make_snapshot(score=Decimal("85.00"), auto_mode_rate=Decimal("90.00"))]
         previous = [_make_snapshot(score=Decimal("80.00"), auto_mode_rate=Decimal("85.00"))]
-        cards = _build_kpi_cards(
-            current_snapshots=current, previous_snapshots=previous
-        )
+        cards = _build_kpi_cards(current_snapshots=current, previous_snapshots=previous)
         # 综合评分上升 5 > 0.5 阈值，trend=up
         assert cards["composite_score"]["value"] == 85.0
         assert cards["composite_score"]["delta"] == 5.0
@@ -633,9 +620,7 @@ class TestDashboardService:
 
         current = [_make_snapshot(score=Decimal("85.00"))]
         previous = [_make_snapshot(score=Decimal("85.20"))]
-        cards = _build_kpi_cards(
-            current_snapshots=current, previous_snapshots=previous
-        )
+        cards = _build_kpi_cards(current_snapshots=current, previous_snapshots=previous)
         # delta = -0.2，绝对值 < 0.5，trend=stable
         assert cards["composite_score"]["delta"] == -0.2
         assert cards["composite_score"]["trend"] == "stable"
@@ -646,9 +631,7 @@ class TestDashboardService:
 
         current = [_make_snapshot(score=Decimal("70.00"))]
         previous = [_make_snapshot(score=Decimal("85.00"))]
-        cards = _build_kpi_cards(
-            current_snapshots=current, previous_snapshots=previous
-        )
+        cards = _build_kpi_cards(current_snapshots=current, previous_snapshots=previous)
         assert cards["composite_score"]["delta"] == -15.0
         assert cards["composite_score"]["trend"] == "down"
 
@@ -658,9 +641,7 @@ class TestDashboardService:
 
         current = [_make_snapshot(score=Decimal("85.00"))]
         previous = []
-        cards = _build_kpi_cards(
-            current_snapshots=current, previous_snapshots=previous
-        )
+        cards = _build_kpi_cards(current_snapshots=current, previous_snapshots=previous)
         assert cards["composite_score"]["value"] == 85.0
         assert cards["composite_score"]["delta"] == 0.0
         assert cards["composite_score"]["trend"] == "stable"

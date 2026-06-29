@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
@@ -41,7 +42,6 @@ from app.schemas.config import (
     MetricConfigItem,
     MetricConfigUpdateItem,
 )
-from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +134,7 @@ def _metric_to_response_dict(c: MetricConfig) -> dict[str, Any]:
         "controlType": c.control_type,
         "isEnabled": bool(c.is_enabled) if c.is_enabled is not None else True,
         "description": None,
-        "algorithmVersion": _AUX_ALGORITHM_VERSIONS.get(
-            c.metric_code, "KPI_CALC_v1.0"
-        ),
+        "algorithmVersion": _AUX_ALGORITHM_VERSIONS.get(c.metric_code, "KPI_CALC_v1.0"),
         "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
         "updatedBy": c.updated_by,
     }
@@ -267,9 +265,7 @@ async def batch_get_metric_configs(
             aux_items.append(item)
 
     # 核心指标权重总和校验
-    core_weights = [
-        c.weight for c in core_items if c.weight is not None and c.isEnabled
-    ]
+    core_weights = [c.weight for c in core_items if c.weight is not None and c.isEnabled]
     core_total = sum(core_weights) if core_weights else 0.0
     core_valid = abs(core_total - 100.0) < 1e-6 if core_weights else True
 
@@ -320,12 +316,8 @@ async def batch_update_metric_configs(
 
     # 一次性查询所有涉及的配置
     metric_ids = [item.metricId for item in all_items]
-    result = await db.execute(
-        select(MetricConfig).where(MetricConfig.id.in_(metric_ids))
-    )
-    config_map: dict[str, MetricConfig] = {
-        str(c.id): c for c in result.scalars().all()
-    }
+    result = await db.execute(select(MetricConfig).where(MetricConfig.id.in_(metric_ids)))
+    config_map: dict[str, MetricConfig] = {str(c.id): c for c in result.scalars().all()}
 
     # 校验所有 metricId 都存在
     missing = [mid for mid in metric_ids if mid not in config_map]
@@ -361,9 +353,7 @@ async def batch_update_metric_configs(
     core_weights = [
         float(c.weight)
         for c in config_map.values()
-        if c.metric_code in _CORE_METRIC_CODES
-        and c.is_enabled
-        and c.weight is not None
+        if c.metric_code in _CORE_METRIC_CODES and c.is_enabled and c.weight is not None
     ]
     if core_weights:
         total = sum(core_weights)
@@ -371,10 +361,7 @@ async def batch_update_metric_configs(
             await db.rollback()
             raise BizError(
                 code="ERR_METRIC_WEIGHT_SUM",
-                message=(
-                    f"核心指标权重总和必须为 100，当前为 {total:.2f}；"
-                    "事务已回滚"
-                ),
+                message=(f"核心指标权重总和必须为 100，当前为 {total:.2f}；事务已回滚"),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -412,9 +399,7 @@ async def batch_update_metric_configs(
         elif item.category == "AUXILIARY_DIAGNOSTIC":
             aux_items.append(item)
 
-    core_weights_after = [
-        c.weight for c in core_items if c.weight is not None and c.isEnabled
-    ]
+    core_weights_after = [c.weight for c in core_items if c.weight is not None and c.isEnabled]
     core_total = sum(core_weights_after) if core_weights_after else 0.0
 
     resp = MetricConfigBatchResponse(
@@ -440,9 +425,7 @@ async def batch_update_metric_configs(
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse]
-)
+@router.get("/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse])
 async def batch_get_diagnosis_configs(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -451,15 +434,10 @@ async def batch_get_diagnosis_configs(
 
     设计依据：IDS §2.9.1
     """
-    result = await db.execute(
-        select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc())
-    )
+    result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
     configs = list(result.scalars().all())
 
-    items = [
-        DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c))
-        for c in configs
-    ]
+    items = [DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c)) for c in configs]
 
     resp = DiagnosisConfigBatchResponse(items=items)
     return success(data=resp.model_dump())
@@ -470,9 +448,7 @@ async def batch_get_diagnosis_configs(
 # ---------------------------------------------------------------------------
 
 
-@router.put(
-    "/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse]
-)
+@router.put("/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse])
 async def batch_update_diagnosis_configs(
     body: DiagnosisConfigBatchUpdateRequest,
     db: AsyncSession = Depends(get_db),
@@ -490,12 +466,8 @@ async def batch_update_diagnosis_configs(
         )
 
     diag_ids = [item.diagId for item in body.items]
-    result = await db.execute(
-        select(DiagnosisConfig).where(DiagnosisConfig.id.in_(diag_ids))
-    )
-    config_map: dict[str, DiagnosisConfig] = {
-        str(c.id): c for c in result.scalars().all()
-    }
+    result = await db.execute(select(DiagnosisConfig).where(DiagnosisConfig.id.in_(diag_ids)))
+    config_map: dict[str, DiagnosisConfig] = {str(c.id): c for c in result.scalars().all()}
 
     missing = [did for did in diag_ids if did not in config_map]
     if missing:
@@ -535,14 +507,9 @@ async def batch_update_diagnosis_configs(
         ) from None
 
     # 重新查询返回完整列表
-    result = await db.execute(
-        select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc())
-    )
+    result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
     configs = list(result.scalars().all())
-    items = [
-        DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c))
-        for c in configs
-    ]
+    items = [DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c)) for c in configs]
 
     resp = DiagnosisConfigBatchResponse(items=items, updatedCount=len(body.items))
 

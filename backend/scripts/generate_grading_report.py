@@ -211,7 +211,7 @@ def generate_report(results: list[dict]) -> str:
     lines.append("# 5 级性能定级修改前后对比报告")
     lines.append("")
     lines.append(f"> 生成时间：{now_str}")
-    lines.append(f"> 算法版本：KPI_CALC_v1.0")
+    lines.append("> 算法版本：KPI_CALC_v1.0")
     lines.append(f"> 测试场景数：{len(results)}")
     lines.append("")
 
@@ -288,7 +288,9 @@ def generate_report(results: list[dict]) -> str:
             score_val = float(r["score"]) if r["score"] is not None else None
             lines.append(f"#### {r['scenario']}（{r['description']}）")
             lines.append("")
-            lines.append(f"- 综合评分：**{score_val:.2f}**" if score_val is not None else "- 综合评分：N/A")
+            lines.append(
+                f"- 综合评分：**{score_val:.2f}**" if score_val is not None else "- 综合评分：N/A"
+            )
             lines.append(f"- 旧定级：`{r['old_grade']}` → 新定级：`{r['new_grade']}`")
             reason = _explain_change(r["old_grade"], r["new_grade"], score_val)
             lines.append(f"- 变化原因：{reason}")
@@ -307,10 +309,10 @@ def generate_report(results: list[dict]) -> str:
         lines.append("|--------|----------|------------------|------|")
         for r in unchanged_results:
             score_str = f"{float(r['score']):.2f}" if r["score"] is not None else "N/A"
-            note = _explain_unchanged(r["old_grade"], float(r["score"]) if r["score"] is not None else None)
-            lines.append(
-                f"| {r['scenario']} | {score_str} | {r['old_grade']} | {note} |"
+            note = _explain_unchanged(
+                r["old_grade"], float(r["score"]) if r["score"] is not None else None
             )
+            lines.append(f"| {r['scenario']} | {score_str} | {r['old_grade']} | {note} |")
         lines.append("")
 
     # ── 4. 5 级定级标准说明 ──
@@ -339,19 +341,29 @@ def generate_report(results: list[dict]) -> str:
     lines.append("")
     lines.append("**5 级定级的优势：**")
     lines.append("")
-    lines.append("1. **更精细的性能区分**：原 3 级将 60~79 分统归为 WARNING，"
-                 "无法区分「中等」与「较差」；5 级新增 FAIR 等级，准确反映 70~79 分的「一般」状态。")
-    lines.append("2. **对齐国标要求**：GB/T 44693.2-2024 明确规定 5 级性能分级，"
-                 "本次修改确保系统定级标准与国标一致。")
-    lines.append("3. **优化运维决策**：EXCELLENT 与 GOOD 的区分有助于识别标杆回路，"
-                 "FAIR 与 WARNING 的区分有助于差异化制定优化策略。")
+    lines.append(
+        "1. **更精细的性能区分**：原 3 级将 60~79 分统归为 WARNING，"
+        "无法区分「中等」与「较差」；5 级新增 FAIR 等级，准确反映 70~79 分的「一般」状态。"
+    )
+    lines.append(
+        "2. **对齐国标要求**：GB/T 44693.2-2024 明确规定 5 级性能分级，"
+        "本次修改确保系统定级标准与国标一致。"
+    )
+    lines.append(
+        "3. **优化运维决策**：EXCELLENT 与 GOOD 的区分有助于识别标杆回路，"
+        "FAIR 与 WARNING 的区分有助于差异化制定优化策略。"
+    )
     lines.append("")
 
     # ── 附录：各场景 KPI 明细 ──
     lines.append("## 附录：各场景 KPI 计算明细")
     lines.append("")
-    lines.append("| 场景名 | 准确率 | 快速率 | 平稳率 | 有效自控率 | 振荡率 | 饱和率 | 自控率 | 好值率 |")
-    lines.append("|--------|--------|--------|--------|------------|--------|--------|--------|--------|")
+    lines.append(
+        "| 场景名 | 准确率 | 快速率 | 平稳率 | 有效自控率 | 振荡率 | 饱和率 | 自控率 | 好值率 |"
+    )
+    lines.append(
+        "|--------|--------|--------|--------|------------|--------|--------|--------|--------|"
+    )
     kpi_codes = [
         "accuracy_rate",
         "fast_response_rate",
@@ -382,9 +394,18 @@ def _explain_change(old: str, new: str, score: float | None) -> str:
         ("GOOD", "EXCELLENT"): "评分 >= 90，新标准新增 EXCELLENT 等级，原 GOOD 升级为 EXCELLENT。",
         ("GOOD", "FAIR"): "评分位于 70~79，新标准将原 WARNING 区间拆分，70~79 归入新增 FAIR 等级。",
         ("WARNING", "FAIR"): "评分位于 70~79，新标准将原 WARNING（60~79）拆分，70~79 升级为 FAIR。",
-        ("WARNING", "GOOD"): "评分位于 80~89，新旧标准均判定为 GOOD（此情况理论上不应出现，请核查）。",
-        ("WARNING", "EXCELLENT"): "评分 >= 90，新标准新增 EXCELLENT 等级（此情况理论上不应出现，请核查）。",
-        ("POOR", "WARNING"): "评分位于 60~69，新旧标准均判定为 WARNING（此情况理论上不应出现，请核查）。",
+        (
+            "WARNING",
+            "GOOD",
+        ): "评分位于 80~89，新旧标准均判定为 GOOD（此情况理论上不应出现，请核查）。",
+        (
+            "WARNING",
+            "EXCELLENT",
+        ): "评分 >= 90，新标准新增 EXCELLENT 等级（此情况理论上不应出现，请核查）。",
+        (
+            "POOR",
+            "WARNING",
+        ): "评分位于 60~69，新旧标准均判定为 WARNING（此情况理论上不应出现，请核查）。",
         ("POOR", "FAIR"): "评分位于 70~79，新标准拆分后归入 FAIR（此情况理论上不应出现，请核查）。",
     }
     key = (old, new)

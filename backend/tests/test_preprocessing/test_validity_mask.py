@@ -10,11 +10,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import pytest
-
-from app.contracts.data_types import DataBlock, QualitySummary
+from app.contracts.data_types import DataBlock
 from app.services.preprocessing.validity_mask import apply_mask
-
 
 # ---------------------------------------------------------------------------
 # 测试辅助

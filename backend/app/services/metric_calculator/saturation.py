@@ -17,8 +17,8 @@ import logging
 from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.auto_mode import AUTO_MODES
+from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,11 @@ class SaturationRateCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[饱和率] sat_high=%.1f, sat_low=%.1f, total_auto=%.1f, rate=%.2f%%, type=%s",
-            sat_high_duration, sat_low_duration, total_duration, rate, sat_type,
+            sat_high_duration,
+            sat_low_duration,
+            total_duration,
+            rate,
+            sat_type,
         )
 
         return self._make_result(

@@ -321,9 +321,7 @@ async def generate_report_endpoint(
     loop_id: uuid.UUID,
     body: DiagnosisReportRequest | None = None,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(
-        require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")
-    ),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
 ) -> Response:
     """生成并下载 PDF 建议书（SVC-12）。
 
@@ -510,9 +508,7 @@ def _tag_to_dict(tag: DiagnosisTag) -> dict:
         if isinstance(raw_threshold, (int, float, Decimal)):
             threshold = float(raw_threshold)
 
-    trigger_value = (
-        float(tag.trigger_value) if tag.trigger_value is not None else None
-    )
+    trigger_value = float(tag.trigger_value) if tag.trigger_value is not None else None
 
     return {
         "id": str(tag.id),
@@ -566,9 +562,9 @@ async def _query_diagnosis_tags(
 
     base_stmt = select(DiagnosisTag)
     if plant_node_id:
-        base_stmt = base_stmt.join(
-            LoopLedger, DiagnosisTag.loop_id == LoopLedger.id
-        ).where(LoopLedger.unit_id == plant_node_id)
+        base_stmt = base_stmt.join(LoopLedger, DiagnosisTag.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id == plant_node_id
+        )
     for cond in conditions:
         base_stmt = base_stmt.where(cond)
 
@@ -665,9 +661,7 @@ async def resolve_diagnosis_tag_endpoint(
     tag_id: uuid.UUID,
     body: TagResolveRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(
-        require_roles("IC_ENGINEER", "PE_ENGINEER", "ADMIN")
-    ),
+    user: SysUser = Depends(require_roles("IC_ENGINEER", "PE_ENGINEER", "ADMIN")),
 ) -> dict:
     """处理诊断标签（IDS §2.4.12）。
 
@@ -685,9 +679,7 @@ async def resolve_diagnosis_tag_endpoint(
         )
 
     # 查询标签
-    result = await db.execute(
-        select(DiagnosisTag).where(DiagnosisTag.id == str(tag_id))
-    )
+    result = await db.execute(select(DiagnosisTag).where(DiagnosisTag.id == str(tag_id)))
     tag = result.scalar_one_or_none()
     if tag is None:
         raise BizError(

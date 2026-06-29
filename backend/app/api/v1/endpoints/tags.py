@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
@@ -79,9 +79,7 @@ async def list_tags_endpoint(
         None,
         description="按测点类型筛选: TEMPERATURE/PRESSURE/LEVEL/FLOW/ANALYSIS/POSITION/OTHER",
     ),
-    tagType: str | None = Query(
-        None, description="按参数类型筛选: PV/SP/OP/MODE/KP/TI/TD"
-    ),
+    tagType: str | None = Query(None, description="按参数类型筛选: PV/SP/OP/MODE/KP/TI/TD"),
     plantNodeId: str | None = Query(None, description="按装置/单元筛选，支持层级查询"),
     isLinked: bool | None = Query(None, description="按关联状态筛选"),
     db: AsyncSession = Depends(get_db),
@@ -195,15 +193,17 @@ async def match_tags_for_loop_endpoint(
         )
         tag = result.scalar_one_or_none()
         if tag:
-            matched_tags.append({
-                "role": tag_type,
-                "tagId": str(tag.id),
-                "tagName": tag.tag_name,
-                "tagDescription": tag.tag_description,
-                "tagType": tag.tag_type,
-                "measureType": tag.measure_type,
-                "unit": tag.unit,
-            })
+            matched_tags.append(
+                {
+                    "role": tag_type,
+                    "tagId": str(tag.id),
+                    "tagName": tag.tag_name,
+                    "tagDescription": tag.tag_description,
+                    "tagType": tag.tag_type,
+                    "measureType": tag.measure_type,
+                    "unit": tag.unit,
+                }
+            )
 
     return success(data=matched_tags)
 
@@ -312,7 +312,7 @@ def _parse_iso_datetime(s: str) -> datetime:
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
         # 统一转为 naive UTC（与现有 waveform service 一致）
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            dt = dt.astimezone(UTC).replace(tzinfo=None)
         return dt
     except ValueError:
         return datetime.fromisoformat(s)
@@ -330,8 +330,8 @@ def _build_data_planner(db: AsyncSession) -> Any:
     """
     from app.core.redis import redis_client
     from app.services.cache.l1_datablock import L1DataBlockCache
-    from app.services.data_source.factory import get_provider
     from app.services.data_planner import DataPlanner
+    from app.services.data_source.factory import get_provider
     from app.services.metric_data_bundle import MetricDataBundleAssembler
 
     provider = get_provider()
@@ -347,9 +347,7 @@ def _build_data_planner(db: AsyncSession) -> Any:
     )
 
 
-def _get_signal_value(
-    signals: dict[str, list[Any]], key: str, idx: int
-) -> float | None:
+def _get_signal_value(signals: dict[str, list[Any]], key: str, idx: int) -> float | None:
     """从 DataBlock.signals 中安全获取指定索引的信号值。"""
     vals = signals.get(key)
     if vals is None or idx >= len(vals):
@@ -363,9 +361,7 @@ def _get_signal_value(
         return None
 
 
-def _compute_point_validity(
-    validity: dict[str, list[bool]], idx: int
-) -> bool:
+def _compute_point_validity(validity: dict[str, list[bool]], idx: int) -> bool:
     """计算单个数据点的整体有效性。
 
     取所有 ``{tag}_valid`` 标记的逻辑与；无有效性信息时默认 True。
@@ -380,15 +376,13 @@ def _compute_point_validity(
     return True
 
 
-def _compute_outlier_reason(
-    outlier_reasons: dict[str, list[list[str]]], idx: int
-) -> str | None:
+def _compute_outlier_reason(outlier_reasons: dict[str, list[list[str]]], idx: int) -> str | None:
     """汇总单个数据点所有信号的异常原因码。
 
     多个原因码以逗号分隔（如 ``"FROZEN,JUMP"``）。
     """
     reasons: list[str] = []
-    for key, vals in outlier_reasons.items():
+    for _key, vals in outlier_reasons.items():
         if idx < len(vals) and vals[idx]:
             for r in vals[idx]:
                 if r and r not in reasons:
@@ -420,7 +414,9 @@ def _datablock_to_waveform_response(
             points=[],
             samplingFreq=getattr(data_block, "sampling_freq", "1s") if data_block else "1s",
             qualityPolicy=_quality_policy_for(
-                getattr(data_block, "tag_group", _DEFAULT_TAG_GROUP) if data_block else _DEFAULT_TAG_GROUP
+                getattr(data_block, "tag_group", _DEFAULT_TAG_GROUP)
+                if data_block
+                else _DEFAULT_TAG_GROUP
             ),
             validRate=1.0,
             downsampled=False,
@@ -534,7 +530,7 @@ def _lttb_downsample_datablock(
     # 还原 datetime
     new_timestamps: list[datetime] = []
     for ms in new_ts_millis:
-        new_timestamps.append(datetime.fromtimestamp(ms / 1000, tz=timezone.utc).replace(tzinfo=None))
+        new_timestamps.append(datetime.fromtimestamp(ms / 1000, tz=UTC).replace(tzinfo=None))
 
     # 拆分回三类字典
     new_signals: dict[str, list[Any]] = {}
@@ -597,10 +593,7 @@ async def _fetch_waveform_for_loop(
     if not metrics:
         raise BizError(
             code="ERR_INVALID_TAG_GROUP",
-            message=(
-                f"无效的 tag_group: {tg}，"
-                f"可选值: {', '.join(_TAG_GROUP_METRICS.keys())}"
-            ),
+            message=(f"无效的 tag_group: {tg}，可选值: {', '.join(_TAG_GROUP_METRICS.keys())}"),
             status_code=400,
         )
 
@@ -666,9 +659,7 @@ async def get_waveform_v2_endpoint(
         None,
         description="按标签组筛选: BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF（默认 BASE）",
     ),
-    includeValidMask: bool = Query(
-        True, description="是否返回 valid_mask（默认 true）"
-    ),
+    includeValidMask: bool = Query(True, description="是否返回 valid_mask（默认 true）"),
     maxPoints: int = Query(5000, ge=100, le=50000, description="最大数据点数"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -699,9 +690,7 @@ async def get_waveform_v2_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@timeseries_router.post(
-    "/batch/waveform", response_model=ApiResponse[BatchWaveformResponse]
-)
+@timeseries_router.post("/batch/waveform", response_model=ApiResponse[BatchWaveformResponse])
 async def batch_waveform_endpoint(
     body: BatchWaveformRequest,
     db: AsyncSession = Depends(get_db),

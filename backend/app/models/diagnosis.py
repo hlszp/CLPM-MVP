@@ -108,9 +108,7 @@ class DiagnosisTag(Base):
     # 触发条件，如 {"threshold": 0.4, "window_minutes": 60}
     trigger_condition: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # 触发阈值数值
-    trigger_value: Mapped[Decimal | None] = mapped_column(
-        Numeric(10, 4), nullable=True
-    )
+    trigger_value: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     triggered_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -118,9 +116,7 @@ class DiagnosisTag(Base):
     resolved_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 标签状态：ACTIVE（生效中）/ RESOLVED（已解除）/ SUPPRESSED（已抑制）
-    status: Mapped[str] = mapped_column(
-        String(20), server_default=text("'ACTIVE'"), nullable=False
-    )
+    status: Mapped[str] = mapped_column(String(20), server_default=text("'ACTIVE'"), nullable=False)
 
     __table_args__ = (
         CheckConstraint(

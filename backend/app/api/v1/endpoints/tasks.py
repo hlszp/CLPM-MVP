@@ -378,8 +378,7 @@ async def trigger_custom_evaluation(
         raise BizError(
             code="ERR_TASK_CONCURRENCY_LIMIT",
             message=(
-                f"您当前已有 {user_active} 个活跃自定义任务，"
-                f"超过单用户上限 {MAX_CUSTOM_PER_USER}"
+                f"您当前已有 {user_active} 个活跃自定义任务，超过单用户上限 {MAX_CUSTOM_PER_USER}"
             ),
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
@@ -389,8 +388,7 @@ async def trigger_custom_evaluation(
         raise BizError(
             code="ERR_TASK_CONCURRENCY_LIMIT",
             message=(
-                f"系统当前有 {system_active} 个活跃自定义任务，"
-                f"超过系统上限 {MAX_CUSTOM_SYSTEM}"
+                f"系统当前有 {system_active} 个活跃自定义任务，超过系统上限 {MAX_CUSTOM_SYSTEM}"
             ),
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )

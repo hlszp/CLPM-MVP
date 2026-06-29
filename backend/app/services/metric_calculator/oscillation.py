@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import numpy as np
 
@@ -62,7 +61,8 @@ class OscillationRateCalculator(MetricCalculatorBase):
 
         if n < 4:
             return self._make_result(
-                bundle, 0.0,
+                bundle,
+                0.0,
                 {"is_oscillating": False, "oscillation_period": 0.0, "reason": "insufficient_data"},
             )
 
@@ -71,10 +71,17 @@ class OscillationRateCalculator(MetricCalculatorBase):
         # 步骤 2：识别零交叉点
         zero_crossings = self._find_zero_crossings(errors)
         if len(zero_crossings) < MIN_ZERO_CROSSINGS:
-            logger.debug("[振荡率] 零交叉点 %d < %d，返回 0", len(zero_crossings), MIN_ZERO_CROSSINGS)
+            logger.debug(
+                "[振荡率] 零交叉点 %d < %d，返回 0", len(zero_crossings), MIN_ZERO_CROSSINGS
+            )
             return self._make_result(
-                bundle, 0.0,
-                {"is_oscillating": False, "oscillation_period": 0.0, "zero_crossings": len(zero_crossings)},
+                bundle,
+                0.0,
+                {
+                    "is_oscillating": False,
+                    "oscillation_period": 0.0,
+                    "zero_crossings": len(zero_crossings),
+                },
             )
 
         # 步骤 3：计算相邻零交叉间的 IAE
@@ -84,7 +91,8 @@ class OscillationRateCalculator(MetricCalculatorBase):
 
         if not pos_iae or not neg_iae:
             return self._make_result(
-                bundle, 0.0,
+                bundle,
+                0.0,
                 {"is_oscillating": False, "oscillation_period": 0.0, "reason": "empty_polarity"},
             )
 
@@ -98,21 +106,24 @@ class OscillationRateCalculator(MetricCalculatorBase):
 
         # 步骤 5：综合振荡率
         osc_value = min(s_a, s_b) * regularity * 100.0
-        is_osc = (s_a >= SIMILARITY_THRESHOLD
-                  and s_b >= SIMILARITY_THRESHOLD
-                  and regularity >= 0.5)
+        is_osc = s_a >= SIMILARITY_THRESHOLD and s_b >= SIMILARITY_THRESHOLD and regularity >= 0.5
 
         period = 0.0
         if is_osc and len(zero_crossings) >= 3:
-            intervals = [zero_crossings[i + 1] - zero_crossings[i]
-                         for i in range(len(zero_crossings) - 1)]
+            intervals = [
+                zero_crossings[i + 1] - zero_crossings[i] for i in range(len(zero_crossings) - 1)
+            ]
             period = float(np.median(intervals)) * 2.0
 
         osc_value = self._clamp(osc_value)
 
         logger.debug(
             "[振荡率] s_a=%.4f, s_b=%.4f, osc=%.2f%%, is_osc=%s, period=%.1f",
-            s_a, s_b, osc_value, is_osc, period,
+            s_a,
+            s_b,
+            osc_value,
+            is_osc,
+            period,
         )
 
         return self._make_result(
@@ -214,8 +225,7 @@ class OscillationRateCalculator(MetricCalculatorBase):
         if len(zero_crossings) < 2:
             return 0.0
         intervals = np.array(
-            [zero_crossings[i + 1] - zero_crossings[i]
-             for i in range(len(zero_crossings) - 1)],
+            [zero_crossings[i + 1] - zero_crossings[i] for i in range(len(zero_crossings) - 1)],
             dtype=float,
         )
         mean_interval = float(np.mean(intervals))

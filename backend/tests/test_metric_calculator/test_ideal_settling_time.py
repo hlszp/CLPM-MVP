@@ -12,13 +12,11 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.contracts.data_types import ControlType
 from app.services.metric_calculator.ideal_settling_time import (
-    IdealSettlingTimeCalculator,
     DEFAULT_IDEAL_SETTLING,
     FALLBACK_DEFAULT,
+    IdealSettlingTimeCalculator,
 )
 
 from .conftest import make_bundle

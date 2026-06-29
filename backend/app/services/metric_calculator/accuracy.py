@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.metric_calculator.base import MetricCalculatorBase
@@ -66,7 +65,9 @@ class AccuracyRateCalculator(MetricCalculatorBase):
 
         if e_max <= 0:
             logger.warning("[准确率] e_max=0，返回 0")
-            return self._make_result(bundle, 0.0, {"mean_abs_error": mean_abs_error, "e_max": e_max})
+            return self._make_result(
+                bundle, 0.0, {"mean_abs_error": mean_abs_error, "e_max": e_max}
+            )
 
         # 归一化偏差 r = |Ē| / |E|_max
         r = mean_abs_error / e_max
@@ -80,7 +81,11 @@ class AccuracyRateCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[准确率] mean_abs_error=%.4f, e_max=%.4f, r=%.4f, decay=%.4f, A=%.2f",
-            mean_abs_error, e_max, r, decay_factor, accuracy,
+            mean_abs_error,
+            e_max,
+            r,
+            decay_factor,
+            accuracy,
         )
 
         return self._make_result(

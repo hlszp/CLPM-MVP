@@ -72,13 +72,17 @@ RECOMMENDATION_TEMPLATES: dict[str, list[dict[str, Any]]] = {
         {
             "priority": 1,
             "action": "重新整定PID",
-            "description": "降低比例增益或增加积分时间，抑制闭环振荡；建议采用 Lambda 整定法重新计算参数。",
+            "description": (
+                "降低比例增益或增加积分时间，抑制闭环振荡；建议采用 Lambda 整定法重新计算参数。"
+            ),
             "target_module": "整定",
         },
         {
             "priority": 2,
             "action": "检查阀门粘滞",
-            "description": "PV-OP 散点图呈椭圆轨迹时，阀门可能存在粘滞；建议加阀门定位器或清洁填料。",
+            "description": (
+                "PV-OP 散点图呈椭圆轨迹时，阀门可能存在粘滞；建议加阀门定位器或清洁填料。"
+            ),
             "target_module": "跟踪",
         },
         {

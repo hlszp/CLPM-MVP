@@ -92,9 +92,7 @@ class L3FeatureCache:
         设计依据：ADS §10.7.1, 任务规范
         """
         window_hash = _time_window_hash(time_window_start, time_window_end)
-        return (
-            f"{_KEY_PREFIX}:{loop_id}:{metric_code}:{feature_name}:{window_hash}"
-        )
+        return f"{_KEY_PREFIX}:{loop_id}:{metric_code}:{feature_name}:{window_hash}"
 
     # ------------------------------------------------------------------
     # 单条读写
@@ -118,9 +116,7 @@ class L3FeatureCache:
         try:
             feature = _deserialize(raw)
         except Exception:  # noqa: BLE001
-            logger.warning(
-                "L3 cache 反序列化失败，丢弃脏数据: key=%s", cache_key, exc_info=True
-            )
+            logger.warning("L3 cache 反序列化失败，丢弃脏数据: key=%s", cache_key, exc_info=True)
             await self._redis.delete(cache_key)
             return None
         logger.debug(

@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from tests.conftest import TEST_USERS, mock_current_user
 
 # ---------------------------------------------------------------------------
@@ -274,9 +272,7 @@ class TestKpiCalculate:
         """DataPlanner 取数异常返回 422 ERR_ALGORITHM_DATA_INSUFFICIENT."""
         calculator = MagicMock()
         planner = MagicMock()
-        planner.request_bundles = AsyncMock(
-            side_effect=RuntimeError("TDengine down")
-        )
+        planner.request_bundles = AsyncMock(side_effect=RuntimeError("TDengine down"))
 
         with (
             patch(
@@ -506,9 +502,7 @@ class TestDiagnosisAnalyze:
 
     def test_no_token(self, client) -> None:
         """未认证请求返回 401."""
-        resp = client.post(
-            "/api/v1/algorithms/diagnosis/analyze", json=_DIAG_BODY
-        )
+        resp = client.post("/api/v1/algorithms/diagnosis/analyze", json=_DIAG_BODY)
         assert resp.status_code == 401
 
 
@@ -620,9 +614,7 @@ class TestTuningCalculate:
         assert resp.status_code == 500
         assert resp.json()["code"] == "ERR_ALGORITHM_INVALID_PARAMS"
 
-    def test_simulation_failure_does_not_block(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_simulation_failure_does_not_block(self, client, mock_db, fake_redis) -> None:
         """仿真失败不阻断整定计算，simulationResult 为 null."""
         identify_result = {
             "modelType": "FOPDT",
@@ -761,9 +753,7 @@ class TestTuningCalculate:
 
     def test_no_token(self, client) -> None:
         """未认证请求返回 401."""
-        resp = client.post(
-            "/api/v1/algorithms/tuning/calculate", json=_TUNING_BODY
-        )
+        resp = client.post("/api/v1/algorithms/tuning/calculate", json=_TUNING_BODY)
         assert resp.status_code == 401
 
 

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.metric_calculator.base import MetricCalculatorBase
@@ -60,13 +59,15 @@ class FastRateCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[快速率] actual_settling=%.2f, ideal_settling=%s",
-            actual_t, ideal_t,
+            actual_t,
+            ideal_t,
         )
 
         # 理想稳态时间无效 → 返回 INCONCLUSIVE
         if ideal_t is None or ideal_t <= 0:
             return self._make_inconclusive(
-                bundle, "invalid_ideal_settling_time",
+                bundle,
+                "invalid_ideal_settling_time",
                 {"actual_settling_time": actual_t, "ideal_settling_time": ideal_t},
             )
 
@@ -74,7 +75,8 @@ class FastRateCalculator(MetricCalculatorBase):
         if actual_t <= 0:
             logger.debug("[快速率] actual_settling ≤ 0，返回 100")
             return self._make_result(
-                bundle, 100.0,
+                bundle,
+                100.0,
                 {
                     "actual_settling_time": 0.0,
                     "ideal_settling_time": round(ideal_t, 2),
@@ -86,7 +88,8 @@ class FastRateCalculator(MetricCalculatorBase):
         if actual_t <= ideal_t:
             logger.debug("[快速率] T=%.1f ≤ T'=%.1f，返回 100", actual_t, ideal_t)
             return self._make_result(
-                bundle, 100.0,
+                bundle,
+                100.0,
                 {
                     "actual_settling_time": round(actual_t, 2),
                     "ideal_settling_time": round(ideal_t, 2),
@@ -101,7 +104,10 @@ class FastRateCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[快速率] T=%.1f > T'=%.1f, ratio=%.4f, F=%.2f",
-            actual_t, ideal_t, ratio, fast_rate,
+            actual_t,
+            ideal_t,
+            ratio,
+            fast_rate,
         )
 
         return self._make_result(

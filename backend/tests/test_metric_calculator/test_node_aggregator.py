@@ -19,7 +19,6 @@ from __future__ import annotations
 from app.contracts.data_types import DataLineage, MetricResult
 from app.services.node_aggregation import NodeAggregator
 
-
 # ---------------------------------------------------------------------------
 # 辅助构造
 # ---------------------------------------------------------------------------

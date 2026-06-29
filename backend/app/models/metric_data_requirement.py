@@ -58,6 +58,4 @@ class ClpmMetricDataRequirement(Base):
         DateTime, server_default=func.now(), nullable=True
     )
 
-    __table_args__ = (
-        {"comment": "指标数据需求契约：定义每个指标的数据获取和预处理需求"},
-    )
+    __table_args__ = ({"comment": "指标数据需求契约：定义每个指标的数据获取和预处理需求"},)

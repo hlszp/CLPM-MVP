@@ -14,14 +14,12 @@
 from __future__ import annotations
 
 import logging
-import math
 from datetime import datetime
 from typing import Any
 
 import numpy as np
 
 from app.contracts.data_types import (
-    ControlType,
     OutlierReason,
     QualityStatus,
 )
@@ -34,9 +32,7 @@ from app.services.preprocessing.thresholds import ControlTypeThreshold
 logger = logging.getLogger(__name__)
 
 # 标记但不置 valid=False 的原因码
-_MARK_ONLY: frozenset[OutlierReason] = frozenset(
-    {OutlierReason.TS_ANOMALY, OutlierReason.HF_NOISE}
-)
+_MARK_ONLY: frozenset[OutlierReason] = frozenset({OutlierReason.TS_ANOMALY, OutlierReason.HF_NOISE})
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +113,6 @@ def detect_frozen(
                 float_vals.append(float("nan"))
 
     arr = np.array(float_vals, dtype=float)
-    range_span = 1.0  # 归一化后量程为 0~100，span=100；原始值用 range_max-range_min
     # frozen_std_pct 是占量程百分比，阈值 = pct × range_span
     # 此处 range_span 由调用方在归一化后为 100，原始值时由调用方传入
     # 为通用起见，使用绝对阈值：threshold.frozen_std_pct * 100（归一化场景）
@@ -264,9 +259,7 @@ def detect_spike(
 
     results: list[tuple[int, OutlierReason]] = []
     for i in range(1, n - 1):
-        if is_nan_or_inf(values[i]) or is_nan_or_inf(values[i - 1]) or is_nan_or_inf(
-            values[i + 1]
-        ):
+        if is_nan_or_inf(values[i]) or is_nan_or_inf(values[i - 1]) or is_nan_or_inf(values[i + 1]):
             continue
         try:
             prev_diff = abs(float(values[i]) - float(values[i - 1]))
@@ -484,11 +477,7 @@ class OutlierDetector:
             if is_normalized:
                 _add(detect_frozen(values, self.threshold))
             else:
-                _add(
-                    detect_frozen_raw(
-                        values, self.threshold, range_min, range_max
-                    )
-                )
+                _add(detect_frozen_raw(values, self.threshold, range_min, range_max))
 
         # 4. 跳变
         _add(detect_jump(values, self.threshold, range_min, range_max))
@@ -511,10 +500,7 @@ class OutlierDetector:
             tag_name,
             n,
             len(all_reasons),
-            {
-                k: [r.value for r in v]
-                for k, v in list(all_reasons.items())[:5]
-            },
+            {k: [r.value for r in v] for k, v in list(all_reasons.items())[:5]},
         )
         return all_reasons
 

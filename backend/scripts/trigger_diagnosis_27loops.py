@@ -108,7 +108,7 @@ async def trigger_diagnosis(loops: list[tuple[str, str]]) -> dict[str, str]:
     # 统计结果
     success_count = sum(1 for s in completed.values() if s == "SUCCESS")
     failed_count = sum(1 for s in completed.values() if s == "FAILURE")
-    print(f"\n=== 诊断任务结果 ===")
+    print("\n=== 诊断任务结果 ===")
     print(f"  SUCCESS: {success_count}")
     print(f"  FAILURE: {failed_count}")
     print(f"  TIMEOUT: {len(task_map)}")
@@ -135,9 +135,7 @@ async def verify_diagnosis_api(token: str, loops: list[tuple[str, str]]) -> None
                 tag_name = item.get("tagName", "?")
                 score = item.get("score")
                 labels_str = ",".join(labels) if labels else "-"
-                print(
-                    f"  {tag_name:30s} score={score!s:8s} labels={labels_str}"
-                )
+                print(f"  {tag_name:30s} score={score!s:8s} labels={labels_str}")
             print(f"\n  标签分布: {label_counter}")
         else:
             print(f"  ERROR {resp.status_code}: {resp.text[:200]}")
@@ -191,8 +189,7 @@ async def verify_diagnosis_api(token: str, loops: list[tuple[str, str]]) -> None
             print(f"  诊断指标配置数: {len(metrics)}")
             for m in metrics[:5]:
                 print(
-                    f"    - {m.get('diagCode')}: {m.get('diagName')} "
-                    f"(enabled={m.get('isEnabled')})"
+                    f"    - {m.get('diagCode')}: {m.get('diagName')} (enabled={m.get('isEnabled')})"
                 )
         else:
             print(f"  ERROR {resp.status_code}: {resp.text[:200]}")
@@ -224,7 +221,7 @@ async def main() -> None:
         return
 
     # 触发诊断
-    completed = await trigger_diagnosis(loops)
+    await trigger_diagnosis(loops)
 
     # 登录
     token = await login()

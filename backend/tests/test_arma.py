@@ -65,7 +65,7 @@ class TestGreenFunction:
         g = compute_green_function(ar_coeffs, length=50)
         assert abs(g[0] - 1.0) < 1e-10
         for k in range(1, 20):
-            assert abs(g[k] - 0.8 ** k) < 1e-10
+            assert abs(g[k] - 0.8**k) < 1e-10
 
     def test_green_function_decays_to_zero(self):
         """稳定系统的 Green 函数衰减到 0。"""

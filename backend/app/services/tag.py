@@ -118,9 +118,7 @@ def _build_tag_dict(tag: TagRegistry, loop_info: dict | None = None) -> dict:
     }
 
 
-async def _get_tags_loop_info_map(
-    db: AsyncSession, tag_ids: list[str]
-) -> dict[str, dict]:
+async def _get_tags_loop_info_map(db: AsyncSession, tag_ids: list[str]) -> dict[str, dict]:
     """批量获取测点关联的回路信息（含所属单元名称）。
 
     通过 loop_tag_mapping → loop_ledger → plant_node 间接关联。
@@ -335,9 +333,7 @@ async def delete_tag(db: AsyncSession, tag_id: str, operator: str) -> dict:
             status_code=400,
         )
 
-    before_json = json.dumps(
-        {"tagName": tag.tag_name, "tagType": tag.tag_type}, ensure_ascii=False
-    )
+    before_json = json.dumps({"tagName": tag.tag_name, "tagType": tag.tag_type}, ensure_ascii=False)
 
     await db.execute(delete(TagRegistry).where(TagRegistry.id == tag_id))
 
@@ -358,9 +354,7 @@ async def delete_tag(db: AsyncSession, tag_id: str, operator: str) -> dict:
     }
 
 
-async def batch_delete_tags(
-    db: AsyncSession, tag_ids: list[str], operator: str
-) -> dict:
+async def batch_delete_tags(db: AsyncSession, tag_ids: list[str], operator: str) -> dict:
     """批量删除测点。
 
     已关联回路的测点跳过并记入 failures，不影响其他测点删除。
@@ -380,9 +374,7 @@ async def batch_delete_tags(
     linked_map = {str(row.tag_id): row.cnt for row in link_count_result.fetchall()}
 
     # 批量查询 tag 信息（用于审计日志和 failure 信息）
-    tag_result = await db.execute(
-        select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
-    )
+    tag_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
     tags_map = {str(t.id): t for t in tag_result.scalars().fetchall()}
 
     for tag_id in tag_ids:
@@ -393,11 +385,13 @@ async def batch_delete_tags(
 
         link_count = linked_map.get(tag_id, 0)
         if link_count > 0:
-            failures.append({
-                "tagId": tag_id,
-                "tagName": tag.tag_name,
-                "reason": f"已关联 {link_count} 个回路，无法删除",
-            })
+            failures.append(
+                {
+                    "tagId": tag_id,
+                    "tagName": tag.tag_name,
+                    "reason": f"已关联 {link_count} 个回路，无法删除",
+                }
+            )
             continue
 
         before_json = json.dumps(
@@ -591,9 +585,7 @@ async def import_tags(
 
         # 按名称查找所属单元（仅查找，不存储到 TagRegistry）
         if plant_node_name and plant_node_name not in plant_node_cache:
-            p_result = await db.execute(
-                select(PlantNode).where(PlantNode.name == plant_node_name)
-            )
+            p_result = await db.execute(select(PlantNode).where(PlantNode.name == plant_node_name))
             node = p_result.scalar_one_or_none()
             if node is not None:
                 plant_node_cache[plant_node_name] = str(node.id)

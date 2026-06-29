@@ -124,8 +124,7 @@ def _validate_labels(labels: list[str]) -> None:
             raise BizError(
                 code="ERR_LABEL_INVALID",
                 message=(
-                    f"无效的诊断标签: {label}，"
-                    f"可选值: {', '.join(sorted(_VALID_DIAG_LABELS))}"
+                    f"无效的诊断标签: {label}，可选值: {', '.join(sorted(_VALID_DIAG_LABELS))}"
                 ),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
@@ -272,9 +271,7 @@ async def calculate_kpi(
 # ---------------------------------------------------------------------------
 
 
-@router.post(
-    "/diagnosis/analyze", response_model=ApiResponse[DiagnosisAnalyzeResponse]
-)
+@router.post("/diagnosis/analyze", response_model=ApiResponse[DiagnosisAnalyzeResponse])
 async def analyze_diagnosis(
     body: DiagnosisAnalyzeRequest,
     db: AsyncSession = Depends(get_db),
@@ -293,9 +290,7 @@ async def analyze_diagnosis(
     from app.tasks.diagnosis_engine import _do_diagnose_single_loop
 
     try:
-        result = await _do_diagnose_single_loop(
-            body.loopId, ts_start=body.startTime
-        )
+        result = await _do_diagnose_single_loop(body.loopId, ts_start=body.startTime)
     except Exception:
         logger.exception("诊断分析失败: loop=%s", body.loopId)
         raise BizError(
@@ -306,9 +301,7 @@ async def analyze_diagnosis(
 
     # 解析诊断引擎返回结果，转换为 DiagnosisLabelResult 列表
     diag_labels: list[DiagnosisLabelResult] = []
-    label_list = (
-        result.get("diagnosis_labels", []) if isinstance(result, dict) else []
-    )
+    label_list = result.get("diagnosis_labels", []) if isinstance(result, dict) else []
     requested = set(body.labels) if body.labels else None
 
     for item in label_list:
@@ -342,9 +335,7 @@ async def analyze_diagnosis(
             )
         )
 
-    tag_name = (
-        result.get("tag_name") if isinstance(result, dict) else None
-    )
+    tag_name = result.get("tag_name") if isinstance(result, dict) else None
     algorithm_version = (
         result.get("algorithm_version", "DIAG_ENGINE_v1.0")
         if isinstance(result, dict)
@@ -372,9 +363,7 @@ async def analyze_diagnosis(
 # ---------------------------------------------------------------------------
 
 
-@router.post(
-    "/tuning/calculate", response_model=ApiResponse[TuningCalculateResponse]
-)
+@router.post("/tuning/calculate", response_model=ApiResponse[TuningCalculateResponse])
 async def calculate_tuning(
     body: TuningCalculateRequest,
     db: AsyncSession = Depends(get_db),
@@ -461,8 +450,7 @@ async def calculate_tuning(
             sim_result = await run_simulation(
                 model_type=model_type,
                 model_params=params_dict,
-                current_pid=tune_result.get("current_pid", {})
-                or tune_result.get("current_pid"),
+                current_pid=tune_result.get("current_pid", {}) or tune_result.get("current_pid"),
                 recommended_pid=recommended_pid_raw,
                 sim_duration=body.simulationConfig.simulationDuration,
                 sim_step=body.identificationParams.samplePeriod,
@@ -473,8 +461,7 @@ async def calculate_tuning(
             sim_schema = SimulationResultSchema(
                 riseTime=sim_metrics.get("riseTime") or sim_metrics.get("rise_time"),
                 overshoot=sim_metrics.get("overshoot"),
-                settlingTime=sim_metrics.get("settlingTime")
-                or sim_metrics.get("settling_time"),
+                settlingTime=sim_metrics.get("settlingTime") or sim_metrics.get("settling_time"),
                 itae=sim_metrics.get("itae"),
             )
         except Exception:
@@ -485,9 +472,7 @@ async def calculate_tuning(
                 exc_info=True,
             )
 
-    algorithm_version = (
-        tune_result.get("algorithmVersion") or "TUNE_ENGINE_v1.0"
-    )
+    algorithm_version = tune_result.get("algorithmVersion") or "TUNE_ENGINE_v1.0"
 
     resp = TuningCalculateResponse(
         loopId=body.loopId,
@@ -515,9 +500,7 @@ async def calculate_tuning(
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "/tasks/{task_id}", response_model=ApiResponse[AlgorithmTaskStatus]
-)
+@router.get("/tasks/{task_id}", response_model=ApiResponse[AlgorithmTaskStatus])
 async def get_algorithm_task_status(
     task_id: str,
     _: SysUser = Depends(require_roles(*_KPI_DIAG_ROLES, *_TUNING_ROLES)),

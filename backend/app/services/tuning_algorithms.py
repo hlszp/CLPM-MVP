@@ -131,9 +131,7 @@ def identify_fopdt(
     else:  # TWO_POINT 或未知方法默认两点法
         params = result_two_point
 
-    fitted_pv = _fopdt_simulate_curve(
-        K, params["tau"], params["theta"], ts, pv_initial, mv_step
-    )
+    fitted_pv = _fopdt_simulate_curve(K, params["tau"], params["theta"], ts, pv_initial, mv_step)
     fitting_score = _calc_r2(pv, fitted_pv)
 
     return {
@@ -222,9 +220,7 @@ def _fopdt_area_method(
     return {"tau": tau, "theta": theta}
 
 
-def _find_time_at_value(
-    pv: np.ndarray, ts: np.ndarray, target: float
-) -> float | None:
+def _find_time_at_value(pv: np.ndarray, ts: np.ndarray, target: float) -> float | None:
     """找到 PV 首次到达 target 值的时间（线性插值）。"""
     for i in range(1, len(pv)):
         if (pv[i - 1] <= target <= pv[i]) or (pv[i - 1] >= target >= pv[i]):
@@ -361,13 +357,10 @@ def _sopdt_simulate_curve(
             td = t - theta
             if abs(denom) < 1e-8:
                 # 临界阻尼（T1 ≈ T2）
-                result[i] = pv_initial + K * mv_step * (
-                    1.0 - (1.0 + td / T1) * math.exp(-td / T1)
-                )
+                result[i] = pv_initial + K * mv_step * (1.0 - (1.0 + td / T1) * math.exp(-td / T1))
             else:
                 result[i] = pv_initial + K * mv_step * (
-                    1.0
-                    - (T1 * math.exp(-td / T1) - T2 * math.exp(-td / T2)) / (T1 - T2)
+                    1.0 - (T1 * math.exp(-td / T1) - T2 * math.exp(-td / T2)) / (T1 - T2)
                 )
     return result
 
@@ -431,9 +424,7 @@ def identify_ipdt(
 # ---------------------------------------------------------------------------
 
 
-def tune_imc(
-    K: float, tau: float, theta: float, lambda_ratio: float = 1.0
-) -> PIDParams:
+def tune_imc(K: float, tau: float, theta: float, lambda_ratio: float = 1.0) -> PIDParams:
     """IMC 整定算法（§6.3）— 基于 Morari & Zafiriou 内模控制原理。
 
     使用一阶 Padé 近似迟延，FOPDT 模型 G(s)=K·exp(-θs)/(τs+1) 的 IMC-PID 整定：
@@ -460,9 +451,7 @@ def tune_imc(
     return PIDParams(kp=round(kp, 6), ti=round(ti, 4), td=round(td, 4))
 
 
-def tune_lambda(
-    K: float, tau: float, theta: float, lambda_ratio: float = 1.0
-) -> PIDParams:
+def tune_lambda(K: float, tau: float, theta: float, lambda_ratio: float = 1.0) -> PIDParams:
     """Lambda 整定算法（§6.4）— 一阶自调节过程 PI。
 
     Kc = tau / (K * (lambda + theta))
@@ -486,9 +475,7 @@ def tune_lambda(
     return PIDParams(kp=round(kc, 6), ti=round(ti, 4), td=round(td, 4))
 
 
-def tune_zn(
-    K: float, tau: float, theta: float, controller_type: str = "PID"
-) -> PIDParams:
+def tune_zn(K: float, tau: float, theta: float, controller_type: str = "PID") -> PIDParams:
     """Ziegler-Nichols 开环反应曲线法（§6.5.2）。
 
     响应率 R = K / tau
@@ -526,9 +513,7 @@ def tune_zn(
     return PIDParams(kp=round(kp, 6), ti=round(ti, 4), td=round(td, 4))
 
 
-def tune_cohen_coon(
-    K: float, tau: float, theta: float, controller_type: str = "PID"
-) -> PIDParams:
+def tune_cohen_coon(K: float, tau: float, theta: float, controller_type: str = "PID") -> PIDParams:
     """Cohen-Coon 整定算法（§6.6）。
 
     PID:
@@ -568,9 +553,7 @@ def tune_cohen_coon(
     return PIDParams(kp=round(kp, 6), ti=round(ti, 4), td=round(td, 4))
 
 
-def tune_simc(
-    K: float, tau: float, theta: float, tau_c_ratio: float = 1.0
-) -> PIDParams:
+def tune_simc(K: float, tau: float, theta: float, tau_c_ratio: float = 1.0) -> PIDParams:
     """SIMC 整定算法（§6.7）— Skogestad 2001 简化 IMC。
 
     FOPDT 模型 G(s)=K·exp(-θs)/(τs+1) 的 SIMC-PI 整定规则：
@@ -712,7 +695,7 @@ def _simulate_pid_response(
     # 被控对象状态
     x1 = 0.0  # SOPDT 第一状态（输出）
     x2 = 0.0  # SOPDT 第二状态（输出导数）
-    x = 0.0   # FOPDT 状态变量
+    x = 0.0  # FOPDT 状态变量
 
     # 导数函数在循环外定义（避免 B023 闭包警告）
     def _deriv_sopdt(state1: float, state2: float, u: float) -> tuple[float, float]:
@@ -738,9 +721,7 @@ def _simulate_pid_response(
                 + pid.td / sim_step * (e - 2 * e_prev + e_prev2)
             )
         else:
-            delta_u = pid.kp * (
-                (e - e_prev) + pid.td / sim_step * (e - 2 * e_prev + e_prev2)
-            )
+            delta_u = pid.kp * ((e - e_prev) + pid.td / sim_step * (e - 2 * e_prev + e_prev2))
 
         op[k] = op[k - 1] + delta_u
 
@@ -763,9 +744,7 @@ def _simulate_pid_response(
             k3_1, k3_2 = _deriv_sopdt(
                 x1 + 0.5 * sim_step * k2_1, x2 + 0.5 * sim_step * k2_2, delayed_op
             )
-            k4_1, k4_2 = _deriv_sopdt(
-                x1 + sim_step * k3_1, x2 + sim_step * k3_2, delayed_op
-            )
+            k4_1, k4_2 = _deriv_sopdt(x1 + sim_step * k3_1, x2 + sim_step * k3_2, delayed_op)
             x1 = x1 + sim_step / 6.0 * (k1_1 + 2 * k2_1 + 2 * k3_1 + k4_1)
             x2 = x2 + sim_step / 6.0 * (k1_2 + 2 * k2_2 + 2 * k3_2 + k4_2)
             pv[k] = x1
@@ -843,6 +822,7 @@ def _calc_improvement(
     current: SimulationMetrics, recommended: SimulationMetrics
 ) -> dict[str, float | None]:
     """计算改善幅度。"""
+
     def _pct_change(curr: float | None, rec: float | None) -> float | None:
         if curr is None or rec is None or curr == 0:
             return None

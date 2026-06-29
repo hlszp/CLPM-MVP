@@ -18,8 +18,8 @@ import logging
 from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.auto_mode import AUTO_MODES
+from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,11 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[有效自控率] auto=%.1f, effective=%.1f, total=%.1f, R=%.2f%%, auto_mode=%.2f%%",
-            auto_duration, effective_duration, total_duration, effective_rate, auto_mode_rate,
+            auto_duration,
+            effective_duration,
+            total_duration,
+            effective_rate,
+            auto_mode_rate,
         )
 
         return self._make_result(

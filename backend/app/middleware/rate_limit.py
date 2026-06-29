@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 # 敏感端点限流配置: path -> (max_requests, window_seconds)
 RATE_LIMITS: dict[str, tuple[int, int]] = {
-    "/api/v1/auth/login": (10, 60),       # 登录：10 次/分钟
-    "/api/v1/auth/refresh": (10, 60),     # 刷新令牌：10 次/分钟
-    "/api/v1/auth/password": (5, 60),     # 改密：5 次/分钟
-    "/api/v1/users": (5, 60),             # 创建用户：5 次/分钟
+    "/api/v1/auth/login": (10, 60),  # 登录：10 次/分钟
+    "/api/v1/auth/refresh": (10, 60),  # 刷新令牌：10 次/分钟
+    "/api/v1/auth/password": (5, 60),  # 改密：5 次/分钟
+    "/api/v1/users": (5, 60),  # 创建用户：5 次/分钟
 }
 
 

@@ -251,9 +251,7 @@ async def get_realtime_auto_rate_endpoint(
         all_ids.append(plantNodeId)
         stmt = stmt.where(LoopLedger.unit_id.in_(all_ids))
         # 查节点名
-        node_result = await db.execute(
-            select(PlantNode.name).where(PlantNode.id == plantNodeId)
-        )
+        node_result = await db.execute(select(PlantNode.name).where(PlantNode.id == plantNodeId))
         row = node_result.first()
         if row:
             plant_node_name = row[0]

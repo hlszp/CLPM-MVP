@@ -136,9 +136,7 @@ class CacheInvalidator:
     # 内部：SCAN + DEL
     # ------------------------------------------------------------------
 
-    async def _scan_and_delete(
-        self, pattern: str, keep_version: str | None = None
-    ) -> int:
+    async def _scan_and_delete(self, pattern: str, keep_version: str | None = None) -> int:
         """通过 SCAN 游标式扫描匹配 Key，批量 DEL.
 
         使用 SCAN 而非 KEYS，避免阻塞 Redis 主线程（ADS §10.7.3）。

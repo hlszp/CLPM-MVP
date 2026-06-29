@@ -137,6 +137,7 @@ class FakeRedis:
     def scan_iter(self, match: str, count: int = 100):
         """Synchronous scan iterator (CacheInvalidator compatibility)."""
         import fnmatch
+
         for key in list(self._strings.keys()):
             if fnmatch.fnmatch(key, match.replace("*", "*")):
                 yield key
@@ -144,6 +145,7 @@ class FakeRedis:
     async def keys(self, pattern: str) -> list[str]:
         """Pattern-matching key search (CacheInvalidator compatibility)."""
         import fnmatch
+
         return [k for k in self._strings.keys() if fnmatch.fnmatch(k, pattern)]
 
     async def info(self, section: str | None = None) -> dict[str, Any]:
@@ -290,9 +292,7 @@ def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
         patch("app.services.dashboard.AsyncSessionLocal") as mock_session_local,
     ):
         # 配置 AsyncSessionLocal mock：每次 async with 返回 mock_parallel_session
-        mock_session_local.return_value.__aenter__ = AsyncMock(
-            return_value=mock_parallel_session
-        )
+        mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_parallel_session)
         mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
 
         # Override DB dependency to return our mock session.

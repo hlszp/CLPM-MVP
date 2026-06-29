@@ -94,6 +94,7 @@ EQUIP_PATTERN = re.compile(r"[A-Z]-?(\d{2,5})[A-Z]?")
 # Excel 解析
 # ============================================================================
 
+
 def parse_unit_info() -> list[dict]:
     wb = openpyxl.load_workbook(UNIT_INFO_XLSX, read_only=True)
     ws = wb.active
@@ -105,12 +106,14 @@ def parse_unit_info() -> list[dict]:
         code, name, typ, area, craft, desc = row[:6]
         if not code:
             continue
-        units.append({
-            "code": str(code).strip(),
-            "name": str(name).strip() if name else str(code).strip(),
-            "area": str(area).strip() if area else "OTHER",
-            "description": str(desc).strip() if desc else None,
-        })
+        units.append(
+            {
+                "code": str(code).strip(),
+                "name": str(name).strip() if name else str(code).strip(),
+                "area": str(area).strip() if area else "OTHER",
+                "description": str(desc).strip() if desc else None,
+            }
+        )
     return units
 
 
@@ -123,24 +126,35 @@ def parse_loop_list() -> list[dict]:
     loops = []
     for row in rows:
         (
-            loop_no, loop_name, sp_tag, pv_tag, op_tag, mode_tag,
-            area, enabled, kp_tag, ti_tag, td_tag,
+            loop_no,
+            loop_name,
+            sp_tag,
+            pv_tag,
+            op_tag,
+            mode_tag,
+            area,
+            enabled,
+            kp_tag,
+            ti_tag,
+            td_tag,
         ) = row[:11]
         if not loop_no:
             continue
-        loops.append({
-            "tag_name": str(loop_no).strip(),
-            "description": str(loop_name).strip() if loop_name else None,
-            "area": str(area).strip() if area else "OTHER",
-            "enabled": str(enabled).strip() == "是" if enabled else False,
-            "sp_tag": str(sp_tag).strip() if sp_tag else None,
-            "pv_tag": str(pv_tag).strip() if pv_tag else None,
-            "op_tag": str(op_tag).strip() if op_tag else None,
-            "mode_tag": str(mode_tag).strip() if mode_tag else None,
-            "kp_tag": str(kp_tag).strip() if kp_tag else None,
-            "ti_tag": str(ti_tag).strip() if ti_tag else None,
-            "td_tag": str(td_tag).strip() if td_tag else None,
-        })
+        loops.append(
+            {
+                "tag_name": str(loop_no).strip(),
+                "description": str(loop_name).strip() if loop_name else None,
+                "area": str(area).strip() if area else "OTHER",
+                "enabled": str(enabled).strip() == "是" if enabled else False,
+                "sp_tag": str(sp_tag).strip() if sp_tag else None,
+                "pv_tag": str(pv_tag).strip() if pv_tag else None,
+                "op_tag": str(op_tag).strip() if op_tag else None,
+                "mode_tag": str(mode_tag).strip() if mode_tag else None,
+                "kp_tag": str(kp_tag).strip() if kp_tag else None,
+                "ti_tag": str(ti_tag).strip() if ti_tag else None,
+                "td_tag": str(td_tag).strip() if td_tag else None,
+            }
+        )
     return loops
 
 
@@ -208,12 +222,14 @@ def build_unit_list() -> list[dict]:
 
     for area, unit_defs in AREA_UNIT_DEFS.items():
         for unit_code, unit_name, _ in unit_defs:
-            all_units.append({
-                "code": unit_code,
-                "name": unit_name,
-                "area": area,
-                "description": None,
-            })
+            all_units.append(
+                {
+                    "code": unit_code,
+                    "name": unit_name,
+                    "area": area,
+                    "description": None,
+                }
+            )
 
     return all_units
 
@@ -222,16 +238,22 @@ def build_unit_list() -> list[dict]:
 # 数据库操作
 # ============================================================================
 
+
 async def clean_data(session) -> None:
-    await session.execute(text("""
+    await session.execute(
+        text("""
         DELETE FROM kpi_snapshot_hourly
         WHERE loop_id IN (SELECT id FROM loop_ledger WHERE created_by = 'import_script')
-    """))
-    await session.execute(text("""
+    """)
+    )
+    await session.execute(
+        text("""
         DELETE FROM loop_tag_mapping
         WHERE loop_id IN (SELECT id FROM loop_ledger WHERE created_by = 'import_script')
-    """))
-    await session.execute(text("""
+    """)
+    )
+    await session.execute(
+        text("""
         DELETE FROM tag_registry
         WHERE id IN (
             SELECT tr.id FROM tag_registry tr
@@ -239,21 +261,28 @@ async def clean_data(session) -> None:
             JOIN loop_ledger ll ON ltm.loop_id = ll.id
             WHERE ll.created_by = 'import_script'
         )
-    """))
-    await session.execute(text("""
+    """)
+    )
+    await session.execute(
+        text("""
         DELETE FROM loop_ledger WHERE created_by = 'import_script'
-    """))
+    """)
+    )
     print("  ✓ 旧测试回路数据已清理")
 
     factory_names = [FACTORY_NAME, "某化工厂", "[E2E_TEST]化工厂", "加氢联合车间"]
     for fname in factory_names:
-        result = await session.execute(text("""
+        result = await session.execute(
+            text("""
             SELECT id FROM plant_node WHERE type = 'FACTORY' AND name = :fname
-        """), {"fname": fname})
+        """),
+            {"fname": fname},
+        )
         if not result.scalar():
             continue
 
-        await session.execute(text("""
+        await session.execute(
+            text("""
             DELETE FROM plant_node
             WHERE type = 'UNIT'
               AND parent_id IN (
@@ -263,23 +292,32 @@ async def clean_data(session) -> None:
                     SELECT id FROM plant_node WHERE type = 'FACTORY' AND name = :fname
                   )
               )
-        """), {"fname": fname})
+        """),
+            {"fname": fname},
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text("""
             DELETE FROM plant_node
             WHERE type = 'UNIT'
               AND parent_id IN (SELECT id FROM plant_node WHERE type = 'FACTORY' AND name = :fname)
-        """), {"fname": fname})
+        """),
+            {"fname": fname},
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text("""
             DELETE FROM plant_node WHERE type = 'FACTORY' AND name = :fname
-        """), {"fname": fname})
+        """),
+            {"fname": fname},
+        )
 
     print("  ✓ 旧工厂节点已清理")
 
 
 async def import_plant_nodes(session, units: list[dict]) -> dict[str, str]:
-    await session.execute(text("""
+    await session.execute(
+        text("""
         INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at)
         VALUES (:id, :name, 'FACTORY', NULL, TRUE, NOW(), NOW())
         ON CONFLICT (id) DO UPDATE SET
@@ -287,7 +325,9 @@ async def import_plant_nodes(session, units: list[dict]) -> dict[str, str]:
             type = EXCLUDED.type,
             is_kpi_enabled = EXCLUDED.is_kpi_enabled,
             updated_at = NOW()
-    """), {"id": FACTORY_ID, "name": FACTORY_NAME})
+    """),
+        {"id": FACTORY_ID, "name": FACTORY_NAME},
+    )
 
     areas = {}
     for unit in units:
@@ -301,37 +341,45 @@ async def import_plant_nodes(session, units: list[dict]) -> dict[str, str]:
 
     area_id_map = {}
     for area_code, area in areas.items():
-        await session.execute(text("""
-            INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at)
+        await session.execute(
+            text("""
+            INSERT INTO plant_node
+                (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at)
             VALUES (:id, :name, 'UNIT', :parent_id, TRUE, NOW(), NOW())
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
                 parent_id = EXCLUDED.parent_id,
                 is_kpi_enabled = EXCLUDED.is_kpi_enabled,
                 updated_at = NOW()
-        """), {
-            "id": area["id"],
-            "name": area["name"],
-            "parent_id": FACTORY_ID,
-        })
+        """),
+            {
+                "id": area["id"],
+                "name": area["name"],
+                "parent_id": FACTORY_ID,
+            },
+        )
         area_id_map[area_code] = area["id"]
 
     unit_id_map = {}
     for unit in units:
         unit_id = str(uuid.uuid4())
         area_id = area_id_map.get(unit["area"])
-        await session.execute(text("""
-            INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at)
+        await session.execute(
+            text("""
+            INSERT INTO plant_node
+                (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at)
             VALUES (:id, :name, 'UNIT', :parent_id, FALSE, NOW(), NOW())
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
                 parent_id = EXCLUDED.parent_id,
                 updated_at = NOW()
-        """), {
-            "id": unit_id,
-            "name": unit["name"],
-            "parent_id": area_id,
-        })
+        """),
+            {
+                "id": unit_id,
+                "name": unit["name"],
+                "parent_id": area_id,
+            },
+        )
         unit_id_map[unit["code"]] = unit_id
 
     await session.commit()
@@ -357,7 +405,7 @@ async def import_loops(
     remainder = loop_count % len(areas)
 
     for i, area in enumerate(areas):
-        area_loop_list = [l for l in area_loops[area] if l["enabled"]]
+        area_loop_list = [loop for loop in area_loops[area] if loop["enabled"]]
         if not area_loop_list:
             area_loop_list = area_loops[area]
 
@@ -383,7 +431,8 @@ async def import_loops(
         loop_type = infer_loop_type(loop_data["tag_name"])
 
         loop_id = str(uuid.uuid4())
-        result = await session.execute(text("""
+        result = await session.execute(
+            text("""
             INSERT INTO loop_ledger (
                 id, tag_name, description, unit_id, score_weight,
                 is_active, status, loop_type, level, created_at, updated_at, created_by
@@ -397,14 +446,16 @@ async def import_loops(
                 loop_type = EXCLUDED.loop_type,
                 updated_at = NOW()
             RETURNING id
-        """), {
-            "id": loop_id,
-            "tag_name": loop_data["tag_name"],
-            "desc": loop_data["description"],
-            "unit_id": unit_id,
-            "is_active": loop_data["enabled"],
-            "loop_type": loop_type,
-        })
+        """),
+            {
+                "id": loop_id,
+                "tag_name": loop_data["tag_name"],
+                "desc": loop_data["description"],
+                "unit_id": unit_id,
+                "is_active": loop_data["enabled"],
+                "loop_type": loop_type,
+            },
+        )
         actual_loop_id = str(result.scalar())
 
         tag_defs = [
@@ -424,7 +475,8 @@ async def import_loops(
             tag_id = str(uuid.uuid4())
             is_required = role in ("PV", "SP", "OP", "MODE")
 
-            result = await session.execute(text("""
+            result = await session.execute(
+                text("""
                 INSERT INTO tag_registry (
                     id, tag_name, tag_description, tag_type,
                     current_value, quality, last_sync_at, is_linked, measure_type
@@ -437,37 +489,45 @@ async def import_loops(
                     is_linked = TRUE,
                     measure_type = EXCLUDED.measure_type
                 RETURNING id
-            """), {
-                "id": tag_id,
-                "tag_name": tag_name,
-                "desc": f"{loop_data['description'] or loop_data['tag_name']} - {role}",
-                "type": role,
-                "measure_type": loop_type,
-            })
+            """),
+                {
+                    "id": tag_id,
+                    "tag_name": tag_name,
+                    "desc": f"{loop_data['description'] or loop_data['tag_name']} - {role}",
+                    "type": role,
+                    "measure_type": loop_type,
+                },
+            )
             actual_tag_id = str(result.scalar())
 
             mapping_id = str(uuid.uuid4())
-            await session.execute(text("""
-                INSERT INTO loop_tag_mapping (id, loop_id, tag_id, tag_role, is_required, created_at)
+            await session.execute(
+                text("""
+                INSERT INTO loop_tag_mapping
+                    (id, loop_id, tag_id, tag_role, is_required, created_at)
                 VALUES (:id, :loop_id, :tag_id, :role, :required, NOW())
                 ON CONFLICT (loop_id, tag_role) DO UPDATE SET
                     tag_id = EXCLUDED.tag_id
-            """), {
-                "id": mapping_id,
-                "loop_id": actual_loop_id,
-                "tag_id": actual_tag_id,
-                "role": role,
-                "required": is_required,
-            })
+            """),
+                {
+                    "id": mapping_id,
+                    "loop_id": actual_loop_id,
+                    "tag_id": actual_tag_id,
+                    "role": role,
+                    "required": is_required,
+                },
+            )
 
-        imported.append({
-            "id": actual_loop_id,
-            "tag_name": loop_data["tag_name"],
-            "area": area,
-            "unit_code": unit_code,
-            "unit_id": unit_id,
-            "loop_type": loop_type,
-        })
+        imported.append(
+            {
+                "id": actual_loop_id,
+                "tag_name": loop_data["tag_name"],
+                "area": area,
+                "unit_code": unit_code,
+                "unit_id": unit_id,
+                "loop_type": loop_type,
+            }
+        )
 
     await session.commit()
     print(f"  ✓ 测试回路导入完成：{len(imported)} 个回路")
@@ -494,6 +554,7 @@ async def import_loops(
 # 主函数
 # ============================================================================
 
+
 async def main(clean: bool = False, loop_count: int = 100) -> None:
     if not UNIT_INFO_XLSX.exists():
         print(f"错误: 单元信息文件不存在: {UNIT_INFO_XLSX}")
@@ -502,9 +563,9 @@ async def main(clean: bool = False, loop_count: int = 100) -> None:
         print(f"错误: 回路清单文件不存在: {LOOP_LIST_XLSX}")
         return
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("1. 解析 Excel 数据")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     units = build_unit_list()
     loops = parse_loop_list()
     print(f"  ✓ 单元信息: {len(units)} 个")
@@ -523,27 +584,27 @@ async def main(clean: bool = False, loop_count: int = 100) -> None:
 
     async with AsyncSessionLocal() as session:
         if clean:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print("2. 清理旧数据")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             await clean_data(session)
             await session.commit()
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("3. 导入工厂节点")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         unit_id_map = await import_plant_nodes(session, units)
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"4. 导入测试回路（{loop_count} 个）")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         imported_loops = await import_loops(session, loops, unit_id_map, loop_count)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("导入完成！")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"工厂: {FACTORY_NAME}")
-    print(f"区域: 5 个")
+    print("区域: 5 个")
     print(f"单元: {len(units)} 个")
     print(f"测试回路: {len(imported_loops)} 个")
     print()

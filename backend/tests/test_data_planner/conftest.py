@@ -24,7 +24,6 @@ from app.contracts.data_types import (
 )
 from app.services.preprocessing.pipeline import PREPROCESS_VERSION
 
-
 # ---------------------------------------------------------------------------
 # FakeCacheRedis — 支持 pipeline / scan / setex / get / delete
 # ---------------------------------------------------------------------------
@@ -87,7 +86,7 @@ class FakeCacheRedis:
         next_cursor = end if end < len(matched) else 0
         return next_cursor, batch
 
-    def pipeline(self) -> "_FakePipeline":
+    def pipeline(self) -> _FakePipeline:
         self.pipeline_calls += 1
         return _FakePipeline(self)
 
@@ -288,7 +287,9 @@ def preprocess_config():
     """提供默认 LoopPreprocessConfig."""
     return LoopPreprocessConfig(
         loop_id="L001",
-        control_type=__import__("app.contracts.data_types", fromlist=["ControlType"]).ControlType.FLOW,
+        control_type=__import__(
+            "app.contracts.data_types", fromlist=["ControlType"]
+        ).ControlType.FLOW,
         range_min=0.0,
         range_max=100.0,
         config_version="cfg_1000",

@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 # 默认参数
 DEFAULT_AR_ORDER = 10
 DEFAULT_SETTLING_THRESHOLD = 0.05  # Green 函数衰减阈值（5%）
-MAX_GREEN_FUNC_LENGTH = 3600       # Green 函数最大长度（1 小时 @ 1Hz）
-MIN_DATA_POINTS = 30               # 最少数据点数
+MAX_GREEN_FUNC_LENGTH = 3600  # Green 函数最大长度（1 小时 @ 1Hz）
+MIN_DATA_POINTS = 30  # 最少数据点数
 
 
 def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarray:
@@ -49,7 +49,7 @@ def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarra
 
     signal = signal - np.mean(signal)
     autocorr = np.correlate(signal, signal, mode="full")
-    autocorr = autocorr[n - 1:] / n  # r(0), r(1), ..., r(2n-1)
+    autocorr = autocorr[n - 1 :] / n  # r(0), r(1), ..., r(2n-1)
 
     if autocorr[0] == 0:
         return np.zeros(order)
@@ -119,9 +119,7 @@ def compute_settling_time(
     """
     n = len(signal)
     if n < MIN_DATA_POINTS:
-        logger.warning(
-            "[ARMA] 数据点不足（%d < %d），无法辨识稳态时间", n, MIN_DATA_POINTS
-        )
+        logger.warning("[ARMA] 数据点不足（%d < %d），无法辨识稳态时间", n, MIN_DATA_POINTS)
         return 0.0
 
     signal = np.asarray(signal, dtype=float)
@@ -181,7 +179,9 @@ def compute_settling_time(
     else:
         logger.debug(
             "[ARMA] Green 函数稳态时间 = %.1f 秒（阈值 %.0f%%，连续 %d 点）",
-            settling_time, threshold * 100, n_consecutive,
+            settling_time,
+            threshold * 100,
+            n_consecutive,
         )
 
     return settling_time

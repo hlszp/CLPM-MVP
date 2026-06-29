@@ -1029,9 +1029,7 @@ class TestS4B1CombinedRemoved:
         )
 
         result_default = identify_fopdt(pv_values, timestamps, mv_step)
-        result_explicit = identify_fopdt(
-            pv_values, timestamps, mv_step, method="TWO_POINT"
-        )
+        result_explicit = identify_fopdt(pv_values, timestamps, mv_step, method="TWO_POINT")
 
         assert result_default["tau"] == result_explicit["tau"]
         assert result_default["theta"] == result_explicit["theta"]

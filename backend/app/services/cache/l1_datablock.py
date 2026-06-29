@@ -368,9 +368,7 @@ def _data_block_to_dict(block: DataBlock) -> dict[str, Any]:
         "validity": block.validity,
         "outlier_reasons": block.outlier_reasons,
         "quality_summary": _quality_summary_to_dict(block.quality_summary),
-        "consecutive_segments": [
-            [s, e] for s, e in block.consecutive_segments
-        ],
+        "consecutive_segments": [[s, e] for s, e in block.consecutive_segments],
         "config_version": block.config_version,
         "preprocess_version": block.preprocess_version,
         "point_count": block.point_count,
@@ -394,9 +392,7 @@ def _data_block_from_dict(data: dict[str, Any]) -> DataBlock:
     """dict → DataBlock（反序列化）."""
     timestamps = [datetime.fromisoformat(ts) for ts in data["timestamps"]]
     quality_summary = QualitySummary(**_quality_summary_from_dict(data["quality_summary"]))
-    consecutive_segments = [
-        (int(s), int(e)) for s, e in data.get("consecutive_segments", [])
-    ]
+    consecutive_segments = [(int(s), int(e)) for s, e in data.get("consecutive_segments", [])]
     return DataBlock(
         data_block_id=data["data_block_id"],
         loop_id=data["loop_id"],

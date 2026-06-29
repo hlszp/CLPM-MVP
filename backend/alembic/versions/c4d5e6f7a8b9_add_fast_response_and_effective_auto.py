@@ -53,7 +53,7 @@ def upgrade() -> None:
         "is_enabled, updated_by, updated_at, version) VALUES "
         "('00000000-0000-0000-0000-000000000407', 'FAST_RESPONSE_RATE', '快速率', "
         "'count(response_time <= threshold) / count(sp_changes) * 100', 10.00, "
-        "'{\"min\": 80, \"max\": 100, \"alert\": \"warning\"}'::jsonb, 'FAST', "
+        '\'{"min": 80, "max": 100, "alert": "warning"}\'::jsonb, \'FAST\', '
         "TRUE, 'admin', NOW(), 1) "
         "ON CONFLICT (metric_code) DO NOTHING"
     )
@@ -62,9 +62,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     # 删除 FAST_RESPONSE_RATE 指标配置
-    op.execute(
-        "DELETE FROM metric_config WHERE metric_code = 'FAST_RESPONSE_RATE'"
-    )
+    op.execute("DELETE FROM metric_config WHERE metric_code = 'FAST_RESPONSE_RATE'")
     # 恢复 GOOD_VALUE_RATE 权重
     op.execute(
         "UPDATE metric_config SET weight = 10.00, "

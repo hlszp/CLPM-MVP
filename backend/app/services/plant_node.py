@@ -442,9 +442,7 @@ async def _import_one_node(
         if parent_name in parent_cache:
             parent_id = parent_cache[parent_name]
         else:
-            p_result = await db.execute(
-                select(PlantNode).where(PlantNode.name == parent_name)
-            )
+            p_result = await db.execute(select(PlantNode).where(PlantNode.name == parent_name))
             parent = p_result.scalars().first()
             if parent is None:
                 raise ValueError(f"父节点 '{parent_name}' 不存在")

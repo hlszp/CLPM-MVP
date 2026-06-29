@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,7 +20,6 @@ from app.services.node_aggregation import (
     aggregate_daily_snapshot,
     aggregate_monthly_snapshot,
 )
-
 
 # ---------------------------------------------------------------------------
 # 测试数据构造
@@ -155,10 +154,12 @@ class TestAggregateDailySnapshot:
         db = AsyncMock()
         # 第一次 execute: 查询小时快照
         # 第二次 execute: 查询已存在的日快照（None = 新增）
-        db.execute = AsyncMock(side_effect=[
-            _make_scalars_result(hourly_snaps),
-            _make_scalar_one_or_none_result(None),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result(hourly_snaps),
+                _make_scalar_one_or_none_result(None),
+            ]
+        )
         db.flush = AsyncMock()
         db.add = MagicMock()
 
@@ -201,12 +202,14 @@ class TestAggregateDailySnapshot:
         db = AsyncMock()
         # 第一次调用：查询小时快照 → 2 条；查询已存在日快照 → None（新增）
         # 第二次调用：查询小时快照 → 2 条；查询已存在日快照 → existing（覆盖更新）
-        db.execute = AsyncMock(side_effect=[
-            _make_scalars_result(hourly_snaps),
-            _make_scalar_one_or_none_result(None),
-            _make_scalars_result(hourly_snaps),
-            _make_scalar_one_or_none_result(existing_daily),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result(hourly_snaps),
+                _make_scalar_one_or_none_result(None),
+                _make_scalars_result(hourly_snaps),
+                _make_scalar_one_or_none_result(existing_daily),
+            ]
+        )
         db.flush = AsyncMock()
         db.add = MagicMock()
 
@@ -248,10 +251,12 @@ class TestAggregateDailySnapshot:
         )
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            _make_scalars_result([snap1, snap2]),
-            _make_scalar_one_or_none_result(None),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result([snap1, snap2]),
+                _make_scalar_one_or_none_result(None),
+            ]
+        )
         db.flush = AsyncMock()
         db.add = MagicMock()
 
@@ -295,11 +300,13 @@ class TestAggregateMonthlySnapshot:
         # 1. 查询日快照
         # 2. 查询当月最后一条小时快照
         # 3. 查询已存在的月快照（None = 新增）
-        db.execute = AsyncMock(side_effect=[
-            _make_scalars_result(daily_snaps),
-            _make_scalar_one_or_none_result(last_hourly),
-            _make_scalar_one_or_none_result(None),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result(daily_snaps),
+                _make_scalar_one_or_none_result(last_hourly),
+                _make_scalar_one_or_none_result(None),
+            ]
+        )
         db.flush = AsyncMock()
         db.add = MagicMock()
 
@@ -344,14 +351,16 @@ class TestAggregateMonthlySnapshot:
         db = AsyncMock()
         # 第一次调用：日快照 → 1 条；最后小时快照 → last_hourly；已存在月快照 → None（新增）
         # 第二次调用：日快照 → 1 条；最后小时快照 → last_hourly；已存在月快照 → existing（覆盖）
-        db.execute = AsyncMock(side_effect=[
-            _make_scalars_result(daily_snaps),
-            _make_scalar_one_or_none_result(last_hourly),
-            _make_scalar_one_or_none_result(None),
-            _make_scalars_result(daily_snaps),
-            _make_scalar_one_or_none_result(last_hourly),
-            _make_scalar_one_or_none_result(existing_monthly),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_result(daily_snaps),
+                _make_scalar_one_or_none_result(last_hourly),
+                _make_scalar_one_or_none_result(None),
+                _make_scalars_result(daily_snaps),
+                _make_scalar_one_or_none_result(last_hourly),
+                _make_scalar_one_or_none_result(existing_monthly),
+            ]
+        )
         db.flush = AsyncMock()
         db.add = MagicMock()
 
@@ -386,14 +395,14 @@ class TestAggregateAllNodesDaily:
 
         # mock session：第一次 execute 返回节点列表
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(
-            return_value=_make_scalars_result([node1, node2])
-        )
+        mock_session.execute = AsyncMock(return_value=_make_scalars_result([node1, node2]))
         mock_session.commit = AsyncMock()
 
         with (
             patch("app.core.db.AsyncSessionLocal") as mock_factory,
-            patch("app.services.node_aggregation.aggregate_daily_snapshot", new_callable=AsyncMock) as mock_agg,
+            patch(
+                "app.services.node_aggregation.aggregate_daily_snapshot", new_callable=AsyncMock
+            ) as mock_agg,
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -417,9 +426,7 @@ class TestAggregateAllNodesDaily:
     async def test_aggregate_all_nodes_daily_no_enabled_nodes(self):
         """无启用 KPI 评估的节点时返回全零结果。"""
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(
-            return_value=_make_scalars_result([])
-        )
+        mock_session.execute = AsyncMock(return_value=_make_scalars_result([]))
         mock_session.commit = AsyncMock()
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
@@ -449,14 +456,14 @@ class TestAggregateAllNodesDaily:
         node3.name = "装置 C"
 
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(
-            return_value=_make_scalars_result([node1, node2, node3])
-        )
+        mock_session.execute = AsyncMock(return_value=_make_scalars_result([node1, node2, node3]))
         mock_session.commit = AsyncMock()
 
         with (
             patch("app.core.db.AsyncSessionLocal") as mock_factory,
-            patch("app.services.node_aggregation.aggregate_daily_snapshot", new_callable=AsyncMock) as mock_agg,
+            patch(
+                "app.services.node_aggregation.aggregate_daily_snapshot", new_callable=AsyncMock
+            ) as mock_agg,
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)

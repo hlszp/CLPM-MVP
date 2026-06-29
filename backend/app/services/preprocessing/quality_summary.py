@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from app.contracts.data_types import QualitySummary, QualityStatus
+from app.contracts.data_types import QualityStatus, QualitySummary
 from app.services.preprocessing.quality_code import map_quality_code
 
 logger = logging.getLogger(__name__)
@@ -62,18 +62,12 @@ def compute_quality_summary(
 
     valid_rate = valid_count / total if total else 0.0
     bad_rate = bad_count / total if total else 0.0
-    missing_rate = (
-        missing_count / expected_count if expected_count > total else 0.0
-    )
+    missing_rate = missing_count / expected_count if expected_count > total else 0.0
 
     # 好值率（仅当有质量码时计算）
     good_value_rate: float | None = None
     if quality_codes is not None and len(quality_codes) > 0:
-        good_count = sum(
-            1
-            for qc in quality_codes
-            if map_quality_code(qc) == QualityStatus.GOOD
-        )
+        good_count = sum(1 for qc in quality_codes if map_quality_code(qc) == QualityStatus.GOOD)
         good_value_rate = good_count / len(quality_codes)
 
     summary = QualitySummary(
@@ -100,9 +94,7 @@ def compute_quality_summary(
     return summary
 
 
-def _compute_expected_count(
-    timestamps: list[datetime], expected_interval_s: float
-) -> int:
+def _compute_expected_count(timestamps: list[datetime], expected_interval_s: float) -> int:
     """根据时间跨度计算期望点数.
 
     Args:

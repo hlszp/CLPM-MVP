@@ -80,9 +80,7 @@ class MetricDataBundleAssembler:
             data_block.tag_group,
             data_block.point_count,
             len(masked_indices),
-            (len(masked_indices) / data_block.point_count * 100)
-            if data_block.point_count
-            else 0.0,
+            (len(masked_indices) / data_block.point_count * 100) if data_block.point_count else 0.0,
             data_block.quality_summary.valid_rate,
         )
         return bundle

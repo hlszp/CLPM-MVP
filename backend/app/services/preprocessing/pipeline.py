@@ -48,9 +48,7 @@ _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
 # PID_P/PID_I/PID_D: PID 整定参数，工程师设定后保持不变
 # OP: 稳态时 OP 变化幅度小（std < frozen_std_pct×range），FROZEN 检测会误报；
 #     阀门粘滞由 stiction_coeff 指标单独检测，OP 饱和由 saturation_rate 单独检测
-_SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset(
-    {"sp", "op", "mode", "pid_p", "pid_i", "pid_d"}
-)
+_SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
 
 PREPROCESS_VERSION = "pre_v1"
 
@@ -121,9 +119,7 @@ class PreprocessingPipeline:
         signals = self._step3_normalize(signals)
 
         # Step ④ 异常值识别（算法说明 §3.4.2 步骤④, §3.4.3）
-        all_outlier_reasons = self._step4_detect_outliers(
-            raw, signals, tag_group
-        )
+        all_outlier_reasons = self._step4_detect_outliers(raw, signals, tag_group)
 
         # Step ② 有效性标记（算法说明 §3.4.2 步骤②）
         # 基于质量码 + 异常值检测结果，设置 valid=True/False
@@ -179,9 +175,7 @@ class PreprocessingPipeline:
     # Step ① 质量码识别
     # -------------------------------------------------------------------
 
-    def _step1_identify_quality(
-        self, raw: RawTimeSeries
-    ) -> dict[str, list[QualityStatus]]:
+    def _step1_identify_quality(self, raw: RawTimeSeries) -> dict[str, list[QualityStatus]]:
         """步骤①：将原始质量码映射为 Good/Bad/Unknown 三态.
 
         设计依据：算法说明 §3.4.2 步骤①, §4.1.2
@@ -249,9 +243,7 @@ class PreprocessingPipeline:
     # Step ③ 量程归一化
     # -------------------------------------------------------------------
 
-    def _step3_normalize(
-        self, signals: dict[str, list[Any]]
-    ) -> dict[str, list[Any]]:
+    def _step3_normalize(self, signals: dict[str, list[Any]]) -> dict[str, list[Any]]:
         """步骤③：PV/SP/OP 按量程归一化为百分比（0~100）.
 
         归一化公式：normalized = (value - range_min) / (range_max - range_min) × 100
@@ -278,9 +270,7 @@ class PreprocessingPipeline:
                     else:
                         try:
                             norm_vals.append(
-                                (float(v) - self.config.range_min)
-                                / range_span
-                                * 100.0
+                                (float(v) - self.config.range_min) / range_span * 100.0
                             )
                         except (ValueError, TypeError):
                             norm_vals.append(v)
@@ -331,27 +321,21 @@ class PreprocessingPipeline:
     # Step ⑥ 连续性检查
     # -------------------------------------------------------------------
 
-    def _step6_continuity_check(
-        self, all_valid: list[bool]
-    ) -> list[tuple[int, int]]:
+    def _step6_continuity_check(self, all_valid: list[bool]) -> list[tuple[int, int]]:
         """步骤⑥：标记连续有效段，缺口超过阈值时切断.
 
         连续 valid=True 的段长度不足 min_consecutive_points 时丢弃。
 
         设计依据：算法说明 §3.4.2 步骤⑥, §3.4.4 连续有效最短段
         """
-        return compute_consecutive_segments(
-            all_valid, self.threshold.min_consecutive_points
-        )
+        return compute_consecutive_segments(all_valid, self.threshold.min_consecutive_points)
 
     # -------------------------------------------------------------------
     # 辅助方法
     # -------------------------------------------------------------------
 
     @staticmethod
-    def _compute_all_valid(
-        validity: dict[str, list[bool]], n: int
-    ) -> list[bool]:
+    def _compute_all_valid(validity: dict[str, list[bool]], n: int) -> list[bool]:
         """计算所有信号 valid 的交集（该时间戳是否全有效）."""
         all_valid = [True] * n
         for arr in validity.values():

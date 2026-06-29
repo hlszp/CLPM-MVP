@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 from app.services.metric_calculator.settling_time import SettlingTimeCalculator
 
 from .conftest import make_bundle

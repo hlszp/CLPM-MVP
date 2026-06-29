@@ -52,8 +52,7 @@ class LoopBatchConfigRequest(CamelModel):
             raise ValueError("非删除模式必须提供 updates 字段")
         # updates 至少有一个非 None 字段
         if all(
-            getattr(self.updates, f) is None
-            for f in ("is_monitored", "is_stat_enabled", "level")
+            getattr(self.updates, f) is None for f in ("is_monitored", "is_stat_enabled", "level")
         ):
             raise ValueError("updates 至少包含一个待更新字段")
         return self

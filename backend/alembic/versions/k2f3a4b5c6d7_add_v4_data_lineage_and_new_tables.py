@@ -14,9 +14,10 @@ Create Date: 2026-06-26 10:00:00.000000
 
 """
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "k2f3a4b5c6d7"
@@ -31,33 +32,51 @@ def upgrade() -> None:
     # ========================================================
 
     # 1a. 缺失的指标字段
-    op.add_column("kpi_snapshot_hourly",
-        sa.Column("ideal_settling_time", sa.DECIMAL(8, 2), nullable=True))
-    op.add_column("kpi_snapshot_hourly",
-        sa.Column("algorithm_version", sa.VARCHAR(50), nullable=True))
+    op.add_column(
+        "kpi_snapshot_hourly", sa.Column("ideal_settling_time", sa.DECIMAL(8, 2), nullable=True)
+    )
+    op.add_column(
+        "kpi_snapshot_hourly", sa.Column("algorithm_version", sa.VARCHAR(50), nullable=True)
+    )
 
     # 1b. v4.0 数据血缘字段
-    op.add_column("kpi_snapshot_hourly",
-        sa.Column("sampling_freq", sa.VARCHAR(10), nullable=True))
-    op.add_column("kpi_snapshot_hourly",
-        sa.Column("quality_policy", sa.VARCHAR(30), nullable=True))
-    op.add_column("kpi_snapshot_hourly",
-        sa.Column("valid_rate", sa.DECIMAL(5, 4), nullable=True))
-    op.add_column("kpi_snapshot_hourly",
-        sa.Column("confidence_level", sa.CHAR(1), nullable=True))
-    op.add_column("kpi_snapshot_hourly",
-        sa.Column("data_lineage", JSONB, nullable=True))
+    op.add_column("kpi_snapshot_hourly", sa.Column("sampling_freq", sa.VARCHAR(10), nullable=True))
+    op.add_column("kpi_snapshot_hourly", sa.Column("quality_policy", sa.VARCHAR(30), nullable=True))
+    op.add_column("kpi_snapshot_hourly", sa.Column("valid_rate", sa.DECIMAL(5, 4), nullable=True))
+    op.add_column("kpi_snapshot_hourly", sa.Column("confidence_level", sa.CHAR(1), nullable=True))
+    op.add_column("kpi_snapshot_hourly", sa.Column("data_lineage", JSONB, nullable=True))
 
-    op.execute("COMMENT ON COLUMN kpi_snapshot_hourly.ideal_settling_time IS '理想稳态时间（秒），由控制类型/模型参数/手动配置决定'")
-    op.execute("COMMENT ON COLUMN kpi_snapshot_hourly.algorithm_version IS '算法版本号（如 KPI_CALC_v2.0）'")
-    op.execute("COMMENT ON COLUMN kpi_snapshot_hourly.sampling_freq IS '数据采样频率（如 1s/5s/10s）'")
-    op.execute("COMMENT ON COLUMN kpi_snapshot_hourly.quality_policy IS '质量策略（KEEP_ALL_WITH_VALIDITY / KEEP_ALL）'")
-    op.execute("COMMENT ON COLUMN kpi_snapshot_hourly.valid_rate IS '有效数据率（0~1），用于可信度判定'")
-    op.execute("COMMENT ON COLUMN kpi_snapshot_hourly.confidence_level IS '指标可信度等级（A/B/C/D/E，E=INCONCLUSIVE）'")
-    op.execute("COMMENT ON COLUMN kpi_snapshot_hourly.data_lineage IS '数据血缘JSON：tag_group/data_block_ids/aggregation_policy/data_policy_version 等'")
+    op.execute(
+        "COMMENT ON COLUMN kpi_snapshot_hourly.ideal_settling_time IS "
+        "'理想稳态时间（秒），由控制类型/模型参数/手动配置决定'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN kpi_snapshot_hourly.algorithm_version IS "
+        "'算法版本号（如 KPI_CALC_v2.0）'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN kpi_snapshot_hourly.sampling_freq IS '数据采样频率（如 1s/5s/10s）'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN kpi_snapshot_hourly.quality_policy IS "
+        "'质量策略（KEEP_ALL_WITH_VALIDITY / KEEP_ALL）'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN kpi_snapshot_hourly.valid_rate IS '有效数据率（0~1），用于可信度判定'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN kpi_snapshot_hourly.confidence_level IS "
+        "'指标可信度等级（A/B/C/D/E，E=INCONCLUSIVE）'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN kpi_snapshot_hourly.data_lineage IS "
+        "'数据血缘JSON：tag_group/data_block_ids/aggregation_policy/data_policy_version 等'"
+    )
 
     # 1c. 增加索引（按时间窗口+回路查询是高频操作）
-    op.create_index("ix_kpi_snapshot_hourly_loop_ts", "kpi_snapshot_hourly", ["loop_id", "ts_start"])
+    op.create_index(
+        "ix_kpi_snapshot_hourly_loop_ts", "kpi_snapshot_hourly", ["loop_id", "ts_start"]
+    )
 
     # ========================================================
     # 2. kpi_snapshot_custom（自定义任务快照）
@@ -90,12 +109,18 @@ def upgrade() -> None:
         sa.Column("created_at", sa.TIMESTAMP, server_default=sa.text("NOW()")),
         sa.UniqueConstraint("task_id", "loop_id", name="uq_kpi_custom_task_loop"),
         sa.ForeignKeyConstraint(["loop_id"], ["loop_ledger.id"], ondelete="CASCADE"),
-        sa.CheckConstraint("status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')", name="ck_kpi_custom_status"),
+        sa.CheckConstraint(
+            "status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')", name="ck_kpi_custom_status"
+        ),
         sa.CheckConstraint("ts_end > ts_start", name="ck_kpi_custom_window"),
     )
-    op.execute("COMMENT ON TABLE kpi_snapshot_custom IS '自定义评估任务快照（按需触发，不参与装置级聚合）'")
+    op.execute(
+        "COMMENT ON TABLE kpi_snapshot_custom IS '自定义评估任务快照（按需触发，不参与装置级聚合）'"
+    )
     op.create_index("ix_kpi_snapshot_custom_task", "kpi_snapshot_custom", ["task_id"])
-    op.create_index("ix_kpi_snapshot_custom_loop_ts", "kpi_snapshot_custom", ["loop_id", "ts_start"])
+    op.create_index(
+        "ix_kpi_snapshot_custom_loop_ts", "kpi_snapshot_custom", ["loop_id", "ts_start"]
+    )
 
     # ========================================================
     # 3. clpm_metric_data_requirement（指标数据需求契约）
@@ -115,23 +140,43 @@ def upgrade() -> None:
         sa.Column("version", sa.VARCHAR(20), server_default=sa.text("'v1'")),
         sa.Column("updated_at", sa.TIMESTAMP, server_default=sa.text("NOW()")),
     )
-    op.execute("COMMENT ON TABLE clpm_metric_data_requirement IS '指标数据需求契约：定义每个指标的数据获取和预处理需求'")
+    op.execute(
+        "COMMENT ON TABLE clpm_metric_data_requirement IS "
+        "'指标数据需求契约：定义每个指标的数据获取和预处理需求'"
+    )
 
     # 3a. 预置 12 条种子数据
     op.execute("""
-        INSERT INTO clpm_metric_data_requirement (metric_code, metric_name, tag_group, tags, sampling_strategy, quality_policy, mask_expression, aggregation_policy, depends_on) VALUES
-        ('accuracy_rate',        '准确率',       'BASE',       '["pv","sp"]',         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',                       'LAST', NULL),
-        ('fast_response_rate',   '快速率',       'BASE',       '["pv","sp"]',         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',                       'LAST', '["settling_time","ideal_settling_time"]'),
-        ('steady_rate',          '稳定率',       'BASE',       '["pv","sp"]',         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',                       'LAST', '["oscillation_rate"]'),
-        ('effective_auto_rate',  '有效自控率',   'MODE_HF',    '["mode","op"]',       'FIXED_1S',        'KEEP_ALL_WITH_VALIDITY', 'mode_valid && op_valid',                     'LAST', '["auto_mode_rate","saturation_rate"]'),
-        ('good_value_rate',      '好值率',       'QUALITY_HF', '["pv_quality"]',      'FIXED_1S',        'KEEP_ALL',               NULL,                                          NULL,  NULL),
-        ('oscillation_rate',     '振荡率',       'BASE',       '["pv","sp"]',         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',                       'LAST', NULL),
-        ('saturation_rate',      '饱和率',       'OP_HF',      '["op"]',              'FIXED_1S',        'KEEP_ALL_WITH_VALIDITY', 'op_valid',                                   'LAST', NULL),
-        ('stiction_coeff',       '粘滞系数',     'PVOP_HF',    '["pv","op"]',         'FIXED_1S',        'KEEP_ALL_WITH_VALIDITY', 'pv_valid && op_valid',                       'LAST', NULL),
-        ('output_travel_index',  '输出值行程指数','OP_HF',     '["op"]',              'FIXED_1S',        'KEEP_ALL_WITH_VALIDITY', 'op_valid && consecutive_valid',              'LAST', NULL),
-        ('auto_mode_rate',       '自控率',       'MODE_HF',    '["mode"]',            'FIXED_1S',        'KEEP_ALL_WITH_VALIDITY', 'mode_valid',                                  'LAST', NULL),
-        ('steady_state_time',    '稳态时间',     'BASE',       '["pv","sp"]',         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',                       'LAST', NULL),
-        ('ideal_settling_time',  '理想稳态时间', 'CONFIG',     '[]',                  'NONE',            'NONE',                   NULL,                                          NULL,  NULL)
+        INSERT INTO clpm_metric_data_requirement
+            (metric_code, metric_name, tag_group, tags, sampling_strategy,
+             quality_policy, mask_expression, aggregation_policy, depends_on) VALUES
+        ('accuracy_rate', '准确率', 'BASE', '["pv","sp"]',
+         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+        ('fast_response_rate', '快速率', 'BASE', '["pv","sp"]',
+         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',
+         'LAST', '["settling_time","ideal_settling_time"]'),
+        ('steady_rate', '稳定率', 'BASE', '["pv","sp"]',
+         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',
+         'LAST', '["oscillation_rate"]'),
+        ('effective_auto_rate', '有效自控率', 'MODE_HF', '["mode","op"]',
+         'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'mode_valid && op_valid',
+         'LAST', '["auto_mode_rate","saturation_rate"]'),
+        ('good_value_rate', '好值率', 'QUALITY_HF', '["pv_quality"]',
+         'FIXED_1S', 'KEEP_ALL', NULL, NULL, NULL),
+        ('oscillation_rate', '振荡率', 'BASE', '["pv","sp"]',
+         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+        ('saturation_rate', '饱和率', 'OP_HF', '["op"]',
+         'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'op_valid', 'LAST', NULL),
+        ('stiction_coeff', '粘滞系数', 'PVOP_HF', '["pv","op"]',
+         'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && op_valid', 'LAST', NULL),
+        ('output_travel_index', '输出值行程指数', 'OP_HF', '["op"]',
+         'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'op_valid && consecutive_valid', 'LAST', NULL),
+        ('auto_mode_rate', '自控率', 'MODE_HF', '["mode"]',
+         'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'mode_valid', 'LAST', NULL),
+        ('steady_state_time', '稳态时间', 'BASE', '["pv","sp"]',
+         'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+        ('ideal_settling_time', '理想稳态时间', 'CONFIG', '[]',
+         'NONE', 'NONE', NULL, NULL, NULL)
         ON CONFLICT (metric_code) DO NOTHING;
     """)
 
@@ -154,10 +199,17 @@ def upgrade() -> None:
         sa.Column("resolution_note", sa.TEXT),
         sa.Column("status", sa.VARCHAR(20), nullable=False, server_default=sa.text("'ACTIVE'")),
         sa.ForeignKeyConstraint(["loop_id"], ["loop_ledger.id"], ondelete="CASCADE"),
-        sa.CheckConstraint("severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')", name="ck_diag_tag_severity"),
-        sa.CheckConstraint("status IN ('ACTIVE', 'RESOLVED', 'SUPPRESSED')", name="ck_diag_tag_status"),
+        sa.CheckConstraint(
+            "severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')", name="ck_diag_tag_severity"
+        ),
+        sa.CheckConstraint(
+            "status IN ('ACTIVE', 'RESOLVED', 'SUPPRESSED')", name="ck_diag_tag_status"
+        ),
     )
-    op.execute("COMMENT ON TABLE diagnosis_tag IS '诊断标签表：用于故障定位和告警（振荡/阀门粘滞/输出饱和/PV质量异常等）'")
+    op.execute(
+        "COMMENT ON TABLE diagnosis_tag IS "
+        "'诊断标签表：用于故障定位和告警（振荡/阀门粘滞/输出饱和/PV质量异常等）'"
+    )
     op.create_index("ix_diagnosis_tag_loop_status", "diagnosis_tag", ["loop_id", "status"])
     op.create_index("ix_diagnosis_tag_severity", "diagnosis_tag", ["severity", "triggered_at"])
 
@@ -186,8 +238,13 @@ def upgrade() -> None:
         sa.UniqueConstraint("node_id", "snapshot_time", name="uq_unit_kpi_summary_node_time"),
         sa.ForeignKeyConstraint(["node_id"], ["plant_node.id"], ondelete="CASCADE"),
     )
-    op.execute("COMMENT ON TABLE unit_kpi_summary IS '装置级KPI汇总表：仅基于标准任务（kpi_snapshot_hourly）聚合，自定义任务不参与'")
-    op.create_index("ix_unit_kpi_summary_node_time", "unit_kpi_summary", ["node_id", "snapshot_time"])
+    op.execute(
+        "COMMENT ON TABLE unit_kpi_summary IS "
+        "'装置级KPI汇总表：仅基于标准任务（kpi_snapshot_hourly）聚合，自定义任务不参与'"
+    )
+    op.create_index(
+        "ix_unit_kpi_summary_node_time", "unit_kpi_summary", ["node_id", "snapshot_time"]
+    )
 
     # ========================================================
     # 6. kpi_snapshot_hourly 约束：confidence_level 取值校验
@@ -195,7 +252,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_kpi_snapshot_confidence",
         "kpi_snapshot_hourly",
-        "confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E')"
+        "confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E')",
     )
 
 

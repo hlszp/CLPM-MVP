@@ -15,9 +15,7 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
-from app.contracts.data_types import ConfidenceLevel, MetricResult, DataLineage
+from app.contracts.data_types import DataLineage, MetricResult
 from app.services.metric_calculator.stability import StabilityRateCalculator
 
 from .conftest import make_bundle

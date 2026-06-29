@@ -53,9 +53,7 @@ class MetricCalculator(ABC):
         设计依据：数据流程图 §7.5
         """
 
-    def with_dependencies(
-        self, deps: dict[str, MetricResult]
-    ) -> MetricCalculator:
+    def with_dependencies(self, deps: dict[str, MetricResult]) -> MetricCalculator:
         """注入前置指标结果（链式调用）.
 
         Args:

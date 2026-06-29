@@ -61,9 +61,7 @@ class MetricCalculatorBase(MetricCalculator):
         return list(bundle.data_block.signals.get(tag_name, []))
 
     @staticmethod
-    def _get_masked_values(
-        bundle: MetricDataBundle, tag_name: str
-    ) -> list[Any]:
+    def _get_masked_values(bundle: MetricDataBundle, tag_name: str) -> list[Any]:
         """获取掩码后（masked_indices）的信号值.
 
         Args:
@@ -77,9 +75,7 @@ class MetricCalculatorBase(MetricCalculator):
         return [signals[i] for i in bundle.masked_indices if i < len(signals)]
 
     @staticmethod
-    def _get_masked_pair(
-        bundle: MetricDataBundle, tag_a: str, tag_b: str
-    ) -> list[tuple[Any, Any]]:
+    def _get_masked_pair(bundle: MetricDataBundle, tag_a: str, tag_b: str) -> list[tuple[Any, Any]]:
         """获取掩码后的两个信号配对值（如 PV-SP）.
 
         Args:
@@ -130,13 +126,9 @@ class MetricCalculatorBase(MetricCalculator):
             return 0.0
         return len(bundle.masked_indices) / n
 
-    def _build_lineage(
-        self, bundle: MetricDataBundle, valid_rate: float
-    ) -> DataLineage:
+    def _build_lineage(self, bundle: MetricDataBundle, valid_rate: float) -> DataLineage:
         """构建数据血缘（委托 ConfidenceEvaluator）."""
-        return ConfidenceEvaluator.build_lineage(
-            bundle, valid_rate, self.algorithm_version
-        )
+        return ConfidenceEvaluator.build_lineage(bundle, valid_rate, self.algorithm_version)
 
     def _make_result(
         self,
@@ -162,7 +154,10 @@ class MetricCalculatorBase(MetricCalculator):
 
         logger.debug(
             "[%s] value=%.2f, valid_rate=%.4f, confidence=%s",
-            self.metric_code, value, vr, confidence.value,
+            self.metric_code,
+            value,
+            vr,
+            confidence.value,
         )
 
         return MetricResult(
@@ -197,7 +192,9 @@ class MetricCalculatorBase(MetricCalculator):
 
         logger.warning(
             "[%s] INCONCLUSIVE: reason=%s, valid_rate=%.4f",
-            self.metric_code, reason, vr,
+            self.metric_code,
+            reason,
+            vr,
         )
 
         return MetricResult(

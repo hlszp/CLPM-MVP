@@ -120,7 +120,7 @@ def _eval_expr(expr: str, env: dict[str, bool]) -> bool:
     parser = _BoolParser(tokens, env)
     result = parser.parse_or()
     if parser.pos != len(tokens):
-        raise ValueError(f"Unexpected token at pos {parser.pos}: {tokens[parser.pos:]}")
+        raise ValueError(f"Unexpected token at pos {parser.pos}: {tokens[parser.pos :]}")
     return result
 
 

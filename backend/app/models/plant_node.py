@@ -25,10 +25,9 @@ class PlantNode(Base):
     parent_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False), ForeignKey("plant_node.id", ondelete="RESTRICT"), nullable=True
     )
-    is_kpi_enabled: Mapped[bool | None] = mapped_column(
-        Boolean, default=False, nullable=True
-    )
-    # SVC-10 位号触发监控：配置后查询 TDengine 最新值，等于 monitor_trigger_value 时该节点下回路应监控
+    is_kpi_enabled: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    # SVC-10 位号触发监控：配置后查询 TDengine 最新值，
+    # 等于 monitor_trigger_value 时该节点下回路应监控
     monitor_tag_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),
         ForeignKey("tag_registry.id", ondelete="RESTRICT"),

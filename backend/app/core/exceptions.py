@@ -80,9 +80,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(RequestValidationError)
-    async def _handle_validation_error(
-        _: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def _handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
         # DEBUG 模式下保留完整错误信息（方便开发调试）
         if settings.DEBUG:
             return JSONResponse(
@@ -95,9 +93,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         sanitized = _sanitize_validation_errors(exc.errors())
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=jsonable_encoder(
-                _error_body("ERR_VALIDATION", "输入校验失败", sanitized)
-            ),
+            content=jsonable_encoder(_error_body("ERR_VALIDATION", "输入校验失败", sanitized)),
         )
 
     @app.exception_handler(StarletteHTTPException)

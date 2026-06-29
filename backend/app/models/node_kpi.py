@@ -113,7 +113,8 @@ class KpiNodeSnapshotDaily(Base):
             name="ck_kpi_node_snapshot_daily_status",
         ),
         UniqueConstraint(
-            "plant_node_id", "stat_date",
+            "plant_node_id",
+            "stat_date",
             name="uk_kpi_node_snapshot_daily_node_date",
         ),
         Index("idx_kpi_node_snapshot_daily_node_id", "plant_node_id"),
@@ -163,7 +164,8 @@ class KpiNodeSnapshotMonthly(Base):
             name="ck_kpi_node_snapshot_monthly_status",
         ),
         UniqueConstraint(
-            "plant_node_id", "stat_month",
+            "plant_node_id",
+            "stat_month",
             name="uk_kpi_node_snapshot_monthly_node_month",
         ),
         Index("idx_kpi_node_snapshot_monthly_node_id", "plant_node_id"),

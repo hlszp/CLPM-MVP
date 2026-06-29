@@ -64,9 +64,7 @@ def _build_user_info(user: SysUser) -> dict:
 
 
 @router.post("/login", response_model=ApiResponse[LoginData])
-async def login(
-    body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)
-) -> dict:
+async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """User login — returns access + refresh tokens and user info."""
     client_ip = get_client_ip(request)
     user, tokens = await authenticate(

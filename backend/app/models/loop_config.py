@@ -68,9 +68,7 @@ class LoopModeMapping(Base):
         default=False,
         comment="是否算有效自动（不饱和的自动模式为 True）",
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
 
     __table_args__ = (
         CheckConstraint(
@@ -108,15 +106,9 @@ class LoopTypeWeight(Base):
     type_name: Mapped[str] = mapped_column(
         String(50), nullable=False, comment="类型名称（稳定型/慢速型/快速型/逻辑型）"
     )
-    weight_a: Mapped[Decimal] = mapped_column(
-        Numeric(3, 2), nullable=False, comment="准确率权重 a"
-    )
-    weight_f: Mapped[Decimal] = mapped_column(
-        Numeric(3, 2), nullable=False, comment="快速率权重 f"
-    )
-    weight_s: Mapped[Decimal] = mapped_column(
-        Numeric(3, 2), nullable=False, comment="平稳率权重 s"
-    )
+    weight_a: Mapped[Decimal] = mapped_column(Numeric(3, 2), nullable=False, comment="准确率权重 a")
+    weight_f: Mapped[Decimal] = mapped_column(Numeric(3, 2), nullable=False, comment="快速率权重 f")
+    weight_s: Mapped[Decimal] = mapped_column(Numeric(3, 2), nullable=False, comment="平稳率权重 s")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

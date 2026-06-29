@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.metric_calculator.base import MetricCalculatorBase
@@ -82,7 +81,9 @@ class GoodValueRateCalculator(MetricCalculatorBase):
             {
                 "good_value_rate": round(rate, 2),
                 "sample_count": n,
-                "source": "quality_summary" if block.quality_summary.good_value_rate is not None else "pv_valid",
+                "source": "quality_summary"
+                if block.quality_summary.good_value_rate is not None
+                else "pv_valid",
             },
         )
 

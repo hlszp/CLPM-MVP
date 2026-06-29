@@ -106,9 +106,13 @@ async def get_node_trend_endpoint(
 
 @router.get("/ranking", response_model=ApiResponse[list[NodeRankingItem]])
 async def get_node_ranking_endpoint(
-    timeWindow: str = Query("today", description="时间窗：today/yesterday/last_7_days/last_30_days"),
+    timeWindow: str = Query(
+        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
+    ),
     nodeType: str | None = Query(None, description="节点类型筛选：FACTORY/UNIT/EQUIPMENT"),
-    sortBy: str = Query("score", description="排序字段：score/steady_rate/auto_loop_ratio/effective_auto_rate"),
+    sortBy: str = Query(
+        "score", description="排序字段：score/steady_rate/auto_loop_ratio/effective_auto_rate"
+    ),
     sortOrder: str = Query("desc", description="排序方向：asc/desc"),
     limit: int = Query(50, ge=1, le=200, description="返回条数"),
     db: AsyncSession = Depends(get_db),
@@ -156,7 +160,9 @@ async def calculate_node_endpoint(
 
     if ts_start_str:
         try:
-            ts_start_dt = datetime.fromisoformat(ts_start_str.replace("Z", "+00:00")).replace(tzinfo=None)
+            ts_start_dt = datetime.fromisoformat(ts_start_str.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
         except ValueError:
             ts_start_dt = datetime.fromisoformat(ts_start_str)
     else:
@@ -164,7 +170,9 @@ async def calculate_node_endpoint(
 
     if ts_end_str:
         try:
-            ts_end_dt = datetime.fromisoformat(ts_end_str.replace("Z", "+00:00")).replace(tzinfo=None)
+            ts_end_dt = datetime.fromisoformat(ts_end_str.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
         except ValueError:
             ts_end_dt = datetime.fromisoformat(ts_end_str)
     else:
@@ -200,7 +208,9 @@ async def calculate_node_endpoint(
 
 @router.get("/overview", response_model=ApiResponse[NodeOverviewData])
 async def get_nodes_overview_endpoint(
-    timeWindow: str = Query("today", description="时间窗：today/yesterday/last_7_days/last_30_days"),
+    timeWindow: str = Query(
+        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
+    ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:

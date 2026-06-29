@@ -13,9 +13,6 @@
 
 from __future__ import annotations
 
-import pytest
-
-from app.contracts.data_types import ConfidenceLevel
 from app.services.metric_calculator.output_trip import OutputTripIndexCalculator
 
 from .conftest import make_bundle

@@ -21,7 +21,9 @@
 
     # 指定场景分布
     cd backend && uv run python scripts/realtime_simulator.py \\
-        --scenario-distribution normal:15,oscillation:3,saturation:2,slow_response:2,manual:2,overaggressive:1,overconservative:1,valve_stiction:1
+        --scenario-distribution \\
+        normal:15,oscillation:3,saturation:2,slow_response:2,\\
+        manual:2,overaggressive:1,overconservative:1,valve_stiction:1
 
     # 指定运行时长（秒）
     cd backend && uv run python scripts/realtime_simulator.py --duration 3600
@@ -49,7 +51,7 @@ import signal
 import sys
 import time
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -109,6 +111,7 @@ random.seed(42)
 # 工具函数（与 simulate_unit_loops.py 保持一致）
 # ============================================================================
 
+
 def subtable_name(tag_name: str) -> str:
     """回路位号 → TDengine 子表名。
 
@@ -159,31 +162,31 @@ def infer_control_type(tag_name: str) -> str:
 
 TYPE_PARAMS: dict[str, dict[str, Any]] = {
     "FLOW": {
-        "tau": 8.0,            # 一阶滞后时间常数（秒）
-        "theta_ratio": 0.1,    # 纯滞后 = tau * ratio
-        "noise_pct": 0.005,    # 噪声占量程比例（0.5%）
-        "base_sp_range": (40.0, 200.0),   # t/h
+        "tau": 8.0,  # 一阶滞后时间常数（秒）
+        "theta_ratio": 0.1,  # 纯滞后 = tau * ratio
+        "noise_pct": 0.005,  # 噪声占量程比例（0.5%）
+        "base_sp_range": (40.0, 200.0),  # t/h
         "pv_range_pct": 1.0,
     },
     "LEVEL": {
         "tau": 120.0,
         "theta_ratio": 0.1,
-        "noise_pct": 0.003,    # 0.3%
-        "base_sp_range": (35.0, 75.0),    # %
+        "noise_pct": 0.003,  # 0.3%
+        "base_sp_range": (35.0, 75.0),  # %
         "pv_range_pct": 100.0,
     },
     "PRESSURE": {
         "tau": 25.0,
         "theta_ratio": 0.1,
-        "noise_pct": 0.004,    # 0.4%
-        "base_sp_range": (0.3, 3.5),      # MPa
+        "noise_pct": 0.004,  # 0.4%
+        "base_sp_range": (0.3, 3.5),  # MPa
         "pv_range_pct": 1.0,
     },
     "TEMPERATURE": {
         "tau": 60.0,
         "theta_ratio": 0.1,
-        "noise_pct": 0.003,    # 0.3%
-        "base_sp_range": (80.0, 380.0),   # °C
+        "noise_pct": 0.003,  # 0.3%
+        "base_sp_range": (80.0, 380.0),  # °C
         "pv_range_pct": 1.0,
     },
     "STABLE": {
@@ -207,19 +210,20 @@ TYPE_PID: dict[str, tuple[float, float, float]] = {
 # 场景 → PID 参数缩放因子（manual / saturation / valve_stiction 不依赖 PID）
 SCENARIO_PID_SCALE: dict[str, tuple[float, float, float]] = {
     "normal": (1.0, 1.0, 1.0),
-    "oscillation": (3.0, 1.0, 1.0),         # Kp×3 → 振荡
+    "oscillation": (3.0, 1.0, 1.0),  # Kp×3 → 振荡
     "saturation": (1.0, 1.0, 1.0),
-    "slow_response": (0.3, 0.3, 1.0),       # Kp×0.3, Ki×0.3 → 慢响应
+    "slow_response": (0.3, 0.3, 1.0),  # Kp×0.3, Ki×0.3 → 慢响应
     "valve_stiction": (1.0, 1.0, 1.0),
     "manual": (1.0, 1.0, 1.0),
-    "overaggressive": (2.0, 1.0, 3.0),      # Kp×2, Kd×3 → 超调
-    "overconservative": (0.5, 0.2, 1.0),    # Kp×0.5, Ki×0.2 → 迟缓
+    "overaggressive": (2.0, 1.0, 3.0),  # Kp×2, Kd×3 → 超调
+    "overconservative": (0.5, 0.2, 1.0),  # Kp×0.5, Ki×0.2 → 迟缓
 }
 
 
 # ============================================================================
 # FOPDT 物理模型（一阶滞后 + 纯滞后）
 # ============================================================================
+
 
 class FOPDTModel:
     """FOPDT（First-Order Plus Dead Time）物理模型。
@@ -261,7 +265,9 @@ class FOPDTModel:
         # 入队当前输入
         self._delay_queue.append(sp_input)
         # 取出 theta 秒前的输入
-        sp_delayed = self._delay_queue[0] if len(self._delay_queue) >= self._delay_queue.maxlen else sp_input
+        sp_delayed = (
+            self._delay_queue[0] if len(self._delay_queue) >= self._delay_queue.maxlen else sp_input
+        )
 
         dt = SAMPLE_INTERVAL
         alpha = 1.0 - math.exp(-dt / self.tau)
@@ -275,6 +281,7 @@ class FOPDTModel:
 # ============================================================================
 # PID 控制器（位置式 + 抗积分饱和 / 积分分离）
 # ============================================================================
+
 
 class PIDController:
     """标准位置式 PID 控制器。
@@ -356,6 +363,7 @@ class PIDController:
 # ============================================================================
 # 异常注入器（实时版，按事件调度）
 # ============================================================================
+
 
 class RealtimeAnomalyInjector:
     """实时异常注入器。
@@ -496,13 +504,16 @@ class RealtimeAnomalyInjector:
 # 回路仿真器
 # ============================================================================
 
+
 class LoopSimulator:
     """单回路实时仿真器。
 
     封装 FOPDT 模型 + PID 控制器 + 场景逻辑 + 异常注入。
     """
 
-    def __init__(self, cfg: dict[str, Any], anomaly_enabled: bool = True, sp_interval: int = 600) -> None:
+    def __init__(
+        self, cfg: dict[str, Any], anomaly_enabled: bool = True, sp_interval: int = 600
+    ) -> None:
         self.cfg = cfg
         self.tag_name: str = cfg["tag_name"]
         self.loop_id: str = cfg["id"]
@@ -612,8 +623,9 @@ class LoopSimulator:
             change_pct = random.uniform(0.05, 0.15)  # 量程的 5-15%
             direction = random.choice([-1, 1])
             new_sp = self._sp + direction * self.pv_range * change_pct
-            new_sp = clamp(new_sp, self.range_min + self.pv_range * 0.1,
-                           self.range_max - self.pv_range * 0.1)
+            new_sp = clamp(
+                new_sp, self.range_min + self.pv_range * 0.1, self.range_max - self.pv_range * 0.1
+            )
             self._sp = round(new_sp, 4)
             self._next_sp_change = now + random.uniform(
                 self._sp_interval_min, self._sp_interval_max
@@ -635,14 +647,10 @@ class LoopSimulator:
         if self.scenario == "manual":
             # 手动模式：OP 由操作员阶跃调节，PV 跟随 OP
             if now >= self._manual_next_change:
-                self._manual_op_target = clamp(
-                    self._op + random.uniform(-15, 15), 10, 90
-                )
+                self._manual_op_target = clamp(self._op + random.uniform(-15, 15), 10, 90)
                 self._manual_next_change = now + random.uniform(3600, 10800)
             # OP 缓慢趋近目标
-            self._op = clamp(
-                self._op + (self._manual_op_target - self._op) * 0.1, 0, 100
-            )
+            self._op = clamp(self._op + (self._manual_op_target - self._op) * 0.1, 0, 100)
             target_input = self._compute_target_pv_from_op(self._op)
             self._pv = self._fopdt.step(target_input, self._pv)
             quality = 1
@@ -702,13 +710,15 @@ class LoopSimulator:
 # PostgreSQL 加载回路配置
 # ============================================================================
 
+
 async def load_loops_from_db(
     scenario_distribution: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """从 PostgreSQL 加载 3 个单元的全部控制回路，并分配场景。"""
     loops_raw: list[dict[str, Any]] = []
     async with AsyncSessionLocal() as s:
-        r = await s.execute(text("""
+        r = await s.execute(
+            text("""
             SELECT l.id, l.tag_name, l.description, l.unit_id,
                    p.name AS unit_name
             FROM loop_ledger l
@@ -716,19 +726,24 @@ async def load_loops_from_db(
             WHERE l.unit_id = ANY(:unit_ids)
               AND l.is_active = TRUE
             ORDER BY l.unit_id, l.tag_name
-        """), {"unit_ids": TARGET_UNIT_IDS})
+        """),
+            {"unit_ids": TARGET_UNIT_IDS},
+        )
         rows = r.fetchall()
 
         # 查询各回路的 tag_name 映射（PV/SP/OP/MODE 各角色的 tag_name）
         loop_ids = [str(row[0]) for row in rows]
         tag_map: dict[str, dict[str, str]] = {}
         if loop_ids:
-            r2 = await s.execute(text("""
+            r2 = await s.execute(
+                text("""
                 SELECT m.loop_id, m.tag_role, t.tag_name
                 FROM loop_tag_mapping m
                 JOIN tag_registry t ON t.id = m.tag_id
                 WHERE m.loop_id = ANY(:loop_ids)
-            """), {"loop_ids": loop_ids})
+            """),
+                {"loop_ids": loop_ids},
+            )
             for lid, role, tname in r2.fetchall():
                 tag_map.setdefault(str(lid), {})[role] = tname
 
@@ -749,26 +764,30 @@ async def load_loops_from_db(
             range_max = pv_range * 1.2 if ctype != "LEVEL" else 100.0
             pid_p, pid_i, pid_d = TYPE_PID[ctype]
 
-            loops_raw.append({
-                "id": str(loop_id),
-                "tag_name": tag_name,
-                "tag_names": tag_map.get(str(loop_id), {}),  # 各角色 tag_name（用于 Redis 写入）
-                "description": desc or f"{tag_name} 控制回路",
-                "unit_id": str(unit_id),
-                "unit_name": unit_name,
-                "control_type": ctype,
-                "tau": params["tau"],
-                "noise_pct": params["noise_pct"],
-                "base_sp": base_sp,
-                "base_pv": base_pv,
-                "base_op": base_op,
-                "pv_range": pv_range,
-                "range_min": range_min,
-                "range_max": range_max,
-                "pid_p": pid_p,
-                "pid_i": pid_i,
-                "pid_d": pid_d,
-            })
+            loops_raw.append(
+                {
+                    "id": str(loop_id),
+                    "tag_name": tag_name,
+                    "tag_names": tag_map.get(
+                        str(loop_id), {}
+                    ),  # 各角色 tag_name（用于 Redis 写入）
+                    "description": desc or f"{tag_name} 控制回路",
+                    "unit_id": str(unit_id),
+                    "unit_name": unit_name,
+                    "control_type": ctype,
+                    "tau": params["tau"],
+                    "noise_pct": params["noise_pct"],
+                    "base_sp": base_sp,
+                    "base_pv": base_pv,
+                    "base_op": base_op,
+                    "pv_range": pv_range,
+                    "range_min": range_min,
+                    "range_max": range_max,
+                    "pid_p": pid_p,
+                    "pid_i": pid_i,
+                    "pid_d": pid_d,
+                }
+            )
 
     # 场景分配
     n_loops = len(loops_raw)
@@ -804,6 +823,7 @@ async def load_loops_from_db(
 # TDengine 操作
 # ============================================================================
 
+
 async def td_execute(
     client: httpx.AsyncClient,
     sql: str,
@@ -826,12 +846,12 @@ async def td_execute(
             if attempt == retries - 1:
                 logger.error("TDengine SQL 错误: %s", desc[:200])
                 return None
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
         except Exception as exc:
             if attempt == retries - 1:
                 logger.error("TDengine 请求异常: %s", exc)
                 return None
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
     return None
 
 
@@ -842,7 +862,9 @@ async def setup_tdengine(client: httpx.AsyncClient, loops: list[dict[str, Any]])
         "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'",
         use_db=False,
     )
-    await td_execute(client, """
+    await td_execute(
+        client,
+        """
         CREATE STABLE IF NOT EXISTS st_loop_data (
             ts          TIMESTAMP,
             pv          FLOAT,
@@ -857,7 +879,8 @@ async def setup_tdengine(client: httpx.AsyncClient, loops: list[dict[str, Any]])
             loop_id     BINARY(36),
             unit_id     BINARY(36)
         )
-    """)
+    """,
+    )
     for cfg in loops:
         sub = subtable_name(cfg["tag_name"])
         await td_execute(
@@ -882,7 +905,7 @@ async def write_batch_to_tdengine(
     """
     ts_str = fmt_ts_utc(ts)
     parts: list[str] = ["INSERT INTO"]
-    for sim, data in zip(loops, batch):
+    for sim, data in zip(loops, batch, strict=False):
         sub = subtable_name(sim.tag_name)
         pv, sp, op, mode, pid_p, pid_i, pid_d, quality = data
         parts.append(
@@ -909,7 +932,7 @@ async def write_to_redis(
     """
     ts_iso = ts.isoformat()
     updates: list[str] = []
-    for sim, data in zip(loops, batch):
+    for sim, data in zip(loops, batch, strict=False):
         pv, sp, op, mode, pid_p, pid_i, pid_d, quality = data
         tag_names = sim.cfg.get("tag_names", {})
         role_values = {"PV": (pv, quality), "SP": (sp, 1), "OP": (op, 1), "MODE": (mode, 1)}
@@ -917,12 +940,14 @@ async def write_to_redis(
             tag_name = tag_names.get(role)
             if not tag_name or value is None:
                 continue
-            msg = json.dumps({
-                "tagCode": tag_name,
-                "value": f"{value:.3f}",
-                "quality": q,
-                "collectTime": ts_iso,
-            })
+            msg = json.dumps(
+                {
+                    "tagCode": tag_name,
+                    "value": f"{value:.3f}",
+                    "quality": q,
+                    "collectTime": ts_iso,
+                }
+            )
             # key 前缀 realtime: 与后端 RealtimeSubscriber._REDIS_KEY_PREFIX 一致
             await redis_client.set(f"realtime:{tag_name}", msg, ex=60)
             updates.append(msg)
@@ -1007,7 +1032,7 @@ async def run(
                 batch.append(data)
 
             # 2. 批量写入 TDengine
-            ts = datetime.now(timezone.utc)
+            ts = datetime.now(UTC)
             ok = await write_batch_to_tdengine(client, loops, batch, ts)
             if ok:
                 total_written += len(batch)
@@ -1026,14 +1051,21 @@ async def run(
                 rate = total_written / elapsed if elapsed > 0 else 0
                 logger.info(
                     "tick=%d  已写入=%d  失败=%d  速率=%.1f 行/秒  耗时=%.3fs",
-                    tick_count, total_written, total_failed, rate, time.time() - loop_start,
+                    tick_count,
+                    total_written,
+                    total_failed,
+                    rate,
+                    time.time() - loop_start,
                 )
             elif tick_count % 60 == 0:
                 elapsed = time.monotonic() - start_time
                 rate = total_written / elapsed if elapsed > 0 else 0
                 logger.info(
                     "tick=%d  已写入=%d  失败=%d  速率=%.1f 行/秒",
-                    tick_count, total_written, total_failed, rate,
+                    tick_count,
+                    total_written,
+                    total_failed,
+                    rate,
                 )
 
             # 4. 检查运行时长
@@ -1055,8 +1087,9 @@ async def run(
         logger.info("  总写入行数:    %d", total_written)
         logger.info("  失败行数:      %d", total_failed)
         logger.info("  总耗时:        %.1f 秒", elapsed_total)
-        logger.info("  平均写入速率:  %.1f 行/秒",
-                    total_written / elapsed_total if elapsed_total > 0 else 0)
+        logger.info(
+            "  平均写入速率:  %.1f 行/秒", total_written / elapsed_total if elapsed_total > 0 else 0
+        )
         logger.info("=" * 60)
 
         # 关闭 Redis
@@ -1068,6 +1101,7 @@ async def run(
 # ============================================================================
 # CLI
 # ============================================================================
+
 
 def parse_scenario_distribution(s: str) -> dict[str, int]:
     """解析场景分布字符串 'normal:15,oscillation:3' → dict。"""
@@ -1085,7 +1119,7 @@ def parse_scenario_distribution(s: str) -> dict[str, int]:
         try:
             count = int(count_str.strip())
         except ValueError:
-            raise ValueError(f"场景数量非整数: {count_str}")
+            raise ValueError(f"场景数量非整数: {count_str}") from None
         if count < 0:
             raise ValueError(f"场景数量不能为负: {name}={count}")
         result[name] = count

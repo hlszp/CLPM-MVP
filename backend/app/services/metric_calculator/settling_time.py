@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import numpy as np
 
@@ -68,7 +67,8 @@ class SettlingTimeCalculator(MetricCalculatorBase):
         if n < MIN_POINTS:
             logger.debug("[稳态时间] 数据不足（%d < %d），返回 0", n, MIN_POINTS)
             return self._make_result(
-                bundle, 0.0,
+                bundle,
+                0.0,
                 {"reason": "insufficient_data", "sample_count": n, "min_required": MIN_POINTS},
             )
 
@@ -79,7 +79,8 @@ class SettlingTimeCalculator(MetricCalculatorBase):
         if np.std(errors) < 1e-9:
             logger.debug("[稳态时间] 偏差恒定，返回 0（已处于稳态）")
             return self._make_result(
-                bundle, 0.0,
+                bundle,
+                0.0,
                 {"reason": "constant_signal", "std": 0.0},
             )
 
@@ -95,7 +96,8 @@ class SettlingTimeCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[稳态时间] sample_interval=%.2f, settling_time=%.1f 秒",
-            sample_interval, settling_time,
+            sample_interval,
+            settling_time,
         )
 
         return self._make_result(

@@ -19,8 +19,7 @@ from app.contracts.data_types import TagGroup
 from app.services.cache.invalidation import CacheInvalidator
 from app.services.cache.l1_datablock import L1DataBlockCache
 
-from .conftest import build_data_block, FakeCacheRedis
-
+from .conftest import FakeCacheRedis, build_data_block
 
 # ---------------------------------------------------------------------------
 # 辅助：填充测试缓存
@@ -187,9 +186,7 @@ class TestScanBehavior:
     """验证使用 SCAN 而非 KEYS."""
 
     @pytest.mark.asyncio
-    async def test_scan_handles_large_keyspace(
-        self, fake_redis: FakeCacheRedis
-    ) -> None:
+    async def test_scan_handles_large_keyspace(self, fake_redis: FakeCacheRedis) -> None:
         """SCAN 应能处理大量 Key（分批扫描）."""
         cache = L1DataBlockCache(fake_redis)
         # 写入 50 个 DataBlock（不同 loop_id）

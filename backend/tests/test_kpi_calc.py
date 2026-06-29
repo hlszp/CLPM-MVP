@@ -34,15 +34,15 @@ from app.contracts.data_types import (
     TagGroup,
 )
 from app.tasks.kpi_calc import (
-    ALGORITHM_VERSION,
     _ALL_METRIC_CODES_DB,
+    _CALCULATOR_TO_DB_METRIC_CODE,
+    _DB_TO_CALCULATOR_METRIC_CODE,
+    ALGORITHM_VERSION,
     _build_config_bundle,
     _build_ts_index,
     _build_weights_map,
     _calculate_loop_kpi,
-    _CALCULATOR_TO_DB_METRIC_CODE,
     _compute_kpis_three_layer,
-    _DB_TO_CALCULATOR_METRIC_CODE,
     _do_calculate,
     _do_calculate_single_loop,
     _extract_kpi_values,
@@ -201,9 +201,7 @@ def _make_bundle(
         timestamps=[ts],
         signals={"pv": [50.0], "sp": [50.0]},
         validity={"pv_valid": [True]},
-        quality_summary=QualitySummary(
-            total_count=1, valid_count=1, valid_rate=1.0
-        ),
+        quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
         point_count=1,
     )
     return MetricDataBundle(
@@ -211,9 +209,7 @@ def _make_bundle(
         data_block=data_block,
         mask_expression="pv_valid",
         masked_indices=[0],
-        lineage=_make_data_lineage(
-            sampling_freq=sampling_freq, tag_group=tag_group
-        ),
+        lineage=_make_data_lineage(sampling_freq=sampling_freq, tag_group=tag_group),
     )
 
 
@@ -236,21 +232,15 @@ def _make_full_metric_results(
         "accuracy_rate": _make_metric_result("accuracy_rate", accuracy),
         "fast_rate": _make_metric_result("fast_rate", fast),
         "stability_rate": _make_metric_result("stability_rate", stability),
-        "effective_auto_rate": _make_metric_result(
-            "effective_auto_rate", effective_auto
-        ),
+        "effective_auto_rate": _make_metric_result("effective_auto_rate", effective_auto),
         "good_value_rate": _make_metric_result("good_value_rate", good_value),
         "auto_mode_rate": _make_metric_result("auto_mode_rate", auto_mode),
         "oscillation_rate": _make_metric_result("oscillation_rate", oscillation),
         "saturation_rate": _make_metric_result("saturation_rate", saturation),
         "stiction_index": _make_metric_result("stiction_index", stiction),
-        "output_trip_index": _make_metric_result(
-            "output_trip_index", output_trip
-        ),
+        "output_trip_index": _make_metric_result("output_trip_index", output_trip),
         "settling_time": _make_metric_result("settling_time", settling),
-        "ideal_settling_time": _make_metric_result(
-            "ideal_settling_time", ideal_settling
-        ),
+        "ideal_settling_time": _make_metric_result("ideal_settling_time", ideal_settling),
     }
 
 
@@ -566,12 +556,27 @@ class TestSaveSnapshot:
         existing.id = "snap-1"
         # 所有字段初始为 None
         for attr in (
-            "ts_end", "status", "score", "good_value_rate", "auto_mode_rate",
-            "effective_auto_rate", "steady_rate", "accuracy_rate",
-            "fast_response_rate", "oscillation_rate", "saturation_rate",
-            "stiction_coeff", "steady_state_time", "output_travel_index",
-            "ideal_settling_time", "algorithm_version", "sampling_freq",
-            "quality_policy", "valid_rate", "confidence_level", "data_lineage",
+            "ts_end",
+            "status",
+            "score",
+            "good_value_rate",
+            "auto_mode_rate",
+            "effective_auto_rate",
+            "steady_rate",
+            "accuracy_rate",
+            "fast_response_rate",
+            "oscillation_rate",
+            "saturation_rate",
+            "stiction_coeff",
+            "steady_state_time",
+            "output_travel_index",
+            "ideal_settling_time",
+            "algorithm_version",
+            "sampling_freq",
+            "quality_policy",
+            "valid_rate",
+            "confidence_level",
+            "data_lineage",
         ):
             setattr(existing, attr, None)
 
@@ -678,9 +683,7 @@ class TestCalculateLoopKpi:
         db.add = MagicMock()
 
         mock_planner = AsyncMock()
-        mock_planner.request_bundles = AsyncMock(
-            return_value=[_make_bundle("accuracy_rate")]
-        )
+        mock_planner.request_bundles = AsyncMock(return_value=[_make_bundle("accuracy_rate")])
 
         # mock 三层计算：返回有效指标但综合评分为 None（E 级）
         metric_results = _make_full_metric_results(effective_auto=None)
@@ -716,9 +719,7 @@ class TestCalculateLoopKpi:
         db.add = MagicMock()
 
         mock_planner = AsyncMock()
-        mock_planner.request_bundles = AsyncMock(
-            return_value=[_make_bundle("accuracy_rate")]
-        )
+        mock_planner.request_bundles = AsyncMock(return_value=[_make_bundle("accuracy_rate")])
 
         metric_results = _make_full_metric_results()
         composite_result = MetricResult(
@@ -753,9 +754,7 @@ class TestCalculateLoopKpi:
         db.add = MagicMock()
 
         mock_planner = AsyncMock()
-        mock_planner.request_bundles = AsyncMock(
-            return_value=[_make_bundle("accuracy_rate")]
-        )
+        mock_planner.request_bundles = AsyncMock(return_value=[_make_bundle("accuracy_rate")])
 
         # steady_rate (stability_rate) = None → PARTIAL
         metric_results = _make_full_metric_results(stability=None)
@@ -826,9 +825,7 @@ class TestDoCalculate:
         mock_session.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
             result = await _do_calculate()
@@ -857,9 +854,7 @@ class TestDoCalculate:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
             mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
 
@@ -891,9 +886,7 @@ class TestDoCalculate:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
             mock_calc.return_value = {
                 "status": "INCONCLUSIVE",
@@ -927,9 +920,7 @@ class TestDoCalculate:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
             mock_calc.side_effect = RuntimeError("calc failed")
 
@@ -951,14 +942,10 @@ class TestDoCalculateSingleLoop:
     async def test_loop_not_found_returns_failed(self) -> None:
         """回路不存在返回 FAILED。"""
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(None)
-        )
+        mock_session.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
             result = await _do_calculate_single_loop("nonexistent", None)
@@ -987,9 +974,7 @@ class TestDoCalculateSingleLoop:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
             mock_calc.return_value = {"loopId": str(loop.id), "status": "SUCCESS"}
 
@@ -1018,9 +1003,7 @@ class TestDoCalculateSingleLoop:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
             mock_calc.return_value = {"loopId": str(loop.id), "status": "SUCCESS"}
 
@@ -1050,9 +1033,7 @@ class TestDoCalculateSingleLoop:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
             mock_calc.return_value = {"loopId": str(loop.id), "status": "SUCCESS"}
 
@@ -1073,18 +1054,14 @@ class TestCeleryTasks:
     def test_calculate_hourly_kpi_success(self) -> None:
         """calculate_hourly_kpi 正常执行返回结果。"""
         expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
-        with patch(
-            "app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock
-        ) as mock_calc:
+        with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
             mock_calc.return_value = expected
             result = calculate_hourly_kpi.run()
             assert result == expected
 
     def test_calculate_hourly_kpi_exception_reraises(self) -> None:
         """calculate_hourly_kpi 异常时重新抛出。"""
-        with patch(
-            "app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock
-        ) as mock_calc:
+        with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
             mock_calc.side_effect = RuntimeError("DB down")
             with pytest.raises(RuntimeError, match="DB down"):
                 calculate_hourly_kpi.run()
@@ -1235,9 +1212,15 @@ class TestComputeKpisThreeLayer:
         """Layer1 对 10 个无依赖指标调用计算器。"""
         # 构造 10 个 bundle（使用数据库列名）
         db_codes = [
-            "accuracy_rate", "effective_auto_rate", "good_value_rate",
-            "oscillation_rate", "saturation_rate", "stiction_coeff",
-            "output_travel_index", "auto_mode_rate", "steady_state_time",
+            "accuracy_rate",
+            "effective_auto_rate",
+            "good_value_rate",
+            "oscillation_rate",
+            "saturation_rate",
+            "stiction_coeff",
+            "output_travel_index",
+            "auto_mode_rate",
+            "steady_state_time",
         ]
         bundles = [_make_bundle(code) for code in db_codes]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
@@ -1254,15 +1237,19 @@ class TestComputeKpisThreeLayer:
             patch("app.tasks.kpi_calc.ConfidenceEvaluator") as mock_conf,
         ):
             mock_conf.compute_composite_score.return_value = composite_result
-            results, composite = _compute_kpis_three_layer(
-                bundles, config_bundle, None
-            )
+            results, composite = _compute_kpis_three_layer(bundles, config_bundle, None)
 
         # 10 个 Layer1 指标 + ideal_settling_time（config_bundle）都被计算
         layer1_calc_codes = [
-            "accuracy_rate", "effective_auto_rate", "good_value_rate",
-            "oscillation_rate", "saturation_rate", "stiction_index",
-            "output_trip_index", "auto_mode_rate", "settling_time",
+            "accuracy_rate",
+            "effective_auto_rate",
+            "good_value_rate",
+            "oscillation_rate",
+            "saturation_rate",
+            "stiction_index",
+            "output_trip_index",
+            "auto_mode_rate",
+            "settling_time",
             "ideal_settling_time",
         ]
         for code in layer1_calc_codes:
@@ -1414,9 +1401,7 @@ class TestComputeKpisThreeLayer:
             patch("app.tasks.kpi_calc.ConfidenceEvaluator") as mock_conf,
         ):
             mock_conf.compute_composite_score.return_value = composite
-            results, returned_composite = _compute_kpis_three_layer(
-                bundles, config_bundle, None
-            )
+            results, returned_composite = _compute_kpis_three_layer(bundles, config_bundle, None)
 
         assert results["composite_score"] == composite
         assert returned_composite == composite
@@ -1441,8 +1426,12 @@ class TestExtractKpiValues:
         assert kpi_values["steady_rate"] == Decimal("70.0")  # stability_rate → steady_rate
         assert kpi_values["effective_auto_rate"] == Decimal("60.0")
         assert kpi_values["stiction_coeff"] == Decimal("0.5")  # stiction_index → stiction_coeff
-        assert kpi_values["steady_state_time"] == Decimal("45.0")  # settling_time → steady_state_time
-        assert kpi_values["output_travel_index"] == Decimal("12.0")  # output_trip_index → output_travel_index
+        assert kpi_values["steady_state_time"] == Decimal(
+            "45.0"
+        )  # settling_time → steady_state_time
+        assert kpi_values["output_travel_index"] == Decimal(
+            "12.0"
+        )  # output_trip_index → output_travel_index
         assert kpi_values["ideal_settling_time"] == Decimal("30.0")
 
     def test_none_values_preserved(self) -> None:
@@ -1457,9 +1446,7 @@ class TestExtractKpiValues:
     def test_composite_score_skipped(self) -> None:
         """composite_score 不写入指标列。"""
         metric_results = _make_full_metric_results()
-        metric_results["composite_score"] = _make_metric_result(
-            "composite_score", 80.0
-        )
+        metric_results["composite_score"] = _make_metric_result("composite_score", 80.0)
         kpi_values = _extract_kpi_values(metric_results)
 
         assert "composite_score" not in kpi_values
@@ -1485,9 +1472,7 @@ class TestExtractLineageInfo:
             algorithm_version="KPI_CALC_v2.0",
         )
         metric_results = {
-            "accuracy_rate": _make_metric_result(
-                "accuracy_rate", 90.0, "B", lineage
-            ),
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "B", lineage),
         }
         composite = _make_metric_result("composite_score", 80.0, "B")
 
@@ -1500,13 +1485,9 @@ class TestExtractLineageInfo:
 
     def test_lineage_from_composite_when_accuracy_missing(self) -> None:
         """accuracy_rate 缺失时从 composite_result 的 lineage 取。"""
-        lineage = _make_data_lineage(
-            sampling_freq="1s", valid_rate=0.95
-        )
+        lineage = _make_data_lineage(sampling_freq="1s", valid_rate=0.95)
         metric_results = {}
-        composite = _make_metric_result(
-            "composite_score", 80.0, "A", lineage
-        )
+        composite = _make_metric_result("composite_score", 80.0, "A", lineage)
 
         info = _extract_lineage_info(metric_results, composite)
 
@@ -1532,9 +1513,7 @@ class TestExtractLineageInfo:
         """valid_rate 量化到 4 位小数（Decimal(5,4) 精度）。"""
         lineage = _make_data_lineage(valid_rate=0.123456)
         metric_results = {
-            "accuracy_rate": _make_metric_result(
-                "accuracy_rate", 90.0, "A", lineage
-            ),
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "A", lineage),
         }
         composite = _make_metric_result("composite_score", 80.0, "A")
 
@@ -1546,9 +1525,7 @@ class TestExtractLineageInfo:
         """confidence_level 取自 composite_result。"""
         lineage = _make_data_lineage()
         metric_results = {
-            "accuracy_rate": _make_metric_result(
-                "accuracy_rate", 90.0, "A", lineage
-            ),
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "A", lineage),
         }
         composite = _make_metric_result("composite_score", 80.0, "C")
 
@@ -1560,9 +1537,7 @@ class TestExtractLineageInfo:
         """composite_result.confidence_level 为 None 时默认为 E。"""
         lineage = _make_data_lineage()
         metric_results = {
-            "accuracy_rate": _make_metric_result(
-                "accuracy_rate", 90.0, "A", lineage
-            ),
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "A", lineage),
         }
         composite = MetricResult(
             metric_code="composite_score",
@@ -1577,13 +1552,9 @@ class TestExtractLineageInfo:
 
     def test_data_lineage_dict_returned(self) -> None:
         """data_lineage 字段为 lineage 的字典序列化。"""
-        lineage = _make_data_lineage(
-            sampling_freq="1s", quality_policy="KEEP_ALL_WITH_VALIDITY"
-        )
+        lineage = _make_data_lineage(sampling_freq="1s", quality_policy="KEEP_ALL_WITH_VALIDITY")
         metric_results = {
-            "accuracy_rate": _make_metric_result(
-                "accuracy_rate", 90.0, "A", lineage
-            ),
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "A", lineage),
         }
         composite = _make_metric_result("composite_score", 80.0, "A")
 

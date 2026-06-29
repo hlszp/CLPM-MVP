@@ -44,10 +44,10 @@ from app.core.db import AsyncSessionLocal, engine
 # 常量
 # ============================================================================
 
-SAMPLE_INTERVAL = 1              # 1Hz 采样间隔（秒）
-BATCH_SIZE = 5000                # TDengine 单批写入行数（1Hz 数据量大，增大批量）
-MAX_CONCURRENT = 8               # TDengine 并发写入数
-PROGRESS_INTERVAL = 200_000      # 进度打印间隔（行）
+SAMPLE_INTERVAL = 1  # 1Hz 采样间隔（秒）
+BATCH_SIZE = 5000  # TDengine 单批写入行数（1Hz 数据量大，增大批量）
+MAX_CONCURRENT = 8  # TDengine 并发写入数
+PROGRESS_INTERVAL = 200_000  # 进度打印间隔（行）
 
 # 3 个目标单元（脱甲烷精馏/醛化反应/急冷分离）
 TARGET_UNIT_IDS: list[str] = [
@@ -71,6 +71,7 @@ random.seed(42)
 # ============================================================================
 # 工具函数
 # ============================================================================
+
 
 def subtable_name(tag_name: str) -> str:
     """回路位号 → TDengine 子表名。
@@ -128,27 +129,27 @@ def infer_control_type(tag_name: str) -> str:
 # 控制类型 → 动态特性参数
 TYPE_PARAMS: dict[str, dict[str, Any]] = {
     "FLOW": {
-        "tau": 8.0,            # 一阶滞后时间常数（秒）
-        "noise_pct": 0.005,    # 噪声占量程比例
-        "base_sp_range": (40.0, 200.0),   # t/h
-        "pv_range_pct": 1.0,   # PV 量程 = base_sp
+        "tau": 8.0,  # 一阶滞后时间常数（秒）
+        "noise_pct": 0.005,  # 噪声占量程比例
+        "base_sp_range": (40.0, 200.0),  # t/h
+        "pv_range_pct": 1.0,  # PV 量程 = base_sp
     },
     "LEVEL": {
         "tau": 120.0,
         "noise_pct": 0.003,
-        "base_sp_range": (35.0, 75.0),    # %
+        "base_sp_range": (35.0, 75.0),  # %
         "pv_range_pct": 100.0,
     },
     "PRESSURE": {
         "tau": 25.0,
         "noise_pct": 0.004,
-        "base_sp_range": (0.3, 3.5),      # MPa
+        "base_sp_range": (0.3, 3.5),  # MPa
         "pv_range_pct": 1.0,
     },
     "TEMPERATURE": {
         "tau": 60.0,
         "noise_pct": 0.003,
-        "base_sp_range": (80.0, 380.0),   # °C
+        "base_sp_range": (80.0, 380.0),  # °C
         "pv_range_pct": 1.0,
     },
     "STABLE": {
@@ -173,7 +174,8 @@ async def load_loops_from_db() -> list[dict[str, Any]]:
     """从 PostgreSQL 加载 3 个单元的全部控制回路。"""
     loops: list[dict[str, Any]] = []
     async with AsyncSessionLocal() as s:
-        r = await s.execute(text("""
+        r = await s.execute(
+            text("""
             SELECT l.id, l.tag_name, l.description, l.unit_id,
                    p.name AS unit_name
             FROM loop_ledger l
@@ -181,7 +183,9 @@ async def load_loops_from_db() -> list[dict[str, Any]]:
             WHERE l.unit_id = ANY(:unit_ids)
               AND l.is_active = TRUE
             ORDER BY l.unit_id, l.tag_name
-        """), {"unit_ids": TARGET_UNIT_IDS})
+        """),
+            {"unit_ids": TARGET_UNIT_IDS},
+        )
         rows = r.fetchall()
 
         for idx, (loop_id, tag_name, desc, unit_id, unit_name) in enumerate(rows):
@@ -195,7 +199,11 @@ async def load_loops_from_db() -> list[dict[str, Any]]:
             h = abs(hash(tag_name))
             sp_lo, sp_hi = params["base_sp_range"]
             base_sp = round(sp_lo + (h % 10000) / 10000 * (sp_hi - sp_lo), 2)
-            pv_range = base_sp * params["pv_range_pct"] if params["pv_range_pct"] <= 1.0 else params["pv_range_pct"]
+            pv_range = (
+                base_sp * params["pv_range_pct"]
+                if params["pv_range_pct"] <= 1.0
+                else params["pv_range_pct"]
+            )
             base_pv = round(base_sp + random.uniform(-pv_range * 0.01, pv_range * 0.01), 2)
             base_op = round(random.uniform(35, 65), 2)
 
@@ -211,24 +219,26 @@ async def load_loops_from_db() -> list[dict[str, Any]]:
             else:
                 pid_p, pid_i, pid_d = 1.5, 30.0, 2.0
 
-            loops.append({
-                "id": loop_id,
-                "tag_name": tag_name,
-                "description": desc or f"{tag_name} 控制回路",
-                "unit_id": unit_id,
-                "unit_name": unit_name,
-                "control_type": ctype,
-                "scenario": scenario,
-                "tau": params["tau"],
-                "noise_pct": params["noise_pct"],
-                "base_sp": base_sp,
-                "base_pv": base_pv,
-                "base_op": base_op,
-                "pv_range": pv_range,
-                "pid_p": pid_p,
-                "pid_i": pid_i,
-                "pid_d": pid_d,
-            })
+            loops.append(
+                {
+                    "id": loop_id,
+                    "tag_name": tag_name,
+                    "description": desc or f"{tag_name} 控制回路",
+                    "unit_id": unit_id,
+                    "unit_name": unit_name,
+                    "control_type": ctype,
+                    "scenario": scenario,
+                    "tau": params["tau"],
+                    "noise_pct": params["noise_pct"],
+                    "base_sp": base_sp,
+                    "base_pv": base_pv,
+                    "base_op": base_op,
+                    "pv_range": pv_range,
+                    "pid_p": pid_p,
+                    "pid_i": pid_i,
+                    "pid_d": pid_d,
+                }
+            )
     return loops
 
 
@@ -236,7 +246,10 @@ async def load_loops_from_db() -> list[dict[str, Any]]:
 # SP / PID / MODE 调度
 # ============================================================================
 
-def generate_sp_schedule(base_sp: float, pv_range: float, start: datetime, end: datetime) -> list[tuple[datetime, float]]:
+
+def generate_sp_schedule(
+    base_sp: float, pv_range: float, start: datetime, end: datetime
+) -> list[tuple[datetime, float]]:
     """SP 阶跃调度：每 2-4 小时变化一次，幅度 ±5-10%。"""
     schedule = [(start, base_sp)]
     t = start
@@ -251,7 +264,9 @@ def generate_sp_schedule(base_sp: float, pv_range: float, start: datetime, end: 
     return schedule
 
 
-def generate_pid_schedule(cfg: dict, start: datetime, end: datetime) -> list[tuple[datetime, float, float, float]]:
+def generate_pid_schedule(
+    cfg: dict, start: datetime, end: datetime
+) -> list[tuple[datetime, float, float, float]]:
     """PID 参数每日 1-2 次微调（±5%）。"""
     base_p, base_i, base_d = cfg["pid_p"], cfg["pid_i"], cfg["pid_d"]
     schedule = [(start, base_p, base_i, base_d)]
@@ -267,7 +282,9 @@ def generate_pid_schedule(cfg: dict, start: datetime, end: datetime) -> list[tup
     return schedule
 
 
-def generate_mode_schedule(scenario: str, start: datetime, end: datetime) -> list[tuple[datetime, int]]:
+def generate_mode_schedule(
+    scenario: str, start: datetime, end: datetime
+) -> list[tuple[datetime, int]]:
     """MODE 调度：实际工程至少 4 小时变化一次。
 
     语义：0=Manual, 1=Auto, 2=Cascade
@@ -304,6 +321,7 @@ def generate_mode_schedule(scenario: str, start: datetime, end: datetime) -> lis
 # 场景化 PV/OP 生成（1Hz 适配）
 # ============================================================================
 
+
 def _gen_normal(sp: float, prev_op: float, prev_pv: float, cfg: dict) -> tuple[float, float]:
     """正常回路：PV 紧跟 SP，OP 平缓。"""
     noise = abs(sp) * cfg["noise_pct"]
@@ -313,7 +331,9 @@ def _gen_normal(sp: float, prev_op: float, prev_pv: float, cfg: dict) -> tuple[f
     return round(pv, 4), round(op, 4)
 
 
-def _gen_oscillation(sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict) -> tuple[float, float]:
+def _gen_oscillation(
+    sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict
+) -> tuple[float, float]:
     """振荡回路：PV 正弦振荡，周期 ~10 分钟。"""
     amplitude = cfg["pv_range"] * 0.05
     period = 600.0
@@ -325,7 +345,9 @@ def _gen_oscillation(sp: float, prev_op: float, prev_pv: float, t: float, cfg: d
     return round(pv, 4), round(op, 4)
 
 
-def _gen_valve_stiction(sp: float, prev_op: float, prev_pv: float, cfg: dict, state: dict) -> tuple[float, float]:
+def _gen_valve_stiction(
+    sp: float, prev_op: float, prev_pv: float, cfg: dict, state: dict
+) -> tuple[float, float]:
     """阀门粘滞：OP 阶跃式变化。"""
     error = sp - prev_pv
     desired_op = prev_op + error * 0.15
@@ -341,7 +363,9 @@ def _gen_valve_stiction(sp: float, prev_op: float, prev_pv: float, cfg: dict, st
     return round(pv, 4), round(op, 4)
 
 
-def _gen_op_saturation(sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict, state: dict) -> tuple[float, float]:
+def _gen_op_saturation(
+    sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict, state: dict
+) -> tuple[float, float]:
     """OP 饱和：OP 长时间停留 95-100% 或 0-5%。"""
     sat_until = state.get("sat_until", 0.0)
     norm_until = state.get("norm_until", 0.0)
@@ -365,7 +389,9 @@ def _gen_op_saturation(sp: float, prev_op: float, prev_pv: float, t: float, cfg:
     return round(pv, 4), round(op, 4)
 
 
-def _gen_overconservative(sp: float, prev_op: float, prev_pv: float, cfg: dict) -> tuple[float, float]:
+def _gen_overconservative(
+    sp: float, prev_op: float, prev_pv: float, cfg: dict
+) -> tuple[float, float]:
     """过保守：PV 响应慢，稳态偏差 8%。"""
     tau = cfg["tau"] * 4.0
     target_pv = sp * 0.92
@@ -375,7 +401,9 @@ def _gen_overconservative(sp: float, prev_op: float, prev_pv: float, cfg: dict) 
     return round(pv, 4), round(op, 4)
 
 
-def _gen_overaggressive(sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict, state: dict) -> tuple[float, float]:
+def _gen_overaggressive(
+    sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict, state: dict
+) -> tuple[float, float]:
     """过激进：PV 过冲大，振荡后收敛。"""
     last_sp = state.get("last_sp", sp)
     sp_change_t = state.get("sp_change_t", 0.0)
@@ -398,7 +426,9 @@ def _gen_overaggressive(sp: float, prev_op: float, prev_pv: float, t: float, cfg
     return round(pv, 4), round(op, 4)
 
 
-def _gen_manual(cfg: dict, sp: float, prev_op: float, prev_pv: float, t: float, state: dict) -> tuple[float, float]:
+def _gen_manual(
+    cfg: dict, sp: float, prev_op: float, prev_pv: float, t: float, state: dict
+) -> tuple[float, float]:
     """手动模式：OP 由操作员阶跃调节，PV 跟随 OP。"""
     next_change = state.get("next_change", 0.0)
     op_target = state.get("op_target", prev_op)
@@ -416,6 +446,7 @@ def _gen_manual(cfg: dict, sp: float, prev_op: float, prev_pv: float, t: float, 
 # ============================================================================
 # 异常值 + 非 Good 质量戳注入
 # ============================================================================
+
 
 class AnomalyInjector:
     """异常值与质量戳注入器。
@@ -487,14 +518,14 @@ class AnomalyInjector:
         quality = 1
 
         # 1. spike 尖峰
-        for (s, dur, val) in self.spike_events:
+        for s, dur, val in self.spike_events:
             if s <= idx < s + dur:
                 pv = val
                 quality = 0  # 尖峰视为 Bad
                 return round(pv, 4), quality
 
         # 2. flatline 停滞
-        for (s, dur, val) in self.flatline_events:
+        for s, dur, val in self.flatline_events:
             if s <= idx < s + dur:
                 pv = val
                 # 停滞期间标记 Uncertain
@@ -510,7 +541,7 @@ class AnomalyInjector:
             return round(pv, 4), quality
 
         # 4. bad_cluster 坏质量聚簇
-        for (s, dur) in self.bad_clusters:
+        for s, dur in self.bad_clusters:
             if s <= idx < s + dur:
                 quality = 0
                 return round(pv, 4), quality
@@ -525,6 +556,7 @@ class AnomalyInjector:
 # ============================================================================
 # 时序数据生成
 # ============================================================================
+
 
 def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple]:
     """为单个回路生成完整时间序列。
@@ -565,7 +597,11 @@ def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple
             cur_sp = sp_schedule[sp_idx][1]
             sp_idx += 1
         while pid_idx < len(pid_schedule) and pid_schedule[pid_idx][0] <= t:
-            cur_p, cur_i, cur_d = pid_schedule[pid_idx][1], pid_schedule[pid_idx][2], pid_schedule[pid_idx][3]
+            cur_p, cur_i, cur_d = (
+                pid_schedule[pid_idx][1],
+                pid_schedule[pid_idx][2],
+                pid_schedule[pid_idx][3],
+            )
             pid_idx += 1
         while mode_idx < len(mode_schedule) and mode_schedule[mode_idx][0] <= t:
             cur_mode = mode_schedule[mode_idx][1]
@@ -607,27 +643,29 @@ def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple
 # PostgreSQL 元数据补全
 # ============================================================================
 
+
 async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> None:
     """补全 tag_registry + loop_tag_mapping（每回路 7 个 Tag 角色）。"""
     loop_ids = [c["id"] for c in loops]
     async with AsyncSessionLocal() as session:
         if clean:
             # 1. 先删除这些回路的 loop_tag_mapping（解除外键引用）
-            await session.execute(text(
-                "DELETE FROM loop_tag_mapping WHERE loop_id = ANY(:ids)"
-            ), {"ids": loop_ids})
+            await session.execute(
+                text("DELETE FROM loop_tag_mapping WHERE loop_id = ANY(:ids)"), {"ids": loop_ids}
+            )
             # 2. 删除 tag_registry 中不再被任何 loop_tag_mapping 引用的 tag
             #    （只删除这些回路的 7 角色 tag，且确认无其他回路引用）
             tag_names_to_clean = [
-                f"{cfg['tag_name']}.{role}"
-                for cfg in loops
-                for role in TAG_ROLES
+                f"{cfg['tag_name']}.{role}" for cfg in loops for role in TAG_ROLES
             ]
-            await session.execute(text(
-                "DELETE FROM tag_registry "
-                "WHERE tag_name = ANY(:tns) "
-                "AND id NOT IN (SELECT tag_id FROM loop_tag_mapping)"
-            ), {"tns": tag_names_to_clean})
+            await session.execute(
+                text(
+                    "DELETE FROM tag_registry "
+                    "WHERE tag_name = ANY(:tns) "
+                    "AND id NOT IN (SELECT tag_id FROM loop_tag_mapping)"
+                ),
+                {"tns": tag_names_to_clean},
+            )
             await session.commit()
             print(f"  ✓ 清理旧 tag 映射（{len(loops)} 回路）")
 
@@ -669,10 +707,12 @@ async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> No
                     range_min, range_max, unit = 0.0, cfg["pv_range"] * 1.2, ""
 
                 # upsert tag_registry 并 RETURNING 实际 id（无论新建还是已存在都返回正确 id）
-                result = await session.execute(text("""
+                result = await session.execute(
+                    text("""
                     INSERT INTO tag_registry
                         (id, tag_name, tag_description, tag_type, current_value, quality,
-                         last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id)
+                         last_sync_at, is_linked, range_min, range_max, unit,
+                         measure_type, tdengine_tag_id)
                     VALUES (:id, :tn, :desc, :type, :val, 'GOOD', NOW(), TRUE,
                             :rmin, :rmax, :unit, :mtype, :tdtag)
                     ON CONFLICT (tag_name) DO UPDATE SET
@@ -687,26 +727,42 @@ async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> No
                         unit = EXCLUDED.unit,
                         tdengine_tag_id = EXCLUDED.tdengine_tag_id
                     RETURNING id
-                """), {
-                    "id": str(uuid.uuid4()), "tn": tag_name, "desc": tag_desc, "type": role,
-                    "val": cur_val, "rmin": range_min, "rmax": range_max, "unit": unit,
-                    "mtype": ctype, "tdtag": subtable_name(cfg["tag_name"]),
-                })
+                """),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "tn": tag_name,
+                        "desc": tag_desc,
+                        "type": role,
+                        "val": cur_val,
+                        "rmin": range_min,
+                        "rmax": range_max,
+                        "unit": unit,
+                        "mtype": ctype,
+                        "tdtag": subtable_name(cfg["tag_name"]),
+                    },
+                )
                 actual_tag_id = result.scalar()
                 n_tags += 1
 
                 # 用实际 tag_id upsert loop_tag_mapping，FK 约束不会冲突
                 is_required = role in REQUIRED_ROLES
-                await session.execute(text("""
-                    INSERT INTO loop_tag_mapping (id, loop_id, tag_id, tag_role, is_required, created_at)
+                await session.execute(
+                    text("""
+                    INSERT INTO loop_tag_mapping
+                        (id, loop_id, tag_id, tag_role, is_required, created_at)
                     VALUES (:id, :loop_id, :tag_id, :role, :req, NOW())
                     ON CONFLICT (loop_id, tag_role) DO UPDATE SET
                         tag_id = EXCLUDED.tag_id,
                         is_required = EXCLUDED.is_required
-                """), {
-                    "id": str(uuid.uuid4()), "loop_id": cfg["id"], "tag_id": actual_tag_id,
-                    "role": role, "req": is_required,
-                })
+                """),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "loop_id": cfg["id"],
+                        "tag_id": actual_tag_id,
+                        "role": role,
+                        "req": is_required,
+                    },
+                )
                 n_mappings += 1
 
         await session.commit()
@@ -718,11 +774,16 @@ async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> No
 # TDengine 操作
 # ============================================================================
 
-async def td_execute(client: httpx.AsyncClient, sql: str, use_db: bool = True, retries: int = 3) -> dict | None:
+
+async def td_execute(
+    client: httpx.AsyncClient, sql: str, use_db: bool = True, retries: int = 3
+) -> dict | None:
     url = TD_REST_DB_URL if use_db else TD_REST_BASE
     for attempt in range(retries):
         try:
-            resp = await client.post(url, content=sql.encode("utf-8"), headers={"Content-Type": "text/plain"})
+            resp = await client.post(
+                url, content=sql.encode("utf-8"), headers={"Content-Type": "text/plain"}
+            )
             result = resp.json()
             if result.get("code") == 0:
                 return result
@@ -732,20 +793,28 @@ async def td_execute(client: httpx.AsyncClient, sql: str, use_db: bool = True, r
             if attempt == retries - 1:
                 print(f"  ⚠ TDengine SQL 错误: {desc[:200]}")
                 return None
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
         except Exception as exc:
             if attempt == retries - 1:
                 print(f"  ⚠ TDengine 请求异常: {exc}")
                 return None
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
     return None
 
 
-async def setup_tdengine(client: httpx.AsyncClient, loops: list[dict[str, Any]], clean: bool = False) -> None:
+async def setup_tdengine(
+    client: httpx.AsyncClient, loops: list[dict[str, Any]], clean: bool = False
+) -> None:
     """创建数据库、超级表、子表。clean=True 时先 DROP 旧子表。"""
     # 1. 数据库 + 超级表
-    await td_execute(client, "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'", use_db=False)
-    await td_execute(client, """
+    await td_execute(
+        client,
+        "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'",
+        use_db=False,
+    )
+    await td_execute(
+        client,
+        """
         CREATE STABLE IF NOT EXISTS st_loop_data (
             ts          TIMESTAMP,
             pv          FLOAT,
@@ -760,17 +829,21 @@ async def setup_tdengine(client: httpx.AsyncClient, loops: list[dict[str, Any]],
             loop_id     BINARY(36),
             unit_id     BINARY(36)
         )
-    """)
+    """,
+    )
 
     # 2. 子表
     for cfg in loops:
         sub = subtable_name(cfg["tag_name"])
         if clean:
             await td_execute(client, f"DROP TABLE IF EXISTS {sub}")
-        await td_execute(client, (
-            f"CREATE TABLE IF NOT EXISTS {sub} "
-            f"USING st_loop_data TAGS ('{cfg['id']}', '{cfg['unit_id']}')"
-        ))
+        await td_execute(
+            client,
+            (
+                f"CREATE TABLE IF NOT EXISTS {sub} "
+                f"USING st_loop_data TAGS ('{cfg['id']}', '{cfg['unit_id']}')"
+            ),
+        )
 
     print(f"  ✓ TDengine 子表创建完成（{len(loops)} 张，clean={clean}）")
 
@@ -778,6 +851,7 @@ async def setup_tdengine(client: httpx.AsyncClient, loops: list[dict[str, Any]],
 # ============================================================================
 # 时序数据写入
 # ============================================================================
+
 
 class ProgressTracker:
     def __init__(self) -> None:
@@ -824,13 +898,12 @@ async def write_loop_data(
     return total_written
 
 
-async def write_all_tdengine_data(client: httpx.AsyncClient, loops: list[dict[str, Any]], start: datetime, end: datetime) -> int:
+async def write_all_tdengine_data(
+    client: httpx.AsyncClient, loops: list[dict[str, Any]], start: datetime, end: datetime
+) -> int:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
     progress = ProgressTracker()
-    tasks = [
-        write_loop_data(client, semaphore, cfg, start, end, progress)
-        for cfg in loops
-    ]
+    tasks = [write_loop_data(client, semaphore, cfg, start, end, progress) for cfg in loops]
     results = await asyncio.gather(*tasks)
     total = sum(results)
     print(f"  ✓ TDengine 时序数据写入完成：{total} 行")
@@ -841,10 +914,13 @@ async def write_all_tdengine_data(client: httpx.AsyncClient, loops: list[dict[st
 # 主函数
 # ============================================================================
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CLPM 3 单元真实回路秒级数据仿真器")
     parser.add_argument("--days", type=int, default=7, help="历史数据天数（默认 7）")
-    parser.add_argument("--clean", action="store_true", help="清空旧 TDengine 子表 + 旧 tag 映射后重建")
+    parser.add_argument(
+        "--clean", action="store_true", help="清空旧 TDengine 子表 + 旧 tag 映射后重建"
+    )
     return parser.parse_args()
 
 

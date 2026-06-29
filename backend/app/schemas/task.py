@@ -14,19 +14,18 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import Field
 
 from app.schemas.base import CamelModel
-
 
 # ---------------------------------------------------------------------------
 # 枚举
 # ---------------------------------------------------------------------------
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     """任务类型.
 
     Attributes:
@@ -38,7 +37,7 @@ class TaskType(str, Enum):
     CUSTOM = "CUSTOM"
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """任务状态机（PRD §4.3.7.C）.
 
     Attributes:
@@ -68,9 +67,7 @@ class StandardTaskCreate(CamelModel):
         tsStart: 评估时间窗起始（ISO 8601），None 表示当前小时
     """
 
-    tsStart: str | None = Field(
-        None, description="评估时间窗起始（ISO 8601），None=当前小时"
-    )
+    tsStart: str | None = Field(None, description="评估时间窗起始（ISO 8601），None=当前小时")
 
 
 class CustomTaskCreate(CamelModel):
@@ -116,9 +113,7 @@ class TaskResponse(CamelModel):
     taskType: TaskType
     status: TaskStatus
     progress: float | None = Field(None, description="进度 0~1")
-    currentStage: str | None = Field(
-        None, description="当前阶段：取数/预处理/指标计算/可信度判定"
-    )
+    currentStage: str | None = Field(None, description="当前阶段：取数/预处理/指标计算/可信度判定")
     loopsTotal: int | None = None
     loopsDone: int | None = None
     createdAt: str

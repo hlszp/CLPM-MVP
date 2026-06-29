@@ -15,7 +15,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.contracts.data_types import ConfidenceLevel, DataLineage, MetricResult
 from app.core.exceptions import BizError
+from app.services.confidence_evaluator import (
+    ALGORITHM_VERSION as CONFIDENCE_ALGORITHM_VERSION,
+)
+from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.loop_config import (
     get_auto_mode_values,
     get_effective_mode_values,
@@ -23,16 +28,10 @@ from app.services.loop_config import (
     list_mode_mappings,
     replace_mode_mappings,
 )
-from app.contracts.data_types import ConfidenceLevel, DataLineage, MetricResult
-from app.services.confidence_evaluator import (
-    ALGORITHM_VERSION as CONFIDENCE_ALGORITHM_VERSION,
-)
-from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.node_performance import (
     aggregate_node_snapshot,
     query_realtime_auto_rate,
 )
-
 
 # ===========================================================================
 # 辅助函数：构造 mock 对象
@@ -135,6 +134,7 @@ def _compute_composite_score_v2_via_evaluator(
     Returns:
         综合评分 Decimal（INCONCLUSIVE 时返回 None）
     """
+
     def _to_result(code: str, value: Decimal | None) -> MetricResult:
         if value is None:
             return MetricResult(
@@ -157,9 +157,7 @@ def _compute_composite_score_v2_via_evaluator(
     }
     eff_auto = kpi_values.get("effective_auto_rate")
     if eff_auto is not None:
-        metric_results["effective_auto_rate"] = _to_result(
-            "effective_auto_rate", eff_auto
-        )
+        metric_results["effective_auto_rate"] = _to_result("effective_auto_rate", eff_auto)
 
     weights: dict[str, float] | None = None
     if type_weights and score_type in type_weights:
@@ -225,9 +223,7 @@ class TestModeMappingCRUD:
         """全量替换成功（3 条映射）。"""
         db = AsyncMock()
         # 1st execute: 查询旧数据（空）；2nd execute: delete（返回值不使用）
-        db.execute = AsyncMock(
-            side_effect=[_make_scalars_mock([]), MagicMock()]
-        )
+        db.execute = AsyncMock(side_effect=[_make_scalars_mock([]), MagicMock()])
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -420,17 +416,20 @@ class TestComputeCompositeScoreV2:
 class TestInferScoreType:
     """工艺类型→评分类型映射测试。"""
 
-    @pytest.mark.parametrize("loop_type,expected", [
-        ("TEMPERATURE", "STABLE"),
-        ("PRESSURE", "STABLE"),
-        ("LEVEL", "SLOW"),
-        ("ANALYSIS", "SLOW"),
-        ("FLOW", "FAST"),
-        ("SPEED", "FAST"),
-        ("OTHER", "LOGIC"),
-        (None, "LOGIC"),
-        ("UNKNOWN", "LOGIC"),
-    ])
+    @pytest.mark.parametrize(
+        "loop_type,expected",
+        [
+            ("TEMPERATURE", "STABLE"),
+            ("PRESSURE", "STABLE"),
+            ("LEVEL", "SLOW"),
+            ("ANALYSIS", "SLOW"),
+            ("FLOW", "FAST"),
+            ("SPEED", "FAST"),
+            ("OTHER", "LOGIC"),
+            (None, "LOGIC"),
+            ("UNKNOWN", "LOGIC"),
+        ],
+    )
     def test_infer_score_type(self, loop_type: str | None, expected: str) -> None:
         """工艺类型→评分类型映射（TEMPERATURE→STABLE 等）。"""
         assert infer_score_type(loop_type) == expected
@@ -572,9 +571,7 @@ class TestRealtimeAutoRate:
             MagicMock(loop_id="loop-001", tag_name="TAG_001"),
             MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        db.execute = AsyncMock(
-            side_effect=[_make_rows_mock(mm_rows), _make_rows_mock(tag_rows)]
-        )
+        db.execute = AsyncMock(side_effect=[_make_rows_mock(mm_rows), _make_rows_mock(tag_rows)])
 
         async def _mock_query_trend(tag_name: str, start: str, end: str):
             if tag_name == "TAG_001":
@@ -610,9 +607,7 @@ class TestRealtimeAutoRate:
             MagicMock(loop_id="loop-001", tag_name="TAG_001"),
             MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        db.execute = AsyncMock(
-            side_effect=[_make_rows_mock([]), _make_rows_mock(tag_rows)]
-        )
+        db.execute = AsyncMock(side_effect=[_make_rows_mock([]), _make_rows_mock(tag_rows)])
 
         async def _mock_query_trend(tag_name: str, start: str, end: str):
             if tag_name == "TAG_001":

@@ -72,7 +72,9 @@ class AutoModeRateCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[自控率] auto_duration=%.1f, total=%.1f, rate=%.2f%%",
-            auto_duration, total_duration, rate,
+            auto_duration,
+            total_duration,
+            rate,
         )
 
         return self._make_result(

@@ -84,9 +84,7 @@ class KpiSnapshotHourly(Base):
     output_travel_index: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     # v4.0 扩展字段（DDS §2.8）：理想稳态时间 + 算法版本 + 5 个数据血缘字段
-    ideal_settling_time: Mapped[Decimal | None] = mapped_column(
-        Numeric(8, 2), nullable=True
-    )
+    ideal_settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     sampling_freq: Mapped[str | None] = mapped_column(String(10), nullable=True)
     quality_policy: Mapped[str | None] = mapped_column(String(30), nullable=True)
@@ -138,32 +136,16 @@ class KpiSnapshotCustom(Base):
     ts_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    fast_response_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
+    fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     steady_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    effective_auto_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
-    good_value_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
-    oscillation_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
-    saturation_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
+    effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    good_value_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     stiction_coeff: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    output_travel_index: Mapped[Decimal | None] = mapped_column(
-        Numeric(8, 2), nullable=True
-    )
-    steady_state_time: Mapped[Decimal | None] = mapped_column(
-        Numeric(8, 2), nullable=True
-    )
-    ideal_settling_time: Mapped[Decimal | None] = mapped_column(
-        Numeric(8, 2), nullable=True
-    )
+    output_travel_index: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    steady_state_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    ideal_settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     auto_mode_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)

@@ -277,9 +277,7 @@ async def query_trend_data(
         for row in data_rows:
             ts_val = row[0]
             value = float(row[1]) if len(row) > 1 and row[1] is not None else None
-            quality = (
-                str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
-            )
+            quality = str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
             rows.append({"ts": str(ts_val), "value": value, "quality": quality})
         return rows
     except RuntimeError as exc:
@@ -300,9 +298,7 @@ async def query_trend_data(
                 for row in data_rows:
                     ts_val = row[0]
                     value = float(row[1]) if len(row) > 1 and row[1] is not None else None
-                    quality = (
-                        str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
-                    )
+                    quality = str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
                     rows.append({"ts": str(ts_val), "value": value, "quality": quality})
                 return rows
             except Exception as exc2:  # noqa: BLE001
@@ -339,7 +335,6 @@ def make_dataplanner_query_fn(db: Any) -> Any:
     Returns:
         TDengineQueryFn 闭包（async callable）
     """
-    from collections.abc import Awaitable, Callable
 
     async def _query_fn(
         loop_id: str,
@@ -356,24 +351,22 @@ def make_dataplanner_query_fn(db: Any) -> Any:
         from app.models.tag import TagRegistry
 
         # 1. 查询 LoopTagMapping（tag_role 大写存储，DataPlanner 传入小写）
-        m_result = await db.execute(
-            select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
-        )
+        m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
         mappings = {m.tag_role.upper(): m for m in m_result.scalars().all()}
 
         # 2. 查询 TagRegistry 获取 tag_name
         tag_ids = [str(m.tag_id) for m in mappings.values()]
         tags_map: dict[str, Any] = {}
         if tag_ids:
-            t_result = await db.execute(
-                select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
-            )
+            t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
             for t in t_result.scalars().all():
                 tags_map[str(t.id)] = t
 
         # 3. 对每个 tag_role 查询 TDengine 数据
         # TDengine 存储的时间带 Z 后缀（ISO 8601 UTC），查询时需保持一致
-        start_iso = start.isoformat().replace("+00:00", "Z") if start.tzinfo else start.isoformat() + "Z"
+        start_iso = (
+            start.isoformat().replace("+00:00", "Z") if start.tzinfo else start.isoformat() + "Z"
+        )
         end_iso = end.isoformat().replace("+00:00", "Z") if end.tzinfo else end.isoformat() + "Z"
 
         # role_lower → rows（每行 {ts, value, quality}）
@@ -417,8 +410,7 @@ def make_dataplanner_query_fn(db: Any) -> Any:
             if role_lower.upper() == "PV":
                 quality_key = f"{role_lower}_quality"
                 ts_to_quality = {
-                    str(row.get("ts")): str(row.get("quality", "GOOD")).upper()
-                    for row in rows
+                    str(row.get("ts")): str(row.get("quality", "GOOD")).upper() for row in rows
                 }
                 quality_codes[quality_key] = [
                     1 if ts_to_quality.get(ts, "GOOD") in _GOOD_QUALITY_STRS else 0

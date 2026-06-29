@@ -77,7 +77,11 @@ class OutputTripIndexCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[输出行程] total_trip=%.4f, duration=%.1f, op_range=%.1f, trip=%.6f, level=%s",
-            total_trip, total_duration, op_range, trip_index, trip_level,
+            total_trip,
+            total_duration,
+            op_range,
+            trip_index,
+            trip_level,
         )
 
         return self._make_result(

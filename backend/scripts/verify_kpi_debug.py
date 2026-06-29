@@ -18,8 +18,6 @@ import logging
 import sys
 from pathlib import Path
 
-import numpy as np
-
 # 配置 DEBUG 日志
 logging.basicConfig(
     level=logging.DEBUG,
@@ -48,7 +46,6 @@ def load_scenario(name: str) -> list[dict]:
 def make_metric_configs() -> dict:
     """构造国标 4 分项指标配置（与 seed_data.sql 对齐）。"""
     from decimal import Decimal
-
     from unittest.mock import MagicMock
 
     def _cfg(code: str, weight: str) -> MagicMock:
@@ -72,9 +69,9 @@ def make_metric_configs() -> dict:
 
 def run_scenario(name: str) -> None:
     """运行单个场景的 KPI 计算。"""
-    print(f"\n{'='*72}")
+    print(f"\n{'=' * 72}")
     print(f"场景: {name}")
-    print(f"{'='*72}")
+    print(f"{'=' * 72}")
 
     data = load_scenario(name)
     print(f"数据点数: {len(data)}")
@@ -91,7 +88,7 @@ def run_scenario(name: str) -> None:
     # 计算综合评分
     score = _compute_composite_score(kpi_values, configs)
 
-    print(f"\n--- 结果汇总 ---")
+    print("\n--- 结果汇总 ---")
     print(f"  综合评分 P = {score}")
     print(f"  准确率 A   = {kpi_values.get('accuracy_rate')}")
     print(f"  快速率 F   = {kpi_values.get('fast_response_rate')}")
@@ -126,11 +123,12 @@ def main() -> None:
         except Exception as e:
             print(f"场景 {name} 失败: {e}")
             import traceback
+
             traceback.print_exc()
 
-    print(f"\n{'='*72}")
+    print(f"\n{'=' * 72}")
     print("DEBUG 日志验证完成 — 检查上方日志是否覆盖所有关键节点")
-    print(f"{'='*72}")
+    print(f"{'=' * 72}")
 
 
 if __name__ == "__main__":

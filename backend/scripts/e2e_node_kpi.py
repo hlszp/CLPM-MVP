@@ -20,7 +20,7 @@ from uuid import uuid4
 # 确保能导入 app 模块
 sys.path.insert(0, ".")
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 
 from app.core.db import AsyncSessionLocal
 from app.models.loop import LoopLedger
@@ -226,9 +226,7 @@ async def cleanup_test_data(db) -> None:
     print("\n[1/6] 清理旧测试数据...")
 
     # 查找所有测试节点
-    result = await db.execute(
-        select(PlantNode).where(PlantNode.name.like(f"{TEST_TAG}%"))
-    )
+    result = await db.execute(select(PlantNode).where(PlantNode.name.like(f"{TEST_TAG}%")))
     test_nodes = result.scalars().all()
     test_node_ids = [str(n.id) for n in test_nodes]
 
@@ -245,19 +243,15 @@ async def cleanup_test_data(db) -> None:
             select(LoopLedger).where(LoopLedger.unit_id.in_(test_node_ids))
         )
         test_loops = loop_result.scalars().all()
-        test_loop_ids = [str(l.id) for l in test_loops]
+        test_loop_ids = [str(loop.id) for loop in test_loops]
 
         if test_loop_ids:
             # 删除回路级快照
             await db.execute(
-                delete(KpiSnapshotHourly).where(
-                    KpiSnapshotHourly.loop_id.in_(test_loop_ids)
-                )
+                delete(KpiSnapshotHourly).where(KpiSnapshotHourly.loop_id.in_(test_loop_ids))
             )
             # 删除回路
-            await db.execute(
-                delete(LoopLedger).where(LoopLedger.id.in_(test_loop_ids))
-            )
+            await db.execute(delete(LoopLedger).where(LoopLedger.id.in_(test_loop_ids)))
 
         # 删除节点（先子后父，通过递归删除）
         # 由于有外键约束，需要先删子节点
@@ -267,9 +261,7 @@ async def cleanup_test_data(db) -> None:
                 .where(PlantNode.name.like(f"{TEST_TAG}%"))
                 .where(
                     ~PlantNode.id.in_(
-                        select(PlantNode.parent_id).where(
-                            PlantNode.parent_id.is_not(None)
-                        )
+                        select(PlantNode.parent_id).where(PlantNode.parent_id.is_not(None))
                     )
                 )
             )
@@ -280,9 +272,7 @@ async def cleanup_test_data(db) -> None:
                 await db.execute(delete(PlantNode).where(PlantNode.id == leaf.id))
 
         # 最终清理剩余
-        await db.execute(
-            delete(PlantNode).where(PlantNode.name.like(f"{TEST_TAG}%"))
-        )
+        await db.execute(delete(PlantNode).where(PlantNode.name.like(f"{TEST_TAG}%")))
 
         await db.commit()
         print(f"  已清理 {len(test_nodes)} 个节点, {len(test_loops)} 个回路")
@@ -398,23 +388,16 @@ async def trigger_node_calculation(
     print("\n[4/6] 触发节点级 KPI 加权聚合计算...")
 
     # 查询所有 is_kpi_enabled 的节点
-    result = await db.execute(
-        select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
-    )
+    result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
     enabled_nodes = result.scalars().all()
 
     for node in enabled_nodes:
         # 先查看递归收集的回路数
         loop_ids = await collect_descendant_loop_ids(db, str(node.id))
-        print(
-            f"\n  节点: {node.name} ({node.type})"
-            f"\n  递归收集到 {len(loop_ids)} 个回路"
-        )
+        print(f"\n  节点: {node.name} ({node.type})\n  递归收集到 {len(loop_ids)} 个回路")
 
         # 执行聚合计算
-        snap_data = await calculate_and_save_node_snapshot(
-            db, str(node.id), ts_start, ts_end
-        )
+        snap_data = await calculate_and_save_node_snapshot(db, str(node.id), ts_start, ts_end)
 
         if snap_data:
             print(
@@ -432,7 +415,7 @@ async def trigger_node_calculation(
                 f"\n     饱和率:   {snap_data['saturation_rate']}"
             )
         else:
-            print(f"  ❌ 无数据（回路或快照不存在）")
+            print("  ❌ 无数据（回路或快照不存在）")
 
     await db.commit()
 
@@ -517,9 +500,9 @@ async def verify_weighted_aggregation(
 
     # 查询回路级快照
     result = await db.execute(
-        select(KpiSnapshotHourly, LoopLedger).join(
-            LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id
-        ).where(
+        select(KpiSnapshotHourly, LoopLedger)
+        .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+        .where(
             KpiSnapshotHourly.loop_id.in_(loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
             KpiSnapshotHourly.ts_start <= ts_end,

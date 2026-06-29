@@ -35,6 +35,7 @@ def non_debug_mode():
     finally:
         settings.DEBUG = original
 
+
 # ===========================================================================
 # S4-C1: ValidationError 脱敏
 # ===========================================================================
@@ -80,9 +81,7 @@ class TestValidationErrorSanitization:
         body_str = json.dumps(resp.json(), ensure_ascii=False)
         assert "ctx" not in body_str
 
-    def test_validation_error_no_internal_type_in_response(
-        self, client, non_debug_mode
-    ) -> None:
+    def test_validation_error_no_internal_type_in_response(self, client, non_debug_mode) -> None:
         """脱敏后响应不包含内部 type 字段（如 string_too_short）。"""
         resp = client.post(
             "/api/v1/auth/login",
@@ -183,15 +182,11 @@ class TestRefreshTokenDeviceBinding:
 
     def test_refresh_token_stores_device_in_payload(self) -> None:
         """Refresh Token payload 中包含 device 字段。"""
-        token, _, _ = create_refresh_token(
-            subject="test-user-id", device_ip="192.168.1.100"
-        )
+        token, _, _ = create_refresh_token(subject="test-user-id", device_ip="192.168.1.100")
         payload = decode_token(token)
         assert payload["device"] == "192.168.1.100"
 
-    def test_refresh_api_ip_mismatch_returns_401(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_refresh_api_ip_mismatch_returns_401(self, client, mock_db, fake_redis) -> None:
         """API 层面：登录 IP 与刷新 IP 不一致返回 401。"""
         mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
 
@@ -210,9 +205,7 @@ class TestRefreshTokenDeviceBinding:
             mock_session.execute = AsyncMock(
                 return_value=make_db_execute_return(TEST_USERS["admin"])
             )
-            mock_session_local.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
 
             resp = client.post(
@@ -223,9 +216,7 @@ class TestRefreshTokenDeviceBinding:
         assert resp.status_code == 401
         assert resp.json()["code"] == "ERR_TOKEN_DEVICE_MISMATCH"
 
-    def test_refresh_api_same_ip_succeeds(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_refresh_api_same_ip_succeeds(self, client, mock_db, fake_redis) -> None:
         """API 层面：登录 IP 与刷新 IP 一致时刷新成功。"""
         mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
 
@@ -244,9 +235,7 @@ class TestRefreshTokenDeviceBinding:
             mock_session.execute = AsyncMock(
                 return_value=make_db_execute_return(TEST_USERS["admin"])
             )
-            mock_session_local.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
 
             resp = client.post(

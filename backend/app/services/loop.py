@@ -776,9 +776,7 @@ async def import_loops(
         is_active_str = _cell_str(row[7]) if len(row) > 7 else "是"
         is_active = is_active_str in ("是", "true", "True", "1", "YES", "yes", "Y", "y")
         loop_type = (
-            _cell_str(row[_LOOP_TYPE_COLUMN_INDEX])
-            if len(row) > _LOOP_TYPE_COLUMN_INDEX
-            else ""
+            _cell_str(row[_LOOP_TYPE_COLUMN_INDEX]) if len(row) > _LOOP_TYPE_COLUMN_INDEX else ""
         ) or None
 
         is_update = False
@@ -840,9 +838,7 @@ async def _import_one_row(
         if unit_name in plant_node_cache:
             unit_id = plant_node_cache[unit_name]
         else:
-            p_result = await db.execute(
-                select(PlantNode).where(PlantNode.name == unit_name)
-            )
+            p_result = await db.execute(select(PlantNode).where(PlantNode.name == unit_name))
             node = p_result.scalar_one_or_none()
             if node is None:
                 node = PlantNode(
@@ -868,9 +864,7 @@ async def _import_one_row(
             loop.loop_type = loop_type
         loop.updated_by = operator
         # 删除现有关联 Tag
-        await db.execute(
-            delete(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id))
-        )
+        await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id)))
     else:
         loop = LoopLedger(
             id=str(uuid4()),
@@ -894,9 +888,7 @@ async def _import_one_row(
         if t_name in tag_cache:
             tag_id = tag_cache[t_name]
         else:
-            t_result = await db.execute(
-                select(TagRegistry).where(TagRegistry.tag_name == t_name)
-            )
+            t_result = await db.execute(select(TagRegistry).where(TagRegistry.tag_name == t_name))
             tag = t_result.scalar_one_or_none()
             if tag is None:
                 tag = TagRegistry(

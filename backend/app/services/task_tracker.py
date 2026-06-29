@@ -379,9 +379,7 @@ async def _send_notification(task_data: dict[str, str]) -> None:
     )
 
 
-async def get_notifications(
-    user_id: str, limit: int = 20
-) -> list[dict[str, Any]]:
+async def get_notifications(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
     """查询用户任务通知列表.
 
     Args:
@@ -402,9 +400,7 @@ async def get_notifications(
     return notifications
 
 
-async def mark_notification_read(
-    user_id: str, task_id: str
-) -> bool:
+async def mark_notification_read(user_id: str, task_id: str) -> bool:
     """标记指定任务的通知为已读（从通知列表移除）.
 
     Args:

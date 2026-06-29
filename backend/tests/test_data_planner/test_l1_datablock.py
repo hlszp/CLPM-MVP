@@ -12,19 +12,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 
-from app.contracts.data_types import DataBlock, TagGroup
+from app.contracts.data_types import TagGroup
 from app.services.cache.l1_datablock import (
     L1DataBlockCache,
     compute_compression_ratio,
     time_window_hash,
 )
 
-from .conftest import build_data_block, FakeCacheRedis
-
+from .conftest import FakeCacheRedis, build_data_block
 
 # ---------------------------------------------------------------------------
 # zstd 压缩/解压
@@ -137,7 +136,9 @@ class TestTieredTTL:
         assert fake_redis._ttls[op_key] == 300
 
     @pytest.mark.asyncio
-    async def test_set_with_explicit_ttl_overrides_default(self, fake_redis: FakeCacheRedis) -> None:
+    async def test_set_with_explicit_ttl_overrides_default(
+        self, fake_redis: FakeCacheRedis
+    ) -> None:
         """显式 TTL 覆盖分层默认值."""
         cache = L1DataBlockCache(fake_redis)
         block = build_data_block(tag_group=TagGroup.BASE, n=10)
@@ -278,16 +279,24 @@ class TestKeyGeneration:
         start1 = datetime(2024, 1, 1, 10, 0, 0)
         start2 = datetime(2024, 1, 1, 11, 0, 0)
         end = datetime(2024, 1, 1, 12, 0, 0)
-        k1 = L1DataBlockCache.build_key("L1", "BASE", start1, end, "1s", "KEEP_ALL_WITH_VALIDITY", "pre_v1", "cfg_1")
-        k2 = L1DataBlockCache.build_key("L1", "BASE", start2, end, "1s", "KEEP_ALL_WITH_VALIDITY", "pre_v1", "cfg_1")
+        k1 = L1DataBlockCache.build_key(
+            "L1", "BASE", start1, end, "1s", "KEEP_ALL_WITH_VALIDITY", "pre_v1", "cfg_1"
+        )
+        k2 = L1DataBlockCache.build_key(
+            "L1", "BASE", start2, end, "1s", "KEEP_ALL_WITH_VALIDITY", "pre_v1", "cfg_1"
+        )
         assert k1 != k2
 
     def test_build_key_different_config_version_differ(self) -> None:
         """不同配置版本的 Key 应不同（支持配置变更失效）."""
         start = datetime(2024, 1, 1, 10, 0, 0)
         end = datetime(2024, 1, 1, 11, 0, 0)
-        k1 = L1DataBlockCache.build_key("L1", "BASE", start, end, "1s", "KEEP_ALL_WITH_VALIDITY", "pre_v1", "cfg_1")
-        k2 = L1DataBlockCache.build_key("L1", "BASE", start, end, "1s", "KEEP_ALL_WITH_VALIDITY", "pre_v1", "cfg_2")
+        k1 = L1DataBlockCache.build_key(
+            "L1", "BASE", start, end, "1s", "KEEP_ALL_WITH_VALIDITY", "pre_v1", "cfg_1"
+        )
+        k2 = L1DataBlockCache.build_key(
+            "L1", "BASE", start, end, "1s", "KEEP_ALL_WITH_VALIDITY", "pre_v1", "cfg_2"
+        )
         assert k1 != k2
 
     def test_time_window_hash_stable(self) -> None:

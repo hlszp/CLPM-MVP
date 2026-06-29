@@ -18,7 +18,7 @@ import argparse
 import asyncio
 import json
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -106,11 +106,14 @@ TAG_ROLES = ["PV", "SP", "OP", "MODE"]
 # TDengine 操作
 # ============================================================================
 
+
 async def td_execute(client: httpx.AsyncClient, sql: str, use_db: bool = True) -> dict | None:
     """执行 TDengine SQL。"""
     url = TD_REST_DB_URL if use_db else TD_REST_BASE
     try:
-        resp = await client.post(url, content=sql.encode("utf-8"), headers={"Content-Type": "text/plain"})
+        resp = await client.post(
+            url, content=sql.encode("utf-8"), headers={"Content-Type": "text/plain"}
+        )
         result = resp.json()
         if result.get("code") == 0:
             return result
@@ -126,6 +129,7 @@ async def td_execute(client: httpx.AsyncClient, sql: str, use_db: bool = True) -
 def subtable_name(tag_name: str) -> str:
     """子表命名: d_loop_<位号小写连字符转下划线>。"""
     import re
+
     name = "d_loop_" + tag_name.lower().replace("-", "_").replace(".", "_")
     return re.sub(r"_+", "_", name)
 
@@ -140,7 +144,9 @@ async def setup_tdengine(client: httpx.AsyncClient, clean: bool = False) -> None
     )
 
     # 创建超级表（幂等）
-    await td_execute(client, """
+    await td_execute(
+        client,
+        """
         CREATE STABLE IF NOT EXISTS st_loop_data (
             ts          TIMESTAMP,
             pv          FLOAT,
@@ -155,17 +161,21 @@ async def setup_tdengine(client: httpx.AsyncClient, clean: bool = False) -> None
             loop_id     BINARY(36),
             unit_id     BINARY(36)
         )
-    """)
+    """,
+    )
 
     # 创建子表
     for cfg in TEST_LOOPS:
         sub = subtable_name(cfg["tag_name"])
         if clean:
             await td_execute(client, f"DROP TABLE IF EXISTS {sub}")
-        await td_execute(client, (
-            f"CREATE TABLE IF NOT EXISTS {sub} "
-            f"USING st_loop_data TAGS ('{cfg['id']}', '{cfg['unit_id']}')"
-        ))
+        await td_execute(
+            client,
+            (
+                f"CREATE TABLE IF NOT EXISTS {sub} "
+                f"USING st_loop_data TAGS ('{cfg['id']}', '{cfg['unit_id']}')"
+            ),
+        )
 
     print(f"  ✓ TDengine 子表创建完成（{len(TEST_LOOPS)} 张）")
 
@@ -194,9 +204,7 @@ async def write_scenario_data(
             op = pt["op"]
             mode = int(pt["mode"])
             pv_q = int(pt.get("pv_quality", 1))
-            parts.append(
-                f"('{ts_str}', {pv}, {sp}, {op}, {mode}, NULL, NULL, NULL, {pv_q})"
-            )
+            parts.append(f"('{ts_str}', {pv}, {sp}, {op}, {mode}, NULL, NULL, NULL, {pv_q})")
         sql = " ".join(parts)
 
         async with semaphore:
@@ -210,6 +218,7 @@ async def write_scenario_data(
 # ============================================================================
 # PostgreSQL 操作
 # ============================================================================
+
 
 async def setup_postgresql(clean: bool = False) -> None:
     """在 PostgreSQL 创建测试回路 + Tag + 映射。"""
@@ -236,9 +245,13 @@ async def setup_postgresql(clean: bool = False) -> None:
 
         # 创建回路
         for cfg in TEST_LOOPS:
-            await session.execute(text("""
-                INSERT INTO loop_ledger (id, tag_name, description, unit_id, score_weight, is_active, status, last_aas_sync_at, created_at, updated_at, created_by)
-                VALUES (:id, :tag_name, :desc, :unit_id, :weight, TRUE, 'READY', NOW(), NOW(), NOW(), 'admin')
+            await session.execute(
+                text("""
+                INSERT INTO loop_ledger
+                    (id, tag_name, description, unit_id, score_weight, is_active,
+                     status, last_aas_sync_at, created_at, updated_at, created_by)
+                VALUES (:id, :tag_name, :desc, :unit_id, :weight, TRUE,
+                        'READY', NOW(), NOW(), NOW(), 'admin')
                 ON CONFLICT (id) DO UPDATE SET
                     tag_name = EXCLUDED.tag_name,
                     description = EXCLUDED.description,
@@ -247,13 +260,15 @@ async def setup_postgresql(clean: bool = False) -> None:
                     status = 'READY',
                     is_active = TRUE,
                     updated_at = NOW()
-            """), {
-                "id": cfg["id"],
-                "tag_name": cfg["tag_name"],
-                "desc": cfg["description"],
-                "unit_id": cfg["unit_id"],
-                "weight": cfg["score_weight"],
-            })
+            """),
+                {
+                    "id": cfg["id"],
+                    "tag_name": cfg["tag_name"],
+                    "desc": cfg["description"],
+                    "unit_id": cfg["unit_id"],
+                    "weight": cfg["score_weight"],
+                },
+            )
 
         # 创建 Tag 注册 + 映射
         for cfg in TEST_LOOPS:
@@ -263,54 +278,68 @@ async def setup_postgresql(clean: bool = False) -> None:
                 tag_name = f"{cfg['tag_name']}.{role}"
                 tag_desc = f"{cfg['description']} {role}"
 
-                await session.execute(text("""
-                    INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked)
+                await session.execute(
+                    text("""
+                    INSERT INTO tag_registry
+                        (id, tag_name, tag_description, tag_type, current_value,
+                         quality, last_sync_at, is_linked)
                     VALUES (:id, :tag_name, :desc, :type, 0.0, 'GOOD', NOW(), TRUE)
                     ON CONFLICT (tag_name) DO UPDATE SET
                         tag_description = EXCLUDED.tag_description,
                         tag_type = EXCLUDED.tag_type,
                         is_linked = TRUE
-                """), {
-                    "id": tag_id,
-                    "tag_name": tag_name,
-                    "desc": tag_desc,
-                    "type": role,
-                })
+                """),
+                    {
+                        "id": tag_id,
+                        "tag_name": tag_name,
+                        "desc": tag_desc,
+                        "type": role,
+                    },
+                )
 
                 # 创建映射
                 mapping_id = str(uuid.uuid4())
-                await session.execute(text("""
-                    INSERT INTO loop_tag_mapping (id, loop_id, tag_id, tag_role, is_required, created_at)
+                await session.execute(
+                    text("""
+                    INSERT INTO loop_tag_mapping
+                        (id, loop_id, tag_id, tag_role, is_required, created_at)
                     VALUES (:id, :loop_id, :tag_id, :role, TRUE, NOW())
                     ON CONFLICT (loop_id, tag_role) DO UPDATE SET
                         tag_id = EXCLUDED.tag_id
-                """), {
-                    "id": mapping_id,
-                    "loop_id": loop_id,
-                    "tag_id": tag_id,
-                    "role": role,
-                })
+                """),
+                    {
+                        "id": mapping_id,
+                        "loop_id": loop_id,
+                        "tag_id": tag_id,
+                        "role": role,
+                    },
+                )
 
         await session.commit()
-    print(f"  ✓ PostgreSQL 数据创建完成：{len(TEST_LOOPS)} 回路 / {len(TEST_LOOPS) * len(TAG_ROLES)} Tag / {len(TEST_LOOPS) * len(TAG_ROLES)} 映射")
+    print(
+        f"  ✓ PostgreSQL 数据创建完成：{len(TEST_LOOPS)} 回路 / "
+        f"{len(TEST_LOOPS) * len(TAG_ROLES)} Tag / "
+        f"{len(TEST_LOOPS) * len(TAG_ROLES)} 映射"
+    )
 
 
 # ============================================================================
 # KPI 计算触发
 # ============================================================================
 
+
 async def trigger_kpi_calculation(ts_start: datetime, ts_end: datetime) -> None:
     """触发所有测试回路的 KPI 计算。"""
-    from app.core.tdengine import query_trend_data
-    from app.models.loop import LoopLedger, LoopTagMapping
-    from app.models.metric import MetricConfig
-    from app.models.tag import TagRegistry
-    from app.tasks.kpi_calc import _calculate_loop_kpi
     from sqlalchemy import select
 
-    print(f"\n{'='*60}")
+    from app.core.tdengine import query_trend_data
+    from app.models.loop import LoopLedger
+    from app.models.metric import MetricConfig
+    from app.tasks.kpi_calc import _calculate_loop_kpi
+
+    print(f"\n{'=' * 60}")
     print("触发 KPI 计算")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"时间窗: {ts_start.isoformat()} ~ {ts_end.isoformat()}")
 
     async with AsyncSessionLocal() as db:
@@ -320,9 +349,7 @@ async def trigger_kpi_calculation(ts_start: datetime, ts_end: datetime) -> None:
 
         # 逐个回路计算
         for cfg in TEST_LOOPS:
-            loop_result = await db.execute(
-                select(LoopLedger).where(LoopLedger.id == cfg["id"])
-            )
+            loop_result = await db.execute(select(LoopLedger).where(LoopLedger.id == cfg["id"]))
             loop = loop_result.scalar_one_or_none()
             if loop is None:
                 print(f"  ✗ 回路 {cfg['tag_name']} 不存在")
@@ -363,6 +390,7 @@ async def trigger_kpi_calculation(ts_start: datetime, ts_end: datetime) -> None:
 # 主函数
 # ============================================================================
 
+
 async def main(clean: bool = False) -> None:
     """主入口。"""
     if not FIXTURE_PATH.exists():
@@ -384,15 +412,15 @@ async def main(clean: bool = False) -> None:
     ts_end = now
 
     # 1. PostgreSQL 设置
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("1. PostgreSQL 数据创建")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     await setup_postgresql(clean=clean)
 
     # 2. TDengine 设置 + 数据写入
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("2. TDengine 数据写入")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     async with httpx.AsyncClient(
         auth=(settings.TDENGINE_USER, settings.TDENGINE_PASSWORD),
         timeout=httpx.Timeout(30.0, connect=10.0),
@@ -417,9 +445,9 @@ async def main(clean: bool = False) -> None:
     # 3. 触发 KPI 计算
     await trigger_kpi_calculation(ts_start, ts_end)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("导入完成！可在前端查看 KPI 计算结果")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

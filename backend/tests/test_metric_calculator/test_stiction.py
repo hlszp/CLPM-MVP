@@ -15,8 +15,6 @@ from __future__ import annotations
 import math
 import random
 
-import pytest
-
 from app.services.metric_calculator.stiction import StictionIndexCalculator
 
 from .conftest import make_bundle

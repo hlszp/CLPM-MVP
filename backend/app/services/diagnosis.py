@@ -87,9 +87,7 @@ async def _write_audit(
 
 async def list_diagnosis_configs(db: AsyncSession) -> list[dict]:
     """获取诊断指标配置列表。"""
-    result = await db.execute(
-        select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc())
-    )
+    result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
     configs = result.scalars().all()
     return [_config_to_dict(c) for c in configs]
 
@@ -206,8 +204,13 @@ async def list_diagnosis(
     # 主查询
     base_stmt = (
         select(DiagnosisResult, LoopLedger, ActionTracker)
-        .join(latest_sub, and_(DiagnosisResult.loop_id == latest_sub.c.loop_id,
-                                DiagnosisResult.diagnosed_at == latest_sub.c.max_diagnosed_at))
+        .join(
+            latest_sub,
+            and_(
+                DiagnosisResult.loop_id == latest_sub.c.loop_id,
+                DiagnosisResult.diagnosed_at == latest_sub.c.max_diagnosed_at,
+            ),
+        )
         .join(LoopLedger, DiagnosisResult.loop_id == LoopLedger.id, isouter=True)
         .outerjoin(ActionTracker, ActionTracker.loop_id == LoopLedger.id)
     )
@@ -221,9 +224,11 @@ async def list_diagnosis(
     total = total_result.scalar() or 0
 
     # 分页
-    stmt = base_stmt.order_by(DiagnosisResult.diagnosed_at.desc()).offset(
-        (page - 1) * page_size
-    ).limit(page_size)
+    stmt = (
+        base_stmt.order_by(DiagnosisResult.diagnosed_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     result = await db.execute(stmt)
     rows = result.all()
 
@@ -347,9 +352,9 @@ async def get_diagnosis_detail(db: AsyncSession, loop_id: str) -> dict:
     # 取最新一条诊断作为主诊断
     primary = diag_records[0]
     primary_evidence = primary.evidence_chain or {}
-    fused_confidence = primary_evidence.get("fused_confidence") if isinstance(
-        primary_evidence, dict
-    ) else None
+    fused_confidence = (
+        primary_evidence.get("fused_confidence") if isinstance(primary_evidence, dict) else None
+    )
 
     # 构建 diagnosisLabels 数组
     diagnosis_labels: list[dict] = []
@@ -378,9 +383,9 @@ async def get_diagnosis_detail(db: AsyncSession, loop_id: str) -> dict:
     waveform_url = (
         f"/api/v1/timeseries/{loop_id}/waveform?startTime={start_time}&endTime={end_time}"
     )
-    scatter_plot = primary_evidence.get("scatter_plot") if isinstance(
-        primary_evidence, dict
-    ) else None
+    scatter_plot = (
+        primary_evidence.get("scatter_plot") if isinstance(primary_evidence, dict) else None
+    )
     reasoning = primary_evidence.get("reasoning") if isinstance(primary_evidence, dict) else None
 
     evidence_chain = {
@@ -566,6 +571,7 @@ def _aggregate_efficiency_trend(
     end: datetime,
 ) -> dict:
     """聚合效率趋势（按粒度分桶）。"""
+
     # 按粒度分桶
     def bucket_key(ts: datetime) -> str:
         if ts.tzinfo is not None:

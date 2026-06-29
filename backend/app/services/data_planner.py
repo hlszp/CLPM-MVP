@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -244,9 +244,7 @@ class DataPlanner:
     # Phase 2: 读取指标数据需求契约
     # ------------------------------------------------------------------
 
-    async def _load_requirements(
-        self, metrics: list[str]
-    ) -> dict[str, Any]:
+    async def _load_requirements(self, metrics: list[str]) -> dict[str, Any]:
         """从 clpm_metric_data_requirement 表读取指标契约.
 
         Args:
@@ -354,9 +352,7 @@ class DataPlanner:
                 )
             else:
                 # 非复用：BASE 按控制类型采样，HF 固定 1s
-                interval = (
-                    base_interval if tag_group == TagGroup.BASE else 1
-                )
+                interval = base_interval if tag_group == TagGroup.BASE else 1
                 task = QueryTask(
                     tag_group=tag_group,
                     metrics=info["metrics"],
@@ -641,14 +637,10 @@ class DataPlanner:
             return
         try:
             await self._bundle_cache.set(l2_key, bundles)
-            logger.debug(
-                "DataPlanner L2 写入: key=%s, bundles=%d", l2_key, len(bundles)
-            )
+            logger.debug("DataPlanner L2 写入: key=%s, bundles=%d", l2_key, len(bundles))
         except Exception:  # noqa: BLE001
             # L2 写入失败不应影响主流程（缓存只是优化）
-            logger.warning(
-                "DataPlanner L2 写入失败，忽略: key=%s", l2_key, exc_info=True
-            )
+            logger.warning("DataPlanner L2 写入失败，忽略: key=%s", l2_key, exc_info=True)
 
     # ------------------------------------------------------------------
     # 辅助方法
@@ -668,9 +660,7 @@ class DataPlanner:
         return "KEEP_ALL_WITH_VALIDITY"
 
     @staticmethod
-    def _empty_data_block(
-        loop_id: str, tag_group: TagGroup, interval_s: int
-    ) -> DataBlock:
+    def _empty_data_block(loop_id: str, tag_group: TagGroup, interval_s: int) -> DataBlock:
         """构造空 DataBlock（TDengine 返回空数据时使用）."""
         return DataBlock(
             data_block_id=f"db_{loop_id}_{tag_group.value}_{interval_s}s",
@@ -710,9 +700,7 @@ class DataPlanner:
         from app.models.tag import TagRegistry
 
         # 查询回路
-        loop_result = await self._db.execute(
-            select(LoopLedger).where(LoopLedger.id == loop_id)
-        )
+        loop_result = await self._db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
         loop = loop_result.scalar_one_or_none()
 
         # 查询 PV tag 的量程

@@ -6,6 +6,7 @@
 3. 注入 Pinia core-access store 的持久化 JSON
 4. 刷新页面，路由守卫读取 store 后放行
 """
+
 from __future__ import annotations
 
 import json
@@ -170,7 +171,9 @@ def check_text(page, text: str, label: str) -> tuple[bool, str]:
 def check_no_error(page) -> tuple[bool, str]:
     """检查页面无错误提示（仅检查可见的 antd 错误组件，不检查 body 文本中的数字）。"""
     try:
-        err = page.locator(".ant-message-error, .ant-notification-error, .ant-result-status-error").count()
+        err = page.locator(
+            ".ant-message-error, .ant-notification-error, .ant-result-status-error"
+        ).count()
         if err > 0:
             return False, f"页面有 {err} 个错误提示"
         return True, "无错误"
@@ -199,9 +202,9 @@ def test_page(
         checks: {检查名: (page) -> (ok, msg)}
         interactions: [(描述, action_fn(page) -> (ok, msg))]
     """
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"测试: {name}  →  {url}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     issues = []
     ok_count = 0
     total_checks = 0
@@ -294,7 +297,9 @@ def _click_edit_open_drawer(page) -> tuple[bool, str]:
     """点击表格行的编辑按钮，打开抽屉。"""
     try:
         # 查找编辑按钮（可能在操作列）
-        edit_btn = page.locator('button:has-text("编辑"), a:has-text("编辑"), .ant-btn:has-text("编辑")').first
+        edit_btn = page.locator(
+            'button:has-text("编辑"), a:has-text("编辑"), .ant-btn:has-text("编辑")'
+        ).first
         if edit_btn.count() > 0 and edit_btn.is_visible():
             edit_btn.click()
             page.wait_for_timeout(2000)
@@ -360,7 +365,7 @@ def _click_tab(page) -> tuple[bool, str]:
         if len(tabs) >= 2:
             tabs[1].click()
             page.wait_for_timeout(1000)
-            return True, f"切换到第2个Tab"
+            return True, "切换到第2个Tab"
         return False, f"Tab数量不足: {len(tabs)}"
     except Exception as e:
         return False, f"Tab切换失败: {e}"
@@ -369,7 +374,9 @@ def _click_tab(page) -> tuple[bool, str]:
 def _search_loop(page) -> tuple[bool, str]:
     """在搜索框输入关键词。"""
     try:
-        search = page.locator('input[placeholder*="搜索"], input[placeholder*="回路"], .ant-input-search input').first
+        search = page.locator(
+            'input[placeholder*="搜索"], input[placeholder*="回路"], .ant-input-search input'
+        ).first
         if search.count() > 0:
             search.fill("TIC")
             page.wait_for_timeout(1500)
@@ -384,13 +391,21 @@ def _switch_dimension(page, dim: str) -> tuple[bool, str]:
     """切换性能看板维度（支持 radio/segmented/select/link 多种控件）。"""
     try:
         # 1. radio-button / segmented
-        radio = page.locator(f'.ant-radio-button-wrapper:has-text("{dim}"), .ant-segmented-item:has-text("{dim}"), .ant-radio-wrapper:has-text("{dim}")').first
+        radio = page.locator(
+            f'.ant-radio-button-wrapper:has-text("{dim}"), '
+            f'.ant-segmented-item:has-text("{dim}"), '
+            f'.ant-radio-wrapper:has-text("{dim}")'
+        ).first
         if radio.count() > 0 and radio.is_visible():
             radio.click()
             page.wait_for_timeout(1500)
             return True, f"切换到 {dim}"
         # 2. 文本链接/按钮
-        link = page.locator(f'a:has-text("{dim}"), span:has-text("{dim}")[class*="cursor"], .ant-btn:has-text("{dim}")').first
+        link = page.locator(
+            f'a:has-text("{dim}"), '
+            f'span:has-text("{dim}")[class*="cursor"], '
+            f'.ant-btn:has-text("{dim}")'
+        ).first
         if link.count() > 0 and link.is_visible():
             link.click()
             page.wait_for_timeout(1500)
@@ -413,7 +428,9 @@ def _switch_dimension(page, dim: str) -> tuple[bool, str]:
 def _click_diagnosis_tab(page) -> tuple[bool, str]:
     """点击智能诊断 Tab。"""
     try:
-        tab = page.locator(".ant-tabs-tab:has-text('智能诊断'), .ant-tabs-tab:has-text('诊断')").first
+        tab = page.locator(
+            ".ant-tabs-tab:has-text('智能诊断'), .ant-tabs-tab:has-text('诊断')"
+        ).first
         if tab.count() > 0:
             tab.click()
             page.wait_for_timeout(2000)
@@ -426,7 +443,11 @@ def _click_diagnosis_tab(page) -> tuple[bool, str]:
 def _find_action_button(page) -> tuple[bool, str]:
     """查找操作按钮（新增/编辑/保存/刷新等）。"""
     try:
-        btn = page.locator('button:has-text("新增"), button:has-text("编辑"), button:has-text("新建"), button:has-text("保存"), button:has-text("刷新"), .ant-btn-primary').first
+        btn = page.locator(
+            'button:has-text("新增"), button:has-text("编辑"), '
+            'button:has-text("新建"), button:has-text("保存"), '
+            'button:has-text("刷新"), .ant-btn-primary'
+        ).first
         if btn.count() > 0:
             return True, "找到操作按钮"
         return False, "未找到操作按钮"
@@ -489,8 +510,12 @@ with sync_playwright() as p:
             page.wait_for_timeout(2000)
             screenshot(page, "00-login-page")
             # 使用更精确的选择器
-            username_input = page.locator('input[name="username"], input[placeholder="请输入用户名"]').first
-            password_input = page.locator('input[name="password"], input[type="password"], input[placeholder="请输入密码"]').first
+            username_input = page.locator(
+                'input[name="username"], input[placeholder="请输入用户名"]'
+            ).first
+            password_input = page.locator(
+                'input[name="password"], input[type="password"], input[placeholder="请输入密码"]'
+            ).first
             if username_input.count() > 0:
                 username_input.fill(USERNAME)
                 print(f"  ✅ 填写用户名: {USERNAME}")
@@ -505,9 +530,11 @@ with sync_playwright() as p:
                     inputs[0].fill(USERNAME)
             if password_input.count() > 0:
                 password_input.fill(PASSWORD)
-                print(f"  ✅ 填写密码")
+                print("  ✅ 填写密码")
             # 点击登录按钮
-            login_btn = page.locator('button[aria-label="login"], button:has-text("登录"), button[type="submit"]').first
+            login_btn = page.locator(
+                'button[aria-label="login"], button:has-text("登录"), button[type="submit"]'
+            ).first
             if login_btn.count() > 0:
                 login_btn.click()
                 print("  点击登录按钮")
@@ -563,8 +590,12 @@ with sync_playwright() as p:
             "/metric/dashboard",
             checks={
                 "KPI卡片": lambda pg: check_count(pg, ".ant-card", "KPI卡片", 1),
-                "工厂树/选择器": lambda pg: check_count(pg, ".ant-tree, .ant-select", "工厂树/选择器", 1),
-                "自控率仪表盘组件": lambda pg: check_count(pg, "[class*='gauge'], canvas, .ant-statistic", "仪表盘/统计", 1),
+                "工厂树/选择器": lambda pg: check_count(
+                    pg, ".ant-tree, .ant-select", "工厂树/选择器", 1
+                ),
+                "自控率仪表盘组件": lambda pg: check_count(
+                    pg, "[class*='gauge'], canvas, .ant-statistic", "仪表盘/统计", 1
+                ),
             },
             interactions=[
                 ("切换时间窗-昨天", lambda pg: _switch_time_window(pg, "昨天")),
@@ -596,10 +627,18 @@ with sync_playwright() as p:
                 "04-diagnosis-detail",
                 f"/diagnosis/detail/{loop_id_for_test}",
                 checks={
-                    "三段式-问题定位": lambda pg: check_text_or_card(pg, ["问题", "定位", "Problem", "诊断"]),
-                    "三段式-证据链": lambda pg: check_text_or_card(pg, ["证据", "Evidence", "趋势", "波形"]),
-                    "三段式-解决方案": lambda pg: check_text_or_card(pg, ["解决", "方案", "建议", "推荐", "Recommendation"]),
-                    "卡片/步骤组件": lambda pg: check_count(pg, ".ant-card, .ant-steps", "卡片/步骤", 1),
+                    "三段式-问题定位": lambda pg: check_text_or_card(
+                        pg, ["问题", "定位", "Problem", "诊断"]
+                    ),
+                    "三段式-证据链": lambda pg: check_text_or_card(
+                        pg, ["证据", "Evidence", "趋势", "波形"]
+                    ),
+                    "三段式-解决方案": lambda pg: check_text_or_card(
+                        pg, ["解决", "方案", "建议", "推荐", "Recommendation"]
+                    ),
+                    "卡片/步骤组件": lambda pg: check_count(
+                        pg, ".ant-card, .ant-steps", "卡片/步骤", 1
+                    ),
                 },
                 wait_ms=3500,
             )
@@ -611,9 +650,11 @@ with sync_playwright() as p:
                 f"/loop/detail/{loop_id_for_test}",
                 checks={
                     "Tab组件": lambda pg: check_count(pg, ".ant-tabs-tab", "Tab", 1),
-                    "智能诊断Tab": lambda pg: check_text(pg, "智能诊断", "智能诊断Tab")
-                    if pg.locator("text=智能诊断").count() > 0
-                    else (True, "智能诊断Tab不存在（可能默认未渲染）"),
+                    "智能诊断Tab": lambda pg: (
+                        check_text(pg, "智能诊断", "智能诊断Tab")
+                        if pg.locator("text=智能诊断").count() > 0
+                        else (True, "智能诊断Tab不存在（可能默认未渲染）")
+                    ),
                 },
                 interactions=[
                     ("点击智能诊断Tab", lambda pg: _click_diagnosis_tab(pg)),
@@ -629,7 +670,9 @@ with sync_playwright() as p:
             "/metric/type-weight",
             checks={
                 "表格": lambda pg: check_count(pg, ".ant-table", "表格", 1),
-                "类型权重标题": lambda pg: check_text_or_card(pg, ["类型权重", "回路类型", "Type Weight"]),
+                "类型权重标题": lambda pg: check_text_or_card(
+                    pg, ["类型权重", "回路类型", "Type Weight"]
+                ),
             },
             interactions=[
                 ("新增/编辑按钮", lambda pg: _find_action_button(pg)),
@@ -643,7 +686,9 @@ with sync_playwright() as p:
             "/metric/level-weight",
             checks={
                 "表格": lambda pg: check_count(pg, ".ant-table", "表格", 1),
-                "级别权重标题": lambda pg: check_text_or_card(pg, ["级别权重", "回路级别", "Level Weight"]),
+                "级别权重标题": lambda pg: check_text_or_card(
+                    pg, ["级别权重", "回路级别", "Level Weight"]
+                ),
             },
             interactions=[
                 ("新增/编辑按钮", lambda pg: _find_action_button(pg)),
@@ -676,9 +721,11 @@ with sync_playwright() as p:
             "10-redirect-factory",
             "/loop/factory",
             checks={
-                "重定向到/manage": lambda pg: (True, f"URL: {pg.url}")
-                if "/loop/manage" in pg.url
-                else (False, f"未重定向到/manage, URL: {pg.url}"),
+                "重定向到/manage": lambda pg: (
+                    (True, f"URL: {pg.url}")
+                    if "/loop/manage" in pg.url
+                    else (False, f"未重定向到/manage, URL: {pg.url}")
+                ),
             },
         )
         test_page(
@@ -686,9 +733,11 @@ with sync_playwright() as p:
             "11-redirect-ledger",
             "/loop/ledger",
             checks={
-                "重定向到/manage": lambda pg: (True, f"URL: {pg.url}")
-                if "/loop/manage" in pg.url
-                else (False, f"未重定向到/manage, URL: {pg.url}"),
+                "重定向到/manage": lambda pg: (
+                    (True, f"URL: {pg.url}")
+                    if "/loop/manage" in pg.url
+                    else (False, f"未重定向到/manage, URL: {pg.url}")
+                ),
             },
         )
 

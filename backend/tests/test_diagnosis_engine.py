@@ -913,9 +913,7 @@ class TestAnalyzeQuality:
 
     def test_mixed_quality(self) -> None:
         """混合质量码。"""
-        data = [{"quality": "GOOD"} for _ in range(30)] + [
-            {"quality": "BAD"} for _ in range(20)
-        ]
+        data = [{"quality": "GOOD"} for _ in range(30)] + [{"quality": "BAD"} for _ in range(20)]
         result = _analyze_quality(data)
         assert result["bad_rate"] == 0.4
 
@@ -938,9 +936,7 @@ class TestDempsterShaferFusion:
 
     def test_multiple_evidence(self) -> None:
         """多条证据应通过 noisy-OR 融合。"""
-        fused = _dempster_shafer_fusion(
-            [("OSCILLATION", 0.5), ("VALVE_STICTION", 0.6)]
-        )
+        fused = _dempster_shafer_fusion([("OSCILLATION", 0.5), ("VALVE_STICTION", 0.6)])
         # noisy-OR: 1 - (1-0.5)*(1-0.6) = 1 - 0.2 = 0.8
         assert abs(fused - 0.8) < 0.001
 
@@ -1390,13 +1386,11 @@ class TestDiagnoseLoopExtendedAlgorithms:
         async def _query_fn(tag_name: str, *args, **kwargs):
             if tag_name == "LIC.PV":
                 return [
-                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"}
-                    for i in range(n)
+                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"} for i in range(n)
                 ]
             if tag_name == "LIC.SP":
                 return [
-                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"}
-                    for i in range(n)
+                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"} for i in range(n)
                 ]
             return []
 
@@ -1445,13 +1439,11 @@ class TestDiagnoseLoopExtendedAlgorithms:
         async def _query_fn(tag_name: str, *args, **kwargs):
             if tag_name == "LIC.PV":
                 return [
-                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"}
-                    for i in range(n)
+                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"} for i in range(n)
                 ]
             if tag_name == "LIC.SP":
                 return [
-                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"}
-                    for i in range(n)
+                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"} for i in range(n)
                 ]
             return []
 

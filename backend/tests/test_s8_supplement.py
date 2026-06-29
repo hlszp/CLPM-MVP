@@ -355,9 +355,7 @@ class TestAuthLockUnlock:
         """UT-AUTH-005: 登录失败计数在成功登录后清零。"""
         from tests.conftest import TEST_PASSWORD, make_db_execute_return
 
-        mock_db.execute = AsyncMock(
-            return_value=make_db_execute_return(TEST_USERS["admin"])
-        )
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
         # 失败 3 次
         for _ in range(3):
             client.post(

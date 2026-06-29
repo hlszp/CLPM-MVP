@@ -17,14 +17,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.data_source.realtime_subscriber import (
-    RealtimeSubscriber,
     _REDIS_KEY_PREFIX,
-    _REDIS_TTL,
+    RealtimeSubscriber,
     get_subscriber,
     start_subscriber,
     stop_subscriber,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fake Redis（轻量级，仅支持 setex/mget）
@@ -32,16 +30,21 @@ from app.services.data_source.realtime_subscriber import (
 
 
 class _FakeRedis:
-    """轻量级 Redis mock，支持 setex/mget."""
+    """轻量级 Redis mock，支持 setex/mget/publish."""
 
     def __init__(self) -> None:
         self._data: dict[str, str] = {}
+        self.published: list[tuple[str, str]] = []
 
     async def setex(self, key: str, ttl: int, value: str) -> None:
         self._data[key] = value
 
     async def mget(self, keys: list[str]) -> list[str | None]:
         return [self._data.get(k) for k in keys]
+
+    async def publish(self, channel: str, message: str) -> int:
+        self.published.append((channel, message))
+        return 1
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +94,7 @@ async def test_stop_cancels_running_task():
         # Mock _run 为长时间运行的任务
         async def _long_run():
             import asyncio
+
             try:
                 await asyncio.sleep(100)
             except asyncio.CancelledError:
@@ -158,12 +162,14 @@ async def test_cache_value_skips_empty_tag_code():
 async def test_get_cached_values_returns_cached_items():
     """get_cached_values 应返回已缓存的实时值."""
     fake_redis = _FakeRedis()
-    fake_redis._data[f"{_REDIS_KEY_PREFIX}LIC-101.PV"] = json.dumps({
-        "tagCode": "LIC-101.PV",
-        "value": "50.5",
-        "quality": 0,
-        "collectTime": "2026-06-28T08:00:00Z",
-    })
+    fake_redis._data[f"{_REDIS_KEY_PREFIX}LIC-101.PV"] = json.dumps(
+        {
+            "tagCode": "LIC-101.PV",
+            "value": "50.5",
+            "quality": 0,
+            "collectTime": "2026-06-28T08:00:00Z",
+        }
+    )
 
     sub = RealtimeSubscriber()
     with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
@@ -241,6 +247,7 @@ def test_get_subscriber_returns_singleton():
     """get_subscriber 应返回全局单例."""
     # 重置单例
     import app.services.data_source.realtime_subscriber as mod
+
     original = mod._subscriber
     mod._subscriber = None
     try:
@@ -256,6 +263,7 @@ def test_get_subscriber_returns_singleton():
 async def test_start_subscriber_delegates_to_singleton():
     """start_subscriber 应委托到全局单例的 start."""
     import app.services.data_source.realtime_subscriber as mod
+
     original = mod._subscriber
     mod._subscriber = None
     try:
@@ -274,6 +282,7 @@ async def test_start_subscriber_delegates_to_singleton():
 async def test_stop_subscriber_resets_singleton():
     """stop_subscriber 应停止并重置单例."""
     import app.services.data_source.realtime_subscriber as mod
+
     original = mod._subscriber
     mod._subscriber = None
     try:

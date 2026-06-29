@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import UTC
 from typing import Any
 
 import websockets
@@ -78,7 +79,9 @@ class RealtimeSubscriber:
         self._ws: Any = None
         self._running = False
         self._subscribed_tags: set[str] = set()
-        self._buffer: dict[str, dict[str, Any]] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
+        self._buffer: dict[
+            str, dict[str, Any]
+        ] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
         self._buffer_lock = asyncio.Lock()
 
     async def start(self) -> None:
@@ -129,7 +132,9 @@ class RealtimeSubscriber:
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001
-                logger.warning("实时数据订阅异常: %s，%ds 后重连", exc, settings.SIGNALR_RECONNECT_INTERVAL)
+                logger.warning(
+                    "实时数据订阅异常: %s，%ds 后重连", exc, settings.SIGNALR_RECONNECT_INTERVAL
+                )
                 await asyncio.sleep(settings.SIGNALR_RECONNECT_INTERVAL)
 
     async def _connect_and_subscribe(self) -> None:
@@ -145,10 +150,12 @@ class RealtimeSubscriber:
             return
 
         # 发送订阅请求
-        subscribe_msg = json.dumps({
-            "method": "SubscribeAsync",
-            "args": [tag_codes],
-        })
+        subscribe_msg = json.dumps(
+            {
+                "method": "SubscribeAsync",
+                "args": [tag_codes],
+            }
+        )
         await self._ws.send(subscribe_msg)
         logger.info("已订阅 %d 个 Tag", len(tag_codes))
         self._subscribed_tags = set(tag_codes)
@@ -248,7 +255,7 @@ class RealtimeSubscriber:
         values = await redis_client.mget(keys)
 
         result: list[dict] = []
-        for tc, val in zip(tag_codes, values, strict=False):
+        for _tc, val in zip(tag_codes, values, strict=False):
             if val:
                 try:
                     result.append(json.loads(val))
@@ -286,11 +293,12 @@ class RealtimeSubscriber:
             pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT
         """
         try:
-            from app.core.tdengine import execute_sql
-            from app.core.config import settings
-
             # 子表命名: d_loop_<位号小写连字符转下划线>
             import re
+
+            from app.core.config import settings
+            from app.core.tdengine import execute_sql
+
             subtable = "d_loop_" + loop_part.lower().replace("-", "_").replace(".", "_")
             subtable = re.sub(r"_+", "_", subtable)
 
@@ -301,8 +309,9 @@ class RealtimeSubscriber:
                 if ts_str:
                     break
             if not ts_str:
-                from datetime import datetime, timezone
-                ts_str = datetime.now(timezone.utc).isoformat()
+                from datetime import datetime
+
+                ts_str = datetime.now(UTC).isoformat()
 
             # 构建 INSERT 语句：缺失值用 NULL
             # 列顺序: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality

@@ -44,23 +44,13 @@ class UnitKpiSummary(Base):
     snapshot_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     avg_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     auto_mode_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    effective_auto_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
+    effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     steady_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    fast_response_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
-    good_value_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
-    oscillation_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
-    saturation_rate: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), nullable=True
-    )
+    fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    good_value_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     total_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)
     evaluated_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)
     inconclusive_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)

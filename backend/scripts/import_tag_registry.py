@@ -124,22 +124,33 @@ def parse_tag_info() -> list[dict]:
     tags = []
     for row in rows:
         (
-            tag_name, tag_desc, tag_type, range_max, range_min, unit,
-            area, system, gateway, sensor, is_alarm,
+            tag_name,
+            tag_desc,
+            tag_type,
+            range_max,
+            range_min,
+            unit,
+            area,
+            system,
+            gateway,
+            sensor,
+            is_alarm,
         ) = row[:11]
         if not tag_name:
             continue
 
-        tags.append({
-            "tag_name": str(tag_name).strip(),
-            "tag_description": str(tag_desc).strip() if tag_desc else None,
-            "tag_type": str(tag_type).strip() if tag_type else None,
-            "range_max": float(range_max) if range_max else None,
-            "range_min": float(range_min) if range_min else None,
-            "unit": str(unit).strip() if unit else None,
-            "area": str(area).strip() if area else "OTHER",
-            "is_alarm": str(is_alarm).strip() == "是" if is_alarm else False,
-        })
+        tags.append(
+            {
+                "tag_name": str(tag_name).strip(),
+                "tag_description": str(tag_desc).strip() if tag_desc else None,
+                "tag_type": str(tag_type).strip() if tag_type else None,
+                "range_max": float(range_max) if range_max else None,
+                "range_min": float(range_min) if range_min else None,
+                "unit": str(unit).strip() if unit else None,
+                "area": str(area).strip() if area else "OTHER",
+                "is_alarm": str(is_alarm).strip() == "是" if is_alarm else False,
+            }
+        )
     return tags
 
 
@@ -208,25 +219,32 @@ def assign_unit_code(tag: dict) -> str | None:
 
 async def clean_tag_data(session) -> None:
     """清空现有标签数据。"""
-    await session.execute(text("""
+    await session.execute(
+        text("""
         DELETE FROM loop_tag_mapping
         WHERE tag_id IN (SELECT id FROM tag_registry)
-    """))
-    await session.execute(text("""
+    """)
+    )
+    await session.execute(
+        text("""
         DELETE FROM tag_registry
-    """))
+    """)
+    )
     print("  ✓ 旧标签数据已清理")
 
 
 async def get_unit_id_map(session) -> dict[str, str]:
     """获取单元名称到 node_id 的映射。"""
-    result = await session.execute(text("""
+    result = await session.execute(
+        text("""
         SELECT pn.id, pn.name, parent.name AS area_name
         FROM plant_node pn
         JOIN plant_node parent ON pn.parent_id = parent.id
         JOIN plant_node factory ON parent.parent_id = factory.id
         WHERE factory.name = :factory_name AND pn.type = 'UNIT'
-    """), {"factory_name": FACTORY_NAME})
+    """),
+        {"factory_name": FACTORY_NAME},
+    )
 
     unit_id_map = {}
     for row in result.fetchall():
@@ -258,7 +276,8 @@ async def import_tags(session, tags: list[dict]) -> list[dict]:
         unit = infer_unit(tag_name, tag_type)
 
         tag_id = str(uuid.uuid4())
-        await session.execute(text("""
+        await session.execute(
+            text("""
             INSERT INTO tag_registry (
                 id, tag_name, tag_description, tag_type,
                 current_value, quality, last_sync_at, is_linked,
@@ -275,25 +294,29 @@ async def import_tags(session, tags: list[dict]) -> list[dict]:
                 range_max = EXCLUDED.range_max,
                 unit = EXCLUDED.unit,
                 measure_type = EXCLUDED.measure_type
-        """), {
-            "id": tag_id,
-            "tag_name": tag_name,
-            "desc": tag["tag_description"] or tag_name,
-            "type": tag_type,
-            "range_min": tag["range_min"],
-            "range_max": tag["range_max"],
-            "unit": unit,
-            "measure_type": measure_type,
-            "td_tag_id": tag_name,
-        })
+        """),
+            {
+                "id": tag_id,
+                "tag_name": tag_name,
+                "desc": tag["tag_description"] or tag_name,
+                "type": tag_type,
+                "range_min": tag["range_min"],
+                "range_max": tag["range_max"],
+                "unit": unit,
+                "measure_type": measure_type,
+                "td_tag_id": tag_name,
+            },
+        )
 
-        imported.append({
-            "tag_name": tag_name,
-            "area": area,
-            "unit_code": unit_code,
-            "unit_id": unit_id,
-            "measure_type": measure_type,
-        })
+        imported.append(
+            {
+                "tag_name": tag_name,
+                "area": area,
+                "unit_code": unit_code,
+                "unit_id": unit_id,
+                "measure_type": measure_type,
+            }
+        )
 
     await session.commit()
     print(f"  ✓ 标签导入完成：{len(imported)} 条")
@@ -321,27 +344,27 @@ async def main(clean: bool = False) -> None:
         print(f"错误: 标签信息文件不存在: {TAG_INFO_XLSX}")
         return
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("1. 解析标签信息 Excel")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     tags = parse_tag_info()
     print(f"  ✓ 标签信息: {len(tags)} 条")
 
     async with AsyncSessionLocal() as session:
         if clean:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print("2. 清理旧数据")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
             await clean_tag_data(session)
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("3. 导入标签数据")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         imported = await import_tags(session, tags)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("导入完成！")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"标签总数: {len(imported)}")
     print()
 

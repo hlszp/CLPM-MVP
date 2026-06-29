@@ -158,7 +158,8 @@ async def aggregate_daily_snapshot(
     if not hourly_snaps:
         logger.debug(
             "[日聚合] plant_node_id=%s, stat_date=%s 无小时快照",
-            plant_node_id, stat_date,
+            plant_node_id,
+            stat_date,
         )
         return None
 
@@ -200,8 +201,12 @@ async def aggregate_daily_snapshot(
     logger.info(
         "[日聚合] plant_node_id=%s, stat_date=%s, 小时快照数=%d, "
         "loop_count=%d, score=%s, status=%s",
-        plant_node_id, stat_date, len(hourly_snaps),
-        loop_count, snap_data["score"], status,
+        plant_node_id,
+        stat_date,
+        len(hourly_snaps),
+        loop_count,
+        snap_data["score"],
+        status,
     )
     return saved
 
@@ -227,7 +232,8 @@ async def _save_daily_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         await db.flush()
         logger.debug(
             "[日快照] 覆盖更新 plant_node_id=%s, stat_date=%s",
-            plant_node_id, stat_date,
+            plant_node_id,
+            stat_date,
         )
     else:
         snap = KpiNodeSnapshotDaily(
@@ -238,7 +244,8 @@ async def _save_daily_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         await db.flush()
         logger.debug(
             "[日快照] 新增 plant_node_id=%s, stat_date=%s",
-            plant_node_id, stat_date,
+            plant_node_id,
+            stat_date,
         )
 
     return snap_data
@@ -291,7 +298,8 @@ async def aggregate_monthly_snapshot(
     if not daily_snaps:
         logger.debug(
             "[月聚合] plant_node_id=%s, stat_month=%s 无日快照",
-            plant_node_id, stat_month,
+            plant_node_id,
+            stat_month,
         )
         return None
 
@@ -343,10 +351,13 @@ async def aggregate_monthly_snapshot(
 
     saved = await _save_monthly_snapshot(db, snap_data)
     logger.info(
-        "[月聚合] plant_node_id=%s, stat_month=%s, 日快照数=%d, "
-        "loop_count=%d, score=%s, status=%s",
-        plant_node_id, stat_month, len(daily_snaps),
-        loop_count, snap_data["score"], status,
+        "[月聚合] plant_node_id=%s, stat_month=%s, 日快照数=%d, loop_count=%d, score=%s, status=%s",
+        plant_node_id,
+        stat_month,
+        len(daily_snaps),
+        loop_count,
+        snap_data["score"],
+        status,
     )
     return saved
 
@@ -372,7 +383,8 @@ async def _save_monthly_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         await db.flush()
         logger.debug(
             "[月快照] 覆盖更新 plant_node_id=%s, stat_month=%s",
-            plant_node_id, stat_month,
+            plant_node_id,
+            stat_month,
         )
     else:
         snap = KpiNodeSnapshotMonthly(
@@ -383,7 +395,8 @@ async def _save_monthly_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         await db.flush()
         logger.debug(
             "[月快照] 新增 plant_node_id=%s, stat_month=%s",
-            plant_node_id, stat_month,
+            plant_node_id,
+            stat_month,
         )
 
     return snap_data
@@ -409,15 +422,18 @@ async def aggregate_all_nodes_daily(stat_date) -> dict:
         stat_date = stat_date.date()
 
     async with AsyncSessionLocal() as db:
-        node_result = await db.execute(
-            select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
-        )
+        node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
         nodes = list(node_result.scalars().all())
 
         if not nodes:
             logger.info("[批量日聚合] 无启用 KPI 评估的节点，跳过")
-            return {"total": 0, "success": 0, "skipped": 0, "failed": 0,
-                    "stat_date": str(stat_date)}
+            return {
+                "total": 0,
+                "success": 0,
+                "skipped": 0,
+                "failed": 0,
+                "stat_date": str(stat_date),
+            }
 
         logger.info("[批量日聚合] 待聚合节点数: %d, stat_date=%s", len(nodes), stat_date)
 
@@ -468,15 +484,18 @@ async def aggregate_all_nodes_monthly(stat_month) -> dict:
         stat_month = stat_month.replace(day=1)
 
     async with AsyncSessionLocal() as db:
-        node_result = await db.execute(
-            select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
-        )
+        node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
         nodes = list(node_result.scalars().all())
 
         if not nodes:
             logger.info("[批量月聚合] 无启用 KPI 评估的节点，跳过")
-            return {"total": 0, "success": 0, "skipped": 0, "failed": 0,
-                    "stat_month": str(stat_month)}
+            return {
+                "total": 0,
+                "success": 0,
+                "skipped": 0,
+                "failed": 0,
+                "stat_month": str(stat_month),
+            }
 
         logger.info("[批量月聚合] 待聚合节点数: %d, stat_month=%s", len(nodes), stat_month)
 
@@ -583,7 +602,9 @@ class NodeAggregator:
         total_loops = len(loop_scores)
         logger.debug(
             "[节点聚合] total=%d, valid=%d, inconclusive=%d",
-            total_loops, len(valid_results), inconclusive_count,
+            total_loops,
+            len(valid_results),
+            inconclusive_count,
         )
 
         # 所有回路 INCONCLUSIVE → 节点评分留空
@@ -615,7 +636,9 @@ class NodeAggregator:
 
         logger.debug(
             "[节点聚合] node_score=%.2f, confidence=%s, weight_total=%d",
-            node_score, confidence, weight_total,
+            node_score,
+            confidence,
+            weight_total,
         )
 
         return MetricResult(
@@ -631,9 +654,7 @@ class NodeAggregator:
             },
         )
 
-    def _resolve_level(
-        self, result: MetricResult, loop_weights: dict[str, int]
-    ) -> int:
+    def _resolve_level(self, result: MetricResult, loop_weights: dict[str, int]) -> int:
         """解析回路级别.
 
         优先级：loop_weights[loop_id] > result.details.loop_level > DEFAULT_LEVEL

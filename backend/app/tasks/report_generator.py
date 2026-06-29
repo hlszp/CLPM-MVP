@@ -21,7 +21,6 @@ import logging
 import os
 import tempfile
 from datetime import UTC, datetime
-from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, select
@@ -135,9 +134,7 @@ async def _do_generate(
     # S2-A4: 业务参数校验 — 非法周期不重试
     valid_periods = {"SHIFT", "DAILY", "WEEKLY", "MONTHLY"}
     if report_period not in valid_periods:
-        raise NonRetryableError(
-            f"非法报表周期: {report_period}，允许值: {valid_periods}"
-        )
+        raise NonRetryableError(f"非法报表周期: {report_period}，允许值: {valid_periods}")
 
     record_id = task_id or str(uuid4())
 
@@ -395,9 +392,7 @@ async def _do_export_diagnosis_statistics(
         # 2. 查询装置名
         plant_name = "全部装置"
         if plant_node_id:
-            node_result = await db.execute(
-                select(PlantNode).where(PlantNode.id == plant_node_id)
-            )
+            node_result = await db.execute(select(PlantNode).where(PlantNode.id == plant_node_id))
             node = node_result.scalar_one_or_none()
             if node:
                 plant_name = node.name
@@ -664,9 +659,7 @@ def _generate_csv_bytes(
             if hasattr(diagnosed_at, "strftime")
             else str(diagnosed_at)
         )
-        writer.writerow(
-            [str(loop_id), label, label_name, conf_val, diag_time, str(algo_ver or "")]
-        )
+        writer.writerow([str(loop_id), label, label_name, conf_val, diag_time, str(algo_ver or "")])
 
     csv_str = buffer.getvalue()
     buffer.close()

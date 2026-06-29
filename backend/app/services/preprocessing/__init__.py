@@ -4,8 +4,8 @@
 """
 
 from app.services.preprocessing.pipeline import PreprocessingPipeline
-from app.services.preprocessing.quality_code import map_quality_code, is_good_quality
-from app.services.preprocessing.thresholds import get_threshold, ControlTypeThreshold
+from app.services.preprocessing.quality_code import is_good_quality, map_quality_code
+from app.services.preprocessing.thresholds import ControlTypeThreshold, get_threshold
 
 __all__ = [
     "PreprocessingPipeline",

@@ -17,7 +17,6 @@ from app.services.preprocessing.thresholds import (
     get_threshold,
 )
 
-
 # ---------------------------------------------------------------------------
 # 5 种控制类型阈值查询
 # ---------------------------------------------------------------------------
@@ -66,9 +65,9 @@ class TestControlTypeThresholds:
         t = get_threshold(ControlType.FLOW)
         assert t.control_type == ControlType.FLOW
         assert t.frozen_window_points == 5
-        assert t.frozen_std_pct == 0.001       # 0.1%
-        assert t.jump_threshold_pct == 0.8     # 0.8×量程
-        assert t.spike_threshold_pct == 0.5    # 0.5×量程
+        assert t.frozen_std_pct == 0.001  # 0.1%
+        assert t.jump_threshold_pct == 0.8  # 0.8×量程
+        assert t.spike_threshold_pct == 0.5  # 0.5×量程
         assert t.noise_cutoff_hz == 0.2
         assert t.min_consecutive_points == 30
 
@@ -86,7 +85,7 @@ class TestControlTypeThresholds:
         """TC（温度）阈值：低频采样、小跳变阈值、更严格冻结标准差。"""
         t = get_threshold(ControlType.TEMPERATURE)
         assert t.frozen_window_points == 6
-        assert t.frozen_std_pct == 0.0005      # 0.05%（更严格）
+        assert t.frozen_std_pct == 0.0005  # 0.05%（更严格）
         assert t.jump_threshold_pct == 0.3
         assert t.spike_threshold_pct == 0.2
         assert t.noise_cutoff_hz == 0.05
@@ -114,9 +113,7 @@ class TestControlTypeThresholds:
 
     def test_thresholds_are_differentiated(self):
         """5 种控制类型的阈值应差异化（采样率各不相同）。"""
-        freqs = {
-            ct: get_threshold(ct).base_sampling_freq for ct in ControlType
-        }
+        freqs = {ct: get_threshold(ct).base_sampling_freq for ct in ControlType}
         # FC=1, PC=2, TC=5, LC=5, CC=10
         assert freqs[ControlType.FLOW] < freqs[ControlType.PRESSURE]
         assert freqs[ControlType.PRESSURE] < freqs[ControlType.TEMPERATURE]

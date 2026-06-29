@@ -14,8 +14,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from tests.conftest import TEST_USERS, mock_current_user
 
 # 路由冲突说明：
@@ -130,9 +128,7 @@ class TestListDiagnosisTags:
         assert item["severity"] == "WARN"
         assert item["status"] == "ACTIVE"
 
-    def test_list_tags_filter_by_tag_type(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_tags_filter_by_tag_type(self, client, mock_db, fake_redis) -> None:
         """按标签类型筛选."""
         call_count = [0]
 
@@ -152,9 +148,7 @@ class TestListDiagnosisTags:
         data = resp.json()["data"]
         assert data["total"] == 1
 
-    def test_list_tags_filter_by_severity(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_tags_filter_by_severity(self, client, mock_db, fake_redis) -> None:
         """按严重等级筛选."""
         call_count = [0]
 
@@ -175,9 +169,7 @@ class TestListDiagnosisTags:
         assert data["total"] == 1
         assert data["items"][0]["severity"] == "CRITICAL"
 
-    def test_list_tags_filter_by_status(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_tags_filter_by_status(self, client, mock_db, fake_redis) -> None:
         """按处理状态筛选."""
         call_count = [0]
 
@@ -197,9 +189,7 @@ class TestListDiagnosisTags:
         data = resp.json()["data"]
         assert data["total"] == 0
 
-    def test_list_tags_invalid_tag_type(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_tags_invalid_tag_type(self, client, mock_db, fake_redis) -> None:
         """无效标签类型返回 422."""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -209,9 +199,7 @@ class TestListDiagnosisTags:
         assert resp.status_code == 422
         assert resp.json()["code"] == "ERR_VALIDATION"
 
-    def test_list_tags_pagination(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_tags_pagination(self, client, mock_db, fake_redis) -> None:
         """分页查询."""
         call_count = [0]
 
@@ -247,9 +235,7 @@ class TestListDiagnosisTags:
 class TestListLoopDiagnosisTags:
     """GET /api/v1/diagnosis/tags/{loopId} tests."""
 
-    def test_list_loop_tags_success(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_loop_tags_success(self, client, mock_db, fake_redis) -> None:
         """按回路查询诊断标签."""
         loop_id = "00000000-0000-0000-0000-000000000201"
         tags = [
@@ -282,9 +268,7 @@ class TestListLoopDiagnosisTags:
         for item in data["items"]:
             assert item["loopId"] == loop_id
 
-    def test_list_loop_tags_empty(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_loop_tags_empty(self, client, mock_db, fake_redis) -> None:
         """回路无标签时返回空列表."""
         call_count = [0]
 
@@ -305,9 +289,7 @@ class TestListLoopDiagnosisTags:
         assert data["total"] == 0
         assert data["items"] == []
 
-    def test_list_loop_tags_with_filter(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_loop_tags_with_filter(self, client, mock_db, fake_redis) -> None:
         """回路标签支持二次筛选."""
         call_count = [0]
 
@@ -315,9 +297,7 @@ class TestListLoopDiagnosisTags:
             call_count[0] += 1
             if call_count[0] == 1:
                 return _make_count_mock(1)
-            return _make_scalars_mock(
-                [_make_diag_tag(severity="ERROR", status="ACTIVE")]
-            )
+            return _make_scalars_mock([_make_diag_tag(severity="ERROR", status="ACTIVE")])
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["admin"]):
@@ -344,9 +324,7 @@ class TestListLoopDiagnosisTags:
 class TestResolveDiagnosisTag:
     """PUT /api/v1/diagnosis/tags/{tagId}/resolve tests."""
 
-    def test_resolve_tag_resolved(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_resolve_tag_resolved(self, client, mock_db, fake_redis) -> None:
         """IC_ENGINEER 可以将标签标记为 RESOLVED."""
         tag = _make_diag_tag(status="ACTIVE")
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(tag))
@@ -370,9 +348,7 @@ class TestResolveDiagnosisTag:
         assert tag.status == "RESOLVED"
         assert tag.resolution_note == "已处理"
 
-    def test_resolve_tag_suppressed(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_resolve_tag_suppressed(self, client, mock_db, fake_redis) -> None:
         """PE_ENGINEER 可以将标签标记为 SUPPRESSED."""
         tag = _make_diag_tag(status="ACTIVE")
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(tag))
@@ -390,9 +366,7 @@ class TestResolveDiagnosisTag:
         assert data["status"] == "SUPPRESSED"
         assert tag.status == "SUPPRESSED"
 
-    def test_resolve_tag_admin(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_resolve_tag_admin(self, client, mock_db, fake_redis) -> None:
         """ADMIN 也可以处理标签."""
         tag = _make_diag_tag(status="ACTIVE")
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(tag))
@@ -407,9 +381,7 @@ class TestResolveDiagnosisTag:
             )
         assert resp.status_code == 200
 
-    def test_resolve_tag_not_found(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_resolve_tag_not_found(self, client, mock_db, fake_redis) -> None:
         """标签不存在返回 404."""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["ic_engineer"]):
@@ -421,9 +393,7 @@ class TestResolveDiagnosisTag:
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_DIAG_TAG_NOT_FOUND"
 
-    def test_resolve_tag_invalid_status(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_resolve_tag_invalid_status(self, client, mock_db, fake_redis) -> None:
         """无效目标状态返回 422."""
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.put(
@@ -434,9 +404,7 @@ class TestResolveDiagnosisTag:
         assert resp.status_code == 422
         assert resp.json()["code"] == "ERR_VALIDATION"
 
-    def test_resolve_tag_sponsor_forbidden(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_resolve_tag_sponsor_forbidden(self, client, mock_db, fake_redis) -> None:
         """SPONSOR 不能处理标签（403）."""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.put(
@@ -447,9 +415,7 @@ class TestResolveDiagnosisTag:
         assert resp.status_code == 403
         assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
 
-    def test_resolve_tag_writes_audit_log(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_resolve_tag_writes_audit_log(self, client, mock_db, fake_redis) -> None:
         """处理标签时写入审计日志."""
         tag = _make_diag_tag(status="ACTIVE")
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(tag))

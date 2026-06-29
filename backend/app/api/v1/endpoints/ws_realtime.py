@@ -15,7 +15,6 @@ RealtimeSubscriber 广播的实时数据，推送给已连接的前端客户端�
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -30,7 +29,6 @@ router = APIRouter(prefix="/ws", tags=["WebSocket实时推送"])
 
 async def _verify_token(websocket: WebSocket) -> bool:
     """从 query 参数验证 JWT token."""
-    from app.core.config import settings
     from app.core.security import decode_token
 
     token = websocket.query_params.get("token", "")
@@ -58,7 +56,9 @@ async def realtime_websocket(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
-    client_id = f"{websocket.client.host}:{websocket.client.port}" if websocket.client else "unknown"
+    client_id = (
+        f"{websocket.client.host}:{websocket.client.port}" if websocket.client else "unknown"
+    )
     logger.info("WebSocket 客户端已连接: %s", client_id)
 
     # 创建 Redis Pub/Sub 订阅

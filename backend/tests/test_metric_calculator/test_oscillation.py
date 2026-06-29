@@ -16,8 +16,6 @@ from __future__ import annotations
 import math
 import random
 
-import pytest
-
 from app.services.metric_calculator.oscillation import OscillationRateCalculator
 
 from .conftest import make_bundle

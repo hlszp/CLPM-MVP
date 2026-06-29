@@ -12,10 +12,12 @@ Create Date: 2026-06-24 17:00:00.000000
 
 """
 
-from alembic import op
-import sqlalchemy as sa
 from decimal import Decimal
+
+import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "g8b9c0d1e2f3"
@@ -30,19 +32,36 @@ def upgrade() -> None:
     # =========================================================================
     op.create_table(
         "loop_mode_mapping",
-        sa.Column("id", UUID(as_uuid=False), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("loop_id", UUID(as_uuid=False),
-                  sa.ForeignKey("loop_ledger.id", ondelete="CASCADE"),
-                  nullable=False),
-        sa.Column("mode_value", sa.Integer, nullable=False,
-                  comment="DCS 返回的 MODE 值"),
-        sa.Column("mode_label", sa.String(20), nullable=False,
-                  comment="控制模式：AUTO/CAS/REMOTE/APC/MANUAL"),
-        sa.Column("is_auto", sa.Boolean, nullable=False, server_default=sa.text("FALSE"),
-                  comment="是否算自动控制"),
-        sa.Column("is_effective", sa.Boolean, nullable=False, server_default=sa.text("FALSE"),
-                  comment="是否算有效自动（不饱和）"),
+        sa.Column(
+            "id", UUID(as_uuid=False), primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
+        sa.Column(
+            "loop_id",
+            UUID(as_uuid=False),
+            sa.ForeignKey("loop_ledger.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column("mode_value", sa.Integer, nullable=False, comment="DCS 返回的 MODE 值"),
+        sa.Column(
+            "mode_label",
+            sa.String(20),
+            nullable=False,
+            comment="控制模式：AUTO/CAS/REMOTE/APC/MANUAL",
+        ),
+        sa.Column(
+            "is_auto",
+            sa.Boolean,
+            nullable=False,
+            server_default=sa.text("FALSE"),
+            comment="是否算自动控制",
+        ),
+        sa.Column(
+            "is_effective",
+            sa.Boolean,
+            nullable=False,
+            server_default=sa.text("FALSE"),
+            comment="是否算有效自动（不饱和）",
+        ),
         sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("loop_id", "mode_value", name="uk_loop_mode_mapping_loop_mode"),
         comment="回路投用定义：MODE 值到控制模式的映射",
@@ -54,17 +73,20 @@ def upgrade() -> None:
     # =========================================================================
     op.create_table(
         "loop_type_weight",
-        sa.Column("id", UUID(as_uuid=False), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("loop_type", sa.String(20), nullable=False, unique=True,
-                  comment="回路类型：STABLE/SLOW/FAST/LOGIC"),
+        sa.Column(
+            "id", UUID(as_uuid=False), primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
+        sa.Column(
+            "loop_type",
+            sa.String(20),
+            nullable=False,
+            unique=True,
+            comment="回路类型：STABLE/SLOW/FAST/LOGIC",
+        ),
         sa.Column("type_name", sa.String(50), nullable=False, comment="类型名称"),
-        sa.Column("weight_a", sa.Numeric(3, 2), nullable=False,
-                  comment="准确率权重 a"),
-        sa.Column("weight_f", sa.Numeric(3, 2), nullable=False,
-                  comment="快速率权重 f"),
-        sa.Column("weight_s", sa.Numeric(3, 2), nullable=False,
-                  comment="平稳率权重 s"),
+        sa.Column("weight_a", sa.Numeric(3, 2), nullable=False, comment="准确率权重 a"),
+        sa.Column("weight_f", sa.Numeric(3, 2), nullable=False, comment="快速率权重 f"),
+        sa.Column("weight_s", sa.Numeric(3, 2), nullable=False, comment="平稳率权重 s"),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("updated_by", sa.String(50), nullable=True),
         sa.Column("updated_at", sa.DateTime, server_default=sa.func.now()),
@@ -123,13 +145,12 @@ def upgrade() -> None:
     # =========================================================================
     op.create_table(
         "loop_level_weight",
-        sa.Column("id", UUID(as_uuid=False), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("level", sa.Integer, nullable=False, unique=True,
-                  comment="回路级别：1/2/3"),
+        sa.Column(
+            "id", UUID(as_uuid=False), primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
+        sa.Column("level", sa.Integer, nullable=False, unique=True, comment="回路级别：1/2/3"),
         sa.Column("level_name", sa.String(50), nullable=False, comment="级别名称"),
-        sa.Column("weight", sa.Numeric(3, 1), nullable=False,
-                  comment="级别权重：3.0/2.0/1.0"),
+        sa.Column("weight", sa.Numeric(3, 1), nullable=False, comment="级别权重：3.0/2.0/1.0"),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("updated_by", sa.String(50), nullable=True),
         sa.Column("updated_at", sa.DateTime, server_default=sa.func.now()),
@@ -172,20 +193,32 @@ def upgrade() -> None:
     # =========================================================================
     op.add_column(
         "loop_ledger",
-        sa.Column("level", sa.SmallInteger, nullable=True, server_default=sa.text("3"),
-                  comment="回路级别 1/2/3（默认3，对齐国标附表2）"),
+        sa.Column(
+            "level",
+            sa.SmallInteger,
+            nullable=True,
+            server_default=sa.text("3"),
+            comment="回路级别 1/2/3（默认3，对齐国标附表2）",
+        ),
     )
     op.add_column(
         "loop_ledger",
-        sa.Column("modeattr_tag_id", UUID(as_uuid=False),
-                  sa.ForeignKey("tag_registry.id", ondelete="RESTRICT"),
-                  nullable=True,
-                  comment="APC 识别位号 ID（位号值为 program 时算自动控制）"),
+        sa.Column(
+            "modeattr_tag_id",
+            UUID(as_uuid=False),
+            sa.ForeignKey("tag_registry.id", ondelete="RESTRICT"),
+            nullable=True,
+            comment="APC 识别位号 ID（位号值为 program 时算自动控制）",
+        ),
     )
     op.add_column(
         "loop_ledger",
-        sa.Column("data_retention_days", sa.Integer, nullable=True,
-                  comment="数据保存周期（天），NULL 表示用系统默认"),
+        sa.Column(
+            "data_retention_days",
+            sa.Integer,
+            nullable=True,
+            comment="数据保存周期（天），NULL 表示用系统默认",
+        ),
     )
 
     # 为 level 字段创建索引（常用于筛选和聚合）

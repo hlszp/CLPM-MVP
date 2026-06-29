@@ -23,7 +23,6 @@ from app.contracts.data_types import (
     QualitySummary,
 )
 
-
 # ---------------------------------------------------------------------------
 # 数据构造辅助
 # ---------------------------------------------------------------------------
@@ -119,7 +118,10 @@ def make_bundle(
         tags = [t.strip() for t in mask_expression.split("&&")]
         masked_indices = []
         for i in range(block.point_count):
-            if all(block.validity.get(t, [False])[i] if i < len(block.validity.get(t, [])) else False for t in tags):
+            if all(
+                block.validity.get(t, [False])[i] if i < len(block.validity.get(t, [])) else False
+                for t in tags
+            ):
                 masked_indices.append(i)
     lineage = DataLineage(
         sampling_freq=sampling_freq,
@@ -176,6 +178,7 @@ def empty_bundle() -> MetricDataBundle:
 def oscillation_bundle() -> MetricDataBundle:
     """振荡数据（PV 在 SP 上下周期性波动）."""
     import math
+
     n = 200
     sp = [50.0] * n
     pv = [50.0 + 10.0 * math.sin(2 * math.pi * i / 20) for i in range(n)]

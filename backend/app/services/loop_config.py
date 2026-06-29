@@ -34,12 +34,12 @@ LOOP_MODE_MAPPING_CACHE_KEY_TEMPLATE = "clpm:loop_mode_mapping:{loop_id}"
 # 工艺类型（LoopLedger.loop_type）→ 评分类型（LoopTypeWeight.loop_type）
 _LOOP_TYPE_TO_SCORE_TYPE: dict[str, str] = {
     "TEMPERATURE": "STABLE",  # 温度控制 → 稳定型
-    "PRESSURE": "STABLE",     # 压力控制 → 稳定型
-    "LEVEL": "SLOW",          # 液位控制 → 慢速型
-    "ANALYSIS": "SLOW",       # 成分分析 → 慢速型
-    "FLOW": "FAST",           # 流量控制 → 快速型
-    "SPEED": "FAST",          # 速度控制 → 快速型
-    "OTHER": "LOGIC",         # 其他 → 逻辑型
+    "PRESSURE": "STABLE",  # 压力控制 → 稳定型
+    "LEVEL": "SLOW",  # 液位控制 → 慢速型
+    "ANALYSIS": "SLOW",  # 成分分析 → 慢速型
+    "FLOW": "FAST",  # 流量控制 → 快速型
+    "SPEED": "FAST",  # 速度控制 → 快速型
+    "OTHER": "LOGIC",  # 其他 → 逻辑型
 }
 
 
@@ -177,9 +177,7 @@ async def replace_mode_mappings(
         seen_values.add(mv)
 
     # 查询旧数据用于审计
-    old_result = await db.execute(
-        select(LoopModeMapping).where(LoopModeMapping.loop_id == loop_id)
-    )
+    old_result = await db.execute(select(LoopModeMapping).where(LoopModeMapping.loop_id == loop_id))
     old_mappings = old_result.scalars().all()
     before_json = json.dumps(
         [_mode_mapping_to_dict(m) for m in old_mappings],
@@ -188,9 +186,7 @@ async def replace_mode_mappings(
     )
 
     # 先删后建
-    await db.execute(
-        delete(LoopModeMapping).where(LoopModeMapping.loop_id == loop_id)
-    )
+    await db.execute(delete(LoopModeMapping).where(LoopModeMapping.loop_id == loop_id))
 
     new_records: list[LoopModeMapping] = []
     for m in mappings:
@@ -224,7 +220,9 @@ async def replace_mode_mappings(
 
     logger.info(
         "[投用定义] 回路 %s 已更新 %d 条映射（操作人: %s）",
-        loop_id, len(new_records), operator,
+        loop_id,
+        len(new_records),
+        operator,
     )
 
     return [_mode_mapping_to_dict(m) for m in new_records]
@@ -237,8 +235,9 @@ async def get_auto_mode_values(db: AsyncSession, loop_id: str) -> set[int]:
     若回路无配置，返回默认 {1, 2, 3}（向后兼容）。
     """
     result = await db.execute(
-        select(LoopModeMapping.mode_value)
-        .where(LoopModeMapping.loop_id == loop_id, LoopModeMapping.is_auto.is_(True))
+        select(LoopModeMapping.mode_value).where(
+            LoopModeMapping.loop_id == loop_id, LoopModeMapping.is_auto.is_(True)
+        )
     )
     values = {row.mode_value for row in result.all()}
     if not values:
@@ -254,8 +253,9 @@ async def get_effective_mode_values(db: AsyncSession, loop_id: str) -> set[int]:
     若回路无配置，返回默认 {1, 2, 3}（向后兼容）。
     """
     result = await db.execute(
-        select(LoopModeMapping.mode_value)
-        .where(LoopModeMapping.loop_id == loop_id, LoopModeMapping.is_effective.is_(True))
+        select(LoopModeMapping.mode_value).where(
+            LoopModeMapping.loop_id == loop_id, LoopModeMapping.is_effective.is_(True)
+        )
     )
     values = {row.mode_value for row in result.all()}
     if not values:
@@ -270,20 +270,14 @@ async def get_effective_mode_values(db: AsyncSession, loop_id: str) -> set[int]:
 
 async def list_loop_type_weights(db: AsyncSession) -> list[dict]:
     """获取全部回路类型权重配置。"""
-    result = await db.execute(
-        select(LoopTypeWeight).order_by(LoopTypeWeight.loop_type.asc())
-    )
+    result = await db.execute(select(LoopTypeWeight).order_by(LoopTypeWeight.loop_type.asc()))
     weights = result.scalars().all()
     return [_type_weight_to_dict(w) for w in weights]
 
 
-async def get_loop_type_weight(
-    db: AsyncSession, loop_type: str
-) -> dict | None:
+async def get_loop_type_weight(db: AsyncSession, loop_type: str) -> dict | None:
     """获取指定类型的权重配置。"""
-    result = await db.execute(
-        select(LoopTypeWeight).where(LoopTypeWeight.loop_type == loop_type)
-    )
+    result = await db.execute(select(LoopTypeWeight).where(LoopTypeWeight.loop_type == loop_type))
     w = result.scalar_one_or_none()
     return _type_weight_to_dict(w) if w else None
 
@@ -308,9 +302,7 @@ async def update_loop_type_weight(
     Raises:
         BizError: ERR_LOOP_TYPE_NOT_FOUND / ERR_WEIGHT_SUM_INVALID
     """
-    result = await db.execute(
-        select(LoopTypeWeight).where(LoopTypeWeight.loop_type == loop_type)
-    )
+    result = await db.execute(select(LoopTypeWeight).where(LoopTypeWeight.loop_type == loop_type))
     w = result.scalar_one_or_none()
     if w is None:
         raise BizError(
@@ -361,7 +353,11 @@ async def update_loop_type_weight(
 
     logger.info(
         "[类型权重] %s 已更新（a=%s, f=%s, s=%s, 操作人: %s）",
-        loop_type, w.weight_a, w.weight_f, w.weight_s, operator,
+        loop_type,
+        w.weight_a,
+        w.weight_f,
+        w.weight_s,
+        operator,
     )
 
     return after
@@ -374,20 +370,14 @@ async def update_loop_type_weight(
 
 async def list_loop_level_weights(db: AsyncSession) -> list[dict]:
     """获取全部回路级别权重配置。"""
-    result = await db.execute(
-        select(LoopLevelWeight).order_by(LoopLevelWeight.level.asc())
-    )
+    result = await db.execute(select(LoopLevelWeight).order_by(LoopLevelWeight.level.asc()))
     weights = result.scalars().all()
     return [_level_weight_to_dict(w) for w in weights]
 
 
-async def get_loop_level_weight(
-    db: AsyncSession, level: int
-) -> dict | None:
+async def get_loop_level_weight(db: AsyncSession, level: int) -> dict | None:
     """获取指定级别的权重配置。"""
-    result = await db.execute(
-        select(LoopLevelWeight).where(LoopLevelWeight.level == level)
-    )
+    result = await db.execute(select(LoopLevelWeight).where(LoopLevelWeight.level == level))
     w = result.scalar_one_or_none()
     return _level_weight_to_dict(w) if w else None
 
@@ -410,9 +400,7 @@ async def update_loop_level_weight(
     Raises:
         BizError: ERR_LOOP_LEVEL_NOT_FOUND / ERR_WEIGHT_INVALID
     """
-    result = await db.execute(
-        select(LoopLevelWeight).where(LoopLevelWeight.level == level)
-    )
+    result = await db.execute(select(LoopLevelWeight).where(LoopLevelWeight.level == level))
     w = result.scalar_one_or_none()
     if w is None:
         raise BizError(
@@ -456,7 +444,9 @@ async def update_loop_level_weight(
 
     logger.info(
         "[级别权重] %d 级已更新（weight=%s, 操作人: %s）",
-        level, w.weight, operator,
+        level,
+        w.weight,
+        operator,
     )
 
     return after

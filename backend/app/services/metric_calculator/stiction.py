@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import numpy as np
 
@@ -65,7 +64,8 @@ class StictionIndexCalculator(MetricCalculatorBase):
 
         if n < MIN_POINTS:
             return self._make_inconclusive(
-                bundle, "insufficient_data",
+                bundle,
+                "insufficient_data",
                 {"sample_count": n, "min_required": MIN_POINTS},
             )
 
@@ -85,14 +85,24 @@ class StictionIndexCalculator(MetricCalculatorBase):
         if fitting_score < MIN_FITTING_SCORE:
             logger.debug("[粘滞系数] 拟合度 %.4f < %.1f，返回 0", fitting_score, MIN_FITTING_SCORE)
             return self._make_result(
-                bundle, 0.0,
-                {"stiction_level": "NONE", "fitting_score": round(fitting_score, 4), "reason": "low_fitting"},
+                bundle,
+                0.0,
+                {
+                    "stiction_level": "NONE",
+                    "fitting_score": round(fitting_score, 4),
+                    "reason": "low_fitting",
+                },
             )
 
         if a <= 0:
             return self._make_result(
-                bundle, 0.0,
-                {"stiction_level": "NONE", "fitting_score": round(fitting_score, 4), "reason": "zero_long_axis"},
+                bundle,
+                0.0,
+                {
+                    "stiction_level": "NONE",
+                    "fitting_score": round(fitting_score, 4),
+                    "reason": "zero_long_axis",
+                },
             )
 
         # 粘滞系数 St = b/a × 100
@@ -102,7 +112,11 @@ class StictionIndexCalculator(MetricCalculatorBase):
 
         logger.debug(
             "[粘滞系数] a=%.4f, b=%.4f, St=%.2f%%, level=%s, R2=%.4f",
-            a, b, stiction, level, fitting_score,
+            a,
+            b,
+            stiction,
+            level,
+            fitting_score,
         )
 
         return self._make_result(

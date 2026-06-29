@@ -10,9 +10,10 @@ Create Date: 2026-06-24 15:00:00
 
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "d5e6f7a8b9c0"
@@ -27,12 +28,20 @@ def upgrade() -> None:
         "plant_node",
         sa.Column("is_kpi_enabled", sa.Boolean(), server_default=sa.text("FALSE"), nullable=True),
     )
-    op.execute("COMMENT ON COLUMN plant_node.is_kpi_enabled IS '是否纳入性能评估（TRUE 时生成节点级 KPI 快照）'")
+    op.execute(
+        "COMMENT ON COLUMN plant_node.is_kpi_enabled IS "
+        "'是否纳入性能评估（TRUE 时生成节点级 KPI 快照）'"
+    )
 
     # 2. 新建 kpi_node_snapshot_hourly 表
     op.create_table(
         "kpi_node_snapshot_hourly",
-        sa.Column("id", UUID(as_uuid=False), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
+        sa.Column(
+            "id",
+            UUID(as_uuid=False),
+            primary_key=True,
+            server_default=sa.text("uuid_generate_v4()"),
+        ),
         sa.Column("plant_node_id", UUID(as_uuid=False), nullable=False),
         sa.Column("ts_start", sa.DateTime(), nullable=False),
         sa.Column("ts_end", sa.DateTime(), nullable=False),
@@ -50,8 +59,12 @@ def upgrade() -> None:
         sa.Column("status", sa.String(20), nullable=False),
         sa.Column("algorithm_version", sa.String(30), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("NOW()"), nullable=False),
-        sa.ForeignKeyConstraint(["plant_node_id"], ["plant_node.id"], ondelete="CASCADE",
-                                name="fk_kpi_node_snapshot_node"),
+        sa.ForeignKeyConstraint(
+            ["plant_node_id"],
+            ["plant_node.id"],
+            ondelete="CASCADE",
+            name="fk_kpi_node_snapshot_node",
+        ),
         sa.CheckConstraint(
             "status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')",
             name="ck_kpi_node_snapshot_status",
@@ -63,15 +76,28 @@ def upgrade() -> None:
     op.create_index("idx_kpi_node_snapshot_node_id", "kpi_node_snapshot_hourly", ["plant_node_id"])
     op.create_index("idx_kpi_node_snapshot_ts_start", "kpi_node_snapshot_hourly", ["ts_start"])
     op.create_index("idx_kpi_node_snapshot_status", "kpi_node_snapshot_hourly", ["status"])
-    op.create_index("idx_kpi_node_snapshot_node_ts", "kpi_node_snapshot_hourly",
-                    ["plant_node_id", "ts_start"])
-    op.create_index("idx_kpi_node_snapshot_ts_status", "kpi_node_snapshot_hourly",
-                    ["ts_start", "status", "score"])
+    op.create_index(
+        "idx_kpi_node_snapshot_node_ts", "kpi_node_snapshot_hourly", ["plant_node_id", "ts_start"]
+    )
+    op.create_index(
+        "idx_kpi_node_snapshot_ts_status",
+        "kpi_node_snapshot_hourly",
+        ["ts_start", "status", "score"],
+    )
 
     # 注释
-    op.execute("COMMENT ON TABLE kpi_node_snapshot_hourly IS '节点级每小时性能评估快照（按 plant_node 递归聚合，对齐 GB/T 44693.2-2024 §6.4）'")
-    op.execute("COMMENT ON COLUMN kpi_node_snapshot_hourly.plant_node_id IS '工厂节点 ID（FACTORY/UNIT/EQUIPMENT 任意层级）'")
-    op.execute("COMMENT ON COLUMN kpi_node_snapshot_hourly.status IS '节点级定级：EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE'")
+    op.execute(
+        "COMMENT ON TABLE kpi_node_snapshot_hourly IS "
+        "'节点级每小时性能评估快照（按 plant_node 递归聚合，对齐 GB/T 44693.2-2024 §6.4）'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN kpi_node_snapshot_hourly.plant_node_id IS "
+        "'工厂节点 ID（FACTORY/UNIT/EQUIPMENT 任意层级）'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN kpi_node_snapshot_hourly.status IS "
+        "'节点级定级：EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE'"
+    )
 
 
 def downgrade() -> None:

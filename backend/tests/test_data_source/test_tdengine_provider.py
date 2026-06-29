@@ -36,9 +36,7 @@ def test_make_query_fn_with_different_db_instances():
     fn1 = MagicMock(name="fn1")
     fn2 = MagicMock(name="fn2")
 
-    with patch(
-        "app.core.tdengine.make_dataplanner_query_fn", side_effect=[fn1, fn2]
-    ) as mock_make:
+    with patch("app.core.tdengine.make_dataplanner_query_fn", side_effect=[fn1, fn2]) as mock_make:
         provider = TDengineProvider()
         result1 = provider.make_query_fn(db1)
         result2 = provider.make_query_fn(db2)

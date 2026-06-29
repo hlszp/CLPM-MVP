@@ -43,7 +43,7 @@ import math
 import random
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -78,9 +78,9 @@ REALTIME_HUB_URL = "ws://localhost:8100/signalr/realValueForClpmHub"
 REALTIME_INTERVAL = 1.0  # 秒
 
 # 测试参数
-NUM_TEST_TAGS = 3          # 测试 Tag 数量
-PUSH_DURATION = 5          # 推送持续时间（秒）
-POLL_INTERVAL = 0.5        # 查询间隔（秒）
+NUM_TEST_TAGS = 3  # 测试 Tag 数量
+PUSH_DURATION = 5  # 推送持续时间（秒）
+POLL_INTERVAL = 0.5  # 查询间隔（秒）
 
 # ============================================================================
 # 辅助函数
@@ -97,6 +97,7 @@ def subtable_name(tag_name: str) -> str:
     """回路位号 → TDengine 子表名。"""
     name = tag_name.lower().replace("-", "_").replace(".", "_")
     import re
+
     name = re.sub(r"_+", "_", name)
     return "d_loop_" + name
 
@@ -104,6 +105,7 @@ def subtable_name(tag_name: str) -> str:
 def subtable_name_for_loop(tag_name: str) -> str:
     """tag_name 如 LIC-101 → d_loop_lic_101（用于包含 PV/SP/OP/MODE 的单表）。"""
     import re
+
     name = tag_name.lower().replace("-", "_").replace(".", "_")
     name = re.sub(r"_+", "_", name)
     return "d_loop_" + name
@@ -237,11 +239,12 @@ async def fetch_loop_detail(loop_id: str, token: str) -> dict | None:
 async def fetch_waveform(loop_id: str, token: str, window: str = "last_1_hour") -> dict | None:
     """通过 /timeseries 接口获取回路波形数据。"""
     try:
-        from datetime import datetime, timedelta, timezone
-        now = datetime.now(timezone.utc)
+        from datetime import datetime, timedelta
+
+        now = datetime.now(UTC)
         start_time = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         end_time = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-        
+
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(
                 f"{BACKEND_URL}/api/v1/timeseries/{loop_id}/waveform",
@@ -278,8 +281,10 @@ async def fetch_realtime(tag_codes: list[str], token: str) -> list[dict]:
 async def push_via_websocket(tag_codes: list[str], values: list[dict]) -> bool:
     """通过 WebSocket Hub 推送实时数据（模拟 B 节点）。"""
     try:
-        import websockets
         import os
+
+        import websockets
+
         old_proxy = os.environ.get("HTTP_PROXY")
         old_https_proxy = os.environ.get("HTTPS_PROXY")
         if old_proxy:
@@ -291,20 +296,24 @@ async def push_via_websocket(tag_codes: list[str], values: list[dict]) -> bool:
             open_timeout=5.0,
             close_timeout=2.0,
         ) as ws:
-            subscribe_msg = json.dumps({
-                "method": "SubscribeAsync",
-                "args": [tag_codes],
-            })
+            subscribe_msg = json.dumps(
+                {
+                    "method": "SubscribeAsync",
+                    "args": [tag_codes],
+                }
+            )
             await ws.send(subscribe_msg)
             initial_resp = json.loads(await ws.recv())
             if initial_resp.get("code") != 200:
                 logger.warning("  WebSocket 订阅失败: %s", initial_resp)
                 return False
             for value_item in values:
-                msg = json.dumps({
-                    "event": "updateRealValues",
-                    "data": [value_item],
-                })
+                msg = json.dumps(
+                    {
+                        "event": "updateRealValues",
+                        "data": [value_item],
+                    }
+                )
                 await ws.send(msg)
                 await asyncio.sleep(0.1)
             logger.info("  ✓ WebSocket 推送 %d 条数据完成", len(values))
@@ -317,7 +326,7 @@ async def push_via_websocket(tag_codes: list[str], values: list[dict]) -> bool:
 async def query_tdengine_for_loop(tag_name: str, seconds: int = 10) -> list[dict]:
     """直接查 TDengine 验证数据写入。"""
     subtable = subtable_name_for_loop(tag_name)
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     start_time = end_time - timedelta(seconds=seconds)
 
     sql = (
@@ -429,9 +438,10 @@ class RealtimePipelineE2E:
         if self.token:
             try:
                 import redis.asyncio as redis
-                r = redis.Redis(host='localhost', port=6379, decode_responses=True)
-                keys = await r.keys('realtime:*')
-                pv_tags = [k.replace('realtime:', '') for k in keys if '.PV' in k][:NUM_TEST_TAGS]
+
+                r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+                keys = await r.keys("realtime:*")
+                pv_tags = [k.replace("realtime:", "") for k in keys if ".PV" in k][:NUM_TEST_TAGS]
                 if pv_tags:
                     self.tag_codes = pv_tags
                     logger.info("  从 Redis 获取测试 Tag: %s", self.tag_codes)
@@ -458,25 +468,27 @@ class RealtimePipelineE2E:
                 result = await db.execute(
                     select(LoopTagMapping.loop_id, TagRegistry.tag_name)
                     .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
-                    .where(LoopTagMapping.tag_role == 'PV')
+                    .where(LoopTagMapping.tag_role == "PV")
                     .limit(20)
                 )
                 rows = result.all()
-            
+
             self.valid_loop_ids = []
             for row in rows:
                 loop_id, tag_name = row
                 # 检查 TDengine 中是否有数据
-                loop_name = tag_name.replace('.PV', '')
+                loop_name = tag_name.replace(".PV", "")
                 rows_td = await query_tdengine_for_loop(loop_name, seconds=3600)
                 if rows_td:
                     self.valid_loop_ids.append(loop_id)
-                    logger.info("  回路 %s (%s) 在 TDengine 中有 %d 条数据", loop_id, tag_name, len(rows_td))
-            
+                    logger.info(
+                        "  回路 %s (%s) 在 TDengine 中有 %d 条数据", loop_id, tag_name, len(rows_td)
+                    )
+
             if not self.valid_loop_ids:
                 logger.warning("  TDengine 中无有效数据，使用所有回路 ID")
                 self.valid_loop_ids = [row[0] for row in rows]
-            
+
             logger.info("  获取到 %d 个有效回路 ID", len(self.valid_loop_ids))
         except Exception as exc:
             logger.warning("  查询数据库失败: %s", exc)
@@ -489,7 +501,7 @@ class RealtimePipelineE2E:
         rng = random.Random(42)
 
         for i in range(int(PUSH_DURATION / REALTIME_INTERVAL)):
-            ts_str = datetime.now(timezone.utc).isoformat()
+            ts_str = datetime.now(UTC).isoformat()
             for j, tag_code in enumerate(self.tag_codes):
                 # 正弦波 + 噪声（与 realtime_generator.py 一致）
                 t = base_time + i * REALTIME_INTERVAL
@@ -499,13 +511,15 @@ class RealtimePipelineE2E:
                 value = base + amplitude * math.sin(2 * math.pi * t / period)
                 value += rng.uniform(-0.5, 0.5)
 
-                self.test_values.append({
-                    "id": 1000 + i * len(self.tag_codes) + j,
-                    "tagCode": tag_code,
-                    "value": f"{value:.3f}",
-                    "quality": 1,
-                    "collectTime": ts_str,
-                })
+                self.test_values.append(
+                    {
+                        "id": 1000 + i * len(self.tag_codes) + j,
+                        "tagCode": tag_code,
+                        "value": f"{value:.3f}",
+                        "quality": 1,
+                        "collectTime": ts_str,
+                    }
+                )
 
     async def _test_realtime_path(self) -> None:
         """测试 A→B→F: WebSocket 推送 → /api/v1/realtime（走 Redis）。
@@ -525,12 +539,16 @@ class RealtimePipelineE2E:
             if cached:
                 logger.info("  ✓ /api/v1/realtime 返回 %d 条实时值", len(cached))
                 for item in cached[:3]:
-                    logger.info("    - %s: %s (quality=%s)",
-                                item.get("tagCode", ""),
-                                item.get("value", ""),
-                                item.get("quality", ""))
+                    logger.info(
+                        "    - %s: %s (quality=%s)",
+                        item.get("tagCode", ""),
+                        item.get("value", ""),
+                        item.get("quality", ""),
+                    )
             else:
-                logger.warning("  ✗ /api/v1/realtime 未返回数据（可能 RealtimeSubscriber 未启动或无数据）")
+                logger.warning(
+                    "  ✗ /api/v1/realtime 未返回数据（可能 RealtimeSubscriber 未启动或无数据）"
+                )
                 logger.warning("    提示: 检查 backend 环境变量 SIGNALR_ENABLED=True")
                 passed = False
         else:
@@ -547,7 +565,7 @@ class RealtimePipelineE2E:
         """测试 C→D→E→F: TDengine → History API → /timeseries。"""
         passed = True
 
-        if not hasattr(self, 'valid_loop_ids') or not self.valid_loop_ids:
+        if not hasattr(self, "valid_loop_ids") or not self.valid_loop_ids:
             logger.warning("  ℹ 无有效回路 ID，跳过历史链路验证")
             return
 
@@ -557,12 +575,15 @@ class RealtimePipelineE2E:
         waveform = await fetch_waveform(valid_loop_id, self.token or "", "last_1_hour")
         if waveform:
             timestamps = waveform.get("timestamps", [])
-            logger.info("  ✓ /timeseries 返回 %d 个数据点 for loop %s",
-                        len(timestamps), valid_loop_id)
+            logger.info(
+                "  ✓ /timeseries 返回 %d 个数据点 for loop %s", len(timestamps), valid_loop_id
+            )
             if timestamps:
-                logger.info("    时间范围: %s → %s",
-                            timestamps[0] if timestamps else "N/A",
-                            timestamps[-1] if timestamps else "N/A")
+                logger.info(
+                    "    时间范围: %s → %s",
+                    timestamps[0] if timestamps else "N/A",
+                    timestamps[-1] if timestamps else "N/A",
+                )
             else:
                 logger.warning("  ✗ /timeseries 返回空数据（TDengine 可能刚启动无历史数据）")
                 logger.warning("    提示: RealtimeSubscriber 已运行，等待几秒积累数据")
@@ -584,9 +605,14 @@ class RealtimePipelineE2E:
         if passed:
             logger.info("  ✓ C→D→E→F 链路验证通过")
         else:
-            logger.error("  ✗ C→D→E→F 链路验证失败（TDengine 无数据是预期行为，如未运行 simulator）")
+            logger.error(
+                "  ✗ C→D→E→F 链路验证失败（TDengine 无数据是预期行为，如未运行 simulator）"
+            )
             # TDengine 无数据不算失败，只是说明没有测试数据
-            logger.info("  ℹ 如需完整验证，请先运行: cd backend && uv run python scripts/realtime_simulator.py")
+            logger.info(
+                "  ℹ 如需完整验证，请先运行: "
+                "cd backend && uv run python scripts/realtime_simulator.py"
+            )
 
     async def _test_tdengine_write_path(self) -> None:
         """测试 A→B→C: 验证 RealtimeSubscriber 是否将数据写入 TDengine。
@@ -611,17 +637,21 @@ class RealtimePipelineE2E:
         if rows:
             logger.info("  ✓ A→B→C 链路验证通过：TDengine 已写入 %d 条数据", len(rows))
             for row in rows[:2]:
-                logger.info("    - ts=%s, pv=%s, sp=%s, op=%s, mode=%s",
-                            row[0] if len(row) > 0 else "N/A",
-                            row[1] if len(row) > 1 else "N/A",
-                            row[2] if len(row) > 2 else "N/A",
-                            row[3] if len(row) > 3 else "N/A",
-                            row[4] if len(row) > 4 else "N/A")
+                logger.info(
+                    "    - ts=%s, pv=%s, sp=%s, op=%s, mode=%s",
+                    row[0] if len(row) > 0 else "N/A",
+                    row[1] if len(row) > 1 else "N/A",
+                    row[2] if len(row) > 2 else "N/A",
+                    row[3] if len(row) > 3 else "N/A",
+                    row[4] if len(row) > 4 else "N/A",
+                )
         else:
             # 尝试查更长时间范围
             rows = await query_tdengine_for_loop(loop_part, seconds=60)
             if rows:
-                logger.info("  ✓ A→B→C 链路验证通过（延迟写入）：TDengine 已写入 %d 条数据", len(rows))
+                logger.info(
+                    "  ✓ A→B→C 链路验证通过（延迟写入）：TDengine 已写入 %d 条数据", len(rows)
+                )
             else:
                 logger.error("  ✗ A→B→C 链路验证失败：TDengine 无数据")
                 self.all_passed = False
@@ -630,6 +660,7 @@ class RealtimePipelineE2E:
 # ============================================================================
 # CLI
 # ============================================================================
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(

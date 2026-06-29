@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from tests.conftest import TEST_USERS, mock_current_user
 
 # ---------------------------------------------------------------------------
@@ -88,24 +86,16 @@ def _build_full_metric_set() -> list[MagicMock]:
         _make_metric_config("m-2", "fast_response_rate", "快速率", weight=30.0),
         _make_metric_config("m-3", "steady_rate", "稳定率", weight=30.0),
         # 1 投用（折扣因子）
-        _make_metric_config(
-            "m-4", "effective_auto_rate", "有效自控率", weight=None
-        ),
+        _make_metric_config("m-4", "effective_auto_rate", "有效自控率", weight=None),
         # 8 辅助诊断
         _make_metric_config("m-5", "good_value_rate", "好值率", weight=None),
         _make_metric_config("m-6", "oscillation_rate", "振荡率", weight=None),
         _make_metric_config("m-7", "saturation_rate", "饱和率", weight=None),
         _make_metric_config("m-8", "stiction_index", "粘滞指数", weight=None),
-        _make_metric_config(
-            "m-9", "overaggressive_index", "过激指数", weight=None
-        ),
-        _make_metric_config(
-            "m-10", "overconservative_index", "过保守指数", weight=None
-        ),
+        _make_metric_config("m-9", "overaggressive_index", "过激指数", weight=None),
+        _make_metric_config("m-10", "overconservative_index", "过保守指数", weight=None),
         _make_metric_config("m-11", "disturbance_index", "外扰指数", weight=None),
-        _make_metric_config(
-            "m-12", "quality_abnormal_rate", "质量异常率", weight=None
-        ),
+        _make_metric_config("m-12", "quality_abnormal_rate", "质量异常率", weight=None),
     ]
 
 
@@ -123,7 +113,7 @@ def _build_full_diagnosis_set() -> list[MagicMock]:
     ]
     return [
         _make_diagnosis_config(
-            f"d-{i+1}",
+            f"d-{i + 1}",
             diag_code=code,
             diag_name=name,
             algorithm_type=algo,
@@ -150,9 +140,7 @@ class TestGetMetricConfigs:
 
     def test_success(self, client, mock_db, fake_redis) -> None:
         """批量获取指标配置返回 3+1+8 三段式结构."""
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return(_build_full_metric_set())
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return(_build_full_metric_set()))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/configs/metrics",
@@ -187,9 +175,7 @@ class TestGetMetricConfigs:
         configs[0].weight = 40.0
         configs[1].weight = 30.0
         configs[2].weight = 20.0
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return(configs)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return(configs))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/configs/metrics",
@@ -202,9 +188,7 @@ class TestGetMetricConfigs:
 
     def test_empty_db(self, client, mock_db, fake_redis) -> None:
         """空数据库返回空三段式结构."""
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return([])
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return([]))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/configs/metrics",
@@ -220,9 +204,7 @@ class TestGetMetricConfigs:
 
     def test_ic_engineer_allowed(self, client, mock_db, fake_redis) -> None:
         """IC_ENGINEER 可以查看指标配置（只读权限）."""
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return(_build_full_metric_set())
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return(_build_full_metric_set()))
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.get(
                 "/api/v1/configs/metrics",
@@ -357,19 +339,15 @@ class TestUpdateMetricConfigs:
         data = resp.json()["data"]
         assert data["updatedCount"] == 1
 
-    def test_weight_sum_invalid_rollback(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_weight_sum_invalid_rollback(self, client, mock_db, fake_redis) -> None:
         """核心权重总和≠100 时事务回滚，返回 ERR_METRIC_WEIGHT_SUM."""
-        full_set = _build_full_metric_set()
+        _build_full_metric_set()
         # 返回 2 个核心指标（权重 50+60=110）
         updated = [
             _make_metric_config("m-1", "accuracy_rate", "准确率", weight=40.0),
             _make_metric_config("m-2", "fast_response_rate", "快速率", weight=30.0),
         ]
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return(updated)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return(updated))
         mock_db.add = MagicMock()
 
         body = {
@@ -494,9 +472,7 @@ class TestGetDiagnosisConfigs:
 
     def test_success(self, client, mock_db, fake_redis) -> None:
         """批量获取诊断配置返回 8 类标签."""
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return(_build_full_diagnosis_set())
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return(_build_full_diagnosis_set()))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/configs/diagnosis",
@@ -513,9 +489,7 @@ class TestGetDiagnosisConfigs:
 
     def test_empty_db(self, client, mock_db, fake_redis) -> None:
         """空数据库返回空列表."""
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return([])
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return([]))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/configs/diagnosis",
@@ -527,9 +501,7 @@ class TestGetDiagnosisConfigs:
 
     def test_ic_engineer_allowed(self, client, mock_db, fake_redis) -> None:
         """IC_ENGINEER 可以查看诊断配置."""
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return(_build_full_diagnosis_set())
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return(_build_full_diagnosis_set()))
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.get(
                 "/api/v1/configs/diagnosis",
@@ -598,9 +570,7 @@ class TestUpdateDiagnosisConfigs:
 
     def test_diag_not_found(self, client, mock_db, fake_redis) -> None:
         """diagId 不存在返回 404 ERR_DIAG_CONFIG_NOT_FOUND."""
-        mock_db.execute = AsyncMock(
-            return_value=_make_execute_return([])
-        )
+        mock_db.execute = AsyncMock(return_value=_make_execute_return([]))
         mock_db.add = MagicMock()
         body = {
             "items": [

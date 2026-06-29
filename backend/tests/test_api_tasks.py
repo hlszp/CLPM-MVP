@@ -14,9 +14,8 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -186,9 +185,7 @@ def _save_task_to_redis(
 class TestStandardTaskEvaluate:
     """POST /api/v1/tasks/standard/evaluate tests."""
 
-    def test_standard_evaluate_success(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_standard_evaluate_success(self, client, task_redis, fake_redis) -> None:
         """IC_ENGINEER 可以触发标准评估任务."""
         with (
             patch("app.tasks.kpi_calc.calculate_hourly_kpi") as mock_celery,
@@ -211,9 +208,7 @@ class TestStandardTaskEvaluate:
         # 验证 Celery 被调用
         mock_celery.delay.assert_called_once()
 
-    def test_standard_evaluate_admin(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_standard_evaluate_admin(self, client, task_redis, fake_redis) -> None:
         """ADMIN 可以触发标准评估任务."""
         with (
             patch("app.tasks.kpi_calc.calculate_hourly_kpi") as mock_celery,
@@ -227,9 +222,7 @@ class TestStandardTaskEvaluate:
             )
         assert resp.status_code == 200
 
-    def test_standard_evaluate_sponsor_forbidden(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_standard_evaluate_sponsor_forbidden(self, client, task_redis, fake_redis) -> None:
         """SPONSOR 不能触发评估任务（403）."""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.post(
@@ -262,9 +255,7 @@ _CUSTOM_BODY = {
 class TestCustomTaskEvaluate:
     """POST /api/v1/tasks/custom/evaluate tests."""
 
-    def test_custom_evaluate_success(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_custom_evaluate_success(self, client, task_redis, fake_redis) -> None:
         """IC_ENGINEER 可以触发自定义评估任务."""
         with (
             patch("app.tasks.kpi_calc.calculate_loop_kpi") as mock_celery,
@@ -286,9 +277,7 @@ class TestCustomTaskEvaluate:
         assert data["currentStage"] == "取数"
         assert data["createdBy"] == "ic_engineer"
 
-    def test_custom_evaluate_empty_loops(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_custom_evaluate_empty_loops(self, client, task_redis, fake_redis) -> None:
         """空回路列表返回 400 ERR_INVALID_REQUEST."""
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
@@ -299,9 +288,7 @@ class TestCustomTaskEvaluate:
         assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_INVALID_REQUEST"
 
-    def test_custom_evaluate_empty_metrics(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_custom_evaluate_empty_metrics(self, client, task_redis, fake_redis) -> None:
         """空指标列表返回 400 ERR_INVALID_REQUEST."""
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
@@ -312,9 +299,7 @@ class TestCustomTaskEvaluate:
         assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_INVALID_REQUEST"
 
-    def test_custom_evaluate_concurrency_limit_user(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_custom_evaluate_concurrency_limit_user(self, client, task_redis, fake_redis) -> None:
         """单用户活跃任务超过 3 个时返回 429."""
         # 预先创建 3 个活跃任务
         for i in range(3):
@@ -361,9 +346,7 @@ class TestGetTaskStatus:
         assert data["taskId"] == "task-pending"
         assert data["status"] == "PENDING"
 
-    def test_get_task_success_status(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_get_task_success_status(self, client, task_redis, fake_redis) -> None:
         """查询 SUCCESS 状态任务."""
         _save_task_to_redis(
             task_redis,
@@ -422,16 +405,10 @@ class TestListTasks:
         assert data["total"] == 2
         assert len(data["items"]) == 2
 
-    def test_list_tasks_filter_by_type(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_list_tasks_filter_by_type(self, client, task_redis, fake_redis) -> None:
         """按任务类型筛选."""
-        _save_task_to_redis(
-            task_redis, task_id="task-std", task_type="STANDARD", status="SUCCESS"
-        )
-        _save_task_to_redis(
-            task_redis, task_id="task-cust", task_type="CUSTOM", status="PENDING"
-        )
+        _save_task_to_redis(task_redis, task_id="task-std", task_type="STANDARD", status="SUCCESS")
+        _save_task_to_redis(task_redis, task_id="task-cust", task_type="CUSTOM", status="PENDING")
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/tasks?taskType=CUSTOM",
@@ -442,9 +419,7 @@ class TestListTasks:
         assert data["total"] == 1
         assert data["items"][0]["taskType"] == "CUSTOM"
 
-    def test_list_tasks_filter_by_status(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_list_tasks_filter_by_status(self, client, task_redis, fake_redis) -> None:
         """按状态筛选."""
         _save_task_to_redis(task_redis, task_id="task-s1", status="SUCCESS")
         _save_task_to_redis(task_redis, task_id="task-s2", status="SUCCESS")
@@ -486,9 +461,7 @@ class TestListTasks:
 class TestCancelTask:
     """POST /api/v1/tasks/{taskId}/cancel tests."""
 
-    def test_cancel_pending_task(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_cancel_pending_task(self, client, task_redis, fake_redis) -> None:
         """取消 PENDING 状态任务."""
         _save_task_to_redis(
             task_redis,
@@ -511,17 +484,11 @@ class TestCancelTask:
         assert body["code"] == "0"
         assert body["data"]["status"] == "CANCELLED"
         # 验证 Celery revoke 被调用
-        mock_celery_app.control.revoke.assert_called_once_with(
-            "celery-001", terminate=False
-        )
+        mock_celery_app.control.revoke.assert_called_once_with("celery-001", terminate=False)
 
-    def test_cancel_terminal_task(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_cancel_terminal_task(self, client, task_redis, fake_redis) -> None:
         """取消已完成的任务返回 400."""
-        _save_task_to_redis(
-            task_redis, task_id="task-done", status="SUCCESS"
-        )
+        _save_task_to_redis(task_redis, task_id="task-done", status="SUCCESS")
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
                 "/api/v1/tasks/task-done/cancel",
@@ -540,9 +507,7 @@ class TestCancelTask:
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_TASK_NOT_FOUND"
 
-    def test_cancel_sponsor_forbidden(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_cancel_sponsor_forbidden(self, client, task_redis, fake_redis) -> None:
         """SPONSOR 不能取消任务（403）."""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.post(
@@ -695,9 +660,7 @@ class TestDataLineageSchema:
 class TestListNotifications:
     """GET /api/v1/tasks/notifications tests."""
 
-    def test_list_notifications_empty(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_list_notifications_empty(self, client, task_redis, fake_redis) -> None:
         """无通知时返回空列表."""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -709,9 +672,7 @@ class TestListNotifications:
         assert data["items"] == []
         assert data["total"] == 0
 
-    def test_list_notifications_with_data(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_list_notifications_with_data(self, client, task_redis, fake_redis) -> None:
         """查询到任务完成通知."""
         import json as _json
 
@@ -725,9 +686,7 @@ class TestListNotifications:
             "error_message": "",
             "notification_time": "2026-06-26T10:00:01+00:00",
         }
-        task_redis._lists[f"task:notifications:{user_id}"] = [
-            _json.dumps(notification)
-        ]
+        task_redis._lists[f"task:notifications:{user_id}"] = [_json.dumps(notification)]
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/tasks/notifications",
@@ -739,18 +698,14 @@ class TestListNotifications:
         assert data["items"][0]["task_id"] == "task-notify-001"
         assert data["items"][0]["status"] == "SUCCESS"
 
-    def test_list_notifications_with_limit(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_list_notifications_with_limit(self, client, task_redis, fake_redis) -> None:
         """limit 参数控制返回条数."""
         import json as _json
 
         user_id = "00000000-0000-0000-0000-000000000002"
         notifications = []
         for i in range(5):
-            notifications.append(
-                _json.dumps({"task_id": f"task-{i}", "status": "SUCCESS"})
-            )
+            notifications.append(_json.dumps({"task_id": f"task-{i}", "status": "SUCCESS"}))
         task_redis._lists[f"task:notifications:{user_id}"] = notifications
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.get(
@@ -761,9 +716,7 @@ class TestListNotifications:
         data = resp.json()["data"]
         assert len(data["items"]) == 3
 
-    def test_list_notifications_invalid_limit(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_list_notifications_invalid_limit(self, client, task_redis, fake_redis) -> None:
         """limit 超出范围返回 422."""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -792,9 +745,7 @@ class TestMarkNotificationRead:
 
         user_id = "00000000-0000-0000-0000-000000000001"
         notification = {"task_id": "task-read-001", "status": "SUCCESS"}
-        task_redis._lists[f"task:notifications:{user_id}"] = [
-            _json.dumps(notification)
-        ]
+        task_redis._lists[f"task:notifications:{user_id}"] = [_json.dumps(notification)]
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/tasks/notifications/task-read-001/read",
@@ -821,9 +772,7 @@ class TestMarkNotificationRead:
 
     def test_mark_read_no_token(self, client) -> None:
         """未认证返回 401."""
-        resp = client.post(
-            "/api/v1/tasks/notifications/some-task/read"
-        )
+        resp = client.post("/api/v1/tasks/notifications/some-task/read")
         assert resp.status_code == 401
 
 
@@ -835,9 +784,7 @@ class TestMarkNotificationRead:
 class TestNotificationRouteOrder:
     """验证 /notifications 路由不被 /{task_id} 拦截."""
 
-    def test_notifications_route_not_intercepted(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_notifications_route_not_intercepted(self, client, task_redis, fake_redis) -> None:
         """GET /tasks/notifications 应命中通知端点，而非 /{task_id}."""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -873,9 +820,7 @@ class TestTaskTrackerService:
         assert task_id
         assert len(task_id) == 36  # UUID format
 
-    async def test_update_status_to_success_sends_notification(
-        self, task_redis
-    ) -> None:
+    async def test_update_status_to_success_sends_notification(self, task_redis) -> None:
         """任务进入 SUCCESS 时自动发送通知."""
         from app.schemas.task import TaskStatus, TaskType
         from app.services import task_tracker
@@ -899,9 +844,7 @@ class TestTaskTrackerService:
         assert notifications[0]["task_id"] == task_id
         assert notifications[0]["status"] == "SUCCESS"
 
-    async def test_update_status_running_no_notification(
-        self, task_redis
-    ) -> None:
+    async def test_update_status_running_no_notification(self, task_redis) -> None:
         """任务进入 RUNNING（非终态）不发送通知."""
         from app.schemas.task import TaskStatus, TaskType
         from app.services import task_tracker
@@ -921,9 +864,7 @@ class TestTaskTrackerService:
         notifications = await task_tracker.get_notifications("user-003")
         assert len(notifications) == 0
 
-    async def test_update_status_failed_sends_notification(
-        self, task_redis
-    ) -> None:
+    async def test_update_status_failed_sends_notification(self, task_redis) -> None:
         """任务进入 FAILED 时自动发送通知."""
         from app.schemas.task import TaskStatus, TaskType
         from app.services import task_tracker

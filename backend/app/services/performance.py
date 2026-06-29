@@ -133,9 +133,7 @@ async def _invalidate_dashboard_cache(plant_node_id: str | None, time_window: st
 
 async def list_metric_configs(db: AsyncSession) -> list[dict]:
     """获取 6 大 KPI 指标配置列表。"""
-    result = await db.execute(
-        select(MetricConfig).order_by(MetricConfig.metric_code.asc())
-    )
+    result = await db.execute(select(MetricConfig).order_by(MetricConfig.metric_code.asc()))
     configs = result.scalars().all()
     return [_metric_config_to_dict(c) for c in configs]
 
@@ -359,11 +357,7 @@ async def get_board(
         "active": inconclusive_count > 0,
         "inconclusiveCount": inconclusive_count,
         "partialCount": 0,
-        "message": (
-            f"存在 {inconclusive_count} 个不确定结果"
-            if inconclusive_count > 0
-            else None
-        ),
+        "message": (f"存在 {inconclusive_count} 个不确定结果" if inconclusive_count > 0 else None),
     }
 
     data = {
@@ -447,7 +441,7 @@ async def _aggregate_node_board(
         return _empty_kpi_cards(), _empty_kpi_summary()
 
     # 聚合 KPI 值（多节点时按 loop_count 加权平均）
-    fields = _node_kpi_fields()
+    _node_kpi_fields()
     total_weight = sum(s.loop_count or 1 for s in snaps)
 
     def weighted_avg(field: str) -> float | None:
@@ -456,9 +450,7 @@ async def _aggregate_node_board(
             for s in snaps
             if getattr(s, field) is not None
         )
-        denominator = sum(
-            (s.loop_count or 1) for s in snaps if getattr(s, field) is not None
-        )
+        denominator = sum((s.loop_count or 1) for s in snaps if getattr(s, field) is not None)
         if denominator == 0:
             return None
         return round(float(numerator) / denominator, 2)
@@ -467,25 +459,29 @@ async def _aggregate_node_board(
     cards: list[dict] = []
     for code in KPI_METRIC_CODES:
         val = weighted_avg(code)
-        cards.append({
-            "metricKey": code,
-            "metricName": KPI_NAME_MAP.get(code, code),
-            "value": val,
-            "unit": "%",
-            "status": _kpi_status(code, val, _default_threshold(code)),
-            "algorithmVersion": ALGORITHM_VERSION,
-        })
+        cards.append(
+            {
+                "metricKey": code,
+                "metricName": KPI_NAME_MAP.get(code, code),
+                "value": val,
+                "unit": "%",
+                "status": _kpi_status(code, val, _default_threshold(code)),
+                "algorithmVersion": ALGORITHM_VERSION,
+            }
+        )
 
     # 综合评分卡片
     score_avg = weighted_avg("score")
-    cards.append({
-        "metricKey": "composite_score",
-        "metricName": KPI_NAME_MAP["composite_score"],
-        "value": score_avg,
-        "unit": "",
-        "status": _score_to_status(score_avg),
-        "algorithmVersion": ALGORITHM_VERSION,
-    })
+    cards.append(
+        {
+            "metricKey": "composite_score",
+            "metricName": KPI_NAME_MAP["composite_score"],
+            "value": score_avg,
+            "unit": "",
+            "status": _score_to_status(score_avg),
+            "algorithmVersion": ALGORITHM_VERSION,
+        }
+    )
 
     # 构建 KPI 汇总
     auto_loop_ratio = weighted_avg("auto_loop_ratio")
@@ -561,10 +557,7 @@ async def _aggregate_node_steady_trend(
     result = await db.execute(stmt)
     rows = result.all()
     timestamps = [r.hour.strftime("%Y-%m-%dT%H:00:00") for r in rows]
-    values = [
-        round(float(r.avg_steady), 2) if r.avg_steady is not None else None
-        for r in rows
-    ]
+    values = [round(float(r.avg_steady), 2) if r.avg_steady is not None else None for r in rows]
     return {"timestamps": timestamps, "values": values}
 
 
@@ -1070,9 +1063,7 @@ async def _aggregate_kpi_summary(
     for f in fields:
         col = getattr(KpiSnapshotHourly, f)
         # SUM(value * w) / NULLIF(SUM(w), 0)
-        weighted_cols.append(
-            (func.sum(col * weight_col) / weight_sum_col).label(f)
-        )
+        weighted_cols.append((func.sum(col * weight_col) / weight_sum_col).label(f))
 
     # 投自动回路占比：COUNT(auto_mode_rate > 0) / COUNT(*)
     auto_loop_count = func.sum(
@@ -1119,7 +1110,8 @@ async def _aggregate_kpi_summary(
         logger.warning(
             "[装置级聚合] plant_node_id=%s, SUM(weight)=%s（为 0 或 NULL），"
             "无法计算加权平均，返回 INCONCLUSIVE",
-            plant_node_id, weight_sum_val,
+            plant_node_id,
+            weight_sum_val,
         )
         return empty
 
@@ -1135,8 +1127,12 @@ async def _aggregate_kpi_summary(
     logger.debug(
         "[装置级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%.0f, "
         "投自动回路占比=%.2f%%, SUM(weight)=%.4f, 加权综合评分=%s",
-        plant_node_id, row.cnt, auto_loop_count_val,
-        auto_loop_ratio, weight_sum_val, score_avg,
+        plant_node_id,
+        row.cnt,
+        auto_loop_count_val,
+        auto_loop_ratio,
+        weight_sum_val,
+        score_avg,
     )
 
     return {
@@ -1177,9 +1173,7 @@ async def _aggregate_steady_trend(
     result = await db.execute(stmt)
     rows = result.all()
     timestamps = [r.hour.strftime("%Y-%m-%dT%H:00:00") for r in rows]
-    values = [
-        round(float(r.avg_steady), 2) if r.avg_steady is not None else None for r in rows
-    ]
+    values = [round(float(r.avg_steady), 2) if r.avg_steady is not None else None for r in rows]
     return {"timestamps": timestamps, "values": values}
 
 
@@ -1233,9 +1227,7 @@ async def _aggregate_kpi_trend(
         return dt.strftime("%Y-%m-%d")
 
     timestamps = [format_bucket(r.bucket) for r in rows]
-    values = [
-        round(float(r.avg_value), 2) if r.avg_value is not None else None for r in rows
-    ]
+    values = [round(float(r.avg_value), 2) if r.avg_value is not None else None for r in rows]
     return {
         "timestamps": timestamps,
         "series": [
@@ -1323,9 +1315,7 @@ async def _aggregate_bad_actor_distribution(
     label_count: dict[str, int] = {}
     for tracker in t_result.scalars().all():
         if tracker.diagnosis_label:
-            label_count[tracker.diagnosis_label] = (
-                label_count.get(tracker.diagnosis_label, 0) + 1
-            )
+            label_count[tracker.diagnosis_label] = label_count.get(tracker.diagnosis_label, 0) + 1
 
     items = [{"label": label, "count": count} for label, count in label_count.items()]
     items.sort(key=lambda x: -x["count"])

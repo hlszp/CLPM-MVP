@@ -109,14 +109,10 @@ class TestArchiveAuditLogsTask:
         mock_session = _make_mock_session(rowcount=500)
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            result = archive_audit_logs.run(
-                retention_days=DEFAULT_RETENTION_DAYS
-            )
+            result = archive_audit_logs.run(retention_days=DEFAULT_RETENTION_DAYS)
 
         assert result["archived"] == 500
         assert result["retention_days"] == DEFAULT_RETENTION_DAYS
@@ -138,14 +134,10 @@ class TestArchiveAuditLogsTask:
         mock_session.commit = AsyncMock()
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            result = archive_audit_logs.run(
-                retention_days=DEFAULT_RETENTION_DAYS
-            )
+            result = archive_audit_logs.run(retention_days=DEFAULT_RETENTION_DAYS)
 
         assert result["archived"] == 1300
         # execute 被调用 4 次：2 次 ensure_archive_table + 2 次 archive_batch
@@ -156,14 +148,10 @@ class TestArchiveAuditLogsTask:
         mock_session = _make_mock_session(rowcount=0)
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
-            result = archive_audit_logs.run(
-                retention_days=DEFAULT_RETENTION_DAYS
-            )
+            result = archive_audit_logs.run(retention_days=DEFAULT_RETENTION_DAYS)
 
         assert result["archived"] == 0
         assert result["retention_days"] == DEFAULT_RETENTION_DAYS
@@ -175,15 +163,11 @@ class TestArchiveAuditLogsTask:
         mock_session.commit = AsyncMock()
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
             # 不应抛出异常
-            result = archive_audit_logs.run(
-                retention_days=DEFAULT_RETENTION_DAYS
-            )
+            result = archive_audit_logs.run(retention_days=DEFAULT_RETENTION_DAYS)
 
         assert result["archived"] == 0
         assert "error" in result
@@ -194,9 +178,7 @@ class TestArchiveAuditLogsTask:
         mock_session = _make_mock_session(rowcount=100)
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(
-                return_value=mock_session
-            )
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
             result = archive_audit_logs.run(retention_days=30)

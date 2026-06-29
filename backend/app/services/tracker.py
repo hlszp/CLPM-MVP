@@ -194,8 +194,7 @@ async def _generate_ab_comparison(
             "startTime": after_start,
             "endTime": after_end,
             "waveformUrl": (
-                f"/api/v1/timeseries/{loop_id}/waveform"
-                f"?startTime={after_start}&endTime={after_end}"
+                f"/api/v1/timeseries/{loop_id}/waveform?startTime={after_start}&endTime={after_end}"
             ),
         },
         "diagnosisLabel": tracker.diagnosis_label,

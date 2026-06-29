@@ -187,15 +187,17 @@ async def authenticate(
     if user is None:
         await _record_login_fail(username)
         # 登录失败审计日志（S1-B8）
-        db.add(SysAuditLog(
-            id=str(uuid4()),
-            operator=username,
-            operation_type="LOGIN_FAILED",
-            target_type="User",
-            target_id=None,
-            after_value="reason=user_not_found",
-            operated_at=datetime.now(UTC).replace(tzinfo=None),
-        ))
+        db.add(
+            SysAuditLog(
+                id=str(uuid4()),
+                operator=username,
+                operation_type="LOGIN_FAILED",
+                target_type="User",
+                target_id=None,
+                after_value="reason=user_not_found",
+                operated_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
         await db.commit()
         # 统一错误信息，防止用户名枚举攻击（S1-B6）
         raise BizError(
@@ -208,15 +210,17 @@ async def authenticate(
     if not verify_password(password, user.password_hash):
         await _record_login_fail(username)
         # 登录失败审计日志（S1-B8）
-        db.add(SysAuditLog(
-            id=str(uuid4()),
-            operator=username,
-            operation_type="LOGIN_FAILED",
-            target_type="User",
-            target_id=str(user.id),
-            after_value="reason=wrong_password",
-            operated_at=datetime.now(UTC).replace(tzinfo=None),
-        ))
+        db.add(
+            SysAuditLog(
+                id=str(uuid4()),
+                operator=username,
+                operation_type="LOGIN_FAILED",
+                target_type="User",
+                target_id=str(user.id),
+                after_value="reason=wrong_password",
+                operated_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
         await db.commit()
         raise BizError(
             code="ERR_INVALID_CREDENTIALS",
@@ -245,15 +249,17 @@ async def authenticate(
         .values(last_login_at=datetime.now(UTC).replace(tzinfo=None))
     )
     # 登录成功审计日志（S1-B8）
-    db.add(SysAuditLog(
-        id=str(uuid4()),
-        operator=user.username,
-        operation_type="LOGIN",
-        target_type="User",
-        target_id=str(user.id),
-        after_value=f"role={user.role}",
-        operated_at=datetime.now(UTC).replace(tzinfo=None),
-    ))
+    db.add(
+        SysAuditLog(
+            id=str(uuid4()),
+            operator=user.username,
+            operation_type="LOGIN",
+            target_type="User",
+            target_id=str(user.id),
+            after_value=f"role={user.role}",
+            operated_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+    )
     await db.commit()
 
     return user, tokens

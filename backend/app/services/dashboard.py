@@ -168,22 +168,16 @@ async def _aggregate_dashboard(
     trend_task = _run_in_session(
         lambda s: _aggregate_trend_summary_sql(s, plant_id=plant_id, now=now)
     )
-    alerts_task = _run_in_session(
-        lambda s: _build_pending_alerts(s, plant_id=plant_id)
-    )
+    alerts_task = _run_in_session(lambda s: _build_pending_alerts(s, plant_id=plant_id))
 
     # SPONSOR 角色跳过低效回路
     if user_role in ROLE_FACTORY_SUMMARY:
-        results = await asyncio.gather(
-            kpi_cards_task, counts_task, trend_task, alerts_task
-        )
+        results = await asyncio.gather(kpi_cards_task, counts_task, trend_task, alerts_task)
         kpi_cards, counts, trend_summary, pending_alerts = results
         inefficient_loops: list[dict[str, Any]] = []
     else:
         loops_task = _run_in_session(
-            lambda s: _build_inefficient_loops(
-                s, plant_id=plant_id, start=current_start, end=now
-            )
+            lambda s: _build_inefficient_loops(s, plant_id=plant_id, start=current_start, end=now)
         )
         results = await asyncio.gather(
             kpi_cards_task, counts_task, trend_task, alerts_task, loops_task
@@ -238,9 +232,9 @@ def _apply_snapshot_filters(
     if status_filter:
         stmt = stmt.where(KpiSnapshotHourly.status == status_filter)
     if plant_id:
-        stmt = stmt.join(
-            LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id
-        ).where(LoopLedger.unit_id == plant_id)
+        stmt = stmt.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id == plant_id
+        )
     return stmt
 
 
@@ -275,12 +269,8 @@ async def _aggregate_kpi_cards_sql(
     avg_cols = []
     for f in fields:
         col = getattr(KpiSnapshotHourly, f)
-        avg_cols.append(
-            func.avg(case((cur_cond, col), else_=None)).label(f"cur_{f}")
-        )
-        avg_cols.append(
-            func.avg(case((prev_cond, col), else_=None)).label(f"prev_{f}")
-        )
+        avg_cols.append(func.avg(case((cur_cond, col), else_=None)).label(f"cur_{f}"))
+        avg_cols.append(func.avg(case((prev_cond, col), else_=None)).label(f"prev_{f}"))
 
     stmt = _apply_snapshot_filters(
         select(cur_cnt, prev_cnt, *avg_cols),
@@ -361,9 +351,7 @@ async def _aggregate_counts_sql(
 
     tracker_result = await session.execute(tracker_stmt)
     tracker_row = tracker_result.one()
-    operation_count = _make_card(
-        tracker_row.cur_cnt or 0, tracker_row.prev_cnt or 0, unit="次"
-    )
+    operation_count = _make_card(tracker_row.cur_cnt or 0, tracker_row.prev_cnt or 0, unit="次")
 
     return {"alarm_count": alarm_count, "operation_count": operation_count}
 
@@ -481,9 +469,7 @@ async def _fill_async_kpi_cards(
     alarm_count_previous = await _count_diagnoses(
         db=db, plant_id=plant_id, start=previous_start, end=current_start
     )
-    kpi_cards["alarm_count"] = _make_card(
-        alarm_count_current, alarm_count_previous, unit="次"
-    )
+    kpi_cards["alarm_count"] = _make_card(alarm_count_current, alarm_count_previous, unit="次")
 
     # operation_count: 当前周期 ActionTracker 更新数
     operation_count_current = await _count_tracker_updates(
@@ -847,9 +833,7 @@ def _to_float(value: Decimal | float | None) -> float | None:
 # ---------------------------------------------------------------------------
 
 
-def _build_cache_key(
-    plant_id: str | None, granularity: str, user_role: str
-) -> str:
+def _build_cache_key(plant_id: str | None, granularity: str, user_role: str) -> str:
     """构建 Redis 缓存 key。"""
     return DASHBOARD_CACHE_KEY_TEMPLATE.format(
         plant_id=plant_id or "all",
@@ -876,9 +860,7 @@ async def _write_cache(cache_key: str, data: dict[str, Any]) -> None:
     """
     try:
         ttl = DASHBOARD_CACHE_TTL + random.randint(-30, 30)
-        await redis_client.setex(
-            cache_key, ttl, json.dumps(data, default=str)
-        )
+        await redis_client.setex(cache_key, ttl, json.dumps(data, default=str))
     except Exception as exc:  # noqa: BLE001
         logger.warning("写入工作台缓存失败: %s", exc)
 

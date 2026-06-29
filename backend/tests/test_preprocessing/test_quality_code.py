@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from app.contracts.data_types import QualityStatus
@@ -20,7 +18,6 @@ from app.services.preprocessing.quality_code import (
     is_nan_or_inf,
     map_quality_code,
 )
-
 
 # ---------------------------------------------------------------------------
 # map_quality_code
@@ -34,12 +31,12 @@ class TestMapQualityCode:
         "raw_code,expected",
         [
             (None, QualityStatus.GOOD),
-            (1, QualityStatus.GOOD),        # TDengine Good
-            (2, QualityStatus.GOOD),        # OPC UA Good
-            (3, QualityStatus.GOOD),        # OPC UA Good_Cascaded
-            (192, QualityStatus.GOOD),      # OPC DA Good
-            (0, QualityStatus.BAD),         # TDengine / OPC UA Bad
-            (999, QualityStatus.UNKNOWN),   # 未知码
+            (1, QualityStatus.GOOD),  # TDengine Good
+            (2, QualityStatus.GOOD),  # OPC UA Good
+            (3, QualityStatus.GOOD),  # OPC UA Good_Cascaded
+            (192, QualityStatus.GOOD),  # OPC DA Good
+            (0, QualityStatus.BAD),  # TDengine / OPC UA Bad
+            (999, QualityStatus.UNKNOWN),  # 未知码
             (-1, QualityStatus.UNKNOWN),
             (100, QualityStatus.UNKNOWN),
         ],

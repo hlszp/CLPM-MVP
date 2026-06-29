@@ -34,10 +34,10 @@ from app.core.db import AsyncSessionLocal, engine
 # 常量
 # ============================================================================
 
-SAMPLE_INTERVAL = 10          # 采样间隔（秒）
-BATCH_SIZE = 1000             # TDengine 批量写入行数
-MAX_CONCURRENT = 5            # TDengine 并发写入数
-PROGRESS_INTERVAL = 10000     # 进度打印间隔（行）
+SAMPLE_INTERVAL = 10  # 采样间隔（秒）
+BATCH_SIZE = 1000  # TDengine 批量写入行数
+MAX_CONCURRENT = 5  # TDengine 并发写入数
+PROGRESS_INTERVAL = 10000  # 进度打印间隔（行）
 
 # TDengine REST API URL（端口 = 原生端口 + 11，如 6030→6041）
 TD_REST_BASE = f"http://{settings.TDENGINE_HOST}:{settings.TDENGINE_PORT + 11}/rest/sql"
@@ -55,91 +55,131 @@ LOOP_CONFIGS: list[dict[str, Any]] = [
         "id": "00000000-0000-0000-0000-000000000201",
         "tag_name": "HDS-RX-TIC-101",
         "description": "R-101 反应器入口温度调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000111",   # HDS-RX 反应系统
+        "unit_id": "00000000-0000-0000-0000-000000000111",  # HDS-RX 反应系统
         "scenario": "normal",
-        "base_sp": 360.0, "base_pv": 358.5, "base_op": 62.3,
-        "pid_p": 1.5, "pid_i": 30.0, "pid_d": 5.0,
+        "base_sp": 360.0,
+        "base_pv": 358.5,
+        "base_op": 62.3,
+        "pid_p": 1.5,
+        "pid_i": 30.0,
+        "pid_d": 5.0,
     },
     {
         "id": "00000000-0000-0000-0000-000000000202",
         "tag_name": "HDS-FR-FIC-201",
         "description": "E-201 分馏塔进料流量调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000112",   # HDS-FR 分馏系统
+        "unit_id": "00000000-0000-0000-0000-000000000112",  # HDS-FR 分馏系统
         "scenario": "oscillation",
-        "base_sp": 85.0, "base_pv": 85.2, "base_op": 48.5,
-        "pid_p": 2.0, "pid_i": 10.0, "pid_d": 0.0,
+        "base_sp": 85.0,
+        "base_pv": 85.2,
+        "base_op": 48.5,
+        "pid_p": 2.0,
+        "pid_i": 10.0,
+        "pid_d": 0.0,
     },
     {
         "id": "00000000-0000-0000-0000-000000000203",
         "tag_name": "HDC-RX-TIC-301",
         "description": "R-301 反应器入口温度调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000113",   # HDC-RX 反应系统
+        "unit_id": "00000000-0000-0000-0000-000000000113",  # HDC-RX 反应系统
         "scenario": "valve_stiction",
-        "base_sp": 375.0, "base_pv": 372.1, "base_op": 55.8,
-        "pid_p": 1.5, "pid_i": 30.0, "pid_d": 5.0,
+        "base_sp": 375.0,
+        "base_pv": 372.1,
+        "base_op": 55.8,
+        "pid_p": 1.5,
+        "pid_i": 30.0,
+        "pid_d": 5.0,
     },
     {
         "id": str(uuid.uuid4()),
         "tag_name": "HDS-DE-LIC-102",
         "description": "T-102 塔底液位调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000116",   # HDS-DE 分馏系统（新建）
+        "unit_id": "00000000-0000-0000-0000-000000000116",  # HDS-DE 分馏系统（新建）
         "scenario": "op_saturation",
-        "base_sp": 50.0, "base_pv": 50.0, "base_op": 45.0,
-        "pid_p": 1.0, "pid_i": 60.0, "pid_d": 0.0,
+        "base_sp": 50.0,
+        "base_pv": 50.0,
+        "base_op": 45.0,
+        "pid_p": 1.0,
+        "pid_i": 60.0,
+        "pid_d": 0.0,
     },
     {
         "id": str(uuid.uuid4()),
         "tag_name": "HDC-FR-FIC-302",
         "description": "E-302 换热器流量调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000114",   # HDC-FR 分馏系统
+        "unit_id": "00000000-0000-0000-0000-000000000114",  # HDC-FR 分馏系统
         "scenario": "normal",
-        "base_sp": 120.0, "base_pv": 120.0, "base_op": 55.0,
-        "pid_p": 2.0, "pid_i": 10.0, "pid_d": 0.0,
+        "base_sp": 120.0,
+        "base_pv": 120.0,
+        "base_op": 55.0,
+        "pid_p": 2.0,
+        "pid_i": 10.0,
+        "pid_d": 0.0,
     },
     {
         "id": str(uuid.uuid4()),
         "tag_name": "HDS-RX-PIC-103",
         "description": "V-103 压力控制调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000111",   # HDS-RX 反应系统
+        "unit_id": "00000000-0000-0000-0000-000000000111",  # HDS-RX 反应系统
         "scenario": "overconservative",
-        "base_sp": 1.2, "base_pv": 1.18, "base_op": 40.0,
-        "pid_p": 1.2, "pid_i": 20.0, "pid_d": 2.0,
+        "base_sp": 1.2,
+        "base_pv": 1.18,
+        "base_op": 40.0,
+        "pid_p": 1.2,
+        "pid_i": 20.0,
+        "pid_d": 2.0,
     },
     {
         "id": str(uuid.uuid4()),
         "tag_name": "HDC-DE-TIC-303",
         "description": "T-303 塔顶温度调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000117",   # HDC-DE 分馏系统（新建）
+        "unit_id": "00000000-0000-0000-0000-000000000117",  # HDC-DE 分馏系统（新建）
         "scenario": "overaggressive",
-        "base_sp": 180.0, "base_pv": 178.0, "base_op": 50.0,
-        "pid_p": 2.0, "pid_i": 15.0, "pid_d": 3.0,
+        "base_sp": 180.0,
+        "base_pv": 178.0,
+        "base_op": 50.0,
+        "pid_p": 2.0,
+        "pid_i": 15.0,
+        "pid_d": 3.0,
     },
     {
         "id": str(uuid.uuid4()),
         "tag_name": "HDS-FR-FIC-104",
         "description": "F-104 燃料气流量调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000112",   # HDS-FR 分馏系统
+        "unit_id": "00000000-0000-0000-0000-000000000112",  # HDS-FR 分馏系统
         "scenario": "normal",
-        "base_sp": 200.0, "base_pv": 200.0, "base_op": 60.0,
-        "pid_p": 2.0, "pid_i": 10.0, "pid_d": 0.0,
+        "base_sp": 200.0,
+        "base_pv": 200.0,
+        "base_op": 60.0,
+        "pid_p": 2.0,
+        "pid_i": 10.0,
+        "pid_d": 0.0,
     },
     {
         "id": str(uuid.uuid4()),
         "tag_name": "HDC-RX-LIC-304",
         "description": "D-304 分离器液位调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000113",   # HDC-RX 反应系统
+        "unit_id": "00000000-0000-0000-0000-000000000113",  # HDC-RX 反应系统
         "scenario": "manual",
-        "base_sp": 60.0, "base_pv": 58.0, "base_op": 35.0,
-        "pid_p": 1.0, "pid_i": 60.0, "pid_d": 0.0,
+        "base_sp": 60.0,
+        "base_pv": 58.0,
+        "base_op": 35.0,
+        "pid_p": 1.0,
+        "pid_i": 60.0,
+        "pid_d": 0.0,
     },
     {
         "id": str(uuid.uuid4()),
         "tag_name": "HDS-DE-PIC-105",
         "description": "D-105 塔顶压力调节回路",
-        "unit_id": "00000000-0000-0000-0000-000000000116",   # HDS-DE 分馏系统（新建）
+        "unit_id": "00000000-0000-0000-0000-000000000116",  # HDS-DE 分馏系统（新建）
         "scenario": "normal",
-        "base_sp": 0.8, "base_pv": 0.79, "base_op": 45.0,
-        "pid_p": 1.2, "pid_i": 20.0, "pid_d": 2.0,
+        "base_sp": 0.8,
+        "base_pv": 0.79,
+        "base_op": 45.0,
+        "pid_p": 1.2,
+        "pid_i": 20.0,
+        "pid_d": 2.0,
     },
 ]
 
@@ -166,32 +206,67 @@ NEW_PLANT_NODES = [
 # 场景 → KPI 范围（对齐 GB/T 44693.2-2024，新增 frr 快速率）
 SCENARIO_KPI: dict[str, dict[str, tuple[float, float]]] = {
     "normal": {
-        "gvr": (95, 99), "amr": (95, 100), "sr": (85, 95),
-        "ar": (85, 95), "or": (1, 5), "sat": (0, 3), "frr": (85, 95),
+        "gvr": (95, 99),
+        "amr": (95, 100),
+        "sr": (85, 95),
+        "ar": (85, 95),
+        "or": (1, 5),
+        "sat": (0, 3),
+        "frr": (85, 95),
     },
     "oscillation": {
-        "gvr": (95, 99), "amr": (95, 100), "sr": (25, 40),
-        "ar": (50, 65), "or": (40, 60), "sat": (1, 5), "frr": (60, 75),
+        "gvr": (95, 99),
+        "amr": (95, 100),
+        "sr": (25, 40),
+        "ar": (50, 65),
+        "or": (40, 60),
+        "sat": (1, 5),
+        "frr": (60, 75),
     },
     "valve_stiction": {
-        "gvr": (95, 99), "amr": (95, 100), "sr": (40, 55),
-        "ar": (60, 75), "or": (20, 35), "sat": (2, 8), "frr": (40, 60),
+        "gvr": (95, 99),
+        "amr": (95, 100),
+        "sr": (40, 55),
+        "ar": (60, 75),
+        "or": (20, 35),
+        "sat": (2, 8),
+        "frr": (40, 60),
     },
     "op_saturation": {
-        "gvr": (95, 99), "amr": (95, 100), "sr": (50, 65),
-        "ar": (55, 70), "or": (5, 15), "sat": (30, 45), "frr": (50, 70),
+        "gvr": (95, 99),
+        "amr": (95, 100),
+        "sr": (50, 65),
+        "ar": (55, 70),
+        "or": (5, 15),
+        "sat": (30, 45),
+        "frr": (50, 70),
     },
     "overconservative": {
-        "gvr": (95, 99), "amr": (95, 100), "sr": (70, 85),
-        "ar": (55, 70), "or": (3, 10), "sat": (1, 5), "frr": (30, 50),
+        "gvr": (95, 99),
+        "amr": (95, 100),
+        "sr": (70, 85),
+        "ar": (55, 70),
+        "or": (3, 10),
+        "sat": (1, 5),
+        "frr": (30, 50),
     },
     "overaggressive": {
-        "gvr": (95, 99), "amr": (95, 100), "sr": (35, 50),
-        "ar": (60, 75), "or": (25, 40), "sat": (2, 8), "frr": (80, 95),
+        "gvr": (95, 99),
+        "amr": (95, 100),
+        "sr": (35, 50),
+        "ar": (60, 75),
+        "or": (25, 40),
+        "sat": (2, 8),
+        "frr": (80, 95),
     },
     "manual": {
-        "gvr": (95, 99), "amr": (0, 5), "sr": (65, 80),
-        "ar": (70, 85), "or": (3, 10), "sat": (1, 5), "frr": (100, 100),
+        "gvr": (95, 99),
+        "amr": (0, 5),
+        "sr": (65, 80),
+        "ar": (70, 85),
+        "or": (3, 10),
+        "sat": (1, 5),
+        "frr": (100, 100),
     },
 }
 
@@ -202,35 +277,61 @@ DIAGNOSIS_CONFIGS: list[dict[str, Any]] = [
         "diag_label": "OSCILLATION",
         "confidence": (80, 95),
         "feature_values": {"amplitude": 3.5, "period_s": 600, "frequency_hz": 0.00167, "snr": 8.5},
-        "evidence_chain": {"method": "IAE_FFT", "peak_frequency_hz": 0.00167, "zero_crossings": 42, "threshold": 0.004},
+        "evidence_chain": {
+            "method": "IAE_FFT",
+            "peak_frequency_hz": 0.00167,
+            "zero_crossings": 42,
+            "threshold": 0.004,
+        },
     },
     {
         "scenario": "valve_stiction",
         "diag_label": "VALVE_STICTION",
         "confidence": (75, 90),
         "feature_values": {"ngi": 0.005, "nli": 0.08, "stiction_index": 0.75, "r2": 0.82},
-        "evidence_chain": {"method": "CHOUDHURY_NGI_NLI", "pv_op_ellipse": True, "fitting_score": 0.82},
+        "evidence_chain": {
+            "method": "CHOUDHURY_NGI_NLI",
+            "pv_op_ellipse": True,
+            "fitting_score": 0.82,
+        },
     },
     {
         "scenario": "op_saturation",
         "diag_label": "OUTPUT_SATURATION",
         "confidence": (85, 95),
-        "feature_values": {"saturation_rate": 35.5, "high_saturation_s": 7200, "low_saturation_s": 0},
-        "evidence_chain": {"method": "OP_LIMIT_STAT", "op_high_limit": 100, "op_low_limit": 0, "epsilon": 2},
+        "feature_values": {
+            "saturation_rate": 35.5,
+            "high_saturation_s": 7200,
+            "low_saturation_s": 0,
+        },
+        "evidence_chain": {
+            "method": "OP_LIMIT_STAT",
+            "op_high_limit": 100,
+            "op_low_limit": 0,
+            "epsilon": 2,
+        },
     },
     {
         "scenario": "overconservative",
         "diag_label": "OVERCONSERVATIVE",
         "confidence": (70, 85),
         "feature_values": {"settling_time_s": 600, "iae_ratio": 2.5, "op_activity": 0.005},
-        "evidence_chain": {"method": "EXPERT_RULE", "steady_state_error_pct": 8.5, "settling_ratio": 5.0},
+        "evidence_chain": {
+            "method": "EXPERT_RULE",
+            "steady_state_error_pct": 8.5,
+            "settling_ratio": 5.0,
+        },
     },
     {
         "scenario": "overaggressive",
         "diag_label": "OVERAGGRESSIVE",
         "confidence": (75, 90),
         "feature_values": {"overshoot_pct": 32.5, "decay_ratio": 0.45, "harris_index": 0.55},
-        "evidence_chain": {"method": "EXPERT_RULE", "step_response_analysis": True, "overshoot_threshold": 25},
+        "evidence_chain": {
+            "method": "EXPERT_RULE",
+            "step_response_analysis": True,
+            "overshoot_threshold": 25,
+        },
     },
 ]
 
@@ -238,6 +339,7 @@ DIAGNOSIS_CONFIGS: list[dict[str, Any]] = [
 # ============================================================================
 # 工具函数
 # ============================================================================
+
 
 def subtable_name(tag_name: str) -> str:
     """回路位号 → TDengine 子表名（如 HDS-RX-TIC-101 → d_loop_hds_rx_tic_101）。"""
@@ -270,7 +372,10 @@ def clamp(v: float, lo: float, hi: float) -> float:
 # SP / PID / MODE 调度生成
 # ============================================================================
 
-def generate_sp_schedule(base_sp: float, start: datetime, end: datetime) -> list[tuple[datetime, float]]:
+
+def generate_sp_schedule(
+    base_sp: float, start: datetime, end: datetime
+) -> list[tuple[datetime, float]]:
     """生成 SP 阶跃变化时间表（每 2-4 小时变化一次，±5-10%）。"""
     schedule = [(start, base_sp)]
     t = start
@@ -287,7 +392,9 @@ def generate_sp_schedule(base_sp: float, start: datetime, end: datetime) -> list
     return schedule
 
 
-def generate_pid_schedule(cfg: dict, start: datetime, end: datetime) -> list[tuple[datetime, float, float, float]]:
+def generate_pid_schedule(
+    cfg: dict, start: datetime, end: datetime
+) -> list[tuple[datetime, float, float, float]]:
     """生成 PID 参数变化时间表（每天 1-2 次微调，±5%）。"""
     base_p, base_i, base_d = cfg["pid_p"], cfg["pid_i"], cfg["pid_d"]
     schedule = [(start, base_p, base_i, base_d)]
@@ -304,7 +411,9 @@ def generate_pid_schedule(cfg: dict, start: datetime, end: datetime) -> list[tup
     return schedule
 
 
-def generate_mode_schedule(scenario: str, start: datetime, end: datetime) -> list[tuple[datetime, int]]:
+def generate_mode_schedule(
+    scenario: str, start: datetime, end: datetime
+) -> list[tuple[datetime, int]]:
     """生成 MODE 变化时间表（每天 0-1 次切换，手动回路始终为 0）。"""
     if scenario == "manual":
         return [(start, 0)]
@@ -324,6 +433,7 @@ def generate_mode_schedule(scenario: str, start: datetime, end: datetime) -> lis
 # ============================================================================
 # 场景数据生成
 # ============================================================================
+
 
 def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple]:
     """为单个回路生成完整时间序列数据。
@@ -360,7 +470,11 @@ def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple
             sp_idx += 1
         # 更新 PID
         while pid_idx < len(pid_schedule) and pid_schedule[pid_idx][0] <= t:
-            cur_p, cur_i, cur_d = pid_schedule[pid_idx][1], pid_schedule[pid_idx][2], pid_schedule[pid_idx][3]
+            cur_p, cur_i, cur_d = (
+                pid_schedule[pid_idx][1],
+                pid_schedule[pid_idx][2],
+                pid_schedule[pid_idx][3],
+            )
             pid_idx += 1
         # 更新 MODE
         while mode_idx < len(mode_schedule) and mode_schedule[mode_idx][0] <= t:
@@ -425,7 +539,9 @@ def _gen_oscillation(sp: float, prev_op: float, prev_pv: float, t: float) -> tup
     return round(pv, 4), round(op, 4)
 
 
-def _gen_valve_stiction(sp: float, prev_op: float, prev_pv: float, state: dict) -> tuple[float, float]:
+def _gen_valve_stiction(
+    sp: float, prev_op: float, prev_pv: float, state: dict
+) -> tuple[float, float]:
     """阀门粘滞：OP 阶跃式变化，PV-OP 椭圆轨迹。"""
     error = sp - prev_pv
     desired_op = prev_op + error * 0.15
@@ -434,7 +550,7 @@ def _gen_valve_stiction(sp: float, prev_op: float, prev_pv: float, state: dict) 
     if abs(desired_op - prev_op) >= stiction_band:
         op = desired_op  # 滑动
     else:
-        op = prev_op     # 粘滞
+        op = prev_op  # 粘滞
     op = clamp(op, 0, 100)
 
     # PV 一阶滞后跟随 OP
@@ -444,7 +560,9 @@ def _gen_valve_stiction(sp: float, prev_op: float, prev_pv: float, state: dict) 
     return round(pv, 4), round(op, 4)
 
 
-def _gen_op_saturation(sp: float, prev_op: float, prev_pv: float, t: float, state: dict) -> tuple[float, float]:
+def _gen_op_saturation(
+    sp: float, prev_op: float, prev_pv: float, t: float, state: dict
+) -> tuple[float, float]:
     """OP 饱和：OP 长时间停留在 95-100% 或 0-5%。"""
     sat_until = state.get("sat_until", 0)
     norm_until = state.get("norm_until", 0)
@@ -478,7 +596,9 @@ def _gen_op_saturation(sp: float, prev_op: float, prev_pv: float, t: float, stat
     return round(pv, 4), round(op, 4)
 
 
-def _gen_overconservative(sp: float, prev_op: float, prev_pv: float, t: float) -> tuple[float, float]:
+def _gen_overconservative(
+    sp: float, prev_op: float, prev_pv: float, t: float
+) -> tuple[float, float]:
     """过保守：PV 响应慢，稳态偏差大。"""
     tau = 300.0  # 大时间常数
     target_pv = sp * 0.92  # 8% 稳态偏差
@@ -490,7 +610,9 @@ def _gen_overconservative(sp: float, prev_op: float, prev_pv: float, t: float) -
     return round(pv, 4), round(op, 4)
 
 
-def _gen_overaggressive(sp: float, prev_op: float, prev_pv: float, t: float, state: dict) -> tuple[float, float]:
+def _gen_overaggressive(
+    sp: float, prev_op: float, prev_pv: float, t: float, state: dict
+) -> tuple[float, float]:
     """过激进：PV 过冲大，振荡后收敛。"""
     last_sp = state.get("last_sp", sp)
     sp_change_t = state.get("sp_change_t", 0.0)
@@ -501,8 +623,8 @@ def _gen_overaggressive(sp: float, prev_op: float, prev_pv: float, t: float, sta
         sp_change_t = t
 
     elapsed = t - sp_change_t
-    omega = 0.015   # 振荡角频率
-    zeta = 0.2      # 阻尼比
+    omega = 0.015  # 振荡角频率
+    zeta = 0.2  # 阻尼比
     overshoot = 0.3  # 30% 过冲
 
     if elapsed < 1200:
@@ -519,7 +641,9 @@ def _gen_overaggressive(sp: float, prev_op: float, prev_pv: float, t: float, sta
     return round(pv, 4), round(op, 4)
 
 
-def _gen_manual(cfg: dict, sp: float, prev_op: float, prev_pv: float, t: float, state: dict) -> tuple[float, float]:
+def _gen_manual(
+    cfg: dict, sp: float, prev_op: float, prev_pv: float, t: float, state: dict
+) -> tuple[float, float]:
     """手动模式：OP 由操作员手动调节（阶跃变化），PV 跟随 OP。"""
     next_change = state.get("next_change", 0.0)
     op_target = state.get("op_target", prev_op)
@@ -544,34 +668,50 @@ def _gen_manual(cfg: dict, sp: float, prev_op: float, prev_pv: float, t: float, 
 # PostgreSQL 数据填充
 # ============================================================================
 
+
 async def setup_postgres(clean: bool = False) -> None:
     """填充 PostgreSQL 数据（plant_node / loop_ledger / tag_registry / loop_tag_mapping）。"""
     async with AsyncSessionLocal() as session:
         # 1. 新建装置节点
         for node in NEW_PLANT_NODES:
-            await session.execute(text("""
+            await session.execute(
+                text("""
                 INSERT INTO plant_node (id, name, type, parent_id, created_at, updated_at)
                 VALUES (:id, :name, :type, :parent_id, NOW(), NOW())
                 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type
-            """), node)
+            """),
+                node,
+            )
 
         # 2. 清理旧 Tag 映射和 Tag 注册（保留 loop_ledger）
         loop_ids = [c["id"] for c in LOOP_CONFIGS]
         # 先删映射
-        await session.execute(text("DELETE FROM loop_tag_mapping WHERE loop_id = ANY(:ids)"), {"ids": loop_ids})
+        await session.execute(
+            text("DELETE FROM loop_tag_mapping WHERE loop_id = ANY(:ids)"), {"ids": loop_ids}
+        )
         # 删旧格式 Tag（T-HDS-001-PV 等）
-        await session.execute(text("DELETE FROM tag_registry WHERE tag_name LIKE 'T-HDS-%' OR tag_name LIKE 'T-HDC-%'"))
+        await session.execute(
+            text(
+                "DELETE FROM tag_registry WHERE tag_name LIKE 'T-HDS-%' OR tag_name LIKE 'T-HDC-%'"
+            )
+        )
         # 删新格式 Tag（HDS-RX-TIC-101.PV 等），防止重复运行冲突
         for cfg in LOOP_CONFIGS:
             for role in TAG_ROLES:
                 tag_name = f"{cfg['tag_name']}.{role}"
-                await session.execute(text("DELETE FROM tag_registry WHERE tag_name = :tn"), {"tn": tag_name})
+                await session.execute(
+                    text("DELETE FROM tag_registry WHERE tag_name = :tn"), {"tn": tag_name}
+                )
 
         # 3. Upsert loop_ledger
         for cfg in LOOP_CONFIGS:
-            await session.execute(text("""
-                INSERT INTO loop_ledger (id, tag_name, description, unit_id, score_weight, is_active, status, last_aas_sync_at, created_at, updated_at, created_by)
-                VALUES (:id, :tag_name, :description, :unit_id, 1.00, TRUE, 'READY', NOW(), NOW(), NOW(), 'admin')
+            await session.execute(
+                text("""
+                INSERT INTO loop_ledger
+                    (id, tag_name, description, unit_id, score_weight, is_active,
+                     status, last_aas_sync_at, created_at, updated_at, created_by)
+                VALUES (:id, :tag_name, :description, :unit_id, 1.00, TRUE,
+                        'READY', NOW(), NOW(), NOW(), 'admin')
                 ON CONFLICT (tag_name) DO UPDATE SET
                     description = EXCLUDED.description,
                     unit_id = EXCLUDED.unit_id,
@@ -579,12 +719,14 @@ async def setup_postgres(clean: bool = False) -> None:
                     is_active = TRUE,
                     last_aas_sync_at = NOW(),
                     updated_at = NOW()
-            """), {
-                "id": cfg["id"],
-                "tag_name": cfg["tag_name"],
-                "description": cfg["description"],
-                "unit_id": cfg["unit_id"],
-            })
+            """),
+                {
+                    "id": cfg["id"],
+                    "tag_name": cfg["tag_name"],
+                    "description": cfg["description"],
+                    "unit_id": cfg["unit_id"],
+                },
+            )
 
         # 4. 创建 Tag 注册 + 映射
         for cfg in LOOP_CONFIGS:
@@ -610,8 +752,11 @@ async def setup_postgres(clean: bool = False) -> None:
                 else:  # PID_D
                     current_val = cfg["pid_d"]
 
-                await session.execute(text("""
-                    INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked)
+                await session.execute(
+                    text("""
+                    INSERT INTO tag_registry
+                        (id, tag_name, tag_description, tag_type, current_value,
+                         quality, last_sync_at, is_linked)
                     VALUES (:id, :tag_name, :desc, :type, :val, 'GOOD', NOW(), TRUE)
                     ON CONFLICT (tag_name) DO UPDATE SET
                         tag_description = EXCLUDED.tag_description,
@@ -620,51 +765,66 @@ async def setup_postgres(clean: bool = False) -> None:
                         quality = EXCLUDED.quality,
                         last_sync_at = NOW(),
                         is_linked = TRUE
-                """), {
-                    "id": tag_id,
-                    "tag_name": tag_name,
-                    "desc": tag_desc,
-                    "type": role,
-                    "val": current_val,
-                })
+                """),
+                    {
+                        "id": tag_id,
+                        "tag_name": tag_name,
+                        "desc": tag_desc,
+                        "type": role,
+                        "val": current_val,
+                    },
+                )
 
                 # 创建映射
                 mapping_id = str(uuid.uuid4())
                 is_required = role in REQUIRED_ROLES
-                await session.execute(text("""
-                    INSERT INTO loop_tag_mapping (id, loop_id, tag_id, tag_role, is_required, created_at)
+                await session.execute(
+                    text("""
+                    INSERT INTO loop_tag_mapping
+                        (id, loop_id, tag_id, tag_role, is_required, created_at)
                     VALUES (:id, :loop_id, :tag_id, :role, :req, NOW())
                     ON CONFLICT (loop_id, tag_role) DO UPDATE SET
                         tag_id = EXCLUDED.tag_id,
                         is_required = EXCLUDED.is_required
-                """), {
-                    "id": mapping_id,
-                    "loop_id": loop_id,
-                    "tag_id": tag_id,
-                    "role": role,
-                    "req": is_required,
-                })
+                """),
+                    {
+                        "id": mapping_id,
+                        "loop_id": loop_id,
+                        "tag_id": tag_id,
+                        "role": role,
+                        "req": is_required,
+                    },
+                )
 
         # 5. 清理旧 KPI 快照和诊断结果（如果 --clean）
         if clean:
-            await session.execute(text("DELETE FROM kpi_snapshot_hourly WHERE loop_id = ANY(:ids)"), {"ids": loop_ids})
-            await session.execute(text("DELETE FROM diagnosis_result WHERE loop_id = ANY(:ids)"), {"ids": loop_ids})
+            await session.execute(
+                text("DELETE FROM kpi_snapshot_hourly WHERE loop_id = ANY(:ids)"), {"ids": loop_ids}
+            )
+            await session.execute(
+                text("DELETE FROM diagnosis_result WHERE loop_id = ANY(:ids)"), {"ids": loop_ids}
+            )
 
         await session.commit()
 
-    print(f"  ✓ PostgreSQL 数据填充完成：10 回路 / 70 Tag / 70 映射")
+    print("  ✓ PostgreSQL 数据填充完成：10 回路 / 70 Tag / 70 映射")
 
 
 # ============================================================================
 # TDengine 操作
 # ============================================================================
 
-async def td_execute(client: httpx.AsyncClient, sql: str, use_db: bool = True, retries: int = 3) -> dict | None:
+
+async def td_execute(
+    client: httpx.AsyncClient, sql: str, use_db: bool = True, retries: int = 3
+) -> dict | None:
     """执行 TDengine SQL（带重试）。"""
     url = TD_REST_DB_URL if use_db else TD_REST_BASE
     for attempt in range(retries):
         try:
-            resp = await client.post(url, content=sql.encode("utf-8"), headers={"Content-Type": "text/plain"})
+            resp = await client.post(
+                url, content=sql.encode("utf-8"), headers={"Content-Type": "text/plain"}
+            )
             result = resp.json()
             if result.get("code") == 0:
                 return result
@@ -674,22 +834,28 @@ async def td_execute(client: httpx.AsyncClient, sql: str, use_db: bool = True, r
                 if attempt == retries - 1:
                     print(f"  ⚠ TDengine SQL 错误: {desc[:200]}")
                     return None
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
         except Exception as exc:
             if attempt == retries - 1:
                 print(f"  ⚠ TDengine 请求异常: {exc}")
                 return None
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
     return None
 
 
 async def setup_tdengine(client: httpx.AsyncClient, clean: bool = False) -> None:
     """创建 TDengine 数据库、超级表、子表。"""
     # 1. 创建数据库
-    await td_execute(client, "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'", use_db=False)
+    await td_execute(
+        client,
+        "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'",
+        use_db=False,
+    )
 
     # 2. 创建超级表
-    await td_execute(client, """
+    await td_execute(
+        client,
+        """
         CREATE STABLE IF NOT EXISTS st_loop_data (
             ts          TIMESTAMP,
             pv          FLOAT,
@@ -704,17 +870,21 @@ async def setup_tdengine(client: httpx.AsyncClient, clean: bool = False) -> None
             loop_id     BINARY(36),
             unit_id     BINARY(36)
         )
-    """)
+    """,
+    )
 
     # 3. 创建/重建子表
     for cfg in LOOP_CONFIGS:
         sub = subtable_name(cfg["tag_name"])
         if clean:
             await td_execute(client, f"DROP TABLE IF EXISTS {sub}")
-        await td_execute(client, (
-            f"CREATE TABLE IF NOT EXISTS {sub} "
-            f"USING st_loop_data TAGS ('{cfg['id']}', '{cfg['unit_id']}')"
-        ))
+        await td_execute(
+            client,
+            (
+                f"CREATE TABLE IF NOT EXISTS {sub} "
+                f"USING st_loop_data TAGS ('{cfg['id']}', '{cfg['unit_id']}')"
+            ),
+        )
 
     print(f"  ✓ TDengine 数据库/超级表/子表创建完成（{len(LOOP_CONFIGS)} 张子表）")
 
@@ -723,8 +893,10 @@ async def setup_tdengine(client: httpx.AsyncClient, clean: bool = False) -> None
 # TDengine 时序数据写入
 # ============================================================================
 
+
 class ProgressTracker:
     """进度跟踪器。"""
+
     def __init__(self) -> None:
         self.total = 0
         self._lock = asyncio.Lock()
@@ -777,10 +949,7 @@ async def write_all_tdengine_data(client: httpx.AsyncClient, start: datetime, en
     semaphore = asyncio.Semaphore(MAX_CONCURRENT)
     progress = ProgressTracker()
 
-    tasks = [
-        write_loop_data(client, semaphore, cfg, start, end, progress)
-        for cfg in LOOP_CONFIGS
-    ]
+    tasks = [write_loop_data(client, semaphore, cfg, start, end, progress) for cfg in LOOP_CONFIGS]
     results = await asyncio.gather(*tasks)
     total = sum(results)
     print(f"  ✓ TDengine 时序数据写入完成：{total} 行")
@@ -790,6 +959,7 @@ async def write_all_tdengine_data(client: httpx.AsyncClient, start: datetime, en
 # ============================================================================
 # KPI 快照生成
 # ============================================================================
+
 
 def calc_score(
     gvr: float, amr: float, sr: float, ar: float, or_: float, sat: float, frr: float
@@ -895,6 +1065,7 @@ async def generate_kpi_snapshots(start: datetime, end: datetime) -> int:
 # 诊断结果生成
 # ============================================================================
 
+
 async def generate_diagnosis_results() -> int:
     """为有问题的回路生成诊断结果。"""
     total = 0
@@ -918,20 +1089,26 @@ async def generate_diagnosis_results() -> int:
                     features_json = json.dumps(diag_cfg["feature_values"])
                     evidence_json = json.dumps(diag_cfg["evidence_chain"])
 
-                    await session.execute(text("""
+                    await session.execute(
+                        text("""
                         INSERT INTO diagnosis_result
-                        (id, loop_id, diag_label, confidence, feature_values, evidence_chain, algorithm_version, diagnosed_at)
-                        VALUES (:id, :loop_id, :label, :conf, CAST(:feat AS json), CAST(:evid AS json), :ver, :diag_at)
-                    """), {
-                        "id": diag_id,
-                        "loop_id": loop_id,
-                        "label": diag_cfg["diag_label"],
-                        "conf": confidence,
-                        "feat": features_json,
-                        "evid": evidence_json,
-                        "ver": "v1.0.0",
-                        "diag_at": diagnosed_at,
-                    })
+                        (id, loop_id, diag_label, confidence, feature_values,
+                         evidence_chain, algorithm_version, diagnosed_at)
+                        VALUES (:id, :loop_id, :label, :conf,
+                                CAST(:feat AS json), CAST(:evid AS json),
+                                :ver, :diag_at)
+                    """),
+                        {
+                            "id": diag_id,
+                            "loop_id": loop_id,
+                            "label": diag_cfg["diag_label"],
+                            "conf": confidence,
+                            "feat": features_json,
+                            "evid": evidence_json,
+                            "ver": "v1.0.0",
+                            "diag_at": diagnosed_at,
+                        },
+                    )
                     total += 1
 
         await session.commit()
@@ -943,6 +1120,7 @@ async def generate_diagnosis_results() -> int:
 # ============================================================================
 # 主函数
 # ============================================================================
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CLPM 工业过程数据仿真器")

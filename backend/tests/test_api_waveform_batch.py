@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from app.core.exceptions import BizError
 from app.schemas.tag import WaveformResponse, WaveformTimeRange
 from tests.conftest import TEST_USERS, mock_current_user
@@ -82,12 +80,8 @@ class TestBatchWaveform:
 
     def test_batch_waveform_success(self, client, mock_db, fake_redis) -> None:
         """批量查询多个回路波形数据."""
-        resp1 = _make_waveform_response(
-            loop_id="00000000-0000-0000-0000-000000000201"
-        )
-        resp2 = _make_waveform_response(
-            loop_id="00000000-0000-0000-0000-000000000202"
-        )
+        resp1 = _make_waveform_response(loop_id="00000000-0000-0000-0000-000000000201")
+        resp2 = _make_waveform_response(loop_id="00000000-0000-0000-0000-000000000202")
 
         async def fetch_side_effect(*, loop_id, **kwargs):
             if "201" in loop_id:
@@ -117,13 +111,9 @@ class TestBatchWaveform:
         assert data["items"][0]["loopId"] == "00000000-0000-0000-0000-000000000201"
         assert data["items"][1]["loopId"] == "00000000-0000-0000-0000-000000000202"
 
-    def test_batch_waveform_partial_failure(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_batch_waveform_partial_failure(self, client, mock_db, fake_redis) -> None:
         """部分回路查询失败时，失败信息放入 failed 列表."""
-        resp_ok = _make_waveform_response(
-            loop_id="00000000-0000-0000-0000-000000000201"
-        )
+        resp_ok = _make_waveform_response(loop_id="00000000-0000-0000-0000-000000000201")
 
         async def fetch_side_effect(*, loop_id, **kwargs):
             if "201" in loop_id:
@@ -155,10 +145,9 @@ class TestBatchWaveform:
         assert data["failed"][0]["loopId"] == "00000000-0000-0000-0000-000000000202"
         assert "ERR_LOOP_NOT_FOUND" in data["failed"][0]["error"]
 
-    def test_batch_waveform_all_fail(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_batch_waveform_all_fail(self, client, mock_db, fake_redis) -> None:
         """所有回路都失败时，items 为空，failed 包含全部."""
+
         async def fetch_side_effect(*, loop_id, **kwargs):
             raise BizError(
                 code="ERR_WAVEFORM_FETCH",
@@ -185,9 +174,7 @@ class TestBatchWaveform:
         assert len(data["items"]) == 0
         assert len(data["failed"]) == 2
 
-    def test_batch_waveform_empty_loops(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_batch_waveform_empty_loops(self, client, mock_db, fake_redis) -> None:
         """空回路列表返回 422 校验错误."""
         body = {**_BATCH_BODY, "loopIds": []}
         with mock_current_user(TEST_USERS["admin"]):
@@ -198,9 +185,7 @@ class TestBatchWaveform:
             )
         assert resp.status_code == 422
 
-    def test_batch_waveform_exceeds_limit(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_batch_waveform_exceeds_limit(self, client, mock_db, fake_redis) -> None:
         """超过 50 个回路返回 422 校验错误."""
         loop_ids = [f"00000000-0000-0000-0000-{i:012d}" for i in range(51)]
         body = {**_BATCH_BODY, "loopIds": loop_ids}
@@ -212,9 +197,7 @@ class TestBatchWaveform:
             )
         assert resp.status_code == 422
 
-    def test_batch_waveform_with_tag_group(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_batch_waveform_with_tag_group(self, client, mock_db, fake_redis) -> None:
         """使用不同 tagGroup 查询波形."""
         resp_mock = _make_waveform_response()
 
@@ -247,10 +230,9 @@ class TestBatchWaveform:
         resp = client.post("/api/v1/timeseries/batch/waveform", json=_BATCH_BODY)
         assert resp.status_code == 401
 
-    def test_batch_waveform_unexpected_exception(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_batch_waveform_unexpected_exception(self, client, mock_db, fake_redis) -> None:
         """非 BizError 异常也放入 failed 列表."""
+
         async def fetch_side_effect(*, loop_id, **kwargs):
             raise RuntimeError("Unexpected internal error")
 

@@ -29,9 +29,7 @@ def _make_scalar_one_or_none_mock(value) -> MagicMock:
 class TestIdempotencyPost:
     """POST 请求幂等性测试。"""
 
-    def test_same_key_returns_cached_response(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_same_key_returns_cached_response(self, client, mock_db, fake_redis) -> None:
         """相同 Idempotency-Key 的 POST 请求返回缓存响应，不重复创建。"""
         # 第一次请求：用户名不存在，可以创建
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
@@ -65,9 +63,7 @@ class TestIdempotencyPost:
         assert mock_db.add.call_count == 2
         assert mock_db.commit.call_count == 1
 
-    def test_different_keys_execute_independently(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_different_keys_execute_independently(self, client, mock_db, fake_redis) -> None:
         """不同 Idempotency-Key 的请求各自独立执行。"""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
 

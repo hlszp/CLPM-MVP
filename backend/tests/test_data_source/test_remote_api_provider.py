@@ -18,10 +18,9 @@ import httpx
 import pytest
 
 from app.services.data_source.remote_api_provider import (
-    RemoteApiProvider,
     _GOOD_QUALITY_CODES,
+    RemoteApiProvider,
 )
-
 
 # ---------------------------------------------------------------------------
 # 辅助函数
@@ -128,9 +127,11 @@ async def test_query_fn_parses_successful_response():
     )
 
     provider = RemoteApiProvider()
-    with patch.object(provider, "_get_client", new=AsyncMock(return_value=MagicMock(
-        post=AsyncMock(return_value=api_response)
-    ))):
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+    ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
             "loop-001",
@@ -170,9 +171,11 @@ async def test_query_fn_maps_quality_codes_correctly():
     )
 
     provider = RemoteApiProvider()
-    with patch.object(provider, "_get_client", new=AsyncMock(return_value=MagicMock(
-        post=AsyncMock(return_value=api_response)
-    ))):
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+    ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
             "loop-001",
@@ -219,9 +222,11 @@ async def test_query_fn_handles_http_error():
     error_response.text = "Internal Server Error"
 
     provider = RemoteApiProvider()
-    with patch.object(provider, "_get_client", new=AsyncMock(return_value=MagicMock(
-        post=AsyncMock(return_value=error_response)
-    ))):
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=error_response))),
+    ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
             "loop-001",
@@ -246,9 +251,11 @@ async def test_query_fn_handles_business_error():
     error_response = _make_api_response(code=500, status_code=200)
 
     provider = RemoteApiProvider()
-    with patch.object(provider, "_get_client", new=AsyncMock(return_value=MagicMock(
-        post=AsyncMock(return_value=error_response)
-    ))):
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=error_response))),
+    ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
             "loop-001",
@@ -300,9 +307,11 @@ async def test_query_fn_parses_iso_timestamps():
     )
 
     provider = RemoteApiProvider()
-    with patch.object(provider, "_get_client", new=AsyncMock(return_value=MagicMock(
-        post=AsyncMock(return_value=api_response)
-    ))):
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+    ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
             "loop-001",
@@ -330,9 +339,11 @@ async def test_query_fn_handles_empty_string_values():
     )
 
     provider = RemoteApiProvider()
-    with patch.object(provider, "_get_client", new=AsyncMock(return_value=MagicMock(
-        post=AsyncMock(return_value=api_response)
-    ))):
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+    ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
             "loop-001",
@@ -361,9 +372,11 @@ async def test_query_fn_skips_missing_tag_in_series():
     )
 
     provider = RemoteApiProvider()
-    with patch.object(provider, "_get_client", new=AsyncMock(return_value=MagicMock(
-        post=AsyncMock(return_value=api_response)
-    ))):
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+    ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
             "loop-001",
@@ -426,7 +439,7 @@ async def test_close_resets_client():
         mock_settings.HISTORY_DATA_API_TIMEOUT = 30.0
         mock_settings.HISTORY_DATA_API_TOKEN = ""
 
-        client = await provider._get_client()
+        await provider._get_client()
         assert provider._client is not None
 
         await provider.close()

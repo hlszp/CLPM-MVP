@@ -30,7 +30,7 @@ import numpy as np
 # ============================================================================
 
 SAMPLE_INTERVAL = 1.0  # 采样间隔（秒）
-DURATION_SEC = 7200    # 数据时长（2 小时）
+DURATION_SEC = 7200  # 数据时长（2 小时）
 N_POINTS = int(DURATION_SEC / SAMPLE_INTERVAL)
 RANDOM_SEED = 42
 
@@ -48,13 +48,13 @@ SCENARIOS = {
     # ------------------------------------------------------------------
     "fast_response": {
         "description": "快速响应回路：PV 在 10s 内跟随 SP 变化",
-        "ar_coeffs": [-0.3],          # 已知 AR 参数（供验证）
+        "ar_coeffs": [-0.3],  # 已知 AR 参数（供验证）
         "expected_settling_sec": 10,  # 预期稳态时间
         "expected_fast_rate": (80, 100),
         "base_sp": 100.0,
         "base_pv": 100.0,
         "base_op": 50.0,
-        "pv_range": 200.0,   # 量程
+        "pv_range": 200.0,  # 量程
         "control_type": "FAST",
     },
     # ------------------------------------------------------------------
@@ -145,7 +145,7 @@ SCENARIOS = {
         "ar_coeffs": [-0.5, 0.3],  # 已知 AR(2) 参数
         "expected_ar_coeffs": [-0.5, 0.3],  # 期望辨识结果
         "expected_settling_sec": 20,
-        "base_sp": 0.0,   # 纯偏差信号，SP=0
+        "base_sp": 0.0,  # 纯偏差信号，SP=0
         "base_pv": 0.0,
         "base_op": 50.0,
         "pv_range": 100.0,
@@ -157,6 +157,7 @@ SCENARIOS = {
 # ============================================================================
 # 数据生成函数
 # ============================================================================
+
 
 def _gen_ar_signal(
     ar_coeffs: list[float],
@@ -204,7 +205,7 @@ def _gen_sp_schedule(
     step_amplitude = base_sp * change_ratio * 2  # 10% 量程
 
     for i in range(step_period, n, step_period * 2):
-        sp[i:i + step_period] = base_sp + step_amplitude
+        sp[i : i + step_period] = base_sp + step_amplitude
 
     return sp
 
@@ -219,8 +220,7 @@ def _gen_oscillation_signal(
 ) -> np.ndarray:
     """生成振荡信号：基值 + 正弦波 + 噪声。"""
     t = np.arange(n) * interval
-    signal = base_sp + amplitude * np.sin(2 * math.pi * t / period) + \
-        np.random.randn(n) * noise_std
+    signal = base_sp + amplitude * np.sin(2 * math.pi * t / period) + np.random.randn(n) * noise_std
     return signal
 
 
@@ -283,7 +283,9 @@ def generate_scenario_data(scenario_name: str, config: dict) -> dict:
     elif scenario_name == "oscillation":
         # 振荡信号
         ar_signal = _gen_oscillation_signal(
-            0, n, interval,
+            0,
+            n,
+            interval,
             config["oscillation_period"],
             config["oscillation_amplitude"],
         )
@@ -300,19 +302,22 @@ def generate_scenario_data(scenario_name: str, config: dict) -> dict:
         # OP 跟踪 SP 偏差 + 漂移
         op_values = np.full(n, base_op, dtype=float)
         for i in range(1, n):
-            op_values[i] = op_values[i - 1] + (sp_values[i] - pv_values[i - 1]) * 0.02 \
+            op_values[i] = (
+                op_values[i - 1]
+                + (sp_values[i] - pv_values[i - 1]) * 0.02
                 + np.random.randn() * 0.3
+            )
         op_values = np.clip(op_values, 0, 100)
 
     # 生成 MODE
     if scenario_name == "manual_mode":
         mode_values = np.zeros(n, dtype=int)  # 全手动
     else:
-        mode_values = np.ones(n, dtype=int)   # 全自动
+        mode_values = np.ones(n, dtype=int)  # 全自动
         # 5% 时间切手动（模拟短暂手动操作）
         manual_start = np.random.randint(0, n - 300, size=3)
         for ms in manual_start:
-            mode_values[ms:ms + 100] = 0
+            mode_values[ms : ms + 100] = 0
 
     # 生成 PV 质量码（99.5% Good）
     pv_quality = np.ones(n, dtype=int)
@@ -322,14 +327,16 @@ def generate_scenario_data(scenario_name: str, config: dict) -> dict:
     # 组装时序数据
     data = []
     for i in range(n):
-        data.append({
-            "ts": float(i * interval),
-            "pv": round(float(pv_values[i]), 4),
-            "sp": round(float(sp_values[i]), 4),
-            "op": round(float(op_values[i]), 4),
-            "mode": int(mode_values[i]),
-            "pv_quality": int(pv_quality[i]),
-        })
+        data.append(
+            {
+                "ts": float(i * interval),
+                "pv": round(float(pv_values[i]), 4),
+                "sp": round(float(sp_values[i]), 4),
+                "op": round(float(op_values[i]), 4),
+                "mode": int(mode_values[i]),
+                "pv_quality": int(pv_quality[i]),
+            }
+        )
 
     # 预期结果
     expected = {}
@@ -364,6 +371,7 @@ def generate_scenario_data(scenario_name: str, config: dict) -> dict:
 # 主函数
 # ============================================================================
 
+
 def main() -> None:
     """生成全部场景测试数据并写入 JSON 文件。"""
     output_dir = Path(__file__).parent.parent / "tests" / "fixtures"
@@ -374,9 +382,8 @@ def main() -> None:
     for scenario_name, config in SCENARIOS.items():
         print(f"生成场景 [{scenario_name}]: {config['description']}...")
         all_data[scenario_name] = generate_scenario_data(scenario_name, config)
-        settling = all_data[scenario_name]['expected'].get('settling_time_sec', 'N/A')
-        print(f"  → {all_data[scenario_name]['n_points']} 点, "
-              f"预期稳态时间={settling}s")
+        settling = all_data[scenario_name]["expected"].get("settling_time_sec", "N/A")
+        print(f"  → {all_data[scenario_name]['n_points']} 点, 预期稳态时间={settling}s")
 
     # 写入 JSON
     with open(output_file, "w", encoding="utf-8") as f:

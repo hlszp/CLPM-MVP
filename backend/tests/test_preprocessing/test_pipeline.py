@@ -29,7 +29,6 @@ from app.contracts.data_types import (
 )
 from app.services.preprocessing.pipeline import PREPROCESS_VERSION, PreprocessingPipeline
 
-
 # ---------------------------------------------------------------------------
 # 测试辅助
 # ---------------------------------------------------------------------------

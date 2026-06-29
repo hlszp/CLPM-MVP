@@ -14,16 +14,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
-
 
 # ---------------------------------------------------------------------------
 # 枚举类型
 # ---------------------------------------------------------------------------
 
 
-class ControlType(str, Enum):
+class ControlType(StrEnum):
     """回路控制类型（算法说明 §3.4.4）。
 
     不同控制类型的物理特性不同，异常值检测阈值差异显著。
@@ -36,7 +35,7 @@ class ControlType(str, Enum):
     COMPOSITION = "CC"  # 成分
 
 
-class TagGroup(str, Enum):
+class TagGroup(StrEnum):
     """tagGroup 分组（算法说明 §3.5.1）。
 
     不同指标对采样率的需求不同，通过 tagGroup 分组按需获取数据。
@@ -50,7 +49,7 @@ class TagGroup(str, Enum):
     CONFIG = "CONFIG"  # 配置参数，无时序数据
 
 
-class QualityStatus(str, Enum):
+class QualityStatus(StrEnum):
     """质量码三态映射（算法说明 §3.4.2 步骤①）。"""
 
     GOOD = "Good"
@@ -58,7 +57,7 @@ class QualityStatus(str, Enum):
     UNKNOWN = "Unknown"
 
 
-class OutlierReason(str, Enum):
+class OutlierReason(StrEnum):
     """8 类异常值原因码（算法说明 §3.4.3, PRD §5.5.2）。
 
     每个异常点可叠加多个原因码。其中 TS_ANOMALY 和 HF_NOISE
@@ -75,7 +74,7 @@ class OutlierReason(str, Enum):
     HF_NOISE = "HF_NOISE"  # 高频噪声（仅标记）
 
 
-class ConfidenceLevel(str, Enum):
+class ConfidenceLevel(StrEnum):
     """指标可信度五级（算法说明 §3.7.2）。
 
     基于有效数据率 valid_rate 自动判定。E 级时 score=NULL，标记 INCONCLUSIVE。

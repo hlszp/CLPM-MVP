@@ -68,7 +68,9 @@ async def list_loops_endpoint(
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
     loopType: str | None = Query(None, description="按回路类型筛选"),
     level: int | None = Query(None, ge=1, le=3, description="按回路级别筛选：1/2/3"),
-    monitorStatus: bool | None = Query(None, description="按监控状态筛选：true=监控中/false=已停用"),
+    monitorStatus: bool | None = Query(
+        None, description="按监控状态筛选：true=监控中/false=已停用"
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),

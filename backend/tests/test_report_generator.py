@@ -834,10 +834,7 @@ class TestExportDiagnosisStatisticsTask:
 
     def test_task_registered(self) -> None:
         """export_diagnosis_statistics 应注册到 celery_app。"""
-        assert (
-            "app.tasks.report_generator.export_diagnosis_statistics"
-            in celery_app.tasks
-        )
+        assert "app.tasks.report_generator.export_diagnosis_statistics" in celery_app.tasks
 
     def test_task_success_returns_result(self) -> None:
         """任务成功时应返回 _do_export_diagnosis_statistics 的结果。"""

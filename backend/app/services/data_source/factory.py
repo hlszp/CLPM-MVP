@@ -44,9 +44,7 @@ def get_provider() -> HistoryDataProvider:
         _provider_instance = TDengineProvider()
         logger.info("数据源: TDengineProvider (DATA_SOURCE_TYPE=tdengine)")
     else:
-        raise ValueError(
-            f"不支持的 DATA_SOURCE_TYPE: {source_type!r}，可选: tdengine / remote_api"
-        )
+        raise ValueError(f"不支持的 DATA_SOURCE_TYPE: {source_type!r}，可选: tdengine / remote_api")
 
     return _provider_instance
 

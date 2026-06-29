@@ -10,13 +10,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from app.services.preprocessing.quality_summary import (
     compute_consecutive_segments,
     compute_quality_summary,
 )
-
 
 # ---------------------------------------------------------------------------
 # compute_quality_summary
@@ -108,9 +105,7 @@ class TestComputeQualitySummary:
         """无质量码时 good_value_rate=None。"""
         validity = {"pv_valid": [True, True]}
         timestamps = [datetime(2024, 1, 1) + timedelta(seconds=i) for i in range(2)]
-        summary = compute_quality_summary(
-            validity, timestamps, point_count=2, quality_codes=None
-        )
+        summary = compute_quality_summary(validity, timestamps, point_count=2, quality_codes=None)
         assert summary.good_value_rate is None
 
     def test_empty_point_count(self):

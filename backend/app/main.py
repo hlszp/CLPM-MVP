@@ -34,10 +34,12 @@ from app.api.v1.endpoints import (
     realtime,
     reports,
     tags,
-    tasks as eval_tasks,
     tuning,
     users,
     ws_realtime,
+)
+from app.api.v1.endpoints import (
+    tasks as eval_tasks,
 )
 from app.core.config import settings
 from app.core.db import dispose_engine

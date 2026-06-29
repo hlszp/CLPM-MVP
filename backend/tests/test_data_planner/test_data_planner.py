@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -29,12 +29,11 @@ from app.services.metric_data_bundle import MetricDataBundleAssembler
 from app.services.preprocessing.pipeline import PREPROCESS_VERSION
 
 from .conftest import (
+    FakeCacheRedis,
     build_data_block,
     build_raw_timeseries,
     build_requirement,
-    FakeCacheRedis,
 )
-
 
 # ---------------------------------------------------------------------------
 # 测试辅助
@@ -74,9 +73,7 @@ def _make_query_fn(call_log: list, return_n: int = 100):
     """构造 mock TDengine 查询函数，记录调用参数."""
 
     async def query_fn(loop_id, tag_roles, start, end, interval_s):
-        call_log.append(
-            {"loop_id": loop_id, "tags": list(tag_roles), "interval_s": interval_s}
-        )
+        call_log.append({"loop_id": loop_id, "tags": list(tag_roles), "interval_s": interval_s})
         return build_raw_timeseries(n=return_n, interval_s=float(interval_s), tags=tag_roles)
 
     return query_fn
@@ -86,25 +83,35 @@ def _five_metrics_requirements() -> list:
     """构造 5 指标的契约（覆盖 4 个 tagGroup）."""
     return [
         build_requirement(
-            "accuracy_rate", TagGroup.BASE, ["pv", "sp"],
+            "accuracy_rate",
+            TagGroup.BASE,
+            ["pv", "sp"],
             mask_expression="pv_valid && sp_valid",
         ),
         build_requirement(
-            "stability_rate", TagGroup.BASE, ["pv", "sp"],
+            "stability_rate",
+            TagGroup.BASE,
+            ["pv", "sp"],
             mask_expression="pv_valid && sp_valid",
         ),
         build_requirement(
-            "output_trip_index", TagGroup.OP_HF, ["op"],
+            "output_trip_index",
+            TagGroup.OP_HF,
+            ["op"],
             mask_expression="op_valid && consecutive_valid",
             sampling_strategy="FIXED_1S",
         ),
         build_requirement(
-            "stiction_index", TagGroup.PVOP_HF, ["pv", "op"],
+            "stiction_index",
+            TagGroup.PVOP_HF,
+            ["pv", "op"],
             mask_expression="pv_valid && op_valid",
             sampling_strategy="FIXED_1S",
         ),
         build_requirement(
-            "good_value_rate", TagGroup.QUALITY_HF, ["pv_quality"],
+            "good_value_rate",
+            TagGroup.QUALITY_HF,
+            ["pv_quality"],
             mask_expression=None,
             sampling_strategy="FIXED_1S",
             quality_policy="KEEP_ALL",
@@ -480,7 +487,9 @@ class TestBundleAssembly:
         """Bundle 应包含完整的数据血缘."""
         requirements = [
             build_requirement(
-                "accuracy_rate", TagGroup.BASE, ["pv", "sp"],
+                "accuracy_rate",
+                TagGroup.BASE,
+                ["pv", "sp"],
                 "pv_valid && sp_valid",
                 aggregation_policy="LAST",
                 quality_policy="KEEP_ALL_WITH_VALIDITY",
@@ -518,7 +527,9 @@ class TestBundleAssembly:
         """Bundle 的 masked_indices 应正确应用 mask_expression."""
         requirements = [
             build_requirement(
-                "accuracy_rate", TagGroup.BASE, ["pv", "sp"],
+                "accuracy_rate",
+                TagGroup.BASE,
+                ["pv", "sp"],
                 "pv_valid && sp_valid",
             ),
         ]
@@ -564,9 +575,7 @@ class TestEdgeCases:
             db=db,
             config_loader=_make_config_loader(),
         )
-        bundles = await planner.request_bundles(
-            "L001", [], _time_window(), ControlType.TEMPERATURE
-        )
+        bundles = await planner.request_bundles("L001", [], _time_window(), ControlType.TEMPERATURE)
         assert bundles == []
 
     @pytest.mark.asyncio
@@ -579,6 +588,7 @@ class TestEdgeCases:
 
         async def empty_query_fn(loop_id, tags, start, end, interval_s):
             from app.contracts.data_types import RawTimeSeries
+
             return RawTimeSeries(timestamps=[], signals={})
 
         planner = DataPlanner(

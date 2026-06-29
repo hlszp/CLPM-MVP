@@ -20,12 +20,10 @@ from app.services.node_performance import (
     aggregate_node_snapshot,
     collect_descendant_loop_ids,
     get_node_latest_snapshot,
-    get_node_ranking,
     get_nodes_overview,
     save_node_snapshot,
 )
 from app.services.performance import _score_to_status
-
 
 # ---------------------------------------------------------------------------
 # 测试数据构造
@@ -147,7 +145,8 @@ class TestAggregateNodeSnapshot:
             return_value=[],
         ):
             result = await aggregate_node_snapshot(
-                db, "node-001",
+                db,
+                "node-001",
                 datetime.now(UTC).replace(tzinfo=None),
                 datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
             )
@@ -171,7 +170,8 @@ class TestAggregateNodeSnapshot:
             return_value=["loop-001", "loop-002"],
         ):
             result = await aggregate_node_snapshot(
-                db, "node-001",
+                db,
+                "node-001",
                 datetime.now(UTC).replace(tzinfo=None),
                 datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
             )
@@ -203,7 +203,8 @@ class TestAggregateNodeSnapshot:
             return_value=["loop-001", "loop-002", "loop-003"],
         ):
             result = await aggregate_node_snapshot(
-                db, "node-001",
+                db,
+                "node-001",
                 datetime.now(UTC).replace(tzinfo=None),
                 datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
             )
@@ -355,18 +356,21 @@ class TestQueryServices:
 class TestNodeScoreToStatus:
     """节点级 5 级定级（复用回路级 _score_to_status）。"""
 
-    @pytest.mark.parametrize("score,expected", [
-        (Decimal("95"), "EXCELLENT"),
-        (Decimal("90"), "EXCELLENT"),
-        (Decimal("89.99"), "GOOD"),
-        (Decimal("80"), "GOOD"),
-        (Decimal("79.99"), "FAIR"),
-        (Decimal("70"), "FAIR"),
-        (Decimal("69.99"), "WARNING"),
-        (Decimal("60"), "WARNING"),
-        (Decimal("59.99"), "POOR"),
-        (Decimal("0"), "POOR"),
-        (None, "INCONCLUSIVE"),
-    ])
+    @pytest.mark.parametrize(
+        "score,expected",
+        [
+            (Decimal("95"), "EXCELLENT"),
+            (Decimal("90"), "EXCELLENT"),
+            (Decimal("89.99"), "GOOD"),
+            (Decimal("80"), "GOOD"),
+            (Decimal("79.99"), "FAIR"),
+            (Decimal("70"), "FAIR"),
+            (Decimal("69.99"), "WARNING"),
+            (Decimal("60"), "WARNING"),
+            (Decimal("59.99"), "POOR"),
+            (Decimal("0"), "POOR"),
+            (None, "INCONCLUSIVE"),
+        ],
+    )
     def test_score_to_status(self, score, expected):
         assert _score_to_status(score) == expected

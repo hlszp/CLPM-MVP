@@ -63,7 +63,7 @@ class TestSanitizeMessage:
 
     def test_multiple_sensitive_patterns(self) -> None:
         """多种敏感信息同时存在时全部脱敏。"""
-        msg = 'password=secret token=abc Bearer xyz eyJpayload'
+        msg = "password=secret token=abc Bearer xyz eyJpayload"
         result = _sanitize_message(msg)
         assert "secret" not in result
         assert "abc" not in result
@@ -116,9 +116,7 @@ class TestMetricsEndpoint:
         resp = client.get("/metrics")
         assert resp.status_code == 200
 
-    def test_metrics_contains_http_requests_total(
-        self, client: TestClient
-    ) -> None:
+    def test_metrics_contains_http_requests_total(self, client: TestClient) -> None:
         """/metrics 响应包含 http_requests_total 指标。"""
         # 先发一个请求产生指标数据
         client.get("/health")

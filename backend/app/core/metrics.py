@@ -77,9 +77,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         finally:
             duration = time.perf_counter() - start_time
             http_requests_total.labels(method=method, path=path, status=status).inc()
-            http_request_duration_seconds.labels(method=method, path=path).observe(
-                duration
-            )
+            http_request_duration_seconds.labels(method=method, path=path).observe(duration)
 
 
 # ---------------------------------------------------------------------------

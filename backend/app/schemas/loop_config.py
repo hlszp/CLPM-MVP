@@ -35,9 +35,7 @@ class ModeMappingInput(CamelModel):
     """投用定义单条输入（请求体内元素）。"""
 
     modeValue: int = Field(..., ge=0, description="DCS 返回的 MODE 值（非负整数）")
-    modeLabel: str = Field(
-        ..., pattern="^(AUTO|CAS|REMOTE|APC|MANUAL)$", description="控制模式"
-    )
+    modeLabel: str = Field(..., pattern="^(AUTO|CAS|REMOTE|APC|MANUAL)$", description="控制模式")
     isAuto: bool = Field(False, description="是否算自动控制")
     isEffective: bool = Field(False, description="是否算有效自动")
 
@@ -45,9 +43,7 @@ class ModeMappingInput(CamelModel):
 class ModeMappingReplaceRequest(CamelModel):
     """PUT /loops/{loopId}/mode-mapping 请求体。"""
 
-    mappings: list[ModeMappingInput] = Field(
-        ..., description="全量替换的投用定义列表"
-    )
+    mappings: list[ModeMappingInput] = Field(..., description="全量替换的投用定义列表")
 
 
 # ---------------------------------------------------------------------------

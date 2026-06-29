@@ -13,9 +13,10 @@ Create Date: 2026-06-24 20:00:00.000000
 
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "j1e2f3a4b5c6"
@@ -44,9 +45,7 @@ def upgrade() -> None:
             comment='触发监控的位号值（如 "true"/"1"/"ON"）',
         ),
     )
-    op.create_index(
-        "idx_plant_node_monitor_tag_id", "plant_node", ["monitor_tag_id"]
-    )
+    op.create_index("idx_plant_node_monitor_tag_id", "plant_node", ["monitor_tag_id"])
 
 
 def downgrade() -> None:

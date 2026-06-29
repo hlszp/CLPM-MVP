@@ -384,15 +384,13 @@ async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
 
     # 按算法分组
     algo_result = await db.execute(
-        select(TuningRecord.algorithm, func.count())
-        .group_by(TuningRecord.algorithm)
+        select(TuningRecord.algorithm, func.count()).group_by(TuningRecord.algorithm)
     )
     by_algorithm = {row[0]: row[1] for row in algo_result.all()}
 
     # 按状态分组
     status_result = await db.execute(
-        select(TuningRecord.status, func.count())
-        .group_by(TuningRecord.status)
+        select(TuningRecord.status, func.count()).group_by(TuningRecord.status)
     )
     by_status = {row[0]: row[1] for row in status_result.all()}
 

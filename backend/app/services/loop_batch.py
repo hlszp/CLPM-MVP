@@ -111,9 +111,7 @@ async def batch_update_loops(
             )
 
     # 查询待更新回路
-    result = await db.execute(
-        select(LoopLedger).where(LoopLedger.id.in_(loop_ids))
-    )
+    result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids)))
     loops = result.scalars().all()
 
     if not loops:
@@ -172,7 +170,9 @@ async def batch_update_loops(
 
     logger.info(
         "[批量更新] 已更新 %d 个回路（操作人: %s, 字段: %s）",
-        len(loops), operator, list(updates.keys()),
+        len(loops),
+        operator,
+        list(updates.keys()),
     )
 
     return len(loops)
@@ -208,9 +208,7 @@ async def batch_delete_loops(
             status_code=422,
         )
 
-    result = await db.execute(
-        select(LoopLedger).where(LoopLedger.id.in_(loop_ids))
-    )
+    result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids)))
     loops = result.scalars().all()
 
     if not loops:
@@ -259,7 +257,8 @@ async def batch_delete_loops(
 
     logger.info(
         "[批量软删除] 已软删除 %d 个回路（操作人: %s）",
-        len(loops), operator,
+        len(loops),
+        operator,
     )
 
     return len(loops)
@@ -291,9 +290,7 @@ async def check_node_monitor_trigger(
     Raises:
         BizError: ERR_NODE_NOT_FOUND (节点不存在)
     """
-    result = await db.execute(
-        select(PlantNode).where(PlantNode.id == plant_node_id)
-    )
+    result = await db.execute(select(PlantNode).where(PlantNode.id == plant_node_id))
     node = result.scalar_one_or_none()
     if node is None:
         raise BizError(
@@ -307,15 +304,14 @@ async def check_node_monitor_trigger(
         return True
 
     # 查询 monitor_tag_id 对应的 tag_name
-    tag_result = await db.execute(
-        select(TagRegistry).where(TagRegistry.id == node.monitor_tag_id)
-    )
+    tag_result = await db.execute(select(TagRegistry).where(TagRegistry.id == node.monitor_tag_id))
     tag = tag_result.scalar_one_or_none()
     if tag is None:
         # 配置了 monitor_tag_id 但 tag 已删除 → 默认监控
         logger.warning(
             "[SVC-10] 节点 %s 的 monitor_tag_id %s 对应 Tag 不存在，回退默认监控",
-            plant_node_id, node.monitor_tag_id,
+            plant_node_id,
+            node.monitor_tag_id,
         )
         return True
 
@@ -332,7 +328,8 @@ async def check_node_monitor_trigger(
         # 无数据时默认不监控（避免误报）
         logger.info(
             "[SVC-10] 节点 %s 的监控位号 %s 无最近数据，返回 False",
-            plant_node_id, tag.tag_name,
+            plant_node_id,
+            tag.tag_name,
         )
         return False
 
@@ -353,7 +350,11 @@ async def check_node_monitor_trigger(
     matched = latest_str == trigger_str
     logger.info(
         "[SVC-10] 节点 %s 监控位号 %s 最新值=%s, 触发值=%s, 匹配=%s",
-        plant_node_id, tag.tag_name, latest_value, trigger_value, matched,
+        plant_node_id,
+        tag.tag_name,
+        latest_value,
+        trigger_value,
+        matched,
     )
     return matched
 

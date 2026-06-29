@@ -30,19 +30,17 @@ from app.contracts.data_types import (
     TagGroup,
     TimeWindow,
 )
+from app.services.cache.l1_datablock import L1DataBlockCache
 from app.services.cache.l2_bundle import L2BundleCache
 from app.services.cache.l3_feature import L3FeatureCache
 from app.services.data_planner import DataPlanner
-from app.services.cache.l1_datablock import L1DataBlockCache
 from app.services.metric_data_bundle import MetricDataBundleAssembler
-
 from tests.test_data_planner.conftest import (
     FakeCacheRedis,
     build_data_block,
     build_raw_timeseries,
     build_requirement,
 )
-
 
 # ---------------------------------------------------------------------------
 # 测试辅助
@@ -97,6 +95,7 @@ def _make_config_loader(
 ):
     async def loader(loop_id: str, ctrl: ControlType):
         from app.contracts.data_types import LoopPreprocessConfig
+
         return LoopPreprocessConfig(
             loop_id=loop_id,
             control_type=ctrl,
@@ -104,17 +103,15 @@ def _make_config_loader(
             range_max=100.0,
             config_version=config_version,
         )
+
     return loader
 
 
 def _make_query_fn(call_log: list, return_n: int = 100):
     async def query_fn(loop_id, tag_roles, start, end, interval_s):
-        call_log.append(
-            {"loop_id": loop_id, "tags": list(tag_roles), "interval_s": interval_s}
-        )
-        return build_raw_timeseries(
-            n=return_n, interval_s=float(interval_s), tags=tag_roles
-        )
+        call_log.append({"loop_id": loop_id, "tags": list(tag_roles), "interval_s": interval_s})
+        return build_raw_timeseries(n=return_n, interval_s=float(interval_s), tags=tag_roles)
+
     return query_fn
 
 
@@ -144,7 +141,7 @@ class TestL2Serialization:
 
         assert restored is not None
         assert len(restored) == len(original_bundles)
-        for orig, rest in zip(original_bundles, restored):
+        for orig, rest in zip(original_bundles, restored, strict=False):
             assert rest.metric_code == orig.metric_code
             assert rest.mask_expression == orig.mask_expression
             assert list(rest.masked_indices) == list(orig.masked_indices)
@@ -154,24 +151,17 @@ class TestL2Serialization:
             assert rest.data_block.tag_group == orig.data_block.tag_group
             assert rest.data_block.point_count == orig.data_block.point_count
             assert rest.data_block.signals["pv"] == orig.data_block.signals["pv"]
-            assert (
-                rest.data_block.validity["pv_valid"]
-                == orig.data_block.validity["pv_valid"]
-            )
+            assert rest.data_block.validity["pv_valid"] == orig.data_block.validity["pv_valid"]
             assert (
                 rest.data_block.quality_summary.valid_rate
                 == orig.data_block.quality_summary.valid_rate
             )
-            assert rest.data_block.consecutive_segments == (
-                orig.data_block.consecutive_segments
-            )
+            assert rest.data_block.consecutive_segments == (orig.data_block.consecutive_segments)
             # DataLineage 等价性
             assert rest.lineage.sampling_freq == orig.lineage.sampling_freq
             assert rest.lineage.tag_group == orig.lineage.tag_group
             assert rest.lineage.valid_rate == orig.lineage.valid_rate
-            assert rest.lineage.data_policy_version == (
-                orig.lineage.data_policy_version
-            )
+            assert rest.lineage.data_policy_version == (orig.lineage.data_policy_version)
 
     @pytest.mark.asyncio
     async def test_roundtrip_preserves_timestamps(self) -> None:
@@ -294,6 +284,7 @@ class TestL2TTL:
     def test_default_ttl_constant(self) -> None:
         """DEFAULT_TTL 常量应为 600."""
         from app.services.cache.l2_bundle import DEFAULT_TTL as L2_TTL
+
         assert L2_TTL == 600
 
 
@@ -530,6 +521,7 @@ class TestL3TTL:
     def test_default_ttl_constant(self) -> None:
         """DEFAULT_TTL 常量应为 1800."""
         from app.services.cache.l3_feature import DEFAULT_TTL as L3_TTL
+
         assert L3_TTL == 1800
 
 
@@ -698,7 +690,9 @@ class TestDataPlannerL2Integration:
         query_log: list = []
         requirements = [
             build_requirement(
-                "accuracy_rate", TagGroup.BASE, ["pv", "sp"],
+                "accuracy_rate",
+                TagGroup.BASE,
+                ["pv", "sp"],
                 mask_expression="pv_valid && sp_valid",
             ),
         ]
@@ -747,7 +741,9 @@ class TestDataPlannerL2Integration:
         query_log: list = []
         requirements = [
             build_requirement(
-                "accuracy_rate", TagGroup.BASE, ["pv", "sp"],
+                "accuracy_rate",
+                TagGroup.BASE,
+                ["pv", "sp"],
                 mask_expression="pv_valid && sp_valid",
             ),
         ]
@@ -782,7 +778,9 @@ class TestDataPlannerL2Integration:
         query_log: list = []
         requirements = [
             build_requirement(
-                "accuracy_rate", TagGroup.BASE, ["pv", "sp"],
+                "accuracy_rate",
+                TagGroup.BASE,
+                ["pv", "sp"],
                 mask_expression="pv_valid && sp_valid",
             ),
         ]
