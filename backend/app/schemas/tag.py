@@ -81,6 +81,28 @@ class TagDeleteResult(CamelModel):
     deletedAt: str
 
 
+class TagBatchDeleteRequest(CamelModel):
+    """批量删除测点请求体。"""
+
+    tagIds: list[str] = Field(..., min_length=1, max_length=500)
+
+
+class TagBatchDeleteFailure(CamelModel):
+    """批量删除中单个失败项。"""
+
+    tagId: str
+    tagName: str | None = None
+    reason: str
+
+
+class TagBatchDeleteResult(CamelModel):
+    """批量删除测点响应。"""
+
+    deleted: int
+    failed: int
+    failures: list[TagBatchDeleteFailure] = []
+
+
 class TagImportError(CamelModel):
     """测点导入单行错误。"""
 

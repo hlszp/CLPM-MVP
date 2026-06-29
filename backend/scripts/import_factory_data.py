@@ -145,7 +145,11 @@ def parse_loop_list() -> list[dict]:
 
 
 def infer_loop_type(tag_name: str) -> str:
-    match = re.match(r"^[A-Z]*([A-Z])[A-Z]*", tag_name)
+    """从位号推断回路类型。
+
+    支持数字开头的位号：41FIC20021_PIDA → F → FLOW
+    """
+    match = re.match(r"^\d*([A-Z])", tag_name)
     if match:
         letter = match.group(1)
         return LOOP_TYPE_MAP.get(letter, "OTHER")

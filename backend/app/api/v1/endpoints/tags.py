@@ -36,6 +36,8 @@ from app.schemas.tag import (
     BatchWaveformFailure,
     BatchWaveformRequest,
     BatchWaveformResponse,
+    TagBatchDeleteRequest,
+    TagBatchDeleteResult,
     TagDeleteResult,
     TagDetail,
     TagImportResult,
@@ -46,6 +48,7 @@ from app.schemas.tag import (
     WaveformTimeRange,
 )
 from app.services.tag import (
+    batch_delete_tags,
     delete_tag,
     export_tags,
     get_tag_detail,
@@ -145,6 +148,21 @@ async def import_tags_endpoint(
     file_bytes = await file.read()
     data = await import_tags(db=db, file_bytes=file_bytes, operator=user.username)
     return success(data=data, message="导入完成")
+
+
+@router.post("/batch-delete", response_model=ApiResponse[TagBatchDeleteResult])
+async def batch_delete_tags_endpoint(
+    body: TagBatchDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """批量删除测点（仅 ADMIN）。
+
+    已关联回路的测点跳过并记入 failures，不影响其他测点删除。
+    返回 {deleted, failed, failures[]}。
+    """
+    data = await batch_delete_tags(db=db, tag_ids=body.tagIds, operator=user.username)
+    return success(data=data, message=f"已删除 {data['deleted']} 个测点")
 
 
 # ---------------------------------------------------------------------------

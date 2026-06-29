@@ -103,6 +103,29 @@ export function deleteTagApi(tagId: string) {
   return requestClient.delete<null>(`/tags/${tagId}`);
 }
 
+/** 批量删除失败项 */
+export interface TagBatchDeleteFailure {
+  tagId: string;
+  tagName?: string;
+  reason: string;
+}
+
+/** 批量删除结果 */
+export interface TagBatchDeleteResult {
+  deleted: number;
+  failed: number;
+  failures: TagBatchDeleteFailure[];
+}
+
+/**
+ * 批量删除测点（仅 ADMIN）
+ *
+ * 已关联回路的测点跳过并记入 failures。
+ */
+export function batchDeleteTagsApi(tagIds: string[]) {
+  return requestClient.post<TagBatchDeleteResult>('/tags/batch-delete', { tagIds });
+}
+
 /**
  * 根据回路位号自动匹配测点
  */

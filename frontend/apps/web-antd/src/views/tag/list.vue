@@ -45,7 +45,12 @@ import {
 
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
-import { deleteTagApi, getTagListApi, updateTagApi } from '#/api/tag';
+import {
+  batchDeleteTagsApi,
+  deleteTagApi,
+  getTagListApi,
+  updateTagApi,
+} from '#/api/tag';
 import { ClpmDataCanvas } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { flattenNodes } from '#/utils/plant-node';
@@ -64,6 +69,34 @@ const query = reactive({
   keyword: '',
   page: 1,
   pageSize: 20,
+});
+
+// 批量选中
+const selectedRowKeys = ref<string[]>([]);
+const batchDeleting = ref(false);
+
+/** 表格行选择配置 */
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: (string | number)[]) => {
+    selectedRowKeys.value = keys.map(String);
+  },
+}));
+
+/** 选中项中可删除的数量（未关联回路） */
+const selectedDeletableCount = computed(() => {
+  const selectedSet = new Set(selectedRowKeys.value);
+  return tagList.value.filter(
+    (t) => selectedSet.has(t.id) && !t.isLinked,
+  ).length;
+});
+
+/** 选中项中已关联（不可删除）的数量 */
+const selectedLinkedCount = computed(() => {
+  const selectedSet = new Set(selectedRowKeys.value);
+  return tagList.value.filter(
+    (t) => selectedSet.has(t.id) && t.isLinked,
+  ).length;
 });
 
 // Plant nodes for filter (flattened)
@@ -227,12 +260,14 @@ async function loadList() {
 
 function handleSearch() {
   query.page = 1;
+  selectedRowKeys.value = [];
   loadList();
 }
 
 function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize || 20;
+  selectedRowKeys.value = [];
   loadList();
 }
 
@@ -285,6 +320,26 @@ async function handleDelete(record: TagApi.TagItem) {
     await loadList();
   } catch {
     // 错误已由拦截器处理
+  }
+}
+
+/** 批量删除测点 */
+async function handleBatchDelete() {
+  if (selectedRowKeys.value.length === 0) return;
+  batchDeleting.value = true;
+  try {
+    const result = await batchDeleteTagsApi(selectedRowKeys.value);
+    const parts: string[] = [`成功删除 ${result.deleted} 个测点`];
+    if (result.failed > 0) {
+      parts.push(`${result.failed} 个因已关联回路跳过`);
+    }
+    message.success(parts.join('，'));
+    selectedRowKeys.value = [];
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchDeleting.value = false;
   }
 }
 
@@ -430,8 +485,29 @@ onMounted(() => {
           @press-enter="handleSearch"
         />
         <Button type="primary" @click="handleSearch">查询</Button>
-        <!-- 导入导出 -->
+        <!-- 批量操作 + 导入导出 -->
         <div class="ml-auto flex items-center gap-2">
+          <!-- 批量删除（仅 ADMIN，选中时显示） -->
+          <Popconfirm
+            v-if="selectedRowKeys.length > 0"
+            v-permission="['ADMIN']"
+            :title="
+              selectedLinkedCount > 0
+                ? `选中 ${selectedRowKeys.length} 项，其中 ${selectedLinkedCount} 个已关联回路（自动跳过），确认删除 ${selectedDeletableCount} 个未关联测点？`
+                : `确认删除选中的 ${selectedRowKeys.length} 个测点？删除后不可恢复。`
+            "
+            @confirm="handleBatchDelete"
+          >
+            <Button
+              v-permission="['ADMIN']"
+              danger
+              :loading="batchDeleting"
+            >
+              批量删除<template v-if="selectedRowKeys.length > 0">
+                ({{ selectedRowKeys.length }})
+              </template>
+            </Button>
+          </Popconfirm>
           <Upload v-bind="uploadProps">
             <Button
               v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -457,7 +533,8 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: TagApi.TagItem) => record.id"
-        :scroll="{ x: 1600 }"
+        :row-selection="rowSelection"
+        :scroll="{ x: 1700 }"
         size="middle"
         @change="handleTableChange"
       >

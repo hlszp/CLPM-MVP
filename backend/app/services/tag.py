@@ -46,11 +46,17 @@ async def _write_audit(
     operator: str,
     operation_type: str,
     target_type: str,
-    target_id: str,
+    target_id: str | None,
     before_value: str | None = None,
     after_value: str | None = None,
 ) -> None:
-    """写入审计日志。"""
+    """写入审计日志。
+
+    target_id 为 None 或空字符串时写入 NULL（批量操作无单一目标）。
+    """
+    # 空字符串 → None（PostgreSQL UUID 类型不接受空字符串）
+    if target_id is not None and not str(target_id).strip():
+        target_id = None
     log = SysAuditLog(
         id=str(uuid4()),
         operator=operator,
@@ -349,6 +355,71 @@ async def delete_tag(db: AsyncSession, tag_id: str, operator: str) -> dict:
         "id": tag_id,
         "deleted": True,
         "deletedAt": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+    }
+
+
+async def batch_delete_tags(
+    db: AsyncSession, tag_ids: list[str], operator: str
+) -> dict:
+    """批量删除测点。
+
+    已关联回路的测点跳过并记入 failures，不影响其他测点删除。
+
+    Returns:
+        {"deleted": int, "failed": int, "failures": [{tagId, tagName, reason}]}
+    """
+    deleted_count = 0
+    failures: list[dict] = []
+
+    # 批量查询这些 tag 的关联状态
+    link_count_result = await db.execute(
+        select(LoopTagMapping.tag_id, func.count().label("cnt"))
+        .where(LoopTagMapping.tag_id.in_(tag_ids))
+        .group_by(LoopTagMapping.tag_id)
+    )
+    linked_map = {str(row.tag_id): row.cnt for row in link_count_result.fetchall()}
+
+    # 批量查询 tag 信息（用于审计日志和 failure 信息）
+    tag_result = await db.execute(
+        select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
+    )
+    tags_map = {str(t.id): t for t in tag_result.scalars().fetchall()}
+
+    for tag_id in tag_ids:
+        tag = tags_map.get(tag_id)
+        if tag is None:
+            failures.append({"tagId": tag_id, "tagName": None, "reason": "测点不存在"})
+            continue
+
+        link_count = linked_map.get(tag_id, 0)
+        if link_count > 0:
+            failures.append({
+                "tagId": tag_id,
+                "tagName": tag.tag_name,
+                "reason": f"已关联 {link_count} 个回路，无法删除",
+            })
+            continue
+
+        before_json = json.dumps(
+            {"tagName": tag.tag_name, "tagType": tag.tag_type}, ensure_ascii=False
+        )
+        await db.execute(delete(TagRegistry).where(TagRegistry.id == tag_id))
+        await _write_audit(
+            db=db,
+            operator=operator,
+            operation_type="TAG_DELETE",
+            target_type="tag_registry",
+            target_id=tag_id,
+            before_value=before_json,
+        )
+        deleted_count += 1
+
+    await db.commit()
+
+    return {
+        "deleted": deleted_count,
+        "failed": len(failures),
+        "failures": failures,
     }
 
 
