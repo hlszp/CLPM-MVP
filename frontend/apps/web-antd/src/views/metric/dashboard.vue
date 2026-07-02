@@ -49,6 +49,8 @@ import dayjs from 'dayjs';
 
 import {
   getBoardApi,
+  getNodeSnapshotApi,
+  getNodesOverviewApi,
   getRankingApi,
   getRealtimeAutoRateApi,
 } from '#/api/metric';
@@ -102,6 +104,45 @@ const loading = ref(false);
 const boardData = ref<MetricApi.BoardResult | null>(null);
 const realtimeAutoRate = ref<MetricApi.RealtimeAutoRateResult | null>(null);
 const realtimeAutoRateLoading = ref(false);
+
+// ===== 节点级 KPI 数据（P0 B2 修复：接入节点级 API）=====
+// 选中具体节点时：节点最新快照（含 score/loopCount/autoLoopRatio）
+// 未选中（全厂）时：全厂总览（含多节点汇总与状态分布）
+const nodeSnapshot = ref<MetricApi.NodeSnapshotItem | null>(null);
+const nodeOverview = ref<MetricApi.NodeOverviewData | null>(null);
+const nodeLoading = ref(false);
+
+/** 节点级回路数（选中节点时为该节点回路数，全厂时为总回路数） */
+const nodeLoopCount = computed(() => {
+  if (nodeSnapshot.value) return nodeSnapshot.value.loopCount;
+  if (nodeOverview.value) {
+    return nodeOverview.value.nodes.reduce((sum, n) => sum + n.loopCount, 0);
+  }
+  return 0;
+});
+
+/** 节点级自控率（优先节点快照 realtimeAutoRate，回退 autoLoopRatio） */
+const nodeAutoLoopRatio = computed(() => {
+  if (nodeSnapshot.value) {
+    return (
+      nodeSnapshot.value.realtimeAutoRate ??
+      nodeSnapshot.value.autoLoopRatio ??
+      null
+    );
+  }
+  if (nodeOverview.value && nodeOverview.value.nodesWithSnapshot > 0) {
+    const withRate = nodeOverview.value.nodes.filter(
+      (n) => n.autoLoopRatio != null,
+    );
+    if (withRate.length > 0) {
+      return (
+        withRate.reduce((sum, n) => sum + (n.autoLoopRatio ?? 0), 0) /
+        withRate.length
+      );
+    }
+  }
+  return null;
+});
 
 const timeWindowOptions = [
   { label: '今天', value: 'today' },
@@ -239,7 +280,7 @@ const primaryItem = computed<SummaryItem | null>(() => {
 const summaryItems = computed<SummaryItem[]>(() => {
   if (!boardData.value) return [];
   const k = boardData.value.kpiSummary;
-  return [
+  const items: SummaryItem[] = [
     {
       key: 'status',
       label: 'KPI 状态',
@@ -267,6 +308,30 @@ const summaryItems = computed<SummaryItem[]>(() => {
       status: 'neutral',
     },
   ];
+
+  // 节点级 KPI 汇总（P0 B2 修复：展示节点级聚合数据）
+  if (nodeLoopCount.value > 0) {
+    items.push({
+      key: 'nodeLoops',
+      label: `${selectedPlantNodeName.value}回路数`,
+      value: `${nodeLoopCount.value} 个`,
+      status: 'neutral',
+    });
+  }
+  if (nodeAutoLoopRatio.value != null) {
+    items.push({
+      key: 'nodeAutoRate',
+      label: `${selectedPlantNodeName.value}自控率`,
+      value: `${(nodeAutoLoopRatio.value * 100).toFixed(1)}%`,
+      status:
+        nodeAutoLoopRatio.value >= 0.9
+          ? 'success'
+          : nodeAutoLoopRatio.value >= 0.7
+            ? 'warning'
+            : 'neutral',
+    });
+  }
+  return items;
 });
 
 const summaryActions = computed<SummaryAction[]>(() => [
@@ -366,6 +431,36 @@ async function loadRealtimeAutoRate() {
   }
 }
 
+/**
+ * 加载节点级 KPI 数据（P0 B2 修复）
+ *
+ * 选中具体节点时调用 getNodeSnapshotApi 获取该节点最新快照，
+ * 未选中（全厂）时调用 getNodesOverviewApi 获取全厂总览。
+ * 两个 API 互斥调用，避免冗余请求。
+ */
+async function loadNodeSnapshot() {
+  nodeLoading.value = true;
+  try {
+    if (selectedPlantNodeId.value) {
+      // 选中具体节点：获取节点最新快照
+      nodeSnapshot.value = await getNodeSnapshotApi(selectedPlantNodeId.value);
+      nodeOverview.value = null;
+    } else {
+      // 全厂：获取总览
+      nodeSnapshot.value = null;
+      nodeOverview.value = await getNodesOverviewApi({
+        timeWindow: filter.timeWindow,
+      });
+    }
+  } catch {
+    // 节点级 KPI 为增强信息，失败不影响主看板，静默处理
+    nodeSnapshot.value = null;
+    nodeOverview.value = null;
+  } finally {
+    nodeLoading.value = false;
+  }
+}
+
 /** 加载低效排行 */
 async function loadRanking() {
   rankingLoading.value = true;
@@ -401,6 +496,7 @@ function loadAll() {
   loadBoard();
   loadRealtimeAutoRate();
   loadRanking();
+  loadNodeSnapshot();
 }
 
 function handleRankingSearch() {
@@ -463,11 +559,12 @@ function renderTrendChart() {
       axisLabel: {
         formatter: (val: string) => {
           try {
-            const d = new Date(val);
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            const hh = String(d.getHours()).padStart(2, '0');
-            const mi = String(d.getMinutes()).padStart(2, '0');
+            // 强制北京时间（UTC+8）：+8h 后用 getUTC* 方法
+            const d = new Date(new Date(val).getTime() + 8 * 3600 * 1000);
+            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const dd = String(d.getUTCDate()).padStart(2, '0');
+            const hh = String(d.getUTCHours()).padStart(2, '0');
+            const mi = String(d.getUTCMinutes()).padStart(2, '0');
             return `${mm}-${dd} ${hh}:${mi}`;
           } catch {
             return val;
@@ -561,11 +658,12 @@ function rankingCustomRow(record: MetricApi.RankingItem): any {
 /** 格式化选中时间戳为可读字符串 */
 function formatSelectedTime(ts: string): string {
   try {
-    const d = new Date(ts);
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mi = String(d.getMinutes()).padStart(2, '0');
+    // 强制北京时间（UTC+8）：+8h 后用 getUTC* 方法
+    const d = new Date(new Date(ts).getTime() + 8 * 3600 * 1000);
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mi = String(d.getUTCMinutes()).padStart(2, '0');
     return `${mm}-${dd} ${hh}:${mi}`;
   } catch {
     return ts;
@@ -999,7 +1097,8 @@ onUnmounted(() => {
               :loading="realtimeAutoRateLoading"
               :subtitle="
                 realtimeAutoRate?.readAt
-                  ? `统计于 ${new Date(realtimeAutoRate.readAt).toLocaleString('zh-CN')}`
+                  ? // 强制北京时间（UTC+8）
+                    `统计于 ${new Date(realtimeAutoRate.readAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
                   : ''
               "
               height="220px"
