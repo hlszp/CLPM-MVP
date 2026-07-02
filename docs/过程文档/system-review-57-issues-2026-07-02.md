@@ -11,7 +11,7 @@
 | # | 模块 | 问题 | 文件 | 状态 |
 |---|---|---|---|---|
 | 1 | 回路管理 | B6: 批量操作审计日志 `target_id` 传逗号分隔 UUID 字符串，PostgreSQL UUID 类型冲突导致事务回滚，批量操作完全不可用 | `services/loop_batch.py:165,252` | **已修复** |
-| 2 | 回路管理 | B1: monitor 服务硬编码 MODE→控制模式映射 `{0:Manual,1:Auto,2:Cascade,3:Cascade}`，忽略用户在 `loop_mode_mapping` 表中的配置，自控率统计口径错误 | `services/monitor.py:43-48` | 待修复 |
+| 2 | 回路管理 | B1: monitor 服务硬编码 MODE→控制模式映射 `{0:Manual,1:Auto,2:Cascade,3:Cascade}`，忽略用户在 `loop_mode_mapping` 表中的配置，自控率统计口径错误 | `services/monitor.py:43-48` | **已修复** |
 | 3 | 跨模块 | B1: SignalR 默认禁用（`SIGNALR_ENABLED=False`），实时数据链路完全断开，开发环境无实时数据流入 TDengine | `core/config.py:82-84` | 已由实时模拟器缓解 |
 | 4 | 跨模块 | B2: 前端完全缺失节点级 KPI API 调用，后端 5 个 `/performance/nodes/*` 端点无前端消费方，装置级/单元级/工厂级聚合结果不可见 | `frontend/src/api/` | 待修复 |
 | 5 | UX | UX1: 169 处硬编码浅色 Tailwind 类（`text-gray-400`/`bg-blue-50`/`border-gray-200` 等），暗色模式下出现刺眼亮色块、对比度不足 | `views/loop/*.vue`(107处) + `views/metric/*.vue`(62处) | 待修复 |

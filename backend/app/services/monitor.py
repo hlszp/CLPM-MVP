@@ -40,12 +40,82 @@ TREND_WINDOWS: dict[str, timedelta] = {
 }
 
 
-def _mode_value_to_label(value: float | None) -> str | None:
-    """MODE tag 值 → 控制模式标签。"""
+# 默认 MODE 值 → 控制模式映射（向后兼容，无 loop_mode_mapping 配置时使用）
+# 与 node_performance.py 的 DEFAULT_AUTO_MODES={1,2,3} 语义一致
+_DEFAULT_MODE_LABELS: dict[int, str] = {
+    0: "Manual",
+    1: "Auto",
+    2: "Cascade",
+    3: "Cascade",
+}
+
+# 数据库 mode_label（LoopModeMapping.mode_label，全大写）→ 前端 ControlMode（首字母大写）转换
+# 前端 ControlMode 类型仅 'Auto' | 'Cascade' | 'Manual'，REMOTE/APC 归并为 Auto
+_DB_MODE_LABEL_TO_FRONTEND: dict[str, str] = {
+    "AUTO": "Auto",
+    "CAS": "Cascade",
+    "REMOTE": "Auto",  # 远程控制归并为 Auto（非手动）
+    "APC": "Auto",  # 先进控制归并为 Auto（非手动）
+    "MANUAL": "Manual",
+}
+
+
+def _mode_value_to_label(
+    value: float | None,
+    mapping: dict[int, str] | None = None,
+) -> str | None:
+    """MODE tag 值 → 控制模式标签。
+
+    优先使用用户在 ``loop_mode_mapping`` 表中配置的映射（PRD §5.1.3 / FDS §5.3.1），
+    无配置时回退到默认硬编码映射（向后兼容）。
+
+    Args:
+        value: MODE tag 当前值（int/float/None）
+        mapping: 该回路的 MODE 值映射 ``{mode_value: frontend_label}``，
+            由 ``_load_mode_mappings`` 预查并转换。None 时使用默认映射。
+
+    Returns:
+        控制模式标签（"Auto"/"Cascade"/"Manual"/"Unknown"），None 输入返回 None
+    """
     if value is None:
         return None
-    mapping = {0: "Manual", 1: "Auto", 2: "Cascade", 3: "Cascade"}
-    return mapping.get(int(value), "Unknown")
+    active_mapping = mapping if mapping is not None else _DEFAULT_MODE_LABELS
+    return active_mapping.get(int(value), "Unknown")
+
+
+async def _load_mode_mappings(
+    db: AsyncSession, loop_ids: list[str]
+) -> dict[str, dict[int, str]]:
+    """批量查询多个回路的 MODE 值映射配置。
+
+    从 ``loop_mode_mapping`` 表读取每个回路的 (mode_value, mode_label) 配置，
+    转换为前端 ControlMode 格式 ``{loop_id: {mode_value: frontend_label}}``。
+
+    无配置的回路不在返回字典中（调用方回退到默认映射）。
+
+    Args:
+        db: 异步数据库会话
+        loop_ids: 回路 ID 列表
+
+    Returns:
+        ``{loop_id: {mode_value: frontend_label}}`` 字典
+    """
+    if not loop_ids:
+        return {}
+    from app.models.loop_config import LoopModeMapping
+
+    result = await db.execute(
+        select(LoopModeMapping.loop_id, LoopModeMapping.mode_value, LoopModeMapping.mode_label)
+        .where(LoopModeMapping.loop_id.in_(loop_ids))
+    )
+    mappings: dict[str, dict[int, str]] = {}
+    for row in result:
+        loop_id = str(row.loop_id)
+        frontend_label = _DB_MODE_LABEL_TO_FRONTEND.get(
+            str(row.mode_label).upper(), "Unknown"
+        )
+        mappings.setdefault(loop_id, {})[int(row.mode_value)] = frontend_label
+    return mappings
 
 
 def _ts_to_ms(ts: Any) -> int:
@@ -308,6 +378,12 @@ async def list_loop_monitor(
             if key not in snapshot_map:
                 snapshot_map[key] = snap
 
+    # 批量查每个回路的 MODE 值映射配置（loop_mode_mapping 表）
+    # 无配置的回路回退到默认映射（在 _mode_value_to_label 内处理）
+    mode_mapping_map: dict[str, dict[int, str]] = (
+        await _load_mode_mappings(db, loop_ids) if loop_ids else {}
+    )
+
     # 批量从 Redis 读取实时值，优先于 PostgreSQL current_value
     redis_cache: dict[str, dict] = {}
     try:
@@ -359,7 +435,8 @@ async def list_loop_monitor(
                         current_values["pvQuality"] = tag.quality
                 if role == "MODE":
                     mode_val = current_values["mode"]
-                    current_values["modeLabel"] = _mode_value_to_label(mode_val)
+                    loop_mode_mapping = mode_mapping_map.get(str(loop.id))
+                    current_values["modeLabel"] = _mode_value_to_label(mode_val, loop_mode_mapping)
                     control_mode = current_values["modeLabel"]
                 if not cached and tag.last_sync_at:
                     ts = (
@@ -449,6 +526,11 @@ async def get_loop_monitor_detail(
 
     tags_map, mappings = await _get_loop_tag_values(db, loop_id)
 
+    # 查询该回路的 MODE 值映射配置（loop_mode_mapping 表）
+    # 无配置时回退到默认映射（在 _mode_value_to_label 内处理）
+    mode_mapping_dict = await _load_mode_mappings(db, [loop_id])
+    loop_mode_mapping = mode_mapping_dict.get(loop_id)
+
     # 构建当前值快照
     current_values: dict[str, Any] = {
         "pv": None,
@@ -479,8 +561,12 @@ async def get_loop_monitor_detail(
                 current_values["op"] = tag.current_value
             elif role == "MODE":
                 current_values["mode"] = tag.current_value
-                current_values["modeLabel"] = _mode_value_to_label(tag.current_value)
-                runtime_params["controlMode"] = _mode_value_to_label(tag.current_value)
+                current_values["modeLabel"] = _mode_value_to_label(
+                    tag.current_value, loop_mode_mapping
+                )
+                runtime_params["controlMode"] = _mode_value_to_label(
+                    tag.current_value, loop_mode_mapping
+                )
             elif role == "PID_P":
                 runtime_params["pidP"] = tag.current_value
             elif role == "PID_I":

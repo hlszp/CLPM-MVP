@@ -108,6 +108,30 @@ def _make_plant_node(node_id: str = "unit-001", name: str = "常减压装置") -
     return node
 
 
+def _make_mode_mapping_row(
+    loop_id: str = "loop-001",
+    mode_value: int = 5,
+    mode_label: str = "AUTO",
+) -> MagicMock:
+    """构造 LoopModeMapping 行 mock（用于 _load_mode_mappings 直接迭代）。"""
+    row = MagicMock()
+    row.loop_id = loop_id
+    row.mode_value = mode_value
+    row.mode_label = mode_label
+    return row
+
+
+def _make_rows_iterable_mock(rows: list) -> MagicMock:
+    """构造可直接迭代返回 rows 的 mock（用于 _load_mode_mappings 查询）。
+
+    _load_mode_mappings 使用 ``for row in result:`` 直接迭代 result，
+    而非 ``result.scalars().all()``，需要此辅助函数。
+    """
+    result = MagicMock()
+    result.__iter__ = MagicMock(return_value=iter(rows))
+    return result
+
+
 # ===========================================================================
 # _mode_value_to_label 单元测试
 # ===========================================================================
@@ -143,6 +167,39 @@ class TestModeValueToLabel:
     def test_float_value_truncates_to_int(self) -> None:
         """浮点数 1.0 → Auto（int 转换）。"""
         assert _mode_value_to_label(1.0) == "Auto"
+
+    def test_custom_mapping_overrides_default(self) -> None:
+        """用户自定义 mapping 优先于默认映射。
+
+        场景：DCS 中 MODE=5 表示 AUTO，MODE=8 表示 CAS（非标准编码），
+        用户在 loop_mode_mapping 表配置后应生效。
+        """
+        custom_mapping = {5: "Auto", 8: "Cascade", 0: "Manual"}
+        assert _mode_value_to_label(5, custom_mapping) == "Auto"
+        assert _mode_value_to_label(8, custom_mapping) == "Cascade"
+        assert _mode_value_to_label(0, custom_mapping) == "Manual"
+        # 默认映射中 1=Auto，但自定义 mapping 中 1 未定义 → Unknown
+        assert _mode_value_to_label(1, custom_mapping) == "Unknown"
+
+    def test_none_mapping_falls_back_to_default(self) -> None:
+        """mapping=None 回退到默认映射（向后兼容）。"""
+        assert _mode_value_to_label(1, None) == "Auto"
+        assert _mode_value_to_label(0, None) == "Manual"
+        assert _mode_value_to_label(2, None) == "Cascade"
+
+    def test_empty_mapping_returns_unknown_for_known_default_value(self) -> None:
+        """空 mapping 字典 {} 不回退默认，已知值返回 Unknown。
+
+        区分 None（未提供配置）与 {}（显式空配置）：
+        - None → 使用默认映射（向后兼容）
+        - {} → 视为有效但空的配置，所有值返回 Unknown
+        """
+        assert _mode_value_to_label(1, {}) == "Unknown"
+
+    def test_custom_mapping_unknown_value(self) -> None:
+        """自定义 mapping 中未定义的值返回 Unknown。"""
+        custom_mapping = {5: "Auto"}
+        assert _mode_value_to_label(99, custom_mapping) == "Unknown"
 
 
 # ===========================================================================
@@ -225,6 +282,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
             ]
         )
         result = await list_loop_monitor(db)
@@ -262,12 +320,13 @@ class TestListLoopMonitor:
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
             ]
         )
         result = await list_loop_monitor(db, plant_node_id="unit-001")
         assert result["total"] == 1
         assert len(result["items"]) == 1
-        assert db.execute.await_count == 6
+        assert db.execute.await_count == 7
 
     async def test_with_keyword_filter(self) -> None:
         """带 keyword 过滤时正确返回空列表。"""
@@ -318,6 +377,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag, sp_tag, op_tag, mode_tag]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
             ]
         )
         result = await list_loop_monitor(db)
@@ -341,13 +401,14 @@ class TestListLoopMonitor:
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
             ]
         )
         result = await list_loop_monitor(db)
         item = result["items"][0]
         assert item["unitName"] is None
-        # count + loops + mappings + kpi_snapshot = 4 次（跳过 plant node 查询）
-        assert db.execute.await_count == 4
+        # count + loops + mappings + kpi_snapshot + mode_mapping = 5 次（跳过 plant node 查询）
+        assert db.execute.await_count == 5
 
     async def test_no_score_weight(self) -> None:
         """无 KPI 快照时 score 为 None（score 来自 KpiSnapshotHourly，非 loop.score_weight）。"""
@@ -361,6 +422,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
             ]
         )
         result = await list_loop_monitor(db)
@@ -382,11 +444,46 @@ class TestListLoopMonitor:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
             ]
         )
         result = await list_loop_monitor(db)
         item = result["items"][0]
         assert item["readAt"] == "2026-06-22T10:00:00"
+
+    async def test_custom_mode_mapping_overrides_default(self) -> None:
+        """用户配置 loop_mode_mapping 后，modeLabel 使用自定义映射而非默认。
+
+        场景：DCS 中 MODE=5 表示 AUTO（非标准编码），
+        用户在 loop_mode_mapping 表配置 mode_value=5, mode_label='AUTO'，
+        列表展示时应返回 "Auto" 而非默认映射的 "Unknown"。
+        """
+        loop = _make_loop(unit_id=None)  # 跳过 plant node 查询简化 mock
+        mode_tag = _make_tag(
+            tag_id="tag-mode", tag_name="LIC-101.MODE", current_value=5
+        )
+        mappings = [_make_mapping(tag_role="MODE", tag_id="tag-mode")]
+        # 用户配置：MODE=5 → AUTO
+        mode_mapping_rows = [
+            _make_mode_mapping_row(loop_id="loop-001", mode_value=5, mode_label="AUTO")
+        ]
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock(mappings),
+                _make_scalars_mock([mode_tag]),
+                _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_rows_iterable_mock(mode_mapping_rows),  # mode mapping 查询（有配置）
+            ]
+        )
+        result = await list_loop_monitor(db)
+        item = result["items"][0]
+        # MODE=5 在默认映射中是 Unknown，但用户配置为 AUTO → 转换为 "Auto"
+        assert item["currentValues"]["mode"] == 5
+        assert item["currentValues"]["modeLabel"] == "Auto"
+        assert item["controlMode"] == "Auto"
 
 
 # ===========================================================================
@@ -444,6 +541,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock(
                     [pv_tag, sp_tag, op_tag, mode_tag, pid_p_tag, pid_i_tag, pid_d_tag]
                 ),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalar_one_or_none_mock(snap),  # KPI 快照查询
             ]
         )
@@ -486,6 +584,7 @@ class TestGetLoopMonitorDetail:
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
@@ -512,6 +611,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
@@ -535,6 +635,7 @@ class TestGetLoopMonitorDetail:
                 side_effect=[
                     _make_scalar_one_or_none_mock(loop),
                     _make_scalars_mock([]),
+                    _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                     _make_scalar_one_or_none_mock(None),  # KPI 快照查询
                 ]
             )
@@ -549,6 +650,7 @@ class TestGetLoopMonitorDetail:
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
@@ -564,6 +666,7 @@ class TestGetLoopMonitorDetail:
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
@@ -581,6 +684,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([sp_tag]),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
@@ -605,6 +709,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([op_tag]),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
@@ -629,6 +734,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalar_one_or_none_mock(None),  # KPI 快照查询
             ]
         )
