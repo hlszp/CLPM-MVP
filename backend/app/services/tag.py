@@ -622,7 +622,7 @@ async def import_tags(
         operator=operator,
         operation_type="TAG_IMPORT",
         target_type="tag_registry",
-        target_id="",
+        target_id=None,  # 导入操作无单一目标记录
         after_value=json.dumps(
             {
                 "total": total,

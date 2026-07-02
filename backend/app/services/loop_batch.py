@@ -162,7 +162,7 @@ async def batch_update_loops(
         operator=operator,
         operation_type="LOOP_BATCH_UPDATE",
         target_type="loop_ledger",
-        target_id=",".join(str(loop.id) for loop in loops),
+        target_id=None,  # 批量操作无单一目标，完整列表在 before_value/after_value
         before_value=before_json,
         after_value=after_json,
     )
@@ -249,7 +249,7 @@ async def batch_delete_loops(
         operator=operator,
         operation_type="LOOP_BATCH_DELETE",
         target_type="loop_ledger",
-        target_id=",".join(str(loop.id) for loop in loops),
+        target_id=None,  # 批量操作无单一目标，完整列表在 before_value/after_value
         before_value=before_json,
         after_value=after_json,
     )

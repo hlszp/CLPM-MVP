@@ -159,7 +159,7 @@ async def update_aas_config(
         operator=operator,
         operation_type="AAS_CONFIG_UPDATE",
         target_type="sys_config",
-        target_id="aas",
+        target_id=None,  # 配置级操作无单一目标记录
         before_value=before_json,
         after_value=after_json,
     )
