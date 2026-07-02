@@ -14,8 +14,8 @@
 | 2 | 回路管理 | B1: monitor 服务硬编码 MODE→控制模式映射 `{0:Manual,1:Auto,2:Cascade,3:Cascade}`，忽略用户在 `loop_mode_mapping` 表中的配置，自控率统计口径错误 | `services/monitor.py:43-48` | **已修复** |
 | 3 | 跨模块 | B1: SignalR 默认禁用（`SIGNALR_ENABLED=False`），实时数据链路完全断开，开发环境无实时数据流入 TDengine | `core/config.py:82-84` | 已由实时模拟器缓解 |
 | 4 | 性能评估 | B2: 前端完全缺失节点级 KPI API 调用，后端 5 个 `/performance/nodes/*` 端点无前端消费方，装置级/单元级/工厂级聚合结果不可见 | `frontend/.../api/metric.ts` | **已修复** |
-| 5 | UX | UX1: 169 处硬编码浅色 Tailwind 类（`text-gray-400`/`bg-blue-50`/`border-gray-200` 等），暗色模式下出现刺眼亮色块、对比度不足 | `views/loop/*.vue`(107处) + `views/metric/*.vue`(62处) | 待修复 |
-| 6 | UX | UX2: `industrial-light.css` 仅覆盖浅色变量，无 `.dark` 选择器，表头/hover/选中行/滚动条硬编码 HSL 值 | `styles/industrial-light.css` | 待修复 |
+| 5 | UX | UX1: 169 处硬编码浅色 Tailwind 类（`text-gray-400`/`bg-blue-50`/`border-gray-200` 等），暗色模式下出现刺眼亮色块、对比度不足 | `views/loop/*.vue`(107处) + `views/metric/*.vue`(62处) | **已修复**（CSS 集中覆盖） |
+| 6 | UX | UX2: `industrial-light.css` 仅覆盖浅色变量，无 `.dark` 选择器，表头/hover/选中行/滚动条硬编码 HSL 值 | `styles/industrial-light.css` | **已修复** |
 | 7 | UX | UX4: AAS 同步触发后只 `setTimeout(2000)` 硬等 2 秒，无进度反馈、无完成确认、无错误提示 | `views/loop/aas.vue:204-218` | 待修复 |
 | 8 | UX | UX5: KPI 计算/批量配置/导出等异步操作只显示成功/失败 toast，无进度条或步骤反馈 | `views/loop/manage.vue` 多处 | 待修复 |
 

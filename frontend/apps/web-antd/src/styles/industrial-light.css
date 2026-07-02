@@ -182,3 +182,166 @@ th.align-right {
 .bg-panel {
   background: hsl(var(--card));
 }
+
+/* =========================================================================
+ * 10. 暗色模式覆盖（P0 #5 + #6 修复）
+ *
+ * 问题：业务代码中 292 处硬编码 Tailwind 浅色类（text-gray-*/bg-gray-*/
+ * border-gray-*/bg-blue-50/text-green-600 等），暗色模式下出现刺眼亮色块、
+ * 对比度不足。本块用 .dark 作用域集中覆盖，无需逐个修改 30 个 Vue 文件。
+ *
+ * 覆盖原则：
+ * - 文本类：浅色越深 → 暗色越亮（反转亮度）
+ * - 背景类：浅色越浅 → 暗色越深
+ * - 边框类：统一用暗色边框
+ * - 彩色浅色背景：用半透明深色（保留色调提示）
+ * - 彩色深色文本：提亮到 400 级别
+ * ========================================================================= */
+
+/* ---------- 10.1 CSS 变量暗色值（对应 P0 #6） ---------- */
+
+:root.dark,
+.dark[data-theme='default'] {
+  /* 页面画布底色：深蓝灰 #0f172a → HSL(222 47% 11%) */
+  --background: 222 47% 11%;
+  --background-deep: 222 47% 9%;
+  /* 主文本：浅色 #e5e7eb → HSL(210 20% 90%) */
+  --foreground: 210 20% 90%;
+  /* 次文本：#9ca3af → HSL(217 10% 65%) */
+  --muted-foreground: 217 10% 65%;
+  /* 强分割线：#374151 → HSL(215 25% 27%) */
+  --border: 215 25% 27%;
+  --input: 215 25% 27%;
+}
+
+/* ---------- 10.2 gray 文本类反转（浅色越深→暗色越亮） ---------- */
+
+.dark .text-gray-300 { color: rgb(156 163 175); }  /* #d1d5db → #9ca3af */
+.dark .text-gray-400 { color: rgb(156 163 175); }  /* #9ca3af 保持 */
+.dark .text-gray-500 { color: rgb(156 163 175); }  /* #6b7280 → #9ca3af */
+.dark .text-gray-600 { color: rgb(209 213 219); }  /* #4b5563 → #d1d5db */
+.dark .text-gray-700 { color: rgb(229 231 235); }  /* #374151 → #e5e7eb */
+.dark .text-gray-800 { color: rgb(243 244 246); }  /* #1f2937 → #f3f4f6 */
+.dark .text-gray-900 { color: rgb(249 250 251); }  /* #111827 → #f9fafb */
+
+/* ---------- 10.3 gray 背景类反转（浅色越浅→暗色越深） ---------- */
+
+.dark .bg-gray-50  { background-color: rgb(31 41 55); }    /* #f9fafb → #1f2937 */
+.dark .bg-gray-100 { background-color: rgb(31 41 55); }   /* #f3f4f6 → #1f2937 */
+.dark .bg-gray-200 { background-color: rgb(55 65 81); }  /* #e5e7eb → #374151 */
+
+/* ---------- 10.4 gray 边框类反转 ---------- */
+
+.dark .border-gray-100 { border-color: rgb(55 65 81); }   /* → #374151 */
+.dark .border-gray-200 { border-color: rgb(55 65 81); }   /* → #374151 */
+.dark .border-gray-300 { border-color: rgb(75 85 99); }   /* → #4b5563 */
+.dark .border-gray-400 { border-color: rgb(107 114 128); } /* → #6b7280 */
+
+/* ---------- 10.5 彩色浅色背景 → 半透明暗色 ---------- */
+
+.dark .bg-blue-50     { background-color: rgb(59 130 246 / 0.12); }
+.dark .bg-blue-100    { background-color: rgb(59 130 246 / 0.18); }
+.dark .bg-green-50    { background-color: rgb(34 197 94 / 0.12); }
+.dark .bg-green-100   { background-color: rgb(34 197 94 / 0.18); }
+.dark .bg-emerald-50  { background-color: rgb(16 185 129 / 0.12); }
+.dark .bg-emerald-100 { background-color: rgb(16 185 129 / 0.18); }
+.dark .bg-red-50      { background-color: rgb(239 68 68 / 0.12); }
+.dark .bg-red-100     { background-color: rgb(239 68 68 / 0.18); }
+.dark .bg-amber-50    { background-color: rgb(245 158 11 / 0.12); }
+.dark .bg-amber-100   { background-color: rgb(245 158 11 / 0.18); }
+.dark .bg-orange-50   { background-color: rgb(249 115 22 / 0.12); }
+.dark .bg-orange-100  { background-color: rgb(249 115 22 / 0.18); }
+.dark .bg-yellow-50   { background-color: rgb(234 179 8 / 0.12); }
+.dark .bg-cyan-50     { background-color: rgb(6 182 212 / 0.12); }
+.dark .bg-sky-50      { background-color: rgb(14 165 233 / 0.12); }
+.dark .bg-indigo-50   { background-color: rgb(99 102 241 / 0.12); }
+.dark .bg-purple-50   { background-color: rgb(168 85 247 / 0.12); }
+.dark .bg-pink-50     { background-color: rgb(236 72 153 / 0.12); }
+.dark .bg-rose-50     { background-color: rgb(244 63 94 / 0.12); }
+
+/* ---------- 10.6 彩色深色文本 → 提亮到 400 级别 ---------- */
+
+.dark .text-blue-600     { color: rgb(96 165 250); }   /* #60a5fa */
+.dark .text-blue-700     { color: rgb(96 165 250); }
+.dark .text-green-600    { color: rgb(74 222 128); }   /* #4ade80 */
+.dark .text-green-700    { color: rgb(74 222 128); }
+.dark .text-emerald-600  { color: rgb(52 211 153); }   /* #34d399 */
+.dark .text-emerald-700  { color: rgb(52 211 153); }
+.dark .text-red-600      { color: rgb(248 113 113); }   /* #f87171 */
+.dark .text-red-700      { color: rgb(248 113 113); }
+.dark .text-amber-600    { color: rgb(251 191 36); }   /* #fbbf24 */
+.dark .text-amber-700    { color: rgb(251 191 36); }
+.dark .text-orange-600   { color: rgb(251 146 60); }   /* #fb923c */
+.dark .text-orange-700   { color: rgb(251 146 60); }
+.dark .text-cyan-600     { color: rgb(34 211 238); }
+.dark .text-sky-600      { color: rgb(56 189 248); }
+.dark .text-indigo-600   { color: rgb(129 140 248); }
+.dark .text-purple-600   { color: rgb(192 132 252); }
+.dark .text-pink-600     { color: rgb(244 114 182); }
+.dark .text-rose-600     { color: rgb(251 113 133); }
+
+/* ---------- 10.7 彩色边框 → 半透明暗色 ---------- */
+
+.dark .border-blue-200    { border-color: rgb(59 130 246 / 0.3); }
+.dark .border-blue-300    { border-color: rgb(59 130 246 / 0.4); }
+.dark .border-green-200   { border-color: rgb(34 197 94 / 0.3); }
+.dark .border-green-300   { border-color: rgb(34 197 94 / 0.4); }
+.dark .border-emerald-200 { border-color: rgb(16 185 129 / 0.3); }
+.dark .border-red-200     { border-color: rgb(239 68 68 / 0.3); }
+.dark .border-red-300     { border-color: rgb(239 68 68 / 0.4); }
+.dark .border-amber-200    { border-color: rgb(245 158 11 / 0.3); }
+.dark .border-amber-300    { border-color: rgb(245 158 11 / 0.4); }
+.dark .border-orange-200   { border-color: rgb(249 115 22 / 0.3); }
+
+/* ---------- 10.8 industrial-light.css 硬编码 HSL 覆盖 ---------- */
+
+/* 表头：暗色深蓝灰 */
+.dark .ant-table-thead > tr > th {
+  background: hsl(215deg 25% 17%);
+  border-bottom: 1px solid hsl(215deg 25% 27%);
+  color: hsl(210deg 20% 90%);
+}
+
+/* hover：暗色稍亮 */
+.dark .ant-table-tbody > tr:hover > td {
+  background: hsl(215deg 25% 20%) !important;
+}
+
+/* 选中行：暗色深蓝 */
+.dark .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: hsl(211deg 98% 20%) !important;
+  box-shadow: inset 2px 0 0 hsl(211deg 98% 52%);
+}
+
+/* 滚动条：暗色 */
+.dark .clpm-scroll::-webkit-scrollbar-thumb,
+.dark .ant-table-body::-webkit-scrollbar-thumb {
+  background: hsl(213deg 15% 35%);
+}
+
+.dark .clpm-scroll::-webkit-scrollbar-thumb:hover,
+.dark .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: hsl(213deg 15% 45%);
+}
+
+/* 工具类覆盖 */
+.dark .border-strong {
+  border-color: hsl(215deg 25% 27%) !important;
+}
+
+.dark .bg-canvas {
+  background: hsl(var(--background));
+}
+
+/* ---------- 10.9 常见硬编码白色背景 → 暗色面板 ---------- */
+
+.dark .bg-white { background-color: rgb(31 41 55); }
+.dark .bg-white\/80 { background-color: rgb(31 41 55 / 0.8); }
+.dark .bg-white\/90 { background-color: rgb(31 41 55 / 0.9); }
+
+/* ---------- 10.10 常见硬编码黑色文本 → 暗色浅文本 ---------- */
+
+.dark .text-black { color: rgb(249 250 251); }
+.dark .text-black\/50 { color: rgb(156 163 175 / 0.5); }
+.dark .text-black\/60 { color: rgb(156 163 175 / 0.6); }
+.dark .text-black\/70 { color: rgb(156 163 175 / 0.7); }
