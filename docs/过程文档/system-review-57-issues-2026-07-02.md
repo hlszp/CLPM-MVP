@@ -38,7 +38,7 @@
 | 19 | UX | UX3: `preferences.ts` 中 `THEME_COLORS` 为静态常量（不响应主题切换），`detail.vue` 直接使用而非 `useClpmTheme()` | `preferences.ts:38-49` | **已修复** |
 | 20 | UX | UX6: 批量配置入口隐藏在独立 Tab 中，需跨 Tab 操作（选中回路→切换Tab→打开弹窗），流程不直观 | `views/loop/manage.vue:1129-1139` | **已修复** |
 | 21 | UX | UX7: 大量 `catch {}` 静默吞错，页面状态不一致且无错误引导，`ClpmDataCanvas` 的 error/retry 能力未使用 | `views/loop/manage.vue` 多处 | **已修复** |
-| 22 | 测试 | TC1: 7 场景测试数据（7200点×7）已生成于 `fixtures/kpi_test_data.json`，但**没有任何 pytest 测试引用**，项目记忆硬约束在 CI 中未被验证 | `tests/fixtures/kpi_test_data.json` | 待修复 |
+| 22 | 测试 | TC1: 7 场景测试数据（7200点×7）已生成于 `fixtures/kpi_test_data.json`，但**没有任何 pytest 测试引用**，项目记忆硬约束在 CI 中未被验证 | `tests/fixtures/kpi_test_data.json` | **已修复** |
 
 ---
 
@@ -96,10 +96,10 @@
 | 优先级 | 数量 | 已修复 | 待修复 |
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
-| P1 高优先级 | 14 | 13 | 1 |
+| P1 高优先级 | 14 | 14 | 0 |
 | P2 中优先级 | 19 | 0 | 19 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **19** | **38** |
+| **合计** | **57** | **20** | **37** |
 
 ## 已修复记录
 
@@ -124,3 +124,4 @@
 | 19 | UX3: THEME_COLORS 静态常量不响应主题切换 | `detail.vue` 移除 `import { THEME_COLORS } from '#/preferences'`，改用 `useClpmTheme()` 获取响应式 `themeColors`（computed ref，isDark 变化时自动更新）；template 中 `THEME_COLORS.SUCCESS/DANGER` 改为 `themeColors.SUCCESS/DANGER`（Vue 自动解包 ref）。`preferences.ts` 中 `THEME_COLORS` 添加 `@deprecated` JSDoc 注释，引导组件改用 `useClpmTheme()`。注：`KPI_COLOR_MAP`/`ACTION_STATUS_COLOR_MAP` 仍在 preferences.ts 中定义但无任何文件 import 使用（死代码，保留备用） | `frontend/.../views/loop/detail.vue:49-62,589-598` + `frontend/.../preferences.ts:32-42` | 前端类型检查通过 |
 | 20 | UX6: 批量配置入口跨 Tab 操作 | 移除冗余的"批量配置"Tab（`<TabPane key="batch">` + 对应的 ClpmDataCanvas 内容块），因为"回路台账"Tab 已内联完整的批量操作入口：工具栏"批量配置"按钮 + 选中回路后浮现的批量操作工具栏（批量设置/批量删除/清除选择）。移除后简化为 3 个 Tab（工厂结构/回路台账/Tag 关联），消除跨 Tab 操作摩擦。同时清理死代码：`selectedLoopColumns`/`selectedLoops` 仅在批量配置 Tab 使用，一并删除；移除未使用的 `Alert` import | `frontend/.../views/loop/manage.vue:85,1158,1489-1567` | 前端类型检查通过 |
 | 21 | UX7: catch {} 静默吞错 + ClpmDataCanvas error/retry 未使用 | `manage.vue` 新增 `loadError` ref（数据加载错误状态）；`loadList()` 在 catch 中置 `loadError=true` + `console.error('[回路列表] 加载失败:', error)`；ClpmDataCanvas 绑定 `:error="loadError"` + `@retry="loadList"`，让用户在加载失败时看到 error 态 + 重试按钮。`loadPlantNodes()` 添加 `console.error('[工厂节点] 加载失败:', error)`。批量替换 11 处 `} catch {` → `} catch (error) {`，11 处 `// 错误已由拦截器处理` → `console.error('操作失败:', error);`，让操作失败有控制台证据（拦截器仍负责 UI toast）。Promise 链 `.catch(() => {` → `.catch((error) => {` + `console.error('导入失败:', error)` | `frontend/.../views/loop/manage.vue:101,237,251-253,455,560,595,630,653,843,867,890,939,983,1081,1090,1157` | 前端类型检查通过 |
+| 22 | TC1: 7 场景测试数据未被 pytest 引用 | 新增 `tests/test_metric_calculator/test_scenarios.py`（20 个测试），引用 `tests/fixtures/kpi_test_data.json` 中 7 个场景数据。session 级 `kpi_scenarios` fixture 加载 JSON；`_scenario_to_bundle()` 辅助函数将场景 data 数组转为 MetricDataBundle（pv/sp/op/mode + pv_valid 掩码）。测试覆盖：①7 场景齐全性（数据点数/control_type/ar_signal 字段）；②fast_response（settling_time ≤ 60s + fast_rate ≥ 80）；③slow_response（settling_time ≥ 30s + fast_rate < fast_response + fast_rate < 50）；④normal fast_rate ≥ 70；⑤oscillation（zero_crossings ≥ 20 + rate ≥ 0）；⑥op_saturation（type=HIGH + epsilon=5 时 rate ∈ [25,60]）；⑦normal accuracy/good_value/auto_mode（accuracy > 70, good_value ≥ 95, auto_mode ≥ 85）；⑧manual_mode（全 mode=0 + auto_rate ∈ [0,5]）；⑨pure_ar2（AR(2) 前 2 系数匹配 [-0.5,0.3] ±0.15 + 剩余 8 系数 |coeff|<0.05 + settling_time ≤ 100s）。注：测试考虑生成脚本注入的 0.5% 坏质量点 + 5% 手动段 | `backend/tests/test_metric_calculator/test_scenarios.py` | 全后端 1524 测试通过（1504 原有 + 20 新增） |
