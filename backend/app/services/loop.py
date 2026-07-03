@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -22,6 +23,8 @@ from app.models.audit import SysAuditLog
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
+
+logger = logging.getLogger(__name__)
 
 # 必填 Tag 角色
 REQUIRED_ROLES = ("PV", "SP", "OP", "MODE")
@@ -1002,9 +1005,20 @@ async def _import_one_row(
             t_result = await db.execute(select(TagRegistry).where(TagRegistry.tag_name == t_name))
             tag = t_result.scalar_one_or_none()
             if tag is None:
+                # P3 #47: 不再静默创建 TagRegistry（绕过 AAS 同步会引入"幽灵 Tag"）
+                # 改为显式警告 + 标记 tag_description，提示运维人员后续需通过 AAS 同步补全元数据
+                logger.warning(
+                    "Excel 导入自动创建 Tag（未通过 AAS 同步）: tag_name=%s, role=%s, "
+                    "operator=%s — 该 Tag 缺少量程/单位/measure_type 等元数据，"
+                    "请尽快执行 AAS 同步以补全",
+                    t_name,
+                    role,
+                    operator,
+                )
                 tag = TagRegistry(
                     id=str(uuid4()),
                     tag_name=t_name,
+                    tag_description="[Excel 导入自动创建，未通过 AAS 同步，元数据待补全]",
                     tag_type=role,
                     last_sync_at=datetime.now(UTC).replace(tzinfo=None),
                     is_linked=True,

@@ -11,7 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from tests.conftest import TEST_USERS, mock_current_user
 
@@ -496,3 +496,170 @@ class TestLoopListIsActiveMonitorStatusMutex:
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"
+
+
+class TestImportLoopsTagAutoCreate:
+    """P3 #47: TagRegistry 在导入时静默创建防护测试。
+
+    验证 Excel 导入回路时，若 Tag 不存在于 TagRegistry：
+    - 不再静默创建（绕过 AAS 同步）
+    - 改为显式 logger.warning + 标记 tag_description
+    - 提示运维人员后续通过 AAS 同步补全元数据
+    """
+
+    async def test_auto_created_tag_has_warning_description(self, mock_db) -> None:
+        """自动创建的 Tag 应有清晰的 tag_description 标记。"""
+        from app.services.loop import _import_one_row
+
+        # 模拟：PlantNode 不存在 → 新建；LoopLedger 不存在 → 新建；
+        # TagRegistry 不存在 → 触发 P3 #47 自动创建路径
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+            # PlantNode 查询 → 返回 None
+            if "plant_node" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(None)
+            # LoopLedger 查询 → 返回 None（新建回路）
+            if "loop_ledger" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(None)
+            # TagRegistry 查询 → 返回 None（触发自动创建）
+            if "tag_registry" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(None)
+            return _make_scalar_one_or_none_mock(None)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        # 记录 db.add 的所有对象
+        added_objects: list = []
+        mock_db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+        mock_db.flush = AsyncMock()
+
+        with patch("app.services.loop.logger") as mock_logger:
+            await _import_one_row(
+                db=mock_db,
+                tag_name="T-TEST-001",
+                description="测试回路",
+                unit_name="单元A",
+                is_active=True,
+                role_tag_values={"PV": "T-TEST-001-PV"},
+                operator="admin",
+                plant_node_cache={},
+                tag_cache={},
+            )
+
+        # 验证 logger.warning 被调用（不再静默创建）
+        assert mock_logger.warning.called
+        # logger.warning 使用 %s 懒格式化，args[0] 是格式串，args[1:] 是参数
+        warning_call = mock_logger.warning.call_args
+        warning_fmt = warning_call.args[0]
+        warning_params = warning_call.args[1:]
+        assert "Excel 导入自动创建 Tag" in warning_fmt
+        assert "T-TEST-001-PV" in warning_params
+
+        # 验证自动创建的 TagRegistry 有清晰的 tag_description 标记
+        tag_objs = [o for o in added_objects if hasattr(o, "tag_description")]
+        assert len(tag_objs) >= 1
+        tag = tag_objs[0]
+        assert tag.tag_description == "[Excel 导入自动创建，未通过 AAS 同步，元数据待补全]"
+        assert tag.is_linked is True
+
+    async def test_existing_tag_no_warning_logged(self, mock_db) -> None:
+        """Tag 已存在时不应触发自动创建警告。"""
+        from app.services.loop import _import_one_row
+
+        existing_tag = MagicMock()
+        existing_tag.id = "existing-tag-id"
+        existing_tag.is_linked = False
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+            if "plant_node" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(None)
+            if "loop_ledger" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(None)
+            if "tag_registry" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(existing_tag)
+            return _make_scalar_one_or_none_mock(None)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.add = MagicMock()
+        mock_db.flush = AsyncMock()
+
+        with patch("app.services.loop.logger") as mock_logger:
+            await _import_one_row(
+                db=mock_db,
+                tag_name="T-TEST-002",
+                description="测试回路",
+                unit_name="单元B",
+                is_active=True,
+                role_tag_values={"PV": "T-TEST-002-PV"},
+                operator="admin",
+                plant_node_cache={},
+                tag_cache={},
+            )
+
+        # Tag 已存在 → 不应触发自动创建警告
+        auto_create_warnings = [
+            call for call in mock_logger.warning.call_args_list
+            if "Excel 导入自动创建 Tag" in (call.args[0] if call.args else "")
+        ]
+        assert len(auto_create_warnings) == 0
+        # 已存在 Tag 的 is_linked 应被置为 True
+        assert existing_tag.is_linked is True
+
+    async def test_tag_cache_prevents_duplicate_creation(self, mock_db) -> None:
+        """同一 Tag 在多行导入中只创建一次（通过 tag_cache 缓存）。"""
+        from app.services.loop import _import_one_row
+
+        tag_cache: dict[str, str] = {}
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+            if "plant_node" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(None)
+            if "loop_ledger" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(None)
+            # TagRegistry 查询 — 第 2 次调用时 tag_cache 已有缓存，不会执行到这里
+            if "tag_registry" in compiled and "select" in compiled:
+                return _make_scalar_one_or_none_mock(None)
+            return _make_scalar_one_or_none_mock(None)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        added_objects: list = []
+        mock_db.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+        mock_db.flush = AsyncMock()
+
+        with patch("app.services.loop.logger") as mock_logger:
+            # 第 1 行：Tag 不存在 → 自动创建 + 警告
+            await _import_one_row(
+                db=mock_db,
+                tag_name="T-TEST-003",
+                description="测试回路 1",
+                unit_name="单元C",
+                is_active=True,
+                role_tag_values={"PV": "T-TEST-003-PV"},
+                operator="admin",
+                plant_node_cache={},
+                tag_cache=tag_cache,
+            )
+            first_warning_count = mock_logger.warning.call_count
+
+            # 第 2 行：相同 Tag → 通过 tag_cache 命中，不再查询 DB、不再创建
+            await _import_one_row(
+                db=mock_db,
+                tag_name="T-TEST-004",
+                description="测试回路 2",
+                unit_name="单元C",
+                is_active=True,
+                role_tag_values={"PV": "T-TEST-003-PV"},  # 同一个 Tag
+                operator="admin",
+                plant_node_cache={},
+                tag_cache=tag_cache,
+            )
+
+        # 第 2 次不应触发新的警告
+        assert mock_logger.warning.call_count == first_warning_count
+        # tag_cache 应缓存了该 Tag
+        assert "T-TEST-003-PV" in tag_cache
