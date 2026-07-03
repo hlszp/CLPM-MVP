@@ -186,7 +186,7 @@ class TestStandardTaskEvaluate:
     """POST /api/v1/tasks/standard/evaluate tests."""
 
     def test_standard_evaluate_success(self, client, task_redis, fake_redis) -> None:
-        """IC_ENGINEER 可以触发标准评估任务."""
+        """IC_ENGINEER 可以触发标准评估任务，tsStart 透传给 Celery（P1 #11）."""
         with (
             patch("app.tasks.kpi_calc.calculate_hourly_kpi") as mock_celery,
             mock_current_user(TEST_USERS["ic_engineer"]),
@@ -205,11 +205,11 @@ class TestStandardTaskEvaluate:
         assert data["status"] == "PENDING"
         assert data["createdBy"] == "ic_engineer"
         assert data["taskId"]  # non-empty UUID
-        # 验证 Celery 被调用
-        mock_celery.delay.assert_called_once()
+        # P1 #11: 验证 tsStart 透传给 Celery 任务
+        mock_celery.delay.assert_called_once_with(ts_start="2026-06-22T08:00:00Z")
 
     def test_standard_evaluate_admin(self, client, task_redis, fake_redis) -> None:
-        """ADMIN 可以触发标准评估任务."""
+        """ADMIN 可以触发标准评估任务（不传 tsStart 时 ts_start=None）."""
         with (
             patch("app.tasks.kpi_calc.calculate_hourly_kpi") as mock_celery,
             mock_current_user(TEST_USERS["admin"]),
@@ -221,6 +221,8 @@ class TestStandardTaskEvaluate:
                 json={},
             )
         assert resp.status_code == 200
+        # P1 #11: 未传 tsStart 时 ts_start=None（取上一个完整计算周期）
+        mock_celery.delay.assert_called_once_with(ts_start=None)
 
     def test_standard_evaluate_sponsor_forbidden(self, client, task_redis, fake_redis) -> None:
         """SPONSOR 不能触发评估任务（403）."""

@@ -93,6 +93,73 @@ _CALCULATOR_TO_DB_METRIC_CODE: dict[str, str] = {
 # 全部指标数据库列名列表（传给 DataPlanner.request_bundles）
 _ALL_METRIC_CODES_DB: list[str] = list(_DB_TO_CALCULATOR_METRIC_CODE.keys())
 
+
+def _is_metric_enabled(
+    calc_code: str,
+    metric_configs: dict[str, MetricConfig] | None,
+) -> bool:
+    """检查指标是否启用（MetricConfig.is_enabled）。
+
+    PRD §5.1.3 / FDS §5.3.1.2：指标停用后该指标显示 INCONCLUSIVE，
+    并联动影响综合评分。
+
+    Args:
+        calc_code: 计算器代码（如 accuracy_rate / fast_rate / stability_rate）
+        metric_configs: 指标配置字典 {metric_code: MetricConfig}，键为数据库列名小写
+
+    Returns:
+        True 表示启用（或无配置时默认启用），False 表示被禁用
+    """
+    if metric_configs is None:
+        return True
+    db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+    mc = metric_configs.get(db_code) or metric_configs.get(calc_code)
+    if mc and mc.is_enabled is False:
+        return False
+    return True
+
+
+def _inject_threshold_to_bundle(
+    bundle: MetricDataBundle | None,
+    calc_code: str,
+    metric_configs: dict[str, MetricConfig] | None,
+) -> None:
+    """从 MetricConfig.threshold 读取阈值参数，注入到 bundle.data_block.signals。
+
+    FDS §5.3.1：指标配置的 threshold（JSONB {min,max,alert} 等）应被计算器使用。
+    v4.0 计算器通过 _read_config_scalar 从 data_block.signals 读取参数，
+    本函数将 MetricConfig.threshold 中的阈值注入 signals，使配置生效。
+
+    Args:
+        bundle: 指标数据包（None 时跳过）
+        calc_code: 计算器代码
+        metric_configs: 指标配置字典
+    """
+    if bundle is None or metric_configs is None:
+        return
+    db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+    mc = metric_configs.get(db_code) or metric_configs.get(calc_code)
+    if mc and mc.threshold:
+        signals = bundle.data_block.signals
+        for key, val in mc.threshold.items():
+            # signals 约定：标量值存储为单元素列表 [val]（CONFIG tagGroup 规范）
+            if key not in signals:
+                signals[key] = [val] if not isinstance(val, list) else val
+
+
+def _make_disabled_result(calc_code: str) -> MetricResult:
+    """构造指标被禁用时的 INCONCLUSIVE 结果。
+
+    PRD §5.1.3：指标停用后该指标显示 INCONCLUSIVE。
+    """
+    return MetricResult(
+        metric_code=calc_code,
+        value=None,
+        confidence_level="E",
+        lineage=DataLineage(algorithm_version=ALGORITHM_VERSION),
+        details={"reason": "metric_disabled_by_config"},
+    )
+
 # LoopLedger.loop_type → ControlType 映射
 # SPEED/OTHER 无直接对应控制类型，回退为 FLOW（采样率 1s，最宽松）
 _LOOP_TYPE_TO_CONTROL_TYPE: dict[str, ControlType] = {
@@ -121,7 +188,7 @@ _LOOP_TYPE_TO_CONTROL_TYPE: dict[str, ControlType] = {
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def calculate_hourly_kpi(self: AsyncTask) -> dict:
+def calculate_hourly_kpi(self: AsyncTask, ts_start: str | None = None) -> dict:
     """每小时全量计算所有 ACTIVE 回路的 KPI 快照。
 
     失败自动重试 3 次，指数退避。
@@ -129,10 +196,17 @@ def calculate_hourly_kpi(self: AsyncTask) -> dict:
     Phase 5 补齐：集成 task_tracker，定时触发时创建任务记录，
     使定时任务在 ``GET /tasks`` 列表可见（``triggered_by=system``）。
     任务跟踪失败不影响计算本身。
+
+    P1 #11 修正：接收 ``ts_start`` 参数，使手动触发标准评估任务时
+    用户指定的时间窗能传递到实际计算逻辑（cron 定时触发时不传参，
+    默认 ``None`` 表示取上一个完整计算周期）。
+
+    Args:
+        ts_start: 时间窗起始（ISO 8601 字符串，UTC）；None 时取上一个完整计算周期
     """
-    logger.info("KPI 计算任务开始, task_id=%s", self.request.id)
+    logger.info("KPI 计算任务开始, task_id=%s, ts_start=%s", self.request.id, ts_start)
     try:
-        result = self.run_async(_track_hourly_calculation(self.request.id))
+        result = self.run_async(_track_hourly_calculation(self.request.id, ts_start))
         logger.info("KPI 计算任务完成: %s", result)
         return result
     except Exception:
@@ -140,20 +214,41 @@ def calculate_hourly_kpi(self: AsyncTask) -> dict:
         raise
 
 
-async def _track_hourly_calculation(celery_task_id: str) -> dict:
+def _parse_ts_start(ts_start: str | None) -> datetime | None:
+    """将 ISO 8601 字符串解析为 datetime（UTC），None 时返回 None。
+
+    兼容带 ``Z`` 后缀和不带后缀两种格式。
+    """
+    if not ts_start:
+        return None
+    try:
+        return datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.fromisoformat(ts_start)
+
+
+async def _track_hourly_calculation(
+    celery_task_id: str, ts_start: str | None = None
+) -> dict:
     """包装 _do_calculate，加入任务跟踪记录（cron 定时触发专用）.
 
     创建任务记录 → 标记 RUNNING → 执行计算 → 标记 SUCCESS/FAILED。
     跟踪失败时降级为直接执行 _do_calculate（不影响计算本身）。
 
+    P1 #11 修正：``ts_start`` 透传到 ``_do_calculate``，使手动触发的
+    标准评估任务能使用用户指定的时间窗。
+
     Args:
         celery_task_id: Celery 任务 ID
+        ts_start: 时间窗起始（ISO 8601 字符串，UTC）；None 时取上一个完整计算周期
 
     Returns:
         _do_calculate 的返回值
     """
     from app.schemas.task import TaskStatus, TaskType
     from app.services import task_tracker
+
+    ts_start_dt = _parse_ts_start(ts_start)
 
     tracker_id: str | None = None
     try:
@@ -173,10 +268,10 @@ async def _track_hourly_calculation(celery_task_id: str) -> dict:
         )
     except Exception:
         logger.warning("任务跟踪记录创建失败，降级为直接执行计算", exc_info=True)
-        return await _do_calculate()
+        return await _do_calculate(ts_start=ts_start_dt)
 
     try:
-        result = await _do_calculate()
+        result = await _do_calculate(ts_start=ts_start_dt)
         await task_tracker.update_status(
             tracker_id,
             TaskStatus.SUCCESS,
@@ -206,21 +301,183 @@ async def _track_hourly_calculation(celery_task_id: str) -> dict:
     retry_jitter=True,
 )
 def calculate_loop_kpi(loop_id: str, ts_start: str | None = None) -> dict:
-    """单回路 KPI 计算（可手动触发）。"""
-    logger.info("单回路 KPI 计算, loop_id=%s", loop_id)
+    """单回路 KPI 计算（标准任务，写入 kpi_snapshot_hourly，参与聚合）。"""
+    logger.info("单回路 KPI 计算（标准任务）, loop_id=%s", loop_id)
     return AsyncTask().run_async(_do_calculate_single_loop(loop_id, ts_start))
 
 
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_custom_loop_kpi",
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_custom_loop_kpi(
+    task_id: str, loop_id: str, ts_start: str | None = None
+) -> dict:
+    """单回路 KPI 计算（自定义任务，写入 kpi_snapshot_custom，不参与聚合）.
+
+    PRD §4.3.7.B / FDS §5.3.11：自定义评估任务结果写入独立快照表，
+    通过 task_id 区分，不参与装置级/单元级/工厂级聚合。
+
+    Args:
+        task_id: 自定义任务 ID（用于区分独立任务）
+        loop_id: 回路 ID
+        ts_start: 时间窗起始（ISO 8601，UTC）；None 时取上一个完整计算周期
+    """
+    logger.info("单回路 KPI 计算（自定义任务）, task_id=%s, loop_id=%s", task_id, loop_id)
+    return AsyncTask().run_async(
+        _do_calculate_custom_loop(task_id, loop_id, ts_start)
+    )
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.backfill_kpi_range",
+    bind=True,
+    base=AsyncTask,
+)
+def backfill_kpi_range(self: AsyncTask, ts_start: str, ts_end: str) -> dict:
+    """按小时窗口批量回填 KPI 快照（脚本触发）。
+
+    遍历 [ts_start, ts_end) 范围内的每个完整小时窗口，
+    对全量 ACTIVE/READY 回路计算 KPI，并同步触发节点级聚合。
+    幂等：相同 (loop_id, ts_start) 的快照会被 UPSERT 覆盖，可重复执行。
+
+    Args:
+        ts_start: 起始时间（ISO 8601，UTC）
+        ts_end: 结束时间（ISO 8601，UTC，不包含）
+
+    用途：
+        - 补齐因数据空档或服务中断缺失的历史 KPI 快照
+        - 修复契约配置后重新计算指定时段的指标
+    """
+    logger.info("KPI 回填任务开始, task_id=%s, range=%s~%s", self.request.id, ts_start, ts_end)
+    try:
+        result = self.run_async(_do_backfill(ts_start, ts_end))
+        logger.info("KPI 回填任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("KPI 回填任务失败")
+        raise
+
+
+async def _do_backfill(ts_start: str, ts_end: str) -> dict:
+    """批量回填 async 逻辑：遍历小时窗口，每窗口全量回路计算 + 节点聚合。
+
+    在 Celery worker 的 event loop 内执行，复用 worker 的 httpx client，
+    避免脚本进程 asyncio.run 环境下 TDengine 查询异常的问题。
+    """
+    start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+    end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+
+    # 生成小时窗口列表
+    windows: list[datetime] = []
+    cur = start_dt.replace(minute=0, second=0, microsecond=0)
+    while cur < end_dt:
+        windows.append(cur)
+        cur += timedelta(hours=1)
+
+    total = len(windows)
+    logger.info("回填窗口数: %d (%s ~ %s)", total, start_dt.isoformat(), end_dt.isoformat())
+
+    agg_loop_success = 0
+    agg_loop_inconclusive = 0
+    agg_loop_failed = 0
+    agg_node_success = 0
+    failed_windows: list[str] = []
+
+    for i, w in enumerate(windows, 1):
+        try:
+            loop_result = await _do_calculate(ts_start=w, cascade_node=False)
+            node_result = await _do_calculate_node_kpi(ts_start=w)
+            agg_loop_success += loop_result.get("success", 0)
+            agg_loop_inconclusive += loop_result.get("inconclusive", 0)
+            agg_loop_failed += loop_result.get("failed", 0)
+            agg_node_success += node_result.get("success", 0)
+            logger.info(
+                "回填进度 [%d/%d] %s: loop_ok=%d, node_ok=%d",
+                i, total, w.isoformat(),
+                loop_result.get("success", 0), node_result.get("success", 0),
+            )
+        except Exception as exc:  # noqa: BLE001
+            failed_windows.append(w.isoformat())
+            logger.warning("回填窗口 %s 失败: %s", w.isoformat(), exc)
+
+    return {
+        "total_windows": total,
+        "failed_windows": len(failed_windows),
+        "loop_success": agg_loop_success,
+        "loop_inconclusive": agg_loop_inconclusive,
+        "loop_failed": agg_loop_failed,
+        "node_success": agg_node_success,
+        "failed_window_list": failed_windows,
+    }
+
+
 # ---------------------------------------------------------------------------
-# Beat 调度配置：每小时执行一次 + 每日 00:05 + 每月 1 日 00:10
+# Beat 调度配置：计算周期由 EngineRule EVAL_CALC_CYCLE 决定 + 每日 00:05 + 每月 1 日 00:10
 # ---------------------------------------------------------------------------
 
 
 from celery.schedules import crontab  # noqa: E402
 
+
+def _load_calc_cycle_seconds_from_db() -> float:
+    """同步读取 EngineRule EVAL_CALC_CYCLE.cycle_minutes（refresh_beat_schedule 调用）.
+
+    PRD §5.4.2 / FDS §5.3.3：计算周期由引擎规则配置，不硬编码。
+    本函数在 refresh_beat_schedule 任务中调用（Celery worker 进程内），
+    通过同步 SQLAlchemy 查询读取 EngineRule。
+
+    Returns:
+        计算周期秒数（默认 3600）
+    """
+    try:
+        from app.core.config import settings
+        from sqlalchemy import create_engine, text
+
+        sync_url = settings.postgres_dsn.replace("+asyncpg", "")
+        engine = create_engine(sync_url)
+        try:
+            with engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        "SELECT params FROM engine_rule "
+                        "WHERE rule_code = 'EVAL_CALC_CYCLE' AND is_enabled = TRUE"
+                    )
+                ).fetchone()
+                if row and row[0]:
+                    import json
+
+                    params = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                    minutes = int(params.get("cycle_minutes", 60))
+                    if minutes > 0:
+                        logger.info(
+                            "EngineRule EVAL_CALC_CYCLE.cycle_minutes=%d → beat schedule %ds",
+                            minutes,
+                            minutes * 60,
+                        )
+                        return float(minutes * 60)
+        finally:
+            engine.dispose()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "读取 EngineRule EVAL_CALC_CYCLE 失败，回退默认 3600s: %s", exc
+        )
+    return 3600.0
+
+
+# Beat schedule 默认 3600s（1 小时）。
+# 实际计算周期由 EngineRule EVAL_CALC_CYCLE.cycle_minutes 决定，
+# 通过 refresh_beat_schedule 任务动态更新（update_engine_rule 后触发）。
+# 模块加载时不查数据库，避免阻塞导入和 psycopg2 依赖。
+# 修改 EVAL_CALC_CYCLE 后需重启 Beat 进程才能生效。
 _beat_entry = {
     "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
-    "schedule": 3600.0,  # 1 小时
+    "schedule": 3600.0,  # 默认 1 小时，可由 EngineRule 动态覆盖
 }
 
 # 合并到 celery_app 的 beat_schedule（与 aas_sync 的 beat 共存）
@@ -240,22 +497,84 @@ celery_app.conf.beat_schedule = _existing_beat
 celery_app.conf.timezone = "Asia/Shanghai"
 
 
+@celery_app.task(name="app.tasks.kpi_calc.refresh_beat_schedule")
+def refresh_beat_schedule() -> dict:
+    """刷新 Beat 调度配置（EngineRule EVAL_CALC_CYCLE 变更后触发）.
+
+    PRD §5.4.2：计算周期变更后需刷新 Beat schedule 才能生效。
+    本任务重新读取 EngineRule 并更新 celery_app.conf.beat_schedule。
+    注意：Beat 进程需重启才能加载新的 schedule（Celery Beat 限制）。
+
+    Returns:
+        {"calc_cycle_seconds": float, "beat_schedule_updated": bool}
+    """
+    new_seconds = _load_calc_cycle_seconds_from_db()
+    beat = getattr(celery_app.conf, "beat_schedule", None) or {}
+    beat["kpi-calc-hourly"] = {
+        "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
+        "schedule": new_seconds,
+    }
+    celery_app.conf.beat_schedule = beat
+    # 同时清除 EngineRuleLoader 缓存
+    from app.services.engine_rule_loader import get_engine_rule_loader
+
+    get_engine_rule_loader().invalidate_cache()
+    logger.warning(
+        "Beat schedule 已刷新: kpi-calc-hourly schedule=%.0fs（需重启 Beat 进程生效）",
+        new_seconds,
+    )
+    return {
+        "calc_cycle_seconds": new_seconds,
+        "beat_schedule_updated": True,
+        "note": "Beat 进程需重启才能加载新 schedule",
+    }
+
+
 # ---------------------------------------------------------------------------
 # 异步计算逻辑
 # ---------------------------------------------------------------------------
 
 
-async def _do_calculate() -> dict:
-    """执行全量 KPI 计算的实际 async 逻辑。"""
+async def _do_calculate(
+    ts_start: datetime | None = None, cascade_node: bool = True
+) -> dict:
+    """执行全量 KPI 计算的实际 async 逻辑。
+
+    Args:
+        ts_start: 时间窗起始（UTC，naive 视为 UTC）。None 时取「上一个完整计算周期」，
+            周期长度由 EngineRule EVAL_CALC_CYCLE.cycle_minutes 决定（默认 60 分钟）。
+        cascade_node: 是否在回路级计算完成后级联触发节点级聚合任务。
+            脚本批量回填时设为 False，由脚本同步调用 _do_calculate_node_kpi
+            避免大量 .delay() 调用堆积到 Celery 队列。
+
+    引擎规则（PRD §5.4.2 / FDS §5.3.3）：
+        - EVAL_CALC_CYCLE.cycle_minutes → 计算周期 + 时间窗长度
+        - SCHEDULE_CONCURRENCY.concurrency → 并发处理数量
+    """
     from app.core.db import AsyncSessionLocal
+    from app.services.engine_rule_loader import get_engine_rule_loader
 
-    # 计算时间窗（上一个完整小时）
-    now = datetime.now(UTC)
-    ts_end = now.replace(minute=0, second=0, microsecond=0)
-    ts_start = ts_end - timedelta(hours=1)
+    engine_loader = get_engine_rule_loader()
 
-    # 主 session 仅用于查询回路列表和指标配置（只读，无并发）
+    # 主 session 仅用于查询回路列表、指标配置和引擎规则（只读，无并发）
     async with AsyncSessionLocal() as db:
+        # 引擎规则：计算周期（分钟）+ 并发数
+        cycle_minutes = await engine_loader.get_calc_cycle_minutes(db)
+        concurrency = await engine_loader.get_concurrency(db)
+        logger.info(
+            "引擎规则: calc_cycle=%dmin, concurrency=%d", cycle_minutes, concurrency
+        )
+
+        # 计算时间窗：周期长度由 EngineRule 决定（对齐 EVAL_CALC_CYCLE.cycle_minutes）
+        if ts_start is not None:
+            ts_end = ts_start + timedelta(minutes=cycle_minutes)
+        else:
+            now = datetime.now(UTC)
+            # 对齐到计算周期边界（cycle_minutes 整数倍）
+            ts_end = now.replace(second=0, microsecond=0)
+            ts_end = ts_end.replace(minute=(ts_end.minute // cycle_minutes) * cycle_minutes)
+            ts_start = ts_end - timedelta(minutes=cycle_minutes)
+
         # 1. 查询所有 ACTIVE/READY 状态回路
         loop_result = await db.execute(
             select(LoopLedger).where(
@@ -269,7 +588,7 @@ async def _do_calculate() -> dict:
         if not loops:
             return {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
 
-        # 2. 加载指标配置（保留用于向后兼容查询，v4.0 计算器不依赖 metric_config）
+        # 2. 加载指标配置（PRD §5.1.3：is_enabled 控制计算器执行，threshold 注入 bundle）
         metric_result = await db.execute(select(MetricConfig))
         metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
 
@@ -280,7 +599,8 @@ async def _do_calculate() -> dict:
         logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
 
     # 3. 并发计算（信号量限制并发数，每协程独立 session 避免并发共享）
-    sem = asyncio.Semaphore(CONCURRENCY)
+    # 并发数由 EngineRule SCHEDULE_CONCURRENCY.concurrency 决定
+    sem = asyncio.Semaphore(concurrency)
 
     async def _calc_with_sem(loop: LoopLedger) -> dict | None:
         async with sem:
@@ -319,11 +639,12 @@ async def _do_calculate() -> dict:
             success_count += 1
 
     # 级联触发节点级 KPI 聚合（确保回路快照已写入后再聚合，消除时序竞态）
-    try:
-        calculate_node_kpi_hourly.delay()
-        logger.info("已触发节点级 KPI 聚合任务（回路级计算完成后级联）")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("触发节点级 KPI 聚合任务失败: %s", exc)
+    if cascade_node:
+        try:
+            calculate_node_kpi_hourly.delay()
+            logger.info("已触发节点级 KPI 聚合任务（回路级计算完成后级联）")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("触发节点级 KPI 聚合任务失败: %s", exc)
 
     return {
         "total": len(loops),
@@ -338,12 +659,17 @@ async def _do_calculate() -> dict:
 async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -> dict:
     """单回路 KPI 计算。"""
     from app.core.db import AsyncSessionLocal
+    from app.services.engine_rule_loader import get_engine_rule_loader
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
         loop = result.scalar_one_or_none()
         if loop is None:
             return {"loopId": loop_id, "status": "FAILED", "error": "回路不存在"}
+
+        # 引擎规则：计算周期决定时间窗长度
+        engine_loader = get_engine_rule_loader()
+        cycle_minutes = await engine_loader.get_calc_cycle_minutes(db)
 
         # 时间窗
         now = datetime.now(UTC)
@@ -353,8 +679,14 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
             except ValueError:
                 ts_start_dt = datetime.fromisoformat(ts_start)
         else:
-            ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-        ts_end_dt = ts_start_dt + timedelta(hours=1)
+            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(
+                second=0, microsecond=0
+            )
+            # 对齐到计算周期边界
+            ts_start_dt = ts_start_dt.replace(
+                minute=(ts_start_dt.minute // cycle_minutes) * cycle_minutes
+            )
+        ts_end_dt = ts_start_dt + timedelta(minutes=cycle_minutes)
 
         metric_result = await db.execute(select(MetricConfig))
         metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
@@ -376,6 +708,66 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
         return snap or {"loopId": loop_id, "status": "FAILED"}
 
 
+async def _do_calculate_custom_loop(
+    task_id: str, loop_id: str, ts_start: str | None = None
+) -> dict:
+    """单回路 KPI 计算（自定义任务，写入 kpi_snapshot_custom）.
+
+    PRD §4.3.7.B / FDS §5.3.11：自定义评估任务与标准任务计算逻辑相同，
+    但结果写入 kpi_snapshot_custom 表（通过 task_id 区分），
+    不参与装置级/单元级/工厂级聚合。
+    """
+    from app.core.db import AsyncSessionLocal
+    from app.services.engine_rule_loader import get_engine_rule_loader
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
+        loop = result.scalar_one_or_none()
+        if loop is None:
+            return {"loopId": loop_id, "taskId": task_id, "status": "FAILED", "error": "回路不存在"}
+
+        # 引擎规则：计算周期决定时间窗长度
+        engine_loader = get_engine_rule_loader()
+        cycle_minutes = await engine_loader.get_calc_cycle_minutes(db)
+
+        # 时间窗
+        now = datetime.now(UTC)
+        if ts_start:
+            try:
+                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+            except ValueError:
+                ts_start_dt = datetime.fromisoformat(ts_start)
+        else:
+            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(
+                second=0, microsecond=0
+            )
+            ts_start_dt = ts_start_dt.replace(
+                minute=(ts_start_dt.minute // cycle_minutes) * cycle_minutes
+            )
+        ts_end_dt = ts_start_dt + timedelta(minutes=cycle_minutes)
+
+        metric_result = await db.execute(select(MetricConfig))
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+        # 加载回路类型权重（v2 算法用）
+        from app.services.loop_config import get_loop_type_weights_map
+
+        type_weights = await get_loop_type_weights_map(db)
+
+        # 关键：传入 custom_task_id → 写入 kpi_snapshot_custom（不参与聚合）
+        snap = await _calculate_loop_kpi(
+            db=db,
+            loop=loop,
+            metric_configs=metric_configs,
+            ts_start=ts_start_dt,
+            ts_end=ts_end_dt,
+            type_weights=type_weights,
+            custom_task_id=task_id,
+        )
+        await db.commit()
+        return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
+
+
 async def _calculate_loop_kpi(
     db,
     loop: LoopLedger,
@@ -384,22 +776,32 @@ async def _calculate_loop_kpi(
     ts_end: datetime,
     data_planner: DataPlanner | None = None,
     type_weights: dict[str, dict] | None = None,
+    custom_task_id: str | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（幂等）。
 
     v4.0 三层架构：
         1. DataPlanner 获取 MetricDataBundle 列表（含预处理 + 缓存）
         2. _compute_kpis_three_layer 执行三层计算（无依赖 → 有依赖 → 综合评分）
-        3. _save_snapshot 写入快照表（含 7 个数据血缘字段）
+        3. 写入快照表（含 7 个数据血缘字段）
+
+    任务策略（PRD §4.3.7 / FDS §5.3.11）：
+        - custom_task_id=None：标准任务，写入 kpi_snapshot_hourly，**参与装置级聚合**
+        - custom_task_id=<uuid>：自定义任务，写入 kpi_snapshot_custom，**不参与聚合**
 
     Args:
         db: 异步数据库会话
         loop: 回路对象
-        metric_configs: 指标配置字典 {metric_code: MetricConfig}（v4.0 仅用于向后兼容）
+        metric_configs: 指标配置字典 {metric_code: MetricConfig}。
+            PRD §5.1.3 / FDS §5.3.1：is_enabled 控制计算器是否执行，
+            threshold 阈值参数注入 bundle 供计算器读取。
         ts_start: 时间窗起始
         ts_end: 时间窗结束
         data_planner: 数据编排器实例（注入便于测试）；None 时内部构造
         type_weights: 回路类型权重映射（v2 算法用）
+        custom_task_id: 自定义任务 ID。None 表示标准任务（写入
+            kpi_snapshot_hourly）；非 None 表示自定义任务（写入
+            kpi_snapshot_custom，不参与聚合）。
 
     Returns:
         快照字典，包含 status 字段
@@ -411,6 +813,13 @@ async def _calculate_loop_kpi(
     # 推断控制类型
     control_type = _loop_type_to_control_type(loop.loop_type)
 
+    logger.info(
+        "[回路KPI] 开始计算 loop_id=%s tag_name=%s loop_type=%s control_type=%s "
+        "ts_start=%s ts_end=%s custom_task_id=%s",
+        loop.id, loop.tag_name, loop.loop_type, control_type.value,
+        ts_start.isoformat(), ts_end.isoformat(), custom_task_id,
+    )
+
     # 通过 DataPlanner 获取所有指标的 MetricDataBundle
     try:
         bundles = await data_planner.request_bundles(
@@ -421,8 +830,9 @@ async def _calculate_loop_kpi(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("DataPlanner 取数失败（回路 %s 跳过）: %s", loop.tag_name, exc)
-        snap = await _save_snapshot(
+        snap = await _persist_snapshot(
             db=db,
+            custom_task_id=custom_task_id,
             loop_id=str(loop.id),
             ts_start=ts_start,
             ts_end=ts_end,
@@ -432,8 +842,9 @@ async def _calculate_loop_kpi(
 
     if not bundles:
         logger.warning("DataPlanner 返回空 Bundle 列表（回路 %s）", loop.tag_name)
-        snap = await _save_snapshot(
+        snap = await _persist_snapshot(
             db=db,
+            custom_task_id=custom_task_id,
             loop_id=str(loop.id),
             ts_start=ts_start,
             ts_end=ts_end,
@@ -451,10 +862,12 @@ async def _calculate_loop_kpi(
     weights = _build_weights_map(type_weights, score_type)
 
     # 三层计算：Layer1 无依赖 → Layer2 有依赖 → Layer3 综合评分
+    # PRD §5.1.3 / FDS §5.3.1：metric_configs 控制 is_enabled 过滤 + threshold 注入
     metric_results, composite_result = _compute_kpis_three_layer(
         bundles=bundles,
         config_bundle=config_bundle,
         weights=weights,
+        metric_configs=metric_configs,
     )
 
     # 将 MetricResult 映射为数据库列名 → Decimal 值（用于 _save_snapshot）
@@ -475,8 +888,9 @@ async def _calculate_loop_kpi(
     if score is None:
         status = "INCONCLUSIVE"
 
-    snap = await _save_snapshot(
+    snap = await _persist_snapshot(
         db=db,
+        custom_task_id=custom_task_id,
         loop_id=str(loop.id),
         ts_start=ts_start,
         ts_end=ts_end,
@@ -500,6 +914,15 @@ async def _calculate_loop_kpi(
         valid_rate=lineage_info["valid_rate"],
         confidence_level=lineage_info["confidence_level"],
         data_lineage=lineage_info["data_lineage"],
+    )
+    logger.info(
+        "[回路KPI] 计算完成 loop_id=%s tag_name=%s status=%s score=%s confidence=%s "
+        "valid_rate=%s custom_task_id=%s",
+        loop.id, loop.tag_name, status,
+        float(score) if score is not None else None,
+        lineage_info["confidence_level"],
+        lineage_info["valid_rate"],
+        custom_task_id,
     )
     return snap
 
@@ -739,6 +1162,7 @@ def _compute_kpis_three_layer(
     bundles: list[MetricDataBundle],
     config_bundle: MetricDataBundle,
     weights: dict[str, float] | None = None,
+    metric_configs: dict[str, MetricConfig] | None = None,
 ) -> tuple[dict[str, MetricResult], MetricResult]:
     """三层计算流程（数据流程图 §7.1）。
 
@@ -759,6 +1183,9 @@ def _compute_kpis_three_layer(
         bundles: DataPlanner 返回的 MetricDataBundle 列表（metric_code 为数据库列名）
         config_bundle: 虚拟 CONFIG bundle（ideal_settling_time 数据源）
         weights: 权重映射 {accuracy_rate, fast_rate, stability_rate}
+        metric_configs: 指标配置字典 {metric_code: MetricConfig}（键为数据库列名小写）。
+            PRD §5.1.3 / FDS §5.3.1：is_enabled 控制计算器是否执行，
+            threshold 中的阈值参数注入 bundle 供计算器读取。
 
     Returns:
         (metric_results, composite_result)
@@ -791,17 +1218,33 @@ def _compute_kpis_three_layer(
         "ideal_settling_time",
     ]
     for code in layer1_codes:
+        # PRD §5.1.3：指标停用后返回 INCONCLUSIVE，不执行计算
+        if not _is_metric_enabled(code, metric_configs):
+            logger.info("[三层计算] Layer1: 指标 %s 已禁用（is_enabled=False），返回 INCONCLUSIVE", code)
+            results[code] = _make_disabled_result(code)
+            continue
         bundle = bundle_map.get(code)
         if bundle is None:
             logger.debug("[三层计算] Layer1: 指标 %s 无 bundle，跳过", code)
             continue
+        # FDS §5.3.1：注入 threshold 阈值参数到 bundle
+        _inject_threshold_to_bundle(bundle, code, metric_configs)
         calculator = get_calculator(code)
         if calculator is None:
             logger.warning("[三层计算] Layer1: 指标 %s 无计算器注册，跳过", code)
             continue
+        # 输入摘要：数据点数 + 有效率
+        block = bundle.data_block
+        logger.info(
+            "[三层计算] Layer1: 指标=%s 输入 points=%d valid_rate=%.4f signals=%s",
+            code,
+            block.point_count,
+            block.quality_summary.valid_rate if block.quality_summary else 0.0,
+            list(block.signals.keys()),
+        )
         results[code] = calculator.calculate(bundle)
-        logger.debug(
-            "[三层计算] Layer1: %s = %s (confidence=%s)",
+        logger.info(
+            "[三层计算] Layer1: 指标=%s 结果 value=%s confidence=%s",
             code,
             results[code].value,
             results[code].confidence_level,
@@ -809,46 +1252,77 @@ def _compute_kpis_three_layer(
 
     # ── Layer 2: 有依赖指标（2 个） ──
     # stability_rate depends_on: oscillation_rate
-    stability_bundle = bundle_map.get("stability_rate")
-    if stability_bundle is not None:
-        calc = get_calculator("stability_rate")
-        if calc is not None:
-            calc.with_dependencies({"oscillation_rate": results.get("oscillation_rate")})
-            results["stability_rate"] = calc.calculate(stability_bundle)
-            logger.debug(
-                "[三层计算] Layer2: stability_rate = %s (confidence=%s)",
-                results["stability_rate"].value,
-                results["stability_rate"].confidence_level,
-            )
+    if not _is_metric_enabled("stability_rate", metric_configs):
+        logger.info("[三层计算] Layer2: 指标 stability_rate 已禁用，返回 INCONCLUSIVE")
+        results["stability_rate"] = _make_disabled_result("stability_rate")
+    else:
+        stability_bundle = bundle_map.get("stability_rate")
+        if stability_bundle is not None:
+            _inject_threshold_to_bundle(stability_bundle, "stability_rate", metric_configs)
+            calc = get_calculator("stability_rate")
+            if calc is not None:
+                dep_osc = results.get("oscillation_rate")
+                logger.info(
+                    "[三层计算] Layer2: stability_rate 依赖 oscillation_rate=%s",
+                    dep_osc.value if dep_osc else None,
+                )
+                calc.with_dependencies({"oscillation_rate": dep_osc})
+                results["stability_rate"] = calc.calculate(stability_bundle)
+                logger.info(
+                    "[三层计算] Layer2: stability_rate 结果 value=%s confidence=%s",
+                    results["stability_rate"].value,
+                    results["stability_rate"].confidence_level,
+                )
 
     # fast_rate depends_on: settling_time, ideal_settling_time
-    fast_bundle = bundle_map.get("fast_rate")
-    if fast_bundle is not None:
-        calc = get_calculator("fast_rate")
-        if calc is not None:
-            calc.with_dependencies(
-                {
-                    "settling_time": results.get("settling_time"),
-                    "ideal_settling_time": results.get("ideal_settling_time"),
-                }
-            )
-            results["fast_rate"] = calc.calculate(fast_bundle)
-            logger.debug(
-                "[三层计算] Layer2: fast_rate = %s (confidence=%s)",
-                results["fast_rate"].value,
-                results["fast_rate"].confidence_level,
-            )
+    if not _is_metric_enabled("fast_rate", metric_configs):
+        logger.info("[三层计算] Layer2: 指标 fast_rate 已禁用，返回 INCONCLUSIVE")
+        results["fast_rate"] = _make_disabled_result("fast_rate")
+    else:
+        fast_bundle = bundle_map.get("fast_rate")
+        if fast_bundle is not None:
+            _inject_threshold_to_bundle(fast_bundle, "fast_rate", metric_configs)
+            calc = get_calculator("fast_rate")
+            if calc is not None:
+                dep_st = results.get("settling_time")
+                dep_ist = results.get("ideal_settling_time")
+                logger.info(
+                    "[三层计算] Layer2: fast_rate 依赖 settling_time=%s ideal_settling_time=%s",
+                    dep_st.value if dep_st else None,
+                    dep_ist.value if dep_ist else None,
+                )
+                calc.with_dependencies(
+                    {
+                        "settling_time": dep_st,
+                        "ideal_settling_time": dep_ist,
+                    }
+                )
+                results["fast_rate"] = calc.calculate(fast_bundle)
+                logger.info(
+                    "[三层计算] Layer2: fast_rate 结果 value=%s confidence=%s",
+                    results["fast_rate"].value,
+                    results["fast_rate"].confidence_level,
+                )
 
     # ── Layer 3: 综合评分 ──
+    logger.info(
+        "[三层计算] Layer3: 综合评分输入 A=%s F=%s S=%s R=%s weights=%s",
+        results.get("accuracy_rate").value if results.get("accuracy_rate") else None,
+        results.get("fast_rate").value if results.get("fast_rate") else None,
+        results.get("stability_rate").value if results.get("stability_rate") else None,
+        results.get("effective_auto_rate").value if results.get("effective_auto_rate") else None,
+        weights,
+    )
     composite_result = ConfidenceEvaluator.compute_composite_score(
         metric_results=results,
         weights=weights,
     )
     results["composite_score"] = composite_result
-    logger.debug(
-        "[三层计算] Layer3: composite_score = %s (confidence=%s)",
+    logger.info(
+        "[三层计算] Layer3: composite_score 结果 value=%s confidence=%s details=%s",
         composite_result.value,
         composite_result.confidence_level,
+        composite_result.details,
     )
 
     return results, composite_result
@@ -935,6 +1409,58 @@ def _quantize(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"))
 
 
+async def _persist_snapshot(
+    db,
+    custom_task_id: str | None = None,
+    **kwargs,
+) -> dict:
+    """快照写入分流器 — 根据任务类型写入对应快照表.
+
+    任务策略（PRD §4.3.7 / FDS §5.3.11）：
+    - custom_task_id=None → 标准任务 → 写入 kpi_snapshot_hourly（参与聚合）
+    - custom_task_id=<uuid> → 自定义任务 → 写入 kpi_snapshot_custom（不参与聚合）
+
+    Args:
+        db: 异步数据库会话
+        custom_task_id: 自定义任务 ID；None 表示标准任务
+        **kwargs: 传给 _save_snapshot / _save_custom_snapshot 的快照字段
+
+    Returns:
+        快照字典
+    """
+    loop_id = kwargs.get("loop_id", "?")
+    status = kwargs.get("status", "?")
+    score = kwargs.get("score")
+    if custom_task_id is not None:
+        # 自定义任务 → 写入 kpi_snapshot_custom（不参与聚合）
+        logger.info(
+            "[快照分流] 自定义任务 task_id=%s loop=%s status=%s score=%s → kpi_snapshot_custom（不参与聚合）",
+            custom_task_id,
+            loop_id,
+            status,
+            score,
+        )
+        # 注意：_save_custom_snapshot 不接受 sampling_freq/quality_policy
+        # （kpi_snapshot_custom 表无此二字段），需剔除
+        custom_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k not in ("sampling_freq", "quality_policy")
+        }
+        return await _save_custom_snapshot(
+            db=db,
+            task_id=custom_task_id,
+            **custom_kwargs,
+        )
+    # 标准任务 → 写入 kpi_snapshot_hourly（参与聚合）
+    logger.info(
+        "[快照分流] 标准任务 loop=%s status=%s score=%s → kpi_snapshot_hourly（参与聚合）",
+        loop_id,
+        status,
+        score,
+    )
+    return await _save_snapshot(db=db, **kwargs)
+
+
 async def _save_snapshot(
     db,
     loop_id: str,
@@ -1013,6 +1539,11 @@ async def _save_snapshot(
         existing.confidence_level = confidence_level
         existing.data_lineage = data_lineage
         snapshot_id = str(existing.id)
+        logger.info(
+            "[快照写入] 覆盖更新 kpi_snapshot_hourly loop=%s ts_start=%s status=%s score=%s confidence=%s",
+            loop_id, ts_start_naive.isoformat(), status,
+            float(score) if score is not None else None, confidence_level,
+        )
     else:
         # 新增记录
         snapshot_id = str(uuid4())
@@ -1044,6 +1575,11 @@ async def _save_snapshot(
             data_lineage=data_lineage,
         )
         db.add(snapshot)
+        logger.info(
+            "[快照写入] 新增 kpi_snapshot_hourly loop=%s ts_start=%s status=%s score=%s confidence=%s",
+            loop_id, ts_start_naive.isoformat(), status,
+            float(score) if score is not None else None, confidence_level,
+        )
 
     return {
         "loopId": loop_id,
@@ -1056,15 +1592,138 @@ async def _save_snapshot(
     }
 
 
+async def _save_custom_snapshot(
+    db,
+    task_id: str,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    status: str,
+    score: Decimal | None = None,
+    good_value_rate: Decimal | None = None,
+    auto_mode_rate: Decimal | None = None,
+    effective_auto_rate: Decimal | None = None,
+    steady_rate: Decimal | None = None,
+    accuracy_rate: Decimal | None = None,
+    fast_response_rate: Decimal | None = None,
+    oscillation_rate: Decimal | None = None,
+    saturation_rate: Decimal | None = None,
+    stiction_coeff: Decimal | None = None,
+    steady_state_time: Decimal | None = None,
+    output_travel_index: Decimal | None = None,
+    ideal_settling_time: Decimal | None = None,
+    algorithm_version: str | None = None,
+    valid_rate: Decimal | None = None,
+    confidence_level: str | None = None,
+    data_lineage: dict | None = None,
+) -> dict:
+    """幂等写入自定义任务快照到 kpi_snapshot_custom 表.
+
+    PRD §4.3.7.B / FDS §5.3.11：自定义任务结果写入 kpi_snapshot_custom，
+    通过 task_id 区分独立任务，**不参与装置级聚合**（节点聚合仅查
+    kpi_snapshot_hourly）。
+
+    幂等：相同 (task_id, loop_id) 不重复写入，覆盖更新（对齐
+    UniqueConstraint("task_id", "loop_id")）。
+    """
+    from app.models.metric import KpiSnapshotCustom
+
+    ts_start_naive = ts_start.replace(tzinfo=None) if ts_start.tzinfo else ts_start
+    ts_end_naive = ts_end.replace(tzinfo=None) if ts_end.tzinfo else ts_end
+
+    existing_result = await db.execute(
+        select(KpiSnapshotCustom).where(
+            KpiSnapshotCustom.task_id == task_id,
+            KpiSnapshotCustom.loop_id == loop_id,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+
+    if existing:
+        existing.ts_start = ts_start_naive
+        existing.ts_end = ts_end_naive
+        existing.status = status
+        existing.score = score
+        existing.good_value_rate = good_value_rate
+        existing.auto_mode_rate = auto_mode_rate
+        existing.effective_auto_rate = effective_auto_rate
+        existing.steady_rate = steady_rate
+        existing.accuracy_rate = accuracy_rate
+        existing.fast_response_rate = fast_response_rate
+        existing.oscillation_rate = oscillation_rate
+        existing.saturation_rate = saturation_rate
+        existing.stiction_coeff = stiction_coeff
+        existing.steady_state_time = steady_state_time
+        existing.output_travel_index = output_travel_index
+        existing.ideal_settling_time = ideal_settling_time
+        existing.algorithm_version = algorithm_version
+        existing.valid_rate = valid_rate
+        existing.confidence_level = confidence_level
+        existing.data_lineage = data_lineage
+        snapshot_id = str(existing.id)
+        logger.info(
+            "[快照写入] 覆盖更新 kpi_snapshot_custom task=%s loop=%s status=%s score=%s confidence=%s",
+            task_id, loop_id, status,
+            float(score) if score is not None else None, confidence_level,
+        )
+    else:
+        snapshot_id = str(uuid4())
+        snapshot = KpiSnapshotCustom(
+            id=snapshot_id,
+            task_id=task_id,
+            loop_id=loop_id,
+            ts_start=ts_start_naive,
+            ts_end=ts_end_naive,
+            status=status,
+            score=score,
+            good_value_rate=good_value_rate,
+            auto_mode_rate=auto_mode_rate,
+            effective_auto_rate=effective_auto_rate,
+            steady_rate=steady_rate,
+            accuracy_rate=accuracy_rate,
+            fast_response_rate=fast_response_rate,
+            oscillation_rate=oscillation_rate,
+            saturation_rate=saturation_rate,
+            stiction_coeff=stiction_coeff,
+            steady_state_time=steady_state_time,
+            output_travel_index=output_travel_index,
+            ideal_settling_time=ideal_settling_time,
+            algorithm_version=algorithm_version,
+            valid_rate=valid_rate,
+            confidence_level=confidence_level,
+            data_lineage=data_lineage,
+        )
+        db.add(snapshot)
+        logger.info(
+            "[快照写入] 新增 kpi_snapshot_custom task=%s loop=%s status=%s score=%s confidence=%s",
+            task_id, loop_id, status,
+            float(score) if score is not None else None, confidence_level,
+        )
+
+    return {
+        "loopId": loop_id,
+        "taskId": task_id,
+        "snapshotId": snapshot_id,
+        "tsStart": ts_start.isoformat(),
+        "tsEnd": ts_end.isoformat(),
+        "status": status,
+        "score": float(score) if score is not None else None,
+        "algorithmVersion": algorithm_version or ALGORITHM_VERSION,
+    }
+
+
 __all__ = [
     "ALGORITHM_VERSION",
     "AsyncTask",
+    "backfill_kpi_range",
+    "calculate_custom_loop_kpi",
     "calculate_daily_kpi",
     "calculate_hourly_kpi",
     "calculate_loop_kpi",
     "calculate_monthly_kpi",
     "calculate_node_kpi",
     "calculate_node_kpi_hourly",
+    "refresh_beat_schedule",
 ]
 
 
@@ -1125,16 +1784,24 @@ def calculate_node_kpi(
     return AsyncTask().run_async(_do_calculate_single_node(plant_node_id, ts_start, ts_end))
 
 
-async def _do_calculate_node_kpi() -> dict:
-    """执行节点级 KPI 聚合的实际 async 逻辑。"""
+async def _do_calculate_node_kpi(ts_start: datetime | None = None) -> dict:
+    """执行节点级 KPI 聚合的实际 async 逻辑。
+
+    Args:
+        ts_start: 时间窗起始（UTC，naive 视为 UTC）。None 时取「上一个完整小时」，
+            与回路级 _do_calculate 默认行为一致。
+    """
     from app.core.db import AsyncSessionLocal
     from app.models.plant_node import PlantNode
     from app.services.node_performance import calculate_and_save_node_snapshot
 
-    # 时间窗：上一个完整小时（与回路级一致）
-    now = datetime.now(UTC)
-    ts_end = now.replace(minute=0, second=0, microsecond=0)
-    ts_start = ts_end - timedelta(hours=1)
+    # 时间窗
+    if ts_start is not None:
+        ts_end = ts_start + timedelta(hours=1)
+    else:
+        now = datetime.now(UTC)
+        ts_end = now.replace(minute=0, second=0, microsecond=0)
+        ts_start = ts_end - timedelta(hours=1)
 
     async with AsyncSessionLocal() as db:
         # 查询所有启用 KPI 评估的节点

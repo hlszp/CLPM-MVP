@@ -27,7 +27,7 @@
 |---|---|---|---|---|
 | 9 | 回路管理 | R1: 单删（硬删+校验Tag）与批删（软删+不校验Tag）行为不一致 | `endpoints/loops.py` + `services/loop_batch.py` | 待修复 |
 | 10 | 回路管理 | R2: `batch_update_loops` 的 `is_stat_enabled` 复用 `is_active` 语义，与 `is_monitored` 写入冲突 | `services/loop_batch.py:75-77,133-136` | 待修复 |
-| 11 | 性能评估 | R1: 标准任务 `trigger_standard_evaluation` 接收 `body.tsStart` 但调用 `calculate_hourly_kpi.delay()` 时未传参，用户指定时间窗被忽略 | `endpoints/tasks.py:310` | 待修复 |
+| 11 | 性能评估 | R1: 标准任务 `trigger_standard_evaluation` 接收 `body.tsStart` 但调用 `calculate_hourly_kpi.delay()` 时未传参，用户指定时间窗被忽略 | `endpoints/tasks.py:310` | **已修复** |
 | 12 | 性能评估 | R2: 自定义任务 `ts_end` 参数存入 Redis 但未传给 Celery 任务，自定义任务时间窗固定为 `cycle_minutes` 长度 | `endpoints/tasks.py:404` | 待修复 |
 | 13 | 跨模块 | B3: 实现契约 §6 状态机声称 `ACTIVE/PAUSED/DECOMMISSIONED`，实际代码为 `READY/PARTIAL/INACTIVE` | `docs/.../implementation-contract.md` §6 | 待修复 |
 | 14 | 跨模块 | B4: 节点级聚合 `KPI_FIELDS` 仅含 9 项，缺失 `stiction_coeff`/`steady_state_time`/`output_travel_index`/`ideal_settling_time` | `services/node_performance.py:38-48` | **已修复** |
@@ -96,10 +96,10 @@
 | 优先级 | 数量 | 已修复 | 待修复 |
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
-| P1 高优先级 | 14 | 5 | 9 |
+| P1 高优先级 | 14 | 6 | 8 |
 | P2 中优先级 | 19 | 0 | 19 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **11** | **46** |
+| **合计** | **57** | **12** | **45** |
 
 ## 已修复记录
 
@@ -116,3 +116,4 @@
 | 18 | 偏差1: R 缺失降级 60% 无依据 | 删除 `base_score * 0.6` 降级分支；R 缺失（r_result is None）/ R value=None / R 可信度 E 级统一并入 INCONCLUSIVE 路径，返回 value=None + confidence=E；血缘 R 缺失时回退到 accuracy_rate；重写原固化错误行为的 `test_R_missing_degrades_to_60_percent` 为 `test_R_missing_treated_as_inconclusive` + 新增 `test_R_value_none_treated_as_inconclusive` | `services/confidence_evaluator.py:162-189,227-234` + `tests/test_metric_calculator/test_confidence_evaluator.py` + `tests/test_loop_config.py:387-398` | 全后端 1492 测试通过 |
 | 14 | B4: 节点级聚合 KPI_FIELDS 缺失 4 字段 | `KPI_FIELDS` 元组补全 4 个字段（stiction_coeff/steady_state_time/output_travel_index/ideal_settling_time）；返回 dict + 3 处响应序列化（最新快照/排名/趋势）补 camelCase 输出；3 个节点级 ORM 模型（Hourly/Daily/Monthly）添加 4 列；新增 alembic migration `l5p6q7r8s9t0`（3 表 × 4 列 = 12 个 add_column）；测试 `_make_loop_snapshot`/`_make_node_snapshot`/`_make_agg_row`/2 个 snap_data dict 补 4 字段；`test_aggregate_calculates_weighted_average` 新增 4 字段断言 | `services/node_performance.py:38-54,371-394,479-491,633-648,755-770` + `models/node_kpi.py:54-59,107-112,163-168` + `alembic/versions/l5p6q7r8s9t0_add_node_snapshot_diagnostic_fields.py` + `tests/test_node_performance.py` + `tests/test_loop_config.py:199-204` | 全后端 1492 测试通过；alembic head 更新为 l5p6q7r8s9t0 |
 | 15 | B5: 实时自控率硬编码 `DEFAULT_AUTO_MODES={1,2,3}` | 移除硬编码常量，新增 `get_default_auto_modes(db)` 从 `sys_config.loop.default_auto_modes` 读取 JSON 数组（如 `"[1, 2, 3]"`）；无配置或解析失败时返回空集（严格模式，不假设默认值）；`query_realtime_auto_rate` 改为调用该函数获取全局默认；自动 MODE 来源优先级：LoopModeMapping（回路级）> sys_config（全局默认）> 空集。重写 `TestRealtimeAutoRate` 5 个测试：`test_realtime_auto_rate_with_loop_config`（回路配置 + sys_config 空）/`test_realtime_auto_rate_with_sysconfig_default`（sys_config `[1,2,3]` 回退）/`test_realtime_auto_rate_empty_default_no_auto`（双空 → 0%）/`test_realtime_auto_rate_invalid_sysconfig_value`（非法值容错）/`test_realtime_auto_rate_no_loops`（空列表）。注：TDengine 直查保留（实时点查不适合走 DataPlanner 缓存） | `services/node_performance.py:95-133,167-168,222-223` + `tests/test_loop_config.py:553-747` | 全后端 1494 测试通过 |
+| 11 | R1: 标准任务 tsStart 未传给 Celery | `calculate_hourly_kpi` 添加 `ts_start: str | None = None` 参数；新增 `_parse_ts_start()` 辅助函数将 ISO 8601 字符串解析为 datetime；`_track_hourly_calculation` 添加 `ts_start` 参数并透传 `_do_calculate(ts_start=ts_start_dt)`；`trigger_standard_evaluation` 改为 `calculate_hourly_kpi.delay(ts_start=body.tsStart)`。兼容性：cron 定时触发不传参（默认 None → 取上一个完整周期）；手动 API 触发传 `body.tsStart`（None 时同 cron）。测试更新：`test_standard_evaluate_success` 断言 `delay.assert_called_once_with(ts_start="2026-06-22T08:00:00Z")`；`test_standard_evaluate_admin` 断言 `ts_start=None`；新增 `test_calculate_hourly_kpi_with_ts_start` 验证 datetime 解析 + 透传；新增 `test_calculate_hourly_kpi_ts_start_none_uses_default` 验证默认行为 | `tasks/kpi_calc.py:191-291` + `endpoints/tasks.py:309-310` + `tests/test_api_tasks.py:188-225` + `tests/test_kpi_calc.py:1054-1094` | 全后端 1496 测试通过 |

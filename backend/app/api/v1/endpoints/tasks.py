@@ -306,8 +306,8 @@ async def trigger_standard_evaluation(
     task_id = str(uuid4())
     now = _now_iso()
 
-    # 触发 Celery 任务
-    celery_result = calculate_hourly_kpi.delay()
+    # 触发 Celery 任务（P1 #11: 透传 body.tsStart，None 时取上一个完整计算周期）
+    celery_result = calculate_hourly_kpi.delay(ts_start=body.tsStart)
     celery_task_id = celery_result.id
 
     task_data: dict[str, str] = {
@@ -393,15 +393,15 @@ async def trigger_custom_evaluation(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    from app.tasks.kpi_calc import calculate_loop_kpi
+    from app.tasks.kpi_calc import calculate_custom_loop_kpi
 
     task_id = str(uuid4())
     now = _now_iso()
 
-    # 对每个回路触发 Celery 任务
+    # 对每个回路触发 Celery 任务（自定义任务，写入 kpi_snapshot_custom 不参与聚合）
     celery_task_ids: list[str] = []
     for loop_id in body.loopIds:
-        result = calculate_loop_kpi.delay(loop_id, body.tsStart)
+        result = calculate_custom_loop_kpi.delay(task_id, loop_id, body.tsStart)
         celery_task_ids.append(result.id)
 
     task_data: dict[str, str] = {

@@ -1059,6 +1059,33 @@ class TestCeleryTasks:
             result = calculate_hourly_kpi.run()
             assert result == expected
 
+    def test_calculate_hourly_kpi_with_ts_start(self) -> None:
+        """calculate_hourly_kpi 透传 ts_start 给 _do_calculate（P1 #11）."""
+        from datetime import UTC, datetime
+
+        expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+        with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
+            mock_calc.return_value = expected
+            # task_tracker 无 Redis 会抛异常，走 fallback 分支调用 _do_calculate
+            result = calculate_hourly_kpi.run(ts_start="2026-06-22T08:00:00Z")
+            assert result == expected
+            # 验证 _do_calculate 收到解析后的 datetime（非 None）
+            call_kwargs = mock_calc.call_args
+            ts_start_arg = call_kwargs.kwargs.get("ts_start")
+            assert ts_start_arg is not None
+            expected_dt = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
+            assert ts_start_arg == expected_dt
+
+    def test_calculate_hourly_kpi_ts_start_none_uses_default(self) -> None:
+        """calculate_hourly_kpi 不传 ts_start 时 _do_calculate 收到 None（P1 #11）."""
+        expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+        with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
+            mock_calc.return_value = expected
+            result = calculate_hourly_kpi.run()
+            assert result == expected
+            call_kwargs = mock_calc.call_args
+            assert call_kwargs.kwargs.get("ts_start") is None
+
     def test_calculate_hourly_kpi_exception_reraises(self) -> None:
         """calculate_hourly_kpi 异常时重新抛出。"""
         with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
