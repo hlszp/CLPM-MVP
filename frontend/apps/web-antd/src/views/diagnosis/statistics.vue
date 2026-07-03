@@ -319,12 +319,15 @@ function handleExportPng() {
     { inst: getTrendInstance(), name: '处理效率趋势' },
     { inst: getBarInstance(), name: '闭环时长分布' },
   ];
+  // P2 #36 UX9: 导出 PNG 背景色响应主题，暗色模式下用深色背景
+  // 避免暗色模式导出图片中浅色文字/网格线在白色背景上消失
+  const exportBgColor = isDark.value ? '#1f2937' : '#fff';
   for (const { inst, name } of instances) {
     if (!inst) continue;
     const url = inst.getDataURL({
       type: 'png',
       pixelRatio: 2,
-      backgroundColor: '#fff',
+      backgroundColor: exportBgColor,
     });
     const link = document.createElement('a');
     link.href = url;
