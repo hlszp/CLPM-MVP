@@ -54,7 +54,7 @@
 | 28 | 性能评估 | R4: 节点小时聚合用 `LoopLevelWeight`(1:3,2:2,3:1)，日/月聚合用 `loop_count`，权重体系不一致 | `node_performance.py:261` vs `node_aggregation.py:88` | **已修复** |
 | 29 | 跨模块 | B6: 自定义任务快照表 `kpi_snapshot_custom` 缺少 `sampling_freq`/`quality_policy` 字段，数据血缘追溯能力弱于标准任务 | `tasks/kpi_calc.py:1415-1420` | **已修复** |
 | 30 | 跨模块 | B7: API 前缀不统一（`/config/loop-type-weights` 单数 vs `/configs/metrics` 复数） | `endpoints/loop_type_weight.py:23` vs `endpoints/configs.py:48` | **已修复** |
-| 31 | 跨模块 | B8: 前端路由与实现契约 §2 不一致（`/metric/weight-config` vs 契约 `/metric/type-weight`），孤儿视图 `type-weight.vue`/`level-weight.vue` | `router/routes/modules/metric.ts` | 待修复 |
+| 31 | 跨模块 | B8: 前端路由与实现契约 §2 不一致（`/metric/weight-config` vs 契约 `/metric/type-weight`），孤儿视图 `type-weight.vue`/`level-weight.vue` | `router/routes/modules/metric.ts` | **已修复** |
 | 32 | 跨模块 | B9: 前端端口文档与配置不一致（`.env.development` 为 5666，AGENTS.md 为 5668） | `frontend/.env.development` vs `AGENTS.md` | 待修复 |
 | 33 | 算法 | 偏差2: 振荡检测用 `_crossing_regularity`(CV变异系数) 替代设计要求的 S_TA/S_TB(持续时间相似率)，数学含义不同 | `metric_calculator/oscillation.py:105-108` | 待修复 |
 | 34 | 算法 | 偏差4: ARMA 模型用 AR(10) 高阶近似 ARMA(2,1)，设计文档要求默认 (2,1)，可能过拟合 | `tasks/arma.py:23` | 待修复 |
@@ -97,9 +97,9 @@
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 14 | 0 |
-| P2 中优先级 | 19 | 8 | 11 |
+| P2 中优先级 | 19 | 9 | 10 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **28** | **29** |
+| **合计** | **57** | **29** | **28** |
 
 ## 已修复记录
 
@@ -132,3 +132,4 @@
 | 28 | R4: 节点小时/日/月聚合权重体系不一致 | 经设计文档研究（FDS §5.3.7 + ADS + 实现契约 + 项目记忆约束）确认：两套权重体系处理不同维度的聚合，**非缺陷而是设计选择**。① 小时聚合（回路→节点小时）使用 LoopLevelWeight（1:3,2:2,3:1），依据 FDS §5.3.7 "装置级聚合评分" + GB/T 44693.2-2024 附录 E.2 + 项目记忆约束 "Plant-level"；② 日/月聚合（节点小时→节点日/月）使用 loop_count，因 KpiNodeSnapshotHourly/Daily 表不含 level 字段（节点级快照已无回路维度，无法按 LoopLevelWeight 加权），loop_count 反映节点规模与代表性。修复内容：在 `node_aggregation.py` 模块 docstring 补充完整权重体系说明（含两套权重的设计依据、目的、结构性约束、项目记忆约束边界）；新增 `TestNodeAggregationWeightDesign` 测试类 3 个用例：① loop_count 加权与简单平均产生不同结果（证明加权有意义）/② loop_count 更高的快照主导结果（验证加权方向）/③ 模块 docstring 包含关键设计说明（防回归文档） | `backend/app/services/node_aggregation.py:1-40` + `backend/tests/test_node_aggregation.py:543-601` | 全后端 1549 测试通过（1546 原有 + 3 新增） |
 | 29 | B6: 自定义任务快照表缺少 sampling_freq/quality_policy | 数据库迁移 `n7q8r9s0t1u2` 在 `kpi_snapshot_custom` 表新增 `sampling_freq`（String(10) NULL）+ `quality_policy`（String(30) NULL）两列，与 `kpi_snapshot_hourly` 对齐。ORM 模型 `KpiSnapshotCustom` 添加 `sampling_freq`/`quality_policy` 两字段。`_save_custom_snapshot` 函数签名新增 `sampling_freq`/`quality_policy` 参数，existing 更新路径与 new 创建路径均写入这两字段。`_persist_snapshot` 移除剔除 `sampling_freq`/`quality_policy` 的逻辑，自定义任务路径直接透传完整 kwargs。新增 `TestSaveCustomSnapshotLineage` 测试类 3 个用例（新增写入/更新写入/未提供时 None）+ `TestPersistSnapshotLineagePassThrough` 测试类 2 个用例（custom 路径透传/standard 路径不剔除），共 5 个测试 | `backend/alembic/versions/n7q8r9s0t1u2_add_lineage_to_custom_snapshot.py` + `backend/app/models/metric.py:151-153` + `backend/app/tasks/kpi_calc.py:1500-1515,1681-1683,1730-1732,1764-1766` + `backend/tests/test_kpi_calc.py:1931-2115` | 全后端 1554 测试通过（1549 原有 + 5 新增） |
 | 30 | B7: API 前缀不统一 /config vs /configs | `loop_type_weight.py` 与 `loop_level_weight.py` router prefix 从 `/config/loop-type-weights` / `/config/loop-level-weights` 统一为复数 `/configs/loop-type-weights` / `/configs/loop-level-weights`，与 `/configs/metrics` / `/configs/diagnosis` 对齐。前端 `metric.ts` 4 处 API 路径同步更新（getLoopTypeWeightsApi/updateLoopTypeWeightApi/getLoopLevelWeightsApi/updateLoopLevelWeightApi）。schema docstring `LoopTypeWeightUpdate` / `LoopLevelWeightUpdate` 引用同步。前端注释 `type-weight.vue` / `level-weight.vue` 同步。设计文档 `CLPM系统重构方案.md` 路由清单与任务清单同步。新增 4 个路由可达性测试：`TestLoopTypeWeightRoutesReachable` + `TestLoopLevelWeightRoutesReachable` 各 2 个用例（新路径 200/旧路径 404） | `backend/app/api/v1/endpoints/loop_type_weight.py:7-12,27` + `backend/app/api/v1/endpoints/loop_level_weight.py:7-12,26` + `backend/app/schemas/loop_config.py:69,96` + `frontend/.../api/metric.ts:591-637` + `frontend/.../views/metric/type-weight.vue:9` + `frontend/.../views/metric/level-weight.vue:9` + `docs/设计文档/04-重构方案/CLPM系统重构方案.md:208-209,458-459` + `backend/tests/test_api_configs.py:636-695` | 全后端 1558 测试通过（1554 原有 + 4 新增）；前端类型检查通过 |
+| 31 | B8: 前端路由与实现契约不一致 + 孤儿视图 | 经文档研究确认：代码遵循 UI/UX 改造方案 v1.0 §6.1.4 "5 Tab 聚合"设计（指标定义/权重配置/引擎规则/任务策略/执行记录），`type-weight.vue` / `level-weight.vue` 是 `weight-config.vue` 的子组件（非孤儿视图）。问题源于实现契约 §2 路由清单未同步 UI/UX 改造方案 v1.0 的合并决策，仍列旧路由 `/metric/type-weight` / `/metric/level-weight`。修复内容：实现契约 §2 性能评估行的"当前主要路由"更新为 `/metric/dashboard`、`/metric/ranking`、`/metric/statistics`、`/metric/config`、`/metric/weight-config`、`/metric/engine-config`、`/metric/task-strategy`、`/metric/tasks`；§3 路由命名决策新增"指标配置 Tab 聚合"行，说明合并决策依据与子组件关系。无代码改动（代码已正确），仅文档追认 | `docs/设计文档/00-BASELINE/implementation-contract.md:27,38` | 前端类型检查通过（无代码改动） |

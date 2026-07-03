@@ -24,7 +24,7 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 |---|---|---|
 | 工作台门户 | 全角色入口，聚合 KPI、低效回路、待处理异常与趋势 | `/dashboard/workbench` |
 | 回路管理 | 用一个聚合页承载工厂树、回路台账、Tag 关联、评估参数、投用定义 | `/loop/manage`、`/loop/detail/:id`、`/loop/monitor`、`/tag/list` |
-| 性能评估 | 保留重构后的 metric 命名，承载 KPI 看板、排行、统计、类型/级别权重 | `/metric/dashboard`、`/metric/ranking`、`/metric/statistics`、`/metric/type-weight`、`/metric/level-weight` |
+| 性能评估 | 保留重构后的 metric 命名，承载 KPI 看板、排行、统计、5 Tab 配置组 | `/metric/dashboard`、`/metric/ranking`、`/metric/statistics`、`/metric/config`、`/metric/weight-config`、`/metric/engine-config`、`/metric/task-strategy`、`/metric/tasks` |
 | 诊断中心 | 诊断列表、详情、波形、异常跟踪、A/B 对比、统计、配置分离 | `/diagnosis/list`、`/diagnosis/detail/:loopId`、`/diagnosis/waveform`、`/diagnosis/tracker`、`/diagnosis/ab-compare`、`/diagnosis/statistics`、`/diagnosis/config` |
 | 回路整定 | Phase 1 保留实验/辅助能力入口，承载工作台、模型、算法、仿真、统计 | `/tuning/workbench`、`/tuning/model`、`/tuning/algorithm`、`/tuning/simulation`、`/tuning/stats` |
 | 系统管理 | 用户、审计、权限矩阵、报表配置 | `/system/users`、`/system/audit`、`/system/permissions`、`/system/reports` |
@@ -35,6 +35,7 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 |---|---|---|
 | 首页 | 使用 `/dashboard/workbench` | `/` 可作为部署层默认入口，但产品路由以工作台路由为准。 |
 | 性能评估 | 保留 `/metric/*` | 不再强制回退到旧 UI/UX 的 `/performance/*`。如需兼容，可后续增加 redirect，不在菜单暴露。 |
+| 指标配置 Tab 聚合 | `/metric/config` + `/metric/weight-config` + `/metric/engine-config` + `/metric/task-strategy` + `/metric/tasks` | P2 #31 B8 修正：原契约列 `/metric/type-weight` / `/metric/level-weight` 已被 UI/UX 改造方案 v1.0 §6.1.4 合并为 `/metric/weight-config` 单 Tab，内含"类型权重 + 级别权重"两个子 Tab（子组件 `type-weight.vue` / `level-weight.vue` 作为 `weight-config.vue` 的内容组件，非孤儿视图）。 |
 | 回路管理 | 保留 `/loop/manage` 聚合页 | `/loop/factory`、`/loop/ledger` 视为旧设计路径，不再作为主菜单页。 |
 | Tag 管理 | 使用 `/tag/list` | AAS Tag 是独立资源入口，不强行塞回 `/loop/mapping`。 |
 | 诊断中心 | 以实际 7 页面为准 | waveform、ab-compare、config 是重构后显式页面。 |
