@@ -918,14 +918,15 @@ async function handleAutoLink() {
     }
 
     // 填充槽位
+    // P3 #45: role 值对齐 loop_tag_mapping.tag_role CHECK 约束（PID_P/PID_I/PID_D）
     const roleToSlot: Record<string, keyof typeof slotState> = {
       PV: 'pv',
       SP: 'sp',
       OP: 'op',
       MODE: 'mode',
-      KP: 'pid_p',
-      TI: 'pid_i',
-      TD: 'pid_d',
+      PID_P: 'pid_p',
+      PID_I: 'pid_i',
+      PID_D: 'pid_d',
     };
 
     for (const tag of matchedTags) {

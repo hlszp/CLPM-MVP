@@ -462,7 +462,8 @@ async function handleToggleActive(
 function formatTime(t: string): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
@@ -571,14 +572,15 @@ async function handleAutoLink() {
     }
 
     // 填充槽位
+    // P3 #45: role 值对齐 loop_tag_mapping.tag_role CHECK 约束（PID_P/PID_I/PID_D）
     const roleToSlot: Record<string, keyof typeof slotState> = {
       PV: 'pv',
       SP: 'sp',
       OP: 'op',
       MODE: 'mode',
-      KP: 'pid_p',
-      TI: 'pid_i',
-      TD: 'pid_d',
+      PID_P: 'pid_p',
+      PID_I: 'pid_i',
+      PID_D: 'pid_d',
     };
 
     for (const tag of matchedTags) {
@@ -1101,7 +1103,7 @@ onMounted(() => {
             </Button>
           </div>
           <div class="text-xs text-gray-500">
-            根据回路位号前缀搜索测点，按后缀（_PV/_SP/_OUT/_MODE/_KP/_TI/_TD
+            根据回路位号前缀搜索测点，按后缀（_PV/_SP/_OP/_MODE/_PID_P/_PID_I/_PID_D
             等）自动匹配到对应槽位，匹配后可手动调整。
           </div>
         </div>

@@ -170,32 +170,41 @@ async def batch_delete_tags_endpoint(
 
 @router.get("/match-loop", response_model=ApiResponse[list])
 async def match_tags_for_loop_endpoint(
-    loopTagName: str = Query(..., description="回路位号，如 80PIC31306_PIDA"),
+    loopTagName: str = Query(..., description="回路位号，如 T-HDS-001"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """根据回路位号自动匹配测点。
 
     返回匹配的测点列表，用于自动关联功能。
-    匹配规则：测点位号 = 回路位号 + _ + 参数类型（PV/SP/OP/MODE/KP/TI/TD）
+    匹配规则：测点位号 = 回路位号 + 分隔符 + 参数类型（PV/SP/OP/MODE/PID_P/PID_I/PID_D）
+
+    P3 #45 修复：
+    - 原 `["PV","SP","OP","MODE","KP","TI","TD"]` 与 schema/seed data 的
+      `PID_P/PID_I/PID_D` 不一致，导致 PID 参数永远无法自动匹配。
+    - 同时支持 `_` 和 `-` 两种分隔符（不同工厂命名约定不同）。
     """
     from sqlalchemy import select
 
     from app.models.tag import TagRegistry
 
-    tag_types = ["PV", "SP", "OP", "MODE", "KP", "TI", "TD"]
+    # P3 #45: 与 loop_tag_mapping.tag_role CHECK 约束保持一致
+    # （来源：db/postgresql/01_schema.sql:168 + AGENTS.md AAS 数据模型）
+    loop_tag_roles = ("PV", "SP", "OP", "MODE", "PID_P", "PID_I", "PID_D")
     matched_tags = []
 
-    for tag_type in tag_types:
-        expected_tag_name = f"{loopTagName}_{tag_type}"
+    for role in loop_tag_roles:
+        # 同时尝试 `_` 和 `-` 分隔符，兼容不同工厂命名约定
+        # （seed data 用 `T-HDS-001-PV`，部分 DCS 用 `80PIC31306_PV`）
+        candidates = [f"{loopTagName}_{role}", f"{loopTagName}-{role}"]
         result = await db.execute(
-            select(TagRegistry).where(TagRegistry.tag_name == expected_tag_name)
+            select(TagRegistry).where(TagRegistry.tag_name.in_(candidates))
         )
         tag = result.scalar_one_or_none()
         if tag:
             matched_tags.append(
                 {
-                    "role": tag_type,
+                    "role": role,
                     "tagId": str(tag.id),
                     "tagName": tag.tag_name,
                     "tagDescription": tag.tag_description,

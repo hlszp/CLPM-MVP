@@ -75,7 +75,7 @@
 | 42 | 回路管理 | B5: `monitor_status` 与 `is_active` 两个语义相同的过滤条件共存，用户同时传不同值会得空结果 | `services/loop.py:158-169` | **已修复** |
 | 43 | 回路管理 | B7: AAS 同步不更新 `LoopLedger.last_aas_sync_at`，该字段成为孤儿 | `services/aas_sync.py` | **已修复** |
 | 44 | 回路管理 | B8: 波形批量接口 `POST /timeseries/batch/waveform` 后端已实现但前端无消费方 | `endpoints/tags.py:batch_waveform_endpoint` | **已修复** |
-| 45 | 回路管理 | R9: `match_tags_for_loop` 硬编码 tag 后缀 `["PV","SP","OP","MODE","KP","TI","TD"]`，与 `PID_P/PID_I/PID_D` 不一致 | `endpoints/tags.py:186` | 待修复 |
+| 45 | 回路管理 | R9: `match_tags_for_loop` 硬编码 tag 后缀 `["PV","SP","OP","MODE","KP","TI","TD"]`，与 `PID_P/PID_I/PID_D` 不一致 | `endpoints/tags.py:186` | **已修复** |
 | 46 | 回路管理 | R10: `_retry_async` 异常处理代码异味（`last_exc = exc = None` 后再 `sys.exc_info()`） | `services/aas_sync.py:219-230` | 待修复 |
 | 47 | 回路管理 | R11: TagRegistry 在导入时静默创建（绕过 AAS 同步），可能出现"幽灵 Tag" | `services/loop.py:891-902` | 待修复 |
 | 48 | 回路管理 | R12: `ledger.vue` 已标注 `@deprecated` 但仍在仓库 | `views/loop/ledger.vue` | 待修复 |
@@ -98,8 +98,8 @@
 | P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 14 | 0 |
 | P2 中优先级 | 19 | 19 | 0 |
-| P3 低优先级 | 16 | 3 | 13 |
-| **合计** | **57** | **42** | **15** |
+| P3 低优先级 | 16 | 4 | 12 |
+| **合计** | **57** | **43** | **14** |
 
 ## 已修复记录
 
@@ -146,3 +146,4 @@
 | 42 | B5: monitor_status 与 is_active 过滤条件冲突 | `list_loops` service 新增互斥校验：`is_active` 与 `monitor_status` 同时传入但值不一致时抛 `ValueError("isActive 与 monitorStatus 语义相同，同时传入时值必须一致")`；值一致时将 `monitor_status` 置 None 避免重复 AND。`list_loops_endpoint` 包装 try/except ValueError，捕获后返回 `{"code":"400","message":...,"data":null}` 业务错误响应（HTTP 200，业务 code=400）。新增 `TestLoopListIsActiveMonitorStatusMutex` 测试类 4 个用例：①冲突返回 400（isActive=true&monitorStatus=false）/②值一致正常返回（同 true）/③仅 isActive 正常/④仅 monitorStatus 正常 | `backend/app/services/loop.py:147-167` + `backend/app/api/v1/endpoints/loops.py:82-101` + `backend/tests/test_loop.py:410-498` | 全后端 1635 测试通过（1631 原有 + 4 新增） |
 | 43 | B7: AAS 同步不更新 LoopLedger.last_aas_sync_at | `sync_tags_from_aas` 在 tag upsert commit 成功后，新增批量 UPDATE：`UPDATE LoopLedger SET last_aas_sync_at=now WHERE is_active=True`，让所有活跃回路的 `last_aas_sync_at` 字段反映最新 AAS 同步时间（之前该字段只在 detail 序列化读取，从未被写入，成为孤儿）。同步失败路径不执行此更新（异常在 update 之前抛出）。新增 `TestSyncTagsFromAasLoopLedgerUpdate` 测试类 2 个用例：①成功路径验证第 2 次 execute 为 UPDATE LoopLedger 语句 + commit ≥2 次/②失败路径验证 commit == 0（不更新 LoopLedger） | `backend/app/services/aas_sync.py:19,24,319-328` + `backend/tests/test_aas.py:342-425` | 全后端 1637 测试通过（1635 原有 + 2 新增） |
 | 44 | B8: 波形批量接口前端无消费方 | 前端 `api/diagnosis.ts` 新增 `getBatchWaveformApi` 函数 + 3 个类型定义（`BatchWaveformRequest`/`BatchWaveformFailure`/`BatchWaveformResponse`），对齐后端 `POST /timeseries/batch/waveform` 的 CamelModel schema。API 函数封装 `requestClient.post('/timeseries/batch/waveform', data)`，支持一次请求并行获取多个回路波形（1~50 个），适用于多回路对比、批量导出等场景。前端页面消费方可直接调用此 API（如未来的多回路对比页面） | `frontend/.../api/diagnosis.ts:162-192,474-491` | 前端类型检查通过 |
+| 45 | R9: match_tags_for_loop 硬编码 tag 后缀不一致 | 后端 `endpoints/tags.py:match_tags_for_loop_endpoint`：将硬编码 `["PV","SP","OP","MODE","KP","TI","TD"]` 修正为 `("PV","SP","OP","MODE","PID_P","PID_I","PID_D")`，与 `loop_tag_mapping.tag_role` CHECK 约束（`db/postgresql/01_schema.sql:168`）+ AGENTS.md AAS 数据模型 + seed data 一致；同时将分隔符从硬编码 `_` 扩展为同时尝试 `_` 和 `-` 两种（兼容 seed data `T-HDS-001-PV` 与部分 DCS `80PIC31306_PV` 命名约定）。**前端联动修复**：① `manage.vue:921-930` `roleToSlot` 映射从 `KP/TI/TD → pid_p/pid_i/pid_d` 改为 `PID_P/PID_I/PID_D → pid_p/pid_i/pid_d`；② `ledger.vue:575-584` 同上；③ `ledger.vue:1106` 提示文本 `_KP/_TI/_TD` 改为 `_PID_P/_PID_I/_PID_D`，并修正 `_OUT` → `_OP`。新增 `tests/test_tag_match_loop.py` 5 个测试：①完整 7 角色 PID_P/PID_I/PID_D（防止回归到 KP/TI/TD）；②`_` 分隔符支持；③部分匹配（缺 PID_* 只返回 4 个）；④无匹配返回空列表；⑤查询次数=7（验证 role 列表完整） | `backend/app/api/v1/endpoints/tags.py:171-217` + `frontend/.../views/loop/manage.vue:920-930` + `frontend/.../views/loop/ledger.vue:574-584,1105-1108` + `backend/tests/test_tag_match_loop.py` | 全后端 1642 测试通过（1637 原有 + 5 新增）；前端类型检查通过 |
