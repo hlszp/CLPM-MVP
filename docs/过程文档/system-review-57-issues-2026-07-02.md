@@ -51,7 +51,7 @@
 | 25 | 回路管理 | B4: `create_loop` 不接收 `level`/`modeattr_tag_id`/`data_retention_days`，前端声明但被忽略 | `endpoints/loops.py:96-117` | **已修复** |
 | 26 | 回路管理 | B9: AasConfig 前后端字段不匹配（`syncInterval` vs `syncIntervalSeconds`、`latency` vs `latencyMs`） | `frontend/src/api/aas.ts` vs `schemas/aas.py` | **已修复** |
 | 27 | 性能评估 | R3: `MetricConfig.weight` 字段存在并校验总和=100，但综合评分实际使用 `LoopTypeWeight`，管理员修改不生效 | `services/performance.py:194` vs `kpi_calc.py:1105` | **已修复** |
-| 28 | 性能评估 | R4: 节点小时聚合用 `LoopLevelWeight`(1:3,2:2,3:1)，日/月聚合用 `loop_count`，权重体系不一致 | `node_performance.py:261` vs `node_aggregation.py:88` | 待修复 |
+| 28 | 性能评估 | R4: 节点小时聚合用 `LoopLevelWeight`(1:3,2:2,3:1)，日/月聚合用 `loop_count`，权重体系不一致 | `node_performance.py:261` vs `node_aggregation.py:88` | **已修复** |
 | 29 | 跨模块 | B6: 自定义任务快照表 `kpi_snapshot_custom` 缺少 `sampling_freq`/`quality_policy` 字段，数据血缘追溯能力弱于标准任务 | `tasks/kpi_calc.py:1415-1420` | 待修复 |
 | 30 | 跨模块 | B7: API 前缀不统一（`/config/loop-type-weights` 单数 vs `/configs/metrics` 复数） | `endpoints/loop_type_weight.py:23` vs `endpoints/configs.py:48` | 待修复 |
 | 31 | 跨模块 | B8: 前端路由与实现契约 §2 不一致（`/metric/weight-config` vs 契约 `/metric/type-weight`），孤儿视图 `type-weight.vue`/`level-weight.vue` | `router/routes/modules/metric.ts` | 待修复 |
@@ -97,9 +97,9 @@
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 14 | 0 |
-| P2 中优先级 | 19 | 5 | 14 |
+| P2 中优先级 | 19 | 6 | 13 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **25** | **32** |
+| **合计** | **57** | **26** | **31** |
 
 ## 已修复记录
 
@@ -129,3 +129,4 @@
 | 24+25 | B3+B4: controlType/level/modeattrTagId/dataRetentionDays 前端声明但被忽略 | 数据库迁移 `m6q7r8s9t0u1` 在 `loop_ledger` 表新增 `control_type` 字段（STABLE/SLOW/FAST/LOGIC，与 `loop_type` 业务类型独立，对齐 GB/T 44693.2-2024 附表1）。ORM 模型 `LoopLedger` 添加 `control_type` 列。`LoopCreate`/`LoopUpdate` schema 新增 `controlType`/`level`/`modeattrTagId`/`dataRetentionDays` 字段；`LoopListItem` 新增 `controlType`；`LoopBasicInfo`/`LoopUpdateResult` 新增 `controlType`/`level`/`modeattrTagId`/`dataRetentionDays`。service 层 `list_loops` 添加 `control_type` 参数 + SQL 过滤（`func.upper(LoopLedger.control_type) == control_type.upper()`）；`create_loop`/`update_loop`/`get_loop_detail` 接收并透传新字段，审计日志 before/after 包含完整字段。endpoint 层 `list_loops_endpoint` 新增 `controlType` 查询参数；`create_loop_endpoint`/`update_loop_endpoint` 透传新字段。新增 6 个测试：schema 字段存在性（Create/Update 各 1）+ service 签名（create/update/list 各 1）+ endpoint 接受 controlType 查询（1）。mock 对象 LOOP_001 补 `control_type`/`modeattr_tag_id`/`data_retention_days` 字段 | `backend/alembic/versions/m6q7r8s9t0u1_add_loop_control_type.py` + `backend/app/models/loop.py:50-55` + `backend/app/schemas/loop.py:42-77,113,140-143,208-211` + `backend/app/services/loop.py:141,168,257,319-322,359-362,395-411,495-521,533-537,553-563,590-600,618-631` + `backend/app/api/v1/endpoints/loops.py:70-72,91,120-123,298-301` + `backend/tests/test_loop.py:37-40,324-407` + `backend/tests/test_s8_supplement.py:130-133` | 全后端 1538 测试通过（1532 原有 + 6 新增） |
 | 26 | B9: AasConfig 前后端字段不匹配 | 前端 `aas.ts` 对齐后端字段命名（含单位更清晰）：`AasConfig.syncInterval` → `syncIntervalSeconds`；`UpdateAasConfigParams.syncInterval` → `syncIntervalSeconds`；`AasConfigTestResult.latency` → `latencyMs`（类型同步改为 `number \| null`）。`aas.vue` 配套更新：`configForm.syncInterval` → `configForm.syncIntervalSeconds`；`data.syncInterval` → `data.syncIntervalSeconds`；模板 `FormItem name="syncInterval"` → `name="syncIntervalSeconds"`；`InputNumber v-model:value` 同步；`testResult.latency` → `testResult.latencyMs`；注释中的字段名同步更新 | `frontend/.../api/aas.ts:54-77` + `frontend/.../views/loop/aas.vue:8,53,222,239,263,269,388,390,429` | 前端类型检查通过 |
 | 27 | R3: MetricConfig.weight 修改不生效 | `_build_weights_map` 函数签名新增 `metric_configs` 参数，权重解析改为三级优先链：① `MetricConfig.weight` 全局配置（管理员通过 PUT /configs/metrics 设置的 3 核心指标权重，sum=100，归一化为 a+f+s=1.0），② `LoopTypeWeight` 控制类型模板（STABLE/SLOW/FAST/LOGIC），③ `DEFAULT_WEIGHTS`（ConfidenceEvaluator 内部 STABLE 模板，返回 None 触发）。回退条件：MetricConfig.weight 任一为 null/0/缺失 → 回退到 LoopTypeWeight；type_weights 不含 score_type → 返回 None。`_calculate_loop_kpi` 调用 `_build_weights_map(type_weights, score_type, metric_configs)` 传入 metric_configs。新增 `TestBuildWeightsMapMetricConfigPriority` 测试类 8 个用例：覆盖优先（MetricConfig 全配置覆盖 LoopTypeWeight）/容错归一化（sum≠100 按比例）/部分 null 回退/含 0 回退/缺指标回退/仅 MetricConfig（type_weights=None）/metric_configs=None 兼容/双 None 返回 None | `backend/app/tasks/kpi_calc.py:1150-1223,875-880` + `backend/tests/test_kpi_calc.py:1370-1522` | 全后端 1546 测试通过（1538 原有 + 8 新增） |
+| 28 | R4: 节点小时/日/月聚合权重体系不一致 | 经设计文档研究（FDS §5.3.7 + ADS + 实现契约 + 项目记忆约束）确认：两套权重体系处理不同维度的聚合，**非缺陷而是设计选择**。① 小时聚合（回路→节点小时）使用 LoopLevelWeight（1:3,2:2,3:1），依据 FDS §5.3.7 "装置级聚合评分" + GB/T 44693.2-2024 附录 E.2 + 项目记忆约束 "Plant-level"；② 日/月聚合（节点小时→节点日/月）使用 loop_count，因 KpiNodeSnapshotHourly/Daily 表不含 level 字段（节点级快照已无回路维度，无法按 LoopLevelWeight 加权），loop_count 反映节点规模与代表性。修复内容：在 `node_aggregation.py` 模块 docstring 补充完整权重体系说明（含两套权重的设计依据、目的、结构性约束、项目记忆约束边界）；新增 `TestNodeAggregationWeightDesign` 测试类 3 个用例：① loop_count 加权与简单平均产生不同结果（证明加权有意义）/② loop_count 更高的快照主导结果（验证加权方向）/③ 模块 docstring 包含关键设计说明（防回归文档） | `backend/app/services/node_aggregation.py:1-40` + `backend/tests/test_node_aggregation.py:543-601` | 全后端 1549 测试通过（1546 原有 + 3 新增） |

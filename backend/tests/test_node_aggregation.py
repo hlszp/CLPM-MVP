@@ -539,3 +539,63 @@ class TestWeightedAverage:
         # 注意：分母是所有 loop_count 之和（包括 None 的），还是非 None 的？
         # 实现中分母是所有 loop_count 之和
         assert result["score"] == Decimal("87.50")
+
+
+# ---------------------------------------------------------------------------
+# P2 #28 R4: 节点级聚合权重体系设计意图验证
+# ---------------------------------------------------------------------------
+
+
+class TestNodeAggregationWeightDesign:
+    """验证节点级聚合的权重体系设计意图（P2 #28 R4）。
+
+    设计决策：
+    - 小时聚合（node_performance.py）：LoopLevelWeight（回路级别 1:3, 2:2, 3:1）
+    - 日/月聚合（node_aggregation.py）：loop_count（节点规模）
+
+    这是两套不同的权重体系，处理不同维度的聚合：
+    - 小时聚合按"回路重要性"加权（重要回路占更高权重）
+    - 日/月聚合按"节点规模"加权（回路数多的小时/日代表性更强）
+    """
+
+    def test_loop_count_weighting_differs_from_simple_average(self):
+        """loop_count 加权与简单平均产生不同结果，证明加权是有意义的。"""
+        from app.services.node_aggregation import _weighted_average
+
+        # 两条快照：score=80 loop_count=1, score=90 loop_count=99
+        # 简单平均：(80+90)/2 = 85.00
+        # loop_count 加权：(80*1 + 90*99)/(1+99) = (80+8910)/100 = 89.90
+        snaps = [
+            MagicMock(score=Decimal("80.00"), loop_count=1),
+            MagicMock(score=Decimal("90.00"), loop_count=99),
+        ]
+        result = _weighted_average(snaps, ("score",))
+        assert result["score"] == Decimal("89.90")
+        # 验证与简单平均不同（证明加权生效）
+        assert result["score"] != Decimal("85.00")
+
+    def test_higher_loop_count_dominates_result(self):
+        """loop_count 更高的快照对结果影响更大。"""
+        from app.services.node_aggregation import _weighted_average
+
+        # 极端情况：loop_count=1000 的快照几乎决定结果
+        snaps = [
+            MagicMock(score=Decimal("50.00"), loop_count=1),
+            MagicMock(score=Decimal("95.00"), loop_count=1000),
+        ]
+        result = _weighted_average(snaps, ("score",))
+        # (50*1 + 95*1000)/(1+1000) = (50+95000)/1001 ≈ 94.96
+        assert result["score"] == Decimal("94.96")
+        # 结果接近 95（loop_count=1000 的快照主导）
+
+    def test_module_docstring_documents_weight_design(self):
+        """模块 docstring 应明确文档化两套权重体系的设计依据。"""
+        from app.services import node_aggregation
+
+        doc = node_aggregation.__doc__ or ""
+        # 验证 docstring 包含关键设计说明
+        assert "LoopLevelWeight" in doc, "docstring 应说明小时聚合使用 LoopLevelWeight"
+        assert "loop_count" in doc, "docstring 应说明日/月聚合使用 loop_count"
+        assert "回路重要性" in doc or "回路级别" in doc, "docstring 应说明小时聚合的权重依据"
+        assert "节点规模" in doc or "代表性" in doc, "docstring 应说明日/月聚合的权重依据"
+        assert "P2 #28" in doc, "docstring 应标注此修复对应的 P2 #28 编号"

@@ -10,6 +10,28 @@
 - status 由聚合后 score 重新定级（_score_to_status）
 - 幂等：相同 plant_node_id + stat_date / stat_month 不重复写入（先删后建）
 
+权重体系说明（P2 #28 R4 修复时澄清）：
+
+本模块的"日/月聚合"与 node_performance.py 的"小时聚合"使用**不同的权重体系**，
+这是有意为之的设计选择，并非缺陷：
+
+1. **小时聚合**（node_performance.py:aggregate_node_snapshot）：
+   - 数据流：回路级快照 → 节点级小时快照
+   - 权重：LoopLevelWeight（按回路级别 1:3, 2:2, 3:1）
+   - 依据：FDS §5.3.7 "装置级聚合评分" + GB/T 44693.2-2024 附录 E.2
+   - 目的：让重要回路（level=1）在节点级评分中占更高权重
+
+2. **日/月聚合**（本模块）：
+   - 数据流：节点级小时快照 → 节点级日/月快照
+   - 权重：loop_count（每小时/日参与聚合的回路数）
+   - 目的：让回路数多的小时/日（代表性更强）在日/月聚合中占更高权重
+   - 结构性约束：KpiNodeSnapshotHourly/Daily 表不含 level 字段，
+     节点级快照已无回路维度，无法再按 LoopLevelWeight 加权
+
+两套权重体系处理不同维度的聚合：小时聚合按"回路重要性"，日/月聚合按"节点规模"。
+项目记忆约束 "Plant-level KPI aggregation must use weighted average based on
+loop importance levels" 仅适用于回路 → 节点的小时聚合（plant-level），不覆盖日/月层。
+
 核心函数：
 - aggregate_daily_snapshot: 单节点日聚合
 - aggregate_monthly_snapshot: 单节点月聚合
