@@ -26,7 +26,8 @@ from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
 
-#: 最少数据点数（AR(10) 模型辨识需要足够自由度，设计要求 100 点）
+#: 最少数据点数（AR(2) 模型辨识需要足够自由度，设计要求 100 点）
+#: 注：P2 #34 已将默认 AR 阶数从 10 降至 2（对齐设计文档 ARMA(2,1)），MIN_POINTS 保持 100 以确保数据充分性
 MIN_POINTS = 100
 
 #: 默认采样周期（秒）

@@ -629,21 +629,22 @@ class TestPureAr2Scenario:
         settling_time_sec = 20
         ar_coeffs = [-0.5, 0.3]
 
-    注：fit_ar_model 默认 order=10，返回 10 个系数。
-    AR(2) 信号的前 2 个系数应接近 [-0.5, 0.3]，剩余 8 个应接近 0。
+    注：P2 #34 偏差4 已将 fit_ar_model 默认 order 从 10 降至 2（对齐设计文档
+    ARMA(2,1) 的 p=2）。默认辨识返回 2 个系数，前 2 个应接近 [-0.5, 0.3]。
+    显式 order=10 仍可用于验证高阶辨识能力（剩余系数接近 0）。
     """
 
     def test_ar2_first_two_coefficients_match(self, kpi_scenarios):
-        """AR(2) 辨识的前 2 个系数应接近期望值 [-0.5, 0.3]。"""
+        """AR(2) 默认辨识返回 2 个系数，应接近期望值 [-0.5, 0.3]。"""
         from app.tasks.arma import fit_ar_model
 
         scenario = kpi_scenarios["pure_ar2"]
         signal = np.array(scenario["ar_signal"], dtype=float)
         assert len(signal) == 7200
 
-        # 用默认 order=10 辨识（生产代码默认行为）
+        # P2 #34: 默认 order=2（对齐设计文档 ARMA(2,1) 的 p=2）
         coeffs = fit_ar_model(signal)
-        assert len(coeffs) == 10
+        assert len(coeffs) == 2
 
         expected_coeffs = scenario["expected"]["ar_coeffs"]
         # 容差 0.15（Yule-Walker 估计有一定偏差）
@@ -656,12 +657,17 @@ class TestPureAr2Scenario:
         )
 
     def test_ar2_residual_coefficients_near_zero(self, kpi_scenarios):
-        """AR(2) 信号的剩余系数（第 3~10 个）应接近 0（|coeff| < 0.05）。"""
+        """AR(2) 信号用显式 order=10 辨识时，剩余系数（第 3~10 个）应接近 0。
+
+        P2 #34: 默认 order=2，此测试改为显式 order=10 验证高阶辨识能力保留。
+        """
         from app.tasks.arma import fit_ar_model
 
         scenario = kpi_scenarios["pure_ar2"]
         signal = np.array(scenario["ar_signal"], dtype=float)
-        coeffs = fit_ar_model(signal)
+        # 显式使用高阶验证 AR(2) 信号的剩余系数接近 0
+        coeffs = fit_ar_model(signal, order=10)
+        assert len(coeffs) == 10
 
         # 前 2 个是真实 AR 系数，剩余应为噪声估计（接近 0）
         for i in range(2, len(coeffs)):

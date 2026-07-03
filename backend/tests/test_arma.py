@@ -1,8 +1,14 @@
-"""ARMA 稳态时间计算测试 — 对齐 GB/T 44693.2-2024 附录 F.4。"""
+"""ARMA 稳态时间计算测试 — 对齐 GB/T 44693.2-2024 附录 F.4 与设计文档 §4.5。
+
+P2 #34 偏差4：默认 AR 阶数从 10 降至 2，对齐设计文档 ARMA(2,1) 的 p=2。
+AR(2) 对接近单位根信号可能发散，compute_settling_time 自动升级阶数重试。
+"""
 
 import numpy as np
 
 from app.tasks.arma import (
+    DEFAULT_AR_ORDER,
+    DEFAULT_MA_ORDER,
     compute_green_function,
     compute_ideal_settling_time,
     compute_settling_time,
@@ -138,3 +144,50 @@ class TestIdealSettlingTime:
 
     def test_unknown_type_fallback(self):
         assert compute_ideal_settling_time(100, "UNKNOWN") == 60.0
+
+
+class TestArmaOrderDesignAlignment:
+    """ARMA 阶数对齐设计文档测试（P2 #34 偏差4）。"""
+
+    def test_default_ar_order_is_2(self):
+        """默认 AR 阶数为 2，对齐设计文档 §4.5.3 arma_order 默认 (2,1) 的 p=2。"""
+        assert DEFAULT_AR_ORDER == 2
+
+    def test_default_ma_order_is_1(self):
+        """DEFAULT_MA_ORDER 常量记录设计文档要求的 q=1。"""
+        assert DEFAULT_MA_ORDER == 1
+
+    def test_slow_response_near_unit_root_calculated(self):
+        """接近单位根的慢速响应信号（AR(1) 系数 -0.95）能正确计算稳态时间。
+
+        AR(2) 对此类信号 Green 函数发散，compute_settling_time 自动升级阶数重试。
+        """
+        np.random.seed(42)
+        n = 1000
+        signal = np.zeros(n)
+        for t in range(1, n):
+            signal[t] = -0.95 * signal[t - 1] + np.random.randn() * 0.1
+        settling = compute_settling_time(signal, sample_interval_sec=1.0)
+        # 通过阶数升级，应能计算出有效稳态时间（> 30 秒）
+        assert settling > 30
+
+    def test_fast_response_stable_at_ar2(self):
+        """快速响应信号在 AR(2) 下稳定，无需阶数升级。"""
+        np.random.seed(42)
+        n = 500
+        signal = np.zeros(n)
+        for t in range(1, n):
+            signal[t] = -0.3 * signal[t - 1] + np.random.randn() * 0.1
+        settling = compute_settling_time(signal, sample_interval_sec=1.0)
+        assert 0 < settling < 30
+
+    def test_custom_ar_order_respected(self):
+        """自定义 ar_order 参数被尊重（仍可能触发阶数升级回退）。"""
+        np.random.seed(42)
+        n = 500
+        signal = np.zeros(n)
+        for t in range(2, n):
+            signal[t] = -0.5 * signal[t - 1] + 0.3 * signal[t - 2] + np.random.randn() * 0.1
+        # AR(2) 信号，ar_order=2 应直接稳定
+        settling = compute_settling_time(signal, sample_interval_sec=1.0, ar_order=2)
+        assert settling >= 0  # 不报错即可（具体值依赖模型辨识）

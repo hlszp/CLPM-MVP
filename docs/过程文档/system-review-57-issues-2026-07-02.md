@@ -57,7 +57,7 @@
 | 31 | 跨模块 | B8: 前端路由与实现契约 §2 不一致（`/metric/weight-config` vs 契约 `/metric/type-weight`），孤儿视图 `type-weight.vue`/`level-weight.vue` | `router/routes/modules/metric.ts` | **已修复** |
 | 32 | 跨模块 | B9: 前端端口文档与配置不一致（`.env.development` 为 5666，AGENTS.md 为 5668） | `frontend/.env.development` vs `AGENTS.md` | **已修复** |
 | 33 | 算法 | 偏差2: 振荡检测用 `_crossing_regularity`(CV变异系数) 替代设计要求的 S_TA/S_TB(持续时间相似率)，数学含义不同 | `metric_calculator/oscillation.py:105-108` | **已修复** |
-| 34 | 算法 | 偏差4: ARMA 模型用 AR(10) 高阶近似 ARMA(2,1)，设计文档要求默认 (2,1)，可能过拟合 | `tasks/arma.py:23` | 待修复 |
+| 34 | 算法 | 偏差4: ARMA 模型用 AR(10) 高阶近似 ARMA(2,1)，设计文档要求默认 (2,1)，可能过拟合 | `tasks/arma.py:23` | **已修复** |
 | 35 | UX | UX8: `confidence-badge.vue` 色块圆点硬编码 hex 值，不响应主题切换 | `components/metric/confidence-badge.vue:47-54` | 待修复 |
 | 36 | UX | UX9: Ant Design `darkAlgorithm` 已接入，但 CLPM 业务自定义样式未对齐，原生组件与业务组件视觉断裂 | `app.vue:16-30` | 待修复 |
 | 37 | UX | UX13: 多处 `message.info("功能待后端接口支持")` 让用户困惑，应改为 disabled + tooltip | `views/loop/monitor.vue:524` 等 | 待修复 |
@@ -97,9 +97,9 @@
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 14 | 0 |
-| P2 中优先级 | 19 | 11 | 8 |
+| P2 中优先级 | 19 | 12 | 7 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **31** | **26** |
+| **合计** | **57** | **32** | **25** |
 
 ## 已修复记录
 
@@ -135,3 +135,4 @@
 | 31 | B8: 前端路由与实现契约不一致 + 孤儿视图 | 经文档研究确认：代码遵循 UI/UX 改造方案 v1.0 §6.1.4 "5 Tab 聚合"设计（指标定义/权重配置/引擎规则/任务策略/执行记录），`type-weight.vue` / `level-weight.vue` 是 `weight-config.vue` 的子组件（非孤儿视图）。问题源于实现契约 §2 路由清单未同步 UI/UX 改造方案 v1.0 的合并决策，仍列旧路由 `/metric/type-weight` / `/metric/level-weight`。修复内容：实现契约 §2 性能评估行的"当前主要路由"更新为 `/metric/dashboard`、`/metric/ranking`、`/metric/statistics`、`/metric/config`、`/metric/weight-config`、`/metric/engine-config`、`/metric/task-strategy`、`/metric/tasks`；§3 路由命名决策新增"指标配置 Tab 聚合"行，说明合并决策依据与子组件关系。无代码改动（代码已正确），仅文档追认 | `docs/设计文档/00-BASELINE/implementation-contract.md:27,38` | 前端类型检查通过（无代码改动） |
 | 32 | B9: 前端端口文档与配置不一致 | 实际配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=5666`，但 `AGENTS.md` / `CLAUDE.md` / `README.md` 三份文档误写为 5668。修复内容：① `AGENTS.md` line 66 "前端 (port 5668)" → "前端 (port 5666)" + line 86 "前端端口是 5668（非 5666）" → "前端端口是 5666（P2 #32 B9 修正：实际配置 VITE_PORT=5666）"；② `CLAUDE.md` line 67 同步 + line 87 同步；③ `README.md` line 77 "默认端口 5668" → "默认端口 5666" + line 80 "http://localhost:5668" → "http://localhost:5666"。`backend/app/core/config.py` CORS 白名单同时包含 5666 和 5668（兼容性配置，无需修改）。无代码改动，仅文档追认 | `AGENTS.md:66,86` + `CLAUDE.md:67,87` + `README.md:77,80` | 无代码改动（文档追认） |
 | 33 | 偏差2: 振荡检测 _crossing_regularity 替代 S_TA/S_TB | 严格按设计文档 §4.6.2 实现：① 步骤 5 新增持续时间相似率 S_TA/S_TB 计算（用同一 `_similarity_rate` 函数对 pos_dur/neg_dur 计算）；② 步骤 6 综合振荡率 `osc_value = min(s_a, s_b) * 100.0`（移除 `_crossing_regularity` 乘法）；③ `is_osc` 判定 `s_a >= τ AND s_b >= τ`（移除 `regularity >= 0.5` 条件，对齐伪代码 line 19-22）；④ 振荡周期改为 `2 * mean(pos_dur + neg_dur)`（对齐伪代码 line 23-25，原为 `2 * median(intervals)`）；⑤ 删除 `_crossing_regularity` 方法（CV 变异系数，不再使用）；⑥ details 输出新增 s_ta/s_tb 辅助诊断字段。测试调整：`test_random_noise_no_oscillation` → `test_random_noise_output_format`（设计文档算法在高频噪声下 S_A/S_B 达 1.0 是已知特性，S_TA/S_TB 提供辅助诊断区分）；新增 `TestOscillationSTaSTb` 测试类 3 个用例（S_TA/S_TB 输出/取值范围/regularity 字段移除）+ `TestOscillationDesignAlignment` 测试类 3 个用例（osc_value 公式/is_oscillating 仅依赖 S_A/S_B/周期计算公式） | `backend/app/services/metric_calculator/oscillation.py:6-21,92-152,225-248(删除)` + `backend/tests/test_metric_calculator/test_oscillation.py:1-209` | 全后端 1564 测试通过（1558 原有 + 6 新增） |
+| 34 | 偏差4: ARMA 模型默认阶数 10 → 2 | 严格对齐设计文档 §4.5.3 输入输出规范 `arma_order` 默认 (2,1)：① `DEFAULT_AR_ORDER = 10` → `2`（对齐 p=2）；② 新增 `DEFAULT_MA_ORDER = 1` 常量记录设计文档要求的 q=1（当前 AR 近似未实现 MA 部分，供未来实现真正 ARMA(2,1) 时使用）；③ `compute_settling_time` 新增阶数自动升级回退机制：AR(2) 对接近单位根信号 Green 函数发散时，自动尝试 [4, 6, 10] 阶数，首个稳定阶数胜出（用 `np.errstate` 抑制浮点溢出警告，含 NaN/Inf 检测）；④ 顺带修复 `fit_ar_model` 的 `solve_toeplitz` 调用 bug：原传入 2D `toeplitz()` 矩阵在 order=2 时返回 2x2 结果（flatten 后 4 个系数），改为直接传 1D 第一列 `autocorr[:order]`（scipy 内部用 Levinson 递归，更高效且返回 1D 向量）。测试调整：`test_scenarios.py::TestPureAr2Scenario::test_ar2_first_two_coefficients_match` 断言 `len(coeffs) == 2`（原为 10）；`test_ar2_residual_coefficients_near_zero` 改为显式 `order=10` 验证高阶辨识能力保留；新增 `TestArmaOrderDesignAlignment` 测试类 5 个用例（默认阶数验证/MA 阶数常量/慢速响应阶数升级/快速响应 AR(2) 稳定/自定义 ar_order 尊重） | `backend/app/tasks/arma.py:1-33,64-75,140-184` + `backend/app/services/metric_calculator/settling_time.py:29-31` + `backend/tests/test_arma.py:1-16,149-193` + `backend/tests/test_metric_calculator/test_scenarios.py:625-676` | 全后端 1569 测试通过（1564 原有 + 5 新增） |

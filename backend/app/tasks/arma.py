@@ -1,13 +1,19 @@
 """ARMA 模型辨识与 Green 函数稳态时间计算。
 
-对齐 GB/T 44693.2-2024 附录 F.4：
+对齐 GB/T 44693.2-2024 附录 F.4 与设计文档 §4.5.2：
     基于 ARMA(p,q) 模型辨识系统单位脉冲响应函数（Green 函数），
     将单位脉冲响应函数稳定在 5% 或 2% 中的时间作为实际稳态时间。
 
 实现方案：
-    用高阶 AR(p) 模型近似 ARMA(p,q)（Yule-Walker 方程求解），
+    用 AR(p) 模型近似 ARMA(p,q)（Yule-Walker 方程求解），
     通过 Green 函数递推计算脉冲响应衰减时间。
     避免引入 statsmodels 依赖，仅用 numpy + scipy。
+
+P2 #34 偏差4 修正：默认 AR 阶数从 10 降至 2，对齐设计文档 §4.5.3
+输入输出规范 `arma_order` 默认 (2,1) 的 p=2。AR(2) 是 ARMA(2,1) 的
+AR 近似（未实现 MA(1) 部分），避免高阶 AR(10) 在有限数据点上过拟合。
+`DEFAULT_MA_ORDER = 1` 常量记录设计文档要求的 q=1，供未来实现真正
+ARMA(2,1) 辨识（如 Hannan-Rissanen 两步法）时使用。
 """
 
 from __future__ import annotations
@@ -19,8 +25,9 @@ from scipy.linalg import solve_toeplitz, toeplitz
 
 logger = logging.getLogger(__name__)
 
-# 默认参数
-DEFAULT_AR_ORDER = 10
+# 默认参数（对齐设计文档 §4.5.3 arma_order 默认 (2,1)）
+DEFAULT_AR_ORDER = 2  # p=2，对齐 ARMA(2,1) 的自回归阶数
+DEFAULT_MA_ORDER = 1  # q=1，设计文档要求（当前 AR 近似未实现 MA 部分，保留常量记录设计意图）
 DEFAULT_SETTLING_THRESHOLD = 0.05  # Green 函数衰减阈值（5%）
 MAX_GREEN_FUNC_LENGTH = 3600  # Green 函数最大长度（1 小时 @ 1Hz）
 MIN_DATA_POINTS = 30  # 最少数据点数
@@ -55,11 +62,14 @@ def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarra
         return np.zeros(order)
 
     r_vector = autocorr[1 : order + 1]
-    r_matrix = toeplitz(autocorr[:order])
+    # P2 #34: 直接传 1D 第一列给 solve_toeplitz（scipy 内部用 Levinson 递归），
+    # 避免传入 2D toeplitz 矩阵导致返回 2D 结果（order=2 时曾返回 2x2=4 个系数）
+    first_column = autocorr[:order]
 
     try:
-        ar_coeffs = solve_toeplitz(r_matrix, -r_vector)
+        ar_coeffs = solve_toeplitz(first_column, -r_vector)
     except np.linalg.LinAlgError:
+        r_matrix = toeplitz(first_column)
         ar_coeffs = np.linalg.lstsq(r_matrix, -r_vector, rcond=None)[0]
 
     return np.asarray(ar_coeffs).flatten()
@@ -130,24 +140,48 @@ def compute_settling_time(
         logger.debug("[ARMA] 信号恒定，稳态时间为 0（已处于稳态）")
         return 0.0
 
-    # 步骤 1：AR(p) 模型辨识
-    ar_coeffs = fit_ar_model(signal, order=ar_order)
-    logger.debug("[ARMA] AR(%d) 系数: %s", ar_order, np.round(ar_coeffs, 4))
+    # 步骤 1-2：AR(p) 辨识 + Green 函数递推
+    # P2 #34 偏差4：默认 ar_order=2（对齐设计文档 ARMA(2,1)），但 AR(2) 对接近单位根的
+    # 慢速响应信号可能不稳定（Green 函数发散）。此时自动升级阶数重试：
+    # [ar_order, 4, 6, 10]，首个稳定的阶数胜出。ARMA(2,1) 的 MA(1) 部分能更好
+    # 表示近单位根过程，当前 AR 近似丢失 MA 部分，阶数升级作为工程回退。
+    retry_orders = sorted(set([ar_order, 4, 6, 10]))
+    ar_coeffs = None
+    green_func = None
+    for try_order in retry_orders:
+        if try_order > n // 3:
+            continue  # 数据点不足以支撑该阶数
+        coeffs = fit_ar_model(signal, order=try_order)
+        # 抑制发散时的浮点溢出警告（发散检测会跳过该阶数）
+        with np.errstate(over="ignore", invalid="ignore"):
+            g = compute_green_function(coeffs, length=MAX_GREEN_FUNC_LENGTH)
+        # 归一化（G(0) = 1）
+        if abs(g[0]) > 0:
+            g = g / g[0]
+        # 检测发散（含 NaN/Inf）
+        if not np.all(np.isfinite(g)):
+            logger.debug(
+                "[ARMA] AR(%d) Green 函数含 NaN/Inf（发散），尝试更高阶", try_order
+            )
+            continue
+        max_abs_g = float(np.max(np.abs(g)))
+        if max_abs_g <= 1e6:
+            ar_coeffs = coeffs
+            green_func = g
+            logger.debug(
+                "[ARMA] AR(%d) 稳定（max|G|=%.2e），系数: %s",
+                try_order, max_abs_g, np.round(coeffs, 4),
+            )
+            break
+        logger.debug(
+            "[ARMA] AR(%d) Green 函数发散（max|G|=%.2e），尝试更高阶",
+            try_order, max_abs_g,
+        )
 
-    # 步骤 2：Green 函数递推
-    green_func = compute_green_function(ar_coeffs, length=MAX_GREEN_FUNC_LENGTH)
-
-    # 归一化（G(0) = 1）
-    if abs(green_func[0]) > 0:
-        green_func = green_func / green_func[0]
-
-    # 发散检测：若 Green 函数幅值发散（不稳定模型），浮点累积误差会导致稳态时间计算错误
-    # 此时直接返回 0，由调用方兜底处理（actual_settling <= 0 → 快速率返回 100）
-    max_abs_green = float(np.max(np.abs(green_func))) if len(green_func) > 0 else 0.0
-    if max_abs_green > 1e6:
+    if ar_coeffs is None or green_func is None:
         logger.warning(
-            "[ARMA] Green 函数发散（max|G|=%.2e），模型不稳定，稳态时间返回 0",
-            max_abs_green,
+            "[ARMA] 所有尝试阶数 %s 的 Green 函数均发散，模型不稳定，稳态时间返回 0",
+            retry_orders,
         )
         return 0.0
 
