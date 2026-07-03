@@ -384,18 +384,18 @@ class TestComputeCompositeScoreV2:
 
         assert score == Decimal("44.73")
 
-    def test_score_v2_r_missing(self) -> None:
-        """R 缺失时降级 60%（基础评分 * 0.6）。
+    def test_score_v2_r_missing_is_inconclusive(self) -> None:
+        """R 缺失时视为 INCONCLUSIVE（P1 #18 修正，原为降级 60%）。
 
-        基础评分 = (0.2*0.9 + 0.3*0.8 + 0.5*0.7) / 1.0 * 100 = 77.00
-        降级后 = 77.00 * 0.6 = 46.20
+        设计文档 §4.10 未定义 R 缺失的降级逻辑，
+        原 base_score * 0.6 系数缺乏依据，统一并入 INCONCLUSIVE 路径。
         """
         type_weights = _make_type_weights("STABLE", 0.2, 0.3, 0.5)
         kpi_values = _make_kpi_values(effective_auto=None)
 
         score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "STABLE")
 
-        assert score == Decimal("46.20")
+        assert score is None
 
     def test_score_v2_no_weights(self) -> None:
         """无权重配置时使用 ConfidenceEvaluator 默认权重（a=0.25, f=0.20, s=0.55）。

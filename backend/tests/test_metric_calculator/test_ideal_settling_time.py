@@ -64,7 +64,7 @@ class TestIdealSettlingTime:
         assert result.details["source"] == "default"
 
     def test_default_by_control_type_tc(self):
-        """TC 默认 300 秒。"""
+        """TC 默认 180 秒（P1 #17 修正，旧值 300）。"""
         bundle = make_bundle(
             {"control_type": ["TC"]},
             tag_group="CONFIG",
@@ -73,10 +73,22 @@ class TestIdealSettlingTime:
         )
         calc = IdealSettlingTimeCalculator()
         result = calc.calculate(bundle)
-        assert result.value == 300.0
+        assert result.value == 180.0
+
+    def test_default_by_control_type_lc(self):
+        """LC 默认 600 秒（P1 #17 修正，旧值 300）。"""
+        bundle = make_bundle(
+            {"control_type": ["LC"]},
+            tag_group="CONFIG",
+            metric_code="ideal_settling_time",
+            n=1,
+        )
+        calc = IdealSettlingTimeCalculator()
+        result = calc.calculate(bundle)
+        assert result.value == 600.0
 
     def test_default_by_control_type_cc(self):
-        """CC 默认 600 秒。"""
+        """CC 默认 300 秒（P1 #17 修正，旧值 600）。"""
         bundle = make_bundle(
             {"control_type": ["CC"]},
             tag_group="CONFIG",
@@ -85,7 +97,7 @@ class TestIdealSettlingTime:
         )
         calc = IdealSettlingTimeCalculator()
         result = calc.calculate(bundle)
-        assert result.value == 600.0
+        assert result.value == 300.0
 
     def test_unknown_control_type_fallback(self):
         """未知控制类型 → 回退 120 秒。"""

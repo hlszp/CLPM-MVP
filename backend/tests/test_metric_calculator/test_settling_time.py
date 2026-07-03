@@ -3,7 +3,7 @@
 测试用例覆盖：
 - 恒定信号（settling=0）
 - 振荡信号（settling > 0）
-- 数据不足（< 30 点）
+- 数据不足（< 100 点，含旧阈值 30/30 边界回归测试）
 - 自定义采样周期
 - 大数据集
 
@@ -47,7 +47,7 @@ class TestSettlingTime:
         assert result.value >= 0.0
 
     def test_insufficient_data(self):
-        """数据不足（< 30 点）→ settling=0。"""
+        """数据不足（< 100 点）→ settling=0。"""
         n = 20
         pv = [50.0 + i * 0.1 for i in range(n)]
         sp = [50.0] * n
@@ -56,6 +56,45 @@ class TestSettlingTime:
         result = calc.calculate(bundle)
         assert result.value == 0.0
         assert result.details["reason"] == "insufficient_data"
+
+    def test_boundary_30_still_insufficient(self):
+        """旧阈值 30 点现在仍判为数据不足（防回归）。
+
+        P1 #16: MIN_POINTS 从 30 提升至 100，原 30 点边界点应仍判 insufficient_data。
+        """
+        n = 30
+        pv = [50.0 + i * 0.05 for i in range(n)]
+        sp = [50.0] * n
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="settling_time")
+        calc = SettlingTimeCalculator()
+        result = calc.calculate(bundle)
+        assert result.value == 0.0
+        assert result.details["reason"] == "insufficient_data"
+        assert result.details["min_required"] == 100
+
+    def test_boundary_99_still_insufficient(self):
+        """99 点（阈值减 1）仍判为数据不足。"""
+        n = 99
+        sp = [50.0] * n
+        pv = [50.0 + 10.0 * math.sin(i * 0.1) for i in range(n)]
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="settling_time")
+        calc = SettlingTimeCalculator()
+        result = calc.calculate(bundle)
+        assert result.details["reason"] == "insufficient_data"
+        assert result.details["sample_count"] == 99
+        assert result.details["min_required"] == 100
+
+    def test_boundary_100_passes_threshold(self):
+        """100 点正好达到阈值，不应返回 insufficient_data。"""
+        n = 100
+        sp = [50.0] * n
+        pv = [50.0 + 10.0 * math.sin(i * 0.1) for i in range(n)]
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="settling_time")
+        calc = SettlingTimeCalculator()
+        result = calc.calculate(bundle)
+        # 100 点正好通过阈值，reason 不应是 insufficient_data
+        assert result.details.get("reason") != "insufficient_data"
+        assert result.details["sample_count"] == 100
 
     def test_custom_sample_interval(self):
         """自定义采样周期（5s）。"""

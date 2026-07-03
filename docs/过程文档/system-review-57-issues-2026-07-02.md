@@ -32,9 +32,9 @@
 | 13 | 跨模块 | B3: 实现契约 §6 状态机声称 `ACTIVE/PAUSED/DECOMMISSIONED`，实际代码为 `READY/PARTIAL/INACTIVE` | `docs/.../implementation-contract.md` §6 | 待修复 |
 | 14 | 跨模块 | B4: 节点级聚合 `KPI_FIELDS` 仅含 9 项，缺失 `stiction_coeff`/`steady_state_time`/`output_travel_index`/`ideal_settling_time` | `services/node_performance.py:38-48` | 待修复 |
 | 15 | 跨模块 | B5: 节点级实时自控率绕过 DataPlanner 直查 TDengine（每回路并发 5 分钟窗口查询），不享缓存且硬编码 `DEFAULT_AUTO_MODES={1,2,3}` | `services/node_performance.py:115-195` | 待修复 |
-| 16 | 算法 | 偏差3: `settling_time.py` MIN_POINTS=30，设计要求 100；30 点 AR(10) 模型自由度不足，影响快速率 F | `metric_calculator/settling_time.py:30` | 待修复 |
-| 17 | 算法 | 偏差5: `ideal_settling_time.py` 默认值 TC=300(应180)/LC=300(应600)/CC=600(应300)，影响快速率 F 基准 T' | `metric_calculator/ideal_settling_time.py:27-33` | 待修复 |
-| 18 | 算法 | 偏差1: R 缺失时降级为基础评分 60%，设计文档 §4.10 未定义此降级逻辑，60% 系数缺乏依据 | `confidence_evaluator.py:222-225` | 待修复 |
+| 16 | 算法 | 偏差3: `settling_time.py` MIN_POINTS=30，设计要求 100；30 点 AR(10) 模型自由度不足，影响快速率 F | `metric_calculator/settling_time.py:30` | **已修复** |
+| 17 | 算法 | 偏差5: `ideal_settling_time.py` 默认值 TC=300(应180)/LC=300(应600)/CC=600(应300)，影响快速率 F 基准 T' | `metric_calculator/ideal_settling_time.py:27-33` | **已修复** |
+| 18 | 算法 | 偏差1: R 缺失时降级为基础评分 60%，设计文档 §4.10 未定义此降级逻辑，60% 系数缺乏依据 | `confidence_evaluator.py:222-225` | **已修复** |
 | 19 | UX | UX3: `preferences.ts` 中 `THEME_COLORS` 为静态常量（不响应主题切换），`detail.vue` 直接使用而非 `useClpmTheme()` | `preferences.ts:38-49` | 待修复 |
 | 20 | UX | UX6: 批量配置入口隐藏在独立 Tab 中，需跨 Tab 操作（选中回路→切换Tab→打开弹窗），流程不直观 | `views/loop/manage.vue:1129-1139` | 待修复 |
 | 21 | UX | UX7: 大量 `catch {}` 静默吞错，页面状态不一致且无错误引导，`ClpmDataCanvas` 的 error/retry 能力未使用 | `views/loop/manage.vue` 多处 | 待修复 |
@@ -96,10 +96,10 @@
 | 优先级 | 数量 | 已修复 | 待修复 |
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
-| P1 高优先级 | 14 | 0 | 14 |
+| P1 高优先级 | 14 | 3 | 11 |
 | P2 中优先级 | 19 | 0 | 19 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **6** | **51** |
+| **合计** | **57** | **9** | **48** |
 
 ## 已修复记录
 
@@ -111,3 +111,6 @@
 | 5+6 | UX1+UX2: 暗色模式 292 处硬编码 | `industrial-light.css` 新增 10 子节 `.dark` 覆盖块（CSS 变量 / gray 反转 / 彩色半透明 / 表头 hover 选中行 / 滚动条 / 工具类） | `styles/industrial-light.css` | 前端类型检查通过 |
 | 7 | UX4: AAS 同步进度反馈 | 后端：`AasConfigInfo` schema 新增 `lastSyncAt`/`lastSyncStatus` 字段；`aas_config.py` 新增 `set_last_sync_status` 写入 sys_config；`trigger_aas_sync` 端点预先置为 PROCESSING；`sync_tags_from_aas` 同步成功置 SUCCESS/异常置 FAILED。前端：`aas.vue` `handleSync` 改为触发后轮询 `getAasConfigApi`，新增进度 Alert 与超时（90s）保护，`onUnmounted` 清理定时器 | `backend/.../schemas/aas.py` + `services/aas_config.py` + `api/v1/endpoints/aas.py` + `services/aas_sync.py` + `frontend/.../views/loop/aas.vue` + `tests/test_aas.py` | 21 个 AAS 测试通过；前端类型检查通过 |
 | 8 | UX5: 异步操作进度反馈 | 在 `manage.vue`（批量配置/批量删除/导出/导入）与 `tuning/algorithm.vue`/`model.vue`/`simulation.vue`（PID 整定/模型辨识/闭环仿真）的耗时操作入口添加 `message.loading(content, 0)` 即时反馈，完成后切换为 `message.success`/`message.error`；按钮 loading 仍保留用于视觉禁用 | `frontend/.../views/loop/manage.vue` + `views/tuning/algorithm.vue` + `views/tuning/model.vue` + `views/tuning/simulation.vue` | 前端类型检查通过 |
+| 16 | 偏差3: settling_time MIN_POINTS=30 | `MIN_POINTS` 从 30 提升至 100（AR(10) 模型自由度要求）；新增 3 个边界测试（n=30/99/100）防回归；原 `test_insufficient_data`（n=20）保留 | `metric_calculator/settling_time.py:30` + `tests/test_metric_calculator/test_settling_time.py` | 全后端 1492 测试通过 |
+| 17 | 偏差5: ideal_settling_time 默认值错误 | `DEFAULT_IDEAL_SETTLING` 修正：TC 300→180 / LC 300→600 / CC 600→300；新增 LC 测试用例；3 个原测试断言更新（TC/CC 期望值同步） | `metric_calculator/ideal_settling_time.py:27-33` + `tests/test_metric_calculator/test_ideal_settling_time.py` | 全后端 1492 测试通过 |
+| 18 | 偏差1: R 缺失降级 60% 无依据 | 删除 `base_score * 0.6` 降级分支；R 缺失（r_result is None）/ R value=None / R 可信度 E 级统一并入 INCONCLUSIVE 路径，返回 value=None + confidence=E；血缘 R 缺失时回退到 accuracy_rate；重写原固化错误行为的 `test_R_missing_degrades_to_60_percent` 为 `test_R_missing_treated_as_inconclusive` + 新增 `test_R_value_none_treated_as_inconclusive` | `services/confidence_evaluator.py:162-189,227-234` + `tests/test_metric_calculator/test_confidence_evaluator.py` + `tests/test_loop_config.py:387-398` | 全后端 1492 测试通过 |

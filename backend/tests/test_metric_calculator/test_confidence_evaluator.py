@@ -5,8 +5,8 @@
 - build_lineage: 数据血缘 8 字段构建
 - compute_composite_score: 综合评分 v2 计算
     - 正常（A/F/S/R 均存在）
-    - R INCONCLUSIVE → 评分留空
-    - R 缺失 → 基础评分 60%
+    - R INCONCLUSIVE（value=None 或可信度 E）→ 评分留空
+    - R 缺失 → 视为 INCONCLUSIVE（P1 #18 修正，原为降级 60%）
     - 所有权重为 0 → 0
     - 核心指标缺失 → 0 计入分子
     - 评分限制在 [0, 100]
@@ -193,15 +193,29 @@ class TestComputeCompositeScore:
         assert score.value is None
         assert score.confidence_level == ConfidenceLevel.E.value
 
-    def test_R_missing_degrades_to_60_percent(self):
-        """R 缺失 → 评分为基础评分的 60%。"""
+    def test_R_missing_treated_as_inconclusive(self):
+        """R 缺失 → 视为 INCONCLUSIVE（P1 #18 修正，原为降级 60%）。
+
+        设计文档 §4.10 未定义 R 缺失的降级逻辑，
+        原 base_score * 0.6 系数缺乏依据，统一并入 INCONCLUSIVE 路径。
+        """
         results = _make_full_results(a=100.0, f=100.0, s=100.0, r=100.0)
         # 删除 R
         del results[DISCOUNT_METRIC_CODE]
         score = ConfidenceEvaluator.compute_composite_score(results)
-        assert score.value is not None
-        # base_score = 100, R 缺失 → 100 * 0.6 = 60
-        assert score.value == 60.0
+        assert score.value is None
+        assert score.confidence_level == ConfidenceLevel.E.value
+        assert score.details["reason"] == "effective_auto_rate INCONCLUSIVE"
+
+    def test_R_value_none_treated_as_inconclusive(self):
+        """R 存在但 value=None → 视为 INCONCLUSIVE（与缺失一致）。"""
+        results = _make_full_results(a=100.0, f=100.0, s=100.0, r=100.0)
+        results[DISCOUNT_METRIC_CODE] = _make_metric_result(
+            DISCOUNT_METRIC_CODE, None, confidence="A"
+        )
+        score = ConfidenceEvaluator.compute_composite_score(results)
+        assert score.value is None
+        assert score.confidence_level == ConfidenceLevel.E.value
 
     def test_zero_total_weight_returns_zero(self):
         """所有权重为 0 → 评分为 0。"""

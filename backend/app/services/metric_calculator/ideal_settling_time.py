@@ -6,8 +6,8 @@
     3. 基于回路类型的默认值
 
 默认值（按控制类型，单位：秒）：
-    | FC | PC | TC | LC | CC | 其他 |
-    | 30 | 60 | 300| 300| 600| 120  |
+    | FC | PC | TC | LC  | CC | 其他 |
+    | 30 | 60 | 180| 600 | 300| 120  |
 
 设计依据：算法说明 §4.5；GB/T 44693.2-2024 附录 B.4
 
@@ -23,13 +23,14 @@ from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
 
-#: 按控制类型的默认理想稳态时间（秒）
+#: 按控制类型的默认理想稳态时间（秒，P1 #17 修正）
+#: 旧值：TC=300/LC=300/CC=600（错误）；新值：TC=180/LC=600/CC=300（设计要求）
 DEFAULT_IDEAL_SETTLING: dict[str, float] = {
     ControlType.FLOW.value: 30.0,
     ControlType.PRESSURE.value: 60.0,
-    ControlType.TEMPERATURE.value: 300.0,
-    ControlType.LEVEL.value: 300.0,
-    ControlType.COMPOSITION.value: 600.0,
+    ControlType.TEMPERATURE.value: 180.0,
+    ControlType.LEVEL.value: 600.0,
+    ControlType.COMPOSITION.value: 300.0,
 }
 
 #: 默认值（未知控制类型）

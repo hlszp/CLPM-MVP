@@ -144,7 +144,7 @@ class ConfidenceEvaluator:
         r_result = metric_results.get(DISCOUNT_METRIC_CODE)
         r_value = r_result.value if r_result else None
 
-        logger.debug(
+        logger.info(
             "[综合评分] 输入: A=%s, F=%s, S=%s, R=%s, weights(a=%.3f, f=%.3f, s=%.3f)",
             metric_results.get("accuracy_rate").value
             if metric_results.get("accuracy_rate")
@@ -159,14 +159,27 @@ class ConfidenceEvaluator:
             s,
         )
 
-        # R 为 INCONCLUSIVE（None 且可信度 E）→ 评分留空
-        if r_result is not None and r_result.confidence_level == ConfidenceLevel.E.value:
-            logger.debug("[综合评分] R 可信度 E 级，评分留空（INCONCLUSIVE）")
-            lineage = (
-                r_result.lineage
-                if r_result.lineage
-                else DataLineage(algorithm_version=ALGORITHM_VERSION)
+        # R 缺失或可信度 E 级 → 评分留空（INCONCLUSIVE）
+        # P1 #18: 移除原"R 缺失降级 60%"无依据逻辑，统一视为 INCONCLUSIVE
+        if (
+            r_result is None
+            or r_result.value is None
+            or r_result.confidence_level == ConfidenceLevel.E.value
+        ):
+            logger.info(
+                "[综合评分] R 缺失或可信度 E 级，评分留空（INCONCLUSIVE）: r_result=%s",
+                "None" if r_result is None else f"value={r_result.value}, conf={r_result.confidence_level}",
             )
+            if r_result and r_result.lineage:
+                lineage = r_result.lineage
+            else:
+                # R 缺失时回退到 accuracy_rate 的血缘
+                acc_result = metric_results.get("accuracy_rate")
+                lineage = (
+                    acc_result.lineage
+                    if acc_result and acc_result.lineage
+                    else DataLineage(algorithm_version=ALGORITHM_VERSION)
+                )
             return MetricResult(
                 metric_code="composite_score",
                 value=None,
@@ -184,8 +197,20 @@ class ConfidenceEvaluator:
                 # 归一化到 [0,1] 再加权
                 eta = max(0.0, min(1.0, val / 100.0))
                 weighted_sum += weight * eta
+                logger.info(
+                    "[综合评分] 加权项 %s: value=%.4f eta=%.4f weight=%.3f 贡献=%.4f",
+                    code, float(val), eta, weight, weight * eta,
+                )
+            else:
+                logger.info(
+                    "[综合评分] 加权项 %s: value=%s weight=%.3f 跳过（值缺失或权重为0）",
+                    code, val, weight,
+                )
 
         total_weight = a + f + s
+        logger.info(
+            "[综合评分] weighted_sum=%.4f, total_weight=%.3f", weighted_sum, total_weight
+        )
         if total_weight <= 0:
             logger.warning("[综合评分] 所有权重总和为 0，返回 0")
             return MetricResult(
@@ -200,13 +225,13 @@ class ConfidenceEvaluator:
         base_score = weighted_sum / total_weight * 100.0
 
         # R 作为乘数：P = base_score * R/100
-        if r_value is not None:
-            r_norm = max(0.0, min(1.0, r_value / 100.0))
-            score = base_score * r_norm
-        else:
-            # R 缺失时降级为基础评分的 60%
-            logger.debug("[综合评分] R 缺失，评分降级为基础评分的 60%%")
-            score = base_score * 0.6
+        # R 缺失或 INCONCLUSIVE 已在前面提前返回，此处 r_value 必为有效值
+        r_norm = max(0.0, min(1.0, r_value / 100.0))
+        score = base_score * r_norm
+        logger.info(
+            "[综合评分] R 折扣: R=%.4f r_norm=%.4f, base_score=%.4f → score=%.4f",
+            float(r_value), r_norm, base_score, score,
+        )
 
         score = max(0.0, min(100.0, score))
         score = round(score, 2)
@@ -222,8 +247,8 @@ class ConfidenceEvaluator:
             else DataLineage(algorithm_version=ALGORITHM_VERSION)
         )
 
-        logger.debug(
-            "[综合评分] base_score=%.4f, R=%s, score=%.2f, confidence=%s",
+        logger.info(
+            "[综合评分] 最终结果: base_score=%.4f, R=%s, score=%.2f, confidence=%s",
             base_score,
             r_value,
             score,
