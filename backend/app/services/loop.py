@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import openpyxl
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -176,8 +176,22 @@ async def list_loops(
             )
         )
 
-    # controlMode 从 MODE tag 读取，需要 join loop_tag_mapping + tag_registry
-    # 简化处理：先查回路，再过滤 controlMode
+    # controlMode 过滤下沉到 SQL 层（EXISTS 子查询），避免后置过滤导致 total 与分页错乱
+    if control_mode:
+        mode_values = _control_mode_to_values(control_mode)
+        if not mode_values:
+            # 无法识别的控制模式标签，直接返回空结果
+            return {"items": [], "total": 0, "page": page, "pageSize": page_size}
+        mode_exists = (
+            select(LoopTagMapping.tag_id)
+            .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+            .where(LoopTagMapping.loop_id == LoopLedger.id)
+            .where(LoopTagMapping.tag_role == "MODE")
+            .where(TagRegistry.current_value.in_(mode_values))
+            .exists()
+        )
+        conditions.append(mode_exists)
+
     count_stmt = select(func.count()).select_from(LoopLedger)
     for cond in conditions:
         count_stmt = count_stmt.where(cond)
@@ -244,11 +258,6 @@ async def list_loops(
             }
         )
 
-    # controlMode 过滤（后置过滤）
-    if control_mode:
-        items = [i for i in items if (i.get("controlMode") or "").lower() == control_mode.lower()]
-        total = len(items)
-
     return {
         "items": items,
         "total": total,
@@ -263,6 +272,32 @@ def _mode_value_to_label(value: float | None) -> str | None:
         return None
     mapping = {0: "Manual", 1: "Auto", 2: "Cascade", 3: "Cascade"}
     return mapping.get(int(value), "Unknown")
+
+
+# 反向映射：控制模式标签 → MODE 值集合
+# 与 _mode_value_to_label 保持一致（Cascade 对应 2 和 3）
+_CONTROL_MODE_VALUES: dict[str, set[int]] = {
+    "manual": {0},
+    "auto": {1},
+    "cascade": {2, 3},
+}
+
+
+def _control_mode_to_values(control_mode: str) -> list[int]:
+    """控制模式标签 → MODE 值列表（大小写不敏感）。
+
+    用于 SQL 层 EXISTS 子查询过滤，将前端传入的 controlMode label
+    反向映射为 TagRegistry.current_value 的合法值集合。
+
+    Args:
+        control_mode: 控制模式标签（Manual/Auto/Cascade），大小写不敏感
+
+    Returns:
+        MODE 值列表（如 "Auto" → [1]）；无法识别时返回空列表
+    """
+    if not control_mode:
+        return []
+    return sorted(_CONTROL_MODE_VALUES.get(control_mode.lower(), set()))
 
 
 async def create_loop(

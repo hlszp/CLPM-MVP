@@ -254,3 +254,65 @@ class TestStatusDerivation:
         mappings = {role: MagicMock() for role in ("PV", "SP", "OP", "MODE")}
         status = await derive_loop_status(db, loop, mappings=mappings)
         assert status == "READY"
+
+
+class TestControlModeFilter:
+    """controlMode SQL 过滤反向映射单元测试（P2 #23 B2）。
+
+    验证 _control_mode_to_values 与 _mode_value_to_label 保持一致，
+    确保 SQL 层 EXISTS 子查询的过滤口径与 Python 层标签生成一致。
+    """
+
+    def test_auto_label_maps_to_one(self) -> None:
+        from app.services.loop import _control_mode_to_values
+
+        assert _control_mode_to_values("Auto") == [1]
+
+    def test_manual_label_maps_to_zero(self) -> None:
+        from app.services.loop import _control_mode_to_values
+
+        assert _control_mode_to_values("Manual") == [0]
+
+    def test_cascade_label_maps_to_two_and_three(self) -> None:
+        """Cascade 对应 MODE=2 和 MODE=3（与 _mode_value_to_label 一致）。"""
+        from app.services.loop import _control_mode_to_values
+
+        assert _control_mode_to_values("Cascade") == [2, 3]
+
+    def test_case_insensitive(self) -> None:
+        from app.services.loop import _control_mode_to_values
+
+        assert _control_mode_to_values("AUTO") == [1]
+        assert _control_mode_to_values("auto") == [1]
+        assert _control_mode_to_values("Cascade") == [2, 3]
+
+    def test_unknown_label_returns_empty(self) -> None:
+        """未识别的标签返回空列表，调用方据此返回空结果。"""
+        from app.services.loop import _control_mode_to_values
+
+        assert _control_mode_to_values("Unknown") == []
+        assert _control_mode_to_values("Telepathic") == []
+
+    def test_empty_input_returns_empty(self) -> None:
+        from app.services.loop import _control_mode_to_values
+
+        assert _control_mode_to_values("") == []
+        assert _control_mode_to_values(None) == []
+
+    def test_reverse_mapping_covers_all_known_labels(self) -> None:
+        """_mode_value_to_label 的所有已知输出都应有反向映射。"""
+        from app.services.loop import _control_mode_to_values, _mode_value_to_label
+
+        known_values = [0, 1, 2, 3]
+        labels = {_mode_value_to_label(float(v)) for v in known_values}
+        # 移除 None / Unknown
+        labels -= {None, "Unknown"}
+        for label in labels:
+            assert _control_mode_to_values(label), f"标签 {label} 缺失反向映射"
+
+    def test_unknown_mode_value_maps_to_unknown_label(self) -> None:
+        """MODE 值不在 {0,1,2,3} 时返回 Unknown 标签（无法 SQL 过滤）。"""
+        from app.services.loop import _mode_value_to_label
+
+        assert _mode_value_to_label(99.0) == "Unknown"
+        assert _mode_value_to_label(-1.0) == "Unknown"
