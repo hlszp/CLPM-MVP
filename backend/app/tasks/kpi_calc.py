@@ -1506,16 +1506,12 @@ async def _persist_snapshot(
             status,
             score,
         )
-        # 注意：_save_custom_snapshot 不接受 sampling_freq/quality_policy
-        # （kpi_snapshot_custom 表无此二字段），需剔除
-        custom_kwargs = {
-            k: v for k, v in kwargs.items()
-            if k not in ("sampling_freq", "quality_policy")
-        }
+        # P2 #29 B6: _save_custom_snapshot 已支持 sampling_freq/quality_policy
+        # 与 kpi_snapshot_hourly 对齐，自定义任务具备完整数据血缘追溯能力
         return await _save_custom_snapshot(
             db=db,
             task_id=custom_task_id,
-            **custom_kwargs,
+            **kwargs,
         )
     # 标准任务 → 写入 kpi_snapshot_hourly（参与聚合）
     logger.info(
@@ -1679,6 +1675,8 @@ async def _save_custom_snapshot(
     output_travel_index: Decimal | None = None,
     ideal_settling_time: Decimal | None = None,
     algorithm_version: str | None = None,
+    sampling_freq: str | None = None,
+    quality_policy: str | None = None,
     valid_rate: Decimal | None = None,
     confidence_level: str | None = None,
     data_lineage: dict | None = None,
@@ -1688,6 +1686,9 @@ async def _save_custom_snapshot(
     PRD §4.3.7.B / FDS §5.3.11：自定义任务结果写入 kpi_snapshot_custom，
     通过 task_id 区分独立任务，**不参与装置级聚合**（节点聚合仅查
     kpi_snapshot_hourly）。
+
+    P2 #29 B6：补齐 ``sampling_freq`` / ``quality_policy`` 数据血缘字段，
+    与 ``kpi_snapshot_hourly`` 对齐，使自定义任务具备完整数据血缘追溯能力。
 
     幂等：相同 (task_id, loop_id) 不重复写入，覆盖更新（对齐
     UniqueConstraint("task_id", "loop_id")）。
@@ -1723,6 +1724,8 @@ async def _save_custom_snapshot(
         existing.output_travel_index = output_travel_index
         existing.ideal_settling_time = ideal_settling_time
         existing.algorithm_version = algorithm_version
+        existing.sampling_freq = sampling_freq
+        existing.quality_policy = quality_policy
         existing.valid_rate = valid_rate
         existing.confidence_level = confidence_level
         existing.data_lineage = data_lineage
@@ -1755,6 +1758,8 @@ async def _save_custom_snapshot(
             output_travel_index=output_travel_index,
             ideal_settling_time=ideal_settling_time,
             algorithm_version=algorithm_version,
+            sampling_freq=sampling_freq,
+            quality_policy=quality_policy,
             valid_rate=valid_rate,
             confidence_level=confidence_level,
             data_lineage=data_lineage,

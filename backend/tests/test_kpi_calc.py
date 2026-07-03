@@ -50,7 +50,9 @@ from app.tasks.kpi_calc import (
     _find_nearest_value,
     _get_tag_name,
     _loop_type_to_control_type,
+    _persist_snapshot,
     _quantize,
+    _save_custom_snapshot,
     _save_snapshot,
     _ts_to_float,
     calculate_hourly_kpi,
@@ -1919,3 +1921,196 @@ class TestMetricCodeMapping:
         assert _DB_TO_CALCULATOR_METRIC_CODE["stiction_coeff"] == "stiction_index"
         assert _DB_TO_CALCULATOR_METRIC_CODE["steady_state_time"] == "settling_time"
         assert _DB_TO_CALCULATOR_METRIC_CODE["output_travel_index"] == "output_trip_index"
+
+
+# ===========================================================================
+# P2 #29 B6: _save_custom_snapshot 数据血缘字段写入测试
+# ===========================================================================
+
+
+class TestSaveCustomSnapshotLineage:
+    """P2 #29 B6: 自定义任务快照表数据血缘字段写入测试。
+
+    验证 sampling_freq/quality_policy 与 kpi_snapshot_hourly 对齐，
+    自定义任务具备完整数据血缘追溯能力。
+    """
+
+    @pytest.mark.asyncio
+    async def test_new_custom_snapshot_writes_lineage_fields(self) -> None:
+        """新增 custom 快照时 sampling_freq/quality_policy 被写入。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        db.add = MagicMock()
+
+        ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
+        ts_end = datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC)
+
+        result = await _save_custom_snapshot(
+            db=db,
+            task_id="task-p229-001",
+            loop_id="loop-p229",
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="SUCCESS",
+            score=Decimal("82.50"),
+            sampling_freq="1s",
+            quality_policy="TDengine",
+            algorithm_version=ALGORITHM_VERSION,
+            valid_rate=Decimal("0.9876"),
+            confidence_level="A",
+            data_lineage={"algorithm_version": ALGORITHM_VERSION},
+        )
+
+        db.add.assert_called_once()
+        added_obj = db.add.call_args.args[0]
+        assert added_obj.sampling_freq == "1s"
+        assert added_obj.quality_policy == "TDengine"
+        assert added_obj.valid_rate == Decimal("0.9876")
+        assert added_obj.confidence_level == "A"
+        assert added_obj.algorithm_version == ALGORITHM_VERSION
+
+        assert result["taskId"] == "task-p229-001"
+        assert result["loopId"] == "loop-p229"
+        assert result["status"] == "SUCCESS"
+        assert result["score"] == 82.5
+
+    @pytest.mark.asyncio
+    async def test_update_existing_custom_snapshot_writes_lineage_fields(self) -> None:
+        """更新已有 custom 快照时 sampling_freq/quality_policy 被写入。"""
+        existing = MagicMock()
+        existing.id = "existing-custom-id"
+        existing.sampling_freq = None
+        existing.quality_policy = None
+        existing.algorithm_version = None
+        existing.valid_rate = None
+        existing.confidence_level = None
+        existing.data_lineage = None
+        existing.score = None
+        existing.status = None
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(existing))
+        db.add = MagicMock()
+
+        ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
+        ts_end = datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC)
+
+        await _save_custom_snapshot(
+            db=db,
+            task_id="task-p229-002",
+            loop_id="loop-p229",
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="SUCCESS",
+            score=Decimal("88.00"),
+            sampling_freq="1min",
+            quality_policy="OPC_DA",
+            algorithm_version=ALGORITHM_VERSION,
+            valid_rate=Decimal("0.95"),
+            confidence_level="B",
+            data_lineage={"algorithm_version": ALGORITHM_VERSION},
+        )
+
+        db.add.assert_not_called()
+        assert existing.sampling_freq == "1min"
+        assert existing.quality_policy == "OPC_DA"
+        assert existing.valid_rate == Decimal("0.95")
+        assert existing.confidence_level == "B"
+        assert existing.algorithm_version == ALGORITHM_VERSION
+
+    @pytest.mark.asyncio
+    async def test_custom_snapshot_lineage_none_when_not_provided(self) -> None:
+        """未提供 sampling_freq/quality_policy 时写入 None（向后兼容）。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        db.add = MagicMock()
+
+        ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
+        ts_end = datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC)
+
+        await _save_custom_snapshot(
+            db=db,
+            task_id="task-p229-003",
+            loop_id="loop-p229",
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="INCONCLUSIVE",
+        )
+
+        db.add.assert_called_once()
+        added_obj = db.add.call_args.args[0]
+        assert added_obj.sampling_freq is None
+        assert added_obj.quality_policy is None
+
+
+class TestPersistSnapshotLineagePassThrough:
+    """P2 #29 B6: _persist_snapshot 不再剔除 sampling_freq/quality_policy。
+
+    验证自定义任务路径将完整 kwargs 透传给 _save_custom_snapshot。
+    """
+
+    @pytest.mark.asyncio
+    async def test_persist_custom_snapshot_passes_lineage_fields(self) -> None:
+        """_persist_snapshot 在 custom_task_id 模式下透传 sampling_freq/quality_policy。"""
+        with patch(
+            "app.tasks.kpi_calc._save_custom_snapshot", new_callable=AsyncMock
+        ) as mock_save_custom:
+            mock_save_custom.return_value = {"taskId": "task-p229", "loopId": "loop-1"}
+
+            ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
+            ts_end = datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC)
+
+            await _persist_snapshot(
+                db=AsyncMock(),
+                custom_task_id="task-p229",
+                loop_id="loop-1",
+                ts_start=ts_start,
+                ts_end=ts_end,
+                status="SUCCESS",
+                score=Decimal("80.00"),
+                sampling_freq="1s",
+                quality_policy="TDengine",
+                algorithm_version=ALGORITHM_VERSION,
+                valid_rate=Decimal("0.95"),
+                confidence_level="A",
+                data_lineage={"algorithm_version": ALGORITHM_VERSION},
+            )
+
+            call_kwargs = mock_save_custom.call_args.kwargs
+            assert call_kwargs["sampling_freq"] == "1s"
+            assert call_kwargs["quality_policy"] == "TDengine"
+            assert call_kwargs["task_id"] == "task-p229"
+            assert call_kwargs["loop_id"] == "loop-1"
+
+    @pytest.mark.asyncio
+    async def test_persist_standard_snapshot_still_writes_lineage_fields(self) -> None:
+        """_persist_snapshot 标准任务路径仍透传 sampling_freq/quality_policy 到 _save_snapshot。"""
+        with patch(
+            "app.tasks.kpi_calc._save_snapshot", new_callable=AsyncMock
+        ) as mock_save:
+            mock_save.return_value = {"loopId": "loop-1"}
+
+            ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
+            ts_end = datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC)
+
+            await _persist_snapshot(
+                db=AsyncMock(),
+                custom_task_id=None,
+                loop_id="loop-1",
+                ts_start=ts_start,
+                ts_end=ts_end,
+                status="SUCCESS",
+                score=Decimal("80.00"),
+                sampling_freq="1s",
+                quality_policy="TDengine",
+                algorithm_version=ALGORITHM_VERSION,
+                valid_rate=Decimal("0.95"),
+                confidence_level="A",
+                data_lineage={"algorithm_version": ALGORITHM_VERSION},
+            )
+
+            call_kwargs = mock_save.call_args.kwargs
+            assert call_kwargs["sampling_freq"] == "1s"
+            assert call_kwargs["quality_policy"] == "TDengine"
+            assert "task_id" not in call_kwargs
+

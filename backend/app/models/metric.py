@@ -148,6 +148,9 @@ class KpiSnapshotCustom(Base):
     ideal_settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     auto_mode_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # P2 #29 B6: 补齐数据血缘字段（与 kpi_snapshot_hourly 对齐）
+    sampling_freq: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    quality_policy: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     confidence_level: Mapped[str | None] = mapped_column(CHAR(1), nullable=True)
     valid_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
