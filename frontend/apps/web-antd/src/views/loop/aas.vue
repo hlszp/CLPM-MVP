@@ -5,7 +5,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
  * S2-LOOP-008 AAS 连接配置页
  *
  * 对齐 D06 §6 + IDS v3.2 §2.2.5 ~ §2.2.6
- * - 表单展示 AAS 连接配置（endpoint/syncInterval/enabled）
+ * - 表单展示 AAS 连接配置（endpoint/syncIntervalSeconds/enabled）
  * - "测试连接"按钮调用 POST /aas/config/test
  * - "立即同步"按钮调用 POST /aas/sync
  * - 同步日志/状态展示
@@ -50,7 +50,7 @@ const configLoading = ref(false);
 const configSaving = ref(false);
 const configForm = reactive({
   endpoint: '',
-  syncInterval: 60,
+  syncIntervalSeconds: 60,
   enabled: false,
 });
 const lastSyncAt = ref<null | string>(null);
@@ -219,7 +219,7 @@ async function loadConfig() {
   try {
     const data = await getAasConfigApi();
     configForm.endpoint = data.endpoint;
-    configForm.syncInterval = data.syncInterval;
+    configForm.syncIntervalSeconds = data.syncIntervalSeconds;
     configForm.enabled = data.enabled;
     lastSyncAt.value = data.lastSyncAt;
     lastSyncStatus.value = data.lastSyncStatus;
@@ -236,7 +236,7 @@ async function handleSaveConfig() {
   try {
     await updateAasConfigApi({
       endpoint: configForm.endpoint,
-      syncInterval: configForm.syncInterval,
+      syncIntervalSeconds: configForm.syncIntervalSeconds,
       enabled: configForm.enabled,
     });
     message.success('配置保存成功');
@@ -260,13 +260,13 @@ async function handleTestConnection() {
     // 先保存配置再测试
     await updateAasConfigApi({
       endpoint: configForm.endpoint,
-      syncInterval: configForm.syncInterval,
+      syncIntervalSeconds: configForm.syncIntervalSeconds,
       enabled: configForm.enabled,
     });
     const result = await testAasConfigApi();
     testResult.value = result;
     if (result.success) {
-      message.success(`连接成功，延迟 ${result.latency}ms`);
+      message.success(`连接成功，延迟 ${result.latencyMs}ms`);
     } else {
       message.error(`连接失败：${result.message}`);
     }
@@ -385,9 +385,9 @@ onUnmounted(() => {
                 placeholder="例如：opc.tcp://192.168.1.100:4840"
               />
             </FormItem>
-            <FormItem label="同步周期（秒）" name="syncInterval">
+            <FormItem label="同步周期（秒）" name="syncIntervalSeconds">
               <InputNumber
-                v-model:value="configForm.syncInterval"
+                v-model:value="configForm.syncIntervalSeconds"
                 :min="10"
                 :max="3600"
                 class="w-full"
@@ -426,7 +426,7 @@ onUnmounted(() => {
               {{ testResult.success ? '成功' : '失败' }}
             </Tag>
             <span v-if="testResult.success">
-              延迟：{{ testResult.latency }}ms
+              延迟：{{ testResult.latencyMs }}ms
             </span>
             <span v-else class="text-red-500">{{ testResult.message }}</span>
           </div>

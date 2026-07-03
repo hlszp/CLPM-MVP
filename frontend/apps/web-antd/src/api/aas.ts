@@ -53,7 +53,8 @@ export namespace AasApi {
   /** AAS 连接配置 */
   export interface AasConfig {
     endpoint: string;
-    syncInterval: number;
+    /** 同步周期（秒），对齐后端 syncIntervalSeconds */
+    syncIntervalSeconds: number;
     enabled: boolean;
     lastSyncAt: null | string;
     lastSyncStatus: null | SyncStatus;
@@ -62,14 +63,16 @@ export namespace AasApi {
   /** 更新 AAS 配置参数 */
   export interface UpdateAasConfigParams {
     endpoint: string;
-    syncInterval: number;
+    /** 同步周期（秒） */
+    syncIntervalSeconds: number;
     enabled: boolean;
   }
 
   /** 测试连接结果 */
   export interface AasConfigTestResult {
     success: boolean;
-    latency: number;
+    /** 延迟（毫秒），对齐后端 latencyMs */
+    latencyMs: number | null;
     message: string;
   }
 }
