@@ -14,11 +14,12 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { AasApi } from '#/api/aas';
 import type { LoopApi } from '#/api/loop';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Alert,
   Badge,
   Button,
   Form,
@@ -61,6 +62,82 @@ const testResult = ref<AasApi.AasConfigTestResult | null>(null);
 
 // Sync
 const syncing = ref(false);
+/** 同步触发后已经过的秒数（用于 UI 提示与超时判断） */
+const syncElapsedSec = ref(0);
+/** 同步轮询定时器 */
+let syncPollTimer: null | ReturnType<typeof setInterval> = null;
+/** 同步耗时计时器（每秒更新 syncElapsedSec） */
+let syncElapsedTimer: null | ReturnType<typeof setInterval> = null;
+/** 同步最大等待时长（秒），超过则视为超时 */
+const SYNC_TIMEOUT_SEC = 90;
+/** 同步轮询间隔（毫秒） */
+const SYNC_POLL_INTERVAL_MS = 2000;
+
+/** 同步进度提示文案 */
+const syncProgressText = computed(() => {
+  if (!syncing.value) return '';
+  const secs = syncElapsedSec.value;
+  if (secs < 5) return '正在触发同步任务…';
+  if (secs < 15) return '正在从 AAS 读取 Tag 数据…';
+  if (secs < 30) return '正在比对与更新本地 Tag 注册表…';
+  return `同步进行中（已耗时 ${secs}s）`;
+});
+
+/** 停止同步轮询与计时 */
+function stopSyncPolling() {
+  if (syncPollTimer) {
+    clearInterval(syncPollTimer);
+    syncPollTimer = null;
+  }
+  if (syncElapsedTimer) {
+    clearInterval(syncElapsedTimer);
+    syncElapsedTimer = null;
+  }
+}
+
+/**
+ * 轮询 GET /aas/config，根据 lastSyncStatus 判断同步是否结束。
+ * - SUCCESS：提示成功 + 刷新 Tag 列表 + 重置 syncing
+ * - FAILED：提示失败 + 重置 syncing
+ * - PROCESSING/未知：继续轮询，直到超时
+ */
+async function pollSyncStatus(triggeredAt: number) {
+  const elapsed = Math.floor((Date.now() - triggeredAt) / 1000);
+  syncElapsedSec.value = elapsed;
+
+  // 超时保护
+  if (elapsed > SYNC_TIMEOUT_SEC) {
+    stopSyncPolling();
+    syncing.value = false;
+    message.warning(
+      `同步已超过 ${SYNC_TIMEOUT_SEC}s 未完成，可能仍在后台执行；请稍后刷新页面查看结果`,
+    );
+    return;
+  }
+
+  try {
+    const cfg = await getAasConfigApi();
+    lastSyncAt.value = cfg.lastSyncAt;
+    lastSyncStatus.value = cfg.lastSyncStatus;
+
+    if (cfg.lastSyncStatus === 'SUCCESS') {
+      stopSyncPolling();
+      syncing.value = false;
+      message.success('AAS Tag 同步完成');
+      // 刷新 Tag 列表与配置展示
+      await Promise.all([loadTags(), loadConfig()]);
+    } else if (cfg.lastSyncStatus === 'FAILED') {
+      stopSyncPolling();
+      syncing.value = false;
+      message.error('AAS Tag 同步失败，请检查 AAS 连接或日志');
+      // 仍刷新一次配置以拿到最新状态
+      await loadConfig();
+    }
+    // PROCESSING 或 null：继续等下次轮询
+  } catch {
+    // 轮询本身失败：不立即终止，等待下次轮询或超时
+  }
+}
 
 // Tag list
 const tagLoading = ref(false);
@@ -129,7 +206,8 @@ const syncStatusMap: Record<
 function formatTime(t: null | string): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
@@ -199,21 +277,32 @@ async function handleTestConnection() {
   }
 }
 
-/** 立即同步 */
+/** 立即同步：触发后轮询 lastSyncStatus 直到 SUCCESS/FAILED 或超时 */
 async function handleSync() {
+  if (syncing.value) {
+    message.info('同步任务进行中，请稍候');
+    return;
+  }
   syncing.value = true;
+  syncElapsedSec.value = 0;
   try {
     const task = await triggerAasSyncApi();
-    message.success(`同步任务已触发，任务 ID：${task.taskId}`);
-    // 延迟刷新 Tag 列表
-    setTimeout(() => {
-      loadTags();
-      loadConfig();
-    }, 2000);
+    message.info(`同步任务已触发（任务 ID：${task.taskId}），正在后台执行…`);
+    lastSyncStatus.value = 'PROCESSING';
+
+    // 启动轮询与计时
+    const triggeredAt = Date.now();
+    // 立即调用一次（同步触发返回后后端可能尚未设置 PROCESSING）
+    pollSyncStatus(triggeredAt);
+    syncPollTimer = setInterval(() => {
+      pollSyncStatus(triggeredAt);
+    }, SYNC_POLL_INTERVAL_MS);
+    syncElapsedTimer = setInterval(() => {
+      syncElapsedSec.value = Math.floor((Date.now() - triggeredAt) / 1000);
+    }, 1000);
   } catch {
-    // 错误已由拦截器处理
-  } finally {
     syncing.value = false;
+    // 错误已由拦截器处理
   }
 }
 
@@ -257,6 +346,10 @@ onMounted(() => {
   loadConfig();
   loadTags();
 });
+
+onUnmounted(() => {
+  stopSyncPolling();
+});
 </script>
 
 <template>
@@ -266,6 +359,22 @@ onMounted(() => {
       subtitle="配置连接、测试连接并查看同步后的 Tag 列表。"
     />
     <div class="mt-4 space-y-4">
+      <!-- 同步进度提示（仅在同步进行中显示） -->
+      <Alert
+        v-if="syncing"
+        type="info"
+        show-icon
+        :message="`AAS Tag 同步进行中（已耗时 ${syncElapsedSec}s）`"
+        :description="syncProgressText"
+        class="!mb-0"
+      >
+        <template #action>
+          <span class="text-xs text-gray-400">
+            最长等待 {{ SYNC_TIMEOUT_SEC }}s，超时后请刷新页面查看结果
+          </span>
+        </template>
+      </Alert>
+
       <!-- 配置卡片 -->
       <ClpmDataCanvas title="连接配置" :loading="configLoading">
         <Form :model="configForm" layout="vertical">

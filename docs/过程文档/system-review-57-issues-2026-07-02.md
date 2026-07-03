@@ -16,8 +16,8 @@
 | 4 | 性能评估 | B2: 前端完全缺失节点级 KPI API 调用，后端 5 个 `/performance/nodes/*` 端点无前端消费方，装置级/单元级/工厂级聚合结果不可见 | `frontend/.../api/metric.ts` | **已修复** |
 | 5 | UX | UX1: 169 处硬编码浅色 Tailwind 类（`text-gray-400`/`bg-blue-50`/`border-gray-200` 等），暗色模式下出现刺眼亮色块、对比度不足 | `views/loop/*.vue`(107处) + `views/metric/*.vue`(62处) | **已修复**（CSS 集中覆盖） |
 | 6 | UX | UX2: `industrial-light.css` 仅覆盖浅色变量，无 `.dark` 选择器，表头/hover/选中行/滚动条硬编码 HSL 值 | `styles/industrial-light.css` | **已修复** |
-| 7 | UX | UX4: AAS 同步触发后只 `setTimeout(2000)` 硬等 2 秒，无进度反馈、无完成确认、无错误提示 | `views/loop/aas.vue:204-218` | 待修复 |
-| 8 | UX | UX5: KPI 计算/批量配置/导出等异步操作只显示成功/失败 toast，无进度条或步骤反馈 | `views/loop/manage.vue` 多处 | 待修复 |
+| 7 | UX | UX4: AAS 同步触发后只 `setTimeout(2000)` 硬等 2 秒，无进度反馈、无完成确认、无错误提示 | `views/loop/aas.vue:204-218` | **已修复** |
+| 8 | UX | UX5: KPI 计算/批量配置/导出等异步操作只显示成功/失败 toast，无进度条或步骤反馈 | `views/loop/manage.vue` 多处 | **已修复** |
 
 ---
 
@@ -95,14 +95,19 @@
 
 | 优先级 | 数量 | 已修复 | 待修复 |
 |---|---|---|---|
-| P0 阻断性 | 8 | 1 | 7 |
+| P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 0 | 14 |
 | P2 中优先级 | 19 | 0 | 19 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **1** | **56** |
+| **合计** | **57** | **6** | **51** |
 
 ## 已修复记录
 
 | # | 问题 | 修复内容 | 修复文件 | 验证 |
 |---|---|---|---|---|
 | 1 | B6: 批量操作审计日志 UUID 类型冲突 | 将 4 处非 UUID 的 `target_id` 值改为 `None`（批量/配置/导入操作无单一目标记录，完整列表已在 `before_value`/`after_value` JSON 中） | `services/loop_batch.py:165,252` + `services/aas_config.py:162` + `services/tag.py:625` | 51 个相关测试通过 |
+| 2 | B1: monitor 硬编码 MODE 映射 | `_mode_value_to_label` 增加可选 `mapping` 参数；新增 `_load_mode_mappings` 批量查询；`list_loop_monitor`/`get_loop_monitor_detail` 接入 `loop_mode_mapping` 表 | `services/monitor.py` + `tests/test_monitor_service.py` | 39 个测试通过 |
+| 4 | B2: 前端缺失节点级 KPI API | 补齐 6 个 API 函数 + 10 个类型定义；dashboard.vue 接入节点 snapshot 与 overview API | `frontend/.../api/metric.ts` + `views/metric/dashboard.vue` | 前端类型检查通过 |
+| 5+6 | UX1+UX2: 暗色模式 292 处硬编码 | `industrial-light.css` 新增 10 子节 `.dark` 覆盖块（CSS 变量 / gray 反转 / 彩色半透明 / 表头 hover 选中行 / 滚动条 / 工具类） | `styles/industrial-light.css` | 前端类型检查通过 |
+| 7 | UX4: AAS 同步进度反馈 | 后端：`AasConfigInfo` schema 新增 `lastSyncAt`/`lastSyncStatus` 字段；`aas_config.py` 新增 `set_last_sync_status` 写入 sys_config；`trigger_aas_sync` 端点预先置为 PROCESSING；`sync_tags_from_aas` 同步成功置 SUCCESS/异常置 FAILED。前端：`aas.vue` `handleSync` 改为触发后轮询 `getAasConfigApi`，新增进度 Alert 与超时（90s）保护，`onUnmounted` 清理定时器 | `backend/.../schemas/aas.py` + `services/aas_config.py` + `api/v1/endpoints/aas.py` + `services/aas_sync.py` + `frontend/.../views/loop/aas.vue` + `tests/test_aas.py` | 21 个 AAS 测试通过；前端类型检查通过 |
+| 8 | UX5: 异步操作进度反馈 | 在 `manage.vue`（批量配置/批量删除/导出/导入）与 `tuning/algorithm.vue`/`model.vue`/`simulation.vue`（PID 整定/模型辨识/闭环仿真）的耗时操作入口添加 `message.loading(content, 0)` 即时反馈，完成后切换为 `message.success`/`message.error`；按钮 loading 仍保留用于视觉禁用 | `frontend/.../views/loop/manage.vue` + `views/tuning/algorithm.vue` + `views/tuning/model.vue` + `views/tuning/simulation.vue` | 前端类型检查通过 |

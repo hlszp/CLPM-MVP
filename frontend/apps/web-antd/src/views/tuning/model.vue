@@ -121,6 +121,10 @@ async function handleIdentify() {
   }
 
   loading.value = true;
+  const hide = message.loading(
+    `正在进行 ${filter.modelType} 模型辨识（${filter.method ?? 'auto'}）…`,
+    0,
+  );
   try {
     const result = await identifyModelApi({
       loopId: filter.loopId,
@@ -131,8 +135,10 @@ async function handleIdentify() {
     });
     identifyResult.value = result;
     nextTick(() => renderFittedCurve());
+    hide();
     message.success('模型辨识完成');
   } catch {
+    hide();
     // 错误已由拦截器处理
   } finally {
     loading.value = false;
@@ -205,11 +211,12 @@ function renderFittedCurve() {
     xAxis: {
       axisLabel: {
         formatter: (val: string) => {
-          const d = new Date(Number(val));
-          const hh = String(d.getHours()).padStart(2, '0');
-          const mm = String(d.getMinutes()).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          const mo = String(d.getMonth() + 1).padStart(2, '0');
+          // 强制北京时间（UTC+8）：+8h 后用 getUTC* 方法
+          const d = new Date(Number(val) + 8 * 3600 * 1000);
+          const hh = String(d.getUTCHours()).padStart(2, '0');
+          const mm = String(d.getUTCMinutes()).padStart(2, '0');
+          const dd = String(d.getUTCDate()).padStart(2, '0');
+          const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
           return `${mo}-${dd} ${hh}:${mm}`;
         },
       },

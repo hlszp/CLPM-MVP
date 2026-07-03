@@ -246,70 +246,100 @@ async def _retry_async(
 async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
     """从 AAS 同步 Tag 到 tag_registry。
 
+    同步完成后更新 sys_config 中的 aas.last_sync_status/aas.last_sync_at，
+    供前端轮询 GET /aas/config 判断同步进度。
+
     Returns:
         统计信息 dict：{total, inserted, updated, unchanged, duration_ms}
     """
+    from app.services.aas_config import (
+        SYNC_STATUS_FAILED,
+        SYNC_STATUS_PROCESSING,
+        SYNC_STATUS_SUCCESS,
+        set_last_sync_status,
+    )
+
     start_time = datetime.now(UTC).replace(tzinfo=None)
     provider = get_aas_provider()
 
-    # 带重试地读取 AAS
-    aas_tags = await _retry_async(provider.read_all_tags)
+    # 防御性：若 trigger 端点未设置 PROCESSING（如定时任务入口），此处补设
+    try:
+        await set_last_sync_status(db, SYNC_STATUS_PROCESSING)
+    except Exception:  # pragma: no cover  noqa: BLE001
+        logger.warning("设置 PROCESSING 状态失败（继续同步）", exc_info=True)
 
-    # 读取现有 tag_registry（按 tag_name 索引）
-    result = await db.execute(select(TagRegistry))
-    existing_tags = {t.tag_name: t for t in result.scalars().all()}
+    try:
+        # 带重试地读取 AAS
+        aas_tags = await _retry_async(provider.read_all_tags)
 
-    now = datetime.now(UTC).replace(tzinfo=None)
-    inserted = 0
-    updated = 0
-    unchanged = 0
+        # 读取现有 tag_registry（按 tag_name 索引）
+        result = await db.execute(select(TagRegistry))
+        existing_tags = {t.tag_name: t for t in result.scalars().all()}
 
-    for aas_tag in aas_tags:
-        tag_name = aas_tag["tag_name"]
-        existing = existing_tags.get(tag_name)
-        if existing is None:
-            # 新增
-            new_tag = TagRegistry(
-                id=str(uuid4()),
-                tag_name=tag_name,
-                tag_description=aas_tag.get("tag_description"),
-                tag_type=aas_tag.get("tag_type", "OTHER"),
-                current_value=aas_tag.get("current_value"),
-                quality=aas_tag.get("quality"),
-                last_sync_at=now,
-                is_linked=False,
-            )
-            db.add(new_tag)
-            inserted += 1
-        else:
-            # 更新（值或质量码变化时）
-            changed = (
-                existing.current_value != aas_tag.get("current_value")
-                or existing.quality != aas_tag.get("quality")
-                or existing.tag_description != aas_tag.get("tag_description")
-            )
-            if changed:
-                existing.current_value = aas_tag.get("current_value")
-                existing.quality = aas_tag.get("quality")
-                existing.tag_description = aas_tag.get("tag_description")
-                existing.last_sync_at = now
-                updated += 1
+        now = datetime.now(UTC).replace(tzinfo=None)
+        inserted = 0
+        updated = 0
+        unchanged = 0
+
+        for aas_tag in aas_tags:
+            tag_name = aas_tag["tag_name"]
+            existing = existing_tags.get(tag_name)
+            if existing is None:
+                # 新增
+                new_tag = TagRegistry(
+                    id=str(uuid4()),
+                    tag_name=tag_name,
+                    tag_description=aas_tag.get("tag_description"),
+                    tag_type=aas_tag.get("tag_type", "OTHER"),
+                    current_value=aas_tag.get("current_value"),
+                    quality=aas_tag.get("quality"),
+                    last_sync_at=now,
+                    is_linked=False,
+                )
+                db.add(new_tag)
+                inserted += 1
             else:
-                existing.last_sync_at = now
-                unchanged += 1
+                # 更新（值或质量码变化时）
+                changed = (
+                    existing.current_value != aas_tag.get("current_value")
+                    or existing.quality != aas_tag.get("quality")
+                    or existing.tag_description != aas_tag.get("tag_description")
+                )
+                if changed:
+                    existing.current_value = aas_tag.get("current_value")
+                    existing.quality = aas_tag.get("quality")
+                    existing.tag_description = aas_tag.get("tag_description")
+                    existing.last_sync_at = now
+                    updated += 1
+                else:
+                    existing.last_sync_at = now
+                    unchanged += 1
 
-    await db.commit()
+        await db.commit()
 
-    duration_ms = int((datetime.now(UTC).replace(tzinfo=None) - start_time).total_seconds() * 1000)
-    stats = {
-        "total": len(aas_tags),
-        "inserted": inserted,
-        "updated": updated,
-        "unchanged": unchanged,
-        "duration_ms": duration_ms,
-    }
-    logger.info("AAS 同步完成: %s", stats)
-    return stats
+        # 同步成功：更新状态为 SUCCESS（带完成时间）
+        try:
+            await set_last_sync_status(db, SYNC_STATUS_SUCCESS, sync_at=now)
+        except Exception:  # pragma: no cover  noqa: BLE001
+            logger.warning("设置 SUCCESS 状态失败（同步已完成）", exc_info=True)
+
+        duration_ms = int((datetime.now(UTC).replace(tzinfo=None) - start_time).total_seconds() * 1000)
+        stats = {
+            "total": len(aas_tags),
+            "inserted": inserted,
+            "updated": updated,
+            "unchanged": unchanged,
+            "duration_ms": duration_ms,
+        }
+        logger.info("AAS 同步完成: %s", stats)
+        return stats
+    except Exception as exc:
+        # 同步失败：更新状态为 FAILED（不掩盖异常，仍向上抛出）
+        try:
+            await set_last_sync_status(db, SYNC_STATUS_FAILED)
+        except Exception:  # pragma: no cover  noqa: BLE001
+            logger.warning("设置 FAILED 状态失败", exc_info=True)
+        raise
 
 
 async def test_aas_connection(endpoint: str | None = None) -> dict[str, Any]:

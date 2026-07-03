@@ -26,7 +26,12 @@ from app.schemas.aas import (
     AasTagListData,
 )
 from app.schemas.common import ApiResponse, success
-from app.services.aas_config import get_aas_config, update_aas_config
+from app.services.aas_config import (
+    SYNC_STATUS_PROCESSING,
+    get_aas_config,
+    set_last_sync_status,
+    update_aas_config,
+)
 from app.services.aas_sync import test_aas_connection
 
 router = APIRouter(prefix="/aas", tags=["aas"])
@@ -83,19 +88,24 @@ async def test_aas_connection_endpoint(
 
 @router.post("/sync", response_model=ApiResponse[AasSyncTriggerResult])
 async def trigger_aas_sync(
+    db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
     """手动触发 AAS Tag 同步（返回 task_id）。
 
-    异步任务由 Celery 执行，前端可通过 task_id 查询状态。
+    异步任务由 Celery 执行，前端可通过轮询 GET /aas/config 的 lastSyncStatus
+    判断同步进度（PROCESSING/SUCCESS/FAILED）。
     """
     from app.tasks.aas_sync import trigger_sync
+
+    # 先将同步状态置为 PROCESSING，让前端立即感知"同步进行中"
+    await set_last_sync_status(db, SYNC_STATUS_PROCESSING)
 
     task = trigger_sync.delay()
     return success(
         data={
             "taskId": task.id,
-            "status": "PROCESSING",
+            "status": SYNC_STATUS_PROCESSING,
             "checkUrl": f"/api/v1/tasks/{task.id}",
         }
     )

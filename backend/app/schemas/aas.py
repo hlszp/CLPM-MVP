@@ -15,6 +15,13 @@ class AasConfigInfo(CamelModel):
     enabled: bool = Field(..., description="是否启用定时同步")
     mockMode: bool = Field(..., description="是否为 Mock 模式（无真实 AAS）")
     securityMode: str = Field("None", description="安全模式：None/Sign/SignAndEncrypt")
+    lastSyncAt: str | None = Field(
+        None, description="最近一次同步完成时间（ISO 8601），未同步过则为 null"
+    )
+    lastSyncStatus: str | None = Field(
+        None,
+        description="最近一次同步状态：PROCESSING/SUCCESS/FAILED，未同步过则为 null",
+    )
 
 
 class AasConfigUpdate(CamelModel):

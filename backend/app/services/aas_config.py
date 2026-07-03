@@ -19,7 +19,14 @@ AAS_CONFIG_KEYS = {
     "syncIntervalSeconds": "aas.sync_interval_seconds",
     "enabled": "aas.sync_enabled",
     "securityMode": "aas.security_mode",
+    "lastSyncAt": "aas.last_sync_at",
+    "lastSyncStatus": "aas.last_sync_status",
 }
+
+# 同步状态枚举（与前端 SyncStatus 对齐）
+SYNC_STATUS_PROCESSING = "PROCESSING"
+SYNC_STATUS_SUCCESS = "SUCCESS"
+SYNC_STATUS_FAILED = "FAILED"
 
 
 async def _get_config_value(db: AsyncSession, key: str) -> str | None:
@@ -81,11 +88,14 @@ async def get_aas_config(db: AsyncSession) -> dict:
     """获取 AAS 连接配置。
 
     优先从 sys_config 表读取，缺失则回退到 settings 默认值。
+    lastSyncAt/lastSyncStatus 来自 sys_config 的 aas.last_sync_at/aas.last_sync_status 键。
     """
     endpoint = await _get_config_value(db, AAS_CONFIG_KEYS["endpoint"])
     sync_interval = await _get_config_value(db, AAS_CONFIG_KEYS["syncIntervalSeconds"])
     enabled = await _get_config_value(db, AAS_CONFIG_KEYS["enabled"])
     security_mode = await _get_config_value(db, AAS_CONFIG_KEYS["securityMode"])
+    last_sync_at = await _get_config_value(db, AAS_CONFIG_KEYS["lastSyncAt"])
+    last_sync_status = await _get_config_value(db, AAS_CONFIG_KEYS["lastSyncStatus"])
 
     return {
         "endpoint": endpoint if endpoint is not None else settings.AAS_ENDPOINT,
@@ -99,7 +109,45 @@ async def get_aas_config(db: AsyncSession) -> dict:
         "securityMode": (
             security_mode if security_mode is not None else settings.AAS_SECURITY_MODE
         ),
+        "lastSyncAt": last_sync_at,
+        "lastSyncStatus": last_sync_status,
     }
+
+
+async def set_last_sync_status(
+    db: AsyncSession,
+    status: str,
+    sync_at: datetime | None = None,
+) -> None:
+    """更新 AAS 同步状态（写入 sys_config，立即提交）。
+
+    用于 POST /aas/sync 触发时设置为 PROCESSING、同步完成时设置为 SUCCESS/FAILED。
+    前端通过轮询 GET /aas/config 获取 lastSyncStatus 判断同步进度。
+
+    Args:
+        db: 数据库会话
+        status: 同步状态 PROCESSING/SUCCESS/FAILED
+        sync_at: 同步完成时间，None 则使用当前 UTC 时间（仅 SUCCESS/FAILED 时设置）
+    """
+    if sync_at is None and status != SYNC_STATUS_PROCESSING:
+        sync_at = datetime.now(UTC).replace(tzinfo=None)
+    sync_at_str = sync_at.isoformat() if sync_at else None
+    await _set_config_value(
+        db,
+        AAS_CONFIG_KEYS["lastSyncStatus"],
+        status,
+        "AAS 最近一次同步状态",
+        operator="system",
+    )
+    if sync_at_str:
+        await _set_config_value(
+            db,
+            AAS_CONFIG_KEYS["lastSyncAt"],
+            sync_at_str,
+            "AAS 最近一次同步完成时间",
+            operator="system",
+        )
+    await db.commit()
 
 
 async def update_aas_config(
@@ -168,4 +216,11 @@ async def update_aas_config(
     return after
 
 
-__all__ = ["get_aas_config", "update_aas_config"]
+__all__ = [
+    "SYNC_STATUS_FAILED",
+    "SYNC_STATUS_PROCESSING",
+    "SYNC_STATUS_SUCCESS",
+    "get_aas_config",
+    "set_last_sync_status",
+    "update_aas_config",
+]

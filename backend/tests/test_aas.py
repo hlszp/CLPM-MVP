@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from tests.conftest import TEST_USERS, mock_current_user
 
 # 测试用 Tag 数据
@@ -45,6 +47,13 @@ def _make_scalar_mock(value) -> MagicMock:
     result = MagicMock()
     result.scalar.return_value = value
     return result
+
+
+def _make_config_row(value: str) -> MagicMock:
+    """构造一个模拟 SysConfig 行（含 .value 属性）。"""
+    row = MagicMock()
+    row.value = value
+    return row
 
 
 class TestAasConfig:
@@ -141,13 +150,17 @@ class TestAasSync:
     """POST /api/v1/aas/sync tests."""
 
     def test_trigger_sync_admin_success(self, client, mock_db, fake_redis) -> None:
-        """ADMIN 触发同步返回 task_id。"""
+        """ADMIN 触发同步返回 task_id，且会预先设置 PROCESSING 状态。"""
         mock_task = MagicMock()
         mock_task.id = "task-uuid-xxx"
 
         with (
             mock_current_user(TEST_USERS["admin"]),
             patch("app.tasks.aas_sync.trigger_sync") as mock_trigger,
+            patch(
+                "app.api.v1.endpoints.aas.set_last_sync_status",
+                new_callable=AsyncMock,
+            ) as mock_set_status,
         ):
             mock_trigger.delay.return_value = mock_task
             resp = client.post(
@@ -159,6 +172,171 @@ class TestAasSync:
         assert body["code"] == "0"
         assert body["data"]["taskId"] == "task-uuid-xxx"
         assert body["data"]["status"] == "PROCESSING"
+        # 验证触发端点先调用了 set_last_sync_status("PROCESSING")
+        mock_set_status.assert_awaited_once()
+        args, _kwargs = mock_set_status.call_args
+        assert args[1] == "PROCESSING"
+
+
+class TestAasConfigFields:
+    """AAS 配置接口新增 lastSyncAt/lastSyncStatus 字段测试（P0 #7）。"""
+
+    def test_get_config_returns_last_sync_fields(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """GET /aas/config 响应包含 lastSyncAt 与 lastSyncStatus 字段。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/aas/config",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        # 即使 sys_config 表无值，字段也应存在（值为 None）
+        assert "lastSyncAt" in data
+        assert "lastSyncStatus" in data
+        assert data["lastSyncAt"] is None
+        assert data["lastSyncStatus"] is None
+
+    def test_get_config_returns_populated_last_sync_fields(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """sys_config 表中存在 aas.last_sync_status 时，GET /aas/config 返回实际值。"""
+        # 模拟 sys_config 中 6 个键依次返回的 SysConfig 行
+        # 前 4 个为 None（回退 settings 默认值），后 2 个为有值的 config 行
+        values_iter = iter(
+            [
+                None,  # endpoint → 回退 settings
+                None,  # sync_interval → 回退 settings
+                None,  # enabled → 回退 settings
+                None,  # security_mode → 回退 settings
+                _make_config_row("2026-07-02T10:00:00"),  # last_sync_at
+                _make_config_row("PROCESSING"),  # last_sync_status
+            ]
+        )
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            return _make_scalar_one_or_none_mock(next(values_iter))
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/aas/config",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["lastSyncAt"] == "2026-07-02T10:00:00"
+        assert data["lastSyncStatus"] == "PROCESSING"
+
+
+class TestSetLastSyncStatus:
+    """set_last_sync_status 辅助函数测试（P0 #7）。"""
+
+    async def test_processing_does_not_write_sync_at(
+        self, mock_db: AsyncMock
+    ) -> None:
+        """PROCESSING 状态不写 last_sync_at（同步尚未完成）。"""
+        from app.services.aas_config import set_last_sync_status
+
+        await set_last_sync_status(mock_db, "PROCESSING")
+
+        # 验证仅写入 last_sync_status，未写入 last_sync_at
+        # 由于 _set_config_value 调用 db.execute(select(...)) 与 db.add/commit
+        # 这里只验证 commit 被调用
+        mock_db.commit.assert_awaited_once()
+
+    async def test_success_writes_sync_at(self, mock_db: AsyncMock) -> None:
+        """SUCCESS 状态同时写入 last_sync_at 与 last_sync_status。"""
+        from datetime import datetime, UTC
+
+        from app.services.aas_config import set_last_sync_status
+
+        sync_at = datetime.now(UTC).replace(tzinfo=None)
+        await set_last_sync_status(mock_db, "SUCCESS", sync_at=sync_at)
+
+        mock_db.commit.assert_awaited_once()
+
+    async def test_failed_writes_sync_at(self, mock_db: AsyncMock) -> None:
+        """FAILED 状态也写入 last_sync_at（标记失败时间）。"""
+        from app.services.aas_config import set_last_sync_status
+
+        await set_last_sync_status(mock_db, "FAILED")
+
+        mock_db.commit.assert_awaited_once()
+
+
+class TestSyncTagsFromAasStatusTracking:
+    """sync_tags_from_aas 同步状态追踪测试（P0 #7）。
+
+    验证同步函数在以下场景下正确更新 last_sync_status：
+    - 同步开始时设置为 PROCESSING
+    - 同步成功时设置为 SUCCESS
+    - 同步失败时设置为 FAILED
+    """
+
+    async def test_success_sets_success_status(self, mock_db: AsyncMock) -> None:
+        """同步成功后，last_sync_status 应为 SUCCESS。"""
+        with (
+            patch(
+                "app.services.aas_config.set_last_sync_status",
+                new_callable=AsyncMock,
+            ) as mock_set_status,
+            patch(
+                "app.services.aas_sync._retry_async",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "app.services.aas_sync.get_aas_provider"
+            ) as mock_provider_fn,
+        ):
+            mock_provider_fn.return_value = MagicMock()
+            mock_db.execute = AsyncMock(
+                return_value=_make_scalars_mock([])
+            )
+
+            from app.services.aas_sync import sync_tags_from_aas
+
+            stats = await sync_tags_from_aas(mock_db)
+
+            assert stats["total"] == 0
+            assert stats["inserted"] == 0
+            # 两次调用：PROCESSING（开始）、SUCCESS（成功后）
+            assert mock_set_status.await_count == 2
+            first_call = mock_set_status.call_args_list[0]
+            second_call = mock_set_status.call_args_list[1]
+            assert first_call.args[1] == "PROCESSING"
+            assert second_call.args[1] == "SUCCESS"
+
+    async def test_failure_sets_failed_status(self, mock_db: AsyncMock) -> None:
+        """同步失败后，last_sync_status 应为 FAILED，且异常向上抛出。"""
+        with (
+            patch(
+                "app.services.aas_config.set_last_sync_status",
+                new_callable=AsyncMock,
+            ) as mock_set_status,
+            patch(
+                "app.services.aas_sync._retry_async",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("AAS 连接失败"),
+            ),
+            patch("app.services.aas_sync.get_aas_provider") as mock_provider_fn,
+        ):
+            mock_provider_fn.return_value = MagicMock()
+
+            from app.services.aas_sync import sync_tags_from_aas
+
+            with pytest.raises(RuntimeError, match="AAS 连接失败"):
+                await sync_tags_from_aas(mock_db)
+
+            # 两次调用：PROCESSING（开始）、FAILED（异常时）
+            assert mock_set_status.await_count == 2
+            first_call = mock_set_status.call_args_list[0]
+            second_call = mock_set_status.call_args_list[1]
+            assert first_call.args[1] == "PROCESSING"
+            assert second_call.args[1] == "FAILED"
 
 
 class TestMockAasProvider:

@@ -204,6 +204,10 @@ async function handleTune() {
   }
 
   loading.value = true;
+  const hide = message.loading(
+    `正在使用 ${form.algorithm} 算法进行 PID 整定…`,
+    0,
+  );
   try {
     const result = await tunePidApi({
       modelType: form.modelType,
@@ -214,8 +218,10 @@ async function handleTune() {
       loopId: form.loopId || undefined,
     });
     tuneResult.value = result;
+    hide();
     message.success('PID 整定完成');
   } catch {
+    hide();
     // 错误已由拦截器处理
   } finally {
     loading.value = false;

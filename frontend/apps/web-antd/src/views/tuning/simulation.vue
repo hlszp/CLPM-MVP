@@ -417,6 +417,10 @@ async function handleSimulate() {
   }
 
   loading.value = true;
+  const hide = message.loading(
+    `正在进行 ${form.modelType} 闭环仿真（${form.simDuration}s 时长）…`,
+    0,
+  );
   try {
     const data = await simulateTuningApi({
       modelType: form.modelType,
@@ -438,8 +442,10 @@ async function handleSimulate() {
     });
     simulationResult.value = data;
     renderChart();
+    hide();
     message.success('仿真完成');
   } catch {
+    hide();
     // 错误已由拦截器处理
   } finally {
     loading.value = false;

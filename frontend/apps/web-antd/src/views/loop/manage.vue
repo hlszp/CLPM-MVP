@@ -555,6 +555,11 @@ async function handleBatchConfigSubmit() {
 /** 执行批量配置（确认后调用） */
 async function doBatchConfigSubmit() {
   batchSaving.value = true;
+  const loopCount = selectedRowKeys.value.length;
+  const hide = message.loading(
+    `正在批量更新 ${loopCount} 个回路配置…`,
+    0,
+  );
   try {
     const updates: LoopApi.LoopBatchUpdates = {};
     if (batchForm.isMonitored !== undefined) {
@@ -570,10 +575,12 @@ async function doBatchConfigSubmit() {
       loopIds: selectedRowKeys.value,
       updates,
     });
+    hide();
     message.success(`批量更新成功，共影响 ${result.affected} 个回路`);
     selectedRowKeys.value = [];
     await loadList();
   } catch {
+    hide();
     // 错误已由拦截器处理
   } finally {
     batchSaving.value = false;
@@ -593,15 +600,22 @@ function handleBatchDelete() {
     okType: 'danger',
     cancelText: '取消',
     onOk: async () => {
+      const loopCount = selectedRowKeys.value.length;
+      const hide = message.loading(
+        `正在软删除 ${loopCount} 个回路（停用监控）…`,
+        0,
+      );
       try {
         const result = await batchConfigLoopsApi({
           loopIds: selectedRowKeys.value,
           action: 'delete',
         });
+        hide();
         message.success(`批量软删除成功，共影响 ${result.affected} 个回路`);
         selectedRowKeys.value = [];
         await loadList();
       } catch {
+        hide();
         // 错误已由拦截器处理
       }
     },
@@ -614,6 +628,7 @@ const exporting = ref(false);
 
 async function handleExport() {
   exporting.value = true;
+  const hide = message.loading('正在生成导出文件，请稍候…', 0);
   try {
     const blob = await requestClient.download<Blob>('/loops/export', {
       params: {
@@ -632,8 +647,10 @@ async function handleExport() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    hide();
     message.success('导出成功');
   } catch {
+    hide();
     // 错误已由拦截器处理
   } finally {
     exporting.value = false;
@@ -642,6 +659,7 @@ async function handleExport() {
 
 function handleImportBeforeUpload(file: File): boolean {
   importing.value = true;
+  const hide = message.loading(`正在导入文件「${file.name}」…`, 0);
   const formData = new FormData();
   formData.append('file', file);
   requestClient
@@ -649,10 +667,12 @@ function handleImportBeforeUpload(file: File): boolean {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     .then(() => {
+      hide();
       message.success('导入成功');
       loadList();
     })
     .catch(() => {
+      hide();
       // 错误已由拦截器处理
     })
     .finally(() => {
