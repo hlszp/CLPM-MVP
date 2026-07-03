@@ -211,26 +211,26 @@ async def _retry_async(
     kwargs: dict | None = None,
     max_retries: int = MAX_RETRIES,
 ) -> Any:
-    """带指数退避的重试包装器。"""
+    """带指数退避的重试包装器。
+
+    P3 #46 修复：
+    - 移除 `last_exc = exc = None` + `sys.exc_info()` 的代码异味，
+      改用 `except BizError as exc` 直接捕获异常对象。
+    - 移除从未使用的 `last_exc` 变量（所有路径要么 return 要么 raise）。
+    - 移除循环后的死代码 `raise last_exc`。
+    """
     kwargs = kwargs or {}
-    last_exc: Exception | None = None
     for attempt in range(1, max_retries + 1):
         try:
             return await func(*args, **kwargs)
-        except BizError:
+        except BizError as exc:
             # 业务错误（如 ERR_AAS_CONNECTION_FAILED）直接重试
-            last_exc = exc = None
-            import sys
-
-            exc = sys.exc_info()[1]
-            last_exc = exc
             if attempt == max_retries:
                 raise
             wait = RETRY_BACKOFF_BASE ** (attempt - 1)
             logger.warning("AAS 同步第 %d 次尝试失败，%ds 后重试: %s", attempt, wait, exc)
             await asyncio.sleep(wait)
         except Exception as exc:
-            last_exc = exc
             if attempt == max_retries:
                 raise BizError(
                     code="ERR_AAS_CONNECTION_FAILED",
@@ -240,8 +240,8 @@ async def _retry_async(
             wait = RETRY_BACKOFF_BASE ** (attempt - 1)
             logger.warning("AAS 同步第 %d 次尝试异常，%ds 后重试: %s", attempt, wait, exc)
             await asyncio.sleep(wait)
-    # 不会执行到这里
-    raise last_exc  # type: ignore[misc]
+    # 不会执行到这里：循环内每个 attempt 要么 return 要么 raise
+    raise RuntimeError("unreachable: _retry_async exhausted without return/raise")
 
 
 async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:

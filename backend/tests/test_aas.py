@@ -495,3 +495,95 @@ class TestLTTB:
 
         result = lttb_downsample([])
         assert result == []
+
+
+class TestRetryAsync:
+    """P3 #46: _retry_async 异常处理测试。
+
+    验证修复后的代码异味（移除 sys.exc_info() + 死代码 last_exc）后，
+    重试逻辑行为保持不变：
+    - 成功调用不重试
+    - BizError 触发重试，最终成功
+    - BizError 重试耗尽后抛出原始 BizError
+    - 通用 Exception 重试耗尽后包装为 BizError(ERR_AAS_CONNECTION_FAILED)
+    - 指数退避：第 N 次重试等待 RETRY_BACKOFF_BASE^(N-1) 秒
+    """
+
+    async def test_success_no_retry(self) -> None:
+        """成功调用立即返回，不触发重试。"""
+        from app.services.aas_sync import _retry_async
+
+        func = AsyncMock(return_value="ok")
+        with patch("app.services.aas_sync.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            result = await _retry_async(func)
+
+        assert result == "ok"
+        func.assert_awaited_once()
+        mock_sleep.assert_not_awaited()
+
+    async def test_biz_error_retry_then_success(self) -> None:
+        """BizError 触发重试，第二次成功。"""
+        from app.core.exceptions import BizError
+
+        from app.services.aas_sync import _retry_async
+
+        func = AsyncMock(
+            side_effect=[BizError(code="TEST", message="fail"), "ok"]
+        )
+        with patch("app.services.aas_sync.asyncio.sleep", new=AsyncMock()):
+            result = await _retry_async(func, max_retries=3)
+
+        assert result == "ok"
+        assert func.await_count == 2
+
+    async def test_biz_error_exhausted_raises_original(self) -> None:
+        """BizError 重试耗尽后抛出原始 BizError（不包装）。"""
+        from app.core.exceptions import BizError
+
+        from app.services.aas_sync import _retry_async
+
+        original_exc = BizError(code="ERR_AAS_CONNECTION_FAILED", message="conn fail")
+        func = AsyncMock(side_effect=original_exc)
+        with patch("app.services.aas_sync.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(BizError) as exc_info:
+                await _retry_async(func, max_retries=2)
+
+        # 应抛出原始异常（而非新建包装异常）
+        assert exc_info.value is original_exc
+        assert func.await_count == 2
+
+    async def test_generic_exception_wrapped_as_biz_error(self) -> None:
+        """通用 Exception 重试耗尽后包装为 BizError(ERR_AAS_CONNECTION_FAILED)。"""
+        from app.core.exceptions import BizError
+
+        from app.services.aas_sync import _retry_async
+
+        original_exc = ValueError("network timeout")
+        func = AsyncMock(side_effect=original_exc)
+        with patch("app.services.aas_sync.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(BizError) as exc_info:
+                await _retry_async(func, max_retries=2)
+
+        assert exc_info.value.code == "ERR_AAS_CONNECTION_FAILED"
+        assert "network timeout" in exc_info.value.message
+        # 原始异常应作为 __cause__ 保留（raise ... from exc）
+        assert exc_info.value.__cause__ is original_exc
+        assert func.await_count == 2
+
+    async def test_exponential_backoff_applied(self) -> None:
+        """验证指数退避：第 N 次重试等待 RETRY_BACKOFF_BASE^(N-1) 秒。"""
+        from app.services.aas_sync import RETRY_BACKOFF_BASE, _retry_async
+
+        from app.core.exceptions import BizError
+
+        func = AsyncMock(side_effect=BizError(code="TEST", message="fail"))
+        with patch("app.services.aas_sync.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            with pytest.raises(BizError):
+                await _retry_async(func, max_retries=3)
+
+        # 3 次尝试 → 2 次 sleep（attempt 1 → wait BASE^0=1s，attempt 2 → wait BASE^1=2s）
+        assert mock_sleep.await_count == 2
+        first_wait = mock_sleep.await_args_list[0].args[0]
+        second_wait = mock_sleep.await_args_list[1].args[0]
+        assert first_wait == RETRY_BACKOFF_BASE ** 0  # 1s
+        assert second_wait == RETRY_BACKOFF_BASE ** 1  # 2s
