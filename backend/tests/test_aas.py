@@ -339,6 +339,88 @@ class TestSyncTagsFromAasStatusTracking:
             assert second_call.args[1] == "FAILED"
 
 
+class TestSyncTagsFromAasLoopLedgerUpdate:
+    """P3 #43: sync_tags_from_aas 同步成功后更新 LoopLedger.last_aas_sync_at。
+
+    验证 AAS 同步成功后，所有活跃回路的 last_aas_sync_at 字段被更新为
+    同步完成时间，避免该字段成为孤儿。
+    """
+
+    async def test_updates_loop_ledger_last_aas_sync_at(
+        self, mock_db: AsyncMock
+    ) -> None:
+        """同步成功后应执行 UPDATE LoopLedger SET last_aas_sync_at=now WHERE is_active=True。"""
+        with (
+            patch(
+                "app.services.aas_config.set_last_sync_status",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.services.aas_sync._retry_async",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "app.services.aas_sync.get_aas_provider"
+            ) as mock_provider_fn,
+        ):
+            mock_provider_fn.return_value = MagicMock()
+            mock_db.execute = AsyncMock(
+                return_value=_make_scalars_mock([])
+            )
+
+            from app.services.aas_sync import sync_tags_from_aas
+
+            await sync_tags_from_aas(mock_db)
+
+            # set_last_sync_status 被 mock，所以只有 2 次 execute：
+            # 1. select(TagRegistry) 查询现有 tag
+            # 2. update(LoopLedger) 批量更新 last_aas_sync_at
+            assert mock_db.execute.await_count == 2
+
+            # 验证第 2 次 execute 是 update 语句（含 LoopLedger 表）
+            second_call_args = mock_db.execute.call_args_list[1]
+            stmt_arg = second_call_args.args[0] if second_call_args.args else None
+            stmt_str = str(stmt_arg).upper() if stmt_arg is not None else ""
+            assert "UPDATE" in stmt_str or "LOOP_LEDGER" in stmt_str, (
+                f"第 2 次 execute 应为 UPDATE LoopLedger 语句，实际：{stmt_str}"
+            )
+
+            # 验证有 2 次 commit：tag upsert + LoopLedger 更新
+            assert mock_db.commit.await_count >= 2
+
+    async def test_no_loop_ledger_update_on_failure(
+        self, mock_db: AsyncSession
+    ) -> None:
+        """同步失败时不应执行 LoopLedger 更新（异常在 update 之前抛出）。"""
+        with (
+            patch(
+                "app.services.aas_config.set_last_sync_status",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.services.aas_sync._retry_async",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("AAS 连接失败"),
+            ),
+            patch("app.services.aas_sync.get_aas_provider") as mock_provider_fn,
+        ):
+            mock_provider_fn.return_value = MagicMock()
+            mock_db.execute = AsyncMock(
+                return_value=_make_scalars_mock([])
+            )
+
+            from app.services.aas_sync import sync_tags_from_aas
+
+            with pytest.raises(RuntimeError, match="AAS 连接失败"):
+                await sync_tags_from_aas(mock_db)
+
+            # 失败路径不应到达 update(LoopLedger) 调用
+            # 只应有 set_last_sync_status 的两次 execute（PROCESSING + FAILED）
+            # 不应有 LoopLedger 的 update 调用
+            assert mock_db.commit.await_count == 0
+
+
 class TestMockAasProvider:
     """MockAasProvider 单元测试。"""
 

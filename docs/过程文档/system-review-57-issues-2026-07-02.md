@@ -73,7 +73,7 @@
 | # | 模块 | 问题 | 文件 | 状态 |
 |---|---|---|---|---|
 | 42 | 回路管理 | B5: `monitor_status` 与 `is_active` 两个语义相同的过滤条件共存，用户同时传不同值会得空结果 | `services/loop.py:158-169` | **已修复** |
-| 43 | 回路管理 | B7: AAS 同步不更新 `LoopLedger.last_aas_sync_at`，该字段成为孤儿 | `services/aas_sync.py` | 待修复 |
+| 43 | 回路管理 | B7: AAS 同步不更新 `LoopLedger.last_aas_sync_at`，该字段成为孤儿 | `services/aas_sync.py` | **已修复** |
 | 44 | 回路管理 | B8: 波形批量接口 `POST /timeseries/batch/waveform` 后端已实现但前端无消费方 | `endpoints/tags.py:batch_waveform_endpoint` | 待修复 |
 | 45 | 回路管理 | R9: `match_tags_for_loop` 硬编码 tag 后缀 `["PV","SP","OP","MODE","KP","TI","TD"]`，与 `PID_P/PID_I/PID_D` 不一致 | `endpoints/tags.py:186` | 待修复 |
 | 46 | 回路管理 | R10: `_retry_async` 异常处理代码异味（`last_exc = exc = None` 后再 `sys.exc_info()`） | `services/aas_sync.py:219-230` | 待修复 |
@@ -98,8 +98,8 @@
 | P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 14 | 0 |
 | P2 中优先级 | 19 | 19 | 0 |
-| P3 低优先级 | 16 | 1 | 15 |
-| **合计** | **57** | **40** | **17** |
+| P3 低优先级 | 16 | 2 | 14 |
+| **合计** | **57** | **41** | **16** |
 
 ## 已修复记录
 
@@ -144,3 +144,4 @@
 | 40 | TC3: 7200 点大数据集性能未验证 | 新增 `tests/test_metric_calculator/test_large_dataset_performance.py` 17 个测试覆盖 3 类：① 性能测试 9 个参数化用例（8 个 O(n) 计算器 accuracy/auto_mode/saturation/oscillation/good_value/stability/stiction/output_trip 各 1 个 + settling_time ARMA 单独测试）；阈值 PERF_THRESHOLD_S=5s（O(n) 计算器），ARMA_PERF_THRESHOLD_S=10s（ARMA O(n·p²) 复杂度更宽松）；实际执行 0.38s 全部远低于阈值。② 一致性测试 5 个（7200 点 vs 100 点结果方向一致：accuracy 零偏差→100、saturation 全 OP=99.5→100 HIGH、auto_mode 全自动→100、good_value 全 Good→100、oscillation 周期 20s 7200 点→360 周期 is_oscillating=True + 周期 15~25s）。③ 数据量级断言 3 个（LARGE_N=7200=2×60×60 校验、生成数据实际点数校验、性能阈值合理性校验）。3 种数据生成器：正常工况（PV 微偏离 SP σ=0.5）/振荡（周期 20s 正弦波）/饱和（50% OP=99.5） | `backend/tests/test_metric_calculator/test_large_dataset_performance.py` | 全后端 1625 测试通过（1608 原有 + 17 新增）；7200 点执行 0.38s |
 | 41 | TC4: 场景间对比测试缺失 | 新增 `tests/test_metric_calculator/test_scenario_comparison.py` 6 个对比测试覆盖 4 类横向差异：① fast_response vs slow_response 的 fast_rate 差异（同 ideal=30s 基准下 fast > slow 且差异 ≥ 20 个百分点）；② fast_response vs normal 的 settling_time 差异（fast ≤ normal×1.2）；③ normal vs op_saturation 的 saturation_rate 差异（同 epsilon=5.0 下 sat > normal 且差异 ≥ 20）；④ normal vs manual_mode 的 auto_mode_rate 差异（normal > manual 且差异 ≥ 80）；⑤ fast_response vs normal 的 fast_rate 一致性（fast ≥ normal-5）；⑥ slow_response vs normal 的 settling_time 差异（slow ≥ normal×0.8）。**配套重构**：将 `kpi_scenarios` session fixture 与 `SCENARIO_NAMES`/`FIXTURE_PATH` 常量从 `test_scenarios.py` 移至 `conftest.py`，使多个测试模块共享 fixture（避免重复加载 7 场景 JSON）。删除原 `test_normal_vs_oscillation_osc_rate_diff` 测试：因 `oscillation_rate` 语义为"振荡相似率"（值越高表示零交叉 IAE 越规律，非振荡程度），normal 场景偏差小且高频过零反而得 100，oscillation 场景周期大反而得 18，对比假设不成立；oscillation 场景的振荡检测已由 `test_scenarios.py::TestOscillationScenario` 覆盖 | `backend/tests/test_metric_calculator/test_scenario_comparison.py` + `backend/tests/test_metric_calculator/conftest.py:1-62` + `backend/tests/test_metric_calculator/test_scenarios.py:21-48` | 全后端 1631 测试通过（1625 原有 + 6 新增） |
 | 42 | B5: monitor_status 与 is_active 过滤条件冲突 | `list_loops` service 新增互斥校验：`is_active` 与 `monitor_status` 同时传入但值不一致时抛 `ValueError("isActive 与 monitorStatus 语义相同，同时传入时值必须一致")`；值一致时将 `monitor_status` 置 None 避免重复 AND。`list_loops_endpoint` 包装 try/except ValueError，捕获后返回 `{"code":"400","message":...,"data":null}` 业务错误响应（HTTP 200，业务 code=400）。新增 `TestLoopListIsActiveMonitorStatusMutex` 测试类 4 个用例：①冲突返回 400（isActive=true&monitorStatus=false）/②值一致正常返回（同 true）/③仅 isActive 正常/④仅 monitorStatus 正常 | `backend/app/services/loop.py:147-167` + `backend/app/api/v1/endpoints/loops.py:82-101` + `backend/tests/test_loop.py:410-498` | 全后端 1635 测试通过（1631 原有 + 4 新增） |
+| 43 | B7: AAS 同步不更新 LoopLedger.last_aas_sync_at | `sync_tags_from_aas` 在 tag upsert commit 成功后，新增批量 UPDATE：`UPDATE LoopLedger SET last_aas_sync_at=now WHERE is_active=True`，让所有活跃回路的 `last_aas_sync_at` 字段反映最新 AAS 同步时间（之前该字段只在 detail 序列化读取，从未被写入，成为孤儿）。同步失败路径不执行此更新（异常在 update 之前抛出）。新增 `TestSyncTagsFromAasLoopLedgerUpdate` 测试类 2 个用例：①成功路径验证第 2 次 execute 为 UPDATE LoopLedger 语句 + commit ≥2 次/②失败路径验证 commit == 0（不更新 LoopLedger） | `backend/app/services/aas_sync.py:19,24,319-328` + `backend/tests/test_aas.py:342-425` | 全后端 1637 测试通过（1635 原有 + 2 新增） |

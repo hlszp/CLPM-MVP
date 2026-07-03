@@ -16,11 +16,12 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import BizError
+from app.models.loop import LoopLedger
 from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
@@ -315,6 +316,15 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
                     existing.last_sync_at = now
                     unchanged += 1
 
+        await db.commit()
+
+        # P3 #43: 同步成功后更新所有活跃回路的 last_aas_sync_at
+        # AAS 同步是全局操作，所有关联了 tag 的活跃回路都应反映最新同步时间
+        await db.execute(
+            update(LoopLedger)
+            .where(LoopLedger.is_active.is_(True))
+            .values(last_aas_sync_at=now)
+        )
         await db.commit()
 
         # 同步成功：更新状态为 SUCCESS（带完成时间）
