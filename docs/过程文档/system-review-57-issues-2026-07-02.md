@@ -29,7 +29,7 @@
 | 10 | 回路管理 | R2: `batch_update_loops` 的 `is_stat_enabled` 复用 `is_active` 语义，与 `is_monitored` 写入冲突 | `services/loop_batch.py:75-77,133-136` | **已修复** |
 | 11 | 性能评估 | R1: 标准任务 `trigger_standard_evaluation` 接收 `body.tsStart` 但调用 `calculate_hourly_kpi.delay()` 时未传参，用户指定时间窗被忽略 | `endpoints/tasks.py:310` | **已修复** |
 | 12 | 性能评估 | R2: 自定义任务 `ts_end` 参数存入 Redis 但未传给 Celery 任务，自定义任务时间窗固定为 `cycle_minutes` 长度 | `endpoints/tasks.py:404` | **已修复** |
-| 13 | 跨模块 | B3: 实现契约 §6 状态机声称 `ACTIVE/PAUSED/DECOMMISSIONED`，实际代码为 `READY/PARTIAL/INACTIVE` | `docs/.../implementation-contract.md` §6 | 待修复 |
+| 13 | 跨模块 | B3: 实现契约 §6 状态机声称 `ACTIVE/PAUSED/DECOMMISSIONED`，实际代码为 `READY/PARTIAL/INACTIVE` | `docs/.../implementation-contract.md` §6 | **已修复** |
 | 14 | 跨模块 | B4: 节点级聚合 `KPI_FIELDS` 仅含 9 项，缺失 `stiction_coeff`/`steady_state_time`/`output_travel_index`/`ideal_settling_time` | `services/node_performance.py:38-48` | **已修复** |
 | 15 | 跨模块 | B5: 节点级实时自控率绕过 DataPlanner 直查 TDengine（每回路并发 5 分钟窗口查询），不享缓存且硬编码 `DEFAULT_AUTO_MODES={1,2,3}` | `services/node_performance.py:95-246` | **已修复**（硬编码部分；TDengine 实时查询保留，实时点查不适合走 DataPlanner 缓存） |
 | 16 | 算法 | 偏差3: `settling_time.py` MIN_POINTS=30，设计要求 100；30 点 AR(10) 模型自由度不足，影响快速率 F | `metric_calculator/settling_time.py:30` | **已修复** |
@@ -96,10 +96,10 @@
 | 优先级 | 数量 | 已修复 | 待修复 |
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
-| P1 高优先级 | 14 | 9 | 5 |
+| P1 高优先级 | 14 | 10 | 4 |
 | P2 中优先级 | 19 | 0 | 19 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **15** | **42** |
+| **合计** | **57** | **16** | **41** |
 
 ## 已修复记录
 
@@ -120,3 +120,4 @@
 | 9 | R1: 单删与批删行为不一致 | `delete_loop` 改硬删→软删（is_active=False, status=INACTIVE），保留 Tag 校验；`batch_delete_loops` 补 Tag 关联校验（批量查询 LoopTagMapping，有 Tag 的回路跳过并记入 skipped 列表），返回类型从 int 改为 dict {deleted, skipped}；`LoopBatchConfigResult` 添加 `skipped` 字段；端点适配新返回类型。新增 `test_batch_delete_loops_skip_with_tags` 测试 | `services/loop.py:549-613` + `services/loop_batch.py:186-293` + `schemas/loop_batch.py:77-83` + `endpoints/loops.py:142-177` + `tests/test_loop_batch.py:189-273` | 全后端 1500 测试通过 |
 | 10 | R2: is_stat_enabled 与 is_monitored 写入冲突 | `LoopBatchUpdates` 添加 `model_validator` 强制 isMonitored 与 isStatEnabled 互斥（同时传值抛 ValidationError）；新增 `TestLoopBatchUpdatesMutex` 3 个测试（互斥拒绝/仅 monitored/仅 stat） | `schemas/loop_batch.py:13-39` + `tests/test_loop_batch.py:275-306` | 全后端 1500 测试通过 |
 | 12 | R2: 自定义任务 ts_end 未传给 Celery | `calculate_custom_loop_kpi` 添加 `ts_end: str \| None = None` 参数并透传给 `_do_calculate_custom_loop`；`_do_calculate_custom_loop` 添加 `ts_end` 参数，时间窗结束逻辑改为：用户指定 ts_end 优先，否则 `ts_start + cycle_minutes`（保持默认行为）；`trigger_custom_evaluation` 改为 `calculate_custom_loop_kpi.delay(task_id, loop_id, body.tsStart, body.tsEnd)`。修复 `test_custom_evaluate_success` mock 目标错误（原 mock `calculate_loop_kpi` 应为 `calculate_custom_loop_kpi`）并添加 delay 调用参数断言。新增 4 个测试：2 个 Celery 任务层（ts_end 透传/None 默认）+ 2 个 `_do_calculate_custom_loop` 时间窗层（用户指定 ts_end/ts_end=None 用 cycle_minutes） | `tasks/kpi_calc.py:318-346,723-764` + `endpoints/tasks.py:401-408` + `tests/test_api_tasks.py:260-286` + `tests/test_kpi_calc.py:1106-1249` | 全后端 1504 测试通过 |
+| 13 | B3: 状态机契约与代码不一致 | 实现契约 §6 Loop 状态机从 `ACTIVE/PAUSED/DECOMMISSIONED`（运行/暂停/退役）修正为 `READY/PARTIAL/INACTIVE`（就绪/部分配置/已停用），对齐代码实际使用；新增历史命名映射说明：`ACTIVE`/`PAUSED`/`DECOMMISSIONED` 统一视为旧命名。代码中的状态反映"配置完整性 + 删除状态"而非"运行状态"：`READY` = 配置完整可参与 KPI 计算；`PARTIAL` = 缺必需 Tag 不参与计算；`INACTIVE` = 软删除（is_active=False）。仅文档修复，无代码改动 | `docs/设计文档/00-BASELINE/implementation-contract.md` §6 | 无需测试（文档修复） |
