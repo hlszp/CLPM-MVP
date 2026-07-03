@@ -98,6 +98,7 @@ function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
 
 // ===== 列表 =====
 const loading = ref(false);
+const loadError = ref(false); // P1 #21: 数据加载错误状态，供 ClpmDataCanvas 显示 error/retry
 const loopList = ref<LoopApi.LoopListItem[]>([]);
 const total = ref(0);
 const selectedRowKeys = ref<string[]>([]);
@@ -233,6 +234,7 @@ const SLOT_LABELS: Record<string, string> = {
 /** 加载回路列表 */
 async function loadList() {
   loading.value = true;
+  loadError.value = false;
   try {
     const data = await getLoopListApi({
       plantNodeId: query.plantNodeId,
@@ -246,8 +248,9 @@ async function loadList() {
     });
     loopList.value = data.items;
     total.value = data.total;
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    loadError.value = true; // P1 #21: 触发 ClpmDataCanvas error 态 + retry
+    console.error('[回路列表] 加载失败:', error);
   } finally {
     loading.value = false;
   }
@@ -449,8 +452,8 @@ async function confirmSave() {
       batchModalVisible.value = false;
     }
     confirmVisible.value = false;
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    console.error('操作失败:', error);
   } finally {
     confirmLoading.value = false;
   }
@@ -555,9 +558,9 @@ async function doBatchConfigSubmit() {
     message.success(`批量更新成功，共影响 ${result.affected} 个回路`);
     selectedRowKeys.value = [];
     await loadList();
-  } catch {
+  } catch (error) {
     hide();
-    // 错误已由拦截器处理
+    console.error('操作失败:', error);
   } finally {
     batchSaving.value = false;
   }
@@ -590,9 +593,9 @@ function handleBatchDelete() {
         message.success(`批量软删除成功，共影响 ${result.affected} 个回路`);
         selectedRowKeys.value = [];
         await loadList();
-      } catch {
+      } catch (error) {
         hide();
-        // 错误已由拦截器处理
+        console.error('操作失败:', error);
       }
     },
   });
@@ -625,9 +628,9 @@ async function handleExport() {
     URL.revokeObjectURL(url);
     hide();
     message.success('导出成功');
-  } catch {
+  } catch (error) {
     hide();
-    // 错误已由拦截器处理
+    console.error('操作失败:', error);
   } finally {
     exporting.value = false;
   }
@@ -647,9 +650,9 @@ function handleImportBeforeUpload(file: File): boolean {
       message.success('导入成功');
       loadList();
     })
-    .catch(() => {
+    .catch((error) => {
       hide();
-      // 错误已由拦截器处理
+      console.error('导入失败:', error);
     })
     .finally(() => {
       importing.value = false;
@@ -837,8 +840,8 @@ async function handleEdit(record: LoopApi.LoopListItem) {
     formState.scoreWeights = { ...detail.basicInfo.scoreWeights };
     formState.remark = detail.basicInfo.remark || '';
     formState.description = detail.basicInfo.description;
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    console.error('操作失败:', error);
   } finally {
     drawerLoading.value = false;
   }
@@ -861,8 +864,8 @@ async function loadAvailableTags(keyword?: string) {
       pageSize: 100,
     });
     availableTags.value = data.items;
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    console.error('操作失败:', error);
   } finally {
     tagSearchLoading.value = false;
   }
@@ -884,8 +887,8 @@ async function loadLoopTags(loopId: string) {
       const key = tag.role.toLowerCase() as keyof typeof slotState;
       slotState[key] = tag.tagId ?? undefined;
     }
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    console.error('操作失败:', error);
   }
 }
 
@@ -933,7 +936,7 @@ async function handleAutoLink() {
     }
 
     message.success(`自动关联成功！匹配到 ${matchedTags.length} 个测点`);
-  } catch {
+  } catch (error) {
     message.error('自动关联失败，请手动关联');
   }
 }
@@ -977,8 +980,8 @@ async function doSaveTagMapping() {
       message.success('保存成功');
     }
     await loadList();
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    console.error('操作失败:', error);
   } finally {
     tagSaving.value = false;
   }
@@ -1059,8 +1062,8 @@ async function doSaveBasic() {
       };
     }
     await loadList();
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    console.error('操作失败:', error);
   } finally {
     drawerSaving.value = false;
   }
@@ -1075,8 +1078,8 @@ async function handleDelete(record: LoopApi.LoopListItem) {
       drawerVisible.value = false;
     }
     await loadList();
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    console.error('操作失败:', error);
   }
 }
 
@@ -1085,8 +1088,8 @@ async function loadPlantNodes() {
   try {
     const tree = await getPlantNodeTreeApi();
     plantNodes.value = flattenNodes(tree);
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error) {
+    console.error('[工厂节点] 加载失败:', error);
   }
 }
 
@@ -1151,7 +1154,13 @@ watch(activeMainTab, (tab) => {
       />
 
       <!-- 右侧回路表格 -->
-      <ClpmDataCanvas class="flex-1" title="回路台账" :loading="loading">
+      <ClpmDataCanvas
+        class="flex-1"
+        title="回路台账"
+        :loading="loading"
+        :error="loadError"
+        @retry="loadList"
+      >
         <!-- 工具栏（图标化） -->
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <ClpmToolbarButton
