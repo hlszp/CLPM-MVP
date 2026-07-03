@@ -405,3 +405,94 @@ class TestLoopListControlTypeFilter:
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"
+
+
+class TestLoopListIsActiveMonitorStatusMutex:
+    """P3 #42: isActive 与 monitorStatus 语义冲突防护。
+
+    两个参数都映射到 LoopLedger.is_active 字段，同时传不同值会生成
+    is_active=X AND is_active=Y → 永远返回空结果。
+    """
+
+    def test_conflict_returns_400(self, client, mock_db, fake_redis) -> None:
+        """isActive=True 与 monitorStatus=false 同时传入应返回 400 错误。"""
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            compiled = str(stmt.compile()).lower()
+            if "count" in compiled:
+                return _make_scalar_mock(0)
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?isActive=true&monitorStatus=false",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200  # HTTP 200，但业务 code=400
+        body = resp.json()
+        assert body["code"] == "400"
+        assert "isActive" in body["message"] or "monitorStatus" in body["message"]
+
+    def test_consistent_values_no_error(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """isActive=True 与 monitorStatus=true 同时传入（值一致）应正常返回。"""
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            compiled = str(stmt.compile()).lower()
+            if "count" in compiled:
+                return _make_scalar_mock(0)
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?isActive=true&monitorStatus=true",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+
+    def test_only_is_active_no_error(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """仅传 isActive 应正常返回（无 monitorStatus 冲突）。"""
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            compiled = str(stmt.compile()).lower()
+            if "count" in compiled:
+                return _make_scalar_mock(0)
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?isActive=true",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+
+    def test_only_monitor_status_no_error(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """仅传 monitorStatus 应正常返回（无 isActive 冲突）。"""
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            compiled = str(stmt.compile()).lower()
+            if "count" in compiled:
+                return _make_scalar_mock(0)
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?monitorStatus=true",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"

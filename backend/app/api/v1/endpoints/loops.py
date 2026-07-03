@@ -80,20 +80,24 @@ async def list_loops_endpoint(
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """分页查询回路列表。"""
-    data = await list_loops(
-        db=db,
-        plant_node_id=plantNodeId,
-        control_mode=controlMode,
-        is_active=isActive,
-        status=status,
-        keyword=keyword,
-        loop_type=loopType,
-        control_type=controlType,
-        level=level,
-        monitor_status=monitorStatus,
-        page=page,
-        page_size=pageSize,
-    )
+    try:
+        data = await list_loops(
+            db=db,
+            plant_node_id=plantNodeId,
+            control_mode=controlMode,
+            is_active=isActive,
+            status=status,
+            keyword=keyword,
+            loop_type=loopType,
+            control_type=controlType,
+            level=level,
+            monitor_status=monitorStatus,
+            page=page,
+            page_size=pageSize,
+        )
+    except ValueError as e:
+        # P3 #42: isActive 与 monitorStatus 语义冲突
+        return {"code": "400", "message": str(e), "data": None}
     return success(data=data)
 
 

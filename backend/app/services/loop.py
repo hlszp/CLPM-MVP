@@ -150,7 +150,22 @@ async def list_loops(
         level: 按回路级别筛选（1/2/3）
         control_type: 按控制类型筛选（STABLE/SLOW/FAST/LOGIC）
         monitor_status: 按监控状态筛选（True=is_active=True，False=is_active=False）
+
+    Raises:
+        ValueError: is_active 与 monitor_status 同时传入但值不一致（语义冲突）
     """
+    # P3 #42: is_active 与 monitor_status 都映射到 LoopLedger.is_active 字段，
+    # 同时传入不同值会生成 is_active=X AND is_active=Y → 永远返回空结果。
+    # 校验：两个都传时值必须一致；统一为单一条件避免重复 AND。
+    if is_active is not None and monitor_status is not None:
+        if is_active != monitor_status:
+            raise ValueError(
+                "isActive 与 monitorStatus 语义相同（均映射到 is_active 字段），"
+                "同时传入时值必须一致"
+            )
+        # 值一致时只保留一个，避免重复 AND
+        monitor_status = None
+
     conditions = []
     if plant_node_id:
         # 递归获取所有子孙节点 ID，包含自身
