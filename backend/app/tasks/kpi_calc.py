@@ -872,11 +872,12 @@ async def _calculate_loop_kpi(
     # 构造虚拟 CONFIG bundle（ideal_settling_time 的数据源，DataPlanner 跳过 CONFIG tagGroup）
     config_bundle = _build_config_bundle(str(loop.id), control_type)
 
-    # 构造权重映射（type_weights 键为 weight_a/weight_f/weight_s，需映射到计算器代码）
+    # 构造权重映射：优先级 MetricConfig.weight > LoopTypeWeight > DEFAULT_WEIGHTS
+    # P2 #27: MetricConfig.weight 实际参与计算，管理员修改 /configs/metrics 即时生效
     from app.services.loop_config import infer_score_type
 
     score_type = infer_score_type(loop.loop_type)
-    weights = _build_weights_map(type_weights, score_type)
+    weights = _build_weights_map(type_weights, score_type, metric_configs)
 
     # 三层计算：Layer1 无依赖 → Layer2 有依赖 → Layer3 综合评分
     # PRD §5.1.3 / FDS §5.3.1：metric_configs 控制 is_enabled 过滤 + threshold 注入
@@ -1150,24 +1151,72 @@ def _build_config_bundle(
 def _build_weights_map(
     type_weights: dict[str, dict] | None,
     score_type: str,
+    metric_configs: dict[str, MetricConfig] | None = None,
 ) -> dict[str, float] | None:
     """构造 ConfidenceEvaluator 所需的权重映射。
 
-    type_weights 返回 ``{score_type: {weight_a, weight_f, weight_s}}``，
-    ConfidenceEvaluator 需要 ``{accuracy_rate: a, fast_rate: f, stability_rate: s}``。
+    权重解析优先级（对齐 FDS §5.3.1 / 项目记忆约束：
+    "Metric configuration weights apply to 3 core quality indicators
+    (accuracy/fast/steady) with sum=100"）：
+
+    1. **MetricConfig.weight 全局配置**（管理员通过 PUT /configs/metrics 设置）：
+       若 3 个核心指标（accuracy_rate / fast_response_rate / steady_rate）
+       的 weight 均已设置（非 null 且 > 0），则使用此全局权重（覆盖控制类型模板）。
+       MetricConfig.weight sum=100（百分比），需除以 100 归一化为 a+f+s=1.0 比例。
+
+    2. **LoopTypeWeight 控制类型模板**（按 STABLE/SLOW/FAST/LOGIC 自动套用）：
+       若 MetricConfig.weight 未配置（任一为 null 或全为 0），则按控制类型回退。
+
+    3. **DEFAULT_WEIGHTS**（ConfidenceEvaluator 内部 STABLE 模板）：
+       若 LoopTypeWeight 也未配置，返回 None 由调用方回退。
 
     Args:
-        type_weights: 回路类型权重映射
+        type_weights: 回路类型权重映射 ``{score_type: {weight_a, weight_f, weight_s}}``
         score_type: 评分类型（STABLE/SLOW/FAST/LOGIC）
+        metric_configs: 指标配置字典 ``{metric_code: MetricConfig}``（键为数据库列名小写）；
+            None 时跳过优先级 1，直接走 LoopTypeWeight
 
     Returns:
         权重映射字典 ``{accuracy_rate, fast_rate, stability_rate}``；
         无配置时返回 None（ConfidenceEvaluator 使用默认权重）
     """
+    # 优先级 1：MetricConfig.weight 全局配置（管理员通过 /configs/metrics 设置）
+    if metric_configs:
+        a_cfg = metric_configs.get("accuracy_rate")
+        f_cfg = metric_configs.get("fast_response_rate")
+        s_cfg = metric_configs.get("steady_rate")
+        if (
+            a_cfg and a_cfg.weight is not None and float(a_cfg.weight) > 0
+            and f_cfg and f_cfg.weight is not None and float(f_cfg.weight) > 0
+            and s_cfg and s_cfg.weight is not None and float(s_cfg.weight) > 0
+        ):
+            total = float(a_cfg.weight) + float(f_cfg.weight) + float(s_cfg.weight)
+            if total > 0:
+                logger.info(
+                    "[权重解析] 使用 MetricConfig.weight 全局配置: a=%s f=%s s=%s "
+                    "(sum=%s, 归一化后 sum=1.0)",
+                    a_cfg.weight, f_cfg.weight, s_cfg.weight, total,
+                )
+                return {
+                    "accuracy_rate": float(a_cfg.weight) / total,
+                    "fast_rate": float(f_cfg.weight) / total,
+                    "stability_rate": float(s_cfg.weight) / total,
+                }
+            logger.warning(
+                "[权重解析] MetricConfig.weight 总和为 0，回退到 LoopTypeWeight: "
+                "a=%s f=%s s=%s",
+                a_cfg.weight, f_cfg.weight, s_cfg.weight,
+            )
+
+    # 优先级 2：LoopTypeWeight 按控制类型模板
     if not type_weights or score_type not in type_weights:
         return None
 
     w = type_weights[score_type]
+    logger.info(
+        "[权重解析] 使用 LoopTypeWeight 控制类型模板: score_type=%s a=%s f=%s s=%s",
+        score_type, w.get("weight_a"), w.get("weight_f"), w.get("weight_s"),
+    )
     return {
         "accuracy_rate": float(w.get("weight_a", 0)),
         "fast_rate": float(w.get("weight_f", 0)),

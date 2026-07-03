@@ -1369,6 +1369,160 @@ class TestBuildWeightsMap:
 
 
 # ===========================================================================
+# P2 #27 R3: MetricConfig.weight 全局优先级测试
+# 设计意图：管理员通过 PUT /configs/metrics 设置的 MetricConfig.weight
+#           应作为全局权重覆盖 LoopTypeWeight 模板
+# ===========================================================================
+
+
+class TestBuildWeightsMapMetricConfigPriority:
+    """测试 _build_weights_map() 优先级链：MetricConfig.weight > LoopTypeWeight > None。
+
+    P2 #27 R3：MetricConfig.weight 应实际参与计算，而非仅作元数据。
+    """
+
+    def test_metric_config_overrides_loop_type_weight(self) -> None:
+        """MetricConfig.weight 全配置时覆盖 LoopTypeWeight 模板。"""
+        # MetricConfig: a=50, f=30, s=20 (sum=100)
+        metric_configs = {
+            "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("50")),
+            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+            "steady_rate": _make_metric_config("steady_rate", weight=Decimal("20")),
+        }
+        # LoopTypeWeight STABLE: a=0.2, f=0.3, s=0.5（应被覆盖）
+        type_weights = {
+            "STABLE": {
+                "weight_a": Decimal("0.2"),
+                "weight_f": Decimal("0.3"),
+                "weight_s": Decimal("0.5"),
+            }
+        }
+        result = _build_weights_map(type_weights, "STABLE", metric_configs)
+        # 归一化后：50/100=0.5, 30/100=0.3, 20/100=0.2
+        assert result == {
+            "accuracy_rate": 0.5,
+            "fast_rate": 0.3,
+            "stability_rate": 0.2,
+        }
+
+    def test_metric_config_normalized_when_sum_not_100(self) -> None:
+        """MetricConfig.weight 总和不为 100 时也按比例归一化（容错）。"""
+        # sum=200（异常输入但容错）
+        metric_configs = {
+            "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("100")),
+            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("60")),
+            "steady_rate": _make_metric_config("steady_rate", weight=Decimal("40")),
+        }
+        result = _build_weights_map(None, "STABLE", metric_configs)
+        # 归一化：100/200=0.5, 60/200=0.3, 40/200=0.2
+        assert result == {
+            "accuracy_rate": 0.5,
+            "fast_rate": 0.3,
+            "stability_rate": 0.2,
+        }
+
+    def test_metric_config_with_partial_null_falls_back_to_loop_type(self) -> None:
+        """MetricConfig.weight 部分为 null 时回退到 LoopTypeWeight。"""
+        # accuracy_rate.weight=null, fast/steady 已配置（应回退）
+        metric_configs = {
+            "accuracy_rate": _make_metric_config("accuracy_rate", weight=None),
+            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+            "steady_rate": _make_metric_config("steady_rate", weight=Decimal("20")),
+        }
+        type_weights = {
+            "SLOW": {
+                "weight_a": Decimal("0.3"),
+                "weight_f": Decimal("0.1"),
+                "weight_s": Decimal("0.6"),
+            }
+        }
+        result = _build_weights_map(type_weights, "SLOW", metric_configs)
+        # 回退到 LoopTypeWeight SLOW 模板
+        assert result == {
+            "accuracy_rate": 0.3,
+            "fast_rate": 0.1,
+            "stability_rate": 0.6,
+        }
+
+    def test_metric_config_with_zero_weight_falls_back_to_loop_type(self) -> None:
+        """MetricConfig.weight 含 0 时回退到 LoopTypeWeight（视作未配置）。"""
+        metric_configs = {
+            "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("0")),
+            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("50")),
+            "steady_rate": _make_metric_config("steady_rate", weight=Decimal("50")),
+        }
+        type_weights = {
+            "FAST": {
+                "weight_a": Decimal("0.2"),
+                "weight_f": Decimal("0.4"),
+                "weight_s": Decimal("0.4"),
+            }
+        }
+        result = _build_weights_map(type_weights, "FAST", metric_configs)
+        assert result == {
+            "accuracy_rate": 0.2,
+            "fast_rate": 0.4,
+            "stability_rate": 0.4,
+        }
+
+    def test_metric_config_partial_missing_falls_back_to_loop_type(self) -> None:
+        """metric_configs 缺失某核心指标时回退到 LoopTypeWeight。"""
+        # 缺 steady_rate
+        metric_configs = {
+            "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("50")),
+            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+        }
+        type_weights = {
+            "STABLE": {
+                "weight_a": Decimal("0.25"),
+                "weight_f": Decimal("0.20"),
+                "weight_s": Decimal("0.55"),
+            }
+        }
+        result = _build_weights_map(type_weights, "STABLE", metric_configs)
+        assert result == {
+            "accuracy_rate": 0.25,
+            "fast_rate": 0.20,
+            "stability_rate": 0.55,
+        }
+
+    def test_metric_config_only_metric_config_returns_normalized(self) -> None:
+        """仅有 MetricConfig.weight（type_weights=None）时仍能解析。"""
+        metric_configs = {
+            "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("40")),
+            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("35")),
+            "steady_rate": _make_metric_config("steady_rate", weight=Decimal("25")),
+        }
+        result = _build_weights_map(None, "STABLE", metric_configs)
+        assert result == {
+            "accuracy_rate": 0.4,
+            "fast_rate": 0.35,
+            "stability_rate": 0.25,
+        }
+
+    def test_metric_configs_none_falls_back_to_loop_type(self) -> None:
+        """metric_configs=None 时直接走 LoopTypeWeight（保持兼容）。"""
+        type_weights = {
+            "STABLE": {
+                "weight_a": Decimal("0.25"),
+                "weight_f": Decimal("0.20"),
+                "weight_s": Decimal("0.55"),
+            }
+        }
+        result = _build_weights_map(type_weights, "STABLE", None)
+        assert result == {
+            "accuracy_rate": 0.25,
+            "fast_rate": 0.20,
+            "stability_rate": 0.55,
+        }
+
+    def test_both_none_returns_none(self) -> None:
+        """metric_configs=None 且 type_weights=None 返回 None（用默认权重）。"""
+        result = _build_weights_map(None, "STABLE", None)
+        assert result is None
+
+
+# ===========================================================================
 # 8. 三层计算流程测试
 # ===========================================================================
 

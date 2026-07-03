@@ -50,7 +50,7 @@
 | 24 | 回路管理 | B3: 前端 `LoopQueryParams` 声明 `controlType` 参数但后端未实现，筛选被静默忽略 | `frontend/src/api/loop.ts:109` | **已修复** |
 | 25 | 回路管理 | B4: `create_loop` 不接收 `level`/`modeattr_tag_id`/`data_retention_days`，前端声明但被忽略 | `endpoints/loops.py:96-117` | **已修复** |
 | 26 | 回路管理 | B9: AasConfig 前后端字段不匹配（`syncInterval` vs `syncIntervalSeconds`、`latency` vs `latencyMs`） | `frontend/src/api/aas.ts` vs `schemas/aas.py` | **已修复** |
-| 27 | 性能评估 | R3: `MetricConfig.weight` 字段存在并校验总和=100，但综合评分实际使用 `LoopTypeWeight`，管理员修改不生效 | `services/performance.py:194` vs `kpi_calc.py:1105` | 待修复 |
+| 27 | 性能评估 | R3: `MetricConfig.weight` 字段存在并校验总和=100，但综合评分实际使用 `LoopTypeWeight`，管理员修改不生效 | `services/performance.py:194` vs `kpi_calc.py:1105` | **已修复** |
 | 28 | 性能评估 | R4: 节点小时聚合用 `LoopLevelWeight`(1:3,2:2,3:1)，日/月聚合用 `loop_count`，权重体系不一致 | `node_performance.py:261` vs `node_aggregation.py:88` | 待修复 |
 | 29 | 跨模块 | B6: 自定义任务快照表 `kpi_snapshot_custom` 缺少 `sampling_freq`/`quality_policy` 字段，数据血缘追溯能力弱于标准任务 | `tasks/kpi_calc.py:1415-1420` | 待修复 |
 | 30 | 跨模块 | B7: API 前缀不统一（`/config/loop-type-weights` 单数 vs `/configs/metrics` 复数） | `endpoints/loop_type_weight.py:23` vs `endpoints/configs.py:48` | 待修复 |
@@ -97,9 +97,9 @@
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 14 | 0 |
-| P2 中优先级 | 19 | 4 | 15 |
+| P2 中优先级 | 19 | 5 | 14 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **24** | **33** |
+| **合计** | **57** | **25** | **32** |
 
 ## 已修复记录
 
@@ -128,3 +128,4 @@
 | 23 | B2: controlMode 后置过滤导致分页 total 错误 | 将 controlMode 过滤从 Python 后置过滤下沉到 SQL 层（EXISTS 子查询），让 `count_stmt` 与 `stmt` 共享同一过滤条件，`total` 自动反映全表匹配数。新增 `_control_mode_to_values(control_mode)` 反向映射函数（Manual→[0] / Auto→[1] / Cascade→[2,3]，与 `_mode_value_to_label` 保持一致）；未识别标签返回空列表，调用方据此直接返回空结果。EXISTS 子查询结构：`WHERE EXISTS (SELECT 1 FROM LoopTagMapping JOIN TagRegistry ON tag_id=TagRegistry.id WHERE loop_id=LoopLedger.id AND tag_role='MODE' AND current_value IN :mode_values)`。新增 8 个单元测试覆盖反向映射（Auto/Manual/Cascade/大小写/Unknown/空输入/双向一致性/Unknown 模式值） | `backend/app/services/loop.py:179-193,269-300` + `backend/tests/test_loop.py:259-318` | 全后端 1532 测试通过（1524 原有 + 8 新增） |
 | 24+25 | B3+B4: controlType/level/modeattrTagId/dataRetentionDays 前端声明但被忽略 | 数据库迁移 `m6q7r8s9t0u1` 在 `loop_ledger` 表新增 `control_type` 字段（STABLE/SLOW/FAST/LOGIC，与 `loop_type` 业务类型独立，对齐 GB/T 44693.2-2024 附表1）。ORM 模型 `LoopLedger` 添加 `control_type` 列。`LoopCreate`/`LoopUpdate` schema 新增 `controlType`/`level`/`modeattrTagId`/`dataRetentionDays` 字段；`LoopListItem` 新增 `controlType`；`LoopBasicInfo`/`LoopUpdateResult` 新增 `controlType`/`level`/`modeattrTagId`/`dataRetentionDays`。service 层 `list_loops` 添加 `control_type` 参数 + SQL 过滤（`func.upper(LoopLedger.control_type) == control_type.upper()`）；`create_loop`/`update_loop`/`get_loop_detail` 接收并透传新字段，审计日志 before/after 包含完整字段。endpoint 层 `list_loops_endpoint` 新增 `controlType` 查询参数；`create_loop_endpoint`/`update_loop_endpoint` 透传新字段。新增 6 个测试：schema 字段存在性（Create/Update 各 1）+ service 签名（create/update/list 各 1）+ endpoint 接受 controlType 查询（1）。mock 对象 LOOP_001 补 `control_type`/`modeattr_tag_id`/`data_retention_days` 字段 | `backend/alembic/versions/m6q7r8s9t0u1_add_loop_control_type.py` + `backend/app/models/loop.py:50-55` + `backend/app/schemas/loop.py:42-77,113,140-143,208-211` + `backend/app/services/loop.py:141,168,257,319-322,359-362,395-411,495-521,533-537,553-563,590-600,618-631` + `backend/app/api/v1/endpoints/loops.py:70-72,91,120-123,298-301` + `backend/tests/test_loop.py:37-40,324-407` + `backend/tests/test_s8_supplement.py:130-133` | 全后端 1538 测试通过（1532 原有 + 6 新增） |
 | 26 | B9: AasConfig 前后端字段不匹配 | 前端 `aas.ts` 对齐后端字段命名（含单位更清晰）：`AasConfig.syncInterval` → `syncIntervalSeconds`；`UpdateAasConfigParams.syncInterval` → `syncIntervalSeconds`；`AasConfigTestResult.latency` → `latencyMs`（类型同步改为 `number \| null`）。`aas.vue` 配套更新：`configForm.syncInterval` → `configForm.syncIntervalSeconds`；`data.syncInterval` → `data.syncIntervalSeconds`；模板 `FormItem name="syncInterval"` → `name="syncIntervalSeconds"`；`InputNumber v-model:value` 同步；`testResult.latency` → `testResult.latencyMs`；注释中的字段名同步更新 | `frontend/.../api/aas.ts:54-77` + `frontend/.../views/loop/aas.vue:8,53,222,239,263,269,388,390,429` | 前端类型检查通过 |
+| 27 | R3: MetricConfig.weight 修改不生效 | `_build_weights_map` 函数签名新增 `metric_configs` 参数，权重解析改为三级优先链：① `MetricConfig.weight` 全局配置（管理员通过 PUT /configs/metrics 设置的 3 核心指标权重，sum=100，归一化为 a+f+s=1.0），② `LoopTypeWeight` 控制类型模板（STABLE/SLOW/FAST/LOGIC），③ `DEFAULT_WEIGHTS`（ConfidenceEvaluator 内部 STABLE 模板，返回 None 触发）。回退条件：MetricConfig.weight 任一为 null/0/缺失 → 回退到 LoopTypeWeight；type_weights 不含 score_type → 返回 None。`_calculate_loop_kpi` 调用 `_build_weights_map(type_weights, score_type, metric_configs)` 传入 metric_configs。新增 `TestBuildWeightsMapMetricConfigPriority` 测试类 8 个用例：覆盖优先（MetricConfig 全配置覆盖 LoopTypeWeight）/容错归一化（sum≠100 按比例）/部分 null 回退/含 0 回退/缺指标回退/仅 MetricConfig（type_weights=None）/metric_configs=None 兼容/双 None 返回 None | `backend/app/tasks/kpi_calc.py:1150-1223,875-880` + `backend/tests/test_kpi_calc.py:1370-1522` | 全后端 1546 测试通过（1538 原有 + 8 新增） |
