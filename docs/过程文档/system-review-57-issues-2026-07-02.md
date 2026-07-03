@@ -36,7 +36,7 @@
 | 17 | 算法 | 偏差5: `ideal_settling_time.py` 默认值 TC=300(应180)/LC=300(应600)/CC=600(应300)，影响快速率 F 基准 T' | `metric_calculator/ideal_settling_time.py:27-33` | **已修复** |
 | 18 | 算法 | 偏差1: R 缺失时降级为基础评分 60%，设计文档 §4.10 未定义此降级逻辑，60% 系数缺乏依据 | `confidence_evaluator.py:222-225` | **已修复** |
 | 19 | UX | UX3: `preferences.ts` 中 `THEME_COLORS` 为静态常量（不响应主题切换），`detail.vue` 直接使用而非 `useClpmTheme()` | `preferences.ts:38-49` | **已修复** |
-| 20 | UX | UX6: 批量配置入口隐藏在独立 Tab 中，需跨 Tab 操作（选中回路→切换Tab→打开弹窗），流程不直观 | `views/loop/manage.vue:1129-1139` | 待修复 |
+| 20 | UX | UX6: 批量配置入口隐藏在独立 Tab 中，需跨 Tab 操作（选中回路→切换Tab→打开弹窗），流程不直观 | `views/loop/manage.vue:1129-1139` | **已修复** |
 | 21 | UX | UX7: 大量 `catch {}` 静默吞错，页面状态不一致且无错误引导，`ClpmDataCanvas` 的 error/retry 能力未使用 | `views/loop/manage.vue` 多处 | 待修复 |
 | 22 | 测试 | TC1: 7 场景测试数据（7200点×7）已生成于 `fixtures/kpi_test_data.json`，但**没有任何 pytest 测试引用**，项目记忆硬约束在 CI 中未被验证 | `tests/fixtures/kpi_test_data.json` | 待修复 |
 
@@ -96,10 +96,10 @@
 | 优先级 | 数量 | 已修复 | 待修复 |
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
-| P1 高优先级 | 14 | 11 | 3 |
+| P1 高优先级 | 14 | 12 | 2 |
 | P2 中优先级 | 19 | 0 | 19 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **17** | **40** |
+| **合计** | **57** | **18** | **39** |
 
 ## 已修复记录
 
@@ -122,3 +122,4 @@
 | 12 | R2: 自定义任务 ts_end 未传给 Celery | `calculate_custom_loop_kpi` 添加 `ts_end: str \| None = None` 参数并透传给 `_do_calculate_custom_loop`；`_do_calculate_custom_loop` 添加 `ts_end` 参数，时间窗结束逻辑改为：用户指定 ts_end 优先，否则 `ts_start + cycle_minutes`（保持默认行为）；`trigger_custom_evaluation` 改为 `calculate_custom_loop_kpi.delay(task_id, loop_id, body.tsStart, body.tsEnd)`。修复 `test_custom_evaluate_success` mock 目标错误（原 mock `calculate_loop_kpi` 应为 `calculate_custom_loop_kpi`）并添加 delay 调用参数断言。新增 4 个测试：2 个 Celery 任务层（ts_end 透传/None 默认）+ 2 个 `_do_calculate_custom_loop` 时间窗层（用户指定 ts_end/ts_end=None 用 cycle_minutes） | `tasks/kpi_calc.py:318-346,723-764` + `endpoints/tasks.py:401-408` + `tests/test_api_tasks.py:260-286` + `tests/test_kpi_calc.py:1106-1249` | 全后端 1504 测试通过 |
 | 13 | B3: 状态机契约与代码不一致 | 实现契约 §6 Loop 状态机从 `ACTIVE/PAUSED/DECOMMISSIONED`（运行/暂停/退役）修正为 `READY/PARTIAL/INACTIVE`（就绪/部分配置/已停用），对齐代码实际使用；新增历史命名映射说明：`ACTIVE`/`PAUSED`/`DECOMMISSIONED` 统一视为旧命名。代码中的状态反映"配置完整性 + 删除状态"而非"运行状态"：`READY` = 配置完整可参与 KPI 计算；`PARTIAL` = 缺必需 Tag 不参与计算；`INACTIVE` = 软删除（is_active=False）。仅文档修复，无代码改动 | `docs/设计文档/00-BASELINE/implementation-contract.md` §6 | 无需测试（文档修复） |
 | 19 | UX3: THEME_COLORS 静态常量不响应主题切换 | `detail.vue` 移除 `import { THEME_COLORS } from '#/preferences'`，改用 `useClpmTheme()` 获取响应式 `themeColors`（computed ref，isDark 变化时自动更新）；template 中 `THEME_COLORS.SUCCESS/DANGER` 改为 `themeColors.SUCCESS/DANGER`（Vue 自动解包 ref）。`preferences.ts` 中 `THEME_COLORS` 添加 `@deprecated` JSDoc 注释，引导组件改用 `useClpmTheme()`。注：`KPI_COLOR_MAP`/`ACTION_STATUS_COLOR_MAP` 仍在 preferences.ts 中定义但无任何文件 import 使用（死代码，保留备用） | `frontend/.../views/loop/detail.vue:49-62,589-598` + `frontend/.../preferences.ts:32-42` | 前端类型检查通过 |
+| 20 | UX6: 批量配置入口跨 Tab 操作 | 移除冗余的"批量配置"Tab（`<TabPane key="batch">` + 对应的 ClpmDataCanvas 内容块），因为"回路台账"Tab 已内联完整的批量操作入口：工具栏"批量配置"按钮 + 选中回路后浮现的批量操作工具栏（批量设置/批量删除/清除选择）。移除后简化为 3 个 Tab（工厂结构/回路台账/Tag 关联），消除跨 Tab 操作摩擦。同时清理死代码：`selectedLoopColumns`/`selectedLoops` 仅在批量配置 Tab 使用，一并删除；移除未使用的 `Alert` import | `frontend/.../views/loop/manage.vue:85,1158,1489-1567` | 前端类型检查通过 |

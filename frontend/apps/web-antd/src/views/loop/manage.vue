@@ -27,7 +27,6 @@ import { useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 
 import {
-  Alert,
   Button,
   Drawer,
   Form,
@@ -82,7 +81,7 @@ function handleViewDetail(record: LoopApi.LoopListItem) {
 }
 
 // ===== 主 Tab 结构 =====
-const activeMainTab = ref<'batch' | 'factory' | 'ledger' | 'tags'>('factory');
+const activeMainTab = ref<'factory' | 'ledger' | 'tags'>('factory');
 
 // ===== 树（使用统一组件 PlantNodeTree）=====
 const selectedPlantNodeId = ref<string | undefined>(undefined);
@@ -220,24 +219,6 @@ const tagColumns: TableColumnsType = [
   { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ];
 
-/** 批量配置 Tab 已选回路列 */
-const selectedLoopColumns: TableColumnsType = [
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    key: 'description',
-    ellipsis: true,
-  },
-  {
-    title: '控制类型',
-    dataIndex: 'controlType',
-    key: 'controlType',
-    width: 100,
-  },
-  { title: '级别', dataIndex: 'level', key: 'level', width: 80 },
-];
-
 /** Tag 槽位标签 */
 const SLOT_LABELS: Record<string, string> = {
   pv: 'PV',
@@ -289,11 +270,6 @@ const rowSelection = computed(() => ({
     selectedRowKeys.value = keys as string[];
   },
 }));
-
-/** 已选中的回路列表（当前页内） */
-const selectedLoops = computed(() =>
-  loopList.value.filter((l) => selectedRowKeys.value.includes(l.loopId)),
-);
 
 // ===== 变更确认弹窗（通用） =====
 type ConfirmContextType = 'batch' | 'tagMapping' | 'update';
@@ -1155,7 +1131,6 @@ watch(activeMainTab, (tab) => {
       <TabPane key="factory" tab="工厂结构" />
       <TabPane key="ledger" tab="回路台账" />
       <TabPane key="tags" tab="Tag 关联" />
-      <TabPane key="batch" tab="批量配置" />
     </Tabs>
 
     <!-- 工厂结构 / 回路台账 共享表格区 -->
@@ -1484,86 +1459,6 @@ watch(activeMainTab, (tab) => {
           </template>
         </template>
       </Table>
-    </ClpmDataCanvas>
-
-    <!-- 批量配置 Tab -->
-    <ClpmDataCanvas
-      v-if="activeMainTab === 'batch'"
-      title="批量配置"
-      :loading="false"
-    >
-      <Alert
-        v-if="selectedRowKeys.length === 0"
-        type="info"
-        show-icon
-        message="请先选择回路"
-        description="切换到「工厂结构」或「回路台账」Tab，勾选要批量配置的回路后返回此处。"
-      />
-      <template v-else>
-        <Alert
-          type="warning"
-          show-icon
-          :message="`本次将影响 ${selectedRowKeys.length} 个回路`"
-          description="批量配置将立即生效，请仔细确认操作范围。点击「打开批量配置」后系统会弹出变更确认对话框。"
-        />
-        <div class="mt-4 flex items-center gap-3">
-          <ClpmToolbarButton
-            v-permission="['ADMIN']"
-            icon="ant-design:setting-outlined"
-            label="打开批量配置"
-            variant="primary"
-            @click="handleBatchConfig"
-          />
-          <ClpmToolbarButton
-            v-permission="['ADMIN']"
-            icon="delete"
-            label="批量删除"
-            @click="handleBatchDelete"
-          />
-          <Button size="small" type="link" @click="selectedRowKeys = []">
-            清除选择
-          </Button>
-        </div>
-
-        <!-- 已选回路列表 -->
-        <div class="mt-4">
-          <div class="mb-2 text-sm font-medium">
-            已选回路（{{ selectedLoops.length }} /
-            {{ selectedRowKeys.length }}，仅显示当前页内）
-          </div>
-          <Table
-            :columns="selectedLoopColumns"
-            :data-source="selectedLoops"
-            :pagination="false"
-            :row-key="(record: LoopApi.LoopListItem) => record.loopId"
-            size="small"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'controlType'">
-                <Tag
-                  v-if="record.controlType"
-                  :color="
-                    CONTROL_TYPE_MAP[record.controlType]?.color ?? 'default'
-                  "
-                  class="m-0"
-                >
-                  {{
-                    CONTROL_TYPE_MAP[record.controlType]?.label ??
-                    record.controlType
-                  }}
-                </Tag>
-                <span v-else class="text-gray-400">—</span>
-              </template>
-              <template v-else-if="column.key === 'level'">
-                <span v-if="record.level" class="font-mono">
-                  {{ LEVEL_LABEL[record.level] ?? record.level }}
-                </span>
-                <span v-else class="text-gray-400">—</span>
-              </template>
-            </template>
-          </Table>
-        </div>
-      </template>
     </ClpmDataCanvas>
 
     <!-- 编辑抽屉 -->
