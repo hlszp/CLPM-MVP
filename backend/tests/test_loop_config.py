@@ -197,6 +197,11 @@ def _make_agg_row(
     row.fast_response_rate = Decimal("82.00")
     row.oscillation_rate = Decimal("15.00")
     row.saturation_rate = Decimal("8.00")
+    # P1 #14: 4 个新增诊断字段
+    row.stiction_coeff = Decimal("0.12")
+    row.steady_state_time = Decimal("135.00")
+    row.output_travel_index = Decimal("38.00")
+    row.ideal_settling_time = Decimal("180.00")
     return row
 
 

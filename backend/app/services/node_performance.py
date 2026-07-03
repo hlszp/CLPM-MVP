@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Integer, func, select, text
+from sqlalchemy import Integer, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loop import LoopLedger
@@ -35,6 +35,8 @@ from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_
 logger = logging.getLogger(__name__)
 
 # 参与加权聚合的 KPI 字段（与回路级快照对齐）
+# P1 #14: 补全 4 个缺失字段（stiction_coeff / steady_state_time /
+# output_travel_index / ideal_settling_time），节点级用回路重要性加权均值
 KPI_FIELDS = (
     "good_value_rate",
     "auto_mode_rate",
@@ -45,6 +47,10 @@ KPI_FIELDS = (
     "oscillation_rate",
     "saturation_rate",
     "score",
+    "stiction_coeff",
+    "steady_state_time",
+    "output_travel_index",
+    "ideal_settling_time",
 )
 
 
@@ -222,15 +228,35 @@ async def aggregate_node_snapshot(
         logger.debug("[节点级聚合] plant_node_id=%s 无下属回路", plant_node_id)
         return None
 
-    # 子查询：每个回路在时间窗内最新一条 SUCCESS 快照
+    logger.info(
+        "[节点级聚合] plant_node_id=%s 下属回路数=%d 时间窗=%s~%s",
+        plant_node_id, len(loop_ids), ts_start, ts_end,
+    )
+
+    # 子查询：每个回路在时间窗内最新一条 SUCCESS/PARTIAL 快照
     # 使用 DISTINCT ON (loop_id) 取每组最新
+    #
+    # 纳入 PARTIAL 的原因：PARTIAL 快照仅表示 good_value_rate / auto_mode_rate /
+    # steady_rate 中有部分为 NULL（如 OP/MODE 信号缺失或质量码无效），
+    # 但其他指标（accuracy_rate / score 等）仍有有效值。
+    # SQL 聚合中 col * weight_col 对 NULL 自然跳过（SUM 忽略 NULL），
+    # 不会污染其他字段的加权平均。INCONCLUSIVE 仍被排除（数据严重不足）。
+    #
+    # 可信度 E 级过滤（PRD §5.4.3 / FDS §5.3.10）：
+    # confidence_level='E' 表示有效数据率 < 20%，数据严重不足，
+    # 此类快照不参与节点级聚合，保证聚合结果可靠性。
+    # confidence_level 为 NULL 的旧数据（未评估可信度）仍纳入聚合。
     subq = (
         select(KpiSnapshotHourly)
         .where(
             KpiSnapshotHourly.loop_id.in_(loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
             KpiSnapshotHourly.ts_start <= ts_end,
-            KpiSnapshotHourly.status == "SUCCESS",
+            KpiSnapshotHourly.status.in_(["SUCCESS", "PARTIAL"]),
+            or_(
+                KpiSnapshotHourly.confidence_level.is_(None),
+                KpiSnapshotHourly.confidence_level != "E",
+            ),
         )
         .distinct(KpiSnapshotHourly.loop_id)
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
@@ -281,6 +307,37 @@ async def aggregate_node_snapshot(
         )
         return None
 
+    # 查询每回路明细（score + level + weight），用于排查聚合偏差
+    detail_stmt = (
+        select(
+            subq.c.loop_id,
+            subq.c.score,
+            subq.c.status,
+            subq.c.confidence_level,
+            LoopLedger.tag_name,
+            LoopLedger.level,
+            weight_col,
+        )
+        .select_from(
+            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
+                LoopLevelWeight, LoopLedger.level == LoopLevelWeight.level
+            )
+        )
+    )
+    detail_result = await db.execute(detail_stmt)
+    detail_rows = detail_result.all()
+    logger.info(
+        "[节点级聚合] plant_node_id=%s 参与聚合回路明细（共 %d 条）:",
+        plant_node_id, len(detail_rows),
+    )
+    for dr in detail_rows:
+        logger.info(
+            "[节点级聚合]   回路 loop_id=%s tag=%s level=%s weight=%s score=%s status=%s confidence=%s",
+            dr.loop_id, dr.tag_name, dr.level, dr.w,
+            float(dr.score) if dr.score is not None else None,
+            dr.status, dr.confidence_level,
+        )
+
     def avg_value(field: str) -> Decimal | None:
         val = getattr(row, field)
         if val is None:
@@ -298,10 +355,12 @@ async def aggregate_node_snapshot(
     realtime_auto_rate = _realtime_result["rate"] if _realtime_result else None
 
     logger.info(
-        "[节点级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "
-        "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, 定级=%s",
+        "[节点级聚合] plant_node_id=%s 聚合结果: 回路数=%d, weight_sum=%.2f, "
+        "投自动回路数=%d, 投自动占比=%.2f%%, 实时自控率=%s, "
+        "加权综合评分=%s, 定级=%s",
         plant_node_id,
         row.cnt,
+        weight_sum_val,
         auto_loop_count_val,
         auto_loop_ratio,
         realtime_auto_rate,
@@ -322,6 +381,11 @@ async def aggregate_node_snapshot(
         "fast_response_rate": avg_value("fast_response_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
+        # P1 #14: 补全 4 个字段（节点级加权均值，对齐 GB/T 44693.2-2024 §6.4）
+        "stiction_coeff": avg_value("stiction_coeff"),
+        "steady_state_time": avg_value("steady_state_time"),
+        "output_travel_index": avg_value("output_travel_index"),
+        "ideal_settling_time": avg_value("ideal_settling_time"),
         "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
         "realtime_auto_rate": realtime_auto_rate,
         "loop_count": int(row.cnt),
@@ -359,7 +423,10 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
                 setattr(existing, key, val)
         existing.created_at = datetime.now(UTC).replace(tzinfo=None)
         await db.flush()
-        logger.debug("[节点级快照] 覆盖更新 plant_node_id=%s, ts_start=%s", plant_node_id, ts_start)
+        logger.info(
+            "[节点级快照] 覆盖更新 plant_node_id=%s ts_start=%s score=%s status=%s",
+            plant_node_id, ts_start, snap_data.get("score"), snap_data.get("status"),
+        )
     else:
         # 新增
         snap = KpiNodeSnapshotHourly(
@@ -368,7 +435,10 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         )
         db.add(snap)
         await db.flush()
-        logger.debug("[节点级快照] 新增 plant_node_id=%s, ts_start=%s", plant_node_id, ts_start)
+        logger.info(
+            "[节点级快照] 新增 plant_node_id=%s ts_start=%s score=%s status=%s",
+            plant_node_id, ts_start, snap_data.get("score"), snap_data.get("status"),
+        )
 
     return snap_data
 
@@ -414,6 +484,10 @@ def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None)
         "fastResponseRate": to_float(snap.fast_response_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
+        "stictionCoeff": to_float(snap.stiction_coeff),
+        "steadyStateTime": to_float(snap.steady_state_time),
+        "outputTravelIndex": to_float(snap.output_travel_index),
+        "idealSettlingTime": to_float(snap.ideal_settling_time),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
         "realtimeAutoRate": to_float(snap.realtime_auto_rate),
         "loopCount": snap.loop_count,
@@ -568,6 +642,10 @@ async def get_node_ranking(
                 "fastResponseRate": to_float(row.fast_response_rate),
                 "oscillationRate": to_float(row.oscillation_rate),
                 "saturationRate": to_float(row.saturation_rate),
+                "stictionCoeff": to_float(row.stiction_coeff),
+                "steadyStateTime": to_float(row.steady_state_time),
+                "outputTravelIndex": to_float(row.output_travel_index),
+                "idealSettlingTime": to_float(row.ideal_settling_time),
                 "autoLoopRatio": to_float(row.auto_loop_ratio),
                 "realtimeAutoRate": to_float(row.realtime_auto_rate),
                 "loopCount": row.loop_count,
@@ -690,6 +768,10 @@ def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None
         "fastResponseRate": to_float(snap.fast_response_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
+        "stictionCoeff": to_float(snap.stiction_coeff),
+        "steadyStateTime": to_float(snap.steady_state_time),
+        "outputTravelIndex": to_float(snap.output_travel_index),
+        "idealSettlingTime": to_float(snap.ideal_settling_time),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
         "realtimeAutoRate": to_float(snap.realtime_auto_rate),
         "loopCount": snap.loop_count,
