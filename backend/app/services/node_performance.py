@@ -92,6 +92,46 @@ async def collect_descendant_loop_ids(
 # ---------------------------------------------------------------------------
 
 
+#: sys_config 中存储全局默认自动 MODE 集合的 key
+DEFAULT_AUTO_MODES_KEY = "loop.default_auto_modes"
+
+
+async def get_default_auto_modes(db: AsyncSession) -> set[int]:
+    """从 sys_config 读取全局默认自动 MODE 集合（P1 #15 修正）。
+
+    替代原硬编码 ``{1, 2, 3}``，管理员可通过 sys_config 表配置：
+    - key: ``loop.default_auto_modes``
+    - value: JSON 数组字符串，如 ``"[1, 2, 3]"``
+
+    无配置或解析失败时返回空集（不假设默认值），
+    此时无 LoopModeMapping 配置的回路不计入自动模式回路数。
+
+    Returns:
+        全局默认自动 MODE 值集合
+    """
+    from app.models.sys_config import SysConfig
+
+    result = await db.execute(
+        select(SysConfig.value).where(SysConfig.key == DEFAULT_AUTO_MODES_KEY)
+    )
+    raw = result.scalar_one_or_none()
+    if not raw:
+        return set()
+    try:
+        import json
+
+        modes = json.loads(raw)
+        return {int(m) for m in modes} if isinstance(modes, list) else set()
+    except (ValueError, TypeError) as exc:
+        logger.warning(
+            "[实时自控率] sys_config.%s 值无效（%r），回退空集: %s",
+            DEFAULT_AUTO_MODES_KEY,
+            raw,
+            exc,
+        )
+        return set()
+
+
 async def query_realtime_auto_rate(
     db: AsyncSession,
     loop_ids: list[str],
@@ -100,7 +140,8 @@ async def query_realtime_auto_rate(
 
     从 TDengine 查询每个回路的最新 MODE 值，
     根据该回路的投用定义（loop_mode_mapping）判断是否算自动模式。
-    无投用定义的回路回退到默认 {1, 2, 3}（向后兼容）。
+    无投用定义的回路回退到 ``sys_config`` 中 ``loop.default_auto_modes``
+    配置的全局默认值（默认空集，建议管理员配置）。
 
     Args:
         db: 异步数据库会话
@@ -122,6 +163,9 @@ async def query_realtime_auto_rate(
     from app.models.loop import LoopTagMapping
     from app.models.loop_config import LoopModeMapping
     from app.models.tag import TagRegistry
+
+    # --- 0. 读取全局默认自动 MODE 集合（P1 #15: 替代硬编码 {1,2,3}）---
+    default_auto_modes = await get_default_auto_modes(db)
 
     # --- 1. 批量查询投用定义，构建 {loop_id: set(auto_mode_values)} ---
     mm_result = await db.execute(
@@ -168,7 +212,6 @@ async def query_realtime_auto_rate(
     mode_values = await asyncio.gather(*tasks)
 
     # --- 5. 按回路投用定义判断是否算自动 ---
-    DEFAULT_AUTO_MODES = {1, 2, 3}  # 向后兼容默认值
     auto_count = 0
     valid_count = 0
 
@@ -176,8 +219,8 @@ async def query_realtime_auto_rate(
         if mode_val is None:
             continue
         valid_count += 1
-        # 取该回路的自动 MODE 集合，无配置时回退到默认
-        auto_modes = auto_mode_map.get(row.loop_id, DEFAULT_AUTO_MODES)
+        # 取该回路的自动 MODE 集合，无配置时回退到 sys_config 全局默认
+        auto_modes = auto_mode_map.get(row.loop_id, default_auto_modes)
         if mode_val in auto_modes:
             auto_count += 1
 
@@ -187,10 +230,12 @@ async def query_realtime_auto_rate(
 
     rate = round(auto_count / valid_count * 100, 2)
     logger.debug(
-        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%",
+        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, "
+        "全局默认自动MODE=%s",
         valid_count,
         auto_count,
         rate,
+        default_auto_modes,
     )
     return {
         "rate": Decimal(str(rate)),
