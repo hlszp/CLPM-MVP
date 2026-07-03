@@ -41,6 +41,29 @@ const DARK_COLORS = {
   NEUTRAL: '#9ca3af',
 } as const;
 
+/**
+ * 可信度等级色板（浅色模式，对齐 confidence-badge.vue §7.15 A/B/C/D/E 五级）
+ *
+ * 设计文档 §7.15 颜色映射要求用 `--status-*` 语义变量响应主题切换。
+ * 此处保留 5 级高区分度色相（绿/青/金/橙/灰），深色模式亮度提升。
+ */
+const LIGHT_CONFIDENCE = {
+  A: '#52c41a', // 绿（对齐 SUCCESS）
+  B: '#13c2c2', // 青（INFO 近似）
+  C: '#faad14', // 金黄（WARNING）
+  D: '#fa8c16', // 橙（介于 WARNING 与 DANGER 之间，保留原视觉区分）
+  E: '#8c8c8c', // 灰（NEUTRAL）
+} as const;
+
+/** 可信度等级色板（深色模式，亮度提升对齐 DARK_COLORS 同语义色） */
+const DARK_CONFIDENCE = {
+  A: '#22c55e',
+  B: '#2dd4bf',
+  C: '#fbbf24',
+  D: '#fb923c',
+  E: '#9ca3af',
+} as const;
+
 /** ECharts 图表通用色（浅色模式） */
 const LIGHT_CHART = {
   /** 轴标签、图例、标题等文本色 */
@@ -87,6 +110,11 @@ export function useClpmTheme() {
     isDark.value ? DARK_COLORS : LIGHT_COLORS,
   );
 
+  /** 可信度等级色板（响应式，A/B/C/D/E 五级，对齐 §7.15） */
+  const confidenceColors = computed(() =>
+    isDark.value ? DARK_CONFIDENCE : LIGHT_CONFIDENCE,
+  );
+
   /** ECharts 图表通用色（响应式） */
   const chartColors = computed(() => (isDark.value ? DARK_CHART : LIGHT_CHART));
 
@@ -117,6 +145,7 @@ export function useClpmTheme() {
   return {
     isDark,
     themeColors,
+    confidenceColors,
     chartColors,
     chartTextColor,
     chartTextStrongColor,

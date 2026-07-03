@@ -8,12 +8,17 @@
  * - C 级（60% ≤ valid_rate < 80%）：琥珀色，可信度一般
  * - D 级（20% ≤ valid_rate < 60%）：橙红色，可信度较低
  * - E 级（valid_rate < 20%）：灰色，标记 INCONCLUSIVE，评分留空
+ *
+ * P2 #35 UX8 修正：色块圆点不再硬编码 hex 值，改用 useClpmTheme().confidenceColors
+ * 响应式色板，暗色模式自动切换为高亮度色值（对齐 §7.15 `--status-*` 语义变量要求）。
  */
 import { computed } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
 import { Tag, Tooltip } from 'ant-design-vue';
+
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricConfidenceBadge' });
 
@@ -37,27 +42,35 @@ const props = withDefaults(defineProps<Props>(), {
   showLabel: true,
 });
 
-/** 等级配置：Tag 颜色预设、色块圆点颜色、文字、是否为 INCONCLUSIVE */
-const levelMap: Record<
+/** 响应式可信度色板（A/B/C/D/E → 浅/深色自适应） */
+const { confidenceColors } = useClpmTheme();
+
+/** 等级配置：Tag 颜色预设、色块圆点颜色 key、文字、是否为 INCONCLUSIVE */
+const levelConfig: Record<
   ConfidenceLevel,
-  { color: string; dot: string; label: string; inconclusive?: boolean }
+  { color: string; dotKey: keyof typeof confidenceColors.value; label: string; inconclusive?: boolean }
 > = {
-  A: { color: 'green', dot: '#52c41a', label: 'A' },
-  B: { color: 'cyan', dot: '#13c2c2', label: 'B' },
-  C: { color: 'gold', dot: '#faad14', label: 'C' },
-  D: { color: 'orange', dot: '#fa8c16', label: 'D' },
+  A: { color: 'green', dotKey: 'A', label: 'A' },
+  B: { color: 'cyan', dotKey: 'B', label: 'B' },
+  C: { color: 'gold', dotKey: 'C', label: 'C' },
+  D: { color: 'orange', dotKey: 'D', label: 'D' },
   E: {
     color: 'default',
-    dot: '#8c8c8c',
+    dotKey: 'E',
     label: 'INCONCLUSIVE',
     inconclusive: true,
   },
 };
 
-/** 当前等级配置 */
+/** 当前等级配置（含响应式 dot 色） */
 const current = computed(() => {
   if (!props.level) return null;
-  return levelMap[props.level] ?? null;
+  const cfg = levelConfig[props.level];
+  if (!cfg) return null;
+  return {
+    ...cfg,
+    dot: confidenceColors.value[cfg.dotKey],
+  };
 });
 
 /** Tooltip 显示的有效数据率文本 */
