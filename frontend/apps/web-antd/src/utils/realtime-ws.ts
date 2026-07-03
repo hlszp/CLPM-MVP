@@ -21,6 +21,7 @@ class RealtimeWebSocket {
   private ws: WebSocket | null = null;
   private token: string = '';
   private handlers = new Set<MessageHandler>();
+  private connectionHandlers = new Set<() => void>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private isManualClose = false;
@@ -70,6 +71,20 @@ class RealtimeWebSocket {
   }
 
   /**
+   * 注册连接状态变化回调（P2 #38 UX14）
+   *
+   * WS 连接成功 / 断开 / 重连成功时触发，调用方可据此切换轮询策略
+   */
+  onConnectionChange(handler: () => void): () => void {
+    this.connectionHandlers.add(handler);
+    return () => this.connectionHandlers.delete(handler);
+  }
+
+  private _notifyConnectionChange() {
+    this.connectionHandlers.forEach((h) => h());
+  }
+
+  /**
    * 是否已连接
    */
   get isConnected() {
@@ -91,6 +106,7 @@ class RealtimeWebSocket {
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
       console.log('[RealtimeWS] 已连接');
+      this._notifyConnectionChange();
     };
 
     this.ws.onmessage = (event) => {
@@ -108,6 +124,7 @@ class RealtimeWebSocket {
     this.ws.onclose = (event) => {
       console.log(`[RealtimeWS] 连接关闭 (code=${event.code})`);
       this.ws = null;
+      this._notifyConnectionChange();
       if (!this.isManualClose) {
         this._scheduleReconnect();
       }

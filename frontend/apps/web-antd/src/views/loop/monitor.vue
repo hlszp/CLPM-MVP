@@ -311,6 +311,7 @@ const countdown = ref(refreshInterval);
 let refreshTimer: null | ReturnType<typeof setInterval> = null;
 let countdownTimer: null | ReturnType<typeof setInterval> = null;
 let wsUnsubscribe: (() => void) | null = null;
+let wsConnectionUnsubscribe: (() => void) | null = null;
 
 /** WebSocket 实时数据：局部更新单条回路的 currentValues */
 function handleRealtimeMessage(msg: {
@@ -646,6 +647,37 @@ function viewDetail(record: LoopApi.MonitorListItem) {
 
 // ===== 自动刷新 =====
 
+/**
+ * 启动低频轮询 fallback
+ *
+ * 仅在 WS 断连时使用，避免与 WS 实时推送重复请求。
+ */
+function startPolling() {
+  if (refreshTimer) return;
+  countdown.value = refreshInterval;
+  refreshTimer = setInterval(() => {
+    loadList();
+    countdown.value = refreshInterval;
+  }, refreshInterval * 1000);
+  countdownTimer = setInterval(() => {
+    if (countdown.value > 0) countdown.value -= 1;
+  }, 1000);
+}
+
+/**
+ * 停止低频轮询
+ */
+function stopPolling() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+}
+
 function startAutoRefresh() {
   stopAutoRefresh();
   if (!autoRefresh.value) return;
@@ -658,31 +690,33 @@ function startAutoRefresh() {
       realtimeWs.connect(token);
     }
     wsUnsubscribe = realtimeWs.onMessage(handleRealtimeMessage);
+    // P2 #38 UX14: WS 连接状态变化时切换轮询策略
+    // - WS 在线 → 停止轮询（实时推送已覆盖）
+    // - WS 断连 → 启动轮询 fallback
+    wsConnectionUnsubscribe = realtimeWs.onConnectionChange(() => {
+      if (realtimeWs.isConnected) {
+        stopPolling();
+      } else {
+        startPolling();
+      }
+    });
   }
 
-  // 低频轮询作为 fallback（WS 断连时仍能获取数据）
-  countdown.value = refreshInterval;
-  refreshTimer = setInterval(() => {
-    loadList();
-    countdown.value = refreshInterval;
-  }, refreshInterval * 1000);
-  countdownTimer = setInterval(() => {
-    if (countdown.value > 0) countdown.value -= 1;
-  }, 1000);
+  // 初始策略：WS 已连接则不启动轮询，等 WS 推送；WS 未连接则启动轮询 fallback
+  if (!realtimeWs.isConnected) {
+    startPolling();
+  }
 }
 
 function stopAutoRefresh() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
+  stopPolling();
   if (wsUnsubscribe) {
     wsUnsubscribe();
     wsUnsubscribe = null;
+  }
+  if (wsConnectionUnsubscribe) {
+    wsConnectionUnsubscribe();
+    wsConnectionUnsubscribe = null;
   }
 }
 
