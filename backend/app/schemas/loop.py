@@ -48,7 +48,15 @@ class LoopCreate(CamelModel):
     scoreWeights: ScoreWeights | None = Field(None, description="评分权重")
     isActive: bool = Field(True, description="是否启用")
     remark: str | None = Field(None, max_length=500, description="备注")
-    loopType: str | None = Field(None, description="回路类型")
+    loopType: str | None = Field(None, description="回路类型（业务类型 TEMPERATURE/PRESSURE/...）")
+    # P2 #24/#25: 补全前端已声明但被忽略的字段
+    controlType: str | None = Field(
+        None,
+        description="控制类型 STABLE/SLOW/FAST/LOGIC（用于评分权重分类）",
+    )
+    level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
+    modeattrTagId: str | None = Field(None, description="APC 识别位号 ID")
+    dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
 
 
 class LoopUpdate(CamelModel):
@@ -59,6 +67,14 @@ class LoopUpdate(CamelModel):
     isActive: bool | None = None
     remark: str | None = Field(None, max_length=500)
     loopType: str | None = Field(None, description="回路类型")
+    # P2 #24/#25: 补全前端已声明但被忽略的字段
+    controlType: str | None = Field(
+        None,
+        description="控制类型 STABLE/SLOW/FAST/LOGIC",
+    )
+    level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
+    modeattrTagId: str | None = Field(None, description="APC 识别位号 ID")
+    dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
 
 
 class TagMappingSlot(CamelModel):
@@ -94,6 +110,7 @@ class LoopListItem(CamelModel):
     isActive: bool = True
     status: str = "PARTIAL"
     loopType: str | None = None
+    controlType: str | None = None
     level: int | None = None
     score: float | None = None
     lastScoreAt: str | None = None
@@ -120,6 +137,10 @@ class LoopBasicInfo(CamelModel):
     isActive: bool = True
     status: str = "PARTIAL"
     loopType: str | None = None
+    controlType: str | None = None
+    level: int | None = None
+    modeattrTagId: str | None = None
+    dataRetentionDays: int | None = None
     scoreWeights: dict | None = None
     remark: str | None = None
     createdAt: str | None = None
@@ -184,6 +205,10 @@ class LoopUpdateResult(CamelModel):
     isActive: bool | None = None
     remark: str | None = None
     loopType: str | None = None
+    controlType: str | None = None
+    level: int | None = None
+    modeattrTagId: str | None = None
+    dataRetentionDays: int | None = None
     updatedAt: str | None = None
     updatedBy: str | None = None
 

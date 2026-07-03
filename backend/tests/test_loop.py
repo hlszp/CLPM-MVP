@@ -34,7 +34,10 @@ LOOP_001.updated_by = None
 LOOP_001.score_weights = None
 LOOP_001.remark = None
 LOOP_001.loop_type = "TEMPERATURE"
+LOOP_001.control_type = "STABLE"
 LOOP_001.level = 3
+LOOP_001.modeattr_tag_id = None
+LOOP_001.data_retention_days = None
 
 
 def _make_scalars_mock(items: list) -> MagicMock:
@@ -316,3 +319,89 @@ class TestControlModeFilter:
 
         assert _mode_value_to_label(99.0) == "Unknown"
         assert _mode_value_to_label(-1.0) == "Unknown"
+
+
+class TestLoopCreateNewFields:
+    """P2 #24/#25: create_loop 接收 controlType/level/modeattrTagId/dataRetentionDays。
+
+    通过验证 service 签名包含这些参数 + LoopCreate schema 字段，确保前端
+    声明的字段不再被静默忽略。
+    """
+
+    def test_loop_create_schema_has_control_type(self) -> None:
+        from app.schemas.loop import LoopCreate
+
+        fields = set(LoopCreate.model_fields.keys())
+        assert "controlType" in fields
+        assert "level" in fields
+        assert "modeattrTagId" in fields
+        assert "dataRetentionDays" in fields
+
+    def test_loop_update_schema_has_control_type(self) -> None:
+        from app.schemas.loop import LoopUpdate
+
+        fields = set(LoopUpdate.model_fields.keys())
+        assert "controlType" in fields
+        assert "level" in fields
+        assert "modeattrTagId" in fields
+        assert "dataRetentionDays" in fields
+
+    def test_loop_create_service_accepts_new_params(self) -> None:
+        """create_loop service 签名应包含 control_type 等参数。"""
+        import inspect
+
+        from app.services.loop import create_loop
+
+        sig = inspect.signature(create_loop)
+        params = set(sig.parameters.keys())
+        assert "control_type" in params
+        assert "level" in params
+        assert "modeattr_tag_id" in params
+        assert "data_retention_days" in params
+
+    def test_loop_update_service_accepts_new_params(self) -> None:
+        """update_loop service 签名应包含 control_type 等参数。"""
+        import inspect
+
+        from app.services.loop import update_loop
+
+        sig = inspect.signature(update_loop)
+        params = set(sig.parameters.keys())
+        assert "control_type" in params
+        assert "level" in params
+        assert "modeattr_tag_id" in params
+        assert "data_retention_days" in params
+
+    def test_list_loops_service_accepts_control_type(self) -> None:
+        """list_loops service 签名应包含 control_type 参数。"""
+        import inspect
+
+        from app.services.loop import list_loops
+
+        sig = inspect.signature(list_loops)
+        assert "control_type" in sig.parameters
+
+
+class TestLoopListControlTypeFilter:
+    """P2 #24: list 端点 controlType 查询参数过滤。"""
+
+    def test_list_endpoint_accepts_control_type_query(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """list 端点应接受 controlType 查询参数，不返回 422。"""
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            compiled = str(stmt.compile()).lower()
+            if "count" in compiled:
+                return _make_scalar_mock(0)
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?controlType=STABLE",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"

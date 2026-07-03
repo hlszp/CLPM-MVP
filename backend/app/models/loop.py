@@ -47,6 +47,12 @@ class LoopLedger(Base):
         nullable=True,
         comment="回路类型: TEMPERATURE/PRESSURE/LEVEL/FLOW/ANALYSIS/SPEED/OTHER",
     )
+    # P2 #24: 控制类型（与 loop_type 业务类型独立，用于评分权重分类）
+    control_type: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="控制类型: STABLE/SLOW/FAST/LOGIC（对齐 GB/T 44693.2-2024 附表1）",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now(), nullable=False

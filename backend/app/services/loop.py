@@ -138,6 +138,7 @@ async def list_loops(
     status: str | None = None,
     keyword: str | None = None,
     loop_type: str | None = None,
+    control_type: str | None = None,
     level: int | None = None,
     monitor_status: bool | None = None,
     page: int = 1,
@@ -147,6 +148,7 @@ async def list_loops(
 
     Args:
         level: 按回路级别筛选（1/2/3）
+        control_type: 按控制类型筛选（STABLE/SLOW/FAST/LOGIC）
         monitor_status: 按监控状态筛选（True=is_active=True，False=is_active=False）
     """
     conditions = []
@@ -161,6 +163,9 @@ async def list_loops(
         conditions.append(func.upper(LoopLedger.status) == status.upper())
     if loop_type:
         conditions.append(func.upper(LoopLedger.loop_type) == loop_type.upper())
+    if control_type:
+        # P2 #24: 控制类型筛选（STABLE/SLOW/FAST/LOGIC）
+        conditions.append(func.upper(LoopLedger.control_type) == control_type.upper())
     if level is not None:
         conditions.append(LoopLedger.level == level)
     if monitor_status is not None:
@@ -249,6 +254,7 @@ async def list_loops(
                 "isActive": bool(loop.is_active),
                 "status": loop.status,
                 "loopType": loop.loop_type,
+                "controlType": loop.control_type,
                 "level": loop.level,
                 "score": float(loop.score_weight) if loop.score_weight else None,
                 "lastScoreAt": (
@@ -310,6 +316,10 @@ async def create_loop(
     remark: str | None,
     operator: str,
     loop_type: str | None = None,
+    control_type: str | None = None,
+    level: int | None = None,
+    modeattr_tag_id: str | None = None,
+    data_retention_days: int | None = None,
 ) -> dict:
     """创建回路。
 
@@ -346,6 +356,10 @@ async def create_loop(
         is_active=is_active,
         status=status,
         loop_type=loop_type,
+        control_type=control_type,
+        level=level,
+        modeattr_tag_id=modeattr_tag_id,
+        data_retention_days=data_retention_days,
         score_weights=score_weights,
         remark=remark,
         created_by=operator,
@@ -368,6 +382,10 @@ async def create_loop(
                 "isActive": is_active,
                 "status": status,
                 "loopType": loop_type,
+                "controlType": control_type,
+                "level": level,
+                "modeattrTagId": modeattr_tag_id,
+                "dataRetentionDays": data_retention_days,
             },
             ensure_ascii=False,
         ),
@@ -381,6 +399,10 @@ async def create_loop(
         "unitId": str(loop.unit_id) if loop.unit_id else None,
         "status": loop.status,
         "loopType": loop.loop_type,
+        "controlType": loop.control_type,
+        "level": loop.level,
+        "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
+        "dataRetentionDays": loop.data_retention_days,
         "isActive": bool(loop.is_active),
         "scoreWeights": loop.score_weights,
         "remark": loop.remark,
@@ -480,6 +502,10 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             "isActive": bool(loop.is_active),
             "status": loop.status,
             "loopType": loop.loop_type,
+            "controlType": loop.control_type,
+            "level": loop.level,
+            "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
+            "dataRetentionDays": loop.data_retention_days,
             "scoreWeights": loop.score_weights,
             "remark": loop.remark,
             "createdAt": loop.created_at.isoformat() if loop.created_at else None,
@@ -505,8 +531,12 @@ async def update_loop(
     is_active: bool | None = None,
     remark: str | None = None,
     loop_type: str | None = None,
+    control_type: str | None = None,
+    level: int | None = None,
+    modeattr_tag_id: str | None = None,
+    data_retention_days: int | None = None,
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型）。
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/级别/APC位号/保留周期）。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND
@@ -526,6 +556,10 @@ async def update_loop(
         "isActive": loop.is_active,
         "remark": loop.remark,
         "loopType": loop.loop_type,
+        "controlType": loop.control_type,
+        "level": loop.level,
+        "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
+        "dataRetentionDays": loop.data_retention_days,
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -539,6 +573,14 @@ async def update_loop(
         loop.remark = remark
     if loop_type is not None:
         loop.loop_type = loop_type
+    if control_type is not None:
+        loop.control_type = control_type
+    if level is not None:
+        loop.level = level
+    if modeattr_tag_id is not None:
+        loop.modeattr_tag_id = modeattr_tag_id
+    if data_retention_days is not None:
+        loop.data_retention_days = data_retention_days
     loop.updated_by = operator
 
     # 重新推导 status
@@ -551,6 +593,10 @@ async def update_loop(
         "isActive": loop.is_active,
         "remark": loop.remark,
         "loopType": loop.loop_type,
+        "controlType": loop.control_type,
+        "level": loop.level,
+        "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
+        "dataRetentionDays": loop.data_retention_days,
         "status": new_status,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -576,6 +622,10 @@ async def update_loop(
         "isActive": bool(loop.is_active),
         "remark": loop.remark,
         "loopType": loop.loop_type,
+        "controlType": loop.control_type,
+        "level": loop.level,
+        "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
+        "dataRetentionDays": loop.data_retention_days,
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
         "updatedBy": loop.updated_by,
     }

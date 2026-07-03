@@ -67,6 +67,9 @@ async def list_loops_endpoint(
     status: str | None = Query(None, description="按回路状态筛选：READY/PARTIAL/INACTIVE"),
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
     loopType: str | None = Query(None, description="按回路类型筛选"),
+    controlType: str | None = Query(
+        None, description="按控制类型筛选：STABLE/SLOW/FAST/LOGIC"
+    ),
     level: int | None = Query(None, ge=1, le=3, description="按回路级别筛选：1/2/3"),
     monitorStatus: bool | None = Query(
         None, description="按监控状态筛选：true=监控中/false=已停用"
@@ -85,6 +88,7 @@ async def list_loops_endpoint(
         status=status,
         keyword=keyword,
         loop_type=loopType,
+        control_type=controlType,
         level=level,
         monitor_status=monitorStatus,
         page=page,
@@ -113,6 +117,10 @@ async def create_loop_endpoint(
         remark=body.remark,
         operator=user.username,
         loop_type=body.loopType,
+        control_type=body.controlType,
+        level=body.level,
+        modeattr_tag_id=body.modeattrTagId,
+        data_retention_days=body.dataRetentionDays,
     )
     return success(data=data, message="创建成功")
 
@@ -274,7 +282,7 @@ async def update_loop_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型）。"""
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/级别/APC位号/保留周期）。"""
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
@@ -287,6 +295,10 @@ async def update_loop_endpoint(
         is_active=body.isActive,
         remark=body.remark,
         loop_type=body.loopType,
+        control_type=body.controlType,
+        level=body.level,
+        modeattr_tag_id=body.modeattrTagId,
+        data_retention_days=body.dataRetentionDays,
     )
     return success(data=data, message="更新成功")
 
