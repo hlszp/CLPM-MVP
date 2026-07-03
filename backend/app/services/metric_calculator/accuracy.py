@@ -72,8 +72,10 @@ class AccuracyRateCalculator(MetricCalculatorBase):
         # 归一化偏差 r = |Ē| / |E|_max
         r = mean_abs_error / e_max
 
-        # 指数衰减因子：(1 - 1/e^r)
-        decay_factor = 1.0 - 1.0 / math.exp(r)
+        # 指数衰减因子：(1 - 1/e^r) = (1 - e^(-r))
+        # P2 #39 TC2: 使用 e^(-r) 而非 1/e^r 避免大 r 时溢出（如 PV=1e6 → r=2e5）
+        # math.exp(-r) 在 r→∞ 时返回 0.0（不抛 OverflowError），数学等价但数值稳定
+        decay_factor = 1.0 - math.exp(-r)
 
         # 准确率 A = [1 - r × (1 - 1/e^r)] × 100
         accuracy = (1.0 - r * decay_factor) * 100.0
