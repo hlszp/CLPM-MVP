@@ -196,7 +196,10 @@ class TestBatchDeleteLoops:
         loop2 = _make_loop("loop-002", is_active=True, status="PARTIAL")
 
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1, loop2]))
+        # 1st execute: 查询回路列表；2nd execute: 查询有 Tag 的回路（返回空 → 无 Tag）
+        db.execute = AsyncMock(
+            side_effect=[_make_scalars_mock([loop1, loop2]), _make_scalars_mock([])]
+        )
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -206,7 +209,8 @@ class TestBatchDeleteLoops:
             operator="admin",
         )
 
-        assert result == 2
+        assert result["deleted"] == 2
+        assert result["skipped"] == []
         assert loop1.is_active is False
         assert loop1.status == "INACTIVE"
         assert loop2.is_active is False
@@ -216,7 +220,7 @@ class TestBatchDeleteLoops:
 
     @pytest.mark.asyncio
     async def test_batch_delete_loops_not_found(self) -> None:
-        """无匹配回路时返回 0。"""
+        """无匹配回路时返回 deleted=0。"""
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         db.add = MagicMock()
@@ -228,12 +232,83 @@ class TestBatchDeleteLoops:
             operator="admin",
         )
 
-        assert result == 0
+        assert result["deleted"] == 0
+        assert result["skipped"] == []
         db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_batch_delete_loops_skip_with_tags(self) -> None:
+        """P1 #9: 有关联 Tag 的回路应跳过并记入 skipped 列表。"""
+        loop1 = _make_loop("loop-001", is_active=True, status="READY")
+        loop2 = _make_loop("loop-002", is_active=True, status="PARTIAL")
+
+        db = AsyncMock()
+        # 1st execute: 查询回路列表（scalars().all()）
+        # 2nd execute: 查询有 Tag 的回路（.all() 返回 [(loop_id,)]）
+        rows_result = MagicMock()
+        rows_result.all.return_value = [("loop-001",)]
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_mock([loop1, loop2]),
+                rows_result,
+            ]
+        )
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        result = await batch_delete_loops(
+            db=db,
+            loop_ids=["loop-001", "loop-002"],
+            operator="admin",
+        )
+
+        assert result["deleted"] == 1
+        assert len(result["skipped"]) == 1
+        assert result["skipped"][0]["loopId"] == "loop-001"
+        assert "Tag" in result["skipped"][0]["reason"]
+        # loop-001 未被修改（跳过）
+        assert loop1.is_active is True
+        # loop-002 被软删
+        assert loop2.is_active is False
+        assert loop2.status == "INACTIVE"
 
 
 # ===========================================================================
-# TEST-04: 空列表抛异常
+# TEST-04: Schema 互斥校验（P1 #10）
+# ===========================================================================
+
+
+class TestLoopBatchUpdatesMutex:
+    """P1 #10: isMonitored 与 isStatEnabled 不能同时更新。"""
+
+    def test_both_monitor_and_stat_rejected(self) -> None:
+        """同时传 isMonitored 和 isStatEnabled 应被 Schema 拒绝。"""
+        from app.schemas.loop_batch import LoopBatchUpdates
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            LoopBatchUpdates(is_monitored=True, is_stat_enabled=False)
+        assert "不能同时更新" in str(exc_info.value)
+
+    def test_only_monitored_accepted(self) -> None:
+        """仅传 isMonitored 应通过。"""
+        from app.schemas.loop_batch import LoopBatchUpdates
+
+        updates = LoopBatchUpdates(is_monitored=True)
+        assert updates.is_monitored is True
+        assert updates.is_stat_enabled is None
+
+    def test_only_stat_accepted(self) -> None:
+        """仅传 isStatEnabled 应通过。"""
+        from app.schemas.loop_batch import LoopBatchUpdates
+
+        updates = LoopBatchUpdates(is_stat_enabled=False)
+        assert updates.is_stat_enabled is False
+        assert updates.is_monitored is None
+
+
+# ===========================================================================
+# TEST-05: 空列表抛异常
 # ===========================================================================
 
 

@@ -187,8 +187,11 @@ async def batch_delete_loops(
     db: AsyncSession,
     loop_ids: list[str],
     operator: str,
-) -> int:
+) -> dict:
     """批量软删除回路（is_active=False，不实际删除记录）。
+
+    P1 #9 修正：补 Tag 关联校验，有关联 Tag 的回路跳过并记入 skipped 列表，
+    与单删 delete_loop 行为对齐（单删有 Tag 直接抛错，批删跳过）。
 
     Args:
         db: 异步数据库会话
@@ -196,7 +199,9 @@ async def batch_delete_loops(
         operator: 操作人
 
     Returns:
-        软删除的回路数量
+        {"deleted": int, "skipped": list[dict]}
+        - deleted: 软删除的回路数量
+        - skipped: 跳过的回路列表（每项含 loopId/reason）
 
     Raises:
         BizError: ERR_BATCH_EMPTY (loop_ids 为空)
@@ -212,12 +217,32 @@ async def batch_delete_loops(
     loops = result.scalars().all()
 
     if not loops:
-        return 0
+        return {"deleted": 0, "skipped": []}
+
+    # P1 #9: 批量查询有关联 Tag 的回路 ID
+    from app.models.loop import LoopTagMapping
+
+    tag_result = await db.execute(
+        select(LoopTagMapping.loop_id)
+        .where(LoopTagMapping.loop_id.in_([str(l.id) for l in loops]))
+        .distinct()
+    )
+    loops_with_tags: set[str] = {str(row[0]) for row in tag_result.all()}
 
     audit_items: list[dict] = []
+    skipped: list[dict] = []
+    deleted_count = 0
+
     for loop in loops:
+        loop_id_str = str(loop.id)
+        if loop_id_str in loops_with_tags:
+            skipped.append(
+                {"loopId": loop_id_str, "tagName": loop.tag_name, "reason": "存在关联 Tag"}
+            )
+            continue
+
         before = {
-            "loopId": str(loop.id),
+            "loopId": loop_id_str,
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
             "status": loop.status,
@@ -226,42 +251,46 @@ async def batch_delete_loops(
         loop.status = "INACTIVE"
         loop.updated_by = operator
         after = {
-            "loopId": str(loop.id),
+            "loopId": loop_id_str,
             "tagName": loop.tag_name,
             "is_active": False,
             "status": "INACTIVE",
         }
         audit_items.append({"before": before, "after": after})
+        deleted_count += 1
 
-    before_json = json.dumps(
-        [item["before"] for item in audit_items],
-        ensure_ascii=False,
-        default=str,
-    )
-    after_json = json.dumps(
-        [item["after"] for item in audit_items],
-        ensure_ascii=False,
-        default=str,
-    )
+    if audit_items:
+        before_json = json.dumps(
+            [item["before"] for item in audit_items],
+            ensure_ascii=False,
+            default=str,
+        )
+        after_json = json.dumps(
+            [item["after"] for item in audit_items],
+            ensure_ascii=False,
+            default=str,
+        )
 
-    await _write_audit(
-        db=db,
-        operator=operator,
-        operation_type="LOOP_BATCH_DELETE",
-        target_type="loop_ledger",
-        target_id=None,  # 批量操作无单一目标，完整列表在 before_value/after_value
-        before_value=before_json,
-        after_value=after_json,
-    )
+        await _write_audit(
+            db=db,
+            operator=operator,
+            operation_type="LOOP_BATCH_DELETE",
+            target_type="loop_ledger",
+            target_id=None,  # 批量操作无单一目标，完整列表在 before_value/after_value
+            before_value=before_json,
+            after_value=after_json,
+        )
+
     await db.commit()
 
     logger.info(
-        "[批量软删除] 已软删除 %d 个回路（操作人: %s）",
-        len(loops),
+        "[批量软删除] 已软删除 %d 个回路，跳过 %d 个（操作人: %s）",
+        deleted_count,
+        len(skipped),
         operator,
     )
 
-    return len(loops)
+    return {"deleted": deleted_count, "skipped": skipped}
 
 
 # ---------------------------------------------------------------------------

@@ -140,11 +140,14 @@ async def batch_config_loops_endpoint(
     所有操作均记录审计日志。
     """
     if body.action == "delete":
-        affected = await batch_delete_loops(
+        # P1 #9: batch_delete_loops 返回 {"deleted": int, "skipped": list}
+        del_result = await batch_delete_loops(
             db=db,
             loop_ids=body.loop_ids,
             operator=user.username,
         )
+        affected = del_result["deleted"]
+        skipped = del_result["skipped"]
         action = "delete"
     else:
         # 更新模式
@@ -163,11 +166,13 @@ async def batch_config_loops_endpoint(
             operator=user.username,
         )
         action = "update"
+        skipped = None
 
     result = LoopBatchConfigResult(
         affected=affected,
         action=action,
         loop_ids=body.loop_ids,
+        skipped=skipped,
     )
     return success(data=result.model_dump(by_alias=True), message="批量操作成功")
 

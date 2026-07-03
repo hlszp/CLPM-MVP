@@ -551,10 +551,10 @@ async def delete_loop(
     loop_id: str,
     operator: str,
 ) -> dict:
-    """删除回路。
+    """软删除回路（P1 #9: 统一为软删，与批删行为对齐）。
 
     校验：若回路有关联 Tag → ERR_LOOP_HAS_TAGS。
-    实际：loop_tag_mapping 表设置了 ON DELETE CASCADE，但根据 IDS 要求需校验。
+    实际：置 is_active=False, status=INACTIVE（软删除，保留记录可追溯）。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_LOOP_HAS_TAGS
@@ -580,10 +580,20 @@ async def delete_loop(
             status_code=400,
         )
 
-    before_json = json.dumps({"tagName": loop.tag_name, "status": loop.status}, ensure_ascii=False)
+    before_json = json.dumps(
+        {"tagName": loop.tag_name, "is_active": loop.is_active, "status": loop.status},
+        ensure_ascii=False,
+    )
 
-    # 删除回路（loop_tag_mapping 会因 CASCADE 自动清理，但此处已校验无关联）
-    await db.execute(delete(LoopLedger).where(LoopLedger.id == loop_id))
+    # 软删除（P1 #9: 与 batch_delete_loops 行为对齐）
+    loop.is_active = False
+    loop.status = "INACTIVE"
+    loop.updated_by = operator
+
+    after_json = json.dumps(
+        {"tagName": loop.tag_name, "is_active": False, "status": "INACTIVE"},
+        ensure_ascii=False,
+    )
 
     await _write_audit(
         db=db,
@@ -592,6 +602,7 @@ async def delete_loop(
         target_type="loop_ledger",
         target_id=loop_id,
         before_value=before_json,
+        after_value=after_json,
     )
     await db.commit()
 

@@ -16,11 +16,27 @@ class LoopBatchUpdates(CamelModel):
     - isMonitored: 是否监控（is_active=True 表示启用监控）
     - isStatEnabled: 是否纳入统计（当前复用 is_active 语义）
     - level: 回路级别 1/2/3
+
+    P1 #10: isMonitored 与 isStatEnabled 共用 is_active 字段，
+    同时传值会导致后者覆盖前者（静默数据错误），Schema 层强制互斥。
     """
 
     is_monitored: bool | None = Field(None, description="是否监控")
     is_stat_enabled: bool | None = Field(None, description="是否纳入统计")
     level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
+
+    @model_validator(mode="after")
+    def check_monitor_stat_exclusive(self) -> "LoopBatchUpdates":
+        """P1 #10: is_monitored 与 is_stat_enabled 不能同时更新。
+
+        当前 LoopLedger 无独立 is_stat_enabled 字段，二者都写入 is_active，
+        同时传值会导致后者静默覆盖前者。后续若新增独立字段可解除此限制。
+        """
+        if self.is_monitored is not None and self.is_stat_enabled is not None:
+            raise ValueError(
+                "isMonitored 与 isStatEnabled 不能同时更新（当前共用 is_active 字段），请分两次调用"
+            )
+        return self
 
 
 class LoopBatchConfigRequest(CamelModel):
@@ -64,6 +80,7 @@ class LoopBatchConfigResult(CamelModel):
     affected: int = Field(..., description="受影响的回路数量")
     action: str = Field(..., description="执行的动作：update/delete")
     loop_ids: list[str] = Field(default_factory=list, description="受影响的回路 ID 列表")
+    skipped: list[dict] | None = Field(None, description="跳过的回路列表（仅 delete 动作，含 loopId/reason）")
 
 
 __all__ = [
