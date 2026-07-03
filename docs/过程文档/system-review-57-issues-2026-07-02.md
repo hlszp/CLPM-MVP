@@ -63,7 +63,7 @@
 | 37 | UX | UX13: 多处 `message.info("功能待后端接口支持")` 让用户困惑，应改为 disabled + tooltip | `views/loop/monitor.vue:524` 等 | **已修复** |
 | 38 | UX | UX14: WS 在线时仍每 30s 全量轮询，浪费带宽与资源 | `views/loop/monitor.vue:651-675` | **已修复** |
 | 39 | 测试 | TC2: 边界条件缺失（极端PV值、100% Bad质量、低频振荡周期>60s、OP饱和临界值98/99/100） | `tests/test_metric_calculator/` | **已修复** |
-| 40 | 测试 | TC3: 2小时 1Hz 大数据集（7200点）性能未验证，现有测试最大 500 点 | `tests/test_metric_calculator/conftest.py` | 待修复 |
+| 40 | 测试 | TC3: 2小时 1Hz 大数据集（7200点）性能未验证，现有测试最大 500 点 | `tests/test_metric_calculator/conftest.py` | **已修复** |
 | 41 | 测试 | TC4: 场景间对比测试缺失（fast_response vs slow_response 的 fast_rate 应有明显差异） | — | 待修复 |
 
 ---
@@ -97,9 +97,9 @@
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 14 | 0 |
-| P2 中优先级 | 19 | 17 | 2 |
+| P2 中优先级 | 19 | 18 | 1 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **37** | **20** |
+| **合计** | **57** | **38** | **19** |
 
 ## 已修复记录
 
@@ -141,3 +141,4 @@
 | 37 | UX13: message.info 占位按钮让用户困惑 | 7 个文件 11 个占位按钮统一改为 disabled + Tooltip 提示"功能开发中"：① `diagnosis/tracker.vue` 删除 handleExport()/handleBatchProcess() 函数，2 个 ClpmToolbarButton 改 `disabled disabled-reason="导出功能开发中，待后端接口支持"`/`disabled disabled-reason="批量处理功能开发中，待后端接口支持"`；② `diagnosis/list.vue` 删除 handleExport/handleBatchProcess，2 个按钮改 disabled；③ `tuning/workbench.vue` 删除 handleExport，1 个按钮改 disabled；④ `tuning/simulation.vue` 删除 handleExport（含 `if (!simulationResult.value)` 分支），1 个 ClpmToolbarButton 改 disabled，ObjectSummaryBar 的 export action 添加 `disabled: true`，onSummaryAction 删除 `else if (key === 'export')` 分支；⑤ `loop/detail.vue` 删除 handleExport；⑥ `loop/monitor.vue` 删除 handleExport；⑦ `metric/dashboard.vue` 删除 handleExport。3 个文件删除不再使用的 `import { message } from 'ant-design-vue'`（diagnosis/list.vue / loop/detail.vue / tuning/workbench.vue）。ClpmToolbarButton 组件已内置 disabled + disabledReason props + Tooltip 渲染，无需新增组件 | `frontend/.../views/diagnosis/tracker.vue` + `views/diagnosis/list.vue` + `views/tuning/workbench.vue` + `views/tuning/simulation.vue` + `views/loop/detail.vue` + `views/loop/monitor.vue` + `views/metric/dashboard.vue` | 前端类型检查通过 |
 | 38 | UX14: WS 在线时仍每 30s 全量轮询 | `realtime-ws.ts` 新增 `connectionHandlers` Set + `onConnectionChange(handler)` API + `_notifyConnectionChange()` 私有方法；在 `onopen`/`onclose` 回调中调用 `_notifyConnectionChange()` 通知订阅者连接状态变化。`monitor.vue` `startAutoRefresh()` 重构：提取 `startPolling()`/`stopPolling()` 独立函数，注册 `wsConnectionUnsubscribe = realtimeWs.onConnectionChange(...)` 回调，WS 在线时 `stopPolling()`（实时推送已覆盖），WS 断连时 `startPolling()` fallback；初始策略：若 WS 已连接则不启动轮询，等 WS 推送；WS 未连接则启动 30s 轮询 fallback。`stopAutoRefresh()` 同步清理 `wsConnectionUnsubscribe`。预期效果：WS 稳定时不再每 30s 全量拉取列表，节省带宽；WS 断连时自动降级为 30s 轮询，可用性保持 | `frontend/.../utils/realtime-ws.ts:24,73-85,106-109,124-127` + `frontend/.../views/loop/monitor.vue:313-314,650-721` | 前端类型检查通过 |
 | 39 | TC2: 边界条件缺失 | 新增 `tests/test_metric_calculator/test_boundary_conditions.py` 39 个测试覆盖 4 类边界场景：① 极端 PV 值 7 个参数化用例（1e6/-1e6/0/1e-9/-1e-9/100/-100）+ PV=SP=1e6 零偏差 → 100 + 负 MODE/-1 + 字符串 MODE "Auto" 不计入自控率；② 100% Bad 质量 5 个用例（accuracy/oscillation/saturation/auto_mode 返回 INCONCLUSIVE 或 0，good_value_rate 触发 < 20% INCONCLUSIVE 阈值）；③ 低频振荡 5 个用例（周期 70/90/120s 在 60s 窗口内 → 0 零交叉 → 非振荡，周期 65s 60s 窗口 → ≤1 零交叉 → 非振荡，周期 120s 在 600s 窗口 → 5 周期 → 识别振荡 + 周期 100~140s）；④ OP 饱和临界值 19 个用例（98/99/99.5/100 → HIGH 饱和，97.99/97/50/3 → NONE，98.0 恰好阈值触发，97.99 边界下方不饱和，0/1/1.99/2.0 → LOW 饱和，2.01 边界上方不饱和，30% 混合 → rate≈30%，自定义 epsilon=5 时阈值变 95，DEFAULT_EPSILON/OP_HIGH/OP_LOW 常量校验，98/99/100 混合全饱和）。**顺带修复真实边界 bug**：`accuracy.py` `decay_factor = 1.0 - 1.0 / math.exp(r)` 在 PV=1e6 时 `math.exp(2e5)` 溢出 OverflowError；改为数学等价但数值稳定的 `1.0 - math.exp(-r)`（r→∞ 时返回 0.0，不溢出） | `backend/app/services/metric_calculator/accuracy.py:75-78` + `backend/tests/test_metric_calculator/test_boundary_conditions.py` | 全后端 1608 测试通过（1569 原有 + 39 新增） |
+| 40 | TC3: 7200 点大数据集性能未验证 | 新增 `tests/test_metric_calculator/test_large_dataset_performance.py` 17 个测试覆盖 3 类：① 性能测试 9 个参数化用例（8 个 O(n) 计算器 accuracy/auto_mode/saturation/oscillation/good_value/stability/stiction/output_trip 各 1 个 + settling_time ARMA 单独测试）；阈值 PERF_THRESHOLD_S=5s（O(n) 计算器），ARMA_PERF_THRESHOLD_S=10s（ARMA O(n·p²) 复杂度更宽松）；实际执行 0.38s 全部远低于阈值。② 一致性测试 5 个（7200 点 vs 100 点结果方向一致：accuracy 零偏差→100、saturation 全 OP=99.5→100 HIGH、auto_mode 全自动→100、good_value 全 Good→100、oscillation 周期 20s 7200 点→360 周期 is_oscillating=True + 周期 15~25s）。③ 数据量级断言 3 个（LARGE_N=7200=2×60×60 校验、生成数据实际点数校验、性能阈值合理性校验）。3 种数据生成器：正常工况（PV 微偏离 SP σ=0.5）/振荡（周期 20s 正弦波）/饱和（50% OP=99.5） | `backend/tests/test_metric_calculator/test_large_dataset_performance.py` | 全后端 1625 测试通过（1608 原有 + 17 新增）；7200 点执行 0.38s |
