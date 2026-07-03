@@ -260,7 +260,7 @@ class TestCustomTaskEvaluate:
     def test_custom_evaluate_success(self, client, task_redis, fake_redis) -> None:
         """IC_ENGINEER 可以触发自定义评估任务."""
         with (
-            patch("app.tasks.kpi_calc.calculate_loop_kpi") as mock_celery,
+            patch("app.tasks.kpi_calc.calculate_custom_loop_kpi") as mock_celery,
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
             mock_celery.delay.return_value = _mock_celery_result()
@@ -278,6 +278,12 @@ class TestCustomTaskEvaluate:
         assert data["loopsTotal"] == 1
         assert data["currentStage"] == "取数"
         assert data["createdBy"] == "ic_engineer"
+        # P1 #12: 验证 ts_end 透传给 Celery 任务
+        mock_celery.delay.assert_called_once()
+        call_args = mock_celery.delay.call_args
+        assert call_args.args[1] == "00000000-0000-0000-0000-000000000201"
+        assert call_args.args[2] == "2026-06-22T08:00:00Z"
+        assert call_args.args[3] == "2026-06-22T09:00:00Z"
 
     def test_custom_evaluate_empty_loops(self, client, task_redis, fake_redis) -> None:
         """空回路列表返回 400 ERR_INVALID_REQUEST."""

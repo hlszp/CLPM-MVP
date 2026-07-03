@@ -316,7 +316,10 @@ def calculate_loop_kpi(loop_id: str, ts_start: str | None = None) -> dict:
     retry_jitter=True,
 )
 def calculate_custom_loop_kpi(
-    task_id: str, loop_id: str, ts_start: str | None = None
+    task_id: str,
+    loop_id: str,
+    ts_start: str | None = None,
+    ts_end: str | None = None,
 ) -> dict:
     """单回路 KPI 计算（自定义任务，写入 kpi_snapshot_custom，不参与聚合）.
 
@@ -327,10 +330,19 @@ def calculate_custom_loop_kpi(
         task_id: 自定义任务 ID（用于区分独立任务）
         loop_id: 回路 ID
         ts_start: 时间窗起始（ISO 8601，UTC）；None 时取上一个完整计算周期
+        ts_end: 时间窗结束（ISO 8601，UTC）；None 时按 cycle_minutes 计算。
+            P1 #12 修正：透传用户指定的时间窗结束，使自定义任务支持
+            非 cycle_minutes 长度的时间窗。
     """
-    logger.info("单回路 KPI 计算（自定义任务）, task_id=%s, loop_id=%s", task_id, loop_id)
+    logger.info(
+        "单回路 KPI 计算（自定义任务）, task_id=%s, loop_id=%s, ts_start=%s, ts_end=%s",
+        task_id,
+        loop_id,
+        ts_start,
+        ts_end,
+    )
     return AsyncTask().run_async(
-        _do_calculate_custom_loop(task_id, loop_id, ts_start)
+        _do_calculate_custom_loop(task_id, loop_id, ts_start, ts_end)
     )
 
 
@@ -709,13 +721,18 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
 
 
 async def _do_calculate_custom_loop(
-    task_id: str, loop_id: str, ts_start: str | None = None
+    task_id: str,
+    loop_id: str,
+    ts_start: str | None = None,
+    ts_end: str | None = None,
 ) -> dict:
     """单回路 KPI 计算（自定义任务，写入 kpi_snapshot_custom）.
 
     PRD §4.3.7.B / FDS §5.3.11：自定义评估任务与标准任务计算逻辑相同，
     但结果写入 kpi_snapshot_custom 表（通过 task_id 区分），
     不参与装置级/单元级/工厂级聚合。
+
+    P1 #12: ts_end 透传后支持用户指定非 cycle_minutes 长度的时间窗。
     """
     from app.core.db import AsyncSessionLocal
     from app.services.engine_rule_loader import get_engine_rule_loader
@@ -730,21 +747,21 @@ async def _do_calculate_custom_loop(
         engine_loader = get_engine_rule_loader()
         cycle_minutes = await engine_loader.get_calc_cycle_minutes(db)
 
-        # 时间窗
+        # 时间窗起始
         now = datetime.now(UTC)
-        if ts_start:
-            try:
-                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
-            except ValueError:
-                ts_start_dt = datetime.fromisoformat(ts_start)
-        else:
+        ts_start_dt = _parse_ts_start(ts_start)
+        if ts_start_dt is None:
             ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(
                 second=0, microsecond=0
             )
             ts_start_dt = ts_start_dt.replace(
                 minute=(ts_start_dt.minute // cycle_minutes) * cycle_minutes
             )
-        ts_end_dt = ts_start_dt + timedelta(minutes=cycle_minutes)
+
+        # 时间窗结束（P1 #12: 用户指定 ts_end 优先；否则按 cycle_minutes 计算）
+        ts_end_dt = _parse_ts_start(ts_end)
+        if ts_end_dt is None:
+            ts_end_dt = ts_start_dt + timedelta(minutes=cycle_minutes)
 
         metric_result = await db.execute(select(MetricConfig))
         metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}

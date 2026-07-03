@@ -399,9 +399,12 @@ async def trigger_custom_evaluation(
     now = _now_iso()
 
     # 对每个回路触发 Celery 任务（自定义任务，写入 kpi_snapshot_custom 不参与聚合）
+    # P1 #12: 透传 body.tsEnd，使用户指定的时间窗能传递到实际计算逻辑
     celery_task_ids: list[str] = []
     for loop_id in body.loopIds:
-        result = calculate_custom_loop_kpi.delay(task_id, loop_id, body.tsStart)
+        result = calculate_custom_loop_kpi.delay(
+            task_id, loop_id, body.tsStart, body.tsEnd
+        )
         celery_task_ids.append(result.id)
 
     task_data: dict[str, str] = {

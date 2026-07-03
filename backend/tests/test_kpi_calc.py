@@ -1103,6 +1103,151 @@ class TestCeleryTasks:
             result = calculate_loop_kpi.run("loop-1", None)
             assert result == expected
 
+    def test_calculate_custom_loop_kpi_with_ts_end(self) -> None:
+        """calculate_custom_loop_kpi 透传 ts_start + ts_end 给 _do_calculate_custom_loop（P1 #12）."""
+        from datetime import UTC, datetime
+
+        from app.tasks.kpi_calc import calculate_custom_loop_kpi
+
+        expected = {"loopId": "loop-1", "taskId": "t-1", "status": "SUCCESS"}
+        with patch(
+            "app.tasks.kpi_calc._do_calculate_custom_loop", new_callable=AsyncMock
+        ) as mock_fn:
+            mock_fn.return_value = expected
+            result = calculate_custom_loop_kpi.run(
+                "t-1", "loop-1", "2026-06-22T08:00:00Z", "2026-06-22T09:30:00Z"
+            )
+            assert result == expected
+            # 验证 ts_start + ts_end 透传
+            call_args = mock_fn.call_args
+            assert call_args.args[0] == "t-1"
+            assert call_args.args[1] == "loop-1"
+            assert call_args.args[2] == "2026-06-22T08:00:00Z"
+            assert call_args.args[3] == "2026-06-22T09:30:00Z"
+
+    def test_calculate_custom_loop_kpi_ts_end_none(self) -> None:
+        """calculate_custom_loop_kpi 不传 ts_end 时 _do_calculate_custom_loop 收到 None（P1 #12 默认行为）."""
+        from app.tasks.kpi_calc import calculate_custom_loop_kpi
+
+        expected = {"loopId": "loop-1", "taskId": "t-1", "status": "SUCCESS"}
+        with patch(
+            "app.tasks.kpi_calc._do_calculate_custom_loop", new_callable=AsyncMock
+        ) as mock_fn:
+            mock_fn.return_value = expected
+            result = calculate_custom_loop_kpi.run(
+                "t-1", "loop-1", "2026-06-22T08:00:00Z"
+            )
+            assert result == expected
+            call_args = mock_fn.call_args
+            assert call_args.args[2] == "2026-06-22T08:00:00Z"
+            assert call_args.args[3] is None
+
+
+# ===========================================================================
+# 6.1 _do_calculate_custom_loop 时间窗测试（P1 #12）
+# ===========================================================================
+
+
+class TestDoCalculateCustomLoopTimeWindow:
+    """P1 #12: _do_calculate_custom_loop 时间窗处理测试。"""
+
+    @pytest.mark.asyncio
+    async def test_custom_loop_uses_user_specified_ts_end(self) -> None:
+        """用户提供 ts_end 时，_calculate_loop_kpi 收到用户指定的时间窗结束。"""
+        from datetime import UTC, datetime
+
+        loop = _make_loop()
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_metric_config()]),
+            ]
+        )
+        mock_session.commit = AsyncMock()
+
+        mock_engine = MagicMock()
+        mock_engine.get_calc_cycle_minutes = AsyncMock(return_value=60)
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_factory,
+            patch(
+                "app.services.engine_rule_loader.get_engine_rule_loader",
+                return_value=mock_engine,
+            ),
+            patch("app.tasks.kpi_calc._calculate_loop_kpi", new_callable=AsyncMock) as mock_calc,
+            patch("app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock) as mock_weights,
+        ):
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
+            mock_weights.return_value = {}
+
+            from app.tasks.kpi_calc import _do_calculate_custom_loop
+
+            await _do_calculate_custom_loop(
+                "task-001",
+                str(loop.id),
+                "2026-06-22T08:00:00Z",
+                "2026-06-22T09:30:00Z",  # 用户指定 1.5 小时窗口（非 cycle_minutes=60）
+            )
+
+        # 验证 _calculate_loop_kpi 收到用户指定的 ts_end（而非 ts_start + 60min）
+        call_kwargs = mock_calc.call_args.kwargs
+        expected_ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
+        expected_ts_end = datetime(2026, 6, 22, 9, 30, 0, tzinfo=UTC)
+        assert call_kwargs["ts_start"] == expected_ts_start
+        assert call_kwargs["ts_end"] == expected_ts_end
+        assert call_kwargs["custom_task_id"] == "task-001"
+
+    @pytest.mark.asyncio
+    async def test_custom_loop_ts_end_none_uses_cycle_minutes(self) -> None:
+        """不传 ts_end 时，ts_end = ts_start + cycle_minutes（默认行为）。"""
+        from datetime import UTC, datetime, timedelta
+
+        loop = _make_loop()
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_metric_config()]),
+            ]
+        )
+        mock_session.commit = AsyncMock()
+
+        mock_engine = MagicMock()
+        mock_engine.get_calc_cycle_minutes = AsyncMock(return_value=60)
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_factory,
+            patch(
+                "app.services.engine_rule_loader.get_engine_rule_loader",
+                return_value=mock_engine,
+            ),
+            patch("app.tasks.kpi_calc._calculate_loop_kpi", new_callable=AsyncMock) as mock_calc,
+            patch("app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock) as mock_weights,
+        ):
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
+            mock_weights.return_value = {}
+
+            from app.tasks.kpi_calc import _do_calculate_custom_loop
+
+            await _do_calculate_custom_loop(
+                "task-001",
+                str(loop.id),
+                "2026-06-22T08:00:00Z",
+                None,  # 不传 ts_end
+            )
+
+        # 验证 ts_end = ts_start + 60min
+        call_kwargs = mock_calc.call_args.kwargs
+        expected_ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
+        expected_ts_end = expected_ts_start + timedelta(minutes=60)
+        assert call_kwargs["ts_start"] == expected_ts_start
+        assert call_kwargs["ts_end"] == expected_ts_end
+
 
 # ===========================================================================
 # 7. v4.0 辅助函数测试
