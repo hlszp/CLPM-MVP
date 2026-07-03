@@ -17,7 +17,7 @@ import { useRouter } from 'vue-router';
 import { IconifyIcon } from '@vben/icons';
 import { Page } from '@vben/common-ui';
 
-import { Alert, Button, Card, message, Spin, Table, Tag } from 'ant-design-vue';
+import { Alert, Button, Card, Spin, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
@@ -282,10 +282,7 @@ function handleRefresh() {
   loadHistory();
 }
 
-/** 工具栏：导出（占位，待导出接口接入） */
-function handleExport() {
-  message.info('导出功能开发中');
-}
+// P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
 
 /** 工具栏：新建整定，跳转模型辨识 */
 function handleCreate() {
@@ -296,7 +293,8 @@ function handleCreate() {
 function formatTime(t: string): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
@@ -335,7 +333,12 @@ onMounted(() => {
             :loading="loading"
             @click="handleRefresh"
           />
-          <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+          <ClpmToolbarButton
+            icon="export"
+            label="导出"
+            disabled
+            disabled-reason="导出功能开发中，待后端接口支持"
+          />
           <ClpmToolbarButton
             icon="create"
             label="新建整定"

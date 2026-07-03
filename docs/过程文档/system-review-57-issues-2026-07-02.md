@@ -60,7 +60,7 @@
 | 34 | 算法 | 偏差4: ARMA 模型用 AR(10) 高阶近似 ARMA(2,1)，设计文档要求默认 (2,1)，可能过拟合 | `tasks/arma.py:23` | **已修复** |
 | 35 | UX | UX8: `confidence-badge.vue` 色块圆点硬编码 hex 值，不响应主题切换 | `components/metric/confidence-badge.vue:47-54` | **已修复** |
 | 36 | UX | UX9: Ant Design `darkAlgorithm` 已接入，但 CLPM 业务自定义样式未对齐，原生组件与业务组件视觉断裂 | `app.vue:16-30` | **已修复** |
-| 37 | UX | UX13: 多处 `message.info("功能待后端接口支持")` 让用户困惑，应改为 disabled + tooltip | `views/loop/monitor.vue:524` 等 | 待修复 |
+| 37 | UX | UX13: 多处 `message.info("功能待后端接口支持")` 让用户困惑，应改为 disabled + tooltip | `views/loop/monitor.vue:524` 等 | **已修复** |
 | 38 | UX | UX14: WS 在线时仍每 30s 全量轮询，浪费带宽与资源 | `views/loop/monitor.vue:651-675` | 待修复 |
 | 39 | 测试 | TC2: 边界条件缺失（极端PV值、100% Bad质量、低频振荡周期>60s、OP饱和临界值98/99/100） | `tests/test_metric_calculator/` | 待修复 |
 | 40 | 测试 | TC3: 2小时 1Hz 大数据集（7200点）性能未验证，现有测试最大 500 点 | `tests/test_metric_calculator/conftest.py` | 待修复 |
@@ -97,9 +97,9 @@
 |---|---|---|---|
 | P0 阻断性 | 8 | 6 | 2 |
 | P1 高优先级 | 14 | 14 | 0 |
-| P2 中优先级 | 19 | 14 | 5 |
+| P2 中优先级 | 19 | 15 | 4 |
 | P3 低优先级 | 16 | 0 | 16 |
-| **合计** | **57** | **34** | **23** |
+| **合计** | **57** | **35** | **22** |
 
 ## 已修复记录
 

@@ -26,7 +26,6 @@ import {
   Descriptions,
   DescriptionsItem,
   Empty,
-  message,
   RadioGroup,
   Spin,
   TabPane,
@@ -370,10 +369,7 @@ async function handleGenerateReport() {
   }
 }
 
-/** 导出（占位，待后端接口） */
-function handleExport() {
-  message.info('回路详情导出功能待后端接口支持');
-}
+// P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
 
 function handleTrendWindowChange() {
   loadMonitorDetail();
@@ -426,7 +422,12 @@ onMounted(() => {
           icon-only
           @click="router.back()"
         />
-        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          disabled
+          disabled-reason="回路详情导出功能待后端接口支持"
+        />
         <ClpmToolbarButton
           icon="diagnosis"
           label="进入诊断"

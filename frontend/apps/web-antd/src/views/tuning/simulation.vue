@@ -318,6 +318,8 @@ const summaryActions = computed<SummaryAction[]>(() => [
     label: '导出报告',
     icon: 'ant-design:download-outlined',
     type: 'default',
+    // P2 #37 UX13: 导出功能开发中，禁用按钮
+    disabled: true,
   },
 ]);
 
@@ -327,9 +329,8 @@ function onSummaryAction(key: string) {
     handleSave();
   } else if (key === 'recalculate') {
     handleSimulate();
-  } else if (key === 'export') {
-    handleExport();
   }
+  // P2 #37: 'export' action 已禁用，不再处理
 }
 
 /** 风险等级：根据 PID 参数变化幅度推导（后端字段待补，前端先行计算） */
@@ -467,14 +468,7 @@ function handleReset() {
   message.info('已重置参数');
 }
 
-/** 导出报告（占位，待导出接口接入） */
-function handleExport() {
-  if (!simulationResult.value) {
-    message.warning('请先执行仿真');
-    return;
-  }
-  message.info('导出功能开发中');
-}
+// P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
 
 /** 渲染仿真对比图 */
 function renderChart() {
@@ -679,7 +673,12 @@ watch(isDark, () => {
           label="重置"
           @click="handleReset"
         />
-        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          disabled
+          disabled-reason="导出功能开发中，待后端接口支持"
+        />
       </template>
     </ClpmPageToolbar>
 

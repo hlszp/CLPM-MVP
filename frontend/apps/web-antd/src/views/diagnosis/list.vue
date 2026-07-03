@@ -25,7 +25,6 @@ import { Page } from '@vben/common-ui';
 import {
   Alert,
   Button,
-  message,
   Progress,
   Select,
   Table,
@@ -222,15 +221,7 @@ function handleRefresh() {
   loadList();
 }
 
-/** 工具栏：导出 */
-function handleExport() {
-  message.info('导出功能开发中');
-}
-
-/** 工具栏：批量处理 */
-function handleBatchProcess() {
-  message.info('批量处理功能开发中');
-}
+// P2 #37 UX13: 导出/批量处理功能开发中，按钮改为 disabled + tooltip
 
 /**
  * 根据诊断 confidence（0~1）推导可信度等级
@@ -311,7 +302,8 @@ const filteredDiagnosisList = computed(() => {
 function formatTime(t: string): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
@@ -357,12 +349,18 @@ onMounted(() => {
           :loading="loading"
           @click="handleRefresh"
         />
-        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          disabled
+          disabled-reason="导出功能开发中，待后端接口支持"
+        />
         <ClpmToolbarButton
           icon="ant-design:thunderbolt-outlined"
           label="批量处理"
           variant="primary"
-          @click="handleBatchProcess"
+          disabled
+          disabled-reason="批量处理功能开发中，待后端接口支持"
         />
       </template>
     </ClpmPageToolbar>

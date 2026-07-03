@@ -887,10 +887,7 @@ function handleTimeWindowChange() {
   loadAll();
 }
 
-/** 导出（占位） */
-function handleExport() {
-  message.info('KPI 看板导出功能待后端接口支持');
-}
+// P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
 
 function formatPercent(val: number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
@@ -1034,7 +1031,8 @@ onUnmounted(() => {
             <ClpmToolbarButton
               icon="export"
               label="导出"
-              @click="handleExport"
+              disabled
+              disabled-reason="KPI 看板导出功能待后端接口支持"
             />
             <Button type="link" size="small" @click="handleSavePreset">
               保存预设

@@ -479,7 +479,8 @@ function formatValueWithUnit(
 function formatTime(t: null | string | undefined): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
@@ -518,10 +519,7 @@ async function loadList() {
   }
 }
 
-/** 导出（占位，待后端接口） */
-function handleExport() {
-  message.info(`导出 ${total.value} 条回路监控数据，待后端接口支持`);
-}
+// P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
 
 function handleSearch() {
   query.page = 1;
@@ -813,7 +811,12 @@ onUnmounted(() => {
           :loading="loading"
           @click="loadList"
         />
-        <ClpmToolbarButton icon="export" label="导出" @click="handleExport" />
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          disabled
+          disabled-reason="回路监控数据导出功能待后端接口支持"
+        />
       </template>
     </ClpmPageToolbar>
 
