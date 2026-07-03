@@ -7,12 +7,17 @@
     1. 计算控制偏差 E = PV - SP
     2. 识别零交叉点（偏差符号变化时刻）
     3. 计算相邻零交叉间的 IAE（积分绝对误差）
-    4. 分别对正值段/负值段计算面积相似率（最小距离法）
-    5. 振荡率 = min(正面积相似率, 负面积相似率) × 100
+    4. 分别对正值段/负值段计算 IAE 相似率 S_A/S_B（最小距离法）
+    5. 分别对正值段/负值段计算持续时间相似率 S_TA/S_TB（同一算法）
+    6. 振荡率 = min(S_A, S_B) × 100；is_oscillating = S_A>=τ AND S_B>=τ
 
 设计依据：算法说明 §4.6；GB/T 44693.2-2024 附录 F.1
 
 定位：辅助诊断指标，用于稳定率修正和振荡诊断。
+
+P2 #33 偏差2 修正：移除 _crossing_regularity（CV 变异系数），
+按设计文档 §4.6.2 步骤 5 计算持续时间相似率 S_TA/S_TB（与 S_A/S_B 同算法），
+振荡判定仅依赖 S_A/S_B（设计文档伪代码 line 19-22），S_TA/S_TB 作为辅助诊断输出。
 """
 
 from __future__ import annotations
@@ -84,10 +89,12 @@ class OscillationRateCalculator(MetricCalculatorBase):
                 },
             )
 
-        # 步骤 3：计算相邻零交叉间的 IAE
+        # 步骤 3：计算相邻零交叉间的 IAE 与持续时间
         segments = self._compute_iae_segments(errors, zero_crossings, n)
         pos_iae = [s[0] for s in segments if s[2] > 0]
         neg_iae = [s[0] for s in segments if s[2] < 0]
+        pos_dur = [s[1] for s in segments if s[2] > 0]
+        neg_dur = [s[1] for s in segments if s[2] < 0]
 
         if not pos_iae or not neg_iae:
             return self._make_result(
@@ -96,31 +103,33 @@ class OscillationRateCalculator(MetricCalculatorBase):
                 {"is_oscillating": False, "oscillation_period": 0.0, "reason": "empty_polarity"},
             )
 
-        # 步骤 4：计算相似率（最小距离法）
+        # 步骤 4：计算 IAE 相似率 S_A/S_B（最小距离法）
         s_a = self._similarity_rate(pos_iae)
         s_b = self._similarity_rate(neg_iae)
 
-        # 零交叉间隔规律性检验（过滤随机噪声的误判）
-        # 真实振荡的零交叉间隔应较为均匀；随机噪声的间隔高度不规则
-        regularity = self._crossing_regularity(zero_crossings)
+        # 步骤 5：计算持续时间相似率 S_TA/S_TB（设计文档 §4.6.2 步骤 5，同一算法）
+        # 注：设计文档伪代码 line 19-22 综合判定仅用 S_A/S_B，S_TA/S_TB 作为辅助诊断输出
+        s_ta = self._similarity_rate(pos_dur)
+        s_tb = self._similarity_rate(neg_dur)
 
-        # 步骤 5：综合振荡率
-        osc_value = min(s_a, s_b) * regularity * 100.0
-        is_osc = s_a >= SIMILARITY_THRESHOLD and s_b >= SIMILARITY_THRESHOLD and regularity >= 0.5
+        # 步骤 6：综合振荡率（设计文档 §4.6.2 步骤 6）
+        osc_value = min(s_a, s_b) * 100.0
+        is_osc = s_a >= SIMILARITY_THRESHOLD and s_b >= SIMILARITY_THRESHOLD
 
+        # 振荡周期 = 2 × 平均半周期（设计文档伪代码 line 23-25）
         period = 0.0
-        if is_osc and len(zero_crossings) >= 3:
-            intervals = [
-                zero_crossings[i + 1] - zero_crossings[i] for i in range(len(zero_crossings) - 1)
-            ]
-            period = float(np.median(intervals)) * 2.0
+        if is_osc and (pos_dur or neg_dur):
+            all_durations = pos_dur + neg_dur
+            period = float(np.mean(all_durations)) * 2.0
 
         osc_value = self._clamp(osc_value)
 
         logger.debug(
-            "[振荡率] s_a=%.4f, s_b=%.4f, osc=%.2f%%, is_osc=%s, period=%.1f",
+            "[振荡率] s_a=%.4f, s_b=%.4f, s_ta=%.4f, s_tb=%.4f, osc=%.2f%%, is_osc=%s, period=%.1f",
             s_a,
             s_b,
+            s_ta,
+            s_tb,
             osc_value,
             is_osc,
             period,
@@ -134,6 +143,8 @@ class OscillationRateCalculator(MetricCalculatorBase):
                 "oscillation_period": round(period, 2),
                 "s_a": round(s_a, 4),
                 "s_b": round(s_b, 4),
+                "s_ta": round(s_ta, 4),
+                "s_tb": round(s_tb, 4),
                 "zero_crossings": len(zero_crossings),
                 "positive_segments": len(pos_iae),
                 "negative_segments": len(neg_iae),
@@ -210,31 +221,6 @@ class OscillationRateCalculator(MetricCalculatorBase):
         cleaned_avg = float(np.mean(cleaned))
         similarity = 1.0 - abs(min(cleaned_avg, avg) - avg) / abs(avg)
         return max(0.0, min(1.0, similarity))
-
-    @staticmethod
-    def _crossing_regularity(zero_crossings: list[int]) -> float:
-        """计算零交叉间隔的规律性因子.
-
-        基于间隔变异系数（CV = σ/μ）评估振荡的周期性：
-            - CV 接近 0 → 间隔均匀 → 规律性接近 1（真实振荡）
-            - CV 较大 → 间隔混乱 → 规律性接近 0（随机噪声）
-
-        Returns:
-            规律性因子 0~1；交叉点不足 2 个时返回 0
-        """
-        if len(zero_crossings) < 2:
-            return 0.0
-        intervals = np.array(
-            [zero_crossings[i + 1] - zero_crossings[i] for i in range(len(zero_crossings) - 1)],
-            dtype=float,
-        )
-        mean_interval = float(np.mean(intervals))
-        if mean_interval <= 0:
-            return 0.0
-        std_interval = float(np.std(intervals))
-        cv = std_interval / mean_interval
-        # CV 越大规律性越低；CV=0 → regularity=1, CV>=1 → regularity=0
-        return max(0.0, 1.0 - cv)
 
 
 __all__ = ["OscillationRateCalculator"]
