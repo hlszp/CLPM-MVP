@@ -159,6 +159,38 @@ export namespace DiagnosisApi {
     includeValidMask?: boolean;
   }
 
+  /** P3 #44: 批量波形查询请求体（POST /timeseries/batch/waveform） */
+  export interface BatchWaveformRequest {
+    /** 回路 ID 列表（1~50 个） */
+    loopIds: string[];
+    /** 开始时间（ISO 8601） */
+    startTime: string;
+    /** 结束时间（ISO 8601） */
+    endTime: string;
+    /** 按标签组筛选（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF） */
+    tagGroup?: string;
+    /** 是否返回 valid_mask（默认 true） */
+    includeValidMask?: boolean;
+    /** 每个回路最大数据点数（100~50000，默认 5000） */
+    maxPoints?: number;
+  }
+
+  /** P3 #44: 批量波形查询中的失败回路信息 */
+  export interface BatchWaveformFailure {
+    loopId: string;
+    error: string;
+  }
+
+  /** P3 #44: 批量波形查询响应 */
+  export interface BatchWaveformResponse {
+    /** 成功获取的波形数据列表 */
+    items: WaveformResult[];
+    /** 失败的回路列表（含错误信息） */
+    failed: BatchWaveformFailure[];
+    /** 成功回路数 */
+    total: number;
+  }
+
   /** Tracker 状态更新参数（仅 IC_ENGINEER） */
   export interface TrackerStatusUpdateParams {
     status: ActionStatus;
@@ -436,6 +468,25 @@ export function getWaveformApi(
   return requestClient.get<DiagnosisApi.WaveformResult>(
     `/timeseries/${loopId}/waveform`,
     { params },
+  );
+}
+
+/**
+ * P3 #44: 批量获取波形数据 — IDS v3.2 §2.4
+ *
+ * 一次请求并行获取多个回路的波形数据，减少 HTTP 请求次数。
+ * 适用于多回路对比、批量导出等场景。
+ *
+ * - 最多 50 个回路
+ * - 单个回路失败不影响其他回路（失败信息放入 failed 列表）
+ * - 每个回路独立应用 LTTB 降采样
+ */
+export function getBatchWaveformApi(
+  data: DiagnosisApi.BatchWaveformRequest,
+) {
+  return requestClient.post<DiagnosisApi.BatchWaveformResponse>(
+    '/timeseries/batch/waveform',
+    data,
   );
 }
 
