@@ -66,7 +66,7 @@ class LoopTypeWeightItem(CamelModel):
 
 
 class LoopTypeWeightUpdate(CamelModel):
-    """PUT /config/loop-type-weights/{loopType} 请求体。"""
+    """PUT /configs/loop-type-weights/{loopType} 请求体（P2 #30 B7 前缀统一为复数）。"""
 
     typeName: str | None = Field(None, max_length=50)
     weightA: Decimal | None = Field(None, ge=0, le=1)
@@ -93,7 +93,7 @@ class LoopLevelWeightItem(CamelModel):
 
 
 class LoopLevelWeightUpdate(CamelModel):
-    """PUT /config/loop-level-weights/{level} 请求体。"""
+    """PUT /configs/loop-level-weights/{level} 请求体（P2 #30 B7 前缀统一为复数）。"""
 
     levelName: str | None = Field(None, max_length=50)
     weight: Decimal | None = Field(None, gt=0)

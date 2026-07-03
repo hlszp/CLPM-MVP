@@ -631,3 +631,66 @@ class TestUpdateDiagnosisConfigs:
             json={"items": [{"diagId": "d-1", "isEnabled": False}]},
         )
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# P2 #30 B7: /configs/loop-type-weights 与 /configs/loop-level-weights 路由可达性
+# ---------------------------------------------------------------------------
+
+
+class TestLoopTypeWeightRoutesReachable:
+    """P2 #30 B7: 验证 /configs/loop-type-weights 路由前缀已生效。
+
+    旧路径 /config/loop-type-weights（单数）应返回 404，
+    新路径 /configs/loop-type-weights（复数）应可访问。
+    """
+
+    def test_new_path_list_reachable(self, client, mock_db, fake_redis) -> None:
+        """新复数路径 GET /configs/loop-type-weights 返回 200。"""
+        # mock list_loop_type_weights 返回空列表（路由可达即可）
+        mock_db.execute = AsyncMock(return_value=_make_execute_return([]))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/configs/loop-type-weights",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"] == []
+
+    def test_old_path_list_not_found(self, client, mock_db, fake_redis) -> None:
+        """旧单数路径 GET /config/loop-type-weights 已不存在（404）。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/config/loop-type-weights",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+
+
+class TestLoopLevelWeightRoutesReachable:
+    """P2 #30 B7: 验证 /configs/loop-level-weights 路由前缀已生效。"""
+
+    def test_new_path_list_reachable(self, client, mock_db, fake_redis) -> None:
+        """新复数路径 GET /configs/loop-level-weights 返回 200。"""
+        mock_db.execute = AsyncMock(return_value=_make_execute_return([]))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/configs/loop-level-weights",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"] == []
+
+    def test_old_path_list_not_found(self, client, mock_db, fake_redis) -> None:
+        """旧单数路径 GET /config/loop-level-weights 已不存在（404）。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/config/loop-level-weights",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+

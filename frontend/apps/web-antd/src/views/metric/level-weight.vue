@@ -6,7 +6,7 @@
  * - 表格：3 个级别（1/2/3）
  * - 列：级别名称、weight、描述
  * - 行内编辑
- * - 保存调用 PUT /api/v1/config/loop-level-weights/{level}
+ * - 保存调用 PUT /api/v1/configs/loop-level-weights/{level}
  * - 仅 ADMIN 可编辑
  */
 import type { TableColumnsType } from 'ant-design-vue';

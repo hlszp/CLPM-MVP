@@ -205,8 +205,8 @@ def upgrade():
 |---|---|---|---|
 | `/loops/{id}/mode-mapping` | GET/PUT | 投用定义配置 | 回路管理 |
 | `/loops/batch-config` | POST | 批量配置（监控/统计/删除） | 回路管理 |
-| `/config/loop-type-weights` | GET/PUT | 回路类型权重配置 | 性能评估 |
-| `/config/loop-level-weights` | GET/PUT | 回路级别权重配置 | 性能评估 |
+| `/configs/loop-type-weights` | GET/PUT | 回路类型权重配置（P2 #30 B7 前缀统一为复数） | 性能评估 |
+| `/configs/loop-level-weights` | GET/PUT | 回路级别权重配置（P2 #30 B7 前缀统一为复数） | 性能评估 |
 | `/performance/nodes/{id}/monitor` | GET | 节点级监控数据（时/日/月） | 性能评估 |
 | `/performance/loops/diagnose` | GET | 回路级故障诊断指标监控 | 性能评估 |
 | `/performance/nodes/daily` | GET | 日级聚合查询 | 性能评估 |
@@ -455,8 +455,8 @@ def aggregate_node_score_v2(loop_scores: list[dict]):
 | ID | 任务 | 优先级 | 依赖 |
 |---|---|---|---|
 | API-01 | `GET/PUT /loops/{id}/mode-mapping` | P0 | SVC-01 |
-| API-02 | `GET/PUT /config/loop-type-weights` | P0 | SVC-02 |
-| API-03 | `GET/PUT /config/loop-level-weights` | P0 | SVC-03 |
+| API-02 | `GET/PUT /configs/loop-type-weights` | P0 | SVC-02 |
+| API-03 | `GET/PUT /configs/loop-level-weights` | P0 | SVC-03 |
 | API-04 | `POST /loops/batch-config` | P1 | SVC-14 |
 | API-05 | `GET /performance/nodes/{id}/monitor?dimension=hour/day/month` | P1 | SVC-07/08 |
 | API-06 | `GET /performance/loops/diagnose` | P1 | SVC-09 |

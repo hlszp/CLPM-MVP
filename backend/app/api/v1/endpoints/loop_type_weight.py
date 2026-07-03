@@ -4,8 +4,12 @@
     P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R
 
 路由清单：
-- GET /api/v1/config/loop-type-weights            — 获取全部回路类型权重（所有认证用户）
-- PUT /api/v1/config/loop-type-weights/{loopType} — 更新指定类型权重（仅 ADMIN）
+- GET /api/v1/configs/loop-type-weights            — 获取全部回路类型权重（所有认证用户）
+- PUT /api/v1/configs/loop-type-weights/{loopType} — 更新指定类型权重（仅 ADMIN）
+
+P2 #30 B7: 前缀从 `/config/loop-type-weights` 统一为 `/configs/loop-type-weights`，
+与 `/configs/metrics` / `/configs/diagnosis` 保持一致（复数形式）。
+向后兼容策略：旧路径暂不提供 redirect，前端同步更新；外部调用方需迁移。
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from app.schemas.common import ApiResponse, success
 from app.schemas.loop_config import LoopTypeWeightItem, LoopTypeWeightUpdate
 from app.services.loop_config import list_loop_type_weights, update_loop_type_weight
 
-router = APIRouter(prefix="/config/loop-type-weights", tags=["loop-type-weight"])
+router = APIRouter(prefix="/configs/loop-type-weights", tags=["loop-type-weight"])
 
 
 @router.get("", response_model=ApiResponse[list[LoopTypeWeightItem]])

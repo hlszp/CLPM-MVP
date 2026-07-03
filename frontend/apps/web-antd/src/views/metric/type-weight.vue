@@ -6,7 +6,7 @@
  * - 表格：4 种类型（STABLE/SLOW/FAST/LOGIC）
  * - 列：类型名称、weightA、weightF、weightS、描述
  * - 行内编辑
- * - 保存调用 PUT /api/v1/config/loop-type-weights/{loop_type}
+ * - 保存调用 PUT /api/v1/configs/loop-type-weights/{loop_type}
  * - 仅 ADMIN 可编辑
  */
 import type { TableColumnsType } from 'ant-design-vue';

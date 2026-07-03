@@ -4,8 +4,11 @@
     装置平均性能评分 = Σ(w_i * P_i) / Σw_i
 
 路由清单：
-- GET /api/v1/config/loop-level-weights         — 获取全部回路级别权重（所有认证用户）
-- PUT /api/v1/config/loop-level-weights/{level} — 更新指定级别权重（仅 ADMIN）
+- GET /api/v1/configs/loop-level-weights         — 获取全部回路级别权重（所有认证用户）
+- PUT /api/v1/configs/loop-level-weights/{level} — 更新指定级别权重（仅 ADMIN）
+
+P2 #30 B7: 前缀从 `/config/loop-level-weights` 统一为 `/configs/loop-level-weights`，
+与 `/configs/metrics` / `/configs/diagnosis` / `/configs/loop-type-weights` 保持一致。
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from app.schemas.common import ApiResponse, success
 from app.schemas.loop_config import LoopLevelWeightItem, LoopLevelWeightUpdate
 from app.services.loop_config import list_loop_level_weights, update_loop_level_weight
 
-router = APIRouter(prefix="/config/loop-level-weights", tags=["loop-level-weight"])
+router = APIRouter(prefix="/configs/loop-level-weights", tags=["loop-level-weight"])
 
 
 @router.get("", response_model=ApiResponse[list[LoopLevelWeightItem]])

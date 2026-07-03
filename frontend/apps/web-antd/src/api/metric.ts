@@ -590,10 +590,12 @@ export function exportAnalyticsApi(data: MetricApi.AnalyticsExportParams) {
 
 /**
  * 获取回路类型权重列表 — 配置项
+ *
+ * P2 #30 B7: API 前缀从 /config/ 统一为 /configs/（与 /configs/metrics 对齐）
  */
 export function getLoopTypeWeightsApi() {
   return requestClient.get<MetricApi.LoopTypeWeightListResult>(
-    '/config/loop-type-weights',
+    '/configs/loop-type-weights',
   );
 }
 
@@ -605,17 +607,19 @@ export function updateLoopTypeWeightApi(
   data: MetricApi.LoopTypeWeightUpdateParams,
 ) {
   return requestClient.put<MetricApi.LoopTypeWeightItem>(
-    `/config/loop-type-weights/${loopType}`,
+    `/configs/loop-type-weights/${loopType}`,
     data,
   );
 }
 
 /**
  * 获取回路级别权重列表 — 配置项
+ *
+ * P2 #30 B7: API 前缀从 /config/ 统一为 /configs/
  */
 export function getLoopLevelWeightsApi() {
   return requestClient.get<MetricApi.LoopLevelWeightListResult>(
-    '/config/loop-level-weights',
+    '/configs/loop-level-weights',
   );
 }
 
@@ -627,7 +631,7 @@ export function updateLoopLevelWeightApi(
   data: MetricApi.LoopLevelWeightUpdateParams,
 ) {
   return requestClient.put<MetricApi.LoopLevelWeightItem>(
-    `/config/loop-level-weights/${level}`,
+    `/configs/loop-level-weights/${level}`,
     data,
   );
 }
