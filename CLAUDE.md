@@ -64,7 +64,7 @@ cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 # 3. Celery Worker（独立进程，必须单独启动）
 cd backend && .venv/bin/celery -A app.tasks.celery_app worker -l info -Q default
 
-# 4. 前端 (port 5668)
+# 4. 前端 (port 5666)
 cd frontend && pnpm run dev:antd
 ```
 
@@ -84,7 +84,7 @@ cd e2e && pnpm exec playwright test
 ### 关键注意事项
 
 - **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker
-- **前端端口是 5668**（非 5666）
+- **前端端口是 5666**（P2 #32 B9 修正：实际配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=5666`）
 - **前端有 6 个预存在 TypeScript 错误**（plant-node-tree.vue 3 个 + workbench.vue 3 个），与 v4.0 重构无关
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
 - **Git 分支**：当前在 `remediation/v1.1.0` 分支

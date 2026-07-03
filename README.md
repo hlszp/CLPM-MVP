@@ -74,10 +74,10 @@ cd backend
 ```bash
 cd frontend
 pnpm install
-pnpm run dev:antd              # 默认端口 5668
+pnpm run dev:antd              # 默认端口 5666
 ```
 
-前端访问地址：http://localhost:5668
+前端访问地址：http://localhost:5666
 
 ### 5. 默认账号
 
