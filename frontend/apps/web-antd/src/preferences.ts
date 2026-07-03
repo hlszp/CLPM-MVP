@@ -34,6 +34,10 @@ export const CLPM_INDUSTRIAL_TOKENS = {
  *
  * 统一全系统的状态色彩编码，确保 KPI 卡片、徽章、图表、标签等元素
  * 使用一致的色彩语义。所有页面应优先引用这些常量，避免硬编码颜色值。
+ *
+ * @deprecated P1 #19: 此为静态常量，不响应深色模式切换。
+ *   组件内请改用 `useClpmTheme()` 获取响应式 themeColors。
+ *   本常量仅保留用于非响应式场景（如模块顶层常量定义）。
  */
 export const THEME_COLORS = {
   /** 成功 / 优秀 / 已完成（Ant Design green-6） */

@@ -50,13 +50,16 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
-import { THEME_COLORS } from '#/preferences';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'LoopDetail' });
 
 const route = useRoute();
 const router = useRouter();
 const loopId = route.params.id as string;
+
+// P1 #19: 使用响应式主题色板，替代静态 THEME_COLORS 常量
+const { themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const monitorLoading = ref(false);
@@ -379,7 +382,8 @@ function handleTrendWindowChange() {
 function formatTime(t: null | string): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
@@ -583,12 +587,12 @@ onMounted(() => {
                   <ClpmTagAssociationBadge :mapping="loopDetail.tagMapping" />
                 </DescriptionsItem>
                 <DescriptionsItem label="Good">
-                  <Tag :color="THEME_COLORS.SUCCESS">
+                  <Tag :color="themeColors.SUCCESS">
                     {{ dataQualitySummary.good.toFixed(1) }}%
                   </Tag>
                 </DescriptionsItem>
                 <DescriptionsItem label="Bad">
-                  <Tag :color="THEME_COLORS.DANGER">
+                  <Tag :color="themeColors.DANGER">
                     {{ dataQualitySummary.bad.toFixed(1) }}%
                   </Tag>
                 </DescriptionsItem>
