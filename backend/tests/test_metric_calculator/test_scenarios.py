@@ -20,9 +20,7 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -46,40 +44,8 @@ from app.services.metric_calculator.oscillation import OscillationRateCalculator
 from app.services.metric_calculator.saturation import SaturationRateCalculator
 from app.services.metric_calculator.settling_time import SettlingTimeCalculator
 
-# ---------------------------------------------------------------------------
-# Fixture：加载 7 场景测试数据（session 级，仅加载一次）
-# ---------------------------------------------------------------------------
-
-FIXTURE_PATH = Path(__file__).parent.parent / "fixtures" / "kpi_test_data.json"
-
-#: 7 个场景名称（对齐项目记忆硬约束 "7 scenarios"）
-SCENARIO_NAMES = (
-    "fast_response",
-    "slow_response",
-    "oscillation",
-    "op_saturation",
-    "normal",
-    "manual_mode",
-    "pure_ar2",
-)
-
-
-@pytest.fixture(scope="session")
-def kpi_scenarios() -> dict[str, dict[str, Any]]:
-    """加载 kpi_test_data.json 中全部 7 个场景数据。
-
-    Returns:
-        {scenario_name: scenario_dict} 字典；
-        每个 scenario_dict 含 data/description/expected/control_type/pv_range 等字段。
-    """
-    if not FIXTURE_PATH.exists():
-        pytest.skip(f"测试数据文件不存在：{FIXTURE_PATH}")
-    with FIXTURE_PATH.open(encoding="utf-8") as f:
-        data = json.load(f)
-    # 校验 7 个场景齐全
-    missing = [n for n in SCENARIO_NAMES if n not in data]
-    assert not missing, f"测试数据缺失场景：{missing}"
-    return data
+# kpi_scenarios fixture 与 SCENARIO_NAMES 常量已移至 conftest.py（跨模块共享）
+from tests.test_metric_calculator.conftest import SCENARIO_NAMES
 
 
 # ---------------------------------------------------------------------------

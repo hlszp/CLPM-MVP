@@ -5,13 +5,16 @@
 - 边界数据（空/单点/恒定值）
 - 极端数据（全无效/振荡/饱和）
 - 配置数据（CONFIG tagGroup）
+- 7 场景测试数据集（kpi_scenarios session fixture）
 
 设计依据：算法说明 §3.4-3.7
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -22,6 +25,41 @@ from app.contracts.data_types import (
     MetricDataBundle,
     QualitySummary,
 )
+
+# ---------------------------------------------------------------------------
+# 7 场景测试数据集（session 级，跨模块共享）
+# ---------------------------------------------------------------------------
+
+FIXTURE_PATH = Path(__file__).parent.parent / "fixtures" / "kpi_test_data.json"
+
+#: 7 个场景名称（对齐项目记忆硬约束 "7 scenarios"）
+SCENARIO_NAMES = (
+    "fast_response",
+    "slow_response",
+    "oscillation",
+    "op_saturation",
+    "normal",
+    "manual_mode",
+    "pure_ar2",
+)
+
+
+@pytest.fixture(scope="session")
+def kpi_scenarios() -> dict[str, dict[str, Any]]:
+    """加载 kpi_test_data.json 中全部 7 个场景数据。
+
+    Returns:
+        {scenario_name: scenario_dict} 字典；
+        每个 scenario_dict 含 data/description/expected/control_type/pv_range 等字段。
+    """
+    if not FIXTURE_PATH.exists():
+        pytest.skip(f"测试数据文件不存在：{FIXTURE_PATH}")
+    with FIXTURE_PATH.open(encoding="utf-8") as f:
+        data = json.load(f)
+    # 校验 7 个场景齐全
+    missing = [n for n in SCENARIO_NAMES if n not in data]
+    assert not missing, f"测试数据缺失场景：{missing}"
+    return data
 
 # ---------------------------------------------------------------------------
 # 数据构造辅助
