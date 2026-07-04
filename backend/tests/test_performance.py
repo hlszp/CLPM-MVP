@@ -767,10 +767,9 @@ class TestPerformanceService:
 
         db = AsyncMock()
         # get_board 在 plant_node_id=None 时跳过装置名查询，依次调用：
-        # 1. _aggregate_kpi_cards → result.one() 期望 row.cnt=0
-        # 2. _aggregate_kpi_summary → result.one() 期望 row.cnt=0
-        # 3. _aggregate_steady_trend → result.all() 期望空列表
-        # 4. count_stmt (partialWarning) → result.all() 期望空列表
+        # 1. _aggregate_node_board → result.one() 期望 row.cnt=0（空节点）
+        # 2. _aggregate_node_steady_trend → result.all() 期望空列表
+        # 3. count_stmt (partialWarning) → result.all() 期望空列表
         call_count = [0]
 
         async def execute_side_effect(stmt, *args, **kwargs):

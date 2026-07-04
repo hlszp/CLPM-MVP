@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Integer, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -242,6 +242,11 @@ async def update_engine_rule(
 ) -> dict:
     """更新引擎规则。
 
+    PRD §5.4.2 / FDS §5.3.3：引擎规则变更后需触发：
+    1. cfgVersion 缓存失效（DataBlock 缓存可能受引擎参数影响）
+    2. EngineRuleLoader 进程内缓存清除
+    3. 若 EVAL_CALC_CYCLE 变更，触发 refresh_beat_schedule 任务
+
     Raises:
         BizError: ERR_RULE_NOT_FOUND
     """
@@ -281,7 +286,58 @@ async def update_engine_rule(
     )
     await db.commit()
 
+    # 引擎规则变更后处理：缓存失效 + Beat 刷新
+    await _handle_engine_rule_changed(rule.rule_code)
+
     return after
+
+
+async def _handle_engine_rule_changed(rule_code: str) -> None:
+    """引擎规则变更后处理：缓存失效 + EngineRuleLoader 缓存清除 + Beat 刷新.
+
+    PRD §5.4.2 / FDS §5.3.3：
+    - 任何引擎规则变更 → 清除 EngineRuleLoader 进程内缓存
+    - 任何引擎规则变更 → 触发 L1 DataBlock 缓存全量失效（cfgVersion 机制）
+    - EVAL_CALC_CYCLE 变更 → 额外触发 refresh_beat_schedule 任务
+
+    Args:
+        rule_code: 变更的规则代码
+    """
+    # 1. 清除 EngineRuleLoader 进程内缓存
+    try:
+        from app.services.engine_rule_loader import get_engine_rule_loader
+
+        get_engine_rule_loader().invalidate_cache()
+        logger.info("EngineRuleLoader 缓存已清除（规则 %s 变更）", rule_code)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("清除 EngineRuleLoader 缓存失败: %s", exc)
+
+    # 2. 触发 L1 DataBlock 缓存全量失效（cfgVersion 机制）
+    # 引擎参数（采样间隔、质量策略等）变更会影响 DataBlock 内容，
+    # 旧版本缓存需失效，避免脏数据被复用。
+    try:
+        from app.services.cache.invalidation import CacheInvalidator
+        from app.core.redis import redis_client
+
+        invalidator = CacheInvalidator(redis_client)
+        deleted = await invalidator.invalidate_all()
+        logger.warning(
+            "引擎规则 %s 变更触发 L1 DataBlock 缓存全量失效: deleted=%d",
+            rule_code,
+            deleted,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("L1 DataBlock 缓存失效失败（规则 %s）: %s", rule_code, exc)
+
+    # 3. EVAL_CALC_CYCLE 变更 → 触发 refresh_beat_schedule
+    if rule_code == "EVAL_CALC_CYCLE":
+        try:
+            from app.tasks.kpi_calc import refresh_beat_schedule
+
+            refresh_beat_schedule.delay()
+            logger.info("已触发 refresh_beat_schedule 任务（EVAL_CALC_CYCLE 变更）")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("触发 refresh_beat_schedule 失败: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -943,57 +999,6 @@ def _kpi_status(metric_code: str, value: float | None, threshold: dict | None) -
     return "POOR"
 
 
-async def _aggregate_kpi_cards(
-    db: AsyncSession,
-    plant_node_id: str | None,
-    start: datetime,
-    end: datetime,
-) -> list[dict]:
-    """聚合 KPI 卡片（6 大 KPI + 综合评分 = 7 张卡片）— SQL 聚合。"""
-    fields = (*KPI_METRIC_CODES, "score")
-    avg_cols = [func.avg(getattr(KpiSnapshotHourly, f)).label(f) for f in fields]
-    stmt = _apply_snapshot_filters(
-        select(func.count().label("cnt"), *avg_cols),
-        plant_node_id=plant_node_id,
-        start=start,
-        end=end,
-        status_filter="SUCCESS",
-    )
-    result = await db.execute(stmt)
-    row = result.one()
-
-    if row.cnt == 0:
-        return _empty_kpi_cards()
-
-    cards: list[dict] = []
-    for code in KPI_METRIC_CODES:
-        val = _to_float(getattr(row, code))
-        cards.append(
-            {
-                "metricKey": code,
-                "metricName": KPI_NAME_MAP.get(code, code),
-                "value": round(val, 2) if val is not None else None,
-                "unit": "%",
-                "status": _kpi_status(code, val, _default_threshold(code)),
-                "algorithmVersion": ALGORITHM_VERSION,
-            }
-        )
-
-    # 综合评分卡片
-    score_avg = _to_float(row.score)
-    cards.append(
-        {
-            "metricKey": "composite_score",
-            "metricName": KPI_NAME_MAP["composite_score"],
-            "value": round(score_avg, 2) if score_avg is not None else None,
-            "unit": "",
-            "status": _score_to_status(score_avg),
-            "algorithmVersion": ALGORITHM_VERSION,
-        }
-    )
-    return cards
-
-
 def _empty_kpi_cards() -> list[dict]:
     """空 KPI 卡片列表。"""
     cards: list[dict] = []
@@ -1034,147 +1039,6 @@ def _default_threshold(metric_code: str) -> dict:
         "saturation_rate": {"min": 0, "max": 100, "alert": 15},
     }
     return defaults.get(metric_code, {})
-
-
-async def _aggregate_kpi_summary(
-    db: AsyncSession,
-    plant_node_id: str | None,
-    start: datetime,
-    end: datetime,
-) -> dict:
-    """聚合 KPI 汇总 — 按回路重要度加权聚合（对齐 GB/T 44693.2-2024 §6.2）。
-
-    P0#12: 装置级加权聚合 — 使用 LoopLedger.score_weight 作为权重，
-           加权平均公式: weighted_avg = Σ(value_i × w_i) / Σ(w_i)
-           权重为 NULL 时按 1.0 处理（等权）。
-
-    P0#11: 投自动回路占比 — 统计 auto_mode_rate > 0 的回路数占比，
-           反映装置内有多少回路实际投入自动控制。
-    """
-    fields = (*KPI_METRIC_CODES, "score")
-    # 使用 COALESCE 处理 NULL 权重（默认 1.0），确保不丢失数据点
-    weight_col = func.coalesce(LoopLedger.score_weight, Decimal("1.0")).label("w")
-    # SUM(weight) 可能因所有权重显式为 0 而等于 0，使用 NULLIF 避免 SQL 除零
-    weight_sum_col = func.nullif(func.sum(weight_col), 0).label("weight_sum")
-
-    # 加权聚合：Σ(value × w) / Σ(w)
-    # NULLIF 确保 SUM(w)=0 时返回 NULL 而非抛除零错误
-    weighted_cols = []
-    for f in fields:
-        col = getattr(KpiSnapshotHourly, f)
-        # SUM(value * w) / NULLIF(SUM(w), 0)
-        weighted_cols.append((func.sum(col * weight_col) / weight_sum_col).label(f))
-
-    # 投自动回路占比：COUNT(auto_mode_rate > 0) / COUNT(*)
-    auto_loop_count = func.sum(
-        func.coalesce(
-            func.cast(
-                KpiSnapshotHourly.auto_mode_rate > 0,
-                Integer,
-            ),
-            0,
-        )
-    ).label("auto_loop_count")
-    total_count = func.count().label("cnt")
-
-    stmt = _apply_snapshot_filters(
-        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols),
-        plant_node_id=plant_node_id,
-        start=start,
-        end=end,
-        status_filter="SUCCESS",
-    )
-    result = await db.execute(stmt)
-    row = result.one()
-
-    empty = {
-        "good_value_rate": None,
-        "auto_mode_rate": None,
-        "effective_auto_rate": None,
-        "steady_rate": None,
-        "accuracy_rate": None,
-        "fast_response_rate": None,
-        "oscillation_rate": None,
-        "saturation_rate": None,
-        "composite_score": None,
-        "auto_loop_ratio": None,
-        "status": "INCONCLUSIVE",
-        "algorithm_version": ALGORITHM_VERSION,
-    }
-    if row.cnt == 0:
-        return empty
-
-    # 除零保护：SUM(weight)=0（所有权重显式为 0）时返回空结果
-    weight_sum_val = _to_float(row.weight_sum)
-    if weight_sum_val is None or weight_sum_val == 0:
-        logger.warning(
-            "[装置级聚合] plant_node_id=%s, SUM(weight)=%s（为 0 或 NULL），"
-            "无法计算加权平均，返回 INCONCLUSIVE",
-            plant_node_id,
-            weight_sum_val,
-        )
-        return empty
-
-    def avg_value(field: str) -> float | None:
-        val = _to_float(getattr(row, field))
-        return round(val, 2) if val is not None else None
-
-    score_avg = avg_value("score")
-    # 投自动回路占比 = auto_loop_count / total_count × 100
-    auto_loop_count_val = _to_float(row.auto_loop_count) or 0.0
-    auto_loop_ratio = round(auto_loop_count_val / float(row.cnt) * 100, 2)
-
-    logger.debug(
-        "[装置级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%.0f, "
-        "投自动回路占比=%.2f%%, SUM(weight)=%.4f, 加权综合评分=%s",
-        plant_node_id,
-        row.cnt,
-        auto_loop_count_val,
-        auto_loop_ratio,
-        weight_sum_val,
-        score_avg,
-    )
-
-    return {
-        "good_value_rate": avg_value("good_value_rate"),
-        "auto_mode_rate": avg_value("auto_mode_rate"),
-        "effective_auto_rate": avg_value("effective_auto_rate"),
-        "steady_rate": avg_value("steady_rate"),
-        "accuracy_rate": avg_value("accuracy_rate"),
-        "fast_response_rate": avg_value("fast_response_rate"),
-        "oscillation_rate": avg_value("oscillation_rate"),
-        "saturation_rate": avg_value("saturation_rate"),
-        "composite_score": score_avg,
-        "auto_loop_ratio": auto_loop_ratio,
-        "status": _score_to_status(score_avg),
-        "algorithm_version": ALGORITHM_VERSION,
-    }
-
-
-async def _aggregate_steady_trend(
-    db: AsyncSession,
-    plant_node_id: str | None,
-    start: datetime,
-    end: datetime,
-) -> dict:
-    """聚合平稳率趋势（按小时聚合）— SQL date_trunc + GROUP BY + AVG。"""
-    hour_col = func.date_trunc("hour", KpiSnapshotHourly.ts_start).label("hour")
-    avg_col = func.avg(KpiSnapshotHourly.steady_rate).label("avg_steady")
-    stmt = (
-        _apply_snapshot_filters(
-            select(hour_col, avg_col),
-            plant_node_id=plant_node_id,
-            start=start,
-            end=end,
-        )
-        .group_by(hour_col)
-        .order_by(hour_col.asc())
-    )
-    result = await db.execute(stmt)
-    rows = result.all()
-    timestamps = [r.hour.strftime("%Y-%m-%dT%H:00:00") for r in rows]
-    values = [round(float(r.avg_steady), 2) if r.avg_steady is not None else None for r in rows]
-    return {"timestamps": timestamps, "values": values}
 
 
 async def _aggregate_kpi_trend(
