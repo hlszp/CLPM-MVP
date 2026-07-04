@@ -89,6 +89,8 @@ export namespace MetricApi {
     processedLoopCount?: number;
     updatedAt: string;
     updatedBy: string;
+    /** P3 #51: EVAL_CALC_CYCLE 变更时返回，提示 Beat 进程需重启 */
+    warning?: string;
   }
 
   /** 引擎规则列表响应 */

@@ -761,6 +761,55 @@ class TestPerformanceService:
             await update_engine_rule(db, "nonexistent", "admin", rule_name="更新")
         assert exc_info.value.code == "ERR_RULE_NOT_FOUND"
 
+    async def test_update_engine_rule_eval_calc_cycle_returns_beat_warning(self) -> None:
+        """P3 #51: 更新 EVAL_CALC_CYCLE 规则时返回 Beat 重启提示。"""
+        from app.services.performance import update_engine_rule
+
+        rule = _make_engine_rule(rule_code="EVAL_CALC_CYCLE", rule_name="计算周期")
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=_make_scalar_one_or_none_mock(rule)
+        )
+        db.add = AsyncMock()
+        db.commit = AsyncMock()
+
+        # Mock _handle_engine_rule_changed 避免实际触发缓存失效/Celery 任务
+        with patch(
+            "app.services.performance._handle_engine_rule_changed",
+            new=AsyncMock(return_value="计算周期已变更，新调度需重启 Celery Beat 进程才能生效"),
+        ):
+            result = await update_engine_rule(
+                db, "rule-id", "admin", rule_name="更新计算周期"
+            )
+
+        # 验证返回结果包含 warning 字段
+        assert "warning" in result
+        assert "Beat" in result["warning"]
+        assert "重启" in result["warning"]
+
+    async def test_update_engine_rule_other_rule_no_warning(self) -> None:
+        """P3 #51: 更新非 EVAL_CALC_CYCLE 规则时不返回 warning。"""
+        from app.services.performance import update_engine_rule
+
+        rule = _make_engine_rule(rule_code="SCHEDULE_CONCURRENCY", rule_name="并发数")
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=_make_scalar_one_or_none_mock(rule)
+        )
+        db.add = AsyncMock()
+        db.commit = AsyncMock()
+
+        with patch(
+            "app.services.performance._handle_engine_rule_changed",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await update_engine_rule(
+                db, "rule-id", "admin", rule_name="更新并发"
+            )
+
+        # 非计算周期规则不应返回 warning
+        assert "warning" not in result or result.get("warning") is None
+
     async def test_get_board_empty(self) -> None:
         """无快照数据时看板返回空 KPI 卡片。"""
         from app.services.performance import get_board

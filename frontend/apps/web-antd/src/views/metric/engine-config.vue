@@ -105,13 +105,23 @@ async function doSave() {
   if (!rule.value) return;
   saving.value = true;
   try {
-    await updateRuleApi(rule.value.ruleId, {
+    const result = await updateRuleApi(rule.value.ruleId, {
       calcPeriod: formState.calcPeriod,
       dataFetchWindow: formState.dataFetchWindow,
       scheduleConcurrency: formState.scheduleConcurrency,
       isEnabled: formState.isEnabled,
     });
-    message.success('引擎规则更新成功，已即时生效');
+    // P3 #51: EVAL_CALC_CYCLE 变更时后端返回 warning 提示 Beat 进程需重启
+    if (result?.warning) {
+      message.success('引擎规则更新成功');
+      Modal.warning({
+        title: '注意：需重启 Beat 进程',
+        content: result.warning,
+        okText: '知道了',
+      });
+    } else {
+      message.success('引擎规则更新成功，已即时生效');
+    }
     await loadRule();
   } catch {
     // 错误已由拦截器处理
@@ -123,7 +133,8 @@ async function doSave() {
 function formatTime(t?: string): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }

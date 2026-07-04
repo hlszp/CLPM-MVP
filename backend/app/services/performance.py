@@ -287,21 +287,27 @@ async def update_engine_rule(
     await db.commit()
 
     # 引擎规则变更后处理：缓存失效 + Beat 刷新
-    await _handle_engine_rule_changed(rule.rule_code)
+    warning = await _handle_engine_rule_changed(rule.rule_code)
 
+    # P3 #51: EVAL_CALC_CYCLE 变更时返回 Beat 重启提示，让前端展示给用户
+    if warning:
+        after["warning"] = warning
     return after
 
 
-async def _handle_engine_rule_changed(rule_code: str) -> None:
+async def _handle_engine_rule_changed(rule_code: str) -> str | None:
     """引擎规则变更后处理：缓存失效 + EngineRuleLoader 缓存清除 + Beat 刷新.
 
     PRD §5.4.2 / FDS §5.3.3：
     - 任何引擎规则变更 → 清除 EngineRuleLoader 进程内缓存
     - 任何引擎规则变更 → 触发 L1 DataBlock 缓存全量失效（cfgVersion 机制）
-    - EVAL_CALC_CYCLE 变更 → 额外触发 refresh_beat_schedule 任务
+    - EVAL_CALC_CYCLE 变更 → 额外触发 refresh_beat_schedule 任务（需重启 Beat 进程生效）
 
     Args:
         rule_code: 变更的规则代码
+
+    Returns:
+        warning: EVAL_CALC_CYCLE 变更时返回 Beat 重启提示，其他规则返回 None
     """
     # 1. 清除 EngineRuleLoader 进程内缓存
     try:
@@ -329,7 +335,7 @@ async def _handle_engine_rule_changed(rule_code: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("L1 DataBlock 缓存失效失败（规则 %s）: %s", rule_code, exc)
 
-    # 3. EVAL_CALC_CYCLE 变更 → 触发 refresh_beat_schedule
+    # 3. EVAL_CALC_CYCLE 变更 → 触发 refresh_beat_schedule + 返回 Beat 重启提示
     if rule_code == "EVAL_CALC_CYCLE":
         try:
             from app.tasks.kpi_calc import refresh_beat_schedule
@@ -338,6 +344,11 @@ async def _handle_engine_rule_changed(rule_code: str) -> None:
             logger.info("已触发 refresh_beat_schedule 任务（EVAL_CALC_CYCLE 变更）")
         except Exception as exc:  # noqa: BLE001
             logger.warning("触发 refresh_beat_schedule 失败: %s", exc)
+        # P3 #51: Celery Beat 进程在启动时已加载 schedule，
+        # refresh_beat_schedule 仅更新 celery_app.conf.beat_schedule，
+        # Beat 进程需重启才能加载新 schedule（Celery Beat 限制）
+        return "计算周期已变更，新调度需重启 Celery Beat 进程才能生效"
+    return None
 
 
 # ---------------------------------------------------------------------------

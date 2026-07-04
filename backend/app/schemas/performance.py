@@ -65,6 +65,8 @@ class EngineRuleItem(CamelModel):
     isEnabled: bool = True
     updatedBy: str | None = None
     updatedAt: str | None = None
+    # P3 #51: EVAL_CALC_CYCLE 变更时填充，提示前端 Beat 进程需重启
+    warning: str | None = None
 
 
 class EngineRuleUpdate(CamelModel):
