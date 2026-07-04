@@ -111,6 +111,44 @@ export namespace DashboardApi {
     /** 统计粒度 */
     granularity?: Granularity;
   }
+
+  /** 装置级 KPI 看板单项（来自 unit_kpi_summary） */
+  export interface BoardItem {
+    nodeId: string;
+    nodeName: string | null;
+    snapshotTime: string | null;
+    avgScore: number | null;
+    autoModeRate: number | null;
+    stabilityRate: number | null;
+    effectiveAutoRate: number | null;
+    accuracyRate: number | null;
+    fastRate: number | null;
+    goodValueRate: number | null;
+    oscillationRate: number | null;
+    saturationRate: number | null;
+    totalLoops: number;
+    evaluatedLoops: number;
+    inconclusiveLoops: number;
+    excludedLoops: number;
+    status: string;
+    algorithmVersion: string | null;
+  }
+
+  /** 装置级 KPI 看板结果 */
+  export interface BoardResult {
+    items: BoardItem[];
+    total: number;
+  }
+
+  /** 实时自控率结果 */
+  export interface AutoRateRt {
+    rate: number | null;
+    autoCount: number;
+    manualCount: number;
+    totalCount: number;
+    readAt: string | null;
+    message?: string;
+  }
 }
 
 /**
@@ -121,6 +159,24 @@ export function getDashboardOverviewApi(
   params?: DashboardApi.OverviewQueryParams,
 ) {
   return requestClient.get<DashboardApi.OverviewResult>('/dashboard/overview', {
+    params,
+  });
+}
+
+/**
+ * 获取装置级三大 KPI 看板 — FDS v5.1 §5.3.7, UIUX v5.3 ①
+ */
+export function getBoardKpiApi(params?: { plantId?: string }) {
+  return requestClient.get<DashboardApi.BoardResult>('/dashboard/board', {
+    params,
+  });
+}
+
+/**
+ * 获取实时自控率 — FDS v5.1 §5.3.6, UIUX v5.3 ①
+ */
+export function getAutoRateRtApi(params?: { plantId?: string }) {
+  return requestClient.get<DashboardApi.AutoRateRt>('/dashboard/auto-rate-rt', {
     params,
   });
 }

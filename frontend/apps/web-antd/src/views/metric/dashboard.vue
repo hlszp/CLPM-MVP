@@ -218,8 +218,8 @@ const rankingColumns: TableColumnsType = [
   },
   {
     title: '综合评分',
-    dataIndex: 'compositeScore',
-    key: 'compositeScore',
+    dataIndex: 'score',
+    key: 'score',
     width: 100,
     align: 'right',
   },
@@ -263,7 +263,7 @@ const kpiStripItems = computed<KpiStripItem[]>(() =>
 
 // ===== ObjectSummaryBar 派生 =====
 const compositeScore = computed(
-  () => boardData.value?.kpiSummary.composite_score ?? 0,
+  () => boardData.value?.kpiSummary.compositeScore ?? 0,
 );
 
 const primaryItem = computed<SummaryItem | null>(() => {
@@ -304,7 +304,7 @@ const summaryItems = computed<SummaryItem[]>(() => {
     {
       key: 'algo',
       label: '算法版本',
-      value: k.algorithm_version,
+      value: k.algorithmVersion,
       status: 'neutral',
     },
   ];
@@ -357,9 +357,9 @@ function onSummaryAction(key: string) {
   }
 }
 
-/** 数据质量摘要（基于 good_value_rate 推导） */
+/** 数据质量摘要（基于 goodValueRate 推导） */
 const dataQualitySummary = computed(() => {
-  const rate = boardData.value?.kpiSummary.good_value_rate ?? 0;
+  const rate = boardData.value?.kpiSummary.goodValueRate ?? 0;
   const good = rate;
   const bad = (100 - rate) / 2;
   const uncertain = 100 - rate - bad;
@@ -468,7 +468,7 @@ async function loadRanking() {
     const data = await getRankingApi({
       plantNodeId: selectedPlantNodeId.value,
       timeWindow: filter.timeWindow,
-      sortBy: 'compositeScore',
+      sortBy: 'score',
       sortOrder: 'asc',
       limit: rankingQuery.pageSize * rankingQuery.page,
     });
@@ -617,7 +617,7 @@ function bindTrendClickEvent() {
 /** D2 联动：趋势图选中时间点 → 排行表高亮评分最低回路 */
 function onTrendTimeSelect(timestamp: string) {
   selectedTrendTime.value = timestamp;
-  // 排行表已按 compositeScore 升序排列，第一项为评分最低回路
+  // 排行表已按 score 升序排列，第一项为评分最低回路
   if (rankingList.value.length > 0) {
     const lowest = rankingList.value[0]!;
     selectedLoopId.value = lowest.loopId;
@@ -714,9 +714,9 @@ function renderBulletChart() {
   const k = boardData.value?.kpiSummary;
   if (!k) return;
   const metrics = [
-    { name: '稳定率', value: k.steady_rate ?? 0, target: 80 },
-    { name: '好值率', value: k.good_value_rate ?? 0, target: 95 },
-    { name: '快速率', value: k.fast_response_rate ?? 0, target: 80 },
+    { name: '稳定率', value: k.steadyRate ?? 0, target: 80 },
+    { name: '好值率', value: k.goodValueRate ?? 0, target: 95 },
+    { name: '快速率', value: k.fastRate ?? 0, target: 80 },
   ];
   renderBulletEcharts({
     grid: { bottom: 24, containLabel: true, left: 48, right: 24, top: 16 },
@@ -1183,12 +1183,12 @@ onUnmounted(() => {
                 </Tag>
                 <span v-else>{{ record.rank }}</span>
               </template>
-              <template v-else-if="column.key === 'compositeScore'">
+              <template v-else-if="column.key === 'score'">
                 <span
                   class="font-mono font-bold"
-                  :style="{ color: scoreColor(record.compositeScore) }"
+                  :style="{ color: scoreColor(record.score) }"
                 >
-                  {{ Number(record.compositeScore).toFixed(1) }}
+                  {{ Number(record.score).toFixed(1) }}
                 </span>
               </template>
               <template v-else-if="column.key === 'autoModeRate'">

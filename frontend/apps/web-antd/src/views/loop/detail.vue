@@ -120,7 +120,7 @@ const kpiItems: {
     label: '有效自控率',
     unit: '%',
   },
-  { desc: '快速率', key: 'fast_response_rate', label: '快速率', unit: '%' },
+  { desc: '快速率', key: 'fast_rate', label: '快速率', unit: '%' },
   { desc: '稳定率', key: 'steady_rate', label: '稳定率', unit: '%' },
   { desc: '准确度', key: 'accuracy_rate', label: '准确度', unit: '%' },
   { desc: '振荡率', key: 'oscillation_rate', label: '振荡率', unit: '%' },

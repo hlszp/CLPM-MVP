@@ -53,7 +53,7 @@ const filter = reactive({
   timeWindow: 'today' as TimeWindow,
   scoreMin: undefined as number | undefined,
   scoreMax: undefined as number | undefined,
-  sortBy: 'compositeScore' as string,
+  sortBy: 'score' as string,
   sortOrder: 'asc' as 'asc' | 'desc',
   keyword: '',
 });
@@ -72,13 +72,13 @@ const timeWindowOptions = [
 ];
 
 const sortByOptions = [
-  { label: '综合评分', value: 'compositeScore' },
+  { label: '综合评分', value: 'score' },
   { label: '好值率', value: 'goodValueRate' },
   { label: '自控率', value: 'autoModeRate' },
   { label: '有效自控率', value: 'effectiveAutoRate' },
   { label: '平稳率', value: 'steadyRate' },
   { label: '准确率', value: 'accuracyRate' },
-  { label: '快速率', value: 'fastResponseRate' },
+  { label: '快速率', value: 'fastRate' },
   { label: '振荡率', value: 'oscillationRate' },
   { label: '饱和率', value: 'saturationRate' },
 ];
@@ -120,8 +120,8 @@ const columns: TableColumnsType = [
   },
   {
     title: '综合评分',
-    dataIndex: 'compositeScore',
-    key: 'compositeScore',
+    dataIndex: 'score',
+    key: 'score',
     width: 100,
     align: 'right',
   },
@@ -226,11 +226,11 @@ const drawerSummaryItems = computed<SummaryItem[]>(() => {
     {
       key: 'score',
       label: '综合评分',
-      value: Number(selectedLoop.value.compositeScore).toFixed(1),
+      value: Number(selectedLoop.value.score).toFixed(1),
       status:
-        selectedLoop.value.compositeScore >= 80
+        selectedLoop.value.score >= 80
           ? 'success'
-          : selectedLoop.value.compositeScore >= 60
+          : selectedLoop.value.score >= 60
             ? 'warning'
             : 'danger',
     },
@@ -265,8 +265,8 @@ const stats = computed(() => {
   let min = 100;
   for (const item of list) {
     if (item.status === 'PARTIAL') badCount++;
-    sum += Number(item.compositeScore) || 0;
-    const score = Number(item.compositeScore) || 100;
+    sum += Number(item.score) || 0;
+    const score = Number(item.score) || 100;
     if (score < min) min = score;
   }
   const avg = sum / total;
@@ -302,10 +302,10 @@ async function loadList() {
     // 客户端过滤评分范围和关键字
     let list = data || [];
     if (filter.scoreMin !== null && filter.scoreMin !== undefined) {
-      list = list.filter((i) => i.compositeScore >= (filter.scoreMin ?? 0));
+      list = list.filter((i) => i.score >= (filter.scoreMin ?? 0));
     }
     if (filter.scoreMax !== null && filter.scoreMax !== undefined) {
-      list = list.filter((i) => i.compositeScore <= (filter.scoreMax ?? 100));
+      list = list.filter((i) => i.score <= (filter.scoreMax ?? 100));
     }
     if (filter.keyword) {
       const kw = filter.keyword.toLowerCase();
@@ -468,9 +468,9 @@ onMounted(() => {
               {{ record.rank }}
             </span>
           </template>
-          <template v-else-if="column.key === 'compositeScore'">
+          <template v-else-if="column.key === 'score'">
             <span class="font-medium text-blue-600">
-              {{ Number(record.compositeScore).toFixed(1) }}
+              {{ Number(record.score).toFixed(1) }}
             </span>
           </template>
           <template v-else-if="column.key === 'goodValueRate'">

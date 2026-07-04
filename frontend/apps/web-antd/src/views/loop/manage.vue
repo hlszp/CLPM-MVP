@@ -106,7 +106,7 @@ const selectedRowKeys = ref<string[]>([]);
 const query = reactive({
   plantNodeId: undefined as string | undefined,
   controlType: undefined as 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE' | undefined,
-  level: undefined as 1 | 2 | 3 | undefined,
+  importanceLevel: undefined as 1 | 2 | 3 | undefined,
   status: undefined as LoopApi.LoopStatus | undefined,
   monitorStatus: undefined as boolean | undefined,
   keyword: '',
@@ -188,8 +188,8 @@ const columns: TableColumnsType = [
   },
   {
     title: '级别',
-    dataIndex: 'level',
-    key: 'level',
+    dataIndex: 'importanceLevel',
+    key: 'importanceLevel',
     width: 80,
     align: 'center',
   },
@@ -239,7 +239,7 @@ async function loadList() {
     const data = await getLoopListApi({
       plantNodeId: query.plantNodeId,
       controlType: query.controlType,
-      level: query.level,
+      importanceLevel: query.importanceLevel,
       status: query.status,
       monitorStatus: query.monitorStatus,
       keyword: query.keyword || undefined,
@@ -338,14 +338,14 @@ const changeSummary = computed<DiffEntry[]>(() => {
           : '—',
       });
     }
-    if ((orig.level ?? undefined) !== (formState.level ?? undefined)) {
+    if ((orig.importanceLevel ?? undefined) !== (formState.importanceLevel ?? undefined)) {
       summary.push({
         field: '回路级别',
-        from: orig.level
-          ? (LEVEL_LABEL[orig.level] ?? String(orig.level))
+        from: orig.importanceLevel
+          ? (LEVEL_LABEL[orig.importanceLevel] ?? String(orig.importanceLevel))
           : '—',
-        to: formState.level
-          ? (LEVEL_LABEL[formState.level] ?? String(formState.level))
+        to: formState.importanceLevel
+          ? (LEVEL_LABEL[formState.importanceLevel] ?? String(formState.importanceLevel))
           : '—',
       });
     }
@@ -412,11 +412,11 @@ const changeSummary = computed<DiffEntry[]>(() => {
         to: batchForm.isStatEnabled ? '纳入统计' : '不纳入统计',
       });
     }
-    if (batchForm.level !== undefined) {
+    if (batchForm.importanceLevel !== undefined) {
       summary.push({
         field: '回路级别',
         from: '保持原值',
-        to: LEVEL_LABEL[batchForm.level] ?? String(batchForm.level),
+        to: LEVEL_LABEL[batchForm.importanceLevel] ?? String(batchForm.importanceLevel),
       });
     }
     return summary;
@@ -465,7 +465,7 @@ const batchSaving = ref(false);
 const batchForm = reactive({
   isMonitored: undefined as boolean | undefined,
   isStatEnabled: undefined as boolean | undefined,
-  level: undefined as 1 | 2 | 3 | undefined,
+  importanceLevel: undefined as 1 | 2 | 3 | undefined,
 });
 
 const monitorStatusOptions: { label: string; value: any }[] = [
@@ -511,7 +511,7 @@ function handleBatchConfig() {
   }
   batchForm.isMonitored = undefined;
   batchForm.isStatEnabled = undefined;
-  batchForm.level = undefined;
+  batchForm.importanceLevel = undefined;
   batchModalVisible.value = true;
 }
 
@@ -521,7 +521,7 @@ async function handleBatchConfigSubmit() {
   if (
     batchForm.isMonitored === undefined &&
     batchForm.isStatEnabled === undefined &&
-    batchForm.level === undefined
+    batchForm.importanceLevel === undefined
   ) {
     message.warning('请至少配置一项批量更新字段');
     return;
@@ -547,8 +547,8 @@ async function doBatchConfigSubmit() {
     if (batchForm.isStatEnabled !== undefined) {
       updates.isStatEnabled = batchForm.isStatEnabled;
     }
-    if (batchForm.level !== undefined) {
-      updates.level = batchForm.level;
+    if (batchForm.importanceLevel !== undefined) {
+      updates.importanceLevel = batchForm.importanceLevel;
     }
     const result = await batchConfigLoopsApi({
       loopIds: selectedRowKeys.value,
@@ -613,7 +613,7 @@ async function handleExport() {
       params: {
         plantNodeId: query.plantNodeId,
         controlType: query.controlType,
-        level: query.level,
+        importanceLevel: query.importanceLevel,
         status: query.status,
         keyword: query.keyword || undefined,
       },
@@ -681,14 +681,14 @@ const formState = reactive({
   unitId: undefined as string | undefined,
   loopType: 'OTHER' as string | undefined,
   controlType: undefined as 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE' | undefined,
-  level: undefined as 1 | 2 | 3 | undefined,
+  importanceLevel: undefined as 1 | 2 | 3 | undefined,
   isActive: true,
   remark: '',
   scoreWeights: {
     auto_mode_rate: 10,
     steady_rate: 30,
     accuracy_rate: 15,
-    fast_response_rate: 10,
+    fast_rate: 10,
     oscillation_rate: 20,
     saturation_rate: 15,
   } as LoopApi.ScoreWeights,
@@ -698,7 +698,7 @@ const weightItems: { key: keyof LoopApi.ScoreWeights; label: string }[] = [
   { key: 'auto_mode_rate', label: '自动模式率' },
   { key: 'steady_rate', label: '稳定率' },
   { key: 'accuracy_rate', label: '准确度' },
-  { key: 'fast_response_rate', label: '快速率' },
+  { key: 'fast_rate', label: '快速率' },
   { key: 'oscillation_rate', label: '振荡率' },
   { key: 'saturation_rate', label: '饱和率' },
 ];
@@ -794,13 +794,13 @@ function handleAdd() {
   formState.unitId = selectedPlantNodeId.value;
   formState.loopType = 'OTHER';
   formState.controlType = undefined;
-  formState.level = undefined;
+  formState.importanceLevel = undefined;
   formState.isActive = true;
   formState.remark = '';
   formState.scoreWeights = {
     accuracy_rate: 15,
     auto_mode_rate: 10,
-    fast_response_rate: 10,
+    fast_rate: 10,
     oscillation_rate: 20,
     saturation_rate: 15,
     steady_rate: 30,
@@ -819,13 +819,13 @@ async function handleEdit(record: LoopApi.LoopListItem) {
   formState.unitId = record.unitId;
   formState.loopType = record.loopType ?? 'OTHER';
   formState.controlType = record.controlType;
-  formState.level = record.level;
+  formState.importanceLevel = record.importanceLevel;
   formState.isActive = record.isActive;
   formState.remark = '';
   formState.scoreWeights = {
     accuracy_rate: 15,
     auto_mode_rate: 10,
-    fast_response_rate: 10,
+    fast_rate: 10,
     oscillation_rate: 20,
     saturation_rate: 15,
     steady_rate: 30,
@@ -1016,7 +1016,7 @@ async function doSaveBasic() {
         unitId: formState.unitId,
         loopType: formState.loopType as LoopApi.LoopType | undefined,
         controlType: formState.controlType,
-        level: formState.level,
+        importanceLevel: formState.importanceLevel,
         scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
@@ -1034,7 +1034,7 @@ async function doSaveBasic() {
         unitId: formState.unitId,
         loopType: formState.loopType as LoopApi.LoopType | undefined,
         controlType: formState.controlType,
-        level: formState.level,
+        importanceLevel: formState.importanceLevel,
         scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
@@ -1244,7 +1244,7 @@ watch(activeMainTab, (tab) => {
             @change="handleSearch"
           />
           <Select
-            v-model:value="query.level"
+            v-model:value="query.importanceLevel"
             placeholder="级别"
             style="width: 120px"
             size="small"
@@ -1334,9 +1334,9 @@ watch(activeMainTab, (tab) => {
               </Tag>
               <span v-else class="text-gray-400">—</span>
             </template>
-            <template v-else-if="column.key === 'level'">
-              <span v-if="record.level" class="font-mono">
-                {{ LEVEL_LABEL[record.level] ?? record.level }}
+            <template v-else-if="column.key === 'importanceLevel'">
+              <span v-if="record.importanceLevel" class="font-mono">
+                {{ LEVEL_LABEL[record.importanceLevel] ?? record.importanceLevel }}
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
@@ -1555,12 +1555,12 @@ watch(activeMainTab, (tab) => {
                   />
                 </FormItem>
                 <FormItem
-                  name="level"
+                  name="importanceLevel"
                   label="回路级别"
                   tooltip="1 级：关键回路（直接影响生产安全）；2 级：重要回路（影响产品质量）；3 级：一般回路（辅助控制）"
                 >
                   <Select
-                    v-model:value="formState.level"
+                    v-model:value="formState.importanceLevel"
                     placeholder="请选择回路级别"
                     allow-clear
                     :options="levelOptions.filter((o) => o.value)"
@@ -1766,7 +1766,7 @@ watch(activeMainTab, (tab) => {
         </FormItem>
         <FormItem label="回路级别">
           <Select
-            v-model:value="batchForm.level"
+            v-model:value="batchForm.importanceLevel"
             placeholder="不修改"
             allow-clear
             :options="levelOptions.filter((o) => o.value)"

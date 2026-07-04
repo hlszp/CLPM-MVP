@@ -75,6 +75,36 @@ export namespace AasApi {
     latencyMs: number | null;
     message: string;
   }
+
+  /** 同步状态结果 */
+  export interface SyncStatusResult {
+    enabled: boolean;
+    endpoint?: string | null;
+    syncIntervalSeconds?: number | null;
+    lastSyncAt?: string | null;
+    lastSyncStatus?: string | null;
+    tagStats: {
+      total: number;
+      linked: number;
+      byQuality: Record<string, number>;
+    };
+  }
+
+  /** 同步日志项 */
+  export interface SyncLog {
+    id: string;
+    operationType: string;
+    operator: string;
+    operatedAt: string;
+    beforeValue?: string | null;
+    afterValue?: string | null;
+  }
+
+  /** 同步日志列表结果 */
+  export interface SyncLogListResult {
+    items: SyncLog[];
+    total: number;
+  }
 }
 
 /**
@@ -110,4 +140,20 @@ export function updateAasConfigApi(data: AasApi.UpdateAasConfigParams) {
  */
 export function testAasConfigApi() {
   return requestClient.post<AasApi.AasConfigTestResult>('/aas/config/test');
+}
+
+/**
+ * 获取 AAS 同步状态 — FDS v5.1 §5.3.5
+ */
+export function getSyncStatusApi() {
+  return requestClient.get<AasApi.SyncStatusResult>('/aas/sync-status');
+}
+
+/**
+ * 获取 AAS 同步日志 — FDS v5.1 §5.3.5
+ */
+export function getSyncLogsApi(params?: { page?: number; pageSize?: number }) {
+  return requestClient.get<AasApi.SyncLogListResult>('/aas/sync-logs', {
+    params,
+  });
 }

@@ -116,6 +116,42 @@ export namespace TaskApi {
     taskId: string;
     cancelled: boolean;
   }
+
+  /** 非标任务结果项 */
+  export interface TaskResultItem {
+    loopId: string;
+    loopTagName: string;
+    tsStart: string | null;
+    tsEnd: string | null;
+    score: number | null;
+    accuracyRate: number | null;
+    fastRate: number | null;
+    steadyRate: number | null;
+    effectiveAutoRate: number | null;
+    goodValueRate: number | null;
+    oscillationRate: number | null;
+    saturationRate: number | null;
+    autoModeRate: number | null;
+    stictionIndex: number | null;
+    outputTripIndex: number | null;
+    settlingTime: number | null;
+    idealSettlingTime: number | null;
+    status: string;
+    confidenceLevel: string | null;
+    validRate: number | null;
+    algorithmVersion: string | null;
+    samplingFreq: string | null;
+    qualityPolicy: string | null;
+    dataLineage: Record<string, unknown> | null;
+    createdAt: string | null;
+  }
+
+  /** 非标任务结果列表结果 */
+  export interface TaskResultListResult {
+    items: TaskResultItem[];
+    total: number;
+    taskStatus: string;
+  }
 }
 
 const BASE = '/tasks';
@@ -189,5 +225,18 @@ export function getTaskNotificationsApi(limit = 20) {
 export function markNotificationReadApi(taskId: string) {
   return requestClient.post<TaskApi.MarkReadResult>(
     `${BASE}/notifications/${taskId}/read`,
+  );
+}
+
+/**
+ * 获取非标任务结果 — FDS v5.1 §5.3.8
+ */
+export function getTaskResultsApi(
+  taskId: string,
+  params?: { page?: number; pageSize?: number },
+) {
+  return requestClient.get<TaskApi.TaskResultListResult>(
+    `${BASE}/${taskId}/results`,
+    { params },
   );
 }
