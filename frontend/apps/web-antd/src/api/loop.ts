@@ -347,6 +347,8 @@ export namespace LoopApi {
   export interface MonitorDetail {
     loopId: string;
     tagName: string;
+    /** 回路状态：READY/PARTIAL/INACTIVE（P3 #53：用于区分 KPI 缺失原因） */
+    status: LoopStatus;
     currentValues: MonitorCurrentValues & { readAt: string };
     runtimeParams: {
       controlMode: ControlMode;

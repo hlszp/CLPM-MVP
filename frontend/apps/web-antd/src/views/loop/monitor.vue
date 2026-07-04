@@ -127,6 +127,20 @@ const isPerfInconclusive = computed(
   () => perfDetail.value?.kpiSummary.status === 'INCONCLUSIVE',
 );
 
+/** P3 #53: 回路状态（READY/PARTIAL/INACTIVE）—— 用于区分 KPI 缺失原因 */
+const loopStatus = computed(() => perfDetail.value?.status);
+
+/** P3 #53: 回路状态非 READY（PARTIAL/INACTIVE），未参与 KPI 计算 */
+const isLoopNotReady = computed(() => {
+  const s = loopStatus.value;
+  return s === 'PARTIAL' || s === 'INACTIVE';
+});
+
+/** P3 #53: 仅在回路 READY 且 KPI 状态 INCONCLUSIVE 时显示「数据不足」警告 */
+const showDataInsufficientAlert = computed(
+  () => !isLoopNotReady.value && isPerfInconclusive.value,
+);
+
 /** 6 大 KPI 配置（含权重 key） */
 const kpiItems: {
   desc: string;
@@ -643,6 +657,12 @@ function handlePerfWindowChange() {
 
 function viewDetail(record: LoopApi.MonitorListItem) {
   router.push(`/loop/detail/${record.loopId}`);
+}
+
+/** P3 #53: 跳转到 Tag 关联管理（带当前回路 ID） */
+function goToTagMapping() {
+  if (!currentRecord.value) return;
+  router.push(`/loop/tag-mapping?loopId=${currentRecord.value.loopId}`);
 }
 
 // ===== 自动刷新 =====
@@ -1183,9 +1203,35 @@ onUnmounted(() => {
             />
           </div>
 
-          <!-- INCONCLUSIVE 警告 -->
+          <!-- P3 #53: 回路状态非 READY 警告（Tag 关联不完整或未激活） -->
           <Alert
-            v-if="isPerfInconclusive"
+            v-if="isLoopNotReady && loopStatus === 'PARTIAL'"
+            class="mb-4"
+            type="warning"
+            show-icon
+            message="回路 Tag 关联不完整（PARTIAL），未参与 KPI 计算"
+          >
+            <template #description>
+              <div>
+                该回路缺少 PV/SP/OP/MODE 4 个必填 Tag 中的一个或多个，
+                系统不会为其生成 KPI 快照。请到
+                <a @click="goToTagMapping">Tag 关联管理</a>
+                补全必填 Tag 后再次评估。
+              </div>
+            </template>
+          </Alert>
+          <Alert
+            v-else-if="isLoopNotReady && loopStatus === 'INACTIVE'"
+            class="mb-4"
+            type="info"
+            show-icon
+            message="回路未激活（INACTIVE），不参与 KPI 计算"
+            description="请到回路管理页面激活该回路，并确保 4 个必填 Tag 关联完整。"
+          />
+
+          <!-- P3 #53: 仅当回路 READY 但 KPI INCONCLUSIVE 时显示「数据不足」警告 -->
+          <Alert
+            v-if="showDataInsufficientAlert"
             class="mb-4"
             type="warning"
             show-icon

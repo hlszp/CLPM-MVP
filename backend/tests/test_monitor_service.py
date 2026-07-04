@@ -656,6 +656,29 @@ class TestGetLoopMonitorDetail:
         )
         result = await get_loop_monitor_detail(db, "loop-001")
         assert result["kpiSummary"]["status"] == "INCONCLUSIVE"
+        # P3 #53: 返回字段 status 应为回路状态（PARTIAL/INACTIVE/READY），
+        # 供前端区分 KPI 缺失原因（Tag 关联不完整 vs 数据不足）
+        assert result["status"] == "PARTIAL"
+
+    async def test_inactive_status_returned(self) -> None:
+        """P3 #53: 回路 INACTIVE 时返回字段 status='INACTIVE'。
+
+        前端依据此字段提示「回路未激活，不参与 KPI 计算」，
+        与 PARTIAL（Tag 关联不完整）和 READY+INCONCLUSIVE（数据不足）区分。
+        """
+        loop = _make_loop(status="INACTIVE")
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
+                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+            ]
+        )
+        result = await get_loop_monitor_detail(db, "loop-001")
+        assert result["status"] == "INACTIVE"
+        assert result["kpiSummary"]["status"] == "INCONCLUSIVE"
 
     async def test_no_score_weight(self) -> None:
         """回路无 score_weight 时 composite_score 为 None。"""
