@@ -115,6 +115,8 @@ export namespace LoopApi {
     isActive?: boolean;
     status?: LoopStatus;
     keyword?: string;
+    /** 参评状态筛选（v5.3：true=参评/false=不参评） */
+    includeInEvaluation?: boolean;
   }
 
   /** 创建回路参数（IDS v3.2 §2.2.8） */
@@ -127,6 +129,8 @@ export namespace LoopApi {
     controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
     /** 回路级别 */
     importanceLevel?: 1 | 2 | 3;
+    /** 是否参与评估（v5.3：默认 true） */
+    includeInEvaluation?: boolean;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -141,6 +145,8 @@ export namespace LoopApi {
     controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
     /** 回路级别 */
     importanceLevel?: 1 | 2 | 3;
+    /** 是否参与评估（v5.3） */
+    includeInEvaluation?: boolean;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -404,6 +410,8 @@ export namespace LoopApi {
     isStatEnabled?: boolean;
     /** 回路级别 1/2/3 */
     importanceLevel?: 1 | 2 | 3;
+    /** 是否参与评估（v5.3） */
+    includeInEvaluation?: boolean;
   }
 
   /** 批量配置请求（更新模式 / 删除模式互斥） */

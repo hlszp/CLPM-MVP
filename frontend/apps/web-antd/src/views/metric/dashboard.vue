@@ -1,23 +1,24 @@
 <script lang="ts" setup>
 /**
- * 性能看板（FE-06 重构 + B2.4 深化）
+ * 性能看板（v5.3 重构）
  *
- * 对齐 UI/UX v4.1 §6.1.1 + §8.5 + PRD §4.3 + IDS v3.2 §2.3
+ * 对齐 UI/UX v5.3 §6.3.1 + FDS §5.3.4 / §5.3.6 / §5.3.7
  * - 左侧：工厂树导航
- * - 顶部：PageToolbar（时间窗 + 刷新 + 导出，带图标）
- * - 摘要条：ObjectSummaryBar（综合评分 primaryItem + actions）
- * - 上行三列：综合健康仪表盘 + 核心 Bullet + 数据质量环形图
- * - 中行：实时自控率仪表盘 + 整点 KpiStrip
- * - 下行：平稳率趋势 + 详细列表
- * - StatusFooter：最近刷新/数据延迟/自动刷新状态/对象
- * - 5 分钟自动刷新
+ * - 顶部：PageToolbar（时间窗 + 刷新 + 导出）
+ * - Partial 警告横幅（条件触发，可折叠不可关闭）
+ * - 装置级三大 KPI 卡片区（综合性能/平均自控率/稳定率）+ 实时自控率仪表盘（4 卡片横排）
+ * - 装置评分排名柱状图（左 60%）+ 全厂稳定率趋势双轴折线图（右 40%）
+ * - 低效回路 Top 10 预览
+ * - StatusFooter：最近刷新/数据延迟/自动刷新状态
+ * - 5 分钟自动刷新；实时自控率 60 秒轮询
  */
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { KpiStatus, MetricApi, TimeWindow } from '#/api/metric';
+import type { ConfidenceLevel, MetricApi, TimeWindow } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { DashboardApi } from '#/api/dashboard';
 
 import {
   computed,
@@ -38,39 +39,37 @@ import {
   Alert,
   Button,
   Card,
+  Empty,
   Input,
   message,
   Modal,
   Select,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
   getBoardApi,
-  getNodeSnapshotApi,
-  getNodesOverviewApi,
   getRankingApi,
-  getRealtimeAutoRateApi,
 } from '#/api/metric';
-import { ClpmDataCanvas, ClpmKpiStrip, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
-import type { KpiStripItem, SummaryAction, SummaryItem } from '#/components/clpm';
+import { getAutoRateRtApi, getBoardKpiApi } from '#/api/dashboard';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import AutoRateGauge from '#/components/metric/auto-rate-gauge.vue';
+import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import type { FilterPreset } from '#/composables/use-clpm-preferences';
 
 defineOptions({ name: 'MetricDashboard' });
 
-const {
-  isDark,
-  themeColors,
-  chartTextColor,
-  chartTrackColor,
-  chartMarkLineColor,
-} = useClpmTheme();
+const { isDark, themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -102,47 +101,9 @@ function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
 // ===== 看板数据 =====
 const loading = ref(false);
 const boardData = ref<MetricApi.BoardResult | null>(null);
-const realtimeAutoRate = ref<MetricApi.RealtimeAutoRateResult | null>(null);
-const realtimeAutoRateLoading = ref(false);
-
-// ===== 节点级 KPI 数据（P0 B2 修复：接入节点级 API）=====
-// 选中具体节点时：节点最新快照（含 score/loopCount/autoLoopRatio）
-// 未选中（全厂）时：全厂总览（含多节点汇总与状态分布）
-const nodeSnapshot = ref<MetricApi.NodeSnapshotItem | null>(null);
-const nodeOverview = ref<MetricApi.NodeOverviewData | null>(null);
-const nodeLoading = ref(false);
-
-/** 节点级回路数（选中节点时为该节点回路数，全厂时为总回路数） */
-const nodeLoopCount = computed(() => {
-  if (nodeSnapshot.value) return nodeSnapshot.value.loopCount;
-  if (nodeOverview.value) {
-    return nodeOverview.value.nodes.reduce((sum, n) => sum + n.loopCount, 0);
-  }
-  return 0;
-});
-
-/** 节点级自控率（优先节点快照 realtimeAutoRate，回退 autoLoopRatio） */
-const nodeAutoLoopRatio = computed(() => {
-  if (nodeSnapshot.value) {
-    return (
-      nodeSnapshot.value.realtimeAutoRate ??
-      nodeSnapshot.value.autoLoopRatio ??
-      null
-    );
-  }
-  if (nodeOverview.value && nodeOverview.value.nodesWithSnapshot > 0) {
-    const withRate = nodeOverview.value.nodes.filter(
-      (n) => n.autoLoopRatio != null,
-    );
-    if (withRate.length > 0) {
-      return (
-        withRate.reduce((sum, n) => sum + (n.autoLoopRatio ?? 0), 0) /
-        withRate.length
-      );
-    }
-  }
-  return null;
-});
+const boardKpi = ref<DashboardApi.BoardResult | null>(null);
+const autoRateRt = ref<DashboardApi.AutoRateRt | null>(null);
+const autoRateLoading = ref(false);
 
 const timeWindowOptions = [
   { label: '今天', value: 'today' },
@@ -157,12 +118,6 @@ const filter = reactive({
     ('today' as TimeWindow),
 });
 
-const statusLabelMap: Record<KpiStatus, string> = {
-  SUCCESS: '良好',
-  INCONCLUSIVE: '不确定',
-  PARTIAL: '部分',
-};
-
 // ===== 状态反馈 =====
 const lastRefreshAt = ref<Date | null>(null);
 const lastRefreshText = computed(() => {
@@ -174,7 +129,7 @@ const lastRefreshText = computed(() => {
 });
 
 const dataDelayText = computed(() => {
-  const readAt = realtimeAutoRate.value?.readAt;
+  const readAt = autoRateRt.value?.readAt;
   if (!readAt) return '';
   const diff = dayjs().diff(dayjs(readAt), 'minute');
   if (diff < 1) return '<1m';
@@ -182,23 +137,123 @@ const dataDelayText = computed(() => {
   return `${Math.floor(diff / 60)}h`;
 });
 
-// ===== 详细列表（低效排行） =====
+// ===== Partial 警告横幅（可折叠不可关闭）=====
+const partialBannerCollapsed = ref(false);
+
+/** 选中装置的 BoardItem（用于三大 KPI 卡片） */
+const selectedBoardItem = computed<DashboardApi.BoardItem | null>(() => {
+  if (!boardKpi.value || boardKpi.value.items.length === 0) return null;
+  if (selectedPlantNodeId.value) {
+    return (
+      boardKpi.value.items.find((it) => it.nodeId === selectedPlantNodeId.value) ||
+      null
+    );
+  }
+  // 未选中节点：取第一个作为全厂代表
+  return boardKpi.value.items[0] || null;
+});
+
+/** 装置级三大 KPI 卡片数据 */
+interface KpiCardData {
+  title: string;
+  value: number | null;
+  unit: string;
+  evaluatedLoops: number;
+  inconclusiveLoops: number;
+  excludedLoops: number;
+  confidenceLevel: ConfidenceLevel | null;
+  trendDelta: number | null;
+  sparkline: number[];
+}
+
+const kpiCards = computed<KpiCardData[]>(() => {
+  const item = selectedBoardItem.value;
+  const spark = boardData.value?.steadyRateTrend?.values ?? [];
+  if (!item) {
+    return [
+      {
+        title: '综合性能',
+        value: null,
+        unit: '',
+        evaluatedLoops: 0,
+        inconclusiveLoops: 0,
+        excludedLoops: 0,
+        confidenceLevel: null,
+        trendDelta: null,
+        sparkline: [],
+      },
+      {
+        title: '平均自控率',
+        value: null,
+        unit: '%',
+        evaluatedLoops: 0,
+        inconclusiveLoops: 0,
+        excludedLoops: 0,
+        confidenceLevel: null,
+        trendDelta: null,
+        sparkline: [],
+      },
+      {
+        title: '稳定率',
+        value: null,
+        unit: '%',
+        evaluatedLoops: 0,
+        inconclusiveLoops: 0,
+        excludedLoops: 0,
+        confidenceLevel: null,
+        trendDelta: null,
+        sparkline: [],
+      },
+    ];
+  }
+  return [
+    {
+      title: '综合性能',
+      value: item.avgScore,
+      unit: '',
+      evaluatedLoops: item.evaluatedLoops,
+      inconclusiveLoops: item.inconclusiveLoops,
+      excludedLoops: item.excludedLoops,
+      confidenceLevel: null,
+      trendDelta: null,
+      sparkline: spark,
+    },
+    {
+      title: '平均自控率',
+      value: item.autoModeRate,
+      unit: '%',
+      evaluatedLoops: item.evaluatedLoops,
+      inconclusiveLoops: item.inconclusiveLoops,
+      excludedLoops: item.excludedLoops,
+      confidenceLevel: null,
+      trendDelta: null,
+      sparkline: spark,
+    },
+    {
+      title: '稳定率',
+      value: item.stabilityRate,
+      unit: '%',
+      evaluatedLoops: item.evaluatedLoops,
+      inconclusiveLoops: item.inconclusiveLoops,
+      excludedLoops: item.excludedLoops,
+      confidenceLevel: null,
+      trendDelta: null,
+      sparkline: spark,
+    },
+  ];
+});
+
+/** 实时自控率历史（用于 sparkline，最近 60 分钟） */
+const autoRateHistory = ref<number[]>([]);
+
+// ===== 详细列表（低效回路 Top 10） =====
 const rankingLoading = ref(false);
 const rankingList = ref<MetricApi.RankingItem[]>([]);
 const rankingTotal = ref(0);
 const rankingQuery = reactive({
-  level: undefined as 1 | 2 | 3 | undefined,
-  keyword: '',
   page: 1,
   pageSize: 10,
 });
-
-const levelOptions = [
-  { label: '全部', value: undefined },
-  { label: '1 级', value: 1 },
-  { label: '2 级', value: 2 },
-  { label: '3 级', value: 3 },
-];
 
 const rankingColumns: TableColumnsType = [
   { title: '排名', dataIndex: 'rank', key: 'rank', width: 70, align: 'center' },
@@ -210,13 +265,6 @@ const rankingColumns: TableColumnsType = [
     ellipsis: true,
   },
   {
-    title: '装置',
-    dataIndex: 'unitName',
-    key: 'unitName',
-    width: 140,
-    ellipsis: true,
-  },
-  {
     title: '综合评分',
     dataIndex: 'score',
     key: 'score',
@@ -224,190 +272,77 @@ const rankingColumns: TableColumnsType = [
     align: 'right',
   },
   {
-    title: '自控率',
-    dataIndex: 'autoModeRate',
-    key: 'autoModeRate',
-    width: 90,
-    align: 'right',
-  },
-  {
-    title: '平稳率',
+    title: '稳定率',
     dataIndex: 'steadyRate',
     key: 'steadyRate',
     width: 90,
     align: 'right',
   },
   {
-    title: '状态',
-    dataIndex: 'status',
-    key: 'status',
-    width: 90,
+    title: '可信度',
+    dataIndex: 'confidenceLevel',
+    key: 'confidenceLevel',
+    width: 110,
+    align: 'center',
+  },
+  {
+    title: '预诊',
+    dataIndex: 'preDiagnosis',
+    key: 'preDiagnosis',
+    width: 140,
+    ellipsis: true,
+  },
+  {
+    title: '处理状态',
+    dataIndex: 'actionStatus',
+    key: 'actionStatus',
+    width: 100,
     align: 'center',
   },
 ];
 
-const kpiStripItems = computed<KpiStripItem[]>(() =>
-  (boardData.value?.kpiCards || []).map((card) => ({
-    key: card.metricKey,
-    label: card.metricName,
-    status:
-      card.status === 'SUCCESS'
-        ? 'success'
-        : card.status === 'PARTIAL'
-          ? 'warning'
-          : 'neutral',
-    unit: card.unit,
-    value: card.value?.toFixed(1) ?? '--',
-  })),
-);
-
-// ===== ObjectSummaryBar 派生 =====
-const compositeScore = computed(
-  () => boardData.value?.kpiSummary.compositeScore ?? 0,
-);
-
-const primaryItem = computed<SummaryItem | null>(() => {
-  if (!boardData.value) return null;
-  const score = compositeScore.value;
-  return {
-    key: 'composite',
-    label: '综合评分',
-    value: score.toFixed(1),
-    status: score >= 80 ? 'success' : score >= 60 ? 'warning' : 'danger',
-  };
-});
-
-const summaryItems = computed<SummaryItem[]>(() => {
-  if (!boardData.value) return [];
-  const k = boardData.value.kpiSummary;
-  const items: SummaryItem[] = [
-    {
-      key: 'status',
-      label: 'KPI 状态',
-      value: statusLabelMap[k.status] ?? k.status,
-      status:
-        k.status === 'SUCCESS'
-          ? 'success'
-          : k.status === 'PARTIAL'
-            ? 'warning'
-            : 'neutral',
-    },
-    {
-      key: 'partial',
-      label: '不确定回路',
-      value: `${boardData.value.partialWarning.inconclusiveCount} 个`,
-      status:
-        boardData.value.partialWarning.inconclusiveCount > 0
-          ? 'warning'
-          : 'success',
-    },
-    {
-      key: 'algo',
-      label: '算法版本',
-      value: k.algorithmVersion,
-      status: 'neutral',
-    },
-  ];
-
-  // 节点级 KPI 汇总（P0 B2 修复：展示节点级聚合数据）
-  if (nodeLoopCount.value > 0) {
-    items.push({
-      key: 'nodeLoops',
-      label: `${selectedPlantNodeName.value}回路数`,
-      value: `${nodeLoopCount.value} 个`,
-      status: 'neutral',
-    });
-  }
-  if (nodeAutoLoopRatio.value != null) {
-    items.push({
-      key: 'nodeAutoRate',
-      label: `${selectedPlantNodeName.value}自控率`,
-      value: `${(nodeAutoLoopRatio.value * 100).toFixed(1)}%`,
-      status:
-        nodeAutoLoopRatio.value >= 0.9
-          ? 'success'
-          : nodeAutoLoopRatio.value >= 0.7
-            ? 'warning'
-            : 'neutral',
-    });
-  }
-  return items;
-});
-
-const summaryActions = computed<SummaryAction[]>(() => [
-  {
-    key: 'ranking',
-    label: '查看排行',
-    icon: 'ant-design:bar-chart-outlined',
-    type: 'default',
-  },
-  {
-    key: 'statistics',
-    label: '统计分析',
-    icon: 'ant-design:line-chart-outlined',
-    type: 'primary',
-  },
-]);
-
-function onSummaryAction(key: string) {
-  if (key === 'ranking') {
-    router.push('/metric/ranking');
-  } else if (key === 'statistics') {
-    router.push('/metric/statistics');
-  }
-}
-
-/** 数据质量摘要（基于 goodValueRate 推导） */
-const dataQualitySummary = computed(() => {
-  const rate = boardData.value?.kpiSummary.goodValueRate ?? 0;
-  const good = rate;
-  const bad = (100 - rate) / 2;
-  const uncertain = 100 - rate - bad;
-  return { bad, good, uncertain, validRate: rate };
-});
+const actionStatusLabel: Record<string, string> = {
+  PENDING: '待处理',
+  IN_PROGRESS: '处理中',
+  IMPLEMENTED: '已实施',
+  IGNORED: '已忽略',
+};
 
 // ECharts 趋势图
 const trendChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderTrend, getChartInstance: getTrendInstance } =
   useEcharts(trendChartRef);
 
-// ===== D2 多图联动：趋势图 → 排行表 =====
-/** 趋势图选中的时间点 */
-const selectedTrendTime = ref<string | null>(null);
-/** 排行表中高亮的回路 ID */
-const selectedLoopId = ref<string | null>(null);
-
-// 综合健康仪表盘
-const healthGaugeRef = ref<EchartsUIType>();
-const { renderEcharts: renderHealthGaugeEcharts } = useEcharts(healthGaugeRef);
-
-// 核心 Bullet Chart
-const bulletRef = ref<EchartsUIType>();
-const { renderEcharts: renderBulletEcharts } = useEcharts(bulletRef);
-
-// 数据质量环形图
-const qualityDonutRef = ref<EchartsUIType>();
-const { renderEcharts: renderQualityDonutEcharts } =
-  useEcharts(qualityDonutRef);
+// 装置评分排名柱状图
+const unitRankingRef = ref<EchartsUIType>();
+const { renderEcharts: renderUnitRankingEcharts } = useEcharts(unitRankingRef);
 
 // 自动刷新
 const REFRESH_INTERVAL = 5 * 60 * 1000;
+/** 实时自控率轮询间隔（60 秒） */
+const AUTO_RATE_INTERVAL = 60 * 1000;
 let refreshTimer: null | ReturnType<typeof setInterval> = null;
+let autoRateTimer: null | ReturnType<typeof setInterval> = null;
 
-/** 加载看板数据 */
+/** 加载看板数据（含装置级三大 KPI） */
 async function loadBoard() {
   loading.value = true;
   try {
-    const data = await getBoardApi({
-      plantNodeId: selectedPlantNodeId.value,
-      timeWindow: filter.timeWindow,
-    });
-    boardData.value = data;
+    // 并行：原 board（含稳定率趋势/Partial 警告）+ 装置级 BoardKpi
+    const [board, kpi] = await Promise.all([
+      getBoardApi({
+        plantNodeId: selectedPlantNodeId.value,
+        timeWindow: filter.timeWindow,
+      }),
+      getBoardKpiApi({
+        plantId: selectedPlantNodeId.value,
+      }),
+    ]);
+    boardData.value = board;
+    boardKpi.value = kpi;
     await nextTick();
     renderTrendChart();
-    renderHealthGauge();
-    renderBulletChart();
-    renderQualityDonut();
+    renderUnitRanking();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -417,51 +352,25 @@ async function loadBoard() {
 }
 
 /** 加载实时自控率 */
-async function loadRealtimeAutoRate() {
-  realtimeAutoRateLoading.value = true;
+async function loadAutoRateRt() {
+  autoRateLoading.value = true;
   try {
-    const data = await getRealtimeAutoRateApi({
-      plantNodeId: selectedPlantNodeId.value,
+    const data = await getAutoRateRtApi({
+      plantId: selectedPlantNodeId.value,
     });
-    realtimeAutoRate.value = data;
+    autoRateRt.value = data;
+    // 维护最近 60 分钟历史
+    if (data.rate !== null && data.rate !== undefined) {
+      autoRateHistory.value = [...autoRateHistory.value, data.rate].slice(-60);
+    }
   } catch {
     // 错误已由拦截器处理
   } finally {
-    realtimeAutoRateLoading.value = false;
+    autoRateLoading.value = false;
   }
 }
 
-/**
- * 加载节点级 KPI 数据（P0 B2 修复）
- *
- * 选中具体节点时调用 getNodeSnapshotApi 获取该节点最新快照，
- * 未选中（全厂）时调用 getNodesOverviewApi 获取全厂总览。
- * 两个 API 互斥调用，避免冗余请求。
- */
-async function loadNodeSnapshot() {
-  nodeLoading.value = true;
-  try {
-    if (selectedPlantNodeId.value) {
-      // 选中具体节点：获取节点最新快照
-      nodeSnapshot.value = await getNodeSnapshotApi(selectedPlantNodeId.value);
-      nodeOverview.value = null;
-    } else {
-      // 全厂：获取总览
-      nodeSnapshot.value = null;
-      nodeOverview.value = await getNodesOverviewApi({
-        timeWindow: filter.timeWindow,
-      });
-    }
-  } catch {
-    // 节点级 KPI 为增强信息，失败不影响主看板，静默处理
-    nodeSnapshot.value = null;
-    nodeOverview.value = null;
-  } finally {
-    nodeLoading.value = false;
-  }
-}
-
-/** 加载低效排行 */
+/** 加载低效排行 Top 10 */
 async function loadRanking() {
   rankingLoading.value = true;
   try {
@@ -470,21 +379,14 @@ async function loadRanking() {
       timeWindow: filter.timeWindow,
       sortBy: 'score',
       sortOrder: 'asc',
-      limit: rankingQuery.pageSize * rankingQuery.page,
+      limit: 10,
     });
-    let items = data || [];
-    // 关键字过滤
-    if (rankingQuery.keyword) {
-      const kw = rankingQuery.keyword.toLowerCase();
-      items = items.filter(
-        (it) =>
-          it.tagName.toLowerCase().includes(kw) ||
-          it.unitName?.toLowerCase().includes(kw),
-      );
-    }
+    // 默认仅展示 include_in_evaluation=true 的回路
+    const items = (data || []).filter(
+      (it) => it.includeInEvaluation !== false,
+    );
+    rankingList.value = items;
     rankingTotal.value = items.length;
-    const start = (rankingQuery.page - 1) * rankingQuery.pageSize;
-    rankingList.value = items.slice(start, start + rankingQuery.pageSize);
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -494,32 +396,29 @@ async function loadRanking() {
 
 function loadAll() {
   loadBoard();
-  loadRealtimeAutoRate();
-  loadRanking();
-  loadNodeSnapshot();
-}
-
-function handleRankingSearch() {
-  rankingQuery.page = 1;
+  loadAutoRateRt();
   loadRanking();
 }
 
 function handleRankingTableChange(pagination: TablePaginationConfig) {
   rankingQuery.page = pagination.current || 1;
   rankingQuery.pageSize = pagination.pageSize || 10;
-  loadRanking();
 }
 
+/** 渲染稳定率趋势双轴折线图（左轴稳定率，右轴参评回路数） */
 function renderTrendChart() {
   const trend = boardData.value?.steadyRateTrend;
   if (!trend || !trend.timestamps || trend.timestamps.length === 0) return;
 
   // D2 联动：选中时间点 markLine
   const selTs = selectedTrendTime.value;
+  // 右轴：参评回路数（用 selectedBoardItem.evaluatedLoops 派生近似序列）
+  const evaluatedLoops = selectedBoardItem.value?.evaluatedLoops ?? 0;
+  const loopCounts = trend.values.map(() => evaluatedLoops);
 
   renderTrend({
     grid: { bottom: 30, containLabel: true, left: '2%', right: '2%', top: 40 },
-    legend: { data: ['平稳率'], top: 5 },
+    legend: { data: ['稳定率', '参评回路数'], top: 5 },
     series: [
       {
         areaStyle: { opacity: 0.15 },
@@ -544,22 +443,44 @@ function renderTrendChart() {
               symbol: 'none',
             }
           : undefined,
-        name: '平稳率',
+        name: '稳定率',
         smooth: true,
         type: 'line',
+        yAxisIndex: 0,
+      },
+      {
+        data: loopCounts,
+        itemStyle: { color: themeColors.value.SUCCESS },
+        lineStyle: { width: 1.5, type: 'dashed' },
+        name: '参评回路数',
+        symbolSize: 4,
+        type: 'line',
+        yAxisIndex: 1,
       },
     ],
     tooltip: {
       axisPointer: { type: 'cross' },
       trigger: 'axis',
-      valueFormatter: (val) =>
-        val === null || val === undefined ? '—' : `${Number(val).toFixed(1)}%`,
+      formatter: (params) => {
+        const arr = Array.isArray(params) ? params : [params];
+        let html = '';
+        arr.forEach((p) => {
+          const val = (p as { value: number | null }).value;
+          if (val === null || val === undefined) return;
+          const sp = p as { seriesName?: string; marker?: string };
+          const formatted =
+            sp.seriesName === '参评回路数'
+              ? `${Math.round(Number(val))} 个`
+              : `${Number(val).toFixed(1)}%`;
+          html += `${sp.marker ?? ''} ${sp.seriesName ?? ''}: ${formatted}<br/>`;
+        });
+        return html;
+      },
     },
     xAxis: {
       axisLabel: {
         formatter: (val: string) => {
           try {
-            // 强制北京时间（UTC+8）：+8h 后用 getUTC* 方法
             const d = new Date(new Date(val).getTime() + 8 * 3600 * 1000);
             const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
             const dd = String(d.getUTCDate()).padStart(2, '0');
@@ -575,12 +496,21 @@ function renderTrendChart() {
       data: trend.timestamps,
       type: 'category',
     },
-    yAxis: {
-      axisLabel: { formatter: '{value}%' },
-      max: 100,
-      min: 0,
-      type: 'value',
-    },
+    yAxis: [
+      {
+        axisLabel: { formatter: '{value}%' },
+        max: 100,
+        min: 0,
+        name: '稳定率',
+        type: 'value',
+      },
+      {
+        axisLabel: { formatter: '{value}' },
+        name: '回路数',
+        splitLine: { show: false },
+        type: 'value',
+      },
+    ],
   }).then(() => {
     bindTrendClickEvent();
   });
@@ -595,7 +525,6 @@ function bindTrendClickEvent() {
   if (!chart) return;
   const zr = chart.getZr();
   if (!zr) return;
-  // 同一 zr 实例已绑定，避免重复
   if (trendBoundZr === zr && trendClickHandler) return;
   if (trendBoundZr && trendClickHandler) {
     trendBoundZr.off('click', trendClickHandler);
@@ -614,25 +543,20 @@ function bindTrendClickEvent() {
   trendBoundZr = zr;
 }
 
-/** D2 联动：趋势图选中时间点 → 排行表高亮评分最低回路 */
 function onTrendTimeSelect(timestamp: string) {
   selectedTrendTime.value = timestamp;
-  // 排行表已按 score 升序排列，第一项为评分最低回路
   if (rankingList.value.length > 0) {
     const lowest = rankingList.value[0]!;
     selectedLoopId.value = lowest.loopId;
-    // 滚动到选中行
     nextTick(() => scrollToSelectedRow());
   }
 }
 
-/** D2 联动：清除选中 */
 function clearTrendSelection() {
   selectedTrendTime.value = null;
   selectedLoopId.value = null;
 }
 
-/** 滚动到排行表选中行 */
 function scrollToSelectedRow() {
   if (!selectedLoopId.value) return;
   const row = document.querySelector(
@@ -643,22 +567,18 @@ function scrollToSelectedRow() {
   }
 }
 
-/** 排行表行样式：高亮选中回路 */
 function rankingRowClassName(record: MetricApi.RankingItem): string {
   return record.loopId === selectedLoopId.value ? 'clpm-row-selected' : '';
 }
 
-/** 排行表 customRow：附加 data-loop-id 便于 DOM 查询 */
 function rankingCustomRow(record: MetricApi.RankingItem): any {
   return {
     'data-loop-id': record.loopId,
   };
 }
 
-/** 格式化选中时间戳为可读字符串 */
 function formatSelectedTime(ts: string): string {
   try {
-    // 强制北京时间（UTC+8）：+8h 后用 getUTC* 方法
     const d = new Date(new Date(ts).getTime() + 8 * 3600 * 1000);
     const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(d.getUTCDate()).padStart(2, '0');
@@ -670,210 +590,73 @@ function formatSelectedTime(ts: string): string {
   }
 }
 
-/** 综合健康仪表盘（半圆 Gauge） */
-function renderHealthGauge() {
-  const score = compositeScore.value;
-  renderHealthGaugeEcharts({
-    series: [
-      {
-        axisLine: {
-          lineStyle: {
-            color: [
-              [0.6, themeColors.value.DANGER],
-              [0.8, themeColors.value.WARNING],
-              [1, themeColors.value.SUCCESS],
-            ],
-            width: 18,
-          },
-        },
-        axisTick: { show: false },
-        data: [{ name: '综合健康', value: score }],
-        detail: {
-          fontSize: 28,
-          fontWeight: 700,
-          formatter: '{value}',
-          offsetCenter: [0, '50%'],
-        },
-        endAngle: 0,
-        max: 100,
-        min: 0,
-        pointer: { itemStyle: { color: 'auto' } },
-        progress: { show: true, width: 18 },
-        radius: '95%',
-        splitLine: { length: 18 },
-        startAngle: 180,
-        title: { fontSize: 14, offsetCenter: [0, '80%'] },
-        type: 'gauge',
-      },
-    ],
-  });
-}
+/** 装置评分排名柱状图（横向，按评分降序） */
+function renderUnitRanking() {
+  const items = boardKpi.value?.items ?? [];
+  if (items.length === 0) return;
+  const sorted = [...items]
+    .filter((it) => it.avgScore !== null && it.avgScore !== undefined)
+    .sort((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
 
-/** 核心 Bullet Chart（稳定率/好值率/快速率） */
-function renderBulletChart() {
-  const k = boardData.value?.kpiSummary;
-  if (!k) return;
-  const metrics = [
-    { name: '稳定率', value: k.steadyRate ?? 0, target: 80 },
-    { name: '好值率', value: k.goodValueRate ?? 0, target: 95 },
-    { name: '快速率', value: k.fastRate ?? 0, target: 80 },
-  ];
-  renderBulletEcharts({
-    grid: { bottom: 24, containLabel: true, left: 48, right: 24, top: 16 },
+  renderUnitRankingEcharts({
+    grid: { bottom: 20, containLabel: true, left: '2%', right: '4%', top: 16 },
     series: [
       {
-        data: metrics.map((m) => ({
-          name: m.name,
-          symbol: 'roundRect',
-          symbolKeepAspect: true,
-          symbolSize: [18, 14],
-          symbolOffset: [0, 0],
-          type: 'custom',
-          value: m.value,
-          itemStyle: {
-            color:
-              m.value >= m.target
-                ? themeColors.value.SUCCESS
-                : m.value >= m.target - 20
-                  ? themeColors.value.WARNING
-                  : themeColors.value.DANGER,
-          },
+        type: 'bar',
+        data: sorted.map((it) => ({
+          value: it.avgScore ?? 0,
+          itemStyle: { color: scoreToColor(it.avgScore ?? 0) },
         })),
-        type: 'custom',
-        encode: { x: -1, y: -1 },
-        renderItem: (_params: any, api: any) => {
-          const idx = api.value(0);
-          const val = api.value(1);
-          const target = api.value(2);
-          const yStart = api.coord([0, idx]);
-          const yEnd = api.coord([0, idx + 1]);
-          const valEnd = api.coord([val, idx]);
-          const targetPos = api.coord([target, idx]);
-          const barHeight = (yStart[1] - yEnd[1]) * 0.55;
-          const barY = yEnd[1] + (yStart[1] - yEnd[1] - barHeight) / 2;
-          return {
-            type: 'group',
-            children: [
-              // 背景 track
-              {
-                shape: {
-                  height: barHeight,
-                  width: api.coord([100, 0])[0] - api.coord([0, 0])[0],
-                  x: api.coord([0, 0])[0],
-                  y: barY,
-                },
-                style: { fill: chartTrackColor.value },
-                type: 'rect',
-              },
-              // 实际值
-              {
-                shape: {
-                  height: barHeight,
-                  width: valEnd[0] - api.coord([0, 0])[0],
-                  x: api.coord([0, 0])[0],
-                  y: barY,
-                },
-                style: {
-                  fill:
-                    val >= target
-                      ? themeColors.value.SUCCESS
-                      : val >= target - 20
-                        ? themeColors.value.WARNING
-                        : themeColors.value.DANGER,
-                },
-                type: 'rect',
-              },
-              // 目标线
-              {
-                shape: {
-                  height: barHeight + 6,
-                  width: 2,
-                  x: targetPos[0] - 1,
-                  y: barY - 3,
-                },
-                style: { fill: chartMarkLineColor.value },
-                type: 'rect',
-              },
-            ],
-          };
+        label: {
+          show: true,
+          position: 'right',
+          formatter: (p: any) => `${Number(p.value).toFixed(1)}`,
         },
+        barWidth: 16,
       },
     ],
     tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
       formatter: (p: any) => {
-        const m = metrics[p.dataIndex];
-        if (!m) return '';
-        return `${m.name}: ${m.value.toFixed(1)}% (目标 ${m.target}%)`;
+        const idx = p?.[0]?.dataIndex ?? 0;
+        const it = sorted[idx];
+        if (!it) return '';
+        return `${it.nodeName ?? '—'}<br/>综合评分: ${it.avgScore?.toFixed(1) ?? '—'}<br/>参评回路: ${it.evaluatedLoops}`;
       },
-      trigger: 'item',
     },
-    xAxis: { max: 100, min: 0, show: false, type: 'value' },
+    xAxis: {
+      type: 'value',
+      max: 100,
+      min: 0,
+      axisLabel: { formatter: '{value}' },
+    },
     yAxis: {
-      axisLabel: { fontSize: 12 },
-      data: metrics.map((m) => m.name),
       type: 'category',
+      data: sorted.map((it) => it.nodeName ?? '—'),
+      inverse: false,
     },
   });
 }
 
-/** 数据质量环形图 */
-function renderQualityDonut() {
-  const q = dataQualitySummary.value;
-  renderQualityDonutEcharts({
-    color: [
-      themeColors.value.SUCCESS,
-      themeColors.value.DANGER,
-      themeColors.value.NEUTRAL,
-    ],
-    legend: {
-      bottom: 0,
-      data: ['Good', 'Bad', 'Uncertain'],
-      icon: 'circle',
-      itemHeight: 8,
-      itemWidth: 8,
-      textStyle: { fontSize: 11 },
-    },
-    series: [
-      {
-        avoidLabelOverlap: false,
-        center: ['50%', '45%'],
-        data: [
-          { value: q.good, name: 'Good' },
-          { value: q.bad, name: 'Bad' },
-          { value: q.uncertain, name: 'Uncertain' },
-        ],
-        label: {
-          position: 'center',
-          formatter: `{a|${q.validRate.toFixed(1)}%}\n{b|好值率}`,
-          rich: {
-            a: {
-              color: themeColors.value.SUCCESS,
-              fontSize: 22,
-              fontWeight: 700,
-              lineHeight: 28,
-            },
-            b: { color: chartTextColor.value, fontSize: 12, lineHeight: 18 },
-          },
-          show: true,
-        },
-        labelLine: { show: false },
-        name: '数据质量',
-        radius: ['55%', '78%'],
-        type: 'pie',
-      },
-    ],
-    tooltip: {
-      formatter: '{b}: {c} ({d}%)',
-      trigger: 'item',
-    },
-  });
+/** 5 级定级颜色（EXCELLENT 绿/GOOD 蓝/FAIR 黄/WARNING 橙/POOR 红） */
+function scoreToColor(score: number): string {
+  if (score >= 90) return '#52c41a';
+  if (score >= 80) return '#1890ff';
+  if (score >= 70) return '#faad14';
+  if (score >= 60) return '#fa8c16';
+  return '#f5222d';
 }
 
 function startAutoRefresh() {
   stopAutoRefresh();
   refreshTimer = setInterval(() => {
-    loadAll();
+    loadBoard();
+    loadRanking();
   }, REFRESH_INTERVAL);
+  autoRateTimer = setInterval(() => {
+    loadAutoRateRt();
+  }, AUTO_RATE_INTERVAL);
 }
 
 function stopAutoRefresh() {
@@ -881,24 +664,19 @@ function stopAutoRefresh() {
     clearInterval(refreshTimer);
     refreshTimer = null;
   }
+  if (autoRateTimer) {
+    clearInterval(autoRateTimer);
+    autoRateTimer = null;
+  }
 }
 
 function handleTimeWindowChange() {
   loadAll();
 }
 
-// P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
-
-function formatPercent(val: number | undefined): string {
-  if (val === null || val === undefined || Number.isNaN(val)) return '—';
-  return `${Number(val).toFixed(1)}%`;
-}
-
-function scoreColor(score: number): string {
-  if (score >= 80) return themeColors.value.SUCCESS;
-  if (score >= 60) return themeColors.value.WARNING;
-  return themeColors.value.DANGER;
-}
+// D2 多图联动
+const selectedTrendTime = ref<string | null>(null);
+const selectedLoopId = ref<string | null>(null);
 
 watch(
   () => boardData.value?.steadyRateTrend,
@@ -906,31 +684,32 @@ watch(
   { deep: true },
 );
 
-// D2 联动：选中时间变化时重渲趋势图（更新 markLine）
 watch(selectedTrendTime, () => {
   nextTick(() => renderTrendChart());
 });
 
-// ===== 主题切换重渲图表 =====
+// 装置级 KPI 变化时重渲柱状图
+watch(
+  () => boardKpi.value?.items,
+  () => renderUnitRanking(),
+  { deep: true },
+);
+
+// 主题切换重渲图表
 watch(isDark, () => {
   nextTick(() => {
     renderTrendChart();
-    renderHealthGauge();
-    renderBulletChart();
-    renderQualityDonut();
+    renderUnitRanking();
   });
 });
 
 // ===== 偏好持久化 =====
-
-/** 保存默认时间窗 */
 watch(
   () => filter.timeWindow,
   (val) => setDefaultTimeWindow(val),
 );
 
 // ===== 筛选预设 =====
-
 const presetModalVisible = ref(false);
 const presetName = ref('');
 
@@ -946,8 +725,8 @@ function confirmSavePreset() {
   }
   saveFilterPreset(presetName.value.trim(), {
     timeWindow: filter.timeWindow,
-    level: rankingQuery.level,
-    keyword: rankingQuery.keyword,
+    level: undefined,
+    keyword: '',
   });
   presetModalVisible.value = false;
   message.success('预设已保存');
@@ -958,9 +737,6 @@ function handleApplyPreset(preset: FilterPreset) {
   if (f.timeWindow) {
     filter.timeWindow = f.timeWindow as TimeWindow;
   }
-  rankingQuery.level = f.level;
-  rankingQuery.keyword = f.keyword ?? '';
-  rankingQuery.page = 1;
   loadAll();
   message.success(`已应用预设：${preset.name}`);
 }
@@ -970,11 +746,30 @@ function handleDeletePreset(id: string) {
   message.success('预设已删除');
 }
 
-/** 重置页面偏好 */
 function handleResetPreferences() {
   resetPreferences();
   filter.timeWindow = 'today' as TimeWindow;
   message.success('页面偏好已重置');
+}
+
+function formatPercent(val: number | undefined | null): string {
+  if (val === null || val === undefined || Number.isNaN(val)) return '—';
+  return `${Number(val).toFixed(1)}%`;
+}
+
+function formatNumber(val: number | null | undefined, digits = 1): string {
+  if (val === null || val === undefined || Number.isNaN(val)) return '--';
+  return Number(val).toFixed(digits);
+}
+
+function scoreColor(score: number): string {
+  if (score >= 80) return themeColors.value.SUCCESS;
+  if (score >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
+}
+
+function handleViewFullRanking() {
+  router.push('/metric/ranking');
 }
 
 onMounted(() => {
@@ -989,14 +784,29 @@ onUnmounted(() => {
 
 <template>
   <Page>
+    <!-- Partial 警告横幅（可折叠不可关闭） -->
     <Alert
       v-if="boardData?.partialWarning?.active"
       class="mb-3"
       type="warning"
       show-icon
       :message="boardData.partialWarning.message || '存在部分回路数据不完整'"
-      :description="`不确定回路 ${boardData.partialWarning.inconclusiveCount} 个，部分关联 ${boardData.partialWarning.partialCount} 个`"
-    />
+      :description="
+        partialBannerCollapsed
+          ? ''
+          : `不确定回路 ${boardData.partialWarning.inconclusiveCount} 个，部分关联 ${boardData.partialWarning.partialCount} 个`
+      "
+    >
+      <template #action>
+        <Button
+          type="link"
+          size="small"
+          @click="partialBannerCollapsed = !partialBannerCollapsed"
+        >
+          {{ partialBannerCollapsed ? '展开查看' : '收起' }}
+        </Button>
+      </template>
+    </Alert>
 
     <div class="flex gap-3" style="min-height: calc(100vh - 160px)">
       <PlantNodeTree
@@ -1062,97 +872,96 @@ onUnmounted(() => {
           </Tag>
         </div>
 
-        <!-- ObjectSummaryBar：综合评分 primaryItem + actions -->
-        <ClpmObjectSummaryBar
-          v-if="boardData"
-          :title="selectedPlantNodeName"
-          :subtitle="`${timeWindowOptions.find((o) => o.value === filter.timeWindow)?.label ?? '今天'} · 性能总览`"
-          :items="summaryItems"
-          :primary-item="primaryItem"
-          :actions="summaryActions"
-          @action="onSummaryAction"
-        />
-
-        <!-- 上行三列：综合健康仪表盘 + 核心 Bullet + 数据质量环形图 -->
-        <div class="clpm-top-grid">
-          <Card size="small" title="综合健康仪表盘" class="clpm-chart-card">
-            <EchartsUI ref="healthGaugeRef" height="200px" />
-          </Card>
-          <Card size="small" title="核心指标 Bullet" class="clpm-chart-card">
-            <EchartsUI ref="bulletRef" height="200px" />
-          </Card>
-          <Card size="small" title="数据质量摘要" class="clpm-chart-card">
-            <EchartsUI ref="qualityDonutRef" height="200px" />
-          </Card>
-        </div>
-
-        <!-- 中行：实时自控率仪表盘 + 整点 KPI -->
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <div class="lg:col-span-1">
-            <AutoRateGauge
-              :auto-count="realtimeAutoRate?.autoCount ?? 0"
-              :manual-count="realtimeAutoRate?.manualCount ?? 0"
-              :loading="realtimeAutoRateLoading"
-              :subtitle="
-                realtimeAutoRate?.readAt
-                  ? // 强制北京时间（UTC+8）
-                    `统计于 ${new Date(realtimeAutoRate.readAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
-                  : ''
-              "
-              height="220px"
-            />
-          </div>
-
-          <ClpmDataCanvas
-            class="lg:col-span-2"
-            title="整点 KPI"
-            description="核心指标按当前时间窗聚合展示，支持部分有效和不确定状态。"
-            :loading="loading"
+        <!-- 装置级三大 KPI 卡片区 + 实时自控率仪表盘（4 卡片横排） -->
+        <div class="clpm-kpi-grid">
+          <Tooltip
+            v-for="card in kpiCards"
+            :key="card.title"
+            placement="bottom"
           >
-            <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
-          </ClpmDataCanvas>
+            <template #title>
+              <div class="text-xs">
+                <div>参评回路：{{ card.evaluatedLoops }}</div>
+                <div>不确定回路：{{ card.inconclusiveLoops }}</div>
+                <div>不参评回路：{{ card.excludedLoops }}</div>
+              </div>
+            </template>
+            <Card size="small" class="clpm-kpi-card">
+              <div class="text-xs text-gray-500">{{ card.title }}</div>
+              <div class="clpm-kpi-value">
+                <span v-if="card.value === null || card.value === undefined">--</span>
+                <span
+                  v-else
+                  :style="{ color: scoreColor(card.value) }"
+                  class="clpm-kpi-number"
+                >
+                  {{ formatNumber(card.value, card.title === '综合性能' ? 1 : 1) }}
+                </span>
+                <span v-if="card.unit && card.value !== null && card.value !== undefined" class="clpm-kpi-unit">
+                  {{ card.unit }}
+                </span>
+              </div>
+              <div class="clpm-kpi-meta">
+                <span class="text-xs text-gray-400">
+                  参评 {{ card.evaluatedLoops }} 回路
+                </span>
+                <ConfidenceBadge
+                  v-if="card.confidenceLevel"
+                  :level="card.confidenceLevel"
+                  size="small"
+                />
+              </div>
+            </Card>
+          </Tooltip>
+
+          <!-- 实时自控率仪表盘卡片（第 4 张） -->
+          <AutoRateGauge
+            :rate="autoRateRt?.rate ?? null"
+            :auto-count="autoRateRt?.autoCount ?? 0"
+            :total-count="autoRateRt?.totalCount ?? 0"
+            :history="autoRateHistory"
+            :loading="autoRateLoading"
+            :subtitle="
+              autoRateRt?.readAt
+                ? `统计于 ${new Date(autoRateRt.readAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
+                : ''
+            "
+          />
         </div>
 
-        <ClpmDataCanvas title="平稳率趋势" :loading="loading">
-          <!-- D2 多图联动状态指示条 -->
-          <div v-if="selectedTrendTime" class="clpm-linkage-bar">
-            <IconifyIcon icon="ant-design:link-outlined" />
-            <span>
-              联动已激活：选中时间 {{ formatSelectedTime(selectedTrendTime) }}
-            </span>
-            <Button type="link" size="small" @click="clearTrendSelection">
-              清除
-            </Button>
-          </div>
-          <EchartsUI ref="trendChartRef" height="240px" />
-        </ClpmDataCanvas>
+        <!-- 装置评分排名柱状图（左 60%）+ 全厂稳定率趋势双轴折线图（右 40%） -->
+        <div class="clpm-chart-grid">
+          <Card size="small" title="装置评分排名" class="clpm-chart-card">
+            <EchartsUI ref="unitRankingRef" height="280px" />
+          </Card>
+          <Card size="small" title="全厂稳定率趋势" class="clpm-chart-card">
+            <!-- D2 多图联动状态指示条 -->
+            <div v-if="selectedTrendTime" class="clpm-linkage-bar">
+              <IconifyIcon icon="ant-design:link-outlined" />
+              <span>
+                联动已激活：选中时间 {{ formatSelectedTime(selectedTrendTime) }}
+              </span>
+              <Button type="link" size="small" @click="clearTrendSelection">
+                清除
+              </Button>
+            </div>
+            <EchartsUI ref="trendChartRef" height="240px" />
+          </Card>
+        </div>
 
-        <ClpmDataCanvas title="详细列表" :loading="rankingLoading">
+        <!-- 低效回路 Top 10 预览 -->
+        <ClpmDataCanvas title="低效回路 Top 10 预览" :loading="rankingLoading">
           <template #extra>
-            <Select
-              v-model:value="rankingQuery.level"
-              placeholder="等级筛选"
-              style="width: 120px"
-              size="small"
-              allow-clear
-              :options="levelOptions"
-              @change="handleRankingSearch"
-            />
-            <Input
-              v-model:value="rankingQuery.keyword"
-              placeholder="搜索位号/装置"
-              allow-clear
-              size="small"
-              style="width: 220px"
-              @press-enter="handleRankingSearch"
-            />
-            <ClpmToolbarButton
-              icon="search"
-              label="查询"
-              @click="handleRankingSearch"
-            />
+            <Button type="link" size="small" @click="handleViewFullRanking">
+              查看完整排行 →
+            </Button>
           </template>
+          <Empty
+            v-if="!rankingLoading && rankingList.length === 0"
+            description="当前筛选条件下无低效回路数据"
+          />
           <Table
+            v-else
             :columns="rankingColumns"
             :data-source="rankingList"
             :loading="rankingLoading"
@@ -1185,15 +994,17 @@ onUnmounted(() => {
               </template>
               <template v-else-if="column.key === 'score'">
                 <span
+                  v-if="record.status === 'INCONCLUSIVE'"
+                  class="text-gray-400"
+                >
+                  —
+                </span>
+                <span
+                  v-else
                   class="font-mono font-bold"
                   :style="{ color: scoreColor(record.score) }"
                 >
                   {{ Number(record.score).toFixed(1) }}
-                </span>
-              </template>
-              <template v-else-if="column.key === 'autoModeRate'">
-                <span class="font-mono text-xs">
-                  {{ formatPercent(record.autoModeRate) }}
                 </span>
               </template>
               <template v-else-if="column.key === 'steadyRate'">
@@ -1201,20 +1012,33 @@ onUnmounted(() => {
                   {{ formatPercent(record.steadyRate) }}
                 </span>
               </template>
-              <template v-else-if="column.key === 'status'">
+              <template v-else-if="column.key === 'confidenceLevel'">
+                <ConfidenceBadge
+                  :level="record.confidenceLevel"
+                  :valid-rate="record.validRate"
+                  size="small"
+                />
+              </template>
+              <template v-else-if="column.key === 'preDiagnosis'">
+                <Tag v-if="record.preDiagnosis" color="orange" class="m-0">
+                  {{ record.preDiagnosis }}
+                </Tag>
+                <span v-else class="text-gray-400">—</span>
+              </template>
+              <template v-else-if="column.key === 'actionStatus'">
                 <Tag
                   :color="
-                    record.status === 'SUCCESS'
-                      ? 'green'
-                      : record.status === 'PARTIAL'
-                        ? 'orange'
-                        : 'default'
+                    record.actionStatus === 'PENDING'
+                      ? 'red'
+                      : record.actionStatus === 'IN_PROGRESS'
+                        ? 'blue'
+                        : record.actionStatus === 'IMPLEMENTED'
+                          ? 'green'
+                          : 'default'
                   "
                   class="m-0"
                 >
-                  {{
-                    statusLabelMap[record.status as KpiStatus] || record.status
-                  }}
+                  {{ actionStatusLabel[record.actionStatus] || record.actionStatus }}
                 </Tag>
               </template>
             </template>
@@ -1227,7 +1051,9 @@ onUnmounted(() => {
           <span class="clpm-status-footer__divider">·</span>
           <span>数据延迟：{{ dataDelayText || '—' }}</span>
           <span class="clpm-status-footer__divider">·</span>
-          <span>自动刷新：每 5 分钟</span>
+          <span>看板自动刷新：每 5 分钟</span>
+          <span class="clpm-status-footer__divider">·</span>
+          <span>实时自控率：每 60 秒</span>
           <span class="clpm-status-footer__divider">·</span>
           <span>对象：{{ selectedPlantNodeName }}</span>
         </div>
@@ -1258,10 +1084,54 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.clpm-top-grid {
+.clpm-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.clpm-kpi-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+}
+
+.clpm-kpi-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.clpm-kpi-number {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  transition: color 300ms ease-out;
+}
+
+.clpm-kpi-unit {
+  font-size: 14px;
+  color: hsl(var(--muted-foreground));
+}
+
+.clpm-kpi-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.clpm-chart-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 12px;
+}
+
+.clpm-chart-card {
+  display: flex;
+  flex-direction: column;
 }
 
 .clpm-preset-bar {
@@ -1273,11 +1143,6 @@ onUnmounted(() => {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
-}
-
-.clpm-chart-card {
-  display: flex;
-  flex-direction: column;
 }
 
 .clpm-status-footer {
@@ -1297,7 +1162,6 @@ onUnmounted(() => {
   color: hsl(var(--border));
 }
 
-/* D2 多图联动状态指示条 */
 .clpm-linkage-bar {
   display: flex;
   gap: 8px;
@@ -1311,13 +1175,22 @@ onUnmounted(() => {
   border-radius: 4px;
 }
 
-/* D2 多图联动：排行表选中行高亮 */
 :deep(.clpm-row-selected) td {
   background-color: hsl(var(--primary) / 8%) !important;
 }
 
+@media (max-width: 1280px) {
+  .clpm-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 1024px) {
-  .clpm-top-grid {
+  .clpm-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .clpm-chart-grid {
     grid-template-columns: 1fr;
   }
 }

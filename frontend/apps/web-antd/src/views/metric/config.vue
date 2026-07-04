@@ -2,23 +2,30 @@
 import type { TableColumnsType } from 'ant-design-vue';
 
 /**
- * S3-METRIC-007 性能指标配置页
+ * S3-METRIC-007 性能指标配置页（v5.3 修订）
  *
- * 对齐 IDS v3.2 §2.3 + PRD §4.3
- * - 表格展示 6 大 KPI 配置（名称/公式/权重/阈值/启用状态）
- * - 编辑弹窗表单（公式/权重/阈值/启用开关/controlType）
- * - 权重总和实时校验（≠100% 时禁用保存，显示红色提示）
+ * 对齐 UI/UX v5.3 §6.3.3 + FDS §5.3.1
+ * - 顶部提示条：核心指标权重模板按控制类型配置，已迁移至权重配置管理页面
+ * - 表格按 3+1+8 分组展示（CORE/COMMISSIONING/AUXILIARY_DIAGNOSTIC）
+ * - 公式编辑器改为只读展示（已废弃，对齐 FDS §5.3.1.2）
+ * - 控制类型字段移除（已迁移至回路台账）
+ * - 权重字段：仅核心指标可编辑，投用指标显示"折扣因子"，辅助诊断指标显示"不参与评分"
  * - 配置变更二次确认弹窗
  * - 仅 ADMIN 可见编辑按钮（v-permission 指令）
- * - 表格底部显示权重总和和校验状态
  */
-import type { ControlType, MetricApi } from '#/api/metric';
+import type {
+  ControlType,
+  MetricApi,
+  MetricApi as MetricApiType,
+} from '#/api/metric';
 
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Alert,
   Button,
   Card,
   Form,
@@ -27,7 +34,6 @@ import {
   InputNumber,
   message,
   Modal,
-  Select,
   Switch,
   Table,
   Tag,
@@ -39,36 +45,92 @@ import { getMetricsApi, updateMetricApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricConfig' });
 
+const router = useRouter();
+
 const loading = ref(false);
 const metricList = ref<MetricApi.MetricItem[]>([]);
 const totalWeight = ref(0);
 const weightValid = ref(true);
 
-const controlTypeOptions = [
-  { label: '稳定型', value: 'STABLE' },
-  { label: '快速型', value: 'FAST' },
-  { label: '慢速型', value: 'SLOW' },
-  { label: '逻辑型', value: 'LOGIC' },
-];
+/** 指标类别配置 */
+const categoryConfig: Record<
+  MetricApi.MetricCategory,
+  { color: string; label: string; order: number; weightLabel: string }
+> = {
+  CORE: {
+    color: 'green',
+    label: '核心质量',
+    order: 0,
+    weightLabel: '权重',
+  },
+  COMMISSIONING: {
+    color: 'blue',
+    label: '投用',
+    order: 1,
+    weightLabel: '折扣因子',
+  },
+  AUXILIARY_DIAGNOSTIC: {
+    color: 'default',
+    label: '辅助诊断',
+    order: 2,
+    weightLabel: '不参与评分',
+  },
+};
+
+/** 通过 metricKey 推断 category（fallback，后端未返回 category 时使用） */
+function inferCategory(metricKey: string): MetricApi.MetricCategory {
+  const coreKeys = ['accuracyRate', 'fastRate', 'steadyRate'];
+  const commissioningKeys = ['effectiveAutoRate'];
+  if (coreKeys.includes(metricKey)) return 'CORE';
+  if (commissioningKeys.includes(metricKey)) return 'COMMISSIONING';
+  return 'AUXILIARY_DIAGNOSTIC';
+}
+
+/** 获取指标类别（优先用后端 category，否则用 metricKey 推断） */
+function getCategory(item: MetricApi.MetricItem): MetricApi.MetricCategory {
+  return item.category ?? inferCategory(item.metricKey);
+}
+
+/** 排序后的指标列表（按 category 分组） */
+const sortedMetricList = computed(() => {
+  return [...metricList.value].sort((a, b) => {
+    const ca = getCategory(a);
+    const cb = getCategory(b);
+    return categoryConfig[ca].order - categoryConfig[cb].order;
+  });
+});
+
+/** 核心指标权重总和（仅 CORE 类别） */
+const coreWeightTotal = computed(() => {
+  return sortedMetricList.value
+    .filter((m) => getCategory(m) === 'CORE')
+    .reduce((sum, m) => sum + (Number(m.weight) || 0), 0);
+});
+
+/** 核心指标权重是否有效（>0） */
+const coreWeightValid = computed(() => coreWeightTotal.value > 0);
 
 const columns: TableColumnsType = [
   { title: '指标名称', dataIndex: 'metricName', key: 'metricName', width: 140 },
   { title: '指标 Key', dataIndex: 'metricKey', key: 'metricKey', width: 180 },
-  { title: '计算公式', dataIndex: 'formula', key: 'formula', ellipsis: true },
+  {
+    title: '类别',
+    key: 'category',
+    width: 110,
+  },
+  {
+    title: '算法公式',
+    key: 'formula',
+    ellipsis: true,
+  },
   {
     title: '权重',
     dataIndex: 'weight',
     key: 'weight',
-    width: 90,
+    width: 110,
     align: 'right',
   },
   { title: '阈值', key: 'threshold', width: 200 },
-  {
-    title: '控制类型',
-    dataIndex: 'controlType',
-    key: 'controlType',
-    width: 110,
-  },
   {
     title: '启用',
     dataIndex: 'isEnabled',
@@ -100,16 +162,29 @@ const formState = reactive({
   description: '',
 });
 
-/** 计算编辑表单的权重总和（其他指标权重 + 当前编辑权重） */
-const editWeightTotal = computed(() => {
+/** 当前编辑指标的类别 */
+const editingCategory = computed<MetricApi.MetricCategory | null>(() => {
+  if (!editingMetric.value) return null;
+  return getCategory(editingMetric.value);
+});
+
+/** 是否可编辑权重（仅核心指标） */
+const weightEditable = computed(() => editingCategory.value === 'CORE');
+
+/** 计算编辑表单的核心指标权重总和 */
+const editCoreWeightTotal = computed(() => {
   if (!editingMetric.value) return 0;
   const others = metricList.value
-    .filter((m) => m.metricId !== editingMetric.value?.metricId)
+    .filter(
+      (m) =>
+        m.metricId !== editingMetric.value?.metricId &&
+        getCategory(m) === 'CORE',
+    )
     .reduce((sum, m) => sum + (Number(m.weight) || 0), 0);
   return others + (Number(formState.weight) || 0);
 });
 
-const editWeightValid = computed(() => editWeightTotal.value === 100);
+const editWeightValid = computed(() => editCoreWeightTotal.value > 0);
 
 /** 加载指标列表 */
 async function loadList() {
@@ -148,25 +223,12 @@ const changeSummary = computed(() => {
   const m = editingMetric.value;
   if (!m) return [];
   const summary: { field: string; from: string; to: string }[] = [];
-  if (m.formula !== formState.formula) {
-    summary.push({
-      field: '计算公式',
-      from: m.formula || '—',
-      to: formState.formula || '—',
-    });
-  }
-  if (m.weight !== formState.weight) {
+  // 公式不再编辑（只读），不进入变更摘要
+  if (weightEditable.value && m.weight !== formState.weight) {
     summary.push({
       field: '权重',
       from: `${m.weight}%`,
       to: `${formState.weight}%`,
-    });
-  }
-  if (m.controlType !== formState.controlType) {
-    summary.push({
-      field: '控制类型',
-      from: m.controlType,
-      to: formState.controlType,
     });
   }
   if (m.isEnabled !== formState.isEnabled) {
@@ -194,14 +256,14 @@ const changeSummary = computed(() => {
 const impactScope = computed(() => {
   const m = editingMetric.value;
   if (!m) return '';
-  return `指标「${m.metricName}」配置变更后，所有回路下次评估将使用新公式/权重/阈值计算该指标。`;
+  return `指标「${m.metricName}」配置变更后，所有回路下次评估将使用新阈值/权重计算该指标。`;
 });
 
 /** 提交表单（含二次确认） */
 function handleSubmit() {
   formRef.value?.validate().then(() => {
-    if (!editWeightValid.value) {
-      message.warning(`权重总和须为 100%，当前为 ${editWeightTotal.value}%`);
+    if (weightEditable.value && !editWeightValid.value) {
+      message.warning('核心指标权重总和须大于 0');
       return;
     }
     changeRemark.value = '';
@@ -227,6 +289,7 @@ async function doSubmit() {
   if (!editingMetric.value) return;
   modalLoading.value = true;
   try {
+    // 仍按原 API 契约提交（controlType 字段后端已不消费，传原值保持兼容）
     await updateMetricApi(editingMetric.value.metricId, {
       formula: formState.formula,
       weight: formState.weight,
@@ -248,20 +311,33 @@ async function doSubmit() {
 function formatTime(t: string): string {
   if (!t) return '—';
   try {
-    // 强制北京时间（UTC+8）
     return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
 }
 
-function controlTypeLabel(t: ControlType): string {
-  return controlTypeOptions.find((o) => o.value === t)?.label || t;
-}
-
 function thresholdText(t: MetricApi.MetricThreshold): string {
   return `${t.min} ~ ${t.max}`;
 }
+
+/** 跳转权重配置管理页面 */
+function goWeightConfig() {
+  router.push('/metric/weight-config');
+}
+
+/** 类别 Tag 颜色 */
+function categoryColor(item: MetricApi.MetricItem): string {
+  return categoryConfig[getCategory(item)].color;
+}
+
+/** 类别标签文本 */
+function categoryLabel(item: MetricApi.MetricItem): string {
+  return categoryConfig[getCategory(item)].label;
+}
+
+/** 类型别名避免与命名空间冲突 */
+type MetricItem = MetricApiType.MetricItem;
 
 onMounted(() => {
   loadList();
@@ -273,13 +349,29 @@ onMounted(() => {
     <ConfigTabs />
     <ClpmPageToolbar
       title="指标定义"
-      subtitle="管理 6 大核心 KPI 的计算公式、权重、阈值、启用状态"
+      subtitle="管理 12 项 KPI 的算法公式（只读）、阈值、启停与算法版本（v5.3 3+1+8 结构）"
     />
-    <Card class="mt-4">
+
+    <!-- 顶部提示条 [v5.3 新增] -->
+    <Alert
+      class="mt-3"
+      type="info"
+      show-icon
+      message="核心指标权重模板按控制类型配置，已迁移至权重配置管理页面。本页仅管理单指标的阈值、启停与算法版本"
+    >
+      <template #action>
+        <Button type="link" size="small" @click="goWeightConfig">
+          前往权重配置管理 →
+        </Button>
+      </template>
+    </Alert>
+
+    <Card class="mt-3">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
-          管理 6 大核心
-          KPI（好值率、自控率、平稳率、准确率、振荡率、饱和率）的计算公式、权重、阈值、启用状态。
+          按 3+1+8 分组展示：核心质量指标（CORE · 准确率 A / 快速率 F / 稳定率
+          S）+ 投用指标（COMMISSIONING · 有效自控率 R）+ 辅助诊断指标（AUXILIARY_DIAGNOSTIC
+          · 好值率/振荡率/饱和率等 8 项）。
         </p>
         <ClpmToolbarButton
           icon="ant-design:reload-outlined"
@@ -291,16 +383,41 @@ onMounted(() => {
 
       <Table
         :columns="columns"
-        :data-source="metricList"
+        :data-source="sortedMetricList"
         :loading="loading"
         :pagination="false"
-        :row-key="(record: MetricApi.MetricItem) => record.metricId"
+        :row-key="(record: MetricItem) => record.metricId"
         :scroll="{ x: 1300 }"
         size="middle"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'weight'">
-            <span class="font-medium">{{ record.weight }}%</span>
+          <template v-if="column.key === 'category'">
+            <Tag :color="categoryColor(record as MetricItem)">
+              {{ categoryLabel(record as MetricItem) }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'formula'">
+            <span class="text-xs text-gray-500">
+              {{ record.formula || '—' }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'weight'">
+            <span
+              v-if="getCategory(record as MetricItem) === 'CORE'"
+              class="font-medium"
+            >
+              {{ record.weight }}%
+            </span>
+            <Tag
+              v-else-if="getCategory(record as MetricItem) === 'COMMISSIONING'"
+              color="blue"
+              class="m-0"
+            >
+              折扣因子
+            </Tag>
+            <Tag v-else color="default" class="m-0">
+              不参与评分
+            </Tag>
           </template>
           <template v-else-if="column.key === 'threshold'">
             <div class="text-xs">
@@ -308,9 +425,6 @@ onMounted(() => {
               <br />
               <Tag color="orange">告警：{{ record.threshold.alert }}</Tag>
             </div>
-          </template>
-          <template v-else-if="column.key === 'controlType'">
-            <Tag color="blue">{{ controlTypeLabel(record.controlType) }}</Tag>
           </template>
           <template v-else-if="column.key === 'isEnabled'">
             <Tag :color="record.isEnabled ? 'green' : 'default'">
@@ -325,24 +439,28 @@ onMounted(() => {
               v-permission="['ADMIN']"
               type="link"
               size="small"
-              @click="handleEdit(record as MetricApi.MetricItem)"
+              @click="handleEdit(record as MetricItem)"
             >
               编辑
             </Button>
           </template>
         </template>
 
-        <!-- 表格底部权重总和 -->
+        <!-- 表格底部：核心指标权重总和 -->
         <template #footer>
           <div class="flex items-center justify-between">
-            <span>权重总和</span>
+            <span>核心指标权重总和（A + F + S）</span>
             <span
               class="font-medium"
-              :class="weightValid ? 'text-green-500' : 'text-red-500'"
+              :class="coreWeightValid ? 'text-green-500' : 'text-red-500'"
             >
-              {{ totalWeight }}%
+              {{ coreWeightTotal }}%
               <span class="ml-2 text-xs">
-                {{ weightValid ? '✓ 校验通过' : '✗ 权重总和须为 100%' }}
+                {{
+                  coreWeightValid
+                    ? '✓ 权重在公式中自动归一化'
+                    : '✗ 核心指标权重总和须大于 0'
+                }}
               </span>
             </span>
           </div>
@@ -356,43 +474,70 @@ onMounted(() => {
       :title="`编辑指标 - ${editingMetric?.metricName || ''}`"
       :confirm-loading="modalLoading"
       width="600px"
-      :ok-button-props="{ disabled: !editWeightValid }"
+      :ok-button-props="{
+        disabled: weightEditable && !editWeightValid,
+      }"
       @ok="handleSubmit"
     >
-      <Form ref="formRef" :model="formState" layout="vertical" class="pt-4">
-        <FormItem
-          name="formula"
-          label="计算公式"
-          :rules="[{ required: true, message: '请输入计算公式' }]"
-        >
-          <Input.TextArea
-            v-model:value="formState.formula"
-            placeholder="例如：sum(quality==Good) / count(*) * 100"
-            :rows="2"
-          />
+      <Form
+        ref="formRef"
+        :model="formState"
+        layout="vertical"
+        class="pt-4"
+      >
+        <!-- 类别（只读） -->
+        <FormItem label="指标类别">
+          <Tag v-if="editingCategory" :color="categoryConfig[editingCategory].color">
+            {{ categoryConfig[editingCategory].label }}
+          </Tag>
         </FormItem>
 
-        <div class="grid grid-cols-2 gap-4">
-          <FormItem
-            name="weight"
-            label="权重（%）"
-            :rules="[{ required: true, message: '请输入权重' }]"
+        <!-- 算法公式（只读展示，已废弃编辑） -->
+        <FormItem label="算法公式（只读 · 已废弃自定义）">
+          <Input
+            :value="formState.formula || '（算法已固化为独立函数模块）'"
+            readonly
+            placeholder="算法公式已固化为独立函数模块"
+          />
+          <template #extra>
+            <span class="text-xs text-gray-500">
+              对齐 FDS §5.3.1.2 与 DDS v4.1，12 项指标算法已固化为独立函数模块，
+              不再支持用户自定义公式覆盖。
+            </span>
+            <Button type="link" size="small" class="px-0">
+              查看公式详情
+            </Button>
+          </template>
+        </FormItem>
+
+        <!-- 权重（仅核心指标可编辑） -->
+        <FormItem v-if="weightEditable" label="权重（%）">
+          <InputNumber
+            v-model:value="formState.weight"
+            :min="0"
+            :max="100"
+            class="w-full"
+            addon-after="%"
+          />
+          <template #extra>
+            <span class="text-xs">
+              核心指标权重按控制类型分 4 套模板，本页编辑的是当前控制类型下的权重值；
+              如需管理权重模板，请前往
+              <Button type="link" size="small" class="px-0" @click="goWeightConfig">
+                权重配置管理
+              </Button>
+            </span>
+          </template>
+        </FormItem>
+        <FormItem v-else label="权重">
+          <Tag
+            v-if="editingCategory === 'COMMISSIONING'"
+            color="blue"
           >
-            <InputNumber
-              v-model:value="formState.weight"
-              :min="0"
-              :max="100"
-              class="w-full"
-              addon-after="%"
-            />
-          </FormItem>
-          <FormItem name="controlType" label="控制类型">
-            <Select
-              v-model:value="formState.controlType"
-              :options="controlTypeOptions"
-            />
-          </FormItem>
-        </div>
+            折扣因子（无权重输入）
+          </Tag>
+          <Tag v-else color="default">不参与评分</Tag>
+        </FormItem>
 
         <!-- 阈值 -->
         <div class="mb-2 font-medium">阈值配置</div>
@@ -417,12 +562,12 @@ onMounted(() => {
           </FormItem>
         </div>
 
-        <!-- 权重总和实时校验 -->
-        <div class="mt-2 text-sm">
+        <!-- 核心指标权重实时校验 -->
+        <div v-if="weightEditable" class="mt-2 text-sm">
           <span :class="editWeightValid ? 'text-green-500' : 'text-red-500'">
-            权重总和：{{ editWeightTotal }}%
+            核心指标权重总和：{{ editCoreWeightTotal }}%
             <span v-if="!editWeightValid" class="ml-1">
-              （须为 100%，否则无法保存）
+              （须大于 0，否则无法保存）
             </span>
           </span>
         </div>
@@ -441,7 +586,7 @@ onMounted(() => {
       </Form>
     </Modal>
 
-    <!-- 配置变更确认弹窗（B2.5） -->
+    <!-- 配置变更确认弹窗 -->
     <Modal
       v-model:open="confirmVisible"
       title="确认变更指标配置"

@@ -42,6 +42,12 @@ export namespace MetricApi {
     alert: number;
   }
 
+  /** 指标类别（v5.3 对齐 FDS §5.3.1 3+1+8 结构） */
+  export type MetricCategory =
+    | 'AUXILIARY_DIAGNOSTIC'
+    | 'COMMISSIONING'
+    | 'CORE';
+
   /** 指标配置项 */
   export interface MetricItem {
     metricId: string;
@@ -56,6 +62,8 @@ export namespace MetricApi {
     algorithmVersion: string;
     updatedAt: string;
     updatedBy: string;
+    /** v5.3 指标类别（CORE/COMMISSIONING/AUXILIARY_DIAGNOSTIC） */
+    category?: MetricCategory | null;
   }
 
   /** 指标配置列表响应 */
