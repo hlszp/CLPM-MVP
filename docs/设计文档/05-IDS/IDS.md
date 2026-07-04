@@ -15,8 +15,8 @@
 | v2.0 | 2026-06-19 | 全面重构：基于 PRD v2.2 重新设计，移除繁重工单审批流，重塑为"自动评估+轻量跟踪"架构，定义性能看板、波形查询、异常跟踪三类核心 API。 | 系统设计团队 |
 | v3.0 | 2026-06-20 | 产品化架构重构：①对齐 6 模块 + 1 门户结构（工作台/回路管理/性能评估/诊断中心/回路整定/系统管理）；②引入 AAS Tag 模型（7 个 OPC tag：PV/SP/OP/MODE/PID_P/PID_I/PID_D），PID 参数从 tag 只读，数据质量主要针对 PV；③新增工作台、回路管理（含 AAS 同步/回路 CRUD/tag 关联/回路监控）、回路整定（Phase 2 占位）、系统管理 API 组；④扩展性能评估与诊断中心 API（指标配置/引擎规则/统计报表）；⑤波形 API 响应增加 `pv_quality` 数组，明确仅 PV 携带质量码；⑥补充新错误码（ERR_TAG_NOT_FOUND/ERR_LOOP_TAG_REQUIRED/ERR_METRIC_WEIGHT_SUM/ERR_CONFIG_FORBIDDEN）。 | 系统设计团队 |
 | v3.1 | 2026-06-21 | 认证授权与统一响应规范补充：①新增 §5 认证与授权 API（登录/登出/Token 刷新/获取当前用户/修改密码），定义 JWT Bearer Token 方案、Access/Refresh Token 双 Token 机制、黑名单策略、权限列表枚举；②新增 §6 统一响应规范（成功/错误/分页/异步任务响应 envelope 格式、HTTP 状态码使用规则、4 位业务错误码分段定义、前端 Axios 拦截器对接规范）；③补充 ERR_TOKEN_EXPIRED/ERR_TOKEN_INVALID/ERR_INVALID_CREDENTIALS/ERR_ACCOUNT_DISABLED/ERR_TOO_MANY_ATTEMPTS/ERR_PASSWORD_SAME/ERR_USER_NOT_FOUND/ERR_USER_DUPLICATE 等认证相关错误码。 | 系统设计团队 |
-| v3.2 | 2026-06-22 | 算法对齐与算法服务接口补充（依据《关键算法设计说明》v1.0）：①统一 6 大 KPI 清单（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate），所有 KPI 接口响应包含全部 6 个 KPI 字段 + composite_score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version；②统一诊断标签为 8 类（OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW），诊断结果结构含 label/confidence/evidence/algorithm，新增 fused_confidence（Dempster-Shafer 融合置信度）；③整定接口新增 fitting_score 字段、method 枚举（IMC/LAMBDA/ZIEGLER_NICHOLS/COHEN_COON/SIMC），响应包含 model_params/pid_params/simulation_result/fitting_score；④新增 §2.7 算法服务接口（4 个异步 API：KPI 计算/诊断分析/整定计算/任务查询）；⑤新增 §2.8 指标配置接口与 §2.9 诊断配置接口（批量 GET/PUT，calc_method/threshold JSONB/control_type）；⑥对齐 C1-C7 跨文档差距修正。 | 系统设计团队 |
-| v4.0 | 2026-06-26 | 数据质量增强与算法服务扩展（依据《关键算法设计说明》v2.0）：①§2.4.5 历史数据接口扩展，新增 tagGroup（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）/qualityPolicy（KEEP_ALL_WITH_VALIDITY/KEEP_ALL）/aggregationPolicy（LAST/MEAN/MAX）参数，数据点增加 valid 标记；②§2.7.1 KPI 计算接口增加数据血缘（sampling_freq/quality_policy/tag_group/valid_rate）与 confidence_level（A/B/C/D/E），composite_score 增加 data_lineage JSON 对象；③新增 §2.7.5 DataPlanner 内部接口（plan/bundle，仅供算法服务调用，不对外暴露）；④新增 §2.7.6 任务管理接口（standard/custom 评估任务触发、任务状态/列表查询）；⑤§2.4 新增诊断标签接口（标签列表/回路标签/标签处理）；⑥§4.4 PV 质量码处理约定从"Bad 对应 pv=null"改为"保留所有点，Bad 对应 valid=false"，波形 Good 实线/Bad 灰色虚线/Uncertain 黄色虚线，引入 Metric Validity Mask；⑦§2.8 指标配置从 6 大 KPI 升级为 3+1+8 结构（3 核心指标 + 1 投用指标 + 8 辅助诊断指标），核心指标权重配置、投用指标作为折扣因子、辅助诊断指标不参与权重配置。 | 系统设计团队 |
+| v3.2 | 2026-06-22 | 算法对齐与算法服务接口补充（依据《关键算法设计说明》v1.0）：①统一 6 大 KPI 清单（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate），所有 KPI 接口响应包含全部 6 个 KPI 字段 + score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version；②统一诊断标签为 8 类（OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW），诊断结果结构含 label/confidence/evidence/algorithm，新增 fused_confidence（Dempster-Shafer 融合置信度）；③整定接口新增 fitting_score 字段、method 枚举（IMC/LAMBDA/ZIEGLER_NICHOLS/COHEN_COON/SIMC），响应包含 model_params/pid_params/simulation_result/fitting_score；④新增 §2.7 算法服务接口（4 个异步 API：KPI 计算/诊断分析/整定计算/任务查询）；⑤新增 §2.8 指标配置接口与 §2.9 诊断配置接口（批量 GET/PUT，calc_method/threshold JSONB/control_type）；⑥对齐 C1-C7 跨文档差距修正。 | 系统设计团队 |
+| v4.0 | 2026-06-26 | 数据质量增强与算法服务扩展（依据《关键算法设计说明》v2.0）：①§2.4.5 历史数据接口扩展，新增 tagGroup（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）/qualityPolicy（KEEP_ALL_WITH_VALIDITY/KEEP_ALL）/aggregationPolicy（LAST/MEAN/MAX）参数，数据点增加 valid 标记；②§2.7.1 KPI 计算接口增加数据血缘（sampling_freq/quality_policy/tag_group/valid_rate）与 confidence_level（A/B/C/D/E），score 增加 data_lineage JSON 对象；③新增 §2.7.5 DataPlanner 内部接口（plan/bundle，仅供算法服务调用，不对外暴露）；④新增 §2.7.6 任务管理接口（standard/custom 评估任务触发、任务状态/列表查询）；⑤§2.4 新增诊断标签接口（标签列表/回路标签/标签处理）；⑥§4.4 PV 质量码处理约定从"Bad 对应 pv=null"改为"保留所有点，Bad 对应 valid=false"，波形 Good 实线/Bad 灰色虚线/Uncertain 黄色虚线，引入 Metric Validity Mask；⑦§2.8 指标配置从 6 大 KPI 升级为 3+1+8 结构（3 核心指标 + 1 投用指标 + 8 辅助诊断指标），核心指标权重配置、投用指标作为折扣因子、辅助诊断指标不参与权重配置。 | 系统设计团队 |
 
 ---
 
@@ -86,7 +86,7 @@
         },
         {
           "metricKey": "steady_rate",
-          "metricName": "平稳率",
+          "metricName": "稳定率",
           "value": 85.3,
           "unit": "%",
           "delta": -0.8,
@@ -125,7 +125,7 @@
           "status": "GOOD"
         },
         {
-          "metricKey": "composite_score",
+          "metricKey": "score",
           "metricName": "综合评分",
           "value": 78.6,
           "unit": "",
@@ -142,7 +142,7 @@
         "accuracy_rate": 88.1,
         "oscillation_rate": 12.4,
         "saturation_rate": 5.2,
-        "composite_score": 78.6,
+        "score": 78.6,
         "status": "WARNING",
         "algorithm_version": "KPI_CALC_v1.0"
       },
@@ -179,7 +179,7 @@
     }
   }
   ```
-* **说明**：KPI 卡片固定返回 7 项（6 大 KPI + 综合评分），6 大 KPI 严格对齐《关键算法设计说明》§4.0：好值率/自控率/平稳率/准确率/振荡率/饱和率；每卡 `status` 枚举值为 `GOOD`/`WARNING`/`POOR`/`INCONCLUSIVE`；`kpiSummary` 汇总 6 大 KPI 数值 + `composite_score`（综合评分，0-100）+ `status`（整体状态）+ `algorithm_version`（算法版本号，格式 `<算法类别>v<主版本>.<次版本>`）；`badActors` 默认返回 Top 10 低效回路；`loopTrendSummary` 返回选中回路近 24h 趋势摘要；数据为空时对应字段返回 `null` 或空数组，前端展示"--"。
+* **说明**：KPI 卡片固定返回 7 项（6 大 KPI + 综合评分），6 大 KPI 严格对齐《关键算法设计说明》§4.0：好值率/自控率/稳定率/准确率/振荡率/饱和率；每卡 `status` 枚举值为 `GOOD`/`WARNING`/`POOR`/`INCONCLUSIVE`；`kpiSummary` 汇总 6 大 KPI 数值 + `score`（综合评分，0-100）+ `status`（整体状态）+ `algorithm_version`（算法版本号，格式 `<算法类别>v<主版本>.<次版本>`）；`badActors` 默认返回 Top 10 低效回路；`loopTrendSummary` 返回选中回路近 24h 趋势摘要；数据为空时对应字段返回 `null` 或空数组，前端展示"--"。
 
 ---
 
@@ -742,7 +742,7 @@
         "accuracy_rate": 88.1,
         "oscillation_rate": 12.4,
         "saturation_rate": 5.2,
-        "composite_score": 78.6,
+        "score": 78.6,
         "status": "WARNING",
         "algorithm_version": "KPI_CALC_v1.0",
         "calculatedAt": "2026-06-20T09:00:00Z"
@@ -750,7 +750,7 @@
     }
   }
   ```
-* **说明**：`currentValues` 为当前最新值快照；`trend` 为趋势数据，`pvQuality` 数组与 `pv` 数组等长，仅 PV 携带质量码；`kpiSummary` 包含全部 6 大 KPI（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate）+ composite_score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version。回路处于 `INCONCLUSIVE` 时，`kpiSummary.status` 为 `INCONCLUSIVE`，波形区灰色虚线断线。
+* **说明**：`currentValues` 为当前最新值快照；`trend` 为趋势数据，`pvQuality` 数组与 `pv` 数组等长，仅 PV 携带质量码；`kpiSummary` 包含全部 6 大 KPI（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate）+ score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version。回路处于 `INCONCLUSIVE` 时，`kpiSummary.status` 为 `INCONCLUSIVE`，波形区灰色虚线断线。
 
 #### 2.2.15 回路监控列表 (List Loop Monitor)
 
@@ -837,7 +837,7 @@
         },
         {
           "metricKey": "steady_rate",
-          "metricName": "平稳率",
+          "metricName": "稳定率",
           "value": 85.3,
           "unit": "%",
           "status": "WARNING",
@@ -868,7 +868,7 @@
           "algorithmVersion": "KPI_CALC_v1.0"
         },
         {
-          "metricKey": "composite_score",
+          "metricKey": "score",
           "metricName": "综合评分",
           "value": 78.6,
           "unit": "",
@@ -883,7 +883,7 @@
         "accuracy_rate": 88.1,
         "oscillation_rate": 12.4,
         "saturation_rate": 5.2,
-        "composite_score": 78.6,
+        "score": 78.6,
         "status": "WARNING",
         "algorithm_version": "KPI_CALC_v1.0"
       },
@@ -900,7 +900,7 @@
     }
   }
   ```
-* **说明**：KPI 卡片固定返回 7 项（6 大 KPI + 综合评分），6 大 KPI 严格对齐《关键算法设计说明》§4.0：好值率/自控率/平稳率/准确率/振荡率/饱和率；每卡 `status` 枚举值为 `GOOD`/`WARNING`/`POOR`/`INCONCLUSIVE`，对应绿/黄/红/灰；`algorithmVersion` 标识该 KPI 计算所用的算法版本号；`kpiSummary` 汇总 6 大 KPI + composite_score + status + algorithm_version；指标停用后对应卡片 `status` 为 `INCONCLUSIVE`；`partialWarning` 在存在 `INCONCLUSIVE` 或 `Partial` 回路时激活，强制显示黄色警告横幅。
+* **说明**：KPI 卡片固定返回 7 项（6 大 KPI + 综合评分），6 大 KPI 严格对齐《关键算法设计说明》§4.0：好值率/自控率/稳定率/准确率/振荡率/饱和率；每卡 `status` 枚举值为 `GOOD`/`WARNING`/`POOR`/`INCONCLUSIVE`，对应绿/黄/红/灰；`algorithmVersion` 标识该 KPI 计算所用的算法版本号；`kpiSummary` 汇总 6 大 KPI + score + status + algorithm_version；指标停用后对应卡片 `status` 为 `INCONCLUSIVE`；`partialWarning` 在存在 `INCONCLUSIVE` 或 `Partial` 回路时激活，强制显示黄色警告横幅。
 
 #### 2.3.2 获取低效回路排行 (Get Performance Ranking)
 
@@ -936,7 +936,7 @@
     ]
   }
   ```
-* **说明**：默认按评分升序返回 Top N 低效回路；响应包含全部 6 大 KPI 字段 + composite_score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithmVersion；`actionStatus` 来自异常跟踪子模块（待处理/处理中/已实施/已忽略）。
+* **说明**：默认按评分升序返回 Top N 低效回路；响应包含全部 6 大 KPI 字段 + score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithmVersion；`actionStatus` 来自异常跟踪子模块（待处理/处理中/已实施/已忽略）。
 
 #### 2.3.3 获取性能指标配置列表 (List Performance Metrics)
 
@@ -985,7 +985,7 @@
     }
   }
   ```
-* **说明**：返回 6 大核心 KPI（好值率/自控率/平稳率/准确率/振荡率/饱和率）的配置；`threshold` 字段为 JSONB 对象 `{min: number, max: number, alert: string}`（对齐《关键算法设计说明》§10.1 C3 修正）；`controlType` 枚举值为 `STABLE`（稳定型）/`SLOW`（慢速型）/`FAST`（快速型）/`LOGIC`（逻辑型），用于权重模板选择（对齐§4.7.3 默认权重配置）；`algorithmVersion` 标识算法版本号；`totalWeight` 标识当前权重总和，`weightValid` 标识是否为 100%。
+* **说明**：返回 6 大核心 KPI（好值率/自控率/稳定率/准确率/振荡率/饱和率）的配置；`threshold` 字段为 JSONB 对象 `{min: number, max: number, alert: string}`（对齐《关键算法设计说明》§10.1 C3 修正）；`controlType` 枚举值为 `STABLE`（稳定型）/`SLOW`（慢速型）/`FAST`（快速型）/`LOGIC`（逻辑型），用于权重模板选择（对齐§4.7.3 默认权重配置）；`algorithmVersion` 标识算法版本号；`totalWeight` 标识当前权重总和，`weightValid` 标识是否为 100%。
 
 #### 2.3.4 更新性能指标配置 (Update Performance Metric)
 
@@ -1617,7 +1617,7 @@
   ```
 * **说明**：
   * **v4.0 新增**：诊断标签列表接口，支持按回路/严重程度/处理状态/标签类型/时间范围多维筛选。
-  * `label` 枚举为 8 类诊断标签（对齐 §2.4.1 C6 修正）；`severity` 枚举值 `HIGH`（高，composite_score < 50 或 confidence ≥ 0.8）/`MEDIUM`（中，50 ≤ score < 70 或 0.6 ≤ confidence < 0.8）/`LOW`（低，score ≥ 70 或 confidence < 0.6）。
+  * `label` 枚举为 8 类诊断标签（对齐 §2.4.1 C6 修正）；`severity` 枚举值 `HIGH`（高，score < 50 或 confidence ≥ 0.8）/`MEDIUM`（中，50 ≤ score < 70 或 0.6 ≤ confidence < 0.8）/`LOW`（低，score ≥ 70 或 confidence < 0.6）。
   * `status` 枚举值 `PENDING`（待处理）/`IN_PROGRESS`（处理中）/`RESOLVED`（已实施）/`IGNORED`（已忽略），对齐 §2.4.6。
   * `confidence` 为单算法置信度（0-1），`fusedConfidence` 为 Dempster-Shafer 融合置信度（0-1，对齐 §5.7）。
   * 已处理的标签返回 `resolvedAt`/`resolvedBy`/`resolveComment`，未处理时为 `null`。
@@ -2105,12 +2105,12 @@
   * 触发指定回路的 6 大 KPI 计算（对齐《关键算法设计说明》§4 KPI 算法，C1 修正）。
   * `loopIds` 为空数组时表示对所有启用回路进行计算；`metrics` 为空数组时表示计算全部 6 项 KPI。
   * `forceRecalculate=true` 时强制重算（忽略缓存），默认 `false` 复用已有快照。
-  * 任务完成后通过 §2.7.4 查询结果，结果结构包含 `kpiResults`（每回路的指标结果 + `composite_score` + `status` + `algorithm_version`）。
+  * 任务完成后通过 §2.7.4 查询结果，结果结构包含 `kpiResults`（每回路的指标结果 + `score` + `status` + `algorithm_version`）。
   * **v4.0 数据血缘与置信度增强**（对齐《关键算法设计说明》v2.0）：
     * 每个指标结果采用 `metrics` 嵌套对象结构，每项含 `value`（指标值）+ `confidence_level`（置信度等级 A/B/C/D/E）+ `valid_rate`（有效数据率，0-1）+ `data_lineage`（数据血缘 JSON 对象）。
     * `data_lineage` 对象字段：`sampling_freq`（采样频率，如 `5s`）/`quality_policy`（质量策略，对齐 §2.4.5）/`tag_group`（数据分组，对齐 §2.4.5）。
     * 回路级结果新增 `confidence_level`（综合置信度等级 A/B/C/D/E）与 `data_lineage`（回路级数据血缘汇总对象）。
-    * `composite_score` 结果新增 `data_lineage` JSON 对象，记录综合评分所依据的数据血缘信息。
+    * `score` 结果新增 `data_lineage` JSON 对象，记录综合评分所依据的数据血缘信息。
     * `confidence_level` 等级规则：A（valid_rate ≥ 0.95）/B（0.90-0.95）/C（0.80-0.90）/D（0.60-0.80）/E（< 0.60）。
   * `algorithmVersion` 固定为 `KPI_CALC_v1.0`（对齐§4.10 算法版本号规范）。
   * 计算失败时任务状态标记为 `FAILED`，`error` 字段包含错误码与详情。
@@ -2301,7 +2301,7 @@
                 }
               }
             },
-            "composite_score": 78.5,
+            "score": 78.5,
             "confidence_level": "A",
             "status": "GOOD",
             "data_lineage": {
@@ -2666,7 +2666,7 @@
                 }
               }
             },
-            "composite_score": 78.5,
+            "score": 78.5,
             "confidence_level": "A",
             "status": "GOOD",
             "data_lineage": {
@@ -2766,7 +2766,7 @@
 本组 API 提供指标配置的批量读写能力，便于前端配置界面一次性加载/保存全部指标配置。与 §2.3.3/§2.3.4 单条操作接口互补，批量保存时后端事务化处理，任一项校验失败则全部回滚。
 
 **v4.0 指标体系升级（3+1+8 结构，对齐《关键算法设计说明》v2.0）**：
-* **3 核心指标（CORE，参与综合评分权重配置）**：准确率（accuracy_rate）/ 快速率（fast_response_rate）/ 稳定率（steady_rate）。3 项核心指标权重总和须为 100%，综合评分 = Σ(核心指标值 × 权重)。
+* **3 核心指标（CORE，参与综合评分权重配置）**：准确率（accuracy_rate）/ 快速率（fast_rate）/ 稳定率（steady_rate）。3 项核心指标权重总和须为 100%，综合评分 = Σ(核心指标值 × 权重)。
 * **1 投用指标（COMMISSIONING，作为折扣因子，不参与权重配置）**：有效自控率（effective_auto_rate）。综合评分 = 核心指标加权得分 × 投用指标折扣因子（discount_factor），未投用（自控率为 0）时综合评分折半，全投用时折扣因子为 1.0。
 * **8 辅助诊断指标（AUXILIARY_DIAGNOSTIC，不参与权重配置与综合评分）**：好值率（good_value_rate）/ 振荡率（oscillation_rate）/ 饱和率（saturation_rate）/ 粘滞指数（stiction_index）/ 过激指数（overaggressive_index）/ 过保守指数（overconservative_index）/ 外扰指数（disturbance_index）/ 质量异常率（quality_abnormal_rate）。辅助诊断指标仅用于诊断标签生成与看板展示，权重字段固定为 `null`。
 * 每项指标配置增加 `category` 字段（`CORE`/`COMMISSIONING`/`AUXILIARY_DIAGNOSTIC`）标识所属类别；投用指标增加 `isDiscountFactor=true` 标记。
@@ -2798,7 +2798,7 @@
         },
         {
           "metricId": "uuid-c02",
-          "metricKey": "fast_response_rate",
+          "metricKey": "fast_rate",
           "metricName": "快速率",
           "category": "CORE",
           "formula": "duration(rise_time <= rise_time_threshold) / duration(*) * 100",
@@ -2974,7 +2974,7 @@
 * **说明**：
   * **v4.0 结构升级**：响应从单一 `items` 数组改为按类别分组的 `coreMetrics`（3 项）/`commissioningMetric`（1 项）/`auxiliaryDiagnosticMetrics`（8 项）三段式结构，`structureVersion` 标识结构版本（`3+1+8`）。
   * `category` 枚举值 `CORE`（核心指标）/`COMMISSIONING`（投用指标）/`AUXILIARY_DIAGNOSTIC`（辅助诊断指标）。
-  * **核心指标权重配置**：仅 3 项核心指标（accuracy_rate/fast_response_rate/steady_rate）参与权重配置，`coreTotalWeight` 标识核心指标权重总和，`coreWeightValid` 标识是否为 100%。
+  * **核心指标权重配置**：仅 3 项核心指标（accuracy_rate/fast_rate/steady_rate）参与权重配置，`coreTotalWeight` 标识核心指标权重总和，`coreWeightValid` 标识是否为 100%。
   * **投用指标作为折扣因子**：`commissioningMetric` 的 `isDiscountFactor=true`，`weight=null`，不参与权重总和校验；综合评分 = 核心指标加权得分 × 投用折扣因子。
   * **辅助诊断指标不参与权重配置**：`auxiliaryDiagnosticMetrics` 每项 `weight=null`，不参与权重总和校验，仅用于诊断标签生成与看板展示。
   * `threshold` 为 JSONB 对象 `{min, max, alert}`（对齐 C3 修正）；`controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`（对齐§4.7.3 默认权重配置）。
@@ -3054,7 +3054,7 @@
         },
         {
           "metricId": "uuid-c02",
-          "metricKey": "fast_response_rate",
+          "metricKey": "fast_rate",
           "metricName": "快速率",
           "category": "CORE",
           "weight": 25,
@@ -3124,7 +3124,7 @@
 * **说明**：
   * **v4.0 结构升级**：请求/响应体从单一 `items` 数组改为 `coreMetrics`/`commissioningMetric`/`auxiliaryDiagnosticMetrics` 三段式结构，与 §2.8.1 一致。
   * 批量更新指标配置，事务化处理：任一项校验失败则全部回滚，返回 `ERR_METRIC_WEIGHT_SUM` 或对应字段错误码。
-  * **权重校验仅针对核心指标**：若本次变更导致 3 项核心指标（accuracy_rate/fast_response_rate/steady_rate）权重总和 ≠ 100%，返回 `ERR_METRIC_WEIGHT_SUM`。投用指标与辅助诊断指标的 `weight` 字段固定为 `null`，传入非 null 值将被忽略并告警。
+  * **权重校验仅针对核心指标**：若本次变更导致 3 项核心指标（accuracy_rate/fast_rate/steady_rate）权重总和 ≠ 100%，返回 `ERR_METRIC_WEIGHT_SUM`。投用指标与辅助诊断指标的 `weight` 字段固定为 `null`，传入非 null 值将被忽略并告警。
   * 投用指标（commissioningMetric）的 `isDiscountFactor` 字段不可修改，由系统固定为 `true`；可更新 formula/threshold/isEnabled/description。
   * 辅助诊断指标（auxiliaryDiagnosticMetrics）不参与权重配置，可更新 formula/threshold/controlType/isEnabled/description。
   * `threshold` 为 JSONB 对象（对齐 C3 修正）；`controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`。

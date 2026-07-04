@@ -453,7 +453,7 @@ v4.0 定义 **4 类页面结构模式**：
 | 控制方式 | `mode`（from MODE tag） | 只读展示，Manual/Auto/Cascade |
 | PID 参数 | `pid_p/pid_i/pid_d`（from PID tag） | 只读展示，等宽字体 |
 | Tag 关联状态 | `mapping_status` | 只读，完整/缺失（标红） |
-| 评分权重 | `score_weight` | 可编辑 |
+| 重要等级 | `importance_level` | 可编辑（1/2/3） |
 | 启用状态 | `is_active` | 开关控件 |
 | AAS 同步状态 | `last_sync_time` / `tag_count` | 只读，最后同步时间/tag 总数 |
 | 操作 | — | 编辑、查看 Tag 关联、查看监控 |
@@ -574,7 +574,7 @@ v4.0 定义 **4 类页面结构模式**：
 | KPI | 字段 | 说明 | 可信度 |
 |---|---|---|---|
 | 准确率 A | `accuracy_rate` | 核心质量指标 | 角标显示 A/B/C/D/E |
-| 快速率 F | `fast_response_rate` | 核心质量指标 | 角标显示 A/B/C/D/E |
+| 快速率 F | `fast_rate` | 核心质量指标 | 角标显示 A/B/C/D/E |
 | 稳定率 S | `steady_rate` | 核心质量指标 | 角标显示 A/B/C/D/E |
 | 有效自控率 R | `effective_auto_rate` | 投用指标（折扣因子） | 角标显示 A/B/C/D/E |
 | 综合评分 P | `score` | P=(A·a+F·f+S·s)/(a+f+s)×R | 取 A/F/S 最低可信度 |
@@ -2157,7 +2157,7 @@ Chrome (v90+), Edge (v90+), Safari (v14+)。
 |---|---|---|---|
 | `loop_tag` | `loop_ledger` | 全局表格主列 | 等宽字体，可点击 |
 | `description` | `loop_ledger` | 台账表格 | 普通文本 |
-| `composite_score` | `kpi_snapshot_hourly` | 排行/看板/诊断 | 评分色块 + 数值（v4.1：原 `score`） |
+| `score` | `kpi_snapshot_hourly` | 排行/看板/诊断 | 评分色块 + 数值 |
 | `good_value_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡/雷达图 | 百分比 |
 | `auto_mode_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡/雷达图 | 百分比 |
 | `steady_rate` | `kpi_snapshot_hourly` | 看板 KPI 卡/排行/雷达图 | 百分比 |
@@ -2180,7 +2180,7 @@ Chrome (v90+), Edge (v90+), Safari (v14+)。
 | `pv_quality` | `st_loop_data`（PV tag 质量码） | 诊断波形/监控列表 | Good 实线/Bad 灰色虚线保留连线/Uncertain 琥珀虚线保留连线 |
 | `pid_p/pid_i/pid_d` | `st_loop_data`（from PID tag） | 台账/运行详情 | 只读等宽字体 |
 | `is_active` | `loop_ledger` | 台账表格 | 启用开关 |
-| `score_weight` | `loop_ledger` | 台账表格 | 可编辑数值 |
+| `importance_level` | `loop_ledger` | 台账表格 | 可编辑数值 |
 | `plant_node.type` | `plant_node` | 模型树 | 图标差异化（FACTORY/UNIT/EQUIPMENT） |
 | `tag_name` | `tag_registry` | Tag 关联管理左侧列表 | 等宽字体 |
 | `quality` | `tag_registry` | Tag 关联管理左侧列表 | Good/Bad/Uncertain 徽章 |

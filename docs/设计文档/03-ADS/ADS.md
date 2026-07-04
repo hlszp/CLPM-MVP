@@ -86,7 +86,7 @@
 | **Auth & Audit Service** | 统一认证、RBAC 权限管理、操作审计日志（不可删除）、自动报表周期配置与归档管理。 |
 | **AAS Integration Service** | **AAS Tag 同步服务**。定期从 AAS 同步所有 OPC Tag 位号信息（Tag 名/描述/当前值/数据质量），写入 `tag_registry` 表。同步对象为 Tag 位号（非回路实体）。 |
 | **Loop Management Service** | **回路管理核心服务**（原 Plant Model Service 演进）。负责工厂层级配置、回路台账 CRUD、Tag 关联管理（7 个 OPC Tag 关联）、回路监控运行态读取。PID 参数与控制方式从 Tag 只读读取，不支持手动编辑。 |
-| **Metric Config Service** | **性能指标配置服务**。国标评分核显式管理有效自控率 R、准确率 A、快速率 F、平稳率 S 及 A/F/S 权重；项目展示与诊断指标另行管理好值率、自控率、振荡率、饱和率等，不与国标评分公式混用。国标公式/阈值和关键回路变更须审批后定时生效。 |
+| **Metric Config Service** | **性能指标配置服务**。国标评分核显式管理有效自控率 R、准确率 A、快速率 F、稳定率 S 及 A/F/S 权重；项目展示与诊断指标另行管理好值率、自控率、振荡率、饱和率等，不与国标评分公式混用。国标公式/阈值和关键回路变更须审批后定时生效。 |
 | **Diagnosis Config Service** | **诊断指标配置服务**。统一管理诊断指标（振荡检测 FFT、粘滞检测散点拟合、参数过激检测、质量码规则等）的算法类型、参数阈值、启用/停止、计算方法。 |
 | **Scheduler & Job Orchestrator** | 全局节拍器。按小时/天自动触发"性能评估任务"和"诊断任务"，将 1200+ 回路的计算拆分为细粒度子任务推入消息队列。同时承载引擎规则配置（计算周期、数据拉取规则、调度参数）。 |
 | **Ingestion Engine** | 作为数据入口，负责对接 OPC Server，将原始值、质量码、超量程/断线原因和采集时间全部写入 TDengine，不在入库前删除 Bad/超量程记录。有效掩码仅作用于计算副本，保证好值率可计算、可回放和可审计。 |
@@ -211,7 +211,7 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 | 算法服务 | 职责 | 触发方式 | 调度周期 | 并发数 | 数据源 |
 |---|---|---|---|---|---|
 | **DataPlanner Service** (数据编排服务) | 读取指标数据需求契约 → 合并查询计划 → 查询 DataBlock 缓存 → 调用 8 步预处理 → 生成 MetricDataBundle → 分发给指标计算器；管理 DataBlock 缓存与 L3 特征缓存 | 被 KPI/Diagnosis/Tuning Service 同步调用 | 按需 | 10 | TDengine + Redis (Cache) |
-| **KPI 计算服务** (KPI Calculation Service) | 6 大 KPI 计算（好值率/自控率/平稳率/准确率/振荡率/饱和率）+ 综合评分 + 装置级聚合；向 DataPlanner 提交数据需求，仅消费 MetricDataBundle | Celery Beat 定时 | 每小时（可配置） | 10 | MetricDataBundle (来自 DataPlanner) |
+| **KPI 计算服务** (KPI Calculation Service) | 6 大 KPI 计算（好值率/自控率/稳定率/准确率/振荡率/饱和率）+ 综合评分 + 装置级聚合；向 DataPlanner 提交数据需求，仅消费 MetricDataBundle | Celery Beat 定时 | 每小时（可配置） | 10 | MetricDataBundle (来自 DataPlanner) |
 | **诊断分析服务** (Diagnosis Service) | 8 类诊断标签识别（振荡/粘滞/过激/过保守/外扰/质量异常/饱和/人工复核）+ 置信度融合 + 专家规则矩阵 | 事件触发（评分 < 阈值） | 实时 | 5 | MetricDataBundle (来自 DataPlanner) |
 | **整定计算服务** (Tuning Service) | FOPDT/SOPDT 模型辨识 + IMC/Lambda/Z-N/Cohen-Coon/SIMC 整定 + 闭环仿真 | 用户手动触发 | 按需 | 2 | MetricDataBundle (来自 DataPlanner) + 用户输入 |
 
@@ -298,7 +298,7 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 | 技术栈 | 版本要求 | 用途 | 选型考量 |
 |---|---|---|---|
 | **Python** | 3.11+ | 算法引擎主语言 | 工业算法生态丰富，性能优于 3.10（PEP 657 异常追踪、PEP 659 专用优化器）。 |
-| **NumPy** | 1.26+ | 数值计算基础库 | 提供高性能数组运算，支撑 KPI 计算中的向量化统计（好值率/自控率/平稳率等 O(N) 算法）。 |
+| **NumPy** | 1.26+ | 数值计算基础库 | 提供高性能数组运算，支撑 KPI 计算中的向量化统计（好值率/自控率/稳定率等 O(N) 算法）。 |
 | **SciPy** | 1.13+ | 信号处理、优化、ODE 求解 | `scipy.signal` 用于 FFT 振荡检测（Welch 法 PSD）；`scipy.optimize` 用于 SOPDT 非线性最小二乘辨识；`scipy.integrate` 用于闭环仿真四阶 Runge-Kutta 积分。 |
 | **simpleeval** | 1.0+ | 表达式引擎安全沙箱 | 用于 `metric_config.formula` 用户自定义公式的安全求值。白名单函数与变量注入，禁止 `import`/`exec`/`eval`/属性访问，表达式长度限制 500 字符，执行超时 5 秒。 |
 | **pandas** | 2.2+ | 数据处理 | 时序数据分段、重采样、缺失值处理，支撑诊断算法的数据预处理与特征提取。 |
@@ -363,7 +363,7 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 | `calc_effective_auto_rate` | `EFFECTIVE_AUTO_RATE` | 控制器自动模式下且控制有效的时长占比，排除无效自控时段 | `MODE_HF` + `OP_HF` | `mode_valid && op_valid` | mode + op + pv + sp | 有效自控率 |
 | `calc_accuracy_rate` | `ACCURACY_RATE` | PV与SP偏差的绝对均值，反映控制精度，采用指数衰减评分 | `BASE` | `pv_valid && sp_valid` | pv + sp | 准确率 |
 | `calc_fast_rate` | `FAST_RATE` | 基于ARMA模型辨识和Green函数计算的实际稳态时间与理想稳态时间的比值 | `BASE` | `pv_valid && sp_valid` | pv + sp + timestamps | 快速率（含稳态时间计算） |
-| `calc_stability_rate` | `STABILITY_RATE` | PV与SP偏差的标准差，反映控制稳定性，采用指数衰减评分并乘以振荡修正系数 | `BASE` | `pv_valid && sp_valid` | pv + sp | 稳定率 |
+| `calc_steady_rate` | `STEADY_RATE` | PV与SP偏差的标准差，反映控制稳定性，采用指数衰减评分并乘以振荡修正系数 | `BASE` | `pv_valid && sp_valid` | pv + sp | 稳定率 |
 | `calc_oscillation_rate` | `OSCILLATION_RATE` | 基于IAE零交叉相似率法检测的振荡程度 | `BASE` | `pv_valid && sp_valid` | pv + sp | 振荡率 |
 | `calc_saturation_rate` | `SATURATION_RATE` | 控制器输出值达到上下限的时长占比 | `OP_HF` | `op_valid` | op + mode | 饱和率 |
 | `calc_stiction_index` | `STICTION_INDEX` | 基于PV-OP散点椭圆拟合法计算的阀门粘滞程度指标 | `PVOP_HF` | `pv_valid && op_valid` | pv + op | 粘滞系数 |
@@ -420,7 +420,7 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 
 | 接口 | 输入 | 输出 | 说明 |
 |---|---|---|---|
-| `batch_calc_metrics` | `loop_id` + `time_window` + `metrics`[] + `config` | `results`{} + `composite_score` + `data_fetch_summary` | 批量指标计算 |
+| `batch_calc_metrics` | `loop_id` + `time_window` + `metrics`[] + `config` | `results`{} + `score` + `data_fetch_summary` | 批量指标计算 |
 | `aggregate_unit_score` | `unit_id` + `time_window` | `unit_kpis` + `unit_score` + `inconclusive_count` | 装置级聚合评分 |
 
 **组合调用输入**：
@@ -428,7 +428,7 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 {
   "loopId": "uuid-xxx",
   "timeWindow": {"start": "...", "end": "..."},
-  "metrics": ["accuracy_rate", "fast_rate", "stability_rate", "effective_auto_rate"],
+  "metrics": ["accuracy_rate", "fast_rate", "steady_rate", "effective_auto_rate"],
   "config": {"pvRange": [0, 100], "idealSettlingTime": 300}
 }
 ```
@@ -642,7 +642,7 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 
 | 算法类别 | 当前版本 | 说明 |
 |---|---|---|
-| `KPI_CALC` | v1.0 | 6 大 KPI 计算（好值率/自控率/平稳率/准确率/振荡率/饱和率） |
+| `KPI_CALC` | v1.0 | 6 大 KPI 计算（好值率/自控率/稳定率/准确率/振荡率/饱和率） |
 | `SCORE_CALC` | v1.0 | 综合评分（6 指标加权 + 有效自控率系数） |
 | `OSC_IAE` | v1.0 | IAE 时域振荡检测（Hägglund 方法） |
 | `OSC_FFT` | v1.0 | FFT 频域振荡检测（Welch 法 PSD） |
@@ -685,12 +685,12 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 
 | 国标条款 | 国标要求 | 本系统实现 | 合规状态 |
 |---|---|---|---|
-| §6.3 单回路评估 | 通过有效自控率、平稳率、准确率、快速率评估 | **3+1+8 指标体系**：3 核心质量指标（准确率/快速率/稳定率）+ 1 投用指标（有效自控率作为折扣因子）+ 8 辅助诊断指标（好值率/自控率/振荡率/饱和率/粘滞系数/输出行程指数/稳态时间/理想稳态时间），对齐《关键算法设计说明》v2.0 §4.0 | ✅ 合规（扩展） |
+| §6.3 单回路评估 | 通过有效自控率、稳定率、准确率、快速率评估 | **3+1+8 指标体系**：3 核心质量指标（准确率/快速率/稳定率）+ 1 投用指标（有效自控率作为折扣因子）+ 8 辅助诊断指标（好值率/自控率/振荡率/饱和率/粘滞系数/输出行程指数/稳态时间/理想稳态时间），对齐《关键算法设计说明》v2.0 §4.0 | ✅ 合规（扩展） |
 | 附录 B.1 自控率 | `Auto = AutoTime / AllTime × 100%` | 自控率算法实现一致（tagGroup: `MODE_HF`） | ✅ 合规 |
 | 附录 B.2 有效自控率 | `AR = AutoRealTime / AllTime × 100%` | 有效自控率算法实现一致（tagGroup: `MODE_HF` + `OP_HF`） | ✅ 合规 |
 | 附录 B.3 准确率 | `A = (1 - |E|/|E|max) × 100%` | 准确率算法实现一致（指数型公式，tagGroup: `BASE`） | ✅ 合规 |
 | 附录 B.4 快速率 | ARMA 模型 + Green 函数 | 快速率算法实现一致（分段指数衰减，tagGroup: `BASE`） | ✅ 合规 |
-| 附录 B.5 平稳率 | `S = [1/σ × (1 - Osc)] × 100%` | 稳定率算法实现一致（指数型公式，tagGroup: `BASE`） | ✅ 合规 |
+| 附录 B.5 稳定率 | `S = [1/σ × (1 - Osc)] × 100%` | 稳定率算法实现一致（指数型公式，tagGroup: `BASE`） | ✅ 合规 |
 | 附录 B.6 性能评分 | `P = [(A·a + F·f + S·s)/(a+f+s)] × R` | 3+1 加权模型（准确率/快速率/稳定率×有效自控率）；评分结果携带 `confidence_level`（A~E），E 级时标记 INCONCLUSIVE | ✅ 合规 |
 | 附录 C 权重系数 | 稳定型/慢速型/快速型/逻辑型 | 默认权重配置（4 类控制类型） | ✅ 合规 |
 | 附录 D 性能定级 | 一级至五级 | 评分映射等级 | ✅ 合规 |
@@ -711,7 +711,7 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 | 标准 | 合规说明 |
 |---|---|
 | **GB/T 44693.1-2024** | 《危险化学品企业工艺平稳性 第1部分：管理导则》——本系统提供管理所需的性能数据与报表。 |
-| **DB32/T 4822—2024** | 《PID 回路性能评估与优化实施技术规范》——装置自控率/平稳率 ≥ 95% 阈值告警；禁止向 DCS 自动下写（AAS Integration Service 仅 OPC UA 只读）。 |
+| **DB32/T 4822—2024** | 《PID 回路性能评估与优化实施技术规范》——装置自控率/稳定率 ≥ 95% 阈值告警；禁止向 DCS 自动下写（AAS Integration Service 仅 OPC UA 只读）。 |
 | **ANSI/ISA-112.00.01-2025** | SCADA 系统标准——本系统通过 OPC UA 只读接入 SCADA 数据。 |
 | **NAMUR NE 43** | 4-20mA 信号标准——饱和率算法对齐故障模式与饱和值判定。 |
 

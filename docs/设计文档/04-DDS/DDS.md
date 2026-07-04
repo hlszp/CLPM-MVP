@@ -1,9 +1,9 @@
 # CLPM 数据模型设计说明书 (DDS)
 
 **文档状态**: 正式版
-**当前版本**: v4.0
-**发布日期**: 2026-06-26
-**设计依据**: PRD (v3.0), FDS (v3.0), ADS (v3.1), 关键算法设计说明 (v2.0)
+**当前版本**: v4.1
+**发布日期**: 2026-07-04
+**设计依据**: PRD (v3.1), FDS (v5.1，表名/字段名权威基线), ADS (v3.1), 关键算法设计说明 (v2.0)
 
 ---
 
@@ -14,6 +14,7 @@
 | v3.0 | 2026-06-20 | 产品化架构重构版：存算分离、回路-Tag 解耦、配置驱动、PV 质量码处理、新增诊断结果表与整定记录表。 | 数据架构组 |
 | v3.1 | 2026-06-22 | 对齐《关键算法设计说明》v1.0：①`metric_config.threshold` 类型 DECIMAL → JSONB，新增 `control_type` 字段；②`kpi_snapshot_hourly` 新增 `accuracy_rate`、`saturation_rate` 字段；③`diagnosis_config` 新增 `calc_method` 字段，`threshold` 类型 DECIMAL → JSONB；④`tuning_record` 新增 `fitting_score` 字段；⑤新增"算法结果存储设计"章节；⑥新增"算法版本字段"说明；⑦ER 图更新说明（新增字段不影响现有关系结构）。 | 数据架构组 |
 | v4.0 | 2026-06-26 | 对齐《关键算法设计说明》v2.0：①`kpi_snapshot_hourly` 扩展 `fast_rate`/`effective_auto_rate`/`stiction_index`/`output_trip_index`/`settling_time`/`ideal_settling_time` 等指标字段及 `sampling_freq`/`quality_policy`/`valid_rate`/`confidence_level`/`data_lineage` 数据血缘字段；②新增 `kpi_snapshot_custom` 自定义任务快照表；③新增 `clpm_metric_data_requirement` 指标数据需求契约表；④新增 `diagnosis_tag` 诊断标签表；⑤新增 `unit_kpi_summary` 装置级汇总表；⑥§4.1 PV 质量码过滤策略升级为 `KEEP_ALL_WITH_VALIDITY`，引入 Metric Validity Mask 与 A/B/C/D/E 五级可信度；⑦§5.1 KPI 结果存储新增数据血缘字段说明，区分标准任务与自定义任务存储。 | 数据架构组 |
+| v4.1 | 2026-07-04 | 对齐 FDS v5.1：①`loop_ledger` 新增 `control_type` / `importance_level` / `include_in_evaluation` 三字段（回路评估参与配置）；②`metric_config` 新增 `grading_thresholds` 字段（性能定级阈值 JSONB），`formula` 字段标注为废弃（v5.0 起算法公式固化为独立函数模块），`control_type` 字段标注为迁移至 `loop_ledger`；③`unit_kpi_summary` 新增 `excluded_loops` / `status` 字段（不参评回路数与聚合状态）；④`kpi_snapshot_custom.stability_rate` 修正为 `steady_rate`（与 `kpi_snapshot_hourly` 字段命名对齐，loop-level 字段统一为 `steady_rate`，`stability_rate` 仅用于 `unit_kpi_summary` 装置级聚合）；⑤全文术语"稳定率"统一为"稳定率"。 | 数据架构组 |
 
 ---
 
@@ -57,7 +58,7 @@
 
 **表名: `loop_ledger` (回路台账)**
 
-回路作为系统核心实体，由用户在 CLPM 系统中创建并关联 Tag。v3.0 移除原 `mapping_pv/sp/op/mode` 字段（迁移至 `loop_tag_mapping` 表），新增描述、评分权重、AAS 同步时间、回路状态等扩展字段。
+回路作为系统核心实体，由用户在 CLPM 系统中创建并关联 Tag。v3.0 移除原 `mapping_pv/sp/op/mode` 字段（迁移至 `loop_tag_mapping` 表），新增描述、评分权重、AAS 同步时间、回路状态等扩展字段。v4.1 新增 `control_type` / `importance_level` / `include_in_evaluation` 三字段，对齐 FDS v5.1 §5.2.3 回路评估参与配置。
 
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
@@ -69,11 +70,35 @@
 | is_active | BOOLEAN | 是否启用全量评估计算 | DEFAULT TRUE |
 | last_aas_sync_at | TIMESTAMP | 最后 AAS 同步时间 | |
 | status | VARCHAR(20) | 回路状态: `READY`(就绪), `PARTIAL`(部分就绪), `INACTIVE`(未启用) | NOT NULL, DEFAULT 'PARTIAL' |
+| control_type | VARCHAR(20) | 控制类型: `STABLE`(稳定型), `SLOW`(慢速型), `FAST`(快速型), `LOGIC`(逻辑型)，决定该回路自动套用的权重模板 [v4.1 新增] | NOT NULL, DEFAULT 'STABLE' |
+| importance_level | SMALLINT | 重要等级：`1`(一级)、`2`(二级)、`3`(三级)，决定装置级聚合权重（一级=3、二级=2、三级=1）。**前后端数据交互统一使用 int 类型**，不使用字符串枚举 [v4.1 新增] | NOT NULL, DEFAULT 2 |
+| include_in_evaluation | BOOLEAN | 是否参与评估：`TRUE` 时回路进入综合性能评分与装置级 KPI 聚合；`FALSE` 时单回路 KPI 仍正常计算但不参与装置级统计。默认 `TRUE` [v4.1 新增] | NOT NULL, DEFAULT TRUE |
 
 **状态语义**：
 * `READY`：PV/SP/OP/MODE 四个必填 Tag 全部关联成功，回路进入评估流程。
 * `PARTIAL`：必填 Tag 缺失，回路标红提示，不参与评估计算。
 * `INACTIVE`：`is_active=FALSE`，回路被手动停用，不参与评估计算。
+
+**control_type 枚举值说明**（对齐 FDS v5.1 §5.3.7.1 默认权重配置）：
+
+| control_type | 说明 | 适用场景 |
+|---|---|---|
+| `STABLE` | 稳定型 | 温度、压力控制 |
+| `SLOW` | 慢速型 | 缓慢调节回路 |
+| `FAST` | 快速型 | 副回路、流量控制 |
+| `LOGIC` | 逻辑型 | 防回流、防超温 |
+
+**importance_level 数值映射**（对齐 FDS v5.1 §5.3.7.2 装置级聚合权重）：
+
+| importance_level | 中文名称 | 装置级聚合权重 w_level |
+|:---:|---|:---:|
+| 1 | 一级 | 3 |
+| 2 | 二级 | 2 |
+| 3 | 三级 | 1 |
+
+**include_in_evaluation 语义**（对齐 FDS v5.1 §5.2.3 回路评估参与配置说明）：
+* `TRUE` 且回路 `status=READY` 且回路 KPI 快照 `status ≠ INCONCLUSIVE`：进入综合性能评分（详见 FDS §5.3.7.2）与装置级三大 KPI 聚合（综合性能 / 平均自控率 / 稳定率，详见 FDS §5.3.7.3）。
+* `FALSE`：单回路 KPI 仍按引擎规则正常计算（可在回路监控、诊断中心查看），但不进入综合性能评分、不参与装置级聚合、不出现在低效回路排行。典型场景：试运行回路、临时停用回路、非关键测量回路、未完成调试的新回路。
 
 ### 2.3 AAS Tag 注册表 (tag_registry)
 
@@ -111,23 +136,30 @@ AAS Integration Service 定期从 AAS 同步所有 OPC Tag 位号信息，写入
 
 ### 2.5 性能指标配置 (metric_config)
 
-**表名: `metric_config` (性能指标配置)** [v3.0 新增，v3.1 更新]
+**表名: `metric_config` (性能指标配置)** [v3.0 新增，v3.1 更新，v4.1 修订]
 
-承载 6 大核心 KPI（好值率、自控率、平稳率、准确率、振荡率、饱和率）及变体指标的可配置元数据。权重总和约束 100%。
+承载 6 大核心 KPI（好值率、自控率、稳定率、准确率、振荡率、饱和率）及变体指标的可配置元数据。权重总和约束 100%。
 
 > **v3.1 变更**（对齐《关键算法设计说明》§10.1）：
 > 1. `threshold` 字段类型由 `DECIMAL(5,2)` 变更为 `JSONB`，结构为 `{"min": number, "max": number, "alert": string}`，支持区间阈值与告警级别。
 > 2. 新增 `control_type` 字段（VARCHAR(20)，默认 `STABLE`），用于权重模板选择，枚举值：`STABLE`/`SLOW`/`FAST`/`LOGIC`。
 
+> **v4.1 变更**（对齐 FDS v5.1 §5.3.1.2）：
+> 1. `formula` 字段标注为**废弃**（deprecated）：v5.0 起 12 项指标的算法公式已按 GB/T 44693.2-2024 与《关键算法设计说明 v2.0》固化为独立函数模块（详见 FDS §5.3.1.3），不再支持用户自定义公式覆盖。底层表保留该字段以兼容历史数据，但不再开放 API 与 UI 入口。
+> 2. `control_type` 字段标注为**迁移至 `loop_ledger`**：因控制类型是回路属性而非指标属性，同一套权重模板适用于所有回路，仅按回路控制类型套用。底层表保留该字段以兼容历史数据，但新写入应使用 `loop_ledger.control_type`。
+> 3. 新增 `grading_thresholds` 字段（JSONB）：5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR），国标默认值详见 FDS §5.3.7.1，可在"权重配置管理"页面手工配置覆盖。
+> 4. `weight` 字段语义调整：按控制类型分 4 套模板（STABLE/SLOW/FAST/LOGIC），仅在 3 项核心指标 (A/F/S) 上配置；权重总和须为 1.0（即 100%）；8 项辅助诊断指标不参与评分，权重置 NULL。
+
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
 | id | UUID | 指标主键 | PK |
-| metric_code | VARCHAR(50) | 指标代码: `GOOD_VALUE_RATE`, `AUTO_MODE_RATE`, `STEADY_RATE`, `ACCURACY_RATE`, `OSCILLATION_RATE`, `SATURATION_RATE` 等 | UNIQUE, NOT NULL |
+| metric_code | VARCHAR(50) | 指标代码: `GOOD_VALUE_RATE`, `AUTO_MODE_RATE`, `STEADY_RATE`, `ACCURACY_RATE`, `OSCILLATION_RATE`, `SATURATION_RATE`, `FAST_RATE`, `EFFECTIVE_AUTO_RATE`, `STICTION_INDEX`, `OUTPUT_TRIP_INDEX`, `SETTLING_TIME`, `IDEAL_SETTLING_TIME` | UNIQUE, NOT NULL |
 | metric_name | VARCHAR(100) | 指标名称 (如: 好值率) | NOT NULL |
-| formula | TEXT | 计算公式 (支持用户自定义表达式，采用 simpleeval 安全沙箱求值) | |
-| weight | DECIMAL(5,2) | 权重 (总和须为 100%) | |
-| threshold | JSONB | 阈值对象 `{"min": number, "max": number, "alert": string}`，用于触发诊断与告警 | |
-| control_type | VARCHAR(20) | 控制类型: `STABLE`(稳定型), `SLOW`(慢速型), `FAST`(快速型), `LOGIC`(逻辑型)，用于权重模板选择 | DEFAULT 'STABLE' |
+| formula | TEXT | ~~计算公式（已废弃）~~ [v4.1 标注废弃] 12 项指标算法已固化为独立函数模块（FDS §5.3.1.3），不再支持用户自定义公式。字段保留以兼容历史数据，不开放 API/UI | |
+| weight | DECIMAL(5,2) | 权重 (3 项核心指标 A/F/S 权重，按 control_type 分 4 套模板；总和须为 1.0；辅助诊断指标置 NULL) | |
+| threshold | JSONB | 阈值对象 `{"min": number, "max": number, "alert": number}`，对应最小值/最大值/告警阈值，用于触发诊断与告警 | |
+| control_type | VARCHAR(20) | ~~控制类型（已迁移至 `loop_ledger.control_type`）~~ [v4.1 标注迁移] 字段保留以兼容历史数据，新写入应使用 `loop_ledger.control_type` | DEFAULT 'STABLE' |
+| grading_thresholds | JSONB | 性能定级 5 级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR），国标默认值详见 FDS §5.3.7.1，可在权重配置管理页面手工配置覆盖 [v4.1 新增] | |
 | is_enabled | BOOLEAN | 是否启用 | DEFAULT TRUE |
 | updated_by | VARCHAR(50) | 最后更新人 | |
 | updated_at | TIMESTAMP | 最后更新时间 | |
@@ -139,15 +171,38 @@ AAS Integration Service 定期从 AAS 同步所有 OPC Tag 位号信息，写入
 {
   "min": 0.0,
   "max": 100.0,
-  "alert": "WARNING"
+  "alert": 90.0
 }
 ```
 
 * `min`：阈值下限（数值型）
 * `max`：阈值上限（数值型）
-* `alert`：告警级别字符串（如 `INFO`/`WARNING`/`CRITICAL`）
+* `alert`：告警阈值（数值型，如稳定率低于 90 触发告警）
 
-**control_type 枚举值说明**（对齐《关键算法设计说明》§4.7.3 默认权重配置）：
+**grading_thresholds 字段结构说明** [v4.1 新增]：
+
+```json
+{
+  "EXCELLENT": {"min": 90, "max": 100},
+  "GOOD":      {"min": 80, "max": 90},
+  "FAIR":      {"min": 70, "max": 80},
+  "WARNING":   {"min": 60, "max": 70},
+  "POOR":      {"min": 0,  "max": 60}
+}
+```
+
+* 国标默认值，可在"权重配置管理"页面手工配置覆盖。
+* 性能定级 5 级标准（对齐 FDS §5.3.7.1）：
+
+| 性能评分 P | 国标定级 | 英文标识 | 颜色 |
+|---|---|---|---|
+| 90 ≤ P < 100 | 一级 | EXCELLENT | 绿色 |
+| 80 ≤ P < 90 | 二级 | GOOD | 蓝色 |
+| 70 ≤ P < 80 | 三级 | FAIR | 黄色 |
+| 60 ≤ P < 70 | 四级 | WARNING | 橙色 |
+| 0 ≤ P < 60 | 五级 | POOR | 红色 |
+
+**control_type 枚举值说明**（已迁移至 `loop_ledger.control_type`，详见 §2.2；本字段保留以兼容历史数据）：
 
 | control_type | 说明 | 适用场景 |
 |---|---|---|
@@ -219,7 +274,7 @@ AAS Integration Service 定期从 AAS 同步所有 OPC Tag 位号信息，写入
 v3.0 保持表结构不变，但明确**好值率 (`good_value_rate`) 基于 PV 质量码 (`pv_quality`) 统计**：PV 质量码为 `Good` 的时段计入好值，`Bad` / `Uncertain` 时段不计入。
 
 > **v3.1 变更**（对齐《关键算法设计说明》§10.2）：
-> 补全 6 大 KPI 字段，新增 `accuracy_rate`（准确率）与 `saturation_rate`（饱和率）字段，使快照表完整覆盖 6 大 KPI（好值率/自控率/平稳率/准确率/振荡率/饱和率）。
+> 补全 6 大 KPI 字段，新增 `accuracy_rate`（准确率）与 `saturation_rate`（饱和率）字段，使快照表完整覆盖 6 大 KPI（好值率/自控率/稳定率/准确率/振荡率/饱和率）。
 
 > **v4.0 变更**（对齐《关键算法设计说明》v2.0）：
 > 1. 新增扩展指标字段：`fast_rate`（快速率）、`effective_auto_rate`（有效自控率）、`stiction_index`（粘滞系数）、`output_trip_index`（输出值行程指数）、`settling_time`（实际稳态时间）、`ideal_settling_time`（理想稳态时间）。
@@ -234,7 +289,7 @@ v3.0 保持表结构不变，但明确**好值率 (`good_value_rate`) 基于 PV 
 | score | DECIMAL(5,2) | 综合评分 (0-100) | |
 | good_value_rate | DECIMAL(5,2) | 好值率 (%)，基于 PV 质量码统计 | |
 | auto_mode_rate | DECIMAL(5,2) | 自控率 (%) | |
-| steady_rate | DECIMAL(5,2) | 平稳率 (%) | |
+| steady_rate | DECIMAL(5,2) | 稳定率 (%) | |
 | accuracy_rate | DECIMAL(5,2) | 准确率 (%)，衡量 PV 达到 SP 的准确程度 | |
 | oscillation_rate | DECIMAL(5,2) | 振荡率 (%) | |
 | saturation_rate | DECIMAL(5,2) | 饱和率 (%)，统计 OP 处于限位的时长占比 | |
@@ -377,7 +432,7 @@ v3.0 保持不变。所有配置变更（性能指标/诊断指标/引擎规则/
 | score | DECIMAL(5,2) | 综合评分 (0-100) | |
 | accuracy_rate | DECIMAL(5,2) | 准确率 (%) | |
 | fast_rate | DECIMAL(5,2) | 快速率 (%) | |
-| stability_rate | DECIMAL(5,2) | 平稳率 (%) | |
+| steady_rate | DECIMAL(5,2) | 稳定率 (%) [v4.1 修正：原字段名 `stability_rate` 与 `kpi_snapshot_hourly.steady_rate` 不一致，已统一为 `steady_rate`；`stability_rate` 仅用于 `unit_kpi_summary` 装置级聚合] | |
 | effective_auto_rate | DECIMAL(5,2) | 有效自控率 (%) | |
 | good_value_rate | DECIMAL(5,2) | 好值率 (%) | |
 | oscillation_rate | DECIMAL(5,2) | 振荡率 (%) | |
@@ -410,7 +465,7 @@ CREATE TABLE kpi_snapshot_custom (
     score DECIMAL(5,2),
     accuracy_rate DECIMAL(5,2),
     fast_rate DECIMAL(5,2),
-    stability_rate DECIMAL(5,2),
+    steady_rate DECIMAL(5,2),
     effective_auto_rate DECIMAL(5,2),
     good_value_rate DECIMAL(5,2),
     oscillation_rate DECIMAL(5,2),
@@ -506,33 +561,51 @@ CREATE TABLE diagnosis_tag (
 
 ### 2.17 装置级汇总 (unit_kpi_summary)
 
-**表名: `unit_kpi_summary` (装置级 KPI 汇总表)** [v4.0 新增]
+**表名: `unit_kpi_summary` (装置级 KPI 汇总表)** [v4.0 新增，v4.1 修订]
 
-承载装置（plant_node 中 `type=UNIT` 的节点）级 KPI 汇总快照，按周期对装置下所有启用回路的 `kpi_snapshot_hourly` 进行聚合。**装置级汇总仅基于标准任务（`kpi_snapshot_hourly`），自定义任务（`kpi_snapshot_custom`）不参与聚合**。
+承载装置（plant_node 中 `type=UNIT` 的节点）级 KPI 汇总快照，按周期对装置下所有参评回路（`include_in_evaluation=TRUE` 且回路 KPI 快照 `status ≠ INCONCLUSIVE`）的 `kpi_snapshot_hourly` 进行聚合。**装置级汇总仅基于标准任务（`kpi_snapshot_hourly`），自定义任务（`kpi_snapshot_custom`）不参与聚合**。聚合权重按 `loop_ledger.importance_level` 映射（一级=3、二级=2、三级=1，对齐 FDS v5.1 §5.3.7.2）。
+
+> **v4.1 变更**（对齐 FDS v5.1 §5.3.7.3）：
+> 1. 新增 `excluded_loops` 字段（INTEGER）：装置下 `include_in_evaluation=FALSE` 的回路数（不参评回路数）。
+> 2. 新增 `status` 字段（VARCHAR(20)）：聚合状态，枚举值 `SUCCESS` / `PARTIAL` / `EMPTY`。`SUCCESS` 表示有参评回路且全部 SUCCESS；`PARTIAL` 表示部分回路 INCONCLUSIVE；`EMPTY` 表示装置内无参评回路（所有回路均 INCONCLUSIVE 或 `include_in_evaluation=FALSE`）。
+> 3. `avg_score` 字段语义明确：装置级综合性能评分，按 `importance_level` 权重加权聚合（原 `score_weight` 字段语义迁移至 `importance_level`，原字段保留以兼容历史数据）。
+> 4. `auto_mode_rate` 字段语义明确：装置级平均自控率（参评回路 `auto_mode_rate` 加权聚合）。
+> 5. `stability_rate` 字段语义明确：装置级稳定率（参评回路 `steady_rate` 加权聚合，注意 loop-level 字段名为 `steady_rate`，unit-level 聚合字段名为 `stability_rate`）。
 
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
 | id | UUID | 汇总主键 | PK, DEFAULT gen_random_uuid() |
 | node_id | UUID | 装置节点 ID | FK -> plant_node.id, NOT NULL |
 | snapshot_time | TIMESTAMP | 汇总快照时间（与聚合窗口对齐） | NOT NULL |
-| avg_score | DECIMAL(5,2) | 装置内回路平均综合评分（按 `score_weight` 加权） | |
-| auto_mode_rate | DECIMAL(5,2) | 装置自控率（加权聚合） | |
-| effective_auto_rate | DECIMAL(5,2) | 装置有效自控率（加权聚合） | |
-| stability_rate | DECIMAL(5,2) | 装置平稳率（加权聚合） | |
-| accuracy_rate | DECIMAL(5,2) | 装置准确率（加权聚合） | |
-| fast_rate | DECIMAL(5,2) | 装置快速率（加权聚合） | |
-| good_value_rate | DECIMAL(5,2) | 装置好值率（加权聚合） | |
-| oscillation_rate | DECIMAL(5,2) | 装置振荡率（加权聚合） | |
-| saturation_rate | DECIMAL(5,2) | 装置饱和率（加权聚合） | |
+| avg_score | DECIMAL(5,2) | 装置级综合性能评分（按 `importance_level` 权重加权聚合参评回路的 `kpi_snapshot_hourly.score`，对齐 FDS §5.3.7.2） | |
+| auto_mode_rate | DECIMAL(5,2) | 装置级平均自控率（参评回路 `auto_mode_rate` 按 `importance_level` 权重加权聚合，对齐 FDS §5.3.7.3） | |
+| effective_auto_rate | DECIMAL(5,2) | 装置级有效自控率（加权聚合） | |
+| stability_rate | DECIMAL(5,2) | 装置级稳定率（参评回路 `steady_rate` 按 `importance_level` 权重加权聚合，对齐 FDS §5.3.7.3） | |
+| accuracy_rate | DECIMAL(5,2) | 装置级准确率（加权聚合） | |
+| fast_rate | DECIMAL(5,2) | 装置级快速率（加权聚合） | |
+| good_value_rate | DECIMAL(5,2) | 装置级好值率（加权聚合） | |
+| oscillation_rate | DECIMAL(5,2) | 装置级振荡率（加权聚合） | |
+| saturation_rate | DECIMAL(5,2) | 装置级饱和率（加权聚合） | |
 | total_loops | INTEGER | 装置下回路总数 | |
-| evaluated_loops | INTEGER | 实际参与评估的回路数（status=SUCCESS） | |
-| inconclusive_loops | INTEGER | INCONCLUSIVE 状态回路数 | |
+| evaluated_loops | INTEGER | 实际参与评估的回路数（`include_in_evaluation=TRUE` 且 `status=SUCCESS`） | |
+| inconclusive_loops | INTEGER | INCONCLUSIVE 状态回路数（参评回路中 KPI 快照为 INCONCLUSIVE 的数量） | |
+| excluded_loops | INTEGER | 不参评回路数（`include_in_evaluation=FALSE` 的回路数）[v4.1 新增] | |
+| status | VARCHAR(20) | 聚合状态: `SUCCESS`(全部参评回路 SUCCESS), `PARTIAL`(部分回路 INCONCLUSIVE), `EMPTY`(无参评回路) [v4.1 新增] | NOT NULL, DEFAULT 'SUCCESS' |
 | algorithm_version | VARCHAR(50) | 聚合算法版本号 | |
 | created_at | TIMESTAMP | 记录创建时间 | DEFAULT NOW() |
 
 **唯一约束**: `(node_id, snapshot_time)` —— 同一装置同一快照时间仅一条汇总记录。
 
-**说明**：装置级汇总仅基于标准任务（`kpi_snapshot_hourly`），自定义任务不参与。
+**说明**：装置级汇总仅基于标准任务（`kpi_snapshot_hourly`），自定义任务不参与。聚合权重按 `loop_ledger.importance_level` 映射（一级=3、二级=2、三级=1）。
+
+**字段关系说明** [v4.1 新增]：
+
+* `total_loops = evaluated_loops + inconclusive_loops + excluded_loops + other_loops`
+  * `evaluated_loops`：参评且 KPI 快照 SUCCESS 的回路数
+  * `inconclusive_loops`：参评但 KPI 快照 INCONCLUSIVE 的回路数
+  * `excluded_loops`：`include_in_evaluation=FALSE` 的回路数
+  * `other_loops`：回路 `status ≠ READY`（如 PARTIAL/INACTIVE）的回路数
+* 三大 KPI 字段（`avg_score` / `auto_mode_rate` / `stability_rate`）仅在 `evaluated_loops > 0` 时有值，否则置 NULL，且 `status = EMPTY`。
 
 **建表 DDL**：
 
@@ -553,6 +626,8 @@ CREATE TABLE unit_kpi_summary (
     total_loops INTEGER,
     evaluated_loops INTEGER,
     inconclusive_loops INTEGER,
+    excluded_loops INTEGER,
+    status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
     algorithm_version VARCHAR(50),
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(node_id, snapshot_time)
