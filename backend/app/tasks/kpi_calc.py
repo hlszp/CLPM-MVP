@@ -874,9 +874,9 @@ async def _calculate_loop_kpi(
 
     # 构造权重映射：优先级 MetricConfig.weight > LoopTypeWeight > DEFAULT_WEIGHTS
     # P2 #27: MetricConfig.weight 实际参与计算，管理员修改 /configs/metrics 即时生效
-    from app.services.loop_config import infer_score_type
-
-    score_type = infer_score_type(loop.loop_type)
+    # v5.3 对齐 DDS v4.1：直接使用 LoopLedger.control_type（STABLE/SLOW/FAST/LOGIC）
+    # 而非由 loop_type 推断，避免业务类型与评分模板耦合
+    score_type = loop.control_type or "LOGIC"
     weights = _build_weights_map(type_weights, score_type, metric_configs)
 
     # 三层计算：Layer1 无依赖 → Layer2 有依赖 → Layer3 综合评分
@@ -894,6 +894,15 @@ async def _calculate_loop_kpi(
     # 提取综合评分
     score = Decimal(str(composite_result.value)) if composite_result.value is not None else None
 
+    # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路（include_in_evaluation=false）
+    # 单回路 KPI 指标仍计算，但综合评分 score 设为 None（不写入快照 score 字段）
+    if not loop.include_in_evaluation:
+        score = None
+        logger.info(
+            "[回路KPI] 回路 %s 未参评（include_in_evaluation=false），score 不写入",
+            loop.tag_name,
+        )
+
     # 提取数据血缘信息（从 accuracy_rate 的 lineage 取，若不存在则从任意结果取）
     lineage_info = _extract_lineage_info(metric_results, composite_result)
 
@@ -902,8 +911,9 @@ async def _calculate_loop_kpi(
     required_db_codes = ("good_value_rate", "auto_mode_rate", "steady_rate")
     if any(kpi_values.get(k) is None for k in required_db_codes):
         status = "PARTIAL"
-    # 综合评分为 None（R 可信度 E 级）时状态降级
-    if score is None:
+    # 综合评分为 None 时状态降级——仅当回路参评时才降级为 INCONCLUSIVE
+    # 不参评回路 score=None 是设计行为（非数据质量问题），不应降级
+    if score is None and loop.include_in_evaluation:
         status = "INCONCLUSIVE"
 
     snap = await _persist_snapshot(

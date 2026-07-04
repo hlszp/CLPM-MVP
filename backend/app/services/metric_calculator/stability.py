@@ -4,14 +4,15 @@
 
 其中：
     E_i = PV_i - SP_i
-    σ = sqrt((1/n) × Σ(E_i - Ē)²)
+    σ = sqrt((1/(n-1)) × Σ(E_i - Ē)²)  （无偏估计，分母 n-1，对齐 FDS v5.1 / 算法 v2.1）
     U = PV 量程范围（归一化后为 100）
     Osc = 振荡率（0~1，由 oscillation_rate 计算器提供）
 
-设计依据：算法说明 §4.3；GB/T 44693.2-2024 附录 B.5
+设计依据：算法说明 §4.3 v2.1；GB/T 44693.2-2024 附录 B.5
 
-定位：核心质量指标，参与综合评分加权。
-依赖：oscillation_rate（通过 dependencies 注入）。
+v2.1 修正：标准差 σ 由"分母 n（有偏估计）"改为"分母 n-1（无偏估计）"，
+对齐 FDS v5.1 §4.3.4 步骤 7。无偏估计在小样本（n<30）时更准确，
+避免系统性低估标准差导致稳定率偏高。
 """
 
 from __future__ import annotations
@@ -68,7 +69,9 @@ class StabilityRateCalculator(MetricCalculatorBase):
         # 计算控制偏差
         errors = np.array([float(pv) - float(sp) for pv, sp in pairs], dtype=float)
         mean_error = float(np.mean(errors))
-        std_error = float(np.std(errors))
+        # v2.1 修正：使用 ddof=1（无偏估计，分母 n-1），对齐 FDS v5.1 / 算法 v2.1 §4.3.4 步骤 7
+        # n>=2 保证（MIN_POINTS=2 已在上方校验），ddof=1 不会除零
+        std_error = float(np.std(errors, ddof=1))
 
         # 振荡率（0~1）
         osc_result = self.dependencies.get("oscillation_rate")

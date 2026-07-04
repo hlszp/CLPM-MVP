@@ -37,11 +37,19 @@ CORE_METRIC_CODES: tuple[str, ...] = (
 #: 折扣因子指标代码
 DISCOUNT_METRIC_CODE = "effective_auto_rate"
 
-#: 默认权重（无配置时回退，对齐国标附录 C 稳定型）
+#: 默认权重（无配置时回退，对齐国标附录 C 稳定型 STABLE 0.2/0.3/0.5）
+#: v2.1 修正（对齐 FDS v5.1 §5.3.7.1 / 算法 v2.1 §4.10.3）：
+#: 原 v2.0 权重 0.25/0.20/0.55 与国标默认值不一致，已修正为国标稳定型默认值。
+#: 四套控制类型权重模板：
+#:   - STABLE（稳定型）: a=0.2, f=0.3, s=0.5  —— 温度、压力控制
+#:   - SLOW（慢速型）:   a=0.3, f=0.1, s=0.6  —— 缓慢调节回路
+#:   - FAST（快速型）:   a=0.2, f=0.5, s=0.3  —— 副回路、流量控制
+#:   - LOGIC（逻辑型）:  a=0.0, f=0.4, s=0.6  —— 防回流、防超温
+#: effective_auto_rate 作为折扣因子 R 不参与权重分配。
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "accuracy_rate": 0.25,
-    "fast_rate": 0.20,
-    "stability_rate": 0.55,
+    "accuracy_rate": 0.2,
+    "fast_rate": 0.3,
+    "stability_rate": 0.5,
 }
 
 

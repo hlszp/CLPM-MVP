@@ -277,11 +277,18 @@ class TestSaveNodeSnapshot:
             "loop_count": 3,
             "status": "FAIR",
             "algorithm_version": "KPI_CALC_v2.0",
+            # v5.3 新增 unit_kpi_summary 聚合字段
+            "total_loops": 5,
+            "evaluated_loops": 3,
+            "excluded_loops": 1,
+            "inconclusive_loops": 1,
+            "unit_status": "PARTIAL",
         }
 
         result = await save_node_snapshot(db, snap_data)
         assert result["plant_node_id"] == "node-001"
-        assert db.add.call_count == 1
+        # v5.3：并行写入 KpiNodeSnapshotHourly + UnitKpiSummary → db.add 调用 2 次
+        assert db.add.call_count == 2
 
     @pytest.mark.asyncio
     async def test_save_overwrite_existing(self):

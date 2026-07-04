@@ -689,6 +689,12 @@ async def get_ranking(
         end=now,
         status_filter="SUCCESS",
     )
+    # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路不出现在低效排行
+    # _apply_snapshot_filters 仅在 plant_node_id 存在时 JOIN LoopLedger，
+    # 此处确保无 plant_node_id 时也 JOIN 并应用 include_in_evaluation 过滤
+    if not plant_node_id:
+        base = base.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+    base = base.where(LoopLedger.include_in_evaluation.is_(True))
     subquery = base.subquery()
     snapshot_alias = aliased(KpiSnapshotHourly, subquery)
 

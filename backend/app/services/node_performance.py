@@ -30,6 +30,7 @@ from app.models.node_kpi import (
     KpiNodeSnapshotMonthly,
 )
 from app.models.plant_node import PlantNode
+from app.models.unit_kpi_summary import UnitKpiSummary
 from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_status
 
 logger = logging.getLogger(__name__)
@@ -251,6 +252,51 @@ async def query_realtime_auto_rate(
 # ---------------------------------------------------------------------------
 
 
+async def _count_loops_by_evaluation(
+    db: AsyncSession, loop_ids: list[str], *, included: bool
+) -> int:
+    """统计 loop_ids 中 include_in_evaluation 为指定值的回路数。
+
+    v5.3 对齐 DDS v4.1 §2.17：用于 unit_kpi_summary.excluded_loops 统计。
+    """
+    if not loop_ids:
+        return 0
+    result = await db.execute(
+        select(func.count())
+        .select_from(LoopLedger)
+        .where(
+            LoopLedger.id.in_(loop_ids),
+            LoopLedger.include_in_evaluation.is_(included),
+        )
+    )
+    return int(result.scalar() or 0)
+
+
+async def _count_inconclusive_snapshots(
+    db: AsyncSession, loop_ids: list[str], ts_start: datetime, ts_end: datetime
+) -> int:
+    """统计时间窗内状态为 INCONCLUSIVE 的回路快照数。
+
+    v5.3 对齐 DDS v4.1 §2.17：用于 unit_kpi_summary.inconclusive_loops 统计。
+    只统计参评回路（include_in_evaluation=true）中的 INCONCLUSIVE 快照。
+    """
+    if not loop_ids:
+        return 0
+    result = await db.execute(
+        select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
+        .select_from(KpiSnapshotHourly)
+        .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+        .where(
+            KpiSnapshotHourly.loop_id.in_(loop_ids),
+            KpiSnapshotHourly.ts_start >= ts_start,
+            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.status == "INCONCLUSIVE",
+            LoopLedger.include_in_evaluation.is_(True),
+        )
+    )
+    return int(result.scalar() or 0)
+
+
 async def aggregate_node_snapshot(
     db: AsyncSession,
     plant_node_id: str,
@@ -331,6 +377,9 @@ async def aggregate_node_snapshot(
         subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
             LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
         )
+    ).where(
+        # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路不参与装置级聚合
+        LoopLedger.include_in_evaluation.is_(True)
     )
     result = await db.execute(stmt)
     row = result.one()
@@ -367,6 +416,10 @@ async def aggregate_node_snapshot(
             subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
                 LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
             )
+        )
+        .where(
+            # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路不参与装置级聚合
+            LoopLedger.include_in_evaluation.is_(True)
         )
     )
     detail_result = await db.execute(detail_stmt)
@@ -413,6 +466,26 @@ async def aggregate_node_snapshot(
         status,
     )
 
+    # v5.3 对齐 DDS v4.1 §2.17：统计 total_loops / excluded_loops / inconclusive_loops
+    # total_loops: 节点下属所有 active 回路数（含不参评）
+    # excluded_loops: include_in_evaluation=false 的回路数
+    # inconclusive_loops: 参评但快照状态为 INCONCLUSIVE 的回路数
+    total_loops_val = len(loop_ids)
+    excluded_loops_val = await _count_loops_by_evaluation(db, loop_ids, included=False)
+    inconclusive_loops_val = await _count_inconclusive_snapshots(
+        db, loop_ids, ts_start, ts_end
+    )
+    # evaluated_loops: 参与聚合的回路数（已有有效快照且 include_in_evaluation=true）
+    evaluated_loops_val = int(row.cnt)
+
+    # unit_kpi_summary.status 映射：
+    # EMPTY=无有效评分, PARTIAL=部分回路 INCONCLUSIVE, SUCCESS=全部回路有有效评分
+    unit_status = "SUCCESS"
+    if evaluated_loops_val == 0:
+        unit_status = "EMPTY"
+    elif inconclusive_loops_val > 0:
+        unit_status = "PARTIAL"
+
     return {
         "plant_node_id": plant_node_id,
         "ts_start": ts_start,
@@ -433,14 +506,23 @@ async def aggregate_node_snapshot(
         "ideal_settling_time": avg_value("ideal_settling_time"),
         "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
         "realtime_auto_rate": realtime_auto_rate,
-        "loop_count": int(row.cnt),
+        "loop_count": evaluated_loops_val,
         "status": status,
         "algorithm_version": ALGORITHM_VERSION,
+        # v5.3 新增：unit_kpi_summary 聚合统计字段
+        "total_loops": total_loops_val,
+        "evaluated_loops": evaluated_loops_val,
+        "excluded_loops": excluded_loops_val,
+        "inconclusive_loops": inconclusive_loops_val,
+        "unit_status": unit_status,
     }
 
 
 async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
     """保存节点级快照（幂等：相同 plant_node_id + ts_start 覆盖更新）。
+
+    v5.3 对齐 DDS v4.1 §2.17：同时并行写入 ``unit_kpi_summary`` 表，
+    保留 ``kpi_node_snapshot_hourly`` 作为节点级快照主表（供日/月聚合与查询使用）。
 
     Args:
         db: 异步数据库会话
@@ -451,6 +533,16 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
     """
     plant_node_id = snap_data["plant_node_id"]
     ts_start = snap_data["ts_start"]
+
+    # v5.3：剥离 unit_kpi_summary 专属字段，避免传入 KpiNodeSnapshotHourly 报错
+    _unit_fields = (
+        "total_loops",
+        "evaluated_loops",
+        "excluded_loops",
+        "inconclusive_loops",
+        "unit_status",
+    )
+    node_snap_data = {k: v for k, v in snap_data.items() if k not in _unit_fields}
 
     # 查询是否已存在（幂等）
     existing_result = await db.execute(
@@ -463,7 +555,7 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
 
     if existing:
         # 覆盖更新
-        for key, val in snap_data.items():
+        for key, val in node_snap_data.items():
             if hasattr(existing, key):
                 setattr(existing, key, val)
         existing.created_at = datetime.now(UTC).replace(tzinfo=None)
@@ -476,7 +568,7 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         # 新增
         snap = KpiNodeSnapshotHourly(
             id=str(uuid4()),
-            **snap_data,
+            **node_snap_data,
         )
         db.add(snap)
         await db.flush()
@@ -485,7 +577,74 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
             plant_node_id, ts_start, snap_data.get("score"), snap_data.get("status"),
         )
 
+    # v5.3 对齐 DDS v4.1 §2.17：并行写入 unit_kpi_summary（装置级 KPI 汇总表）
+    await _save_unit_kpi_summary(db, snap_data)
+
     return snap_data
+
+
+async def _save_unit_kpi_summary(db: AsyncSession, snap_data: dict) -> None:
+    """保存装置级 KPI 汇总到 ``unit_kpi_summary`` 表（幂等）。
+
+    v5.3 对齐 DDS v4.1 §2.17 / 算法说明 §4.11：
+    - ``stability_rate`` ← ``steady_rate``（字段名对齐 DDS v4.1）
+    - ``avg_score`` ← ``score``（综合评分加权均值）
+    - ``status`` ← ``unit_status``（SUCCESS/PARTIAL/EMPTY 聚合状态）
+    """
+    node_id = snap_data["plant_node_id"]
+    snapshot_time = snap_data["ts_start"]
+
+    # 幂等查询
+    existing_result = await db.execute(
+        select(UnitKpiSummary).where(
+            UnitKpiSummary.node_id == node_id,
+            UnitKpiSummary.snapshot_time == snapshot_time,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+
+    # 字段映射：snap_data key → UnitKpiSummary column
+    field_map = {
+        "avg_score": snap_data.get("score"),
+        "auto_mode_rate": snap_data.get("auto_mode_rate"),
+        "effective_auto_rate": snap_data.get("effective_auto_rate"),
+        "stability_rate": snap_data.get("steady_rate"),  # DDS v4.1 字段名对齐
+        "accuracy_rate": snap_data.get("accuracy_rate"),
+        "fast_rate": snap_data.get("fast_rate"),
+        "good_value_rate": snap_data.get("good_value_rate"),
+        "oscillation_rate": snap_data.get("oscillation_rate"),
+        "saturation_rate": snap_data.get("saturation_rate"),
+        "total_loops": snap_data.get("total_loops"),
+        "evaluated_loops": snap_data.get("evaluated_loops"),
+        "inconclusive_loops": snap_data.get("inconclusive_loops"),
+        "excluded_loops": snap_data.get("excluded_loops"),
+        "status": snap_data.get("unit_status"),
+        "algorithm_version": snap_data.get("algorithm_version"),
+    }
+
+    if existing:
+        for col, val in field_map.items():
+            setattr(existing, col, val)
+        await db.flush()
+        logger.info(
+            "[装置级汇总] 覆盖 unit_kpi_summary node_id=%s snapshot_time=%s "
+            "avg_score=%s status=%s",
+            node_id, snapshot_time, field_map["avg_score"], field_map["status"],
+        )
+    else:
+        summary = UnitKpiSummary(
+            id=str(uuid4()),
+            node_id=node_id,
+            snapshot_time=snapshot_time,
+            **field_map,
+        )
+        db.add(summary)
+        await db.flush()
+        logger.info(
+            "[装置级汇总] 新增 unit_kpi_summary node_id=%s snapshot_time=%s "
+            "avg_score=%s status=%s",
+            node_id, snapshot_time, field_map["avg_score"], field_map["status"],
+        )
 
 
 async def calculate_and_save_node_snapshot(
