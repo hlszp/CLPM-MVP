@@ -515,7 +515,7 @@ class TestRanking:
             assert "rank" in data[0]
             assert "loopId" in data[0]
             assert "tagName" in data[0]
-            assert "compositeScore" in data[0]
+            assert "score" in data[0]
 
     def test_get_ranking_with_limit(self, client, mock_db, fake_redis) -> None:
         """limit 参数限制返回条数。"""

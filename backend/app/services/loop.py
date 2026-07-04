@@ -142,7 +142,7 @@ async def list_loops(
     keyword: str | None = None,
     loop_type: str | None = None,
     control_type: str | None = None,
-    level: int | None = None,
+    importance_level: int | None = None,
     monitor_status: bool | None = None,
     page: int = 1,
     page_size: int = 20,
@@ -150,7 +150,7 @@ async def list_loops(
     """分页查询回路列表。
 
     Args:
-        level: 按回路级别筛选（1/2/3）
+        importance_level: 按回路重要等级筛选（1/2/3）
         control_type: 按控制类型筛选（STABLE/SLOW/FAST/LOGIC）
         monitor_status: 按监控状态筛选（True=is_active=True，False=is_active=False）
 
@@ -184,8 +184,8 @@ async def list_loops(
     if control_type:
         # P2 #24: 控制类型筛选（STABLE/SLOW/FAST/LOGIC）
         conditions.append(func.upper(LoopLedger.control_type) == control_type.upper())
-    if level is not None:
-        conditions.append(LoopLedger.importance_level == level)
+    if importance_level is not None:
+        conditions.append(LoopLedger.importance_level == importance_level)
     if monitor_status is not None:
         # monitor_status=True → is_active=True（在监控中）
         # monitor_status=False → is_active=False（已停用监控）
@@ -274,6 +274,7 @@ async def list_loops(
                 "loopType": loop.loop_type,
                 "controlType": loop.control_type,
                 "importanceLevel": loop.importance_level,
+                "includeInEvaluation": loop.include_in_evaluation,
                 "score": float(loop.score_weight) if loop.score_weight else None,
                 "lastScoreAt": (
                     loop.last_aas_sync_at.isoformat() if loop.last_aas_sync_at else None
@@ -335,7 +336,8 @@ async def create_loop(
     operator: str,
     loop_type: str | None = None,
     control_type: str | None = None,
-    level: int | None = None,
+    importance_level: int | None = None,
+    include_in_evaluation: bool | None = None,
     modeattr_tag_id: str | None = None,
     data_retention_days: int | None = None,
 ) -> dict:
@@ -365,6 +367,9 @@ async def create_loop(
 
     # 新建回路默认状态：INACTIVE（未激活）或 PARTIAL（已激活但无 Tag）
     status = "PARTIAL" if is_active else "INACTIVE"
+    # v5.3 对齐 FDS §5.2.3 / DDS v4.1：include_in_evaluation 默认 True（参与评估）
+    if include_in_evaluation is None:
+        include_in_evaluation = True
 
     loop = LoopLedger(
         id=str(uuid4()),
@@ -375,7 +380,8 @@ async def create_loop(
         status=status,
         loop_type=loop_type,
         control_type=control_type,
-        importance_level=level,
+        importance_level=importance_level,
+        include_in_evaluation=include_in_evaluation,
         modeattr_tag_id=modeattr_tag_id,
         data_retention_days=data_retention_days,
         score_weights=score_weights,
@@ -401,7 +407,8 @@ async def create_loop(
                 "status": status,
                 "loopType": loop_type,
                 "controlType": control_type,
-                "importanceLevel": level,
+                "importanceLevel": importance_level,
+                "includeInEvaluation": include_in_evaluation,
                 "modeattrTagId": modeattr_tag_id,
                 "dataRetentionDays": data_retention_days,
             },
@@ -419,6 +426,7 @@ async def create_loop(
         "loopType": loop.loop_type,
         "controlType": loop.control_type,
         "importanceLevel": loop.importance_level,
+        "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "isActive": bool(loop.is_active),
@@ -522,6 +530,7 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             "loopType": loop.loop_type,
             "controlType": loop.control_type,
             "importanceLevel": loop.importance_level,
+            "includeInEvaluation": loop.include_in_evaluation,
             "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
             "dataRetentionDays": loop.data_retention_days,
             "scoreWeights": loop.score_weights,
@@ -550,11 +559,12 @@ async def update_loop(
     remark: str | None = None,
     loop_type: str | None = None,
     control_type: str | None = None,
-    level: int | None = None,
+    importance_level: int | None = None,
+    include_in_evaluation: bool | None = None,
     modeattr_tag_id: str | None = None,
     data_retention_days: int | None = None,
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/级别/APC位号/保留周期）。
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期）。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND
@@ -576,6 +586,7 @@ async def update_loop(
         "loopType": loop.loop_type,
         "controlType": loop.control_type,
         "importanceLevel": loop.importance_level,
+        "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
     }
@@ -593,8 +604,10 @@ async def update_loop(
         loop.loop_type = loop_type
     if control_type is not None:
         loop.control_type = control_type
-    if level is not None:
-        loop.importance_level = level
+    if importance_level is not None:
+        loop.importance_level = importance_level
+    if include_in_evaluation is not None:
+        loop.include_in_evaluation = include_in_evaluation
     if modeattr_tag_id is not None:
         loop.modeattr_tag_id = modeattr_tag_id
     if data_retention_days is not None:
@@ -613,6 +626,7 @@ async def update_loop(
         "loopType": loop.loop_type,
         "controlType": loop.control_type,
         "importanceLevel": loop.importance_level,
+        "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "status": new_status,
@@ -642,6 +656,7 @@ async def update_loop(
         "loopType": loop.loop_type,
         "controlType": loop.control_type,
         "importanceLevel": loop.importance_level,
+        "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,

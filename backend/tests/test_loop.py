@@ -35,7 +35,8 @@ LOOP_001.score_weights = None
 LOOP_001.remark = None
 LOOP_001.loop_type = "TEMPERATURE"
 LOOP_001.control_type = "STABLE"
-LOOP_001.level = 3
+LOOP_001.importance_level = 3
+LOOP_001.include_in_evaluation = True
 LOOP_001.modeattr_tag_id = None
 LOOP_001.data_retention_days = None
 
@@ -322,7 +323,7 @@ class TestControlModeFilter:
 
 
 class TestLoopCreateNewFields:
-    """P2 #24/#25: create_loop 接收 controlType/level/modeattrTagId/dataRetentionDays。
+    """P2 #24/#25: create_loop 接收 controlType/importanceLevel/includeInEvaluation/modeattrTagId/dataRetentionDays。
 
     通过验证 service 签名包含这些参数 + LoopCreate schema 字段，确保前端
     声明的字段不再被静默忽略。
@@ -333,7 +334,8 @@ class TestLoopCreateNewFields:
 
         fields = set(LoopCreate.model_fields.keys())
         assert "controlType" in fields
-        assert "level" in fields
+        assert "importance_level" in fields
+        assert "include_in_evaluation" in fields
         assert "modeattrTagId" in fields
         assert "dataRetentionDays" in fields
 
@@ -342,7 +344,8 @@ class TestLoopCreateNewFields:
 
         fields = set(LoopUpdate.model_fields.keys())
         assert "controlType" in fields
-        assert "level" in fields
+        assert "importance_level" in fields
+        assert "include_in_evaluation" in fields
         assert "modeattrTagId" in fields
         assert "dataRetentionDays" in fields
 
@@ -355,7 +358,8 @@ class TestLoopCreateNewFields:
         sig = inspect.signature(create_loop)
         params = set(sig.parameters.keys())
         assert "control_type" in params
-        assert "level" in params
+        assert "importance_level" in params
+        assert "include_in_evaluation" in params
         assert "modeattr_tag_id" in params
         assert "data_retention_days" in params
 
@@ -368,7 +372,8 @@ class TestLoopCreateNewFields:
         sig = inspect.signature(update_loop)
         params = set(sig.parameters.keys())
         assert "control_type" in params
-        assert "level" in params
+        assert "importance_level" in params
+        assert "include_in_evaluation" in params
         assert "modeattr_tag_id" in params
         assert "data_retention_days" in params
 

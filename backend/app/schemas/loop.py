@@ -54,7 +54,12 @@ class LoopCreate(CamelModel):
         None,
         description="控制类型 STABLE/SLOW/FAST/LOGIC（用于评分权重分类）",
     )
-    level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
+    # v5.3 对齐 DDS v4.1：level → importance_level（CamelModel 自动映射为 importanceLevel）
+    importance_level: int | None = Field(None, ge=1, le=3, description="回路重要等级 1/2/3")
+    # v5.3 新增：是否参与评估（对齐 FDS §5.2.3 / DDS v4.1）
+    include_in_evaluation: bool | None = Field(
+        None, description="是否参与评估：true=参与综合评分与装置级聚合"
+    )
     modeattrTagId: str | None = Field(
         None,
         description=(
@@ -78,7 +83,12 @@ class LoopUpdate(CamelModel):
         None,
         description="控制类型 STABLE/SLOW/FAST/LOGIC",
     )
-    level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
+    # v5.3 对齐 DDS v4.1：level → importance_level
+    importance_level: int | None = Field(None, ge=1, le=3, description="回路重要等级 1/2/3")
+    # v5.3 新增：是否参与评估
+    include_in_evaluation: bool | None = Field(
+        None, description="是否参与评估：true=参与综合评分与装置级聚合"
+    )
     modeattrTagId: str | None = Field(
         None,
         description=(
@@ -123,7 +133,9 @@ class LoopListItem(CamelModel):
     status: str = "PARTIAL"
     loopType: str | None = None
     controlType: str | None = None
-    level: int | None = None
+    # v5.3 对齐 DDS v4.1：level → importance_level
+    importance_level: int | None = None
+    include_in_evaluation: bool | None = None
     score: float | None = None
     lastScoreAt: str | None = None
     tagMappingStatus: TagMappingStatus
@@ -150,7 +162,9 @@ class LoopBasicInfo(CamelModel):
     status: str = "PARTIAL"
     loopType: str | None = None
     controlType: str | None = None
-    level: int | None = None
+    # v5.3 对齐 DDS v4.1：level → importance_level
+    importance_level: int | None = None
+    include_in_evaluation: bool | None = None
     # modeattrTagId 保留字段，未参与 KPI 计算链路（详见 models/loop.py 注释）
     modeattrTagId: str | None = None
     dataRetentionDays: int | None = None
@@ -219,7 +233,9 @@ class LoopUpdateResult(CamelModel):
     remark: str | None = None
     loopType: str | None = None
     controlType: str | None = None
-    level: int | None = None
+    # v5.3 对齐 DDS v4.1：level → importance_level
+    importance_level: int | None = None
+    include_in_evaluation: bool | None = None
     # modeattrTagId 保留字段，未参与 KPI 计算链路（详见 models/loop.py 注释）
     modeattrTagId: str | None = None
     dataRetentionDays: int | None = None

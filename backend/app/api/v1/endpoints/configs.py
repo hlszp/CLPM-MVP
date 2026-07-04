@@ -119,7 +119,11 @@ def _metric_category(metric_code: str) -> str | None:
 
 
 def _metric_to_response_dict(c: MetricConfig) -> dict[str, Any]:
-    """将 MetricConfig ORM 转为响应字典（含 category/isDiscountFactor）。"""
+    """将 MetricConfig ORM 转为响应字典（含 category/isDiscountFactor）。
+
+    v5.3 P3-T10：formula 字段已标注废弃（算法已固化在代码中），
+    Schema 层通过 deprecated=True 在 OpenAPI 文档中体现。
+    """
     category = _metric_category(c.metric_code)
     is_discount = c.metric_code == _COMMISSIONING_METRIC_CODE
     return {
@@ -128,6 +132,7 @@ def _metric_to_response_dict(c: MetricConfig) -> dict[str, Any]:
         "metricName": c.metric_name,
         "category": category,
         "isDiscountFactor": is_discount if is_discount else None,
+        # v5.3 P3-T10：formula 已废弃，保留返回值用于历史追溯
         "formula": c.formula,
         "weight": float(c.weight) if c.weight is not None else None,
         "threshold": c.threshold,

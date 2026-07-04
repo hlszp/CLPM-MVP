@@ -20,7 +20,8 @@ class NodeSnapshotItem(CamelModel):
     effectiveAutoRate: float | None = None
     steadyRate: float | None = None
     accuracyRate: float | None = None
-    fastResponseRate: float | None = None
+    # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+    fastRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
     autoLoopRatio: float | None = None
@@ -44,7 +45,8 @@ class NodeRankingItem(CamelModel):
     effectiveAutoRate: float | None = None
     steadyRate: float | None = None
     accuracyRate: float | None = None
-    fastResponseRate: float | None = None
+    # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+    fastRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
     autoLoopRatio: float | None = None
@@ -126,7 +128,8 @@ class NodeMonitorSnapshot(CamelModel):
     effectiveAutoRate: float | None = None
     steadyRate: float | None = None
     accuracyRate: float | None = None
-    fastResponseRate: float | None = None
+    # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+    fastRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
     autoLoopRatio: float | None = None

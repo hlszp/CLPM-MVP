@@ -755,19 +755,23 @@ async def get_ranking(
                 "loopId": loop_id,
                 "tagName": loop.tag_name,
                 "unitName": unit_map.get(str(loop.unit_id)) if loop.unit_id else None,
-                "compositeScore": _to_float(snap.score),
+                # v5.3 对齐 FDS v5.1 / DDS v4.1：compositeScore → score
+                "score": _to_float(snap.score),
                 "goodValueRate": _to_float(snap.good_value_rate),
                 "autoModeRate": _to_float(snap.auto_mode_rate),
                 "effectiveAutoRate": _to_float(snap.effective_auto_rate),
                 "steadyRate": _to_float(snap.steady_rate),
                 "accuracyRate": _to_float(snap.accuracy_rate),
-                "fastResponseRate": _to_float(snap.fast_rate),
+                # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+                "fastRate": _to_float(snap.fast_rate),
                 "oscillationRate": _to_float(snap.oscillation_rate),
                 "saturationRate": _to_float(snap.saturation_rate),
                 "status": _score_to_status(snap.score),
                 "algorithmVersion": ALGORITHM_VERSION,
                 "preDiagnosis": diagnosis_map.get(loop_id),
                 "actionStatus": action_status_map.get(loop_id, "PENDING"),
+                # v5.3 新增：是否参与评估（FDS §5.2.3）
+                "includeInEvaluation": loop.include_in_evaluation,
             }
         )
 

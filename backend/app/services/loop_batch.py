@@ -28,7 +28,12 @@ from app.models.tag import TagRegistry
 logger = logging.getLogger(__name__)
 
 # 允许批量更新的字段白名单
-_BATCH_UPDATABLE_FIELDS = {"is_monitored", "is_stat_enabled", "importance_level"}
+_BATCH_UPDATABLE_FIELDS = {
+    "is_monitored",
+    "is_stat_enabled",
+    "importance_level",
+    "include_in_evaluation",
+}
 
 
 async def _write_audit(
@@ -125,6 +130,7 @@ async def batch_update_loops(
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
             "importanceLevel": loop.importance_level,
+            "includeInEvaluation": loop.include_in_evaluation,
         }
 
         if "is_monitored" in updates and updates["is_monitored"] is not None:
@@ -136,6 +142,8 @@ async def batch_update_loops(
             loop.is_active = bool(updates["is_stat_enabled"])
         if "importance_level" in updates and updates["importance_level"] is not None:
             loop.importance_level = updates["importance_level"]
+        if "include_in_evaluation" in updates and updates["include_in_evaluation"] is not None:
+            loop.include_in_evaluation = bool(updates["include_in_evaluation"])
         loop.updated_by = operator
 
         after = {
@@ -143,6 +151,7 @@ async def batch_update_loops(
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
             "importanceLevel": loop.importance_level,
+            "includeInEvaluation": loop.include_in_evaluation,
         }
         audit_items.append({"before": before, "after": after})
 

@@ -42,10 +42,22 @@ class MetricConfigUpdate(CamelModel):
     """PUT /performance/metrics/{metricId} 请求体。"""
 
     metricName: str | None = Field(None, max_length=100)
-    formula: str | None = Field(None, max_length=2000)
+    # v5.3 P3-T9：formula 参数废弃（接收但忽略写入，算法已固化在代码中）
+    formula: str | None = Field(
+        None,
+        max_length=2000,
+        deprecated=True,
+        description="（已废弃）计算公式——算法已固化在 metric_calculator 代码中，接收但忽略写入",
+    )
     weight: Decimal | None = Field(None, ge=0, le=100)
     threshold: dict[str, Any] | None = None
-    controlType: str | None = Field(None, pattern="^(STABLE|SLOW|FAST|LOGIC)$")
+    # v5.3 P3-T9：controlType 参数废弃（控制类型由回路配置决定，不在指标配置中修改）
+    controlType: str | None = Field(
+        None,
+        pattern="^(STABLE|SLOW|FAST|LOGIC)$",
+        deprecated=True,
+        description="（已废弃）控制类型——由回路配置决定，不在指标配置中修改",
+    )
     isEnabled: bool | None = None
 
 
@@ -155,19 +167,23 @@ class RankingItem(CamelModel):
     loopId: str
     tagName: str
     unitName: str | None = None
-    compositeScore: float | None = None
+    # v5.3 对齐 FDS v5.1 / DDS v4.1：compositeScore → score
+    score: float | None = None
     goodValueRate: float | None = None
     autoModeRate: float | None = None
     effectiveAutoRate: float | None = None
     steadyRate: float | None = None
     accuracyRate: float | None = None
-    fastResponseRate: float | None = None
+    # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+    fastRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
     status: str = "INCONCLUSIVE"
     algorithmVersion: str = "KPI_CALC_v1.0"
     preDiagnosis: str | None = None
     actionStatus: str | None = None
+    # v5.3 新增：是否参与评估（FDS §5.2.3）
+    includeInEvaluation: bool | None = None
     # v4.0 数据血缘字段（Phase 5 Track A — IDS §2.7.1）
     confidenceLevel: str | None = None
     validRate: float | None = None
@@ -327,13 +343,13 @@ class KpiSnapshotSchema(CamelModel):
         goodValueRate: 好值率
         autoModeRate: 自控率
         effectiveAutoRate: 有效自控率
-        steadyRate: 平稳率
+        steadyRate: 稳定率
         accuracyRate: 准确率
         oscillationRate: 振荡率
         saturationRate: 饱和率
-        fastResponseRate: 快速率
-        stictionCoeff: 粘滞系数
-        steadyStateTime: 稳态时间
+        fastRate: 快速率
+        stictionIndex: 粘滞指数
+        settlingTime: 稳态时间（秒）
         outputTravelIndex: 输出值行程指数
         status: 快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）
         idealSettlingTime: 理想稳态时间（秒）
@@ -356,9 +372,12 @@ class KpiSnapshotSchema(CamelModel):
     accuracyRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
-    fastResponseRate: float | None = None
-    stictionCoeff: float | None = None
-    steadyStateTime: float | None = None
+    # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+    fastRate: float | None = None
+    # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
+    stictionIndex: float | None = None
+    # v5.3 对齐 DDS v4.1：steadyStateTime → settlingTime
+    settlingTime: float | None = None
     outputTravelIndex: float | None = None
     status: str = "INCONCLUSIVE"
     # v4.0 数据血缘字段（7 个）

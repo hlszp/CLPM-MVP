@@ -685,11 +685,14 @@ def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None)
         "effectiveAutoRate": to_float(snap.effective_auto_rate),
         "steadyRate": to_float(snap.steady_rate),
         "accuracyRate": to_float(snap.accuracy_rate),
-        "fastResponseRate": to_float(snap.fast_rate),
+        # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+        "fastRate": to_float(snap.fast_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
-        "stictionCoeff": to_float(snap.stiction_index),
-        "steadyStateTime": to_float(snap.settling_time),
+        # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
+        "stictionIndex": to_float(snap.stiction_index),
+        # v5.3 对齐 DDS v4.1：steadyStateTime → settlingTime
+        "settlingTime": to_float(snap.settling_time),
         "outputTravelIndex": to_float(snap.output_trip_index),
         "idealSettlingTime": to_float(snap.ideal_settling_time),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
@@ -843,11 +846,14 @@ async def get_node_ranking(
                 "effectiveAutoRate": to_float(row.effective_auto_rate),
                 "steadyRate": to_float(row.steady_rate),
                 "accuracyRate": to_float(row.accuracy_rate),
-                "fastResponseRate": to_float(row.fast_rate),
+                # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+                "fastRate": to_float(row.fast_rate),
                 "oscillationRate": to_float(row.oscillation_rate),
                 "saturationRate": to_float(row.saturation_rate),
-                "stictionCoeff": to_float(row.stiction_index),
-                "steadyStateTime": to_float(row.settling_time),
+                # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
+                "stictionIndex": to_float(row.stiction_index),
+                # v5.3 对齐 DDS v4.1：steadyStateTime → settlingTime
+                "settlingTime": to_float(row.settling_time),
                 "outputTravelIndex": to_float(row.output_trip_index),
                 "idealSettlingTime": to_float(row.ideal_settling_time),
                 "autoLoopRatio": to_float(row.auto_loop_ratio),
@@ -969,11 +975,14 @@ def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None
         "effectiveAutoRate": to_float(snap.effective_auto_rate),
         "steadyRate": to_float(snap.steady_rate),
         "accuracyRate": to_float(snap.accuracy_rate),
-        "fastResponseRate": to_float(snap.fast_rate),
+        # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+        "fastRate": to_float(snap.fast_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
-        "stictionCoeff": to_float(snap.stiction_index),
-        "steadyStateTime": to_float(snap.settling_time),
+        # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
+        "stictionIndex": to_float(snap.stiction_index),
+        # v5.3 对齐 DDS v4.1：steadyStateTime → settlingTime
+        "settlingTime": to_float(snap.settling_time),
         "outputTravelIndex": to_float(snap.output_trip_index),
         "idealSettlingTime": to_float(snap.ideal_settling_time),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),

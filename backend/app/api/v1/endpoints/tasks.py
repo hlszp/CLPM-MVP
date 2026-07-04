@@ -29,10 +29,15 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
+from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.redis import redis_client
+from app.models.loop import LoopLedger
+from app.models.metric import KpiSnapshotCustom
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.task import (
@@ -639,6 +644,155 @@ async def cancel_task(
 
     resp = _task_to_response(data)
     return success(data=resp.model_dump(), message="任务已取消")
+
+
+# ---------------------------------------------------------------------------
+# 接口：查询非标任务的具体指标计算结果（P3-T5 新增）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{task_id}/results", response_model=ApiResponse[dict])
+async def get_task_results(
+    task_id: str,
+    page: int = Query(1, ge=1, description="页码"),
+    pageSize: int = Query(20, ge=1, le=200, description="每页条数（最多 200）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """查询非标（自定义）任务的具体指标计算结果.
+
+    从 ``kpi_snapshot_custom`` 表查询指定 ``task_id`` 的全部回路 KPI 计算结果，
+    包含综合评分、各指标率、可信度等级、数据血缘等信息。
+
+    返回：
+    - ``items``: 各回路的计算结果列表（含 loopTagName、score、各指标率）
+    - ``total``: 总回路数
+    - ``page`` / ``pageSize``: 分页信息
+    - ``taskStatus``: 任务当前状态（从 Redis 读取）
+
+    设计依据：DDS v4.1 §2.14, PRD §4.3.7B, FDS §5.3.11
+    """
+    # 查询任务状态（从 Redis）
+    task_data = await _get_task(task_id)
+    task_status = task_data.get("status", "UNKNOWN") if task_data else "NOT_FOUND"
+
+    # 统计总数
+    count_stmt = (
+        select(func.count())
+        .select_from(KpiSnapshotCustom)
+        .where(KpiSnapshotCustom.task_id == task_id)
+    )
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    if total == 0:
+        return success(
+            data={
+                "items": [],
+                "total": 0,
+                "page": page,
+                "pageSize": pageSize,
+                "taskStatus": task_status,
+            }
+        )
+
+    # 分页查询，关联 loop_ledger 获取回路 tag_name
+    stmt = (
+        select(KpiSnapshotCustom, LoopLedger.tag_name.label("loop_tag_name"))
+        .outerjoin(LoopLedger, KpiSnapshotCustom.loop_id == LoopLedger.id)
+        .where(KpiSnapshotCustom.task_id == task_id)
+        .order_by(KpiSnapshotCustom.ts_start.desc())
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    items = [
+        _build_task_result_item(snapshot, loop_tag_name)
+        for snapshot, loop_tag_name in rows
+    ]
+
+    return success(
+        data={
+            "items": items,
+            "total": total,
+            "page": page,
+            "pageSize": pageSize,
+            "taskStatus": task_status,
+        }
+    )
+
+
+def _build_task_result_item(snapshot: KpiSnapshotCustom, loop_tag_name: str | None) -> dict:
+    """构建非标任务结果单项响应字典."""
+    return {
+        "resultId": str(snapshot.id),
+        "taskId": str(snapshot.task_id),
+        "loopId": str(snapshot.loop_id),
+        "loopTagName": loop_tag_name,
+        "tsStart": snapshot.ts_start.isoformat() if snapshot.ts_start else None,
+        "tsEnd": snapshot.ts_end.isoformat() if snapshot.ts_end else None,
+        "score": float(snapshot.score) if snapshot.score is not None else None,
+        "accuracyRate": (
+            float(snapshot.accuracy_rate) if snapshot.accuracy_rate is not None else None
+        ),
+        "fastRate": float(snapshot.fast_rate) if snapshot.fast_rate is not None else None,
+        "steadyRate": (
+            float(snapshot.steady_rate) if snapshot.steady_rate is not None else None
+        ),
+        "effectiveAutoRate": (
+            float(snapshot.effective_auto_rate)
+            if snapshot.effective_auto_rate is not None
+            else None
+        ),
+        "goodValueRate": (
+            float(snapshot.good_value_rate)
+            if snapshot.good_value_rate is not None
+            else None
+        ),
+        "oscillationRate": (
+            float(snapshot.oscillation_rate)
+            if snapshot.oscillation_rate is not None
+            else None
+        ),
+        "saturationRate": (
+            float(snapshot.saturation_rate)
+            if snapshot.saturation_rate is not None
+            else None
+        ),
+        "autoModeRate": (
+            float(snapshot.auto_mode_rate) if snapshot.auto_mode_rate is not None else None
+        ),
+        "stictionIndex": (
+            float(snapshot.stiction_index) if snapshot.stiction_index is not None else None
+        ),
+        "outputTripIndex": (
+            float(snapshot.output_trip_index)
+            if snapshot.output_trip_index is not None
+            else None
+        ),
+        "settlingTime": (
+            float(snapshot.settling_time) if snapshot.settling_time is not None else None
+        ),
+        "idealSettlingTime": (
+            float(snapshot.ideal_settling_time)
+            if snapshot.ideal_settling_time is not None
+            else None
+        ),
+        "status": snapshot.status,
+        "confidenceLevel": snapshot.confidence_level,
+        "validRate": (
+            float(snapshot.valid_rate) if snapshot.valid_rate is not None else None
+        ),
+        "algorithmVersion": snapshot.algorithm_version,
+        "samplingFreq": snapshot.sampling_freq,
+        "qualityPolicy": snapshot.quality_policy,
+        "dataLineage": snapshot.data_lineage,
+        "createdAt": (
+            snapshot.created_at.isoformat() if snapshot.created_at else None
+        ),
+    }
 
 
 __all__ = ["router"]
