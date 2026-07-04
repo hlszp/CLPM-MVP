@@ -21,9 +21,10 @@ import type { PlantNodeApi } from '#/api/plant-node';
  */
 import type { TagApi } from '#/api/tag';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
+import { useAccessStore } from '@vben/stores';
 
 import {
   Button,
@@ -53,6 +54,7 @@ import {
 } from '#/api/tag';
 import { ClpmDataCanvas } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
+import { realtimeWs } from '#/utils/realtime-ws';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'TagList' });
@@ -359,7 +361,8 @@ async function handleViewDetail(record: TagApi.TagItem) {
 function formatTime(t?: null | string): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
@@ -428,9 +431,45 @@ const uploadProps: UploadProps = {
   beforeUpload: handleImportBeforeUpload as UploadProps['beforeUpload'],
 };
 
+// ===== WebSocket 实时更新 =====
+let wsUnsubscribe: (() => void) | null = null;
+
+/** 处理 WebSocket 实时消息，更新匹配 tag 的 currentValue/quality/lastSyncAt */
+function handleRealtimeMessage(msg: {
+  tagCode: string;
+  value: string;
+  quality: number;
+  collectTime: string;
+}) {
+  // tagCode 即 tag_registry.tag_name（含角色后缀，如 41FIC20021_PIDA.PV）
+  const item = tagList.value.find((t) => t.tagName === msg.tagCode);
+  if (!item) return;
+  const numValue = Number.parseFloat(msg.value);
+  if (Number.isNaN(numValue)) return;
+  item.currentValue = numValue;
+  item.quality = msg.quality === 0 ? 'BAD' : msg.quality === 2 ? 'UNCERTAIN' : 'GOOD';
+  item.lastSyncAt = msg.collectTime;
+}
+
 onMounted(() => {
   loadPlantNodes();
   loadList();
+  // 连接 WebSocket 实时推送
+  const accessStore = useAccessStore();
+  const token = accessStore.accessToken;
+  if (token) {
+    if (!realtimeWs.isConnected) {
+      realtimeWs.connect(token);
+    }
+    wsUnsubscribe = realtimeWs.onMessage(handleRealtimeMessage);
+  }
+});
+
+onUnmounted(() => {
+  if (wsUnsubscribe) {
+    wsUnsubscribe();
+    wsUnsubscribe = null;
+  }
 });
 </script>
 

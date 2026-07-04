@@ -469,7 +469,8 @@ function formatSelectedTime(ts: string): string {
   const n = Number(ts);
   if (Number.isNaN(n)) return ts;
   try {
-    return new Date(n).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(n).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return ts;
   }
@@ -482,7 +483,8 @@ function handleBack() {
 function formatTime(t: null | string): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    // 强制北京时间（UTC+8）
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
