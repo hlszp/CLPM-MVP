@@ -73,7 +73,12 @@ class LoopLedger(Base):
         UUID(as_uuid=False),
         ForeignKey("tag_registry.id", ondelete="RESTRICT"),
         nullable=True,
-        comment="APC 识别位号 ID（位号值为 program 时算自动控制）",
+        comment=(
+            "APC 识别位号 ID（保留字段，未参与 KPI 计算链路）："
+            "原设计为 APC 系统识别位号，当该位号值为 program 时算自动控制；"
+            "实际实现采用 MODE 信号值（1=Auto/2=Cascade/3=Remote）判定自控率，"
+            "本字段仅作为元数据保留，供未来 APC 集成或运维追溯使用"
+        ),
     )
     data_retention_days: Mapped[int | None] = mapped_column(
         Integer,

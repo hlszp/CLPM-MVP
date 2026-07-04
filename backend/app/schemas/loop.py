@@ -55,7 +55,13 @@ class LoopCreate(CamelModel):
         description="控制类型 STABLE/SLOW/FAST/LOGIC（用于评分权重分类）",
     )
     level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
-    modeattrTagId: str | None = Field(None, description="APC 识别位号 ID")
+    modeattrTagId: str | None = Field(
+        None,
+        description=(
+            "APC 识别位号 ID（保留字段，未参与 KPI 计算；"
+            "实际自控率判定使用 MODE 信号值）"
+        ),
+    )
     dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
 
 
@@ -73,7 +79,13 @@ class LoopUpdate(CamelModel):
         description="控制类型 STABLE/SLOW/FAST/LOGIC",
     )
     level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
-    modeattrTagId: str | None = Field(None, description="APC 识别位号 ID")
+    modeattrTagId: str | None = Field(
+        None,
+        description=(
+            "APC 识别位号 ID（保留字段，未参与 KPI 计算；"
+            "实际自控率判定使用 MODE 信号值）"
+        ),
+    )
     dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
 
 
@@ -139,6 +151,7 @@ class LoopBasicInfo(CamelModel):
     loopType: str | None = None
     controlType: str | None = None
     level: int | None = None
+    # modeattrTagId 保留字段，未参与 KPI 计算链路（详见 models/loop.py 注释）
     modeattrTagId: str | None = None
     dataRetentionDays: int | None = None
     scoreWeights: dict | None = None
@@ -207,6 +220,7 @@ class LoopUpdateResult(CamelModel):
     loopType: str | None = None
     controlType: str | None = None
     level: int | None = None
+    # modeattrTagId 保留字段，未参与 KPI 计算链路（详见 models/loop.py 注释）
     modeattrTagId: str | None = None
     dataRetentionDays: int | None = None
     updatedAt: str | None = None

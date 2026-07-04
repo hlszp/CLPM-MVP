@@ -82,7 +82,7 @@
 | 49 | 性能评估 | R5: `performance.py` 中 `_aggregate_kpi_summary`/`_aggregate_kpi_cards`/`_aggregate_steady_trend` 为死代码 | `services/performance.py:1095-1207` | **已修复** |
 | 50 | 性能评估 | R6: `get_ranking()` 未过滤 `confidence_level='E'`，与节点级聚合不一致 | `services/performance.py:625` | **已修复** |
 | 51 | 性能评估 | R8: `refresh_beat_schedule` 需重启 Beat 进程才生效，前端无提示 | `tasks/kpi_calc.py:472` | **已修复** |
-| 52 | 跨模块 | B10: `LoopLedger.modeattr_tag_id` 字段未被计算链路使用（死字段） | `models/loop.py` | 待修复 |
+| 52 | 跨模块 | B10: `LoopLedger.modeattr_tag_id` 字段未被计算链路使用（死字段） | `models/loop.py` | **已修复** |
 | 53 | 跨模块 | B11: KPI 计算仅过滤 `status='READY'`，PARTIAL 回路永远不计算（设计合理但用户感知差） | `tasks/kpi_calc.py:553-555` | 待修复 |
 | 54 | 跨模块 | B12: TDengine 子表名生成规则散落 3 处未抽公共函数 | `core/tdengine.py` + `realtime_subscriber.py` | 待修复 |
 | 55 | 算法 | 偏差6: `algorithm_version` 在 `confidence_evaluator.py` 为 v2.0，在 `performance.py` 为 v1.0，同代码库不一致 | `confidence_evaluator.py:25` vs `performance.py:39` | 待修复 |
@@ -98,8 +98,8 @@
 | P0 阻断性 | 8 | 8 | 0 |
 | P1 高优先级 | 14 | 14 | 0 |
 | P2 中优先级 | 19 | 19 | 0 |
-| P3 低优先级 | 16 | 10 | 6 |
-| **合计** | **57** | **51** | **6** |
+| P3 低优先级 | 16 | 11 | 5 |
+| **合计** | **57** | **52** | **5** |
 
 ## 已修复记录
 
@@ -154,3 +154,4 @@
 | 49 | R5: performance.py 死代码 _aggregate_* | 删除 3 个未被调用的死代码函数：①`_aggregate_kpi_cards`（KPI 卡片 SQL 聚合，已被 `_aggregate_node_board` 替代走节点级快照表）；②`_aggregate_kpi_summary`（装置级加权聚合，已被 `_aggregate_node_board` 替代）；③`_aggregate_steady_trend`（平稳率趋势 SQL date_trunc 聚合，已被 `_aggregate_node_steady_trend` 替代）。验证：`grep _aggregate_kpi_summary\|_aggregate_kpi_cards\|_aggregate_steady_trend` 在 backend 范围仅剩函数定义本身（无任何调用方）；保留同区域仍被使用的辅助函数 `_empty_kpi_cards`/`_default_threshold`/`_aggregate_kpi_trend`/`_aggregate_unit_ranking`/`_aggregate_bad_actor_distribution`。移除因死代码删除而不再使用的 `Integer` import（仍保留 `Decimal` 用于其他位置）。同步更新 `tests/test_performance.py:770-772` 中过时的注释（指向已删除的死代码函数名）为正确的活动函数名 `_aggregate_node_board`/`_aggregate_node_steady_trend` | `backend/app/services/performance.py:21,1002-1050,1095-1207,1210-1234`（删除 3 函数 + Integer import） + `backend/tests/test_performance.py:770-773`（注释更新） | 全后端 1650 测试通过（与 #49 修复前基线一致，无回归） |
 | 50 | R6: get_ranking 未过滤 confidence_level=E | `get_ranking` 中 base 子查询新增 `where(or_(KpiSnapshotHourly.confidence_level.is_(None), KpiSnapshotHourly.confidence_level != "E"))` 过滤条件，与 `node_performance.py:301-304` 节点级聚合的过滤条件保持一致。设计依据：`confidence_level='E'` 表示有效数据率 < 20%（PRD §5.4.3 / FDS §5.3.10），数据严重不足的快照不应参与排行；`confidence_level IS NULL` 为旧数据（未评估可信度），按设计仍纳入排行避免历史数据丢失。新增 `test_get_ranking_filters_confidence_level_e` 测试：通过 `compile(compile_kwargs={"literal_binds": True})` 渲染 SQL 字面值，断言 SQL 中含 `confidence_level` + `IS NULL` + `E` 三要素，确保过滤条件被正确编译到 SQL 中 | `backend/app/services/performance.py:21,658-672`（新增 or_ import + base.where 过滤） + `backend/tests/test_performance.py:798-830`（新增 1 测试） | 全后端 1651 测试通过（1650 原有 + 1 新增） |
 | 51 | R8: refresh_beat_schedule 需重启 Beat 进程前端无提示 | 后端：①`_handle_engine_rule_changed` 改为返回 `str | None`（EVAL_CALC_CYCLE 变更时返回"计算周期已变更，新调度需重启 Celery Beat 进程才能生效"，其他规则返回 None）；②`update_engine_rule` 接收 warning 并在返回的 dict 中附加 `warning` 字段；③`EngineRuleItem` schema 新增 `warning: str | None = None` 字段，对齐 OpenAPI 文档。前端：①`MetricApi.RuleItem` 类型新增 `warning?: string` 字段；②`engine-config.vue doSave` 检查响应 `warning`：存在时 `message.success('引擎规则更新成功')` + `Modal.warning({ title: '注意：需重启 Beat 进程', content: result.warning })` 弹窗显式提示用户；不存在时保持原 `message.success('引擎规则更新成功，已即时生效')`。新增 2 个测试：①`test_update_engine_rule_eval_calc_cycle_returns_beat_warning`（EVAL_CALC_CYCLE 规则更新返回 warning，断言含 "Beat" 和 "重启" 关键字，mock `_handle_engine_rule_changed` 避免实际触发缓存失效/Celery 任务）；②`test_update_engine_rule_other_rule_no_warning`（SCHEDULE_CONCURRENCY 规则更新不返回 warning） | `backend/app/services/performance.py:289-351`（_handle_engine_rule_changed 返回 warning + update_engine_rule 透传） + `backend/app/schemas/performance.py:69`（EngineRuleItem 新增 warning 字段） + `backend/tests/test_performance.py:764-811`（新增 2 测试） + `frontend/.../api/metric.ts:92-93`（RuleItem 新增 warning） + `frontend/.../views/metric/engine-config.vue:104-131`（doSave 检查 warning + Modal.warning 弹窗） | 全后端 1653 测试通过（1651 原有 + 2 新增）；前端类型检查通过 |
+| 52 | B10: LoopLedger.modeattr_tag_id 死字段 | 字段澄清与文档化：`LoopLedger.modeattr_tag_id` 字段为"APC 识别位号 ID"原设计预留字段，当前 KPI 计算链路（auto_mode_rate）使用 MODE 信号值（1=Auto/2=Cascade/3=Remote）判定自控率，不读取此字段。设计权衡：保留字段而非删除（①已有 alembic migration 创建列；②前端 CRUD 接口已暴露字段；③部分部署环境已录入数据；④保留供未来 APC 集成或运维追溯使用）。修复内容：①`models/loop.py:72-82` 字段 comment 扩展为"APC 识别位号 ID（保留字段，未参与 KPI 计算链路）：原设计为 APC 系统识别位号，当该位号值为 program 时算自动控制；实际实现采用 MODE 信号值（1=Auto/2=Cascade/3=Remote）判定自控率，本字段仅作为元数据保留，供未来 APC 集成或运维追溯使用"；②`schemas/loop.py` 4 处 `modeattrTagId` 字段同步更新 description（2 处 LoopCreate/LoopUpdate 用 Field description，2 处 LoopBasicInfo/LoopDetail 加注释指向 models/loop.py） | `backend/app/models/loop.py:72-82` + `backend/app/schemas/loop.py:58-63,82-87,154-156,223-225` | 全后端 1653 测试通过（无回归，仅文档变更） |
