@@ -35,8 +35,9 @@ from app.schemas.performance import WeightSumValidator
 
 logger = logging.getLogger(__name__)
 
-# 算法版本号
-ALGORITHM_VERSION = "KPI_CALC_v1.0"
+# 算法版本号（P3 #55：统一为 KPI_CALC_v2.0，与 confidence_evaluator/metric_data_bundle/node_aggregation/kpi_calc 保持一致）
+# 旧版本 v1.0 在 confidence_evaluator.py v2.0 升级后已废弃
+ALGORITHM_VERSION = "KPI_CALC_v2.0"
 
 # Redis 缓存键
 METRIC_CONFIG_CACHE_KEY = "clpm:metric_config"

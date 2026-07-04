@@ -97,7 +97,7 @@ def _make_node_snapshot(
     snap.auto_loop_ratio = Decimal("90.00")
     snap.loop_count = 5
     snap.status = status
-    snap.algorithm_version = "KPI_CALC_v1.0"
+    snap.algorithm_version = "KPI_CALC_v2.0"
     snap.created_at = datetime.now(UTC).replace(tzinfo=None)
     return snap
 
@@ -276,7 +276,7 @@ class TestSaveNodeSnapshot:
             "auto_loop_ratio": Decimal("66.67"),
             "loop_count": 3,
             "status": "FAIR",
-            "algorithm_version": "KPI_CALC_v1.0",
+            "algorithm_version": "KPI_CALC_v2.0",
         }
 
         result = await save_node_snapshot(db, snap_data)
@@ -313,7 +313,7 @@ class TestSaveNodeSnapshot:
             "auto_loop_ratio": Decimal("66.67"),
             "loop_count": 3,
             "status": "GOOD",
-            "algorithm_version": "KPI_CALC_v1.0",
+            "algorithm_version": "KPI_CALC_v2.0",
         }
 
         result = await save_node_snapshot(db, snap_data)

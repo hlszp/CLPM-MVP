@@ -138,7 +138,7 @@ def _make_node_snapshot(
     s.realtime_auto_rate = realtime_auto_rate
     s.loop_count = loop_count
     s.status = status
-    s.algorithm_version = "KPI_CALC_v1.0"
+    s.algorithm_version = "KPI_CALC_v2.0"
     return s
 
 

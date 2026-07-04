@@ -526,7 +526,7 @@ class TestGetLoopMonitorDetail:
         snap = MagicMock()
         snap.score = Decimal("85.50")
         snap.status = "GOOD"
-        snap.algorithm_version = "KPI_CALC_v1.0"
+        snap.algorithm_version = "KPI_CALC_v2.0"
         snap.good_value_rate = Decimal("96.80")
         snap.auto_mode_rate = Decimal("90.00")
         snap.steady_rate = Decimal("85.00")
@@ -574,7 +574,7 @@ class TestGetLoopMonitorDetail:
         assert result["trend"]["pvQuality"] == ["GOOD", "GOOD"]
         assert result["kpiSummary"]["composite_score"] == 85.5
         assert result["kpiSummary"]["status"] == "GOOD"
-        assert result["kpiSummary"]["algorithm_version"] == "KPI_CALC_v1.0"
+        assert result["kpiSummary"]["algorithm_version"] == "KPI_CALC_v2.0"
 
     async def test_no_tags(self) -> None:
         """回路无 Tag 关联时 current_values 全为 None，trendStatus=EMPTY。"""
@@ -679,6 +679,86 @@ class TestGetLoopMonitorDetail:
         result = await get_loop_monitor_detail(db, "loop-001")
         assert result["status"] == "INACTIVE"
         assert result["kpiSummary"]["status"] == "INCONCLUSIVE"
+
+    async def test_algorithm_version_passthrough_from_snapshot(self) -> None:
+        """P3 #55: monitor 应透传快照实际记录的 algorithm_version。
+
+        场景：v1.0 旧快照保留在数据库中（升级前生成），monitor 应返回 v1.0 而非
+        当前常量 v2.0，确保审计/排查时能识别旧快照。
+        """
+        loop = _make_loop()
+        # 模拟 v1.0 旧快照（升级前生成，保留在数据库）
+        snap = MagicMock()
+        snap.score = Decimal("75.00")
+        snap.status = "GOOD"
+        snap.algorithm_version = "KPI_CALC_v1.0"  # 旧版本号
+        snap.good_value_rate = Decimal("92.00")
+        snap.auto_mode_rate = Decimal("88.00")
+        snap.steady_rate = Decimal("80.00")
+        snap.accuracy_rate = Decimal("75.00")
+        snap.fast_response_rate = Decimal("70.00")
+        snap.oscillation_rate = Decimal("20.00")
+        snap.saturation_rate = Decimal("15.00")
+        snap.effective_auto_rate = Decimal("82.00")
+        snap.ts_end = datetime.now(UTC)
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),  # mode mapping
+                _make_scalar_one_or_none_mock(snap),  # KPI 快照
+            ]
+        )
+        result = await get_loop_monitor_detail(db, "loop-001")
+        # 透传快照实际版本号 v1.0（而非当前常量 v2.0）
+        assert result["kpiSummary"]["algorithm_version"] == "KPI_CALC_v1.0"
+
+    async def test_algorithm_version_fallback_when_no_snapshot(self) -> None:
+        """P3 #55: 无快照时用统一常量 v2.0（不再硬编码 v1.0）。"""
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),  # mode mapping
+                _make_scalar_one_or_none_mock(None),  # 无快照
+            ]
+        )
+        result = await get_loop_monitor_detail(db, "loop-001")
+        # 无快照时 fallback 到当前 ALGORITHM_VERSION（v2.0）
+        assert result["kpiSummary"]["algorithm_version"] == "KPI_CALC_v2.0"
+
+    async def test_algorithm_version_fallback_when_snap_none(self) -> None:
+        """P3 #55: 快照 algorithm_version 字段为 None 时 fallback 到统一常量 v2.0。"""
+        loop = _make_loop()
+        snap = MagicMock()
+        snap.score = Decimal("75.00")
+        snap.status = "GOOD"
+        snap.algorithm_version = None  # 字段为空（兼容旧数据）
+        snap.good_value_rate = Decimal("92.00")
+        snap.auto_mode_rate = Decimal("88.00")
+        snap.steady_rate = Decimal("80.00")
+        snap.accuracy_rate = Decimal("75.00")
+        snap.fast_response_rate = Decimal("70.00")
+        snap.oscillation_rate = Decimal("20.00")
+        snap.saturation_rate = Decimal("15.00")
+        snap.effective_auto_rate = Decimal("82.00")
+        snap.ts_end = datetime.now(UTC)
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalar_one_or_none_mock(snap),
+            ]
+        )
+        result = await get_loop_monitor_detail(db, "loop-001")
+        assert result["kpiSummary"]["algorithm_version"] == "KPI_CALC_v2.0"
 
     async def test_no_score_weight(self) -> None:
         """回路无 score_weight 时 composite_score 为 None。"""

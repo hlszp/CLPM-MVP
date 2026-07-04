@@ -41,7 +41,8 @@ from app.services.node_performance import (
 # ============================================================================
 
 TEST_TAG = "[E2E_TEST]"
-ALGORITHM_VERSION = "KPI_CALC_v1.0"
+# P3 #55: 与 app/services/confidence_evaluator.py ALGORITHM_VERSION 统一为 v2.0
+ALGORITHM_VERSION = "KPI_CALC_v2.0"
 
 # 工厂模型层级定义
 # 化工厂(FACTORY)

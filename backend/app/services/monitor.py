@@ -21,6 +21,7 @@ from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
+from app.services.confidence_evaluator import ALGORITHM_VERSION
 from app.services.data_source.realtime_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
@@ -679,7 +680,9 @@ async def get_loop_monitor_detail(
             "saturation_rate": _rate(snap.saturation_rate),
             "good_value_rate": _rate(snap.good_value_rate),
             "status": snap.status,
-            "algorithm_version": "KPI_CALC_v1.0",
+            # P3 #55: 取快照实际记录的 algorithm_version（兼容 v1.0 旧快照），
+            # 缺失时 fallback 到当前算法版本（ALGORITHM_VERSION，v2.0）
+            "algorithm_version": snap.algorithm_version or ALGORITHM_VERSION,
             "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else read_at,
         }
     else:
@@ -694,7 +697,8 @@ async def get_loop_monitor_detail(
             "saturation_rate": None,
             "good_value_rate": None,
             "status": "INCONCLUSIVE" if loop.status != "READY" else "GOOD",
-            "algorithm_version": "KPI_CALC_v1.0",
+            # P3 #55: 无快照时用统一常量（v2.0），不再硬编码 v1.0
+            "algorithm_version": ALGORITHM_VERSION,
             "calculatedAt": read_at,
         }
 
