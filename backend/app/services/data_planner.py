@@ -13,6 +13,27 @@ DataPlanner 负责指标驱动的数据获取与编排：
     - 缓存复用：多指标共享同一 tagGroup 时仅查询/预处理一次
     - Pipeline 批量写入：减少 Redis 网络往返
 
+采样策略（P3 #56 文档对齐）：
+    KPI 计算路径**不进行 LTTB 降采样**。DataPlanner 按控制类型阈值决定采样率：
+        - STABLE/SLOW/FAST/LOGIC 四类阈值由 ``get_threshold(control_type)`` 提供
+        - interval_s 是固定值（典型为 1s，由 base_threshold.base_sampling_freq 决定）
+        - HF tagGroup（OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）固定 1s 高频采样
+    KPI 计算需要全量数据点参与运算（好值率/自控率/振荡率等指标依赖每个采样点），
+    LTTB 降采样会破坏指标计算的准确性。
+
+    AGENTS.md §性能边界 提到的 "LTTB 降采样 maxPoints=2000，30 天时间窗口" 是
+    **波形查询接口**（monitor.py::lttb_downsample + waveform.py::lttb_downsample_multi_series）
+    的渲染优化约束，**不是** KPI 计算路径的约束：
+        - monitor.py: LTTB_THRESHOLD=10000 + LTTB_TARGET_POINTS=2000（波形展示路径）
+        - waveform.py: DEFAULT_MAX_POINTS=5000（前端波形渲染）
+        - ADS.md: max_points=2000 是 ``get_timeseries_data`` 波形查询接口的默认值
+
+    30 天时间窗口 × 1s 采样 ≈ 2,592,000 点，KPI 计算直接处理（7200 点性能测试
+    0.38s 通过 #40，远低于性能阈值）。如未来扩展更长窗口，可考虑：
+        - 缩短保留周期（dataRetentionDays）
+        - 增加 DataBlock 缓存命中率（tagGroup 复用）
+        - 在 TDengine 查询阶段做时间聚合（而非计算后降采样）
+
 设计依据：ADS §2/§8/§10.1/§10.7, FDS §4/§5.3.9, PRD §8.1-8.3, 数据流程图 §7
 """
 

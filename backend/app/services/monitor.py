@@ -26,8 +26,10 @@ from app.services.data_source.realtime_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
 
-# LTTB 降采样阈值
+# LTTB 降采样阈值（P3 #56：仅用于波形展示路径，KPI 计算路径不降采样）
+# 触发降采样阈值：超过 10000 点触发 LTTB 算法
 LTTB_THRESHOLD = 10000
+# 降采样目标点数：对齐 AGENTS.md §性能边界 maxPoints=2000（波形渲染优化）
 LTTB_TARGET_POINTS = 2000
 
 # 趋势时间窗映射
