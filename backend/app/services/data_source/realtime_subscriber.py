@@ -293,14 +293,11 @@ class RealtimeSubscriber:
             pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT
         """
         try:
-            # 子表命名: d_loop_<位号小写连字符转下划线>
-            import re
-
+            # 子表命名：调用公共函数 make_subtable_name（P3 #54）
             from app.core.config import settings
-            from app.core.tdengine import execute_sql
+            from app.core.tdengine import execute_sql, make_subtable_name
 
-            subtable = "d_loop_" + loop_part.lower().replace("-", "_").replace(".", "_")
-            subtable = re.sub(r"_+", "_", subtable)
+            subtable = make_subtable_name(loop_part)
 
             # 获取时间戳（取任意一个角色的时间戳）
             ts_str = ""

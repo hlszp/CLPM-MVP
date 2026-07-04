@@ -94,21 +94,20 @@ def fmt_ts_utc(dt: datetime) -> str:
 
 
 def subtable_name(tag_name: str) -> str:
-    """回路位号 → TDengine 子表名。"""
-    name = tag_name.lower().replace("-", "_").replace(".", "_")
-    import re
+    """回路位号 → TDengine 子表名（P3 #54：复用 app.core.tdengine.make_subtable_name）."""
+    from app.core.tdengine import make_subtable_name
 
-    name = re.sub(r"_+", "_", name)
-    return "d_loop_" + name
+    return make_subtable_name(tag_name)
 
 
 def subtable_name_for_loop(tag_name: str) -> str:
-    """tag_name 如 LIC-101 → d_loop_lic_101（用于包含 PV/SP/OP/MODE 的单表）。"""
-    import re
+    """tag_name 如 LIC-101 → d_loop_lic_101（用于包含 PV/SP/OP/MODE 的单表）。
 
-    name = tag_name.lower().replace("-", "_").replace(".", "_")
-    name = re.sub(r"_+", "_", name)
-    return "d_loop_" + name
+    P3 #54：复用 app.core.tdengine.make_subtable_name。
+    """
+    from app.core.tdengine import make_subtable_name
+
+    return make_subtable_name(tag_name)
 
 
 async def td_execute(sql: str) -> dict | None:

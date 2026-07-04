@@ -113,18 +113,23 @@ random.seed(42)
 
 
 def subtable_name(tag_name: str) -> str:
-    """回路位号 → TDengine 子表名。
+    """回路位号 → TDengine 子表名（P3 #54：复用 app.core.tdengine.make_subtable_name）。
 
     示例: 41FIC40504_PIDA → d_loop_41fic40504_pida
     """
-    name = tag_name.lower().replace("-", "_").replace(".", "_")
-    name = re.sub(r"_+", "_", name)
-    return "d_loop_" + name
+    from app.core.tdengine import make_subtable_name
+
+    return make_subtable_name(tag_name)
 
 
 def fmt_ts_utc(dt: datetime) -> str:
-    """格式化 UTC 时间戳为 TDengine 字符串（毫秒精度）。"""
-    return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{dt.microsecond // 1000:03d}"
+    """格式化 UTC 时间戳为 TDengine 字符串（毫秒精度，带 Z 后缀）。
+
+    TDengine 容器时区为 Asia/Shanghai，无时区标识的字符串会被按本地时区解释，
+    导致 UTC 时间偏移 8 小时。显式标注 Z 后缀确保 TDengine 按 UTC 正确存储，
+    与后端查询（tdengine.py 用 isoformat + Z）保持一致。
+    """
+    return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
 
 def fmt_float(v: float | None) -> str:
@@ -591,8 +596,10 @@ class LoopSimulator:
         self._stiction_last_op_jump = self._op
 
         # 手动模式 OP 目标
-        self._manual_op_target = self._op
-        self._manual_next_change = time.monotonic() + random.uniform(3600, 10800)
+        # 初始 target 偏离 _op 一定幅度，让 OP 从启动开始就缓慢变化
+        # （否则首次 _manual_next_change 触发前 target==_op，OP 完全冻结 1-3 小时）
+        self._manual_op_target = clamp(self._op + random.uniform(-10, 10), 10, 90)
+        self._manual_next_change = time.monotonic() + random.uniform(600, 1800)
 
         # 过激进场景的 SP 变化追踪
         self._last_sp = self._sp
@@ -648,7 +655,8 @@ class LoopSimulator:
             # 手动模式：OP 由操作员阶跃调节，PV 跟随 OP
             if now >= self._manual_next_change:
                 self._manual_op_target = clamp(self._op + random.uniform(-15, 15), 10, 90)
-                self._manual_next_change = now + random.uniform(3600, 10800)
+                # 缩短切换间隔，避免 OP 趋近 target 后长时间冻结
+                self._manual_next_change = now + random.uniform(600, 1800)
             # OP 缓慢趋近目标
             self._op = clamp(self._op + (self._manual_op_target - self._op) * 0.1, 0, 100)
             target_input = self._compute_target_pv_from_op(self._op)
@@ -674,7 +682,9 @@ class LoopSimulator:
 
         else:
             # 闭环 PID 控制
-            if self._mode == 1:
+            # Auto(1) 和 Cascade(2) 模式下都计算 OP，避免 OP 长时间冻结
+            # 真实 DCS 中 Cascade 模式下 OP 由上级控制器调整，这里用 PID 模拟
+            if self._mode in (1, 2):
                 op = self._pid.compute(self._sp, self._pv)
                 self._op = op
             target_input = self._compute_target_pv_from_op(self._op)

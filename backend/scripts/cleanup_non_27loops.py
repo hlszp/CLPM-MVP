@@ -40,10 +40,10 @@ TD_REST_DB_URL = f"http://{settings.TDENGINE_HOST}:{_TD_REST_PORT}/rest/sql/{set
 
 
 def subtable_name(tag_name: str) -> str:
-    """回路位号 → TDengine 子表名."""
-    name = tag_name.lower().replace("-", "_").replace(".", "_")
-    name = re.sub(r"_+", "_", name)
-    return "d_loop_" + name
+    """回路位号 → TDengine 子表名（P3 #54：复用 app.core.tdengine.make_subtable_name）."""
+    from app.core.tdengine import make_subtable_name
+
+    return make_subtable_name(tag_name)
 
 
 async def get_counts(db) -> dict[str, int]:

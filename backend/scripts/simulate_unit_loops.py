@@ -1,32 +1,36 @@
 #!/usr/bin/env python3
-"""3 单元真实回路秒级历史数据仿真器。
+"""27 回路秒级历史数据仿真器（基于 189 测点真实量程）。
 
-从 PostgreSQL 动态加载 3 个工艺单元（脱甲烷精馏/醛化反应/急冷分离）的全部控制回路，
-按 1Hz 采样生成 7 天历史时序数据，写入 TDengine，并补全缺失的 tag_registry / loop_tag_mapping。
+从 PostgreSQL 动态加载 3 个工艺单元（脱甲烷精馏/醛化反应/急冷分离）的 27 个控制回路，
+读取每个回路 PV 角色的真实量程（range_min/range_max），按 1Hz 采样生成历史时序数据写入 TDengine。
 
-特性：
-    - 1 秒采样间隔（原始秒级数据，对齐 DDS §4.1 采集规范）
-    - 7 天数据时长（默认，可 --days 调整）
-    - 按 tag_name 前缀（FIC/LIC/PIC/TIC）推断控制类型与动态特性
-    - 多场景分布（normal/oscillation/valve_stiction/op_saturation/manual/
-      overconservative/overaggressive）确保 27 回路 KPI 表现多样
-    - 异常值注入（spike 尖峰/flatline 停滞/out-of-range 超量程）
-    - 非 Good 质量戳注入（~5%：Bad 聚簇 + Uncertain 散点）
-    - --clean 清空 3 单元回路旧 TDengine 子表 + 旧 tag 映射后重建
+核心特性（对齐用户 8 条仿真要求）：
+    1. SP 每 ~4 小时变化一次（3.5-4.5h），幅度 ±5-10%，不频繁变化
+    2. MODE 每 ~8 小时变化一次（7-9h），手动模式(0)持续不超过 30 分钟
+    3. PID 参数全程不变；微分时间(D)仅温度回路设置非零
+    4. PV 跟随 SP 采用物理模型：
+       - 流量/压力：一阶纯滞后（FOPDT）
+       - 温度：二阶纯滞后（SOPDT）
+       - 液位：积分对象
+    5. 3 个流量回路模拟阀门卡滞（valve_stiction 场景）
+    6. SP/PV/OP 值约束在各自量程范围内
+    7. 异常值模拟在量程范围内，PV 异常比例 < 5%
+    8. 数据变化速度按控制类型差异化（通过 tau 时间常数体现）：
+       流量 tau=2s（1-2s 响应）、压力 tau=3s（2-3s）、液位 tau=5s（3-5s）、温度 tau=8s（5-10s）
 
 用法::
 
-    cd backend && uv run python scripts/simulate_unit_loops.py
-    cd backend && uv run python scripts/simulate_unit_loops.py --days 7 --clean
-    cd backend && uv run python scripts/simulate_unit_loops.py --days 3
+    cd backend && uv run python scripts/simulate_unit_loops.py --clean
+    # 默认：2026-06-27 00:00:00 起 72 小时，1Hz，清空 TDengine 后写入
 
-注意：27 回路 × 7 天 × 1Hz ≈ 1630 万行，写入约 10-20 分钟。
+注意：27 回路 × 72h × 1Hz ≈ 700 万行，写入约 5-10 分钟。
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import collections
 import math
 import random
 import re
@@ -45,9 +49,13 @@ from app.core.db import AsyncSessionLocal, engine
 # ============================================================================
 
 SAMPLE_INTERVAL = 1  # 1Hz 采样间隔（秒）
-BATCH_SIZE = 5000  # TDengine 单批写入行数（1Hz 数据量大，增大批量）
+BATCH_SIZE = 5000  # TDengine 单批写入行数
 MAX_CONCURRENT = 8  # TDengine 并发写入数
 PROGRESS_INTERVAL = 200_000  # 进度打印间隔（行）
+
+# 默认时间范围：2026-06-27 00:00:00 起 72 小时
+DEFAULT_START = datetime(2026, 6, 27, 0, 0, 0)
+DEFAULT_HOURS = 72
 
 # 3 个目标单元（脱甲烷精馏/醛化反应/急冷分离）
 TARGET_UNIT_IDS: list[str] = [
@@ -74,30 +82,26 @@ random.seed(42)
 
 
 def subtable_name(tag_name: str) -> str:
-    """回路位号 → TDengine 子表名。
+    """回路位号 → TDengine 子表名（P3 #54：复用 app.core.tdengine.make_subtable_name）."""
+    from app.core.tdengine import make_subtable_name
 
-    示例: 41FIC40504_PIDA → d_loop_41fic40504_pida
-    """
-    name = tag_name.lower().replace("-", "_").replace(".", "_")
-    name = re.sub(r"_+", "_", name)
-    return "d_loop_" + name
+    return make_subtable_name(tag_name)
 
 
 def fmt_ts(dt: datetime) -> str:
-    """格式化时间戳为 TDengine 字符串（毫秒精度）。"""
-    return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{dt.microsecond // 1000:03d}"
+    """格式化时间戳为 TDengine 字符串（毫秒精度，带 UTC Z 后缀）。
+
+    TDengine 容器时区为 Asia/Shanghai，无时区标识的字符串会被按本地时区解释，
+    导致时间偏移 8 小时。显式标注 Z 后缀确保 TDengine 按 UTC 正确存储，
+    与后端查询（tdengine.py 用 isoformat + Z）保持一致。
+    """
+    return dt.strftime("%Y-%m-%d %H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
 
 def fmt_float(v: float | None) -> str:
-    """格式化浮点数用于 SQL，处理 NaN/Inf。"""
     if v is None or math.isnan(v) or math.isinf(v):
         return "NULL"
     return f"{v:.4f}"
-
-
-def sql_str(s: str) -> str:
-    """转义 SQL 字符串。"""
-    return "'" + s.replace("'", "''") + "'"
 
 
 def clamp(v: float, lo: float, hi: float) -> float:
@@ -105,11 +109,7 @@ def clamp(v: float, lo: float, hi: float) -> float:
 
 
 def infer_control_type(tag_name: str) -> str:
-    """根据位号前缀推断控制类型。
-
-    FIC→FLOW(流量), LIC→LEVEL(液位), PIC→PRESSURE(压力), TIC→TEMPERATURE(温度)
-    其他默认 STABLE。
-    """
+    """根据位号前缀推断控制类型：FIC→FLOW, LIC→LEVEL, PIC→PRESSURE, TIC→TEMPERATURE。"""
     upper = tag_name.upper()
     if "FIC" in upper:
         return "FLOW"
@@ -123,101 +123,221 @@ def infer_control_type(tag_name: str) -> str:
 
 
 # ============================================================================
-# 回路配置：从 PostgreSQL 动态加载 + 场景/基值分配
+# 物理模型：PV 跟随 SP
 # ============================================================================
 
-# 控制类型 → 动态特性参数
+
+class FOPDTModel:
+    """一阶纯滞后模型（First-Order Plus Dead Time）。
+
+    用于流量、压力回路。PV 快速跟随 SP，有纯滞后 theta。
+    离散化：PV[n] = PV[n-1] * (1-alpha) + K * SP_delayed * alpha + noise
+    其中 alpha = 1 - exp(-dt/tau)
+    """
+
+    def __init__(self, tau: float, theta: float, k: float = 1.0, noise_sigma: float = 0.0) -> None:
+        self.tau = max(tau, 0.1)
+        self.theta = max(theta, 0.0)
+        self.k = k
+        self.noise_sigma = noise_sigma
+        self.dt = float(SAMPLE_INTERVAL)
+        self.alpha = 1.0 - math.exp(-self.dt / self.tau)
+        delay_len = max(1, int(round(self.theta / self.dt)))
+        self._delay_queue: collections.deque[float] = collections.deque(maxlen=delay_len)
+
+    def step(self, sp_input: float, pv_prev: float) -> float:
+        # 纯滞后：入队当前 SP，取 theta 秒前的 SP
+        self._delay_queue.append(sp_input)
+        if len(self._delay_queue) >= self._delay_queue.maxlen:
+            sp_delayed = self._delay_queue[0]
+        else:
+            sp_delayed = sp_input
+        pv = pv_prev * (1.0 - self.alpha) + self.k * sp_delayed * self.alpha
+        if self.noise_sigma > 0:
+            pv += random.gauss(0.0, self.noise_sigma)
+        return pv
+
+
+class SOPDTModel:
+    """二阶纯滞后模型（Second-Order Plus Dead Time）。
+
+    用于温度回路。两个一阶环节串联 + 纯滞后，响应更慢，可能有超调。
+    G(s) = K / ((tau1*s+1)(tau2*s+1)) * exp(-theta*s)
+    """
+
+    def __init__(self, tau: float, theta: float, k: float = 1.0, noise_sigma: float = 0.0) -> None:
+        self.tau1 = max(tau, 0.1)
+        self.tau2 = max(tau * 0.6, 0.1)  # 第二个时间常数为第一个的 60%
+        self.theta = max(theta, 0.0)
+        self.k = k
+        self.noise_sigma = noise_sigma
+        self.dt = float(SAMPLE_INTERVAL)
+        self.a1 = 1.0 - math.exp(-self.dt / self.tau1)
+        self.a2 = 1.0 - math.exp(-self.dt / self.tau2)
+        delay_len = max(1, int(round(self.theta / self.dt)))
+        self._delay_queue: collections.deque[float] = collections.deque(maxlen=delay_len)
+        self._x1 = 0.0  # 中间状态（第一个一阶环节输出）
+
+    def reset(self, pv_init: float) -> None:
+        self._x1 = pv_init
+        self._delay_queue.clear()
+
+    def step(self, sp_input: float, pv_prev: float) -> float:
+        self._delay_queue.append(sp_input)
+        sp_delayed = self._delay_queue[0] if len(self._delay_queue) >= self._delay_queue.maxlen else sp_input
+        # 两个一阶环节串联
+        self._x1 = self._x1 * (1.0 - self.a1) + sp_delayed * self.a1
+        pv = pv_prev * (1.0 - self.a2) + self.k * self._x1 * self.a2
+        if self.noise_sigma > 0:
+            pv += random.gauss(0.0, self.noise_sigma)
+        return pv
+
+
+class IntegratorModel:
+    """积分对象模型。
+
+    用于液位回路。PV 无稳态偏差，持续朝 SP 积分趋近。
+    液位变化由 OP（阀门开度）控制的进出料平衡决定：
+        dPV/dt = K * (OP - OP_balance) / range
+    闭环反馈使 PV 趋向 SP。
+    """
+
+    def __init__(self, tau: float, k: float = 1.0, noise_sigma: float = 0.0) -> None:
+        self.tau = max(tau, 0.1)
+        self.k = k
+        self.noise_sigma = noise_sigma
+        self.dt = float(SAMPLE_INTERVAL)
+        # 积分增益：使响应时间约等于 tau
+        self.ki = 1.0 / self.tau
+
+    def step(self, sp_input: float, pv_prev: float, op: float) -> float:
+        # 积分对象：PV 朝 SP 积分，同时受 OP 偏差影响
+        error = sp_input - pv_prev
+        # 积分项：error * ki * dt（朝 SP 趋近）
+        # OP 项：OP 偏离 50% 引起的额外变化（模拟进出料不平衡）
+        op_imbalance = (op - 50.0) * 0.0005  # 小系数，避免发散
+        pv = pv_prev + (error * self.ki * self.dt + op_imbalance) * self.k
+        if self.noise_sigma > 0:
+            pv += random.gauss(0.0, self.noise_sigma)
+        return pv
+
+
+# ============================================================================
+# 控制类型参数：时间常数 / 纯滞后 / 噪声 / PID
+# ============================================================================
+
+# 各控制类型的物理模型参数（tau 体现"数据变化间隔"要求）
 TYPE_PARAMS: dict[str, dict[str, Any]] = {
     "FLOW": {
-        "tau": 8.0,  # 一阶滞后时间常数（秒）
-        "noise_pct": 0.005,  # 噪声占量程比例
-        "base_sp_range": (40.0, 200.0),  # t/h
-        "pv_range_pct": 1.0,  # PV 量程 = base_sp
+        "tau": 2.0,          # 流量：1-2s 响应
+        "theta": 0.5,        # 纯滞后 0.5s
+        "model": "fopdt",    # 一阶纯滞后
+        "noise_pct": 0.005,  # 噪声占量程 0.5%
     },
     "LEVEL": {
-        "tau": 120.0,
+        "tau": 5.0,          # 液位：3-5s 响应
+        "theta": 0.0,
+        "model": "integrator",  # 积分对象
         "noise_pct": 0.003,
-        "base_sp_range": (35.0, 75.0),  # %
-        "pv_range_pct": 100.0,
     },
     "PRESSURE": {
-        "tau": 25.0,
+        "tau": 3.0,          # 压力：2-3s 响应
+        "theta": 1.0,        # 纯滞后 1s
+        "model": "fopdt",    # 一阶纯滞后
         "noise_pct": 0.004,
-        "base_sp_range": (0.3, 3.5),  # MPa
-        "pv_range_pct": 1.0,
     },
     "TEMPERATURE": {
-        "tau": 60.0,
+        "tau": 8.0,          # 温度：5-10s 响应
+        "theta": 3.0,        # 纯滞后 3s
+        "model": "sopdt",    # 二阶纯滞后
         "noise_pct": 0.003,
-        "base_sp_range": (80.0, 380.0),  # °C
-        "pv_range_pct": 1.0,
     },
     "STABLE": {
-        "tau": 45.0,
+        "tau": 5.0,
+        "theta": 1.0,
+        "model": "fopdt",
         "noise_pct": 0.004,
-        "base_sp_range": (40.0, 120.0),
-        "pv_range_pct": 1.0,
     },
 }
 
-# 控制类型 → 候选场景（每个回路按索引轮选，保证多样性）
-TYPE_SCENARIOS: dict[str, list[str]] = {
-    "FLOW": ["normal", "oscillation", "valve_stiction", "normal"],
-    "LEVEL": ["normal", "op_saturation", "manual", "normal"],
-    "PRESSURE": ["normal", "overconservative", "normal"],
-    "TEMPERATURE": ["normal", "overaggressive", "overconservative", "normal"],
-    "STABLE": ["normal", "oscillation", "normal"],
+# PID 参数（全程不变）；D 仅温度回路非零
+TYPE_PID: dict[str, tuple[float, float, float]] = {
+    "FLOW": (2.0, 10.0, 0.0),
+    "LEVEL": (1.0, 60.0, 0.0),
+    "PRESSURE": (1.2, 20.0, 0.0),
+    "TEMPERATURE": (1.5, 30.0, 5.0),  # D=5.0 仅温度
+    "STABLE": (1.5, 30.0, 0.0),
 }
+
+# 阀门卡滞回路（3 个流量回路）
+VALVE_STICTION_LOOPS = {
+    "41FIC20021_PIDA",
+    "41FIC40504_PIDA",
+    "80FIC11906_PIDA",
+}
+
+
+# ============================================================================
+# 从 PostgreSQL 加载回路（含量程）
+# ============================================================================
 
 
 async def load_loops_from_db() -> list[dict[str, Any]]:
-    """从 PostgreSQL 加载 3 个单元的全部控制回路。"""
+    """从 PostgreSQL 加载 27 回路，读取 PV 角色真实量程。"""
     loops: list[dict[str, Any]] = []
     async with AsyncSessionLocal() as s:
+        # 回路基本信息
         r = await s.execute(
             text("""
-            SELECT l.id, l.tag_name, l.description, l.unit_id,
-                   p.name AS unit_name
+            SELECT l.id, l.tag_name, l.description, l.unit_id, p.name AS unit_name
             FROM loop_ledger l
             JOIN plant_node p ON l.unit_id = p.id
-            WHERE l.unit_id = ANY(:unit_ids)
-              AND l.is_active = TRUE
+            WHERE l.unit_id = ANY(:unit_ids) AND l.is_active = TRUE
             ORDER BY l.unit_id, l.tag_name
         """),
             {"unit_ids": TARGET_UNIT_IDS},
         )
-        rows = r.fetchall()
+        base_rows = r.fetchall()
 
-        for idx, (loop_id, tag_name, desc, unit_id, unit_name) in enumerate(rows):
+        # 查询每个回路 PV 角色的量程
+        for idx, (loop_id, tag_name, desc, unit_id, unit_name) in enumerate(base_rows):
             ctype = infer_control_type(tag_name)
             params = TYPE_PARAMS[ctype]
-            scenarios = TYPE_SCENARIOS[ctype]
-            # 按索引轮选场景
-            scenario = scenarios[idx % len(scenarios)]
 
-            # 确定性生成 base_sp（基于 tag_name hash，保证可复现）
-            h = abs(hash(tag_name))
-            sp_lo, sp_hi = params["base_sp_range"]
-            base_sp = round(sp_lo + (h % 10000) / 10000 * (sp_hi - sp_lo), 2)
-            pv_range = (
-                base_sp * params["pv_range_pct"]
-                if params["pv_range_pct"] <= 1.0
-                else params["pv_range_pct"]
+            # 读取 PV 角色量程
+            pv_r = await s.execute(
+                text("""
+                SELECT t.range_min, t.range_max, t.unit
+                FROM loop_tag_mapping m
+                JOIN tag_registry t ON t.id = m.tag_id
+                WHERE m.loop_id = :lid AND m.tag_role = 'PV'
+            """),
+                {"lid": loop_id},
             )
-            base_pv = round(base_sp + random.uniform(-pv_range * 0.01, pv_range * 0.01), 2)
-            base_op = round(random.uniform(35, 65), 2)
-
-            # PID 参数随控制类型
-            if ctype == "FLOW":
-                pid_p, pid_i, pid_d = 2.0, 10.0, 0.0
-            elif ctype == "LEVEL":
-                pid_p, pid_i, pid_d = 1.0, 60.0, 0.0
-            elif ctype == "PRESSURE":
-                pid_p, pid_i, pid_d = 1.2, 20.0, 2.0
-            elif ctype == "TEMPERATURE":
-                pid_p, pid_i, pid_d = 1.5, 30.0, 5.0
+            pv_row = pv_r.fetchone()
+            if pv_row and pv_row[1] is not None and pv_row[0] is not None:
+                range_min = float(pv_row[0])
+                range_max = float(pv_row[1])
+                pv_unit = pv_row[2] or ""
             else:
-                pid_p, pid_i, pid_d = 1.5, 30.0, 2.0
+                # 兜底量程
+                range_min, range_max, pv_unit = 0.0, 100.0, ""
+
+            pv_range = range_max - range_min
+            # base_sp：量程 40%-60% 范围内，基于 tag_name hash 确定性生成
+            h = abs(hash(tag_name))
+            base_sp = round(range_min + pv_range * (0.4 + (h % 2000) / 2000 * 0.2), 4)
+            base_pv = round(base_sp + random.uniform(-pv_range * 0.01, pv_range * 0.01), 4)
+            base_op = round(random.uniform(40, 60), 2)
+
+            # PID 参数（按控制类型，D 仅温度）
+            pid_p, pid_i, pid_d = TYPE_PID[ctype]
+
+            # 场景分配
+            if tag_name in VALVE_STICTION_LOOPS:
+                scenario = "valve_stiction"
+            else:
+                scenario = _assign_scenario(idx, ctype)
 
             loops.append(
                 {
@@ -229,11 +349,16 @@ async def load_loops_from_db() -> list[dict[str, Any]]:
                     "control_type": ctype,
                     "scenario": scenario,
                     "tau": params["tau"],
+                    "theta": params["theta"],
+                    "model_type": params["model"],
                     "noise_pct": params["noise_pct"],
+                    "range_min": range_min,
+                    "range_max": range_max,
+                    "pv_range": pv_range,
+                    "pv_unit": pv_unit,
                     "base_sp": base_sp,
                     "base_pv": base_pv,
                     "base_op": base_op,
-                    "pv_range": pv_range,
                     "pid_p": pid_p,
                     "pid_i": pid_i,
                     "pid_d": pid_d,
@@ -242,55 +367,56 @@ async def load_loops_from_db() -> list[dict[str, Any]]:
     return loops
 
 
+def _assign_scenario(idx: int, ctype: str) -> str:
+    """按索引轮选场景（保证多样性），排除 valve_stiction（已单独指定）。"""
+    scenarios_by_type = {
+        "FLOW": ["normal", "oscillation", "normal", "op_saturation"],
+        "LEVEL": ["normal", "manual", "normal"],
+        "PRESSURE": ["normal", "overconservative", "normal"],
+        "TEMPERATURE": ["normal", "overaggressive", "overconservative", "normal"],
+        "STABLE": ["normal", "oscillation", "normal"],
+    }
+    scs = scenarios_by_type.get(ctype, ["normal", "oscillation", "normal"])
+    return scs[idx % len(scs)]
+
+
 # ============================================================================
-# SP / PID / MODE 调度
+# SP / MODE 调度（PID 全程不变，无需调度）
 # ============================================================================
 
 
 def generate_sp_schedule(
-    base_sp: float, pv_range: float, start: datetime, end: datetime
+    base_sp: float, range_min: float, range_max: float, start: datetime, end: datetime
 ) -> list[tuple[datetime, float]]:
-    """SP 阶跃调度：每 2-4 小时变化一次，幅度 ±5-10%。"""
-    schedule = [(start, base_sp)]
+    """SP 阶跃调度：每 ~4 小时变化一次（3.5-4.5h），幅度 ±5-10%，约束在量程内。"""
+    pv_range = range_max - range_min
+    # SP 允许范围：量程的 15%-85%，避免边界
+    sp_lo = range_min + pv_range * 0.15
+    sp_hi = range_max - pv_range * 0.15
+    schedule = [(start, clamp(base_sp, sp_lo, sp_hi))]
     t = start
     while t < end:
-        t += timedelta(seconds=random.randint(2 * 3600, 4 * 3600))
+        # 每 3.5-4.5 小时变化一次（围绕 4 小时）
+        t += timedelta(seconds=random.randint(int(3.5 * 3600), int(4.5 * 3600)))
         if t >= end:
             break
-        change = random.uniform(-0.10, 0.10)
-        new_sp = round(base_sp * (1 + change), 2)
-        new_sp = clamp(new_sp, base_sp - pv_range * 0.2, base_sp + pv_range * 0.2)
-        schedule.append((t, new_sp))
-    return schedule
-
-
-def generate_pid_schedule(
-    cfg: dict, start: datetime, end: datetime
-) -> list[tuple[datetime, float, float, float]]:
-    """PID 参数每日 1-2 次微调（±5%）。"""
-    base_p, base_i, base_d = cfg["pid_p"], cfg["pid_i"], cfg["pid_d"]
-    schedule = [(start, base_p, base_i, base_d)]
-    t = start
-    while t < end:
-        t += timedelta(seconds=random.randint(12 * 3600, 24 * 3600))
-        if t >= end:
-            break
-        p = round(base_p * random.uniform(0.95, 1.05), 3)
-        i = round(base_i * random.uniform(0.95, 1.05), 3)
-        d = round(base_d * random.uniform(0.95, 1.05), 3)
-        schedule.append((t, p, i, d))
+        change_pct = random.uniform(0.05, 0.10)  # 量程的 5-10%
+        direction = random.choice([-1, 1])
+        new_sp = schedule[-1][1] + direction * pv_range * change_pct
+        new_sp = clamp(new_sp, sp_lo, sp_hi)
+        schedule.append((t, round(new_sp, 4)))
     return schedule
 
 
 def generate_mode_schedule(
     scenario: str, start: datetime, end: datetime
 ) -> list[tuple[datetime, int]]:
-    """MODE 调度：实际工程至少 4 小时变化一次。
+    """MODE 调度：每 ~8 小时变化一次（7-9h）。
 
     语义：0=Manual, 1=Auto, 2=Cascade
     - manual 场景：始终 0
-    - 其他场景：在 Auto(1) ↔ Cascade(2) 之间切换，每 4-8 小时一次；
-      偶尔短暂切 Manual(0) 维护（约 10% 概率，持续 15-30 分钟）。
+    - 其他场景：在 Auto(1) ↔ Cascade(2) 之间切换，每 7-9 小时一次；
+      10% 概率短暂切 Manual(0) 维护，持续 15-30 分钟（不超过 30 分钟）。
     """
     if scenario == "manual":
         return [(start, 0)]
@@ -298,12 +424,12 @@ def generate_mode_schedule(
     schedule: list[tuple[datetime, int]] = [(start, 1)]
     t = start
     while t < end:
-        # 主切换间隔：4-8 小时
-        t += timedelta(seconds=random.randint(4 * 3600, 8 * 3600))
+        # 主切换间隔：7-9 小时（围绕 8 小时）
+        t += timedelta(seconds=random.randint(7 * 3600, 9 * 3600))
         if t >= end:
             break
         cur = schedule[-1][1]
-        # 10% 概率短暂切 Manual 维护
+        # 10% 概率短暂切 Manual 维护（15-30 分钟）
         if random.random() < 0.10:
             schedule.append((t, 0))
             maintenance_end = t + timedelta(seconds=random.randint(15 * 60, 30 * 60))
@@ -318,235 +444,278 @@ def generate_mode_schedule(
 
 
 # ============================================================================
-# 场景化 PV/OP 生成（1Hz 适配）
+# 场景化 PV/OP 生成（基于物理模型）
 # ============================================================================
 
 
-def _gen_normal(sp: float, prev_op: float, prev_pv: float, cfg: dict) -> tuple[float, float]:
-    """正常回路：PV 紧跟 SP，OP 平缓。"""
-    noise = abs(sp) * cfg["noise_pct"]
-    pv = sp + random.gauss(0, noise)
-    op = prev_op + (sp - prev_pv) * 0.02 + random.gauss(0, 0.2)
-    op = clamp(op, 0, 100)
-    return round(pv, 4), round(op, 4)
+class LoopSimulator:
+    """单回路仿真器：封装物理模型 + 场景逻辑 + 状态。"""
 
+    def __init__(self, cfg: dict) -> None:
+        self.cfg = cfg
+        self.scenario = cfg["scenario"]
+        self.range_min = cfg["range_min"]
+        self.range_max = cfg["range_max"]
+        self.pv_range = cfg["pv_range"]
+        self.tau = cfg["tau"]
+        self.theta = cfg["theta"]
+        self.noise_sigma = cfg["noise_pct"] * self.pv_range
+        self.model_type = cfg["model_type"]
 
-def _gen_oscillation(
-    sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict
-) -> tuple[float, float]:
-    """振荡回路：PV 正弦振荡，周期 ~10 分钟。"""
-    amplitude = cfg["pv_range"] * 0.05
-    period = 600.0
-    omega = 2 * math.pi / period
-    noise = abs(sp) * cfg["noise_pct"]
-    pv = sp + amplitude * math.sin(omega * t) + random.gauss(0, noise)
-    op = prev_op + 0.8 * math.sin(omega * t + math.pi) + random.gauss(0, 0.15)
-    op = clamp(op, 0, 100)
-    return round(pv, 4), round(op, 4)
+        # 初始化物理模型
+        if self.model_type == "sopdt":
+            self.model = SOPDTModel(self.tau, self.theta, k=1.0, noise_sigma=self.noise_sigma)
+            self.model.reset(cfg["base_pv"])
+        elif self.model_type == "integrator":
+            self.model = IntegratorModel(self.tau, k=1.0, noise_sigma=self.noise_sigma)
+        else:  # fopdt
+            self.model = FOPDTModel(self.tau, self.theta, k=1.0, noise_sigma=self.noise_sigma)
 
+        # 阀门卡滞状态
+        self._stiction_last_op = cfg["base_op"]
+        self._stiction_band = 3.0
 
-def _gen_valve_stiction(
-    sp: float, prev_op: float, prev_pv: float, cfg: dict, state: dict
-) -> tuple[float, float]:
-    """阀门粘滞：OP 阶跃式变化。"""
-    error = sp - prev_pv
-    desired_op = prev_op + error * 0.15
-    stiction_band = 3.0
-    if abs(desired_op - prev_op) >= stiction_band:
-        op = desired_op
-    else:
-        op = prev_op
-    op = clamp(op, 0, 100)
-    tau = cfg["tau"]
-    target_pv = sp + (op - 50) * (cfg["pv_range"] * 0.005)
-    pv = prev_pv + (target_pv - prev_pv) * (SAMPLE_INTERVAL / tau) + random.gauss(0, 0.15)
-    return round(pv, 4), round(op, 4)
+        # op_saturation 状态
+        self._sat_until = 0.0
+        self._norm_until = 0.0
 
+        # manual 状态
+        self._manual_next_change = 0.0
+        self._manual_op_target = cfg["base_op"]
 
-def _gen_op_saturation(
-    sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict, state: dict
-) -> tuple[float, float]:
-    """OP 饱和：OP 长时间停留 95-100% 或 0-5%。"""
-    sat_until = state.get("sat_until", 0.0)
-    norm_until = state.get("norm_until", 0.0)
-    if t < sat_until:
-        op = clamp(97.0 + random.gauss(0, 0.5), 95, 100)
-    elif t < norm_until:
-        op = prev_op + (sp - prev_pv) * 0.1 + random.gauss(0, 0.2)
-        op = clamp(op, 0, 100)
-    else:
-        if random.random() < 0.4:
-            state["sat_until"] = t + random.randint(1800, 3600)
-            state["norm_until"] = 0.0
-            op = clamp(97.0 + random.gauss(0, 0.5), 95, 100)
+        # overaggressive 状态
+        self._last_sp = cfg["base_sp"]
+        self._sp_change_t = 0.0
+
+    def step(self, sp: float, prev_pv: float, prev_op: float, t_sec: float) -> tuple[float, float]:
+        """单步仿真，返回 (pv, op)，均约束在量程内。"""
+        if self.scenario == "valve_stiction":
+            pv, op = self._gen_valve_stiction(sp, prev_pv, prev_op)
+        elif self.scenario == "manual":
+            pv, op = self._gen_manual(sp, prev_pv, prev_op, t_sec)
+        elif self.scenario == "op_saturation":
+            pv, op = self._gen_op_saturation(sp, prev_pv, prev_op, t_sec)
+        elif self.scenario == "oscillation":
+            pv, op = self._gen_oscillation(sp, prev_pv, t_sec)
+        elif self.scenario == "overaggressive":
+            pv, op = self._gen_overaggressive(sp, prev_pv, t_sec)
+        elif self.scenario == "overconservative":
+            pv, op = self._gen_overconservative(sp, prev_pv)
+        else:  # normal
+            pv, op = self._gen_normal(sp, prev_pv, prev_op)
+
+        # 量程约束
+        pv = clamp(pv, self.range_min, self.range_max)
+        op = clamp(op, 0.0, 100.0)
+        return round(pv, 4), round(op, 4)
+
+    def _gen_normal(self, sp: float, prev_pv: float, prev_op: float) -> tuple[float, float]:
+        """正常回路：PV 按物理模型跟随 SP，OP 平缓调节。"""
+        if self.model_type == "integrator":
+            pv = self.model.step(sp, prev_pv, prev_op)
+        elif self.model_type == "sopdt":
+            pv = self.model.step(sp, prev_pv)
         else:
-            state["norm_until"] = t + random.randint(3600, 7200)
-            state["sat_until"] = 0.0
-            op = prev_op + (sp - prev_pv) * 0.1 + random.gauss(0, 0.2)
-            op = clamp(op, 0, 100)
-    target_pv = sp + (op - 50) * (cfg["pv_range"] * 0.008)
-    pv = prev_pv + (target_pv - prev_pv) * 0.05 + random.gauss(0, 0.2)
-    return round(pv, 4), round(op, 4)
+            pv = self.model.step(sp, prev_pv)
+        # OP 缓慢调节（PI 控制）
+        error = sp - pv
+        op = prev_op + error * 0.02 + random.gauss(0, 0.2)
+        return pv, op
 
+    def _gen_oscillation(self, sp: float, prev_pv: float, t_sec: float) -> tuple[float, float]:
+        """振荡回路：PV 正弦振荡，周期 ~10 分钟。"""
+        amplitude = self.pv_range * 0.05
+        period = 600.0
+        omega = 2 * math.pi / period
+        if self.model_type == "sopdt":
+            pv = self.model.step(sp, prev_pv)
+        elif self.model_type == "integrator":
+            pv = self.model.step(sp, prev_pv, 50.0)
+        else:
+            pv = self.model.step(sp, prev_pv)
+        pv = pv + amplitude * math.sin(omega * t_sec)
+        op = 50 + 0.8 * math.sin(omega * t_sec + math.pi) * self.pv_range * 0.01
+        return pv, op
 
-def _gen_overconservative(
-    sp: float, prev_op: float, prev_pv: float, cfg: dict
-) -> tuple[float, float]:
-    """过保守：PV 响应慢，稳态偏差 8%。"""
-    tau = cfg["tau"] * 4.0
-    target_pv = sp * 0.92
-    pv = prev_pv + (target_pv - prev_pv) * (SAMPLE_INTERVAL / tau) + random.gauss(0, 0.15)
-    op = prev_op + (sp - pv) * 0.02 + random.gauss(0, 0.1)
-    op = clamp(op, 0, 100)
-    return round(pv, 4), round(op, 4)
+    def _gen_valve_stiction(self, sp: float, prev_pv: float, prev_op: float) -> tuple[float, float]:
+        """阀门卡滞：OP 阶跃式变化（累积误差超过 stiction_band 才动作），PV 响应极慢。"""
+        error = sp - prev_pv
+        desired_op = prev_op + error * 0.15
+        if abs(desired_op - self._stiction_last_op) >= self._stiction_band:
+            op = clamp(desired_op, 0, 100)
+            self._stiction_last_op = op
+        else:
+            op = prev_op  # 粘滞，OP 不变
+        # PV 响应极慢（系数远小于正常 alpha）
+        if self.model_type == "integrator":
+            pv = prev_pv + (sp - prev_pv) * 0.02 * (SAMPLE_INTERVAL / self.tau)
+        else:
+            pv = prev_pv + (sp - prev_pv) * 0.02 * (SAMPLE_INTERVAL / self.tau)
+        pv += random.gauss(0, self.noise_sigma * 0.3)  # 粘滞时噪声更小
+        return pv, op
 
+    def _gen_op_saturation(self, sp: float, prev_pv: float, prev_op: float, t_sec: float) -> tuple[float, float]:
+        """OP 饱和：OP 长时间停留 95-100% 或 0-5%。"""
+        if t_sec < self._sat_until:
+            op = clamp(97.0 + random.gauss(0, 0.5), 95, 100)
+        elif t_sec < self._norm_until:
+            error = sp - prev_pv
+            op = prev_op + error * 0.1 + random.gauss(0, 0.2)
+        else:
+            if random.random() < 0.4:
+                self._sat_until = t_sec + random.randint(1800, 3600)
+                self._norm_until = 0.0
+                op = clamp(97.0 + random.gauss(0, 0.5), 95, 100)
+            else:
+                self._norm_until = t_sec + random.randint(3600, 7200)
+                self._sat_until = 0.0
+                error = sp - prev_pv
+                op = prev_op + error * 0.1 + random.gauss(0, 0.2)
+        # PV 跟随
+        if self.model_type == "integrator":
+            pv = self.model.step(sp, prev_pv, op)
+        elif self.model_type == "sopdt":
+            pv = self.model.step(sp, prev_pv)
+        else:
+            pv = self.model.step(sp, prev_pv)
+        return pv, op
 
-def _gen_overaggressive(
-    sp: float, prev_op: float, prev_pv: float, t: float, cfg: dict, state: dict
-) -> tuple[float, float]:
-    """过激进：PV 过冲大，振荡后收敛。"""
-    last_sp = state.get("last_sp", sp)
-    sp_change_t = state.get("sp_change_t", 0.0)
-    if sp != last_sp:
-        state["sp_change_t"] = t
-        state["last_sp"] = sp
-        sp_change_t = t
-    elapsed = t - sp_change_t
-    omega = 0.015
-    zeta = 0.2
-    overshoot = 0.3
-    noise = abs(sp) * cfg["noise_pct"]
-    if elapsed < 1200:
-        decay = math.exp(-zeta * omega * elapsed)
-        pv = sp + overshoot * sp * decay * math.cos(omega * elapsed) + random.gauss(0, noise)
-    else:
-        pv = sp + random.gauss(0, noise)
-    op = prev_op + (sp - pv) * 0.2 + random.gauss(0, 0.4)
-    op = clamp(op, 0, 100)
-    return round(pv, 4), round(op, 4)
+    def _gen_overconservative(self, sp: float, prev_pv: float) -> tuple[float, float]:
+        """过保守：PV 响应慢，稳态偏差 ~8%。"""
+        target_pv = sp - self.pv_range * 0.08 * (1 if sp > prev_pv else -1)
+        # 用更大的 tau 模拟慢响应
+        slow_alpha = 1.0 - math.exp(-SAMPLE_INTERVAL / (self.tau * 4.0))
+        pv = prev_pv + (target_pv - prev_pv) * slow_alpha + random.gauss(0, self.noise_sigma)
+        op = 50 + (sp - pv) * 0.02
+        return pv, op
 
+    def _gen_overaggressive(self, sp: float, prev_pv: float, t_sec: float) -> tuple[float, float]:
+        """过激进：SP 变化后 PV 过冲大，振荡后收敛。"""
+        if sp != self._last_sp:
+            self._sp_change_t = t_sec
+            self._last_sp = sp
+        elapsed = t_sec - self._sp_change_t
+        overshoot = 0.3
+        omega = 0.015
+        zeta = 0.2
+        if elapsed < 1200:
+            decay = math.exp(-zeta * omega * elapsed)
+            pv = sp + overshoot * self.pv_range * 0.1 * decay * math.cos(omega * elapsed)
+        else:
+            pv = sp
+        pv += random.gauss(0, self.noise_sigma)
+        op = 50 + (sp - pv) * 0.2 + random.gauss(0, 0.4)
+        return pv, op
 
-def _gen_manual(
-    cfg: dict, sp: float, prev_op: float, prev_pv: float, t: float, state: dict
-) -> tuple[float, float]:
-    """手动模式：OP 由操作员阶跃调节，PV 跟随 OP。"""
-    next_change = state.get("next_change", 0.0)
-    op_target = state.get("op_target", prev_op)
-    if t >= next_change:
-        op_target = clamp(prev_op + random.uniform(-15, 15), 10, 90)
-        state["op_target"] = op_target
-        state["next_change"] = t + random.randint(3600, 10800)
-    op = prev_op + (op_target - prev_op) * 0.1
-    op = clamp(op, 0, 100)
-    target_pv = cfg["base_sp"] + (op - 50) * (cfg["pv_range"] * 0.005)
-    pv = prev_pv + (target_pv - prev_pv) * 0.03 + random.gauss(0, 0.15)
-    return round(pv, 4), round(op, 4)
+    def _gen_manual(self, sp: float, prev_pv: float, prev_op: float, t_sec: float) -> tuple[float, float]:
+        """手动模式：OP 由操作员阶跃调节，PV 跟随 OP。"""
+        if t_sec >= self._manual_next_change:
+            self._manual_op_target = clamp(prev_op + random.uniform(-15, 15), 10, 90)
+            self._manual_next_change = t_sec + random.randint(3600, 10800)
+        op = prev_op + (self._manual_op_target - prev_op) * 0.1
+        # PV 受 OP 影响（手动模式 SP 不跟随）
+        if self.model_type == "integrator":
+            pv = self.model.step(sp, prev_pv, op)
+        elif self.model_type == "sopdt":
+            pv = self.model.step(prev_pv, prev_pv)  # 手动时 SP 不起作用
+        else:
+            pv = self.model.step(prev_pv, prev_pv)
+        return pv, op
 
 
 # ============================================================================
-# 异常值 + 非 Good 质量戳注入
+# 异常值注入（量程内，PV 异常 < 5%）
 # ============================================================================
 
 
 class AnomalyInjector:
-    """异常值与质量戳注入器。
+    """异常值与质量戳注入器（所有异常值约束在量程范围内，PV 异常比例 < 5%）。
 
     策略：
-        - spike（尖峰）：随机时刻 PV 突变到 5-10x 量程外，持续 1-5 秒
-        - flatline（停滞）：PV 锁定固定值 60-300 秒
-        - out_of_range（超量程）：PV 超出 [range_min, range_max] 边界
-        - bad_cluster（坏质量聚簇）：30-120 秒窗口 pv_quality=0
+        - spike（尖峰）：PV 突变到量程边界附近（不超量程），持续 1-3 秒，标记 Bad
+        - flatline（停滞）：PV 锁定固定值 30-90 秒，标记 Uncertain
+        - bad_cluster（坏质量聚簇）：30-60 秒窗口 pv_quality=0（仅质量，不改 PV 值）
         - uncertain_scatter（不确定散点）：~1% 单点 pv_quality=2
+    总异常点比例控制在 < 5%。
     """
 
     def __init__(self, cfg: dict, n_points: int) -> None:
         self.cfg = cfg
         self.n = n_points
+        self.range_min = cfg["range_min"]
+        self.range_max = cfg["range_max"]
         self.pv_range = cfg["pv_range"]
         self.base_sp = cfg["base_sp"]
 
-        # 预生成异常事件
+        # 预生成异常事件（控制总比例 < 5%）
         self.spike_events = self._gen_spikes()
         self.flatline_events = self._gen_flatlines()
         self.bad_clusters = self._gen_bad_clusters()
-        # out_of_range 标记点（~0.05%）
-        self.oor_indices = set(random.sample(range(n_points), max(1, n_points // 2000)))
-        # uncertain 散点（~1%）
-        self.uncertain_indices = set(random.sample(range(n_points), max(1, n_points // 100)))
+        # uncertain 散点 ~0.5%
+        n_uncertain = max(1, n_points // 200)
+        self.uncertain_indices = set(random.sample(range(n_points), n_uncertain))
 
     def _gen_spikes(self) -> list[tuple[int, int, float]]:
-        """生成尖峰事件：(起始索引, 持续秒数, 尖峰值)。约 0.05% 的点。"""
+        """尖峰事件：(起始, 持续秒, 尖峰值)。量程边界附近，不超量程。约 0.05%。"""
         events = []
-        n_spikes = max(3, self.n // 2000)
+        n_spikes = max(2, self.n // 2000)
         for _ in range(n_spikes):
             start = random.randint(60, self.n - 300)
-            dur = random.randint(1, 5)
-            # 尖峰方向：向上或向下
-            magnitude = self.pv_range * random.uniform(5, 10) * random.choice([-1, 1])
-            spike_val = self.base_sp + magnitude
-            events.append((start, dur, spike_val))
+            dur = random.randint(1, 3)
+            # 尖峰到量程边界附近（量程的 90-99% 或 1-10%），不超量程
+            if random.random() < 0.5:
+                spike_val = self.range_max * random.uniform(0.90, 0.99)
+            else:
+                spike_val = self.range_min + self.pv_range * random.uniform(0.01, 0.10)
+            events.append((start, dur, round(spike_val, 4)))
         return events
 
     def _gen_flatlines(self) -> list[tuple[int, int, float]]:
-        """生成停滞事件：(起始索引, 持续秒数, 锁定值)。约 0.2% 的点。"""
+        """停滞事件：(起始, 持续秒, 锁定值)。约 0.15%。"""
         events = []
-        n_flats = max(2, self.n // 5000)
+        n_flats = max(1, self.n // 6000)
         for _ in range(n_flats):
             start = random.randint(60, self.n - 300)
-            dur = random.randint(30, 90)
-            val = self.base_sp + random.uniform(-self.pv_range * 0.1, self.pv_range * 0.1)
-            events.append((start, dur, val))
+            dur = random.randint(20, 60)
+            val = self.base_sp + random.uniform(-self.pv_range * 0.05, self.pv_range * 0.05)
+            val = clamp(val, self.range_min, self.range_max)
+            events.append((start, dur, round(val, 4)))
         return events
 
     def _gen_bad_clusters(self) -> list[tuple[int, int]]:
-        """生成坏质量聚簇：(起始索引, 持续秒数)。约 3% 的点。"""
+        """坏质量聚簇：(起始, 持续秒)。约 1.5%（仅质量戳，不改 PV 值）。"""
         clusters = []
         total_bad = 0
-        target_bad = int(self.n * 0.03)
+        target_bad = int(self.n * 0.015)
         while total_bad < target_bad:
             start = random.randint(60, self.n - 300)
-            dur = random.randint(30, 120)
+            dur = random.randint(20, 50)
             clusters.append((start, dur))
             total_bad += dur
         return clusters
 
-    def apply(self, idx: int, pv: float, ts_sec: float) -> tuple[float, int]:
-        """对单点应用异常注入，返回 (pv_after, quality)。
-
-        quality: 1=Good, 0=Bad, 2=Uncertain
-        """
+    def apply(self, idx: int, pv: float) -> tuple[float, int]:
+        """对单点应用异常注入，返回 (pv_after, quality)。quality: 1=Good, 0=Bad, 2=Uncertain。"""
         quality = 1
 
-        # 1. spike 尖峰
+        # 1. spike 尖峰（量程内）
         for s, dur, val in self.spike_events:
             if s <= idx < s + dur:
-                pv = val
-                quality = 0  # 尖峰视为 Bad
-                return round(pv, 4), quality
+                return val, 0  # Bad
 
         # 2. flatline 停滞
         for s, dur, val in self.flatline_events:
             if s <= idx < s + dur:
-                pv = val
-                # 停滞期间标记 Uncertain
                 if quality == 1:
-                    quality = 2
-                return round(pv, 4), quality
+                    quality = 2  # Uncertain
+                return val, quality
 
-        # 3. out_of_range 超量程
-        if idx in self.oor_indices:
-            pv = pv + self.pv_range * random.uniform(0.15, 0.25) * random.choice([-1, 1])
-            if quality == 1:
-                quality = 2
-            return round(pv, 4), quality
-
-        # 4. bad_cluster 坏质量聚簇
+        # 3. bad_cluster 坏质量聚簇（仅质量戳）
         for s, dur in self.bad_clusters:
             if s <= idx < s + dur:
-                quality = 0
-                return round(pv, 4), quality
+                return round(pv, 4), 0  # Bad
 
-        # 5. uncertain 散点
+        # 4. uncertain 散点
         if idx in self.uncertain_indices:
             quality = 2
 
@@ -564,69 +733,45 @@ def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple
     返回 list of (ts_str, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality)
     """
     interval = timedelta(seconds=SAMPLE_INTERVAL)
-    sp_schedule = generate_sp_schedule(cfg["base_sp"], cfg["pv_range"], start, end)
-    pid_schedule = generate_pid_schedule(cfg, start, end)
+    sp_schedule = generate_sp_schedule(cfg["base_sp"], cfg["range_min"], cfg["range_max"], start, end)
     mode_schedule = generate_mode_schedule(cfg["scenario"], start, end)
 
     sp_idx = 0
     cur_sp = sp_schedule[0][1]
-    pid_idx = 0
-    cur_p, cur_i, cur_d = pid_schedule[0][1], pid_schedule[0][2], pid_schedule[0][3]
     mode_idx = 0
     cur_mode = mode_schedule[0][1]
 
+    # PID 全程不变
+    cur_p, cur_i, cur_d = cfg["pid_p"], cfg["pid_i"], cfg["pid_d"]
+
     prev_pv = cfg["base_pv"]
     prev_op = cfg["base_op"]
-    scenario = cfg["scenario"]
-    state: dict[str, Any] = {}
+    simulator = LoopSimulator(cfg)
 
-    # 计算总点数
     total_sec = int((end - start).total_seconds())
     n_points = total_sec // SAMPLE_INTERVAL + 1
-
     injector = AnomalyInjector(cfg, n_points)
 
     points: list[tuple] = []
     t = start
     idx = 0
-    total_seconds = 0.0
+    t_sec = 0.0
 
     while t <= end:
-        # 更新调度
+        # 更新 SP 调度
         while sp_idx < len(sp_schedule) and sp_schedule[sp_idx][0] <= t:
             cur_sp = sp_schedule[sp_idx][1]
             sp_idx += 1
-        while pid_idx < len(pid_schedule) and pid_schedule[pid_idx][0] <= t:
-            cur_p, cur_i, cur_d = (
-                pid_schedule[pid_idx][1],
-                pid_schedule[pid_idx][2],
-                pid_schedule[pid_idx][3],
-            )
-            pid_idx += 1
+        # 更新 MODE 调度
         while mode_idx < len(mode_schedule) and mode_schedule[mode_idx][0] <= t:
             cur_mode = mode_schedule[mode_idx][1]
             mode_idx += 1
 
-        # 场景化 PV/OP
-        if scenario == "normal":
-            pv, op = _gen_normal(cur_sp, prev_op, prev_pv, cfg)
-        elif scenario == "oscillation":
-            pv, op = _gen_oscillation(cur_sp, prev_op, prev_pv, total_seconds, cfg)
-        elif scenario == "valve_stiction":
-            pv, op = _gen_valve_stiction(cur_sp, prev_op, prev_pv, cfg, state)
-        elif scenario == "op_saturation":
-            pv, op = _gen_op_saturation(cur_sp, prev_op, prev_pv, total_seconds, cfg, state)
-        elif scenario == "overconservative":
-            pv, op = _gen_overconservative(cur_sp, prev_op, prev_pv, cfg)
-        elif scenario == "overaggressive":
-            pv, op = _gen_overaggressive(cur_sp, prev_op, prev_pv, total_seconds, cfg, state)
-        elif scenario == "manual":
-            pv, op = _gen_manual(cfg, cur_sp, prev_op, prev_pv, total_seconds, state)
-        else:
-            pv, op = _gen_normal(cur_sp, prev_op, prev_pv, cfg)
+        # 场景化 PV/OP 生成（物理模型）
+        pv, op = simulator.step(cur_sp, prev_pv, prev_op, t_sec)
 
         # 异常值 + 质量戳注入
-        pv, pv_quality = injector.apply(idx, pv, total_seconds)
+        pv, pv_quality = injector.apply(idx, pv)
 
         points.append((fmt_ts(t), pv, cur_sp, op, cur_mode, cur_p, cur_i, cur_d, pv_quality))
 
@@ -634,7 +779,7 @@ def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple
         prev_op = op
         t += interval
         idx += 1
-        total_seconds += SAMPLE_INTERVAL
+        t_sec += SAMPLE_INTERVAL
 
     return points
 
@@ -644,69 +789,39 @@ def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple
 # ============================================================================
 
 
-async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> None:
+async def setup_postgres(loops: list[dict[str, Any]]) -> None:
     """补全 tag_registry + loop_tag_mapping（每回路 7 个 Tag 角色）。"""
     loop_ids = [c["id"] for c in loops]
+    n_tags = 0
+    n_mappings = 0
     async with AsyncSessionLocal() as session:
-        if clean:
-            # 1. 先删除这些回路的 loop_tag_mapping（解除外键引用）
-            await session.execute(
-                text("DELETE FROM loop_tag_mapping WHERE loop_id = ANY(:ids)"), {"ids": loop_ids}
-            )
-            # 2. 删除 tag_registry 中不再被任何 loop_tag_mapping 引用的 tag
-            #    （只删除这些回路的 7 角色 tag，且确认无其他回路引用）
-            tag_names_to_clean = [
-                f"{cfg['tag_name']}.{role}" for cfg in loops for role in TAG_ROLES
-            ]
-            await session.execute(
-                text(
-                    "DELETE FROM tag_registry "
-                    "WHERE tag_name = ANY(:tns) "
-                    "AND id NOT IN (SELECT tag_id FROM loop_tag_mapping)"
-                ),
-                {"tns": tag_names_to_clean},
-            )
-            await session.commit()
-            print(f"  ✓ 清理旧 tag 映射（{len(loops)} 回路）")
-
-        # 创建 tag_registry + loop_tag_mapping（使用 RETURNING 获取实际 tag_id，避免 FK 冲突）
-        n_tags = 0
-        n_mappings = 0
         for cfg in loops:
             for role in TAG_ROLES:
                 tag_name = f"{cfg['tag_name']}.{role}"
                 tag_desc = f"{cfg['description']} {role}"
 
-                # 当前值
                 if role == "PV":
                     cur_val = cfg["base_pv"]
+                    rmin, rmax, unit = cfg["range_min"], cfg["range_max"], cfg["pv_unit"]
                 elif role == "SP":
                     cur_val = cfg["base_sp"]
+                    rmin, rmax, unit = cfg["range_min"], cfg["range_max"], cfg["pv_unit"]
                 elif role == "OP":
                     cur_val = cfg["base_op"]
+                    rmin, rmax, unit = 0.0, 100.0, "%"
                 elif role == "MODE":
                     cur_val = 1.0 if cfg["scenario"] != "manual" else 0.0
+                    rmin, rmax, unit = 0.0, 10.0, ""
                 elif role == "PID_P":
                     cur_val = cfg["pid_p"]
+                    rmin, rmax, unit = 0.0, 100.0, ""
                 elif role == "PID_I":
                     cur_val = cfg["pid_i"]
+                    rmin, rmax, unit = 0.0, 1000.0, "s"
                 else:  # PID_D
                     cur_val = cfg["pid_d"]
+                    rmin, rmax, unit = 0.0, 1000.0, "s"
 
-                # range_min / range_max / unit
-                ctype = cfg["control_type"]
-                if ctype == "FLOW":
-                    range_min, range_max, unit = 0.0, cfg["pv_range"] * 1.2, "t/h"
-                elif ctype == "LEVEL":
-                    range_min, range_max, unit = 0.0, 100.0, "%"
-                elif ctype == "PRESSURE":
-                    range_min, range_max, unit = 0.0, cfg["pv_range"] * 1.5, "MPa"
-                elif ctype == "TEMPERATURE":
-                    range_min, range_max, unit = 0.0, cfg["pv_range"] * 1.2, "°C"
-                else:
-                    range_min, range_max, unit = 0.0, cfg["pv_range"] * 1.2, ""
-
-                # upsert tag_registry 并 RETURNING 实际 id（无论新建还是已存在都返回正确 id）
                 result = await session.execute(
                     text("""
                     INSERT INTO tag_registry
@@ -734,17 +849,16 @@ async def setup_postgres(loops: list[dict[str, Any]], clean: bool = False) -> No
                         "desc": tag_desc,
                         "type": role,
                         "val": cur_val,
-                        "rmin": range_min,
-                        "rmax": range_max,
+                        "rmin": rmin,
+                        "rmax": rmax,
                         "unit": unit,
-                        "mtype": ctype,
+                        "mtype": cfg["control_type"],
                         "tdtag": subtable_name(cfg["tag_name"]),
                     },
                 )
                 actual_tag_id = result.scalar()
                 n_tags += 1
 
-                # 用实际 tag_id upsert loop_tag_mapping，FK 约束不会冲突
                 is_required = role in REQUIRED_ROLES
                 await session.execute(
                     text("""
@@ -793,25 +907,32 @@ async def td_execute(
             if attempt == retries - 1:
                 print(f"  ⚠ TDengine SQL 错误: {desc[:200]}")
                 return None
-            await asyncio.sleep(2**attempt)
+            await asyncio.sleep(2 ** attempt)
         except Exception as exc:
             if attempt == retries - 1:
                 print(f"  ⚠ TDengine 请求异常: {exc}")
                 return None
-            await asyncio.sleep(2**attempt)
+            await asyncio.sleep(2 ** attempt)
     return None
 
 
 async def setup_tdengine(
     client: httpx.AsyncClient, loops: list[dict[str, Any]], clean: bool = False
 ) -> None:
-    """创建数据库、超级表、子表。clean=True 时先 DROP 旧子表。"""
-    # 1. 数据库 + 超级表
+    """创建数据库、超级表、子表。clean=True 时 DROP 超级表（清空全部数据）后重建。"""
+    # 1. 数据库
     await td_execute(
         client,
         "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'",
         use_db=False,
     )
+
+    # 2. clean=True 时 DROP 超级表（清空全部时序数据）
+    if clean:
+        await td_execute(client, "DROP STABLE IF EXISTS st_loop_data")
+        print("  ✓ 已清空 TDengine 全部数据（DROP STABLE st_loop_data）")
+
+    # 3. 超级表
     await td_execute(
         client,
         """
@@ -832,11 +953,9 @@ async def setup_tdengine(
     """,
     )
 
-    # 2. 子表
+    # 4. 子表
     for cfg in loops:
         sub = subtable_name(cfg["tag_name"])
-        if clean:
-            await td_execute(client, f"DROP TABLE IF EXISTS {sub}")
         await td_execute(
             client,
             (
@@ -916,44 +1035,50 @@ async def write_all_tdengine_data(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="CLPM 3 单元真实回路秒级数据仿真器")
-    parser.add_argument("--days", type=int, default=7, help="历史数据天数（默认 7）")
-    parser.add_argument(
-        "--clean", action="store_true", help="清空旧 TDengine 子表 + 旧 tag 映射后重建"
-    )
+    parser = argparse.ArgumentParser(description="CLPM 27 回路秒级数据仿真器（189 测点真实量程）")
+    parser.add_argument("--hours", type=int, default=DEFAULT_HOURS, help=f"历史数据小时数（默认 {DEFAULT_HOURS}）")
+    parser.add_argument("--start", type=str, default=None, help=f"起始时间 YYYY-MM-DD HH:MM:SS（默认 {DEFAULT_START}）")
+    parser.add_argument("--clean", action="store_true", help="清空 TDengine 全部数据后重新写入")
     return parser.parse_args()
 
 
 async def main() -> None:
     args = parse_args()
-    start_time = datetime.now().replace(microsecond=0) - timedelta(days=args.days)
-    end_time = datetime.now().replace(microsecond=0)
+    start_time = datetime.strptime(args.start, "%Y-%m-%d %H:%M:%S") if args.start else DEFAULT_START
+    end_time = start_time + timedelta(hours=args.hours)
 
     print("=" * 70)
-    print("  CLPM 3 单元真实回路秒级数据仿真器")
-    print(f"  时间范围: {start_time} ~ {end_time} ({args.days} 天)")
+    print("  CLPM 27 回路秒级数据仿真器（189 测点真实量程）")
+    print(f"  时间范围: {start_time} ~ {end_time} ({args.hours} 小时)")
     print(f"  采样间隔: {SAMPLE_INTERVAL} 秒 (1Hz)")
-    print(f"  清理旧数据: {'是' if args.clean else '否'}")
+    print(f"  清空 TDengine: {'是' if args.clean else '否'}")
     print("=" * 70)
 
     # 1. 加载回路配置
-    print("\n📋 [1/4] 从 PostgreSQL 加载 3 单元回路配置...")
+    print("\n📋 [1/4] 从 PostgreSQL 加载 27 回路配置（含真实量程）...")
     loops = await load_loops_from_db()
     print(f"  ✓ 加载 {len(loops)} 个回路：")
-    # 按单元分组打印
     units_seen: dict[str, list[str]] = {}
     for cfg in loops:
         units_seen.setdefault(cfg["unit_name"], []).append(
-            f"{cfg['tag_name']}({cfg['control_type']}/{cfg['scenario']})"
+            f"{cfg['tag_name']}({cfg['control_type']}/{cfg['scenario']} 量程[{cfg['range_min']},{cfg['range_max']}])"
         )
     for uname, tags in units_seen.items():
         print(f"    {uname}: {len(tags)} 回路")
 
-    # 2. PostgreSQL 元数据补全（始终用 upsert，不删除已有 tag，避免 FK 冲突）
-    print("\n📋 [2/4] 补全 PostgreSQL tag_registry / loop_tag_mapping...")
-    await setup_postgres(loops, clean=False)
+    # 物理模型分布
+    model_dist: dict[str, int] = {}
+    for cfg in loops:
+        model_dist[cfg["model_type"]] = model_dist.get(cfg["model_type"], 0) + 1
+    print(f"  物理模型分布: {model_dist}")
+    valve_loops = [c["tag_name"] for c in loops if c["scenario"] == "valve_stiction"]
+    print(f"  阀门卡滞回路({len(valve_loops)}): {valve_loops}")
 
-    # 3. TDengine 设置 + 数据写入（--clean 时 DROP 旧子表重建）
+    # 2. PostgreSQL 元数据补全
+    print("\n📋 [2/4] 补全 PostgreSQL tag_registry / loop_tag_mapping...")
+    await setup_postgres(loops)
+
+    # 3. TDengine 设置 + 数据写入
     print("\n📊 [3/4] 设置 TDengine 并写入时序数据...")
     async with httpx.AsyncClient(
         auth=httpx.BasicAuth(settings.TDENGINE_USER, settings.TDENGINE_PASSWORD),
@@ -967,10 +1092,12 @@ async def main() -> None:
     print("  ✅ 数据生成完成！")
     print(f"  回路数:       {len(loops)}")
     print(f"  Tag 数:       {len(loops) * len(TAG_ROLES)}")
-    print(f"  时序数据:     {total_rows} 行（{SAMPLE_INTERVAL}Hz × {args.days} 天）")
-    expected = len(loops) * (args.days * 86400 + 1)
+    print(f"  时序数据:     {total_rows} 行（{SAMPLE_INTERVAL}Hz × {args.hours} 小时）")
+    expected = len(loops) * (args.hours * 3600 + 1)
     print(f"  预期行数:     {expected}")
-    print(f"  写入率:       {total_rows / expected * 100:.2f}%" if expected else "")
+    if expected:
+        print(f"  写入率:       {total_rows / expected * 100:.2f}%")
+    print(f"  时间范围:     {start_time} ~ {end_time}")
     print("=" * 70)
 
     await engine.dispose()

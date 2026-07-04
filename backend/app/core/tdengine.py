@@ -72,6 +72,34 @@ def _validate_time(time_str: str, field_name: str) -> str:
     return time_str
 
 
+def make_subtable_name(loop_part: str) -> str:
+    """回路位号 → TDengine 子表名（P3 #54：公共函数，避免散落多处实现）。
+
+    规则：
+        - 全部转小写
+        - 连字符 `-` 和点号 `.` 替换为下划线 `_`
+        - 合并连续多个下划线为单个下划线
+        - 加 `d_loop_` 前缀
+
+    示例:
+        >>> make_subtable_name("HDS-RX-TIC-101")
+        'd_loop_hds_rx_tic_101'
+        >>> make_subtable_name("41FIC40504.PIDA")
+        'd_loop_41fic40504_pida'
+        >>> make_subtable_name("LIC-101")
+        'd_loop_lic_101'
+
+    Args:
+        loop_part: 回路位号部分（不含 .PV/.SP 等角色后缀）
+
+    Returns:
+        TDengine 子表名（d_loop_<normalized>）
+    """
+    name = loop_part.lower().replace("-", "_").replace(".", "_")
+    name = re.sub(r"_+", "_", name)
+    return "d_loop_" + name
+
+
 def _parse_tag_to_table_column(tag_name: str) -> tuple[str, str, str | None]:
     """将 tag_name 解析为子表名、数据列名、质量列名。
 
@@ -87,10 +115,8 @@ def _parse_tag_to_table_column(tag_name: str) -> tuple[str, str, str | None]:
     column = _ROLE_COLUMN_MAP.get(role_upper, "pv")
     quality_col = _QUALITY_COLUMN_MAP.get(role_upper)
 
-    # 子表命名: d_loop_<位号小写连字符转下划线>
-    subtable = "d_loop_" + loop_part.lower().replace("-", "_").replace(".", "_")
-    # 清理多余下划线
-    subtable = re.sub(r"_+", "_", subtable)
+    # 子表命名: 调用公共函数 make_subtable_name（P3 #54）
+    subtable = make_subtable_name(loop_part)
 
     return subtable, column, quality_col
 
