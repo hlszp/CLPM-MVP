@@ -78,7 +78,7 @@
 | 45 | 回路管理 | R9: `match_tags_for_loop` 硬编码 tag 后缀 `["PV","SP","OP","MODE","KP","TI","TD"]`，与 `PID_P/PID_I/PID_D` 不一致 | `endpoints/tags.py:186` | **已修复** |
 | 46 | 回路管理 | R10: `_retry_async` 异常处理代码异味（`last_exc = exc = None` 后再 `sys.exc_info()`） | `services/aas_sync.py:219-230` | **已修复** |
 | 47 | 回路管理 | R11: TagRegistry 在导入时静默创建（绕过 AAS 同步），可能出现"幽灵 Tag" | `services/loop.py:891-902` | **已修复** |
-| 48 | 回路管理 | R12: `ledger.vue` 已标注 `@deprecated` 但仍在仓库 | `views/loop/ledger.vue` | 待修复 |
+| 48 | 回路管理 | R12: `ledger.vue` 已标注 `@deprecated` 但仍在仓库 | `views/loop/ledger.vue` | **已修复** |
 | 49 | 性能评估 | R5: `performance.py` 中 `_aggregate_kpi_summary`/`_aggregate_kpi_cards`/`_aggregate_steady_trend` 为死代码 | `services/performance.py:1095-1207` | 待修复 |
 | 50 | 性能评估 | R6: `get_ranking()` 未过滤 `confidence_level='E'`，与节点级聚合不一致 | `services/performance.py:625` | 待修复 |
 | 51 | 性能评估 | R8: `refresh_beat_schedule` 需重启 Beat 进程才生效，前端无提示 | `tasks/kpi_calc.py:472` | 待修复 |
@@ -98,8 +98,8 @@
 | P0 阻断性 | 8 | 8 | 0 |
 | P1 高优先级 | 14 | 14 | 0 |
 | P2 中优先级 | 19 | 19 | 0 |
-| P3 低优先级 | 16 | 6 | 10 |
-| **合计** | **57** | **47** | **10** |
+| P3 低优先级 | 16 | 7 | 9 |
+| **合计** | **57** | **48** | **9** |
 
 ## 已修复记录
 
@@ -150,3 +150,4 @@
 | 45 | R9: match_tags_for_loop 硬编码 tag 后缀不一致 | 后端 `endpoints/tags.py:match_tags_for_loop_endpoint`：将硬编码 `["PV","SP","OP","MODE","KP","TI","TD"]` 修正为 `("PV","SP","OP","MODE","PID_P","PID_I","PID_D")`，与 `loop_tag_mapping.tag_role` CHECK 约束（`db/postgresql/01_schema.sql:168`）+ AGENTS.md AAS 数据模型 + seed data 一致；同时将分隔符从硬编码 `_` 扩展为同时尝试 `_` 和 `-` 两种（兼容 seed data `T-HDS-001-PV` 与部分 DCS `80PIC31306_PV` 命名约定）。**前端联动修复**：① `manage.vue:921-930` `roleToSlot` 映射从 `KP/TI/TD → pid_p/pid_i/pid_d` 改为 `PID_P/PID_I/PID_D → pid_p/pid_i/pid_d`；② `ledger.vue:575-584` 同上；③ `ledger.vue:1106` 提示文本 `_KP/_TI/_TD` 改为 `_PID_P/_PID_I/_PID_D`，并修正 `_OUT` → `_OP`。新增 `tests/test_tag_match_loop.py` 5 个测试：①完整 7 角色 PID_P/PID_I/PID_D（防止回归到 KP/TI/TD）；②`_` 分隔符支持；③部分匹配（缺 PID_* 只返回 4 个）；④无匹配返回空列表；⑤查询次数=7（验证 role 列表完整） | `backend/app/api/v1/endpoints/tags.py:171-217` + `frontend/.../views/loop/manage.vue:920-930` + `frontend/.../views/loop/ledger.vue:574-584,1105-1108` + `backend/tests/test_tag_match_loop.py` | 全后端 1642 测试通过（1637 原有 + 5 新增）；前端类型检查通过 |
 | 46 | R10: _retry_async 异常处理代码异味 | `_retry_async` 函数清理代码异味：①`except BizError:` 改为 `except BizError as exc:` 直接捕获异常对象，移除 `last_exc = exc = None` + `import sys` + `exc = sys.exc_info()[1]` 的迂回写法；②移除从未使用的 `last_exc` 变量（所有路径要么 return 要么 raise，该变量从未被读取）；③移除循环后的死代码 `raise last_exc  # type: ignore[misc]`，改为 `raise RuntimeError("unreachable: ...")` 显式标记不可达路径。行为完全保持不变：BizError 重试耗尽抛出原始异常，通用 Exception 重试耗尽包装为 `BizError(ERR_AAS_CONNECTION_FAILED)` 并通过 `raise ... from exc` 保留原始异常链。新增 `TestRetryAsync` 5 个测试：①成功调用不重试/②BizError 重试后成功/③BizError 重试耗尽抛出原始异常（验证 `exc_info.value is original_exc`）/④通用 Exception 包装为 BizError（验证 `__cause__` 保留）/⑤指数退避 `RETRY_BACKOFF_BASE^(N-1)` 秒数验证 | `backend/app/services/aas_sync.py:208-244` + `backend/tests/test_aas.py:500-589` | 全后端 1647 测试通过（1642 原有 + 5 新增） |
 | 47 | R11: TagRegistry 静默创建绕过 AAS 同步 | `_import_one_row` 函数中 TagRegistry 自动创建路径防护：①新增 `logger.warning("Excel 导入自动创建 Tag（未通过 AAS 同步）: tag_name=%s, role=%s, operator=%s — 该 Tag 缺少量程/单位/measure_type 等元数据，请尽快执行 AAS 同步以补全", ...)`，替代原先的静默创建；②自动创建的 TagRegistry 设置 `tag_description="[Excel 导入自动创建，未通过 AAS 同步，元数据待补全]"`，让运维人员在 Tag 列表页一眼识别"幽灵 Tag"并知道需通过 AAS 同步补全元数据。设计权衡：未完全禁止自动创建（部分部署环境无 AAS 服务器，需通过 Excel 导入完成初次组态），但通过日志 + 描述标记让"幽灵 Tag"可观测、可追溯。新增 `TestImportLoopsTagAutoCreate` 3 个测试：①自动创建的 Tag 有清晰 tag_description 标记 + logger.warning 被调用（验证格式串和参数包含 tag_name）/②Tag 已存在时不触发警告 + is_linked 置 True/③tag_cache 缓存防止同一 Tag 重复创建（多行导入只警告一次） | `backend/app/services/loop.py:13,27,1007-1031` + `backend/tests/test_loop.py:501-662` | 全后端 1650 测试通过（1647 原有 + 3 新增） |
+| 48 | R12: ledger.vue 已标注 @deprecated 但仍在仓库 | 删除两个废弃 Vue 组件文件：①`views/loop/ledger.vue`（第 9 行标注 `@deprecated FE-04：本页已废弃，请使用 /loop/manage`）；②`views/loop/factory.vue`（第 3 行标注 `@deprecated FE-04：本页已废弃，请使用 /loop/manage`）。两者均无任何 `import` 引用（`grep import.*ledger` / `grep import.*factory` 均无匹配）。路由 `loop.ts` 中 `/loop/ledger` 和 `/loop/factory` 已 redirect 到 `/loop/manage`（`hideInMenu: true`），保留 redirect 用于兼容旧书签。`store.test.ts:104` 引用 `/loop/ledger` 字符串仅作为测试模拟路由数据，不引用组件 | `frontend/.../views/loop/ledger.vue`（删除） + `frontend/.../views/loop/factory.vue`（删除） | 前端类型检查通过（2 packages successful） |
