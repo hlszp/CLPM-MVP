@@ -90,7 +90,10 @@ class RealtimeWebSocket {
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
-      console.log('[RealtimeWS] 已连接');
+      // P3 #57: 控制台日志环境守卫，生产环境不输出
+      if (import.meta.env.DEV) {
+        console.log('[RealtimeWS] 已连接');
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -106,7 +109,10 @@ class RealtimeWebSocket {
     };
 
     this.ws.onclose = (event) => {
-      console.log(`[RealtimeWS] 连接关闭 (code=${event.code})`);
+      // P3 #57: 控制台日志环境守卫，生产环境不输出
+      if (import.meta.env.DEV) {
+        console.log(`[RealtimeWS] 连接关闭 (code=${event.code})`);
+      }
       this.ws = null;
       if (!this.isManualClose) {
         this._scheduleReconnect();
@@ -114,7 +120,10 @@ class RealtimeWebSocket {
     };
 
     this.ws.onerror = () => {
-      console.warn('[RealtimeWS] 连接错误');
+      // P3 #57: 控制台日志环境守卫，生产环境不输出
+      if (import.meta.env.DEV) {
+        console.warn('[RealtimeWS] 连接错误');
+      }
     };
   }
 
@@ -126,9 +135,12 @@ class RealtimeWebSocket {
       RECONNECT_INTERVAL * this.reconnectAttempts,
       MAX_RECONNECT_DELAY,
     );
-    console.log(
-      `[RealtimeWS] ${delay}ms 后重连 (第${this.reconnectAttempts}次)`,
-    );
+    // P3 #57: 控制台日志环境守卫，生产环境不输出
+    if (import.meta.env.DEV) {
+      console.log(
+        `[RealtimeWS] ${delay}ms 后重连 (第${this.reconnectAttempts}次)`,
+      );
+    }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this._doConnect();
