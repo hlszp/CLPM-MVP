@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -656,10 +656,19 @@ async def get_ranking(
     sort_field_name = sort_field_map.get(sort_by, "score")
 
     # 子查询：每个回路最新一条 SUCCESS 快照（PostgreSQL DISTINCT ON）
+    # P3 #50: 与节点级聚合（node_performance.py）保持一致，过滤 confidence_level='E'
+    # 表示有效数据率 < 20%，数据严重不足的快照不参与排行（PRD §5.4.3 / FDS §5.3.10）
+    # confidence_level 为 NULL 的旧数据（未评估可信度）仍纳入排行
     base = (
         select(KpiSnapshotHourly)
         .distinct(KpiSnapshotHourly.loop_id)
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+        .where(
+            or_(
+                KpiSnapshotHourly.confidence_level.is_(None),
+                KpiSnapshotHourly.confidence_level != "E",
+            ),
+        )
     )
     base = _apply_snapshot_filters(
         base,

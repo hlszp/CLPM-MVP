@@ -795,6 +795,40 @@ class TestPerformanceService:
         result = await get_ranking(db)
         assert result == []
 
+    async def test_get_ranking_filters_confidence_level_e(self) -> None:
+        """P3 #50: confidence_level='E' 的快照不参与排行（与节点级聚合一致）。
+
+        验证 SQL 中包含 (confidence_level IS NULL OR confidence_level != 'E') 过滤，
+        与 node_performance.py 中节点级聚合的过滤条件保持一致。
+        """
+        from app.services.performance import get_ranking
+
+        db = AsyncMock()
+        # get_ranking 第 1 次 execute 为排行查询；后续 loop_map/unit_map/tracker 查询返回空
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # 返回空列表（验证 SQL 已应用 confidence_level 过滤）
+                return _make_scalars_mock([])
+            return _make_scalars_mock([])
+
+        db.execute = AsyncMock(side_effect=execute_side_effect)
+        result = await get_ranking(db)
+        assert result == []
+
+        # 验证第 1 次 SQL 含 confidence_level 过滤条件（IS NULL OR != 'E'）
+        first_stmt = db.execute.call_args_list[0].args[0]
+        sql_text = str(
+            first_stmt.compile(compile_kwargs={"literal_binds": True})
+        ).lower()
+        assert "confidence_level" in sql_text
+        # IS NULL 分支：保证 NULL 旧数据仍纳入排行
+        assert "is null" in sql_text or "isnull" in sql_text
+        # != 'E' 分支：排除有效数据率 < 20% 的快照
+        assert "e" in sql_text
+
     async def test_export_analytics_csv(self) -> None:
         """导出 CSV 包含表头和分区。"""
         from app.services.performance import export_analytics_csv

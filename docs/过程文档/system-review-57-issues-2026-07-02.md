@@ -80,7 +80,7 @@
 | 47 | 回路管理 | R11: TagRegistry 在导入时静默创建（绕过 AAS 同步），可能出现"幽灵 Tag" | `services/loop.py:891-902` | **已修复** |
 | 48 | 回路管理 | R12: `ledger.vue` 已标注 `@deprecated` 但仍在仓库 | `views/loop/ledger.vue` | **已修复** |
 | 49 | 性能评估 | R5: `performance.py` 中 `_aggregate_kpi_summary`/`_aggregate_kpi_cards`/`_aggregate_steady_trend` 为死代码 | `services/performance.py:1095-1207` | **已修复** |
-| 50 | 性能评估 | R6: `get_ranking()` 未过滤 `confidence_level='E'`，与节点级聚合不一致 | `services/performance.py:625` | 待修复 |
+| 50 | 性能评估 | R6: `get_ranking()` 未过滤 `confidence_level='E'`，与节点级聚合不一致 | `services/performance.py:625` | **已修复** |
 | 51 | 性能评估 | R8: `refresh_beat_schedule` 需重启 Beat 进程才生效，前端无提示 | `tasks/kpi_calc.py:472` | 待修复 |
 | 52 | 跨模块 | B10: `LoopLedger.modeattr_tag_id` 字段未被计算链路使用（死字段） | `models/loop.py` | 待修复 |
 | 53 | 跨模块 | B11: KPI 计算仅过滤 `status='READY'`，PARTIAL 回路永远不计算（设计合理但用户感知差） | `tasks/kpi_calc.py:553-555` | 待修复 |
@@ -98,8 +98,8 @@
 | P0 阻断性 | 8 | 8 | 0 |
 | P1 高优先级 | 14 | 14 | 0 |
 | P2 中优先级 | 19 | 19 | 0 |
-| P3 低优先级 | 16 | 8 | 8 |
-| **合计** | **57** | **49** | **8** |
+| P3 低优先级 | 16 | 9 | 7 |
+| **合计** | **57** | **50** | **7** |
 
 ## 已修复记录
 
@@ -152,3 +152,4 @@
 | 47 | R11: TagRegistry 静默创建绕过 AAS 同步 | `_import_one_row` 函数中 TagRegistry 自动创建路径防护：①新增 `logger.warning("Excel 导入自动创建 Tag（未通过 AAS 同步）: tag_name=%s, role=%s, operator=%s — 该 Tag 缺少量程/单位/measure_type 等元数据，请尽快执行 AAS 同步以补全", ...)`，替代原先的静默创建；②自动创建的 TagRegistry 设置 `tag_description="[Excel 导入自动创建，未通过 AAS 同步，元数据待补全]"`，让运维人员在 Tag 列表页一眼识别"幽灵 Tag"并知道需通过 AAS 同步补全元数据。设计权衡：未完全禁止自动创建（部分部署环境无 AAS 服务器，需通过 Excel 导入完成初次组态），但通过日志 + 描述标记让"幽灵 Tag"可观测、可追溯。新增 `TestImportLoopsTagAutoCreate` 3 个测试：①自动创建的 Tag 有清晰 tag_description 标记 + logger.warning 被调用（验证格式串和参数包含 tag_name）/②Tag 已存在时不触发警告 + is_linked 置 True/③tag_cache 缓存防止同一 Tag 重复创建（多行导入只警告一次） | `backend/app/services/loop.py:13,27,1007-1031` + `backend/tests/test_loop.py:501-662` | 全后端 1650 测试通过（1647 原有 + 3 新增） |
 | 48 | R12: ledger.vue 已标注 @deprecated 但仍在仓库 | 删除两个废弃 Vue 组件文件：①`views/loop/ledger.vue`（第 9 行标注 `@deprecated FE-04：本页已废弃，请使用 /loop/manage`）；②`views/loop/factory.vue`（第 3 行标注 `@deprecated FE-04：本页已废弃，请使用 /loop/manage`）。两者均无任何 `import` 引用（`grep import.*ledger` / `grep import.*factory` 均无匹配）。路由 `loop.ts` 中 `/loop/ledger` 和 `/loop/factory` 已 redirect 到 `/loop/manage`（`hideInMenu: true`），保留 redirect 用于兼容旧书签。`store.test.ts:104` 引用 `/loop/ledger` 字符串仅作为测试模拟路由数据，不引用组件 | `frontend/.../views/loop/ledger.vue`（删除） + `frontend/.../views/loop/factory.vue`（删除） | 前端类型检查通过（2 packages successful） |
 | 49 | R5: performance.py 死代码 _aggregate_* | 删除 3 个未被调用的死代码函数：①`_aggregate_kpi_cards`（KPI 卡片 SQL 聚合，已被 `_aggregate_node_board` 替代走节点级快照表）；②`_aggregate_kpi_summary`（装置级加权聚合，已被 `_aggregate_node_board` 替代）；③`_aggregate_steady_trend`（平稳率趋势 SQL date_trunc 聚合，已被 `_aggregate_node_steady_trend` 替代）。验证：`grep _aggregate_kpi_summary\|_aggregate_kpi_cards\|_aggregate_steady_trend` 在 backend 范围仅剩函数定义本身（无任何调用方）；保留同区域仍被使用的辅助函数 `_empty_kpi_cards`/`_default_threshold`/`_aggregate_kpi_trend`/`_aggregate_unit_ranking`/`_aggregate_bad_actor_distribution`。移除因死代码删除而不再使用的 `Integer` import（仍保留 `Decimal` 用于其他位置）。同步更新 `tests/test_performance.py:770-772` 中过时的注释（指向已删除的死代码函数名）为正确的活动函数名 `_aggregate_node_board`/`_aggregate_node_steady_trend` | `backend/app/services/performance.py:21,1002-1050,1095-1207,1210-1234`（删除 3 函数 + Integer import） + `backend/tests/test_performance.py:770-773`（注释更新） | 全后端 1650 测试通过（与 #49 修复前基线一致，无回归） |
+| 50 | R6: get_ranking 未过滤 confidence_level=E | `get_ranking` 中 base 子查询新增 `where(or_(KpiSnapshotHourly.confidence_level.is_(None), KpiSnapshotHourly.confidence_level != "E"))` 过滤条件，与 `node_performance.py:301-304` 节点级聚合的过滤条件保持一致。设计依据：`confidence_level='E'` 表示有效数据率 < 20%（PRD §5.4.3 / FDS §5.3.10），数据严重不足的快照不应参与排行；`confidence_level IS NULL` 为旧数据（未评估可信度），按设计仍纳入排行避免历史数据丢失。新增 `test_get_ranking_filters_confidence_level_e` 测试：通过 `compile(compile_kwargs={"literal_binds": True})` 渲染 SQL 字面值，断言 SQL 中含 `confidence_level` + `IS NULL` + `E` 三要素，确保过滤条件被正确编译到 SQL 中 | `backend/app/services/performance.py:21,658-672`（新增 or_ import + base.where 过滤） + `backend/tests/test_performance.py:798-830`（新增 1 测试） | 全后端 1651 测试通过（1650 原有 + 1 新增） |
