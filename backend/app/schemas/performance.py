@@ -109,7 +109,7 @@ class KpiSummary(CamelModel):
     effective_auto_rate: float | None = None
     steady_rate: float | None = None
     accuracy_rate: float | None = None
-    fast_response_rate: float | None = None
+    fast_rate: float | None = None
     oscillation_rate: float | None = None
     saturation_rate: float | None = None
     composite_score: float | None = None

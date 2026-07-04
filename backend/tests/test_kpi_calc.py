@@ -136,7 +136,7 @@ def _make_full_metric_configs() -> dict[str, MagicMock]:
     """构造完整的 8 大 KPI 指标配置（对齐国标 4 分项评分公式）。
 
     参与评分的 4 指标（weight > 0）：
-        accuracy_rate(30) + fast_response_rate(20) + steady_rate(30) + effective_auto_rate(20) = 100
+        accuracy_rate(30) + fast_rate(20) + steady_rate(30) + effective_auto_rate(20) = 100
     仅显示的指标（weight = 0）：好值率/自控率/振荡率/饱和率
     """
     return {
@@ -145,7 +145,7 @@ def _make_full_metric_configs() -> dict[str, MagicMock]:
         "effective_auto_rate": _make_metric_config("effective_auto_rate", Decimal("20")),
         "steady_rate": _make_metric_config("steady_rate", Decimal("30")),
         "accuracy_rate": _make_metric_config("accuracy_rate", Decimal("30")),
-        "fast_response_rate": _make_metric_config("fast_response_rate", Decimal("20")),
+        "fast_rate": _make_metric_config("fast_rate", Decimal("20")),
         "oscillation_rate": _make_metric_config("oscillation_rate", Decimal("0")),
         "saturation_rate": _make_metric_config("saturation_rate", Decimal("0")),
     }
@@ -566,12 +566,12 @@ class TestSaveSnapshot:
             "effective_auto_rate",
             "steady_rate",
             "accuracy_rate",
-            "fast_response_rate",
+            "fast_rate",
             "oscillation_rate",
             "saturation_rate",
-            "stiction_coeff",
-            "steady_state_time",
-            "output_travel_index",
+            "stiction_index",
+            "settling_time",
+            "output_trip_index",
             "ideal_settling_time",
             "algorithm_version",
             "sampling_freq",
@@ -1388,7 +1388,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         # MetricConfig: a=50, f=30, s=20 (sum=100)
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("50")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("30")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("20")),
         }
         # LoopTypeWeight STABLE: a=0.2, f=0.3, s=0.5（应被覆盖）
@@ -1412,7 +1412,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         # sum=200（异常输入但容错）
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("100")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("60")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("60")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("40")),
         }
         result = _build_weights_map(None, "STABLE", metric_configs)
@@ -1428,7 +1428,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         # accuracy_rate.weight=null, fast/steady 已配置（应回退）
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=None),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("30")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("20")),
         }
         type_weights = {
@@ -1450,7 +1450,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         """MetricConfig.weight 含 0 时回退到 LoopTypeWeight（视作未配置）。"""
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("0")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("50")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("50")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("50")),
         }
         type_weights = {
@@ -1472,7 +1472,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         # 缺 steady_rate
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("50")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("30")),
         }
         type_weights = {
             "STABLE": {
@@ -1492,7 +1492,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         """仅有 MetricConfig.weight（type_weights=None）时仍能解析。"""
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("40")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("35")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("35")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("25")),
         }
         result = _build_weights_map(None, "STABLE", metric_configs)
@@ -1545,10 +1545,10 @@ class TestComputeKpisThreeLayer:
             "good_value_rate",
             "oscillation_rate",
             "saturation_rate",
-            "stiction_coeff",
-            "output_travel_index",
+            "stiction_index",
+            "output_trip_index",
             "auto_mode_rate",
-            "steady_state_time",
+            "settling_time",
         ]
         bundles = [_make_bundle(code) for code in db_codes]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
@@ -1586,8 +1586,8 @@ class TestComputeKpisThreeLayer:
         assert composite == composite_result
 
     def test_bundle_db_code_mapped_to_calculator_code(self) -> None:
-        """数据库列名正确映射为计算器代码（如 fast_response_rate → fast_rate）。"""
-        bundles = [_make_bundle("fast_response_rate")]
+        """数据库列名正确映射为计算器代码（如 fast_rate → fast_rate）。"""
+        bundles = [_make_bundle("fast_rate")]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
 
         mock_calc = MagicMock()
@@ -1604,7 +1604,7 @@ class TestComputeKpisThreeLayer:
             )
             _compute_kpis_three_layer(bundles, config_bundle, None)
 
-        # get_calculator 被调用时传入的是计算器代码 "fast_rate" 而非 "fast_response_rate"
+        # get_calculator 被调用时传入的是计算器代码 "fast_rate" 而非 "fast_rate"
         called_codes = [call.args[0] for call in mock_get_calc.call_args_list]
         assert "fast_rate" in called_codes
 
@@ -1637,8 +1637,8 @@ class TestComputeKpisThreeLayer:
     def test_layer2_fast_rate_gets_settling_dependencies(self) -> None:
         """Layer2 fast_rate 注入 settling_time + ideal_settling_time 依赖。"""
         bundles = [
-            _make_bundle("steady_state_time"),  # DB code for settling_time
-            _make_bundle("fast_response_rate"),  # DB code for fast_rate
+            _make_bundle("settling_time"),  # DB code for settling_time
+            _make_bundle("fast_rate"),  # DB code for fast_rate
         ]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
 
@@ -1750,16 +1750,16 @@ class TestExtractKpiValues:
 
         # 验证关键映射
         assert kpi_values["accuracy_rate"] == Decimal("90.0")
-        assert kpi_values["fast_response_rate"] == Decimal("80.0")  # fast_rate → fast_response_rate
+        assert kpi_values["fast_rate"] == Decimal("80.0")  # fast_rate → fast_rate
         assert kpi_values["steady_rate"] == Decimal("70.0")  # stability_rate → steady_rate
         assert kpi_values["effective_auto_rate"] == Decimal("60.0")
-        assert kpi_values["stiction_coeff"] == Decimal("0.5")  # stiction_index → stiction_coeff
-        assert kpi_values["steady_state_time"] == Decimal(
+        assert kpi_values["stiction_index"] == Decimal("0.5")  # stiction_index → stiction_index
+        assert kpi_values["settling_time"] == Decimal(
             "45.0"
-        )  # settling_time → steady_state_time
-        assert kpi_values["output_travel_index"] == Decimal(
+        )  # settling_time → settling_time
+        assert kpi_values["output_trip_index"] == Decimal(
             "12.0"
-        )  # output_trip_index → output_travel_index
+        )  # output_trip_index → output_trip_index
         assert kpi_values["ideal_settling_time"] == Decimal("30.0")
 
     def test_none_values_preserved(self) -> None:
@@ -1768,7 +1768,7 @@ class TestExtractKpiValues:
         kpi_values = _extract_kpi_values(metric_results)
 
         assert kpi_values["accuracy_rate"] is None
-        assert kpi_values["fast_response_rate"] is None
+        assert kpi_values["fast_rate"] is None
         assert kpi_values["steady_rate"] == Decimal("70.0")
 
     def test_composite_score_skipped(self) -> None:
@@ -1916,11 +1916,11 @@ class TestMetricCodeMapping:
 
     def test_key_mappings_correct(self) -> None:
         """关键映射对正确（DB 列名 → 计算器代码）。"""
-        assert _DB_TO_CALCULATOR_METRIC_CODE["fast_response_rate"] == "fast_rate"
+        assert _DB_TO_CALCULATOR_METRIC_CODE["fast_rate"] == "fast_rate"
         assert _DB_TO_CALCULATOR_METRIC_CODE["steady_rate"] == "stability_rate"
-        assert _DB_TO_CALCULATOR_METRIC_CODE["stiction_coeff"] == "stiction_index"
-        assert _DB_TO_CALCULATOR_METRIC_CODE["steady_state_time"] == "settling_time"
-        assert _DB_TO_CALCULATOR_METRIC_CODE["output_travel_index"] == "output_trip_index"
+        assert _DB_TO_CALCULATOR_METRIC_CODE["stiction_index"] == "stiction_index"
+        assert _DB_TO_CALCULATOR_METRIC_CODE["settling_time"] == "settling_time"
+        assert _DB_TO_CALCULATOR_METRIC_CODE["output_trip_index"] == "output_trip_index"
 
 
 # ===========================================================================

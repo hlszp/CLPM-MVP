@@ -15,7 +15,17 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,15 +55,21 @@ class UnitKpiSummary(Base):
     avg_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     auto_mode_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    steady_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    stability_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    fast_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     good_value_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     total_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)
     evaluated_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)
     inconclusive_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # v5.3 新增（对齐 DDS v4.1）：不参评回路数 + 聚合状态
+    excluded_loops: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="SUCCESS",
+        comment="聚合状态: SUCCESS=全部回路有有效评分, PARTIAL=部分回路 INCONCLUSIVE, EMPTY=无有效评分",
+    )
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime, server_default=func.now(), nullable=True
@@ -61,6 +77,10 @@ class UnitKpiSummary(Base):
 
     __table_args__ = (
         UniqueConstraint("node_id", "snapshot_time", name="uq_unit_kpi_summary_node_time"),
+        CheckConstraint(
+            "status IN ('SUCCESS', 'PARTIAL', 'EMPTY')",
+            name="ck_unit_kpi_summary_status",
+        ),
         Index("ix_unit_kpi_summary_node_time", "node_id", "snapshot_time"),
         {"comment": "装置级KPI汇总表：仅基于标准任务（kpi_snapshot_hourly）聚合，自定义任务不参与"},
     )

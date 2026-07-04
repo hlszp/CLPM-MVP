@@ -67,21 +67,21 @@ CONCURRENCY = 10
 # ---------------------------------------------------------------------------
 # metric_code 映射：数据库列名 ↔ 计算器注册表代码
 # ---------------------------------------------------------------------------
-# clpm_metric_data_requirement 表使用数据库列名（如 fast_response_rate），
+# clpm_metric_data_requirement 表使用数据库列名（如 fast_rate），
 # 而 CALCULATOR_REGISTRY 使用计算器代码（如 fast_rate）。
 # 调用 DataPlanner 时传入数据库列名，调用计算器时映射为计算器代码。
 _DB_TO_CALCULATOR_METRIC_CODE: dict[str, str] = {
     "accuracy_rate": "accuracy_rate",
-    "fast_response_rate": "fast_rate",
+    "fast_rate": "fast_rate",
     "steady_rate": "stability_rate",
     "effective_auto_rate": "effective_auto_rate",
     "good_value_rate": "good_value_rate",
     "oscillation_rate": "oscillation_rate",
     "saturation_rate": "saturation_rate",
-    "stiction_coeff": "stiction_index",
-    "output_travel_index": "output_trip_index",
+    "stiction_index": "stiction_index",
+    "output_trip_index": "output_trip_index",
     "auto_mode_rate": "auto_mode_rate",
-    "steady_state_time": "settling_time",
+    "settling_time": "settling_time",
     "ideal_settling_time": "ideal_settling_time",
 }
 
@@ -919,12 +919,12 @@ async def _calculate_loop_kpi(
         effective_auto_rate=kpi_values.get("effective_auto_rate"),
         steady_rate=kpi_values.get("steady_rate"),
         accuracy_rate=kpi_values.get("accuracy_rate"),
-        fast_response_rate=kpi_values.get("fast_response_rate"),
+        fast_rate=kpi_values.get("fast_rate"),
         oscillation_rate=kpi_values.get("oscillation_rate"),
         saturation_rate=kpi_values.get("saturation_rate"),
-        stiction_coeff=kpi_values.get("stiction_coeff"),
-        steady_state_time=kpi_values.get("steady_state_time"),
-        output_travel_index=kpi_values.get("output_travel_index"),
+        stiction_index=kpi_values.get("stiction_index"),
+        settling_time=kpi_values.get("settling_time"),
+        output_trip_index=kpi_values.get("output_trip_index"),
         ideal_settling_time=kpi_values.get("ideal_settling_time"),
         algorithm_version=lineage_info["algorithm_version"],
         sampling_freq=lineage_info["sampling_freq"],
@@ -1160,7 +1160,7 @@ def _build_weights_map(
     (accuracy/fast/steady) with sum=100"）：
 
     1. **MetricConfig.weight 全局配置**（管理员通过 PUT /configs/metrics 设置）：
-       若 3 个核心指标（accuracy_rate / fast_response_rate / steady_rate）
+       若 3 个核心指标（accuracy_rate / fast_rate / steady_rate）
        的 weight 均已设置（非 null 且 > 0），则使用此全局权重（覆盖控制类型模板）。
        MetricConfig.weight sum=100（百分比），需除以 100 归一化为 a+f+s=1.0 比例。
 
@@ -1183,7 +1183,7 @@ def _build_weights_map(
     # 优先级 1：MetricConfig.weight 全局配置（管理员通过 /configs/metrics 设置）
     if metric_configs:
         a_cfg = metric_configs.get("accuracy_rate")
-        f_cfg = metric_configs.get("fast_response_rate")
+        f_cfg = metric_configs.get("fast_rate")
         s_cfg = metric_configs.get("steady_rate")
         if (
             a_cfg and a_cfg.weight is not None and float(a_cfg.weight) > 0
@@ -1399,7 +1399,7 @@ def _extract_kpi_values(
 ) -> dict[str, Decimal | None]:
     """将 MetricResult 字典转换为数据库列名 → Decimal 值映射。
 
-    计算器代码（如 fast_rate）需映射为数据库列名（如 fast_response_rate）。
+    计算器代码（如 fast_rate）需映射为数据库列名（如 fast_rate）。
     value 为 None 时保持 None（表示 INCONCLUSIVE）。
 
     Args:
@@ -1535,12 +1535,12 @@ async def _save_snapshot(
     effective_auto_rate: Decimal | None = None,
     steady_rate: Decimal | None = None,
     accuracy_rate: Decimal | None = None,
-    fast_response_rate: Decimal | None = None,
+    fast_rate: Decimal | None = None,
     oscillation_rate: Decimal | None = None,
     saturation_rate: Decimal | None = None,
-    stiction_coeff: Decimal | None = None,
-    steady_state_time: Decimal | None = None,
-    output_travel_index: Decimal | None = None,
+    stiction_index: Decimal | None = None,
+    settling_time: Decimal | None = None,
+    output_trip_index: Decimal | None = None,
     # v4.0 数据血缘字段（7 个）
     ideal_settling_time: Decimal | None = None,
     algorithm_version: str | None = None,
@@ -1586,12 +1586,12 @@ async def _save_snapshot(
         existing.effective_auto_rate = effective_auto_rate
         existing.steady_rate = steady_rate
         existing.accuracy_rate = accuracy_rate
-        existing.fast_response_rate = fast_response_rate
+        existing.fast_rate = fast_rate
         existing.oscillation_rate = oscillation_rate
         existing.saturation_rate = saturation_rate
-        existing.stiction_coeff = stiction_coeff
-        existing.steady_state_time = steady_state_time
-        existing.output_travel_index = output_travel_index
+        existing.stiction_index = stiction_index
+        existing.settling_time = settling_time
+        existing.output_trip_index = output_trip_index
         # v4.0 数据血缘字段
         existing.ideal_settling_time = ideal_settling_time
         existing.algorithm_version = algorithm_version
@@ -1621,12 +1621,12 @@ async def _save_snapshot(
             effective_auto_rate=effective_auto_rate,
             steady_rate=steady_rate,
             accuracy_rate=accuracy_rate,
-            fast_response_rate=fast_response_rate,
+            fast_rate=fast_rate,
             oscillation_rate=oscillation_rate,
             saturation_rate=saturation_rate,
-            stiction_coeff=stiction_coeff,
-            steady_state_time=steady_state_time,
-            output_travel_index=output_travel_index,
+            stiction_index=stiction_index,
+            settling_time=settling_time,
+            output_trip_index=output_trip_index,
             # v4.0 数据血缘字段
             ideal_settling_time=ideal_settling_time,
             algorithm_version=algorithm_version,
@@ -1667,12 +1667,12 @@ async def _save_custom_snapshot(
     effective_auto_rate: Decimal | None = None,
     steady_rate: Decimal | None = None,
     accuracy_rate: Decimal | None = None,
-    fast_response_rate: Decimal | None = None,
+    fast_rate: Decimal | None = None,
     oscillation_rate: Decimal | None = None,
     saturation_rate: Decimal | None = None,
-    stiction_coeff: Decimal | None = None,
-    steady_state_time: Decimal | None = None,
-    output_travel_index: Decimal | None = None,
+    stiction_index: Decimal | None = None,
+    settling_time: Decimal | None = None,
+    output_trip_index: Decimal | None = None,
     ideal_settling_time: Decimal | None = None,
     algorithm_version: str | None = None,
     sampling_freq: str | None = None,
@@ -1716,12 +1716,12 @@ async def _save_custom_snapshot(
         existing.effective_auto_rate = effective_auto_rate
         existing.steady_rate = steady_rate
         existing.accuracy_rate = accuracy_rate
-        existing.fast_response_rate = fast_response_rate
+        existing.fast_rate = fast_rate
         existing.oscillation_rate = oscillation_rate
         existing.saturation_rate = saturation_rate
-        existing.stiction_coeff = stiction_coeff
-        existing.steady_state_time = steady_state_time
-        existing.output_travel_index = output_travel_index
+        existing.stiction_index = stiction_index
+        existing.settling_time = settling_time
+        existing.output_trip_index = output_trip_index
         existing.ideal_settling_time = ideal_settling_time
         existing.algorithm_version = algorithm_version
         existing.sampling_freq = sampling_freq
@@ -1750,12 +1750,12 @@ async def _save_custom_snapshot(
             effective_auto_rate=effective_auto_rate,
             steady_rate=steady_rate,
             accuracy_rate=accuracy_rate,
-            fast_response_rate=fast_response_rate,
+            fast_rate=fast_rate,
             oscillation_rate=oscillation_rate,
             saturation_rate=saturation_rate,
-            stiction_coeff=stiction_coeff,
-            steady_state_time=steady_state_time,
-            output_travel_index=output_travel_index,
+            stiction_index=stiction_index,
+            settling_time=settling_time,
+            output_trip_index=output_trip_index,
             ideal_settling_time=ideal_settling_time,
             algorithm_version=algorithm_version,
             sampling_freq=sampling_freq,

@@ -185,7 +185,7 @@ async def list_loops(
         # P2 #24: 控制类型筛选（STABLE/SLOW/FAST/LOGIC）
         conditions.append(func.upper(LoopLedger.control_type) == control_type.upper())
     if level is not None:
-        conditions.append(LoopLedger.level == level)
+        conditions.append(LoopLedger.importance_level == level)
     if monitor_status is not None:
         # monitor_status=True → is_active=True（在监控中）
         # monitor_status=False → is_active=False（已停用监控）
@@ -273,7 +273,7 @@ async def list_loops(
                 "status": loop.status,
                 "loopType": loop.loop_type,
                 "controlType": loop.control_type,
-                "level": loop.level,
+                "importanceLevel": loop.importance_level,
                 "score": float(loop.score_weight) if loop.score_weight else None,
                 "lastScoreAt": (
                     loop.last_aas_sync_at.isoformat() if loop.last_aas_sync_at else None
@@ -375,7 +375,7 @@ async def create_loop(
         status=status,
         loop_type=loop_type,
         control_type=control_type,
-        level=level,
+        importance_level=level,
         modeattr_tag_id=modeattr_tag_id,
         data_retention_days=data_retention_days,
         score_weights=score_weights,
@@ -401,7 +401,7 @@ async def create_loop(
                 "status": status,
                 "loopType": loop_type,
                 "controlType": control_type,
-                "level": level,
+                "importanceLevel": level,
                 "modeattrTagId": modeattr_tag_id,
                 "dataRetentionDays": data_retention_days,
             },
@@ -418,7 +418,7 @@ async def create_loop(
         "status": loop.status,
         "loopType": loop.loop_type,
         "controlType": loop.control_type,
-        "level": loop.level,
+        "importanceLevel": loop.importance_level,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "isActive": bool(loop.is_active),
@@ -521,7 +521,7 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             "status": loop.status,
             "loopType": loop.loop_type,
             "controlType": loop.control_type,
-            "level": loop.level,
+            "importanceLevel": loop.importance_level,
             "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
             "dataRetentionDays": loop.data_retention_days,
             "scoreWeights": loop.score_weights,
@@ -575,7 +575,7 @@ async def update_loop(
         "remark": loop.remark,
         "loopType": loop.loop_type,
         "controlType": loop.control_type,
-        "level": loop.level,
+        "importanceLevel": loop.importance_level,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
     }
@@ -594,7 +594,7 @@ async def update_loop(
     if control_type is not None:
         loop.control_type = control_type
     if level is not None:
-        loop.level = level
+        loop.importance_level = level
     if modeattr_tag_id is not None:
         loop.modeattr_tag_id = modeattr_tag_id
     if data_retention_days is not None:
@@ -612,7 +612,7 @@ async def update_loop(
         "remark": loop.remark,
         "loopType": loop.loop_type,
         "controlType": loop.control_type,
-        "level": loop.level,
+        "importanceLevel": loop.importance_level,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "status": new_status,
@@ -641,7 +641,7 @@ async def update_loop(
         "remark": loop.remark,
         "loopType": loop.loop_type,
         "controlType": loop.control_type,
-        "level": loop.level,
+        "importanceLevel": loop.importance_level,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,

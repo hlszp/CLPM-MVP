@@ -150,7 +150,7 @@ class TestLoopCreate:
                         "auto_mode_rate": 50,
                         "steady_rate": 0,
                         "accuracy_rate": 0,
-                        "fast_response_rate": 50,
+                        "fast_rate": 50,
                         "oscillation_rate": 0,
                         "saturation_rate": 0,
                     },

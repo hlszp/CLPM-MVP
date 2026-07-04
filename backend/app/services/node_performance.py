@@ -35,21 +35,21 @@ from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_
 logger = logging.getLogger(__name__)
 
 # 参与加权聚合的 KPI 字段（与回路级快照对齐）
-# P1 #14: 补全 4 个缺失字段（stiction_coeff / steady_state_time /
-# output_travel_index / ideal_settling_time），节点级用回路重要性加权均值
+# P1 #14: 补全 4 个缺失字段（stiction_index / settling_time /
+# output_trip_index / ideal_settling_time），节点级用回路重要性加权均值
 KPI_FIELDS = (
     "good_value_rate",
     "auto_mode_rate",
     "effective_auto_rate",
     "steady_rate",
     "accuracy_rate",
-    "fast_response_rate",
+    "fast_rate",
     "oscillation_rate",
     "saturation_rate",
     "score",
-    "stiction_coeff",
-    "steady_state_time",
-    "output_travel_index",
+    "stiction_index",
+    "settling_time",
+    "output_trip_index",
     "ideal_settling_time",
 )
 
@@ -329,7 +329,7 @@ async def aggregate_node_snapshot(
 
     stmt = select(total_count, auto_loop_count, weight_sum_col, *weighted_cols).select_from(
         subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-            LoopLevelWeight, LoopLedger.level == LoopLevelWeight.level
+            LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
         )
     )
     result = await db.execute(stmt)
@@ -352,7 +352,7 @@ async def aggregate_node_snapshot(
         )
         return None
 
-    # 查询每回路明细（score + level + weight），用于排查聚合偏差
+    # 查询每回路明细（score + importance_level + weight），用于排查聚合偏差
     detail_stmt = (
         select(
             subq.c.loop_id,
@@ -360,12 +360,12 @@ async def aggregate_node_snapshot(
             subq.c.status,
             subq.c.confidence_level,
             LoopLedger.tag_name,
-            LoopLedger.level,
+            LoopLedger.importance_level,
             weight_col,
         )
         .select_from(
             subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-                LoopLevelWeight, LoopLedger.level == LoopLevelWeight.level
+                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
             )
         )
     )
@@ -377,8 +377,8 @@ async def aggregate_node_snapshot(
     )
     for dr in detail_rows:
         logger.info(
-            "[节点级聚合]   回路 loop_id=%s tag=%s level=%s weight=%s score=%s status=%s confidence=%s",
-            dr.loop_id, dr.tag_name, dr.level, dr.w,
+            "[节点级聚合]   回路 loop_id=%s tag=%s importance_level=%s weight=%s score=%s status=%s confidence=%s",
+            dr.loop_id, dr.tag_name, dr.importance_level, dr.w,
             float(dr.score) if dr.score is not None else None,
             dr.status, dr.confidence_level,
         )
@@ -423,13 +423,13 @@ async def aggregate_node_snapshot(
         "effective_auto_rate": avg_value("effective_auto_rate"),
         "steady_rate": avg_value("steady_rate"),
         "accuracy_rate": avg_value("accuracy_rate"),
-        "fast_response_rate": avg_value("fast_response_rate"),
+        "fast_rate": avg_value("fast_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
         # P1 #14: 补全 4 个字段（节点级加权均值，对齐 GB/T 44693.2-2024 §6.4）
-        "stiction_coeff": avg_value("stiction_coeff"),
-        "steady_state_time": avg_value("steady_state_time"),
-        "output_travel_index": avg_value("output_travel_index"),
+        "stiction_index": avg_value("stiction_index"),
+        "settling_time": avg_value("settling_time"),
+        "output_trip_index": avg_value("output_trip_index"),
         "ideal_settling_time": avg_value("ideal_settling_time"),
         "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
         "realtime_auto_rate": realtime_auto_rate,
@@ -526,12 +526,12 @@ def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None)
         "effectiveAutoRate": to_float(snap.effective_auto_rate),
         "steadyRate": to_float(snap.steady_rate),
         "accuracyRate": to_float(snap.accuracy_rate),
-        "fastResponseRate": to_float(snap.fast_response_rate),
+        "fastResponseRate": to_float(snap.fast_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
-        "stictionCoeff": to_float(snap.stiction_coeff),
-        "steadyStateTime": to_float(snap.steady_state_time),
-        "outputTravelIndex": to_float(snap.output_travel_index),
+        "stictionCoeff": to_float(snap.stiction_index),
+        "steadyStateTime": to_float(snap.settling_time),
+        "outputTravelIndex": to_float(snap.output_trip_index),
         "idealSettlingTime": to_float(snap.ideal_settling_time),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
         "realtimeAutoRate": to_float(snap.realtime_auto_rate),
@@ -684,12 +684,12 @@ async def get_node_ranking(
                 "effectiveAutoRate": to_float(row.effective_auto_rate),
                 "steadyRate": to_float(row.steady_rate),
                 "accuracyRate": to_float(row.accuracy_rate),
-                "fastResponseRate": to_float(row.fast_response_rate),
+                "fastResponseRate": to_float(row.fast_rate),
                 "oscillationRate": to_float(row.oscillation_rate),
                 "saturationRate": to_float(row.saturation_rate),
-                "stictionCoeff": to_float(row.stiction_coeff),
-                "steadyStateTime": to_float(row.steady_state_time),
-                "outputTravelIndex": to_float(row.output_travel_index),
+                "stictionCoeff": to_float(row.stiction_index),
+                "steadyStateTime": to_float(row.settling_time),
+                "outputTravelIndex": to_float(row.output_trip_index),
                 "idealSettlingTime": to_float(row.ideal_settling_time),
                 "autoLoopRatio": to_float(row.auto_loop_ratio),
                 "realtimeAutoRate": to_float(row.realtime_auto_rate),
@@ -810,12 +810,12 @@ def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None
         "effectiveAutoRate": to_float(snap.effective_auto_rate),
         "steadyRate": to_float(snap.steady_rate),
         "accuracyRate": to_float(snap.accuracy_rate),
-        "fastResponseRate": to_float(snap.fast_response_rate),
+        "fastResponseRate": to_float(snap.fast_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
-        "stictionCoeff": to_float(snap.stiction_coeff),
-        "steadyStateTime": to_float(snap.steady_state_time),
-        "outputTravelIndex": to_float(snap.output_travel_index),
+        "stictionCoeff": to_float(snap.stiction_index),
+        "steadyStateTime": to_float(snap.settling_time),
+        "outputTravelIndex": to_float(snap.output_trip_index),
         "idealSettlingTime": to_float(snap.ideal_settling_time),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
         "realtimeAutoRate": to_float(snap.realtime_auto_rate),

@@ -12,7 +12,7 @@ class ScoreWeights(CamelModel):
 
     对齐 GB/T 44693.2-2024：
     - 好值率仅作为显示指标，不参与综合评分加权
-    - 新增快速率（fast_response_rate）参与加权
+    - 新增快速率（fast_rate）参与加权
     - 有效自控率作为乘数因子（单独显示）
     - 向后兼容：读取时忽略已有的 good_value_rate 字段
     """
@@ -20,7 +20,7 @@ class ScoreWeights(CamelModel):
     auto_mode_rate: int = Field(10, ge=0, le=100)
     steady_rate: int = Field(30, ge=0, le=100)
     accuracy_rate: int = Field(15, ge=0, le=100)
-    fast_response_rate: int = Field(10, ge=0, le=100)
+    fast_rate: int = Field(10, ge=0, le=100)
     oscillation_rate: int = Field(20, ge=0, le=100)
     saturation_rate: int = Field(15, ge=0, le=100)
 
@@ -30,7 +30,7 @@ class ScoreWeights(CamelModel):
             self.auto_mode_rate
             + self.steady_rate
             + self.accuracy_rate
-            + self.fast_response_rate
+            + self.fast_rate
             + self.oscillation_rate
             + self.saturation_rate
         )

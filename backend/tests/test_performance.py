@@ -110,7 +110,7 @@ def _make_node_snapshot(
     effective_auto_rate: Decimal = Decimal("82.00"),
     steady_rate: Decimal = Decimal("85.00"),
     accuracy_rate: Decimal = Decimal("80.00"),
-    fast_response_rate: Decimal = Decimal("75.00"),
+    fast_rate: Decimal = Decimal("75.00"),
     oscillation_rate: Decimal = Decimal("15.00"),
     saturation_rate: Decimal = Decimal("8.00"),
     auto_loop_ratio: Decimal = Decimal("100.00"),
@@ -131,7 +131,7 @@ def _make_node_snapshot(
     s.effective_auto_rate = effective_auto_rate
     s.steady_rate = steady_rate
     s.accuracy_rate = accuracy_rate
-    s.fast_response_rate = fast_response_rate
+    s.fast_rate = fast_rate
     s.oscillation_rate = oscillation_rate
     s.saturation_rate = saturation_rate
     s.auto_loop_ratio = auto_loop_ratio

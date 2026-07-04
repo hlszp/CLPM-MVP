@@ -34,7 +34,7 @@ class ClpmMetricDataRequirement(Base):
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
     )
-    # 指标代码（如 accuracy_rate / fast_response_rate），与数据库列名一致
+    # 指标代码（如 accuracy_rate / fast_rate），与数据库列名一致
     metric_code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
     # 所需 Tag 组（BASE / PVOP_HF / OP_HF / MODE_HF / QUALITY_HF / CONFIG）

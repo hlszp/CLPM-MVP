@@ -118,7 +118,7 @@ def make_metric_configs() -> dict[str, SimpleNamespace]:
     权重对齐 GB/T 44693.2-2024 综合评分公式：
         P = (λA·A + λF·F + λS·S + λR·R) / (λA + λF + λS + λR)
         - A = accuracy_rate（准确率）       权重 30
-        - F = fast_response_rate（快速率）  权重 20
+        - F = fast_rate（快速率）  权重 20
         - S = steady_rate（平稳率）         权重 30
         - R = effective_auto_rate（有效自控率） 权重 20
     """
@@ -126,8 +126,8 @@ def make_metric_configs() -> dict[str, SimpleNamespace]:
         "accuracy_rate": SimpleNamespace(
             metric_code="accuracy_rate", weight=Decimal("30"), is_enabled=True
         ),
-        "fast_response_rate": SimpleNamespace(
-            metric_code="fast_response_rate", weight=Decimal("20"), is_enabled=True
+        "fast_rate": SimpleNamespace(
+            metric_code="fast_rate", weight=Decimal("20"), is_enabled=True
         ),
         "steady_rate": SimpleNamespace(
             metric_code="steady_rate", weight=Decimal("30"), is_enabled=True
@@ -366,7 +366,7 @@ def generate_report(results: list[dict]) -> str:
     )
     kpi_codes = [
         "accuracy_rate",
-        "fast_response_rate",
+        "fast_rate",
         "steady_rate",
         "effective_auto_rate",
         "oscillation_rate",

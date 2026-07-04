@@ -47,7 +47,7 @@ _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
 # MODE: 控制模式（AUTO/MANUAL），离散值
 # PID_P/PID_I/PID_D: PID 整定参数，工程师设定后保持不变
 # OP: 稳态时 OP 变化幅度小（std < frozen_std_pct×range），FROZEN 检测会误报；
-#     阀门粘滞由 stiction_coeff 指标单独检测，OP 饱和由 saturation_rate 单独检测
+#     阀门粘滞由 stiction_index 指标单独检测，OP 饱和由 saturation_rate 单独检测
 _SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
 
 PREPROCESS_VERSION = "pre_v1"

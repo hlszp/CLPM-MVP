@@ -51,7 +51,7 @@ KPI_METRIC_CODES = (
     "effective_auto_rate",
     "steady_rate",
     "accuracy_rate",
-    "fast_response_rate",
+    "fast_rate",
     "oscillation_rate",
     "saturation_rate",
 )
@@ -63,7 +63,7 @@ KPI_NAME_MAP = {
     "effective_auto_rate": "有效自控率",
     "steady_rate": "平稳率",
     "accuracy_rate": "准确率",
-    "fast_response_rate": "快速率",
+    "fast_rate": "快速率",
     "oscillation_rate": "振荡率",
     "saturation_rate": "饱和率",
     "composite_score": "综合评分",
@@ -462,7 +462,7 @@ def _node_kpi_fields() -> tuple[str, ...]:
         "effective_auto_rate",
         "steady_rate",
         "accuracy_rate",
-        "fast_response_rate",
+        "fast_rate",
         "oscillation_rate",
         "saturation_rate",
     )
@@ -560,7 +560,7 @@ async def _aggregate_node_board(
         "effective_auto_rate": weighted_avg("effective_auto_rate"),
         "steady_rate": weighted_avg("steady_rate"),
         "accuracy_rate": weighted_avg("accuracy_rate"),
-        "fast_response_rate": weighted_avg("fast_response_rate"),
+        "fast_rate": weighted_avg("fast_rate"),
         "oscillation_rate": weighted_avg("oscillation_rate"),
         "saturation_rate": weighted_avg("saturation_rate"),
         "composite_score": score_avg,
@@ -583,7 +583,7 @@ def _empty_kpi_summary() -> dict:
         "effective_auto_rate": None,
         "steady_rate": None,
         "accuracy_rate": None,
-        "fast_response_rate": None,
+        "fast_rate": None,
         "oscillation_rate": None,
         "saturation_rate": None,
         "composite_score": None,
@@ -663,7 +663,7 @@ async def get_ranking(
         "score": "score",
         "steady_rate": "steady_rate",
         "good_value_rate": "good_value_rate",
-        "fast_response_rate": "fast_response_rate",
+        "fast_rate": "fast_rate",
     }
     sort_field_name = sort_field_map.get(sort_by, "score")
 
@@ -755,7 +755,7 @@ async def get_ranking(
                 "effectiveAutoRate": _to_float(snap.effective_auto_rate),
                 "steadyRate": _to_float(snap.steady_rate),
                 "accuracyRate": _to_float(snap.accuracy_rate),
-                "fastResponseRate": _to_float(snap.fast_response_rate),
+                "fastResponseRate": _to_float(snap.fast_rate),
                 "oscillationRate": _to_float(snap.oscillation_rate),
                 "saturationRate": _to_float(snap.saturation_rate),
                 "status": _score_to_status(snap.score),
@@ -1055,7 +1055,7 @@ def _default_threshold(metric_code: str) -> dict:
         "effective_auto_rate": {"min": 0, "max": 100, "alert": 90},
         "steady_rate": {"min": 0, "max": 100, "alert": 85},
         "accuracy_rate": {"min": 0, "max": 100, "alert": 80},
-        "fast_response_rate": {"min": 0, "max": 100, "alert": 80},
+        "fast_rate": {"min": 0, "max": 100, "alert": 80},
         "oscillation_rate": {"min": 0, "max": 100, "alert": 20},
         "saturation_rate": {"min": 0, "max": 100, "alert": 15},
     }
@@ -1078,7 +1078,7 @@ async def _aggregate_kpi_trend(
         "effective_auto_rate": KpiSnapshotHourly.effective_auto_rate,
         "steady_rate": KpiSnapshotHourly.steady_rate,
         "accuracy_rate": KpiSnapshotHourly.accuracy_rate,
-        "fast_response_rate": KpiSnapshotHourly.fast_response_rate,
+        "fast_rate": KpiSnapshotHourly.fast_rate,
         "oscillation_rate": KpiSnapshotHourly.oscillation_rate,
         "saturation_rate": KpiSnapshotHourly.saturation_rate,
     }

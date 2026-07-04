@@ -103,7 +103,7 @@ def _make_kpi_values(
     """构造 KPI 值字典（默认 A=90, F=80, S=70, R=60）。"""
     return {
         "accuracy_rate": accuracy,
-        "fast_response_rate": fast_response,
+        "fast_rate": fast_response,
         "steady_rate": steady,
         "effective_auto_rate": effective_auto,
     }
@@ -123,7 +123,7 @@ def _compute_composite_score_v2_via_evaluator(
     Phase 4 重构后 ``app.tasks.kpi_calc._compute_composite_score_v2`` 已删除，
     本函数封装新接口调用，保留旧测试用例的调用方式。
 
-    旧 kpi_values key: accuracy_rate / fast_response_rate / steady_rate /
+    旧 kpi_values key: accuracy_rate / fast_rate / steady_rate /
         effective_auto_rate
     新 metric_results key: accuracy_rate / fast_rate / stability_rate /
         effective_auto_rate
@@ -152,7 +152,7 @@ def _compute_composite_score_v2_via_evaluator(
 
     metric_results: dict[str, MetricResult] = {
         "accuracy_rate": _to_result("accuracy_rate", kpi_values.get("accuracy_rate")),
-        "fast_rate": _to_result("fast_rate", kpi_values.get("fast_response_rate")),
+        "fast_rate": _to_result("fast_rate", kpi_values.get("fast_rate")),
         "stability_rate": _to_result("stability_rate", kpi_values.get("steady_rate")),
     }
     eff_auto = kpi_values.get("effective_auto_rate")
@@ -194,13 +194,13 @@ def _make_agg_row(
     row.effective_auto_rate = Decimal("85.00")
     row.steady_rate = Decimal("80.00")
     row.accuracy_rate = Decimal("78.00")
-    row.fast_response_rate = Decimal("82.00")
+    row.fast_rate = Decimal("82.00")
     row.oscillation_rate = Decimal("15.00")
     row.saturation_rate = Decimal("8.00")
     # P1 #14: 4 个新增诊断字段
-    row.stiction_coeff = Decimal("0.12")
-    row.steady_state_time = Decimal("135.00")
-    row.output_travel_index = Decimal("38.00")
+    row.stiction_index = Decimal("0.12")
+    row.settling_time = Decimal("135.00")
+    row.output_trip_index = Decimal("38.00")
     row.ideal_settling_time = Decimal("180.00")
     return row
 

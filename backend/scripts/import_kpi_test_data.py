@@ -374,7 +374,7 @@ async def trigger_kpi_calculation(ts_start: datetime, ts_end: datetime) -> None:
                     print(
                         f"  ✓ {cfg['tag_name']:15s} → score={score:6.2f}  "
                         f"A={snap.get('accuracy_rate', 0):6.2f}  "
-                        f"F={snap.get('fast_response_rate', 0):6.2f}  "
+                        f"F={snap.get('fast_rate', 0):6.2f}  "
                         f"S={snap.get('steady_rate', 0):6.2f}  "
                         f"R={snap.get('effective_auto_rate', 0):6.2f}  "
                         f"osc={snap.get('oscillation_rate', 0):6.2f}  "

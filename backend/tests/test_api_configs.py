@@ -83,7 +83,7 @@ def _build_full_metric_set() -> list[MagicMock]:
     return [
         # 3 核心
         _make_metric_config("m-1", "accuracy_rate", "准确率", weight=40.0),
-        _make_metric_config("m-2", "fast_response_rate", "快速率", weight=30.0),
+        _make_metric_config("m-2", "fast_rate", "快速率", weight=30.0),
         _make_metric_config("m-3", "steady_rate", "稳定率", weight=30.0),
         # 1 投用（折扣因子）
         _make_metric_config("m-4", "effective_auto_rate", "有效自控率", weight=None),
@@ -345,7 +345,7 @@ class TestUpdateMetricConfigs:
         # 返回 2 个核心指标（权重 50+60=110）
         updated = [
             _make_metric_config("m-1", "accuracy_rate", "准确率", weight=40.0),
-            _make_metric_config("m-2", "fast_response_rate", "快速率", weight=30.0),
+            _make_metric_config("m-2", "fast_rate", "快速率", weight=30.0),
         ]
         mock_db.execute = AsyncMock(return_value=_make_execute_return(updated))
         mock_db.add = MagicMock()

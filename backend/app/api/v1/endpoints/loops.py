@@ -170,7 +170,7 @@ async def batch_config_loops_endpoint(
             if body.updates.is_stat_enabled is not None:
                 updates_dict["is_stat_enabled"] = body.updates.is_stat_enabled
             if body.updates.level is not None:
-                updates_dict["level"] = body.updates.level
+                updates_dict["importance_level"] = body.updates.level
         affected = await batch_update_loops(
             db=db,
             loop_ids=body.loop_ids,
