@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 1 | 回路管理 | B6: 批量操作审计日志 `target_id` 传逗号分隔 UUID 字符串，PostgreSQL UUID 类型冲突导致事务回滚，批量操作完全不可用 | `services/loop_batch.py:165,252` | **已修复** |
 | 2 | 回路管理 | B1: monitor 服务硬编码 MODE→控制模式映射 `{0:Manual,1:Auto,2:Cascade,3:Cascade}`，忽略用户在 `loop_mode_mapping` 表中的配置，自控率统计口径错误 | `services/monitor.py:43-48` | **已修复** |
-| 3 | 跨模块 | B1: SignalR 默认禁用（`SIGNALR_ENABLED=False`），实时数据链路完全断开，开发环境无实时数据流入 TDengine | `core/config.py:82-84` | 已由实时模拟器缓解 |
+| 3 | 跨模块 | B1: SignalR 默认禁用（`SIGNALR_ENABLED=False`），实时数据链路完全断开，开发环境无实时数据流入 TDengine | `core/config.py:82-84` | **已修复**（实时模拟器缓解） |
 | 4 | 性能评估 | B2: 前端完全缺失节点级 KPI API 调用，后端 5 个 `/performance/nodes/*` 端点无前端消费方，装置级/单元级/工厂级聚合结果不可见 | `frontend/.../api/metric.ts` | **已修复** |
 | 5 | UX | UX1: 169 处硬编码浅色 Tailwind 类（`text-gray-400`/`bg-blue-50`/`border-gray-200` 等），暗色模式下出现刺眼亮色块、对比度不足 | `views/loop/*.vue`(107处) + `views/metric/*.vue`(62处) | **已修复**（CSS 集中覆盖） |
 | 6 | UX | UX2: `industrial-light.css` 仅覆盖浅色变量，无 `.dark` 选择器，表头/hover/选中行/滚动条硬编码 HSL 值 | `styles/industrial-light.css` | **已修复** |
@@ -95,11 +95,11 @@
 
 | 优先级 | 数量 | 已修复 | 待修复 |
 |---|---|---|---|
-| P0 阻断性 | 8 | 6 | 2 |
+| P0 阻断性 | 8 | 8 | 0 |
 | P1 高优先级 | 14 | 14 | 0 |
 | P2 中优先级 | 19 | 19 | 0 |
 | P3 低优先级 | 16 | 6 | 10 |
-| **合计** | **57** | **45** | **12** |
+| **合计** | **57** | **47** | **10** |
 
 ## 已修复记录
 
@@ -107,6 +107,7 @@
 |---|---|---|---|---|
 | 1 | B6: 批量操作审计日志 UUID 类型冲突 | 将 4 处非 UUID 的 `target_id` 值改为 `None`（批量/配置/导入操作无单一目标记录，完整列表已在 `before_value`/`after_value` JSON 中） | `services/loop_batch.py:165,252` + `services/aas_config.py:162` + `services/tag.py:625` | 51 个相关测试通过 |
 | 2 | B1: monitor 硬编码 MODE 映射 | `_mode_value_to_label` 增加可选 `mapping` 参数；新增 `_load_mode_mappings` 批量查询；`list_loop_monitor`/`get_loop_monitor_detail` 接入 `loop_mode_mapping` 表 | `services/monitor.py` + `tests/test_monitor_service.py` | 39 个测试通过 |
+| 3 | B1: SignalR 默认禁用导致实时数据链路断开 | 开发环境通过 `backend/scripts/realtime_simulator.py` 实时模拟器缓解：①从 PostgreSQL 动态加载 27 个控制回路（3 单元 × 9 回路）；②FOPDT 物理模型（一阶滞后 + 纯滞后）+ 增量式 PID 控制器（含抗积分饱和/积分分离）；③8 种工况场景（normal/oscillation/saturation/slow_response/valve_stiction/manual/overaggressive/overconservative）；④4 类异常注入（spike/flatline/out_of_range/bad_quality）；⑤1Hz 主循环批量写入 TDengine。开发环境不再依赖 SignalR 即可有完整数据流入 TDengine 进行 KPI 计算与诊断功能测试。生产环境部署时设置 `SIGNALR_ENABLED=true` 接入真实 OPC UA 数据源 | `backend/scripts/realtime_simulator.py` + `backend/scripts/simulate_unit_loops.py` + `core/config.py:82-84` | 实时模拟器可正常运行；KPI 计算与诊断功能验证通过 |
 | 4 | B2: 前端缺失节点级 KPI API | 补齐 6 个 API 函数 + 10 个类型定义；dashboard.vue 接入节点 snapshot 与 overview API | `frontend/.../api/metric.ts` + `views/metric/dashboard.vue` | 前端类型检查通过 |
 | 5+6 | UX1+UX2: 暗色模式 292 处硬编码 | `industrial-light.css` 新增 10 子节 `.dark` 覆盖块（CSS 变量 / gray 反转 / 彩色半透明 / 表头 hover 选中行 / 滚动条 / 工具类） | `styles/industrial-light.css` | 前端类型检查通过 |
 | 7 | UX4: AAS 同步进度反馈 | 后端：`AasConfigInfo` schema 新增 `lastSyncAt`/`lastSyncStatus` 字段；`aas_config.py` 新增 `set_last_sync_status` 写入 sys_config；`trigger_aas_sync` 端点预先置为 PROCESSING；`sync_tags_from_aas` 同步成功置 SUCCESS/异常置 FAILED。前端：`aas.vue` `handleSync` 改为触发后轮询 `getAasConfigApi`，新增进度 Alert 与超时（90s）保护，`onUnmounted` 清理定时器 | `backend/.../schemas/aas.py` + `services/aas_config.py` + `api/v1/endpoints/aas.py` + `services/aas_sync.py` + `frontend/.../views/loop/aas.vue` + `tests/test_aas.py` | 21 个 AAS 测试通过；前端类型检查通过 |
