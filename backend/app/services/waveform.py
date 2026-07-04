@@ -24,10 +24,13 @@ from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
 
-# 最大时间窗（30 天）
+# 最大时间窗（30 天，对齐 AGENTS.md §性能边界）
 MAX_TIME_WINDOW_DAYS = 30
 
-# 默认降采样阈值
+# 默认降采样阈值（P3 #56：仅用于波形展示路径，KPI 计算路径不降采样）
+# 此值是波形查询接口 /timeseries/waveform 的默认 maxPoints，
+# 与 monitor.py LTTB_TARGET_POINTS=2000（回路监控页波形）独立，
+# monitor.py 走自己的 lttb_downsample（多序列共享时间戳）。
 DEFAULT_MAX_POINTS = 5000
 
 

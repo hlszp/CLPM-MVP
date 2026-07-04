@@ -647,3 +647,170 @@ class TestEdgeCases:
         # 第二次请求（应命中缓存）
         await planner.request_bundles("TC101", ["accuracy_rate"], tw, ControlType.TEMPERATURE)
         assert len(query_log) == first_queries  # 无新增查询
+
+
+# ---------------------------------------------------------------------------
+# P3 #56: KPI 计算路径不进行 LTTB 降采样
+# ---------------------------------------------------------------------------
+
+
+class TestKpiPathNoLttbDownsampling:
+    """验证 KPI 计算路径使用控制类型阈值决定采样率，不调用 LTTB 降采样.
+
+    设计依据：data_planner.py 模块 docstring「采样策略（P3 #56 文档对齐）」，
+    AGENTS.md §性能边界 "LTTB 降采样 maxPoints=2000" 仅约束波形展示路径
+    （monitor.py::lttb_downsample + waveform.py::lttb_downsample_multi_series）。
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "control_type, expected_base_interval",
+        [
+            (ControlType.FLOW, 1),
+            (ControlType.PRESSURE, 2),
+            (ControlType.TEMPERATURE, 5),
+            (ControlType.LEVEL, 5),
+            (ControlType.COMPOSITION, 10),
+        ],
+    )
+    async def test_kpi_base_interval_from_control_type(
+        self, control_type: ControlType, expected_base_interval: int
+    ) -> None:
+        """KPI 路径 BASE tagGroup 的 interval_s 来自 ``get_threshold(control_type)``.
+
+        非 LTTB 降采样推导出的阈值（如固定 2000 点）。验证 5 种控制类型均按
+        阈值表使用 1/2/5/5/10 秒。
+        """
+        requirements = [
+            build_requirement(
+                "accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"
+            ),
+        ]
+        db = _make_db(requirements)
+        query_log: list = []
+        planner = DataPlanner(
+            cache=L1DataBlockCache(FakeCacheRedis()),
+            tdengine_query_fn=_make_query_fn(query_log),
+            assembler=MetricDataBundleAssembler(),
+            db=db,
+            config_loader=_make_config_loader(control_type),
+        )
+
+        await planner.request_bundles(
+            loop_id="L001",
+            metrics=["accuracy_rate"],
+            time_window=_time_window(),
+            control_type=control_type,
+        )
+
+        assert len(query_log) == 1
+        # interval_s 来自控制类型阈值表，而非 LTTB 降采样推导
+        assert query_log[0]["interval_s"] == expected_base_interval
+
+    @pytest.mark.asyncio
+    async def test_kpi_hf_tag_group_always_1s(self) -> None:
+        """HF tagGroup（OP_HF/PVOP_HF/QUALITY_HF）固定 1s 高频采样.
+
+        不受控制类型影响（温度回路 BASE=5s 但 HF 仍为 1s），不进入 LTTB 降采样路径。
+        """
+        requirements = _five_metrics_requirements()
+        db = _make_db(requirements)
+        query_log: list = []
+        planner = DataPlanner(
+            cache=L1DataBlockCache(FakeCacheRedis()),
+            tdengine_query_fn=_make_query_fn(query_log),
+            assembler=MetricDataBundleAssembler(),
+            db=db,
+            config_loader=_make_config_loader(ControlType.TEMPERATURE),
+        )
+
+        await planner.request_bundles(
+            loop_id="TC101",
+            metrics=[r.metric_code for r in requirements],
+            time_window=_time_window(),
+            control_type=ControlType.TEMPERATURE,
+        )
+
+        # 温度回路：BASE=5s，3 个 HF tagGroup 各 1s → 4 次查询
+        assert len(query_log) == 4
+        base_query = next(q for q in query_log if q["interval_s"] == 5)
+        hf_queries = [q for q in query_log if q["interval_s"] == 1]
+        assert base_query is not None
+        assert len(hf_queries) == 3
+        # 所有 HF 查询固定 1s，不因数据量大触发 LTTB
+        for q in hf_queries:
+            assert q["interval_s"] == 1
+
+    @pytest.mark.asyncio
+    async def test_kpi_large_window_no_lttb_threshold(self) -> None:
+        """KPI 路径在大时间窗下不触发 LTTB 阈值（10000 点）.
+
+        即使时间窗内数据点数远超 monitor.py LTTB_THRESHOLD=10000，KPI 路径
+        仍按控制类型 interval_s 查询全量数据，不做降采样。
+        """
+        # 1 小时 × 1Hz = 3600 点；扩展为 4 小时 = 14400 点（> LTTB_THRESHOLD=10000）
+        tw = TimeWindow(
+            start=datetime(2024, 1, 1, 10, 0, 0),
+            end=datetime(2024, 1, 1, 14, 0, 0),
+        )
+        requirements = [
+            build_requirement(
+                "accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"
+            ),
+        ]
+        db = _make_db(requirements)
+
+        # 记录 query_fn 收到的数据量（mock 返回 14400 点）
+        captured_interval: list[int] = []
+
+        async def query_fn(loop_id, tags, start, end, interval_s):
+            captured_interval.append(interval_s)
+            # 返回 14400 点（> LTTB_THRESHOLD=10000）
+            return build_raw_timeseries(n=14400, interval_s=float(interval_s), tags=tags)
+
+        planner = DataPlanner(
+            cache=L1DataBlockCache(FakeCacheRedis()),
+            tdengine_query_fn=query_fn,
+            assembler=MetricDataBundleAssembler(),
+            db=db,
+            config_loader=_make_config_loader(ControlType.TEMPERATURE),
+        )
+
+        bundles = await planner.request_bundles(
+            loop_id="TC101",
+            metrics=["accuracy_rate"],
+            time_window=tw,
+            control_type=ControlType.TEMPERATURE,
+        )
+
+        # KPI 路径未触发 LTTB 降采样：interval_s 仍为控制类型阈值（5s）
+        assert captured_interval == [5]
+        # Bundle 保留全量数据点（14400 点未降采样）
+        assert bundles[0].data_block.point_count == 14400
+
+    @pytest.mark.asyncio
+    async def test_kpi_path_does_not_import_lttb(self) -> None:
+        """DataPlanner 模块不应导入 LTTB 降采样函数（防回归）.
+
+        确保未来修改不会误将 monitor.py/waveform.py 的 LTTB 函数引入 KPI 计算路径。
+        """
+        import app.services.data_planner as dp_module
+
+        # 检查模块源码不含 lttb_downsample 调用
+        source_lines = [
+            line
+            for line in dp_module.__doc__.splitlines() if "lttb" in line.lower()
+        ]
+        # docstring 中应仅作为说明提及（不调用函数）
+        assert not any(
+            "import" in line.lower() and "lttb" in line.lower()
+            for line in source_lines
+        ), "DataPlanner docstring 不应包含 lttb import 语句"
+
+        # 模块不应有 lttb_downsample 函数引用
+        assert not hasattr(dp_module, "lttb_downsample"), (
+            "DataPlanner 模块不应定义/导入 lttb_downsample 函数"
+        )
+        assert not hasattr(dp_module, "lttb_downsample_multi_series"), (
+            "DataPlanner 模块不应定义/导入 lttb_downsample_multi_series 函数"
+        )
