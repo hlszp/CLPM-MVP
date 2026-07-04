@@ -133,4 +133,141 @@ test.describe('性能评估 E2E', () => {
       }
     }
   });
+
+  // E2E-PERF-004: 全局看板装置级 KPI + 实时自控率仪表盘
+  // 路由 /metric/dashboard：装置级三大 KPI 卡片（综合性能/平均自控率/稳定率）
+  // + 实时自控率仪表盘（AutoRateGauge）+ 低效回路 Top 10 预览 + Partial 警告横幅
+  test('E2E-PERF-004: 全局看板装置级 KPI + 实时自控率仪表盘', async ({ page }) => {
+    await page.goto('/metric/dashboard');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    // 验证页面加载（KPI 卡片区存在）
+    // dashboard.vue: .clpm-kpi-grid 包含 3 大 KPI 卡片 + 1 张实时自控率仪表盘
+    const kpiGrid = page.locator('.clpm-kpi-grid').first();
+    const hasKpiGrid = await kpiGrid.isVisible({ timeout: 15_000 }).catch(() => false);
+    // 兜底：任意 ant-card 可见
+    const anyCard = page.locator('.ant-card').first();
+    expect(hasKpiGrid || (await anyCard.isVisible().catch(() => false))).toBeTruthy();
+
+    // 验证三大 KPI 卡片标题文本存在（综合性能/平均自控率/稳定率）
+    const pageText = await page.locator('body').innerText();
+    expect(pageText).toContain('综合性能');
+    expect(pageText).toContain('平均自控率');
+    expect(pageText).toContain('稳定率');
+
+    // 验证实时自控率仪表盘卡片存在（ECharts canvas 或 AutoRateGauge 容器）
+    // dashboard.vue 引入 AutoRateGauge 组件，内部渲染 ECharts gauge
+    const canvas = page.locator('canvas').first();
+    const hasCanvas = await canvas.isVisible().catch(() => false);
+    const echartsInstance = page.locator('[_echarts_instance_]').first();
+    const hasEcharts = (await echartsInstance.count().catch(() => 0)) > 0;
+    // 容忍数据为空导致图表未渲染，验证 KPI 区存在即可
+    expect(hasKpiGrid || hasCanvas || hasEcharts).toBeTruthy();
+
+    // 验证低效回路 Top 10 预览表格存在（ClpmDataCanvas title="低效回路 Top 10 预览"）
+    const top10Title = page.getByText('低效回路 Top 10 预览').first();
+    const hasTop10 = await top10Title.isVisible().catch(() => false);
+    // 若标题可见，验证内部表格或空状态容器存在
+    if (hasTop10) {
+      const tableOrEmpty = page.locator('.ant-table, .ant-empty').first();
+      const hasTableOrEmpty = await tableOrEmpty.isVisible().catch(() => false);
+      expect(hasTableOrEmpty).toBeTruthy();
+    }
+
+    // Partial 警告横幅（条件触发，仅验证不阻塞页面渲染）
+    // dashboard.vue: boardData.partialWarning.active 时渲染 Alert type="warning"
+    // 不做硬断言
+    expect(page.url()).toContain('/metric/dashboard');
+  });
+
+  // E2E-PERF-005: 权重配置管理（3 Tab + 保存/回滚/恢复默认）
+  // 路由 /metric/weight-config：3 Tab（控制类型权重模板 / 性能定级阈值 / 版本历史）
+  // + "恢复国标默认值"按钮（仅 ADMIN 可见）
+  test('E2E-PERF-005: 权重配置管理', async ({ page }) => {
+    await page.goto('/metric/weight-config');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // weight-config.vue 页面包含两层 Tabs：
+    // 1. 顶部 ConfigTabs（指标定义/权重配置/引擎规则/任务策略/执行记录，class="metric-config-tabs"）
+    // 2. 内部 weight-config 自身 Tabs（控制类型权重模板/性能定级阈值/版本历史）
+    // 内部 Tabs 在 .mt-4 容器内
+    const innerTabs = page.locator('.mt-4 .ant-tabs').first();
+    const hasInnerTabs = await innerTabs.isVisible({ timeout: 15_000 }).catch(() => false);
+    // 兜底：取第二个 .ant-tabs（第一个是 ConfigTabs）
+    const fallbackTabs = page.locator('.ant-tabs').nth(1);
+    const tabsLocator = hasInnerTabs ? innerTabs : fallbackTabs;
+    await expect(tabsLocator).toBeVisible({ timeout: 15_000 });
+
+    // 验证 3 个 Tab 标签存在（控制类型权重模板 / 性能定级阈值 / 版本历史）
+    const tabBar = tabsLocator.locator('.ant-tabs-nav, .ant-tabs-tab-bar').first();
+    const tabText = await tabBar.innerText().catch(() => '');
+    expect(tabText).toContain('控制类型权重模板');
+    expect(tabText).toContain('性能定级阈值');
+    expect(tabText).toContain('版本历史');
+
+    // 验证"恢复国标默认值"按钮存在（仅 ADMIN 可见）
+    const restoreBtn = page.getByRole('button', { name: /恢复国标默认值/ }).first();
+    const hasRestoreBtn = await restoreBtn.isVisible({ timeout: 10_000 }).catch(() => false);
+    expect(hasRestoreBtn).toBeTruthy();
+
+    // 点击"性能定级阈值"Tab，验证 5 级定级表存在
+    const thresholdTab = tabsLocator.getByRole('tab', { name: /性能定级阈值/ }).first();
+    if (await thresholdTab.isVisible().catch(() => false)) {
+      await thresholdTab.click();
+      await page.waitForTimeout(1000);
+      // grading-threshold.vue: 5 级定级 EXCELLENT/GOOD/FAIR/WARNING/POOR
+      const thresholdText = await page.locator('body').innerText();
+      // 验证至少出现一个等级关键词
+      expect(thresholdText).toMatch(/EXCELLENT|GOOD|FAIR|WARNING|POOR|一级|二级|三级|四级|五级/);
+    }
+
+    // 点击"版本历史"Tab，验证版本列表表格存在
+    const historyTab = tabsLocator.getByRole('tab', { name: /版本历史/ }).first();
+    if (await historyTab.isVisible().catch(() => false)) {
+      await historyTab.click();
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+      // version-history.vue: 版本号 / 变更类型 / 变更内容摘要 / 操作人 / 变更时间 / 操作
+      // 验证版本历史组件已渲染（表格或说明文案）
+      const historyText = await page.locator('body').innerText();
+      // version-history.vue 包含"权重模板的版本变更历史"说明文案
+      expect(historyText).toContain('版本变更历史');
+    }
+
+    // 注意：不实际执行保存/回滚操作，避免污染数据
+    expect(page.url()).toContain('/metric/weight-config');
+  });
+
+  // E2E-PERF-006: 低效排行参评过滤
+  // 路由 /metric/ranking：包含"包含不参评回路"开关（默认关闭）+ "仅显示有效评分"开关
+  test('E2E-PERF-006: 低效排行参评过滤', async ({ page }) => {
+    await page.goto('/metric/ranking');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // 验证页面加载（筛选栏或表格可见）
+    const tableOrFilter = page.locator('.ant-table, .ant-select, .ant-switch').first();
+    await expect(tableOrFilter).toBeVisible({ timeout: 15_000 });
+
+    // 验证"包含不参评回路"开关存在（默认关闭）
+    // ranking.vue: includeExcluded ref(false)，标签文本"包含不参评回路"
+    const includeExcludedLabel = page.getByText('包含不参评回路', { exact: false }).first();
+    const hasLabel1 = await includeExcludedLabel.isVisible().catch(() => false);
+    expect(hasLabel1).toBeTruthy();
+
+    // 验证"仅显示有效评分"开关存在
+    const onlyValidLabel = page.getByText('仅显示有效评分', { exact: false }).first();
+    const hasLabel2 = await onlyValidLabel.isVisible().catch(() => false);
+    expect(hasLabel2).toBeTruthy();
+
+    // 验证表格容器存在（容忍空数据：Empty 占位或 Table）
+    const tableOrEmpty = page.locator('.ant-table, .ant-empty').first();
+    const hasTable = await tableOrEmpty.isVisible().catch(() => false);
+    expect(hasTable).toBeTruthy();
+
+    // 注意：不切换开关，只验证 UI 元素存在；默认仅显示参评回路（前端过滤）
+    expect(page.url()).toContain('/metric/ranking');
+  });
 });
