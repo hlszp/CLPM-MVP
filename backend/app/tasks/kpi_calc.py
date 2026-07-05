@@ -351,8 +351,13 @@ def calculate_custom_loop_kpi(
     bind=True,
     base=AsyncTask,
 )
-def backfill_kpi_range(self: AsyncTask, ts_start: str, ts_end: str) -> dict:
-    """按小时窗口批量回填 KPI 快照（脚本触发）。
+def backfill_kpi_range(
+    self: AsyncTask,
+    ts_start: str,
+    ts_end: str,
+    loop_ids: list[str] | None = None,
+) -> dict:
+    """按小时窗口批量回填 KPI 快照（脚本/HTTP 触发）。
 
     遍历 [ts_start, ts_end) 范围内的每个完整小时窗口，
     对全量 ACTIVE/READY 回路计算 KPI，并同步触发节点级聚合。
@@ -361,14 +366,24 @@ def backfill_kpi_range(self: AsyncTask, ts_start: str, ts_end: str) -> dict:
     Args:
         ts_start: 起始时间（ISO 8601，UTC）
         ts_end: 结束时间（ISO 8601，UTC，不包含）
+        loop_ids: 回路 ID 过滤列表。None=全量（保持原行为）；
+            非空列表=仅这些回路（HTTP API 历史重算按回路精准过滤）；
+            空列表=直接返回 0 结果。
 
     用途：
         - 补齐因数据空档或服务中断缺失的历史 KPI 快照
         - 修复契约配置后重新计算指定时段的指标
+        - 按回路/装置精准重算历史数据
     """
-    logger.info("KPI 回填任务开始, task_id=%s, range=%s~%s", self.request.id, ts_start, ts_end)
+    logger.info(
+        "KPI 回填任务开始, task_id=%s, range=%s~%s, loop_ids=%s",
+        self.request.id,
+        ts_start,
+        ts_end,
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
     try:
-        result = self.run_async(_do_backfill(ts_start, ts_end))
+        result = self.run_async(_do_backfill(ts_start, ts_end, loop_ids=loop_ids))
         logger.info("KPI 回填任务完成: %s", result)
         return result
     except Exception:
@@ -376,11 +391,20 @@ def backfill_kpi_range(self: AsyncTask, ts_start: str, ts_end: str) -> dict:
         raise
 
 
-async def _do_backfill(ts_start: str, ts_end: str) -> dict:
+async def _do_backfill(
+    ts_start: str,
+    ts_end: str,
+    loop_ids: list[str] | None = None,
+) -> dict:
     """批量回填 async 逻辑：遍历小时窗口，每窗口全量回路计算 + 节点聚合。
 
     在 Celery worker 的 event loop 内执行，复用 worker 的 httpx client，
     避免脚本进程 asyncio.run 环境下 TDengine 查询异常的问题。
+
+    Args:
+        ts_start: 起始时间 ISO 8601
+        ts_end: 结束时间 ISO 8601（不包含）
+        loop_ids: 回路 ID 过滤列表；None=全量，空列表=跳过计算
     """
     start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
     end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
@@ -393,7 +417,27 @@ async def _do_backfill(ts_start: str, ts_end: str) -> dict:
         cur += timedelta(hours=1)
 
     total = len(windows)
-    logger.info("回填窗口数: %d (%s ~ %s)", total, start_dt.isoformat(), end_dt.isoformat())
+
+    # 空列表提前返回，避免遍历窗口调用 _do_calculate
+    # 注意：窗口数已计算（total_windows），仅跳过计算逻辑
+    if loop_ids is not None and len(loop_ids) == 0:
+        return {
+            "total_windows": total,
+            "failed_windows": 0,
+            "loop_success": 0,
+            "loop_inconclusive": 0,
+            "loop_failed": 0,
+            "node_success": 0,
+            "failed_window_list": [],
+        }
+
+    logger.info(
+        "回填窗口数: %d (%s ~ %s), loop_ids=%s",
+        total,
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
 
     agg_loop_success = 0
     agg_loop_inconclusive = 0
@@ -403,7 +447,9 @@ async def _do_backfill(ts_start: str, ts_end: str) -> dict:
 
     for i, w in enumerate(windows, 1):
         try:
-            loop_result = await _do_calculate(ts_start=w, cascade_node=False)
+            loop_result = await _do_calculate(
+                ts_start=w, cascade_node=False, loop_ids=loop_ids
+            )
             node_result = await _do_calculate_node_kpi(ts_start=w)
             agg_loop_success += loop_result.get("success", 0)
             agg_loop_inconclusive += loop_result.get("inconclusive", 0)
@@ -548,7 +594,9 @@ def refresh_beat_schedule() -> dict:
 
 
 async def _do_calculate(
-    ts_start: datetime | None = None, cascade_node: bool = True
+    ts_start: datetime | None = None,
+    cascade_node: bool = True,
+    loop_ids: list[str] | None = None,
 ) -> dict:
     """执行全量 KPI 计算的实际 async 逻辑。
 
@@ -558,6 +606,9 @@ async def _do_calculate(
         cascade_node: 是否在回路级计算完成后级联触发节点级聚合任务。
             脚本批量回填时设为 False，由脚本同步调用 _do_calculate_node_kpi
             避免大量 .delay() 调用堆积到 Celery 队列。
+        loop_ids: 回路 ID 过滤列表。None=全量 ACTIVE/READY 回路（保持原行为）；
+            非空列表=仅这些回路（用于历史重算按回路精准过滤）；
+            空列表=直接返回 0 结果。
 
     引擎规则（PRD §5.4.2 / FDS §5.3.3）：
         - EVAL_CALC_CYCLE.cycle_minutes → 计算周期 + 时间窗长度
@@ -587,15 +638,25 @@ async def _do_calculate(
             ts_end = ts_end.replace(minute=(ts_end.minute // cycle_minutes) * cycle_minutes)
             ts_start = ts_end - timedelta(minutes=cycle_minutes)
 
-        # 1. 查询所有 ACTIVE/READY 状态回路
-        loop_result = await db.execute(
-            select(LoopLedger).where(
-                LoopLedger.is_active.is_(True),
-                LoopLedger.status == "READY",
-            )
+        # 1. 查询回路（支持 loop_ids 过滤）
+        # loop_ids=[] 表示空集，直接返回 0 结果（避免误查全量）
+        if loop_ids is not None and len(loop_ids) == 0:
+            return {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+
+        stmt = select(LoopLedger).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
         )
+        if loop_ids is not None:
+            stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+
+        loop_result = await db.execute(stmt)
         loops = list(loop_result.scalars().all())
-        logger.info("待计算回路数: %d", len(loops))
+        logger.info(
+            "待计算回路数: %d (loop_ids=%s)",
+            len(loops),
+            "all" if loop_ids is None else f"{len(loop_ids)} filtered",
+        )
 
         if not loops:
             return {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
