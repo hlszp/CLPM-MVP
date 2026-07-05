@@ -632,11 +632,13 @@ class AnomalyInjector:
     """异常值与质量戳注入器（所有异常值约束在量程范围内，PV 异常比例 < 5%）。
 
     策略：
-        - spike（尖峰）：PV 突变到量程边界附近（不超量程），持续 1-3 秒，标记 Bad
         - flatline（停滞）：PV 锁定固定值 30-90 秒，标记 Uncertain
         - bad_cluster（坏质量聚簇）：30-60 秒窗口 pv_quality=0（仅质量，不改 PV 值）
         - uncertain_scatter（不确定散点）：~1% 单点 pv_quality=2
     总异常点比例控制在 < 5%。
+
+    注：spike（尖峰）生成逻辑已于本次数据清洗任务移除，避免再次注入毛刺数据
+    （历史毛刺已由 scripts/clean_tdengine_spikes.py 清洗）。
     """
 
     def __init__(self, cfg: dict, n_points: int) -> None:
@@ -647,28 +649,12 @@ class AnomalyInjector:
         self.pv_range = cfg["pv_range"]
         self.base_sp = cfg["base_sp"]
 
-        # 预生成异常事件（控制总比例 < 5%）
-        self.spike_events = self._gen_spikes()
+        # 预生成异常事件（控制总比例 < 5%，spike 已移除）
         self.flatline_events = self._gen_flatlines()
         self.bad_clusters = self._gen_bad_clusters()
         # uncertain 散点 ~0.5%
         n_uncertain = max(1, n_points // 200)
         self.uncertain_indices = set(random.sample(range(n_points), n_uncertain))
-
-    def _gen_spikes(self) -> list[tuple[int, int, float]]:
-        """尖峰事件：(起始, 持续秒, 尖峰值)。量程边界附近，不超量程。约 0.05%。"""
-        events = []
-        n_spikes = max(2, self.n // 2000)
-        for _ in range(n_spikes):
-            start = random.randint(60, self.n - 300)
-            dur = random.randint(1, 3)
-            # 尖峰到量程边界附近（量程的 90-99% 或 1-10%），不超量程
-            if random.random() < 0.5:
-                spike_val = self.range_max * random.uniform(0.90, 0.99)
-            else:
-                spike_val = self.range_min + self.pv_range * random.uniform(0.01, 0.10)
-            events.append((start, dur, round(spike_val, 4)))
-        return events
 
     def _gen_flatlines(self) -> list[tuple[int, int, float]]:
         """停滞事件：(起始, 持续秒, 锁定值)。约 0.15%。"""
@@ -698,24 +684,19 @@ class AnomalyInjector:
         """对单点应用异常注入，返回 (pv_after, quality)。quality: 1=Good, 0=Bad, 2=Uncertain。"""
         quality = 1
 
-        # 1. spike 尖峰（量程内）
-        for s, dur, val in self.spike_events:
-            if s <= idx < s + dur:
-                return val, 0  # Bad
-
-        # 2. flatline 停滞
+        # 1. flatline 停滞（spike 已移除）
         for s, dur, val in self.flatline_events:
             if s <= idx < s + dur:
                 if quality == 1:
                     quality = 2  # Uncertain
                 return val, quality
 
-        # 3. bad_cluster 坏质量聚簇（仅质量戳）
+        # 2. bad_cluster 坏质量聚簇（仅质量戳）
         for s, dur in self.bad_clusters:
             if s <= idx < s + dur:
                 return round(pv, 4), 0  # Bad
 
-        # 4. uncertain 散点
+        # 3. uncertain 散点
         if idx in self.uncertain_indices:
             quality = 2
 
