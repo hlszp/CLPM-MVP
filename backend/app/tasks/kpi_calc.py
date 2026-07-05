@@ -1724,7 +1724,10 @@ async def _save_snapshot(
     confidence_level: str | None = None,
     data_lineage: dict | None = None,
 ) -> dict:
-    """幂等写入快照（相同 loop_id + ts_start 不重复写入，覆盖更新）。
+    """幂等写入快照（UPSERT：相同 loop_id + ts_start 覆盖更新）。
+
+    使用 PostgreSQL ``INSERT ... ON CONFLICT (loop_id, ts_start) DO UPDATE``，
+    数据库层保证唯一性，避免应用层 SELECT-then-INSERT 的并发竞态。
 
     v4.0 新增 7 个数据血缘字段，支持审计追溯：
         - ideal_settling_time: 理想稳态时间（秒）
@@ -1741,81 +1744,86 @@ async def _save_snapshot(
     ts_start_naive = ts_start.replace(tzinfo=None) if ts_start.tzinfo else ts_start
     ts_end_naive = ts_end.replace(tzinfo=None) if ts_end.tzinfo else ts_end
 
-    # 检查是否已存在
-    existing_result = await db.execute(
-        select(KpiSnapshotHourly).where(
+    snapshot_id = str(uuid4())
+    # 使用 PostgreSQL INSERT ... ON CONFLICT DO UPDATE（真 UPSERT）
+    # 数据库层保证 (loop_id, ts_start) 唯一，避免并发竞态产生重复
+    from sqlalchemy.dialects import postgresql
+
+    insert_stmt = postgresql.insert(KpiSnapshotHourly).values(
+        id=snapshot_id,
+        loop_id=loop_id,
+        ts_start=ts_start_naive,
+        ts_end=ts_end_naive,
+        status=status,
+        score=score,
+        good_value_rate=good_value_rate,
+        auto_mode_rate=auto_mode_rate,
+        effective_auto_rate=effective_auto_rate,
+        steady_rate=steady_rate,
+        accuracy_rate=accuracy_rate,
+        fast_rate=fast_rate,
+        oscillation_rate=oscillation_rate,
+        saturation_rate=saturation_rate,
+        stiction_index=stiction_index,
+        settling_time=settling_time,
+        output_trip_index=output_trip_index,
+        # v4.0 数据血缘字段
+        ideal_settling_time=ideal_settling_time,
+        algorithm_version=algorithm_version,
+        sampling_freq=sampling_freq,
+        quality_policy=quality_policy,
+        valid_rate=valid_rate,
+        confidence_level=confidence_level,
+        data_lineage=data_lineage,
+    )
+    # ON CONFLICT (loop_id, ts_start) DO UPDATE：覆盖除 id 外的所有字段
+    update_cols = {
+        "ts_end": ts_end_naive,
+        "status": status,
+        "score": score,
+        "good_value_rate": good_value_rate,
+        "auto_mode_rate": auto_mode_rate,
+        "effective_auto_rate": effective_auto_rate,
+        "steady_rate": steady_rate,
+        "accuracy_rate": accuracy_rate,
+        "fast_rate": fast_rate,
+        "oscillation_rate": oscillation_rate,
+        "saturation_rate": saturation_rate,
+        "stiction_index": stiction_index,
+        "settling_time": settling_time,
+        "output_trip_index": output_trip_index,
+        "ideal_settling_time": ideal_settling_time,
+        "algorithm_version": algorithm_version,
+        "sampling_freq": sampling_freq,
+        "quality_policy": quality_policy,
+        "valid_rate": valid_rate,
+        "confidence_level": confidence_level,
+        "data_lineage": data_lineage,
+    }
+    upsert_stmt = insert_stmt.on_conflict_do_update(
+        index_elements=["loop_id", "ts_start"],
+        set_=update_cols,
+    )
+    await db.execute(upsert_stmt)
+    # 注意：不在此处 commit，由调用方统一管理事务（_do_calculate 第 794 行）
+    # 这样保证单回路计算原子性：UPSERT + 后续操作一起提交或回滚
+
+    # PostgreSQL RETURNING 可获取实际写入的 id（INSERT 时为新 id，UPDATE 时为旧 id）
+    # 但 ON CONFLICT DO UPDATE 不自动 RETURNING，需用 SELECT 查询实际 id
+    actual_id_result = await db.execute(
+        select(KpiSnapshotHourly.id).where(
             KpiSnapshotHourly.loop_id == loop_id,
             KpiSnapshotHourly.ts_start == ts_start_naive,
         )
     )
-    existing = existing_result.scalar_one_or_none()
+    actual_id_row = actual_id_result.first()
+    snapshot_id = str(actual_id_row[0]) if actual_id_row else snapshot_id
 
-    if existing:
-        # 更新已有记录
-        existing.ts_end = ts_end_naive
-        existing.status = status
-        existing.score = score
-        existing.good_value_rate = good_value_rate
-        existing.auto_mode_rate = auto_mode_rate
-        existing.effective_auto_rate = effective_auto_rate
-        existing.steady_rate = steady_rate
-        existing.accuracy_rate = accuracy_rate
-        existing.fast_rate = fast_rate
-        existing.oscillation_rate = oscillation_rate
-        existing.saturation_rate = saturation_rate
-        existing.stiction_index = stiction_index
-        existing.settling_time = settling_time
-        existing.output_trip_index = output_trip_index
-        # v4.0 数据血缘字段
-        existing.ideal_settling_time = ideal_settling_time
-        existing.algorithm_version = algorithm_version
-        existing.sampling_freq = sampling_freq
-        existing.quality_policy = quality_policy
-        existing.valid_rate = valid_rate
-        existing.confidence_level = confidence_level
-        existing.data_lineage = data_lineage
-        snapshot_id = str(existing.id)
-        logger.info(
-            "[快照写入] 覆盖更新 kpi_snapshot_hourly loop=%s ts_start=%s status=%s score=%s confidence=%s",
-            loop_id, ts_start_naive.isoformat(), status,
-            float(score) if score is not None else None, confidence_level,
-        )
-    else:
-        # 新增记录
-        snapshot_id = str(uuid4())
-        snapshot = KpiSnapshotHourly(
-            id=snapshot_id,
-            loop_id=loop_id,
-            ts_start=ts_start_naive,
-            ts_end=ts_end_naive,
-            status=status,
-            score=score,
-            good_value_rate=good_value_rate,
-            auto_mode_rate=auto_mode_rate,
-            effective_auto_rate=effective_auto_rate,
-            steady_rate=steady_rate,
-            accuracy_rate=accuracy_rate,
-            fast_rate=fast_rate,
-            oscillation_rate=oscillation_rate,
-            saturation_rate=saturation_rate,
-            stiction_index=stiction_index,
-            settling_time=settling_time,
-            output_trip_index=output_trip_index,
-            # v4.0 数据血缘字段
-            ideal_settling_time=ideal_settling_time,
-            algorithm_version=algorithm_version,
-            sampling_freq=sampling_freq,
-            quality_policy=quality_policy,
-            valid_rate=valid_rate,
-            confidence_level=confidence_level,
-            data_lineage=data_lineage,
-        )
-        db.add(snapshot)
-        logger.info(
-            "[快照写入] 新增 kpi_snapshot_hourly loop=%s ts_start=%s status=%s score=%s confidence=%s",
-            loop_id, ts_start_naive.isoformat(), status,
-            float(score) if score is not None else None, confidence_level,
-        )
+    logger.info(
+        "[快照写入] UPSERT kpi_snapshot_hourly loop=%s ts_start=%s status=%s score=%s confidence=%s",
+        loop_id, ts_start_naive.isoformat(), status,
+        float(score) if score is not None else None, confidence_level,
+    )
 
     return {
         "loopId": loop_id,

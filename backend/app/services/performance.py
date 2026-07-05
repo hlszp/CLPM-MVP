@@ -1254,6 +1254,7 @@ async def list_loop_snapshots(
         end = datetime.now(UTC).replace(tzinfo=None)
 
     # 构建列表查询（join LoopLedger 获取 tag_name）
+    # 注：UNIQUE(loop_id, ts_start) 约束已保证不会重复（q1a2b3c4d5e6 迁移）
     stmt = (
         select(KpiSnapshotHourly, LoopLedger.tag_name)
         .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
@@ -1270,6 +1271,8 @@ async def list_loop_snapshots(
         stmt = stmt.where(KpiSnapshotHourly.confidence_level == confidence_level)
 
     # count 查询（不加 limit/offset）
+    # 注：UNIQUE(loop_id, ts_start) 约束已保证不会重复（q1a2b3c4d5e6 迁移），
+    # 普通 COUNT(*) 即可
     count_stmt = select(func.count()).select_from(KpiSnapshotHourly).where(
         KpiSnapshotHourly.ts_start >= start,
         KpiSnapshotHourly.ts_start <= end,

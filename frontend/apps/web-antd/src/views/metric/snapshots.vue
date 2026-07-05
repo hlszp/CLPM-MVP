@@ -5,8 +5,9 @@
  * 对齐后端 GET /api/v1/performance/loops/snapshots
  * - 顶部工具栏：刷新
  * - 筛选区：装置 TreeSelect + 回路 Select + 时间 RangePicker + 状态 + 可信度
- * - 表格：回路名 / 时间窗 / 综合评分 / 准确率 / 快速率 / 稳定率 / 有效自控率 / 可信度徽章 / 状态
- * - 行展开：显示完整 24 字段（含数据血缘）
+ * - 表格：回路名 / 时间窗 / 综合评分 / 8 大 KPI + 粘滞指数 / 稳态时间 / 输出行程指数
+ *   / 可信度徽章 / 状态 / 操作（详情按钮）
+ * - 详情抽屉：点击"详情"按钮从右侧滑出，展示完整 24 字段（含数据血缘）
  *
  * 路由：/metric/snapshots
  * 权限：所有角色可查看
@@ -22,6 +23,7 @@ import {
   DatePicker,
   Descriptions,
   DescriptionsItem,
+  Drawer,
   Select,
   Space,
   Table,
@@ -37,8 +39,8 @@ import type {
   KpiSnapshotItem,
   KpiStatus,
 } from '#/api/metric';
-import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { getLoopListApi } from '#/api/loop';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 
 defineOptions({ name: 'MetricSnapshots' });
 
@@ -60,9 +62,26 @@ const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 const plantNodeTree = ref<any[]>([]);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
 
+// ============ 详情抽屉状态 ============
+const drawerVisible = ref(false);
+const drawerRecord = ref<KpiSnapshotItem | null>(null);
+
+/** 点击"详情"按钮：打开抽屉并加载该行完整数据 */
+function openDetail(record: Record<string, any>) {
+  drawerRecord.value = record as unknown as KpiSnapshotItem;
+  drawerVisible.value = true;
+}
+
+/** 关闭抽屉 */
+function closeDetail() {
+  drawerVisible.value = false;
+  drawerRecord.value = null;
+}
+
 // ============ 表格列定义 ============
 // 列顺序：回路 → 时间窗 → 综合评分 → 8 大 KPI（好值率/自控率/有效自控率/
-// 稳定率/准确率/快速率/振荡率/饱和率）→ 可信度 → 状态
+// 稳定率/准确率/快速率/振荡率/饱和率）→ 粘滞指数 / 稳态时间 / 输出行程指数
+// → 可信度 → 状态 → 操作
 // 8 大 KPI 顺序对齐 GB/T 44693.2-2024
 const columns = computed<TableColumnsType>(() => [
   {
@@ -134,6 +153,24 @@ const columns = computed<TableColumnsType>(() => [
     width: 80,
   },
   {
+    title: '粘滞指数',
+    key: 'stictionIndex',
+    dataIndex: 'stictionIndex',
+    width: 90,
+  },
+  {
+    title: '稳态时间',
+    key: 'settlingTime',
+    dataIndex: 'settlingTime',
+    width: 90,
+  },
+  {
+    title: '输出行程指数',
+    key: 'outputTravelIndex',
+    dataIndex: 'outputTravelIndex',
+    width: 110,
+  },
+  {
     title: '可信度',
     key: 'confidenceLevel',
     dataIndex: 'confidenceLevel',
@@ -144,6 +181,11 @@ const columns = computed<TableColumnsType>(() => [
     key: 'status',
     dataIndex: 'status',
     width: 100,
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 80,
     fixed: 'right' as const,
   },
 ]);
@@ -198,7 +240,7 @@ async function loadLoops(plantNodeId?: string) {
     const result = await getLoopListApi(params);
     loopOptions.value = (result.items || []).map((l: any) => ({
       label: l.tagName,
-      value: l.id,
+      value: l.loopId,
     }));
   } catch {
     loopOptions.value = [];
@@ -340,7 +382,7 @@ onMounted(() => {
         showSizeChanger: true,
         showTotal: (t: number) => `共 ${t} 条`,
       }"
-      :expandable="{ expandedRowRender: undefined }"
+      :scroll="{ x: 1800 }"
       row-key="tsStart"
       size="small"
       @change="
@@ -390,88 +432,160 @@ onMounted(() => {
         >
           {{ formatNumber(record[column.dataIndex as string], '%') }}
         </template>
+        <!-- 粘滞指数 / 稳态时间 / 输出行程指数 -->
+        <template
+          v-else-if="
+            (['stictionIndex', 'settlingTime', 'outputTravelIndex'] as string[]).includes(
+              column.key as string,
+            )
+          "
+        >
+          <span class="font-mono">
+            {{
+              column.key === 'settlingTime'
+                ? formatNumber(record[column.dataIndex as string], 's')
+                : formatNumber(record[column.dataIndex as string])
+            }}
+          </span>
+        </template>
+        <!-- 操作列：详情按钮 -->
+        <template v-else-if="column.key === 'action'">
+          <Button type="link" size="small" @click="openDetail(record)">
+            详情
+          </Button>
+        </template>
       </template>
+    </Table>
 
-      <!-- 行展开：完整 24 字段详情 -->
-      <template #expandedRowRender="{ record }">
+    <!-- 详情抽屉：从右侧滑出，展示完整字段 -->
+    <Drawer
+      :open="drawerVisible"
+      title="回路指标详情"
+      placement="right"
+      :width="720"
+      :mask-closable="true"
+      @close="closeDetail"
+    >
+      <template v-if="drawerRecord">
         <Descriptions
-          :column="4"
+          :column="2"
           size="small"
           bordered
           :label-style="{ width: '120px' }"
         >
           <DescriptionsItem label="回路 ID">
-            {{ record.loopId || '—' }}
+            {{ drawerRecord.loopId || '—' }}
           </DescriptionsItem>
           <DescriptionsItem label="回路名">
-            {{ record.loopTagName || '—' }}
+            {{ drawerRecord.loopTagName || '—' }}
           </DescriptionsItem>
-          <DescriptionsItem label="好值率">
-            {{ formatNumber(record.goodValueRate, '%') }}
+          <DescriptionsItem label="时间窗起">
+            {{ drawerRecord.tsStart || '—' }}
           </DescriptionsItem>
-          <DescriptionsItem label="自控率">
-            {{ formatNumber(record.autoModeRate, '%') }}
+          <DescriptionsItem label="时间窗止">
+            {{ drawerRecord.tsEnd || '—' }}
           </DescriptionsItem>
-          <DescriptionsItem label="振荡率">
-            {{ formatNumber(record.oscillationRate, '%') }}
+          <DescriptionsItem label="综合评分">
+            <span class="font-semibold">{{ formatNumber(drawerRecord.score) }}</span>
           </DescriptionsItem>
-          <DescriptionsItem label="饱和率">
-            {{ formatNumber(record.saturationRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="粘滞指数">
-            {{ formatNumber(record.stictionIndex) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="稳态时间">
-            {{ formatNumber(record.settlingTime, 's') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="输出行程指数">
-            {{ formatNumber(record.outputTravelIndex) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="理想稳态时间">
-            {{ formatNumber(record.idealSettlingTime, 's') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="有效数据率">
-            {{ formatNumber(record.validRate) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="可信度等级">
+          <DescriptionsItem label="可信度">
             <Tag
-              v-if="record.confidenceLevel"
-              :color="CONFIDENCE_COLOR_MAP[record.confidenceLevel] || 'default'"
+              v-if="drawerRecord.confidenceLevel"
+              :color="CONFIDENCE_COLOR_MAP[drawerRecord.confidenceLevel] || 'default'"
             >
-              {{ record.confidenceLevel }}
+              {{ CONFIDENCE_LABEL_MAP[drawerRecord.confidenceLevel] || drawerRecord.confidenceLevel }}
             </Tag>
             <span v-else>—</span>
           </DescriptionsItem>
-          <DescriptionsItem label="算法版本">
-            {{ record.algorithmVersion || '—' }}
-          </DescriptionsItem>
-          <DescriptionsItem label="采样频率">
-            {{ record.samplingFreq || '—' }}
-          </DescriptionsItem>
-          <DescriptionsItem label="质量策略">
-            {{ record.qualityPolicy || '—' }}
-          </DescriptionsItem>
           <DescriptionsItem label="状态">
-            <Tag :color="STATUS_COLOR_MAP[record.status] || 'default'">
-              {{ STATUS_LABEL_MAP[record.status] || record.status }}
+            <Tag :color="STATUS_COLOR_MAP[drawerRecord.status] || 'default'">
+              {{ STATUS_LABEL_MAP[drawerRecord.status] || drawerRecord.status }}
             </Tag>
           </DescriptionsItem>
-          <DescriptionsItem v-if="record.dataLineage" label="数据血缘" :span="4">
-            <div class="font-mono text-xs">
-              <div>采样频率: {{ record.dataLineage.samplingFreq }}</div>
-              <div>聚合策略: {{ record.dataLineage.aggregationPolicy }}</div>
-              <div>质量策略: {{ record.dataLineage.qualityPolicy }}</div>
-              <div>tagGroup: {{ record.dataLineage.tagGroup }}</div>
-              <div>
-                数据块: {{ record.dataLineage.dataBlockIds?.join(', ') || '—' }}
-              </div>
-              <div>有效数据率: {{ record.dataLineage.validRate }}</div>
-              <div>预处理版本: {{ record.dataLineage.dataPolicyVersion }}</div>
-              <div>算法版本: {{ record.dataLineage.algorithmVersion }}</div>
-            </div>
+          <DescriptionsItem label="算法版本">
+            {{ drawerRecord.algorithmVersion || '—' }}
           </DescriptionsItem>
         </Descriptions>
+
+        <!-- 8 大 KPI -->
+        <div class="mt-4 mb-2 text-sm font-medium">8 大 KPI 指标</div>
+        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+          <DescriptionsItem label="好值率">
+            {{ formatNumber(drawerRecord.goodValueRate, '%') }}
+          </DescriptionsItem>
+          <DescriptionsItem label="自控率">
+            {{ formatNumber(drawerRecord.autoModeRate, '%') }}
+          </DescriptionsItem>
+          <DescriptionsItem label="有效自控率">
+            {{ formatNumber(drawerRecord.effectiveAutoRate, '%') }}
+          </DescriptionsItem>
+          <DescriptionsItem label="稳定率">
+            {{ formatNumber(drawerRecord.steadyRate, '%') }}
+          </DescriptionsItem>
+          <DescriptionsItem label="准确率">
+            {{ formatNumber(drawerRecord.accuracyRate, '%') }}
+          </DescriptionsItem>
+          <DescriptionsItem label="快速率">
+            {{ formatNumber(drawerRecord.fastRate, '%') }}
+          </DescriptionsItem>
+          <DescriptionsItem label="振荡率">
+            {{ formatNumber(drawerRecord.oscillationRate, '%') }}
+          </DescriptionsItem>
+          <DescriptionsItem label="饱和率">
+            {{ formatNumber(drawerRecord.saturationRate, '%') }}
+          </DescriptionsItem>
+        </Descriptions>
+
+        <!-- 诊断指标 -->
+        <div class="mt-4 mb-2 text-sm font-medium">诊断指标</div>
+        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+          <DescriptionsItem label="粘滞指数">
+            {{ formatNumber(drawerRecord.stictionIndex) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="稳态时间">
+            {{ formatNumber(drawerRecord.settlingTime, 's') }}
+          </DescriptionsItem>
+          <DescriptionsItem label="输出行程指数">
+            {{ formatNumber(drawerRecord.outputTravelIndex) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="理想稳态时间">
+            {{ formatNumber(drawerRecord.idealSettlingTime, 's') }}
+          </DescriptionsItem>
+        </Descriptions>
+
+        <!-- 数据血缘 -->
+        <div class="mt-4 mb-2 text-sm font-medium">数据血缘</div>
+        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+          <DescriptionsItem label="有效数据率">
+            {{ formatNumber(drawerRecord.validRate) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="采样频率">
+            {{ drawerRecord.samplingFreq || '—' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="质量策略">
+            {{ drawerRecord.qualityPolicy || '—' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="可信度等级">
+            {{ drawerRecord.confidenceLevel || '—' }}
+          </DescriptionsItem>
+        </Descriptions>
+
+        <template v-if="drawerRecord.dataLineage">
+          <div class="mt-4 mb-2 text-sm font-medium">数据血缘详情</div>
+          <div class="rounded bg-gray-50 p-3 font-mono text-xs">
+            <div>采样频率: {{ drawerRecord.dataLineage.samplingFreq }}</div>
+            <div>聚合策略: {{ drawerRecord.dataLineage.aggregationPolicy }}</div>
+            <div>质量策略: {{ drawerRecord.dataLineage.qualityPolicy }}</div>
+            <div>tagGroup: {{ drawerRecord.dataLineage.tagGroup }}</div>
+            <div>
+              数据块: {{ drawerRecord.dataLineage.dataBlockIds?.join(', ') || '—' }}
+            </div>
+            <div>有效数据率: {{ drawerRecord.dataLineage.validRate }}</div>
+            <div>预处理版本: {{ drawerRecord.dataLineage.dataPolicyVersion }}</div>
+            <div>算法版本: {{ drawerRecord.dataLineage.algorithmVersion }}</div>
+          </div>
+        </template>
       </template>
-    </Table>
+    </Drawer>
   </div>
 </template>

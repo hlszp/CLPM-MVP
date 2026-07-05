@@ -109,8 +109,10 @@ class KpiSnapshotHourly(Base):
         Index("idx_kpi_snapshot_loop_id", "loop_id"),
         Index("idx_kpi_snapshot_ts_start", "ts_start"),
         Index("idx_kpi_snapshot_status", "status"),
-        # v4.0 迁移 k2f3a4b5c6d7 创建的复合索引（DDS §2.8）
-        Index("ix_kpi_snapshot_hourly_loop_ts", "loop_id", "ts_start"),
+        # UNIQUE 约束：每个回路每小时仅允许一条快照（q1a2b3c4d5e6 迁移）
+        UniqueConstraint(
+            "loop_id", "ts_start", name="uq_kpi_snapshot_hourly_loop_ts"
+        ),
         {"comment": "每小时性能评估快照（好值率基于 PV 质量码统计）"},
     )
 
