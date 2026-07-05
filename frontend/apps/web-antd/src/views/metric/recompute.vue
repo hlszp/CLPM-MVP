@@ -12,7 +12,7 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 import { Plus, RotateCw } from '@vben/icons';
 
@@ -149,11 +149,62 @@ async function loadList() {
     const result = await getTaskListApi(params);
     taskList.value = result.items;
     totalCount.value = result.total;
+    // 根据是否有活跃任务自动启停 polling
+    updatePolling();
   } catch (error) {
     console.error('加载重算记录失败:', error);
     message.error('加载重算记录失败');
   } finally {
     loading.value = false;
+  }
+}
+
+// ============ 自动刷新（polling 活跃任务） ============
+const POLLING_INTERVAL = 5000; // 5 秒
+let pollingTimer: ReturnType<typeof setInterval> | null = null;
+
+function hasActiveTask(): boolean {
+  return taskList.value.some(
+    (t) => t.status === 'PENDING' || t.status === 'RUNNING',
+  );
+}
+
+function updatePolling() {
+  if (hasActiveTask() && !pollingTimer) {
+    pollingTimer = setInterval(async () => {
+      // 静默刷新（不显示 loading）
+      try {
+        const params: TaskApi.TaskListQueryParams = {
+          taskType: 'BACKFILL',
+          page: currentPage.value,
+          pageSize: pageSize.value,
+        };
+        if (filterStatus.value) params.status = filterStatus.value;
+        if (filterPlantNodeIds.value) params.plantNodeIds = filterPlantNodeIds.value;
+        if (filterDateRange.value) {
+          params.startTime = filterDateRange.value[0].toISOString();
+          params.endTime = filterDateRange.value[1].toISOString();
+        }
+        const result = await getTaskListApi(params);
+        taskList.value = result.items;
+        totalCount.value = result.total;
+        // 无活跃任务时停止 polling
+        if (!hasActiveTask()) {
+          stopPolling();
+        }
+      } catch (error) {
+        console.error('自动刷新失败:', error);
+      }
+    }, POLLING_INTERVAL);
+  } else if (!hasActiveTask() && pollingTimer) {
+    stopPolling();
+  }
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer);
+    pollingTimer = null;
   }
 }
 
@@ -312,6 +363,10 @@ function isTaskActive(task: TaskApi.TaskItem): boolean {
 // ============ 生命周期 ============
 onMounted(() => {
   loadList();
+});
+
+onUnmounted(() => {
+  stopPolling();
 });
 </script>
 

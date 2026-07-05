@@ -337,9 +337,14 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
         return
 
     try:
-        if data.get("task_type") == TaskType.STANDARD.value:
+        if data.get("task_type") in (
+            TaskType.STANDARD.value,
+            TaskType.BACKFILL.value,
+        ):
+            # STANDARD/BACKFILL 用 celery_task_id（单数字符串）
             celery_ids: list[str] = [celery_ids_raw]
         else:
+            # CUSTOM 用 celery_task_ids（JSON 数组）
             celery_ids = json.loads(celery_ids_raw)
     except (json.JSONDecodeError, TypeError):
         return
@@ -650,15 +655,16 @@ async def trigger_backfill(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    # 6. 触发 Celery 任务
-    final_loop_ids = [loop.id for loop in loops]
-    celery_result = backfill_kpi_range.delay(
-        body.tsStart, body.tsEnd, loop_ids=final_loop_ids
-    )
-
-    # 7. 创建任务记录
+    # 6. 先创建任务记录（需要 task_id 传给 Celery 任务用于状态跟踪）
     task_id = str(uuid4())
     now = _now_iso()
+
+    # 7. 触发 Celery 任务（传入 task_id 让任务主动更新 Redis 进度）
+    final_loop_ids = [loop.id for loop in loops]
+    celery_result = backfill_kpi_range.delay(
+        body.tsStart, body.tsEnd, loop_ids=final_loop_ids, task_id=task_id
+    )
+
     task_data: dict[str, str] = {
         "task_id": task_id,
         "task_type": TaskType.BACKFILL.value,

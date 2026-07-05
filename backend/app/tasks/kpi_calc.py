@@ -356,6 +356,7 @@ def backfill_kpi_range(
     ts_start: str,
     ts_end: str,
     loop_ids: list[str] | None = None,
+    task_id: str | None = None,
 ) -> dict:
     """按小时窗口批量回填 KPI 快照（脚本/HTTP 触发）。
 
@@ -369,6 +370,9 @@ def backfill_kpi_range(
         loop_ids: 回路 ID 过滤列表。None=全量（保持原行为）；
             非空列表=仅这些回路（HTTP API 历史重算按回路精准过滤）；
             空列表=直接返回 0 结果。
+        task_id: Redis 任务跟踪 ID（HTTP API 触发时传入）。
+            传入则主动更新 Redis 中的任务状态/进度；
+            None（CLI 触发）则只打日志，不更新 Redis。
 
     用途：
         - 补齐因数据空档或服务中断缺失的历史 KPI 快照
@@ -376,25 +380,96 @@ def backfill_kpi_range(
         - 按回路/装置精准重算历史数据
     """
     logger.info(
-        "KPI 回填任务开始, task_id=%s, range=%s~%s, loop_ids=%s",
+        "KPI 回填任务开始, celery_id=%s, task_id=%s, range=%s~%s, loop_ids=%s",
         self.request.id,
+        task_id or "(none)",
         ts_start,
         ts_end,
         "all" if loop_ids is None else f"{len(loop_ids)} loops",
     )
+
+    # 同步初始状态：PENDING → RUNNING
+    if task_id:
+        try:
+            self.run_async(_update_task_running(task_id))
+        except Exception:
+            logger.warning("更新任务 RUNNING 状态失败: task_id=%s", task_id, exc_info=True)
+
     try:
-        result = self.run_async(_do_backfill(ts_start, ts_end, loop_ids=loop_ids))
+        result = self.run_async(
+            _do_backfill(ts_start, ts_end, loop_ids=loop_ids, task_id=task_id)
+        )
         logger.info("KPI 回填任务完成: %s", result)
+
+        # 同步终态：RUNNING → SUCCESS
+        if task_id:
+            try:
+                self.run_async(_update_task_success(task_id, result))
+            except Exception:
+                logger.warning("更新任务 SUCCESS 状态失败: task_id=%s", task_id, exc_info=True)
+
         return result
-    except Exception:
+    except Exception as exc:
         logger.exception("KPI 回填任务失败")
+
+        # 同步终态：RUNNING → FAILED
+        if task_id:
+            try:
+                self.run_async(_update_task_failed(task_id, str(exc)))
+            except Exception:
+                logger.warning("更新任务 FAILED 状态失败: task_id=%s", task_id, exc_info=True)
         raise
+
+
+async def _update_task_running(task_id: str) -> None:
+    """将任务状态从 PENDING 更新为 RUNNING。"""
+    from app.schemas.task import TaskStatus
+
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        current_stage="回填计算",
+        started_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_success(task_id: str, result: dict) -> None:
+    """将任务状态更新为 SUCCESS。"""
+    from app.schemas.task import TaskStatus
+
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.SUCCESS,
+        progress=1.0,
+        current_stage="完成",
+        finished_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_failed(task_id: str, error_message: str) -> None:
+    """将任务状态更新为 FAILED。"""
+    from app.schemas.task import TaskStatus
+
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.FAILED,
+        current_stage="失败",
+        error_message=error_message,
+        finished_at=task_tracker._now_iso(),
+    )
 
 
 async def _do_backfill(
     ts_start: str,
     ts_end: str,
     loop_ids: list[str] | None = None,
+    task_id: str | None = None,
 ) -> dict:
     """批量回填 async 逻辑：遍历小时窗口，每窗口全量回路计算 + 节点聚合。
 
@@ -405,6 +480,7 @@ async def _do_backfill(
         ts_start: 起始时间 ISO 8601
         ts_end: 结束时间 ISO 8601（不包含）
         loop_ids: 回路 ID 过滤列表；None=全量，空列表=跳过计算
+        task_id: Redis 任务跟踪 ID；传入则每窗口完成后更新进度
     """
     start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
     end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
@@ -464,6 +540,16 @@ async def _do_backfill(
             failed_windows.append(w.isoformat())
             logger.warning("回填窗口 %s 失败: %s", w.isoformat(), exc)
 
+        # 每窗口完成后更新 Redis 进度
+        if task_id:
+            try:
+                await _update_task_progress(task_id, i, total)
+            except Exception:
+                logger.warning(
+                    "更新任务进度失败: task_id=%s, window=%d/%d",
+                    task_id, i, total, exc_info=True,
+                )
+
     return {
         "total_windows": total,
         "failed_windows": len(failed_windows),
@@ -473,6 +559,23 @@ async def _do_backfill(
         "node_success": agg_node_success,
         "failed_window_list": failed_windows,
     }
+
+
+async def _update_task_progress(task_id: str, done: int, total: int) -> None:
+    """更新任务进度（每窗口完成后调用）。"""
+    from app.schemas.task import TaskStatus
+
+    from app.services import task_tracker
+
+    progress = done / total if total > 0 else 0.0
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        progress=progress,
+        loops_done=done,
+        loops_total=total,
+        current_stage=f"回填计算 [{done}/{total}]",
+    )
 
 
 # ---------------------------------------------------------------------------
