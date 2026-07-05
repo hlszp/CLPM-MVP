@@ -83,12 +83,16 @@ const snapshotsPageSize = ref(10);
 const snapshotsDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 
 const snapshotsColumns = computed(() => [
-  { title: '时间窗', key: 'tsRange', width: 280 },
-  { title: '综合评分', key: 'score', dataIndex: 'score', width: 100 },
-  { title: '准确率', key: 'accuracyRate', dataIndex: 'accuracyRate', width: 90 },
-  { title: '快速率', key: 'fastRate', dataIndex: 'fastRate', width: 90 },
-  { title: '稳定率', key: 'steadyRate', dataIndex: 'steadyRate', width: 90 },
-  { title: '有效自控率', key: 'effectiveAutoRate', dataIndex: 'effectiveAutoRate', width: 110 },
+  { title: '时间窗', key: 'tsRange', width: 110 },
+  { title: '综合评分', key: 'score', dataIndex: 'score', width: 90 },
+  { title: '好值率', key: 'goodValueRate', dataIndex: 'goodValueRate', width: 80 },
+  { title: '自控率', key: 'autoModeRate', dataIndex: 'autoModeRate', width: 80 },
+  { title: '有效自控率', key: 'effectiveAutoRate', dataIndex: 'effectiveAutoRate', width: 100 },
+  { title: '稳定率', key: 'steadyRate', dataIndex: 'steadyRate', width: 80 },
+  { title: '准确率', key: 'accuracyRate', dataIndex: 'accuracyRate', width: 80 },
+  { title: '快速率', key: 'fastRate', dataIndex: 'fastRate', width: 80 },
+  { title: '振荡率', key: 'oscillationRate', dataIndex: 'oscillationRate', width: 80 },
+  { title: '饱和率', key: 'saturationRate', dataIndex: 'saturationRate', width: 80 },
   { title: '可信度', key: 'confidenceLevel', dataIndex: 'confidenceLevel', width: 80 },
   { title: '状态', key: 'status', dataIndex: 'status', width: 100 },
 ]);
@@ -444,9 +448,10 @@ async function loadSnapshots() {
   }
 }
 
-function formatSnapshotTime(ts: string | null | undefined): string {
+/** 时间窗：只显示结束时间的「MM-DD HH:00」 */
+function formatSnapshotTsEnd(ts: string | null | undefined): string {
   if (!ts) return '—';
-  return dayjs(ts).format('YYYY-MM-DD HH:mm');
+  return dayjs(ts).format('MM-DD HH:00');
 }
 
 function formatSnapshotNumber(val: number | null | undefined, suffix = ''): string {
@@ -813,8 +818,7 @@ onMounted(() => {
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'tsRange'">
                   <span class="font-mono text-xs">
-                    {{ formatSnapshotTime(record.tsStart) }} ~
-                    {{ formatSnapshotTime(record.tsEnd) }}
+                    {{ formatSnapshotTsEnd(record.tsEnd) }}
                   </span>
                 </template>
                 <template v-else-if="column.key === 'score'">
@@ -838,9 +842,16 @@ onMounted(() => {
                 </template>
                 <template
                   v-else-if="
-                    (['accuracyRate', 'fastRate', 'steadyRate', 'effectiveAutoRate'] as string[]).includes(
-                      column.key as string,
-                    )
+                    ([
+                      'goodValueRate',
+                      'autoModeRate',
+                      'effectiveAutoRate',
+                      'steadyRate',
+                      'accuracyRate',
+                      'fastRate',
+                      'oscillationRate',
+                      'saturationRate',
+                    ] as string[]).includes(column.key as string)
                   "
                 >
                   {{ formatSnapshotNumber(record[column.dataIndex as string], '%') }}

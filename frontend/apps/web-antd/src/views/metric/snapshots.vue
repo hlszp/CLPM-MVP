@@ -61,6 +61,9 @@ const plantNodeTree = ref<any[]>([]);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
 
 // ============ 表格列定义 ============
+// 列顺序：回路 → 时间窗 → 综合评分 → 8 大 KPI（好值率/自控率/有效自控率/
+// 稳定率/准确率/快速率/振荡率/饱和率）→ 可信度 → 状态
+// 8 大 KPI 顺序对齐 GB/T 44693.2-2024
 const columns = computed<TableColumnsType>(() => [
   {
     title: '回路',
@@ -73,38 +76,62 @@ const columns = computed<TableColumnsType>(() => [
   {
     title: '时间窗',
     key: 'tsRange',
-    width: 280,
+    width: 110,
   },
   {
     title: '综合评分',
     key: 'score',
     dataIndex: 'score',
-    width: 100,
+    width: 90,
     sorter: true,
   },
   {
-    title: '准确率',
-    key: 'accuracyRate',
-    dataIndex: 'accuracyRate',
-    width: 90,
+    title: '好值率',
+    key: 'goodValueRate',
+    dataIndex: 'goodValueRate',
+    width: 80,
   },
   {
-    title: '快速率',
-    key: 'fastRate',
-    dataIndex: 'fastRate',
-    width: 90,
-  },
-  {
-    title: '稳定率',
-    key: 'steadyRate',
-    dataIndex: 'steadyRate',
-    width: 90,
+    title: '自控率',
+    key: 'autoModeRate',
+    dataIndex: 'autoModeRate',
+    width: 80,
   },
   {
     title: '有效自控率',
     key: 'effectiveAutoRate',
     dataIndex: 'effectiveAutoRate',
-    width: 110,
+    width: 100,
+  },
+  {
+    title: '稳定率',
+    key: 'steadyRate',
+    dataIndex: 'steadyRate',
+    width: 80,
+  },
+  {
+    title: '准确率',
+    key: 'accuracyRate',
+    dataIndex: 'accuracyRate',
+    width: 80,
+  },
+  {
+    title: '快速率',
+    key: 'fastRate',
+    dataIndex: 'fastRate',
+    width: 80,
+  },
+  {
+    title: '振荡率',
+    key: 'oscillationRate',
+    dataIndex: 'oscillationRate',
+    width: 80,
+  },
+  {
+    title: '饱和率',
+    key: 'saturationRate',
+    dataIndex: 'saturationRate',
+    width: 80,
   },
   {
     title: '可信度',
@@ -116,7 +143,7 @@ const columns = computed<TableColumnsType>(() => [
     title: '状态',
     key: 'status',
     dataIndex: 'status',
-    width: 110,
+    width: 100,
     fixed: 'right' as const,
   },
 ]);
@@ -173,9 +200,10 @@ async function loadLoops() {
 }
 
 // ============ 工具函数 ============
-function formatTime(ts: string | null | undefined): string {
+/** 时间窗：只显示结束时间的「MM-DD HH:00」 */
+function formatTsEnd(ts: string | null | undefined): string {
   if (!ts) return '—';
-  return dayjs(ts).format('YYYY-MM-DD HH:mm:ss');
+  return dayjs(ts).format('MM-DD HH:00');
 }
 
 function formatNumber(val: number | null | undefined, suffix = ''): string {
@@ -312,7 +340,7 @@ onMounted(() => {
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'tsRange'">
           <span class="font-mono text-xs">
-            {{ formatTime(record.tsStart) }} ~ {{ formatTime(record.tsEnd) }}
+            {{ formatTsEnd(record.tsEnd) }}
           </span>
         </template>
         <template v-else-if="column.key === 'score'">
@@ -334,9 +362,16 @@ onMounted(() => {
         </template>
         <template
           v-else-if="
-            (['accuracyRate', 'fastRate', 'steadyRate', 'effectiveAutoRate'] as string[]).includes(
-              column.key as string,
-            )
+            ([
+              'goodValueRate',
+              'autoModeRate',
+              'effectiveAutoRate',
+              'steadyRate',
+              'accuracyRate',
+              'fastRate',
+              'oscillationRate',
+              'saturationRate',
+            ] as string[]).includes(column.key as string)
           "
         >
           {{ formatNumber(record[column.dataIndex as string], '%') }}
