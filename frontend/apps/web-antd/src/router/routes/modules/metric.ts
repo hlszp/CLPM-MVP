@@ -51,6 +51,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'MetricSnapshots',
+        path: '/metric/snapshots',
+        component: () => import('#/views/metric/snapshots.vue'),
+        meta: {
+          icon: 'lucide:table-properties',
+          title: '指标明细',
+        },
+      },
+      {
         name: 'MetricRecompute',
         path: '/metric/recompute',
         component: () => import('#/views/metric/recompute.vue'),

@@ -934,3 +934,75 @@ export function getGradingThresholdsApi() {
 export function saveGradingThresholdsApi(data: MetricApi.GradingThresholdSaveRequest) {
   return requestClient.post<MetricApi.GradingThresholdSchema>(GRADING_BASE, data);
 }
+
+// ===========================================================================
+// 回路小时指标快照列表 — GET /performance/loops/snapshots
+// ===========================================================================
+
+const SNAPSHOTS_BASE = '/performance/loops/snapshots';
+
+/** 回路小时指标快照列表项（24 字段 + loopTagName） */
+export interface KpiSnapshotItem {
+  loopId: string | null;
+  loopTagName: string | null;
+  tsStart: string | null;
+  tsEnd: string | null;
+  score: number | null;
+  goodValueRate: number | null;
+  autoModeRate: number | null;
+  effectiveAutoRate: number | null;
+  steadyRate: number | null;
+  accuracyRate: number | null;
+  oscillationRate: number | null;
+  saturationRate: number | null;
+  fastRate: number | null;
+  stictionIndex: number | null;
+  settlingTime: number | null;
+  outputTravelIndex: number | null;
+  status: KpiStatus;
+  idealSettlingTime: number | null;
+  algorithmVersion: string | null;
+  samplingFreq: string | null;
+  qualityPolicy: string | null;
+  validRate: number | null;
+  confidenceLevel: ConfidenceLevel | null;
+  dataLineage: MetricApi.DataLineage | null;
+}
+
+/** 快照列表响应 */
+export interface KpiSnapshotListResult {
+  items: KpiSnapshotItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** 快照列表查询参数 */
+export interface KpiSnapshotQueryParams {
+  /** 回路 ID（逗号分隔多个） */
+  loopId?: string;
+  /** 装置 ID（逗号分隔多个） */
+  plantNodeId?: string;
+  /** 起始时间（ISO 8601） */
+  startTime?: string;
+  /** 结束时间（ISO 8601） */
+  endTime?: string;
+  /** 快照状态 */
+  status?: KpiStatus;
+  /** 可信度等级 */
+  confidenceLevel?: ConfidenceLevel;
+  /** 页码 */
+  page?: number;
+  /** 每页条数 */
+  pageSize?: number;
+}
+
+/**
+ * 查询回路小时指标快照列表
+ *
+ * 按回路/装置/时间范围/状态/可信度筛选，分页返回。
+ * 默认时间范围为近 7 天，排序按 tsStart DESC。
+ */
+export function getLoopSnapshotsApi(params: KpiSnapshotQueryParams) {
+  return requestClient.get<KpiSnapshotListResult>(SNAPSHOTS_BASE, { params });
+}
