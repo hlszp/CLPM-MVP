@@ -186,10 +186,16 @@ async function loadPlantNodeTree() {
 }
 
 // ============ 加载回路列表 ============
-async function loadLoops() {
+/**
+ * 加载回路列表。
+ * @param plantNodeId 装置 ID；传入时只加载该装置下的回路，不传则加载全部。
+ */
+async function loadLoops(plantNodeId?: string) {
   try {
     // 后端 loops API pageSize 上限 100，传 1000 会 422
-    const result = await getLoopListApi({ page: 1, pageSize: 100 });
+    const params: any = { page: 1, pageSize: 100 };
+    if (plantNodeId) params.plantNodeId = plantNodeId;
+    const result = await getLoopListApi(params);
     loopOptions.value = (result.items || []).map((l: any) => ({
       label: l.tagName,
       value: l.id,
@@ -197,6 +203,14 @@ async function loadLoops() {
   } catch {
     loopOptions.value = [];
   }
+}
+
+// ============ 装置筛选联动 ============
+/** 装置变更：重新加载该装置下的回路，并清空已选回路 */
+function handlePlantNodeChange(value: string | undefined) {
+  filterLoopId.value = undefined;
+  loadLoops(value);
+  loadList();
 }
 
 // ============ 工具函数 ============
@@ -270,7 +284,7 @@ onMounted(() => {
         allow-clear
         tree-default-expand-all
         style="width: 200px"
-        @change="loadList"
+        @change="handlePlantNodeChange"
       />
       <Select
         v-model:value="filterLoopId"
