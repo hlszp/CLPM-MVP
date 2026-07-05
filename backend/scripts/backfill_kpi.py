@@ -95,6 +95,12 @@ def parse_args() -> argparse.Namespace:
         help="只打印计划，不触发任务",
     )
     p.add_argument(
+        "--loop-ids",
+        nargs="*",
+        default=None,
+        help="回路 ID 列表（可选，多个用空格分隔）；不传=全量回路",
+    )
+    p.add_argument(
         "--poll",
         action="store_true",
         default=True,
@@ -340,14 +346,30 @@ async def detect_tdengine_gaps(lookback_hours: int) -> list[dict[str, Any]]:
 
 
 def trigger_backfill(
-    start: datetime, end: datetime, dry_run: bool, poll: bool
+    start: datetime,
+    end: datetime,
+    dry_run: bool,
+    poll: bool,
+    loop_ids: list[str] | None = None,
 ) -> None:
-    """触发 backfill_kpi_range Celery 任务并轮询状态。"""
+    """触发 backfill_kpi_range Celery 任务并轮询状态.
+
+    Args:
+        start: 起始时间（UTC）
+        end: 结束时间（UTC，不包含）
+        dry_run: 只打印计划，不触发任务
+        poll: 轮询 Celery 任务状态直到完成
+        loop_ids: 回路 ID 列表（可选）；None=全量，空列表=不触发计算
+    """
     windows = gen_hourly_windows(start, end)
     print(f"\n=== 回填计划 ===")
     print(f"时间范围（UTC）: {fmt_utc(start)} ~ {fmt_utc(end)}")
     print(f"小时窗口数: {len(windows)}")
     print(f"执行方式: 触发 Celery 任务 backfill_kpi_range（worker 内串行执行）")
+    if loop_ids is not None:
+        print(f"回路过滤: {len(loop_ids)} 个回路")
+    else:
+        print(f"回路过滤: 全量")
     print()
 
     if dry_run:
@@ -362,10 +384,12 @@ def trigger_backfill(
 
     start_iso = fmt_utc(start)
     end_iso = fmt_utc(end)
-    result = backfill_kpi_range.delay(start_iso, end_iso)
+    result = backfill_kpi_range.delay(start_iso, end_iso, loop_ids=loop_ids)
     task_id = result.id
     print(f"Celery 任务已触发: task_id={task_id}")
     print(f"参数: ts_start={start_iso}, ts_end={end_iso}")
+    if loop_ids is not None:
+        print(f"参数: loop_ids={loop_ids}")
     print()
 
     if not poll:
@@ -458,7 +482,7 @@ def main() -> None:
             )
             sys.exit(1)
 
-        trigger_backfill(start, end, args.dry_run, args.poll)
+        trigger_backfill(start, end, args.dry_run, args.poll, loop_ids=args.loop_ids)
         return
 
     # ── 模式 2: --last-hours N ──
@@ -470,7 +494,7 @@ def main() -> None:
         end = now.replace(minute=0, second=0, microsecond=0)
         start = end - timedelta(hours=args.last_hours)
         print(f"[快速模式] 回填最近 {args.last_hours} 小时")
-        trigger_backfill(start, end, args.dry_run, args.poll)
+        trigger_backfill(start, end, args.dry_run, args.poll, loop_ids=args.loop_ids)
         return
 
     # ── 模式 3: --gap-detect（仅检测，不回填）──
@@ -507,7 +531,7 @@ def main() -> None:
         end = missing[-1] + timedelta(hours=1)
 
         print(f"\n[回填] 将回填 {len(missing)} 个缺失/不完整窗口")
-        trigger_backfill(start, end, args.dry_run, args.poll)
+        trigger_backfill(start, end, args.dry_run, args.poll, loop_ids=args.loop_ids)
         return
 
 
