@@ -390,6 +390,47 @@ class KpiSnapshotSchema(CamelModel):
     dataLineage: DataLineageSchema | None = None
 
 
+class KpiSnapshotListItem(CamelModel):
+    """KPI 快照列表项（KpiSnapshotSchema + 回路名）.
+
+    在 KpiSnapshotSchema 基础上附加 loopTagName，便于前端展示。
+    """
+
+    loopId: str | None = None
+    loopTagName: str | None = None
+    tsStart: str | None = None
+    tsEnd: str | None = None
+    score: float | None = None
+    goodValueRate: float | None = None
+    autoModeRate: float | None = None
+    effectiveAutoRate: float | None = None
+    steadyRate: float | None = None
+    accuracyRate: float | None = None
+    oscillationRate: float | None = None
+    saturationRate: float | None = None
+    fastRate: float | None = None
+    stictionIndex: float | None = None
+    settlingTime: float | None = None
+    outputTravelIndex: float | None = None
+    status: str = "INCONCLUSIVE"
+    idealSettlingTime: float | None = None
+    algorithmVersion: str | None = None
+    samplingFreq: str | None = None
+    qualityPolicy: str | None = None
+    validRate: float | None = None
+    confidenceLevel: str | None = None
+    dataLineage: DataLineageSchema | None = None
+
+
+class KpiSnapshotListData(CamelModel):
+    """回路小时指标快照列表响应 data 块."""
+
+    items: list[KpiSnapshotListItem]
+    total: int
+    page: int
+    pageSize: int
+
+
 __all__ = [
     "AnalyticsData",
     "AnalyticsFilterScope",
@@ -401,6 +442,8 @@ __all__ = [
     "EngineRuleUpdate",
     "ExportRequest",
     "KpiCard",
+    "KpiSnapshotListData",
+    "KpiSnapshotListItem",
     "KpiSnapshotSchema",
     "KpiSummary",
     "KpiTrend",

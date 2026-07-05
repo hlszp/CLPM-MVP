@@ -9,9 +9,13 @@
 - GET    /api/v1/performance/ranking            — 低效回路排行
 - GET    /api/v1/performance/analytics          — 统计报表数据
 - POST   /api/v1/performance/analytics/export   — 导出报表（CSV）
+- GET    /api/v1/performance/loops/snapshots    — 回路小时指标快照列表
 """
 
 from __future__ import annotations
+
+from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -26,6 +30,8 @@ from app.schemas.performance import (
     EngineRuleItem,
     EngineRuleUpdate,
     ExportRequest,
+    KpiSnapshotListData,
+    KpiSnapshotListItem,
     MetricConfigItem,
     MetricConfigUpdate,
     RankingItem,
@@ -36,6 +42,7 @@ from app.services.performance import (
     get_board,
     get_ranking,
     list_engine_rules,
+    list_loop_snapshots,
     list_metric_configs,
     update_engine_rule,
     update_metric_config,
@@ -283,6 +290,135 @@ async def get_realtime_auto_rate_endpoint(
             "readAt": rate_data["read_at"],
         }
 
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# 回路小时指标快照列表
+# ---------------------------------------------------------------------------
+
+
+def _parse_dt(s: str | None) -> datetime | None:
+    """解析 ISO 8601 时间字符串（兼容 Z 后缀），失败返回 None."""
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def _to_float(val) -> float | None:
+    """Decimal/float/None → float | None."""
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+@router.get("/loops/snapshots", response_model=ApiResponse[KpiSnapshotListData])
+async def list_loop_snapshots_endpoint(
+    loopId: str | None = Query(None, description="回路 ID（逗号分隔多个）"),
+    plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
+    startTime: str | None = Query(None, description="起始时间（ISO 8601）"),
+    endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
+    status: str | None = Query(
+        None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"
+    ),
+    confidenceLevel: str | None = Query(
+        None, description="可信度等级（A/B/C/D/E）"
+    ),
+    page: int = Query(1, ge=1, description="页码（1-based）"),
+    pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """查询回路小时指标快照列表（所有角色可查看）.
+
+    按回路 ID / 装置 / 时间范围 / 状态 / 可信度筛选，分页返回。
+    默认时间范围为近 7 天，排序按 ts_start DESC。
+    每条记录包含完整的 24 个 KPI 字段 + loopTagName。
+    """
+    # 解析逗号分隔的 ID 列表
+    loop_ids = (
+        [s.strip() for s in loopId.split(",") if s.strip()]
+        if loopId
+        else None
+    )
+    plant_node_ids = (
+        [s.strip() for s in plantNodeId.split(",") if s.strip()]
+        if plantNodeId
+        else None
+    )
+
+    start_dt = _parse_dt(startTime)
+    end_dt = _parse_dt(endTime)
+
+    rows, total = await list_loop_snapshots(
+        db=db,
+        loop_ids=loop_ids,
+        plant_node_ids=plant_node_ids,
+        start=start_dt,
+        end=end_dt,
+        status_filter=status,
+        confidence_level=confidenceLevel,
+        page=page,
+        page_size=pageSize,
+    )
+
+    # 组装响应
+    items: list[KpiSnapshotListItem] = []
+    for snap, tag_name in rows:
+        # 解析 data_lineage（JSONB → DataLineageSchema）
+        from app.schemas.performance import DataLineageSchema
+
+        data_lineage = None
+        if snap.data_lineage:
+            try:
+                if isinstance(snap.data_lineage, dict):
+                    data_lineage = DataLineageSchema(**snap.data_lineage)
+                else:
+                    data_lineage = DataLineageSchema(**snap.data_lineage)
+            except (TypeError, ValueError):
+                data_lineage = None
+
+        items.append(
+            KpiSnapshotListItem(
+                loopId=str(snap.loop_id) if snap.loop_id else None,
+                loopTagName=tag_name,
+                tsStart=snap.ts_start.isoformat() if snap.ts_start else None,
+                tsEnd=snap.ts_end.isoformat() if snap.ts_end else None,
+                score=_to_float(snap.score),
+                goodValueRate=_to_float(snap.good_value_rate),
+                autoModeRate=_to_float(snap.auto_mode_rate),
+                effectiveAutoRate=_to_float(snap.effective_auto_rate),
+                steadyRate=_to_float(snap.steady_rate),
+                accuracyRate=_to_float(snap.accuracy_rate),
+                oscillationRate=_to_float(snap.oscillation_rate),
+                saturationRate=_to_float(snap.saturation_rate),
+                fastRate=_to_float(snap.fast_rate),
+                stictionIndex=_to_float(snap.stiction_index),
+                settlingTime=_to_float(snap.settling_time),
+                outputTravelIndex=_to_float(snap.output_trip_index),
+                status=snap.status or "INCONCLUSIVE",
+                idealSettlingTime=_to_float(snap.ideal_settling_time),
+                algorithmVersion=snap.algorithm_version,
+                samplingFreq=snap.sampling_freq,
+                qualityPolicy=snap.quality_policy,
+                validRate=_to_float(snap.valid_rate),
+                confidenceLevel=snap.confidence_level,
+                dataLineage=data_lineage,
+            )
+        )
+
+    data = KpiSnapshotListData(
+        items=items,
+        total=total,
+        page=page,
+        pageSize=pageSize,
+    )
     return success(data=data)
 
 

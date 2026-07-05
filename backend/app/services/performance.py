@@ -1217,6 +1217,89 @@ async def _aggregate_bad_actor_distribution(
     return items
 
 
+async def list_loop_snapshots(
+    db: AsyncSession,
+    loop_ids: list[str] | None = None,
+    plant_node_ids: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    status_filter: str | None = None,
+    confidence_level: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[tuple[KpiSnapshotHourly, str | None]], int]:
+    """查询回路小时指标快照列表（含回路名，分页）.
+
+    Args:
+        db: 异步 DB 会话
+        loop_ids: 回路 ID 列表过滤；None=不按回路过滤
+        plant_node_ids: 装置 ID 列表过滤（LoopLedger.unit_id）；None=不按装置过滤
+        start: 起始时间（按 ts_start 过滤）；None=默认近 7 天
+        end: 结束时间（按 ts_start 过滤）；None=当前时间
+        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL）
+        confidence_level: 可信度等级过滤（A/B/C/D/E）
+        page: 页码（1-based）
+        page_size: 每页条数
+
+    Returns:
+        (rows, total) — rows 为 [(KpiSnapshotHourly, tag_name), ...]，
+        total 为符合条件的总记录数
+    """
+    # 默认时间范围：近 7 天
+    if start is None:
+        start = datetime.now(UTC) - timedelta(days=7)
+    if end is None:
+        end = datetime.now(UTC)
+
+    # 构建列表查询（join LoopLedger 获取 tag_name）
+    stmt = (
+        select(KpiSnapshotHourly, LoopLedger.tag_name)
+        .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+        .where(KpiSnapshotHourly.ts_start >= start)
+        .where(KpiSnapshotHourly.ts_start <= end)
+    )
+    if loop_ids:
+        stmt = stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+    if plant_node_ids:
+        stmt = stmt.where(LoopLedger.unit_id.in_(plant_node_ids))
+    if status_filter:
+        stmt = stmt.where(KpiSnapshotHourly.status == status_filter)
+    if confidence_level:
+        stmt = stmt.where(KpiSnapshotHourly.confidence_level == confidence_level)
+
+    # count 查询（不加 limit/offset）
+    count_stmt = select(func.count()).select_from(KpiSnapshotHourly).where(
+        KpiSnapshotHourly.ts_start >= start,
+        KpiSnapshotHourly.ts_start <= end,
+    )
+    if loop_ids:
+        count_stmt = count_stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+    if plant_node_ids:
+        count_stmt = count_stmt.join(
+            LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id
+        ).where(LoopLedger.unit_id.in_(plant_node_ids))
+    if status_filter:
+        count_stmt = count_stmt.where(KpiSnapshotHourly.status == status_filter)
+    if confidence_level:
+        count_stmt = count_stmt.where(
+            KpiSnapshotHourly.confidence_level == confidence_level
+        )
+
+    # 排序 + 分页
+    stmt = stmt.order_by(KpiSnapshotHourly.ts_start.desc())
+    if page > 0 and page_size > 0:
+        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+
+    # 执行查询
+    list_result = await db.execute(stmt)
+    rows = list(list_result.all())
+
+    count_result = await db.execute(count_stmt)
+    total = count_result.scalar() or 0
+
+    return rows, total
+
+
 __all__ = [
     "ALGORITHM_VERSION",
     "DASHBOARD_CACHE_TTL",
@@ -1227,6 +1310,7 @@ __all__ = [
     "get_board",
     "get_ranking",
     "list_engine_rules",
+    "list_loop_snapshots",
     "list_metric_configs",
     "update_engine_rule",
     "update_metric_config",
