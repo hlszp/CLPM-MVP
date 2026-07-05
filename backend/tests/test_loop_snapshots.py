@@ -317,3 +317,47 @@ class TestListLoopSnapshots:
         """未认证返回 401."""
         resp = client.get("/api/v1/performance/loops/snapshots")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# 回归测试：默认时间范围必须为 naive datetime（避免 asyncpg TypeError）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_loop_snapshots_default_time_is_naive() -> None:
+    """服务函数默认时间范围（近 7 天）必须生成 naive datetime.
+
+    回归：list_loop_snapshots 此前用 datetime.now(UTC) 生成 aware datetime，
+    与数据库 ts_start (naive) 比较时 asyncpg 抛
+    "can't subtract offset-naive and offset-aware datetimes" → 500 → CORS 错误。
+    """
+    from app.services.performance import list_loop_snapshots
+
+    db = AsyncMock()
+    captured_stmts: list = []
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        captured_stmts.append(stmt)
+        # 返回空列表 + count=0，避免后续处理逻辑干扰
+        result = MagicMock()
+        result.all.return_value = []
+        result.scalar.return_value = 0
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    await list_loop_snapshots(db)  # 不传 start/end，使用默认近 7 天
+
+    assert len(captured_stmts) >= 1
+    # 编译 SQL 并提取绑定参数
+    compiled = captured_stmts[0].compile()
+    params = compiled.params
+    # 找到时间参数（ts_start >= ? 和 ts_start <= ?）
+    time_values = [v for v in params.values() if isinstance(v, datetime)]
+    assert len(time_values) >= 2, f"应至少有 2 个时间参数，实际: {params}"
+    for tv in time_values:
+        assert tv.tzinfo is None, (
+            f"默认时间范围必须为 naive datetime（数据库 ts_start 无时区），"
+            f"但收到 aware: {tv}"
+        )

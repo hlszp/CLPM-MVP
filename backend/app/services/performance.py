@@ -1246,10 +1246,12 @@ async def list_loop_snapshots(
         total 为符合条件的总记录数
     """
     # 默认时间范围：近 7 天
+    # 注意：数据库 ts_start 字段为无时区类型，必须使用 naive datetime，
+    # 否则 asyncpg 会抛 "can't subtract offset-naive and offset-aware datetimes"
     if start is None:
-        start = datetime.now(UTC) - timedelta(days=7)
+        start = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=7)
     if end is None:
-        end = datetime.now(UTC)
+        end = datetime.now(UTC).replace(tzinfo=None)
 
     # 构建列表查询（join LoopLedger 获取 tag_name）
     stmt = (

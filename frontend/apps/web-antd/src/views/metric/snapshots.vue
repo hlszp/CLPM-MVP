@@ -161,7 +161,8 @@ async function loadPlantNodeTree() {
 // ============ 加载回路列表 ============
 async function loadLoops() {
   try {
-    const result = await getLoopListApi({ page: 1, pageSize: 1000 });
+    // 后端 loops API pageSize 上限 100，传 1000 会 422
+    const result = await getLoopListApi({ page: 1, pageSize: 100 });
     loopOptions.value = (result.items || []).map((l: any) => ({
       label: l.tagName,
       value: l.id,
