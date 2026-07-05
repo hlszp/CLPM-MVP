@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -41,6 +41,8 @@ from app.models.metric import KpiSnapshotCustom
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.task import (
+    BackfillPreviewResult,
+    BackfillTaskCreate,
     CustomTaskCreate,
     StandardTaskCreate,
     TaskListResponse,
@@ -169,6 +171,25 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
     Returns:
         TaskResponse 实例
     """
+    # 解析 loopIds/plantNodeIds（JSON 字符串 → list）
+    loop_ids_raw = data.get("loop_ids", "")
+    loop_ids: list[str] | None = None
+    if loop_ids_raw:
+        try:
+            loop_ids = json.loads(loop_ids_raw) if loop_ids_raw else None
+        except (json.JSONDecodeError, TypeError):
+            loop_ids = None
+
+    plant_node_ids_raw = data.get("plant_node_ids", "")
+    plant_node_ids: list[str] | None = None
+    if plant_node_ids_raw:
+        try:
+            plant_node_ids = (
+                json.loads(plant_node_ids_raw) if plant_node_ids_raw else None
+            )
+        except (json.JSONDecodeError, TypeError):
+            plant_node_ids = None
+
     return TaskResponse(
         taskId=data.get("task_id", ""),
         taskType=TaskType(data.get("task_type", TaskType.STANDARD.value)),
@@ -182,14 +203,18 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         finishedAt=_to_str_or_none(data.get("finished_at")),
         errorMessage=_to_str_or_none(data.get("error_message")),
         createdBy=data.get("created_by", ""),
+        tsStart=_to_str_or_none(data.get("ts_start")),
+        tsEnd=_to_str_or_none(data.get("ts_end")),
+        loopIds=loop_ids,
+        plantNodeIds=plant_node_ids,
     )
 
 
 async def _count_active_custom_tasks(user_id: str | None = None) -> int:
     """统计活跃的自定义任务数.
 
-    遍历任务索引，统计状态为 PENDING/RUNNING 的自定义任务。
-    若指定 user_id，仅统计该用户的活跃任务。
+    遍历任务索引，统计状态为 PENDING/RUNNING 的自定义任务（CUSTOM + BACKFILL，
+    BACKFILL 计入同一并发池）。若指定 user_id，仅统计该用户的活跃任务。
 
     Args:
         user_id: 用户 ID；None 表示统计全系统
@@ -203,7 +228,11 @@ async def _count_active_custom_tasks(user_id: str | None = None) -> int:
         data = await _get_task(tid)
         if not data:
             continue
-        if data.get("task_type") != TaskType.CUSTOM.value:
+        # 统计 CUSTOM 和 BACKFILL 任务（BACKFILL 计入同一并发池）
+        if data.get("task_type") not in (
+            TaskType.CUSTOM.value,
+            TaskType.BACKFILL.value,
+        ):
             continue
         if data.get("status") not in _ACTIVE_STATUSES:
             continue
@@ -211,6 +240,77 @@ async def _count_active_custom_tasks(user_id: str | None = None) -> int:
             continue
         count += 1
     return count
+
+
+async def _query_loops_by_ids(
+    db: AsyncSession, loop_ids: list[str]
+) -> list[LoopLedger]:
+    """按 ID 列表查询回路（校验存在性 + ACTIVE/READY 状态）."""
+    result = await db.execute(
+        select(LoopLedger).where(
+            LoopLedger.id.in_(loop_ids),
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def _query_loops_by_plant_nodes(
+    db: AsyncSession, plant_node_ids: list[str]
+) -> list[LoopLedger]:
+    """按装置 ID 列表查询回路（LoopLedger.unit_id 关联 plant_node.id）."""
+    result = await db.execute(
+        select(LoopLedger).where(
+            LoopLedger.unit_id.in_(plant_node_ids),
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def _query_all_active_loops(db: AsyncSession) -> list[LoopLedger]:
+    """查询全量 ACTIVE/READY 回路."""
+    result = await db.execute(
+        select(LoopLedger).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def _resolve_loop_ids(
+    db: AsyncSession,
+    loop_ids: list[str] | None,
+    plant_node_ids: list[str] | None,
+) -> list[LoopLedger]:
+    """解析最终回路列表（loop_ids 优先级高于 plant_node_ids）.
+
+    - loop_ids 非空 → 按回路 ID 查询（校验存在性）
+    - loop_ids 为空但 plant_node_ids 非空 → 按装置查询
+    - 两者都为空 → 全量 ACTIVE/READY 回路
+    """
+    if loop_ids:
+        return await _query_loops_by_ids(db, loop_ids)
+    if plant_node_ids:
+        return await _query_loops_by_plant_nodes(db, plant_node_ids)
+    return await _query_all_active_loops(db)
+
+
+def _calc_window_count(ts_start: str, ts_end: str, cycle_minutes: int = 60) -> int:
+    """计算小时窗口数（向上取整）."""
+    start = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+    end = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+    delta = end - start
+    total_minutes = delta.total_seconds() / 60
+    # 向上取整
+    return max(
+        1,
+        int(total_minutes // cycle_minutes)
+        + (1 if total_minutes % cycle_minutes else 0),
+    )
 
 
 async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
@@ -447,6 +547,156 @@ async def trigger_custom_evaluation(
 
 
 # ---------------------------------------------------------------------------
+# 接口：触发历史重算任务
+# ---------------------------------------------------------------------------
+
+# 时间窗最大范围（30 天，防误操作）
+_MAX_BACKFILL_WINDOW_DAYS = 30
+
+
+@router.post("/backfill", response_model=ApiResponse[dict])
+async def trigger_backfill(
+    body: BackfillTaskCreate,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """触发历史重算任务（按时间窗批量重算，覆盖标准快照）.
+
+    调用 Celery 任务 ``backfill_kpi_range``，结果 UPSERT 覆盖
+    ``kpi_snapshot_hourly``，参与装置级聚合。
+    支持 dry-run 模式：仅返回影响范围预览，不实际触发计算。
+
+    并发限制：BACKFILL 任务计入 CUSTOM 并发池（单用户 ≤3，系统 ≤20）。
+
+    设计依据：IDS §2.7.6.5, PRD §4.3.7
+    """
+    from app.tasks.kpi_calc import backfill_kpi_range
+
+    # 1. 校验时间窗
+    try:
+        start_dt = datetime.fromisoformat(body.tsStart.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(body.tsEnd.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise BizError(
+            code="ERR_INVALID_TIME_FORMAT",
+            message=f"时间格式无效: {exc}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if start_dt >= end_dt:
+        raise BizError(
+            code="ERR_INVALID_TIME_RANGE",
+            message="tsStart 必须早于 tsEnd",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if (end_dt - start_dt) > timedelta(days=_MAX_BACKFILL_WINDOW_DAYS):
+        raise BizError(
+            code="ERR_BACKFILL_WINDOW_TOO_LARGE",
+            message=(
+                f"时间窗不能超过 {_MAX_BACKFILL_WINDOW_DAYS} 天"
+                f"（当前: {(end_dt - start_dt).days} 天）"
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 2. 解析最终回路列表（loop_ids 优先级高于 plant_node_ids）
+    loops = await _resolve_loop_ids(db, body.loopIds, body.plantNodeIds)
+
+    if not loops:
+        raise BizError(
+            code="ERR_NO_LOOPS_TO_RECOMPUTE",
+            message="所选范围内没有可重算的回路（ACTIVE/READY 状态）",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 3. 计算窗口数与预估耗时
+    window_count = _calc_window_count(body.tsStart, body.tsEnd)
+    loop_count = len(loops)
+    estimated_duration_sec = loop_count * window_count * 2  # 每回路每窗口预估 2s
+    sample_loop_names = [loop.tag_name or loop.id for loop in loops[:5]]
+
+    # 4. dry-run 模式：返回预览，不触发 Celery
+    if body.dryRun:
+        preview = BackfillPreviewResult(
+            loopCount=loop_count,
+            windowCount=window_count,
+            estimatedDurationSec=estimated_duration_sec,
+            sampleLoopNames=sample_loop_names,
+        )
+        return success(
+            data=preview.model_dump(),
+            message=f"预览：将重算 {loop_count} 个回路 × {window_count} 个窗口",
+        )
+
+    # 5. 正式提交：并发限制校验（BACKFILL 计入 CUSTOM 并发池）
+    user_active = await _count_active_custom_tasks(user_id=str(user.id))
+    if user_active >= MAX_CUSTOM_PER_USER:
+        raise BizError(
+            code="ERR_TASK_CONCURRENCY_LIMIT",
+            message=(
+                f"您当前已有 {user_active} 个活跃任务，超过单用户上限 {MAX_CUSTOM_PER_USER}"
+            ),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    system_active = await _count_active_custom_tasks()
+    if system_active >= MAX_CUSTOM_SYSTEM:
+        raise BizError(
+            code="ERR_TASK_CONCURRENCY_LIMIT",
+            message=(
+                f"系统当前有 {system_active} 个活跃任务，超过系统上限 {MAX_CUSTOM_SYSTEM}"
+            ),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    # 6. 触发 Celery 任务
+    final_loop_ids = [loop.id for loop in loops]
+    celery_result = backfill_kpi_range.delay(
+        body.tsStart, body.tsEnd, loop_ids=final_loop_ids
+    )
+
+    # 7. 创建任务记录
+    task_id = str(uuid4())
+    now = _now_iso()
+    task_data: dict[str, str] = {
+        "task_id": task_id,
+        "task_type": TaskType.BACKFILL.value,
+        "status": TaskStatus.PENDING.value,
+        "progress": "0",
+        "current_stage": "初始化",
+        "loops_total": str(loop_count),
+        "loops_done": "0",
+        "created_at": now,
+        "started_at": "",
+        "finished_at": "",
+        "error_message": "",
+        "created_by": user.username,
+        "created_by_id": str(user.id),
+        "celery_task_id": celery_result.id,
+        "ts_start": body.tsStart,
+        "ts_end": body.tsEnd,
+        "loop_ids": json.dumps(final_loop_ids),
+        "plant_node_ids": _to_str(body.plantNodeIds),
+    }
+    await _save_task(task_data)
+
+    logger.info(
+        "历史重算任务已触发: task_id=%s, celery_id=%s, loops=%d, windows=%d, user=%s",
+        task_id,
+        celery_result.id,
+        loop_count,
+        window_count,
+        user.username,
+    )
+
+    return success(
+        data={"taskId": task_id},
+        message=f"历史重算任务已触发，预计耗时 {estimated_duration_sec} 秒",
+    )
+
+
+# ---------------------------------------------------------------------------
 # 接口：查询任务通知（Phase 5 补齐）
 # ---------------------------------------------------------------------------
 # 注意：本组端点必须注册在 GET /{task_id} 之前，否则 /notifications
@@ -530,22 +780,34 @@ async def get_task_status(
 
 @router.get("", response_model=ApiResponse[TaskListResponse])
 async def list_tasks(
-    taskType: str | None = Query(None, description="按任务类型筛选：STANDARD/CUSTOM"),
+    taskType: str | None = Query(
+        None, description="按任务类型筛选：STANDARD/CUSTOM/BACKFILL"
+    ),
     status_filter: str | None = Query(
         None, alias="status", description="按状态筛选：PENDING/RUNNING/SUCCESS/FAILED/CANCELLED"
     ),
     startTime: str | None = Query(None, description="创建时间起始（ISO 8601）"),
     endTime: str | None = Query(None, description="创建时间结束（ISO 8601）"),
+    plantNodeIds: str | None = Query(
+        None, description="按装置 ID 筛选（逗号分隔，仅对 BACKFILL 任务生效）"
+    ),
     limit: int = Query(50, ge=1, le=200, description="返回条数（最多 200）"),
     offset: int = Query(0, ge=0, description="偏移量"),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
-    """查询任务列表（按类型/状态/时间筛选）.
+    """查询任务列表（按类型/状态/时间/装置筛选）.
 
     按创建时间倒序排列，支持分页。
 
     设计依据：IDS §2.7.6.4, PRD §4.3.7.C
     """
+    # 解析 plantNodeIds（逗号分隔 → list）
+    plant_node_filter = (
+        [pid.strip() for pid in plantNodeIds.split(",") if pid.strip()]
+        if plantNodeIds
+        else None
+    )
+
     # 从索引获取所有 task_id（按创建时间倒序）
     task_ids = await redis_client.zrevrange(_TASK_INDEX_KEY, 0, -1)
 
@@ -567,6 +829,18 @@ async def list_tasks(
             continue
         if endTime and created_at > endTime:
             continue
+
+        # 筛选：装置（仅对 BACKFILL 任务生效）
+        if plant_node_filter:
+            task_plant_nodes_raw = data.get("plant_node_ids", "")
+            if not task_plant_nodes_raw:
+                continue
+            try:
+                task_plant_nodes = json.loads(task_plant_nodes_raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not any(pid in task_plant_nodes for pid in plant_node_filter):
+                continue
 
         items.append(_task_to_response(data))
 
