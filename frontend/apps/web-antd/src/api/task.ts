@@ -18,7 +18,7 @@ import { requestClient } from '#/api/request';
 
 export namespace TaskApi {
   /** 任务类型（对齐 app.schemas.task.TaskType） */
-  export type TaskType = 'CUSTOM' | 'STANDARD';
+  export type TaskType = 'BACKFILL' | 'CUSTOM' | 'STANDARD';
 
   /** 任务状态（对齐 app.schemas.task.TaskStatus） */
   export type TaskStatus =
@@ -56,6 +56,32 @@ export namespace TaskApi {
     tsEnd: string;
   }
 
+  /** 历史重算任务创建参数 */
+  export interface BackfillTaskCreateParams {
+    /** 重算时间窗起始（ISO 8601） */
+    tsStart: string;
+    /** 重算时间窗结束（ISO 8601，不包含） */
+    tsEnd: string;
+    /** 装置 ID 列表（可选，不传=全部装置） */
+    plantNodeIds?: string[];
+    /** 回路 ID 列表（可选，优先级高于 plantNodeIds） */
+    loopIds?: string[];
+    /** True=只返回预览不提交 */
+    dryRun?: boolean;
+  }
+
+  /** 历史重算 dry-run 预览结果 */
+  export interface BackfillPreviewResult {
+    /** 影响回路数 */
+    loopCount: number;
+    /** 影响小时窗口数 */
+    windowCount: number;
+    /** 预估耗时（秒） */
+    estimatedDurationSec: number;
+    /** 前 5 个回路名预览 */
+    sampleLoopNames: string[];
+  }
+
   /** 任务响应（对齐 app.schemas.task.TaskResponse） */
   export interface TaskItem {
     taskId: string;
@@ -72,6 +98,14 @@ export namespace TaskApi {
     finishedAt?: null | string;
     errorMessage?: null | string;
     createdBy: string;
+    /** 重算时间窗起始（仅 BACKFILL） */
+    tsStart?: null | string;
+    /** 重算时间窗结束（仅 BACKFILL） */
+    tsEnd?: null | string;
+    /** 回路 ID 列表（仅 BACKFILL） */
+    loopIds?: null | string[];
+    /** 装置 ID 列表（仅 BACKFILL） */
+    plantNodeIds?: null | string[];
   }
 
   /** 任务列表响应 */
@@ -84,6 +118,10 @@ export namespace TaskApi {
   export interface TaskListQueryParams {
     taskType?: TaskType;
     status?: TaskStatus;
+    startTime?: string;
+    endTime?: string;
+    /** 按装置 ID 筛选（逗号分隔，仅对 BACKFILL 任务生效） */
+    plantNodeIds?: string;
     page?: number;
     pageSize?: number;
   }
@@ -179,6 +217,21 @@ export function triggerStandardEvaluateApi(
  */
 export function triggerCustomEvaluateApi(data: TaskApi.CustomTaskCreateParams) {
   return requestClient.post<TaskApi.TaskItem>(`${BASE}/custom/evaluate`, data);
+}
+
+/**
+ * 触发历史重算任务 — IDS §2.7.6.5（ADMIN/IC_ENGINEER）
+ *
+ * 按时间窗+装置+回路批量重算历史 KPI，结果 UPSERT 覆盖 kpi_snapshot_hourly。
+ * 支持 dry-run 预览模式（仅返回影响范围，不实际触发计算）。
+ *
+ * @returns dryRun=true 返回 BackfillPreviewResult；dryRun=false 返回 { taskId }
+ */
+export function triggerBackfillApi(data: TaskApi.BackfillTaskCreateParams) {
+  return requestClient.post<TaskApi.BackfillPreviewResult | { taskId: string }>(
+    `${BASE}/backfill`,
+    data,
+  );
 }
 
 /**
