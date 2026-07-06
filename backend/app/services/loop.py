@@ -41,6 +41,27 @@ ROLE_TO_FIELD = {
     "PID_D": "pid_d",
 }
 
+# v6.1：回路类型 / 控制类型 中英文双向映射（Excel 导入导出用）
+# 导出时英→中（用户友好），导入时中→英（容错识别）
+LOOP_TYPE_TO_CN: dict[str, str] = {
+    "TEMPERATURE": "温度",
+    "PRESSURE": "压力",
+    "LEVEL": "液位",
+    "FLOW": "流量",
+    "ANALYSIS": "分析",
+    "SPEED": "速度",
+    "OTHER": "其他",
+}
+LOOP_TYPE_FROM_CN: dict[str, str] = {v: k for k, v in LOOP_TYPE_TO_CN.items()}
+
+CONTROL_TYPE_TO_CN: dict[str, str] = {
+    "STABLE": "稳定型",
+    "SLOW": "慢速型",
+    "FAST": "快速型",
+    "LOGIC": "逻辑型",
+}
+CONTROL_TYPE_FROM_CN: dict[str, str] = {v: k for k, v in CONTROL_TYPE_TO_CN.items()}
+
 
 async def _write_audit(
     db: AsyncSession,
@@ -962,14 +983,15 @@ async def delete_loop(
 
 # Excel 列头（18 列，v6.1 扩展：追加控制类型/等级/参评/OP 限位/备注）
 # 保持原 12 列顺序不变（向后兼容已有 Excel 模板），末尾追加新列
+# v6.1：列头语义化（"自控回路名称"→"回路描述"，"所属区域编号"→"所属单元名称"）
 EXPORT_HEADERS = [
     "自控回路编号",
-    "自控回路名称",
+    "回路描述",
     "设定值位号",
     "测量值位号",
     "输出值位号",
     "控制方式位号",
-    "所属区域编号",
+    "所属单元名称",
     "是否启用",
     "比例带",
     "积分时间",
@@ -1011,6 +1033,46 @@ def _cell_str(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _normalize_loop_type(raw: str) -> str | None:
+    """v6.1：回路类型中英文双向识别。
+
+    接受中文（温度/压力/液位/...）或英文（TEMPERATURE/PRESSURE/...），
+    统一返回英文枚举值。未知值原样返回（由上层校验）。
+    """
+    if not raw:
+        return None
+    val = raw.strip()
+    # 中文 → 英文
+    if val in LOOP_TYPE_FROM_CN:
+        return LOOP_TYPE_FROM_CN[val]
+    # 英文（大小写不敏感）→ 标准大写
+    upper = val.upper()
+    if upper in LOOP_TYPE_TO_CN:
+        return upper
+    # 未知值原样返回（允许自定义扩展，前端兜底显示）
+    return val
+
+
+def _normalize_control_type(raw: str) -> str | None:
+    """v6.1：控制类型中英文双向识别。
+
+    接受中文（稳定型/慢速型/快速型/逻辑型）或英文（STABLE/SLOW/FAST/LOGIC），
+    统一返回英文枚举值。未知值原样返回（由上层校验）。
+    """
+    if not raw:
+        return None
+    val = raw.strip()
+    # 中文 → 英文
+    if val in CONTROL_TYPE_FROM_CN:
+        return CONTROL_TYPE_FROM_CN[val]
+    # 英文（大小写不敏感）→ 标准大写
+    upper = val.upper()
+    if upper in CONTROL_TYPE_TO_CN:
+        return upper
+    # 未知值原样返回
+    return val
 
 
 async def export_loops(
@@ -1092,6 +1154,17 @@ async def export_loops(
         if loop.include_in_evaluation is not None:
             include_in_eval_str = "是" if loop.include_in_evaluation else "否"
         importance_level_str = str(loop.importance_level) if loop.importance_level else ""
+        # v6.1：枚举值导出为中文（用户友好，便于 Excel 编辑）
+        loop_type_str = (
+            LOOP_TYPE_TO_CN.get(loop.loop_type.upper(), loop.loop_type)
+            if loop.loop_type
+            else ""
+        )
+        control_type_str = (
+            CONTROL_TYPE_TO_CN.get(loop.control_type.upper(), loop.control_type)
+            if loop.control_type
+            else ""
+        )
         # OP 限位为空时留空（导入时空值表示使用默认 = OP Tag 量程）
         op_lower_str = (
             str(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else ""
@@ -1112,9 +1185,9 @@ async def export_loops(
                 tags.get("PID_P", ""),
                 tags.get("PID_I", ""),
                 tags.get("PID_D", ""),
-                loop.loop_type or "",
+                loop_type_str,
                 # v6.1 新增
-                loop.control_type or "",
+                control_type_str,
                 importance_level_str,
                 include_in_eval_str,
                 op_lower_str,
@@ -1177,15 +1250,17 @@ async def import_loops(
         unit_name = _cell_str(row[6]) if len(row) > 6 else ""
         is_active_str = _cell_str(row[7]) if len(row) > 7 else "是"
         is_active = is_active_str in ("是", "true", "True", "1", "YES", "yes", "Y", "y")
-        loop_type = (
+        # v6.1：回路类型 / 控制类型 中英文双向识别
+        loop_type_raw = (
             _cell_str(row[_LOOP_TYPE_COLUMN_INDEX]) if len(row) > _LOOP_TYPE_COLUMN_INDEX else ""
-        ) or None
-        # v6.1 解析新增字段
-        control_type = (
+        )
+        loop_type = _normalize_loop_type(loop_type_raw)
+        control_type_raw = (
             _cell_str(row[_CONTROL_TYPE_COLUMN_INDEX])
             if len(row) > _CONTROL_TYPE_COLUMN_INDEX
             else ""
-        ) or None
+        )
+        control_type = _normalize_control_type(control_type_raw)
         importance_level_str = (
             _cell_str(row[_IMPORTANCE_LEVEL_COLUMN_INDEX])
             if len(row) > _IMPORTANCE_LEVEL_COLUMN_INDEX
@@ -1442,6 +1517,10 @@ __all__ = [
     "ALL_ROLES",
     "REQUIRED_ROLES",
     "ROLE_TO_FIELD",
+    "LOOP_TYPE_TO_CN",
+    "LOOP_TYPE_FROM_CN",
+    "CONTROL_TYPE_TO_CN",
+    "CONTROL_TYPE_FROM_CN",
     "create_loop",
     "delete_loop",
     "derive_loop_status",
