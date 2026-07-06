@@ -240,6 +240,10 @@ async def export_loops_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     status: str | None = Query(None, description="按回路状态筛选：READY/PARTIAL/INACTIVE"),
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
+    controlType: str | None = Query(None, description="按控制类型筛选：STABLE/SLOW/FAST/LOGIC"),
+    importanceLevel: int | None = Query(None, ge=1, le=3, description="按回路等级筛选：1/2/3"),
+    includeInEvaluation: bool | None = Query(None, description="按参评状态筛选"),
+    loopType: str | None = Query(None, description="按回路类型筛选"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> StreamingResponse:
@@ -249,6 +253,10 @@ async def export_loops_endpoint(
         plant_node_id=plantNodeId,
         status=status,
         keyword=keyword,
+        control_type=controlType,
+        importance_level=importanceLevel,
+        include_in_evaluation=includeInEvaluation,
+        loop_type=loopType,
     )
     return StreamingResponse(
         iter([content]),

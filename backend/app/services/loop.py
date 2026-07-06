@@ -960,7 +960,8 @@ async def delete_loop(
 # 批量导入导出 (S2-LOOP-009)
 # ---------------------------------------------------------------------------
 
-# Excel 列头（12 列，对齐 loopList.xlsx，新增"回路类型"列）
+# Excel 列头（18 列，v6.1 扩展：追加控制类型/等级/参评/OP 限位/备注）
+# 保持原 12 列顺序不变（向后兼容已有 Excel 模板），末尾追加新列
 EXPORT_HEADERS = [
     "自控回路编号",
     "自控回路名称",
@@ -974,6 +975,13 @@ EXPORT_HEADERS = [
     "积分时间",
     "微分时间",
     "回路类型",
+    # v6.1 新增列
+    "控制类型",
+    "等级",
+    "参评状态",
+    "OP输出下限位",
+    "OP输出上限位",
+    "备注",
 ]
 
 # 导入时列索引 → Tag 角色（索引从 0 开始）
@@ -989,6 +997,14 @@ _IMPORT_ROLE_COLUMNS: dict[int, str] = {
 # 回路类型列索引（"回路类型"列）
 _LOOP_TYPE_COLUMN_INDEX = 11
 
+# v6.1 新增列索引
+_CONTROL_TYPE_COLUMN_INDEX = 12
+_IMPORTANCE_LEVEL_COLUMN_INDEX = 13
+_INCLUDE_IN_EVALUATION_COLUMN_INDEX = 14
+_OP_OUTPUT_LOWER_LIMIT_COLUMN_INDEX = 15
+_OP_OUTPUT_UPPER_LIMIT_COLUMN_INDEX = 16
+_REMARK_COLUMN_INDEX = 17
+
 
 def _cell_str(value: object) -> str:
     """将 Excel 单元格值转为去除首尾空白的字符串，None/空返回空串。"""
@@ -1002,10 +1018,14 @@ async def export_loops(
     plant_node_id: str | None = None,
     status: str | None = None,
     keyword: str | None = None,
+    control_type: str | None = None,
+    importance_level: int | None = None,
+    include_in_evaluation: bool | None = None,
+    loop_type: str | None = None,
 ) -> bytes:
     """导出所有回路为 Excel 文件（.xlsx），返回文件字节。
 
-    支持按 plantNodeId/status/keyword 筛选（可选）。
+    支持按 plantNodeId/status/keyword/controlType/importanceLevel/includeInEvaluation/loopType 筛选（可选）。
     """
     conditions = []
     if plant_node_id:
@@ -1020,6 +1040,15 @@ async def export_loops(
                 LoopLedger.description.ilike(kw),
             )
         )
+    # v6.1 新增筛选条件
+    if control_type:
+        conditions.append(LoopLedger.control_type == control_type.upper())
+    if importance_level is not None:
+        conditions.append(LoopLedger.importance_level == importance_level)
+    if include_in_evaluation is not None:
+        conditions.append(LoopLedger.include_in_evaluation == include_in_evaluation)
+    if loop_type:
+        conditions.append(LoopLedger.loop_type == loop_type.upper())
 
     stmt = select(LoopLedger).order_by(LoopLedger.tag_name)
     for cond in conditions:
@@ -1058,6 +1087,18 @@ async def export_loops(
         tags = tag_name_map.get(str(loop.id), {})
         unit_name = unit_map.get(str(loop.unit_id)) if loop.unit_id else ""
         is_active_str = "是" if loop.is_active else "否"
+        # v6.1 新增字段导出
+        include_in_eval_str = ""
+        if loop.include_in_evaluation is not None:
+            include_in_eval_str = "是" if loop.include_in_evaluation else "否"
+        importance_level_str = str(loop.importance_level) if loop.importance_level else ""
+        # OP 限位为空时留空（导入时空值表示使用默认 = OP Tag 量程）
+        op_lower_str = (
+            str(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else ""
+        )
+        op_upper_str = (
+            str(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else ""
+        )
         ws.append(
             [
                 loop.tag_name,
@@ -1072,6 +1113,13 @@ async def export_loops(
                 tags.get("PID_I", ""),
                 tags.get("PID_D", ""),
                 loop.loop_type or "",
+                # v6.1 新增
+                loop.control_type or "",
+                importance_level_str,
+                include_in_eval_str,
+                op_lower_str,
+                op_upper_str,
+                loop.remark or "",
             ]
         )
 
@@ -1132,6 +1180,62 @@ async def import_loops(
         loop_type = (
             _cell_str(row[_LOOP_TYPE_COLUMN_INDEX]) if len(row) > _LOOP_TYPE_COLUMN_INDEX else ""
         ) or None
+        # v6.1 解析新增字段
+        control_type = (
+            _cell_str(row[_CONTROL_TYPE_COLUMN_INDEX])
+            if len(row) > _CONTROL_TYPE_COLUMN_INDEX
+            else ""
+        ) or None
+        importance_level_str = (
+            _cell_str(row[_IMPORTANCE_LEVEL_COLUMN_INDEX])
+            if len(row) > _IMPORTANCE_LEVEL_COLUMN_INDEX
+            else ""
+        )
+        importance_level = None
+        if importance_level_str:
+            try:
+                importance_level = int(importance_level_str)
+                if importance_level not in (1, 2, 3):
+                    importance_level = None
+            except ValueError:
+                importance_level = None
+        include_in_eval_str = (
+            _cell_str(row[_INCLUDE_IN_EVALUATION_COLUMN_INDEX])
+            if len(row) > _INCLUDE_IN_EVALUATION_COLUMN_INDEX
+            else ""
+        )
+        # 空值表示不修改（保持原值）；非空时按 是/否 解析
+        include_in_evaluation: bool | None = None
+        if include_in_eval_str:
+            include_in_evaluation = include_in_eval_str in (
+                "是", "true", "True", "1", "YES", "yes", "Y", "y",
+            )
+        # OP 限位：空值表示使用默认（NULL），非空时解析为 float
+        op_lower_str = (
+            _cell_str(row[_OP_OUTPUT_LOWER_LIMIT_COLUMN_INDEX])
+            if len(row) > _OP_OUTPUT_LOWER_LIMIT_COLUMN_INDEX
+            else ""
+        )
+        op_output_lower_limit: float | None = None
+        if op_lower_str:
+            try:
+                op_output_lower_limit = float(op_lower_str)
+            except ValueError:
+                op_output_lower_limit = None
+        op_upper_str = (
+            _cell_str(row[_OP_OUTPUT_UPPER_LIMIT_COLUMN_INDEX])
+            if len(row) > _OP_OUTPUT_UPPER_LIMIT_COLUMN_INDEX
+            else ""
+        )
+        op_output_upper_limit: float | None = None
+        if op_upper_str:
+            try:
+                op_output_upper_limit = float(op_upper_str)
+            except ValueError:
+                op_output_upper_limit = None
+        remark = (
+            _cell_str(row[_REMARK_COLUMN_INDEX]) if len(row) > _REMARK_COLUMN_INDEX else ""
+        ) or None
 
         is_update = False
         try:
@@ -1148,6 +1252,12 @@ async def import_loops(
                     plant_node_cache=plant_node_cache,
                     tag_cache=tag_cache,
                     loop_type=loop_type,
+                    control_type=control_type,
+                    importance_level=importance_level,
+                    include_in_evaluation=include_in_evaluation,
+                    op_output_lower_limit=op_output_lower_limit,
+                    op_output_upper_limit=op_output_upper_limit,
+                    remark=remark,
                 )
         except Exception as exc:  # noqa: BLE001
             failed += 1
@@ -1181,6 +1291,12 @@ async def _import_one_row(
     plant_node_cache: dict[str, str],
     tag_cache: dict[str, str],
     loop_type: str | None = None,
+    control_type: str | None = None,
+    importance_level: int | None = None,
+    include_in_evaluation: bool | None = None,
+    op_output_lower_limit: float | None = None,
+    op_output_upper_limit: float | None = None,
+    remark: str | None = None,
 ) -> bool:
     """处理单行导入，返回是否为更新（True）或新建（False）。
 
@@ -1216,6 +1332,22 @@ async def _import_one_row(
         loop.is_active = is_active
         if loop_type is not None:
             loop.loop_type = loop_type
+        # v6.1 新增字段：仅在非空/非 None 时更新（空值表示保持原值）
+        if control_type is not None:
+            loop.control_type = control_type
+        if importance_level is not None:
+            loop.importance_level = importance_level
+        if include_in_evaluation is not None:
+            loop.include_in_evaluation = include_in_evaluation
+        # OP 限位：显式传入 None 时表示使用默认（清除自定义值）
+        # 但导入解析时 None 表示未填，这里区分：若 Excel 单元格为空则不修改
+        # （op_output_lower_limit/upper_limit 在解析时 None=空单元格，已区分）
+        if op_output_lower_limit is not None:
+            loop.op_output_lower_limit = op_output_lower_limit
+        if op_output_upper_limit is not None:
+            loop.op_output_upper_limit = op_output_upper_limit
+        if remark is not None:
+            loop.remark = remark
         loop.updated_by = operator
         # 删除现有关联 Tag
         await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id)))
@@ -1228,6 +1360,12 @@ async def _import_one_row(
             is_active=is_active,
             status="PARTIAL",
             loop_type=loop_type,
+            control_type=control_type,
+            importance_level=importance_level,
+            include_in_evaluation=include_in_evaluation,
+            op_output_lower_limit=op_output_lower_limit,
+            op_output_upper_limit=op_output_upper_limit,
+            remark=remark,
             created_by=operator,
             updated_by=operator,
         )
