@@ -197,9 +197,7 @@ async def match_tags_for_loop_endpoint(
         # 同时尝试 `_` 和 `-` 分隔符，兼容不同工厂命名约定
         # （seed data 用 `T-HDS-001-PV`，部分 DCS 用 `80PIC31306_PV`）
         candidates = [f"{loopTagName}_{role}", f"{loopTagName}-{role}"]
-        result = await db.execute(
-            select(TagRegistry).where(TagRegistry.tag_name.in_(candidates))
-        )
+        result = await db.execute(select(TagRegistry).where(TagRegistry.tag_name.in_(candidates)))
         tag = result.scalar_one_or_none()
         if tag:
             matched_tags.append(
@@ -275,9 +273,9 @@ _MAX_TIME_WINDOW_DAYS = 30
 # tagGroup → 代表性 metric_code 列表（用于 DataPlanner.request_bundles）
 # DataPlanner 会合并同 tagGroup 的指标，取 tag 角色并集查询
 _TAG_GROUP_METRICS: dict[str, list[str]] = {
-    "BASE": ["accuracy_rate", "fast_response_rate", "steady_rate", "oscillation_rate"],
+    "BASE": ["accuracy_rate", "fast_rate", "steady_rate", "oscillation_rate"],
     "OP_HF": ["saturation_rate"],
-    "PVOP_HF": ["stiction_coeff"],
+    "PVOP_HF": ["stiction_index"],
     "MODE_HF": ["effective_auto_rate"],
     "QUALITY_HF": ["good_value_rate"],
 }

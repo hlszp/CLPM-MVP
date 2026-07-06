@@ -24,7 +24,7 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 |---|---|---|
 | 工作台门户 | 全角色入口，聚合 KPI、低效回路、待处理异常与趋势 | `/dashboard/workbench` |
 | 回路管理 | 用一个聚合页承载工厂树、回路台账、Tag 关联、评估参数、投用定义 | `/loop/manage`、`/loop/detail/:id`、`/loop/monitor`、`/tag/list` |
-| 性能评估 | 保留重构后的 metric 命名，承载 KPI 看板、排行、统计、5 Tab 配置组 | `/metric/dashboard`、`/metric/ranking`、`/metric/statistics`、`/metric/config`、`/metric/weight-config`、`/metric/engine-config`、`/metric/task-strategy`、`/metric/tasks` |
+| 性能评估 | 保留重构后的 metric 命名，承载 KPI 看板、排行、统计、指标明细、历史重算、5 Tab 配置组 | `/metric/dashboard`、`/metric/ranking`、`/metric/statistics`、`/metric/snapshots`、`/metric/recompute`、`/metric/config`、`/metric/weight-config`、`/metric/engine-config`、`/metric/task-strategy`、`/metric/tasks` |
 | 诊断中心 | 诊断列表、详情、波形、异常跟踪、A/B 对比、统计、配置分离 | `/diagnosis/list`、`/diagnosis/detail/:loopId`、`/diagnosis/waveform`、`/diagnosis/tracker`、`/diagnosis/ab-compare`、`/diagnosis/statistics`、`/diagnosis/config` |
 | 回路整定 | Phase 1 保留实验/辅助能力入口，承载工作台、模型、算法、仿真、统计 | `/tuning/workbench`、`/tuning/model`、`/tuning/algorithm`、`/tuning/simulation`、`/tuning/stats` |
 | 系统管理 | 用户、审计、权限矩阵、报表配置 | `/system/users`、`/system/audit`、`/system/permissions`、`/system/reports` |

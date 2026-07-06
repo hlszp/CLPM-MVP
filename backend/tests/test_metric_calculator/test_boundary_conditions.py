@@ -36,7 +36,6 @@ from app.services.metric_calculator.saturation import (
 
 from .conftest import make_bundle
 
-
 # ---------------------------------------------------------------------------
 # 1. 极端 PV 值边界
 # ---------------------------------------------------------------------------
@@ -355,8 +354,9 @@ class TestOpSaturationBoundaryValues:
         op = [98.0] * n
         # 通过 CONFIG 信号传入自定义 epsilon
         signals = {"mode": mode, "op": op, "saturation_epsilon": [5.0]}
-        from .conftest import make_data_block
         from app.contracts.data_types import DataLineage, MetricDataBundle
+
+        from .conftest import make_data_block
 
         block = make_data_block(signals)
         bundle = MetricDataBundle(

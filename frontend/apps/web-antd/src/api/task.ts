@@ -18,7 +18,7 @@ import { requestClient } from '#/api/request';
 
 export namespace TaskApi {
   /** 任务类型（对齐 app.schemas.task.TaskType） */
-  export type TaskType = 'CUSTOM' | 'STANDARD';
+  export type TaskType = 'BACKFILL' | 'CUSTOM' | 'STANDARD';
 
   /** 任务状态（对齐 app.schemas.task.TaskStatus） */
   export type TaskStatus =
@@ -56,6 +56,32 @@ export namespace TaskApi {
     tsEnd: string;
   }
 
+  /** 历史重算任务创建参数 */
+  export interface BackfillTaskCreateParams {
+    /** 重算时间窗起始（ISO 8601） */
+    tsStart: string;
+    /** 重算时间窗结束（ISO 8601，不包含） */
+    tsEnd: string;
+    /** 装置 ID 列表（可选，不传=全部装置） */
+    plantNodeIds?: string[];
+    /** 回路 ID 列表（可选，优先级高于 plantNodeIds） */
+    loopIds?: string[];
+    /** True=只返回预览不提交 */
+    dryRun?: boolean;
+  }
+
+  /** 历史重算 dry-run 预览结果 */
+  export interface BackfillPreviewResult {
+    /** 影响回路数 */
+    loopCount: number;
+    /** 影响小时窗口数 */
+    windowCount: number;
+    /** 预估耗时（秒） */
+    estimatedDurationSec: number;
+    /** 前 5 个回路名预览 */
+    sampleLoopNames: string[];
+  }
+
   /** 任务响应（对齐 app.schemas.task.TaskResponse） */
   export interface TaskItem {
     taskId: string;
@@ -67,11 +93,21 @@ export namespace TaskApi {
     currentStage?: null | string;
     loopsTotal?: null | number;
     loopsDone?: null | number;
+    /** 小时窗口数（仅 BACKFILL，显示计算量） */
+    windowCount?: null | number;
     createdAt: string;
     startedAt?: null | string;
     finishedAt?: null | string;
     errorMessage?: null | string;
     createdBy: string;
+    /** 重算时间窗起始（仅 BACKFILL） */
+    tsStart?: null | string;
+    /** 重算时间窗结束（仅 BACKFILL） */
+    tsEnd?: null | string;
+    /** 回路 ID 列表（仅 BACKFILL） */
+    loopIds?: null | string[];
+    /** 装置 ID 列表（仅 BACKFILL） */
+    plantNodeIds?: null | string[];
   }
 
   /** 任务列表响应 */
@@ -84,6 +120,10 @@ export namespace TaskApi {
   export interface TaskListQueryParams {
     taskType?: TaskType;
     status?: TaskStatus;
+    startTime?: string;
+    endTime?: string;
+    /** 按装置 ID 筛选（逗号分隔，仅对 BACKFILL 任务生效） */
+    plantNodeIds?: string;
     page?: number;
     pageSize?: number;
   }
@@ -116,6 +156,42 @@ export namespace TaskApi {
     taskId: string;
     cancelled: boolean;
   }
+
+  /** 非标任务结果项 */
+  export interface TaskResultItem {
+    loopId: string;
+    loopTagName: string;
+    tsStart: string | null;
+    tsEnd: string | null;
+    score: number | null;
+    accuracyRate: number | null;
+    fastRate: number | null;
+    steadyRate: number | null;
+    effectiveAutoRate: number | null;
+    goodValueRate: number | null;
+    oscillationRate: number | null;
+    saturationRate: number | null;
+    autoModeRate: number | null;
+    stictionIndex: number | null;
+    outputTripIndex: number | null;
+    settlingTime: number | null;
+    idealSettlingTime: number | null;
+    status: string;
+    confidenceLevel: string | null;
+    validRate: number | null;
+    algorithmVersion: string | null;
+    samplingFreq: string | null;
+    qualityPolicy: string | null;
+    dataLineage: Record<string, unknown> | null;
+    createdAt: string | null;
+  }
+
+  /** 非标任务结果列表结果 */
+  export interface TaskResultListResult {
+    items: TaskResultItem[];
+    total: number;
+    taskStatus: string;
+  }
 }
 
 const BASE = '/tasks';
@@ -146,6 +222,21 @@ export function triggerCustomEvaluateApi(data: TaskApi.CustomTaskCreateParams) {
 }
 
 /**
+ * 触发历史重算任务 — IDS §2.7.6.5（ADMIN/IC_ENGINEER）
+ *
+ * 按时间窗+装置+回路批量重算历史 KPI，结果 UPSERT 覆盖 kpi_snapshot_hourly。
+ * 支持 dry-run 预览模式（仅返回影响范围，不实际触发计算）。
+ *
+ * @returns dryRun=true 返回 BackfillPreviewResult；dryRun=false 返回 { taskId }
+ */
+export function triggerBackfillApi(data: TaskApi.BackfillTaskCreateParams) {
+  return requestClient.post<TaskApi.BackfillPreviewResult | { taskId: string }>(
+    `${BASE}/backfill`,
+    data,
+  );
+}
+
+/**
  * 查询任务详情 — IDS §2.7.6
  */
 export function getTaskDetailApi(taskId: string) {
@@ -171,6 +262,18 @@ export function cancelTaskApi(taskId: string) {
 }
 
 /**
+ * 删除任务记录 — IDS §2.7.6.6（IC_ENGINEER/PE_ENGINEER/ADMIN）
+ *
+ * 仅终态（SUCCESS/FAILED/CANCELLED）任务可删除。
+ * 运行中任务必须先 cancel 再 delete。
+ */
+export function deleteTaskApi(taskId: string) {
+  return requestClient.delete<{ task_id: string; deleted: boolean }>(
+    `${BASE}/${taskId}`,
+  );
+}
+
+/**
  * 查询当前用户任务通知 — Phase 5 补齐
  *
  * 返回终态任务完成通知列表（成功/失败/取消）。
@@ -189,5 +292,18 @@ export function getTaskNotificationsApi(limit = 20) {
 export function markNotificationReadApi(taskId: string) {
   return requestClient.post<TaskApi.MarkReadResult>(
     `${BASE}/notifications/${taskId}/read`,
+  );
+}
+
+/**
+ * 获取非标任务结果 — FDS v5.1 §5.3.8
+ */
+export function getTaskResultsApi(
+  taskId: string,
+  params?: { page?: number; pageSize?: number },
+) {
+  return requestClient.get<TaskApi.TaskResultListResult>(
+    `${BASE}/${taskId}/results`,
+    { params },
   );
 }

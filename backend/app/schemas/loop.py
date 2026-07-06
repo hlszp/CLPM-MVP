@@ -12,7 +12,7 @@ class ScoreWeights(CamelModel):
 
     对齐 GB/T 44693.2-2024：
     - 好值率仅作为显示指标，不参与综合评分加权
-    - 新增快速率（fast_response_rate）参与加权
+    - 新增快速率（fast_rate）参与加权
     - 有效自控率作为乘数因子（单独显示）
     - 向后兼容：读取时忽略已有的 good_value_rate 字段
     """
@@ -20,7 +20,7 @@ class ScoreWeights(CamelModel):
     auto_mode_rate: int = Field(10, ge=0, le=100)
     steady_rate: int = Field(30, ge=0, le=100)
     accuracy_rate: int = Field(15, ge=0, le=100)
-    fast_response_rate: int = Field(10, ge=0, le=100)
+    fast_rate: int = Field(10, ge=0, le=100)
     oscillation_rate: int = Field(20, ge=0, le=100)
     saturation_rate: int = Field(15, ge=0, le=100)
 
@@ -30,7 +30,7 @@ class ScoreWeights(CamelModel):
             self.auto_mode_rate
             + self.steady_rate
             + self.accuracy_rate
-            + self.fast_response_rate
+            + self.fast_rate
             + self.oscillation_rate
             + self.saturation_rate
         )
@@ -54,12 +54,16 @@ class LoopCreate(CamelModel):
         None,
         description="控制类型 STABLE/SLOW/FAST/LOGIC（用于评分权重分类）",
     )
-    level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
+    # v5.3 对齐 DDS v4.1：level → importance_level（CamelModel 自动映射为 importanceLevel）
+    importance_level: int | None = Field(None, ge=1, le=3, description="回路重要等级 1/2/3")
+    # v5.3 新增：是否参与评估（对齐 FDS §5.2.3 / DDS v4.1）
+    include_in_evaluation: bool | None = Field(
+        None, description="是否参与评估：true=参与综合评分与装置级聚合"
+    )
     modeattrTagId: str | None = Field(
         None,
         description=(
-            "APC 识别位号 ID（保留字段，未参与 KPI 计算；"
-            "实际自控率判定使用 MODE 信号值）"
+            "APC 识别位号 ID（保留字段，未参与 KPI 计算；实际自控率判定使用 MODE 信号值）"
         ),
     )
     dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
@@ -78,12 +82,16 @@ class LoopUpdate(CamelModel):
         None,
         description="控制类型 STABLE/SLOW/FAST/LOGIC",
     )
-    level: int | None = Field(None, ge=1, le=3, description="回路级别 1/2/3")
+    # v5.3 对齐 DDS v4.1：level → importance_level
+    importance_level: int | None = Field(None, ge=1, le=3, description="回路重要等级 1/2/3")
+    # v5.3 新增：是否参与评估
+    include_in_evaluation: bool | None = Field(
+        None, description="是否参与评估：true=参与综合评分与装置级聚合"
+    )
     modeattrTagId: str | None = Field(
         None,
         description=(
-            "APC 识别位号 ID（保留字段，未参与 KPI 计算；"
-            "实际自控率判定使用 MODE 信号值）"
+            "APC 识别位号 ID（保留字段，未参与 KPI 计算；实际自控率判定使用 MODE 信号值）"
         ),
     )
     dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
@@ -123,7 +131,9 @@ class LoopListItem(CamelModel):
     status: str = "PARTIAL"
     loopType: str | None = None
     controlType: str | None = None
-    level: int | None = None
+    # v5.3 对齐 DDS v4.1：level → importance_level
+    importance_level: int | None = None
+    include_in_evaluation: bool | None = None
     score: float | None = None
     lastScoreAt: str | None = None
     tagMappingStatus: TagMappingStatus
@@ -150,7 +160,9 @@ class LoopBasicInfo(CamelModel):
     status: str = "PARTIAL"
     loopType: str | None = None
     controlType: str | None = None
-    level: int | None = None
+    # v5.3 对齐 DDS v4.1：level → importance_level
+    importance_level: int | None = None
+    include_in_evaluation: bool | None = None
     # modeattrTagId 保留字段，未参与 KPI 计算链路（详见 models/loop.py 注释）
     modeattrTagId: str | None = None
     dataRetentionDays: int | None = None
@@ -219,7 +231,9 @@ class LoopUpdateResult(CamelModel):
     remark: str | None = None
     loopType: str | None = None
     controlType: str | None = None
-    level: int | None = None
+    # v5.3 对齐 DDS v4.1：level → importance_level
+    importance_level: int | None = None
+    include_in_evaluation: bool | None = None
     # modeattrTagId 保留字段，未参与 KPI 计算链路（详见 models/loop.py 注释）
     modeattrTagId: str | None = None
     dataRetentionDays: int | None = None

@@ -7,24 +7,34 @@ function toMs(ts: number): number {
   return ts;
 }
 
-/** 格式化时间戳为 MM-DD HH:mm */
+/**
+ * 将时间戳转换为北京时间（UTC+8）对应的 Date 对象。
+ *
+ * 中国无夏令时，固定 UTC+8 偏移。通过 +8h 后取 getUTC* 方法，
+ * 确保无论浏览器本地时区如何，均显示北京时间，与后端 Celery Beat 时区一致。
+ */
+function toCstDate(ts: number): Date {
+  return new Date(toMs(ts) + 8 * 3600 * 1000);
+}
+
+/** 格式化时间戳为 MM-DD HH:mm（北京时间） */
 function fmtTimeShort(ts: number): string {
-  const d = new Date(toMs(ts));
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
+  const d = toCstDate(ts);
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
   return `${mo}-${dd} ${hh}:${mm}`;
 }
 
-/** 格式化时间戳为 MM-DD HH:mm:ss */
+/** 格式化时间戳为 MM-DD HH:mm:ss（北京时间） */
 function fmtTimeLong(ts: number): string {
-  const d = new Date(toMs(ts));
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
+  const d = toCstDate(ts);
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const ss = String(d.getUTCSeconds()).padStart(2, '0');
   return `${mo}-${dd} ${hh}:${mm}:${ss}`;
 }
 

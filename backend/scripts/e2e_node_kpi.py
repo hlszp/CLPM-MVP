@@ -95,7 +95,7 @@ LOOPS_DEF = [
         "effective_auto_rate": Decimal("88.00"),
         "steady_rate": Decimal("90.00"),
         "accuracy_rate": Decimal("85.00"),
-        "fast_response_rate": Decimal("82.00"),
+        "fast_rate": Decimal("82.00"),
         "oscillation_rate": Decimal("10.00"),
         "saturation_rate": Decimal("5.00"),
     },
@@ -111,7 +111,7 @@ LOOPS_DEF = [
         "effective_auto_rate": Decimal("78.00"),
         "steady_rate": Decimal("72.00"),
         "accuracy_rate": Decimal("70.00"),
-        "fast_response_rate": Decimal("65.00"),
+        "fast_rate": Decimal("65.00"),
         "oscillation_rate": Decimal("25.00"),
         "saturation_rate": Decimal("12.00"),
     },
@@ -128,7 +128,7 @@ LOOPS_DEF = [
         "effective_auto_rate": Decimal("93.00"),
         "steady_rate": Decimal("94.00"),
         "accuracy_rate": Decimal("90.00"),
-        "fast_response_rate": Decimal("88.00"),
+        "fast_rate": Decimal("88.00"),
         "oscillation_rate": Decimal("5.00"),
         "saturation_rate": Decimal("2.00"),
     },
@@ -144,7 +144,7 @@ LOOPS_DEF = [
         "effective_auto_rate": Decimal("55.00"),
         "steady_rate": Decimal("65.00"),
         "accuracy_rate": Decimal("62.00"),
-        "fast_response_rate": Decimal("58.00"),
+        "fast_rate": Decimal("58.00"),
         "oscillation_rate": Decimal("35.00"),
         "saturation_rate": Decimal("18.00"),
     },
@@ -161,7 +161,7 @@ LOOPS_DEF = [
         "effective_auto_rate": Decimal("86.00"),
         "steady_rate": Decimal("87.00"),
         "accuracy_rate": Decimal("83.00"),
-        "fast_response_rate": Decimal("80.00"),
+        "fast_rate": Decimal("80.00"),
         "oscillation_rate": Decimal("12.00"),
         "saturation_rate": Decimal("6.00"),
     },
@@ -177,7 +177,7 @@ LOOPS_DEF = [
         "effective_auto_rate": Decimal("80.00"),
         "steady_rate": Decimal("76.00"),
         "accuracy_rate": Decimal("75.00"),
-        "fast_response_rate": Decimal("72.00"),
+        "fast_rate": Decimal("72.00"),
         "oscillation_rate": Decimal("18.00"),
         "saturation_rate": Decimal("8.00"),
     },
@@ -194,7 +194,7 @@ LOOPS_DEF = [
         "effective_auto_rate": Decimal("50.00"),
         "steady_rate": Decimal("60.00"),
         "accuracy_rate": Decimal("58.00"),
-        "fast_response_rate": Decimal("52.00"),
+        "fast_rate": Decimal("52.00"),
         "oscillation_rate": Decimal("40.00"),
         "saturation_rate": Decimal("22.00"),
     },
@@ -210,7 +210,7 @@ LOOPS_DEF = [
         "effective_auto_rate": Decimal("65.00"),
         "steady_rate": Decimal("68.00"),
         "accuracy_rate": Decimal("66.00"),
-        "fast_response_rate": Decimal("63.00"),
+        "fast_rate": Decimal("63.00"),
         "oscillation_rate": Decimal("28.00"),
         "saturation_rate": Decimal("15.00"),
     },
@@ -360,7 +360,7 @@ async def create_loops_and_snapshots(
             effective_auto_rate=loop_def["effective_auto_rate"],
             steady_rate=loop_def["steady_rate"],
             accuracy_rate=loop_def["accuracy_rate"],
-            fast_response_rate=loop_def["fast_response_rate"],
+            fast_rate=loop_def["fast_rate"],
             oscillation_rate=loop_def["oscillation_rate"],
             saturation_rate=loop_def["saturation_rate"],
             status="SUCCESS",
@@ -411,7 +411,7 @@ async def trigger_node_calculation(
                 f"\n     自控率:   {snap_data['auto_mode_rate']}"
                 f"\n     平稳率:   {snap_data['steady_rate']}"
                 f"\n     准确度:   {snap_data['accuracy_rate']}"
-                f"\n     快速率:   {snap_data['fast_response_rate']}"
+                f"\n     快速率:   {snap_data['fast_rate']}"
                 f"\n     振荡率:   {snap_data['oscillation_rate']}"
                 f"\n     饱和率:   {snap_data['saturation_rate']}"
             )

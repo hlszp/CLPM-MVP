@@ -142,7 +142,7 @@ const metricOptions = [
   { label: '有效自控率', value: 'effective_auto_rate' },
   { label: '平稳率', value: 'steady_rate' },
   { label: '准确率', value: 'accuracy_rate' },
-  { label: '快速率', value: 'fast_response_rate' },
+  { label: '快速率', value: 'fast_rate' },
   { label: '振荡率', value: 'oscillation_rate' },
   { label: '饱和率', value: 'saturation_rate' },
 ];

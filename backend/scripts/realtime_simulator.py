@@ -10,7 +10,7 @@
     - 增量式 PID 控制器（含抗积分饱和 / 积分分离）
     - 8 种场景：normal/oscillation/saturation/slow_response/
       valve_stiction/manual/overaggressive/overconservative
-    - 4 类异常注入：spike/flatline/out_of_range/bad_quality
+    - 3 类异常注入：flatline/out_of_range/bad_quality（spike 已移除）
     - 1Hz 主循环，每秒批量写入 27 行
     - 支持 Ctrl+C 优雅退出
 
@@ -46,7 +46,6 @@ import json
 import logging
 import math
 import random
-import re
 import signal
 import sys
 import time
@@ -374,10 +373,12 @@ class RealtimeAnomalyInjector:
     """实时异常注入器。
 
     事件类型：
-        spike:        PV 突变到极端值，每小时 1-2 次，持续 1-2 秒
         flatline:     PV 保持不变，每小时 0-1 次，持续 10-30 秒
         out_of_range: PV 超出量程 ±20%，每小时 0-1 次，持续 5-10 秒
         bad_quality:  pv_quality=0，每小时 0-1 次，持续 3-5 秒
+
+    注：spike（毛刺）生成逻辑已于本次数据清洗任务移除，避免向 TDengine
+    注入新的毛刺数据（历史毛刺已由 scripts/clean_tdengine_spikes.py 清洗）。
     """
 
     def __init__(
@@ -396,9 +397,8 @@ class RealtimeAnomalyInjector:
 
         # 当前活动事件：type → (end_time, value)
         self._active: dict[str, tuple[float, float | None]] = {}
-        # 下次事件调度时间
+        # 下次事件调度时间（spike 已移除）
         self._next_schedule: dict[str, float] = {
-            "spike": time.monotonic() + random.uniform(30, 3600),
             "flatline": time.monotonic() + random.uniform(60, 3600),
             "out_of_range": time.monotonic() + random.uniform(120, 3600),
             "bad_quality": time.monotonic() + random.uniform(180, 3600),
@@ -409,13 +409,10 @@ class RealtimeAnomalyInjector:
     def _schedule_next(self, event_type: str) -> None:
         """调度下一次事件。
 
-        spike 每小时 1-2 次（间隔 1800-3600s）；
         flatline / out_of_range / bad_quality 每小时 0-1 次（间隔 3600-7200s）。
         """
         now = time.monotonic()
-        if event_type == "spike":
-            interval = random.uniform(1800, 3600)
-        elif event_type in ("flatline", "out_of_range", "bad_quality"):
+        if event_type in ("flatline", "out_of_range", "bad_quality"):
             # 50% 概率跳过本次（即 0 次/小时），否则 1 次/小时
             if random.random() < 0.5:
                 interval = random.uniform(7200, 10800)
@@ -454,14 +451,6 @@ class RealtimeAnomalyInjector:
         if "bad_quality" in self._active:
             quality = 0
 
-        # spike
-        if "spike" in self._active:
-            _, spike_val = self._active["spike"]
-            if spike_val is not None:
-                pv = spike_val
-            if quality == 1:
-                quality = 0  # 尖峰视为 Bad
-
         # flatline
         if "flatline" in self._active:
             if self._flatline_value is not None:
@@ -482,13 +471,7 @@ class RealtimeAnomalyInjector:
     def _trigger_event(self, event_type: str) -> None:
         """触发一个异常事件。"""
         now = time.monotonic()
-        if event_type == "spike":
-            duration = random.uniform(1, 2)
-            # 突变到极端值（量程外 5-10 倍方向）
-            magnitude = self.pv_range * random.uniform(5, 10) * random.choice([-1, 1])
-            spike_val = self.base_sp + magnitude
-            self._active["spike"] = (now + duration, spike_val)
-        elif event_type == "flatline":
+        if event_type == "flatline":
             duration = random.uniform(10, 30)
             self._flatline_value = self.base_sp + random.uniform(
                 -self.pv_range * 0.05, self.pv_range * 0.05

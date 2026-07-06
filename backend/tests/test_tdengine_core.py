@@ -163,5 +163,5 @@ class TestParseTagToTableColumn:
             assert subtable == make_subtable_name(expected_loop_part), (
                 f"_parse_tag_to_table_column({tag_name!r}) subtable "
                 f"({subtable!r}) != make_subtable_name({expected_loop_part!r}) "
-                f"({_ := make_subtable_name(expected_loop_part)!r})"
+                f"({_:= make_subtable_name(expected_loop_part)!r})"
             )

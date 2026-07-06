@@ -65,7 +65,7 @@ const metricOptions = [
   { label: '有效自控率', value: 'effective_auto_rate' },
   { label: '平稳率', value: 'steady_rate' },
   { label: '准确率', value: 'accuracy_rate' },
-  { label: '快速率', value: 'fast_response_rate' },
+  { label: '快速率', value: 'fast_rate' },
   { label: '振荡率', value: 'oscillation_rate' },
   { label: '饱和率', value: 'saturation_rate' },
 ];
@@ -253,10 +253,11 @@ function renderTrendChart() {
       axisLabel: {
         formatter: (val: string) => {
           try {
-            const d = new Date(val);
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            const hh = String(d.getHours()).padStart(2, '0');
+            // 强制北京时间（UTC+8）：+8h 后用 getUTC* 方法
+            const d = new Date(new Date(val).getTime() + 8 * 3600 * 1000);
+            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const dd = String(d.getUTCDate()).padStart(2, '0');
+            const hh = String(d.getUTCHours()).padStart(2, '0');
             return `${mm}-${dd} ${hh}:00`;
           } catch {
             return val;

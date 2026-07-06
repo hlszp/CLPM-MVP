@@ -31,10 +31,12 @@ class TaskType(StrEnum):
     Attributes:
         STANDARD: 标准评估任务（每小时定时，全量回路覆盖）
         CUSTOM: 自定义评估任务（用户按需触发，选定回路/指标/时间范围）
+        BACKFILL: 历史重算任务（按时间窗批量重算，覆盖标准快照）
     """
 
     STANDARD = "STANDARD"
     CUSTOM = "CUSTOM"
+    BACKFILL = "BACKFILL"
 
 
 class TaskStatus(StrEnum):
@@ -86,6 +88,26 @@ class CustomTaskCreate(CamelModel):
     tsEnd: str = Field(..., description="评估时间窗结束（ISO 8601）")
 
 
+class BackfillTaskCreate(CamelModel):
+    """历史重算任务创建请求.
+
+    Attributes:
+        tsStart: 重算时间窗起始（ISO 8601）
+        tsEnd: 重算时间窗结束（ISO 8601，不包含）
+        plantNodeIds: 装置 ID 列表（可选，不传=全部装置）
+        loopIds: 回路 ID 列表（可选，优先级高于 plantNodeIds；不传=对应装置全部回路）
+        dryRun: True=只返回影响范围预览，不实际触发 Celery 任务
+    """
+
+    tsStart: str = Field(..., description="重算时间窗起始（ISO 8601）")
+    tsEnd: str = Field(..., description="重算时间窗结束（ISO 8601，不包含）")
+    plantNodeIds: list[str] | None = Field(None, description="装置 ID 列表（可选）")
+    loopIds: list[str] | None = Field(
+        None, description="回路 ID 列表（可选，优先级高于 plantNodeIds）"
+    )
+    dryRun: bool = Field(False, description="True=只返回预览不提交")
+
+
 # ---------------------------------------------------------------------------
 # 响应 Schema
 # ---------------------------------------------------------------------------
@@ -101,7 +123,8 @@ class TaskResponse(CamelModel):
         progress: 进度 0~1
         currentStage: 当前阶段（取数/预处理/指标计算/可信度判定）
         loopsTotal: 总回路数
-        loopsDone: 已完成回路数
+        loopsDone: 已完成回路数（BACKFILL 任务为已完成窗口数）
+        windowCount: 小时窗口数（仅 BACKFILL，用于显示计算量）
         createdAt: 创建时间（ISO 8601）
         startedAt: 开始执行时间
         finishedAt: 完成时间
@@ -116,11 +139,33 @@ class TaskResponse(CamelModel):
     currentStage: str | None = Field(None, description="当前阶段：取数/预处理/指标计算/可信度判定")
     loopsTotal: int | None = None
     loopsDone: int | None = None
+    windowCount: int | None = Field(None, description="小时窗口数（仅 BACKFILL）")
     createdAt: str
     startedAt: str | None = None
     finishedAt: str | None = None
     errorMessage: str | None = None
     createdBy: str
+    # 历史重算任务额外字段（其他任务类型为 None）
+    tsStart: str | None = Field(None, description="重算时间窗起始（仅 BACKFILL）")
+    tsEnd: str | None = Field(None, description="重算时间窗结束（仅 BACKFILL）")
+    loopIds: list[str] | None = Field(None, description="回路 ID 列表（仅 BACKFILL）")
+    plantNodeIds: list[str] | None = Field(None, description="装置 ID 列表（仅 BACKFILL）")
+
+
+class BackfillPreviewResult(CamelModel):
+    """历史重算 dry-run 预览结果.
+
+    Attributes:
+        loopCount: 影响回路数
+        windowCount: 影响小时窗口数
+        estimatedDurationSec: 预估耗时（秒，按 loopCount × windowCount × 2s 估算）
+        sampleLoopNames: 前 5 个回路名预览
+    """
+
+    loopCount: int = Field(..., description="影响回路数")
+    windowCount: int = Field(..., description="影响小时窗口数")
+    estimatedDurationSec: int = Field(..., description="预估耗时（秒）")
+    sampleLoopNames: list[str] = Field(default_factory=list, description="前 5 个回路名预览")
 
 
 class TaskListResponse(CamelModel):
@@ -136,6 +181,8 @@ class TaskListResponse(CamelModel):
 
 
 __all__ = [
+    "BackfillPreviewResult",
+    "BackfillTaskCreate",
     "CustomTaskCreate",
     "StandardTaskCreate",
     "TaskListResponse",

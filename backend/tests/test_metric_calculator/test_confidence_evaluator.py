@@ -232,11 +232,11 @@ class TestComputeCompositeScore:
         # accuracy 缺失
         results["accuracy_rate"] = _make_metric_result("accuracy_rate", None)
         score = ConfidenceEvaluator.compute_composite_score(results)
-        # a=0.25, f=0.20, s=0.55；A=None 视为 0
-        # 加权和 = 0 + 0.20*1.0 + 0.55*1.0 = 0.75
-        # base = 0.75 / 1.0 * 100 = 75
-        # P = 75 * 100/100 = 75
-        assert score.value == 75.0
+        # v2.1 国标权重 STABLE: a=0.2, f=0.3, s=0.5；A=None 视为 0
+        # 加权和 = 0 + 0.3*1.0 + 0.5*1.0 = 0.8
+        # base = 0.8 / 1.0 * 100 = 80
+        # P = 80 * 100/100 = 80
+        assert score.value == 80.0
 
     def test_custom_weights(self):
         """自定义权重生效。"""

@@ -67,21 +67,21 @@ CONCURRENCY = 10
 # ---------------------------------------------------------------------------
 # metric_code 映射：数据库列名 ↔ 计算器注册表代码
 # ---------------------------------------------------------------------------
-# clpm_metric_data_requirement 表使用数据库列名（如 fast_response_rate），
+# clpm_metric_data_requirement 表使用数据库列名（如 fast_rate），
 # 而 CALCULATOR_REGISTRY 使用计算器代码（如 fast_rate）。
 # 调用 DataPlanner 时传入数据库列名，调用计算器时映射为计算器代码。
 _DB_TO_CALCULATOR_METRIC_CODE: dict[str, str] = {
     "accuracy_rate": "accuracy_rate",
-    "fast_response_rate": "fast_rate",
+    "fast_rate": "fast_rate",
     "steady_rate": "stability_rate",
     "effective_auto_rate": "effective_auto_rate",
     "good_value_rate": "good_value_rate",
     "oscillation_rate": "oscillation_rate",
     "saturation_rate": "saturation_rate",
-    "stiction_coeff": "stiction_index",
-    "output_travel_index": "output_trip_index",
+    "stiction_index": "stiction_index",
+    "output_trip_index": "output_trip_index",
     "auto_mode_rate": "auto_mode_rate",
-    "steady_state_time": "settling_time",
+    "settling_time": "settling_time",
     "ideal_settling_time": "ideal_settling_time",
 }
 
@@ -160,6 +160,7 @@ def _make_disabled_result(calc_code: str) -> MetricResult:
         details={"reason": "metric_disabled_by_config"},
     )
 
+
 # LoopLedger.loop_type → ControlType 映射
 # SPEED/OTHER 无直接对应控制类型，回退为 FLOW（采样率 1s，最宽松）
 _LOOP_TYPE_TO_CONTROL_TYPE: dict[str, ControlType] = {
@@ -227,9 +228,7 @@ def _parse_ts_start(ts_start: str | None) -> datetime | None:
         return datetime.fromisoformat(ts_start)
 
 
-async def _track_hourly_calculation(
-    celery_task_id: str, ts_start: str | None = None
-) -> dict:
+async def _track_hourly_calculation(celery_task_id: str, ts_start: str | None = None) -> dict:
     """包装 _do_calculate，加入任务跟踪记录（cron 定时触发专用）.
 
     创建任务记录 → 标记 RUNNING → 执行计算 → 标记 SUCCESS/FAILED。
@@ -341,9 +340,7 @@ def calculate_custom_loop_kpi(
         ts_start,
         ts_end,
     )
-    return AsyncTask().run_async(
-        _do_calculate_custom_loop(task_id, loop_id, ts_start, ts_end)
-    )
+    return AsyncTask().run_async(_do_calculate_custom_loop(task_id, loop_id, ts_start, ts_end))
 
 
 @celery_app.task(
@@ -351,8 +348,14 @@ def calculate_custom_loop_kpi(
     bind=True,
     base=AsyncTask,
 )
-def backfill_kpi_range(self: AsyncTask, ts_start: str, ts_end: str) -> dict:
-    """按小时窗口批量回填 KPI 快照（脚本触发）。
+def backfill_kpi_range(
+    self: AsyncTask,
+    ts_start: str,
+    ts_end: str,
+    loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+) -> dict:
+    """按小时窗口批量回填 KPI 快照（脚本/HTTP 触发）。
 
     遍历 [ts_start, ts_end) 范围内的每个完整小时窗口，
     对全量 ACTIVE/READY 回路计算 KPI，并同步触发节点级聚合。
@@ -361,26 +364,115 @@ def backfill_kpi_range(self: AsyncTask, ts_start: str, ts_end: str) -> dict:
     Args:
         ts_start: 起始时间（ISO 8601，UTC）
         ts_end: 结束时间（ISO 8601，UTC，不包含）
+        loop_ids: 回路 ID 过滤列表。None=全量（保持原行为）；
+            非空列表=仅这些回路（HTTP API 历史重算按回路精准过滤）；
+            空列表=直接返回 0 结果。
+        task_id: Redis 任务跟踪 ID（HTTP API 触发时传入）。
+            传入则主动更新 Redis 中的任务状态/进度；
+            None（CLI 触发）则只打日志，不更新 Redis。
 
     用途：
         - 补齐因数据空档或服务中断缺失的历史 KPI 快照
         - 修复契约配置后重新计算指定时段的指标
+        - 按回路/装置精准重算历史数据
     """
-    logger.info("KPI 回填任务开始, task_id=%s, range=%s~%s", self.request.id, ts_start, ts_end)
+    logger.info(
+        "KPI 回填任务开始, celery_id=%s, task_id=%s, range=%s~%s, loop_ids=%s",
+        self.request.id,
+        task_id or "(none)",
+        ts_start,
+        ts_end,
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
+
+    # 同步初始状态：PENDING → RUNNING
+    if task_id:
+        try:
+            self.run_async(_update_task_running(task_id))
+        except Exception:
+            logger.warning("更新任务 RUNNING 状态失败: task_id=%s", task_id, exc_info=True)
+
     try:
-        result = self.run_async(_do_backfill(ts_start, ts_end))
+        result = self.run_async(_do_backfill(ts_start, ts_end, loop_ids=loop_ids, task_id=task_id))
         logger.info("KPI 回填任务完成: %s", result)
+
+        # 同步终态：RUNNING → SUCCESS
+        if task_id:
+            try:
+                self.run_async(_update_task_success(task_id, result))
+            except Exception:
+                logger.warning("更新任务 SUCCESS 状态失败: task_id=%s", task_id, exc_info=True)
+
         return result
-    except Exception:
+    except Exception as exc:
         logger.exception("KPI 回填任务失败")
+
+        # 同步终态：RUNNING → FAILED
+        if task_id:
+            try:
+                self.run_async(_update_task_failed(task_id, str(exc)))
+            except Exception:
+                logger.warning("更新任务 FAILED 状态失败: task_id=%s", task_id, exc_info=True)
         raise
 
 
-async def _do_backfill(ts_start: str, ts_end: str) -> dict:
+async def _update_task_running(task_id: str) -> None:
+    """将任务状态从 PENDING 更新为 RUNNING。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        current_stage="回填计算",
+        started_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_success(task_id: str, result: dict) -> None:
+    """将任务状态更新为 SUCCESS。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.SUCCESS,
+        progress=1.0,
+        current_stage="完成",
+        finished_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_failed(task_id: str, error_message: str) -> None:
+    """将任务状态更新为 FAILED。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.FAILED,
+        current_stage="失败",
+        error_message=error_message,
+        finished_at=task_tracker._now_iso(),
+    )
+
+
+async def _do_backfill(
+    ts_start: str,
+    ts_end: str,
+    loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+) -> dict:
     """批量回填 async 逻辑：遍历小时窗口，每窗口全量回路计算 + 节点聚合。
 
     在 Celery worker 的 event loop 内执行，复用 worker 的 httpx client，
     避免脚本进程 asyncio.run 环境下 TDengine 查询异常的问题。
+
+    Args:
+        ts_start: 起始时间 ISO 8601
+        ts_end: 结束时间 ISO 8601（不包含）
+        loop_ids: 回路 ID 过滤列表；None=全量，空列表=跳过计算
+        task_id: Redis 任务跟踪 ID；传入则每窗口完成后更新进度
     """
     start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
     end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
@@ -393,7 +485,27 @@ async def _do_backfill(ts_start: str, ts_end: str) -> dict:
         cur += timedelta(hours=1)
 
     total = len(windows)
-    logger.info("回填窗口数: %d (%s ~ %s)", total, start_dt.isoformat(), end_dt.isoformat())
+
+    # 空列表提前返回，避免遍历窗口调用 _do_calculate
+    # 注意：窗口数已计算（total_windows），仅跳过计算逻辑
+    if loop_ids is not None and len(loop_ids) == 0:
+        return {
+            "total_windows": total,
+            "failed_windows": 0,
+            "loop_success": 0,
+            "loop_inconclusive": 0,
+            "loop_failed": 0,
+            "node_success": 0,
+            "failed_window_list": [],
+        }
+
+    logger.info(
+        "回填窗口数: %d (%s ~ %s), loop_ids=%s",
+        total,
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
 
     agg_loop_success = 0
     agg_loop_inconclusive = 0
@@ -402,8 +514,32 @@ async def _do_backfill(ts_start: str, ts_end: str) -> dict:
     failed_windows: list[str] = []
 
     for i, w in enumerate(windows, 1):
+        # 每窗口开始前检查任务是否已被取消（POST /tasks/{task_id}/cancel 触发）
+        if task_id:
+            try:
+                if await _is_task_cancelled(task_id):
+                    logger.info(
+                        "检测到取消标志，提前终止回填: task_id=%s, completed=%d/%d",
+                        task_id,
+                        i - 1,
+                        total,
+                    )
+                    return {
+                        "total_windows": total,
+                        "failed_windows": len(failed_windows),
+                        "loop_success": agg_loop_success,
+                        "loop_inconclusive": agg_loop_inconclusive,
+                        "loop_failed": agg_loop_failed,
+                        "node_success": agg_node_success,
+                        "failed_window_list": failed_windows,
+                        "cancelled": True,
+                        "completed_windows": i - 1,
+                    }
+            except Exception:
+                logger.warning("查询取消标志失败，继续执行: task_id=%s", task_id, exc_info=True)
+
         try:
-            loop_result = await _do_calculate(ts_start=w, cascade_node=False)
+            loop_result = await _do_calculate(ts_start=w, cascade_node=False, loop_ids=loop_ids)
             node_result = await _do_calculate_node_kpi(ts_start=w)
             agg_loop_success += loop_result.get("success", 0)
             agg_loop_inconclusive += loop_result.get("inconclusive", 0)
@@ -411,12 +547,28 @@ async def _do_backfill(ts_start: str, ts_end: str) -> dict:
             agg_node_success += node_result.get("success", 0)
             logger.info(
                 "回填进度 [%d/%d] %s: loop_ok=%d, node_ok=%d",
-                i, total, w.isoformat(),
-                loop_result.get("success", 0), node_result.get("success", 0),
+                i,
+                total,
+                w.isoformat(),
+                loop_result.get("success", 0),
+                node_result.get("success", 0),
             )
         except Exception as exc:  # noqa: BLE001
             failed_windows.append(w.isoformat())
             logger.warning("回填窗口 %s 失败: %s", w.isoformat(), exc)
+
+        # 每窗口完成后更新 Redis 进度
+        if task_id:
+            try:
+                await _update_task_progress(task_id, i, total)
+            except Exception:
+                logger.warning(
+                    "更新任务进度失败: task_id=%s, window=%d/%d",
+                    task_id,
+                    i,
+                    total,
+                    exc_info=True,
+                )
 
     return {
         "total_windows": total,
@@ -427,6 +579,41 @@ async def _do_backfill(ts_start: str, ts_end: str) -> dict:
         "node_success": agg_node_success,
         "failed_window_list": failed_windows,
     }
+
+
+async def _update_task_progress(task_id: str, done: int, total: int) -> None:
+    """更新任务进度（每窗口完成后调用）。
+
+    注意：``loops_total`` 字段在任务创建时已填为真实回路数（如 27），
+    此处不应覆盖为窗口数（如 219）——否则前端会误显示"219 个回路"。
+    ``loops_done`` 此处填窗口完成数，配合 ``current_stage`` 文本展示进度。
+    ``progress`` = done/total 反映窗口级完成比例。
+    """
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    progress = done / total if total > 0 else 0.0
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        progress=progress,
+        loops_done=done,
+        current_stage=f"回填计算 [{done}/{total}]",
+    )
+
+
+async def _is_task_cancelled(task_id: str) -> bool:
+    """检查任务是否已被取消（POST /tasks/{task_id}/cancel 触发）。
+
+    直接读 Redis 中的 task:{task_id} 哈希，避免 task_tracker 服务的额外封装。
+    取消是终态，一旦置为 CANCELLED，worker 在下个窗口开始前应主动终止。
+    """
+    from app.core.redis import redis_client
+
+    raw = await redis_client.hget(f"task:{task_id}", "status")
+    if raw is None:
+        return False
+    return str(raw).upper() == "CANCELLED"
 
 
 # ---------------------------------------------------------------------------
@@ -448,8 +635,9 @@ def _load_calc_cycle_seconds_from_db() -> float:
         计算周期秒数（默认 3600）
     """
     try:
-        from app.core.config import settings
         from sqlalchemy import create_engine, text
+
+        from app.core.config import settings
 
         sync_url = settings.postgres_dsn.replace("+asyncpg", "")
         engine = create_engine(sync_url)
@@ -476,9 +664,7 @@ def _load_calc_cycle_seconds_from_db() -> float:
         finally:
             engine.dispose()
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "读取 EngineRule EVAL_CALC_CYCLE 失败，回退默认 3600s: %s", exc
-        )
+        logger.warning("读取 EngineRule EVAL_CALC_CYCLE 失败，回退默认 3600s: %s", exc)
     return 3600.0
 
 
@@ -548,7 +734,9 @@ def refresh_beat_schedule() -> dict:
 
 
 async def _do_calculate(
-    ts_start: datetime | None = None, cascade_node: bool = True
+    ts_start: datetime | None = None,
+    cascade_node: bool = True,
+    loop_ids: list[str] | None = None,
 ) -> dict:
     """执行全量 KPI 计算的实际 async 逻辑。
 
@@ -558,6 +746,9 @@ async def _do_calculate(
         cascade_node: 是否在回路级计算完成后级联触发节点级聚合任务。
             脚本批量回填时设为 False，由脚本同步调用 _do_calculate_node_kpi
             避免大量 .delay() 调用堆积到 Celery 队列。
+        loop_ids: 回路 ID 过滤列表。None=全量 ACTIVE/READY 回路（保持原行为）；
+            非空列表=仅这些回路（用于历史重算按回路精准过滤）；
+            空列表=直接返回 0 结果。
 
     引擎规则（PRD §5.4.2 / FDS §5.3.3）：
         - EVAL_CALC_CYCLE.cycle_minutes → 计算周期 + 时间窗长度
@@ -573,9 +764,7 @@ async def _do_calculate(
         # 引擎规则：计算周期（分钟）+ 并发数
         cycle_minutes = await engine_loader.get_calc_cycle_minutes(db)
         concurrency = await engine_loader.get_concurrency(db)
-        logger.info(
-            "引擎规则: calc_cycle=%dmin, concurrency=%d", cycle_minutes, concurrency
-        )
+        logger.info("引擎规则: calc_cycle=%dmin, concurrency=%d", cycle_minutes, concurrency)
 
         # 计算时间窗：周期长度由 EngineRule 决定（对齐 EVAL_CALC_CYCLE.cycle_minutes）
         if ts_start is not None:
@@ -587,15 +776,25 @@ async def _do_calculate(
             ts_end = ts_end.replace(minute=(ts_end.minute // cycle_minutes) * cycle_minutes)
             ts_start = ts_end - timedelta(minutes=cycle_minutes)
 
-        # 1. 查询所有 ACTIVE/READY 状态回路
-        loop_result = await db.execute(
-            select(LoopLedger).where(
-                LoopLedger.is_active.is_(True),
-                LoopLedger.status == "READY",
-            )
+        # 1. 查询回路（支持 loop_ids 过滤）
+        # loop_ids=[] 表示空集，直接返回 0 结果（避免误查全量）
+        if loop_ids is not None and len(loop_ids) == 0:
+            return {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+
+        stmt = select(LoopLedger).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
         )
+        if loop_ids is not None:
+            stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+
+        loop_result = await db.execute(stmt)
         loops = list(loop_result.scalars().all())
-        logger.info("待计算回路数: %d", len(loops))
+        logger.info(
+            "待计算回路数: %d (loop_ids=%s)",
+            len(loops),
+            "all" if loop_ids is None else f"{len(loop_ids)} filtered",
+        )
 
         if not loops:
             return {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
@@ -691,9 +890,7 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
             except ValueError:
                 ts_start_dt = datetime.fromisoformat(ts_start)
         else:
-            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(
-                second=0, microsecond=0
-            )
+            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(second=0, microsecond=0)
             # 对齐到计算周期边界
             ts_start_dt = ts_start_dt.replace(
                 minute=(ts_start_dt.minute // cycle_minutes) * cycle_minutes
@@ -751,9 +948,7 @@ async def _do_calculate_custom_loop(
         now = datetime.now(UTC)
         ts_start_dt = _parse_ts_start(ts_start)
         if ts_start_dt is None:
-            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(
-                second=0, microsecond=0
-            )
+            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(second=0, microsecond=0)
             ts_start_dt = ts_start_dt.replace(
                 minute=(ts_start_dt.minute // cycle_minutes) * cycle_minutes
             )
@@ -833,8 +1028,13 @@ async def _calculate_loop_kpi(
     logger.info(
         "[回路KPI] 开始计算 loop_id=%s tag_name=%s loop_type=%s control_type=%s "
         "ts_start=%s ts_end=%s custom_task_id=%s",
-        loop.id, loop.tag_name, loop.loop_type, control_type.value,
-        ts_start.isoformat(), ts_end.isoformat(), custom_task_id,
+        loop.id,
+        loop.tag_name,
+        loop.loop_type,
+        control_type.value,
+        ts_start.isoformat(),
+        ts_end.isoformat(),
+        custom_task_id,
     )
 
     # 通过 DataPlanner 获取所有指标的 MetricDataBundle
@@ -874,9 +1074,9 @@ async def _calculate_loop_kpi(
 
     # 构造权重映射：优先级 MetricConfig.weight > LoopTypeWeight > DEFAULT_WEIGHTS
     # P2 #27: MetricConfig.weight 实际参与计算，管理员修改 /configs/metrics 即时生效
-    from app.services.loop_config import infer_score_type
-
-    score_type = infer_score_type(loop.loop_type)
+    # v5.3 对齐 DDS v4.1：直接使用 LoopLedger.control_type（STABLE/SLOW/FAST/LOGIC）
+    # 而非由 loop_type 推断，避免业务类型与评分模板耦合
+    score_type = loop.control_type or "LOGIC"
     weights = _build_weights_map(type_weights, score_type, metric_configs)
 
     # 三层计算：Layer1 无依赖 → Layer2 有依赖 → Layer3 综合评分
@@ -894,6 +1094,15 @@ async def _calculate_loop_kpi(
     # 提取综合评分
     score = Decimal(str(composite_result.value)) if composite_result.value is not None else None
 
+    # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路（include_in_evaluation=false）
+    # 单回路 KPI 指标仍计算，但综合评分 score 设为 None（不写入快照 score 字段）
+    if not loop.include_in_evaluation:
+        score = None
+        logger.info(
+            "[回路KPI] 回路 %s 未参评（include_in_evaluation=false），score 不写入",
+            loop.tag_name,
+        )
+
     # 提取数据血缘信息（从 accuracy_rate 的 lineage 取，若不存在则从任意结果取）
     lineage_info = _extract_lineage_info(metric_results, composite_result)
 
@@ -902,8 +1111,9 @@ async def _calculate_loop_kpi(
     required_db_codes = ("good_value_rate", "auto_mode_rate", "steady_rate")
     if any(kpi_values.get(k) is None for k in required_db_codes):
         status = "PARTIAL"
-    # 综合评分为 None（R 可信度 E 级）时状态降级
-    if score is None:
+    # 综合评分为 None 时状态降级——仅当回路参评时才降级为 INCONCLUSIVE
+    # 不参评回路 score=None 是设计行为（非数据质量问题），不应降级
+    if score is None and loop.include_in_evaluation:
         status = "INCONCLUSIVE"
 
     snap = await _persist_snapshot(
@@ -919,12 +1129,12 @@ async def _calculate_loop_kpi(
         effective_auto_rate=kpi_values.get("effective_auto_rate"),
         steady_rate=kpi_values.get("steady_rate"),
         accuracy_rate=kpi_values.get("accuracy_rate"),
-        fast_response_rate=kpi_values.get("fast_response_rate"),
+        fast_rate=kpi_values.get("fast_rate"),
         oscillation_rate=kpi_values.get("oscillation_rate"),
         saturation_rate=kpi_values.get("saturation_rate"),
-        stiction_coeff=kpi_values.get("stiction_coeff"),
-        steady_state_time=kpi_values.get("steady_state_time"),
-        output_travel_index=kpi_values.get("output_travel_index"),
+        stiction_index=kpi_values.get("stiction_index"),
+        settling_time=kpi_values.get("settling_time"),
+        output_trip_index=kpi_values.get("output_trip_index"),
         ideal_settling_time=kpi_values.get("ideal_settling_time"),
         algorithm_version=lineage_info["algorithm_version"],
         sampling_freq=lineage_info["sampling_freq"],
@@ -936,7 +1146,9 @@ async def _calculate_loop_kpi(
     logger.info(
         "[回路KPI] 计算完成 loop_id=%s tag_name=%s status=%s score=%s confidence=%s "
         "valid_rate=%s custom_task_id=%s",
-        loop.id, loop.tag_name, status,
+        loop.id,
+        loop.tag_name,
+        status,
         float(score) if score is not None else None,
         lineage_info["confidence_level"],
         lineage_info["valid_rate"],
@@ -1160,7 +1372,7 @@ def _build_weights_map(
     (accuracy/fast/steady) with sum=100"）：
 
     1. **MetricConfig.weight 全局配置**（管理员通过 PUT /configs/metrics 设置）：
-       若 3 个核心指标（accuracy_rate / fast_response_rate / steady_rate）
+       若 3 个核心指标（accuracy_rate / fast_rate / steady_rate）
        的 weight 均已设置（非 null 且 > 0），则使用此全局权重（覆盖控制类型模板）。
        MetricConfig.weight sum=100（百分比），需除以 100 归一化为 a+f+s=1.0 比例。
 
@@ -1183,19 +1395,28 @@ def _build_weights_map(
     # 优先级 1：MetricConfig.weight 全局配置（管理员通过 /configs/metrics 设置）
     if metric_configs:
         a_cfg = metric_configs.get("accuracy_rate")
-        f_cfg = metric_configs.get("fast_response_rate")
+        f_cfg = metric_configs.get("fast_rate")
         s_cfg = metric_configs.get("steady_rate")
         if (
-            a_cfg and a_cfg.weight is not None and float(a_cfg.weight) > 0
-            and f_cfg and f_cfg.weight is not None and float(f_cfg.weight) > 0
-            and s_cfg and s_cfg.weight is not None and float(s_cfg.weight) > 0
+            a_cfg
+            and a_cfg.weight is not None
+            and float(a_cfg.weight) > 0
+            and f_cfg
+            and f_cfg.weight is not None
+            and float(f_cfg.weight) > 0
+            and s_cfg
+            and s_cfg.weight is not None
+            and float(s_cfg.weight) > 0
         ):
             total = float(a_cfg.weight) + float(f_cfg.weight) + float(s_cfg.weight)
             if total > 0:
                 logger.info(
                     "[权重解析] 使用 MetricConfig.weight 全局配置: a=%s f=%s s=%s "
                     "(sum=%s, 归一化后 sum=1.0)",
-                    a_cfg.weight, f_cfg.weight, s_cfg.weight, total,
+                    a_cfg.weight,
+                    f_cfg.weight,
+                    s_cfg.weight,
+                    total,
                 )
                 return {
                     "accuracy_rate": float(a_cfg.weight) / total,
@@ -1203,9 +1424,10 @@ def _build_weights_map(
                     "stability_rate": float(s_cfg.weight) / total,
                 }
             logger.warning(
-                "[权重解析] MetricConfig.weight 总和为 0，回退到 LoopTypeWeight: "
-                "a=%s f=%s s=%s",
-                a_cfg.weight, f_cfg.weight, s_cfg.weight,
+                "[权重解析] MetricConfig.weight 总和为 0，回退到 LoopTypeWeight: a=%s f=%s s=%s",
+                a_cfg.weight,
+                f_cfg.weight,
+                s_cfg.weight,
             )
 
     # 优先级 2：LoopTypeWeight 按控制类型模板
@@ -1215,7 +1437,10 @@ def _build_weights_map(
     w = type_weights[score_type]
     logger.info(
         "[权重解析] 使用 LoopTypeWeight 控制类型模板: score_type=%s a=%s f=%s s=%s",
-        score_type, w.get("weight_a"), w.get("weight_f"), w.get("weight_s"),
+        score_type,
+        w.get("weight_a"),
+        w.get("weight_f"),
+        w.get("weight_s"),
     )
     return {
         "accuracy_rate": float(w.get("weight_a", 0)),
@@ -1286,7 +1511,9 @@ def _compute_kpis_three_layer(
     for code in layer1_codes:
         # PRD §5.1.3：指标停用后返回 INCONCLUSIVE，不执行计算
         if not _is_metric_enabled(code, metric_configs):
-            logger.info("[三层计算] Layer1: 指标 %s 已禁用（is_enabled=False），返回 INCONCLUSIVE", code)
+            logger.info(
+                "[三层计算] Layer1: 指标 %s 已禁用（is_enabled=False），返回 INCONCLUSIVE", code
+            )
             results[code] = _make_disabled_result(code)
             continue
         bundle = bundle_map.get(code)
@@ -1399,7 +1626,7 @@ def _extract_kpi_values(
 ) -> dict[str, Decimal | None]:
     """将 MetricResult 字典转换为数据库列名 → Decimal 值映射。
 
-    计算器代码（如 fast_rate）需映射为数据库列名（如 fast_response_rate）。
+    计算器代码（如 fast_rate）需映射为数据库列名（如 fast_rate）。
     value 为 None 时保持 None（表示 INCONCLUSIVE）。
 
     Args:
@@ -1500,7 +1727,8 @@ async def _persist_snapshot(
     if custom_task_id is not None:
         # 自定义任务 → 写入 kpi_snapshot_custom（不参与聚合）
         logger.info(
-            "[快照分流] 自定义任务 task_id=%s loop=%s status=%s score=%s → kpi_snapshot_custom（不参与聚合）",
+            "[快照分流] 自定义任务 task_id=%s loop=%s status=%s score=%s "
+            "→ kpi_snapshot_custom（不参与聚合）",
             custom_task_id,
             loop_id,
             status,
@@ -1535,12 +1763,12 @@ async def _save_snapshot(
     effective_auto_rate: Decimal | None = None,
     steady_rate: Decimal | None = None,
     accuracy_rate: Decimal | None = None,
-    fast_response_rate: Decimal | None = None,
+    fast_rate: Decimal | None = None,
     oscillation_rate: Decimal | None = None,
     saturation_rate: Decimal | None = None,
-    stiction_coeff: Decimal | None = None,
-    steady_state_time: Decimal | None = None,
-    output_travel_index: Decimal | None = None,
+    stiction_index: Decimal | None = None,
+    settling_time: Decimal | None = None,
+    output_trip_index: Decimal | None = None,
     # v4.0 数据血缘字段（7 个）
     ideal_settling_time: Decimal | None = None,
     algorithm_version: str | None = None,
@@ -1550,7 +1778,10 @@ async def _save_snapshot(
     confidence_level: str | None = None,
     data_lineage: dict | None = None,
 ) -> dict:
-    """幂等写入快照（相同 loop_id + ts_start 不重复写入，覆盖更新）。
+    """幂等写入快照（UPSERT：相同 loop_id + ts_start 覆盖更新）。
+
+    使用 PostgreSQL ``INSERT ... ON CONFLICT (loop_id, ts_start) DO UPDATE``，
+    数据库层保证唯一性，避免应用层 SELECT-then-INSERT 的并发竞态。
 
     v4.0 新增 7 个数据血缘字段，支持审计追溯：
         - ideal_settling_time: 理想稳态时间（秒）
@@ -1567,81 +1798,90 @@ async def _save_snapshot(
     ts_start_naive = ts_start.replace(tzinfo=None) if ts_start.tzinfo else ts_start
     ts_end_naive = ts_end.replace(tzinfo=None) if ts_end.tzinfo else ts_end
 
-    # 检查是否已存在
-    existing_result = await db.execute(
-        select(KpiSnapshotHourly).where(
+    snapshot_id = str(uuid4())
+    # 使用 PostgreSQL INSERT ... ON CONFLICT DO UPDATE（真 UPSERT）
+    # 数据库层保证 (loop_id, ts_start) 唯一，避免并发竞态产生重复
+    from sqlalchemy.dialects import postgresql
+
+    insert_stmt = postgresql.insert(KpiSnapshotHourly).values(
+        id=snapshot_id,
+        loop_id=loop_id,
+        ts_start=ts_start_naive,
+        ts_end=ts_end_naive,
+        status=status,
+        score=score,
+        good_value_rate=good_value_rate,
+        auto_mode_rate=auto_mode_rate,
+        effective_auto_rate=effective_auto_rate,
+        steady_rate=steady_rate,
+        accuracy_rate=accuracy_rate,
+        fast_rate=fast_rate,
+        oscillation_rate=oscillation_rate,
+        saturation_rate=saturation_rate,
+        stiction_index=stiction_index,
+        settling_time=settling_time,
+        output_trip_index=output_trip_index,
+        # v4.0 数据血缘字段
+        ideal_settling_time=ideal_settling_time,
+        algorithm_version=algorithm_version,
+        sampling_freq=sampling_freq,
+        quality_policy=quality_policy,
+        valid_rate=valid_rate,
+        confidence_level=confidence_level,
+        data_lineage=data_lineage,
+    )
+    # ON CONFLICT (loop_id, ts_start) DO UPDATE：覆盖除 id 外的所有字段
+    update_cols = {
+        "ts_end": ts_end_naive,
+        "status": status,
+        "score": score,
+        "good_value_rate": good_value_rate,
+        "auto_mode_rate": auto_mode_rate,
+        "effective_auto_rate": effective_auto_rate,
+        "steady_rate": steady_rate,
+        "accuracy_rate": accuracy_rate,
+        "fast_rate": fast_rate,
+        "oscillation_rate": oscillation_rate,
+        "saturation_rate": saturation_rate,
+        "stiction_index": stiction_index,
+        "settling_time": settling_time,
+        "output_trip_index": output_trip_index,
+        "ideal_settling_time": ideal_settling_time,
+        "algorithm_version": algorithm_version,
+        "sampling_freq": sampling_freq,
+        "quality_policy": quality_policy,
+        "valid_rate": valid_rate,
+        "confidence_level": confidence_level,
+        "data_lineage": data_lineage,
+    }
+    upsert_stmt = insert_stmt.on_conflict_do_update(
+        index_elements=["loop_id", "ts_start"],
+        set_=update_cols,
+    )
+    await db.execute(upsert_stmt)
+    # 注意：不在此处 commit，由调用方统一管理事务（_do_calculate 第 794 行）
+    # 这样保证单回路计算原子性：UPSERT + 后续操作一起提交或回滚
+
+    # PostgreSQL RETURNING 可获取实际写入的 id（INSERT 时为新 id，UPDATE 时为旧 id）
+    # 但 ON CONFLICT DO UPDATE 不自动 RETURNING，需用 SELECT 查询实际 id
+    actual_id_result = await db.execute(
+        select(KpiSnapshotHourly.id).where(
             KpiSnapshotHourly.loop_id == loop_id,
             KpiSnapshotHourly.ts_start == ts_start_naive,
         )
     )
-    existing = existing_result.scalar_one_or_none()
+    actual_id_row = actual_id_result.first()
+    snapshot_id = str(actual_id_row[0]) if actual_id_row else snapshot_id
 
-    if existing:
-        # 更新已有记录
-        existing.ts_end = ts_end_naive
-        existing.status = status
-        existing.score = score
-        existing.good_value_rate = good_value_rate
-        existing.auto_mode_rate = auto_mode_rate
-        existing.effective_auto_rate = effective_auto_rate
-        existing.steady_rate = steady_rate
-        existing.accuracy_rate = accuracy_rate
-        existing.fast_response_rate = fast_response_rate
-        existing.oscillation_rate = oscillation_rate
-        existing.saturation_rate = saturation_rate
-        existing.stiction_coeff = stiction_coeff
-        existing.steady_state_time = steady_state_time
-        existing.output_travel_index = output_travel_index
-        # v4.0 数据血缘字段
-        existing.ideal_settling_time = ideal_settling_time
-        existing.algorithm_version = algorithm_version
-        existing.sampling_freq = sampling_freq
-        existing.quality_policy = quality_policy
-        existing.valid_rate = valid_rate
-        existing.confidence_level = confidence_level
-        existing.data_lineage = data_lineage
-        snapshot_id = str(existing.id)
-        logger.info(
-            "[快照写入] 覆盖更新 kpi_snapshot_hourly loop=%s ts_start=%s status=%s score=%s confidence=%s",
-            loop_id, ts_start_naive.isoformat(), status,
-            float(score) if score is not None else None, confidence_level,
-        )
-    else:
-        # 新增记录
-        snapshot_id = str(uuid4())
-        snapshot = KpiSnapshotHourly(
-            id=snapshot_id,
-            loop_id=loop_id,
-            ts_start=ts_start_naive,
-            ts_end=ts_end_naive,
-            status=status,
-            score=score,
-            good_value_rate=good_value_rate,
-            auto_mode_rate=auto_mode_rate,
-            effective_auto_rate=effective_auto_rate,
-            steady_rate=steady_rate,
-            accuracy_rate=accuracy_rate,
-            fast_response_rate=fast_response_rate,
-            oscillation_rate=oscillation_rate,
-            saturation_rate=saturation_rate,
-            stiction_coeff=stiction_coeff,
-            steady_state_time=steady_state_time,
-            output_travel_index=output_travel_index,
-            # v4.0 数据血缘字段
-            ideal_settling_time=ideal_settling_time,
-            algorithm_version=algorithm_version,
-            sampling_freq=sampling_freq,
-            quality_policy=quality_policy,
-            valid_rate=valid_rate,
-            confidence_level=confidence_level,
-            data_lineage=data_lineage,
-        )
-        db.add(snapshot)
-        logger.info(
-            "[快照写入] 新增 kpi_snapshot_hourly loop=%s ts_start=%s status=%s score=%s confidence=%s",
-            loop_id, ts_start_naive.isoformat(), status,
-            float(score) if score is not None else None, confidence_level,
-        )
+    logger.info(
+        "[快照写入] UPSERT kpi_snapshot_hourly loop=%s ts_start=%s "
+        "status=%s score=%s confidence=%s",
+        loop_id,
+        ts_start_naive.isoformat(),
+        status,
+        float(score) if score is not None else None,
+        confidence_level,
+    )
 
     return {
         "loopId": loop_id,
@@ -1667,12 +1907,12 @@ async def _save_custom_snapshot(
     effective_auto_rate: Decimal | None = None,
     steady_rate: Decimal | None = None,
     accuracy_rate: Decimal | None = None,
-    fast_response_rate: Decimal | None = None,
+    fast_rate: Decimal | None = None,
     oscillation_rate: Decimal | None = None,
     saturation_rate: Decimal | None = None,
-    stiction_coeff: Decimal | None = None,
-    steady_state_time: Decimal | None = None,
-    output_travel_index: Decimal | None = None,
+    stiction_index: Decimal | None = None,
+    settling_time: Decimal | None = None,
+    output_trip_index: Decimal | None = None,
     ideal_settling_time: Decimal | None = None,
     algorithm_version: str | None = None,
     sampling_freq: str | None = None,
@@ -1716,12 +1956,12 @@ async def _save_custom_snapshot(
         existing.effective_auto_rate = effective_auto_rate
         existing.steady_rate = steady_rate
         existing.accuracy_rate = accuracy_rate
-        existing.fast_response_rate = fast_response_rate
+        existing.fast_rate = fast_rate
         existing.oscillation_rate = oscillation_rate
         existing.saturation_rate = saturation_rate
-        existing.stiction_coeff = stiction_coeff
-        existing.steady_state_time = steady_state_time
-        existing.output_travel_index = output_travel_index
+        existing.stiction_index = stiction_index
+        existing.settling_time = settling_time
+        existing.output_trip_index = output_trip_index
         existing.ideal_settling_time = ideal_settling_time
         existing.algorithm_version = algorithm_version
         existing.sampling_freq = sampling_freq
@@ -1731,9 +1971,13 @@ async def _save_custom_snapshot(
         existing.data_lineage = data_lineage
         snapshot_id = str(existing.id)
         logger.info(
-            "[快照写入] 覆盖更新 kpi_snapshot_custom task=%s loop=%s status=%s score=%s confidence=%s",
-            task_id, loop_id, status,
-            float(score) if score is not None else None, confidence_level,
+            "[快照写入] 覆盖更新 kpi_snapshot_custom task=%s loop=%s "
+            "status=%s score=%s confidence=%s",
+            task_id,
+            loop_id,
+            status,
+            float(score) if score is not None else None,
+            confidence_level,
         )
     else:
         snapshot_id = str(uuid4())
@@ -1750,12 +1994,12 @@ async def _save_custom_snapshot(
             effective_auto_rate=effective_auto_rate,
             steady_rate=steady_rate,
             accuracy_rate=accuracy_rate,
-            fast_response_rate=fast_response_rate,
+            fast_rate=fast_rate,
             oscillation_rate=oscillation_rate,
             saturation_rate=saturation_rate,
-            stiction_coeff=stiction_coeff,
-            steady_state_time=steady_state_time,
-            output_travel_index=output_travel_index,
+            stiction_index=stiction_index,
+            settling_time=settling_time,
+            output_trip_index=output_trip_index,
             ideal_settling_time=ideal_settling_time,
             algorithm_version=algorithm_version,
             sampling_freq=sampling_freq,
@@ -1767,8 +2011,11 @@ async def _save_custom_snapshot(
         db.add(snapshot)
         logger.info(
             "[快照写入] 新增 kpi_snapshot_custom task=%s loop=%s status=%s score=%s confidence=%s",
-            task_id, loop_id, status,
-            float(score) if score is not None else None, confidence_level,
+            task_id,
+            loop_id,
+            status,
+            float(score) if score is not None else None,
+            confidence_level,
         )
 
     return {

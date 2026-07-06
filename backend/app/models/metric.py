@@ -36,10 +36,14 @@ class MetricConfig(Base):
     )
     metric_code: Mapped[str] = mapped_column(String(50), nullable=False)
     metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # DEPRECATED: 对齐 FDS v5.1 §5.3.1.2，12 项指标算法已固化为独立函数模块，不再支持自定义公式覆盖
     formula: Mapped[str | None] = mapped_column(Text, nullable=True)
     weight: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     threshold: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # MIGRATED: 已迁移至 loop_ledger.control_type，本字段仅保留兼容历史数据
     control_type: Mapped[str | None] = mapped_column(String(20), default="STABLE", nullable=True)
+    # v5.3 新增：5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR），JSONB 存储
+    grading_thresholds: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     is_enabled: Mapped[bool | None] = mapped_column(Boolean, default=True, nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -76,12 +80,12 @@ class KpiSnapshotHourly(Base):
     accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    fast_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     # 故障诊断扩展指标（nullable，向后兼容；诊断中心与性能评估共享表）
-    stiction_coeff: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    steady_state_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
-    output_travel_index: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    stiction_index: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    output_trip_index: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     # v4.0 扩展字段（DDS §2.8）：理想稳态时间 + 算法版本 + 5 个数据血缘字段
     ideal_settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
@@ -105,8 +109,8 @@ class KpiSnapshotHourly(Base):
         Index("idx_kpi_snapshot_loop_id", "loop_id"),
         Index("idx_kpi_snapshot_ts_start", "ts_start"),
         Index("idx_kpi_snapshot_status", "status"),
-        # v4.0 迁移 k2f3a4b5c6d7 创建的复合索引（DDS §2.8）
-        Index("ix_kpi_snapshot_hourly_loop_ts", "loop_id", "ts_start"),
+        # UNIQUE 约束：每个回路每小时仅允许一条快照（q1a2b3c4d5e6 迁移）
+        UniqueConstraint("loop_id", "ts_start", name="uq_kpi_snapshot_hourly_loop_ts"),
         {"comment": "每小时性能评估快照（好值率基于 PV 质量码统计）"},
     )
 
@@ -136,15 +140,15 @@ class KpiSnapshotCustom(Base):
     ts_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    fast_response_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    fast_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     steady_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     good_value_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    stiction_coeff: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    output_travel_index: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
-    steady_state_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    stiction_index: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    output_trip_index: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     ideal_settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     auto_mode_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)

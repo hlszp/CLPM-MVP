@@ -35,7 +35,8 @@ LOOP_001.score_weights = None
 LOOP_001.remark = None
 LOOP_001.loop_type = "TEMPERATURE"
 LOOP_001.control_type = "STABLE"
-LOOP_001.level = 3
+LOOP_001.importance_level = 3
+LOOP_001.include_in_evaluation = True
 LOOP_001.modeattr_tag_id = None
 LOOP_001.data_retention_days = None
 
@@ -150,7 +151,7 @@ class TestLoopCreate:
                         "auto_mode_rate": 50,
                         "steady_rate": 0,
                         "accuracy_rate": 0,
-                        "fast_response_rate": 50,
+                        "fast_rate": 50,
                         "oscillation_rate": 0,
                         "saturation_rate": 0,
                     },
@@ -322,7 +323,7 @@ class TestControlModeFilter:
 
 
 class TestLoopCreateNewFields:
-    """P2 #24/#25: create_loop 接收 controlType/level/modeattrTagId/dataRetentionDays。
+    """P2 #24/#25: create_loop 接收 controlType/importanceLevel 等新字段。
 
     通过验证 service 签名包含这些参数 + LoopCreate schema 字段，确保前端
     声明的字段不再被静默忽略。
@@ -333,7 +334,8 @@ class TestLoopCreateNewFields:
 
         fields = set(LoopCreate.model_fields.keys())
         assert "controlType" in fields
-        assert "level" in fields
+        assert "importance_level" in fields
+        assert "include_in_evaluation" in fields
         assert "modeattrTagId" in fields
         assert "dataRetentionDays" in fields
 
@@ -342,7 +344,8 @@ class TestLoopCreateNewFields:
 
         fields = set(LoopUpdate.model_fields.keys())
         assert "controlType" in fields
-        assert "level" in fields
+        assert "importance_level" in fields
+        assert "include_in_evaluation" in fields
         assert "modeattrTagId" in fields
         assert "dataRetentionDays" in fields
 
@@ -355,7 +358,8 @@ class TestLoopCreateNewFields:
         sig = inspect.signature(create_loop)
         params = set(sig.parameters.keys())
         assert "control_type" in params
-        assert "level" in params
+        assert "importance_level" in params
+        assert "include_in_evaluation" in params
         assert "modeattr_tag_id" in params
         assert "data_retention_days" in params
 
@@ -368,7 +372,8 @@ class TestLoopCreateNewFields:
         sig = inspect.signature(update_loop)
         params = set(sig.parameters.keys())
         assert "control_type" in params
-        assert "level" in params
+        assert "importance_level" in params
+        assert "include_in_evaluation" in params
         assert "modeattr_tag_id" in params
         assert "data_retention_days" in params
 
@@ -385,9 +390,7 @@ class TestLoopCreateNewFields:
 class TestLoopListControlTypeFilter:
     """P2 #24: list 端点 controlType 查询参数过滤。"""
 
-    def test_list_endpoint_accepts_control_type_query(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_endpoint_accepts_control_type_query(self, client, mock_db, fake_redis) -> None:
         """list 端点应接受 controlType 查询参数，不返回 422。"""
 
         async def execute_side_effect(stmt, *args, **kwargs):
@@ -434,9 +437,7 @@ class TestLoopListIsActiveMonitorStatusMutex:
         assert body["code"] == "400"
         assert "isActive" in body["message"] or "monitorStatus" in body["message"]
 
-    def test_consistent_values_no_error(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_consistent_values_no_error(self, client, mock_db, fake_redis) -> None:
         """isActive=True 与 monitorStatus=true 同时传入（值一致）应正常返回。"""
 
         async def execute_side_effect(stmt, *args, **kwargs):
@@ -455,9 +456,7 @@ class TestLoopListIsActiveMonitorStatusMutex:
         body = resp.json()
         assert body["code"] == "0"
 
-    def test_only_is_active_no_error(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_only_is_active_no_error(self, client, mock_db, fake_redis) -> None:
         """仅传 isActive 应正常返回（无 monitorStatus 冲突）。"""
 
         async def execute_side_effect(stmt, *args, **kwargs):
@@ -476,9 +475,7 @@ class TestLoopListIsActiveMonitorStatusMutex:
         body = resp.json()
         assert body["code"] == "0"
 
-    def test_only_monitor_status_no_error(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_only_monitor_status_no_error(self, client, mock_db, fake_redis) -> None:
         """仅传 monitorStatus 应正常返回（无 isActive 冲突）。"""
 
         async def execute_side_effect(stmt, *args, **kwargs):
@@ -602,7 +599,8 @@ class TestImportLoopsTagAutoCreate:
 
         # Tag 已存在 → 不应触发自动创建警告
         auto_create_warnings = [
-            call for call in mock_logger.warning.call_args_list
+            call
+            for call in mock_logger.warning.call_args_list
             if "Excel 导入自动创建 Tag" in (call.args[0] if call.args else "")
         ]
         assert len(auto_create_warnings) == 0

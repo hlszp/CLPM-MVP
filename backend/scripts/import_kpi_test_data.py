@@ -127,7 +127,7 @@ async def td_execute(client: httpx.AsyncClient, sql: str, use_db: bool = True) -
 
 
 def subtable_name(tag_name: str) -> str:
-    """子表命名: d_loop_<位号小写连字符转下划线>（P3 #54：复用 app.core.tdengine.make_subtable_name）."""
+    """子表命名: d_loop_<位号小写连字符转下划线>（P3 #54：复用 make_subtable_name）."""
     from app.core.tdengine import make_subtable_name
 
     return make_subtable_name(tag_name)
@@ -374,7 +374,7 @@ async def trigger_kpi_calculation(ts_start: datetime, ts_end: datetime) -> None:
                     print(
                         f"  ✓ {cfg['tag_name']:15s} → score={score:6.2f}  "
                         f"A={snap.get('accuracy_rate', 0):6.2f}  "
-                        f"F={snap.get('fast_response_rate', 0):6.2f}  "
+                        f"F={snap.get('fast_rate', 0):6.2f}  "
                         f"S={snap.get('steady_rate', 0):6.2f}  "
                         f"R={snap.get('effective_auto_rate', 0):6.2f}  "
                         f"osc={snap.get('oscillation_rate', 0):6.2f}  "

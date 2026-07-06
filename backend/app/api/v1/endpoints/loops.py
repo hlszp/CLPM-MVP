@@ -67,10 +67,15 @@ async def list_loops_endpoint(
     status: str | None = Query(None, description="按回路状态筛选：READY/PARTIAL/INACTIVE"),
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
     loopType: str | None = Query(None, description="按回路类型筛选"),
-    controlType: str | None = Query(
-        None, description="按控制类型筛选：STABLE/SLOW/FAST/LOGIC"
+    controlType: str | None = Query(None, description="按控制类型筛选：STABLE/SLOW/FAST/LOGIC"),
+    level: int | None = Query(
+        None,
+        ge=1,
+        le=3,
+        description="（已废弃，请使用 importanceLevel）按回路重要等级筛选：1/2/3",
+        deprecated=True,
     ),
-    level: int | None = Query(None, ge=1, le=3, description="按回路级别筛选：1/2/3"),
+    importanceLevel: int | None = Query(None, ge=1, le=3, description="按回路重要等级筛选：1/2/3"),
     monitorStatus: bool | None = Query(
         None, description="按监控状态筛选：true=监控中/false=已停用"
     ),
@@ -80,6 +85,8 @@ async def list_loops_endpoint(
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """分页查询回路列表。"""
+    # v5.3 对齐 DDS v4.1：level → importanceLevel（保留 level 向后兼容）
+    effective_level = importanceLevel if importanceLevel is not None else level
     try:
         data = await list_loops(
             db=db,
@@ -90,7 +97,7 @@ async def list_loops_endpoint(
             keyword=keyword,
             loop_type=loopType,
             control_type=controlType,
-            level=level,
+            importance_level=effective_level,
             monitor_status=monitorStatus,
             page=page,
             page_size=pageSize,
@@ -122,7 +129,8 @@ async def create_loop_endpoint(
         operator=user.username,
         loop_type=body.loopType,
         control_type=body.controlType,
-        level=body.level,
+        importance_level=body.importance_level,
+        include_in_evaluation=body.include_in_evaluation,
         modeattr_tag_id=body.modeattrTagId,
         data_retention_days=body.dataRetentionDays,
     )
@@ -146,7 +154,7 @@ async def batch_config_loops_endpoint(
     """批量配置回路（仅 ADMIN）。
 
     两种模式（互斥）：
-    - 更新模式：提供 updates 字段（isMonitored/isStatEnabled/level）
+    - 更新模式：提供 updates 字段（isMonitored/isStatEnabled/importanceLevel/includeInEvaluation）
     - 删除模式：action="delete"（软删除：is_active=False）
 
     所有操作均记录审计日志。
@@ -169,8 +177,10 @@ async def batch_config_loops_endpoint(
                 updates_dict["is_monitored"] = body.updates.is_monitored
             if body.updates.is_stat_enabled is not None:
                 updates_dict["is_stat_enabled"] = body.updates.is_stat_enabled
-            if body.updates.level is not None:
-                updates_dict["level"] = body.updates.level
+            if body.updates.importance_level is not None:
+                updates_dict["importance_level"] = body.updates.importance_level
+            if body.updates.include_in_evaluation is not None:
+                updates_dict["include_in_evaluation"] = body.updates.include_in_evaluation
         affected = await batch_update_loops(
             db=db,
             loop_ids=body.loop_ids,
@@ -286,7 +296,7 @@ async def update_loop_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/级别/APC位号/保留周期）。"""
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期）。"""
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
@@ -300,7 +310,8 @@ async def update_loop_endpoint(
         remark=body.remark,
         loop_type=body.loopType,
         control_type=body.controlType,
-        level=body.level,
+        importance_level=body.importance_level,
+        include_in_evaluation=body.include_in_evaluation,
         modeattr_tag_id=body.modeattrTagId,
         data_retention_days=body.dataRetentionDays,
     )

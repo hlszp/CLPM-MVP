@@ -80,6 +80,16 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'LoopAasSync',
+        path: '/loop/aas-sync',
+        component: () => import('#/views/loop/aas.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:refresh-cw',
+          title: 'AAS 同步状态',
+        },
+      },
+      {
         name: 'LoopDetail',
         path: '/loop/detail/:id',
         component: () => import('#/views/loop/detail.vue'),

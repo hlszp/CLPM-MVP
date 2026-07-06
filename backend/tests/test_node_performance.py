@@ -37,13 +37,13 @@ def _make_loop_snapshot(
     steady_rate: Decimal = Decimal("85.00"),
     effective_auto_rate: Decimal = Decimal("88.00"),
     accuracy_rate: Decimal = Decimal("82.00"),
-    fast_response_rate: Decimal = Decimal("90.00"),
+    fast_rate: Decimal = Decimal("90.00"),
     good_value_rate: Decimal = Decimal("100.00"),
     oscillation_rate: Decimal = Decimal("10.00"),
     saturation_rate: Decimal = Decimal("5.00"),
-    stiction_coeff: Decimal = Decimal("0.10"),
-    steady_state_time: Decimal = Decimal("120.00"),
-    output_travel_index: Decimal = Decimal("35.00"),
+    stiction_index: Decimal = Decimal("0.10"),
+    settling_time: Decimal = Decimal("120.00"),
+    output_trip_index: Decimal = Decimal("35.00"),
     ideal_settling_time: Decimal = Decimal("180.00"),
     ts_start: datetime | None = None,
 ) -> MagicMock:
@@ -58,13 +58,13 @@ def _make_loop_snapshot(
     snap.steady_rate = steady_rate
     snap.effective_auto_rate = effective_auto_rate
     snap.accuracy_rate = accuracy_rate
-    snap.fast_response_rate = fast_response_rate
+    snap.fast_rate = fast_rate
     snap.good_value_rate = good_value_rate
     snap.oscillation_rate = oscillation_rate
     snap.saturation_rate = saturation_rate
-    snap.stiction_coeff = stiction_coeff
-    snap.steady_state_time = steady_state_time
-    snap.output_travel_index = output_travel_index
+    snap.stiction_index = stiction_index
+    snap.settling_time = settling_time
+    snap.output_trip_index = output_trip_index
     snap.ideal_settling_time = ideal_settling_time
     return snap
 
@@ -87,12 +87,12 @@ def _make_node_snapshot(
     snap.effective_auto_rate = Decimal("85.00")
     snap.steady_rate = Decimal("80.00")
     snap.accuracy_rate = Decimal("78.00")
-    snap.fast_response_rate = Decimal("82.00")
+    snap.fast_rate = Decimal("82.00")
     snap.oscillation_rate = Decimal("15.00")
     snap.saturation_rate = Decimal("8.00")
-    snap.stiction_coeff = Decimal("0.15")
-    snap.steady_state_time = Decimal("150.00")
-    snap.output_travel_index = Decimal("42.00")
+    snap.stiction_index = Decimal("0.15")
+    snap.settling_time = Decimal("150.00")
+    snap.output_trip_index = Decimal("42.00")
     snap.ideal_settling_time = Decimal("180.00")
     snap.auto_loop_ratio = Decimal("90.00")
     snap.loop_count = 5
@@ -204,13 +204,13 @@ class TestAggregateNodeSnapshot:
         mock_row.effective_auto_rate = Decimal("85.00")
         mock_row.steady_rate = Decimal("80.00")
         mock_row.accuracy_rate = Decimal("78.00")
-        mock_row.fast_response_rate = Decimal("82.00")
+        mock_row.fast_rate = Decimal("82.00")
         mock_row.oscillation_rate = Decimal("15.00")
         mock_row.saturation_rate = Decimal("8.00")
         # P1 #14: 4 个新增诊断字段
-        mock_row.stiction_coeff = Decimal("0.12")
-        mock_row.steady_state_time = Decimal("135.00")
-        mock_row.output_travel_index = Decimal("38.00")
+        mock_row.stiction_index = Decimal("0.12")
+        mock_row.settling_time = Decimal("135.00")
+        mock_row.output_trip_index = Decimal("38.00")
         mock_row.ideal_settling_time = Decimal("180.00")
         mock_result.one.return_value = mock_row
         db.execute = AsyncMock(return_value=mock_result)
@@ -233,9 +233,9 @@ class TestAggregateNodeSnapshot:
         assert result["status"] == "GOOD"  # score=80 → GOOD
         assert result["score"] == Decimal("80.00")
         # P1 #14: 验证 4 个新增字段被正确序列化
-        assert result["stiction_coeff"] == Decimal("0.12")
-        assert result["steady_state_time"] == Decimal("135.00")
-        assert result["output_travel_index"] == Decimal("38.00")
+        assert result["stiction_index"] == Decimal("0.12")
+        assert result["settling_time"] == Decimal("135.00")
+        assert result["output_trip_index"] == Decimal("38.00")
         assert result["ideal_settling_time"] == Decimal("180.00")
 
 
@@ -266,22 +266,29 @@ class TestSaveNodeSnapshot:
             "effective_auto_rate": Decimal("85.00"),
             "steady_rate": Decimal("80.00"),
             "accuracy_rate": Decimal("78.00"),
-            "fast_response_rate": Decimal("82.00"),
+            "fast_rate": Decimal("82.00"),
             "oscillation_rate": Decimal("15.00"),
             "saturation_rate": Decimal("8.00"),
-            "stiction_coeff": Decimal("0.12"),
-            "steady_state_time": Decimal("135.00"),
-            "output_travel_index": Decimal("38.00"),
+            "stiction_index": Decimal("0.12"),
+            "settling_time": Decimal("135.00"),
+            "output_trip_index": Decimal("38.00"),
             "ideal_settling_time": Decimal("180.00"),
             "auto_loop_ratio": Decimal("66.67"),
             "loop_count": 3,
             "status": "FAIR",
             "algorithm_version": "KPI_CALC_v2.0",
+            # v5.3 新增 unit_kpi_summary 聚合字段
+            "total_loops": 5,
+            "evaluated_loops": 3,
+            "excluded_loops": 1,
+            "inconclusive_loops": 1,
+            "unit_status": "PARTIAL",
         }
 
         result = await save_node_snapshot(db, snap_data)
         assert result["plant_node_id"] == "node-001"
-        assert db.add.call_count == 1
+        # v5.3：并行写入 KpiNodeSnapshotHourly + UnitKpiSummary → db.add 调用 2 次
+        assert db.add.call_count == 2
 
     @pytest.mark.asyncio
     async def test_save_overwrite_existing(self):
@@ -303,12 +310,12 @@ class TestSaveNodeSnapshot:
             "effective_auto_rate": Decimal("85.00"),
             "steady_rate": Decimal("80.00"),
             "accuracy_rate": Decimal("78.00"),
-            "fast_response_rate": Decimal("82.00"),
+            "fast_rate": Decimal("82.00"),
             "oscillation_rate": Decimal("15.00"),
             "saturation_rate": Decimal("8.00"),
-            "stiction_coeff": Decimal("0.12"),
-            "steady_state_time": Decimal("135.00"),
-            "output_travel_index": Decimal("38.00"),
+            "stiction_index": Decimal("0.12"),
+            "settling_time": Decimal("135.00"),
+            "output_trip_index": Decimal("38.00"),
             "ideal_settling_time": Decimal("180.00"),
             "auto_loop_ratio": Decimal("66.67"),
             "loop_count": 3,

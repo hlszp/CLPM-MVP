@@ -421,11 +421,12 @@ function renderWaveformChart() {
     xAxis: {
       axisLabel: {
         formatter: (val: string) => {
-          const d = new Date(toMs(Number(val)));
-          const hh = String(d.getHours()).padStart(2, '0');
-          const mm = String(d.getMinutes()).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          const mo = String(d.getMonth() + 1).padStart(2, '0');
+          // 强制北京时间（UTC+8）：+8h 后用 getUTC* 方法
+          const d = new Date(toMs(Number(val)) + 8 * 3600 * 1000);
+          const hh = String(d.getUTCHours()).padStart(2, '0');
+          const mm = String(d.getUTCMinutes()).padStart(2, '0');
+          const dd = String(d.getUTCDate()).padStart(2, '0');
+          const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
           return `${mo}-${dd} ${hh}:${mm}`;
         },
       },

@@ -32,3 +32,7 @@ openapi.json
 .vscode/
 *.swp
 .DS_Store
+
+# Runtime logs (benchmark / spike cleaning / simulator)
+logs/
+---

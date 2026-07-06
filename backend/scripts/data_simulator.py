@@ -1034,7 +1034,7 @@ async def generate_kpi_snapshots(start: datetime, end: datetime) -> int:
                         "INSERT INTO kpi_snapshot_hourly "
                         "(id, loop_id, ts_start, ts_end, score, good_value_rate, "
                         "auto_mode_rate, effective_auto_rate, steady_rate, "
-                        "accuracy_rate, fast_response_rate, oscillation_rate, "
+                        "accuracy_rate, fast_rate, oscillation_rate, "
                         "saturation_rate, status) VALUES " + ",".join(batch_values)
                     )
                     await session.execute(text(sql))
@@ -1049,7 +1049,7 @@ async def generate_kpi_snapshots(start: datetime, end: datetime) -> int:
                     "INSERT INTO kpi_snapshot_hourly "
                     "(id, loop_id, ts_start, ts_end, score, good_value_rate, "
                     "auto_mode_rate, effective_auto_rate, steady_rate, "
-                    "accuracy_rate, fast_response_rate, oscillation_rate, "
+                    "accuracy_rate, fast_rate, oscillation_rate, "
                     "saturation_rate, status) VALUES " + ",".join(batch_values)
                 )
                 await session.execute(text(sql))

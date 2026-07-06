@@ -54,7 +54,7 @@ def _make_loop(
     loop.id = loop_id
     loop.tag_name = tag_name
     loop.is_active = is_active
-    loop.level = level
+    loop.importance_level = level
     loop.status = status
     loop.updated_by = None
     return loop
@@ -130,7 +130,7 @@ class TestBatchUpdateLoopsLevel:
 
     @pytest.mark.asyncio
     async def test_batch_update_loops_level(self) -> None:
-        """批量更新 level=1，应将所有回路 level 置为 1。"""
+        """批量更新 importance_level=1，应将所有回路 importance_level 置为 1。"""
         loop1 = _make_loop("loop-001", level=3)
         loop2 = _make_loop("loop-002", level=2)
 
@@ -142,26 +142,26 @@ class TestBatchUpdateLoopsLevel:
         result = await batch_update_loops(
             db=db,
             loop_ids=["loop-001", "loop-002"],
-            updates={"level": 1},
+            updates={"importance_level": 1},
             operator="admin",
         )
 
         assert result == 2
-        assert loop1.level == 1
-        assert loop2.level == 1
+        assert loop1.importance_level == 1
+        assert loop2.importance_level == 1
         db.add.assert_called_once()
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_batch_update_loops_invalid_level(self) -> None:
-        """level=4 应抛 ERR_BATCH_INVALID_FIELD。"""
+        """importance_level=4 应抛 ERR_BATCH_INVALID_FIELD。"""
         db = AsyncMock()
 
         with pytest.raises(BizError) as exc_info:
             await batch_update_loops(
                 db=db,
                 loop_ids=["loop-001"],
-                updates={"level": 4},
+                updates={"importance_level": 4},
                 operator="admin",
             )
         assert exc_info.value.code == "ERR_BATCH_INVALID_FIELD"
@@ -283,8 +283,9 @@ class TestLoopBatchUpdatesMutex:
 
     def test_both_monitor_and_stat_rejected(self) -> None:
         """同时传 isMonitored 和 isStatEnabled 应被 Schema 拒绝。"""
-        from app.schemas.loop_batch import LoopBatchUpdates
         from pydantic import ValidationError
+
+        from app.schemas.loop_batch import LoopBatchUpdates
 
         with pytest.raises(ValidationError) as exc_info:
             LoopBatchUpdates(is_monitored=True, is_stat_enabled=False)
@@ -324,7 +325,7 @@ class TestBatchUpdateEmptyList:
             await batch_update_loops(
                 db=db,
                 loop_ids=[],
-                updates={"level": 1},
+                updates={"importance_level": 1},
                 operator="admin",
             )
         assert exc_info.value.code == "ERR_BATCH_EMPTY"

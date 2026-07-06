@@ -52,7 +52,7 @@ export namespace LoopApi {
     /** 准确度权重 */
     accuracy_rate: number;
     /** 快速率权重 */
-    fast_response_rate: number;
+    fast_rate: number;
     /** 振荡率权重 */
     oscillation_rate: number;
     /** 饱和率权重 */
@@ -92,7 +92,8 @@ export namespace LoopApi {
     /** 控制类型（STABLE/SLOW/FAST/LOGIC），用于评分权重分类 */
     controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
     /** 回路级别（1/2/3），用于级别权重评分 */
-    level?: 1 | 2 | 3;
+    importanceLevel?: 1 | 2 | 3;
+    includeInEvaluation?: boolean | null;
     isActive: boolean;
     status: LoopStatus;
     score: number;
@@ -108,12 +109,14 @@ export namespace LoopApi {
     /** 控制类型筛选 */
     controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
     /** 级别筛选 */
-    level?: 1 | 2 | 3;
+    importanceLevel?: 1 | 2 | 3;
     /** 监控状态筛选（true=监控中/false=已停用） */
     monitorStatus?: boolean;
     isActive?: boolean;
     status?: LoopStatus;
     keyword?: string;
+    /** 参评状态筛选（v5.3：true=参评/false=不参评） */
+    includeInEvaluation?: boolean;
   }
 
   /** 创建回路参数（IDS v3.2 §2.2.8） */
@@ -125,7 +128,9 @@ export namespace LoopApi {
     /** 控制类型 */
     controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
     /** 回路级别 */
-    level?: 1 | 2 | 3;
+    importanceLevel?: 1 | 2 | 3;
+    /** 是否参与评估（v5.3：默认 true） */
+    includeInEvaluation?: boolean;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -139,7 +144,9 @@ export namespace LoopApi {
     /** 控制类型 */
     controlType?: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
     /** 回路级别 */
-    level?: 1 | 2 | 3;
+    importanceLevel?: 1 | 2 | 3;
+    /** 是否参与评估（v5.3） */
+    includeInEvaluation?: boolean;
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
@@ -334,7 +341,7 @@ export namespace LoopApi {
     effective_auto_rate: number;
     steady_rate: number;
     accuracy_rate: number;
-    fast_response_rate: number;
+    fast_rate: number;
     oscillation_rate: number;
     saturation_rate: number;
     composite_score: number;
@@ -402,7 +409,9 @@ export namespace LoopApi {
     /** 是否纳入统计 */
     isStatEnabled?: boolean;
     /** 回路级别 1/2/3 */
-    level?: 1 | 2 | 3;
+    importanceLevel?: 1 | 2 | 3;
+    /** 是否参与评估（v5.3） */
+    includeInEvaluation?: boolean;
   }
 
   /** 批量配置请求（更新模式 / 删除模式互斥） */

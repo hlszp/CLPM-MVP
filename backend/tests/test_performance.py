@@ -110,7 +110,7 @@ def _make_node_snapshot(
     effective_auto_rate: Decimal = Decimal("82.00"),
     steady_rate: Decimal = Decimal("85.00"),
     accuracy_rate: Decimal = Decimal("80.00"),
-    fast_response_rate: Decimal = Decimal("75.00"),
+    fast_rate: Decimal = Decimal("75.00"),
     oscillation_rate: Decimal = Decimal("15.00"),
     saturation_rate: Decimal = Decimal("8.00"),
     auto_loop_ratio: Decimal = Decimal("100.00"),
@@ -131,7 +131,7 @@ def _make_node_snapshot(
     s.effective_auto_rate = effective_auto_rate
     s.steady_rate = steady_rate
     s.accuracy_rate = accuracy_rate
-    s.fast_response_rate = fast_response_rate
+    s.fast_rate = fast_rate
     s.oscillation_rate = oscillation_rate
     s.saturation_rate = saturation_rate
     s.auto_loop_ratio = auto_loop_ratio
@@ -515,7 +515,7 @@ class TestRanking:
             assert "rank" in data[0]
             assert "loopId" in data[0]
             assert "tagName" in data[0]
-            assert "compositeScore" in data[0]
+            assert "score" in data[0]
 
     def test_get_ranking_with_limit(self, client, mock_db, fake_redis) -> None:
         """limit 参数限制返回条数。"""
@@ -767,9 +767,7 @@ class TestPerformanceService:
 
         rule = _make_engine_rule(rule_code="EVAL_CALC_CYCLE", rule_name="计算周期")
         db = AsyncMock()
-        db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(rule)
-        )
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(rule))
         db.add = AsyncMock()
         db.commit = AsyncMock()
 
@@ -778,9 +776,7 @@ class TestPerformanceService:
             "app.services.performance._handle_engine_rule_changed",
             new=AsyncMock(return_value="计算周期已变更，新调度需重启 Celery Beat 进程才能生效"),
         ):
-            result = await update_engine_rule(
-                db, "rule-id", "admin", rule_name="更新计算周期"
-            )
+            result = await update_engine_rule(db, "rule-id", "admin", rule_name="更新计算周期")
 
         # 验证返回结果包含 warning 字段
         assert "warning" in result
@@ -793,9 +789,7 @@ class TestPerformanceService:
 
         rule = _make_engine_rule(rule_code="SCHEDULE_CONCURRENCY", rule_name="并发数")
         db = AsyncMock()
-        db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none_mock(rule)
-        )
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(rule))
         db.add = AsyncMock()
         db.commit = AsyncMock()
 
@@ -803,9 +797,7 @@ class TestPerformanceService:
             "app.services.performance._handle_engine_rule_changed",
             new=AsyncMock(return_value=None),
         ):
-            result = await update_engine_rule(
-                db, "rule-id", "admin", rule_name="更新并发"
-            )
+            result = await update_engine_rule(db, "rule-id", "admin", rule_name="更新并发")
 
         # 非计算周期规则不应返回 warning
         assert "warning" not in result or result.get("warning") is None
@@ -869,9 +861,7 @@ class TestPerformanceService:
 
         # 验证第 1 次 SQL 含 confidence_level 过滤条件（IS NULL OR != 'E'）
         first_stmt = db.execute.call_args_list[0].args[0]
-        sql_text = str(
-            first_stmt.compile(compile_kwargs={"literal_binds": True})
-        ).lower()
+        sql_text = str(first_stmt.compile(compile_kwargs={"literal_binds": True})).lower()
         assert "confidence_level" in sql_text
         # IS NULL 分支：保证 NULL 旧数据仍纳入排行
         assert "is null" in sql_text or "isnull" in sql_text

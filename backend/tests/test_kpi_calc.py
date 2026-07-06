@@ -127,6 +127,31 @@ def _make_scalar_one_or_none_mock(value: object) -> MagicMock:
     return result
 
 
+def _make_select_id_result_mock(snapshot_id: str) -> MagicMock:
+    """构造 _save_snapshot 第二次 db.execute（SELECT id）的返回值。
+
+    _save_snapshot 在 UPSERT 后用 ``select(KpiSnapshotHourly.id)`` 查询实际写入的 id，
+    返回值需支持 ``.first()`` 并返回一个可索引的 row（``row[0]`` 为 id 字符串）。
+    """
+    result = MagicMock()
+    result.first.return_value = (snapshot_id,)
+    return result
+
+
+def _extract_upsert_set_values(upsert_stmt: object) -> dict:
+    """从 postgresql.insert(...).on_conflict_do_update(...) 语句中提取 set_ 字典。
+
+    _save_snapshot 构造的 UPSERT 语句使用 ``on_conflict_do_update(set_=update_cols)``
+    设置冲突时的更新列。SQLAlchemy 将其存储在
+    ``stmt._post_values_clause.update_values_to_set`` 中，是一个
+    ``(column_name_str, value)`` 元组列表。
+
+    Returns:
+        dict[col_name_str, value]：列名到值的映射。
+    """
+    return dict(upsert_stmt._post_values_clause.update_values_to_set)
+
+
 def _make_trend_point(ts: object, value: float, quality: str = "GOOD") -> dict:
     """构造 TDengine 时序数据点。"""
     return {"ts": ts, "value": value, "quality": quality}
@@ -136,7 +161,7 @@ def _make_full_metric_configs() -> dict[str, MagicMock]:
     """构造完整的 8 大 KPI 指标配置（对齐国标 4 分项评分公式）。
 
     参与评分的 4 指标（weight > 0）：
-        accuracy_rate(30) + fast_response_rate(20) + steady_rate(30) + effective_auto_rate(20) = 100
+        accuracy_rate(30) + fast_rate(20) + steady_rate(30) + effective_auto_rate(20) = 100
     仅显示的指标（weight = 0）：好值率/自控率/振荡率/饱和率
     """
     return {
@@ -145,7 +170,7 @@ def _make_full_metric_configs() -> dict[str, MagicMock]:
         "effective_auto_rate": _make_metric_config("effective_auto_rate", Decimal("20")),
         "steady_rate": _make_metric_config("steady_rate", Decimal("30")),
         "accuracy_rate": _make_metric_config("accuracy_rate", Decimal("30")),
-        "fast_response_rate": _make_metric_config("fast_response_rate", Decimal("20")),
+        "fast_rate": _make_metric_config("fast_rate", Decimal("20")),
         "oscillation_rate": _make_metric_config("oscillation_rate", Decimal("0")),
         "saturation_rate": _make_metric_config("saturation_rate", Decimal("0")),
     }
@@ -412,11 +437,12 @@ class TestSaveSnapshot:
     """测试 _save_snapshot() 幂等写入。"""
 
     @pytest.mark.asyncio
-    async def test_new_snapshot_calls_add(self) -> None:
-        """新增快照（existing=None）调用 db.add，返回正确字典。"""
+    async def test_new_snapshot_executes_upsert(self) -> None:
+        """新增快照（existing=None）通过 UPSERT 写入，db.execute 调用 2 次。"""
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         db.add = MagicMock()
+        # 第一次 execute（UPSERT）返回无结果；第二次 execute（SELECT id）返回新 UUID
+        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("new-snapshot-id")])
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -431,8 +457,12 @@ class TestSaveSnapshot:
             good_value_rate=Decimal("96.80"),
         )
 
-        db.add.assert_called_once()
+        # UPSERT 模式：db.execute 被调用 2 次（1 次 UPSERT + 1 次 SELECT id），不调用 db.add
+        assert db.execute.call_count == 2
+        db.add.assert_not_called()
+        # 返回字典关键字段
         assert result["loopId"] == "loop-1"
+        assert result["snapshotId"] == "new-snapshot-id"
         assert result["status"] == "SUCCESS"
         assert result["score"] == 78.5
         assert result["algorithmVersion"] == ALGORITHM_VERSION
@@ -440,31 +470,21 @@ class TestSaveSnapshot:
         assert result["tsEnd"] == ts_end.isoformat()
 
     @pytest.mark.asyncio
-    async def test_update_existing_snapshot_no_add(self) -> None:
-        """更新已有快照（existing 存在）不调用 db.add，更新字段。"""
-        existing = MagicMock()
-        existing.id = "existing-snapshot-id"
-        existing.ts_end = None
-        existing.status = None
-        existing.score = None
-        existing.good_value_rate = None
-        existing.auto_mode_rate = None
-        existing.steady_rate = None
-        existing.accuracy_rate = None
-        existing.oscillation_rate = None
-        existing.saturation_rate = None
-        # v4.0 血缘字段
-        existing.ideal_settling_time = None
-        existing.algorithm_version = None
-        existing.sampling_freq = None
-        existing.quality_policy = None
-        existing.valid_rate = None
-        existing.confidence_level = None
-        existing.data_lineage = None
+    async def test_update_existing_snapshot_executes_upsert(self) -> None:
+        """更新已有快照（UPSERT 触发 UPDATE 分支）不调用 db.add，返回字典正确。
 
+        v4.0 实现使用 ``INSERT ... ON CONFLICT DO UPDATE``，由数据库层处理
+        UPDATE 分支，应用层不再读取/修改 ``existing`` 对象。本测试验证：
+        1. db.execute 被调用 2 次（UPSERT + SELECT id）
+        2. 不调用 db.add
+        3. 返回字典的 snapshotId 来自 UPSERT 后的 SELECT 查询（即旧 id）
+        """
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(existing))
         db.add = MagicMock()
+        # 第二次 execute（SELECT id）返回已存在快照的 id（UPDATE 分支不生成新 id）
+        db.execute = AsyncMock(
+            side_effect=[None, _make_select_id_result_mock("existing-snapshot-id")]
+        )
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -478,9 +498,8 @@ class TestSaveSnapshot:
         )
 
         db.add.assert_not_called()
-        # 字段被更新（_save_snapshot 剥离 tzinfo 适配 PG TIMESTAMP WITHOUT TIME ZONE）
-        assert existing.ts_end == ts_end.replace(tzinfo=None)
-        assert existing.status == "INCONCLUSIVE"
+        assert db.execute.call_count == 2
+        # 返回字典使用 UPSERT 后 SELECT 出的 id（即已存在快照的 id）
         assert result["snapshotId"] == "existing-snapshot-id"
         assert result["status"] == "INCONCLUSIVE"
         assert result["score"] is None
@@ -509,11 +528,17 @@ class TestSaveSnapshot:
         assert result["score"] == 50.0
 
     @pytest.mark.asyncio
-    async def test_lineage_fields_written_on_new(self) -> None:
-        """新增快照时 7 个数据血缘字段正确写入。"""
+    async def test_lineage_fields_in_upsert_stmt(self) -> None:
+        """新增快照时 7 个数据血缘字段在 UPSERT 语句的 set_ 字典中正确写入。
+
+        v4.0 实现使用 ``postgresql.insert(...).on_conflict_do_update(set_=...)``
+        构造 UPSERT，不再通过 ``db.add`` 写入 ORM 对象。因此无法再断言
+        ``snapshot.ideal_settling_time`` 等属性；改为捕获第一次 ``db.execute``
+        调用的 UPSERT 语句，从其 ``set_`` 字典验证血缘字段。
+        """
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         db.add = MagicMock()
+        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("new-uuid")])
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -540,51 +565,30 @@ class TestSaveSnapshot:
             data_lineage=lineage_dict,
         )
 
-        # 验证 db.add 被调用，且传入的 KpiSnapshotHourly 对象含血缘字段
-        db.add.assert_called_once()
-        snapshot = db.add.call_args[0][0]
-        assert snapshot.ideal_settling_time == Decimal("30.0")
-        assert snapshot.algorithm_version == "KPI_CALC_v2.0"
-        assert snapshot.sampling_freq == "1s"
-        assert snapshot.quality_policy == "KEEP_ALL_WITH_VALIDITY"
-        assert snapshot.valid_rate == Decimal("0.9500")
-        assert snapshot.confidence_level == "A"
-        assert snapshot.data_lineage == lineage_dict
+        # 捕获第一次 db.execute 调用的 UPSERT 语句
+        assert db.execute.call_count == 2
+        upsert_stmt = db.execute.call_args_list[0][0][0]
+        set_dict = _extract_upsert_set_values(upsert_stmt)
+        # 验证 7 个数据血缘字段在 ON CONFLICT DO UPDATE 的 set_ 字典中正确写入
+        assert set_dict["ideal_settling_time"] == Decimal("30.0")
+        assert set_dict["algorithm_version"] == "KPI_CALC_v2.0"
+        assert set_dict["sampling_freq"] == "1s"
+        assert set_dict["quality_policy"] == "KEEP_ALL_WITH_VALIDITY"
+        assert set_dict["valid_rate"] == Decimal("0.9500")
+        assert set_dict["confidence_level"] == "A"
+        assert set_dict["data_lineage"] == lineage_dict
 
     @pytest.mark.asyncio
-    async def test_lineage_fields_updated_on_existing(self) -> None:
-        """更新已有快照时 7 个数据血缘字段被正确更新。"""
-        existing = MagicMock()
-        existing.id = "snap-1"
-        # 所有字段初始为 None
-        for attr in (
-            "ts_end",
-            "status",
-            "score",
-            "good_value_rate",
-            "auto_mode_rate",
-            "effective_auto_rate",
-            "steady_rate",
-            "accuracy_rate",
-            "fast_response_rate",
-            "oscillation_rate",
-            "saturation_rate",
-            "stiction_coeff",
-            "steady_state_time",
-            "output_travel_index",
-            "ideal_settling_time",
-            "algorithm_version",
-            "sampling_freq",
-            "quality_policy",
-            "valid_rate",
-            "confidence_level",
-            "data_lineage",
-        ):
-            setattr(existing, attr, None)
+    async def test_lineage_fields_in_upsert_set_on_existing(self) -> None:
+        """更新已有快照时 7 个数据血缘字段在 UPSERT 的 set_ 字典中被正确更新。
 
+        UPSERT 的 ON CONFLICT DO UPDATE 分支会用 set_ 字典覆盖所有字段（包括
+        血缘字段），无论新增还是更新。本测试验证 UPDATE 分支下 set_ 字典
+        的血缘字段值正确（验证覆盖更新语义）。
+        """
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(existing))
         db.add = MagicMock()
+        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("existing-snap-id")])
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -606,13 +610,16 @@ class TestSaveSnapshot:
         )
 
         db.add.assert_not_called()
-        assert existing.ideal_settling_time == Decimal("60.0")
-        assert existing.algorithm_version == "KPI_CALC_v2.0"
-        assert existing.sampling_freq == "5s"
-        assert existing.quality_policy == "KEEP_ALL_WITH_VALIDITY"
-        assert existing.valid_rate == Decimal("0.8800")
-        assert existing.confidence_level == "B"
-        assert existing.data_lineage == {"key": "value"}
+        assert db.execute.call_count == 2
+        upsert_stmt = db.execute.call_args_list[0][0][0]
+        set_dict = _extract_upsert_set_values(upsert_stmt)
+        assert set_dict["ideal_settling_time"] == Decimal("60.0")
+        assert set_dict["algorithm_version"] == "KPI_CALC_v2.0"
+        assert set_dict["sampling_freq"] == "5s"
+        assert set_dict["quality_policy"] == "KEEP_ALL_WITH_VALIDITY"
+        assert set_dict["valid_rate"] == Decimal("0.8800")
+        assert set_dict["confidence_level"] == "B"
+        assert set_dict["data_lineage"] == {"key": "value"}
 
 
 # ===========================================================================
@@ -1106,8 +1113,7 @@ class TestCeleryTasks:
             assert result == expected
 
     def test_calculate_custom_loop_kpi_with_ts_end(self) -> None:
-        """calculate_custom_loop_kpi 透传 ts_start + ts_end 给 _do_calculate_custom_loop（P1 #12）."""
-        from datetime import UTC, datetime
+        """透传 ts_start+ts_end 给 _do_calculate_custom_loop（P1 #12）."""
 
         from app.tasks.kpi_calc import calculate_custom_loop_kpi
 
@@ -1128,7 +1134,7 @@ class TestCeleryTasks:
             assert call_args.args[3] == "2026-06-22T09:30:00Z"
 
     def test_calculate_custom_loop_kpi_ts_end_none(self) -> None:
-        """calculate_custom_loop_kpi 不传 ts_end 时 _do_calculate_custom_loop 收到 None（P1 #12 默认行为）."""
+        """不传 ts_end 时 _do_calculate_custom_loop 收到 None（P1 #12 默认）."""
         from app.tasks.kpi_calc import calculate_custom_loop_kpi
 
         expected = {"loopId": "loop-1", "taskId": "t-1", "status": "SUCCESS"}
@@ -1136,9 +1142,7 @@ class TestCeleryTasks:
             "app.tasks.kpi_calc._do_calculate_custom_loop", new_callable=AsyncMock
         ) as mock_fn:
             mock_fn.return_value = expected
-            result = calculate_custom_loop_kpi.run(
-                "t-1", "loop-1", "2026-06-22T08:00:00Z"
-            )
+            result = calculate_custom_loop_kpi.run("t-1", "loop-1", "2026-06-22T08:00:00Z")
             assert result == expected
             call_args = mock_fn.call_args
             assert call_args.args[2] == "2026-06-22T08:00:00Z"
@@ -1178,7 +1182,9 @@ class TestDoCalculateCustomLoopTimeWindow:
                 return_value=mock_engine,
             ),
             patch("app.tasks.kpi_calc._calculate_loop_kpi", new_callable=AsyncMock) as mock_calc,
-            patch("app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock) as mock_weights,
+            patch(
+                "app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock
+            ) as mock_weights,
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -1227,7 +1233,9 @@ class TestDoCalculateCustomLoopTimeWindow:
                 return_value=mock_engine,
             ),
             patch("app.tasks.kpi_calc._calculate_loop_kpi", new_callable=AsyncMock) as mock_calc,
-            patch("app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock) as mock_weights,
+            patch(
+                "app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock
+            ) as mock_weights,
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -1388,7 +1396,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         # MetricConfig: a=50, f=30, s=20 (sum=100)
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("50")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("30")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("20")),
         }
         # LoopTypeWeight STABLE: a=0.2, f=0.3, s=0.5（应被覆盖）
@@ -1412,7 +1420,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         # sum=200（异常输入但容错）
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("100")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("60")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("60")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("40")),
         }
         result = _build_weights_map(None, "STABLE", metric_configs)
@@ -1428,7 +1436,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         # accuracy_rate.weight=null, fast/steady 已配置（应回退）
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=None),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("30")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("20")),
         }
         type_weights = {
@@ -1450,7 +1458,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         """MetricConfig.weight 含 0 时回退到 LoopTypeWeight（视作未配置）。"""
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("0")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("50")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("50")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("50")),
         }
         type_weights = {
@@ -1472,7 +1480,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         # 缺 steady_rate
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("50")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("30")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("30")),
         }
         type_weights = {
             "STABLE": {
@@ -1492,7 +1500,7 @@ class TestBuildWeightsMapMetricConfigPriority:
         """仅有 MetricConfig.weight（type_weights=None）时仍能解析。"""
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("40")),
-            "fast_response_rate": _make_metric_config("fast_response_rate", weight=Decimal("35")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("35")),
             "steady_rate": _make_metric_config("steady_rate", weight=Decimal("25")),
         }
         result = _build_weights_map(None, "STABLE", metric_configs)
@@ -1545,10 +1553,10 @@ class TestComputeKpisThreeLayer:
             "good_value_rate",
             "oscillation_rate",
             "saturation_rate",
-            "stiction_coeff",
-            "output_travel_index",
+            "stiction_index",
+            "output_trip_index",
             "auto_mode_rate",
-            "steady_state_time",
+            "settling_time",
         ]
         bundles = [_make_bundle(code) for code in db_codes]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
@@ -1586,8 +1594,8 @@ class TestComputeKpisThreeLayer:
         assert composite == composite_result
 
     def test_bundle_db_code_mapped_to_calculator_code(self) -> None:
-        """数据库列名正确映射为计算器代码（如 fast_response_rate → fast_rate）。"""
-        bundles = [_make_bundle("fast_response_rate")]
+        """数据库列名正确映射为计算器代码（如 fast_rate → fast_rate）。"""
+        bundles = [_make_bundle("fast_rate")]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
 
         mock_calc = MagicMock()
@@ -1604,7 +1612,7 @@ class TestComputeKpisThreeLayer:
             )
             _compute_kpis_three_layer(bundles, config_bundle, None)
 
-        # get_calculator 被调用时传入的是计算器代码 "fast_rate" 而非 "fast_response_rate"
+        # get_calculator 被调用时传入的是计算器代码 "fast_rate" 而非 "fast_rate"
         called_codes = [call.args[0] for call in mock_get_calc.call_args_list]
         assert "fast_rate" in called_codes
 
@@ -1637,8 +1645,8 @@ class TestComputeKpisThreeLayer:
     def test_layer2_fast_rate_gets_settling_dependencies(self) -> None:
         """Layer2 fast_rate 注入 settling_time + ideal_settling_time 依赖。"""
         bundles = [
-            _make_bundle("steady_state_time"),  # DB code for settling_time
-            _make_bundle("fast_response_rate"),  # DB code for fast_rate
+            _make_bundle("settling_time"),  # DB code for settling_time
+            _make_bundle("fast_rate"),  # DB code for fast_rate
         ]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
 
@@ -1750,16 +1758,14 @@ class TestExtractKpiValues:
 
         # 验证关键映射
         assert kpi_values["accuracy_rate"] == Decimal("90.0")
-        assert kpi_values["fast_response_rate"] == Decimal("80.0")  # fast_rate → fast_response_rate
+        assert kpi_values["fast_rate"] == Decimal("80.0")  # fast_rate → fast_rate
         assert kpi_values["steady_rate"] == Decimal("70.0")  # stability_rate → steady_rate
         assert kpi_values["effective_auto_rate"] == Decimal("60.0")
-        assert kpi_values["stiction_coeff"] == Decimal("0.5")  # stiction_index → stiction_coeff
-        assert kpi_values["steady_state_time"] == Decimal(
-            "45.0"
-        )  # settling_time → steady_state_time
-        assert kpi_values["output_travel_index"] == Decimal(
+        assert kpi_values["stiction_index"] == Decimal("0.5")  # stiction_index → stiction_index
+        assert kpi_values["settling_time"] == Decimal("45.0")  # settling_time → settling_time
+        assert kpi_values["output_trip_index"] == Decimal(
             "12.0"
-        )  # output_trip_index → output_travel_index
+        )  # output_trip_index → output_trip_index
         assert kpi_values["ideal_settling_time"] == Decimal("30.0")
 
     def test_none_values_preserved(self) -> None:
@@ -1768,7 +1774,7 @@ class TestExtractKpiValues:
         kpi_values = _extract_kpi_values(metric_results)
 
         assert kpi_values["accuracy_rate"] is None
-        assert kpi_values["fast_response_rate"] is None
+        assert kpi_values["fast_rate"] is None
         assert kpi_values["steady_rate"] == Decimal("70.0")
 
     def test_composite_score_skipped(self) -> None:
@@ -1916,11 +1922,11 @@ class TestMetricCodeMapping:
 
     def test_key_mappings_correct(self) -> None:
         """关键映射对正确（DB 列名 → 计算器代码）。"""
-        assert _DB_TO_CALCULATOR_METRIC_CODE["fast_response_rate"] == "fast_rate"
+        assert _DB_TO_CALCULATOR_METRIC_CODE["fast_rate"] == "fast_rate"
         assert _DB_TO_CALCULATOR_METRIC_CODE["steady_rate"] == "stability_rate"
-        assert _DB_TO_CALCULATOR_METRIC_CODE["stiction_coeff"] == "stiction_index"
-        assert _DB_TO_CALCULATOR_METRIC_CODE["steady_state_time"] == "settling_time"
-        assert _DB_TO_CALCULATOR_METRIC_CODE["output_travel_index"] == "output_trip_index"
+        assert _DB_TO_CALCULATOR_METRIC_CODE["stiction_index"] == "stiction_index"
+        assert _DB_TO_CALCULATOR_METRIC_CODE["settling_time"] == "settling_time"
+        assert _DB_TO_CALCULATOR_METRIC_CODE["output_trip_index"] == "output_trip_index"
 
 
 # ===========================================================================
@@ -2085,9 +2091,7 @@ class TestPersistSnapshotLineagePassThrough:
     @pytest.mark.asyncio
     async def test_persist_standard_snapshot_still_writes_lineage_fields(self) -> None:
         """_persist_snapshot 标准任务路径仍透传 sampling_freq/quality_policy 到 _save_snapshot。"""
-        with patch(
-            "app.tasks.kpi_calc._save_snapshot", new_callable=AsyncMock
-        ) as mock_save:
+        with patch("app.tasks.kpi_calc._save_snapshot", new_callable=AsyncMock) as mock_save:
             mock_save.return_value = {"loopId": "loop-1"}
 
             ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
@@ -2114,3 +2118,150 @@ class TestPersistSnapshotLineagePassThrough:
             assert call_kwargs["quality_policy"] == "TDengine"
             assert "task_id" not in call_kwargs
 
+
+# ===========================================================================
+# 任务取消逻辑测试（_is_task_cancelled + _do_backfill 提前终止）
+# ===========================================================================
+
+
+class TestIsTaskCancelled:
+    """_is_task_cancelled — 检测任务取消标志."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_status_is_cancelled(self) -> None:
+        """Redis 中 status=CANCELLED → 返回 True."""
+        from app.tasks.kpi_calc import _is_task_cancelled
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="CANCELLED")
+        with patch("app.core.redis.redis_client", fake_redis):
+            result = await _is_task_cancelled("task-001")
+        assert result is True
+        fake_redis.hget.assert_called_once_with("task:task-001", "status")
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_status_is_running(self) -> None:
+        """Redis 中 status=RUNNING → 返回 False."""
+        from app.tasks.kpi_calc import _is_task_cancelled
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="RUNNING")
+        with patch("app.core.redis.redis_client", fake_redis):
+            result = await _is_task_cancelled("task-002")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_task_not_in_redis(self) -> None:
+        """任务不存在（hget 返回 None）→ 返回 False."""
+        from app.tasks.kpi_calc import _is_task_cancelled
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value=None)
+        with patch("app.core.redis.redis_client", fake_redis):
+            result = await _is_task_cancelled("task-nonexistent")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_true_for_lowercase_cancelled(self) -> None:
+        """status=cancelled（小写）→ 应识别为已取消."""
+        from app.tasks.kpi_calc import _is_task_cancelled
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="cancelled")
+        with patch("app.core.redis.redis_client", fake_redis):
+            result = await _is_task_cancelled("task-003")
+        assert result is True
+
+
+class TestDoBackfillCancellation:
+    """_do_backfill 在任务被取消时提前终止.
+
+    设计依据：当用户 POST /tasks/{task_id}/cancel 后，
+    _do_backfill 应在下个窗口开始前检测到 CANCELLED 状态并主动返回。
+    """
+
+    @pytest.mark.asyncio
+    async def test_backfill_returns_cancelled_when_status_is_cancelled(self) -> None:
+        """第一个窗口开始前检测到取消 → 立即返回 cancelled=True."""
+        from app.tasks.kpi_calc import _do_backfill
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="CANCELLED")
+        with (
+            patch("app.core.redis.redis_client", fake_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
+        ):
+            result = await _do_backfill(
+                ts_start="2026-07-06T08:00:00+00:00",
+                ts_end="2026-07-06T10:00:00+00:00",
+                loop_ids=None,
+                task_id="task-cancel-test",
+            )
+        # 应当提前终止，未执行任何窗口计算
+        assert result["cancelled"] is True
+        assert result["completed_windows"] == 0
+        assert result["total_windows"] == 2
+        mock_calc.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_backfill_completes_when_not_cancelled(self) -> None:
+        """任务未取消 → 正常执行所有窗口，返回 cancelled 字段不出现或为 False."""
+        from app.tasks.kpi_calc import _do_backfill
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="RUNNING")
+        with (
+            patch("app.core.redis.redis_client", fake_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
+        ):
+            mock_calc.return_value = {
+                "loop_success": 1,
+                "loop_inconclusive": 0,
+                "loop_failed": 0,
+                "node_success": 0,
+                "failed_window_list": [],
+            }
+            result = await _do_backfill(
+                ts_start="2026-07-06T08:00:00+00:00",
+                ts_end="2026-07-06T09:00:00+00:00",
+                loop_ids=None,
+                task_id="task-running-test",
+            )
+        # 1 个窗口正常完成
+        assert mock_calc.call_count == 1
+        assert result["total_windows"] == 1
+        # 未提前终止时，返回字典不含 cancelled 标志
+        assert "cancelled" not in result or result["cancelled"] is False
+
+    @pytest.mark.asyncio
+    async def test_backfill_no_task_id_skips_cancel_check(self) -> None:
+        """task_id=None → 不查询 Redis 取消标志，正常执行."""
+        from app.tasks.kpi_calc import _do_backfill
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="CANCELLED")  # 即使为 CANCELLED
+        with (
+            patch("app.core.redis.redis_client", fake_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
+        ):
+            mock_calc.return_value = {
+                "loop_success": 0,
+                "loop_inconclusive": 0,
+                "loop_failed": 0,
+                "node_success": 0,
+                "failed_window_list": [],
+            }
+            result = await _do_backfill(
+                ts_start="2026-07-06T08:00:00+00:00",
+                ts_end="2026-07-06T10:00:00+00:00",
+                loop_ids=None,
+                task_id=None,
+            )
+        # task_id=None 时不应查询取消标志
+        fake_redis.hget.assert_not_called()
+        # 2 个窗口都执行
+        assert mock_calc.call_count == 2
+        assert result["total_windows"] == 2

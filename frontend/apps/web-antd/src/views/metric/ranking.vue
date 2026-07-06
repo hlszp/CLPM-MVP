@@ -4,15 +4,19 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 /**
  * S3-METRIC-010 低效回路排行页
  *
- * 对齐 IDS v3.2 §2.3 + PRD §4.3
+ * 对齐 IDS v3.2 §2.3 + PRD §4.3 + UIUX v5.3 ⑥
  * - 顶部 4 个统计 KPI 卡片（总回路数/低效回路数/平均评分/最低评分）
- * - 筛选栏（装置选择/评分范围/排序字段/排序方向/搜索框）
+ * - 筛选栏（装置选择/评分范围/排序字段/排序方向/搜索框 + 参评状态筛选开关）
  * - 表格展示排行（排名/位号/装置/评分/6大KPI/状态/预诊标签/操作）
  * - 点击行打开侧边抽屉展示回路摘要
  * - 点击"查看详情"跳转回路详情页 /loop/detail/:id
  * - 排名前 3 用红/黄/橙色标示
+ * - 默认仅展示参评回路（include_in_evaluation !== false）
+ * - "包含不参评回路"开关：开启后展示不参评回路，并以淡灰行底色 + "不参评"标签区分
+ * - "仅显示有效评分"开关：隐藏 INCONCLUSIVE 回路
+ * - INCONCLUSIVE 回路综合评分显示"—"
  */
-import type { KpiStatus, MetricApi, TimeWindow } from '#/api/metric';
+import type { ConfidenceLevel, KpiStatus, MetricApi, TimeWindow } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onMounted, reactive, ref } from 'vue';
@@ -23,9 +27,11 @@ import { Page } from '@vben/common-ui';
 import {
   Button,
   Drawer,
+  Empty,
   Input,
   InputNumber,
   Select,
+  Switch,
   Table,
   Tag,
 } from 'ant-design-vue';
@@ -53,10 +59,15 @@ const filter = reactive({
   timeWindow: 'today' as TimeWindow,
   scoreMin: undefined as number | undefined,
   scoreMax: undefined as number | undefined,
-  sortBy: 'compositeScore' as string,
+  sortBy: 'score' as string,
   sortOrder: 'asc' as 'asc' | 'desc',
   keyword: '',
 });
+
+/** 参评状态筛选开关（前端过滤，不触发后端请求） */
+const includeExcluded = ref(false);
+/** 仅显示有效评分（隐藏 INCONCLUSIVE 回路） */
+const onlyValidScore = ref(false);
 
 const pagination = reactive({
   page: 1,
@@ -72,13 +83,13 @@ const timeWindowOptions = [
 ];
 
 const sortByOptions = [
-  { label: '综合评分', value: 'compositeScore' },
+  { label: '综合评分', value: 'score' },
   { label: '好值率', value: 'goodValueRate' },
   { label: '自控率', value: 'autoModeRate' },
   { label: '有效自控率', value: 'effectiveAutoRate' },
   { label: '平稳率', value: 'steadyRate' },
   { label: '准确率', value: 'accuracyRate' },
-  { label: '快速率', value: 'fastResponseRate' },
+  { label: '快速率', value: 'fastRate' },
   { label: '振荡率', value: 'oscillationRate' },
   { label: '饱和率', value: 'saturationRate' },
 ];
@@ -120,8 +131,8 @@ const columns: TableColumnsType = [
   },
   {
     title: '综合评分',
-    dataIndex: 'compositeScore',
-    key: 'compositeScore',
+    dataIndex: 'score',
+    key: 'score',
     width: 100,
     align: 'right',
   },
@@ -188,6 +199,35 @@ const columns: TableColumnsType = [
 const drawerVisible = ref(false);
 const selectedLoop = ref<MetricApi.RankingItem | null>(null);
 
+/**
+ * 判断回路是否为 INCONCLUSIVE（综合评分无效）
+ * - status === 'INCONCLUSIVE'，或
+ * - confidenceLevel === 'E'（可信度 E 级标记为 INCONCLUSIVE）
+ */
+function isInconclusive(item: MetricApi.RankingItem): boolean {
+  return (
+    item.status === 'INCONCLUSIVE' ||
+    item.confidenceLevel === ('E' as ConfidenceLevel)
+  );
+}
+
+/**
+ * 前端过滤后的列表：
+ * 1. 默认仅展示参评回路（includeInEvaluation !== false）
+ * 2. includeExcluded 开启后展示不参评回路
+ * 3. onlyValidScore 开启后隐藏 INCONCLUSIVE 回路
+ */
+const filteredList = computed<MetricApi.RankingItem[]>(() => {
+  let list = rankingList.value;
+  if (!includeExcluded.value) {
+    list = list.filter((item) => item.includeInEvaluation !== false);
+  }
+  if (onlyValidScore.value) {
+    list = list.filter((item) => !isInconclusive(item));
+  }
+  return list;
+});
+
 const kpiStripItems = computed<KpiStripItem[]>(() => [
   {
     key: 'total',
@@ -222,15 +262,17 @@ const kpiStripItems = computed<KpiStripItem[]>(() => [
 
 const drawerSummaryItems = computed<SummaryItem[]>(() => {
   if (!selectedLoop.value) return [];
+  const inconclusive = isInconclusive(selectedLoop.value);
   return [
     {
       key: 'score',
       label: '综合评分',
-      value: Number(selectedLoop.value.compositeScore).toFixed(1),
-      status:
-        selectedLoop.value.compositeScore >= 80
+      value: inconclusive ? '—' : Number(selectedLoop.value.score).toFixed(1),
+      status: inconclusive
+        ? 'neutral'
+        : selectedLoop.value.score >= 80
           ? 'success'
-          : selectedLoop.value.compositeScore >= 60
+          : selectedLoop.value.score >= 60
             ? 'warning'
             : 'danger',
     },
@@ -255,7 +297,7 @@ const drawerSummaryItems = computed<SummaryItem[]>(() => {
 });
 
 const stats = computed(() => {
-  const list = rankingList.value;
+  const list = filteredList.value;
   if (list.length === 0) {
     return { total: 0, badCount: 0, avgScore: 0, minScore: 0 };
   }
@@ -265,11 +307,15 @@ const stats = computed(() => {
   let min = 100;
   for (const item of list) {
     if (item.status === 'PARTIAL') badCount++;
-    sum += Number(item.compositeScore) || 0;
-    const score = Number(item.compositeScore) || 100;
-    if (score < min) min = score;
+    // INCONCLUSIVE 回路不参与评分统计
+    if (!isInconclusive(item)) {
+      sum += Number(item.score) || 0;
+      const score = Number(item.score) || 100;
+      if (score < min) min = score;
+    }
   }
-  const avg = sum / total;
+  const validCount = list.filter((i) => !isInconclusive(i)).length || 1;
+  const avg = sum / validCount;
   return {
     total,
     badCount,
@@ -302,10 +348,10 @@ async function loadList() {
     // 客户端过滤评分范围和关键字
     let list = data || [];
     if (filter.scoreMin !== null && filter.scoreMin !== undefined) {
-      list = list.filter((i) => i.compositeScore >= (filter.scoreMin ?? 0));
+      list = list.filter((i) => i.score >= (filter.scoreMin ?? 0));
     }
     if (filter.scoreMax !== null && filter.scoreMax !== undefined) {
-      list = list.filter((i) => i.compositeScore <= (filter.scoreMax ?? 100));
+      list = list.filter((i) => i.score <= (filter.scoreMax ?? 100));
     }
     if (filter.keyword) {
       const kw = filter.keyword.toLowerCase();
@@ -316,12 +362,20 @@ async function loadList() {
       );
     }
     rankingList.value = list;
+    // pagination.total 由 filteredList 计算属性派生（参评状态筛选开关变化时同步更新）
     pagination.total = list.length;
+    pagination.page = 1;
   } catch {
     // 错误已由拦截器处理
   } finally {
     loading.value = false;
   }
+}
+
+/** 监听参评状态筛选开关变化时重置分页 */
+function handleEvalFilterChange() {
+  pagination.page = 1;
+  pagination.total = filteredList.value.length;
 }
 
 function handleSearch() {
@@ -431,11 +485,35 @@ onMounted(() => {
         <Button type="primary" :loading="loading" @click="handleSearch">
           查询
         </Button>
+        <div class="ml-auto flex items-center gap-4">
+          <span class="flex items-center gap-2 text-sm text-gray-600">
+            <Switch
+              v-model:checked="includeExcluded"
+              size="small"
+              @change="handleEvalFilterChange"
+            />
+            包含不参评回路
+          </span>
+          <span class="flex items-center gap-2 text-sm text-gray-600">
+            <Switch
+              v-model:checked="onlyValidScore"
+              size="small"
+              @change="handleEvalFilterChange"
+            />
+            仅显示有效评分
+          </span>
+        </div>
       </div>
 
+      <Empty
+        v-if="filteredList.length === 0 && !loading"
+        description="当前筛选条件下无低效回路数据"
+        class="py-12"
+      />
       <Table
+        v-else
         :columns="columns"
-        :data-source="rankingList"
+        :data-source="filteredList"
         :loading="loading"
         :pagination="{
           current: pagination.page,
@@ -445,6 +523,10 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: MetricApi.RankingItem) => record.loopId"
+        :row-class-name="
+          (record: MetricApi.RankingItem) =>
+            record.includeInEvaluation === false ? 'ranking-row-excluded' : ''
+        "
         :scroll="{ x: 1610 }"
         size="middle"
         :custom-row="
@@ -468,9 +550,25 @@ onMounted(() => {
               {{ record.rank }}
             </span>
           </template>
-          <template v-else-if="column.key === 'compositeScore'">
-            <span class="font-medium text-blue-600">
-              {{ Number(record.compositeScore).toFixed(1) }}
+          <template v-else-if="column.key === 'tagName'">
+            <span class="font-medium">{{ record.tagName }}</span>
+            <Tag
+              v-if="record.includeInEvaluation === false"
+              color="default"
+              class="ml-2"
+            >
+              不参评
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'score'">
+            <span
+              v-if="isInconclusive(record as MetricApi.RankingItem)"
+              class="text-gray-400"
+            >
+              —
+            </span>
+            <span v-else class="font-medium text-blue-600">
+              {{ Number(record.score).toFixed(1) }}
             </span>
           </template>
           <template v-else-if="column.key === 'goodValueRate'">
@@ -611,3 +709,15 @@ onMounted(() => {
     </Drawer>
   </Page>
 </template>
+
+<style scoped>
+/* 不参评回路行底色：淡灰区分 */
+:deep(.ranking-row-excluded > td) {
+  background-color: #fafafa !important;
+  color: #999;
+}
+
+:deep(.ranking-row-excluded:hover > td) {
+  background-color: #f0f0f0 !important;
+}
+</style>

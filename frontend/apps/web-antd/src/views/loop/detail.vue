@@ -23,11 +23,13 @@ import { Page } from '@vben/common-ui';
 import {
   Button,
   Card,
+  DatePicker,
   Descriptions,
   DescriptionsItem,
   Empty,
   RadioGroup,
   Spin,
+  Table,
   TabPane,
   Tabs,
   Tag,
@@ -40,6 +42,8 @@ import {
   getRecommendationsApi,
 } from '#/api/diagnosis';
 import { getLoopDetailApi, getLoopMonitorDetailApi } from '#/api/loop';
+import { getLoopSnapshotsApi } from '#/api/metric';
+import type { KpiSnapshotItem } from '#/api/metric';
 import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmTagAssociationBadge, ClpmToolbarButton } from '#/components/clpm';
 import type { KpiStripItem } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
@@ -68,7 +72,30 @@ const monitorDetail = ref<LoopApi.MonitorDetail | null>(null);
 const trendWindow = ref<LoopApi.TrendWindow>('last_4_hours');
 
 /** FE-05: 智能诊断 Tab 相关状态 */
-const activeTab = ref<'diagnosis' | 'overview'>('overview');
+const activeTab = ref<'diagnosis' | 'overview' | 'snapshots'>('overview');
+
+/** 指标历史 Tab 相关状态 */
+const snapshotsLoading = ref(false);
+const snapshotsList = ref<KpiSnapshotItem[]>([]);
+const snapshotsTotal = ref(0);
+const snapshotsPage = ref(1);
+const snapshotsPageSize = ref(10);
+const snapshotsDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
+
+const snapshotsColumns = computed(() => [
+  { title: '时间窗', key: 'tsRange', width: 110 },
+  { title: '综合评分', key: 'score', dataIndex: 'score', width: 90 },
+  { title: '好值率', key: 'goodValueRate', dataIndex: 'goodValueRate', width: 80 },
+  { title: '自控率', key: 'autoModeRate', dataIndex: 'autoModeRate', width: 80 },
+  { title: '有效自控率', key: 'effectiveAutoRate', dataIndex: 'effectiveAutoRate', width: 100 },
+  { title: '稳定率', key: 'steadyRate', dataIndex: 'steadyRate', width: 80 },
+  { title: '准确率', key: 'accuracyRate', dataIndex: 'accuracyRate', width: 80 },
+  { title: '快速率', key: 'fastRate', dataIndex: 'fastRate', width: 80 },
+  { title: '振荡率', key: 'oscillationRate', dataIndex: 'oscillationRate', width: 80 },
+  { title: '饱和率', key: 'saturationRate', dataIndex: 'saturationRate', width: 80 },
+  { title: '可信度', key: 'confidenceLevel', dataIndex: 'confidenceLevel', width: 80 },
+  { title: '状态', key: 'status', dataIndex: 'status', width: 100 },
+]);
 const diagnosisLoading = ref(false);
 const recommendationsLoading = ref(false);
 const reportGenerating = ref(false);
@@ -120,7 +147,7 @@ const kpiItems: {
     label: '有效自控率',
     unit: '%',
   },
-  { desc: '快速率', key: 'fast_response_rate', label: '快速率', unit: '%' },
+  { desc: '快速率', key: 'fast_rate', label: '快速率', unit: '%' },
   { desc: '稳定率', key: 'steady_rate', label: '稳定率', unit: '%' },
   { desc: '准确度', key: 'accuracy_rate', label: '准确度', unit: '%' },
   { desc: '振荡率', key: 'oscillation_rate', label: '振荡率', unit: '%' },
@@ -393,7 +420,58 @@ function handleTabChange(key: number | string) {
   ) {
     loadDiagnosis();
   }
+  if (key === 'snapshots' && snapshotsList.value.length === 0) {
+    loadSnapshots();
+  }
 }
+
+/** 加载回路小时指标历史 */
+async function loadSnapshots() {
+  snapshotsLoading.value = true;
+  try {
+    const params: any = {
+      loopId,
+      page: snapshotsPage.value,
+      pageSize: snapshotsPageSize.value,
+    };
+    if (snapshotsDateRange.value) {
+      params.startTime = snapshotsDateRange.value[0].toISOString();
+      params.endTime = snapshotsDateRange.value[1].toISOString();
+    }
+    const result = await getLoopSnapshotsApi(params);
+    snapshotsList.value = result.items;
+    snapshotsTotal.value = result.total;
+  } catch (error) {
+    console.error('加载指标历史失败:', error);
+  } finally {
+    snapshotsLoading.value = false;
+  }
+}
+
+/** 时间窗：只显示结束时间的「MM-DD HH:00」 */
+function formatSnapshotTsEnd(ts: string | null | undefined): string {
+  if (!ts) return '—';
+  return dayjs(ts).format('MM-DD HH:00');
+}
+
+function formatSnapshotNumber(val: number | null | undefined, suffix = ''): string {
+  if (val === null || val === undefined) return '—';
+  return `${val.toFixed(2)}${suffix}`;
+}
+
+const SNAPSHOT_STATUS_COLOR: Record<string, string> = {
+  SUCCESS: 'green',
+  INCONCLUSIVE: 'orange',
+  PARTIAL: 'red',
+};
+
+const SNAPSHOT_CONFIDENCE_COLOR: Record<string, string> = {
+  A: 'green',
+  B: 'blue',
+  C: 'gold',
+  D: 'orange',
+  E: 'red',
+};
 
 watch(trendWindow, () => {
   loadMonitorDetail();
@@ -703,6 +781,120 @@ onMounted(() => {
             </div>
             <Empty v-else description="暂无诊断数据" />
           </Spin>
+        </TabPane>
+
+        <!-- 指标历史 Tab -->
+        <TabPane key="snapshots" tab="指标历史">
+          <div class="space-y-3">
+            <div class="flex items-center gap-3">
+              <DatePicker.RangePicker
+                v-model:value="snapshotsDateRange"
+                :allow-clear="true"
+                @change="loadSnapshots"
+              />
+              <Button type="primary" @click="loadSnapshots">查询</Button>
+            </div>
+            <Table
+              :columns="snapshotsColumns"
+              :data-source="snapshotsList"
+              :loading="snapshotsLoading"
+              :pagination="{
+                current: snapshotsPage,
+                pageSize: snapshotsPageSize,
+                total: snapshotsTotal,
+                showSizeChanger: true,
+                showTotal: (t: number) => `共 ${t} 条`,
+              }"
+              row-key="tsStart"
+              size="small"
+              @change="
+                (p: any) => {
+                  snapshotsPage = p.current;
+                  snapshotsPageSize = p.pageSize;
+                  loadSnapshots();
+                }
+              "
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'tsRange'">
+                  <span class="font-mono text-xs">
+                    {{ formatSnapshotTsEnd(record.tsEnd) }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'score'">
+                  <span class="font-semibold">
+                    {{ formatSnapshotNumber(record.score) }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'confidenceLevel'">
+                  <Tag
+                    v-if="record.confidenceLevel"
+                    :color="SNAPSHOT_CONFIDENCE_COLOR[record.confidenceLevel] || 'default'"
+                  >
+                    {{ record.confidenceLevel }}
+                  </Tag>
+                  <span v-else>—</span>
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <Tag :color="SNAPSHOT_STATUS_COLOR[record.status] || 'default'">
+                    {{ record.status }}
+                  </Tag>
+                </template>
+                <template
+                  v-else-if="
+                    ([
+                      'goodValueRate',
+                      'autoModeRate',
+                      'effectiveAutoRate',
+                      'steadyRate',
+                      'accuracyRate',
+                      'fastRate',
+                      'oscillationRate',
+                      'saturationRate',
+                    ] as string[]).includes(column.key as string)
+                  "
+                >
+                  {{ formatSnapshotNumber(record[column.dataIndex as string], '%') }}
+                </template>
+              </template>
+
+              <!-- 行展开：完整字段 -->
+              <template #expandedRowRender="{ record }">
+                <Descriptions :column="4" size="small" bordered>
+                  <DescriptionsItem label="好值率">
+                    {{ formatSnapshotNumber(record.goodValueRate, '%') }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="自控率">
+                    {{ formatSnapshotNumber(record.autoModeRate, '%') }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="振荡率">
+                    {{ formatSnapshotNumber(record.oscillationRate, '%') }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="饱和率">
+                    {{ formatSnapshotNumber(record.saturationRate, '%') }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="粘滞指数">
+                    {{ formatSnapshotNumber(record.stictionIndex) }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="稳态时间">
+                    {{ formatSnapshotNumber(record.settlingTime, 's') }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="理想稳态时间">
+                    {{ formatSnapshotNumber(record.idealSettlingTime, 's') }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="有效数据率">
+                    {{ formatSnapshotNumber(record.validRate) }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="算法版本">
+                    {{ record.algorithmVersion || '—' }}
+                  </DescriptionsItem>
+                  <DescriptionsItem label="采样频率">
+                    {{ record.samplingFreq || '—' }}
+                  </DescriptionsItem>
+                </Descriptions>
+              </template>
+            </Table>
+          </div>
         </TabPane>
       </Tabs>
     </Spin>

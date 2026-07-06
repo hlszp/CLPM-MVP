@@ -151,9 +151,7 @@ class TestLargeDatasetConsistency:
         """准确率：7200 点 vs 100 点，零偏差 → 都接近 100."""
         for n in (100, LARGE_N):
             val = [50.0] * n
-            bundle = make_bundle(
-                {"pv": list(val), "sp": list(val)}, metric_code="accuracy_rate"
-            )
+            bundle = make_bundle({"pv": list(val), "sp": list(val)}, metric_code="accuracy_rate")
             result = AccuracyRateCalculator().calculate(bundle)
             assert result.value == 100.0, f"n={n}: accuracy={result.value} 应为 100"
 
@@ -162,9 +160,7 @@ class TestLargeDatasetConsistency:
         for n in (100, LARGE_N):
             mode = [1] * n
             op = [99.5] * n
-            bundle = make_bundle(
-                {"mode": mode, "op": op}, metric_code="saturation_rate"
-            )
+            bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
             result = SaturationRateCalculator().calculate(bundle)
             assert result.value == 100.0
             assert result.details["saturation_type"] == "HIGH"

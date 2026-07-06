@@ -61,7 +61,7 @@ def make_metric_configs() -> dict:
         "effective_auto_rate": _cfg("effective_auto_rate", "20"),
         "steady_rate": _cfg("steady_rate", "30"),
         "accuracy_rate": _cfg("accuracy_rate", "30"),
-        "fast_response_rate": _cfg("fast_response_rate", "20"),
+        "fast_rate": _cfg("fast_rate", "20"),
         "oscillation_rate": _cfg("oscillation_rate", "0"),
         "saturation_rate": _cfg("saturation_rate", "0"),
     }
@@ -91,7 +91,7 @@ def run_scenario(name: str) -> None:
     print("\n--- 结果汇总 ---")
     print(f"  综合评分 P = {score}")
     print(f"  准确率 A   = {kpi_values.get('accuracy_rate')}")
-    print(f"  快速率 F   = {kpi_values.get('fast_response_rate')}")
+    print(f"  快速率 F   = {kpi_values.get('fast_rate')}")
     print(f"  平稳率 S   = {kpi_values.get('steady_rate')}")
     print(f"  有效自控率 R = {kpi_values.get('effective_auto_rate')}")
     print(f"  振荡率     = {kpi_values.get('oscillation_rate')}")

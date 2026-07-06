@@ -42,6 +42,12 @@ export namespace MetricApi {
     alert: number;
   }
 
+  /** 指标类别（v5.3 对齐 FDS §5.3.1 3+1+8 结构） */
+  export type MetricCategory =
+    | 'AUXILIARY_DIAGNOSTIC'
+    | 'COMMISSIONING'
+    | 'CORE';
+
   /** 指标配置项 */
   export interface MetricItem {
     metricId: string;
@@ -56,6 +62,8 @@ export namespace MetricApi {
     algorithmVersion: string;
     updatedAt: string;
     updatedBy: string;
+    /** v5.3 指标类别（CORE/COMMISSIONING/AUXILIARY_DIAGNOSTIC） */
+    category?: MetricCategory | null;
   }
 
   /** 指标配置列表响应 */
@@ -139,24 +147,24 @@ export namespace MetricApi {
 
   /** KPI 摘要（对齐 GB/T 44693.2-2024） */
   export interface KpiSummary {
-    good_value_rate: number;
-    auto_mode_rate: number;
-    effective_auto_rate: number;
-    steady_rate: number;
-    accuracy_rate: number;
-    fast_response_rate: number;
-    oscillation_rate: number;
-    saturation_rate: number;
-    composite_score: number;
+    goodValueRate: number;
+    autoModeRate: number;
+    effectiveAutoRate: number;
+    steadyRate: number;
+    accuracyRate: number;
+    fastRate: number;
+    oscillationRate: number;
+    saturationRate: number;
+    compositeScore: number;
     status: KpiStatus;
-    algorithm_version: string;
+    algorithmVersion: string;
     /** v4.0 数据血缘字段（7 个，对齐 KpiSnapshotSchema） */
-    ideal_settling_time?: null | number;
-    sampling_freq?: null | string;
-    quality_policy?: null | string;
-    valid_rate?: null | number;
-    confidence_level?: null | ConfidenceLevel;
-    data_lineage?: DataLineage | null;
+    idealSettlingTime?: null | number;
+    samplingFreq?: null | string;
+    qualityPolicy?: null | string;
+    validRate?: null | number;
+    confidenceLevel?: null | ConfidenceLevel;
+    dataLineage?: DataLineage | null;
   }
 
   /** 趋势数据 */
@@ -188,19 +196,20 @@ export namespace MetricApi {
     loopId: string;
     tagName: string;
     unitName: string;
-    compositeScore: number;
+    score: number;
     goodValueRate: number;
     autoModeRate: number;
     effectiveAutoRate: number;
     steadyRate: number;
     accuracyRate: number;
-    fastResponseRate: number;
+    fastRate: number;
     oscillationRate: number;
     saturationRate: number;
     status: KpiStatus;
     algorithmVersion: string;
     preDiagnosis?: string;
     actionStatus: ActionStatus;
+    includeInEvaluation?: boolean | null;
     /** v4.0 数据血缘字段（对齐后端 RankingItem schema） */
     confidenceLevel?: null | ConfidenceLevel;
     validRate?: null | number;
@@ -356,6 +365,137 @@ export namespace MetricApi {
   }
 
   // ========================================================================
+  // v5.3 权重模板 / 定级阈值 / 版本历史（FDS v5.1 §5.2.2 / §5.2.4）
+  // ========================================================================
+
+  /** 权重模板单项（单个控制类型的 6 指标权重） */
+  export interface WeightTemplateItem {
+    controlType: ControlType;
+    autoModeRate: number;
+    steadyRate: number;
+    accuracyRate: number;
+    fastRate: number;
+    oscillationRate: number;
+    saturationRate: number;
+  }
+
+  /** 权重模板（4 类控制类型的权重集合） */
+  export interface WeightTemplateSchema {
+    version: number;
+    templates: WeightTemplateItem[];
+    updatedAt?: string | null;
+    updatedBy?: string | null;
+  }
+
+  /** 权重模板保存请求 */
+  export interface WeightTemplateSaveRequest {
+    templates: WeightTemplateItem[];
+    remark?: string;
+  }
+
+  /** 定级阈值单项 */
+  export interface GradingThresholdItem {
+    level: number;
+    name: string;
+    minScore: number;
+    maxScore: number;
+    color?: string | null;
+  }
+
+  /** 定级阈值配置（5 级） */
+  export interface GradingThresholdSchema {
+    thresholds: GradingThresholdItem[];
+    updatedAt?: string | null;
+    updatedBy?: string | null;
+  }
+
+  /** 定级阈值更新请求 */
+  export interface GradingThresholdSaveRequest {
+    thresholds: GradingThresholdItem[];
+  }
+
+  /** 版本历史单项 */
+  export interface VersionHistoryItem {
+    version: number;
+    updatedAt?: string | null;
+    updatedBy?: string | null;
+    remark?: string | null;
+    isCurrent: boolean;
+  }
+
+  /** 版本历史列表 */
+  export interface VersionHistorySchema {
+    items: VersionHistoryItem[];
+    currentVersion?: number;
+  }
+
+  /** AAS 同步状态 */
+  export interface AasSyncStatus {
+    enabled: boolean;
+    endpoint?: string | null;
+    syncIntervalSeconds?: number | null;
+    lastSyncAt?: string | null;
+    lastSyncStatus?: string | null;
+    tagStats: {
+      total: number;
+      linked: number;
+      byQuality: Record<string, number>;
+    };
+  }
+
+  /** AAS 同步日志项 */
+  export interface AasSyncLog {
+    id: string;
+    operationType: string;
+    operator: string;
+    operatedAt: string;
+    beforeValue?: string | null;
+    afterValue?: string | null;
+  }
+
+  /** AAS 同步日志列表结果 */
+  export interface AasSyncLogListResult {
+    items: AasSyncLog[];
+    total: number;
+  }
+
+  /** 非标任务结果项 */
+  export interface TaskResultItem {
+    loopId: string;
+    loopTagName: string;
+    tsStart: string | null;
+    tsEnd: string | null;
+    score: number | null;
+    accuracyRate: number | null;
+    fastRate: number | null;
+    steadyRate: number | null;
+    effectiveAutoRate: number | null;
+    goodValueRate: number | null;
+    oscillationRate: number | null;
+    saturationRate: number | null;
+    autoModeRate: number | null;
+    stictionIndex: number | null;
+    outputTripIndex: number | null;
+    settlingTime: number | null;
+    idealSettlingTime: number | null;
+    status: string;
+    confidenceLevel: string | null;
+    validRate: number | null;
+    algorithmVersion: string | null;
+    samplingFreq: string | null;
+    qualityPolicy: string | null;
+    dataLineage: Record<string, unknown> | null;
+    createdAt: string | null;
+  }
+
+  /** 非标任务结果列表结果 */
+  export interface TaskResultListResult {
+    items: TaskResultItem[];
+    total: number;
+    taskStatus: string;
+  }
+
+  // ========================================================================
   // 节点级 KPI 类型（对齐 IDS v3.2 §6.4 — GB/T 44693.2-2024）
   // ========================================================================
 
@@ -377,7 +517,7 @@ export namespace MetricApi {
     effectiveAutoRate?: null | number;
     steadyRate?: null | number;
     accuracyRate?: null | number;
-    fastResponseRate?: null | number;
+    fastRate?: null | number;
     oscillationRate?: null | number;
     saturationRate?: null | number;
     autoLoopRatio?: null | number;
@@ -400,7 +540,7 @@ export namespace MetricApi {
     effectiveAutoRate?: null | number;
     steadyRate?: null | number;
     accuracyRate?: null | number;
-    fastResponseRate?: null | number;
+    fastRate?: null | number;
     oscillationRate?: null | number;
     saturationRate?: null | number;
     autoLoopRatio?: null | number;
@@ -475,7 +615,7 @@ export namespace MetricApi {
     effectiveAutoRate?: null | number;
     steadyRate?: null | number;
     accuracyRate?: null | number;
-    fastResponseRate?: null | number;
+    fastRate?: null | number;
     oscillationRate?: null | number;
     saturationRate?: null | number;
     autoLoopRatio?: null | number;
@@ -728,4 +868,141 @@ export function getNodeMonitorApi(
     `${NODE_BASE}/${nodeId}/monitor`,
     { params },
   );
+}
+
+// ===========================================================================
+// v5.3 权重模板管理 API（FDS v5.1 §5.2.2）
+// ===========================================================================
+
+const WEIGHT_BASE = '/configs/weight-templates';
+
+/**
+ * 获取当前权重模板 — FDS v5.1 §5.2.2
+ */
+export function getWeightTemplatesApi() {
+  return requestClient.get<MetricApi.WeightTemplateSchema>(WEIGHT_BASE);
+}
+
+/**
+ * 保存权重模板为新版本 — 仅 ADMIN
+ */
+export function saveWeightTemplatesApi(data: MetricApi.WeightTemplateSaveRequest) {
+  return requestClient.post<MetricApi.WeightTemplateSchema>(WEIGHT_BASE, data);
+}
+
+/**
+ * 获取权重模板版本历史 — FDS v5.1 §5.2.2
+ */
+export function getWeightTemplateHistoryApi() {
+  return requestClient.get<MetricApi.VersionHistorySchema>(`${WEIGHT_BASE}/history`);
+}
+
+/**
+ * 回滚到指定版本 — 仅 ADMIN
+ */
+export function rollbackWeightTemplateApi(version: number) {
+  return requestClient.post<MetricApi.WeightTemplateSchema>(
+    `${WEIGHT_BASE}/${version}/rollback`,
+  );
+}
+
+/**
+ * 恢复国标默认权重模板 — 仅 ADMIN
+ */
+export function restoreWeightDefaultsApi() {
+  return requestClient.post<MetricApi.WeightTemplateSchema>(
+    `${WEIGHT_BASE}/restore-defaults`,
+  );
+}
+
+// ===========================================================================
+// v5.3 定级阈值管理 API（FDS v5.1 §5.2.4）
+// ===========================================================================
+
+const GRADING_BASE = '/configs/grading-thresholds';
+
+/**
+ * 获取当前定级阈值 — FDS v5.1 §5.2.4
+ */
+export function getGradingThresholdsApi() {
+  return requestClient.get<MetricApi.GradingThresholdSchema>(GRADING_BASE);
+}
+
+/**
+ * 更新定级阈值 — 仅 ADMIN
+ */
+export function saveGradingThresholdsApi(data: MetricApi.GradingThresholdSaveRequest) {
+  return requestClient.post<MetricApi.GradingThresholdSchema>(GRADING_BASE, data);
+}
+
+// ===========================================================================
+// 回路小时指标快照列表 — GET /performance/loops/snapshots
+// ===========================================================================
+
+const SNAPSHOTS_BASE = '/performance/loops/snapshots';
+
+/** 回路小时指标快照列表项（24 字段 + loopTagName） */
+export interface KpiSnapshotItem {
+  loopId: string | null;
+  loopTagName: string | null;
+  tsStart: string | null;
+  tsEnd: string | null;
+  score: number | null;
+  goodValueRate: number | null;
+  autoModeRate: number | null;
+  effectiveAutoRate: number | null;
+  steadyRate: number | null;
+  accuracyRate: number | null;
+  oscillationRate: number | null;
+  saturationRate: number | null;
+  fastRate: number | null;
+  stictionIndex: number | null;
+  settlingTime: number | null;
+  outputTravelIndex: number | null;
+  status: KpiStatus;
+  idealSettlingTime: number | null;
+  algorithmVersion: string | null;
+  samplingFreq: string | null;
+  qualityPolicy: string | null;
+  validRate: number | null;
+  confidenceLevel: ConfidenceLevel | null;
+  dataLineage: MetricApi.DataLineage | null;
+}
+
+/** 快照列表响应 */
+export interface KpiSnapshotListResult {
+  items: KpiSnapshotItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** 快照列表查询参数 */
+export interface KpiSnapshotQueryParams {
+  /** 回路 ID（逗号分隔多个） */
+  loopId?: string;
+  /** 装置 ID（逗号分隔多个） */
+  plantNodeId?: string;
+  /** 起始时间（ISO 8601） */
+  startTime?: string;
+  /** 结束时间（ISO 8601） */
+  endTime?: string;
+  /** 快照状态 */
+  status?: KpiStatus;
+  /** 可信度等级 */
+  confidenceLevel?: ConfidenceLevel;
+  /** 页码 */
+  page?: number;
+  /** 每页条数 */
+  pageSize?: number;
+}
+
+/**
+ * 查询回路小时指标快照列表
+ *
+ * 按回路/装置/时间范围/状态/可信度筛选，分页返回。
+ * 默认时间范围为近 7 天，排序按 tsStart DESC。
+ */
+export function getLoopSnapshotsApi(params: KpiSnapshotQueryParams) {
+  return requestClient.get<KpiSnapshotListResult>(SNAPSHOTS_BASE, { params });
 }

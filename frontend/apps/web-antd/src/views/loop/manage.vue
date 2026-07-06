@@ -36,6 +36,7 @@ import {
   message,
   Modal,
   Popconfirm,
+  RadioGroup,
   Select,
   Spin,
   Switch,
@@ -106,9 +107,11 @@ const selectedRowKeys = ref<string[]>([]);
 const query = reactive({
   plantNodeId: undefined as string | undefined,
   controlType: undefined as 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE' | undefined,
-  level: undefined as 1 | 2 | 3 | undefined,
+  importanceLevel: undefined as 1 | 2 | 3 | undefined,
   status: undefined as LoopApi.LoopStatus | undefined,
   monitorStatus: undefined as boolean | undefined,
+  /** v5.3：参评状态筛选 */
+  includeInEvaluation: undefined as boolean | undefined,
   keyword: '',
   page: 1,
   pageSize: 20,
@@ -152,6 +155,31 @@ const statusOptions = [
   { label: '未启用', value: 'INACTIVE' },
 ];
 
+/** v5.3：参评状态过滤选项 */
+const evaluationOptions: { label: string; value: any }[] = [
+  { label: '全部', value: undefined },
+  { label: '参评', value: true },
+  { label: '不参评', value: false },
+];
+
+/** v5.3：参评状态查询代理（ant-design-vue Select 不接受 boolean） */
+const queryIncludeInEvaluation = computed({
+  get: () => query.includeInEvaluation as any,
+  set: (val: any) => {
+    query.includeInEvaluation = val;
+  },
+});
+
+/** v5.3：重要等级视觉编码（1 红色 / 2 橙色 / 3 灰色） */
+const IMPORTANCE_LEVEL_TAG: Record<
+  number,
+  { color: string; label: string }
+> = {
+  1: { label: '1 级', color: 'red' },
+  2: { label: '2 级', color: 'orange' },
+  3: { label: '3 级', color: 'default' },
+};
+
 const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
   TEMPERATURE: { label: '温度', color: 'red' },
   PRESSURE: { label: '压力', color: 'blue' },
@@ -187,10 +215,17 @@ const columns: TableColumnsType = [
     width: 100,
   },
   {
-    title: '级别',
-    dataIndex: 'level',
-    key: 'level',
-    width: 80,
+    title: '重要等级',
+    dataIndex: 'importanceLevel',
+    key: 'importanceLevel',
+    width: 90,
+    align: 'center',
+  },
+  {
+    title: '参评状态',
+    dataIndex: 'includeInEvaluation',
+    key: 'includeInEvaluation',
+    width: 100,
     align: 'center',
   },
   { title: '监控状态', dataIndex: 'status', key: 'status', width: 110 },
@@ -239,9 +274,10 @@ async function loadList() {
     const data = await getLoopListApi({
       plantNodeId: query.plantNodeId,
       controlType: query.controlType,
-      level: query.level,
+      importanceLevel: query.importanceLevel,
       status: query.status,
       monitorStatus: query.monitorStatus,
+      includeInEvaluation: query.includeInEvaluation,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -265,6 +301,88 @@ function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize || 20;
   loadList();
+}
+
+/** v5.3：表格行样式 — 不参评回路行底色淡灰 */
+function rowClassName(record: LoopApi.LoopListItem): string {
+  return record.includeInEvaluation === false ? 'row-not-evaluated' : '';
+}
+
+/** v5.3：内联切换参评状态 */
+function handleToggleEvaluation(record: LoopApi.LoopListItem, checked: boolean) {
+  if (!checked) {
+    // 切换为不参评时提示
+    Modal.warning({
+      title: '确认切换为不参评',
+      content:
+        '不参评回路仍正常计算单回路 KPI，但不进入综合性能评分、装置级聚合与低效排行，确认切换？',
+      okText: '确认切换',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await updateLoopApi(record.loopId, { includeInEvaluation: false });
+          message.success('已切换为不参评');
+          await loadList();
+        } catch (error) {
+          console.error('操作失败:', error);
+        }
+      },
+    });
+  } else {
+    updateLoopApi(record.loopId, { includeInEvaluation: true })
+      .then(() => {
+        message.success('已切换为参评');
+        loadList();
+      })
+      .catch((error) => {
+        console.error('操作失败:', error);
+      });
+  }
+}
+
+/** v5.3：抽屉中切换控制类型 — 提示将应用对应默认权重模板 */
+const pendingControlType = ref<'FAST' | 'LOGIC' | 'SLOW' | 'STABLE' | undefined>(
+  undefined,
+);
+function handleControlTypeChange(value: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE') {
+  if (!value) return;
+  if (formState.controlType && value !== formState.controlType) {
+    pendingControlType.value = value;
+    Modal.warning({
+      title: '确认切换控制类型',
+      content:
+        '切换控制类型将应用对应默认权重模板，是否继续？保存回路后生效。',
+      okText: '确认切换',
+      cancelText: '取消',
+      onOk: () => {
+        formState.controlType = pendingControlType.value;
+        pendingControlType.value = undefined;
+      },
+      onCancel: () => {
+        pendingControlType.value = undefined;
+      },
+    });
+  } else {
+    formState.controlType = value;
+  }
+}
+
+/** v5.3：抽屉中切换参评状态 — 切换为 false 时提示 */
+function handleDrawerEvaluationChange(checked: boolean) {
+  if (!checked) {
+    Modal.warning({
+      title: '确认切换为不参评',
+      content:
+        '不参评回路仍正常计算单回路 KPI，但不进入综合性能评分、装置级聚合与低效排行，确认切换？',
+      okText: '确认切换',
+      cancelText: '取消',
+      onOk: () => {
+        formState.includeInEvaluation = false;
+      },
+    });
+  } else {
+    formState.includeInEvaluation = true;
+  }
 }
 
 const rowSelection = computed(() => ({
@@ -338,15 +456,25 @@ const changeSummary = computed<DiffEntry[]>(() => {
           : '—',
       });
     }
-    if ((orig.level ?? undefined) !== (formState.level ?? undefined)) {
+    if ((orig.importanceLevel ?? undefined) !== (formState.importanceLevel ?? undefined)) {
       summary.push({
         field: '回路级别',
-        from: orig.level
-          ? (LEVEL_LABEL[orig.level] ?? String(orig.level))
+        from: orig.importanceLevel
+          ? (LEVEL_LABEL[orig.importanceLevel] ?? String(orig.importanceLevel))
           : '—',
-        to: formState.level
-          ? (LEVEL_LABEL[formState.level] ?? String(formState.level))
+        to: formState.importanceLevel
+          ? (LEVEL_LABEL[formState.importanceLevel] ?? String(formState.importanceLevel))
           : '—',
+      });
+    }
+    // v5.3：参评状态变更
+    const origEval =
+      orig.includeInEvaluation !== false && orig.includeInEvaluation !== null;
+    if (origEval !== formState.includeInEvaluation) {
+      summary.push({
+        field: '参评状态',
+        from: origEval ? '参评' : '不参评',
+        to: formState.includeInEvaluation ? '参评' : '不参评',
       });
     }
     if ((orig.unitId ?? undefined) !== (formState.unitId ?? undefined)) {
@@ -412,11 +540,19 @@ const changeSummary = computed<DiffEntry[]>(() => {
         to: batchForm.isStatEnabled ? '纳入统计' : '不纳入统计',
       });
     }
-    if (batchForm.level !== undefined) {
+    if (batchForm.importanceLevel !== undefined) {
       summary.push({
         field: '回路级别',
         from: '保持原值',
-        to: LEVEL_LABEL[batchForm.level] ?? String(batchForm.level),
+        to: LEVEL_LABEL[batchForm.importanceLevel] ?? String(batchForm.importanceLevel),
+      });
+    }
+    // v5.3：批量参评状态
+    if (batchForm.includeInEvaluation !== undefined) {
+      summary.push({
+        field: '参评状态',
+        from: '保持原值',
+        to: batchForm.includeInEvaluation ? '参评' : '不参评',
       });
     }
     return summary;
@@ -465,7 +601,9 @@ const batchSaving = ref(false);
 const batchForm = reactive({
   isMonitored: undefined as boolean | undefined,
   isStatEnabled: undefined as boolean | undefined,
-  level: undefined as 1 | 2 | 3 | undefined,
+  importanceLevel: undefined as 1 | 2 | 3 | undefined,
+  /** v5.3：批量设置参评状态 */
+  includeInEvaluation: undefined as boolean | undefined,
 });
 
 const monitorStatusOptions: { label: string; value: any }[] = [
@@ -503,6 +641,19 @@ const batchStatEnabledOptions: { label: string; value: any }[] = [
   { label: '不纳入统计', value: false },
 ];
 
+/** v5.3：批量参评状态代理 */
+const batchIncludeInEvaluation = computed({
+  get: () => batchForm.includeInEvaluation as any,
+  set: (val: any) => {
+    batchForm.includeInEvaluation = val;
+  },
+});
+
+const batchEvaluationOptions: { label: string; value: any }[] = [
+  { label: '参评', value: true },
+  { label: '不参评', value: false },
+];
+
 /** 打开批量配置弹窗 */
 function handleBatchConfig() {
   if (selectedRowKeys.value.length === 0) {
@@ -511,7 +662,8 @@ function handleBatchConfig() {
   }
   batchForm.isMonitored = undefined;
   batchForm.isStatEnabled = undefined;
-  batchForm.level = undefined;
+  batchForm.importanceLevel = undefined;
+  batchForm.includeInEvaluation = undefined;
   batchModalVisible.value = true;
 }
 
@@ -521,7 +673,8 @@ async function handleBatchConfigSubmit() {
   if (
     batchForm.isMonitored === undefined &&
     batchForm.isStatEnabled === undefined &&
-    batchForm.level === undefined
+    batchForm.importanceLevel === undefined &&
+    batchForm.includeInEvaluation === undefined
   ) {
     message.warning('请至少配置一项批量更新字段');
     return;
@@ -547,8 +700,11 @@ async function doBatchConfigSubmit() {
     if (batchForm.isStatEnabled !== undefined) {
       updates.isStatEnabled = batchForm.isStatEnabled;
     }
-    if (batchForm.level !== undefined) {
-      updates.level = batchForm.level;
+    if (batchForm.importanceLevel !== undefined) {
+      updates.importanceLevel = batchForm.importanceLevel;
+    }
+    if (batchForm.includeInEvaluation !== undefined) {
+      updates.includeInEvaluation = batchForm.includeInEvaluation;
     }
     const result = await batchConfigLoopsApi({
       loopIds: selectedRowKeys.value,
@@ -613,8 +769,9 @@ async function handleExport() {
       params: {
         plantNodeId: query.plantNodeId,
         controlType: query.controlType,
-        level: query.level,
+        importanceLevel: query.importanceLevel,
         status: query.status,
+        includeInEvaluation: query.includeInEvaluation,
         keyword: query.keyword || undefined,
       },
     });
@@ -681,14 +838,16 @@ const formState = reactive({
   unitId: undefined as string | undefined,
   loopType: 'OTHER' as string | undefined,
   controlType: undefined as 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE' | undefined,
-  level: undefined as 1 | 2 | 3 | undefined,
+  importanceLevel: undefined as 1 | 2 | 3 | undefined,
+  /** v5.3：是否参与评估 */
+  includeInEvaluation: true,
   isActive: true,
   remark: '',
   scoreWeights: {
     auto_mode_rate: 10,
     steady_rate: 30,
     accuracy_rate: 15,
-    fast_response_rate: 10,
+    fast_rate: 10,
     oscillation_rate: 20,
     saturation_rate: 15,
   } as LoopApi.ScoreWeights,
@@ -698,7 +857,7 @@ const weightItems: { key: keyof LoopApi.ScoreWeights; label: string }[] = [
   { key: 'auto_mode_rate', label: '自动模式率' },
   { key: 'steady_rate', label: '稳定率' },
   { key: 'accuracy_rate', label: '准确度' },
-  { key: 'fast_response_rate', label: '快速率' },
+  { key: 'fast_rate', label: '快速率' },
   { key: 'oscillation_rate', label: '振荡率' },
   { key: 'saturation_rate', label: '饱和率' },
 ];
@@ -793,14 +952,16 @@ function handleAdd() {
   formState.description = '';
   formState.unitId = selectedPlantNodeId.value;
   formState.loopType = 'OTHER';
-  formState.controlType = undefined;
-  formState.level = undefined;
+  // v5.3：新建回路评估配置默认值
+  formState.controlType = 'STABLE';
+  formState.importanceLevel = 2;
+  formState.includeInEvaluation = true;
   formState.isActive = true;
   formState.remark = '';
   formState.scoreWeights = {
     accuracy_rate: 15,
     auto_mode_rate: 10,
-    fast_response_rate: 10,
+    fast_rate: 10,
     oscillation_rate: 20,
     saturation_rate: 15,
     steady_rate: 30,
@@ -819,13 +980,16 @@ async function handleEdit(record: LoopApi.LoopListItem) {
   formState.unitId = record.unitId;
   formState.loopType = record.loopType ?? 'OTHER';
   formState.controlType = record.controlType;
-  formState.level = record.level;
+  formState.importanceLevel = record.importanceLevel;
+  // v5.3：同步参评状态（默认 true）
+  formState.includeInEvaluation =
+    record.includeInEvaluation !== false && record.includeInEvaluation !== null;
   formState.isActive = record.isActive;
   formState.remark = '';
   formState.scoreWeights = {
     accuracy_rate: 15,
     auto_mode_rate: 10,
-    fast_response_rate: 10,
+    fast_rate: 10,
     oscillation_rate: 20,
     saturation_rate: 15,
     steady_rate: 30,
@@ -995,6 +1159,17 @@ async function handleSaveBasic() {
     message.warning(`权重总和须为 100%，当前为 ${weightTotal.value}%`);
     return;
   }
+  // v5.3：新建回路时控制类型与重要等级为必填
+  if (!editingLoop.value) {
+    if (!formState.controlType) {
+      message.warning('请选择控制类型');
+      return;
+    }
+    if (!formState.importanceLevel) {
+      message.warning('请选择重要等级');
+      return;
+    }
+  }
   if (editingLoop.value) {
     // 编辑模式：打开变更确认弹窗
     confirmContextType.value = 'update';
@@ -1016,7 +1191,8 @@ async function doSaveBasic() {
         unitId: formState.unitId,
         loopType: formState.loopType as LoopApi.LoopType | undefined,
         controlType: formState.controlType,
-        level: formState.level,
+        importanceLevel: formState.importanceLevel,
+        includeInEvaluation: formState.includeInEvaluation,
         scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
@@ -1034,7 +1210,8 @@ async function doSaveBasic() {
         unitId: formState.unitId,
         loopType: formState.loopType as LoopApi.LoopType | undefined,
         controlType: formState.controlType,
-        level: formState.level,
+        importanceLevel: formState.importanceLevel,
+        includeInEvaluation: formState.includeInEvaluation,
         scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
@@ -1244,12 +1421,21 @@ watch(activeMainTab, (tab) => {
             @change="handleSearch"
           />
           <Select
-            v-model:value="query.level"
-            placeholder="级别"
+            v-model:value="query.importanceLevel"
+            placeholder="重要等级"
             style="width: 120px"
             size="small"
             allow-clear
             :options="levelOptions"
+            @change="handleSearch"
+          />
+          <Select
+            v-model:value="queryIncludeInEvaluation"
+            placeholder="参评状态"
+            style="width: 120px"
+            size="small"
+            allow-clear
+            :options="evaluationOptions"
             @change="handleSearch"
           />
           <Select
@@ -1304,7 +1490,8 @@ watch(activeMainTab, (tab) => {
             showTotal: (t: number) => `共 ${t} 条`,
           }"
           :row-key="(record: LoopApi.LoopListItem) => record.loopId"
-          :scroll="{ x: 1200 }"
+          :row-class-name="rowClassName"
+          :scroll="{ x: 1300 }"
           size="middle"
           @change="handleTableChange"
         >
@@ -1334,11 +1521,36 @@ watch(activeMainTab, (tab) => {
               </Tag>
               <span v-else class="text-gray-400">—</span>
             </template>
-            <template v-else-if="column.key === 'level'">
-              <span v-if="record.level" class="font-mono">
-                {{ LEVEL_LABEL[record.level] ?? record.level }}
-              </span>
+            <template v-else-if="column.key === 'importanceLevel'">
+              <Tag
+                v-if="record.importanceLevel"
+                :color="
+                  IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.color ??
+                  'default'
+                "
+                class="m-0"
+              >
+                {{ IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.label ??
+                  LEVEL_LABEL[record.importanceLevel] ?? record.importanceLevel }}
+              </Tag>
               <span v-else class="text-gray-400">—</span>
+            </template>
+            <template v-else-if="column.key === 'includeInEvaluation'">
+              <Switch
+                v-permission="['ADMIN', 'IC_ENGINEER']"
+                :checked="
+                  record.includeInEvaluation !== false &&
+                  record.includeInEvaluation !== null
+                "
+                size="small"
+                @change="
+                  (checked: any) =>
+                    handleToggleEvaluation(
+                      record as LoopApi.LoopListItem,
+                      Boolean(checked),
+                    )
+                "
+              />
             </template>
             <template v-else-if="column.key === 'status'">
               <StatusBadge
@@ -1541,30 +1753,63 @@ watch(activeMainTab, (tab) => {
                   />
                 </FormItem>
               </div>
-              <div class="grid grid-cols-2 gap-3">
+              <!-- v5.3：评估配置区 -->
+              <div class="mb-3 rounded border border-blue-100 bg-blue-50/40 p-3">
+                <div class="mb-3 font-medium text-blue-700">评估配置</div>
                 <FormItem
                   name="controlType"
                   label="控制类型"
                   tooltip="稳定型：温度/液位回路；慢速型：流量回路；快速型：快速响应回路；逻辑型：开关量回路"
+                  :rules="[
+                    {
+                      required: !editingLoop,
+                      message: '请选择控制类型',
+                    },
+                  ]"
                 >
-                  <Select
-                    v-model:value="formState.controlType"
-                    placeholder="请选择控制类型"
-                    allow-clear
+                  <RadioGroup
+                    :value="formState.controlType"
                     :options="controlTypeOptions.filter((o) => o.value)"
+                    option-type="button"
+                    button-style="solid"
+                    @change="
+                      (e: any) =>
+                        handleControlTypeChange(
+                          e.target.value as 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE',
+                        )
+                    "
                   />
                 </FormItem>
                 <FormItem
-                  name="level"
-                  label="回路级别"
+                  name="importanceLevel"
+                  label="重要等级"
                   tooltip="1 级：关键回路（直接影响生产安全）；2 级：重要回路（影响产品质量）；3 级：一般回路（辅助控制）"
+                  :rules="[
+                    {
+                      required: !editingLoop,
+                      message: '请选择重要等级',
+                    },
+                  ]"
                 >
-                  <Select
-                    v-model:value="formState.level"
-                    placeholder="请选择回路级别"
-                    allow-clear
+                  <RadioGroup
+                    v-model:value="formState.importanceLevel"
                     :options="levelOptions.filter((o) => o.value)"
+                    option-type="button"
+                    button-style="solid"
                   />
+                </FormItem>
+                <FormItem name="includeInEvaluation" label="是否参与评估">
+                  <Switch
+                    :checked="formState.includeInEvaluation"
+                    @change="(checked: any) => handleDrawerEvaluationChange(Boolean(checked))"
+                  />
+                  <span class="ml-2 text-xs text-gray-500">
+                    {{
+                      formState.includeInEvaluation
+                        ? '参评（进入综合性能评分、装置级聚合与低效排行）'
+                        : '不参评（仅计算单回路 KPI）'
+                    }}
+                  </span>
                 </FormItem>
               </div>
               <FormItem name="isActive" label="启用状态">
@@ -1766,10 +2011,18 @@ watch(activeMainTab, (tab) => {
         </FormItem>
         <FormItem label="回路级别">
           <Select
-            v-model:value="batchForm.level"
+            v-model:value="batchForm.importanceLevel"
             placeholder="不修改"
             allow-clear
             :options="levelOptions.filter((o) => o.value)"
+          />
+        </FormItem>
+        <FormItem label="参评状态">
+          <Select
+            v-model:value="batchIncludeInEvaluation"
+            placeholder="不修改"
+            allow-clear
+            :options="batchEvaluationOptions"
           />
         </FormItem>
       </Form>
@@ -1827,4 +2080,14 @@ watch(activeMainTab, (tab) => {
 
 <style scoped>
 /* 树组件样式由 PlantNodeTree 组件内部管理 */
+</style>
+
+<style>
+/* v5.3：不参评回路行底色淡灰 */
+.row-not-evaluated > td {
+  background-color: #fafafa !important;
+}
+.row-not-evaluated:hover > td {
+  background-color: #f0f0f0 !important;
+}
 </style>

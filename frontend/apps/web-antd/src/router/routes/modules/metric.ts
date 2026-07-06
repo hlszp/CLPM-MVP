@@ -50,6 +50,25 @@ const routes: RouteRecordRaw[] = [
           title: '统计报表',
         },
       },
+      {
+        name: 'MetricSnapshots',
+        path: '/metric/snapshots',
+        component: () => import('#/views/metric/snapshots.vue'),
+        meta: {
+          icon: 'lucide:table-properties',
+          title: '指标明细',
+        },
+      },
+      {
+        name: 'MetricRecompute',
+        path: '/metric/recompute',
+        component: () => import('#/views/metric/recompute.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER'],
+          icon: 'lucide:history',
+          title: '历史重算',
+        },
+      },
       // —— 指标配置（仅 ADMIN 可见，折叠子菜单）——
       {
         name: 'MetricConfigGroup',

@@ -178,10 +178,10 @@ const kpiItems: {
   },
   {
     desc: '快速率',
-    key: 'fast_response_rate',
+    key: 'fast_rate',
     label: '快速率',
     unit: '%',
-    weightKey: 'fast_response_rate',
+    weightKey: 'fast_rate',
   },
   {
     desc: '振荡率',

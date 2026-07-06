@@ -23,6 +23,7 @@ from app.api.v1.endpoints import (
     dashboard,
     dataplanner,
     diagnosis,
+    grading_config,
     health,
     loop_level_weight,
     loop_mode_mapping,
@@ -36,6 +37,7 @@ from app.api.v1.endpoints import (
     tags,
     tuning,
     users,
+    weight_config,
     ws_realtime,
 )
 from app.api.v1.endpoints import (
@@ -148,6 +150,9 @@ def create_app() -> FastAPI:
     v1_router.include_router(algorithms.router)
     # v4.0: 批量配置接口（IDS §2.8/§2.9）
     v1_router.include_router(configs.router)
+    # v5.3: 权重模板管理（FDS §5.2.2）+ 定级阈值管理（FDS §5.2.4）
+    v1_router.include_router(weight_config.router)
+    v1_router.include_router(grading_config.router)
     # v4.0: 评估任务管理（标准/自定义）
     v1_router.include_router(eval_tasks.router)
     # S5 系统管理：用户管理、审计日志、报表配置

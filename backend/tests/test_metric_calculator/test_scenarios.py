@@ -24,7 +24,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import numpy as np
-import pytest
 
 from app.contracts.data_types import (
     DataBlock,
@@ -37,16 +36,12 @@ from app.services.metric_calculator.accuracy import AccuracyRateCalculator
 from app.services.metric_calculator.auto_mode import AutoModeRateCalculator
 from app.services.metric_calculator.fast_rate import FastRateCalculator
 from app.services.metric_calculator.good_value import GoodValueRateCalculator
-from app.services.metric_calculator.ideal_settling_time import (
-    IdealSettlingTimeCalculator,
-)
 from app.services.metric_calculator.oscillation import OscillationRateCalculator
 from app.services.metric_calculator.saturation import SaturationRateCalculator
 from app.services.metric_calculator.settling_time import SettlingTimeCalculator
 
 # kpi_scenarios fixture 与 SCENARIO_NAMES 常量已移至 conftest.py（跨模块共享）
 from tests.test_metric_calculator.conftest import SCENARIO_NAMES
-
 
 # ---------------------------------------------------------------------------
 # 辅助：scenario → MetricDataBundle
@@ -130,8 +125,7 @@ def _scenario_to_bundle(
             i
             for i in range(n)
             if all(
-                validity.get(t, [False])[i] if i < len(validity.get(t, [])) else False
-                for t in tags
+                validity.get(t, [False])[i] if i < len(validity.get(t, [])) else False for t in tags
             )
         ]
 
@@ -225,18 +219,14 @@ class TestScenariosLoaded:
         """各场景 control_type 字段存在且合法。"""
         for name in SCENARIO_NAMES:
             ct = kpi_scenarios[name].get("control_type")
-            assert ct in {"FAST", "SLOW", "STABLE"}, (
-                f"{name} control_type 异常：{ct}"
-            )
+            assert ct in {"FAST", "SLOW", "STABLE"}, f"{name} control_type 异常：{ct}"
 
     def test_scenarios_have_ar_signal(self, kpi_scenarios):
         """各场景包含 ar_signal 字段（纯 AR 偏差信号，供 ARMA 验证）。"""
         for name in SCENARIO_NAMES:
             scenario = kpi_scenarios[name]
             assert "ar_signal" in scenario, f"{name} 缺 ar_signal 字段"
-            assert len(scenario["ar_signal"]) == 7200, (
-                f"{name} ar_signal 长度非 7200"
-            )
+            assert len(scenario["ar_signal"]) == 7200, f"{name} ar_signal 长度非 7200"
 
 
 # ---------------------------------------------------------------------------
@@ -260,9 +250,7 @@ class TestFastResponseScenario:
         result = calc.calculate(bundle)
         assert result.value is not None
         # expected=10s，宽松上界 60s 防止边界抖动
-        assert result.value <= 60.0, (
-            f"fast_response settling_time={result.value} 预期 ≤ 60s"
-        )
+        assert result.value <= 60.0, f"fast_response settling_time={result.value} 预期 ≤ 60s"
 
     def test_fast_rate_high(self, kpi_scenarios):
         """快速率应较高（≥ 80），用 ideal=30s（FAST 默认）。
@@ -291,9 +279,7 @@ class TestFastResponseScenario:
         result = calc.calculate(bundle)
         assert result.value is not None
         # expected fast_rate_range=[80,100]
-        assert result.value >= 80.0, (
-            f"fast_response fast_rate={result.value} 预期 ≥ 80"
-        )
+        assert result.value >= 80.0, f"fast_response fast_rate={result.value} 预期 ≥ 80"
 
 
 class TestSlowResponseScenario:
@@ -312,9 +298,7 @@ class TestSlowResponseScenario:
         result = calc.calculate(bundle)
         assert result.value is not None
         # expected=60s，宽松下界 30s 防止边界抖动
-        assert result.value >= 30.0, (
-            f"slow_response settling_time={result.value} 预期 ≥ 30s"
-        )
+        assert result.value >= 30.0, f"slow_response settling_time={result.value} 预期 ≥ 30s"
 
     def test_fast_rate_lower_than_fast_response(self, kpi_scenarios):
         """slow_response 的 fast_rate 应明显低于 fast_response（同一 ideal 下）。
@@ -349,9 +333,7 @@ class TestSlowResponseScenario:
             f"slow fast_rate={fast_rate_slow} 应低于 fast={fast_rate_fast}"
         )
         # slow_response 的 fast_rate 应 < 50（expected range 上界）
-        assert fast_rate_slow < 50.0, (
-            f"slow_response fast_rate={fast_rate_slow} 预期 < 50"
-        )
+        assert fast_rate_slow < 50.0, f"slow_response fast_rate={fast_rate_slow} 预期 < 50"
 
 
 class TestNormalScenarioFastRate:
@@ -384,9 +366,7 @@ class TestNormalScenarioFastRate:
         result = calc.calculate(bundle)
         assert result.value is not None
         # expected fast_rate_range=[70,100]
-        assert result.value >= 70.0, (
-            f"normal fast_rate={result.value} 预期 ≥ 70"
-        )
+        assert result.value >= 70.0, f"normal fast_rate={result.value} 预期 ≥ 70"
 
 
 # ---------------------------------------------------------------------------
@@ -404,23 +384,17 @@ class TestOscillationScenario:
     def test_oscillation_zero_crossings_abundant(self, kpi_scenarios):
         """振荡场景应检测到大量零交叉点（正弦波周期 600s → ~24 个周期 → ~48 个零交叉）."""
         scenario = kpi_scenarios["oscillation"]
-        bundle = _scenario_to_bundle(
-            scenario, "oscillation_rate", mask_tags="pv_valid && sp_valid"
-        )
+        bundle = _scenario_to_bundle(scenario, "oscillation_rate", mask_tags="pv_valid && sp_valid")
         calc = OscillationRateCalculator()
         result = calc.calculate(bundle)
         # 零交叉点数应远多于 MIN_ZERO_CROSSINGS=4
         zero_crossings = result.details.get("zero_crossings", 0)
-        assert zero_crossings >= 20, (
-            f"oscillation zero_crossings={zero_crossings} 预期 ≥ 20"
-        )
+        assert zero_crossings >= 20, f"oscillation zero_crossings={zero_crossings} 预期 ≥ 20"
 
     def test_oscillation_rate_positive(self, kpi_scenarios):
         """振荡率应 > 0（检测到一定程度的振荡相似性）。"""
         scenario = kpi_scenarios["oscillation"]
-        bundle = _scenario_to_bundle(
-            scenario, "oscillation_rate", mask_tags="pv_valid && sp_valid"
-        )
+        bundle = _scenario_to_bundle(scenario, "oscillation_rate", mask_tags="pv_valid && sp_valid")
         calc = OscillationRateCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
@@ -457,7 +431,7 @@ class TestOpSaturationScenario:
         )
         # 应检测到高限饱和时长 > 0
         assert result.details.get("sat_high_duration_s", 0) > 0, (
-            f"op_saturation sat_high_duration 应 > 0"
+            "op_saturation sat_high_duration 应 > 0"
         )
 
     def test_saturation_rate_in_range_with_wider_epsilon(self, kpi_scenarios):
@@ -480,12 +454,8 @@ class TestOpSaturationScenario:
         result = calc.calculate(bundle)
         assert result.value is not None
         # 宽松下界 25（expected range 下界），上界 60（容忍 2 个饱和期的实际占比）
-        assert result.value >= 25.0, (
-            f"op_saturation rate={result.value}（epsilon=5）预期 ≥ 25"
-        )
-        assert result.value <= 60.0, (
-            f"op_saturation rate={result.value}（epsilon=5）预期 ≤ 60"
-        )
+        assert result.value >= 25.0, f"op_saturation rate={result.value}（epsilon=5）预期 ≥ 25"
+        assert result.value <= 60.0, f"op_saturation rate={result.value}（epsilon=5）预期 ≤ 60"
 
 
 # ---------------------------------------------------------------------------
@@ -502,16 +472,12 @@ class TestNormalScenarioMetrics:
     def test_accuracy_rate_high(self, kpi_scenarios):
         """准确率应较高（> 70）。"""
         scenario = kpi_scenarios["normal"]
-        bundle = _scenario_to_bundle(
-            scenario, "accuracy_rate", mask_tags="pv_valid && sp_valid"
-        )
+        bundle = _scenario_to_bundle(scenario, "accuracy_rate", mask_tags="pv_valid && sp_valid")
         calc = AccuracyRateCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
         # PV 紧跟 SP，准确率应较高
-        assert result.value > 70.0, (
-            f"normal accuracy_rate={result.value} 预期 > 70"
-        )
+        assert result.value > 70.0, f"normal accuracy_rate={result.value} 预期 > 70"
 
     def test_good_value_rate_near_full(self, kpi_scenarios):
         """normal 场景 99.5% Good → good_value_rate ≈ 99.5。"""
@@ -519,18 +485,14 @@ class TestNormalScenarioMetrics:
         # 校验坏质量点占比 ~0.5%
         qualities = [p.get("pv_quality") for p in scenario["data"]]
         good_ratio = sum(1 for q in qualities if q == 1) / len(qualities)
-        assert 0.99 <= good_ratio <= 0.999, (
-            f"normal good_ratio={good_ratio:.4f} 预期 0.99~0.999"
-        )
+        assert 0.99 <= good_ratio <= 0.999, f"normal good_ratio={good_ratio:.4f} 预期 0.99~0.999"
 
         bundle = _scenario_to_bundle(scenario, "good_value_rate")
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
         # good_value_rate 应接近 99.5（>= 95 即 A 级可信度）
-        assert result.value >= 95.0, (
-            f"normal good_value_rate={result.value} 预期 ≥ 95"
-        )
+        assert result.value >= 95.0, f"normal good_value_rate={result.value} 预期 ≥ 95"
 
     def test_auto_mode_rate_high(self, kpi_scenarios):
         """normal 场景 ~95% Auto（5% 手动段注入）→ auto_mode_rate ≈ 95。"""
@@ -538,18 +500,14 @@ class TestNormalScenarioMetrics:
         # 校验手动模式占比 ~5%
         modes = [p.get("mode") for p in scenario["data"]]
         auto_ratio = sum(1 for m in modes if m == 1) / len(modes)
-        assert 0.90 <= auto_ratio <= 0.999, (
-            f"normal auto_ratio={auto_ratio:.4f} 预期 0.90~0.999"
-        )
+        assert 0.90 <= auto_ratio <= 0.999, f"normal auto_ratio={auto_ratio:.4f} 预期 0.90~0.999"
 
         bundle = _scenario_to_bundle(scenario, "auto_mode_rate")
         calc = AutoModeRateCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
         # auto_mode_rate 应 >= 85（5% 手动段 → ~95% auto）
-        assert result.value >= 85.0, (
-            f"normal auto_mode_rate={result.value} 预期 ≥ 85"
-        )
+        assert result.value >= 85.0, f"normal auto_mode_rate={result.value} 预期 ≥ 85"
 
 
 # ---------------------------------------------------------------------------
@@ -637,9 +595,7 @@ class TestPureAr2Scenario:
 
         # 前 2 个是真实 AR 系数，剩余应为噪声估计（接近 0）
         for i in range(2, len(coeffs)):
-            assert abs(coeffs[i]) < 0.05, (
-                f"AR residual coeff[{i}]={coeffs[i]:.4f} 应接近 0"
-            )
+            assert abs(coeffs[i]) < 0.05, f"AR residual coeff[{i}]={coeffs[i]:.4f} 应接近 0"
 
     def test_settling_time_reasonable(self, kpi_scenarios):
         """pure_ar2 的稳态时间应合理（≤ 100s，对应 expected=20s 量级）。"""
@@ -649,6 +605,4 @@ class TestPureAr2Scenario:
         result = calc.calculate(bundle)
         assert result.value is not None
         # expected=20s，宽松上界 100s
-        assert result.value <= 100.0, (
-            f"pure_ar2 settling_time={result.value} 预期 ≤ 100s"
-        )
+        assert result.value <= 100.0, f"pure_ar2 settling_time={result.value} 预期 ≤ 100s"

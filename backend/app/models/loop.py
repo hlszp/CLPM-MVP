@@ -63,11 +63,19 @@ class LoopLedger(Base):
     remark: Mapped[str | None] = mapped_column(String(500), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # 重构方案 v1.2 新增字段（对齐国标 GB/T 44693.2-2024）
-    level: Mapped[int | None] = mapped_column(
+    # v5.3 对齐 DDS v4.1：level → importance_level，NOT NULL，DEFAULT 2
+    importance_level: Mapped[int] = mapped_column(
         SmallInteger,
-        nullable=True,
-        default=3,
-        comment="回路级别 1/2/3（默认3，对齐附表2，用于装置级聚合加权）",
+        nullable=False,
+        default=2,
+        comment="回路重要等级 1/2/3（默认2，对齐附表2，用于装置级聚合加权 1:3, 2:2, 3:1）",
+    )
+    # v5.3 新增：是否参与评估（对齐 FDS §5.2.3 / DDS v4.1）
+    include_in_evaluation: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        comment="是否参与评估：true=参与综合评分与装置级聚合，false=仅计算单回路 KPI 不参与聚合",
     )
     modeattr_tag_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),
@@ -97,14 +105,14 @@ class LoopLedger(Base):
             name="ck_loop_ledger_loop_type",
         ),
         CheckConstraint(
-            "level IS NULL OR level IN (1, 2, 3)",
-            name="ck_loop_ledger_level",
+            "importance_level IN (1, 2, 3)",
+            name="ck_loop_ledger_importance_level",
         ),
         Index("uk_loop_ledger_tag_name", "tag_name", unique=True),
         Index("idx_loop_ledger_unit_id", "unit_id"),
         Index("idx_loop_ledger_status", "status"),
         Index("idx_loop_ledger_tag_name", "tag_name"),
-        Index("idx_loop_ledger_level", "level"),
+        Index("idx_loop_ledger_importance_level", "importance_level"),
     )
 
 

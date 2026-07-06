@@ -15,6 +15,7 @@ RealtimeSubscriber 广播的实时数据，推送给已连接的前端客户端�
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -85,8 +86,17 @@ async def realtime_websocket(websocket: WebSocket) -> None:
                 data = message["data"]
                 if isinstance(data, bytes):
                     data = data.decode("utf-8")
-                # 直接转发 JSON 消息
-                await websocket.send_text(data)
+                # 解析消息：realtime_simulator 发布批量数组，RealtimeSubscriber 发布单对象
+                parsed = json.loads(data)
+                if isinstance(parsed, list):
+                    # 批量消息（数组）：逐条转发给前端
+                    for item in parsed:
+                        await websocket.send_text(
+                            item if isinstance(item, str) else json.dumps(item, ensure_ascii=False)
+                        )
+                else:
+                    # 单条消息（对象）：直接转发
+                    await websocket.send_text(data)
             except WebSocketDisconnect:
                 break
             except Exception as exc:  # noqa: BLE001

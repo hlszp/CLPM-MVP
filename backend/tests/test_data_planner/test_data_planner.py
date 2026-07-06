@@ -682,9 +682,7 @@ class TestKpiPathNoLttbDownsampling:
         阈值表使用 1/2/5/5/10 秒。
         """
         requirements = [
-            build_requirement(
-                "accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"
-            ),
+            build_requirement("accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"),
         ]
         db = _make_db(requirements)
         query_log: list = []
@@ -754,9 +752,7 @@ class TestKpiPathNoLttbDownsampling:
             end=datetime(2024, 1, 1, 14, 0, 0),
         )
         requirements = [
-            build_requirement(
-                "accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"
-            ),
+            build_requirement("accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"),
         ]
         db = _make_db(requirements)
 
@@ -797,14 +793,10 @@ class TestKpiPathNoLttbDownsampling:
         import app.services.data_planner as dp_module
 
         # 检查模块源码不含 lttb_downsample 调用
-        source_lines = [
-            line
-            for line in dp_module.__doc__.splitlines() if "lttb" in line.lower()
-        ]
+        source_lines = [line for line in dp_module.__doc__.splitlines() if "lttb" in line.lower()]
         # docstring 中应仅作为说明提及（不调用函数）
         assert not any(
-            "import" in line.lower() and "lttb" in line.lower()
-            for line in source_lines
+            "import" in line.lower() and "lttb" in line.lower() for line in source_lines
         ), "DataPlanner docstring 不应包含 lttb import 语句"
 
         # 模块不应有 lttb_downsample 函数引用

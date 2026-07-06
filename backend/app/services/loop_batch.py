@@ -28,7 +28,12 @@ from app.models.tag import TagRegistry
 logger = logging.getLogger(__name__)
 
 # 允许批量更新的字段白名单
-_BATCH_UPDATABLE_FIELDS = {"is_monitored", "is_stat_enabled", "level"}
+_BATCH_UPDATABLE_FIELDS = {
+    "is_monitored",
+    "is_stat_enabled",
+    "importance_level",
+    "include_in_evaluation",
+}
 
 
 async def _write_audit(
@@ -100,13 +105,13 @@ async def batch_update_loops(
             status_code=422,
         )
 
-    # 校验 level 取值
-    if "level" in updates and updates["level"] is not None:
-        level = updates["level"]
+    # 校验 importance_level 取值
+    if "importance_level" in updates and updates["importance_level"] is not None:
+        level = updates["importance_level"]
         if level not in (1, 2, 3):
             raise BizError(
                 code="ERR_BATCH_INVALID_FIELD",
-                message=f"level 必须为 1/2/3，当前为 {level}",
+                message=f"importance_level 必须为 1/2/3，当前为 {level}",
                 status_code=422,
             )
 
@@ -124,7 +129,8 @@ async def batch_update_loops(
             "loopId": str(loop.id),
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
-            "level": loop.level,
+            "importanceLevel": loop.importance_level,
+            "includeInEvaluation": loop.include_in_evaluation,
         }
 
         if "is_monitored" in updates and updates["is_monitored"] is not None:
@@ -134,15 +140,18 @@ async def batch_update_loops(
             # 当前 LoopLedger 无独立 is_stat_enabled 字段，复用 is_active 语义
             # 后续若新增字段可在此扩展
             loop.is_active = bool(updates["is_stat_enabled"])
-        if "level" in updates and updates["level"] is not None:
-            loop.level = updates["level"]
+        if "importance_level" in updates and updates["importance_level"] is not None:
+            loop.importance_level = updates["importance_level"]
+        if "include_in_evaluation" in updates and updates["include_in_evaluation"] is not None:
+            loop.include_in_evaluation = bool(updates["include_in_evaluation"])
         loop.updated_by = operator
 
         after = {
             "loopId": str(loop.id),
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
-            "level": loop.level,
+            "importanceLevel": loop.importance_level,
+            "includeInEvaluation": loop.include_in_evaluation,
         }
         audit_items.append({"before": before, "after": after})
 
@@ -224,7 +233,7 @@ async def batch_delete_loops(
 
     tag_result = await db.execute(
         select(LoopTagMapping.loop_id)
-        .where(LoopTagMapping.loop_id.in_([str(l.id) for l in loops]))
+        .where(LoopTagMapping.loop_id.in_([str(lp.id) for lp in loops]))
         .distinct()
     )
     loops_with_tags: set[str] = {str(row[0]) for row in tag_result.all()}

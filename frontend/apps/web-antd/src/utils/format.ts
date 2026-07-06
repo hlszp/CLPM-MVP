@@ -20,13 +20,19 @@ export type { TreeNode } from '#/utils/plant-node';
 
 /**
  * 格式化时间字符串为本地化展示
+ *
+ * 强制使用北京时区（Asia/Shanghai, UTC+8）展示，与后端 Celery Beat 时区配置一致，
+ * 避免依赖浏览器本地时区导致跨地区显示不一致。
+ *
  * @param t ISO8601 时间字符串或空值
  * @returns 格式化后的时间字符串，空值返回 "—"
  */
 export function formatTime(t: null | string | undefined): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN');
+    return new Date(t).toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+    });
   } catch {
     return t;
   }

@@ -459,9 +459,7 @@ class TestListLoopMonitor:
         列表展示时应返回 "Auto" 而非默认映射的 "Unknown"。
         """
         loop = _make_loop(unit_id=None)  # 跳过 plant node 查询简化 mock
-        mode_tag = _make_tag(
-            tag_id="tag-mode", tag_name="LIC-101.MODE", current_value=5
-        )
+        mode_tag = _make_tag(tag_id="tag-mode", tag_name="LIC-101.MODE", current_value=5)
         mappings = [_make_mapping(tag_role="MODE", tag_id="tag-mode")]
         # 用户配置：MODE=5 → AUTO
         mode_mapping_rows = [
@@ -696,7 +694,7 @@ class TestGetLoopMonitorDetail:
         snap.auto_mode_rate = Decimal("88.00")
         snap.steady_rate = Decimal("80.00")
         snap.accuracy_rate = Decimal("75.00")
-        snap.fast_response_rate = Decimal("70.00")
+        snap.fast_rate = Decimal("70.00")
         snap.oscillation_rate = Decimal("20.00")
         snap.saturation_rate = Decimal("15.00")
         snap.effective_auto_rate = Decimal("82.00")
@@ -742,7 +740,7 @@ class TestGetLoopMonitorDetail:
         snap.auto_mode_rate = Decimal("88.00")
         snap.steady_rate = Decimal("80.00")
         snap.accuracy_rate = Decimal("75.00")
-        snap.fast_response_rate = Decimal("70.00")
+        snap.fast_rate = Decimal("70.00")
         snap.oscillation_rate = Decimal("20.00")
         snap.saturation_rate = Decimal("15.00")
         snap.effective_auto_rate = Decimal("82.00")

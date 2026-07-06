@@ -51,7 +51,7 @@ router = APIRouter(prefix="/configs", tags=["configs"])
 # 3 核心指标（参与权重校验）
 _CORE_METRIC_CODES: tuple[str, ...] = (
     "accuracy_rate",
-    "fast_response_rate",
+    "fast_rate",
     "steady_rate",
 )
 # 1 投用指标（折扣因子）
@@ -83,7 +83,7 @@ _AUX_ALGORITHM_VERSIONS: dict[str, str] = {
 # 各指标中文名（用于响应默认值）
 _METRIC_NAMES: dict[str, str] = {
     "accuracy_rate": "准确率",
-    "fast_response_rate": "快速率",
+    "fast_rate": "快速率",
     "steady_rate": "稳定率",
     "effective_auto_rate": "有效自控率",
     "good_value_rate": "好值率",
@@ -119,7 +119,11 @@ def _metric_category(metric_code: str) -> str | None:
 
 
 def _metric_to_response_dict(c: MetricConfig) -> dict[str, Any]:
-    """将 MetricConfig ORM 转为响应字典（含 category/isDiscountFactor）。"""
+    """将 MetricConfig ORM 转为响应字典（含 category/isDiscountFactor）。
+
+    v5.3 P3-T10：formula 字段已标注废弃（算法已固化在代码中），
+    Schema 层通过 deprecated=True 在 OpenAPI 文档中体现。
+    """
     category = _metric_category(c.metric_code)
     is_discount = c.metric_code == _COMMISSIONING_METRIC_CODE
     return {
@@ -128,6 +132,7 @@ def _metric_to_response_dict(c: MetricConfig) -> dict[str, Any]:
         "metricName": c.metric_name,
         "category": category,
         "isDiscountFactor": is_discount if is_discount else None,
+        # v5.3 P3-T10：formula 已废弃，保留返回值用于历史追溯
         "formula": c.formula,
         "weight": float(c.weight) if c.weight is not None else None,
         "threshold": c.threshold,
@@ -293,7 +298,7 @@ async def batch_update_metric_configs(
 ) -> dict:
     """批量更新指标配置（事务性，任一项失败全部回滚）.
 
-    权重校验仅针对 3 项核心指标（accuracy_rate/fast_response_rate/steady_rate），
+    权重校验仅针对 3 项核心指标（accuracy_rate/fast_rate/steady_rate），
     总和须为 100%，否则返回 ``ERR_METRIC_WEIGHT_SUM``。
 
     设计依据：IDS §2.8.2

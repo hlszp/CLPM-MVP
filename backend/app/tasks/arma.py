@@ -145,7 +145,7 @@ def compute_settling_time(
     # 慢速响应信号可能不稳定（Green 函数发散）。此时自动升级阶数重试：
     # [ar_order, 4, 6, 10]，首个稳定的阶数胜出。ARMA(2,1) 的 MA(1) 部分能更好
     # 表示近单位根过程，当前 AR 近似丢失 MA 部分，阶数升级作为工程回退。
-    retry_orders = sorted(set([ar_order, 4, 6, 10]))
+    retry_orders = sorted({ar_order, 4, 6, 10})
     ar_coeffs = None
     green_func = None
     for try_order in retry_orders:
@@ -160,9 +160,7 @@ def compute_settling_time(
             g = g / g[0]
         # 检测发散（含 NaN/Inf）
         if not np.all(np.isfinite(g)):
-            logger.debug(
-                "[ARMA] AR(%d) Green 函数含 NaN/Inf（发散），尝试更高阶", try_order
-            )
+            logger.debug("[ARMA] AR(%d) Green 函数含 NaN/Inf（发散），尝试更高阶", try_order)
             continue
         max_abs_g = float(np.max(np.abs(g)))
         if max_abs_g <= 1e6:
@@ -170,12 +168,15 @@ def compute_settling_time(
             green_func = g
             logger.debug(
                 "[ARMA] AR(%d) 稳定（max|G|=%.2e），系数: %s",
-                try_order, max_abs_g, np.round(coeffs, 4),
+                try_order,
+                max_abs_g,
+                np.round(coeffs, 4),
             )
             break
         logger.debug(
             "[ARMA] AR(%d) Green 函数发散（max|G|=%.2e），尝试更高阶",
-            try_order, max_abs_g,
+            try_order,
+            max_abs_g,
         )
 
     if ar_coeffs is None or green_func is None:

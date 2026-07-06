@@ -33,7 +33,6 @@ import asyncio
 import collections
 import math
 import random
-import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -184,7 +183,9 @@ class SOPDTModel:
 
     def step(self, sp_input: float, pv_prev: float) -> float:
         self._delay_queue.append(sp_input)
-        sp_delayed = self._delay_queue[0] if len(self._delay_queue) >= self._delay_queue.maxlen else sp_input
+        sp_delayed = (
+            self._delay_queue[0] if len(self._delay_queue) >= self._delay_queue.maxlen else sp_input
+        )
         # 两个一阶环节串联
         self._x1 = self._x1 * (1.0 - self.a1) + sp_delayed * self.a1
         pv = pv_prev * (1.0 - self.a2) + self.k * self._x1 * self.a2
@@ -229,27 +230,27 @@ class IntegratorModel:
 # 各控制类型的物理模型参数（tau 体现"数据变化间隔"要求）
 TYPE_PARAMS: dict[str, dict[str, Any]] = {
     "FLOW": {
-        "tau": 2.0,          # 流量：1-2s 响应
-        "theta": 0.5,        # 纯滞后 0.5s
-        "model": "fopdt",    # 一阶纯滞后
+        "tau": 2.0,  # 流量：1-2s 响应
+        "theta": 0.5,  # 纯滞后 0.5s
+        "model": "fopdt",  # 一阶纯滞后
         "noise_pct": 0.005,  # 噪声占量程 0.5%
     },
     "LEVEL": {
-        "tau": 5.0,          # 液位：3-5s 响应
+        "tau": 5.0,  # 液位：3-5s 响应
         "theta": 0.0,
         "model": "integrator",  # 积分对象
         "noise_pct": 0.003,
     },
     "PRESSURE": {
-        "tau": 3.0,          # 压力：2-3s 响应
-        "theta": 1.0,        # 纯滞后 1s
-        "model": "fopdt",    # 一阶纯滞后
+        "tau": 3.0,  # 压力：2-3s 响应
+        "theta": 1.0,  # 纯滞后 1s
+        "model": "fopdt",  # 一阶纯滞后
         "noise_pct": 0.004,
     },
     "TEMPERATURE": {
-        "tau": 8.0,          # 温度：5-10s 响应
-        "theta": 3.0,        # 纯滞后 3s
-        "model": "sopdt",    # 二阶纯滞后
+        "tau": 8.0,  # 温度：5-10s 响应
+        "theta": 3.0,  # 纯滞后 3s
+        "model": "sopdt",  # 二阶纯滞后
         "noise_pct": 0.003,
     },
     "STABLE": {
@@ -554,7 +555,9 @@ class LoopSimulator:
         pv += random.gauss(0, self.noise_sigma * 0.3)  # 粘滞时噪声更小
         return pv, op
 
-    def _gen_op_saturation(self, sp: float, prev_pv: float, prev_op: float, t_sec: float) -> tuple[float, float]:
+    def _gen_op_saturation(
+        self, sp: float, prev_pv: float, prev_op: float, t_sec: float
+    ) -> tuple[float, float]:
         """OP 饱和：OP 长时间停留 95-100% 或 0-5%。"""
         if t_sec < self._sat_until:
             op = clamp(97.0 + random.gauss(0, 0.5), 95, 100)
@@ -607,7 +610,9 @@ class LoopSimulator:
         op = 50 + (sp - pv) * 0.2 + random.gauss(0, 0.4)
         return pv, op
 
-    def _gen_manual(self, sp: float, prev_pv: float, prev_op: float, t_sec: float) -> tuple[float, float]:
+    def _gen_manual(
+        self, sp: float, prev_pv: float, prev_op: float, t_sec: float
+    ) -> tuple[float, float]:
         """手动模式：OP 由操作员阶跃调节，PV 跟随 OP。"""
         if t_sec >= self._manual_next_change:
             self._manual_op_target = clamp(prev_op + random.uniform(-15, 15), 10, 90)
@@ -632,11 +637,13 @@ class AnomalyInjector:
     """异常值与质量戳注入器（所有异常值约束在量程范围内，PV 异常比例 < 5%）。
 
     策略：
-        - spike（尖峰）：PV 突变到量程边界附近（不超量程），持续 1-3 秒，标记 Bad
         - flatline（停滞）：PV 锁定固定值 30-90 秒，标记 Uncertain
         - bad_cluster（坏质量聚簇）：30-60 秒窗口 pv_quality=0（仅质量，不改 PV 值）
         - uncertain_scatter（不确定散点）：~1% 单点 pv_quality=2
     总异常点比例控制在 < 5%。
+
+    注：spike（尖峰）生成逻辑已于本次数据清洗任务移除，避免再次注入毛刺数据
+    （历史毛刺已由 scripts/clean_tdengine_spikes.py 清洗）。
     """
 
     def __init__(self, cfg: dict, n_points: int) -> None:
@@ -647,28 +654,12 @@ class AnomalyInjector:
         self.pv_range = cfg["pv_range"]
         self.base_sp = cfg["base_sp"]
 
-        # 预生成异常事件（控制总比例 < 5%）
-        self.spike_events = self._gen_spikes()
+        # 预生成异常事件（控制总比例 < 5%，spike 已移除）
         self.flatline_events = self._gen_flatlines()
         self.bad_clusters = self._gen_bad_clusters()
         # uncertain 散点 ~0.5%
         n_uncertain = max(1, n_points // 200)
         self.uncertain_indices = set(random.sample(range(n_points), n_uncertain))
-
-    def _gen_spikes(self) -> list[tuple[int, int, float]]:
-        """尖峰事件：(起始, 持续秒, 尖峰值)。量程边界附近，不超量程。约 0.05%。"""
-        events = []
-        n_spikes = max(2, self.n // 2000)
-        for _ in range(n_spikes):
-            start = random.randint(60, self.n - 300)
-            dur = random.randint(1, 3)
-            # 尖峰到量程边界附近（量程的 90-99% 或 1-10%），不超量程
-            if random.random() < 0.5:
-                spike_val = self.range_max * random.uniform(0.90, 0.99)
-            else:
-                spike_val = self.range_min + self.pv_range * random.uniform(0.01, 0.10)
-            events.append((start, dur, round(spike_val, 4)))
-        return events
 
     def _gen_flatlines(self) -> list[tuple[int, int, float]]:
         """停滞事件：(起始, 持续秒, 锁定值)。约 0.15%。"""
@@ -698,24 +689,19 @@ class AnomalyInjector:
         """对单点应用异常注入，返回 (pv_after, quality)。quality: 1=Good, 0=Bad, 2=Uncertain。"""
         quality = 1
 
-        # 1. spike 尖峰（量程内）
-        for s, dur, val in self.spike_events:
-            if s <= idx < s + dur:
-                return val, 0  # Bad
-
-        # 2. flatline 停滞
+        # 1. flatline 停滞（spike 已移除）
         for s, dur, val in self.flatline_events:
             if s <= idx < s + dur:
                 if quality == 1:
                     quality = 2  # Uncertain
                 return val, quality
 
-        # 3. bad_cluster 坏质量聚簇（仅质量戳）
+        # 2. bad_cluster 坏质量聚簇（仅质量戳）
         for s, dur in self.bad_clusters:
             if s <= idx < s + dur:
                 return round(pv, 4), 0  # Bad
 
-        # 4. uncertain 散点
+        # 3. uncertain 散点
         if idx in self.uncertain_indices:
             quality = 2
 
@@ -733,7 +719,9 @@ def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple
     返回 list of (ts_str, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality)
     """
     interval = timedelta(seconds=SAMPLE_INTERVAL)
-    sp_schedule = generate_sp_schedule(cfg["base_sp"], cfg["range_min"], cfg["range_max"], start, end)
+    sp_schedule = generate_sp_schedule(
+        cfg["base_sp"], cfg["range_min"], cfg["range_max"], start, end
+    )
     mode_schedule = generate_mode_schedule(cfg["scenario"], start, end)
 
     sp_idx = 0
@@ -791,7 +779,7 @@ def generate_timeseries(cfg: dict, start: datetime, end: datetime) -> list[tuple
 
 async def setup_postgres(loops: list[dict[str, Any]]) -> None:
     """补全 tag_registry + loop_tag_mapping（每回路 7 个 Tag 角色）。"""
-    loop_ids = [c["id"] for c in loops]
+    [c["id"] for c in loops]
     n_tags = 0
     n_mappings = 0
     async with AsyncSessionLocal() as session:
@@ -907,12 +895,12 @@ async def td_execute(
             if attempt == retries - 1:
                 print(f"  ⚠ TDengine SQL 错误: {desc[:200]}")
                 return None
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
         except Exception as exc:
             if attempt == retries - 1:
                 print(f"  ⚠ TDengine 请求异常: {exc}")
                 return None
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
     return None
 
 
@@ -1036,8 +1024,15 @@ async def write_all_tdengine_data(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CLPM 27 回路秒级数据仿真器（189 测点真实量程）")
-    parser.add_argument("--hours", type=int, default=DEFAULT_HOURS, help=f"历史数据小时数（默认 {DEFAULT_HOURS}）")
-    parser.add_argument("--start", type=str, default=None, help=f"起始时间 YYYY-MM-DD HH:MM:SS（默认 {DEFAULT_START}）")
+    parser.add_argument(
+        "--hours", type=int, default=DEFAULT_HOURS, help=f"历史数据小时数（默认 {DEFAULT_HOURS}）"
+    )
+    parser.add_argument(
+        "--start",
+        type=str,
+        default=None,
+        help=f"起始时间 YYYY-MM-DD HH:MM:SS（默认 {DEFAULT_START}）",
+    )
     parser.add_argument("--clean", action="store_true", help="清空 TDengine 全部数据后重新写入")
     return parser.parse_args()
 
@@ -1061,7 +1056,8 @@ async def main() -> None:
     units_seen: dict[str, list[str]] = {}
     for cfg in loops:
         units_seen.setdefault(cfg["unit_name"], []).append(
-            f"{cfg['tag_name']}({cfg['control_type']}/{cfg['scenario']} 量程[{cfg['range_min']},{cfg['range_max']}])"
+            f"{cfg['tag_name']}({cfg['control_type']}/{cfg['scenario']} "
+            f"量程[{cfg['range_min']},{cfg['range_max']}])"
         )
     for uname, tags in units_seen.items():
         print(f"    {uname}: {len(tags)} 回路")

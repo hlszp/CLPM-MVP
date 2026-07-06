@@ -77,7 +77,12 @@ class MetricConfigItem(CamelModel):
     metricName: str | None = None
     category: MetricCategory | None = None
     isDiscountFactor: bool | None = None
-    formula: str | None = None
+    # v5.3 P3-T8：formula 字段标记为废弃（算法已固化在代码中，不再支持自定义公式）
+    formula: str | None = Field(
+        None,
+        deprecated=True,
+        description="（已废弃）计算公式——算法已固化在 metric_calculator 代码中，不再支持自定义公式",
+    )
     weight: float | None = None
     threshold: dict[str, Any] | None = None
     controlType: ControlType | None = None
@@ -227,6 +232,123 @@ class DiagnosisConfigBatchResponse(CamelModel):
     updatedCount: int | None = None
 
 
+# ---------------------------------------------------------------------------
+# v5.3 P3-T8：权重模板 / 定级阈值 / 版本历史 schema
+# 设计依据：FDS v5.1 §5.2.2 权重配置 / §5.2.4 定级阈值 / DDS v4.1
+# ---------------------------------------------------------------------------
+
+
+class WeightTemplateItem(CamelModel):
+    """权重模板单项（单个控制类型的 6 指标权重）.
+
+    Attributes:
+        controlType: 控制类型 STABLE/SLOW/FAST/LOGIC
+        autoModeRate: 自控率权重（0-100）
+        steadyRate: 稳定率权重（0-100）
+        accuracyRate: 准确率权重（0-100）
+        fastRate: 快速率权重（0-100）
+        oscillationRate: 振荡率权重（0-100）
+        saturationRate: 饱和率权重（0-100）
+    """
+
+    controlType: ControlType
+    autoModeRate: int = Field(0, ge=0, le=100)
+    steadyRate: int = Field(0, ge=0, le=100)
+    accuracyRate: int = Field(0, ge=0, le=100)
+    fastRate: int = Field(0, ge=0, le=100)
+    oscillationRate: int = Field(0, ge=0, le=100)
+    saturationRate: int = Field(0, ge=0, le=100)
+
+
+class WeightTemplateSchema(CamelModel):
+    """权重模板（4 类控制类型的权重集合）.
+
+    对齐 GB/T 44693.2-2024 国标默认权重：
+    - STABLE: 稳定型（快速率权重低，稳定率权重高）
+    - SLOW: 慢速型
+    - FAST: 快速型（快速率权重高）
+    - LOGIC: 逻辑型
+
+    有效自控率（effective_auto_rate）为折扣因子 R，不参与权重和校验。
+    """
+
+    version: int = 1
+    templates: list[WeightTemplateItem] = Field(default_factory=list)
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+class WeightTemplateSaveRequest(CamelModel):
+    """权重模板保存请求（保存为新版本）."""
+
+    templates: list[WeightTemplateItem] = Field(..., min_length=1, max_length=4)
+    remark: str | None = Field(None, max_length=500)
+
+
+class GradingThresholdItem(CamelModel):
+    """定级阈值单项.
+
+    Attributes:
+        level: 等级编号 1-5
+        name: 等级名称（EXCELLENT/GOOD/FAIR/WARNING/POOR）
+        minScore: 最低分（含）
+        maxScore: 最高分（不含，最后一档为含）
+        color: 显示颜色
+    """
+
+    level: int = Field(..., ge=1, le=5)
+    name: str
+    minScore: float = Field(..., ge=0, le=100)
+    maxScore: float = Field(..., ge=0, le=100)
+    color: str | None = None
+
+
+class GradingThresholdSchema(CamelModel):
+    """定级阈值配置（5 级）.
+
+    对齐 FDS v5.1 §5.2.4：
+    - 1 级 EXCELLENT (≥90) 绿色
+    - 2 级 GOOD (80-90) 蓝色
+    - 3 级 FAIR (60-80) 黄色
+    - 4 级 WARNING (40-60) 橙色
+    - 5 级 POOR (<40) 红色
+    """
+
+    thresholds: list[GradingThresholdItem] = Field(default_factory=list)
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+class GradingThresholdSaveRequest(CamelModel):
+    """定级阈值更新请求."""
+
+    thresholds: list[GradingThresholdItem] = Field(..., min_length=5, max_length=5)
+
+
+class VersionHistoryItem(CamelModel):
+    """版本历史单项.
+
+    Attributes:
+        version: 版本号
+        updatedAt: 更新时间
+        updatedBy: 更新人
+        remark: 备注
+        isCurrent: 是否为当前版本
+    """
+
+    version: int
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+    remark: str | None = None
+    isCurrent: bool = False
+
+
+class VersionHistorySchema(CamelModel):
+    """版本历史列表."""
+
+    items: list[VersionHistoryItem] = Field(default_factory=list)
+
+
 __all__ = [
     "ControlType",
     "DiagnosisConfigBatchResponse",
@@ -234,10 +356,18 @@ __all__ = [
     "DiagnosisConfigItem",
     "DiagnosisConfigUpdateItem",
     "DiagnosisLabel",
+    "GradingThresholdItem",
+    "GradingThresholdSaveRequest",
+    "GradingThresholdSchema",
     "MetricCategory",
     "MetricConfigBatchResponse",
     "MetricConfigBatchUpdateRequest",
     "MetricConfigItem",
     "MetricConfigUpdateItem",
     "MetricThresholdSchema",
+    "VersionHistoryItem",
+    "VersionHistorySchema",
+    "WeightTemplateItem",
+    "WeightTemplateSaveRequest",
+    "WeightTemplateSchema",
 ]
