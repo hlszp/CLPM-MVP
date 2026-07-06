@@ -555,7 +555,7 @@ onMounted(() => {
     <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-500">回路：</span>
+          <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">回路：</span>
           <Select
             v-model:value="filter.loopId"
             placeholder="选择回路"
@@ -569,7 +569,7 @@ onMounted(() => {
           />
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-500">时间范围：</span>
+          <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">时间范围：</span>
           <DatePicker.RangePicker
             v-model:value="filter.timeRange"
             :show-time="{ format: 'HH:mm' }"
@@ -578,7 +578,7 @@ onMounted(() => {
           />
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-500">降采样：</span>
+          <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">降采样：</span>
           <Switch v-model:checked="filter.downsample" />
         </div>
         <Button type="primary" :loading="loading" @click="handleSearch">
@@ -591,17 +591,17 @@ onMounted(() => {
     <ClpmDataCanvas v-if="diagnosisDetail" class="mb-4" title="诊断结果">
       <Spin :spinning="detailLoading">
         <div class="flex flex-wrap items-center gap-3">
-          <div class="text-sm text-gray-500">回路位号：</div>
+          <div class="text-sm" :style="{ color: themeColors.NEUTRAL }">回路位号：</div>
           <div class="font-medium">{{ diagnosisDetail.tagName }}</div>
-          <div class="ml-4 text-sm text-gray-500">综合评分：</div>
-          <div class="font-medium text-blue-600">
+          <div class="ml-4 text-sm" :style="{ color: themeColors.NEUTRAL }">综合评分：</div>
+          <div class="font-medium" :style="{ color: themeColors.INFO }">
             {{ Number(diagnosisDetail.compositeScore).toFixed(2) }}
           </div>
-          <div class="ml-4 text-sm text-gray-500">融合置信度：</div>
+          <div class="ml-4 text-sm" :style="{ color: themeColors.NEUTRAL }">融合置信度：</div>
           <div class="font-medium">
             {{ Number(diagnosisDetail.fusedConfidence).toFixed(2) }}
           </div>
-          <div class="ml-4 text-sm text-gray-500">诊断标签：</div>
+          <div class="ml-4 text-sm" :style="{ color: themeColors.NEUTRAL }">诊断标签：</div>
           <Tag
             v-for="item in diagnosisDetail.diagnosisLabels"
             :key="item.label"

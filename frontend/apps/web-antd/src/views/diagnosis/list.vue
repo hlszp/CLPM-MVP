@@ -443,7 +443,10 @@ onMounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'compositeScore'">
-            <span class="clpm-num font-medium text-blue-600">
+            <span
+              class="clpm-num font-medium"
+              :style="{ color: themeColors.INFO }"
+            >
               {{ Number(record.compositeScore).toFixed(2) }}
             </span>
           </template>

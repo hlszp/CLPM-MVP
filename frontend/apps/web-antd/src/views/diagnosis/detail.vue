@@ -621,7 +621,7 @@ onMounted(() => {
                   height="320px"
                   @time-select="onTrendTimeSelect"
                 />
-                <div v-else class="py-12 text-center text-gray-400">
+                <div v-else class="py-12 text-center" :style="{ color: themeColors.NEUTRAL }">
                   暂无波形数据
                 </div>
               </ClpmDataCanvas>
@@ -640,7 +640,7 @@ onMounted(() => {
                     {{ detail.evidenceChain.reasoning }}
                   </div>
                 </div>
-                <div v-else class="py-4 text-center text-gray-400">
+                <div v-else class="py-4 text-center" :style="{ color: themeColors.NEUTRAL }">
                   暂无推理过程
                 </div>
               </div>
@@ -660,14 +660,14 @@ onMounted(() => {
                       :key="item.key"
                       class="rounded border p-3 text-center"
                     >
-                      <div class="text-xs text-gray-500">{{ item.key }}</div>
+                      <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">{{ item.key }}</div>
                       <div class="mt-1 text-lg font-medium">
                         {{ Number(item.value).toFixed(4) }}
                       </div>
                     </div>
                   </div>
                 </div>
-                <div v-else class="py-4 text-center text-gray-400">
+                <div v-else class="py-4 text-center" :style="{ color: themeColors.NEUTRAL }">
                   暂无特征值
                 </div>
               </div>
@@ -699,7 +699,7 @@ onMounted(() => {
                     <Tag :color="labelColorMap[item.label]">
                       {{ item.labelName || labelNameMap[item.label] }}
                     </Tag>
-                    <span class="text-sm text-gray-500">
+                    <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
                       置信度：
                       <span
                         class="font-medium clpm-num"
@@ -708,11 +708,11 @@ onMounted(() => {
                         {{ Number(item.confidence).toFixed(2) }}
                       </span>
                     </span>
-                    <span class="text-sm text-gray-500">
+                    <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
                       算法：{{ item.algorithm }}
                     </span>
                   </div>
-                  <div class="text-xs text-gray-500">
+                  <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">
                     <span class="font-medium">证据：</span>
                     <pre class="mt-1 whitespace-pre-wrap text-xs">{{
                       formatEvidence(item.evidence)
@@ -733,7 +733,7 @@ onMounted(() => {
             >
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <div class="text-xs text-gray-500">当前状态</div>
+                  <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">当前状态</div>
                   <div
                     class="mt-1 text-lg font-medium clpm-num"
                     :style="{ color: trackerStatusColor }"

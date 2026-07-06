@@ -41,8 +41,11 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'DiagnosisConfig' });
+
+const { themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -319,7 +322,7 @@ onMounted(() => {
     />
     <ClpmDataCanvas class="mt-4" title="诊断指标列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
-        <p class="text-sm text-gray-500">
+        <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
           管理诊断指标配置：诊断规则、算法参数、阈值、启用状态。
         </p>
         <Button :loading="loading" @click="loadList">刷新</Button>
@@ -465,7 +468,8 @@ onMounted(() => {
           </div>
           <div
             v-if="formState.threshold.length === 0"
-            class="py-2 text-center text-xs text-gray-400"
+            class="py-2 text-center text-xs"
+            :style="{ color: themeColors.NEUTRAL }"
           >
             暂无阈值，点击右上角添加
           </div>
@@ -505,7 +509,8 @@ onMounted(() => {
           </div>
           <div
             v-if="formState.params.length === 0"
-            class="py-2 text-center text-xs text-gray-400"
+            class="py-2 text-center text-xs"
+            :style="{ color: themeColors.NEUTRAL }"
           >
             暂无参数，点击右上角添加
           </div>

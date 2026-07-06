@@ -331,9 +331,9 @@ function improvementColor(key: string): string {
   // 对于评分/好值率等正向指标，>0 为绿色；对于振荡率/饱和率等负向指标，<0 为绿色
   const negativeMetrics = ['oscillation_rate', 'saturation_rate'];
   if (negativeMetrics.includes(key)) {
-    return val <= 0 ? 'text-green-600' : 'text-red-500';
+    return val <= 0 ? themeColors.value.SUCCESS : themeColors.value.DANGER;
   }
-  return val >= 0 ? 'text-green-600' : 'text-red-500';
+  return val >= 0 ? themeColors.value.SUCCESS : themeColors.value.DANGER;
 }
 
 watch(
@@ -393,7 +393,7 @@ onMounted(() => {
       <Card class="mb-4">
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex items-center gap-2">
-            <span class="text-sm text-gray-500">处置前：</span>
+            <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">处置前：</span>
             <DatePicker.RangePicker
               v-model:value="filter.beforeRange"
               :show-time="{ format: 'HH:mm' }"
@@ -402,7 +402,7 @@ onMounted(() => {
             />
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-sm text-gray-500">处置后：</span>
+            <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">处置后：</span>
             <DatePicker.RangePicker
               v-model:value="filter.afterRange"
               :show-time="{ format: 'HH:mm' }"
@@ -434,19 +434,19 @@ onMounted(() => {
             :key="kpi.metricKey"
             class="rounded border p-3 text-center"
           >
-            <div class="text-xs text-gray-500">{{ kpi.metricName }}</div>
+            <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">{{ kpi.metricName }}</div>
             <div class="mt-1 text-sm">
-              <span class="text-red-500">{{
+              <span :style="{ color: themeColors.DANGER }">{{
                 Number(kpi.before).toFixed(2)
               }}</span>
               →
-              <span class="text-blue-600">{{
+              <span :style="{ color: themeColors.INFO }">{{
                 Number(kpi.after).toFixed(2)
               }}</span>
             </div>
             <div
               class="mt-1 text-xs font-medium"
-              :class="improvementColor(kpi.metricKey)"
+              :style="{ color: improvementColor(kpi.metricKey) }"
             >
               {{ improvementText(kpi.metricKey) }}
             </div>
@@ -475,7 +475,7 @@ onMounted(() => {
     <ClpmDataCanvas class="mb-4 mt-4" title="筛选条件">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-500">回路：</span>
+          <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">回路：</span>
           <Select
             v-model:value="filter.loopId"
             placeholder="选择回路"
@@ -489,7 +489,7 @@ onMounted(() => {
           />
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-500">处置前：</span>
+          <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">处置前：</span>
           <DatePicker.RangePicker
             v-model:value="filter.beforeRange"
             :show-time="{ format: 'HH:mm' }"
@@ -498,7 +498,7 @@ onMounted(() => {
           />
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-sm text-gray-500">处置后：</span>
+          <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">处置后：</span>
           <DatePicker.RangePicker
             v-model:value="filter.afterRange"
             :show-time="{ format: 'HH:mm' }"
@@ -526,27 +526,27 @@ onMounted(() => {
     <ClpmDataCanvas v-if="compareData" class="mb-4" title="改善摘要">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <div
-          v-for="kpi in compareData.kpiComparison"
-          :key="kpi.metricKey"
-          class="rounded border p-3 text-center"
-        >
-          <div class="text-xs text-gray-500">{{ kpi.metricName }}</div>
-          <div class="mt-1 text-sm">
-            <span class="text-red-500">{{
-              Number(kpi.before).toFixed(2)
-            }}</span>
-            →
-            <span class="text-blue-600">{{
-              Number(kpi.after).toFixed(2)
-            }}</span>
-          </div>
-          <div
-            class="mt-1 text-xs font-medium"
-            :class="improvementColor(kpi.metricKey)"
+            v-for="kpi in compareData.kpiComparison"
+            :key="kpi.metricKey"
+            class="rounded border p-3 text-center"
           >
-            {{ improvementText(kpi.metricKey) }}
+            <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">{{ kpi.metricName }}</div>
+            <div class="mt-1 text-sm">
+              <span :style="{ color: themeColors.DANGER }">{{
+                Number(kpi.before).toFixed(2)
+              }}</span>
+              →
+              <span :style="{ color: themeColors.INFO }">{{
+                Number(kpi.after).toFixed(2)
+              }}</span>
+            </div>
+            <div
+              class="mt-1 text-xs font-medium"
+              :style="{ color: improvementColor(kpi.metricKey) }"
+            >
+              {{ improvementText(kpi.metricKey) }}
+            </div>
           </div>
-        </div>
       </div>
     </ClpmDataCanvas>
 
