@@ -345,7 +345,7 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       ellipsis: true,
       width: 180,
     },
-    { title: '监控状态', dataIndex: 'status', key: 'status', width: 100 },
+    { title: '监控状态', dataIndex: 'status', key: 'status', width: 100, align: 'center' },
   ];
 
   if (viewMode.value === 'tags') {
