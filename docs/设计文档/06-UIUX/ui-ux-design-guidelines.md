@@ -1,10 +1,10 @@
 # CLPM UI/UX 可视化设计与用户体验规范
 
 **文档状态**: 正式版
-**当前版本**: v6.0（v6.0 文档统一升级版，修复 Action Tracker 状态枚举冲突，对齐实现契约 v2.0）
+**当前版本**: v6.1（工业风格设计规范整合版，融合 ZL 致联工业软件 UI/UX 设计套件）
 **发布日期**: 2026-07-06
-**设计依据**: PRD (v6.0), FDS (v6.0), ADS (v6.0), DDS (v6.0), IDS (v6.0), 关键算法设计说明 (v2.1), 控制回路性能评估数据流程图 (v4.0), implementation-contract (v2.0)
-**权威声明**: 本文档是视觉、交互、组件与体验规范；重构后 IA、路由、API、权限、状态机口径以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准；指标体系、数据血缘、可信度、质量策略以 v6.0 设计文档为准。
+**设计依据**: PRD (v6.0), FDS (v6.0), ADS (v6.0), DDS (v6.0), IDS (v6.0), 关键算法设计说明 (v2.1), 控制回路性能评估数据流程图 (v4.0), implementation-contract (v2.0), ZL 致联工业软件 UI/UX 设计套件 (2026 完整版)
+**权威声明**: 本文档是视觉、交互、组件与体验规范；重构后 IA、路由、API、权限、状态机口径以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准；指标体系、数据血缘、可信度、质量策略以 v6.0 设计文档为准；工业风格设计准则是 §14 强制检查清单的事实来源，所有页面改造必须通过 §14 验收。
 
 ---
 
@@ -20,6 +20,7 @@
 | v5.2 | 2026-06-27 | 第一轮工业桌面端 UI/UX 样板页与 IA 收口完成：①新增 `frontend/apps/web-antd/src/components/clpm/` 共享组件层；②完成工作台、回路详情、回路监控、性能看板、诊断详情、异常跟踪样板页改造；③性能评估“系统配置”收口为“指标配置”，新增配置 Tabs 与 `/metric/tasks` 执行记录入口；④任务口径统一为“评估任务/执行记录”；⑤整定工作台接入同风格组件，并通过 typecheck / unit tests / build 验证。 | 系统设计团队 |
 | v5.3 | 2026-07-04 | FDS v5.1 / DDS v4.1 对齐版，回路管理与性能评估模块 UIUX 检讨修订（7 项变更）：①**§6.3.1 全局看板重构**——从回路级 3+1+8 聚合 KPI 改为装置级三大 KPI 卡片（综合性能/平均自控率/稳定率，来自 `unit_kpi_summary`）+ 实时自控率半圆径向仪表盘卡片（非条幅式，工业 HMI 标准可视化，每分钟刷新）+ 低效回路 Top 10 预览；②**§6.3.6 权重配置管理页面新增**——4 类控制类型权重模板（STABLE/SLOW/FAST/LOGIC）+ 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR）+ 版本化保存与回滚 + 恢复国标默认值；③**§6.2.2 回路台账修订**——表格列与编辑抽屉补 `control_type` / `importance_level` / `include_in_evaluation` 三字段（对齐 DDS v4.1），新建回路弹窗同步采集，重要等级视觉编码（红/橙/灰徽章）；④**§6.3.3 性能指标配置修订**——公式编辑器标注废弃（对齐 FDS §5.3.1.2，12 项指标算法固化为独立函数模块），控制类型字段移除（迁移至 `loop_ledger.control_type`），权重编辑入口跳转 §6.3.6；⑤**§6.2.0 AAS Tag 同步状态页面新增**——同步服务状态卡片 + 手动触发同步 + Tag 列表 + 质量分布饼图；⑥**§6.3.2 低效排行补充**——明确仅展示 `include_in_evaluation=true` 回路，提供"包含不参评回路"开关；⑦**字段名清理**——`compositeScore` → `score`（§6.7.3、§6.8 任务结果渲染规则），`control_type` 字段映射从 `metric_config` 迁移至 `loop_ledger`，新增 `include_in_evaluation` 与 `grading_thresholds` 字段映射。 | 系统设计团队 |
 | v6.0 | 2026-07-06 | v6.0 文档统一升级版（对齐实现契约 v2.0、PRD v6.0、FDS v6.0、DDS v6.0）：①**修复 Action Tracker 状态枚举冲突**——§6.4.4 与 §8.2.3 旧枚举 `ACTIVE/RESOLVED/SUPPRESSED` 统一为实现契约 v2.0 标准枚举 `PENDING / IN_PROGRESS / IMPLEMENTED / IGNORED`（待处理 / 处理中 / 已实施 / 已忽略），与 §7.2.2 处理状态标签保持一致；②**统一 Loop 状态机**——§8.2.1 回路就绪状态从描述性表达对齐为 `READY / PARTIAL / INACTIVE`（就绪 / 部分配置 / 已停用）；③**统一 Tuning 状态机**——§8.2.6 整定推荐状态对齐为 `DRAFT / RUNNING / COMPLETED / ROLLED_BACK`（草稿 / 运行中 / 已完成 / 已回退）；④**统一 KPI 快照状态机**——`SUCCESS / PARTIAL / INCONCLUSIVE`（§7.2.1、§8.2.2 已一致，本版校验确认）；⑤**统一 PV Quality 状态机**——`GOOD / BAD / UNCERTAIN`（§7.2.4、§8.2.5 已一致，本版校验确认）；⑥**更新引用文档版本**——PRD v3.1→v6.0、FDS v5.1→v6.0、DDS v4.1→v6.0、ADS v4.0→v6.0、IDS v3.1→v6.0、实现契约 v1.0→v2.0；⑦**设计依据版本号**——头部"以 v4.0 设计文档为准"统一修订为"以 v6.0 设计文档为准"。 | 系统设计团队 |
+| v6.1 | 2026-07-06 | 工业风格设计规范整合版（融合 ZL 致联工业软件 UI/UX 设计套件 2026 完整版）：①**新增 §2.4 工业风格设计四大原则**——Calm UI / Poka-Yoke / Glanceability / 数据墨水比最大化，作为 CLPM 工业桌面端设计的核心指导原则；②**强化 §3.1.3 状态语义色严格性**——明确 Emerald/Amber/Rose/Blue 严格语义边界，禁止混用 Ant Design 预设色与局部 hex；③**新增 §3.5.1 边框优先于阴影**——使用极细边框（1px solid `--border-default`）代替厚重阴影，圆角 4-8px；④**新增 §3.7 触控目标规范**——可交互元素至少 44×44px，桌面密度 32px + 触控模式 44px 切换；⑤**新增 §7.16 工业桌面端补充组件**——ClpmNumeric（等宽数字）/ ClpmDangerConfirmModal（危险确认模态框）/ ClpmRealtimeStatus（实时状态条）/ ClpmStatusPanel（状态面板）；⑥**强化 §9.6 配置变更确认交互**——引入 typed confirmation 码确认机制，禁止高危操作使用浏览器默认 `alert()`/`Popconfirm`；⑦**新增 §9.8 高危操作屏障规范**——明确停机/删除/重算类操作的物理与逻辑双重屏障；⑧**新增 §14 工业风格强制检查清单**——18 项强制项落地，作为所有页面改造的验收判据；⑨**新增 §15 改造方案与实施计划**——4 阶段实施路径（横切组件 → P0 页面 → P1 页面 → P2 收口）；⑩**新增 §13.7 ZL 工业设计套件引用说明**——明确 ZL 套件作为工业风格细化准则，不替代 v6.0 事实来源。 | 系统设计团队 |
 
 ---
 
@@ -101,6 +102,65 @@ CLPM 属于**高密度型**产品（Dashboard/Tracker/诊断类），核心卖�
 - 每屏需至少 3 处可见的产品差异化信息（非装饰性数据、状态推断、上下文关联）。
 - 装饰性 icon 仍然忌讳——加的是**有内容的**密度，不是装饰。
 - 列表和工作台页面优先高密度紧凑布局，不做营销站式大留白。
+
+### 2.4 工业风格设计四大原则（v6.1 新增，融合 ZL 致联工业设计套件）
+
+CLPM 作为流程工业控制回路绩效治理平台，必须遵循工业软件的四大核心设计原则。这些原则是 §14 强制检查清单的设计基础，所有页面改造必须以此为准绳。
+
+#### 2.4.1 冷静界面（Calm UI）
+
+**定义**：杜绝毫无意义的装饰性动画与色彩。系统在 99% 的正常运行时间里应该是"安静且融入背景"的，只有在异常发生时，才通过高饱和度色彩和动态效果争夺注意力。
+
+**CLPM 落地要求**：
+- 页面背景以 `--bg-page`（#F8F9FA）中性底色为主，90% 屏幕面积使用中性色（Slate/Gray）
+- 异常发生时（PV Bad / 评分低 / INCONCLUSIVE / 任务 FAILED），才使用 `--status-danger`/`--status-warning` 高饱和色争夺注意力
+- 禁止大面积装饰性渐变（紫/霓虹），禁止 SVG 画人脸/场景/物品
+- 装饰性动效仅用于状态反馈（Toast 300ms / 抽屉 250ms / 行 hover 150ms），不做悬浮装饰
+- 图表去重阴影，仅在异常态/选中态使用轻边线或低透明度背景
+
+**反例**：紫色渐变背景 + 霓虹色卡片 + 装饰性 icon 满屏 → 违反 Calm UI
+
+#### 2.4.2 防呆设计（Poka-Yoke）
+
+**定义**：假设操作员在最疲惫、环境最嘈杂的状态下使用系统。高危操作必须有物理（触控尺寸 ≥44px）和逻辑（双重确认、输入确认码）的双重屏障。
+
+**CLPM 落地要求**：
+- 高危操作（删除回路/取消任务/重算历史/配置保存/整定建议确认）禁止使用浏览器默认 `alert()` 或简单 `Popconfirm`
+- 必须使用 `ClpmDangerConfirmModal` 组件（§7.16.2），包含：
+  - 影响范围说明（如"将删除回路 101-FC-1023 及其 7 个 Tag 关联"）
+  - 输入确认码（如"输入回路位号以确认删除"）
+  - 变更原因（必填，写入审计日志）
+  - 回退提示（如"删除后可通过审计日志追溯，但数据不可恢复"）
+- 触控目标 ≥44×44px（§3.7），桌面密度 32px + 触控模式 44px 切换
+- 整定模块全链路标识"建议输出，不下写 DCS"，参数建议卡片加入"只读建议/人工实施/需留痕"固定标识
+
+**反例**：删除回路按钮直接 `Popconfirm("确认删除？")` → 违反 Poka-Yoke
+
+#### 2.4.3 扫视性（Glanceability）
+
+**定义**：操作员只有 1-2 秒的时间查看屏幕。核心数据必须通过大小、对比度、微图表（Sparklines）实现一目了然。
+
+**CLPM 落地要求**：
+- KPI 卡片主值使用 `--font-mono` 等宽字体，字号 ≥24px / 字重 700
+- 表格内引入微图表（Sparklines / 进度条），低效排行、任务进度、回路监控、AAS 同步列表均需行内趋势/进度条
+- 状态标签必须是"颜色 + 文本 + 语义图标"三维组合（§7.2），**绝不能仅靠颜色传递信息**
+- 评分色块、PV 质量码、可信度等级必须 1-2 秒内可识别
+- 首屏必须先回答"现在该做什么"（待处理异常 / 低效回路 / 失败任务），再解释"为什么"
+
+**反例**：纯文本表格无微图、状态仅靠颜色区分 → 违反 Glanceability
+
+#### 2.4.4 数据墨水比最大化（Maximize Data-Ink Ratio）
+
+**定义**：移除冗余的边框、厚重的背景色、装饰性阴影，像素应该用于展示数据。
+
+**CLPM 落地要求**：
+- 使用极细边框（1px solid `--border-default`）代替厚重阴影，圆角 4-8px（§3.5.1）
+- 表格优先于卡片瀑布流（§7.1），列表页禁止用卡片代替批量信息浏览
+- 主操作常显，次操作 hover reveal 或"更多"菜单（降低操作列视觉噪声）
+- 图表去重阴影，仅在异常态/选中态使用轻边线
+- 装饰性 icon 满屏是禁忌（§2.2 反 AI Slop），icon 只承载差异化信息
+
+**反例**：Card 瀑布流 + 重阴影 + 装饰性 icon 满屏 → 违反数据墨水比
 
 ---
 
@@ -224,6 +284,32 @@ PV tag 质量码（Good/Bad/Uncertain）的视觉表达（对齐 v4.0 KEEP_ALL_W
 
 **阴影只做层级分离，不做悬浮装饰。** 坚决不使用大面积重阴影。
 
+#### 3.5.1 边框优先于阴影（v6.1 新增，对齐 ZL 工业设计套件）
+
+工业桌面端遵循"边框优先于阴影"原则，使用极细边框分隔模块，而非厚重阴影。
+
+**强制规则**：
+- 卡片/面板分隔统一使用 `1px solid var(--border-default)`（#E5E7EB）极细边框
+- 圆角控制在 4-8px（`--radius-sm` / `--radius-md`），禁止超过 12px
+- 阴影仅用于层级分离（`--shadow-sm`）和抽屉（`--shadow-drawer`），禁止大面积重阴影
+- 表格行分隔使用 `border-bottom: 1px solid var(--border-default)`，不使用阴影
+- 选中态/异常态使用轻边线（`border-left: 2px solid var(--status-*)`）或低透明度背景（`background: rgba(0,0,0,0.02)`）
+
+**反例**：
+```css
+/* 禁止 */
+box-shadow: 0 8px 24px rgba(0,0,0,0.15);  /* 厚重阴影 */
+border-radius: 16px;                         /* 过大圆角 */
+```
+
+**正例**：
+```css
+/* 推荐 */
+border: 1px solid var(--border-default);
+border-radius: var(--radius-md);  /* 8px */
+box-shadow: var(--shadow-sm);     /* 仅层级分离 */
+```
+
 ### 3.6 动效
 
 | 场景 | 动效 | 时长 |
@@ -234,6 +320,45 @@ PV tag 质量码（Good/Bad/Uncertain）的视觉表达（对齐 v4.0 KEEP_ALL_W
 | Tag 关联拖拽放置 | 槽位高亮反馈 | 150ms |
 | 配置确认弹窗 | fade-in + scale | 200ms |
 | 页面切换 | 无过渡（生产系统求快） | - |
+
+### 3.7 触控目标规范（v6.1 新增，对齐 ZL 工业设计套件与 DESIGN.md）
+
+工业现场可能使用触控平板，所有可交互元素必须满足触控目标尺寸要求。
+
+**强制规则**：
+
+| 场景 | 最小尺寸 | 说明 |
+|---|---|---|
+| 桌面密度（默认） | 32×32px | 鼠标点击场景，工具栏/图标按钮 |
+| 触控模式（可切换） | 44×44px | 平板触控场景，所有可交互元素 |
+| 表格行操作按钮 | 32×32px（桌面）/ 44×44px（触控） | 主操作常显，次操作 hover reveal |
+| Tag 关联拖拽槽位 | 44×44px | 拖拽放置区域，必须满足触控目标 |
+| 危险确认模态框按钮 | 44×44px | 高危操作，强制触控目标 |
+| 状态切换开关 | 32×32px（桌面）/ 44×44px（触控） | 启用/停用开关 |
+
+**密度切换**：
+- 页面级密度切换：`紧凑 (32px) / 标准 (36px) / 触控 (44px)` 三档
+- 默认紧凑密度，触控模式由用户在系统设置中开启
+- 切换密度后所有可交互元素尺寸统一调整
+
+**反例**：
+```css
+/* 禁止 */
+button { width: 20px; height: 20px; }  /* 小于 32px，违反触控目标 */
+```
+
+**正例**：
+```css
+/* 推荐 */
+.clpm-toolbar-btn {
+  min-width: 32px;
+  min-height: 32px;
+}
+.clpm-touch-mode .clpm-toolbar-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+```
 
 ---
 
@@ -2048,6 +2173,134 @@ Tag 关联管理页面使用的核心组件。
 - §7.12 综合评分展示组件
 - §7.14 数据血缘组件 `valid_rate` 字段旁
 
+### 7.16 工业桌面端补充组件（v6.1 新增，对齐 ZL 工业设计套件）
+
+为落实 §2.4 工业风格设计四大原则，本节定义 4 个补充组件，作为现有 §7.1-§7.15 组件体系的工业风格强化层。
+
+#### 7.16.1 ClpmNumeric（等宽数字组件）
+
+**用途**：统一承载所有动态刷新的数值、位号、时间戳、PID 参数，强制等宽防抖。
+
+**Props**：
+
+| Prop | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `value` | `string \| number` | - | 显示值 |
+| `unit` | `string` | - | 单位（kPa / °C / m³/h 等） |
+| `delta` | `number` | - | 偏离度（正负百分比，显示为 +X% / -X%） |
+| `deltaSeverity` | `'ok' \| 'warning' \| 'danger' \| 'neutral'` | `'neutral'` | 偏离度语义色 |
+| `mono` | `boolean` | `true` | 是否等宽字体 |
+| `tabularNums` | `boolean` | `true` | 是否启用 tabular-nums 防抖 |
+
+**渲染规则**：
+- 主值使用 `--font-mono` + `tabular-nums`，字号 ≥16px
+- 单位使用 `--font-sans`，字号 10-12px，颜色 `--text-muted`
+- 偏离度按 `deltaSeverity` 着色，背景为低透明度色块（如 `bg-emerald-50`）
+- 偏离度绝对值超阈值（默认 5%）时自动升级语义色
+
+**使用位置**（强制）：
+- §7.1 高密度表格所有数值列（score / valid_rate / PV / SP / OP / PID / 时间戳）
+- §7.3 时序波形数值显示区
+- §7.10 诊断结果置信度数值
+- §7.11 整定参数表
+- §7.12 综合评分展示
+
+**反例**：`<span>78.5</span>` 普通字体 → 违反等宽防抖
+
+#### 7.16.2 ClpmDangerConfirmModal（危险确认模态框）
+
+**用途**：高危操作的物理与逻辑双重屏障（Poka-Yoke），禁止使用浏览器 `alert()` 或简单 `Popconfirm`。
+
+**Props**：
+
+| Prop | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `visible` | `boolean` | `false` | 是否显示 |
+| `title` | `string` | - | 操作标题（如"危险操作验证"） |
+| `severity` | `'danger' \| 'warning'` | `'danger'` | 严重等级，决定 Header 高饱和色 |
+| `impactSummary` | `string` | - | 影响范围说明（如"将删除回路 101-FC-1023 及其 7 个 Tag 关联"） |
+| `irreversible` | `boolean` | `true` | 是否不可逆 |
+| `confirmCode` | `string` | - | 需输入的确认码（如回路位号 / "999" / "CONFIRM"） |
+| `confirmCodeHint` | `string` | - | 确认码提示（如"输入回路位号以确认删除"） |
+| `requireReason` | `boolean` | `true` | 是否要求填写变更原因 |
+| `reasonPlaceholder` | `string` | - | 变更原因 placeholder |
+| `rollbackHint` | `string` | - | 回退提示（如"删除后可通过审计日志追溯，但数据不可恢复"） |
+
+**渲染规则**：
+- Header 高饱和色（danger=rose / warning=amber），含闪烁 alert-triangle 图标
+- Body 包含：
+  - 影响范围说明（加粗关键词）
+  - 不可逆警告（如"数据不可逆转"）
+  - 确认码输入区（居中、等宽、tracking-widest）
+  - 变更原因输入框（必填，写入审计日志）
+- Footer：
+  - "取消操作"按钮（中性色）
+  - "执行"按钮（danger=rose / warning=amber），初始禁用，确认码匹配后解禁
+- 触控目标 ≥44×44px（§3.7）
+
+**使用位置**（强制替代所有 `Popconfirm` / `Modal.confirm` 用于高危操作）：
+- 回路删除（`/loop/manage`）
+- Tag 解绑/删除（`/tag/list`）
+- 任务取消/重算（`/tasks/list`、`/metric/recompute`）
+- 配置保存（`/diagnosis/config`、`/tuning/algorithm`）
+- 整定建议确认（`/tuning/*`）
+
+**反例**：`<a-popconfirm title="确认删除？">删除</a-popconfirm>` → 违反 Poka-Yoke
+
+#### 7.16.3 ClpmRealtimeStatus（实时状态条）
+
+**用途**：统一表达数据延迟、自动刷新、接口失败、在线/离线状态，替代分散在页面逻辑中的状态判断。
+
+**Props**：
+
+| Prop | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `status` | `'online' \| 'delayed' \| 'offline' \| 'error'` | - | 实时状态 |
+| `lastUpdate` | `Date` | - | 最后更新时间 |
+| `latencyMs` | `number` | - | 延迟毫秒数 |
+| `autoRefresh` | `boolean` | `true` | 是否自动刷新 |
+| `refreshIntervalMs` | `number` | `60000` | 刷新间隔（默认 1 分钟） |
+
+**渲染规则**：
+- 状态点（pulse 动画）：
+  - `online`：emerald 绿点 + pulse
+  - `delayed`（latency > 5s）：amber 黄点
+  - `offline`：slate 灰点
+  - `error`：rose 红点 + pulse
+- 文本：`ENV: PRODUCTION` + 最后更新时间（等宽）
+- 自动刷新开关（触控目标 44px）
+
+**使用位置**：
+- 工作台顶部状态栏（`/dashboard/workbench`）
+- 性能看板顶部（`/metric/dashboard`）
+- 回路监控列表（`/loop/monitor`）
+- AAS 同步状态（`/loop/aas-sync`）
+
+#### 7.16.4 ClpmStatusPanel（状态面板）
+
+**用途**：统一状态卡视觉，替代 AAS 页面混用 Card 与 ClpmDataCanvas 的不一致。
+
+**Props**：
+
+| Prop | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `title` | `string` | - | 面板标题 |
+| `status` | `string` | - | 状态枚举（如 `SYNCING` / `SUCCESS` / `FAILED`） |
+| `metrics` | `Array<{label, value, unit, severity}>` | - | 关键指标列表 |
+| `actions` | `Array<{label, icon, onClick}>` | - | 主操作按钮列表 |
+
+**渲染规则**：
+- 使用 `1px solid var(--border-default)` 极细边框（§3.5.1）
+- 圆角 `--radius-md`（8px）
+- Header：标题 + 状态标签（§7.2）
+- Body：指标列表（每项使用 ClpmNumeric）
+- Footer：主操作按钮（触控目标 44px）
+
+**使用位置**：
+- AAS 同步状态卡片（`/loop/aas-sync`）
+- 任务详情状态区（`/tasks/:taskId`）
+- 整定工作台状态区（`/tuning/workbench`）
+
 ---
 
 ## 8. 状态机与状态表达规范
@@ -2279,6 +2532,73 @@ PENDING/PROCESSING → CANCELLED（仅自定义任务可取消）
 | 确认状态变更 | 调用 PATCH 接口 | Toast"状态已更新"，列表变色 |
 | 点击"导出 PDF" | 触发异步导出 | 显示"生成中"，轮询结果 |
 | 标记 IMPLEMENTED 后 | 自动展示 A/B 对比 | Before/After 柱状图 |
+
+### 9.8 高危操作屏障规范（v6.1 新增）
+
+依据 ZL 致联工业软件 UI/UX 设计套件《Poka-Yoke 防呆设计》原则，CLPM 平台所有高危操作必须采用**物理屏障 + 逻辑屏障**双重防御，禁止使用浏览器默认 `alert()`、`window.confirm()` 或 Ant Design `Popconfirm`、`Modal.confirm` 承载。
+
+#### 9.8.1 操作风险分级
+
+| 风险等级 | 定义 | 典型场景 | 屏障强度 |
+|---|---|---|---|
+| **高（DANGER）** | 不可逆、影响历史数据或装置级运行 | 删除回路、取消评估任务、历史重算、批量解绑 Tag、用户禁用、参数配置回滚 | 强制 `ClpmDangerConfirmModal` + typed confirmation + 审计备注 |
+| **中（WARNING）** | 可逆但影响范围广、需留痕 | 配置保存（指标/权重/引擎规则）、整定建议确认、状态机变更（如 IMPLEMENTED）、批量启用/停用 | `ClpmDangerConfirmModal` 简化模式 + 变更摘要 + 备注 |
+| **低（INFO）** | 可逆、单对象、无副作用 | 单条编辑保存、视图筛选、列设置、导出 PDF | 普通 `Modal` + 变更说明（可选） |
+
+#### 9.8.2 物理屏障（触控与可达性）
+
+1. **触控目标**：危险按钮自身满足 §3.7 桌面密度 32×32px，触控模式自动切换至 44×44px。
+2. **位置隔离**：危险按钮与常规操作按钮分组放置，禁止紧邻主操作（如"保存"与"删除"不可相邻）。
+3. **色相警示**：DANGER 级按钮使用 `--rose-600` 实心填充；WARNING 级使用 `--amber-500` 描边；不可仅靠颜色区分，必须叠加图标与文本。
+4. **模态遮罩**：`ClpmDangerConfirmModal` 触发后，背景遮罩 `rgba(15, 23, 42, 0.6)` + `blur(2px)`，禁止背景交互。
+5. **二次点击距离**：危险按钮触发后弹出模态框，确认按钮在模态框右下角，与触发按钮距离 ≥ 200px，避免连续误点。
+
+#### 9.8.3 逻辑屏障（信息与确认）
+
+`ClpmDangerConfirmModal`（详见 §7.16.2）必须按以下顺序呈现信息：
+
+1. **操作摘要**：动词 + 对象（如"删除回路 `41LIC201117-PIDA`"），动词使用红色加粗。
+2. **影响范围**：列出受影响的对象数量与下游影响（如"将级联解绑 7 个 Tag、影响 22 条历史快照、不可恢复"）。
+3. **回退提示**：明确说明是否可回退、回退方式、回退代价。
+4. **变更原因**：必填文本域（min 10 字符），如"装置停工检修，回路永久退役"。
+5. **typed confirmation 码**：在输入框提示"请输入回路 tag/任务 ID/确认码以确认"，用户必须精确输入目标对象的标识符方可激活确认按钮。
+6. **审计备注**：可选文本域，记录操作上下文（如工单号、审批单号）。
+7. **二次确认按钮**：默认 disabled，仅在 typed confirmation 码匹配 + 变更原因填写后激活；按钮文案使用完整动词（如"确认删除"，不可使用"确定"或"OK"）。
+
+#### 9.8.4 强制使用场景
+
+| 场景 | 当前实现（不符合） | v6.1 强制改造为 |
+|---|---|---|
+| 删除回路 / 删除 Tag / 解绑 Tag | `Popconfirm` | `ClpmDangerConfirmModal`（输入 loop_tag 或 tag 位号） |
+| 取消评估任务 / 重跑任务 / 历史重算 | `Popconfirm` 或 `Modal.confirm` | `ClpmDangerConfirmModal`（输入 task_id 短码，显示影响回路数与时间窗口） |
+| 配置保存（指标/权重/引擎规则） | `Modal.confirm` 或直接保存 | `ClpmDangerConfirmModal` 简化模式：变更摘要 + 旧值/新值 diff + 影响范围 + 备注 |
+| 状态机变更（如标记 IMPLEMENTED） | `Modal.confirm` 或下拉直接切换 | `ClpmDangerConfirmModal` 简化模式：状态流转摘要 + 备注 |
+| 整定参数建议确认 | `Modal.confirm` | `ClpmDangerConfirmModal`：建议值 + 证据 + 风险 + 回退方案 + "需授权人员人工实施"标识 |
+| 用户禁用 / 角色调整 / 报表删除 | `Popconfirm` | `ClpmDangerConfirmModal`（输入用户名或报表 ID） |
+
+#### 9.8.5 整定安全边界（红线）
+
+依据 CLPM 安全边界原则（§1.2），整定模块全链路禁止出现任何"下发参数""写入 DCS""自动实施"语义入口：
+
+1. 所有参数建议卡片必须显示固定标识：`只读建议 · 人工实施 · 需留痕`。
+2. 禁止出现"下发""写入""应用""执行"等动词按钮，统一改为"导出建议单""生成回退方案""标记已人工实施"。
+3. PID 参数区在 UI 上明确标示"经济区间 / 警告区间 / 过载区间"三段，参数调节滑块仅在建议值范围内可拖动。
+4. 整定结果展示组件（§7.11）顶部固定横幅：`本平台不直接修改 DCS 的 P/I/D 参数，参数由授权人员人工实施并留痕`。
+
+#### 9.8.6 审计字段留痕
+
+所有高危操作确认后，必须写入审计日志（`audit_log` 表），字段包括：
+
+| 字段 | 来源 | 示例 |
+|---|---|---|
+| `operator` | 当前登录用户 | `admin` |
+| `action` | 操作类型枚举 | `LOOP_DELETE` / `TASK_CANCEL` / `CONFIG_SAVE` / `TUNING_CONFIRM` |
+| `target_type` | 对象类型 | `loop` / `task` / `metric_config` / `tuning_recommendation` |
+| `target_id` | 对象标识 | `41LIC201117-PIDA` 或 `task_id` 短码 |
+| `reason` | 用户填写的变更原因 | `装置停工检修` |
+| `change_summary` | 自动生成的变更摘要 JSON | `{"before": {...}, "after": {...}, "affected": 22}` |
+| `audit_note` | 用户填写的审计备注 | `工单 WO-2026-07-06-001` |
+| `performed_at` | 操作时间戳（UTC+8） | `2026-07-06 14:23:11+08:00` |
 
 ---
 
@@ -2592,3 +2912,207 @@ Chrome (v90+), Edge (v90+), Safari (v14+)。
 | 性能指标配置交互 | 数值输入 | 双滑块阈值 + 百分比权重 + 单选按钮组控制类型 |
 | 整定方法枚举 | IMC/Lambda/ZN/CC | IMC/LAMBDA/ZIEGLER_NICHOLS/COHEN_COON/SIMC（5 类） |
 | 错误码 | 9 类 | 新增 7 类算法相关错误码（共 16 类） |
+
+### 13.7 ZL 工业设计套件引用说明（v6.1 新增）
+
+本节明确 ZL 致联工业软件 UI/UX 设计套件在 CLPM UI/UX v6.1 中的引用关系与适用范围。
+
+#### 13.7.1 套件文件清单
+
+| 文件 | 路径 | 内容 | 在 v6.1 中的作用 |
+|---|---|---|---|
+| `IndustrialDesignSystem.md` | `ZL-MES-UI-Design-Kit/` | ZL 工业设计系统规范指南（2026 完整版）— 6 章核心原则、色彩、字体、组件、交互 | §2.4 四大原则、§3.5.1 边框优先、§3.7 触控目标的事实来源 |
+| `Industrial_UI_Agent_Skill.md` | `ZL-MES-UI-Design-Kit/` | AI 智能体 skill 描述 — Calm UI / 色彩语义严格 / 等宽数字 / 边框优先 | §2.4、§3、§9.8 的 AI 生成代码自检清单 |
+| `IndustrialDesignReference.html` | `ZL-MES-UI-Design-Kit/` | 完整设计参考页面 — 语义色、表格微图、Poka-Yoke 模态框、高密度数据网格 | §7.16 工业桌面端补充组件的视觉参考实现 |
+| `clpm_dashboard.html` | `ZL-MES-UI-Design-Kit/` | CLPM 仪表盘 HTML — F 型布局、KPI 卡、低效列表 | §6.1 工作台门户的视觉参考实现 |
+
+#### 13.7.2 适用范围与优先级
+
+| 来源 | 角色 | 优先级 |
+|---|---|---|
+| CLPM UI/UX v6.1（本文档） | CLPM 平台 UI/UX 事实来源 | **最高** |
+| 实现契约 v2.0 | IA / 路由 / API / 权限 / 状态机 / KPI 事实来源 | **最高** |
+| ZL 工业设计套件 | 工业风格细化准则（Calm UI / Poka-Yoke / Glanceability / 数据墨水比） | 次之，作为 §14 强制检查清单的事实来源 |
+| DESIGN.md v3.0 | 反 AI Slop / 表格优先 / token 化 / 配置确认留痕 | 次之，作为视觉风格治理准则 |
+
+**关键约束**：ZL 套件中的 Teal/Emerald 状态色必须映射到 CLPM `--status-ok` token；ZL 主操作色以 CLPM 工业蓝 `--primary` 为准；ZL 大屏模式（无侧边栏）仅可作为独立 HMI/大屏参考，不替代 CLPM 全局壳层（左导航 + 顶部状态栏 + 标题区 + 主体区 + 全局摘要）。
+
+#### 13.7.3 AI 智能体生成工业 UI 的自检清单
+
+依据 `Industrial_UI_Agent_Skill.md`，AI 智能体（Trae / Claude Code）生成 CLPM 前端代码时必须自检以下 4 项：
+
+1. **Calm UI**：90% 屏幕使用中性色（Slate/Gray）；仅在异常发生时使用高饱和度色彩。
+2. **色彩语义严格**：Emerald 仅用于 Running/Success/Online；Amber 仅用于 Idle/Warning/Paused；Rose 仅用于 Error/Critical/Stopped/Alarm；Indigo/Blue 用于主操作。
+3. **等宽数字**：所有动态数字必须使用 `--font-mono` 或 Tailwind `tabular-nums` 类。
+4. **边框优先于阴影**：使用 1px solid `--border-default`（如 `#E2E8F0`）分隔卡片；圆角 4-8px；禁止使用厚重阴影。
+
+#### 13.7.4 引用更新机制
+
+ZL 套件版本升级时，按以下流程同步到 UIUX v6.x：
+
+1. 在 `ZL-MES-UI-Design-Kit/` 内更新文件。
+2. 在 §0 文档变更记录新增条目，标注影响的 UIUX 章节。
+3. 更新 §14 强制检查清单（如有新增强制项）。
+4. 通知 zp 机器（Claude Code）按 §15 改造方案分阶段实施。
+
+---
+
+## 14. 工业风格强制检查清单（v6.1 新增）
+
+本章是 ZL 致联工业软件 UI/UX 设计套件在 CLPM 平台的**落地验收判据**，所有页面改造必须通过本章 18 项强制项验收。zp 机器（Claude Code）执行页面改造时，每完成一个页面组必须按本章逐项核对，并在 PR Body 中标注通过项与未通过项的原因。
+
+### 14.1 产品定位与任务优先（2 项）
+
+| 编号 | 强制项 | 落地要求 | 验证方式 | 影响章节 |
+|---|---|---|---|---|
+| **F-01** | 页面必须体现工业治理平台定位 | 稳重、审计化、任务驱动；首屏优先回答"现在该做什么"；禁止娱乐化插画、装饰性动画、营销文案 | 首屏截图审查；菜单与卡片标题审查 | §2.1 §2.4.1 |
+| **F-02** | 不允许空点击 | 主按钮或主链接必须触发状态变化、上下文变化或路由变化；空态按钮必须置灰并提示原因 | 逐按钮点击测试 | §9.1 |
+
+### 14.2 信息架构与全局壳层（3 项）
+
+| 编号 | 强制项 | 落地要求 | 验证方式 | 影响章节 |
+|---|---|---|---|---|
+| **A-01** | 信息架构以 v6.0 与实现契约为准 | 旧 25 页面清单仅作历史来源；正式路由为当前页面事实；禁止复活已废弃路由 | 路由表 diff；菜单对照实现契约 §2 | §4 §1.4 |
+| **A-02** | 全局壳层完整保留 | 左导航 + 顶部状态栏 + 标题区 + 主体区 + 全局摘要；ZL 无侧栏大屏模式仅作为独立 HMI/大屏参考 | 所有页面布局审查 | §4.1 |
+| **A-03** | 角色权限驱动菜单与按钮 | 无权限菜单隐藏；无权限按钮隐藏或置灰并 tooltip 提示原因；禁止前端硬编码角色字符串 | 多角色账号登录测试（admin/engineer/viewer） | §5 |
+
+### 14.3 色彩与数字排版（3 项）
+
+| 编号 | 强制项 | 落地要求 | 验证方式 | 影响章节 |
+|---|---|---|---|---|
+| **C-01** | 所有颜色来自 token/CSS 变量 | 不在业务页面散落 hex；ZL 色板只映射到 CLPM token（`--status-ok` / `--status-warning` / `--status-error` / `--primary` / `--text-*` / `--border-*`） | `grep -R "#[0-9a-fA-F]{6}" frontend/apps/web-antd/src/views` 人工白名单审计 | §3.1 §3.5 |
+| **C-02** | 状态色严格语义化 | 正常=Emerald、信息=Blue、警告=Amber、危险=Rose、中性=Slate；不得只靠颜色区分，必须叠加文本或图标 | SUCCESS/PARTIAL/INCONCLUSIVE、PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED、GOOD/BAD/UNCERTAIN 快照检查 | §3.1.3 §8 |
+| **C-03** | 动态数字、位号、Tag、版本号、时间戳、PID 参数等宽 | 使用 `--font-mono`、`tabular-nums` 或 `ClpmNumeric`（§7.16.1）组件；评分、KPI、PV/SP/OP、PID、时间戳强制覆盖 | 视觉检查 + class 检查 + 实时刷新跳动测试 | §3.3 §7.16.1 |
+
+### 14.4 表格与扫视性（3 项）
+
+| 编号 | 强制项 | 落地要求 | 验证方式 | 影响章节 |
+|---|---|---|---|---|
+| **G-01** | 台账、排行、任务、审计以高密度表格为主 | 支持筛选、排序、固定列、批量、空态、Partial 提示；禁止用卡片流替代表格 | 18 页面组逐页核对页面类型 | §6 §2.4.3 §2.4.4 |
+| **G-02** | 表格内微图与 hover reveal | 低效排行、任务进度、回路监控、AAS 同步列表加入行内趋势/进度条；主操作常显，次操作 hover reveal 或"更多"菜单 | 表格行交互测试 | §7.16 §2.4.3 |
+| **G-03** | 状态标签必须有颜色、文本、图标或语义前缀 | 状态枚举使用 v6.0 大写标准（PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED、GOOD/BAD/UNCERTAIN、SUCCESS/PARTIAL/INCONCLUSIVE） | 标签视觉审查 | §7.2 §8 |
+
+### 14.5 KPI 与可信度（3 项）
+
+| 编号 | 强制项 | 落地要求 | 验证方式 | 影响章节 |
+|---|---|---|---|---|
+| **K-01** | INCONCLUSIVE 不得显示 0 分 | 可信度 E 级显示 `—`，不参与聚合；评分卡必须显示可信度徽章（A/B/C/D/E） | 构造 valid_rate<20% 数据测试 | §7.15 §8.2.2 |
+| **K-02** | 可信度徽章 tooltip 显示 valid_rate | 评分、KPI、任务结果显示 A/B/C/D/E；tooltip 显示 valid_rate 与采样策略；可展开或跳转数据血缘 | tooltip 测试 | §7.15 §6.3 |
+| **K-03** | PV 质量码 Bad/Uncertain 不断线、不置 0 | Bad 灰色虚线保留连线；Uncertain 琥珀虚线保留连线；tooltip 显示质量码与时间戳 | 构造 Bad/Uncertain 数据测试 | §7.2.4 §8.2.5 |
+
+### 14.6 数据血缘与配置变更（2 项）
+
+| 编号 | 强制项 | 落地要求 | 验证方式 | 影响章节 |
+|---|---|---|---|---|
+| **D-01** | 指标、诊断、任务结果可追溯 | 展示采样频率、质量策略、tag_group、valid_rate、策略版本、算法版本；可下钻至原始数据 | 详情页血缘面板测试 | §7.14 §6 |
+| **D-02** | 配置变更保存必须二次确认并留痕 | 弹窗展示变更摘要、新旧值、影响范围、变更说明；写入 `audit_log` 表（§9.8.6） | 配置保存流程测试 + audit_log 表记录检查 | §9.6 §9.8 |
+
+### 14.7 高危操作与安全边界（2 项）
+
+| 编号 | 强制项 | 落地要求 | 验证方式 | 影响章节 |
+|---|---|---|---|---|
+| **P-01** | 高危操作不用浏览器默认确认承载 | 禁止 `alert()` / `window.confirm()` / `Popconfirm` / `Modal.confirm` 承载高危操作；统一使用 `ClpmDangerConfirmModal`（§7.16.2）+ typed confirmation + 审计备注 | `grep -R "Popconfirm\|Modal.confirm\|alert(" frontend/apps/web-antd/src/views` 逐项分类豁免 | §9.8 §7.16.2 |
+| **P-02** | UI 不得出现"下发参数""写入 DCS""自动实施"入口 | 整定只输出建议、证据、风险与回退方案；整定页顶部固定横幅"只读建议 · 人工实施 · 需留痕" | 全文搜索"下发/写入 DCS/自动实施" | §1.2 §9.8.5 §6.5 |
+
+### 14.8 异常状态与响应式无障碍（3 项）
+
+| 编号 | 强制项 | 落地要求 | 验证方式 | 影响章节 |
+|---|---|---|---|---|
+| **E-01** | 空/异常/Partial 是一等状态 | 说明原因、可用能力、下一步动作和恢复入口；禁止空表格无提示 | 构造空数据/接口失败/Partial 数据测试 | §7.3 §8 |
+| **E-02** | 响应式不简单堆成细长卡片流 | Desktop 保留三栏/双栏；Tablet 折叠次级区；Mobile 步骤式或抽屉式 | 三种断点视觉测试（1440/768/375） | §11 |
+| **E-03** | 触达、键盘、对比度合格 | 点击目标 ≥44px（触控模式）；拖拽必须有下拉替代；状态不能只靠颜色；键盘 Tab 顺序合理；对比度 WCAG AA | 键盘导航测试 + 对比度审计 + 触控尺寸审查 | §3.7 §11 |
+
+### 14.9 验收判定口径
+
+| 等级 | 判定 |
+|---|---|
+| **通过** | 18 项强制项全部满足；页面类型结构正确；状态、权限、数据质量、可信度、空态完整；无明显 v6.0 冲突 |
+| **有条件通过** | 不影响业务安全和状态正确性，但存在建议项缺失、局部密度、层级或响应式不足；可上线但需在下个迭代补齐 |
+| **不通过** | 出现任一严重问题：空点击、权限错误、状态枚举错误、INCONCLUSIVE 显示 0、PV Bad 断线/置 0、无审计确认、危险操作用浏览器默认确认、暗示下写 DCS、用卡片替代表格等 |
+| **需融合设计** | 视觉来自 ZL 工业规范但未映射到 CLPM token、状态机、路由、权限或技术栈；需要先做规范融合后再验收 |
+
+---
+
+## 15. 改造方案与实施计划（v6.1 新增）
+
+本章是 UIUX v6.1 落地的执行路径，作为 zp 机器（Claude Code）页面改造的输入。所有改造任务必须按本章 4 阶段顺序推进，每阶段交付后由 mb 机器（Trae）按 §14 强制检查清单验收。
+
+### 15.1 改造目标
+
+| 目标 | 验收标准 | 影响章节 |
+|---|---|---|
+| **冷静统一** | 页面背景、面板、状态色全部来自 token；无业务页面散落 hex | §3 §14 C-01 |
+| **一眼可读** | KPI、评分、PV/SP/OP、PID、时间戳等全部等宽；关键表格引入微图/进度条 | §7.16 §14 C-03 G-02 |
+| **防误操作** | 高影响操作统一 typed confirmation；配置变更展示影响范围和审计备注 | §9.8 §14 P-01 D-02 |
+| **高密度工业桌面** | 台账页表格优先，次要操作隐藏，详情用抽屉/侧栏/时间线 | §6 §14 G-01 G-02 |
+| **安全边界明确** | 整定模块全链路标识"建议输出，不下写 DCS" | §9.8.5 §14 P-02 |
+
+### 15.2 横切组件任务（阶段 1）
+
+阶段 1 不改业务页面，只交付组件/工具层，作为后续页面改造的基础设施。
+
+| ID | 任务 | 范围 | 优先级 | 输出 |
+|---|---|---|---|---|
+| **UI-01** | 建立工业语义色映射工具 | `constants/industrial-status.ts` 或 `composables/useIndustrialStatus.ts`；替换页面散落色值；映射到 `--status-ok` / `--status-warning` / `--status-error` / `--primary` token | P0 | 共享色映射模块 + 替换文档 |
+| **UI-02** | 新增 `ClpmNumeric` 与全局 `.clpm-num` utility | 数值、时间戳、位号、PID、版本号统一组件；通过 prop 控制精度、单位、趋势箭头 | P0 | `components/clpm/numeric.vue` + 全局 CSS utility |
+| **UI-03** | 新增 `ClpmDangerConfirmModal`（§7.16.2） | 删除、取消、重算、配置保存、整定建议确认统一组件；支持 typed confirmation + 变更摘要 + 审计备注 | P0 | `components/clpm/danger-confirm-modal.vue` |
+| **UI-04** | 新增 `ClpmRealtimeStatus`（§7.16.3） | 数据延迟、自动刷新、接口失败、在线/离线统一表达 | P1 | `components/clpm/realtime-status.vue` |
+| **UI-05** | 增强 `ClpmTable` 或表格规范封装 | hover reveal、行内进度、列设置、密度切换（32px/44px） | P1 | `components/clpm/table.vue` 增强 或表格规范文档 |
+| **UI-06** | 建立图表主题 preset | ECharts grid/axis/tooltip/shadow/状态色 preset；禁用 `shadowBlur`（tooltip/选中态除外） | P1 | `composables/useEChartsPreset.ts` |
+
+**阶段 1 验收**：UI-01 ~ UI-03 必须先完成；UI-04 ~ UI-06 可与阶段 2 并行。所有组件通过 `pnpm run check:type` + 单元测试。
+
+### 15.3 页面级改造任务（阶段 2-4）
+
+#### 阶段 2：P0 页面组（安全与防呆优先）
+
+| ID | 页面组 | 路由 | 任务 | 验收重点 |
+|---|---|---|---|---|
+| **P0-1** | 回路管理台账 + Tag 清单 | `/loop/manage` `/tag/list` | 替换删除/解绑 Popconfirm 为 `ClpmDangerConfirmModal`；统一状态色（UI-01）；数值/位号等宽（UI-02）；操作列主次分层，次操作 hover reveal | §14 P-01 C-01 C-03 G-02 |
+| **P0-2** | 任务列表 + 历史重算 | `/tasks/list` `/metric/recompute` | 取消、重跑、重算统一 `ClpmDangerConfirmModal`（输入 task_id 短码，显示影响回路数与时间窗口）；进度列内联 progress；任务 ID/时间 mono | §14 P-01 C-03 G-02 D-02 |
+| **P0-3** | 整定模块全链路 | `/tuning/*` | 全页面加入安全边界条（顶部固定横幅）；参数建议区标记经济/警告/过载区间；禁止出现"下发/写入 DCS"语义；建议确认走 `ClpmDangerConfirmModal` | §14 P-02 §9.8.5 |
+
+#### 阶段 3：P1 页面组（核心业务页面对齐）
+
+| ID | 页面组 | 路由 | 任务 | 验收重点 |
+|---|---|---|---|---|
+| **P1-1** | 工作台 + 性能看板 | `/dashboard/workbench` `/metric/dashboard` | 统一 `ClpmRealtimeStatus`；KPI 卡数值等宽（UI-02）；低效 Top10 加行内趋势/可信度徽章；减少装饰性 Card，改为 `ClpmDataCanvas` | §14 C-03 K-01 K-02 G-02 |
+| **P1-2** | 回路监控 + AAS 同步 | `/loop/monitor` `/loop/aas-sync` | PV/SP/OP/MODE 行内高密度展示；质量码线型/颜色统一（Good 实线/Bad 灰虚/Uncertain 琥珀虚）；同步状态面板组件化（`ClpmStatusPanel` §7.16.4） | §14 K-03 G-01 G-02 |
+| **P1-3** | 诊断列表 + 异常跟踪 | `/diagnosis/list` `/diagnosis/tracker` | 状态流色彩重映射（UI-01）；A/B 对比入口主次分层；状态更新使用 `ClpmDangerConfirmModal` 简化模式 + 审计 | §14 C-02 G-03 D-02 |
+
+#### 阶段 4：P2 收口（统计、系统管理、旧页清理）
+
+| ID | 页面组 | 路由 | 任务 | 验收重点 |
+|---|---|---|---|---|
+| **P2-1** | 统计类页面 | `/metric/statistics` `/diagnosis/statistics` `/tuning/stats` | 去图表阴影（UI-06 preset）；统一 ECharts preset；图例与语义色一致；增加空/partial/error 状态 | §14 C-01 E-01 |
+| **P2-2** | 系统管理 | `/system/users` `/system/audit` `/system/permissions` `/system/reports` | 用户禁用/角色调整/报表删除加入 typed confirmation；审计字段等宽；权限矩阵密度优化 | §14 P-01 C-03 |
+| **P2-3** | 旧示例页清理 | `_core/*` `dashboard/analytics/*` `dashboard/workspace/*` | 隔离或删除业务无关 dashboard 示例页；避免样式污染；保留时改为开发示例并隔离路由 | §14 A-01 |
+
+### 15.4 实施顺序与产出
+
+| 阶段 | 内容 | 产出 | 验收方 |
+|---|---|---|---|
+| **阶段 1** | 横切 token、数字、危险确认、图表主题 | 组件/工具层 PR，最小页面改动验证 | mb 机器 type-check 通过 + 组件 demo 截图 |
+| **阶段 2** | P0 页面组改造（回路管理 + 任务 + 整定） | 3 个 PR，安全边界与防呆达标 | mb 机器按 §14 强制项验收 |
+| **阶段 3** | P1 页面组改造（看板 + 监控 + 诊断） | 3 个 PR，核心业务页面对齐 | mb 机器按 §14 强制项验收 |
+| **阶段 4** | 统计 + 系统管理 + 旧页清理 | 3 个 PR，视觉债务收口 | mb 机器按 §14 强制项验收 + 长期验收脚本 |
+
+### 15.5 验收清单（每阶段必过）
+
+| 检查项 | 验收方式 | 工具/命令 |
+|---|---|---|
+| 无业务页面新增散落 hex | `grep -R "#[0-9a-fA-F]\{6\}" frontend/apps/web-antd/src/views` 人工白名单 | grep + 人工白名单 |
+| 高风险操作不用简单 Popconfirm | 搜索 `Popconfirm`、`Modal.confirm`、`alert(`，逐项分类豁免 | grep + 人工核对 |
+| 数值等宽覆盖 | 评分、KPI、PV/SP/OP、PID、时间戳视觉检查 + class 检查 | 视觉审查 + grep `tabular-nums\|font-mono` |
+| 图表无装饰阴影 | 搜索 `shadowBlur`，仅 tooltip/选中态允许 | grep `shadowBlur` |
+| 状态语义一致 | SUCCESS/PARTIAL/INCONCLUSIVE、PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED、GOOD/BAD/UNCERTAIN 快照检查 | 视觉审查 |
+| 整定安全边界 | 所有整定页面可见"不下写 DCS/人工实施/留痕"提示 | 全文搜索 + 视觉审查 |
+| 质量验证 | `cd frontend && pnpm run check:type` + 关键页面截图审查 + 必要 E2E 补充 | CI + Playwright |
+
+### 15.6 双机协作约定
+
+- **mb 机器（Trae）**：负责 UIUX v6.1 设计文档维护、§14 强制检查清单更新、阶段验收、视觉审查；不直接改业务页面代码。
+- **zp 机器（Claude Code）**：负责按 §15.2 ~ §15.3 任务清单实施页面改造；每个 PR Body 必须标注通过的 §14 强制项编号（如 `通过 F-01 F-02 A-01 A-02 A-03 C-01 C-02 C-03 G-01 G-02 G-03 K-01 K-02 K-03 D-02 P-01 P-02 E-01`）。
+- **PR 流程**：阶段 1 横切组件 PR 由 zp 机器推送到 `zp/feat-ui-crosscutting`；阶段 2-4 页面组 PR 推送到 `zp/refactor-page-p0-1`、`zp/refactor-page-p0-2` 等分支；mb 机器 review 后合并。
+- **冲突预防**：阶段 1 完成前，阶段 2 不开始；阶段 2 内部三个 P0 任务可并行，但需协调 `ClpmDangerConfirmModal` 接口稳定性。
+- **进度同步**：每阶段完成后，在 `docs/过程文档/` 新建 `uiux-v6.1-stage-N-summary.md`，记录通过项、未通过项、下一步计划。
