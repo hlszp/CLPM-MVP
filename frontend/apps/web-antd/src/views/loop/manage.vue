@@ -1076,14 +1076,25 @@ function handleUseDefaultOpLimitsChange(checked: any) {
   }
 }
 
-/** v6.1：OP 输出下限位校验（提取到 script 中以访问 ref.value 和 Promise） */
+/** v6.1：OP 输出下限位校验（提取到 script 中以访问 ref.value 和 Promise）
+ * 校验规则（仅在「使用默认」未勾选时生效）：
+ *   1. 必填（如未勾选默认且未输入值）
+ *   2. 当 OP Tag 已关联（opTagAssociated=true）时，必须在 OP Tag 量程范围内
+ *   3. 必须小于上限位（如有）
+ */
 function validateOpOutputLowerLimit(_rule: any, value: any): Promise<void> {
   if (useDefaultOpLimits.value) return Promise.resolve();
   if (value === undefined || value === null) {
     return Promise.reject('请输入下限位或勾选「使用默认」');
   }
-  if (opTagRange.value.min !== null && value < opTagRange.value.min) {
-    return Promise.reject(`不能低于 OP Tag 量程下限 ${opTagRange.value.min}`);
+  // OP Tag 已关联时严格校验量程范围
+  if (opTagAssociated.value) {
+    if (opTagRange.value.min !== null && value < opTagRange.value.min) {
+      return Promise.reject(`下限位不能低于 OP Tag 量程下限 ${opTagRange.value.min}`);
+    }
+    if (opTagRange.value.max !== null && value > opTagRange.value.max) {
+      return Promise.reject(`下限位不能超过 OP Tag 量程上限 ${opTagRange.value.max}`);
+    }
   }
   if (
     formState.opOutputUpperLimit !== undefined &&
@@ -1094,14 +1105,25 @@ function validateOpOutputLowerLimit(_rule: any, value: any): Promise<void> {
   return Promise.resolve();
 }
 
-/** v6.1：OP 输出上限位校验 */
+/** v6.1：OP 输出上限位校验
+ * 校验规则（仅在「使用默认」未勾选时生效）：
+ *   1. 必填（如未勾选默认且未输入值）
+ *   2. 当 OP Tag 已关联（opTagAssociated=true）时，必须在 OP Tag 量程范围内
+ *   3. 必须大于下限位（如有）
+ */
 function validateOpOutputUpperLimit(_rule: any, value: any): Promise<void> {
   if (useDefaultOpLimits.value) return Promise.resolve();
   if (value === undefined || value === null) {
     return Promise.reject('请输入上限位或勾选「使用默认」');
   }
-  if (opTagRange.value.max !== null && value > opTagRange.value.max) {
-    return Promise.reject(`不能超过 OP Tag 量程上限 ${opTagRange.value.max}`);
+  // OP Tag 已关联时严格校验量程范围
+  if (opTagAssociated.value) {
+    if (opTagRange.value.min !== null && value < opTagRange.value.min) {
+      return Promise.reject(`上限位不能低于 OP Tag 量程下限 ${opTagRange.value.min}`);
+    }
+    if (opTagRange.value.max !== null && value > opTagRange.value.max) {
+      return Promise.reject(`上限位不能超过 OP Tag 量程上限 ${opTagRange.value.max}`);
+    }
   }
   if (
     formState.opOutputLowerLimit !== undefined &&
@@ -2018,19 +2040,33 @@ watch(
               </span>
               <span v-else class="text-slate-400">—</span>
             </template>
-            <!-- v6.1 新增：OP 限位列 -->
+            <!-- v6.1 新增：OP 限位列（样式与 OP 量程列对齐） -->
             <template v-else-if="column.key === 'opOutputLimits'">
+              <!-- 有限位值（自定义）：绿色高亮 -->
               <Tooltip
-                v-if="record.opOutputLowerLimit !== null && record.opOutputLowerLimit !== undefined
-                  || record.opOutputUpperLimit !== null && record.opOutputUpperLimit !== undefined"
+                v-if="(record.opOutputLowerLimit !== null && record.opOutputLowerLimit !== undefined)
+                  || (record.opOutputUpperLimit !== null && record.opOutputUpperLimit !== undefined)"
                 title="自定义 OP 输出限位（用于饱和率算法）"
               >
                 <span class="font-mono text-xs font-medium text-emerald-600">
                   {{ record.opOutputLowerLimit ?? '—' }} ~ {{ record.opOutputUpperLimit ?? '—' }}
+                  <span v-if="record.opUnit" class="ml-0.5 text-emerald-400">{{ record.opUnit }}</span>
                 </span>
               </Tooltip>
-              <Tooltip v-else title="使用 OP Tag 量程作为默认限位">
-                <span class="text-xs text-slate-500">默认</span>
+              <!-- 无限位值但 OP Tag 已关联：使用 OP Tag 量程作为默认限位（灰色） -->
+              <Tooltip
+                v-else-if="record.opRange && (record.opRange.min !== null || record.opRange.max !== null)"
+                title="使用 OP Tag 量程作为默认限位"
+              >
+                <span class="font-mono text-xs text-slate-500">
+                  {{ record.opRange.min ?? '—' }} ~ {{ record.opRange.max ?? '—' }}
+                  <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{ record.opUnit }}</span>
+                  <span class="ml-1 rounded bg-slate-100 px-1 text-[10px] text-slate-400">默认</span>
+                </span>
+              </Tooltip>
+              <!-- OP Tag 未关联且无限位值 -->
+              <Tooltip v-else title="未关联 OP Tag，使用系统默认 0 ~ 100">
+                <span class="font-mono text-xs text-slate-400">0 ~ 100</span>
               </Tooltip>
             </template>
             <template v-else-if="column.key === 'importanceLevel'">
@@ -2308,9 +2344,12 @@ watch(
                     {{ opTagRange.min ?? '—' }} ~ {{ opTagRange.max ?? '—' }}
                     <span v-if="opTagRange.unit" class="ml-0.5">{{ opTagRange.unit }}</span>
                   </span>
+                  <span v-if="!useDefaultOpLimits" class="ml-2 text-emerald-500">
+                    （限位值须在量程范围内）
+                  </span>
                 </div>
                 <div v-else class="mb-3 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
-                  请先关联 OP Tag，否则限位字段使用系统默认值 0 ~ 100
+                  尚未关联 OP Tag，限位值需人工填写（无范围校验）
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                   <FormItem
@@ -2325,7 +2364,7 @@ watch(
                   >
                     <InputNumber
                       v-model:value="formState.opOutputLowerLimit"
-                      :disabled="isViewMode || useDefaultOpLimits || !opTagAssociated"
+                      :disabled="isViewMode || useDefaultOpLimits"
                       :min="opTagRange.min ?? undefined"
                       :max="
                         formState.opOutputUpperLimit !== undefined
@@ -2350,7 +2389,7 @@ watch(
                   >
                     <InputNumber
                       v-model:value="formState.opOutputUpperLimit"
-                      :disabled="isViewMode || useDefaultOpLimits || !opTagAssociated"
+                      :disabled="isViewMode || useDefaultOpLimits"
                       :min="
                         formState.opOutputLowerLimit !== undefined
                           ? formState.opOutputLowerLimit
