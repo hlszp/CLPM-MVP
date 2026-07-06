@@ -46,8 +46,11 @@ import {
   ClpmDangerConfirmModal,
   ClpmPageToolbar,
 } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricRecompute' });
+
+const { themeColors } = useClpmTheme();
 
 // ============ 列表状态 ============
 const loading = ref(false);
@@ -565,7 +568,7 @@ onUnmounted(() => {
             <span v-if="record.windowCount" class="font-mono">
               {{ record.windowCount }}
             </span>
-            <span v-else class="text-gray-400">—</span>
+            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Button
@@ -585,7 +588,7 @@ onUnmounted(() => {
             >
               删除
             </Button>
-            <span v-else class="text-gray-400">—</span>
+            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
         </template>
       </Table>
@@ -606,7 +609,7 @@ onUnmounted(() => {
             :disabled-date="(d: dayjs.Dayjs) => d.isAfter(dayjs())"
             style="width: 100%"
           />
-          <div class="mt-1 text-xs text-gray-400">
+          <div class="mt-1 text-xs" :style="{ color: themeColors.NEUTRAL }">
             最大 30 天；将按小时窗口批量重算
           </div>
         </FormItem>
@@ -636,7 +639,7 @@ onUnmounted(() => {
             "
             style="width: 100%"
           />
-          <div class="mt-1 text-xs text-gray-400">
+          <div class="mt-1 text-xs" :style="{ color: themeColors.NEUTRAL }">
             优先级高于装置；支持搜索回路名
           </div>
         </FormItem>
@@ -646,7 +649,7 @@ onUnmounted(() => {
           v-if="previewResult"
           class="mt-4 rounded border border-blue-200 bg-blue-50 p-3"
         >
-          <div class="mb-2 font-medium text-blue-700">影响范围预览</div>
+          <div class="mb-2 font-medium" :style="{ color: themeColors.INFO }">影响范围预览</div>
           <div class="text-sm">
             <div>回路数：{{ previewResult.loopCount }}</div>
             <div>小时窗口数：{{ previewResult.windowCount }}</div>

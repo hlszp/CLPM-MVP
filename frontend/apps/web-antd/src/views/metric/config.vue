@@ -41,9 +41,12 @@ import {
 
 import { ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
 import ConfigTabs from '#/components/metric/config-tabs.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getMetricsApi, updateMetricApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricConfig' });
+
+const { themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -52,19 +55,19 @@ const metricList = ref<MetricApi.MetricItem[]>([]);
 const totalWeight = ref(0);
 const weightValid = ref(true);
 
-/** 指标类别配置 */
+/** 指标类别配置（对齐 Ant Design Tag 语义色名） */
 const categoryConfig: Record<
   MetricApi.MetricCategory,
   { color: string; label: string; order: number; weightLabel: string }
 > = {
   CORE: {
-    color: 'green',
+    color: 'success',
     label: '核心质量',
     order: 0,
     weightLabel: '权重',
   },
   COMMISSIONING: {
-    color: 'blue',
+    color: 'processing',
     label: '投用',
     order: 1,
     weightLabel: '折扣因子',
@@ -368,7 +371,7 @@ onMounted(() => {
 
     <Card class="mt-3">
       <div class="mb-4 flex items-center justify-between">
-        <p class="text-sm text-gray-500">
+        <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
           按 3+1+8 分组展示：核心质量指标（CORE · 准确率 A / 快速率 F / 稳定率
           S）+ 投用指标（COMMISSIONING · 有效自控率 R）+ 辅助诊断指标（AUXILIARY_DIAGNOSTIC
           · 好值率/振荡率/饱和率等 8 项）。
@@ -397,7 +400,7 @@ onMounted(() => {
             </Tag>
           </template>
           <template v-else-if="column.key === 'formula'">
-            <span class="text-xs text-gray-500">
+            <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
               {{ record.formula || '—' }}
             </span>
           </template>
@@ -410,7 +413,7 @@ onMounted(() => {
             </span>
             <Tag
               v-else-if="getCategory(record as MetricItem) === 'COMMISSIONING'"
-              color="blue"
+              color="processing"
               class="m-0"
             >
               折扣因子
@@ -423,11 +426,11 @@ onMounted(() => {
             <div class="text-xs">
               <span>范围：{{ thresholdText(record.threshold) }}</span>
               <br />
-              <Tag color="orange">告警：{{ record.threshold.alert }}</Tag>
+              <Tag color="warning">告警：{{ record.threshold.alert }}</Tag>
             </div>
           </template>
           <template v-else-if="column.key === 'isEnabled'">
-            <Tag :color="record.isEnabled ? 'green' : 'default'">
+            <Tag :color="record.isEnabled ? 'success' : 'default'">
               {{ record.isEnabled ? '启用' : '禁用' }}
             </Tag>
           </template>
@@ -451,8 +454,12 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <span>核心指标权重总和（A + F + S）</span>
             <span
-              class="font-medium"
-              :class="coreWeightValid ? 'text-green-500' : 'text-red-500'"
+              class="font-medium clpm-num"
+              :style="{
+                color: coreWeightValid
+                  ? themeColors.SUCCESS
+                  : themeColors.DANGER,
+              }"
             >
               {{ coreWeightTotal }}%
               <span class="ml-2 text-xs">
@@ -500,7 +507,7 @@ onMounted(() => {
             placeholder="算法公式已固化为独立函数模块"
           />
           <template #extra>
-            <span class="text-xs text-gray-500">
+            <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
               对齐 FDS §5.3.1.2 与 DDS v4.1，12 项指标算法已固化为独立函数模块，
               不再支持用户自定义公式覆盖。
             </span>
@@ -532,7 +539,7 @@ onMounted(() => {
         <FormItem v-else label="权重">
           <Tag
             v-if="editingCategory === 'COMMISSIONING'"
-            color="blue"
+            color="processing"
           >
             折扣因子（无权重输入）
           </Tag>
@@ -564,7 +571,14 @@ onMounted(() => {
 
         <!-- 核心指标权重实时校验 -->
         <div v-if="weightEditable" class="mt-2 text-sm">
-          <span :class="editWeightValid ? 'text-green-500' : 'text-red-500'">
+          <span
+            class="clpm-num"
+            :style="{
+              color: editWeightValid
+                ? themeColors.SUCCESS
+                : themeColors.DANGER,
+            }"
+          >
             核心指标权重总和：{{ editCoreWeightTotal }}%
             <span v-if="!editWeightValid" class="ml-1">
               （须大于 0，否则无法保存）
@@ -599,27 +613,52 @@ onMounted(() => {
       <div class="space-y-3 py-2">
         <div class="text-sm">
           <div class="mb-2 font-medium">变更摘要</div>
-          <div v-if="changeSummary.length === 0" class="text-gray-400">
+          <div
+            v-if="changeSummary.length === 0"
+            :style="{ color: themeColors.NEUTRAL }"
+          >
             无变更
           </div>
-          <div v-else class="rounded border border-gray-200 bg-gray-50 p-3">
+          <div
+            v-else
+            class="rounded p-3"
+            :style="{
+              border: '1px solid hsl(var(--border))',
+              background: 'hsl(var(--muted) / 42%)',
+            }"
+          >
             <div
               v-for="(c, idx) in changeSummary"
               :key="idx"
               class="mb-1 flex justify-between text-xs"
             >
-              <span class="text-gray-600">{{ c.field }}</span>
+              <span :style="{ color: themeColors.NEUTRAL }">{{ c.field }}</span>
               <span class="font-mono">
-                <span class="text-gray-400 line-through">{{ c.from }}</span>
-                <span class="mx-1 text-gray-400">→</span>
-                <span class="font-medium text-blue-600">{{ c.to }}</span>
+                <span
+                  class="line-through"
+                  :style="{ color: themeColors.NEUTRAL }"
+                >{{ c.from }}</span>
+                <span
+                  class="mx-1"
+                  :style="{ color: themeColors.NEUTRAL }"
+                >→</span>
+                <span
+                  class="font-medium"
+                  :style="{ color: themeColors.INFO }"
+                >{{ c.to }}</span>
               </span>
             </div>
           </div>
         </div>
         <div class="text-sm">
           <div class="mb-1 font-medium">影响范围</div>
-          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
+          <p
+            class="rounded p-2 text-xs"
+            :style="{
+              background: 'hsl(var(--status-warning) / 0.08)',
+              color: 'hsl(var(--status-warning))',
+            }"
+          >
             {{ impactScope }}
           </p>
         </div>

@@ -465,7 +465,7 @@ onMounted(() => {
           style="width: 110px"
           @change="handleSearch"
         />
-        <span class="text-gray-400">~</span>
+        <span :style="{ color: themeColors.NEUTRAL }">~</span>
         <InputNumber
           v-model:value="filter.scoreMax"
           placeholder="最高分"
@@ -497,7 +497,7 @@ onMounted(() => {
           查询
         </Button>
         <div class="ml-auto flex items-center gap-4">
-          <span class="flex items-center gap-2 text-sm text-gray-600">
+          <span class="flex items-center gap-2 text-sm" :style="{ color: themeColors.NEUTRAL }">
             <Switch
               v-model:checked="includeExcluded"
               size="small"
@@ -505,7 +505,7 @@ onMounted(() => {
             />
             包含不参评回路
           </span>
-          <span class="flex items-center gap-2 text-sm text-gray-600">
+          <span class="flex items-center gap-2 text-sm" :style="{ color: themeColors.NEUTRAL }">
             <Switch
               v-model:checked="onlyValidScore"
               size="small"
@@ -574,7 +574,7 @@ onMounted(() => {
           <template v-else-if="column.key === 'score'">
             <span
               v-if="isInconclusive(record as MetricApi.RankingItem)"
-              class="text-gray-400"
+              :style="{ color: themeColors.NEUTRAL }"
             >
               —
             </span>
@@ -627,10 +627,10 @@ onMounted(() => {
             />
           </template>
           <template v-else-if="column.key === 'preDiagnosis'">
-            <Tag v-if="record.preDiagnosis" color="orange">
+            <Tag v-if="record.preDiagnosis" color="warning">
               {{ record.preDiagnosis }}
             </Tag>
-            <span v-else class="text-gray-400">—</span>
+            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Button
@@ -660,49 +660,49 @@ onMounted(() => {
         />
         <div class="mt-4 space-y-2">
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">好值率</span>
+            <span :style="{ color: themeColors.NEUTRAL }">好值率</span>
             <b class="clpm-num">{{ fpct(selectedLoop.goodValueRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">自控率</span>
+            <span :style="{ color: themeColors.NEUTRAL }">自控率</span>
             <b class="clpm-num">{{ fpct(selectedLoop.autoModeRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">平稳率</span>
+            <span :style="{ color: themeColors.NEUTRAL }">平稳率</span>
             <b class="clpm-num">{{ fpct(selectedLoop.steadyRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">准确率</span>
+            <span :style="{ color: themeColors.NEUTRAL }">准确率</span>
             <b class="clpm-num">{{ fpct(selectedLoop.accuracyRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">振荡率</span>
+            <span :style="{ color: themeColors.NEUTRAL }">振荡率</span>
             <b class="clpm-num">{{ fpct(selectedLoop.oscillationRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">饱和率</span>
+            <span :style="{ color: themeColors.NEUTRAL }">饱和率</span>
             <b class="clpm-num">{{ fpct(selectedLoop.saturationRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">预诊</span>
-            <Tag v-if="selectedLoop.preDiagnosis" color="orange">
+            <span :style="{ color: themeColors.NEUTRAL }">预诊</span>
+            <Tag v-if="selectedLoop.preDiagnosis" color="warning">
               {{ selectedLoop.preDiagnosis }}
             </Tag>
-            <span v-else class="text-gray-400">—</span>
+            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">处理状态</span>
+            <span :style="{ color: themeColors.NEUTRAL }">处理状态</span>
             <span>{{
               actionStatusLabel[selectedLoop.actionStatus] ||
               selectedLoop.actionStatus
             }}</span>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">算法版本</span>
+            <span :style="{ color: themeColors.NEUTRAL }">算法版本</span>
             <span>{{ selectedLoop.algorithmVersion }}</span>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">可信度</span>
+            <span :style="{ color: themeColors.NEUTRAL }">可信度</span>
             <ConfidenceBadge
               :level="selectedLoop.confidenceLevel"
               :valid-rate="selectedLoop.validRate"
@@ -713,7 +713,7 @@ onMounted(() => {
             v-if="selectedLoop.samplingFreq"
             class="flex justify-between border-b pb-2"
           >
-            <span class="text-gray-500">采样频率</span>
+            <span :style="{ color: themeColors.NEUTRAL }">采样频率</span>
             <span>{{ selectedLoop.samplingFreq }}</span>
           </div>
         </div>

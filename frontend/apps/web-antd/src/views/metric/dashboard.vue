@@ -886,7 +886,7 @@ onUnmounted(() => {
 
         <!-- 筛选预设区 -->
         <div v-if="preferences.savedFilters?.length" class="clpm-preset-bar">
-          <span class="text-xs text-gray-500">筛选预设：</span>
+          <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">筛选预设：</span>
           <Tag
             v-for="preset in preferences.savedFilters"
             :key="preset.id"
@@ -895,7 +895,8 @@ onUnmounted(() => {
           >
             {{ preset.name }}
             <span
-              class="ml-1 text-gray-400 hover:text-red-500"
+              class="ml-1"
+              :style="{ color: themeColors.NEUTRAL }"
               @click.stop="handleDeletePreset(preset.id)"
             >
               ×
@@ -918,7 +919,7 @@ onUnmounted(() => {
               </div>
             </template>
             <Card size="small" class="clpm-kpi-card">
-              <div class="text-xs text-gray-500">{{ card.title }}</div>
+              <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">{{ card.title }}</div>
               <div class="clpm-kpi-value">
                 <span v-if="card.value === null || card.value === undefined">--</span>
                 <span
@@ -933,7 +934,7 @@ onUnmounted(() => {
                 </span>
               </div>
               <div class="clpm-kpi-meta">
-                <span class="text-xs text-gray-400">
+                <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
                   参评 {{ card.evaluatedLoops }} 回路
                 </span>
                 <ConfidenceBadge
@@ -1029,7 +1030,7 @@ onUnmounted(() => {
               <template v-else-if="column.key === 'score'">
                 <span
                   v-if="record.status === 'INCONCLUSIVE'"
-                  class="text-gray-400"
+                  :style="{ color: themeColors.NEUTRAL }"
                 >
                   —
                 </span>
@@ -1057,7 +1058,7 @@ onUnmounted(() => {
                 <Tag v-if="record.preDiagnosis" color="warning" class="m-0">
                   {{ record.preDiagnosis }}
                 </Tag>
-                <span v-else class="text-gray-400">—</span>
+                <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
               </template>
               <template v-else-if="column.key === 'actionStatus'">
                 <Tag

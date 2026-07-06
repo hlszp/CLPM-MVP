@@ -620,7 +620,7 @@ onMounted(() => {
 
         <template v-if="drawerRecord.dataLineage">
           <div class="mt-4 mb-2 text-sm font-medium">数据血缘详情</div>
-          <div class="rounded bg-gray-50 p-3 font-mono text-xs">
+          <div class="rounded p-3 font-mono text-xs" :style="{ background: 'hsl(var(--muted) / 42%)' }">
             <div>采样频率: {{ drawerRecord.dataLineage.samplingFreq }}</div>
             <div>聚合策略: {{ drawerRecord.dataLineage.aggregationPolicy }}</div>
             <div>质量策略: {{ drawerRecord.dataLineage.qualityPolicy }}</div>
