@@ -41,12 +41,17 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { getLoopListApi } from '#/api/loop';
 import type { TaskApi } from '#/api/task';
-import { ClpmDangerConfirmModal } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmDangerConfirmModal,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 
 defineOptions({ name: 'MetricRecompute' });
 
 // ============ 列表状态 ============
 const loading = ref(false);
+const loadError = ref(false);
 const taskList = ref<TaskApi.TaskItem[]>([]);
 const totalCount = ref(0);
 const currentPage = ref(1);
@@ -108,11 +113,13 @@ const columns = computed<TableColumnsType>(() => [
     title: '回路数',
     dataIndex: 'loopsTotal',
     width: 90,
+    className: 'clpm-num',
   },
   {
     title: '小时窗口',
     dataIndex: 'windowCount',
     width: 100,
+    className: 'clpm-num',
   },
   {
     title: '状态',
@@ -140,6 +147,7 @@ const columns = computed<TableColumnsType>(() => [
 // ============ 加载列表 ============
 async function loadList() {
   loading.value = true;
+  loadError.value = false;
   try {
     const params: TaskApi.TaskListQueryParams = {
       taskType: 'BACKFILL',
@@ -159,6 +167,7 @@ async function loadList() {
     updatePolling();
   } catch (error) {
     console.error('加载重算记录失败:', error);
+    loadError.value = true;
     message.error('加载重算记录失败');
   } finally {
     loading.value = false;
@@ -233,14 +242,28 @@ function transformTreeData(nodes: any[]): any[] {
   }));
 }
 
+/**
+ * 加载回路选项。
+ * 后端 loops API pageSize 上限 100，循环分页加载全部回路，避免截断 / 422。
+ */
 async function loadLoopOptions() {
   try {
-    const params: any = { page: 1, pageSize: 1000 };
-    if (form.value.plantNodeIds.length > 0) {
-      params.plantNodeIds = form.value.plantNodeIds.join(',');
-    }
-    const result = await getLoopListApi(params);
-    loopOptions.value = (result.items || []).map((l: any) => ({
+    const allLoops: any[] = [];
+    let page = 1;
+    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
+    const loopPageSize = 100;
+    let total = 0;
+    do {
+      const params: any = { page, pageSize: loopPageSize };
+      if (form.value.plantNodeIds.length > 0) {
+        params.plantNodeIds = form.value.plantNodeIds.join(',');
+      }
+      const result = await getLoopListApi(params);
+      total = result.total;
+      allLoops.push(...(result.items || []));
+      page += 1;
+    } while ((page - 1) * loopPageSize < total);
+    loopOptions.value = allLoops.map((l: any) => ({
       label: l.tagName || l.loopName || l.id,
       value: l.id,
     }));
@@ -445,9 +468,13 @@ onUnmounted(() => {
 <template>
   <div class="p-4">
     <!-- 顶部工具栏 -->
-    <div class="mb-4 flex items-center justify-between">
-      <div class="text-lg font-medium">历史重算</div>
-      <Space>
+    <ClpmPageToolbar
+      class="mb-4"
+      title="历史重算"
+      subtitle="按时间窗批量重算回路小时指标，支持预览影响范围与任务跟踪。"
+      :loading="loading"
+    >
+      <template #actions>
         <Button @click="loadList">
           <template #icon><RotateCw /></template>
           刷新
@@ -456,8 +483,8 @@ onUnmounted(() => {
           <template #icon><Plus /></template>
           发起重算
         </Button>
-      </Space>
-    </div>
+      </template>
+    </ClpmPageToolbar>
 
     <!-- 筛选区 -->
     <div class="mb-4 flex items-center gap-3">
@@ -483,80 +510,86 @@ onUnmounted(() => {
     </div>
 
     <!-- 重算记录列表 -->
-    <Table
-      :columns="columns"
-      :data-source="taskList"
+    <ClpmDataCanvas
       :loading="loading"
-      :pagination="{
-        current: currentPage,
-        pageSize: pageSize,
-        total: totalCount,
-        showSizeChanger: true,
-        showTotal: (t: number) => `共 ${t} 条`,
-      }"
-      row-key="taskId"
-      @change="
-        (p: any) => {
-          currentPage = p.current;
-          pageSize = p.pageSize;
-          loadList();
-        }
-      "
+      :error="loadError"
+      :empty="!loading && !loadError && taskList.length === 0"
+      @retry="loadList"
     >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'tsRange'">
-          <span class="font-mono text-xs">
-            {{ formatTime(record.tsStart) }} ~ {{ formatTime(record.tsEnd) }}
-          </span>
+      <Table
+        :columns="columns"
+        :data-source="taskList"
+        :pagination="{
+          current: currentPage,
+          pageSize: pageSize,
+          total: totalCount,
+          showSizeChanger: true,
+          showTotal: (t: number) => `共 ${t} 条`,
+        }"
+        row-key="taskId"
+        @change="
+          (p: any) => {
+            currentPage = p.current;
+            pageSize = p.pageSize;
+            loadList();
+          }
+        "
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'tsRange'">
+            <span class="font-mono text-xs">
+              {{ formatTime(record.tsStart) }} ~ {{ formatTime(record.tsEnd) }}
+            </span>
+          </template>
+          <template v-else-if="column.dataIndex === 'status'">
+            <Tag :color="statusColorMap[record.status]">
+              {{ statusTextMap[record.status] || record.status }}
+            </Tag>
+          </template>
+          <template v-else-if="column.dataIndex === 'progress'">
+            <Progress
+              :percent="formatProgress(record.progress)"
+              :status="
+                record.status === 'FAILED'
+                  ? 'exception'
+                  : record.status === 'SUCCESS'
+                    ? 'success'
+                    : 'active'
+              "
+            />
+          </template>
+          <template v-else-if="column.dataIndex === 'createdAt'">
+            <span class="clpm-num">{{ formatTime(record.createdAt) }}</span>
+          </template>
+          <template v-else-if="column.dataIndex === 'windowCount'">
+            <span v-if="record.windowCount" class="font-mono">
+              {{ record.windowCount }}
+            </span>
+            <span v-else class="text-gray-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <Button
+              v-if="isTaskActive(record as TaskApi.TaskItem)"
+              type="link"
+              danger
+              size="small"
+              @click="openCancelDanger(record as TaskApi.TaskItem)"
+            >
+              取消
+            </Button>
+            <Button
+              v-else-if="isTaskTerminal(record as TaskApi.TaskItem)"
+              type="link"
+              size="small"
+              @click="openDeleteDanger(record as TaskApi.TaskItem)"
+            >
+              删除
+            </Button>
+            <span v-else class="text-gray-400">—</span>
+          </template>
         </template>
-        <template v-else-if="column.dataIndex === 'status'">
-          <Tag :color="statusColorMap[record.status]">
-            {{ statusTextMap[record.status] || record.status }}
-          </Tag>
-        </template>
-        <template v-else-if="column.dataIndex === 'progress'">
-          <Progress
-            :percent="formatProgress(record.progress)"
-            :status="
-              record.status === 'FAILED'
-                ? 'exception'
-                : record.status === 'SUCCESS'
-                  ? 'success'
-                  : 'active'
-            "
-          />
-        </template>
-        <template v-else-if="column.dataIndex === 'createdAt'">
-          {{ formatTime(record.createdAt) }}
-        </template>
-        <template v-else-if="column.dataIndex === 'windowCount'">
-          <span v-if="record.windowCount" class="font-mono">
-            {{ record.windowCount }}
-          </span>
-          <span v-else class="text-gray-400">—</span>
-        </template>
-        <template v-else-if="column.key === 'action'">
-          <Button
-            v-if="isTaskActive(record as TaskApi.TaskItem)"
-            type="link"
-            danger
-            size="small"
-            @click="openCancelDanger(record as TaskApi.TaskItem)"
-          >
-            取消
-          </Button>
-          <Button
-            v-else-if="isTaskTerminal(record as TaskApi.TaskItem)"
-            type="link"
-            size="small"
-            @click="openDeleteDanger(record as TaskApi.TaskItem)"
-          >
-            删除
-          </Button>
-          <span v-else class="text-gray-400">—</span>
-        </template>
-      </template>
-    </Table>
+      </Table>
+    </ClpmDataCanvas>
 
     <!-- 发起重算 Drawer -->
     <Drawer

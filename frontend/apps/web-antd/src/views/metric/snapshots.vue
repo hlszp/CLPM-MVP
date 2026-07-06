@@ -25,7 +25,6 @@ import {
   DescriptionsItem,
   Drawer,
   Select,
-  Space,
   Table,
   Tag,
   TreeSelect,
@@ -41,11 +40,13 @@ import type {
 } from '#/api/metric';
 import { getLoopListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 
 defineOptions({ name: 'MetricSnapshots' });
 
 // ============ 列表状态 ============
 const loading = ref(false);
+const loadError = ref(false);
 const snapshotList = ref<KpiSnapshotItem[]>([]);
 const totalCount = ref(0);
 const currentPage = ref(1);
@@ -193,6 +194,7 @@ const columns = computed<TableColumnsType>(() => [
 // ============ 加载列表 ============
 async function loadList() {
   loading.value = true;
+  loadError.value = false;
   try {
     const params: any = {
       page: currentPage.value,
@@ -210,6 +212,7 @@ async function loadList() {
     snapshotList.value = result.items;
     totalCount.value = result.total;
   } catch (error: any) {
+    loadError.value = true;
     console.error('加载指标快照列表失败:', error);
     message.error(error?.message || '加载失败');
   } finally {
@@ -230,15 +233,25 @@ async function loadPlantNodeTree() {
 // ============ 加载回路列表 ============
 /**
  * 加载回路列表。
+ * 后端 loops API pageSize 上限 100，循环分页加载全部回路，避免截断。
  * @param plantNodeId 装置 ID；传入时只加载该装置下的回路，不传则加载全部。
  */
 async function loadLoops(plantNodeId?: string) {
   try {
-    // 后端 loops API pageSize 上限 100，传 1000 会 422
-    const params: any = { page: 1, pageSize: 100 };
-    if (plantNodeId) params.plantNodeId = plantNodeId;
-    const result = await getLoopListApi(params);
-    loopOptions.value = (result.items || []).map((l: any) => ({
+    const allLoops: any[] = [];
+    let page = 1;
+    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
+    const loopPageSize = 100;
+    let total = 0;
+    do {
+      const params: any = { page, pageSize: loopPageSize };
+      if (plantNodeId) params.plantNodeId = plantNodeId;
+      const result = await getLoopListApi(params);
+      total = result.total;
+      allLoops.push(...(result.items || []));
+      page += 1;
+    } while ((page - 1) * loopPageSize < total);
+    loopOptions.value = allLoops.map((l: any) => ({
       label: l.tagName,
       value: l.loopId,
     }));
@@ -287,9 +300,9 @@ function formatNumber(val: number | null | undefined, suffix = ''): string {
 }
 
 const STATUS_COLOR_MAP: Record<string, string> = {
-  SUCCESS: 'green',
-  INCONCLUSIVE: 'orange',
-  PARTIAL: 'red',
+  SUCCESS: 'success',
+  PARTIAL: 'warning',
+  INCONCLUSIVE: 'default',
 };
 
 const STATUS_LABEL_MAP: Record<string, string> = {
@@ -325,15 +338,19 @@ onMounted(() => {
 <template>
   <div class="p-4">
     <!-- 顶部工具栏 -->
-    <div class="mb-4 flex items-center justify-between">
-      <div class="text-lg font-medium">回路小时指标明细</div>
-      <Space>
+    <ClpmPageToolbar
+      class="mb-4"
+      title="回路小时指标明细"
+      subtitle="按小时快照展示回路性能指标，支持多维度筛选和详情查看。"
+      :loading="loading"
+    >
+      <template #actions>
         <Button @click="loadList">
           <template #icon><RotateCw /></template>
           刷新
         </Button>
-      </Space>
-    </div>
+      </template>
+    </ClpmPageToolbar>
 
     <!-- 筛选区 -->
     <div class="mb-4 flex flex-wrap items-center gap-3">
@@ -390,28 +407,33 @@ onMounted(() => {
     </div>
 
     <!-- 快照列表 -->
-    <Table
-      :columns="columns"
-      :data-source="snapshotList"
+    <ClpmDataCanvas
       :loading="loading"
-      :pagination="{
-        current: currentPage,
-        pageSize: pageSize,
-        total: totalCount,
-        showSizeChanger: true,
-        showTotal: (t: number) => `共 ${t} 条`,
-      }"
-      :scroll="{ x: 1800 }"
-      row-key="tsStart"
-      size="small"
-      @change="
-        (p: any) => {
-          currentPage = p.current;
-          pageSize = p.pageSize;
-          loadList();
-        }
-      "
+      :error="loadError"
+      :empty="!loading && !loadError && snapshotList.length === 0"
+      @retry="loadList"
     >
+      <Table
+        :columns="columns"
+        :data-source="snapshotList"
+        :pagination="{
+          current: currentPage,
+          pageSize: pageSize,
+          total: totalCount,
+          showSizeChanger: true,
+          showTotal: (t: number) => `共 ${t} 条`,
+        }"
+        :scroll="{ x: 1800 }"
+        row-key="tsStart"
+        size="small"
+        @change="
+          (p: any) => {
+            currentPage = p.current;
+            pageSize = p.pageSize;
+            loadList();
+          }
+        "
+      >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'tsRange'">
           <span class="font-mono text-xs">
@@ -419,7 +441,9 @@ onMounted(() => {
           </span>
         </template>
         <template v-else-if="column.key === 'score'">
-          <span class="font-semibold">{{ formatNumber(record.score) }}</span>
+          <span class="clpm-num font-semibold">
+            {{ formatNumber(record.score) }}
+          </span>
         </template>
         <template v-else-if="column.key === 'confidenceLevel'">
           <Tag
@@ -449,7 +473,9 @@ onMounted(() => {
             ] as string[]).includes(column.key as string)
           "
         >
-          {{ formatNumber(record[column.dataIndex as string], '%') }}
+          <span class="clpm-num">
+            {{ formatNumber(record[column.dataIndex as string], '%') }}
+          </span>
         </template>
         <!-- 粘滞指数 / 稳态时间 / 输出行程指数 -->
         <template
@@ -459,7 +485,7 @@ onMounted(() => {
             )
           "
         >
-          <span class="font-mono">
+          <span class="clpm-num font-mono">
             {{
               column.key === 'settlingTime'
                 ? formatNumber(record[column.dataIndex as string], 's')
@@ -474,7 +500,8 @@ onMounted(() => {
           </Button>
         </template>
       </template>
-    </Table>
+      </Table>
+    </ClpmDataCanvas>
 
     <!-- 详情抽屉：从右侧滑出，展示完整字段 -->
     <Drawer
@@ -505,7 +532,9 @@ onMounted(() => {
             {{ formatFullTime(drawerRecord.tsEnd) }}
           </DescriptionsItem>
           <DescriptionsItem label="综合评分">
-            <span class="font-semibold">{{ formatNumber(drawerRecord.score) }}</span>
+            <span class="clpm-num font-semibold">
+              {{ formatNumber(drawerRecord.score) }}
+            </span>
           </DescriptionsItem>
           <DescriptionsItem label="可信度">
             <Tag
