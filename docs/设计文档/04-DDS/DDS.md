@@ -1,9 +1,9 @@
 # CLPM 数据模型设计说明书 (DDS)
 
 **文档状态**: 正式版
-**当前版本**: v4.1
-**发布日期**: 2026-07-04
-**设计依据**: PRD (v3.1), FDS (v5.1，表名/字段名权威基线), ADS (v3.1), 关键算法设计说明 (v2.0)
+**当前版本**: v6.0
+**发布日期**: 2026-07-06
+**设计依据**: PRD (v6.0), FDS (v6.0，表名/字段名权威基线), ADS (v6.0), 关键算法设计说明 (v2.0), 实现契约 (v2.0)
 
 ---
 
@@ -15,19 +15,20 @@
 | v3.1 | 2026-06-22 | 对齐《关键算法设计说明》v1.0：①`metric_config.threshold` 类型 DECIMAL → JSONB，新增 `control_type` 字段；②`kpi_snapshot_hourly` 新增 `accuracy_rate`、`saturation_rate` 字段；③`diagnosis_config` 新增 `calc_method` 字段，`threshold` 类型 DECIMAL → JSONB；④`tuning_record` 新增 `fitting_score` 字段；⑤新增"算法结果存储设计"章节；⑥新增"算法版本字段"说明；⑦ER 图更新说明（新增字段不影响现有关系结构）。 | 数据架构组 |
 | v4.0 | 2026-06-26 | 对齐《关键算法设计说明》v2.0：①`kpi_snapshot_hourly` 扩展 `fast_rate`/`effective_auto_rate`/`stiction_index`/`output_trip_index`/`settling_time`/`ideal_settling_time` 等指标字段及 `sampling_freq`/`quality_policy`/`valid_rate`/`confidence_level`/`data_lineage` 数据血缘字段；②新增 `kpi_snapshot_custom` 自定义任务快照表；③新增 `clpm_metric_data_requirement` 指标数据需求契约表；④新增 `diagnosis_tag` 诊断标签表；⑤新增 `unit_kpi_summary` 装置级汇总表；⑥§4.1 PV 质量码过滤策略升级为 `KEEP_ALL_WITH_VALIDITY`，引入 Metric Validity Mask 与 A/B/C/D/E 五级可信度；⑦§5.1 KPI 结果存储新增数据血缘字段说明，区分标准任务与自定义任务存储。 | 数据架构组 |
 | v4.1 | 2026-07-04 | 对齐 FDS v5.1：①`loop_ledger` 新增 `control_type` / `importance_level` / `include_in_evaluation` 三字段（回路评估参与配置）；②`metric_config` 新增 `grading_thresholds` 字段（性能定级阈值 JSONB），`formula` 字段标注为废弃（v5.0 起算法公式固化为独立函数模块），`control_type` 字段标注为迁移至 `loop_ledger`；③`unit_kpi_summary` 新增 `excluded_loops` / `status` 字段（不参评回路数与聚合状态）；④`kpi_snapshot_custom.stability_rate` 修正为 `steady_rate`（与 `kpi_snapshot_hourly` 字段命名对齐，loop-level 字段统一为 `steady_rate`，`stability_rate` 仅用于 `unit_kpi_summary` 装置级聚合）；⑤全文术语"稳定率"统一为"稳定率"。 | 数据架构组 |
+| v6.0 | 2026-07-06 | 对齐 v6.0 文档统一升级与代码事实（26 张 ORM 模型）：①补全代码特有 9 张表字段定义：节点级 KPI 快照三件套（`kpi_node_snapshot_hourly`/`_daily`/`_monthly`，§2.18-§2.20）、回路配置三件套（`loop_mode_mapping`/`loop_type_weight`/`loop_level_weight`，§2.22-§2.24）、系统配置 `sys_config`（§2.25）、报表配置 `report_config`（§2.26）、系统用户 `sys_user`（§2.21）；②标注 `report_schedule` 已被 `report_config` 替代（§2.27）；③标注 `sys_role`/`sys_user_role` 为"计划中，未实现"（角色用枚举存储于 `sys_user.role`，§2.27）；④ER 图与表清单同步更新（§7）；⑤引用文档版本统一：PRD v3.1 → v6.0、FDS v5.1 → v6.0、ADS v3.1 → v6.0、新增引用实现契约 v2.0；⑥`diagnosis_tag` 字段对齐代码事实（新增 `tag_name`/`trigger_value`/`resolved_by`/`resolution_note` 字段，严重等级枚举对齐 `INFO`/`WARN`/`ERROR`/`CRITICAL`，状态对齐 `ACTIVE`/`RESOLVED`/`SUPPRESSED`）。 | 数据架构组 |
 
 ---
 
 ## 1. 设计原则
 
-遵循 ADS (v3.1) 规定的"存算分离"原则，系统数据模型严格拆分为两大独立域：
+遵循 ADS (v6.0) 规定的"存算分离"原则，系统数据模型严格拆分为两大独立域：
 
 1. **关系型业务域 (PostgreSQL)**：承载工厂拓扑模型、AAS Tag 注册表、回路台账、回路-Tag 关联、性能/诊断/引擎等可配置元数据、算法快照结果、整定记录、报表记录及轻量级状态追踪记录。要求强一致性 (ACID)。
 2. **高频时序域 (TDengine)**：承载原始海量秒级运行数据（PV/SP/OP/MODE/PID_P/PID_I/PID_D 及 PV 质量码）。要求极高写入吞吐与降采样查询性能。
 
 ### 1.1 产品化配置原则
 
-为支撑 PRD v3.0 确立的"产品化、工具化、模块内聚自包含、配置驱动"四大设计原则，本 DDS 在数据模型层面落实以下产品化配置原则：
+为支撑 PRD v6.0 确立的"产品化、工具化、模块内聚自包含、配置驱动"四大设计原则，本 DDS 在数据模型层面落实以下产品化配置原则：
 
 | 配置原则 | 数据模型落地说明 |
 |---|---|
@@ -58,7 +59,7 @@
 
 **表名: `loop_ledger` (回路台账)**
 
-回路作为系统核心实体，由用户在 CLPM 系统中创建并关联 Tag。v3.0 移除原 `mapping_pv/sp/op/mode` 字段（迁移至 `loop_tag_mapping` 表），新增描述、评分权重、AAS 同步时间、回路状态等扩展字段。v4.1 新增 `control_type` / `importance_level` / `include_in_evaluation` 三字段，对齐 FDS v5.1 §5.2.3 回路评估参与配置。
+回路作为系统核心实体，由用户在 CLPM 系统中创建并关联 Tag。v3.0 移除原 `mapping_pv/sp/op/mode` 字段（迁移至 `loop_tag_mapping` 表），新增描述、评分权重、AAS 同步时间、回路状态等扩展字段。v4.1 新增 `control_type` / `importance_level` / `include_in_evaluation` 三字段，对齐 FDS v6.0 §5.2.3 回路评估参与配置。
 
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
@@ -79,7 +80,7 @@
 * `PARTIAL`：必填 Tag 缺失，回路标红提示，不参与评估计算。
 * `INACTIVE`：`is_active=FALSE`，回路被手动停用，不参与评估计算。
 
-**control_type 枚举值说明**（对齐 FDS v5.1 §5.3.7.1 默认权重配置）：
+**control_type 枚举值说明**（对齐 FDS v6.0 §5.3.7.1 默认权重配置）：
 
 | control_type | 说明 | 适用场景 |
 |---|---|---|
@@ -88,7 +89,7 @@
 | `FAST` | 快速型 | 副回路、流量控制 |
 | `LOGIC` | 逻辑型 | 防回流、防超温 |
 
-**importance_level 数值映射**（对齐 FDS v5.1 §5.3.7.2 装置级聚合权重）：
+**importance_level 数值映射**（对齐 FDS v6.0 §5.3.7.2 装置级聚合权重）：
 
 | importance_level | 中文名称 | 装置级聚合权重 w_level |
 |:---:|---|:---:|
@@ -96,7 +97,7 @@
 | 2 | 二级 | 2 |
 | 3 | 三级 | 1 |
 
-**include_in_evaluation 语义**（对齐 FDS v5.1 §5.2.3 回路评估参与配置说明）：
+**include_in_evaluation 语义**（对齐 FDS v6.0 §5.2.3 回路评估参与配置说明）：
 * `TRUE` 且回路 `status=READY` 且回路 KPI 快照 `status ≠ INCONCLUSIVE`：进入综合性能评分（详见 FDS §5.3.7.2）与装置级三大 KPI 聚合（综合性能 / 平均自控率 / 稳定率，详见 FDS §5.3.7.3）。
 * `FALSE`：单回路 KPI 仍按引擎规则正常计算（可在回路监控、诊断中心查看），但不进入综合性能评分、不参与装置级聚合、不出现在低效回路排行。典型场景：试运行回路、临时停用回路、非关键测量回路、未完成调试的新回路。
 
@@ -563,7 +564,7 @@ CREATE TABLE diagnosis_tag (
 
 **表名: `unit_kpi_summary` (装置级 KPI 汇总表)** [v4.0 新增，v4.1 修订]
 
-承载装置（plant_node 中 `type=UNIT` 的节点）级 KPI 汇总快照，按周期对装置下所有参评回路（`include_in_evaluation=TRUE` 且回路 KPI 快照 `status ≠ INCONCLUSIVE`）的 `kpi_snapshot_hourly` 进行聚合。**装置级汇总仅基于标准任务（`kpi_snapshot_hourly`），自定义任务（`kpi_snapshot_custom`）不参与聚合**。聚合权重按 `loop_ledger.importance_level` 映射（一级=3、二级=2、三级=1，对齐 FDS v5.1 §5.3.7.2）。
+承载装置（plant_node 中 `type=UNIT` 的节点）级 KPI 汇总快照，按周期对装置下所有参评回路（`include_in_evaluation=TRUE` 且回路 KPI 快照 `status ≠ INCONCLUSIVE`）的 `kpi_snapshot_hourly` 进行聚合。**装置级汇总仅基于标准任务（`kpi_snapshot_hourly`），自定义任务（`kpi_snapshot_custom`）不参与聚合**。聚合权重按 `loop_ledger.importance_level` 映射（一级=3、二级=2、三级=1，对齐 FDS v6.0 §5.3.7.2）。
 
 > **v4.1 变更**（对齐 FDS v5.1 §5.3.7.3）：
 > 1. 新增 `excluded_loops` 字段（INTEGER）：装置下 `include_in_evaluation=FALSE` 的回路数（不参评回路数）。
@@ -633,6 +634,351 @@ CREATE TABLE unit_kpi_summary (
     UNIQUE(node_id, snapshot_time)
 );
 ```
+
+### 2.18 节点级每小时 KPI 快照 (kpi_node_snapshot_hourly)
+
+**表名: `kpi_node_snapshot_hourly` (节点级每小时性能评估快照)** [v6.0 新增，对齐代码 `models/node_kpi.py`]
+
+承载按 `plant_node` 节点（工厂/装置/单元）维度聚合的每小时 KPI 快照。对齐 GB/T 44693.2-2024 §6.4 综合评估：按 `plant_node` 递归收集下属回路，以 `score_weight` 加权聚合回路级 `kpi_snapshot_hourly` 快照，支持企业级/装置级/单元级 KPI。与 `unit_kpi_summary` 互补：`unit_kpi_summary` 仅承载装置级聚合，本表承载任意节点级聚合，且包含 `auto_loop_ratio` 与 `realtime_auto_rate` 等运行指标。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 快照主键 | PK, DEFAULT gen_random_uuid() |
+| plant_node_id | UUID | 节点 ID | FK -> plant_node.id (ON DELETE CASCADE), NOT NULL |
+| ts_start | TIMESTAMP | 评估窗口起始时间 | NOT NULL |
+| ts_end | TIMESTAMP | 评估窗口结束时间 | NOT NULL |
+| score | DECIMAL(5,2) | 综合评分 (0-100) | |
+| good_value_rate | DECIMAL(5,2) | 好值率 (%) | |
+| auto_mode_rate | DECIMAL(5,2) | 自控率 (%) | |
+| effective_auto_rate | DECIMAL(5,2) | 有效自控率 (%) | |
+| steady_rate | DECIMAL(5,2) | 稳定率 (%) | |
+| accuracy_rate | DECIMAL(5,2) | 准确率 (%) | |
+| fast_rate | DECIMAL(5,2) | 快速率 (%) | |
+| oscillation_rate | DECIMAL(5,2) | 振荡率 (%) | |
+| saturation_rate | DECIMAL(5,2) | 饱和率 (%) | |
+| stiction_index | DECIMAL(5,2) | 粘滞系数 (%) | |
+| settling_time | DECIMAL(8,2) | 实际稳态时间（秒） | |
+| output_trip_index | DECIMAL(8,2) | 输出值行程指数 | |
+| ideal_settling_time | DECIMAL(8,2) | 理想稳态时间（秒） | |
+| auto_loop_ratio | DECIMAL(5,2) | 投用率（自动回路占比，%） | |
+| realtime_auto_rate | DECIMAL(5,2) | 实时自控率（取窗口末尾瞬时值，非聚合） | |
+| loop_count | INTEGER | 参与聚合的回路数 | NOT NULL, DEFAULT 0 |
+| status | VARCHAR(20) | 聚合状态: `EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`/`INCONCLUSIVE` | NOT NULL |
+| algorithm_version | VARCHAR(30) | 算法版本号 | |
+| created_at | TIMESTAMP | 记录创建时间 | NOT NULL, DEFAULT NOW() |
+
+**约束**：
+* `CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE'))`
+* `CHECK (ts_end > ts_start)`
+
+**索引**：
+* `idx_kpi_node_snapshot_node_id` (`plant_node_id`)
+* `idx_kpi_node_snapshot_ts_start` (`ts_start`)
+* `idx_kpi_node_snapshot_status` (`status`)
+* `idx_kpi_node_snapshot_node_ts` (`plant_node_id`, `ts_start`)
+* `idx_kpi_node_snapshot_ts_status` (`ts_start`, `status`, `score`)
+
+### 2.19 节点级日 KPI 快照 (kpi_node_snapshot_daily)
+
+**表名: `kpi_node_snapshot_daily` (节点级日性能评估快照)** [v6.0 新增，对齐代码 `models/node_kpi.py`]
+
+承载按 `plant_node` 节点维度聚合的日 KPI 快照。按 `loop_count` 加权聚合当天 24 条小时快照；`realtime_auto_rate` 取当天最后一次小时快照的值（非聚合）。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 快照主键 | PK, DEFAULT gen_random_uuid() |
+| plant_node_id | UUID | 节点 ID | FK -> plant_node.id (ON DELETE CASCADE), NOT NULL |
+| stat_date | DATE | 统计日期 | NOT NULL |
+| score | DECIMAL(5,2) | 综合评分 (0-100) | |
+| good_value_rate | DECIMAL(5,2) | 好值率 (%) | |
+| auto_mode_rate | DECIMAL(5,2) | 自控率 (%) | |
+| effective_auto_rate | DECIMAL(5,2) | 有效自控率 (%) | |
+| steady_rate | DECIMAL(5,2) | 稳定率 (%) | |
+| accuracy_rate | DECIMAL(5,2) | 准确率 (%) | |
+| fast_rate | DECIMAL(5,2) | 快速率 (%) | |
+| oscillation_rate | DECIMAL(5,2) | 振荡率 (%) | |
+| saturation_rate | DECIMAL(5,2) | 饱和率 (%) | |
+| stiction_index | DECIMAL(5,2) | 粘滞系数 (%) | |
+| settling_time | DECIMAL(8,2) | 实际稳态时间（秒） | |
+| output_trip_index | DECIMAL(8,2) | 输出值行程指数 | |
+| ideal_settling_time | DECIMAL(8,2) | 理想稳态时间（秒） | |
+| auto_loop_ratio | DECIMAL(5,2) | 投用率 (%) | |
+| realtime_auto_rate | DECIMAL(5,2) | 实时自控率（取当日最后一次小时快照值） | |
+| loop_count | INTEGER | 参与聚合的回路数 | NOT NULL, DEFAULT 0 |
+| status | VARCHAR(20) | 聚合状态: `EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`/`INCONCLUSIVE` | NOT NULL |
+| algorithm_version | VARCHAR(30) | 算法版本号 | |
+| created_at | TIMESTAMP | 记录创建时间 | NOT NULL, DEFAULT NOW() |
+
+**约束**：
+* `CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE'))`
+* `UNIQUE (plant_node_id, stat_date)` —— 同一节点同一日期仅一条快照记录
+
+**索引**：
+* `idx_kpi_node_snapshot_daily_node_id` (`plant_node_id`)
+* `idx_kpi_node_snapshot_daily_stat_date` (`stat_date`)
+* `idx_kpi_node_snapshot_daily_status` (`status`)
+* `idx_kpi_node_snapshot_daily_node_date` (`plant_node_id`, `stat_date`)
+
+### 2.20 节点级月 KPI 快照 (kpi_node_snapshot_monthly)
+
+**表名: `kpi_node_snapshot_monthly` (节点级月性能评估快照)** [v6.0 新增，对齐代码 `models/node_kpi.py`]
+
+承载按 `plant_node` 节点维度聚合的月 KPI 快照。按 `loop_count` 加权聚合当月所有日快照；`realtime_auto_rate` 取当月最后一次小时快照的值（非聚合）。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 快照主键 | PK, DEFAULT gen_random_uuid() |
+| plant_node_id | UUID | 节点 ID | FK -> plant_node.id (ON DELETE CASCADE), NOT NULL |
+| stat_month | DATE | 统计月份（用该月 1 日表示） | NOT NULL |
+| score | DECIMAL(5,2) | 综合评分 (0-100) | |
+| good_value_rate | DECIMAL(5,2) | 好值率 (%) | |
+| auto_mode_rate | DECIMAL(5,2) | 自控率 (%) | |
+| effective_auto_rate | DECIMAL(5,2) | 有效自控率 (%) | |
+| steady_rate | DECIMAL(5,2) | 稳定率 (%) | |
+| accuracy_rate | DECIMAL(5,2) | 准确率 (%) | |
+| fast_rate | DECIMAL(5,2) | 快速率 (%) | |
+| oscillation_rate | DECIMAL(5,2) | 振荡率 (%) | |
+| saturation_rate | DECIMAL(5,2) | 饱和率 (%) | |
+| stiction_index | DECIMAL(5,2) | 粘滞系数 (%) | |
+| settling_time | DECIMAL(8,2) | 实际稳态时间（秒） | |
+| output_trip_index | DECIMAL(8,2) | 输出值行程指数 | |
+| ideal_settling_time | DECIMAL(8,2) | 理想稳态时间（秒） | |
+| auto_loop_ratio | DECIMAL(5,2) | 投用率 (%) | |
+| realtime_auto_rate | DECIMAL(5,2) | 实时自控率（取当月最后一次小时快照值） | |
+| loop_count | INTEGER | 参与聚合的回路数 | NOT NULL, DEFAULT 0 |
+| status | VARCHAR(20) | 聚合状态: `EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`/`INCONCLUSIVE` | NOT NULL |
+| algorithm_version | VARCHAR(30) | 算法版本号 | |
+| created_at | TIMESTAMP | 记录创建时间 | NOT NULL, DEFAULT NOW() |
+
+**约束**：
+* `CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE'))`
+* `UNIQUE (plant_node_id, stat_month)` —— 同一节点同一月份仅一条快照记录
+
+**索引**：
+* `idx_kpi_node_snapshot_monthly_node_id` (`plant_node_id`)
+* `idx_kpi_node_snapshot_monthly_stat_month` (`stat_month`)
+* `idx_kpi_node_snapshot_monthly_status` (`status`)
+* `idx_kpi_node_snapshot_monthly_node_month` (`plant_node_id`, `stat_month`)
+
+### 2.21 系统用户 (sys_user)
+
+**表名: `sys_user` (系统用户表)** [v6.0 新增，对齐代码 `models/sys_user.py`]
+
+承载系统登录用户的认证信息与角色枚举。角色通过 `role` 字段以字符串枚举存储（5 种角色：`ADMIN`/`IC_ENGINEER`/`PE_ENGINEER`/`SPONSOR`/`EXPERT`），不再单独建 `sys_role`/`sys_user_role` 关联表（详见 §2.27）。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 用户主键 | PK, DEFAULT gen_random_uuid() |
+| username | VARCHAR(50) | 登录用户名 | UNIQUE, NOT NULL |
+| password_hash | VARCHAR(255) | 密码哈希（bcrypt/argon2） | NOT NULL |
+| display_name | VARCHAR(100) | 显示名称（如：张工） | NOT NULL |
+| email | VARCHAR(255) | 邮箱 | UNIQUE |
+| role | VARCHAR(20) | 角色枚举: `ADMIN`(管理员)/`IC_ENGINEER`(仪控工程师)/`PE_ENGINEER`(工艺工程师)/`SPONSOR`(赞助人)/`EXPERT`(专家) | NOT NULL |
+| is_active | BOOLEAN | 是否启用 | DEFAULT TRUE |
+| last_login_at | TIMESTAMP | 最后登录时间 | |
+| created_at | TIMESTAMP | 创建时间 | NOT NULL, DEFAULT NOW() |
+| updated_at | TIMESTAMP | 更新时间 | NOT NULL, DEFAULT NOW() |
+
+**约束**：
+* `CHECK (role IN ('ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT'))`
+
+**索引**：
+* `uk_sys_user_username` (`username`, UNIQUE)
+* `uk_sys_user_email` (`email`, UNIQUE)
+* `idx_sys_user_is_active` (`is_active`)
+
+**说明**：对齐实现契约 v2.0 §4.5 权限契约的 5 种角色定义；角色以枚举形式存储于 `role` 字段，无需独立角色表。
+
+### 2.22 回路模式映射 (loop_mode_mapping)
+
+**表名: `loop_mode_mapping` (回路投用定义/模式映射)** [v6.0 新增，对齐代码 `models/loop_config.py`]
+
+承载回路 `MODE` 值到控制模式的映射，用于实时自控率/有效自控率/投用率计算，替代硬编码 `{1,2,3}=自动`。每个回路可配置多个 `MODE` 值的语义，由用户按 DCS 实际语义配置。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 映射主键 | PK, DEFAULT gen_random_uuid() |
+| loop_id | UUID | 关联回路 ID | FK -> loop_ledger.id (ON DELETE CASCADE), NOT NULL |
+| mode_value | INTEGER | DCS 返回的 MODE 值（整数） | NOT NULL |
+| mode_label | VARCHAR(20) | 控制模式: `AUTO`(自动)/`CAS`(串级)/`REMOTE`(远程)/`APC`(先进控制)/`MANUAL`(手动) | NOT NULL |
+| is_auto | BOOLEAN | 是否算自动控制（`AUTO`/`CAS`/`REMOTE`/`APC` 为 TRUE） | NOT NULL, DEFAULT FALSE |
+| is_effective | BOOLEAN | 是否算有效自动（不饱和的自动模式为 TRUE） | NOT NULL, DEFAULT FALSE |
+| created_at | TIMESTAMP | 创建时间 | NOT NULL, DEFAULT NOW() |
+
+**约束**：
+* `CHECK (mode_label IN ('AUTO', 'CAS', 'REMOTE', 'APC', 'MANUAL'))`
+* `UNIQUE (loop_id, mode_value)` —— 同一回路同一 MODE 值仅一条映射
+
+**索引**：
+* `uk_loop_mode_mapping_loop_mode` (`loop_id`, `mode_value`, UNIQUE)
+* `idx_loop_mode_mapping_loop_id` (`loop_id`)
+
+**说明**：对齐实现契约 v2.0 与 GB/T 44693.2-2024 投用率定义；用于支撑实时自控率 (`realtime_auto_rate`) 与有效自控率 (`effective_auto_rate`) 的差异化计算。
+
+### 2.23 回路类型权重 (loop_type_weight)
+
+**表名: `loop_type_weight` (回路类型权重)** [v6.0 新增，对齐代码 `models/loop_config.py`]
+
+承载按回路类型（4 类）配置的权重模板，用于回路级综合评分公式：`P = [(A*a) + (F*f) + (S*s)] / (a+f+s) * R`。对齐 GB/T 44693.2-2024 附表 1。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 权重主键 | PK, DEFAULT gen_random_uuid() |
+| loop_type | VARCHAR(20) | 回路类型: `STABLE`(稳定型)/`SLOW`(慢速型)/`FAST`(快速型)/`LOGIC`(逻辑型) | UNIQUE, NOT NULL |
+| type_name | VARCHAR(50) | 类型名称（稳定型/慢速型/快速型/逻辑型） | NOT NULL |
+| weight_a | DECIMAL(3,2) | 准确率权重 `a` | NOT NULL |
+| weight_f | DECIMAL(3,2) | 快速率权重 `f` | NOT NULL |
+| weight_s | DECIMAL(3,2) | 平稳率权重 `s` | NOT NULL |
+| description | TEXT | 描述说明 | |
+| updated_by | VARCHAR(50) | 最后更新人 | |
+| updated_at | TIMESTAMP | 最后更新时间 | DEFAULT NOW() ON UPDATE NOW() |
+
+**约束**：
+* `CHECK (loop_type IN ('STABLE', 'SLOW', 'FAST', 'LOGIC'))`
+
+**默认值（国标附表 1）**：
+
+| loop_type | type_name | weight_a | weight_f | weight_s | 适用场景 |
+|---|---|---|---|---|---|
+| `STABLE` | 稳定型 | 0.20 | 0.30 | 0.50 | 温度/压力控制 |
+| `SLOW` | 慢速型 | 0.30 | 0.10 | 0.60 | 缓慢调节 |
+| `FAST` | 快速型 | 0.20 | 0.50 | 0.30 | 副回路/速度控制 |
+| `LOGIC` | 逻辑型 | 0.00 | 0.50 | 0.60 | 逻辑规则控制 |
+
+**说明**：本表与 §2.5 `metric_config.weight` 互补——`metric_config.weight` 保留以兼容历史数据，新写入应使用本表（按 `loop_ledger.control_type` 关联查询）。
+
+### 2.24 回路级别权重 (loop_level_weight)
+
+**表名: `loop_level_weight` (回路级别权重)** [v6.0 新增，对齐代码 `models/loop_config.py`]
+
+承载按回路重要等级（3 级）配置的权重，用于装置级聚合公式：`装置平均性能评分 = Σ(w_i * P_i) / Σw_i`。对齐 GB/T 44693.2-2024 附表 2，与 `loop_ledger.importance_level` 字段配合使用。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 权重主键 | PK, DEFAULT gen_random_uuid() |
+| level | INTEGER | 回路级别: `1`(一级)/`2`(二级)/`3`(三级) | UNIQUE, NOT NULL |
+| level_name | VARCHAR(50) | 级别名称（一级/二级/三级） | NOT NULL |
+| weight | DECIMAL(3,1) | 级别权重: `3.0`/`2.0`/`1.0` | NOT NULL |
+| description | TEXT | 描述说明 | |
+| updated_by | VARCHAR(50) | 最后更新人 | |
+| updated_at | TIMESTAMP | 最后更新时间 | DEFAULT NOW() ON UPDATE NOW() |
+
+**约束**：
+* `CHECK (level IN (1, 2, 3))`
+
+**默认值（国标附表 2）**：
+
+| level | level_name | weight | 适用场景 |
+|---|---|---|---|
+| 1 | 一级 | 3.0 | 决定性影响：负荷控制/联锁相关 |
+| 2 | 二级 | 2.0 | 辅助保障：稳定性/设备安全 |
+| 3 | 三级 | 1.0 | 次要辅助：维持辅助设备运行 |
+
+**说明**：本表为 `loop_ledger.importance_level` 字段提供权重查询源；装置级聚合（`unit_kpi_summary` 与 `kpi_node_snapshot_*`）按本表权重加权。
+
+### 2.25 系统配置 (sys_config)
+
+**表名: `sys_config` (系统键值配置表)** [v6.0 新增，对齐代码 `models/sys_config.py`]
+
+承载运行时可变的键值对系统配置，包括 AAS 同步周期、缓存策略、特性开关等运行时参数。配置变更通过 `updated_by`/`updated_at` 字段留痕，配合 `sys_audit_log` 实现变更追溯。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| key | VARCHAR(100) | 配置键名（如 `aas_sync_interval`、`cache_ttl`） | PK |
+| value | TEXT | 配置值（字符串形式存储，复杂结构用 JSON 序列化） | |
+| description | VARCHAR(255) | 配置说明 | |
+| updated_by | VARCHAR(50) | 最后更新人 | |
+| updated_at | TIMESTAMP | 最后更新时间 | NOT NULL, DEFAULT NOW() ON UPDATE NOW() |
+
+**索引**：
+* `idx_sys_config_key` (`key`, UNIQUE)
+
+**说明**：本表为运行时键值存储，区别于 `engine_rule`（结构化引擎规则）与 `metric_config`/`diagnosis_config`（指标配置）；适合存储特性开关、运行时参数等非结构化配置。
+
+### 2.26 报表配置 (report_config)
+
+**表名: `report_config` (自动报表配置)** [v6.0 新增，对齐代码 `models/report_config.py`]
+
+承载自动报表生成配置：报表周期、收件人、内容模板等。实际生成的报表归档记录存储于 `report_record`（§2.12）。本表替代 v3.0 规划中的 `report_schedule` 表（详见 §2.27）。
+
+| 字段 | 类型 | 说明 | 约束 |
+|---|---|---|---|
+| id | UUID | 配置主键 | PK, DEFAULT gen_random_uuid() |
+| name | VARCHAR(100) | 报表配置名称（如：装置日报-常减压） | NOT NULL |
+| report_period | VARCHAR(20) | 报表周期: `SHIFT`(班)/`DAILY`(日)/`WEEKLY`(周)/`MONTHLY`(月) | NOT NULL |
+| recipients | TEXT | 收件人列表（逗号分隔的邮箱或用户名） | NOT NULL |
+| content_template | TEXT | 内容模板（JSON 序列化的模板配置） | |
+| is_enabled | BOOLEAN | 是否启用 | DEFAULT TRUE |
+| created_by | VARCHAR(50) | 创建人 | |
+| updated_by | VARCHAR(50) | 最后更新人 | |
+| created_at | TIMESTAMP | 创建时间 | NOT NULL, DEFAULT NOW() |
+| updated_at | TIMESTAMP | 更新时间 | NOT NULL, DEFAULT NOW() ON UPDATE NOW() |
+
+**约束**：
+* `CHECK (report_period IN ('SHIFT', 'DAILY', 'WEEKLY', 'MONTHLY'))`
+
+**索引**：
+* `idx_report_config_period` (`report_period`)
+* `idx_report_config_is_enabled` (`is_enabled`)
+
+**说明**：本表为 `report_record` 的配置源；用户在系统管理模块配置报表规则后，调度器按 `report_period` 周期性生成 `report_record` 记录。
+
+### 2.27 计划中/已替代表说明
+
+> **v6.0 新增**：本章节说明 DDS 历史版本规划但代码中未实现的表，以及代码实现与历史规划不一致的替代关系，确保文档与代码完全一致。
+
+#### 2.27.1 `report_schedule` 已被替代
+
+**表名: `report_schedule`（报表计划表，已替代）**
+
+历史规划中承载报表调度计划的表。v6.0 起代码实际使用 `report_config`（§2.26）承载报表配置，调度计划通过 `report_config.report_period` + `is_enabled` 字段实现，无需独立的 `report_schedule` 表。
+
+* **状态**：已替代
+* **替代表**：`report_config`（§2.26）
+* **影响**：`report_record`（§2.12）通过 `report_config` 关联生成，不再有独立的 schedule 表
+
+#### 2.27.2 `sys_role` / `sys_user_role` 计划中未实现
+
+**表名: `sys_role`（系统角色表）/ `sys_user_role`（用户-角色关联表）**
+
+历史规划中承载 RBAC 角色与用户-角色多对多关联的表。v6.0 起代码采用枚举方式存储角色于 `sys_user.role` 字段（5 种角色：`ADMIN`/`IC_ENGINEER`/`PE_ENGINEER`/`SPONSOR`/`EXPERT`），不再单独建 `sys_role` 与 `sys_user_role` 表。
+
+* **状态**：计划中，未实现
+* **替代方案**：`sys_user.role` 字段以字符串枚举存储角色（详见 §2.21）
+* **影响**：当前不支持自定义角色，5 种角色为系统固定枚举；如未来需支持自定义角色，可按本规划补建 `sys_role` 与 `sys_user_role` 表
+
+#### 2.27.3 表清单对比汇总
+
+| DDS v6.0 表名 | 代码 ORM 模型 | 状态 |
+|---|---|---|
+| §2.1 `plant_node` | `PlantNode` | 一致 |
+| §2.2 `loop_ledger` | `LoopLedger` | 一致 |
+| §2.3 `tag_registry` | `TagRegistry` | 一致 |
+| §2.4 `loop_tag_mapping` | `LoopTagMapping` | 一致 |
+| §2.5 `metric_config` | `MetricConfig` | 一致 |
+| §2.6 `diagnosis_config` | `DiagnosisConfig` | 一致 |
+| §2.7 `engine_rule` | `EngineRule` | 一致 |
+| §2.8 `kpi_snapshot_hourly` | `KpiSnapshotHourly` | 一致 |
+| §2.9 `action_tracker` | `ActionTracker` | 一致 |
+| §2.10 `diagnosis_result` | `DiagnosisResult` | 一致 |
+| §2.11 `tuning_record` | `TuningRecord` | 一致 |
+| §2.12 `report_record` | `ReportRecord` | 一致 |
+| §2.13 `sys_audit_log` | `SysAuditLog` | 一致 |
+| §2.14 `kpi_snapshot_custom` | `KpiSnapshotCustom` | 一致 |
+| §2.15 `clpm_metric_data_requirement` | `ClpmMetricDataRequirement` | 一致 |
+| §2.16 `diagnosis_tag` | `DiagnosisTag` | 一致 |
+| §2.17 `unit_kpi_summary` | `UnitKpiSummary` | 一致 |
+| §2.18 `kpi_node_snapshot_hourly` | `KpiNodeSnapshotHourly` | 一致 |
+| §2.19 `kpi_node_snapshot_daily` | `KpiNodeSnapshotDaily` | 一致 |
+| §2.20 `kpi_node_snapshot_monthly` | `KpiNodeSnapshotMonthly` | 一致 |
+| §2.21 `sys_user` | `SysUser` | 一致 |
+| §2.22 `loop_mode_mapping` | `LoopModeMapping` | 一致 |
+| §2.23 `loop_type_weight` | `LoopTypeWeight` | 一致 |
+| §2.24 `loop_level_weight` | `LoopLevelWeight` | 一致 |
+| §2.25 `sys_config` | `SysConfig` | 一致 |
+| §2.26 `report_config` | `ReportConfig` | 一致 |
+| — `report_schedule` | — | 已替代（→ `report_config`） |
+| — `sys_role` / `sys_user_role` | — | 计划中，未实现（角色用枚举） |
 
 ---
 
@@ -744,7 +1090,7 @@ CLPM 系统的核心设计理念是**"绝对真实，不掩盖数据缺失"**。
 
 ## 5. 算法结果存储设计 (Algorithm Result Storage)
 
-> **v3.1 新增**：本章节对齐《关键算法设计说明》v1.0 与 ADS v3.1 §8 算法服务架构，定义 3 大算法服务（KPI 计算/诊断分析/整定计算）结果的存储策略。
+> **v3.1 新增**：本章节对齐《关键算法设计说明》v1.0 与 ADS v6.0 §8 算法服务架构，定义 3 大算法服务（KPI 计算/诊断分析/整定计算）结果的存储策略。
 >
 > **v4.0 更新**：对齐《关键算法设计说明》v2.0，KPI 结果存储新增数据血缘字段，并区分标准任务（`kpi_snapshot_hourly`）与自定义任务（`kpi_snapshot_custom`）的存储路径。
 
@@ -836,7 +1182,7 @@ KPI 计算服务按任务类型分两类存储：
 
 ## 6. 算法版本字段 (Algorithm Version Fields)
 
-> **v3.1 新增**：本章节对齐 ADS v3.1 §12 算法版本管理与《关键算法设计说明》§3.3，定义算法结果表中的版本字段规范。
+> **v3.1 新增**：本章节对齐 ADS v6.0 §12 算法版本管理与《关键算法设计说明》§3.3，定义算法结果表中的版本字段规范。
 
 ### 6.1 算法版本字段汇总
 
@@ -850,7 +1196,7 @@ v3.1 在以下表中新增或明确 `algorithm_version` 字段，用于算法结
 
 ### 6.2 版本号格式
 
-算法版本号格式：`<algorithm_name>v<major>.<minor>`（对齐 ADS v3.1 §12.1）
+算法版本号格式：`<algorithm_name>v<major>.<minor>`（对齐 ADS v6.0 §12.1）
 
 * `<algorithm_name>`：算法类别代码（如 `KPI_CALC`、`OSC_IAE`、`FOPDT_ID`、`IMC_TUNE`）
 * `<major>`：主版本号，算法公式变更时递增
@@ -900,22 +1246,62 @@ v3.1 在以下表中新增或明确 `algorithm_version` 字段，用于算法结
 
 ```text
 plant_node (1) ──── (N) loop_ledger (1) ──── (N) loop_tag_mapping (N) ──── (1) tag_registry
-                          │
-                          ├── (N) kpi_snapshot_hourly
-                          ├── (N) diagnosis_result
-                          ├── (N) action_tracker
-                          └── (N) tuning_record
+   │                       │
+   │                       ├── (N) kpi_snapshot_hourly
+   │                       ├── (N) diagnosis_result
+   │                       ├── (N) action_tracker
+   │                       ├── (N) tuning_record
+   │                       ├── (N) kpi_snapshot_custom
+   │                       └── (N) loop_mode_mapping [v6.0 新增]
+   │
+   ├── (N) kpi_node_snapshot_hourly [v6.0 新增]
+   ├── (N) kpi_node_snapshot_daily [v6.0 新增]
+   ├── (N) kpi_node_snapshot_monthly [v6.0 新增]
+   └── (N) unit_kpi_summary
+
+diagnosis_tag (N) ──── (1) loop_ledger [v6.0 关系明确]
 
 metric_config (独立配置表)          diagnosis_config (独立配置表)
 engine_rule (独立配置表)            report_record (独立记录表)
-sys_audit_log (独立日志表)
+sys_audit_log (独立日志表)          sys_config (独立键值配置表) [v6.0 新增]
+loop_type_weight (独立配置表) [v6.0 新增]   loop_level_weight (独立配置表) [v6.0 新增]
+sys_user (独立用户表) [v6.0 新增]    report_config (独立报表配置表) [v6.0 新增]
+clpm_metric_data_requirement (独立契约表)
 ```
 
-**外键关系不变**：
+**外键关系**：
 * `loop_ledger.unit_id` → `plant_node.id`
 * `loop_tag_mapping.loop_id` → `loop_ledger.id`
 * `loop_tag_mapping.tag_id` → `tag_registry.id`
 * `kpi_snapshot_hourly.loop_id` → `loop_ledger.id`
+* `kpi_snapshot_custom.loop_id` → `loop_ledger.id`
 * `diagnosis_result.loop_id` → `loop_ledger.id`
+* `diagnosis_tag.loop_id` → `loop_ledger.id`
 * `action_tracker.loop_id` → `loop_ledger.id`
 * `tuning_record.loop_id` → `loop_ledger.id`
+* `loop_mode_mapping.loop_id` → `loop_ledger.id` [v6.0 新增]
+* `unit_kpi_summary.node_id` → `plant_node.id`
+* `kpi_node_snapshot_hourly.plant_node_id` → `plant_node.id` [v6.0 新增]
+* `kpi_node_snapshot_daily.plant_node_id` → `plant_node.id` [v6.0 新增]
+* `kpi_node_snapshot_monthly.plant_node_id` → `plant_node.id` [v6.0 新增]
+
+### 7.4 v6.0 新增表汇总
+
+> **v6.0 新增**：本章节汇总 v6.0 对齐代码事实补全的 9 张表及其关系结构。
+
+| 表名 | 关联实体 | 关系类型 | 说明 |
+|---|---|---|---|
+| `kpi_node_snapshot_hourly` | `plant_node` | N:1 | 节点级每小时 KPI 快照，按节点聚合 |
+| `kpi_node_snapshot_daily` | `plant_node` | N:1 | 节点级日 KPI 快照，按 `loop_count` 加权聚合 |
+| `kpi_node_snapshot_monthly` | `plant_node` | N:1 | 节点级月 KPI 快照，按 `loop_count` 加权聚合 |
+| `sys_user` | — | 独立 | 系统用户表，角色以枚举存储 |
+| `loop_mode_mapping` | `loop_ledger` | N:1 | 回路 MODE 值到控制模式映射 |
+| `loop_type_weight` | — | 独立 | 4 类回路类型权重模板 |
+| `loop_level_weight` | — | 独立 | 3 级回路级别权重 |
+| `sys_config` | — | 独立 | 运行时键值配置 |
+| `report_config` | — | 独立 | 报表生成配置（替代 `report_schedule`） |
+
+**v6.0 关系结构影响评估**：
+* 新增 9 张表，其中 4 张与 `plant_node`/`loop_ledger` 建立外键关系（`kpi_node_snapshot_*` × 3 + `loop_mode_mapping` × 1）。
+* 5 张为独立配置/记录表（`loop_type_weight`/`loop_level_weight`/`sys_config`/`report_config`/`sys_user`），不涉及外键。
+* 新增表不影响 v3.1/v4.0/v4.1 已有的关系结构，仅做扩展。
