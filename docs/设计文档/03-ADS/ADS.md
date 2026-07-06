@@ -1,10 +1,11 @@
 # CLPM 系统架构与交付架构设计说明书 (ADS)
 
 **文档状态**: 正式版
-**当前版本**: v4.0
-**发布日期**: 2026-06-26
-**设计依据**: PRD (v3.0)、关键算法设计说明 v2.0、CLPM后端研发智能体系统提示词与开发指导文档
+**当前版本**: v6.0
+**发布日期**: 2026-07-06
+**设计依据**: PRD (v6.0)、FDS (v6.0)、DDS (v6.0)、UIUX (v6.0)、实现契约 (v2.0)、关键算法设计说明 v2.0、CLPM后端研发智能体系统提示词与开发指导文档（内部参考）
 **受控补充文件**: [关键算法设计说明文档](./关键算法设计说明.md) v2.0（算法权威源，本版本 ADS 与其对齐）
+**下游契约**: 实现契约 v2.0 §2（IA）/§4（API）/§4.5（权限）/§4.6（状态机）/§4.7（KPI）；DDS v6.0 §3（数据模型）；FDS v6.0 §1.3（KPI 体系）；UIUX v6.0 §2（IA）/§6（权限矩阵）/§7（状态机）
 
 ---
 
@@ -15,6 +16,7 @@
 | v3.0 | 2026-06-20 | 产品化架构重构版：存算分离、回路-Tag 解耦、配置驱动、PV 质量码处理。 | 架构组 |
 | v3.1 | 2026-06-22 | 对齐《关键算法设计说明》v1.0：①新增"算法服务架构"章节（算法引擎层独立部署、3 大算法服务、gRPC+REST 通信、Celery+Redis 任务队列）；②新增"算法引擎技术栈"（Python 3.11+/NumPy/SciPy/simpleeval/pandas/statsmodels）；③新增"算法服务接口定义"（KPI 计算/诊断分析/整定计算）；④新增"算法部署架构"（容器化、HPA、资源配额、并发能力）；⑤新增"算法版本管理"章节；⑥新增 GB/T 44693.2-2024 国标合规说明；⑦统一 6 大 KPI 清单与 8 类诊断标签术语。 | 架构组 |
 | v4.0 | 2026-06-26 | 数据架构重构，对齐《关键算法设计说明》v2.0 与 CLPM 后端研发智能体系统提示词与开发指导文档：①§2 逻辑分层架构在"数据处理与算法计算层"新增 DataPlanner 数据编排器，引入 DataBlock/MetricDataBundle/tagGroup 等核心数据结构；②§8 算法服务架构新增 DataPlanner Service，明确其与 KPI Calculation Service 的"数据需求契约 → MetricDataBundle"交互关系，任务幂等键扩展为 (loop_id, time_window, algorithm_version, tag_group, quality_policy)；③§10.1 统一数据服务接口新增 tagGroup/qualityPolicy/aggregationPolicy 参数；④§10.2 独立指标计算服务接口返回结果新增数据血缘字段（sampling_freq/quality_policy/tag_group/valid_rate/confidence_level），并补充各指标 tagGroup 归属与 Metric Validity Mask 说明；⑤§10.7 缓存机制由 4 级 Redis 缓存重构为 DataBlock Cache（zstd 压缩、分层 TTL、L3 特征缓存、Pipeline 批量写入、配置变更主动失效）；⑥新增 §14 核心概念定义章节（DataPlanner/DataBlock/MetricDataBundle/tagGroup/Metric Data Requirement/Metric Validity Mask/KEEP_ALL_WITH_VALIDITY/数据血缘/指标可信度 A~E 五级）；⑦§13 合规性更新，指标体系明确对齐 v2.0 的 3+1+8 结构。 | 架构组 |
+| v6.0 | 2026-07-06 | 对齐 FDS v6.0 / DDS v6.0 / UIUX v6.0 / 实现契约 v2.0，修复 44 条差距：①统一状态机枚举（Action Tracker / Loop / KPI 快照 / Tuning / PV Quality 共 5 类，对齐实现契约 v2.0 §4.6）；②统一 KPI 体系为 3+1+8（12 项指标计算器），补全 12 个 MetricCalculator 清单（含稳态时间/理想稳态时间），新增 4 类权重模板（STABLE/SLOW/FAST/LOGIC）与 5 级性能定级（EXCELLENT/GOOD/FAIR/WARNING/POOR）；③统一数据血缘字段为 5 独立字段（sampling_freq/quality_policy/valid_rate/confidence_level/data_lineage）+ data_lineage JSONB 内 6 子字段，对齐 DDS v6.0 §3.5；④统一角色枚举为 5 角色（ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT/SPONSOR），新增权限矩阵章节；⑤补全 26 张 ORM 表清单（DDS v4.1 17 张 + 代码额外 9 张）；⑥补全 API 路径清单（实现契约 v2.0 §4 的 6 大领域 + 代码实际端点）；⑦补全 32 个前端路由清单（引用实现契约 v2.0 §2）；⑧补全预处理 Pipeline 实现代码路径（`app/services/` 下 quality_code/thresholds/outlier_detection/validity_mask/quality_summary/pipeline 模块）；⑨补全 TaskTracker 与 ConfidenceEvaluator 组件描述；⑩TDengine 字段名 `pv_quality` 修正为 `quality`，补充超级表 `st_loop_data` 与子表命名规则 `loop_{loop_id}`；⑪模块口径统一为 6 模块 + 1 门户（对齐实现契约 v2.0 与 UIUX v6.0）。 | 架构组 |
 
 ---
 
@@ -36,7 +38,9 @@
 
 ## 2. 逻辑分层架构 (Logical Architecture)
 
-系统采用微服务化的经典分层架构设计，服务层划分对齐 PRD v3.0 的 6 大功能模块 + 1 个门户：
+系统采用微服务化的经典分层架构设计，服务层划分对齐实现契约 v2.0 与 UIUX v6.0 的 **6 大功能模块 + 1 个门户**（工作台门户 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理；任务管理作为性能评估子模块，不单列为独立模块）。32 个路由 path 清单详见 §15。
+
+> **口径说明**：FDS v6.0 §5 章节结构实为 5 业务模块 + 1 门户（任务管理归入性能评估子节），与实现契约 v2.0 / UIUX v6.0 的 6 模块 + 1 门户口径存在表述差异，本质一致——任务管理在路由层是独立路由文件，在业务层归属性能评估子模块。本 ADS 以实现契约 v2.0 与 UIUX v6.0 的 6 模块 + 1 门户口径为准。
 
 ```text
 [ 客户端接入层 ]
@@ -93,8 +97,10 @@
 | **Calculation Engine** | **无状态高并发计算节点**。消费队列任务，从 TDengine 批量拉取时序数据，按 Metric Config 计算国标评分核 R/A/F/S 及项目展示/诊断指标，将结果打平写入 PostgreSQL 快照表。 |
 | **Diagnosis Engine** | 监听 `Bad Actor` 事件。一旦回路评分跌破阈值，立即拉取数据执行高算力消耗的 FFT 频域分析与模型拟合，按 Diagnosis Config 配置输出预诊标签，将诊断结论回调给业务层。 |
 | **Analytics Service** | **统计分析服务**。统一支撑性能评估、诊断中心、回路整定三大模块的统计报表需求，输出 KPI 趋势对比、装置评分排名、差等生分布、预诊标签分布、处理效率趋势、整定效果对比等多维分析视图。 |
-| **Action Tracker Service** | **异常跟踪子模块服务**（归入 Diagnosis Service 体系）。负责状态标签、A/B 效果对比数据聚合和 PDF《诊断建议书》生成。Tracker 不是审批系统；任何控制策略、参数或设备变更标记为“已实施”前，必须关联外部 MOC/审批引用，或记录“不适用”及其依据。 |
-| **Tuning Service** | **回路整定服务（Phase 2）**。承载模型辨识（FOPDT/SOPDT/IPDT）、PID 整定算法（IMC/Lambda/Z-N/Cohen-Coon）、闭环仿真、整定记录管理与效果统计。整定记录须关联 MOC/风险评估引用、审批人、实施人、验证结果与回退记录；无审批引用时不得标记为“已实施”。 |
+| **Action Tracker Service** | **异常跟踪子模块服务**（归入 Diagnosis Service 体系）。负责状态标签、A/B 效果对比数据聚合和 PDF《诊断建议书》生成。Tracker 不是审批系统；任何控制策略、参数或设备变更标记为"已实施"前，必须关联外部 MOC/审批引用，或记录"不适用"及其依据。状态机：`PENDING` → `IN_PROGRESS` → `IMPLEMENTED` / `IGNORED`（旧命名 `RESOLVED` 已废弃）。 |
+| **TaskTracker** | **任务全生命周期跟踪组件**（`app/services/task_tracker.py`）。提供 `create` / `update_status` 接口，状态存储于 Redis，支持任务创建、状态流转、通知回调。被 Performance/Diagnosis/Tuning 模块的异步任务统一调用，与 Celery 任务队列解耦。 |
+| **ConfidenceEvaluator** | **指标可信度评估组件**（`app/services/confidence_evaluator.py`）。按 `valid_rate` 自动判定 A/B/C/D/E 五级可信度（阈值 95/80/60/20%），E 级时标记 `INCONCLUSIVE` 并将 `value` 置空。被各 MetricCalculator 在输出结果前调用，结果写入 `kpi_snapshot_*.confidence_level` 字段。 |
+| **Tuning Service** | **回路整定服务（Phase 2）**。承载模型辨识（FOPDT/SOPDT/IPDT）、PID 整定算法（IMC/Lambda/Z-N/Cohen-Coon）、闭环仿真、整定记录管理与效果统计。整定记录须关联 MOC/风险评估引用、审批人、实施人、验证结果与回退记录；无审批引用时不得标记为"已实施"。状态机：`DRAFT` → `RUNNING` → `COMPLETED` / `ROLLED_BACK`。 |
 | **Report Service** | **报表生成服务**。后台利用 Headless Browser（Playwright/Puppeteer）静默渲染波形图与统计图表，生成 PDF《控制回路性能评估报告》《诊断建议书》。 |
 
 ---
@@ -105,28 +111,36 @@
 
 ### 4.1 关系型存储 (PostgreSQL)
 
-PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
+PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态。共 **26 张 ORM 表**（DDS v6.0 §3.2 的 17 张 + 代码额外 9 张），按业务域分组如下：
 
 | 数据类别 | 主要表 | 说明 |
 |---|---|---|
 | **工厂模型** | `plant_node` | 工厂 → 装置 → 单元多级层级树。 |
 | **AAS Tag 注册表** | `tag_registry` | AAS 同步的 OPC Tag 位号列表，含 Tag 名/描述/当前值/数据质量/最后同步时间。 |
-| **回路台账** | `loop_ledger` | 回路基础信息（位号/描述/所属单元/评分权重/启用状态/备注等扩展配置）。**v3.0 调整**：移除 `mapping_pv/sp/op/mode` 字段（迁移至 `loop_tag_mapping`）。 |
+| **回路台账** | `loop_ledger` | 回路基础信息（位号/描述/所属单元/评分权重/启用状态/备注等扩展配置）。**v6.0 新增字段**：`control_type`（控制类型 FC/PC/TC/CC，决定 DataPlanner 采样率）、`importance_level`（装置级聚合权重）、`include_in_evaluation`（是否纳入评估）。**v3.0 调整**：移除 `mapping_pv/sp/op/mode` 字段（迁移至 `loop_tag_mapping`）。 |
 | **回路-Tag 关联** | `loop_tag_mapping` | 回路与 7 个 OPC Tag 的关联关系（PV/SP/OP/MODE/PID_P/PID_I/PID_D），含必填校验状态。 |
-| **性能指标配置** | `metric_config` | 国标评分核 R/A/F/S 的公式、权重、阈值及项目展示/诊断指标元数据。A/F/S 权重总和约束 100%，配置按审批版本和 `effective_from` 生效。 |
-| **诊断指标配置** | `diagnosis_config` | 诊断指标的算法类型、参数阈值、启用/停止、计算方法。 |
+| **回路配置三件套** | `loop_mode_mapping` / `loop_type_weight` / `loop_level_weight` | 回路模式映射、回路类型权重（4 类模板 STABLE/SLOW/FAST/LOGIC）、回路级别权重（一/二/三级）。 |
+| **性能指标配置** | `metric_config` | 国标评分核 R/A/F/S 的公式、权重、阈值及项目展示/诊断指标元数据。A/F/S 权重总和约束 100%，配置按审批版本和 `effective_from` 生效。**v6.0 新增字段**：`grading_thresholds`（5 级性能定级 EXCELLENT/GOOD/FAIR/WARNING/POOR 阈值）。 |
+| **诊断指标三件套** | `diagnosis_config` / `diagnosis_result` / `diagnosis_tag` | 诊断指标配置（算法类型/参数阈值/启用停止/计算方法）、诊断结果（预诊标签/特征值/证据链/算法版本）、诊断标签字典。 |
 | **引擎规则配置** | `engine_rule` | 评估引擎/诊断引擎的计算周期、数据拉取规则、调度参数。 |
-| **计算快照** | `kpi_snapshot_hourly` | 每小时/每天聚合的回路评分，必须持久化 R/A/F/S、数据质量、评分公式/配置版本和不可判定原因，以支持国标评分复算；作为前端看板排行的直接数据源。 |
-| **诊断结果** | `diagnosis_result` | 诊断预诊标签、特征值、证据链引用、算法版本号。 |
-| **异常跟踪** | `action_tracker` | 异常追踪记录（状态标签：待处理/处理中/已实施/已忽略）、A/B 对比窗口标记。 |
-| **整定记录** | `tuning_record` | **Phase 2**。整定任务记录、辨识模型参数、推荐 PID 参数、仿真结果、效果对比。 |
-| **自动报表** | `report_record` | 周期报表（班/日/周/月）生成记录、归档路径、生成状态、重试记录。 |
+| **指标数据需求** | `clpm_metric_data_requirement` | 指标数据需求契约（metric_code/tag_group/tags/sampling_strategy/quality_policy/mask_expression/aggregation_policy/depends_on）的持久化表，DataPlanner 启动时加载。 |
+| **回路级 KPI 快照** | `kpi_snapshot_hourly` / `kpi_snapshot_custom` | 每小时聚合 / 自定义时间窗口的回路评分，必须持久化 R/A/F/S、数据质量、评分公式/配置版本和不可判定原因，以支持国标评分复算；作为前端看板排行的直接数据源。**v4.1 修正**：`stability_rate` 字段名修正为 `steady_rate`（loop-level）；含 5 个数据血缘字段 + `data_lineage` JSONB（详见 §14.8）。 |
+| **节点级 KPI 快照** | `kpi_node_snapshot_hourly` / `kpi_node_snapshot_daily` / `kpi_node_snapshot_monthly` | 节点级（装置/单元）KPI 快照，按小时/日/月三级聚合，支撑装置级 KPI 看板与趋势对比。 |
+| **装置级 KPI 汇总** | `unit_kpi_summary` | 装置级三大 KPI（自控率 / 好值率 / 平稳率 `stability_rate`）+ `unit_score` + `excluded_loops` + `status` 等字段。 |
+| **异常跟踪** | `action_tracker` | 异常追踪记录（状态机：`PENDING` → `IN_PROGRESS` → `IMPLEMENTED` / `IGNORED`，旧命名 `RESOLVED` 已废弃）、A/B 对比窗口标记。 |
+| **整定记录** | `tuning_record` | **Phase 2**。整定任务记录、辨识模型参数、推荐 PID 参数、仿真结果、效果对比。状态机：`DRAFT` → `RUNNING` → `COMPLETED` / `ROLLED_BACK`。 |
+| **自动报表** | `report_record` / `report_config` | 报表生成记录（班/日/周/月，含归档路径/生成状态/重试记录）+ 报表配置（计划周期/收件人/模板）。 |
+| **系统用户与权限** | `sys_user` | 系统用户表，含登录凭证与个人信息。角色通过枚举字段或 `sys_role` / `sys_user_role` 持久化（详见 DDS v6.0 §3.2）。 |
 | **审计日志** | `sys_audit_log` | 操作日志记录，不可物理删除，支持多维筛选。 |
+| **系统配置** | `sys_config` | 全局系统配置键值对（如默认采样率、阈值默认值、特性开关）。 |
 
 ### 4.2 高频时序存储 (TDengine)
 
 * **数据结构**：采用"一回路一表 (Table per Loop)"、"同模型一超级表 (Super Table)"的建表策略。
-* **字段设计**（对齐 7 个 OPC Tag 模型）：
+  * **超级表名**：`st_loop_data`（对齐 DDS v6.0 §3.3）
+  * **Tag 列**（2 个）：`loop_id`（UUID）、`plant_node_id`（UUID）
+  * **子表命名规则**：`loop_{loop_id}`
+* **字段设计**（9 个 Field 列，对齐 7 个 OPC Tag 模型）：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -138,7 +152,7 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 | `pid_p` | DOUBLE | 比例参数，来自 PID_P Tag（只读）。 |
 | `pid_i` | DOUBLE | 积分参数，来自 PID_I Tag（只读）。 |
 | `pid_d` | DOUBLE | 微分参数，来自 PID_D Tag（只读）。 |
-| `pv_quality` | INT | **PV 数据质量码**（Good/Bad/Uncertain），仅 PV Tag 携带质量码。 |
+| `quality` | INT | **PV 数据质量码**（`GOOD` / `BAD` / `UNCERTAIN`），仅 PV Tag 携带质量码。**v6.0 修正**：字段名由 `pv_quality` 改为 `quality`（对齐 DDS v6.0 §3.3）。 |
 
 * **查询策略**：仅在"计算引擎执行时"和"用户点击波形详情时"从 TDengine 提取数据。支持前端发起降采样聚合查询 (Downsampling) 以满足大跨度时间波形的秒级渲染。PV 波形根据质量码断线渲染（Bad 时灰色虚线）。
 
@@ -210,10 +224,11 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 
 | 算法服务 | 职责 | 触发方式 | 调度周期 | 并发数 | 数据源 |
 |---|---|---|---|---|---|
-| **DataPlanner Service** (数据编排服务) | 读取指标数据需求契约 → 合并查询计划 → 查询 DataBlock 缓存 → 调用 8 步预处理 → 生成 MetricDataBundle → 分发给指标计算器；管理 DataBlock 缓存与 L3 特征缓存 | 被 KPI/Diagnosis/Tuning Service 同步调用 | 按需 | 10 | TDengine + Redis (Cache) |
-| **KPI 计算服务** (KPI Calculation Service) | 6 大 KPI 计算（好值率/自控率/稳定率/准确率/振荡率/饱和率）+ 综合评分 + 装置级聚合；向 DataPlanner 提交数据需求，仅消费 MetricDataBundle | Celery Beat 定时 | 每小时（可配置） | 10 | MetricDataBundle (来自 DataPlanner) |
+| **DataPlanner Service** (数据编排服务) | 读取指标数据需求契约 → 合并查询计划（按 `loop_ledger.control_type` 自动降采样） → 查询 DataBlock 缓存 → 调用 8 步预处理 → 生成 MetricDataBundle → 分发给指标计算器；管理 DataBlock 缓存与 L3 特征缓存。**代码路径**：`app/services/data_planner.py` | 被 KPI/Diagnosis/Tuning Service 同步调用 | 按需 | 10 | TDengine + Redis (Cache) |
+| **KPI 计算服务** (KPI Calculation Service) | **3+1+8 体系（12 项指标计算器）**：3 核心质量指标（准确率/快速率/稳定率）+ 1 折扣因子（有效自控率 R）+ 8 扩展指标（好值率/自控率/振荡率/饱和率/粘滞系数/输出行程指数/稳态时间/理想稳态时间）；对外合规口径仍强调 6 大核心 KPI（好值率/自控率/稳定率/准确率/振荡率/饱和率）。**代码路径**：`app/tasks/kpi_calc.py`（12 个 MetricCalculator） | Celery Beat 定时 | 每小时（可配置） | 10 | MetricDataBundle (来自 DataPlanner) |
 | **诊断分析服务** (Diagnosis Service) | 8 类诊断标签识别（振荡/粘滞/过激/过保守/外扰/质量异常/饱和/人工复核）+ 置信度融合 + 专家规则矩阵 | 事件触发（评分 < 阈值） | 实时 | 5 | MetricDataBundle (来自 DataPlanner) |
 | **整定计算服务** (Tuning Service) | FOPDT/SOPDT 模型辨识 + IMC/Lambda/Z-N/Cohen-Coon/SIMC 整定 + 闭环仿真 | 用户手动触发 | 按需 | 2 | MetricDataBundle (来自 DataPlanner) + 用户输入 |
+| **预处理 Pipeline** (Preprocessing Pipeline) | 8 步流水线（质量码识别 → 有效性标记 → 量程归一化 → 异常值识别 → 缺失率统计 → 连续性检查 → Metric Mask 生成 → Quality Summary 生成）+ 8 类异常值检测。**代码路径**：`app/services/` 下的 `quality_code` / `thresholds` / `outlier_detection` / `validity_mask` / `quality_summary` / `pipeline` 模块 | 被 DataPlanner 同步调用 | 按需 | - | TDengine 原始数据 |
 
 **DataPlanner Service 与 KPI Calculation Service 的关系**：
 
@@ -226,7 +241,7 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
    ▼
 [ DataPlanner Service ]
    │
-   │  2. 合并相同 tagGroup 的查询计划
+   │  2. 合并相同 tagGroup 的查询计划（按 loop_ledger.control_type 自动降采样：FC=1s/PC=2s/TC=5s/CC=10s）
    │  3. 查询 DataBlock Cache（命中即返回）
    │  4. 未命中 → 回源 TDengine + 8 步预处理 Pipeline → 生成 DataBlock
    │  5. 按指标需求组装 MetricDataBundle（含数据血缘 metadata）
@@ -234,7 +249,8 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 [ 返回 MetricDataBundle 给 KPI Calculation Service ]
    │
    │  6. KPI Service 消费 Bundle 执行指标计算（不直接查库）
-   │  7. 输出结果携带数据血缘（sampling_freq/quality_policy/tag_group/...）
+   │  7. ConfidenceEvaluator 按 valid_rate 判定 A/B/C/D/E 可信度
+   │  8. 输出结果携带数据血缘（sampling_freq/quality_policy/valid_rate/confidence_level/data_lineage）
    ▼
 [ PostgreSQL kpi_snapshot_hourly ]
 ```
@@ -316,7 +332,7 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 
 `metric_config.formula` 字段支持用户自定义计算公式，采用 `simpleeval` 作为安全沙箱：
 
-* **可用变量域**：`pv`、`sp`、`op`、`mode`、`pv_quality`、`timestamps`、`pv_range`、`n`
+* **可用变量域**：`pv`、`sp`、`op`、`mode`、`quality`、`timestamps`、`pv_range`、`n`
 * **可用函数库**：`sum`、`mean`、`std`、`count`、`count_if`、`abs`、`sqrt`、`min`、`max`、`duration`
 * **安全策略**：禁止 `import`/`exec`/`eval`/`__import__`；禁止属性访问（`.` 操作符）；表达式长度限制 500 字符；执行超时 5 秒。
 
@@ -336,38 +352,46 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 
 | 接口 | 输入 | 输出 | 说明 |
 |---|---|---|---|
-| `get_timeseries_data` | `loop_id` + `time_window` + `tags`(可选) + `downsample`(可选) + `max_points`(可选) + `interval`(可选) + `tagGroup`(可选) + `qualityPolicy`(可选) + `aggregationPolicy`(可选) | `waveform_data` (timestamps + pv + sp + op + mode + pvQuality + valid_mask) | 单回路历史数据查询，返回结果包含 Metric Validity Mask |
+| `get_timeseries_data` | `loop_id` + `time_window` + `tags`(可选) + `downsample`(可选) + `max_points`(可选) + `interval`(可选) + `tagGroup`(可选) + `qualityPolicy`(可选) + `aggregationPolicy`(可选) | `waveform_data` (timestamps + pv + sp + op + mode + quality + valid_mask) | 单回路历史数据查询，返回结果包含 Metric Validity Mask |
 | `get_batch_timeseries_data` | `loop_ids`[] + `time_window` + `tags`(可选) + `tagGroup`(可选) + `qualityPolicy`(可选) + `aggregationPolicy`(可选) | `waveform_data`[] + `data_lineage`{} | 批量多回路数据查询，返回结果携带数据血缘 |
 
 **参数说明**：
-- `tags`：可选值 `pv,sp,op,mode,pv_quality`，默认全部返回
+- `tags`：可选值 `pv,sp,op,mode,quality`，默认全部返回
 - `downsample`：是否启用LTTB降采样，默认`true`
 - `max_points`：最大返回数据点数，默认`2000`
 - `interval`：采样间隔（与downsample互斥），如`1s, 10s, 1m, 5m`
-- `tagGroup`：数据分组，可选值 `BASE / OP_HF / PVOP_HF / MODE_HF / QUALITY_HF`，默认 `BASE`。指定后 DataPlanner 按对应采样率与 Tag 集合查询（详见 §14.4）
+- `tagGroup`：数据分组，可选值 `BASE / OP_HF / PVOP_HF / MODE_HF / QUALITY_HF`，默认 `BASE`。指定后 DataPlanner 按对应采样率与 Tag 集合查询（详见 §14.4）。`BASE` 采样率按 `loop_ledger.control_type` 自动选择（FC=1s/PC=2s/TC=5s/CC=10s）
 - `qualityPolicy`：质量策略，可选值 `KEEP_ALL_WITH_VALIDITY / KEEP_ALL`，默认 `KEEP_ALL_WITH_VALIDITY`。前者保留全部数据点并打 valid 标记（推荐），后者保留原始数据不标记
 - `aggregationPolicy`：聚合策略，可选值 `LAST / MEAN / MAX`，默认 `LAST`。当 tagGroup 采样率与请求 interval 不一致时按此策略聚合
 
 **返回字段说明**：
-- `valid_mask`：每个时间戳的 Tag 有效性标记数组（与 KEEP_ALL_WITH_VALIDITY 策略对齐），由 DataPlanner 在 8 步预处理 Pipeline 中生成
-- `data_lineage`：数据血缘（sampling_freq / aggregation_policy / quality_policy / tag_group / data_block_ids / valid_rate / data_policy_version），详见 §14.8
+- `valid_mask`：每个时间戳的 Tag 有效性标记数组（与 KEEP_ALL_WITH_VALIDITY 策略对齐），由 DataPlanner 在 8 步预处理 Pipeline 中生成（代码路径 `app/services/`，详见 §8.2）
+- `data_lineage`：数据血缘 JSONB（详见 §14.8）
 
 ### 10.2 独立指标计算服务接口
 
-每个指标独立封装，无交叉依赖，可单独调用。所有接口遵循统一的输入输出规范，便于前端页面和其他系统消费。
+每个指标独立封装，无交叉依赖，可单独调用。所有接口遵循统一的输入输出规范，便于前端页面和其他系统消费。共 **12 项指标计算器**（3+1+8 体系），分布如下：
+
+| 类型 | 指标 |
+|---|---|
+| **3 核心质量指标** | accuracy_rate / fast_rate / steady_rate |
+| **1 折扣因子（R）** | effective_auto_rate |
+| **8 扩展指标** | good_value_rate / auto_mode_rate / oscillation_rate / saturation_rate / stiction_index / output_trip_index / settling_time / ideal_settling_time |
 
 | 接口 | metric_code | 中文说明 | tagGroup | Metric Validity Mask | 输入数据依赖 | 说明 |
 |---|---|---|---|---|---|---|
-| `calc_good_value_rate` | `GOOD_VALUE_RATE` | PV质量码为Good的时长占比，反映数据有效性 | `QUALITY_HF` | 不删除行（全量保留） | pv + pvQuality | 好值率 |
+| `calc_good_value_rate` | `GOOD_VALUE_RATE` | PV质量码为Good的时长占比，反映数据有效性 | `QUALITY_HF` | 不删除行（全量保留） | pv + quality | 好值率 |
 | `calc_auto_mode_rate` | `AUTO_MODE_RATE` | 控制器处于自动或串级模式的时长占比 | `MODE_HF` | `mode_valid` | mode | 自控率 |
-| `calc_effective_auto_rate` | `EFFECTIVE_AUTO_RATE` | 控制器自动模式下且控制有效的时长占比，排除无效自控时段 | `MODE_HF` + `OP_HF` | `mode_valid && op_valid` | mode + op + pv + sp | 有效自控率 |
-| `calc_accuracy_rate` | `ACCURACY_RATE` | PV与SP偏差的绝对均值，反映控制精度，采用指数衰减评分 | `BASE` | `pv_valid && sp_valid` | pv + sp | 准确率 |
-| `calc_fast_rate` | `FAST_RATE` | 基于ARMA模型辨识和Green函数计算的实际稳态时间与理想稳态时间的比值 | `BASE` | `pv_valid && sp_valid` | pv + sp + timestamps | 快速率（含稳态时间计算） |
-| `calc_steady_rate` | `STEADY_RATE` | PV与SP偏差的标准差，反映控制稳定性，采用指数衰减评分并乘以振荡修正系数 | `BASE` | `pv_valid && sp_valid` | pv + sp | 稳定率 |
+| `calc_effective_auto_rate` | `EFFECTIVE_AUTO_RATE` | 控制器自动模式下且控制有效的时长占比，排除无效自控时段 | `MODE_HF` + `OP_HF` | `mode_valid && op_valid` | mode + op + pv + sp | 有效自控率（折扣因子 R） |
+| `calc_accuracy_rate` | `ACCURACY_RATE` | PV与SP偏差的绝对均值，反映控制精度，采用指数衰减评分 | `BASE` | `pv_valid && sp_valid` | pv + sp | 准确率（核心） |
+| `calc_fast_rate` | `FAST_RATE` | 基于ARMA模型辨识和Green函数计算的实际稳态时间与理想稳态时间的比值 | `BASE` | `pv_valid && sp_valid` | pv + sp + timestamps | 快速率（核心，含稳态时间计算） |
+| `calc_steady_rate` | `STEADY_RATE` | PV与SP偏差的标准差，反映控制稳定性，采用指数衰减评分并乘以振荡修正系数 | `BASE` | `pv_valid && sp_valid` | pv + sp | 稳定率（核心） |
 | `calc_oscillation_rate` | `OSCILLATION_RATE` | 基于IAE零交叉相似率法检测的振荡程度 | `BASE` | `pv_valid && sp_valid` | pv + sp | 振荡率 |
 | `calc_saturation_rate` | `SATURATION_RATE` | 控制器输出值达到上下限的时长占比 | `OP_HF` | `op_valid` | op + mode | 饱和率 |
 | `calc_stiction_index` | `STICTION_INDEX` | 基于PV-OP散点椭圆拟合法计算的阀门粘滞程度指标 | `PVOP_HF` | `pv_valid && op_valid` | pv + op | 粘滞系数 |
 | `calc_output_trip_index` | `OUTPUT_TRIP_INDEX` | 控制器输出值变化量的累积行程指数，反映阀门磨损程度 | `OP_HF` | `op_valid && consecutive_valid` | op + timestamps | 输出行程指数 |
+| `calc_settling_time` | `SETTLING_TIME` | 测量值从响应设定值变化到稳定所需的实际时间 | `BASE` | `pv_valid && sp_valid` | pv + sp + timestamps | 稳态时间（国标附录 F.4） |
+| `calc_ideal_settling_time` | `IDEAL_SETTLING_TIME` | 按控制类型与回路特性计算的理想稳态时间，作为快速率的基准 | `BASE` | `pv_valid && sp_valid` | pv + sp + config | 理想稳态时间 |
 
 **通用输入**：`loop_id` (UUID) + `time_window` ({start, end}) + `config` (可选配置)
 
@@ -376,43 +400,51 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 {
   "value": 0.85,
   "unit": "%",
-  "status": "OK",
+  "status": "SUCCESS",
   "algorithm_version": "KPI_CALC_v1.0",
   "calculated_at": "2026-06-26T10:00:00Z",
+  "sampling_freq": "1s",
+  "quality_policy": "KEEP_ALL_WITH_VALIDITY",
+  "valid_rate": 0.97,
+  "confidence_level": "A",
   "data_lineage": {
-    "sampling_freq": "1s",
     "aggregation_policy": "LAST",
-    "quality_policy": "KEEP_ALL_WITH_VALIDITY",
     "tag_group": "OP_HF",
     "data_block_ids": ["blk_op_hf_2026062610_001"],
-    "valid_rate": 0.97,
     "data_policy_version": "pre_v1",
-    "algorithm_version": "KPI_CALC_v1.0"
-  },
-  "confidence_level": "A"
+    "algorithm_version": "KPI_CALC_v1.0",
+    "sampling_freq": "1s"
+  }
 }
 ```
 
-**返回字段说明**（v4.0 新增数据血缘字段）：
+**返回字段说明**（v6.0 重构数据血缘结构：5 个独立字段 + `data_lineage` JSONB）：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `value` | Float | 指标计算结果 |
+| `value` | Float | 指标计算结果（`status` 为 `INCONCLUSIVE` 时留空） |
 | `unit` | String | 单位 |
-| `status` | String | 计算状态（`OK` / `INCONCLUSIVE` / `ERROR`） |
+| `status` | String | 计算状态（`SUCCESS` / `PARTIAL` / `INCONCLUSIVE`，对齐实现契约 v2.0 §4.6） |
 | `algorithm_version` | String | 算法版本号 |
 | `calculated_at` | DateTime | 计算时间戳 |
-| `data_lineage.sampling_freq` | String | 实际采样频率（如 `1s` / `5s`） |
-| `data_lineage.aggregation_policy` | String | 聚合策略（`LAST` / `MEAN` / `MAX`） |
-| `data_lineage.quality_policy` | String | 质量策略（`KEEP_ALL_WITH_VALIDITY` / `KEEP_ALL`） |
-| `data_lineage.tag_group` | String | 数据来源 tagGroup（`BASE`/`OP_HF`/`PVOP_HF`/`MODE_HF`/`QUALITY_HF`） |
-| `data_lineage.data_block_ids` | Array | 使用的 DataBlock ID 列表 |
-| `data_lineage.valid_rate` | Float | 有效数据率（0~1），由 8 步预处理 Pipeline 的 Quality Summary 生成 |
-| `data_lineage.data_policy_version` | String | 预处理版本（如 `pre_v1`） |
-| `data_lineage.algorithm_version` | String | 算法版本（与 `algorithm_version` 一致） |
-| `confidence_level` | String | 指标可信度等级（`A`/`B`/`C`/`D`/`E`），由 `valid_rate` 自动判定，详见 §14.9 |
+| `sampling_freq` | String | 实际采样频率（如 `1s` / `5s`），独立字段 |
+| `quality_policy` | String | 质量策略（`KEEP_ALL_WITH_VALIDITY` / `KEEP_ALL`），独立字段 |
+| `valid_rate` | Float | 有效数据率（0~1），由 8 步预处理 Pipeline 的 Quality Summary 生成，独立字段 |
+| `confidence_level` | String | 指标可信度等级（`A`/`B`/`C`/`D`/`E`），由 `ConfidenceEvaluator` 按 `valid_rate` 自动判定，独立字段，详见 §14.9 |
+| `data_lineage` | JSONB | 数据血缘 JSON（内部 6 子字段见下表），独立字段 |
 
-> **Metric Validity Mask 说明**：每个指标的 Mask 表达式由 DataPlanner 在 8 步预处理 Pipeline 第 ⑦ 步生成（详见《关键算法设计说明》v2.0 §3.4.2），指标计算器只消费 Mask 后的数据点。当 `valid_rate < 0.20` 时，可信度降为 E 级，整条结果标记为 `INCONCLUSIVE`，`value` 留空。
+**`data_lineage` JSONB 内部子字段**：
+
+| 子字段 | 类型 | 说明 |
+|---|---|---|
+| `aggregation_policy` | String | 聚合策略（`LAST` / `MEAN` / `MAX`） |
+| `tag_group` | String | 数据来源 tagGroup（`BASE`/`OP_HF`/`PVOP_HF`/`MODE_HF`/`QUALITY_HF`） |
+| `data_block_ids` | Array | 使用的 DataBlock ID 列表 |
+| `data_policy_version` | String | 预处理版本（如 `pre_v1`） |
+| `algorithm_version` | String | 算法版本（与 `algorithm_version` 一致） |
+| `sampling_freq` | String | 实际采样频率（与独立字段冗余存储，便于审计追溯） |
+
+> **Metric Validity Mask 说明**：每个指标的 Mask 表达式由 DataPlanner 在 8 步预处理 Pipeline 第 ⑦ 步生成（详见《关键算法设计说明》v2.0 §3.4.2），指标计算器只消费 Mask 后的数据点。当 `valid_rate < 0.20` 时，可信度降为 E 级，整条结果标记为 `INCONCLUSIVE`，`value` 留空；当 `0.20 ≤ valid_rate < 0.60` 时（D 级）标记为 `PARTIAL`。
 
 ### 10.3 组合调用服务接口
 
@@ -422,6 +454,27 @@ PostgreSQL 承载业务数据、配置数据、计算快照与闭环状态：
 |---|---|---|---|
 | `batch_calc_metrics` | `loop_id` + `time_window` + `metrics`[] + `config` | `results`{} + `score` + `data_fetch_summary` | 批量指标计算 |
 | `aggregate_unit_score` | `unit_id` + `time_window` | `unit_kpis` + `unit_score` + `inconclusive_count` | 装置级聚合评分 |
+
+**装置级三大 KPI**（unit-level，存储于 `unit_kpi_summary` 表）：
+
+| 装置级 KPI | 字段名 | 计算方式 |
+|---|---|---|
+| 自控率 | `auto_mode_rate` | 装置内所有回路自控率按级别权重加权 |
+| 好值率 | `good_value_rate` | 装置内所有回路好值率按级别权重加权 |
+| 平稳率 | `stability_rate` | 装置级聚合字段（**注意**：loop-level 字段名为 `steady_rate`，unit-level 聚合字段名为 `stability_rate`，详见 DDS v6.0 §3.7） |
+
+**综合评分公式**（对齐 GB/T 44693.2-2024 附录 B.6）：
+```
+P = (A·a + F·f + S·s) / (a + f + s) × R
+```
+其中 `A/F/S` 为准确率/快速率/稳定率，`a/f/s` 为对应权重（按 4 类权重模板 STABLE/SLOW/FAST/LOGIC 配置，详见 §13.1），`R` 为有效自控率（折扣因子）。
+
+**5 级性能定级**（存储于 `metric_config.grading_thresholds`）：
+- `EXCELLENT`（优秀）
+- `GOOD`（良好）
+- `FAIR`（合格）
+- `WARNING`（预警）
+- `POOR`（差）
 
 **组合调用输入**：
 ```json
@@ -642,8 +695,8 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 
 | 算法类别 | 当前版本 | 说明 |
 |---|---|---|
-| `KPI_CALC` | v1.0 | 6 大 KPI 计算（好值率/自控率/稳定率/准确率/振荡率/饱和率） |
-| `SCORE_CALC` | v1.0 | 综合评分（6 指标加权 + 有效自控率系数） |
+| `KPI_CALC` | v1.0 | 3+1+8 体系（12 项指标计算器）：3 核心质量指标（准确率/快速率/稳定率）+ 1 折扣因子（有效自控率 R）+ 8 扩展指标（好值率/自控率/振荡率/饱和率/粘滞系数/输出行程指数/稳态时间/理想稳态时间）。对外合规口径仍强调 6 大核心 KPI。 |
+| `SCORE_CALC` | v1.0 | 综合评分：`P = (A·a + F·f + S·s)/(a+f+s) × R`，4 类权重模板（STABLE/SLOW/FAST/LOGIC）+ 5 级性能定级（EXCELLENT/GOOD/FAIR/WARNING/POOR） |
 | `OSC_IAE` | v1.0 | IAE 时域振荡检测（Hägglund 方法） |
 | `OSC_FFT` | v1.0 | FFT 频域振荡检测（Welch 法 PSD） |
 | `STICTION_CH` | v1.0 | Choudhury 粘滞检测（NGI/NLI + 椭圆拟合） |
@@ -685,15 +738,15 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 
 | 国标条款 | 国标要求 | 本系统实现 | 合规状态 |
 |---|---|---|---|
-| §6.3 单回路评估 | 通过有效自控率、稳定率、准确率、快速率评估 | **3+1+8 指标体系**：3 核心质量指标（准确率/快速率/稳定率）+ 1 投用指标（有效自控率作为折扣因子）+ 8 辅助诊断指标（好值率/自控率/振荡率/饱和率/粘滞系数/输出行程指数/稳态时间/理想稳态时间），对齐《关键算法设计说明》v2.0 §4.0 | ✅ 合规（扩展） |
+| §6.3 单回路评估 | 通过有效自控率、稳定率、准确率、快速率评估 | **3+1+8 指标体系（12 项指标计算器）**：3 核心质量指标（准确率/快速率/稳定率）+ 1 投用指标（有效自控率作为折扣因子）+ 8 辅助诊断指标（好值率/自控率/振荡率/饱和率/粘滞系数/输出行程指数/稳态时间/理想稳态时间），对齐《关键算法设计说明》v2.0 §4.0 | ✅ 合规（扩展） |
 | 附录 B.1 自控率 | `Auto = AutoTime / AllTime × 100%` | 自控率算法实现一致（tagGroup: `MODE_HF`） | ✅ 合规 |
 | 附录 B.2 有效自控率 | `AR = AutoRealTime / AllTime × 100%` | 有效自控率算法实现一致（tagGroup: `MODE_HF` + `OP_HF`） | ✅ 合规 |
 | 附录 B.3 准确率 | `A = (1 - |E|/|E|max) × 100%` | 准确率算法实现一致（指数型公式，tagGroup: `BASE`） | ✅ 合规 |
 | 附录 B.4 快速率 | ARMA 模型 + Green 函数 | 快速率算法实现一致（分段指数衰减，tagGroup: `BASE`） | ✅ 合规 |
 | 附录 B.5 稳定率 | `S = [1/σ × (1 - Osc)] × 100%` | 稳定率算法实现一致（指数型公式，tagGroup: `BASE`） | ✅ 合规 |
 | 附录 B.6 性能评分 | `P = [(A·a + F·f + S·s)/(a+f+s)] × R` | 3+1 加权模型（准确率/快速率/稳定率×有效自控率）；评分结果携带 `confidence_level`（A~E），E 级时标记 INCONCLUSIVE | ✅ 合规 |
-| 附录 C 权重系数 | 稳定型/慢速型/快速型/逻辑型 | 默认权重配置（4 类控制类型） | ✅ 合规 |
-| 附录 D 性能定级 | 一级至五级 | 评分映射等级 | ✅ 合规 |
+| 附录 C 权重系数 | 稳定型/慢速型/快速型/逻辑型 | **4 类权重模板**（`STABLE`/`SLOW`/`FAST`/`LOGIC`），按 `loop_ledger.control_type` 映射（FC→FAST、PC→SLOW、TC→STABLE、CC→LOGIC），存储于 `loop_type_weight` 表，可配置化 | ✅ 合规 |
+| 附录 D 性能定级 | 一级至五级 | **5 级性能定级**（`EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`），阈值存储于 `metric_config.grading_thresholds`，支持配置化调整 | ✅ 合规 |
 | 附录 E.2 回路级别权重 | 一级(3)/二级(2)/三级(1) | 装置级聚合采用级别权重 | ✅ 合规 |
 | 附录 F.1 振荡率 | IAE 零交叉相似率法 | 振荡率算法实现一致（tagGroup: `BASE`） | ✅ 合规 |
 | 附录 F.2 黏滞系数 | PV-OP 椭圆拟合法 | Choudhury 椭圆拟合（tagGroup: `PVOP_HF`） | ✅ 合规 |
@@ -704,7 +757,7 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 | §7 性能诊断 | 6 类故障诊断 | 8 类诊断标签（扩展） | ✅ 合规（扩展） |
 | §8 性能优化 | Lambda/IMC/自适应/工程整定 | 5 种整定方法（IMC/Lambda/ZN/CC/SIMC） | ✅ 合规 |
 | §9 证实方法 | 信息化系统软件 | CLPM 系统本体 | ✅ 合规 |
-| 数据可审计性（v4.0 新增） | 算法结果须可追溯数据口径 | 每条 KPI 结果携带 `data_lineage`（sampling_freq / aggregation_policy / quality_policy / tag_group / data_block_ids / valid_rate）+ `confidence_level`，支持国标评分复算与审计回放 | ✅ 合规（扩展） |
+| 数据可审计性（v4.0 新增） | 算法结果须可追溯数据口径 | 每条 KPI 结果携带 5 个独立字段（`sampling_freq` / `quality_policy` / `valid_rate` / `confidence_level` / `data_lineage` JSONB）+ `data_lineage` 内 6 子字段，支持国标评分复算与审计回放（详见 §14.8） | ✅ 合规（扩展） |
 
 ### 13.2 其他标准合规
 
@@ -733,6 +786,10 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 5. 按指标需求组装 MetricDataBundle 并分发给对应指标计算器
 
 **约束**：所有 KPI/Diagnosis/Tuning Service 必须通过 DataPlanner 获取数据，不得绕过直接查询 TDengine。该约束保证数据预处理规范在算法层统一生效。
+
+**代码实现路径**：`app/services/data_planner.py`
+
+**自动降采样**：DataPlanner 根据 `loop_ledger.control_type` 自动选择 BASE tagGroup 的采样率（FC=1s/PC=2s/TC=5s/CC=10s），无需用户配置。当 BASE 采样率已是 1s（如流量回路 FC），高频 tagGroup（OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）直接复用 BASE 数据块。
 
 **部署形态**：独立容器化服务（`clpm/algo-dataplanner:v1.0`），HPA 2~10 副本，详见 §11。
 
@@ -791,6 +848,8 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 
 **复用规则**：当 BASE 采样率已是 1s（如流量回路），高频 tagGroup 直接复用 BASE 数据块，无需单独查询。
 
+**自动降采样**：`BASE` tagGroup 的采样率由 DataPlanner 按 `loop_ledger.control_type` 自动选择（FC=1s/PC=2s/TC=5s/CC=10s），无需用户配置。其他高频 tagGroup（OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）固定 1s 采样，但当 BASE 已是 1s 时直接复用 BASE 数据块。
+
 **时间戳对齐**：同一 tagGroup 内所有 Tag 共享同一时间轴，天然对齐；不同 tagGroup 之间不强行对齐，各指标独立计算。
 
 ### 14.5 Metric Data Requirement（指标数据需求契约）
@@ -842,22 +901,32 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 
 ### 14.8 数据血缘（Data Lineage）
 
-**定义**：数据血缘是附着于每条指标计算结果的**数据口径元信息**，支持审计追溯与国标评分复算。
+**定义**：数据血缘是附着于每条指标计算结果的**数据口径元信息**，支持审计追溯与国标评分复算。**v6.0 重构**：由原 8 字段扁平结构重构为 **5 个独立字段 + `data_lineage` JSONB** 的双层结构，对齐 DDS v6.0 §3.5。
 
-**字段定义**：
+**5 个独立字段**（直接列于 `kpi_snapshot_hourly` / `kpi_snapshot_custom` 表）：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `sampling_freq` | String | 实际采样频率（如 `1s` / `5s`） |
+| `sampling_freq` | VARCHAR(20) | 实际采样频率（如 `1s` / `5s`），独立列 |
+| `quality_policy` | VARCHAR(50) | 质量策略（`KEEP_ALL_WITH_VALIDITY` / `KEEP_ALL`），独立列 |
+| `valid_rate` | DOUBLE | 有效数据率（0~1），由 8 步预处理 Pipeline 的 Quality Summary 生成，独立列 |
+| `confidence_level` | VARCHAR(2) | 指标可信度等级（`A`/`B`/`C`/`D`/`E`），由 `ConfidenceEvaluator` 判定，独立列 |
+| `data_lineage` | JSONB | 数据血缘 JSON（内部 6 子字段见下表），独立列 |
+
+**`data_lineage` JSONB 内部 6 子字段**：
+
+| 子字段 | 类型 | 说明 |
+|---|---|---|
 | `aggregation_policy` | String | 聚合策略（`LAST` / `MEAN` / `MAX`） |
-| `quality_policy` | String | 质量策略（`KEEP_ALL_WITH_VALIDITY` / `KEEP_ALL`） |
-| `tag_group` | String | 数据来源 tagGroup |
+| `tag_group` | String | 数据来源 tagGroup（`BASE`/`OP_HF`/`PVOP_HF`/`MODE_HF`/`QUALITY_HF`） |
 | `data_block_ids` | Array | 使用的 DataBlock ID 列表 |
-| `valid_rate` | Float | 有效数据率（0~1） |
 | `data_policy_version` | String | 预处理版本（如 `pre_v1`） |
 | `algorithm_version` | String | 算法版本（如 `KPI_CALC_v1.0`） |
+| `sampling_freq` | String | 实际采样频率（与独立字段冗余存储，便于审计追溯） |
 
-**持久化**：数据血缘以 JSON 形式存储于 `kpi_snapshot_hourly.data_lineage` 字段（详见《关键算法设计说明》v2.0 §10.2）。
+**持久化**：5 个独立字段 + `data_lineage` JSONB 持久化于 `kpi_snapshot_hourly` 与 `kpi_snapshot_custom` 表（详见 DDS v6.0 §3.5）。
+
+> **重要修正**：原 v4.0 文档描述的"8 字段扁平结构"实际不存在，DDS v6.0 §3.5 明确为 5 字段 + JSONB 子字段。
 
 ### 14.9 指标可信度（Confidence Level）
 
@@ -875,4 +944,169 @@ KPI 计算服务、DataPlanner 服务与诊断分析服务配置 **Kubernetes HP
 
 **与综合评分的关系**：好值率不直接参与综合评分公式，而是通过影响 `valid_rate` → 指标可信度。当可信度为 E 级时，整条快照标记为 `INCONCLUSIVE`，评分留空；当多条指标可信度低于 B 级时，装置级聚合应降权或剔除该回路。
 
-**持久化**：可信度等级存储于 `kpi_snapshot_hourly.confidence_level` 字段（详见《关键算法设计说明》v2.0 §10.2）。
+**实现组件**：`ConfidenceEvaluator`（`app/services/confidence_evaluator.py`），按 `valid_rate` 自动判定 A/B/C/D/E 五级，E 级时标记 `INCONCLUSIVE` 并将 `value` 置空。
+
+**持久化**：可信度等级存储于 `kpi_snapshot_hourly.confidence_level` 与 `kpi_snapshot_custom.confidence_level` 字段（5 个数据血缘独立字段之一，详见 §14.8）。
+
+---
+
+## 15. 前端路由架构 (Frontend Route Architecture)
+
+> **v6.0 新增**：本章节列出 32 个前端路由 path，对齐实现契约 v2.0 §2 与 UIUX v6.0 §2 的 IA 信息架构。完整路由 meta（name/component/order/icon）以实现契约 v2.0 §2-§3 为准。
+
+### 15.1 路由按模块分组（6 模块 + 1 门户）
+
+| 模块 | 路由 path | 说明 |
+|---|---|---|
+| **工作台门户** | `/dashboard/workbench` | 工作台首页（聚合视图） |
+| **回路管理** | `/loop/manage` | 回路台账管理（聚合页） |
+|  | `/loop/detail/:id` | 回路详情（隐藏菜单） |
+|  | `/loop/monitor` | 回路监控 |
+|  | `/tag/list` | Tag 管理（跨模块路由） |
+| **性能评估** | `/metric/dashboard` | KPI 看板 |
+|  | `/metric/ranking` | 回路排行 |
+|  | `/metric/statistics` | 统计分析 |
+|  | `/metric/snapshots` | 快照查询 |
+|  | `/metric/recompute` | 重算任务 |
+|  | `/metric/config` | 指标配置 |
+|  | `/metric/weight-config` | 权重配置 |
+|  | `/metric/engine-config` | 引擎配置 |
+|  | `/metric/task-strategy` | 任务策略 |
+|  | `/metric/tasks` | 任务管理（性能评估子模块） |
+| **诊断中心** | `/diagnosis/list` | 诊断列表 |
+|  | `/diagnosis/detail/:loopId` | 诊断详情（隐藏菜单，动态参数） |
+|  | `/diagnosis/waveform` | 波形分析 |
+|  | `/diagnosis/tracker` | 异常跟踪（Action Tracker） |
+|  | `/diagnosis/ab-compare` | A/B 对比 |
+|  | `/diagnosis/statistics` | 诊断统计 |
+|  | `/diagnosis/config` | 诊断配置 |
+| **回路整定** | `/tuning/workbench` | 整定工作台（Beta，Phase 2） |
+|  | `/tuning/model` | 模型辨识 |
+|  | `/tuning/algorithm` | 整定算法 |
+|  | `/tuning/simulation` | 闭环仿真 |
+|  | `/tuning/stats` | 整定统计 |
+| **系统管理** | `/system/users` | 用户管理 |
+|  | `/system/audit` | 审计日志 |
+|  | `/system/permissions` | 权限管理 |
+|  | `/system/reports` | 报表管理 |
+
+**合计**：32 个路由 path（含 3 个动态参数路由 + 7 个隐藏菜单路由）。
+
+**关键说明**：
+- 首页默认重定向至 `/dashboard/workbench`
+- 性能评估保留 `/metric/*` 前缀（不强制回退到 `/performance/*`）
+- Tag 管理使用 `/tag/list`（属回路管理模块但前缀非 `/loop`）
+- 任务管理（`/metric/tasks`）作为性能评估子模块，路由 order=3.5（与 Metric 同属"性能评估执行体系"）
+- 回路整定模块带 Beta 徽章，标注为 Phase 2 原型先行
+- 路由权限字段名为 `meta.authority`（非 `meta.roles`）
+
+---
+
+## 16. 业务服务 REST API (Business REST API)
+
+> **v6.0 新增**：本章节列出业务服务的 REST API 端点清单，对齐实现契约 v2.0 §4.4 与代码实际路由。
+
+### 16.1 API 路径前缀（6 大领域 + 代码扩展）
+
+| # | 路径前缀 | 说明 | 实现契约 v2.0 §4.4 |
+|---|---|---|---|
+| 1 | `/api/v1/auth/*` | 认证（login/refresh/logout/me/password/rbac-test） | 代码扩展 |
+| 2 | `/api/v1/users/*` | 用户管理 | ✅ |
+| 3 | `/api/v1/loops/*` | 回路管理（含 mode-mapping 子路径） | 代码扩展 |
+| 4 | `/api/v1/tags/*` | Tag 管理 | 代码扩展 |
+| 5 | `/api/v1/plant-nodes/*` | 工厂层级 | 代码扩展 |
+| 6 | `/api/v1/performance/*` | 性能配置与看板 | ✅ |
+| 7 | `/api/v1/performance/nodes/*` | 节点级性能 | 代码扩展 |
+| 8 | `/api/v1/diagnosis/*` | 诊断配置与跟踪 | ✅ |
+| 9 | `/api/v1/tracker/*` | 异常跟踪（diagnosis.py 内） | 代码扩展 |
+| 10 | `/api/v1/tuning/*` | 整定算法 | ✅ |
+| 11 | `/api/v1/tasks/*` | 任务管理 + 通知 | 代码扩展 |
+| 12 | `/api/v1/dashboard/*` | 工作台门户 | 代码扩展 |
+| 13 | `/api/v1/realtime/*` | 实时数据查询 | 代码扩展 |
+| 14 | `/api/v1/ws/*` | WebSocket 实时推送 | 代码扩展 |
+| 15 | `/api/v1/audit-logs/*` | 审计日志 | ✅ |
+| 16 | `/api/v1/reports/*` | 报表管理 | ✅ |
+| 17 | `/api/v1/aas/*` | AAS 同步 | 代码扩展 |
+| 18 | `/api/v1/configs/*` | 配置聚合（含 metrics/diagnosis/loop-type-weights/loop-level-weights/weight-templates/grading-thresholds 子路径） | 代码扩展 |
+| 19 | `/api/v1/algorithms/*` | 算法任务（含 dataplanner 子路径） | 代码扩展 |
+| 20 | `/api/v1/timeseries/*` | 时序数据查询 | 代码扩展 |
+| 21 | `/api/v1/health` | 健康检查 | 代码扩展 |
+
+### 16.2 gRPC 算法服务与 REST 端点的关系
+
+§10 描述的 gRPC 算法服务接口（如 `get_timeseries_data`、`calc_good_value_rate`、`batch_calc_metrics`、`diagnose`、`identify_model`、`tune_pid`）通过 FastAPI 适配层暴露为 REST 端点：
+- `/api/v1/timeseries/*` → 对应 `get_timeseries_data` / `get_batch_timeseries_data`
+- `/api/v1/algorithms/kpi/calculate` → 对应 `batch_calc_metrics`
+- `/api/v1/algorithms/diagnosis/analyze` → 对应 `diagnose`
+- `/api/v1/algorithms/tuning/calculate` → 对应 `identify_model` / `tune_pid` / `simulate`
+- `/api/v1/algorithms/dataplanner/*` → DataPlanner 调试接口（plan/bundle/cache）
+
+### 16.3 任务管理与通知 API
+
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `/api/v1/tasks/standard/evaluate` | POST | 标准评估任务（每小时/每天） |
+| `/api/v1/tasks/custom/evaluate` | POST | 自定义时间窗口评估 |
+| `/api/v1/tasks/backfill` | POST | 历史重算任务（Backfill） |
+| `/api/v1/tasks/notifications` | GET | 任务通知列表 |
+| `/api/v1/tasks/notifications/{task_id}/read` | POST | 标记通知已读 |
+| `/api/v1/tasks/{task_id}` | GET | 任务详情 |
+| `/api/v1/tasks/{task_id}/cancel` | POST | 取消任务 |
+| `/api/v1/tasks/{task_id}/results` | GET | 任务结果 |
+
+任务状态由 `TaskTracker`（`app/services/task_tracker.py`）统一跟踪，状态存储于 Redis，支持任务创建/状态流转/通知回调。
+
+---
+
+## 17. 权限矩阵 (Permission Matrix)
+
+> **v6.0 新增**：本章节列出 5 角色 × 6 模块的权限矩阵，对齐实现契约 v2.0 §4.5 与 UIUX v6.0 §6。
+
+### 17.1 角色枚举（5 角色）
+
+| 角色 | 中文 | 设计口径 |
+|---|---|---|
+| `ADMIN` | 管理员 | 全模块、全配置、全审计 |
+| `IC_ENGINEER` | 仪表工程师 | 业务模块全流程，可编辑异常跟踪和回路配置 |
+| `PE_ENGINEER` | 工艺工程师 | 可查看评估、监控、诊断汇总；可参与异常跟踪 |
+| `EXPERT` | 专家 | 可查看诊断与整定相关页面，可参与异常跟踪和专家建议 |
+| `SPONSOR` | 赞助人 | 只看工作台、性能汇总、诊断统计等汇总视图；不可进入单回路诊断详情、波形证据或异常跟踪编辑 |
+
+### 17.2 权限矩阵（5 角色 × 6 模块）
+
+| 模块 | ADMIN | IC_ENGINEER | PE_ENGINEER | EXPERT | SPONSOR |
+|---|---|---|---|---|---|
+| **工作台门户** | 全部 | 全部 | 查看 | 查看 | 查看 |
+| **回路管理** | 全部 | 编辑 | 查看 | 查看 | - |
+| **性能评估** | 全部 | 全部 | 查看 | 查看 | 查看汇总 |
+| **诊断中心** | 全部 | 编辑异常跟踪 | 查看汇总 + 参与异常跟踪 | 查看诊断 + 参与异常跟踪 | 查看统计 |
+| **回路整定** | 全部 | 查看 | 查看 | 查看 + 参与建议 | - |
+| **系统管理** | 全部 | - | - | - | - |
+
+**关键约束**：
+- SPONSOR 不可进入单回路诊断详情、波形证据或异常跟踪编辑
+- 任何角色标记 Action Tracker 为 `IMPLEMENTED` 前，必须关联外部 MOC/审批引用或记录"不适用"及依据
+- Tuning 标记为 `COMPLETED` 须关联 MOC/风险评估引用、审批人、实施人、验证结果与回退记录
+
+### 17.3 数据模型映射
+
+角色通过 `sys_role` / `sys_user_role` 表持久化（DDS v6.0 §3.2）；代码实现中角色以枚举字段存储于 `sys_user` 表。权限校验通过 `meta.authority` 字段配置于路由元信息。
+
+---
+
+## 18. 状态机定义 (State Machine Definitions)
+
+> **v6.0 新增**：本章节统一定义 5 类状态机枚举，对齐实现契约 v2.0 §4.6 与 DDS v6.0 §4。
+
+| 对象 | 标准枚举 | 中文显示 | 说明 |
+|---|---|---|---|
+| **Action Tracker** | `PENDING` → `IN_PROGRESS` → `IMPLEMENTED` / `IGNORED` | 待处理 → 处理中 → 已实施 / 已忽略 | 异常跟踪状态机。旧命名 `RESOLVED` 已废弃 |
+| **Loop** | `READY` / `PARTIAL` / `INACTIVE` | 就绪 / 部分配置 / 已停用 | 回路状态机。旧命名 `ACTIVE`/`PAUSED`/`DECOMMISSIONED` 已废弃 |
+| **KPI 快照** | `SUCCESS` / `PARTIAL` / `INCONCLUSIVE` | 成功 / 部分有效 / 数据不足 | KPI 快照状态机。`SUCCESS`=valid_rate≥0.80；`PARTIAL`=0.20≤valid_rate<0.80；`INCONCLUSIVE`=valid_rate<0.20 |
+| **Tuning** | `DRAFT` → `RUNNING` → `COMPLETED` / `ROLLED_BACK` | 草稿 → 运行中 → 已完成 / 已回退 | 整定任务状态机 |
+| **PV Quality** | `GOOD` / `BAD` / `UNCERTAIN` | 好值 / 坏值 / 不确定 | PV 数据质量码状态机，存储于 TDengine `quality` 字段 |
+
+**关键修正**：
+- 历史文档中的 `RESOLVED` 统一视为旧命名；当前代码与后续文档使用 `IMPLEMENTED`
+- 历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED` 统一视为旧命名；当前使用 `READY`/`PARTIAL`/`INACTIVE`
+- KPI 快照状态 `OK` / `ERROR` 已废弃，统一使用 `SUCCESS` / `PARTIAL` / `INCONCLUSIVE`

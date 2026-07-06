@@ -1,9 +1,10 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline  
-**当前版本**：v1.0  
-**发布日期**：2026-06-25  
-**适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐
+**当前版本**：v2.0  
+**发布日期**：2026-07-06  
+**适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐  
+**v2.0 变更摘要**：追认代码实际存在的 API 领域与表结构，补全 3+1+8 KPI 体系说明
 
 ## 1. 定位
 
@@ -43,14 +44,50 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 
 ## 4. API 契约
 
+### 4.1 v1.0 已声明且代码存在的 API 领域
+
 | 领域 | 当前实现路径 | 说明 |
 |---|---|---|
-| 性能配置与看板 | `/api/v1/performance/*` | 当前不新增 `/api/v1/configs/metrics` 聚合接口。 |
-| 诊断配置与跟踪 | `/api/v1/diagnosis/*` | 当前不新增 `/api/v1/configs/diagnosis` 聚合接口。 |
-| 整定算法 | `/api/v1/tuning/*` | 当前作为 Phase 1 实验/辅助能力，不代表自动下写 DCS。 |
+| 性能配置与看板 | `/api/v1/performance/*` | KPI 看板、排行、分析、回路快照、实时自控率。 |
+| 诊断配置与跟踪 | `/api/v1/diagnosis/*` | 诊断列表、详情、波形、A/B 对比、统计；含 `/api/v1/tracker/*`（异常跟踪）与 `/api/v1/diagnosis/tags/*`（诊断标签）子路由。 |
+| 整定算法 | `/api/v1/tuning/*` | Phase 1 实验/辅助能力，不代表自动下写 DCS。 |
 | 用户管理 | `/api/v1/users/*` | 不强制改为 `/api/v1/system/users`。 |
 | 审计日志 | `/api/v1/audit-logs/*` | 系统管理 UI 可消费该路径。 |
-| 报表管理 | `/api/v1/reports/*` | 系统管理 UI 可消费该路径。 |
+| 报表管理 | `/api/v1/reports/*` | 报表配置 CRUD、生成、任务状态查询。 |
+
+### 4.2 v2.0 追认存在的 API 领域（v1.0 声明禁止但代码已存在）
+
+| 领域 | 当前实现路径 | 说明 |
+|---|---|---|
+| 指标配置聚合 | `/api/v1/configs/metrics` | v1.0 声明"不新增"，v2.0 追认代码已存在批量指标配置接口。 |
+| 诊断配置聚合 | `/api/v1/configs/diagnosis` | v1.0 声明"不新增"，v2.0 追认代码已存在批量诊断配置接口。 |
+
+### 4.3 v2.0 补全的代码已有 API 领域（v1.0 未提及）
+
+| 领域 | 当前实现路径 | 说明 |
+|---|---|---|
+| 认证 | `/api/v1/auth/*` | 登录、登出、刷新 token、获取当前用户、修改密码。 |
+| 回路管理 | `/api/v1/loops/*` | 回路 CRUD、批量创建、监控、导入导出、Tag 关联、模式映射。 |
+| Tag 管理 | `/api/v1/tags/*` | AAS Tag 列表、导入导出、批量删除、匹配回路。 |
+| 工厂层级 | `/api/v1/plant-nodes/*` | 工厂树 CRUD、导入导出。 |
+| 工作台 | `/api/v1/dashboard/*` | 工作台总览、看板、实时自控率。 |
+| 实时数据 | `/api/v1/realtime/*` | 实时数据查询。 |
+| WebSocket | `/api/v1/ws/*` | 实时推送通道。 |
+| AAS 同步 | `/api/v1/aas/*` | AAS 配置、同步触发、同步状态与日志、Tag 列表。 |
+| 配置中心 | `/api/v1/configs/*` | 含 `metrics`/`diagnosis`/`loop-type-weights`/`loop-level-weights`/`weight-templates`/`grading-thresholds` 子领域。 |
+| 算法独立调用 | `/api/v1/algorithms/*` | 含 `kpi`/`diagnosis`/`tuning`/`dataplanner` 子领域，用于算法独立调试与数据计划。 |
+| 任务管理 | `/api/v1/tasks/*` | 标准评估、自定义评估、历史重算、任务通知、取消、删除、结果查询。 |
+| 节点级 KPI | `/api/v1/performance/nodes/*` | 节点快照、趋势、排行、对比、总览、监控。 |
+| 异常跟踪 | `/api/v1/tracker/*` | diagnosis.py 内的子路由，承担 Action Tracker 状态机流转。 |
+| 诊断标签 | `/api/v1/diagnosis/tags/*` | 诊断标签管理。 |
+| 时间序列 | `/api/v1/timeseries/*` | 时间序列数据查询（tags.py 与 diagnosis.py 各一个 router）。 |
+| 健康检查 | `/api/v1/health` | 健康检查与就绪检查。 |
+
+### 4.4 API 契约规则
+
+- 所有 API 默认以 `/api/v1/` 为前缀；新增领域不得绕过此前缀。
+- 新增 API 领域必须先在本契约 §4 登记路径与说明，再落地代码与测试。
+- 算法独立调用接口（`/api/v1/algorithms/*`）仅用于调试与数据计划，不暴露给业务 UI 作为主入口。
 
 ## 5. 权限契约
 
@@ -78,12 +115,62 @@ P1 #13 修正：历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED`（运行/�
 
 ## 7. KPI 契约
 
-| 类型 | 指标 |
-|---|---|
-| 6 大核心 KPI | 好值率、自控率、平稳率、准确率、振荡率、饱和率 |
-| 扩展派生指标 | 有效自控率、快速响应率 |
+### 7.1 体系结构：3 核心质量指标 + 1 折扣因子 + 8 扩展指标
 
-说明：PRD 对外合规口径仍强调 6 大核心 KPI；实现可保留 2 个扩展派生指标用于算法增强、排序与内部诊断，但 UI/报表需明确区分"核心 KPI"与"扩展指标"。
+代码实际的 MetricCalculator 体系为 3+1+8 结构，共 12 个独立计算器：
+
+| 类型 | 指标名 | 字段名 | 用途 |
+|---|---|---|---|
+| 3 核心质量指标 | 准确率 | `accuracy_rate` | 反映 SP 跟踪 PV 的精度 |
+| | 快速响应率 | `fast_rate` | 反映扰动恢复速度 |
+| | 平稳率 | `steady_rate`（loop 级）/ `stability_rate`（unit 级） | 反映运行平稳程度 |
+| 1 折扣因子 | 有效自控率 | `effective_auto_rate`（R） | 综合评分折扣因子 |
+| 8 扩展指标 | 好值率 | `good_value_rate` | PV 数据质量 |
+| | 自控率 | `auto_mode_rate` | 自动模式时长占比 |
+| | 饱和率 | `saturation_rate` | OP 输出饱和占比 |
+| | 振荡率 | `oscillation_rate` | 振荡识别占比 |
+| | 理想稳定时间 | `ideal_settling_time` | 理论稳定时间 |
+| | 实际稳定时间 | `settling_time` | 实测稳定时间 |
+| | 输出跳变率 | `output_trip_rate` | OP 跳变频率 |
+| | 阀门粘滞 | `stiction` | 阀门粘滞估计 |
+
+### 7.2 综合评分公式
+
+```
+P = (A·a + F·f + S·s) / (a + f + s) × R
+```
+
+其中：
+- `A` = accuracy_rate（准确率）
+- `F` = fast_rate（快速响应率）
+- `S` = steady_rate / stability_rate（平稳率）
+- `a / f / s` = 类型权重（来自 4 类权重模板）
+- `R` = effective_auto_rate（有效自控率，折扣因子）
+
+### 7.3 4 类权重模板
+
+| 模板 | 适用回路类型 | 权重倾向 |
+|---|---|---|
+| `STABLE` | 稳定型回路 | 平稳率权重最高 |
+| `SLOW` | 慢响应回路 | 准确率权重最高 |
+| `FAST` | 快速响应回路 | 快速响应率权重最高 |
+| `LOGIC` | 逻辑开关回路 | 自定义权重组合 |
+
+### 7.4 5 级性能定级
+
+| 等级 | 枚举值 | 说明 |
+|---|---|---|
+| 优秀 | `EXCELLENT` | P ≥ 优秀阈值 |
+| 良好 | `GOOD` | P ≥ 良好阈值 |
+| 一般 | `FAIR` | P ≥ 一般阈值 |
+| 警告 | `WARNING` | P ≥ 警告阈值 |
+| 较差 | `POOR` | P < 警告阈值 |
+
+阈值由 `/api/v1/configs/grading-thresholds` 维护，可在 UI 中配置。
+
+### 7.5 对外口径
+
+PRD 对外合规口径仍强调 6 大核心 KPI（好值率、自控率、平稳率、准确率、振荡率、饱和率）；实现以 3+1+8 体系为算法增强、排序与内部诊断的依据，但 UI/报表需明确区分"核心 KPI"与"扩展指标"。
 
 ## 8. 阶段契约
 
@@ -101,3 +188,53 @@ P1 #13 修正：历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED`（运行/�
 - README、CLAUDE、DESIGN、UI/UX 后续修订应引用本契约。
 - 旧路径可记录为历史兼容路径，但不作为主菜单验收项。
 - 新增页面必须先更新本契约，再更新路由、权限、测试与 UI/UX 页面清单。
+
+## 10. 代码实际 ORM 表清单（26 张）
+
+代码共定义 26 张 ORM 模型，作为 DDS v6.0 表清单的事实来源。详细字段定义见 DDS v6.0。
+
+| # | 类名 | __tablename__ | 文件 | 用途 |
+|---|---|---|---|---|
+| 1 | `LoopLedger` | `loop_ledger` | `models/loop.py` | 回路台账 |
+| 2 | `LoopTagMapping` | `loop_tag_mapping` | `models/loop.py` | 回路-Tag 关联 |
+| 3 | `TagRegistry` | `tag_registry` | `models/tag.py` | AAS Tag 注册表 |
+| 4 | `PlantNode` | `plant_node` | `models/plant_node.py` | 工厂层级 |
+| 5 | `MetricConfig` | `metric_config` | `models/metric.py` | 指标配置 |
+| 6 | `KpiSnapshotHourly` | `kpi_snapshot_hourly` | `models/metric.py` | KPI 小时快照 |
+| 7 | `KpiSnapshotCustom` | `kpi_snapshot_custom` | `models/metric.py` | KPI 自定义快照 |
+| 8 | `ClpmMetricDataRequirement` | `clpm_metric_data_requirement` | `models/metric_data_requirement.py` | 指标数据需求 |
+| 9 | `UnitKpiSummary` | `unit_kpi_summary` | `models/unit_kpi_summary.py` | 装置级 KPI 汇总 |
+| 10 | `KpiNodeSnapshotHourly` | `kpi_node_snapshot_hourly` | `models/node_kpi.py` | 节点 KPI 小时快照 |
+| 11 | `KpiNodeSnapshotDaily` | `kpi_node_snapshot_daily` | `models/node_kpi.py` | 节点 KPI 日快照 |
+| 12 | `KpiNodeSnapshotMonthly` | `kpi_node_snapshot_monthly` | `models/node_kpi.py` | 节点 KPI 月快照 |
+| 13 | `EngineRule` | `engine_rule` | `models/engine.py` | 引擎规则 |
+| 14 | `DiagnosisConfig` | `diagnosis_config` | `models/diagnosis.py` | 诊断配置 |
+| 15 | `DiagnosisResult` | `diagnosis_result` | `models/diagnosis.py` | 诊断结果 |
+| 16 | `DiagnosisTag` | `diagnosis_tag` | `models/diagnosis.py` | 诊断标签 |
+| 17 | `ActionTracker` | `action_tracker` | `models/tracker.py` | 异常跟踪 |
+| 18 | `TuningRecord` | `tuning_record` | `models/tuning.py` | 整定记录 |
+| 19 | `LoopModeMapping` | `loop_mode_mapping` | `models/loop_config.py` | 回路模式映射 |
+| 20 | `LoopTypeWeight` | `loop_type_weight` | `models/loop_config.py` | 回路类型权重 |
+| 21 | `LoopLevelWeight` | `loop_level_weight` | `models/loop_config.py` | 回路级别权重 |
+| 22 | `SysUser` | `sys_user` | `models/sys_user.py` | 系统用户 |
+| 23 | `SysAuditLog` | `sys_audit_log` | `models/audit.py` | 审计日志 |
+| 24 | `SysConfig` | `sys_config` | `models/sys_config.py` | 系统配置 |
+| 25 | `ReportRecord` | `report_record` | `models/report.py` | 报表记录 |
+| 26 | `ReportConfig` | `report_config` | `models/report_config.py` | 报表配置 |
+
+注：DDS v4.1 中声明的 `report_schedule` 实际由代码 `report_config` 承载；`sys_role` / `sys_user_role` 代码无对应模型，角色以枚举形式实现。
+
+## 11. v2.0 变更记录
+
+| 变更项 | v1.0 口径 | v2.0 口径 | 依据 |
+|---|---|---|---|
+| 版本号 | v1.0（2026-06-25） | v2.0（2026-07-06） | — |
+| `/api/v1/configs/metrics` | 不新增 | 追认存在 | `endpoints/configs.py` |
+| `/api/v1/configs/diagnosis` | 不新增 | 追认存在 | `endpoints/configs.py` |
+| API 领域清单 | 6 项 | 6 项（已声明） + 2 项（追认） + 15 项（补全） | `v6-code-facts.md` §1 |
+| KPI 体系 | 6 核心 + 2 扩展 | 3 核心 + 1 折扣因子 + 8 扩展（共 12 个计算器） | `v6-consistency-check.md` §6.1 |
+| 综合评分公式 | 未声明 | `P = (A·a + F·f + S·s)/(a+f+s) × R` | FDS v6.0 |
+| 4 类权重模板 | 未声明 | STABLE / SLOW / FAST / LOGIC | `endpoints/weight_config.py` |
+| 5 级性能定级 | 未声明 | EXCELLENT / GOOD / FAIR / WARNING / POOR | `endpoints/grading_config.py` |
+| ORM 表清单 | 未声明 | 26 张（见 §10） | `v6-code-facts.md` §2 |
+| 状态机契约 | 已统一 | 与 v1.0 一致，无变更 | — |

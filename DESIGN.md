@@ -1,6 +1,6 @@
 # CLPM Design Baseline
 
-日期：2026-06-25（对齐 PRD v3.1、UI/UX v4.1 与重构后实现契约 v1.0）
+日期：2026-07-06（对齐 PRD v6.0、UI/UX v6.0 与重构后实现契约 v2.0）
 状态：active-baseline
 适用范围：CLPM 重构后正式前端与原型体验对齐
 
@@ -12,16 +12,16 @@
 
 | 类型 | 唯一来源 | 版本 |
 |---|---|---|
-| 产品需求 | `docs/设计文档/01-PRD/PRD.md` | v3.1 |
-| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | v1.0 |
-| 功能规范 | `docs/设计文档/02-FDS/FDS.md` | v3.0（待追认） |
-| 应用架构 | `docs/设计文档/03-ADS/ADS.md` | v3.0（目标架构/待校准） |
-| 数据模型 | `docs/设计文档/04-DDS/DDS.md` | v3.0（待追认） |
-| API 接口 | `docs/设计文档/05-IDS/IDS.md` | v3.0（待追认） |
-| UI/UX 规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | v4.1（待升级 v4.2） |
+| 产品需求 | `docs/设计文档/01-PRD/PRD.md` | v6.0 |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | v2.0 |
+| 功能规范 | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
+| 应用架构 | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
+| 数据模型 | `docs/设计文档/04-DDS/DDS.md` | v6.0 |
+| API 接口 | `docs/设计文档/05-IDS/IDS.md` | v6.0 |
+| UI/UX 规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | v6.0 |
 | 当前生产前端路由 | `frontend/apps/web-antd/src/router/routes/modules/` | 实现事实来源 |
 
-当本文件与实现契约冲突时，以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准；当业务范围与安全边界冲突时，以 PRD v3.1 为准。本文件保留横切设计约束。
+当本文件与实现契约冲突时，以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准；当业务范围与安全边界冲突时，以 PRD v6.0 为准。本文件保留横切设计约束。
 
 ## 1. 目标
 
@@ -63,21 +63,21 @@ CLPM 是"产品化、工具化的控制回路绩效治理与优化闭环平台"�
 - 角色切换会影响菜单可见项、默认首页、主 CTA 和页面操作权限。
 - 角色切换不刷新页面数据，但会重新计算当前页面的可见区域和禁用态。
 
-角色集（对齐 PRD v3.1 §3 与实现契约 §5）：
+角色集（对齐 PRD v6.0 §3 与实现契约 v2.0 §5，共 5 角色）：
 
-- 仪控工程师
-- 工艺设备工程师
-- Sponsor
-- 系统管理员
-- 外部专家
+- 系统管理员（ADMIN）
+- 仪控工程师（IC_ENGINEER）
+- 工艺设备工程师（PE_ENGINEER）
+- 外部专家（EXPERT）
+- Sponsor（SPONSOR）
 
-如果某阶段只启用部分角色，未启用角色仍保留在设计规范中，便于后续扩展。角色与功能权限矩阵详见实现契约 §5 与 FDS v3.0 §3 RBAC 矩阵。
+如果某阶段只启用部分角色，未启用角色仍保留在设计规范中，便于后续扩展。角色与功能权限矩阵详见实现契约 v2.0 §5 与 FDS v6.0 §3 RBAC 矩阵。
 
 ## 5. 信息架构要求
 
 ### 5.1 模块结构
 
-对齐 PRD v3.1 与实现契约 v1.0，采用 **6 模块 + 1 门户** 结构。重构后的正式前端已从旧 25 页面清单调整为"聚合工作台 + 隐藏详情页 + 专项配置页"，各业务模块仍遵循"配置→运行→分析"三态自包含原则：
+对齐 PRD v6.0 与实现契约 v2.0，采用 **6 模块 + 1 门户** 结构。重构后的正式前端已从旧 25 页面清单调整为"聚合工作台 + 隐藏详情页 + 专项配置页"，各业务模块仍遵循"配置→运行→分析"三态自包含原则：
 
 | 模块 | 配置态 | 运行态 | 分析态 |
 |---|---|---|---|
@@ -132,7 +132,7 @@ CLPM 是"产品化、工具化的控制回路绩效治理与优化闭环平台"�
 
 - 风险色优先用于标签、边线、状态点，不大面积铺底。
 - 所有颜色必须从 token 引用，不允许页面散落写死 hex。
-- PV 质量码渲染规则：Good=正常色实线、Bad=灰色虚线断点、Uncertain=琥珀色点划线（对齐 UI/UX v4.1 与实现契约）。
+- PV 质量码渲染规则：Good=正常色实线、Bad=灰色虚线断点、Uncertain=琥珀色点划线（对齐 UI/UX v6.0 与实现契约 v2.0）。
 
 ### 6.2 字体
 
@@ -177,7 +177,7 @@ CLPM 是"产品化、工具化的控制回路绩效治理与优化闭环平台"�
 
 ### 7.2 页面结构模式
 
-允许的页面结构模式（对齐 UI/UX v4.1 与实现契约）：
+允许的页面结构模式（对齐 UI/UX v6.0 与实现契约 v2.0）：
 
 - **工作台页**：左侧列表 + 中央主工作区 + 右侧动作/上下文区
 - **数据表页**：顶部筛选 + 中央表格 + 右侧详情抽屉或侧栏
@@ -212,14 +212,14 @@ CLPM 是"产品化、工具化的控制回路绩效治理与优化闭环平台"�
 
 ### 8.2 状态标签
 
-统一标签体系（对齐实现契约 §6 与 DDS 字段）：
+统一标签体系（对齐实现契约 v2.0 §6 与 DDS v6.0 字段）：
 
-- `loop_status`（回路状态：active/paused/decommissioned）
-- `pv_quality`（PV 质量码：good/bad/uncertain）
-- `kpi_status`（KPI 状态：success/inconclusive/partial）
-- `action_status`（异常跟踪状态：pending/in_progress/resolved/ignored）
+- `loop_status`（回路状态：READY/PARTIAL/INACTIVE）
+- `pv_quality`（PV 质量码：GOOD/BAD/UNCERTAIN）
+- `kpi_status`（KPI 状态：SUCCESS/INCONCLUSIVE/PARTIAL）
+- `action_status`（异常跟踪状态：PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED）
 - `diag_label`（诊断标签：stiction/oscillation/saturation/tuning_needed/normal）
-- `tuning_status`（整定状态：draft/running/completed/rolled_back）
+- `tuning_status`（整定状态：DRAFT/RUNNING/COMPLETED/ROLLED_BACK）
 - `risk_level`（风险等级：low/medium/high）
 
 标签必须有：
@@ -264,12 +264,12 @@ CLPM 是"产品化、工具化的控制回路绩效治理与优化闭环平台"�
 ### 8.6 空状态与数据不足状态
 
 - 空状态必须告诉用户"当前为什么没有数据、可以做什么"。
-- 数据不足（PV 质量码为 bad/uncertain 占比高）必须明确"缺什么、还能继续做什么、下一步去哪"。
-- 数据不足不是错误，KPI 状态应标记为 `inconclusive` 或 `partial`。
+- 数据不足（PV 质量码为 BAD/UNCERTAIN 占比高）必须明确"缺什么、还能继续做什么、下一步去哪"。
+- 数据不足不是错误，KPI 状态应标记为 `INCONCLUSIVE` 或 `PARTIAL`。
 
 ### 8.7 Tag 关联选择器（新增）
 
-回路台账页与 Tag 关联管理页必须提供 Tag 关联选择器组件（对齐 UI/UX v4.1 与实现契约）：
+回路台账页与 Tag 关联管理页必须提供 Tag 关联选择器组件（对齐 UI/UX v6.0 与实现契约 v2.0）：
 
 - 左侧 AAS Tag 列表（从 `tag_registry` 只读读取）
 - 右侧 7 个槽位（PV/SP/OP/MODE/PID_P/PID_I/PID_D）
@@ -290,23 +290,25 @@ CLPM 是"产品化、工具化的控制回路绩效治理与优化闭环平台"�
 
 原型必须采用统一状态机，不允许每页自行解释业务状态。
 
-核心对象与状态（对齐实现契约 §6、DDS 与 UI/UX）：
+核心对象与状态（对齐实现契约 v2.0 §6、DDS v6.0 与 UI/UX v6.0）：
 
 | 对象 | 关键状态 |
 |---|---|
-| Loop（回路） | `active` / `paused` / `decommissioned` |
-| Action Tracker（异常跟踪） | `pending` → `in_progress` → `implemented` / `ignored` |
-| KPI 快照 | `success` / `inconclusive` / `partial` |
+| Loop（回路） | `READY` / `PARTIAL` / `INACTIVE` |
+| Action Tracker（异常跟踪） | `PENDING` → `IN_PROGRESS` → `IMPLEMENTED` / `IGNORED` |
+| KPI 快照 | `SUCCESS` / `INCONCLUSIVE` / `PARTIAL` |
 | 诊断结果 | `stiction` / `oscillation` / `saturation` / `tuning_needed` / `normal` |
-| 整定记录 | `draft` → `running` → `completed` / `rolled_back` |
-| PV 质量码 | `good` / `bad` / `uncertain` |
+| 整定记录 | `DRAFT` → `RUNNING` → `COMPLETED` / `ROLLED_BACK` |
+| PV 质量码 | `GOOD` / `BAD` / `UNCERTAIN` |
 
 规则：
 
 - KPI 状态由引擎自动派生，不能手工切换。
-- 任一关键回路 PV 质量码为 `bad` 或 `uncertain` 占比超阈值时，该回路 KPI 状态必须为 `partial` 或 `inconclusive`。
+- 任一关键回路 PV 质量码为 `BAD` 或 `UNCERTAIN` 占比超阈值时，该回路 KPI 状态必须为 `PARTIAL` 或 `INCONCLUSIVE`。
 - Action Tracker 状态机由诊断引擎或用户手动触发，状态流转必须留痕。
 - 页面间必须共享状态源，不能各页硬编码各自版本的"真相"。
+- 历史文档中的 `RESOLVED` 统一视为旧命名；当前代码与后续文档使用 `IMPLEMENTED`。
+- 历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED` 统一视为旧命名；当前使用 `READY`/`PARTIAL`/`INACTIVE`。
 
 ## 10. 文案规范
 
@@ -318,13 +320,13 @@ CLPM 是"产品化、工具化的控制回路绩效治理与优化闭环平台"�
 
 ## 11. 验收标准
 
-原型与正式前端验收必须同时满足（对齐实现契约 v1.0 与 UI/UX v4.1）：
+原型与正式前端验收必须同时满足（对齐实现契约 v2.0 与 UI/UX v6.0）：
 
 - Phase 1 范围内的当前实现契约页面全部可运行。
 - 角色切换器可驱动菜单与页面可见态变化。
 - 至少 1 条顺畅闭环链路可完整跑通：回路创建 → Tag 关联 → 性能评估 → 诊断 → 异常跟踪 → 解决。
-- 至少 1 条驳回回退链路可完整跑通：异常跟踪 `ignored` 或整定 `rolled_back`。
-- 至少 1 条 `partial` KPI 链路可完整跑通：PV 质量码异常 → KPI `partial` → 用户查看波形 → 创建跟踪。
+- 至少 1 条驳回回退链路可完整跑通：异常跟踪 `IGNORED` 或整定 `ROLLED_BACK`。
+- 至少 1 条 `PARTIAL` KPI 链路可完整跑通：PV 质量码异常 → KPI `PARTIAL` → 用户查看波形 → 创建跟踪。
 - 所有主按钮都有真实结果。
 - 所有列表页支持筛选、排序和批量选择。
 - 所有配置类操作有确认对话框与变更留痕。
@@ -349,3 +351,4 @@ Phase 1 可保留整定辨识、推荐、仿真的实验/辅助接口，但必�
 | 2026-06-18 | v1.0 | 初版基线，定义 6 核心页面、视觉系统、组件标准 |
 | 2026-06-21 | v2.0 | 对齐 v3.0/v4.0 基线：移除 SampleBatch/EvidencePackage/ReviewDecision/ImplementationRecord/ReevaluationResult 旧模型；改用 Loop/ActionTracker/DiagnosisResult/TuningRecord 新模型；6 模块+门户结构；AAS Tag 关联模型；产品化配置原则；新增 Tag 关联选择器与配置确认对话框组件；验收标准对齐 Phase 1 |
 | 2026-06-25 | v2.1 | 追认重构后实现契约 v1.0：以当前 Vue 前端 IA、路由、权限、状态机、KPI 与阶段口径为设计基线；旧 25 页面清单降为历史来源。 |
+| 2026-07-06 | v3.0 | 对齐 UIUX v6.0 与实现契约 v2.0：所有版本号引用统一升级为 v6.0；角色集补充英文枚举（ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT/SPONSOR）；状态机枚举统一为大写（5 类状态机：Loop/Action Tracker/KPI 快照/整定记录/PV 质量码）；标注 RESOLVED 与 ACTIVE/PAUSED/DECOMMISSIONED 为旧命名；状态标签、PV 质量码渲染规则、页面结构模式与验收标准全部对齐 v6.0。 |

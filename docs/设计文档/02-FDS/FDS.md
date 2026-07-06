@@ -1,16 +1,16 @@
 # CLPM 功能规格说明书 (FDS)
 
 **文档状态**: 正式版
-**当前版本**: v5.1 (DDS 对齐版)
-**发布日期**: 2026-07-04
-**设计依据**: `docs/设计文档/01-PRD/PRD.md` (v3.1)、`docs/设计文档/04-DDS/DDS.md` (v4.1，表名/字段名权威基线)、`docs/设计文档/03-ADS/关键算法设计说明.md` (v2.0)、`CLPM后端研发智能体系统提示词与开发指导文档`
+**当前版本**: v6.0
+**发布日期**: 2026-07-06
+**设计依据**: `docs/设计文档/01-PRD/PRD.md` (v6.0)、`docs/设计文档/04-DDS/DDS.md` (v6.0，表名/字段名权威基线)、`docs/设计文档/03-ADS/关键算法设计说明.md` (v2.0)、`docs/设计文档/00-BASELINE/implementation-contract.md` (v2.0)、`docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` (v6.0)、`CLPM后端研发智能体系统提示词与开发指导文档`
 
 ---
 
 ## 1. 文档概述与变更记录
 
 ### 1.1 文档目的
-本文档基于 CLPM PRD (v3.1)、关键算法设计说明 (v2.0) 与《CLPM后端研发智能体系统提示词与开发指导文档》输出全链路产品功能规格设计。本 FDS 旨在为前后端研发、测试团队提供**清晰无模糊空间**、**具备强可落地性**的技术实现契约。涵盖功能范围、交互逻辑、数据流转、接口边界及异常处理规则，并贯彻"产品化、模块内聚自包含、配置驱动"三大设计原则。
+本文档基于 CLPM PRD (v6.0)、关键算法设计说明 (v2.0)、实现契约 (v2.0)、UI/UX 设计规范 (v6.0) 与《CLPM后端研发智能体系统提示词与开发指导文档》输出全链路产品功能规格设计。本 FDS 旨在为前后端研发、测试团队提供**清晰无模糊空间**、**具备强可落地性**的技术实现契约。涵盖功能范围、交互逻辑、数据流转、接口边界及异常处理规则，并贯彻"产品化、模块内聚自包含、配置驱动"三大设计原则。
 
 ### 1.2 变更记录
 | 版本 | 日期 | 变更说明 | 作者 |
@@ -22,9 +22,10 @@
 | v4.0 | 2026-06-26 | 数据编排与可信度版：①数据流转层引入**数据编排层 (DataPlanner)**，定义 tagGroup（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）合并查询计划，新增 DataBlock 缓存；②质量码处理改为 **KEEP_ALL_WITH_VALIDITY** 策略，不删除任何数据点，为每个时间戳每个 Tag 打 valid=True/False 标记，由 Metric Validity Mask 决定各指标有效点；③指标体系升级为 **3+1+8 结构**（3 核心质量指标 A/F/S + 1 投用指标 R + 8 辅助诊断指标）；④综合评分公式更新为 `P = (A·a + F·f + S·s)/(a+f+s) × R`，按控制类型分 4 类权重；⑤新增**数据血缘与可信度**（A/B/C/D/E 五级），指标结果携带 sampling_freq/quality_policy/tag_group/valid_rate；⑥新增 **DataBlock Cache** 设计（Redis + zstd + 分层 TTL + LRU）；⑦任务管理区分为标准任务（kpi_snapshot_hourly）与自定义任务（kpi_snapshot_custom，不参与装置级聚合）；⑧INCONCLUSIVE 处理改为基于指标可信度 E 级（valid_rate < 0.20）。对齐《关键算法设计说明 v2.0》与《CLPM后端研发智能体系统提示词与开发指导文档》。 | 系统设计团队 |
 | v5.0 | 2026-07-04 | 性能评估模块业务逻辑修订版：①§5.2.3 回路台账新增 `control_type` / `importance_level` / `include_in_evaluation` 三字段及"回路评估参与配置说明"；②§5.3.7 重构为两类评分体系（回路级性能评分 + 综合性能评分）+ 装置级三大 KPI（综合性能/平均自控率/稳定率）+ 实时自控率；③§5.3.4 全局看板重构（装置级三大 KPI 卡片 + 实时自控率条幅 + 稳定率趋势 + 可信度标签）；④§5.3.1.2 清理废弃字段（formula/control_type/data_contract 迁移说明），新增"配置字段维护入口总览"；⑤§5.3.1.1 固化 12 项指标算法定义（编号 ①~⑫）；⑥修正准确率/稳定率/综合评分/行程指数/时间分母等公式与口径；⑦性能定级 5 级（EXCELLENT/GOOD/FAIR/WARNING/POOR，国标默认阈值可在"权重配置管理"页面手工覆盖）。 | 系统设计团队 |
 | v5.1 | 2026-07-04 | DDS 对齐版：①**表名/字段名全面对齐 DDS v4.1**——`loops` → `loop_ledger`；`kpi_snapshot_unit_hourly` → `unit_kpi_summary`；`fast_response_rate` → `fast_rate`；`output_travel_index` → `output_trip_index`；`steady_state_time` → `settling_time`；装置级 `composite_score` → `avg_score`、`avg_auto_rate` → `auto_mode_rate`、`stability_rate` 保持不变；`N_eval` / `N_inconclusive` / `N_excluded` → `evaluated_loops` / `inconclusive_loops` / `excluded_loops`；②`importance_level` 字段类型由字符串枚举 `LEVEL_1` / `LEVEL_2` / `LEVEL_3` 改为**数值类型 `1` / `2` / `3`**，对齐后端接口；③全文术语"平稳率"统一为"稳定率"；④标注 DDS 应同步补齐 `loop_ledger.control_type` / `importance_level` / `include_in_evaluation` 字段、`metric_config.grading_thresholds` 字段、`unit_kpi_summary.excluded_loops` / `status` 字段。 | 系统设计团队 |
+| v6.0 | 2026-07-06 | v6.0 文档统一升级版：①引用文档版本全面对齐——PRD v3.1 → v6.0、DDS v4.1 → v6.0、UI/UX v5.3 → v6.0、实现契约 v1.0 → v2.0；②§5.3.7.3 装置级三大 KPI 章节补充**节点级 KPI 聚合说明**（`kpi_node_snapshot_hourly` / `kpi_node_snapshot_daily` / `kpi_node_snapshot_monthly` 三张表，按工厂层级节点聚合小时/日/月三级快照）；③§5.3.11 任务管理章节补充**代码实际 API 领域概览**（algorithms / tasks / dashboard / realtime / ws / aas / configs / performance/nodes 等领域）；④设计依据补充实现契约 v2.0 与 UI/UX v6.0 引用。对齐 v6.0 基线（`v6-baseline-extract.md` + `v6-code-facts.md`）。 | 系统设计团队 |
 
 ### 1.3 设计原则
-本 FDS 遵循 PRD v3.1 确立的四项产品化设计原则：
+本 FDS 遵循 PRD v6.0 确立的四项产品化设计原则：
 1. **产品化、工具化**：系统是可复用的产品，非项目型定制化系统。提供充分的配置组态能力，用户自助完成配置。
 2. **模块内聚、自包含**：每个功能模块自包含其"配置 → 运行 → 分析"三态功能，减少模块间交叉。
 3. **配置驱动**：指标公式、诊断算法、引擎规则等均支持用户自助配置，无需开发介入。
@@ -626,6 +627,21 @@ Redis 实时键
   └── 实时自控率 Auto_rt
 ```
 
+**节点级 KPI 聚合说明** [v6.0 新增]：
+
+代码实际提供按 `plant_node`（工厂层级节点）聚合的三级 KPI 快照表，作为装置级 KPI 的下钻补充：
+
+| 表名 | 聚合粒度 | 用途 | 主要字段 |
+|---|---|---|---|
+| `kpi_node_snapshot_hourly` | 小时 | 节点级小时 KPI 快照，供趋势分析 | `node_id`、`avg_score`、`auto_mode_rate`、`stability_rate`、`evaluated_loops`、`inconclusive_loops`、`excluded_loops`、`status` |
+| `kpi_node_snapshot_daily` | 日 | 节点级日 KPI 快照，供日报表 | 同上，按日聚合 |
+| `kpi_node_snapshot_monthly` | 月 | 节点级月 KPI 快照，供月报表与趋势对比 | 同上，按月聚合 |
+
+* **节点聚合层级**：支持工厂 / 装置 / 单元任意层级节点的聚合，每个节点均独立落库三级快照。
+* **聚合规则**：与装置级三大 KPI 一致——按回路重要等级权重加权平均（一级=3、二级=2、三级=1），剔除 INCONCLUSIVE 回路与 `include_in_evaluation=false` 回路。
+* **API 入口**：`/api/v1/performance/nodes/*`（详见 §5.3.11.1），支持节点快照查询、趋势对比、节点排行、节点总览、节点监控。
+* **下游消费**：节点级快照供工作台门户、性能评估全局看板、统计分析报表与自动报表快照调用。
+
 ##### 5.3.7.4 两类评分对比矩阵
 
 | 维度 | 回路级性能评分 | 综合性能评分 |
@@ -724,6 +740,45 @@ pdb:{loopId}:{tagGroup}:{startTime}:{endTime}:{samplingFreq}:{qualityPolicy}:{pr
 * **自定义任务**：用户在工作台或回路详情页手动触发，指定回路集合 / 时间窗 / 指标范围；结果落库 `kpi_snapshot_custom`，仅在用户侧展示，**不参与装置级聚合、不进入低效排行、不影响标准任务评分**。
 * **任务状态**：两类任务均记录 `task_status`（PENDING/RUNNING/SUCCESS/FAILED/INCONCLUSIVE），支持任务查询与重试。
 * **并发控制**：自定义任务与标准任务共享计算资源池，自定义任务优先级低于标准任务，避免影响周期性评估。
+
+##### 5.3.11.1 代码实际 API 领域概览 [v6.0 新增]
+
+代码实际暴露的 API 领域共 31 个 router 前缀（120+ 端点），与功能模块的映射关系如下：
+
+| API 领域 | 路径前缀 | 主要功能 | 对应 FDS 章节 |
+|---|---|---|---|
+| auth | `/api/v1/auth` | 登录/登出/刷新/当前用户 | §5.6.1 |
+| users | `/api/v1/users` | 用户与角色管理 | §5.6.1 |
+| loops | `/api/v1/loops` | 回路台账与监控 | §5.2.3 / §5.2.5 |
+| loop_mode_mapping | `/api/v1/loops/mode-mapping` | 回路模式映射 | §5.2.3 |
+| tags | `/api/v1/tags` | Tag 列表管理 | §5.2.1 / §5.2.4 |
+| plant-nodes | `/api/v1/plant-nodes` | 工厂层级配置 | §5.2.2 |
+| performance | `/api/v1/performance` | 性能配置、看板、排行、分析 | §5.3.1 / §5.3.4 / §5.3.5 |
+| performance/nodes | `/api/v1/performance/nodes` | 节点级 KPI（快照/趋势/排行/对比/总览/监控） | §5.3.7.3 节点级 KPI |
+| diagnosis | `/api/v1/diagnosis` | 诊断指标配置、诊断列表、波形、报告 | §5.4.1 / §5.4.2 / §5.4.3 |
+| tracker | `/api/v1/tracker`（diagnosis.py 内）| 异常跟踪子模块 | §5.4.4 |
+| diagnosis/tags | `/api/v1/diagnosis/tags` | 诊断标签管理 | §5.4.1 |
+| tuning | `/api/v1/tuning` | 整定方法/辨识/计算/仿真/任务/历史 | §5.5 |
+| tasks | `/api/v1/tasks` | 标准评估/自定义评估/历史重算/通知 | §5.3.11 |
+| dashboard | `/api/v1/dashboard` | 工作台总览/看板/实时自控率 | §5.1 |
+| realtime | `/api/v1/realtime` | 实时数据查询 | §5.2.5 回路监控 |
+| ws | `/api/v1/ws` | WebSocket 实时推送 | §5.1 / §5.2.5 |
+| audit-logs | `/api/v1/audit-logs` | 审计日志查询 | §5.6.2 |
+| reports | `/api/v1/reports` | 报表配置与生成 | §5.6.4 |
+| aas | `/api/v1/aas` | AAS 配置/同步/状态/日志/Tag 列表 | §5.2.1 |
+| configs | `/api/v1/configs` | 指标/诊断配置批量、权重模板、定级阈值 | §5.3.1 / §5.4.1 |
+| configs/loop-type-weights | `/api/v1/configs/loop-type-weights` | 控制类型权重（4 类模板） | §5.3.7.1 |
+| configs/loop-level-weights | `/api/v1/configs/loop-level-weights` | 重要等级权重 | §5.3.7.2 |
+| configs/weight-templates | `/api/v1/configs/weight-templates` | 权重模板版本化保存与回滚 | §5.3.1.2 |
+| configs/grading-thresholds | `/api/v1/configs/grading-thresholds` | 性能定级阈值（5 级） | §5.3.7.1 |
+| algorithms | `/api/v1/algorithms` | 算法独立调用（KPI 计算/诊断分析/整定计算/任务状态） | §5.3.3 / §5.4.2 / §5.5 |
+| algorithms/dataplanner | `/api/v1/algorithms/dataplanner` | 数据编排层独立调用（数据计划/数据包/缓存统计/清除缓存） | §4 数据流转 / §5.3.9 |
+| health | `/api/v1/health` | 健康检查与就绪检查 | 运维 |
+
+**说明**：
+* 上表列出代码实际暴露的全部 API 领域，部分领域（如 `algorithms` / `algorithms/dataplanner`）为算法独立调用入口，主要供内部测试与运维使用，不直接对应前端页面。
+* 实现契约 v1.0 声明"不新增 `/api/v1/configs/metrics` 与 `/api/v1/configs/diagnosis`"，但代码实际已存在这两个端点，作为指标/诊断配置的批量管理入口。v6.0 起追认其存在，实现契约 v2.0 已对齐。
+* `/api/v1/ws` 提供 WebSocket 实时推送，主要用于工作台门户与回路监控页的实时数据更新。
 
 ### 5.4 诊断中心
 

@@ -1,9 +1,9 @@
 # CLPM 接口设计规范说明书 (IDS)
 
 **文档状态**: 正式版
-**当前版本**: v4.0 (数据质量增强与算法服务扩展版)
-**发布日期**: 2026-06-26
-**设计依据**: PRD (v3.0), FDS (v3.0), ADS (v3.0), DDS (v3.0), 关键算法设计说明 (v1.0), 关键算法设计说明 v2.0
+**当前版本**: v6.0 (实现契约对齐与 3+1+8 体系统一版)
+**发布日期**: 2026-07-06
+**设计依据**: PRD (v3.1), FDS (v5.1), ADS (v4.0), DDS (v4.1), UIUX (v5.3), 实现契约 (v1.0), 关键算法设计说明 v2.0, GB/T 44693.2-2024
 
 ---
 
@@ -17,6 +17,8 @@
 | v3.1 | 2026-06-21 | 认证授权与统一响应规范补充：①新增 §5 认证与授权 API（登录/登出/Token 刷新/获取当前用户/修改密码），定义 JWT Bearer Token 方案、Access/Refresh Token 双 Token 机制、黑名单策略、权限列表枚举；②新增 §6 统一响应规范（成功/错误/分页/异步任务响应 envelope 格式、HTTP 状态码使用规则、4 位业务错误码分段定义、前端 Axios 拦截器对接规范）；③补充 ERR_TOKEN_EXPIRED/ERR_TOKEN_INVALID/ERR_INVALID_CREDENTIALS/ERR_ACCOUNT_DISABLED/ERR_TOO_MANY_ATTEMPTS/ERR_PASSWORD_SAME/ERR_USER_NOT_FOUND/ERR_USER_DUPLICATE 等认证相关错误码。 | 系统设计团队 |
 | v3.2 | 2026-06-22 | 算法对齐与算法服务接口补充（依据《关键算法设计说明》v1.0）：①统一 6 大 KPI 清单（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate），所有 KPI 接口响应包含全部 6 个 KPI 字段 + score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version；②统一诊断标签为 8 类（OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW），诊断结果结构含 label/confidence/evidence/algorithm，新增 fused_confidence（Dempster-Shafer 融合置信度）；③整定接口新增 fitting_score 字段、method 枚举（IMC/LAMBDA/ZIEGLER_NICHOLS/COHEN_COON/SIMC），响应包含 model_params/pid_params/simulation_result/fitting_score；④新增 §2.7 算法服务接口（4 个异步 API：KPI 计算/诊断分析/整定计算/任务查询）；⑤新增 §2.8 指标配置接口与 §2.9 诊断配置接口（批量 GET/PUT，calc_method/threshold JSONB/control_type）；⑥对齐 C1-C7 跨文档差距修正。 | 系统设计团队 |
 | v4.0 | 2026-06-26 | 数据质量增强与算法服务扩展（依据《关键算法设计说明》v2.0）：①§2.4.5 历史数据接口扩展，新增 tagGroup（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）/qualityPolicy（KEEP_ALL_WITH_VALIDITY/KEEP_ALL）/aggregationPolicy（LAST/MEAN/MAX）参数，数据点增加 valid 标记；②§2.7.1 KPI 计算接口增加数据血缘（sampling_freq/quality_policy/tag_group/valid_rate）与 confidence_level（A/B/C/D/E），score 增加 data_lineage JSON 对象；③新增 §2.7.5 DataPlanner 内部接口（plan/bundle，仅供算法服务调用，不对外暴露）；④新增 §2.7.6 任务管理接口（standard/custom 评估任务触发、任务状态/列表查询）；⑤§2.4 新增诊断标签接口（标签列表/回路标签/标签处理）；⑥§4.4 PV 质量码处理约定从"Bad 对应 pv=null"改为"保留所有点，Bad 对应 valid=false"，波形 Good 实线/Bad 灰色虚线/Uncertain 黄色虚线，引入 Metric Validity Mask；⑦§2.8 指标配置从 6 大 KPI 升级为 3+1+8 结构（3 核心指标 + 1 投用指标 + 8 辅助诊断指标），核心指标权重配置、投用指标作为折扣因子、辅助诊断指标不参与权重配置。 | 系统设计团队 |
+| v5.0 | 2026-07-04 | 对齐 FDS v5.1 与 DDS v4.1：①引用文档版本同步更新至 FDS v5.1/DDS v4.1/ADS v4.0/UIUX v5.3；②新增对实现契约 v1.0 的引用；③补全 metric_config 表 category/is_discount_factor/grading_thresholds 字段；④补全 loop_ledger 表 control_type/importance_level/include_in_evaluation 字段；⑤补全 unit_kpi_summary 表 excluded_loops/status 字段；⑥数据血缘结构修正为 5 独立字段+data_lineage JSONB（对齐 DDS v6.0 §3.5）；⑦kpi_snapshot_custom.stability_rate 修正为 steady_rate。 | 系统设计团队 |
+| v6.0 | 2026-07-06 | 实现契约对齐与 3+1+8 体系统一：①统一 API 路径与代码一致（`/api/v1/system/users`→`/api/v1/users`、`/api/v1/system/audit`→`/api/v1/audit-logs`、`/api/v1/system/reports`→`/api/v1/reports`、`/api/v1/tracker/*`→`/api/v1/diagnosis/tracker/*`）；②统一角色枚举为 5 角色（EXECUTOR→IC_ENGINEER、COLLABORATOR→PE_ENGINEER、VIEWER→SPONSOR，补全 ADMIN/EXPERT）；③统一状态机枚举（Action Tracker: PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED；Loop: READY/PARTIAL/INACTIVE；Tuning: DRAFT/RUNNING/COMPLETED/ROLLED_BACK；KPI 快照: SUCCESS/PARTIAL/INCONCLUSIVE；PV Quality: GOOD/BAD/UNCERTAIN）；④统一 KPI 体系为 3+1+8（修复 §2.1/§2.3 与 §2.8 内部矛盾），补全 effective_auto_rate 作为折扣因子 R；⑤统一 scoreWeights 结构为 3 核心指标权重（accuracy/fast/steady，权重和=100）+ R 折扣因子（不纳入权重和）；⑥可信度 D 级阈值统一为 20%~60%（对齐 FDS v5.1）；⑦补全 ERR_DISCOUNT_FACTOR_READONLY/ERR_AUXILIARY_METRIC_WEIGHT_FORBIDDEN 错误码；⑧新增对 GB/T 44693.2-2024 国标的引用；⑨新增"数据模型映射"与"时序数据存储"通用约定小节。 | 系统设计团队 |
 
 ---
 
@@ -26,7 +28,7 @@
 
 * **RESTful 风格**：资源导向设计，标准 HTTP 方法 (GET, POST, PUT, PATCH, DELETE)。资源路径统一以 `/api/v1/` 为前缀。
 * **防超载设计**：对于时序波形数据的查询，必须强制提供时间窗参数，并默认执行降采样（LTTB）。单次返回数据点数不得超过 `maxPoints` 上限。
-* **安全与权限**：所有接口需在 Header 中携带 `Authorization: Bearer <JWT>`，网关层执行 RBAC 校验。权限层级分为：查看层（Sponsor）、协同层（工艺/设备工程师）、执行层（仪控工程师）、管理层（系统管理员）、服务层（外部专家）。
+* **安全与权限**：所有接口需在 Header 中携带 `Authorization: Bearer <JWT>`，网关层执行 RBAC 校验。角色枚举对齐实现契约 v2.0 §4.5，共 5 个角色：`ADMIN`（系统管理员）/`IC_ENGINEER`（仪控工程师）/`PE_ENGINEER`（工艺/设备工程师）/`EXPERT`（外部专家）/`SPONSOR`（生产技术 Sponsor）。权限层级分为：查看层（SPONSOR）、协同层（PE_ENGINEER）、执行层（IC_ENGINEER）、管理层（ADMIN）、服务层（EXPERT）。
 * **绝对只读边界**：系统与 DCS/OPC 之间仅建立单向只读连接，API 设计中**严禁**出现任何针对 DCS OPC 节点的 `Write` / `Set` 语义接口。
 * **不掩盖数据缺失**：数据不足/无效时通过 `INCONCLUSIVE` 状态显式反馈，严禁以 0 分或空值掩盖。
 * **产品化配置 API 原则**：
@@ -65,38 +67,9 @@
       },
       "kpiCards": [
         {
-          "metricKey": "good_value_rate",
-          "metricName": "好值率",
-          "value": 96.8,
-          "unit": "%",
-          "delta": 0.5,
-          "trend": "UP",
-          "miniTrend": [96.0, 96.3, 96.5, 96.8],
-          "status": "GOOD"
-        },
-        {
-          "metricKey": "auto_mode_rate",
-          "metricName": "自控率",
-          "value": 92.5,
-          "unit": "%",
-          "delta": 1.2,
-          "trend": "UP",
-          "miniTrend": [91.0, 91.5, 92.0, 92.5],
-          "status": "GOOD"
-        },
-        {
-          "metricKey": "steady_rate",
-          "metricName": "稳定率",
-          "value": 85.3,
-          "unit": "%",
-          "delta": -0.8,
-          "trend": "DOWN",
-          "miniTrend": [86.1, 85.9, 85.5, 85.3],
-          "status": "WARNING"
-        },
-        {
           "metricKey": "accuracy_rate",
           "metricName": "准确率",
+          "category": "CORE",
           "value": 88.1,
           "unit": "%",
           "delta": 0.3,
@@ -105,23 +78,37 @@
           "status": "GOOD"
         },
         {
-          "metricKey": "oscillation_rate",
-          "metricName": "振荡率",
-          "value": 12.4,
+          "metricKey": "fast_rate",
+          "metricName": "快速率",
+          "category": "CORE",
+          "value": 76.5,
           "unit": "%",
-          "delta": -1.5,
+          "delta": 0.8,
+          "trend": "UP",
+          "miniTrend": [75.0, 75.5, 76.0, 76.5],
+          "status": "FAIR"
+        },
+        {
+          "metricKey": "steady_rate",
+          "metricName": "稳定率",
+          "category": "CORE",
+          "value": 85.3,
+          "unit": "%",
+          "delta": -0.8,
           "trend": "DOWN",
-          "miniTrend": [14.0, 13.5, 13.0, 12.4],
+          "miniTrend": [86.1, 85.9, 85.5, 85.3],
           "status": "WARNING"
         },
         {
-          "metricKey": "saturation_rate",
-          "metricName": "饱和率",
-          "value": 5.2,
+          "metricKey": "effective_auto_rate",
+          "metricName": "有效自控率",
+          "category": "COMMISSIONING",
+          "isDiscountFactor": true,
+          "value": 92.5,
           "unit": "%",
-          "delta": -0.3,
-          "trend": "DOWN",
-          "miniTrend": [6.0, 5.8, 5.5, 5.2],
+          "delta": 1.2,
+          "trend": "UP",
+          "miniTrend": [91.0, 91.5, 92.0, 92.5],
           "status": "GOOD"
         },
         {
@@ -136,14 +123,14 @@
         }
       ],
       "kpiSummary": {
-        "good_value_rate": 96.8,
-        "auto_mode_rate": 92.5,
-        "steady_rate": 85.3,
         "accuracy_rate": 88.1,
-        "oscillation_rate": 12.4,
-        "saturation_rate": 5.2,
+        "fast_rate": 76.5,
+        "steady_rate": 85.3,
+        "effective_auto_rate": 92.5,
+        "discountFactor": 0.925,
         "score": 78.6,
         "status": "WARNING",
+        "snapshotStatus": "SUCCESS",
         "algorithm_version": "KPI_CALC_v1.0"
       },
       "badActors": [
@@ -173,13 +160,13 @@
       "combinedTrend": {
         "granularity": "day",
         "timestamps": ["2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17"],
-        "autoModeRate": [91.0, 91.5, 92.0, 92.5],
+        "effectiveAutoRate": [91.0, 91.5, 92.0, 92.5],
         "steadyRate": [86.1, 85.9, 85.5, 85.3]
       }
     }
   }
   ```
-* **说明**：KPI 卡片固定返回 7 项（6 大 KPI + 综合评分），6 大 KPI 严格对齐《关键算法设计说明》§4.0：好值率/自控率/稳定率/准确率/振荡率/饱和率；每卡 `status` 枚举值为 `GOOD`/`WARNING`/`POOR`/`INCONCLUSIVE`；`kpiSummary` 汇总 6 大 KPI 数值 + `score`（综合评分，0-100）+ `status`（整体状态）+ `algorithm_version`（算法版本号，格式 `<算法类别>v<主版本>.<次版本>`）；`badActors` 默认返回 Top 10 低效回路；`loopTrendSummary` 返回选中回路近 24h 趋势摘要；数据为空时对应字段返回 `null` 或空数组，前端展示"--"。
+* **说明**：KPI 卡片采用 3+1+8 体系（对齐 §2.8 与 FDS v6.0 §1.3）：固定返回 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ 综合评分（score），辅助诊断指标通过 §2.3.1 单独查询；每卡 `status` 枚举值为 5 级性能定级（`EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`，对齐 FDS v6.0 §1.3）；`kpiSummary` 汇总 3 核心指标 + 1 投用指标 + `discountFactor`（折扣因子，0-1）+ `score`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE）+ `algorithm_version`；`badActors` 默认返回 Top 10 低效回路；`loopTrendSummary` 返回选中回路近 24h 趋势摘要；数据为空时对应字段返回 `null` 或空数组，前端展示"--"。
 
 ---
 
@@ -349,7 +336,7 @@
   * `plantNodeId` (UUID, optional): 按装置/单元筛选
   * `controlMode` (String, optional): 按控制方式筛选，枚举值 `Manual`, `Auto`, `Cascade`
   * `isActive` (Boolean, optional): 按启用状态筛选
-  * `status` (String, optional): 按回路状态筛选，枚举值 `Ready`, `Partial`, `INCONCLUSIVE`
+  * `status` (String, optional): 按回路状态筛选，枚举值 `READY`, `PARTIAL`, `INACTIVE`
   * `keyword` (String, optional): 按回路位号/描述模糊查询
   * `page` (Integer, default=1): 页码
   * `pageSize` (Integer, default=20): 每页条数，最大 100
@@ -366,7 +353,7 @@
           "unitName": "常减压装置-单元A",
           "controlMode": "Auto",
           "isActive": true,
-          "status": "Ready",
+          "status": "READY",
           "score": 78.6,
           "lastScoreAt": "2026-06-20T09:00:00Z",
           "tagMappingStatus": {
@@ -386,25 +373,25 @@
     }
   }
   ```
-* **说明**：`controlMode` 从 MODE tag 只读读取；`tagMappingStatus` 标识 7 个 OPC tag 的关联完整性，PV/SP/OP/MODE 任一缺失时 `status` 为 `Partial`。
+* **说明**：`controlMode` 从 MODE tag 只读读取；`tagMappingStatus` 标识 7 个 OPC tag 的关联完整性，PV/SP/OP/MODE 任一缺失时 `status` 为 `PARTIAL`；`status` 枚举值对齐实现契约 v2.0 §4.6：`READY`（就绪，必填 tag 完整）/`PARTIAL`（部分配置，必填 tag 缺失）/`INACTIVE`（已停用，isActive=false）。
 
 #### 2.2.8 创建回路 (Create Loop)
 
 * **URL**: `POST /api/v1/loops`
-* **权限**: 执行层及以上（仪控工程师/系统管理员）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN）
 * **Request Body**:
   ```json
   {
     "tagName": "101-FC-1024",
     "description": "常减压装置塔顶温度控制",
     "unitId": "uuid-yyy",
+    "controlType": "STABLE",
+    "importanceLevel": "MEDIUM",
+    "includeInEvaluation": true,
     "scoreWeights": {
-      "good_value_rate": 20,
-      "auto_mode_rate": 20,
-      "steady_rate": 20,
-      "accuracy_rate": 15,
-      "oscillation_rate": 15,
-      "saturation_rate": 10
+      "accuracy_rate": 40,
+      "fast_rate": 30,
+      "steady_rate": 30
     },
     "isActive": true,
     "remark": "新增回路，待关联 tag"
@@ -418,15 +405,20 @@
       "tagName": "101-FC-1024",
       "description": "常减压装置塔顶温度控制",
       "unitId": "uuid-yyy",
-      "status": "Partial",
+      "controlType": "STABLE",
+      "importanceLevel": "MEDIUM",
+      "includeInEvaluation": true,
+      "status": "PARTIAL",
       "isActive": true,
       "scoreWeights": {
-        "good_value_rate": 20,
-        "auto_mode_rate": 20,
-        "steady_rate": 20,
-        "accuracy_rate": 15,
-        "oscillation_rate": 15,
-        "saturation_rate": 10
+        "accuracy_rate": 40,
+        "fast_rate": 30,
+        "steady_rate": 30
+      },
+      "commissioningMetric": {
+        "metricKey": "effective_auto_rate",
+        "isDiscountFactor": true,
+        "discountFactor": 1.0
       },
       "remark": "新增回路，待关联 tag",
       "createdAt": "2026-06-20T10:00:00Z",
@@ -434,7 +426,7 @@
     }
   }
   ```
-* **说明**：回路位号在所属单元内唯一；新建回路默认状态为 `Partial`（待关联 tag）；`scoreWeights` 可不传，缺省继承自性能指标配置默认值，权重总和须为 100%，否则返回 `ERR_METRIC_WEIGHT_SUM`。
+* **说明**：回路位号在所属单元内唯一；新建回路默认状态为 `PARTIAL`（待关联 tag）；`scoreWeights` 仅含 3 项核心指标（accuracy_rate/fast_rate/steady_rate，权重和=100），投用指标 `effective_auto_rate` 作为折扣因子 R 不纳入权重和（对齐 §2.8 3+1+8 体系）；`scoreWeights` 可不传，缺省继承自性能指标配置默认值，权重总和须为 100%，否则返回 `ERR_METRIC_WEIGHT_SUM`；`controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`；`importanceLevel` 枚举值 `HIGH`/`MEDIUM`/`LOW`；`includeInEvaluation` 为 `false` 时该回路不参与装置级 KPI 汇总。
 
 #### 2.2.9 获取回路详情 (Get Loop Detail)
 
@@ -452,15 +444,20 @@
         "description": "常减压装置进料流量控制",
         "unitId": "uuid-yyy",
         "unitName": "常减压装置-单元A",
+        "controlType": "STABLE",
+        "importanceLevel": "HIGH",
+        "includeInEvaluation": true,
         "isActive": true,
-        "status": "Ready",
+        "status": "READY",
         "scoreWeights": {
-          "good_value_rate": 20,
-          "auto_mode_rate": 20,
-          "steady_rate": 20,
-          "accuracy_rate": 15,
-          "oscillation_rate": 15,
-          "saturation_rate": 10
+          "accuracy_rate": 40,
+          "fast_rate": 30,
+          "steady_rate": 30
+        },
+        "commissioningMetric": {
+          "metricKey": "effective_auto_rate",
+          "isDiscountFactor": true,
+          "discountFactor": 0.92
         },
         "remark": "重点监控回路",
         "createdAt": "2026-06-01T10:00:00Z",
@@ -496,7 +493,7 @@
 #### 2.2.10 更新回路 (Update Loop)
 
 * **URL**: `PUT /api/v1/loops/{loopId}`
-* **权限**: 执行层及以上（仪控工程师/系统管理员）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN）
 * **Path Parameters**:
   * `loopId` (UUID, required): 回路 ID
 * **Request Body**:
@@ -504,12 +501,9 @@
   {
     "description": "常减压装置进料流量控制（更新描述）",
     "scoreWeights": {
-      "good_value_rate": 25,
-      "auto_mode_rate": 20,
-      "steady_rate": 20,
-      "accuracy_rate": 15,
-      "oscillation_rate": 10,
-      "saturation_rate": 10
+      "accuracy_rate": 45,
+      "fast_rate": 25,
+      "steady_rate": 30
     },
     "isActive": true,
     "remark": "更新备注：权重调整"
@@ -522,12 +516,9 @@
       "loopId": "uuid-xxx",
       "description": "常减压装置进料流量控制（更新描述）",
       "scoreWeights": {
-        "good_value_rate": 25,
-        "auto_mode_rate": 20,
-        "steady_rate": 20,
-        "accuracy_rate": 15,
-        "oscillation_rate": 10,
-        "saturation_rate": 10
+        "accuracy_rate": 45,
+        "fast_rate": 25,
+        "steady_rate": 30
       },
       "isActive": true,
       "remark": "更新备注：权重调整",
@@ -536,12 +527,12 @@
     }
   }
   ```
-* **说明**：仅支持更新扩展配置（描述/评分权重/启用状态/备注），回路位号与所属单元不可变更；权重总和须为 100%，否则返回 `ERR_METRIC_WEIGHT_SUM`；变更记录审计日志。
+* **说明**：仅支持更新扩展配置（描述/评分权重/启用状态/备注），回路位号与所属单元不可变更；`scoreWeights` 仅含 3 项核心指标（accuracy_rate/fast_rate/steady_rate，权重和=100），权重总和须为 100%，否则返回 `ERR_METRIC_WEIGHT_SUM`；变更记录审计日志。
 
 #### 2.2.11 删除回路 (Delete Loop)
 
 * **URL**: `DELETE /api/v1/loops/{loopId}`
-* **权限**: 管理层（系统管理员）
+* **权限**: 管理层（ADMIN）
 * **Path Parameters**:
   * `loopId` (UUID, required): 回路 ID
 * **Response (200 OK)**:
@@ -656,7 +647,7 @@
 #### 2.2.13 更新回路 Tag 关联 (Update Loop Tag Mapping)
 
 * **URL**: `PUT /api/v1/loops/{loopId}/tags`
-* **权限**: 执行层及以上（仪控工程师/系统管理员）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN）
 * **Path Parameters**:
   * `loopId` (UUID, required): 回路 ID
 * **Request Body**:
@@ -676,7 +667,7 @@
   {
     "data": {
       "loopId": "uuid-xxx",
-      "status": "Ready",
+      "status": "READY",
       "tags": [
         { "role": "PV", "tagId": "uuid-pv", "tagName": "101-FC-1023.PV", "required": true, "associated": true },
         { "role": "SP", "tagId": "uuid-sp", "tagName": "101-FC-1023.SP", "required": true, "associated": true },
@@ -693,7 +684,7 @@
   ```
 * **说明**：
   * 请求体为 7 个 tag 角色与 `tag_registry` 中 tagId 的映射，未关联的角色传 `null`。
-  * PV/SP/OP/MODE 为必填 tag，缺失时回路状态变更为 `Partial` 并标红提示，但 API 调用本身成功（不报错），由前端根据 `status` 提示。
+  * PV/SP/OP/MODE 为必填 tag，缺失时回路状态变更为 `PARTIAL` 并标红提示，但 API 调用本身成功（不报错），由前端根据 `status` 提示。
   * 若 tagId 在 `tag_registry` 中不存在，返回 `ERR_TAG_NOT_FOUND`。
   * 若请求体中未提供任何必填 tag（pv/sp/op/mode 全为 null 或缺失），返回 `ERR_LOOP_TAG_REQUIRED`。
   * Tag 关联变更记录审计日志。
@@ -736,21 +727,20 @@
         "pvQuality": ["Good", "Good", "Bad"]
       },
       "kpiSummary": {
-        "good_value_rate": 96.8,
-        "auto_mode_rate": 92.5,
-        "steady_rate": 85.3,
         "accuracy_rate": 88.1,
-        "oscillation_rate": 12.4,
-        "saturation_rate": 5.2,
+        "fast_rate": 76.5,
+        "steady_rate": 85.3,
+        "effective_auto_rate": 92.5,
         "score": 78.6,
         "status": "WARNING",
+        "snapshotStatus": "SUCCESS",
         "algorithm_version": "KPI_CALC_v1.0",
         "calculatedAt": "2026-06-20T09:00:00Z"
       }
     }
   }
   ```
-* **说明**：`currentValues` 为当前最新值快照；`trend` 为趋势数据，`pvQuality` 数组与 `pv` 数组等长，仅 PV 携带质量码；`kpiSummary` 包含全部 6 大 KPI（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate）+ score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version。回路处于 `INCONCLUSIVE` 时，`kpiSummary.status` 为 `INCONCLUSIVE`，波形区灰色虚线断线。
+* **说明**：`currentValues` 为当前最新值快照；`trend` 为趋势数据，`pvQuality` 数组与 `pv` 数组等长，仅 PV 携带质量码；`kpiSummary` 包含 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ `score`（综合评分，0-100）+ `status`（5 级性能定级：EXCELLENT/GOOD/FAIR/WARNING/POOR）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE，对齐实现契约 v2.0 §4.6）+ `algorithm_version`。回路处于 `INACTIVE` 或数据不足时，`snapshotStatus` 为 `INCONCLUSIVE`，波形区灰色虚线断线。
 
 #### 2.2.15 回路监控列表 (List Loop Monitor)
 
@@ -783,7 +773,7 @@
           },
           "controlMode": "Auto",
           "score": 78.6,
-          "status": "Ready",
+          "status": "READY",
           "isActive": true,
           "readAt": "2026-06-20T10:00:00Z"
         }
@@ -794,7 +784,7 @@
     }
   }
   ```
-* **说明**：列表视图与卡片视图返回数据结构一致，仅前端渲染方式不同；回路处于 `Partial` 时卡片置灰，悬浮提示缺失项。
+* **说明**：列表视图与卡片视图返回数据结构一致，仅前端渲染方式不同；回路处于 `PARTIAL` 时卡片置灰，悬浮提示缺失项；`status` 枚举值对齐实现契约 v2.0 §4.6：`READY`/`PARTIAL`/`INACTIVE`。
 
 ---
 
@@ -820,49 +810,38 @@
       },
       "kpiCards": [
         {
-          "metricKey": "good_value_rate",
-          "metricName": "好值率",
-          "value": 96.8,
-          "unit": "%",
-          "status": "GOOD",
-          "algorithmVersion": "KPI_CALC_v1.0"
-        },
-        {
-          "metricKey": "auto_mode_rate",
-          "metricName": "自控率",
-          "value": 92.5,
-          "unit": "%",
-          "status": "GOOD",
-          "algorithmVersion": "KPI_CALC_v1.0"
-        },
-        {
-          "metricKey": "steady_rate",
-          "metricName": "稳定率",
-          "value": 85.3,
-          "unit": "%",
-          "status": "WARNING",
-          "algorithmVersion": "KPI_CALC_v1.0"
-        },
-        {
           "metricKey": "accuracy_rate",
           "metricName": "准确率",
+          "category": "CORE",
           "value": 88.1,
           "unit": "%",
           "status": "GOOD",
           "algorithmVersion": "KPI_CALC_v1.0"
         },
         {
-          "metricKey": "oscillation_rate",
-          "metricName": "振荡率",
-          "value": 12.4,
+          "metricKey": "fast_rate",
+          "metricName": "快速率",
+          "category": "CORE",
+          "value": 76.5,
+          "unit": "%",
+          "status": "FAIR",
+          "algorithmVersion": "KPI_CALC_v1.0"
+        },
+        {
+          "metricKey": "steady_rate",
+          "metricName": "稳定率",
+          "category": "CORE",
+          "value": 85.3,
           "unit": "%",
           "status": "WARNING",
           "algorithmVersion": "KPI_CALC_v1.0"
         },
         {
-          "metricKey": "saturation_rate",
-          "metricName": "饱和率",
-          "value": 5.2,
+          "metricKey": "effective_auto_rate",
+          "metricName": "有效自控率",
+          "category": "COMMISSIONING",
+          "isDiscountFactor": true,
+          "value": 92.5,
           "unit": "%",
           "status": "GOOD",
           "algorithmVersion": "KPI_CALC_v1.0"
@@ -877,14 +856,14 @@
         }
       ],
       "kpiSummary": {
-        "good_value_rate": 96.8,
-        "auto_mode_rate": 92.5,
-        "steady_rate": 85.3,
         "accuracy_rate": 88.1,
-        "oscillation_rate": 12.4,
-        "saturation_rate": 5.2,
+        "fast_rate": 76.5,
+        "steady_rate": 85.3,
+        "effective_auto_rate": 92.5,
+        "discountFactor": 0.925,
         "score": 78.6,
         "status": "WARNING",
+        "snapshotStatus": "SUCCESS",
         "algorithm_version": "KPI_CALC_v1.0"
       },
       "steadyRateTrend": {
@@ -900,7 +879,7 @@
     }
   }
   ```
-* **说明**：KPI 卡片固定返回 7 项（6 大 KPI + 综合评分），6 大 KPI 严格对齐《关键算法设计说明》§4.0：好值率/自控率/稳定率/准确率/振荡率/饱和率；每卡 `status` 枚举值为 `GOOD`/`WARNING`/`POOR`/`INCONCLUSIVE`，对应绿/黄/红/灰；`algorithmVersion` 标识该 KPI 计算所用的算法版本号；`kpiSummary` 汇总 6 大 KPI + score + status + algorithm_version；指标停用后对应卡片 `status` 为 `INCONCLUSIVE`；`partialWarning` 在存在 `INCONCLUSIVE` 或 `Partial` 回路时激活，强制显示黄色警告横幅。
+* **说明**：KPI 卡片采用 3+1+8 体系（对齐 §2.8 与 FDS v6.0 §1.3）：固定返回 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ 综合评分（score），辅助诊断指标通过 §2.3.3 单独查询；每卡 `status` 枚举值为 5 级性能定级（`EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`，对齐 FDS v6.0 §1.3）；`kpiSummary` 汇总 3 核心指标 + 1 投用指标 + `discountFactor`（折扣因子，0-1）+ `score`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE，对齐实现契约 v2.0 §4.6）+ `algorithm_version`；指标停用后对应卡片 `status` 为 `INCONCLUSIVE`；`partialWarning` 在存在 `INCONCLUSIVE` 或 `PARTIAL` 回路时激活，强制显示黄色警告横幅。
 
 #### 2.3.2 获取低效回路排行 (Get Performance Ranking)
 
@@ -910,7 +889,7 @@
   * `plantNodeId` (UUID, optional): 按装置/单元过滤
   * `timeWindow` (String, required): 时间窗，枚举值 `today`, `yesterday`, `last_7_days`, `last_30_days`
   * `limit` (Integer, default=10): 返回条数，最大 100
-  * `sortBy` (String, default=`score`): 排序字段，枚举值 `score`, `steady_rate`, `good_value_rate`
+  * `sortBy` (String, default=`score`): 排序字段，枚举值 `score`, `steady_rate`, `accuracy_rate`, `fast_rate`
   * `sortOrder` (String, default=`asc`): 排序方向，枚举值 `asc`, `desc`
 * **Response (200 OK)**:
   ```json
@@ -922,13 +901,13 @@
         "tagName": "101-FC-1023",
         "unitName": "常减压装置-单元A",
         "compositeScore": 45.2,
-        "goodValueRate": 75.0,
-        "autoModeRate": 80.0,
-        "steadyRate": 60.5,
         "accuracyRate": 65.0,
-        "oscillationRate": 35.0,
-        "saturationRate": 8.0,
+        "fastRate": 50.5,
+        "steadyRate": 60.5,
+        "effectiveAutoRate": 80.0,
+        "discountFactor": 0.80,
         "status": "POOR",
+        "snapshotStatus": "SUCCESS",
         "algorithmVersion": "KPI_CALC_v1.0",
         "preDiagnosis": "疑似阀门粘滞",
         "actionStatus": "PENDING"
@@ -936,7 +915,7 @@
     ]
   }
   ```
-* **说明**：默认按评分升序返回 Top N 低效回路；响应包含全部 6 大 KPI 字段 + score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithmVersion；`actionStatus` 来自异常跟踪子模块（待处理/处理中/已实施/已忽略）。
+* **说明**：默认按评分升序返回 Top N 低效回路；响应包含 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate）+ `discountFactor`（折扣因子）+ `compositeScore`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级：EXCELLENT/GOOD/FAIR/WARNING/POOR）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE）+ `algorithmVersion`；`actionStatus` 来自异常跟踪子模块（待处理/处理中/已实施/已忽略，对齐实现契约 v2.0 §4.6）。
 
 #### 2.3.3 获取性能指标配置列表 (List Performance Metrics)
 
@@ -946,46 +925,121 @@
   ```json
   {
     "data": {
-      "items": [
+      "coreMetrics": [
         {
-          "metricId": "uuid-xxx",
-          "metricKey": "good_value_rate",
-          "metricName": "好值率",
-          "formula": "sum(quality==Good) / count(*) * 100",
-          "weight": 20,
-          "threshold": {
-            "min": 0,
-            "max": 100,
-            "alert": 80
+          "metricId": "uuid-c01",
+          "metricKey": "accuracy_rate",
+          "metricName": "准确率",
+          "category": "CORE",
+          "formula": "duration(abs(pv - sp) <= pv_range * 0.05) / duration(*) * 100",
+          "weight": 40,
+          "threshold": { "min": 0, "max": 100, "alert": 80 },
+          "gradingThresholds": {
+            "EXCELLENT": 95,
+            "GOOD": 85,
+            "FAIR": 75,
+            "WARNING": 65,
+            "POOR": 0
           },
           "controlType": "STABLE",
           "isEnabled": true,
-          "description": "剔除通讯中断、超量程、冻结等无效数据后的时长占比，基于 PV tag 质量码统计",
+          "description": "PV 偏离 SP 在 5% 量程内的时长占比（核心指标）",
           "algorithmVersion": "KPI_CALC_v1.0",
-          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedAt": "2026-06-25T10:00:00Z",
           "updatedBy": "admin"
         },
         {
-          "metricId": "uuid-yyy",
-          "metricKey": "auto_mode_rate",
-          "metricName": "自控率",
-          "formula": "sum(mode in [Auto, Cascade]) / count(*) * 100",
-          "weight": 20,
-          "threshold": { "min": 0, "max": 100, "alert": 90 },
+          "metricId": "uuid-c02",
+          "metricKey": "fast_rate",
+          "metricName": "快速率",
+          "category": "CORE",
+          "formula": "duration(rise_time <= rise_time_threshold) / duration(*) * 100",
+          "weight": 30,
+          "threshold": { "min": 0, "max": 100, "alert": 75 },
+          "gradingThresholds": {
+            "EXCELLENT": 90, "GOOD": 80, "FAIR": 70, "WARNING": 60, "POOR": 0
+          },
+          "controlType": "FAST",
+          "isEnabled": true,
+          "description": "设定值变化后 PV 响应速度达标的时长占比（核心指标）",
+          "algorithmVersion": "KPI_CALC_v1.0",
+          "updatedAt": "2026-06-25T10:00:00Z",
+          "updatedBy": "admin"
+        },
+        {
+          "metricId": "uuid-c03",
+          "metricKey": "steady_rate",
+          "metricName": "稳定率",
+          "category": "CORE",
+          "formula": "duration(abs(pv - sp) <= pv_range * 0.02) / duration(*) * 100",
+          "weight": 30,
+          "threshold": { "min": 0, "max": 100, "alert": 85 },
+          "gradingThresholds": {
+            "EXCELLENT": 95, "GOOD": 85, "FAIR": 75, "WARNING": 65, "POOR": 0
+          },
           "controlType": "STABLE",
           "isEnabled": true,
-          "description": "控制器处于自动或串级模式的时长占比",
+          "description": "PV 偏离 SP 在 2% 量程内的时长占比（核心指标）",
           "algorithmVersion": "KPI_CALC_v1.0",
-          "updatedAt": "2026-06-19T10:00:00Z",
+          "updatedAt": "2026-06-25T10:00:00Z",
           "updatedBy": "admin"
         }
       ],
-      "totalWeight": 100,
-      "weightValid": true
+      "commissioningMetric": {
+        "metricId": "uuid-m01",
+        "metricKey": "effective_auto_rate",
+        "metricName": "有效自控率",
+        "category": "COMMISSIONING",
+        "isDiscountFactor": true,
+        "formula": "sum(mode in [Auto, Cascade] AND pvQuality == Good) / count(*) * 100",
+        "weight": null,
+        "threshold": { "min": 0, "max": 100, "alert": 90 },
+        "gradingThresholds": {
+          "EXCELLENT": 95, "GOOD": 85, "FAIR": 70, "WARNING": 50, "POOR": 0
+        },
+        "controlType": "STABLE",
+        "isEnabled": true,
+        "description": "控制器处于自动/串级模式且 PV 质量良好的时长占比，作为综合评分折扣因子（投用指标）",
+        "algorithmVersion": "KPI_CALC_v1.0",
+        "updatedAt": "2026-06-25T10:00:00Z",
+        "updatedBy": "admin"
+      },
+      "auxiliaryDiagnosticMetrics": [
+        {
+          "metricId": "uuid-a01",
+          "metricKey": "good_value_rate",
+          "metricName": "好值率",
+          "category": "AUXILIARY_DIAGNOSTIC",
+          "weight": null,
+          "isEnabled": true,
+          "algorithmVersion": "KPI_CALC_v1.0"
+        },
+        {
+          "metricId": "uuid-a02",
+          "metricKey": "oscillation_rate",
+          "metricName": "振荡率",
+          "category": "AUXILIARY_DIAGNOSTIC",
+          "weight": null,
+          "isEnabled": true,
+          "algorithmVersion": "KPI_CALC_v1.0"
+        },
+        {
+          "metricId": "uuid-a03",
+          "metricKey": "saturation_rate",
+          "metricName": "饱和率",
+          "category": "AUXILIARY_DIAGNOSTIC",
+          "weight": null,
+          "isEnabled": true,
+          "algorithmVersion": "KPI_CALC_v1.0"
+        }
+      ],
+      "coreTotalWeight": 100,
+      "coreWeightValid": true,
+      "structureVersion": "3+1+8"
     }
   }
   ```
-* **说明**：返回 6 大核心 KPI（好值率/自控率/稳定率/准确率/振荡率/饱和率）的配置；`threshold` 字段为 JSONB 对象 `{min: number, max: number, alert: string}`（对齐《关键算法设计说明》§10.1 C3 修正）；`controlType` 枚举值为 `STABLE`（稳定型）/`SLOW`（慢速型）/`FAST`（快速型）/`LOGIC`（逻辑型），用于权重模板选择（对齐§4.7.3 默认权重配置）；`algorithmVersion` 标识算法版本号；`totalWeight` 标识当前权重总和，`weightValid` 标识是否为 100%。
+* **说明**：返回 3+1+8 体系指标配置（对齐 §2.8 与 FDS v6.0 §1.3）：3 项核心指标（CORE）参与权重配置 + 1 项投用指标（COMMISSIONING）作为折扣因子 + 8 项辅助诊断指标（AUXILIARY_DIAGNOSTIC）不参与权重配置；`category` 枚举值 `CORE`/`COMMISSIONING`/`AUXILIARY_DIAGNOSTIC`；`gradingThresholds` 为 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR，对齐 FDS v6.0 §1.3）；投用指标的 `isDiscountFactor=true`、`weight=null`；`threshold` 字段为 JSONB 对象 `{min: number, max: number, alert: number}`；`controlType` 枚举值为 `STABLE`/`SLOW`/`FAST`/`LOGIC`，用于权重模板选择（对齐§4.7.3 默认权重配置）；`coreTotalWeight` 标识核心指标权重总和，`coreWeightValid` 标识是否为 100%；辅助诊断指标完整列表见 §2.8.1。
 
 #### 2.3.4 更新性能指标配置 (Update Performance Metric)
 
@@ -996,33 +1050,44 @@
 * **Request Body**:
   ```json
   {
-    "formula": "sum(quality==Good) / count(*) * 100",
-    "weight": 25,
+    "formula": "duration(abs(pv - sp) <= pv_range * 0.05) / duration(*) * 100",
+    "weight": 45,
     "threshold": {
       "min": 0,
       "max": 100,
       "alert": 85
     },
+    "gradingThresholds": {
+      "EXCELLENT": 95,
+      "GOOD": 85,
+      "FAIR": 75,
+      "WARNING": 65,
+      "POOR": 0
+    },
     "controlType": "STABLE",
     "isEnabled": true,
-    "description": "更新好值率公式与权重"
+    "description": "更新准确率公式与权重"
   }
   ```
 * **Response (200 OK)**:
   ```json
   {
     "data": {
-      "metricId": "uuid-xxx",
-      "metricKey": "good_value_rate",
-      "metricName": "好值率",
-      "formula": "sum(quality==Good) / count(*) * 100",
-      "weight": 25,
+      "metricId": "uuid-c01",
+      "metricKey": "accuracy_rate",
+      "metricName": "准确率",
+      "category": "CORE",
+      "formula": "duration(abs(pv - sp) <= pv_range * 0.05) / duration(*) * 100",
+      "weight": 45,
       "threshold": { "min": 0, "max": 100, "alert": 85 },
+      "gradingThresholds": {
+        "EXCELLENT": 95, "GOOD": 85, "FAIR": 75, "WARNING": 65, "POOR": 0
+      },
       "controlType": "STABLE",
       "isEnabled": true,
-      "description": "更新好值率公式与权重",
+      "description": "更新准确率公式与权重",
       "algorithmVersion": "KPI_CALC_v1.0",
-      "updatedAt": "2026-06-20T10:30:00Z",
+      "updatedAt": "2026-06-26T10:30:00Z",
       "updatedBy": "admin"
     }
   }
@@ -1030,10 +1095,12 @@
 * **说明**：
   * 配置变更即时生效，无需重启服务。
   * `threshold` 为 JSONB 对象，结构 `{min, max, alert}`（对齐 C3 修正）。
+  * `gradingThresholds` 为 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR，对齐 FDS v6.0 §1.3）；仅核心指标与投用指标可配置 `gradingThresholds`，辅助诊断指标不参与性能定级。
   * `controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`，用于权重模板选择。
   * `formula` 字段表达式引擎采用 `simpleeval` 安全沙箱（对齐《关键算法设计说明》§4.9 C7），可用变量：pv/sp/op/mode/pv_quality/timestamps/pv_range/n；可用函数：sum/mean/std/count/count_if/abs/sqrt/min/max/duration；禁止 import/exec/eval/属性访问，表达式长度限制 500 字符，执行超时 5 秒。
-  * 后端二次校验权重总和：若本次变更导致 6 项指标权重总和 ≠ 100%，返回 `ERR_METRIC_WEIGHT_SUM`。
-  * 指标停用后相关 KPI 显示 `INCONCLUSIVE`，不参与综合评分计算。
+  * 后端二次校验权重总和：若本次变更导致 3 项核心指标（accuracy_rate/fast_rate/steady_rate）权重总和 ≠ 100%，返回 `ERR_METRIC_WEIGHT_SUM`。投用指标（effective_auto_rate）的 `weight` 字段固定为 `null`，传入非 null 值返回 `ERR_DISCOUNT_FACTOR_READONLY`；辅助诊断指标的 `weight` 字段固定为 `null`，传入非 null 值返回 `ERR_AUXILIARY_METRIC_WEIGHT_FORBIDDEN`。
+  * 投用指标的 `isDiscountFactor` 字段不可修改，由系统固定为 `true`。
+  * 指标停用后相关 KPI 显示 `INCONCLUSIVE`，不参与综合评分计算；核心指标停用导致权重重新归一化（其他核心指标按比例分配）。
   * 变更记录审计日志（操作人/时间/变更前后值）。
 
 #### 2.3.5 获取引擎规则配置列表 (List Performance Rules)
@@ -1105,7 +1172,7 @@
   * `startTime` (ISO8601, required): 开始时间
   * `endTime` (ISO8601, required): 结束时间
   * `plantNodeId` (UUID, optional): 按装置/单元筛选
-  * `metricKey` (String, optional): 按指标筛选，枚举值 `good_value_rate`, `auto_mode_rate`, `steady_rate`, `accuracy_rate`, `oscillation_rate`, `saturation_rate`, `score`
+  * `metricKey` (String, optional): 按指标筛选，枚举值 `accuracy_rate`, `fast_rate`, `steady_rate`, `effective_auto_rate`, `score`
   * `granularity` (String, default=`day`): 统计粒度，枚举值 `hour`, `day`, `week`, `month`
 * **Response (200 OK)**:
   ```json
@@ -1182,7 +1249,7 @@
 * **Query Parameters**:
   * `plantNodeId` (UUID, optional): 按装置/单元筛选
   * `diagnosisLabel` (String, optional): 按诊断标签筛选，枚举值 `OSCILLATION`, `VALVE_STICTION`, `OVERAGGRESSIVE`, `OVERCONSERVATIVE`, `EXTERNAL_DISTURBANCE`, `QUALITY_ABNORMAL`, `OUTPUT_SATURATION`, `MANUAL_REVIEW`
-  * `actionStatus` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `RESOLVED`, `IGNORED`
+  * `actionStatus` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `IMPLEMENTED`, `IGNORED`
   * `timeWindow` (String, default=`last_7_days`): 时间窗，枚举值 `today`, `yesterday`, `last_7_days`, `last_30_days`
   * `page` (Integer, default=1): 页码
   * `pageSize` (Integer, default=20): 每页条数，最大 100
@@ -1217,7 +1284,7 @@
 #### 2.4.2 获取回路诊断详情 (Get Loop Diagnosis Detail)
 
 * **URL**: `GET /api/v1/diagnosis/{loopId}`
-* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN/EXPERT）；SPONSOR 不可访问单回路诊断详情，越权返回 `ERR_AUTH_403`
 * **Path Parameters**:
   * `loopId` (UUID, required): 回路 ID
 * **Query Parameters**:
@@ -1394,7 +1461,7 @@
 #### 2.4.5 获取高频波形数据 (Get Timeseries Waveform)
 
 * **URL**: `GET /api/v1/timeseries/{loopId}/waveform`
-* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN/EXPERT）；SPONSOR 不可访问波形证据
 * **Path Parameters**:
   * `loopId` (UUID, required): 回路 ID
 * **Query Parameters**:
@@ -1445,8 +1512,8 @@
 
 #### 2.4.6 更新回路处理状态 (Update Action Status)
 
-* **URL**: `PATCH /api/v1/tracker/{loopId}/status`
-* **权限**: 仅限执行层（仪控工程师），越权返回 `ERR_AUTH_403`
+* **URL**: `PATCH /api/v1/diagnosis/tracker/{loopId}/status`
+* **权限**: 仅限执行层（IC_ENGINEER），越权返回 `ERR_AUTH_403`
 * **Path Parameters**:
   * `loopId` (UUID, required): 回路 ID
 * **Request Body**:
@@ -1468,12 +1535,12 @@
     }
   }
   ```
-* **说明**：`status` 枚举值 `PENDING`（待处理）, `IN_PROGRESS`（处理中）, `RESOLVED`（已实施）, `IGNORED`（已忽略）；不走审批流；状态变更记录审计日志；标记为 `RESOLVED` 后系统自动截取实施前后数据窗口生成 A/B 对比视图。
+* **说明**：`status` 枚举值 `PENDING`（待处理）, `IN_PROGRESS`（处理中）, `IMPLEMENTED`（已实施）, `IGNORED`（已忽略）；不走审批流；状态变更记录审计日志；标记为 `IMPLEMENTED` 后系统自动截取实施前后数据窗口生成 A/B 对比视图。
 
 #### 2.4.7 导出诊断建议书 (Export Diagnosis Report)
 
-* **URL**: `POST /api/v1/tracker/{loopId}/export`
-* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
+* **URL**: `POST /api/v1/diagnosis/tracker/{loopId}/export`
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN/EXPERT）
 * **Path Parameters**:
   * `loopId` (UUID, required): 回路 ID
 * **Request Body** (optional):
@@ -1505,7 +1572,7 @@
   * `endTime` (ISO8601, required): 结束时间
   * `plantNodeId` (UUID, optional): 按装置/单元筛选
   * `diagnosisLabel` (String, optional): 按诊断标签筛选，枚举值 `OSCILLATION`, `VALVE_STICTION`, `OVERAGGRESSIVE`, `OVERCONSERVATIVE`, `EXTERNAL_DISTURBANCE`, `QUALITY_ABNORMAL`, `OUTPUT_SATURATION`, `MANUAL_REVIEW`
-  * `actionStatus` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `RESOLVED`, `IGNORED`
+  * `actionStatus` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `IMPLEMENTED`, `IGNORED`
   * `granularity` (String, default=`day`): 统计粒度，枚举值 `day`, `week`, `month`
 * **Response (200 OK)**:
   ```json
@@ -1575,7 +1642,7 @@
 * **Query Parameters**:
   * `loopId` (UUID, optional): 按回路 ID 筛选
   * `severity` (String, optional): 按严重程度筛选，枚举值 `HIGH`, `MEDIUM`, `LOW`
-  * `status` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `RESOLVED`, `IGNORED`
+  * `status` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `IMPLEMENTED`, `IGNORED`
   * `label` (String, optional): 按诊断标签筛选，枚举值 `OSCILLATION`, `VALVE_STICTION`, `OVERAGGRESSIVE`, `OVERCONSERVATIVE`, `EXTERNAL_DISTURBANCE`, `QUALITY_ABNORMAL`, `OUTPUT_SATURATION`, `MANUAL_REVIEW`
   * `startTime` (ISO8601, optional): 诊断时间下界
   * `endTime` (ISO8601, optional): 诊断时间上界
@@ -1618,7 +1685,7 @@
 * **说明**：
   * **v4.0 新增**：诊断标签列表接口，支持按回路/严重程度/处理状态/标签类型/时间范围多维筛选。
   * `label` 枚举为 8 类诊断标签（对齐 §2.4.1 C6 修正）；`severity` 枚举值 `HIGH`（高，score < 50 或 confidence ≥ 0.8）/`MEDIUM`（中，50 ≤ score < 70 或 0.6 ≤ confidence < 0.8）/`LOW`（低，score ≥ 70 或 confidence < 0.6）。
-  * `status` 枚举值 `PENDING`（待处理）/`IN_PROGRESS`（处理中）/`RESOLVED`（已实施）/`IGNORED`（已忽略），对齐 §2.4.6。
+  * `status` 枚举值 `PENDING`（待处理）/`IN_PROGRESS`（处理中）/`IMPLEMENTED`（已实施）/`IGNORED`（已忽略），对齐 §2.4.6。
   * `confidence` 为单算法置信度（0-1），`fusedConfidence` 为 Dempster-Shafer 融合置信度（0-1，对齐 §5.7）。
   * 已处理的标签返回 `resolvedAt`/`resolvedBy`/`resolveComment`，未处理时为 `null`。
 
@@ -1629,7 +1696,7 @@
 * **Path Parameters**:
   * `loopId` (UUID, required): 回路 ID
 * **Query Parameters**:
-  * `status` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `RESOLVED`, `IGNORED`
+  * `status` (String, optional): 按处理状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `IMPLEMENTED`, `IGNORED`
   * `timeWindow` (String, default=`last_7_days`): 时间窗，枚举值 `today`, `yesterday`, `last_7_days`, `last_30_days`
 * **Response (200 OK)**:
   ```json
@@ -1667,7 +1734,7 @@
           "severity": "MEDIUM",
           "confidence": 0.72,
           "fusedConfidence": 0.68,
-          "status": "RESOLVED",
+          "status": "IMPLEMENTED",
           "algorithm": "OSC_IAE_v1.0",
           "evidence": {
             "oscillation_period": 60.5,
@@ -1695,13 +1762,13 @@
 #### 2.4.12 处理诊断标签 (Resolve Diagnosis Tag)
 
 * **URL**: `PUT /api/v1/diagnosis/tags/{tagId}/resolve`
-* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家），越权返回 `ERR_AUTH_403`
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN/EXPERT），越权返回 `ERR_AUTH_403`；SPONSOR 不可调用
 * **Path Parameters**:
   * `tagId` (UUID, required): 诊断标签 ID
 * **Request Body**:
   ```json
   {
-    "status": "RESOLVED",
+    "status": "IMPLEMENTED",
     "comment": "已联系设备部拆阀检查，更换阀芯后粘滞消除"
   }
   ```
@@ -1715,7 +1782,7 @@
       "label": "VALVE_STICTION",
       "labelName": "阀门粘滞",
       "previousStatus": "PENDING",
-      "status": "RESOLVED",
+      "status": "IMPLEMENTED",
       "comment": "已联系设备部拆阀检查，更换阀芯后粘滞消除",
       "resolvedBy": "zhang.san",
       "resolvedAt": "2026-06-20T10:30:00Z"
@@ -1724,10 +1791,10 @@
   ```
 * **说明**：
   * **v4.0 新增**：处理诊断标签，更新标签状态并记录处理意见。
-  * `status` 枚举值 `IN_PROGRESS`（处理中）/`RESOLVED`（已实施）/`IGNORED`（已忽略）；不允许直接从 `RESOLVED`/`IGNORED` 回退至 `PENDING`，状态流转需符合 §2.4.6 处理状态约定。
+  * `status` 枚举值 `IN_PROGRESS`（处理中）/`IMPLEMENTED`（已实施）/`IGNORED`（已忽略）；不允许直接从 `IMPLEMENTED`/`IGNORED` 回退至 `PENDING`，状态流转需符合 §2.4.6 处理状态约定。
   * `comment`（处理意见，必填）：1-500 字符，记录处理过程与结论。
   * 响应中 `previousStatus` 标识变更前状态，便于前端审计与回溯。
-  * 标记为 `RESOLVED` 后系统自动截取实施前后数据窗口生成 A/B 对比视图（对齐 §2.4.6 约定）。
+  * 标记为 `IMPLEMENTED` 后系统自动截取实施前后数据窗口生成 A/B 对比视图（对齐 §2.4.6 约定）。
   * 状态变更记录审计日志（操作人/时间/变更前后值）；不走审批流。
 
 ---
@@ -1739,10 +1806,10 @@
 #### 2.5.1 获取整定记录列表 (List Tuning Tasks)
 
 * **URL**: `GET /api/v1/tuning/tasks`
-* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN/EXPERT）
 * **Query Parameters**:
   * `loopId` (UUID, optional): 按回路筛选
-  * `status` (String, optional): 按整定状态筛选，枚举值 `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`
+  * `status` (String, optional): 按整定状态筛选，枚举值 `DRAFT`, `RUNNING`, `COMPLETED`, `ROLLED_BACK`
   * `startTime` (ISO8601, optional): 开始时间
   * `endTime` (ISO8601, optional): 结束时间
   * `page` (Integer, default=1): 页码
@@ -1794,7 +1861,7 @@
 #### 2.5.2 触发模型辨识 (Trigger Model Identification)
 
 * **URL**: `POST /api/v1/tuning/identify`
-* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN/EXPERT）
 * **Request Body**:
   ```json
   {
@@ -1823,7 +1890,7 @@
 #### 2.5.3 计算整定参数 (Calculate Tuning Parameters)
 
 * **URL**: `POST /api/v1/tuning/tune`
-* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN/EXPERT）
 * **Request Body**:
   ```json
   {
@@ -1850,7 +1917,7 @@
 #### 2.5.4 执行闭环仿真 (Run Closed-Loop Simulation)
 
 * **URL**: `POST /api/v1/tuning/simulate`
-* **权限**: 执行层及以上（仪控工程师/系统管理员/外部专家）
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN/EXPERT）
 * **Request Body**:
   ```json
   {
@@ -1918,11 +1985,11 @@
 
 #### 2.6.1 获取用户列表 (List Users)
 
-* **URL**: `GET /api/v1/system/users`
-* **权限**: 管理层（系统管理员）
+* **URL**: `GET /api/v1/users`
+* **权限**: 管理层（ADMIN），越权返回 `ERR_AUTH_403`
 * **Query Parameters**:
   * `keyword` (String, optional): 按用户名/姓名模糊查询
-  * `role` (String, optional): 按角色筛选，枚举值 `EXECUTOR`（仪控工程师）, `COLLABORATOR`（工艺/设备工程师）, `VIEWER`（Sponsor）, `ADMIN`（系统管理员）, `EXPERT`（外部专家）
+  * `role` (String, optional): 按角色筛选，枚举值 `IC_ENGINEER`（仪控工程师）, `PE_ENGINEER`（工艺/设备工程师）, `SPONSOR`（Sponsor）, `ADMIN`（系统管理员）, `EXPERT`（外部专家）
   * `page` (Integer, default=1): 页码
   * `pageSize` (Integer, default=20): 每页条数，最大 100
 * **Response (200 OK)**:
@@ -1934,7 +2001,7 @@
           "userId": "uuid-xxx",
           "username": "zhang.san",
           "fullName": "张三",
-          "role": "EXECUTOR",
+          "role": "IC_ENGINEER",
           "roleName": "仪控工程师",
           "isActive": true,
           "lastLoginAt": "2026-06-20T09:00:00Z",
@@ -1950,8 +2017,8 @@
 
 #### 2.6.2 更新用户角色 (Update User Role)
 
-* **URL**: `PUT /api/v1/system/users/{userId}/role`
-* **权限**: 管理层（系统管理员），越权返回 `ERR_AUTH_403`
+* **URL**: `PUT /api/v1/users/{userId}/role`
+* **权限**: 管理层（ADMIN），越权返回 `ERR_AUTH_403`
 * **Path Parameters**:
   * `userId` (UUID, required): 用户 ID
 * **Request Body**:
@@ -1978,8 +2045,8 @@
 
 #### 2.6.3 获取审计日志列表 (List Audit Logs)
 
-* **URL**: `GET /api/v1/system/audit`
-* **权限**: 管理层（系统管理员）
+* **URL**: `GET /api/v1/audit-logs`
+* **权限**: 管理层（ADMIN）
 * **Query Parameters**:
   * `startTime` (ISO8601, optional): 开始时间
   * `endTime` (ISO8601, optional): 结束时间
@@ -2016,8 +2083,8 @@
 
 #### 2.6.4 获取自动报表记录列表 (List Report Records)
 
-* **URL**: `GET /api/v1/system/reports`
-* **权限**: 管理层（系统管理员）
+* **URL**: `GET /api/v1/reports`
+* **权限**: 管理层（ADMIN）
 * **Query Parameters**:
   * `period` (String, optional): 按报表周期筛选，枚举值 `shift`（班）, `day`（日）, `week`（周）, `month`（月）
   * `status` (String, optional): 按生成状态筛选，枚举值 `SUCCESS`, `PROCESSING`, `FAILED`
@@ -2036,7 +2103,7 @@
           "period": "day",
           "generatedAt": "2026-06-20T01:00:00Z",
           "status": "SUCCESS",
-          "fileUrl": "/api/v1/system/reports/uuid-xxx/download",
+          "fileUrl": "/api/v1/reports/uuid-xxx/download",
           "fileSize": 2048576,
           "retryCount": 0
         }
@@ -2051,8 +2118,8 @@
 
 #### 2.6.5 重试报表生成 (Retry Report Generation)
 
-* **URL**: `POST /api/v1/system/reports/{reportId}/retry`
-* **权限**: 管理层（系统管理员）
+* **URL**: `POST /api/v1/reports/{reportId}/retry`
+* **权限**: 管理层（ADMIN）
 * **Path Parameters**:
   * `reportId` (UUID, required): 报表 ID
 * **Response (202 Accepted)**:
@@ -2085,7 +2152,7 @@
     "loopIds": ["uuid-xxx", "uuid-yyy"],
     "startTime": "2026-06-20T00:00:00Z",
     "endTime": "2026-06-20T08:00:00Z",
-    "metrics": ["good_value_rate", "auto_mode_rate", "steady_rate", "accuracy_rate", "oscillation_rate", "saturation_rate"],
+    "metrics": ["accuracy_rate", "fast_rate", "steady_rate", "effective_auto_rate", "good_value_rate", "oscillation_rate", "saturation_rate"],
     "forceRecalculate": false
   }
   ```
@@ -2102,16 +2169,16 @@
   }
   ```
 * **说明**：
-  * 触发指定回路的 6 大 KPI 计算（对齐《关键算法设计说明》§4 KPI 算法，C1 修正）。
-  * `loopIds` 为空数组时表示对所有启用回路进行计算；`metrics` 为空数组时表示计算全部 6 项 KPI。
+  * 触发指定回路的 KPI 计算，采用 3+1+8 体系（3 核心 + 1 投用 + 8 辅助诊断，对齐 §2.8 与 FDS v6.0 §1.3）。
+  * `loopIds` 为空数组时表示对所有启用回路进行计算；`metrics` 为空数组时表示计算全部 12 项指标（3 核心 + 1 投用 + 8 辅助诊断）。
   * `forceRecalculate=true` 时强制重算（忽略缓存），默认 `false` 复用已有快照。
   * 任务完成后通过 §2.7.4 查询结果，结果结构包含 `kpiResults`（每回路的指标结果 + `score` + `status` + `algorithm_version`）。
   * **v4.0 数据血缘与置信度增强**（对齐《关键算法设计说明》v2.0）：
-    * 每个指标结果采用 `metrics` 嵌套对象结构，每项含 `value`（指标值）+ `confidence_level`（置信度等级 A/B/C/D/E）+ `valid_rate`（有效数据率，0-1）+ `data_lineage`（数据血缘 JSON 对象）。
-    * `data_lineage` 对象字段：`sampling_freq`（采样频率，如 `5s`）/`quality_policy`（质量策略，对齐 §2.4.5）/`tag_group`（数据分组，对齐 §2.4.5）。
+    * 每个指标结果采用 `metrics` 嵌套对象结构，每项含 `value`（指标值）+ `confidence_level`（置信度等级 A/B/C/D/E）+ `valid_rate`（有效数据率，0-1）+ `data_lineage`（数据血缘对象，5 独立字段 + JSONB 子字段，对齐 DDS v6.0 §3.5）。
+    * `data_lineage` 包含 5 个独立字段：`sampling_freq`（采样频率，如 `5s`）/`quality_policy`（质量策略，对齐 §2.4.5）/`tag_group`（数据分组，对齐 §2.4.5）/`valid_rate`（有效数据率）/`confidence_level`（置信度等级）；其中 `data_lineage` JSONB 内部还可记录 `source_metrics`（来源指标列表）等子字段。
     * 回路级结果新增 `confidence_level`（综合置信度等级 A/B/C/D/E）与 `data_lineage`（回路级数据血缘汇总对象）。
-    * `score` 结果新增 `data_lineage` JSON 对象，记录综合评分所依据的数据血缘信息。
-    * `confidence_level` 等级规则：A（valid_rate ≥ 0.95）/B（0.90-0.95）/C（0.80-0.90）/D（0.60-0.80）/E（< 0.60）。
+    * `score` 结果新增 `data_lineage` JSONB 对象，记录综合评分所依据的数据血缘信息。
+    * `confidence_level` 等级规则（对齐 FDS v6.0，valid_rate 阈值）：A（valid_rate ≥ 0.95）/B（0.80-0.95）/C（0.60-0.80）/D（0.20-0.60）/E（< 0.20）。
   * `algorithmVersion` 固定为 `KPI_CALC_v1.0`（对齐§4.10 算法版本号规范）。
   * 计算失败时任务状态标记为 `FAILED`，`error` 字段包含错误码与详情。
 
@@ -2429,7 +2496,7 @@
   ```json
   {
     "loopIds": ["uuid-xxx"],
-    "metrics": ["good_value_rate", "auto_mode_rate", "steady_rate", "accuracy_rate", "oscillation_rate", "saturation_rate"],
+    "metrics": ["accuracy_rate", "fast_rate", "steady_rate", "effective_auto_rate", "good_value_rate", "oscillation_rate", "saturation_rate"],
     "startTime": "2026-06-20T00:00:00Z",
     "endTime": "2026-06-20T08:00:00Z",
     "qualityPolicy": "KEEP_ALL_WITH_VALIDITY",
@@ -2447,7 +2514,7 @@
           "loopId": "uuid-xxx",
           "metricGroups": [
             {
-              "metrics": ["good_value_rate", "auto_mode_rate", "steady_rate", "accuracy_rate", "saturation_rate"],
+              "metrics": ["accuracy_rate", "fast_rate", "steady_rate", "effective_auto_rate", "good_value_rate", "saturation_rate"],
               "tagGroup": "BASE",
               "samplingFreq": "5s",
               "qualityPolicy": "KEEP_ALL_WITH_VALIDITY",
@@ -2472,9 +2539,10 @@
 * **说明**：
   * 内部接口，仅供算法服务调用，不对外暴露。
   * DataPlanner 根据指标需求自动规划每个回路的数据拉取方案，将指标按所需 tag 分组与采样频率聚合为多个 metricGroup，输出 queryPlans。
+  * `metrics` 枚举值对齐 §2.8 的 3+1+8 体系（3 核心 + 1 投用 + 8 辅助诊断，共 12 项指标）。
   * `tagGroup` 枚举值对齐 §2.4.5（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）；`qualityPolicy`/`aggregationPolicy` 枚举值对齐 §2.4.5。
   * `planId` 用于后续 §2.7.5.2 获取 MetricDataBundle。
-  * 规划结果记录数据血缘信息（sampling_freq/quality_policy/tag_group），随指标结果回传（对齐 §2.7.1 v4.0 数据血缘字段）。
+  * 规划结果记录数据血缘信息（sampling_freq/quality_policy/tag_group/valid_rate/confidence_level），随指标结果回传（对齐 §2.7.1 v4.0 数据血缘字段，5 独立字段 + `data_lineage` JSONB 子字段，对齐 DDS v6.0 §3.5）。
 
 ##### 2.7.5.2 获取指标数据包 (Get Metric Data Bundle)
 
@@ -2576,7 +2644,7 @@
   }
   ```
 * **说明**：
-  * 触发标准评估任务，默认由系统调度器每小时定时调用，对全厂启用回路执行 6 大 KPI 计算 + 诊断分析。
+  * 触发标准评估任务，默认由系统调度器每小时定时调用，对全厂启用回路执行 3+1+8 体系指标计算（3 核心 + 1 投用 + 8 辅助诊断，对齐 §2.8）+ 诊断分析。
   * `timeWindow` 枚举值 `last_1_hour`/`last_24_hours`，默认 `last_1_hour`。
   * `plantNodeId` 为空时表示全厂评估；`forceRecalculate=true` 时强制重算（忽略缓存）。
   * 任务完成后通过 §2.7.6.3 查询结果，结果结构对齐 §2.7.4 KPI/诊断结果（含 v4.0 数据血缘与 confidence_level 字段）。
@@ -2590,7 +2658,7 @@
   ```json
   {
     "loopIds": ["uuid-xxx", "uuid-yyy"],
-    "metrics": ["good_value_rate", "auto_mode_rate", "steady_rate", "accuracy_rate", "oscillation_rate", "saturation_rate"],
+    "metrics": ["accuracy_rate", "fast_rate", "steady_rate", "effective_auto_rate", "good_value_rate", "oscillation_rate", "saturation_rate"],
     "startTime": "2026-06-19T00:00:00Z",
     "endTime": "2026-06-20T00:00:00Z",
     "taskName": "常减压装置专项评估"
@@ -2612,7 +2680,7 @@
 * **说明**：
   * 触发自定义评估任务，按需对指定回路集合在指定时间窗内执行指定指标的计算。
   * `loopIds`（回路 ID 数组，必填）：至少 1 个，上限 500 个。
-  * `metrics`（指标 key 数组，必填）：枚举值 `good_value_rate`/`auto_mode_rate`/`steady_rate`/`accuracy_rate`/`oscillation_rate`/`saturation_rate`；为空数组时计算全部 6 项。
+  * `metrics`（指标 key 数组，必填）：枚举值 `accuracy_rate`/`fast_rate`/`steady_rate`/`effective_auto_rate`/`good_value_rate`/`oscillation_rate`/`saturation_rate`/`stiction_index`/`overaggressive_index`/`overconservative_index`/`disturbance_index`/`quality_abnormal_rate`；为空数组时计算全部 12 项（3 核心 + 1 投用 + 8 辅助诊断，对齐 §2.8 3+1+8 体系）。
   * `startTime`/`endTime`（ISO8601，必填）：评估时间窗，结束时间不得早于开始时间，时间窗不得超过 30 天，否则返回 `ERR_TS_001`。
   * `taskName`（任务名称，必填）：用户自定义任务名，1-100 字符，用于 §2.7.6.4 任务列表展示。
   * 任务完成后通过 §2.7.6.3 查询结果，结果结构对齐 §2.7.4（含 v4.0 数据血缘与 confidence_level 字段）。
@@ -3383,8 +3451,10 @@
 |---|---|---|---|
 | `ERR_TAG_NOT_FOUND` | 404 | Tag 未找到 | 更新回路 tag 关联时，请求体中的 tagId 在 `tag_registry` 中不存在。 |
 | `ERR_LOOP_TAG_REQUIRED` | 400 | 回路必填 tag 缺失 | 更新回路 tag 关联时，请求体中 PV/SP/OP/MODE 全部缺失或为 null，无法完成最小关联校验。 |
-| `ERR_METRIC_WEIGHT_SUM` | 400 | 性能指标权重总和不为 100% | 更新性能指标配置时，6 项指标权重总和 ≠ 100%；或更新回路扩展配置时 `scoreWeights` 总和 ≠ 100%。 |
+| `ERR_METRIC_WEIGHT_SUM` | 400 | 性能指标权重总和不为 100% | 更新性能指标配置时，3 项核心指标（accuracy_rate/fast_rate/steady_rate）权重总和 ≠ 100%；或更新回路扩展配置时 `scoreWeights` 总和 ≠ 100%。投用指标与辅助诊断指标不参与权重总和校验。 |
 | `ERR_CONFIG_FORBIDDEN` | 403 | 越权修改配置 | 非系统管理员角色尝试调用配置类 API（性能指标配置/诊断指标配置/引擎规则配置的更新接口）。 |
+| `ERR_DISCOUNT_FACTOR_READONLY` | 400 | 投用指标折扣因子字段只读 | 更新性能指标配置时，尝试修改投用指标（effective_auto_rate）的 `weight` 或 `isDiscountFactor` 字段，该字段由系统固定为 `null`/`true`。 |
+| `ERR_AUXILIARY_METRIC_WEIGHT_FORBIDDEN` | 400 | 辅助诊断指标不允许配置权重 | 更新性能指标配置时，尝试为辅助诊断指标（好值率/振荡率/饱和率等）设置 `weight` 非 null 值，辅助诊断指标 `weight` 固定为 `null`，不参与权重配置。 |
 
 ### 3.3 v3.2 新增错误码（算法服务相关）
 
@@ -3431,8 +3501,8 @@
 ```json
 {
   "errorCode": "ERR_METRIC_WEIGHT_SUM",
-  "errorMessage": "Total weight of metrics must be 100%",
-  "details": "当前 6 项指标权重总和为 95%，请调整至 100%"
+  "errorMessage": "Total weight of core metrics must be 100%",
+  "details": "当前 3 项核心指标（accuracy_rate/fast_rate/steady_rate）权重总和为 95%，请调整至 100%（投用指标与辅助诊断指标不参与权重校验）"
 }
 ```
 
@@ -3460,11 +3530,11 @@
 
 | 权限层级 | 角色 | 说明 |
 |---|---|---|
-| 查看层 | Sponsor（生产技术） | 仅查看工厂/装置级全局看板与定期报告。 |
-| 协同层 | 工艺/设备工程师 | 查看诊断报告，协助排查，不可修改状态与配置。 |
-| 执行层 | 仪控工程师 | 配置回路与 tag 关联，查看性能看板，分析波形，标记异常跟踪状态。 |
-| 管理层 | 系统管理员 | 管理工厂模型，配置指标与算法阈值，管理用户，查看审计日志。 |
-| 服务层 | 外部专家 | 诊断复核，出具高级诊断意见与整定模型样例。 |
+| 查看层 | SPONSOR（生产技术 Sponsor） | 仅查看工厂/装置级全局看板与定期报告；不可访问单回路诊断详情、波形证据或异常跟踪编辑。 |
+| 协同层 | PE_ENGINEER（工艺/设备工程师） | 查看诊断报告，协助排查，不可修改状态与配置。 |
+| 执行层 | IC_ENGINEER（仪控工程师） | 配置回路与 tag 关联，查看性能看板，分析波形，标记异常跟踪状态。 |
+| 管理层 | ADMIN（系统管理员） | 管理工厂模型，配置指标与算法阈值，管理用户，查看审计日志。 |
+| 服务层 | EXPERT（外部专家） | 诊断复核，出具高级诊断意见与整定模型样例。 |
 
 ### 4.4 PV 质量码处理约定
 
@@ -3482,7 +3552,7 @@
   * `Uncertain` 点：黄色虚线渲染（`valid=false`）。
 * **Metric Validity Mask（指标有效点掩码）**：不同指标使用不同的有效点判定规则决定参与计算的数据点，由算法服务根据指标 key 自动选择对应的 Validity Mask。
   * `good_value_rate`：有效点 = `pvQuality=Good` 的点（基于 PV 质量码统计）。
-  * `auto_mode_rate`：有效点 = 全部点（不依赖 PV 质量码，基于 MODE tag 判定）。
+  * `auto_mode_rate`（辅助诊断指标，已并入 `effective_auto_rate` 投用指标）：有效点 = 全部点（不依赖 PV 质量码，基于 MODE tag 判定）；`effective_auto_rate` 有效点 = `mode in [Auto, Cascade]` 且 `pvQuality == Good` 的点。
   * `steady_rate`/`accuracy_rate`：有效点 = `pvQuality=Good` 且 `mode in [Auto, Cascade]` 的点。
   * `oscillation_rate`：有效点 = `pvQuality=Good` 的高频 PV/OP 点（`tagGroup=PVOP_HF`）。
   * `saturation_rate`：有效点 = 全部点（基于 OP 范围判定，不依赖 PV 质量码）。
@@ -3492,6 +3562,78 @@
   * `KEEP_ALL`：保留全部点不区分有效性，算法按指标逻辑自行处理。
 * KPI 好值率基于 PV 质量码统计，`Bad`/`Uncertain` 时段不计入好值（对应 `valid_rate` 字段，对齐 §2.7.1 v4.0 数据血缘）。
 * `valid_rate`（有效数据率，0-1）= 有效点数 / 总点数，用于推导 `confidence_level`（A/B/C/D/E，对齐 §2.7.1）。
+
+### 4.5 数据模型映射约定
+
+本规范涉及的 API 资源对应 DDS v6.0 的 PostgreSQL 表与 TDengine 超级表，前后端字段命名遵循以下映射规则（对齐 DDS v6.0 与代码 ORM 模型）：
+
+| API 资源领域 | PostgreSQL 表（ORM 模型） | 说明 |
+|---|---|---|
+| 工厂层级 | `plant_node`（`PlantNode`） | 工厂/装置/单元多级层级 |
+| AAS Tag | `tag_registry`（`TagRegistry`） | AAS 同步的 OPC tag 位号注册表 |
+| 回路台账 | `loop_ledger`（`LoopLedger`） | 回路实体，含 `control_type`/`importance_level`/`include_in_evaluation` |
+| 回路-Tag 关联 | `loop_tag_mapping`（`LoopTagMapping`） | 7 个 OPC tag 角色映射 |
+| 指标配置 | `metric_config`（`MetricConfig`） | 3+1+8 体系指标配置，含 `category`/`is_discount_factor`/`grading_thresholds` |
+| 引擎规则 | `engine_rule`（`EngineRule`） | 评估引擎调度与执行规则 |
+| KPI 小时快照 | `kpi_snapshot_hourly`（`KpiSnapshotHourly`） | KPI 计算结果小时级快照，含 5 个数据血缘字段 + `data_lineage` JSONB |
+| KPI 自定义快照 | `kpi_snapshot_custom`（`KpiSnapshotCustom`） | 自定义评估任务结果，含 `steady_rate`（修正自 `stability_rate`） |
+| 装置级 KPI 汇总 | `unit_kpi_summary`（`UnitKpiSummary`） | 装置级聚合，含 `excluded_loops`/`status` |
+| 节点级 KPI 快照 | `kpi_node_snapshot_hourly`/`daily`/`monthly` | 节点级 KPI 3 张快照表 |
+| 指标数据需求 | `clpm_metric_data_requirement`（`ClpmMetricDataRequirement`） | 指标计算所需数据需求 |
+| 诊断配置 | `diagnosis_config`（`DiagnosisConfig`） | 8 类诊断标签算法配置 |
+| 诊断结果 | `diagnosis_result`（`DiagnosisResult`） | 诊断分析结果 |
+| 诊断标签 | `diagnosis_tag`（`DiagnosisTag`） | 诊断标签生命周期管理 |
+| 异常跟踪 | `action_tracker`（`ActionTracker`） | 异常跟踪记录，状态机 PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED |
+| 整定记录 | `tuning_record`（`TuningRecord`） | 整定任务记录，状态机 DRAFT/RUNNING/COMPLETED/ROLLED_BACK |
+| 回路模式映射 | `loop_mode_mapping`（`LoopModeMapping`） | MODE tag 值与控制模式映射 |
+| 回路类型权重 | `loop_type_weight`（`LoopTypeWeight`） | 按回路类型（STABLE/SLOW/FAST/LOGIC）的权重模板 |
+| 回路级别权重 | `loop_level_weight`（`LoopLevelWeight`） | 按回路重要性级别（HIGH/MEDIUM/LOW）的权重 |
+| 系统用户 | `sys_user`（`SysUser`） | 用户账号，角色用枚举字段（非独立角色表） |
+| 审计日志 | `sys_audit_log`（`SysAuditLog`） | 操作审计日志，不可物理删除 |
+| 系统配置 | `sys_config`（`SysConfig`） | 系统级配置键值对 |
+| 报表记录 | `report_record`（`ReportRecord`） | 报表生成记录 |
+| 报表配置 | `report_config`（`ReportConfig`） | 报表周期与模板配置 |
+
+**字段命名约定**：
+* API 响应字段统一使用 `camelCase`（如 `loopId`/`tagName`/`scoreWeights`），数据库字段统一使用 `snake_case`（如 `loop_id`/`tag_name`/`score_weights`），由后端 ORM 自动转换。
+* 时间字段在 API 中使用 ISO8601 字符串，在数据库中存储为 `TIMESTAMP WITH TIME ZONE`。
+* UUID 字段在 API 与数据库中均使用标准 UUID 格式字符串。
+* JSONB 字段（如 `threshold`/`grading_thresholds`/`data_lineage`/`score_weights`）在 API 中以 JSON 对象形式返回。
+
+### 4.6 时序数据存储约定
+
+回路时序数据存储于 TDengine 超级表 `st_loop_data`，与 PostgreSQL 业务表分离（对齐 DDS v6.0 §3）：
+
+* **超级表结构**：`st_loop_data`，子表命名规则 `loop_{loop_id}`。
+* **Tag 列**（2 个）：`loop_id`（UUID）、`plant_node_id`（UUID）。
+* **Field 列**（9 个）：`ts`（时间戳）、`pv`（过程变量）、`sp`（设定值）、`op`（控制器输出）、`mode`（控制模式）、`quality`（PV 质量码，1=Good/0=Bad/2=Uncertain，对齐 TDengine schema；同时支持 OPC DA 192=Good）、`pid_p`/`pid_i`/`pid_d`（PID 参数）。
+* **统一 1 秒采集**：所有 tag 统一以 1 秒采样频率写入 TDengine；指标计算层按需降采样（LTTB，`maxPoints=2000`，30 天时间窗口）。
+* **质量码处理**：PV 质量码为 `Bad`/`Uncertain` 时数据点保留（不置 null），`pvValid=false`；KPI 计算按 Metric Validity Mask 过滤有效点（对齐 §4.4）。
+* **数据读取接口**：时序数据读取统一通过 §2.4.5 波形接口与 §2.7.5 DataPlanner 内部接口，禁止直接暴露 TDengine 查询接口。
+
+### 4.7 支撑性 API 领域说明
+
+本规范 §2.1-§2.9 定义了 6 大业务 API 领域（dashboard/loops/performance/diagnosis/tuning/users）+ 算法服务（§2.7）+ 配置批量操作（§2.8/§2.9）。除此之外，系统还存在以下支撑性 API 领域（对齐实现契约 v2.0 与代码实际）：
+
+| API 领域 | 路径前缀 | 说明 | 对应章节 |
+|---|---|---|---|
+| 认证授权 | `/api/v1/auth/*` | 登录/登出/Token 刷新/当前用户/修改密码 | §5 |
+| 工厂层级 | `/api/v1/plant-nodes/*` | 工厂节点 CRUD | §2.2.1-§2.2.4 |
+| AAS 同步 | `/api/v1/aas/*` | AAS 配置/同步/Tag 查询 | §2.2.5-§2.2.6 |
+| Tag 管理 | `/api/v1/tags/*` | Tag 列表/详情/导入导出/批量删除 | 代码实际，对齐 DDS v6.0 §2 |
+| 实时数据 | `/api/v1/realtime/*` | 实时数据查询 | 代码实际 |
+| WebSocket 推送 | `/api/v1/ws/*` | 实时数据 WebSocket 推送（对齐 UIUX v6.0 实时刷新需求） | 代码实际 |
+| 时序数据 | `/api/v1/timeseries/*` | 波形/散点图等高频时序数据查询 | §2.4.5 |
+| 任务管理 | `/api/v1/tasks/*` | 评估任务触发/查询/取消/删除/通知 | §2.7.6 |
+| 算法服务 | `/api/v1/algorithms/*` | KPI/诊断/整定算法任务 | §2.7.1-§2.7.4 |
+| 数据计划 | `/api/v1/algorithms/dataplanner/*` | DataPlanner 内部接口（不对外暴露） | §2.7.5 |
+| 节点级性能 | `/api/v1/performance/nodes/*` | 节点级 KPI 快照/趋势/排行/对比 | 代码实际，对齐 DDS v6.0 节点级 KPI 表 |
+| 配置批量操作 | `/api/v1/configs/*` | 指标/诊断配置批量读写 + 类型/级别权重 + 权重模板 + 性能定级阈值 | §2.8/§2.9 + 代码实际 |
+| 健康检查 | `/api/v1/health` | 服务健康与就绪检查 | 代码实际 |
+
+**说明**：
+* 上述支撑性 API 领域中，部分接口（如 `/api/v1/tags/*`、`/api/v1/realtime/*`、`/api/v1/ws/*`、`/api/v1/performance/nodes/*`、`/api/v1/configs/loop-type-weights/*`、`/api/v1/configs/loop-level-weights/*`、`/api/v1/configs/weight-templates/*`、`/api/v1/configs/grading-thresholds/*`、`/api/v1/health`）在代码中已实现但未在本规范中展开详细 Schema 定义，将在后续版本补全。
+* 实现契约 v2.0 §4.4 声明"不新增 `/api/v1/configs/metrics` 与 `/api/v1/configs/diagnosis` 聚合接口"，但代码实际已实现这两类接口（§2.8/§2.9）；实现契约 v2.0 追认其存在，本规范保留 §2.8/§2.9 的接口定义。
 
 ---
 
