@@ -1,10 +1,10 @@
 # CLPM UI/UX 可视化设计与用户体验规范
 
 **文档状态**: 正式版
-**当前版本**: v5.3（FDS v5.1 / DDS v4.1 对齐版，回路管理与性能评估模块 UIUX 检讨修订）
-**发布日期**: 2026-07-04
-**设计依据**: PRD (v3.1), FDS (v5.1), ADS (v4.0), DDS (v4.1), IDS (v3.1), 关键算法设计说明 (v2.1), 控制回路性能评估数据流程图 (v4.0), implementation-contract (v1.0)
-**权威声明**: 本文档是视觉、交互、组件与体验规范；重构后 IA、路由、API、权限、状态机口径以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准；指标体系、数据血缘、可信度、质量策略以 v4.0 设计文档为准。
+**当前版本**: v6.0（v6.0 文档统一升级版，修复 Action Tracker 状态枚举冲突，对齐实现契约 v2.0）
+**发布日期**: 2026-07-06
+**设计依据**: PRD (v6.0), FDS (v6.0), ADS (v6.0), DDS (v6.0), IDS (v6.0), 关键算法设计说明 (v2.1), 控制回路性能评估数据流程图 (v4.0), implementation-contract (v2.0)
+**权威声明**: 本文档是视觉、交互、组件与体验规范；重构后 IA、路由、API、权限、状态机口径以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准；指标体系、数据血缘、可信度、质量策略以 v6.0 设计文档为准。
 
 ---
 
@@ -19,6 +19,7 @@
 | v5.2-draft | 2026-06-27 | 新增 `CLPM_UIUX_工业桌面端改造方案_v1.0.md`，作为后续 UI/UX 优化基线：①基于 vue-vben-admin 5.7 主题能力定义 CLPM Industrial Light；②统一 PageToolbar / ObjectSummaryBar / KpiStrip / DataCanvas 等工业桌面端组件；③明确工作台、回路管理、性能评估、诊断中心、回路整定全模块改造方向；④将任务管理归入性能评估执行体系；⑤补充前后端接口影响评估。 | 系统设计团队 |
 | v5.2 | 2026-06-27 | 第一轮工业桌面端 UI/UX 样板页与 IA 收口完成：①新增 `frontend/apps/web-antd/src/components/clpm/` 共享组件层；②完成工作台、回路详情、回路监控、性能看板、诊断详情、异常跟踪样板页改造；③性能评估“系统配置”收口为“指标配置”，新增配置 Tabs 与 `/metric/tasks` 执行记录入口；④任务口径统一为“评估任务/执行记录”；⑤整定工作台接入同风格组件，并通过 typecheck / unit tests / build 验证。 | 系统设计团队 |
 | v5.3 | 2026-07-04 | FDS v5.1 / DDS v4.1 对齐版，回路管理与性能评估模块 UIUX 检讨修订（7 项变更）：①**§6.3.1 全局看板重构**——从回路级 3+1+8 聚合 KPI 改为装置级三大 KPI 卡片（综合性能/平均自控率/稳定率，来自 `unit_kpi_summary`）+ 实时自控率半圆径向仪表盘卡片（非条幅式，工业 HMI 标准可视化，每分钟刷新）+ 低效回路 Top 10 预览；②**§6.3.6 权重配置管理页面新增**——4 类控制类型权重模板（STABLE/SLOW/FAST/LOGIC）+ 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR）+ 版本化保存与回滚 + 恢复国标默认值；③**§6.2.2 回路台账修订**——表格列与编辑抽屉补 `control_type` / `importance_level` / `include_in_evaluation` 三字段（对齐 DDS v4.1），新建回路弹窗同步采集，重要等级视觉编码（红/橙/灰徽章）；④**§6.3.3 性能指标配置修订**——公式编辑器标注废弃（对齐 FDS §5.3.1.2，12 项指标算法固化为独立函数模块），控制类型字段移除（迁移至 `loop_ledger.control_type`），权重编辑入口跳转 §6.3.6；⑤**§6.2.0 AAS Tag 同步状态页面新增**——同步服务状态卡片 + 手动触发同步 + Tag 列表 + 质量分布饼图；⑥**§6.3.2 低效排行补充**——明确仅展示 `include_in_evaluation=true` 回路，提供"包含不参评回路"开关；⑦**字段名清理**——`compositeScore` → `score`（§6.7.3、§6.8 任务结果渲染规则），`control_type` 字段映射从 `metric_config` 迁移至 `loop_ledger`，新增 `include_in_evaluation` 与 `grading_thresholds` 字段映射。 | 系统设计团队 |
+| v6.0 | 2026-07-06 | v6.0 文档统一升级版（对齐实现契约 v2.0、PRD v6.0、FDS v6.0、DDS v6.0）：①**修复 Action Tracker 状态枚举冲突**——§6.4.4 与 §8.2.3 旧枚举 `ACTIVE/RESOLVED/SUPPRESSED` 统一为实现契约 v2.0 标准枚举 `PENDING / IN_PROGRESS / IMPLEMENTED / IGNORED`（待处理 / 处理中 / 已实施 / 已忽略），与 §7.2.2 处理状态标签保持一致；②**统一 Loop 状态机**——§8.2.1 回路就绪状态从描述性表达对齐为 `READY / PARTIAL / INACTIVE`（就绪 / 部分配置 / 已停用）；③**统一 Tuning 状态机**——§8.2.6 整定推荐状态对齐为 `DRAFT / RUNNING / COMPLETED / ROLLED_BACK`（草稿 / 运行中 / 已完成 / 已回退）；④**统一 KPI 快照状态机**——`SUCCESS / PARTIAL / INCONCLUSIVE`（§7.2.1、§8.2.2 已一致，本版校验确认）；⑤**统一 PV Quality 状态机**——`GOOD / BAD / UNCERTAIN`（§7.2.4、§8.2.5 已一致，本版校验确认）；⑥**更新引用文档版本**——PRD v3.1→v6.0、FDS v5.1→v6.0、DDS v4.1→v6.0、ADS v4.0→v6.0、IDS v3.1→v6.0、实现契约 v1.0→v2.0；⑦**设计依据版本号**——头部"以 v4.0 设计文档为准"统一修订为"以 v6.0 设计文档为准"。 | 系统设计团队 |
 
 ---
 
@@ -1097,20 +1098,19 @@ v4.0 定义 **4 类页面结构模式**：
 - **筛选栏**：关键词搜索 + 装置/单元 + 处理状态 + 预诊标签 + 时间范围
 - **表格列**：回路位号、预诊标签、处理状态、最后操作人、最后操作时间、PDF 下载入口、操作
 
-**诊断标签状态流转**（v5.0 更新，对齐 PRD §5.6.2 / IDS §2.4.12）：
+**Action Tracker 状态流转**（v6.0 修订，对齐实现契约 v2.0 / §7.2.2 / §8.2.3 标准枚举）：
 
 ```
-ACTIVE（活跃） → RESOLVED（已处理）
-      ↓
-SUPPRESSED（已抑制，需注明抑制原因与到期时间）
+PENDING（待处理） → IN_PROGRESS（处理中） → IMPLEMENTED（已实施，触发 A/B 对比采集）
+                                                  └→ IGNORED（已忽略，需注明忽略原因）
 ```
 
 **状态变更交互**：
 - 仅仪控工程师可见状态下拉框
 - 变更时弹出确认抽屉，填写 `comment`（处理说明，必填 1-500 字符）
-- 标记 RESOLVED 后自动生成 A/B 对比视图
-- 状态变更记录审计日志，不支持 RESOLVED/SUPPRESSED 回退至 ACTIVE
-- SUPPRESSED 需注明抑制原因与到期时间
+- 标记 IMPLEMENTED 后自动生成 A/B 对比视图
+- 状态变更记录审计日志，不支持 IMPLEMENTED/IGNORED 回退至 PENDING/IN_PROGRESS
+- IGNORED 需注明忽略原因（如"误报"、"已纳入整定计划"等）
 - 成功后全局 Toast"状态已更新为：处理中"，列表即时变色
 - 每次变更记录 `updated_by` + `updated_at`，生成处理时间线节点
 
@@ -2087,10 +2087,14 @@ Tag 关联管理页面使用的核心组件。
 
 ### 8.2 核心状态机
 
-#### 8.2.1 回路就绪状态
+#### 8.2.1 回路就绪状态（v6.0 修订：对齐实现契约 v2.0 标准枚举）
 ```
-Partial（Tag 关联字段缺失，标红） → 就绪（PV/SP/OP/MODE 完整校验通过）
+READY（就绪，PV/SP/OP/MODE 完整校验通过，参与性能评估与装置级聚合）
+PARTIAL（部分配置，Tag 关联字段缺失，标红，不参与性能评估）
+INACTIVE（已停用，loop_ledger.is_active=false，不参与任何计算与展示）
 ```
+- 状态枚举与实现契约 v2.0、DDS v6.0 `loop_ledger.status` 字段保持一致
+- 历史命名 `ACTIVE/PAUSED/DECOMMISSIONED` 已于 v6.0 废弃，统一视为旧命名
 
 #### 8.2.2 回路评估状态（`kpi_snapshot_hourly.status`，v5.0 更新：可信度联动）
 ```
@@ -2103,14 +2107,15 @@ valid_rate < 0.20（可信度 E 级） → INCONCLUSIVE（不计算评分、不�
 - 可信度 E 级强制 `status=INCONCLUSIVE`，评分数值留空显示"—"
 - 可信度 C/D 级评分正常展示，但附加角标提示
 
-#### 8.2.3 Action Tracker 处理状态（`action_tracker.action_status`，v5.0 更新：状态枚举变更）
+#### 8.2.3 Action Tracker 处理状态（`action_tracker.action_status`，v6.0 修订：状态枚举统一为实现契约 v2.0 标准枚举）
 ```
-ACTIVE → RESOLVED（触发 A/B 对比采集）
-ACTIVE → SUPPRESSED（人工抑制，不再展示但不删除）
-SUPPRESSED → ACTIVE（重新激活）
+PENDING（待处理） → IN_PROGRESS（处理中） → IMPLEMENTED（已实施，触发 A/B 对比采集）
+                                                  └→ IGNORED（已忽略，需注明忽略原因）
 ```
-- 每次变更记录 `updated_by` + `updated_at` + severity（INFO/WARN/ERROR/CRITICAL）
-- 标记 RESOLVED 后截取 `[T-7天,T]` vs `[T,T+7天]` 窗口
+- 每次变更记录 `updated_by` + `updated_at` + comment（处理说明，必填）
+- 标记 IMPLEMENTED 后截取 `[T-7天,T]` vs `[T,T+7天]` 窗口
+- 状态枚举与 §7.2.2 处理状态标签、§6.4.4 Action Tracker 状态流转保持一致
+- 历史命名 `ACTIVE/RESOLVED/SUPPRESSED` 已于 v6.0 废弃，统一视为旧命名
 
 #### 8.2.4 诊断标签（v4.1 更新，8 类枚举对齐 C6）
 - `OSCILLATION` 振荡（FFT/自相关检测，振荡周期/频率特征命中）
@@ -2135,10 +2140,13 @@ SP/OP 线不受 PV 质量码影响，始终正常显示
 - 对齐 KEEP_ALL_WITH_VALIDITY 策略：Bad/Uncertain 数据点保留在时间序列中，不删除
 - 各指标通过 Metric Validity Mask 决定有效点（对齐算法说明 §3.5）
 
-#### 8.2.6 整定推荐状态（v4.0 新增，Phase 2）
+#### 8.2.6 整定推荐状态（v6.0 修订：对齐实现契约 v2.0 标准枚举，Phase 2）
 ```
-待辨识 → 已辨识（模型辨识完成） → 已整定（PID 参数推荐完成） → 已仿真（闭环仿真完成）
+DRAFT（草稿，新建整定任务） → RUNNING（运行中，辨识/整定/仿真计算中） → COMPLETED（已完成，结果可应用）
+                                                                  └→ ROLLED_BACK（已回退，参数未实施或回滚到上一版本）
 ```
+- 状态枚举与实现契约 v2.0、DDS v6.0 `tuning_record.status` 字段保持一致
+- 历史命名 `PENDING/IN_PROGRESS/FAILED` 已于 v6.0 废弃，统一视为旧命名
 
 #### 8.2.7 报表生成状态
 ```
@@ -2543,12 +2551,13 @@ Chrome (v90+), Edge (v90+), Safari (v14+)。
 
 | 文档 | 对本文档的约束 |
 |---|---|
-| PRD v3.0 | 产品定位、角色模型、6 模块 25 页面划分、AAS Tag 模型、安全边界、6 大 KPI、产品化设计原则 |
-| FDS v3.0 | 各模块 UI 形态强制约束、业务流程、状态流转、异常分支、配置变更确认流程 |
-| ADS v3.0 | 技术选型（React 19/ECharts/dnd-kit）、性能边界、部署架构 |
-| DDS v3.0 | 数据字段、枚举值、状态定义、PV 质量码阈值、AAS Tag 模型 |
-| IDS v3.2（v4.1 更新） | 接口路径、参数、分页/降采样默认值、错误码、算法服务接口（§2.7）、批量配置接口（§2.8/§2.9） |
-| 关键算法设计说明 v1.0（v4.1 新增） | 6 大 KPI 算法（§4）、8 类诊断标签（§5）、整定算法（§6）、综合评分（§4.7）、表达式引擎（§4.9）、C1-C7 跨文档差距修正 |
+| PRD v6.0 | 产品定位、角色模型、6 模块 25 页面划分、AAS Tag 模型、安全边界、6 大 KPI、产品化设计原则 |
+| FDS v6.0 | 各模块 UI 形态强制约束、业务流程、状态流转、异常分支、配置变更确认流程 |
+| ADS v6.0 | 技术选型（Vue 3 / vue-vben-admin / ECharts）、性能边界、部署架构 |
+| DDS v6.0 | 数据字段、枚举值、状态定义、PV 质量码阈值、AAS Tag 模型 |
+| IDS v6.0（v4.1 更新） | 接口路径、参数、分页/降采样默认值、错误码、算法服务接口（§2.7）、批量配置接口（§2.8/§2.9） |
+| 关键算法设计说明 v2.1（v4.1 新增） | 6 大 KPI 算法（§4）、8 类诊断标签（§5）、整定算法（§6）、综合评分（§4.7）、表达式引擎（§4.9）、C1-C7 跨文档差距修正 |
+| 实现契约 v2.0 | IA、路由、API 路径、权限矩阵、状态机标准枚举、KPI 契约、阶段口径 |
 | DESIGN.md | 原型设计基线、菜单结构声明、状态机原则 |
 
 ### 13.5 与历史版本的关系
@@ -2558,7 +2567,9 @@ Chrome (v90+), Edge (v90+), Safari (v14+)。
 | v0.1 草稿（2026-06-16） | 历史 `prototype-*-v0.1-2026-06-16.md` 文件基于 approved 产品化架构的 P0 治理闭环验证包，与 PRD/FDS 正式版存在根本性概念冲突。v0.1 文件已于 2026-06-20 清理删除。 |
 | v3.0（2026-06-20） | 基于 PRD v2.2/FDS v2.0 等，5 模块 14 页面架构。本文档 v4.0 已吸收 v3.0 中有价值的页面级交互明细与状态矩阵，映射到 v4.0 的 6 模块 25 页面体系。 |
 | v4.0（2026-06-20） | 基于 PRD v3.0/FDS v3.0/ADS v3.0/DDS v3.0/IDS v3.0，6 模块 + 门户 25 页面架构，引入 AAS Tag 模型、PV 质量码处理、产品化配置 UI、Tag 关联拖拽交互、配置变更确认交互。 |
-| **v4.1（2026-06-22）** | **当前权威版本**。基于《关键算法设计说明》v1.0 与 IDS v3.2，新增算法配置界面（§6.7）、诊断结果展示组件（§7.10）、整定参数展示组件（§7.11）、综合评分展示组件（§7.12）、算法任务状态组件（§7.13），更新性能指标配置交互（双滑块/百分比/单选按钮组），对齐 C1-C7 跨文档差距修正。本文档为唯一 UI/UX 事实来源。 |
+| v4.1（2026-06-22） | 基于《关键算法设计说明》v1.0 与 IDS v3.2，新增算法配置界面（§6.7）、诊断结果展示组件（§7.10）、整定参数展示组件（§7.11）、综合评分展示组件（§7.12）、算法任务状态组件（§7.13），更新性能指标配置交互（双滑块/百分比/单选按钮组），对齐 C1-C7 跨文档差距修正。 |
+| v5.0-v5.3（2026-06-26 ~ 2026-07-04） | 指标体系重构为 3+1+8 结构、引入可信度 A/B/C/D/E 五级、新增数据血缘展示、PV 质量码改为灰色虚线保留连线、新增任务管理页面与权重配置管理页面。 |
+| **v6.0（2026-07-06）** | **当前权威版本**。v6.0 文档统一升级版：修复 Action Tracker 状态枚举冲突（统一为 PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED），统一 5 类状态机（Loop / Action Tracker / KPI 快照 / Tuning / PV Quality），对齐实现契约 v2.0 与 PRD/FDS/DDS v6.0。本文档为唯一 UI/UX 事实来源。 |
 
 ### 13.6 v4.1 核心变更摘要
 
