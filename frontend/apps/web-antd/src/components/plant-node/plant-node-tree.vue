@@ -603,9 +603,9 @@ defineExpose({ loadTree, expandAll, collapseAll });
           {{ treeStats.totalLoops }}
         </span>
       </span>
-      <!-- 统计栏右侧：展开/折叠树节点按钮 -->
+      <!-- 统计栏右侧：展开/折叠树节点按钮（最右侧） -->
       <template v-if="showCollapseButtons">
-        <span class="mx-1 text-slate-300">|</span>
+        <span class="ml-auto" />
         <Tooltip title="全部展开">
           <Button type="text" size="small" @click="expandAll">
             <template #icon>

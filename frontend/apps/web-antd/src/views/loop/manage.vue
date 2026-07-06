@@ -2692,6 +2692,28 @@ watch(
   background-color: #f0f0f0 !important;
 }
 
+/* v6.1：选中行样式优化（去除默认的列分割线，改为整体淡蓝背景 + 左侧蓝色竖线） */
+.ant-table-tbody > tr.ant-table-row-selected > td {
+  background-color: #eff6ff !important; /* blue-50 */
+  border-bottom-color: #dbeafe !important; /* blue-100 */
+}
+.ant-table-tbody > tr.ant-table-row-selected:hover > td {
+  background-color: #dbeafe !important; /* blue-100 */
+}
+/* 选中行的第一列左侧加蓝色竖线（视觉锚点） */
+.ant-table-tbody > tr.ant-table-row-selected > td:first-child {
+  position: relative;
+}
+.ant-table-tbody > tr.ant-table-row-selected > td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: #3b82f6; /* blue-500 */
+}
+
 /* v6.1：抽屉表单紧凑布局（减小 FormItem 间距，确保保存按钮可见） */
 .compact-form .ant-form-item {
   margin-bottom: 12px;
