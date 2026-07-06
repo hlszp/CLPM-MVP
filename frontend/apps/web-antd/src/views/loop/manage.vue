@@ -2196,7 +2196,7 @@ watch(
               ref="formRef"
               :model="formState"
               layout="vertical"
-              class="pt-2"
+              class="pt-1 compact-form"
             >
               <div class="grid grid-cols-2 gap-3">
                 <FormItem
@@ -2254,8 +2254,8 @@ watch(
                 </FormItem>
               </div>
               <!-- v5.3：评估配置区（ZL 工业风格：浅灰底 + 左蓝色竖线 + 标题加粗） -->
-              <div class="mb-3 rounded border border-slate-200 border-l-4 border-l-blue-500 bg-slate-50 p-4">
-                <div class="mb-3 text-sm font-semibold text-slate-700">
+              <div class="mb-2 rounded border border-slate-200 border-l-4 border-l-blue-500 bg-slate-50 p-3">
+                <div class="mb-2 text-sm font-semibold text-slate-700">
                   评估配置
                   <span class="ml-2 text-xs font-normal text-slate-400">
                     用于 KPI 计算与装置级聚合
@@ -2321,8 +2321,8 @@ watch(
                 </FormItem>
               </div>
               <!-- v6.1：OP 输出限位配置区（ZL 工业风格：浅灰底 + 左蓝色竖线 + 标题加粗） -->
-              <div class="mb-3 rounded border border-slate-200 border-l-4 border-l-emerald-500 bg-slate-50 p-4">
-                <div class="mb-3 flex items-center justify-between">
+              <div class="mb-2 rounded border border-slate-200 border-l-4 border-l-emerald-500 bg-slate-50 p-3">
+                <div class="mb-2 flex items-center justify-between">
                   <div class="text-sm font-semibold text-slate-700">
                     OP 输出限位
                     <span class="ml-2 text-xs font-normal text-slate-400">
@@ -2340,7 +2340,7 @@ watch(
                 <!-- OP Tag 量程提示 -->
                 <div
                   v-if="opTagAssociated"
-                  class="mb-3 rounded bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700"
+                  class="mb-2 rounded bg-emerald-50 px-3 py-1 text-xs text-emerald-700"
                 >
                   OP Tag 量程：
                   <span class="font-mono font-medium">
@@ -2351,7 +2351,7 @@ watch(
                     （限位值须在量程范围内）
                   </span>
                 </div>
-                <div v-else class="mb-3 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
+                <div v-else class="mb-2 rounded bg-amber-50 px-3 py-1 text-xs text-amber-700">
                   尚未关联 OP Tag，限位值需人工填写（无范围校验）
                 </div>
                 <div class="grid grid-cols-2 gap-3">
@@ -2421,17 +2421,6 @@ watch(
                   :disabled="isViewMode"
                 />
               </FormItem>
-              <!-- v6.1：view 模式不显示保存按钮 -->
-              <div v-if="!isViewMode" class="flex justify-end gap-2">
-                <Button
-                  v-permission="['ADMIN', 'IC_ENGINEER']"
-                  type="primary"
-                  :loading="drawerSaving"
-                  @click="handleSaveBasic"
-                >
-                  保存基础信息
-                </Button>
-              </div>
             </Form>
           </TabPane>
 
@@ -2537,6 +2526,20 @@ watch(
           </TabPane>
         </Tabs>
       </Spin>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <Button @click="drawerVisible = false">{{ isViewMode ? '关闭' : '取消' }}</Button>
+          <Button
+            v-if="!isViewMode"
+            v-permission="['ADMIN', 'IC_ENGINEER']"
+            type="primary"
+            :loading="drawerSaving"
+            @click="handleSaveBasic"
+          >
+            保存
+          </Button>
+        </div>
+      </template>
     </Drawer>
 
     <!-- 批量配置弹窗 -->
@@ -2680,6 +2683,14 @@ watch(
 }
 .row-not-evaluated:hover > td {
   background-color: #f0f0f0 !important;
+}
+
+/* v6.1：抽屉表单紧凑布局（减小 FormItem 间距，确保保存按钮可见） */
+.compact-form .ant-form-item {
+  margin-bottom: 12px;
+}
+.compact-form .ant-form-item-label {
+  padding-bottom: 2px;
 }
 
 /* —— ZL §2 hover reveal 操作列 —— */
