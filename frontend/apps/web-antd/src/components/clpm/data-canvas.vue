@@ -235,6 +235,8 @@ const emit = defineEmits<{
   flex: 1 1 auto;
   min-height: 0;
   padding: 12px;
+  /* 允许内容滚动：避免 Antd Table 分页栏被 overflow:hidden 裁切 */
+  overflow: auto;
 }
 
 .clpm-data-canvas__body.is-dimmed {
