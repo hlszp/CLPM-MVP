@@ -1,4 +1,4 @@
-"""``plant_node`` model — factory → unit → equipment hierarchy."""
+"""``plant_node`` model — factory → area → unit 三层结构."""
 
 from __future__ import annotations
 
@@ -13,7 +13,11 @@ from app.models.base import Base
 
 
 class PlantNode(Base):
-    """Plant node — multi-level hierarchy (DDL §2)."""
+    """Plant node — 三层工厂结构（DDL §2）.
+
+    支持三层结构：FACTORY（工厂）→ AREA（装置/车间）→ UNIT（单元）
+    回路挂在 UNIT 节点下。
+    """
 
     __tablename__ = "plant_node"
 
@@ -46,7 +50,7 @@ class PlantNode(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('FACTORY', 'UNIT', 'EQUIPMENT')",
+            "type IN ('FACTORY', 'AREA', 'UNIT')",
             name="ck_plant_node_type",
         ),
         Index("idx_plant_node_monitor_tag_id", "monitor_tag_id"),

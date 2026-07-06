@@ -26,16 +26,19 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
+import { IconifyIcon } from '@vben/icons';
+
 import {
   Button,
   Drawer,
   Form,
   FormItem,
   Input,
-  InputNumber,
   message,
   Modal,
+  Popover,
   RadioGroup,
+  Segmented,
   Select,
   Spin,
   Switch,
@@ -81,12 +84,48 @@ function handleViewDetail(record: LoopApi.LoopListItem) {
   router.push(`/loop/detail/${record.loopId}`);
 }
 
-// ===== 主 Tab 结构 =====
-const activeMainTab = ref<'factory' | 'ledger' | 'tags'>('factory');
+// ===== 主 Tab 结构（已移除：方案 A 单页 + 视图切换） =====
+// 原 activeMainTab ref 已删除，改为 viewMode（'compact' | 'tags'）
+
+/**
+ * 视图切换（方案 A 单页 + 视图切换）
+ * - compact：紧凑视图（类型/等级/参评/状态/评分/操作）
+ * - tags：Tag 详情视图（增加 Tag 关联详情列）
+ */
+type ViewMode = 'compact' | 'tags';
+const viewMode = ref<ViewMode>('compact');
 
 // ===== 树（使用统一组件 PlantNodeTree）=====
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNode = ref<null | PlantNodeApi.PlantNode>(null);
+
+/**
+ * 各 UNIT 节点的回路数映射（key=plantNodeId, value=该节点直接挂载的回路数）
+ * 供 PlantNodeTree 显示节点尾部的回路数（递归累加得到 AREA/FACTORY 总数）
+ * 在 onMounted 时一次性加载全量回路（pageSize=1000，足以覆盖典型场景）
+ */
+const loopCountsByNodeId = ref<Record<string, number>>({});
+
+/** 加载所有 UNIT 节点的回路数聚合（一次性，用于工厂树显示回路总数） */
+async function loadLoopCounts() {
+  try {
+    const data = await getLoopListApi({
+      page: 1,
+      // eslint-disable-next-line @typescript-eslint/no-magic-numbers
+      pageSize: 1000,
+    });
+    const counts: Record<string, number> = {};
+    for (const loop of data.items) {
+      const unitId = loop.unitId;
+      if (unitId) {
+        counts[unitId] = (counts[unitId] ?? 0) + 1;
+      }
+    }
+    loopCountsByNodeId.value = counts;
+  } catch (error) {
+    console.error('[回路数聚合] 加载失败:', error);
+  }
+}
 
 /** 选中树节点（由 PlantNodeTree emit 触发） */
 function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
@@ -170,90 +209,95 @@ const queryIncludeInEvaluation = computed({
   },
 });
 
-/** v5.3：重要等级视觉编码（1 红色 / 2 橙色 / 3 灰色） */
+/** v5.3：重要等级视觉编码（ZL 语义色 — 1 级 rose / 2 级 amber / 3 级 slate） */
 const IMPORTANCE_LEVEL_TAG: Record<
   number,
-  { color: string; label: string }
+  { badgeClass: string; label: string }
 > = {
-  1: { label: '1 级', color: 'red' },
-  2: { label: '2 级', color: 'orange' },
-  3: { label: '3 级', color: 'default' },
+  1: {
+    label: '1 级',
+    badgeClass:
+      'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30',
+  },
+  2: {
+    label: '2 级',
+    badgeClass:
+      'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
+  },
+  3: {
+    label: '3 级',
+    badgeClass:
+      'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
+  },
 };
 
-const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  TEMPERATURE: { label: '温度', color: 'red' },
-  PRESSURE: { label: '压力', color: 'blue' },
-  LEVEL: { label: '液位', color: 'green' },
-  FLOW: { label: '流量', color: 'cyan' },
-  ANALYSIS: { label: '分析', color: 'purple' },
-  SPEED: { label: '速度', color: 'orange' },
-  OTHER: { label: '其他', color: 'default' },
+const LOOP_TYPE_MAP: Record<string, { badgeClass: string; label: string }> = {
+  TEMPERATURE: {
+    label: '温度',
+    badgeClass:
+      'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30',
+  },
+  PRESSURE: {
+    label: '压力',
+    badgeClass:
+      'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
+  },
+  LEVEL: {
+    label: '液位',
+    badgeClass:
+      'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30',
+  },
+  FLOW: {
+    label: '流量',
+    badgeClass:
+      'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30',
+  },
+  ANALYSIS: {
+    label: '分析',
+    badgeClass:
+      'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30',
+  },
+  SPEED: {
+    label: '速度',
+    badgeClass:
+      'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
+  },
+  OTHER: {
+    label: '其他',
+    badgeClass:
+      'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
+  },
 };
 
-const CONTROL_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  STABLE: { label: '稳定型', color: 'blue' },
-  SLOW: { label: '慢速型', color: 'cyan' },
-  FAST: { label: '快速型', color: 'orange' },
-  LOGIC: { label: '逻辑型', color: 'purple' },
+const CONTROL_TYPE_MAP: Record<string, { badgeClass: string; label: string }> = {
+  STABLE: {
+    label: '稳定型',
+    badgeClass:
+      'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
+  },
+  SLOW: {
+    label: '慢速型',
+    badgeClass:
+      'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30',
+  },
+  FAST: {
+    label: '快速型',
+    badgeClass:
+      'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
+  },
+  LOGIC: {
+    label: '逻辑型',
+    badgeClass:
+      'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30',
+  },
 };
 
 const LEVEL_LABEL: Record<number, string> = { 1: '1 级', 2: '2 级', 3: '3 级' };
 
-const columns: TableColumnsType = [
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    key: 'description',
-    ellipsis: true,
-  },
-  { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 90 },
-  {
-    title: '控制类型',
-    dataIndex: 'controlType',
-    key: 'controlType',
-    width: 100,
-  },
-  {
-    title: '重要等级',
-    dataIndex: 'importanceLevel',
-    key: 'importanceLevel',
-    width: 90,
-    align: 'center',
-  },
-  {
-    title: '参评状态',
-    dataIndex: 'includeInEvaluation',
-    key: 'includeInEvaluation',
-    width: 100,
-    align: 'center',
-  },
-  { title: '监控状态', dataIndex: 'status', key: 'status', width: 110 },
-  {
-    title: '评分',
-    dataIndex: 'score',
-    key: 'score',
-    width: 80,
-    align: 'right',
-  },
-  { title: 'Tag 状态', key: 'tagMapping', width: 180 },
-  { title: '操作', key: 'action', width: 160, fixed: 'right' },
-];
-
-/** Tag 关联 Tab 列 */
-const tagColumns: TableColumnsType = [
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    key: 'description',
-    ellipsis: true,
-  },
-  { title: '监控状态', dataIndex: 'status', key: 'status', width: 110 },
-  { title: 'Tag 关联', key: 'tagMapping', width: 180 },
-  { title: '关联详情', key: 'tagDetail' },
-  { title: '操作', key: 'action', width: 100, fixed: 'right' },
-];
+/**
+ * 表格列定义统一由 dynamicColumns computed 提供，根据 viewMode 切换。
+ * 不再保留静态 columns / tagColumns，避免数据冗余。
+ */
 
 /** Tag 槽位标签 */
 const SLOT_LABELS: Record<string, string> = {
@@ -265,6 +309,64 @@ const SLOT_LABELS: Record<string, string> = {
   pid_i: 'I',
   pid_d: 'D',
 };
+
+/**
+ * 动态表格列：根据 viewMode 切换
+ * - compact：紧凑视图（默认）
+ * - tags：Tag 详情视图（增加 Tag 关联详情列，移除类型/等级/参评/评分）
+ */
+const dynamicColumns = computed<TableColumnsType>(() => {
+  const baseCols: TableColumnsType = [
+    { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 130, fixed: 'left' },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+      width: 180,
+    },
+    { title: '监控状态', dataIndex: 'status', key: 'status', width: 100 },
+    { title: 'Tag 状态', key: 'tagMapping', width: 150 },
+  ];
+
+  if (viewMode.value === 'tags') {
+    // Tag 详情视图：增加 Tag 详情列
+    return [
+      ...baseCols,
+      { title: 'Tag 关联详情', key: 'tagDetail', width: 320 },
+      { title: '操作', key: 'action', width: 100, fixed: 'right' },
+    ];
+  }
+
+  // 紧凑视图：类型/等级/参评 + 操作（v6.1：移除"评分"列，综合评分统一在回路监控页面查看）
+  return [
+    ...baseCols.slice(0, 2), // tagName + description
+    { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 70, align: 'center' },
+    {
+      title: '控制类型',
+      dataIndex: 'controlType',
+      key: 'controlType',
+      width: 80,
+      align: 'center',
+    },
+    {
+      title: '等级',
+      dataIndex: 'importanceLevel',
+      key: 'importanceLevel',
+      width: 60,
+      align: 'center',
+    },
+    {
+      title: '参评',
+      dataIndex: 'includeInEvaluation',
+      key: 'includeInEvaluation',
+      width: 60,
+      align: 'center',
+    },
+    ...baseCols.slice(2), // status + tagMapping
+    { title: '操作', key: 'action', width: 100, fixed: 'right' },
+  ];
+});
 
 /** 加载回路列表 */
 async function loadList() {
@@ -301,11 +403,6 @@ function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize || 20;
   loadList();
-}
-
-/** v5.3：表格行样式 — 不参评回路行底色淡灰 */
-function rowClassName(record: LoopApi.LoopListItem): string {
-  return record.includeInEvaluation === false ? 'row-not-evaluated' : '';
 }
 
 /** v5.3：内联切换参评状态 */
@@ -489,20 +586,7 @@ const changeSummary = computed<DiffEntry[]>(() => {
         '—';
       summary.push({ field: '所属单元', from: origLabel, to: newLabel });
     }
-    if (loopDetail.value) {
-      const origW = loopDetail.value.basicInfo.scoreWeights;
-      for (const item of weightItems) {
-        if (
-          (origW[item.key] ?? 0) !== (formState.scoreWeights[item.key] ?? 0)
-        ) {
-          summary.push({
-            field: `权重·${item.label}`,
-            from: `${origW[item.key]}%`,
-            to: `${formState.scoreWeights[item.key]}%`,
-          });
-        }
-      }
-    }
+    // 评分权重对比已移除（v6.1：回路级权重未参与计算）
     return summary;
   }
   if (confirmContextType.value === 'tagMapping' && tagData.value) {
@@ -864,32 +948,110 @@ const formState = reactive({
   includeInEvaluation: true,
   isActive: true,
   remark: '',
-  scoreWeights: {
-    auto_mode_rate: 10,
-    steady_rate: 30,
-    accuracy_rate: 15,
-    fast_rate: 10,
-    oscillation_rate: 20,
-    saturation_rate: 15,
-  } as LoopApi.ScoreWeights,
 });
 
-const weightItems: { key: keyof LoopApi.ScoreWeights; label: string }[] = [
-  { key: 'auto_mode_rate', label: '自动模式率' },
-  { key: 'steady_rate', label: '稳定率' },
-  { key: 'accuracy_rate', label: '准确度' },
-  { key: 'fast_rate', label: '快速率' },
-  { key: 'oscillation_rate', label: '振荡率' },
-  { key: 'saturation_rate', label: '饱和率' },
-];
+// 评分权重已移除（v6.1：回路级权重未被算法使用，统一由 MetricConfig.weight 全局配置管理）
 
-const weightTotal = computed(() =>
-  Object.values(formState.scoreWeights).reduce(
-    (sum, v) => sum + (Number(v) || 0),
-    0,
-  ),
-);
-const weightValid = computed(() => weightTotal.value === 100);
+
+// ===== 筛选区紧凑化（P2-1）：已选筛选徽章 + 高级筛选 Popover =====
+const activeFilterCount = computed(() => {
+  let count = 0;
+  if (query.controlType) count++;
+  if (query.importanceLevel) count++;
+  if (queryIncludeInEvaluation.value !== undefined && queryIncludeInEvaluation.value !== null) count++;
+  if (queryMonitorStatus.value) count++;
+  if (query.status) count++;
+  return count;
+});
+
+const activeFilterBadges = computed(() => {
+  const badges: {
+    key: string;
+    label: string;
+    value: string;
+    clear: () => void;
+  }[] = [];
+
+  if (query.controlType) {
+    const opt = controlTypeOptions.find((o) => o.value === query.controlType);
+    badges.push({
+      key: 'controlType',
+      label: '控制类型',
+      value: opt?.label ?? String(query.controlType),
+      clear: () => {
+        query.controlType = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.importanceLevel) {
+    const opt = levelOptions.find((o) => o.value === query.importanceLevel);
+    badges.push({
+      key: 'importanceLevel',
+      label: '等级',
+      value: opt?.label ?? String(query.importanceLevel),
+      clear: () => {
+        query.importanceLevel = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (queryIncludeInEvaluation.value !== undefined && queryIncludeInEvaluation.value !== null) {
+    const opt = evaluationOptions.find(
+      (o) => o.value === queryIncludeInEvaluation.value,
+    );
+    badges.push({
+      key: 'evaluation',
+      label: '参评',
+      value: opt?.label ?? String(queryIncludeInEvaluation.value),
+      clear: () => {
+        queryIncludeInEvaluation.value = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (queryMonitorStatus.value) {
+    const opt = monitorStatusOptions.find(
+      (o) => o.value === queryMonitorStatus.value,
+    );
+    badges.push({
+      key: 'monitorStatus',
+      label: '监控',
+      value: opt?.label ?? String(queryMonitorStatus.value),
+      clear: () => {
+        queryMonitorStatus.value = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.status) {
+    const opt = statusOptions.find((o) => o.value === query.status);
+    badges.push({
+      key: 'status',
+      label: '状态',
+      value: opt?.label ?? String(query.status),
+      clear: () => {
+        query.status = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  return badges;
+});
+
+function clearAllFilters() {
+  query.controlType = undefined;
+  query.importanceLevel = undefined;
+  queryIncludeInEvaluation.value = undefined;
+  queryMonitorStatus.value = undefined;
+  query.status = undefined;
+  handleSearch();
+}
 
 // Tag 关联状态
 const tagData = ref<LoopApi.LoopTagsResult | null>(null);
@@ -979,14 +1141,6 @@ function handleAdd() {
   formState.includeInEvaluation = true;
   formState.isActive = true;
   formState.remark = '';
-  formState.scoreWeights = {
-    accuracy_rate: 15,
-    auto_mode_rate: 10,
-    fast_rate: 10,
-    oscillation_rate: 20,
-    saturation_rate: 15,
-    steady_rate: 30,
-  };
   activeTab.value = 'basic';
   drawerVisible.value = true;
 }
@@ -1007,14 +1161,6 @@ async function handleEdit(record: LoopApi.LoopListItem) {
     record.includeInEvaluation !== false && record.includeInEvaluation !== null;
   formState.isActive = record.isActive;
   formState.remark = '';
-  formState.scoreWeights = {
-    accuracy_rate: 15,
-    auto_mode_rate: 10,
-    fast_rate: 10,
-    oscillation_rate: 20,
-    saturation_rate: 15,
-    steady_rate: 30,
-  };
   activeTab.value = 'basic';
   drawerVisible.value = true;
   // 加载详情
@@ -1022,7 +1168,6 @@ async function handleEdit(record: LoopApi.LoopListItem) {
   try {
     const detail = await getLoopDetailApi(record.loopId);
     loopDetail.value = detail;
-    formState.scoreWeights = { ...detail.basicInfo.scoreWeights };
     formState.remark = detail.basicInfo.remark || '';
     formState.description = detail.basicInfo.description;
   } catch (error) {
@@ -1173,13 +1318,9 @@ async function doSaveTagMapping() {
   }
 }
 
-/** 保存基础信息 + 评估参数（编辑模式打开变更确认弹窗） */
+/** 保存基础信息（编辑模式打开变更确认弹窗） */
 async function handleSaveBasic() {
   await formRef.value?.validate();
-  if (!weightValid.value) {
-    message.warning(`权重总和须为 100%，当前为 ${weightTotal.value}%`);
-    return;
-  }
   // v5.3：新建回路时控制类型与重要等级为必填
   if (!editingLoop.value) {
     if (!formState.controlType) {
@@ -1214,7 +1355,6 @@ async function doSaveBasic() {
         controlType: formState.controlType,
         importanceLevel: formState.importanceLevel,
         includeInEvaluation: formState.includeInEvaluation,
-        scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
       });
@@ -1233,7 +1373,6 @@ async function doSaveBasic() {
         controlType: formState.controlType,
         importanceLevel: formState.importanceLevel,
         includeInEvaluation: formState.includeInEvaluation,
-        scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
       });
@@ -1247,8 +1386,6 @@ async function doSaveBasic() {
         controlMode: 'Manual',
         isActive: result.isActive,
         status: result.status,
-        score: 0,
-        lastScoreAt: '',
         tagMappingStatus: {
           pv: false,
           sp: false,
@@ -1301,6 +1438,7 @@ async function loadPlantNodes() {
 onMounted(() => {
   loadPlantNodes();
   loadList();
+  loadLoopCounts();
 });
 
 watch(
@@ -1310,16 +1448,7 @@ watch(
   },
 );
 
-// 切换到回路台账 Tab 时清除工厂节点筛选，展示全量回路
-watch(activeMainTab, (tab) => {
-  if (tab === 'ledger' && query.plantNodeId) {
-    query.plantNodeId = undefined;
-    selectedPlantNodeId.value = undefined;
-    selectedPlantNode.value = null;
-    query.page = 1;
-    loadList();
-  }
-});
+// watch activeMainTab 已移除：方案 A 单页 + 视图切换，不再切换 Tab
 </script>
 
 <template>
@@ -1329,31 +1458,19 @@ watch(activeMainTab, (tab) => {
       subtitle="工厂结构、回路台账、Tag 关联与批量配置的统一入口。"
     />
 
-    <!-- 主 Tab 结构 -->
-    <Tabs
-      v-model:active-key="activeMainTab"
-      class="mt-3"
-      type="line"
-      :tab-bar-style="{ marginBottom: '12px' }"
-    >
-      <TabPane key="factory" tab="工厂结构" />
-      <TabPane key="ledger" tab="回路台账" />
-      <TabPane key="tags" tab="Tag 关联" />
-    </Tabs>
-
-    <!-- 工厂结构 / 回路台账 共享表格区 -->
+    <!-- 单页布局：左侧工厂树 + 右侧回路表格（方案 A） -->
     <div
-      v-show="activeMainTab === 'factory' || activeMainTab === 'ledger'"
       class="flex gap-3"
       style="height: calc(100vh - 220px)"
     >
-      <!-- 左侧工厂树（仅工厂结构 Tab 可见） -->
+      <!-- 左侧工厂模型树 -->
       <PlantNodeTree
-        v-show="activeMainTab === 'factory'"
         card-title="工厂模型"
         :width="280"
         :show-crud-buttons="true"
         :default-expand-level="2"
+        :show-stats="true"
+        :loop-counts="loopCountsByNodeId"
         max-height="calc(100vh - 220px)"
         @select="onTreeSelect"
       />
@@ -1401,22 +1518,35 @@ watch(activeMainTab, (tab) => {
             :loading="loading"
             @click="loadList"
           />
-          <span class="ml-auto text-xs text-gray-400">
+          <span class="text-xs text-gray-400">
             {{
               selectedPlantNode ? `当前节点：${selectedPlantNode.name}` : '全厂'
             }}
           </span>
+          <!-- 视图切换：紧凑视图 / Tag 详情视图 -->
+          <Segmented
+            v-model:value="viewMode"
+            :options="[
+              { label: '紧凑视图', value: 'compact' },
+              { label: 'Tag 详情', value: 'tags' },
+            ]"
+            size="small"
+          />
         </div>
 
-        <!-- 批量操作工具栏（选中回路后浮现） -->
+        <!-- 批量操作工具栏（ZL 工业风格：左侧蓝色竖线 + 已选数量高亮） -->
         <div
           v-if="selectedRowKeys.length > 0"
-          class="mb-3 flex flex-wrap items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2"
+          class="mb-3 flex flex-wrap items-center gap-3 rounded border border-slate-200 border-l-4 border-l-blue-500 bg-slate-50 px-4 py-2"
         >
-          <span class="text-sm font-medium text-blue-700">
-            已选择 {{ selectedRowKeys.length }} 个回路
+          <span class="text-sm font-medium text-slate-700">
+            已选择
+            <span class="mx-1 font-mono font-bold text-blue-600">
+              {{ selectedRowKeys.length }}
+            </span>
+            个回路
           </span>
-          <div class="ml-auto flex gap-2">
+          <div class="ml-auto flex items-center gap-2">
             <ClpmToolbarButton
               v-permission="['ADMIN']"
               icon="ant-design:setting-outlined"
@@ -1436,76 +1566,142 @@ watch(activeMainTab, (tab) => {
           </div>
         </div>
 
-        <!-- 筛选区 -->
-        <div class="mb-3 flex flex-wrap items-center gap-2">
-          <Select
-            v-model:value="query.controlType"
-            placeholder="控制类型"
-            style="width: 140px"
-            size="small"
-            allow-clear
-            :options="controlTypeOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="query.importanceLevel"
-            placeholder="重要等级"
-            style="width: 120px"
-            size="small"
-            allow-clear
-            :options="levelOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="queryIncludeInEvaluation"
-            placeholder="参评状态"
-            style="width: 120px"
-            size="small"
-            allow-clear
-            :options="evaluationOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="queryMonitorStatus"
-            placeholder="监控状态"
-            style="width: 140px"
-            size="small"
-            allow-clear
-            :options="monitorStatusOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="query.status"
-            placeholder="回路状态"
-            style="width: 140px"
-            size="small"
-            allow-clear
-            :options="statusOptions"
-            @change="handleSearch"
-          />
+        <!-- 筛选区（ZL 工业风格工具栏：左搜索 + 右高级筛选 Popover） -->
+        <div class="mb-3 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50/50 px-3 py-2">
           <Input
             v-model:value="query.keyword"
             placeholder="搜索位号/描述"
             allow-clear
             size="small"
-            style="width: 220px"
+            class="!w-60"
             @press-enter="handleSearch"
-          />
+          >
+            <template #prefix>
+              <IconifyIcon icon="ant-design:search-outlined" class="text-slate-400" />
+            </template>
+          </Input>
           <Button type="primary" size="small" @click="handleSearch">
             查询
           </Button>
-          <Button
-            v-if="selectedRowKeys.length > 0"
-            size="small"
-            type="link"
-            @click="selectedRowKeys = []"
-          >
-            清除选择（{{ selectedRowKeys.length }}）
-          </Button>
+
+          <div class="ml-auto flex items-center gap-2">
+            <!-- 已选筛选条件徽章 -->
+            <template v-if="activeFilterCount > 0">
+              <span
+                v-for="f in activeFilterBadges"
+                :key="f.key"
+                class="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+              >
+                {{ f.label }}: {{ f.value }}
+                <IconifyIcon
+                  icon="ant-design:close-outlined"
+                  class="cursor-pointer text-blue-500 hover:text-blue-700"
+                  @click="f.clear"
+                />
+              </span>
+            </template>
+
+            <Popover trigger="click" placement="bottomRight">
+              <template #content>
+                <div class="w-64 space-y-3">
+                  <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    高级筛选
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">控制类型</div>
+                    <Select
+                      v-model:value="query.controlType"
+                      placeholder="控制类型"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="controlTypeOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">重要等级</div>
+                    <Select
+                      v-model:value="query.importanceLevel"
+                      placeholder="重要等级"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="levelOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">参评状态</div>
+                    <Select
+                      v-model:value="queryIncludeInEvaluation"
+                      placeholder="参评状态"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="evaluationOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">监控状态</div>
+                    <Select
+                      v-model:value="queryMonitorStatus"
+                      placeholder="监控状态"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="monitorStatusOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">回路状态</div>
+                    <Select
+                      v-model:value="query.status"
+                      placeholder="回路状态"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="statusOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div class="flex justify-between border-t border-slate-200 pt-2">
+                    <Button size="small" type="link" @click="clearAllFilters">
+                      清空筛选
+                    </Button>
+                    <Button size="small" type="primary" @click="handleSearch">
+                      应用
+                    </Button>
+                  </div>
+                </div>
+              </template>
+              <Button size="small">
+                <IconifyIcon icon="ant-design:filter-outlined" class="mr-1" />
+                筛选
+                <span
+                  v-if="activeFilterCount > 0"
+                  class="ml-1 rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                >
+                  {{ activeFilterCount }}
+                </span>
+              </Button>
+            </Popover>
+
+            <Button
+              v-if="selectedRowKeys.length > 0"
+              size="small"
+              type="link"
+              @click="selectedRowKeys = []"
+            >
+              清除选择（{{ selectedRowKeys.length }}）
+            </Button>
+          </div>
         </div>
 
         <Table
-          :columns="columns"
+          :columns="dynamicColumns"
           :data-source="loopList"
           :loading="loading"
           :row-selection="rowSelection"
@@ -1517,54 +1713,57 @@ watch(activeMainTab, (tab) => {
             showTotal: (t: number) => `共 ${t} 条`,
           }"
           :row-key="(record: LoopApi.LoopListItem) => record.loopId"
-          :row-class-name="rowClassName"
           :scroll="{ x: 1300 }"
-          size="middle"
+          size="small"
+          :custom-row="(record: LoopApi.LoopListItem) => ({
+            class: record.includeInEvaluation === false ? 'row-not-evaluated' : '',
+          })"
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'loopType'">
-              <Tag
-                :color="
-                  LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.color ?? 'default'
-                "
-                class="m-0"
+              <span
+                :class="[
+                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                  LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.badgeClass ??
+                    'bg-slate-100 text-slate-700 border-slate-200',
+                ]"
               >
                 {{ LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.label ?? '其他' }}
-              </Tag>
+              </span>
             </template>
             <template v-else-if="column.key === 'controlType'">
-              <Tag
+              <span
                 v-if="record.controlType"
-                :color="
-                  CONTROL_TYPE_MAP[record.controlType]?.color ?? 'default'
-                "
-                class="m-0"
+                :class="[
+                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                  CONTROL_TYPE_MAP[record.controlType]?.badgeClass ??
+                    'bg-slate-100 text-slate-700 border-slate-200',
+                ]"
               >
                 {{
                   CONTROL_TYPE_MAP[record.controlType]?.label ??
                   record.controlType
                 }}
-              </Tag>
-              <span v-else class="text-gray-400">—</span>
+              </span>
+              <span v-else class="text-slate-400">—</span>
             </template>
             <template v-else-if="column.key === 'importanceLevel'">
-              <Tag
+              <span
                 v-if="record.importanceLevel"
-                :color="
-                  IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.color ??
-                  'default'
-                "
-                class="m-0"
+                :class="[
+                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                  IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.badgeClass ??
+                    'bg-slate-100 text-slate-700 border-slate-200',
+                ]"
               >
                 {{ IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.label ??
                   LEVEL_LABEL[record.importanceLevel] ?? record.importanceLevel }}
-              </Tag>
-              <span v-else class="text-gray-400">—</span>
+              </span>
+              <span v-else class="text-slate-400">—</span>
             </template>
             <template v-else-if="column.key === 'includeInEvaluation'">
               <Switch
-                v-permission="['ADMIN', 'IC_ENGINEER']"
                 :checked="
                   record.includeInEvaluation !== false &&
                   record.includeInEvaluation !== null
@@ -1585,122 +1784,77 @@ watch(activeMainTab, (tab) => {
                 :is-active="record.isActive"
               />
             </template>
-            <template v-else-if="column.key === 'score'">
-              <span v-if="record.score != null" class="font-mono font-medium">
-                {{ record.score?.toFixed(1) ?? '--' }}
-              </span>
-              <span v-else class="text-gray-400">—</span>
-            </template>
             <template v-else-if="column.key === 'tagMapping'">
               <ClpmTagAssociationBadge
                 :status="(record as LoopApi.LoopListItem).tagMappingStatus"
               />
             </template>
+            <template v-else-if="column.key === 'tagDetail'">
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="(val, key) in (record as LoopApi.LoopListItem)
+                    .tagMappingStatus"
+                  :key="key"
+                  :class="[
+                    'inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium leading-none',
+                    val
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
+                      : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
+                  ]"
+                >
+                  {{ SLOT_LABELS[key] ?? key }}: {{ val ? '✓' : '✗' }}
+                </span>
+              </div>
+            </template>
             <template v-else-if="column.key === 'action'">
-              <div class="flex gap-1">
+              <div class="loop-action-cell group">
                 <Tooltip title="查看回路详情">
                   <Button
-                    type="link"
+                    type="text"
                     size="small"
+                    class="loop-action-btn"
                     @click="handleViewDetail(record as LoopApi.LoopListItem)"
                   >
-                    查看
+                    <template #icon>
+                      <IconifyIcon icon="ant-design:eye-outlined" />
+                    </template>
                   </Button>
                 </Tooltip>
-                <Tooltip title="编辑回路信息">
-                  <Button
-                    v-permission="['ADMIN', 'IC_ENGINEER']"
-                    type="link"
-                    size="small"
-                    @click="handleEdit(record as LoopApi.LoopListItem)"
-                  >
-                    编辑
-                  </Button>
-                </Tooltip>
-                <Button
-                  v-permission="['ADMIN']"
-                  type="link"
-                  size="small"
-                  danger
-                  @click="openDanger(record as LoopApi.LoopListItem)"
-                >
-                  删除
-                </Button>
+                <span class="loop-action-cell__more">
+                  <Tooltip title="编辑回路信息">
+                    <Button
+                      v-permission="['ADMIN', 'IC_ENGINEER']"
+                      type="text"
+                      size="small"
+                      class="loop-action-btn"
+                      @click="handleEdit(record as LoopApi.LoopListItem)"
+                    >
+                      <template #icon>
+                        <IconifyIcon icon="ant-design:edit-outlined" />
+                      </template>
+                    </Button>
+                  </Tooltip>
+                  <Tooltip title="删除回路">
+                    <Button
+                      v-permission="['ADMIN']"
+                      type="text"
+                      size="small"
+                      danger
+                      class="loop-action-btn"
+                      @click="openDanger(record as LoopApi.LoopListItem)"
+                    >
+                      <template #icon>
+                        <IconifyIcon icon="ant-design:delete-outlined" />
+                      </template>
+                    </Button>
+                  </Tooltip>
+                </span>
               </div>
             </template>
           </template>
         </Table>
       </ClpmDataCanvas>
     </div>
-
-    <!-- Tag 关联概览 Tab -->
-    <ClpmDataCanvas
-      v-if="activeMainTab === 'tags'"
-      title="Tag 关联概览"
-      :loading="loading"
-    >
-      <div class="mb-3 flex items-center justify-between">
-        <p class="text-sm text-gray-500">
-          浏览各回路的 Tag 关联状态，点击「编辑」进入抽屉管理 Tag 关联。
-        </p>
-        <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loading"
-          @click="loadList"
-        />
-      </div>
-      <Table
-        :columns="tagColumns"
-        :data-source="loopList"
-        :loading="loading"
-        :pagination="{
-          current: query.page,
-          pageSize: query.pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (t: number) => `共 ${t} 条`,
-        }"
-        :row-key="(record: LoopApi.LoopListItem) => record.loopId"
-        :scroll="{ x: 900 }"
-        size="middle"
-        @change="handleTableChange"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'status'">
-            <StatusBadge :status="record.status" :is-active="record.isActive" />
-          </template>
-          <template v-else-if="column.key === 'tagMapping'">
-            <ClpmTagAssociationBadge
-              :status="(record as LoopApi.LoopListItem).tagMappingStatus"
-            />
-          </template>
-          <template v-else-if="column.key === 'tagDetail'">
-            <div class="flex flex-wrap gap-1">
-              <Tag
-                v-for="(val, key) in (record as LoopApi.LoopListItem)
-                  .tagMappingStatus"
-                :key="key"
-                :color="val ? 'green' : 'default'"
-                class="m-0 text-xs"
-              >
-                {{ SLOT_LABELS[key] ?? key }}: {{ val ? '✓' : '✗' }}
-              </Tag>
-            </div>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <Button
-              v-permission="['ADMIN', 'IC_ENGINEER']"
-              type="link"
-              size="small"
-              @click="handleEdit(record as LoopApi.LoopListItem)"
-            >
-              编辑
-            </Button>
-          </template>
-        </template>
-      </Table>
-    </ClpmDataCanvas>
 
     <!-- 编辑抽屉 -->
     <Drawer
@@ -1772,9 +1926,14 @@ watch(activeMainTab, (tab) => {
                   />
                 </FormItem>
               </div>
-              <!-- v5.3：评估配置区 -->
-              <div class="mb-3 rounded border border-blue-100 bg-blue-50/40 p-3">
-                <div class="mb-3 font-medium text-blue-700">评估配置</div>
+              <!-- v5.3：评估配置区（ZL 工业风格：浅灰底 + 左蓝色竖线 + 标题加粗） -->
+              <div class="mb-3 rounded border border-slate-200 border-l-4 border-l-blue-500 bg-slate-50 p-4">
+                <div class="mb-3 text-sm font-semibold text-slate-700">
+                  评估配置
+                  <span class="ml-2 text-xs font-normal text-slate-400">
+                    用于 KPI 计算与装置级聚合
+                  </span>
+                </div>
                 <FormItem
                   name="controlType"
                   label="控制类型"
@@ -1928,49 +2087,6 @@ watch(activeMainTab, (tab) => {
                   @click="handleSaveTagMapping"
                 >
                   保存 Tag 关联
-                </Button>
-              </div>
-            </div>
-            <div v-else class="py-8 text-center text-gray-400">
-              请先保存基础信息
-            </div>
-          </TabPane>
-
-          <!-- 评估参数 -->
-          <TabPane key="params" tab="评估参数" :disabled="!editingLoop">
-            <div v-if="editingLoop">
-              <div class="mb-2 font-medium">
-                评分权重
-                <span
-                  class="ml-2 text-xs"
-                  :class="weightValid ? 'text-green-500' : 'text-red-500'"
-                >
-                  总和：{{ weightTotal }}%
-                </span>
-              </div>
-              <div class="grid grid-cols-3 gap-3 rounded border p-3">
-                <FormItem
-                  v-for="item in weightItems"
-                  :key="item.key"
-                  :label="item.label"
-                >
-                  <InputNumber
-                    v-model:value="formState.scoreWeights[item.key]"
-                    :min="0"
-                    :max="100"
-                    class="w-full"
-                    addon-after="%"
-                  />
-                </FormItem>
-              </div>
-              <div class="mt-4 flex justify-end">
-                <Button
-                  v-permission="['ADMIN', 'IC_ENGINEER']"
-                  type="primary"
-                  :loading="drawerSaving"
-                  @click="handleSaveBasic"
-                >
-                  保存评估参数
                 </Button>
               </div>
             </div>
@@ -2135,5 +2251,71 @@ watch(activeMainTab, (tab) => {
 }
 .row-not-evaluated:hover > td {
   background-color: #f0f0f0 !important;
+}
+
+/* —— ZL §2 hover reveal 操作列 —— */
+.loop-action-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.loop-action-cell__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+/* hover 行时显示更多操作 */
+.ant-table-row:hover .loop-action-cell__more,
+.loop-action-cell:hover .loop-action-cell__more,
+.loop-action-cell:focus-within .loop-action-cell__more {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 操作按钮统一样式 */
+.loop-action-btn {
+  height: 22px !important;
+  padding: 0 4px !important;
+  font-size: 13px !important;
+  border-radius: 3px !important;
+}
+
+.loop-action-btn:hover {
+  background-color: hsl(var(--accent) / 0.1) !important;
+}
+
+.loop-action-btn.ant-btn-dangerous:hover {
+  background-color: hsl(var(--destructive) / 0.1) !important;
+}
+
+/* —— ZL 高密度表格 —— */
+.ant-table-small .ant-table-thead > tr > th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  background-color: #f8fafc;
+}
+
+.dark .ant-table-small .ant-table-thead > tr > th {
+  background-color: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+}
+
+.ant-table-small .ant-table-tbody > tr > td {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+/* 数值列等宽字体 */
+.ant-table-small .ant-table-tbody > tr > td[align='right'] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 </style>

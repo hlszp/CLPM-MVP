@@ -43,7 +43,10 @@ export namespace LoopApi {
   /** KPI 状态（IDS v3.2 §2.2.14） */
   export type KpiStatus = 'INCONCLUSIVE' | 'PARTIAL' | 'SUCCESS';
 
-  /** 评分权重（6 大 KPI，总和须 100，对齐 GB/T 44693.2-2024） */
+  /** 评分权重（6 大 KPI，总和须 100，对齐 GB/T 44693.2-2024）
+   * @deprecated v6.1：回路级权重未参与 KPI 计算，统一由 MetricConfig.weight 全局配置管理。
+   * 保留字段仅为兼容后端响应，前端不再写入。
+   */
   export interface ScoreWeights {
     /** 自动模式率权重 */
     auto_mode_rate: number;
@@ -96,8 +99,14 @@ export namespace LoopApi {
     includeInEvaluation?: boolean | null;
     isActive: boolean;
     status: LoopStatus;
-    score: number;
-    lastScoreAt: string;
+    /**
+     * 综合评分（v6.1：回路管理列表已移除该列）
+     * @deprecated v6.1 后端仍返回此字段（来自 loop.score_weight 僵尸字段，恒为 null），
+     * 前端不再使用。综合评分请走回路监控接口 MonitorListItem.score。
+     */
+    score?: number;
+    /** @deprecated v6.1 同 score，已废弃 */
+    lastScoreAt?: string;
     tagMappingStatus: TagMappingStatus;
   }
 
