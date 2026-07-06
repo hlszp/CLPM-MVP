@@ -1784,12 +1784,32 @@ watch(
             label="新建回路"
             @click="handleAdd"
           />
-          <ClpmToolbarButton
-            v-permission="['ADMIN', 'IC_ENGINEER']"
-            icon="ant-design:setting-outlined"
-            label="批量配置"
-            @click="handleBatchConfig"
-          />
+          <!-- 批量操作按钮：选中时显示（与主工具栏同行，避免页面浮动） -->
+          <template v-if="selectedRowKeys.length > 0">
+            <span
+              class="inline-flex items-center rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+            >
+              已选 {{ selectedRowKeys.length }}
+            </span>
+            <ClpmToolbarButton
+              v-permission="['ADMIN']"
+              icon="ant-design:setting-outlined"
+              label="批量设置"
+              variant="primary"
+              @click="handleBatchConfig"
+            />
+            <ClpmToolbarButton
+              v-permission="['ADMIN']"
+              icon="delete"
+              label="批量删除"
+              variant="danger"
+              @click="handleBatchDelete"
+            />
+            <Button size="small" type="link" @click="selectedRowKeys = []">
+              清除选择
+            </Button>
+            <span class="mx-1 text-slate-300">|</span>
+          </template>
           <Upload v-bind="uploadProps">
             <ClpmToolbarButton
               v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -1825,38 +1845,6 @@ watch(
             ]"
             size="small"
           />
-        </div>
-
-        <!-- 批量操作工具栏（ZL 工业风格：左侧蓝色竖线 + 已选数量高亮） -->
-        <div
-          v-if="selectedRowKeys.length > 0"
-          class="mb-3 flex flex-wrap items-center gap-3 rounded border border-slate-200 border-l-4 border-l-blue-500 bg-slate-50 px-4 py-2"
-        >
-          <span class="text-sm font-medium text-slate-700">
-            已选择
-            <span class="mx-1 font-mono font-bold text-blue-600">
-              {{ selectedRowKeys.length }}
-            </span>
-            个回路
-          </span>
-          <div class="ml-auto flex items-center gap-2">
-            <ClpmToolbarButton
-              v-permission="['ADMIN']"
-              icon="ant-design:setting-outlined"
-              label="批量设置"
-              variant="primary"
-              @click="handleBatchConfig"
-            />
-            <ClpmToolbarButton
-              v-permission="['ADMIN']"
-              icon="delete"
-              label="批量删除"
-              @click="handleBatchDelete"
-            />
-            <Button size="small" type="link" @click="selectedRowKeys = []">
-              清除选择
-            </Button>
-          </div>
         </div>
 
         <!-- 筛选区（ZL 工业风格工具栏：左搜索 + 右高级筛选 Popover） -->
