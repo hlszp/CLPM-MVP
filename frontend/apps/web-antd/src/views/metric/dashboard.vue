@@ -65,12 +65,14 @@ import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import AutoRateGauge from '#/components/metric/auto-rate-gauge.vue';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import type { FilterPreset } from '#/composables/use-clpm-preferences';
 
 defineOptions({ name: 'MetricDashboard' });
 
 const { isDark, themeColors } = useClpmTheme();
+const { getStatusMeta } = useIndustrialStatus();
 
 const router = useRouter();
 
@@ -658,13 +660,16 @@ function renderUnitRanking() {
   });
 }
 
-/** 5 级定级颜色（EXCELLENT 绿/GOOD 蓝/FAIR 黄/WARNING 橙/POOR 红） */
+/**
+ * 5 级定级颜色（对齐 ZL 工业色板，响应式跟随主题）
+ * EXCELLENT(>=90)=emerald/GOOD(>=80)=teal/FAIR(>=70)=blue/WARNING(>=60)=amber/POOR(<60)=rose
+ */
 function scoreToColor(score: number): string {
-  if (score >= 90) return '#52c41a';
-  if (score >= 80) return '#1890ff';
-  if (score >= 70) return '#faad14';
-  if (score >= 60) return '#fa8c16';
-  return '#f5222d';
+  if (score >= 90) return themeColors.value.SUCCESS;
+  if (score >= 80) return themeColors.value.ACCENT;
+  if (score >= 70) return themeColors.value.INFO;
+  if (score >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 function startAutoRefresh() {
@@ -1010,7 +1015,7 @@ onUnmounted(() => {
                 <Tag
                   v-if="record.rank <= 3"
                   :color="
-                    ['red', 'orange', 'gold'][record.rank - 1] ?? 'default'
+                    ['error', 'warning', 'default'][record.rank - 1] ?? 'default'
                   "
                   class="m-0"
                 >
@@ -1049,22 +1054,18 @@ onUnmounted(() => {
                 />
               </template>
               <template v-else-if="column.key === 'preDiagnosis'">
-                <Tag v-if="record.preDiagnosis" color="orange" class="m-0">
+                <Tag v-if="record.preDiagnosis" color="warning" class="m-0">
                   {{ record.preDiagnosis }}
                 </Tag>
                 <span v-else class="text-gray-400">—</span>
               </template>
               <template v-else-if="column.key === 'actionStatus'">
                 <Tag
-                  :color="
-                    record.actionStatus === 'PENDING'
-                      ? 'red'
-                      : record.actionStatus === 'IN_PROGRESS'
-                        ? 'blue'
-                        : record.actionStatus === 'IMPLEMENTED'
-                          ? 'green'
-                          : 'default'
-                  "
+                  :color="getStatusMeta(record.actionStatus).color"
+                  :style="{
+                    background: getStatusMeta(record.actionStatus).bgColor,
+                    borderColor: getStatusMeta(record.actionStatus).borderColor,
+                  }"
                   class="m-0"
                 >
                   {{ actionStatusLabel[record.actionStatus] || record.actionStatus }}

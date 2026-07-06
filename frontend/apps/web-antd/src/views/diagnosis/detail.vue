@@ -131,6 +131,18 @@ const trackerStatusTag = computed<{
   };
 });
 
+/** 跟踪状态颜色（响应式，对齐 ZL 工业色板） */
+const trackerStatusColor = computed(() => {
+  const map: Record<string, string> = {
+    danger: themeColors.value.DANGER,
+    warning: themeColors.value.WARNING,
+    primary: themeColors.value.INFO,
+    success: themeColors.value.SUCCESS,
+    neutral: themeColors.value.NEUTRAL,
+  };
+  return map[trackerStatusTag.value.status ?? 'neutral'] ?? themeColors.value.NEUTRAL;
+});
+
 const summaryItems = computed<SummaryItem[]>(() => {
   if (!detail.value) return [];
   return [
@@ -253,15 +265,22 @@ async function loadDetail() {
     const data = await getDiagnosisDetailApi(loopId, timeWindow.value);
     detail.value = data;
     renderScatterChart();
-    // 详情加载成功后并行加载波形数据、推荐方案、跟踪状态
-    loadWaveform();
-    loadRecommendations();
-    loadTrackerStatus();
   } catch {
     // 错误已由拦截器处理
   } finally {
     loading.value = false;
   }
+}
+
+/**
+ * 加载全部数据（详情 + 波形 + 推荐 + 跟踪状态，四路并行）
+ * 波形/推荐/跟踪仅依赖 loopId 与 timeWindow，无需等待 detail，可全并行以缩短首屏时间
+ */
+function loadAll() {
+  loadDetail();
+  loadWaveform();
+  loadRecommendations();
+  loadTrackerStatus();
 }
 
 /** 加载时序波形数据 */
@@ -512,7 +531,7 @@ function featureEntries(
 }
 
 watch(timeWindow, () => {
-  loadDetail();
+  loadAll();
 });
 
 // D2 联动：选中时间变化时重渲散点图（更新高亮 ±30s 窗口）
@@ -528,7 +547,7 @@ watch(isDark, () => {
 });
 
 onMounted(() => {
-  loadDetail();
+  loadAll();
 });
 </script>
 
@@ -614,7 +633,10 @@ onMounted(() => {
               <div v-if="detail" class="mt-4 space-y-3">
                 <div v-if="detail.evidenceChain?.reasoning">
                   <div class="mb-2 font-medium">推理过程</div>
-                  <div class="rounded border bg-gray-50 p-3 text-sm">
+                  <div
+                    class="rounded border p-3 text-sm"
+                    :style="{ background: 'hsl(var(--muted) / 42%)' }"
+                  >
                     {{ detail.evidenceChain.reasoning }}
                   </div>
                 </div>
@@ -679,7 +701,10 @@ onMounted(() => {
                     </Tag>
                     <span class="text-sm text-gray-500">
                       置信度：
-                      <span class="font-medium text-blue-600">
+                      <span
+                        class="font-medium clpm-num"
+                        :style="{ color: themeColors.INFO }"
+                      >
                         {{ Number(item.confidence).toFixed(2) }}
                       </span>
                     </span>
@@ -710,14 +735,8 @@ onMounted(() => {
                 <div>
                   <div class="text-xs text-gray-500">当前状态</div>
                   <div
-                    class="mt-1 text-lg font-medium"
-                    :class="{
-                      'text-red-500': trackerStatusTag.status === 'danger',
-                      'text-orange-500': trackerStatusTag.status === 'warning',
-                      'text-blue-500': trackerStatusTag.status === 'primary',
-                      'text-green-500': trackerStatusTag.status === 'success',
-                      'text-gray-500': trackerStatusTag.status === 'neutral',
-                    }"
+                    class="mt-1 text-lg font-medium clpm-num"
+                    :style="{ color: trackerStatusColor }"
                   >
                     {{ trackerStatusTag.label }}
                   </div>
