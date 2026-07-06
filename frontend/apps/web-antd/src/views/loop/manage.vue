@@ -22,7 +22,6 @@ import type { PlantNodeApi } from '#/api/plant-node';
 import type { TagApi } from '#/api/tag';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -30,10 +29,12 @@ import { IconifyIcon } from '@vben/icons';
 
 import {
   Button,
+  Checkbox,
   Drawer,
   Form,
   FormItem,
   Input,
+  InputNumber,
   message,
   Modal,
   Popover,
@@ -77,11 +78,13 @@ import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopManage' });
 
-const router = useRouter();
-
-/** 查看回路详情 */
-function handleViewDetail(record: LoopApi.LoopListItem) {
-  router.push(`/loop/detail/${record.loopId}`);
+/**
+ * 查看回路详情（v6.1：改为打开只读抽屉，不再跳转到 /loop/detail/:id）
+ * 设计依据：用户需求"详情页参考编辑页面显示，不可修改，不显示趋势/KPI"
+ * 回路监控页面（/loop/monitor）负责显示趋势、性能指标、智能诊断等内容
+ */
+async function handleViewDetail(record: LoopApi.LoopListItem) {
+  await handleView(record);
 }
 
 // ===== 主 Tab 结构（已移除：方案 A 单页 + 视图切换） =====
@@ -151,6 +154,8 @@ const query = reactive({
   monitorStatus: undefined as boolean | undefined,
   /** v5.3：参评状态筛选 */
   includeInEvaluation: undefined as boolean | undefined,
+  /** v6.1：回路类型筛选（温度/压力/液位/流量/分析/速度/其他） */
+  loopType: undefined as LoopApi.LoopType | undefined,
   keyword: '',
   page: 1,
   pageSize: 20,
@@ -192,6 +197,18 @@ const statusOptions = [
   { label: '就绪', value: 'READY' },
   { label: '部分关联', value: 'PARTIAL' },
   { label: '未启用', value: 'INACTIVE' },
+];
+
+/** v6.1：回路类型筛选选项（温度/压力/液位/流量/分析/速度/其他） */
+const loopTypeOptions: { label: string; value: any }[] = [
+  { label: '全部', value: undefined },
+  { label: '温度', value: 'TEMPERATURE' },
+  { label: '压力', value: 'PRESSURE' },
+  { label: '液位', value: 'LEVEL' },
+  { label: '流量', value: 'FLOW' },
+  { label: '分析', value: 'ANALYSIS' },
+  { label: '速度', value: 'SPEED' },
+  { label: '其他', value: 'OTHER' },
 ];
 
 /** v5.3：参评状态过滤选项 */
@@ -349,6 +366,25 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       width: 80,
       align: 'center',
     },
+    // v6.1 新增：PV 量程 / OP 量程 / OP 限位 三列
+    {
+      title: 'PV 量程',
+      key: 'pvRange',
+      width: 110,
+      align: 'center',
+    },
+    {
+      title: 'OP 量程',
+      key: 'opRange',
+      width: 110,
+      align: 'center',
+    },
+    {
+      title: 'OP 限位',
+      key: 'opOutputLimits',
+      width: 100,
+      align: 'center',
+    },
     {
       title: '等级',
       dataIndex: 'importanceLevel',
@@ -380,6 +416,7 @@ async function loadList() {
       status: query.status,
       monitorStatus: query.monitorStatus,
       includeInEvaluation: query.includeInEvaluation,
+      loopType: query.loopType,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -585,6 +622,34 @@ const changeSummary = computed<DiffEntry[]>(() => {
         formState.unitId ??
         '—';
       summary.push({ field: '所属单元', from: origLabel, to: newLabel });
+    }
+    // v6.1：OP 输出限位变更对比
+    const origLower = (orig as any).opOutputLowerLimit;
+    const origUpper = (orig as any).opOutputUpperLimit;
+    const origLowerStr =
+      origLower !== null && origLower !== undefined
+        ? String(origLower)
+        : '默认';
+    const origUpperStr =
+      origUpper !== null && origUpper !== undefined
+        ? String(origUpper)
+        : '默认';
+    const newLowerStr = useDefaultOpLimits.value
+      ? '默认'
+      : (formState.opOutputLowerLimit !== undefined
+          ? String(formState.opOutputLowerLimit)
+          : '默认');
+    const newUpperStr = useDefaultOpLimits.value
+      ? '默认'
+      : (formState.opOutputUpperLimit !== undefined
+          ? String(formState.opOutputUpperLimit)
+          : '默认');
+    if (origLowerStr !== newLowerStr || origUpperStr !== newUpperStr) {
+      summary.push({
+        field: 'OP 输出限位',
+        from: `${origLowerStr} ~ ${origUpperStr}`,
+        to: `${newLowerStr} ~ ${newUpperStr}`,
+      });
     }
     // 评分权重对比已移除（v6.1：回路级权重未参与计算）
     return summary;
@@ -877,6 +942,7 @@ async function handleExport() {
         importanceLevel: query.importanceLevel,
         status: query.status,
         includeInEvaluation: query.includeInEvaluation,
+        loopType: query.loopType,
         keyword: query.keyword || undefined,
       },
     });
@@ -932,6 +998,21 @@ const uploadProps: UploadProps = {
 const drawerVisible = ref(false);
 const drawerLoading = ref(false);
 const drawerSaving = ref(false);
+/** v6.1：抽屉模式 — create=新建/edit=编辑/view=只读查看 */
+const drawerMode = ref<'create' | 'edit' | 'view'>('create');
+/** v6.1：是否只读模式 */
+const isViewMode = computed(() => drawerMode.value === 'view');
+
+/** v6.1：抽屉标题 */
+const drawerTitle = computed(() => {
+  if (drawerMode.value === 'view') {
+    return `查看回路 - ${editingLoop.value?.tagName ?? ''}`;
+  }
+  if (drawerMode.value === 'edit') {
+    return `编辑回路 - ${editingLoop.value?.tagName ?? ''}`;
+  }
+  return '新建回路';
+});
 const activeTab = ref<'basic' | 'mode' | 'params' | 'tags'>('basic');
 const editingLoop = ref<LoopApi.LoopListItem | null>(null);
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
@@ -948,7 +1029,88 @@ const formState = reactive({
   includeInEvaluation: true,
   isActive: true,
   remark: '',
+  /** v6.1：OP 输出下限位（NULL 时取 OP Tag range_min） */
+  opOutputLowerLimit: undefined as number | undefined,
+  /** v6.1：OP 输出上限位（NULL 时取 OP Tag range_max） */
+  opOutputUpperLimit: undefined as number | undefined,
 });
+
+/**
+ * v6.1：编辑表单的 OP Tag 量程信息（用于限位校验范围提示）
+ * 来自 loopDetail.basicInfo.opRange 或 loopListItem.opRange
+ */
+const opTagRange = computed(() => {
+  // 优先从 loopDetail.basicInfo 获取（编辑模式加载详情后填充）
+  if (loopDetail.value?.basicInfo) {
+    const info = loopDetail.value.basicInfo as any;
+    return {
+      min: info.opRange?.min ?? null,
+      max: info.opRange?.max ?? null,
+      unit: info.opUnit ?? null,
+    };
+  }
+  // 回退到列表项数据
+  if (editingLoop.value) {
+    return {
+      min: (editingLoop.value as any).opRange?.min ?? null,
+      max: (editingLoop.value as any).opRange?.max ?? null,
+      unit: (editingLoop.value as any).opUnit ?? null,
+    };
+  }
+  return { min: null, max: null, unit: null };
+});
+
+/** v6.1：是否使用默认限位（= OP Tag 量程） */
+const useDefaultOpLimits = ref(true);
+
+/** v6.1：OP Tag 是否已关联（决定限位字段是否可编辑） */
+const opTagAssociated = computed(() => {
+  return opTagRange.value.min !== null || opTagRange.value.max !== null;
+});
+
+/** v6.1：切换"使用默认"时重置限位字段 */
+function handleUseDefaultOpLimitsChange(checked: any) {
+  if (checked) {
+    formState.opOutputLowerLimit = undefined;
+    formState.opOutputUpperLimit = undefined;
+  }
+}
+
+/** v6.1：OP 输出下限位校验（提取到 script 中以访问 ref.value 和 Promise） */
+function validateOpOutputLowerLimit(_rule: any, value: any): Promise<void> {
+  if (useDefaultOpLimits.value) return Promise.resolve();
+  if (value === undefined || value === null) {
+    return Promise.reject('请输入下限位或勾选「使用默认」');
+  }
+  if (opTagRange.value.min !== null && value < opTagRange.value.min) {
+    return Promise.reject(`不能低于 OP Tag 量程下限 ${opTagRange.value.min}`);
+  }
+  if (
+    formState.opOutputUpperLimit !== undefined &&
+    value >= formState.opOutputUpperLimit
+  ) {
+    return Promise.reject('下限位必须小于上限位');
+  }
+  return Promise.resolve();
+}
+
+/** v6.1：OP 输出上限位校验 */
+function validateOpOutputUpperLimit(_rule: any, value: any): Promise<void> {
+  if (useDefaultOpLimits.value) return Promise.resolve();
+  if (value === undefined || value === null) {
+    return Promise.reject('请输入上限位或勾选「使用默认」');
+  }
+  if (opTagRange.value.max !== null && value > opTagRange.value.max) {
+    return Promise.reject(`不能超过 OP Tag 量程上限 ${opTagRange.value.max}`);
+  }
+  if (
+    formState.opOutputLowerLimit !== undefined &&
+    value <= formState.opOutputLowerLimit
+  ) {
+    return Promise.reject('上限位必须大于下限位');
+  }
+  return Promise.resolve();
+}
 
 // 评分权重已移除（v6.1：回路级权重未被算法使用，统一由 MetricConfig.weight 全局配置管理）
 
@@ -961,6 +1123,7 @@ const activeFilterCount = computed(() => {
   if (queryIncludeInEvaluation.value !== undefined && queryIncludeInEvaluation.value !== null) count++;
   if (queryMonitorStatus.value) count++;
   if (query.status) count++;
+  if (query.loopType) count++;
   return count;
 });
 
@@ -1041,6 +1204,19 @@ const activeFilterBadges = computed(() => {
     });
   }
 
+  if (query.loopType) {
+    const opt = loopTypeOptions.find((o) => o.value === query.loopType);
+    badges.push({
+      key: 'loopType',
+      label: '类型',
+      value: opt?.label ?? String(query.loopType),
+      clear: () => {
+        query.loopType = undefined;
+        handleSearch();
+      },
+    });
+  }
+
   return badges;
 });
 
@@ -1050,6 +1226,7 @@ function clearAllFilters() {
   queryIncludeInEvaluation.value = undefined;
   queryMonitorStatus.value = undefined;
   query.status = undefined;
+  query.loopType = undefined;
   handleSearch();
 }
 
@@ -1128,6 +1305,7 @@ const slotConfigs: {
 
 /** 打开新建回路 */
 function handleAdd() {
+  drawerMode.value = 'create';
   editingLoop.value = null;
   loopDetail.value = null;
   tagData.value = null;
@@ -1141,12 +1319,32 @@ function handleAdd() {
   formState.includeInEvaluation = true;
   formState.isActive = true;
   formState.remark = '';
+  // v6.1：新建时默认使用默认限位（OP Tag 量程）
+  formState.opOutputLowerLimit = undefined;
+  formState.opOutputUpperLimit = undefined;
+  useDefaultOpLimits.value = true;
   activeTab.value = 'basic';
   drawerVisible.value = true;
 }
 
 /** 打开编辑抽屉 */
 async function handleEdit(record: LoopApi.LoopListItem) {
+  drawerMode.value = 'edit';
+  await loadLoopForDrawer(record);
+}
+
+/**
+ * v6.1：打开只读查看抽屉
+ * 复用编辑抽屉的布局，但所有字段 disabled，不显示保存按钮
+ * 不加载监控数据（趋势/KPI 由回路监控页面负责）
+ */
+async function handleView(record: LoopApi.LoopListItem) {
+  drawerMode.value = 'view';
+  await loadLoopForDrawer(record);
+}
+
+/** v6.1：抽屉数据加载通用逻辑（编辑/查看共用） */
+async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
   editingLoop.value = record;
   tagData.value = null;
   loopDetail.value = null;
@@ -1161,6 +1359,16 @@ async function handleEdit(record: LoopApi.LoopListItem) {
     record.includeInEvaluation !== false && record.includeInEvaluation !== null;
   formState.isActive = record.isActive;
   formState.remark = '';
+  // v6.1：读取 OP 输出限位（NULL 表示使用默认 = OP Tag 量程）
+  const lower = (record as any).opOutputLowerLimit;
+  const upper = (record as any).opOutputUpperLimit;
+  formState.opOutputLowerLimit =
+    lower !== null && lower !== undefined ? Number(lower) : undefined;
+  formState.opOutputUpperLimit =
+    upper !== null && upper !== undefined ? Number(upper) : undefined;
+  useDefaultOpLimits.value =
+    formState.opOutputLowerLimit === undefined &&
+    formState.opOutputUpperLimit === undefined;
   activeTab.value = 'basic';
   drawerVisible.value = true;
   // 加载详情
@@ -1170,6 +1378,20 @@ async function handleEdit(record: LoopApi.LoopListItem) {
     loopDetail.value = detail;
     formState.remark = detail.basicInfo.remark || '';
     formState.description = detail.basicInfo.description;
+    // v6.1：详情加载后同步 OP 限位（详情响应更权威）
+    const detailLower = (detail.basicInfo as any).opOutputLowerLimit;
+    const detailUpper = (detail.basicInfo as any).opOutputUpperLimit;
+    formState.opOutputLowerLimit =
+      detailLower !== null && detailLower !== undefined
+        ? Number(detailLower)
+        : undefined;
+    formState.opOutputUpperLimit =
+      detailUpper !== null && detailUpper !== undefined
+        ? Number(detailUpper)
+        : undefined;
+    useDefaultOpLimits.value =
+      formState.opOutputLowerLimit === undefined &&
+      formState.opOutputUpperLimit === undefined;
   } catch (error) {
     console.error('操作失败:', error);
   } finally {
@@ -1357,6 +1579,13 @@ async function doSaveBasic() {
         includeInEvaluation: formState.includeInEvaluation,
         isActive: formState.isActive,
         remark: formState.remark,
+        // v6.1：OP 输出限位（使用默认时传 undefined，由后端存 NULL）
+        opOutputLowerLimit: useDefaultOpLimits.value
+          ? null
+          : (formState.opOutputLowerLimit ?? null),
+        opOutputUpperLimit: useDefaultOpLimits.value
+          ? null
+          : (formState.opOutputUpperLimit ?? null),
       });
       message.success('回路更新成功');
     } else {
@@ -1375,6 +1604,13 @@ async function doSaveBasic() {
         includeInEvaluation: formState.includeInEvaluation,
         isActive: formState.isActive,
         remark: formState.remark,
+        // v6.1：新建回路时 OP 限位默认 null（使用 OP Tag 量程）
+        opOutputLowerLimit: useDefaultOpLimits.value
+          ? null
+          : (formState.opOutputLowerLimit ?? null),
+        opOutputUpperLimit: useDefaultOpLimits.value
+          ? null
+          : (formState.opOutputUpperLimit ?? null),
       });
       message.success('回路创建成功');
       editingLoop.value = {
@@ -1395,7 +1631,7 @@ async function doSaveBasic() {
           pid_i: false,
           pid_d: false,
         },
-      };
+      } as LoopApi.LoopListItem;
     }
     await loadList();
   } catch (error) {
@@ -1608,6 +1844,18 @@ watch(
                     高级筛选
                   </div>
                   <div>
+                    <div class="mb-1 text-xs text-slate-600">回路类型</div>
+                    <Select
+                      v-model:value="query.loopType"
+                      placeholder="回路类型"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="loopTypeOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
                     <div class="mb-1 text-xs text-slate-600">控制类型</div>
                     <Select
                       v-model:value="query.controlType"
@@ -1748,6 +1996,43 @@ watch(
               </span>
               <span v-else class="text-slate-400">—</span>
             </template>
+            <!-- v6.1 新增：PV 量程列 -->
+            <template v-else-if="column.key === 'pvRange'">
+              <span
+                v-if="record.pvRange && (record.pvRange.min !== null || record.pvRange.max !== null)"
+                class="font-mono text-xs text-slate-700"
+              >
+                {{ record.pvRange.min ?? '—' }} ~ {{ record.pvRange.max ?? '—' }}
+                <span v-if="record.pvUnit" class="ml-0.5 text-slate-400">{{ record.pvUnit }}</span>
+              </span>
+              <span v-else class="text-slate-400">—</span>
+            </template>
+            <!-- v6.1 新增：OP 量程列 -->
+            <template v-else-if="column.key === 'opRange'">
+              <span
+                v-if="record.opRange && (record.opRange.min !== null || record.opRange.max !== null)"
+                class="font-mono text-xs text-slate-700"
+              >
+                {{ record.opRange.min ?? '—' }} ~ {{ record.opRange.max ?? '—' }}
+                <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{ record.opUnit }}</span>
+              </span>
+              <span v-else class="text-slate-400">—</span>
+            </template>
+            <!-- v6.1 新增：OP 限位列 -->
+            <template v-else-if="column.key === 'opOutputLimits'">
+              <Tooltip
+                v-if="record.opOutputLowerLimit !== null && record.opOutputLowerLimit !== undefined
+                  || record.opOutputUpperLimit !== null && record.opOutputUpperLimit !== undefined"
+                title="自定义 OP 输出限位（用于饱和率算法）"
+              >
+                <span class="font-mono text-xs font-medium text-emerald-600">
+                  {{ record.opOutputLowerLimit ?? '—' }} ~ {{ record.opOutputUpperLimit ?? '—' }}
+                </span>
+              </Tooltip>
+              <Tooltip v-else title="使用 OP Tag 量程作为默认限位">
+                <span class="text-xs text-slate-500">默认</span>
+              </Tooltip>
+            </template>
             <template v-else-if="column.key === 'importanceLevel'">
               <span
                 v-if="record.importanceLevel"
@@ -1856,10 +2141,10 @@ watch(
       </ClpmDataCanvas>
     </div>
 
-    <!-- 编辑抽屉 -->
+    <!-- 编辑/查看抽屉 -->
     <Drawer
       v-model:open="drawerVisible"
-      :title="editingLoop ? `编辑回路 - ${editingLoop.tagName}` : '新建回路'"
+      :title="drawerTitle"
       placement="right"
       width="780px"
       :mask-closable="true"
@@ -1883,7 +2168,7 @@ watch(
                   <Input
                     v-model:value="formState.tagName"
                     placeholder="例如：101-FC-1023"
-                    :disabled="!!editingLoop"
+                    :disabled="!!editingLoop || isViewMode"
                   />
                 </FormItem>
                 <FormItem
@@ -1897,6 +2182,7 @@ watch(
                     :options="plantNodeOptions"
                     show-search
                     allow-clear
+                    :disabled="isViewMode"
                     :filter-option="
                       (input: string, option: any) =>
                         option.label.includes(input)
@@ -1909,12 +2195,14 @@ watch(
                   <Input
                     v-model:value="formState.description"
                     placeholder="请输入回路描述"
+                    :disabled="isViewMode"
                   />
                 </FormItem>
                 <FormItem name="loopType" label="回路类型">
                   <Select
                     v-model:value="formState.loopType"
                     placeholder="请选择回路类型"
+                    :disabled="isViewMode"
                     :options="
                       Object.entries(LOOP_TYPE_MAP).map(
                         ([value, { label }]) => ({
@@ -1950,6 +2238,7 @@ watch(
                     :options="controlTypeOptions.filter((o) => o.value)"
                     option-type="button"
                     button-style="solid"
+                    :disabled="isViewMode"
                     @change="
                       (e: any) =>
                         handleControlTypeChange(
@@ -1974,11 +2263,13 @@ watch(
                     :options="levelOptions.filter((o) => o.value)"
                     option-type="button"
                     button-style="solid"
+                    :disabled="isViewMode"
                   />
                 </FormItem>
                 <FormItem name="includeInEvaluation" label="是否参与评估">
                   <Switch
                     :checked="formState.includeInEvaluation"
+                    :disabled="isViewMode"
                     @change="(checked: any) => handleDrawerEvaluationChange(Boolean(checked))"
                   />
                   <span class="ml-2 text-xs text-gray-500">
@@ -1990,17 +2281,106 @@ watch(
                   </span>
                 </FormItem>
               </div>
+              <!-- v6.1：OP 输出限位配置区（ZL 工业风格：浅灰底 + 左蓝色竖线 + 标题加粗） -->
+              <div class="mb-3 rounded border border-slate-200 border-l-4 border-l-emerald-500 bg-slate-50 p-4">
+                <div class="mb-3 flex items-center justify-between">
+                  <div class="text-sm font-semibold text-slate-700">
+                    OP 输出限位
+                    <span class="ml-2 text-xs font-normal text-slate-400">
+                      用于饱和率算法
+                    </span>
+                  </div>
+                  <Checkbox
+                    :checked="useDefaultOpLimits"
+                    :disabled="isViewMode"
+                    @change="(e: any) => handleUseDefaultOpLimitsChange(e.target.checked)"
+                  >
+                    使用默认（= OP Tag 量程）
+                  </Checkbox>
+                </div>
+                <!-- OP Tag 量程提示 -->
+                <div
+                  v-if="opTagAssociated"
+                  class="mb-3 rounded bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700"
+                >
+                  OP Tag 量程：
+                  <span class="font-mono font-medium">
+                    {{ opTagRange.min ?? '—' }} ~ {{ opTagRange.max ?? '—' }}
+                    <span v-if="opTagRange.unit" class="ml-0.5">{{ opTagRange.unit }}</span>
+                  </span>
+                </div>
+                <div v-else class="mb-3 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
+                  请先关联 OP Tag，否则限位字段使用系统默认值 0 ~ 100
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <FormItem
+                    name="opOutputLowerLimit"
+                    label="OP 输出下限位"
+                    :rules="[
+                      {
+                        validator: validateOpOutputLowerLimit,
+                        trigger: 'change',
+                      },
+                    ]"
+                  >
+                    <InputNumber
+                      v-model:value="formState.opOutputLowerLimit"
+                      :disabled="isViewMode || useDefaultOpLimits || !opTagAssociated"
+                      :min="opTagRange.min ?? undefined"
+                      :max="
+                        formState.opOutputUpperLimit !== undefined
+                          ? formState.opOutputUpperLimit
+                          : (opTagRange.max ?? undefined)
+                      "
+                      :step="0.1"
+                      :precision="2"
+                      style="width: 100%"
+                      placeholder="下限位"
+                    />
+                  </FormItem>
+                  <FormItem
+                    name="opOutputUpperLimit"
+                    label="OP 输出上限位"
+                    :rules="[
+                      {
+                        validator: validateOpOutputUpperLimit,
+                        trigger: 'change',
+                      },
+                    ]"
+                  >
+                    <InputNumber
+                      v-model:value="formState.opOutputUpperLimit"
+                      :disabled="isViewMode || useDefaultOpLimits || !opTagAssociated"
+                      :min="
+                        formState.opOutputLowerLimit !== undefined
+                          ? formState.opOutputLowerLimit
+                          : (opTagRange.min ?? undefined)
+                      "
+                      :max="opTagRange.max ?? undefined"
+                      :step="0.1"
+                      :precision="2"
+                      style="width: 100%"
+                      placeholder="上限位"
+                    />
+                  </FormItem>
+                </div>
+              </div>
               <FormItem name="isActive" label="启用状态">
-                <Switch v-model:checked="formState.isActive" />
+                <Switch
+                  v-model:checked="formState.isActive"
+                  :disabled="isViewMode"
+                />
               </FormItem>
               <FormItem name="remark" label="备注">
                 <Input.TextArea
                   v-model:value="formState.remark"
                   placeholder="备注信息"
                   :rows="2"
+                  :disabled="isViewMode"
                 />
               </FormItem>
-              <div class="flex justify-end gap-2">
+              <!-- v6.1：view 模式不显示保存按钮 -->
+              <div v-if="!isViewMode" class="flex justify-end gap-2">
                 <Button
                   v-permission="['ADMIN', 'IC_ENGINEER']"
                   type="primary"
@@ -2044,8 +2424,9 @@ watch(
                         cfg.description
                       }}</span>
                     </div>
+                    <!-- v6.1：view 模式隐藏清除按钮 -->
                     <Button
-                      v-if="slotState[cfg.key]"
+                      v-if="slotState[cfg.key] && !isViewMode"
                       type="link"
                       size="small"
                       danger
@@ -2060,6 +2441,7 @@ watch(
                     allow-clear
                     placeholder="选择 Tag"
                     style="width: 100%"
+                    :disabled="isViewMode"
                     :loading="tagSearchLoading"
                     :options="
                       availableTags.map((t) => ({
@@ -2072,7 +2454,8 @@ watch(
                   />
                 </div>
               </div>
-              <div class="mt-4 flex justify-end gap-2">
+              <!-- v6.1：view 模式隐藏底部操作按钮 -->
+              <div v-if="!isViewMode" class="mt-4 flex justify-end gap-2">
                 <Button
                   v-permission="['ADMIN', 'IC_ENGINEER']"
                   type="default"
@@ -2097,11 +2480,15 @@ watch(
 
           <!-- 投用定义 -->
           <TabPane key="mode" tab="投用定义" :disabled="!editingLoop">
+            <!-- v6.1：view 模式下投用定义 Tab 禁用（编辑权限相关） -->
             <ModeMappingEditor
-              v-if="editingLoop"
+              v-if="editingLoop && !isViewMode"
               :loop-id="editingLoop.loopId"
               @saved="loadList"
             />
+            <div v-else-if="editingLoop && isViewMode" class="py-8 text-center text-gray-400">
+              投用定义为回路编辑专属配置，请通过"编辑"功能修改
+            </div>
             <div v-else class="py-8 text-center text-gray-400">
               请先保存基础信息
             </div>
