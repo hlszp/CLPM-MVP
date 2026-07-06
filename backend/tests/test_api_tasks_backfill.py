@@ -35,7 +35,10 @@ class TestBackfillTaskEvaluate:
     """POST /api/v1/tasks/backfill tests."""
 
     def test_backfill_dry_run_returns_preview(
-        self, client, task_redis, fake_redis  # noqa: F811 — pytest fixture
+        self,
+        client,
+        task_redis,
+        fake_redis,  # noqa: F811 — pytest fixture
     ) -> None:
         """dryRun=True 应返回预览结果，不触发 Celery."""
         fake_loops = [_mock_loop(f"loop-{i}", f"L-{i:03d}") for i in range(3)]
