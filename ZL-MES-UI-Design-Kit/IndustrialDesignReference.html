@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZL(致联)工业软件 - 全要素 UI 参考标准</title>
+    <!-- 引入 Tailwind CSS 作为样式基础 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入工业标准字体：Inter (通用) 和 Fira Code (等宽数字) -->
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 引入 Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        // Tailwind 工业级色板与字体配置
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['Fira Code', 'monospace'],
+                    },
+                    colors: {
+                        slate: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' },
+                        emerald: { 50: '#ecfdf5', 500: '#10b981', 600: '#059669', 700: '#047857' },
+                        amber: { 50: '#fffbeb', 500: '#f59e0b', 600: '#d97706', 700: '#b45309' },
+                        rose: { 50: '#fff1f2', 500: '#f43f5e', 600: '#e11d48', 700: '#be123c' },
+                        blue: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 强制使用等宽数字特性 (Tabular Nums)，防止数据跳动 */
+        .tabular-nums { font-variant-numeric: tabular-nums; }
+        
+        /* 隐藏工业软件中多余的滚动条，保持界面整洁 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* 隐藏 hover-reveal 默认状态 */
+        .group:hover .hover-reveal { opacity: 1; visibility: visible; }
+        .hover-reveal { opacity: 0; visibility: hidden; transition: all 0.2s; }
+        
+        /* 锚点平滑滚动 */
+        html { scroll-behavior: smooth; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased h-screen flex overflow-hidden">
+
+    <!-- ========================================== -->
+    <!-- 1. 左侧导航 (F型布局的主锚点) - 严谨深色体系 -->
+    <!-- ========================================== -->
+    <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 border-r border-slate-950 shadow-xl z-20">
+        <!-- 系统 Logo 与名称 -->
+        <div class="h-14 flex items-center px-5 border-b border-slate-800 bg-slate-950/50">
+            <div class="w-7 h-7 bg-blue-600 rounded flex items-center justify-center mr-3 shadow-sm shadow-blue-500/20">
+                <i data-lucide="factory" class="w-4 h-4 text-white"></i>
+            </div>
+            <span class="text-white font-bold tracking-wide text-sm">ZL-MES 设计系统</span>
+        </div>
+        
+        <!-- 导航菜单 -->
+        <nav class="flex-1 overflow-y-auto py-5 px-3 space-y-1">
+            <div class="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-2 px-3">核心视图与组件</div>
+            
+            <a href="#overview" class="flex items-center gap-3 px-3 py-2.5 rounded-md bg-blue-600/10 text-blue-400 font-medium text-sm border border-blue-500/20 transition-colors">
+                <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                UI/UX 规范参考全览
+            </a>
+            <a href="#charts" class="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-slate-800 hover:text-slate-100 text-slate-400 transition-colors text-sm">
+                <i data-lucide="activity" class="w-4 h-4"></i>
+                图表与微视图
+            </a>
+            <a href="#datagrid" class="flex items-center gap-3 px-3 py-2.5 rounded-md hover:bg-slate-800 hover:text-slate-100 text-slate-400 transition-colors text-sm">
+                <i data-lucide="table-properties" class="w-4 h-4"></i>
+                高密度数据网格
+            </a>
+        </nav>
+        
+        <!-- 底部用户信息 -->
+        <div class="p-4 border-t border-slate-800 bg-slate-900 flex items-center">
+            <div class="w-9 h-9 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                ZL
+            </div>
+            <div class="ml-3 overflow-hidden">
+                <p class="text-sm font-medium text-white truncate">Admin 演示账号</p>
+                <p class="text-[10px] text-slate-500 font-mono truncate">ID: 100010</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ========================================== -->
+    <!-- 2. 右侧主内容区 -->
+    <!-- ========================================== -->
+    <div class="flex-1 flex flex-col min-w-0">
+        
+        <!-- 顶部全局栏 (环境信息与全局操作) -->
+        <header class="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-10 shadow-sm">
+            <div class="flex items-center text-sm">
+                <span class="text-slate-500 hover:text-slate-700 cursor-pointer">设计系统</span>
+                <i data-lucide="chevron-right" class="w-4 h-4 mx-2 text-slate-300"></i>
+                <span class="font-semibold text-slate-800">UI 规范参考全览</span>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div class="flex items-center bg-slate-100 border border-slate-200 rounded px-2.5 py-1 text-xs font-mono text-slate-500">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+                    ENV: PRODUCTION
+                </div>
+                <button class="text-slate-400 hover:text-blue-600 transition-colors relative">
+                    <i data-lucide="bell" class="w-5 h-5"></i>
+                    <span class="absolute top-0 right-0 w-2 h-2 bg-rose-500 rounded-full border border-white"></span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 页面主滚动区 -->
+        <main class="flex-1 overflow-auto p-6 md:p-8 space-y-10">
+            
+            <!-- 标题区 -->
+            <div id="overview" class="scroll-mt-6">
+                <h1 class="text-2xl font-bold text-slate-900 tracking-tight">ZL 工业软件 UI 规范实战参考</h1>
+                <p class="text-sm text-slate-500 mt-1">本页面展示了《致联工业设计规范》中要求的导航、布局、元素排版、语义色彩及防呆交互的标准 HTML 实现。</p>
+            </div>
+            
+            <!-- 模块 A：语义色彩与排版 (Typography & Colors) -->
+            <section>
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="palette" class="w-4 h-4 text-slate-400"></i>
+                    <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">1. 状态语义色与等宽数字排版</h2>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <!-- 正常 -->
+                    <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-slate-500">运行效率 (Emerald)</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-200">Running</span>
+                        </div>
+                        <div class="flex items-baseline gap-2">
+                            <span id="live-data-1" class="text-3xl font-bold font-mono text-slate-800 tabular-nums">92.4</span>
+                            <span class="text-xs text-slate-400 font-mono">PCS/min</span>
+                        </div>
+                    </div>
+                    <!-- 警告 -->
+                    <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-slate-500">设备温度 (Amber)</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-600 border border-amber-200">Warning</span>
+                        </div>
+                        <div class="flex items-baseline gap-2">
+                            <span id="live-data-2" class="text-3xl font-bold font-mono text-amber-600 tabular-nums">78.5</span>
+                            <span class="text-xs text-slate-400 font-mono">°C</span>
+                        </div>
+                    </div>
+                    <!-- 故障 -->
+                    <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-slate-500">伺服扭矩 (Rose)</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-600 border border-rose-200 animate-pulse">Error</span>
+                        </div>
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-3xl font-bold font-mono text-rose-600 tabular-nums">OVER</span>
+                            <span class="text-xs text-slate-400 font-mono">LOAD</span>
+                        </div>
+                    </div>
+                    <!-- 行动 -->
+                    <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm flex flex-col justify-center items-start">
+                        <span class="text-xs font-medium text-slate-500 mb-2">常规行动 (Indigo/Blue)</span>
+                        <button class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors shadow-sm flex items-center justify-center gap-2">
+                            <i data-lucide="settings-2" class="w-4 h-4"></i> 参数设置
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 模块 B：工业表格与微图表 (Data Grids & Micro-visualizations) -->
+            <section>
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="table" class="w-4 h-4 text-slate-400"></i>
+                    <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">2. 高密度台账与微图表融合 (Hover Reveal 交互)</h2>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                    <!-- 表格工具栏 -->
+                    <div class="px-5 py-3 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+                        <div class="relative">
+                            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                            <input type="text" placeholder="搜索工单..." class="pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-64 transition-all">
+                        </div>
+                        <button class="px-3 py-1.5 text-sm text-slate-600 border border-slate-300 rounded hover:bg-slate-50 flex items-center gap-2 transition-colors">
+                            <i data-lucide="filter" class="w-4 h-4"></i> 过滤
+                        </button>
+                    </div>
+                    <!-- 表格主体 -->
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                                <th class="px-5 py-3 font-semibold">工单 ID / 产品</th>
+                                <th class="px-5 py-3 font-semibold w-1/3">生产进度 (Inline Visual)</th>
+                                <th class="px-5 py-3 font-semibold text-center">状态</th>
+                                <th class="px-5 py-3 font-semibold text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <!-- 数据行 1: 正常 -->
+                            <tr class="hover:bg-slate-50 transition-colors group">
+                                <td class="px-5 py-3">
+                                    <div class="font-mono font-medium text-slate-800">WO-2608-01</div>
+                                    <div class="text-xs text-slate-500 mt-0.5">主轴电机组件 A型</div>
+                                </td>
+                                <td class="px-5 py-3">
+                                    <div class="flex justify-between text-xs mb-1">
+                                        <span class="tabular-nums font-medium text-slate-700">4,500 / 5,000</span>
+                                        <span class="text-slate-500 font-mono">90%</span>
+                                    </div>
+                                    <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border border-slate-200/50">
+                                        <div class="bg-emerald-500 h-1.5 transition-all" style="width: 90%;"></div>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3 text-center">
+                                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 执行中
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3 text-right">
+                                    <!-- Hover Reveal 交互：鼠标悬停才显示的次要操作 -->
+                                    <div class="hover-reveal flex items-center justify-end gap-2">
+                                        <button class="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="详情"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                                        <button class="p-1.5 text-slate-400 hover:bg-slate-100 rounded transition-colors" title="更多"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <!-- 数据行 2: 异常 -->
+                            <tr class="hover:bg-slate-50 transition-colors group">
+                                <td class="px-5 py-3">
+                                    <div class="font-mono font-medium text-slate-800">WO-2608-02</div>
+                                    <div class="text-xs text-slate-500 mt-0.5">控制板 V3.0</div>
+                                </td>
+                                <td class="px-5 py-3">
+                                    <div class="flex justify-between text-xs mb-1">
+                                        <span class="tabular-nums font-medium text-rose-600">120 / 1,000</span>
+                                        <span class="text-rose-500 font-mono">12%</span>
+                                    </div>
+                                    <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden border border-slate-200/50">
+                                        <div class="bg-rose-500 h-1.5 transition-all" style="width: 12%;"></div>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3 text-center">
+                                    <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                                        <i data-lucide="alert-circle" class="w-3 h-3"></i> 物料短缺
+                                    </span>
+                                </td>
+                                <td class="px-5 py-3 text-right">
+                                    <div class="hover-reveal flex items-center justify-end gap-2">
+                                        <button class="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="详情"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                                        <button class="p-1.5 text-slate-400 hover:bg-slate-100 rounded transition-colors" title="更多"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 模块 C：防呆交互 (Poka-Yoke & Critical Action) -->
+            <section>
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="shield-alert" class="w-4 h-4 text-slate-400"></i>
+                    <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">3. 物理与逻辑双重防呆 (Poka-Yoke Modal)</h2>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg p-6 shadow-sm flex flex-col md:flex-row items-center gap-6">
+                    <div class="flex-1">
+                        <h3 class="font-semibold text-slate-800 text-sm mb-1">模拟现场设备高危控制面板</h3>
+                        <p class="text-xs text-slate-500 leading-relaxed">
+                            设计规范要求：绝对禁止在系统级停机、修改配方等高危操作中使用简单的 `alert` 或单次点击按钮。必须提供自定义的二次确认覆盖层，并要求输入明确的验证凭据。
+                        </p>
+                    </div>
+                    <div class="shrink-0 border-l border-slate-100 pl-6 flex flex-col gap-3">
+                        <button class="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded transition-colors shadow-sm flex items-center justify-center gap-2">
+                            <i data-lucide="pause-circle" class="w-4 h-4"></i> 正常待机
+                        </button>
+                        <!-- 触发防呆模态框的按钮 -->
+                        <button onclick="openModal()" class="px-5 py-3 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold rounded transition-colors shadow-lg shadow-rose-600/20 uppercase tracking-wider flex items-center justify-center gap-2">
+                            <i data-lucide="power-off" class="w-4 h-4"></i> 紧急停机 [E-STOP]
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 模块 D：图表与微视图 (Charts & Micro-visualizations) -->
+            <section id="charts" class="scroll-mt-6">
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="activity" class="w-4 h-4 text-slate-400"></i>
+                    <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">4. 图表与微视图 (Micro-visualizations)</h2>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="text-xs font-medium text-slate-500">主轴振动频率实时微波形</span>
+                            <span class="flex items-center gap-1.5 text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold uppercase tracking-wider">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span> Live
+                            </span>
+                        </div>
+                        <div class="flex items-end gap-4">
+                            <div class="flex flex-col">
+                                <span class="text-2xl font-bold font-mono text-slate-800 tabular-nums">42.8<span class="text-sm text-slate-400 font-normal">Hz</span></span>
+                                <span class="text-xs text-emerald-500 font-mono mt-1">+0.4%</span>
+                            </div>
+                            <div class="flex-1 h-10 relative mt-2">
+                                <!-- 纯 SVG 实现的微型走势图 -->
+                                <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 40">
+                                    <path d="M0,30 Q10,10 20,25 T40,15 T60,35 T80,10 T100,20 L100,40 L0,40 Z" fill="#eff6ff" />
+                                    <path d="M0,30 Q10,10 20,25 T40,15 T60,35 T80,10 T100,20" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" />
+                                    <circle cx="100" cy="20" r="2.5" fill="#3b82f6" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 模块 E：高密度数据网格 (High-Density Data Grid) -->
+            <section id="datagrid" class="scroll-mt-6">
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="table-properties" class="w-4 h-4 text-slate-400"></i>
+                    <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">5. 高密度数据网格 (High-Density Data Grid)</h2>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
+                    <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center shrink-0">
+                        <span class="text-xs font-semibold text-slate-600">设备传感器实时读数日志 (Dense Mode)</span>
+                        <div class="flex items-center gap-2">
+                            <button class="p-1 text-slate-400 hover:text-blue-600 transition-colors" title="下载 CSV"><i data-lucide="download" class="w-4 h-4"></i></button>
+                            <button class="p-1 text-slate-400 hover:text-blue-600 transition-colors" title="刷新"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <!-- 高密度表格：使用紧凑 padding (px-3 py-1.5) 和最小字号 (text-[11px] 或 text-xs) -->
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="bg-slate-100/80 border-b border-slate-200">
+                                <tr class="text-slate-500 uppercase tracking-wider text-[10px]">
+                                    <th class="px-3 py-2 font-semibold w-10 text-center">状态</th>
+                                    <th class="px-3 py-2 font-semibold">测点 ID</th>
+                                    <th class="px-3 py-2 font-semibold">采集时间戳</th>
+                                    <th class="px-3 py-2 font-semibold text-right">读数</th>
+                                    <th class="px-3 py-2 font-semibold">单位</th>
+                                    <th class="px-3 py-2 font-semibold">偏离度</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 font-mono text-slate-700">
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-3 py-1.5 text-center"><span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span></td>
+                                    <td class="px-3 py-1.5 font-bold">PT-100A</td>
+                                    <td class="px-3 py-1.5 text-slate-400">2026-07-06 14:02:11.050</td>
+                                    <td class="px-3 py-1.5 text-right tabular-nums">1,024.5</td>
+                                    <td class="px-3 py-1.5 text-slate-400 font-sans text-[10px]">kPa</td>
+                                    <td class="px-3 py-1.5"><span class="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">+0.2%</span></td>
+                                </tr>
+                                <tr class="hover:bg-slate-50 transition-colors bg-rose-50/40">
+                                    <td class="px-3 py-1.5 text-center"><span class="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span></td>
+                                    <td class="px-3 py-1.5 font-bold text-rose-700">TT-205B</td>
+                                    <td class="px-3 py-1.5 text-rose-500">2026-07-06 14:02:10.880</td>
+                                    <td class="px-3 py-1.5 text-right tabular-nums text-rose-600 font-bold">85.4</td>
+                                    <td class="px-3 py-1.5 text-slate-400 font-sans text-[10px]">°C</td>
+                                    <td class="px-3 py-1.5"><span class="text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded font-bold">+12.5%</span></td>
+                                </tr>
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-3 py-1.5 text-center"><span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500"></span></td>
+                                    <td class="px-3 py-1.5 font-bold">FT-301C</td>
+                                    <td class="px-3 py-1.5 text-slate-400">2026-07-06 14:02:09.120</td>
+                                    <td class="px-3 py-1.5 text-right tabular-nums">0.0</td>
+                                    <td class="px-3 py-1.5 text-slate-400 font-sans text-[10px]">m³/h</td>
+                                    <td class="px-3 py-1.5"><span class="text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">-</span></td>
+                                </tr>
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-3 py-1.5 text-center"><span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span></td>
+                                    <td class="px-3 py-1.5 font-bold">VT-109X</td>
+                                    <td class="px-3 py-1.5 text-slate-400">2026-07-06 14:02:08.550</td>
+                                    <td class="px-3 py-1.5 text-right tabular-nums">2.14</td>
+                                    <td class="px-3 py-1.5 text-slate-400 font-sans text-[10px]">mm/s</td>
+                                    <td class="px-3 py-1.5"><span class="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">-0.1%</span></td>
+                                </tr>
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-3 py-1.5 text-center"><span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span></td>
+                                    <td class="px-3 py-1.5 font-bold">PT-100A</td>
+                                    <td class="px-3 py-1.5 text-slate-400">2026-07-06 14:02:07.050</td>
+                                    <td class="px-3 py-1.5 text-right tabular-nums">1,024.2</td>
+                                    <td class="px-3 py-1.5 text-slate-400 font-sans text-[10px]">kPa</td>
+                                    <td class="px-3 py-1.5"><span class="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">+0.1%</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <br><br> <!-- 留白 -->
+        </main>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 紧急操作防呆模态框 (Poka-Yoke Custom Modal) -->
+    <!-- ========================================== -->
+    <div id="estop-modal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm hidden items-center justify-center z-50 transition-opacity">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden transform scale-95 transition-transform" id="estop-modal-content">
+            <!-- 模态框 Header: 高饱和度警示色 -->
+            <div class="bg-rose-50 px-6 py-4 border-b border-rose-100 flex items-center justify-between">
+                <h3 class="text-rose-700 font-bold text-lg flex items-center gap-2">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 animate-pulse"></i> 危险操作验证
+                </h3>
+            </div>
+            <!-- 模态框 Body -->
+            <div class="p-6">
+                <p class="text-sm text-slate-700 mb-2 font-medium">您正在请求执行全线 <span class="text-rose-600 font-bold">紧急断电 (E-STOP)</span> 操作。</p>
+                <p class="text-xs text-slate-500 mb-5 leading-relaxed">
+                    此操作将立即切断伺服控制层电源，并上报安全事故日志。流水线上未完成的产品可能会报废，数据不可逆转。
+                </p>
+                
+                <!-- 验证输入区 -->
+                <div class="bg-slate-50 p-4 rounded border border-slate-200 mb-5">
+                    <label class="block text-xs font-medium text-slate-600 mb-2">
+                        请输入安全授权码 <span class="font-mono font-bold text-slate-800 bg-slate-200 px-1 py-0.5 rounded">999</span> 以解锁指令:
+                    </label>
+                    <input type="text" id="auth-code" autocomplete="off" placeholder="输入密钥..." class="w-full font-mono text-center text-lg tracking-widest border border-slate-300 rounded px-3 py-2.5 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-200 transition-all bg-white">
+                </div>
+                
+                <!-- 模态框 Footer -->
+                <div class="flex justify-end gap-3">
+                    <button onclick="closeModal()" class="px-5 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 rounded transition-colors">取消操作</button>
+                    <!-- 初始状态为禁用，只有输入正确才解禁 -->
+                    <button id="confirm-btn" disabled class="px-5 py-2.5 text-sm font-bold text-white bg-rose-600 rounded opacity-40 cursor-not-allowed transition-all flex items-center gap-2">
+                        <i data-lucide="shield" class="w-4 h-4"></i> 执行断电
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 交互脚本区 -->
+    <!-- ========================================== -->
+    <script>
+        // 初始化 Lucide 图标
+        lucide.createIcons();
+
+        // 1. 模拟动态数据，演示等宽字体(Tabular Nums)防抖效果
+        setInterval(() => {
+            const el = document.getElementById('live-data-1');
+            const current = parseFloat(el.innerText);
+            const delta = (Math.random() * 0.4 - 0.2);
+            el.innerText = (current + delta).toFixed(1);
+            
+            const el2 = document.getElementById('live-data-2');
+            el2.innerText = (78.5 + (Math.random() * 1.0 - 0.5)).toFixed(1);
+        }, 1500);
+
+        // 2. 防呆模态框控制逻辑
+        const modal = document.getElementById('estop-modal');
+        const modalContent = document.getElementById('estop-modal-content');
+        const input = document.getElementById('auth-code');
+        const btn = document.getElementById('confirm-btn');
+
+        function openModal() {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            // 简单动画效果
+            setTimeout(() => {
+                modalContent.classList.remove('scale-95');
+                modalContent.classList.add('scale-100');
+                input.focus();
+            }, 10);
+            input.value = '';
+            btn.disabled = true;
+            btn.classList.add('opacity-40', 'cursor-not-allowed');
+            btn.classList.remove('hover:bg-rose-700', 'shadow-lg', 'shadow-rose-600/30');
+        }
+
+        function closeModal() {
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }, 150);
+        }
+
+        // 监听输入，实现防呆解锁验证
+        input.addEventListener('input', (e) => {
+            if (e.target.value === '999') {
+                btn.disabled = false;
+                btn.classList.remove('opacity-40', 'cursor-not-allowed');
+                btn.classList.add('hover:bg-rose-700', 'shadow-lg', 'shadow-rose-600/30');
+            } else {
+                btn.disabled = true;
+                btn.classList.add('opacity-40', 'cursor-not-allowed');
+                btn.classList.remove('hover:bg-rose-700', 'shadow-lg', 'shadow-rose-600/30');
+            }
+        });
+
+        // 确认执行
+        btn.addEventListener('click', () => {
+            alert('系统验证通过：指令已下达！设备控制层已切断。');
+            closeModal();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLPM 控制回路性能评估工作台</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入 FontAwesome 图标库 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        industrial: {
+                            900: '#1a1f2c', // 深色侧边栏
+                            800: '#222837', // 侧边栏悬浮
+                            700: '#2d3548',
+                            accent: '#0d9488', // 强调色 (Teal)
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 自定义滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        .tree-line::before {
+            content: '';
+            position: absolute;
+            left: 11px;
+            top: 24px;
+            bottom: -8px;
+            width: 1px;
+            background-color: #e2e8f0;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans h-screen flex overflow-hidden">
+
+    <!-- 左侧主导航 (Dark Sidebar) -->
+    <aside class="w-16 md:w-56 bg-industrial-900 text-slate-300 flex flex-col transition-all duration-300 z-20 shrink-0">
+        <!-- Logo 区域 -->
+        <div class="h-14 flex items-center justify-center md:justify-start md:px-4 border-b border-white/10 shrink-0">
+            <i class="fas fa-layer-group text-industrial-accent text-xl"></i>
+            <span class="ml-3 font-bold text-white hidden md:block tracking-wide">CLPM <span class="font-normal text-slate-400 text-sm">系统</span></span>
+        </div>
+        
+        <!-- 导航菜单 -->
+        <nav class="flex-1 overflow-y-auto py-4">
+            <ul class="space-y-1">
+                <li>
+                    <a href="#" class="flex items-center px-4 py-3 hover:bg-industrial-800 transition-colors group">
+                        <i class="fas fa-desktop w-6 text-center text-slate-400 group-hover:text-white"></i>
+                        <span class="ml-3 hidden md:block">工作台</span>
+                        <i class="fas fa-chevron-down ml-auto text-xs text-slate-500 hidden md:block"></i>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center px-4 py-3 hover:bg-industrial-800 transition-colors group">
+                        <i class="fas fa-project-diagram w-6 text-center text-slate-400 group-hover:text-white"></i>
+                        <span class="ml-3 hidden md:block">回路管理</span>
+                        <i class="fas fa-chevron-down ml-auto text-xs text-slate-500 hidden md:block"></i>
+                    </a>
+                </li>
+                <!-- 展开状态的菜单 -->
+                <li class="bg-industrial-800/50">
+                    <div class="flex items-center px-4 py-3 text-white cursor-pointer border-l-2 border-industrial-accent">
+                        <i class="fas fa-chart-pie w-6 text-center text-industrial-accent"></i>
+                        <span class="ml-3 hidden md:block font-medium">性能评估</span>
+                        <i class="fas fa-chevron-up ml-auto text-xs hidden md:block"></i>
+                    </div>
+                    <ul class="pb-2 hidden md:block">
+                        <li>
+                            <a href="#" class="flex items-center pl-12 pr-4 py-2 text-sm text-industrial-accent bg-industrial-800/80">
+                                <i class="fas fa-chalkboard text-xs mr-2"></i> 性能看板
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="flex items-center pl-12 pr-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-industrial-800">
+                                <i class="fas fa-sort-amount-down text-xs mr-2"></i> 低效排行
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="flex items-center pl-12 pr-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-industrial-800">
+                                <i class="fas fa-chart-bar text-xs mr-2"></i> 统计报表
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="flex items-center pl-12 pr-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-industrial-800">
+                                <i class="fas fa-list-alt text-xs mr-2"></i> 指标明细
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center px-4 py-3 hover:bg-industrial-800 transition-colors group">
+                        <i class="fas fa-tasks w-6 text-center text-slate-400 group-hover:text-white"></i>
+                        <span class="ml-3 hidden md:block">评估任务</span>
+                        <i class="fas fa-chevron-down ml-auto text-xs text-slate-500 hidden md:block"></i>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center px-4 py-3 hover:bg-industrial-800 transition-colors group">
+                        <i class="fas fa-stethoscope w-6 text-center text-slate-400 group-hover:text-white"></i>
+                        <span class="ml-3 hidden md:block">诊断中心</span>
+                        <i class="fas fa-chevron-down ml-auto text-xs text-slate-500 hidden md:block"></i>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        
+        <!-- 底部设置 -->
+        <div class="p-4 border-t border-white/10 shrink-0">
+            <a href="#" class="flex items-center text-slate-400 hover:text-white transition-colors">
+                <i class="fas fa-cog w-6 text-center"></i>
+                <span class="ml-3 hidden md:block">系统管理</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- 右侧主体内容 -->
+    <main class="flex-1 flex flex-col min-w-0">
+        
+        <!-- 顶部工具栏 (Tabs & Actions) -->
+        <header class="h-12 bg-white border-b border-slate-200 flex items-end px-2 shrink-0 justify-between">
+            <!-- 标签页 -->
+            <div class="flex space-x-1 overflow-x-auto hide-scrollbar">
+                <div class="px-4 py-2 border-t border-l border-r border-slate-200 rounded-t-md bg-slate-50 text-slate-500 text-sm flex items-center cursor-pointer hover:bg-white mt-1">
+                    <i class="fas fa-th-large mr-2 text-xs"></i> 性能总览 <i class="fas fa-times ml-3 text-slate-400 hover:text-slate-600"></i>
+                </div>
+                <div class="px-4 py-2 border-t border-l border-r border-slate-200 rounded-t-md bg-slate-50 text-slate-500 text-sm flex items-center cursor-pointer hover:bg-white mt-1">
+                    <i class="fas fa-project-diagram mr-2 text-xs"></i> 回路详情 <i class="fas fa-times ml-3 text-slate-400 hover:text-slate-600"></i>
+                </div>
+                <!-- 激活的标签 -->
+                <div class="px-4 py-2.5 border-t-2 border-industrial-accent border-l border-r border-slate-200 rounded-t-md bg-white text-industrial-accent font-medium text-sm flex items-center cursor-pointer relative shadow-[0_1px_0_white]">
+                    <i class="fas fa-chalkboard mr-2 text-xs"></i> 性能看板 <i class="fas fa-times ml-3 text-slate-400 hover:text-slate-600"></i>
+                </div>
+            </div>
+            
+            <!-- 右侧全局工具 -->
+            <div class="flex items-center space-x-4 pb-2 pr-4 text-slate-500 shrink-0">
+                <div class="relative hidden sm:block">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
+                    <input type="text" placeholder="搜索 ⌘K" class="bg-slate-100 text-sm rounded-full pl-8 pr-4 py-1 focus:outline-none focus:ring-1 focus:ring-industrial-accent w-48">
+                </div>
+                <i class="fas fa-moon hover:text-slate-700 cursor-pointer"></i>
+                <i class="fas fa-bell hover:text-slate-700 cursor-pointer"></i>
+                <div class="w-6 h-6 rounded-full bg-industrial-accent text-white flex items-center justify-center text-xs font-bold cursor-pointer">
+                    理员
+                </div>
+            </div>
+        </header>
+
+        <!-- 内容工作区 -->
+        <div class="flex-1 flex overflow-hidden">
+            
+            <!-- 工厂导航树 (内侧边栏) -->
+            <div class="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0 hidden lg:flex">
+                <div class="p-3 border-b border-slate-100 flex items-center justify-between">
+                    <span class="font-medium text-slate-800 text-sm">工厂导航</span>
+                    <div class="flex space-x-2 text-slate-400">
+                        <i class="fas fa-compress-alt cursor-pointer hover:text-slate-600 text-xs title='折叠全部'"></i>
+                        <i class="fas fa-sync-alt cursor-pointer hover:text-slate-600 text-xs title='刷新'"></i>
+                    </div>
+                </div>
+                <div class="p-3 border-b border-slate-100">
+                    <div class="relative">
+                        <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
+                        <input type="text" placeholder="搜索工厂/装置/单元" class="w-full text-sm border border-slate-200 rounded px-8 py-1.5 focus:outline-none focus:border-industrial-accent">
+                    </div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 text-sm">
+                    <ul class="space-y-2 text-slate-600 relative">
+                        <li class="relative tree-line">
+                            <div class="flex items-center py-1 cursor-pointer hover:bg-slate-50 rounded px-1">
+                                <i class="fas fa-caret-down text-slate-400 mr-2 w-3 text-center"></i>
+                                <i class="fas fa-folder text-slate-300 mr-2"></i>
+                                <span>全厂</span>
+                            </div>
+                            <ul class="pl-6 mt-1 space-y-1 relative">
+                                <li>
+                                    <div class="flex items-center py-1 cursor-pointer hover:bg-slate-50 rounded px-1">
+                                        <i class="far fa-file-alt text-slate-400 mr-2"></i>
+                                        <span>急冷分离单元</span>
+                                        <span class="ml-2 text-xs text-slate-400 bg-slate-100 px-1 rounded">单元</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <div class="flex items-center py-1 cursor-pointer bg-industrial-accent/10 text-industrial-accent rounded px-1 font-medium">
+                                        <i class="far fa-file-alt mr-2"></i>
+                                        <span>脱甲烷精馏单元</span>
+                                        <span class="ml-2 text-xs opacity-70 bg-industrial-accent/20 px-1 rounded">单元</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <div class="flex items-center py-1 cursor-pointer hover:bg-slate-50 rounded px-1">
+                                        <i class="far fa-file-alt text-slate-400 mr-2"></i>
+                                        <span>醚化反应单元</span>
+                                        <span class="ml-2 text-xs text-slate-400 bg-slate-100 px-1 rounded">单元</span>
+                                    </div>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- 主看板内容区 -->
+            <div class="flex-1 overflow-y-auto bg-slate-50 relative p-4 md:p-6">
+                
+                <!-- 页面标题 & 操作栏 -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                    <div class="flex items-center">
+                        <h1 class="text-xl font-bold text-slate-800">性能看板</h1>
+                        <span class="mx-3 text-slate-300">|</span>
+                        <span class="text-sm text-slate-500">全厂</span>
+                        <div class="ml-4">
+                            <select class="text-sm border border-slate-200 rounded px-3 py-1.5 bg-white focus:outline-none focus:border-industrial-accent">
+                                <option>近 7 天</option>
+                                <option>近 30 天</option>
+                                <option>本月</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-3 text-sm">
+                        <span class="text-slate-400 text-xs hidden sm:inline"><i class="fas fa-circle text-green-500 text-[8px] mr-1"></i> 数据延迟 <1m</span>
+                        <button class="px-3 py-1.5 bg-white border border-slate-200 rounded shadow-sm hover:bg-slate-50 flex items-center text-slate-600 transition">
+                            <i class="fas fa-sync-alt mr-1.5 text-xs"></i> 刷新
+                        </button>
+                        <button class="px-3 py-1.5 bg-white border border-slate-200 rounded shadow-sm hover:bg-slate-50 flex items-center text-slate-600 transition">
+                            <i class="fas fa-download mr-1.5 text-xs"></i> 导出
+                        </button>
+                        <button class="px-4 py-1.5 bg-industrial-accent text-white rounded shadow-sm hover:bg-teal-700 transition">
+                            保存预设
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 优化：顶部 KPI 卡片区 -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    
+                    <!-- 卡片 1: 综合性能 -->
+                    <div class="bg-white p-5 rounded-lg border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-slate-500 text-sm font-medium flex items-center">
+                                    综合性能 <i class="fas fa-info-circle ml-1.5 text-slate-300 cursor-help" title="综合健康度评分"></i>
+                                </h3>
+                                <div class="mt-2 flex items-baseline gap-2">
+                                    <span class="text-3xl font-bold text-slate-800">28.0</span>
+                                </div>
+                            </div>
+                            <!-- 装饰图标 -->
+                            <div class="w-10 h-10 rounded bg-indigo-50 text-indigo-500 flex items-center justify-center">
+                                <i class="fas fa-chart-line text-lg"></i>
+                            </div>
+                        </div>
+                        <!-- 优化：填充底部的上下文与微型图表 -->
+                        <div class="mt-4 pt-4 border-t border-slate-50">
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="text-slate-500">参评 5 回路</span>
+                                <span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium flex items-center">
+                                    <i class="fas fa-arrow-up text-[10px] mr-1"></i>2.4% 同比
+                                </span>
+                            </div>
+                            <div class="mt-2 w-full bg-slate-100 rounded-full h-1.5">
+                                <div class="bg-indigo-500 h-1.5 rounded-full" style="width: 28%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 卡片 2: 平均自控率 -->
+                    <div class="bg-white p-5 rounded-lg border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-slate-500 text-sm font-medium">平均自控率</h3>
+                                <div class="mt-2 flex items-baseline gap-1">
+                                    <span class="text-3xl font-bold text-emerald-600">100.0</span>
+                                    <span class="text-lg font-medium text-emerald-600">%</span>
+                                </div>
+                            </div>
+                            <div class="w-10 h-10 rounded bg-emerald-50 text-emerald-500 flex items-center justify-center">
+                                <i class="fas fa-robot text-lg"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-slate-50">
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="text-slate-500">参评 5 回路</span>
+                                <span class="text-slate-400">运行满载</span>
+                            </div>
+                            <div class="mt-2 w-full bg-emerald-100 rounded-full h-1.5 relative overflow-hidden">
+                                <div class="absolute inset-0 bg-emerald-500 w-full animate-pulse opacity-20"></div>
+                                <div class="bg-emerald-500 h-1.5 rounded-full relative z-10" style="width: 100%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 卡片 3: 稳定率 -->
+                    <div class="bg-white p-5 rounded-lg border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-slate-500 text-sm font-medium">稳定率</h3>
+                                <div class="mt-2 flex items-baseline gap-1">
+                                    <span class="text-3xl font-bold text-rose-500">10.7</span>
+                                    <span class="text-lg font-medium text-rose-500">%</span>
+                                </div>
+                            </div>
+                            <div class="w-10 h-10 rounded bg-rose-50 text-rose-500 flex items-center justify-center">
+                                <i class="fas fa-wave-square text-lg"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-slate-50">
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="text-slate-500">参评 5 回路</span>
+                                <span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 font-medium flex items-center">
+                                    <i class="fas fa-arrow-down text-[10px] mr-1"></i>1.2% 同比
+                                </span>
+                            </div>
+                            <!-- 微型柱状图替代空白 -->
+                            <div class="mt-2 flex items-end h-3 gap-0.5 opacity-70">
+                                <div class="bg-rose-400 w-full rounded-t" style="height: 20%"></div>
+                                <div class="bg-rose-400 w-full rounded-t" style="height: 40%"></div>
+                                <div class="bg-rose-400 w-full rounded-t" style="height: 30%"></div>
+                                <div class="bg-rose-400 w-full rounded-t" style="height: 80%"></div>
+                                <div class="bg-rose-500 w-full rounded-t" style="height: 10%"></div>
+                                <div class="bg-slate-200 w-full rounded-t" style="height: 60%"></div>
+                                <div class="bg-slate-200 w-full rounded-t" style="height: 50%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 卡片 4: 实时自控率 (重构的仪表盘) -->
+                    <div class="bg-white p-5 rounded-lg border border-slate-100 shadow-sm relative overflow-hidden flex flex-col items-center justify-center hover:shadow-md transition">
+                        <div class="absolute top-4 left-4">
+                            <h3 class="text-slate-500 text-sm font-medium">实时自控率</h3>
+                            <div class="text-[10px] text-slate-400 mt-0.5">统计于 09:37:10</div>
+                        </div>
+                        <!-- 右上角警示标签 -->
+                        <div class="absolute top-4 right-4 border border-rose-200 text-rose-600 bg-rose-50 text-xs px-2 py-0.5 rounded">
+                            严重
+                        </div>
+                        
+                        <!-- 半圆环仪表盘 -->
+                        <div class="relative w-40 h-24 mt-6">
+                            <canvas id="gaugeChart"></canvas>
+                            <!-- 中心文字绝对定位 -->
+                            <div class="absolute bottom-0 left-0 w-full flex flex-col items-center pb-2">
+                                <span class="text-2xl font-bold text-slate-800">0.0%</span>
+                                <span class="text-xs text-rose-500 font-medium mt-1">故障状态</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 图表区 -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                    <!-- 柱状图 -->
+                    <div class="lg:col-span-1 bg-white p-5 rounded-lg border border-slate-100 shadow-sm">
+                        <h3 class="text-slate-800 font-medium mb-4 text-sm">装置评分排名</h3>
+                        <div class="relative h-64">
+                            <canvas id="barChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- 折线图 -->
+                    <div class="lg:col-span-2 bg-white p-5 rounded-lg border border-slate-100 shadow-sm">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-slate-800 font-medium text-sm">全厂稳定率趋势</h3>
+                            <div class="flex items-center text-xs space-x-4">
+                                <span class="flex items-center text-slate-500"><span class="w-3 h-3 rounded-full bg-blue-500 mr-1.5 inline-block border-2 border-white shadow-[0_0_0_1px_#3b82f6]"></span> 稳定率</span>
+                                <span class="flex items-center text-slate-500"><span class="w-3 h-3 rounded-full bg-emerald-500 mr-1.5 inline-block border-2 border-white shadow-[0_0_0_1px_#10b981] border-dashed"></span> 参评回路数</span>
+                            </div>
+                        </div>
+                        <div class="relative h-64 w-full">
+                            <canvas id="lineChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 底部数据表格 -->
+                <div class="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden mb-6">
+                    <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <h3 class="text-slate-800 font-medium text-sm">低效回路 Top 10 预览</h3>
+                        <a href="#" class="text-industrial-accent text-sm hover:underline flex items-center">
+                            查看完整排行 <i class="fas fa-arrow-right ml-1 text-xs"></i>
+                        </a>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-600">
+                            <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-medium">
+                                <tr>
+                                    <th class="px-5 py-3 border-b border-slate-100">排名</th>
+                                    <th class="px-5 py-3 border-b border-slate-100">回路位号</th>
+                                    <th class="px-5 py-3 border-b border-slate-100">综合评分</th>
+                                    <th class="px-5 py-3 border-b border-slate-100">稳定率</th>
+                                    <th class="px-5 py-3 border-b border-slate-100">可信度</th>
+                                    <th class="px-5 py-3 border-b border-slate-100">预诊诊断</th>
+                                    <th class="px-5 py-3 border-b border-slate-100 text-right">处理状态</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-5 py-3">
+                                        <span class="inline-flex items-center justify-center w-6 h-6 rounded bg-orange-100 text-orange-600 font-bold text-xs">1</span>
+                                    </td>
+                                    <td class="px-5 py-3 font-medium text-slate-700">41LIC40404_PIDA</td>
+                                    <td class="px-5 py-3 text-rose-500 font-bold">0.0</td>
+                                    <td class="px-5 py-3">0.0%</td>
+                                    <td class="px-5 py-3 text-slate-400">—</td>
+                                    <td class="px-5 py-3">
+                                        <span class="text-xs text-rose-500 bg-rose-50 px-2 py-1 rounded">故障</span>
+                                    </td>
+                                    <td class="px-5 py-3 text-right">
+                                        <span class="inline-block px-2 py-1 bg-rose-50 text-rose-600 rounded text-xs border border-rose-100">待处理</span>
+                                    </td>
+                                </tr>
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-5 py-3">
+                                        <span class="inline-flex items-center justify-center w-6 h-6 rounded bg-orange-50 text-orange-500 font-bold text-xs">2</span>
+                                    </td>
+                                    <td class="px-5 py-3 font-medium text-slate-700">90PIC51212A_PIDA</td>
+                                    <td class="px-5 py-3 text-rose-500 font-bold">0.0</td>
+                                    <td class="px-5 py-3">55.8%</td>
+                                    <td class="px-5 py-3 text-slate-400">—</td>
+                                    <td class="px-5 py-3">
+                                        <span class="text-xs text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1 rounded">VALVE_STICTION</span>
+                                    </td>
+                                    <td class="px-5 py-3 text-right">
+                                        <span class="inline-block px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs border border-blue-100">处理中</span>
+                                    </td>
+                                </tr>
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-5 py-3">
+                                        <span class="inline-flex items-center justify-center w-6 h-6 rounded bg-slate-100 text-slate-500 font-bold text-xs">3</span>
+                                    </td>
+                                    <td class="px-5 py-3 font-medium text-slate-700">41FIC20074_PIDA</td>
+                                    <td class="px-5 py-3 text-rose-500 font-bold">0.0</td>
+                                    <td class="px-5 py-3">47.3%</td>
+                                    <td class="px-5 py-3 text-slate-400">—</td>
+                                    <td class="px-5 py-3">
+                                        <span class="text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded">振荡处理中</span>
+                                    </td>
+                                    <td class="px-5 py-3 text-right">
+                                        <span class="inline-block px-2 py-1 bg-rose-50 text-rose-600 rounded text-xs border border-rose-100">待处理</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- 图表初始化脚本 -->
+    <script>
+        // 1. 半圆环仪表盘 (实时自控率)
+        const ctxGauge = document.getElementById('gaugeChart').getContext('2d');
+        new Chart(ctxGauge, {
+            type: 'doughnut',
+            data: {
+                labels: ['故障', '正常'],
+                datasets: [{
+                    data: [100, 0], // 当前值为0，红色占满表示故障
+                    backgroundColor: ['#f43f5e', '#e2e8f0'],
+                    borderWidth: 0,
+                    circumference: 180,
+                    rotation: 270,
+                    cutout: '80%'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                },
+                layout: { padding: 0 }
+            }
+        });
+
+        // 2. 柱状图 (装置评分排名)
+        const ctxBar = document.getElementById('barChart').getContext('2d');
+        new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: ['脱甲烷精馏单元', '醚化反应单元', '急冷分离单元'],
+                datasets: [{
+                    label: '评分',
+                    data: [17.2, 18.1, 28.0],
+                    backgroundColor: '#0d9488', // Teal accent
+                    borderRadius: 4,
+                    barThickness: 16
+                }]
+            },
+            options: {
+                indexAxis: 'y', // 横向柱状图
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1e293b',
+                        padding: 10
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: '#f1f5f9', drawBorder: false },
+                        ticks: { color: '#64748b', font: {size: 10} }
+                    },
+                    y: {
+                        grid: { display: false, drawBorder: false },
+                        ticks: { color: '#475569', font: {size: 11} }
+                    }
+                }
+            }
+        });
+
+        // 3. 折线图 (全厂稳定率趋势)
+        const ctxLine = document.getElementById('lineChart').getContext('2d');
+        // 模拟一些波动数据
+        const lineData = Array.from({length: 40}, () => Math.floor(Math.random() * 20) + 5);
+        new Chart(ctxLine, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: 40}, (_, i) => `07-${String(Math.floor(i/10)+1).padStart(2,'0')} ${String((i%10)*2).padStart(2,'0')}:00`),
+                datasets: [
+                    {
+                        label: '稳定率',
+                        data: lineData,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: '#1e293b'
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false, drawBorder: false },
+                        ticks: {
+                            maxTicksLimit: 6,
+                            color: '#64748b',
+                            font: {size: 10}
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: '#f1f5f9', drawBorder: false, borderDash: [4, 4] },
+                        ticks: {
+                            callback: function(value) { return value + '%' },
+                            color: '#64748b',
+                            font: {size: 10},
+                            stepSize: 20
+                        }
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    </script>
+</body>
+</html>
