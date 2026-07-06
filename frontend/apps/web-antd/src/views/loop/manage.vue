@@ -1077,11 +1077,39 @@ const opTagAssociated = computed(() => {
 function handleUseDefaultOpLimitsChange(checked: any) {
   useDefaultOpLimits.value = Boolean(checked);
   if (useDefaultOpLimits.value) {
-    // 勾选「使用默认」时清空自定义限位值
+    // 勾选「使用默认」时清空自定义限位值（显示由 computed 控制）
     formState.opOutputLowerLimit = undefined;
     formState.opOutputUpperLimit = undefined;
   }
 }
+
+/** v6.1：OP 输出限位显示值（勾选"使用默认"时显示 OP Tag 量程值，否则 0/100 兜底）
+ * - useDefaultOpLimits=true：显示 OP Tag 量程（opTagRange.min ?? 0, opTagRange.max ?? 100）
+ * - useDefaultOpLimits=false：显示用户输入的自定义值
+ */
+const opLowerLimitDisplay = computed<number | undefined>({
+  get: () => {
+    if (useDefaultOpLimits.value) {
+      return opTagRange.value.min ?? 0;
+    }
+    return formState.opOutputLowerLimit;
+  },
+  set: (v) => {
+    formState.opOutputLowerLimit = v;
+  },
+});
+
+const opUpperLimitDisplay = computed<number | undefined>({
+  get: () => {
+    if (useDefaultOpLimits.value) {
+      return opTagRange.value.max ?? 100;
+    }
+    return formState.opOutputUpperLimit;
+  },
+  set: (v) => {
+    formState.opOutputUpperLimit = v;
+  },
+});
 
 /** v6.1：OP 输出下限位校验（提取到 script 中以访问 ref.value 和 Promise）
  * 校验规则（仅在「使用默认」未勾选时生效）：
@@ -2060,18 +2088,17 @@ watch(
                   <span v-if="record.opUnit" class="ml-0.5 text-emerald-400">{{ record.opUnit }}</span>
                 </span>
               </Tooltip>
-              <!-- 无限位值但 OP Tag 已关联：使用 OP Tag 量程作为默认限位（灰色） -->
+              <!-- 无限位值：直接显示 OP Tag 量程作为默认限位 -->
               <Tooltip
                 v-else-if="record.opRange && (record.opRange.min !== null || record.opRange.max !== null)"
-                title="使用 OP Tag 量程作为默认限位"
+                title="使用 OP Tag 量程作为限位"
               >
-                <span class="font-mono text-xs text-slate-500">
+                <span class="font-mono text-xs text-slate-600">
                   {{ record.opRange.min ?? '—' }} ~ {{ record.opRange.max ?? '—' }}
                   <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{ record.opUnit }}</span>
-                  <span class="ml-1 rounded bg-slate-100 px-1 text-[10px] text-slate-400">默认</span>
                 </span>
               </Tooltip>
-              <!-- OP Tag 未关联且无限位值 -->
+              <!-- OP Tag 未关联且无限位值：系统默认 0 ~ 100 -->
               <Tooltip v-else title="未关联 OP Tag，使用系统默认 0 ~ 100">
                 <span class="font-mono text-xs text-slate-400">0 ~ 100</span>
               </Tooltip>
@@ -2366,12 +2393,12 @@ watch(
                     ]"
                   >
                     <InputNumber
-                      v-model:value="formState.opOutputLowerLimit"
+                      v-model:value="opLowerLimitDisplay"
                       :disabled="isViewMode || useDefaultOpLimits"
                       :min="opTagRange.min ?? undefined"
                       :max="
-                        formState.opOutputUpperLimit !== undefined
-                          ? formState.opOutputUpperLimit
+                        opUpperLimitDisplay !== undefined
+                          ? opUpperLimitDisplay
                           : (opTagRange.max ?? undefined)
                       "
                       :step="0.1"
@@ -2391,11 +2418,11 @@ watch(
                     ]"
                   >
                     <InputNumber
-                      v-model:value="formState.opOutputUpperLimit"
+                      v-model:value="opUpperLimitDisplay"
                       :disabled="isViewMode || useDefaultOpLimits"
                       :min="
-                        formState.opOutputLowerLimit !== undefined
-                          ? formState.opOutputLowerLimit
+                        opLowerLimitDisplay !== undefined
+                          ? opLowerLimitDisplay
                           : (opTagRange.min ?? undefined)
                       "
                       :max="opTagRange.max ?? undefined"
