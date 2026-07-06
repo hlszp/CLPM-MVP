@@ -121,7 +121,8 @@ class TaskResponse(CamelModel):
         progress: 进度 0~1
         currentStage: 当前阶段（取数/预处理/指标计算/可信度判定）
         loopsTotal: 总回路数
-        loopsDone: 已完成回路数
+        loopsDone: 已完成回路数（BACKFILL 任务为已完成窗口数）
+        windowCount: 小时窗口数（仅 BACKFILL，用于显示计算量）
         createdAt: 创建时间（ISO 8601）
         startedAt: 开始执行时间
         finishedAt: 完成时间
@@ -136,6 +137,7 @@ class TaskResponse(CamelModel):
     currentStage: str | None = Field(None, description="当前阶段：取数/预处理/指标计算/可信度判定")
     loopsTotal: int | None = None
     loopsDone: int | None = None
+    windowCount: int | None = Field(None, description="小时窗口数（仅 BACKFILL）")
     createdAt: str
     startedAt: str | None = None
     finishedAt: str | None = None

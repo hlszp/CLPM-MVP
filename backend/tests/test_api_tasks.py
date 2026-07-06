@@ -106,6 +106,20 @@ class FakeTaskRedis:
                 deleted += 1
         return deleted
 
+    async def zrem(self, key: str, *members: str) -> int:
+        """Remove members from sorted set."""
+        zset = self._zsets.get(key, {})
+        removed = 0
+        for m in members:
+            if m in zset:
+                del zset[m]
+                removed += 1
+        return removed
+
+    async def hget(self, key: str, field: str) -> str | None:
+        """Get a single hash field."""
+        return self._hashes.get(key, {}).get(field)
+
 
 @pytest.fixture
 def task_redis() -> FakeTaskRedis:
@@ -491,8 +505,8 @@ class TestCancelTask:
         body = resp.json()
         assert body["code"] == "0"
         assert body["data"]["status"] == "CANCELLED"
-        # 验证 Celery revoke 被调用
-        mock_celery_app.control.revoke.assert_called_once_with("celery-001", terminate=False)
+        # 验证 Celery revoke 被调用（terminate=True 强制终止 worker 进程）
+        mock_celery_app.control.revoke.assert_called_once_with("celery-001", terminate=True)
 
     def test_cancel_terminal_task(self, client, task_redis, fake_redis) -> None:
         """取消已完成的任务返回 400."""
@@ -527,6 +541,137 @@ class TestCancelTask:
     def test_cancel_no_token(self, client) -> None:
         """未认证请求返回 401."""
         resp = client.post("/api/v1/tasks/some-task/cancel")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/tasks/{taskId}
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteTask:
+    """DELETE /api/v1/tasks/{taskId} tests — IDS §2.7.6.6"""
+
+    def test_delete_success_task(self, client, task_redis, fake_redis) -> None:
+        """删除 SUCCESS 状态任务：从 Redis 哈希与索引中移除."""
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-del-success",
+            status="SUCCESS",
+            task_type="BACKFILL",
+        )
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.delete(
+                "/api/v1/tasks/task-del-success",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"]["task_id"] == "task-del-success"
+        assert body["data"]["deleted"] is True
+        # 验证 Redis Hash 已删除
+        assert "task:task-del-success" not in task_redis._hashes
+        # 验证索引 zset 中已移除
+        assert "task-del-success" not in task_redis._zsets.get("task:index", {})
+
+    def test_delete_failed_task(self, client, task_redis, fake_redis) -> None:
+        """删除 FAILED 状态任务."""
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-del-failed",
+            status="FAILED",
+        )
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                "/api/v1/tasks/task-del-failed",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["deleted"] is True
+        assert "task:task-del-failed" not in task_redis._hashes
+
+    def test_delete_cancelled_task(self, client, task_redis, fake_redis) -> None:
+        """删除 CANCELLED 状态任务."""
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-del-cancelled",
+            status="CANCELLED",
+        )
+        with mock_current_user(TEST_USERS["pe_engineer"]):
+            resp = client.delete(
+                "/api/v1/tasks/task-del-cancelled",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["deleted"] is True
+
+    def test_delete_running_task_rejected(
+        self, client, task_redis, fake_redis
+    ) -> None:
+        """删除 RUNNING 状态任务返回 400 — 必须先取消."""
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-running",
+            status="RUNNING",
+        )
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.delete(
+                "/api/v1/tasks/task-running",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_TASK_NOT_DELETABLE"
+        # 验证任务仍在 Redis 中
+        assert "task:task-running" in task_redis._hashes
+
+    def test_delete_pending_task_rejected(
+        self, client, task_redis, fake_redis
+    ) -> None:
+        """删除 PENDING 状态任务返回 400."""
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-pending",
+            status="PENDING",
+        )
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                "/api/v1/tasks/task-pending",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_TASK_NOT_DELETABLE"
+
+    def test_delete_not_found(self, client, task_redis, fake_redis) -> None:
+        """删除不存在的任务返回 404."""
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.delete(
+                "/api/v1/tasks/nonexistent-task",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_TASK_NOT_FOUND"
+
+    def test_delete_sponsor_forbidden(self, client, task_redis, fake_redis) -> None:
+        """SPONSOR 不能删除任务（403）."""
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-sponsor",
+            status="SUCCESS",
+        )
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.delete(
+                "/api/v1/tasks/task-sponsor",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
+        # 任务仍存在
+        assert "task:task-sponsor" in task_redis._hashes
+
+    def test_delete_no_token(self, client) -> None:
+        """未认证请求返回 401."""
+        resp = client.delete("/api/v1/tasks/some-task")
         assert resp.status_code == 401
 
 

@@ -93,6 +93,8 @@ export namespace TaskApi {
     currentStage?: null | string;
     loopsTotal?: null | number;
     loopsDone?: null | number;
+    /** 小时窗口数（仅 BACKFILL，显示计算量） */
+    windowCount?: null | number;
     createdAt: string;
     startedAt?: null | string;
     finishedAt?: null | string;
@@ -256,6 +258,18 @@ export function getTaskListApi(params: TaskApi.TaskListQueryParams) {
 export function cancelTaskApi(taskId: string) {
   return requestClient.post<TaskApi.CancelTaskResult>(
     `${BASE}/${taskId}/cancel`,
+  );
+}
+
+/**
+ * 删除任务记录 — IDS §2.7.6.6（IC_ENGINEER/PE_ENGINEER/ADMIN）
+ *
+ * 仅终态（SUCCESS/FAILED/CANCELLED）任务可删除。
+ * 运行中任务必须先 cancel 再 delete。
+ */
+export function deleteTaskApi(taskId: string) {
+  return requestClient.delete<{ task_id: string; deleted: boolean }>(
+    `${BASE}/${taskId}`,
   );
 }
 

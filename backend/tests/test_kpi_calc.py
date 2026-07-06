@@ -2114,3 +2114,163 @@ class TestPersistSnapshotLineagePassThrough:
             assert call_kwargs["quality_policy"] == "TDengine"
             assert "task_id" not in call_kwargs
 
+
+# ===========================================================================
+# 任务取消逻辑测试（_is_task_cancelled + _do_backfill 提前终止）
+# ===========================================================================
+
+
+class TestIsTaskCancelled:
+    """_is_task_cancelled — 检测任务取消标志."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_status_is_cancelled(self) -> None:
+        """Redis 中 status=CANCELLED → 返回 True."""
+        from app.tasks.kpi_calc import _is_task_cancelled
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="CANCELLED")
+        with patch("app.core.redis.redis_client", fake_redis):
+            result = await _is_task_cancelled("task-001")
+        assert result is True
+        fake_redis.hget.assert_called_once_with("task:task-001", "status")
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_status_is_running(self) -> None:
+        """Redis 中 status=RUNNING → 返回 False."""
+        from app.tasks.kpi_calc import _is_task_cancelled
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="RUNNING")
+        with patch("app.core.redis.redis_client", fake_redis):
+            result = await _is_task_cancelled("task-002")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_task_not_in_redis(self) -> None:
+        """任务不存在（hget 返回 None）→ 返回 False."""
+        from app.tasks.kpi_calc import _is_task_cancelled
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value=None)
+        with patch("app.core.redis.redis_client", fake_redis):
+            result = await _is_task_cancelled("task-nonexistent")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_true_for_lowercase_cancelled(self) -> None:
+        """status=cancelled（小写）→ 应识别为已取消."""
+        from app.tasks.kpi_calc import _is_task_cancelled
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="cancelled")
+        with patch("app.core.redis.redis_client", fake_redis):
+            result = await _is_task_cancelled("task-003")
+        assert result is True
+
+
+class TestDoBackfillCancellation:
+    """_do_backfill 在任务被取消时提前终止.
+
+    设计依据：当用户 POST /tasks/{task_id}/cancel 后，
+    _do_backfill 应在下个窗口开始前检测到 CANCELLED 状态并主动返回。
+    """
+
+    @pytest.mark.asyncio
+    async def test_backfill_returns_cancelled_when_status_is_cancelled(self) -> None:
+        """第一个窗口开始前检测到取消 → 立即返回 cancelled=True."""
+        from app.tasks.kpi_calc import _do_backfill
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="CANCELLED")
+        with (
+            patch("app.core.redis.redis_client", fake_redis),
+            patch(
+                "app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock
+            ) as mock_calc,
+            patch(
+                "app.services.task_tracker.update_status", new_callable=AsyncMock
+            ),
+        ):
+            result = await _do_backfill(
+                ts_start="2026-07-06T08:00:00+00:00",
+                ts_end="2026-07-06T10:00:00+00:00",
+                loop_ids=None,
+                task_id="task-cancel-test",
+            )
+        # 应当提前终止，未执行任何窗口计算
+        assert result["cancelled"] is True
+        assert result["completed_windows"] == 0
+        assert result["total_windows"] == 2
+        mock_calc.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_backfill_completes_when_not_cancelled(self) -> None:
+        """任务未取消 → 正常执行所有窗口，返回 cancelled 字段不出现或为 False."""
+        from app.tasks.kpi_calc import _do_backfill
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="RUNNING")
+        with (
+            patch("app.core.redis.redis_client", fake_redis),
+            patch(
+                "app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock
+            ) as mock_calc,
+            patch(
+                "app.services.task_tracker.update_status", new_callable=AsyncMock
+            ),
+        ):
+            mock_calc.return_value = {
+                "loop_success": 1,
+                "loop_inconclusive": 0,
+                "loop_failed": 0,
+                "node_success": 0,
+                "failed_window_list": [],
+            }
+            result = await _do_backfill(
+                ts_start="2026-07-06T08:00:00+00:00",
+                ts_end="2026-07-06T09:00:00+00:00",
+                loop_ids=None,
+                task_id="task-running-test",
+            )
+        # 1 个窗口正常完成
+        assert mock_calc.call_count == 1
+        assert result["total_windows"] == 1
+        # 未提前终止时，返回字典不含 cancelled 标志
+        assert "cancelled" not in result or result["cancelled"] is False
+
+    @pytest.mark.asyncio
+    async def test_backfill_no_task_id_skips_cancel_check(self) -> None:
+        """task_id=None → 不查询 Redis 取消标志，正常执行."""
+        from app.tasks.kpi_calc import _do_backfill
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value="CANCELLED")  # 即使为 CANCELLED
+        with (
+            patch("app.core.redis.redis_client", fake_redis),
+            patch(
+                "app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock
+            ) as mock_calc,
+            patch(
+                "app.services.task_tracker.update_status", new_callable=AsyncMock
+            ),
+        ):
+            mock_calc.return_value = {
+                "loop_success": 0,
+                "loop_inconclusive": 0,
+                "loop_failed": 0,
+                "node_success": 0,
+                "failed_window_list": [],
+            }
+            result = await _do_backfill(
+                ts_start="2026-07-06T08:00:00+00:00",
+                ts_end="2026-07-06T10:00:00+00:00",
+                loop_ids=None,
+                task_id=None,
+            )
+        # task_id=None 时不应查询取消标志
+        fake_redis.hget.assert_not_called()
+        # 2 个窗口都执行
+        assert mock_calc.call_count == 2
+        assert result["total_windows"] == 2
+

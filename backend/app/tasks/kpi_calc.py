@@ -522,6 +522,30 @@ async def _do_backfill(
     failed_windows: list[str] = []
 
     for i, w in enumerate(windows, 1):
+        # 每窗口开始前检查任务是否已被取消（POST /tasks/{task_id}/cancel 触发）
+        if task_id:
+            try:
+                if await _is_task_cancelled(task_id):
+                    logger.info(
+                        "检测到取消标志，提前终止回填: task_id=%s, completed=%d/%d",
+                        task_id, i - 1, total,
+                    )
+                    return {
+                        "total_windows": total,
+                        "failed_windows": len(failed_windows),
+                        "loop_success": agg_loop_success,
+                        "loop_inconclusive": agg_loop_inconclusive,
+                        "loop_failed": agg_loop_failed,
+                        "node_success": agg_node_success,
+                        "failed_window_list": failed_windows,
+                        "cancelled": True,
+                        "completed_windows": i - 1,
+                    }
+            except Exception:
+                logger.warning(
+                    "查询取消标志失败，继续执行: task_id=%s", task_id, exc_info=True
+                )
+
         try:
             loop_result = await _do_calculate(
                 ts_start=w, cascade_node=False, loop_ids=loop_ids
@@ -562,7 +586,13 @@ async def _do_backfill(
 
 
 async def _update_task_progress(task_id: str, done: int, total: int) -> None:
-    """更新任务进度（每窗口完成后调用）。"""
+    """更新任务进度（每窗口完成后调用）。
+
+    注意：``loops_total`` 字段在任务创建时已填为真实回路数（如 27），
+    此处不应覆盖为窗口数（如 219）——否则前端会误显示"219 个回路"。
+    ``loops_done`` 此处填窗口完成数，配合 ``current_stage`` 文本展示进度。
+    ``progress`` = done/total 反映窗口级完成比例。
+    """
     from app.schemas.task import TaskStatus
 
     from app.services import task_tracker
@@ -573,9 +603,22 @@ async def _update_task_progress(task_id: str, done: int, total: int) -> None:
         TaskStatus.RUNNING,
         progress=progress,
         loops_done=done,
-        loops_total=total,
         current_stage=f"回填计算 [{done}/{total}]",
     )
+
+
+async def _is_task_cancelled(task_id: str) -> bool:
+    """检查任务是否已被取消（POST /tasks/{task_id}/cancel 触发）。
+
+    直接读 Redis 中的 task:{task_id} 哈希，避免 task_tracker 服务的额外封装。
+    取消是终态，一旦置为 CANCELLED，worker 在下个窗口开始前应主动终止。
+    """
+    from app.core.redis import redis_client
+
+    raw = await redis_client.hget(f"task:{task_id}", "status")
+    if raw is None:
+        return False
+    return str(raw).upper() == "CANCELLED"
 
 
 # ---------------------------------------------------------------------------

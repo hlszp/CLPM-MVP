@@ -35,6 +35,7 @@ import dayjs from 'dayjs';
 
 import {
   cancelTaskApi,
+  deleteTaskApi,
   getTaskListApi,
   triggerBackfillApi,
 } from '#/api/task';
@@ -109,6 +110,11 @@ const columns = computed<TableColumnsType>(() => [
     width: 90,
   },
   {
+    title: '小时窗口',
+    dataIndex: 'windowCount',
+    width: 100,
+  },
+  {
     title: '状态',
     dataIndex: 'status',
     width: 100,
@@ -126,7 +132,7 @@ const columns = computed<TableColumnsType>(() => [
   {
     title: '操作',
     key: 'action',
-    width: 120,
+    width: 140,
     fixed: 'right',
   },
 ]);
@@ -345,10 +351,34 @@ async function handleCancel(taskId: string) {
   }
 }
 
+// ============ 删除任务 ============
+async function handleDelete(taskId: string) {
+  try {
+    await deleteTaskApi(taskId);
+    message.success('任务已删除');
+    loadList();
+  } catch (error: any) {
+    message.error(error?.message || '删除失败');
+  }
+}
+
 // ============ 工具函数 ============
+/**
+ * 格式化时间为本地时区（UTC+8）显示。
+ *
+ * 后端返回的时间可能是：
+ * 1. 带 Z 或 +00:00 的 UTC ISO 字符串（如 "2026-07-05T10:00:00Z"）
+ *    → dayjs 自动识别为 UTC 并转本地时区显示
+ * 2. 不带时区的字符串（如 "2026-07-05 10:00:00"，PostgreSQL TIMESTAMP WITHOUT TIME ZONE）
+ *    → 假定为 UTC，手动加 Z 标记后再转本地时区
+ *
+ * 显式标注 [UTC+8]，避免用户误认为显示的是 UTC 时间。
+ */
 function formatTime(ts: string | null | undefined): string {
   if (!ts) return '—';
-  return dayjs(ts).format('YYYY-MM-DD HH:mm:ss');
+  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
+  const normalized = hasTimezone ? ts : `${ts}Z`;
+  return dayjs(normalized).format('YYYY-MM-DD HH:mm:ss [UTC+8]');
 }
 
 function formatProgress(progress: number | null | undefined): number {
@@ -358,6 +388,14 @@ function formatProgress(progress: number | null | undefined): number {
 
 function isTaskActive(task: TaskApi.TaskItem): boolean {
   return task.status === 'PENDING' || task.status === 'RUNNING';
+}
+
+function isTaskTerminal(task: TaskApi.TaskItem): boolean {
+  return (
+    task.status === 'SUCCESS' ||
+    task.status === 'FAILED' ||
+    task.status === 'CANCELLED'
+  );
 }
 
 // ============ 生命周期 ============
@@ -457,6 +495,12 @@ onUnmounted(() => {
         <template v-else-if="column.dataIndex === 'createdAt'">
           {{ formatTime(record.createdAt) }}
         </template>
+        <template v-else-if="column.dataIndex === 'windowCount'">
+          <span v-if="record.windowCount" class="font-mono">
+            {{ record.windowCount }}
+          </span>
+          <span v-else class="text-gray-400">—</span>
+        </template>
         <template v-else-if="column.key === 'action'">
           <Popconfirm
             v-if="isTaskActive(record as TaskApi.TaskItem)"
@@ -464,6 +508,13 @@ onUnmounted(() => {
             @confirm="handleCancel(record.taskId)"
           >
             <Button type="link" danger size="small">取消</Button>
+          </Popconfirm>
+          <Popconfirm
+            v-else-if="isTaskTerminal(record as TaskApi.TaskItem)"
+            title="确定删除此任务记录？删除后不可恢复。"
+            @confirm="handleDelete(record.taskId)"
+          >
+            <Button type="link" size="small">删除</Button>
           </Popconfirm>
           <span v-else class="text-gray-400">—</span>
         </template>

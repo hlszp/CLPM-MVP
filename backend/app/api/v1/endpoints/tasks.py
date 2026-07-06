@@ -198,6 +198,7 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         currentStage=_to_str_or_none(data.get("current_stage")),
         loopsTotal=_to_int(data.get("loops_total")),
         loopsDone=_to_int(data.get("loops_done")),
+        windowCount=_to_int(data.get("window_count")),
         createdAt=data.get("created_at", ""),
         startedAt=_to_str_or_none(data.get("started_at")),
         finishedAt=_to_str_or_none(data.get("finished_at")),
@@ -673,6 +674,7 @@ async def trigger_backfill(
         "current_stage": "初始化",
         "loops_total": str(loop_count),
         "loops_done": "0",
+        "window_count": str(window_count),
         "created_at": now,
         "started_at": "",
         "finished_at": "",
@@ -891,6 +893,8 @@ async def cancel_task(
         )
 
     # 撤销关联的 Celery 任务
+    # 使用 terminate=True 强制终止正在执行的 worker 进程，
+    # 避免 _do_backfill 循环继续跑完所有窗口
     from app.tasks.celery_app import celery_app
 
     celery_ids_raw = data.get("celery_task_id") or data.get("celery_task_ids")
@@ -901,7 +905,7 @@ async def cancel_task(
             else:
                 celery_ids = json.loads(celery_ids_raw)
             for cid in celery_ids:
-                celery_app.control.revoke(cid, terminate=False)
+                celery_app.control.revoke(cid, terminate=True)
         except (json.JSONDecodeError, TypeError):
             logger.warning("解析 Celery 任务 ID 失败: task_id=%s", task_id)
 
@@ -924,6 +928,48 @@ async def cancel_task(
 
     resp = _task_to_response(data)
     return success(data=resp.model_dump(), message="任务已取消")
+
+
+@router.delete("/{task_id}", response_model=ApiResponse[dict])
+async def delete_task(
+    task_id: str,
+    user: SysUser = Depends(require_roles(*_TASK_CREATOR_ROLES)),
+) -> dict:
+    """删除任务记录.
+
+    仅允许删除已处于终态（SUCCESS/FAILED/CANCELLED）的任务。
+    运行中（PENDING/RUNNING）的任务必须先 cancel 再 delete。
+
+    设计依据：IDS §2.7.6.6
+    """
+    data = await _get_task(task_id)
+    if data is None:
+        raise BizError(
+            code="ERR_TASK_NOT_FOUND",
+            message=f"任务不存在: {task_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    current_status = data.get("status", "")
+    if current_status not in _TERMINAL_STATUSES:
+        raise BizError(
+            code="ERR_TASK_NOT_DELETABLE",
+            message=(
+                f"任务未处于终态: {current_status}，"
+                "请先取消后再删除"
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 从 Redis 哈希与索引中删除
+    await redis_client.delete(_task_key(task_id))
+    await redis_client.zrem(_TASK_INDEX_KEY, task_id)
+
+    logger.info(
+        "任务已删除: task_id=%s, status=%s, user=%s",
+        task_id, current_status, user.username,
+    )
+    return success(data={"task_id": task_id, "deleted": True}, message="任务已删除")
 
 
 # ---------------------------------------------------------------------------

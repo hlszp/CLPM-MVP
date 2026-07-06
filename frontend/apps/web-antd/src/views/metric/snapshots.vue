@@ -256,10 +256,29 @@ function handlePlantNodeChange(value: string | undefined) {
 }
 
 // ============ 工具函数 ============
-/** 时间窗：只显示结束时间的「MM-DD HH:00」 */
+/**
+ * 时间窗：只显示结束时间的「MM-DD HH:00」。
+ *
+ * PostgreSQL ts_start 字段是 TIMESTAMP WITHOUT TIME ZONE，存储的是 UTC 时间。
+ * 假定不带时区的时间字符串为 UTC，手动加 Z 标记后再转本地时区显示。
+ */
 function formatTsEnd(ts: string | null | undefined): string {
   if (!ts) return '—';
-  return dayjs(ts).format('MM-DD HH:00');
+  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
+  const normalized = hasTimezone ? ts : `${ts}Z`;
+  return dayjs(normalized).format('MM-DD HH:00');
+}
+
+/**
+ * 完整时间格式化（用于抽屉详情）。
+ *
+ * 显式标注 UTC+8，避免用户误认为显示的是 UTC 时间。
+ */
+function formatFullTime(ts: string | null | undefined): string {
+  if (!ts) return '—';
+  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
+  const normalized = hasTimezone ? ts : `${ts}Z`;
+  return dayjs(normalized).format('YYYY-MM-DD HH:mm:ss [UTC+8]');
 }
 
 function formatNumber(val: number | null | undefined, suffix = ''): string {
@@ -480,10 +499,10 @@ onMounted(() => {
             {{ drawerRecord.loopTagName || '—' }}
           </DescriptionsItem>
           <DescriptionsItem label="时间窗起">
-            {{ drawerRecord.tsStart || '—' }}
+            {{ formatFullTime(drawerRecord.tsStart) }}
           </DescriptionsItem>
           <DescriptionsItem label="时间窗止">
-            {{ drawerRecord.tsEnd || '—' }}
+            {{ formatFullTime(drawerRecord.tsEnd) }}
           </DescriptionsItem>
           <DescriptionsItem label="综合评分">
             <span class="font-semibold">{{ formatNumber(drawerRecord.score) }}</span>
