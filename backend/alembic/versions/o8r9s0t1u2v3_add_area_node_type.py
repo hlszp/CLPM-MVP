@@ -18,13 +18,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    """扩展 CHECK 约束：新增 AREA 类型，支持三层工厂结构。"""
+    """扩展 CHECK 约束：新增 AREA 类型，支持三层工厂结构。
+
+    保留原有 EQUIPMENT 类型，兼容已有数据。
+    """
     op.execute(
         "ALTER TABLE plant_node DROP CONSTRAINT IF EXISTS ck_plant_node_type"
     )
     op.execute(
         "ALTER TABLE plant_node ADD CONSTRAINT ck_plant_node_type "
-        "CHECK (type IN ('FACTORY', 'AREA', 'UNIT'))"
+        "CHECK (type IN ('FACTORY', 'AREA', 'UNIT', 'EQUIPMENT'))"
     )
 
 

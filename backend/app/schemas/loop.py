@@ -279,6 +279,9 @@ class LoopUpdateResult(CamelModel):
     # modeattrTagId 保留字段，未参与 KPI 计算链路（详见 models/loop.py 注释）
     modeattrTagId: str | None = None
     dataRetentionDays: int | None = None
+    # v6.1 新增：OP 输出限位（更新后返回当前值）
+    opOutputLowerLimit: float | None = None
+    opOutputUpperLimit: float | None = None
     updatedAt: str | None = None
     updatedBy: str | None = None
 

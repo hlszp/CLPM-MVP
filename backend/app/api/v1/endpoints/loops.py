@@ -310,6 +310,10 @@ async def update_loop_endpoint(
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
+    # v6.1：使用 model_fields_set 区分"未传递"和"传递了 NULL"
+    # 确保用户可以通过 PUT null 清空 OP 输出限位（恢复默认值）
+    op_output_lower_limit = body.opOutputLowerLimit if "opOutputLowerLimit" in body.model_fields_set else None
+    op_output_upper_limit = body.opOutputUpperLimit if "opOutputUpperLimit" in body.model_fields_set else None
     data = await update_loop(
         db=db,
         loop_id=loop_id,
@@ -324,8 +328,10 @@ async def update_loop_endpoint(
         include_in_evaluation=body.include_in_evaluation,
         modeattr_tag_id=body.modeattrTagId,
         data_retention_days=body.dataRetentionDays,
-        op_output_lower_limit=body.opOutputLowerLimit,
-        op_output_upper_limit=body.opOutputUpperLimit,
+        op_output_lower_limit=op_output_lower_limit,
+        op_output_upper_limit=op_output_upper_limit,
+        _op_lower_set="opOutputLowerLimit" in body.model_fields_set,
+        _op_upper_set="opOutputUpperLimit" in body.model_fields_set,
     )
     return success(data=data, message="更新成功")
 

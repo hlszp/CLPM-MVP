@@ -198,6 +198,21 @@ class DataPlanner:
         )
 
         # Phase 1: L2 Bundle 缓存查询（若启用，命中则直接返回，跳过查询与组装）
+        # v6.1：缓存 key 包含 OP 限位，修改限位后自动失效
+        op_lower: float | None = None
+        op_upper: float | None = None
+        if self._bundle_cache is not None and metrics and self._db is not None:
+            from sqlalchemy import select
+            from app.models.loop import LoopLedger
+            op_result = await self._db.execute(
+                select(LoopLedger.op_output_lower_limit, LoopLedger.op_output_upper_limit)
+                .where(LoopLedger.id == loop_id)
+            )
+            op_row = op_result.first()
+            if op_row:
+                op_lower = float(op_row[0]) if op_row[0] is not None else None
+                op_upper = float(op_row[1]) if op_row[1] is not None else None
+
         if self._bundle_cache is not None and metrics:
             l2_key = L2BundleCache.build_key(
                 loop_id=loop_id,
@@ -205,6 +220,8 @@ class DataPlanner:
                 time_window_start=time_window.start,
                 time_window_end=time_window.end,
                 control_type=control_type.value,
+                op_output_lower_limit=op_lower,
+                op_output_upper_limit=op_upper,
             )
             cached_bundles = await self._bundle_cache.get(l2_key)
             if cached_bundles is not None:

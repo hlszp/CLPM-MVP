@@ -754,6 +754,8 @@ async def update_loop(
     data_retention_days: int | None = None,
     op_output_lower_limit: float | None = None,
     op_output_upper_limit: float | None = None,
+    _op_lower_set: bool = False,
+    _op_upper_set: bool = False,
 ) -> dict:
     """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。
 
@@ -834,9 +836,11 @@ async def update_loop(
         loop.modeattr_tag_id = modeattr_tag_id
     if data_retention_days is not None:
         loop.data_retention_days = data_retention_days
-    if op_output_lower_limit is not None:
+    # v6.1：使用 _op_lower_set / _op_upper_set 标记区分"未传递"和"传递了 NULL"
+    # 允许用户通过 PUT null 清空 OP 输出限位（恢复默认值）
+    if _op_lower_set:
         loop.op_output_lower_limit = op_output_lower_limit
-    if op_output_upper_limit is not None:
+    if _op_upper_set:
         loop.op_output_upper_limit = op_output_upper_limit
     loop.updated_by = operator
 

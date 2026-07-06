@@ -81,22 +81,26 @@ class L2BundleCache:
         time_window_start: datetime,
         time_window_end: datetime,
         control_type: str,
+        op_output_lower_limit: float | None = None,
+        op_output_upper_limit: float | None = None,
     ) -> str:
         """生成 L2 缓存 Key.
 
         Key 格式（任务规范）::
 
-            pdb_l2:{loopId}:{metrics_hash}:{window_hash}:{control_type}
+            pdb_l2:{loopId}:{metrics_hash}:{window_hash}:{control_type}:{op_limits_hash}
 
         - ``metrics_hash``：对 metrics 列表排序后取 MD5 前 8 位，
           确保相同指标集合（无论顺序）命中同一 Key
         - ``window_hash``：时间窗口短哈希（与 L1 ``time_window_hash`` 一致）
+        - ``op_limits_hash``：OP 输出限位哈希（用于区分不同限位配置的缓存）
 
-        设计依据：ADS §10.7.1, 任务规范
+        设计依据：ADS §10.7.1, 任务规范, loop-range-and-output-limits-design-v1.0.md §4.3
         """
         metrics_hash = _metrics_hash(metrics)
         window_hash = _time_window_hash(time_window_start, time_window_end)
-        return f"{_KEY_PREFIX}:{loop_id}:{metrics_hash}:{window_hash}:{control_type}"
+        op_limits_hash = _op_limits_hash(op_output_lower_limit, op_output_upper_limit)
+        return f"{_KEY_PREFIX}:{loop_id}:{metrics_hash}:{window_hash}:{control_type}:{op_limits_hash}"
 
     # ------------------------------------------------------------------
     # 单条读写
@@ -390,6 +394,16 @@ def _metrics_hash(metrics: list[str]) -> str:
 def _time_window_hash(start: datetime, end: datetime) -> str:
     """计算时间窗口的短哈希（与 L1 ``time_window_hash`` 一致）."""
     raw = f"{start.isoformat()}|{end.isoformat()}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
+
+
+def _op_limits_hash(lower: float | None, upper: float | None) -> str:
+    """计算 OP 输出限位的短哈希（8 位）.
+
+    用于 L2 缓存 Key，确保不同限位配置生成不同的缓存条目。
+    修复问题：修改 OP 输出限位后，L2 缓存仍返回旧限位数据。
+    """
+    raw = f"{lower}|{upper}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
 
 
