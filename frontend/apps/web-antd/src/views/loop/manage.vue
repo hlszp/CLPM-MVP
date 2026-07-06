@@ -1773,35 +1773,43 @@ watch(
         :error="loadError"
         @retry="loadList"
       >
-        <!-- 工具栏（图标化） -->
+        <!-- 工具栏（图标化）— 左右分区布局：左侧=新建/批量操作；右侧=导入/导出/刷新/节点信息/视图切换 -->
         <div class="mb-3 flex flex-wrap items-center gap-2">
+          <!-- 左侧：新建与批量操作（默认显示，未选中回路时批量按钮禁用） -->
           <ClpmToolbarButton
             v-permission="['ADMIN', 'IC_ENGINEER']"
             icon="create"
             label="新建回路"
             @click="handleAdd"
           />
-          <!-- 批量操作按钮：选中时显示（与主工具栏同行，避免页面浮动） -->
-          <template v-if="selectedRowKeys.length > 0">
-            <ClpmToolbarButton
-              v-permission="['ADMIN']"
-              icon="ant-design:setting-outlined"
-              label="批量设置"
-              variant="primary"
-              @click="handleBatchConfig"
-            />
-            <ClpmToolbarButton
-              v-permission="['ADMIN']"
-              icon="delete"
-              label="批量删除"
-              variant="danger"
-              @click="handleBatchDelete"
-            />
-            <Button size="small" type="link" @click="selectedRowKeys = []">
-              清除选择
-            </Button>
-            <span class="mx-1 text-slate-300">|</span>
-          </template>
+          <ClpmToolbarButton
+            v-permission="['ADMIN']"
+            icon="ant-design:setting-outlined"
+            label="批量设置"
+            variant="primary"
+            :disabled="selectedRowKeys.length === 0"
+            disabled-reason="请先选择回路"
+            @click="handleBatchConfig"
+          />
+          <ClpmToolbarButton
+            v-permission="['ADMIN']"
+            icon="delete"
+            label="批量删除"
+            variant="danger"
+            :disabled="selectedRowKeys.length === 0"
+            disabled-reason="请先选择回路"
+            @click="handleBatchDelete"
+          />
+          <ClpmToolbarButton
+            icon="ant-design:close-outlined"
+            label="清除选择"
+            :disabled="selectedRowKeys.length === 0"
+            disabled-reason="尚未选择回路"
+            @click="selectedRowKeys = []"
+          />
+
+          <!-- 右侧：数据交互与视图工具 -->
+          <span class="ml-auto" />
           <Upload v-bind="uploadProps">
             <ClpmToolbarButton
               v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -2692,13 +2700,16 @@ watch(
   background-color: #f0f0f0 !important;
 }
 
-/* v6.1：选中行样式优化（去除默认的列分割线，改为整体淡蓝背景 + 左侧蓝色竖线） */
+/* v6.1：选中行样式优化（淡蓝背景 + 左侧蓝色竖线，列分割线最细最淡） */
 .ant-table-tbody > tr.ant-table-row-selected > td {
   background-color: #eff6ff !important; /* blue-50 */
-  border-bottom-color: #dbeafe !important; /* blue-100 */
+  border-bottom-color: #eff6ff !important; /* 与背景同色，弱化横向分割线 */
+  border-right-color: #eff6ff !important; /* 与背景同色，弱化列分割线 */
 }
 .ant-table-tbody > tr.ant-table-row-selected:hover > td {
   background-color: #dbeafe !important; /* blue-100 */
+  border-bottom-color: #dbeafe !important;
+  border-right-color: #dbeafe !important;
 }
 /* 选中行的第一列左侧加蓝色竖线（视觉锚点） */
 .ant-table-tbody > tr.ant-table-row-selected > td:first-child {
