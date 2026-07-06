@@ -17,7 +17,7 @@
 | v3.1 | 2026-06-21 | 认证授权与统一响应规范补充：①新增 §5 认证与授权 API（登录/登出/Token 刷新/获取当前用户/修改密码），定义 JWT Bearer Token 方案、Access/Refresh Token 双 Token 机制、黑名单策略、权限列表枚举；②新增 §6 统一响应规范（成功/错误/分页/异步任务响应 envelope 格式、HTTP 状态码使用规则、4 位业务错误码分段定义、前端 Axios 拦截器对接规范）；③补充 ERR_TOKEN_EXPIRED/ERR_TOKEN_INVALID/ERR_INVALID_CREDENTIALS/ERR_ACCOUNT_DISABLED/ERR_TOO_MANY_ATTEMPTS/ERR_PASSWORD_SAME/ERR_USER_NOT_FOUND/ERR_USER_DUPLICATE 等认证相关错误码。 | 系统设计团队 |
 | v3.2 | 2026-06-22 | 算法对齐与算法服务接口补充（依据《关键算法设计说明》v1.0）：①统一 6 大 KPI 清单（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate），所有 KPI 接口响应包含全部 6 个 KPI 字段 + score + status（GOOD/WARNING/POOR/INCONCLUSIVE）+ algorithm_version；②统一诊断标签为 8 类（OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW），诊断结果结构含 label/confidence/evidence/algorithm，新增 fused_confidence（Dempster-Shafer 融合置信度）；③整定接口新增 fitting_score 字段、method 枚举（IMC/LAMBDA/ZIEGLER_NICHOLS/COHEN_COON/SIMC），响应包含 model_params/pid_params/simulation_result/fitting_score；④新增 §2.7 算法服务接口（4 个异步 API：KPI 计算/诊断分析/整定计算/任务查询）；⑤新增 §2.8 指标配置接口与 §2.9 诊断配置接口（批量 GET/PUT，calc_method/threshold JSONB/control_type）；⑥对齐 C1-C7 跨文档差距修正。 | 系统设计团队 |
 | v4.0 | 2026-06-26 | 数据质量增强与算法服务扩展（依据《关键算法设计说明》v2.0）：①§2.4.5 历史数据接口扩展，新增 tagGroup（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）/qualityPolicy（KEEP_ALL_WITH_VALIDITY/KEEP_ALL）/aggregationPolicy（LAST/MEAN/MAX）参数，数据点增加 valid 标记；②§2.7.1 KPI 计算接口增加数据血缘（sampling_freq/quality_policy/tag_group/valid_rate）与 confidence_level（A/B/C/D/E），score 增加 data_lineage JSON 对象；③新增 §2.7.5 DataPlanner 内部接口（plan/bundle，仅供算法服务调用，不对外暴露）；④新增 §2.7.6 任务管理接口（standard/custom 评估任务触发、任务状态/列表查询）；⑤§2.4 新增诊断标签接口（标签列表/回路标签/标签处理）；⑥§4.4 PV 质量码处理约定从"Bad 对应 pv=null"改为"保留所有点，Bad 对应 valid=false"，波形 Good 实线/Bad 灰色虚线/Uncertain 黄色虚线，引入 Metric Validity Mask；⑦§2.8 指标配置从 6 大 KPI 升级为 3+1+8 结构（3 核心指标 + 1 投用指标 + 8 辅助诊断指标），核心指标权重配置、投用指标作为折扣因子、辅助诊断指标不参与权重配置。 | 系统设计团队 |
-| v5.0 | 2026-07-04 | 对齐 FDS v5.1 与 DDS v4.1：①引用文档版本同步更新至 FDS v5.1/DDS v4.1/ADS v4.0/UIUX v5.3；②新增对实现契约 v1.0 的引用；③补全 metric_config 表 category/is_discount_factor/grading_thresholds 字段；④补全 loop_ledger 表 control_type/importance_level/include_in_evaluation 字段；⑤补全 unit_kpi_summary 表 excluded_loops/status 字段；⑥数据血缘结构修正为 5 独立字段+data_lineage JSONB（对齐 DDS v4.1 §3.5）；⑦kpi_snapshot_custom.stability_rate 修正为 steady_rate。 | 系统设计团队 |
+| v5.0 | 2026-07-04 | 对齐 FDS v5.1 与 DDS v4.1：①引用文档版本同步更新至 FDS v5.1/DDS v4.1/ADS v4.0/UIUX v5.3；②新增对实现契约 v1.0 的引用；③补全 metric_config 表 category/is_discount_factor/grading_thresholds 字段；④补全 loop_ledger 表 control_type/importance_level/include_in_evaluation 字段；⑤补全 unit_kpi_summary 表 excluded_loops/status 字段；⑥数据血缘结构修正为 5 独立字段+data_lineage JSONB（对齐 DDS v6.0 §3.5）；⑦kpi_snapshot_custom.stability_rate 修正为 steady_rate。 | 系统设计团队 |
 | v6.0 | 2026-07-06 | 实现契约对齐与 3+1+8 体系统一：①统一 API 路径与代码一致（`/api/v1/system/users`→`/api/v1/users`、`/api/v1/system/audit`→`/api/v1/audit-logs`、`/api/v1/system/reports`→`/api/v1/reports`、`/api/v1/tracker/*`→`/api/v1/diagnosis/tracker/*`）；②统一角色枚举为 5 角色（EXECUTOR→IC_ENGINEER、COLLABORATOR→PE_ENGINEER、VIEWER→SPONSOR，补全 ADMIN/EXPERT）；③统一状态机枚举（Action Tracker: PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED；Loop: READY/PARTIAL/INACTIVE；Tuning: DRAFT/RUNNING/COMPLETED/ROLLED_BACK；KPI 快照: SUCCESS/PARTIAL/INCONCLUSIVE；PV Quality: GOOD/BAD/UNCERTAIN）；④统一 KPI 体系为 3+1+8（修复 §2.1/§2.3 与 §2.8 内部矛盾），补全 effective_auto_rate 作为折扣因子 R；⑤统一 scoreWeights 结构为 3 核心指标权重（accuracy/fast/steady，权重和=100）+ R 折扣因子（不纳入权重和）；⑥可信度 D 级阈值统一为 20%~60%（对齐 FDS v5.1）；⑦补全 ERR_DISCOUNT_FACTOR_READONLY/ERR_AUXILIARY_METRIC_WEIGHT_FORBIDDEN 错误码；⑧新增对 GB/T 44693.2-2024 国标的引用；⑨新增"数据模型映射"与"时序数据存储"通用约定小节。 | 系统设计团队 |
 
 ---
@@ -28,7 +28,7 @@
 
 * **RESTful 风格**：资源导向设计，标准 HTTP 方法 (GET, POST, PUT, PATCH, DELETE)。资源路径统一以 `/api/v1/` 为前缀。
 * **防超载设计**：对于时序波形数据的查询，必须强制提供时间窗参数，并默认执行降采样（LTTB）。单次返回数据点数不得超过 `maxPoints` 上限。
-* **安全与权限**：所有接口需在 Header 中携带 `Authorization: Bearer <JWT>`，网关层执行 RBAC 校验。角色枚举对齐实现契约 v1.0 §4.5，共 5 个角色：`ADMIN`（系统管理员）/`IC_ENGINEER`（仪控工程师）/`PE_ENGINEER`（工艺/设备工程师）/`EXPERT`（外部专家）/`SPONSOR`（生产技术 Sponsor）。权限层级分为：查看层（SPONSOR）、协同层（PE_ENGINEER）、执行层（IC_ENGINEER）、管理层（ADMIN）、服务层（EXPERT）。
+* **安全与权限**：所有接口需在 Header 中携带 `Authorization: Bearer <JWT>`，网关层执行 RBAC 校验。角色枚举对齐实现契约 v2.0 §4.5，共 5 个角色：`ADMIN`（系统管理员）/`IC_ENGINEER`（仪控工程师）/`PE_ENGINEER`（工艺/设备工程师）/`EXPERT`（外部专家）/`SPONSOR`（生产技术 Sponsor）。权限层级分为：查看层（SPONSOR）、协同层（PE_ENGINEER）、执行层（IC_ENGINEER）、管理层（ADMIN）、服务层（EXPERT）。
 * **绝对只读边界**：系统与 DCS/OPC 之间仅建立单向只读连接，API 设计中**严禁**出现任何针对 DCS OPC 节点的 `Write` / `Set` 语义接口。
 * **不掩盖数据缺失**：数据不足/无效时通过 `INCONCLUSIVE` 状态显式反馈，严禁以 0 分或空值掩盖。
 * **产品化配置 API 原则**：
@@ -166,7 +166,7 @@
     }
   }
   ```
-* **说明**：KPI 卡片采用 3+1+8 体系（对齐 §2.8 与 FDS v5.1 §1.3）：固定返回 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ 综合评分（score），辅助诊断指标通过 §2.3.1 单独查询；每卡 `status` 枚举值为 5 级性能定级（`EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`，对齐 FDS v5.1 §1.3）；`kpiSummary` 汇总 3 核心指标 + 1 投用指标 + `discountFactor`（折扣因子，0-1）+ `score`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE）+ `algorithm_version`；`badActors` 默认返回 Top 10 低效回路；`loopTrendSummary` 返回选中回路近 24h 趋势摘要；数据为空时对应字段返回 `null` 或空数组，前端展示"--"。
+* **说明**：KPI 卡片采用 3+1+8 体系（对齐 §2.8 与 FDS v6.0 §1.3）：固定返回 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ 综合评分（score），辅助诊断指标通过 §2.3.1 单独查询；每卡 `status` 枚举值为 5 级性能定级（`EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`，对齐 FDS v6.0 §1.3）；`kpiSummary` 汇总 3 核心指标 + 1 投用指标 + `discountFactor`（折扣因子，0-1）+ `score`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE）+ `algorithm_version`；`badActors` 默认返回 Top 10 低效回路；`loopTrendSummary` 返回选中回路近 24h 趋势摘要；数据为空时对应字段返回 `null` 或空数组，前端展示"--"。
 
 ---
 
@@ -373,7 +373,7 @@
     }
   }
   ```
-* **说明**：`controlMode` 从 MODE tag 只读读取；`tagMappingStatus` 标识 7 个 OPC tag 的关联完整性，PV/SP/OP/MODE 任一缺失时 `status` 为 `PARTIAL`；`status` 枚举值对齐实现契约 v1.0 §4.6：`READY`（就绪，必填 tag 完整）/`PARTIAL`（部分配置，必填 tag 缺失）/`INACTIVE`（已停用，isActive=false）。
+* **说明**：`controlMode` 从 MODE tag 只读读取；`tagMappingStatus` 标识 7 个 OPC tag 的关联完整性，PV/SP/OP/MODE 任一缺失时 `status` 为 `PARTIAL`；`status` 枚举值对齐实现契约 v2.0 §4.6：`READY`（就绪，必填 tag 完整）/`PARTIAL`（部分配置，必填 tag 缺失）/`INACTIVE`（已停用，isActive=false）。
 
 #### 2.2.8 创建回路 (Create Loop)
 
@@ -740,7 +740,7 @@
     }
   }
   ```
-* **说明**：`currentValues` 为当前最新值快照；`trend` 为趋势数据，`pvQuality` 数组与 `pv` 数组等长，仅 PV 携带质量码；`kpiSummary` 包含 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ `score`（综合评分，0-100）+ `status`（5 级性能定级：EXCELLENT/GOOD/FAIR/WARNING/POOR）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE，对齐实现契约 v1.0 §4.6）+ `algorithm_version`。回路处于 `INACTIVE` 或数据不足时，`snapshotStatus` 为 `INCONCLUSIVE`，波形区灰色虚线断线。
+* **说明**：`currentValues` 为当前最新值快照；`trend` 为趋势数据，`pvQuality` 数组与 `pv` 数组等长，仅 PV 携带质量码；`kpiSummary` 包含 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ `score`（综合评分，0-100）+ `status`（5 级性能定级：EXCELLENT/GOOD/FAIR/WARNING/POOR）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE，对齐实现契约 v2.0 §4.6）+ `algorithm_version`。回路处于 `INACTIVE` 或数据不足时，`snapshotStatus` 为 `INCONCLUSIVE`，波形区灰色虚线断线。
 
 #### 2.2.15 回路监控列表 (List Loop Monitor)
 
@@ -784,7 +784,7 @@
     }
   }
   ```
-* **说明**：列表视图与卡片视图返回数据结构一致，仅前端渲染方式不同；回路处于 `PARTIAL` 时卡片置灰，悬浮提示缺失项；`status` 枚举值对齐实现契约 v1.0 §4.6：`READY`/`PARTIAL`/`INACTIVE`。
+* **说明**：列表视图与卡片视图返回数据结构一致，仅前端渲染方式不同；回路处于 `PARTIAL` 时卡片置灰，悬浮提示缺失项；`status` 枚举值对齐实现契约 v2.0 §4.6：`READY`/`PARTIAL`/`INACTIVE`。
 
 ---
 
@@ -879,7 +879,7 @@
     }
   }
   ```
-* **说明**：KPI 卡片采用 3+1+8 体系（对齐 §2.8 与 FDS v5.1 §1.3）：固定返回 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ 综合评分（score），辅助诊断指标通过 §2.3.3 单独查询；每卡 `status` 枚举值为 5 级性能定级（`EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`，对齐 FDS v5.1 §1.3）；`kpiSummary` 汇总 3 核心指标 + 1 投用指标 + `discountFactor`（折扣因子，0-1）+ `score`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE，对齐实现契约 v1.0 §4.6）+ `algorithm_version`；指标停用后对应卡片 `status` 为 `INCONCLUSIVE`；`partialWarning` 在存在 `INCONCLUSIVE` 或 `PARTIAL` 回路时激活，强制显示黄色警告横幅。
+* **说明**：KPI 卡片采用 3+1+8 体系（对齐 §2.8 与 FDS v6.0 §1.3）：固定返回 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate，作为折扣因子 R）+ 综合评分（score），辅助诊断指标通过 §2.3.3 单独查询；每卡 `status` 枚举值为 5 级性能定级（`EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`，对齐 FDS v6.0 §1.3）；`kpiSummary` 汇总 3 核心指标 + 1 投用指标 + `discountFactor`（折扣因子，0-1）+ `score`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE，对齐实现契约 v2.0 §4.6）+ `algorithm_version`；指标停用后对应卡片 `status` 为 `INCONCLUSIVE`；`partialWarning` 在存在 `INCONCLUSIVE` 或 `PARTIAL` 回路时激活，强制显示黄色警告横幅。
 
 #### 2.3.2 获取低效回路排行 (Get Performance Ranking)
 
@@ -915,7 +915,7 @@
     ]
   }
   ```
-* **说明**：默认按评分升序返回 Top N 低效回路；响应包含 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate）+ `discountFactor`（折扣因子）+ `compositeScore`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级：EXCELLENT/GOOD/FAIR/WARNING/POOR）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE）+ `algorithmVersion`；`actionStatus` 来自异常跟踪子模块（待处理/处理中/已实施/已忽略，对齐实现契约 v1.0 §4.6）。
+* **说明**：默认按评分升序返回 Top N 低效回路；响应包含 3 项核心指标（accuracy_rate/fast_rate/steady_rate）+ 1 项投用指标（effective_auto_rate）+ `discountFactor`（折扣因子）+ `compositeScore`（综合评分 = 核心指标加权得分 × 折扣因子）+ `status`（5 级性能定级：EXCELLENT/GOOD/FAIR/WARNING/POOR）+ `snapshotStatus`（KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE）+ `algorithmVersion`；`actionStatus` 来自异常跟踪子模块（待处理/处理中/已实施/已忽略，对齐实现契约 v2.0 §4.6）。
 
 #### 2.3.3 获取性能指标配置列表 (List Performance Metrics)
 
@@ -1039,7 +1039,7 @@
     }
   }
   ```
-* **说明**：返回 3+1+8 体系指标配置（对齐 §2.8 与 FDS v5.1 §1.3）：3 项核心指标（CORE）参与权重配置 + 1 项投用指标（COMMISSIONING）作为折扣因子 + 8 项辅助诊断指标（AUXILIARY_DIAGNOSTIC）不参与权重配置；`category` 枚举值 `CORE`/`COMMISSIONING`/`AUXILIARY_DIAGNOSTIC`；`gradingThresholds` 为 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR，对齐 FDS v5.1 §1.3）；投用指标的 `isDiscountFactor=true`、`weight=null`；`threshold` 字段为 JSONB 对象 `{min: number, max: number, alert: number}`；`controlType` 枚举值为 `STABLE`/`SLOW`/`FAST`/`LOGIC`，用于权重模板选择（对齐§4.7.3 默认权重配置）；`coreTotalWeight` 标识核心指标权重总和，`coreWeightValid` 标识是否为 100%；辅助诊断指标完整列表见 §2.8.1。
+* **说明**：返回 3+1+8 体系指标配置（对齐 §2.8 与 FDS v6.0 §1.3）：3 项核心指标（CORE）参与权重配置 + 1 项投用指标（COMMISSIONING）作为折扣因子 + 8 项辅助诊断指标（AUXILIARY_DIAGNOSTIC）不参与权重配置；`category` 枚举值 `CORE`/`COMMISSIONING`/`AUXILIARY_DIAGNOSTIC`；`gradingThresholds` 为 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR，对齐 FDS v6.0 §1.3）；投用指标的 `isDiscountFactor=true`、`weight=null`；`threshold` 字段为 JSONB 对象 `{min: number, max: number, alert: number}`；`controlType` 枚举值为 `STABLE`/`SLOW`/`FAST`/`LOGIC`，用于权重模板选择（对齐§4.7.3 默认权重配置）；`coreTotalWeight` 标识核心指标权重总和，`coreWeightValid` 标识是否为 100%；辅助诊断指标完整列表见 §2.8.1。
 
 #### 2.3.4 更新性能指标配置 (Update Performance Metric)
 
@@ -1095,7 +1095,7 @@
 * **说明**：
   * 配置变更即时生效，无需重启服务。
   * `threshold` 为 JSONB 对象，结构 `{min, max, alert}`（对齐 C3 修正）。
-  * `gradingThresholds` 为 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR，对齐 FDS v5.1 §1.3）；仅核心指标与投用指标可配置 `gradingThresholds`，辅助诊断指标不参与性能定级。
+  * `gradingThresholds` 为 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR，对齐 FDS v6.0 §1.3）；仅核心指标与投用指标可配置 `gradingThresholds`，辅助诊断指标不参与性能定级。
   * `controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`，用于权重模板选择。
   * `formula` 字段表达式引擎采用 `simpleeval` 安全沙箱（对齐《关键算法设计说明》§4.9 C7），可用变量：pv/sp/op/mode/pv_quality/timestamps/pv_range/n；可用函数：sum/mean/std/count/count_if/abs/sqrt/min/max/duration；禁止 import/exec/eval/属性访问，表达式长度限制 500 字符，执行超时 5 秒。
   * 后端二次校验权重总和：若本次变更导致 3 项核心指标（accuracy_rate/fast_rate/steady_rate）权重总和 ≠ 100%，返回 `ERR_METRIC_WEIGHT_SUM`。投用指标（effective_auto_rate）的 `weight` 字段固定为 `null`，传入非 null 值返回 `ERR_DISCOUNT_FACTOR_READONLY`；辅助诊断指标的 `weight` 字段固定为 `null`，传入非 null 值返回 `ERR_AUXILIARY_METRIC_WEIGHT_FORBIDDEN`。
@@ -2169,16 +2169,16 @@
   }
   ```
 * **说明**：
-  * 触发指定回路的 KPI 计算，采用 3+1+8 体系（3 核心 + 1 投用 + 8 辅助诊断，对齐 §2.8 与 FDS v5.1 §1.3）。
+  * 触发指定回路的 KPI 计算，采用 3+1+8 体系（3 核心 + 1 投用 + 8 辅助诊断，对齐 §2.8 与 FDS v6.0 §1.3）。
   * `loopIds` 为空数组时表示对所有启用回路进行计算；`metrics` 为空数组时表示计算全部 12 项指标（3 核心 + 1 投用 + 8 辅助诊断）。
   * `forceRecalculate=true` 时强制重算（忽略缓存），默认 `false` 复用已有快照。
   * 任务完成后通过 §2.7.4 查询结果，结果结构包含 `kpiResults`（每回路的指标结果 + `score` + `status` + `algorithm_version`）。
   * **v4.0 数据血缘与置信度增强**（对齐《关键算法设计说明》v2.0）：
-    * 每个指标结果采用 `metrics` 嵌套对象结构，每项含 `value`（指标值）+ `confidence_level`（置信度等级 A/B/C/D/E）+ `valid_rate`（有效数据率，0-1）+ `data_lineage`（数据血缘对象，5 独立字段 + JSONB 子字段，对齐 DDS v4.1 §3.5）。
+    * 每个指标结果采用 `metrics` 嵌套对象结构，每项含 `value`（指标值）+ `confidence_level`（置信度等级 A/B/C/D/E）+ `valid_rate`（有效数据率，0-1）+ `data_lineage`（数据血缘对象，5 独立字段 + JSONB 子字段，对齐 DDS v6.0 §3.5）。
     * `data_lineage` 包含 5 个独立字段：`sampling_freq`（采样频率，如 `5s`）/`quality_policy`（质量策略，对齐 §2.4.5）/`tag_group`（数据分组，对齐 §2.4.5）/`valid_rate`（有效数据率）/`confidence_level`（置信度等级）；其中 `data_lineage` JSONB 内部还可记录 `source_metrics`（来源指标列表）等子字段。
     * 回路级结果新增 `confidence_level`（综合置信度等级 A/B/C/D/E）与 `data_lineage`（回路级数据血缘汇总对象）。
     * `score` 结果新增 `data_lineage` JSONB 对象，记录综合评分所依据的数据血缘信息。
-    * `confidence_level` 等级规则（对齐 FDS v5.1，valid_rate 阈值）：A（valid_rate ≥ 0.95）/B（0.80-0.95）/C（0.60-0.80）/D（0.20-0.60）/E（< 0.20）。
+    * `confidence_level` 等级规则（对齐 FDS v6.0，valid_rate 阈值）：A（valid_rate ≥ 0.95）/B（0.80-0.95）/C（0.60-0.80）/D（0.20-0.60）/E（< 0.20）。
   * `algorithmVersion` 固定为 `KPI_CALC_v1.0`（对齐§4.10 算法版本号规范）。
   * 计算失败时任务状态标记为 `FAILED`，`error` 字段包含错误码与详情。
 
@@ -2542,7 +2542,7 @@
   * `metrics` 枚举值对齐 §2.8 的 3+1+8 体系（3 核心 + 1 投用 + 8 辅助诊断，共 12 项指标）。
   * `tagGroup` 枚举值对齐 §2.4.5（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）；`qualityPolicy`/`aggregationPolicy` 枚举值对齐 §2.4.5。
   * `planId` 用于后续 §2.7.5.2 获取 MetricDataBundle。
-  * 规划结果记录数据血缘信息（sampling_freq/quality_policy/tag_group/valid_rate/confidence_level），随指标结果回传（对齐 §2.7.1 v4.0 数据血缘字段，5 独立字段 + `data_lineage` JSONB 子字段，对齐 DDS v4.1 §3.5）。
+  * 规划结果记录数据血缘信息（sampling_freq/quality_policy/tag_group/valid_rate/confidence_level），随指标结果回传（对齐 §2.7.1 v4.0 数据血缘字段，5 独立字段 + `data_lineage` JSONB 子字段，对齐 DDS v6.0 §3.5）。
 
 ##### 2.7.5.2 获取指标数据包 (Get Metric Data Bundle)
 
@@ -3565,7 +3565,7 @@
 
 ### 4.5 数据模型映射约定
 
-本规范涉及的 API 资源对应 DDS v4.1 的 PostgreSQL 表与 TDengine 超级表，前后端字段命名遵循以下映射规则（对齐 DDS v4.1 与代码 ORM 模型）：
+本规范涉及的 API 资源对应 DDS v6.0 的 PostgreSQL 表与 TDengine 超级表，前后端字段命名遵循以下映射规则（对齐 DDS v6.0 与代码 ORM 模型）：
 
 | API 资源领域 | PostgreSQL 表（ORM 模型） | 说明 |
 |---|---|---|
@@ -3602,7 +3602,7 @@
 
 ### 4.6 时序数据存储约定
 
-回路时序数据存储于 TDengine 超级表 `st_loop_data`，与 PostgreSQL 业务表分离（对齐 DDS v4.1 §3）：
+回路时序数据存储于 TDengine 超级表 `st_loop_data`，与 PostgreSQL 业务表分离（对齐 DDS v6.0 §3）：
 
 * **超级表结构**：`st_loop_data`，子表命名规则 `loop_{loop_id}`。
 * **Tag 列**（2 个）：`loop_id`（UUID）、`plant_node_id`（UUID）。
@@ -3620,20 +3620,20 @@
 | 认证授权 | `/api/v1/auth/*` | 登录/登出/Token 刷新/当前用户/修改密码 | §5 |
 | 工厂层级 | `/api/v1/plant-nodes/*` | 工厂节点 CRUD | §2.2.1-§2.2.4 |
 | AAS 同步 | `/api/v1/aas/*` | AAS 配置/同步/Tag 查询 | §2.2.5-§2.2.6 |
-| Tag 管理 | `/api/v1/tags/*` | Tag 列表/详情/导入导出/批量删除 | 代码实际，对齐 DDS v4.1 §2 |
+| Tag 管理 | `/api/v1/tags/*` | Tag 列表/详情/导入导出/批量删除 | 代码实际，对齐 DDS v6.0 §2 |
 | 实时数据 | `/api/v1/realtime/*` | 实时数据查询 | 代码实际 |
-| WebSocket 推送 | `/api/v1/ws/*` | 实时数据 WebSocket 推送（对齐 UIUX v5.3 实时刷新需求） | 代码实际 |
+| WebSocket 推送 | `/api/v1/ws/*` | 实时数据 WebSocket 推送（对齐 UIUX v6.0 实时刷新需求） | 代码实际 |
 | 时序数据 | `/api/v1/timeseries/*` | 波形/散点图等高频时序数据查询 | §2.4.5 |
 | 任务管理 | `/api/v1/tasks/*` | 评估任务触发/查询/取消/删除/通知 | §2.7.6 |
 | 算法服务 | `/api/v1/algorithms/*` | KPI/诊断/整定算法任务 | §2.7.1-§2.7.4 |
 | 数据计划 | `/api/v1/algorithms/dataplanner/*` | DataPlanner 内部接口（不对外暴露） | §2.7.5 |
-| 节点级性能 | `/api/v1/performance/nodes/*` | 节点级 KPI 快照/趋势/排行/对比 | 代码实际，对齐 DDS v4.1 节点级 KPI 表 |
+| 节点级性能 | `/api/v1/performance/nodes/*` | 节点级 KPI 快照/趋势/排行/对比 | 代码实际，对齐 DDS v6.0 节点级 KPI 表 |
 | 配置批量操作 | `/api/v1/configs/*` | 指标/诊断配置批量读写 + 类型/级别权重 + 权重模板 + 性能定级阈值 | §2.8/§2.9 + 代码实际 |
 | 健康检查 | `/api/v1/health` | 服务健康与就绪检查 | 代码实际 |
 
 **说明**：
 * 上述支撑性 API 领域中，部分接口（如 `/api/v1/tags/*`、`/api/v1/realtime/*`、`/api/v1/ws/*`、`/api/v1/performance/nodes/*`、`/api/v1/configs/loop-type-weights/*`、`/api/v1/configs/loop-level-weights/*`、`/api/v1/configs/weight-templates/*`、`/api/v1/configs/grading-thresholds/*`、`/api/v1/health`）在代码中已实现但未在本规范中展开详细 Schema 定义，将在后续版本补全。
-* 实现契约 v1.0 §4.4 声明"不新增 `/api/v1/configs/metrics` 与 `/api/v1/configs/diagnosis` 聚合接口"，但代码实际已实现这两类接口（§2.8/§2.9）；实现契约 v2.0 追认其存在，本规范保留 §2.8/§2.9 的接口定义。
+* 实现契约 v2.0 §4.4 声明"不新增 `/api/v1/configs/metrics` 与 `/api/v1/configs/diagnosis` 聚合接口"，但代码实际已实现这两类接口（§2.8/§2.9）；实现契约 v2.0 追认其存在，本规范保留 §2.8/§2.9 的接口定义。
 
 ---
 

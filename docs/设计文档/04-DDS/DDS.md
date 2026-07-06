@@ -535,12 +535,16 @@ CREATE TABLE clpm_metric_data_requirement (
 | id | UUID | 标签主键 | PK, DEFAULT gen_random_uuid() |
 | loop_id | UUID | 关联回路 ID | FK -> loop_ledger.id, NOT NULL |
 | tag_code | VARCHAR(50) | 标签代码（如 `OSCILLATION`、`VALVE_STICTION`、`OUTPUT_SATURATION`、`QUALITY_ABNORMAL`） | NOT NULL |
-| severity | VARCHAR(20) | 严重等级（如 `INFO`、`WARNING`、`CRITICAL`） | NOT NULL |
+| tag_name | VARCHAR(100) | 标签显示名称（用于 UI 展示，可空） | |
+| severity | VARCHAR(20) | 严重等级: `INFO`(提示), `WARN`(警告), `ERROR`(错误), `CRITICAL`(严重) | NOT NULL |
 | source_metric | VARCHAR(50) | 触发该标签的来源指标代码（如 `OSCILLATION_RATE`） | |
 | trigger_condition | JSONB | 触发条件（如 `{"threshold": 0.4, "window_minutes": 60}`） | |
+| trigger_value | DECIMAL(10,4) | 触发阈值数值（标签触发时的实际指标值） | |
 | triggered_at | TIMESTAMP | 标签触发时间 | NOT NULL, DEFAULT NOW() |
 | resolved_at | TIMESTAMP | 标签解除时间 | |
-| status | VARCHAR(20) | 标签状态: `ACTIVE`(生效中), `RESOLVED`(已解除), `IGNORED`(已忽略) | DEFAULT 'ACTIVE' |
+| resolved_by | UUID | 解除操作人 ID（FK -> sys_user.id） | |
+| resolution_note | TEXT | 解除/抑制说明（抑制时必填） | |
+| status | VARCHAR(20) | 标签状态: `ACTIVE`(生效中), `RESOLVED`(已解除), `SUPPRESSED`(已抑制) | DEFAULT 'ACTIVE' |
 
 **说明**：诊断标签用于故障定位和告警，包括振荡、阀门粘滞、输出饱和、PV 质量异常等标签。
 
@@ -551,13 +555,22 @@ CREATE TABLE diagnosis_tag (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     loop_id UUID NOT NULL REFERENCES loop_ledger(id),
     tag_code VARCHAR(50) NOT NULL,
+    tag_name VARCHAR(100),
     severity VARCHAR(20) NOT NULL,
     source_metric VARCHAR(50),
     trigger_condition JSONB,
+    trigger_value DECIMAL(10, 4),
     triggered_at TIMESTAMP NOT NULL DEFAULT NOW(),
     resolved_at TIMESTAMP,
-    status VARCHAR(20) DEFAULT 'ACTIVE'
+    resolved_by UUID,
+    resolution_note TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    CONSTRAINT ck_diag_tag_status CHECK (status IN ('ACTIVE', 'RESOLVED', 'SUPPRESSED')),
+    CONSTRAINT ck_diag_tag_severity CHECK (severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL'))
 );
+
+CREATE INDEX ix_diagnosis_tag_loop_status ON diagnosis_tag(loop_id, status);
+CREATE INDEX ix_diagnosis_tag_severity ON diagnosis_tag(severity, triggered_at);
 ```
 
 ### 2.17 装置级汇总 (unit_kpi_summary)
