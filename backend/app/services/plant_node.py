@@ -16,8 +16,8 @@ from app.models.audit import SysAuditLog
 from app.models.loop import LoopLedger
 from app.models.plant_node import PlantNode
 
-# 节点类型枚举
-VALID_NODE_TYPES = {"FACTORY", "UNIT", "EQUIPMENT"}
+# 节点类型枚举（FACTORY → AREA → UNIT 三层结构，回路挂 UNIT 下）
+VALID_NODE_TYPES = {"AREA", "FACTORY", "UNIT"}
 
 
 async def _write_audit(

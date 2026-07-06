@@ -88,6 +88,34 @@ const activeMainTab = ref<'factory' | 'ledger' | 'tags'>('factory');
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNode = ref<null | PlantNodeApi.PlantNode>(null);
 
+/**
+ * 各 UNIT 节点的回路数映射（key=plantNodeId, value=该节点直接挂载的回路数）
+ * 供 PlantNodeTree 显示节点尾部的回路数（递归累加得到 AREA/FACTORY 总数）
+ * 在 onMounted 时一次性加载全量回路（pageSize=1000，足以覆盖典型场景）
+ */
+const loopCountsByNodeId = ref<Record<string, number>>({});
+
+/** 加载所有 UNIT 节点的回路数聚合（一次性，用于工厂树显示回路总数） */
+async function loadLoopCounts() {
+  try {
+    const data = await getLoopListApi({
+      page: 1,
+      // eslint-disable-next-line @typescript-eslint/no-magic-numbers
+      pageSize: 1000,
+    });
+    const counts: Record<string, number> = {};
+    for (const loop of data.items) {
+      const unitId = loop.unitId;
+      if (unitId) {
+        counts[unitId] = (counts[unitId] ?? 0) + 1;
+      }
+    }
+    loopCountsByNodeId.value = counts;
+  } catch (error) {
+    console.error('[回路数聚合] 加载失败:', error);
+  }
+}
+
 /** 选中树节点（由 PlantNodeTree emit 触发） */
 function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
   selectedPlantNode.value = node;
@@ -1301,6 +1329,7 @@ async function loadPlantNodes() {
 onMounted(() => {
   loadPlantNodes();
   loadList();
+  loadLoopCounts();
 });
 
 watch(
@@ -1354,6 +1383,8 @@ watch(activeMainTab, (tab) => {
         :width="280"
         :show-crud-buttons="true"
         :default-expand-level="2"
+        :show-stats="true"
+        :loop-counts="loopCountsByNodeId"
         max-height="calc(100vh - 220px)"
         @select="onTreeSelect"
       />

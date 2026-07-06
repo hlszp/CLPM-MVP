@@ -6,8 +6,8 @@
 import { requestClient } from '#/api/request';
 
 export namespace PlantNodeApi {
-  /** 节点类型（IDS v3.2 §2.2.1） */
-  export type NodeType = 'EQUIPMENT' | 'FACTORY' | 'UNIT';
+  /** 节点类型（IDS v3.2 §2.2.1）— FACTORY → AREA → UNIT 三层结构，回路挂 UNIT 下 */
+  export type NodeType = 'AREA' | 'FACTORY' | 'UNIT';
 
   /** 工厂节点（IDS v3.2 §2.2.1） */
   export interface PlantNode {
