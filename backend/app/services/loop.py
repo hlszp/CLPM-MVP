@@ -381,7 +381,10 @@ async def _get_op_tag_range(
     result = await db.execute(
         select(TagRegistry.range_min, TagRegistry.range_max)
         .join(LoopTagMapping, LoopTagMapping.tag_id == TagRegistry.id)
-        .where(LoopTagMapping.loop_id == loop_id, LoopTagMapping.role == "OP")
+        .where(
+            LoopTagMapping.loop_id == loop_id,
+            LoopTagMapping.tag_role == "OP",
+        )
     )
     row = result.first()
     if row is None:
