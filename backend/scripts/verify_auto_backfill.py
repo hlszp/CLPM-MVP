@@ -15,8 +15,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import delete, select
-from sqlalchemy import func
+from sqlalchemy import delete, func, select
 
 from app.core.db import AsyncSessionLocal
 from app.models.loop import LoopLedger
@@ -37,9 +36,7 @@ TEST_MARKER = "__verify_auto_backfill__"
 async def clear_test_data(db):
     """清除本脚本产生的测试数据（按 algorithm_version 标记识别）"""
     result = await db.execute(
-        delete(KpiSnapshotHourly).where(
-            KpiSnapshotHourly.algorithm_version == TEST_MARKER
-        )
+        delete(KpiSnapshotHourly).where(KpiSnapshotHourly.algorithm_version == TEST_MARKER)
     )
     await db.commit()
     if result.rowcount > 0:
@@ -49,10 +46,12 @@ async def clear_test_data(db):
 async def get_active_loops(db) -> list[LoopLedger]:
     """查询所有活跃回路"""
     result = await db.execute(
-        select(LoopLedger).where(
+        select(LoopLedger)
+        .where(
             LoopLedger.is_active.is_(True),
             LoopLedger.status == "READY",
-        ).order_by(LoopLedger.tag_name)
+        )
+        .order_by(LoopLedger.tag_name)
     )
     return list(result.scalars().all())
 
@@ -61,7 +60,7 @@ async def insert_mock_snapshots(db, loops: list[LoopLedger]):
     """插入三组模拟快照"""
     ts_a = HOUR_A.replace(tzinfo=None)
     ts_b = HOUR_B.replace(tzinfo=None)
-    ts_c = HOUR_C.replace(tzinfo=None)
+    HOUR_C.replace(tzinfo=None)
 
     # ── Hour A: 27 条完整快照 ──
     for lp in loops:
@@ -127,6 +126,7 @@ async def verify_detection(loops: list[LoopLedger]) -> bool:
     """调用 detect_missing_snapshots 验证检测结果"""
     # 延迟导入被测函数
     import sys
+
     sys.path.insert(0, "/Users/zhangping/DEV/CLPM/backend/scripts")
     from backfill_kpi import detect_missing_snapshots
 
@@ -142,21 +142,21 @@ async def verify_detection(loops: list[LoopLedger]) -> bool:
     if HOUR_A not in missing:
         print(f"\n  [✓] 验证点1 通过: Hour A ({HOUR_A.isoformat()}) 完整快照未被标记")
     else:
-        print(f"\n  [✗] 验证点1 失败: Hour A 不应出现在缺失列表中")
+        print("\n  [✗] 验证点1 失败: Hour A 不应出现在缺失列表中")
         return False
 
     # ── 验证点 2: Hour B 在缺失列表中 ──
     if HOUR_B in missing:
         print(f"  [✓] 验证点2 通过: Hour B ({HOUR_B.isoformat()}) 不完整快照被正确标记")
     else:
-        print(f"  [✗] 验证点2 失败: Hour B 应出现在缺失列表中")
+        print("  [✗] 验证点2 失败: Hour B 应出现在缺失列表中")
         return False
 
     # ── 验证点 3: Hour C 在缺失列表中 ──
     if HOUR_C in missing:
         print(f"  [✓] 验证点3 通过: Hour C ({HOUR_C.isoformat()}) 缺失快照被正确标记")
     else:
-        print(f"  [✗] 验证点3 失败: Hour C 应出现在缺失列表中")
+        print("  [✗] 验证点3 失败: Hour C 应出现在缺失列表中")
         return False
 
     # ── 验证点 4: 缺失列表包含其他空窗口 ──
@@ -165,19 +165,23 @@ async def verify_detection(loops: list[LoopLedger]) -> bool:
     if current_hour not in missing:
         print(f"  [✓] 验证点4 通过: 当前小时 ({current_hour.isoformat()}) 未被标记")
     else:
-        print(f"  [⚠] 验证点4 注意: 当前小时在缺失列表中（可能因为本小时尚未计算）")
+        print("  [⚠] 验证点4 注意: 当前小时在缺失列表中（可能因为本小时尚未计算）")
 
     # ── 验证点 5: 统计验证 ──
     # 直接查询确认 Hour A 有 27 条，Hour B 有 15 条
     async with AsyncSessionLocal() as db:
         cnt_a = await db.scalar(
-            select(func.count()).select_from(KpiSnapshotHourly).where(
+            select(func.count())
+            .select_from(KpiSnapshotHourly)
+            .where(
                 KpiSnapshotHourly.ts_start == HOUR_A.replace(tzinfo=None),
                 KpiSnapshotHourly.algorithm_version == TEST_MARKER,
             )
         )
         cnt_b = await db.scalar(
-            select(func.count()).select_from(KpiSnapshotHourly).where(
+            select(func.count())
+            .select_from(KpiSnapshotHourly)
+            .where(
                 KpiSnapshotHourly.ts_start == HOUR_B.replace(tzinfo=None),
                 KpiSnapshotHourly.algorithm_version == TEST_MARKER,
             )
@@ -190,7 +194,10 @@ async def verify_detection(loops: list[LoopLedger]) -> bool:
         return False
 
     if cnt_b == 15:
-        print(f"  [✓] 验证点6 通过: Hour B 快照数={cnt_b}（期望 15，< {expected_loop_count} → 标记不完整）")
+        print(
+            f"  [✓] 验证点6 通过: Hour B 快照数={cnt_b}"
+            f"（期望 15，< {expected_loop_count} → 标记不完整）"
+        )
     else:
         print(f"  [✗] 验证点6 失败: Hour B 快照数={cnt_b}（期望 15）")
         return False

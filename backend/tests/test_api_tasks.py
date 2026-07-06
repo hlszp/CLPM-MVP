@@ -606,9 +606,7 @@ class TestDeleteTask:
         assert resp.status_code == 200
         assert resp.json()["data"]["deleted"] is True
 
-    def test_delete_running_task_rejected(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_delete_running_task_rejected(self, client, task_redis, fake_redis) -> None:
         """删除 RUNNING 状态任务返回 400 — 必须先取消."""
         _save_task_to_redis(
             task_redis,
@@ -625,9 +623,7 @@ class TestDeleteTask:
         # 验证任务仍在 Redis 中
         assert "task:task-running" in task_redis._hashes
 
-    def test_delete_pending_task_rejected(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_delete_pending_task_rejected(self, client, task_redis, fake_redis) -> None:
         """删除 PENDING 状态任务返回 400."""
         _save_task_to_redis(
             task_redis,

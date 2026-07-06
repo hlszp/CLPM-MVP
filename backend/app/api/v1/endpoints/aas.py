@@ -309,9 +309,7 @@ async def get_aas_sync_logs(
     """
     # 查询 AAS 相关审计日志
     count_stmt = (
-        select(func.count())
-        .select_from(SysAuditLog)
-        .where(SysAuditLog.operation_type.like("AAS%"))
+        select(func.count()).select_from(SysAuditLog).where(SysAuditLog.operation_type.like("AAS%"))
     )
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
@@ -335,9 +333,7 @@ async def get_aas_sync_logs(
             "targetId": log.target_id,
             "beforeValue": log.before_value,
             "afterValue": log.after_value,
-            "operatedAt": (
-                log.operated_at.isoformat() if log.operated_at else None
-            ),
+            "operatedAt": (log.operated_at.isoformat() if log.operated_at else None),
         }
         for log in logs
     ]

@@ -197,9 +197,7 @@ async def match_tags_for_loop_endpoint(
         # 同时尝试 `_` 和 `-` 分隔符，兼容不同工厂命名约定
         # （seed data 用 `T-HDS-001-PV`，部分 DCS 用 `80PIC31306_PV`）
         candidates = [f"{loopTagName}_{role}", f"{loopTagName}-{role}"]
-        result = await db.execute(
-            select(TagRegistry).where(TagRegistry.tag_name.in_(candidates))
-        )
+        result = await db.execute(select(TagRegistry).where(TagRegistry.tag_name.in_(candidates)))
         tag = result.scalar_one_or_none()
         if tag:
             matched_tags.append(

@@ -152,10 +152,7 @@ def _validate_thresholds(thresholds: list[GradingThresholdItem]) -> None:
         if t.name != expected_name:
             raise BizError(
                 code="ERR_GRADING_NAME_MISMATCH",
-                message=(
-                    f"等级 {t.level} 的名称必须为 {expected_name}，"
-                    f"当前为 {t.name}"
-                ),
+                message=(f"等级 {t.level} 的名称必须为 {expected_name}，当前为 {t.name}"),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -191,8 +188,7 @@ def _validate_thresholds(thresholds: list[GradingThresholdItem]) -> None:
         raise BizError(
             code="ERR_GRADING_TOP_BOUND",
             message=(
-                f"等级 1（EXCELLENT）的 maxScore 必须为 100，"
-                f"当前为 {sorted_by_level[0].maxScore}"
+                f"等级 1（EXCELLENT）的 maxScore 必须为 100，当前为 {sorted_by_level[0].maxScore}"
             ),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
@@ -201,10 +197,7 @@ def _validate_thresholds(thresholds: list[GradingThresholdItem]) -> None:
     if abs(sorted_by_level[-1].minScore) > 1e-6:
         raise BizError(
             code="ERR_GRADING_BOTTOM_BOUND",
-            message=(
-                f"等级 5（POOR）的 minScore 必须为 0，"
-                f"当前为 {sorted_by_level[-1].minScore}"
-            ),
+            message=(f"等级 5（POOR）的 minScore 必须为 0，当前为 {sorted_by_level[-1].minScore}"),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 

@@ -102,7 +102,9 @@ class BackfillTaskCreate(CamelModel):
     tsStart: str = Field(..., description="重算时间窗起始（ISO 8601）")
     tsEnd: str = Field(..., description="重算时间窗结束（ISO 8601，不包含）")
     plantNodeIds: list[str] | None = Field(None, description="装置 ID 列表（可选）")
-    loopIds: list[str] | None = Field(None, description="回路 ID 列表（可选，优先级高于 plantNodeIds）")
+    loopIds: list[str] | None = Field(
+        None, description="回路 ID 列表（可选，优先级高于 plantNodeIds）"
+    )
     dryRun: bool = Field(False, description="True=只返回预览不提交")
 
 

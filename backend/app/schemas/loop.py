@@ -63,8 +63,7 @@ class LoopCreate(CamelModel):
     modeattrTagId: str | None = Field(
         None,
         description=(
-            "APC 识别位号 ID（保留字段，未参与 KPI 计算；"
-            "实际自控率判定使用 MODE 信号值）"
+            "APC 识别位号 ID（保留字段，未参与 KPI 计算；实际自控率判定使用 MODE 信号值）"
         ),
     )
     dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
@@ -92,8 +91,7 @@ class LoopUpdate(CamelModel):
     modeattrTagId: str | None = Field(
         None,
         description=(
-            "APC 识别位号 ID（保留字段，未参与 KPI 计算；"
-            "实际自控率判定使用 MODE 信号值）"
+            "APC 识别位号 ID（保留字段，未参与 KPI 计算；实际自控率判定使用 MODE 信号值）"
         ),
     )
     dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")

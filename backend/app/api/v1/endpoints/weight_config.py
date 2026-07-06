@@ -427,9 +427,7 @@ async def get_weight_template_history(
     }
 
     # 按版本号倒序
-    all_items = [current_item] + sorted(
-        history, key=lambda x: x.get("version", 0), reverse=True
-    )
+    all_items = [current_item] + sorted(history, key=lambda x: x.get("version", 0), reverse=True)
 
     return success(data={"items": all_items, "currentVersion": current.version})
 
@@ -466,7 +464,7 @@ async def rollback_weight_template(
             db=db,
             templates=default_template.templates,
             operator=user.username,
-            remark=f"回滚到国标默认值（源版本 0）",
+            remark="回滚到国标默认值（源版本 0）",
         )
         try:
             await db.commit()

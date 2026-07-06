@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.services.metric_calculator.auto_mode import AutoModeRateCalculator
 from app.services.metric_calculator.fast_rate import FastRateCalculator
 from app.services.metric_calculator.saturation import SaturationRateCalculator
@@ -26,7 +24,6 @@ from tests.test_metric_calculator.test_scenarios import (
     _compute_ideal_result,
     _scenario_to_bundle,
 )
-
 
 # ---------------------------------------------------------------------------
 # 辅助：计算 fast_rate（依赖 settling_time + ideal_settling_time）
@@ -49,9 +46,7 @@ def _compute_fast_rate(kpi_scenarios, scenario_name: str, ideal_sec: float = 30.
     # 1. 实际 settling_time
     settling_bundle = _scenario_to_bundle(scenario, "settling_time")
     settling_result = SettlingTimeCalculator().calculate(settling_bundle)
-    assert settling_result.value is not None, (
-        f"{scenario_name} settling_time 计算返回 None"
-    )
+    assert settling_result.value is not None, f"{scenario_name} settling_time 计算返回 None"
 
     # 2. 注入 ideal_settling_time，计算 fast_rate
     bundle = _scenario_to_bundle(scenario, "fast_rate")
@@ -96,9 +91,7 @@ class TestScenarioComparison:
         )
         # 差异应显著（≥ 20 个百分点，确保场景设计具有可分性）
         diff = fast_rate_fast - fast_rate_slow
-        assert diff >= 20.0, (
-            f"fast vs slow fast_rate 差异 {diff:.2f} 应 ≥ 20"
-        )
+        assert diff >= 20.0, f"fast vs slow fast_rate 差异 {diff:.2f} 应 ≥ 20"
 
     def test_fast_vs_normal_settling_time_diff(self, kpi_scenarios):
         """fast_response 的 settling_time 应小于 normal。
@@ -147,14 +140,10 @@ class TestScenarioComparison:
 
         assert normal_sat is not None and sat_sat is not None
         # op_saturation 应高于 normal
-        assert sat_sat > normal_sat, (
-            f"op_saturation sat_rate={sat_sat} 应高于 normal={normal_sat}"
-        )
+        assert sat_sat > normal_sat, f"op_saturation sat_rate={sat_sat} 应高于 normal={normal_sat}"
         # 差异至少 20 个百分点（normal 应接近 0，op_saturation 应 ≥ 25）
         diff = sat_sat - normal_sat
-        assert diff >= 20.0, (
-            f"op_saturation vs normal sat_rate 差异 {diff:.2f} 应 ≥ 20"
-        )
+        assert diff >= 20.0, f"op_saturation vs normal sat_rate 差异 {diff:.2f} 应 ≥ 20"
 
     def test_normal_vs_manual_mode_auto_rate_diff(self, kpi_scenarios):
         """normal 场景的 auto_mode_rate 应高于 manual_mode。
@@ -180,9 +169,7 @@ class TestScenarioComparison:
         )
         # 差异至少 80 个百分点（normal ≥ 85，manual ≤ 5）
         diff = normal_auto - manual_auto
-        assert diff >= 80.0, (
-            f"normal vs manual auto_rate 差异 {diff:.2f} 应 ≥ 80"
-        )
+        assert diff >= 80.0, f"normal vs manual auto_rate 差异 {diff:.2f} 应 ≥ 80"
 
     def test_fast_response_higher_fast_rate_than_normal(self, kpi_scenarios):
         """fast_response 的 fast_rate 应高于 normal（横向一致性检查）。
@@ -196,8 +183,7 @@ class TestScenarioComparison:
 
         # fast_response 应 ≥ normal（容忍边界抖动，允许相等或更高）
         assert fast_rate_fast >= fast_rate_normal - 5.0, (
-            f"fast_response fast_rate={fast_rate_fast} 应 ≥ normal-5="
-            f"{fast_rate_normal - 5.0:.1f}"
+            f"fast_response fast_rate={fast_rate_fast} 应 ≥ normal-5={fast_rate_normal - 5.0:.1f}"
         )
 
     def test_slow_vs_normal_settling_time_diff(self, kpi_scenarios):

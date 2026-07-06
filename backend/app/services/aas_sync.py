@@ -321,9 +321,7 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
         # P3 #43: 同步成功后更新所有活跃回路的 last_aas_sync_at
         # AAS 同步是全局操作，所有关联了 tag 的活跃回路都应反映最新同步时间
         await db.execute(
-            update(LoopLedger)
-            .where(LoopLedger.is_active.is_(True))
-            .values(last_aas_sync_at=now)
+            update(LoopLedger).where(LoopLedger.is_active.is_(True)).values(last_aas_sync_at=now)
         )
         await db.commit()
 
@@ -333,7 +331,9 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
         except Exception:  # pragma: no cover  noqa: BLE001
             logger.warning("设置 SUCCESS 状态失败（同步已完成）", exc_info=True)
 
-        duration_ms = int((datetime.now(UTC).replace(tzinfo=None) - start_time).total_seconds() * 1000)
+        duration_ms = int(
+            (datetime.now(UTC).replace(tzinfo=None) - start_time).total_seconds() * 1000
+        )
         stats = {
             "total": len(aas_tags),
             "inserted": inserted,
@@ -343,7 +343,7 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
         }
         logger.info("AAS 同步完成: %s", stats)
         return stats
-    except Exception as exc:
+    except Exception:
         # 同步失败：更新状态为 FAILED（不掩盖异常，仍向上抛出）
         try:
             await set_last_sync_status(db, SYNC_STATUS_FAILED)

@@ -35,7 +35,8 @@ from app.schemas.performance import WeightSumValidator
 
 logger = logging.getLogger(__name__)
 
-# 算法版本号（P3 #55：统一为 KPI_CALC_v2.0，与 confidence_evaluator/metric_data_bundle/node_aggregation/kpi_calc 保持一致）
+# 算法版本号（P3 #55：统一为 KPI_CALC_v2.0，与 confidence_evaluator/
+# metric_data_bundle/node_aggregation/kpi_calc 保持一致）
 # 旧版本 v1.0 在 confidence_evaluator.py v2.0 升级后已废弃
 ALGORITHM_VERSION = "KPI_CALC_v2.0"
 
@@ -323,8 +324,8 @@ async def _handle_engine_rule_changed(rule_code: str) -> str | None:
     # 引擎参数（采样间隔、质量策略等）变更会影响 DataBlock 内容，
     # 旧版本缓存需失效，避免脏数据被复用。
     try:
-        from app.services.cache.invalidation import CacheInvalidator
         from app.core.redis import redis_client
+        from app.services.cache.invalidation import CacheInvalidator
 
         invalidator = CacheInvalidator(redis_client)
         deleted = await invalidator.invalidate_all()
@@ -1273,22 +1274,24 @@ async def list_loop_snapshots(
     # count 查询（不加 limit/offset）
     # 注：UNIQUE(loop_id, ts_start) 约束已保证不会重复（q1a2b3c4d5e6 迁移），
     # 普通 COUNT(*) 即可
-    count_stmt = select(func.count()).select_from(KpiSnapshotHourly).where(
-        KpiSnapshotHourly.ts_start >= start,
-        KpiSnapshotHourly.ts_start <= end,
+    count_stmt = (
+        select(func.count())
+        .select_from(KpiSnapshotHourly)
+        .where(
+            KpiSnapshotHourly.ts_start >= start,
+            KpiSnapshotHourly.ts_start <= end,
+        )
     )
     if loop_ids:
         count_stmt = count_stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
     if plant_node_ids:
-        count_stmt = count_stmt.join(
-            LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id
-        ).where(LoopLedger.unit_id.in_(plant_node_ids))
+        count_stmt = count_stmt.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id.in_(plant_node_ids)
+        )
     if status_filter:
         count_stmt = count_stmt.where(KpiSnapshotHourly.status == status_filter)
     if confidence_level:
-        count_stmt = count_stmt.where(
-            KpiSnapshotHourly.confidence_level == confidence_level
-        )
+        count_stmt = count_stmt.where(KpiSnapshotHourly.confidence_level == confidence_level)
 
     # 排序 + 分页
     stmt = stmt.order_by(KpiSnapshotHourly.ts_start.desc())

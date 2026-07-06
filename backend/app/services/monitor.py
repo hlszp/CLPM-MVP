@@ -86,9 +86,7 @@ def _mode_value_to_label(
     return active_mapping.get(int(value), "Unknown")
 
 
-async def _load_mode_mappings(
-    db: AsyncSession, loop_ids: list[str]
-) -> dict[str, dict[int, str]]:
+async def _load_mode_mappings(db: AsyncSession, loop_ids: list[str]) -> dict[str, dict[int, str]]:
     """批量查询多个回路的 MODE 值映射配置。
 
     从 ``loop_mode_mapping`` 表读取每个回路的 (mode_value, mode_label) 配置，
@@ -108,15 +106,14 @@ async def _load_mode_mappings(
     from app.models.loop_config import LoopModeMapping
 
     result = await db.execute(
-        select(LoopModeMapping.loop_id, LoopModeMapping.mode_value, LoopModeMapping.mode_label)
-        .where(LoopModeMapping.loop_id.in_(loop_ids))
+        select(
+            LoopModeMapping.loop_id, LoopModeMapping.mode_value, LoopModeMapping.mode_label
+        ).where(LoopModeMapping.loop_id.in_(loop_ids))
     )
     mappings: dict[str, dict[int, str]] = {}
     for row in result:
         loop_id = str(row.loop_id)
-        frontend_label = _DB_MODE_LABEL_TO_FRONTEND.get(
-            str(row.mode_label).upper(), "Unknown"
-        )
+        frontend_label = _DB_MODE_LABEL_TO_FRONTEND.get(str(row.mode_label).upper(), "Unknown")
         mappings.setdefault(loop_id, {})[int(row.mode_value)] = frontend_label
     return mappings
 

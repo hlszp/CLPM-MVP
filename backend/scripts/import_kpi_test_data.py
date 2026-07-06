@@ -127,7 +127,7 @@ async def td_execute(client: httpx.AsyncClient, sql: str, use_db: bool = True) -
 
 
 def subtable_name(tag_name: str) -> str:
-    """子表命名: d_loop_<位号小写连字符转下划线>（P3 #54：复用 app.core.tdengine.make_subtable_name）."""
+    """子表命名: d_loop_<位号小写连字符转下划线>（P3 #54：复用 make_subtable_name）."""
     from app.core.tdengine import make_subtable_name
 
     return make_subtable_name(tag_name)

@@ -95,9 +95,7 @@ class TestRealtimeAnomalyInjectorNoSpike:
             pv, _q = injector.apply(pv)
             pv_values.append(pv)
         spikes = _detect_spike_points(pv_values, spike_threshold)
-        assert spikes == [], (
-            f"apply() produced {len(spikes)} spikes at indices {spikes[:10]}"
-        )
+        assert spikes == [], f"apply() produced {len(spikes)} spikes at indices {spikes[:10]}"
 
     def test_apply_out_of_range_does_not_create_spike(self):
         injector = realtime_simulator.RealtimeAnomalyInjector(

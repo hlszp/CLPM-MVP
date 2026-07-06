@@ -67,9 +67,7 @@ async def list_loops_endpoint(
     status: str | None = Query(None, description="按回路状态筛选：READY/PARTIAL/INACTIVE"),
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
     loopType: str | None = Query(None, description="按回路类型筛选"),
-    controlType: str | None = Query(
-        None, description="按控制类型筛选：STABLE/SLOW/FAST/LOGIC"
-    ),
+    controlType: str | None = Query(None, description="按控制类型筛选：STABLE/SLOW/FAST/LOGIC"),
     level: int | None = Query(
         None,
         ge=1,
@@ -77,9 +75,7 @@ async def list_loops_endpoint(
         description="（已废弃，请使用 importanceLevel）按回路重要等级筛选：1/2/3",
         deprecated=True,
     ),
-    importanceLevel: int | None = Query(
-        None, ge=1, le=3, description="按回路重要等级筛选：1/2/3"
-    ),
+    importanceLevel: int | None = Query(None, ge=1, le=3, description="按回路重要等级筛选：1/2/3"),
     monitorStatus: bool | None = Query(
         None, description="按监控状态筛选：true=监控中/false=已停用"
     ),

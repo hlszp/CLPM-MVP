@@ -184,9 +184,7 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
     plant_node_ids: list[str] | None = None
     if plant_node_ids_raw:
         try:
-            plant_node_ids = (
-                json.loads(plant_node_ids_raw) if plant_node_ids_raw else None
-            )
+            plant_node_ids = json.loads(plant_node_ids_raw) if plant_node_ids_raw else None
         except (json.JSONDecodeError, TypeError):
             plant_node_ids = None
 
@@ -243,9 +241,7 @@ async def _count_active_custom_tasks(user_id: str | None = None) -> int:
     return count
 
 
-async def _query_loops_by_ids(
-    db: AsyncSession, loop_ids: list[str]
-) -> list[LoopLedger]:
+async def _query_loops_by_ids(db: AsyncSession, loop_ids: list[str]) -> list[LoopLedger]:
     """按 ID 列表查询回路（校验存在性 + ACTIVE/READY 状态）."""
     result = await db.execute(
         select(LoopLedger).where(
@@ -309,8 +305,7 @@ def _calc_window_count(ts_start: str, ts_end: str, cycle_minutes: int = 60) -> i
     # 向上取整
     return max(
         1,
-        int(total_minutes // cycle_minutes)
-        + (1 if total_minutes % cycle_minutes else 0),
+        int(total_minutes // cycle_minutes) + (1 if total_minutes % cycle_minutes else 0),
     )
 
 
@@ -513,9 +508,7 @@ async def trigger_custom_evaluation(
     # P1 #12: 透传 body.tsEnd，使用户指定的时间窗能传递到实际计算逻辑
     celery_task_ids: list[str] = []
     for loop_id in body.loopIds:
-        result = calculate_custom_loop_kpi.delay(
-            task_id, loop_id, body.tsStart, body.tsEnd
-        )
+        result = calculate_custom_loop_kpi.delay(task_id, loop_id, body.tsStart, body.tsEnd)
         celery_task_ids.append(result.id)
 
     task_data: dict[str, str] = {
@@ -587,7 +580,7 @@ async def trigger_backfill(
             code="ERR_INVALID_TIME_FORMAT",
             message=f"时间格式无效: {exc}",
             status_code=status.HTTP_400_BAD_REQUEST,
-        )
+        ) from exc
 
     if start_dt >= end_dt:
         raise BizError(
@@ -640,9 +633,7 @@ async def trigger_backfill(
     if user_active >= MAX_CUSTOM_PER_USER:
         raise BizError(
             code="ERR_TASK_CONCURRENCY_LIMIT",
-            message=(
-                f"您当前已有 {user_active} 个活跃任务，超过单用户上限 {MAX_CUSTOM_PER_USER}"
-            ),
+            message=(f"您当前已有 {user_active} 个活跃任务，超过单用户上限 {MAX_CUSTOM_PER_USER}"),
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
@@ -650,9 +641,7 @@ async def trigger_backfill(
     if system_active >= MAX_CUSTOM_SYSTEM:
         raise BizError(
             code="ERR_TASK_CONCURRENCY_LIMIT",
-            message=(
-                f"系统当前有 {system_active} 个活跃任务，超过系统上限 {MAX_CUSTOM_SYSTEM}"
-            ),
+            message=(f"系统当前有 {system_active} 个活跃任务，超过系统上限 {MAX_CUSTOM_SYSTEM}"),
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
@@ -788,9 +777,7 @@ async def get_task_status(
 
 @router.get("", response_model=ApiResponse[TaskListResponse])
 async def list_tasks(
-    taskType: str | None = Query(
-        None, description="按任务类型筛选：STANDARD/CUSTOM/BACKFILL"
-    ),
+    taskType: str | None = Query(None, description="按任务类型筛选：STANDARD/CUSTOM/BACKFILL"),
     status_filter: str | None = Query(
         None, alias="status", description="按状态筛选：PENDING/RUNNING/SUCCESS/FAILED/CANCELLED"
     ),
@@ -811,9 +798,7 @@ async def list_tasks(
     """
     # 解析 plantNodeIds（逗号分隔 → list）
     plant_node_filter = (
-        [pid.strip() for pid in plantNodeIds.split(",") if pid.strip()]
-        if plantNodeIds
-        else None
+        [pid.strip() for pid in plantNodeIds.split(",") if pid.strip()] if plantNodeIds else None
     )
 
     # 从索引获取所有 task_id（按创建时间倒序）
@@ -954,10 +939,7 @@ async def delete_task(
     if current_status not in _TERMINAL_STATUSES:
         raise BizError(
             code="ERR_TASK_NOT_DELETABLE",
-            message=(
-                f"任务未处于终态: {current_status}，"
-                "请先取消后再删除"
-            ),
+            message=(f"任务未处于终态: {current_status}，请先取消后再删除"),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -967,7 +949,9 @@ async def delete_task(
 
     logger.info(
         "任务已删除: task_id=%s, status=%s, user=%s",
-        task_id, current_status, user.username,
+        task_id,
+        current_status,
+        user.username,
     )
     return success(data={"task_id": task_id, "deleted": True}, message="任务已删除")
 
@@ -1034,10 +1018,7 @@ async def get_task_results(
     result = await db.execute(stmt)
     rows = result.all()
 
-    items = [
-        _build_task_result_item(snapshot, loop_tag_name)
-        for snapshot, loop_tag_name in rows
-    ]
+    items = [_build_task_result_item(snapshot, loop_tag_name) for snapshot, loop_tag_name in rows]
 
     return success(
         data={
@@ -1064,28 +1045,20 @@ def _build_task_result_item(snapshot: KpiSnapshotCustom, loop_tag_name: str | No
             float(snapshot.accuracy_rate) if snapshot.accuracy_rate is not None else None
         ),
         "fastRate": float(snapshot.fast_rate) if snapshot.fast_rate is not None else None,
-        "steadyRate": (
-            float(snapshot.steady_rate) if snapshot.steady_rate is not None else None
-        ),
+        "steadyRate": (float(snapshot.steady_rate) if snapshot.steady_rate is not None else None),
         "effectiveAutoRate": (
             float(snapshot.effective_auto_rate)
             if snapshot.effective_auto_rate is not None
             else None
         ),
         "goodValueRate": (
-            float(snapshot.good_value_rate)
-            if snapshot.good_value_rate is not None
-            else None
+            float(snapshot.good_value_rate) if snapshot.good_value_rate is not None else None
         ),
         "oscillationRate": (
-            float(snapshot.oscillation_rate)
-            if snapshot.oscillation_rate is not None
-            else None
+            float(snapshot.oscillation_rate) if snapshot.oscillation_rate is not None else None
         ),
         "saturationRate": (
-            float(snapshot.saturation_rate)
-            if snapshot.saturation_rate is not None
-            else None
+            float(snapshot.saturation_rate) if snapshot.saturation_rate is not None else None
         ),
         "autoModeRate": (
             float(snapshot.auto_mode_rate) if snapshot.auto_mode_rate is not None else None
@@ -1094,9 +1067,7 @@ def _build_task_result_item(snapshot: KpiSnapshotCustom, loop_tag_name: str | No
             float(snapshot.stiction_index) if snapshot.stiction_index is not None else None
         ),
         "outputTripIndex": (
-            float(snapshot.output_trip_index)
-            if snapshot.output_trip_index is not None
-            else None
+            float(snapshot.output_trip_index) if snapshot.output_trip_index is not None else None
         ),
         "settlingTime": (
             float(snapshot.settling_time) if snapshot.settling_time is not None else None
@@ -1108,16 +1079,12 @@ def _build_task_result_item(snapshot: KpiSnapshotCustom, loop_tag_name: str | No
         ),
         "status": snapshot.status,
         "confidenceLevel": snapshot.confidence_level,
-        "validRate": (
-            float(snapshot.valid_rate) if snapshot.valid_rate is not None else None
-        ),
+        "validRate": (float(snapshot.valid_rate) if snapshot.valid_rate is not None else None),
         "algorithmVersion": snapshot.algorithm_version,
         "samplingFreq": snapshot.sampling_freq,
         "qualityPolicy": snapshot.quality_policy,
         "dataLineage": snapshot.data_lineage,
-        "createdAt": (
-            snapshot.created_at.isoformat() if snapshot.created_at else None
-        ),
+        "createdAt": (snapshot.created_at.isoformat() if snapshot.created_at else None),
     }
 
 

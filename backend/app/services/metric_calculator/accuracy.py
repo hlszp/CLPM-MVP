@@ -116,9 +116,7 @@ class AccuracyRateCalculator(MetricCalculatorBase):
         )
 
     @staticmethod
-    def _read_e_max(
-        bundle: MetricDataBundle, abs_errors: list[float] | None = None
-    ) -> float:
+    def _read_e_max(bundle: MetricDataBundle, abs_errors: list[float] | None = None) -> float:
         """读取偏差最大允许基准 |E|_max.
 
         优先级（对齐算法 v2.1 §4.4.4）：
@@ -151,7 +149,9 @@ class AccuracyRateCalculator(MetricCalculatorBase):
         e_max = sum(max_abs_error - e for e in abs_errors) / n
         logger.debug(
             "[准确率] e_max 数据驱动计算: max_abs=%.4f, n=%d, e_max=%.4f",
-            max_abs_error, n, e_max,
+            max_abs_error,
+            n,
+            e_max,
         )
         return e_max
 

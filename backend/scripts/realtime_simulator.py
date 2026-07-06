@@ -46,7 +46,6 @@ import json
 import logging
 import math
 import random
-import re
 import signal
 import sys
 import time

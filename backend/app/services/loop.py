@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import openpyxl
-from sqlalchemy import delete, exists, func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError

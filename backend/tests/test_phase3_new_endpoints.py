@@ -14,10 +14,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from tests.conftest import TEST_USERS, mock_current_user
-
 
 # ---------------------------------------------------------------------------
 # 辅助函数
@@ -225,7 +224,13 @@ class TestGradingThresholds:
 
         payload = {
             "thresholds": [
-                {"level": 1, "name": "EXCELLENT", "minScore": 90, "maxScore": 100, "color": "#52c41a"},
+                {
+                    "level": 1,
+                    "name": "EXCELLENT",
+                    "minScore": 90,
+                    "maxScore": 100,
+                    "color": "#52c41a",
+                },
                 {"level": 2, "name": "GOOD", "minScore": 80, "maxScore": 90, "color": "#1890ff"},
                 {"level": 3, "name": "FAIR", "minScore": 60, "maxScore": 80, "color": "#faad14"},
                 {"level": 4, "name": "WARNING", "minScore": 40, "maxScore": 60, "color": "#fa8c16"},

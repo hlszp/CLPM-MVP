@@ -29,7 +29,7 @@ class LoopBatchUpdates(CamelModel):
     include_in_evaluation: bool | None = Field(None, description="是否参与评估")
 
     @model_validator(mode="after")
-    def check_monitor_stat_exclusive(self) -> "LoopBatchUpdates":
+    def check_monitor_stat_exclusive(self) -> LoopBatchUpdates:
         """P1 #10: is_monitored 与 is_stat_enabled 不能同时更新。
 
         当前 LoopLedger 无独立 is_stat_enabled 字段，二者都写入 is_active，
@@ -72,7 +72,12 @@ class LoopBatchConfigRequest(CamelModel):
         # updates 至少有一个非 None 字段
         if all(
             getattr(self.updates, f) is None
-            for f in ("is_monitored", "is_stat_enabled", "importance_level", "include_in_evaluation")
+            for f in (
+                "is_monitored",
+                "is_stat_enabled",
+                "importance_level",
+                "include_in_evaluation",
+            )
         ):
             raise ValueError("updates 至少包含一个待更新字段")
         return self
@@ -84,7 +89,9 @@ class LoopBatchConfigResult(CamelModel):
     affected: int = Field(..., description="受影响的回路数量")
     action: str = Field(..., description="执行的动作：update/delete")
     loop_ids: list[str] = Field(default_factory=list, description="受影响的回路 ID 列表")
-    skipped: list[dict] | None = Field(None, description="跳过的回路列表（仅 delete 动作，含 loopId/reason）")
+    skipped: list[dict] | None = Field(
+        None, description="跳过的回路列表（仅 delete 动作，含 loopId/reason）"
+    )
 
 
 __all__ = [

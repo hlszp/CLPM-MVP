@@ -110,9 +110,7 @@ class KpiSnapshotHourly(Base):
         Index("idx_kpi_snapshot_ts_start", "ts_start"),
         Index("idx_kpi_snapshot_status", "status"),
         # UNIQUE 约束：每个回路每小时仅允许一条快照（q1a2b3c4d5e6 迁移）
-        UniqueConstraint(
-            "loop_id", "ts_start", name="uq_kpi_snapshot_hourly_loop_ts"
-        ),
+        UniqueConstraint("loop_id", "ts_start", name="uq_kpi_snapshot_hourly_loop_ts"),
         {"comment": "每小时性能评估快照（好值率基于 PV 质量码统计）"},
     )
 

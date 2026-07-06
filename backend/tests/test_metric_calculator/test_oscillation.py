@@ -207,4 +207,3 @@ class TestOscillationDesignAlignment:
         if result.details["is_oscillating"]:
             # 周期 20s 的正弦波，半周期约 10s
             assert result.details["oscillation_period"] > 0
-

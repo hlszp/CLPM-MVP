@@ -283,8 +283,9 @@ class TestLoopBatchUpdatesMutex:
 
     def test_both_monitor_and_stat_rejected(self) -> None:
         """同时传 isMonitored 和 isStatEnabled 应被 Schema 拒绝。"""
-        from app.schemas.loop_batch import LoopBatchUpdates
         from pydantic import ValidationError
+
+        from app.schemas.loop_batch import LoopBatchUpdates
 
         with pytest.raises(ValidationError) as exc_info:
             LoopBatchUpdates(is_monitored=True, is_stat_enabled=False)

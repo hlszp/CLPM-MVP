@@ -231,8 +231,7 @@ async def query_realtime_auto_rate(
 
     rate = round(auto_count / valid_count * 100, 2)
     logger.debug(
-        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, "
-        "全局默认自动MODE=%s",
+        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, 全局默认自动MODE=%s",
         valid_count,
         auto_count,
         rate,
@@ -321,7 +320,10 @@ async def aggregate_node_snapshot(
 
     logger.info(
         "[节点级聚合] plant_node_id=%s 下属回路数=%d 时间窗=%s~%s",
-        plant_node_id, len(loop_ids), ts_start, ts_end,
+        plant_node_id,
+        len(loop_ids),
+        ts_start,
+        ts_end,
     )
 
     # 子查询：每个回路在时间窗内最新一条 SUCCESS/PARTIAL 快照
@@ -373,13 +375,17 @@ async def aggregate_node_snapshot(
     ).label("auto_loop_count")
     total_count = func.count().label("cnt")
 
-    stmt = select(total_count, auto_loop_count, weight_sum_col, *weighted_cols).select_from(
-        subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-            LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
+    stmt = (
+        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
+        .select_from(
+            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
+                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
+            )
         )
-    ).where(
-        # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路不参与装置级聚合
-        LoopLedger.include_in_evaluation.is_(True)
+        .where(
+            # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路不参与装置级聚合
+            LoopLedger.include_in_evaluation.is_(True)
+        )
     )
     result = await db.execute(stmt)
     row = result.one()
@@ -426,14 +432,20 @@ async def aggregate_node_snapshot(
     detail_rows = detail_result.all()
     logger.info(
         "[节点级聚合] plant_node_id=%s 参与聚合回路明细（共 %d 条）:",
-        plant_node_id, len(detail_rows),
+        plant_node_id,
+        len(detail_rows),
     )
     for dr in detail_rows:
         logger.info(
-            "[节点级聚合]   回路 loop_id=%s tag=%s importance_level=%s weight=%s score=%s status=%s confidence=%s",
-            dr.loop_id, dr.tag_name, dr.importance_level, dr.w,
+            "[节点级聚合]   回路 loop_id=%s tag=%s importance_level=%s "
+            "weight=%s score=%s status=%s confidence=%s",
+            dr.loop_id,
+            dr.tag_name,
+            dr.importance_level,
+            dr.w,
             float(dr.score) if dr.score is not None else None,
-            dr.status, dr.confidence_level,
+            dr.status,
+            dr.confidence_level,
         )
 
     def avg_value(field: str) -> Decimal | None:
@@ -472,9 +484,7 @@ async def aggregate_node_snapshot(
     # inconclusive_loops: 参评但快照状态为 INCONCLUSIVE 的回路数
     total_loops_val = len(loop_ids)
     excluded_loops_val = await _count_loops_by_evaluation(db, loop_ids, included=False)
-    inconclusive_loops_val = await _count_inconclusive_snapshots(
-        db, loop_ids, ts_start, ts_end
-    )
+    inconclusive_loops_val = await _count_inconclusive_snapshots(db, loop_ids, ts_start, ts_end)
     # evaluated_loops: 参与聚合的回路数（已有有效快照且 include_in_evaluation=true）
     evaluated_loops_val = int(row.cnt)
 
@@ -562,7 +572,10 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         await db.flush()
         logger.info(
             "[节点级快照] 覆盖更新 plant_node_id=%s ts_start=%s score=%s status=%s",
-            plant_node_id, ts_start, snap_data.get("score"), snap_data.get("status"),
+            plant_node_id,
+            ts_start,
+            snap_data.get("score"),
+            snap_data.get("status"),
         )
     else:
         # 新增
@@ -574,7 +587,10 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         await db.flush()
         logger.info(
             "[节点级快照] 新增 plant_node_id=%s ts_start=%s score=%s status=%s",
-            plant_node_id, ts_start, snap_data.get("score"), snap_data.get("status"),
+            plant_node_id,
+            ts_start,
+            snap_data.get("score"),
+            snap_data.get("status"),
         )
 
     # v5.3 对齐 DDS v4.1 §2.17：并行写入 unit_kpi_summary（装置级 KPI 汇总表）
@@ -627,9 +643,11 @@ async def _save_unit_kpi_summary(db: AsyncSession, snap_data: dict) -> None:
             setattr(existing, col, val)
         await db.flush()
         logger.info(
-            "[装置级汇总] 覆盖 unit_kpi_summary node_id=%s snapshot_time=%s "
-            "avg_score=%s status=%s",
-            node_id, snapshot_time, field_map["avg_score"], field_map["status"],
+            "[装置级汇总] 覆盖 unit_kpi_summary node_id=%s snapshot_time=%s avg_score=%s status=%s",
+            node_id,
+            snapshot_time,
+            field_map["avg_score"],
+            field_map["status"],
         )
     else:
         summary = UnitKpiSummary(
@@ -641,9 +659,11 @@ async def _save_unit_kpi_summary(db: AsyncSession, snap_data: dict) -> None:
         db.add(summary)
         await db.flush()
         logger.info(
-            "[装置级汇总] 新增 unit_kpi_summary node_id=%s snapshot_time=%s "
-            "avg_score=%s status=%s",
-            node_id, snapshot_time, field_map["avg_score"], field_map["status"],
+            "[装置级汇总] 新增 unit_kpi_summary node_id=%s snapshot_time=%s avg_score=%s status=%s",
+            node_id,
+            snapshot_time,
+            field_map["avg_score"],
+            field_map["status"],
         )
 
 

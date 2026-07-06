@@ -160,6 +160,7 @@ def _make_disabled_result(calc_code: str) -> MetricResult:
         details={"reason": "metric_disabled_by_config"},
     )
 
+
 # LoopLedger.loop_type → ControlType 映射
 # SPEED/OTHER 无直接对应控制类型，回退为 FLOW（采样率 1s，最宽松）
 _LOOP_TYPE_TO_CONTROL_TYPE: dict[str, ControlType] = {
@@ -227,9 +228,7 @@ def _parse_ts_start(ts_start: str | None) -> datetime | None:
         return datetime.fromisoformat(ts_start)
 
 
-async def _track_hourly_calculation(
-    celery_task_id: str, ts_start: str | None = None
-) -> dict:
+async def _track_hourly_calculation(celery_task_id: str, ts_start: str | None = None) -> dict:
     """包装 _do_calculate，加入任务跟踪记录（cron 定时触发专用）.
 
     创建任务记录 → 标记 RUNNING → 执行计算 → 标记 SUCCESS/FAILED。
@@ -341,9 +340,7 @@ def calculate_custom_loop_kpi(
         ts_start,
         ts_end,
     )
-    return AsyncTask().run_async(
-        _do_calculate_custom_loop(task_id, loop_id, ts_start, ts_end)
-    )
+    return AsyncTask().run_async(_do_calculate_custom_loop(task_id, loop_id, ts_start, ts_end))
 
 
 @celery_app.task(
@@ -396,9 +393,7 @@ def backfill_kpi_range(
             logger.warning("更新任务 RUNNING 状态失败: task_id=%s", task_id, exc_info=True)
 
     try:
-        result = self.run_async(
-            _do_backfill(ts_start, ts_end, loop_ids=loop_ids, task_id=task_id)
-        )
+        result = self.run_async(_do_backfill(ts_start, ts_end, loop_ids=loop_ids, task_id=task_id))
         logger.info("KPI 回填任务完成: %s", result)
 
         # 同步终态：RUNNING → SUCCESS
@@ -424,7 +419,6 @@ def backfill_kpi_range(
 async def _update_task_running(task_id: str) -> None:
     """将任务状态从 PENDING 更新为 RUNNING。"""
     from app.schemas.task import TaskStatus
-
     from app.services import task_tracker
 
     await task_tracker.update_status(
@@ -438,7 +432,6 @@ async def _update_task_running(task_id: str) -> None:
 async def _update_task_success(task_id: str, result: dict) -> None:
     """将任务状态更新为 SUCCESS。"""
     from app.schemas.task import TaskStatus
-
     from app.services import task_tracker
 
     await task_tracker.update_status(
@@ -453,7 +446,6 @@ async def _update_task_success(task_id: str, result: dict) -> None:
 async def _update_task_failed(task_id: str, error_message: str) -> None:
     """将任务状态更新为 FAILED。"""
     from app.schemas.task import TaskStatus
-
     from app.services import task_tracker
 
     await task_tracker.update_status(
@@ -528,7 +520,9 @@ async def _do_backfill(
                 if await _is_task_cancelled(task_id):
                     logger.info(
                         "检测到取消标志，提前终止回填: task_id=%s, completed=%d/%d",
-                        task_id, i - 1, total,
+                        task_id,
+                        i - 1,
+                        total,
                     )
                     return {
                         "total_windows": total,
@@ -542,14 +536,10 @@ async def _do_backfill(
                         "completed_windows": i - 1,
                     }
             except Exception:
-                logger.warning(
-                    "查询取消标志失败，继续执行: task_id=%s", task_id, exc_info=True
-                )
+                logger.warning("查询取消标志失败，继续执行: task_id=%s", task_id, exc_info=True)
 
         try:
-            loop_result = await _do_calculate(
-                ts_start=w, cascade_node=False, loop_ids=loop_ids
-            )
+            loop_result = await _do_calculate(ts_start=w, cascade_node=False, loop_ids=loop_ids)
             node_result = await _do_calculate_node_kpi(ts_start=w)
             agg_loop_success += loop_result.get("success", 0)
             agg_loop_inconclusive += loop_result.get("inconclusive", 0)
@@ -557,8 +547,11 @@ async def _do_backfill(
             agg_node_success += node_result.get("success", 0)
             logger.info(
                 "回填进度 [%d/%d] %s: loop_ok=%d, node_ok=%d",
-                i, total, w.isoformat(),
-                loop_result.get("success", 0), node_result.get("success", 0),
+                i,
+                total,
+                w.isoformat(),
+                loop_result.get("success", 0),
+                node_result.get("success", 0),
             )
         except Exception as exc:  # noqa: BLE001
             failed_windows.append(w.isoformat())
@@ -571,7 +564,10 @@ async def _do_backfill(
             except Exception:
                 logger.warning(
                     "更新任务进度失败: task_id=%s, window=%d/%d",
-                    task_id, i, total, exc_info=True,
+                    task_id,
+                    i,
+                    total,
+                    exc_info=True,
                 )
 
     return {
@@ -594,7 +590,6 @@ async def _update_task_progress(task_id: str, done: int, total: int) -> None:
     ``progress`` = done/total 反映窗口级完成比例。
     """
     from app.schemas.task import TaskStatus
-
     from app.services import task_tracker
 
     progress = done / total if total > 0 else 0.0
@@ -640,8 +635,9 @@ def _load_calc_cycle_seconds_from_db() -> float:
         计算周期秒数（默认 3600）
     """
     try:
-        from app.core.config import settings
         from sqlalchemy import create_engine, text
+
+        from app.core.config import settings
 
         sync_url = settings.postgres_dsn.replace("+asyncpg", "")
         engine = create_engine(sync_url)
@@ -668,9 +664,7 @@ def _load_calc_cycle_seconds_from_db() -> float:
         finally:
             engine.dispose()
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "读取 EngineRule EVAL_CALC_CYCLE 失败，回退默认 3600s: %s", exc
-        )
+        logger.warning("读取 EngineRule EVAL_CALC_CYCLE 失败，回退默认 3600s: %s", exc)
     return 3600.0
 
 
@@ -770,9 +764,7 @@ async def _do_calculate(
         # 引擎规则：计算周期（分钟）+ 并发数
         cycle_minutes = await engine_loader.get_calc_cycle_minutes(db)
         concurrency = await engine_loader.get_concurrency(db)
-        logger.info(
-            "引擎规则: calc_cycle=%dmin, concurrency=%d", cycle_minutes, concurrency
-        )
+        logger.info("引擎规则: calc_cycle=%dmin, concurrency=%d", cycle_minutes, concurrency)
 
         # 计算时间窗：周期长度由 EngineRule 决定（对齐 EVAL_CALC_CYCLE.cycle_minutes）
         if ts_start is not None:
@@ -898,9 +890,7 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
             except ValueError:
                 ts_start_dt = datetime.fromisoformat(ts_start)
         else:
-            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(
-                second=0, microsecond=0
-            )
+            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(second=0, microsecond=0)
             # 对齐到计算周期边界
             ts_start_dt = ts_start_dt.replace(
                 minute=(ts_start_dt.minute // cycle_minutes) * cycle_minutes
@@ -958,9 +948,7 @@ async def _do_calculate_custom_loop(
         now = datetime.now(UTC)
         ts_start_dt = _parse_ts_start(ts_start)
         if ts_start_dt is None:
-            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(
-                second=0, microsecond=0
-            )
+            ts_start_dt = (now - timedelta(minutes=cycle_minutes)).replace(second=0, microsecond=0)
             ts_start_dt = ts_start_dt.replace(
                 minute=(ts_start_dt.minute // cycle_minutes) * cycle_minutes
             )
@@ -1040,8 +1028,13 @@ async def _calculate_loop_kpi(
     logger.info(
         "[回路KPI] 开始计算 loop_id=%s tag_name=%s loop_type=%s control_type=%s "
         "ts_start=%s ts_end=%s custom_task_id=%s",
-        loop.id, loop.tag_name, loop.loop_type, control_type.value,
-        ts_start.isoformat(), ts_end.isoformat(), custom_task_id,
+        loop.id,
+        loop.tag_name,
+        loop.loop_type,
+        control_type.value,
+        ts_start.isoformat(),
+        ts_end.isoformat(),
+        custom_task_id,
     )
 
     # 通过 DataPlanner 获取所有指标的 MetricDataBundle
@@ -1153,7 +1146,9 @@ async def _calculate_loop_kpi(
     logger.info(
         "[回路KPI] 计算完成 loop_id=%s tag_name=%s status=%s score=%s confidence=%s "
         "valid_rate=%s custom_task_id=%s",
-        loop.id, loop.tag_name, status,
+        loop.id,
+        loop.tag_name,
+        status,
         float(score) if score is not None else None,
         lineage_info["confidence_level"],
         lineage_info["valid_rate"],
@@ -1403,16 +1398,25 @@ def _build_weights_map(
         f_cfg = metric_configs.get("fast_rate")
         s_cfg = metric_configs.get("steady_rate")
         if (
-            a_cfg and a_cfg.weight is not None and float(a_cfg.weight) > 0
-            and f_cfg and f_cfg.weight is not None and float(f_cfg.weight) > 0
-            and s_cfg and s_cfg.weight is not None and float(s_cfg.weight) > 0
+            a_cfg
+            and a_cfg.weight is not None
+            and float(a_cfg.weight) > 0
+            and f_cfg
+            and f_cfg.weight is not None
+            and float(f_cfg.weight) > 0
+            and s_cfg
+            and s_cfg.weight is not None
+            and float(s_cfg.weight) > 0
         ):
             total = float(a_cfg.weight) + float(f_cfg.weight) + float(s_cfg.weight)
             if total > 0:
                 logger.info(
                     "[权重解析] 使用 MetricConfig.weight 全局配置: a=%s f=%s s=%s "
                     "(sum=%s, 归一化后 sum=1.0)",
-                    a_cfg.weight, f_cfg.weight, s_cfg.weight, total,
+                    a_cfg.weight,
+                    f_cfg.weight,
+                    s_cfg.weight,
+                    total,
                 )
                 return {
                     "accuracy_rate": float(a_cfg.weight) / total,
@@ -1420,9 +1424,10 @@ def _build_weights_map(
                     "stability_rate": float(s_cfg.weight) / total,
                 }
             logger.warning(
-                "[权重解析] MetricConfig.weight 总和为 0，回退到 LoopTypeWeight: "
-                "a=%s f=%s s=%s",
-                a_cfg.weight, f_cfg.weight, s_cfg.weight,
+                "[权重解析] MetricConfig.weight 总和为 0，回退到 LoopTypeWeight: a=%s f=%s s=%s",
+                a_cfg.weight,
+                f_cfg.weight,
+                s_cfg.weight,
             )
 
     # 优先级 2：LoopTypeWeight 按控制类型模板
@@ -1432,7 +1437,10 @@ def _build_weights_map(
     w = type_weights[score_type]
     logger.info(
         "[权重解析] 使用 LoopTypeWeight 控制类型模板: score_type=%s a=%s f=%s s=%s",
-        score_type, w.get("weight_a"), w.get("weight_f"), w.get("weight_s"),
+        score_type,
+        w.get("weight_a"),
+        w.get("weight_f"),
+        w.get("weight_s"),
     )
     return {
         "accuracy_rate": float(w.get("weight_a", 0)),
@@ -1503,7 +1511,9 @@ def _compute_kpis_three_layer(
     for code in layer1_codes:
         # PRD §5.1.3：指标停用后返回 INCONCLUSIVE，不执行计算
         if not _is_metric_enabled(code, metric_configs):
-            logger.info("[三层计算] Layer1: 指标 %s 已禁用（is_enabled=False），返回 INCONCLUSIVE", code)
+            logger.info(
+                "[三层计算] Layer1: 指标 %s 已禁用（is_enabled=False），返回 INCONCLUSIVE", code
+            )
             results[code] = _make_disabled_result(code)
             continue
         bundle = bundle_map.get(code)
@@ -1717,7 +1727,8 @@ async def _persist_snapshot(
     if custom_task_id is not None:
         # 自定义任务 → 写入 kpi_snapshot_custom（不参与聚合）
         logger.info(
-            "[快照分流] 自定义任务 task_id=%s loop=%s status=%s score=%s → kpi_snapshot_custom（不参与聚合）",
+            "[快照分流] 自定义任务 task_id=%s loop=%s status=%s score=%s "
+            "→ kpi_snapshot_custom（不参与聚合）",
             custom_task_id,
             loop_id,
             status,
@@ -1863,9 +1874,13 @@ async def _save_snapshot(
     snapshot_id = str(actual_id_row[0]) if actual_id_row else snapshot_id
 
     logger.info(
-        "[快照写入] UPSERT kpi_snapshot_hourly loop=%s ts_start=%s status=%s score=%s confidence=%s",
-        loop_id, ts_start_naive.isoformat(), status,
-        float(score) if score is not None else None, confidence_level,
+        "[快照写入] UPSERT kpi_snapshot_hourly loop=%s ts_start=%s "
+        "status=%s score=%s confidence=%s",
+        loop_id,
+        ts_start_naive.isoformat(),
+        status,
+        float(score) if score is not None else None,
+        confidence_level,
     )
 
     return {
@@ -1956,9 +1971,13 @@ async def _save_custom_snapshot(
         existing.data_lineage = data_lineage
         snapshot_id = str(existing.id)
         logger.info(
-            "[快照写入] 覆盖更新 kpi_snapshot_custom task=%s loop=%s status=%s score=%s confidence=%s",
-            task_id, loop_id, status,
-            float(score) if score is not None else None, confidence_level,
+            "[快照写入] 覆盖更新 kpi_snapshot_custom task=%s loop=%s "
+            "status=%s score=%s confidence=%s",
+            task_id,
+            loop_id,
+            status,
+            float(score) if score is not None else None,
+            confidence_level,
         )
     else:
         snapshot_id = str(uuid4())
@@ -1992,8 +2011,11 @@ async def _save_custom_snapshot(
         db.add(snapshot)
         logger.info(
             "[快照写入] 新增 kpi_snapshot_custom task=%s loop=%s status=%s score=%s confidence=%s",
-            task_id, loop_id, status,
-            float(score) if score is not None else None, confidence_level,
+            task_id,
+            loop_id,
+            status,
+            float(score) if score is not None else None,
+            confidence_level,
         )
 
     return {

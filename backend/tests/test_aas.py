@@ -12,11 +12,15 @@ Covers:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from tests.conftest import TEST_USERS, mock_current_user
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # 测试用 Tag 数据
 TAG_001 = MagicMock()
@@ -181,9 +185,7 @@ class TestAasSync:
 class TestAasConfigFields:
     """AAS 配置接口新增 lastSyncAt/lastSyncStatus 字段测试（P0 #7）。"""
 
-    def test_get_config_returns_last_sync_fields(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_get_config_returns_last_sync_fields(self, client, mock_db, fake_redis) -> None:
         """GET /aas/config 响应包含 lastSyncAt 与 lastSyncStatus 字段。"""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
@@ -234,9 +236,7 @@ class TestAasConfigFields:
 class TestSetLastSyncStatus:
     """set_last_sync_status 辅助函数测试（P0 #7）。"""
 
-    async def test_processing_does_not_write_sync_at(
-        self, mock_db: AsyncMock
-    ) -> None:
+    async def test_processing_does_not_write_sync_at(self, mock_db: AsyncMock) -> None:
         """PROCESSING 状态不写 last_sync_at（同步尚未完成）。"""
         from app.services.aas_config import set_last_sync_status
 
@@ -249,7 +249,7 @@ class TestSetLastSyncStatus:
 
     async def test_success_writes_sync_at(self, mock_db: AsyncMock) -> None:
         """SUCCESS 状态同时写入 last_sync_at 与 last_sync_status。"""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
 
         from app.services.aas_config import set_last_sync_status
 
@@ -288,14 +288,10 @@ class TestSyncTagsFromAasStatusTracking:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
-            patch(
-                "app.services.aas_sync.get_aas_provider"
-            ) as mock_provider_fn,
+            patch("app.services.aas_sync.get_aas_provider") as mock_provider_fn,
         ):
             mock_provider_fn.return_value = MagicMock()
-            mock_db.execute = AsyncMock(
-                return_value=_make_scalars_mock([])
-            )
+            mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
             from app.services.aas_sync import sync_tags_from_aas
 
@@ -346,9 +342,7 @@ class TestSyncTagsFromAasLoopLedgerUpdate:
     同步完成时间，避免该字段成为孤儿。
     """
 
-    async def test_updates_loop_ledger_last_aas_sync_at(
-        self, mock_db: AsyncMock
-    ) -> None:
+    async def test_updates_loop_ledger_last_aas_sync_at(self, mock_db: AsyncMock) -> None:
         """同步成功后应执行 UPDATE LoopLedger SET last_aas_sync_at=now WHERE is_active=True。"""
         with (
             patch(
@@ -360,14 +354,10 @@ class TestSyncTagsFromAasLoopLedgerUpdate:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
-            patch(
-                "app.services.aas_sync.get_aas_provider"
-            ) as mock_provider_fn,
+            patch("app.services.aas_sync.get_aas_provider") as mock_provider_fn,
         ):
             mock_provider_fn.return_value = MagicMock()
-            mock_db.execute = AsyncMock(
-                return_value=_make_scalars_mock([])
-            )
+            mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
             from app.services.aas_sync import sync_tags_from_aas
 
@@ -389,9 +379,7 @@ class TestSyncTagsFromAasLoopLedgerUpdate:
             # 验证有 2 次 commit：tag upsert + LoopLedger 更新
             assert mock_db.commit.await_count >= 2
 
-    async def test_no_loop_ledger_update_on_failure(
-        self, mock_db: AsyncSession
-    ) -> None:
+    async def test_no_loop_ledger_update_on_failure(self, mock_db: AsyncSession) -> None:
         """同步失败时不应执行 LoopLedger 更新（异常在 update 之前抛出）。"""
         with (
             patch(
@@ -406,9 +394,7 @@ class TestSyncTagsFromAasLoopLedgerUpdate:
             patch("app.services.aas_sync.get_aas_provider") as mock_provider_fn,
         ):
             mock_provider_fn.return_value = MagicMock()
-            mock_db.execute = AsyncMock(
-                return_value=_make_scalars_mock([])
-            )
+            mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
             from app.services.aas_sync import sync_tags_from_aas
 
@@ -524,12 +510,9 @@ class TestRetryAsync:
     async def test_biz_error_retry_then_success(self) -> None:
         """BizError 触发重试，第二次成功。"""
         from app.core.exceptions import BizError
-
         from app.services.aas_sync import _retry_async
 
-        func = AsyncMock(
-            side_effect=[BizError(code="TEST", message="fail"), "ok"]
-        )
+        func = AsyncMock(side_effect=[BizError(code="TEST", message="fail"), "ok"])
         with patch("app.services.aas_sync.asyncio.sleep", new=AsyncMock()):
             result = await _retry_async(func, max_retries=3)
 
@@ -539,7 +522,6 @@ class TestRetryAsync:
     async def test_biz_error_exhausted_raises_original(self) -> None:
         """BizError 重试耗尽后抛出原始 BizError（不包装）。"""
         from app.core.exceptions import BizError
-
         from app.services.aas_sync import _retry_async
 
         original_exc = BizError(code="ERR_AAS_CONNECTION_FAILED", message="conn fail")
@@ -555,7 +537,6 @@ class TestRetryAsync:
     async def test_generic_exception_wrapped_as_biz_error(self) -> None:
         """通用 Exception 重试耗尽后包装为 BizError(ERR_AAS_CONNECTION_FAILED)。"""
         from app.core.exceptions import BizError
-
         from app.services.aas_sync import _retry_async
 
         original_exc = ValueError("network timeout")
@@ -572,9 +553,8 @@ class TestRetryAsync:
 
     async def test_exponential_backoff_applied(self) -> None:
         """验证指数退避：第 N 次重试等待 RETRY_BACKOFF_BASE^(N-1) 秒。"""
-        from app.services.aas_sync import RETRY_BACKOFF_BASE, _retry_async
-
         from app.core.exceptions import BizError
+        from app.services.aas_sync import RETRY_BACKOFF_BASE, _retry_async
 
         func = AsyncMock(side_effect=BizError(code="TEST", message="fail"))
         with patch("app.services.aas_sync.asyncio.sleep", new=AsyncMock()) as mock_sleep:
@@ -585,5 +565,5 @@ class TestRetryAsync:
         assert mock_sleep.await_count == 2
         first_wait = mock_sleep.await_args_list[0].args[0]
         second_wait = mock_sleep.await_args_list[1].args[0]
-        assert first_wait == RETRY_BACKOFF_BASE ** 0  # 1s
-        assert second_wait == RETRY_BACKOFF_BASE ** 1  # 2s
+        assert first_wait == RETRY_BACKOFF_BASE**0  # 1s
+        assert second_wait == RETRY_BACKOFF_BASE**1  # 2s

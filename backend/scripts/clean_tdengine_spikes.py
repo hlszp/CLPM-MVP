@@ -38,6 +38,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import asyncpg  # noqa: E402
+
 from app.contracts.data_types import ControlType  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.tdengine import execute_sql, make_subtable_name  # noqa: E402
@@ -296,8 +297,7 @@ def build_replace_sql(
     # TDengine INSERT：同 ts 重复写入，last-write-wins 覆盖原值
     sql = (
         f"INSERT INTO clpm_ts.{subtable} "
-        f"(ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality) VALUES "
-        + ", ".join(values_parts)
+        f"(ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality) VALUES " + ", ".join(values_parts)
     )
     return sql
 
@@ -372,9 +372,7 @@ async def clean_loop(
         replacements: dict[int, float] = {}
         for start, end in segments:
             # 找前一个有效 PV（在 rows 起始之前的需要跨批处理，先在批内找）
-            prev_pv = find_previous_valid_pv(
-                pv_values, quality_values, start, replacements
-            )
+            prev_pv = find_previous_valid_pv(pv_values, quality_values, start, replacements)
             if prev_pv is None:
                 # 跨批情况：查 TDengine 前一批最后一个有效值
                 # 简化处理：用 range_min 或跳过（保守策略）
@@ -514,18 +512,12 @@ async def main(args: argparse.Namespace) -> None:
             "total_loops": len(loops),
             "summary": {
                 "total_rows_scanned": sum(s["total_rows_scanned"] for s in all_stats),
-                "total_spike_segments": sum(
-                    s["total_spike_segments"] for s in all_stats
-                ),
-                "total_points_replaced": sum(
-                    s["total_points_replaced"] for s in all_stats
-                ),
+                "total_spike_segments": sum(s["total_spike_segments"] for s in all_stats),
+                "total_points_replaced": sum(s["total_points_replaced"] for s in all_stats),
             },
             "loops": all_stats,
         }
-        report_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
         # CSV 日志
         if clean_log:
@@ -540,15 +532,9 @@ async def main(args: argparse.Namespace) -> None:
         print("=" * 60)
         print(f"模式：{'dry-run（仅识别）' if args.dry_run else '执行替换'}")
         print(f"回路数：{len(loops)}")
-        print(
-            f"扫描总行数：{report['summary']['total_rows_scanned']:,}"
-        )
-        print(
-            f"识别毛刺段数：{report['summary']['total_spike_segments']:,}"
-        )
-        print(
-            f"替换点数：{report['summary']['total_points_replaced']:,}"
-        )
+        print(f"扫描总行数：{report['summary']['total_rows_scanned']:,}")
+        print(f"识别毛刺段数：{report['summary']['total_spike_segments']:,}")
+        print(f"替换点数：{report['summary']['total_points_replaced']:,}")
         print(f"\nJSON 报告：{report_path}")
         if clean_log:
             print(f"CSV 日志：{log_csv_path}（{len(clean_log)} 条记录）")

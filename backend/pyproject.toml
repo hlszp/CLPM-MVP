@@ -58,6 +58,8 @@ select = ["E", "W", "F", "I", "B", "C4", "UP"]
 "alembic/versions/*.py" = ["F401"]
 # FastAPI uses ``Depends()`` in argument defaults as its standard DI pattern.
 "app/api/**/*.py" = ["B008"]
+# 测试文件中 pytest fixture 参数会"覆盖"导入的 fixture 名，是 pytest 标准模式，非真重定义。
+"tests/**/*.py" = ["F811"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

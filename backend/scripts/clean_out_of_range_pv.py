@@ -20,8 +20,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import json
-import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -113,9 +112,7 @@ def insert_corrected_rows(sub: str, rows: list[tuple]) -> int:
         values_sql = []
         for ts, pv, sp, op, mode, pid_p, pid_i, pid_d, q in batch:
             # ts is already in UTC ISO format from REST API; pass as-is
-            values_sql.append(
-                f"('{ts}', {pv}, {sp}, {op}, {mode}, {pid_p}, {pid_i}, {pid_d}, {q})"
-            )
+            values_sql.append(f"('{ts}', {pv}, {sp}, {op}, {mode}, {pid_p}, {pid_i}, {pid_d}, {q})")
         sql = (
             f"INSERT INTO {sub} "
             f"(ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality) VALUES "
@@ -124,11 +121,11 @@ def insert_corrected_rows(sub: str, rows: list[tuple]) -> int:
         resp = httpx.post(REST_DB_URL, data=sql, auth=AUTH, timeout=60.0)
         affected = _parse_affected_rows(resp)
         if affected < 0:
-            print(f"    INSERT batch {i//INSERT_BATCH} failed: {resp.text[:200]}")
+            print(f"    INSERT batch {i // INSERT_BATCH} failed: {resp.text[:200]}")
             continue
         if affected != len(batch):
             print(
-                f"    INSERT batch {i//INSERT_BATCH} partial: "
+                f"    INSERT batch {i // INSERT_BATCH} partial: "
                 f"expected {len(batch)}, got {affected}"
             )
         inserted += affected
@@ -164,9 +161,13 @@ async def clean_loop(loop: dict, log_writer: csv.writer, report: dict) -> None:
     total_oor = len(oor_rows)
     if total_oor == 0:
         print(f"  {tag}: 0 out-of-range values, skip")
-        report["loops"].append({
-            "loop_tag": tag, "out_of_range_count": 0, "replaced": 0,
-        })
+        report["loops"].append(
+            {
+                "loop_tag": tag,
+                "out_of_range_count": 0,
+                "replaced": 0,
+            }
+        )
         return
 
     print(f"  {tag}: {total_oor} out-of-range values, cleaning...")
@@ -192,7 +193,7 @@ async def clean_loop(loop: dict, log_writer: csv.writer, report: dict) -> None:
     if current_seg:
         segments.append(current_seg)
 
-    print(f"  {tag}: {len(segments)} segments (avg {total_oor//max(len(segments),1)} pts/seg)")
+    print(f"  {tag}: {len(segments)} segments (avg {total_oor // max(len(segments), 1)} pts/seg)")
 
     # For each segment, get the previous valid PV and replace all points
     corrected_rows: list[tuple] = []
@@ -207,9 +208,16 @@ async def clean_loop(loop: dict, log_writer: csv.writer, report: dict) -> None:
             new_pv = round(prev_valid, 4)
             corrected_rows.append((ts, new_pv, sp, op, mode, pid_p, pid_i, pid_d, q))
             # Log the replacement
-            log_writer.writerow([
-                tag, sub, ts, orig_pv, new_pv, q,
-            ])
+            log_writer.writerow(
+                [
+                    tag,
+                    sub,
+                    ts,
+                    orig_pv,
+                    new_pv,
+                    q,
+                ]
+            )
             replaced_count += 1
 
         # Update prev_valid to the corrected value for subsequent segments
@@ -219,19 +227,22 @@ async def clean_loop(loop: dict, log_writer: csv.writer, report: dict) -> None:
     inserted = insert_corrected_rows(sub, corrected_rows)
     print(f"  {tag}: replaced {replaced_count} values, inserted {inserted} rows")
 
-    report["loops"].append({
-        "loop_tag": tag,
-        "out_of_range_count": total_oor,
-        "segments": len(segments),
-        "replaced": replaced_count,
-        "inserted": inserted,
-    })
+    report["loops"].append(
+        {
+            "loop_tag": tag,
+            "out_of_range_count": total_oor,
+            "segments": len(segments),
+            "replaced": replaced_count,
+            "inserted": inserted,
+        }
+    )
 
 
 def _ts_diff_seconds(ts1: str, ts2: str) -> float:
     """Approximate time difference between two ISO timestamps."""
     try:
         from datetime import datetime
+
         d1 = datetime.fromisoformat(ts1.replace("Z", "+00:00"))
         d2 = datetime.fromisoformat(ts2.replace("Z", "+00:00"))
         return abs((d2 - d1).total_seconds())
@@ -247,27 +258,34 @@ async def main() -> None:
     loops = await load_loops()
     print(f"Loaded {len(loops)} active loops")
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     log_path = OUTPUT_DIR / f"range_clean_log_{timestamp}.csv"
     report_path = OUTPUT_DIR / f"range_clean_report_{timestamp}.json"
 
     report = {
-        "cleaned_at": datetime.now(timezone.utc).isoformat(),
+        "cleaned_at": datetime.now(UTC).isoformat(),
         "total_loops": len(loops),
         "loops": [],
     }
 
     with open(log_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "loop_tag", "subtable", "ts", "original_pv", "replaced_pv", "pv_quality",
-        ])
+        writer.writerow(
+            [
+                "loop_tag",
+                "subtable",
+                "ts",
+                "original_pv",
+                "replaced_pv",
+                "pv_quality",
+            ]
+        )
         for loop in loops:
             await clean_loop(loop, writer, report)
             f.flush()
 
     # Summary
-    total_replaced = sum(l.get("replaced", 0) for l in report["loops"])
+    total_replaced = sum(lp.get("replaced", 0) for lp in report["loops"])
     report["total_replaced"] = total_replaced
     print(f"\nTotal replaced: {total_replaced} values")
 

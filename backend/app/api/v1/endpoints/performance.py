@@ -14,8 +14,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from decimal import Decimal
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -324,12 +323,8 @@ async def list_loop_snapshots_endpoint(
     plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
     startTime: str | None = Query(None, description="起始时间（ISO 8601）"),
     endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
-    status: str | None = Query(
-        None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"
-    ),
-    confidenceLevel: str | None = Query(
-        None, description="可信度等级（A/B/C/D/E）"
-    ),
+    status: str | None = Query(None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"),
+    confidenceLevel: str | None = Query(None, description="可信度等级（A/B/C/D/E）"),
     page: int = Query(1, ge=1, description="页码（1-based）"),
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
@@ -342,15 +337,9 @@ async def list_loop_snapshots_endpoint(
     每条记录包含完整的 24 个 KPI 字段 + loopTagName。
     """
     # 解析逗号分隔的 ID 列表
-    loop_ids = (
-        [s.strip() for s in loopId.split(",") if s.strip()]
-        if loopId
-        else None
-    )
+    loop_ids = [s.strip() for s in loopId.split(",") if s.strip()] if loopId else None
     plant_node_ids = (
-        [s.strip() for s in plantNodeId.split(",") if s.strip()]
-        if plantNodeId
-        else None
+        [s.strip() for s in plantNodeId.split(",") if s.strip()] if plantNodeId else None
     )
 
     start_dt = _parse_dt(startTime)

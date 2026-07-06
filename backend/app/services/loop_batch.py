@@ -233,7 +233,7 @@ async def batch_delete_loops(
 
     tag_result = await db.execute(
         select(LoopTagMapping.loop_id)
-        .where(LoopTagMapping.loop_id.in_([str(l.id) for l in loops]))
+        .where(LoopTagMapping.loop_id.in_([str(lp.id) for lp in loops]))
         .distinct()
     )
     loops_with_tags: set[str] = {str(row[0]) for row in tag_result.all()}

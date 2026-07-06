@@ -693,4 +693,3 @@ class TestLoopLevelWeightRoutesReachable:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
-

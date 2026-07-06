@@ -1106,8 +1106,7 @@ class TestCeleryTasks:
             assert result == expected
 
     def test_calculate_custom_loop_kpi_with_ts_end(self) -> None:
-        """calculate_custom_loop_kpi 透传 ts_start + ts_end 给 _do_calculate_custom_loop（P1 #12）."""
-        from datetime import UTC, datetime
+        """透传 ts_start+ts_end 给 _do_calculate_custom_loop（P1 #12）."""
 
         from app.tasks.kpi_calc import calculate_custom_loop_kpi
 
@@ -1128,7 +1127,7 @@ class TestCeleryTasks:
             assert call_args.args[3] == "2026-06-22T09:30:00Z"
 
     def test_calculate_custom_loop_kpi_ts_end_none(self) -> None:
-        """calculate_custom_loop_kpi 不传 ts_end 时 _do_calculate_custom_loop 收到 None（P1 #12 默认行为）."""
+        """不传 ts_end 时 _do_calculate_custom_loop 收到 None（P1 #12 默认）."""
         from app.tasks.kpi_calc import calculate_custom_loop_kpi
 
         expected = {"loopId": "loop-1", "taskId": "t-1", "status": "SUCCESS"}
@@ -1136,9 +1135,7 @@ class TestCeleryTasks:
             "app.tasks.kpi_calc._do_calculate_custom_loop", new_callable=AsyncMock
         ) as mock_fn:
             mock_fn.return_value = expected
-            result = calculate_custom_loop_kpi.run(
-                "t-1", "loop-1", "2026-06-22T08:00:00Z"
-            )
+            result = calculate_custom_loop_kpi.run("t-1", "loop-1", "2026-06-22T08:00:00Z")
             assert result == expected
             call_args = mock_fn.call_args
             assert call_args.args[2] == "2026-06-22T08:00:00Z"
@@ -1178,7 +1175,9 @@ class TestDoCalculateCustomLoopTimeWindow:
                 return_value=mock_engine,
             ),
             patch("app.tasks.kpi_calc._calculate_loop_kpi", new_callable=AsyncMock) as mock_calc,
-            patch("app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock) as mock_weights,
+            patch(
+                "app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock
+            ) as mock_weights,
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -1227,7 +1226,9 @@ class TestDoCalculateCustomLoopTimeWindow:
                 return_value=mock_engine,
             ),
             patch("app.tasks.kpi_calc._calculate_loop_kpi", new_callable=AsyncMock) as mock_calc,
-            patch("app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock) as mock_weights,
+            patch(
+                "app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock
+            ) as mock_weights,
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -1754,9 +1755,7 @@ class TestExtractKpiValues:
         assert kpi_values["steady_rate"] == Decimal("70.0")  # stability_rate → steady_rate
         assert kpi_values["effective_auto_rate"] == Decimal("60.0")
         assert kpi_values["stiction_index"] == Decimal("0.5")  # stiction_index → stiction_index
-        assert kpi_values["settling_time"] == Decimal(
-            "45.0"
-        )  # settling_time → settling_time
+        assert kpi_values["settling_time"] == Decimal("45.0")  # settling_time → settling_time
         assert kpi_values["output_trip_index"] == Decimal(
             "12.0"
         )  # output_trip_index → output_trip_index
@@ -2085,9 +2084,7 @@ class TestPersistSnapshotLineagePassThrough:
     @pytest.mark.asyncio
     async def test_persist_standard_snapshot_still_writes_lineage_fields(self) -> None:
         """_persist_snapshot 标准任务路径仍透传 sampling_freq/quality_policy 到 _save_snapshot。"""
-        with patch(
-            "app.tasks.kpi_calc._save_snapshot", new_callable=AsyncMock
-        ) as mock_save:
+        with patch("app.tasks.kpi_calc._save_snapshot", new_callable=AsyncMock) as mock_save:
             mock_save.return_value = {"loopId": "loop-1"}
 
             ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
@@ -2185,12 +2182,8 @@ class TestDoBackfillCancellation:
         fake_redis.hget = AsyncMock(return_value="CANCELLED")
         with (
             patch("app.core.redis.redis_client", fake_redis),
-            patch(
-                "app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock
-            ) as mock_calc,
-            patch(
-                "app.services.task_tracker.update_status", new_callable=AsyncMock
-            ),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
         ):
             result = await _do_backfill(
                 ts_start="2026-07-06T08:00:00+00:00",
@@ -2213,12 +2206,8 @@ class TestDoBackfillCancellation:
         fake_redis.hget = AsyncMock(return_value="RUNNING")
         with (
             patch("app.core.redis.redis_client", fake_redis),
-            patch(
-                "app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock
-            ) as mock_calc,
-            patch(
-                "app.services.task_tracker.update_status", new_callable=AsyncMock
-            ),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
         ):
             mock_calc.return_value = {
                 "loop_success": 1,
@@ -2248,12 +2237,8 @@ class TestDoBackfillCancellation:
         fake_redis.hget = AsyncMock(return_value="CANCELLED")  # 即使为 CANCELLED
         with (
             patch("app.core.redis.redis_client", fake_redis),
-            patch(
-                "app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock
-            ) as mock_calc,
-            patch(
-                "app.services.task_tracker.update_status", new_callable=AsyncMock
-            ),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
         ):
             mock_calc.return_value = {
                 "loop_success": 0,
@@ -2273,4 +2258,3 @@ class TestDoBackfillCancellation:
         # 2 个窗口都执行
         assert mock_calc.call_count == 2
         assert result["total_windows"] == 2
-

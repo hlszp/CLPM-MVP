@@ -13,14 +13,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 import math
 import statistics
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +29,8 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 # Reduce noise from data_planner logs
 logging.basicConfig(level=logging.WARNING)
+
+import httpx  # noqa: E402
 
 from app.contracts.data_types import (  # noqa: E402
     ControlType,
@@ -44,16 +45,9 @@ from app.contracts.data_types import (  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.tdengine import make_subtable_name  # noqa: E402
 from app.services.metric_calculator import (  # noqa: E402
-    AUXILIARY_METRIC_CODES,
-    CORE_METRIC_CODES,
-    DISCOUNT_METRIC_CODE,
     get_calculator,
 )
 from app.services.preprocessing.pipeline import PreprocessingPipeline  # noqa: E402
-from app.services.preprocessing.thresholds import get_threshold  # noqa: E402
-
-import httpx  # noqa: E402
-
 
 # Default representative loops: one per control type
 DEFAULT_LOOPS: list[tuple[str, ControlType, float, float]] = [
@@ -70,7 +64,9 @@ DEFAULT_SIZES = [1000, 5000, 10000, 30000]
 REPEAT = 3
 
 # REST API endpoint
-REST_URL = f"http://{settings.TDENGINE_HOST}:{settings.TDENGINE_PORT + 11}/rest/sql/{settings.TDENGINE_DB}"
+REST_URL = (
+    f"http://{settings.TDENGINE_HOST}:{settings.TDENGINE_PORT + 11}/rest/sql/{settings.TDENGINE_DB}"
+)
 AUTH = (settings.TDENGINE_USER, settings.TDENGINE_PASSWORD)
 
 
@@ -102,7 +98,7 @@ def query_raw_data(
         if isinstance(ts_str, str):
             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
         else:
-            ts = datetime.fromtimestamp(r[0] / 1000.0, tz=timezone.utc)
+            ts = datetime.fromtimestamp(r[0] / 1000.0, tz=UTC)
         timestamps.append(ts)
         pv.append(float(r[1]) if r[1] is not None else 0.0)
         sp.append(float(r[2]) if r[2] is not None else 0.0)
@@ -114,8 +110,15 @@ def query_raw_data(
         q.append(int(r[8]) if r[8] is not None else 1)
     return RawTimeSeries(
         timestamps=timestamps,
-        signals={"pv": pv, "sp": sp, "op": op, "mode": mode,
-                 "pid_p": pid_p, "pid_i": pid_i, "pid_d": pid_d},
+        signals={
+            "pv": pv,
+            "sp": sp,
+            "op": op,
+            "mode": mode,
+            "pid_p": pid_p,
+            "pid_i": pid_i,
+            "pid_d": pid_d,
+        },
         quality_codes={"pv_quality": q},
     )
 
@@ -168,8 +171,12 @@ def build_config_bundle(
         loop_id=loop_id,
         tag_group="CONFIG",
         sampling_freq="config",
-        timestamps=[datetime.now(timezone.utc)],
-        signals={"control_type": [control_type.value], "range_min": [range_min], "range_max": [range_max]},
+        timestamps=[datetime.now(UTC)],
+        signals={
+            "control_type": [control_type.value],
+            "range_min": [range_min],
+            "range_max": [range_max],
+        },
         validity={},
         quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
         point_count=1,
@@ -210,7 +217,7 @@ def measure_one(calc_code: str, bundle: MetricDataBundle) -> tuple[float, Any]:
 
 def infer_complexity(sizes: list[int], times_ms: list[float]) -> str:
     """Infer time complexity class from scaling behavior."""
-    valid = [(s, t) for s, t in zip(sizes, times_ms) if t > 0]
+    valid = [(s, t) for s, t in zip(sizes, times_ms, strict=False) if t > 0]
     if len(valid) < 2:
         return "n/a"
     # Compute ratio of times for largest/smallest
@@ -228,7 +235,7 @@ def infer_complexity(sizes: list[int], times_ms: list[float]) -> str:
     # O(n²):  t_ratio ≈ n_ratio²
     if t_ratio < 2:
         return "O(1)"
-    log_n_ratio = n_ratio ** 0.5  # sqrt
+    log_n_ratio = n_ratio**0.5  # sqrt
     if t_ratio < log_n_ratio * 1.5:
         return "O(√n) or O(log n)"
     if t_ratio < n_ratio * 1.3:
@@ -238,7 +245,7 @@ def infer_complexity(sizes: list[int], times_ms: list[float]) -> str:
         return "O(n log n)"
     if t_ratio < n_ratio * n_ratio * 1.3:
         return "O(n²)"
-    return f"O(n^{2 + (t_ratio / (n_ratio ** 2) - 1):.1f})"
+    return f"O(n^{2 + (t_ratio / (n_ratio**2) - 1):.1f})"
 
 
 def run_benchmark(
@@ -298,7 +305,10 @@ def run_benchmark(
         pipeline = PreprocessingPipeline(cfg)
         block = pipeline.process(raw=raw, tag_group=TagGroup.BASE)
         t_pre = (time.perf_counter() - t0) * 1000.0
-        print(f"  预处理 Pipeline: {t_pre:.1f} ms  (valid_rate={block.quality_summary.valid_rate:.4f})")
+        print(
+            f"  预处理 Pipeline: {t_pre:.1f} ms  "
+            f"(valid_rate={block.quality_summary.valid_rate:.4f})"
+        )
 
         # Build per-metric bundles (different mask/tag_group per metric)
         bundles: dict[str, MetricDataBundle] = {}
@@ -347,14 +357,16 @@ def run_benchmark(
             print(f"  {status} {code:25s} {t_med:8.2f} ms  result={res_val}")
 
     # Infer complexity
-    print(f"\n--- 复杂度推断 ---")
+    print("\n--- 复杂度推断 ---")
     for code in all_codes:
         times = results[code]["times"]
         sizes_used = results[code]["sizes"]
         complexity = infer_complexity(sizes_used, times)
         results[code]["complexity"] = complexity
-        print(f"  {code:25s} {complexity:15s}  "
-              f"sizes={sizes_used}  times={[f'{t:.2f}' for t in times]} ms")
+        print(
+            f"  {code:25s} {complexity:15s}  "
+            f"sizes={sizes_used}  times={[f'{t:.2f}' for t in times]} ms"
+        )
 
     return {
         "loop_tag": loop_tag,
@@ -368,12 +380,25 @@ def run_benchmark(
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark 12 KPI metric calculators")
-    parser.add_argument("--loop-tag", type=str, default=None,
-                        help="Specific loop tag to test (default: 4 loops, one per control type)")
-    parser.add_argument("--points", type=int, nargs="+", default=None,
-                        help="Data sizes to test (default: 1000 5000 10000 30000)")
-    parser.add_argument("--output", type=str, default=None,
-                        help="Output JSON file path (default: backend/logs/benchmark_<ts>.json)")
+    parser.add_argument(
+        "--loop-tag",
+        type=str,
+        default=None,
+        help="Specific loop tag to test (default: 4 loops, one per control type)",
+    )
+    parser.add_argument(
+        "--points",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Data sizes to test (default: 1000 5000 10000 30000)",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Output JSON file path (default: backend/logs/benchmark_<ts>.json)",
+    )
     args = parser.parse_args()
 
     sizes = args.points or DEFAULT_SIZES
@@ -398,6 +423,7 @@ def main():
         except Exception as exc:
             print(f"\n!! 回路 {tag} 基准测试失败: {exc}")
             import traceback
+
             traceback.print_exc()
 
     # Write report
@@ -412,7 +438,7 @@ def main():
     print(f"\n{'=' * 90}")
     print(f"{'指标':25s} {'回路':22s} {'类型':8s} ", end="")
     for n in sizes:
-        print(f"{'n='+str(n):>12s} ", end="")
+        print(f"{'n=' + str(n):>12s} ", end="")
     print(f"{'复杂度':>15s}")
     print("-" * 90)
     for r in all_results:

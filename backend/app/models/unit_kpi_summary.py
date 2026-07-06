@@ -67,8 +67,11 @@ class UnitKpiSummary(Base):
     # v5.3 新增（对齐 DDS v4.1）：不参评回路数 + 聚合状态
     excluded_loops: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="SUCCESS",
-        comment="聚合状态: SUCCESS=全部回路有有效评分, PARTIAL=部分回路 INCONCLUSIVE, EMPTY=无有效评分",
+        String(20),
+        nullable=False,
+        default="SUCCESS",
+        comment="聚合状态: SUCCESS=全部回路有效评分, "
+        "PARTIAL=部分回路 INCONCLUSIVE, EMPTY=无有效评分",
     )
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(

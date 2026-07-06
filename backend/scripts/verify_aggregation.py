@@ -2,7 +2,8 @@
 
 构造模拟数据：
 - 选择"急冷分离单元"(8 个回路)作为测试节点
-- 标准任务快照写入 kpi_snapshot_hourly（6 条 score=80 confidence=A + 1 条 score=90 confidence=B + 1 条 score=70 confidence=E）
+- 标准任务快照写入 kpi_snapshot_hourly
+  （6 条 score=80 confidence=A + 1 条 score=90 confidence=B + 1 条 score=70 confidence=E）
 - 自定义任务快照写入 kpi_snapshot_custom（3 条 score=50，验证不参与聚合）
 
 预期聚合结果：
@@ -17,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 
 from app.core.db import AsyncSessionLocal
 from app.models.loop import LoopLedger
@@ -50,9 +51,7 @@ async def clear_test_data(db):
         )
     )
     # 清除自定义快照（按 task_id）
-    await db.execute(
-        delete(KpiSnapshotCustom).where(KpiSnapshotCustom.task_id == CUSTOM_TASK_ID)
-    )
+    await db.execute(delete(KpiSnapshotCustom).where(KpiSnapshotCustom.task_id == CUSTOM_TASK_ID))
     # 清除节点级快照
     await db.execute(
         delete(KpiNodeSnapshotHourly).where(
@@ -68,11 +67,13 @@ async def insert_mock_data(db):
     """插入模拟快照数据"""
     # 查询测试节点下属回路
     result = await db.execute(
-        select(LoopLedger).where(
+        select(LoopLedger)
+        .where(
             LoopLedger.unit_id == TEST_NODE_ID,
             LoopLedger.is_active.is_(True),
             LoopLedger.status == "READY",
-        ).order_by(LoopLedger.tag_name)
+        )
+        .order_by(LoopLedger.tag_name)
     )
     loops = list(result.scalars().all())
     print(f"[构造] 测试节点 {TEST_NODE_ID} 下属回路数: {len(loops)}")
@@ -158,7 +159,10 @@ async def insert_mock_data(db):
         print(f"  [自定义] loop={lp.tag_name} score=50.00 (不应参与聚合)")
 
     await db.commit()
-    print(f"\n[构造] 完成: {len(standard_snapshots)} 条标准快照 + {len(custom_snapshots)} 条自定义快照")
+    print(
+        f"\n[构造] 完成: {len(standard_snapshots)} 条标准快照 + "
+        f"{len(custom_snapshots)} 条自定义快照"
+    )
     return loops
 
 
@@ -212,7 +216,9 @@ async def verify_aggregation(db, loops):
     # ── 验证点 3: 自定义任务未污染聚合 ──
     # 如果自定义任务（score=50）参与了聚合，score 会明显低于 81.43
     if actual_score > 75:
-        print(f"  [✓] 验证点3 通过: 自定义任务(score=50)未参与聚合（score={actual_score:.2f} > 75）")
+        print(
+            f"  [✓] 验证点3 通过: 自定义任务(score=50)未参与聚合（score={actual_score:.2f} > 75）"
+        )
     else:
         print(f"  [✗] 验证点3 失败: 自定义任务可能参与了聚合（score={actual_score:.2f} 偏低）")
         return False
@@ -232,7 +238,10 @@ async def verify_aggregation(db, loops):
     expected_accuracy = 80.0
     actual_accuracy = float(result["accuracy_rate"])
     if abs(actual_accuracy - expected_accuracy) < 0.1:
-        print(f"  [✓] 验证点5 通过: accuracy_rate={actual_accuracy:.2f}（期望 {expected_accuracy:.2f}）")
+        print(
+            f"  [✓] 验证点5 通过: accuracy_rate={actual_accuracy:.2f}"
+            f"（期望 {expected_accuracy:.2f}）"
+        )
     else:
         print(f"  [✗] 验证点5 失败: 期望 {expected_accuracy:.2f}，实际 {actual_accuracy:.2f}")
         return False

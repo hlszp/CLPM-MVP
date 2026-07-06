@@ -17,9 +17,10 @@ Revises: n7q8r9s0t1u2
 Create Date: 2026-07-04
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "p9r0s1t2u3v4"
@@ -88,7 +89,8 @@ def upgrade() -> None:
             sa.Boolean(),
             nullable=False,
             server_default=sa.text("true"),
-            comment="是否参与评估：true=参与综合评分与装置级聚合，false=仅计算单回路 KPI 不参与聚合",
+            comment="是否参与评估：true=参与综合评分与装置级聚合，"
+            "false=仅计算单回路 KPI 不参与聚合",
         ),
     )
 
@@ -147,13 +149,15 @@ def upgrade() -> None:
     for table_name in _TABLES_WITH_RENAMED_FIELDS:
         for old_name, new_name in _RENAMED_FIELDS:
             # 检查列是否存在（某些表可能没有所有 4 个字段）
-            # kpi_node_snapshot_* 有 stiction_coeff/settling_time/output_trip_index 但没有 fast_response_rate 的情况
-            # 实际上所有 5 张表都有这 4 个字段
+            # kpi_node_snapshot_* 可能有 stiction_coeff/settling_time/output_trip_index
+            # 但没有 fast_response_rate 的情况；实际所有 5 张表都有这 4 个字段
             op.alter_column(
                 table_name,
                 old_name,
                 new_column_name=new_name,
-                existing_type=sa.Numeric(5, 2) if old_name != "steady_state_time" and old_name != "output_travel_index" else sa.Numeric(8, 2),
+                existing_type=sa.Numeric(5, 2)
+                if old_name != "steady_state_time" and old_name != "output_travel_index"
+                else sa.Numeric(8, 2),
                 existing_nullable=True,
             )
 
@@ -166,7 +170,9 @@ def downgrade() -> None:
                 table_name,
                 new_name,
                 new_column_name=old_name,
-                existing_type=sa.Numeric(5, 2) if old_name != "steady_state_time" and old_name != "output_travel_index" else sa.Numeric(8, 2),
+                existing_type=sa.Numeric(5, 2)
+                if old_name != "steady_state_time" and old_name != "output_travel_index"
+                else sa.Numeric(8, 2),
                 existing_nullable=True,
             )
 

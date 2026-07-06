@@ -1,7 +1,7 @@
 """Dashboard aggregation endpoints (IDS v3.2 §2 — S6-PORTAL-001 BFF 层).
 
 路由清单：
-- GET /api/v1/dashboard/overview      — 工作台聚合数据（6 大 KPI + 低效回路 Top 10 + 趋势 + 待处理异常）
+- GET /api/v1/dashboard/overview      — 工作台聚合数据（6 大 KPI + 低效回路 Top 10 + 趋势 + 异常）
 - GET /api/v1/dashboard/board         — 装置级三大 KPI 看板（综合性能/平均自控率/稳定率）
 - GET /api/v1/dashboard/auto-rate-rt  — 实时自控率（每分钟刷新，来自 TDengine 最新 MODE 值）
 """
@@ -131,9 +131,7 @@ def _build_board_item(summary: UnitKpiSummary, node_name: str) -> dict:
     return {
         "nodeId": str(summary.node_id),
         "nodeName": node_name,
-        "snapshotTime": (
-            summary.snapshot_time.isoformat() if summary.snapshot_time else None
-        ),
+        "snapshotTime": (summary.snapshot_time.isoformat() if summary.snapshot_time else None),
         "avgScore": float(summary.avg_score) if summary.avg_score is not None else None,
         "autoModeRate": (
             float(summary.auto_mode_rate) if summary.auto_mode_rate is not None else None
@@ -142,28 +140,20 @@ def _build_board_item(summary: UnitKpiSummary, node_name: str) -> dict:
             float(summary.stability_rate) if summary.stability_rate is not None else None
         ),
         "effectiveAutoRate": (
-            float(summary.effective_auto_rate)
-            if summary.effective_auto_rate is not None
-            else None
+            float(summary.effective_auto_rate) if summary.effective_auto_rate is not None else None
         ),
         "accuracyRate": (
             float(summary.accuracy_rate) if summary.accuracy_rate is not None else None
         ),
         "fastRate": float(summary.fast_rate) if summary.fast_rate is not None else None,
         "goodValueRate": (
-            float(summary.good_value_rate)
-            if summary.good_value_rate is not None
-            else None
+            float(summary.good_value_rate) if summary.good_value_rate is not None else None
         ),
         "oscillationRate": (
-            float(summary.oscillation_rate)
-            if summary.oscillation_rate is not None
-            else None
+            float(summary.oscillation_rate) if summary.oscillation_rate is not None else None
         ),
         "saturationRate": (
-            float(summary.saturation_rate)
-            if summary.saturation_rate is not None
-            else None
+            float(summary.saturation_rate) if summary.saturation_rate is not None else None
         ),
         "totalLoops": summary.total_loops,
         "evaluatedLoops": summary.evaluated_loops,

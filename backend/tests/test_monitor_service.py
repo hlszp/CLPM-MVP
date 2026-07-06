@@ -459,9 +459,7 @@ class TestListLoopMonitor:
         列表展示时应返回 "Auto" 而非默认映射的 "Unknown"。
         """
         loop = _make_loop(unit_id=None)  # 跳过 plant node 查询简化 mock
-        mode_tag = _make_tag(
-            tag_id="tag-mode", tag_name="LIC-101.MODE", current_value=5
-        )
+        mode_tag = _make_tag(tag_id="tag-mode", tag_name="LIC-101.MODE", current_value=5)
         mappings = [_make_mapping(tag_role="MODE", tag_id="tag-mode")]
         # 用户配置：MODE=5 → AUTO
         mode_mapping_rows = [

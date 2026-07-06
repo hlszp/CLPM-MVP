@@ -91,17 +91,13 @@ class EngineRuleLoader:
                 return cached[1]
 
             # 查询数据库
-            result = await db.execute(
-                select(EngineRule).where(EngineRule.rule_code == rule_code)
-            )
+            result = await db.execute(select(EngineRule).where(EngineRule.rule_code == rule_code))
             rule = result.scalar_one_or_none()
             params: dict[str, Any] = {}
             if rule is not None and rule.is_enabled is not False:
                 params = dict(rule.params or {})
             else:
-                logger.warning(
-                    "EngineRule %s 不存在或已禁用，使用默认值", rule_code
-                )
+                logger.warning("EngineRule %s 不存在或已禁用，使用默认值", rule_code)
 
             self._cache[rule_code] = (now, params)
             return params

@@ -18,7 +18,6 @@ import pytest
 
 from tests.conftest import TEST_USERS, mock_current_user
 
-
 # ---------------------------------------------------------------------------
 # 测试数据
 # ---------------------------------------------------------------------------
@@ -265,9 +264,7 @@ class TestListLoopSnapshots:
         assert body["data"]["total"] == 0
         assert body["data"]["items"] == []
 
-    def test_list_snapshots_includes_all_kpi_fields(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_list_snapshots_includes_all_kpi_fields(self, client, mock_db, fake_redis) -> None:
         """响应包含所有 KPI 指标字段."""
         snap = _make_snapshot_full()
         rows = [(snap, "tag1")]
@@ -358,6 +355,5 @@ async def test_list_loop_snapshots_default_time_is_naive() -> None:
     assert len(time_values) >= 2, f"应至少有 2 个时间参数，实际: {params}"
     for tv in time_values:
         assert tv.tzinfo is None, (
-            f"默认时间范围必须为 naive datetime（数据库 ts_start 无时区），"
-            f"但收到 aware: {tv}"
+            f"默认时间范围必须为 naive datetime（数据库 ts_start 无时区），但收到 aware: {tv}"
         )

@@ -176,7 +176,9 @@ class ConfidenceEvaluator:
         ):
             logger.info(
                 "[综合评分] R 缺失或可信度 E 级，评分留空（INCONCLUSIVE）: r_result=%s",
-                "None" if r_result is None else f"value={r_result.value}, conf={r_result.confidence_level}",
+                "None"
+                if r_result is None
+                else f"value={r_result.value}, conf={r_result.confidence_level}",
             )
             if r_result and r_result.lineage:
                 lineage = r_result.lineage
@@ -207,18 +209,22 @@ class ConfidenceEvaluator:
                 weighted_sum += weight * eta
                 logger.info(
                     "[综合评分] 加权项 %s: value=%.4f eta=%.4f weight=%.3f 贡献=%.4f",
-                    code, float(val), eta, weight, weight * eta,
+                    code,
+                    float(val),
+                    eta,
+                    weight,
+                    weight * eta,
                 )
             else:
                 logger.info(
                     "[综合评分] 加权项 %s: value=%s weight=%.3f 跳过（值缺失或权重为0）",
-                    code, val, weight,
+                    code,
+                    val,
+                    weight,
                 )
 
         total_weight = a + f + s
-        logger.info(
-            "[综合评分] weighted_sum=%.4f, total_weight=%.3f", weighted_sum, total_weight
-        )
+        logger.info("[综合评分] weighted_sum=%.4f, total_weight=%.3f", weighted_sum, total_weight)
         if total_weight <= 0:
             logger.warning("[综合评分] 所有权重总和为 0，返回 0")
             return MetricResult(
@@ -238,7 +244,10 @@ class ConfidenceEvaluator:
         score = base_score * r_norm
         logger.info(
             "[综合评分] R 折扣: R=%.4f r_norm=%.4f, base_score=%.4f → score=%.4f",
-            float(r_value), r_norm, base_score, score,
+            float(r_value),
+            r_norm,
+            base_score,
+            score,
         )
 
         score = max(0.0, min(100.0, score))

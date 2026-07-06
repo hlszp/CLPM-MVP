@@ -1,4 +1,5 @@
 """backfill_kpi_range loop_ids 过滤测试."""
+
 from unittest.mock import AsyncMock, patch
 
 import pytest

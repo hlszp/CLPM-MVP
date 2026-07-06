@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import re
 
 import httpx
 from sqlalchemy import text

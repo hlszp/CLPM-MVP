@@ -5,7 +5,8 @@
 
 1. 手动模式（默认）::
 
-    cd backend && uv run python scripts/backfill_kpi.py --start "2026-06-27 00:00:00" --end "2026-06-30 10:00:00"
+    cd backend && uv run python scripts/backfill_kpi.py \
+        --start "2026-06-27 00:00:00" --end "2026-06-30 10:00:00"
 
 2. 自动检测缺失快照::
 
@@ -157,14 +158,14 @@ async def detect_missing_snapshots(lookback_hours: int) -> list[datetime]:
     from app.models.metric import KpiSnapshotHourly
 
     now = datetime.now(UTC)
-    start = (now - timedelta(hours=lookback_hours)).replace(
-        minute=0, second=0, microsecond=0
-    )
+    start = (now - timedelta(hours=lookback_hours)).replace(minute=0, second=0, microsecond=0)
 
     # 1. 查询活跃回路总数
     async with AsyncSessionLocal() as db:
         loop_count = await db.scalar(
-            select(func.count()).select_from(LoopLedger).where(
+            select(func.count())
+            .select_from(LoopLedger)
+            .where(
                 LoopLedger.is_active.is_(True),
                 LoopLedger.status == "READY",
             )
@@ -243,9 +244,7 @@ async def detect_tdengine_gaps(lookback_hours: int) -> list[dict[str, Any]]:
     from app.core.config import settings
 
     now = datetime.now(UTC)
-    start = (now - timedelta(hours=lookback_hours)).replace(
-        minute=0, second=0, microsecond=0
-    )
+    start = (now - timedelta(hours=lookback_hours)).replace(minute=0, second=0, microsecond=0)
     td_port = settings.TDENGINE_PORT + 11
     td_url = f"http://{settings.TDENGINE_HOST}:{td_port}/rest/sql/{settings.TDENGINE_DB}"
     auth = httpx.BasicAuth(settings.TDENGINE_USER, settings.TDENGINE_PASSWORD)
@@ -257,7 +256,7 @@ async def detect_tdengine_gaps(lookback_hours: int) -> list[dict[str, Any]]:
         # 1. 查询子表数
         resp = await client.post(
             td_url,
-            content="SHOW TABLES LIKE 'd_loop_%'".encode("utf-8"),
+            content=b"SHOW TABLES LIKE 'd_loop_%'",
             headers={"Content-Type": "text/plain"},
         )
         tables_data = resp.json()
@@ -303,13 +302,15 @@ async def detect_tdengine_gaps(lookback_hours: int) -> list[dict[str, Any]]:
                 tbl_name, cnt = row[0], row[1]
                 if cnt < expected * 0.9:
                     gap_ratio = 1.0 - (cnt / expected) if expected > 0 else 1.0
-                    gaps.append({
-                        "tag_name": tbl_name,
-                        "hour_start": w,
-                        "row_count": cnt,
-                        "expected": expected,
-                        "gap_ratio": gap_ratio,
-                    })
+                    gaps.append(
+                        {
+                            "tag_name": tbl_name,
+                            "hour_start": w,
+                            "row_count": cnt,
+                            "expected": expected,
+                            "gap_ratio": gap_ratio,
+                        }
+                    )
                     gap_count += 1
                     if cnt < min_rows:
                         min_rows = cnt
@@ -362,14 +363,14 @@ def trigger_backfill(
         loop_ids: 回路 ID 列表（可选）；None=全量，空列表=不触发计算
     """
     windows = gen_hourly_windows(start, end)
-    print(f"\n=== 回填计划 ===")
+    print("\n=== 回填计划 ===")
     print(f"时间范围（UTC）: {fmt_utc(start)} ~ {fmt_utc(end)}")
     print(f"小时窗口数: {len(windows)}")
-    print(f"执行方式: 触发 Celery 任务 backfill_kpi_range（worker 内串行执行）")
+    print("执行方式: 触发 Celery 任务 backfill_kpi_range（worker 内串行执行）")
     if loop_ids is not None:
         print(f"回路过滤: {len(loop_ids)} 个回路")
     else:
-        print(f"回路过滤: 全量")
+        print("回路过滤: 全量")
     print()
 
     if dry_run:
@@ -488,7 +489,7 @@ def main() -> None:
     # ── 模式 2: --last-hours N ──
     if args.last_hours is not None:
         if args.last_hours <= 0:
-            print(f"--last-hours 必须 > 0", file=sys.stderr)
+            print("--last-hours 必须 > 0", file=sys.stderr)
             sys.exit(1)
         now = datetime.now(UTC)
         end = now.replace(minute=0, second=0, microsecond=0)
@@ -505,7 +506,7 @@ def main() -> None:
         if gaps:
             print(f"\n[建议] 检测到 {len(gaps)} 个空档，建议运行回填:")
             # 找出受影响的最早和最晚时间
-            hours = sorted(set(g["hour_start"] for g in gaps))
+            hours = sorted({g["hour_start"] for g in gaps})
             earliest = hours[0]
             latest = hours[-1] + timedelta(hours=1)
             print(

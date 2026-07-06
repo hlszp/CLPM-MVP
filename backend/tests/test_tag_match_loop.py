@@ -55,9 +55,7 @@ class TestMatchTagsForLoop:
 
         async def execute_side_effect(stmt, *args, **kwargs):
             # 使用 literal_binds 让 IN 子句渲染为字面值，便于字符串匹配
-            compiled = str(
-                stmt.compile(compile_kwargs={"literal_binds": True})
-            )
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
             for name, tag in name_to_tag.items():
                 if name in compiled:
                     return _make_scalar_one_or_none(tag)
@@ -84,9 +82,7 @@ class TestMatchTagsForLoop:
         assert "TI" not in roles
         assert "TD" not in roles
 
-    def test_underscore_separator_supported(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_underscore_separator_supported(self, client, mock_db, fake_redis) -> None:
         """P3 #45：同时支持 `_` 分隔符（部分 DCS 命名约定）。"""
         tag = _make_tag("t1", "80PIC31306_PV", "PV")
         name_to_tag = {
@@ -95,9 +91,7 @@ class TestMatchTagsForLoop:
         }
 
         async def execute_side_effect(stmt, *args, **kwargs):
-            compiled = str(
-                stmt.compile(compile_kwargs={"literal_binds": True})
-            )
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
             for name, t in name_to_tag.items():
                 if name in compiled:
                     return _make_scalar_one_or_none(t)
@@ -119,9 +113,7 @@ class TestMatchTagsForLoop:
         assert data[0]["role"] == "PV"
         assert data[0]["tagName"] == "80PIC31306_PV"
 
-    def test_partial_tags_only_returns_existing(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_partial_tags_only_returns_existing(self, client, mock_db, fake_redis) -> None:
         """P3 #45：仅 PV/SP/OP/MODE 存在时（缺 PID_*），只返回 4 个。"""
         tags_by_role = {
             "PV": _make_tag("t1", "T-HDC-003-PV", "PV"),
@@ -135,9 +127,7 @@ class TestMatchTagsForLoop:
             name_to_tag[f"T-HDC-003_{role}"] = tag
 
         async def execute_side_effect(stmt, *args, **kwargs):
-            compiled = str(
-                stmt.compile(compile_kwargs={"literal_binds": True})
-            )
+            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
             for name, tag in name_to_tag.items():
                 if name in compiled:
                     return _make_scalar_one_or_none(tag)
@@ -159,13 +149,9 @@ class TestMatchTagsForLoop:
         roles = {item["role"] for item in data}
         assert roles == {"PV", "SP", "OP", "MODE"}
 
-    def test_no_matching_tags_returns_empty(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_no_matching_tags_returns_empty(self, client, mock_db, fake_redis) -> None:
         """P3 #45：无匹配测点时返回空列表（而非错误）。"""
-        mock_db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none(None)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none(None))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -178,17 +164,13 @@ class TestMatchTagsForLoop:
         assert body["code"] == "0"
         assert body["data"] == []
 
-    def test_query_count_matches_role_count(
-        self, client, mock_db, fake_redis
-    ) -> None:
+    def test_query_count_matches_role_count(self, client, mock_db, fake_redis) -> None:
         """P3 #45：查询次数 = 7（每个 role 一次），验证 role 列表完整。
 
         防止回归：如果硬编码列表恢复为旧版 7 项但包含 KP/TI/TD，
         查询次数仍是 7，但 role 值错误（由 test_returns_pid_p_pid_i_pid_d_roles 覆盖）。
         """
-        mock_db.execute = AsyncMock(
-            return_value=_make_scalar_one_or_none(None)
-        )
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none(None))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(

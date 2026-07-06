@@ -14,10 +14,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from tests.conftest import TEST_USERS, mock_current_user
-from tests.test_api_tasks import task_redis  # noqa: F401 — reuse FakeTaskRedis fixture
+from tests.test_api_tasks import task_redis  # noqa: F401, F811 — reuse FakeTaskRedis fixture
 
 
 def _mock_loop(loop_id: str, tag_name: str | None = None) -> MagicMock:
@@ -37,7 +35,7 @@ class TestBackfillTaskEvaluate:
     """POST /api/v1/tasks/backfill tests."""
 
     def test_backfill_dry_run_returns_preview(
-        self, client, task_redis, fake_redis
+        self, client, task_redis, fake_redis  # noqa: F811 — pytest fixture
     ) -> None:
         """dryRun=True 应返回预览结果，不触发 Celery."""
         fake_loops = [_mock_loop(f"loop-{i}", f"L-{i:03d}") for i in range(3)]
@@ -69,9 +67,7 @@ class TestBackfillTaskEvaluate:
         # dryRun 不应触发 Celery
         mock_task.delay.assert_not_called()
 
-    def test_backfill_submit_creates_task(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_backfill_submit_creates_task(self, client, task_redis, fake_redis) -> None:
         """dryRun=False 应创建 BACKFILL 任务并返回 taskId."""
         fake_loops = [_mock_loop("loop-1", "L-001"), _mock_loop("loop-2", "L-002")]
         with patch("app.tasks.kpi_calc.backfill_kpi_range") as mock_task:
@@ -117,9 +113,7 @@ class TestBackfillTaskEvaluate:
         assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_BACKFILL_WINDOW_TOO_LARGE"
 
-    def test_backfill_pe_engineer_forbidden(
-        self, client, task_redis, fake_redis
-    ) -> None:
+    def test_backfill_pe_engineer_forbidden(self, client, task_redis, fake_redis) -> None:
         """PE_ENGINEER 应无权限（403）."""
         with mock_current_user(TEST_USERS["pe_engineer"]):
             resp = client.post(
