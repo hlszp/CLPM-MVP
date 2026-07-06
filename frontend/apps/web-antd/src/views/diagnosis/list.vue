@@ -29,6 +29,7 @@ import {
   Select,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -327,6 +328,19 @@ function formatPercent(p: number | undefined): string {
   return `${p?.toFixed(2) ?? '0.00'}%`;
 }
 
+/**
+ * 分页总数展示（对齐 Poka-Yoke：可信度筛选为前端过滤时明确区分）
+ * - 可信度筛选激活：显示当前页过滤数 + 后端总数，避免"共 25 条但只显示 3 条"的误导
+ * - 未激活：显示后端总数
+ */
+function paginationShowTotal(apiTotal: number): string {
+  if (query.confidenceLevel) {
+    const filtered = filteredDiagnosisList.value.length;
+    return `当前页 ${filtered} 条（已按可信度过滤，后端共 ${apiTotal} 条）`;
+  }
+  return `共 ${apiTotal} 条`;
+}
+
 onMounted(() => {
   loadPlantNodes();
   loadList();
@@ -401,13 +415,15 @@ onMounted(() => {
           :options="statusOptions"
           @change="handleSearch"
         />
-        <Select
-          v-model:value="query.confidenceLevel"
-          placeholder="可信度等级"
-          style="width: 180px"
-          allow-clear
-          :options="confidenceLevelOptions"
-        />
+        <Tooltip title="该筛选仅过滤当前页数据，不影响后端查询总数">
+          <Select
+            v-model:value="query.confidenceLevel"
+            placeholder="可信度等级"
+            style="width: 180px"
+            allow-clear
+            :options="confidenceLevelOptions"
+          />
+        </Tooltip>
         <Select
           v-model:value="query.timeWindow"
           style="width: 140px"
@@ -428,7 +444,7 @@ onMounted(() => {
           pageSize: query.pageSize,
           total,
           showSizeChanger: true,
-          showTotal: (t: number) => `共 ${t} 条`,
+          showTotal: paginationShowTotal,
         }"
         :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
         :scroll="{ x: 1370 }"

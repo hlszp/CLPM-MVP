@@ -23,6 +23,7 @@ import {
   Form,
   FormItem,
   Input,
+  InputNumber,
   message,
   Modal,
   Select,
@@ -148,14 +149,17 @@ function objectToKv(
   }));
 }
 
-/** 将键值对数组转为对象 */
+/** 将键值对数组转为对象（防御性：跳过空 key 与非数字 value，对齐 Poka-Yoke） */
 function kvToObject(
   kv: { key: string; value: string }[],
 ): Record<string, number> {
   const result: Record<string, number> = {};
   for (const item of kv) {
     if (!item.key) continue;
+    if (item.value === '' || item.value === null || item.value === undefined)
+      continue;
     const num = Number(item.value);
+    if (Number.isNaN(num)) continue;
     result[item.key] = num;
   }
   return result;
@@ -452,10 +456,13 @@ onMounted(() => {
               placeholder="阈值名（如 amplitude）"
               style="width: 40%"
             />
-            <Input
+            <InputNumber
               v-model:value="item.value"
               placeholder="阈值（如 1.5）"
               style="width: 50%"
+              string-mode
+              :step="0.01"
+              :precision="6"
             />
             <Button
               type="link"
@@ -493,10 +500,13 @@ onMounted(() => {
               placeholder="参数名（如 windowSize）"
               style="width: 40%"
             />
-            <Input
+            <InputNumber
               v-model:value="item.value"
               placeholder="参数值（如 1024）"
               style="width: 50%"
+              string-mode
+              :step="1"
+              :precision="6"
             />
             <Button
               type="link"
