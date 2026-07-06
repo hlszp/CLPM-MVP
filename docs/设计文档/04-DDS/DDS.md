@@ -330,7 +330,7 @@ v3.0 中 Action Tracker 降级为诊断中心子模块，表结构保持不变�
 | id | UUID | 追踪记录主键 | PK |
 | loop_id | UUID | 关联回路 ID | FK -> loop_ledger.id |
 | diagnosis_label | VARCHAR(100) | 自动预诊结论 (如: 疑似阀门粘滞) | |
-| action_status | VARCHAR(20) | 处理状态: `PENDING`(待处理), `IN_PROGRESS`(处理中), `IGNORED`(已忽略), `RESOLVED`(已实施) | NOT NULL, DEFAULT 'PENDING' |
+| action_status | VARCHAR(20) | 处理状态: `PENDING`(待处理), `IN_PROGRESS`(处理中), `IGNORED`(已忽略), `IMPLEMENTED`(已实施) | NOT NULL, DEFAULT 'PENDING' |
 | evidence_url | VARCHAR(255) | 导出的《诊断建议书》PDF S3 存储路径 | |
 | updated_by | VARCHAR(50) | 最后操作人 (仪控工程师) | |
 | updated_at | TIMESTAMP | 状态变更时间戳 | |
