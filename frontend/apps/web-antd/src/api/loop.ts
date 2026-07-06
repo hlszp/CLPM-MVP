@@ -83,6 +83,12 @@ export namespace LoopApi {
     | 'SPEED'
     | 'TEMPERATURE';
 
+  /** 量程信息（从关联 Tag 引用，不冗余存储） */
+  export interface RangeInfo {
+    min: number | null;
+    max: number | null;
+  }
+
   /** 回路列表项（IDS v3.2 §2.2.7） */
   export interface LoopListItem {
     loopId: string;
@@ -108,6 +114,18 @@ export namespace LoopApi {
     /** @deprecated v6.1 同 score，已废弃 */
     lastScoreAt?: string;
     tagMappingStatus: TagMappingStatus;
+    /** v6.1 新增：PV 量程（从 PV Tag 引用） */
+    pvRange?: RangeInfo | null;
+    /** v6.1 新增：PV 工程单位 */
+    pvUnit?: string | null;
+    /** v6.1 新增：OP 量程（从 OP Tag 引用） */
+    opRange?: RangeInfo | null;
+    /** v6.1 新增：OP 工程单位 */
+    opUnit?: string | null;
+    /** v6.1 新增：OP 输出下限位（NULL 时取 OP Tag range_min） */
+    opOutputLowerLimit?: number | null;
+    /** v6.1 新增：OP 输出上限位（NULL 时取 OP Tag range_max） */
+    opOutputUpperLimit?: number | null;
   }
 
   /** 回路列表查询参数（IDS v3.2 §2.2.7） */
@@ -143,6 +161,10 @@ export namespace LoopApi {
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
+    /** v6.1 新增：OP 输出下限位 */
+    opOutputLowerLimit?: number | null;
+    /** v6.1 新增：OP 输出上限位 */
+    opOutputUpperLimit?: number | null;
   }
 
   /** 更新回路参数（IDS v3.2 §2.2.10） */
@@ -159,6 +181,10 @@ export namespace LoopApi {
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
+    /** v6.1 新增：OP 输出下限位 */
+    opOutputLowerLimit?: number | null;
+    /** v6.1 新增：OP 输出上限位 */
+    opOutputUpperLimit?: number | null;
   }
 
   /** 创建回路响应（IDS v3.2 §2.2.8） */

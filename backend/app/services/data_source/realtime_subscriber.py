@@ -19,13 +19,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 import websockets
 
 from app.core.config import settings
+from app.core.db import AsyncSessionLocal
 from app.core.redis import redis_client
+from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +199,7 @@ class RealtimeSubscriber:
             return []
 
     async def _cache_value(self, item: dict) -> None:
-        """将实时值缓存到 Redis + 放入 TDengine 写入缓冲区 + Pub/Sub 广播."""
+        """将实时值缓存到 Redis + 更新数据库 + 放入 TDengine 写入缓冲区 + Pub/Sub 广播."""
         tag_code = item.get("tagCode", "")
         if not tag_code:
             return
@@ -215,6 +217,9 @@ class RealtimeSubscriber:
 
         # Pub/Sub 广播给 WebSocket 端点
         await redis_client.publish(_PUBSUB_CHANNEL, value)
+
+        # 更新数据库 tag.current_value
+        await self._update_db_tag_value(tag_code, item.get("value"), item.get("quality", 0))
 
         # 放入 TDengine 写入缓冲区
         loop_part, role = self._parse_tag_code(tag_code)
@@ -238,6 +243,27 @@ class RealtimeSubscriber:
             loop_part, role = tag_code.rsplit(".", 1)
             return loop_part, role.upper()
         return tag_code, "PV"
+
+    async def _update_db_tag_value(self, tag_code: str, value: Any, quality: int) -> None:
+        """更新数据库中 TagRegistry 的 current_value 和 quality。
+
+        当 zpdev 推送实时数据时，同步更新 PostgreSQL，作为 Redis 缓存失效时的 fallback。
+        """
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    TagRegistry.__table__.update()
+                    .where(TagRegistry.tag_name == tag_code)
+                    .values(
+                        current_value=float(value) if value else None,
+                        quality=quality,
+                        last_sync_at=datetime.now(UTC),
+                    )
+                )
+                if result.rowcount > 0:
+                    await db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("更新数据库 tag 值失败 (%s): %s", tag_code, exc)
 
     async def get_cached_values(self, tag_codes: list[str]) -> list[dict]:
         """从 Redis 读取缓存的实时值.

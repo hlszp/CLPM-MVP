@@ -10,6 +10,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -92,6 +93,27 @@ class LoopLedger(Base):
         Integer,
         nullable=True,
         comment="数据保存周期（天），NULL 表示用系统默认",
+    )
+    # v6.1 新增字段：OP 输出限位（用于饱和率算法）
+    # 设计依据：docs/设计文档/00-BASELINE/loop-range-and-output-limits-design-v1.0.md §5.1
+    # 优先级：Loop 表字段 > OP Tag range_min/range_max > 默认值 0.0/100.0
+    op_output_lower_limit: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+        comment=(
+            "OP 输出下限位（用于饱和率算法）。"
+            "NULL 时取 OP Tag range_min，再 NULL 时取默认值 0.0。"
+            "应用层校验：>= OP Tag range_min 且 < op_output_upper_limit"
+        ),
+    )
+    op_output_upper_limit: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+        comment=(
+            "OP 输出上限位（用于饱和率算法）。"
+            "NULL 时取 OP Tag range_max，再 NULL 时取默认值 100.0。"
+            "应用层校验：<= OP Tag range_max 且 > op_output_lower_limit"
+        ),
     )
 
     __table_args__ = (

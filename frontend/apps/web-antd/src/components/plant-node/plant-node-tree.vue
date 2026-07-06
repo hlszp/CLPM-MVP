@@ -154,6 +154,8 @@ const treeLoading = ref(false);
 const treeSearchKeyword = ref('');
 const expandedKeys = ref<(number | string)[]>([]);
 const autoExpandParent = ref(true);
+// 树面板整体折叠状态（Card 头部右侧按钮切换）
+const treeCollapsed = ref(false);
 const selectedNode = ref<TreeNode | null>(null);
 
 // CRUD Modal
@@ -231,11 +233,43 @@ const treeStats = computed(() => {
       if (type === 'FACTORY') factoryCount++;
       else if (type === 'AREA') areaCount++;
       else if (type === 'UNIT') unitCount++;
-      totalLoops += loopCountByNode.value[n.key as string] ?? 0;
+      // 只累加根节点的回路数（loopCountByNode 已递归包含子节点）
+      // 避免父节点 + 子节点重复累加导致 totalLoops 放大
+      if (type === 'FACTORY') {
+        totalLoops += loopCountByNode.value[n.key as string] ?? 0;
+      }
       if (n.children) walk(n.children);
     }
   }
   walk(treeData.value);
+  // 无 FACTORY 时（仅有 AREA/UNIT），累加 AREA 层
+  if (factoryCount === 0) {
+    totalLoops = 0;
+    function walkArea(nodes: TreeNode[]) {
+      for (const n of nodes) {
+        const type = n.node?.type;
+        if (type === 'AREA') {
+          totalLoops += loopCountByNode.value[n.key as string] ?? 0;
+        }
+        if (n.children) walkArea(n.children);
+      }
+    }
+    walkArea(treeData.value);
+  }
+  // 既无 FACTORY 也无 AREA 时（仅有 UNIT），累加 UNIT 层
+  if (factoryCount === 0 && areaCount === 0) {
+    totalLoops = 0;
+    function walkUnit(nodes: TreeNode[]) {
+      for (const n of nodes) {
+        const type = n.node?.type;
+        if (type === 'UNIT') {
+          totalLoops += loopCountByNode.value[n.key as string] ?? 0;
+        }
+        if (n.children) walkUnit(n.children);
+      }
+    }
+    walkUnit(treeData.value);
+  }
   return {
     areaCount,
     factoryCount,
@@ -470,12 +504,12 @@ defineExpose({ loadTree, expandAll, collapseAll });
 <template>
   <Card
     class="plant-node-tree-card shrink-0"
-    :style="{ width: `${width}px` }"
+    :style="{ width: treeCollapsed ? '48px' : `${width}px` }"
     size="small"
-    :body-style="{ padding: '8px' }"
+    :body-style="{ padding: treeCollapsed ? '8px 4px' : '8px' }"
   >
     <template #title>
-      <span class="text-sm font-semibold">{{ cardTitle }}</span>
+      <span v-if="!treeCollapsed" class="text-sm font-semibold">{{ cardTitle }}</span>
     </template>
     <template #extra>
       <div class="flex gap-1">
@@ -492,23 +526,16 @@ defineExpose({ loadTree, expandAll, collapseAll });
             </template>
           </Button>
         </Tooltip>
-        <!-- 展开/折叠按钮 -->
-        <template v-if="showCollapseButtons">
-          <Tooltip title="全部展开">
-            <Button type="text" size="small" @click="expandAll">
-              <template #icon>
-                <IconifyIcon icon="ant-design:node-expand-outlined" />
-              </template>
-            </Button>
-          </Tooltip>
-          <Tooltip title="全部折叠">
-            <Button type="text" size="small" @click="collapseAll">
-              <template #icon>
-                <IconifyIcon icon="ant-design:node-collapse-outlined" />
-              </template>
-            </Button>
-          </Tooltip>
-        </template>
+        <!-- 折叠整个树形面板（向左收起） -->
+        <Tooltip :title="treeCollapsed ? '展开树面板' : '折叠树面板'">
+          <Button type="text" size="small" @click="treeCollapsed = !treeCollapsed">
+            <template #icon>
+              <IconifyIcon
+                :icon="treeCollapsed ? 'ant-design:right-outlined' : 'ant-design:left-outlined'"
+              />
+            </template>
+          </Button>
+        </Tooltip>
         <!-- CRUD 按钮：新增工厂 + 导入 + 导出 -->
         <template v-if="showCrudButtons">
           <Tooltip title="新增工厂">
@@ -549,7 +576,7 @@ defineExpose({ loadTree, expandAll, collapseAll });
 
     <!-- 头部统计栏（ZL 高密度排版风格） -->
     <div
-      v-if="showStats"
+      v-if="showStats && !treeCollapsed"
       class="mx-1 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-solid border-slate-200 pb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:border-slate-700 dark:text-slate-400"
     >
       <span>
@@ -576,10 +603,28 @@ defineExpose({ loadTree, expandAll, collapseAll });
           {{ treeStats.totalLoops }}
         </span>
       </span>
+      <!-- 统计栏右侧：展开/折叠树节点按钮（最右侧） -->
+      <template v-if="showCollapseButtons">
+        <span class="ml-auto" />
+        <Tooltip title="全部展开">
+          <Button type="text" size="small" @click="expandAll">
+            <template #icon>
+              <IconifyIcon icon="ant-design:node-expand-outlined" />
+            </template>
+          </Button>
+        </Tooltip>
+        <Tooltip title="全部折叠">
+          <Button type="text" size="small" @click="collapseAll">
+            <template #icon>
+              <IconifyIcon icon="ant-design:node-collapse-outlined" />
+            </template>
+          </Button>
+        </Tooltip>
+      </template>
     </div>
 
     <!-- 搜索框 -->
-    <div v-if="showSearch" class="mb-2 px-1">
+    <div v-if="showSearch && !treeCollapsed" class="mb-2 px-1">
       <Input
         v-model:value="treeSearchKeyword"
         placeholder="搜索工厂/装置/单元"
@@ -595,7 +640,7 @@ defineExpose({ loadTree, expandAll, collapseAll });
       </Input>
     </div>
 
-    <Spin :spinning="treeLoading">
+    <Spin v-if="!treeCollapsed" :spinning="treeLoading">
       <div class="overflow-auto" :style="{ maxHeight: maxHeight }">
         <Tree
           v-if="filteredTreeData.length > 0"

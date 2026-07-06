@@ -67,6 +67,18 @@ class LoopCreate(CamelModel):
         ),
     )
     dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
+    # v6.1 新增：OP 输出限位（用于饱和率算法）
+    # 设计依据：docs/设计文档/00-BASELINE/loop-range-and-output-limits-design-v1.0.md §6.3
+    # 应用层校验：op_output_lower_limit < op_output_upper_limit
+    # 且范围在 OP Tag range_min ~ range_max 之间
+    opOutputLowerLimit: float | None = Field(
+        None,
+        description="OP 输出下限位（NULL 时取 OP Tag range_min，再 NULL 时取默认值 0.0）",
+    )
+    opOutputUpperLimit: float | None = Field(
+        None,
+        description="OP 输出上限位（NULL 时取 OP Tag range_max，再 NULL 时取默认值 100.0）",
+    )
 
 
 class LoopUpdate(CamelModel):
@@ -95,6 +107,15 @@ class LoopUpdate(CamelModel):
         ),
     )
     dataRetentionDays: int | None = Field(None, ge=1, description="数据保存周期（天）")
+    # v6.1 新增：OP 输出限位（同 LoopCreate）
+    opOutputLowerLimit: float | None = Field(
+        None,
+        description="OP 输出下限位（NULL 时取 OP Tag range_min，再 NULL 时取默认值 0.0）",
+    )
+    opOutputUpperLimit: float | None = Field(
+        None,
+        description="OP 输出上限位（NULL 时取 OP Tag range_max，再 NULL 时取默认值 100.0）",
+    )
 
 
 class TagMappingSlot(CamelModel):
@@ -118,6 +139,13 @@ class TagMappingStatus(CamelModel):
     pid_d: bool = False
 
 
+class RangeInfo(CamelModel):
+    """量程信息（从关联 Tag 引用，不冗余存储）。"""
+
+    min: float | None = None
+    max: float | None = None
+
+
 class LoopListItem(CamelModel):
     """回路列表项。"""
 
@@ -137,6 +165,13 @@ class LoopListItem(CamelModel):
     score: float | None = None
     lastScoreAt: str | None = None
     tagMappingStatus: TagMappingStatus
+    # v6.1 新增：量程与限位（设计依据：loop-range-and-output-limits-design-v1.0.md §6.1）
+    pvRange: RangeInfo | None = Field(None, description="PV 量程（从 PV Tag 引用）")
+    pvUnit: str | None = Field(None, description="PV 工程单位")
+    opRange: RangeInfo | None = Field(None, description="OP 量程（从 OP Tag 引用）")
+    opUnit: str | None = Field(None, description="OP 工程单位")
+    opOutputLowerLimit: float | None = Field(None, description="OP 输出下限位")
+    opOutputUpperLimit: float | None = Field(None, description="OP 输出上限位")
 
 
 class LoopListData(CamelModel):
@@ -168,6 +203,13 @@ class LoopBasicInfo(CamelModel):
     dataRetentionDays: int | None = None
     scoreWeights: dict | None = None
     remark: str | None = None
+    # v6.1 新增：量程与限位（设计依据：loop-range-and-output-limits-design-v1.0.md §6.5）
+    pvRange: RangeInfo | None = Field(None, description="PV 量程（从 PV Tag 引用）")
+    pvUnit: str | None = Field(None, description="PV 工程单位")
+    opRange: RangeInfo | None = Field(None, description="OP 量程（从 OP Tag 引用）")
+    opUnit: str | None = Field(None, description="OP 工程单位")
+    opOutputLowerLimit: float | None = Field(None, description="OP 输出下限位")
+    opOutputUpperLimit: float | None = Field(None, description="OP 输出上限位")
     createdAt: str | None = None
     createdBy: str | None = None
     updatedAt: str | None = None
@@ -237,6 +279,9 @@ class LoopUpdateResult(CamelModel):
     # modeattrTagId 保留字段，未参与 KPI 计算链路（详见 models/loop.py 注释）
     modeattrTagId: str | None = None
     dataRetentionDays: int | None = None
+    # v6.1 新增：OP 输出限位（更新后返回当前值）
+    opOutputLowerLimit: float | None = None
+    opOutputUpperLimit: float | None = None
     updatedAt: str | None = None
     updatedBy: str | None = None
 
@@ -344,6 +389,7 @@ __all__ = [
     "LoopTagSlotInfo",
     "LoopUpdate",
     "LoopUpdateResult",
+    "RangeInfo",
     "ScoreWeights",
     "TagMappingSlot",
     "TagMappingStatus",

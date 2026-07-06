@@ -8,6 +8,7 @@ Create Date: 2026-07-06 14:20:00.000000
 支持 FACTORY → AREA → UNIT 三层工厂结构。
 回路挂在 UNIT 节点下。
 """
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -18,13 +19,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    """扩展 CHECK 约束：新增 AREA 类型，支持三层工厂结构。"""
-    op.execute(
-        "ALTER TABLE plant_node DROP CONSTRAINT IF EXISTS ck_plant_node_type"
-    )
+    """扩展 CHECK 约束：新增 AREA 类型，支持三层工厂结构。
+
+    保留原有 EQUIPMENT 类型，兼容已有数据。
+    """
+    op.execute("ALTER TABLE plant_node DROP CONSTRAINT IF EXISTS ck_plant_node_type")
     op.execute(
         "ALTER TABLE plant_node ADD CONSTRAINT ck_plant_node_type "
-        "CHECK (type IN ('FACTORY', 'AREA', 'UNIT'))"
+        "CHECK (type IN ('FACTORY', 'AREA', 'UNIT', 'EQUIPMENT'))"
     )
 
 
@@ -34,9 +36,7 @@ def downgrade() -> None:
     注意：若数据库中已存在 AREA 类型节点，回滚会失败。
     需先删除或转换 AREA 节点为 UNIT 类型。
     """
-    op.execute(
-        "ALTER TABLE plant_node DROP CONSTRAINT IF EXISTS ck_plant_node_type"
-    )
+    op.execute("ALTER TABLE plant_node DROP CONSTRAINT IF EXISTS ck_plant_node_type")
     op.execute(
         "ALTER TABLE plant_node ADD CONSTRAINT ck_plant_node_type "
         "CHECK (type IN ('FACTORY', 'UNIT', 'EQUIPMENT'))"

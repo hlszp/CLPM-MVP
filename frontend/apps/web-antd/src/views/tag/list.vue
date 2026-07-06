@@ -51,7 +51,7 @@ import {
   getTagListApi,
   updateTagApi,
 } from '#/api/tag';
-import { ClpmDangerConfirmModal, ClpmDataCanvas } from '#/components/clpm';
+import { ClpmDangerConfirmModal, ClpmDataCanvas, ClpmNumeric } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { realtimeWs } from '#/utils/realtime-ws';
 import { flattenNodes } from '#/utils/plant-node';
@@ -143,15 +143,15 @@ const plantNodeOptions = computed(() => {
   });
 });
 
-/** 测点类型映射（label + color） */
+/** 测点类型映射（label + color）- 使用中性色调，避免混淆状态语义色 */
 const MEASURE_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  TEMPERATURE: { label: '温度', color: 'red' },
-  PRESSURE: { label: '压力', color: 'blue' },
-  LEVEL: { label: '液位', color: 'green' },
-  FLOW: { label: '流量', color: 'cyan' },
-  ANALYSIS: { label: '分析', color: 'purple' },
-  POSITION: { label: '阀位', color: 'orange' },
-  OTHER: { label: '其他', color: 'default' },
+  TEMPERATURE: { label: '温度', color: '#FCA5A5' },
+  PRESSURE: { label: '压力', color: '#93C5FD' },
+  LEVEL: { label: '液位', color: '#86EFAC' },
+  FLOW: { label: '流量', color: '#67E8F9' },
+  ANALYSIS: { label: '分析', color: '#D8B4FE' },
+  POSITION: { label: '阀位', color: '#FDBA74' },
+  OTHER: { label: '其他', color: '#CBD5E1' },
 };
 
 const measureTypeOptions = [
@@ -162,15 +162,15 @@ const measureTypeOptions = [
   })),
 ];
 
-/** 参数类型映射（label + color） */
+/** 参数类型映射（label + color）- 使用中性色调，避免混淆状态语义色 */
 const TAG_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  PV: { label: 'PV', color: 'blue' },
-  SP: { label: 'SP', color: 'green' },
-  OP: { label: 'OP', color: 'orange' },
-  MODE: { label: 'MODE', color: 'purple' },
-  KP: { label: 'KP', color: 'cyan' },
-  TI: { label: 'TI', color: 'cyan' },
-  TD: { label: 'TD', color: 'cyan' },
+  PV: { label: 'PV', color: '#93C5FD' },
+  SP: { label: 'SP', color: '#86EFAC' },
+  OP: { label: 'OP', color: '#FDBA74' },
+  MODE: { label: 'MODE', color: '#D8B4FE' },
+  KP: { label: 'KP', color: '#67E8F9' },
+  TI: { label: 'TI', color: '#67E8F9' },
+  TD: { label: 'TD', color: '#67E8F9' },
 };
 
 const tagTypeOptions = [
@@ -208,19 +208,14 @@ const columns: TableColumnsType = [
     title: '实时值',
     dataIndex: 'currentValue',
     key: 'currentValue',
-    width: 100,
+    width: 140,
   },
   { title: '单位', dataIndex: 'unit', key: 'unit', width: 80 },
   { title: '质量戳', dataIndex: 'quality', key: 'quality', width: 110 },
   { title: '参数类型', dataIndex: 'tagType', key: 'tagType', width: 100 },
   { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 160 },
-  {
-    title: '原始ID',
-    dataIndex: 'tdengineTagId',
-    key: 'tdengineTagId',
-    width: 160,
-  },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+  { title: '同步时间', dataIndex: 'lastSyncAt', key: 'lastSyncAt', width: 160 },
+  { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ];
 
 // Modal state
@@ -394,11 +389,18 @@ async function handleViewDetail(record: TagApi.TagItem) {
 function formatTime(t?: null | string): string {
   if (!t) return '—';
   try {
-    // 强制北京时间（UTC+8）
     return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
+}
+
+function getProgressWidth(record: { currentValue?: number | null; rangeMin?: number | null; rangeMax?: number | null }): number {
+  if (record.currentValue == null || record.rangeMin == null || record.rangeMax == null) return 0;
+  const range = record.rangeMax - record.rangeMin;
+  if (range <= 0) return 0;
+  const ratio = (record.currentValue - record.rangeMin) / range;
+  return Math.min(100, Math.max(0, ratio * 100));
 }
 
 // ===== 导入导出方法 =====
@@ -595,12 +597,16 @@ onUnmounted(() => {
         }"
         :row-key="(record: TagApi.TagItem) => record.id"
         :row-selection="rowSelection"
-        :scroll="{ x: 1700 }"
-        size="middle"
+        :scroll="{ x: 1860 }"
+        :row-class-name="(record: TagApi.TagItem) => record.quality === 'BAD' ? 'tag-row--bad' : ''"
+        size="small"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'tagDescription'">
+          <template v-if="column.key === 'tagName'">
+            <ClpmNumeric :value="record.tagName" mono size="sm" />
+          </template>
+          <template v-else-if="column.key === 'tagDescription'">
             <span v-if="record.tagDescription">{{
               record.tagDescription
             }}</span>
@@ -617,21 +623,28 @@ onUnmounted(() => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'rangeMin'">
-            <span v-if="record.rangeMin != null">{{ record.rangeMin }}</span>
+            <ClpmNumeric v-if="record.rangeMin != null" :value="record.rangeMin" :precision="2" mono size="sm" />
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'rangeMax'">
-            <span v-if="record.rangeMax != null">{{ record.rangeMax }}</span>
+            <ClpmNumeric v-if="record.rangeMax != null" :value="record.rangeMax" :precision="2" mono size="sm" />
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'currentValue'">
-            <span v-if="record.currentValue != null" class="font-medium">
-              {{ record.currentValue }}
-            </span>
+            <div v-if="record.currentValue != null" class="flex flex-col gap-1">
+              <ClpmNumeric :value="record.currentValue" :precision="2" mono size="sm" :weight="600" />
+              <div v-if="record.rangeMin != null && record.rangeMax != null && record.rangeMax > record.rangeMin" class="w-full bg-gray-100 h-1 rounded-full overflow-hidden">
+                <div
+                  class="h-1 rounded-full transition-all"
+                  :class="record.quality === 'BAD' ? 'bg-gray-400' : record.quality === 'UNCERTAIN' ? 'bg-amber-400' : 'bg-emerald-500'"
+                  :style="{ width: getProgressWidth(record) + '%' }"
+                />
+              </div>
+            </div>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'unit'">
-            <span v-if="record.unit">{{ record.unit }}</span>
+            <span v-if="record.unit" class="text-xs text-gray-500">{{ record.unit }}</span>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'quality'">
@@ -649,14 +662,14 @@ onUnmounted(() => {
             <span v-if="record.unitName">{{ record.unitName }}</span>
             <span v-else class="text-gray-400">—</span>
           </template>
-          <template v-else-if="column.key === 'tdengineTagId'">
-            <span v-if="record.tdengineTagId" class="text-xs text-gray-500">
-              {{ record.tdengineTagId }}
+          <template v-else-if="column.key === 'lastSyncAt'">
+            <span v-if="record.lastSyncAt" class="text-xs text-gray-500 font-mono">
+              {{ formatTime(record.lastSyncAt) }}
             </span>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <div class="flex gap-1">
+            <div class="flex items-center gap-1">
               <Button
                 type="link"
                 size="small"
@@ -664,24 +677,26 @@ onUnmounted(() => {
               >
                 详情
               </Button>
-              <Button
-                v-permission="['ADMIN', 'IC_ENGINEER']"
-                type="link"
-                size="small"
-                @click="handleEdit(record as TagApi.TagItem)"
-              >
-                编辑
-              </Button>
-              <Button
-                v-permission="['ADMIN']"
-                type="link"
-                size="small"
-                danger
-                :disabled="(record as TagApi.TagItem).isLinked"
-                @click="openDanger(record as TagApi.TagItem)"
-              >
-                删除
-              </Button>
+              <div class="tag-row-actions">
+                <Button
+                  v-permission="['ADMIN', 'IC_ENGINEER']"
+                  type="link"
+                  size="small"
+                  @click="handleEdit(record as TagApi.TagItem)"
+                >
+                  编辑
+                </Button>
+                <Button
+                  v-permission="['ADMIN']"
+                  type="link"
+                  size="small"
+                  danger
+                  :disabled="(record as TagApi.TagItem).isLinked"
+                  @click="openDanger(record as TagApi.TagItem)"
+                >
+                  删除
+                </Button>
+              </div>
             </div>
           </template>
         </template>
@@ -873,3 +888,26 @@ onUnmounted(() => {
     />
   </Page>
 </template>
+
+<style scoped>
+.tag-row--bad {
+  background-color: rgba(244, 63, 94, 0.04);
+}
+
+.tag-row--bad:hover {
+  background-color: rgba(244, 63, 94, 0.08);
+}
+
+.tag-row-actions {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+}
+
+:deep(.ant-table-row):hover .tag-row-actions {
+  opacity: 1;
+  visibility: visible;
+}
+</style>

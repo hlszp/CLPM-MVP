@@ -56,6 +56,7 @@ import {
 import {
   ClpmColumnSettings,
   ClpmDataCanvas,
+  ClpmNumeric,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
@@ -86,15 +87,15 @@ const {
 
 // ===== 常量 =====
 
-/** 回路类型映射（label + color） */
+/** 回路类型映射（label + color）- 使用中性色调，避免混淆状态语义色 */
 const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  TEMPERATURE: { label: '温度', color: 'red' },
-  PRESSURE: { label: '压力', color: 'blue' },
-  LEVEL: { label: '液位', color: 'green' },
-  FLOW: { label: '流量', color: 'cyan' },
-  ANALYSIS: { label: '分析', color: 'purple' },
-  SPEED: { label: '速度', color: 'orange' },
-  OTHER: { label: '其他', color: 'default' },
+  TEMPERATURE: { label: '温度', color: '#FCA5A5' },
+  PRESSURE: { label: '压力', color: '#93C5FD' },
+  LEVEL: { label: '液位', color: '#86EFAC' },
+  FLOW: { label: '流量', color: '#67E8F9' },
+  ANALYSIS: { label: '分析', color: '#D8B4FE' },
+  SPEED: { label: '速度', color: '#FDBA74' },
+  OTHER: { label: '其他', color: '#CBD5E1' },
 };
 
 const loopTypeOptions = [
@@ -115,11 +116,11 @@ const trendWindowOptions: { label: string; value: LoopApi.TrendWindow }[] = [
   { label: '72h', value: 'last_72_hours' },
 ];
 
-/** KPI 状态映射 */
+/** KPI 状态映射 - 使用 ZL 语义色 */
 const kpiStatusMap: Record<string, { color: string; label: string }> = {
-  SUCCESS: { color: 'green', label: '良好' },
-  INCONCLUSIVE: { color: 'default', label: '未确定' },
-  PARTIAL: { color: 'orange', label: '部分' },
+  SUCCESS: { color: '#10B981', label: '良好' },
+  INCONCLUSIVE: { color: '#CBD5E1', label: '未确定' },
+  PARTIAL: { color: '#F59E0B', label: '部分' },
 };
 
 /** 性能 Modal 中 KPI 结果是否为 INCONCLUSIVE */
@@ -141,7 +142,7 @@ const showDataInsufficientAlert = computed(
   () => !isLoopNotReady.value && isPerfInconclusive.value,
 );
 
-/** 6 大 KPI 配置（含权重 key） */
+/** 8 大 KPI 配置（含权重 key） */
 const kpiItems: {
   desc: string;
   key: keyof LoopApi.KpiSummary;
@@ -455,12 +456,12 @@ function handleSelectLoop(record: LoopApi.MonitorListItem) {
 
 // ===== 工具函数 =====
 
-/** MODE 颜色映射：Auto=绿 / Manual=橙 / Cascade=蓝 */
+/** MODE 颜色映射：Auto=绿 / Manual=橙 / Cascade=蓝 - 使用 ZL 语义色 */
 function modeColor(modeLabel: string): string {
-  if (modeLabel === 'Auto') return 'green';
-  if (modeLabel === 'Manual') return 'orange';
-  if (modeLabel === 'Cascade') return 'blue';
-  return 'default';
+  if (modeLabel === 'Auto') return '#10B981';
+  if (modeLabel === 'Manual') return '#F59E0B';
+  if (modeLabel === 'Cascade') return '#3B82F6';
+  return '#CBD5E1';
 }
 
 /** MODE 中文标签映射：0=Manual, 1=Auto, 2=Cascade */
@@ -472,23 +473,6 @@ function modeText(record: LoopApi.MonitorListItem): string {
   if (mode === 1) return 'Auto';
   if (mode === 2) return 'Cascade';
   return '—';
-}
-
-/** OP 值格式化，带 % 后缀 */
-function formatOp(val: null | number | undefined): string {
-  if (val === null || val === undefined || Number.isNaN(val)) return '—';
-  return `${val.toFixed(2)}%`;
-}
-
-/** 数值 + 单位格式化 */
-function formatValueWithUnit(
-  val: null | number | undefined,
-  unit?: string,
-  digits = 2,
-): string {
-  if (val === null || val === undefined || Number.isNaN(val)) return '—';
-  const formatted = val.toFixed(digits);
-  return unit ? `${formatted} ${unit}` : formatted;
 }
 
 function formatTime(t: null | string | undefined): string {
@@ -950,7 +934,7 @@ onUnmounted(() => {
           }"
           :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
           :scroll="{ x: 1200 }"
-          size="middle"
+          size="small"
           :row-class-name="
             (record) =>
               selectedLoop?.loopId === record.loopId
@@ -983,27 +967,41 @@ onUnmounted(() => {
               </Tag>
             </template>
             <template v-else-if="column.key === 'sp'">
-              <span class="clpm-num">{{
-                formatValueWithUnit(
-                  (record as LoopApi.MonitorListItem).currentValues?.sp,
-                  (record as LoopApi.MonitorListItem).currentValues?.unit,
-                )
-              }}</span>
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.sp != null" class="flex items-baseline gap-1">
+                <ClpmNumeric
+                  :value="(record as LoopApi.MonitorListItem).currentValues?.sp"
+                  :precision="2"
+                  mono
+                  size="sm"
+                />
+                <span class="text-xs text-gray-500">{{ (record as LoopApi.MonitorListItem).currentValues?.unit }}</span>
+              </span>
+              <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'pv'">
-              <span class="clpm-num font-medium text-blue-600">
-                {{
-                  formatValueWithUnit(
-                    (record as LoopApi.MonitorListItem).currentValues?.pv,
-                    (record as LoopApi.MonitorListItem).currentValues?.unit,
-                  )
-                }}
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.pv != null" class="flex items-baseline gap-1">
+                <ClpmNumeric
+                  :value="(record as LoopApi.MonitorListItem).currentValues?.pv"
+                  :precision="2"
+                  mono
+                  size="sm"
+                  :weight="600"
+                />
+                <span class="text-xs text-gray-500">{{ (record as LoopApi.MonitorListItem).currentValues?.unit }}</span>
               </span>
+              <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'op'">
-              <span class="clpm-num">{{
-                formatOp((record as LoopApi.MonitorListItem).currentValues?.op)
-              }}</span>
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.op != null" class="flex items-baseline gap-0.5">
+                <ClpmNumeric
+                  :value="(record as LoopApi.MonitorListItem).currentValues?.op"
+                  :precision="2"
+                  mono
+                  size="sm"
+                />
+                <span class="text-xs text-gray-500">%</span>
+              </span>
+              <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'mode'">
               <Tag
@@ -1027,30 +1025,30 @@ onUnmounted(() => {
             <template v-else-if="column.key === 'score'">
               <span
                 v-if="(record as LoopApi.MonitorListItem).score != null"
-                class="clpm-num font-medium"
+                class="inline-flex items-center gap-1"
               >
-                {{
-                  (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—'
-                }}
+                <span
+                  class="w-2 h-2 rounded-full"
+                  :class="
+                    (record as LoopApi.MonitorListItem).score >= 80
+                      ? 'bg-emerald-500'
+                      : (record as LoopApi.MonitorListItem).score >= 60
+                        ? 'bg-amber-500'
+                        : 'bg-rose-500'
+                  "
+                />
+                <ClpmNumeric
+                  :value="(record as LoopApi.MonitorListItem).score"
+                  :precision="1"
+                  mono
+                  size="sm"
+                  :weight="600"
+                />
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'action'">
-              <div class="flex gap-1">
-                <Button
-                  type="link"
-                  size="small"
-                  @click="openTrend(record as LoopApi.MonitorListItem)"
-                >
-                  趋势
-                </Button>
-                <Button
-                  type="link"
-                  size="small"
-                  @click="openPerformance(record as LoopApi.MonitorListItem)"
-                >
-                  性能
-                </Button>
+              <div class="flex items-center gap-1">
                 <Button
                   type="link"
                   size="small"
@@ -1058,6 +1056,22 @@ onUnmounted(() => {
                 >
                   详情
                 </Button>
+                <div class="loop-row-actions">
+                  <Button
+                    type="link"
+                    size="small"
+                    @click="openTrend(record as LoopApi.MonitorListItem)"
+                  >
+                    趋势
+                  </Button>
+                  <Button
+                    type="link"
+                    size="small"
+                    @click="openPerformance(record as LoopApi.MonitorListItem)"
+                  >
+                    性能
+                  </Button>
+                </div>
               </div>
             </template>
           </template>
@@ -1133,31 +1147,45 @@ onUnmounted(() => {
           >
             <div>
               <span class="text-xs text-gray-400">PV</span>
-              <span class="clpm-num ml-2 font-medium text-blue-600">
-                {{
-                  formatValueWithUnit(
-                    trendDetail.currentValues.pv,
-                    trendDetail.currentValues.unit,
-                  )
-                }}
+              <span v-if="trendDetail.currentValues.pv != null" class="ml-2 flex items-baseline gap-1">
+                <ClpmNumeric
+                  :value="trendDetail.currentValues.pv"
+                  :precision="2"
+                  mono
+                  size="sm"
+                  :weight="600"
+                />
+                <span class="text-xs text-gray-500">{{ trendDetail.currentValues.unit }}</span>
               </span>
+              <span v-else class="ml-2 text-gray-400">—</span>
             </div>
             <div>
               <span class="text-xs text-gray-400">SP</span>
-              <span class="clpm-num ml-2 font-medium">
-                {{
-                  formatValueWithUnit(
-                    trendDetail.currentValues.sp,
-                    trendDetail.currentValues.unit,
-                  )
-                }}
+              <span v-if="trendDetail.currentValues.sp != null" class="ml-2 flex items-baseline gap-1">
+                <ClpmNumeric
+                  :value="trendDetail.currentValues.sp"
+                  :precision="2"
+                  mono
+                  size="sm"
+                  :weight="600"
+                />
+                <span class="text-xs text-gray-500">{{ trendDetail.currentValues.unit }}</span>
               </span>
+              <span v-else class="ml-2 text-gray-400">—</span>
             </div>
             <div>
               <span class="text-xs text-gray-400">OP</span>
-              <span class="clpm-num ml-2 font-medium">
-                {{ formatOp(trendDetail.currentValues.op) }}
+              <span v-if="trendDetail.currentValues.op != null" class="ml-2 flex items-baseline gap-0.5">
+                <ClpmNumeric
+                  :value="trendDetail.currentValues.op"
+                  :precision="2"
+                  mono
+                  size="sm"
+                  :weight="600"
+                />
+                <span class="text-xs text-gray-500">%</span>
               </span>
+              <span v-else class="ml-2 text-gray-400">—</span>
             </div>
             <div>
               <span class="text-xs text-gray-400">读取时间</span>
@@ -1262,23 +1290,19 @@ onUnmounted(() => {
                 综合性能指数（composite_score）
               </div>
               <div
-                class="mt-1 text-3xl font-bold"
-                :class="
-                  isPerfInconclusive
-                    ? 'text-gray-400'
-                    : {
-                        'text-green-600':
-                          (perfDetail.kpiSummary.composite_score ?? 0) >= 80,
-                        'text-orange-500':
-                          (perfDetail.kpiSummary.composite_score ?? 0) >= 60 &&
-                          (perfDetail.kpiSummary.composite_score ?? 0) < 80,
-                        'text-red-500':
-                          (perfDetail.kpiSummary.composite_score ?? 0) < 60,
-                      }
-                "
-              >
-                {{ perfDetail.kpiSummary.composite_score?.toFixed(1) ?? '—' }}
-              </div>
+              class="mt-1 text-3xl font-bold"
+              :style="{
+                color: isPerfInconclusive
+                  ? '#9CA3AF'
+                  : (perfDetail.kpiSummary.composite_score ?? 0) >= 80
+                    ? '#10B981'
+                    : (perfDetail.kpiSummary.composite_score ?? 0) >= 60
+                      ? '#F59E0B'
+                      : '#F43F5E',
+              }"
+            >
+              {{ perfDetail.kpiSummary.composite_score?.toFixed(1) ?? '—' }}
+            </div>
               <div class="mt-2 flex items-center gap-2">
                 <span class="text-xs text-gray-400">KPI 状态：</span>
                 <Tag :color="kpiStatusMap[perfDetail.kpiSummary.status]?.color">
@@ -1303,31 +1327,71 @@ onUnmounted(() => {
             :class="{ 'opacity-60': isPerfInconclusive }"
           >
             <div
-              v-for="item in kpiItems"
-              :key="item.key"
-              class="rounded border p-3"
-            >
-              <div class="flex items-center justify-between">
-                <span class="text-sm font-medium">{{ item.label }}</span>
-                <span class="text-xs text-gray-400">
-                  权重：{{
-                    item.weightKey
-                      ? (loopDetailForWeights?.basicInfo.scoreWeights?.[
-                          item.weightKey
-                        ] ?? '—')
-                      : '—'
-                  }}%
-                </span>
-              </div>
-              <div class="mt-1 text-xl font-medium">
+            v-for="item in kpiItems"
+            :key="item.key"
+            class="rounded border p-3 transition-all hover:shadow-sm"
+            :style="{
+              backgroundColor:
+                (perfDetail.kpiSummary[item.key] as null | number) == null
+                  ? 'transparent'
+                  : (perfDetail.kpiSummary[item.key] as number) >= 80
+                    ? 'rgba(16, 185, 129, 0.06)'
+                    : (perfDetail.kpiSummary[item.key] as number) >= 60
+                      ? 'rgba(245, 158, 11, 0.06)'
+                      : 'rgba(244, 63, 94, 0.06)',
+            }"
+          >
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium">{{ item.label }}</span>
+              <span class="text-xs text-gray-400">
+                权重：{{
+                  item.weightKey
+                    ? (loopDetailForWeights?.basicInfo.scoreWeights?.[
+                        item.weightKey
+                      ] ?? '—')
+                    : '—'
+                }}%
+              </span>
+            </div>
+            <div class="mt-1 flex items-center gap-2">
+              <span
+                class="text-xl font-medium"
+                :style="{
+                  color:
+                    (perfDetail.kpiSummary[item.key] as null | number) == null
+                      ? '#9CA3AF'
+                      : (perfDetail.kpiSummary[item.key] as number) >= 80
+                        ? '#10B981'
+                        : (perfDetail.kpiSummary[item.key] as number) >= 60
+                          ? '#F59E0B'
+                          : '#F43F5E',
+                }"
+              >
                 {{
                   (perfDetail.kpiSummary[item.key] as null | number)?.toFixed(
                     1,
                   ) ?? '—'
-                }}{{ item.unit }}
-              </div>
-              <div class="mt-1 text-xs text-gray-400">{{ item.desc }}</div>
+                }}
+              </span>
+              <span class="text-sm text-gray-500">{{ item.unit }}</span>
             </div>
+            <div class="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                v-if="(perfDetail.kpiSummary[item.key] as null | number) != null"
+                class="h-full rounded-full transition-all"
+                :style="{
+                  width: `${perfDetail.kpiSummary[item.key]}%`,
+                  backgroundColor:
+                    (perfDetail.kpiSummary[item.key] as number) >= 80
+                      ? '#10B981'
+                      : (perfDetail.kpiSummary[item.key] as number) >= 60
+                        ? '#F59E0B'
+                        : '#F43F5E',
+                }"
+              />
+            </div>
+            <div class="mt-1 text-xs text-gray-400">{{ item.desc }}</div>
+          </div>
           </div>
         </div>
         <div v-else class="py-12 text-center text-gray-400">暂无性能数据</div>
@@ -1396,5 +1460,18 @@ onUnmounted(() => {
 
 .clpm-status-footer strong.is-muted {
   color: hsl(var(--muted-foreground));
+}
+
+.loop-row-actions {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+}
+
+:deep(.ant-table-row):hover .loop-row-actions {
+  opacity: 1;
+  visibility: visible;
 }
 </style>
