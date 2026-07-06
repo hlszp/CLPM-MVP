@@ -30,7 +30,11 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDangerConfirmModal,
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
 import {
   createUserApi,
@@ -231,24 +235,32 @@ function handleSubmit() {
   });
 }
 
-/** 禁用用户二次确认 */
+/** 禁用用户二次确认 - 使用 ClpmDangerConfirmModal 替代 Modal.confirm */
+const disableOpen = ref(false);
+const disableTarget = ref('');
+const disableLoading = ref(false);
+/** 暂存待禁用用户（点击确认后用于 API 调用） */
+const pendingDisable = ref<SystemApi.User | null>(null);
+
 function handleDisable(record: SystemApi.User) {
-  Modal.confirm({
-    title: '确认禁用用户',
-    content: `即将禁用用户「${record.full_name}（${record.username}）」，禁用后该用户将无法登录系统。是否继续？`,
-    okText: '确认禁用',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        await deleteUserApi(record.id);
-        message.success('用户已禁用');
-        await loadList();
-      } catch {
-        // 错误已由拦截器处理
-      }
-    },
-  });
+  pendingDisable.value = record;
+  disableTarget.value = `${record.full_name}（${record.username}）`;
+  disableOpen.value = true;
+}
+
+async function handleDisableConfirm() {
+  if (!pendingDisable.value) return;
+  disableLoading.value = true;
+  try {
+    await deleteUserApi(pendingDisable.value.id);
+    message.success('用户已禁用');
+    disableOpen.value = false;
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    disableLoading.value = false;
+  }
 }
 
 /** 打开重置密码弹窗 */
@@ -499,5 +511,18 @@ onMounted(() => {
         </FormItem>
       </Form>
     </Modal>
+
+    <!-- 禁用用户二次确认 - ClpmDangerConfirmModal -->
+    <ClpmDangerConfirmModal
+      v-model:open="disableOpen"
+      title="禁用用户"
+      action="禁用"
+      :target="disableTarget"
+      impact-scope="该用户将无法登录系统、活跃会话将被终止"
+      rollback-tip="可随时重新启用"
+      :require-confirm-code="true"
+      :loading="disableLoading"
+      @confirm="handleDisableConfirm"
+    />
   </Page>
 </template>

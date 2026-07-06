@@ -583,7 +583,7 @@ onUnmounted(() => {
       <!-- 最近同步时间 -->
       <Card size="small" :loading="syncStatusLoading">
         <div class="text-xs text-gray-500">最近同步时间</div>
-        <div class="mt-2 text-lg font-semibold font-mono">
+        <div class="clpm-num mt-2 text-lg font-semibold font-mono">
           {{ lastSyncAgo }}
         </div>
         <div class="mt-2 text-xs text-gray-400">
@@ -606,7 +606,7 @@ onUnmounted(() => {
       >
         <div class="text-xs text-gray-500">同步统计</div>
         <div class="mt-2 flex items-baseline gap-2">
-          <span class="text-2xl font-bold">
+          <span class="clpm-num text-2xl font-bold">
             {{ syncStatus?.tagStats?.total ?? 0 }}
           </span>
           <span class="text-xs text-gray-400">Tag 总数</span>
@@ -722,7 +722,7 @@ onUnmounted(() => {
               <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'currentValue'">
-              {{ record.currentValue ?? '—' }}
+              <span class="clpm-num">{{ record.currentValue ?? '—' }}</span>
             </template>
             <template v-else-if="column.key === 'action'">
               <Button

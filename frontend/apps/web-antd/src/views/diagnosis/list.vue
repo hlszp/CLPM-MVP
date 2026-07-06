@@ -42,6 +42,7 @@ import {
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import { $t } from '#/locales';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -50,6 +51,7 @@ import Tracker from './tracker.vue';
 defineOptions({ name: 'DiagnosisList' });
 
 const { themeColors } = useClpmTheme();
+const { getStatusMeta } = useIndustrialStatus();
 
 /** 可信度等级（对齐 ConfidenceEvaluator A/B/C/D/E） */
 type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
@@ -89,13 +91,8 @@ const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '已忽略', value: 'IGNORED' },
 ];
 
-/** 处理状态颜色映射 */
-const statusColorMap: Record<DiagnosisApi.ActionStatus, string> = {
-  PENDING: 'gold',
-  IN_PROGRESS: 'blue',
-  IMPLEMENTED: 'green',
-  IGNORED: 'default',
-};
+/** 处理状态颜色映射（已迁移至 useIndustrialStatus，保留 statusOptions 用于下拉） */
+// const statusColorMap 已废弃，改用 useIndustrialStatus().getStatusMeta(status)
 
 /** 时间窗选项（对齐后端 _build_time_window_condition 支持的值） */
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
@@ -446,7 +443,7 @@ onMounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'compositeScore'">
-            <span class="font-medium text-blue-600">
+            <span class="clpm-num font-medium text-blue-600">
               {{ Number(record.compositeScore).toFixed(2) }}
             </span>
           </template>
@@ -467,15 +464,20 @@ onMounted(() => {
             />
           </template>
           <template v-else-if="column.key === 'fusedConfidence'">
-            <span :style="{ color: confidenceColor(record.fusedConfidence) }">
+            <span
+              class="clpm-num"
+              :style="{ color: confidenceColor(record.fusedConfidence) }"
+            >
               {{ Number(record.fusedConfidence).toFixed(2) }}
             </span>
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
-              :color="
-                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
-              "
+              :color="getStatusMeta(record.actionStatus as string).color"
+              :style="{
+                background: getStatusMeta(record.actionStatus as string).bgColor,
+                borderColor: getStatusMeta(record.actionStatus as string).borderColor,
+              }"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>

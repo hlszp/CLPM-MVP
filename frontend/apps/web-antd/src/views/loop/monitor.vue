@@ -983,15 +983,15 @@ onUnmounted(() => {
               </Tag>
             </template>
             <template v-else-if="column.key === 'sp'">
-              {{
+              <span class="clpm-num">{{
                 formatValueWithUnit(
                   (record as LoopApi.MonitorListItem).currentValues?.sp,
                   (record as LoopApi.MonitorListItem).currentValues?.unit,
                 )
-              }}
+              }}</span>
             </template>
             <template v-else-if="column.key === 'pv'">
-              <span class="font-medium text-blue-600">
+              <span class="clpm-num font-medium text-blue-600">
                 {{
                   formatValueWithUnit(
                     (record as LoopApi.MonitorListItem).currentValues?.pv,
@@ -1001,9 +1001,9 @@ onUnmounted(() => {
               </span>
             </template>
             <template v-else-if="column.key === 'op'">
-              {{
+              <span class="clpm-num">{{
                 formatOp((record as LoopApi.MonitorListItem).currentValues?.op)
-              }}
+              }}</span>
             </template>
             <template v-else-if="column.key === 'mode'">
               <Tag
@@ -1027,7 +1027,7 @@ onUnmounted(() => {
             <template v-else-if="column.key === 'score'">
               <span
                 v-if="(record as LoopApi.MonitorListItem).score != null"
-                class="font-medium"
+                class="clpm-num font-medium"
               >
                 {{
                   (record as LoopApi.MonitorListItem).score?.toFixed(1) ?? '—'
@@ -1133,7 +1133,7 @@ onUnmounted(() => {
           >
             <div>
               <span class="text-xs text-gray-400">PV</span>
-              <span class="ml-2 font-medium text-blue-600">
+              <span class="clpm-num ml-2 font-medium text-blue-600">
                 {{
                   formatValueWithUnit(
                     trendDetail.currentValues.pv,
@@ -1144,7 +1144,7 @@ onUnmounted(() => {
             </div>
             <div>
               <span class="text-xs text-gray-400">SP</span>
-              <span class="ml-2 font-medium">
+              <span class="clpm-num ml-2 font-medium">
                 {{
                   formatValueWithUnit(
                     trendDetail.currentValues.sp,
@@ -1155,7 +1155,7 @@ onUnmounted(() => {
             </div>
             <div>
               <span class="text-xs text-gray-400">OP</span>
-              <span class="ml-2 font-medium">
+              <span class="clpm-num ml-2 font-medium">
                 {{ formatOp(trendDetail.currentValues.op) }}
               </span>
             </div>
