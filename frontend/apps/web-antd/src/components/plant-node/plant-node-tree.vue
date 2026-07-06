@@ -231,11 +231,43 @@ const treeStats = computed(() => {
       if (type === 'FACTORY') factoryCount++;
       else if (type === 'AREA') areaCount++;
       else if (type === 'UNIT') unitCount++;
-      totalLoops += loopCountByNode.value[n.key as string] ?? 0;
+      // 只累加根节点的回路数（loopCountByNode 已递归包含子节点）
+      // 避免父节点 + 子节点重复累加导致 totalLoops 放大
+      if (type === 'FACTORY') {
+        totalLoops += loopCountByNode.value[n.key as string] ?? 0;
+      }
       if (n.children) walk(n.children);
     }
   }
   walk(treeData.value);
+  // 无 FACTORY 时（仅有 AREA/UNIT），累加 AREA 层
+  if (factoryCount === 0) {
+    totalLoops = 0;
+    function walkArea(nodes: TreeNode[]) {
+      for (const n of nodes) {
+        const type = n.node?.type;
+        if (type === 'AREA') {
+          totalLoops += loopCountByNode.value[n.key as string] ?? 0;
+        }
+        if (n.children) walkArea(n.children);
+      }
+    }
+    walkArea(treeData.value);
+  }
+  // 既无 FACTORY 也无 AREA 时（仅有 UNIT），累加 UNIT 层
+  if (factoryCount === 0 && areaCount === 0) {
+    totalLoops = 0;
+    function walkUnit(nodes: TreeNode[]) {
+      for (const n of nodes) {
+        const type = n.node?.type;
+        if (type === 'UNIT') {
+          totalLoops += loopCountByNode.value[n.key as string] ?? 0;
+        }
+        if (n.children) walkUnit(n.children);
+      }
+    }
+    walkUnit(treeData.value);
+  }
   return {
     areaCount,
     factoryCount,
