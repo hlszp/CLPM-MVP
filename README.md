@@ -2,13 +2,13 @@
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）。
 
-版本：**v4.0**（系统重构完成版 — 7 阶段重构 Phase 0-6 全部交付）
+版本：**v6.0**（系统重构完成版 — 7 阶段重构 Phase 0-6 全部交付 + v6.0 文档统一升级）
 
 ## 项目简介
 
 CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆盖"监控 → 评估 → 诊断 → 整定"全流程，提供：
 
-- **工作台门户**：8 大 KPI 看板 + 低效回路 Top10 + 趋势摘要 + 待办异常
+- **工作台门户**：12 项 KPI 指标看板（3+1+8 体系）+ 低效回路 Top10 + 趋势摘要 + 待办异常
 - **回路管理**：AAS Tag 同步 / 回路台账 / Tag 关联 / 实时监控
 - **性能评估**：KPI 看板 / 低效排行 / 统计分析 / 指标配置（指标定义 / 引擎规则 / 类型权重 / 级别权重 / 执行记录） / 可信度标识 / 工业桌面端驾驶舱样式
 - **诊断中心**：诊断配置 / 异常诊断（FFT 振荡检测 + D-S 证据融合）/ Action Tracker / 统计
@@ -32,7 +32,7 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
 | v4.0 核心组件 | DataPlanner（统一数据读取）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（1239 用例）+ Playwright E2E（27 用例）|
+| 测试 | pytest（1762 用例）+ Playwright E2E（27 用例）|
 
 ## 快速开始（开发环境）
 
@@ -260,10 +260,10 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 当前生产 Nginx 配置默认将 HTTP 跳转到 HTTPS，并挂载以下证书文件：
 
-- `deploy/ssl/fullchain.pem`
-- `deploy/ssl/privkey.pem`
+- `deploy/ssl/fullchain.pem`（需自行创建）
+- `deploy/ssl/privkey.pem`（需自行创建）
 
-生产部署前必须准备证书文件，或按内网试运行需求调整 `deploy/nginx.conf` 为 HTTP-only 配置后再启动。证书更新后重新构建 frontend 镜像：
+生产部署前必须准备证书文件（`deploy/ssl/` 目录默认不存在，需手动创建并放置证书），或按内网试运行需求调整 `deploy/nginx.conf` 为 HTTP-only 配置后再启动。证书更新后重新构建 frontend 镜像：
 
 ```bash
 docker compose -f docker-compose.prod.yml build frontend
@@ -283,15 +283,15 @@ docker compose -f docker-compose.prod.yml up -d
 
 | 类型 | 文件 |
 |---|---|
-| 当前 PRD | `docs/设计文档/01-PRD/PRD.md` |
-| 总体 FDS | `docs/设计文档/02-FDS/FDS.md` |
-| 交付架构设计 | `docs/设计文档/03-ADS/ADS.md` |
-| 数据模型设计 | `docs/设计文档/04-DDS/DDS.md` |
-| API 接口设计 | `docs/设计文档/05-IDS/IDS.md` |
-| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md`（v5.1） |
-| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` |
+| 当前 PRD（v6.0） | `docs/设计文档/01-PRD/PRD.md` |
+| 总体 FDS（v6.0） | `docs/设计文档/02-FDS/FDS.md` |
+| 交付架构设计（v6.0） | `docs/设计文档/03-ADS/ADS.md` |
+| 数据模型设计（v6.0） | `docs/设计文档/04-DDS/DDS.md` |
+| API 接口设计（v6.0） | `docs/设计文档/05-IDS/IDS.md` |
+| UI/UX 设计规范（v6.0） | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
+| 重构后实现契约（v2.0） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
 | **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
-| 原型设计基线 | `DESIGN.md`（v2.1，对齐实现契约 v1.0） |
+| 原型设计基线 | `DESIGN.md`（v3.0，对齐实现契约 v2.0） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 | 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` |
 | 原型开发冻结任务书 | `docs/过程文档/prototype-development-freeze-v0.1-2026-06-16.md` |
@@ -312,13 +312,13 @@ docker compose -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | **v4.0** — 7 阶段系统重构（Phase 0-6）全部完成，后端 1239 测试用例通过 |
+| 当前版本 | **v6.0** — 7 阶段系统重构（Phase 0-6）全部完成 + v6.0 文档统一升级，后端 1762 测试用例通过 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 工作台门户、回路管理（AAS tag 同步/回路创建/tag 关联/监控）、性能评估（指标配置/引擎规则/看板/排行/统计）、诊断中心（指标配置/诊断/异常跟踪/统计）、系统管理；回路整定原型页面设计 |
-| 模块架构 | 7 模块+门户：工作台/回路管理/性能评估/诊断中心/回路整定/**任务管理**/系统管理，各模块"配置→运行→分析"三态自包含 |
+| 模块架构 | 6 模块 + 1 门户：工作台/回路管理/性能评估/诊断中心/回路整定/系统管理（任务管理是性能评估子模块），各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
 | 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED），诊断中心子模块 |
-| 工程主约束 | PRD v3.1 负责产品需求；实现契约 v1.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v5.1 负责视觉与交互 |
+| 工程主约束 | PRD v6.0 负责产品需求；实现契约 v2.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.0 负责视觉与交互 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
 
@@ -333,6 +333,7 @@ docker compose -f docker-compose.prod.yml up -d
 | Phase 5 | API 接口层扩展（波形批量/DataPlanner/任务管理/诊断标签） | `39859e5` `0dfd37b` |
 | Phase 6 | 前端适配（4层架构：类型/API → 组件 → 页面 → 路由） | `86f356c` `3516641` `4bff65b` |
 | 修复 | Celery worker 任务注册修复 | `207c882` |
+| v6.0 文档统一升级 | PRD/ADS/IDS/FDS/DDS/实现契约/UIUX/DESIGN 全量升级到 v6.0；统一术语、状态机、API 路径与权限字段 | 待 commit |
 
 ## 目录说明
 
@@ -349,7 +350,7 @@ docker compose -f docker-compose.prod.yml up -d
 | `docs/设计文档/05-IDS/IDS.md` | 当前系统 API 接口设计 |
 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | 当前可视化设计与用户体验规范 |
 | `docs/设计文档/00-BASELINE/implementation-contract.md` | 重构后实现契约：IA、路由、API、权限、状态机、KPI 与阶段口径 |
-| `DESIGN.md` | 设计基线 v2.1（视觉/布局/组件/验收横切约束，对齐实现契约 v1.0） |
+| `DESIGN.md` | 设计基线 v3.0（视觉/布局/组件/验收横切约束，对齐实现契约 v2.0） |
 | `docs/过程文档/prototype-development-freeze-v0.1-2026-06-16.md` | 原型开发任务书、页面清单、样例数据和技术栈冻结 |
 | `docs/设计文档/prototype/README.md` | 原型系统代码库入口说明 |
 | `backend/` | FastAPI 后端（API + Celery 任务 + 算法引擎） |
