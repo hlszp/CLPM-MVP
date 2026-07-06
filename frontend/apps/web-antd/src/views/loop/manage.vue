@@ -1786,11 +1786,6 @@ watch(
           />
           <!-- 批量操作按钮：选中时显示（与主工具栏同行，避免页面浮动） -->
           <template v-if="selectedRowKeys.length > 0">
-            <span
-              class="inline-flex items-center rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
-            >
-              已选 {{ selectedRowKeys.length }}
-            </span>
             <ClpmToolbarButton
               v-permission="['ADMIN']"
               icon="ant-design:setting-outlined"
