@@ -133,6 +133,8 @@ async def create_loop_endpoint(
         include_in_evaluation=body.include_in_evaluation,
         modeattr_tag_id=body.modeattrTagId,
         data_retention_days=body.dataRetentionDays,
+        op_output_lower_limit=body.opOutputLowerLimit,
+        op_output_upper_limit=body.opOutputUpperLimit,
     )
     return success(data=data, message="创建成功")
 
@@ -296,7 +298,7 @@ async def update_loop_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期）。"""
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。"""
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
@@ -314,6 +316,8 @@ async def update_loop_endpoint(
         include_in_evaluation=body.include_in_evaluation,
         modeattr_tag_id=body.modeattrTagId,
         data_retention_days=body.dataRetentionDays,
+        op_output_lower_limit=body.opOutputLowerLimit,
+        op_output_upper_limit=body.opOutputUpperLimit,
     )
     return success(data=data, message="更新成功")
 

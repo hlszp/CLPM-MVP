@@ -250,6 +250,11 @@ class DataPlanner:
         # Phase 8: 按指标组装 MetricDataBundle
         bundles = self._assemble_bundles(requirements, data_blocks)
 
+        # v6.1 填充 OP 输出限位到每个 bundle 的 signals 字典
+        # 设计依据：loop-range-and-output-limits-design-v1.0.md §4.3
+        # 优先级：Loop 表字段 > OP Tag range_min/range_max > 默认值（不填充，由算法兜底）
+        await self._fill_op_output_limits(bundles, loop_id)
+
         # Phase 8 (续): 写入 L2 缓存（若启用且本次未命中）
         await self._maybe_write_l2_cache(bundles)
 
@@ -662,6 +667,74 @@ class DataPlanner:
         except Exception:  # noqa: BLE001
             # L2 写入失败不应影响主流程（缓存只是优化）
             logger.warning("DataPlanner L2 写入失败，忽略: key=%s", l2_key, exc_info=True)
+
+    async def _fill_op_output_limits(
+        self, bundles: list[MetricDataBundle], loop_id: str
+    ) -> None:
+        """v6.1 填充 OP 输出限位到每个 bundle 的 signals 字典.
+
+        优先级（设计文档 §2.3）：
+            1. Loop 表 op_output_lower_limit / op_output_upper_limit（非 NULL）
+            2. OP Tag range_min / range_max（已关联且非 NULL）
+            3. 默认值（不填充，由 SaturationRateCalculator 用 DEFAULT_OP_LOW/HIGH 兜底）
+
+        signals 字典的值统一为列表类型（对齐 _read_config_scalar 约定）。
+
+        设计依据：loop-range-and-output-limits-design-v1.0.md §4.3
+        """
+        if not bundles:
+            return
+        if self._db is None:
+            return
+
+        from sqlalchemy import select
+
+        from app.models.loop import LoopLedger, LoopTagMapping
+        from app.models.tag import TagRegistry
+
+        # 查询 Loop 表限位字段
+        loop_result = await self._db.execute(
+            select(
+                LoopLedger.op_output_lower_limit,
+                LoopLedger.op_output_upper_limit,
+            ).where(LoopLedger.id == loop_id)
+        )
+        loop_row = loop_result.first()
+        loop_lower = float(loop_row[0]) if loop_row and loop_row[0] is not None else None
+        loop_upper = float(loop_row[1]) if loop_row and loop_row[1] is not None else None
+
+        # 若 Loop 表字段为 NULL，回退到 OP Tag 量程
+        op_lower = loop_lower
+        op_upper = loop_upper
+        if op_lower is None or op_upper is None:
+            op_result = await self._db.execute(
+                select(TagRegistry.range_min, TagRegistry.range_max)
+                .join(LoopTagMapping, LoopTagMapping.tag_id == TagRegistry.id)
+                .where(
+                    LoopTagMapping.loop_id == loop_id,
+                    LoopTagMapping.tag_role == "OP",
+                )
+            )
+            op_row = op_result.first()
+            if op_row is not None:
+                if op_lower is None and op_row[0] is not None:
+                    op_lower = float(op_row[0])
+                if op_upper is None and op_row[1] is not None:
+                    op_upper = float(op_row[1])
+
+        # 填充到每个 bundle 的 signals 字典
+        for bundle in bundles:
+            if op_lower is not None:
+                bundle.data_block.signals["op_low"] = [op_lower]
+            if op_upper is not None:
+                bundle.data_block.signals["op_high"] = [op_upper]
+        if op_lower is not None or op_upper is not None:
+            logger.debug(
+                "DataPlanner 填充 OP 限位: loop=%s, op_low=%s, op_high=%s",
+                loop_id,
+                op_lower,
+                op_upper,
+            )
 
     # ------------------------------------------------------------------
     # 辅助方法

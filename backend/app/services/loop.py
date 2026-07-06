@@ -264,9 +264,31 @@ async def list_loops(
         for mapping, tag in mode_result:
             mode_map[str(mapping.loop_id)] = _mode_value_to_label(tag.current_value)
 
+    # v6.1 批量查询 PV/OP Tag 量程与单位（设计文档 §4.1）
+    # 数据来源：tag_registry.range_min/range_max/unit，通过 loop_tag_mapping JOIN
+    range_map: dict[str, dict[str, object]] = {}
+    if loop_ids:
+        range_result = await db.execute(
+            select(LoopTagMapping, TagRegistry)
+            .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+            .where(LoopTagMapping.loop_id.in_(loop_ids))
+            .where(LoopTagMapping.tag_role.in_(["PV", "OP"]))
+        )
+        for mapping, tag in range_result:
+            loop_idx = str(mapping.loop_id)
+            if loop_idx not in range_map:
+                range_map[loop_idx] = {}
+            role_key = mapping.tag_role.lower()  # "pv" / "op"
+            range_map[loop_idx][f"{role_key}_range"] = {
+                "min": float(tag.range_min) if tag.range_min is not None else None,
+                "max": float(tag.range_max) if tag.range_max is not None else None,
+            }
+            range_map[loop_idx][f"{role_key}_unit"] = tag.unit
+
     items = []
     for loop in loops:
         mappings = mappings_map.get(str(loop.id), {})
+        loop_range = range_map.get(str(loop.id), {})
         items.append(
             {
                 "loopId": str(loop.id),
@@ -286,6 +308,21 @@ async def list_loops(
                     loop.last_aas_sync_at.isoformat() if loop.last_aas_sync_at else None
                 ),
                 "tagMappingStatus": _build_tag_mapping_status(mappings),
+                # v6.1 新增：量程与限位
+                "pvRange": loop_range.get("pv_range"),
+                "pvUnit": loop_range.get("pv_unit"),
+                "opRange": loop_range.get("op_range"),
+                "opUnit": loop_range.get("op_unit"),
+                "opOutputLowerLimit": (
+                    float(loop.op_output_lower_limit)
+                    if loop.op_output_lower_limit is not None
+                    else None
+                ),
+                "opOutputUpperLimit": (
+                    float(loop.op_output_upper_limit)
+                    if loop.op_output_upper_limit is not None
+                    else None
+                ),
             }
         )
 
@@ -331,6 +368,68 @@ def _control_mode_to_values(control_mode: str) -> list[int]:
     return sorted(_CONTROL_MODE_VALUES.get(control_mode.lower(), set()))
 
 
+async def _get_op_tag_range(
+    db: AsyncSession, loop_id: str | None
+) -> tuple[float | None, float | None]:
+    """查询回路关联 OP Tag 的量程上下限。
+
+    用于 OP 输出限位校验和饱和率算法回退。
+    返回 (range_min, range_max)；若 OP Tag 未关联或量程为 NULL，返回 (None, None)。
+    """
+    if not loop_id:
+        return None, None
+    result = await db.execute(
+        select(TagRegistry.range_min, TagRegistry.range_max)
+        .join(LoopTagMapping, LoopTagMapping.tag_id == TagRegistry.id)
+        .where(LoopTagMapping.loop_id == loop_id, LoopTagMapping.role == "OP")
+    )
+    row = result.first()
+    if row is None:
+        return None, None
+    return float(row[0]) if row[0] is not None else None, (
+        float(row[1]) if row[1] is not None else None
+    )
+
+
+def _validate_op_output_limits(
+    lower: float | None,
+    upper: float | None,
+    op_range_min: float | None,
+    op_range_max: float | None,
+) -> None:
+    """校验 OP 输出限位范围。
+
+    校验规则（设计文档 §2.2）：
+    - lower < upper
+    - lower >= OP Tag range_min（若 range_min 已知）
+    - upper <= OP Tag range_max（若 range_max 已知）
+
+    Raises:
+        BizError: ERR_OP_LIMIT_OUT_OF_RANGE
+    """
+    if lower is None and upper is None:
+        return
+    if lower is not None and upper is not None and lower >= upper:
+        raise BizError(
+            code="ERR_OP_LIMIT_OUT_OF_RANGE",
+            message=f"OP 输出下限位 ({lower}) 必须小于上限位 ({upper})",
+            status_code=400,
+        )
+    if lower is not None and op_range_min is not None and lower < op_range_min:
+        raise BizError(
+            code="ERR_OP_LIMIT_OUT_OF_RANGE",
+            message=f"OP 输出下限位 ({lower}) 不能小于 OP Tag 量程下限 ({op_range_min})",
+            status_code=400,
+        )
+    if upper is not None and op_range_max is not None and upper > op_range_max:
+        raise BizError(
+            code="ERR_OP_LIMIT_OUT_OF_RANGE",
+            message=f"OP 输出上限位 ({upper}) 不能大于 OP Tag 量程上限 ({op_range_max})",
+            status_code=400,
+        )
+
+
+
 async def create_loop(
     db: AsyncSession,
     tag_name: str,
@@ -346,11 +445,14 @@ async def create_loop(
     include_in_evaluation: bool | None = None,
     modeattr_tag_id: str | None = None,
     data_retention_days: int | None = None,
+    op_output_lower_limit: float | None = None,
+    op_output_upper_limit: float | None = None,
 ) -> dict:
     """创建回路。
 
     Raises:
         BizError: ERR_LOOP_DUPLICATE (tag_name 重复) / ERR_NODE_NOT_FOUND (unit_id 不存在)
+                  / ERR_OP_LIMIT_OUT_OF_RANGE (OP 输出限位校验失败)
     """
     # tag_name 唯一校验
     existing = await db.execute(select(LoopLedger).where(LoopLedger.tag_name == tag_name))
@@ -371,6 +473,14 @@ async def create_loop(
                 status_code=404,
             )
 
+    # v6.1 校验 OP 输出限位范围（创建时 loop_id 还未生成，仅校验 lower < upper）
+    _validate_op_output_limits(
+        lower=op_output_lower_limit,
+        upper=op_output_upper_limit,
+        op_range_min=None,  # 创建时 OP Tag 未关联，无法校验范围
+        op_range_max=None,
+    )
+
     # 新建回路默认状态：INACTIVE（未激活）或 PARTIAL（已激活但无 Tag）
     status = "PARTIAL" if is_active else "INACTIVE"
     # v5.3 对齐 FDS §5.2.3 / DDS v4.1：include_in_evaluation 默认 True（参与评估）
@@ -390,6 +500,8 @@ async def create_loop(
         include_in_evaluation=include_in_evaluation,
         modeattr_tag_id=modeattr_tag_id,
         data_retention_days=data_retention_days,
+        op_output_lower_limit=op_output_lower_limit,
+        op_output_upper_limit=op_output_upper_limit,
         score_weights=score_weights,
         remark=remark,
         created_by=operator,
@@ -417,6 +529,8 @@ async def create_loop(
                 "includeInEvaluation": include_in_evaluation,
                 "modeattrTagId": modeattr_tag_id,
                 "dataRetentionDays": data_retention_days,
+                "opOutputLowerLimit": op_output_lower_limit,
+                "opOutputUpperLimit": op_output_upper_limit,
             },
             ensure_ascii=False,
         ),
@@ -435,6 +549,16 @@ async def create_loop(
         "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
+        "opOutputLowerLimit": (
+            float(loop.op_output_lower_limit)
+            if loop.op_output_lower_limit is not None
+            else None
+        ),
+        "opOutputUpperLimit": (
+            float(loop.op_output_upper_limit)
+            if loop.op_output_upper_limit is not None
+            else None
+        ),
         "isActive": bool(loop.is_active),
         "scoreWeights": loop.score_weights,
         "remark": loop.remark,
@@ -524,6 +648,26 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             if last_sync is None or ts > last_sync:
                 last_sync = ts
 
+    # v6.1 查询 PV/OP Tag 量程与单位
+    pv_range_info: dict | None = None
+    pv_unit: str | None = None
+    op_range_info: dict | None = None
+    op_unit: str | None = None
+    for role in ("PV", "OP"):
+        mapping = mappings.get(role)
+        if mapping and str(mapping.tag_id) in tags_map:
+            tag = tags_map[str(mapping.tag_id)]
+            range_info = {
+                "min": float(tag.range_min) if tag.range_min is not None else None,
+                "max": float(tag.range_max) if tag.range_max is not None else None,
+            }
+            if role == "PV":
+                pv_range_info = range_info
+                pv_unit = tag.unit
+            elif role == "OP":
+                op_range_info = range_info
+                op_unit = tag.unit
+
     return {
         "basicInfo": {
             "loopId": str(loop.id),
@@ -541,6 +685,21 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             "dataRetentionDays": loop.data_retention_days,
             "scoreWeights": loop.score_weights,
             "remark": loop.remark,
+            # v6.1 新增：量程与限位
+            "pvRange": pv_range_info,
+            "pvUnit": pv_unit,
+            "opRange": op_range_info,
+            "opUnit": op_unit,
+            "opOutputLowerLimit": (
+                float(loop.op_output_lower_limit)
+                if loop.op_output_lower_limit is not None
+                else None
+            ),
+            "opOutputUpperLimit": (
+                float(loop.op_output_upper_limit)
+                if loop.op_output_upper_limit is not None
+                else None
+            ),
             "createdAt": loop.created_at.isoformat() if loop.created_at else None,
             "createdBy": loop.created_by,
             "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
@@ -569,11 +728,13 @@ async def update_loop(
     include_in_evaluation: bool | None = None,
     modeattr_tag_id: str | None = None,
     data_retention_days: int | None = None,
+    op_output_lower_limit: float | None = None,
+    op_output_upper_limit: float | None = None,
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期）。
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。
 
     Raises:
-        BizError: ERR_LOOP_NOT_FOUND
+        BizError: ERR_LOOP_NOT_FOUND / ERR_OP_LIMIT_OUT_OF_RANGE
     """
     result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = result.scalar_one_or_none()
@@ -583,6 +744,27 @@ async def update_loop(
             message="回路不存在",
             status_code=404,
         )
+
+    # v6.1 校验 OP 输出限位范围
+    # 查询 OP Tag 量程作为校验基准
+    op_range_min, op_range_max = await _get_op_tag_range(db, loop_id)
+    # 计算生效的 lower/upper（更新后的值优先，否则保持原值）
+    effective_lower = (
+        op_output_lower_limit
+        if op_output_lower_limit is not None
+        else loop.op_output_lower_limit
+    )
+    effective_upper = (
+        op_output_upper_limit
+        if op_output_upper_limit is not None
+        else loop.op_output_upper_limit
+    )
+    _validate_op_output_limits(
+        lower=effective_lower,
+        upper=effective_upper,
+        op_range_min=op_range_min,
+        op_range_max=op_range_max,
+    )
 
     before = {
         "description": loop.description,
@@ -595,6 +777,16 @@ async def update_loop(
         "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
+        "opOutputLowerLimit": (
+            float(loop.op_output_lower_limit)
+            if loop.op_output_lower_limit is not None
+            else None
+        ),
+        "opOutputUpperLimit": (
+            float(loop.op_output_upper_limit)
+            if loop.op_output_upper_limit is not None
+            else None
+        ),
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -618,6 +810,10 @@ async def update_loop(
         loop.modeattr_tag_id = modeattr_tag_id
     if data_retention_days is not None:
         loop.data_retention_days = data_retention_days
+    if op_output_lower_limit is not None:
+        loop.op_output_lower_limit = op_output_lower_limit
+    if op_output_upper_limit is not None:
+        loop.op_output_upper_limit = op_output_upper_limit
     loop.updated_by = operator
 
     # 重新推导 status
@@ -635,6 +831,16 @@ async def update_loop(
         "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
+        "opOutputLowerLimit": (
+            float(loop.op_output_lower_limit)
+            if loop.op_output_lower_limit is not None
+            else None
+        ),
+        "opOutputUpperLimit": (
+            float(loop.op_output_upper_limit)
+            if loop.op_output_upper_limit is not None
+            else None
+        ),
         "status": new_status,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -665,6 +871,16 @@ async def update_loop(
         "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
+        "opOutputLowerLimit": (
+            float(loop.op_output_lower_limit)
+            if loop.op_output_lower_limit is not None
+            else None
+        ),
+        "opOutputUpperLimit": (
+            float(loop.op_output_upper_limit)
+            if loop.op_output_upper_limit is not None
+            else None
+        ),
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
         "updatedBy": loop.updated_by,
     }
