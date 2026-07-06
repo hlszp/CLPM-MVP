@@ -221,7 +221,13 @@ async def list_loops(
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
 
-    stmt = select(LoopLedger).order_by(LoopLedger.created_at.desc())
+    # 双键排序：created_at desc 为主序，tag_name asc 为次序保证稳定排序
+    # （批量导入的回路 created_at 可能相同，PostgreSQL 对相同键值不保证返回顺序，
+    # 加次级排序避免编辑后回路位置漂移）
+    stmt = (
+        select(LoopLedger)
+        .order_by(LoopLedger.created_at.desc(), LoopLedger.tag_name.asc())
+    )
     for cond in conditions:
         stmt = stmt.where(cond)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
