@@ -1,8 +1,13 @@
 export { default as ClpmColumnSettings } from './column-settings.vue';
 export { default as ClpmDataCanvas } from './data-canvas.vue';
+export { default as ClpmDangerConfirmModal } from './danger-confirm-modal.vue';
+export { default as ClpmKpiCard } from './kpi-card.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
+export { default as ClpmNumeric } from './numeric.vue';
 export { default as ClpmObjectSummaryBar } from './object-summary-bar.vue';
 export { default as ClpmPageToolbar } from './page-toolbar.vue';
+export { default as ClpmRealtimeStatus } from './realtime-status.vue';
+export { default as ClpmStatusPanel } from './status-panel.vue';
 export { default as ClpmTagAssociationBadge } from './tag-association-badge.vue';
 export { default as ClpmToolbarButton } from './toolbar-button.vue';
 
@@ -16,3 +21,27 @@ export {
   type ToolbarAction,
   type ToolbarVariant,
 } from './toolbar-config';
+
+/**
+ * UI-05 ClpmTable 表格规范封装（v6.1 §7.16 / §15.2 UI-05）
+ *
+ * 不新建组件，而是基于 Ant Design Table + 工业风格 utility class 提供规范：
+ *
+ * 1. 表格容器：使用 <ClpmDataCanvas> 或直接 <a-table>
+ * 2. 等宽数字列：在 column 定义中设置 `class: 'clpm-num'`，或单元格使用 <ClpmNumeric>
+ * 3. 行内进度条：使用 `.clpm-row-progress` + `.clpm-row-progress__track` + `.clpm-row-progress__fill[--ok|--warning|--error]`
+ * 4. hover reveal 次要操作：将次要操作包在 `<span class="clpm-row-actions">` 中
+ * 5. 状态标签：使用 <a-tag> + useIndustrialStatus() 提供的 meta.color/bgColor
+ * 6. 列设置：<ClpmColumnSettings> 已存在
+ * 7. 密度切换：根容器添加 `.clpm-density-touch` 切换为触控密度（44px）
+ *
+ * 详见 `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` §7.16 + §15.2 UI-05
+ */
+export const CLPM_TABLE_GUIDE = {
+  numericClass: 'clpm-num',
+  rowActionsClass: 'clpm-row-actions',
+  rowProgressClass: 'clpm-row-progress',
+  densityTouchClass: 'clpm-density-touch',
+  borderDefaultClass: 'clpm-border-default',
+  radiusIndustrialClass: 'clpm-radius-industrial',
+} as const;

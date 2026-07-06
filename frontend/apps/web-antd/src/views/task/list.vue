@@ -35,7 +35,6 @@ import {
   Input,
   message,
   Modal,
-  Popconfirm,
   Progress,
   Select,
   Space,
@@ -54,6 +53,7 @@ import {
 import { getLoopListApi } from '#/api/loop';
 import {
   ClpmDataCanvas,
+  ClpmDangerConfirmModal,
   ClpmKpiStrip,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
@@ -397,13 +397,34 @@ function handleViewDetail(taskId: string) {
   router.push(`/tasks/${taskId}`);
 }
 
-async function handleCancel(taskId: string) {
+// ===== 危险确认弹窗（ClpmDangerConfirmModal）=====
+const dangerOpen = ref(false);
+const dangerTarget = ref<TaskApi.TaskItem | null>(null);
+const dangerLoading = ref(false);
+
+/** 打开取消任务危险确认弹窗 */
+function openDanger(record: TaskApi.TaskItem) {
+  dangerTarget.value = record;
+  dangerOpen.value = true;
+}
+
+/** 取消任务危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleDangerConfirm() {
+  if (!dangerTarget.value) return;
+  const task = dangerTarget.value;
+  dangerLoading.value = true;
   try {
-    await cancelTaskApi(taskId);
+    await cancelTaskApi(task.taskId);
     message.success('任务已取消');
+    dangerOpen.value = false;
+    if (drawerVisible.value && selectedTask.value?.taskId === task.taskId) {
+      drawerVisible.value = false;
+    }
     loadList();
   } catch {
     // 错误已由拦截器处理
+  } finally {
+    dangerLoading.value = false;
   }
 }
 
@@ -766,19 +787,17 @@ onUnmounted(() => {
               >
                 详情
               </Button>
-              <Popconfirm
+              <Button
                 v-if="
                   record.status === 'PENDING' || record.status === 'RUNNING'
                 "
-                title="确认取消该任务？"
-                ok-text="确认"
-                cancel-text="取消"
-                @confirm="handleCancel(record.taskId)"
+                type="link"
+                size="small"
+                danger
+                @click.stop="openDanger(record as TaskApi.TaskItem)"
               >
-                <Button type="link" size="small" danger @click.stop>
-                  取消
-                </Button>
-              </Popconfirm>
+                取消
+              </Button>
             </Space>
           </template>
         </template>
@@ -953,5 +972,17 @@ onUnmounted(() => {
         </div>
       </div>
     </Modal>
+
+    <!-- 取消任务：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="dangerOpen"
+      title="取消任务"
+      action="取消"
+      :target="dangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
+      impact-scope="将终止正在运行的评估任务、已计算的结果保留"
+      rollback-tip="任务取消后可重新发起"
+      :loading="dangerLoading"
+      @confirm="handleDangerConfirm"
+    />
   </Page>
 </template>

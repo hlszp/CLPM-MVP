@@ -37,7 +37,6 @@ import {
   InputNumber,
   message,
   Modal,
-  Popconfirm,
   Select,
   Table,
   Tag,
@@ -52,7 +51,7 @@ import {
   getTagListApi,
   updateTagApi,
 } from '#/api/tag';
-import { ClpmDataCanvas } from '#/components/clpm';
+import { ClpmDangerConfirmModal, ClpmDataCanvas } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { realtimeWs } from '#/utils/realtime-ws';
 import { flattenNodes } from '#/utils/plant-node';
@@ -76,6 +75,28 @@ const query = reactive({
 // 批量选中
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleting = ref(false);
+
+// ===== 危险确认弹窗（ClpmDangerConfirmModal）=====
+// 单个删除
+const dangerOpen = ref(false);
+const dangerTarget = ref<TagApi.TagItem | null>(null);
+const dangerLoading = ref(false);
+// 批量删除
+const batchDangerOpen = ref(false);
+
+function openDanger(record: TagApi.TagItem) {
+  if (record.isLinked) {
+    message.warning('该测点已关联回路，不允许删除');
+    return;
+  }
+  dangerTarget.value = record;
+  dangerOpen.value = true;
+}
+
+function openBatchDanger() {
+  if (selectedRowKeys.value.length === 0) return;
+  batchDangerOpen.value = true;
+}
 
 /** 表格行选择配置 */
 const rowSelection = computed(() => ({
@@ -308,21 +329,6 @@ async function handleSubmit() {
   }
 }
 
-/** 删除测点 */
-async function handleDelete(record: TagApi.TagItem) {
-  if (record.isLinked) {
-    message.warning('该测点已关联回路，不允许删除');
-    return;
-  }
-  try {
-    await deleteTagApi(record.id);
-    message.success('测点删除成功');
-    await loadList();
-  } catch {
-    // 错误已由拦截器处理
-  }
-}
-
 /** 批量删除测点 */
 async function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) return;
@@ -341,6 +347,33 @@ async function handleBatchDelete() {
   } finally {
     batchDeleting.value = false;
   }
+}
+
+/** 单个删除危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleDangerConfirm() {
+  if (!dangerTarget.value) return;
+  const record = dangerTarget.value;
+  if (record.isLinked) {
+    message.warning('该测点已关联回路，不允许删除');
+    return;
+  }
+  dangerLoading.value = true;
+  try {
+    await deleteTagApi(record.id);
+    message.success('测点删除成功');
+    dangerOpen.value = false;
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    dangerLoading.value = false;
+  }
+}
+
+/** 批量删除危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleBatchDangerConfirm() {
+  await handleBatchDelete();
+  batchDangerOpen.value = false;
 }
 
 /** 打开详情 Drawer */
@@ -524,23 +557,18 @@ onUnmounted(() => {
         <Button type="primary" @click="handleSearch">查询</Button>
         <!-- 批量操作 + 导入导出 -->
         <div class="ml-auto flex items-center gap-2">
-          <!-- 批量删除（仅 ADMIN，选中时显示） -->
-          <Popconfirm
+          <!-- 批量删除（仅 ADMIN，选中时显示，由 ClpmDangerConfirmModal 二次确认） -->
+          <Button
             v-if="selectedRowKeys.length > 0"
             v-permission="['ADMIN']"
-            :title="
-              selectedLinkedCount > 0
-                ? `选中 ${selectedRowKeys.length} 项，其中 ${selectedLinkedCount} 个已关联回路（自动跳过），确认删除 ${selectedDeletableCount} 个未关联测点？`
-                : `确认删除选中的 ${selectedRowKeys.length} 个测点？删除后不可恢复。`
-            "
-            @confirm="handleBatchDelete"
+            danger
+            :loading="batchDeleting"
+            @click="openBatchDanger"
           >
-            <Button v-permission="['ADMIN']" danger :loading="batchDeleting">
-              批量删除<template v-if="selectedRowKeys.length > 0">
-                ({{ selectedRowKeys.length }})
-              </template>
-            </Button>
-          </Popconfirm>
+            批量删除<template v-if="selectedRowKeys.length > 0">
+              ({{ selectedRowKeys.length }})
+            </template>
+          </Button>
           <Upload v-bind="uploadProps">
             <Button
               v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -644,26 +672,16 @@ onUnmounted(() => {
               >
                 编辑
               </Button>
-              <Popconfirm
+              <Button
                 v-permission="['ADMIN']"
-                :title="
-                  (record as TagApi.TagItem).isLinked
-                    ? '该测点已关联回路，不允许删除'
-                    : '确认删除该测点？删除后不可恢复。'
-                "
+                type="link"
+                size="small"
+                danger
                 :disabled="(record as TagApi.TagItem).isLinked"
-                @confirm="handleDelete(record as TagApi.TagItem)"
+                @click="openDanger(record as TagApi.TagItem)"
               >
-                <Button
-                  v-permission="['ADMIN']"
-                  type="link"
-                  size="small"
-                  danger
-                  :disabled="(record as TagApi.TagItem).isLinked"
-                >
-                  删除
-                </Button>
-              </Popconfirm>
+                删除
+              </Button>
             </div>
           </template>
         </template>
@@ -825,5 +843,33 @@ onUnmounted(() => {
         </DescriptionsItem>
       </Descriptions>
     </Drawer>
+
+    <!-- 单个删除 Tag：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="dangerOpen"
+      title="删除 Tag"
+      action="删除"
+      :target="dangerTarget?.tagName ?? ''"
+      impact-scope="将解除该 Tag 与回路的关联、影响历史数据查询"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :loading="dangerLoading"
+      @confirm="handleDangerConfirm"
+    />
+
+    <!-- 批量删除 Tag：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDangerOpen"
+      title="批量删除 Tag"
+      action="删除"
+      :target="`选中的 ${selectedRowKeys.length} 个测点`"
+      :impact-scope="
+        selectedLinkedCount > 0
+          ? `选中 ${selectedRowKeys.length} 项，其中 ${selectedLinkedCount} 个已关联回路（自动跳过），将删除 ${selectedDeletableCount} 个未关联测点、不可恢复`
+          : `将批量删除选中的 ${selectedRowKeys.length} 个测点、不可恢复`
+      "
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :loading="batchDeleting"
+      @confirm="handleBatchDangerConfirm"
+    />
   </Page>
 </template>

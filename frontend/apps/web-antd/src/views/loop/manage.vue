@@ -35,7 +35,6 @@ import {
   InputNumber,
   message,
   Modal,
-  Popconfirm,
   RadioGroup,
   Select,
   Spin,
@@ -63,6 +62,7 @@ import { requestClient } from '#/api/request';
 import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
 import {
   ClpmDataCanvas,
+  ClpmDangerConfirmModal,
   ClpmPageToolbar,
   ClpmTagAssociationBadge,
   ClpmToolbarButton,
@@ -722,39 +722,60 @@ async function doBatchConfigSubmit() {
   }
 }
 
-/** 批量软删除（独立危险确认弹窗） */
-function handleBatchDelete() {
+// ===== 危险确认弹窗（ClpmDangerConfirmModal）=====
+// 单个删除回路
+const dangerOpen = ref(false);
+const dangerTarget = ref<LoopApi.LoopListItem | null>(null);
+const dangerLoading = ref(false);
+// 批量删除回路
+const batchDangerOpen = ref(false);
+const batchDangerLoading = ref(false);
+
+/** 打开单个删除危险确认弹窗 */
+function openDanger(record: LoopApi.LoopListItem) {
+  dangerTarget.value = record;
+  dangerOpen.value = true;
+}
+
+/** 打开批量删除危险确认弹窗 */
+function openBatchDanger() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先勾选要批量删除的回路');
     return;
   }
-  Modal.confirm({
-    title: '批量软删除确认',
-    content: `确认将选中的 ${selectedRowKeys.value.length} 个回路软删除（停用监控）？此操作可通过重新启用恢复。`,
-    okText: '确认删除',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      const loopCount = selectedRowKeys.value.length;
-      const hide = message.loading(
-        `正在软删除 ${loopCount} 个回路（停用监控）…`,
-        0,
-      );
-      try {
-        const result = await batchConfigLoopsApi({
-          loopIds: selectedRowKeys.value,
-          action: 'delete',
-        });
-        hide();
-        message.success(`批量软删除成功，共影响 ${result.affected} 个回路`);
-        selectedRowKeys.value = [];
-        await loadList();
-      } catch (error) {
-        hide();
-        console.error('操作失败:', error);
-      }
-    },
-  });
+  batchDangerOpen.value = true;
+}
+
+/** 批量删除入口（由 ClpmToolbarButton 触发，打开危险确认弹窗） */
+function handleBatchDelete() {
+  openBatchDanger();
+}
+
+/** 批量软删除危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleBatchDangerConfirm() {
+  if (selectedRowKeys.value.length === 0) return;
+  const loopCount = selectedRowKeys.value.length;
+  batchDangerLoading.value = true;
+  const hide = message.loading(
+    `正在软删除 ${loopCount} 个回路（停用监控）…`,
+    0,
+  );
+  try {
+    const result = await batchConfigLoopsApi({
+      loopIds: selectedRowKeys.value,
+      action: 'delete',
+    });
+    hide();
+    message.success(`批量软删除成功，共影响 ${result.affected} 个回路`);
+    selectedRowKeys.value = [];
+    batchDangerOpen.value = false;
+    await loadList();
+  } catch (error) {
+    hide();
+    console.error('操作失败:', error);
+  } finally {
+    batchDangerLoading.value = false;
+  }
 }
 
 // ===== 导入导出 =====
@@ -1247,17 +1268,23 @@ async function doSaveBasic() {
   }
 }
 
-/** 删除回路（独立 Popconfirm 确认，红色危险样式） */
-async function handleDelete(record: LoopApi.LoopListItem) {
+/** 删除回路危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleDangerConfirm() {
+  if (!dangerTarget.value) return;
+  const record = dangerTarget.value;
+  dangerLoading.value = true;
   try {
     await deleteLoopApi(record.loopId);
     message.success('回路删除成功');
     if (editingLoop.value?.loopId === record.loopId) {
       drawerVisible.value = false;
     }
+    dangerOpen.value = false;
     await loadList();
   } catch (error) {
     console.error('操作失败:', error);
+  } finally {
+    dangerLoading.value = false;
   }
 }
 
@@ -1590,23 +1617,15 @@ watch(activeMainTab, (tab) => {
                     编辑
                   </Button>
                 </Tooltip>
-                <Popconfirm
+                <Button
                   v-permission="['ADMIN']"
-                  title="确认删除该回路？删除后监控将停止，可通过重新启用恢复。"
-                  ok-text="确认删除"
-                  cancel-text="取消"
-                  ok-type="danger"
-                  @confirm="handleDelete(record as LoopApi.LoopListItem)"
+                  type="link"
+                  size="small"
+                  danger
+                  @click="openDanger(record as LoopApi.LoopListItem)"
                 >
-                  <Button
-                    v-permission="['ADMIN']"
-                    type="link"
-                    size="small"
-                    danger
-                  >
-                    删除
-                  </Button>
-                </Popconfirm>
+                  删除
+                </Button>
               </div>
             </template>
           </template>
@@ -2075,6 +2094,33 @@ watch(activeMainTab, (tab) => {
         </div>
       </div>
     </Modal>
+
+    <!-- 单个删除回路：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="dangerOpen"
+      title="删除回路"
+      action="删除"
+      :target="dangerTarget?.tagName ?? ''"
+      impact-scope="将级联解绑 7 个 Tag、影响历史快照、不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入回路 tag 以确认"
+      :loading="dangerLoading"
+      @confirm="handleDangerConfirm"
+    />
+
+    <!-- 批量删除回路：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDangerOpen"
+      title="批量删除回路"
+      action="删除"
+      :target="`选中的 ${selectedRowKeys.length} 个回路`"
+      impact-scope="将软删除（停用监控）选中的回路、可通过重新启用恢复"
+      rollback-tip="此操作为软删除，可通过重新启用恢复"
+      :require-confirm-code="false"
+      :loading="batchDangerLoading"
+      @confirm="handleBatchDangerConfirm"
+    />
   </Page>
 </template>
 

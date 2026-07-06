@@ -689,7 +689,8 @@ watch(isDark, () => {
       show-icon
       banner
       :closable="false"
-      message="平台只输出整定建议、证据和风险，不直接修改 DCS 参数。参数由授权人员人工实施并留痕。"
+      message="只读建议 · 人工实施 · 需留痕"
+      description="本平台不直接修改 DCS 的 P/I/D 参数，参数由授权人员人工实施并留痕。"
     />
 
     <!-- 主区域：仿真图优先（左 70%）+ 参数表单（右 30%）-->

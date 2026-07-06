@@ -58,6 +58,7 @@ import { getAutoRateRtApi, getBoardKpiApi } from '#/api/dashboard';
 import {
   ClpmDataCanvas,
   ClpmPageToolbar,
+  ClpmRealtimeStatus,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
@@ -135,6 +136,24 @@ const dataDelayText = computed(() => {
   if (diff < 1) return '<1m';
   if (diff < 60) return `${diff}m`;
   return `${Math.floor(diff / 60)}h`;
+});
+
+/** 实时状态：用于 ClpmRealtimeStatus 组件（v6.1 §15.3 P1-1） */
+const realtimeStatus = computed<
+  'delayed' | 'failed' | 'offline' | 'online' | 'refreshing'
+>(() => {
+  if (loading.value) return 'refreshing';
+  if (!lastRefreshAt.value) return 'offline';
+  const diffSec = dayjs().diff(lastRefreshAt.value, 'second');
+  // 看板刷新周期 5 分钟，超过 5 分钟视为延迟
+  if (diffSec > 300) return 'delayed';
+  return 'online';
+});
+
+/** 数据延迟（毫秒），用于 ClpmRealtimeStatus 显示 */
+const realtimeLatency = computed(() => {
+  if (!lastRefreshAt.value) return 0;
+  return dayjs().diff(lastRefreshAt.value, 'millisecond');
 });
 
 // ===== Partial 警告横幅（可折叠不可关闭）=====
@@ -832,6 +851,13 @@ onUnmounted(() => {
             @change="handleTimeWindowChange"
           />
           <template #actions>
+            <ClpmRealtimeStatus
+              :status="realtimeStatus"
+              :latency="realtimeLatency"
+              :last-refresh="lastRefreshAt?.getTime() ?? ''"
+              :auto-refresh="true"
+              :refresh-interval="300"
+            />
             <ClpmToolbarButton
               icon="refresh"
               label="刷新"
@@ -893,7 +919,7 @@ onUnmounted(() => {
                 <span
                   v-else
                   :style="{ color: scoreColor(card.value) }"
-                  class="clpm-kpi-number"
+                  class="clpm-kpi-number clpm-num"
                 >
                   {{ formatNumber(card.value, card.title === '综合性能' ? 1 : 1) }}
                 </span>
@@ -990,7 +1016,10 @@ onUnmounted(() => {
                 >
                   {{ record.rank }}
                 </Tag>
-                <span v-else>{{ record.rank }}</span>
+                <span v-else class="clpm-num">{{ record.rank }}</span>
+              </template>
+              <template v-else-if="column.key === 'tagName'">
+                <span class="clpm-num font-mono">{{ record.tagName }}</span>
               </template>
               <template v-else-if="column.key === 'score'">
                 <span
@@ -1001,14 +1030,14 @@ onUnmounted(() => {
                 </span>
                 <span
                   v-else
-                  class="font-mono font-bold"
+                  class="clpm-num font-mono font-bold"
                   :style="{ color: scoreColor(record.score) }"
                 >
                   {{ Number(record.score).toFixed(1) }}
                 </span>
               </template>
               <template v-else-if="column.key === 'steadyRate'">
-                <span class="font-mono text-xs">
+                <span class="clpm-num font-mono text-xs">
                   {{ formatPercent(record.steadyRate) }}
                 </span>
               </template>

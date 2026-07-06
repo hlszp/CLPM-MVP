@@ -55,6 +55,7 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { useIndustrialStatus } from '#/composables/use-industrial-status';
 
 import AbCompare from './ab-compare.vue';
 
@@ -78,6 +79,8 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+
+const { getStatusMeta } = useIndustrialStatus();
 
 const loading = ref(false);
 const trackerList = ref<DiagnosisApi.TrackerItem[]>([]);
@@ -106,13 +109,8 @@ const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '已忽略', value: 'IGNORED' },
 ];
 
-/** 处理状态颜色映射（对齐状态机可视化：default/processing/success/warning） */
-const statusColorMap: Record<DiagnosisApi.ActionStatus, string> = {
-  PENDING: 'default',
-  IN_PROGRESS: 'processing',
-  IMPLEMENTED: 'success',
-  IGNORED: 'warning',
-};
+/** 处理状态颜色映射（已迁移至 useIndustrialStatus，保留 statusOptions 用于下拉） */
+// const statusColorMap 已废弃，改用 useIndustrialStatus().getStatusMeta(status)
 
 /** 时间窗选项（对齐后端 _build_time_window_condition 支持的值） */
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
@@ -623,18 +621,20 @@ onBeforeUnmount(() => {
             </Tag>
           </template>
           <template v-else-if="column.key === 'compositeScore'">
-            <span class="font-medium text-blue-600">
+            <span class="clpm-num font-medium text-blue-600">
               {{ Number(record.compositeScore).toFixed(2) }}
             </span>
           </template>
           <template v-else-if="column.key === 'confidence'">
-            {{ Number(record.confidence).toFixed(2) }}
+            <span class="clpm-num">{{ Number(record.confidence).toFixed(2) }}</span>
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
-              :color="
-                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
-              "
+              :color="getStatusMeta(record.actionStatus as string).color"
+              :style="{
+                background: getStatusMeta(record.actionStatus as string).bgColor,
+                borderColor: getStatusMeta(record.actionStatus as string).borderColor,
+              }"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>
@@ -869,18 +869,20 @@ onBeforeUnmount(() => {
             </Tag>
           </template>
           <template v-else-if="column.key === 'compositeScore'">
-            <span class="font-medium text-blue-600">
+            <span class="clpm-num font-medium text-blue-600">
               {{ Number(record.compositeScore).toFixed(2) }}
             </span>
           </template>
           <template v-else-if="column.key === 'confidence'">
-            {{ Number(record.confidence).toFixed(2) }}
+            <span class="clpm-num">{{ Number(record.confidence).toFixed(2) }}</span>
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
-              :color="
-                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
-              "
+              :color="getStatusMeta(record.actionStatus as string).color"
+              :style="{
+                background: getStatusMeta(record.actionStatus as string).bgColor,
+                borderColor: getStatusMeta(record.actionStatus as string).borderColor,
+              }"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>

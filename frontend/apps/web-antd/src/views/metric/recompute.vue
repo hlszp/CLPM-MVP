@@ -22,7 +22,6 @@ import {
   Drawer,
   Form,
   FormItem,
-  Popconfirm,
   Progress,
   Select,
   Space,
@@ -42,6 +41,7 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { getLoopListApi } from '#/api/loop';
 import type { TaskApi } from '#/api/task';
+import { ClpmDangerConfirmModal } from '#/components/clpm';
 
 defineOptions({ name: 'MetricRecompute' });
 
@@ -340,25 +340,59 @@ async function handleSubmit() {
   }
 }
 
-// ============ 取消任务 ============
-async function handleCancel(taskId: string) {
+// ============ 危险确认弹窗（ClpmDangerConfirmModal）============
+// 取消重算任务
+const cancelDangerOpen = ref(false);
+const cancelDangerTarget = ref<TaskApi.TaskItem | null>(null);
+const cancelDangerLoading = ref(false);
+// 删除重算记录
+const deleteDangerOpen = ref(false);
+const deleteDangerTarget = ref<TaskApi.TaskItem | null>(null);
+const deleteDangerLoading = ref(false);
+
+/** 打开取消重算任务危险确认弹窗 */
+function openCancelDanger(record: TaskApi.TaskItem) {
+  cancelDangerTarget.value = record;
+  cancelDangerOpen.value = true;
+}
+
+/** 打开删除重算记录危险确认弹窗 */
+function openDeleteDanger(record: TaskApi.TaskItem) {
+  deleteDangerTarget.value = record;
+  deleteDangerOpen.value = true;
+}
+
+// ============ 取消任务（ClpmDangerConfirmModal @confirm）============
+async function handleCancel() {
+  if (!cancelDangerTarget.value) return;
+  const task = cancelDangerTarget.value;
+  cancelDangerLoading.value = true;
   try {
-    await cancelTaskApi(taskId);
+    await cancelTaskApi(task.taskId);
     message.success('任务已取消');
+    cancelDangerOpen.value = false;
     loadList();
   } catch (error: any) {
     message.error(error?.message || '取消失败');
+  } finally {
+    cancelDangerLoading.value = false;
   }
 }
 
-// ============ 删除任务 ============
-async function handleDelete(taskId: string) {
+// ============ 删除任务（ClpmDangerConfirmModal @confirm）============
+async function handleDelete() {
+  if (!deleteDangerTarget.value) return;
+  const task = deleteDangerTarget.value;
+  deleteDangerLoading.value = true;
   try {
-    await deleteTaskApi(taskId);
+    await deleteTaskApi(task.taskId);
     message.success('任务已删除');
+    deleteDangerOpen.value = false;
     loadList();
   } catch (error: any) {
     message.error(error?.message || '删除失败');
+  } finally {
+    deleteDangerLoading.value = false;
   }
 }
 
@@ -502,20 +536,23 @@ onUnmounted(() => {
           <span v-else class="text-gray-400">—</span>
         </template>
         <template v-else-if="column.key === 'action'">
-          <Popconfirm
+          <Button
             v-if="isTaskActive(record as TaskApi.TaskItem)"
-            title="确定取消此任务？"
-            @confirm="handleCancel(record.taskId)"
+            type="link"
+            danger
+            size="small"
+            @click="openCancelDanger(record as TaskApi.TaskItem)"
           >
-            <Button type="link" danger size="small">取消</Button>
-          </Popconfirm>
-          <Popconfirm
+            取消
+          </Button>
+          <Button
             v-else-if="isTaskTerminal(record as TaskApi.TaskItem)"
-            title="确定删除此任务记录？删除后不可恢复。"
-            @confirm="handleDelete(record.taskId)"
+            type="link"
+            size="small"
+            @click="openDeleteDanger(record as TaskApi.TaskItem)"
           >
-            <Button type="link" size="small">删除</Button>
-          </Popconfirm>
+            删除
+          </Button>
           <span v-else class="text-gray-400">—</span>
         </template>
       </template>
@@ -609,5 +646,29 @@ onUnmounted(() => {
         </Space>
       </template>
     </Drawer>
+
+    <!-- 取消重算任务：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="cancelDangerOpen"
+      title="取消重算任务"
+      action="取消"
+      :target="cancelDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
+      impact-scope="将终止正在运行的历史重算任务、已计算的结果保留"
+      rollback-tip="任务取消后可重新发起"
+      :loading="cancelDangerLoading"
+      @confirm="handleCancel"
+    />
+
+    <!-- 删除重算记录：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="deleteDangerOpen"
+      title="删除重算记录"
+      action="删除"
+      :target="deleteDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
+      impact-scope="将删除该重算任务记录、不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :loading="deleteDangerLoading"
+      @confirm="handleDelete"
+    />
   </div>
 </template>
