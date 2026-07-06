@@ -68,7 +68,6 @@ import {
   ClpmDataCanvas,
   ClpmDangerConfirmModal,
   ClpmPageToolbar,
-  ClpmTagAssociationBadge,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
@@ -334,7 +333,7 @@ const SLOT_LABELS: Record<string, string> = {
 /**
  * 动态表格列：根据 viewMode 切换
  * - compact：紧凑视图（默认）
- * - tags：Tag 详情视图（增加 Tag 关联详情列，移除类型/等级/参评/评分）
+ * - tags：Tag 详情视图（在紧凑视图基础上增加 Tag 关联详情列）
  */
 const dynamicColumns = computed<TableColumnsType>(() => {
   const baseCols: TableColumnsType = [
@@ -347,11 +346,10 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       width: 180,
     },
     { title: '监控状态', dataIndex: 'status', key: 'status', width: 100 },
-    { title: 'Tag 状态', key: 'tagMapping', width: 150 },
   ];
 
   if (viewMode.value === 'tags') {
-    // Tag 详情视图：增加 Tag 详情列
+    // Tag 详情视图：增加 Tag 关联详情列
     return [
       ...baseCols,
       { title: 'Tag 关联详情', key: 'tagDetail', width: 320 },
@@ -359,9 +357,11 @@ const dynamicColumns = computed<TableColumnsType>(() => {
     ];
   }
 
-  // 紧凑视图：类型/等级/参评 + 操作（v6.1：移除"评分"列，综合评分统一在回路监控页面查看）
+  // 紧凑视图：类型/等级/参评 + 量程/限位 + 操作
+  // v6.1：移除"Tag 状态"列（与监控状态重复，Tag 关联详情在编辑/查看抽屉中查看）
+  // v6.1：移除"评分"列（综合评分统一在回路监控页面查看）
   return [
-    ...baseCols.slice(0, 2), // tagName + description
+    ...baseCols, // tagName + description + status
     { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 70, align: 'center' },
     {
       title: '控制类型',
@@ -370,23 +370,23 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       width: 80,
       align: 'center',
     },
-    // v6.1 新增：PV 量程 / OP 量程 / OP 限位 三列
+    // v6.1 新增：PV 量程 / OP 量程 / OP 限位 三列（加宽以完整显示量程范围）
     {
       title: 'PV 量程',
       key: 'pvRange',
-      width: 110,
+      width: 130,
       align: 'center',
     },
     {
       title: 'OP 量程',
       key: 'opRange',
-      width: 110,
+      width: 130,
       align: 'center',
     },
     {
       title: 'OP 限位',
       key: 'opOutputLimits',
-      width: 100,
+      width: 130,
       align: 'center',
     },
     {
@@ -403,7 +403,6 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       width: 60,
       align: 'center',
     },
-    ...baseCols.slice(2), // status + tagMapping
     { title: '操作', key: 'action', width: 100, fixed: 'right' },
   ];
 });
@@ -2113,11 +2112,7 @@ watch(
                 :is-active="record.isActive"
               />
             </template>
-            <template v-else-if="column.key === 'tagMapping'">
-              <ClpmTagAssociationBadge
-                :status="(record as LoopApi.LoopListItem).tagMappingStatus"
-              />
-            </template>
+            <!-- v6.1：Tag 状态列已移除（与监控状态重复，Tag 关联详情在编辑/查看抽屉中查看） -->
             <template v-else-if="column.key === 'tagDetail'">
               <div class="flex flex-wrap gap-1">
                 <span
