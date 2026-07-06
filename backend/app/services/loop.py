@@ -165,6 +165,7 @@ async def list_loops(
     control_type: str | None = None,
     importance_level: int | None = None,
     monitor_status: bool | None = None,
+    include_in_evaluation: bool | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
@@ -174,6 +175,7 @@ async def list_loops(
         importance_level: 按回路重要等级筛选（1/2/3）
         control_type: 按控制类型筛选（STABLE/SLOW/FAST/LOGIC）
         monitor_status: 按监控状态筛选（True=is_active=True，False=is_active=False）
+        include_in_evaluation: 按参评状态筛选（True=参评/False=不参评）
 
     Raises:
         ValueError: is_active 与 monitor_status 同时传入但值不一致（语义冲突）
@@ -211,6 +213,8 @@ async def list_loops(
         # monitor_status=True → is_active=True（在监控中）
         # monitor_status=False → is_active=False（已停用监控）
         conditions.append(LoopLedger.is_active.is_(monitor_status))
+    if include_in_evaluation is not None:
+        conditions.append(LoopLedger.include_in_evaluation == include_in_evaluation)
     if keyword:
         kw = f"%{keyword}%"
         conditions.append(
