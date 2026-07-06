@@ -87,7 +87,7 @@ cd e2e && pnpm exec playwright test
 - **前端端口是 5666**（P2 #32 B8 修正：原 AGENTS.md 误写 5668，实际配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=5666`）
 - **前端 TypeScript 错误已全部修复**（v6.0 升级中清零，原 plant-node-tree.vue 3 个 + workbench.vue 3 个已修复）
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
-- **Git 分支**：当前在 `main` 分支
+- **Git 分支**：当前在 `main` 分支；双机协作时使用 `mb/*`（mb 机器）或 `zp/*`（zp 机器）临时分支，详见 §双机协作开发规范
 
 ## 核心决策
 
@@ -105,6 +105,229 @@ cd e2e && pnpm exec playwright test
 | 原型/前端开发 | 当前生产前端为 Vue 3 + Vite + TypeScript + vue-vben-admin；重构后路由/页面以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 文档权威性 | PRD v6.0 负责产品需求；实现契约 v2.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.0 负责视觉与交互（已对齐 v6.0 代码）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
+
+## 双机协作开发规范
+
+本项目由两台机器通过 GitHub 远程仓库协同开发，每台机器配置独立的 AI 智能体（Trae / Claude Code）。为确保协作安全、顺畅、便捷，特制定本规范。
+
+### 1. 机器与智能体配置
+
+| 机器 | 智能体 | 分支前缀 | 主要职责 |
+|---|---|---|---|
+| mb 机器 | Trae | `mb/*` | 文档治理、设计规范、架构对齐、Bug 修复 |
+| zp 机器 | Claude Code | `zp/*` | 功能开发、数据链路、CI 修复、实时仿真 |
+
+> 两台机器均从 `main` 创建临时分支，工作完成后通过 PR 合并，合并后删除分支。
+
+### 2. 分支命名规范
+
+**格式**：`<机器前缀>/<类型>-<简述>[-<编号>]`
+
+**类型枚举**（与 Conventional Commits 对齐）：
+
+| 类型 | 用途 | 示例 |
+|---|---|---|
+| `feat` | 新功能 | `mb/feat-loop-monitor`、`zp/feat-realtime-sync` |
+| `fix` | Bug 修复 | `mb/fix-timezone-display`、`zp/fix-ci-config` |
+| `doc` | 文档更新 | `mb/doc-v6-upgrade`、`zp/doc-api-spec` |
+| `refactor` | 重构 | `mb/refactor-metric-calc` |
+| `test` | 测试补充 | `zp/test-e2e-tasks` |
+| `chore` | 构建/配置 | `zp/chore-deploy-config` |
+
+**规则**：
+- 分支名使用小写英文 + 连字符，禁止中文和下划线
+- 简述不超过 30 字符
+- 单次任务的分支生命周期不超过 3 天，合并后立即删除（本地 + 远程）
+- 禁止在 `main` 分支上直接开发或提交
+
+### 3. 提交规范（Conventional Commits）
+
+**格式**：
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**类型**：`feat` / `fix` / `doc` / `refactor` / `test` / `chore` / `style` / `perf`
+
+**scope 示例**：`v6` / `ui` / `metric` / `diagnosis` / `loop` / `task` / `ci` / `data`
+
+**规则**：
+- Subject 不超过 50 字符，使用祈使句（如"修复时区显示"而非"修复了时区显示"）
+- Body 解释 "为什么" 而非 "做了什么"（diff 已说明做了什么）
+- 涉及多文件大改动时，按逻辑单元拆分多个 commit
+- 单个 commit 不超过 500 行 diff（自动化生成文件如 lock 文件除外）
+
+### 4. 推送与 PR 合并流程
+
+**推送规则**：
+- 临时分支首次推送：`git push -u origin <branch-name>`
+- 后续推送：`git push origin <branch-name>`
+- **禁止** `git push --force` 到任何分支（包括临时分支），如需重写历史请先与对方机器沟通
+- **禁止**直接 `git push origin main`，所有 main 更新必须通过 PR
+
+**PR 合并流程**：
+
+1. 推送临时分支到 origin
+2. 使用 `gh pr create` 创建 PR，标题遵循 Conventional Commits 格式
+3. PR Body 必须包含：
+   - 变更概述（1-2 句）
+   - 变更范围（文件清单或模块清单）
+   - 验证结果（测试通过情况、type-check、build 等）
+   - 关联 issue（如有）
+4. 等待 CI 通过（Backend CI + Frontend CI）
+5. CI 通过后，由对方机器或自己 review（小改动可自合并）
+6. 使用 `gh pr merge <PR号> --merge` 合并（保留分支历史，不使用 squash）
+7. 合并后删除临时分支（本地 + 远程）：
+   ```bash
+   git checkout main && git pull origin main
+   git branch -D <branch-name>
+   git push origin --delete <branch-name>
+   ```
+
+**PR 合并决策矩阵**：
+
+| 改动规模 | Review 要求 | 合并方式 |
+|---|---|---|
+| 纯文档（*.md） | 自合并即可 | `gh pr merge --merge` |
+| 单文件小改动（<50 行） | 自合并即可 | `gh pr merge --merge` |
+| 多文件改动 | 建议对方 review | `gh pr merge --merge` |
+| 架构/数据模型变更 | 必须对方 review | `gh pr merge --merge` |
+| 紧急修复（hotfix） | 自合并，事后通知对方 | `gh pr merge --merge` |
+
+### 5. 每日同步流程
+
+**目标**：避免分支长期偏离 main，减少冲突积累。
+
+**每日开始工作前（早同步）**：
+
+```bash
+# 1. 切到 main 拉取最新
+git checkout main && git pull origin main
+
+# 2. 切到工作分支，merge main 进来
+git checkout <branch-name>
+git merge main -m "chore: 同步 main 到工作分支"
+
+# 3. 解决冲突（如有），运行测试确认
+cd backend && uv run pytest -q --tb=no
+cd frontend && pnpm run check:type
+
+# 4. 推送同步后的分支
+git push origin <branch-name>
+```
+
+**每日结束工作前（晚同步）**：
+
+```bash
+# 1. 提交当日工作
+git add <files>
+git commit -m "<type>(<scope>): <subject>"
+
+# 2. 推送到 origin
+git push origin <branch-name>
+
+# 3. 如任务完成，创建 PR
+gh pr create --base main --head <branch-name> --title "..." --body "..."
+```
+
+**冲突解决原则**：
+- 同一文件冲突，优先联系对方机器确认意图
+- 文档冲突以"版本号更高"或"最近设计决策"为准
+- 代码冲突以"测试通过"为最终判据
+- 无法判断时，创建临时分支讨论，不强行合并
+
+### 6. 工作分配原则
+
+**职责划分**（柔性，非强制）：
+
+| 模块 | mb 机器（Trae） | zp 机器（Claude Code） |
+|---|---|---|
+| 设计文档（PRD/FDS/ADS/DDS/IDS/UIUX） | 主 | 协 |
+| 实现契约 / DESIGN.md | 主 | 协 |
+| 后端 API + 业务逻辑 | 协 | 主 |
+| 前端页面 + 组件 | 主或协 | 主或协 |
+| 数据链路 + TDengine | 协 | 主 |
+| CI/CD + 部署 | 协 | 主 |
+| 测试用例 | 协 | 主 |
+| Bug 修复 | 主或协 | 主或协 |
+
+**避免并行修改同一文件**：
+- 开始任务前，先 `git pull origin main` 确认对方是否有相关改动
+- 如对方有未合并的 PR 涉及相同文件，先沟通协调
+- 大改动（>500 行）开始前在工作分支创建 issue 或 PR 草稿，标注 "WIP"
+
+### 7. 安全规则（红线）
+
+**绝对禁止**：
+- ❌ `git push --force` 到 `main` 或他人分支
+- ❌ 直接 `git push origin main`（必须通过 PR）
+- ❌ `git reset --hard` 后推送共享分支
+- ❌ 在 `main` 分支上直接 commit
+- ❌ 删除他人的工作分支（除非已合并且对方确认）
+- ❌ 修改 `.git/config` 或 git hooks 不通知对方
+
+**需要确认**：
+- ⚠️ 修改 `package.json` / `pyproject.toml` 添加新依赖（可能影响对方环境）
+- ⚠️ 修改 `docker-compose*.yml`（可能影响对方容器）
+- ⚠️ 修改 `.env.example` 或环境变量约定
+- ⚠️ 数据库 schema 变更（Alembic migration）
+- ⚠️ 修改 CI workflow（`.github/workflows/*.yml`）
+
+**允许**：
+- ✅ 在自己的临时分支上自由实验
+- ✅ 修改自己分支的文件
+- ✅ 强制推送自己的临时分支（如需重写历史，但建议先沟通）
+- ✅ 删除自己创建的临时分支
+
+### 8. 智能体协作约定
+
+不同智能体（Trae / Claude Code）在同一项目协作时：
+
+| 约定 | 说明 |
+|---|---|
+| 上下文传递 | 通过 GitHub PR、commit message、AGENTS.md 传递上下文，不依赖本地会话 |
+| 文档先行 | 设计决策先写入设计文档，再实现代码 |
+| 测试驱动 | 代码改动必须有对应测试（后端 pytest、前端 type-check） |
+| 提交粒度 | 单次 commit 聚焦一个逻辑单元，便于 review 和 revert |
+| 冲突预防 | 开始任务前阅读 AGENTS.md 和相关设计文档，避免与对方方向冲突 |
+| 通知机制 | 重要改动（架构/数据模型/CI）通过 PR comment 或 commit footer `Notify: <内容>` 标注 |
+
+### 9. 快速命令参考
+
+```bash
+# 开始新任务
+git checkout main && git pull origin main
+git checkout -b mb/feat-xxx  # 或 zp/feat-xxx
+
+# 日常工作
+git add <files> && git commit -m "feat(scope): 描述"
+git push origin mb/feat-xxx
+
+# 同步 main
+git checkout main && git pull origin main
+git checkout mb/feat-xxx && git merge main -m "chore: 同步 main"
+
+# 创建 PR
+gh pr create --base main --head mb/feat-xxx --title "feat: xxx" --body "..."
+
+# 合并 PR 并清理
+gh pr merge <PR号> --merge
+git checkout main && git pull origin main
+git branch -D mb/feat-xxx
+git push origin --delete mb/feat-xxx
+
+# 查看对方工作
+git fetch --all --prune
+git log origin/main --oneline -10
+gh pr list --state open
+```
+
+---
 
 ## 下阶段规则
 
