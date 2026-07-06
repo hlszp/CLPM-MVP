@@ -101,8 +101,7 @@ class L2BundleCache:
         window_hash = _time_window_hash(time_window_start, time_window_end)
         op_limits_hash = _op_limits_hash(op_output_lower_limit, op_output_upper_limit)
         return (
-            f"{_KEY_PREFIX}:{loop_id}:{metrics_hash}:{window_hash}:"
-            f"{control_type}:{op_limits_hash}"
+            f"{_KEY_PREFIX}:{loop_id}:{metrics_hash}:{window_hash}:{control_type}:{op_limits_hash}"
         )
 
     # ------------------------------------------------------------------

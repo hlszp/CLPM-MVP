@@ -245,10 +245,7 @@ async def list_loops(
     # 双键排序：created_at desc 为主序，tag_name asc 为次序保证稳定排序
     # （批量导入的回路 created_at 可能相同，PostgreSQL 对相同键值不保证返回顺序，
     # 加次级排序避免编辑后回路位置漂移）
-    stmt = (
-        select(LoopLedger)
-        .order_by(LoopLedger.created_at.desc(), LoopLedger.tag_name.asc())
-    )
+    stmt = select(LoopLedger).order_by(LoopLedger.created_at.desc(), LoopLedger.tag_name.asc())
     for cond in conditions:
         stmt = stmt.where(cond)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
@@ -453,7 +450,6 @@ def _validate_op_output_limits(
         )
 
 
-
 async def create_loop(
     db: AsyncSession,
     tag_name: str,
@@ -574,14 +570,10 @@ async def create_loop(
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "opOutputLowerLimit": (
-            float(loop.op_output_lower_limit)
-            if loop.op_output_lower_limit is not None
-            else None
+            float(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else None
         ),
         "opOutputUpperLimit": (
-            float(loop.op_output_upper_limit)
-            if loop.op_output_upper_limit is not None
-            else None
+            float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
         "isActive": bool(loop.is_active),
         "scoreWeights": loop.score_weights,
@@ -776,14 +768,10 @@ async def update_loop(
     op_range_min, op_range_max = await _get_op_tag_range(db, loop_id)
     # 计算生效的 lower/upper（更新后的值优先，否则保持原值）
     effective_lower = (
-        op_output_lower_limit
-        if op_output_lower_limit is not None
-        else loop.op_output_lower_limit
+        op_output_lower_limit if op_output_lower_limit is not None else loop.op_output_lower_limit
     )
     effective_upper = (
-        op_output_upper_limit
-        if op_output_upper_limit is not None
-        else loop.op_output_upper_limit
+        op_output_upper_limit if op_output_upper_limit is not None else loop.op_output_upper_limit
     )
     _validate_op_output_limits(
         lower=effective_lower,
@@ -804,14 +792,10 @@ async def update_loop(
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "opOutputLowerLimit": (
-            float(loop.op_output_lower_limit)
-            if loop.op_output_lower_limit is not None
-            else None
+            float(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else None
         ),
         "opOutputUpperLimit": (
-            float(loop.op_output_upper_limit)
-            if loop.op_output_upper_limit is not None
-            else None
+            float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
@@ -860,14 +844,10 @@ async def update_loop(
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "opOutputLowerLimit": (
-            float(loop.op_output_lower_limit)
-            if loop.op_output_lower_limit is not None
-            else None
+            float(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else None
         ),
         "opOutputUpperLimit": (
-            float(loop.op_output_upper_limit)
-            if loop.op_output_upper_limit is not None
-            else None
+            float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
         "status": new_status,
     }
@@ -900,14 +880,10 @@ async def update_loop(
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
         "opOutputLowerLimit": (
-            float(loop.op_output_lower_limit)
-            if loop.op_output_lower_limit is not None
-            else None
+            float(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else None
         ),
         "opOutputUpperLimit": (
-            float(loop.op_output_upper_limit)
-            if loop.op_output_upper_limit is not None
-            else None
+            float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
         "updatedBy": loop.updated_by,
@@ -1161,9 +1137,7 @@ async def export_loops(
         importance_level_str = str(loop.importance_level) if loop.importance_level else ""
         # v6.1：枚举值导出为中文（用户友好，便于 Excel 编辑）
         loop_type_str = (
-            LOOP_TYPE_TO_CN.get(loop.loop_type.upper(), loop.loop_type)
-            if loop.loop_type
-            else ""
+            LOOP_TYPE_TO_CN.get(loop.loop_type.upper(), loop.loop_type) if loop.loop_type else ""
         )
         control_type_str = (
             CONTROL_TYPE_TO_CN.get(loop.control_type.upper(), loop.control_type)
@@ -1288,7 +1262,14 @@ async def import_loops(
         include_in_evaluation: bool | None = None
         if include_in_eval_str:
             include_in_evaluation = include_in_eval_str in (
-                "是", "true", "True", "1", "YES", "yes", "Y", "y",
+                "是",
+                "true",
+                "True",
+                "1",
+                "YES",
+                "yes",
+                "Y",
+                "y",
             )
         # OP 限位：空值表示使用默认（NULL），非空时解析为 float
         op_lower_str = (

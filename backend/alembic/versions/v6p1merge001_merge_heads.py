@@ -6,6 +6,7 @@
 
 合并后形成单一 head，便于后续迁移基于此点继续延伸。
 """
+
 from alembic import op
 
 # revision identifiers, used by Alembic.

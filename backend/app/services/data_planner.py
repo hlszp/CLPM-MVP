@@ -205,9 +205,11 @@ class DataPlanner:
             from sqlalchemy import select
 
             from app.models.loop import LoopLedger
+
             op_result = await self._db.execute(
-                select(LoopLedger.op_output_lower_limit, LoopLedger.op_output_upper_limit)
-                .where(LoopLedger.id == loop_id)
+                select(LoopLedger.op_output_lower_limit, LoopLedger.op_output_upper_limit).where(
+                    LoopLedger.id == loop_id
+                )
             )
             op_row = op_result.first()
             if op_row:
@@ -686,9 +688,7 @@ class DataPlanner:
             # L2 写入失败不应影响主流程（缓存只是优化）
             logger.warning("DataPlanner L2 写入失败，忽略: key=%s", l2_key, exc_info=True)
 
-    async def _fill_op_output_limits(
-        self, bundles: list[MetricDataBundle], loop_id: str
-    ) -> None:
+    async def _fill_op_output_limits(self, bundles: list[MetricDataBundle], loop_id: str) -> None:
         """v6.1 填充 OP 输出限位到每个 bundle 的 signals 字典.
 
         优先级（设计文档 §2.3）：

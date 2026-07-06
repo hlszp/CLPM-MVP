@@ -313,12 +313,8 @@ async def update_loop_endpoint(
     # v6.1：使用 model_fields_set 区分"未传递"和"传递了 NULL"
     # 确保用户可以通过 PUT null 清空 OP 输出限位（恢复默认值）
     _fs = body.model_fields_set
-    op_output_lower_limit = (
-        body.opOutputLowerLimit if "opOutputLowerLimit" in _fs else None
-    )
-    op_output_upper_limit = (
-        body.opOutputUpperLimit if "opOutputUpperLimit" in _fs else None
-    )
+    op_output_lower_limit = body.opOutputLowerLimit if "opOutputLowerLimit" in _fs else None
+    op_output_upper_limit = body.opOutputUpperLimit if "opOutputUpperLimit" in _fs else None
     data = await update_loop(
         db=db,
         loop_id=loop_id,
