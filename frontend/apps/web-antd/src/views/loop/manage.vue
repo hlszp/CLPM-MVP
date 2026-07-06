@@ -1746,10 +1746,7 @@ watch(
 
 <template>
   <Page>
-    <ClpmPageToolbar
-      title="回路管理"
-      subtitle="工厂结构、回路台账、Tag 关联与批量配置的统一入口。"
-    />
+    <ClpmPageToolbar title="回路配置" />
 
     <!-- 单页布局：左侧工厂树 + 右侧回路表格（方案 A） -->
     <div
