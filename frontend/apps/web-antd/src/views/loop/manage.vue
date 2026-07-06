@@ -105,25 +105,29 @@ const selectedPlantNode = ref<null | PlantNodeApi.PlantNode>(null);
 /**
  * 各 UNIT 节点的回路数映射（key=plantNodeId, value=该节点直接挂载的回路数）
  * 供 PlantNodeTree 显示节点尾部的回路数（递归累加得到 AREA/FACTORY 总数）
- * 在 onMounted 时一次性加载全量回路（pageSize=1000，足以覆盖典型场景）
+ * 在 onMounted 时循环分页加载全量回路（后端 pageSize 上限 100）
  */
 const loopCountsByNodeId = ref<Record<string, number>>({});
 
-/** 加载所有 UNIT 节点的回路数聚合（一次性，用于工厂树显示回路总数） */
+/** 加载所有 UNIT 节点的回路数聚合（分页循环，用于工厂树显示回路总数） */
 async function loadLoopCounts() {
   try {
-    const data = await getLoopListApi({
-      page: 1,
-      // eslint-disable-next-line @typescript-eslint/no-magic-numbers
-      pageSize: 1000,
-    });
     const counts: Record<string, number> = {};
-    for (const loop of data.items) {
-      const unitId = loop.unitId;
-      if (unitId) {
-        counts[unitId] = (counts[unitId] ?? 0) + 1;
+    let page = 1;
+    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
+    const pageSize = 100;
+    let total = 0;
+    do {
+      const data = await getLoopListApi({ page, pageSize });
+      total = data.total;
+      for (const loop of data.items) {
+        const unitId = loop.unitId;
+        if (unitId) {
+          counts[unitId] = (counts[unitId] ?? 0) + 1;
+        }
       }
-    }
+      page += 1;
+    } while ((page - 1) * pageSize < total);
     loopCountsByNodeId.value = counts;
   } catch (error) {
     console.error('[回路数聚合] 加载失败:', error);
