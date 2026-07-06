@@ -2107,6 +2107,7 @@ watch(
             </template>
             <template v-else-if="column.key === 'includeInEvaluation'">
               <Switch
+                :key="`eval-${record.loopId}-${record.includeInEvaluation}`"
                 :checked="
                   record.includeInEvaluation !== false &&
                   record.includeInEvaluation !== null
