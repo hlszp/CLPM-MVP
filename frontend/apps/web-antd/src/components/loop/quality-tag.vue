@@ -24,9 +24,9 @@ const qualityMap: Record<
   string,
   { borderStyle?: string; color: string; label: string }
 > = {
-  BAD: { borderStyle: 'dashed', color: 'red', label: 'Bad' },
-  GOOD: { color: 'green', label: 'Good' },
-  UNCERTAIN: { color: 'gold', label: 'Uncertain' },
+  BAD: { borderStyle: 'dashed', color: '#F43F5E', label: 'Bad' },
+  GOOD: { color: '#10B981', label: 'Good' },
+  UNCERTAIN: { color: '#F59E0B', label: 'Uncertain' },
 };
 
 const current = computed(() => {
