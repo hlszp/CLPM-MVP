@@ -127,6 +127,31 @@ def _make_scalar_one_or_none_mock(value: object) -> MagicMock:
     return result
 
 
+def _make_select_id_result_mock(snapshot_id: str) -> MagicMock:
+    """构造 _save_snapshot 第二次 db.execute（SELECT id）的返回值。
+
+    _save_snapshot 在 UPSERT 后用 ``select(KpiSnapshotHourly.id)`` 查询实际写入的 id，
+    返回值需支持 ``.first()`` 并返回一个可索引的 row（``row[0]`` 为 id 字符串）。
+    """
+    result = MagicMock()
+    result.first.return_value = (snapshot_id,)
+    return result
+
+
+def _extract_upsert_set_values(upsert_stmt: object) -> dict:
+    """从 postgresql.insert(...).on_conflict_do_update(...) 语句中提取 set_ 字典。
+
+    _save_snapshot 构造的 UPSERT 语句使用 ``on_conflict_do_update(set_=update_cols)``
+    设置冲突时的更新列。SQLAlchemy 将其存储在
+    ``stmt._post_values_clause.update_values_to_set`` 中，是一个
+    ``(column_name_str, value)`` 元组列表。
+
+    Returns:
+        dict[col_name_str, value]：列名到值的映射。
+    """
+    return dict(upsert_stmt._post_values_clause.update_values_to_set)
+
+
 def _make_trend_point(ts: object, value: float, quality: str = "GOOD") -> dict:
     """构造 TDengine 时序数据点。"""
     return {"ts": ts, "value": value, "quality": quality}
@@ -412,11 +437,12 @@ class TestSaveSnapshot:
     """测试 _save_snapshot() 幂等写入。"""
 
     @pytest.mark.asyncio
-    async def test_new_snapshot_calls_add(self) -> None:
-        """新增快照（existing=None）调用 db.add，返回正确字典。"""
+    async def test_new_snapshot_executes_upsert(self) -> None:
+        """新增快照（existing=None）通过 UPSERT 写入，db.execute 调用 2 次。"""
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         db.add = MagicMock()
+        # 第一次 execute（UPSERT）返回无结果；第二次 execute（SELECT id）返回新 UUID
+        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("new-snapshot-id")])
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -431,8 +457,12 @@ class TestSaveSnapshot:
             good_value_rate=Decimal("96.80"),
         )
 
-        db.add.assert_called_once()
+        # UPSERT 模式：db.execute 被调用 2 次（1 次 UPSERT + 1 次 SELECT id），不调用 db.add
+        assert db.execute.call_count == 2
+        db.add.assert_not_called()
+        # 返回字典关键字段
         assert result["loopId"] == "loop-1"
+        assert result["snapshotId"] == "new-snapshot-id"
         assert result["status"] == "SUCCESS"
         assert result["score"] == 78.5
         assert result["algorithmVersion"] == ALGORITHM_VERSION
@@ -440,31 +470,21 @@ class TestSaveSnapshot:
         assert result["tsEnd"] == ts_end.isoformat()
 
     @pytest.mark.asyncio
-    async def test_update_existing_snapshot_no_add(self) -> None:
-        """更新已有快照（existing 存在）不调用 db.add，更新字段。"""
-        existing = MagicMock()
-        existing.id = "existing-snapshot-id"
-        existing.ts_end = None
-        existing.status = None
-        existing.score = None
-        existing.good_value_rate = None
-        existing.auto_mode_rate = None
-        existing.steady_rate = None
-        existing.accuracy_rate = None
-        existing.oscillation_rate = None
-        existing.saturation_rate = None
-        # v4.0 血缘字段
-        existing.ideal_settling_time = None
-        existing.algorithm_version = None
-        existing.sampling_freq = None
-        existing.quality_policy = None
-        existing.valid_rate = None
-        existing.confidence_level = None
-        existing.data_lineage = None
+    async def test_update_existing_snapshot_executes_upsert(self) -> None:
+        """更新已有快照（UPSERT 触发 UPDATE 分支）不调用 db.add，返回字典正确。
 
+        v4.0 实现使用 ``INSERT ... ON CONFLICT DO UPDATE``，由数据库层处理
+        UPDATE 分支，应用层不再读取/修改 ``existing`` 对象。本测试验证：
+        1. db.execute 被调用 2 次（UPSERT + SELECT id）
+        2. 不调用 db.add
+        3. 返回字典的 snapshotId 来自 UPSERT 后的 SELECT 查询（即旧 id）
+        """
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(existing))
         db.add = MagicMock()
+        # 第二次 execute（SELECT id）返回已存在快照的 id（UPDATE 分支不生成新 id）
+        db.execute = AsyncMock(
+            side_effect=[None, _make_select_id_result_mock("existing-snapshot-id")]
+        )
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -478,9 +498,8 @@ class TestSaveSnapshot:
         )
 
         db.add.assert_not_called()
-        # 字段被更新（_save_snapshot 剥离 tzinfo 适配 PG TIMESTAMP WITHOUT TIME ZONE）
-        assert existing.ts_end == ts_end.replace(tzinfo=None)
-        assert existing.status == "INCONCLUSIVE"
+        assert db.execute.call_count == 2
+        # 返回字典使用 UPSERT 后 SELECT 出的 id（即已存在快照的 id）
         assert result["snapshotId"] == "existing-snapshot-id"
         assert result["status"] == "INCONCLUSIVE"
         assert result["score"] is None
@@ -509,11 +528,17 @@ class TestSaveSnapshot:
         assert result["score"] == 50.0
 
     @pytest.mark.asyncio
-    async def test_lineage_fields_written_on_new(self) -> None:
-        """新增快照时 7 个数据血缘字段正确写入。"""
+    async def test_lineage_fields_in_upsert_stmt(self) -> None:
+        """新增快照时 7 个数据血缘字段在 UPSERT 语句的 set_ 字典中正确写入。
+
+        v4.0 实现使用 ``postgresql.insert(...).on_conflict_do_update(set_=...)``
+        构造 UPSERT，不再通过 ``db.add`` 写入 ORM 对象。因此无法再断言
+        ``snapshot.ideal_settling_time`` 等属性；改为捕获第一次 ``db.execute``
+        调用的 UPSERT 语句，从其 ``set_`` 字典验证血缘字段。
+        """
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         db.add = MagicMock()
+        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("new-uuid")])
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -540,51 +565,30 @@ class TestSaveSnapshot:
             data_lineage=lineage_dict,
         )
 
-        # 验证 db.add 被调用，且传入的 KpiSnapshotHourly 对象含血缘字段
-        db.add.assert_called_once()
-        snapshot = db.add.call_args[0][0]
-        assert snapshot.ideal_settling_time == Decimal("30.0")
-        assert snapshot.algorithm_version == "KPI_CALC_v2.0"
-        assert snapshot.sampling_freq == "1s"
-        assert snapshot.quality_policy == "KEEP_ALL_WITH_VALIDITY"
-        assert snapshot.valid_rate == Decimal("0.9500")
-        assert snapshot.confidence_level == "A"
-        assert snapshot.data_lineage == lineage_dict
+        # 捕获第一次 db.execute 调用的 UPSERT 语句
+        assert db.execute.call_count == 2
+        upsert_stmt = db.execute.call_args_list[0][0][0]
+        set_dict = _extract_upsert_set_values(upsert_stmt)
+        # 验证 7 个数据血缘字段在 ON CONFLICT DO UPDATE 的 set_ 字典中正确写入
+        assert set_dict["ideal_settling_time"] == Decimal("30.0")
+        assert set_dict["algorithm_version"] == "KPI_CALC_v2.0"
+        assert set_dict["sampling_freq"] == "1s"
+        assert set_dict["quality_policy"] == "KEEP_ALL_WITH_VALIDITY"
+        assert set_dict["valid_rate"] == Decimal("0.9500")
+        assert set_dict["confidence_level"] == "A"
+        assert set_dict["data_lineage"] == lineage_dict
 
     @pytest.mark.asyncio
-    async def test_lineage_fields_updated_on_existing(self) -> None:
-        """更新已有快照时 7 个数据血缘字段被正确更新。"""
-        existing = MagicMock()
-        existing.id = "snap-1"
-        # 所有字段初始为 None
-        for attr in (
-            "ts_end",
-            "status",
-            "score",
-            "good_value_rate",
-            "auto_mode_rate",
-            "effective_auto_rate",
-            "steady_rate",
-            "accuracy_rate",
-            "fast_rate",
-            "oscillation_rate",
-            "saturation_rate",
-            "stiction_index",
-            "settling_time",
-            "output_trip_index",
-            "ideal_settling_time",
-            "algorithm_version",
-            "sampling_freq",
-            "quality_policy",
-            "valid_rate",
-            "confidence_level",
-            "data_lineage",
-        ):
-            setattr(existing, attr, None)
+    async def test_lineage_fields_in_upsert_set_on_existing(self) -> None:
+        """更新已有快照时 7 个数据血缘字段在 UPSERT 的 set_ 字典中被正确更新。
 
+        UPSERT 的 ON CONFLICT DO UPDATE 分支会用 set_ 字典覆盖所有字段（包括
+        血缘字段），无论新增还是更新。本测试验证 UPDATE 分支下 set_ 字典
+        的血缘字段值正确（验证覆盖更新语义）。
+        """
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(existing))
         db.add = MagicMock()
+        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("existing-snap-id")])
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -606,13 +610,16 @@ class TestSaveSnapshot:
         )
 
         db.add.assert_not_called()
-        assert existing.ideal_settling_time == Decimal("60.0")
-        assert existing.algorithm_version == "KPI_CALC_v2.0"
-        assert existing.sampling_freq == "5s"
-        assert existing.quality_policy == "KEEP_ALL_WITH_VALIDITY"
-        assert existing.valid_rate == Decimal("0.8800")
-        assert existing.confidence_level == "B"
-        assert existing.data_lineage == {"key": "value"}
+        assert db.execute.call_count == 2
+        upsert_stmt = db.execute.call_args_list[0][0][0]
+        set_dict = _extract_upsert_set_values(upsert_stmt)
+        assert set_dict["ideal_settling_time"] == Decimal("60.0")
+        assert set_dict["algorithm_version"] == "KPI_CALC_v2.0"
+        assert set_dict["sampling_freq"] == "5s"
+        assert set_dict["quality_policy"] == "KEEP_ALL_WITH_VALIDITY"
+        assert set_dict["valid_rate"] == Decimal("0.8800")
+        assert set_dict["confidence_level"] == "B"
+        assert set_dict["data_lineage"] == {"key": "value"}
 
 
 # ===========================================================================

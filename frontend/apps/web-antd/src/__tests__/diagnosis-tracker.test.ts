@@ -43,6 +43,7 @@ vi.mock('ant-design-vue', () => ({
   Spin: { template: '<div><slot /></div>' },
   Table: { template: '<div><slot /></div>' },
   Tag: { template: '<span><slot /></span>' },
+  Tooltip: { template: '<span><slot /></span>' },
   message: {
     error: vi.fn(),
     info: vi.fn(),
