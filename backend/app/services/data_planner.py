@@ -203,6 +203,7 @@ class DataPlanner:
         op_upper: float | None = None
         if self._bundle_cache is not None and metrics and self._db is not None:
             from sqlalchemy import select
+
             from app.models.loop import LoopLedger
             op_result = await self._db.execute(
                 select(LoopLedger.op_output_lower_limit, LoopLedger.op_output_upper_limit)

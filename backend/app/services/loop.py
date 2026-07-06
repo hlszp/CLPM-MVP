@@ -1091,7 +1091,8 @@ async def export_loops(
 ) -> bytes:
     """导出所有回路为 Excel 文件（.xlsx），返回文件字节。
 
-    支持按 plantNodeId/status/keyword/controlType/importanceLevel/includeInEvaluation/loopType 筛选（可选）。
+    支持按 plantNodeId/status/keyword/controlType/importanceLevel/
+    includeInEvaluation/loopType 筛选（可选）。
     """
     conditions = []
     if plant_node_id:
