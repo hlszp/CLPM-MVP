@@ -1068,9 +1068,13 @@ const opTagAssociated = computed(() => {
   return opTagRange.value.min !== null || opTagRange.value.max !== null;
 });
 
-/** v6.1：切换"使用默认"时重置限位字段 */
+/** v6.1：切换"使用默认"时更新状态并重置限位字段
+ * Checkbox 使用 :checked 单向绑定，需手动更新 useDefaultOpLimits.value
+ */
 function handleUseDefaultOpLimitsChange(checked: any) {
-  if (checked) {
+  useDefaultOpLimits.value = Boolean(checked);
+  if (useDefaultOpLimits.value) {
+    // 勾选「使用默认」时清空自定义限位值
     formState.opOutputLowerLimit = undefined;
     formState.opOutputUpperLimit = undefined;
   }
