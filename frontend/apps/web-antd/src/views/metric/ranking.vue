@@ -10,7 +10,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
  * - 表格展示排行（排名/位号/装置/评分/6大KPI/状态/预诊标签/操作）
  * - 点击行打开侧边抽屉展示回路摘要
  * - 点击"查看详情"跳转回路详情页 /loop/detail/:id
- * - 排名前 3 用红/黄/橙色标示
+ * - 排名前 3 用红/黄/蓝色标示（DANGER/WARNING/INFO 语义色）
  * - 默认仅展示参评回路（include_in_evaluation !== false）
  * - "包含不参评回路"开关：开启后展示不参评回路，并以淡灰行底色 + "不参评"标签区分
  * - "仅显示有效评分"开关：隐藏 INCONCLUSIVE 回路
@@ -346,6 +346,10 @@ async function loadList() {
       sortOrder: filter.sortOrder,
     });
     // 客户端过滤评分范围和关键字
+    // 注意：后端 RankingQueryParams 暂不支持 scoreMin/scoreMax/keyword 筛选参数，
+    // 此处在前端对已取回的 pageSize 条数据做二次过滤。
+    // 已知限制：若后端匹配总数超过 pageSize，仅能展示前 pageSize 条中的匹配项；
+    // total 已修正为过滤后实际展示的条数，保证分页显示与列表一致。
     let list = data || [];
     if (filter.scoreMin !== null && filter.scoreMin !== undefined) {
       list = list.filter((i) => i.score >= (filter.scoreMin ?? 0));
@@ -400,12 +404,19 @@ function handleViewDetail(loopId: string) {
   router.push(`/loop/detail/${loopId}`);
 }
 
-/** 排名前 3 的颜色 */
+/** 排名前 3 的颜色：rank 1 最差=红 / rank 2 次差=黄 / rank 3 第三=蓝 */
 function rankColor(rank: number): string {
-  if (rank === 1) return themeColors.value.DANGER; // 红
-  if (rank === 2) return themeColors.value.WARNING; // 黄
-  if (rank === 3) return themeColors.value.WARNING; // 橙
+  if (rank === 1) return themeColors.value.DANGER;
+  if (rank === 2) return themeColors.value.WARNING;
+  if (rank === 3) return themeColors.value.INFO;
   return '';
+}
+
+/** 综合评分语义色：高(≥80)=SUCCESS / 中(≥60)=WARNING / 低(<60)=DANGER */
+function scoreColor(score: number): string {
+  if (score >= 80) return themeColors.value.SUCCESS;
+  if (score >= 60) return themeColors.value.WARNING;
+  return themeColors.value.DANGER;
 }
 
 /** 格式化百分比 */
@@ -454,7 +465,7 @@ onMounted(() => {
           style="width: 110px"
           @change="handleSearch"
         />
-        <span class="text-gray-400">~</span>
+        <span :style="{ color: themeColors.NEUTRAL }">~</span>
         <InputNumber
           v-model:value="filter.scoreMax"
           placeholder="最高分"
@@ -486,7 +497,7 @@ onMounted(() => {
           查询
         </Button>
         <div class="ml-auto flex items-center gap-4">
-          <span class="flex items-center gap-2 text-sm text-gray-600">
+          <span class="flex items-center gap-2 text-sm" :style="{ color: themeColors.NEUTRAL }">
             <Switch
               v-model:checked="includeExcluded"
               size="small"
@@ -494,7 +505,7 @@ onMounted(() => {
             />
             包含不参评回路
           </span>
-          <span class="flex items-center gap-2 text-sm text-gray-600">
+          <span class="flex items-center gap-2 text-sm" :style="{ color: themeColors.NEUTRAL }">
             <Switch
               v-model:checked="onlyValidScore"
               size="small"
@@ -563,33 +574,43 @@ onMounted(() => {
           <template v-else-if="column.key === 'score'">
             <span
               v-if="isInconclusive(record as MetricApi.RankingItem)"
-              class="text-gray-400"
+              :style="{ color: themeColors.NEUTRAL }"
             >
               —
             </span>
-            <span v-else class="font-medium text-blue-600">
+            <span
+              v-else
+              class="clpm-num font-medium"
+              :style="{ color: scoreColor(Number(record.score)) }"
+            >
               {{ Number(record.score).toFixed(1) }}
             </span>
           </template>
           <template v-else-if="column.key === 'goodValueRate'">
-            {{ Number(record.goodValueRate).toFixed(1) }}%
+            <span class="clpm-num">{{ Number(record.goodValueRate).toFixed(1) }}%</span>
           </template>
           <template v-else-if="column.key === 'autoModeRate'">
-            {{ Number(record.autoModeRate).toFixed(1) }}%
+            <span class="clpm-num">{{ Number(record.autoModeRate).toFixed(1) }}%</span>
           </template>
           <template v-else-if="column.key === 'steadyRate'">
-            {{ Number(record.steadyRate).toFixed(1) }}%
+            <span class="clpm-num">{{ Number(record.steadyRate).toFixed(1) }}%</span>
           </template>
           <template v-else-if="column.key === 'accuracyRate'">
-            {{ Number(record.accuracyRate).toFixed(1) }}%
+            <span class="clpm-num">{{ Number(record.accuracyRate).toFixed(1) }}%</span>
           </template>
           <template v-else-if="column.key === 'oscillationRate'">
-            <span :class="record.oscillationRate > 30 ? 'text-red-500' : ''">
+            <span
+              class="clpm-num"
+              :style="record.oscillationRate > 30 ? { color: themeColors.DANGER } : {}"
+            >
               {{ Number(record.oscillationRate).toFixed(1) }}%
             </span>
           </template>
           <template v-else-if="column.key === 'saturationRate'">
-            <span :class="record.saturationRate > 20 ? 'text-orange-500' : ''">
+            <span
+              class="clpm-num"
+              :style="record.saturationRate > 20 ? { color: themeColors.WARNING } : {}"
+            >
               {{ Number(record.saturationRate).toFixed(1) }}%
             </span>
           </template>
@@ -606,10 +627,10 @@ onMounted(() => {
             />
           </template>
           <template v-else-if="column.key === 'preDiagnosis'">
-            <Tag v-if="record.preDiagnosis" color="orange">
+            <Tag v-if="record.preDiagnosis" color="warning">
               {{ record.preDiagnosis }}
             </Tag>
-            <span v-else class="text-gray-400">—</span>
+            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Button
@@ -639,49 +660,49 @@ onMounted(() => {
         />
         <div class="mt-4 space-y-2">
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">好值率</span>
-            <b>{{ fpct(selectedLoop.goodValueRate) }}</b>
+            <span :style="{ color: themeColors.NEUTRAL }">好值率</span>
+            <b class="clpm-num">{{ fpct(selectedLoop.goodValueRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">自控率</span>
-            <b>{{ fpct(selectedLoop.autoModeRate) }}</b>
+            <span :style="{ color: themeColors.NEUTRAL }">自控率</span>
+            <b class="clpm-num">{{ fpct(selectedLoop.autoModeRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">平稳率</span>
-            <b>{{ fpct(selectedLoop.steadyRate) }}</b>
+            <span :style="{ color: themeColors.NEUTRAL }">平稳率</span>
+            <b class="clpm-num">{{ fpct(selectedLoop.steadyRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">准确率</span>
-            <b>{{ fpct(selectedLoop.accuracyRate) }}</b>
+            <span :style="{ color: themeColors.NEUTRAL }">准确率</span>
+            <b class="clpm-num">{{ fpct(selectedLoop.accuracyRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">振荡率</span>
-            <b>{{ fpct(selectedLoop.oscillationRate) }}</b>
+            <span :style="{ color: themeColors.NEUTRAL }">振荡率</span>
+            <b class="clpm-num">{{ fpct(selectedLoop.oscillationRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">饱和率</span>
-            <b>{{ fpct(selectedLoop.saturationRate) }}</b>
+            <span :style="{ color: themeColors.NEUTRAL }">饱和率</span>
+            <b class="clpm-num">{{ fpct(selectedLoop.saturationRate) }}</b>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">预诊</span>
-            <Tag v-if="selectedLoop.preDiagnosis" color="orange">
+            <span :style="{ color: themeColors.NEUTRAL }">预诊</span>
+            <Tag v-if="selectedLoop.preDiagnosis" color="warning">
               {{ selectedLoop.preDiagnosis }}
             </Tag>
-            <span v-else class="text-gray-400">—</span>
+            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">处理状态</span>
+            <span :style="{ color: themeColors.NEUTRAL }">处理状态</span>
             <span>{{
               actionStatusLabel[selectedLoop.actionStatus] ||
               selectedLoop.actionStatus
             }}</span>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">算法版本</span>
+            <span :style="{ color: themeColors.NEUTRAL }">算法版本</span>
             <span>{{ selectedLoop.algorithmVersion }}</span>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span class="text-gray-500">可信度</span>
+            <span :style="{ color: themeColors.NEUTRAL }">可信度</span>
             <ConfidenceBadge
               :level="selectedLoop.confidenceLevel"
               :valid-rate="selectedLoop.validRate"
@@ -692,7 +713,7 @@ onMounted(() => {
             v-if="selectedLoop.samplingFreq"
             class="flex justify-between border-b pb-2"
           >
-            <span class="text-gray-500">采样频率</span>
+            <span :style="{ color: themeColors.NEUTRAL }">采样频率</span>
             <span>{{ selectedLoop.samplingFreq }}</span>
           </div>
         </div>
@@ -711,13 +732,13 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* 不参评回路行底色：淡灰区分 */
+/* 不参评回路行底色：淡灰区分，使用 Antd 主题 CSS 变量以适配深色模式 */
 :deep(.ranking-row-excluded > td) {
-  background-color: #fafafa !important;
-  color: #999;
+  background-color: var(--ant-color-fill-quaternary, #fafafa) !important;
+  color: var(--ant-color-text-tertiary, #999);
 }
 
 :deep(.ranking-row-excluded:hover > td) {
-  background-color: #f0f0f0 !important;
+  background-color: var(--ant-color-fill-tertiary, #f0f0f0) !important;
 }
 </style>

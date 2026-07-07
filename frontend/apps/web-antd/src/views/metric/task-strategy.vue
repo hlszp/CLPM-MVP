@@ -29,9 +29,12 @@ import {
 } from 'ant-design-vue';
 
 import { ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import ConfigTabs from '#/components/metric/config-tabs.vue';
 
 defineOptions({ name: 'MetricTaskStrategy' });
+
+const { themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -155,7 +158,7 @@ onMounted(() => {
             </FormItem>
             <FormItem label="整点自动触发" name="hourlyTrigger">
               <Switch v-model:checked="formState.hourlyTrigger" />
-              <span class="ml-2 text-xs text-gray-500">
+              <span class="ml-2 text-xs" :style="{ color: themeColors.NEUTRAL }">
                 开启后每整点自动触发标准评估任务
               </span>
             </FormItem>
@@ -178,13 +181,13 @@ onMounted(() => {
                 class="w-full"
                 addon-after="分"
               />
-              <span class="mt-1 block text-xs text-gray-500">
+              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
                 综合评分低于此阈值的回路将自动触发重评
               </span>
             </FormItem>
             <FormItem label="新回路自动首评" name="autoFirstEvaluation">
               <Switch v-model:checked="formState.autoFirstEvaluation" />
-              <span class="ml-2 text-xs text-gray-500">
+              <span class="ml-2 text-xs" :style="{ color: themeColors.NEUTRAL }">
                 新建回路后自动触发首次评估
               </span>
             </FormItem>
@@ -238,10 +241,10 @@ onMounted(() => {
             </FormItem>
             <FormItem label="按级别优先" name="priorityByLevel">
               <Switch v-model:checked="formState.priorityByLevel" />
-              <span class="ml-2 text-xs text-gray-500">
-                <Tag color="red">1 级</Tag>
-                <Tag color="orange">2 级</Tag>
-                <Tag color="blue">3 级</Tag>
+              <span class="ml-2 text-xs" :style="{ color: themeColors.NEUTRAL }">
+                <Tag color="error">1 级</Tag>
+                <Tag color="warning">2 级</Tag>
+                <Tag color="processing">3 级</Tag>
                 关键回路优先调度
               </span>
             </FormItem>
@@ -281,7 +284,7 @@ onMounted(() => {
       <div class="space-y-3 py-2">
         <div class="text-sm">
           <div class="mb-1 font-medium">影响范围</div>
-          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
+          <p class="rounded p-2 text-xs" :style="{ background: 'hsl(var(--status-warning) / 0.08)', color: 'hsl(var(--status-warning))' }">
             任务策略变更后将影响下一次评估调度的执行方式，包括触发时机、并发数与重试策略。已运行中的任务不受影响。
           </p>
         </div>

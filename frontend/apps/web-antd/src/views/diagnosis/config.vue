@@ -23,6 +23,7 @@ import {
   Form,
   FormItem,
   Input,
+  InputNumber,
   message,
   Modal,
   Select,
@@ -41,8 +42,11 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'DiagnosisConfig' });
+
+const { themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -145,14 +149,17 @@ function objectToKv(
   }));
 }
 
-/** 将键值对数组转为对象 */
+/** 将键值对数组转为对象（防御性：跳过空 key 与非数字 value，对齐 Poka-Yoke） */
 function kvToObject(
   kv: { key: string; value: string }[],
 ): Record<string, number> {
   const result: Record<string, number> = {};
   for (const item of kv) {
     if (!item.key) continue;
+    if (item.value === '' || item.value === null || item.value === undefined)
+      continue;
     const num = Number(item.value);
+    if (Number.isNaN(num)) continue;
     result[item.key] = num;
   }
   return result;
@@ -319,7 +326,7 @@ onMounted(() => {
     />
     <ClpmDataCanvas class="mt-4" title="诊断指标列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
-        <p class="text-sm text-gray-500">
+        <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
           管理诊断指标配置：诊断规则、算法参数、阈值、启用状态。
         </p>
         <Button :loading="loading" @click="loadList">刷新</Button>
@@ -449,10 +456,13 @@ onMounted(() => {
               placeholder="阈值名（如 amplitude）"
               style="width: 40%"
             />
-            <Input
+            <InputNumber
               v-model:value="item.value"
               placeholder="阈值（如 1.5）"
               style="width: 50%"
+              string-mode
+              :step="0.01"
+              :precision="6"
             />
             <Button
               type="link"
@@ -465,7 +475,8 @@ onMounted(() => {
           </div>
           <div
             v-if="formState.threshold.length === 0"
-            class="py-2 text-center text-xs text-gray-400"
+            class="py-2 text-center text-xs"
+            :style="{ color: themeColors.NEUTRAL }"
           >
             暂无阈值，点击右上角添加
           </div>
@@ -489,10 +500,13 @@ onMounted(() => {
               placeholder="参数名（如 windowSize）"
               style="width: 40%"
             />
-            <Input
+            <InputNumber
               v-model:value="item.value"
               placeholder="参数值（如 1024）"
               style="width: 50%"
+              string-mode
+              :step="1"
+              :precision="6"
             />
             <Button
               type="link"
@@ -505,7 +519,8 @@ onMounted(() => {
           </div>
           <div
             v-if="formState.params.length === 0"
-            class="py-2 text-center text-xs text-gray-400"
+            class="py-2 text-center text-xs"
+            :style="{ color: themeColors.NEUTRAL }"
           >
             暂无参数，点击右上角添加
           </div>

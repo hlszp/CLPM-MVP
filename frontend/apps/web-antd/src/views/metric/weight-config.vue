@@ -14,9 +14,9 @@ import { ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, message, Modal, TabPane, Tabs } from 'ant-design-vue';
+import { Button, message, TabPane, Tabs } from 'ant-design-vue';
 
-import { ClpmPageToolbar } from '#/components/clpm';
+import { ClpmDangerConfirmModal, ClpmPageToolbar } from '#/components/clpm';
 import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { restoreWeightDefaultsApi } from '#/api/metric';
 import GradingThresholdContent from './grading-threshold.vue';
@@ -28,37 +28,36 @@ defineOptions({ name: 'MetricWeightConfig' });
 const activeTab = ref<'history' | 'threshold' | 'type'>('type');
 const restoring = ref(false);
 
-/** 恢复国标默认值（二次确认） */
-function handleRestoreDefaults() {
-  Modal.confirm({
-    title: '确认恢复国标默认权重模板',
-    content:
-      '将权重模板恢复为 GB/T 44693.2-2024 默认值（STABLE/SLOW/FAST/LOGIC 各类标准权重）。此操作将生成新版本，原配置可通过版本历史回滚。是否继续？',
-    okText: '确认恢复',
-    cancelText: '取消',
-    okType: 'danger',
-    onOk: async () => {
-      restoring.value = true;
-      try {
-        await restoreWeightDefaultsApi();
-        message.success('已恢复为国标默认权重模板（生成新版本生效）');
-        // 切换到版本历史查看新版本
-        activeTab.value = 'history';
-        // 触发版本历史组件刷新（通过 key 重新挂载）
-        versionHistoryKey.value += 1;
-        typeWeightKey.value += 1;
-      } catch {
-        // 错误已由拦截器处理
-      } finally {
-        restoring.value = false;
-      }
-    },
-  });
-}
-
 /** 子组件 key（用于恢复默认后强制刷新） */
 const typeWeightKey = ref(0);
 const versionHistoryKey = ref(0);
+
+/** 恢复国标默认值二次确认弹窗 */
+const restoreConfirmOpen = ref(false);
+
+/** 打开恢复默认值确认弹窗 */
+function handleRestoreDefaults() {
+  restoreConfirmOpen.value = true;
+}
+
+/** 确认恢复国标默认值 */
+async function handleRestoreConfirm() {
+  restoring.value = true;
+  try {
+    await restoreWeightDefaultsApi();
+    message.success('已恢复为国标默认权重模板（生成新版本生效）');
+    restoreConfirmOpen.value = false;
+    // 切换到版本历史查看新版本
+    activeTab.value = 'history';
+    // 触发版本历史组件刷新（通过 key 重新挂载）
+    versionHistoryKey.value += 1;
+    typeWeightKey.value += 1;
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    restoring.value = false;
+  }
+}
 </script>
 
 <template>
@@ -90,5 +89,19 @@ const versionHistoryKey = ref(0);
         </TabPane>
       </Tabs>
     </div>
+
+    <!-- 恢复国标默认值二次确认弹窗（高危操作：物理+逻辑屏障） -->
+    <ClpmDangerConfirmModal
+      v-model:open="restoreConfirmOpen"
+      title="恢复国标默认权重模板"
+      action="恢复"
+      target="国标默认模板（GB/T 44693.2-2024）"
+      impact-scope="将覆盖当前 STABLE/SLOW/FAST/LOGIC 各类权重为国标默认值，并生成新版本生效"
+      rollback-tip="此操作将生成新版本，可通过版本历史回滚到当前配置"
+      confirm-code="恢复默认"
+      confirm-code-placeholder="请输入 恢复默认 以确认"
+      :loading="restoring"
+      @confirm="handleRestoreConfirm"
+    />
   </Page>
 </template>

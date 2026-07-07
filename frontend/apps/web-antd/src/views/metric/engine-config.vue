@@ -30,15 +30,21 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmPageToolbar } from '#/components/clpm';
+import { ClpmDangerConfirmModal, ClpmPageToolbar } from '#/components/clpm';
 import ConfigTabs from '#/components/metric/config-tabs.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getRulesApi, updateRuleApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricEngineConfig' });
 
+const { themeColors } = useClpmTheme();
+
 const loading = ref(false);
 const saving = ref(false);
 const rule = ref<MetricApi.RuleItem | null>(null);
+
+/** 保存二次确认弹窗 */
+const saveConfirmOpen = ref(false);
 
 const calcPeriodOptions = [
   { label: '5 分钟', value: '5m' },
@@ -87,17 +93,17 @@ async function loadRule() {
   }
 }
 
-/** 保存（含二次确认） */
+/** 保存（含二次确认：打开 ClpmDangerConfirmModal） */
 function handleSave() {
   formRef.value?.validate().then(() => {
-    Modal.confirm({
-      title: '确认变更引擎规则',
-      content: '引擎规则变更后立即生效，可能影响下一次评估调度。是否继续？',
-      okText: '确认保存',
-      cancelText: '取消',
-      onOk: doSave,
-    });
+    saveConfirmOpen.value = true;
   });
+}
+
+/** 确认保存（来自 ClpmDangerConfirmModal 的 confirm 事件） */
+async function handleSaveConfirm() {
+  await doSave();
+  saveConfirmOpen.value = false;
 }
 
 /** 实际保存 */
@@ -140,11 +146,12 @@ function formatTime(t?: string): string {
   }
 }
 
+/** 执行状态语义色（对齐 Ant Design Tag 语义色名） */
 function executionStatusColor(status?: string): string {
   if (!status) return 'default';
-  if (status === 'SUCCESS') return 'green';
-  if (status === 'FAILED') return 'red';
-  if (status === 'RUNNING') return 'blue';
+  if (status === 'SUCCESS') return 'success';
+  if (status === 'FAILED') return 'error';
+  if (status === 'RUNNING') return 'processing';
   return 'default';
 }
 
@@ -245,7 +252,7 @@ onMounted(() => {
             {{ rule.ruleName }}
           </DescriptionsItem>
           <DescriptionsItem label="启用状态">
-            <Tag :color="rule.isEnabled ? 'green' : 'default'">
+            <Tag :color="rule.isEnabled ? 'success' : 'default'">
               {{ rule.isEnabled ? '启用' : '禁用' }}
             </Tag>
           </DescriptionsItem>
@@ -274,8 +281,28 @@ onMounted(() => {
             {{ rule.updatedBy || '—' }}
           </DescriptionsItem>
         </Descriptions>
-        <div v-else class="py-8 text-center text-gray-400">暂无执行记录</div>
+        <div
+          v-else
+          class="py-8 text-center"
+          :style="{ color: themeColors.NEUTRAL }"
+        >
+          暂无执行记录
+        </div>
       </Card>
     </div>
+
+    <!-- 引擎规则变更二次确认弹窗 -->
+    <ClpmDangerConfirmModal
+      v-model:open="saveConfirmOpen"
+      title="确认变更引擎规则"
+      action="保存"
+      target="引擎规则"
+      impact-scope="引擎规则变更后立即生效，可能影响下一次评估调度"
+      rollback-tip="可通过表单再次修改以恢复原配置"
+      :require-confirm-code="false"
+      :show-audit-note="false"
+      :loading="saving"
+      @confirm="handleSaveConfirm"
+    />
   </Page>
 </template>

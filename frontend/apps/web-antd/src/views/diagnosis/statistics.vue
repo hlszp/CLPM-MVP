@@ -31,6 +31,7 @@ import {
   DIAGNOSIS_LABEL_COLOR_HEX_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
 } from '#/constants/diagnosis';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { $t } from '#/locales';
 import { flattenNodes } from '#/utils/plant-node';
@@ -41,6 +42,8 @@ defineOptions({ name: 'DiagnosisStatistics' });
 
 const loading = ref(false);
 const exporting = ref(false);
+/** 数据加载是否出错（用于 ClpmDataCanvas 错误态展示与重试） */
+const hasError = ref(false);
 const analyticsData = ref<DiagnosisApi.AnalyticsResult | null>(null);
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 
@@ -111,6 +114,7 @@ async function loadData() {
     return;
   }
   loading.value = true;
+  hasError.value = false;
   try {
     const data = await getDiagnosisAnalyticsApi({
       startTime: start.format('YYYY-MM-DD HH:mm:ss'),
@@ -123,7 +127,8 @@ async function loadData() {
     analyticsData.value = data;
     renderAllCharts();
   } catch {
-    // 错误已由拦截器处理
+    // 错误已由拦截器处理；标记错误态供 ClpmDataCanvas 展示重试入口
+    hasError.value = true;
   } finally {
     loading.value = false;
   }
@@ -370,6 +375,11 @@ function handleSearch() {
   loadData();
 }
 
+/** 重试加载（ClpmDataCanvas 错误态回调） */
+function handleRetry() {
+  loadData();
+}
+
 // 粒度切换时自动刷新
 watch(
   () => filter.granularity,
@@ -392,9 +402,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page :title="$t('diagnosis.statistics.title')">
+  <Page>
+    <ClpmPageToolbar
+      :title="$t('diagnosis.statistics.title')"
+      subtitle="查看诊断标签分布、处理效率趋势与闭环时长分布，支持多维度筛选与导出。"
+    />
     <!-- 筛选栏 -->
-    <Card class="mb-4">
+    <Card class="mt-4 mb-4">
       <div class="flex flex-wrap items-center gap-3">
         <DatePicker.RangePicker
           v-model:value="filter.timeRange"
@@ -442,30 +456,39 @@ onMounted(() => {
     </Card>
 
     <!-- 标签分布饼图 -->
-    <Card
+    <ClpmDataCanvas
       :title="$t('diagnosis.statistics.labelDistribution')"
       class="mb-4"
       :loading="loading"
+      :error="hasError"
+      loading-variant="opacity"
+      @retry="handleRetry"
     >
       <EchartsUI ref="pieChartRef" height="360px" />
-    </Card>
+    </ClpmDataCanvas>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- 处理效率趋势折线图 -->
-      <Card
+      <ClpmDataCanvas
         :title="$t('diagnosis.statistics.efficiencyTrend')"
         :loading="loading"
+        :error="hasError"
+        loading-variant="opacity"
+        @retry="handleRetry"
       >
         <EchartsUI ref="trendChartRef" height="320px" />
-      </Card>
+      </ClpmDataCanvas>
 
       <!-- 闭环时长分布柱状图 -->
-      <Card
+      <ClpmDataCanvas
         :title="$t('diagnosis.statistics.closeDuration')"
         :loading="loading"
+        :error="hasError"
+        loading-variant="opacity"
+        @retry="handleRetry"
       >
         <EchartsUI ref="barChartRef" height="320px" />
-      </Card>
+      </ClpmDataCanvas>
     </div>
   </Page>
 </template>

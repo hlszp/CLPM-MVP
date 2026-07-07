@@ -79,6 +79,9 @@ async def list_loops_endpoint(
     monitorStatus: bool | None = Query(
         None, description="按监控状态筛选：true=监控中/false=已停用"
     ),
+    includeInEvaluation: bool | None = Query(
+        None, description="按参评状态筛选：true=参评/false=不参评"
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -99,6 +102,7 @@ async def list_loops_endpoint(
             control_type=controlType,
             importance_level=effective_level,
             monitor_status=monitorStatus,
+            include_in_evaluation=includeInEvaluation,
             page=page,
             page_size=pageSize,
         )

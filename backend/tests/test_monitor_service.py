@@ -531,6 +531,11 @@ class TestGetLoopMonitorDetail:
         snap.accuracy_rate = Decimal("80.00")
         snap.oscillation_rate = Decimal("15.00")
         snap.saturation_rate = Decimal("8.00")
+        snap.effective_auto_rate = Decimal("85.00")
+        snap.fast_rate = Decimal("75.00")
+        snap.valid_rate = Decimal("0.95")
+        snap.ts_end = datetime.now(UTC)
+        snap.ts_start = datetime.now(UTC)
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
@@ -540,7 +545,7 @@ class TestGetLoopMonitorDetail:
                     [pv_tag, sp_tag, op_tag, mode_tag, pid_p_tag, pid_i_tag, pid_d_tag]
                 ),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(snap),  # KPI 快照查询
+                _make_scalars_mock([snap]),  # KPI 快照查询
             ]
         )
         pv_trend = [
@@ -583,7 +588,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -610,7 +615,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
@@ -634,7 +639,7 @@ class TestGetLoopMonitorDetail:
                     _make_scalar_one_or_none_mock(loop),
                     _make_scalars_mock([]),
                     _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                    _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                    _make_scalars_mock([]),  # KPI 快照查询
                 ]
             )
             result = await get_loop_monitor_detail(db, "loop-001", trend_window=window)
@@ -649,7 +654,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -671,7 +676,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -706,7 +711,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # mode mapping
-                _make_scalar_one_or_none_mock(snap),  # KPI 快照
+                _make_scalars_mock([snap]),  # KPI 快照
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -722,7 +727,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # mode mapping
-                _make_scalar_one_or_none_mock(None),  # 无快照
+                _make_scalars_mock([]),  # 无快照
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -752,7 +757,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),
-                _make_scalar_one_or_none_mock(snap),
+                _make_scalars_mock([snap]),
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -768,7 +773,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
@@ -786,7 +791,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([sp_tag]),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
         sp_trend = [{"ts": "2026-06-22T08:00:00Z", "value": 52.0, "quality": "GOOD"}]
@@ -811,7 +816,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([op_tag]),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
         op_trend = [{"ts": "2026-06-22T08:00:00Z", "value": 55.0, "quality": "GOOD"}]
@@ -836,7 +841,7 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalar_one_or_none_mock(None),  # KPI 快照查询
+                _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
