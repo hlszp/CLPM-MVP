@@ -2,7 +2,7 @@
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）。
 
-版本：**v6.0**（系统重构完成版 — 7 阶段重构 Phase 0-6 全部交付 + v6.0 文档统一升级）
+版本：**v6.1**（系统重构完成版 + ZL 工业设计规范对齐 — 7 阶段重构 Phase 0-6 全部交付 + v6.0 文档统一升级 + v6.1 设计对齐）
 
 ## 项目简介
 
@@ -288,7 +288,7 @@ docker compose -f docker-compose.prod.yml up -d
 | 交付架构设计（v6.0） | `docs/设计文档/03-ADS/ADS.md` |
 | 数据模型设计（v6.0） | `docs/设计文档/04-DDS/DDS.md` |
 | API 接口设计（v6.0） | `docs/设计文档/05-IDS/IDS.md` |
-| UI/UX 设计规范（v6.0） | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
+| UI/UX 设计规范（v6.1） | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
 | 重构后实现契约（v2.0） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
 | **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
 | 原型设计基线 | `DESIGN.md`（v3.0，对齐实现契约 v2.0） |
@@ -312,7 +312,7 @@ docker compose -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | **v6.0** — 7 阶段系统重构（Phase 0-6）全部完成 + v6.0 文档统一升级，后端 1762 测试用例通过 |
+| 当前版本 | **v6.1** — 7 阶段系统重构（Phase 0-6）全部完成 + v6.0 文档统一升级 + v6.1 ZL 工业设计规范对齐，后端 1762 测试用例通过，前端 TypeScript 错误 0 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 工作台门户、回路管理（AAS tag 同步/回路创建/tag 关联/监控）、性能评估（指标配置/引擎规则/看板/排行/统计）、诊断中心（指标配置/诊断/异常跟踪/统计）、系统管理；回路整定原型页面设计 |
 | 模块架构 | 6 模块 + 1 门户：工作台/回路管理/性能评估/诊断中心/回路整定/系统管理（任务管理是性能评估子模块），各模块"配置→运行→分析"三态自包含 |

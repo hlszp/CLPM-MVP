@@ -1,14 +1,14 @@
 # CLPM Agent Guidance
 
-本项目是危化企业控制回路性能评估与优化平台（CLPM v6.0），7 阶段系统重构已全部完成，文档体系已统一升级至 v6.0。
+本项目是危化企业控制回路性能评估与优化平台（CLPM v6.1），7 阶段系统重构已全部完成，文档体系已统一升级至 v6.1（含 ZL 工业设计规范对齐）。
 
 ## 必读入口
 
 先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v6.0。
 
-PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.0 是视觉与交互输入文件（已对齐 v6.0 代码）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
+PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
-## 当前基线（2026-07-06 修订 — v6.0 文档统一升级完成）
+## 当前基线（2026-07-07 修订 — v6.1 ZL 设计对齐完成）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
@@ -19,15 +19,15 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
 | 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v6.0 |
 | API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v6.0 |
-| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v6.0**（已对齐 v6.0 代码） |
+| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v6.1**（已对齐 v6.1 代码，含 ZL 工业设计规范） |
 | 设计基线 | `DESIGN.md` | v3.0（对齐实现契约 v2.0） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
 | 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` | 历史参考 |
 
-## v6.0 文档统一升级状态（2026-07-06）
+## v6.1 文档与设计对齐状态（2026-07-07）
 
-7 阶段重构全部交付，后端 1762 测试用例通过，文档体系已统一升级至 v6.0：
+7 阶段重构全部交付，后端 1762 测试用例通过，文档体系已统一升级至 v6.1（含 ZL 工业设计规范对齐）：
 
 | 阶段 | 核心交付 | Commit |
 |---|---|---|
@@ -39,6 +39,7 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | Phase 6 | 前端适配（4层架构：类型/API → 组件 → 页面 → 路由） | `86f356c` `3516641` `4bff65b` |
 | 修复 | Celery worker 任务注册修复（include 参数替代 autodiscover_tasks） | `207c882` |
 | v6.0 升级 | 文档统一升级：PRD/FDS/ADS/DDS/IDS/UIUX → v6.0；实现契约 v1.0 → v2.0；DESIGN v2.1 → v3.0；测试数 1762；TS 错误 0 | 见 `docs/过程文档/superpowers/plans/v6-consistency-check.md` |
+| v6.1 升级 | ZL 工业设计规范对齐：诊断中心/指标管理页面清除硬编码 Tailwind 色类；高危操作确认统一改用 ClpmDangerConfirmModal；监控页面 KPI 指标按时间范围聚合 | `1585a7e` `4aea6b8` `80c38ef` `d5f532f` |
 
 ## v6.0 核心架构组件
 
@@ -104,7 +105,7 @@ cd e2e && pnpm exec playwright test
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 原型/前端开发 | 当前生产前端为 Vue 3 + Vite + TypeScript + vue-vben-admin；重构后路由/页面以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
-| 文档权威性 | PRD v6.0 负责产品需求；实现契约 v2.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.0 负责视觉与交互（已对齐 v6.0 代码）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
+| 文档权威性 | PRD v6.0 负责产品需求；实现契约 v2.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互（已对齐 v6.1 代码，含 ZL 工业设计规范）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## 双机协作开发规范
 
