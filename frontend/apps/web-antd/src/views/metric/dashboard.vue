@@ -320,6 +320,12 @@ const rankingColumns: TableColumnsType = [
     width: 100,
     align: 'center',
   },
+  {
+    title: '操作',
+    key: 'action',
+    width: 110,
+    fixed: 'right',
+  },
 ];
 
 const actionStatusLabel: Record<string, string> = {
@@ -796,6 +802,10 @@ function handleViewFullRanking() {
   router.push('/metric/ranking');
 }
 
+function handleInitiateDiagnosis(loopId: string) {
+  router.push(`/diagnosis/detail/${loopId}`);
+}
+
 onMounted(() => {
   loadAll();
   startAutoRefresh();
@@ -1071,6 +1081,15 @@ onUnmounted(() => {
                 >
                   {{ actionStatusLabel[record.actionStatus] || record.actionStatus }}
                 </Tag>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <Button
+                  type="primary"
+                  size="small"
+                  @click.stop="handleInitiateDiagnosis(record.loopId)"
+                >
+                  发起诊断
+                </Button>
               </template>
             </template>
           </Table>

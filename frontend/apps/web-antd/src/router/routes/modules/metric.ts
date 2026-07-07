@@ -132,6 +132,26 @@ const routes: RouteRecordRaw[] = [
               title: '执行记录',
             },
           },
+          {
+            name: 'MetricGradingThreshold',
+            path: '/metric/grading-threshold',
+            component: () => import('#/views/metric/grading-threshold.vue'),
+            meta: {
+              authority: ['ADMIN'],
+              icon: 'lucide:scale',
+              title: '定级阈值',
+            },
+          },
+          {
+            name: 'MetricVersionHistory',
+            path: '/metric/version-history',
+            component: () => import('#/views/metric/version-history.vue'),
+            meta: {
+              authority: ['ADMIN'],
+              icon: 'lucide:history',
+              title: '版本管理',
+            },
+          },
         ],
       },
     ],

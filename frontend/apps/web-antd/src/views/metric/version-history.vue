@@ -17,6 +17,7 @@ import { onMounted, ref } from 'vue';
 import { Button, message, Table, Tag } from 'ant-design-vue';
 
 import { ClpmDangerConfirmModal, ClpmToolbarButton } from '#/components/clpm';
+import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   getWeightTemplateHistoryApi,
@@ -140,6 +141,7 @@ onMounted(() => {
 
 <template>
   <div class="metric-version-history">
+    <ConfigTabs />
     <div class="mb-3 flex items-center justify-between">
       <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
         权重模板的版本变更历史。支持回滚到任意历史版本（回滚操作将生成新版本，原历史保留）。
