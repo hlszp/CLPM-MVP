@@ -41,6 +41,7 @@ import type {
 import { getLoopListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import ScoreSparkline from '#/components/metric/score-sparkline.vue';
 
 defineOptions({ name: 'MetricSnapshots' });
 
@@ -66,17 +67,42 @@ const loopOptions = ref<{ label: string; value: string }[]>([]);
 // ============ 详情抽屉状态 ============
 const drawerVisible = ref(false);
 const drawerRecord = ref<KpiSnapshotItem | null>(null);
+const drawerTrendSnapshots = ref<KpiSnapshotItem[]>([]);
+const drawerTrendLoading = ref(false);
 
-/** 点击"详情"按钮：打开抽屉并加载该行完整数据 */
-function openDetail(record: Record<string, any>) {
+/** 点击"详情"按钮：打开抽屉并加载该行完整数据及趋势 */
+async function openDetail(record: Record<string, any>) {
   drawerRecord.value = record as unknown as KpiSnapshotItem;
   drawerVisible.value = true;
+  drawerTrendLoading.value = true;
+  drawerTrendSnapshots.value = [];
+  
+  const loopId = record.loopId;
+  if (loopId) {
+    try {
+      const params: any = {
+        loopId,
+        page: 1,
+        pageSize: 24,
+      };
+      const result = await getLoopSnapshotsApi(params);
+      drawerTrendSnapshots.value = (result.items || []).sort((a, b) => {
+        const aTs = a.tsStart || '';
+        const bTs = b.tsStart || '';
+        return aTs.localeCompare(bTs);
+      });
+    } catch {
+      drawerTrendSnapshots.value = [];
+    }
+  }
+  drawerTrendLoading.value = false;
 }
 
 /** 关闭抽屉 */
 function closeDetail() {
   drawerVisible.value = false;
   drawerRecord.value = null;
+  drawerTrendSnapshots.value = [];
 }
 
 // ============ 表格列定义 ============
@@ -633,6 +659,53 @@ onMounted(() => {
             <div>算法版本: {{ drawerRecord.dataLineage.algorithmVersion }}</div>
           </div>
         </template>
+
+        <!-- 评分趋势 -->
+        <div class="mt-4 mb-2 text-sm font-medium">评分趋势（最近 24 小时）</div>
+        <div v-if="drawerTrendLoading" class="text-center py-4">加载中...</div>
+        <template v-else-if="drawerTrendSnapshots.length > 0">
+          <div class="p-3 rounded-lg border border-border bg-muted/30">
+            <div class="flex items-center justify-center gap-2">
+              <ScoreSparkline
+                :data="drawerTrendSnapshots.map((s) => (s.score ?? 0))"
+                :width="560"
+                :height="50"
+              />
+            </div>
+            <div class="flex justify-between mt-2 text-xs text-muted-foreground">
+              <span>{{ formatTsEnd(drawerTrendSnapshots[0]?.tsEnd) }}</span>
+              <span>{{ formatTsEnd(drawerTrendSnapshots[drawerTrendSnapshots.length - 1]?.tsEnd) }}</span>
+            </div>
+          </div>
+          <div class="mt-2 max-h-[200px] overflow-y-auto space-y-1">
+            <div
+              v-for="(item, index) in drawerTrendSnapshots"
+              :key="index"
+              class="flex items-center gap-3 text-xs"
+            >
+              <span class="font-mono w-16 text-muted-foreground">{{ formatTsEnd(item.tsEnd) }}</span>
+              <span
+                class="clpm-num font-medium w-12 text-right"
+                :style="{
+                  color:
+                    item.score !== null && item.score !== undefined
+                      ? (item.score >= 80 ? '#10B981' : item.score >= 60 ? '#F59E0B' : '#F43F5E')
+                      : '#9CA3AF',
+                }"
+              >
+                {{ formatNumber(item.score) }}
+              </span>
+              <Tag
+                v-if="item.confidenceLevel"
+                :color="CONFIDENCE_COLOR_MAP[item.confidenceLevel] || 'default'"
+                size="small"
+              >
+                {{ item.confidenceLevel }}
+              </Tag>
+            </div>
+          </div>
+        </template>
+        <div v-else class="text-center py-4 text-muted-foreground">暂无趋势数据</div>
       </template>
     </Drawer>
   </div>

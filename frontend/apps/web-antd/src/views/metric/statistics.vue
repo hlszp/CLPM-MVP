@@ -56,7 +56,14 @@ const filter = reactive({
   plantNodeId: undefined as string | undefined,
   metricKey: 'score' as string,
   granularity: 'day' as Granularity,
+  dimension: 'plant' as 'plant' | 'unit' | 'loop',
 });
+
+const dimensionOptions = [
+  { label: '按装置', value: 'plant' },
+  { label: '按单元', value: 'unit' },
+  { label: '按回路', value: 'loop' },
+];
 
 const metricOptions = [
   { label: '综合评分', value: 'score' },
@@ -414,9 +421,16 @@ onMounted(() => {
       />
       <Select
         v-model:value="filter.metricKey"
-        style="width: 160px"
+        style="width: 140px"
         size="small"
         :options="metricOptions"
+        @change="handleSearch"
+      />
+      <Select
+        v-model:value="filter.dimension"
+        style="width: 120px"
+        size="small"
+        :options="dimensionOptions"
         @change="handleSearch"
       />
       <Select
@@ -468,7 +482,7 @@ onMounted(() => {
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- 装置评分对比柱状图 -->
       <ClpmDataCanvas
-        title="装置评分对比"
+        :title="filter.dimension === 'plant' ? '装置评分对比' : filter.dimension === 'unit' ? '单元评分对比' : '回路评分对比'"
         :loading="loading"
         :error="loadError"
         :empty="!loading && !loadError && unitEmpty"

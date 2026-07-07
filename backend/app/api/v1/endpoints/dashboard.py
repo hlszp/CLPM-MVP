@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -67,63 +67,67 @@ async def get_overview_endpoint(
 
 @router.get("/board", response_model=ApiResponse[dict])
 async def get_board_endpoint(
-    plantId: str | None = Query(None, description="按装置/单元筛选；为空返回全部装置"),
+    plantId: str | None = Query(None, description="按装置/单元筛选；为空返回顶层节点的子节点"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
     """装置级三大 KPI 看板（来自 ``unit_kpi_summary`` 表）.
 
-    返回每个装置的最新 KPI 汇总快照：
+    返回当前节点下一层级子节点的最新 KPI 汇总快照：
     - ``avgScore``: 综合性能评分
     - ``autoModeRate``: 平均自控率
     - ``stabilityRate``: 稳定率
 
-    若指定 ``plantId``，仅返回该装置的 KPI；否则返回全部 ``type=UNIT`` 的装置 KPI 列表。
+    若指定 ``plantId``，返回该节点的直接子节点（下一层级）的 KPI；
+    若未指定 ``plantId``，返回顶层节点（parent_id IS NULL）的直接子节点的 KPI。
 
     设计依据：FDS v5.1 §5.3.7, UIUX v5.3 ①, DDS v4.1 §2.17
     """
-    # 构建查询：每个装置的最新一条 unit_kpi_summary
+    # 获取当前节点的直接子节点 ID 列表
     if plantId:
-        # 指定装置：查询该装置最新快照
-        stmt = (
-            select(UnitKpiSummary, PlantNode.name.label("node_name"))
-            .join(PlantNode, UnitKpiSummary.node_id == PlantNode.id)
-            .where(UnitKpiSummary.node_id == plantId)
-            .order_by(desc(UnitKpiSummary.snapshot_time))
-            .limit(1)
-        )
-        result = await db.execute(stmt)
-        row = result.first()
-        if row is None:
-            return success(data={"items": [], "total": 0})
-        summary, node_name = row
-        item = _build_board_item(summary, node_name)
-        return success(data={"items": [item], "total": 1})
+        # 指定节点：查询其直接子节点
+        child_stmt = select(PlantNode.id).where(PlantNode.parent_id == plantId)
     else:
-        # 全部装置：使用 DISTINCT ON 等效查询每个装置最新快照
-        # 子查询：每个 node_id 的最大 snapshot_time
-        subq = (
-            select(
-                UnitKpiSummary.node_id.label("nid"),
-                func.max(UnitKpiSummary.snapshot_time).label("max_ts"),
-            )
-            .group_by(UnitKpiSummary.node_id)
-            .subquery()
+        # 未指定节点：查询顶层节点（parent_id IS NULL）的直接子节点
+        # 先查顶层节点，再查其子节点
+        root_stmt = select(PlantNode.id).where(PlantNode.parent_id.is_(None))
+        root_result = await db.execute(root_stmt)
+        root_ids = [str(row[0]) for row in root_result.all()]
+        child_stmt = select(PlantNode.id).where(PlantNode.parent_id.in_(root_ids))
+
+    child_result = await db.execute(child_stmt)
+    child_ids = [str(row[0]) for row in child_result.all()]
+
+    if not child_ids:
+        return success(data={"items": [], "total": 0})
+
+    # 子查询：每个 node_id 的最大 snapshot_time
+    subq = (
+        select(
+            UnitKpiSummary.node_id.label("nid"),
+            func.max(UnitKpiSummary.snapshot_time).label("max_ts"),
         )
-        stmt = (
-            select(UnitKpiSummary, PlantNode.name.label("node_name"))
-            .join(PlantNode, UnitKpiSummary.node_id == PlantNode.id)
-            .join(
-                subq,
-                (UnitKpiSummary.node_id == subq.c.nid)
-                & (UnitKpiSummary.snapshot_time == subq.c.max_ts),
-            )
-            .order_by(PlantNode.name)
+        .where(UnitKpiSummary.node_id.in_(child_ids))
+        .group_by(UnitKpiSummary.node_id)
+        .subquery()
+    )
+
+    # 查询每个子节点的最新快照
+    stmt = (
+        select(UnitKpiSummary, PlantNode.name.label("node_name"))
+        .join(PlantNode, UnitKpiSummary.node_id == PlantNode.id)
+        .join(
+            subq,
+            (UnitKpiSummary.node_id == subq.c.nid)
+            & (UnitKpiSummary.snapshot_time == subq.c.max_ts),
         )
-        result = await db.execute(stmt)
-        rows = result.all()
-        items = [_build_board_item(summary, node_name) for summary, node_name in rows]
-        return success(data={"items": items, "total": len(items)})
+        .order_by(PlantNode.name)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+    items = [_build_board_item(summary, node_name) for summary, node_name in rows]
+    return success(data={"items": items, "total": len(items)})
 
 
 def _build_board_item(summary: UnitKpiSummary, node_name: str) -> dict:
@@ -171,7 +175,7 @@ def _build_board_item(summary: UnitKpiSummary, node_name: str) -> dict:
 
 @router.get("/auto-rate-rt", response_model=ApiResponse[dict])
 async def get_auto_rate_rt_endpoint(
-    plantId: str | None = Query(None, description="按装置筛选；为空统计全厂"),
+    plantId: str | None = Query(None, description="按节点筛选；为空统计全厂；递归包含所有下属节点"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -187,15 +191,18 @@ async def get_auto_rate_rt_endpoint(
     若 TDengine 不可用或无 MODE 数据，返回 ``rate=null``。
 
     设计依据：FDS v5.1 §5.3.6, UIUX v5.3 ①
-    """
-    from app.services.node_performance import query_realtime_auto_rate
 
-    # 查询活跃回路 ID 列表
-    loop_query = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+    v6.1 更新：支持递归聚合当前节点及所有下属节点的回路
+    """
+    from app.services.node_performance import collect_descendant_loop_ids, query_realtime_auto_rate
+
+    # 查询活跃回路 ID 列表（递归包含当前节点及所有下属节点）
     if plantId:
-        loop_query = loop_query.where(LoopLedger.unit_id == plantId)
-    result = await db.execute(loop_query)
-    loop_ids = [str(row[0]) for row in result.all()]
+        loop_ids = await collect_descendant_loop_ids(db, plantId)
+    else:
+        loop_query = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+        result = await db.execute(loop_query)
+        loop_ids = [str(row[0]) for row in result.all()]
 
     if not loop_ids:
         return success(
@@ -231,6 +238,253 @@ async def get_auto_rate_rt_endpoint(
             "readAt": data["read_at"],
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# S6-PORTAL-004: 节点级聚合 KPI（v6.1 新增）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/board/trend", response_model=ApiResponse[dict])
+async def get_board_trend_endpoint(
+    plantId: str | None = Query(None, description="按节点筛选；为空统计全厂；递归包含所有下属节点"),
+    timeWindow: str = Query("today", description="时间窗：today/yesterday/last_7_days/last_30_days"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """节点级聚合趋势数据（来自 ``unit_kpi_summary`` 表，递归聚合当前节点及所有下属节点）.
+
+    返回当前节点及其所有下属节点的趋势数据，按小时聚合：
+    - ``avgScore``: 综合性能评分（加权平均）
+    - ``autoModeRate``: 平均自控率（加权平均）
+    - ``stabilityRate``: 稳定率（加权平均）
+    - ``evaluatedLoops``: 参评回路数（求和）
+
+    若指定 ``plantId``，返回该节点及其所有下属节点的聚合趋势；
+    若未指定 ``plantId``，返回全厂所有节点的聚合趋势。
+
+    设计依据：FDS v5.1 §5.3.7, UIUX v5.3 ①, DDS v4.1 §2.17
+
+    v6.1 更新：支持递归聚合当前节点及所有下属节点的趋势数据（使用 PostgreSQL 递归 CTE）
+    """
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if timeWindow == "today":
+        start = now - timedelta(hours=24)
+    elif timeWindow == "yesterday":
+        start = now - timedelta(days=2)
+        now = now - timedelta(days=1)
+    elif timeWindow == "last_7_days":
+        start = now - timedelta(days=7)
+    elif timeWindow == "last_30_days":
+        start = now - timedelta(days=30)
+    else:
+        start = now - timedelta(hours=24)
+
+    if plantId:
+        cte_sql = text("""
+            WITH RECURSIVE node_tree AS (
+                SELECT id FROM plant_node WHERE id = :node_id
+                UNION ALL
+                SELECT child.id FROM plant_node child
+                JOIN node_tree ON child.parent_id = node_tree.id
+            )
+            SELECT id FROM node_tree
+        """)
+        result = await db.execute(cte_sql, {"node_id": plantId})
+        descendant_ids = [str(row.id) for row in result.all()]
+    else:
+        result = await db.execute(select(PlantNode.id))
+        descendant_ids = [str(row.id) for row in result.all()]
+
+    if not descendant_ids:
+        return success(data={"timestamps": [], "avgScore": [], "autoModeRate": [], "stabilityRate": [], "evaluatedLoops": []})
+
+    hour_col = func.date_trunc("hour", UnitKpiSummary.snapshot_time).label("hour")
+
+    subq = (
+        select(
+            hour_col,
+            UnitKpiSummary.node_id.label("nid"),
+            UnitKpiSummary.evaluated_loops,
+            UnitKpiSummary.avg_score,
+            UnitKpiSummary.auto_mode_rate,
+            UnitKpiSummary.stability_rate,
+        )
+        .where(
+            UnitKpiSummary.node_id.in_(descendant_ids),
+            UnitKpiSummary.snapshot_time >= start,
+            UnitKpiSummary.snapshot_time <= now,
+        )
+    ).subquery()
+
+    stmt = (
+        select(
+            subq.c.hour,
+            func.sum(subq.c.evaluated_loops).label("total_evaluated"),
+            func.sum(subq.c.avg_score * subq.c.evaluated_loops).label("score_weighted_sum"),
+            func.sum(subq.c.auto_mode_rate * subq.c.evaluated_loops).label("auto_weighted_sum"),
+            func.sum(subq.c.stability_rate * subq.c.evaluated_loops).label("stable_weighted_sum"),
+        )
+        .group_by(subq.c.hour)
+        .order_by(subq.c.hour.asc())
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    timestamps: list[str] = []
+    avg_score: list[float | None] = []
+    auto_mode_rate: list[float | None] = []
+    stability_rate: list[float | None] = []
+    evaluated_loops: list[int] = []
+
+    for row in rows:
+        timestamps.append(row.hour.strftime("%Y-%m-%dT%H:00:00"))
+        total = row.total_evaluated or 0
+        evaluated_loops.append(total)
+        if total > 0:
+            avg_score.append(round(float(row.score_weighted_sum or 0) / total, 2))
+            auto_mode_rate.append(round(float(row.auto_weighted_sum or 0) / total, 2))
+            stability_rate.append(round(float(row.stable_weighted_sum or 0) / total, 2))
+        else:
+            avg_score.append(None)
+            auto_mode_rate.append(None)
+            stability_rate.append(None)
+
+    return success(
+        data={
+            "timestamps": timestamps,
+            "avgScore": avg_score,
+            "autoModeRate": auto_mode_rate,
+            "stabilityRate": stability_rate,
+            "evaluatedLoops": evaluated_loops,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# S6-PORTAL-005: 节点级聚合 KPI（v6.1 新增）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/board/aggregate", response_model=ApiResponse[dict])
+async def get_board_aggregate_endpoint(
+    plantId: str | None = Query(None, description="按节点筛选；为空统计全厂；递归包含所有下属节点"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """节点级聚合 KPI（来自 ``unit_kpi_summary`` 表，递归聚合当前节点及所有下属节点）.
+
+    返回当前节点及其所有下属节点的最新 KPI 汇总快照：
+    - ``avgScore``: 综合性能评分（加权平均）
+    - ``autoModeRate``: 平均自控率（加权平均）
+    - ``stabilityRate``: 稳定率（加权平均）
+    - ``effectiveAutoRate``: 有效自控率（加权平均）
+    - ``accuracyRate``: 准确率（加权平均）
+    - ``fastRate``: 快速率（加权平均）
+    - ``goodValueRate``: 好值率（加权平均）
+    - ``totalLoops``: 总回路数（求和）
+    - ``evaluatedLoops``: 参评回路数（求和）
+    - ``inconclusiveLoops``: INCONCLUSIVE 回路数（求和）
+    - ``excludedLoops``: 排除回路数（求和）
+
+    若指定 ``plantId``，返回该节点及其所有下属节点的聚合 KPI；
+    若未指定 ``plantId``，返回全厂所有节点的聚合 KPI。
+
+    设计依据：FDS v5.1 §5.3.7, UIUX v5.3 ①, DDS v4.1 §2.17
+
+    v6.1 更新：支持递归聚合当前节点及所有下属节点的 KPI（使用 PostgreSQL 递归 CTE）
+    """
+    # 使用递归 CTE 获取当前节点及所有下属节点 ID 列表
+    if plantId:
+        # 指定节点：递归获取该节点及其所有子孙节点
+        cte_sql = text("""
+            WITH RECURSIVE node_tree AS (
+                SELECT id FROM plant_node WHERE id = :node_id
+                UNION ALL
+                SELECT child.id FROM plant_node child
+                JOIN node_tree ON child.parent_id = node_tree.id
+            )
+            SELECT id FROM node_tree
+        """)
+        result = await db.execute(cte_sql, {"node_id": plantId})
+        descendant_ids = [str(row.id) for row in result.all()]
+    else:
+        # 未指定节点：返回所有节点
+        result = await db.execute(select(PlantNode.id))
+        descendant_ids = [str(row.id) for row in result.all()]
+
+    if not descendant_ids:
+        return success(data={"items": [], "total": 0})
+
+    # 子查询：每个 node_id 的最大 snapshot_time
+    subq = (
+        select(
+            UnitKpiSummary.node_id.label("nid"),
+            func.max(UnitKpiSummary.snapshot_time).label("max_ts"),
+        )
+        .where(UnitKpiSummary.node_id.in_(descendant_ids))
+        .group_by(UnitKpiSummary.node_id)
+        .subquery()
+    )
+
+    # 查询每个子节点的最新快照
+    stmt = (
+        select(UnitKpiSummary, PlantNode.name.label("node_name"))
+        .join(PlantNode, UnitKpiSummary.node_id == PlantNode.id)
+        .join(
+            subq,
+            (UnitKpiSummary.node_id == subq.c.nid)
+            & (UnitKpiSummary.snapshot_time == subq.c.max_ts),
+        )
+        .order_by(PlantNode.name)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+    items = [_build_board_item(summary, node_name) for summary, node_name in rows]
+
+    # 计算聚合值（按 evaluatedLoops 加权平均）
+    total_evaluated = sum(item.get("evaluatedLoops", 0) for item in items if item.get("evaluatedLoops") > 0)
+
+    def weighted_avg(field: str) -> float | None:
+        if total_evaluated == 0:
+            return None
+        total = 0.0
+        count = 0
+        for item in items:
+            val = item.get(field)
+            weight = item.get("evaluatedLoops", 0)
+            if val is not None and weight > 0:
+                total += float(val) * weight
+                count += weight
+        return round(total / count, 2) if count > 0 else None
+
+    # 获取聚合节点名称
+    node_name = None
+    if plantId:
+        node_result = await db.execute(select(PlantNode.name).where(PlantNode.id == plantId))
+        node_name = node_result.scalar_one_or_none()
+
+    aggregate = {
+        "nodeId": plantId,
+        "nodeName": node_name or "全厂",
+        "avgScore": weighted_avg("avgScore"),
+        "autoModeRate": weighted_avg("autoModeRate"),
+        "stabilityRate": weighted_avg("stabilityRate"),
+        "effectiveAutoRate": weighted_avg("effectiveAutoRate"),
+        "accuracyRate": weighted_avg("accuracyRate"),
+        "fastRate": weighted_avg("fastRate"),
+        "goodValueRate": weighted_avg("goodValueRate"),
+        "totalLoops": sum(item.get("totalLoops", 0) for item in items),
+        "evaluatedLoops": total_evaluated,
+        "inconclusiveLoops": sum(item.get("inconclusiveLoops", 0) for item in items),
+        "excludedLoops": sum(item.get("excludedLoops", 0) for item in items),
+    }
+
+    return success(data={"items": items, "total": len(items), "aggregate": aggregate})
 
 
 __all__ = ["router"]

@@ -149,6 +149,36 @@ export namespace DashboardApi {
     readAt: string | null;
     message?: string;
   }
+
+  /** 节点级聚合 KPI 结果（v6.1 新增） */
+  export interface BoardAggregateResult {
+    items: BoardItem[];
+    total: number;
+    aggregate: {
+      nodeId: string | null;
+      nodeName: string | null;
+      avgScore: number | null;
+      autoModeRate: number | null;
+      stabilityRate: number | null;
+      effectiveAutoRate: number | null;
+      accuracyRate: number | null;
+      fastRate: number | null;
+      goodValueRate: number | null;
+      totalLoops: number;
+      evaluatedLoops: number;
+      inconclusiveLoops: number;
+      excludedLoops: number;
+    };
+  }
+
+  /** 节点级聚合趋势结果（v6.1 新增） */
+  export interface BoardTrendResult {
+    timestamps: string[];
+    avgScore: (number | null)[];
+    autoModeRate: (number | null)[];
+    stabilityRate: (number | null)[];
+    evaluatedLoops: number[];
+  }
 }
 
 /**
@@ -177,6 +207,26 @@ export function getBoardKpiApi(params?: { plantId?: string }) {
  */
 export function getAutoRateRtApi(params?: { plantId?: string }) {
   return requestClient.get<DashboardApi.AutoRateRt>('/dashboard/auto-rate-rt', {
+    params,
+  });
+}
+
+/**
+ * 获取节点级聚合 KPI（v6.1 新增）
+ * 递归聚合当前节点及所有下属节点的 KPI
+ */
+export function getBoardAggregateApi(params?: { plantId?: string }) {
+  return requestClient.get<DashboardApi.BoardAggregateResult>('/dashboard/board/aggregate', {
+    params,
+  });
+}
+
+/**
+ * 获取节点级聚合趋势数据（v6.1 新增）
+ * 递归聚合当前节点及所有下属节点的趋势数据
+ */
+export function getBoardTrendApi(params?: { plantId?: string; timeWindow?: string }) {
+  return requestClient.get<DashboardApi.BoardTrendResult>('/dashboard/board/trend', {
     params,
   });
 }

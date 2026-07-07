@@ -16,7 +16,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
  * - "仅显示有效评分"开关：隐藏 INCONCLUSIVE 回路
  * - INCONCLUSIVE 回路综合评分显示"—"
  */
-import type { ConfidenceLevel, KpiStatus, MetricApi, TimeWindow } from '#/api/metric';
+import type { KpiStatus, MetricApi, TimeWindow } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onMounted, reactive, ref } from 'vue';
@@ -41,6 +41,7 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas, ClpmKpiStrip, ClpmObjectSummaryBar, ClpmPageToolbar } from '#/components/clpm';
 import type { KpiStripItem, SummaryItem } from '#/components/clpm';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import ScoreSparkline from '#/components/metric/score-sparkline.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -137,6 +138,12 @@ const columns: TableColumnsType = [
     align: 'right',
   },
   {
+    title: '趋势',
+    key: 'trend',
+    width: 100,
+    align: 'center',
+  },
+  {
     title: '好值率',
     dataIndex: 'goodValueRate',
     key: 'goodValueRate',
@@ -204,10 +211,10 @@ const selectedLoop = ref<MetricApi.RankingItem | null>(null);
  * - status === 'INCONCLUSIVE'，或
  * - confidenceLevel === 'E'（可信度 E 级标记为 INCONCLUSIVE）
  */
-function isInconclusive(item: MetricApi.RankingItem): boolean {
+function isInconclusive(item: Record<string, any>): boolean {
   return (
     item.status === 'INCONCLUSIVE' ||
-    item.confidenceLevel === ('E' as ConfidenceLevel)
+    item.confidenceLevel === 'E'
   );
 }
 
@@ -573,7 +580,7 @@ onMounted(() => {
           </template>
           <template v-else-if="column.key === 'score'">
             <span
-              v-if="isInconclusive(record as MetricApi.RankingItem)"
+              v-if="isInconclusive(record)"
               :style="{ color: themeColors.NEUTRAL }"
             >
               —
@@ -585,6 +592,15 @@ onMounted(() => {
             >
               {{ Number(record.score).toFixed(1) }}
             </span>
+          </template>
+          <template v-else-if="column.key === 'trend'">
+            <ScoreSparkline
+              v-if="record.scoreHistory && record.scoreHistory.length >= 2"
+              :data="record.scoreHistory"
+              :width="80"
+              :height="20"
+            />
+            <span v-else :style="{ color: themeColors.NEUTRAL, fontSize: '11px' }">—</span>
           </template>
           <template v-else-if="column.key === 'goodValueRate'">
             <span class="clpm-num">{{ Number(record.goodValueRate).toFixed(1) }}%</span>

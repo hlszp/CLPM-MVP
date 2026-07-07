@@ -72,7 +72,7 @@ const previewLoading = ref(false);
 const previewResult = ref<TaskApi.BackfillPreviewResult | null>(null);
 
 const form = ref({
-  tsRange: [dayjs().subtract(7, 'day'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs],
+  tsRange: [dayjs().subtract(7, 'day').startOf('hour'), dayjs().startOf('hour')] as [dayjs.Dayjs, dayjs.Dayjs],
   plantNodeIds: [] as string[],
   loopIds: [] as string[],
 });
@@ -607,10 +607,12 @@ onUnmounted(() => {
             v-model:value="form.tsRange"
             :allow-clear="false"
             :disabled-date="(d: dayjs.Dayjs) => d.isAfter(dayjs())"
+            :show-time="{ format: 'HH:mm', defaultValue: [dayjs().startOf('hour'), dayjs().startOf('hour')] }"
+            format="YYYY-MM-DD HH:mm"
             style="width: 100%"
           />
           <div class="mt-1 text-xs" :style="{ color: themeColors.NEUTRAL }">
-            最大 30 天；将按小时窗口批量重算
+            默认整点时刻（如 01:00~03:00），可精确到分钟；最大 30 天；按小时窗口批量重算
           </div>
         </FormItem>
 

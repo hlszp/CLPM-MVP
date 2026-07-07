@@ -4,10 +4,16 @@ Wires up logging, CORS, global exception handlers and route prefixes:
 - ``/health`` (root) for liveness probes
 - ``/api/v1/*`` for business endpoints (auth, ...)
 - ``/docs`` and ``/redoc`` for OpenAPI documentation
+
+v6.1：lifespan 中自动启动 Celery Beat 调度进程，确保每小时 KPI 计算
+等定时任务在项目启动后自动执行，无需手动启动 Beat。
 """
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -55,6 +61,87 @@ from app.middleware.request_id import RequestIdMiddleware
 
 logger = get_logger(__name__)
 
+# Celery Beat 子进程引用（lifespan 管理）
+_celery_beat_process: subprocess.Popen | None = None
+
+
+def _start_celery_beat() -> None:
+    """启动 Celery Beat 调度子进程。
+
+    在 FastAPI lifespan 中调用，确保定时任务（如每小时 KPI 计算）
+    随后端启动自动运行。Beat 进程独立于 Celery worker，仅负责
+    按 schedule 发送任务到队列。
+
+    PersistentScheduler 使用文件锁（celerybeat-schedule），
+    即使多个 Beat 进程启动也只有一个能运行。
+    """
+    global _celery_beat_process
+
+    # 检查是否已有 Beat 进程在运行（通过 celerybeat.pid 文件）
+    pid_file = os.path.join(os.getcwd(), "celerybeat.pid")
+    if os.path.exists(pid_file):
+        try:
+            with open(pid_file) as f:
+                old_pid = int(f.read().strip())
+            os.kill(old_pid, 0)  # 检查进程是否存在
+            logger.info("Celery Beat 已在运行 (PID=%s)，跳过启动", old_pid)
+            return
+        except (ProcessLookupError, ValueError, OSError):
+            # 进程不存在，清理遗留的 PID 文件
+            try:
+                os.remove(pid_file)
+            except OSError:
+                pass
+
+    try:
+        _celery_beat_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "celery",
+                "-A",
+                "app.tasks.celery_app",
+                "beat",
+                "-l",
+                "info",
+                "--pidfile",
+                pid_file,
+            ],
+            cwd=os.getcwd(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info(
+            "Celery Beat 调度进程已启动 (PID=%s)，定时任务将自动执行",
+            _celery_beat_process.pid,
+        )
+    except Exception as exc:
+        logger.warning(
+            "启动 Celery Beat 失败（定时任务将不会自动执行）: %s", exc
+        )
+
+
+def _stop_celery_beat() -> None:
+    """停止 Celery Beat 调度子进程。"""
+    global _celery_beat_process
+    if _celery_beat_process is not None:
+        logger.info("停止 Celery Beat 调度进程...")
+        _celery_beat_process.terminate()
+        try:
+            _celery_beat_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _celery_beat_process.kill()
+            _celery_beat_process.wait(timeout=3)
+        _celery_beat_process = None
+        logger.info("Celery Beat 调度进程已停止")
+
+    # 清理 PID 文件
+    pid_file = os.path.join(os.getcwd(), "celerybeat.pid")
+    try:
+        os.remove(pid_file)
+    except OSError:
+        pass
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -62,6 +149,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
     logger.info("数据源类型: %s", settings.DATA_SOURCE_TYPE)
+
+    # v6.1：自动启动 Celery Beat 调度进程
+    _start_celery_beat()
 
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
@@ -71,6 +161,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
     logger.info("Shutting down %s", settings.APP_NAME)
+
+    # 停止 Celery Beat
+    _stop_celery_beat()
 
     # 停止实时数据订阅
     from app.services.data_source.realtime_subscriber import stop_subscriber

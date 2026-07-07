@@ -217,6 +217,8 @@ export namespace MetricApi {
     qualityPolicy?: null | string;
     idealSettlingTime?: null | number;
     dataLineage?: DataLineage | null;
+    /** 历史评分趋势（用于行内 sparkline 展示） */
+    scoreHistory?: number[];
   }
 
   /** 排行查询参数 */
