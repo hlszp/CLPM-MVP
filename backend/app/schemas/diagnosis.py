@@ -361,6 +361,128 @@ class TagResolveRequest(CamelModel):
     resolution_note: str | None = Field(None, description="处理说明（抑制时必填）")
 
 
+# ---------------------------------------------------------------------------
+# 诊断任务管理 (PRD §5.6 诊断中心 — 诊断任务子模块)
+# ---------------------------------------------------------------------------
+
+# 诊断任务状态：PENDING/RUNNING/SUCCESS/FAILED/CANCELLED
+DiagnosisTaskStatus = Literal["PENDING", "RUNNING", "SUCCESS", "FAILED", "CANCELLED"]
+
+# 诊断任务触发方式：manual（手动）/ auto（自动）
+DiagnosisTriggerType = Literal["manual", "auto"]
+
+
+class DiagnosisTriggerRequest(CamelModel):
+    """POST /diagnosis/trigger 请求体 — 触发诊断（支持批量）。
+
+    支持单/批量回路诊断触发，可选时间范围（默认最近 1 小时）。
+    """
+
+    loopIds: list[str] = Field(..., min_length=1, description="回路 ID 列表（至少 1 个）")
+    startTime: str | None = Field(None, description="时间窗起始（ISO 8601，默认最近 1 小时）")
+    endTime: str | None = Field(None, description="时间窗结束（ISO 8601，默认当前时间）")
+
+
+class DiagnosisTaskTriggerItem(CamelModel):
+    """触发诊断响应中的单个任务项。"""
+
+    taskId: str
+    loopId: str
+    status: DiagnosisTaskStatus = "PENDING"
+
+
+class DiagnosisTriggerData(CamelModel):
+    """触发诊断响应 data 块。"""
+
+    tasks: list[DiagnosisTaskTriggerItem] = Field(default_factory=list)
+
+
+class DiagnosisLabelItem(CamelModel):
+    """诊断任务列表项中的标签聚合。"""
+
+    label: str
+    confidence: float = 0.0
+
+
+class DiagnosisTaskItem(CamelModel):
+    """诊断任务列表项（未归档）。"""
+
+    taskId: str
+    loopId: str
+    tagName: str | None = None
+    loopName: str | None = None
+    unitName: str | None = None
+    compositeScore: float | None = None
+    accuracyScore: float | None = None
+    fastScore: float | None = None
+    steadyScore: float | None = None
+    effectiveAutoRate: float | None = None
+    status: DiagnosisTaskStatus
+    triggerType: DiagnosisTriggerType
+    triggeredBy: str | None = None
+    triggeredAt: str | None = None
+    completedAt: str | None = None
+    timeRangeStart: str | None = None
+    timeRangeEnd: str | None = None
+    labels: list[DiagnosisLabelItem] = Field(default_factory=list)
+    isArchived: bool = False
+
+
+class DiagnosisTaskListData(CamelModel):
+    """诊断任务列表响应 data 块。"""
+
+    items: list[DiagnosisTaskItem] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    pageSize: int = 20
+
+
+class DiagnosisTaskResultItem(CamelModel):
+    """诊断任务详情中的单条诊断结果。"""
+
+    id: str
+    label: str
+    labelName: str | None = None
+    confidence: float = 0.0
+    featureValues: dict[str, Any] = Field(default_factory=dict)
+    evidenceChain: dict[str, Any] = Field(default_factory=dict)
+    algorithmVersion: str | None = None
+    diagnosedAt: str | None = None
+
+
+class DiagnosisTaskDetail(CamelModel):
+    """诊断任务详情响应 data 块。"""
+
+    taskId: str
+    loopId: str
+    tagName: str | None = None
+    loopName: str | None = None
+    unitName: str | None = None
+    status: DiagnosisTaskStatus
+    triggerType: DiagnosisTriggerType
+    triggeredBy: str | None = None
+    triggeredAt: str | None = None
+    completedAt: str | None = None
+    timeRangeStart: str | None = None
+    timeRangeEnd: str | None = None
+    errorMessage: str | None = None
+    isArchived: bool = False
+    results: list[DiagnosisTaskResultItem] = Field(default_factory=list)
+
+
+class DiagnosisRecordItem(DiagnosisTaskItem):
+    """诊断记录列表项（已归档），结构与任务列表项一致。"""
+
+
+class DiagnosisRecordListData(CamelModel):
+    """诊断记录列表响应 data 块。"""
+
+    items: list[DiagnosisRecordItem] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    pageSize: int = 20
+
+
 __all__ = [
     "AnalyticsExportData",
     "AnalyticsExportRequest",
@@ -374,6 +496,8 @@ __all__ = [
     "DiagnosisLabelDetail",
     "DiagnosisListData",
     "DiagnosisListItem",
+    "DiagnosisRecordItem",
+    "DiagnosisRecordListData",
     "DiagnosisReportRequest",
     "DiagnosisStatisticsExportParams",
     "DiagnosisTagListResponse",
@@ -381,6 +505,16 @@ __all__ = [
     "DiagnosisTagSeverity",
     "DiagnosisTagStatus",
     "DiagnosisTagType",
+    "DiagnosisTaskDetail",
+    "DiagnosisTaskItem",
+    "DiagnosisTaskListData",
+    "DiagnosisTaskResultItem",
+    "DiagnosisTaskStatus",
+    "DiagnosisTaskTriggerItem",
+    "DiagnosisTriggerData",
+    "DiagnosisTriggerRequest",
+    "DiagnosisTriggerType",
+    "DiagnosisLabelItem",
     "EfficiencyTrend",
     "EvidenceChain",
     "LabelDistributionItem",

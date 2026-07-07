@@ -1,5 +1,8 @@
 {
   "title": "Diagnosis Center",
+  "overview": {
+    "title": "Diagnosis Overview"
+  },
   "list": {
     "title": "Diagnosis List",
     "plantNodePlaceholder": "Plant / Unit Filter",

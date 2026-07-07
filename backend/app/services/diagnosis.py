@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
-from app.models.diagnosis import DiagnosisConfig, DiagnosisResult
+from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTask
 from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
@@ -640,13 +640,595 @@ def _aggregate_close_duration_distribution(rows: list) -> list[dict]:
     return [{"range": label, "count": counts[label]} for label, _, _ in CLOSE_DURATION_BUCKETS]
 
 
+# ---------------------------------------------------------------------------
+# 诊断任务管理 (PRD §5.6 诊断中心 — 诊断任务子模块)
+# ---------------------------------------------------------------------------
+
+
+# 可取消的任务状态
+_CANCELLABLE_STATUSES = ("PENDING", "RUNNING")
+
+
+async def trigger_diagnosis(
+    db: AsyncSession,
+    *,
+    loop_ids: list[str],
+    start_time: str | None = None,
+    end_time: str | None = None,
+    operator: str = "system",
+) -> dict:
+    """触发诊断任务（手动，支持批量）。
+
+    为每个回路创建一条 DiagnosisTask 记录（trigger_type='manual'），
+    并通过 Celery 异步执行诊断。
+
+    Args:
+        db: 异步数据库会话
+        loop_ids: 回路 ID 列表（至少 1 个）
+        start_time: 时间窗起始（ISO 8601，可选，默认最近 1 小时）
+        end_time: 时间窗结束（ISO 8601，可选，默认当前时间）
+        operator: 触发人用户名
+
+    Returns:
+        {tasks: [{taskId, loopId, status}, ...]}
+
+    Raises:
+        BizError: ERR_VALIDATION — loop_ids 为空
+    """
+    if not loop_ids:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message="回路 ID 列表不能为空",
+            status_code=422,
+        )
+
+    # 延迟导入避免 Celery worker 循环依赖
+    from app.tasks.diagnosis_engine import run_loop_diagnosis
+
+    # 解析时间范围（naive datetime 入库）
+    now_naive = datetime.now(UTC).replace(tzinfo=None)
+    if start_time:
+        ts_start_dt = _parse_iso_datetime(start_time)
+    else:
+        ts_start_dt = now_naive - timedelta(hours=1)
+    if end_time:
+        ts_end_dt = _parse_iso_datetime(end_time)
+    else:
+        ts_end_dt = now_naive
+
+    tasks_list: list[dict] = []
+    for lid in loop_ids:
+        task_id = str(uuid4())
+        task = DiagnosisTask(
+            id=task_id,
+            loop_id=lid,
+            trigger_type="manual",
+            triggered_by=operator,
+            status="PENDING",
+            time_range_start=ts_start_dt,
+            time_range_end=ts_end_dt,
+        )
+        db.add(task)
+        tasks_list.append({"taskId": task_id, "loopId": lid, "status": "PENDING"})
+
+    await db.commit()
+
+    # 提交 Celery 异步任务（每回路一个）
+    for item in tasks_list:
+        run_loop_diagnosis.delay(
+            item["loopId"],
+            task_id=item["taskId"],
+            time_range_start=ts_start_dt.isoformat(),
+            time_range_end=ts_end_dt.isoformat(),
+        )
+
+    logger.info(
+        "诊断任务已触发: %d 个回路, operator=%s, range=%s~%s",
+        len(loop_ids),
+        operator,
+        ts_start_dt.isoformat(),
+        ts_end_dt.isoformat(),
+    )
+
+    return {"tasks": tasks_list}
+
+
+async def list_diagnosis_tasks(
+    db: AsyncSession,
+    *,
+    status: str | None = None,
+    trigger_type: str | None = None,
+    loop_id: str | None = None,
+    plant_node_id: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """诊断任务列表（仅未归档，分页 + 筛选）。
+
+    Returns:
+        {items, total, page, pageSize}
+    """
+    conditions: list[Any] = [DiagnosisTask.is_archived.is_(False)]
+    if status:
+        conditions.append(DiagnosisTask.status == status)
+    if trigger_type:
+        conditions.append(DiagnosisTask.trigger_type == trigger_type)
+    if loop_id:
+        conditions.append(DiagnosisTask.loop_id == loop_id)
+
+    base_stmt = select(DiagnosisTask)
+    if plant_node_id:
+        base_stmt = base_stmt.join(
+            LoopLedger, DiagnosisTask.loop_id == LoopLedger.id
+        ).where(LoopLedger.unit_id == plant_node_id)
+    for cond in conditions:
+        base_stmt = base_stmt.where(cond)
+
+    # 计数
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    # 分页查询（按触发时间倒序）
+    stmt = (
+        base_stmt.order_by(DiagnosisTask.triggered_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    result = await db.execute(stmt)
+    tasks = list(result.scalars().all())
+
+    # 批量查询回路信息和最新评分
+    loop_ids_list = [str(t.loop_id) for t in tasks if t.loop_id]
+    loop_map: dict[str, LoopLedger] = {}
+    unit_map: dict[str, str] = {}
+    score_map: dict[str, Decimal | None] = {}
+    if loop_ids_list:
+        # 查询回路
+        l_result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids_list)))
+        for loop in l_result.scalars().all():
+            loop_map[str(loop.id)] = loop
+        # 查询装置名称
+        unit_ids = [str(l.unit_id) for l in loop_map.values() if l.unit_id]
+        if unit_ids:
+            u_result = await db.execute(select(PlantNode).where(PlantNode.id.in_(unit_ids)))
+            for node in u_result.scalars().all():
+                unit_map[str(node.id)] = node.name
+        # 查询最新评分
+        score_sub = (
+            select(
+                KpiSnapshotHourly.loop_id,
+                KpiSnapshotHourly.score,
+                func.row_number()
+                .over(
+                    partition_by=KpiSnapshotHourly.loop_id,
+                    order_by=KpiSnapshotHourly.ts_start.desc(),
+                )
+                .label("rn"),
+            )
+            .where(KpiSnapshotHourly.loop_id.in_(loop_ids_list))
+            .subquery()
+        )
+        s_result = await db.execute(
+            select(score_sub.c.loop_id, score_sub.c.score).where(score_sub.c.rn == 1)
+        )
+        for lid, score in s_result.all():
+            score_map[str(lid)] = score
+
+    items: list[dict] = []
+    for task in tasks:
+        items.append(_task_to_dict(task, loop_map, unit_map, score_map))
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+    }
+
+
+async def get_diagnosis_task_detail(db: AsyncSession, task_id: str) -> dict:
+    """获取诊断任务详情（含关联的诊断结果）。
+
+    Raises:
+        BizError: ERR_DIAG_TASK_NOT_FOUND
+    """
+    result = await db.execute(select(DiagnosisTask).where(DiagnosisTask.id == task_id))
+    task = result.scalar_one_or_none()
+    if task is None:
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_FOUND",
+            message="诊断任务不存在",
+            status_code=404,
+        )
+
+    # 查询回路信息
+    loop_map: dict[str, LoopLedger] = {}
+    unit_map: dict[str, str] = {}
+    if task.loop_id:
+        l_result = await db.execute(
+            select(LoopLedger).where(LoopLedger.id == str(task.loop_id))
+        )
+        loop = l_result.scalar_one_or_none()
+        if loop:
+            loop_map[str(loop.id)] = loop
+            if loop.unit_id:
+                u_result = await db.execute(
+                    select(PlantNode).where(PlantNode.id == str(loop.unit_id))
+                )
+                node = u_result.scalar_one_or_none()
+                if node:
+                    unit_map[str(node.id)] = node.name
+
+    # 查询关联的诊断结果
+    diag_result = await db.execute(
+        select(DiagnosisResult)
+        .where(DiagnosisResult.task_id == task_id)
+        .order_by(DiagnosisResult.diagnosed_at.desc())
+    )
+    diag_records = list(diag_result.scalars().all())
+
+    results_list: list[dict] = []
+    for record in diag_records:
+        label = record.diag_label or "MANUAL_REVIEW"
+        results_list.append(
+            {
+                "id": str(record.id),
+                "label": label,
+                "labelName": DIAG_LABEL_NAMES.get(label, label),
+                "confidence": _confidence_to_float(record.confidence),
+                "featureValues": record.feature_values or {},
+                "evidenceChain": record.evidence_chain or {},
+                "algorithmVersion": record.algorithm_version,
+                "diagnosedAt": record.diagnosed_at.isoformat()
+                if record.diagnosed_at
+                else None,
+            }
+        )
+
+    # 构建详情字典
+    score_map: dict[str, Decimal | None] = {}
+    if task.loop_id:
+        snap_result = await db.execute(
+            select(KpiSnapshotHourly)
+            .where(KpiSnapshotHourly.loop_id == str(task.loop_id))
+            .order_by(KpiSnapshotHourly.ts_start.desc())
+            .limit(1)
+        )
+        snap = snap_result.scalar_one_or_none()
+        if snap:
+            score_map[str(task.loop_id)] = snap.score
+
+    base = _task_to_dict(task, loop_map, unit_map, score_map)
+    base.update(
+        {
+            "errorMessage": task.error_message,
+            "results": results_list,
+        }
+    )
+    return base
+
+
+async def archive_diagnosis_task(
+    db: AsyncSession,
+    task_id: str,
+    operator: str = "system",
+) -> dict:
+    """归档诊断任务（仅 SUCCESS/FAILED/CANCELLED 可归档）。
+
+    Raises:
+        BizError: ERR_DIAG_TASK_NOT_FOUND / ERR_DIAG_TASK_NOT_ARCHIVABLE
+    """
+    result = await db.execute(select(DiagnosisTask).where(DiagnosisTask.id == task_id))
+    task = result.scalar_one_or_none()
+    if task is None:
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_FOUND",
+            message="诊断任务不存在",
+            status_code=404,
+        )
+
+    if task.is_archived:
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_ARCHIVABLE",
+            message="任务已归档，无需重复操作",
+            status_code=400,
+        )
+
+    if task.status in _CANCELLABLE_STATUSES:
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_ARCHIVABLE",
+            message=f"任务状态为 {task.status}，仅终态（SUCCESS/FAILED/CANCELLED）可归档",
+            status_code=400,
+        )
+
+    before_snapshot = json.dumps(
+        {"id": str(task.id), "isArchived": task.is_archived}, ensure_ascii=False
+    )
+
+    task.is_archived = True
+    task.archived_at = datetime.now(UTC).replace(tzinfo=None)
+    task.archived_by = operator
+
+    after_snapshot = json.dumps(
+        {
+            "id": str(task.id),
+            "isArchived": task.is_archived,
+            "archivedAt": task.archived_at.isoformat() if task.archived_at else None,
+            "archivedBy": task.archived_by,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+
+    await _write_audit(
+        db=db,
+        operator=operator,
+        operation_type="DIAG_TASK_ARCHIVE",
+        target_type="diagnosis_task",
+        target_id=str(task.id),
+        before_value=before_snapshot,
+        after_value=after_snapshot,
+    )
+    await db.commit()
+
+    logger.info("诊断任务 %s 已归档, operator=%s", task_id, operator)
+    return {"taskId": task_id, "isArchived": True}
+
+
+async def cancel_diagnosis_task(
+    db: AsyncSession,
+    task_id: str,
+    operator: str = "system",
+) -> dict:
+    """取消诊断任务（仅 PENDING/RUNNING 可取消）。
+
+    Raises:
+        BizError: ERR_DIAG_TASK_NOT_FOUND / ERR_DIAG_TASK_NOT_CANCELLABLE
+    """
+    result = await db.execute(select(DiagnosisTask).where(DiagnosisTask.id == task_id))
+    task = result.scalar_one_or_none()
+    if task is None:
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_FOUND",
+            message="诊断任务不存在",
+            status_code=404,
+        )
+
+    if task.status not in _CANCELLABLE_STATUSES:
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_CANCELLABLE",
+            message=f"任务状态为 {task.status}，仅 PENDING/RUNNING 可取消",
+            status_code=400,
+        )
+
+    before_snapshot = json.dumps(
+        {"id": str(task.id), "status": task.status}, ensure_ascii=False
+    )
+
+    task.status = "CANCELLED"
+    task.completed_at = datetime.now(UTC).replace(tzinfo=None)
+
+    after_snapshot = json.dumps(
+        {
+            "id": str(task.id),
+            "status": task.status,
+            "completedAt": task.completed_at.isoformat() if task.completed_at else None,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+
+    await _write_audit(
+        db=db,
+        operator=operator,
+        operation_type="DIAG_TASK_CANCEL",
+        target_type="diagnosis_task",
+        target_id=str(task.id),
+        before_value=before_snapshot,
+        after_value=after_snapshot,
+    )
+    await db.commit()
+
+    logger.info("诊断任务 %s 已取消, operator=%s", task_id, operator)
+    return {"taskId": task_id, "status": "CANCELLED"}
+
+
+async def delete_diagnosis_task(
+    db: AsyncSession,
+    task_id: str,
+    operator: str = "system",
+) -> dict:
+    """物理删除诊断任务（仅 PENDING 可删除）。
+
+    Raises:
+        BizError: ERR_DIAG_TASK_NOT_FOUND / ERR_DIAG_TASK_NOT_DELETABLE
+    """
+    result = await db.execute(select(DiagnosisTask).where(DiagnosisTask.id == task_id))
+    task = result.scalar_one_or_none()
+    if task is None:
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_FOUND",
+            message="诊断任务不存在",
+            status_code=404,
+        )
+
+    if task.status != "PENDING":
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_DELETABLE",
+            message=f"任务状态为 {task.status}，仅 PENDING 可删除",
+            status_code=400,
+        )
+
+    before_snapshot = json.dumps(
+        {"id": str(task.id), "status": task.status, "loopId": str(task.loop_id)},
+        ensure_ascii=False,
+    )
+
+    await db.delete(task)
+
+    await _write_audit(
+        db=db,
+        operator=operator,
+        operation_type="DIAG_TASK_DELETE",
+        target_type="diagnosis_task",
+        target_id=str(task.id),
+        before_value=before_snapshot,
+        after_value=None,
+    )
+    await db.commit()
+
+    logger.info("诊断任务 %s 已删除, operator=%s", task_id, operator)
+    return {"taskId": task_id, "deleted": True}
+
+
+async def list_diagnosis_records(
+    db: AsyncSession,
+    *,
+    status: str | None = None,
+    trigger_type: str | None = None,
+    loop_id: str | None = None,
+    plant_node_id: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """诊断记录列表（仅已归档，分页 + 筛选）。
+
+    Returns:
+        {items, total, page, pageSize}
+    """
+    conditions: list[Any] = [DiagnosisTask.is_archived.is_(True)]
+    if status:
+        conditions.append(DiagnosisTask.status == status)
+    if trigger_type:
+        conditions.append(DiagnosisTask.trigger_type == trigger_type)
+    if loop_id:
+        conditions.append(DiagnosisTask.loop_id == loop_id)
+
+    base_stmt = select(DiagnosisTask)
+    if plant_node_id:
+        base_stmt = base_stmt.join(
+            LoopLedger, DiagnosisTask.loop_id == LoopLedger.id
+        ).where(LoopLedger.unit_id == plant_node_id)
+    for cond in conditions:
+        base_stmt = base_stmt.where(cond)
+
+    # 计数
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    # 分页查询（按归档时间倒序）
+    stmt = (
+        base_stmt.order_by(DiagnosisTask.archived_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    result = await db.execute(stmt)
+    tasks = list(result.scalars().all())
+
+    # 批量查询回路信息和最新评分
+    loop_ids_list = [str(t.loop_id) for t in tasks if t.loop_id]
+    loop_map: dict[str, LoopLedger] = {}
+    unit_map: dict[str, str] = {}
+    score_map: dict[str, Decimal | None] = {}
+    if loop_ids_list:
+        l_result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids_list)))
+        for loop in l_result.scalars().all():
+            loop_map[str(loop.id)] = loop
+        unit_ids = [str(l.unit_id) for l in loop_map.values() if l.unit_id]
+        if unit_ids:
+            u_result = await db.execute(select(PlantNode).where(PlantNode.id.in_(unit_ids)))
+            for node in u_result.scalars().all():
+                unit_map[str(node.id)] = node.name
+        score_sub = (
+            select(
+                KpiSnapshotHourly.loop_id,
+                KpiSnapshotHourly.score,
+                func.row_number()
+                .over(
+                    partition_by=KpiSnapshotHourly.loop_id,
+                    order_by=KpiSnapshotHourly.ts_start.desc(),
+                )
+                .label("rn"),
+            )
+            .where(KpiSnapshotHourly.loop_id.in_(loop_ids_list))
+            .subquery()
+        )
+        s_result = await db.execute(
+            select(score_sub.c.loop_id, score_sub.c.score).where(score_sub.c.rn == 1)
+        )
+        for lid, score in s_result.all():
+            score_map[str(lid)] = score
+
+    items: list[dict] = []
+    for task in tasks:
+        items.append(_task_to_dict(task, loop_map, unit_map, score_map))
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+    }
+
+
+def _task_to_dict(
+    task: DiagnosisTask,
+    loop_map: dict[str, LoopLedger] | None = None,
+    unit_map: dict[str, str] | None = None,
+    score_map: dict[str, Decimal | None] | None = None,
+) -> dict:
+    """将 DiagnosisTask ORM 模型转换为响应字典。
+
+    Args:
+        task: 诊断任务 ORM 对象
+        loop_map: 回路 ID → LoopLedger 映射（可选，用于补充回路信息）
+        unit_map: 装置 ID → 名称映射（可选，用于补充装置名称）
+        score_map: 回路 ID → 最新评分映射（可选，用于补充综合评分）
+    """
+    loop_map = loop_map or {}
+    unit_map = unit_map or {}
+    score_map = score_map or {}
+
+    loop_id = str(task.loop_id) if task.loop_id else ""
+    loop = loop_map.get(loop_id)
+    tag_name = loop.tag_name if loop else None
+    loop_name = loop.description if loop else None
+    unit_name = unit_map.get(str(loop.unit_id)) if loop and loop.unit_id else None
+    composite_score = _to_float(score_map.get(loop_id))
+
+    return {
+        "taskId": str(task.id),
+        "loopId": loop_id,
+        "tagName": tag_name,
+        "loopName": loop_name,
+        "unitName": unit_name,
+        "compositeScore": composite_score,
+        "status": task.status,
+        "triggerType": task.trigger_type,
+        "triggeredBy": task.triggered_by,
+        "triggeredAt": task.triggered_at.isoformat() if task.triggered_at else None,
+        "completedAt": task.completed_at.isoformat() if task.completed_at else None,
+        "timeRangeStart": task.time_range_start.isoformat()
+        if task.time_range_start
+        else None,
+        "timeRangeEnd": task.time_range_end.isoformat() if task.time_range_end else None,
+        "isArchived": bool(task.is_archived),
+    }
+
+
 __all__ = [
     "CLOSE_DURATION_BUCKETS",
     "DIAG_ALGORITHM_VERSION",
     "DIAG_LABEL_NAMES",
+    "archive_diagnosis_task",
+    "cancel_diagnosis_task",
     "get_diagnosis_analytics",
     "get_diagnosis_detail",
+    "get_diagnosis_task_detail",
     "list_diagnosis",
     "list_diagnosis_configs",
+    "list_diagnosis_records",
+    "list_diagnosis_tasks",
+    "trigger_diagnosis",
     "update_diagnosis_config",
 ]

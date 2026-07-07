@@ -66,6 +66,12 @@ class DiagnosisResult(Base):
     evidence_chain: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     diagnosed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # 关联诊断任务（可选，向后兼容：旧记录 task_id 为 NULL）
+    task_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("diagnosis_task.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -74,6 +80,67 @@ class DiagnosisResult(Base):
         ),
         Index("idx_diagnosis_result_loop_id", "loop_id"),
         Index("idx_diagnosis_result_diagnosed", "diagnosed_at"),
+        Index("idx_diagnosis_result_task_id", "task_id"),
+    )
+
+
+class DiagnosisTask(Base):
+    """诊断任务 — 每回路每批次一条任务记录（DDL §11.1）。
+
+    承载用户手动触发或系统自动触发的回路诊断任务全生命周期记录：
+    - 状态机：PENDING → RUNNING → SUCCESS / FAILED / CANCELLED
+    - 触发方式：manual（用户手动） / auto（系统自动）
+    - 完成后可归档（is_archived=true），归档后从任务列表移入诊断记录
+    - 与 DiagnosisResult 一对多：一个任务可产生多条诊断结果记录
+
+    设计依据：PRD §5.6 诊断中心 / IDS §2.4 诊断任务管理
+    """
+
+    __tablename__ = "diagnosis_task"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    loop_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("loop_ledger.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # 触发方式：manual（手动）/ auto（自动）
+    trigger_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    # 触发人：用户名或 'system'
+    triggered_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # 任务状态：PENDING / RUNNING / SUCCESS / FAILED / CANCELLED
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'PENDING'")
+    )
+    # 诊断时间窗（NULL 表示使用默认 1 小时）
+    time_range_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    time_range_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 失败时的错误信息
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    triggered_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 归档相关字段
+    is_archived: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false"), default=False, nullable=False
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    archived_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "trigger_type IN ('manual', 'auto')", name="ck_diag_task_trigger_type"
+        ),
+        CheckConstraint(
+            "status IN ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED')",
+            name="ck_diag_task_status",
+        ),
+        Index("idx_diagnosis_task_loop_id", "loop_id"),
+        Index("idx_diagnosis_task_status", "status"),
+        Index("idx_diagnosis_task_archived", "is_archived"),
     )
 
 

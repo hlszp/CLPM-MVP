@@ -1,16 +1,25 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 诊断中心路由模块
+ * 诊断中心路由模块（v6.1 IA 调整：7 页面 → 5 页面 + 诊断任务）
  *
- * 对齐 UI/UX v4.1 §4.2 + PRD §4.4 + IDS v3.2 §2.4
- * - 诊断配置 / 诊断列表 / 诊断详情 / 波形查看 / 异常跟踪 / A/B 对比 / 诊断统计
+ * 对齐 UI/UX v6.1 §4.2 + PRD §4.4 + IDS v3.2 §2.4
+ * - 诊断总览 / 诊断任务 / 诊断记录 / 诊断详情（隐藏） / 异常跟踪 / 诊断配置
+ *
+ * v6.1 IA 调整说明：
+ * - 新增 DiagnosisOverview 作为诊断中心默认着陆页（替代原直接进入列表）
+ * - 新增 DiagnosisTasks 页面（未归档诊断任务管理 + 触发诊断 + 结果查看 + 归档）
+ * - 原 DiagnosisList 改造为 DiagnosisRecords（仅显示已归档数据，list.vue 保留便于回退）
+ * - 移除 DiagnosisWaveform 路由（能力已合并入 DiagnosisDetail）
+ * - 移除 DiagnosisABCompare 路由（能力已合并入 DiagnosisTracker 的 Drawer 模式）
+ * - 移除 DiagnosisStatistics 路由（能力已合并入 DiagnosisOverview）
+ * - 原 waveform.vue / ab-compare.vue / statistics.vue 文件保留，便于回退
  *
  * 角色权限（PRD §3）：
  * - ADMIN：全部（含配置）
  * - IC_ENGINEER：全部（含异常跟踪编辑）
  * - PE_ENGINEER：查看 + 异常跟踪
- * - SPONSOR：仅统计报表与诊断列表汇总，不可进入单回路诊断详情/波形证据
+ * - SPONSOR：仅总览与诊断任务/记录汇总，不可进入单回路诊断详情
  * - EXPERT：查看 + 异常跟踪
  */
 const routes: RouteRecordRaw[] = [
@@ -23,11 +32,12 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'Diagnosis',
     path: '/diagnosis',
+    redirect: '/diagnosis/overview',
     children: [
       {
-        name: 'DiagnosisList',
-        path: '/diagnosis/list',
-        component: () => import('#/views/diagnosis/list.vue'),
+        name: 'DiagnosisOverview',
+        path: '/diagnosis/overview',
+        component: () => import('#/views/diagnosis/overview.vue'),
         meta: {
           authority: [
             'ADMIN',
@@ -36,8 +46,40 @@ const routes: RouteRecordRaw[] = [
             'PE_ENGINEER',
             'SPONSOR',
           ],
-          icon: 'lucide:list',
-          title: '诊断列表',
+          icon: 'lucide:layout-dashboard',
+          title: '诊断总览',
+        },
+      },
+      {
+        name: 'DiagnosisTasks',
+        path: '/diagnosis/tasks',
+        component: () => import('#/views/diagnosis/tasks.vue'),
+        meta: {
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
+          icon: 'lucide:clipboard-list',
+          title: '诊断任务',
+        },
+      },
+      {
+        name: 'DiagnosisRecords',
+        path: '/diagnosis/records',
+        component: () => import('#/views/diagnosis/records.vue'),
+        meta: {
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
+          icon: 'lucide:archive',
+          title: '诊断记录',
         },
       },
       {
@@ -51,16 +93,6 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'DiagnosisWaveform',
-        path: '/diagnosis/waveform',
-        component: () => import('#/views/diagnosis/waveform.vue'),
-        meta: {
-          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],
-          icon: 'lucide:activity',
-          title: '波形分析',
-        },
-      },
-      {
         name: 'DiagnosisTracker',
         path: '/diagnosis/tracker',
         component: () => import('#/views/diagnosis/tracker.vue'),
@@ -68,33 +100,6 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
           icon: 'lucide:clipboard-check',
           title: '异常跟踪',
-        },
-      },
-      {
-        name: 'DiagnosisABCompare',
-        path: '/diagnosis/ab-compare',
-        component: () => import('#/views/diagnosis/ab-compare.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'EXPERT'],
-          hideInMenu: true,
-          icon: 'lucide:git-compare',
-          title: 'A/B 对比',
-        },
-      },
-      {
-        name: 'DiagnosisStatistics',
-        path: '/diagnosis/statistics',
-        component: () => import('#/views/diagnosis/statistics.vue'),
-        meta: {
-          authority: [
-            'ADMIN',
-            'EXPERT',
-            'IC_ENGINEER',
-            'PE_ENGINEER',
-            'SPONSOR',
-          ],
-          icon: 'lucide:bar-chart-3',
-          title: '统计报表',
         },
       },
       {
