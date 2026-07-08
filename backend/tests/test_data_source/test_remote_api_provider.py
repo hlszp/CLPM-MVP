@@ -387,8 +387,73 @@ async def test_query_fn_skips_missing_tag_in_series():
         )
 
     assert result.signals["pv"] == [10.0, 20.0]
-    # SP 缺失，应为空列表
-    assert result.signals["sp"] == []
+    # SP 缺失，应按统一时间轴补 None，保持 RawTimeSeries 对齐契约
+    assert result.signals["sp"] == [None, None]
+
+
+@pytest.mark.asyncio
+async def test_query_fn_accepts_string_success_code_and_case_insensitive_tag_code():
+    """兼容字符串成功码和大小写不一致的 tagCode。"""
+    pv_tag_id = "00000000-0000-0000-0000-000000000001"
+    mappings = [_make_mapping("PV", pv_tag_id)]
+    tags = [_make_tag(pv_tag_id, "LIC-101.PV")]
+    db = _make_db_mock(mappings, tags)
+
+    api_response = _make_api_response(
+        timestamps=["2026-06-28T08:00:00", "2026-06-28T08:00:01"],
+        series=[{"tagCode": "lic-101.pv", "values": ["10", "11"], "qualities": ["1", "2"]}],
+        code="200",
+    )
+
+    provider = RemoteApiProvider()
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+    ):
+        query_fn = provider.make_query_fn(db)
+        result = await query_fn(
+            "loop-001",
+            ["pv"],
+            datetime(2026, 6, 28, 8, 0, 0, tzinfo=UTC),
+            datetime(2026, 6, 28, 9, 0, 0, tzinfo=UTC),
+            1,
+        )
+
+    assert result.signals["pv"] == [10.0, 11.0]
+    assert result.quality_codes["pv_quality"] == [1, 0]
+
+
+@pytest.mark.asyncio
+async def test_query_fn_pads_short_values_and_missing_qualities():
+    """values/qualities 短于 timestamps 时按统一时间轴补齐。"""
+    pv_tag_id = "00000000-0000-0000-0000-000000000001"
+    mappings = [_make_mapping("PV", pv_tag_id)]
+    tags = [_make_tag(pv_tag_id, "LIC-101.PV")]
+    db = _make_db_mock(mappings, tags)
+
+    api_response = _make_api_response(
+        timestamps=["t1", "t2", "t3"],
+        series=[{"tagCode": "LIC-101.PV", "values": ["10"], "qualities": [1]}],
+    )
+
+    provider = RemoteApiProvider()
+    with patch.object(
+        provider,
+        "_get_client",
+        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+    ):
+        query_fn = provider.make_query_fn(db)
+        result = await query_fn(
+            "loop-001",
+            ["pv"],
+            datetime(2026, 6, 28, 8, 0, 0, tzinfo=UTC),
+            datetime(2026, 6, 28, 9, 0, 0, tzinfo=UTC),
+            1,
+        )
+
+    assert result.signals["pv"] == [10.0, None, None]
+    assert result.quality_codes["pv_quality"] == [1, 0, 0]
 
 
 # ---------------------------------------------------------------------------

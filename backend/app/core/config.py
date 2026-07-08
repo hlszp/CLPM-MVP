@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:8100/signalr/realValueForClpmHub
     SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
     SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连间隔（秒）
+    REALTIME_WRITEBACK_ENABLED: bool = False  # 是否将实时数据写回本地 TDengine 宽表（开发兼容）
 
     # ---- Alerting ----
     ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志

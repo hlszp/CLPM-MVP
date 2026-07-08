@@ -111,8 +111,8 @@ CLPM 支持两种历史数据源模式，通过 `DATA_SOURCE_TYPE` 配置切换�
 
 | 模式 | 配置值 | 适用场景 |
 |---|---|---|
-| 直连 TDengine | `tdengine`（默认） | TDengine 部署在同机房，直接查询 |
-| 外部 API | `remote_api` | 对接工控数采系统，通过 HTTP API 查询 |
+| 直连 TDengine | `tdengine`（开发/模拟默认） | CLPM 本地 TDengine 回路宽表 |
+| 外部 API | `remote_api`（现场推荐） | 现场 TDengine 一 Tag 一表，由底层接口完成多 Tag 时间戳与采样率对齐 |
 
 #### 7.1 直连 TDengine（默认）
 
@@ -129,6 +129,8 @@ HISTORY_DATA_API_TOKEN=           # 可选，Bearer Token
 HISTORY_DATA_API_TIMEOUT=30.0
 ```
 
+该模式下，CLPM 不直接读取现场 TDengine 物理表，只消费底层接口返回的 JSON 数据块：`timestamps` 为统一时间轴，`series` 为各 Tag 对齐后的值和质量码。
+
 对接接口规范见 `docs/设计文档/05-IDS/HisDATA_API.md`。
 
 #### 7.3 实时数据订阅（SignalR/WebSocket）
@@ -137,6 +139,7 @@ HISTORY_DATA_API_TIMEOUT=30.0
 SIGNALR_HUB_URL=ws://localhost:8100/signalr/realValueForClpmHub
 SIGNALR_ENABLED=True             # 启用实时数据订阅
 SIGNALR_RECONNECT_INTERVAL=5     # 断线重连间隔（秒）
+REALTIME_WRITEBACK_ENABLED=False # 现场模式：只缓存/推送，不写回 CLPM 本地回路宽表
 ```
 
 对接接口规范见 `docs/设计文档/05-IDS/RealDATA_API.md`。

@@ -128,7 +128,12 @@ async def test_cache_value_writes_to_redis():
         "collectTime": "2026-06-28T08:00:00Z",
     }
 
-    with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+    ):
+        mock_settings.REALTIME_WRITEBACK_ENABLED = False
+        mock_settings.DATA_SOURCE_TYPE = "remote_api"
         await sub._cache_value(item)
 
     expected_key = f"{_REDIS_KEY_PREFIX}LIC-101.PV"
@@ -137,6 +142,35 @@ async def test_cache_value_writes_to_redis():
     assert cached["tagCode"] == "LIC-101.PV"
     assert cached["value"] == "50.5"
     assert cached["quality"] == 0
+    assert sub._buffer == {}
+
+
+@pytest.mark.asyncio
+async def test_cache_value_buffers_writeback_when_enabled():
+    """开启写回且数据源为 tdengine 时，保留旧宽表缓冲逻辑。"""
+    fake_redis = _FakeRedis()
+    sub = RealtimeSubscriber()
+
+    item = {
+        "tagCode": "LIC-101.PV",
+        "value": "50.5",
+        "quality": 1,
+        "collectTime": "2026-06-28T08:00:00Z",
+    }
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+    ):
+        mock_settings.REALTIME_WRITEBACK_ENABLED = True
+        mock_settings.DATA_SOURCE_TYPE = "tdengine"
+        await sub._cache_value(item)
+
+    assert sub._buffer["LIC-101"]["PV"] == {
+        "value": "50.5",
+        "quality": 1,
+        "ts": "2026-06-28T08:00:00Z",
+    }
 
 
 @pytest.mark.asyncio

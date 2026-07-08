@@ -84,6 +84,14 @@ class RealtimeSubscriber:
         ] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
         self._buffer_lock = asyncio.Lock()
 
+    @property
+    def _writeback_enabled(self) -> bool:
+        """是否启用实时数据写回本地 TDengine 宽表。"""
+        return (
+            settings.REALTIME_WRITEBACK_ENABLED
+            and settings.DATA_SOURCE_TYPE.lower() == "tdengine"
+        )
+
     async def start(self) -> None:
         """启动订阅后台任务."""
         if self._running:
@@ -97,8 +105,13 @@ class RealtimeSubscriber:
 
         self._running = True
         self._task = asyncio.create_task(self._run())
-        self._flush_task = asyncio.create_task(self._flush_loop())
-        logger.info("实时数据订阅任务已启动 (hub=%s)", settings.SIGNALR_HUB_URL)
+        if self._writeback_enabled:
+            self._flush_task = asyncio.create_task(self._flush_loop())
+        logger.info(
+            "实时数据订阅任务已启动 (hub=%s, writeback=%s)",
+            settings.SIGNALR_HUB_URL,
+            self._writeback_enabled,
+        )
 
     async def stop(self) -> None:
         """停止订阅."""
@@ -216,17 +229,19 @@ class RealtimeSubscriber:
         # Pub/Sub 广播给 WebSocket 端点
         await redis_client.publish(_PUBSUB_CHANNEL, value)
 
-        # 放入 TDengine 写入缓冲区
-        loop_part, role = self._parse_tag_code(tag_code)
-        if loop_part:
-            async with self._buffer_lock:
-                if loop_part not in self._buffer:
-                    self._buffer[loop_part] = {}
-                self._buffer[loop_part][role] = {
-                    "value": item.get("value"),
-                    "quality": item.get("quality"),
-                    "ts": item.get("collectTime", ""),
-                }
+        # 可选：写回本地 TDengine 回路宽表（仅开发/模拟兼容）。
+        # 现场模式下，原始数据已由外部系统按“一 Tag 一表”存储，CLPM 只缓存/转发实时值。
+        if self._writeback_enabled:
+            loop_part, role = self._parse_tag_code(tag_code)
+            if loop_part:
+                async with self._buffer_lock:
+                    if loop_part not in self._buffer:
+                        self._buffer[loop_part] = {}
+                    self._buffer[loop_part][role] = {
+                        "value": item.get("value"),
+                        "quality": item.get("quality"),
+                        "ts": item.get("collectTime", ""),
+                    }
 
     def _parse_tag_code(self, tag_code: str) -> tuple[str, str]:
         """解析 tagCode 为回路部分和角色。
