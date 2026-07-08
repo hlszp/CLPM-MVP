@@ -33,6 +33,7 @@ DATASOURCE_CONFIG_KEYS = {
     "signalrHubUrl": "datasource.signalr_hub_url",
     "signalrEnabled": "datasource.signalr_enabled",
     "signalrReconnectInterval": "datasource.signalr_reconnect_interval",
+    "realtimeWritebackEnabled": "datasource.realtime_writeback_enabled",
 }
 
 # 字段 → settings 属性名 映射（用于同步内存）
@@ -44,6 +45,7 @@ _SETTINGS_ATTR_MAP = {
     "signalrHubUrl": "SIGNALR_HUB_URL",
     "signalrEnabled": "SIGNALR_ENABLED",
     "signalrReconnectInterval": "SIGNALR_RECONNECT_INTERVAL",
+    "realtimeWritebackEnabled": "REALTIME_WRITEBACK_ENABLED",
 }
 
 # 字段 → 类型转换（sys_config 存字符串，需转回原类型）
@@ -51,6 +53,7 @@ _TYPE_CASTERS: dict[str, type] = {
     "historyApiTimeout": float,
     "signalrEnabled": lambda v: v.lower() == "true",
     "signalrReconnectInterval": int,
+    "realtimeWritebackEnabled": lambda v: v.lower() == "true",
 }
 
 _KEY_DESCRIPTIONS = {
@@ -61,6 +64,7 @@ _KEY_DESCRIPTIONS = {
     "signalrHubUrl": "实时数据 SignalR Hub URL",
     "signalrEnabled": "实时数据订阅启停",
     "signalrReconnectInterval": "SignalR 断线重连间隔（秒）",
+    "realtimeWritebackEnabled": "实时数据写回本地 TDengine 宽表（仅 tdengine 模式）",
 }
 
 
@@ -149,6 +153,9 @@ async def get_datasource_config(db: AsyncSession) -> dict:
         "signalrEnabled": _cast_value("signalrEnabled", values["signalrEnabled"]),
         "signalrReconnectInterval": _cast_value(
             "signalrReconnectInterval", values["signalrReconnectInterval"]
+        ),
+        "realtimeWritebackEnabled": _cast_value(
+            "realtimeWritebackEnabled", values["realtimeWritebackEnabled"]
         ),
         # 运行态：从 settings 读取（启动时初始化的实际状态）
         "historyProviderActive": settings.DATA_SOURCE_TYPE,

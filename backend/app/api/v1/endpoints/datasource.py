@@ -63,6 +63,7 @@ async def update_datasource_config_endpoint(
         signalrHubUrl=body.signalrHubUrl,
         signalrEnabled=body.signalrEnabled,
         signalrReconnectInterval=body.signalrReconnectInterval,
+        realtimeWritebackEnabled=body.realtimeWritebackEnabled,
     )
     return success(data=data, message="配置更新成功")
 
