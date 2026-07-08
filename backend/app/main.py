@@ -28,6 +28,7 @@ from app.api.v1.endpoints import (
     configs,
     dashboard,
     dataplanner,
+    datasource,
     diagnosis,
     grading_config,
     health,
@@ -225,6 +226,7 @@ def create_app() -> FastAPI:
     v1_router.include_router(loops.router)
     v1_router.include_router(tags.router)
     v1_router.include_router(aas.router)
+    v1_router.include_router(datasource.router)
     v1_router.include_router(performance.router)
     # S3-METRIC 节点级性能评估（GB/T 44693.2-2024 §6.4 综合评估）
     v1_router.include_router(node_performance.router)
