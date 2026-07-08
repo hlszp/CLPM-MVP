@@ -151,10 +151,17 @@ echo ""
 # ------------------------------------------------------------
 echo "=== 部署完成 ==="
 echo ""
+# 自动获取服务器 IP（Linux）
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ -n "$SERVER_IP" ]; then
+    ACCESS_URL="http://$SERVER_IP"
+else
+    ACCESS_URL="http://localhost"
+fi
 echo "服务访问地址："
-echo "  前端：        http://localhost"
-echo "  后端 API：    http://localhost/api/v1（通过 nginx 反向代理）"
-echo "  API 文档：    http://localhost/api/docs（生产环境建议关闭）"
+echo "  前端：        $ACCESS_URL"
+echo "  后端 API：    $ACCESS_URL/api/v1（通过 nginx 反向代理）"
+echo "  API 文档：    $ACCESS_URL/api/docs（生产环境建议关闭）"
 echo ""
 echo "常用运维命令："
 echo "  查看日志：    docker compose -f $COMPOSE_FILE logs -f"
