@@ -477,12 +477,39 @@ async def list_loop_monitor(
             list_status = None
             confidence_level = None
 
+        # v6.1：补充 PV/OP 量程与工程单位（从关联 Tag 引用，不冗余存储）
+        pv_range_info: dict[str, float | None] | None = None
+        pv_unit_val: str | None = None
+        op_range_info: dict[str, float | None] | None = None
+        op_unit_val: str | None = None
+        loop_mappings = mappings_map.get(str(loop.id), {})
+        for role_key, m in loop_mappings.items():
+            tag = tags_map.get(str(m.tag_id))
+            if not tag:
+                continue
+            if role_key == "PV":
+                pv_range_info = {
+                    "min": float(tag.range_min) if tag.range_min is not None else None,
+                    "max": float(tag.range_max) if tag.range_max is not None else None,
+                }
+                pv_unit_val = tag.unit
+            elif role_key == "OP":
+                op_range_info = {
+                    "min": float(tag.range_min) if tag.range_min is not None else None,
+                    "max": float(tag.range_max) if tag.range_max is not None else None,
+                }
+                op_unit_val = tag.unit
+
         items.append(
             {
                 "loopId": str(loop.id),
                 "tagName": loop.tag_name,
                 "description": loop.description,
                 "unitName": unit_map.get(str(loop.unit_id)) if loop.unit_id else None,
+                "pvRange": pv_range_info,
+                "pvUnit": pv_unit_val,
+                "opRange": op_range_info,
+                "opUnit": op_unit_val,
                 "currentValues": current_values,
                 "controlMode": control_mode,
                 "score": list_score,
