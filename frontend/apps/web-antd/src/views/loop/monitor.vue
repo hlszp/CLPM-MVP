@@ -249,6 +249,9 @@ const columns: TableColumnsType = [
     key: 'description',
     ellipsis: true,
   },
+  // v6.1 新增：测量量程 / 单位
+  { title: '测量量程', key: 'pvRange', width: 130, align: 'center' },
+  { title: '单位', key: 'pvUnit', width: 70, align: 'center' },
   { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 100 },
   { title: '设定值 SP', key: 'sp', width: 120 },
   { title: '测量值 PV', key: 'pv', width: 120 },
@@ -950,7 +953,26 @@ onUnmounted(() => {
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'loopType'">
+            <!-- v6.1 新增：测量量程 -->
+            <template v-if="column.key === 'pvRange'">
+              <span
+                v-if="(record as LoopApi.MonitorListItem).pvRange?.min != null || (record as LoopApi.MonitorListItem).pvRange?.max != null"
+                class="font-mono text-xs text-slate-600"
+              >
+                {{ (record as LoopApi.MonitorListItem).pvRange?.min ?? '—' }}
+                ~
+                {{ (record as LoopApi.MonitorListItem).pvRange?.max ?? '—' }}
+              </span>
+              <span v-else class="text-slate-300">—</span>
+            </template>
+            <!-- v6.1 新增：单位 -->
+            <template v-else-if="column.key === 'pvUnit'">
+              <span v-if="(record as LoopApi.MonitorListItem).pvUnit" class="text-xs text-slate-600">
+                {{ (record as LoopApi.MonitorListItem).pvUnit }}
+              </span>
+              <span v-else class="text-slate-300">—</span>
+            </template>
+            <template v-else-if="column.key === 'loopType'">
               <Tag
                 :color="
                   LOOP_TYPE_MAP[

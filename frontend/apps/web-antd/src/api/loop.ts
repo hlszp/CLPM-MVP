@@ -330,6 +330,14 @@ export namespace LoopApi {
     tagName: string;
     description: string;
     unitName: string;
+    /** v6.1：PV 量程（从 PV Tag 引用） */
+    pvRange?: RangeInfo | null;
+    /** v6.1：PV 工程单位 */
+    pvUnit?: string | null;
+    /** v6.1：OP 量程（从 OP Tag 引用） */
+    opRange?: RangeInfo | null;
+    /** v6.1：OP 工程单位 */
+    opUnit?: string | null;
     currentValues: MonitorCurrentValues;
     controlMode: ControlMode;
     loopType?: LoopType;
