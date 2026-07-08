@@ -111,7 +111,7 @@ const testRoutes: any[] = [
       {
         path: '/loop/aas',
         name: 'LoopAas',
-        meta: { authority: ['ADMIN', 'IC_ENGINEER'], title: 'AAS 配置' },
+        meta: { authority: ['ADMIN', 'IC_ENGINEER'], title: '数据接入' },
       },
     ],
   },

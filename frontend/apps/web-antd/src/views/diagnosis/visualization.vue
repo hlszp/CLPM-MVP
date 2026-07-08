@@ -71,8 +71,8 @@ const fetchLoops = async () => {
   try {
     const res = await getLoopListApi({ page: 1, pageSize: 100 });
     loops.value = res.items;
-    if (!selectedLoopId.value && res.items.length > 0) {
-      selectedLoopId.value = res.items[0]?.loopId ?? '';
+    if (!selectedLoopId.value && res.items.length > 0 && res.items[0]) {
+      selectedLoopId.value = res.items[0].loopId;
     }
   } catch (error) {
     console.error('Failed to fetch loops:', error);
@@ -113,10 +113,10 @@ watch(() => route.params.loopId, (newId) => {
   }
 });
 
-onMounted(() => {
-  fetchLoops();
+onMounted(async () => {
+  await fetchLoops();
   if (selectedLoopId.value) {
-    fetchVisualizationData();
+    await fetchVisualizationData();
   }
 });
 </script>

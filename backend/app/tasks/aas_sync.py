@@ -37,6 +37,13 @@ class AsyncTask(Task):
 
 async def _do_sync() -> dict:
     """执行 AAS 同步的实际 async 逻辑。"""
+    from app.core.config import settings
+
+    # AAS 同步开关：开发环境仿真器直接写 TDengine，无需 AAS 同步
+    if not settings.AAS_SYNC_ENABLED:
+        logger.info("AAS 同步已禁用 (AAS_SYNC_ENABLED=False)，跳过")
+        return {"skipped": True, "reason": "AAS_SYNC_ENABLED=False"}
+
     from app.core.db import AsyncSessionLocal
     from app.services.aas_sync import sync_tags_from_aas
 

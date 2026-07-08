@@ -40,7 +40,6 @@ import {
 } from 'ant-design-vue';
 
 import { ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
-import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getMetricsApi, updateMetricApi } from '#/api/metric';
 
@@ -80,18 +79,21 @@ const categoryConfig: Record<
   },
 };
 
-/** 通过 metricKey 推断 category（fallback，后端未返回 category 时使用） */
-function inferCategory(metricKey: string): MetricApi.MetricCategory {
-  const coreKeys = ['accuracyRate', 'fastRate', 'steadyRate'];
-  const commissioningKeys = ['effectiveAutoRate'];
-  if (coreKeys.includes(metricKey)) return 'CORE';
-  if (commissioningKeys.includes(metricKey)) return 'COMMISSIONING';
+/** 通过 metricCode/metricKey 推断 category（fallback，后端未返回 category 时使用） */
+function inferCategory(item: MetricApi.MetricItem): MetricApi.MetricCategory {
+  // 兼容两种字段：metricCode（大写下划线，/performance/metrics 返回）
+  // 和 metricKey（驼峰，/configs/metrics 返回）
+  const code = (item.metricCode || item.metricKey || '').toUpperCase();
+  const coreCodes = ['ACCURACY_RATE', 'FAST_RATE', 'STEADY_RATE'];
+  const commissioningCodes = ['EFFECTIVE_AUTO_RATE'];
+  if (coreCodes.includes(code)) return 'CORE';
+  if (commissioningCodes.includes(code)) return 'COMMISSIONING';
   return 'AUXILIARY_DIAGNOSTIC';
 }
 
-/** 获取指标类别（优先用后端 category，否则用 metricKey 推断） */
+/** 获取指标类别（优先用后端 category，否则用 metricCode/metricKey 推断） */
 function getCategory(item: MetricApi.MetricItem): MetricApi.MetricCategory {
-  return item.category ?? inferCategory(item.metricKey);
+  return item.category ?? inferCategory(item);
 }
 
 /** 排序后的指标列表（按 category 分组） */
@@ -349,7 +351,6 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ConfigTabs />
     <ClpmPageToolbar
       title="指标定义"
       subtitle="管理 12 项 KPI 的算法公式（只读）、阈值、启停与算法版本（v5.3 3+1+8 结构）"

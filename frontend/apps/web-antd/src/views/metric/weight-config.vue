@@ -10,7 +10,6 @@ import { ref } from 'vue';
 import { Button, message } from 'ant-design-vue';
 
 import { ClpmDangerConfirmModal, ClpmPageToolbar } from '#/components/clpm';
-import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { restoreWeightDefaultsApi } from '#/api/metric';
 import TypeWeightContent from './type-weight.vue';
 
@@ -48,7 +47,6 @@ async function handleRestoreConfirm() {
 
 <template>
   <div>
-    <ConfigTabs />
     <ClpmPageToolbar
       title="权重配置"
       subtitle="管理控制类型权重模板（对齐 GB/T 44693.2-2024）"

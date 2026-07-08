@@ -195,15 +195,6 @@ export function getDashboardOverviewApi(
 }
 
 /**
- * 获取装置级三大 KPI 看板 — FDS v5.1 §5.3.7, UIUX v5.3 ①
- */
-export function getBoardKpiApi(params?: { plantId?: string }) {
-  return requestClient.get<DashboardApi.BoardResult>('/dashboard/board', {
-    params,
-  });
-}
-
-/**
  * 获取实时自控率 — FDS v5.1 §5.3.6, UIUX v5.3 ①
  */
 export function getAutoRateRtApi(params?: { plantId?: string }) {

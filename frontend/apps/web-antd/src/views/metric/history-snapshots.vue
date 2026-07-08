@@ -1,15 +1,14 @@
 <script lang="ts" setup>
 /**
- * 回路小时指标快照列表页
+ * 评估历史 — 回路小时指标快照列表（Tab 内嵌组件）
  *
  * 对齐后端 GET /api/v1/performance/loops/snapshots
- * - 顶部工具栏：刷新
  * - 筛选区：装置 TreeSelect + 回路 Select + 时间 RangePicker + 状态 + 可信度
  * - 表格：回路名 / 时间窗 / 综合评分 / 8 大 KPI + 粘滞指数 / 稳态时间 / 输出行程指数
  *   / 可信度徽章 / 状态 / 操作（详情按钮）
  * - 详情抽屉：点击"详情"按钮从右侧滑出，展示完整 24 字段（含数据血缘）
  *
- * 路由：/metric/snapshots
+ * 嵌入位置：评估任务模块 → "评估历史" Tab
  * 权限：所有角色可查看
  */
 import type { TableColumnsType } from 'ant-design-vue';
@@ -43,7 +42,7 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import ScoreSparkline from '#/components/metric/score-sparkline.vue';
 
-defineOptions({ name: 'MetricSnapshots' });
+defineOptions({ name: 'MetricHistorySnapshots' });
 
 // ============ 列表状态 ============
 const loading = ref(false);
@@ -76,10 +75,11 @@ async function openDetail(record: Record<string, any>) {
   drawerVisible.value = true;
   drawerTrendLoading.value = true;
   drawerTrendSnapshots.value = [];
-  
+
   const loopId = record.loopId;
   if (loopId) {
     try {
+      // 后端 pageSize 上限 100，分页拉取近 24 小时数据
       const params: any = {
         loopId,
         page: 1,
@@ -362,11 +362,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="p-4">
+  <div>
     <!-- 顶部工具栏 -->
     <ClpmPageToolbar
       class="mb-4"
-      title="回路小时指标明细"
+      title="评估历史"
       subtitle="按小时快照展示回路性能指标，支持多维度筛选和详情查看。"
       :loading="loading"
     >

@@ -26,7 +26,6 @@ import {
 } from 'ant-design-vue';
 
 import { ClpmToolbarButton } from '#/components/clpm';
-import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getGradingThresholdsApi, saveGradingThresholdsApi } from '#/api/metric';
 
@@ -199,7 +198,6 @@ onMounted(() => {
 
 <template>
   <div class="metric-grading-threshold">
-    <ConfigTabs />
     <div class="mb-3 flex items-center justify-between">
       <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
         配置 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR）。
