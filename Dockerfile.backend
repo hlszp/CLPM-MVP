@@ -21,7 +21,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # 先拷贝依赖描述文件以利用 Docker 层缓存
-COPY backend/pyproject.toml backend/uv.lock backend/README.md ./
+COPY backend/pyproject.toml backend/uv.lock ./
 
 # 同步依赖到 .venv（--frozen 严格按 lockfile 安装）
 RUN uv sync --frozen --no-install-project
