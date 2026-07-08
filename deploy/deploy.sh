@@ -92,14 +92,28 @@ fi
 echo ""
 
 # ------------------------------------------------------------
-# 7.5 初始化 TDengine 超级表（首次部署执行）
+# 7.5 初始化 TDengine：修改 root 密码 + 创建超级表
 # ------------------------------------------------------------
-echo "4.5 初始化 TDengine 超级表..."
-if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T tdengine taos -f /init/01_supertable.sql 2>/dev/null; then
+echo "4.5 初始化 TDengine..."
+
+# 从 .env.prod 读取 TDengine 密码
+TDENGINE_PASSWORD=$(grep -E "^TDENGINE_PASSWORD=" "$ENV_FILE" | cut -d'=' -f2-)
+
+# 修改 root 密码（首次部署：taosdata → 新密码；已修改过会报错但忽略）
+echo "  修改 TDengine root 密码..."
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T tdengine \
+    taos -u root -ptaosdata -s "ALTER user root PASS '${TDENGINE_PASSWORD}'" 2>/dev/null \
+    && echo "  [OK] TDengine root 密码已设置" \
+    || echo "  [INFO] TDengine 密码可能已修改，跳过"
+
+# 初始化超级表（使用新密码）
+echo "  初始化 TDengine 超级表..."
+if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T tdengine \
+    taos -u root -p${TDENGINE_PASSWORD} -f /init/01_supertable.sql 2>/dev/null; then
     echo "  [OK] TDengine 超级表初始化完成"
 else
     echo "  [WARN] TDengine 初始化失败（可能已存在，忽略）"
-    echo "  手动执行：docker compose -f $COMPOSE_FILE exec tdengine taos -f /init/01_supertable.sql"
+    echo "  手动执行：docker compose --env-file $ENV_FILE -f $COMPOSE_FILE exec tdengine taos -u root -p<TDENGINE_PASSWORD> -f /init/01_supertable.sql"
 fi
 echo ""
 
