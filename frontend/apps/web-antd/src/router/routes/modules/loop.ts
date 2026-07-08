@@ -34,7 +34,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:network',
-          title: '回路管理',
+          title: '回路配置',
         },
       },
       // FE-04：废弃 loop/factory，重定向到 /loop/manage
@@ -86,7 +86,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:refresh-cw',
-          title: 'AAS 同步状态',
+          title: '数据接入',
         },
       },
       {

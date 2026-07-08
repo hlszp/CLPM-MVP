@@ -160,9 +160,10 @@ class TestCheckAasConnection:
     """测试 check_aas_connection()。"""
 
     @pytest.mark.asyncio
-    async def test_mock_mode_returns_ok(self) -> None:
+    async def test_mock_mode_returns_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Mock 模式返回 status=ok, mode=mock。"""
-        # AAS_MOCK_MODE 默认为 True
+        # 显式启用 mock 模式，避免 .env 中 AAS_MOCK_MODE=False 影响测试
+        monkeypatch.setattr("app.services.data_link_monitor.settings.AAS_MOCK_MODE", True)
         result = await check_aas_connection()
         assert result["status"] == "ok"
         assert result["mode"] == "mock"

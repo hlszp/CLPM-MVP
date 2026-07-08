@@ -27,8 +27,14 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
-import { ClpmDataCanvas, ClpmKpiStrip, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
-import type { KpiStripItem } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmKpiCard,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  ClpmRealtimeStatus,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
@@ -107,6 +113,24 @@ const lastRefreshText = computed(() => {
   if (diff < 60) return `${diff} 秒前`;
   if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
   return dayjs(lastRefreshAt.value).format('HH:mm:ss');
+});
+
+/** 实时状态：用于 ClpmRealtimeStatus 组件（v6.1 §15.3 P1-1） */
+const realtimeStatus = computed<
+  'delayed' | 'failed' | 'offline' | 'online' | 'refreshing'
+>(() => {
+  if (loading.value) return 'refreshing';
+  if (!lastRefreshAt.value) return 'offline';
+  const diffSec = dayjs().diff(lastRefreshAt.value, 'second');
+  // 超过 5 分钟视为延迟
+  if (diffSec > 300) return 'delayed';
+  return 'online';
+});
+
+/** 数据延迟（毫秒），用于 ClpmRealtimeStatus 显示 */
+const realtimeLatency = computed(() => {
+  if (!lastRefreshAt.value) return 0;
+  return dayjs().diff(lastRefreshAt.value, 'millisecond');
 });
 
 function startAutoRefresh() {
@@ -258,8 +282,8 @@ async function loadAll() {
   }
 }
 
-// ============ 上行：6 KPI 卡片 ============
-interface KpiCardItem {
+// ============ 上行：6 KPI 卡片（用于 CSV 导出） ============
+interface KpiSummaryItem {
   key: keyof DashboardApi.KpiCards;
   label: string;
   value: number;
@@ -269,7 +293,7 @@ interface KpiCardItem {
   goodWhenUp: boolean;
 }
 
-const kpiCards = computed<KpiCardItem[]>(() => {
+const kpiCards = computed<KpiSummaryItem[]>(() => {
   const kpi = overviewData.value?.kpi_cards;
   if (!kpi) {
     return [
@@ -387,19 +411,124 @@ const kpiCards = computed<KpiCardItem[]>(() => {
   ];
 });
 
-const kpiStripItems = computed<KpiStripItem[]>(() =>
-  kpiCards.value.map((card) => ({
-    delta:
-      card.delta === 0
-        ? ''
-        : `${trendArrow(card.trend)} ${formatDelta(card.delta, card.unit)}`,
-    key: String(card.key),
-    label: card.label,
-    status: kpiStatus(card.value, card.unit === '%'),
-    unit: card.unit,
-    value: card.unit === '%' ? card.value.toFixed(1) : card.value,
-  })),
-);
+// ============ 上行：ZL 工业风格 KPI 卡片网格（v6.1 §15.3 对齐 ZL-MES-UI-Design-Kit/clpm_dashboard.html） ============
+interface KpiCardItem {
+  key: string;
+  title: string;
+  value: number | string;
+  unit: string;
+  status: 'error' | 'info' | 'neutral' | 'ok' | 'warning';
+  icon: string;
+  infoTip?: string;
+  contextText?: string;
+  delta?: number | string;
+  deltaUnit?: string;
+  deltaReverse?: boolean;
+  progress?: number;
+  microBars?: number[];
+  sparkline?: number[];
+}
+
+/** 6 个 KPI 卡片：对齐 ZL 致联工业设计参考 clpm_dashboard.html §"顶部 KPI 卡片区" */
+const kpiCardItems = computed<KpiCardItem[]>(() => {
+  const kpi = overviewData.value?.kpi_cards;
+  const evaluatedCount = overviewData.value?.kpi_cards?.auto_mode_rate?.value !== undefined
+    ? 5
+    : 0;
+
+  // 综合性能趋势（用于 sparkline）
+  const trendSeries = analyticsData.value?.kpiTrend?.series ?? [];
+  const compositeSparkline = trendSeries
+    .flatMap((s) => s.values ?? [])
+    .filter((v) => v !== null && v !== undefined)
+    .slice(-12);
+
+  return [
+    {
+      key: 'composite_score',
+      title: '综合性能',
+      value: kpi?.composite_score?.value ?? 0,
+      unit: kpi?.composite_score?.unit ?? '分',
+      status: kpiStatus(kpi?.composite_score?.value ?? 0, false),
+      icon: 'ant-design:dashboard-outlined',
+      infoTip: '综合健康度评分 = (A·a + F·f + S·s)/(a+f+s) × R',
+      contextText: `参评 ${evaluatedCount} 回路`,
+      delta: kpi?.composite_score?.delta ?? 0,
+      deltaUnit: kpi?.composite_score?.unit ?? '分',
+      deltaReverse: false,
+      progress: Math.min(Math.max(kpi?.composite_score?.value ?? 0, 0), 100),
+      sparkline: compositeSparkline.length >= 2 ? compositeSparkline : undefined,
+    },
+    {
+      key: 'auto_mode_rate',
+      title: '平均自控率',
+      value: kpi?.auto_mode_rate?.value ?? 0,
+      unit: kpi?.auto_mode_rate?.unit ?? '%',
+      status: kpiStatus(kpi?.auto_mode_rate?.value ?? 0),
+      icon: 'ant-design:robot-outlined',
+      infoTip: '自动模式 + 非饱和输出 + PV 质量Good 同时满足的回路占比',
+      contextText: `参评 ${evaluatedCount} 回路`,
+      delta: kpi?.auto_mode_rate?.delta ?? 0,
+      deltaUnit: '%',
+      deltaReverse: false,
+      progress: kpi?.auto_mode_rate?.value ?? 0,
+    },
+    {
+      key: 'steady_rate',
+      title: '稳定率',
+      value: kpi?.steady_rate?.value ?? 0,
+      unit: kpi?.steady_rate?.unit ?? '%',
+      status: kpiStatus(kpi?.steady_rate?.value ?? 0),
+      icon: 'ant-design:line-chart-outlined',
+      infoTip: 'IAE 零交叉相似法判定的稳态回路占比',
+      contextText: `参评 ${evaluatedCount} 回路`,
+      delta: kpi?.steady_rate?.delta ?? 0,
+      deltaUnit: '%',
+      deltaReverse: false,
+      progress: kpi?.steady_rate?.value ?? 0,
+    },
+    {
+      key: 'good_value_rate',
+      title: '好值率',
+      value: kpi?.good_value_rate?.value ?? 0,
+      unit: kpi?.good_value_rate?.unit ?? '%',
+      status: kpiStatus(kpi?.good_value_rate?.value ?? 0),
+      icon: 'ant-design:check-circle-outlined',
+      infoTip: '8 步预处理流水线过滤后的 Good 质量码数据点占比',
+      contextText: `参评 ${evaluatedCount} 回路`,
+      delta: kpi?.good_value_rate?.delta ?? 0,
+      deltaUnit: '%',
+      deltaReverse: false,
+      progress: kpi?.good_value_rate?.value ?? 0,
+    },
+    {
+      key: 'alarm_count',
+      title: '报警次数',
+      value: kpi?.alarm_count?.value ?? 0,
+      unit: kpi?.alarm_count?.unit ?? '次',
+      status: (kpi?.alarm_count?.value ?? 0) > 0 ? 'warning' : 'ok',
+      icon: 'ant-design:bell-outlined',
+      infoTip: '统计周期内回路报警触发次数',
+      contextText: `近 ${granularityOptions.find((o) => o.value === granularity.value)?.label ?? '日'}统计`,
+      delta: kpi?.alarm_count?.delta ?? 0,
+      deltaUnit: '次',
+      deltaReverse: true, // 报警次数下降是好事
+    },
+    {
+      key: 'operation_count',
+      title: '操作频次',
+      value: kpi?.operation_count?.value ?? 0,
+      unit: kpi?.operation_count?.unit ?? '次',
+      status: 'neutral',
+      icon: 'ant-design:thunderbolt-outlined',
+      infoTip: '统计周期内 OP 输出变化次数',
+      contextText: `近 ${granularityOptions.find((o) => o.value === granularity.value)?.label ?? '日'}统计`,
+      delta: kpi?.operation_count?.delta ?? 0,
+      deltaUnit: '次',
+      deltaReverse: true, // 操作频次下降是好事
+    },
+  ];
+});
 
 // ============ 中行左：低效回路列表 ============
 const inefficientLoopColumns = [
@@ -677,10 +806,21 @@ function renderQualityDonut() {
 }
 
 // ============ 辅助函数 ============
-function kpiStatus(
+type KpiStatus = 'error' | 'info' | 'neutral' | 'ok' | 'warning';
+
+function kpiStatus(score: number, isRate: boolean = true): KpiStatus {
+  const threshold = isRate ? 80 : 60;
+  const good = isRate ? 90 : 80;
+  if (score >= good) return 'ok';
+  if (score >= threshold) return 'warning';
+  return 'error';
+}
+
+/** 适用于 ClpmObjectSummaryBar 的状态映射（success/warning/danger） */
+function summaryStatus(
   score: number,
   isRate: boolean = true,
-): KpiStripItem['status'] {
+): 'danger' | 'neutral' | 'success' | 'warning' {
   const threshold = isRate ? 80 : 60;
   const good = isRate ? 90 : 80;
   if (score >= good) return 'success';
@@ -688,16 +828,14 @@ function kpiStatus(
   return 'danger';
 }
 
-function trendArrow(trend: DashboardApi.Trend): string {
-  if (trend === 'up') return '↑';
-  if (trend === 'down') return '↓';
-  return '→';
-}
-
-function formatDelta(delta: number, unit: string): string {
-  if (delta === 0) return '—';
-  const sign = delta > 0 ? '+' : '';
-  return `${sign}${delta.toFixed(1)}${unit}`;
+/** 实时数据时间格式化（强制北京时间） */
+function formatRealtimeText(t: string): string {
+  if (!t) return '';
+  try {
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+  } catch {
+    return t;
+  }
 }
 
 function scoreLevelColor(score: number): string {
@@ -757,6 +895,13 @@ onUnmounted(() => {
           @change="loadAll"
         />
         <template #actions>
+          <ClpmRealtimeStatus
+            :status="realtimeStatus"
+            :latency="realtimeLatency"
+            :last-refresh="lastRefreshAt?.getTime() ?? ''"
+            :auto-refresh="autoRefresh"
+            :refresh-interval="autoRefreshInterval"
+          />
           <Tooltip
             :title="
               autoRefresh
@@ -801,25 +946,77 @@ onUnmounted(() => {
         </template>
       </ClpmPageToolbar>
 
-      <!-- ====== 上行：综合健康仪表盘 + 数据质量环形图 + KPI Strip ====== -->
+      <!-- ====== 上行：ZL 工业风格 KPI 卡片网格（v6.1 §15.3 对齐 ZL clpm_dashboard.html） ====== -->
+      <div
+        class="grid grid-cols-1 gap-3 flex-shrink-0 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      >
+        <ClpmKpiCard
+          v-for="card in kpiCardItems"
+          :key="card.key"
+          :title="card.title"
+          :value="card.value"
+          :unit="card.unit"
+          :status="card.status"
+          :icon="card.icon"
+          :info-tip="card.infoTip"
+          :context-text="card.contextText"
+          :delta="card.delta"
+          :delta-unit="card.deltaUnit"
+          :delta-reverse="card.deltaReverse"
+          :progress="card.progress"
+          :sparkline="card.sparkline"
+          :micro-bars="card.microBars"
+          :loading="loading"
+        />
+      </div>
+
+      <!-- ====== 二行：综合健康仪表盘 + 数据质量环形图（深度可视化） ====== -->
       <div class="flex gap-3 flex-shrink-0">
         <ClpmDataCanvas
-          class="w-[240px]"
+          class="w-[280px]"
           title="综合健康"
           description="全厂综合评分"
         >
-          <EchartsUI ref="healthGaugeRef" height="160px" />
+          <EchartsUI ref="healthGaugeRef" height="180px" />
         </ClpmDataCanvas>
         <ClpmDataCanvas
-          class="w-[260px]"
+          class="w-[300px]"
           title="数据质量"
           description="Good / Bad / Uncertain"
         >
-          <EchartsUI ref="qualityDonutRef" height="160px" />
+          <EchartsUI ref="qualityDonutRef" height="180px" />
         </ClpmDataCanvas>
-        <div class="flex-1 min-w-0">
-          <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
-        </div>
+        <ClpmDataCanvas
+          class="flex-1 min-w-0"
+          title="实时自控率"
+          description="当前所有回路自动模式占比"
+        >
+          <div
+            class="flex items-center justify-center h-[180px] clpm-num"
+            :style="{
+              color: realtimeAutoRate?.autoRate !== undefined
+                ? (realtimeAutoRate.autoRate >= 80
+                    ? 'var(--status-ok)'
+                    : realtimeAutoRate.autoRate >= 60
+                      ? 'var(--status-warning)'
+                      : 'var(--status-error)')
+                : 'hsl(var(--muted-foreground))',
+            }"
+          >
+            <div class="flex flex-col items-center gap-1">
+              <span class="text-4xl font-bold tabular-nums">
+                {{ realtimeAutoRate?.autoRate !== undefined ? realtimeAutoRate.autoRate.toFixed(1) : '—' }}
+              </span>
+              <span class="text-sm opacity-70">%</span>
+              <span class="text-xs mt-1 opacity-60">
+                {{ realtimeAutoRate?.readAt ? '更新于 ' + formatRealtimeText(realtimeAutoRate.readAt) : '暂无实时数据' }}
+              </span>
+              <span v-if="realtimeAutoRate?.totalCount" class="text-xs mt-1 opacity-50">
+                {{ realtimeAutoRate.autoCount }}/{{ realtimeAutoRate.totalCount }} 回路
+              </span>
+            </div>
+          </div>
+        </ClpmDataCanvas>
       </div>
 
       <!-- ====== 中行：低效回路列表 | 选中回路摘要 ====== -->
@@ -851,11 +1048,11 @@ onUnmounted(() => {
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'loop_tag'">
-                <span class="font-mono text-sm">{{ record.loop_tag }}</span>
+                <span class="clpm-num font-mono text-sm">{{ record.loop_tag }}</span>
               </template>
               <template v-else-if="column.key === 'composite_score'">
                 <span
-                  class="font-mono font-bold"
+                  class="clpm-num font-mono font-bold"
                   :style="{ color: scoreLevelColor(record.composite_score) }"
                 >
                   {{ record.composite_score.toFixed(0) }}
@@ -868,11 +1065,11 @@ onUnmounted(() => {
               </template>
               <template v-else-if="column.key === 'key_metric'">
                 <div class="flex flex-col items-end text-xs">
-                  <span class="font-mono">
+                  <span class="clpm-num font-mono">
                     自控
                     {{ record.key_metric?.auto_mode_rate?.toFixed(1) ?? '—' }}%
                   </span>
-                  <span class="font-mono text-gray-500">
+                  <span class="clpm-num font-mono text-gray-500">
                     平稳
                     {{ record.key_metric?.steady_rate?.toFixed(1) ?? '—' }}%
                   </span>
@@ -898,7 +1095,7 @@ onUnmounted(() => {
                 key: 'score',
                 label: '综合评分',
                 value: loopSummary.composite_score.toFixed(0),
-                status: kpiStatus(loopSummary.composite_score, false),
+                status: summaryStatus(loopSummary.composite_score, false),
               }"
               :items="[
                 {
@@ -907,7 +1104,7 @@ onUnmounted(() => {
                   value:
                     (loopSummary.key_metric?.auto_mode_rate?.toFixed(1) ??
                       '—') + '%',
-                  status: kpiStatus(
+                  status: summaryStatus(
                     loopSummary.key_metric?.auto_mode_rate ?? 0,
                   ),
                 },
@@ -917,7 +1114,7 @@ onUnmounted(() => {
                   value:
                     (loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—') +
                     '%',
-                  status: kpiStatus(loopSummary.key_metric?.steady_rate ?? 0),
+                  status: summaryStatus(loopSummary.key_metric?.steady_rate ?? 0),
                 },
               ]"
               :actions="[

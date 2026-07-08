@@ -37,7 +37,6 @@ import {
   InputNumber,
   message,
   Modal,
-  Popconfirm,
   Select,
   Table,
   Tag,
@@ -52,7 +51,7 @@ import {
   getTagListApi,
   updateTagApi,
 } from '#/api/tag';
-import { ClpmDataCanvas } from '#/components/clpm';
+import { ClpmDangerConfirmModal, ClpmDataCanvas, ClpmNumeric } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { realtimeWs } from '#/utils/realtime-ws';
 import { flattenNodes } from '#/utils/plant-node';
@@ -76,6 +75,28 @@ const query = reactive({
 // 批量选中
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleting = ref(false);
+
+// ===== 危险确认弹窗（ClpmDangerConfirmModal）=====
+// 单个删除
+const dangerOpen = ref(false);
+const dangerTarget = ref<TagApi.TagItem | null>(null);
+const dangerLoading = ref(false);
+// 批量删除
+const batchDangerOpen = ref(false);
+
+function openDanger(record: TagApi.TagItem) {
+  if (record.isLinked) {
+    message.warning('该测点已关联回路，不允许删除');
+    return;
+  }
+  dangerTarget.value = record;
+  dangerOpen.value = true;
+}
+
+function openBatchDanger() {
+  if (selectedRowKeys.value.length === 0) return;
+  batchDangerOpen.value = true;
+}
 
 /** 表格行选择配置 */
 const rowSelection = computed(() => ({
@@ -122,15 +143,15 @@ const plantNodeOptions = computed(() => {
   });
 });
 
-/** 测点类型映射（label + color） */
+/** 测点类型映射（label + color）- 使用中性色调，避免混淆状态语义色 */
 const MEASURE_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  TEMPERATURE: { label: '温度', color: 'red' },
-  PRESSURE: { label: '压力', color: 'blue' },
-  LEVEL: { label: '液位', color: 'green' },
-  FLOW: { label: '流量', color: 'cyan' },
-  ANALYSIS: { label: '分析', color: 'purple' },
-  POSITION: { label: '阀位', color: 'orange' },
-  OTHER: { label: '其他', color: 'default' },
+  TEMPERATURE: { label: '温度', color: '#FCA5A5' },
+  PRESSURE: { label: '压力', color: '#93C5FD' },
+  LEVEL: { label: '液位', color: '#86EFAC' },
+  FLOW: { label: '流量', color: '#67E8F9' },
+  ANALYSIS: { label: '分析', color: '#D8B4FE' },
+  POSITION: { label: '阀位', color: '#FDBA74' },
+  OTHER: { label: '其他', color: '#CBD5E1' },
 };
 
 const measureTypeOptions = [
@@ -141,15 +162,15 @@ const measureTypeOptions = [
   })),
 ];
 
-/** 参数类型映射（label + color） */
+/** 参数类型映射（label + color）- 使用中性色调，避免混淆状态语义色 */
 const TAG_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  PV: { label: 'PV', color: 'blue' },
-  SP: { label: 'SP', color: 'green' },
-  OP: { label: 'OP', color: 'orange' },
-  MODE: { label: 'MODE', color: 'purple' },
-  KP: { label: 'KP', color: 'cyan' },
-  TI: { label: 'TI', color: 'cyan' },
-  TD: { label: 'TD', color: 'cyan' },
+  PV: { label: 'PV', color: '#93C5FD' },
+  SP: { label: 'SP', color: '#86EFAC' },
+  OP: { label: 'OP', color: '#FDBA74' },
+  MODE: { label: 'MODE', color: '#D8B4FE' },
+  KP: { label: 'KP', color: '#67E8F9' },
+  TI: { label: 'TI', color: '#67E8F9' },
+  TD: { label: 'TD', color: '#67E8F9' },
 };
 
 const tagTypeOptions = [
@@ -187,19 +208,14 @@ const columns: TableColumnsType = [
     title: '实时值',
     dataIndex: 'currentValue',
     key: 'currentValue',
-    width: 100,
+    width: 140,
   },
   { title: '单位', dataIndex: 'unit', key: 'unit', width: 80 },
   { title: '质量戳', dataIndex: 'quality', key: 'quality', width: 110 },
   { title: '参数类型', dataIndex: 'tagType', key: 'tagType', width: 100 },
   { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 160 },
-  {
-    title: '原始ID',
-    dataIndex: 'tdengineTagId',
-    key: 'tdengineTagId',
-    width: 160,
-  },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+  { title: '同步时间', dataIndex: 'lastSyncAt', key: 'lastSyncAt', width: 160 },
+  { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ];
 
 // Modal state
@@ -308,21 +324,6 @@ async function handleSubmit() {
   }
 }
 
-/** 删除测点 */
-async function handleDelete(record: TagApi.TagItem) {
-  if (record.isLinked) {
-    message.warning('该测点已关联回路，不允许删除');
-    return;
-  }
-  try {
-    await deleteTagApi(record.id);
-    message.success('测点删除成功');
-    await loadList();
-  } catch {
-    // 错误已由拦截器处理
-  }
-}
-
 /** 批量删除测点 */
 async function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) return;
@@ -343,6 +344,33 @@ async function handleBatchDelete() {
   }
 }
 
+/** 单个删除危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleDangerConfirm() {
+  if (!dangerTarget.value) return;
+  const record = dangerTarget.value;
+  if (record.isLinked) {
+    message.warning('该测点已关联回路，不允许删除');
+    return;
+  }
+  dangerLoading.value = true;
+  try {
+    await deleteTagApi(record.id);
+    message.success('测点删除成功');
+    dangerOpen.value = false;
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    dangerLoading.value = false;
+  }
+}
+
+/** 批量删除危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleBatchDangerConfirm() {
+  await handleBatchDelete();
+  batchDangerOpen.value = false;
+}
+
 /** 打开详情 Drawer */
 async function handleViewDetail(record: TagApi.TagItem) {
   detailVisible.value = true;
@@ -361,11 +389,18 @@ async function handleViewDetail(record: TagApi.TagItem) {
 function formatTime(t?: null | string): string {
   if (!t) return '—';
   try {
-    // 强制北京时间（UTC+8）
     return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   } catch {
     return t;
   }
+}
+
+function getProgressWidth(record: { currentValue?: number | null; rangeMin?: number | null; rangeMax?: number | null }): number {
+  if (record.currentValue == null || record.rangeMin == null || record.rangeMax == null) return 0;
+  const range = record.rangeMax - record.rangeMin;
+  if (range <= 0) return 0;
+  const ratio = (record.currentValue - record.rangeMin) / range;
+  return Math.min(100, Math.max(0, ratio * 100));
 }
 
 // ===== 导入导出方法 =====
@@ -524,23 +559,18 @@ onUnmounted(() => {
         <Button type="primary" @click="handleSearch">查询</Button>
         <!-- 批量操作 + 导入导出 -->
         <div class="ml-auto flex items-center gap-2">
-          <!-- 批量删除（仅 ADMIN，选中时显示） -->
-          <Popconfirm
+          <!-- 批量删除（仅 ADMIN，选中时显示，由 ClpmDangerConfirmModal 二次确认） -->
+          <Button
             v-if="selectedRowKeys.length > 0"
             v-permission="['ADMIN']"
-            :title="
-              selectedLinkedCount > 0
-                ? `选中 ${selectedRowKeys.length} 项，其中 ${selectedLinkedCount} 个已关联回路（自动跳过），确认删除 ${selectedDeletableCount} 个未关联测点？`
-                : `确认删除选中的 ${selectedRowKeys.length} 个测点？删除后不可恢复。`
-            "
-            @confirm="handleBatchDelete"
+            danger
+            :loading="batchDeleting"
+            @click="openBatchDanger"
           >
-            <Button v-permission="['ADMIN']" danger :loading="batchDeleting">
-              批量删除<template v-if="selectedRowKeys.length > 0">
-                ({{ selectedRowKeys.length }})
-              </template>
-            </Button>
-          </Popconfirm>
+            批量删除<template v-if="selectedRowKeys.length > 0">
+              ({{ selectedRowKeys.length }})
+            </template>
+          </Button>
           <Upload v-bind="uploadProps">
             <Button
               v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -567,12 +597,16 @@ onUnmounted(() => {
         }"
         :row-key="(record: TagApi.TagItem) => record.id"
         :row-selection="rowSelection"
-        :scroll="{ x: 1700 }"
-        size="middle"
+        :scroll="{ x: 1860 }"
+        :row-class-name="(record: TagApi.TagItem) => record.quality === 'BAD' ? 'tag-row--bad' : ''"
+        size="small"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'tagDescription'">
+          <template v-if="column.key === 'tagName'">
+            <ClpmNumeric :value="record.tagName" mono size="sm" />
+          </template>
+          <template v-else-if="column.key === 'tagDescription'">
             <span v-if="record.tagDescription">{{
               record.tagDescription
             }}</span>
@@ -589,21 +623,28 @@ onUnmounted(() => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'rangeMin'">
-            <span v-if="record.rangeMin != null">{{ record.rangeMin }}</span>
+            <ClpmNumeric v-if="record.rangeMin != null" :value="record.rangeMin" :precision="2" mono size="sm" />
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'rangeMax'">
-            <span v-if="record.rangeMax != null">{{ record.rangeMax }}</span>
+            <ClpmNumeric v-if="record.rangeMax != null" :value="record.rangeMax" :precision="2" mono size="sm" />
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'currentValue'">
-            <span v-if="record.currentValue != null" class="font-medium">
-              {{ record.currentValue }}
-            </span>
+            <div v-if="record.currentValue != null" class="flex flex-col gap-1">
+              <ClpmNumeric :value="record.currentValue" :precision="2" mono size="sm" :weight="600" />
+              <div v-if="record.rangeMin != null && record.rangeMax != null && record.rangeMax > record.rangeMin" class="w-full bg-gray-100 h-1 rounded-full overflow-hidden">
+                <div
+                  class="h-1 rounded-full transition-all"
+                  :class="record.quality === 'BAD' ? 'bg-gray-400' : record.quality === 'UNCERTAIN' ? 'bg-amber-400' : 'bg-emerald-500'"
+                  :style="{ width: getProgressWidth(record) + '%' }"
+                />
+              </div>
+            </div>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'unit'">
-            <span v-if="record.unit">{{ record.unit }}</span>
+            <span v-if="record.unit" class="text-xs text-gray-500">{{ record.unit }}</span>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'quality'">
@@ -621,14 +662,14 @@ onUnmounted(() => {
             <span v-if="record.unitName">{{ record.unitName }}</span>
             <span v-else class="text-gray-400">—</span>
           </template>
-          <template v-else-if="column.key === 'tdengineTagId'">
-            <span v-if="record.tdengineTagId" class="text-xs text-gray-500">
-              {{ record.tdengineTagId }}
+          <template v-else-if="column.key === 'lastSyncAt'">
+            <span v-if="record.lastSyncAt" class="text-xs text-gray-500 font-mono">
+              {{ formatTime(record.lastSyncAt) }}
             </span>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <div class="flex gap-1">
+            <div class="flex items-center gap-1">
               <Button
                 type="link"
                 size="small"
@@ -636,34 +677,26 @@ onUnmounted(() => {
               >
                 详情
               </Button>
-              <Button
-                v-permission="['ADMIN', 'IC_ENGINEER']"
-                type="link"
-                size="small"
-                @click="handleEdit(record as TagApi.TagItem)"
-              >
-                编辑
-              </Button>
-              <Popconfirm
-                v-permission="['ADMIN']"
-                :title="
-                  (record as TagApi.TagItem).isLinked
-                    ? '该测点已关联回路，不允许删除'
-                    : '确认删除该测点？删除后不可恢复。'
-                "
-                :disabled="(record as TagApi.TagItem).isLinked"
-                @confirm="handleDelete(record as TagApi.TagItem)"
-              >
+              <div class="tag-row-actions">
+                <Button
+                  v-permission="['ADMIN', 'IC_ENGINEER']"
+                  type="link"
+                  size="small"
+                  @click="handleEdit(record as TagApi.TagItem)"
+                >
+                  编辑
+                </Button>
                 <Button
                   v-permission="['ADMIN']"
                   type="link"
                   size="small"
                   danger
                   :disabled="(record as TagApi.TagItem).isLinked"
+                  @click="openDanger(record as TagApi.TagItem)"
                 >
                   删除
                 </Button>
-              </Popconfirm>
+              </div>
             </div>
           </template>
         </template>
@@ -825,5 +858,56 @@ onUnmounted(() => {
         </DescriptionsItem>
       </Descriptions>
     </Drawer>
+
+    <!-- 单个删除 Tag：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="dangerOpen"
+      title="删除 Tag"
+      action="删除"
+      :target="dangerTarget?.tagName ?? ''"
+      impact-scope="将解除该 Tag 与回路的关联、影响历史数据查询"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :loading="dangerLoading"
+      @confirm="handleDangerConfirm"
+    />
+
+    <!-- 批量删除 Tag：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDangerOpen"
+      title="批量删除 Tag"
+      action="删除"
+      :target="`选中的 ${selectedRowKeys.length} 个测点`"
+      :impact-scope="
+        selectedLinkedCount > 0
+          ? `选中 ${selectedRowKeys.length} 项，其中 ${selectedLinkedCount} 个已关联回路（自动跳过），将删除 ${selectedDeletableCount} 个未关联测点、不可恢复`
+          : `将批量删除选中的 ${selectedRowKeys.length} 个测点、不可恢复`
+      "
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :loading="batchDeleting"
+      @confirm="handleBatchDangerConfirm"
+    />
   </Page>
 </template>
+
+<style scoped>
+.tag-row--bad {
+  background-color: rgba(244, 63, 94, 0.04);
+}
+
+.tag-row--bad:hover {
+  background-color: rgba(244, 63, 94, 0.08);
+}
+
+.tag-row-actions {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+}
+
+:deep(.ant-table-row):hover .tag-row-actions {
+  opacity: 1;
+  visibility: visible;
+}
+</style>

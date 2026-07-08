@@ -106,6 +106,7 @@ async def get_default_auto_modes(db: AsyncSession) -> set[int]:
 
     无配置或解析失败时返回空集（不假设默认值），
     此时无 LoopModeMapping 配置的回路不计入自动模式回路数。
+    此严格模式提醒管理员必须配置 sys_config.loop.default_auto_modes。
 
     Returns:
         全局默认自动 MODE 值集合
@@ -117,12 +118,23 @@ async def get_default_auto_modes(db: AsyncSession) -> set[int]:
     )
     raw = result.scalar_one_or_none()
     if not raw:
+        logger.info(
+            "[实时自控率] sys_config.%s 未配置，回退空集（严格模式）",
+            DEFAULT_AUTO_MODES_KEY,
+        )
         return set()
     try:
         import json
 
         modes = json.loads(raw)
-        return {int(m) for m in modes} if isinstance(modes, list) else set()
+        if isinstance(modes, list):
+            return {int(m) for m in modes}
+        logger.warning(
+            "[实时自控率] sys_config.%s 值非 JSON 数组（%r），回退空集",
+            DEFAULT_AUTO_MODES_KEY,
+            raw,
+        )
+        return set()
     except (ValueError, TypeError) as exc:
         logger.warning(
             "[实时自控率] sys_config.%s 值无效（%r），回退空集: %s",

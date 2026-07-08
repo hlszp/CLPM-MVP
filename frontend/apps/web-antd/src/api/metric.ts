@@ -51,6 +51,9 @@ export namespace MetricApi {
   /** 指标配置项 */
   export interface MetricItem {
     metricId: string;
+    /** 指标代码（大写下划线格式，如 IDEAL_SETTLING_TIME，由 /performance/metrics 返回） */
+    metricCode?: string;
+    /** 指标 key（驼峰格式，如 idealSettlingTime，由 /configs/metrics 批量接口返回） */
     metricKey: string;
     metricName: string;
     formula: string;
@@ -83,22 +86,27 @@ export namespace MetricApi {
     description?: string;
   }
 
-  /** 引擎规则项 */
+  /** 引擎规则类型（对齐后端 EngineRuleType） */
+  export type EngineRuleType =
+    | 'CALC_CYCLE'
+    | 'DATA_FETCH'
+    | 'SCHEDULE'
+    | 'RETRY'
+    | 'ARCHIVE';
+
+  /** 引擎规则项（对齐后端 EngineRuleItem） */
   export interface RuleItem {
     ruleId: string;
+    ruleCode: string;
     ruleName: string;
-    calcPeriod: string;
-    dataFetchWindow: string;
-    scheduleConcurrency: number;
+    ruleType: EngineRuleType;
+    /** 规则参数（不同 ruleType 的 params 结构不同） */
+    params: Record<string, any> | null;
     isEnabled: boolean;
-    lastExecutedAt?: string;
-    lastExecutionStatus?: ExecutionStatus;
-    lastExecutionDuration?: number;
-    processedLoopCount?: number;
-    updatedAt: string;
-    updatedBy: string;
+    updatedBy?: string | null;
+    updatedAt?: string | null;
     /** P3 #51: EVAL_CALC_CYCLE 变更时返回，提示 Beat 进程需重启 */
-    warning?: string;
+    warning?: string | null;
   }
 
   /** 引擎规则列表响应 */
@@ -106,12 +114,11 @@ export namespace MetricApi {
     items: RuleItem[];
   }
 
-  /** 更新引擎规则参数 */
+  /** 更新引擎规则参数（对齐后端 EngineRuleUpdate） */
   export interface RuleUpdateParams {
-    calcPeriod: string;
-    dataFetchWindow: string;
-    scheduleConcurrency: number;
-    isEnabled: boolean;
+    ruleName?: string;
+    params?: Record<string, any> | null;
+    isEnabled?: boolean;
   }
 
   /** 看板筛选范围 */
@@ -195,6 +202,7 @@ export namespace MetricApi {
     rank: number;
     loopId: string;
     tagName: string;
+    loopName: string | null;
     unitName: string;
     score: number;
     goodValueRate: number;
@@ -217,6 +225,8 @@ export namespace MetricApi {
     qualityPolicy?: null | string;
     idealSettlingTime?: null | number;
     dataLineage?: DataLineage | null;
+    /** 历史评分趋势（用于行内 sparkline 展示） */
+    scoreHistory?: number[];
   }
 
   /** 排行查询参数 */
@@ -682,18 +692,6 @@ export function updateRuleApi(
   data: MetricApi.RuleUpdateParams,
 ) {
   return requestClient.put<MetricApi.RuleItem>(`${BASE}/rules/${ruleId}`, data);
-}
-
-/**
- * 获取全局看板 — IDS v3.2 §2.3
- */
-export function getBoardApi(params: {
-  plantNodeId?: string;
-  timeWindow: TimeWindow;
-}) {
-  return requestClient.get<MetricApi.BoardResult>(`${BASE}/board`, {
-    params,
-  });
 }
 
 /**

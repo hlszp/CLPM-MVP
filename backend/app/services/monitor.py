@@ -654,36 +654,21 @@ async def get_loop_monitor_detail(
     # TDengine 无数据时保持 EMPTY 状态，返回空数组（不再生成模拟数据）
     # 仿真脚本已持续向 TDengine 推送实时数据，趋势图直接展示真实历史数据
 
-    # KPI 摘要：从 kpi_snapshot_hourly 读取最新快照
+    # KPI 摘要：按 trend_window 时间范围聚合小时快照
+    # last_1_hour → 取最新 1 条快照；last_N_hours → 聚合 N 小时内所有快照
+    kpi_start = (now - delta).replace(tzinfo=None)
     snapshot = await db.execute(
         select(KpiSnapshotHourly)
-        .where(KpiSnapshotHourly.loop_id == loop_id)
-        .order_by(KpiSnapshotHourly.ts_end.desc())
-        .limit(1)
+        .where(
+            KpiSnapshotHourly.loop_id == loop_id,
+            KpiSnapshotHourly.ts_start >= kpi_start,
+        )
+        .order_by(KpiSnapshotHourly.ts_start.desc())
     )
-    snap = snapshot.scalar_one_or_none()
+    snaps = snapshot.scalars().all()
 
-    def _rate(val) -> float | None:
-        """Decimal → float，None 保持 None。"""
-        return float(val) if val is not None else None
-
-    if snap:
-        kpi_summary: dict[str, Any] = {
-            "composite_score": _rate(snap.score),
-            "auto_mode_rate": _rate(snap.auto_mode_rate),
-            "effective_auto_rate": _rate(snap.effective_auto_rate),
-            "steady_rate": _rate(snap.steady_rate),
-            "accuracy_rate": _rate(snap.accuracy_rate),
-            "fast_rate": _rate(snap.fast_rate),
-            "oscillation_rate": _rate(snap.oscillation_rate),
-            "saturation_rate": _rate(snap.saturation_rate),
-            "good_value_rate": _rate(snap.good_value_rate),
-            "status": snap.status,
-            # P3 #55: 取快照实际记录的 algorithm_version（兼容 v1.0 旧快照），
-            # 缺失时 fallback 到当前算法版本（ALGORITHM_VERSION，v2.0）
-            "algorithm_version": snap.algorithm_version or ALGORITHM_VERSION,
-            "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else read_at,
-        }
+    if snaps:
+        kpi_summary = _aggregate_kpi_snapshots(snaps, read_at)
     else:
         kpi_summary = {
             "composite_score": None,
@@ -696,7 +681,6 @@ async def get_loop_monitor_detail(
             "saturation_rate": None,
             "good_value_rate": None,
             "status": "INCONCLUSIVE" if loop.status != "READY" else "GOOD",
-            # P3 #55: 无快照时用统一常量（v2.0），不再硬编码 v1.0
             "algorithm_version": ALGORITHM_VERSION,
             "calculatedAt": read_at,
         }
@@ -710,6 +694,87 @@ async def get_loop_monitor_detail(
         "trend": trend_data,
         "trendStatus": trend_status,
         "kpiSummary": kpi_summary,
+    }
+
+
+def _aggregate_kpi_snapshots(snaps: list[KpiSnapshotHourly], read_at: str) -> dict[str, Any]:
+    """聚合多条小时快照为一条 KPI 摘要。
+
+    策略：按 valid_rate 加权平均（有效数据率高的小时权重更大）。
+    - score / 各指标 rate：加权平均，None 值跳过
+    - status：全 SUCCESS → SUCCESS；含 INCONCLUSIVE → PARTIAL
+    - confidence_level：取最差等级
+    - algorithm_version：取最新快照的版本
+    - calculatedAt：取最新快照的 ts_end
+    """
+    if not snaps:
+        return {}
+
+    if len(snaps) == 1:
+        snap = snaps[0]
+
+        def _r(val):
+            return float(val) if val is not None else None
+
+        return {
+            "composite_score": _r(snap.score),
+            "auto_mode_rate": _r(snap.auto_mode_rate),
+            "effective_auto_rate": _r(snap.effective_auto_rate),
+            "steady_rate": _r(snap.steady_rate),
+            "accuracy_rate": _r(snap.accuracy_rate),
+            "fast_rate": _r(snap.fast_rate),
+            "oscillation_rate": _r(snap.oscillation_rate),
+            "saturation_rate": _r(snap.saturation_rate),
+            "good_value_rate": _r(snap.good_value_rate),
+            "status": snap.status,
+            "algorithm_version": snap.algorithm_version or ALGORITHM_VERSION,
+            "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else read_at,
+        }
+
+    # 多条快照：按 valid_rate 加权平均
+    _CONFIDENCE_ORDER = {"A": 1, "B": 2, "C": 3, "D": 4, "E": 5}
+
+    def _r(val):
+        return float(val) if val is not None else None
+
+    # 计算权重（valid_rate），None 视为 0
+    weights = [_r(s.valid_rate) or 0.0 for s in snaps]
+    total_w = sum(weights)
+    # 全部为 0 时退化为简单平均
+    if total_w == 0:
+        weights = [1.0] * len(snaps)
+        total_w = float(len(snaps))
+
+    def _weighted(key: str) -> float | None:
+        """加权平均一个指标字段，全为 None 时返回 None。"""
+        vals = []
+        for s, w in zip(snaps, weights, strict=False):
+            v = getattr(s, key, None)
+            if v is not None:
+                vals.append((float(v), w))
+        if not vals:
+            return None
+        return sum(v * w for v, w in vals) / sum(w for _, w in vals)
+
+    # 状态：全 SUCCESS → SUCCESS；否则 PARTIAL
+    all_success = all(s.status == "SUCCESS" for s in snaps)
+    agg_status = "SUCCESS" if all_success else "PARTIAL"
+
+    latest = snaps[0]  # snaps 已按 ts_start DESC 排序
+
+    return {
+        "composite_score": _weighted("score"),
+        "auto_mode_rate": _weighted("auto_mode_rate"),
+        "effective_auto_rate": _weighted("effective_auto_rate"),
+        "steady_rate": _weighted("steady_rate"),
+        "accuracy_rate": _weighted("accuracy_rate"),
+        "fast_rate": _weighted("fast_rate"),
+        "oscillation_rate": _weighted("oscillation_rate"),
+        "saturation_rate": _weighted("saturation_rate"),
+        "good_value_rate": _weighted("good_value_rate"),
+        "status": agg_status,
+        "algorithm_version": latest.algorithm_version or ALGORITHM_VERSION,
+        "calculatedAt": latest.ts_end.isoformat() if latest.ts_end else read_at,
     }
 
 

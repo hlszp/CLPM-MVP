@@ -43,7 +43,10 @@ export namespace LoopApi {
   /** KPI 状态（IDS v3.2 §2.2.14） */
   export type KpiStatus = 'INCONCLUSIVE' | 'PARTIAL' | 'SUCCESS';
 
-  /** 评分权重（6 大 KPI，总和须 100，对齐 GB/T 44693.2-2024） */
+  /** 评分权重（6 大 KPI，总和须 100，对齐 GB/T 44693.2-2024）
+   * @deprecated v6.1：回路级权重未参与 KPI 计算，统一由 MetricConfig.weight 全局配置管理。
+   * 保留字段仅为兼容后端响应，前端不再写入。
+   */
   export interface ScoreWeights {
     /** 自动模式率权重 */
     auto_mode_rate: number;
@@ -80,6 +83,12 @@ export namespace LoopApi {
     | 'SPEED'
     | 'TEMPERATURE';
 
+  /** 量程信息（从关联 Tag 引用，不冗余存储） */
+  export interface RangeInfo {
+    min: number | null;
+    max: number | null;
+  }
+
   /** 回路列表项（IDS v3.2 §2.2.7） */
   export interface LoopListItem {
     loopId: string;
@@ -96,9 +105,27 @@ export namespace LoopApi {
     includeInEvaluation?: boolean | null;
     isActive: boolean;
     status: LoopStatus;
-    score: number;
-    lastScoreAt: string;
+    /**
+     * 综合评分（v6.1：回路管理列表已移除该列）
+     * @deprecated v6.1 后端仍返回此字段（来自 loop.score_weight 僵尸字段，恒为 null），
+     * 前端不再使用。综合评分请走回路监控接口 MonitorListItem.score。
+     */
+    score?: number;
+    /** @deprecated v6.1 同 score，已废弃 */
+    lastScoreAt?: string;
     tagMappingStatus: TagMappingStatus;
+    /** v6.1 新增：PV 量程（从 PV Tag 引用） */
+    pvRange?: RangeInfo | null;
+    /** v6.1 新增：PV 工程单位 */
+    pvUnit?: string | null;
+    /** v6.1 新增：OP 量程（从 OP Tag 引用） */
+    opRange?: RangeInfo | null;
+    /** v6.1 新增：OP 工程单位 */
+    opUnit?: string | null;
+    /** v6.1 新增：OP 输出下限位（NULL 时取 OP Tag range_min） */
+    opOutputLowerLimit?: number | null;
+    /** v6.1 新增：OP 输出上限位（NULL 时取 OP Tag range_max） */
+    opOutputUpperLimit?: number | null;
   }
 
   /** 回路列表查询参数（IDS v3.2 §2.2.7） */
@@ -134,6 +161,10 @@ export namespace LoopApi {
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
+    /** v6.1 新增：OP 输出下限位 */
+    opOutputLowerLimit?: number | null;
+    /** v6.1 新增：OP 输出上限位 */
+    opOutputUpperLimit?: number | null;
   }
 
   /** 更新回路参数（IDS v3.2 §2.2.10） */
@@ -150,6 +181,10 @@ export namespace LoopApi {
     scoreWeights?: ScoreWeights;
     isActive?: boolean;
     remark?: string;
+    /** v6.1 新增：OP 输出下限位 */
+    opOutputLowerLimit?: number | null;
+    /** v6.1 新增：OP 输出上限位 */
+    opOutputUpperLimit?: number | null;
   }
 
   /** 创建回路响应（IDS v3.2 §2.2.8） */

@@ -26,9 +26,12 @@ import {
 } from 'ant-design-vue';
 
 import { ClpmToolbarButton } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getGradingThresholdsApi, saveGradingThresholdsApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricGradingThreshold' });
+
+const { themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -196,7 +199,7 @@ onMounted(() => {
 <template>
   <div class="metric-grading-threshold">
     <div class="mb-3 flex items-center justify-between">
-      <p class="text-sm text-gray-500">
+      <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
         配置 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR）。
         相邻等级的分数区间须严格衔接（即 level N 的 minScore == level N+1 的 maxScore）。
       </p>
@@ -271,7 +274,7 @@ onMounted(() => {
                 background: LEVEL_META[record.level]?.color ?? record.color,
               }"
             />
-            <span class="font-mono text-xs text-gray-500">
+            <span class="font-mono text-xs" :style="{ color: themeColors.NEUTRAL }">
               {{ LEVEL_META[record.level]?.color ?? record.color }}
             </span>
           </div>
@@ -279,16 +282,17 @@ onMounted(() => {
         <template v-else-if="column.key === 'validation'">
           <span
             v-if="violatedLevels.includes(record.level)"
-            class="text-xs text-red-500"
+            class="text-xs"
+            :style="{ color: themeColors.DANGER }"
           >
             ✗ 衔接断裂
           </span>
-          <span v-else class="text-xs text-green-500">✓ 衔接正确</span>
+          <span v-else class="text-xs" :style="{ color: themeColors.SUCCESS }">✓ 衔接正确</span>
         </template>
       </template>
     </Table>
 
-    <div class="mt-3 text-xs text-gray-500">
+    <div class="mt-3 text-xs" :style="{ color: themeColors.NEUTRAL }">
       <p>
         <strong>校验规则：</strong>
         相邻等级须满足「level N 的 minScore == level N+1 的 maxScore」，
@@ -313,13 +317,13 @@ onMounted(() => {
       <div class="space-y-3 py-2">
         <div class="text-sm">
           <div class="mb-2 font-medium">变更摘要</div>
-          <div class="rounded border border-gray-200 bg-gray-50 p-3">
+          <div class="rounded p-3" :style="{ border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted) / 42%)' }">
             <div
               v-for="item in list"
               :key="item.level"
               class="mb-1 flex justify-between text-xs"
             >
-              <span class="text-gray-600">
+              <span :style="{ color: themeColors.NEUTRAL }">
                 {{ LEVEL_META[item.level]?.cnLabel }} ({{ item.name }})
               </span>
               <span class="font-mono">
@@ -331,7 +335,7 @@ onMounted(() => {
         </div>
         <div class="text-sm">
           <div class="mb-1 font-medium">影响范围</div>
-          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
+          <p class="rounded p-2 text-xs" :style="{ background: 'hsl(var(--status-warning) / 0.08)', color: 'hsl(var(--status-warning))' }">
             保存后将以新版本生效，所有回路的性能定级将在下次评估时按新阈值划分。
             可在「版本历史」Tab 查看历史版本并回滚。
           </p>

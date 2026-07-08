@@ -1,5 +1,8 @@
 {
   "title": "诊断中心",
+  "overview": {
+    "title": "诊断总览"
+  },
   "list": {
     "title": "诊断列表",
     "plantNodePlaceholder": "装置/单元筛选",

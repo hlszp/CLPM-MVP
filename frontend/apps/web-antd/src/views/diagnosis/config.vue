@@ -23,6 +23,7 @@ import {
   Form,
   FormItem,
   Input,
+  InputNumber,
   message,
   Modal,
   Select,
@@ -31,7 +32,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import { ClpmDataCanvas, ClpmDangerConfirmModal, ClpmPageToolbar } from '#/components/clpm';
 import {
   getDiagnosisMetricsApi,
   updateDiagnosisMetricApi,
@@ -41,8 +42,11 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'DiagnosisConfig' });
+
+const { themeColors } = useClpmTheme();
 
 const router = useRouter();
 
@@ -51,6 +55,20 @@ const metricList = ref<DiagnosisApi.MetricItem[]>([]);
 
 /** 当前正在切换启用状态的指标 ID（用于 Switch loading 态） */
 const togglingId = ref<null | string>(null);
+
+/**
+ * 危险确认模态框（替代 Modal.confirm，对齐 v6.1 §9.8 / §14 P-01 D-02）
+ * - context='toggleEnabled'：切换启用状态确认
+ * - context='submit'：保存配置确认
+ */
+const dangerModalOpen = ref(false);
+const dangerModalLoading = ref(false);
+const dangerModalContext = ref<'submit' | 'toggleEnabled'>('submit');
+/** toggleEnabled 上下文：保存待切换的 record 与目标 checked */
+const pendingToggle = ref<{
+  checked: boolean;
+  record: DiagnosisApi.MetricItem;
+} | null>(null);
 
 /** 8 类诊断标签选项 */
 const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
@@ -112,7 +130,7 @@ async function loadList() {
   loading.value = true;
   try {
     const data = await getDiagnosisMetricsApi();
-    metricList.value = data.items || [];
+    metricList.value = Array.isArray(data) ? data : [];
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -131,14 +149,17 @@ function objectToKv(
   }));
 }
 
-/** 将键值对数组转为对象 */
+/** 将键值对数组转为对象（防御性：跳过空 key 与非数字 value，对齐 Poka-Yoke） */
 function kvToObject(
   kv: { key: string; value: string }[],
 ): Record<string, number> {
   const result: Record<string, number> = {};
   for (const item of kv) {
     if (!item.key) continue;
+    if (item.value === '' || item.value === null || item.value === undefined)
+      continue;
     const num = Number(item.value);
+    if (Number.isNaN(num)) continue;
     result[item.key] = num;
   }
   return result;
@@ -156,36 +177,38 @@ function handleEdit(record: DiagnosisApi.MetricItem) {
   modalVisible.value = true;
 }
 
-/** 切换启用状态（带二次确认 Modal） */
+/** 切换启用状态（打开危险确认模态框，对齐 v6.1 §9.8） */
 function handleToggleEnabled(
   record: DiagnosisApi.MetricItem,
   checked: boolean,
 ) {
-  Modal.confirm({
-    title: '确认变更启用状态',
-    content: `即将${checked ? '启用' : '禁用'}诊断指标「${record.diagName}」，保存后立即生效。是否继续？`,
-    okText: '确认',
-    cancelText: '取消',
-    onOk: async () => {
-      togglingId.value = record.diagId;
-      try {
-        await updateDiagnosisMetricApi(record.diagId, {
-          label: record.label,
-          algorithmType: record.algorithmType,
-          calcMethod: record.calcMethod,
-          params: record.params || {},
-          threshold: record.threshold || {},
-          isEnabled: checked,
-        });
-        record.isEnabled = checked;
-        message.success('启用状态更新成功');
-      } catch {
-        // 错误已由拦截器处理
-      } finally {
-        togglingId.value = null;
-      }
-    },
-  });
+  pendingToggle.value = { record, checked };
+  dangerModalContext.value = 'toggleEnabled';
+  dangerModalOpen.value = true;
+}
+
+/** 实际执行切换启用状态（在 danger modal @confirm 后调用） */
+async function doToggleEnabled() {
+  const pending = pendingToggle.value;
+  if (!pending) return;
+  const { record, checked } = pending;
+  togglingId.value = record.diagId;
+  try {
+    await updateDiagnosisMetricApi(record.diagId, {
+      label: record.label,
+      algorithmType: record.algorithmType,
+      calcMethod: record.calcMethod,
+      params: record.params || {},
+      threshold: record.threshold || {},
+      isEnabled: checked,
+    });
+    record.isEnabled = checked;
+    message.success('启用状态更新成功');
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    togglingId.value = null;
+  }
 }
 
 /** 跳转到审计日志页（预筛选诊断配置） */
@@ -216,17 +239,33 @@ function handleRemoveThreshold(index: number) {
   formState.threshold.splice(index, 1);
 }
 
-/** 提交表单（含二次确认） */
+/** 提交表单（打开危险确认模态框，对齐 v6.1 §9.8） */
 function handleSubmit() {
   formRef.value?.validate().then(() => {
-    Modal.confirm({
-      title: '确认变更诊断指标配置',
-      content: `即将更新诊断指标「${editingMetric.value?.diagName}」的配置，保存后立即生效。是否继续？`,
-      okText: '确认保存',
-      cancelText: '取消',
-      onOk: doSubmit,
-    });
+    dangerModalContext.value = 'submit';
+    dangerModalOpen.value = true;
   });
+}
+
+/** 危险确认模态框确认回调：根据上下文分发执行 */
+async function handleDangerConfirm() {
+  if (dangerModalContext.value === 'toggleEnabled') {
+    dangerModalLoading.value = true;
+    try {
+      await doToggleEnabled();
+      dangerModalOpen.value = false;
+    } finally {
+      dangerModalLoading.value = false;
+    }
+  } else if (dangerModalContext.value === 'submit') {
+    dangerModalLoading.value = true;
+    try {
+      await doSubmit();
+      dangerModalOpen.value = false;
+    } finally {
+      dangerModalLoading.value = false;
+    }
+  }
 }
 
 /** 实际提交 */
@@ -287,7 +326,7 @@ onMounted(() => {
     />
     <ClpmDataCanvas class="mt-4" title="诊断指标列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
-        <p class="text-sm text-gray-500">
+        <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
           管理诊断指标配置：诊断规则、算法参数、阈值、启用状态。
         </p>
         <Button :loading="loading" @click="loadList">刷新</Button>
@@ -417,10 +456,13 @@ onMounted(() => {
               placeholder="阈值名（如 amplitude）"
               style="width: 40%"
             />
-            <Input
+            <InputNumber
               v-model:value="item.value"
               placeholder="阈值（如 1.5）"
               style="width: 50%"
+              string-mode
+              :step="0.01"
+              :precision="6"
             />
             <Button
               type="link"
@@ -433,7 +475,8 @@ onMounted(() => {
           </div>
           <div
             v-if="formState.threshold.length === 0"
-            class="py-2 text-center text-xs text-gray-400"
+            class="py-2 text-center text-xs"
+            :style="{ color: themeColors.NEUTRAL }"
           >
             暂无阈值，点击右上角添加
           </div>
@@ -457,10 +500,13 @@ onMounted(() => {
               placeholder="参数名（如 windowSize）"
               style="width: 40%"
             />
-            <Input
+            <InputNumber
               v-model:value="item.value"
               placeholder="参数值（如 1024）"
               style="width: 50%"
+              string-mode
+              :step="1"
+              :precision="6"
             />
             <Button
               type="link"
@@ -473,7 +519,8 @@ onMounted(() => {
           </div>
           <div
             v-if="formState.params.length === 0"
-            class="py-2 text-center text-xs text-gray-400"
+            class="py-2 text-center text-xs"
+            :style="{ color: themeColors.NEUTRAL }"
           >
             暂无参数，点击右上角添加
           </div>
@@ -484,5 +531,17 @@ onMounted(() => {
         </FormItem>
       </Form>
     </Modal>
+
+    <!-- 危险确认模态框（替代 Modal.confirm，对齐 v6.1 §9.8 / §14 P-01 D-02） -->
+    <ClpmDangerConfirmModal
+      v-model:open="dangerModalOpen"
+      title="保存配置"
+      action="保存"
+      impact-scope="将更新诊断配置、影响后续诊断结果"
+      :require-confirm-code="false"
+      :require-reason="true"
+      :loading="dangerModalLoading"
+      @confirm="handleDangerConfirm"
+    />
   </Page>
 </template>

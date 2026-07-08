@@ -22,12 +22,14 @@ import type { PlantNodeApi } from '#/api/plant-node';
 import type { TagApi } from '#/api/tag';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
+import { IconifyIcon } from '@vben/icons';
+
 import {
   Button,
+  Checkbox,
   Drawer,
   Form,
   FormItem,
@@ -35,8 +37,9 @@ import {
   InputNumber,
   message,
   Modal,
-  Popconfirm,
+  Popover,
   RadioGroup,
+  Segmented,
   Select,
   Spin,
   Switch,
@@ -63,8 +66,8 @@ import { requestClient } from '#/api/request';
 import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
 import {
   ClpmDataCanvas,
+  ClpmDangerConfirmModal,
   ClpmPageToolbar,
-  ClpmTagAssociationBadge,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
@@ -74,19 +77,61 @@ import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopManage' });
 
-const router = useRouter();
-
-/** 查看回路详情 */
-function handleViewDetail(record: LoopApi.LoopListItem) {
-  router.push(`/loop/detail/${record.loopId}`);
+/**
+ * 查看回路详情（v6.1：改为打开只读抽屉，不再跳转到 /loop/detail/:id）
+ * 设计依据：用户需求"详情页参考编辑页面显示，不可修改，不显示趋势/KPI"
+ * 回路监控页面（/loop/monitor）负责显示趋势、性能指标、智能诊断等内容
+ */
+async function handleViewDetail(record: LoopApi.LoopListItem) {
+  await handleView(record);
 }
 
-// ===== 主 Tab 结构 =====
-const activeMainTab = ref<'factory' | 'ledger' | 'tags'>('factory');
+// ===== 主 Tab 结构（已移除：方案 A 单页 + 视图切换） =====
+// 原 activeMainTab ref 已删除，改为 viewMode（'compact' | 'tags'）
+
+/**
+ * 视图切换（方案 A 单页 + 视图切换）
+ * - compact：紧凑视图（类型/等级/参评/状态/评分/操作）
+ * - tags：Tag 详情视图（增加 Tag 关联详情列）
+ */
+type ViewMode = 'compact' | 'tags';
+const viewMode = ref<ViewMode>('compact');
 
 // ===== 树（使用统一组件 PlantNodeTree）=====
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNode = ref<null | PlantNodeApi.PlantNode>(null);
+
+/**
+ * 各 UNIT 节点的回路数映射（key=plantNodeId, value=该节点直接挂载的回路数）
+ * 供 PlantNodeTree 显示节点尾部的回路数（递归累加得到 AREA/FACTORY 总数）
+ * 在 onMounted 时循环分页加载全量回路（后端 pageSize 上限 100）
+ */
+const loopCountsByNodeId = ref<Record<string, number>>({});
+
+/** 加载所有 UNIT 节点的回路数聚合（分页循环，用于工厂树显示回路总数） */
+async function loadLoopCounts() {
+  try {
+    const counts: Record<string, number> = {};
+    let page = 1;
+    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
+    const pageSize = 100;
+    let total = 0;
+    do {
+      const data = await getLoopListApi({ page, pageSize });
+      total = data.total;
+      for (const loop of data.items) {
+        const unitId = loop.unitId;
+        if (unitId) {
+          counts[unitId] = (counts[unitId] ?? 0) + 1;
+        }
+      }
+      page += 1;
+    } while ((page - 1) * pageSize < total);
+    loopCountsByNodeId.value = counts;
+  } catch (error) {
+    console.error('[回路数聚合] 加载失败:', error);
+  }
+}
 
 /** 选中树节点（由 PlantNodeTree emit 触发） */
 function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
@@ -112,6 +157,8 @@ const query = reactive({
   monitorStatus: undefined as boolean | undefined,
   /** v5.3：参评状态筛选 */
   includeInEvaluation: undefined as boolean | undefined,
+  /** v6.1：回路类型筛选（温度/压力/液位/流量/分析/速度/其他） */
+  loopType: undefined as LoopApi.LoopType | undefined,
   keyword: '',
   page: 1,
   pageSize: 20,
@@ -155,6 +202,18 @@ const statusOptions = [
   { label: '未启用', value: 'INACTIVE' },
 ];
 
+/** v6.1：回路类型筛选选项（温度/压力/液位/流量/分析/速度/其他） */
+const loopTypeOptions: { label: string; value: any }[] = [
+  { label: '全部', value: undefined },
+  { label: '温度', value: 'TEMPERATURE' },
+  { label: '压力', value: 'PRESSURE' },
+  { label: '液位', value: 'LEVEL' },
+  { label: '流量', value: 'FLOW' },
+  { label: '分析', value: 'ANALYSIS' },
+  { label: '速度', value: 'SPEED' },
+  { label: '其他', value: 'OTHER' },
+];
+
 /** v5.3：参评状态过滤选项 */
 const evaluationOptions: { label: string; value: any }[] = [
   { label: '全部', value: undefined },
@@ -170,90 +229,95 @@ const queryIncludeInEvaluation = computed({
   },
 });
 
-/** v5.3：重要等级视觉编码（1 红色 / 2 橙色 / 3 灰色） */
+/** v5.3：重要等级视觉编码（ZL 语义色 — 1 级 rose / 2 级 amber / 3 级 slate） */
 const IMPORTANCE_LEVEL_TAG: Record<
   number,
-  { color: string; label: string }
+  { badgeClass: string; label: string }
 > = {
-  1: { label: '1 级', color: 'red' },
-  2: { label: '2 级', color: 'orange' },
-  3: { label: '3 级', color: 'default' },
+  1: {
+    label: '1 级',
+    badgeClass:
+      'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30',
+  },
+  2: {
+    label: '2 级',
+    badgeClass:
+      'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
+  },
+  3: {
+    label: '3 级',
+    badgeClass:
+      'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
+  },
 };
 
-const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  TEMPERATURE: { label: '温度', color: 'red' },
-  PRESSURE: { label: '压力', color: 'blue' },
-  LEVEL: { label: '液位', color: 'green' },
-  FLOW: { label: '流量', color: 'cyan' },
-  ANALYSIS: { label: '分析', color: 'purple' },
-  SPEED: { label: '速度', color: 'orange' },
-  OTHER: { label: '其他', color: 'default' },
+const LOOP_TYPE_MAP: Record<string, { badgeClass: string; label: string }> = {
+  TEMPERATURE: {
+    label: '温度',
+    badgeClass:
+      'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30',
+  },
+  PRESSURE: {
+    label: '压力',
+    badgeClass:
+      'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
+  },
+  LEVEL: {
+    label: '液位',
+    badgeClass:
+      'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30',
+  },
+  FLOW: {
+    label: '流量',
+    badgeClass:
+      'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30',
+  },
+  ANALYSIS: {
+    label: '分析',
+    badgeClass:
+      'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30',
+  },
+  SPEED: {
+    label: '速度',
+    badgeClass:
+      'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
+  },
+  OTHER: {
+    label: '其他',
+    badgeClass:
+      'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
+  },
 };
 
-const CONTROL_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  STABLE: { label: '稳定型', color: 'blue' },
-  SLOW: { label: '慢速型', color: 'cyan' },
-  FAST: { label: '快速型', color: 'orange' },
-  LOGIC: { label: '逻辑型', color: 'purple' },
+const CONTROL_TYPE_MAP: Record<string, { badgeClass: string; label: string }> = {
+  STABLE: {
+    label: '稳定型',
+    badgeClass:
+      'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
+  },
+  SLOW: {
+    label: '慢速型',
+    badgeClass:
+      'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30',
+  },
+  FAST: {
+    label: '快速型',
+    badgeClass:
+      'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
+  },
+  LOGIC: {
+    label: '逻辑型',
+    badgeClass:
+      'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30',
+  },
 };
 
 const LEVEL_LABEL: Record<number, string> = { 1: '1 级', 2: '2 级', 3: '3 级' };
 
-const columns: TableColumnsType = [
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    key: 'description',
-    ellipsis: true,
-  },
-  { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 90 },
-  {
-    title: '控制类型',
-    dataIndex: 'controlType',
-    key: 'controlType',
-    width: 100,
-  },
-  {
-    title: '重要等级',
-    dataIndex: 'importanceLevel',
-    key: 'importanceLevel',
-    width: 90,
-    align: 'center',
-  },
-  {
-    title: '参评状态',
-    dataIndex: 'includeInEvaluation',
-    key: 'includeInEvaluation',
-    width: 100,
-    align: 'center',
-  },
-  { title: '监控状态', dataIndex: 'status', key: 'status', width: 110 },
-  {
-    title: '评分',
-    dataIndex: 'score',
-    key: 'score',
-    width: 80,
-    align: 'right',
-  },
-  { title: 'Tag 状态', key: 'tagMapping', width: 180 },
-  { title: '操作', key: 'action', width: 160, fixed: 'right' },
-];
-
-/** Tag 关联 Tab 列 */
-const tagColumns: TableColumnsType = [
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
-  {
-    title: '描述',
-    dataIndex: 'description',
-    key: 'description',
-    ellipsis: true,
-  },
-  { title: '监控状态', dataIndex: 'status', key: 'status', width: 110 },
-  { title: 'Tag 关联', key: 'tagMapping', width: 180 },
-  { title: '关联详情', key: 'tagDetail' },
-  { title: '操作', key: 'action', width: 100, fixed: 'right' },
-];
+/**
+ * 表格列定义统一由 dynamicColumns computed 提供，根据 viewMode 切换。
+ * 不再保留静态 columns / tagColumns，避免数据冗余。
+ */
 
 /** Tag 槽位标签 */
 const SLOT_LABELS: Record<string, string> = {
@@ -265,6 +329,83 @@ const SLOT_LABELS: Record<string, string> = {
   pid_i: 'I',
   pid_d: 'D',
 };
+
+/**
+ * 动态表格列：根据 viewMode 切换
+ * - compact：紧凑视图（默认）
+ * - tags：Tag 详情视图（在紧凑视图基础上增加 Tag 关联详情列）
+ */
+const dynamicColumns = computed<TableColumnsType>(() => {
+  const baseCols: TableColumnsType = [
+    { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 130, fixed: 'left' },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+      width: 180,
+    },
+    { title: '监控状态', dataIndex: 'status', key: 'status', width: 100, align: 'center' },
+  ];
+
+  if (viewMode.value === 'tags') {
+    // Tag 详情视图：增加 Tag 关联详情列
+    return [
+      ...baseCols,
+      { title: 'Tag 关联详情', key: 'tagDetail', width: 320 },
+      { title: '操作', key: 'action', width: 100, fixed: 'right' },
+    ];
+  }
+
+  // 紧凑视图：类型/等级/参评 + 量程/限位 + 操作
+  // v6.1：移除"Tag 状态"列（与监控状态重复，Tag 关联详情在编辑/查看抽屉中查看）
+  // v6.1：移除"评分"列（综合评分统一在回路监控页面查看）
+  return [
+    ...baseCols, // tagName + description + status
+    { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 70, align: 'center' },
+    {
+      title: '控制类型',
+      dataIndex: 'controlType',
+      key: 'controlType',
+      width: 80,
+      align: 'center',
+    },
+    // v6.1 新增：PV 量程 / OP 量程 / OP 限位 三列（加宽以完整显示量程范围）
+    {
+      title: 'PV 量程',
+      key: 'pvRange',
+      width: 130,
+      align: 'center',
+    },
+    {
+      title: 'OP 量程',
+      key: 'opRange',
+      width: 130,
+      align: 'center',
+    },
+    {
+      title: 'OP 限位',
+      key: 'opOutputLimits',
+      width: 130,
+      align: 'center',
+    },
+    {
+      title: '等级',
+      dataIndex: 'importanceLevel',
+      key: 'importanceLevel',
+      width: 60,
+      align: 'center',
+    },
+    {
+      title: '参评',
+      dataIndex: 'includeInEvaluation',
+      key: 'includeInEvaluation',
+      width: 60,
+      align: 'center',
+    },
+    { title: '操作', key: 'action', width: 100, fixed: 'right' },
+  ];
+});
 
 /** 加载回路列表 */
 async function loadList() {
@@ -278,6 +419,7 @@ async function loadList() {
       status: query.status,
       monitorStatus: query.monitorStatus,
       includeInEvaluation: query.includeInEvaluation,
+      loopType: query.loopType,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -301,11 +443,6 @@ function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize || 20;
   loadList();
-}
-
-/** v5.3：表格行样式 — 不参评回路行底色淡灰 */
-function rowClassName(record: LoopApi.LoopListItem): string {
-  return record.includeInEvaluation === false ? 'row-not-evaluated' : '';
 }
 
 /** v5.3：内联切换参评状态 */
@@ -489,20 +626,35 @@ const changeSummary = computed<DiffEntry[]>(() => {
         '—';
       summary.push({ field: '所属单元', from: origLabel, to: newLabel });
     }
-    if (loopDetail.value) {
-      const origW = loopDetail.value.basicInfo.scoreWeights;
-      for (const item of weightItems) {
-        if (
-          (origW[item.key] ?? 0) !== (formState.scoreWeights[item.key] ?? 0)
-        ) {
-          summary.push({
-            field: `权重·${item.label}`,
-            from: `${origW[item.key]}%`,
-            to: `${formState.scoreWeights[item.key]}%`,
-          });
-        }
-      }
+    // v6.1：OP 输出限位变更对比
+    const origLower = (orig as any).opOutputLowerLimit;
+    const origUpper = (orig as any).opOutputUpperLimit;
+    const origLowerStr =
+      origLower !== null && origLower !== undefined
+        ? String(origLower)
+        : '默认';
+    const origUpperStr =
+      origUpper !== null && origUpper !== undefined
+        ? String(origUpper)
+        : '默认';
+    const newLowerStr = useDefaultOpLimits.value
+      ? '默认'
+      : (formState.opOutputLowerLimit !== undefined
+          ? String(formState.opOutputLowerLimit)
+          : '默认');
+    const newUpperStr = useDefaultOpLimits.value
+      ? '默认'
+      : (formState.opOutputUpperLimit !== undefined
+          ? String(formState.opOutputUpperLimit)
+          : '默认');
+    if (origLowerStr !== newLowerStr || origUpperStr !== newUpperStr) {
+      summary.push({
+        field: 'OP 输出限位',
+        from: `${origLowerStr} ~ ${origUpperStr}`,
+        to: `${newLowerStr} ~ ${newUpperStr}`,
+      });
     }
+    // 评分权重对比已移除（v6.1：回路级权重未参与计算）
     return summary;
   }
   if (confirmContextType.value === 'tagMapping' && tagData.value) {
@@ -722,39 +874,60 @@ async function doBatchConfigSubmit() {
   }
 }
 
-/** 批量软删除（独立危险确认弹窗） */
-function handleBatchDelete() {
+// ===== 危险确认弹窗（ClpmDangerConfirmModal）=====
+// 单个删除回路
+const dangerOpen = ref(false);
+const dangerTarget = ref<LoopApi.LoopListItem | null>(null);
+const dangerLoading = ref(false);
+// 批量删除回路
+const batchDangerOpen = ref(false);
+const batchDangerLoading = ref(false);
+
+/** 打开单个删除危险确认弹窗 */
+function openDanger(record: LoopApi.LoopListItem) {
+  dangerTarget.value = record;
+  dangerOpen.value = true;
+}
+
+/** 打开批量删除危险确认弹窗 */
+function openBatchDanger() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先勾选要批量删除的回路');
     return;
   }
-  Modal.confirm({
-    title: '批量软删除确认',
-    content: `确认将选中的 ${selectedRowKeys.value.length} 个回路软删除（停用监控）？此操作可通过重新启用恢复。`,
-    okText: '确认删除',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      const loopCount = selectedRowKeys.value.length;
-      const hide = message.loading(
-        `正在软删除 ${loopCount} 个回路（停用监控）…`,
-        0,
-      );
-      try {
-        const result = await batchConfigLoopsApi({
-          loopIds: selectedRowKeys.value,
-          action: 'delete',
-        });
-        hide();
-        message.success(`批量软删除成功，共影响 ${result.affected} 个回路`);
-        selectedRowKeys.value = [];
-        await loadList();
-      } catch (error) {
-        hide();
-        console.error('操作失败:', error);
-      }
-    },
-  });
+  batchDangerOpen.value = true;
+}
+
+/** 批量删除入口（由 ClpmToolbarButton 触发，打开危险确认弹窗） */
+function handleBatchDelete() {
+  openBatchDanger();
+}
+
+/** 批量软删除危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleBatchDangerConfirm() {
+  if (selectedRowKeys.value.length === 0) return;
+  const loopCount = selectedRowKeys.value.length;
+  batchDangerLoading.value = true;
+  const hide = message.loading(
+    `正在软删除 ${loopCount} 个回路（停用监控）…`,
+    0,
+  );
+  try {
+    const result = await batchConfigLoopsApi({
+      loopIds: selectedRowKeys.value,
+      action: 'delete',
+    });
+    hide();
+    message.success(`批量软删除成功，共影响 ${result.affected} 个回路`);
+    selectedRowKeys.value = [];
+    batchDangerOpen.value = false;
+    await loadList();
+  } catch (error) {
+    hide();
+    console.error('操作失败:', error);
+  } finally {
+    batchDangerLoading.value = false;
+  }
 }
 
 // ===== 导入导出 =====
@@ -772,6 +945,7 @@ async function handleExport() {
         importanceLevel: query.importanceLevel,
         status: query.status,
         includeInEvaluation: query.includeInEvaluation,
+        loopType: query.loopType,
         keyword: query.keyword || undefined,
       },
     });
@@ -827,6 +1001,21 @@ const uploadProps: UploadProps = {
 const drawerVisible = ref(false);
 const drawerLoading = ref(false);
 const drawerSaving = ref(false);
+/** v6.1：抽屉模式 — create=新建/edit=编辑/view=只读查看 */
+const drawerMode = ref<'create' | 'edit' | 'view'>('create');
+/** v6.1：是否只读模式 */
+const isViewMode = computed(() => drawerMode.value === 'view');
+
+/** v6.1：抽屉标题 */
+const drawerTitle = computed(() => {
+  if (drawerMode.value === 'view') {
+    return `查看回路 - ${editingLoop.value?.tagName ?? ''}`;
+  }
+  if (drawerMode.value === 'edit') {
+    return `编辑回路 - ${editingLoop.value?.tagName ?? ''}`;
+  }
+  return '新建回路';
+});
 const activeTab = ref<'basic' | 'mode' | 'params' | 'tags'>('basic');
 const editingLoop = ref<LoopApi.LoopListItem | null>(null);
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
@@ -843,32 +1032,260 @@ const formState = reactive({
   includeInEvaluation: true,
   isActive: true,
   remark: '',
-  scoreWeights: {
-    auto_mode_rate: 10,
-    steady_rate: 30,
-    accuracy_rate: 15,
-    fast_rate: 10,
-    oscillation_rate: 20,
-    saturation_rate: 15,
-  } as LoopApi.ScoreWeights,
+  /** v6.1：OP 输出下限位（NULL 时取 OP Tag range_min） */
+  opOutputLowerLimit: undefined as number | undefined,
+  /** v6.1：OP 输出上限位（NULL 时取 OP Tag range_max） */
+  opOutputUpperLimit: undefined as number | undefined,
 });
 
-const weightItems: { key: keyof LoopApi.ScoreWeights; label: string }[] = [
-  { key: 'auto_mode_rate', label: '自动模式率' },
-  { key: 'steady_rate', label: '稳定率' },
-  { key: 'accuracy_rate', label: '准确度' },
-  { key: 'fast_rate', label: '快速率' },
-  { key: 'oscillation_rate', label: '振荡率' },
-  { key: 'saturation_rate', label: '饱和率' },
-];
+/**
+ * v6.1：编辑表单的 OP Tag 量程信息（用于限位校验范围提示）
+ * 来自 loopDetail.basicInfo.opRange 或 loopListItem.opRange
+ */
+const opTagRange = computed(() => {
+  // 优先从 loopDetail.basicInfo 获取（编辑模式加载详情后填充）
+  if (loopDetail.value?.basicInfo) {
+    const info = loopDetail.value.basicInfo as any;
+    return {
+      min: info.opRange?.min ?? null,
+      max: info.opRange?.max ?? null,
+      unit: info.opUnit ?? null,
+    };
+  }
+  // 回退到列表项数据
+  if (editingLoop.value) {
+    return {
+      min: (editingLoop.value as any).opRange?.min ?? null,
+      max: (editingLoop.value as any).opRange?.max ?? null,
+      unit: (editingLoop.value as any).opUnit ?? null,
+    };
+  }
+  return { min: null, max: null, unit: null };
+});
 
-const weightTotal = computed(() =>
-  Object.values(formState.scoreWeights).reduce(
-    (sum, v) => sum + (Number(v) || 0),
-    0,
-  ),
-);
-const weightValid = computed(() => weightTotal.value === 100);
+/** v6.1：是否使用默认限位（= OP Tag 量程） */
+const useDefaultOpLimits = ref(true);
+
+/** v6.1：OP Tag 是否已关联（决定限位字段是否可编辑） */
+const opTagAssociated = computed(() => {
+  return opTagRange.value.min !== null || opTagRange.value.max !== null;
+});
+
+/** v6.1：切换"使用默认"时更新状态并重置限位字段
+ * Checkbox 使用 :checked 单向绑定，需手动更新 useDefaultOpLimits.value
+ */
+function handleUseDefaultOpLimitsChange(checked: any) {
+  useDefaultOpLimits.value = Boolean(checked);
+  if (useDefaultOpLimits.value) {
+    // 勾选「使用默认」时清空自定义限位值（显示由 computed 控制）
+    formState.opOutputLowerLimit = undefined;
+    formState.opOutputUpperLimit = undefined;
+  }
+}
+
+/** v6.1：OP 输出限位显示值（勾选"使用默认"时显示 OP Tag 量程值，否则 0/100 兜底）
+ * - useDefaultOpLimits=true：显示 OP Tag 量程（opTagRange.min ?? 0, opTagRange.max ?? 100）
+ * - useDefaultOpLimits=false：显示用户输入的自定义值
+ */
+const opLowerLimitDisplay = computed<number | undefined>({
+  get: () => {
+    if (useDefaultOpLimits.value) {
+      return opTagRange.value.min ?? 0;
+    }
+    return formState.opOutputLowerLimit;
+  },
+  set: (v) => {
+    formState.opOutputLowerLimit = v;
+  },
+});
+
+const opUpperLimitDisplay = computed<number | undefined>({
+  get: () => {
+    if (useDefaultOpLimits.value) {
+      return opTagRange.value.max ?? 100;
+    }
+    return formState.opOutputUpperLimit;
+  },
+  set: (v) => {
+    formState.opOutputUpperLimit = v;
+  },
+});
+
+/** v6.1：OP 输出下限位校验（提取到 script 中以访问 ref.value 和 Promise）
+ * 校验规则（仅在「使用默认」未勾选时生效）：
+ *   1. 必填（如未勾选默认且未输入值）
+ *   2. 当 OP Tag 已关联（opTagAssociated=true）时，必须在 OP Tag 量程范围内
+ *   3. 必须小于上限位（如有）
+ */
+function validateOpOutputLowerLimit(_rule: any, value: any): Promise<void> {
+  if (useDefaultOpLimits.value) return Promise.resolve();
+  if (value === undefined || value === null) {
+    return Promise.reject('请输入下限位或勾选「使用默认」');
+  }
+  // OP Tag 已关联时严格校验量程范围
+  if (opTagAssociated.value) {
+    if (opTagRange.value.min !== null && value < opTagRange.value.min) {
+      return Promise.reject(`下限位不能低于 OP Tag 量程下限 ${opTagRange.value.min}`);
+    }
+    if (opTagRange.value.max !== null && value > opTagRange.value.max) {
+      return Promise.reject(`下限位不能超过 OP Tag 量程上限 ${opTagRange.value.max}`);
+    }
+  }
+  if (
+    formState.opOutputUpperLimit !== undefined &&
+    value >= formState.opOutputUpperLimit
+  ) {
+    return Promise.reject('下限位必须小于上限位');
+  }
+  return Promise.resolve();
+}
+
+/** v6.1：OP 输出上限位校验
+ * 校验规则（仅在「使用默认」未勾选时生效）：
+ *   1. 必填（如未勾选默认且未输入值）
+ *   2. 当 OP Tag 已关联（opTagAssociated=true）时，必须在 OP Tag 量程范围内
+ *   3. 必须大于下限位（如有）
+ */
+function validateOpOutputUpperLimit(_rule: any, value: any): Promise<void> {
+  if (useDefaultOpLimits.value) return Promise.resolve();
+  if (value === undefined || value === null) {
+    return Promise.reject('请输入上限位或勾选「使用默认」');
+  }
+  // OP Tag 已关联时严格校验量程范围
+  if (opTagAssociated.value) {
+    if (opTagRange.value.min !== null && value < opTagRange.value.min) {
+      return Promise.reject(`上限位不能低于 OP Tag 量程下限 ${opTagRange.value.min}`);
+    }
+    if (opTagRange.value.max !== null && value > opTagRange.value.max) {
+      return Promise.reject(`上限位不能超过 OP Tag 量程上限 ${opTagRange.value.max}`);
+    }
+  }
+  if (
+    formState.opOutputLowerLimit !== undefined &&
+    value <= formState.opOutputLowerLimit
+  ) {
+    return Promise.reject('上限位必须大于下限位');
+  }
+  return Promise.resolve();
+}
+
+// 评分权重已移除（v6.1：回路级权重未被算法使用，统一由 MetricConfig.weight 全局配置管理）
+
+
+// ===== 筛选区紧凑化（P2-1）：已选筛选徽章 + 高级筛选 Popover =====
+const activeFilterCount = computed(() => {
+  let count = 0;
+  if (query.controlType) count++;
+  if (query.importanceLevel) count++;
+  if (queryIncludeInEvaluation.value !== undefined && queryIncludeInEvaluation.value !== null) count++;
+  if (queryMonitorStatus.value) count++;
+  if (query.status) count++;
+  if (query.loopType) count++;
+  return count;
+});
+
+const activeFilterBadges = computed(() => {
+  const badges: {
+    key: string;
+    label: string;
+    value: string;
+    clear: () => void;
+  }[] = [];
+
+  if (query.controlType) {
+    const opt = controlTypeOptions.find((o) => o.value === query.controlType);
+    badges.push({
+      key: 'controlType',
+      label: '控制类型',
+      value: opt?.label ?? String(query.controlType),
+      clear: () => {
+        query.controlType = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.importanceLevel) {
+    const opt = levelOptions.find((o) => o.value === query.importanceLevel);
+    badges.push({
+      key: 'importanceLevel',
+      label: '等级',
+      value: opt?.label ?? String(query.importanceLevel),
+      clear: () => {
+        query.importanceLevel = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (queryIncludeInEvaluation.value !== undefined && queryIncludeInEvaluation.value !== null) {
+    const opt = evaluationOptions.find(
+      (o) => o.value === queryIncludeInEvaluation.value,
+    );
+    badges.push({
+      key: 'evaluation',
+      label: '参评',
+      value: opt?.label ?? String(queryIncludeInEvaluation.value),
+      clear: () => {
+        queryIncludeInEvaluation.value = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (queryMonitorStatus.value) {
+    const opt = monitorStatusOptions.find(
+      (o) => o.value === queryMonitorStatus.value,
+    );
+    badges.push({
+      key: 'monitorStatus',
+      label: '监控',
+      value: opt?.label ?? String(queryMonitorStatus.value),
+      clear: () => {
+        queryMonitorStatus.value = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.status) {
+    const opt = statusOptions.find((o) => o.value === query.status);
+    badges.push({
+      key: 'status',
+      label: '状态',
+      value: opt?.label ?? String(query.status),
+      clear: () => {
+        query.status = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.loopType) {
+    const opt = loopTypeOptions.find((o) => o.value === query.loopType);
+    badges.push({
+      key: 'loopType',
+      label: '类型',
+      value: opt?.label ?? String(query.loopType),
+      clear: () => {
+        query.loopType = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  return badges;
+});
+
+function clearAllFilters() {
+  query.controlType = undefined;
+  query.importanceLevel = undefined;
+  queryIncludeInEvaluation.value = undefined;
+  queryMonitorStatus.value = undefined;
+  query.status = undefined;
+  query.loopType = undefined;
+  handleSearch();
+}
 
 // Tag 关联状态
 const tagData = ref<LoopApi.LoopTagsResult | null>(null);
@@ -945,6 +1362,7 @@ const slotConfigs: {
 
 /** 打开新建回路 */
 function handleAdd() {
+  drawerMode.value = 'create';
   editingLoop.value = null;
   loopDetail.value = null;
   tagData.value = null;
@@ -958,20 +1376,32 @@ function handleAdd() {
   formState.includeInEvaluation = true;
   formState.isActive = true;
   formState.remark = '';
-  formState.scoreWeights = {
-    accuracy_rate: 15,
-    auto_mode_rate: 10,
-    fast_rate: 10,
-    oscillation_rate: 20,
-    saturation_rate: 15,
-    steady_rate: 30,
-  };
+  // v6.1：新建时默认使用默认限位（OP Tag 量程）
+  formState.opOutputLowerLimit = undefined;
+  formState.opOutputUpperLimit = undefined;
+  useDefaultOpLimits.value = true;
   activeTab.value = 'basic';
   drawerVisible.value = true;
 }
 
 /** 打开编辑抽屉 */
 async function handleEdit(record: LoopApi.LoopListItem) {
+  drawerMode.value = 'edit';
+  await loadLoopForDrawer(record);
+}
+
+/**
+ * v6.1：打开只读查看抽屉
+ * 复用编辑抽屉的布局，但所有字段 disabled，不显示保存按钮
+ * 不加载监控数据（趋势/KPI 由回路监控页面负责）
+ */
+async function handleView(record: LoopApi.LoopListItem) {
+  drawerMode.value = 'view';
+  await loadLoopForDrawer(record);
+}
+
+/** v6.1：抽屉数据加载通用逻辑（编辑/查看共用） */
+async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
   editingLoop.value = record;
   tagData.value = null;
   loopDetail.value = null;
@@ -986,14 +1416,16 @@ async function handleEdit(record: LoopApi.LoopListItem) {
     record.includeInEvaluation !== false && record.includeInEvaluation !== null;
   formState.isActive = record.isActive;
   formState.remark = '';
-  formState.scoreWeights = {
-    accuracy_rate: 15,
-    auto_mode_rate: 10,
-    fast_rate: 10,
-    oscillation_rate: 20,
-    saturation_rate: 15,
-    steady_rate: 30,
-  };
+  // v6.1：读取 OP 输出限位（NULL 表示使用默认 = OP Tag 量程）
+  const lower = (record as any).opOutputLowerLimit;
+  const upper = (record as any).opOutputUpperLimit;
+  formState.opOutputLowerLimit =
+    lower !== null && lower !== undefined ? Number(lower) : undefined;
+  formState.opOutputUpperLimit =
+    upper !== null && upper !== undefined ? Number(upper) : undefined;
+  useDefaultOpLimits.value =
+    formState.opOutputLowerLimit === undefined &&
+    formState.opOutputUpperLimit === undefined;
   activeTab.value = 'basic';
   drawerVisible.value = true;
   // 加载详情
@@ -1001,9 +1433,22 @@ async function handleEdit(record: LoopApi.LoopListItem) {
   try {
     const detail = await getLoopDetailApi(record.loopId);
     loopDetail.value = detail;
-    formState.scoreWeights = { ...detail.basicInfo.scoreWeights };
     formState.remark = detail.basicInfo.remark || '';
     formState.description = detail.basicInfo.description;
+    // v6.1：详情加载后同步 OP 限位（详情响应更权威）
+    const detailLower = (detail.basicInfo as any).opOutputLowerLimit;
+    const detailUpper = (detail.basicInfo as any).opOutputUpperLimit;
+    formState.opOutputLowerLimit =
+      detailLower !== null && detailLower !== undefined
+        ? Number(detailLower)
+        : undefined;
+    formState.opOutputUpperLimit =
+      detailUpper !== null && detailUpper !== undefined
+        ? Number(detailUpper)
+        : undefined;
+    useDefaultOpLimits.value =
+      formState.opOutputLowerLimit === undefined &&
+      formState.opOutputUpperLimit === undefined;
   } catch (error) {
     console.error('操作失败:', error);
   } finally {
@@ -1152,13 +1597,9 @@ async function doSaveTagMapping() {
   }
 }
 
-/** 保存基础信息 + 评估参数（编辑模式打开变更确认弹窗） */
+/** 保存基础信息（编辑模式打开变更确认弹窗） */
 async function handleSaveBasic() {
   await formRef.value?.validate();
-  if (!weightValid.value) {
-    message.warning(`权重总和须为 100%，当前为 ${weightTotal.value}%`);
-    return;
-  }
   // v5.3：新建回路时控制类型与重要等级为必填
   if (!editingLoop.value) {
     if (!formState.controlType) {
@@ -1193,9 +1634,15 @@ async function doSaveBasic() {
         controlType: formState.controlType,
         importanceLevel: formState.importanceLevel,
         includeInEvaluation: formState.includeInEvaluation,
-        scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
+        // v6.1：OP 输出限位（使用默认时传 undefined，由后端存 NULL）
+        opOutputLowerLimit: useDefaultOpLimits.value
+          ? null
+          : (formState.opOutputLowerLimit ?? null),
+        opOutputUpperLimit: useDefaultOpLimits.value
+          ? null
+          : (formState.opOutputUpperLimit ?? null),
       });
       message.success('回路更新成功');
     } else {
@@ -1212,9 +1659,15 @@ async function doSaveBasic() {
         controlType: formState.controlType,
         importanceLevel: formState.importanceLevel,
         includeInEvaluation: formState.includeInEvaluation,
-        scoreWeights: formState.scoreWeights,
         isActive: formState.isActive,
         remark: formState.remark,
+        // v6.1：新建回路时 OP 限位默认 null（使用 OP Tag 量程）
+        opOutputLowerLimit: useDefaultOpLimits.value
+          ? null
+          : (formState.opOutputLowerLimit ?? null),
+        opOutputUpperLimit: useDefaultOpLimits.value
+          ? null
+          : (formState.opOutputUpperLimit ?? null),
       });
       message.success('回路创建成功');
       editingLoop.value = {
@@ -1226,8 +1679,6 @@ async function doSaveBasic() {
         controlMode: 'Manual',
         isActive: result.isActive,
         status: result.status,
-        score: 0,
-        lastScoreAt: '',
         tagMappingStatus: {
           pv: false,
           sp: false,
@@ -1237,7 +1688,7 @@ async function doSaveBasic() {
           pid_i: false,
           pid_d: false,
         },
-      };
+      } as LoopApi.LoopListItem;
     }
     await loadList();
   } catch (error) {
@@ -1247,17 +1698,23 @@ async function doSaveBasic() {
   }
 }
 
-/** 删除回路（独立 Popconfirm 确认，红色危险样式） */
-async function handleDelete(record: LoopApi.LoopListItem) {
+/** 删除回路危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function handleDangerConfirm() {
+  if (!dangerTarget.value) return;
+  const record = dangerTarget.value;
+  dangerLoading.value = true;
   try {
     await deleteLoopApi(record.loopId);
     message.success('回路删除成功');
     if (editingLoop.value?.loopId === record.loopId) {
       drawerVisible.value = false;
     }
+    dangerOpen.value = false;
     await loadList();
   } catch (error) {
     console.error('操作失败:', error);
+  } finally {
+    dangerLoading.value = false;
   }
 }
 
@@ -1274,6 +1731,7 @@ async function loadPlantNodes() {
 onMounted(() => {
   loadPlantNodes();
   loadList();
+  loadLoopCounts();
 });
 
 watch(
@@ -1283,50 +1741,26 @@ watch(
   },
 );
 
-// 切换到回路台账 Tab 时清除工厂节点筛选，展示全量回路
-watch(activeMainTab, (tab) => {
-  if (tab === 'ledger' && query.plantNodeId) {
-    query.plantNodeId = undefined;
-    selectedPlantNodeId.value = undefined;
-    selectedPlantNode.value = null;
-    query.page = 1;
-    loadList();
-  }
-});
+// watch activeMainTab 已移除：方案 A 单页 + 视图切换，不再切换 Tab
 </script>
 
 <template>
   <Page>
-    <ClpmPageToolbar
-      title="回路管理"
-      subtitle="工厂结构、回路台账、Tag 关联与批量配置的统一入口。"
-    />
+    <ClpmPageToolbar title="回路配置" />
 
-    <!-- 主 Tab 结构 -->
-    <Tabs
-      v-model:active-key="activeMainTab"
-      class="mt-3"
-      type="line"
-      :tab-bar-style="{ marginBottom: '12px' }"
-    >
-      <TabPane key="factory" tab="工厂结构" />
-      <TabPane key="ledger" tab="回路台账" />
-      <TabPane key="tags" tab="Tag 关联" />
-    </Tabs>
-
-    <!-- 工厂结构 / 回路台账 共享表格区 -->
+    <!-- 单页布局：左侧工厂树 + 右侧回路表格（方案 A） -->
     <div
-      v-show="activeMainTab === 'factory' || activeMainTab === 'ledger'"
       class="flex gap-3"
       style="height: calc(100vh - 220px)"
     >
-      <!-- 左侧工厂树（仅工厂结构 Tab 可见） -->
+      <!-- 左侧工厂模型树 -->
       <PlantNodeTree
-        v-show="activeMainTab === 'factory'"
         card-title="工厂模型"
         :width="280"
         :show-crud-buttons="true"
         :default-expand-level="2"
+        :show-stats="true"
+        :loop-counts="loopCountsByNodeId"
         max-height="calc(100vh - 220px)"
         @select="onTreeSelect"
       />
@@ -1339,8 +1773,9 @@ watch(activeMainTab, (tab) => {
         :error="loadError"
         @retry="loadList"
       >
-        <!-- 工具栏（图标化） -->
+        <!-- 工具栏（图标化）— 左右分区布局：左侧=新建/批量操作；右侧=导入/导出/刷新/节点信息/视图切换 -->
         <div class="mb-3 flex flex-wrap items-center gap-2">
+          <!-- 左侧：新建与批量操作（默认显示，未选中回路时批量按钮禁用） -->
           <ClpmToolbarButton
             v-permission="['ADMIN', 'IC_ENGINEER']"
             icon="create"
@@ -1348,11 +1783,33 @@ watch(activeMainTab, (tab) => {
             @click="handleAdd"
           />
           <ClpmToolbarButton
-            v-permission="['ADMIN', 'IC_ENGINEER']"
+            v-permission="['ADMIN']"
             icon="ant-design:setting-outlined"
-            label="批量配置"
+            label="批量设置"
+            variant="primary"
+            :disabled="selectedRowKeys.length === 0"
+            disabled-reason="请先选择回路"
             @click="handleBatchConfig"
           />
+          <ClpmToolbarButton
+            v-permission="['ADMIN']"
+            icon="delete"
+            label="批量删除"
+            variant="danger"
+            :disabled="selectedRowKeys.length === 0"
+            disabled-reason="请先选择回路"
+            @click="handleBatchDelete"
+          />
+          <ClpmToolbarButton
+            icon="ant-design:close-outlined"
+            label="清除选择"
+            :disabled="selectedRowKeys.length === 0"
+            disabled-reason="尚未选择回路"
+            @click="selectedRowKeys = []"
+          />
+
+          <!-- 右侧：数据交互与视图工具 -->
+          <span class="ml-auto" />
           <Upload v-bind="uploadProps">
             <ClpmToolbarButton
               v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -1374,111 +1831,170 @@ watch(activeMainTab, (tab) => {
             :loading="loading"
             @click="loadList"
           />
-          <span class="ml-auto text-xs text-gray-400">
+          <span class="text-xs text-gray-400">
             {{
               selectedPlantNode ? `当前节点：${selectedPlantNode.name}` : '全厂'
             }}
           </span>
+          <!-- 视图切换：紧凑视图 / Tag 详情视图 -->
+          <Segmented
+            v-model:value="viewMode"
+            :options="[
+              { label: '紧凑视图', value: 'compact' },
+              { label: 'Tag 详情', value: 'tags' },
+            ]"
+            size="small"
+          />
         </div>
 
-        <!-- 批量操作工具栏（选中回路后浮现） -->
-        <div
-          v-if="selectedRowKeys.length > 0"
-          class="mb-3 flex flex-wrap items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2"
-        >
-          <span class="text-sm font-medium text-blue-700">
-            已选择 {{ selectedRowKeys.length }} 个回路
-          </span>
-          <div class="ml-auto flex gap-2">
-            <ClpmToolbarButton
-              v-permission="['ADMIN']"
-              icon="ant-design:setting-outlined"
-              label="批量设置"
-              variant="primary"
-              @click="handleBatchConfig"
-            />
-            <ClpmToolbarButton
-              v-permission="['ADMIN']"
-              icon="delete"
-              label="批量删除"
-              @click="handleBatchDelete"
-            />
-            <Button size="small" type="link" @click="selectedRowKeys = []">
-              清除选择
-            </Button>
-          </div>
-        </div>
-
-        <!-- 筛选区 -->
-        <div class="mb-3 flex flex-wrap items-center gap-2">
-          <Select
-            v-model:value="query.controlType"
-            placeholder="控制类型"
-            style="width: 140px"
-            size="small"
-            allow-clear
-            :options="controlTypeOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="query.importanceLevel"
-            placeholder="重要等级"
-            style="width: 120px"
-            size="small"
-            allow-clear
-            :options="levelOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="queryIncludeInEvaluation"
-            placeholder="参评状态"
-            style="width: 120px"
-            size="small"
-            allow-clear
-            :options="evaluationOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="queryMonitorStatus"
-            placeholder="监控状态"
-            style="width: 140px"
-            size="small"
-            allow-clear
-            :options="monitorStatusOptions"
-            @change="handleSearch"
-          />
-          <Select
-            v-model:value="query.status"
-            placeholder="回路状态"
-            style="width: 140px"
-            size="small"
-            allow-clear
-            :options="statusOptions"
-            @change="handleSearch"
-          />
+        <!-- 筛选区（ZL 工业风格工具栏：左搜索 + 右高级筛选 Popover） -->
+        <div class="mb-3 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50/50 px-3 py-2">
           <Input
             v-model:value="query.keyword"
             placeholder="搜索位号/描述"
             allow-clear
             size="small"
-            style="width: 220px"
+            class="!w-60"
             @press-enter="handleSearch"
-          />
+          >
+            <template #prefix>
+              <IconifyIcon icon="ant-design:search-outlined" class="text-slate-400" />
+            </template>
+          </Input>
           <Button type="primary" size="small" @click="handleSearch">
             查询
           </Button>
-          <Button
-            v-if="selectedRowKeys.length > 0"
-            size="small"
-            type="link"
-            @click="selectedRowKeys = []"
-          >
-            清除选择（{{ selectedRowKeys.length }}）
-          </Button>
+
+          <div class="ml-auto flex items-center gap-2">
+            <!-- 已选筛选条件徽章 -->
+            <template v-if="activeFilterCount > 0">
+              <span
+                v-for="f in activeFilterBadges"
+                :key="f.key"
+                class="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+              >
+                {{ f.label }}: {{ f.value }}
+                <IconifyIcon
+                  icon="ant-design:close-outlined"
+                  class="cursor-pointer text-blue-500 hover:text-blue-700"
+                  @click="f.clear"
+                />
+              </span>
+            </template>
+
+            <Popover trigger="click" placement="bottomRight">
+              <template #content>
+                <div class="w-64 space-y-3">
+                  <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    高级筛选
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">回路类型</div>
+                    <Select
+                      v-model:value="query.loopType"
+                      placeholder="回路类型"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="loopTypeOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">控制类型</div>
+                    <Select
+                      v-model:value="query.controlType"
+                      placeholder="控制类型"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="controlTypeOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">重要等级</div>
+                    <Select
+                      v-model:value="query.importanceLevel"
+                      placeholder="重要等级"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="levelOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">参评状态</div>
+                    <Select
+                      v-model:value="queryIncludeInEvaluation"
+                      placeholder="参评状态"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="evaluationOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">监控状态</div>
+                    <Select
+                      v-model:value="queryMonitorStatus"
+                      placeholder="监控状态"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="monitorStatusOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">回路状态</div>
+                    <Select
+                      v-model:value="query.status"
+                      placeholder="回路状态"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="statusOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div class="flex justify-between border-t border-slate-200 pt-2">
+                    <Button size="small" type="link" @click="clearAllFilters">
+                      清空筛选
+                    </Button>
+                    <Button size="small" type="primary" @click="handleSearch">
+                      应用
+                    </Button>
+                  </div>
+                </div>
+              </template>
+              <Button size="small">
+                <IconifyIcon icon="ant-design:filter-outlined" class="mr-1" />
+                筛选
+                <span
+                  v-if="activeFilterCount > 0"
+                  class="ml-1 rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                >
+                  {{ activeFilterCount }}
+                </span>
+              </Button>
+            </Popover>
+
+            <Button
+              v-if="selectedRowKeys.length > 0"
+              size="small"
+              type="link"
+              @click="selectedRowKeys = []"
+            >
+              清除选择（{{ selectedRowKeys.length }}）
+            </Button>
+          </div>
         </div>
 
         <Table
-          :columns="columns"
+          :columns="dynamicColumns"
           :data-source="loopList"
           :loading="loading"
           :row-selection="rowSelection"
@@ -1490,54 +2006,108 @@ watch(activeMainTab, (tab) => {
             showTotal: (t: number) => `共 ${t} 条`,
           }"
           :row-key="(record: LoopApi.LoopListItem) => record.loopId"
-          :row-class-name="rowClassName"
           :scroll="{ x: 1300 }"
-          size="middle"
+          size="small"
+          :custom-row="(record: LoopApi.LoopListItem) => ({
+            class: record.includeInEvaluation === false ? 'row-not-evaluated' : '',
+          })"
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'loopType'">
-              <Tag
-                :color="
-                  LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.color ?? 'default'
-                "
-                class="m-0"
+              <span
+                :class="[
+                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                  LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.badgeClass ??
+                    'bg-slate-100 text-slate-700 border-slate-200',
+                ]"
               >
                 {{ LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.label ?? '其他' }}
-              </Tag>
+              </span>
             </template>
             <template v-else-if="column.key === 'controlType'">
-              <Tag
+              <span
                 v-if="record.controlType"
-                :color="
-                  CONTROL_TYPE_MAP[record.controlType]?.color ?? 'default'
-                "
-                class="m-0"
+                :class="[
+                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                  CONTROL_TYPE_MAP[record.controlType]?.badgeClass ??
+                    'bg-slate-100 text-slate-700 border-slate-200',
+                ]"
               >
                 {{
                   CONTROL_TYPE_MAP[record.controlType]?.label ??
                   record.controlType
                 }}
-              </Tag>
-              <span v-else class="text-gray-400">—</span>
+              </span>
+              <span v-else class="text-slate-400">—</span>
+            </template>
+            <!-- v6.1 新增：PV 量程列 -->
+            <template v-else-if="column.key === 'pvRange'">
+              <span
+                v-if="record.pvRange && (record.pvRange.min !== null || record.pvRange.max !== null)"
+                class="font-mono text-xs text-slate-700"
+              >
+                {{ record.pvRange.min ?? '—' }} ~ {{ record.pvRange.max ?? '—' }}
+                <span v-if="record.pvUnit" class="ml-0.5 text-slate-400">{{ record.pvUnit }}</span>
+              </span>
+              <span v-else class="text-slate-400">—</span>
+            </template>
+            <!-- v6.1 新增：OP 量程列 -->
+            <template v-else-if="column.key === 'opRange'">
+              <span
+                v-if="record.opRange && (record.opRange.min !== null || record.opRange.max !== null)"
+                class="font-mono text-xs text-slate-700"
+              >
+                {{ record.opRange.min ?? '—' }} ~ {{ record.opRange.max ?? '—' }}
+                <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{ record.opUnit }}</span>
+              </span>
+              <span v-else class="text-slate-400">—</span>
+            </template>
+            <!-- v6.1 新增：OP 限位列（样式与 OP 量程列对齐） -->
+            <template v-else-if="column.key === 'opOutputLimits'">
+              <!-- 有限位值（自定义）：绿色高亮 -->
+              <Tooltip
+                v-if="(record.opOutputLowerLimit !== null && record.opOutputLowerLimit !== undefined)
+                  || (record.opOutputUpperLimit !== null && record.opOutputUpperLimit !== undefined)"
+                title="自定义 OP 输出限位（用于饱和率算法）"
+              >
+                <span class="font-mono text-xs font-medium text-emerald-600">
+                  {{ record.opOutputLowerLimit ?? '—' }} ~ {{ record.opOutputUpperLimit ?? '—' }}
+                  <span v-if="record.opUnit" class="ml-0.5 text-emerald-400">{{ record.opUnit }}</span>
+                </span>
+              </Tooltip>
+              <!-- 无限位值：直接显示 OP Tag 量程作为默认限位 -->
+              <Tooltip
+                v-else-if="record.opRange && (record.opRange.min !== null || record.opRange.max !== null)"
+                title="使用 OP Tag 量程作为限位"
+              >
+                <span class="font-mono text-xs text-slate-600">
+                  {{ record.opRange.min ?? '—' }} ~ {{ record.opRange.max ?? '—' }}
+                  <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{ record.opUnit }}</span>
+                </span>
+              </Tooltip>
+              <!-- OP Tag 未关联且无限位值：系统默认 0 ~ 100 -->
+              <Tooltip v-else title="未关联 OP Tag，使用系统默认 0 ~ 100">
+                <span class="font-mono text-xs text-slate-400">0 ~ 100</span>
+              </Tooltip>
             </template>
             <template v-else-if="column.key === 'importanceLevel'">
-              <Tag
+              <span
                 v-if="record.importanceLevel"
-                :color="
-                  IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.color ??
-                  'default'
-                "
-                class="m-0"
+                :class="[
+                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                  IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.badgeClass ??
+                    'bg-slate-100 text-slate-700 border-slate-200',
+                ]"
               >
                 {{ IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.label ??
                   LEVEL_LABEL[record.importanceLevel] ?? record.importanceLevel }}
-              </Tag>
-              <span v-else class="text-gray-400">—</span>
+              </span>
+              <span v-else class="text-slate-400">—</span>
             </template>
             <template v-else-if="column.key === 'includeInEvaluation'">
               <Switch
-                v-permission="['ADMIN', 'IC_ENGINEER']"
+                :key="`eval-${record.loopId}-${record.includeInEvaluation}`"
                 :checked="
                   record.includeInEvaluation !== false &&
                   record.includeInEvaluation !== null
@@ -1558,55 +2128,67 @@ watch(activeMainTab, (tab) => {
                 :is-active="record.isActive"
               />
             </template>
-            <template v-else-if="column.key === 'score'">
-              <span v-if="record.score != null" class="font-mono font-medium">
-                {{ record.score?.toFixed(1) ?? '--' }}
-              </span>
-              <span v-else class="text-gray-400">—</span>
-            </template>
-            <template v-else-if="column.key === 'tagMapping'">
-              <ClpmTagAssociationBadge
-                :status="(record as LoopApi.LoopListItem).tagMappingStatus"
-              />
+            <!-- v6.1：Tag 状态列已移除（与监控状态重复，Tag 关联详情在编辑/查看抽屉中查看） -->
+            <template v-else-if="column.key === 'tagDetail'">
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="(val, key) in (record as LoopApi.LoopListItem)
+                    .tagMappingStatus"
+                  :key="key"
+                  :class="[
+                    'inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium leading-none',
+                    val
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
+                      : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
+                  ]"
+                >
+                  {{ SLOT_LABELS[key] ?? key }}: {{ val ? '✓' : '✗' }}
+                </span>
+              </div>
             </template>
             <template v-else-if="column.key === 'action'">
-              <div class="flex gap-1">
+              <div class="loop-action-cell group">
                 <Tooltip title="查看回路详情">
                   <Button
-                    type="link"
+                    type="text"
                     size="small"
+                    class="loop-action-btn"
                     @click="handleViewDetail(record as LoopApi.LoopListItem)"
                   >
-                    查看
+                    <template #icon>
+                      <IconifyIcon icon="ant-design:eye-outlined" />
+                    </template>
                   </Button>
                 </Tooltip>
-                <Tooltip title="编辑回路信息">
-                  <Button
-                    v-permission="['ADMIN', 'IC_ENGINEER']"
-                    type="link"
-                    size="small"
-                    @click="handleEdit(record as LoopApi.LoopListItem)"
-                  >
-                    编辑
-                  </Button>
-                </Tooltip>
-                <Popconfirm
-                  v-permission="['ADMIN']"
-                  title="确认删除该回路？删除后监控将停止，可通过重新启用恢复。"
-                  ok-text="确认删除"
-                  cancel-text="取消"
-                  ok-type="danger"
-                  @confirm="handleDelete(record as LoopApi.LoopListItem)"
-                >
-                  <Button
-                    v-permission="['ADMIN']"
-                    type="link"
-                    size="small"
-                    danger
-                  >
-                    删除
-                  </Button>
-                </Popconfirm>
+                <span class="loop-action-cell__more">
+                  <Tooltip title="编辑回路信息">
+                    <Button
+                      v-permission="['ADMIN', 'IC_ENGINEER']"
+                      type="text"
+                      size="small"
+                      class="loop-action-btn"
+                      @click="handleEdit(record as LoopApi.LoopListItem)"
+                    >
+                      <template #icon>
+                        <IconifyIcon icon="ant-design:edit-outlined" />
+                      </template>
+                    </Button>
+                  </Tooltip>
+                  <Tooltip title="删除回路">
+                    <Button
+                      v-permission="['ADMIN']"
+                      type="text"
+                      size="small"
+                      danger
+                      class="loop-action-btn"
+                      @click="openDanger(record as LoopApi.LoopListItem)"
+                    >
+                      <template #icon>
+                        <IconifyIcon icon="ant-design:delete-outlined" />
+                      </template>
+                    </Button>
+                  </Tooltip>
+                </span>
               </div>
             </template>
           </template>
@@ -1614,79 +2196,10 @@ watch(activeMainTab, (tab) => {
       </ClpmDataCanvas>
     </div>
 
-    <!-- Tag 关联概览 Tab -->
-    <ClpmDataCanvas
-      v-if="activeMainTab === 'tags'"
-      title="Tag 关联概览"
-      :loading="loading"
-    >
-      <div class="mb-3 flex items-center justify-between">
-        <p class="text-sm text-gray-500">
-          浏览各回路的 Tag 关联状态，点击「编辑」进入抽屉管理 Tag 关联。
-        </p>
-        <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loading"
-          @click="loadList"
-        />
-      </div>
-      <Table
-        :columns="tagColumns"
-        :data-source="loopList"
-        :loading="loading"
-        :pagination="{
-          current: query.page,
-          pageSize: query.pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (t: number) => `共 ${t} 条`,
-        }"
-        :row-key="(record: LoopApi.LoopListItem) => record.loopId"
-        :scroll="{ x: 900 }"
-        size="middle"
-        @change="handleTableChange"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'status'">
-            <StatusBadge :status="record.status" :is-active="record.isActive" />
-          </template>
-          <template v-else-if="column.key === 'tagMapping'">
-            <ClpmTagAssociationBadge
-              :status="(record as LoopApi.LoopListItem).tagMappingStatus"
-            />
-          </template>
-          <template v-else-if="column.key === 'tagDetail'">
-            <div class="flex flex-wrap gap-1">
-              <Tag
-                v-for="(val, key) in (record as LoopApi.LoopListItem)
-                  .tagMappingStatus"
-                :key="key"
-                :color="val ? 'green' : 'default'"
-                class="m-0 text-xs"
-              >
-                {{ SLOT_LABELS[key] ?? key }}: {{ val ? '✓' : '✗' }}
-              </Tag>
-            </div>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <Button
-              v-permission="['ADMIN', 'IC_ENGINEER']"
-              type="link"
-              size="small"
-              @click="handleEdit(record as LoopApi.LoopListItem)"
-            >
-              编辑
-            </Button>
-          </template>
-        </template>
-      </Table>
-    </ClpmDataCanvas>
-
-    <!-- 编辑抽屉 -->
+    <!-- 编辑/查看抽屉 -->
     <Drawer
       v-model:open="drawerVisible"
-      :title="editingLoop ? `编辑回路 - ${editingLoop.tagName}` : '新建回路'"
+      :title="drawerTitle"
       placement="right"
       width="780px"
       :mask-closable="true"
@@ -1699,7 +2212,7 @@ watch(activeMainTab, (tab) => {
               ref="formRef"
               :model="formState"
               layout="vertical"
-              class="pt-2"
+              class="pt-1 compact-form"
             >
               <div class="grid grid-cols-2 gap-3">
                 <FormItem
@@ -1710,7 +2223,7 @@ watch(activeMainTab, (tab) => {
                   <Input
                     v-model:value="formState.tagName"
                     placeholder="例如：101-FC-1023"
-                    :disabled="!!editingLoop"
+                    :disabled="!!editingLoop || isViewMode"
                   />
                 </FormItem>
                 <FormItem
@@ -1724,6 +2237,7 @@ watch(activeMainTab, (tab) => {
                     :options="plantNodeOptions"
                     show-search
                     allow-clear
+                    :disabled="isViewMode"
                     :filter-option="
                       (input: string, option: any) =>
                         option.label.includes(input)
@@ -1736,12 +2250,14 @@ watch(activeMainTab, (tab) => {
                   <Input
                     v-model:value="formState.description"
                     placeholder="请输入回路描述"
+                    :disabled="isViewMode"
                   />
                 </FormItem>
                 <FormItem name="loopType" label="回路类型">
                   <Select
                     v-model:value="formState.loopType"
                     placeholder="请选择回路类型"
+                    :disabled="isViewMode"
                     :options="
                       Object.entries(LOOP_TYPE_MAP).map(
                         ([value, { label }]) => ({
@@ -1753,9 +2269,14 @@ watch(activeMainTab, (tab) => {
                   />
                 </FormItem>
               </div>
-              <!-- v5.3：评估配置区 -->
-              <div class="mb-3 rounded border border-blue-100 bg-blue-50/40 p-3">
-                <div class="mb-3 font-medium text-blue-700">评估配置</div>
+              <!-- v5.3：评估配置区（ZL 工业风格：浅灰底 + 左蓝色竖线 + 标题加粗） -->
+              <div class="mb-2 rounded border border-slate-200 border-l-4 border-l-blue-500 bg-slate-50 p-3">
+                <div class="mb-2 text-sm font-semibold text-slate-700">
+                  评估配置
+                  <span class="ml-2 text-xs font-normal text-slate-400">
+                    用于 KPI 计算与装置级聚合
+                  </span>
+                </div>
                 <FormItem
                   name="controlType"
                   label="控制类型"
@@ -1772,6 +2293,7 @@ watch(activeMainTab, (tab) => {
                     :options="controlTypeOptions.filter((o) => o.value)"
                     option-type="button"
                     button-style="solid"
+                    :disabled="isViewMode"
                     @change="
                       (e: any) =>
                         handleControlTypeChange(
@@ -1796,11 +2318,13 @@ watch(activeMainTab, (tab) => {
                     :options="levelOptions.filter((o) => o.value)"
                     option-type="button"
                     button-style="solid"
+                    :disabled="isViewMode"
                   />
                 </FormItem>
                 <FormItem name="includeInEvaluation" label="是否参与评估">
                   <Switch
                     :checked="formState.includeInEvaluation"
+                    :disabled="isViewMode"
                     @change="(checked: any) => handleDrawerEvaluationChange(Boolean(checked))"
                   />
                   <span class="ml-2 text-xs text-gray-500">
@@ -1812,26 +2336,107 @@ watch(activeMainTab, (tab) => {
                   </span>
                 </FormItem>
               </div>
+              <!-- v6.1：OP 输出限位配置区（ZL 工业风格：浅灰底 + 左蓝色竖线 + 标题加粗） -->
+              <div class="mb-2 rounded border border-slate-200 border-l-4 border-l-emerald-500 bg-slate-50 p-3">
+                <div class="mb-2 flex items-center justify-between">
+                  <div class="text-sm font-semibold text-slate-700">
+                    OP 输出限位
+                    <span class="ml-2 text-xs font-normal text-slate-400">
+                      用于饱和率算法
+                    </span>
+                  </div>
+                  <Checkbox
+                    :checked="useDefaultOpLimits"
+                    :disabled="isViewMode"
+                    @change="(e: any) => handleUseDefaultOpLimitsChange(e.target.checked)"
+                  >
+                    使用默认（= OP Tag 量程）
+                  </Checkbox>
+                </div>
+                <!-- OP Tag 量程提示 -->
+                <div
+                  v-if="opTagAssociated"
+                  class="mb-2 rounded bg-emerald-50 px-3 py-1 text-xs text-emerald-700"
+                >
+                  OP Tag 量程：
+                  <span class="font-mono font-medium">
+                    {{ opTagRange.min ?? '—' }} ~ {{ opTagRange.max ?? '—' }}
+                    <span v-if="opTagRange.unit" class="ml-0.5">{{ opTagRange.unit }}</span>
+                  </span>
+                  <span v-if="!useDefaultOpLimits" class="ml-2 text-emerald-500">
+                    （限位值须在量程范围内）
+                  </span>
+                </div>
+                <div v-else class="mb-2 rounded bg-amber-50 px-3 py-1 text-xs text-amber-700">
+                  尚未关联 OP Tag，限位值需人工填写（无范围校验）
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <FormItem
+                    name="opOutputLowerLimit"
+                    label="OP 输出下限位"
+                    :rules="[
+                      {
+                        validator: validateOpOutputLowerLimit,
+                        trigger: 'change',
+                      },
+                    ]"
+                  >
+                    <InputNumber
+                      v-model:value="opLowerLimitDisplay"
+                      :disabled="isViewMode || useDefaultOpLimits"
+                      :min="opTagRange.min ?? undefined"
+                      :max="
+                        opUpperLimitDisplay !== undefined
+                          ? opUpperLimitDisplay
+                          : (opTagRange.max ?? undefined)
+                      "
+                      :step="0.1"
+                      :precision="2"
+                      style="width: 100%"
+                      placeholder="下限位"
+                    />
+                  </FormItem>
+                  <FormItem
+                    name="opOutputUpperLimit"
+                    label="OP 输出上限位"
+                    :rules="[
+                      {
+                        validator: validateOpOutputUpperLimit,
+                        trigger: 'change',
+                      },
+                    ]"
+                  >
+                    <InputNumber
+                      v-model:value="opUpperLimitDisplay"
+                      :disabled="isViewMode || useDefaultOpLimits"
+                      :min="
+                        opLowerLimitDisplay !== undefined
+                          ? opLowerLimitDisplay
+                          : (opTagRange.min ?? undefined)
+                      "
+                      :max="opTagRange.max ?? undefined"
+                      :step="0.1"
+                      :precision="2"
+                      style="width: 100%"
+                      placeholder="上限位"
+                    />
+                  </FormItem>
+                </div>
+              </div>
               <FormItem name="isActive" label="启用状态">
-                <Switch v-model:checked="formState.isActive" />
+                <Switch
+                  v-model:checked="formState.isActive"
+                  :disabled="isViewMode"
+                />
               </FormItem>
               <FormItem name="remark" label="备注">
                 <Input.TextArea
                   v-model:value="formState.remark"
                   placeholder="备注信息"
                   :rows="2"
+                  :disabled="isViewMode"
                 />
               </FormItem>
-              <div class="flex justify-end gap-2">
-                <Button
-                  v-permission="['ADMIN', 'IC_ENGINEER']"
-                  type="primary"
-                  :loading="drawerSaving"
-                  @click="handleSaveBasic"
-                >
-                  保存基础信息
-                </Button>
-              </div>
             </Form>
           </TabPane>
 
@@ -1866,8 +2471,9 @@ watch(activeMainTab, (tab) => {
                         cfg.description
                       }}</span>
                     </div>
+                    <!-- v6.1：view 模式隐藏清除按钮 -->
                     <Button
-                      v-if="slotState[cfg.key]"
+                      v-if="slotState[cfg.key] && !isViewMode"
                       type="link"
                       size="small"
                       danger
@@ -1882,6 +2488,7 @@ watch(activeMainTab, (tab) => {
                     allow-clear
                     placeholder="选择 Tag"
                     style="width: 100%"
+                    :disabled="isViewMode"
                     :loading="tagSearchLoading"
                     :options="
                       availableTags.map((t) => ({
@@ -1894,7 +2501,8 @@ watch(activeMainTab, (tab) => {
                   />
                 </div>
               </div>
-              <div class="mt-4 flex justify-end gap-2">
+              <!-- v6.1：view 模式隐藏底部操作按钮 -->
+              <div v-if="!isViewMode" class="mt-4 flex justify-end gap-2">
                 <Button
                   v-permission="['ADMIN', 'IC_ENGINEER']"
                   type="default"
@@ -1917,62 +2525,37 @@ watch(activeMainTab, (tab) => {
             </div>
           </TabPane>
 
-          <!-- 评估参数 -->
-          <TabPane key="params" tab="评估参数" :disabled="!editingLoop">
-            <div v-if="editingLoop">
-              <div class="mb-2 font-medium">
-                评分权重
-                <span
-                  class="ml-2 text-xs"
-                  :class="weightValid ? 'text-green-500' : 'text-red-500'"
-                >
-                  总和：{{ weightTotal }}%
-                </span>
-              </div>
-              <div class="grid grid-cols-3 gap-3 rounded border p-3">
-                <FormItem
-                  v-for="item in weightItems"
-                  :key="item.key"
-                  :label="item.label"
-                >
-                  <InputNumber
-                    v-model:value="formState.scoreWeights[item.key]"
-                    :min="0"
-                    :max="100"
-                    class="w-full"
-                    addon-after="%"
-                  />
-                </FormItem>
-              </div>
-              <div class="mt-4 flex justify-end">
-                <Button
-                  v-permission="['ADMIN', 'IC_ENGINEER']"
-                  type="primary"
-                  :loading="drawerSaving"
-                  @click="handleSaveBasic"
-                >
-                  保存评估参数
-                </Button>
-              </div>
-            </div>
-            <div v-else class="py-8 text-center text-gray-400">
-              请先保存基础信息
-            </div>
-          </TabPane>
-
           <!-- 投用定义 -->
           <TabPane key="mode" tab="投用定义" :disabled="!editingLoop">
+            <!-- v6.1：view 模式下投用定义 Tab 禁用（编辑权限相关） -->
             <ModeMappingEditor
-              v-if="editingLoop"
+              v-if="editingLoop && !isViewMode"
               :loop-id="editingLoop.loopId"
               @saved="loadList"
             />
+            <div v-else-if="editingLoop && isViewMode" class="py-8 text-center text-gray-400">
+              投用定义为回路编辑专属配置，请通过"编辑"功能修改
+            </div>
             <div v-else class="py-8 text-center text-gray-400">
               请先保存基础信息
             </div>
           </TabPane>
         </Tabs>
       </Spin>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <Button @click="drawerVisible = false">{{ isViewMode ? '关闭' : '取消' }}</Button>
+          <Button
+            v-if="!isViewMode"
+            v-permission="['ADMIN', 'IC_ENGINEER']"
+            type="primary"
+            :loading="drawerSaving"
+            @click="handleSaveBasic"
+          >
+            保存
+          </Button>
+        </div>
+      </template>
     </Drawer>
 
     <!-- 批量配置弹窗 -->
@@ -2075,6 +2658,33 @@ watch(activeMainTab, (tab) => {
         </div>
       </div>
     </Modal>
+
+    <!-- 单个删除回路：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="dangerOpen"
+      title="删除回路"
+      action="删除"
+      :target="dangerTarget?.tagName ?? ''"
+      impact-scope="将级联解绑 7 个 Tag、影响历史快照、不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入回路 tag 以确认"
+      :loading="dangerLoading"
+      @confirm="handleDangerConfirm"
+    />
+
+    <!-- 批量删除回路：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDangerOpen"
+      title="批量删除回路"
+      action="删除"
+      :target="`选中的 ${selectedRowKeys.length} 个回路`"
+      impact-scope="将软删除（停用监控）选中的回路、可通过重新启用恢复"
+      rollback-tip="此操作为软删除，可通过重新启用恢复"
+      :require-confirm-code="false"
+      :loading="batchDangerLoading"
+      @confirm="handleBatchDangerConfirm"
+    />
   </Page>
 </template>
 
@@ -2089,5 +2699,104 @@ watch(activeMainTab, (tab) => {
 }
 .row-not-evaluated:hover > td {
   background-color: #f0f0f0 !important;
+}
+
+/* v6.1：选中行样式优化（淡蓝背景 + 左侧蓝色竖线，列分割线最细最淡） */
+.ant-table-tbody > tr.ant-table-row-selected > td {
+  background-color: #eff6ff !important; /* blue-50 */
+  border-bottom-color: #eff6ff !important; /* 与背景同色，弱化横向分割线 */
+  border-right-color: #eff6ff !important; /* 与背景同色，弱化列分割线 */
+}
+.ant-table-tbody > tr.ant-table-row-selected:hover > td {
+  background-color: #dbeafe !important; /* blue-100 */
+  border-bottom-color: #dbeafe !important;
+  border-right-color: #dbeafe !important;
+}
+/* 选中行的第一列左侧加蓝色竖线（视觉锚点） */
+.ant-table-tbody > tr.ant-table-row-selected > td:first-child {
+  position: relative;
+}
+.ant-table-tbody > tr.ant-table-row-selected > td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: #3b82f6; /* blue-500 */
+}
+
+/* v6.1：抽屉表单紧凑布局（减小 FormItem 间距，确保保存按钮可见） */
+.compact-form .ant-form-item {
+  margin-bottom: 12px;
+}
+.compact-form .ant-form-item-label {
+  padding-bottom: 2px;
+}
+
+/* —— ZL §2 hover reveal 操作列 —— */
+.loop-action-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.loop-action-cell__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+/* hover 行时显示更多操作 */
+.ant-table-row:hover .loop-action-cell__more,
+.loop-action-cell:hover .loop-action-cell__more,
+.loop-action-cell:focus-within .loop-action-cell__more {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 操作按钮统一样式 */
+.loop-action-btn {
+  height: 22px !important;
+  padding: 0 4px !important;
+  font-size: 13px !important;
+  border-radius: 3px !important;
+}
+
+.loop-action-btn:hover {
+  background-color: hsl(var(--accent) / 0.1) !important;
+}
+
+.loop-action-btn.ant-btn-dangerous:hover {
+  background-color: hsl(var(--destructive) / 0.1) !important;
+}
+
+/* —— ZL 高密度表格 —— */
+.ant-table-small .ant-table-thead > tr > th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  background-color: #f8fafc;
+}
+
+.dark .ant-table-small .ant-table-thead > tr > th {
+  background-color: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+}
+
+.ant-table-small .ant-table-tbody > tr > td {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+/* 数值列等宽字体 */
+.ant-table-small .ant-table-tbody > tr > td[align='right'] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 </style>

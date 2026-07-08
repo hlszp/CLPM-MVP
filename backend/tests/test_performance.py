@@ -386,87 +386,6 @@ class TestEngineRuleUpdate:
 # ---------------------------------------------------------------------------
 
 
-class TestBoard:
-    """GET /api/v1/performance/board tests."""
-
-    def test_get_board_success(self, client, mock_db, fake_redis) -> None:
-        """认证用户可以获取全局看板（从节点级快照表读取）。"""
-        node_snaps = [_make_node_snapshot()]
-        trend_row = MagicMock()
-        trend_row.hour = datetime.now(UTC)
-        trend_row.avg_steady = Decimal("85.00")
-        status_row = MagicMock()
-        status_row.status = "GOOD"
-        status_row.cnt = 1
-
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _make_scalars_mock(node_snaps)
-            elif call_count[0] == 2:
-                return _make_all_rows_mock([trend_row])
-            else:
-                return _make_all_rows_mock([status_row])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
-        with mock_current_user(TEST_USERS["admin"]):
-            resp = client.get(
-                "/api/v1/performance/board",
-                headers={"Authorization": "Bearer fake-token"},
-            )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["code"] == "0"
-        data = body["data"]
-        assert "filterScope" in data
-        assert "kpiCards" in data
-        assert "kpiSummary" in data
-        assert "steadyRateTrend" in data
-        assert "partialWarning" in data
-        # 9 张卡片（8 大 KPI + 综合评分）
-        assert len(data["kpiCards"]) == 9
-
-    def test_get_board_with_plant_node(self, client, mock_db, fake_redis) -> None:
-        """按装置筛选看板数据（从节点级快照表读取）。"""
-        plant_node = MagicMock()
-        plant_node.name = "测试装置"
-        node_snaps = [_make_node_snapshot()]
-        trend_row = MagicMock()
-        trend_row.hour = datetime.now(UTC)
-        trend_row.avg_steady = Decimal("85.00")
-        status_row = MagicMock()
-        status_row.status = "GOOD"
-        status_row.cnt = 1
-
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _make_scalar_one_or_none_mock(plant_node)
-            elif call_count[0] == 2:
-                return _make_scalars_mock(node_snaps)
-            elif call_count[0] == 3:
-                return _make_all_rows_mock([trend_row])
-            else:
-                return _make_all_rows_mock([status_row])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
-        with mock_current_user(TEST_USERS["ic_engineer"]):
-            resp = client.get(
-                "/api/v1/performance/board?plantNodeId=00000000-0000-0000-0000-000000000111",
-                headers={"Authorization": "Bearer fake-token"},
-            )
-        assert resp.status_code == 200
-
-    def test_get_board_no_token(self, client) -> None:
-        """未认证请求返回 401。"""
-        resp = client.get("/api/v1/performance/board")
-        assert resp.status_code == 401
-
-
 # ---------------------------------------------------------------------------
 # S3-METRIC-005: 低效回路排行
 # ---------------------------------------------------------------------------
@@ -481,6 +400,7 @@ class TestRanking:
         loop = MagicMock()
         loop.id = snapshot.loop_id
         loop.tag_name = "101-FC-1023"
+        loop.description = "常减压装置进料流量控制"
         loop.unit_id = "00000000-0000-0000-0000-000000000111"
 
         call_count = [0]

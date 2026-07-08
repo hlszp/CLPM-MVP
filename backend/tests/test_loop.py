@@ -661,3 +661,188 @@ class TestImportLoopsTagAutoCreate:
         assert mock_logger.warning.call_count == first_warning_count
         # tag_cache 应缓存了该 Tag
         assert "T-TEST-003-PV" in tag_cache
+
+
+class TestOpOutputLimitsValidation:
+    """v6.1: OP 输出限位校验单元测试.
+
+    测试 _validate_op_output_limits 纯函数的各种场景，覆盖设计文档 §2.2 业务规则。
+    """
+
+    def test_both_none_passes(self) -> None:
+        """lower/upper 都为 None（使用默认）时校验通过。"""
+        from app.services.loop import _validate_op_output_limits
+
+        _validate_op_output_limits(None, None, 0.0, 100.0)  # 不抛异常即通过
+
+    def test_lower_less_than_upper_passes(self) -> None:
+        """lower < upper 时校验通过。"""
+        from app.services.loop import _validate_op_output_limits
+
+        _validate_op_output_limits(10.0, 90.0, 0.0, 100.0)
+
+    def test_lower_equal_upper_raises(self) -> None:
+        """lower == upper 时抛 BizError。"""
+        from app.core.exceptions import BizError
+        from app.services.loop import _validate_op_output_limits
+
+        try:
+            _validate_op_output_limits(50.0, 50.0, 0.0, 100.0)
+            raise AssertionError("应抛 BizError")
+        except BizError as e:
+            assert e.code == "ERR_OP_LIMIT_OUT_OF_RANGE"
+            assert e.status_code == 400
+
+    def test_lower_greater_than_upper_raises(self) -> None:
+        """lower > upper 时抛 BizError。"""
+        from app.core.exceptions import BizError
+        from app.services.loop import _validate_op_output_limits
+
+        try:
+            _validate_op_output_limits(90.0, 10.0, 0.0, 100.0)
+            raise AssertionError("应抛 BizError")
+        except BizError as e:
+            assert e.code == "ERR_OP_LIMIT_OUT_OF_RANGE"
+
+    def test_lower_below_op_range_min_raises(self) -> None:
+        """lower < op_range_min 时抛 BizError。"""
+        from app.core.exceptions import BizError
+        from app.services.loop import _validate_op_output_limits
+
+        try:
+            _validate_op_output_limits(-5.0, 90.0, 0.0, 100.0)
+            raise AssertionError("应抛 BizError")
+        except BizError as e:
+            assert e.code == "ERR_OP_LIMIT_OUT_OF_RANGE"
+            assert "量程下限" in e.message
+
+    def test_upper_above_op_range_max_raises(self) -> None:
+        """upper > op_range_max 时抛 BizError。"""
+        from app.core.exceptions import BizError
+        from app.services.loop import _validate_op_output_limits
+
+        try:
+            _validate_op_output_limits(10.0, 105.0, 0.0, 100.0)
+            raise AssertionError("应抛 BizError")
+        except BizError as e:
+            assert e.code == "ERR_OP_LIMIT_OUT_OF_RANGE"
+            assert "量程上限" in e.message
+
+    def test_lower_at_op_range_min_passes(self) -> None:
+        """lower == op_range_min 时校验通过（边界值）。"""
+        from app.services.loop import _validate_op_output_limits
+
+        _validate_op_output_limits(0.0, 100.0, 0.0, 100.0)
+
+    def test_upper_at_op_range_max_passes(self) -> None:
+        """upper == op_range_max 时校验通过（边界值）。"""
+        from app.services.loop import _validate_op_output_limits
+
+        _validate_op_output_limits(10.0, 100.0, 0.0, 100.0)
+
+    def test_op_range_none_skips_range_check(self) -> None:
+        """op_range_min/max 为 None 时跳过范围校验（OP Tag 未关联场景）。"""
+        from app.services.loop import _validate_op_output_limits
+
+        # OP Tag 未关联，range_min/max 均为 None，仅校验 lower < upper
+        _validate_op_output_limits(10.0, 90.0, None, None)
+
+    def test_op_range_none_but_lower_ge_upper_raises(self) -> None:
+        """op_range 为 None 时仍校验 lower < upper。"""
+        from app.core.exceptions import BizError
+        from app.services.loop import _validate_op_output_limits
+
+        try:
+            _validate_op_output_limits(90.0, 10.0, None, None)
+            raise AssertionError("应抛 BizError")
+        except BizError as e:
+            assert e.code == "ERR_OP_LIMIT_OUT_OF_RANGE"
+
+    def test_only_lower_set_passes_when_in_range(self) -> None:
+        """仅设置 lower（upper 为 None）时校验通过。"""
+        from app.services.loop import _validate_op_output_limits
+
+        _validate_op_output_limits(10.0, None, 0.0, 100.0)
+
+    def test_only_upper_set_passes_when_in_range(self) -> None:
+        """仅设置 upper（lower 为 None）时校验通过。"""
+        from app.services.loop import _validate_op_output_limits
+
+        _validate_op_output_limits(None, 90.0, 0.0, 100.0)
+
+
+class TestOpOutputLimitsSchemaAndService:
+    """v6.1: OP 输出限位字段在 Schema 和 Service 签名中的存在性测试。"""
+
+    def test_loop_create_schema_has_op_output_limits(self) -> None:
+        """LoopCreate schema 应包含 opOutputLowerLimit / opOutputUpperLimit。"""
+        from app.schemas.loop import LoopCreate
+
+        fields = set(LoopCreate.model_fields.keys())
+        assert "opOutputLowerLimit" in fields
+        assert "opOutputUpperLimit" in fields
+
+    def test_loop_update_schema_has_op_output_limits(self) -> None:
+        """LoopUpdate schema 应包含 opOutputLowerLimit / opOutputUpperLimit。"""
+        from app.schemas.loop import LoopUpdate
+
+        fields = set(LoopUpdate.model_fields.keys())
+        assert "opOutputLowerLimit" in fields
+        assert "opOutputUpperLimit" in fields
+
+    def test_loop_list_item_schema_has_range_fields(self) -> None:
+        """LoopListItem schema 应包含 pvRange/pvUnit/opRange/opUnit 及限位字段。"""
+        from app.schemas.loop import LoopListItem
+
+        fields = set(LoopListItem.model_fields.keys())
+        assert "pvRange" in fields
+        assert "pvUnit" in fields
+        assert "opRange" in fields
+        assert "opUnit" in fields
+        assert "opOutputLowerLimit" in fields
+        assert "opOutputUpperLimit" in fields
+
+    def test_create_loop_service_accepts_op_output_limits(self) -> None:
+        """create_loop service 签名应包含 op_output_lower_limit / op_output_upper_limit。"""
+        import inspect
+
+        from app.services.loop import create_loop
+
+        sig = inspect.signature(create_loop)
+        params = set(sig.parameters.keys())
+        assert "op_output_lower_limit" in params
+        assert "op_output_upper_limit" in params
+
+    def test_update_loop_service_accepts_op_output_limits(self) -> None:
+        """update_loop service 签名应包含 op_output_lower_limit / op_output_upper_limit。"""
+        import inspect
+
+        from app.services.loop import update_loop
+
+        sig = inspect.signature(update_loop)
+        params = set(sig.parameters.keys())
+        assert "op_output_lower_limit" in params
+        assert "op_output_upper_limit" in params
+
+
+class TestOpOutputLimitsOrmModel:
+    """v6.1: LoopLedger ORM 模型字段存在性测试。"""
+
+    def test_loop_ledger_has_op_output_limit_fields(self) -> None:
+        """LoopLedger ORM 模型应包含 op_output_lower_limit / op_output_upper_limit 列。"""
+        from app.models.loop import LoopLedger
+
+        columns = {c.name for c in LoopLedger.__table__.columns}
+        assert "op_output_lower_limit" in columns
+        assert "op_output_upper_limit" in columns
+
+    def test_op_output_limit_fields_nullable(self) -> None:
+        """op_output_lower_limit / op_output_upper_limit 应为 nullable。"""
+        from app.models.loop import LoopLedger
+
+        lower_col = LoopLedger.__table__.columns.get("op_output_lower_limit")
+        upper_col = LoopLedger.__table__.columns.get("op_output_upper_limit")
+        assert lower_col is not None
+        assert upper_col is not None
+        assert lower_col.nullable is True
+        assert upper_col.nullable is True

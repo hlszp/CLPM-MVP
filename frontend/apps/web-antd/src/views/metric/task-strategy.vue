@@ -1,95 +1,113 @@
 <script lang="ts" setup>
 /**
- * 任务策略配置（B2.5 新增）
+ * 策略配置 — 标准评估任务执行策略（Tab 内嵌组件）
  *
- * 对齐 UI/UX 改造方案 §6.1.4 + PRD §4.3
- * - 标准评估任务策略：计算周期 / 数据窗口 / 默认时间窗 / 是否启用整点触发
- * - 自动触发策略：低效回路自动重评阈值 / 新回路自动首评开关
- * - 重试策略：失败重试次数 / 重试间隔
- * - 调度策略：并发数 / 优先级（级别 1 优先）/ 排队超时
- * - 仅 ADMIN 可编辑
+ * 对接后端 GET/PUT /api/v1/performance/rules
+ * 基于 EngineRule 表的 3 类核心策略：
+ * - EVAL_CALC_CYCLE  (CALC_CYCLE):  计算周期 {"cycle_minutes": 60}
+ * - DATA_FETCH_WINDOW (DATA_FETCH):  数据拉取窗口 {"window_days": 30, "sample_interval_seconds": 1}
+ * - SCHEDULE_CONCURRENCY (SCHEDULE): 调度并发 {"concurrency": 16}
  *
- * 注：本页为前端占位 + 表单结构，后端"配置变更预览/任务策略"接口属 P1 待补。
+ * 嵌入位置：评估任务模块 → "策略配置" Tab
+ * 权限：ADMIN 可编辑，其他角色只读
  */
-import { onMounted, reactive, ref } from 'vue';
+import type { MetricApi } from '#/api/metric';
 
-import { Page } from '@vben/common-ui';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import {
+  Alert,
   Card,
   Form,
   FormItem,
-  Input,
   InputNumber,
   message,
-  Modal,
   Select,
   Switch,
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
-import ConfigTabs from '#/components/metric/config-tabs.vue';
+import { ClpmDangerConfirmModal, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { getRulesApi, updateRuleApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricTaskStrategy' });
+
+const { themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const saving = ref(false);
 
-const formRef = ref();
+// ============ 规则数据 ============
+const rules = ref<MetricApi.RuleItem[]>([]);
 
-const formState = reactive({
-  // 标准评估任务
-  calcPeriod: '1h',
-  dataFetchWindow: '1h',
-  defaultTimeWindow: 'today',
-  hourlyTrigger: true,
-  // 自动触发
-  autoRerevaluateThreshold: 60,
-  autoFirstEvaluation: true,
-  // 重试策略
-  retryMaxAttempts: 3,
-  retryInterval: 30,
-  // 调度策略
-  scheduleConcurrency: 10,
-  priorityByLevel: true,
-  queueTimeout: 300,
+/** 按 ruleCode 索引规则 */
+const ruleMap = computed<Record<string, MetricApi.RuleItem>>(() => {
+  const map: Record<string, MetricApi.RuleItem> = {};
+  for (const r of rules.value) {
+    map[r.ruleCode] = r;
+  }
+  return map;
 });
 
-const calcPeriodOptions = [
-  { label: '5 分钟', value: '5m' },
-  { label: '15 分钟', value: '15m' },
-  { label: '30 分钟', value: '30m' },
-  { label: '1 小时', value: '1h' },
-  { label: '6 小时', value: '6h' },
-  { label: '1 天', value: '1d' },
+// ============ 编辑态（按 ruleCode 分组） ============
+interface CalcCycleParams {
+  cycle_minutes: number;
+}
+interface DataFetchParams {
+  window_days: number;
+  sample_interval_seconds: number;
+}
+interface ScheduleParams {
+  concurrency: number;
+}
+
+const calcCycle = reactive<CalcCycleParams>({ cycle_minutes: 60 });
+const dataFetch = reactive<DataFetchParams>({
+  window_days: 30,
+  sample_interval_seconds: 1,
+});
+const schedule = reactive<ScheduleParams>({ concurrency: 10 });
+
+/** 各规则的启用状态 */
+const ruleEnabled = reactive<Record<string, boolean>>({
+  EVAL_CALC_CYCLE: true,
+  DATA_FETCH_WINDOW: true,
+  SCHEDULE_CONCURRENCY: true,
+});
+
+// ============ 计算周期选项 ============
+const calcCycleOptions = [
+  { label: '5 分钟', value: 5 },
+  { label: '15 分钟', value: 15 },
+  { label: '30 分钟', value: 30 },
+  { label: '1 小时', value: 60 },
+  { label: '2 小时', value: 120 },
+  { label: '6 小时', value: 360 },
+  { label: '12 小时', value: 720 },
+  { label: '24 小时', value: 1440 },
 ];
 
-const dataFetchWindowOptions = [
-  { label: '15 分钟', value: '15m' },
-  { label: '30 分钟', value: '30m' },
-  { label: '1 小时', value: '1h' },
-  { label: '6 小时', value: '6h' },
-  { label: '1 天', value: '1d' },
-];
-
-const defaultTimeWindowOptions = [
-  { label: '今天', value: 'today' },
-  { label: '昨天', value: 'yesterday' },
-  { label: '近 7 天', value: 'last_7_days' },
-  { label: '近 30 天', value: 'last_30_days' },
-];
-
-/** 变更确认弹窗 */
-const confirmVisible = ref(false);
-const changeRemark = ref('');
-
-/** 模拟加载（P1 接口待补） */
+// ============ 加载策略 ============
 async function loadStrategy() {
   loading.value = true;
   try {
-    // TODO: 调用 GET /api/v1/config/task-strategy（P1 接口）
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    const data = await getRulesApi();
+    rules.value = data?.items ?? [];
+    // 同步编辑态
+    for (const r of rules.value) {
+      ruleEnabled[r.ruleCode] = r.isEnabled;
+      if (r.ruleCode === 'EVAL_CALC_CYCLE' && r.params) {
+        calcCycle.cycle_minutes = Number(r.params.cycle_minutes ?? 60);
+      } else if (r.ruleCode === 'DATA_FETCH_WINDOW' && r.params) {
+        dataFetch.window_days = Number(r.params.window_days ?? 30);
+        dataFetch.sample_interval_seconds = Number(
+          r.params.sample_interval_seconds ?? 1,
+        );
+      } else if (r.ruleCode === 'SCHEDULE_CONCURRENCY' && r.params) {
+        schedule.concurrency = Number(r.params.concurrency ?? 10);
+      }
+    }
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -97,20 +115,117 @@ async function loadStrategy() {
   }
 }
 
+// ============ 保存确认 ============
+const confirmVisible = ref(false);
+
+/** 变更摘要 */
+const changeSummary = computed(() => {
+  const summary: { field: string; from: string; to: string }[] = [];
+  const cc = ruleMap.value.EVAL_CALC_CYCLE;
+  if (cc?.params) {
+    const oldMin = Number(cc.params.cycle_minutes ?? 60);
+    if (oldMin !== calcCycle.cycle_minutes) {
+      summary.push({
+        field: '计算周期',
+        from: `${oldMin} 分钟`,
+        to: `${calcCycle.cycle_minutes} 分钟`,
+      });
+    }
+  }
+  const df = ruleMap.value.DATA_FETCH_WINDOW;
+  if (df?.params) {
+    const oldDays = Number(df.params.window_days ?? 30);
+    if (oldDays !== dataFetch.window_days) {
+      summary.push({
+        field: '数据拉取窗口',
+        from: `${oldDays} 天`,
+        to: `${dataFetch.window_days} 天`,
+      });
+    }
+  }
+  const sc = ruleMap.value.SCHEDULE_CONCURRENCY;
+  if (sc?.params) {
+    const oldConc = Number(sc.params.concurrency ?? 10);
+    if (oldConc !== schedule.concurrency) {
+      summary.push({
+        field: '调度并发数',
+        from: `${oldConc}`,
+        to: `${schedule.concurrency}`,
+      });
+    }
+  }
+  // 启用状态变更
+  for (const code of [
+    'EVAL_CALC_CYCLE',
+    'DATA_FETCH_WINDOW',
+    'SCHEDULE_CONCURRENCY',
+  ]) {
+    const r = ruleMap.value[code];
+    if (r && r.isEnabled !== ruleEnabled[code]) {
+      summary.push({
+        field: `${r.ruleName} 启用状态`,
+        from: r.isEnabled ? '启用' : '禁用',
+        to: ruleEnabled[code] ? '启用' : '禁用',
+      });
+    }
+  }
+  return summary;
+});
+
+const hasChange = computed(() => changeSummary.value.length > 0);
+
 function handleSave() {
-  formRef.value?.validate().then(() => {
-    confirmVisible.value = true;
-    changeRemark.value = '';
-  });
+  if (!hasChange.value) {
+    message.info('未检测到变更');
+    return;
+  }
+  confirmVisible.value = true;
 }
 
+// ============ 确认保存 ============
 async function confirmSave() {
   saving.value = true;
   try {
-    // TODO: 调用 PUT /api/v1/config/task-strategy（P1 接口）
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    message.success('任务策略已保存（占位提示，P1 接口接入后生效）');
+    // 按规则逐个更新
+    const updates: Promise<unknown>[] = [];
+
+    const cc = ruleMap.value.EVAL_CALC_CYCLE;
+    if (cc) {
+      updates.push(
+        updateRuleApi(cc.ruleId, {
+          params: { cycle_minutes: calcCycle.cycle_minutes },
+          isEnabled: ruleEnabled.EVAL_CALC_CYCLE,
+        }),
+      );
+    }
+
+    const df = ruleMap.value.DATA_FETCH_WINDOW;
+    if (df) {
+      updates.push(
+        updateRuleApi(df.ruleId, {
+          params: {
+            window_days: dataFetch.window_days,
+            sample_interval_seconds: dataFetch.sample_interval_seconds,
+          },
+          isEnabled: ruleEnabled.DATA_FETCH_WINDOW,
+        }),
+      );
+    }
+
+    const sc = ruleMap.value.SCHEDULE_CONCURRENCY;
+    if (sc) {
+      updates.push(
+        updateRuleApi(sc.ruleId, {
+          params: { concurrency: schedule.concurrency },
+          isEnabled: ruleEnabled.SCHEDULE_CONCURRENCY,
+        }),
+      );
+    }
+
+    await Promise.all(updates);
+    message.success('策略配置已保存');
     confirmVisible.value = false;
+    await loadStrategy();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -124,93 +239,94 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page>
-    <ConfigTabs />
+  <div>
     <ClpmPageToolbar
-      title="任务策略"
-      subtitle="管理标准评估任务、自动触发、重试与调度策略"
-    />
+      title="策略配置"
+      subtitle="管理标准评估任务的执行周期、数据窗口与调度并发（基于引擎规则 EngineRule）"
+    >
+      <ClpmToolbarButton
+        icon="ant-design:reload-outlined"
+        :loading="loading"
+        label="刷新"
+        @click="loadStrategy"
+      />
+      <ClpmToolbarButton
+        v-permission="['ADMIN']"
+        icon="ant-design:save-outlined"
+        variant="primary"
+        :loading="saving"
+        :disabled="!hasChange"
+        label="保存配置"
+        @click="handleSave"
+      />
+    </ClpmPageToolbar>
+
     <div class="mt-4 space-y-4">
+      <!-- Beat 重启提示 -->
+      <Alert
+        v-if="ruleMap.EVAL_CALC_CYCLE?.warning"
+        type="warning"
+        show-icon
+        :message="ruleMap.EVAL_CALC_CYCLE.warning"
+      />
+
       <!-- 标准评估任务 -->
       <Card title="标准评估任务" :loading="loading">
-        <Form ref="formRef" :model="formState" layout="vertical" class="pt-2">
+        <template #extra>
+          <Switch
+            v-model:checked="ruleEnabled.EVAL_CALC_CYCLE"
+            v-permission="['ADMIN']"
+          />
+        </template>
+        <Form layout="vertical" class="pt-2">
           <div class="grid grid-cols-2 gap-4">
-            <FormItem label="计算周期" name="calcPeriod">
+            <FormItem label="计算周期" name="cycle_minutes">
               <Select
-                v-model:value="formState.calcPeriod"
-                :options="calcPeriodOptions"
+                v-model:value="calcCycle.cycle_minutes"
+                :options="calcCycleOptions"
+                :disabled="!ruleEnabled.EVAL_CALC_CYCLE"
               />
-            </FormItem>
-            <FormItem label="数据拉取窗口" name="dataFetchWindow">
-              <Select
-                v-model:value="formState.dataFetchWindow"
-                :options="dataFetchWindowOptions"
-              />
-            </FormItem>
-            <FormItem label="默认时间窗" name="defaultTimeWindow">
-              <Select
-                v-model:value="formState.defaultTimeWindow"
-                :options="defaultTimeWindowOptions"
-              />
-            </FormItem>
-            <FormItem label="整点自动触发" name="hourlyTrigger">
-              <Switch v-model:checked="formState.hourlyTrigger" />
-              <span class="ml-2 text-xs text-gray-500">
-                开启后每整点自动触发标准评估任务
+              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
+                标准评估任务的执行间隔（由 EngineRule EVAL_CALC_CYCLE 配置）
               </span>
             </FormItem>
           </div>
         </Form>
       </Card>
 
-      <!-- 自动触发策略 -->
-      <Card title="自动触发策略">
-        <Form :model="formState" layout="vertical">
+      <!-- 数据拉取窗口 -->
+      <Card title="数据拉取窗口">
+        <template #extra>
+          <Switch
+            v-model:checked="ruleEnabled.DATA_FETCH_WINDOW"
+            v-permission="['ADMIN']"
+          />
+        </template>
+        <Form layout="vertical">
           <div class="grid grid-cols-2 gap-4">
-            <FormItem
-              label="低效回路自动重评阈值（综合评分）"
-              name="autoRerevaluateThreshold"
-            >
+            <FormItem label="历史数据窗口（天）" name="window_days">
               <InputNumber
-                v-model:value="formState.autoRerevaluateThreshold"
-                :min="0"
-                :max="100"
+                v-model:value="dataFetch.window_days"
+                :min="1"
+                :max="90"
                 class="w-full"
-                addon-after="分"
+                :disabled="!ruleEnabled.DATA_FETCH_WINDOW"
               />
-              <span class="mt-1 block text-xs text-gray-500">
-                综合评分低于此阈值的回路将自动触发重评
+              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
+                评估时拉取的历史数据天数（默认 30 天）
               </span>
             </FormItem>
-            <FormItem label="新回路自动首评" name="autoFirstEvaluation">
-              <Switch v-model:checked="formState.autoFirstEvaluation" />
-              <span class="ml-2 text-xs text-gray-500">
-                新建回路后自动触发首次评估
+            <FormItem label="采样间隔（秒）" name="sample_interval_seconds">
+              <InputNumber
+                v-model:value="dataFetch.sample_interval_seconds"
+                :min="1"
+                :max="60"
+                class="w-full"
+                :disabled="!ruleEnabled.DATA_FETCH_WINDOW"
+              />
+              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
+                数据采样间隔（默认 1 秒，由 DataPlanner 按需降采样）
               </span>
-            </FormItem>
-          </div>
-        </Form>
-      </Card>
-
-      <!-- 重试策略 -->
-      <Card title="重试策略">
-        <Form :model="formState" layout="vertical">
-          <div class="grid grid-cols-2 gap-4">
-            <FormItem label="失败重试次数" name="retryMaxAttempts">
-              <InputNumber
-                v-model:value="formState.retryMaxAttempts"
-                :min="0"
-                :max="10"
-                class="w-full"
-              />
-            </FormItem>
-            <FormItem label="重试间隔（秒）" name="retryInterval">
-              <InputNumber
-                v-model:value="formState.retryInterval"
-                :min="5"
-                :max="3600"
-                class="w-full"
-              />
             </FormItem>
           </div>
         </Form>
@@ -218,82 +334,55 @@ onMounted(() => {
 
       <!-- 调度策略 -->
       <Card title="调度策略">
-        <Form :model="formState" layout="vertical">
+        <template #extra>
+          <Switch
+            v-model:checked="ruleEnabled.SCHEDULE_CONCURRENCY"
+            v-permission="['ADMIN']"
+          />
+        </template>
+        <Form layout="vertical">
           <div class="grid grid-cols-2 gap-4">
-            <FormItem label="调度并发数" name="scheduleConcurrency">
+            <FormItem label="调度并发数" name="concurrency">
               <InputNumber
-                v-model:value="formState.scheduleConcurrency"
+                v-model:value="schedule.concurrency"
                 :min="1"
                 :max="100"
                 class="w-full"
+                :disabled="!ruleEnabled.SCHEDULE_CONCURRENCY"
               />
-            </FormItem>
-            <FormItem label="排队超时（秒）" name="queueTimeout">
-              <InputNumber
-                v-model:value="formState.queueTimeout"
-                :min="60"
-                :max="3600"
-                class="w-full"
-              />
-            </FormItem>
-            <FormItem label="按级别优先" name="priorityByLevel">
-              <Switch v-model:checked="formState.priorityByLevel" />
-              <span class="ml-2 text-xs text-gray-500">
-                <Tag color="red">1 级</Tag>
-                <Tag color="orange">2 级</Tag>
-                <Tag color="blue">3 级</Tag>
-                关键回路优先调度
+              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
+                Celery Worker 并发处理回路数（默认 10）
               </span>
+            </FormItem>
+            <FormItem label="回路级别优先">
+              <div class="flex items-center gap-2">
+                <Tag color="error">1 级</Tag>
+                <Tag color="warning">2 级</Tag>
+                <Tag color="processing">3 级</Tag>
+                <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
+                  关键回路优先调度（按 loop.importance_level）
+                </span>
+              </div>
             </FormItem>
           </div>
         </Form>
       </Card>
-
-      <!-- 保存按钮 -->
-      <div class="flex justify-end gap-2">
-        <ClpmToolbarButton
-          icon="ant-design:reload-outlined"
-          :loading="loading"
-          label="刷新"
-          @click="loadStrategy"
-        />
-        <ClpmToolbarButton
-          v-permission="['ADMIN']"
-          icon="ant-design:save-outlined"
-          variant="primary"
-          :loading="saving"
-          label="保存配置"
-          @click="handleSave"
-        />
-      </div>
     </div>
 
-    <!-- 变更确认弹窗 -->
-    <Modal
+    <!-- 高危确认弹窗（策略变更影响评估调度） -->
+    <ClpmDangerConfirmModal
       v-model:open="confirmVisible"
-      title="确认变更任务策略"
-      :confirm-loading="saving"
-      ok-text="确认保存"
-      cancel-text="取消"
-      width="520px"
-      @ok="confirmSave"
-    >
-      <div class="space-y-3 py-2">
-        <div class="text-sm">
-          <div class="mb-1 font-medium">影响范围</div>
-          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
-            任务策略变更后将影响下一次评估调度的执行方式，包括触发时机、并发数与重试策略。已运行中的任务不受影响。
-          </p>
-        </div>
-        <div class="text-sm">
-          <div class="mb-1 font-medium">变更说明（可选）</div>
-          <Input.TextArea
-            v-model:value="changeRemark"
-            placeholder="请简要说明本次变更原因，便于追溯"
-            :rows="2"
-          />
-        </div>
-      </div>
-    </Modal>
-  </Page>
+      title="确认变更策略配置"
+      action="保存"
+      target="标准评估任务策略"
+      :impact-scope="changeSummary.length > 0
+        ? changeSummary.map((c) => `${c.field}: ${c.from} → ${c.to}`).join('；')
+        : '策略配置变更'"
+      rollback-tip="变更后下一次评估调度将按新策略执行；计算周期变更需重启 Celery Beat 进程才能生效"
+      confirm-code="确认变更"
+      confirm-code-placeholder="请输入 确认变更 以确认"
+      :loading="saving"
+      @confirm="confirmSave"
+    />
+  </div>
 </template>

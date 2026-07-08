@@ -127,6 +127,116 @@ export namespace DiagnosisApi {
     diagnosedAt: string;
   }
 
+  /** 诊断可视化 - FFT 频谱数据 */
+  export interface SpectrumData {
+    frequencies: number[];
+    amplitudes: number[];
+    peakFrequency: number;
+    peakAmplitude: number;
+    oscillationIndex: number;
+  }
+
+  /** 诊断可视化 - 阶跃响应数据 */
+  export interface StepResponseData {
+    timestamps: number[];
+    pvResponse: number[];
+    spValues: number[];
+    stepIndices: number[];
+    overshoot: number;
+    decayRatio: number;
+    steadyStateError: number;
+  }
+
+  /** 诊断可视化 - CUSUM 累积和数据 */
+  export interface CusumAnalysisData {
+    timestamps: number[];
+    cusumPos: number[];
+    cusumNeg: number[];
+    shiftPoints: number[];
+    threshold: number;
+    shiftCount: number;
+    maxCusum: number;
+  }
+
+  /** 诊断可视化 - PV-OP 散点图数据 */
+  export interface ScatterPlotData {
+    x: number[];
+    y: number[];
+    fittingScore: number;
+    stictionIndex: number;
+  }
+
+  /** 诊断可视化 - 质量码时序数据 */
+  export interface QualityTimelineData {
+    badRate: number;
+    totalPoints: number;
+    badPoints: number;
+    qualityPattern: string;
+  }
+
+  /** 诊断可视化 - OP 饱和分析数据 */
+  export interface SaturationAnalysisData {
+    saturationRate: number;
+    highSaturationCount: number;
+    lowSaturationCount: number;
+  }
+
+  /** 诊断可视化 - 响应迟缓分析数据 */
+  export interface SlowResponseData {
+    timeConstant: number;
+    expectedTimeConstant: number;
+    ratio: number;
+  }
+
+  /** 诊断可视化 - Choudhury 非线性检测数据 */
+  export interface ChoudhuryData {
+    ngi: number;
+    nli: number;
+    stictionIndex: number;
+  }
+
+  /** 诊断可视化 - IAE 零交叉分析数据 */
+  export interface IaeAnalysisData {
+    similarity: number;
+    zeroCrossingCount: number;
+    meanPeriod: number;
+    opZeroCrossCount: number;
+    pvZeroCrossCount: number;
+    similarityRate: number;
+    oscillationIndex: number;
+  }
+
+  /** 诊断可视化 - Kano 统计法数据 */
+  export interface KanoData {
+    stictionRatio: number;
+    correlation: number;
+    stdRatio: number;
+    biasIndex: number;
+    countP: number;
+    countN: number;
+    countZ: number;
+  }
+
+  /** 诊断可视化数据（包含 8 类算法的完整可视化数组） */
+  export interface DiagnosisVisualizationData {
+    loopId: string;
+    tagName: string;
+    compositeScore: number | null;
+    fusedConfidence: number | null;
+    diagnosedAt: string | null;
+    diagnosisLabels: DiagnosisLabelItem[];
+    spectrum: SpectrumData;
+    stepResponse: StepResponseData;
+    cusumAnalysis: CusumAnalysisData;
+    scatterPlot: ScatterPlotData;
+    qualityTimeline: QualityTimelineData;
+    saturationAnalysis: SaturationAnalysisData;
+    slowResponse: SlowResponseData;
+    choudhury: ChoudhuryData;
+    iaeAnalysis: IaeAnalysisData;
+    kano: KanoData;
+  }
+
   /** 波形数据（IDS v3.2 §2.4，Phase 5 扩展血缘字段） */
   export interface WaveformResult {
     loopId: string;
@@ -411,13 +521,84 @@ export namespace DiagnosisApi {
     /** 处理说明（抑制时必填） */
     resolutionNote?: string;
   }
+
+  // -----------------------------------------------------------------------
+  // 诊断任务（Phase 5 扩展 — 诊断任务管理 + 归档）
+  // -----------------------------------------------------------------------
+
+  /** 诊断任务状态机 */
+  export type TaskStatus =
+    | 'PENDING'
+    | 'RUNNING'
+    | 'SUCCESS'
+    | 'FAILED'
+    | 'CANCELLED';
+
+  /** 诊断任务触发方式 */
+  export type TriggerType = 'auto' | 'manual';
+
+  /** 诊断任务列表项（每回路一行，未归档） */
+  export interface TaskItem {
+    taskId: string;
+    loopId: string;
+    tagName: string;
+    loopName: string;
+    unitName: string;
+    compositeScore: null | number;
+    accuracyScore: null | number;
+    fastScore: null | number;
+    steadyScore: null | number;
+    effectiveAutoRate: null | number;
+    diagLabels: string[];
+    status: TaskStatus;
+    triggerType: TriggerType;
+    triggeredBy: null | string;
+    triggeredAt: string;
+    completedAt: null | string;
+    timeRangeStart: null | string;
+    timeRangeEnd: null | string;
+    labels: { label: string; confidence: number }[];
+    isArchived: boolean;
+    errorMessage: null | string;
+  }
+
+  /** 触发诊断请求 */
+  export interface TriggerRequest {
+    loopIds: string[];
+    startTime?: string;
+    endTime?: string;
+  }
+
+  /** 诊断任务查询参数 */
+  export interface TaskListQueryParams {
+    status?: string;
+    triggerType?: string;
+    timeWindow?: TimeWindow;
+    page?: number;
+    pageSize?: number;
+  }
+
+  /** 诊断结果项（任务详情内嵌） */
+  export interface DiagnosisResultItem {
+    diagLabel: string;
+    confidence: number;
+    evidenceChain: Record<string, unknown>;
+    featureValues: Record<string, unknown>;
+    algorithmVersion: string;
+  }
+
+  /** 诊断任务详情（含诊断结果） */
+  export interface TaskDetail extends TaskItem {
+    results: DiagnosisResultItem[];
+    errorMessage: null | string;
+  }
 }
 
 /**
  * 获取诊断指标配置列表 — IDS v3.2 §2.4
  */
 export function getDiagnosisMetricsApi() {
-  return requestClient.get<DiagnosisApi.MetricListResult>('/diagnosis/metrics');
+  return requestClient.get<DiagnosisApi.MetricItem[]>('/diagnosis/metrics');
 }
 
 /**
@@ -455,6 +636,15 @@ export function getDiagnosisDetailApi(
   return requestClient.get<DiagnosisApi.DiagnosisDetail>(
     `/diagnosis/${loopId}`,
     { params: { timeWindow } },
+  );
+}
+
+/**
+ * 获取诊断可视化数据（包含 8 类算法的完整可视化数组）
+ */
+export function getDiagnosisVisualizationApi(loopId: string) {
+  return requestClient.get<DiagnosisApi.DiagnosisVisualizationData>(
+    `/diagnosis/${loopId}/visualization`,
   );
 }
 
@@ -639,5 +829,90 @@ export function updateDiagnosisTagStatusApi(
   return requestClient.put<DiagnosisApi.DiagnosisTagItem>(
     `/diagnosis/tags/${tagId}/resolve`,
     data,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 诊断任务 API（Phase 5 扩展 — 诊断任务管理 + 归档）
+// ---------------------------------------------------------------------------
+
+/**
+ * 触发诊断 — 批量触发一个或多个回路的诊断任务
+ *
+ * 返回创建的任务列表（每回路一个任务）。
+ */
+export function triggerDiagnosisApi(data: DiagnosisApi.TriggerRequest) {
+  return requestClient.post<DiagnosisApi.TaskItem[]>(
+    '/diagnosis/trigger',
+    data,
+  );
+}
+
+/**
+ * 获取诊断任务列表（未归档） — 每回路一行
+ */
+export function getDiagnosisTasksApi(
+  params: DiagnosisApi.TaskListQueryParams,
+) {
+  return requestClient.get<PaginatedResponse<DiagnosisApi.TaskItem>>(
+    '/diagnosis/tasks',
+    { params },
+  );
+}
+
+/**
+ * 获取诊断任务详情（含诊断结果、证据链）
+ */
+export function getDiagnosisTaskDetailApi(taskId: string) {
+  return requestClient.get<DiagnosisApi.TaskDetail>(
+    `/diagnosis/tasks/${taskId}`,
+  );
+}
+
+/**
+ * 执行诊断任务（对已有任务重新执行诊断，不创建新任务）
+ */
+export function runDiagnosisTaskApi(taskId: string) {
+  return requestClient.post<DiagnosisApi.TaskItem>(
+    `/diagnosis/tasks/${taskId}/run`,
+  );
+}
+
+/**
+ * 归档诊断任务
+ */
+export function archiveDiagnosisTaskApi(taskId: string) {
+  return requestClient.post<DiagnosisApi.TaskItem>(
+    `/diagnosis/tasks/${taskId}/archive`,
+  );
+}
+
+/**
+ * 取消诊断任务（仅 PENDING/RUNNING 状态可取消）
+ */
+export function cancelDiagnosisTaskApi(taskId: string) {
+  return requestClient.post<DiagnosisApi.TaskItem>(
+    `/diagnosis/tasks/${taskId}/cancel`,
+  );
+}
+
+/**
+ * 物理删除诊断任务（仅 PENDING 可删除）
+ */
+export function deleteDiagnosisTaskApi(taskId: string) {
+  return requestClient.delete<Record<string, unknown>>(
+    `/diagnosis/tasks/${taskId}`,
+  );
+}
+
+/**
+ * 获取诊断记录列表（已归档）
+ */
+export function getDiagnosisRecordsApi(
+  params: DiagnosisApi.DiagnosisListQueryParams,
+) {
+  return requestClient.get<PaginatedResponse<DiagnosisApi.TaskItem>>(
+    '/diagnosis/records',
+    { params },
   );
 }

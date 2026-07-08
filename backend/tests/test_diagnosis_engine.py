@@ -20,20 +20,24 @@ from app.tasks.diagnosis_engine import (
     _analyze_quality,
     _analyze_saturation,
     _analyze_step_response,
+    _apply_expert_rules,
     _build_scatter_plot_data,
     _compute_sample_interval,
+    _deduplicate_labels,
     _dempster_shafer_fusion,
     _detect_bias_shift,
     _detect_choudhury_nonlinearity,
     _detect_external_disturbance,
     _detect_kano_stiction,
     _detect_oscillation_fft,
+    _detect_oscillation_iae,
     _detect_slow_response,
     _detect_valve_stiction,
     _diagnose_loop,
     _do_diagnose_single_loop,
     _do_run_diagnosis,
     _get_tag_name,
+    _get_threshold,
 )
 
 # ===========================================================================
@@ -634,7 +638,7 @@ class TestDoRunDiagnosis:
 
         diag_config = _make_diag_config()
 
-        # 主 session：查询 snapshot + config
+        # 主 session：查询 snapshot + config + 创建 DiagnosisTask
         main_session = AsyncMock()
         main_session.execute = AsyncMock(
             side_effect=[
@@ -644,13 +648,20 @@ class TestDoRunDiagnosis:
         )
         main_session.commit = AsyncMock()
         main_session.rollback = AsyncMock()
+        main_session.add = MagicMock()  # 添加 DiagnosisTask
 
-        # worker session：查询 loop + mapping（无 PV → 返回 None → failed）
+        # worker session：
+        # 1. _update_task_status(RUNNING) → 查询 DiagnosisTask（mock 返回 None → 跳过）
+        # 2. _diagnose_loop: 查询 loop（存在）
+        # 3. _diagnose_loop: 查询 mapping（无 → 缺少 PV → 返回 None）
+        # 4. _update_task_status(FAILED) → 查询 DiagnosisTask（mock 返回 None → 跳过）
         worker_session = AsyncMock()
         worker_session.execute = AsyncMock(
             side_effect=[
+                _make_scalar_one_or_none_mock(None),  # _update_task_status RUNNING
                 _make_scalar_one_or_none_mock(_make_loop()),  # loop 查询
                 _make_scalars_all_mock([]),  # 无 mapping → 缺少 PV → 返回 None
+                _make_scalar_one_or_none_mock(None),  # _update_task_status FAILED
             ]
         )
         worker_session.commit = AsyncMock()
@@ -857,7 +868,7 @@ class TestAnalyzePidParams:
 
 
 class TestAnalyzeSaturation:
-    """测试 _analyze_saturation() OP 饱和率分析。"""
+    """测试 _analyze_saturation() OP 饱和率分析（P0-3 修复后）。"""
 
     def test_empty_data(self) -> None:
         """空数据应返回未检测。"""
@@ -872,7 +883,7 @@ class TestAnalyzeSaturation:
         assert result["detected"] is False
 
     def test_high_saturation(self) -> None:
-        """OP 长时间高饱和应检测到。"""
+        """OP 长时间高饱和（≥98）应检测到。"""
         op = np.full(100, 100.0)
         op[:10] = 50.0  # 少量非饱和
         result = _analyze_saturation(op)
@@ -880,7 +891,7 @@ class TestAnalyzeSaturation:
         assert result["high_count"] > 0
 
     def test_low_saturation(self) -> None:
-        """OP 长时间低饱和应检测到。"""
+        """OP 长时间低饱和（≤2）应检测到。"""
         op = np.full(100, 0.0)
         op[:10] = 50.0
         result = _analyze_saturation(op)
@@ -888,43 +899,153 @@ class TestAnalyzeSaturation:
         assert result["low_count"] > 0
 
     def test_zero_range(self) -> None:
-        """OP 范围为 0 应返回未检测。"""
+        """OP 恒定在中间值（50）应返回未检测。"""
         op = np.full(100, 50.0)
         result = _analyze_saturation(op)
         assert result["detected"] is False
 
+    def test_mode_filter_excludes_manual(self) -> None:
+        """提供 mode_values 时应排除手动模式数据点。"""
+        # 100 个点：前 50 个为手动模式（OP=100 饱和），后 50 个为自动模式（OP=50 不饱和）
+        op = np.full(100, 100.0)
+        op[50:] = 50.0
+        # 前 50 个为 MANUAL，后 50 个为 AUTO
+        mode = np.array(["MANUAL"] * 50 + ["AUTO"] * 50, dtype=object)
+        result = _analyze_saturation(op, mode_values=mode)
+        # 过滤后仅 50 个 AUTO 点，OP=50 不饱和
+        assert result["detected"] is False
+        assert result["saturation_rate"] == 0.0
+
+    def test_mode_filter_includes_auto_cas(self) -> None:
+        """AUTO 和 CAS 模式都应被纳入统计。"""
+        op = np.full(100, 100.0)  # 全部高饱和
+        op[50:] = 50.0
+        # 前 50 个 CAS（饱和），后 50 个 AUTO（不饱和）
+        mode = np.array(["CAS"] * 50 + ["AUTO"] * 50, dtype=object)
+        result = _analyze_saturation(op, mode_values=mode)
+        # 100 个点都纳入统计，50 个饱和 → saturation_rate = 0.5 > 0.2
+        assert result["detected"] is True
+        assert result["high_count"] == 50
+
+    def test_custom_threshold(self) -> None:
+        """自定义阈值应生效。"""
+        # 工程限位 0-200，epsilon=5 → ≥195 或 ≤5 为饱和
+        op = np.full(100, 200.0)
+        op[:10] = 100.0
+        threshold = {"op_high_limit": 200.0, "op_low_limit": 0.0, "saturation_epsilon": 5.0}
+        result = _analyze_saturation(op, threshold=threshold)
+        assert result["detected"] is True
+        assert result["high_count"] == 90
+
 
 class TestAnalyzeQuality:
-    """测试 _analyze_quality() 质量码统计。"""
+    """测试 _analyze_quality() 质量码统计（P2-1 Q001-Q005 规则矩阵）。"""
 
     def test_all_good(self) -> None:
-        """全部 GOOD 质量码。"""
+        """全部 GOOD 质量码应返回 NORMAL。"""
         data = [{"quality": "GOOD"} for _ in range(50)]
         result = _analyze_quality(data)
         assert result["bad_rate"] == 0.0
         assert result["total"] == 50
+        assert result["quality_pattern"] == "NORMAL"
+        assert result["abnormal"] is False
 
     def test_all_bad(self) -> None:
-        """全部 BAD 质量码。"""
+        """全部 BAD 质量码应返回 Q001（连续 Bad > 10）。"""
         data = [{"quality": "BAD"} for _ in range(50)]
         result = _analyze_quality(data)
         assert result["bad_rate"] == 1.0
         assert result["bad_count"] == 50
+        assert result["quality_pattern"] == "Q001"
+        assert result["abnormal"] is True
+        assert result["confidence"] == 0.9
 
     def test_mixed_quality(self) -> None:
-        """混合质量码。"""
-        data = [{"quality": "GOOD"} for _ in range(30)] + [{"quality": "BAD"} for _ in range(20)]
+        """混合质量码（Good+Bad 交替，无连续 >10）应返回 Q002 或 Q005。"""
+        # 交替 Good/Bad，每段 Bad 仅 1 点 → 不满足 Q001，但 Bad 占比 50% > 10% → Q002
+        data = []
+        for i in range(50):
+            data.append({"quality": "BAD" if i % 2 == 0 else "GOOD"})
         result = _analyze_quality(data)
-        assert result["bad_rate"] == 0.4
+        assert result["bad_rate"] == 0.5
+        # Bad 占比 > 10% 且不满足 Q001 → Q002
+        assert result["quality_pattern"] == "Q002"
+        assert result["abnormal"] is True
 
     def test_empty_data(self) -> None:
-        """空数据。"""
+        """空数据应返回 NORMAL。"""
         result = _analyze_quality([])
         assert result["total"] == 0
+        assert result["quality_pattern"] == "NORMAL"
+
+    def test_q001_consecutive_bad(self) -> None:
+        """连续 Bad > 10 点应返回 Q001。"""
+        # 30 个 Good + 15 个 Bad（连续）+ 5 个 Good
+        data = (
+            [{"quality": "GOOD"} for _ in range(30)]
+            + [{"quality": "BAD"} for _ in range(15)]
+            + [{"quality": "GOOD"} for _ in range(5)]
+        )
+        result = _analyze_quality(data)
+        assert result["quality_pattern"] == "Q001"
+        assert result["confidence"] == 0.9
+
+    def test_q002_intermittent_bad(self) -> None:
+        """间歇 Bad（占比 > 10%，无连续 > 10）应返回 Q002。"""
+        # 每 5 个 Good 后 1 个 Bad，共 50 个点，Bad 占比 10/50 = 20% > 10%
+        data = []
+        for i in range(50):
+            if i % 5 == 4:
+                data.append({"quality": "BAD"})
+            else:
+                data.append({"quality": "GOOD"})
+        result = _analyze_quality(data)
+        assert result["bad_rate"] == 0.2
+        assert result["quality_pattern"] == "Q002"
+        assert result["confidence"] == 0.6
+
+    def test_q003_uncertain_quality(self) -> None:
+        """Uncertain 占比 > 20% 应返回 Q003。"""
+        # 30 个 Good + 20 个 Uncertain（占 40%）
+        data = (
+            [{"quality": "GOOD"} for _ in range(30)]
+            + [{"quality": "UNCERTAIN"} for _ in range(20)]
+        )
+        result = _analyze_quality(data)
+        assert result["quality_pattern"] == "Q003"
+        assert result["abnormal"] is True
+        assert result["confidence"] == 0.6
+
+    def test_q004_sudden_shift(self) -> None:
+        """Good 突变为 Bad 持续 6 点（>5）应返回 Q004。"""
+        # 30 个 Good + 6 个 Bad + 14 个 Good，Bad 连续段=6（>5 但 <10）
+        data = (
+            [{"quality": "GOOD"} for _ in range(30)]
+            + [{"quality": "BAD"} for _ in range(6)]
+            + [{"quality": "GOOD"} for _ in range(14)]
+        )
+        result = _analyze_quality(data)
+        assert result["quality_pattern"] == "Q004"
+        assert result["confidence"] == 0.8
+
+    def test_q005_transient_recovery(self) -> None:
+        """Bad 段 3-10 点后恢复 Good 应返回 Q005。"""
+        # 30 个 Good + 5 个 Bad（3-10 范围内）+ 15 个 Good
+        data = (
+            [{"quality": "GOOD"} for _ in range(30)]
+            + [{"quality": "BAD"} for _ in range(5)]
+            + [{"quality": "GOOD"} for _ in range(15)]
+        )
+        result = _analyze_quality(data)
+        # Bad 占比 5/50 = 10% 不 > 10%，不满足 Q002
+        # 连续 Bad = 5，不 > 10（Q001），不 > 5（Q004，因为 Q004 要求 >5）
+        # 5 在 [3, 10] 范围内 → Q005
+        assert result["quality_pattern"] == "Q005"
+        assert result["confidence"] == 0.4
 
 
 class TestDempsterShaferFusion:
-    """测试 _dempster_shafer_fusion() 证据融合。"""
+    """测试 _dempster_shafer_fusion() 证据融合（D-S 公式，FDS §5.4.7）。"""
 
     def test_empty_evidence(self) -> None:
         """空证据列表应返回 0。"""
@@ -935,14 +1056,22 @@ class TestDempsterShaferFusion:
         assert _dempster_shafer_fusion([("OSCILLATION", 0.8)]) == 0.8
 
     def test_multiple_evidence(self) -> None:
-        """多条证据应通过 noisy-OR 融合。"""
+        """多条证据应通过 D-S 公式融合。"""
         fused = _dempster_shafer_fusion([("OSCILLATION", 0.5), ("VALVE_STICTION", 0.6)])
-        # noisy-OR: 1 - (1-0.5)*(1-0.6) = 1 - 0.2 = 0.8
-        assert abs(fused - 0.8) < 0.001
+        # D-S: Πc = 0.5*0.6 = 0.3, Π(1-c) = 0.5*0.4 = 0.2, fused = 0.3/(0.3+0.2) = 0.6
+        assert abs(fused - 0.6) < 0.001
+
+    def test_high_confidence_evidence(self) -> None:
+        """两个高置信度证据应产生更高融合置信度。"""
+        fused = _dempster_shafer_fusion([("A", 0.9), ("B", 0.9)])
+        # D-S: Πc = 0.81, Π(1-c) = 0.01, fused = 0.81/0.82 ≈ 0.9878
+        assert fused > 0.98
+        assert fused < 0.999
 
     def test_zero_confidence(self) -> None:
         """零置信度证据。"""
         fused = _dempster_shafer_fusion([("A", 0.0), ("B", 0.0)])
+        # D-S: Πc → 0, Π(1-c) = 1, fused → 0
         assert fused == 0.0
 
 
@@ -1374,14 +1503,14 @@ class TestDiagnoseLoopExtendedAlgorithms:
         )
         db.add = MagicMock()
 
-        # 构造过激响应：SP 阶跃 + PV 过冲振荡
+        # 构造过激响应：SP 阶跃 + PV 过冲振荡（低阻尼以满足衰减比阈值）
         n = 200
         sp = np.zeros(n)
         sp[50:] = 100.0
         pv = np.zeros(n)
         for i in range(50, n):
             t = i - 50
-            pv[i] = 100.0 + 40.0 * np.exp(-t * 0.05) * np.cos(t * 0.3)
+            pv[i] = 100.0 + 40.0 * np.exp(-t * 0.02) * np.cos(t * 0.3)
 
         async def _query_fn(tag_name: str, *args, **kwargs):
             if tag_name == "LIC.PV":
@@ -1460,3 +1589,320 @@ class TestDiagnoseLoopExtendedAlgorithms:
         assert result["status"] == "SUCCESS"
         # 频繁突变应触发 EXTERNAL_DISTURBANCE 标签
         assert "EXTERNAL_DISTURBANCE" in result["labels"]
+
+
+# ===========================================================================
+# 新增功能测试（P0-1/P0-2/P1-1/P1-4）
+# ===========================================================================
+
+
+class TestGetThreshold:
+    """测试 _get_threshold() 阈值读取（P0-1）。"""
+
+    def test_config_not_found_returns_default(self) -> None:
+        """配置不存在时返回默认值。"""
+        result = _get_threshold({}, "OSCILLATION", "key", 0.5)
+        assert result == 0.5
+
+    def test_threshold_none_returns_default(self) -> None:
+        """threshold 字段为 None 时返回默认值。"""
+        config = MagicMock()
+        config.threshold = None
+        result = _get_threshold({"OSCILLATION": config}, "OSCILLATION", "key", 0.5)
+        assert result == 0.5
+
+    def test_key_missing_returns_default(self) -> None:
+        """键缺失时返回默认值。"""
+        config = MagicMock()
+        config.threshold = {"other_key": 1.0}
+        result = _get_threshold({"OSCILLATION": config}, "OSCILLATION", "key", 0.5)
+        assert result == 0.5
+
+    def test_key_found_returns_value(self) -> None:
+        """键存在时返回配置值。"""
+        config = MagicMock()
+        config.threshold = {"similarity_threshold": 0.6}
+        result = _get_threshold({"OSCILLATION": config}, "OSCILLATION", "similarity_threshold", 0.4)
+        assert result == 0.6
+
+    def test_key_none_returns_whole_threshold_dict(self) -> None:
+        """key 为 None 时返回整个 threshold dict。"""
+        config = MagicMock()
+        config.threshold = {"k1": 1.0, "k2": 2.0}
+        result = _get_threshold({"OSCILLATION": config}, "OSCILLATION", None, None)
+        assert result == {"k1": 1.0, "k2": 2.0}
+
+
+class TestDetectOscillationIae:
+    """测试 _detect_oscillation_iae() IAE 零交叉相似率法（P1-1）。"""
+
+    def test_short_data_returns_empty(self) -> None:
+        """数据不足应返回未检测。"""
+        pv = np.array([1.0, 2.0, 3.0], dtype=float)
+        sp = np.array([1.0, 2.0, 3.0], dtype=float)
+        result = _detect_oscillation_iae(pv, sp)
+        assert result["detected"] is False
+        assert result["confidence"] == 0.0
+
+    def test_sine_wave_oscillation_detected(self) -> None:
+        """正弦波振荡应检测到。"""
+        n = 200
+        t = np.linspace(0, 10 * np.pi, n)
+        sp = np.full(n, 50.0)
+        pv = 50.0 + 10.0 * np.sin(t)
+        result = _detect_oscillation_iae(pv, sp, sample_interval=1.0)
+        assert result["detected"] is True
+        assert result["confidence"] > 0.0
+        assert result["similarity"] > 0.4
+        assert result["zero_crossing_count"] >= 3
+
+    def test_stable_data_not_detected(self) -> None:
+        """平稳数据应未检测到振荡。"""
+        n = 100
+        sp = np.full(n, 50.0)
+        pv = np.full(n, 50.0)
+        # 加微小噪声避免 IAE 恒定
+        rng = np.random.RandomState(42)
+        pv = pv + rng.normal(0, 0.01, n)
+        result = _detect_oscillation_iae(pv, sp)
+        # 平稳数据不应检测到振荡（或相似率低）
+        assert result["detected"] is False or result["confidence"] == 0.0
+
+    def test_random_noise_not_detected(self) -> None:
+        """随机噪声应未检测到振荡（相似率低）。"""
+        rng = np.random.RandomState(42)
+        n = 200
+        sp = np.full(n, 50.0)
+        pv = 50.0 + rng.normal(0, 5.0, n)
+        result = _detect_oscillation_iae(pv, sp)
+        # 随机噪声零交叉间隔不规律，相似率应较低
+        assert result["detected"] is False
+
+    def test_empty_array(self) -> None:
+        """空数组应返回未检测。"""
+        pv = np.array([], dtype=float)
+        sp = np.array([], dtype=float)
+        result = _detect_oscillation_iae(pv, sp)
+        assert result["detected"] is False
+
+    def test_custom_threshold(self) -> None:
+        """自定义阈值应生效。"""
+        n = 200
+        t = np.linspace(0, 10 * np.pi, n)
+        sp = np.full(n, 50.0)
+        pv = 50.0 + 10.0 * np.sin(t)
+        # 提高相似率阈值到 0.9（几乎不可能达到）
+        result = _detect_oscillation_iae(
+            pv, sp, threshold={"similarity_threshold": 0.99, "min_zero_crossings": 3}
+        )
+        # 正弦波相似率约 0.8-0.95，0.99 阈值过高 → 不检测
+        assert result["detected"] is False
+
+
+class TestApplyExpertRules:
+    """测试 _apply_expert_rules() 专家规则矩阵 R01-R06（P0-2）。"""
+
+    def test_r01_oscillation_stiction_removes_oscillation(self) -> None:
+        """R01: OSCILLATION + VALVE_STICTION（stiction 置信度 > 0.5）→ 移除 OSCILLATION。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {}, "evidence": {}},
+            {
+                "label": "VALVE_STICTION",
+                "confidence": 0.8,
+                "feature_values": {},
+                "evidence": {},
+            },
+        ]
+        processed = _apply_expert_rules(results)
+        labels = [r["label"] for r in processed]
+        assert "OSCILLATION" not in labels
+        assert "VALVE_STICTION" in labels
+
+    def test_r01_low_stiction_keeps_oscillation(self) -> None:
+        """R01: stiction 置信度 ≤ 0.5 时不移除 OSCILLATION。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {}, "evidence": {}},
+            {
+                "label": "VALVE_STICTION",
+                "confidence": 0.4,
+                "feature_values": {},
+                "evidence": {},
+            },
+        ]
+        processed = _apply_expert_rules(results)
+        labels = [r["label"] for r in processed]
+        assert "OSCILLATION" in labels
+        assert "VALVE_STICTION" in labels
+
+    def test_r02_oscillation_overaggressive_removes_oscillation(self) -> None:
+        """R02: OSCILLATION + OVERAGGRESSIVE（无 STICTION）→ 移除 OSCILLATION。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {}, "evidence": {}},
+            {
+                "label": "OVERAGGRESSIVE",
+                "confidence": 0.6,
+                "feature_values": {},
+                "evidence": {},
+            },
+        ]
+        processed = _apply_expert_rules(results)
+        labels = [r["label"] for r in processed]
+        assert "OSCILLATION" not in labels
+        assert "OVERAGGRESSIVE" in labels
+
+    def test_r03_overaggressive_overconservative_keeps_higher(self) -> None:
+        """R03: OVERAGGRESSIVE + OVERCONSERVATIVE → 保留置信度更高的。"""
+        results = [
+            {
+                "label": "OVERAGGRESSIVE",
+                "confidence": 0.8,
+                "feature_values": {},
+                "evidence": {},
+            },
+            {
+                "label": "OVERCONSERVATIVE",
+                "confidence": 0.5,
+                "feature_values": {},
+                "evidence": {},
+            },
+        ]
+        processed = _apply_expert_rules(results)
+        labels = [r["label"] for r in processed]
+        assert "OVERAGGRESSIVE" in labels
+        assert "OVERCONSERVATIVE" not in labels
+
+    def test_r04_severe_quality_abnormal_removes_others(self) -> None:
+        """R04: PV 质量异常严重（bad_rate > 0.5）→ 移除所有其他标签。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.9, "feature_values": {}, "evidence": {}},
+            {
+                "label": "QUALITY_ABNORMAL",
+                "confidence": 0.9,
+                "feature_values": {"bad_quality_rate": 0.8},
+                "evidence": {},
+            },
+            {
+                "label": "VALVE_STICTION",
+                "confidence": 0.7,
+                "feature_values": {},
+                "evidence": {},
+            },
+        ]
+        processed = _apply_expert_rules(results)
+        assert len(processed) == 1
+        assert processed[0]["label"] == "QUALITY_ABNORMAL"
+
+    def test_r05_all_low_confidence_adds_manual_review(self) -> None:
+        """R05: 所有算法置信度 < 0.5 → 添加 MANUAL_REVIEW。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.3, "feature_values": {}, "evidence": {}},
+            {"label": "VALVE_STICTION", "confidence": 0.2, "feature_values": {}, "evidence": {}},
+        ]
+        processed = _apply_expert_rules(results)
+        labels = [r["label"] for r in processed]
+        assert "MANUAL_REVIEW" in labels
+
+    def test_r05_high_confidence_no_manual_review(self) -> None:
+        """R05: 存在置信度 ≥ 0.5 的算法时不添加 MANUAL_REVIEW。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {}, "evidence": {}},
+            {"label": "VALVE_STICTION", "confidence": 0.2, "feature_values": {}, "evidence": {}},
+        ]
+        processed = _apply_expert_rules(results)
+        labels = [r["label"] for r in processed]
+        assert "MANUAL_REVIEW" not in labels
+
+    def test_r06_priority_sorting(self) -> None:
+        """R06: 标签按优先级排序。"""
+        # 使用不触发 R01-R04 的标签组合
+        results = [
+            {
+                "label": "EXTERNAL_DISTURBANCE",
+                "confidence": 0.7,
+                "feature_values": {},
+                "evidence": {},
+            },
+            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {}, "evidence": {}},
+            {
+                "label": "OUTPUT_SATURATION",
+                "confidence": 0.7,
+                "feature_values": {},
+                "evidence": {},
+            },
+        ]
+        processed = _apply_expert_rules(results)
+        labels = [r["label"] for r in processed]
+        # 优先级：OUTPUT_SATURATION(5) > OSCILLATION(6) > EXTERNAL_DISTURBANCE(7)
+        assert labels[0] == "OUTPUT_SATURATION"
+        assert labels[1] == "OSCILLATION"
+        assert labels[2] == "EXTERNAL_DISTURBANCE"
+
+    def test_empty_results_returns_empty(self) -> None:
+        """空列表应返回空列表。"""
+        assert _apply_expert_rules([]) == []
+
+
+class TestDeduplicateLabels:
+    """测试 _deduplicate_labels() 标签去重（P1-4）。"""
+
+    def test_single_label_per_group(self) -> None:
+        """每个标签仅一条记录时应原样返回。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {"a": 1}, "evidence": {}},
+        ]
+        processed = _deduplicate_labels(results)
+        assert len(processed) == 1
+        assert processed[0]["label"] == "OSCILLATION"
+
+    def test_duplicate_labels_keep_highest_confidence(self) -> None:
+        """同一标签多条记录应保留置信度最高的。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.5, "feature_values": {"a": 1}, "evidence": {"reasoning": "low"}},
+            {"label": "OSCILLATION", "confidence": 0.9, "feature_values": {"b": 2}, "evidence": {"reasoning": "high"}},
+            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {"c": 3}, "evidence": {"reasoning": "mid"}},
+        ]
+        processed = _deduplicate_labels(results)
+        assert len(processed) == 1
+        assert processed[0]["confidence"] == 0.9
+        assert processed[0]["evidence"]["reasoning"] == "high"
+
+    def test_merge_feature_values(self) -> None:
+        """合并 feature_values，主记录优先。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.9, "feature_values": {"a": 1, "b": 2}, "evidence": {}},
+            {"label": "OSCILLATION", "confidence": 0.5, "feature_values": {"b": 99, "c": 3}, "evidence": {}},
+        ]
+        processed = _deduplicate_labels(results)
+        assert len(processed) == 1
+        # 主记录的 a, b 保留，补充 c
+        assert processed[0]["feature_values"]["a"] == 1
+        assert processed[0]["feature_values"]["b"] == 2  # 主记录优先
+        assert processed[0]["feature_values"]["c"] == 3
+
+    def test_cross_validated_algorithms_appended(self) -> None:
+        """其他记录的 evidence 应追加到 cross_validated_algorithms。"""
+        results = [
+            {"label": "VALVE_STICTION", "confidence": 0.9, "feature_values": {}, "evidence": {"reasoning": "primary", "algorithm": "A"}},
+            {"label": "VALVE_STICTION", "confidence": 0.7, "feature_values": {}, "evidence": {"reasoning": "secondary", "algorithm": "B"}},
+        ]
+        processed = _deduplicate_labels(results)
+        assert len(processed) == 1
+        assert "cross_validated_algorithms" in processed[0]["evidence"]
+        cross = processed[0]["evidence"]["cross_validated_algorithms"]
+        assert len(cross) == 1
+        # 交叉验证条目结构：{label, confidence, evidence, feature_values}
+        assert cross[0]["evidence"]["algorithm"] == "B"
+        assert cross[0]["confidence"] == 0.7
+
+    def test_different_labels_not_merged(self) -> None:
+        """不同标签不应合并。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {}, "evidence": {}},
+            {"label": "VALVE_STICTION", "confidence": 0.8, "feature_values": {}, "evidence": {}},
+        ]
+        processed = _deduplicate_labels(results)
+        assert len(processed) == 2
+
+    def test_empty_results_returns_empty(self) -> None:
+        """空列表应返回空列表。"""
+        assert _deduplicate_labels([]) == []

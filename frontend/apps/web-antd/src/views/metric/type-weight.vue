@@ -26,12 +26,15 @@ import {
 } from 'ant-design-vue';
 
 import { ClpmToolbarButton } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   getWeightTemplatesApi,
   saveWeightTemplatesApi,
 } from '#/api/metric';
 
 defineOptions({ name: 'MetricTypeWeightContent' });
+
+const { themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -259,7 +262,7 @@ onMounted(() => {
 <template>
   <div class="metric-type-weight-content">
     <div class="mb-3 flex items-center justify-between">
-      <p class="text-sm text-gray-500">
+      <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
         配置 4 种控制类型（STABLE/SLOW/FAST/LOGIC）的 6 指标权重模板。
         仅 3 项核心指标（稳定率 + 准确度 + 快速率）参与权重和校验，须=100。
       </p>
@@ -311,14 +314,14 @@ onMounted(() => {
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
       <!-- 3 项核心指标 -->
       <div class="rounded border border-blue-200 bg-blue-50/30 p-4">
-        <div class="mb-3 font-medium text-blue-700">
+        <div class="mb-3 font-medium" :style="{ color: themeColors.INFO }">
           核心指标（参与权重和校验，须=100）
         </div>
         <div class="space-y-3">
           <div>
             <div class="mb-1 flex items-center justify-between">
               <span class="text-sm">稳定率 (steadyRate)</span>
-              <span class="text-xs text-gray-400">
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
                 国标默认: {{ DEFAULT_WEIGHTS[activeControlType].steadyRate }}
               </span>
             </div>
@@ -333,7 +336,7 @@ onMounted(() => {
           <div>
             <div class="mb-1 flex items-center justify-between">
               <span class="text-sm">准确度 (accuracyRate)</span>
-              <span class="text-xs text-gray-400">
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
                 国标默认: {{ DEFAULT_WEIGHTS[activeControlType].accuracyRate }}
               </span>
             </div>
@@ -348,7 +351,7 @@ onMounted(() => {
           <div>
             <div class="mb-1 flex items-center justify-between">
               <span class="text-sm">快速率 (fastRate)</span>
-              <span class="text-xs text-gray-400">
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
                 国标默认: {{ DEFAULT_WEIGHTS[activeControlType].fastRate }}
               </span>
             </div>
@@ -363,10 +366,10 @@ onMounted(() => {
         </div>
         <div
           class="mt-3 rounded p-2 text-center text-sm"
-          :class="
+          :style="
             coreWeightValid
-              ? 'bg-green-100 text-green-700'
-              : 'bg-red-100 text-red-700'
+              ? { background: 'hsl(var(--status-ok) / 0.12)', color: 'hsl(var(--status-ok))' }
+              : { background: 'hsl(var(--status-error) / 0.12)', color: 'hsl(var(--status-error))' }
           "
         >
           权重总和: {{ coreWeightTotal }}
@@ -376,17 +379,17 @@ onMounted(() => {
       </div>
 
       <!-- 3 项非核心指标（只读，固定为 0） -->
-      <div class="rounded border border-gray-200 bg-gray-50 p-4">
-        <div class="mb-3 font-medium text-gray-600">
+      <div class="rounded p-4" :style="{ border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted) / 42%)' }">
+        <div class="mb-3 font-medium" :style="{ color: themeColors.NEUTRAL }">
           非核心指标（固定为 0，不参与综合评分权重）
         </div>
         <div class="space-y-3">
           <div>
             <div class="mb-1 flex items-center justify-between">
-              <span class="text-sm text-gray-500">
+              <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
                 自动模式率 (autoModeRate)
               </span>
-              <span class="text-xs text-gray-400">固定: 0</span>
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">固定: 0</span>
             </div>
             <InputNumber
               v-model:value="currentEdit.autoModeRate"
@@ -399,10 +402,10 @@ onMounted(() => {
           </div>
           <div>
             <div class="mb-1 flex items-center justify-between">
-              <span class="text-sm text-gray-500">
+              <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
                 振荡率 (oscillationRate)
               </span>
-              <span class="text-xs text-gray-400">固定: 0</span>
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">固定: 0</span>
             </div>
             <InputNumber
               v-model:value="currentEdit.oscillationRate"
@@ -415,10 +418,10 @@ onMounted(() => {
           </div>
           <div>
             <div class="mb-1 flex items-center justify-between">
-              <span class="text-sm text-gray-500">
+              <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
                 饱和率 (saturationRate)
               </span>
-              <span class="text-xs text-gray-400">固定: 0</span>
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">固定: 0</span>
             </div>
             <InputNumber
               v-model:value="currentEdit.saturationRate"
@@ -452,12 +455,12 @@ onMounted(() => {
     </div>
 
     <!-- 适用场景说明 -->
-    <div class="mt-4 rounded border border-gray-200 bg-gray-50 p-4">
-      <div class="mb-2 font-medium text-gray-700">适用场景</div>
-      <p class="text-sm text-gray-600">
+    <div class="mt-4 rounded p-4" :style="{ border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted) / 42%)' }">
+      <div class="mb-2 font-medium" :style="{ color: themeColors.NEUTRAL }">适用场景</div>
+      <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
         {{ CONTROL_TYPE_MAP[activeControlType].scene }}
       </p>
-      <div class="mt-2 text-xs text-gray-500">
+      <div class="mt-2 text-xs" :style="{ color: themeColors.NEUTRAL }">
         <strong>国标默认值：</strong>
         稳定率={{ DEFAULT_WEIGHTS[activeControlType].steadyRate }}%，
         准确度={{ DEFAULT_WEIGHTS[activeControlType].accuracyRate }}%，
@@ -478,13 +481,13 @@ onMounted(() => {
       <div class="space-y-3 py-2">
         <div class="text-sm">
           <div class="mb-2 font-medium">变更摘要（4 类控制类型）</div>
-          <div class="rounded border border-gray-200 bg-gray-50 p-3">
+          <div class="rounded p-3" :style="{ border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted) / 42%)' }">
             <div
               v-for="t in (['STABLE', 'SLOW', 'FAST', 'LOGIC'] as ControlType[])"
               :key="t"
               class="mb-1 flex justify-between text-xs"
             >
-              <span class="text-gray-600">
+              <span :style="{ color: themeColors.NEUTRAL }">
                 {{ CONTROL_TYPE_MAP[t].label }}（{{ t }}）
               </span>
               <span class="font-mono">
@@ -492,14 +495,14 @@ onMounted(() => {
                 A={{ editState[t].accuracyRate }} /
                 F={{ editState[t].fastRate }}
                 <span
-                  :class="
-                    editState[t].steadyRate +
+                  :style="{
+                    color: editState[t].steadyRate +
                       editState[t].accuracyRate +
                       editState[t].fastRate ===
                     100
-                      ? 'text-green-600'
-                      : 'text-red-600'
-                  "
+                      ? themeColors.SUCCESS
+                      : themeColors.DANGER
+                  }"
                 >
                   ({{
                     editState[t].steadyRate +
@@ -513,7 +516,7 @@ onMounted(() => {
         </div>
         <div class="text-sm">
           <div class="mb-1 font-medium">影响范围</div>
-          <p class="rounded bg-orange-50 p-2 text-xs text-orange-700">
+          <p class="rounded p-2 text-xs" :style="{ background: 'hsl(var(--status-warning) / 0.08)', color: 'hsl(var(--status-warning))' }">
             保存后将以新版本生效，所有回路的综合性能评分将在下次评估时使用新权重。
             可在「版本历史」Tab 查看历史版本并回滚。
           </p>

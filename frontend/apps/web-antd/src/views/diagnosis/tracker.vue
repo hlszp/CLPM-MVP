@@ -55,6 +55,8 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useIndustrialStatus } from '#/composables/use-industrial-status';
 
 import AbCompare from './ab-compare.vue';
 
@@ -78,6 +80,24 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+
+const { getStatusMeta } = useIndustrialStatus();
+const { themeColors } = useClpmTheme();
+
+/**
+ * 动态容器：抽屉模式用 Drawer，独立页模式用 Page
+ * 通过 v-bind="containerProps" 和 v-on="containerListeners" 处理两模式 props/事件差异，
+ * 消除抽屉/独立页约 500 行模板重复。
+ */
+const containerComponent = computed(() => (props.drawerMode ? Drawer : Page));
+const containerProps = computed(() =>
+  props.drawerMode
+    ? { open: true, title: '异常跟踪', width: '80%', placement: 'right' }
+    : {},
+);
+const containerListeners = computed(() =>
+  props.drawerMode ? { close: () => emit('close') } : {},
+);
 
 const loading = ref(false);
 const trackerList = ref<DiagnosisApi.TrackerItem[]>([]);
@@ -106,13 +126,8 @@ const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '已忽略', value: 'IGNORED' },
 ];
 
-/** 处理状态颜色映射（对齐状态机可视化：default/processing/success/warning） */
-const statusColorMap: Record<DiagnosisApi.ActionStatus, string> = {
-  PENDING: 'default',
-  IN_PROGRESS: 'processing',
-  IMPLEMENTED: 'success',
-  IGNORED: 'warning',
-};
+/** 处理状态颜色映射（已迁移至 useIndustrialStatus，保留 statusOptions 用于下拉） */
+// const statusColorMap 已废弃，改用 useIndustrialStatus().getStatusMeta(status)
 
 /** 时间窗选项（对齐后端 _build_time_window_condition 支持的值） */
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
@@ -527,16 +542,26 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!-- 抽屉模式（从诊断列表页/详情页右侧滑出，FDS §5.4） -->
-  <Drawer
-    v-if="drawerMode"
-    :open="true"
-    title="异常跟踪"
-    width="80%"
-    placement="right"
-    @close="emit('close')"
+  <!--
+    抽屉模式 / 独立页模式统一容器：
+    - 抽屉模式（drawerMode=true）：从诊断列表页/详情页右侧滑出，用 Drawer
+    - 独立页模式（drawerMode=false）：直接路由访问 /diagnosis/tracker，用 Page
+    通过 containerComponent/containerProps/containerListeners 消除两模式约 500 行模板重复
+  -->
+  <component
+    :is="containerComponent"
+    v-bind="containerProps"
+    v-on="containerListeners"
   >
-    <ClpmPageToolbar compact subtitle="状态、标签、时间窗统一筛选">
+    <ClpmPageToolbar
+      :compact="drawerMode"
+      :title="drawerMode ? undefined : '异常跟踪'"
+      :subtitle="
+        drawerMode
+          ? '状态、标签、时间窗统一筛选'
+          : '状态、标签、时间窗统一筛选，跟踪异常处置闭环'
+      "
+    >
       <Select
         v-model:value="query.diagnosisLabel"
         placeholder="诊断标签"
@@ -583,7 +608,11 @@ onBeforeUnmount(() => {
     </ClpmPageToolbar>
 
     <!-- KpiStrip：各状态计数 -->
-    <ClpmKpiStrip class="mt-3" :items="kpiStripItems" :loading="loading" />
+    <ClpmKpiStrip
+      :class="drawerMode ? 'mt-3' : 'mt-4'"
+      :items="kpiStripItems"
+      :loading="loading"
+    />
 
     <!-- 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略 -->
     <div class="status-flow-bar mt-3">
@@ -623,18 +652,23 @@ onBeforeUnmount(() => {
             </Tag>
           </template>
           <template v-else-if="column.key === 'compositeScore'">
-            <span class="font-medium text-blue-600">
+            <span
+              class="clpm-num font-medium"
+              :style="{ color: themeColors.INFO }"
+            >
               {{ Number(record.compositeScore).toFixed(2) }}
             </span>
           </template>
           <template v-else-if="column.key === 'confidence'">
-            {{ Number(record.confidence).toFixed(2) }}
+            <span class="clpm-num">{{ Number(record.confidence).toFixed(2) }}</span>
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
-              :color="
-                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
-              "
+              :color="getStatusMeta(record.actionStatus as string).color"
+              :style="{
+                background: getStatusMeta(record.actionStatus as string).bgColor,
+                borderColor: getStatusMeta(record.actionStatus as string).borderColor,
+              }"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>
@@ -675,9 +709,7 @@ onBeforeUnmount(() => {
                   v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
                   type="link"
                   size="small"
-                  @click="
-                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
-                  "
+                  @click="handleOpenAbCompare(record as DiagnosisApi.TrackerItem)"
                 >
                   A/B 对比
                 </Button>
@@ -702,22 +734,28 @@ onBeforeUnmount(() => {
                   v-if="getExportState(record.loopId)?.status === 'exporting'"
                 >
                   <Spin size="small" />
-                  <span class="text-xs text-gray-500">导出中...</span>
+                  <span
+                    class="text-xs"
+                    :style="{ color: themeColors.NEUTRAL }"
+                  >
+                    导出中...
+                  </span>
                 </template>
                 <template
                   v-else-if="getExportState(record.loopId)?.status === 'done'"
                 >
-                  <Tag color="green">已完成</Tag>
+                  <Tag color="success">已完成</Tag>
                   <a
                     :href="getExportDownloadUrl(record.loopId)"
                     :download="getExportFileName(record.loopId)"
-                    class="text-xs text-blue-600"
+                    class="text-xs"
+                    :style="{ color: themeColors.INFO }"
                   >
                     下载
                   </a>
                 </template>
                 <template v-else>
-                  <Tag color="red">导出失败</Tag>
+                  <Tag color="error">导出失败</Tag>
                 </template>
               </div>
             </div>
@@ -768,252 +806,7 @@ onBeforeUnmount(() => {
       :drawer-mode="true"
       @close="abCompareVisible = false"
     />
-  </Drawer>
-
-  <!-- 独立页面模式（直接路由访问 /diagnosis/tracker） -->
-  <Page v-else>
-    <ClpmPageToolbar
-      title="异常跟踪"
-      subtitle="状态、标签、时间窗统一筛选，跟踪异常处置闭环"
-    >
-      <template #actions>
-        <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loading"
-          @click="handleRefresh"
-        />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          disabled
-          disabled-reason="导出功能开发中，待后端接口支持"
-        />
-        <ClpmToolbarButton
-          icon="ant-design:thunderbolt-outlined"
-          label="批量处理"
-          variant="primary"
-          disabled
-          disabled-reason="批量处理功能开发中，待后端接口支持"
-        />
-      </template>
-    </ClpmPageToolbar>
-
-    <!-- KpiStrip：各状态计数 -->
-    <ClpmKpiStrip class="mt-4" :items="kpiStripItems" :loading="loading" />
-
-    <!-- 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略 -->
-    <div class="status-flow-bar mt-3">
-      <span class="status-flow-bar__label">状态流转</span>
-      <Tag color="default">待处理</Tag>
-      <span class="status-flow-bar__arrow">→</span>
-      <Tag color="processing">处理中</Tag>
-      <span class="status-flow-bar__arrow">→</span>
-      <Tag color="success">已实施</Tag>
-      <span class="status-flow-bar__alt">/</span>
-      <Tag color="warning">已忽略</Tag>
-    </div>
-
-    <ClpmDataCanvas class="mt-3" title="异常跟踪列表" :loading="loading">
-      <!-- 筛选栏 -->
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <Select
-          v-model:value="query.diagnosisLabel"
-          placeholder="诊断标签"
-          style="width: 160px"
-          allow-clear
-          :options="labelOptions"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="query.actionStatus"
-          placeholder="处理状态"
-          style="width: 140px"
-          allow-clear
-          :options="statusOptions"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="query.timeWindow"
-          style="width: 140px"
-          :options="timeWindowOptions"
-          @change="handleSearch"
-        />
-        <Button type="primary" :loading="loading" @click="handleSearch">
-          查询
-        </Button>
-      </div>
-
-      <Table
-        :columns="columns"
-        :data-source="trackerList"
-        :loading="loading"
-        :pagination="{
-          current: query.page,
-          pageSize: query.pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (t: number) => `共 ${t} 条`,
-        }"
-        :row-key="(record: DiagnosisApi.TrackerItem) => record.loopId"
-        :scroll="{ x: 1400 }"
-        size="middle"
-        @change="handleTableChange"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'diagnosisLabel'">
-            <Tag
-              :color="labelColorMap[record.diagnosisLabel as DiagnosisLabel]"
-            >
-              {{ record.labelName || labelName(record.diagnosisLabel) }}
-            </Tag>
-          </template>
-          <template v-else-if="column.key === 'compositeScore'">
-            <span class="font-medium text-blue-600">
-              {{ Number(record.compositeScore).toFixed(2) }}
-            </span>
-          </template>
-          <template v-else-if="column.key === 'confidence'">
-            {{ Number(record.confidence).toFixed(2) }}
-          </template>
-          <template v-else-if="column.key === 'actionStatus'">
-            <Tag
-              :color="
-                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
-              "
-            >
-              {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
-            </Tag>
-          </template>
-          <template v-else-if="column.key === 'createdAt'">
-            {{ formatTime(record.createdAt) }}
-          </template>
-          <template v-else-if="column.key === 'updatedAt'">
-            {{ formatTime(record.updatedAt) }}
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <div class="flex flex-col gap-1">
-              <div class="flex gap-1">
-                <Button
-                  type="link"
-                  size="small"
-                  @click="handleViewDetail(record.loopId)"
-                >
-                  详情
-                </Button>
-                <Dropdown
-                  v-permission="['IC_ENGINEER']"
-                  trigger="click"
-                  :menu="{
-                    items: getStatusMenuActions(
-                      record as DiagnosisApi.TrackerItem,
-                    ),
-                    onClick: ({ key }: any) =>
-                      handleStatusMenuClick(
-                        record as DiagnosisApi.TrackerItem,
-                        { key },
-                      ),
-                  }"
-                >
-                  <Button type="link" size="small">更新状态</Button>
-                </Dropdown>
-                <Button
-                  v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
-                  type="link"
-                  size="small"
-                  @click="
-                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
-                  "
-                >
-                  A/B 对比
-                </Button>
-                <Button
-                  v-permission="['IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
-                  type="link"
-                  size="small"
-                  :disabled="
-                    getExportState(record.loopId)?.status === 'exporting'
-                  "
-                  @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
-                >
-                  导出 PDF
-                </Button>
-              </div>
-              <div
-                v-if="getExportState(record.loopId)"
-                class="flex items-center gap-1"
-              >
-                <template
-                  v-if="getExportState(record.loopId)?.status === 'exporting'"
-                >
-                  <Spin size="small" />
-                  <span class="text-xs text-gray-500">导出中...</span>
-                </template>
-                <template
-                  v-else-if="getExportState(record.loopId)?.status === 'done'"
-                >
-                  <Tag color="green">已完成</Tag>
-                  <a
-                    :href="getExportDownloadUrl(record.loopId)"
-                    :download="getExportFileName(record.loopId)"
-                    class="text-xs text-blue-600"
-                  >
-                    下载
-                  </a>
-                </template>
-                <template v-else>
-                  <Tag color="red">导出失败</Tag>
-                </template>
-              </div>
-            </div>
-          </template>
-        </template>
-      </Table>
-    </ClpmDataCanvas>
-
-    <!-- 状态更新 Modal（含变更说明审计字段） -->
-    <Modal
-      v-model:open="statusModalVisible"
-      title="更新处理状态"
-      :confirm-loading="statusModalLoading"
-      width="520px"
-      @ok="handleSubmitStatus"
-    >
-      <Form :model="statusForm" layout="vertical" class="pt-4">
-        <FormItem label="回路位号">
-          <span class="font-medium">{{ editingItem?.tagName }}</span>
-        </FormItem>
-        <FormItem label="处理状态" required>
-          <Select v-model:value="statusForm.status" :options="statusOptions" />
-        </FormItem>
-        <FormItem label="变更说明" required>
-          <Input.TextArea
-            v-model:value="statusForm.changeRemark"
-            placeholder="请说明本次状态变更的原因或依据，例如：经现场确认阀门存在粘滞，已安排检修"
-            :rows="3"
-            :maxlength="500"
-            show-count
-          />
-        </FormItem>
-        <FormItem label="处理备注">
-          <Input.TextArea
-            v-model:value="statusForm.comment"
-            placeholder="例如：已联系设备部拆阀检查"
-            :rows="3"
-          />
-        </FormItem>
-      </Form>
-    </Modal>
-
-    <!-- A/B 对比抽屉 -->
-    <AbCompare
-      v-if="abCompareVisible"
-      :loop-id="abCompareLoopId"
-      :implemented-at="abCompareImplementedAt"
-      :drawer-mode="true"
-      @close="abCompareVisible = false"
-    />
-  </Page>
+  </component>
 </template>
 
 <style scoped>

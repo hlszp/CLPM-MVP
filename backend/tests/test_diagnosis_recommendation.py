@@ -562,18 +562,21 @@ class TestReportEndpoint:
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                # get_diagnosis_detail: loop
+                # get_diagnosis_detail: 1. loop (scalar_one_or_none)
                 return _make_scalar_one_or_none_mock(loop)
             if call_count[0] == 2:
-                # get_diagnosis_detail: diag results
-                return _make_scalars_mock([diag])
+                # get_diagnosis_detail: 2. latest_diag (scalar_one_or_none) → latest_record
+                return _make_scalar_one_or_none_mock(diag)
             if call_count[0] == 3:
-                # get_diagnosis_detail: snapshot
-                return _make_scalar_one_or_none_mock(snapshot)
+                # get_diagnosis_detail: 3. diag_result (scalars) — task_id 为 truthy MagicMock
+                return _make_scalars_mock([diag])
             if call_count[0] == 4:
-                # get_recommendations_for_loop: loop
+                # get_diagnosis_detail: 4. snapshot (scalar_one_or_none)
+                return _make_scalar_one_or_none_mock(snapshot)
+            if call_count[0] == 5:
+                # get_recommendations_for_loop: 1. loop (scalar_one_or_none)
                 return _make_scalar_one_or_none_mock(loop)
-            # get_recommendations_for_loop: distinct labels
+            # get_recommendations_for_loop: 2. distinct labels (.all())
             m = MagicMock()
             m.all.return_value = [("OSCILLATION",)]
             return m

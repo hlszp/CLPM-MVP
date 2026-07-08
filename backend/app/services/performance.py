@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -645,6 +645,8 @@ async def get_ranking(
 ) -> list[dict]:
     """低效回路排行。
 
+    v6.1 更新：支持递归聚合当前节点及所有下属节点的回路
+
     Args:
         sort_by: 排序字段 score/steady_rate/good_value_rate
         sort_order: asc/desc（默认 asc，分数最低的在前）
@@ -658,6 +660,21 @@ async def get_ranking(
     else:
         delta = TIME_WINDOWS.get(time_window, timedelta(days=1))
         start = now - delta
+
+    # v6.1: 递归获取当前节点及所有下属节点 ID
+    descendant_ids: list[str] | None = None
+    if plant_node_id:
+        cte_sql = text("""
+            WITH RECURSIVE node_tree AS (
+                SELECT id FROM plant_node WHERE id = :node_id
+                UNION ALL
+                SELECT child.id FROM plant_node child
+                JOIN node_tree ON child.parent_id = node_tree.id
+            )
+            SELECT id FROM node_tree
+        """)
+        result = await db.execute(cte_sql, {"node_id": plant_node_id})
+        descendant_ids = [str(row.id) for row in result.all()]
 
     # 排序字段白名单（防止 SQL 注入：不直接拼接用户输入到 SQL）
     sort_field_map = {
@@ -689,6 +706,7 @@ async def get_ranking(
         start=start,
         end=now,
         status_filter="SUCCESS",
+        descendant_ids=descendant_ids,
     )
     # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路不出现在低效排行
     # _apply_snapshot_filters 仅在 plant_node_id 存在时 JOIN LoopLedger，
@@ -755,6 +773,7 @@ async def get_ranking(
             {
                 "loopId": loop_id,
                 "tagName": loop.tag_name,
+                "loopName": loop.description,
                 "unitName": unit_map.get(str(loop.unit_id)) if loop.unit_id else None,
                 # v5.3 对齐 FDS v5.1 / DDS v4.1：compositeScore → score
                 "score": _to_float(snap.score),
@@ -941,8 +960,12 @@ def _apply_snapshot_filters(
     start: datetime | None = None,
     end: datetime | None = None,
     status_filter: str | None = None,
+    descendant_ids: list[str] | None = None,
 ):
-    """为快照查询添加时间/状态/装置过滤条件。"""
+    """为快照查询添加时间/状态/装置过滤条件。
+
+    v6.1 更新：支持传入 descendant_ids 列表实现递归聚合
+    """
     if start is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start >= start)
     if end is not None:
@@ -950,10 +973,14 @@ def _apply_snapshot_filters(
     if status_filter:
         stmt = stmt.where(KpiSnapshotHourly.status == status_filter)
     if plant_node_id:
-        # 通过 join loop_ledger 过滤
-        stmt = stmt.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id).where(
-            LoopLedger.unit_id == plant_node_id
-        )
+        if descendant_ids:
+            stmt = stmt.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id).where(
+                LoopLedger.unit_id.in_(descendant_ids)
+            )
+        else:
+            stmt = stmt.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id).where(
+                LoopLedger.unit_id == plant_node_id
+            )
     return stmt
 
 

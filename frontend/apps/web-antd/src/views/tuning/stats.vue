@@ -18,7 +18,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Select, Table, Tag } from 'ant-design-vue';
+import { Alert, Button, Select, Table, Tag } from 'ant-design-vue';
 
 import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar } from '#/components/clpm';
 import type { KpiStripItem } from '#/components/clpm';
@@ -425,6 +425,15 @@ watch(isDark, () => {
     <ClpmPageToolbar
       title="效果统计"
       subtitle="查看整定任务分布、拟合质量与历史效果。"
+    />
+    <Alert
+      type="warning"
+      show-icon
+      banner
+      :closable="false"
+      message="只读建议 · 人工实施 · 需留痕"
+      description="本平台不直接修改 DCS 的 P/I/D 参数，参数由授权人员人工实施并留痕。"
+      style="margin-bottom: 12px;"
     />
     <div class="mb-4 mt-4">
       <ClpmKpiStrip :items="kpiStripItems" :loading="historyLoading" />

@@ -92,6 +92,7 @@ class BackfillTaskCreate(CamelModel):
     """历史重算任务创建请求.
 
     Attributes:
+        title: 任务标题（必填）
         tsStart: 重算时间窗起始（ISO 8601）
         tsEnd: 重算时间窗结束（ISO 8601，不包含）
         plantNodeIds: 装置 ID 列表（可选，不传=全部装置）
@@ -99,6 +100,7 @@ class BackfillTaskCreate(CamelModel):
         dryRun: True=只返回影响范围预览，不实际触发 Celery 任务
     """
 
+    title: str = Field(..., min_length=1, max_length=100, description="任务标题")
     tsStart: str = Field(..., description="重算时间窗起始（ISO 8601）")
     tsEnd: str = Field(..., description="重算时间窗结束（ISO 8601，不包含）")
     plantNodeIds: list[str] | None = Field(None, description="装置 ID 列表（可选）")
@@ -135,6 +137,7 @@ class TaskResponse(CamelModel):
     taskId: str
     taskType: TaskType
     status: TaskStatus
+    title: str | None = Field(None, description="任务标题")
     progress: float | None = Field(None, description="进度 0~1")
     currentStage: str | None = Field(None, description="当前阶段：取数/预处理/指标计算/可信度判定")
     loopsTotal: int | None = None

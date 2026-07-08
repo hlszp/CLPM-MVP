@@ -3,8 +3,17 @@
  *
  * 为 ECharts 图表和业务组件提供随深色模式自动切换的颜色取值。
  * vben 框架已内置 dark mode 切换能力（CSS 变量 + Ant Design darkAlgorithm +
- * ECharts 'dark' 主题），但 CLPM 业务代码中存在大量硬编码色值（#52c41a / #faad14 /
- * #8c8c8c / #fff 等），在深色背景下会出现对比度不足、元素消失等问题。
+ * ECharts 'dark' 主题），但 CLPM 业务代码中存在大量硬编码色值，在深色背景
+ * 下会出现对比度不足、元素消失等问题。
+ *
+ * v6.1 §3.1.3 对齐 ZL 致联工业设计套件（参考 ZL-MES-UI-Design-Kit/
+ * IndustrialDesignReference.html §1）：
+ * - Emerald = 运行/成功/在线
+ * - Amber   = 警告/待机/部分
+ * - Rose    = 故障/严重/不可逆
+ * - Blue    = 主操作/信息/待处理
+ * - Slate   = 中性/无数据/未知
+ * - Teal    = 工业强调色（侧边栏激活、KPI 装饰、品牌强调）
  *
  * 本 composable 统一提供响应式色值，使用方式：
  * ```ts
@@ -23,45 +32,47 @@ import { usePreferences } from '@vben/preferences';
 
 import { computed } from 'vue';
 
-/** 业务语义色板（浅色模式，对齐 THEME_COLORS 原始定义） */
+/** ZL 工业色板（浅色模式，对齐 Tailwind slate/emerald/amber/rose/blue） */
 const LIGHT_COLORS = {
-  SUCCESS: '#52c41a',
-  WARNING: '#faad14',
-  DANGER: '#ff4d4f',
-  INFO: '#0d6efd',
-  NEUTRAL: '#8c8c8c',
+  SUCCESS: '#10b981', // emerald-500（运行/成功/在线）
+  WARNING: '#f59e0b', // amber-500（警告/待机/部分）
+  DANGER: '#f43f5e', // rose-500（故障/严重/不可逆）
+  INFO: '#3b82f6', // blue-500（主操作/信息）
+  NEUTRAL: '#64748b', // slate-500（中性/无数据）
+  ACCENT: '#0d9488', // Teal 强调色（侧边栏激活/KPI 装饰/品牌强调）
 } as const;
 
-/** 业务语义色板（深色模式，亮度更高，对齐 dark.css --success/--warning/--destructive） */
+/** ZL 工业色板（深色模式，亮度提升对齐 Tailwind 400/500） */
 const DARK_COLORS = {
-  SUCCESS: '#22c55e',
-  WARNING: '#fbbf24',
-  DANGER: '#f87171',
-  INFO: '#60a5fa',
-  NEUTRAL: '#9ca3af',
+  SUCCESS: '#34d399', // emerald-400
+  WARNING: '#fbbf24', // amber-400
+  DANGER: '#fb7185', // rose-400
+  INFO: '#60a5fa', // blue-400
+  NEUTRAL: '#94a3b8', // slate-400
+  ACCENT: '#2dd4bf', // teal-400
 } as const;
 
 /**
  * 可信度等级色板（浅色模式，对齐 confidence-badge.vue §7.15 A/B/C/D/E 五级）
  *
  * 设计文档 §7.15 颜色映射要求用 `--status-*` 语义变量响应主题切换。
- * 此处保留 5 级高区分度色相（绿/青/金/橙/灰），深色模式亮度提升。
+ * v6.1 对齐 ZL 工业色板：A=emerald, B=teal, C=amber, D=orange, E=slate
  */
 const LIGHT_CONFIDENCE = {
-  A: '#52c41a', // 绿（对齐 SUCCESS）
-  B: '#13c2c2', // 青（INFO 近似）
-  C: '#faad14', // 金黄（WARNING）
-  D: '#fa8c16', // 橙（介于 WARNING 与 DANGER 之间，保留原视觉区分）
-  E: '#8c8c8c', // 灰（NEUTRAL）
+  A: '#10b981', // emerald-500（对齐 SUCCESS）
+  B: '#14b8a6', // teal-500（与 ACCENT #0d9488 同色相但更亮，区分 A/B）
+  C: '#f59e0b', // amber-500（对齐 WARNING）
+  D: '#f97316', // orange-500（介于 amber 与 rose 之间）
+  E: '#64748b', // slate-500（对齐 NEUTRAL）
 } as const;
 
-/** 可信度等级色板（深色模式，亮度提升对齐 DARK_COLORS 同语义色） */
+/** 可信度等级色板（深色模式，亮度提升对齐 ZL Tailwind 400） */
 const DARK_CONFIDENCE = {
-  A: '#22c55e',
-  B: '#2dd4bf',
-  C: '#fbbf24',
-  D: '#fb923c',
-  E: '#9ca3af',
+  A: '#34d399', // emerald-400
+  B: '#2dd4bf', // teal-400
+  C: '#fbbf24', // amber-400
+  D: '#fb923c', // orange-400
+  E: '#94a3b8', // slate-400
 } as const;
 
 /** ECharts 图表通用色（浅色模式） */

@@ -1,15 +1,14 @@
 <script lang="ts" setup>
 /**
- * 回路小时指标快照列表页
+ * 评估历史 — 回路小时指标快照列表（Tab 内嵌组件）
  *
  * 对齐后端 GET /api/v1/performance/loops/snapshots
- * - 顶部工具栏：刷新
  * - 筛选区：装置 TreeSelect + 回路 Select + 时间 RangePicker + 状态 + 可信度
  * - 表格：回路名 / 时间窗 / 综合评分 / 8 大 KPI + 粘滞指数 / 稳态时间 / 输出行程指数
  *   / 可信度徽章 / 状态 / 操作（详情按钮）
  * - 详情抽屉：点击"详情"按钮从右侧滑出，展示完整 24 字段（含数据血缘）
  *
- * 路由：/metric/snapshots
+ * 嵌入位置：评估任务模块 → "评估历史" Tab
  * 权限：所有角色可查看
  */
 import type { TableColumnsType } from 'ant-design-vue';
@@ -25,7 +24,6 @@ import {
   DescriptionsItem,
   Drawer,
   Select,
-  Space,
   Table,
   Tag,
   TreeSelect,
@@ -41,11 +39,14 @@ import type {
 } from '#/api/metric';
 import { getLoopListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import ScoreSparkline from '#/components/metric/score-sparkline.vue';
 
-defineOptions({ name: 'MetricSnapshots' });
+defineOptions({ name: 'MetricHistorySnapshots' });
 
 // ============ 列表状态 ============
 const loading = ref(false);
+const loadError = ref(false);
 const snapshotList = ref<KpiSnapshotItem[]>([]);
 const totalCount = ref(0);
 const currentPage = ref(1);
@@ -65,17 +66,43 @@ const loopOptions = ref<{ label: string; value: string }[]>([]);
 // ============ 详情抽屉状态 ============
 const drawerVisible = ref(false);
 const drawerRecord = ref<KpiSnapshotItem | null>(null);
+const drawerTrendSnapshots = ref<KpiSnapshotItem[]>([]);
+const drawerTrendLoading = ref(false);
 
-/** 点击"详情"按钮：打开抽屉并加载该行完整数据 */
-function openDetail(record: Record<string, any>) {
+/** 点击"详情"按钮：打开抽屉并加载该行完整数据及趋势 */
+async function openDetail(record: Record<string, any>) {
   drawerRecord.value = record as unknown as KpiSnapshotItem;
   drawerVisible.value = true;
+  drawerTrendLoading.value = true;
+  drawerTrendSnapshots.value = [];
+
+  const loopId = record.loopId;
+  if (loopId) {
+    try {
+      // 后端 pageSize 上限 100，分页拉取近 24 小时数据
+      const params: any = {
+        loopId,
+        page: 1,
+        pageSize: 24,
+      };
+      const result = await getLoopSnapshotsApi(params);
+      drawerTrendSnapshots.value = (result.items || []).sort((a, b) => {
+        const aTs = a.tsStart || '';
+        const bTs = b.tsStart || '';
+        return aTs.localeCompare(bTs);
+      });
+    } catch {
+      drawerTrendSnapshots.value = [];
+    }
+  }
+  drawerTrendLoading.value = false;
 }
 
 /** 关闭抽屉 */
 function closeDetail() {
   drawerVisible.value = false;
   drawerRecord.value = null;
+  drawerTrendSnapshots.value = [];
 }
 
 // ============ 表格列定义 ============
@@ -193,6 +220,7 @@ const columns = computed<TableColumnsType>(() => [
 // ============ 加载列表 ============
 async function loadList() {
   loading.value = true;
+  loadError.value = false;
   try {
     const params: any = {
       page: currentPage.value,
@@ -210,6 +238,7 @@ async function loadList() {
     snapshotList.value = result.items;
     totalCount.value = result.total;
   } catch (error: any) {
+    loadError.value = true;
     console.error('加载指标快照列表失败:', error);
     message.error(error?.message || '加载失败');
   } finally {
@@ -230,15 +259,25 @@ async function loadPlantNodeTree() {
 // ============ 加载回路列表 ============
 /**
  * 加载回路列表。
+ * 后端 loops API pageSize 上限 100，循环分页加载全部回路，避免截断。
  * @param plantNodeId 装置 ID；传入时只加载该装置下的回路，不传则加载全部。
  */
 async function loadLoops(plantNodeId?: string) {
   try {
-    // 后端 loops API pageSize 上限 100，传 1000 会 422
-    const params: any = { page: 1, pageSize: 100 };
-    if (plantNodeId) params.plantNodeId = plantNodeId;
-    const result = await getLoopListApi(params);
-    loopOptions.value = (result.items || []).map((l: any) => ({
+    const allLoops: any[] = [];
+    let page = 1;
+    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
+    const loopPageSize = 100;
+    let total = 0;
+    do {
+      const params: any = { page, pageSize: loopPageSize };
+      if (plantNodeId) params.plantNodeId = plantNodeId;
+      const result = await getLoopListApi(params);
+      total = result.total;
+      allLoops.push(...(result.items || []));
+      page += 1;
+    } while ((page - 1) * loopPageSize < total);
+    loopOptions.value = allLoops.map((l: any) => ({
       label: l.tagName,
       value: l.loopId,
     }));
@@ -287,9 +326,9 @@ function formatNumber(val: number | null | undefined, suffix = ''): string {
 }
 
 const STATUS_COLOR_MAP: Record<string, string> = {
-  SUCCESS: 'green',
-  INCONCLUSIVE: 'orange',
-  PARTIAL: 'red',
+  SUCCESS: 'success',
+  PARTIAL: 'warning',
+  INCONCLUSIVE: 'default',
 };
 
 const STATUS_LABEL_MAP: Record<string, string> = {
@@ -323,17 +362,21 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="p-4">
+  <div>
     <!-- 顶部工具栏 -->
-    <div class="mb-4 flex items-center justify-between">
-      <div class="text-lg font-medium">回路小时指标明细</div>
-      <Space>
+    <ClpmPageToolbar
+      class="mb-4"
+      title="评估历史"
+      subtitle="按小时快照展示回路性能指标，支持多维度筛选和详情查看。"
+      :loading="loading"
+    >
+      <template #actions>
         <Button @click="loadList">
           <template #icon><RotateCw /></template>
           刷新
         </Button>
-      </Space>
-    </div>
+      </template>
+    </ClpmPageToolbar>
 
     <!-- 筛选区 -->
     <div class="mb-4 flex flex-wrap items-center gap-3">
@@ -390,28 +433,33 @@ onMounted(() => {
     </div>
 
     <!-- 快照列表 -->
-    <Table
-      :columns="columns"
-      :data-source="snapshotList"
+    <ClpmDataCanvas
       :loading="loading"
-      :pagination="{
-        current: currentPage,
-        pageSize: pageSize,
-        total: totalCount,
-        showSizeChanger: true,
-        showTotal: (t: number) => `共 ${t} 条`,
-      }"
-      :scroll="{ x: 1800 }"
-      row-key="tsStart"
-      size="small"
-      @change="
-        (p: any) => {
-          currentPage = p.current;
-          pageSize = p.pageSize;
-          loadList();
-        }
-      "
+      :error="loadError"
+      :empty="!loading && !loadError && snapshotList.length === 0"
+      @retry="loadList"
     >
+      <Table
+        :columns="columns"
+        :data-source="snapshotList"
+        :pagination="{
+          current: currentPage,
+          pageSize: pageSize,
+          total: totalCount,
+          showSizeChanger: true,
+          showTotal: (t: number) => `共 ${t} 条`,
+        }"
+        :scroll="{ x: 1800 }"
+        row-key="tsStart"
+        size="small"
+        @change="
+          (p: any) => {
+            currentPage = p.current;
+            pageSize = p.pageSize;
+            loadList();
+          }
+        "
+      >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'tsRange'">
           <span class="font-mono text-xs">
@@ -419,7 +467,9 @@ onMounted(() => {
           </span>
         </template>
         <template v-else-if="column.key === 'score'">
-          <span class="font-semibold">{{ formatNumber(record.score) }}</span>
+          <span class="clpm-num font-semibold">
+            {{ formatNumber(record.score) }}
+          </span>
         </template>
         <template v-else-if="column.key === 'confidenceLevel'">
           <Tag
@@ -449,7 +499,9 @@ onMounted(() => {
             ] as string[]).includes(column.key as string)
           "
         >
-          {{ formatNumber(record[column.dataIndex as string], '%') }}
+          <span class="clpm-num">
+            {{ formatNumber(record[column.dataIndex as string], '%') }}
+          </span>
         </template>
         <!-- 粘滞指数 / 稳态时间 / 输出行程指数 -->
         <template
@@ -459,7 +511,7 @@ onMounted(() => {
             )
           "
         >
-          <span class="font-mono">
+          <span class="clpm-num font-mono">
             {{
               column.key === 'settlingTime'
                 ? formatNumber(record[column.dataIndex as string], 's')
@@ -474,7 +526,8 @@ onMounted(() => {
           </Button>
         </template>
       </template>
-    </Table>
+      </Table>
+    </ClpmDataCanvas>
 
     <!-- 详情抽屉：从右侧滑出，展示完整字段 -->
     <Drawer
@@ -505,7 +558,9 @@ onMounted(() => {
             {{ formatFullTime(drawerRecord.tsEnd) }}
           </DescriptionsItem>
           <DescriptionsItem label="综合评分">
-            <span class="font-semibold">{{ formatNumber(drawerRecord.score) }}</span>
+            <span class="clpm-num font-semibold">
+              {{ formatNumber(drawerRecord.score) }}
+            </span>
           </DescriptionsItem>
           <DescriptionsItem label="可信度">
             <Tag
@@ -591,7 +646,7 @@ onMounted(() => {
 
         <template v-if="drawerRecord.dataLineage">
           <div class="mt-4 mb-2 text-sm font-medium">数据血缘详情</div>
-          <div class="rounded bg-gray-50 p-3 font-mono text-xs">
+          <div class="rounded p-3 font-mono text-xs" :style="{ background: 'hsl(var(--muted) / 42%)' }">
             <div>采样频率: {{ drawerRecord.dataLineage.samplingFreq }}</div>
             <div>聚合策略: {{ drawerRecord.dataLineage.aggregationPolicy }}</div>
             <div>质量策略: {{ drawerRecord.dataLineage.qualityPolicy }}</div>
@@ -604,6 +659,53 @@ onMounted(() => {
             <div>算法版本: {{ drawerRecord.dataLineage.algorithmVersion }}</div>
           </div>
         </template>
+
+        <!-- 评分趋势 -->
+        <div class="mt-4 mb-2 text-sm font-medium">评分趋势（最近 24 小时）</div>
+        <div v-if="drawerTrendLoading" class="text-center py-4">加载中...</div>
+        <template v-else-if="drawerTrendSnapshots.length > 0">
+          <div class="p-3 rounded-lg border border-border bg-muted/30">
+            <div class="flex items-center justify-center gap-2">
+              <ScoreSparkline
+                :data="drawerTrendSnapshots.map((s) => (s.score ?? 0))"
+                :width="560"
+                :height="50"
+              />
+            </div>
+            <div class="flex justify-between mt-2 text-xs text-muted-foreground">
+              <span>{{ formatTsEnd(drawerTrendSnapshots[0]?.tsEnd) }}</span>
+              <span>{{ formatTsEnd(drawerTrendSnapshots[drawerTrendSnapshots.length - 1]?.tsEnd) }}</span>
+            </div>
+          </div>
+          <div class="mt-2 max-h-[200px] overflow-y-auto space-y-1">
+            <div
+              v-for="(item, index) in drawerTrendSnapshots"
+              :key="index"
+              class="flex items-center gap-3 text-xs"
+            >
+              <span class="font-mono w-16 text-muted-foreground">{{ formatTsEnd(item.tsEnd) }}</span>
+              <span
+                class="clpm-num font-medium w-12 text-right"
+                :style="{
+                  color:
+                    item.score !== null && item.score !== undefined
+                      ? (item.score >= 80 ? '#10B981' : item.score >= 60 ? '#F59E0B' : '#F43F5E')
+                      : '#9CA3AF',
+                }"
+              >
+                {{ formatNumber(item.score) }}
+              </span>
+              <Tag
+                v-if="item.confidenceLevel"
+                :color="CONFIDENCE_COLOR_MAP[item.confidenceLevel] || 'default'"
+                size="small"
+              >
+                {{ item.confidenceLevel }}
+              </Tag>
+            </div>
+          </div>
+        </template>
+        <div v-else class="text-center py-4 text-muted-foreground">暂无趋势数据</div>
       </template>
     </Drawer>
   </div>

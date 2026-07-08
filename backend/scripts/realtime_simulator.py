@@ -941,7 +941,7 @@ async def write_to_redis(
                     "collectTime": ts_iso,
                 }
             )
-            # key 前缀 realtime: 与后端 RealtimeSubscriber._REDIS_KEY_PREFIX 一致
+            # 使用 realtime: 前缀，与后端 RealtimeSubscriber._REDIS_KEY_PREFIX 一致
             await redis_client.set(f"realtime:{tag_name}", msg, ex=60)
             updates.append(msg)
     if updates:

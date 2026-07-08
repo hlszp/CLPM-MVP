@@ -41,6 +41,27 @@ ROLE_TO_FIELD = {
     "PID_D": "pid_d",
 }
 
+# v6.1：回路类型 / 控制类型 中英文双向映射（Excel 导入导出用）
+# 导出时英→中（用户友好），导入时中→英（容错识别）
+LOOP_TYPE_TO_CN: dict[str, str] = {
+    "TEMPERATURE": "温度",
+    "PRESSURE": "压力",
+    "LEVEL": "液位",
+    "FLOW": "流量",
+    "ANALYSIS": "分析",
+    "SPEED": "速度",
+    "OTHER": "其他",
+}
+LOOP_TYPE_FROM_CN: dict[str, str] = {v: k for k, v in LOOP_TYPE_TO_CN.items()}
+
+CONTROL_TYPE_TO_CN: dict[str, str] = {
+    "STABLE": "稳定型",
+    "SLOW": "慢速型",
+    "FAST": "快速型",
+    "LOGIC": "逻辑型",
+}
+CONTROL_TYPE_FROM_CN: dict[str, str] = {v: k for k, v in CONTROL_TYPE_TO_CN.items()}
+
 
 async def _write_audit(
     db: AsyncSession,
@@ -144,6 +165,7 @@ async def list_loops(
     control_type: str | None = None,
     importance_level: int | None = None,
     monitor_status: bool | None = None,
+    include_in_evaluation: bool | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
@@ -153,6 +175,7 @@ async def list_loops(
         importance_level: 按回路重要等级筛选（1/2/3）
         control_type: 按控制类型筛选（STABLE/SLOW/FAST/LOGIC）
         monitor_status: 按监控状态筛选（True=is_active=True，False=is_active=False）
+        include_in_evaluation: 按参评状态筛选（True=参评/False=不参评）
 
     Raises:
         ValueError: is_active 与 monitor_status 同时传入但值不一致（语义冲突）
@@ -190,6 +213,8 @@ async def list_loops(
         # monitor_status=True → is_active=True（在监控中）
         # monitor_status=False → is_active=False（已停用监控）
         conditions.append(LoopLedger.is_active.is_(monitor_status))
+    if include_in_evaluation is not None:
+        conditions.append(LoopLedger.include_in_evaluation == include_in_evaluation)
     if keyword:
         kw = f"%{keyword}%"
         conditions.append(
@@ -221,7 +246,10 @@ async def list_loops(
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
 
-    stmt = select(LoopLedger).order_by(LoopLedger.created_at.desc())
+    # 双键排序：created_at desc 为主序，tag_name asc 为次序保证稳定排序
+    # （批量导入的回路 created_at 可能相同，PostgreSQL 对相同键值不保证返回顺序，
+    # 加次级排序避免编辑后回路位置漂移）
+    stmt = select(LoopLedger).order_by(LoopLedger.created_at.desc(), LoopLedger.tag_name.asc())
     for cond in conditions:
         stmt = stmt.where(cond)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
@@ -258,9 +286,31 @@ async def list_loops(
         for mapping, tag in mode_result:
             mode_map[str(mapping.loop_id)] = _mode_value_to_label(tag.current_value)
 
+    # v6.1 批量查询 PV/OP Tag 量程与单位（设计文档 §4.1）
+    # 数据来源：tag_registry.range_min/range_max/unit，通过 loop_tag_mapping JOIN
+    range_map: dict[str, dict[str, object]] = {}
+    if loop_ids:
+        range_result = await db.execute(
+            select(LoopTagMapping, TagRegistry)
+            .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+            .where(LoopTagMapping.loop_id.in_(loop_ids))
+            .where(LoopTagMapping.tag_role.in_(["PV", "OP"]))
+        )
+        for mapping, tag in range_result:
+            loop_idx = str(mapping.loop_id)
+            if loop_idx not in range_map:
+                range_map[loop_idx] = {}
+            role_key = mapping.tag_role.lower()  # "pv" / "op"
+            range_map[loop_idx][f"{role_key}_range"] = {
+                "min": float(tag.range_min) if tag.range_min is not None else None,
+                "max": float(tag.range_max) if tag.range_max is not None else None,
+            }
+            range_map[loop_idx][f"{role_key}_unit"] = tag.unit
+
     items = []
     for loop in loops:
         mappings = mappings_map.get(str(loop.id), {})
+        loop_range = range_map.get(str(loop.id), {})
         items.append(
             {
                 "loopId": str(loop.id),
@@ -280,6 +330,21 @@ async def list_loops(
                     loop.last_aas_sync_at.isoformat() if loop.last_aas_sync_at else None
                 ),
                 "tagMappingStatus": _build_tag_mapping_status(mappings),
+                # v6.1 新增：量程与限位
+                "pvRange": loop_range.get("pv_range"),
+                "pvUnit": loop_range.get("pv_unit"),
+                "opRange": loop_range.get("op_range"),
+                "opUnit": loop_range.get("op_unit"),
+                "opOutputLowerLimit": (
+                    float(loop.op_output_lower_limit)
+                    if loop.op_output_lower_limit is not None
+                    else None
+                ),
+                "opOutputUpperLimit": (
+                    float(loop.op_output_upper_limit)
+                    if loop.op_output_upper_limit is not None
+                    else None
+                ),
             }
         )
 
@@ -325,6 +390,70 @@ def _control_mode_to_values(control_mode: str) -> list[int]:
     return sorted(_CONTROL_MODE_VALUES.get(control_mode.lower(), set()))
 
 
+async def _get_op_tag_range(
+    db: AsyncSession, loop_id: str | None
+) -> tuple[float | None, float | None]:
+    """查询回路关联 OP Tag 的量程上下限。
+
+    用于 OP 输出限位校验和饱和率算法回退。
+    返回 (range_min, range_max)；若 OP Tag 未关联或量程为 NULL，返回 (None, None)。
+    """
+    if not loop_id:
+        return None, None
+    result = await db.execute(
+        select(TagRegistry.range_min, TagRegistry.range_max)
+        .join(LoopTagMapping, LoopTagMapping.tag_id == TagRegistry.id)
+        .where(
+            LoopTagMapping.loop_id == loop_id,
+            LoopTagMapping.tag_role == "OP",
+        )
+    )
+    row = result.first()
+    if row is None:
+        return None, None
+    return float(row[0]) if row[0] is not None else None, (
+        float(row[1]) if row[1] is not None else None
+    )
+
+
+def _validate_op_output_limits(
+    lower: float | None,
+    upper: float | None,
+    op_range_min: float | None,
+    op_range_max: float | None,
+) -> None:
+    """校验 OP 输出限位范围。
+
+    校验规则（设计文档 §2.2）：
+    - lower < upper
+    - lower >= OP Tag range_min（若 range_min 已知）
+    - upper <= OP Tag range_max（若 range_max 已知）
+
+    Raises:
+        BizError: ERR_OP_LIMIT_OUT_OF_RANGE
+    """
+    if lower is None and upper is None:
+        return
+    if lower is not None and upper is not None and lower >= upper:
+        raise BizError(
+            code="ERR_OP_LIMIT_OUT_OF_RANGE",
+            message=f"OP 输出下限位 ({lower}) 必须小于上限位 ({upper})",
+            status_code=400,
+        )
+    if lower is not None and op_range_min is not None and lower < op_range_min:
+        raise BizError(
+            code="ERR_OP_LIMIT_OUT_OF_RANGE",
+            message=f"OP 输出下限位 ({lower}) 不能小于 OP Tag 量程下限 ({op_range_min})",
+            status_code=400,
+        )
+    if upper is not None and op_range_max is not None and upper > op_range_max:
+        raise BizError(
+            code="ERR_OP_LIMIT_OUT_OF_RANGE",
+            message=f"OP 输出上限位 ({upper}) 不能大于 OP Tag 量程上限 ({op_range_max})",
+            status_code=400,
+        )
+
+
 async def create_loop(
     db: AsyncSession,
     tag_name: str,
@@ -340,11 +469,14 @@ async def create_loop(
     include_in_evaluation: bool | None = None,
     modeattr_tag_id: str | None = None,
     data_retention_days: int | None = None,
+    op_output_lower_limit: float | None = None,
+    op_output_upper_limit: float | None = None,
 ) -> dict:
     """创建回路。
 
     Raises:
         BizError: ERR_LOOP_DUPLICATE (tag_name 重复) / ERR_NODE_NOT_FOUND (unit_id 不存在)
+                  / ERR_OP_LIMIT_OUT_OF_RANGE (OP 输出限位校验失败)
     """
     # tag_name 唯一校验
     existing = await db.execute(select(LoopLedger).where(LoopLedger.tag_name == tag_name))
@@ -365,6 +497,14 @@ async def create_loop(
                 status_code=404,
             )
 
+    # v6.1 校验 OP 输出限位范围（创建时 loop_id 还未生成，仅校验 lower < upper）
+    _validate_op_output_limits(
+        lower=op_output_lower_limit,
+        upper=op_output_upper_limit,
+        op_range_min=None,  # 创建时 OP Tag 未关联，无法校验范围
+        op_range_max=None,
+    )
+
     # 新建回路默认状态：INACTIVE（未激活）或 PARTIAL（已激活但无 Tag）
     status = "PARTIAL" if is_active else "INACTIVE"
     # v5.3 对齐 FDS §5.2.3 / DDS v4.1：include_in_evaluation 默认 True（参与评估）
@@ -384,6 +524,8 @@ async def create_loop(
         include_in_evaluation=include_in_evaluation,
         modeattr_tag_id=modeattr_tag_id,
         data_retention_days=data_retention_days,
+        op_output_lower_limit=op_output_lower_limit,
+        op_output_upper_limit=op_output_upper_limit,
         score_weights=score_weights,
         remark=remark,
         created_by=operator,
@@ -411,6 +553,8 @@ async def create_loop(
                 "includeInEvaluation": include_in_evaluation,
                 "modeattrTagId": modeattr_tag_id,
                 "dataRetentionDays": data_retention_days,
+                "opOutputLowerLimit": op_output_lower_limit,
+                "opOutputUpperLimit": op_output_upper_limit,
             },
             ensure_ascii=False,
         ),
@@ -429,6 +573,12 @@ async def create_loop(
         "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
+        "opOutputLowerLimit": (
+            float(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else None
+        ),
+        "opOutputUpperLimit": (
+            float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
+        ),
         "isActive": bool(loop.is_active),
         "scoreWeights": loop.score_weights,
         "remark": loop.remark,
@@ -518,6 +668,26 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             if last_sync is None or ts > last_sync:
                 last_sync = ts
 
+    # v6.1 查询 PV/OP Tag 量程与单位
+    pv_range_info: dict | None = None
+    pv_unit: str | None = None
+    op_range_info: dict | None = None
+    op_unit: str | None = None
+    for role in ("PV", "OP"):
+        mapping = mappings.get(role)
+        if mapping and str(mapping.tag_id) in tags_map:
+            tag = tags_map[str(mapping.tag_id)]
+            range_info = {
+                "min": float(tag.range_min) if tag.range_min is not None else None,
+                "max": float(tag.range_max) if tag.range_max is not None else None,
+            }
+            if role == "PV":
+                pv_range_info = range_info
+                pv_unit = tag.unit
+            elif role == "OP":
+                op_range_info = range_info
+                op_unit = tag.unit
+
     return {
         "basicInfo": {
             "loopId": str(loop.id),
@@ -535,6 +705,21 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             "dataRetentionDays": loop.data_retention_days,
             "scoreWeights": loop.score_weights,
             "remark": loop.remark,
+            # v6.1 新增：量程与限位
+            "pvRange": pv_range_info,
+            "pvUnit": pv_unit,
+            "opRange": op_range_info,
+            "opUnit": op_unit,
+            "opOutputLowerLimit": (
+                float(loop.op_output_lower_limit)
+                if loop.op_output_lower_limit is not None
+                else None
+            ),
+            "opOutputUpperLimit": (
+                float(loop.op_output_upper_limit)
+                if loop.op_output_upper_limit is not None
+                else None
+            ),
             "createdAt": loop.created_at.isoformat() if loop.created_at else None,
             "createdBy": loop.created_by,
             "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
@@ -563,11 +748,15 @@ async def update_loop(
     include_in_evaluation: bool | None = None,
     modeattr_tag_id: str | None = None,
     data_retention_days: int | None = None,
+    op_output_lower_limit: float | None = None,
+    op_output_upper_limit: float | None = None,
+    _op_lower_set: bool = False,
+    _op_upper_set: bool = False,
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期）。
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。
 
     Raises:
-        BizError: ERR_LOOP_NOT_FOUND
+        BizError: ERR_LOOP_NOT_FOUND / ERR_OP_LIMIT_OUT_OF_RANGE
     """
     result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = result.scalar_one_or_none()
@@ -577,6 +766,23 @@ async def update_loop(
             message="回路不存在",
             status_code=404,
         )
+
+    # v6.1 校验 OP 输出限位范围
+    # 查询 OP Tag 量程作为校验基准
+    op_range_min, op_range_max = await _get_op_tag_range(db, loop_id)
+    # 计算生效的 lower/upper（更新后的值优先，否则保持原值）
+    effective_lower = (
+        op_output_lower_limit if op_output_lower_limit is not None else loop.op_output_lower_limit
+    )
+    effective_upper = (
+        op_output_upper_limit if op_output_upper_limit is not None else loop.op_output_upper_limit
+    )
+    _validate_op_output_limits(
+        lower=effective_lower,
+        upper=effective_upper,
+        op_range_min=op_range_min,
+        op_range_max=op_range_max,
+    )
 
     before = {
         "description": loop.description,
@@ -589,6 +795,12 @@ async def update_loop(
         "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
+        "opOutputLowerLimit": (
+            float(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else None
+        ),
+        "opOutputUpperLimit": (
+            float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
+        ),
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -612,6 +824,12 @@ async def update_loop(
         loop.modeattr_tag_id = modeattr_tag_id
     if data_retention_days is not None:
         loop.data_retention_days = data_retention_days
+    # v6.1：使用 _op_lower_set / _op_upper_set 标记区分"未传递"和"传递了 NULL"
+    # 允许用户通过 PUT null 清空 OP 输出限位（恢复默认值）
+    if _op_lower_set:
+        loop.op_output_lower_limit = op_output_lower_limit
+    if _op_upper_set:
+        loop.op_output_upper_limit = op_output_upper_limit
     loop.updated_by = operator
 
     # 重新推导 status
@@ -629,6 +847,12 @@ async def update_loop(
         "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
+        "opOutputLowerLimit": (
+            float(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else None
+        ),
+        "opOutputUpperLimit": (
+            float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
+        ),
         "status": new_status,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -659,6 +883,12 @@ async def update_loop(
         "includeInEvaluation": loop.include_in_evaluation,
         "modeattrTagId": str(loop.modeattr_tag_id) if loop.modeattr_tag_id else None,
         "dataRetentionDays": loop.data_retention_days,
+        "opOutputLowerLimit": (
+            float(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else None
+        ),
+        "opOutputUpperLimit": (
+            float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
+        ),
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
         "updatedBy": loop.updated_by,
     }
@@ -735,20 +965,29 @@ async def delete_loop(
 # 批量导入导出 (S2-LOOP-009)
 # ---------------------------------------------------------------------------
 
-# Excel 列头（12 列，对齐 loopList.xlsx，新增"回路类型"列）
+# Excel 列头（18 列，v6.1 扩展：追加控制类型/等级/参评/OP 限位/备注）
+# 保持原 12 列顺序不变（向后兼容已有 Excel 模板），末尾追加新列
+# v6.1：列头语义化（"自控回路名称"→"回路描述"，"所属区域编号"→"所属单元名称"）
 EXPORT_HEADERS = [
     "自控回路编号",
-    "自控回路名称",
+    "回路描述",
     "设定值位号",
     "测量值位号",
     "输出值位号",
     "控制方式位号",
-    "所属区域编号",
+    "所属单元名称",
     "是否启用",
     "比例带",
     "积分时间",
     "微分时间",
     "回路类型",
+    # v6.1 新增列
+    "控制类型",
+    "等级",
+    "参评状态",
+    "OP输出下限位",
+    "OP输出上限位",
+    "备注",
 ]
 
 # 导入时列索引 → Tag 角色（索引从 0 开始）
@@ -764,6 +1003,14 @@ _IMPORT_ROLE_COLUMNS: dict[int, str] = {
 # 回路类型列索引（"回路类型"列）
 _LOOP_TYPE_COLUMN_INDEX = 11
 
+# v6.1 新增列索引
+_CONTROL_TYPE_COLUMN_INDEX = 12
+_IMPORTANCE_LEVEL_COLUMN_INDEX = 13
+_INCLUDE_IN_EVALUATION_COLUMN_INDEX = 14
+_OP_OUTPUT_LOWER_LIMIT_COLUMN_INDEX = 15
+_OP_OUTPUT_UPPER_LIMIT_COLUMN_INDEX = 16
+_REMARK_COLUMN_INDEX = 17
+
 
 def _cell_str(value: object) -> str:
     """将 Excel 单元格值转为去除首尾空白的字符串，None/空返回空串。"""
@@ -772,15 +1019,60 @@ def _cell_str(value: object) -> str:
     return str(value).strip()
 
 
+def _normalize_loop_type(raw: str) -> str | None:
+    """v6.1：回路类型中英文双向识别。
+
+    接受中文（温度/压力/液位/...）或英文（TEMPERATURE/PRESSURE/...），
+    统一返回英文枚举值。未知值原样返回（由上层校验）。
+    """
+    if not raw:
+        return None
+    val = raw.strip()
+    # 中文 → 英文
+    if val in LOOP_TYPE_FROM_CN:
+        return LOOP_TYPE_FROM_CN[val]
+    # 英文（大小写不敏感）→ 标准大写
+    upper = val.upper()
+    if upper in LOOP_TYPE_TO_CN:
+        return upper
+    # 未知值原样返回（允许自定义扩展，前端兜底显示）
+    return val
+
+
+def _normalize_control_type(raw: str) -> str | None:
+    """v6.1：控制类型中英文双向识别。
+
+    接受中文（稳定型/慢速型/快速型/逻辑型）或英文（STABLE/SLOW/FAST/LOGIC），
+    统一返回英文枚举值。未知值原样返回（由上层校验）。
+    """
+    if not raw:
+        return None
+    val = raw.strip()
+    # 中文 → 英文
+    if val in CONTROL_TYPE_FROM_CN:
+        return CONTROL_TYPE_FROM_CN[val]
+    # 英文（大小写不敏感）→ 标准大写
+    upper = val.upper()
+    if upper in CONTROL_TYPE_TO_CN:
+        return upper
+    # 未知值原样返回
+    return val
+
+
 async def export_loops(
     db: AsyncSession,
     plant_node_id: str | None = None,
     status: str | None = None,
     keyword: str | None = None,
+    control_type: str | None = None,
+    importance_level: int | None = None,
+    include_in_evaluation: bool | None = None,
+    loop_type: str | None = None,
 ) -> bytes:
     """导出所有回路为 Excel 文件（.xlsx），返回文件字节。
 
-    支持按 plantNodeId/status/keyword 筛选（可选）。
+    支持按 plantNodeId/status/keyword/controlType/importanceLevel/
+    includeInEvaluation/loopType 筛选（可选）。
     """
     conditions = []
     if plant_node_id:
@@ -795,6 +1087,15 @@ async def export_loops(
                 LoopLedger.description.ilike(kw),
             )
         )
+    # v6.1 新增筛选条件
+    if control_type:
+        conditions.append(LoopLedger.control_type == control_type.upper())
+    if importance_level is not None:
+        conditions.append(LoopLedger.importance_level == importance_level)
+    if include_in_evaluation is not None:
+        conditions.append(LoopLedger.include_in_evaluation == include_in_evaluation)
+    if loop_type:
+        conditions.append(LoopLedger.loop_type == loop_type.upper())
 
     stmt = select(LoopLedger).order_by(LoopLedger.tag_name)
     for cond in conditions:
@@ -833,6 +1134,27 @@ async def export_loops(
         tags = tag_name_map.get(str(loop.id), {})
         unit_name = unit_map.get(str(loop.unit_id)) if loop.unit_id else ""
         is_active_str = "是" if loop.is_active else "否"
+        # v6.1 新增字段导出
+        include_in_eval_str = ""
+        if loop.include_in_evaluation is not None:
+            include_in_eval_str = "是" if loop.include_in_evaluation else "否"
+        importance_level_str = str(loop.importance_level) if loop.importance_level else ""
+        # v6.1：枚举值导出为中文（用户友好，便于 Excel 编辑）
+        loop_type_str = (
+            LOOP_TYPE_TO_CN.get(loop.loop_type.upper(), loop.loop_type) if loop.loop_type else ""
+        )
+        control_type_str = (
+            CONTROL_TYPE_TO_CN.get(loop.control_type.upper(), loop.control_type)
+            if loop.control_type
+            else ""
+        )
+        # OP 限位为空时留空（导入时空值表示使用默认 = OP Tag 量程）
+        op_lower_str = (
+            str(loop.op_output_lower_limit) if loop.op_output_lower_limit is not None else ""
+        )
+        op_upper_str = (
+            str(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else ""
+        )
         ws.append(
             [
                 loop.tag_name,
@@ -846,7 +1168,14 @@ async def export_loops(
                 tags.get("PID_P", ""),
                 tags.get("PID_I", ""),
                 tags.get("PID_D", ""),
-                loop.loop_type or "",
+                loop_type_str,
+                # v6.1 新增
+                control_type_str,
+                importance_level_str,
+                include_in_eval_str,
+                op_lower_str,
+                op_upper_str,
+                loop.remark or "",
             ]
         )
 
@@ -904,8 +1233,73 @@ async def import_loops(
         unit_name = _cell_str(row[6]) if len(row) > 6 else ""
         is_active_str = _cell_str(row[7]) if len(row) > 7 else "是"
         is_active = is_active_str in ("是", "true", "True", "1", "YES", "yes", "Y", "y")
-        loop_type = (
+        # v6.1：回路类型 / 控制类型 中英文双向识别
+        loop_type_raw = (
             _cell_str(row[_LOOP_TYPE_COLUMN_INDEX]) if len(row) > _LOOP_TYPE_COLUMN_INDEX else ""
+        )
+        loop_type = _normalize_loop_type(loop_type_raw)
+        control_type_raw = (
+            _cell_str(row[_CONTROL_TYPE_COLUMN_INDEX])
+            if len(row) > _CONTROL_TYPE_COLUMN_INDEX
+            else ""
+        )
+        control_type = _normalize_control_type(control_type_raw)
+        importance_level_str = (
+            _cell_str(row[_IMPORTANCE_LEVEL_COLUMN_INDEX])
+            if len(row) > _IMPORTANCE_LEVEL_COLUMN_INDEX
+            else ""
+        )
+        importance_level = None
+        if importance_level_str:
+            try:
+                importance_level = int(importance_level_str)
+                if importance_level not in (1, 2, 3):
+                    importance_level = None
+            except ValueError:
+                importance_level = None
+        include_in_eval_str = (
+            _cell_str(row[_INCLUDE_IN_EVALUATION_COLUMN_INDEX])
+            if len(row) > _INCLUDE_IN_EVALUATION_COLUMN_INDEX
+            else ""
+        )
+        # 空值表示不修改（保持原值）；非空时按 是/否 解析
+        include_in_evaluation: bool | None = None
+        if include_in_eval_str:
+            include_in_evaluation = include_in_eval_str in (
+                "是",
+                "true",
+                "True",
+                "1",
+                "YES",
+                "yes",
+                "Y",
+                "y",
+            )
+        # OP 限位：空值表示使用默认（NULL），非空时解析为 float
+        op_lower_str = (
+            _cell_str(row[_OP_OUTPUT_LOWER_LIMIT_COLUMN_INDEX])
+            if len(row) > _OP_OUTPUT_LOWER_LIMIT_COLUMN_INDEX
+            else ""
+        )
+        op_output_lower_limit: float | None = None
+        if op_lower_str:
+            try:
+                op_output_lower_limit = float(op_lower_str)
+            except ValueError:
+                op_output_lower_limit = None
+        op_upper_str = (
+            _cell_str(row[_OP_OUTPUT_UPPER_LIMIT_COLUMN_INDEX])
+            if len(row) > _OP_OUTPUT_UPPER_LIMIT_COLUMN_INDEX
+            else ""
+        )
+        op_output_upper_limit: float | None = None
+        if op_upper_str:
+            try:
+                op_output_upper_limit = float(op_upper_str)
+            except ValueError:
+                op_output_upper_limit = None
+        remark = (
+            _cell_str(row[_REMARK_COLUMN_INDEX]) if len(row) > _REMARK_COLUMN_INDEX else ""
         ) or None
 
         is_update = False
@@ -923,6 +1317,12 @@ async def import_loops(
                     plant_node_cache=plant_node_cache,
                     tag_cache=tag_cache,
                     loop_type=loop_type,
+                    control_type=control_type,
+                    importance_level=importance_level,
+                    include_in_evaluation=include_in_evaluation,
+                    op_output_lower_limit=op_output_lower_limit,
+                    op_output_upper_limit=op_output_upper_limit,
+                    remark=remark,
                 )
         except Exception as exc:  # noqa: BLE001
             failed += 1
@@ -956,6 +1356,12 @@ async def _import_one_row(
     plant_node_cache: dict[str, str],
     tag_cache: dict[str, str],
     loop_type: str | None = None,
+    control_type: str | None = None,
+    importance_level: int | None = None,
+    include_in_evaluation: bool | None = None,
+    op_output_lower_limit: float | None = None,
+    op_output_upper_limit: float | None = None,
+    remark: str | None = None,
 ) -> bool:
     """处理单行导入，返回是否为更新（True）或新建（False）。
 
@@ -991,6 +1397,22 @@ async def _import_one_row(
         loop.is_active = is_active
         if loop_type is not None:
             loop.loop_type = loop_type
+        # v6.1 新增字段：仅在非空/非 None 时更新（空值表示保持原值）
+        if control_type is not None:
+            loop.control_type = control_type
+        if importance_level is not None:
+            loop.importance_level = importance_level
+        if include_in_evaluation is not None:
+            loop.include_in_evaluation = include_in_evaluation
+        # OP 限位：显式传入 None 时表示使用默认（清除自定义值）
+        # 但导入解析时 None 表示未填，这里区分：若 Excel 单元格为空则不修改
+        # （op_output_lower_limit/upper_limit 在解析时 None=空单元格，已区分）
+        if op_output_lower_limit is not None:
+            loop.op_output_lower_limit = op_output_lower_limit
+        if op_output_upper_limit is not None:
+            loop.op_output_upper_limit = op_output_upper_limit
+        if remark is not None:
+            loop.remark = remark
         loop.updated_by = operator
         # 删除现有关联 Tag
         await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id)))
@@ -1003,6 +1425,12 @@ async def _import_one_row(
             is_active=is_active,
             status="PARTIAL",
             loop_type=loop_type,
+            control_type=control_type,
+            importance_level=importance_level,
+            include_in_evaluation=include_in_evaluation,
+            op_output_lower_limit=op_output_lower_limit,
+            op_output_upper_limit=op_output_upper_limit,
+            remark=remark,
             created_by=operator,
             updated_by=operator,
         )
@@ -1079,6 +1507,10 @@ __all__ = [
     "ALL_ROLES",
     "REQUIRED_ROLES",
     "ROLE_TO_FIELD",
+    "LOOP_TYPE_TO_CN",
+    "LOOP_TYPE_FROM_CN",
+    "CONTROL_TYPE_TO_CN",
+    "CONTROL_TYPE_FROM_CN",
     "create_loop",
     "delete_loop",
     "derive_loop_status",

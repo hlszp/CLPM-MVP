@@ -29,6 +29,7 @@ import {
   Select,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -42,6 +43,7 @@ import {
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import { $t } from '#/locales';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -50,6 +52,7 @@ import Tracker from './tracker.vue';
 defineOptions({ name: 'DiagnosisList' });
 
 const { themeColors } = useClpmTheme();
+const { getStatusMeta } = useIndustrialStatus();
 
 /** 可信度等级（对齐 ConfidenceEvaluator A/B/C/D/E） */
 type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
@@ -89,13 +92,8 @@ const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '已忽略', value: 'IGNORED' },
 ];
 
-/** 处理状态颜色映射 */
-const statusColorMap: Record<DiagnosisApi.ActionStatus, string> = {
-  PENDING: 'gold',
-  IN_PROGRESS: 'blue',
-  IMPLEMENTED: 'green',
-  IGNORED: 'default',
-};
+/** 处理状态颜色映射（已迁移至 useIndustrialStatus，保留 statusOptions 用于下拉） */
+// const statusColorMap 已废弃，改用 useIndustrialStatus().getStatusMeta(status)
 
 /** 时间窗选项（对齐后端 _build_time_window_condition 支持的值） */
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
@@ -133,13 +131,13 @@ const columns: TableColumnsType = [
     title: '诊断标签',
     dataIndex: 'diagnosisLabel',
     key: 'diagnosisLabel',
-    width: 130,
+    width: 180,
   },
   {
     title: '置信度',
     dataIndex: 'confidence',
     key: 'confidence',
-    width: 160,
+    width: 180,
   },
   {
     title: '融合置信度',
@@ -158,7 +156,7 @@ const columns: TableColumnsType = [
     title: '诊断时间',
     dataIndex: 'diagnosedAt',
     key: 'diagnosedAt',
-    width: 170,
+    width: 200,
   },
   { title: '操作', key: 'action', width: 180, fixed: 'right' },
 ];
@@ -309,6 +307,57 @@ function formatTime(t: string): string {
   }
 }
 
+/**
+ * 相对时间格式化（如"2小时前"/"3天前"）
+ * 用于诊断时间列辅助展示，提升工程师快速识别异常发生时序的效率
+ */
+function formatRelativeTime(t: string): string {
+  if (!t) return '';
+  try {
+    const target = dayjs(t);
+    const now = dayjs();
+    const diffSec = now.diff(target, 'second');
+    if (diffSec < 60) return '刚刚';
+    const diffMin = now.diff(target, 'minute');
+    if (diffMin < 60) return `${diffMin}分钟前`;
+    const diffHour = now.diff(target, 'hour');
+    if (diffHour < 24) return `${diffHour}小时前`;
+    const diffDay = now.diff(target, 'day');
+    if (diffDay < 30) return `${diffDay}天前`;
+    const diffMonth = now.diff(target, 'month');
+    if (diffMonth < 12) return `${diffMonth}个月前`;
+    return `${now.diff(target, 'year')}年前`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 获取回路的诊断标签列表（多 Tag 展示）
+ *
+ * 当前 DiagnosisListItem 仅含单个 diagnosisLabel 字段；
+ * 但同一回路在实际诊断过程中可能同时被多种算法判定为不同标签（如同时存在振荡与阀门粘滞）。
+ * 这里以数组形式返回，便于未来后端扩展多标签字段时无缝接入，
+ * 当前先返回包含主标签的数组；当置信度等级为 E（INCONCLUSIVE）时附加"不确定"标签。
+ */
+function getDiagnosisTags(record: DiagnosisApi.DiagnosisListItem): {
+  label: DiagnosisLabel;
+  name: string;
+}[] {
+  const tags: { label: DiagnosisLabel; name: string }[] = [];
+  if (record.diagnosisLabel) {
+    tags.push({
+      label: record.diagnosisLabel,
+      name: record.labelName || labelName(record.diagnosisLabel),
+    });
+  }
+  // 可信度等级 E（INCONCLUSIVE）时附加"不确定"提示标签
+  if (deriveConfidenceLevel(record.confidence) === 'E') {
+    tags.push({ label: 'MANUAL_REVIEW' as DiagnosisLabel, name: '不确定' });
+  }
+  return tags;
+}
+
 /** 置信度颜色 */
 function confidenceColor(val: number): string {
   if (val >= 0.8) return themeColors.value.SUCCESS;
@@ -328,6 +377,19 @@ function statusName(status: DiagnosisApi.ActionStatus): string {
 function formatPercent(p: number | undefined): string {
   if (p === undefined || p === null || Number.isNaN(p)) return '—';
   return `${p?.toFixed(2) ?? '0.00'}%`;
+}
+
+/**
+ * 分页总数展示（对齐 Poka-Yoke：可信度筛选为前端过滤时明确区分）
+ * - 可信度筛选激活：显示当前页过滤数 + 后端总数，避免"共 25 条但只显示 3 条"的误导
+ * - 未激活：显示后端总数
+ */
+function paginationShowTotal(apiTotal: number): string {
+  if (query.confidenceLevel) {
+    const filtered = filteredDiagnosisList.value.length;
+    return `当前页 ${filtered} 条（已按可信度过滤，后端共 ${apiTotal} 条）`;
+  }
+  return `共 ${apiTotal} 条`;
 }
 
 onMounted(() => {
@@ -404,13 +466,15 @@ onMounted(() => {
           :options="statusOptions"
           @change="handleSearch"
         />
-        <Select
-          v-model:value="query.confidenceLevel"
-          placeholder="可信度等级"
-          style="width: 180px"
-          allow-clear
-          :options="confidenceLevelOptions"
-        />
+        <Tooltip title="该筛选仅过滤当前页数据，不影响后端查询总数">
+          <Select
+            v-model:value="query.confidenceLevel"
+            placeholder="可信度等级"
+            style="width: 180px"
+            allow-clear
+            :options="confidenceLevelOptions"
+          />
+        </Tooltip>
         <Select
           v-model:value="query.timeWindow"
           style="width: 140px"
@@ -431,10 +495,10 @@ onMounted(() => {
           pageSize: query.pageSize,
           total,
           showSizeChanger: true,
-          showTotal: (t: number) => `共 ${t} 条`,
+          showTotal: paginationShowTotal,
         }"
         :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
-        :scroll="{ x: 1370 }"
+        :scroll="{ x: 1430 }"
         size="middle"
         :custom-row="
           (record: DiagnosisApi.DiagnosisListItem) => ({
@@ -446,16 +510,26 @@ onMounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'compositeScore'">
-            <span class="font-medium text-blue-600">
+            <span
+              class="clpm-num font-medium"
+              :style="{ color: themeColors.INFO }"
+            >
               {{ Number(record.compositeScore).toFixed(2) }}
             </span>
           </template>
           <template v-else-if="column.key === 'diagnosisLabel'">
-            <Tag
-              :color="labelColorMap[record.diagnosisLabel as DiagnosisLabel]"
-            >
-              {{ record.labelName || labelName(record.diagnosisLabel) }}
-            </Tag>
+            <!-- 多 Tag 展示：同一回路可能同时存在多个诊断标签（如振荡+不确定） -->
+            <div class="flex flex-wrap gap-1">
+              <Tag
+                v-for="tag in getDiagnosisTags(
+                  record as DiagnosisApi.DiagnosisListItem,
+                )"
+                :key="tag.label"
+                :color="labelColorMap[tag.label]"
+              >
+                {{ tag.name }}
+              </Tag>
+            </div>
           </template>
           <template v-else-if="column.key === 'confidence'">
             <Progress
@@ -467,21 +541,35 @@ onMounted(() => {
             />
           </template>
           <template v-else-if="column.key === 'fusedConfidence'">
-            <span :style="{ color: confidenceColor(record.fusedConfidence) }">
+            <span
+              class="clpm-num"
+              :style="{ color: confidenceColor(record.fusedConfidence) }"
+            >
               {{ Number(record.fusedConfidence).toFixed(2) }}
             </span>
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
-              :color="
-                statusColorMap[record.actionStatus as DiagnosisApi.ActionStatus]
-              "
+              :color="getStatusMeta(record.actionStatus as string).color"
+              :style="{
+                background: getStatusMeta(record.actionStatus as string).bgColor,
+                borderColor: getStatusMeta(record.actionStatus as string).borderColor,
+              }"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>
           </template>
           <template v-else-if="column.key === 'diagnosedAt'">
-            {{ formatTime(record.diagnosedAt) }}
+            <!-- 诊断时间列：绝对时间 + 相对时间辅助展示 -->
+            <div class="flex flex-col leading-tight">
+              <span class="clpm-num">{{ formatTime(record.diagnosedAt) }}</span>
+              <span
+                v-if="formatRelativeTime(record.diagnosedAt)"
+                class="text-xs text-muted-foreground"
+              >
+                {{ formatRelativeTime(record.diagnosedAt) }}
+              </span>
+            </div>
           </template>
           <template v-else-if="column.key === 'action'">
             <Button

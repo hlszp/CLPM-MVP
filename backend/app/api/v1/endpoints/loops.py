@@ -79,6 +79,9 @@ async def list_loops_endpoint(
     monitorStatus: bool | None = Query(
         None, description="按监控状态筛选：true=监控中/false=已停用"
     ),
+    includeInEvaluation: bool | None = Query(
+        None, description="按参评状态筛选：true=参评/false=不参评"
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -99,6 +102,7 @@ async def list_loops_endpoint(
             control_type=controlType,
             importance_level=effective_level,
             monitor_status=monitorStatus,
+            include_in_evaluation=includeInEvaluation,
             page=page,
             page_size=pageSize,
         )
@@ -133,6 +137,8 @@ async def create_loop_endpoint(
         include_in_evaluation=body.include_in_evaluation,
         modeattr_tag_id=body.modeattrTagId,
         data_retention_days=body.dataRetentionDays,
+        op_output_lower_limit=body.opOutputLowerLimit,
+        op_output_upper_limit=body.opOutputUpperLimit,
     )
     return success(data=data, message="创建成功")
 
@@ -238,6 +244,10 @@ async def export_loops_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     status: str | None = Query(None, description="按回路状态筛选：READY/PARTIAL/INACTIVE"),
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
+    controlType: str | None = Query(None, description="按控制类型筛选：STABLE/SLOW/FAST/LOGIC"),
+    importanceLevel: int | None = Query(None, ge=1, le=3, description="按回路等级筛选：1/2/3"),
+    includeInEvaluation: bool | None = Query(None, description="按参评状态筛选"),
+    loopType: str | None = Query(None, description="按回路类型筛选"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> StreamingResponse:
@@ -247,6 +257,10 @@ async def export_loops_endpoint(
         plant_node_id=plantNodeId,
         status=status,
         keyword=keyword,
+        control_type=controlType,
+        importance_level=importanceLevel,
+        include_in_evaluation=includeInEvaluation,
+        loop_type=loopType,
     )
     return StreamingResponse(
         iter([content]),
@@ -296,10 +310,15 @@ async def update_loop_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期）。"""
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。"""
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
+    # v6.1：使用 model_fields_set 区分"未传递"和"传递了 NULL"
+    # 确保用户可以通过 PUT null 清空 OP 输出限位（恢复默认值）
+    _fs = body.model_fields_set
+    op_output_lower_limit = body.opOutputLowerLimit if "opOutputLowerLimit" in _fs else None
+    op_output_upper_limit = body.opOutputUpperLimit if "opOutputUpperLimit" in _fs else None
     data = await update_loop(
         db=db,
         loop_id=loop_id,
@@ -314,6 +333,10 @@ async def update_loop_endpoint(
         include_in_evaluation=body.include_in_evaluation,
         modeattr_tag_id=body.modeattrTagId,
         data_retention_days=body.dataRetentionDays,
+        op_output_lower_limit=op_output_lower_limit,
+        op_output_upper_limit=op_output_upper_limit,
+        _op_lower_set="opOutputLowerLimit" in body.model_fields_set,
+        _op_upper_set="opOutputUpperLimit" in body.model_fields_set,
     )
     return success(data=data, message="更新成功")
 

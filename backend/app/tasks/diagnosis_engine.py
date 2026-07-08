@@ -25,7 +25,7 @@ from uuid import uuid4
 import numpy as np
 from sqlalchemy import delete, select
 
-from app.models.diagnosis import DiagnosisConfig, DiagnosisResult
+from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTask
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
@@ -85,10 +85,40 @@ def run_diagnosis_hourly(self: AsyncTask) -> dict:
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def run_loop_diagnosis(loop_id: str, ts_start: str | None = None) -> dict:
-    """单回路诊断（可手动触发）。"""
-    logger.info("单回路诊断, loop_id=%s", loop_id)
-    return AsyncTask().run_async(_do_diagnose_single_loop(loop_id, ts_start))
+def run_loop_diagnosis(
+    loop_id: str,
+    ts_start: str | None = None,
+    task_id: str | None = None,
+    time_range_start: str | None = None,
+    time_range_end: str | None = None,
+) -> dict:
+    """单回路诊断（可手动触发）。
+
+    支持两种时间范围参数（向后兼容）：
+    - 旧参数：ts_start（向后兼容，自动推算 ts_end = ts_start + 1h）
+    - 新参数：time_range_start / time_range_end（诊断任务专用，支持自定义时间窗）
+
+    当 task_id 不为 None 时，会更新 diagnosis_task 状态：
+    - 开始时：PENDING → RUNNING
+    - 成功时：RUNNING → SUCCESS
+    - 失败时：RUNNING → FAILED（记录 error_message）
+    """
+    logger.info(
+        "单回路诊断, loop_id=%s, task_id=%s, time_range=%s~%s",
+        loop_id,
+        task_id,
+        time_range_start,
+        time_range_end,
+    )
+    return AsyncTask().run_async(
+        _do_diagnose_single_loop(
+            loop_id,
+            ts_start=ts_start,
+            task_id=task_id,
+            time_range_start=time_range_start,
+            time_range_end=time_range_end,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -113,13 +143,20 @@ celery_app.conf.timezone = "Asia/Shanghai"
 
 
 async def _do_run_diagnosis() -> dict:
-    """执行全量诊断的实际 async 逻辑。"""
+    """执行全量诊断的实际 async 逻辑。
+
+    自动触发时也为每个回路创建 DiagnosisTask 记录（trigger_type='auto'），
+    与手动触发的任务记录统一管理。
+    """
     from app.core.db import AsyncSessionLocal
     from app.core.tdengine import query_trend_data
 
     now = datetime.now(UTC)
     ts_end = now.replace(minute=0, second=0, microsecond=0)
     ts_start = ts_end - timedelta(hours=1)
+    # naive datetime 用于入库（diagnosis_task.time_range_* 为 TIMESTAMP WITHOUT TIME ZONE）
+    ts_start_naive = ts_start.replace(tzinfo=None)
+    ts_end_naive = ts_end.replace(tzinfo=None)
 
     # 主 session 仅用于查询待诊断回路列表和诊断配置（只读，无并发）
     async with AsyncSessionLocal() as db:
@@ -148,13 +185,34 @@ async def _do_run_diagnosis() -> dict:
         )
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
 
-    # 3. 并发诊断（信号量限制并发数，每协程独立 session 避免并发共享）
+        # 3. 为每个回路创建 DiagnosisTask 记录（自动触发）
+        # 显式生成 id 避免 flush 依赖（兼容 mock 测试环境）
+        loop_task_ids: dict[str, str] = {}
+        for lid in loop_ids:
+            task_id = str(uuid4())
+            task = DiagnosisTask(
+                id=task_id,
+                loop_id=lid,
+                trigger_type="auto",
+                triggered_by="system",
+                status="PENDING",
+                time_range_start=ts_start_naive,
+                time_range_end=ts_end_naive,
+            )
+            db.add(task)
+            loop_task_ids[lid] = task_id
+        await db.commit()
+
+    # 4. 并发诊断（信号量限制并发数，每协程独立 session 避免并发共享）
     sem = asyncio.Semaphore(CONCURRENCY)
 
-    async def _diag_with_sem(loop_id: str) -> dict | None:
+    async def _diag_with_sem(loop_id: str, task_id: str) -> dict | None:
         async with sem:
             # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
             async with AsyncSessionLocal() as worker_db:
+                # 进入 RUNNING 状态
+                await _update_task_status(worker_db, task_id, "RUNNING")
+                await worker_db.commit()
                 try:
                     result = await _diagnose_loop(
                         db=worker_db,
@@ -163,14 +221,50 @@ async def _do_run_diagnosis() -> dict:
                         ts_start=ts_start,
                         ts_end=ts_end,
                         query_trend_fn=query_trend_data,
+                        task_id=task_id,
                     )
                     await worker_db.commit()
+                    # 根据诊断结果更新任务状态
+                    now_naive = datetime.now(UTC).replace(tzinfo=None)
+                    if result is None:
+                        # 诊断未产出结果（如缺少 PV Tag），标记为 FAILED
+                        await _update_task_status(
+                            worker_db,
+                            task_id,
+                            "FAILED",
+                            error_message="诊断未产出结果",
+                            completed_at=now_naive,
+                        )
+                    else:
+                        # 成功：更新任务状态为 SUCCESS
+                        await _update_task_status(
+                            worker_db,
+                            task_id,
+                            "SUCCESS",
+                            completed_at=now_naive,
+                        )
+                    await worker_db.commit()
                     return result
-                except Exception:
+                except Exception as exc:
                     await worker_db.rollback()
+                    # 失败：更新任务状态为 FAILED
+                    try:
+                        await _update_task_status(
+                            worker_db,
+                            task_id,
+                            "FAILED",
+                            error_message=str(exc),
+                            completed_at=datetime.now(UTC).replace(tzinfo=None),
+                        )
+                        await worker_db.commit()
+                    except Exception:
+                        logger.exception("更新任务 %s 状态为 FAILED 失败", task_id)
                     raise
 
-    tasks = [asyncio.create_task(_diag_with_sem(lid)) for lid in loop_ids]
+    tasks = [
+        asyncio.create_task(_diag_with_sem(lid, tid))
+        for lid, tid in loop_task_ids.items()
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     diagnosed_count = 0
@@ -193,8 +287,23 @@ async def _do_run_diagnosis() -> dict:
     }
 
 
-async def _do_diagnose_single_loop(loop_id: str, ts_start: str | None = None) -> dict:
-    """单回路诊断。"""
+async def _do_diagnose_single_loop(
+    loop_id: str,
+    ts_start: str | None = None,
+    task_id: str | None = None,
+    time_range_start: str | None = None,
+    time_range_end: str | None = None,
+) -> dict:
+    """单回路诊断。
+
+    支持两种时间范围参数（向后兼容）：
+    - 旧参数：ts_start（向后兼容，自动推算 ts_end = ts_start + 1h）
+    - 新参数：time_range_start / time_range_end（诊断任务专用）
+
+    当 task_id 不为 None 时，更新 diagnosis_task 状态机：
+    - PENDING → RUNNING（开始时）
+    - RUNNING → SUCCESS / FAILED（完成时）
+    """
     from app.core.db import AsyncSessionLocal
     from app.core.tdengine import query_trend_data
 
@@ -206,25 +315,111 @@ async def _do_diagnose_single_loop(loop_id: str, ts_start: str | None = None) ->
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
 
         now = datetime.now(UTC)
-        if ts_start:
-            try:
-                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
-            except ValueError:
-                ts_start_dt = datetime.fromisoformat(ts_start)
+        # 解析时间范围：优先使用 time_range_start/time_range_end，其次 ts_start
+        if time_range_end:
+            ts_end_dt = _parse_iso_to_naive(time_range_end)
         else:
-            ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-        ts_end_dt = ts_start_dt + timedelta(hours=1)
+            ts_end_dt = now.replace(tzinfo=None)
 
-        result = await _diagnose_loop(
-            db=db,
-            loop_id=loop_id,
-            diag_configs=diag_configs,
-            ts_start=ts_start_dt,
-            ts_end=ts_end_dt,
-            query_trend_fn=query_trend_data,
-        )
-        await db.commit()
-        return result or {"loopId": loop_id, "status": "FAILED"}
+        if time_range_start:
+            ts_start_dt = _parse_iso_to_naive(time_range_start)
+        elif ts_start:
+            ts_start_dt = _parse_iso_to_naive(ts_start)
+            # 旧模式：ts_start + 1h = ts_end
+            ts_end_dt = ts_start_dt + timedelta(hours=1)
+        else:
+            ts_start_dt = ts_end_dt - timedelta(hours=1)
+
+        # 如果有 task_id，更新任务状态为 RUNNING
+        if task_id:
+            await _update_task_status(db, task_id, "RUNNING")
+
+        try:
+            result = await _diagnose_loop(
+                db=db,
+                loop_id=loop_id,
+                diag_configs=diag_configs,
+                ts_start=ts_start_dt,
+                ts_end=ts_end_dt,
+                query_trend_fn=query_trend_data,
+                task_id=task_id,
+            )
+            await db.commit()
+            if result is None:
+                # _diagnose_loop 返回 None 表示诊断未执行成功
+                # （回路不存在/缺少 PV Tag/TDengine 查询失败/数据点不足等）
+                # 此时没有写入 DiagnosisResult，任务应标记为 FAILED
+                if task_id:
+                    await _update_task_status(
+                        db,
+                        task_id,
+                        "FAILED",
+                        error_message="诊断未产出结果（回路不存在/缺少PV位号/数据查询失败/数据点不足）",
+                        completed_at=datetime.now(UTC).replace(tzinfo=None),
+                    )
+                    await db.commit()
+                return {"loopId": loop_id, "status": "FAILED"}
+            # 成功：更新任务状态为 SUCCESS
+            if task_id:
+                await _update_task_status(
+                    db, task_id, "SUCCESS", completed_at=datetime.now(UTC).replace(tzinfo=None)
+                )
+                await db.commit()
+            return result
+        except Exception as exc:
+            # 失败：更新任务状态为 FAILED
+            if task_id:
+                await _update_task_status(
+                    db,
+                    task_id,
+                    "FAILED",
+                    error_message=str(exc),
+                    completed_at=datetime.now(UTC).replace(tzinfo=None),
+                )
+                await db.commit()
+            raise
+
+
+def _parse_iso_to_naive(time_str: str) -> datetime:
+    """解析 ISO 8601 时间字符串为 naive datetime。
+
+    兼容带 Z 后缀、带时区偏移、不带时区三种格式，统一剥离 tzinfo。
+    """
+    try:
+        dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+    except ValueError:
+        dt = datetime.fromisoformat(time_str)
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt
+
+
+async def _update_task_status(
+    db,
+    task_id: str,
+    status: str,
+    error_message: str | None = None,
+    completed_at: datetime | None = None,
+) -> None:
+    """更新诊断任务状态（内部辅助函数）。
+
+    Args:
+        db: 异步数据库会话
+        task_id: 诊断任务 ID
+        status: 目标状态（RUNNING/SUCCESS/FAILED/CANCELLED）
+        error_message: 错误信息（FAILED 时填写）
+        completed_at: 完成时间（SUCCESS/FAILED 时填写）
+    """
+    result = await db.execute(select(DiagnosisTask).where(DiagnosisTask.id == task_id))
+    task = result.scalar_one_or_none()
+    if task is None:
+        logger.warning("诊断任务 %s 不存在，无法更新状态为 %s", task_id, status)
+        return
+    task.status = status
+    if error_message is not None:
+        task.error_message = error_message
+    if completed_at is not None:
+        task.completed_at = completed_at
 
 
 async def _diagnose_loop(
@@ -234,6 +429,7 @@ async def _diagnose_loop(
     ts_start: datetime,
     ts_end: datetime,
     query_trend_fn,
+    task_id: str | None = None,
 ) -> dict | None:
     """对单回路执行诊断。
 
@@ -244,6 +440,7 @@ async def _diagnose_loop(
         ts_start: 时间窗起始
         ts_end: 时间窗结束
         query_trend_fn: TDengine 查询函数
+        task_id: 关联诊断任务 ID（可选，用于关联 DiagnosisResult）
 
     Returns:
         诊断结果字典
@@ -317,31 +514,46 @@ async def _diagnose_loop(
     sp_values = np.array([d["sp"] for d in aligned if d.get("sp") is not None], dtype=float)
     op_values = np.array([d["op"] for d in aligned if d.get("op") is not None], dtype=float)
 
+    # 提取 MODE 值数组（P0-3：饱和率分析仅统计自控模式）
+    mode_values = np.array(
+        [d.get("mode") for d in aligned if d.get("mode") is not None],
+        dtype=object,
+    )
+
     # 计算采样间隔（秒），用于 FFT 频率换算
     sample_interval = _compute_sample_interval(aligned)
 
     # 1. FFT 频域分析（振荡检测）
     osc_result = _detect_oscillation_fft(pv_values, sample_interval)
 
+    # 1b. IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法）
+    osc_iae_result = _detect_oscillation_iae(
+        pv_values,
+        sp_values,
+        sample_interval,
+        threshold=_get_threshold(diag_configs, "OSCILLATION", None, None),
+    )
+
     # 2. PV-OP 散点拟合（阀门粘滞检测）
     stiction_result = _detect_valve_stiction(pv_values, op_values)
 
-    # 3. PID 增益分析（参数过激/过保守）
-    pid_result = _analyze_pid_params(pv_values, sp_values)
+    # 3. PV 质量码统计（P2-1：Q001-Q005 规则矩阵）
+    quality_result = _analyze_quality(
+        pv_data,
+        threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
+    )
 
-    # 4. 外扰频繁检测
-    disturbance_result = _detect_external_disturbance(pv_values, sample_interval)
+    # 4. OP 饱和率分析（P0-3：仅自控模式 + 绝对工程限位）
+    saturation_result = _analyze_saturation(
+        op_values,
+        mode_values if len(mode_values) > 0 else None,
+        threshold=_get_threshold(diag_configs, "OUTPUT_SATURATION", None, None),
+    )
 
-    # 5. PV 质量码统计
-    quality_result = _analyze_quality(pv_data)
-
-    # 6. OP 饱和率分析
-    saturation_result = _analyze_saturation(op_values)
-
-    # 7. Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测，设计依据：FDS §5.4.6）
+    # 5. Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测，设计依据：FDS §5.4.6）
     choudhury_result = _detect_choudhury_nonlinearity(pv_values, op_values)
 
-    # 8. Kano 统计法粘滞检测（与 Choudhury 互为交叉验证）
+    # 6. Kano 统计法粘滞检测（与 Choudhury 互为交叉验证）
     kano_result = _detect_kano_stiction(pv_values, op_values)
 
     # 提取时间戳数组（供阶跃响应/响应迟缓/偏差突变算法使用）
@@ -352,19 +564,22 @@ async def _diagnose_loop(
     # 若时间戳数量与 PV 不一致，回退为 None（使用等间隔假设）
     ts_param = ts_values if len(ts_values) == len(pv_values) else None
 
-    # 9. 完整阶跃响应分析（过冲/衰减比/稳态误差）
+    # 7. 完整阶跃响应分析（过冲/衰减比/稳态误差）
     step_response_result = _analyze_step_response(pv_values, sp_values, op_values, ts_param)
 
-    # 10. 响应迟缓检测（一阶滞后拟合）
+    # 8. 响应迟缓检测（一阶滞后拟合）
     # 控制类型从回路扩展属性获取（默认 PI）
     control_type = getattr(loop, "control_type", None) or "PI"
     slow_response_result = _detect_slow_response(pv_values, sp_values, control_type, ts_param)
 
-    # 11. 偏差突变检测（CUSUM）
+    # 9. 偏差突变检测（CUSUM）
     bias_shift_result = _detect_bias_shift(pv_values, sp_values, ts_param)
 
     # 收集所有算法结果（带置信度）
     algorithm_results: list[dict[str, Any]] = []
+
+    # 收集所有算法的可视化数据（无条件保存，供前端图表展示）
+    all_visualization_data: dict[str, Any] = {}
 
     if osc_result["detected"]:
         algorithm_results.append(
@@ -375,15 +590,55 @@ async def _diagnose_loop(
                     "oscillation_amplitude": osc_result["amplitude"],
                     "oscillation_frequency": osc_result["frequency"],
                     "oscillation_index": osc_result["index"],
+                    "fft_frequencies": osc_result.get("frequencies", []),
+                    "fft_amplitudes": osc_result.get("amplitudes", []),
                 },
                 "evidence": {
                     "reasoning": (
                         f"FFT 频域分析检测到主频 {osc_result['frequency']:.3f} Hz，"
                         f"振幅 {osc_result['amplitude']:.3f}，振荡指数 {osc_result['index']:.3f}"
                     ),
+                    "algorithm": "FFT",
                 },
             }
         )
+    # 无条件保存 FFT 可视化数据
+    all_visualization_data.update({
+        "fft_frequencies": osc_result.get("frequencies", []),
+        "fft_amplitudes": osc_result.get("amplitudes", []),
+        "oscillation_frequency": osc_result["frequency"],
+        "oscillation_amplitude": osc_result["amplitude"],
+        "oscillation_index": osc_result["index"],
+    })
+
+    # IAE 零交叉相似率法振荡检测（与 FFT 互为交叉验证，标签同为 OSCILLATION）
+    if osc_iae_result["detected"]:
+        algorithm_results.append(
+            {
+                "label": "OSCILLATION",
+                "confidence": osc_iae_result["confidence"],
+                "feature_values": {
+                    "iae_similarity": osc_iae_result["similarity"],
+                    "iae_zero_crossing_count": osc_iae_result["zero_crossing_count"],
+                    "iae_mean_period": osc_iae_result["mean_period"],
+                },
+                "evidence": {
+                    "reasoning": (
+                        f"IAE 零交叉相似率法检测到振荡：相似率 "
+                        f"{osc_iae_result['similarity']:.3f}，"
+                        f"零交叉数 {osc_iae_result['zero_crossing_count']}，"
+                        f"平均周期 {osc_iae_result['mean_period']:.3f}s"
+                    ),
+                    "algorithm": "IAE_ZERO_CROSSING",
+                },
+            }
+        )
+    # 无条件保存 IAE 可视化数据
+    all_visualization_data.update({
+        "iae_similarity": osc_iae_result["similarity"],
+        "iae_zero_crossing_count": osc_iae_result["zero_crossing_count"],
+        "iae_mean_period": osc_iae_result["mean_period"],
+    })
 
     if stiction_result["detected"]:
         algorithm_results.append(
@@ -400,63 +655,18 @@ async def _diagnose_loop(
                         f"粘滞指数 {stiction_result['stiction_index']:.3f}"
                     ),
                     "scatter_plot": _build_scatter_plot_data(aligned),
+                    "algorithm": "PV_OP_SCATTER",
                 },
             }
         )
-
-    if pid_result["overaggressive"]:
-        algorithm_results.append(
-            {
-                "label": "OVERAGGRESSIVE",
-                "confidence": pid_result["confidence"],
-                "feature_values": {
-                    "overshoot": pid_result["overshoot"],
-                    "settling_time": pid_result["settling_time"],
-                },
-                "evidence": {
-                    "reasoning": (
-                        f"PID 增益分析显示过冲 {pid_result['overshoot']:.3f}，"
-                        f"稳定时间 {pid_result['settling_time']:.3f}s，参数过激"
-                    ),
-                },
-            }
-        )
-
-    if pid_result["overconservative"]:
-        algorithm_results.append(
-            {
-                "label": "OVERCONSERVATIVE",
-                "confidence": pid_result["confidence"],
-                "feature_values": {
-                    "response_time": pid_result["response_time"],
-                    "steady_state_error": pid_result["steady_state_error"],
-                },
-                "evidence": {
-                    "reasoning": (
-                        f"PID 增益分析显示响应时间 {pid_result['response_time']:.3f}s，"
-                        f"稳态误差 {pid_result['steady_state_error']:.3f}，参数过保守"
-                    ),
-                },
-            }
-        )
-
-    if disturbance_result["detected"]:
-        algorithm_results.append(
-            {
-                "label": "EXTERNAL_DISTURBANCE",
-                "confidence": disturbance_result["confidence"],
-                "feature_values": {
-                    "disturbance_frequency": disturbance_result["frequency"],
-                    "disturbance_amplitude": disturbance_result["amplitude"],
-                },
-                "evidence": {
-                    "reasoning": (
-                        f"频谱分析检测到外扰频率 {disturbance_result['frequency']:.3f} Hz，"
-                        f"幅值 {disturbance_result['amplitude']:.3f}"
-                    ),
-                },
-            }
-        )
+    # 无条件保存散点图可视化数据
+    scatter_data = _build_scatter_plot_data(aligned)
+    all_visualization_data.update({
+        "stiction_index": stiction_result["stiction_index"],
+        "fitting_score": stiction_result["fitting_score"],
+        "scatter_plot_x": scatter_data.get("x", []),
+        "scatter_plot_y": scatter_data.get("y", []),
+    })
 
     if quality_result["abnormal"]:
         algorithm_results.append(
@@ -467,15 +677,24 @@ async def _diagnose_loop(
                     "bad_quality_rate": quality_result["bad_rate"],
                     "total_points": quality_result["total"],
                     "bad_points": quality_result["bad_count"],
+                    "quality_pattern": quality_result.get("quality_pattern", "NORMAL"),
                 },
                 "evidence": {
                     "reasoning": (
                         f"PV 质量码统计：Bad 占比 {quality_result['bad_rate']:.3f}，"
-                        f"总点数 {quality_result['total']}，Bad 点数 {quality_result['bad_count']}"
+                        f"总点数 {quality_result['total']}，Bad 点数 {quality_result['bad_count']}，"
+                        f"质量模式 {quality_result.get('quality_pattern', 'NORMAL')}"
                     ),
                 },
             }
         )
+    # 无条件保存质量码可视化数据
+    all_visualization_data.update({
+        "bad_quality_rate": quality_result["bad_rate"],
+        "total_points": quality_result["total"],
+        "bad_points": quality_result["bad_count"],
+        "quality_pattern": quality_result.get("quality_pattern", "NORMAL"),
+    })
 
     if saturation_result["detected"]:
         algorithm_results.append(
@@ -496,6 +715,12 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存饱和率可视化数据
+    all_visualization_data.update({
+        "saturation_rate": saturation_result["saturation_rate"],
+        "high_saturation_count": saturation_result["high_count"],
+        "low_saturation_count": saturation_result["low_count"],
+    })
 
     # Choudhury NGI/NLI 非线性检测 → VALVE_STICTION（交叉验证）
     if choudhury_result["detected"]:
@@ -519,6 +744,13 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存 Choudhury 可视化数据
+    all_visualization_data.update({
+        "ngi": choudhury_result["ngi"],
+        "nli": choudhury_result["nli"],
+        "choudhury_stiction_index": choudhury_result["stiction_index"],
+        "fitting_score": choudhury_result["fitting_score"],
+    })
 
     # Kano 统计法粘滞检测 → VALVE_STICTION（交叉验证）
     if kano_result["detected"]:
@@ -541,6 +773,12 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存 Kano 可视化数据
+    all_visualization_data.update({
+        "kano_stiction_ratio": kano_result["stiction_ratio"],
+        "pv_op_correlation": kano_result["correlation"],
+        "std_ratio": kano_result["std_ratio"],
+    })
 
     # 完整阶跃响应分析 → OVERAGGRESSIVE
     if step_response_result["detected"]:
@@ -553,6 +791,10 @@ async def _diagnose_loop(
                     "decay_ratio": step_response_result["decay_ratio"],
                     "steady_state_error": step_response_result["steady_state_error"],
                     "step_count": step_response_result["step_count"],
+                    "step_timestamps": step_response_result.get("timestamps", []),
+                    "step_pv_response": step_response_result.get("pv_response", []),
+                    "step_sp_values": step_response_result.get("sp_values", []),
+                    "step_indices": step_response_result.get("step_indices", []),
                 },
                 "evidence": {
                     "reasoning": (
@@ -565,6 +807,17 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存阶跃响应可视化数据
+    all_visualization_data.update({
+        "overshoot": step_response_result["overshoot"],
+        "decay_ratio": step_response_result["decay_ratio"],
+        "steady_state_error": step_response_result["steady_state_error"],
+        "step_count": step_response_result["step_count"],
+        "step_timestamps": step_response_result.get("timestamps", []),
+        "step_pv_response": step_response_result.get("pv_response", []),
+        "step_sp_values": step_response_result.get("sp_values", []),
+        "step_indices": step_response_result.get("step_indices", []),
+    })
 
     # 响应迟缓检测 → OVERCONSERVATIVE
     if slow_response_result["detected"]:
@@ -587,6 +840,12 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存响应迟缓可视化数据
+    all_visualization_data.update({
+        "time_constant": slow_response_result["time_constant"],
+        "expected_time_constant": slow_response_result["expected_time_constant"],
+        "ratio": slow_response_result["ratio"],
+    })
 
     # 偏差突变检测 → EXTERNAL_DISTURBANCE
     if bias_shift_result["detected"]:
@@ -598,6 +857,11 @@ async def _diagnose_loop(
                     "shift_count": bias_shift_result["shift_count"],
                     "max_cusum": bias_shift_result["max_cusum"],
                     "shift_magnitude": bias_shift_result["shift_magnitude"],
+                    "cusum_timestamps": bias_shift_result.get("timestamps", []),
+                    "cusum_pos": bias_shift_result.get("cusum_pos", []),
+                    "cusum_neg": bias_shift_result.get("cusum_neg", []),
+                    "cusum_shift_points": bias_shift_result.get("shift_points", []),
+                    "cusum_threshold": bias_shift_result.get("threshold", 0.0),
                 },
                 "evidence": {
                     "reasoning": (
@@ -609,6 +873,17 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存 CUSUM 可视化数据
+    all_visualization_data.update({
+        "shift_count": bias_shift_result["shift_count"],
+        "max_cusum": bias_shift_result["max_cusum"],
+        "shift_magnitude": bias_shift_result["shift_magnitude"],
+        "cusum_timestamps": bias_shift_result.get("timestamps", []),
+        "cusum_pos": bias_shift_result.get("cusum_pos", []),
+        "cusum_neg": bias_shift_result.get("cusum_neg", []),
+        "cusum_shift_points": bias_shift_result.get("shift_points", []),
+        "cusum_threshold": bias_shift_result.get("threshold", 0.0),
+    })
 
     # 兜底标签：无任何算法命中
     if not algorithm_results:
@@ -623,19 +898,34 @@ async def _diagnose_loop(
             }
         )
 
+    # 应用专家规则矩阵 R01-R06（FDS §5.4.6）
+    algorithm_results = _apply_expert_rules(algorithm_results)
+
+    # 标签去重（P1-4：同一标签保留置信度最高的记录）
+    algorithm_results = _deduplicate_labels(algorithm_results)
+
     # 使用 Dempster-Shafer 证据理论融合置信度
     fused_confidence = _dempster_shafer_fusion(
         [(r["label"], r["confidence"]) for r in algorithm_results]
     )
 
-    # 幂等性（S1-C3）：删除该回路在当前时间窗内的旧诊断记录，避免重复写入
-    await db.execute(
-        delete(DiagnosisResult).where(
-            DiagnosisResult.loop_id == loop_id,
-            DiagnosisResult.diagnosed_at >= ts_start,
-            DiagnosisResult.diagnosed_at <= ts_end + timedelta(hours=1),
+    # 幂等性（S1-C3）：删除同一任务的旧诊断记录，避免重复写入
+    # 注意：按 task_id 隔离，避免不同任务互相删除诊断结果
+    if task_id:
+        await db.execute(
+            delete(DiagnosisResult).where(
+                DiagnosisResult.task_id == task_id,
+            )
         )
-    )
+    else:
+        # 无 task_id 时（旧模式兼容）：按回路 + 时间窗删除
+        await db.execute(
+            delete(DiagnosisResult).where(
+                DiagnosisResult.loop_id == loop_id,
+                DiagnosisResult.diagnosed_at >= ts_start,
+                DiagnosisResult.diagnosed_at <= ts_end + timedelta(hours=1),
+            )
+        )
 
     # 写入诊断结果（每个标签一条记录）
     diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
@@ -645,15 +935,21 @@ async def _diagnose_loop(
             **result["evidence"],
             "fused_confidence": fused_confidence,
         }
+        # 合并所有算法的可视化数据（无条件保存所有可视化数组）
+        feature_values = {
+            **all_visualization_data,
+            **result.get("feature_values", {}),
+        }
         diag_record = DiagnosisResult(
             id=str(uuid4()),
             loop_id=loop_id,
             diag_label=result["label"],
             confidence=confidence_decimal,
-            feature_values=result.get("feature_values"),
+            feature_values=feature_values,
             evidence_chain=evidence_chain,
             algorithm_version=DIAG_ALGORITHM_VERSION,
             diagnosed_at=diagnosed_at,
+            task_id=task_id,
         )
         db.add(diag_record)
 
@@ -681,6 +977,8 @@ def _empty_osc_result() -> dict[str, Any]:
         "amplitude": 0.0,
         "frequency": 0.0,
         "index": 0.0,
+        "frequencies": [],
+        "amplitudes": [],
     }
 
 
@@ -738,12 +1036,23 @@ def _detect_oscillation_fft(pv_values: np.ndarray, sample_interval: float = 1.0)
         # 置信度：基于振荡指数
         confidence = min(1.0, osc_index * 1.5) if detected else 0.0
 
+        frequencies = np.arange(len(fft_magnitude)) * fs / N
+        amplitudes = fft_magnitude / N
+
+        max_points = 500
+        if len(frequencies) > max_points:
+            step = len(frequencies) // max_points
+            frequencies = frequencies[::step]
+            amplitudes = amplitudes[::step]
+
         return {
             "detected": detected,
             "confidence": confidence,
             "amplitude": amplitude,
             "frequency": frequency,
             "index": osc_index,
+            "frequencies": frequencies.tolist(),
+            "amplitudes": amplitudes.tolist(),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("FFT 振荡检测失败: %s", exc)
@@ -905,9 +1214,12 @@ def _analyze_pid_params(pv_values: np.ndarray, sp_values: np.ndarray) -> dict[st
 
         confidence = 0.0
         if overaggressive:
-            confidence = min(1.0, overshoot)
+            # 过冲超过 20% 判定为过激，但置信度不直接等于过冲值
+            # 使用更保守的置信度计算，避免过冲值很大时置信度直接到 100%
+            confidence = min(0.95, overshoot * 0.4)
         elif overconservative:
-            confidence = min(1.0, response_time)
+            # 响应时间过长判定为过保守，同样使用保守的置信度计算
+            confidence = min(0.95, response_time * 0.8)
 
         return {
             "overaggressive": overaggressive,
@@ -985,39 +1297,196 @@ def _detect_external_disturbance(
         return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
 
 
-def _analyze_quality(pv_data: list[dict]) -> dict[str, Any]:
-    """PV 质量码统计。
+def _analyze_quality(pv_data: list[dict], threshold: dict | None = None) -> dict[str, Any]:
+    """PV 质量码统计与质量模式识别（FDS §5.4.6 Q001-Q005 规则矩阵）。
+
+    规则矩阵：
+    - Q001（连续 Bad）：连续 Bad 点数 > 10 → 传感器故障（置信度 0.9）
+    - Q002（间歇 Bad）：Bad 点占比 > 10% 且不满足 Q001 → 通信问题（置信度 0.6）
+    - Q003（Uncertain 质量码）：Uncertain 点占比 > 20% → 校准漂移（置信度 0.6）
+    - Q004（质量突变）：从 Good 突变为 Bad 且持续时间 > 5 点 → 突发故障（置信度 0.8）
+    - Q005（质量恢复）：Bad 段后恢复 Good，且 Bad 段持续 3-10 点 → 瞬态干扰（置信度 0.4）
+    - NORMAL：无异常
+
+    满足任一规则即判定为异常。
+
+    Args:
+        pv_data: PV 数据列表，每个元素含 "quality" 字段
+        threshold: 阈值配置（可选），支持键：
+            - q001_consecutive_bad: Q001 连续 Bad 阈值（默认 10）
+            - q002_bad_rate: Q002 Bad 占比阈值（默认 0.1）
+            - q003_uncertain_rate: Q003 Uncertain 占比阈值（默认 0.2）
+            - q004_bad_duration: Q004 Bad 持续点数阈值（默认 5）
+            - q005_min_bad: Q005 Bad 段最小点数（默认 3）
+            - q005_max_bad: Q005 Bad 段最大点数（默认 10）
 
     Returns:
-        {abnormal, confidence, bad_rate, total, bad_count}
+        {abnormal, confidence, bad_rate, total, bad_count, quality_pattern}
     """
+    if threshold is None:
+        threshold = {}
+    q001_consecutive_bad = int(threshold.get("q001_consecutive_bad", 10))
+    q002_bad_rate = float(threshold.get("q002_bad_rate", 0.1))
+    q003_uncertain_rate = float(threshold.get("q003_uncertain_rate", 0.2))
+    q004_bad_duration = int(threshold.get("q004_bad_duration", 5))
+    q005_min_bad = int(threshold.get("q005_min_bad", 3))
+    q005_max_bad = int(threshold.get("q005_max_bad", 10))
+
     total = len(pv_data)
     if total == 0:
-        return {"abnormal": False, "confidence": 0.0, "bad_rate": 0.0, "total": 0, "bad_count": 0}
+        return {
+            "abnormal": False,
+            "confidence": 0.0,
+            "bad_rate": 0.0,
+            "total": 0,
+            "bad_count": 0,
+            "quality_pattern": "NORMAL",
+        }
 
-    bad_count = sum(1 for d in pv_data if str(d.get("quality", "GOOD")).upper() == "BAD")
-    bad_rate = bad_count / total
+    try:
+        # 统计 Bad / Uncertain 数量
+        bad_count = 0
+        uncertain_count = 0
+        quality_seq: list[str] = []
+        for d in pv_data:
+            q = str(d.get("quality", "GOOD")).upper()
+            quality_seq.append(q)
+            if q == "BAD":
+                bad_count += 1
+            elif q == "UNCERTAIN":
+                uncertain_count += 1
 
-    # 异常判定：Bad 占比 > 10%
-    abnormal = bad_rate > 0.1
-    confidence = min(1.0, bad_rate * 5) if abnormal else 0.0
+        bad_rate = bad_count / total
+        uncertain_rate = uncertain_count / total
 
-    return {
-        "abnormal": abnormal,
-        "confidence": confidence,
-        "bad_rate": bad_rate,
-        "total": total,
-        "bad_count": bad_count,
-    }
+        # 计算 Bad 连续段（用于 Q001/Q004/Q005）
+        bad_segments: list[int] = []  # 每段长度
+        current_bad_run = 0
+        max_consecutive_bad = 0
+        for q in quality_seq:
+            if q == "BAD":
+                current_bad_run += 1
+            else:
+                if current_bad_run > 0:
+                    bad_segments.append(current_bad_run)
+                    max_consecutive_bad = max(max_consecutive_bad, current_bad_run)
+                current_bad_run = 0
+        if current_bad_run > 0:
+            bad_segments.append(current_bad_run)
+            max_consecutive_bad = max(max_consecutive_bad, current_bad_run)
+
+        # Q001: 连续 Bad 点数 > 阈值 → 传感器故障
+        q001_hit = max_consecutive_bad > q001_consecutive_bad
+
+        # Q004: 从 Good 突变为 Bad 且持续 > 阈值 → 突发故障
+        # （即存在 Bad 段长度 > q004_bad_duration，且该段之前是 Good）
+        q004_hit = any(seg > q004_bad_duration for seg in bad_segments) and not q001_hit
+
+        # Q005: Bad 段后恢复 Good，且 Bad 段持续在 [min, max] 范围 → 瞬态干扰
+        q005_hit = any(q005_min_bad <= seg <= q005_max_bad for seg in bad_segments)
+
+        # Q002: Bad 占比 > 阈值 且不满足 Q001 → 通信问题
+        q002_hit = bad_rate > q002_bad_rate and not q001_hit
+
+        # Q003: Uncertain 占比 > 阈值 → 校准漂移
+        q003_hit = uncertain_rate > q003_uncertain_rate
+
+        # 按优先级选择质量模式（Q001 > Q004 > Q002 > Q003 > Q005 > NORMAL）
+        if q001_hit:
+            quality_pattern = "Q001"
+            confidence = 0.9
+            abnormal = True
+        elif q004_hit:
+            quality_pattern = "Q004"
+            confidence = 0.8
+            abnormal = True
+        elif q002_hit:
+            quality_pattern = "Q002"
+            confidence = 0.6
+            abnormal = True
+        elif q003_hit:
+            quality_pattern = "Q003"
+            confidence = 0.6
+            abnormal = True
+        elif q005_hit:
+            quality_pattern = "Q005"
+            confidence = 0.4
+            abnormal = True
+        else:
+            quality_pattern = "NORMAL"
+            confidence = 0.0
+            abnormal = False
+
+        return {
+            "abnormal": abnormal,
+            "confidence": confidence,
+            "bad_rate": bad_rate,
+            "total": total,
+            "bad_count": bad_count,
+            "quality_pattern": quality_pattern,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("质量码分析失败: %s", exc)
+        return {
+            "abnormal": False,
+            "confidence": 0.0,
+            "bad_rate": 0.0,
+            "total": total,
+            "bad_count": 0,
+            "quality_pattern": "NORMAL",
+        }
 
 
-def _analyze_saturation(op_values: np.ndarray) -> dict[str, Any]:
-    """OP 饱和率分析。
+def _analyze_saturation(
+    op_values: np.ndarray,
+    mode_values: np.ndarray | None = None,
+    threshold: dict | None = None,
+) -> dict[str, Any]:
+    """OP 饱和率分析（FDS §5.4.6 — 仅自控模式 + 绝对工程限位）。
+
+    修复要点：
+    1. 若提供 mode_values，仅保留 MODE 为 Auto/CAS/RCAS 的数据点（大小写不敏感，包含 "AUTO" 或 "CAS"）
+    2. 使用绝对工程限位（默认 0-100%），不再做 min-max 相对归一化
+    3. saturation_epsilon 默认 2%（≥98% 或 ≤2% 为饱和），与 FDS §5.4.6 一致
+    4. 饱和率 > 20% 判定为 detected
+
+    Args:
+        op_values: OP 数据数组
+        mode_values: MODE 数据数组（可选），若提供则仅统计自控模式点
+        threshold: 阈值配置，支持键：
+            - op_high_limit: 工程高限位（默认 100.0）
+            - op_low_limit: 工程低限位（默认 0.0）
+            - saturation_epsilon: 饱和容差（默认 2.0，即 ≥98 或 ≤2 为饱和）
 
     Returns:
         {detected, confidence, saturation_rate, high_count, low_count}
     """
-    total = len(op_values)
+    # 解析阈值配置
+    if threshold is None:
+        threshold = {}
+    op_high_limit = float(threshold.get("op_high_limit", 100.0))
+    op_low_limit = float(threshold.get("op_low_limit", 0.0))
+    saturation_epsilon = float(threshold.get("saturation_epsilon", 2.0))
+
+    # 若提供 mode_values，仅保留自控模式数据点
+    if mode_values is not None and len(mode_values) > 0:
+        min_len = min(len(op_values), len(mode_values))
+        op_filtered = []
+        for i in range(min_len):
+            mode_val = mode_values[i]
+            # mode_val 可能是数值或字符串
+            try:
+                mode_str = str(mode_val).upper()
+            except Exception:
+                continue
+            # 仅保留 Auto/CAS/RCAS（包含 "AUTO" 或 "CAS"）
+            if "AUTO" in mode_str or "CAS" in mode_str:
+                op_filtered.append(float(op_values[i]))
+        op_arr = np.array(op_filtered, dtype=float) if op_filtered else np.array([], dtype=float)
+    else:
+        op_arr = np.asarray(op_values, dtype=float)
+
+    total = len(op_arr)
     if total == 0:
         return {
             "detected": False,
@@ -1028,22 +1497,12 @@ def _analyze_saturation(op_values: np.ndarray) -> dict[str, Any]:
         }
 
     try:
-        op_min = float(np.min(op_values))
-        op_max = float(np.max(op_values))
-        op_range = op_max - op_min
-        if op_range <= 0:
-            return {
-                "detected": False,
-                "confidence": 0.0,
-                "saturation_rate": 0.0,
-                "high_count": 0,
-                "low_count": 0,
-            }
+        # 计算饱和阈值（基于绝对工程限位）
+        high_threshold = op_high_limit - saturation_epsilon
+        low_threshold = op_low_limit + saturation_epsilon
 
-        # 归一化到 0-100
-        op_norm = (op_values - op_min) / op_range * 100
-        high_count = int(np.sum(op_norm >= 95))
-        low_count = int(np.sum(op_norm <= 5))
+        high_count = int(np.sum(op_arr >= high_threshold))
+        low_count = int(np.sum(op_arr <= low_threshold))
         saturation_rate = (high_count + low_count) / total
 
         # 饱和判定：饱和率 > 20%
@@ -1105,6 +1564,10 @@ def _empty_step_response_result() -> dict[str, Any]:
         "decay_ratio": 0.0,
         "steady_state_error": 0.0,
         "step_count": 0,
+        "timestamps": [],
+        "pv_response": [],
+        "sp_values": [],
+        "step_indices": [],
     }
 
 
@@ -1127,6 +1590,11 @@ def _empty_bias_shift_result() -> dict[str, Any]:
         "shift_count": 0,
         "max_cusum": 0.0,
         "shift_magnitude": 0.0,
+        "timestamps": [],
+        "cusum_pos": [],
+        "cusum_neg": [],
+        "shift_points": [],
+        "threshold": 0.0,
     }
 
 
@@ -1246,9 +1714,9 @@ def _detect_choudhury_nonlinearity(pv: np.ndarray, op: np.ndarray) -> dict[str, 
         # 判定规则（ADS §5.2.2: NGI > 0.001 且 NLI > 0.01）
         detected = bool(ngi > 0.001 and nli > 0.01)
 
-        # 置信度：融合 NGI、NLI 和椭圆拟合度
+        # 置信度：融合 NGI、NLI 和椭圆拟合度（权重和为 1）
         if detected:
-            confidence = min(1.0, (ngi * 50.0 + nli * 30.0 + fitting_score * 20.0) / 3.0)
+            confidence = min(1.0, ngi * 0.5 + nli * 0.3 + fitting_score * 0.2)
         else:
             confidence = 0.0
 
@@ -1455,7 +1923,11 @@ def _analyze_step_response(
 
         # 过激判定：满足 2 项及以上
         detected = bool(satisfied >= 2)
-        confidence = (satisfied / 3.0) if detected else 0.0
+        # 限制最大置信度为 95%，避免全部满足时直接到 100%
+        confidence = min(0.95, satisfied / 3.0) if detected else 0.0
+
+        response_ts = ts[step_idx + 1 : response_end] if ts is not None else np.arange(len(pv_response))
+        sp_response = sp_arr[step_idx + 1 : response_end]
 
         return {
             "detected": detected,
@@ -1464,6 +1936,10 @@ def _analyze_step_response(
             "decay_ratio": decay_ratio,
             "steady_state_error": steady_state_error,
             "step_count": len(step_indices),
+            "timestamps": response_ts.tolist(),
+            "pv_response": pv_response.tolist(),
+            "sp_values": sp_response.tolist(),
+            "step_indices": step_indices.tolist(),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("阶跃响应分析失败: %s", exc)
@@ -1568,12 +2044,15 @@ def _detect_slow_response(
             bias = pv_arr - sp_arr
             bias_std = float(np.std(bias))
             # 稳态偏差大且变化缓慢 → 过保守
+            # 提高阈值，避免误报：偏差标准差超过 SP 量程的 20% 才判定
             ratio = bias_std / sp_range
-            detected = bool(ratio > 0.1)
+            detected = bool(ratio > 0.2)
             expected_tau = _expected_time_constant(control_type)
+            # 降低置信度计算系数，避免轻易达到 100%
+            confidence = min(0.8, ratio * 3) if detected else 0.0
             return {
                 "detected": detected,
-                "confidence": min(1.0, ratio * 5) if detected else 0.0,
+                "confidence": confidence,
                 "time_constant": 0.0,
                 "expected_time_constant": expected_tau,
                 "ratio": ratio,
@@ -1637,7 +2116,13 @@ def _detect_slow_response(
         ratio = time_constant / expected_tau if expected_tau > 0 else 0.0
         detected = bool(ratio > 2.0)  # 实际响应比期望慢 2 倍以上
 
-        confidence = min(1.0, ratio / 5.0) if detected else 0.0
+        # 置信度计算：使用更保守的公式，避免轻易达到 100%
+        # 拟合时间常数达到上限时，置信度不应直接到 100%
+        if detected:
+            # 限制最大置信度为 90%，避免时间常数拟合上限导致的误判
+            confidence = min(0.9, ratio / 10.0)
+        else:
+            confidence = 0.0
 
         return {
             "detected": detected,
@@ -1749,7 +2234,10 @@ def _detect_bias_shift(
 
         # 判定规则（ADS §5.5.2: 频率 > 5 次/小时）
         detected = bool(shift_frequency > 5.0)
-        confidence = min(1.0, shift_frequency / 10.0) if detected else 0.0
+        # 限制最大置信度为 95%，避免频率很高时置信度直接到 100%
+        confidence = min(0.95, shift_frequency / 20.0) if detected else 0.0
+
+        cusum_ts = ts[:min_len].tolist() if ts is not None else np.arange(min_len).tolist()
 
         return {
             "detected": detected,
@@ -1757,18 +2245,365 @@ def _detect_bias_shift(
             "shift_count": shift_count,
             "max_cusum": max_cusum,
             "shift_magnitude": shift_magnitude,
+            "timestamps": cusum_ts,
+            "cusum_pos": cusum_pos.tolist(),
+            "cusum_neg": cusum_neg.tolist(),
+            "shift_points": shift_points,
+            "threshold": h,
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("偏差突变检测失败: %s", exc)
         return _empty_bias_shift_result()
 
 
-def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
-    """多算法置信度融合（noisy-OR 加权模型）。
+def _get_threshold(
+    diag_configs: dict[str, Any],
+    diag_code: str,
+    key: str | None,
+    default: Any,
+) -> Any:
+    """从诊断配置表中读取阈值参数（P0-1 配置表与算法对齐）。
 
-    替代原 D-S 证据理论的简化实现。原实现固定 target_label 导致多标签场景
-    融合结果不合理，改为 noisy-OR 模型：假设各算法独立，融合置信度为
-    P(A|e1,e2,...) = 1 - ∏(1 - P(A|ei))
+    Args:
+        diag_configs: 诊断配置字典 {diag_code: DiagnosisConfig}
+        diag_code: 诊断标签代码（如 "OSCILLATION"）
+        key: 阈值键名（如 "saturation_epsilon"），若为 None 则返回整个 threshold dict
+        default: 默认值（配置不存在或键缺失时返回）
+
+    Returns:
+        阈值值，或默认值
+    """
+    config = diag_configs.get(diag_code)
+    if config is None:
+        return default
+    threshold = getattr(config, "threshold", None)
+    if threshold is None:
+        return default
+    if key is None:
+        return threshold
+    return threshold.get(key, default)
+
+
+def _apply_expert_rules(algorithm_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """应用专家规则矩阵 R01-R06（FDS §5.4.6）。
+
+    多标签优先级与互斥处理：
+    - R01: OSCILLATION + VALVE_STICTION（stiction 置信度 > 0.5）→ 移除 OSCILLATION（根因是粘滞）
+    - R02: OSCILLATION + OVERAGGRESSIVE（无 VALVE_STICTION）→ 移除 OSCILLATION（根因是参数过激）
+    - R03: OVERAGGRESSIVE + OVERCONSERVATIVE → 保留置信度更高的
+    - R04: PV 质量异常严重（bad_rate > 0.5）→ 移除所有其他标签（数据不可信）
+    - R05: 所有算法置信度 < 0.5 → 添加 MANUAL_REVIEW 标签
+    - R06: 标签优先级（用于排序）：QUALITY_ABNORMAL > VALVE_STICTION > OVERAGGRESSIVE >
+           OVERCONSERVATIVE > OUTPUT_SATURATION > OSCILLATION > EXTERNAL_DISTURBANCE
+
+    Args:
+        algorithm_results: 算法结果列表，每个元素含 label/confidence/feature_values/evidence
+
+    Returns:
+        处理后的算法结果列表
+    """
+    if not algorithm_results:
+        return algorithm_results
+
+    try:
+        # 标签优先级映射（数值越小优先级越高）
+        priority_map = {
+            "QUALITY_ABNORMAL": 1,
+            "VALVE_STICTION": 2,
+            "OVERAGGRESSIVE": 3,
+            "OVERCONSERVATIVE": 4,
+            "OUTPUT_SATURATION": 5,
+            "OSCILLATION": 6,
+            "EXTERNAL_DISTURBANCE": 7,
+            "MANUAL_REVIEW": 99,
+        }
+
+        labels = {r["label"] for r in algorithm_results}
+
+        # R04: 质量异常严重时移除其他标签
+        quality_result = next(
+            (r for r in algorithm_results if r["label"] == "QUALITY_ABNORMAL"), None
+        )
+        if quality_result is not None:
+            bad_rate = quality_result.get("feature_values", {}).get("bad_quality_rate", 0.0)
+            if bad_rate > 0.5:
+                # 仅保留 QUALITY_ABNORMAL
+                return [quality_result]
+
+        # R01: OSCILLATION + VALVE_STICTION（stiction 置信度 > 0.5）→ 移除 OSCILLATION
+        stiction_result = next(
+            (r for r in algorithm_results if r["label"] == "VALVE_STICTION"), None
+        )
+        if (
+            "OSCILLATION" in labels
+            and "VALVE_STICTION" in labels
+            and stiction_result is not None
+            and stiction_result["confidence"] > 0.5
+        ):
+            algorithm_results = [r for r in algorithm_results if r["label"] != "OSCILLATION"]
+            labels = {r["label"] for r in algorithm_results}
+
+        # R02: OSCILLATION + OVERAGGRESSIVE（无 VALVE_STICTION）→ 移除 OSCILLATION
+        if (
+            "OSCILLATION" in labels
+            and "OVERAGGRESSIVE" in labels
+            and "VALVE_STICTION" not in labels
+        ):
+            algorithm_results = [r for r in algorithm_results if r["label"] != "OSCILLATION"]
+            labels = {r["label"] for r in algorithm_results}
+
+        # R03: OVERAGGRESSIVE + OVERCONSERVATIVE → 保留置信度更高的
+        if "OVERAGGRESSIVE" in labels and "OVERCONSERVATIVE" in labels:
+            agg_result = next(
+                (r for r in algorithm_results if r["label"] == "OVERAGGRESSIVE"), None
+            )
+            cons_result = next(
+                (r for r in algorithm_results if r["label"] == "OVERCONSERVATIVE"), None
+            )
+            if agg_result is not None and cons_result is not None:
+                if agg_result["confidence"] >= cons_result["confidence"]:
+                    algorithm_results = [
+                        r for r in algorithm_results if r["label"] != "OVERCONSERVATIVE"
+                    ]
+                else:
+                    algorithm_results = [
+                        r for r in algorithm_results if r["label"] != "OVERAGGRESSIVE"
+                    ]
+
+        # R05: 所有算法置信度 < 0.5 → 添加 MANUAL_REVIEW
+        if algorithm_results and all(r["confidence"] < 0.5 for r in algorithm_results):
+            algorithm_results.append(
+                {
+                    "label": "MANUAL_REVIEW",
+                    "confidence": 0.5,
+                    "feature_values": {},
+                    "evidence": {
+                        "reasoning": "所有算法置信度均低于 0.5，建议人工复核",
+                    },
+                }
+            )
+
+        # R06: 按优先级排序
+        algorithm_results.sort(key=lambda r: priority_map.get(r["label"], 100))
+
+        return algorithm_results
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("专家规则应用失败: %s", exc)
+        return algorithm_results
+
+
+def _deduplicate_labels(algorithm_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """标签去重（P1-4 修复标签重复写入）。
+
+    同一标签保留置信度最高的记录，合并多条记录的 evidence 和 feature_values：
+    - 主记录保留最高置信度记录的 evidence 和 feature_values
+    - 其他记录的 evidence 追加到主记录的 "cross_validated_algorithms" 列表
+
+    Args:
+        algorithm_results: 算法结果列表
+
+    Returns:
+        去重后的算法结果列表
+    """
+    if not algorithm_results:
+        return algorithm_results
+
+    try:
+        # 按 label 分组
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for r in algorithm_results:
+            groups.setdefault(r["label"], []).append(r)
+
+        deduplicated: list[dict[str, Any]] = []
+        for label, records in groups.items():
+            if len(records) == 1:
+                deduplicated.append(records[0])
+                continue
+
+            # 按置信度降序排序，取最高
+            records.sort(key=lambda r: r["confidence"], reverse=True)
+            primary = records[0]
+
+            # 收集其他记录的 evidence 作为交叉验证
+            cross_validated = []
+            for rec in records[1:]:
+                cross_validated.append(
+                    {
+                        "label": rec["label"],
+                        "confidence": rec["confidence"],
+                        "evidence": rec.get("evidence", {}),
+                        "feature_values": rec.get("feature_values", {}),
+                    }
+                )
+
+            # 合并 feature_values（主记录优先，补充其他记录的键）
+            merged_features = dict(primary.get("feature_values", {}))
+            for rec in records[1:]:
+                for k, v in rec.get("feature_values", {}).items():
+                    if k not in merged_features:
+                        merged_features[k] = v
+
+            # 构建合并后的记录
+            merged_record = {
+                "label": primary["label"],
+                "confidence": primary["confidence"],
+                "feature_values": merged_features,
+                "evidence": dict(primary.get("evidence", {})),
+            }
+            if cross_validated:
+                merged_record["evidence"]["cross_validated_algorithms"] = cross_validated
+
+            deduplicated.append(merged_record)
+
+        return deduplicated
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("标签去重失败: %s", exc)
+        return algorithm_results
+
+
+def _detect_oscillation_iae(
+    pv: np.ndarray,
+    sp: np.ndarray,
+    sample_interval: float = 1.0,
+    threshold: dict | None = None,
+) -> dict[str, Any]:
+    """IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法，Thornhill & Hägglund 1999）。
+
+    算法原理：
+    1. 计算控制偏差 e(t) = PV - SP
+    2. 对偏差取绝对值后做积分（累积和），得到 IAE 累积曲线
+    3. 对 IAE 累积曲线做一阶差分，找零交叉点（从正变负或从负变正）
+    4. 计算相邻零交叉之间的间隔（采样点数）
+    5. 相似率 = 1 - (std(间隔) / mean(间隔))，值越接近 1 越规律
+    6. 若相似率 > similarity_threshold（默认 0.4）且零交叉数 >= 3，判定为振荡
+    7. 置信度 = min(1.0, similarity * 1.5)
+
+    Args:
+        pv: PV 数据数组
+        sp: SP 数据数组
+        sample_interval: 采样间隔（秒）
+        threshold: 阈值配置，支持键：
+            - similarity_threshold: 相似率阈值（默认 0.4）
+            - min_zero_crossings: 最小零交叉数（默认 3）
+
+    Returns:
+        {detected, confidence, similarity, zero_crossing_count, mean_period}
+    """
+    if threshold is None:
+        threshold = {}
+    similarity_threshold = float(threshold.get("similarity_threshold", 0.4))
+    min_zero_crossings = int(threshold.get("min_zero_crossings", 3))
+
+    min_len = min(len(pv), len(sp))
+    if min_len < 8:
+        return {
+            "detected": False,
+            "confidence": 0.0,
+            "similarity": 0.0,
+            "zero_crossing_count": 0,
+            "mean_period": 0.0,
+        }
+
+    try:
+        pv_arr = pv[:min_len].astype(float)
+        sp_arr = sp[:min_len].astype(float)
+
+        # 1. 计算控制偏差
+        error = pv_arr - sp_arr
+
+        # 2. IAE 累积曲线（绝对值积分 = 累积和，用于振幅参考）
+        iae_cumsum = np.cumsum(np.abs(error))
+
+        # 3. 对 IAE 累积曲线做一阶差分，找零交叉点
+        # 由于 IAE 累积和单调递增，对累积曲线去线性趋势后找零交叉
+        # 线性趋势 = 最小二乘拟合，去除后得到振荡分量
+        n = len(iae_cumsum)
+        x = np.arange(n, dtype=float)
+        # 最小二乘线性拟合
+        A = np.vstack([x, np.ones_like(x)]).T
+        try:
+            slope, intercept = np.linalg.lstsq(A, iae_cumsum, rcond=None)[0]
+            iae_trend = slope * x + intercept
+        except Exception:
+            iae_trend = np.mean(iae_cumsum) * np.ones(n)
+        iae_detrended = iae_cumsum - iae_trend
+
+        # 零交叉：符号变化点
+        signs = np.sign(iae_detrended)
+        # 去除 0 符号（替换为前一非零符号避免误判）
+        for i in range(1, len(signs)):
+            if signs[i] == 0:
+                signs[i] = signs[i - 1]
+
+        zero_crossings = np.where(np.diff(signs) != 0)[0]
+
+        if len(zero_crossings) < max(min_zero_crossings, 2):
+            return {
+                "detected": False,
+                "confidence": 0.0,
+                "similarity": 0.0,
+                "zero_crossing_count": int(len(zero_crossings)),
+                "mean_period": 0.0,
+            }
+
+        # 4. 计算相邻零交叉间隔
+        intervals = np.diff(zero_crossings).astype(float)
+        if len(intervals) < 2:
+            return {
+                "detected": False,
+                "confidence": 0.0,
+                "similarity": 0.0,
+                "zero_crossing_count": int(len(zero_crossings)),
+                "mean_period": 0.0,
+            }
+
+        mean_interval = float(np.mean(intervals))
+        std_interval = float(np.std(intervals))
+
+        # 5. 相似率 = 1 - (std / mean)，值越接近 1 越规律
+        if mean_interval <= 0:
+            similarity = 0.0
+        else:
+            similarity = max(0.0, 1.0 - std_interval / mean_interval)
+
+        # 6. 振荡判定：相似率 > 阈值 且 零交叉数 >= 最小值
+        detected = bool(similarity > similarity_threshold and len(zero_crossings) >= min_zero_crossings)
+
+        # 7. 置信度
+        confidence = min(1.0, similarity * 1.5) if detected else 0.0
+
+        # 平均周期（秒）
+        mean_period = mean_interval * sample_interval if sample_interval > 0 else mean_interval
+
+        return {
+            "detected": detected,
+            "confidence": confidence,
+            "similarity": similarity,
+            "zero_crossing_count": int(len(zero_crossings)),
+            "mean_period": float(mean_period),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("IAE 零交叉振荡检测失败: %s", exc)
+        return {
+            "detected": False,
+            "confidence": 0.0,
+            "similarity": 0.0,
+            "zero_crossing_count": 0,
+            "mean_period": 0.0,
+        }
+
+
+def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
+    """多算法置信度融合（D-S 证据理论公式，FDS §5.4.7）。
+
+    使用 FDS §5.4.7 指定的对数赔率融合公式：
+        C_fused = (Π cᵢ) / (Π cᵢ + Π (1-cᵢ))
+    其中 Π cᵢ 是所有置信度的乘积，Π (1-cᵢ) 是所有 (1-置信度) 的乘积。
+
+    边界处理：
+    - 空证据列表返回 0.0
+    - 单条证据返回该置信度
+    - 置信度为 0 或 1 时通过微小量避免除零
 
     Args:
         evidence: [(label, confidence), ...] 每个算法的标签和置信度
@@ -1781,12 +2616,27 @@ def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
     if len(evidence) == 1:
         return evidence[0][1]
 
-    # noisy-OR: 融合独立证据
-    # P(异常|所有证据) = 1 - ∏(1 - conf_i)
-    prob_not = 1.0
+    # 全零置信度特判：所有证据置信度为 0 时融合结果为 0
+    if all(conf <= 0.0 for _, conf in evidence):
+        return 0.0
+    # 全满置信度特判：所有证据置信度为 1 时融合结果为 1
+    if all(conf >= 1.0 for _, conf in evidence):
+        return 1.0
+
+    # D-S 公式: C_fused = (Π cᵢ) / (Π cᵢ + Π (1-cᵢ))
+    # 引入微小量 epsilon 避免置信度为 0 或 1 时乘积为 0 导致丢失信息
+    eps = 1e-9
+    prod_c = 1.0
+    prod_not_c = 1.0
     for _, conf in evidence:
-        prob_not *= max(0.0, 1.0 - conf)
-    fused = 1.0 - prob_not
+        c = max(eps, min(1.0 - eps, conf))
+        prod_c *= c
+        prod_not_c *= (1.0 - c)
+
+    denom = prod_c + prod_not_c
+    if denom <= 0:
+        return 0.0
+    fused = prod_c / denom
 
     return max(0.0, min(1.0, fused))
 
@@ -1957,10 +2807,14 @@ __all__ = [
     "DIAG_ALGORITHM_VERSION",
     "AsyncTask",
     "_analyze_step_response",
+    "_apply_expert_rules",
+    "_deduplicate_labels",
     "_detect_bias_shift",
     "_detect_choudhury_nonlinearity",
     "_detect_kano_stiction",
+    "_detect_oscillation_iae",
     "_detect_slow_response",
+    "_get_threshold",
     "run_diagnosis_hourly",
     "run_loop_diagnosis",
 ]
