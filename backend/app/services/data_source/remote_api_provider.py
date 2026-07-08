@@ -285,8 +285,6 @@ class RemoteApiProvider:
 
         质量码映射：外部 API(1=Good, 192=OPC DA Good) → CLPM(1=Good, 0=Bad)。
         """
-        from app.core.config import settings
-
         request_body = {
             "tagCodes": [tag_name],
             "startTime": start_time,

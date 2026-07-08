@@ -255,7 +255,10 @@ async def test_get_active_tags_returns_tag_names():
     mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
     mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("app.core.db.AsyncSessionLocal", return_value=mock_session_ctx):
+    with patch(
+        "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+        return_value=mock_session_ctx,
+    ):
         tags = await sub._get_active_tags()
 
     assert tags == ["LIC-101.PV", "TIC-101.PV"]
@@ -266,7 +269,10 @@ async def test_get_active_tags_returns_empty_on_error():
     """数据库异常时应返回空列表."""
     sub = RealtimeSubscriber()
 
-    with patch("app.core.db.AsyncSessionLocal", side_effect=Exception("DB error")):
+    with patch(
+        "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+        side_effect=Exception("DB error"),
+    ):
         tags = await sub._get_active_tags()
 
     assert tags == []
