@@ -12,12 +12,9 @@
  */
 import { ref } from 'vue';
 
-import { Page } from '@vben/common-ui';
-
 import { Button, message, TabPane, Tabs } from 'ant-design-vue';
 
 import { ClpmDangerConfirmModal, ClpmPageToolbar } from '#/components/clpm';
-import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { restoreWeightDefaultsApi } from '#/api/metric';
 import GradingThresholdContent from './grading-threshold.vue';
 import TypeWeightContent from './type-weight.vue';
@@ -61,8 +58,7 @@ async function handleRestoreConfirm() {
 </script>
 
 <template>
-  <Page>
-    <ConfigTabs />
+  <div>
     <ClpmPageToolbar
       title="权重配置"
       subtitle="管理控制类型权重模板、性能定级阈值与版本历史（对齐 GB/T 44693.2-2024）"
@@ -103,5 +99,5 @@ async function handleRestoreConfirm() {
       :loading="restoring"
       @confirm="handleRestoreConfirm"
     />
-  </Page>
+  </div>
 </template>

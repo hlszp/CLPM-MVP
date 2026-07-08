@@ -773,6 +773,7 @@ async def get_ranking(
             {
                 "loopId": loop_id,
                 "tagName": loop.tag_name,
+                "loopName": loop.description,
                 "unitName": unit_map.get(str(loop.unit_id)) if loop.unit_id else None,
                 # v5.3 对齐 FDS v5.1 / DDS v4.1：compositeScore → score
                 "score": _to_float(snap.score),

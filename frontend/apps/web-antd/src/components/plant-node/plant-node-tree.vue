@@ -154,9 +154,9 @@ const treeLoading = ref(false);
 const treeSearchKeyword = ref('');
 const expandedKeys = ref<(number | string)[]>([]);
 const autoExpandParent = ref(true);
-// 树面板整体折叠状态（Card 头部右侧按钮切换）
 const treeCollapsed = ref(false);
 const selectedNode = ref<TreeNode | null>(null);
+const selectedKeys = ref<(number | string)[]>([]);
 
 // CRUD Modal
 const crudModalVisible = ref(false);
@@ -300,6 +300,14 @@ async function loadTree() {
       validKeys.has(k),
     );
 
+    selectedKeys.value = selectedKeys.value.filter((k) =>
+      validKeys.has(k),
+    );
+    if (selectedKeys.value.length === 0) {
+      selectedNode.value = null;
+      emit('select', null);
+    }
+
     // 默认展开第一层（仅初次加载或全部折叠后重新加载时）
     if (props.defaultExpandLevel >= 1 && expandedKeys.value.length === 0) {
       expandedKeys.value = newTreeData.map((n) => n.key);
@@ -352,14 +360,20 @@ watch(treeSearchKeyword, (val) => {
   }
 });
 
-/** 选中树节点 */
+/** 选中树节点：点击即选中，除非选择其他节点 */
 function onTreeSelect(keys: any[], info: any) {
+  if (keys.length === 0) {
+    return;
+  }
   const node =
     keys.length > 0 && info.selectedNodes?.[0]
       ? ((info.selectedNodes[0] as any)?.node ?? null)
       : null;
-  selectedNode.value = node ? info.selectedNodes[0] : null;
-  emit('select', node);
+  if (node) {
+    selectedKeys.value = keys;
+    selectedNode.value = info.selectedNodes[0];
+    emit('select', node);
+  }
 }
 
 /** 全部展开 */
@@ -647,7 +661,8 @@ defineExpose({ loadTree, expandAll, collapseAll });
           :tree-data="filteredTreeData"
           :expanded-keys="expandedKeys"
           :auto-expand-parent="autoExpandParent"
-          :show-line="true"
+          :show-line="false"
+          :selected-keys="selectedKeys"
           class="plant-node-tree"
           @select="onTreeSelect"
           @expand="
@@ -670,14 +685,6 @@ defineExpose({ loadTree, expandAll, collapseAll });
                 />
                 <span class="plant-node-tree__node-title">
                   {{ nodeData.title }}
-                </span>
-                <span
-                  :class="[
-                    'plant-node-tree__type-badge',
-                    getNodeTypeConfig((nodeData as any).node?.type).badgeClass,
-                  ]"
-                >
-                  {{ getNodeTypeConfig((nodeData as any).node?.type).label }}
                 </span>
                 <span
                   v-if="(loopCountByNode[nodeData.key as string] ?? 0) > 0"
@@ -763,14 +770,6 @@ defineExpose({ loadTree, expandAll, collapseAll });
               />
               <span class="plant-node-tree__node-title">
                 {{ nodeData.title }}
-              </span>
-              <span
-                :class="[
-                  'plant-node-tree__type-badge',
-                  getNodeTypeConfig((nodeData as any).node?.type).badgeClass,
-                ]"
-              >
-                {{ getNodeTypeConfig((nodeData as any).node?.type).label }}
               </span>
               <span
                 v-if="(loopCountByNode[nodeData.key as string] ?? 0) > 0"
@@ -897,21 +896,6 @@ defineExpose({ loadTree, expandAll, collapseAll });
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* 类型徽章统一最小宽度对齐 */
-.plant-node-tree__type-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  border: 1px solid;
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.2;
-  min-width: 32px;
-  flex-shrink: 0;
 }
 
 /* 回路数（右侧灰色数字） */

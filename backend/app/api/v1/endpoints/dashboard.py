@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.db import get_db
 from app.models.loop import LoopLedger
+from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.sys_user import SysUser
 from app.models.unit_kpi_summary import UnitKpiSummary
@@ -385,10 +386,10 @@ async def get_board_aggregate_endpoint(
     - ``accuracyRate``: 准确率（加权平均）
     - ``fastRate``: 快速率（加权平均）
     - ``goodValueRate``: 好值率（加权平均）
-    - ``totalLoops``: 总回路数（求和）
-    - ``evaluatedLoops``: 参评回路数（求和）
-    - ``inconclusiveLoops``: INCONCLUSIVE 回路数（求和）
-    - ``excludedLoops``: 排除回路数（求和）
+    - ``totalLoops``: 总回路数（去重后实际回路数）
+    - ``evaluatedLoops``: 参评回路数（去重后实际回路数）
+    - ``inconclusiveLoops``: INCONCLUSIVE 回路数（去重后实际回路数）
+    - ``excludedLoops``: 排除回路数（去重后实际回路数）
 
     若指定 ``plantId``，返回该节点及其所有下属节点的聚合 KPI；
     若未指定 ``plantId``，返回全厂所有节点的聚合 KPI。
@@ -396,10 +397,21 @@ async def get_board_aggregate_endpoint(
     设计依据：FDS v5.1 §5.3.7, UIUX v5.3 ①, DDS v4.1 §2.17
 
     v6.1 更新：支持递归聚合当前节点及所有下属节点的 KPI（使用 PostgreSQL 递归 CTE）
+    
+    v6.1.1 修复：回路数统计改为从数据库直接查询实际回路数，避免父子节点重复累加
     """
-    # 使用递归 CTE 获取当前节点及所有下属节点 ID 列表
+    from app.services.node_performance import collect_descendant_loop_ids
+
+    # 获取实际回路数（去重，避免父子节点重复累加）
     if plantId:
-        # 指定节点：递归获取该节点及其所有子孙节点
+        loop_ids = await collect_descendant_loop_ids(db, plantId)
+    else:
+        loop_query = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+        result = await db.execute(loop_query)
+        loop_ids = [str(row[0]) for row in result.all()]
+
+    # 使用递归 CTE 获取当前节点及所有下属节点 ID 列表（用于查询 unit_kpi_summary）
+    if plantId:
         cte_sql = text("""
             WITH RECURSIVE node_tree AS (
                 SELECT id FROM plant_node WHERE id = :node_id
@@ -412,7 +424,6 @@ async def get_board_aggregate_endpoint(
         result = await db.execute(cte_sql, {"node_id": plantId})
         descendant_ids = [str(row.id) for row in result.all()]
     else:
-        # 未指定节点：返回所有节点
         result = await db.execute(select(PlantNode.id))
         descendant_ids = [str(row.id) for row in result.all()]
 
@@ -446,27 +457,89 @@ async def get_board_aggregate_endpoint(
     rows = result.all()
     items = [_build_board_item(summary, node_name) for summary, node_name in rows]
 
-    # 计算聚合值（按 evaluatedLoops 加权平均）
-    total_evaluated = sum(item.get("evaluatedLoops", 0) for item in items if item.get("evaluatedLoops") > 0)
+    # 获取聚合节点名称
+    node_name = None
+    if plantId:
+        node_result = await db.execute(select(PlantNode.name).where(PlantNode.id == plantId))
+        node_name = node_result.scalar_one_or_none()
+
+    # 从数据库直接查询实际回路数统计（避免父子节点重复累加）
+    total_loops = len(loop_ids)
+    excluded_loops = 0
+    evaluated_loops = 0
+    inconclusive_loops = 0
+
+    if loop_ids:
+        # excluded_loops: include_in_evaluation=false 的回路数
+        ex_result = await db.execute(
+            select(func.count())
+            .select_from(LoopLedger)
+            .where(
+                LoopLedger.id.in_(loop_ids),
+                LoopLedger.include_in_evaluation.is_(False),
+            )
+        )
+        excluded_loops = int(ex_result.scalar() or 0)
+
+        # 获取最近时间窗
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        start_time = now - timedelta(hours=24)
+
+        # 查询有 SUCCESS 快照的回路 ID
+        success_result = await db.execute(
+            select(func.distinct(KpiSnapshotHourly.loop_id))
+            .select_from(KpiSnapshotHourly)
+            .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start_time,
+                KpiSnapshotHourly.status == "SUCCESS",
+                LoopLedger.include_in_evaluation.is_(True),
+            )
+        )
+        success_loop_ids = [str(row[0]) for row in success_result.all()]
+        evaluated_loops = len(success_loop_ids)
+
+        # inconclusive_loops: 只有 INCONCLUSIVE 快照但没有 SUCCESS 快照的回路数
+        ic_result = await db.execute(
+            select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
+            .select_from(KpiSnapshotHourly)
+            .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start_time,
+                KpiSnapshotHourly.status == "INCONCLUSIVE",
+                KpiSnapshotHourly.loop_id.not_in(success_loop_ids) if success_loop_ids else True,
+                LoopLedger.include_in_evaluation.is_(True),
+            )
+        )
+        inconclusive_loops = int(ic_result.scalar() or 0)
+
+    # 计算聚合值（仅使用 UNIT 级节点数据加权，避免父子节点重复）
+    # 过滤出 UNIT 类型的节点
+    unit_items = []
+    for item in items:
+        node_type_result = await db.execute(select(PlantNode.type).where(PlantNode.id == item["nodeId"]))
+        node_type = node_type_result.scalar_one_or_none()
+        if node_type == "UNIT":
+            unit_items.append(item)
+
+    # 按 UNIT 节点的 evaluatedLoops 加权平均
+    total_unit_evaluated = sum(item.get("evaluatedLoops", 0) for item in unit_items if item.get("evaluatedLoops") > 0)
 
     def weighted_avg(field: str) -> float | None:
-        if total_evaluated == 0:
+        if total_unit_evaluated == 0:
             return None
         total = 0.0
         count = 0
-        for item in items:
+        for item in unit_items:
             val = item.get(field)
             weight = item.get("evaluatedLoops", 0)
             if val is not None and weight > 0:
                 total += float(val) * weight
                 count += weight
         return round(total / count, 2) if count > 0 else None
-
-    # 获取聚合节点名称
-    node_name = None
-    if plantId:
-        node_result = await db.execute(select(PlantNode.name).where(PlantNode.id == plantId))
-        node_name = node_result.scalar_one_or_none()
 
     aggregate = {
         "nodeId": plantId,
@@ -478,10 +551,10 @@ async def get_board_aggregate_endpoint(
         "accuracyRate": weighted_avg("accuracyRate"),
         "fastRate": weighted_avg("fastRate"),
         "goodValueRate": weighted_avg("goodValueRate"),
-        "totalLoops": sum(item.get("totalLoops", 0) for item in items),
-        "evaluatedLoops": total_evaluated,
-        "inconclusiveLoops": sum(item.get("inconclusiveLoops", 0) for item in items),
-        "excludedLoops": sum(item.get("excludedLoops", 0) for item in items),
+        "totalLoops": total_loops,
+        "evaluatedLoops": evaluated_loops,
+        "inconclusiveLoops": inconclusive_loops,
+        "excludedLoops": excluded_loops,
     }
 
     return success(data={"items": items, "total": len(items), "aggregate": aggregate})

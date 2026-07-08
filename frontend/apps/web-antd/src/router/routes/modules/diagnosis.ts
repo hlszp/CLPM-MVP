@@ -93,6 +93,16 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'DiagnosisVisualization',
+        path: '/diagnosis/visualization',
+        component: () => import('#/views/diagnosis/visualization.vue'),
+        meta: {
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:bar-chart-2',
+          title: '诊断可视化',
+        },
+      },
+      {
         name: 'DiagnosisTracker',
         path: '/diagnosis/tracker',
         component: () => import('#/views/diagnosis/tracker.vue'),

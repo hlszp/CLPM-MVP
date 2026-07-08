@@ -256,8 +256,13 @@ class TestListDiagnosisTasks:
             # 4: 装置查询
             if call_count[0] == 4:
                 return _make_scalars_all_mock([node])
-            # 5: 评分子查询
-            return _make_rows_mock([(loop.id, Decimal("75.50"))])
+            # 5: 评分查询（6列：loop_id, score, accuracy_rate, fast_rate, steady_rate, effective_auto_rate）
+            if call_count[0] == 5:
+                return _make_rows_mock([
+                    (loop.id, Decimal("75.50"), Decimal("80"), Decimal("70"), Decimal("75"), Decimal("85"))
+                ])
+            # 6: 诊断结果标签查询
+            return _make_rows_mock([])
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["admin"]):
@@ -345,6 +350,10 @@ class TestGetDiagnosisTaskDetail:
         snapshot = MagicMock()
         snapshot.loop_id = loop.id
         snapshot.score = Decimal("82.50")
+        snapshot.accuracy_rate = Decimal("80.00")
+        snapshot.fast_rate = Decimal("70.00")
+        snapshot.steady_rate = Decimal("75.00")
+        snapshot.effective_auto_rate = Decimal("85.00")
         snapshot.ts_start = datetime.now(UTC)
 
         diag_record = MagicMock()
@@ -615,8 +624,13 @@ class TestListDiagnosisRecords:
             # 4: 装置查询
             if call_count[0] == 4:
                 return _make_scalars_all_mock([node])
-            # 5: 评分子查询
-            return _make_rows_mock([(loop.id, Decimal("75.50"))])
+            # 5: 评分查询（6列）
+            if call_count[0] == 5:
+                return _make_rows_mock([
+                    (loop.id, Decimal("75.50"), Decimal("80"), Decimal("70"), Decimal("75"), Decimal("85"))
+                ])
+            # 6: 诊断结果标签查询
+            return _make_rows_mock([])
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["admin"]):

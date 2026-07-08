@@ -17,6 +17,7 @@ import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -33,14 +34,16 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
+import { IconifyIcon } from '@vben/icons';
 import dayjs from 'dayjs';
 
 import {
   archiveDiagnosisTaskApi,
   deleteDiagnosisTaskApi,
-  getDiagnosisTaskDetailApi,
   getDiagnosisTasksApi,
+  runDiagnosisTaskApi,
   triggerDiagnosisApi,
 } from '#/api/diagnosis';
 import { getLoopMonitorListApi } from '#/api/loop';
@@ -108,6 +111,9 @@ const statusConfig: Record<
   CANCELLED: { color: 'warning', text: '已取消' },
 };
 
+// ============ 路由 ============
+const router = useRouter();
+
 // ============ 按钮状态机 ============
 /** 诊断：仅待执行状态可触发 */
 function canDiagnose(status: DiagnosisApi.TaskStatus): boolean {
@@ -120,10 +126,6 @@ function canViewResult(status: DiagnosisApi.TaskStatus): boolean {
 /** 归档：仅诊断完成（SUCCESS）可归档 */
 function canArchive(status: DiagnosisApi.TaskStatus): boolean {
   return status === 'SUCCESS';
-}
-/** 删除：仅待执行状态可删除 */
-function canDelete(status: DiagnosisApi.TaskStatus): boolean {
-  return status === 'PENDING';
 }
 
 const columns: TableColumnsType = [
@@ -183,6 +185,12 @@ const columns: TableColumnsType = [
     key: 'triggerType',
     width: 90,
     align: 'center',
+  },
+  {
+    title: '结果',
+    dataIndex: 'diagLabels',
+    key: 'diagLabels',
+    width: 180,
   },
   {
     title: '创建时间',
@@ -380,36 +388,46 @@ const resultDrawerVisible = ref(false);
 const resultDetail = ref<DiagnosisApi.TaskDetail | null>(null);
 const resultLoading = ref(false);
 
-async function handleViewResult(taskId: string) {
-  resultDrawerVisible.value = true;
-  resultLoading.value = true;
-  resultDetail.value = null;
-  try {
-    resultDetail.value = await getDiagnosisTaskDetailApi(taskId);
-  } catch {
-    // 错误已由拦截器处理
-  } finally {
-    resultLoading.value = false;
-  }
+/** 详情：跳转到诊断详情页 */
+function handleViewDetail(record: DiagnosisApi.TaskItem) {
+  router.push({
+    path: `/diagnosis/detail/${record.loopId}`,
+    query: { taskId: record.taskId },
+  });
 }
 
-// ============ 诊断 / 归档 / 删除（确认弹窗） ============
+/** 诊断标签中文映射 */
+const DIAG_LABEL_MAP: Record<string, { text: string; color: string }> = {
+  OSCILLATION: { text: '振荡', color: 'red' },
+  VALVE_STICTION: { text: '阀门粘滞', color: 'volcano' },
+  OVERAGGRESSIVE: { text: '参数过激', color: 'orange' },
+  OVERCONSERVATIVE: { text: '参数过保守', color: 'gold' },
+  EXTERNAL_DISTURBANCE: { text: '外扰频繁', color: 'lime' },
+  QUALITY_ABNORMAL: { text: 'PV质量异常', color: 'cyan' },
+  OUTPUT_SATURATION: { text: '输出饱和', color: 'blue' },
+  MANUAL_REVIEW: { text: '人工复核', color: 'purple' },
+  NORMAL: { text: '正常', color: 'green' },
+};
+
+function diagLabelText(label: string): string {
+  return DIAG_LABEL_MAP[label]?.text ?? label;
+}
+
+function diagLabelColor(label: string): string {
+  return DIAG_LABEL_MAP[label]?.color ?? 'default';
+}
+
+// ============ 批量操作 ============ 诊断 / 归档 / 删除（确认弹窗） ============
 const rowDiagnoseLoading = ref<string>('');
 async function handleRowDiagnose(record: DiagnosisApi.TaskItem) {
   Modal.confirm({
     title: '确认诊断',
-    content: `确认触发回路 ${record.tagName} 的诊断任务？`,
+    content: `确认对回路 ${record.tagName} 执行诊断？`,
     onOk: async () => {
       rowDiagnoseLoading.value = record.taskId;
       try {
-        const end = dayjs();
-        const start = end.subtract(24, 'hour');
-        await triggerDiagnosisApi({
-          loopIds: [record.loopId],
-          startTime: start.toISOString(),
-          endTime: end.toISOString(),
-        });
-        message.success(`已触发回路 ${record.tagName} 的诊断任务`);
+        await runDiagnosisTaskApi(record.taskId);
+        message.success(`已执行回路 ${record.tagName} 的诊断`);
         await loadTasks();
         startPolling();
       } catch {
@@ -436,7 +454,7 @@ async function handleArchive(taskId: string) {
 async function handleDelete(record: DiagnosisApi.TaskItem) {
   Modal.confirm({
     title: '确认删除',
-    content: `确认删除回路 ${record.tagName} 的待执行任务？`,
+    content: `确认删除回路 ${record.tagName} 的诊断任务？`,
     okType: 'danger',
     onOk: async () => {
       await deleteDiagnosisTaskApi(record.taskId);
@@ -449,28 +467,27 @@ async function handleDelete(record: DiagnosisApi.TaskItem) {
   });
 }
 
-/** 批量删除：对选中行中待执行（PENDING）的任务删除 */
+/** 批量删除：删除选中的所有任务（测试期间不限制状态） */
 const batchDeleteLoading = ref(false);
 async function handleBatchDelete() {
   const selected = taskList.value.filter((t) =>
     selectedRowKeys.value.includes(t.taskId),
   );
-  const eligible = selected.filter((t) => canDelete(t.status));
-  if (eligible.length === 0) {
-    message.warning('选中的任务中没有待执行的可删除任务');
+  if (selected.length === 0) {
+    message.warning('请先选择要删除的任务');
     return;
   }
   Modal.confirm({
     title: '确认批量删除',
-    content: `确认删除 ${eligible.length} 个待执行任务？`,
+    content: `确认删除 ${selected.length} 个诊断任务？`,
     okType: 'danger',
     onOk: async () => {
       batchDeleteLoading.value = true;
       try {
         await Promise.all(
-          eligible.map((t) => deleteDiagnosisTaskApi(t.taskId)),
+          selected.map((t) => deleteDiagnosisTaskApi(t.taskId)),
         );
-        message.success(`已删除 ${eligible.length} 个任务`);
+        message.success(`已删除 ${selected.length} 个任务`);
         selectedRowKeys.value = [];
         await loadTasks();
       } catch {
@@ -514,8 +531,11 @@ async function handleBatchTrigger() {
 }
 
 // ============ 数据加载与轮询 ============
-async function loadTasks() {
-  loading.value = true;
+let pollCount = 0;
+const MAX_POLL_COUNT = 120; // 最多轮询 120 次（10 分钟）
+
+async function loadTasks(silent = false) {
+  if (!silent) loading.value = true;
   try {
     const data = await getDiagnosisTasksApi({
       status: query.status,
@@ -529,14 +549,20 @@ async function loadTasks() {
   } catch {
     // 错误已由拦截器处理
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 
 function startPolling() {
   stopPolling();
+  pollCount = 0;
   pollTimer = setInterval(async () => {
-    await loadTasks();
+    pollCount++;
+    if (pollCount > MAX_POLL_COUNT) {
+      stopPolling();
+      return;
+    }
+    await loadTasks(true);
     const hasActive = taskList.value.some(
       (t) => t.status === 'PENDING' || t.status === 'RUNNING',
     );
@@ -645,34 +671,8 @@ onBeforeUnmount(() => {
 <template>
   <Page>
     <ClpmDataCanvas title="诊断任务列表" :loading="loading">
-      <!-- 顶部操作按钮区（左侧） -->
-      <div class="mb-3 flex items-center gap-2">
-        <Button
-          type="primary"
-          @click="openTriggerModal"
-        >
-          新增任务
-        </Button>
-        <Button
-          type="primary"
-          :disabled="selectedRowKeys.length === 0"
-          :loading="batchDiagnoseLoading"
-          @click="handleBatchTrigger"
-        >
-          批量诊断{{ selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : '' }}
-        </Button>
-        <Button
-          danger
-          :disabled="selectedRowKeys.length === 0"
-          :loading="batchDeleteLoading"
-          @click="handleBatchDelete"
-        >
-          批量删除
-        </Button>
-      </div>
-
-      <!-- 筛选栏（右侧） -->
-      <div class="mb-4 flex flex-wrap items-center gap-3">
+      <!-- 筛选栏 -->
+      <div class="mb-3 flex flex-wrap items-center gap-3">
         <Select
           v-model:value="query.status"
           placeholder="任务状态"
@@ -699,6 +699,32 @@ onBeforeUnmount(() => {
         />
         <Button type="primary" :loading="loading" @click="handleSearch">
           查询
+        </Button>
+      </div>
+
+      <!-- 操作按钮区 -->
+      <div class="mb-3 flex items-center gap-2">
+        <Button type="primary" @click="openTriggerModal">
+          <template #icon><IconifyIcon icon="ant-design:plus-outlined" /></template>
+          新增任务
+        </Button>
+        <Button
+          type="primary"
+          :disabled="selectedRowKeys.length === 0"
+          :loading="batchDiagnoseLoading"
+          @click="handleBatchTrigger"
+        >
+          <template #icon><IconifyIcon icon="ant-design:thunderbolt-outlined" /></template>
+          批量诊断{{ selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : '' }}
+        </Button>
+        <Button
+          danger
+          :disabled="selectedRowKeys.length === 0"
+          :loading="batchDeleteLoading"
+          @click="handleBatchDelete"
+        >
+          <template #icon><IconifyIcon icon="ant-design:delete-outlined" /></template>
+          批量删除
         </Button>
       </div>
 
@@ -762,11 +788,31 @@ onBeforeUnmount(() => {
           <template v-else-if="column.key === 'triggerType'">
             {{ triggerTypeName(record.triggerType) }}
           </template>
+          <template v-else-if="column.key === 'diagLabels'">
+            <template v-if="record.diagLabels && record.diagLabels.length > 0">
+              <Tag
+                v-for="label in record.diagLabels"
+                :key="label"
+                :color="diagLabelColor(label)"
+                size="small"
+                style="margin-bottom: 2px"
+              >
+                {{ diagLabelText(label) }}
+              </Tag>
+            </template>
+            <Tooltip
+              v-else-if="record.status === 'FAILED' && record.errorMessage"
+              :title="record.errorMessage"
+            >
+              <Tag color="error" size="small">诊断失败</Tag>
+            </Tooltip>
+            <span v-else style="color: var(--text-color-secondary)">—</span>
+          </template>
           <template v-else-if="column.key === 'triggeredAt'">
             <span class="clpm-num">{{ formatTime(record.triggeredAt) }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <!-- 诊断 → 结果 → 归档 → 删除，基于状态机控制可用性 -->
+            <!-- 诊断 → 详情 → 归档 → 删除，基于状态机控制可用性 -->
             <Button
               type="link"
               size="small"
@@ -780,9 +826,9 @@ onBeforeUnmount(() => {
               type="link"
               size="small"
               :disabled="!canViewResult(record.status as DiagnosisApi.TaskStatus)"
-              @click="handleViewResult(record.taskId)"
+              @click="handleViewDetail(record as DiagnosisApi.TaskItem)"
             >
-              结果
+              详情
             </Button>
             <Button
               type="link"
@@ -796,7 +842,6 @@ onBeforeUnmount(() => {
               type="link"
               size="small"
               danger
-              :disabled="!canDelete(record.status as DiagnosisApi.TaskStatus)"
               @click="handleDelete(record as DiagnosisApi.TaskItem)"
             >
               删除

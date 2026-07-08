@@ -127,6 +127,108 @@ export namespace DiagnosisApi {
     diagnosedAt: string;
   }
 
+  /** 诊断可视化 - FFT 频谱数据 */
+  export interface SpectrumData {
+    frequencies: number[];
+    amplitudes: number[];
+    peakFrequency: number;
+    peakAmplitude: number;
+    oscillationIndex: number;
+  }
+
+  /** 诊断可视化 - 阶跃响应数据 */
+  export interface StepResponseData {
+    timestamps: number[];
+    pvResponse: number[];
+    spValues: number[];
+    stepIndices: number[];
+    overshoot: number;
+    decayRatio: number;
+    steadyStateError: number;
+  }
+
+  /** 诊断可视化 - CUSUM 累积和数据 */
+  export interface CusumAnalysisData {
+    timestamps: number[];
+    cusumPos: number[];
+    cusumNeg: number[];
+    shiftPoints: number[];
+    threshold: number;
+    shiftCount: number;
+    maxCusum: number;
+  }
+
+  /** 诊断可视化 - PV-OP 散点图数据 */
+  export interface ScatterPlotData {
+    x: number[];
+    y: number[];
+    fittingScore: number;
+    stictionIndex: number;
+  }
+
+  /** 诊断可视化 - 质量码时序数据 */
+  export interface QualityTimelineData {
+    badRate: number;
+    totalPoints: number;
+    badPoints: number;
+    qualityPattern: string;
+  }
+
+  /** 诊断可视化 - OP 饱和分析数据 */
+  export interface SaturationAnalysisData {
+    saturationRate: number;
+    highSaturationCount: number;
+    lowSaturationCount: number;
+  }
+
+  /** 诊断可视化 - 响应迟缓分析数据 */
+  export interface SlowResponseData {
+    timeConstant: number;
+    expectedTimeConstant: number;
+    ratio: number;
+  }
+
+  /** 诊断可视化 - Choudhury 非线性检测数据 */
+  export interface ChoudhuryData {
+    ngi: number;
+    nli: number;
+    stictionIndex: number;
+  }
+
+  /** 诊断可视化 - IAE 零交叉分析数据 */
+  export interface IaeAnalysisData {
+    similarity: number;
+    zeroCrossingCount: number;
+    meanPeriod: number;
+  }
+
+  /** 诊断可视化 - Kano 统计法数据 */
+  export interface KanoData {
+    stictionRatio: number;
+    correlation: number;
+    stdRatio: number;
+  }
+
+  /** 诊断可视化数据（包含 8 类算法的完整可视化数组） */
+  export interface DiagnosisVisualizationData {
+    loopId: string;
+    tagName: string;
+    compositeScore: number | null;
+    fusedConfidence: number | null;
+    diagnosedAt: string | null;
+    diagnosisLabels: DiagnosisLabelItem[];
+    spectrum: SpectrumData;
+    stepResponse: StepResponseData;
+    cusumAnalysis: CusumAnalysisData;
+    scatterPlot: ScatterPlotData;
+    qualityTimeline: QualityTimelineData;
+    saturationAnalysis: SaturationAnalysisData;
+    slowResponse: SlowResponseData;
+    choudhury: ChoudhuryData;
+    iaeAnalysis: IaeAnalysisData;
+    kano: KanoData;
+  }
+
   /** 波形数据（IDS v3.2 §2.4，Phase 5 扩展血缘字段） */
   export interface WaveformResult {
     loopId: string;
@@ -439,6 +541,7 @@ export namespace DiagnosisApi {
     fastScore: null | number;
     steadyScore: null | number;
     effectiveAutoRate: null | number;
+    diagLabels: string[];
     status: TaskStatus;
     triggerType: TriggerType;
     triggeredBy: null | string;
@@ -448,6 +551,7 @@ export namespace DiagnosisApi {
     timeRangeEnd: null | string;
     labels: { label: string; confidence: number }[];
     isArchived: boolean;
+    errorMessage: null | string;
   }
 
   /** 触发诊断请求 */
@@ -524,6 +628,15 @@ export function getDiagnosisDetailApi(
   return requestClient.get<DiagnosisApi.DiagnosisDetail>(
     `/diagnosis/${loopId}`,
     { params: { timeWindow } },
+  );
+}
+
+/**
+ * 获取诊断可视化数据（包含 8 类算法的完整可视化数组）
+ */
+export function getDiagnosisVisualizationApi(loopId: string) {
+  return requestClient.get<DiagnosisApi.DiagnosisVisualizationData>(
+    `/diagnosis/${loopId}/visualization`,
   );
 }
 
@@ -745,6 +858,15 @@ export function getDiagnosisTasksApi(
 export function getDiagnosisTaskDetailApi(taskId: string) {
   return requestClient.get<DiagnosisApi.TaskDetail>(
     `/diagnosis/tasks/${taskId}`,
+  );
+}
+
+/**
+ * 执行诊断任务（对已有任务重新执行诊断，不创建新任务）
+ */
+export function runDiagnosisTaskApi(taskId: string) {
+  return requestClient.post<DiagnosisApi.TaskItem>(
+    `/diagnosis/tasks/${taskId}/run`,
   );
 }
 

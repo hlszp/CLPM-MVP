@@ -19,10 +19,12 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Select, Table, Tag } from 'ant-design-vue';
+import { IconifyIcon } from '@vben/icons';
+
+import { Button, message, Modal, Select, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisRecordsApi } from '#/api/diagnosis';
+import { deleteDiagnosisTaskApi, getDiagnosisRecordsApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
@@ -51,6 +53,16 @@ const loading = ref(false);
 const recordList = ref<DiagnosisApi.TaskItem[]>([]);
 const total = ref(0);
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
+const selectedRowKeys = ref<string[]>([]);
+const batchDeleteLoading = ref(false);
+
+/** 行选择配置 */
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: (string | number)[]) => {
+    selectedRowKeys.value = keys.map(String);
+  },
+}));
 
 /** 异常跟踪抽屉状态（FDS §5.4：从诊断记录页右侧滑出） */
 const trackerDrawerVisible = ref(false);
@@ -118,7 +130,7 @@ const columns: TableColumnsType = [
     key: 'completedAt',
     width: 170,
   },
-  { title: '操作', key: 'action', width: 180, fixed: 'right' },
+  { title: '操作', key: 'action', width: 220, fixed: 'right' },
 ];
 
 /** 加载工厂节点 */
@@ -176,6 +188,52 @@ function handleOpenTracker(loopId: string) {
 /** 工具栏：刷新 */
 function handleRefresh() {
   loadList();
+}
+
+/** 行级删除 */
+function handleDelete(record: DiagnosisApi.TaskItem) {
+  Modal.confirm({
+    title: '确认删除',
+    content: `确认删除回路 ${record.tagName} 的诊断记录？`,
+    okType: 'danger',
+    onOk: async () => {
+      await deleteDiagnosisTaskApi(record.taskId);
+      message.success('记录已删除');
+      selectedRowKeys.value = selectedRowKeys.value.filter(
+        (k) => k !== record.taskId,
+      );
+      await loadList();
+    },
+  });
+}
+
+/** 批量删除 */
+async function handleBatchDelete() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要删除的记录');
+    return;
+  }
+  const count = selectedRowKeys.value.length;
+  Modal.confirm({
+    title: '确认批量删除',
+    content: `确认删除 ${count} 条诊断记录？`,
+    okType: 'danger',
+    onOk: async () => {
+      batchDeleteLoading.value = true;
+      try {
+        await Promise.all(
+          selectedRowKeys.value.map((id) => deleteDiagnosisTaskApi(id)),
+        );
+        message.success(`已删除 ${count} 条记录`);
+        selectedRowKeys.value = [];
+        await loadList();
+      } catch {
+        // 错误已由拦截器处理
+      } finally {
+        batchDeleteLoading.value = false;
+      }
+    },
+  });
 }
 
 /** KpiStrip 摘要指标：已归档总数 / 近 7 天归档 / 振荡类 / 阀门粘滞类 */
@@ -337,6 +395,19 @@ onMounted(() => {
         <Button type="primary" :loading="loading" @click="handleSearch">
           查询
         </Button>
+        <Button
+          danger
+          :disabled="selectedRowKeys.length === 0"
+          :loading="batchDeleteLoading"
+          @click="handleBatchDelete"
+        >
+          <template #icon>
+            <IconifyIcon icon="ant-design:delete-outlined" />
+          </template>
+          批量删除{{
+            selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : ''
+          }}
+        </Button>
       </div>
 
       <Table
@@ -351,7 +422,8 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: DiagnosisApi.TaskItem) => record.taskId"
-        :scroll="{ x: 1280 }"
+        :row-selection="rowSelection"
+        :scroll="{ x: 1320 }"
         size="middle"
         :custom-row="
           (record: DiagnosisApi.TaskItem) => ({
@@ -433,6 +505,14 @@ onMounted(() => {
               @click.stop="handleOpenTracker(record.loopId)"
             >
               异常跟踪
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              danger
+              @click.stop="handleDelete(record as DiagnosisApi.TaskItem)"
+            >
+              删除
             </Button>
           </template>
         </template>

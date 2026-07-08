@@ -417,6 +417,7 @@ class DiagnosisTaskItem(CamelModel):
     fastScore: float | None = None
     steadyScore: float | None = None
     effectiveAutoRate: float | None = None
+    diagLabels: list[str] = Field(default_factory=list)
     status: DiagnosisTaskStatus
     triggerType: DiagnosisTriggerType
     triggeredBy: str | None = None
@@ -426,6 +427,7 @@ class DiagnosisTaskItem(CamelModel):
     timeRangeEnd: str | None = None
     labels: list[DiagnosisLabelItem] = Field(default_factory=list)
     isArchived: bool = False
+    errorMessage: str | None = None
 
 
 class DiagnosisTaskListData(CamelModel):

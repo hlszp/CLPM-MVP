@@ -195,6 +195,7 @@ export namespace MetricApi {
     rank: number;
     loopId: string;
     tagName: string;
+    loopName: string | null;
     unitName: string;
     score: number;
     goodValueRate: number;

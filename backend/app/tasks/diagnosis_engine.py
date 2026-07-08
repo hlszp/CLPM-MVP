@@ -345,13 +345,27 @@ async def _do_diagnose_single_loop(
                 task_id=task_id,
             )
             await db.commit()
+            if result is None:
+                # _diagnose_loop 返回 None 表示诊断未执行成功
+                # （回路不存在/缺少 PV Tag/TDengine 查询失败/数据点不足等）
+                # 此时没有写入 DiagnosisResult，任务应标记为 FAILED
+                if task_id:
+                    await _update_task_status(
+                        db,
+                        task_id,
+                        "FAILED",
+                        error_message="诊断未产出结果（回路不存在/缺少PV位号/数据查询失败/数据点不足）",
+                        completed_at=datetime.now(UTC).replace(tzinfo=None),
+                    )
+                    await db.commit()
+                return {"loopId": loop_id, "status": "FAILED"}
             # 成功：更新任务状态为 SUCCESS
             if task_id:
                 await _update_task_status(
                     db, task_id, "SUCCESS", completed_at=datetime.now(UTC).replace(tzinfo=None)
                 )
                 await db.commit()
-            return result or {"loopId": loop_id, "status": "FAILED"}
+            return result
         except Exception as exc:
             # 失败：更新任务状态为 FAILED
             if task_id:
@@ -564,6 +578,9 @@ async def _diagnose_loop(
     # 收集所有算法结果（带置信度）
     algorithm_results: list[dict[str, Any]] = []
 
+    # 收集所有算法的可视化数据（无条件保存，供前端图表展示）
+    all_visualization_data: dict[str, Any] = {}
+
     if osc_result["detected"]:
         algorithm_results.append(
             {
@@ -573,6 +590,8 @@ async def _diagnose_loop(
                     "oscillation_amplitude": osc_result["amplitude"],
                     "oscillation_frequency": osc_result["frequency"],
                     "oscillation_index": osc_result["index"],
+                    "fft_frequencies": osc_result.get("frequencies", []),
+                    "fft_amplitudes": osc_result.get("amplitudes", []),
                 },
                 "evidence": {
                     "reasoning": (
@@ -583,6 +602,14 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存 FFT 可视化数据
+    all_visualization_data.update({
+        "fft_frequencies": osc_result.get("frequencies", []),
+        "fft_amplitudes": osc_result.get("amplitudes", []),
+        "oscillation_frequency": osc_result["frequency"],
+        "oscillation_amplitude": osc_result["amplitude"],
+        "oscillation_index": osc_result["index"],
+    })
 
     # IAE 零交叉相似率法振荡检测（与 FFT 互为交叉验证，标签同为 OSCILLATION）
     if osc_iae_result["detected"]:
@@ -606,6 +633,12 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存 IAE 可视化数据
+    all_visualization_data.update({
+        "iae_similarity": osc_iae_result["similarity"],
+        "iae_zero_crossing_count": osc_iae_result["zero_crossing_count"],
+        "iae_mean_period": osc_iae_result["mean_period"],
+    })
 
     if stiction_result["detected"]:
         algorithm_results.append(
@@ -626,6 +659,14 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存散点图可视化数据
+    scatter_data = _build_scatter_plot_data(aligned)
+    all_visualization_data.update({
+        "stiction_index": stiction_result["stiction_index"],
+        "fitting_score": stiction_result["fitting_score"],
+        "scatter_plot_x": scatter_data.get("x", []),
+        "scatter_plot_y": scatter_data.get("y", []),
+    })
 
     if quality_result["abnormal"]:
         algorithm_results.append(
@@ -647,6 +688,13 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存质量码可视化数据
+    all_visualization_data.update({
+        "bad_quality_rate": quality_result["bad_rate"],
+        "total_points": quality_result["total"],
+        "bad_points": quality_result["bad_count"],
+        "quality_pattern": quality_result.get("quality_pattern", "NORMAL"),
+    })
 
     if saturation_result["detected"]:
         algorithm_results.append(
@@ -667,6 +715,12 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存饱和率可视化数据
+    all_visualization_data.update({
+        "saturation_rate": saturation_result["saturation_rate"],
+        "high_saturation_count": saturation_result["high_count"],
+        "low_saturation_count": saturation_result["low_count"],
+    })
 
     # Choudhury NGI/NLI 非线性检测 → VALVE_STICTION（交叉验证）
     if choudhury_result["detected"]:
@@ -690,6 +744,13 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存 Choudhury 可视化数据
+    all_visualization_data.update({
+        "ngi": choudhury_result["ngi"],
+        "nli": choudhury_result["nli"],
+        "choudhury_stiction_index": choudhury_result["stiction_index"],
+        "fitting_score": choudhury_result["fitting_score"],
+    })
 
     # Kano 统计法粘滞检测 → VALVE_STICTION（交叉验证）
     if kano_result["detected"]:
@@ -712,6 +773,12 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存 Kano 可视化数据
+    all_visualization_data.update({
+        "kano_stiction_ratio": kano_result["stiction_ratio"],
+        "pv_op_correlation": kano_result["correlation"],
+        "std_ratio": kano_result["std_ratio"],
+    })
 
     # 完整阶跃响应分析 → OVERAGGRESSIVE
     if step_response_result["detected"]:
@@ -724,6 +791,10 @@ async def _diagnose_loop(
                     "decay_ratio": step_response_result["decay_ratio"],
                     "steady_state_error": step_response_result["steady_state_error"],
                     "step_count": step_response_result["step_count"],
+                    "step_timestamps": step_response_result.get("timestamps", []),
+                    "step_pv_response": step_response_result.get("pv_response", []),
+                    "step_sp_values": step_response_result.get("sp_values", []),
+                    "step_indices": step_response_result.get("step_indices", []),
                 },
                 "evidence": {
                     "reasoning": (
@@ -736,6 +807,17 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存阶跃响应可视化数据
+    all_visualization_data.update({
+        "overshoot": step_response_result["overshoot"],
+        "decay_ratio": step_response_result["decay_ratio"],
+        "steady_state_error": step_response_result["steady_state_error"],
+        "step_count": step_response_result["step_count"],
+        "step_timestamps": step_response_result.get("timestamps", []),
+        "step_pv_response": step_response_result.get("pv_response", []),
+        "step_sp_values": step_response_result.get("sp_values", []),
+        "step_indices": step_response_result.get("step_indices", []),
+    })
 
     # 响应迟缓检测 → OVERCONSERVATIVE
     if slow_response_result["detected"]:
@@ -758,6 +840,12 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存响应迟缓可视化数据
+    all_visualization_data.update({
+        "time_constant": slow_response_result["time_constant"],
+        "expected_time_constant": slow_response_result["expected_time_constant"],
+        "ratio": slow_response_result["ratio"],
+    })
 
     # 偏差突变检测 → EXTERNAL_DISTURBANCE
     if bias_shift_result["detected"]:
@@ -769,6 +857,11 @@ async def _diagnose_loop(
                     "shift_count": bias_shift_result["shift_count"],
                     "max_cusum": bias_shift_result["max_cusum"],
                     "shift_magnitude": bias_shift_result["shift_magnitude"],
+                    "cusum_timestamps": bias_shift_result.get("timestamps", []),
+                    "cusum_pos": bias_shift_result.get("cusum_pos", []),
+                    "cusum_neg": bias_shift_result.get("cusum_neg", []),
+                    "cusum_shift_points": bias_shift_result.get("shift_points", []),
+                    "cusum_threshold": bias_shift_result.get("threshold", 0.0),
                 },
                 "evidence": {
                     "reasoning": (
@@ -780,6 +873,17 @@ async def _diagnose_loop(
                 },
             }
         )
+    # 无条件保存 CUSUM 可视化数据
+    all_visualization_data.update({
+        "shift_count": bias_shift_result["shift_count"],
+        "max_cusum": bias_shift_result["max_cusum"],
+        "shift_magnitude": bias_shift_result["shift_magnitude"],
+        "cusum_timestamps": bias_shift_result.get("timestamps", []),
+        "cusum_pos": bias_shift_result.get("cusum_pos", []),
+        "cusum_neg": bias_shift_result.get("cusum_neg", []),
+        "cusum_shift_points": bias_shift_result.get("shift_points", []),
+        "cusum_threshold": bias_shift_result.get("threshold", 0.0),
+    })
 
     # 兜底标签：无任何算法命中
     if not algorithm_results:
@@ -805,14 +909,23 @@ async def _diagnose_loop(
         [(r["label"], r["confidence"]) for r in algorithm_results]
     )
 
-    # 幂等性（S1-C3）：删除该回路在当前时间窗内的旧诊断记录，避免重复写入
-    await db.execute(
-        delete(DiagnosisResult).where(
-            DiagnosisResult.loop_id == loop_id,
-            DiagnosisResult.diagnosed_at >= ts_start,
-            DiagnosisResult.diagnosed_at <= ts_end + timedelta(hours=1),
+    # 幂等性（S1-C3）：删除同一任务的旧诊断记录，避免重复写入
+    # 注意：按 task_id 隔离，避免不同任务互相删除诊断结果
+    if task_id:
+        await db.execute(
+            delete(DiagnosisResult).where(
+                DiagnosisResult.task_id == task_id,
+            )
         )
-    )
+    else:
+        # 无 task_id 时（旧模式兼容）：按回路 + 时间窗删除
+        await db.execute(
+            delete(DiagnosisResult).where(
+                DiagnosisResult.loop_id == loop_id,
+                DiagnosisResult.diagnosed_at >= ts_start,
+                DiagnosisResult.diagnosed_at <= ts_end + timedelta(hours=1),
+            )
+        )
 
     # 写入诊断结果（每个标签一条记录）
     diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
@@ -822,12 +935,17 @@ async def _diagnose_loop(
             **result["evidence"],
             "fused_confidence": fused_confidence,
         }
+        # 合并所有算法的可视化数据（无条件保存所有可视化数组）
+        feature_values = {
+            **all_visualization_data,
+            **result.get("feature_values", {}),
+        }
         diag_record = DiagnosisResult(
             id=str(uuid4()),
             loop_id=loop_id,
             diag_label=result["label"],
             confidence=confidence_decimal,
-            feature_values=result.get("feature_values"),
+            feature_values=feature_values,
             evidence_chain=evidence_chain,
             algorithm_version=DIAG_ALGORITHM_VERSION,
             diagnosed_at=diagnosed_at,
@@ -859,6 +977,8 @@ def _empty_osc_result() -> dict[str, Any]:
         "amplitude": 0.0,
         "frequency": 0.0,
         "index": 0.0,
+        "frequencies": [],
+        "amplitudes": [],
     }
 
 
@@ -916,12 +1036,23 @@ def _detect_oscillation_fft(pv_values: np.ndarray, sample_interval: float = 1.0)
         # 置信度：基于振荡指数
         confidence = min(1.0, osc_index * 1.5) if detected else 0.0
 
+        frequencies = np.arange(len(fft_magnitude)) * fs / N
+        amplitudes = fft_magnitude / N
+
+        max_points = 500
+        if len(frequencies) > max_points:
+            step = len(frequencies) // max_points
+            frequencies = frequencies[::step]
+            amplitudes = amplitudes[::step]
+
         return {
             "detected": detected,
             "confidence": confidence,
             "amplitude": amplitude,
             "frequency": frequency,
             "index": osc_index,
+            "frequencies": frequencies.tolist(),
+            "amplitudes": amplitudes.tolist(),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("FFT 振荡检测失败: %s", exc)
@@ -1083,9 +1214,12 @@ def _analyze_pid_params(pv_values: np.ndarray, sp_values: np.ndarray) -> dict[st
 
         confidence = 0.0
         if overaggressive:
-            confidence = min(1.0, overshoot)
+            # 过冲超过 20% 判定为过激，但置信度不直接等于过冲值
+            # 使用更保守的置信度计算，避免过冲值很大时置信度直接到 100%
+            confidence = min(0.95, overshoot * 0.4)
         elif overconservative:
-            confidence = min(1.0, response_time)
+            # 响应时间过长判定为过保守，同样使用保守的置信度计算
+            confidence = min(0.95, response_time * 0.8)
 
         return {
             "overaggressive": overaggressive,
@@ -1430,6 +1564,10 @@ def _empty_step_response_result() -> dict[str, Any]:
         "decay_ratio": 0.0,
         "steady_state_error": 0.0,
         "step_count": 0,
+        "timestamps": [],
+        "pv_response": [],
+        "sp_values": [],
+        "step_indices": [],
     }
 
 
@@ -1452,6 +1590,11 @@ def _empty_bias_shift_result() -> dict[str, Any]:
         "shift_count": 0,
         "max_cusum": 0.0,
         "shift_magnitude": 0.0,
+        "timestamps": [],
+        "cusum_pos": [],
+        "cusum_neg": [],
+        "shift_points": [],
+        "threshold": 0.0,
     }
 
 
@@ -1780,7 +1923,11 @@ def _analyze_step_response(
 
         # 过激判定：满足 2 项及以上
         detected = bool(satisfied >= 2)
-        confidence = (satisfied / 3.0) if detected else 0.0
+        # 限制最大置信度为 95%，避免全部满足时直接到 100%
+        confidence = min(0.95, satisfied / 3.0) if detected else 0.0
+
+        response_ts = ts[step_idx + 1 : response_end] if ts is not None else np.arange(len(pv_response))
+        sp_response = sp_arr[step_idx + 1 : response_end]
 
         return {
             "detected": detected,
@@ -1789,6 +1936,10 @@ def _analyze_step_response(
             "decay_ratio": decay_ratio,
             "steady_state_error": steady_state_error,
             "step_count": len(step_indices),
+            "timestamps": response_ts.tolist(),
+            "pv_response": pv_response.tolist(),
+            "sp_values": sp_response.tolist(),
+            "step_indices": step_indices.tolist(),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("阶跃响应分析失败: %s", exc)
@@ -1893,12 +2044,15 @@ def _detect_slow_response(
             bias = pv_arr - sp_arr
             bias_std = float(np.std(bias))
             # 稳态偏差大且变化缓慢 → 过保守
+            # 提高阈值，避免误报：偏差标准差超过 SP 量程的 20% 才判定
             ratio = bias_std / sp_range
-            detected = bool(ratio > 0.1)
+            detected = bool(ratio > 0.2)
             expected_tau = _expected_time_constant(control_type)
+            # 降低置信度计算系数，避免轻易达到 100%
+            confidence = min(0.8, ratio * 3) if detected else 0.0
             return {
                 "detected": detected,
-                "confidence": min(1.0, ratio * 5) if detected else 0.0,
+                "confidence": confidence,
                 "time_constant": 0.0,
                 "expected_time_constant": expected_tau,
                 "ratio": ratio,
@@ -1962,7 +2116,13 @@ def _detect_slow_response(
         ratio = time_constant / expected_tau if expected_tau > 0 else 0.0
         detected = bool(ratio > 2.0)  # 实际响应比期望慢 2 倍以上
 
-        confidence = min(1.0, ratio / 5.0) if detected else 0.0
+        # 置信度计算：使用更保守的公式，避免轻易达到 100%
+        # 拟合时间常数达到上限时，置信度不应直接到 100%
+        if detected:
+            # 限制最大置信度为 90%，避免时间常数拟合上限导致的误判
+            confidence = min(0.9, ratio / 10.0)
+        else:
+            confidence = 0.0
 
         return {
             "detected": detected,
@@ -2074,7 +2234,10 @@ def _detect_bias_shift(
 
         # 判定规则（ADS §5.5.2: 频率 > 5 次/小时）
         detected = bool(shift_frequency > 5.0)
-        confidence = min(1.0, shift_frequency / 10.0) if detected else 0.0
+        # 限制最大置信度为 95%，避免频率很高时置信度直接到 100%
+        confidence = min(0.95, shift_frequency / 20.0) if detected else 0.0
+
+        cusum_ts = ts[:min_len].tolist() if ts is not None else np.arange(min_len).tolist()
 
         return {
             "detected": detected,
@@ -2082,6 +2245,11 @@ def _detect_bias_shift(
             "shift_count": shift_count,
             "max_cusum": max_cusum,
             "shift_magnitude": shift_magnitude,
+            "timestamps": cusum_ts,
+            "cusum_pos": cusum_pos.tolist(),
+            "cusum_neg": cusum_neg.tolist(),
+            "shift_points": shift_points,
+            "threshold": h,
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("偏差突变检测失败: %s", exc)

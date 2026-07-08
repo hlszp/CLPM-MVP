@@ -75,10 +75,12 @@ from app.services.diagnosis import (
     get_diagnosis_analytics,
     get_diagnosis_detail,
     get_diagnosis_task_detail,
+    get_diagnosis_visualization,
     list_diagnosis,
     list_diagnosis_configs,
     list_diagnosis_records,
     list_diagnosis_tasks,
+    run_diagnosis_task,
     trigger_diagnosis,
     update_diagnosis_config,
 )
@@ -356,6 +358,23 @@ async def get_task_detail_endpoint(
     return success(data=data)
 
 
+@router.post("/tasks/{task_id}/run", response_model=ApiResponse[dict])
+async def run_task_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+) -> dict:
+    """对已有诊断任务执行诊断（不创建新任务）。
+
+    重置任务状态为 PENDING 并通过 Celery 异步执行诊断。
+    适用于行级"诊断"按钮。仅 ADMIN/IC_ENGINEER/PE_ENGINEER 角色可操作。
+
+    设计依据：PRD §5.6 / IDS §2.4 — POST /api/v1/diagnosis/tasks/{taskId}/run
+    """
+    data = await run_diagnosis_task(db=db, task_id=task_id)
+    return success(data=data, message="诊断任务已执行")
+
+
 @router.post("/tasks/{task_id}/archive", response_model=ApiResponse[dict])
 async def archive_task_endpoint(
     task_id: str,
@@ -410,6 +429,7 @@ async def list_records_endpoint(
     triggerType: str | None = Query(None, description="触发方式筛选（manual/auto）"),
     loopId: str | None = Query(None, description="按回路 ID 筛选"),
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    timeWindow: str | None = Query(None, description="时间窗筛选（兼容前端参数，暂不后端过滤）"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -439,6 +459,30 @@ async def get_diagnosis_detail_endpoint(
 ) -> dict:
     """诊断详情（含 8 类标签数组 + 证据链 + 特征值）。"""
     data = await get_diagnosis_detail(db=db, loop_id=str(loop_id))
+    return success(data=data)
+
+
+@router.get("/{loop_id}/visualization", response_model=ApiResponse[dict])
+async def get_diagnosis_visualization_endpoint(
+    loop_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """诊断可视化数据（包含 8 类算法的完整可视化数组）。
+
+    返回数据结构：
+    - spectrum: FFT 频谱数据（频率、振幅数组）
+    - stepResponse: 阶跃响应数据（PV/SP/时间戳数组）
+    - cusumAnalysis: CUSUM 累积和数据（正负累积和数组）
+    - scatterPlot: PV-OP 散点图数据
+    - qualityTimeline: PV 质量码时序数据
+    - saturationAnalysis: OP 饱和分析数据
+    - slowResponse: 响应迟缓分析数据
+    - choudhury: Choudhury 非线性检测数据
+    - iaeAnalysis: IAE 零交叉分析数据
+    - kano: Kano 统计法数据
+    """
+    data = await get_diagnosis_visualization(db=db, loop_id=str(loop_id))
     return success(data=data)
 
 
