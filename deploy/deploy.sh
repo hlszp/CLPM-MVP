@@ -92,6 +92,18 @@ fi
 echo ""
 
 # ------------------------------------------------------------
+# 7.5 初始化 TDengine 超级表（首次部署执行）
+# ------------------------------------------------------------
+echo "4.5 初始化 TDengine 超级表..."
+if docker compose -f "$COMPOSE_FILE" exec -T tdengine taos -f /init/01_supertable.sql 2>/dev/null; then
+    echo "  [OK] TDengine 超级表初始化完成"
+else
+    echo "  [WARN] TDengine 初始化失败（可能已存在，忽略）"
+    echo "  手动执行：docker compose -f $COMPOSE_FILE exec tdengine taos -f /init/01_supertable.sql"
+fi
+echo ""
+
+# ------------------------------------------------------------
 # 8. 验证服务状态
 # ------------------------------------------------------------
 echo "5. 验证服务状态..."
