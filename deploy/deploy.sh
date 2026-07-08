@@ -62,14 +62,14 @@ echo ""
 # 4. 构建 Docker 镜像
 # ------------------------------------------------------------
 echo "1. 构建 Docker 镜像..."
-docker compose -f "$COMPOSE_FILE" build
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
 echo ""
 
 # ------------------------------------------------------------
 # 5. 启动服务
 # ------------------------------------------------------------
 echo "2. 启动服务..."
-docker compose -f "$COMPOSE_FILE" up -d
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 echo ""
 
 # ------------------------------------------------------------
@@ -83,7 +83,7 @@ echo ""
 # 7. 执行数据库迁移（alembic upgrade head）
 # ------------------------------------------------------------
 echo "4. 执行数据库迁移..."
-if docker compose -f "$COMPOSE_FILE" exec -T backend uv run alembic upgrade head 2>/dev/null; then
+if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend uv run alembic upgrade head 2>/dev/null; then
     echo "  [OK] 数据库迁移完成"
 else
     echo "  [WARN] 数据库迁移失败（可能首次启动 schema 已通过 initdb 创建）"
@@ -95,7 +95,7 @@ echo ""
 # 7.5 初始化 TDengine 超级表（首次部署执行）
 # ------------------------------------------------------------
 echo "4.5 初始化 TDengine 超级表..."
-if docker compose -f "$COMPOSE_FILE" exec -T tdengine taos -f /init/01_supertable.sql 2>/dev/null; then
+if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T tdengine taos -f /init/01_supertable.sql 2>/dev/null; then
     echo "  [OK] TDengine 超级表初始化完成"
 else
     echo "  [WARN] TDengine 初始化失败（可能已存在，忽略）"
@@ -107,7 +107,7 @@ echo ""
 # 8. 验证服务状态
 # ------------------------------------------------------------
 echo "5. 验证服务状态..."
-docker compose -f "$COMPOSE_FILE" ps
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
 echo ""
 
 # ------------------------------------------------------------
@@ -115,7 +115,7 @@ echo ""
 # ------------------------------------------------------------
 echo "6. API 健康检查..."
 # S2-B3: 后端端口不暴露到宿主机，通过 docker exec 检查
-if docker compose -f "$COMPOSE_FILE" exec -T backend curl -fsS http://localhost:8001/health >/dev/null 2>&1; then
+if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend curl -fsS http://localhost:8001/health >/dev/null 2>&1; then
     echo "  [OK] 后端 API 健康"
 else
     echo "  [FAIL] 后端 API 健康检查失败"
