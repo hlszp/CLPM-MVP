@@ -23,6 +23,9 @@ class DataSourceConfigInfo(CamelModel):
     signalrHubUrl: str | None = Field(None, description="实时数据 SignalR Hub URL")
     signalrEnabled: bool = Field(False, description="是否启用实时数据订阅")
     signalrReconnectInterval: int = Field(5, description="SignalR 断线重连间隔（秒）")
+    realtimeWritebackEnabled: bool = Field(
+        False, description="是否将实时数据写回本地 TDengine 宽表（仅 tdengine 模式生效）"
+    )
 
     # 运行态标记（启动时初始化的实际状态，UI 用于提示"需重启生效"）
     historyProviderActive: str = Field(..., description="当前生效的历史数据 Provider：tdengine / remote_api")
@@ -39,6 +42,9 @@ class DataSourceConfigUpdate(CamelModel):
     signalrHubUrl: str | None = Field(None, description="实时数据 SignalR Hub URL")
     signalrEnabled: bool | None = Field(None, description="是否启用实时数据订阅")
     signalrReconnectInterval: int | None = Field(None, description="SignalR 断线重连间隔（秒）")
+    realtimeWritebackEnabled: bool | None = Field(
+        None, description="是否将实时数据写回本地 TDengine 宽表"
+    )
 
 
 class DataSourceTestResult(CamelModel):

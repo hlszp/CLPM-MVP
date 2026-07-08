@@ -41,6 +41,7 @@ const form = reactive({
   signalrHubUrl: '',
   signalrEnabled: false,
   signalrReconnectInterval: 5,
+  realtimeWritebackEnabled: false,
 });
 
 const historyTestResult = ref<DataSourceApi.TestResult | null>(null);
@@ -67,6 +68,7 @@ async function loadConfig() {
     form.signalrHubUrl = data.signalrHubUrl ?? '';
     form.signalrEnabled = data.signalrEnabled;
     form.signalrReconnectInterval = data.signalrReconnectInterval;
+    form.realtimeWritebackEnabled = data.realtimeWritebackEnabled;
     historyTestResult.value = null;
     signalrTestResult.value = null;
   } finally {
@@ -97,6 +99,7 @@ async function saveSignalrConfig() {
       signalrHubUrl: form.signalrHubUrl || undefined,
       signalrEnabled: form.signalrEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
+      realtimeWritebackEnabled: form.realtimeWritebackEnabled,
     });
     config.value = data;
     message.success('实时数据源配置已保存');
@@ -132,6 +135,7 @@ async function testSignalr() {
       signalrHubUrl: form.signalrHubUrl || undefined,
       signalrEnabled: form.signalrEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
+      realtimeWritebackEnabled: form.realtimeWritebackEnabled,
     });
     config.value = data;
     const result = await testSignalrApi();
@@ -282,6 +286,14 @@ onMounted(loadConfig);
                 :max="60"
                 :min="1"
               />
+            </Form.Item>
+            <Form.Item v-if="form.dataSourceType === 'tdengine'" label="实时数据写回 TDengine">
+              <div class="flex items-center gap-2">
+                <Switch v-model:checked="form.realtimeWritebackEnabled" />
+                <span class="text-gray-400 text-sm">
+                  开启后实时数据将写回本地 TDengine 宽表（仅 tdengine 模式）
+                </span>
+              </div>
             </Form.Item>
           </template>
 

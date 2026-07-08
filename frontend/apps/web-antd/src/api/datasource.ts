@@ -25,6 +25,8 @@ export namespace DataSourceApi {
     signalrEnabled: boolean;
     /** SignalR 断线重连间隔（秒） */
     signalrReconnectInterval: number;
+    /** 是否将实时数据写回本地 TDengine 宽表（仅 tdengine 模式生效） */
+    realtimeWritebackEnabled: boolean;
     /** 当前生效的历史数据 Provider（启动时初始化，UI 用于提示"需重启生效"） */
     historyProviderActive: string;
     /** 实时订阅器是否在运行（启动时初始化，UI 用于提示"需重启生效"） */
@@ -40,6 +42,7 @@ export namespace DataSourceApi {
     signalrHubUrl?: string;
     signalrEnabled?: boolean;
     signalrReconnectInterval?: number;
+    realtimeWritebackEnabled?: boolean;
   }
 
   /** 连通性测试结果 */
