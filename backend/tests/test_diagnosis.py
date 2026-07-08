@@ -336,10 +336,15 @@ class TestDiagnosisDetail:
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
+                # 1. loop (scalar_one_or_none)
                 return _make_scalar_one_or_none_mock(loop)
             if call_count[0] == 2:
+                # 2. latest_diag (scalar_one_or_none) → latest_record
+                return _make_scalar_one_or_none_mock(diag)
+            if call_count[0] == 3:
+                # 3. diag_result (scalars) — latest_record.task_id 为 truthy MagicMock
                 return _make_scalars_mock([diag])
-            # snapshot
+            # 4. snapshot (scalar_one_or_none)
             return _make_scalar_one_or_none_mock(_make_snapshot())
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
@@ -378,8 +383,10 @@ class TestDiagnosisDetail:
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
+                # 1. loop (scalar_one_or_none)
                 return _make_scalar_one_or_none_mock(loop)
-            return _make_scalars_mock([])
+            # 2. latest_diag (scalar_one_or_none) → None，触发 ERR_DIAG_RESULT_NOT_FOUND
+            return _make_scalar_one_or_none_mock(None)
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["admin"]):

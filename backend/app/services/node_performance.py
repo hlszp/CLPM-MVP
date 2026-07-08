@@ -104,8 +104,9 @@ async def get_default_auto_modes(db: AsyncSession) -> set[int]:
     - key: ``loop.default_auto_modes``
     - value: JSON 数组字符串，如 ``"[1, 2, 3]"``
 
-    无配置或解析失败时返回默认值 ``{1, 2, 3}``，
-    这是 DCS 系统中常见的自动模式值（1=Auto, 2=Cascade, 3=Program）。
+    无配置或解析失败时返回空集（不假设默认值），
+    此时无 LoopModeMapping 配置的回路不计入自动模式回路数。
+    此严格模式提醒管理员必须配置 sys_config.loop.default_auto_modes。
 
     Returns:
         全局默认自动 MODE 值集合
@@ -118,29 +119,30 @@ async def get_default_auto_modes(db: AsyncSession) -> set[int]:
     raw = result.scalar_one_or_none()
     if not raw:
         logger.info(
-            "[实时自控率] sys_config.%s 未配置，使用默认值 {1, 2, 3}",
+            "[实时自控率] sys_config.%s 未配置，回退空集（严格模式）",
             DEFAULT_AUTO_MODES_KEY,
         )
-        return {1, 2, 3}
+        return set()
     try:
         import json
 
         modes = json.loads(raw)
-        if isinstance(modes, list) and len(modes) > 0:
+        if isinstance(modes, list):
             return {int(m) for m in modes}
         logger.warning(
-            "[实时自控率] sys_config.%s 值为空数组，使用默认值 {1, 2, 3}",
+            "[实时自控率] sys_config.%s 值非 JSON 数组（%r），回退空集",
             DEFAULT_AUTO_MODES_KEY,
+            raw,
         )
-        return {1, 2, 3}
+        return set()
     except (ValueError, TypeError) as exc:
         logger.warning(
-            "[实时自控率] sys_config.%s 值无效（%r），使用默认值 {1, 2, 3}: %s",
+            "[实时自控率] sys_config.%s 值无效（%r），回退空集: %s",
             DEFAULT_AUTO_MODES_KEY,
             raw,
             exc,
         )
-        return {1, 2, 3}
+        return set()
 
 
 async def query_realtime_auto_rate(
