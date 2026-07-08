@@ -26,6 +26,8 @@ const activeKey = computed(() => {
   if (path === '/metric/engine-config') return 'engine';
   if (path === '/metric/task-strategy') return 'task-strategy';
   if (path === '/metric/tasks') return 'tasks';
+  if (path === '/metric/grading-threshold') return 'grading';
+  if (path === '/metric/version-history') return 'version';
   return 'definition';
 });
 
@@ -36,6 +38,8 @@ function handleChange(key: Key) {
     'task-strategy': '/metric/task-strategy',
     tasks: '/metric/tasks',
     weight: '/metric/weight-config',
+    grading: '/metric/grading-threshold',
+    version: '/metric/version-history',
   };
   router.push(map[key] || '/metric/config');
 }
@@ -49,9 +53,11 @@ function handleChange(key: Key) {
   >
     <TabPane key="definition" tab="指标定义" />
     <TabPane key="weight" tab="权重配置" />
+    <TabPane key="grading" tab="定级阈值" />
     <TabPane key="engine" tab="引擎规则" />
     <TabPane key="task-strategy" tab="任务策略" />
     <TabPane key="tasks" tab="执行记录" />
+    <TabPane key="version" tab="版本管理" />
   </Tabs>
 </template>
 

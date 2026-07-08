@@ -144,6 +144,65 @@ watch(aggregateData, (val) => {
 const rankingLoading = ref(false);
 const rankingList = ref<MetricApi.RankingItem[]>([]);
 
+const rankingColumns = [
+  { title: '排名', dataIndex: 'rank', key: 'rank', width: 70, align: 'center' },
+  {
+    title: '回路位号',
+    dataIndex: 'tagName',
+    key: 'tagName',
+    width: 140,
+    ellipsis: true,
+  },
+  {
+    title: '综合评分',
+    dataIndex: 'score',
+    key: 'score',
+    width: 100,
+    align: 'right',
+  },
+  {
+    title: '稳定率',
+    dataIndex: 'steadyRate',
+    key: 'steadyRate',
+    width: 90,
+    align: 'right',
+  },
+  {
+    title: '可信度',
+    dataIndex: 'confidenceLevel',
+    key: 'confidenceLevel',
+    width: 110,
+    align: 'center',
+  },
+  {
+    title: '预诊',
+    dataIndex: 'preDiagnosis',
+    key: 'preDiagnosis',
+    width: 140,
+    ellipsis: true,
+  },
+  {
+    title: '处理状态',
+    dataIndex: 'actionStatus',
+    key: 'actionStatus',
+    width: 100,
+    align: 'center',
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 110,
+    fixed: 'right',
+  },
+];
+
+const actionStatusLabel: Record<string, string> = {
+  PENDING: '待处理',
+  IN_PROGRESS: '处理中',
+  IMPLEMENTED: '已实施',
+  IGNORED: '已忽略',
+};
+
 const trendChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 
@@ -163,7 +222,6 @@ let autoRateTimer: null | ReturnType<typeof setInterval> = null;
 async function loadBoard() {
   loading.value = true;
   try {
-    // 独立调用每个API，避免一个失败影响其他
     const boardParams: { plantNodeId?: string; timeWindow: TimeWindow } = {
       timeWindow: filter.timeWindow,
     };
@@ -659,6 +717,10 @@ function handleRankingSort() {
 
 function handleViewDiagnosis(loopId: string) {
   router.push(`/diagnosis/detail?loopId=${loopId}`);
+}
+
+function handleInitiateDiagnosis(loopId: string) {
+  router.push(`/diagnosis/detail/${loopId}`);
 }
 
 onMounted(() => {

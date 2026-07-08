@@ -411,6 +411,12 @@ function handleViewDetail(loopId: string) {
   router.push(`/loop/detail/${loopId}`);
 }
 
+/** 发起诊断跳转 */
+function handleInitiateDiagnosis(loopId: string) {
+  drawerVisible.value = false;
+  router.push(`/diagnosis/detail/${loopId}`);
+}
+
 /** 排名前 3 的颜色：rank 1 最差=红 / rank 2 次差=黄 / rank 3 第三=蓝 */
 function rankColor(rank: number): string {
   if (rank === 1) return themeColors.value.DANGER;
@@ -656,6 +662,14 @@ onMounted(() => {
             >
               查看详情
             </Button>
+            <Button
+              type="primary"
+              size="small"
+              @click.stop="handleInitiateDiagnosis(record.loopId)"
+              class="ml-2"
+            >
+              发起诊断
+            </Button>
           </template>
         </template>
       </Table>
@@ -733,9 +747,16 @@ onMounted(() => {
             <span>{{ selectedLoop.samplingFreq }}</span>
           </div>
         </div>
-        <div class="mt-6">
+        <div class="mt-6 space-y-2">
           <Button
             type="primary"
+            block
+            @click="handleInitiateDiagnosis(selectedLoop.loopId)"
+          >
+            发起诊断
+          </Button>
+          <Button
+            type="default"
             block
             @click="handleViewDetail(selectedLoop.loopId)"
           >
