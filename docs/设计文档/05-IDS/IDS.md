@@ -763,6 +763,10 @@
           "tagName": "101-FC-1023",
           "description": "常减压装置进料流量控制",
           "unitName": "常减压装置-单元A",
+          "pvRange": { "min": 0.0, "max": 100.0 },
+          "pvUnit": "℃",
+          "opRange": { "min": 0.0, "max": 100.0 },
+          "opUnit": "%",
           "currentValues": {
             "pv": 50.2,
             "sp": 50.0,
@@ -785,6 +789,7 @@
   }
   ```
 * **说明**：列表视图与卡片视图返回数据结构一致，仅前端渲染方式不同；回路处于 `PARTIAL` 时卡片置灰，悬浮提示缺失项；`status` 枚举值对齐实现契约 v2.0 §4.6：`READY`/`PARTIAL`/`INACTIVE`。
+  v6.1 新增 `pvRange`/`pvUnit`/`opRange`/`opUnit` 字段（从关联 Tag 引用，不冗余存储），用于在列表中展示量程和单位。
 
 ---
 
