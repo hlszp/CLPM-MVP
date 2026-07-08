@@ -16,6 +16,12 @@
 - GET    /api/v1/diagnosis/tags                          — 查询诊断标签列表（IDS §2.4.10）
 - GET    /api/v1/diagnosis/tags/{loopId}                 — 查询回路诊断标签（IDS §2.4.11）
 - PUT    /api/v1/diagnosis/tags/{tagId}/resolve          — 处理诊断标签（IDS §2.4.12）
+- POST   /api/v1/diagnosis/trigger                       — 触发诊断任务（手动，支持批量）
+- GET    /api/v1/diagnosis/tasks                         — 诊断任务列表（未归档）
+- GET    /api/v1/diagnosis/tasks/{taskId}                — 诊断任务详情
+- POST   /api/v1/diagnosis/tasks/{taskId}/archive        — 归档诊断任务
+- POST   /api/v1/diagnosis/tasks/{taskId}/cancel         — 取消诊断任务
+- GET    /api/v1/diagnosis/records                       — 诊断记录列表（已归档）
 """
 
 from __future__ import annotations
@@ -47,9 +53,14 @@ from app.schemas.diagnosis import (
     DiagnosisConfigItem,
     DiagnosisConfigUpdate,
     DiagnosisListData,
+    DiagnosisRecordListData,
     DiagnosisReportRequest,
     DiagnosisTagListResponse,
     DiagnosisTagSchema,
+    DiagnosisTaskDetail,
+    DiagnosisTaskListData,
+    DiagnosisTriggerData,
+    DiagnosisTriggerRequest,
     RecommendationData,
     TagResolveRequest,
     TrackerExportData,
@@ -58,10 +69,19 @@ from app.schemas.diagnosis import (
     WaveformData,
 )
 from app.services.diagnosis import (
+    archive_diagnosis_task,
+    cancel_diagnosis_task,
+    delete_diagnosis_task,
     get_diagnosis_analytics,
     get_diagnosis_detail,
+    get_diagnosis_task_detail,
+    get_diagnosis_visualization,
     list_diagnosis,
     list_diagnosis_configs,
+    list_diagnosis_records,
+    list_diagnosis_tasks,
+    run_diagnosis_task,
+    trigger_diagnosis,
     update_diagnosis_config,
 )
 from app.services.diagnosis_recommendation import (
@@ -269,6 +289,168 @@ async def ab_compare_endpoint(
     )
 
 
+# ---------------------------------------------------------------------------
+# 诊断任务管理 API (PRD §5.6 诊断中心 — 诊断任务子模块)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/trigger", response_model=ApiResponse[DiagnosisTriggerData])
+async def trigger_diagnosis_endpoint(
+    body: DiagnosisTriggerRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+) -> dict:
+    """触发诊断任务（手动，支持批量）。
+
+    为每个回路创建一条 DiagnosisTask 记录，并通过 Celery 异步执行诊断。
+    仅 ADMIN/IC_ENGINEER/PE_ENGINEER 角色可操作。
+
+    设计依据：PRD §5.6 / IDS §2.4 — POST /api/v1/diagnosis/trigger
+    """
+    data = await trigger_diagnosis(
+        db=db,
+        loop_ids=body.loopIds,
+        start_time=body.startTime,
+        end_time=body.endTime,
+        operator=user.username,
+    )
+    return success(data=data, message=f"已触发 {len(data['tasks'])} 个诊断任务")
+
+
+@router.get("/tasks", response_model=ApiResponse[DiagnosisTaskListData])
+async def list_tasks_endpoint(
+    status: str | None = Query(None, description="任务状态筛选（PENDING/RUNNING/SUCCESS/FAILED/CANCELLED）"),
+    triggerType: str | None = Query(None, description="触发方式筛选（manual/auto）"),
+    loopId: str | None = Query(None, description="按回路 ID 筛选"),
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """诊断任务列表（仅未归档，分页 + 筛选）。
+
+    设计依据：PRD §5.6 / IDS §2.4 — GET /api/v1/diagnosis/tasks
+    """
+    data = await list_diagnosis_tasks(
+        db=db,
+        status=status,
+        trigger_type=triggerType,
+        loop_id=loopId,
+        plant_node_id=plantNodeId,
+        page=page,
+        page_size=pageSize,
+    )
+    return success(data=data)
+
+
+@router.get("/tasks/{task_id}", response_model=ApiResponse[DiagnosisTaskDetail])
+async def get_task_detail_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """诊断任务详情（含关联的诊断结果列表）。
+
+    设计依据：PRD §5.6 / IDS §2.4 — GET /api/v1/diagnosis/tasks/{taskId}
+    """
+    data = await get_diagnosis_task_detail(db=db, task_id=task_id)
+    return success(data=data)
+
+
+@router.post("/tasks/{task_id}/run", response_model=ApiResponse[dict])
+async def run_task_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+) -> dict:
+    """对已有诊断任务执行诊断（不创建新任务）。
+
+    重置任务状态为 PENDING 并通过 Celery 异步执行诊断。
+    适用于行级"诊断"按钮。仅 ADMIN/IC_ENGINEER/PE_ENGINEER 角色可操作。
+
+    设计依据：PRD §5.6 / IDS §2.4 — POST /api/v1/diagnosis/tasks/{taskId}/run
+    """
+    data = await run_diagnosis_task(db=db, task_id=task_id)
+    return success(data=data, message="诊断任务已执行")
+
+
+@router.post("/tasks/{task_id}/archive", response_model=ApiResponse[dict])
+async def archive_task_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+) -> dict:
+    """归档诊断任务（仅终态任务可归档：SUCCESS/FAILED/CANCELLED）。
+
+    归档后任务从任务列表移入诊断记录。仅 ADMIN/IC_ENGINEER/PE_ENGINEER 角色可操作。
+
+    设计依据：PRD §5.6 / IDS §2.4 — POST /api/v1/diagnosis/tasks/{taskId}/archive
+    """
+    data = await archive_diagnosis_task(db=db, task_id=task_id, operator=user.username)
+    return success(data=data, message="任务已归档")
+
+
+@router.post("/tasks/{task_id}/cancel", response_model=ApiResponse[dict])
+async def cancel_task_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+) -> dict:
+    """取消诊断任务（仅 PENDING/RUNNING 可取消）。
+
+    仅 ADMIN/IC_ENGINEER/PE_ENGINEER 角色可操作。
+
+    设计依据：PRD §5.6 / IDS §2.4 — POST /api/v1/diagnosis/tasks/{taskId}/cancel
+    """
+    data = await cancel_diagnosis_task(db=db, task_id=task_id, operator=user.username)
+    return success(data=data, message="任务已取消")
+
+
+@router.delete("/tasks/{task_id}", response_model=ApiResponse[dict])
+async def delete_task_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+) -> dict:
+    """物理删除诊断任务（仅 PENDING 可删除）。
+
+    仅 ADMIN/IC_ENGINEER/PE_ENGINEER 角色可操作。
+
+    设计依据：PRD §5.6 / IDS §2.4 — DELETE /api/v1/diagnosis/tasks/{taskId}
+    """
+    data = await delete_diagnosis_task(db=db, task_id=task_id, operator=user.username)
+    return success(data=data, message="任务已删除")
+
+
+@router.get("/records", response_model=ApiResponse[DiagnosisRecordListData])
+async def list_records_endpoint(
+    status: str | None = Query(None, description="任务状态筛选（SUCCESS/FAILED/CANCELLED）"),
+    triggerType: str | None = Query(None, description="触发方式筛选（manual/auto）"),
+    loopId: str | None = Query(None, description="按回路 ID 筛选"),
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    timeWindow: str | None = Query(None, description="时间窗筛选（兼容前端参数，暂不后端过滤）"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """诊断记录列表（仅已归档，分页 + 筛选）。
+
+    设计依据：PRD §5.6 / IDS §2.4 — GET /api/v1/diagnosis/records
+    """
+    data = await list_diagnosis_records(
+        db=db,
+        status=status,
+        trigger_type=triggerType,
+        loop_id=loopId,
+        plant_node_id=plantNodeId,
+        page=page,
+        page_size=pageSize,
+    )
+    return success(data=data)
+
+
 @router.get("/{loop_id}", response_model=ApiResponse[dict])
 async def get_diagnosis_detail_endpoint(
     loop_id: uuid.UUID,
@@ -277,6 +459,30 @@ async def get_diagnosis_detail_endpoint(
 ) -> dict:
     """诊断详情（含 8 类标签数组 + 证据链 + 特征值）。"""
     data = await get_diagnosis_detail(db=db, loop_id=str(loop_id))
+    return success(data=data)
+
+
+@router.get("/{loop_id}/visualization", response_model=ApiResponse[dict])
+async def get_diagnosis_visualization_endpoint(
+    loop_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """诊断可视化数据（包含 8 类算法的完整可视化数组）。
+
+    返回数据结构：
+    - spectrum: FFT 频谱数据（频率、振幅数组）
+    - stepResponse: 阶跃响应数据（PV/SP/时间戳数组）
+    - cusumAnalysis: CUSUM 累积和数据（正负累积和数组）
+    - scatterPlot: PV-OP 散点图数据
+    - qualityTimeline: PV 质量码时序数据
+    - saturationAnalysis: OP 饱和分析数据
+    - slowResponse: 响应迟缓分析数据
+    - choudhury: Choudhury 非线性检测数据
+    - iaeAnalysis: IAE 零交叉分析数据
+    - kano: Kano 统计法数据
+    """
+    data = await get_diagnosis_visualization(db=db, loop_id=str(loop_id))
     return success(data=data)
 
 

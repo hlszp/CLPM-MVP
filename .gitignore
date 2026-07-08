@@ -30,3 +30,7 @@ docs/codebuddyCheck/
 
 # 预研文档中的大体积 PDF（OCR 国标等，不入库）
 docs/预研文档/*.pdf
+
+# Celery Beat 运行时临时文件
+celerybeat-schedule*
+celerybeat.pid

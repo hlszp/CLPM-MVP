@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -192,6 +192,7 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         taskId=data.get("task_id", ""),
         taskType=TaskType(data.get("task_type", TaskType.STANDARD.value)),
         status=TaskStatus(data.get("status", TaskStatus.PENDING.value)),
+        title=_to_str_or_none(data.get("title")),
         progress=_to_float(data.get("progress")),
         currentStage=_to_str_or_none(data.get("current_stage")),
         loopsTotal=_to_int(data.get("loops_total")),
@@ -412,6 +413,10 @@ async def trigger_standard_evaluation(
     task_id = str(uuid4())
     now = _now_iso()
 
+    # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
+    _SHANGHAI = timezone(timedelta(hours=8))
+    _title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
+
     # 触发 Celery 任务（P1 #11: 透传 body.tsStart，None 时取上一个完整计算周期）
     celery_result = calculate_hourly_kpi.delay(ts_start=body.tsStart)
     celery_task_id = celery_result.id
@@ -420,6 +425,7 @@ async def trigger_standard_evaluation(
         "task_id": task_id,
         "task_type": TaskType.STANDARD.value,
         "status": TaskStatus.PENDING.value,
+        "title": _title,
         "progress": "",
         "current_stage": "",
         "loops_total": "",
@@ -569,8 +575,6 @@ async def trigger_backfill(
 
     设计依据：IDS §2.7.6.5, PRD §4.3.7
     """
-    from app.tasks.kpi_calc import backfill_kpi_range
-
     # 1. 校验时间窗
     try:
         start_dt = datetime.fromisoformat(body.tsStart.replace("Z", "+00:00"))
@@ -645,22 +649,19 @@ async def trigger_backfill(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    # 6. 先创建任务记录（需要 task_id 传给 Celery 任务用于状态跟踪）
+    # 6. 创建任务记录（PENDING 状态，不立即触发 Celery）
     task_id = str(uuid4())
     now = _now_iso()
 
-    # 7. 触发 Celery 任务（传入 task_id 让任务主动更新 Redis 进度）
     final_loop_ids = [loop.id for loop in loops]
-    celery_result = backfill_kpi_range.delay(
-        body.tsStart, body.tsEnd, loop_ids=final_loop_ids, task_id=task_id
-    )
 
     task_data: dict[str, str] = {
         "task_id": task_id,
         "task_type": TaskType.BACKFILL.value,
         "status": TaskStatus.PENDING.value,
+        "title": body.title,
         "progress": "0",
-        "current_stage": "初始化",
+        "current_stage": "待执行",
         "loops_total": str(loop_count),
         "loops_done": "0",
         "window_count": str(window_count),
@@ -670,7 +671,6 @@ async def trigger_backfill(
         "error_message": "",
         "created_by": user.username,
         "created_by_id": str(user.id),
-        "celery_task_id": celery_result.id,
         "ts_start": body.tsStart,
         "ts_end": body.tsEnd,
         "loop_ids": json.dumps(final_loop_ids),
@@ -679,9 +679,8 @@ async def trigger_backfill(
     await _save_task(task_data)
 
     logger.info(
-        "历史重算任务已触发: task_id=%s, celery_id=%s, loops=%d, windows=%d, user=%s",
+        "手动评估任务已创建（待执行）: task_id=%s, loops=%d, windows=%d, user=%s",
         task_id,
-        celery_result.id,
         loop_count,
         window_count,
         user.username,
@@ -689,7 +688,105 @@ async def trigger_backfill(
 
     return success(
         data={"taskId": task_id},
-        message=f"历史重算任务已触发，预计耗时 {estimated_duration_sec} 秒",
+        message=f"任务已创建，点击「评估」按钮开始执行",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 接口：启动待执行的手动评估任务
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{task_id}/start", response_model=ApiResponse[dict])
+async def start_task(
+    task_id: str,
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """启动待执行（PENDING）的手动评估任务.
+
+    仅 BACKFILL 类型且状态为 PENDING 的任务可以启动。
+    启动后状态变为 RUNNING，Celery 任务开始执行。
+
+    设计依据：IDS §2.7.6, PRD §4.3.7
+    """
+    data = await _get_task(task_id)
+    if not data:
+        raise BizError(
+            code="ERR_TASK_NOT_FOUND",
+            message=f"任务不存在: {task_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    task_type = data.get("task_type", "")
+    task_status = data.get("status", "")
+
+    if task_type != TaskType.BACKFILL.value:
+        raise BizError(
+            code="ERR_TASK_TYPE_NOT_SUPPORTED",
+            message="仅手动评估任务支持启动操作",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if task_status != TaskStatus.PENDING.value:
+        raise BizError(
+            code="ERR_TASK_NOT_PENDING",
+            message=f"任务当前状态为 {task_status}，仅待执行任务可启动",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 并发限制校验
+    user_active = await _count_active_custom_tasks(user_id=str(user.id))
+    if user_active >= MAX_CUSTOM_PER_USER:
+        raise BizError(
+            code="ERR_TASK_CONCURRENCY_LIMIT",
+            message=(f"您当前已有 {user_active} 个活跃任务，超过单用户上限 {MAX_CUSTOM_PER_USER}"),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    system_active = await _count_active_custom_tasks()
+    if system_active >= MAX_CUSTOM_SYSTEM:
+        raise BizError(
+            code="ERR_TASK_CONCURRENCY_LIMIT",
+            message=(f"系统当前有 {system_active} 个活跃任务，超过系统上限 {MAX_CUSTOM_SYSTEM}"),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    # 读取任务参数
+    ts_start = data.get("ts_start", "")
+    ts_end = data.get("ts_end", "")
+    loop_ids_raw = data.get("loop_ids", "[]")
+    try:
+        loop_ids = json.loads(loop_ids_raw) if loop_ids_raw else []
+    except (json.JSONDecodeError, TypeError):
+        loop_ids = []
+
+    # 触发 Celery 任务
+    from app.tasks.kpi_calc import backfill_kpi_range
+
+    celery_result = backfill_kpi_range.delay(
+        ts_start, ts_end, loop_ids=loop_ids, task_id=task_id
+    )
+
+    # 更新任务状态为 RUNNING
+    now = _now_iso()
+    updates = {
+        "status": TaskStatus.RUNNING.value,
+        "started_at": now,
+        "current_stage": "初始化",
+        "celery_task_id": celery_result.id,
+    }
+    await redis_client.hset(_task_key(task_id), mapping=updates)
+
+    logger.info(
+        "手动评估任务已启动: task_id=%s, celery_id=%s, user=%s",
+        task_id,
+        celery_result.id,
+        user.username,
+    )
+
+    return success(
+        data={"taskId": task_id, "celeryTaskId": celery_result.id},
+        message="任务已开始执行",
     )
 
 

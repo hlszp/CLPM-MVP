@@ -305,43 +305,8 @@ class TestGradingThresholds:
 
 
 # ===========================================================================
-# P3-T3: Dashboard board + auto-rate-rt
+# P3-T3: Dashboard auto-rate-rt
 # ===========================================================================
-
-
-class TestDashboardBoard:
-    """装置级 KPI 看板端点测试."""
-
-    def test_get_board_no_plant_id(self, client, mock_db, fake_redis) -> None:
-        """无 plantId 时返回全部装置 KPI（空列表）."""
-        # board 查询会执行多次 db.execute
-        # 无 plantId 时：子查询 + join 查询，返回空列表
-        mock_db.execute = AsyncMock(return_value=_make_all_mock([]))
-
-        with mock_current_user(TEST_USERS["admin"]):
-            resp = client.get(
-                "/api/v1/dashboard/board",
-                headers={"Authorization": "Bearer fake-token"},
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()["data"]
-        assert data["total"] == 0
-        assert isinstance(data["items"], list)
-
-    def test_get_board_with_plant_id_not_found(self, client, mock_db, fake_redis) -> None:
-        """指定 plantId 但无数据时返回空列表."""
-        mock_db.execute = AsyncMock(return_value=_make_first_mock(None))
-
-        with mock_current_user(TEST_USERS["admin"]):
-            resp = client.get(
-                "/api/v1/dashboard/board?plantId=00000000-0000-0000-0000-000000000111",
-                headers={"Authorization": "Bearer fake-token"},
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()["data"]
-        assert data["total"] == 0
 
 
 class TestDashboardAutoRateRt:

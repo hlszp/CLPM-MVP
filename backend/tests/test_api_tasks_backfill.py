@@ -54,6 +54,7 @@ class TestBackfillTaskEvaluate:
                 "/api/v1/tasks/backfill",
                 headers={"Authorization": "Bearer fake-token"},
                 json={
+                    "title": "测试重算任务",
                     "tsStart": "2026-07-04T00:00:00Z",
                     "tsEnd": "2026-07-05T00:00:00Z",
                     "dryRun": True,
@@ -71,7 +72,7 @@ class TestBackfillTaskEvaluate:
         mock_task.delay.assert_not_called()
 
     def test_backfill_submit_creates_task(self, client, task_redis, fake_redis) -> None:
-        """dryRun=False 应创建 BACKFILL 任务并返回 taskId."""
+        """dryRun=False 应创建 PENDING 状态的 BACKFILL 任务，不触发 Celery."""
         fake_loops = [_mock_loop("loop-1", "L-001"), _mock_loop("loop-2", "L-002")]
         with patch("app.tasks.kpi_calc.backfill_kpi_range") as mock_task:
             mock_task.delay.return_value.id = "celery-123"
@@ -86,6 +87,7 @@ class TestBackfillTaskEvaluate:
                     "/api/v1/tasks/backfill",
                     headers={"Authorization": "Bearer fake-token"},
                     json={
+                        "title": "提交测试",
                         "tsStart": "2026-07-04T00:00:00Z",
                         "tsEnd": "2026-07-04T02:00:00Z",
                     },
@@ -93,12 +95,8 @@ class TestBackfillTaskEvaluate:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert "taskId" in data
-        assert mock_task.delay.called
-        # 验证 Celery 调用参数：ts_start, ts_end, loop_ids
-        call_args = mock_task.delay.call_args
-        assert call_args.args[0] == "2026-07-04T00:00:00Z"
-        assert call_args.args[1] == "2026-07-04T02:00:00Z"
-        assert call_args.kwargs.get("loop_ids") == ["loop-1", "loop-2"]
+        # 创建后不应触发 Celery，需手动点击"评估"按钮启动
+        assert not mock_task.delay.called
 
     def test_backfill_time_window_exceeds_30_days_rejected(
         self, client, task_redis, fake_redis
@@ -109,6 +107,7 @@ class TestBackfillTaskEvaluate:
                 "/api/v1/tasks/backfill",
                 headers={"Authorization": "Bearer fake-token"},
                 json={
+                    "title": "超时窗测试",
                     "tsStart": "2026-06-01T00:00:00Z",
                     "tsEnd": "2026-07-05T00:00:00Z",  # 34 天
                 },
@@ -123,6 +122,7 @@ class TestBackfillTaskEvaluate:
                 "/api/v1/tasks/backfill",
                 headers={"Authorization": "Bearer fake-token"},
                 json={
+                    "title": "权限测试",
                     "tsStart": "2026-07-04T00:00:00Z",
                     "tsEnd": "2026-07-05T00:00:00Z",
                 },
@@ -147,6 +147,7 @@ class TestBackfillTaskEvaluate:
                 "/api/v1/tasks/backfill",
                 headers={"Authorization": "Bearer fake-token"},
                 json={
+                    "title": "回路优先级测试",
                     "tsStart": "2026-07-04T00:00:00Z",
                     "tsEnd": "2026-07-04T01:00:00Z",
                     "plantNodeIds": ["node-1"],

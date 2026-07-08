@@ -123,6 +123,7 @@ async def create_task(
     loops_total: int | None = None,
     current_stage: str | None = None,
     triggered_by: str = "user",
+    title: str | None = None,
 ) -> str:
     """创建任务记录，返回 task_id.
 
@@ -149,6 +150,7 @@ async def create_task(
         "task_id": task_id,
         "task_type": task_type.value,
         "status": TaskStatus.PENDING.value,
+        "title": _to_str(title),
         "progress": "",
         "current_stage": _to_str(current_stage),
         "loops_total": _to_str(loops_total),

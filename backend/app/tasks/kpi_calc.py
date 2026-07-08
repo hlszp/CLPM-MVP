@@ -249,6 +249,12 @@ async def _track_hourly_calculation(celery_task_id: str, ts_start: str | None = 
 
     ts_start_dt = _parse_ts_start(ts_start)
 
+    # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
+    from datetime import datetime, timezone, timedelta
+
+    _SHANGHAI = timezone(timedelta(hours=8))
+    _title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
+
     tracker_id: str | None = None
     try:
         tracker_id = await task_tracker.create_task(
@@ -258,6 +264,7 @@ async def _track_hourly_calculation(celery_task_id: str, ts_start: str | None = 
             celery_task_id=celery_task_id,
             triggered_by="system",
             current_stage="初始化",
+            title=_title,
         )
         await task_tracker.update_status(
             tracker_id,

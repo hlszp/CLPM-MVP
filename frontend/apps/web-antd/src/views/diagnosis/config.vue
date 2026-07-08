@@ -130,7 +130,7 @@ async function loadList() {
   loading.value = true;
   try {
     const data = await getDiagnosisMetricsApi();
-    metricList.value = data.items || [];
+    metricList.value = Array.isArray(data) ? data : [];
   } catch {
     // 错误已由拦截器处理
   } finally {

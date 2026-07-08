@@ -189,7 +189,7 @@ const summaryItems = computed<SummaryItem[]>(() => {
   ];
 });
 
-/** 摘要条右侧操作（异常跟踪） */
+/** 摘要条右侧操作（异常跟踪 + 可视化分析） */
 const summaryActions = computed<SummaryAction[]>(() => {
   return [
     {
@@ -197,6 +197,12 @@ const summaryActions = computed<SummaryAction[]>(() => {
       label: '异常跟踪',
       icon: 'ant-design:flag-outlined',
       type: 'primary',
+    },
+    {
+      key: 'visualization',
+      label: '可视化分析',
+      icon: 'ant-design:bar-chart-outlined',
+      type: 'default',
     },
   ];
 });
@@ -359,6 +365,9 @@ function handleRefresh() {
 function handleSummaryAction(key: string) {
   if (key === 'track') {
     trackerDrawerVisible.value = true;
+  }
+  if (key === 'visualization') {
+    router.push(`/diagnosis/visualization/${loopId}`);
   }
 }
 

@@ -38,7 +38,6 @@ from app.schemas.performance import (
 from app.services.performance import (
     export_analytics_csv,
     get_analytics,
-    get_board,
     get_ranking,
     list_engine_rules,
     list_loop_snapshots,
@@ -122,29 +121,6 @@ async def update_rule_endpoint(
         is_enabled=body.isEnabled,
     )
     return success(data=data, message="更新成功")
-
-
-# ---------------------------------------------------------------------------
-# S3-METRIC-004: 全局看板 API
-# ---------------------------------------------------------------------------
-
-
-@router.get("/board", response_model=ApiResponse[dict])
-async def get_board_endpoint(
-    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
-    timeWindow: str = Query(
-        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
-    ),
-    db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
-) -> dict:
-    """全局看板（所有角色）。Redis 缓存 5 分钟。"""
-    data = await get_board(
-        db=db,
-        plant_node_id=plantNodeId,
-        time_window=timeWindow,
-    )
-    return success(data=data)
 
 
 # ---------------------------------------------------------------------------
