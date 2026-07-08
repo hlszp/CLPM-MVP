@@ -200,6 +200,10 @@ export namespace DiagnosisApi {
     similarity: number;
     zeroCrossingCount: number;
     meanPeriod: number;
+    opZeroCrossCount: number;
+    pvZeroCrossCount: number;
+    similarityRate: number;
+    oscillationIndex: number;
   }
 
   /** 诊断可视化 - Kano 统计法数据 */
@@ -207,6 +211,10 @@ export namespace DiagnosisApi {
     stictionRatio: number;
     correlation: number;
     stdRatio: number;
+    biasIndex: number;
+    countP: number;
+    countN: number;
+    countZ: number;
   }
 
   /** 诊断可视化数据（包含 8 类算法的完整可视化数组） */

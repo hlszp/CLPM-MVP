@@ -1,106 +1,101 @@
 <script lang="ts" setup>
-import type { EchartsUIType } from '@vben/plugins/echarts';
-
 import type { DiagnosisApi } from '#/api/diagnosis';
 
-import { computed, onMounted, ref, watch } from 'vue';
-
-import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
-
-import { useEchartsPreset } from '#/composables/use-echarts-preset';
+import { computed } from 'vue';
 
 const props = defineProps<{
   data: DiagnosisApi.QualityTimelineData;
   disabled?: boolean;
 }>();
 
-const { getSeriesColor, axisBase } = useEchartsPreset();
-
-const chartRef = ref<EchartsUIType>();
-const { renderEcharts } = useEcharts(chartRef);
-
-const options = computed(() => {
-  const goodPoints = props.data.totalPoints - props.data.badPoints;
-
-  const goodColor = getSeriesColor('ok');
-  const badColor = getSeriesColor('error');
-
-  const option: any = {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: (params: any) => {
-        return params.map((item: any) => `${item.seriesName}: ${item.value}`).join('<br/>');
-      },
-    },
-    xAxis: {
-      ...axisBase.value,
-      type: 'category',
-      data: ['数据质量'],
-      nameTextStyle: { color: '#6b7280', fontSize: 11 },
-    },
-    yAxis: {
-      ...axisBase.value,
-      type: 'value',
-      name: '点数',
-      nameTextStyle: { color: '#6b7280', fontSize: 11 },
-    },
-    grid: {
-      top: 40,
-      right: 16,
-      bottom: 50,
-      left: 56,
-      containLabel: true,
-    },
-    series: [
-      {
-        name: 'Good',
-        type: 'bar',
-        stack: 'total',
-        data: [goodPoints],
-        itemStyle: { color: goodColor },
-        barWidth: '40%',
-      },
-      {
-        name: 'Bad/Uncertain',
-        type: 'bar',
-        stack: 'total',
-        data: [props.data.badPoints],
-        itemStyle: { color: badColor },
-      },
-    ],
-    title: {
-      left: 'center',
-      top: 10,
-      text: 'PV 质量码统计',
-      subtext: `坏点率: ${(props.data.badRate * 100).toFixed(1)}% | 总点数: ${props.data.totalPoints}`,
-      textStyle: { fontSize: 14, fontWeight: 600 },
-      subtextStyle: { fontSize: 11 },
-    },
-  };
-
-  return option;
-});
-
-watch(options, (newOptions) => {
-  renderEcharts(newOptions);
-}, { immediate: true });
-
-onMounted(() => {
-  renderEcharts(options.value);
-});
+const badRatePercent = computed(() => (props.data.badRate * 100).toFixed(1));
+const goodRatePercent = computed(() => ((1 - props.data.badRate) * 100).toFixed(1));
 </script>
 
 <template>
-  <div class="quality-timeline-chart-container">
-    <EchartsUI ref="chartRef" class="w-full h-full" />
+  <div class="quality-timeline-card">
+    <div class="card-header">
+      <div class="card-title">PV 质量码统计</div>
+    </div>
+    <div class="card-body">
+      <div class="metrics-grid">
+        <div class="metric-item">
+          <span class="metric-label">坏点率</span>
+          <span class="metric-value highlight-error">{{ badRatePercent }}%</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">好点率</span>
+          <span class="metric-value highlight-success">{{ goodRatePercent }}%</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">总点数</span>
+          <span class="metric-value">{{ data.totalPoints }}</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">坏点数</span>
+          <span class="metric-value">{{ data.badPoints }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style lang="scss" scoped>
-.quality-timeline-chart-container {
-  width: 100%;
+.quality-timeline-card {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  min-height: 180px;
+  padding: 12px;
+}
+
+.card-header {
+  margin-bottom: 8px;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+.metric-label {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.metric-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  
+  &.highlight-error {
+    color: #ef4444;
+  }
+  
+  &.highlight-success {
+    color: #10b981;
+  }
 }
 </style>

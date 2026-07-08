@@ -178,6 +178,7 @@ export namespace DashboardApi {
     autoModeRate: (number | null)[];
     stabilityRate: (number | null)[];
     evaluatedLoops: number[];
+    totalLoops: number;
   }
 }
 

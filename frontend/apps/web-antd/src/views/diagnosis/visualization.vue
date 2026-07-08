@@ -8,7 +8,6 @@ import { useRoute, useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 
 import { Button, Card, Col, Row, Select, Spin, Tag } from 'ant-design-vue';
-import dayjs from 'dayjs';
 
 import { getDiagnosisVisualizationApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
@@ -34,8 +33,7 @@ const route = useRoute();
 const router = useRouter();
 
 const selectedLoopId = ref<string>(route.params.loopId as string || '');
-const selectedPlant = ref<string>('');
-const selectedUnit = ref<string>('');
+const timeWindow = ref<string>('last_7_days');
 const loops = ref<LoopApi.LoopListItem[]>([]);
 const loopsLoading = ref(false);
 
@@ -45,37 +43,12 @@ const data = ref<DiagnosisApi.DiagnosisVisualizationData | null>(null);
 const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 
-const plantOptions = computed(() => {
-  const plants = new Set<string>();
-  loops.value.forEach(l => {
-    const plant = l.unitName?.split('-')[0]?.trim() || '未知装置';
-    plants.add(plant);
-  });
-  return Array.from(plants).map(p => ({ value: p, label: p }));
-});
-
-const unitOptions = computed(() => {
-  const units = new Map<string, string>();
-  loops.value.forEach(l => {
-    if (l.unitId && l.unitName) {
-      units.set(l.unitId, l.unitName);
-    }
-  });
-  return Array.from(units.entries()).map(([id, name]) => ({ value: id, label: name }));
-});
-
-const filteredLoops = computed(() => {
-  let result = loops.value;
-  if (selectedPlant.value) {
-    result = result.filter(l => 
-      (l.unitName?.split('-')[0]?.trim() || '') === selectedPlant.value
-    );
-  }
-  if (selectedUnit.value) {
-    result = result.filter(l => l.unitId === selectedUnit.value);
-  }
-  return result;
-});
+const timeWindowOptions = [
+  { value: 'today', label: '今天' },
+  { value: 'yesterday', label: '昨天' },
+  { value: 'last_7_days', label: '近7天' },
+  { value: 'last_30_days', label: '近30天' },
+];
 
 const pageTitle = computed(() => {
   if (data.value?.tagName) {
@@ -129,23 +102,6 @@ const handleLoopChange = (value: unknown) => {
   fetchVisualizationData(strValue);
 };
 
-const handlePlantChange = (value: unknown) => {
-  selectedPlant.value = String(value);
-  selectedUnit.value = '';
-  if (filteredLoops.value.length > 0) {
-    selectedLoopId.value = filteredLoops.value[0].loopId;
-    fetchVisualizationData(filteredLoops.value[0].loopId);
-  }
-};
-
-const handleUnitChange = (value: unknown) => {
-  selectedUnit.value = String(value);
-  if (filteredLoops.value.length > 0) {
-    selectedLoopId.value = filteredLoops.value[0].loopId;
-    fetchVisualizationData(filteredLoops.value[0].loopId);
-  }
-};
-
 const goBack = () => {
   router.back();
 };
@@ -168,49 +124,35 @@ onMounted(() => {
 <template>
   <Page :title="pageTitle">
     <div class="diagnosis-visualization-page">
-      <div class="page-header">
-        <div class="header-left">
-          <Button type="text" @click="goBack">返回诊断详情</Button>
-        </div>
-        <div class="header-right">
-          <div class="filter-bar">
-            <Select
-              :value="selectedPlant"
-              :options="plantOptions"
-              placeholder="装置"
-              style="width: 120px;"
-              @change="handlePlantChange"
-            />
-            <Select
-              :value="selectedUnit"
-              :options="unitOptions"
-              placeholder="单元"
-              style="width: 120px;"
-              @change="handleUnitChange"
-            />
-            <Select
-              :loading="loopsLoading"
-              :value="selectedLoopId"
-              :options="filteredLoops.map(l => ({ value: l.loopId, label: l.tagName }))"
-              placeholder="回路"
-              style="width: 200px;"
-              @change="handleLoopChange"
-            />
-            <span v-if="data" class="diagnosed-at">
-              诊断时间: {{ dayjs(data.diagnosedAt).format('YYYY-MM-DD HH:mm:ss') }}
-            </span>
-            <Button type="primary" @click="() => fetchVisualizationData()">刷新数据</Button>
-          </div>
-        </div>
-      </div>
-
       <div v-if="loading" class="loading-container">
         <Spin size="large" />
       </div>
 
       <div v-else-if="data" class="page-content">
         <div class="summary-section">
-          <Card :title="'诊断概览'" :bordered="false">
+          <Card :bordered="false">
+            <template #title>
+              <div class="card-title-bar">
+                <span class="title-text">诊断概览</span>
+                <div class="title-actions">
+                  <Select
+                    :loading="loopsLoading"
+                    :value="selectedLoopId"
+                    :options="loops.map(l => ({ value: l.loopId, label: l.tagName }))"
+                    placeholder="选择回路"
+                    style="width: 200px;"
+                    @change="handleLoopChange"
+                  />
+                  <Select
+                    :value="timeWindow"
+                    :options="timeWindowOptions"
+                    style="width: 120px;"
+                  />
+                  <Button @click="() => fetchVisualizationData()" :loading="loading">刷新数据</Button>
+                  <Button type="text" @click="goBack">返回</Button>
+                </div>
+              </div>
+            </template>
             <Row :gutter="[16, 16]">
               <Col :span="6">
                 <div class="summary-card">
@@ -318,52 +260,6 @@ onMounted(() => {
   padding: 16px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  margin-bottom: 12px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.header-left {
-  flex: 0 0 auto;
-}
-
-.header-right {
-  flex: 1;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.loop-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.tag-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.divider {
-  color: #d1d5db;
-}
-
-.diagnosed-at {
-  font-size: 14px;
-  color: #6b7280;
-}
-
 .loading-container,
 .empty-container {
   display: flex;
@@ -386,7 +282,26 @@ onMounted(() => {
 }
 
 .mini-card {
-  height: 160px;
+  height: 200px;
+}
+
+.card-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.title-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.title-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .summary-card {
@@ -420,19 +335,14 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .page-header {
+  .card-title-bar {
     flex-direction: column;
     gap: 12px;
-    text-align: center;
+    align-items: flex-start;
   }
 
-  .loop-info {
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .divider {
-    display: none;
+  .title-actions {
+    flex-wrap: wrap;
   }
 
   .charts-grid {

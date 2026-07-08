@@ -1,7 +1,11 @@
 <script lang="ts" setup>
+import type { EchartsUIType } from '@vben/plugins/echarts';
+
 import type { DiagnosisApi } from '#/api/diagnosis';
 
-import { computed } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+
+import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
@@ -11,30 +15,102 @@ const props = defineProps<{
 
 const { getSeriesColor, themeColors } = useEchartsPreset();
 
-const isSticky = computed(() => props.data.stictionRatio > 0.3);
-const statusColor = computed(() => (isSticky.value ? themeColors.value.DANGER : getSeriesColor('ok')));
+const chartRef = ref<EchartsUIType>();
+const { renderEcharts } = useEcharts(chartRef);
 
-const stictionPercent = computed(() => (props.data.stictionRatio * 100).toFixed(1));
+const isBias = computed(() => props.data.biasIndex > 0.5);
+const statusColor = computed(() => (isBias.value ? themeColors.value.DANGER : getSeriesColor('ok')));
+
+const biasPercent = computed(() => (props.data.biasIndex * 100).toFixed(1));
+
+const options = computed(() => {
+  const types = [
+    { name: 'P', value: props.data.countP, color: '#60a5fa' },
+    { name: 'N', value: props.data.countN, color: '#f472b6' },
+    { name: 'Z', value: props.data.countZ, color: '#94a3b8' },
+  ];
+  
+  const option: any = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+    },
+    xAxis: {
+      type: 'category',
+      data: types.map(t => t.name),
+      axisLabel: { 
+        show: true,
+        fontSize: 11,
+        color: '#6b7280',
+      },
+      axisLine: { show: false },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      show: false,
+      max: Math.max(...types.map(t => t.value), 5),
+    },
+    grid: {
+      top: 5,
+      right: 5,
+      bottom: 20,
+      left: 5,
+      containLabel: true,
+    },
+    series: [
+      {
+        type: 'bar',
+        data: types.map(t => ({
+          value: t.value,
+          itemStyle: { color: t.color, borderRadius: 4 },
+        })),
+        barWidth: '50%',
+      },
+    ],
+  };
+
+  return option;
+});
+
+watch(options, (newOptions) => {
+  renderEcharts(newOptions);
+}, { immediate: true });
+
+onMounted(() => {
+  renderEcharts(options.value);
+});
 </script>
 
 <template>
   <div class="kano-card">
-    <div class="card-title">Kano 统计法</div>
-    <div class="card-content">
-      <div class="metric-row">
-        <span class="metric-label">粘滞比</span>
-        <span class="metric-value" :style="{ color: statusColor }">{{ stictionPercent }}%</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">相关系数</span>
-        <span class="metric-value">{{ data.correlation.toFixed(3) }}</span>
-      </div>
-      <div class="metric-row">
-        <span class="metric-label">标准差比</span>
-        <span class="metric-value">{{ data.stdRatio.toFixed(3) }}</span>
-      </div>
+    <div class="card-header">
+      <div class="card-title">Kano 统计分析</div>
       <div class="status-badge" :style="{ backgroundColor: statusColor, color: '#fff' }">
-        {{ isSticky ? '阀门粘滞' : '正常' }}
+        {{ isBias ? '存在偏差' : '正常' }}
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrapper">
+        <EchartsUI ref="chartRef" class="w-full h-full" />
+      </div>
+      <div class="metrics-grid">
+        <div class="metric-item">
+          <span class="metric-label">正偏差次数 (P)</span>
+          <span class="metric-value">{{ data.countP }}</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">负偏差次数 (N)</span>
+          <span class="metric-value">{{ data.countN }}</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">零偏差次数 (Z)</span>
+          <span class="metric-value">{{ data.countZ }}</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-label">偏差指数</span>
+          <span class="metric-value" :style="{ color: statusColor }">{{ biasPercent }}%</span>
+        </div>
       </div>
     </div>
   </div>
@@ -42,54 +118,68 @@ const stictionPercent = computed(() => (props.data.stictionRatio * 100).toFixed(
 
 <style lang="scss" scoped>
 .kano-card {
-  border-radius: 8px;
-  background: #fff;
-  padding: 16px;
-  height: 100%;
-}
-
-.card-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-
-.card-content {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  height: 100%;
+  padding: 12px;
 }
 
-.metric-row {
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
-
-  &:first-child {
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.04);
-    border-radius: 4px;
-  }
+  margin-bottom: 8px;
 }
 
-.metric-label {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.metric-value {
+.card-title {
   font-size: 14px;
   font-weight: 600;
   color: #1f2937;
 }
 
 .status-badge {
-  margin-top: 8px;
-  padding: 4px 12px;
+  padding: 2px 10px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  align-self: flex-start;
+}
+
+.card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chart-wrapper {
+  height: 50px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+.metric-label {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.metric-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
 }
 </style>

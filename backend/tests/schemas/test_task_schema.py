@@ -36,6 +36,7 @@ def test_backfill_task_create_camel_case():
     """BackfillTaskCreate 应支持 camelCase 别名."""
     body = BackfillTaskCreate.model_validate(
         {
+            "title": "测试重算",
             "tsStart": "2026-07-04T00:00:00Z",
             "tsEnd": "2026-07-05T00:00:00Z",
             "plantNodeIds": ["node-1"],

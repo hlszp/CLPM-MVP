@@ -1,14 +1,10 @@
 <script lang="ts" setup>
 /**
- * 历史重算页面
+ * 手动任务页面（评估任务 → 手动任务 Tab）
  *
- * 对齐 spec: docs/过程文档/historical-recompute-design.md
- * - 顶部工具栏：发起重算 + 刷新
- * - 重算记录列表：按装置/时间/回路筛选
+ * - 列表上部左侧：新建任务、批量删除；右侧：筛选查询
+ * - 列表列：多选框、任务标题、任务类型、评估回路、小时窗口、时间窗口、评估状态、评估进度、创建时间、创建人、操作
  * - 发起重算 Drawer：时间窗 + 装置 + 回路 + dry-run 预览 + 确认提交
- *
- * 路由：/metric/recompute
- * 权限：ADMIN + IC_ENGINEER
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
@@ -22,6 +18,7 @@ import {
   Drawer,
   Form,
   FormItem,
+  Input,
   Progress,
   Select,
   Space,
@@ -36,6 +33,7 @@ import {
   cancelTaskApi,
   deleteTaskApi,
   getTaskListApi,
+  startTaskApi,
   triggerBackfillApi,
 } from '#/api/task';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
@@ -44,7 +42,6 @@ import type { TaskApi } from '#/api/task';
 import {
   ClpmDataCanvas,
   ClpmDangerConfirmModal,
-  ClpmPageToolbar,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
@@ -59,11 +56,12 @@ const taskList = ref<TaskApi.TaskItem[]>([]);
 const totalCount = ref(0);
 const currentPage = ref(1);
 const pageSize = ref(20);
+const selectedRowKeys = ref<string[]>([]);
+const batchDeleteLoading = ref(false);
 
 // 筛选状态
 const filterStatus = ref<TaskApi.TaskStatus | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
-const filterPlantNodeIds = ref<string | undefined>();
 
 // ============ Drawer 状态 ============
 const drawerVisible = ref(false);
@@ -72,6 +70,7 @@ const previewLoading = ref(false);
 const previewResult = ref<TaskApi.BackfillPreviewResult | null>(null);
 
 const form = ref({
+  title: '',
   tsRange: [dayjs().subtract(7, 'day').startOf('hour'), dayjs().startOf('hour')] as [dayjs.Dayjs, dayjs.Dayjs],
   plantNodeIds: [] as string[],
   loopIds: [] as string[],
@@ -99,50 +98,97 @@ const statusTextMap: Record<string, string> = {
   CANCELLED: '已取消',
 };
 
+const taskTypeTextMap: Record<string, string> = {
+  BACKFILL: '手动评估',
+  CUSTOM: '自定义评估',
+  STANDARD: '标准评估',
+};
+
+// ============ 行选择 ============
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: (string | number)[]) => {
+    selectedRowKeys.value = keys as string[];
+  },
+}));
+
 // ============ 列定义 ============
 const columns = computed<TableColumnsType>(() => [
   {
-    title: '任务ID',
-    dataIndex: 'taskId',
-    width: 180,
+    title: '任务标题',
+    key: 'taskTitle',
+    width: 160,
     ellipsis: true,
+    align: 'center',
   },
   {
-    title: '时间窗',
-    key: 'tsRange',
-    width: 280,
+    title: '任务类型',
+    dataIndex: 'taskType',
+    key: 'taskType',
+    width: 100,
+    align: 'center',
   },
   {
-    title: '回路数',
+    title: '评估回路',
     dataIndex: 'loopsTotal',
+    key: 'loopsTotal',
     width: 90,
     className: 'clpm-num',
+    align: 'center',
   },
   {
     title: '小时窗口',
     dataIndex: 'windowCount',
-    width: 100,
+    key: 'windowCount',
+    width: 90,
     className: 'clpm-num',
+    align: 'center',
   },
   {
-    title: '状态',
+    title: '时间窗口',
+    key: 'tsRange',
+    width: 280,
+    align: 'center',
+  },
+  {
+    title: '评估状态',
     dataIndex: 'status',
+    key: 'status',
     width: 100,
+    align: 'center',
   },
   {
-    title: '进度',
+    title: '评估进度',
     dataIndex: 'progress',
+    key: 'progress',
     width: 140,
+    align: 'center',
   },
   {
     title: '创建时间',
     dataIndex: 'createdAt',
+    key: 'createdAt',
     width: 170,
+    align: 'center',
+  },
+  {
+    title: '评估时长',
+    key: 'duration',
+    width: 100,
+    align: 'center',
+  },
+  {
+    title: '创建人',
+    dataIndex: 'createdBy',
+    key: 'createdBy',
+    width: 100,
+    ellipsis: true,
+    align: 'center',
   },
   {
     title: '操作',
     key: 'action',
-    width: 140,
+    width: 120,
     fixed: 'right',
   },
 ]);
@@ -158,7 +204,6 @@ async function loadList() {
       pageSize: pageSize.value,
     };
     if (filterStatus.value) params.status = filterStatus.value;
-    if (filterPlantNodeIds.value) params.plantNodeIds = filterPlantNodeIds.value;
     if (filterDateRange.value) {
       params.startTime = filterDateRange.value[0].toISOString();
       params.endTime = filterDateRange.value[1].toISOString();
@@ -166,31 +211,27 @@ async function loadList() {
     const result = await getTaskListApi(params);
     taskList.value = result.items;
     totalCount.value = result.total;
-    // 根据是否有活跃任务自动启停 polling
     updatePolling();
   } catch (error) {
-    console.error('加载重算记录失败:', error);
+    console.error('加载任务列表失败:', error);
     loadError.value = true;
-    message.error('加载重算记录失败');
+    message.error('加载任务列表失败');
   } finally {
     loading.value = false;
   }
 }
 
 // ============ 自动刷新（polling 活跃任务） ============
-const POLLING_INTERVAL = 5000; // 5 秒
+const POLLING_INTERVAL = 5000;
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 
 function hasActiveTask(): boolean {
-  return taskList.value.some(
-    (t) => t.status === 'PENDING' || t.status === 'RUNNING',
-  );
+  return taskList.value.some((t) => t.status === 'RUNNING');
 }
 
 function updatePolling() {
   if (hasActiveTask() && !pollingTimer) {
     pollingTimer = setInterval(async () => {
-      // 静默刷新（不显示 loading）
       try {
         const params: TaskApi.TaskListQueryParams = {
           taskType: 'BACKFILL',
@@ -198,7 +239,6 @@ function updatePolling() {
           pageSize: pageSize.value,
         };
         if (filterStatus.value) params.status = filterStatus.value;
-        if (filterPlantNodeIds.value) params.plantNodeIds = filterPlantNodeIds.value;
         if (filterDateRange.value) {
           params.startTime = filterDateRange.value[0].toISOString();
           params.endTime = filterDateRange.value[1].toISOString();
@@ -206,7 +246,6 @@ function updatePolling() {
         const result = await getTaskListApi(params);
         taskList.value = result.items;
         totalCount.value = result.total;
-        // 无活跃任务时停止 polling
         if (!hasActiveTask()) {
           stopPolling();
         }
@@ -245,15 +284,10 @@ function transformTreeData(nodes: any[]): any[] {
   }));
 }
 
-/**
- * 加载回路选项。
- * 后端 loops API pageSize 上限 100，循环分页加载全部回路，避免截断 / 422。
- */
 async function loadLoopOptions() {
   try {
     const allLoops: any[] = [];
     let page = 1;
-    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
     const loopPageSize = 100;
     let total = 0;
     do {
@@ -276,7 +310,6 @@ async function loadLoopOptions() {
   }
 }
 
-// 装置选择变化时重新加载回路选项
 async function onPlantNodeChange() {
   form.value.loopIds = [];
   await loadLoopOptions();
@@ -286,7 +319,8 @@ async function onPlantNodeChange() {
 function openDrawer() {
   previewResult.value = null;
   form.value = {
-    tsRange: [dayjs().subtract(7, 'day'), dayjs()],
+    title: '',
+    tsRange: [dayjs().subtract(7, 'day').startOf('hour'), dayjs().startOf('hour')] as [dayjs.Dayjs, dayjs.Dayjs],
     plantNodeIds: [],
     loopIds: [],
   };
@@ -296,6 +330,10 @@ function openDrawer() {
 }
 
 async function handlePreview() {
+  if (!form.value.title?.trim()) {
+    message.warning('请输入任务标题');
+    return;
+  }
   if (!form.value.tsRange?.[0] || !form.value.tsRange?.[1]) {
     message.warning('请选择时间窗');
     return;
@@ -303,7 +341,6 @@ async function handlePreview() {
   const tsStart = form.value.tsRange[0].toISOString();
   const tsEnd = form.value.tsRange[1].toISOString();
 
-  // 时间窗最大 30 天校验
   const diffDays = form.value.tsRange[1].diff(form.value.tsRange[0], 'day');
   if (diffDays > 30) {
     message.error('时间窗不能超过 30 天');
@@ -313,6 +350,7 @@ async function handlePreview() {
   previewLoading.value = true;
   try {
     const result = await triggerBackfillApi({
+      title: form.value.title.trim(),
       tsStart,
       tsEnd,
       plantNodeIds:
@@ -344,6 +382,7 @@ async function handleSubmit() {
   drawerLoading.value = true;
   try {
     const result = await triggerBackfillApi({
+      title: form.value.title.trim(),
       tsStart,
       tsEnd,
       plantNodeIds:
@@ -355,7 +394,7 @@ async function handleSubmit() {
       dryRun: false,
     });
     const taskId = (result as { taskId: string }).taskId;
-    message.success(`历史重算任务已触发: ${taskId}`);
+    message.success(`任务已创建: ${taskId}`);
     drawerVisible.value = false;
     loadList();
   } catch (error: any) {
@@ -366,46 +405,53 @@ async function handleSubmit() {
   }
 }
 
-// ============ 危险确认弹窗（ClpmDangerConfirmModal）============
-// 取消重算任务
-const cancelDangerOpen = ref(false);
-const cancelDangerTarget = ref<TaskApi.TaskItem | null>(null);
-const cancelDangerLoading = ref(false);
-// 删除重算记录
+// ============ 批量删除 ============
+const batchDeleteDangerOpen = ref(false);
+
+function handleBatchDelete() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要删除的任务');
+    return;
+  }
+  batchDeleteDangerOpen.value = true;
+}
+
+async function handleBatchDeleteConfirm() {
+  batchDeleteLoading.value = true;
+  try {
+    const failed: string[] = [];
+    for (const taskId of selectedRowKeys.value) {
+      try {
+        await deleteTaskApi(taskId);
+      } catch {
+        failed.push(taskId);
+      }
+    }
+    if (failed.length > 0) {
+      message.warning(`删除完成，${failed.length} 个任务删除失败（可能非终态）`);
+    } else {
+      message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
+    }
+    selectedRowKeys.value = [];
+    batchDeleteDangerOpen.value = false;
+    loadList();
+  } catch (error: any) {
+    message.error(error?.message || '批量删除失败');
+  } finally {
+    batchDeleteLoading.value = false;
+  }
+}
+
+// ============ 单条删除 ============
 const deleteDangerOpen = ref(false);
 const deleteDangerTarget = ref<TaskApi.TaskItem | null>(null);
 const deleteDangerLoading = ref(false);
 
-/** 打开取消重算任务危险确认弹窗 */
-function openCancelDanger(record: TaskApi.TaskItem) {
-  cancelDangerTarget.value = record;
-  cancelDangerOpen.value = true;
-}
-
-/** 打开删除重算记录危险确认弹窗 */
 function openDeleteDanger(record: TaskApi.TaskItem) {
   deleteDangerTarget.value = record;
   deleteDangerOpen.value = true;
 }
 
-// ============ 取消任务（ClpmDangerConfirmModal @confirm）============
-async function handleCancel() {
-  if (!cancelDangerTarget.value) return;
-  const task = cancelDangerTarget.value;
-  cancelDangerLoading.value = true;
-  try {
-    await cancelTaskApi(task.taskId);
-    message.success('任务已取消');
-    cancelDangerOpen.value = false;
-    loadList();
-  } catch (error: any) {
-    message.error(error?.message || '取消失败');
-  } finally {
-    cancelDangerLoading.value = false;
-  }
-}
-
-// ============ 删除任务（ClpmDangerConfirmModal @confirm）============
 async function handleDelete() {
   if (!deleteDangerTarget.value) return;
   const task = deleteDangerTarget.value;
@@ -422,23 +468,38 @@ async function handleDelete() {
   }
 }
 
+// ============ 取消任务 ============
+const cancelDangerOpen = ref(false);
+const cancelDangerTarget = ref<TaskApi.TaskItem | null>(null);
+const cancelDangerLoading = ref(false);
+
+function openCancelDanger(record: TaskApi.TaskItem) {
+  cancelDangerTarget.value = record;
+  cancelDangerOpen.value = true;
+}
+
+async function handleCancel() {
+  if (!cancelDangerTarget.value) return;
+  const task = cancelDangerTarget.value;
+  cancelDangerLoading.value = true;
+  try {
+    await cancelTaskApi(task.taskId);
+    message.success('任务已取消');
+    cancelDangerOpen.value = false;
+    loadList();
+  } catch (error: any) {
+    message.error(error?.message || '取消失败');
+  } finally {
+    cancelDangerLoading.value = false;
+  }
+}
+
 // ============ 工具函数 ============
-/**
- * 格式化时间为本地时区（UTC+8）显示。
- *
- * 后端返回的时间可能是：
- * 1. 带 Z 或 +00:00 的 UTC ISO 字符串（如 "2026-07-05T10:00:00Z"）
- *    → dayjs 自动识别为 UTC 并转本地时区显示
- * 2. 不带时区的字符串（如 "2026-07-05 10:00:00"，PostgreSQL TIMESTAMP WITHOUT TIME ZONE）
- *    → 假定为 UTC，手动加 Z 标记后再转本地时区
- *
- * 显式标注 [UTC+8]，避免用户误认为显示的是 UTC 时间。
- */
 function formatTime(ts: string | null | undefined): string {
   if (!ts) return '—';
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
   const normalized = hasTimezone ? ts : `${ts}Z`;
-  return dayjs(normalized).format('YYYY-MM-DD HH:mm:ss [UTC+8]');
+  return dayjs(normalized).format('YYYY-MM-DD HH:mm');
 }
 
 function formatProgress(progress: number | null | undefined): number {
@@ -446,16 +507,44 @@ function formatProgress(progress: number | null | undefined): number {
   return Math.round(progress * 100);
 }
 
-function isTaskActive(task: TaskApi.TaskItem): boolean {
-  return task.status === 'PENDING' || task.status === 'RUNNING';
+function parseTimestamp(ts: string | null | undefined): number | null {
+  if (!ts) return null;
+  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
+  const normalized = hasTimezone ? ts : `${ts}Z`;
+  const d = dayjs(normalized);
+  return d.isValid() ? d.valueOf() : null;
 }
 
-function isTaskTerminal(task: TaskApi.TaskItem): boolean {
-  return (
-    task.status === 'SUCCESS' ||
-    task.status === 'FAILED' ||
-    task.status === 'CANCELLED'
-  );
+function formatDuration(record: TaskApi.TaskItem): string {
+  const start = parseTimestamp(record.startedAt);
+  if (!start) return '—';
+  const end = parseTimestamp(record.finishedAt) ?? Date.now();
+  const diffSec = Math.floor((end - start) / 1000);
+  if (diffSec < 0) return '—';
+  const mm = Math.floor(diffSec / 60);
+  const ss = diffSec % 60;
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
+
+function getTaskTitle(record: TaskApi.TaskItem): string {
+  if (record.title) return record.title;
+  return `${taskTypeTextMap[record.taskType] || record.taskType}-${record.taskId.slice(-8).toUpperCase()}`;
+}
+
+// ============ 启动任务 ============
+const startLoading = ref(false);
+
+async function handleStartTask(record: TaskApi.TaskItem) {
+  startLoading.value = true;
+  try {
+    await startTaskApi(record.taskId);
+    message.success('任务已开始执行');
+    loadList();
+  } catch (error: any) {
+    message.error(error?.message || '启动任务失败');
+  } finally {
+    startLoading.value = false;
+  }
 }
 
 // ============ 生命周期 ============
@@ -469,50 +558,51 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="p-4">
-    <!-- 顶部工具栏 -->
-    <ClpmPageToolbar
-      class="mb-4"
-      title="历史重算"
-      subtitle="按时间窗批量重算回路小时指标，支持预览影响范围与任务跟踪。"
-      :loading="loading"
-    >
-      <template #actions>
+  <div>
+    <!-- 工具栏：左侧操作按钮 + 右侧筛选 -->
+    <div class="mb-3 flex items-center justify-between gap-3">
+      <Space>
+        <Button type="primary" @click="openDrawer">
+          <template #icon><Plus /></template>
+          新建任务
+        </Button>
+        <Button
+          danger
+          :disabled="selectedRowKeys.length === 0"
+          :loading="batchDeleteLoading"
+          @click="handleBatchDelete"
+        >
+          删除
+        </Button>
         <Button @click="loadList">
           <template #icon><RotateCw /></template>
           刷新
         </Button>
-        <Button type="primary" @click="openDrawer">
-          <template #icon><Plus /></template>
-          发起重算
-        </Button>
-      </template>
-    </ClpmPageToolbar>
-
-    <!-- 筛选区 -->
-    <div class="mb-4 flex items-center gap-3">
-      <Select
-        v-model:value="filterStatus"
-        placeholder="状态筛选"
-        allow-clear
-        style="width: 140px"
-        @change="loadList"
-      >
-        <Select.Option value="PENDING">待执行</Select.Option>
-        <Select.Option value="RUNNING">执行中</Select.Option>
-        <Select.Option value="SUCCESS">成功</Select.Option>
-        <Select.Option value="FAILED">失败</Select.Option>
-        <Select.Option value="CANCELLED">已取消</Select.Option>
-      </Select>
-      <DatePicker.RangePicker
-        v-model:value="filterDateRange"
-        :allow-clear="true"
-        @change="loadList"
-      />
-      <Button type="primary" @click="loadList">查询</Button>
+      </Space>
+      <Space>
+        <Select
+          v-model:value="filterStatus"
+          placeholder="状态筛选"
+          allow-clear
+          style="width: 130px"
+          @change="loadList"
+        >
+          <Select.Option value="PENDING">待执行</Select.Option>
+          <Select.Option value="RUNNING">执行中</Select.Option>
+          <Select.Option value="SUCCESS">成功</Select.Option>
+          <Select.Option value="FAILED">失败</Select.Option>
+          <Select.Option value="CANCELLED">已取消</Select.Option>
+        </Select>
+        <DatePicker.RangePicker
+          v-model:value="filterDateRange"
+          :allow-clear="true"
+          @change="loadList"
+        />
+        <Button type="primary" @click="loadList">查询</Button>
+      </Space>
     </div>
 
-    <!-- 重算记录列表 -->
+    <!-- 任务列表 -->
     <ClpmDataCanvas
       :loading="loading"
       :error="loadError"
@@ -522,6 +612,7 @@ onUnmounted(() => {
       <Table
         :columns="columns"
         :data-source="taskList"
+        :row-selection="rowSelection"
         :pagination="{
           current: currentPage,
           pageSize: pageSize,
@@ -530,6 +621,7 @@ onUnmounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         row-key="taskId"
+        :scroll="{ x: 1400 }"
         @change="
           (p: any) => {
             currentPage = p.current;
@@ -539,17 +631,31 @@ onUnmounted(() => {
         "
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'tsRange'">
+          <template v-if="column.key === 'taskTitle'">
+            <span class="font-medium">{{ getTaskTitle(record as TaskApi.TaskItem) }}</span>
+          </template>
+          <template v-else-if="column.key === 'taskType'">
+            <Tag>{{ taskTypeTextMap[record.taskType] || record.taskType }}</Tag>
+          </template>
+          <template v-else-if="column.key === 'loopsTotal'">
+            <span v-if="record.loopsTotal" class="font-mono">{{ record.loopsTotal }}</span>
+            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
+          </template>
+          <template v-else-if="column.key === 'windowCount'">
+            <span v-if="record.windowCount" class="font-mono">{{ record.windowCount }}</span>
+            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
+          </template>
+          <template v-else-if="column.key === 'tsRange'">
             <span class="font-mono text-xs">
               {{ formatTime(record.tsStart) }} ~ {{ formatTime(record.tsEnd) }}
             </span>
           </template>
-          <template v-else-if="column.dataIndex === 'status'">
+          <template v-else-if="column.key === 'status'">
             <Tag :color="statusColorMap[record.status]">
               {{ statusTextMap[record.status] || record.status }}
             </Tag>
           </template>
-          <template v-else-if="column.dataIndex === 'progress'">
+          <template v-else-if="column.key === 'progress'">
             <Progress
               :percent="formatProgress(record.progress)"
               :status="
@@ -561,34 +667,39 @@ onUnmounted(() => {
               "
             />
           </template>
-          <template v-else-if="column.dataIndex === 'createdAt'">
+          <template v-else-if="column.key === 'createdAt'">
             <span class="clpm-num">{{ formatTime(record.createdAt) }}</span>
           </template>
-          <template v-else-if="column.dataIndex === 'windowCount'">
-            <span v-if="record.windowCount" class="font-mono">
-              {{ record.windowCount }}
-            </span>
-            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
+          <template v-else-if="column.key === 'duration'">
+            <span class="font-mono">{{ formatDuration(record as TaskApi.TaskItem) }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <Button
-              v-if="isTaskActive(record as TaskApi.TaskItem)"
-              type="link"
-              danger
-              size="small"
-              @click="openCancelDanger(record as TaskApi.TaskItem)"
-            >
-              取消
-            </Button>
-            <Button
-              v-else-if="isTaskTerminal(record as TaskApi.TaskItem)"
-              type="link"
-              size="small"
-              @click="openDeleteDanger(record as TaskApi.TaskItem)"
-            >
-              删除
-            </Button>
-            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
+            <Space :size="4">
+              <Button
+                v-if="(record as TaskApi.TaskItem).status === 'PENDING'"
+                type="link"
+                size="small"
+                :loading="startLoading"
+                @click="handleStartTask(record as TaskApi.TaskItem)"
+              >
+                评估
+              </Button>
+              <Button
+                v-if="(record as TaskApi.TaskItem).status === 'RUNNING'"
+                type="link"
+                size="small"
+                @click="openCancelDanger(record as TaskApi.TaskItem)"
+              >
+                取消
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                @click="openDeleteDanger(record as TaskApi.TaskItem)"
+              >
+                删除
+              </Button>
+            </Space>
           </template>
         </template>
       </Table>
@@ -597,11 +708,20 @@ onUnmounted(() => {
     <!-- 发起重算 Drawer -->
     <Drawer
       v-model:open="drawerVisible"
-      title="发起历史重算"
+      title="新建任务"
       width="520"
       :mask-closable="false"
     >
       <Form layout="vertical">
+        <FormItem label="任务标题" required>
+          <Input
+            v-model:value="form.title"
+            placeholder="请输入任务标题"
+            :maxlength="100"
+            allow-clear
+          />
+        </FormItem>
+
         <FormItem label="时间窗" required>
           <DatePicker.RangePicker
             v-model:value="form.tsRange"
@@ -685,25 +805,37 @@ onUnmounted(() => {
       </template>
     </Drawer>
 
-    <!-- 取消重算任务：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <!-- 批量删除：危险确认弹窗 -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDeleteDangerOpen"
+      title="批量删除任务"
+      action="删除"
+      :target="`已选 ${selectedRowKeys.length} 个任务`"
+      impact-scope="将删除选中的任务记录，不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :loading="batchDeleteLoading"
+      @confirm="handleBatchDeleteConfirm"
+    />
+
+    <!-- 取消任务：危险确认弹窗 -->
     <ClpmDangerConfirmModal
       v-model:open="cancelDangerOpen"
-      title="取消重算任务"
+      title="取消任务"
       action="取消"
       :target="cancelDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
-      impact-scope="将终止正在运行的历史重算任务、已计算的结果保留"
+      impact-scope="将终止正在运行的任务，已计算的结果保留"
       rollback-tip="任务取消后可重新发起"
       :loading="cancelDangerLoading"
       @confirm="handleCancel"
     />
 
-    <!-- 删除重算记录：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <!-- 删除任务：危险确认弹窗 -->
     <ClpmDangerConfirmModal
       v-model:open="deleteDangerOpen"
-      title="删除重算记录"
+      title="删除任务"
       action="删除"
       :target="deleteDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
-      impact-scope="将删除该重算任务记录、不可恢复"
+      impact-scope="将删除该任务记录，不可恢复"
       rollback-tip="此操作不可逆，删除后无法恢复"
       :loading="deleteDangerLoading"
       @confirm="handleDelete"

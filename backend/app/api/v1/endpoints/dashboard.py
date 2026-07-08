@@ -283,24 +283,35 @@ async def get_board_trend_endpoint(
     else:
         start = now - timedelta(hours=24)
 
+    # v6.1.2 修复：只聚合 UNIT 级节点，避免 FACTORY/AREA/UNIT 父子节点重复累加
     if plantId:
         cte_sql = text("""
             WITH RECURSIVE node_tree AS (
-                SELECT id FROM plant_node WHERE id = :node_id
+                SELECT id, type FROM plant_node WHERE id = :node_id
                 UNION ALL
-                SELECT child.id FROM plant_node child
+                SELECT child.id, child.type FROM plant_node child
                 JOIN node_tree ON child.parent_id = node_tree.id
             )
-            SELECT id FROM node_tree
+            SELECT id FROM node_tree WHERE type = 'UNIT'
         """)
         result = await db.execute(cte_sql, {"node_id": plantId})
         descendant_ids = [str(row.id) for row in result.all()]
     else:
-        result = await db.execute(select(PlantNode.id))
+        result = await db.execute(select(PlantNode.id).where(PlantNode.type == "UNIT"))
         descendant_ids = [str(row.id) for row in result.all()]
 
+    # 查询实际回路总数（去重，避免父子节点重复累加）
+    from app.services.node_performance import collect_descendant_loop_ids
+
+    if plantId:
+        total_loop_ids = await collect_descendant_loop_ids(db, plantId)
+    else:
+        loop_result = await db.execute(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+        total_loop_ids = [str(row[0]) for row in loop_result.all()]
+    total_loops_count = len(total_loop_ids)
+
     if not descendant_ids:
-        return success(data={"timestamps": [], "avgScore": [], "autoModeRate": [], "stabilityRate": [], "evaluatedLoops": []})
+        return success(data={"timestamps": [], "avgScore": [], "autoModeRate": [], "stabilityRate": [], "evaluatedLoops": [], "totalLoops": total_loops_count})
 
     hour_col = func.date_trunc("hour", UnitKpiSummary.snapshot_time).label("hour")
 
@@ -361,6 +372,7 @@ async def get_board_trend_endpoint(
             "autoModeRate": auto_mode_rate,
             "stabilityRate": stability_rate,
             "evaluatedLoops": evaluated_loops,
+            "totalLoops": total_loops_count,
         }
     )
 

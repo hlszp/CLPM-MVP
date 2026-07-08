@@ -106,10 +106,11 @@
             <div class="clpm-pid-dashboard__top5-card">
               <div class="clpm-pid-dashboard__card-header">
                 <span>TOP5回路</span>
-                <div class="clpm-pid-dashboard__card-tabs">
-                  <span :class="{ active: top5Sort === 'desc' }" @click="top5Sort = 'desc'">评分最高</span>
-                  <span :class="{ active: top5Sort === 'asc' }" @click="top5Sort = 'asc'">评分最低</span>
-                </div>
+                <Tooltip :title="top5Sort === 'desc' ? '当前：评分最高，点击切换为最低' : '当前：评分最低，点击切换为最高'">
+                  <Button type="text" size="small" class="clpm-pid-dashboard__sort-btn" @click="top5Sort = top5Sort === 'desc' ? 'asc' : 'desc'">
+                    <IconifyIcon :icon="top5Sort === 'desc' ? 'ant-design:sort-descending-outlined' : 'ant-design:sort-ascending-outlined'" />
+                  </Button>
+                </Tooltip>
               </div>
               <Table :columns="top5Columns" :data-source="top5TableData" :pagination="false" :scroll="{ y: 200 }">
                 <template #bodyCell="{ column, record }">
@@ -144,7 +145,7 @@ import { useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Select, Table, message } from 'ant-design-vue';
+import { Button, Select, Table, Tooltip, message } from 'ant-design-vue';
 import { IconifyIcon } from '@vben/icons';
 
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
@@ -187,6 +188,7 @@ const boardTrend = ref<DashboardApi.BoardTrendResult | null>(null);
 const autoRateRt = ref<DashboardApi.AutoRateRt | null>(null);
 const rankingList = ref<MetricApi.RankingItem[]>([]);
 const diagnosisLoading = ref(false);
+const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
 
 const top5Sort = ref<'asc' | 'desc'>('desc');
 
@@ -202,13 +204,34 @@ const top5List = computed(() => {
   return items.slice(0, 5);
 });
 
+// 定级阈值等级名称（level 1=优秀, 2=良好, 3=合格, 4=警告, 5=不合格）
 const ratingLabels: Record<string, string> = {
-  '1': '一星级',
-  '2': '二星级',
-  '3': '三星级',
-  '4': '四星级',
-  '5': '五星级',
+  '1': '优秀',
+  '2': '良好',
+  '3': '合格',
+  '4': '警告',
+  '5': '不合格',
 };
+
+// 默认定级阈值（国标 GB/T 44693.2-2024 §6.3）
+const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
+  { level: 1, name: 'EXCELLENT', minScore: 90, maxScore: 100, color: '#52c41a' },
+  { level: 2, name: 'GOOD', minScore: 80, maxScore: 90, color: '#1890ff' },
+  { level: 3, name: 'FAIR', minScore: 60, maxScore: 80, color: '#faad14' },
+  { level: 4, name: 'WARNING', minScore: 40, maxScore: 60, color: '#fa8c16' },
+  { level: 5, name: 'POOR', minScore: 0, maxScore: 40, color: '#f5222d' },
+];
+
+function getRatingLevel(score: number): string {
+  const thresholds = gradingThresholds.value.length > 0
+    ? gradingThresholds.value
+    : DEFAULT_THRESHOLDS;
+  // 按 minScore 降序匹配（level 1 = 最高分区间）
+  for (const t of [...thresholds].sort((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => b.minScore - a.minScore)) {
+    if (score >= t.minScore) return String(t.level);
+  }
+  return '5'; // 最低等级
+}
 
 const tableColumns = [
   { title: '序号', dataIndex: 'index', key: 'index', width: 60, align: 'center' as const },
@@ -217,8 +240,6 @@ const tableColumns = [
   { title: '性能评分', dataIndex: 'score', key: 'score', width: 80, align: 'right' as const },
   { title: '平稳率', dataIndex: 'smoothRate', key: 'smoothRate', width: 80, align: 'right' as const },
   { title: '自控率', dataIndex: 'autoRate', key: 'autoRate', width: 80, align: 'right' as const },
-  { title: '自控回路数', dataIndex: 'autoLoopCount', key: 'autoLoopCount', width: 100, align: 'right' as const },
-  { title: '参评回路数', dataIndex: 'loopCount', key: 'loopCount', width: 100, align: 'right' as const },
   { title: '回路总数', dataIndex: 'totalLoops', key: 'totalLoops', width: 80, align: 'right' as const },
 ];
 
@@ -227,21 +248,13 @@ const tableData = computed(() => {
   const sortedItems = [...items].sort((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
   return sortedItems.map((item, index) => {
     const score = item.avgScore ?? 0;
-    let rating = '3';
-    if (score >= 90) rating = '5';
-    else if (score >= 80) rating = '4';
-    else if (score >= 70) rating = '3';
-    else if (score >= 60) rating = '2';
-    else rating = '1';
     return {
       key: item.nodeId,
       index: index + 1,
       name: item.nodeName ?? '',
-      rating,
+      rating: getRatingLevel(score),
       score: formatNumber(score),
       totalLoops: item.totalLoops ?? 0,
-      loopCount: item.evaluatedLoops ?? 0,
-      autoLoopCount: Math.round(((item.autoModeRate ?? 0) / 100) * (item.evaluatedLoops ?? 0)),
       autoRate: formatNumber(item.autoModeRate),
       smoothRate: formatNumber(item.stabilityRate),
     };
@@ -251,22 +264,35 @@ const tableData = computed(() => {
 const top5Columns = [
   { title: '序号', dataIndex: 'index', key: 'index', width: 40, align: 'center' as const },
   { title: '位号', dataIndex: 'tagName', key: 'tagName', width: 90 },
-  { title: '名称', dataIndex: 'loopName', key: 'loopName', width: 120 },
+  { title: '名称', dataIndex: 'loopName', key: 'loopName', ellipsis: true },
   { title: '性能评分', dataIndex: 'score', key: 'score', width: 70, align: 'right' as const },
   { title: '平稳率', dataIndex: 'steadyRate', key: 'steadyRate', width: 65, align: 'right' as const },
   { title: '', dataIndex: 'diagnosis', key: 'diagnosis', width: 40, align: 'center' as const },
 ];
 
 const top5TableData = computed(() => {
-  return top5List.value.map((item, index) => ({
-    key: item.loopId,
-    index: index + 1,
-    loopId: item.loopId,
-    tagName: item.tagName,
-    loopName: item.loopName || item.tagName || '',
-    score: formatNumber(item.score),
-    steadyRate: `${formatNumber(item.steadyRate)}%`,
-  }));
+  return top5List.value.map((item, index) => {
+    const fullName = item.loopName || item.tagName || '—';
+    // 最多显示 16 个字符（按字符长度计算，中文算 2），超出截断加省略号
+    let truncated = fullName;
+    let len = 0;
+    for (const ch of fullName) {
+      len += ch.charCodeAt(0) > 0x7f ? 2 : 1;
+      if (len > 32) { // 16 汉字 = 32
+        truncated = fullName.slice(0, fullName.indexOf(ch)) + '…';
+        break;
+      }
+    }
+    return {
+      key: item.loopId,
+      index: index + 1,
+      loopId: item.loopId,
+      tagName: item.tagName,
+      loopName: truncated,
+      score: formatNumber(item.score),
+      steadyRate: `${formatNumber(item.steadyRate)}%`,
+    };
+  });
 });
 
 const gauge1Ref = ref<EchartsUIType>();
@@ -346,8 +372,10 @@ function renderTrendChart() {
     return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:00`;
   });
 
-  const barDataTotal = trend.evaluatedLoops ?? [];
-  const barDataAuto = trend.evaluatedLoops ?? [];
+  const barDataTotal = (trend.totalLoops ?? 0) > 0
+    ? timestamps.map(() => trend.totalLoops)
+    : [];
+  const barDataEvaluated = trend.evaluatedLoops ?? [];
 
   const showBar = timestamps.length <= 24;
 
@@ -379,7 +407,7 @@ function renderTrendChart() {
     ],
     series: [
       {
-        name: '总参评回路数',
+        name: '总回路数',
         type: showBar ? 'bar' as const : 'line' as const,
         data: barDataTotal,
         itemStyle: { color: themeColors.value.INFO },
@@ -399,9 +427,9 @@ function renderTrendChart() {
         symbolSize: 4,
       },
       {
-        name: '自动回路数',
+        name: '参评回路数',
         type: showBar ? 'bar' as const : 'line' as const,
-        data: barDataAuto,
+        data: barDataEvaluated,
         itemStyle: { color: themeColors.value.SUCCESS },
         areaStyle: showBar ? undefined : {
           color: {
@@ -489,21 +517,16 @@ function renderTrendChart() {
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: ['总参评回路数', '自动回路数', '性能评分', '自控率', '平稳率'],
+      data: ['总回路数', '参评回路数', '性能评分', '自控率', '平稳率'],
     },
   });
 }
 
 function renderStatusPieChart() {
-  const data = aggregateData.value;
-  if (!data) return;
-
-  const autoCount = Math.round(((data.autoModeRate ?? 0) / 100) * (data.evaluatedLoops ?? 0));
-  const manualCount = (data.evaluatedLoops ?? 0) - autoCount;
-  const totalLoops = data.totalLoops ?? 0;
-  const unevaluatedCount = totalLoops - (data.evaluatedLoops ?? 0);
-
-  const total = autoCount + manualCount + unevaluatedCount;
+  const rt = autoRateRt.value;
+  const autoCount = rt?.autoCount ?? 0;
+  const manualCount = rt?.manualCount ?? 0;
+  const total = rt?.totalCount ?? 0;
 
   renderStatusPie({
     tooltip: {
@@ -517,7 +540,7 @@ function renderStatusPieChart() {
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: ['自动模式', '手动模式', '未参评'],
+      data: ['自动模式', '手动模式'],
     },
     series: [
       {
@@ -538,7 +561,6 @@ function renderStatusPieChart() {
         data: [
           { value: autoCount, name: '自动模式', itemStyle: { color: themeColors.value.SUCCESS } },
           { value: manualCount, name: '手动模式', itemStyle: { color: themeColors.value.WARNING } },
-          { value: unevaluatedCount, name: '未参评', itemStyle: { color: themeColors.value.INFO } },
         ].filter((d) => (d.value ?? 0) > 0 || total === 0),
       },
     ],
@@ -547,15 +569,29 @@ function renderStatusPieChart() {
 
 function renderPieChart() {
   const items = boardAggregate.value?.items ?? [];
-  const counts: number[] = [0, 0, 0, 0, 0];
+  const thresholds = gradingThresholds.value.length > 0
+    ? gradingThresholds.value
+    : DEFAULT_THRESHOLDS;
 
+  // 按等级统计数量（level 1=优秀 ~ level 5=不合格）
+  const levelCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   items.forEach((item) => {
     const score = item.avgScore ?? 0;
-    const idx = score >= 90 ? 4 : score >= 80 ? 3 : score >= 70 ? 2 : score >= 60 ? 1 : 0;
-    counts[idx] = (counts[idx] ?? 0) + 1;
+    const level = parseInt(getRatingLevel(score), 10);
+    levelCounts[level] = (levelCounts[level] ?? 0) + 1;
   });
 
-  const total = counts.reduce((a, b) => a + b, 0);
+  const total = items.length;
+
+  // 按等级顺序（1→5）生成饼图数据
+  const pieData = thresholds
+    .slice()
+    .sort((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => a.level - b.level)
+    .map((t: MetricApi.GradingThresholdItem) => ({
+      value: levelCounts[t.level] ?? 0,
+      name: ratingLabels[String(t.level)] ?? t.name,
+      itemStyle: { color: t.color ?? themeColors.value.SUCCESS },
+    }));
 
   renderPie({
     tooltip: {
@@ -568,12 +604,12 @@ function renderPieChart() {
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: ['一级', '二级', '三级', '四级', '五级'],
+      data: pieData.map((d: { value: number; name: string; itemStyle: { color: string } }) => d.name),
     },
     series: [
       {
         type: 'pie' as const,
-        radius: ['45%', '70%'],
+        radius: '70%',
         center: ['50%', '45%'],
         avoidLabelOverlap: false,
         itemStyle: {
@@ -595,13 +631,7 @@ function renderPieChart() {
           label: { show: true, fontSize: 12, fontWeight: 'bold', color: chartColors.value.textStrong },
         },
         labelLine: { show: true, length: 10, length2: 10 },
-        data: [
-          { value: counts[0], name: '一级', itemStyle: { color: themeColors.value.DANGER } },
-          { value: counts[1], name: '二级', itemStyle: { color: '#f97316' } },
-          { value: counts[2], name: '三级', itemStyle: { color: themeColors.value.WARNING } },
-          { value: counts[3], name: '四级', itemStyle: { color: themeColors.value.INFO } },
-          { value: counts[4], name: '五级', itemStyle: { color: themeColors.value.SUCCESS } },
-        ].filter((d) => (d.value ?? 0) > 0 || total === 0),
+        data: pieData.filter((d: { value: number; name: string; itemStyle: { color: string } }) => (d.value ?? 0) > 0 || total === 0),
       },
     ],
   });
@@ -666,6 +696,7 @@ async function loadAutoRateRt() {
     autoRateRt.value = data;
     await nextTick();
     updateGauges();
+    renderStatusPieChart();
   } catch {
     // ignore
   }
@@ -684,6 +715,16 @@ async function loadRanking() {
     rankingList.value = data.filter((it) => it.includeInEvaluation !== false);
   } catch {
     // ignore
+  }
+}
+
+async function loadGradingThresholds() {
+  try {
+    const { getGradingThresholdsApi } = await import('#/api/metric');
+    const data = await getGradingThresholdsApi();
+    gradingThresholds.value = data.thresholds ?? [];
+  } catch {
+    // 加载失败时使用默认阈值
   }
 }
 
@@ -713,6 +754,7 @@ watch(isDark, () => {
 });
 
 onMounted(() => {
+  loadGradingThresholds();
   loadAll();
 });
 </script>
@@ -861,37 +903,27 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
   color: #334155;
-
-  &-tabs {
-    display: flex;
-    gap: 4px;
-
-    span {
-      padding: 4px 12px;
-      font-size: 12px;
-      color: #64748b;
-      cursor: pointer;
-      border-radius: 4px;
-      transition: all 0.2s;
-
-      &.active {
-        background: rgba(59, 130, 246, 0.1);
-        color: #3b82f6;
-      }
-    }
-  }
 }
 
 .dark .clpm-pid-dashboard__card-header {
   color: #e2e8f0;
+}
 
-  &-tabs span {
-    color: #94a3b8;
+.clpm-pid-dashboard__sort-btn {
+  padding: 2px 6px;
+  color: #64748b;
+  cursor: pointer;
 
-    &.active {
-      background: rgba(59, 130, 246, 0.2);
-      color: #3b82f6;
-    }
+  &:hover {
+    color: #3b82f6;
+  }
+}
+
+.dark .clpm-pid-dashboard__sort-btn {
+  color: #94a3b8;
+
+  &:hover {
+    color: #3b82f6;
   }
 }
 
@@ -902,7 +934,7 @@ onMounted(() => {
 }
 
 .clpm-pid-dashboard__table-card {
-  width: 60%;
+  width: 50%;
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -929,7 +961,7 @@ onMounted(() => {
 }
 
 .clpm-pid-dashboard__top5-card {
-  width: 40%;
+  width: 50%;
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -955,48 +987,52 @@ onMounted(() => {
   color: #f1f5f9;
 }
 
+.clpm-pid-dashboard__top5-card :deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
+}
+
 .clpm-pid-dashboard__rating-tag {
   padding: 2px 8px;
   font-size: 12px;
   border-radius: 4px;
 
   &--1 {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    background: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
   }
   &--2 {
-    background: rgba(249, 115, 22, 0.1);
-    color: #f97316;
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
   }
   &--3 {
     background: rgba(245, 158, 11, 0.1);
     color: #f59e0b;
   }
   &--4 {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    background: rgba(249, 115, 22, 0.1);
+    color: #f97316;
   }
   &--5 {
-    background: rgba(34, 197, 94, 0.1);
-    color: #22c55e;
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
   }
 }
 
 .dark .clpm-pid-dashboard__rating-tag {
   &--1 {
-    background: rgba(239, 68, 68, 0.2);
+    background: rgba(34, 197, 94, 0.2);
   }
   &--2 {
-    background: rgba(249, 115, 22, 0.2);
+    background: rgba(59, 130, 246, 0.2);
   }
   &--3 {
     background: rgba(245, 158, 11, 0.2);
   }
   &--4 {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgba(249, 115, 22, 0.2);
   }
   &--5 {
-    background: rgba(34, 197, 94, 0.2);
+    background: rgba(239, 68, 68, 0.2);
   }
 }
 

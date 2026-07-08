@@ -166,6 +166,7 @@ class RankingItem(CamelModel):
     rank: int
     loopId: str
     tagName: str
+    loopName: str | None = None
     unitName: str | None = None
     # v5.3 对齐 FDS v5.1 / DDS v4.1：compositeScore → score
     score: float | None = None

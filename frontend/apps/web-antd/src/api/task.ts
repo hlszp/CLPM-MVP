@@ -58,6 +58,8 @@ export namespace TaskApi {
 
   /** 历史重算任务创建参数 */
   export interface BackfillTaskCreateParams {
+    /** 任务标题（必填） */
+    title: string;
     /** 重算时间窗起始（ISO 8601） */
     tsStart: string;
     /** 重算时间窗结束（ISO 8601，不包含） */
@@ -87,6 +89,8 @@ export namespace TaskApi {
     taskId: string;
     taskType: TaskType;
     status: TaskStatus;
+    /** 任务标题 */
+    title?: null | string;
     /** 进度 0~1 */
     progress?: null | number;
     /** 当前阶段：取数/预处理/指标计算/可信度判定 */
@@ -233,6 +237,17 @@ export function triggerBackfillApi(data: TaskApi.BackfillTaskCreateParams) {
   return requestClient.post<TaskApi.BackfillPreviewResult | { taskId: string }>(
     `${BASE}/backfill`,
     data,
+  );
+}
+
+/**
+ * 启动待执行的手动评估任务 — IDS §2.7.6
+ *
+ * 仅 PENDING 状态的 BACKFILL 任务可启动，启动后变为 RUNNING。
+ */
+export function startTaskApi(taskId: string) {
+  return requestClient.post<{ taskId: string; celeryTaskId: string }>(
+    `${BASE}/${taskId}/start`,
   );
 }
 

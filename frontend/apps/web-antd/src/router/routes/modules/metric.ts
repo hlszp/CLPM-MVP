@@ -86,68 +86,46 @@ const routes: RouteRecordRaw[] = [
           icon: 'lucide:settings',
           title: '指标配置',
         },
-        children: [
-          {
-            name: 'MetricConfig',
-            path: '/metric/config',
-            component: () => import('#/views/metric/config.vue'),
-            meta: {
-              authority: ['ADMIN'],
-              icon: 'lucide:settings-2',
-              title: '指标定义',
-            },
-          },
-          {
-            name: 'MetricWeightConfig',
-            path: '/metric/weight-config',
-            component: () => import('#/views/metric/weight-config.vue'),
-            meta: {
-              authority: ['ADMIN'],
-              icon: 'lucide:scale',
-              title: '权重配置',
-            },
-          },
-          {
-            name: 'MetricEngineConfig',
-            path: '/metric/engine-config',
-            component: () => import('#/views/metric/engine-config.vue'),
-            meta: {
-              authority: ['ADMIN'],
-              icon: 'lucide:cog',
-              title: '引擎规则',
-            },
-          },
-          {
-            name: 'MetricTaskStrategy',
-            path: '/metric/task-strategy',
-            component: () => import('#/views/metric/task-strategy.vue'),
-            meta: {
-              authority: ['ADMIN'],
-              icon: 'lucide:calendar-clock',
-              title: '任务策略',
-            },
-          },
-          {
-            name: 'MetricGradingThreshold',
-            path: '/metric/grading-threshold',
-            component: () => import('#/views/metric/grading-threshold.vue'),
-            meta: {
-              authority: ['ADMIN'],
-              icon: 'lucide:scale',
-              title: '定级阈值',
-            },
-          },
-          {
-            name: 'MetricVersionHistory',
-            path: '/metric/version-history',
-            component: () => import('#/views/metric/version-history.vue'),
-            meta: {
-              authority: ['ADMIN'],
-              icon: 'lucide:history',
-              title: '版本管理',
-            },
-          },
-        ],
+      },
+      {
+        name: 'MetricWeightConfig',
+        path: '/metric/weight-config',
+        component: () => import('#/views/metric/weight-config.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:scale',
+          title: '权重配置',
+        },
+      },
+      {
+        name: 'MetricEngineConfig',
+        path: '/metric/engine-config',
+        component: () => import('#/views/metric/engine-config.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:cog',
+          title: '引擎规则',
+        },
+      },
+      {
+        name: 'MetricGradingThreshold',
+        path: '/metric/grading-threshold',
+        component: () => import('#/views/metric/grading-threshold.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:scale',
+          title: '定级阈值',
+        },
+      },
+      {
+        name: 'MetricVersionHistory',
+        path: '/metric/version-history',
+        component: () => import('#/views/metric/version-history.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:history',
+          title: '版本管理',
+        },
       },
     ],
   },

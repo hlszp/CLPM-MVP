@@ -44,7 +44,7 @@ import ConfigTabs from '#/components/metric/config-tabs.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getMetricsApi, updateMetricApi } from '#/api/metric';
 
-defineOptions({ name: 'MetricConfig' });
+defineOptions({ name: 'MetricConfigDefinition' });
 
 const { themeColors } = useClpmTheme();
 
@@ -96,7 +96,7 @@ function getCategory(item: MetricApi.MetricItem): MetricApi.MetricCategory {
 
 /** 排序后的指标列表（按 category 分组） */
 const sortedMetricList = computed(() => {
-  return [...metricList.value].sort((a, b) => {
+  return [...(metricList.value ?? [])].sort((a, b) => {
     const ca = getCategory(a);
     const cb = getCategory(b);
     return categoryConfig[ca].order - categoryConfig[cb].order;
@@ -194,9 +194,9 @@ async function loadList() {
   loading.value = true;
   try {
     const data = await getMetricsApi();
-    metricList.value = data.items;
-    totalWeight.value = data.totalWeight;
-    weightValid.value = data.weightValid;
+    metricList.value = data?.items ?? [];
+    totalWeight.value = data?.totalWeight ?? 0;
+    weightValid.value = data?.weightValid ?? true;
   } catch {
     // 错误已由拦截器处理
   } finally {

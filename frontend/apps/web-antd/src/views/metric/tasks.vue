@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref } from 'vue';
+import { defineAsyncComponent, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -14,6 +14,10 @@ const activeTab = ref<'manual' | 'auto' | 'strategy'>('manual');
 const manualKey = ref(0);
 const autoKey = ref(0);
 const strategyKey = ref(0);
+
+const ManualTab = defineAsyncComponent(() => import('./recompute.vue'));
+const AutoTab = defineAsyncComponent(() => import('#/views/task/list.vue'));
+const StrategyTab = defineAsyncComponent(() => import('./task-strategy.vue'));
 
 function handleTabChange(key: string | number) {
   activeTab.value = key as 'manual' | 'auto' | 'strategy';
@@ -32,13 +36,13 @@ function handleTabChange(key: string | number) {
     <div class="mt-4">
       <Tabs v-model:active-key="activeTab" @change="handleTabChange">
         <TabPane key="manual" tab="手动任务">
-          <component :is="(() => import('./recompute.vue'))()" :key="manualKey" />
+          <ManualTab :key="manualKey" />
         </TabPane>
         <TabPane key="auto" tab="自动任务">
-          <component :is="(() => import('#/views/task/list.vue'))()" :key="autoKey" />
+          <AutoTab :key="autoKey" />
         </TabPane>
         <TabPane key="strategy" tab="任务策略">
-          <component :is="(() => import('./task-strategy.vue'))()" :key="strategyKey" />
+          <StrategyTab :key="strategyKey" />
         </TabPane>
       </Tabs>
     </div>
