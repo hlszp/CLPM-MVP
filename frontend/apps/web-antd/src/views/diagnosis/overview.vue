@@ -336,7 +336,7 @@ function renderTrendChart() {
 /** Top 5 异常回路（按综合评分升序，最低分优先） */
 const topAbnormalLoops = computed(() =>
   [...todayDiagnosisList.value]
-    .sort((a, b) => a.compositeScore - b.compositeScore)
+    .toSorted((a, b) => a.compositeScore - b.compositeScore)
     .slice(0, 5),
 );
 

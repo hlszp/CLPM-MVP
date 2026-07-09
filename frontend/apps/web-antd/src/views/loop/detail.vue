@@ -266,6 +266,17 @@ function fmtTime(ts: null | number): string {
   }
 }
 
+/** 根据评分映射状态色：INCONCLUSIVE 或无值时为 neutral，≥80 success，≥60 warning，否则 danger */
+function scoreToStatus(
+  value: null | number | undefined,
+  inconclusive: boolean,
+): KpiStripItem['status'] {
+  if (inconclusive || value === null || value === undefined) return 'neutral';
+  if (value >= 80) return 'success';
+  if (value >= 60) return 'warning';
+  return 'danger';
+}
+
 const loopKpiStripItems = computed<KpiStripItem[]>(() => {
   const detail = monitorDetail.value;
   if (!detail) return [];
@@ -274,15 +285,7 @@ const loopKpiStripItems = computed<KpiStripItem[]>(() => {
   const scoreItem: KpiStripItem = {
     key: 'composite_score',
     label: '综合评分',
-    status: isInconclusive.value
-      ? 'neutral'
-      : score === null || score === undefined
-        ? 'neutral'
-        : score >= 80
-          ? 'success'
-          : score >= 60
-            ? 'warning'
-            : 'danger',
+    status: scoreToStatus(score, isInconclusive.value),
     unit: '',
     value:
       isInconclusive.value || score === null || score === undefined
@@ -294,13 +297,7 @@ const loopKpiStripItems = computed<KpiStripItem[]>(() => {
     return {
       key: item.key,
       label: item.label,
-      status: isInconclusive.value
-        ? 'neutral'
-        : metricValue >= 80
-          ? 'success'
-          : metricValue >= 60
-            ? 'warning'
-            : 'danger',
+      status: scoreToStatus(metricValue, isInconclusive.value),
       unit: item.unit,
       value: metricValue.toFixed(1),
     };

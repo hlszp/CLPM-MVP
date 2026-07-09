@@ -87,7 +87,7 @@ async function openDetail(record: Record<string, any>) {
         pageSize: 24,
       };
       const result = await getLoopSnapshotsApi(params);
-      drawerTrendSnapshots.value = (result.items || []).sort((a, b) => {
+      drawerTrendSnapshots.value = (result.items || []).toSorted((a, b) => {
         const aTs = a.tsStart || '';
         const bTs = b.tsStart || '';
         return aTs.localeCompare(bTs);
@@ -267,7 +267,6 @@ async function loadLoops(plantNodeId?: string) {
   try {
     const allLoops: any[] = [];
     let page = 1;
-    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
     const loopPageSize = 100;
     let total = 0;
     do {

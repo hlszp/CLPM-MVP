@@ -138,7 +138,7 @@ async function loadList() {
  * 违反时返回违规 level 列表
  */
 const violatedLevels = computed<number[]>(() => {
-  const sorted = [...list.value].sort((a, b) => a.level - b.level);
+  const sorted = [...list.value].toSorted((a, b) => a.level - b.level);
   const violations: number[] = [];
   for (let i = 0; i < sorted.length - 1; i++) {
     const cur = editState[sorted[i]!.level];

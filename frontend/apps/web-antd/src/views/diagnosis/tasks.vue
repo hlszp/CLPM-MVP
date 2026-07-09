@@ -319,7 +319,7 @@ async function loadPlantNodes() {
         mapping.set(factory.id, unitNames);
       }
       for (const area of factory.children || []) {
-        if (area.type === 'AREA' && !areas.find((a) => a.id === area.id)) {
+        if (area.type === 'AREA' && !areas.some((a) => a.id === area.id)) {
           areas.push(area);
           const unitNames = (area.children || [])
             .filter((c) => c.type === 'UNIT')

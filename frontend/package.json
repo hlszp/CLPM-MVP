@@ -90,7 +90,7 @@
     "turbo": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vitest": "catalog:",
+    "vitest": "catalog:conflicts_vitest_h4_1_9",
     "vue": "catalog:",
     "vue-tsc": "catalog:"
   },

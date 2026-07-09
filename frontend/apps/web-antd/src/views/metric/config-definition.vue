@@ -98,7 +98,7 @@ function getCategory(item: MetricApi.MetricItem): MetricApi.MetricCategory {
 
 /** 排序后的指标列表（按 category 分组） */
 const sortedMetricList = computed(() => {
-  return [...(metricList.value ?? [])].sort((a, b) => {
+  return [...(metricList.value ?? [])].toSorted((a, b) => {
     const ca = getCategory(a);
     const cb = getCategory(b);
     return categoryConfig[ca].order - categoryConfig[cb].order;

@@ -550,7 +550,6 @@ async function loadHistoryData() {
     // 后端 pageSize 上限 100，循环分页拉取时间窗内全部快照
     const allItems: KpiSnapshotItem[] = [];
     let page = 1;
-    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
     const pageLimit = 100;
     let total = 0;
     do {
@@ -565,7 +564,7 @@ async function loadHistoryData() {
       total = result.total ?? 0;
       page += 1;
     } while ((page - 1) * pageLimit < total);
-    historySnapshots.value = allItems.sort((a, b) => {
+    historySnapshots.value = allItems.toSorted((a, b) => {
       const aTs = normalizeTime(a.tsStart) || '';
       const bTs = normalizeTime(b.tsStart) || '';
       return aTs.localeCompare(bTs);
