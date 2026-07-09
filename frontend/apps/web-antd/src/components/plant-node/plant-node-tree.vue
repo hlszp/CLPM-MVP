@@ -83,7 +83,7 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  (e: 'load-complete', treeData: PlantNodeApi.PlantNode[]): void;
+  (e: 'loadComplete', treeData: PlantNodeApi.PlantNode[]): void;
   (e: 'select', node: null | PlantNodeApi.PlantNode): void;
 }>();
 
@@ -326,7 +326,7 @@ async function loadTree() {
       expandedKeys.value = newTreeData.map((n) => n.key);
     }
     autoExpandParent.value = true;
-    emit('load-complete', data);
+    emit('loadComplete', data);
   } catch {
     // 错误已由拦截器处理
   } finally {

@@ -19,7 +19,7 @@ withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  'partial-detail': [];
+  partialDetail: [];
   retry: [];
 }>();
 
@@ -79,7 +79,7 @@ interface Props {
         v-if="showPartialDetail"
         class="clpm-data-canvas__notice-link"
         href="javascript:void(0)"
-        @click.prevent="emit('partial-detail')"
+        @click.prevent="emit('partialDetail')"
       >
         查看详情
         <IconifyIcon icon="ant-design:right-outlined" />

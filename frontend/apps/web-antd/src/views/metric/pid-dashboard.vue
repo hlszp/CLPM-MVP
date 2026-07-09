@@ -92,7 +92,7 @@ function getRatingLevel(score: number): string {
     ? gradingThresholds.value
     : DEFAULT_THRESHOLDS;
   // 按 minScore 降序匹配（level 1 = 最高分区间）
-  for (const t of [...thresholds].sort((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => b.minScore - a.minScore)) {
+  for (const t of [...thresholds].toSorted((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => b.minScore - a.minScore)) {
     if (score >= t.minScore) return String(t.level);
   }
   return '5'; // 最低等级
@@ -110,7 +110,7 @@ const tableColumns = [
 
 const tableData = computed(() => {
   const items = boardAggregate.value?.items ?? [];
-  const sortedItems = [...items].sort((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
+  const sortedItems = [...items].toSorted((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
   return sortedItems.map((item, index) => {
     const score = item.avgScore ?? 0;
     return {
@@ -142,7 +142,7 @@ const top5TableData = computed(() => {
     let truncated = fullName;
     let len = 0;
     for (const ch of fullName) {
-      len += ch.charCodeAt(0) > 0x7F ? 2 : 1;
+      len += ch.codePointAt(0)! > 0x7F ? 2 : 1;
       if (len > 32) { // 16 汉字 = 32
         truncated = fullName.slice(0, fullName.indexOf(ch)) + '…';
         break;
@@ -474,7 +474,7 @@ function renderPieChart() {
 
   // 按等级顺序（1→5）生成饼图数据
   const pieData = [...thresholds]
-    .sort((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => a.level - b.level)
+    .toSorted((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => a.level - b.level)
     .map((t: MetricApi.GradingThresholdItem) => ({
       value: levelCounts[t.level] ?? 0,
       name: ratingLabels[String(t.level)] ?? t.name,
@@ -526,11 +526,11 @@ function renderPieChart() {
 }
 
 function scoreColor(score: null | number | undefined): string {
-  const val = score ?? 0;
-  if (val >= 90) return themeColors.value.SUCCESS;
-  if (val >= 80) return themeColors.value.INFO;
-  if (val >= 70) return themeColors.value.WARNING;
-  if (val >= 60) return '#f97316';
+  if (score === null || score === undefined) return themeColors.value.DANGER;
+  if (score >= 90) return themeColors.value.SUCCESS;
+  if (score >= 80) return themeColors.value.INFO;
+  if (score >= 70) return themeColors.value.WARNING;
+  if (score >= 60) return '#f97316';
   return themeColors.value.DANGER;
 }
 

@@ -60,7 +60,7 @@ function renderChart() {
   const minVal = props.min ?? 0;
   const percent = ((val - minVal) / (maxVal - minVal)) * 100;
 
-  let color = themeColors.value.SUCCESS as string;
+  let color: string;
   if (percent >= 80) color = themeColors.value.SUCCESS as string;
   else if (percent >= 60) color = themeColors.value.WARNING as string;
   else color = themeColors.value.DANGER as string;
