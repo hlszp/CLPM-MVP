@@ -299,22 +299,13 @@ const realtimeControlRate = computed(() => {
   return total > 0 ? Math.round((autoCount / total) * 100) : 0;
 });
 
-/** 从监控列表数据中统计控制方式 */
-function updateControlModeStats() {
-  const stats: Record<string, number> = {};
-  for (const item of monitorList.value) {
-    const mode = item.currentValues?.modeLabel || 'Unknown';
-    stats[mode] = (stats[mode] || 0) + 1;
-  }
-  controlModeStats.value = stats;
-  updateModeChart();
-}
-
 /** 加载回路类型统计 */
 async function loadLoopTypeStats() {
   try {
     const data = await getLoopTypeStatsApi(query.plantNodeId);
-    loopTypeStats.value = data as Record<string, number>;
+    loopTypeStats.value = (data as any).loopTypeStats || (data as Record<string, number>);
+    controlModeStats.value = (data as any).controlModeStats || {};
+    updateModeChart();
   } catch {
     // 错误已由拦截器处理
   }
@@ -495,7 +486,6 @@ function handleRealtimeMessage(msg: {
           break;
         }
       }
-      updateControlModeStats();
       break;
     }
     case 'OP': {
@@ -645,7 +635,6 @@ async function loadList() {
     });
     monitorList.value = data.items;
     total.value = data.total;
-    updateControlModeStats();
   } catch {
     // 错误已由拦截器处理
   } finally {
