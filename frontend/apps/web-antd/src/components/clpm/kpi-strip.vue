@@ -22,13 +22,6 @@ export interface KpiStripItem {
 
 defineOptions({ name: 'ClpmKpiStrip' });
 
-interface Props {
-  items: KpiStripItem[];
-  loading?: boolean;
-  /** 全局可点击，优先级低于 item.clickable */
-  clickable?: boolean;
-}
-
 const props = withDefaults(defineProps<Props>(), {
   loading: false,
   clickable: false,
@@ -37,6 +30,13 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'item-click': [item: KpiStripItem];
 }>();
+
+interface Props {
+  items: KpiStripItem[];
+  loading?: boolean;
+  /** 全局可点击，优先级低于 item.clickable */
+  clickable?: boolean;
+}
 
 /** 解析 delta 方向：up/down/flat */
 function getDeltaDirection(
@@ -93,17 +93,17 @@ const { themeColors } = useClpmTheme();
 /** sparkline 描边色 */
 function getSparklineColor(status?: string): string {
   switch (status) {
-    case 'success': {
-      return themeColors.value.SUCCESS;
-    }
-    case 'warning': {
-      return themeColors.value.WARNING;
-    }
     case 'danger': {
       return themeColors.value.DANGER;
     }
     case 'primary': {
       return themeColors.value.INFO;
+    }
+    case 'success': {
+      return themeColors.value.SUCCESS;
+    }
+    case 'warning': {
+      return themeColors.value.WARNING;
     }
     default: {
       return themeColors.value.NEUTRAL;
@@ -185,9 +185,7 @@ function getSparklineColor(status?: string): string {
         >
           <span class="clpm-kpi-strip__delta-arrow">
             <template v-if="getDeltaDirection(item.delta) === 'up'">↑</template>
-            <template v-else-if="getDeltaDirection(item.delta) === 'down'"
-              >↓</template
-            >
+            <template v-else-if="getDeltaDirection(item.delta) === 'down'">↓</template>
             <template v-else>→</template>
           </span>
           <span class="clpm-kpi-strip__delta-text">{{

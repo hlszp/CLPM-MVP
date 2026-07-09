@@ -8,6 +8,8 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
+import type { TaskApi } from '#/api/task';
+
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 import { Plus, RotateCw } from '@vben/icons';
@@ -19,16 +21,18 @@ import {
   Form,
   FormItem,
   Input,
+  message,
   Progress,
   Select,
   Space,
   Table,
   Tag,
   TreeSelect,
-  message,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import { getLoopListApi } from '#/api/loop';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   cancelTaskApi,
   deleteTaskApi,
@@ -36,12 +40,9 @@ import {
   startTaskApi,
   triggerBackfillApi,
 } from '#/api/task';
-import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { getLoopListApi } from '#/api/loop';
-import type { TaskApi } from '#/api/task';
 import {
-  ClpmDataCanvas,
   ClpmDangerConfirmModal,
+  ClpmDataCanvas,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
@@ -67,7 +68,7 @@ const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 const drawerVisible = ref(false);
 const drawerLoading = ref(false);
 const previewLoading = ref(false);
-const previewResult = ref<TaskApi.BackfillPreviewResult | null>(null);
+const previewResult = ref<null | TaskApi.BackfillPreviewResult>(null);
 
 const form = ref({
   title: '',
@@ -107,7 +108,7 @@ const taskTypeTextMap: Record<string, string> = {
 // ============ 行选择 ============
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
-  onChange: (keys: (string | number)[]) => {
+  onChange: (keys: (number | string)[]) => {
     selectedRowKeys.value = keys as string[];
   },
 }));
@@ -223,7 +224,7 @@ async function loadList() {
 
 // ============ 自动刷新（polling 活跃任务） ============
 const POLLING_INTERVAL = 5000;
-let pollingTimer: ReturnType<typeof setInterval> | null = null;
+let pollingTimer: null | ReturnType<typeof setInterval> = null;
 
 function hasActiveTask(): boolean {
   return taskList.value.some((t) => t.status === 'RUNNING');
@@ -444,7 +445,7 @@ async function handleBatchDeleteConfirm() {
 
 // ============ 单条删除 ============
 const deleteDangerOpen = ref(false);
-const deleteDangerTarget = ref<TaskApi.TaskItem | null>(null);
+const deleteDangerTarget = ref<null | TaskApi.TaskItem>(null);
 const deleteDangerLoading = ref(false);
 
 function openDeleteDanger(record: TaskApi.TaskItem) {
@@ -470,7 +471,7 @@ async function handleDelete() {
 
 // ============ 取消任务 ============
 const cancelDangerOpen = ref(false);
-const cancelDangerTarget = ref<TaskApi.TaskItem | null>(null);
+const cancelDangerTarget = ref<null | TaskApi.TaskItem>(null);
 const cancelDangerLoading = ref(false);
 
 function openCancelDanger(record: TaskApi.TaskItem) {
@@ -495,19 +496,19 @@ async function handleCancel() {
 }
 
 // ============ 工具函数 ============
-function formatTime(ts: string | null | undefined): string {
+function formatTime(ts: null | string | undefined): string {
   if (!ts) return '—';
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
   const normalized = hasTimezone ? ts : `${ts}Z`;
   return dayjs(normalized).format('YYYY-MM-DD HH:mm');
 }
 
-function formatProgress(progress: number | null | undefined): number {
+function formatProgress(progress: null | number | undefined): number {
   if (progress === null || progress === undefined) return 0;
   return Math.round(progress * 100);
 }
 
-function parseTimestamp(ts: string | null | undefined): number | null {
+function parseTimestamp(ts: null | string | undefined): null | number {
   if (!ts) return null;
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
   const normalized = hasTimezone ? ts : `${ts}Z`;
@@ -615,7 +616,7 @@ onUnmounted(() => {
         :row-selection="rowSelection"
         :pagination="{
           current: currentPage,
-          pageSize: pageSize,
+          pageSize,
           total: totalCount,
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,

@@ -13,6 +13,12 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
+import type {
+  ConfidenceLevel,
+  KpiSnapshotItem,
+  KpiStatus,
+} from '#/api/metric';
+
 import { computed, onMounted, ref } from 'vue';
 
 import { RotateCw } from '@vben/icons';
@@ -23,21 +29,16 @@ import {
   Descriptions,
   DescriptionsItem,
   Drawer,
+  message,
   Select,
   Table,
   Tag,
   TreeSelect,
-  message,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getLoopSnapshotsApi } from '#/api/metric';
-import type {
-  ConfidenceLevel,
-  KpiSnapshotItem,
-  KpiStatus,
-} from '#/api/metric';
 import { getLoopListApi } from '#/api/loop';
+import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import ScoreSparkline from '#/components/metric/score-sparkline.vue';
@@ -301,7 +302,7 @@ function handlePlantNodeChange(value: string | undefined) {
  * PostgreSQL ts_start 字段是 TIMESTAMP WITHOUT TIME ZONE，存储的是 UTC 时间。
  * 假定不带时区的时间字符串为 UTC，手动加 Z 标记后再转本地时区显示。
  */
-function formatTsEnd(ts: string | null | undefined): string {
+function formatTsEnd(ts: null | string | undefined): string {
   if (!ts) return '—';
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
   const normalized = hasTimezone ? ts : `${ts}Z`;
@@ -313,14 +314,14 @@ function formatTsEnd(ts: string | null | undefined): string {
  *
  * 显式标注 UTC+8，避免用户误认为显示的是 UTC 时间。
  */
-function formatFullTime(ts: string | null | undefined): string {
+function formatFullTime(ts: null | string | undefined): string {
   if (!ts) return '—';
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
   const normalized = hasTimezone ? ts : `${ts}Z`;
   return dayjs(normalized).format('YYYY-MM-DD HH:mm:ss [UTC+8]');
 }
 
-function formatNumber(val: number | null | undefined, suffix = ''): string {
+function formatNumber(val: null | number | undefined, suffix = ''): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
 }
@@ -444,7 +445,7 @@ onMounted(() => {
         :data-source="snapshotList"
         :pagination="{
           current: currentPage,
-          pageSize: pageSize,
+          pageSize,
           total: totalCount,
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,

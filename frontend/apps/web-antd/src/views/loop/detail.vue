@@ -14,6 +14,8 @@
  */
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
+import type { KpiSnapshotItem } from '#/api/metric';
+import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -43,17 +45,15 @@ import {
 } from '#/api/diagnosis';
 import { getLoopDetailApi, getLoopMonitorDetailApi } from '#/api/loop';
 import { getLoopSnapshotsApi } from '#/api/metric';
-import type { KpiSnapshotItem } from '#/api/metric';
 import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmTagAssociationBadge, ClpmToolbarButton } from '#/components/clpm';
-import type { KpiStripItem } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'LoopDetail' });
 
@@ -161,7 +161,7 @@ const isInconclusive = computed(
 );
 
 /** 可信度等级（基于 good_value_rate 推导，对齐 ConfidenceEvaluator A/B/C/D/E） */
-const confidenceLevel = computed<'A' | 'B' | 'C' | 'D' | 'E' | '—'>(() => {
+const confidenceLevel = computed<'—' | 'A' | 'B' | 'C' | 'D' | 'E'>(() => {
   const rate = monitorDetail.value?.kpiSummary.good_value_rate ?? 0;
   if (rate >= 95) return 'A';
   if (rate >= 80) return 'B';
@@ -251,8 +251,8 @@ function fmtNum(v: null | number): string {
 /** 时间戳精度转换：纳秒/微秒级→毫秒级 */
 function toMs(ts: number): number {
   const absTs = Math.abs(ts);
-  if (absTs >= 10000000000000000) return Math.floor(ts / 1000000);
-  if (absTs >= 10000000000000) return Math.floor(ts / 1000);
+  if (absTs >= 10_000_000_000_000_000) return Math.floor(ts / 1_000_000);
+  if (absTs >= 10_000_000_000_000) return Math.floor(ts / 1000);
   return ts;
 }
 
@@ -290,7 +290,7 @@ const loopKpiStripItems = computed<KpiStripItem[]>(() => {
         : score.toFixed(1),
   };
   const metricItems: KpiStripItem[] = kpiItems.map((item) => {
-    const metricValue = (detail.kpiSummary[item.key] as number | null) ?? 0;
+    const metricValue = (detail.kpiSummary[item.key] as null | number) ?? 0;
     return {
       key: item.key,
       label: item.label,
@@ -449,12 +449,12 @@ async function loadSnapshots() {
 }
 
 /** 时间窗：只显示结束时间的「MM-DD HH:00」 */
-function formatSnapshotTsEnd(ts: string | null | undefined): string {
+function formatSnapshotTsEnd(ts: null | string | undefined): string {
   if (!ts) return '—';
   return dayjs(ts).format('MM-DD HH:00');
 }
 
-function formatSnapshotNumber(val: number | null | undefined, suffix = ''): string {
+function formatSnapshotNumber(val: null | number | undefined, suffix = ''): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
 }
@@ -610,9 +610,9 @@ onMounted(() => {
                   <span class="text-xs text-gray-400">
                     {{
                       cursorOverride
-                        ? '光标时刻：' +
-                          fmtTime(displaySnapshot?.timestamp ?? null)
-                        : '刷新时间：' + (lastRefreshText || '尚未刷新')
+                        ? `光标时刻：${ 
+                          fmtTime(displaySnapshot?.timestamp ?? null)}`
+                        : `刷新时间：${ lastRefreshText || '尚未刷新'}`
                     }}
                   </span>
                 </div>

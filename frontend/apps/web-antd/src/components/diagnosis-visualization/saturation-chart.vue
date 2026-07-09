@@ -58,8 +58,8 @@ const saturationRatePercent = computed(() => (props.data.saturationRate * 100).t
 }
 
 .card-body {
-  flex: 1;
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
 }
@@ -72,10 +72,10 @@ const saturationRatePercent = computed(() => (props.data.saturationRate * 100).t
 
 .metric-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   padding: 4px 6px;
-  background: rgba(0, 0, 0, 0.02);
+  background: rgb(0 0 0 / 2%);
   border-radius: 4px;
 }
 

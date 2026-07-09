@@ -43,11 +43,11 @@ const options = computed(() => {
     props.data.x.reduce((sum, x) => sum + Math.pow(x - avgX, 2), 0) *
     props.data.y.reduce((sum, y) => sum + Math.pow(y - avgY, 2), 0),
   );
-  const correlation = denominator !== 0 ? numerator / denominator : 0;
+  const correlation = denominator === 0 ? 0 : numerator / denominator;
 
   const sx = props.data.x.reduce((sum, x) => sum + Math.pow(x - avgX, 2), 0) / n;
   const sy = props.data.y.reduce((sum, y) => sum + Math.pow(y - avgY, 2), 0) / n;
-  const slope = sx !== 0 ? correlation * sy / sx : 0;
+  const slope = sx === 0 ? 0 : correlation * sy / sx;
   const intercept = avgY - slope * avgX;
 
   const minX = Math.min(...props.data.x);

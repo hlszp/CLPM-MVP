@@ -77,8 +77,8 @@ export const TOOLBAR_ICON_MAP: Record<ToolbarAction, string> = {
  */
 export type ToolbarVariant =
   | 'danger'
-  | 'default'
   | 'dashed'
+  | 'default'
   | 'export'
   | 'link'
   | 'primary';

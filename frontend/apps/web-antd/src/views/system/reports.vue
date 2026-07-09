@@ -31,7 +31,6 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import {
   createReportConfigApi,
   generateReportApi,
@@ -39,6 +38,7 @@ import {
   getReportTaskStatusApi,
   updateReportConfigApi,
 } from '#/api/system';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 
 defineOptions({ name: 'SystemReports' });
 

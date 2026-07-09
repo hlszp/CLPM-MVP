@@ -16,11 +16,11 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 /** 业务状态语义分类（严格对齐 ZL IndustrialDesignSystem.md §3 色彩系统） */
 export type IndustrialStatus =
-  | 'ok' // 运行/成功/在线/EXCELLENT/GOOD/IMPLEMENTED/SUCCESS
-  | 'warning' // 待机/预警/部分/GOOD/IN_PROGRESS/PARTIAL/WARNING
   | 'error' // 故障/严重/不可逆/POOR/BAD/IGNORED/FAILED
   | 'info' // 主操作/待处理/PENDING/FAIR
-  | 'neutral'; // 中性/忽略/无数据/INCONCLUSIVE/UNCERTAIN/UNKNOWN
+  | 'neutral' // 中性/忽略/无数据/INCONCLUSIVE/UNCERTAIN/UNKNOWN
+  | 'ok' // 运行/成功/在线/EXCELLENT/GOOD/IMPLEMENTED/SUCCESS
+  | 'warning'; // 待机/预警/部分/GOOD/IN_PROGRESS/PARTIAL/WARNING
 
 /** 单条状态映射项 */
 export interface IndustrialStatusMeta {
@@ -178,5 +178,5 @@ export function useIndustrialStatus() {
 }
 
 /** 状态映射表导出（供静态场景使用） */
-export { STATUS_MAP, LIGHT_STATUS_META };
+export { LIGHT_STATUS_META, STATUS_MAP };
 export type { IndustrialStatus as IndustrialStatusType };

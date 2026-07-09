@@ -39,9 +39,9 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import { getMetricsApi, updateMetricApi } from '#/api/metric';
 import { ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { getMetricsApi, updateMetricApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricConfigDefinition' });
 

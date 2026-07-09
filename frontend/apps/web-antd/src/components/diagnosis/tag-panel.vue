@@ -10,7 +10,6 @@
  * 数据来源：getDiagnosisTagsApi / updateDiagnosisTagStatusApi（IDS §2.4.10-2.4.12）
  */
 import type { TableColumnsType } from 'ant-design-vue';
-
 import type { Dayjs } from 'dayjs';
 
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
@@ -46,10 +45,10 @@ defineOptions({ name: 'DiagnosisTagPanel' });
 
 const props = withDefaults(
   defineProps<{
-    /** 传入时仅查询该回路的标签 */
-    loopId?: string;
     /** 面板高度，默认 auto */
     height?: string;
+    /** 传入时仅查询该回路的标签 */
+    loopId?: string;
   }>(),
   {
     loopId: undefined,

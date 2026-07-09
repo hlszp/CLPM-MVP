@@ -102,11 +102,11 @@ export function importPlantNodesApi(file: File) {
   const formData = new FormData();
   formData.append('file', file);
   return requestClient.post<{
-    total: number;
-    inserted: number;
-    updated: number;
-    failed: number;
     errors: string[];
+    failed: number;
+    inserted: number;
+    total: number;
+    updated: number;
   }>('/plant-nodes/import', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',

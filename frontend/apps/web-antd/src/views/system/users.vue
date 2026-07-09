@@ -30,11 +30,6 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  ClpmDangerConfirmModal,
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
 import {
   createUserApi,
@@ -43,6 +38,11 @@ import {
   resetUserPasswordApi,
   updateUserApi,
 } from '#/api/system';
+import {
+  ClpmDangerConfirmModal,
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 
 defineOptions({ name: 'SystemUsers' });
 
@@ -240,7 +240,7 @@ const disableOpen = ref(false);
 const disableTarget = ref('');
 const disableLoading = ref(false);
 /** 暂存待禁用用户（点击确认后用于 API 调用） */
-const pendingDisable = ref<SystemApi.User | null>(null);
+const pendingDisable = ref<null | SystemApi.User>(null);
 
 function handleDisable(record: SystemApi.User) {
   pendingDisable.value = record;

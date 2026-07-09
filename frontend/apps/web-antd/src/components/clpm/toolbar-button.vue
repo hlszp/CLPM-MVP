@@ -1,6 +1,8 @@
 <script lang="ts" setup>
 import type { ButtonProps } from 'ant-design-vue';
 
+import type { ToolbarAction, ToolbarVariant } from './toolbar-config';
+
 import { computed } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
@@ -8,36 +10,8 @@ import { IconifyIcon } from '@vben/icons';
 import { Button, Tooltip } from 'ant-design-vue';
 
 import { TOOLBAR_DEFAULT_VARIANT, TOOLBAR_ICON_MAP } from './toolbar-config';
-import type { ToolbarAction, ToolbarVariant } from './toolbar-config';
 
 defineOptions({ name: 'ClpmToolbarButton' });
-
-interface Props {
-  /** 按钮文字 */
-  label?: string;
-  /**
-   * 按钮功能名
-   * - 传 ToolbarAction 枚举值时，自动映射图标和默认变体
-   * - 传 string 时视为自定义 Iconify 图标名，需同时指定 variant
-   */
-  icon?: ToolbarAction | string;
-  /** 功能色变体，未指定时根据 icon 推导 */
-  variant?: ToolbarVariant;
-  /** 激活态（如自动刷新开启时），仅 default/dashed 变体生效，激活后变 primary 填充 */
-  active?: boolean;
-  /** 加载态 */
-  loading?: boolean;
-  /** 禁用态 */
-  disabled?: boolean;
-  /** 禁用原因，用于 Tooltip 显示 */
-  disabledReason?: string;
-  /** 仅图标模式，必须配合 label 或 tooltip 使用 */
-  iconOnly?: boolean;
-  /** 自定义 tooltip 文案，默认用 label 或 disabledReason */
-  tooltip?: string;
-  /** 按钮尺寸，默认 small（对齐 PageToolbar 紧凑布局） */
-  size?: ButtonProps['size'];
-}
 
 const props = withDefaults(defineProps<Props>(), {
   label: '',
@@ -55,6 +29,33 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   click: [event: MouseEvent];
 }>();
+
+interface Props {
+  /** 按钮文字 */
+  label?: string;
+  /**
+   * 按钮功能名
+   * - 传 ToolbarAction 枚举值时，自动映射图标和默认变体
+   * - 传 string 时视为自定义 Iconify 图标名，需同时指定 variant
+   */
+  icon?: string | ToolbarAction;
+  /** 功能色变体，未指定时根据 icon 推导 */
+  variant?: ToolbarVariant;
+  /** 激活态（如自动刷新开启时），仅 default/dashed 变体生效，激活后变 primary 填充 */
+  active?: boolean;
+  /** 加载态 */
+  loading?: boolean;
+  /** 禁用态 */
+  disabled?: boolean;
+  /** 禁用原因，用于 Tooltip 显示 */
+  disabledReason?: string;
+  /** 仅图标模式，必须配合 label 或 tooltip 使用 */
+  iconOnly?: boolean;
+  /** 自定义 tooltip 文案，默认用 label 或 disabledReason */
+  tooltip?: string;
+  /** 按钮尺寸，默认 small（对齐 PageToolbar 紧凑布局） */
+  size?: ButtonProps['size'];
+}
 
 /** 解析图标名：枚举值走映射表，其他字符串直接当 iconify 名 */
 const iconName = computed(() => {
@@ -119,8 +120,7 @@ const activeClass = 'clpm-toolbar-btn--active';
 <template>
   <Tooltip v-if="needTooltip" :title="tooltipText">
     <Button
-      :class="[
-        'clpm-toolbar-btn',
+      class="clpm-toolbar-btn" :class="[
         resolvedVariant === 'export' ? exportClass : '',
         isActive ? activeClass : '',
       ]"
@@ -143,8 +143,7 @@ const activeClass = 'clpm-toolbar-btn--active';
   </Tooltip>
   <Button
     v-else
-    :class="[
-      'clpm-toolbar-btn',
+    class="clpm-toolbar-btn" :class="[
       resolvedVariant === 'export' ? exportClass : '',
       isActive ? activeClass : '',
     ]"

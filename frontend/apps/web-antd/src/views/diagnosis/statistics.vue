@@ -27,18 +27,18 @@ import {
   getDiagnosisAnalyticsApi,
 } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_HEX_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
 } from '#/constants/diagnosis';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { $t } from '#/locales';
 import { flattenNodes } from '#/utils/plant-node';
 
-const { isDark, themeColors } = useClpmTheme();
-
 defineOptions({ name: 'DiagnosisStatistics' });
+
+const { isDark, themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const exporting = ref(false);

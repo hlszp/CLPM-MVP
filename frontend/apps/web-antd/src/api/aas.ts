@@ -72,21 +72,21 @@ export namespace AasApi {
   export interface AasConfigTestResult {
     success: boolean;
     /** 延迟（毫秒），对齐后端 latencyMs */
-    latencyMs: number | null;
+    latencyMs: null | number;
     message: string;
   }
 
   /** 同步状态结果 */
   export interface SyncStatusResult {
     enabled: boolean;
-    endpoint?: string | null;
-    syncIntervalSeconds?: number | null;
-    lastSyncAt?: string | null;
-    lastSyncStatus?: string | null;
+    endpoint?: null | string;
+    syncIntervalSeconds?: null | number;
+    lastSyncAt?: null | string;
+    lastSyncStatus?: null | string;
     tagStats: {
-      total: number;
-      linked: number;
       byQuality: Record<string, number>;
+      linked: number;
+      total: number;
     };
   }
 
@@ -96,8 +96,8 @@ export namespace AasApi {
     operationType: string;
     operator: string;
     operatedAt: string;
-    beforeValue?: string | null;
-    afterValue?: string | null;
+    beforeValue?: null | string;
+    afterValue?: null | string;
   }
 
   /** 同步日志列表结果 */

@@ -221,9 +221,9 @@ export namespace DiagnosisApi {
   export interface DiagnosisVisualizationData {
     loopId: string;
     tagName: string;
-    compositeScore: number | null;
-    fusedConfidence: number | null;
-    diagnosedAt: string | null;
+    compositeScore: null | number;
+    fusedConfidence: null | number;
+    diagnosedAt: null | string;
     diagnosisLabels: DiagnosisLabelItem[];
     spectrum: SpectrumData;
     stepResponse: StepResponseData;
@@ -528,11 +528,11 @@ export namespace DiagnosisApi {
 
   /** 诊断任务状态机 */
   export type TaskStatus =
+    | 'CANCELLED'
+    | 'FAILED'
     | 'PENDING'
     | 'RUNNING'
-    | 'SUCCESS'
-    | 'FAILED'
-    | 'CANCELLED';
+    | 'SUCCESS';
 
   /** 诊断任务触发方式 */
   export type TriggerType = 'auto' | 'manual';
@@ -557,7 +557,7 @@ export namespace DiagnosisApi {
     completedAt: null | string;
     timeRangeStart: null | string;
     timeRangeEnd: null | string;
-    labels: { label: string; confidence: number }[];
+    labels: { confidence: number; label: string; }[];
     isArchived: boolean;
     errorMessage: null | string;
   }

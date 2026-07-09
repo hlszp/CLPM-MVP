@@ -24,7 +24,6 @@ import type { TagApi } from '#/api/tag';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
-
 import { IconifyIcon } from '@vben/icons';
 
 import {
@@ -51,6 +50,7 @@ import {
   Upload,
 } from 'ant-design-vue';
 
+import { getModelsApi } from '#/api/dcs';
 import {
   batchConfigLoopsApi,
   createLoopApi,
@@ -61,19 +61,18 @@ import {
   updateLoopApi,
   updateLoopTagMappingApi,
 } from '#/api/loop';
-import { getModelsApi } from '#/api/dcs';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
 import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
 import {
-  ClpmDataCanvas,
   ClpmDangerConfirmModal,
+  ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
-import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import StatusBadge from '#/components/loop/status-badge.vue';
+import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'LoopManage' });
@@ -135,7 +134,7 @@ async function loadLoopCounts() {
 }
 
 /** 选中树节点（由 PlantNodeTree emit 触发） */
-function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
+function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
   selectedPlantNode.value = node;
   selectedPlantNodeId.value = node?.id;
   query.plantNodeId = node?.id;
@@ -448,7 +447,16 @@ function handleTableChange(pagination: TablePaginationConfig) {
 
 /** v5.3：内联切换参评状态 */
 function handleToggleEvaluation(record: LoopApi.LoopListItem, checked: boolean) {
-  if (!checked) {
+  if (checked) {
+    updateLoopApi(record.loopId, { includeInEvaluation: true })
+      .then(() => {
+        message.success('已切换为参评');
+        loadList();
+      })
+      .catch((error) => {
+        console.error('操作失败:', error);
+      });
+  } else {
     // 切换为不参评时提示
     Modal.warning({
       title: '确认切换为不参评',
@@ -466,15 +474,6 @@ function handleToggleEvaluation(record: LoopApi.LoopListItem, checked: boolean) 
         }
       },
     });
-  } else {
-    updateLoopApi(record.loopId, { includeInEvaluation: true })
-      .then(() => {
-        message.success('已切换为参评');
-        loadList();
-      })
-      .catch((error) => {
-        console.error('操作失败:', error);
-      });
   }
 }
 
@@ -507,7 +506,9 @@ function handleControlTypeChange(value: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE') {
 
 /** v5.3：抽屉中切换参评状态 — 切换为 false 时提示 */
 function handleDrawerEvaluationChange(checked: boolean) {
-  if (!checked) {
+  if (checked) {
+    formState.includeInEvaluation = true;
+  } else {
     Modal.warning({
       title: '确认切换为不参评',
       content:
@@ -518,8 +519,6 @@ function handleDrawerEvaluationChange(checked: boolean) {
         formState.includeInEvaluation = false;
       },
     });
-  } else {
-    formState.includeInEvaluation = true;
   }
 }
 
@@ -544,14 +543,14 @@ const changeRemark = ref('');
 
 const confirmTitle = computed(() => {
   switch (confirmContextType.value) {
-    case 'update': {
-      return '确认变更回路信息';
+    case 'batch': {
+      return '确认批量配置';
     }
     case 'tagMapping': {
       return '确认变更 Tag 关联';
     }
-    case 'batch': {
-      return '确认批量配置';
+    case 'update': {
+      return '确认变更回路信息';
     }
     default: {
       return '确认变更';
@@ -640,14 +639,14 @@ const changeSummary = computed<DiffEntry[]>(() => {
         : '默认';
     const newLowerStr = useDefaultOpLimits.value
       ? '默认'
-      : (formState.opOutputLowerLimit !== undefined
-          ? String(formState.opOutputLowerLimit)
-          : '默认');
+      : (formState.opOutputLowerLimit === undefined
+          ? '默认'
+          : String(formState.opOutputLowerLimit));
     const newUpperStr = useDefaultOpLimits.value
       ? '默认'
-      : (formState.opOutputUpperLimit !== undefined
-          ? String(formState.opOutputUpperLimit)
-          : '默认');
+      : (formState.opOutputUpperLimit === undefined
+          ? '默认'
+          : String(formState.opOutputUpperLimit));
     if (origLowerStr !== newLowerStr || origUpperStr !== newUpperStr) {
       summary.push({
         field: 'OP 输出限位',
@@ -660,7 +659,7 @@ const changeSummary = computed<DiffEntry[]>(() => {
   }
   if (confirmContextType.value === 'tagMapping' && tagData.value) {
     const summary: DiffEntry[] = [];
-    const origMap: Record<string, string | null> = {};
+    const origMap: Record<string, null | string> = {};
     for (const t of tagData.value.tags) {
       origMap[t.role.toLowerCase()] = t.tagId;
     }
@@ -732,13 +731,24 @@ async function confirmSave() {
   if (!confirmContextType.value) return;
   confirmLoading.value = true;
   try {
-    if (confirmContextType.value === 'update') {
-      await doSaveBasic();
-    } else if (confirmContextType.value === 'tagMapping') {
-      await doSaveTagMapping();
-    } else if (confirmContextType.value === 'batch') {
+    switch (confirmContextType.value) {
+    case 'batch': {
       await doBatchConfigSubmit();
       batchModalVisible.value = false;
+    
+    break;
+    }
+    case 'tagMapping': {
+      await doSaveTagMapping();
+    
+    break;
+    }
+    case 'update': {
+      await doSaveBasic();
+    
+    break;
+    }
+    // No default
     }
     confirmVisible.value = false;
   } catch (error) {
@@ -1075,7 +1085,7 @@ const opTagAssociated = computed(() => {
 });
 
 /** v6.1：DCS 型号列表（用于回路关联 DCS 型号选择） */
-const dcsModels = ref<{ id: string; name: string; code: string; vendorName?: string | null }[]>([]);
+const dcsModels = ref<{ code: string; id: string; name: string; vendorName?: null | string }[]>([]);
 let dcsModelsLoaded = false;
 async function loadDcsModels() {
   if (dcsModelsLoaded) return;
@@ -1208,10 +1218,10 @@ const activeFilterCount = computed(() => {
 
 const activeFilterBadges = computed(() => {
   const badges: {
+    clear: () => void;
     key: string;
     label: string;
     value: string;
-    clear: () => void;
   }[] = [];
 
   if (query.controlType) {
@@ -1550,7 +1560,7 @@ async function handleAutoLink() {
   try {
     const matchedTags = await matchTagsForLoopApi(loopTagName);
 
-    if (!matchedTags.length) {
+    if (matchedTags.length === 0) {
       message.info('未找到匹配的测点，请手动关联');
       return;
     }
@@ -1575,7 +1585,7 @@ async function handleAutoLink() {
     }
 
     message.success(`自动关联成功！匹配到 ${matchedTags.length} 个测点`);
-  } catch (error) {
+  } catch {
     message.error('自动关联失败，请手动关联');
   }
 }
@@ -1842,7 +1852,7 @@ watch(
           />
 
           <!-- 右侧：数据交互与视图工具 -->
-          <span class="ml-auto" />
+          <span class="ml-auto"></span>
           <Upload v-bind="uploadProps">
             <ClpmToolbarButton
               v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -2049,8 +2059,7 @@ watch(
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'loopType'">
               <span
-                :class="[
-                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none" :class="[
                   LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.badgeClass ??
                     'bg-slate-100 text-slate-700 border-slate-200',
                 ]"
@@ -2061,8 +2070,7 @@ watch(
             <template v-else-if="column.key === 'controlType'">
               <span
                 v-if="record.controlType"
-                :class="[
-                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none" :class="[
                   CONTROL_TYPE_MAP[record.controlType]?.badgeClass ??
                     'bg-slate-100 text-slate-700 border-slate-200',
                 ]"
@@ -2127,8 +2135,7 @@ watch(
             <template v-else-if="column.key === 'importanceLevel'">
               <span
                 v-if="record.importanceLevel"
-                :class="[
-                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none" :class="[
                   IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.badgeClass ??
                     'bg-slate-100 text-slate-700 border-slate-200',
                 ]"
@@ -2168,8 +2175,7 @@ watch(
                   v-for="(val, key) in (record as LoopApi.LoopListItem)
                     .tagMappingStatus"
                   :key="key"
-                  :class="[
-                    'inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium leading-none',
+                  class="inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium leading-none" :class="[
                     val
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
                       : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
@@ -2756,6 +2762,7 @@ watch(
 .row-not-evaluated > td {
   background-color: #fafafa !important;
 }
+
 .row-not-evaluated:hover > td {
   background-color: #f0f0f0 !important;
 }
@@ -2763,25 +2770,28 @@ watch(
 /* v6.1：选中行样式优化（淡蓝背景 + 左侧蓝色竖线，列分割线最细最淡） */
 .ant-table-tbody > tr.ant-table-row-selected > td {
   background-color: #eff6ff !important; /* blue-50 */
-  border-bottom-color: #eff6ff !important; /* 与背景同色，弱化横向分割线 */
   border-right-color: #eff6ff !important; /* 与背景同色，弱化列分割线 */
+  border-bottom-color: #eff6ff !important; /* 与背景同色，弱化横向分割线 */
 }
+
 .ant-table-tbody > tr.ant-table-row-selected:hover > td {
   background-color: #dbeafe !important; /* blue-100 */
-  border-bottom-color: #dbeafe !important;
   border-right-color: #dbeafe !important;
+  border-bottom-color: #dbeafe !important;
 }
+
 /* 选中行的第一列左侧加蓝色竖线（视觉锚点） */
 .ant-table-tbody > tr.ant-table-row-selected > td:first-child {
   position: relative;
 }
+
 .ant-table-tbody > tr.ant-table-row-selected > td:first-child::before {
-  content: '';
   position: absolute;
-  left: 0;
   top: 0;
   bottom: 0;
+  left: 0;
   width: 3px;
+  content: '';
   background-color: #3b82f6; /* blue-500 */
 }
 
@@ -2789,6 +2799,7 @@ watch(
 .compact-form .ant-form-item {
   margin-bottom: 12px;
 }
+
 .compact-form .ant-form-item-label {
   padding-bottom: 2px;
 }
@@ -2796,16 +2807,16 @@ watch(
 /* —— ZL §2 hover reveal 操作列 —— */
 .loop-action-cell {
   display: inline-flex;
-  align-items: center;
   gap: 2px;
+  align-items: center;
 }
 
 .loop-action-cell__more {
   display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
   visibility: hidden;
+  gap: 2px;
+  align-items: center;
+  opacity: 0;
   transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
@@ -2813,8 +2824,8 @@ watch(
 .ant-table-row:hover .loop-action-cell__more,
 .loop-action-cell:hover .loop-action-cell__more,
 .loop-action-cell:focus-within .loop-action-cell__more {
-  opacity: 1;
   visibility: visible;
+  opacity: 1;
 }
 
 /* 操作按钮统一样式 */
@@ -2826,31 +2837,31 @@ watch(
 }
 
 .loop-action-btn:hover {
-  background-color: hsl(var(--accent) / 0.1) !important;
+  background-color: hsl(var(--accent) / 10%) !important;
 }
 
 .loop-action-btn.ant-btn-dangerous:hover {
-  background-color: hsl(var(--destructive) / 0.1) !important;
+  background-color: hsl(var(--destructive) / 10%) !important;
 }
 
 /* —— ZL 高密度表格 —— */
 .ant-table-small .ant-table-thead > tr > th {
   font-size: 11px;
   font-weight: 600;
+  color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #64748b;
   background-color: #f8fafc;
 }
 
 .dark .ant-table-small .ant-table-thead > tr > th {
-  background-color: hsl(var(--card));
   color: hsl(var(--muted-foreground));
+  background-color: hsl(var(--card));
 }
 
 .ant-table-small .ant-table-tbody > tr > td {
-  font-size: 12px;
   padding: 4px 8px;
+  font-size: 12px;
 }
 
 /* 数值列等宽字体 */

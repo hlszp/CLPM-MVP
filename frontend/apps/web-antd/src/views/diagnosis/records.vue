@@ -13,12 +13,12 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
-
 import { IconifyIcon } from '@vben/icons';
 
 import { Button, message, Modal, Select, Table, Tag } from 'ant-design-vue';
@@ -32,13 +32,12 @@ import {
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
-import type { KpiStripItem } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { flattenNodes } from '#/utils/plant-node';
 
 import Tracker from './tracker.vue';
@@ -59,7 +58,7 @@ const batchDeleteLoading = ref(false);
 /** 行选择配置 */
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
-  onChange: (keys: (string | number)[]) => {
+  onChange: (keys: (number | string)[]) => {
     selectedRowKeys.value = keys.map(String);
   },
 }));

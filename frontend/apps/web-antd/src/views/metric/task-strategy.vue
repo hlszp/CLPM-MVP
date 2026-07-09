@@ -27,9 +27,9 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import { getRulesApi, updateRuleApi } from '#/api/metric';
 import { ClpmDangerConfirmModal, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { getRulesApi, updateRuleApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricTaskStrategy' });
 

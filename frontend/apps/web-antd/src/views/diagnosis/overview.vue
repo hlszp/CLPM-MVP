@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { TableColumnsType } from 'ant-design-vue';
+
 /**
  * S4-DIAG-013 诊断总览页（v6.1 IA 调整新增）
  *
@@ -17,7 +19,6 @@
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
-import type { TableColumnsType } from 'ant-design-vue';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -38,13 +39,13 @@ import {
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import {
   DIAGNOSIS_LABEL_COLOR_HEX_MAP,
   DIAGNOSIS_LABEL_COLOR_MAP,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import { $t } from '#/locales';
 
 defineOptions({ name: 'DiagnosisOverview' });
@@ -334,8 +335,7 @@ function renderTrendChart() {
 
 /** Top 5 异常回路（按综合评分升序，最低分优先） */
 const topAbnormalLoops = computed(() =>
-  todayDiagnosisList.value
-    .slice()
+  [...todayDiagnosisList.value]
     .sort((a, b) => a.compositeScore - b.compositeScore)
     .slice(0, 5),
 );

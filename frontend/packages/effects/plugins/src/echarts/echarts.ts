@@ -8,8 +8,8 @@ import {
   ScatterChart,
 } from 'echarts/charts';
 import {
-  DataZoomComponent,
   DatasetComponent,
+  DataZoomComponent,
   GraphicComponent,
   GridComponent,
   LegendComponent,

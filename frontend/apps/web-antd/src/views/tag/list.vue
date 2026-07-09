@@ -53,8 +53,8 @@ import {
 } from '#/api/tag';
 import { ClpmDangerConfirmModal, ClpmDataCanvas, ClpmNumeric } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
-import { realtimeWs } from '#/utils/realtime-ws';
 import { flattenNodes } from '#/utils/plant-node';
+import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'TagList' });
 
@@ -79,7 +79,7 @@ const batchDeleting = ref(false);
 // ===== 危险确认弹窗（ClpmDangerConfirmModal）=====
 // 单个删除
 const dangerOpen = ref(false);
-const dangerTarget = ref<TagApi.TagItem | null>(null);
+const dangerTarget = ref<null | TagApi.TagItem>(null);
 const dangerLoading = ref(false);
 // 批量删除
 const batchDangerOpen = ref(false);
@@ -101,7 +101,7 @@ function openBatchDanger() {
 /** 表格行选择配置 */
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
-  onChange: (keys: (string | number)[]) => {
+  onChange: (keys: (number | string)[]) => {
     selectedRowKeys.value = keys.map(String);
   },
 }));
@@ -395,7 +395,7 @@ function formatTime(t?: null | string): string {
   }
 }
 
-function getProgressWidth(record: { currentValue?: number | null; rangeMin?: number | null; rangeMax?: number | null }): number {
+function getProgressWidth(record: { currentValue?: null | number; rangeMax?: null | number; rangeMin?: null | number; }): number {
   if (record.currentValue == null || record.rangeMin == null || record.rangeMax == null) return 0;
   const range = record.rangeMax - record.rangeMin;
   if (range <= 0) return 0;
@@ -471,10 +471,10 @@ let wsUnsubscribe: (() => void) | null = null;
 
 /** 处理 WebSocket 实时消息，更新匹配 tag 的 currentValue/quality/lastSyncAt */
 function handleRealtimeMessage(msg: {
+  collectTime: string;
+  quality: number;
   tagCode: string;
   value: string;
-  quality: number;
-  collectTime: string;
 }) {
   // tagCode 即 tag_registry.tag_name（含角色后缀，如 41FIC20021_PIDA.PV）
   const item = tagList.value.find((t) => t.tagName === msg.tagCode);
@@ -482,7 +482,7 @@ function handleRealtimeMessage(msg: {
   const numValue = Number.parseFloat(msg.value);
   if (Number.isNaN(numValue)) return;
   item.currentValue = numValue;
-  item.quality = msg.quality === 0 ? 'BAD' : msg.quality === 2 ? 'UNCERTAIN' : 'GOOD';
+  item.quality = msg.quality === 0 ? 'BAD' : (msg.quality === 2 ? 'UNCERTAIN' : 'GOOD');
   item.lastSyncAt = msg.collectTime;
 }
 
@@ -637,8 +637,8 @@ onUnmounted(() => {
                 <div
                   class="h-1 rounded-full transition-all"
                   :class="record.quality === 'BAD' ? 'bg-gray-400' : record.quality === 'UNCERTAIN' ? 'bg-amber-400' : 'bg-emerald-500'"
-                  :style="{ width: getProgressWidth(record) + '%' }"
-                />
+                  :style="{ width: `${getProgressWidth(record) }%` }"
+                ></div>
               </div>
             </div>
             <span v-else class="text-gray-400">—</span>
@@ -891,23 +891,23 @@ onUnmounted(() => {
 
 <style scoped>
 .tag-row--bad {
-  background-color: rgba(244, 63, 94, 0.04);
+  background-color: rgb(244 63 94 / 4%);
 }
 
 .tag-row--bad:hover {
-  background-color: rgba(244, 63, 94, 0.08);
+  background-color: rgb(244 63 94 / 8%);
 }
 
 .tag-row-actions {
   display: flex;
+  visibility: hidden;
   gap: 1px;
   opacity: 0;
-  visibility: hidden;
   transition: all 0.2s ease;
 }
 
 :deep(.ant-table-row):hover .tag-row-actions {
-  opacity: 1;
   visibility: visible;
+  opacity: 1;
 }
 </style>

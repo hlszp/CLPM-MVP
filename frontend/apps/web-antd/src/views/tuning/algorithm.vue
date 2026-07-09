@@ -30,12 +30,12 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import {
   createTuningTaskApi,
   getTuningMethodsApi,
   tunePidApi,
 } from '#/api/tuning';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 
 defineOptions({ name: 'TuningAlgorithm' });
 

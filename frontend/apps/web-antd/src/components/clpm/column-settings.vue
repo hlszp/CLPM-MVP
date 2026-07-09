@@ -7,16 +7,15 @@ import { Button, Checkbox, Popover } from 'ant-design-vue';
 
 defineOptions({ name: 'ClpmColumnSettings' });
 
+const props = defineProps<Props>();
+const emit = defineEmits<{
+  reset: [];
+  'update:columns': [columns: ColumnConfig[]];
+}>();
 interface Props {
   /** 当前列配置 */
   columns: ColumnConfig[];
 }
-const props = defineProps<Props>();
-const emit = defineEmits<{
-  'update:columns': [columns: ColumnConfig[]];
-  reset: [];
-}>();
-
 function toggleVisible(key: string) {
   const cols = props.columns.map((c) =>
     c.key === key ? { ...c, visible: !c.visible } : c,

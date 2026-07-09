@@ -12,6 +12,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { TuningApi } from '#/api/tuning';
+import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
@@ -20,10 +21,9 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { Alert, Button, Select, Table, Tag } from 'ant-design-vue';
 
-import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar } from '#/components/clpm';
-import type { KpiStripItem } from '#/components/clpm';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TuningStats' });
 
@@ -128,9 +128,9 @@ const kpiStripItems = computed<KpiStripItem[]>(() => {
       status:
         avgFittingValue >= 80
           ? 'success'
-          : avgFittingValue >= 60
+          : (avgFittingValue >= 60
             ? 'warning'
-            : 'danger',
+            : 'danger'),
     },
     {
       key: 'algorithms',

@@ -32,20 +32,10 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { getAbCompareApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-
-const { isDark, themeColors } = useClpmTheme();
-
-/** 时间戳精度转换：纳秒/微秒级→毫秒级 */
-function toMs(ts: number): number {
-  const absTs = Math.abs(ts);
-  if (absTs >= 10000000000000000) return Math.floor(ts / 1000000);
-  if (absTs >= 10000000000000) return Math.floor(ts / 1000);
-  return ts;
-}
 
 defineOptions({ name: 'DiagnosisABCompare' });
 
@@ -68,6 +58,16 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'close'): void;
 }>();
+
+const { isDark, themeColors } = useClpmTheme();
+
+/** 时间戳精度转换：纳秒/微秒级→毫秒级 */
+function toMs(ts: number): number {
+  const absTs = Math.abs(ts);
+  if (absTs >= 10_000_000_000_000_000) return Math.floor(ts / 1_000_000);
+  if (absTs >= 10_000_000_000_000) return Math.floor(ts / 1000);
+  return ts;
+}
 
 const route = useRoute();
 

@@ -5,6 +5,10 @@ import { computed, ref } from 'vue';
 
 import { Modal, Tag } from 'ant-design-vue';
 
+defineOptions({ name: 'ClpmTagAssociationBadge' });
+
+const props = defineProps<Props>();
+
 const SLOT_META: Array<{
   key: keyof LoopApi.LoopTagMapping;
   label: string;
@@ -19,16 +23,12 @@ const SLOT_META: Array<{
   { key: 'pid_d', label: 'PID_D', required: false },
 ];
 
-defineOptions({ name: 'ClpmTagAssociationBadge' });
-
 interface Props {
   /** 完整 mapping（含 tagName），与 status 二选一；同时提供时优先 mapping */
   mapping?: LoopApi.LoopTagMapping | null;
   /** 简化状态（仅 associated booleans），列表行使用 */
   status?: LoopApi.TagMappingStatus | null;
 }
-
-const props = defineProps<Props>();
 
 const detailOpen = ref(false);
 

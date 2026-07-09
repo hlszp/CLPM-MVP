@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+
 /**
  * 回路性能列表页
  *
@@ -13,8 +15,8 @@
  * - 诊断 Modal（90% 宽）：4 个 Tab（频谱分析 / 时域分析 / 诊断概览 / 评估历史）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
+import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type {
   ConfidenceLevel,
@@ -33,8 +35,8 @@ import {
   watch,
 } from 'vue';
 
-import { IconifyIcon, RotateCw } from '@vben/icons';
 import { Page } from '@vben/common-ui';
+import { IconifyIcon, RotateCw } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
@@ -45,6 +47,7 @@ import {
   Descriptions,
   DescriptionsItem,
   Drawer,
+  message,
   Modal,
   RadioGroup,
   Row,
@@ -54,37 +57,35 @@ import {
   Tabs,
   Tag,
   TreeSelect,
-  message,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import { getDiagnosisVisualizationApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import {
   getGradingThresholdsApi,
   getLoopSnapshotsApi,
 } from '#/api/metric';
-import { getDiagnosisVisualizationApi } from '#/api/diagnosis';
-import type { DiagnosisApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import {
-  DIAGNOSIS_LABEL_COLOR_MAP,
-  DIAGNOSIS_LABEL_NAME_MAP,
-} from '#/constants/diagnosis';
 import {
   ClpmDataCanvas,
   ClpmPageToolbar,
 } from '#/components/clpm';
-import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
-import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
-import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
-import ScatterChart from '#/components/diagnosis-visualization/scatter-chart.vue';
-import QualityTimelineChart from '#/components/diagnosis-visualization/quality-timeline-chart.vue';
-import SaturationChart from '#/components/diagnosis-visualization/saturation-chart.vue';
-import SlowResponseCard from '#/components/diagnosis-visualization/slow-response-card.vue';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
+import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
 import IaeCard from '#/components/diagnosis-visualization/iae-card.vue';
 import KanoCard from '#/components/diagnosis-visualization/kano-card.vue';
+import QualityTimelineChart from '#/components/diagnosis-visualization/quality-timeline-chart.vue';
+import SaturationChart from '#/components/diagnosis-visualization/saturation-chart.vue';
+import ScatterChart from '#/components/diagnosis-visualization/scatter-chart.vue';
+import SlowResponseCard from '#/components/diagnosis-visualization/slow-response-card.vue';
+import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
+import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
 
 defineOptions({ name: 'MetricLoopPerformance' });
 
@@ -354,13 +355,13 @@ const columns: TableColumnsType = [
 // ===== 工具函数 =====
 
 /** 时间字符串规范化（PostgreSQL timestamp without timezone 假定为 UTC） */
-function normalizeTime(ts: string | null | undefined): string | null {
+function normalizeTime(ts: null | string | undefined): null | string {
   if (!ts) return null;
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
   return hasTimezone ? ts : `${ts}Z`;
 }
 
-function formatTsRange(start: string | null, end: string | null): string {
+function formatTsRange(start: null | string, end: null | string): string {
   const s = normalizeTime(start);
   const e = normalizeTime(end);
   if (!s && !e) return '—';
@@ -371,13 +372,13 @@ function formatTsRange(start: string | null, end: string | null): string {
   return dayjs(e || s).format(fmt);
 }
 
-function formatTime(ts: string | null | undefined): string {
+function formatTime(ts: null | string | undefined): string {
   const n = normalizeTime(ts);
   if (!n) return '—';
   return dayjs(n).format('YYYY-MM-DD HH:mm:ss');
 }
 
-function formatShortTime(ts: string | null | undefined): string {
+function formatShortTime(ts: null | string | undefined): string {
   const n = normalizeTime(ts);
   if (!n) return '—';
   return dayjs(n).format('MM-DD HH:mm');
@@ -682,7 +683,7 @@ const diagModalVisible = ref(false);
 const diagLoading = ref(false);
 const diagRecord = ref<LoopPerformanceRow | null>(null);
 const diagData = ref<DiagnosisApi.DiagnosisVisualizationData | null>(null);
-const diagActiveTab = ref<'overview' | 'spectrum' | 'time' | 'history'>(
+const diagActiveTab = ref<'history' | 'overview' | 'spectrum' | 'time'>(
   'overview',
 );
 
@@ -1105,7 +1106,7 @@ onMounted(async () => {
               drawerRecord.loopMeta?.pvRange
                 ? `${drawerRecord.loopMeta.pvRange.min ?? '—'} ~ ${
                     drawerRecord.loopMeta.pvRange.max ?? '—'
-                  }${drawerRecord.loopMeta.pvUnit ? ' ' + drawerRecord.loopMeta.pvUnit : ''}`
+                  }${drawerRecord.loopMeta.pvUnit ? ` ${ drawerRecord.loopMeta.pvUnit}` : ''}`
                 : '—'
             }}
           </DescriptionsItem>
@@ -1114,7 +1115,7 @@ onMounted(async () => {
               drawerRecord.loopMeta?.opRange
                 ? `${drawerRecord.loopMeta.opRange.min ?? '—'} ~ ${
                     drawerRecord.loopMeta.opRange.max ?? '—'
-                  }${drawerRecord.loopMeta.opUnit ? ' ' + drawerRecord.loopMeta.opUnit : ''}`
+                  }${drawerRecord.loopMeta.opUnit ? ` ${ drawerRecord.loopMeta.opUnit}` : ''}`
                 : '—'
             }}
           </DescriptionsItem>
@@ -1500,14 +1501,14 @@ onMounted(async () => {
 <style scoped>
 .summary-card {
   padding: 12px;
-  background: var(--ant-color-fill-quaternary, rgba(0, 0, 0, 0.04));
+  background: var(--ant-color-fill-quaternary, rgb(0 0 0 / 4%));
   border-radius: 8px;
 }
 
 .summary-label {
+  margin-bottom: 4px;
   font-size: 12px;
   color: #6b7280;
-  margin-bottom: 4px;
 }
 
 .summary-value {

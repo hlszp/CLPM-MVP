@@ -1,3 +1,5 @@
+import { computed } from 'vue';
+
 /**
  * CLPM 主题响应式色板
  *
@@ -29,8 +31,6 @@
  * 调用方需在 watch(isDark) 时手动重新构造 options 并调用 renderEcharts。
  */
 import { usePreferences } from '@vben/preferences';
-
-import { computed } from 'vue';
 
 /** ZL 工业色板（浅色模式，对齐 Tailwind slate/emerald/amber/rose/blue） */
 const LIGHT_COLORS = {

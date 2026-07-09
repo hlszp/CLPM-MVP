@@ -20,6 +20,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 
 import {
   Button,
@@ -36,7 +37,6 @@ import {
   Tag,
   Tooltip,
 } from 'ant-design-vue';
-import { IconifyIcon } from '@vben/icons';
 import dayjs from 'dayjs';
 
 import {
@@ -51,8 +51,8 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
 } from '#/components/clpm';
-import { DIAGNOSIS_LABEL_COLOR_MAP } from '#/constants/diagnosis';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { DIAGNOSIS_LABEL_COLOR_MAP } from '#/constants/diagnosis';
 
 defineOptions({ name: 'DiagnosisTasks' });
 
@@ -242,7 +242,7 @@ const unitOptions = computed(() => {
   loopList.value.forEach((l) => {
     if (l.unitName) units.set(l.unitName, l.unitName);
   });
-  return Array.from(units.entries()).map(([value, label]) => ({ value, label }));
+  return [...units.entries()].map(([value, label]) => ({ value, label }));
 });
 
 /** 经过筛选的回路列表 */
@@ -280,7 +280,7 @@ const loopColumns: TableColumnsType = [
 /** 回路选择表格行选择配置 */
 const loopRowSelection = computed(() => ({
   selectedRowKeys: selectedLoopIds.value,
-  onChange: (keys: (string | number)[]) => {
+  onChange: (keys: (number | string)[]) => {
     selectedLoopIds.value = keys.map(String);
   },
   getCheckboxProps: (record: LoopApi.MonitorListItem) => ({
@@ -397,7 +397,7 @@ function handleViewDetail(record: DiagnosisApi.TaskItem) {
 }
 
 /** 诊断标签中文映射 */
-const DIAG_LABEL_MAP: Record<string, { text: string; color: string }> = {
+const DIAG_LABEL_MAP: Record<string, { color: string; text: string; }> = {
   OSCILLATION: { text: '振荡', color: 'red' },
   VALVE_STICTION: { text: '阀门粘滞', color: 'volcano' },
   OVERAGGRESSIVE: { text: '参数过激', color: 'orange' },
@@ -654,7 +654,7 @@ function formatEvidence(
 /** 行选择配置 */
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
-  onChange: (keys: (string | number)[]) => {
+  onChange: (keys: (number | string)[]) => {
     selectedRowKeys.value = keys.map(String);
   },
 }));

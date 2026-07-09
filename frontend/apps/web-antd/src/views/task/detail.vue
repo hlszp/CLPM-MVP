@@ -31,13 +31,13 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { ClpmPageToolbar } from '#/components/clpm';
 import {
   cancelTaskApi,
   getTaskDetailApi,
   getTaskNotificationsApi,
   markNotificationReadApi,
 } from '#/api/task';
+import { ClpmPageToolbar } from '#/components/clpm';
 
 defineOptions({ name: 'TaskDetail' });
 
@@ -46,11 +46,11 @@ const router = useRouter();
 
 const taskId = computed(() => route.params.taskId as string);
 const loading = ref(false);
-const task = ref<TaskApi.TaskItem | null>(null);
+const task = ref<null | TaskApi.TaskItem>(null);
 const notifications = ref<TaskApi.TaskNotification[]>([]);
 const cancelLoading = ref(false);
 
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: null | ReturnType<typeof setInterval> = null;
 
 // ---- 状态映射 ----
 const statusColorMap: Record<TaskApi.TaskStatus, string> = {
@@ -158,7 +158,7 @@ function startPolling() {
       loadDetail();
       loadNotifications();
     }
-  }, 5_000);
+  }, 5000);
 }
 
 function stopPolling() {

@@ -13,13 +13,14 @@
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
+import type { SummaryAction, SummaryItem } from '#/components/clpm';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
-import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { IconifyIcon } from '@vben/icons';
+import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { Button, message, RadioGroup, Spin, Steps, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -32,14 +33,13 @@ import {
   getWaveformApi,
 } from '#/api/diagnosis';
 import { ClpmDataCanvas, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
-import type { SummaryAction, SummaryItem } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 import Tracker from './tracker.vue';
 
@@ -66,7 +66,7 @@ const trackerDrawerVisible = ref(false);
 
 // ===== D2 多图联动：趋势图 ↔ 散点图 =====
 /** 当前选中时间点（由趋势图或散点图点击触发） */
-const selectedTime = ref<{ index: number; timestamp: string } | null>(null);
+const selectedTime = ref<null | { index: number; timestamp: string }>(null);
 
 /** 传递给 WaveformChart 的选中时间戳 */
 const selectedTimestamp = computed(() => selectedTime.value?.timestamp ?? null);
@@ -153,9 +153,9 @@ const summaryItems = computed<SummaryItem[]>(() => {
       status:
         detail.value.compositeScore >= 80
           ? 'success'
-          : detail.value.compositeScore >= 60
+          : (detail.value.compositeScore >= 60
             ? 'warning'
-            : 'danger',
+            : 'danger'),
     },
     {
       key: 'confidence',
@@ -164,9 +164,9 @@ const summaryItems = computed<SummaryItem[]>(() => {
       status:
         detail.value.fusedConfidence >= 0.8
           ? 'success'
-          : detail.value.fusedConfidence >= 0.5
+          : (detail.value.fusedConfidence >= 0.5
             ? 'warning'
-            : 'danger',
+            : 'danger'),
     },
     {
       key: 'risk',
@@ -395,8 +395,8 @@ function renderScatterChart() {
     if (ts.length === scatter.x.length) {
       const selectedTs = Number(selectedTime.value.timestamp);
       const WINDOW = 30_000; // 30 秒（ms）
-      for (let i = 0; i < ts.length; i++) {
-        if (Math.abs(ts[i]! - selectedTs) <= WINDOW) {
+      for (const [i, t] of ts.entries()) {
+        if (Math.abs(t! - selectedTs) <= WINDOW) {
           highlightedSet.add(i);
         }
       }

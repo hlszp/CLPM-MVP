@@ -9,6 +9,8 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
+import type { TaskApi } from '#/api/task';
+
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 import { RotateCw } from '@vben/icons';
@@ -17,12 +19,12 @@ import {
   Button,
   DatePicker,
   Drawer,
+  message,
   Progress,
   Select,
   Space,
   Table,
   Tag,
-  message,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -31,10 +33,9 @@ import {
   getTaskListApi,
   triggerStandardEvaluateApi,
 } from '#/api/task';
-import type { TaskApi } from '#/api/task';
 import {
-  ClpmDataCanvas,
   ClpmDangerConfirmModal,
+  ClpmDataCanvas,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
@@ -79,11 +80,11 @@ const taskTypeTextMap: Record<string, string> = {
 
 // ============ 详情 Drawer ============
 const drawerVisible = ref(false);
-const selectedTask = ref<TaskApi.TaskItem | null>(null);
+const selectedTask = ref<null | TaskApi.TaskItem>(null);
 
 // ============ 取消任务 ============
 const cancelDangerOpen = ref(false);
-const cancelDangerTarget = ref<TaskApi.TaskItem | null>(null);
+const cancelDangerTarget = ref<null | TaskApi.TaskItem>(null);
 const cancelDangerLoading = ref(false);
 
 function openCancelDanger(record: TaskApi.TaskItem) {
@@ -218,7 +219,7 @@ async function loadList() {
 
 // ============ 自动刷新（polling 活跃任务） ============
 const POLLING_INTERVAL = 5000;
-let pollingTimer: ReturnType<typeof setInterval> | null = null;
+let pollingTimer: null | ReturnType<typeof setInterval> = null;
 
 function hasActiveTask(): boolean {
   return taskList.value.some((t) => t.status === 'RUNNING' || t.status === 'PENDING');
@@ -283,19 +284,19 @@ function handleRowClick(record: TaskApi.TaskItem) {
 }
 
 // ============ 工具函数 ============
-function formatTime(ts: string | null | undefined): string {
+function formatTime(ts: null | string | undefined): string {
   if (!ts) return '—';
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
   const normalized = hasTimezone ? ts : `${ts}Z`;
   return dayjs(normalized).format('YYYY-MM-DD HH:mm');
 }
 
-function formatProgress(progress: number | null | undefined): number {
+function formatProgress(progress: null | number | undefined): number {
   if (progress === null || progress === undefined) return 0;
   return Math.round(progress * 100);
 }
 
-function parseTimestamp(ts: string | null | undefined): number | null {
+function parseTimestamp(ts: null | string | undefined): null | number {
   if (!ts) return null;
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
   const normalized = hasTimezone ? ts : `${ts}Z`;
@@ -381,7 +382,7 @@ onUnmounted(() => {
         :data-source="taskList"
         :pagination="{
           current: currentPage,
-          pageSize: pageSize,
+          pageSize,
           total: totalCount,
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,

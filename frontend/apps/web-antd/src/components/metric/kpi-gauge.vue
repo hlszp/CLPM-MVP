@@ -1,17 +1,20 @@
 <script lang="ts" setup>
-import { computed, ref, watch, onMounted } from 'vue';
 import type { EchartsUIType } from '@vben/plugins/echarts';
+
+import { computed, onMounted, ref, watch } from 'vue';
+
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 const props = defineProps<{
-  title: string;
-  value: number | null;
-  compareValue?: number | null;
-  unit?: string;
+  color?: string;
+  compareValue?: null | number;
   max?: number;
   min?: number;
-  color?: string;
+  title: string;
+  unit?: string;
+  value: null | number;
 }>();
 
 const { themeColors, chartColors } = useClpmTheme();
@@ -90,7 +93,7 @@ function renderChart() {
           length: '55%',
           width: 3,
           itemStyle: {
-            color: color,
+            color,
             borderRadius: 2,
           },
         },
@@ -178,10 +181,10 @@ onMounted(() => {
         }"
       >
         <svg v-if="isPositive === true" width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <path d="M5 2L9 6L5 10L1 6L5 2Z" fill="currentColor"/>
+          <path d="M5 2L9 6L5 10L1 6L5 2Z" fill="currentColor" />
         </svg>
         <svg v-else-if="isPositive === false" width="10" height="10" viewBox="0 0 10 10" fill="none">
-          <path d="M5 8L1 4L5 0L9 4L5 8Z" fill="currentColor"/>
+          <path d="M5 8L1 4L5 0L9 4L5 8Z" fill="currentColor" />
         </svg>
         {{ compareText }}
       </span>
@@ -203,9 +206,9 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 12px 8px;
-  height: 100%;
   justify-content: space-between;
+  height: 100%;
+  padding: 12px 8px;
 }
 
 .clpm-kpi-gauge__header {
@@ -224,12 +227,12 @@ onMounted(() => {
 
 .clpm-kpi-gauge__compare {
   display: flex;
-  align-items: center;
   gap: 2px;
-  font-size: 11px;
+  align-items: center;
   padding: 2px 6px;
-  border-radius: 4px;
+  font-size: 11px;
   background: hsl(var(--muted));
+  border-radius: 4px;
 }
 
 .clpm-kpi-gauge__compare--positive {
@@ -241,16 +244,16 @@ onMounted(() => {
 }
 
 .clpm-kpi-gauge__chart {
-  width: 100%;
-  flex: 1;
   display: flex;
+  flex: 1;
   align-items: center;
+  width: 100%;
 }
 
 .clpm-kpi-gauge__footer {
   display: flex;
-  align-items: baseline;
   gap: 4px;
+  align-items: baseline;
 }
 
 .clpm-kpi-gauge__value {
@@ -261,7 +264,7 @@ onMounted(() => {
 
 .clpm-kpi-gauge__unit {
   font-size: 12px;
-  color: hsl(var(--muted-foreground));
   font-weight: 400;
+  color: hsl(var(--muted-foreground));
 }
 </style>

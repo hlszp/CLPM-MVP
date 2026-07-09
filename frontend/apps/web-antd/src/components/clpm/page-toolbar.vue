@@ -5,6 +5,17 @@ import { IconifyIcon } from '@vben/icons';
 
 defineOptions({ name: 'ClpmPageToolbar' });
 
+const props = withDefaults(defineProps<Props>(), {
+  compact: false,
+  subtitle: '',
+  title: '',
+  loading: false,
+  status: '',
+  statusType: 'info',
+  lastRefresh: '',
+  dataDelay: '',
+});
+
 interface Props {
   /** 紧凑模式 */
   compact?: boolean;
@@ -37,17 +48,6 @@ interface Props {
   dataDelay?: string;
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  compact: false,
-  subtitle: '',
-  title: '',
-  loading: false,
-  status: '',
-  statusType: 'info',
-  lastRefresh: '',
-  dataDelay: '',
-});
-
 /** 实际状态类型：loading=true 时强制为 loading */
 const resolvedStatusType = computed(() =>
   props.loading ? 'loading' : props.statusType,
@@ -63,6 +63,9 @@ const resolvedStatusText = computed(() => {
 /** 状态图标 */
 const statusIcon = computed(() => {
   switch (resolvedStatusType.value) {
+    case 'error': {
+      return 'ant-design:close-circle-outlined';
+    }
     case 'loading': {
       return 'ant-design:loading-outlined';
     }
@@ -71,9 +74,6 @@ const statusIcon = computed(() => {
     }
     case 'warning': {
       return 'ant-design:exclamation-circle-outlined';
-    }
-    case 'error': {
-      return 'ant-design:close-circle-outlined';
     }
     default: {
       return 'ant-design:info-circle-outlined';
@@ -143,22 +143,17 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
           <span
             class="clpm-page-toolbar__status-divider"
             v-if="resolvedStatusText"
-            >·</span
-          >
-          <span class="clpm-page-toolbar__status-meta"
-            >{{ lastRefresh }} 已刷新</span
-          >
+            >·</span>
+          <span class="clpm-page-toolbar__status-meta">{{ lastRefresh }} 已刷新</span>
         </template>
         <template v-if="dataDelay">
           <span
             class="clpm-page-toolbar__status-divider"
             v-if="resolvedStatusText || lastRefresh"
-            >·</span
-          >
+            >·</span>
           <span
             class="clpm-page-toolbar__status-meta clpm-page-toolbar__status-meta--delay"
-            >数据延迟 {{ dataDelay }}</span
-          >
+            >数据延迟 {{ dataDelay }}</span>
         </template>
       </slot>
     </div>

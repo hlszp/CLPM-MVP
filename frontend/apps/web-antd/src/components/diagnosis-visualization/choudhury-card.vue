@@ -118,8 +118,8 @@ onMounted(() => {
 
 .card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 8px;
 }
 
@@ -131,14 +131,14 @@ onMounted(() => {
 
 .status-badge {
   padding: 2px 10px;
-  border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
+  border-radius: 4px;
 }
 
 .card-body {
-  flex: 1;
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
 }
@@ -146,7 +146,7 @@ onMounted(() => {
 .chart-wrapper {
   position: relative;
   height: 40px;
-  background: rgba(0, 0, 0, 0.04);
+  background: rgb(0 0 0 / 4%);
   border-radius: 4px;
 }
 
@@ -154,10 +154,10 @@ onMounted(() => {
   position: absolute;
   top: 50%;
   right: 8px;
-  transform: translateY(-50%);
   font-size: 11px;
   font-weight: 600;
   color: #374151;
+  transform: translateY(-50%);
 }
 
 .metrics-grid {
@@ -168,10 +168,10 @@ onMounted(() => {
 
 .metric-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   padding: 4px 6px;
-  background: rgba(0, 0, 0, 0.02);
+  background: rgb(0 0 0 / 2%);
   border-radius: 4px;
 }
 

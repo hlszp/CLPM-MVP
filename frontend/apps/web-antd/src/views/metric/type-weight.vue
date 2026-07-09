@@ -25,12 +25,12 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmToolbarButton } from '#/components/clpm';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   getWeightTemplatesApi,
   saveWeightTemplatesApi,
 } from '#/api/metric';
+import { ClpmToolbarButton } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricTypeWeightContent' });
 

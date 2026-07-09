@@ -85,8 +85,8 @@ export namespace LoopApi {
 
   /** 量程信息（从关联 Tag 引用，不冗余存储） */
   export interface RangeInfo {
-    min: number | null;
-    max: number | null;
+    min: null | number;
+    max: null | number;
   }
 
   /** 回路列表项（IDS v3.2 §2.2.7） */
@@ -115,19 +115,19 @@ export namespace LoopApi {
     lastScoreAt?: string;
     tagMappingStatus: TagMappingStatus;
     /** v6.1 新增：PV 量程（从 PV Tag 引用） */
-    pvRange?: RangeInfo | null;
+    pvRange?: null | RangeInfo;
     /** v6.1 新增：PV 工程单位 */
-    pvUnit?: string | null;
+    pvUnit?: null | string;
     /** v6.1 新增：OP 量程（从 OP Tag 引用） */
-    opRange?: RangeInfo | null;
+    opRange?: null | RangeInfo;
     /** v6.1 新增：OP 工程单位 */
-    opUnit?: string | null;
+    opUnit?: null | string;
     /** v6.1 新增：OP 输出下限位（NULL 时取 OP Tag range_min） */
-    opOutputLowerLimit?: number | null;
+    opOutputLowerLimit?: null | number;
     /** v6.1 新增：OP 输出上限位（NULL 时取 OP Tag range_max） */
-    opOutputUpperLimit?: number | null;
+    opOutputUpperLimit?: null | number;
     /** v6.1 新增：关联 DCS 型号 ID（NULL=使用本系统默认 MODE 映射） */
-    dcsModelId?: string | null;
+    dcsModelId?: null | string;
   }
 
   /** 回路列表查询参数（IDS v3.2 §2.2.7） */
@@ -164,11 +164,11 @@ export namespace LoopApi {
     isActive?: boolean;
     remark?: string;
     /** v6.1 新增：OP 输出下限位 */
-    opOutputLowerLimit?: number | null;
+    opOutputLowerLimit?: null | number;
     /** v6.1 新增：OP 输出上限位 */
-    opOutputUpperLimit?: number | null;
+    opOutputUpperLimit?: null | number;
     /** v6.1 新增：关联 DCS 型号 ID */
-    dcsModelId?: string | null;
+    dcsModelId?: null | string;
   }
 
   /** 更新回路参数（IDS v3.2 §2.2.10） */
@@ -186,11 +186,11 @@ export namespace LoopApi {
     isActive?: boolean;
     remark?: string;
     /** v6.1 新增：OP 输出下限位 */
-    opOutputLowerLimit?: number | null;
+    opOutputLowerLimit?: null | number;
     /** v6.1 新增：OP 输出上限位 */
-    opOutputUpperLimit?: number | null;
+    opOutputUpperLimit?: null | number;
     /** v6.1 新增：关联 DCS 型号 ID */
-    dcsModelId?: string | null;
+    dcsModelId?: null | string;
   }
 
   /** 创建回路响应（IDS v3.2 §2.2.8） */
@@ -337,13 +337,13 @@ export namespace LoopApi {
     description: string;
     unitName: string;
     /** v6.1：PV 量程（从 PV Tag 引用） */
-    pvRange?: RangeInfo | null;
+    pvRange?: null | RangeInfo;
     /** v6.1：PV 工程单位 */
-    pvUnit?: string | null;
+    pvUnit?: null | string;
     /** v6.1：OP 量程（从 OP Tag 引用） */
-    opRange?: RangeInfo | null;
+    opRange?: null | RangeInfo;
     /** v6.1：OP 工程单位 */
-    opUnit?: string | null;
+    opUnit?: null | string;
     currentValues: MonitorCurrentValues;
     controlMode: ControlMode;
     loopType?: LoopType;

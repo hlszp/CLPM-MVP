@@ -1,19 +1,20 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
+
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'ScoreSparkline' });
+
+const props = withDefaults(defineProps<Props>(), {
+  width: 80,
+  height: 20,
+});
 
 interface Props {
   data: number[];
   width?: number;
   height?: number;
 }
-
-const props = withDefaults(defineProps<Props>(), {
-  width: 80,
-  height: 20,
-});
 
 const { themeColors } = useClpmTheme();
 

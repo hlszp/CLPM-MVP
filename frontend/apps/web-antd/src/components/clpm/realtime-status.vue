@@ -25,25 +25,6 @@ import ClpmNumeric from './numeric.vue';
 
 defineOptions({ name: 'ClpmRealtimeStatus' });
 
-interface Props {
-  /** 实时状态 */
-  status: 'online' | 'delayed' | 'failed' | 'refreshing' | 'offline';
-  /** 数据延迟（毫秒） */
-  latency?: number;
-  /** 上次刷新时间戳（ISO 字符串或时间戳） */
-  lastRefresh?: string | number;
-  /** 是否自动刷新 */
-  autoRefresh?: boolean;
-  /** 自动刷新间隔（秒） */
-  refreshInterval?: number;
-  /** 是否显示延迟数值 */
-  showLatency?: boolean;
-  /** 是否显示最后刷新时间 */
-  showLastRefresh?: boolean;
-  /** 尺寸 */
-  size?: 'small' | 'default';
-}
-
 const props = withDefaults(defineProps<Props>(), {
   latency: 0,
   lastRefresh: '',
@@ -53,6 +34,25 @@ const props = withDefaults(defineProps<Props>(), {
   showLastRefresh: true,
   size: 'small',
 });
+
+interface Props {
+  /** 实时状态 */
+  status: 'delayed' | 'failed' | 'offline' | 'online' | 'refreshing';
+  /** 数据延迟（毫秒） */
+  latency?: number;
+  /** 上次刷新时间戳（ISO 字符串或时间戳） */
+  lastRefresh?: number | string;
+  /** 是否自动刷新 */
+  autoRefresh?: boolean;
+  /** 自动刷新间隔（秒） */
+  refreshInterval?: number;
+  /** 是否显示延迟数值 */
+  showLatency?: boolean;
+  /** 是否显示最后刷新时间 */
+  showLastRefresh?: boolean;
+  /** 尺寸 */
+  size?: 'default' | 'small';
+}
 
 /** 状态元数据 */
 const statusMeta = computed(() => {
@@ -132,8 +132,7 @@ const tooltipText = computed(() => {
 <template>
   <Tooltip :title="tooltipText" placement="bottom">
     <div
-      :class="[
-        'clpm-realtime-status',
+      class="clpm-realtime-status" :class="[
         size === 'small' ? 'clpm-realtime-status--sm' : '',
       ]"
       :style="{
@@ -144,8 +143,7 @@ const tooltipText = computed(() => {
     >
       <IconifyIcon
         :icon="statusMeta.icon"
-        :class="[
-          'clpm-realtime-status__icon',
+        class="clpm-realtime-status__icon" :class="[
           statusMeta.pulse ? 'clpm-realtime-status__icon--pulse' : '',
         ]"
       />
@@ -166,28 +164,28 @@ const tooltipText = computed(() => {
 <style scoped>
 .clpm-realtime-status {
   display: inline-flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   padding: 2px 8px;
-  font-size: 12px;
-  border: 1px solid;
-  border-radius: var(--radius-industrial);
   font-family: var(--font-mono);
+  font-size: 12px;
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
   line-height: 18px;
   cursor: default;
+  border: 1px solid;
+  border-radius: var(--radius-industrial);
 }
 
 .clpm-realtime-status--sm {
-  font-size: 11px;
-  padding: 1px 6px;
   gap: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
 }
 
 .clpm-realtime-status__icon {
-  font-size: 12px;
   flex-shrink: 0;
+  font-size: 12px;
 }
 
 .clpm-realtime-status__icon--pulse {
@@ -213,6 +211,7 @@ const tooltipText = computed(() => {
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.5;
   }

@@ -165,29 +165,29 @@ export namespace TaskApi {
   export interface TaskResultItem {
     loopId: string;
     loopTagName: string;
-    tsStart: string | null;
-    tsEnd: string | null;
-    score: number | null;
-    accuracyRate: number | null;
-    fastRate: number | null;
-    steadyRate: number | null;
-    effectiveAutoRate: number | null;
-    goodValueRate: number | null;
-    oscillationRate: number | null;
-    saturationRate: number | null;
-    autoModeRate: number | null;
-    stictionIndex: number | null;
-    outputTripIndex: number | null;
-    settlingTime: number | null;
-    idealSettlingTime: number | null;
+    tsStart: null | string;
+    tsEnd: null | string;
+    score: null | number;
+    accuracyRate: null | number;
+    fastRate: null | number;
+    steadyRate: null | number;
+    effectiveAutoRate: null | number;
+    goodValueRate: null | number;
+    oscillationRate: null | number;
+    saturationRate: null | number;
+    autoModeRate: null | number;
+    stictionIndex: null | number;
+    outputTripIndex: null | number;
+    settlingTime: null | number;
+    idealSettlingTime: null | number;
     status: string;
-    confidenceLevel: string | null;
-    validRate: number | null;
-    algorithmVersion: string | null;
-    samplingFreq: string | null;
-    qualityPolicy: string | null;
-    dataLineage: Record<string, unknown> | null;
-    createdAt: string | null;
+    confidenceLevel: null | string;
+    validRate: null | number;
+    algorithmVersion: null | string;
+    samplingFreq: null | string;
+    qualityPolicy: null | string;
+    dataLineage: null | Record<string, unknown>;
+    createdAt: null | string;
   }
 
   /** 非标任务结果列表结果 */
@@ -246,7 +246,7 @@ export function triggerBackfillApi(data: TaskApi.BackfillTaskCreateParams) {
  * 仅 PENDING 状态的 BACKFILL 任务可启动，启动后变为 RUNNING。
  */
 export function startTaskApi(taskId: string) {
-  return requestClient.post<{ taskId: string; celeryTaskId: string }>(
+  return requestClient.post<{ celeryTaskId: string; taskId: string; }>(
     `${BASE}/${taskId}/start`,
   );
 }
@@ -283,7 +283,7 @@ export function cancelTaskApi(taskId: string) {
  * 运行中任务必须先 cancel 再 delete。
  */
 export function deleteTaskApi(taskId: string) {
-  return requestClient.delete<{ task_id: string; deleted: boolean }>(
+  return requestClient.delete<{ deleted: boolean; task_id: string; }>(
     `${BASE}/${taskId}`,
   );
 }

@@ -88,11 +88,11 @@ export namespace MetricApi {
 
   /** 引擎规则类型（对齐后端 EngineRuleType） */
   export type EngineRuleType =
+    | 'ARCHIVE'
     | 'CALC_CYCLE'
     | 'DATA_FETCH'
-    | 'SCHEDULE'
     | 'RETRY'
-    | 'ARCHIVE';
+    | 'SCHEDULE';
 
   /** 引擎规则项（对齐后端 EngineRuleItem） */
   export interface RuleItem {
@@ -101,12 +101,12 @@ export namespace MetricApi {
     ruleName: string;
     ruleType: EngineRuleType;
     /** 规则参数（不同 ruleType 的 params 结构不同） */
-    params: Record<string, any> | null;
+    params: null | Record<string, any>;
     isEnabled: boolean;
-    updatedBy?: string | null;
-    updatedAt?: string | null;
+    updatedBy?: null | string;
+    updatedAt?: null | string;
     /** P3 #51: EVAL_CALC_CYCLE 变更时返回，提示 Beat 进程需重启 */
-    warning?: string | null;
+    warning?: null | string;
   }
 
   /** 引擎规则列表响应 */
@@ -117,7 +117,7 @@ export namespace MetricApi {
   /** 更新引擎规则参数（对齐后端 EngineRuleUpdate） */
   export interface RuleUpdateParams {
     ruleName?: string;
-    params?: Record<string, any> | null;
+    params?: null | Record<string, any>;
     isEnabled?: boolean;
   }
 
@@ -170,7 +170,7 @@ export namespace MetricApi {
     samplingFreq?: null | string;
     qualityPolicy?: null | string;
     validRate?: null | number;
-    confidenceLevel?: null | ConfidenceLevel;
+    confidenceLevel?: ConfidenceLevel | null;
     dataLineage?: DataLineage | null;
   }
 
@@ -202,7 +202,7 @@ export namespace MetricApi {
     rank: number;
     loopId: string;
     tagName: string;
-    loopName: string | null;
+    loopName: null | string;
     unitName: string;
     score: number;
     goodValueRate: number;
@@ -219,7 +219,7 @@ export namespace MetricApi {
     actionStatus: ActionStatus;
     includeInEvaluation?: boolean | null;
     /** v4.0 数据血缘字段（对齐后端 RankingItem schema） */
-    confidenceLevel?: null | ConfidenceLevel;
+    confidenceLevel?: ConfidenceLevel | null;
     validRate?: null | number;
     samplingFreq?: null | string;
     qualityPolicy?: null | string;
@@ -393,8 +393,8 @@ export namespace MetricApi {
   export interface WeightTemplateSchema {
     version: number;
     templates: WeightTemplateItem[];
-    updatedAt?: string | null;
-    updatedBy?: string | null;
+    updatedAt?: null | string;
+    updatedBy?: null | string;
   }
 
   /** 权重模板保存请求 */
@@ -409,14 +409,14 @@ export namespace MetricApi {
     name: string;
     minScore: number;
     maxScore: number;
-    color?: string | null;
+    color?: null | string;
   }
 
   /** 定级阈值配置（5 级） */
   export interface GradingThresholdSchema {
     thresholds: GradingThresholdItem[];
-    updatedAt?: string | null;
-    updatedBy?: string | null;
+    updatedAt?: null | string;
+    updatedBy?: null | string;
   }
 
   /** 定级阈值更新请求 */
@@ -427,9 +427,9 @@ export namespace MetricApi {
   /** 版本历史单项 */
   export interface VersionHistoryItem {
     version: number;
-    updatedAt?: string | null;
-    updatedBy?: string | null;
-    remark?: string | null;
+    updatedAt?: null | string;
+    updatedBy?: null | string;
+    remark?: null | string;
     isCurrent: boolean;
   }
 
@@ -442,14 +442,14 @@ export namespace MetricApi {
   /** AAS 同步状态 */
   export interface AasSyncStatus {
     enabled: boolean;
-    endpoint?: string | null;
-    syncIntervalSeconds?: number | null;
-    lastSyncAt?: string | null;
-    lastSyncStatus?: string | null;
+    endpoint?: null | string;
+    syncIntervalSeconds?: null | number;
+    lastSyncAt?: null | string;
+    lastSyncStatus?: null | string;
     tagStats: {
-      total: number;
-      linked: number;
       byQuality: Record<string, number>;
+      linked: number;
+      total: number;
     };
   }
 
@@ -459,8 +459,8 @@ export namespace MetricApi {
     operationType: string;
     operator: string;
     operatedAt: string;
-    beforeValue?: string | null;
-    afterValue?: string | null;
+    beforeValue?: null | string;
+    afterValue?: null | string;
   }
 
   /** AAS 同步日志列表结果 */
@@ -473,29 +473,29 @@ export namespace MetricApi {
   export interface TaskResultItem {
     loopId: string;
     loopTagName: string;
-    tsStart: string | null;
-    tsEnd: string | null;
-    score: number | null;
-    accuracyRate: number | null;
-    fastRate: number | null;
-    steadyRate: number | null;
-    effectiveAutoRate: number | null;
-    goodValueRate: number | null;
-    oscillationRate: number | null;
-    saturationRate: number | null;
-    autoModeRate: number | null;
-    stictionIndex: number | null;
-    outputTripIndex: number | null;
-    settlingTime: number | null;
-    idealSettlingTime: number | null;
+    tsStart: null | string;
+    tsEnd: null | string;
+    score: null | number;
+    accuracyRate: null | number;
+    fastRate: null | number;
+    steadyRate: null | number;
+    effectiveAutoRate: null | number;
+    goodValueRate: null | number;
+    oscillationRate: null | number;
+    saturationRate: null | number;
+    autoModeRate: null | number;
+    stictionIndex: null | number;
+    outputTripIndex: null | number;
+    settlingTime: null | number;
+    idealSettlingTime: null | number;
     status: string;
-    confidenceLevel: string | null;
-    validRate: number | null;
-    algorithmVersion: string | null;
-    samplingFreq: string | null;
-    qualityPolicy: string | null;
-    dataLineage: Record<string, unknown> | null;
-    createdAt: string | null;
+    confidenceLevel: null | string;
+    validRate: null | number;
+    algorithmVersion: null | string;
+    samplingFreq: null | string;
+    qualityPolicy: null | string;
+    dataLineage: null | Record<string, unknown>;
+    createdAt: null | string;
   }
 
   /** 非标任务结果列表结果 */
@@ -564,7 +564,7 @@ export namespace MetricApi {
   export interface NodeTrendSeries {
     metricKey: string;
     metricName: string;
-    values: (number | null)[];
+    values: (null | number)[];
   }
 
   /** 节点趋势数据（对齐 NodeTrendData） */
@@ -807,7 +807,7 @@ export function getNodeSnapshotApi(nodeId: string) {
  */
 export function getNodeTrendApi(
   nodeId: string,
-  params: { startTime: string; endTime: string },
+  params: { endTime: string; startTime: string; },
 ) {
   return requestClient.get<MetricApi.NodeTrendData>(`${NODE_BASE}/${nodeId}/trend`, {
     params,
@@ -858,8 +858,8 @@ export function getNodeMonitorApi(
   nodeId: string,
   params: {
     dimension: MetricApi.NodeMonitorDimension;
-    start: string;
     end: string;
+    start: string;
   },
 ) {
   return requestClient.get<MetricApi.NodeMonitorData>(
@@ -941,28 +941,28 @@ const SNAPSHOTS_BASE = '/performance/loops/snapshots';
 
 /** 回路小时指标快照列表项（24 字段 + loopTagName） */
 export interface KpiSnapshotItem {
-  loopId: string | null;
-  loopTagName: string | null;
-  tsStart: string | null;
-  tsEnd: string | null;
-  score: number | null;
-  goodValueRate: number | null;
-  autoModeRate: number | null;
-  effectiveAutoRate: number | null;
-  steadyRate: number | null;
-  accuracyRate: number | null;
-  oscillationRate: number | null;
-  saturationRate: number | null;
-  fastRate: number | null;
-  stictionIndex: number | null;
-  settlingTime: number | null;
-  outputTravelIndex: number | null;
+  loopId: null | string;
+  loopTagName: null | string;
+  tsStart: null | string;
+  tsEnd: null | string;
+  score: null | number;
+  goodValueRate: null | number;
+  autoModeRate: null | number;
+  effectiveAutoRate: null | number;
+  steadyRate: null | number;
+  accuracyRate: null | number;
+  oscillationRate: null | number;
+  saturationRate: null | number;
+  fastRate: null | number;
+  stictionIndex: null | number;
+  settlingTime: null | number;
+  outputTravelIndex: null | number;
   status: KpiStatus;
-  idealSettlingTime: number | null;
-  algorithmVersion: string | null;
-  samplingFreq: string | null;
-  qualityPolicy: string | null;
-  validRate: number | null;
+  idealSettlingTime: null | number;
+  algorithmVersion: null | string;
+  samplingFreq: null | string;
+  qualityPolicy: null | string;
+  validRate: null | number;
   confidenceLevel: ConfidenceLevel | null;
   dataLineage: MetricApi.DataLineage | null;
 }

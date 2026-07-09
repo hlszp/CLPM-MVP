@@ -25,9 +25,9 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import { getGradingThresholdsApi, saveGradingThresholdsApi } from '#/api/metric';
 import { ClpmToolbarButton } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { getGradingThresholdsApi, saveGradingThresholdsApi } from '#/api/metric';
 
 defineOptions({ name: 'MetricGradingThreshold' });
 
@@ -40,7 +40,7 @@ const list = ref<MetricApi.GradingThresholdItem[]>([]);
 /** 5 级定级元数据（名称、颜色、中文等级） */
 const LEVEL_META: Record<
   number,
-  { color: string; cnLabel: string; name: string }
+  { cnLabel: string; color: string; name: string }
 > = {
   1: { name: 'EXCELLENT', cnLabel: '一级', color: '#52c41a' },
   2: { name: 'GOOD', cnLabel: '二级', color: '#1890ff' },
@@ -143,13 +143,10 @@ const violatedLevels = computed<number[]>(() => {
   for (let i = 0; i < sorted.length - 1; i++) {
     const cur = editState[sorted[i]!.level];
     const next = editState[sorted[i + 1]!.level];
-    if (cur && next) {
-      // 当前等级的 minScore 应等于下一等级的 maxScore
-      if (cur.minScore !== next.maxScore) {
-        violations.push(sorted[i]!.level);
-        violations.push(sorted[i + 1]!.level);
+    if (cur && next && // 当前等级的 minScore 应等于下一等级的 maxScore
+      cur.minScore !== next.maxScore) {
+        violations.push(sorted[i]!.level, sorted[i + 1]!.level);
       }
-    }
   }
   return [...new Set(violations)];
 });
@@ -273,7 +270,7 @@ onMounted(() => {
               :style="{
                 background: LEVEL_META[record.level]?.color ?? record.color,
               }"
-            />
+            ></span>
             <span class="font-mono text-xs" :style="{ color: themeColors.NEUTRAL }">
               {{ LEVEL_META[record.level]?.color ?? record.color }}
             </span>
@@ -349,6 +346,7 @@ onMounted(() => {
 :deep(.row-violated) {
   background-color: #fff1f0;
 }
+
 :deep(.row-violated:hover > td) {
   background-color: #ffe7e5 !important;
 }

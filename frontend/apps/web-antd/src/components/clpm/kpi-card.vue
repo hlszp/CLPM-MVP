@@ -21,6 +21,28 @@ import { Tooltip } from 'ant-design-vue';
 
 defineOptions({ name: 'ClpmKpiCard' });
 
+const props = withDefaults(defineProps<Props>(), {
+  unit: '',
+  status: 'neutral',
+  icon: '',
+  precision: 1,
+  groupSeparator: true,
+  contextText: '',
+  delta: undefined,
+  deltaUnit: '',
+  deltaReverse: false,
+  infoTip: '',
+  progress: undefined,
+  microBars: undefined,
+  sparkline: undefined,
+  loading: false,
+  clickable: false,
+});
+
+const emit = defineEmits<{
+  click: [event: MouseEvent];
+}>();
+
 type KpiStatus = 'error' | 'info' | 'neutral' | 'ok' | 'warning';
 
 interface Props {
@@ -60,28 +82,6 @@ interface Props {
   clickable?: boolean;
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  unit: '',
-  status: 'neutral',
-  icon: '',
-  precision: 1,
-  groupSeparator: true,
-  contextText: '',
-  delta: undefined,
-  deltaUnit: '',
-  deltaReverse: false,
-  infoTip: '',
-  progress: undefined,
-  microBars: undefined,
-  sparkline: undefined,
-  loading: false,
-  clickable: false,
-});
-
-const emit = defineEmits<{
-  click: [event: MouseEvent];
-}>();
-
 /** 主值格式化：数字按 precision + 千位分隔符；字符串原样 */
 const formattedValue = computed(() => {
   if (typeof props.value !== 'number') return props.value;
@@ -89,7 +89,7 @@ const formattedValue = computed(() => {
   const fixed = props.value.toFixed(props.precision);
   if (!props.groupSeparator) return fixed;
   const [intPart = '', decPart] = fixed.split('.');
-  const withSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const withSep = intPart.replaceAll(/\B(?=(\d{3})+(?!\d))/g, ',');
   return decPart ? `${withSep}.${decPart}` : withSep;
 });
 
@@ -340,7 +340,7 @@ function handleClick(event: MouseEvent) {
 }
 
 .clpm-kpi-card.is-clickable:hover {
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 4px 12px rgb(15 23 42 / 8%);
   transform: translateY(-1px);
 }
 
@@ -352,50 +352,50 @@ function handleClick(event: MouseEvent) {
 /* —— 顶部 —— */
 .clpm-kpi-card__header {
   display: flex;
+  gap: 12px;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
 }
 
 .clpm-kpi-card__title-row {
   display: flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
   min-width: 0;
 }
 
 .clpm-kpi-card__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 13px;
   font-weight: 500;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .clpm-kpi-card__info-icon {
   font-size: 12px;
   color: hsl(var(--muted-foreground));
-  opacity: 0.6;
   cursor: help;
+  opacity: 0.6;
 }
 
 .clpm-kpi-card__icon-wrap {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-industrial-lg);
   font-size: 18px;
-  flex-shrink: 0;
+  border-radius: var(--radius-industrial-lg);
 }
 
 /* —— 中部 —— */
 .clpm-kpi-card__value-row {
   display: flex;
-  align-items: baseline;
   gap: 4px;
+  align-items: baseline;
   margin-top: 2px;
 }
 
@@ -418,13 +418,13 @@ function handleClick(event: MouseEvent) {
 /* —— 底部上下文 —— */
 .clpm-kpi-card__context {
   display: flex;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
   padding-top: 8px;
-  border-top: 1px solid hsl(var(--border) / 0.5);
+  margin-top: 6px;
   font-size: 11px;
+  border-top: 1px solid hsl(var(--border) / 50%);
 }
 
 .clpm-kpi-card__context-text {
@@ -433,12 +433,12 @@ function handleClick(event: MouseEvent) {
 
 .clpm-kpi-card__delta {
   display: inline-flex;
-  align-items: center;
   gap: 2px;
+  align-items: center;
   padding: 1px 6px;
-  border-radius: 3px;
   font-size: 11px;
   font-weight: 600;
+  border-radius: 3px;
 }
 
 .clpm-kpi-card__delta-arrow {
@@ -447,13 +447,13 @@ function handleClick(event: MouseEvent) {
 }
 
 .clpm-kpi-card__delta--up {
-  background: var(--color-emerald-50);
   color: var(--color-emerald-700);
+  background: var(--color-emerald-50);
 }
 
 .clpm-kpi-card__delta--down {
-  background: var(--color-rose-50);
   color: var(--color-rose-700);
+  background: var(--color-rose-50);
 }
 
 /* —— 微型图表 —— */
@@ -464,9 +464,9 @@ function handleClick(event: MouseEvent) {
 .clpm-kpi-card__progress-track {
   width: 100%;
   height: 4px;
-  background: hsl(var(--border) / 0.4);
-  border-radius: 2px;
   overflow: hidden;
+  background: hsl(var(--border) / 40%);
+  border-radius: 2px;
 }
 
 .clpm-kpi-card__progress-fill {
@@ -477,8 +477,8 @@ function handleClick(event: MouseEvent) {
 
 .clpm-kpi-card__bars {
   display: flex;
-  align-items: flex-end;
   gap: 2px;
+  align-items: flex-end;
   height: 24px;
 }
 
