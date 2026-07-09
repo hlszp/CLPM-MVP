@@ -3,6 +3,7 @@
 ## 接口：GetAsync
 
 - 请求地址：/api/services/v1/HistoryData/Get
+- 请求方法：**GET**
 - 描述：获取历史数据采样结果，按固定时间间隔对指定标签集合进行时间序列采样。
 
 
