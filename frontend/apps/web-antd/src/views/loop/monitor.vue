@@ -294,7 +294,11 @@ async function loadLoopTypeStats() {
 
 /** 点击统计卡片自动筛选 */
 function handleTypeCardClick(type: string) {
-  query.loopType = query.loopType === type ? undefined : type;
+  if (type === 'ALL') {
+    query.loopType = undefined;
+  } else {
+    query.loopType = query.loopType === type ? undefined : type;
+  }
   query.page = 1;
   loadList();
 }
@@ -445,10 +449,24 @@ function handleRealtimeMessage(msg: {
     case 'MODE': {
       cv.mode = numValue;
       // 复用后端已有映射逻辑
-      if (numValue === 0) cv.modeLabel = 'Manual';
-      else if (numValue === 1) cv.modeLabel = 'Auto';
-      else if (numValue === 2) cv.modeLabel = 'Cascade';
-      else cv.modeLabel = 'Unknown';
+      switch (numValue) {
+        case 0: {
+          cv.modeLabel = 'Manual';
+          break;
+        }
+        case 1: {
+          cv.modeLabel = 'Auto';
+          break;
+        }
+        case 2: {
+          cv.modeLabel = 'Cascade';
+          break;
+        }
+        default: {
+          cv.modeLabel = 'Unknown';
+          break;
+        }
+      }
       break;
     }
     case 'OP': {
@@ -960,17 +978,20 @@ onUnmounted(() => {
       <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
         <div class="flex items-center gap-4">
           <div
-            class="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-default"
+            class="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
             :style="{
-              backgroundColor: '#1F2937',
+              backgroundColor: !query.loopType ? '#4B556315' : '#4B556308',
+              borderLeft: `3px solid #4B5563`,
+              borderBottom: !query.loopType ? `2px solid #4B5563` : 'none',
             }"
+            @click="handleTypeCardClick('ALL')"
           >
             <span
               class="w-2 h-2 rounded-full"
-              style="background-color: #60A5FA"
+              style="background-color: #4B5563"
             ></span>
-            <span class="text-sm text-white font-medium">合计</span>
-            <span class="text-sm font-bold text-white">
+            <span class="text-sm text-gray-600 font-medium">合计</span>
+            <span class="text-sm font-bold" style="color: #4B5563">
               {{ Object.values(loopTypeStats).reduce((sum, count) => sum + count, 0) }}
             </span>
           </div>
