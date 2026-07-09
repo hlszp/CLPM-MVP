@@ -585,6 +585,26 @@ export function updateLoopModeMappingApi(
 }
 
 /**
+ * 获取回路类型统计（支持递归子节点）
+ */
+export interface LoopTypeStats {
+  [key: string]: number;
+  TEMPERATURE: number;
+  PRESSURE: number;
+  LEVEL: number;
+  FLOW: number;
+  ANALYSIS: number;
+  SPEED: number;
+  OTHER: number;
+}
+
+export function getLoopTypeStatsApi(plantNodeId?: string) {
+  return requestClient.get<LoopTypeStats>('/loops/monitor/stats', {
+    params: plantNodeId ? { plantNodeId } : undefined,
+  });
+}
+
+/**
  * 批量配置回路（监控/统计/级别 / 批量软删除） — 配置增强
  *
  * 两种模式（互斥）：

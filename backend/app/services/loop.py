@@ -142,6 +142,48 @@ async def _get_descendant_node_ids(db: AsyncSession, parent_id: str) -> list[str
     return all_ids
 
 
+async def get_loop_type_stats(db: AsyncSession, plant_node_id: str | None = None) -> dict:
+    """按回路类型统计数量（支持递归子节点）。
+
+    Args:
+        plant_node_id: 装置/单元 ID，为 None 时统计全部回路
+
+    Returns:
+        各回路类型的统计数量字典
+    """
+    conditions = []
+    if plant_node_id:
+        all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
+        all_node_ids.append(plant_node_id)
+        conditions.append(LoopLedger.unit_id.in_(all_node_ids))
+
+    stmt = (
+        select(LoopLedger.loop_type, func.count())
+        .where(LoopLedger.is_active.is_(True), *conditions)
+        .group_by(LoopLedger.loop_type)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    stats: dict[str, int] = {
+        "TEMPERATURE": 0,
+        "PRESSURE": 0,
+        "LEVEL": 0,
+        "FLOW": 0,
+        "ANALYSIS": 0,
+        "SPEED": 0,
+        "OTHER": 0,
+    }
+    for loop_type, count in rows:
+        key = loop_type or "OTHER"
+        if key in stats:
+            stats[key] = int(count)
+        else:
+            stats["OTHER"] += int(count)
+
+    return stats
+
+
 def _build_tag_mapping_status(mappings: dict[str, LoopTagMapping]) -> dict:
     """构建 7 Tag 关联状态摘要。"""
     return {

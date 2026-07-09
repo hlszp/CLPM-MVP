@@ -55,6 +55,7 @@ import {
   getLoopDetailApi,
   getLoopMonitorDetailApi,
   getLoopMonitorListApi,
+  getLoopTypeStatsApi,
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
@@ -213,22 +214,15 @@ const loading = ref(false);
 const monitorList = ref<LoopApi.MonitorListItem[]>([]);
 const total = ref(0);
 
-/** 按回路类型统计数量 */
-const loopTypeStats = computed(() => {
-  const stats: Record<string, number> = {
-    TEMPERATURE: 0,
-    PRESSURE: 0,
-    LEVEL: 0,
-    FLOW: 0,
-    ANALYSIS: 0,
-    SPEED: 0,
-    OTHER: 0,
-  };
-  for (const item of monitorList.value) {
-    const type = item.loopType || 'OTHER';
-    stats[type] = (stats[type] || 0) + 1;
-  }
-  return stats;
+/** 按回路类型统计数量（后端 API 获取，支持递归子节点） */
+const loopTypeStats = ref<Record<string, number>>({
+  TEMPERATURE: 0,
+  PRESSURE: 0,
+  LEVEL: 0,
+  FLOW: 0,
+  ANALYSIS: 0,
+  SPEED: 0,
+  OTHER: 0,
 });
 
 /** 回路类型颜色映射 */
@@ -284,6 +278,25 @@ function updateTypeChart() {
       splitLine: { show: false },
     },
   });
+}
+
+/** 加载回路类型统计 */
+async function loadLoopTypeStats() {
+  try {
+    const data = await getLoopTypeStatsApi(query.plantNodeId);
+    loopTypeStats.value = data;
+    await nextTick();
+    updateTypeChart();
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
+
+/** 点击统计卡片自动筛选 */
+function handleTypeCardClick(type: string) {
+  query.loopType = query.loopType === type ? undefined : type;
+  query.page = 1;
+  loadList();
 }
 
 const query = reactive({
@@ -589,8 +602,6 @@ async function loadList() {
     });
     monitorList.value = data.items;
     total.value = data.total;
-    await nextTick();
-    updateTypeChart();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -604,6 +615,7 @@ async function loadList() {
 function handleSearch() {
   query.page = 1;
   loadList();
+  loadLoopTypeStats();
 }
 
 function handleTableChange(pagination: TablePaginationConfig) {
@@ -874,8 +886,18 @@ function handleResetPreferences() {
 onMounted(() => {
   loadPlantNodes();
   loadList();
+  loadLoopTypeStats();
   startAutoRefresh();
 });
+
+watch(
+  () => query.plantNodeId,
+  () => {
+    query.page = 1;
+    loadList();
+    loadLoopTypeStats();
+  }
+);
 
 onUnmounted(() => {
   stopAutoRefresh();
@@ -944,11 +966,13 @@ onUnmounted(() => {
           <div
             v-for="(count, key) in loopTypeStats"
             :key="key"
-            class="flex items-center gap-2 px-3 py-1 rounded"
+            class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
             :style="{
-              backgroundColor: LOOP_TYPE_COLOR_MAP[key] + '15',
+              backgroundColor: query.loopType === key ? LOOP_TYPE_COLOR_MAP[key] + '30' : LOOP_TYPE_COLOR_MAP[key] + '15',
               borderLeft: `3px solid ${LOOP_TYPE_COLOR_MAP[key]}`,
+              borderBottom: query.loopType === key ? `2px solid ${LOOP_TYPE_COLOR_MAP[key]}` : 'none',
             }"
+            @click="handleTypeCardClick(key)"
           >
             <span
               class="w-2 h-2 rounded-full"

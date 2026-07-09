@@ -43,6 +43,7 @@ from app.services.loop import (
     delete_loop,
     export_loops,
     get_loop_detail,
+    get_loop_type_stats,
     import_loops,
     list_loops,
     update_loop,
@@ -233,6 +234,17 @@ async def list_loop_monitor_endpoint(
         page_size=pageSize,
     )
     return success(data=data)
+
+
+@router.get("/monitor/stats", response_model=ApiResponse[dict])
+async def get_loop_type_stats_endpoint(
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选（含子节点）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """按回路类型统计数量（支持递归子节点）。"""
+    stats = await get_loop_type_stats(db=db, plant_node_id=plantNodeId)
+    return success(data=stats)
 
 
 # ---------------------------------------------------------------------------
