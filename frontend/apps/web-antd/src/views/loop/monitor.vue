@@ -373,8 +373,9 @@ const columns: TableColumnsType = [
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.sp;
-      return { children: val !== null && val !== undefined ? val.toFixed(2) : '-', style: { textAlign: 'right' } };
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
     },
+    customCell: () => ({ style: { 'text-align': 'right' } }),
   },
   {
     title: '测量值 PV',
@@ -383,8 +384,9 @@ const columns: TableColumnsType = [
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.pv;
-      return { children: val !== null && val !== undefined ? val.toFixed(2) : '-', style: { textAlign: 'right' } };
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
     },
+    customCell: () => ({ style: { 'text-align': 'right' } }),
   },
   {
     title: '输出值 OP',
@@ -393,8 +395,9 @@ const columns: TableColumnsType = [
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.op;
-      return { children: val !== null && val !== undefined ? val.toFixed(2) : '-', style: { textAlign: 'right' } };
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
     },
+    customCell: () => ({ style: { 'text-align': 'right' } }),
   },
   { title: '控制方式', key: 'mode', width: 110, align: 'center' },
   {
@@ -406,6 +409,7 @@ const columns: TableColumnsType = [
     customRender: ({ text }) => {
       return text !== null && text !== undefined ? Number(text).toFixed(2) : '-';
     },
+    customCell: () => ({ style: { 'text-align': 'right' } }),
   },
   { title: '操作', key: 'action', width: 160, fixed: 'right', align: 'center' },
 ];
