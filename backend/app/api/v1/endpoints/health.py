@@ -52,15 +52,16 @@ async def health_ready() -> dict[str, object]:
         logger.warning("健康检查 Redis 失败: %s", exc)
         checks["redis"] = f"fail: {exc.__class__.__name__}"
 
-    # 3. TDengine（轻量级连接探测）
-    try:
-        from app.core.tdengine import execute_sql
+    # 3. TDengine（仅 tdengine 数据源模式才检查，remote_api 模式跳过）
+    if settings.DATA_SOURCE_TYPE.lower() == "tdengine":
+        try:
+            from app.core.tdengine import execute_sql
 
-        rows = await execute_sql("SHOW DATABASES")
-        checks["tdengine"] = "ok" if rows is not None else "fail: empty"
-    except Exception as exc:
-        logger.warning("健康检查 TDengine 失败: %s", exc)
-        checks["tdengine"] = f"fail: {exc.__class__.__name__}"
+            rows = await execute_sql("SHOW DATABASES")
+            checks["tdengine"] = "ok" if rows is not None else "fail: empty"
+        except Exception as exc:
+            logger.warning("健康检查 TDengine 失败: %s", exc)
+            checks["tdengine"] = f"fail: {exc.__class__.__name__}"
 
     all_ok = all(v == "ok" for v in checks.values())
     return {

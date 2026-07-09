@@ -28,8 +28,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      tdengine:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -131,45 +129,6 @@ services:
       - clpm-net
 
   # ============================================================
-  # TDengine 3.x - 时序数据存储
-  # S2-B3: 不暴露 6030/6041 端口到宿主机，仅容器间网络可达
-  # ============================================================
-  tdengine:
-    image: tdengine/tdengine:3.3.6.0
-    container_name: clpm-tdengine
-    environment:
-      TAOS_FQDN: clpm-tdengine
-      TZ: Asia/Shanghai
-    volumes:
-      - tdengine_data:/var/lib/taos
-      - ./db/tdengine/01_supertable.sql:/init/01_supertable.sql:ro
-    # S2-B3: 端口不映射到宿主机
-    expose:
-      - "6030"
-      - "6041"
-    healthcheck:
-      test: ["CMD", "taos", "-s", "SHOW DATABASES"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    # S2-B1: 资源限制
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: "2.0"
-    # S2-B2: 日志轮转
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    restart: unless-stopped
-    networks:
-      - clpm-net
-
-  # ============================================================
   # Redis 7 - 缓存与消息队列
   # S2-B3: 不暴露端口到宿主机
   # ============================================================
@@ -223,8 +182,6 @@ services:
       redis:
         condition: service_healthy
       postgres:
-        condition: service_healthy
-      tdengine:
         condition: service_healthy
     # 健康检查：通过 celery inspect ping 检测 worker 存活
     healthcheck:
@@ -326,8 +283,6 @@ services:
 volumes:
   postgres_data:
     name: clpm_postgres_data
-  tdengine_data:
-    name: clpm_tdengine_data
   redis_data:
     name: clpm_redis_data
 
