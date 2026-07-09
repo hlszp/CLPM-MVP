@@ -1248,7 +1248,7 @@ onUnmounted(() => {
               </Tag>
             </template>
             <template v-else-if="column.key === 'sp'">
-              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.sp != null" class="flex items-baseline gap-1">
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.sp != null" class="flex items-baseline justify-end gap-1">
                 <ClpmNumeric
                   :value="(record as LoopApi.MonitorListItem).currentValues?.sp"
                   :precision="2"
@@ -1260,7 +1260,7 @@ onUnmounted(() => {
               <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'pv'">
-              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.pv != null" class="flex items-baseline gap-1">
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.pv != null" class="flex items-baseline justify-end gap-1">
                 <ClpmNumeric
                   :value="(record as LoopApi.MonitorListItem).currentValues?.pv"
                   :precision="2"
@@ -1273,7 +1273,7 @@ onUnmounted(() => {
               <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'op'">
-              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.op != null" class="flex items-baseline gap-0.5">
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.op != null" class="flex items-baseline justify-end gap-0.5">
                 <ClpmNumeric
                   :value="(record as LoopApi.MonitorListItem).currentValues?.op"
                   :precision="2"
