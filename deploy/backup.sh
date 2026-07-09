@@ -30,13 +30,17 @@ echo "[1/3] PostgreSQL 备份..."
 
 # 从 .env.prod 读取数据库配置
 if [ -f .env.prod ]; then
-    export $(grep -v '^#' .env.prod | grep -E '^(POSTGRES_|PG)' | xargs)
+    export $(grep -v '^#' .env.prod | grep -E '^(POSTGRES_|PG|TDENGINE_)' | xargs)
 fi
 
 PG_HOST="${POSTGRES_HOST:-clpm-postgres}"
 PG_PORT="${POSTGRES_PORT:-5432}"
 PG_USER="${POSTGRES_USER:-clpm}"
 PG_DB="${POSTGRES_DB:-clpm}"
+
+# TDengine 配置（与 .env.prod 中 TDENGINE_DB 保持一致，避免硬编码）
+TD_HOST="${TDENGINE_HOST:-clpm-tdengine}"
+TD_DB="${TDENGINE_DB:-clpm_ts}"
 
 PG_FILE="${BACKUP_SUBDIR}/postgres_${TIMESTAMP}.sql.gz"
 
@@ -62,13 +66,13 @@ echo "[2/3] TDengine 备份..."
 TD_FILE="${BACKUP_SUBDIR}/tdengine_${TIMESTAMP}.sql.gz"
 
 # 通过 docker exec 在 tdengine 容器内执行 taos dump
-docker exec clpm-tdengine taos -s "USE clpm; SHOW TABLES;" >/dev/null 2>&1
+docker exec "$TD_HOST" taos -s "USE ${TD_DB}; SHOW TABLES;" >/dev/null 2>&1
 if [ $? -eq 0 ]; then
-    docker exec clpm-tdengine taosdump -D clpm 2>/dev/null | gzip > "$TD_FILE"
+    docker exec "$TD_HOST" taosdump -D "$TD_DB" 2>/dev/null | gzip > "$TD_FILE"
     TD_SIZE=$(du -h "$TD_FILE" | cut -f1)
     echo "  [OK] TDengine 备份完成: ${TD_FILE} (${TD_SIZE})"
 else
-    echo "  [SKIP] TDengine 数据库 clpm 不存在或不可达，跳过"
+    echo "  [SKIP] TDengine 数据库 ${TD_DB} 不存在或不可达，跳过"
     rm -f "$TD_FILE"
 fi
 

@@ -48,6 +48,62 @@ if [ ${#JWT_SECRET_KEY} -lt 32 ]; then
 fi
 
 # ------------------------------------------------------------
+# 2.5 检查必填密码字段是否仍为占位符或为空
+# ------------------------------------------------------------
+# 校验：必须非空且不能是 <change-me-*> / <generate-*> 占位符
+check_required_no_placeholder() {
+    local var_name="$1"
+    local var_value
+    var_value=$(grep -E "^${var_name}=" "$ENV_FILE" | cut -d'=' -f2-)
+    if [ -z "$var_value" ]; then
+        echo "错误：$var_name 未设置"
+        echo "请修改 $ENV_FILE 中的 $var_name 为真实值"
+        exit 1
+    fi
+    if [[ "$var_value" == *"<change-me"* || "$var_value" == *"<generate"* ]]; then
+        echo "错误：${var_name} 仍为占位符（${var_value}）"
+        echo "请修改 $ENV_FILE 中的 ${var_name} 为真实值"
+        exit 1
+    fi
+}
+
+# 校验：不能是占位符（允许为空，用于可选字段如 TOKEN）
+check_no_placeholder() {
+    local var_name="$1"
+    local var_value
+    var_value=$(grep -E "^${var_name}=" "$ENV_FILE" | cut -d'=' -f2-)
+    if [[ "$var_value" == *"<change-me"* || "$var_value" == *"<generate"* ]]; then
+        echo "错误：${var_name} 仍为占位符（${var_value}）"
+        echo "请修改 $ENV_FILE 中的 ${var_name} 为真实值或留空"
+        exit 1
+    fi
+}
+
+# 必填密码类：不能为空也不能为占位符
+check_required_no_placeholder "POSTGRES_PASSWORD"
+check_required_no_placeholder "TDENGINE_PASSWORD"
+check_required_no_placeholder "REDIS_PASSWORD"
+
+# ------------------------------------------------------------
+# 2.6 检查条件必填字段（开关启用时才校验）
+# ------------------------------------------------------------
+DATA_SOURCE_TYPE=$(grep -E "^DATA_SOURCE_TYPE=" "$ENV_FILE" | cut -d'=' -f2-)
+if [ "$DATA_SOURCE_TYPE" = "remote_api" ]; then
+    check_required_no_placeholder "HISTORY_DATA_API_URL"
+    check_no_placeholder "HISTORY_DATA_API_TOKEN"
+fi
+
+SIGNALR_ENABLED=$(grep -E "^SIGNALR_ENABLED=" "$ENV_FILE" | cut -d'=' -f2- | tr '[:upper:]' '[:lower:]')
+if [ "$SIGNALR_ENABLED" = "true" ]; then
+    check_required_no_placeholder "SIGNALR_HUB_URL"
+fi
+
+AAS_SYNC_ENABLED=$(grep -E "^AAS_SYNC_ENABLED=" "$ENV_FILE" | cut -d'=' -f2- | tr '[:upper:]' '[:lower:]')
+if [ "$AAS_SYNC_ENABLED" = "true" ]; then
+    check_required_no_placeholder "AAS_ENDPOINT"
+fi
+
+# ------------------------------------------------------------
 # 3. 检查 Docker 环境
 # ------------------------------------------------------------
 if ! command -v docker >/dev/null 2>&1; then
