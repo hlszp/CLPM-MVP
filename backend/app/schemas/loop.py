@@ -79,6 +79,11 @@ class LoopCreate(CamelModel):
         None,
         description="OP 输出上限位（NULL 时取 OP Tag range_max，再 NULL 时取默认值 100.0）",
     )
+    # v6.1 DCS 型号关联（用于 MODE 值映射）
+    dcsModelId: str | None = Field(
+        None,
+        description="关联 DCS 型号 ID；NULL=使用本系统默认 MODE 映射",
+    )
 
 
 class LoopUpdate(CamelModel):
@@ -115,6 +120,11 @@ class LoopUpdate(CamelModel):
     opOutputUpperLimit: float | None = Field(
         None,
         description="OP 输出上限位（NULL 时取 OP Tag range_max，再 NULL 时取默认值 100.0）",
+    )
+    # v6.1 DCS 型号关联（用于 MODE 值映射）
+    dcsModelId: str | None = Field(
+        None,
+        description="关联 DCS 型号 ID；NULL=使用本系统默认 MODE 映射",
     )
 
 
@@ -172,6 +182,7 @@ class LoopListItem(CamelModel):
     opUnit: str | None = Field(None, description="OP 工程单位")
     opOutputLowerLimit: float | None = Field(None, description="OP 输出下限位")
     opOutputUpperLimit: float | None = Field(None, description="OP 输出上限位")
+    dcsModelId: str | None = Field(None, description="关联 DCS 型号 ID")
 
 
 class LoopListData(CamelModel):
@@ -210,6 +221,7 @@ class LoopBasicInfo(CamelModel):
     opUnit: str | None = Field(None, description="OP 工程单位")
     opOutputLowerLimit: float | None = Field(None, description="OP 输出下限位")
     opOutputUpperLimit: float | None = Field(None, description="OP 输出上限位")
+    dcsModelId: str | None = Field(None, description="关联 DCS 型号 ID")
     createdAt: str | None = None
     createdBy: str | None = None
     updatedAt: str | None = None
@@ -282,6 +294,7 @@ class LoopUpdateResult(CamelModel):
     # v6.1 新增：OP 输出限位（更新后返回当前值）
     opOutputLowerLimit: float | None = None
     opOutputUpperLimit: float | None = None
+    dcsModelId: str | None = None
     updatedAt: str | None = None
     updatedBy: str | None = None
 

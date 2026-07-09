@@ -139,6 +139,7 @@ async def create_loop_endpoint(
         data_retention_days=body.dataRetentionDays,
         op_output_lower_limit=body.opOutputLowerLimit,
         op_output_upper_limit=body.opOutputUpperLimit,
+        dcs_model_id=body.dcsModelId,
     )
     return success(data=data, message="创建成功")
 
@@ -335,8 +336,10 @@ async def update_loop_endpoint(
         data_retention_days=body.dataRetentionDays,
         op_output_lower_limit=op_output_lower_limit,
         op_output_upper_limit=op_output_upper_limit,
+        dcs_model_id=body.dcsModelId,
         _op_lower_set="opOutputLowerLimit" in body.model_fields_set,
         _op_upper_set="opOutputUpperLimit" in body.model_fields_set,
+        _dcs_model_id_set="dcsModelId" in body.model_fields_set,
     )
     return success(data=data, message="更新成功")
 
