@@ -68,6 +68,15 @@ logger = get_logger(__name__)
 _celery_beat_process: subprocess.Popen | None = None
 
 
+def _is_production() -> bool:
+    """判断当前是否为生产环境。
+
+    生产环境由 docker-compose 独立 celery-beat 服务接管定时任务调度，
+    backend lifespan 不再启动 Beat 子进程，避免重复执行。
+    """
+    return os.environ.get("ENV", "").lower() == "production"
+
+
 def _start_celery_beat() -> None:
     """启动 Celery Beat 调度子进程。
 
@@ -152,7 +161,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info("数据源类型: %s", settings.DATA_SOURCE_TYPE)
 
     # v6.1：自动启动 Celery Beat 调度进程
-    _start_celery_beat()
+    # 生产环境由 docker-compose 独立 celery-beat 服务接管，避免重复启动
+    if not _is_production():
+        _start_celery_beat()
+    else:
+        logger.info("生产环境：Celery Beat 由独立容器接管，跳过 lifespan 启动")
 
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
@@ -164,7 +177,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info("Shutting down %s", settings.APP_NAME)
 
     # 停止 Celery Beat
-    _stop_celery_beat()
+    if not _is_production():
+        _stop_celery_beat()
 
     # 停止实时数据订阅
     from app.services.data_source.realtime_subscriber import stop_subscriber

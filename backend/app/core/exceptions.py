@@ -28,7 +28,9 @@ def _add_cors_headers(response: JSONResponse, request: Request) -> None:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, Idempotency-Key"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Authorization, Content-Type, Accept, Idempotency-Key"
+        )
 
 
 class BizError(Exception):
@@ -92,7 +94,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         return response
 
     @app.exception_handler(RequestValidationError)
-    async def _handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def _handle_validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         if settings.DEBUG:
             response = JSONResponse(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
