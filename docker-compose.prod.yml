@@ -226,6 +226,13 @@ services:
         condition: service_healthy
       tdengine:
         condition: service_healthy
+    # 健康检查：通过 celery inspect ping 检测 worker 存活
+    healthcheck:
+      test: ["CMD", "uv", "run", "celery", "-A", "app.tasks.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     # S2-B1: 资源限制
     deploy:
       resources:
@@ -259,6 +266,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # 健康检查：检测 celery beat 进程存活
+    healthcheck:
+      test: ["CMD-SHELL", "uv run celery -A app.tasks.celery_app inspect ping --timeout 5 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     # S2-B1: 资源限制
     deploy:
       resources:
