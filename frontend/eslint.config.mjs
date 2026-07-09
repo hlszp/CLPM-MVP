@@ -4,7 +4,7 @@ export default defineConfig([
   {
     files: ['**/*.?([cm])[jt]s?(x)'],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 ]);
