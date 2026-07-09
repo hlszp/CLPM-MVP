@@ -585,7 +585,7 @@ export function updateLoopModeMappingApi(
 }
 
 /**
- * 获取回路统计（支持递归子节点）
+ * 获取回路类型统计（支持递归子节点）
  */
 export interface LoopTypeStats {
   [key: string]: number;
@@ -598,13 +598,8 @@ export interface LoopTypeStats {
   OTHER: number;
 }
 
-export interface MonitorStats {
-  loopTypeStats: LoopTypeStats;
-  controlModeStats: Record<string, number>;
-}
-
 export function getLoopTypeStatsApi(plantNodeId?: string) {
-  return requestClient.get<MonitorStats>('/loops/monitor/stats', {
+  return requestClient.get<LoopTypeStats>('/loops/monitor/stats', {
     params: plantNodeId ? { plantNodeId } : undefined,
   });
 }

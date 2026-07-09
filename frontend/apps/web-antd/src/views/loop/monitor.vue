@@ -225,7 +225,7 @@ const loopTypeStats = ref<Record<string, number>>({
   OTHER: 0,
 });
 
-/** 按控制方式统计数量 */
+/** 按控制方式统计数量（从监控列表实时数据中统计） */
 const controlModeStats = ref<Record<string, number>>({});
 
 /** 控制方式颜色映射 */
@@ -291,21 +291,29 @@ function updateModeChart() {
   });
 }
 
-/** 实时控制率（自动控制回路数 / 总回路数） */
+/** 自控率（自动控制回路数 / 总回路数） */
 const realtimeControlRate = computed(() => {
   const autoCount = controlModeStats.value['Auto'] || 0;
   const total = Object.values(controlModeStats.value).reduce((sum, count) => sum + count, 0);
   return total > 0 ? Math.round((autoCount / total) * 100) : 0;
 });
 
-/** 加载回路统计 */
+/** 从监控列表数据中统计控制方式 */
+function updateControlModeStats() {
+  const stats: Record<string, number> = {};
+  for (const item of monitorList.value) {
+    const mode = item.currentValues?.modeLabel || 'Unknown';
+    stats[mode] = (stats[mode] || 0) + 1;
+  }
+  controlModeStats.value = stats;
+  updateModeChart();
+}
+
+/** 加载回路类型统计 */
 async function loadLoopTypeStats() {
   try {
     const data = await getLoopTypeStatsApi(query.plantNodeId);
-    loopTypeStats.value = data.loopTypeStats as Record<string, number>;
-    controlModeStats.value = (data.controlModeStats || {}) as Record<string, number>;
-    await nextTick();
-    updateModeChart();
+    loopTypeStats.value = data as Record<string, number>;
   } catch {
     // 错误已由拦截器处理
   }
@@ -486,6 +494,7 @@ function handleRealtimeMessage(msg: {
           break;
         }
       }
+      updateControlModeStats();
       break;
     }
     case 'OP': {
@@ -635,6 +644,7 @@ async function loadList() {
     });
     monitorList.value = data.items;
     total.value = data.total;
+    updateControlModeStats();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -1068,7 +1078,7 @@ onUnmounted(() => {
                 class="w-2 h-2 rounded-full"
                 style="background-color: #8b5cf6"
               ></span>
-              <span class="text-sm text-gray-600 font-medium">实时控制率</span>
+              <span class="text-sm text-gray-600 font-medium">自控率</span>
               <span class="text-sm font-bold" style="color: #8b5cf6">
                 {{ realtimeControlRate }}%
               </span>
