@@ -120,7 +120,6 @@ check_no_placeholder() {
 
 # 必填密码类：不能为空也不能为占位符
 check_required_no_placeholder "POSTGRES_PASSWORD"
-check_required_no_placeholder "TDENGINE_PASSWORD"
 check_required_no_placeholder "REDIS_PASSWORD"
 
 # ------------------------------------------------------------
@@ -187,28 +186,16 @@ fi
 echo ""
 
 # ------------------------------------------------------------
-# 7.5 初始化 TDengine：修改 root 密码 + 创建超级表
+# 7.5 清理不需要的文档目录（生产环境不需要 docs）
 # ------------------------------------------------------------
-echo "4.5 初始化 TDengine..."
-
-# 从 .env.prod 读取 TDengine 密码
-TDENGINE_PASSWORD=$(grep -E "^TDENGINE_PASSWORD=" "$ENV_FILE" | cut -d'=' -f2-)
-
-# 修改 root 密码（首次部署：taosdata → 新密码；已修改过会报错但忽略）
-echo "  修改 TDengine root 密码..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T tdengine \
-    taos -u root -ptaosdata -s "ALTER user root PASS '${TDENGINE_PASSWORD}'" 2>/dev/null \
-    && echo "  [OK] TDengine root 密码已设置" \
-    || echo "  [INFO] TDengine 密码可能已修改，跳过"
-
-# 初始化超级表（使用新密码）
-echo "  初始化 TDengine 超级表..."
-if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T tdengine \
-    taos -u root -p${TDENGINE_PASSWORD} -f /init/01_supertable.sql 2>/dev/null; then
-    echo "  [OK] TDengine 超级表初始化完成"
-else
-    echo "  [WARN] TDengine 初始化失败（可能已存在，忽略）"
-    echo "  手动执行：docker compose --env-file $ENV_FILE -f $COMPOSE_FILE exec tdengine taos -u root -p<TDENGINE_PASSWORD> -f /init/01_supertable.sql"
+echo "4.5 清理文档目录..."
+if [ -d "docs" ]; then
+    rm -rf docs/
+    echo "  [OK] docs/ 目录已清理"
+fi
+if [ -d "e2e" ]; then
+    rm -rf e2e/
+    echo "  [OK] e2e/ 目录已清理"
 fi
 echo ""
 
