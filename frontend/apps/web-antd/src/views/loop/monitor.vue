@@ -260,6 +260,7 @@ function updateModeChart() {
   const colors = keys.map((k) => CONTROL_MODE_COLOR_MAP[k] || '#6b7280');
 
   renderModeChart({
+    animation: false,
     grid: {
       bottom: 0,
       containLabel: true,
