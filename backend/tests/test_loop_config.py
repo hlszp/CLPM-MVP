@@ -556,43 +556,46 @@ class TestRealtimeAutoRate:
     验证 query_realtime_auto_rate 在有/无投用定义时的行为。
     使用 mock_db + mock TDengine（patch query_trend_data）。
 
-    P1 #15 修正后，自动 MODE 来源优先级：
-    1. LoopModeMapping 投用定义（回路级，最高优先级）
-    2. sys_config.loop.default_auto_modes（全局默认，无配置时为空集）
-    3. 空集 → 任何 MODE 值都不算自动（严格模式）
+    v6.1：MODE 自动判定来源优先级（配置驱动）：
+    1. LoopModeMapping 投用定义（回路级，直接匹配 raw mode，最高优先级）
+    2. mode_definition 配置表（is_auto=True 的 standard_mode 集合）
+    3. 行业默认 {1, 2, 3, 4}（mode_definition 表为空时回退常量）
 
-    DB execute 调用顺序（3 次）：
-    1. sys_config 查询（scalar_one_or_none）
-    2. LoopModeMapping 投用定义查询（all）
-    3. LoopTagMapping MODE tag 映射查询（all）
+    DB execute 调用顺序（4 次）：
+    1. mode_definition 查询（get_auto_modes → .all()）
+    2. LoopModeMapping 投用定义查询（.all()）
+    3. LoopTagMapping + LoopLedger join 查询（含 dcs_model_id，.all()）
+    4. dcs_mode_mapping 默认映射查询（build_raw_to_standard_map(None) → .all()）
     """
 
     @pytest.mark.asyncio
     async def test_realtime_auto_rate_with_loop_config(self) -> None:
-        """有投用定义时按回路配置判断（sys_config 空集，不参与）。
+        """有投用定义时按回路配置判断（mode_definition 空 → 回退常量 {1,2,3,4}）。
 
         loop-001 配置自动 MODE={1,2}（LoopModeMapping），
-        loop-002 无配置且 sys_config 空 → 默认空集。
-        TAG_001 返回 mode=1（在 {1,2} → 自动），TAG_002 返回 mode=4（不在 {} → 非自动）。
+        loop-002 无配置 → 回退 mode_definition 默认 {1,2,3,4}。
+        TAG_001 返回 mode=1（在 {1,2} → 自动），TAG_002 返回 mode=0（不在 {1,2,3,4} → 手动）。
         期望：1/2 = 50.0%
         """
         db = AsyncMock()
-        # 1st execute: sys_config 查询（无配置 → 空集）
+        # 1st execute: mode_definition 查询（空 → 回退常量 {1,2,3,4}）
         # 2nd execute: LoopModeMapping 投用定义（loop-001 有配置）
         mm_rows = [
             MagicMock(loop_id="loop-001", mode_value=1),
             MagicMock(loop_id="loop-001", mode_value=2),
         ]
-        # 3rd execute: MODE tag 映射查询
+        # 3rd execute: MODE tag 映射查询（dcs_model_id=None → 使用默认映射）
         tag_rows = [
-            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
-            MagicMock(loop_id="loop-002", tag_name="TAG_002"),
+            MagicMock(loop_id="loop-001", tag_name="TAG_001", dcs_model_id=None),
+            MagicMock(loop_id="loop-002", tag_name="TAG_002", dcs_model_id=None),
         ]
+        # 4th execute: dcs_mode_mapping 默认映射（空 → 1:1 回退）
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock(None),
-                _make_rows_mock(mm_rows),
-                _make_rows_mock(tag_rows),
+                _make_rows_mock([]),  # mode_definition 空 → 常量 {1,2,3,4}
+                _make_rows_mock(mm_rows),  # LoopModeMapping
+                _make_rows_mock(tag_rows),  # LoopTagMapping + LoopLedger
+                _make_rows_mock([]),  # dcs_mode_mapping 默认空 → 1:1
             ]
         )
 
@@ -600,7 +603,7 @@ class TestRealtimeAutoRate:
             if tag_name == "TAG_001":
                 return [{"ts": "2026-06-22T08:00:00Z", "value": 1}]
             if tag_name == "TAG_002":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 4}]
+                return [{"ts": "2026-06-22T08:00:00Z", "value": 0}]
             return []
 
         with patch(
@@ -614,28 +617,38 @@ class TestRealtimeAutoRate:
         assert result["auto_count"] == 1
         assert result["manual_count"] == 1
         assert result["total_count"] == 2
+        # mode_counts 验证：mode=1 一个回路，mode=0 一个回路
+        assert result["mode_counts"][0] == 1
+        assert result["mode_counts"][1] == 1
+        assert result["mode_counts"][2] == 0
+        assert result["mode_counts"][3] == 0
+        assert result["mode_counts"][4] == 0
 
     @pytest.mark.asyncio
-    async def test_realtime_auto_rate_with_sysconfig_default(self) -> None:
-        """无回路配置时回退 sys_config 全局默认 [1,2,3]。
+    async def test_realtime_auto_rate_with_mode_definition(self) -> None:
+        """无回路配置时使用 mode_definition 配置表的 auto_modes={1,2,3}。
 
-        两个回路均无 LoopModeMapping，回退到 sys_config.loop.default_auto_modes=[1,2,3]。
+        两个回路均无 LoopModeMapping，回退到 mode_definition（is_auto=True 的 {1,2,3}）。
         TAG_001 返回 mode=1（在 {1,2,3} → 自动），TAG_002 返回 mode=2（在 {1,2,3} → 自动）。
         期望：2/2 = 100.0%
         """
         db = AsyncMock()
-        # 1st execute: sys_config 查询（返回 "[1, 2, 3]"）
-        # 2nd execute: LoopModeMapping 投用定义（空，无配置）
-        # 3rd execute: MODE tag 映射查询
+        # mode_definition: is_auto=True 的 standard_mode = {1, 2, 3}
+        mode_def_rows = [
+            MagicMock(standard_mode=1),
+            MagicMock(standard_mode=2),
+            MagicMock(standard_mode=3),
+        ]
         tag_rows = [
-            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
-            MagicMock(loop_id="loop-002", tag_name="TAG_002"),
+            MagicMock(loop_id="loop-001", tag_name="TAG_001", dcs_model_id=None),
+            MagicMock(loop_id="loop-002", tag_name="TAG_002", dcs_model_id=None),
         ]
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock("[1, 2, 3]"),
-                _make_rows_mock([]),
-                _make_rows_mock(tag_rows),
+                _make_rows_mock(mode_def_rows),  # mode_definition {1,2,3}
+                _make_rows_mock([]),  # LoopModeMapping 空
+                _make_rows_mock(tag_rows),  # LoopTagMapping + LoopLedger
+                _make_rows_mock([]),  # dcs_mode_mapping 默认空 → 1:1
             ]
         )
 
@@ -658,26 +671,24 @@ class TestRealtimeAutoRate:
         assert result["total_count"] == 2
 
     @pytest.mark.asyncio
-    async def test_realtime_auto_rate_empty_default_no_auto(self) -> None:
-        """无任何配置（sys_config 空 + 无 LoopModeMapping）→ 严格 0%。
+    async def test_realtime_auto_rate_empty_default_uses_industry_default(self) -> None:
+        """无任何配置（mode_definition 空 + 无 LoopModeMapping）→ 回退行业默认 {1,2,3,4}。
 
-        P1 #15 修正：移除硬编码 {1,2,3} 后，
-        无 sys_config 配置时默认空集，任何 MODE 值都不算自动。
-        此场景提醒管理员必须配置 sys_config.loop.default_auto_modes。
+        v6.1：mode_definition 表为空时，mode_resolver 回退到
+        app.constants.mode.AUTO_MODES = {1, 2, 3, 4}（对齐算法说明 §4.0.3 + APC）。
+        MODE=1/2/3/4 计入自动，MODE=0 计入手动。
         """
         db = AsyncMock()
-        # 1st execute: sys_config 查询（无配置 → 空集）
-        # 2nd execute: LoopModeMapping（空）
-        # 3rd execute: MODE tag 映射
         tag_rows = [
-            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
-            MagicMock(loop_id="loop-002", tag_name="TAG_002"),
+            MagicMock(loop_id="loop-001", tag_name="TAG_001", dcs_model_id=None),
+            MagicMock(loop_id="loop-002", tag_name="TAG_002", dcs_model_id=None),
         ]
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock(None),
-                _make_rows_mock([]),
-                _make_rows_mock(tag_rows),
+                _make_rows_mock([]),  # mode_definition 空 → 常量 {1,2,3,4}
+                _make_rows_mock([]),  # LoopModeMapping 空
+                _make_rows_mock(tag_rows),  # LoopTagMapping + LoopLedger
+                _make_rows_mock([]),  # dcs_mode_mapping 默认空 → 1:1
             ]
         )
 
@@ -695,32 +706,35 @@ class TestRealtimeAutoRate:
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
         assert result is not None
-        assert result["rate"] == Decimal("0.00")
-        assert result["auto_count"] == 0
-        assert result["manual_count"] == 2
+        assert result["rate"] == Decimal("100.00")
+        assert result["auto_count"] == 2
+        assert result["manual_count"] == 0
         assert result["total_count"] == 2
 
     @pytest.mark.asyncio
-    async def test_realtime_auto_rate_invalid_sysconfig_value(self) -> None:
-        """sys_config 值非法（非 JSON 数组）时回退空集并记录告警。
+    async def test_realtime_auto_rate_mode_not_in_auto_set(self) -> None:
+        """mode_definition 配置 auto_modes={1}，回路 MODE=0 → 不计入自动。
 
-        验证 get_default_auto_modes 的异常分支容错：value="invalid" → 空集。
+        验证 mode_definition 配置表生效：只有 standard_mode=1 为 auto，
+        回路 mode=0 不在 {1} → 手动。
         """
         db = AsyncMock()
+        mode_def_rows = [MagicMock(standard_mode=1)]  # 只有 mode 1 为 auto
         tag_rows = [
-            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
+            MagicMock(loop_id="loop-001", tag_name="TAG_001", dcs_model_id=None),
         ]
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock("invalid-json"),
-                _make_rows_mock([]),
-                _make_rows_mock(tag_rows),
+                _make_rows_mock(mode_def_rows),  # mode_definition {1}
+                _make_rows_mock([]),  # LoopModeMapping 空
+                _make_rows_mock(tag_rows),  # LoopTagMapping + LoopLedger
+                _make_rows_mock([]),  # dcs_mode_mapping 默认空 → 1:1
             ]
         )
 
         async def _mock_query_trend(tag_name: str, start: str, end: str):
             if tag_name == "TAG_001":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 1}]
+                return [{"ts": "2026-06-22T08:00:00Z", "value": 0}]
             return []
 
         with patch(
@@ -729,7 +743,7 @@ class TestRealtimeAutoRate:
         ):
             result = await query_realtime_auto_rate(db, ["loop-001"])
 
-        # 非法 sys_config → 空集 → mode=1 不在 {} → 非自动
+        # mode=0 不在 {1} → 手动
         assert result is not None
         assert result["rate"] == Decimal("0.00")
         assert result["auto_count"] == 0

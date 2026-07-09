@@ -146,6 +146,8 @@ export namespace DashboardApi {
     autoCount: number;
     manualCount: number;
     totalCount: number;
+    /** 5 种标准 MODE 值各自的回路数（key 为 "0"/"1"/"2"/"3"/"4"） */
+    modeCounts?: Record<string, number>;
     readAt: string | null;
     message?: string;
   }

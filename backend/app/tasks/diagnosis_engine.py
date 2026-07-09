@@ -261,10 +261,7 @@ async def _do_run_diagnosis() -> dict:
                         logger.exception("更新任务 %s 状态为 FAILED 失败", task_id)
                     raise
 
-    tasks = [
-        asyncio.create_task(_diag_with_sem(lid, tid))
-        for lid, tid in loop_task_ids.items()
-    ]
+    tasks = [asyncio.create_task(_diag_with_sem(lid, tid)) for lid, tid in loop_task_ids.items()]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     diagnosed_count = 0
@@ -603,13 +600,15 @@ async def _diagnose_loop(
             }
         )
     # 无条件保存 FFT 可视化数据
-    all_visualization_data.update({
-        "fft_frequencies": osc_result.get("frequencies", []),
-        "fft_amplitudes": osc_result.get("amplitudes", []),
-        "oscillation_frequency": osc_result["frequency"],
-        "oscillation_amplitude": osc_result["amplitude"],
-        "oscillation_index": osc_result["index"],
-    })
+    all_visualization_data.update(
+        {
+            "fft_frequencies": osc_result.get("frequencies", []),
+            "fft_amplitudes": osc_result.get("amplitudes", []),
+            "oscillation_frequency": osc_result["frequency"],
+            "oscillation_amplitude": osc_result["amplitude"],
+            "oscillation_index": osc_result["index"],
+        }
+    )
 
     # IAE 零交叉相似率法振荡检测（与 FFT 互为交叉验证，标签同为 OSCILLATION）
     if osc_iae_result["detected"]:
@@ -634,11 +633,13 @@ async def _diagnose_loop(
             }
         )
     # 无条件保存 IAE 可视化数据
-    all_visualization_data.update({
-        "iae_similarity": osc_iae_result["similarity"],
-        "iae_zero_crossing_count": osc_iae_result["zero_crossing_count"],
-        "iae_mean_period": osc_iae_result["mean_period"],
-    })
+    all_visualization_data.update(
+        {
+            "iae_similarity": osc_iae_result["similarity"],
+            "iae_zero_crossing_count": osc_iae_result["zero_crossing_count"],
+            "iae_mean_period": osc_iae_result["mean_period"],
+        }
+    )
 
     if stiction_result["detected"]:
         algorithm_results.append(
@@ -661,12 +662,14 @@ async def _diagnose_loop(
         )
     # 无条件保存散点图可视化数据
     scatter_data = _build_scatter_plot_data(aligned)
-    all_visualization_data.update({
-        "stiction_index": stiction_result["stiction_index"],
-        "fitting_score": stiction_result["fitting_score"],
-        "scatter_plot_x": scatter_data.get("x", []),
-        "scatter_plot_y": scatter_data.get("y", []),
-    })
+    all_visualization_data.update(
+        {
+            "stiction_index": stiction_result["stiction_index"],
+            "fitting_score": stiction_result["fitting_score"],
+            "scatter_plot_x": scatter_data.get("x", []),
+            "scatter_plot_y": scatter_data.get("y", []),
+        }
+    )
 
     if quality_result["abnormal"]:
         algorithm_results.append(
@@ -682,19 +685,22 @@ async def _diagnose_loop(
                 "evidence": {
                     "reasoning": (
                         f"PV 质量码统计：Bad 占比 {quality_result['bad_rate']:.3f}，"
-                        f"总点数 {quality_result['total']}，Bad 点数 {quality_result['bad_count']}，"
+                        f"总点数 {quality_result['total']}，"
+                        f"Bad 点数 {quality_result['bad_count']}，"
                         f"质量模式 {quality_result.get('quality_pattern', 'NORMAL')}"
                     ),
                 },
             }
         )
     # 无条件保存质量码可视化数据
-    all_visualization_data.update({
-        "bad_quality_rate": quality_result["bad_rate"],
-        "total_points": quality_result["total"],
-        "bad_points": quality_result["bad_count"],
-        "quality_pattern": quality_result.get("quality_pattern", "NORMAL"),
-    })
+    all_visualization_data.update(
+        {
+            "bad_quality_rate": quality_result["bad_rate"],
+            "total_points": quality_result["total"],
+            "bad_points": quality_result["bad_count"],
+            "quality_pattern": quality_result.get("quality_pattern", "NORMAL"),
+        }
+    )
 
     if saturation_result["detected"]:
         algorithm_results.append(
@@ -716,11 +722,13 @@ async def _diagnose_loop(
             }
         )
     # 无条件保存饱和率可视化数据
-    all_visualization_data.update({
-        "saturation_rate": saturation_result["saturation_rate"],
-        "high_saturation_count": saturation_result["high_count"],
-        "low_saturation_count": saturation_result["low_count"],
-    })
+    all_visualization_data.update(
+        {
+            "saturation_rate": saturation_result["saturation_rate"],
+            "high_saturation_count": saturation_result["high_count"],
+            "low_saturation_count": saturation_result["low_count"],
+        }
+    )
 
     # Choudhury NGI/NLI 非线性检测 → VALVE_STICTION（交叉验证）
     if choudhury_result["detected"]:
@@ -745,12 +753,14 @@ async def _diagnose_loop(
             }
         )
     # 无条件保存 Choudhury 可视化数据
-    all_visualization_data.update({
-        "ngi": choudhury_result["ngi"],
-        "nli": choudhury_result["nli"],
-        "choudhury_stiction_index": choudhury_result["stiction_index"],
-        "fitting_score": choudhury_result["fitting_score"],
-    })
+    all_visualization_data.update(
+        {
+            "ngi": choudhury_result["ngi"],
+            "nli": choudhury_result["nli"],
+            "choudhury_stiction_index": choudhury_result["stiction_index"],
+            "fitting_score": choudhury_result["fitting_score"],
+        }
+    )
 
     # Kano 统计法粘滞检测 → VALVE_STICTION（交叉验证）
     if kano_result["detected"]:
@@ -774,11 +784,13 @@ async def _diagnose_loop(
             }
         )
     # 无条件保存 Kano 可视化数据
-    all_visualization_data.update({
-        "kano_stiction_ratio": kano_result["stiction_ratio"],
-        "pv_op_correlation": kano_result["correlation"],
-        "std_ratio": kano_result["std_ratio"],
-    })
+    all_visualization_data.update(
+        {
+            "kano_stiction_ratio": kano_result["stiction_ratio"],
+            "pv_op_correlation": kano_result["correlation"],
+            "std_ratio": kano_result["std_ratio"],
+        }
+    )
 
     # 完整阶跃响应分析 → OVERAGGRESSIVE
     if step_response_result["detected"]:
@@ -808,16 +820,18 @@ async def _diagnose_loop(
             }
         )
     # 无条件保存阶跃响应可视化数据
-    all_visualization_data.update({
-        "overshoot": step_response_result["overshoot"],
-        "decay_ratio": step_response_result["decay_ratio"],
-        "steady_state_error": step_response_result["steady_state_error"],
-        "step_count": step_response_result["step_count"],
-        "step_timestamps": step_response_result.get("timestamps", []),
-        "step_pv_response": step_response_result.get("pv_response", []),
-        "step_sp_values": step_response_result.get("sp_values", []),
-        "step_indices": step_response_result.get("step_indices", []),
-    })
+    all_visualization_data.update(
+        {
+            "overshoot": step_response_result["overshoot"],
+            "decay_ratio": step_response_result["decay_ratio"],
+            "steady_state_error": step_response_result["steady_state_error"],
+            "step_count": step_response_result["step_count"],
+            "step_timestamps": step_response_result.get("timestamps", []),
+            "step_pv_response": step_response_result.get("pv_response", []),
+            "step_sp_values": step_response_result.get("sp_values", []),
+            "step_indices": step_response_result.get("step_indices", []),
+        }
+    )
 
     # 响应迟缓检测 → OVERCONSERVATIVE
     if slow_response_result["detected"]:
@@ -841,11 +855,13 @@ async def _diagnose_loop(
             }
         )
     # 无条件保存响应迟缓可视化数据
-    all_visualization_data.update({
-        "time_constant": slow_response_result["time_constant"],
-        "expected_time_constant": slow_response_result["expected_time_constant"],
-        "ratio": slow_response_result["ratio"],
-    })
+    all_visualization_data.update(
+        {
+            "time_constant": slow_response_result["time_constant"],
+            "expected_time_constant": slow_response_result["expected_time_constant"],
+            "ratio": slow_response_result["ratio"],
+        }
+    )
 
     # 偏差突变检测 → EXTERNAL_DISTURBANCE
     if bias_shift_result["detected"]:
@@ -874,16 +890,18 @@ async def _diagnose_loop(
             }
         )
     # 无条件保存 CUSUM 可视化数据
-    all_visualization_data.update({
-        "shift_count": bias_shift_result["shift_count"],
-        "max_cusum": bias_shift_result["max_cusum"],
-        "shift_magnitude": bias_shift_result["shift_magnitude"],
-        "cusum_timestamps": bias_shift_result.get("timestamps", []),
-        "cusum_pos": bias_shift_result.get("cusum_pos", []),
-        "cusum_neg": bias_shift_result.get("cusum_neg", []),
-        "cusum_shift_points": bias_shift_result.get("shift_points", []),
-        "cusum_threshold": bias_shift_result.get("threshold", 0.0),
-    })
+    all_visualization_data.update(
+        {
+            "shift_count": bias_shift_result["shift_count"],
+            "max_cusum": bias_shift_result["max_cusum"],
+            "shift_magnitude": bias_shift_result["shift_magnitude"],
+            "cusum_timestamps": bias_shift_result.get("timestamps", []),
+            "cusum_pos": bias_shift_result.get("cusum_pos", []),
+            "cusum_neg": bias_shift_result.get("cusum_neg", []),
+            "cusum_shift_points": bias_shift_result.get("shift_points", []),
+            "cusum_threshold": bias_shift_result.get("threshold", 0.0),
+        }
+    )
 
     # 兜底标签：无任何算法命中
     if not algorithm_results:
@@ -1445,7 +1463,8 @@ def _analyze_saturation(
     """OP 饱和率分析（FDS §5.4.6 — 仅自控模式 + 绝对工程限位）。
 
     修复要点：
-    1. 若提供 mode_values，仅保留 MODE 为 Auto/CAS/RCAS 的数据点（大小写不敏感，包含 "AUTO" 或 "CAS"）
+    1. 若提供 mode_values，仅保留 MODE 为 Auto/CAS/RCAS 的数据点
+       （大小写不敏感，包含 "AUTO" 或 "CAS"）
     2. 使用绝对工程限位（默认 0-100%），不再做 min-max 相对归一化
     3. saturation_epsilon 默认 2%（≥98% 或 ≤2% 为饱和），与 FDS §5.4.6 一致
     4. 饱和率 > 20% 判定为 detected
@@ -1926,7 +1945,9 @@ def _analyze_step_response(
         # 限制最大置信度为 95%，避免全部满足时直接到 100%
         confidence = min(0.95, satisfied / 3.0) if detected else 0.0
 
-        response_ts = ts[step_idx + 1 : response_end] if ts is not None else np.arange(len(pv_response))
+        response_ts = (
+            ts[step_idx + 1 : response_end] if ts is not None else np.arange(len(pv_response))
+        )
         sp_response = sp_arr[step_idx + 1 : response_end]
 
         return {
@@ -2415,7 +2436,7 @@ def _deduplicate_labels(algorithm_results: list[dict[str, Any]]) -> list[dict[st
             groups.setdefault(r["label"], []).append(r)
 
         deduplicated: list[dict[str, Any]] = []
-        for label, records in groups.items():
+        for _label, records in groups.items():
             if len(records) == 1:
                 deduplicated.append(records[0])
                 continue
@@ -2567,7 +2588,9 @@ def _detect_oscillation_iae(
             similarity = max(0.0, 1.0 - std_interval / mean_interval)
 
         # 6. 振荡判定：相似率 > 阈值 且 零交叉数 >= 最小值
-        detected = bool(similarity > similarity_threshold and len(zero_crossings) >= min_zero_crossings)
+        detected = bool(
+            similarity > similarity_threshold and len(zero_crossings) >= min_zero_crossings
+        )
 
         # 7. 置信度
         confidence = min(1.0, similarity * 1.5) if detected else 0.0
@@ -2631,7 +2654,7 @@ def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
     for _, conf in evidence:
         c = max(eps, min(1.0 - eps, conf))
         prod_c *= c
-        prod_not_c *= (1.0 - c)
+        prod_not_c *= 1.0 - c
 
     denom = prod_c + prod_not_c
     if denom <= 0:

@@ -61,6 +61,7 @@ import {
   updateLoopApi,
   updateLoopTagMappingApi,
 } from '#/api/loop';
+import { getModelsApi } from '#/api/dcs';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
 import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
@@ -1036,6 +1037,8 @@ const formState = reactive({
   opOutputLowerLimit: undefined as number | undefined,
   /** v6.1：OP 输出上限位（NULL 时取 OP Tag range_max） */
   opOutputUpperLimit: undefined as number | undefined,
+  /** v6.1：关联 DCS 型号 ID（NULL=使用本系统默认 MODE 映射） */
+  dcsModelId: undefined as string | undefined,
 });
 
 /**
@@ -1070,6 +1073,25 @@ const useDefaultOpLimits = ref(true);
 const opTagAssociated = computed(() => {
   return opTagRange.value.min !== null || opTagRange.value.max !== null;
 });
+
+/** v6.1：DCS 型号列表（用于回路关联 DCS 型号选择） */
+const dcsModels = ref<{ id: string; name: string; code: string; vendorName?: string | null }[]>([]);
+let dcsModelsLoaded = false;
+async function loadDcsModels() {
+  if (dcsModelsLoaded) return;
+  try {
+    const data = await getModelsApi();
+    dcsModels.value = data.map((m) => ({
+      id: m.id,
+      name: m.name,
+      code: m.code,
+      vendorName: m.vendorName,
+    }));
+    dcsModelsLoaded = true;
+  } catch {
+    // 忽略：DCS 型号列表加载失败不影响回路编辑
+  }
+}
 
 /** v6.1：切换"使用默认"时更新状态并重置限位字段
  * Checkbox 使用 :checked 单向绑定，需手动更新 useDefaultOpLimits.value
@@ -1379,7 +1401,9 @@ function handleAdd() {
   // v6.1：新建时默认使用默认限位（OP Tag 量程）
   formState.opOutputLowerLimit = undefined;
   formState.opOutputUpperLimit = undefined;
+  formState.dcsModelId = undefined;
   useDefaultOpLimits.value = true;
+  loadDcsModels();
   activeTab.value = 'basic';
   drawerVisible.value = true;
 }
@@ -1423,9 +1447,12 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
     lower !== null && lower !== undefined ? Number(lower) : undefined;
   formState.opOutputUpperLimit =
     upper !== null && upper !== undefined ? Number(upper) : undefined;
+  // v6.1：读取 DCS 型号关联（列表项可能携带 dcsModelId）
+  formState.dcsModelId = (record as any).dcsModelId ?? undefined;
   useDefaultOpLimits.value =
     formState.opOutputLowerLimit === undefined &&
     formState.opOutputUpperLimit === undefined;
+  loadDcsModels();
   activeTab.value = 'basic';
   drawerVisible.value = true;
   // 加载详情
@@ -1446,6 +1473,8 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
       detailUpper !== null && detailUpper !== undefined
         ? Number(detailUpper)
         : undefined;
+    // v6.1：详情加载后同步 DCS 型号关联（详情响应更权威）
+    formState.dcsModelId = (detail.basicInfo as any).dcsModelId ?? undefined;
     useDefaultOpLimits.value =
       formState.opOutputLowerLimit === undefined &&
       formState.opOutputUpperLimit === undefined;
@@ -1643,6 +1672,8 @@ async function doSaveBasic() {
         opOutputUpperLimit: useDefaultOpLimits.value
           ? null
           : (formState.opOutputUpperLimit ?? null),
+        // v6.1：DCS 型号关联（undefined=未修改，null=清空，string=设值）
+        dcsModelId: formState.dcsModelId ?? null,
       });
       message.success('回路更新成功');
     } else {
@@ -1668,6 +1699,8 @@ async function doSaveBasic() {
         opOutputUpperLimit: useDefaultOpLimits.value
           ? null
           : (formState.opOutputUpperLimit ?? null),
+        // v6.1：DCS 型号关联
+        dcsModelId: formState.dcsModelId ?? null,
       });
       message.success('回路创建成功');
       editingLoop.value = {
@@ -2333,6 +2366,32 @@ watch(
                         ? '参评（进入综合性能评分、装置级聚合与低效排行）'
                         : '不参评（仅计算单回路 KPI）'
                     }}
+                  </span>
+                </FormItem>
+                <FormItem
+                  name="dcsModelId"
+                  label="DCS 型号"
+                  tooltip="关联 DCS 型号用于 MODE 值映射；不选则使用本系统默认映射（MODE 0-4 标准）"
+                >
+                  <Select
+                    v-model:value="formState.dcsModelId"
+                    placeholder="不选则使用本系统默认映射"
+                    :disabled="isViewMode"
+                    allow-clear
+                    :options="
+                      dcsModels.map((m) => ({
+                        label: m.vendorName ? `${m.vendorName} - ${m.name}` : m.name,
+                        value: m.id,
+                      }))
+                    "
+                    :filter-option="
+                      (input: string, option: any) =>
+                        option.label.includes(input)
+                    "
+                    show-search
+                  />
+                  <span class="ml-2 text-xs text-gray-400">
+                    在数据接入 → DCS 系统中管理型号
                   </span>
                 </FormItem>
               </div>

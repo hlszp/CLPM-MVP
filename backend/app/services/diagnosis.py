@@ -332,14 +332,14 @@ async def get_diagnosis_detail(db: AsyncSession, loop_id: str) -> dict:
         .limit(1)
     )
     latest_record = latest_diag.scalar_one_or_none()
-    
+
     if not latest_record:
         raise BizError(
             code="ERR_DIAG_RESULT_NOT_FOUND",
             message="该回路暂无诊断结果",
             status_code=404,
         )
-    
+
     # 获取最新诊断的 task_id（如果有），取该任务的所有诊断结果
     latest_task_id = latest_record.task_id
     if latest_task_id:
@@ -461,11 +461,11 @@ async def get_diagnosis_visualization(db: AsyncSession, loop_id: str) -> dict:
             "maxCusum": feature_values.get("max_cusum", 0.0),
         },
         "scatterPlot": {
-        "x": feature_values.get("scatter_plot_x", []),
-        "y": feature_values.get("scatter_plot_y", []),
-        "fittingScore": feature_values.get("fitting_score", 0.0),
-        "stictionIndex": feature_values.get("stiction_index", 0.0),
-    },
+            "x": feature_values.get("scatter_plot_x", []),
+            "y": feature_values.get("scatter_plot_y", []),
+            "fittingScore": feature_values.get("fitting_score", 0.0),
+            "stictionIndex": feature_values.get("stiction_index", 0.0),
+        },
         "qualityTimeline": {
             "badRate": feature_values.get("bad_quality_rate", 0.0),
             "totalPoints": feature_values.get("total_points", 0),
@@ -859,9 +859,9 @@ async def list_diagnosis_tasks(
 
     base_stmt = select(DiagnosisTask)
     if plant_node_id:
-        base_stmt = base_stmt.join(
-            LoopLedger, DiagnosisTask.loop_id == LoopLedger.id
-        ).where(LoopLedger.unit_id == plant_node_id)
+        base_stmt = base_stmt.join(LoopLedger, DiagnosisTask.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id == plant_node_id
+        )
     for cond in conditions:
         base_stmt = base_stmt.where(cond)
 
@@ -892,7 +892,7 @@ async def list_diagnosis_tasks(
         for loop in l_result.scalars().all():
             loop_map[str(loop.id)] = loop
         # 查询装置名称
-        unit_ids = [str(l.unit_id) for l in loop_map.values() if l.unit_id]
+        unit_ids = [str(lp.unit_id) for lp in loop_map.values() if lp.unit_id]
         if unit_ids:
             u_result = await db.execute(select(PlantNode).where(PlantNode.id.in_(unit_ids)))
             for node in u_result.scalars().all():
@@ -984,9 +984,7 @@ async def get_diagnosis_task_detail(db: AsyncSession, task_id: str) -> dict:
     loop_map: dict[str, LoopLedger] = {}
     unit_map: dict[str, str] = {}
     if task.loop_id:
-        l_result = await db.execute(
-            select(LoopLedger).where(LoopLedger.id == str(task.loop_id))
-        )
+        l_result = await db.execute(select(LoopLedger).where(LoopLedger.id == str(task.loop_id)))
         loop = l_result.scalar_one_or_none()
         if loop:
             loop_map[str(loop.id)] = loop
@@ -1018,9 +1016,7 @@ async def get_diagnosis_task_detail(db: AsyncSession, task_id: str) -> dict:
                 "featureValues": record.feature_values or {},
                 "evidenceChain": record.evidence_chain or {},
                 "algorithmVersion": record.algorithm_version,
-                "diagnosedAt": record.diagnosed_at.isoformat()
-                if record.diagnosed_at
-                else None,
+                "diagnosedAt": record.diagnosed_at.isoformat() if record.diagnosed_at else None,
             }
         )
 
@@ -1196,9 +1192,7 @@ async def cancel_diagnosis_task(
             status_code=400,
         )
 
-    before_snapshot = json.dumps(
-        {"id": str(task.id), "status": task.status}, ensure_ascii=False
-    )
+    before_snapshot = json.dumps({"id": str(task.id), "status": task.status}, ensure_ascii=False)
 
     task.status = "CANCELLED"
     task.completed_at = datetime.now(UTC).replace(tzinfo=None)
@@ -1294,9 +1288,9 @@ async def list_diagnosis_records(
 
     base_stmt = select(DiagnosisTask)
     if plant_node_id:
-        base_stmt = base_stmt.join(
-            LoopLedger, DiagnosisTask.loop_id == LoopLedger.id
-        ).where(LoopLedger.unit_id == plant_node_id)
+        base_stmt = base_stmt.join(LoopLedger, DiagnosisTask.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id == plant_node_id
+        )
     for cond in conditions:
         base_stmt = base_stmt.where(cond)
 
@@ -1322,7 +1316,7 @@ async def list_diagnosis_records(
         l_result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids_list)))
         for loop in l_result.scalars().all():
             loop_map[str(loop.id)] = loop
-        unit_ids = [str(l.unit_id) for l in loop_map.values() if l.unit_id]
+        unit_ids = [str(lp.unit_id) for lp in loop_map.values() if lp.unit_id]
         if unit_ids:
             u_result = await db.execute(select(PlantNode).where(PlantNode.id.in_(unit_ids)))
             for node in u_result.scalars().all():
@@ -1406,7 +1400,8 @@ def _task_to_dict(
         task: 诊断任务 ORM 对象
         loop_map: 回路 ID → LoopLedger 映射（可选，用于补充回路信息）
         unit_map: 装置 ID → 名称映射（可选，用于补充装置名称）
-        score_map: 回路 ID → 最新 KPI 指标字典映射（可选，含 score/accuracy_rate/fast_rate/steady_rate/effective_auto_rate）
+        score_map: 回路 ID → 最新 KPI 指标字典映射
+            （可选，含 score/accuracy_rate/fast_rate/steady_rate/effective_auto_rate）
     """
     loop_map = loop_map or {}
     unit_map = unit_map or {}
@@ -1440,9 +1435,7 @@ def _task_to_dict(
         "triggeredBy": task.triggered_by,
         "triggeredAt": task.triggered_at.isoformat() if task.triggered_at else None,
         "completedAt": task.completed_at.isoformat() if task.completed_at else None,
-        "timeRangeStart": task.time_range_start.isoformat()
-        if task.time_range_start
-        else None,
+        "timeRangeStart": task.time_range_start.isoformat() if task.time_range_start else None,
         "timeRangeEnd": task.time_range_end.isoformat() if task.time_range_end else None,
         "isArchived": bool(task.is_archived),
         "errorMessage": task.error_message,

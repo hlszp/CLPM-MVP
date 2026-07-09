@@ -126,6 +126,8 @@ export namespace LoopApi {
     opOutputLowerLimit?: number | null;
     /** v6.1 新增：OP 输出上限位（NULL 时取 OP Tag range_max） */
     opOutputUpperLimit?: number | null;
+    /** v6.1 新增：关联 DCS 型号 ID（NULL=使用本系统默认 MODE 映射） */
+    dcsModelId?: string | null;
   }
 
   /** 回路列表查询参数（IDS v3.2 §2.2.7） */
@@ -165,6 +167,8 @@ export namespace LoopApi {
     opOutputLowerLimit?: number | null;
     /** v6.1 新增：OP 输出上限位 */
     opOutputUpperLimit?: number | null;
+    /** v6.1 新增：关联 DCS 型号 ID */
+    dcsModelId?: string | null;
   }
 
   /** 更新回路参数（IDS v3.2 §2.2.10） */
@@ -185,6 +189,8 @@ export namespace LoopApi {
     opOutputLowerLimit?: number | null;
     /** v6.1 新增：OP 输出上限位 */
     opOutputUpperLimit?: number | null;
+    /** v6.1 新增：关联 DCS 型号 ID */
+    dcsModelId?: string | null;
   }
 
   /** 创建回路响应（IDS v3.2 §2.2.8） */

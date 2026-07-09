@@ -688,7 +688,7 @@ async def trigger_backfill(
 
     return success(
         data={"taskId": task_id},
-        message=f"任务已创建，点击「评估」按钮开始执行",
+        message="任务已创建，点击「评估」按钮开始执行",
     )
 
 
@@ -763,9 +763,7 @@ async def start_task(
     # 触发 Celery 任务
     from app.tasks.kpi_calc import backfill_kpi_range
 
-    celery_result = backfill_kpi_range.delay(
-        ts_start, ts_end, loop_ids=loop_ids, task_id=task_id
-    )
+    celery_result = backfill_kpi_range.delay(ts_start, ts_end, loop_ids=loop_ids, task_id=task_id)
 
     # 更新任务状态为 RUNNING
     now = _now_iso()

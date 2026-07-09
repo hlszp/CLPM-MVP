@@ -16,13 +16,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.constants.mode import AUTO_MODES
 from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
-
-#: 计入自控的 MODE 值（1=Auto, 2=Cascade, 3=Remote）
-AUTO_MODES: frozenset[int] = frozenset({1, 2, 3})
 
 
 class AutoModeRateCalculator(MetricCalculatorBase):

@@ -170,7 +170,8 @@ async def update_datasource_config(
 ) -> dict:
     """更新数据源配置（即时同步到 settings 内存）。
 
-    即时生效项：historyApiUrl / historyApiToken / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
+    即时生效项：historyApiUrl / historyApiToken / historyApiTimeout
+    / signalrHubUrl / signalrReconnectInterval
     重启生效项：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）
     """
     before = await get_datasource_config(db)
@@ -230,9 +231,7 @@ async def test_history_api_connection(
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(url, json=payload, headers=headers)
-        latency = int(
-            (datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000
-        )
+        latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         if resp.status_code == 200:
             return {"success": True, "latencyMs": latency, "message": "历史数据 API 连接成功"}
         return {
@@ -241,9 +240,7 @@ async def test_history_api_connection(
             "message": f"HTTP {resp.status_code}: {resp.text[:200]}",
         }
     except Exception as exc:
-        latency = int(
-            (datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000
-        )
+        latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         return {"success": False, "latencyMs": latency, "message": f"连接失败: {exc}"}
 
 
@@ -257,14 +254,10 @@ async def test_signalr_hub_connection(hub_url: str | None) -> dict:
         async with websockets.connect(hub_url, open_timeout=5, close_timeout=1):
             # 连接成功即视为可达
             pass
-        latency = int(
-            (datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000
-        )
+        latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         return {"success": True, "latencyMs": latency, "message": "SignalR Hub 连接成功"}
     except Exception as exc:
-        latency = int(
-            (datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000
-        )
+        latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         return {"success": False, "latencyMs": latency, "message": f"连接失败: {exc}"}
 
 

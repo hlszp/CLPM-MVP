@@ -61,6 +61,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """回滚：删除 IDEAL_SETTLING_TIME 配置。"""
-    op.execute(
-        "DELETE FROM metric_config WHERE metric_code = 'IDEAL_SETTLING_TIME'"
-    )
+    op.execute("DELETE FROM metric_config WHERE metric_code = 'IDEAL_SETTLING_TIME'")

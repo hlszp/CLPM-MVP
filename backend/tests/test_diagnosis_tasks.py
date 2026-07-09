@@ -22,10 +22,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import pytest
-
 from tests.conftest import TEST_USERS, mock_current_user
-
 
 # ---------------------------------------------------------------------------
 # 测试数据构造
@@ -256,11 +253,21 @@ class TestListDiagnosisTasks:
             # 4: 装置查询
             if call_count[0] == 4:
                 return _make_scalars_all_mock([node])
-            # 5: 评分查询（6列：loop_id, score, accuracy_rate, fast_rate, steady_rate, effective_auto_rate）
+            # 5: 评分查询（6列：loop_id, score, accuracy_rate,
+            #    fast_rate, steady_rate, effective_auto_rate）
             if call_count[0] == 5:
-                return _make_rows_mock([
-                    (loop.id, Decimal("75.50"), Decimal("80"), Decimal("70"), Decimal("75"), Decimal("85"))
-                ])
+                return _make_rows_mock(
+                    [
+                        (
+                            loop.id,
+                            Decimal("75.50"),
+                            Decimal("80"),
+                            Decimal("70"),
+                            Decimal("75"),
+                            Decimal("85"),
+                        )
+                    ]
+                )
             # 6: 诊断结果标签查询
             return _make_rows_mock([])
 
@@ -626,9 +633,18 @@ class TestListDiagnosisRecords:
                 return _make_scalars_all_mock([node])
             # 5: 评分查询（6列）
             if call_count[0] == 5:
-                return _make_rows_mock([
-                    (loop.id, Decimal("75.50"), Decimal("80"), Decimal("70"), Decimal("75"), Decimal("85"))
-                ])
+                return _make_rows_mock(
+                    [
+                        (
+                            loop.id,
+                            Decimal("75.50"),
+                            Decimal("80"),
+                            Decimal("70"),
+                            Decimal("75"),
+                            Decimal("85"),
+                        )
+                    ]
+                )
             # 6: 诊断结果标签查询
             return _make_rows_mock([])
 

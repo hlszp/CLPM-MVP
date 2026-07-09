@@ -9,9 +9,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -117,13 +118,16 @@ async def get_auto_rate_rt_endpoint(
     - ``autoCount``: 自动模式回路数
     - ``manualCount``: 手动模式回路数
     - ``totalCount``: 有效回路总数
+    - ``modeCounts``: 5 种 MODE 各自的回路数（dict[int,int]，key 为 0/1/2/3/4）
     - ``readAt``: 统计时间（ISO 字符串）
 
     若 TDengine 不可用或无 MODE 数据，返回 ``rate=null``。
 
     设计依据：FDS v5.1 §5.3.6, UIUX v5.3 ①
 
-    v6.1 更新：支持递归聚合当前节点及所有下属节点的回路
+    v6.1 更新：
+    - 支持递归聚合当前节点及所有下属节点的回路
+    - modeCounts 字段用于前端饼图按 5 种 MODE 中文展示（0-手动/1-自动/2-串级/3-远程/4-先控）
     """
     from app.services.node_performance import collect_descendant_loop_ids, query_realtime_auto_rate
 
@@ -142,6 +146,7 @@ async def get_auto_rate_rt_endpoint(
                 "autoCount": 0,
                 "manualCount": 0,
                 "totalCount": 0,
+                "modeCounts": {"0": 0, "1": 0, "2": 0, "3": 0, "4": 0},
                 "readAt": None,
                 "message": "无活跃回路",
             }
@@ -155,6 +160,7 @@ async def get_auto_rate_rt_endpoint(
                 "autoCount": 0,
                 "manualCount": 0,
                 "totalCount": 0,
+                "modeCounts": {"0": 0, "1": 0, "2": 0, "3": 0, "4": 0},
                 "readAt": None,
                 "message": "TDengine 不可用或无 MODE 数据",
             }
@@ -166,6 +172,7 @@ async def get_auto_rate_rt_endpoint(
             "autoCount": data["auto_count"],
             "manualCount": data["manual_count"],
             "totalCount": data["total_count"],
+            "modeCounts": {str(k): v for k, v in data["mode_counts"].items()},
             "readAt": data["read_at"],
         }
     )
@@ -179,7 +186,9 @@ async def get_auto_rate_rt_endpoint(
 @router.get("/board/trend", response_model=ApiResponse[dict])
 async def get_board_trend_endpoint(
     plantId: str | None = Query(None, description="按节点筛选；为空统计全厂；递归包含所有下属节点"),
-    timeWindow: str = Query("today", description="时间窗：today/yesterday/last_7_days/last_30_days"),
+    timeWindow: str = Query(
+        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
+    ),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -198,9 +207,9 @@ async def get_board_trend_endpoint(
 
     v6.1 更新：支持递归聚合当前节点及所有下属节点的趋势数据（使用 PostgreSQL 递归 CTE）
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     if timeWindow == "today":
         start = now - timedelta(hours=24)
     elif timeWindow == "yesterday":
@@ -241,7 +250,16 @@ async def get_board_trend_endpoint(
     total_loops_count = len(total_loop_ids)
 
     if not descendant_ids:
-        return success(data={"timestamps": [], "avgScore": [], "autoModeRate": [], "stabilityRate": [], "evaluatedLoops": [], "totalLoops": total_loops_count})
+        return success(
+            data={
+                "timestamps": [],
+                "avgScore": [],
+                "autoModeRate": [],
+                "stabilityRate": [],
+                "evaluatedLoops": [],
+                "totalLoops": total_loops_count,
+            }
+        )
 
     hour_col = func.date_trunc("hour", UnitKpiSummary.snapshot_time).label("hour")
 
@@ -253,8 +271,7 @@ async def get_board_trend_endpoint(
             UnitKpiSummary.avg_score,
             UnitKpiSummary.auto_mode_rate,
             UnitKpiSummary.stability_rate,
-        )
-        .where(
+        ).where(
             UnitKpiSummary.node_id.in_(descendant_ids),
             UnitKpiSummary.snapshot_time >= start,
             UnitKpiSummary.snapshot_time <= now,
@@ -339,7 +356,7 @@ async def get_board_aggregate_endpoint(
     设计依据：FDS v5.1 §5.3.7, UIUX v5.3 ①, DDS v4.1 §2.17
 
     v6.1 更新：支持递归聚合当前节点及所有下属节点的 KPI（使用 PostgreSQL 递归 CTE）
-    
+
     v6.1.1 修复：回路数统计改为从数据库直接查询实际回路数，避免父子节点重复累加
     """
     from app.services.node_performance import collect_descendant_loop_ids
@@ -424,8 +441,9 @@ async def get_board_aggregate_endpoint(
         excluded_loops = int(ex_result.scalar() or 0)
 
         # 获取最近时间窗
-        from datetime import datetime, timedelta, timezone
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        from datetime import datetime, timedelta
+
+        now = datetime.now(UTC).replace(tzinfo=None)
         start_time = now - timedelta(hours=24)
 
         # 查询有 SUCCESS 快照的回路 ID
@@ -462,13 +480,17 @@ async def get_board_aggregate_endpoint(
     # 过滤出 UNIT 类型的节点
     unit_items = []
     for item in items:
-        node_type_result = await db.execute(select(PlantNode.type).where(PlantNode.id == item["nodeId"]))
+        node_type_result = await db.execute(
+            select(PlantNode.type).where(PlantNode.id == item["nodeId"])
+        )
         node_type = node_type_result.scalar_one_or_none()
         if node_type == "UNIT":
             unit_items.append(item)
 
     # 按 UNIT 节点的 evaluatedLoops 加权平均
-    total_unit_evaluated = sum(item.get("evaluatedLoops", 0) for item in unit_items if item.get("evaluatedLoops") > 0)
+    total_unit_evaluated = sum(
+        item.get("evaluatedLoops", 0) for item in unit_items if item.get("evaluatedLoops") > 0
+    )
 
     def weighted_avg(field: str) -> float | None:
         if total_unit_evaluated == 0:

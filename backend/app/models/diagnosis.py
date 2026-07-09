@@ -131,9 +131,7 @@ class DiagnosisTask(Base):
     archived_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     __table_args__ = (
-        CheckConstraint(
-            "trigger_type IN ('manual', 'auto')", name="ck_diag_task_trigger_type"
-        ),
+        CheckConstraint("trigger_type IN ('manual', 'auto')", name="ck_diag_task_trigger_type"),
         CheckConstraint(
             "status IN ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED')",
             name="ck_diag_task_status",

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
+from app.models.dcs_model import DcsModel
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
@@ -345,6 +346,7 @@ async def list_loops(
                     if loop.op_output_upper_limit is not None
                     else None
                 ),
+                "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
             }
         )
 
@@ -471,6 +473,7 @@ async def create_loop(
     data_retention_days: int | None = None,
     op_output_lower_limit: float | None = None,
     op_output_upper_limit: float | None = None,
+    dcs_model_id: str | None = None,
 ) -> dict:
     """创建回路。
 
@@ -526,6 +529,7 @@ async def create_loop(
         data_retention_days=data_retention_days,
         op_output_lower_limit=op_output_lower_limit,
         op_output_upper_limit=op_output_upper_limit,
+        dcs_model_id=dcs_model_id,
         score_weights=score_weights,
         remark=remark,
         created_by=operator,
@@ -555,6 +559,7 @@ async def create_loop(
                 "dataRetentionDays": data_retention_days,
                 "opOutputLowerLimit": op_output_lower_limit,
                 "opOutputUpperLimit": op_output_upper_limit,
+                "dcsModelId": dcs_model_id,
             },
             ensure_ascii=False,
         ),
@@ -579,6 +584,7 @@ async def create_loop(
         "opOutputUpperLimit": (
             float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
+        "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
         "isActive": bool(loop.is_active),
         "scoreWeights": loop.score_weights,
         "remark": loop.remark,
@@ -720,6 +726,7 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
                 if loop.op_output_upper_limit is not None
                 else None
             ),
+            "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
             "createdAt": loop.created_at.isoformat() if loop.created_at else None,
             "createdBy": loop.created_by,
             "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
@@ -750,8 +757,10 @@ async def update_loop(
     data_retention_days: int | None = None,
     op_output_lower_limit: float | None = None,
     op_output_upper_limit: float | None = None,
+    dcs_model_id: str | None = None,
     _op_lower_set: bool = False,
     _op_upper_set: bool = False,
+    _dcs_model_id_set: bool = False,
 ) -> dict:
     """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。
 
@@ -801,6 +810,7 @@ async def update_loop(
         "opOutputUpperLimit": (
             float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
+        "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -830,6 +840,9 @@ async def update_loop(
         loop.op_output_lower_limit = op_output_lower_limit
     if _op_upper_set:
         loop.op_output_upper_limit = op_output_upper_limit
+    # v6.1 DCS 型号关联：支持通过 PUT null 清空（回退到本系统默认 MODE 映射）
+    if _dcs_model_id_set:
+        loop.dcs_model_id = dcs_model_id
     loop.updated_by = operator
 
     # 重新推导 status
@@ -853,6 +866,7 @@ async def update_loop(
         "opOutputUpperLimit": (
             float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
+        "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
         "status": new_status,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -889,6 +903,7 @@ async def update_loop(
         "opOutputUpperLimit": (
             float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
+        "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
         "updatedBy": loop.updated_by,
     }
@@ -987,6 +1002,7 @@ EXPORT_HEADERS = [
     "参评状态",
     "OP输出下限位",
     "OP输出上限位",
+    "DCS型号",
     "备注",
 ]
 
@@ -1009,7 +1025,8 @@ _IMPORTANCE_LEVEL_COLUMN_INDEX = 13
 _INCLUDE_IN_EVALUATION_COLUMN_INDEX = 14
 _OP_OUTPUT_LOWER_LIMIT_COLUMN_INDEX = 15
 _OP_OUTPUT_UPPER_LIMIT_COLUMN_INDEX = 16
-_REMARK_COLUMN_INDEX = 17
+_DCS_MODEL_COLUMN_INDEX = 17
+_REMARK_COLUMN_INDEX = 18
 
 
 def _cell_str(value: object) -> str:
@@ -1124,6 +1141,14 @@ async def export_loops(
         for mapping, tag in m_result:
             tag_name_map.setdefault(str(mapping.loop_id), {})[mapping.tag_role] = tag.tag_name
 
+    # 批量查询 DCS 型号名称（v6.1：DCS 型号列导出）
+    dcs_model_map: dict[str, str] = {}
+    dcs_model_ids = [str(loop.dcs_model_id) for loop in loops if loop.dcs_model_id]
+    if dcs_model_ids:
+        dm_result = await db.execute(select(DcsModel).where(DcsModel.id.in_(dcs_model_ids)))
+        for dm in dm_result.scalars().all():
+            dcs_model_map[str(dm.id)] = dm.name
+
     # 构建 Excel
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1155,6 +1180,8 @@ async def export_loops(
         op_upper_str = (
             str(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else ""
         )
+        # DCS 型号名称（空值表示使用本系统默认 MODE 映射）
+        dcs_model_str = dcs_model_map.get(str(loop.dcs_model_id)) if loop.dcs_model_id else ""
         ws.append(
             [
                 loop.tag_name,
@@ -1175,6 +1202,7 @@ async def export_loops(
                 include_in_eval_str,
                 op_lower_str,
                 op_upper_str,
+                dcs_model_str,
                 loop.remark or "",
             ]
         )
@@ -1212,9 +1240,10 @@ async def import_loops(
     failed = 0
     errors: list[dict] = []
 
-    # 缓存：plant_node name → id，tag name → id
+    # 缓存：plant_node name → id，tag name → id，dcs_model name → id
     plant_node_cache: dict[str, str] = {}
     tag_cache: dict[str, str] = {}
+    dcs_model_cache: dict[str, str | None] = {}
 
     for row_idx, row in enumerate(rows, start=2):  # 第 1 行为表头
         total += 1
@@ -1298,6 +1327,30 @@ async def import_loops(
                 op_output_upper_limit = float(op_upper_str)
             except ValueError:
                 op_output_upper_limit = None
+        # DCS 型号：空值表示使用本系统默认 MODE 映射（dcs_model_id=NULL）
+        dcs_model_name = (
+            _cell_str(row[_DCS_MODEL_COLUMN_INDEX]) if len(row) > _DCS_MODEL_COLUMN_INDEX else ""
+        )
+        dcs_model_id: str | None = None
+        if dcs_model_name:
+            if dcs_model_name in dcs_model_cache:
+                dcs_model_id = dcs_model_cache[dcs_model_name]
+            else:
+                dm_result = await db.execute(
+                    select(DcsModel).where(DcsModel.name == dcs_model_name)
+                )
+                dm = dm_result.scalar_one_or_none()
+                if dm is None:
+                    # 尝试按 code 匹配
+                    dm_result = await db.execute(
+                        select(DcsModel).where(DcsModel.code == dcs_model_name)
+                    )
+                    dm = dm_result.scalar_one_or_none()
+                if dm is not None:
+                    dcs_model_id = str(dm.id)
+                else:
+                    dcs_model_id = None  # 未找到型号，置空使用默认
+                dcs_model_cache[dcs_model_name] = dcs_model_id
         remark = (
             _cell_str(row[_REMARK_COLUMN_INDEX]) if len(row) > _REMARK_COLUMN_INDEX else ""
         ) or None
@@ -1322,6 +1375,7 @@ async def import_loops(
                     include_in_evaluation=include_in_evaluation,
                     op_output_lower_limit=op_output_lower_limit,
                     op_output_upper_limit=op_output_upper_limit,
+                    dcs_model_id=dcs_model_id,
                     remark=remark,
                 )
         except Exception as exc:  # noqa: BLE001
@@ -1361,6 +1415,7 @@ async def _import_one_row(
     include_in_evaluation: bool | None = None,
     op_output_lower_limit: float | None = None,
     op_output_upper_limit: float | None = None,
+    dcs_model_id: str | None = None,
     remark: str | None = None,
 ) -> bool:
     """处理单行导入，返回是否为更新（True）或新建（False）。
@@ -1411,6 +1466,8 @@ async def _import_one_row(
             loop.op_output_lower_limit = op_output_lower_limit
         if op_output_upper_limit is not None:
             loop.op_output_upper_limit = op_output_upper_limit
+        # DCS 型号：导入时总是覆盖（空值=清空，使用默认映射）
+        loop.dcs_model_id = dcs_model_id
         if remark is not None:
             loop.remark = remark
         loop.updated_by = operator
@@ -1430,6 +1487,7 @@ async def _import_one_row(
             include_in_evaluation=include_in_evaluation,
             op_output_lower_limit=op_output_lower_limit,
             op_output_upper_limit=op_output_upper_limit,
+            dcs_model_id=dcs_model_id,
             remark=remark,
             created_by=operator,
             updated_by=operator,

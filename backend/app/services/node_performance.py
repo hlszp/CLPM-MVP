@@ -31,6 +31,7 @@ from app.models.node_kpi import (
 )
 from app.models.plant_node import PlantNode
 from app.models.unit_kpi_summary import UnitKpiSummary
+from app.services import mode_resolver
 from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_status
 
 logger = logging.getLogger(__name__)
@@ -93,68 +94,33 @@ async def collect_descendant_loop_ids(
 # ---------------------------------------------------------------------------
 
 
-#: sys_config 中存储全局默认自动 MODE 集合的 key
-DEFAULT_AUTO_MODES_KEY = "loop.default_auto_modes"
-
-
 async def get_default_auto_modes(db: AsyncSession) -> set[int]:
-    """从 sys_config 读取全局默认自动 MODE 集合（P1 #15 修正）。
+    """读取全局默认自动 MODE 集合（配置驱动）.
 
-    替代原硬编码 ``{1, 2, 3}``，管理员可通过 sys_config 表配置：
-    - key: ``loop.default_auto_modes``
-    - value: JSON 数组字符串，如 ``"[1, 2, 3]"``
-
-    无配置或解析失败时返回空集（不假设默认值），
-    此时无 LoopModeMapping 配置的回路不计入自动模式回路数。
-    此严格模式提醒管理员必须配置 sys_config.loop.default_auto_modes。
+    v6.1：从 ``mode_definition`` 配置表读取 ``is_auto=True`` 的 ``standard_mode``，
+    替代旧的 sys_config + 硬编码常量方案。表为空时回退到
+    ``app.constants.mode.AUTO_MODES``（{1, 2, 3, 4}）保证向后兼容。
 
     Returns:
         全局默认自动 MODE 值集合
     """
-    from app.models.sys_config import SysConfig
-
-    result = await db.execute(
-        select(SysConfig.value).where(SysConfig.key == DEFAULT_AUTO_MODES_KEY)
-    )
-    raw = result.scalar_one_or_none()
-    if not raw:
-        logger.info(
-            "[实时自控率] sys_config.%s 未配置，回退空集（严格模式）",
-            DEFAULT_AUTO_MODES_KEY,
-        )
-        return set()
-    try:
-        import json
-
-        modes = json.loads(raw)
-        if isinstance(modes, list):
-            return {int(m) for m in modes}
-        logger.warning(
-            "[实时自控率] sys_config.%s 值非 JSON 数组（%r），回退空集",
-            DEFAULT_AUTO_MODES_KEY,
-            raw,
-        )
-        return set()
-    except (ValueError, TypeError) as exc:
-        logger.warning(
-            "[实时自控率] sys_config.%s 值无效（%r），回退空集: %s",
-            DEFAULT_AUTO_MODES_KEY,
-            raw,
-            exc,
-        )
-        return set()
+    return await mode_resolver.get_auto_modes(db)
 
 
 async def query_realtime_auto_rate(
     db: AsyncSession,
     loop_ids: list[str],
 ) -> dict | None:
-    """查询当前时刻处于自动模式的回路占比（实时自控率）。
+    """查询当前时刻处于自动模式的回路占比（实时自控率）.
 
-    从 TDengine 查询每个回路的最新 MODE 值，
-    根据该回路的投用定义（loop_mode_mapping）判断是否算自动模式。
-    无投用定义的回路回退到 ``sys_config`` 中 ``loop.default_auto_modes``
-    配置的全局默认值（默认空集，建议管理员配置）。
+    v6.1：配置驱动的 MODE 值解析。从 TDengine 查询每个回路的最新 raw MODE 值，
+    按回路关联的 DCS 型号（``loop_ledger.dcs_model_id``）解析为标准 MODE 值，
+    再按 ``mode_definition`` 配置表判定是否计入自控率。
+
+    判定优先级：
+    1. 回路投用定义（``loop_mode_mapping``，按回路覆盖，直接匹配 raw mode）
+    2. DCS 型号映射 + ``mode_definition``（配置驱动，raw→standard→is_auto）
+    3. 行业默认 ``{1, 2, 3, 4}``（mode_definition 表为空时回退）
 
     Args:
         db: 异步数据库会话
@@ -166,6 +132,7 @@ async def query_realtime_auto_rate(
         - auto_count: 自动模式回路数
         - manual_count: 手动模式回路数
         - total_count: 有效回路总数
+        - mode_counts: 各标准 MODE 值的回路数（0-4）
         - read_at: 统计时间（ISO 字符串）
         TDengine 不可用或无数据时返回 None
     """
@@ -177,10 +144,10 @@ async def query_realtime_auto_rate(
     from app.models.loop_config import LoopModeMapping
     from app.models.tag import TagRegistry
 
-    # --- 0. 读取全局默认自动 MODE 集合（P1 #15: 替代硬编码 {1,2,3}）---
-    default_auto_modes = await get_default_auto_modes(db)
+    # --- 0. 读取自动 MODE 集合（从 mode_definition 配置表）---
+    auto_modes = await get_default_auto_modes(db)
 
-    # --- 1. 批量查询投用定义，构建 {loop_id: set(auto_mode_values)} ---
+    # --- 1. 批量查询回路投用定义（per-loop 覆盖，向后兼容）---
     mm_result = await db.execute(
         select(LoopModeMapping.loop_id, LoopModeMapping.mode_value).where(
             LoopModeMapping.loop_id.in_(loop_ids),
@@ -191,10 +158,11 @@ async def query_realtime_auto_rate(
     for row in mm_result.all():
         auto_mode_map.setdefault(row.loop_id, set()).add(row.mode_value)
 
-    # --- 2. 查询每个回路的 MODE tag 映射 ---
+    # --- 2. 查询每个回路的 MODE tag 映射 + DCS 型号 ---
     result = await db.execute(
-        select(LoopTagMapping.loop_id, TagRegistry.tag_name)
+        select(LoopTagMapping.loop_id, TagRegistry.tag_name, LoopLedger.dcs_model_id)
         .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+        .outerjoin(LoopLedger, LoopTagMapping.loop_id == LoopLedger.id)
         .where(
             LoopTagMapping.loop_id.in_(loop_ids),
             LoopTagMapping.tag_role == "MODE",
@@ -205,6 +173,15 @@ async def query_realtime_auto_rate(
     if not rows:
         logger.debug("[实时自控率] 无 MODE tag 映射，跳过")
         return None
+
+    # --- 2b. 按型号批量构建 raw→standard 映射表（缓存，避免逐回路查询）---
+    model_ids = {row.dcs_model_id for row in rows if row.dcs_model_id}
+    model_raw_maps: dict[str | None, dict[int, int]] = {}
+    for mid in model_ids:
+        model_raw_maps[mid] = await mode_resolver.build_raw_to_standard_map(db, mid)
+    # 本系统默认映射（dcs_model_id=NULL 的回路使用）
+    default_raw_map = await mode_resolver.build_raw_to_standard_map(db, None)
+    model_raw_maps[None] = default_raw_map
 
     # --- 3. 查询时间窗：最近 5 分钟 ---
     now = datetime.now(UTC)
@@ -224,18 +201,39 @@ async def query_realtime_auto_rate(
     tasks = [_get_latest_mode(row.tag_name) for row in rows]
     mode_values = await asyncio.gather(*tasks)
 
-    # --- 5. 按回路投用定义判断是否算自动 ---
+    # --- 5. 判定自控率 + 统计标准 MODE 分布 ---
+    # mode_counts 按 5 种标准 MODE 值统计（0=手动, 1=自动, 2=串级, 3=远程, 4=先控）
     auto_count = 0
     valid_count = 0
+    mode_counts: dict[int, int] = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
 
-    for row, mode_val in zip(rows, mode_values, strict=False):
-        if mode_val is None:
+    for row, raw_mode in zip(rows, mode_values, strict=False):
+        if raw_mode is None:
             continue
         valid_count += 1
-        # 取该回路的自动 MODE 集合，无配置时回退到 sys_config 全局默认
-        auto_modes = auto_mode_map.get(row.loop_id, default_auto_modes)
-        if mode_val in auto_modes:
+
+        # 解析 raw MODE → standard MODE（按回路的 DCS 型号映射）
+        raw_map = model_raw_maps.get(row.dcs_model_id, default_raw_map)
+        standard_mode = raw_map.get(raw_mode, raw_mode)
+
+        # 判定是否自动：
+        # 1. 优先用回路投用定义（loop_mode_mapping，直接匹配 raw mode）
+        # 2. 无投用定义时，用 standard_mode 匹配 mode_definition 的 auto_modes
+        per_loop_auto = auto_mode_map.get(row.loop_id)
+        if per_loop_auto is not None:
+            is_auto = raw_mode in per_loop_auto
+        else:
+            is_auto = standard_mode in auto_modes
+
+        if is_auto:
             auto_count += 1
+
+        # 统计标准 MODE 分布（用于前端饼图）
+        if standard_mode in mode_counts:
+            mode_counts[standard_mode] += 1
+        else:
+            # 超出 0-4 范围的标准值暂归入手动
+            mode_counts[0] += 1
 
     if valid_count == 0:
         logger.debug("[实时自控率] TDengine 无可用 MODE 数据")
@@ -243,17 +241,19 @@ async def query_realtime_auto_rate(
 
     rate = round(auto_count / valid_count * 100, 2)
     logger.debug(
-        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, 全局默认自动MODE=%s",
+        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, mode_counts=%s, auto_modes=%s",
         valid_count,
         auto_count,
         rate,
-        default_auto_modes,
+        mode_counts,
+        sorted(auto_modes),
     )
     return {
         "rate": Decimal(str(rate)),
         "auto_count": auto_count,
         "manual_count": valid_count - auto_count,
         "total_count": valid_count,
+        "mode_counts": mode_counts,
         "read_at": now.isoformat(),
     }
 

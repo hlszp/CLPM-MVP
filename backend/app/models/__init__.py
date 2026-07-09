@@ -8,12 +8,16 @@ from __future__ import annotations
 
 from app.models.audit import SysAuditLog
 from app.models.base import Base, TimestampMixin
+from app.models.dcs_mode_mapping import DcsModeMapping
+from app.models.dcs_model import DcsModel
+from app.models.dcs_vendor import DcsVendor
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
 from app.models.metric import KpiSnapshotCustom, KpiSnapshotHourly, MetricConfig
 from app.models.metric_data_requirement import ClpmMetricDataRequirement
+from app.models.mode_definition import ModeDefinition
 from app.models.node_kpi import (
     KpiNodeSnapshotDaily,
     KpiNodeSnapshotHourly,
@@ -58,4 +62,9 @@ __all__ = [
     "ReportConfig",
     "SysAuditLog",
     "SysConfig",
+    # DCS 配置（v6.1 新增）
+    "DcsVendor",
+    "DcsModel",
+    "ModeDefinition",
+    "DcsModeMapping",
 ]

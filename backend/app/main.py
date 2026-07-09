@@ -29,6 +29,8 @@ from app.api.v1.endpoints import (
     dashboard,
     dataplanner,
     datasource,
+    # v6.1: DCS 配置管理（品牌/型号/MODE 定义/映射矩阵）
+    dcs,
     diagnosis,
     grading_config,
     health,
@@ -117,9 +119,7 @@ def _start_celery_beat() -> None:
             _celery_beat_process.pid,
         )
     except Exception as exc:
-        logger.warning(
-            "启动 Celery Beat 失败（定时任务将不会自动执行）: %s", exc
-        )
+        logger.warning("启动 Celery Beat 失败（定时任务将不会自动执行）: %s", exc)
 
 
 def _stop_celery_beat() -> None:
@@ -260,6 +260,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(loop_mode_mapping.router)
     v1_router.include_router(loop_type_weight.router)
     v1_router.include_router(loop_level_weight.router)
+    # v6.1：DCS 配置管理（品牌/型号/MODE 定义/映射矩阵）
+    v1_router.include_router(dcs.router)
     # 实时数据查询（从 Redis 缓存读取 SignalR 订阅数据）
     v1_router.include_router(realtime.router)
     v1_router.include_router(ws_realtime.router)

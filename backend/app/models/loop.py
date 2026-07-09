@@ -115,6 +115,15 @@ class LoopLedger(Base):
             "应用层校验：<= OP Tag range_max 且 > op_output_lower_limit"
         ),
     )
+    # v6.1 新增字段：关联 DCS 型号（用于 MODE 值映射）
+    # 设计依据：用户需求"回路配置只对应型号，型号全局唯一"
+    # NULL 表示使用本系统默认 MODE 映射（dcs_mode_mapping.dcs_model_id IS NULL）
+    dcs_model_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("dcs_model.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联 DCS 型号 ID；NULL=使用本系统默认 MODE 映射",
+    )
 
     __table_args__ = (
         CheckConstraint(
