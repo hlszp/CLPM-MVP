@@ -194,7 +194,8 @@ async def _get_control_mode_stats(
 ) -> dict[str, int]:
     """从全量回路中统计控制方式。"""
     from app.services.monitor import _mode_value_to_label, _load_mode_mappings, get_subscriber
-    from app.models.tag import LoopTagMapping, TagRegistry
+    from app.models.loop import LoopTagMapping
+    from app.models.tag import TagRegistry
     import logging
 
     logger = logging.getLogger(__name__)
@@ -228,7 +229,7 @@ async def _get_control_mode_stats(
     redis_cache: dict[str, dict] = {}
     try:
         subscriber = get_subscriber()
-        if tag_names:
+        if subscriber and tag_names:
             cached_list = await subscriber.get_cached_values(tag_names)
             for item in cached_list:
                 tc = item.get("tagCode")
@@ -260,7 +261,7 @@ async def _get_control_mode_stats(
                     except (ValueError, TypeError):
                         pass
 
-        stats[mode_label] = (stats[mode_label] or 0) + 1
+        stats[mode_label] = stats.get(mode_label, 0) + 1
 
     return stats
 
