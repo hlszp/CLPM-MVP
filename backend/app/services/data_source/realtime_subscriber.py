@@ -195,8 +195,7 @@ class RealtimeSubscriber:
 
         # 发送订阅请求（标准 SignalR JSON Hub Protocol: type=1 Invocation）
         subscribe_msg = (
-            json.dumps({"type": 1, "target": "SubscribeAsync", "arguments": [tag_codes]})
-            + "\x1e"
+            json.dumps({"type": 1, "target": "SubscribeAsync", "arguments": [tag_codes]}) + "\x1e"
         )
         await self._ws.send(subscribe_msg)
         logger.info("已订阅 %d 个 Tag", len(tag_codes))
