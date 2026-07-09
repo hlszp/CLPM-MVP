@@ -149,7 +149,7 @@ async def get_loop_type_stats(db: AsyncSession, plant_node_id: str | None = None
         plant_node_id: 装置/单元 ID，为 None 时统计全部回路
 
     Returns:
-        各回路类型的统计数量字典
+        各回路类型的统计数量字典 + 控制方式统计
     """
     conditions = []
     if plant_node_id:
@@ -165,7 +165,7 @@ async def get_loop_type_stats(db: AsyncSession, plant_node_id: str | None = None
     result = await db.execute(stmt)
     rows = result.all()
 
-    stats: dict[str, int] = {
+    type_stats: dict[str, int] = {
         "TEMPERATURE": 0,
         "PRESSURE": 0,
         "LEVEL": 0,
@@ -176,10 +176,91 @@ async def get_loop_type_stats(db: AsyncSession, plant_node_id: str | None = None
     }
     for loop_type, count in rows:
         key = loop_type or "OTHER"
-        if key in stats:
-            stats[key] = int(count)
+        if key in type_stats:
+            type_stats[key] = int(count)
         else:
-            stats["OTHER"] += int(count)
+            type_stats["OTHER"] += int(count)
+
+    mode_stats = await _get_control_mode_stats(db, conditions)
+
+    return {
+        "loopTypeStats": type_stats,
+        "controlModeStats": mode_stats,
+    }
+
+
+async def _get_control_mode_stats(
+    db: AsyncSession, conditions: list[Any],
+) -> dict[str, int]:
+    """从全量回路中统计控制方式。"""
+    from app.services.monitor import _mode_value_to_label, _load_mode_mappings, get_subscriber
+    from app.models.tag import LoopTagMapping, TagRegistry
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    all_loops_stmt = select(LoopLedger).where(LoopLedger.is_active.is_(True), *conditions)
+    all_result = await db.execute(all_loops_stmt)
+    all_loops = all_result.scalars().all()
+
+    if not all_loops:
+        return {}
+
+    loop_ids = [str(l.id) for l in all_loops]
+
+    mode_mapping_map = await _load_mode_mappings(db, loop_ids)
+
+    mappings_result = await db.execute(
+        select(LoopTagMapping).where(LoopTagMapping.loop_id.in_(loop_ids), LoopTagMapping.tag_role == "MODE")
+    )
+    mode_mappings: dict[str, LoopTagMapping] = {}
+    for m in mappings_result.scalars().all():
+        mode_mappings[str(m.loop_id)] = m
+
+    tag_ids = [str(m.tag_id) for m in mode_mappings.values()]
+    tags_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
+    tags_map: dict[str, TagRegistry] = {}
+    for t in tags_result.scalars().all():
+        tags_map[str(t.id)] = t
+
+    tag_names = [t.tag_name for t in tags_map.values() if t.tag_name]
+
+    redis_cache: dict[str, dict] = {}
+    try:
+        subscriber = get_subscriber()
+        if tag_names:
+            cached_list = await subscriber.get_cached_values(tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc:
+                    redis_cache[tc] = item
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+
+    stats: dict[str, int] = {}
+    for loop in all_loops:
+        loop_id = str(loop.id)
+        mode_label = "Unknown"
+
+        mapping = mode_mappings.get(loop_id)
+        if mapping:
+            tag = tags_map.get(str(mapping.tag_id))
+            if tag and tag.tag_name:
+                cached = redis_cache.get(tag.tag_name)
+                if cached and "value" in cached:
+                    try:
+                        mode_val = float(cached["value"])
+                        mode_label = _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id)) or "Unknown"
+                    except (ValueError, TypeError):
+                        pass
+                elif tag.last_value is not None:
+                    try:
+                        mode_val = float(tag.last_value)
+                        mode_label = _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id)) or "Unknown"
+                    except (ValueError, TypeError):
+                        pass
+
+        stats[mode_label] = (stats[mode_label] or 0) + 1
 
     return stats
 
