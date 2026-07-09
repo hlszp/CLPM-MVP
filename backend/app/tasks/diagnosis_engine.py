@@ -149,7 +149,10 @@ async def _do_run_diagnosis() -> dict:
     与手动触发的任务记录统一管理。
     """
     from app.core.db import AsyncSessionLocal
-    from app.core.tdengine import query_trend_data
+    from app.services.data_source.factory import get_provider
+
+    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
+    query_trend_fn = get_provider().query_trend_data
 
     now = datetime.now(UTC)
     ts_end = now.replace(minute=0, second=0, microsecond=0)
@@ -220,7 +223,7 @@ async def _do_run_diagnosis() -> dict:
                         diag_configs=diag_configs,
                         ts_start=ts_start,
                         ts_end=ts_end,
-                        query_trend_fn=query_trend_data,
+                        query_trend_fn=query_trend_fn,
                         task_id=task_id,
                     )
                     await worker_db.commit()
@@ -302,7 +305,10 @@ async def _do_diagnose_single_loop(
     - RUNNING → SUCCESS / FAILED（完成时）
     """
     from app.core.db import AsyncSessionLocal
-    from app.core.tdengine import query_trend_data
+    from app.services.data_source.factory import get_provider
+
+    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
+    query_trend_fn = get_provider().query_trend_data
 
     async with AsyncSessionLocal() as db:
         # 加载诊断配置
@@ -338,7 +344,7 @@ async def _do_diagnose_single_loop(
                 diag_configs=diag_configs,
                 ts_start=ts_start_dt,
                 ts_end=ts_end_dt,
-                query_trend_fn=query_trend_data,
+                query_trend_fn=query_trend_fn,
                 task_id=task_id,
             )
             await db.commit()

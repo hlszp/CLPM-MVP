@@ -435,8 +435,10 @@ class TestWaveform:
             for i in range(10)
         ]
 
-        with patch("app.services.waveform.query_trend_data", new_callable=AsyncMock) as mock_query:
-            mock_query.return_value = pv_data
+        with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
+            mock_provider = MagicMock()
+            mock_provider.query_trend_data = AsyncMock(return_value=pv_data)
+            mock_get_provider.return_value = mock_provider
             with mock_current_user(TEST_USERS["admin"]):
                 resp = client.get(
                     f"/api/v1/timeseries/{loop.id}/waveform",
@@ -489,8 +491,10 @@ class TestWaveform:
             {"ts": "2026-06-22T08:00:02Z", "value": 52.0, "quality": "GOOD"},
         ]
 
-        with patch("app.services.waveform.query_trend_data", new_callable=AsyncMock) as mock_query:
-            mock_query.return_value = pv_data
+        with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
+            mock_provider = MagicMock()
+            mock_provider.query_trend_data = AsyncMock(return_value=pv_data)
+            mock_get_provider.return_value = mock_provider
             with mock_current_user(TEST_USERS["admin"]):
                 resp = client.get(
                     f"/api/v1/timeseries/{loop.id}/waveform",

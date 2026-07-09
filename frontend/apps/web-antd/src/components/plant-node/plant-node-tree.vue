@@ -313,10 +313,13 @@ async function loadTree() {
       validKeys.has(k),
     );
 
+    // 仅在之前有选中节点但被清理时才 emit select(null)，
+    // 首次加载 selectedKeys 本就为空，不应触发父组件重复加载
+    const hadSelection = selectedKeys.value.length > 0;
     selectedKeys.value = selectedKeys.value.filter((k) =>
       validKeys.has(k),
     );
-    if (selectedKeys.value.length === 0) {
+    if (hadSelection && selectedKeys.value.length === 0) {
       selectedNode.value = null;
       emit('select', null);
     }

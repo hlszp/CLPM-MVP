@@ -139,10 +139,14 @@ async def query_realtime_auto_rate(
     if not loop_ids:
         return None
 
-    from app.core.tdengine import query_trend_data
     from app.models.loop import LoopTagMapping
     from app.models.loop_config import LoopModeMapping
     from app.models.tag import TagRegistry
+    from app.services.data_source.factory import get_provider
+
+    # 通过数据源工厂获取 Provider（根据 DATA_SOURCE_TYPE 配置自动选择
+    # tdengine / remote_api，支持数据链路切换）
+    provider = get_provider()
 
     # --- 0. 读取自动 MODE 集合（从 mode_definition 配置表）---
     auto_modes = await get_default_auto_modes(db)
@@ -191,7 +195,7 @@ async def query_realtime_auto_rate(
     # --- 4. 并发查询所有回路的最新 MODE 值 ---
     async def _get_latest_mode(tag_name: str) -> int | None:
         try:
-            data = await query_trend_data(tag_name, start_time, end_time)
+            data = await provider.query_trend_data(tag_name, start_time, end_time)
             if data:
                 return int(data[-1]["value"])
         except Exception as exc:  # noqa: BLE001

@@ -395,9 +395,11 @@ class TestCheckNodeMonitorTriggerMatch:
         async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
             return [{"ts": "2026-06-24T08:00:00Z", "value": "ON", "quality": "GOOD"}]
 
+        mock_provider = MagicMock()
+        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.loop_batch.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
+            "app.services.data_source.factory.get_provider",
+            return_value=mock_provider,
         ):
             result = await check_node_monitor_trigger(db, "node-001")
 
@@ -424,9 +426,11 @@ class TestCheckNodeMonitorTriggerMatch:
         async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
             return [{"ts": "2026-06-24T08:00:00Z", "value": 1, "quality": "GOOD"}]
 
+        mock_provider = MagicMock()
+        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.loop_batch.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
+            "app.services.data_source.factory.get_provider",
+            return_value=mock_provider,
         ):
             result = await check_node_monitor_trigger(db, "node-001")
 
@@ -462,9 +466,11 @@ class TestCheckNodeMonitorTriggerMismatch:
         async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
             return [{"ts": "2026-06-24T08:00:00Z", "value": "OFF", "quality": "GOOD"}]
 
+        mock_provider = MagicMock()
+        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.loop_batch.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
+            "app.services.data_source.factory.get_provider",
+            return_value=mock_provider,
         ):
             result = await check_node_monitor_trigger(db, "node-001")
 
@@ -491,9 +497,11 @@ class TestCheckNodeMonitorTriggerMismatch:
         async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
             return []
 
+        mock_provider = MagicMock()
+        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.loop_batch.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
+            "app.services.data_source.factory.get_provider",
+            return_value=mock_provider,
         ):
             result = await check_node_monitor_trigger(db, "node-001")
 
