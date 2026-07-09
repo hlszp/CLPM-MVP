@@ -166,9 +166,25 @@ class RealtimeSubscriber:
                 await asyncio.sleep(settings.SIGNALR_RECONNECT_INTERVAL)
 
     async def _connect_and_subscribe(self) -> None:
-        """连接 Hub 并订阅数据."""
+        """连接 Hub 并订阅数据.
+
+        SignalR JSON Hub Protocol 流程：
+        1. WebSocket 连接
+        2. 发送握手 {"protocol":"json","version":1}\\x1e
+        3. 接收握手响应 {}\\x1e（成功）或 {"error":"..."}\\x1e（失败）
+        4. 之后所有消息以 \\x1e (Record Separator) 分帧
+        """
         self._ws = await websockets.connect(settings.SIGNALR_HUB_URL)
         logger.info("已连接实时数据 Hub: %s", settings.SIGNALR_HUB_URL)
+
+        # SignalR 协议握手
+        handshake_msg = json.dumps({"protocol": "json", "version": 1}) + "\x1e"
+        await self._ws.send(handshake_msg)
+        raw = await self._ws.recv()
+        handshake = json.loads(raw.rstrip("\x1e"))
+        if "error" in handshake:
+            raise ConnectionError(f"SignalR 握手失败: {handshake['error']}")
+        logger.info("SignalR 握手成功")
 
         # 查询全部活跃 Tag 并订阅
         tag_codes = await self._get_active_tags()
@@ -177,35 +193,44 @@ class RealtimeSubscriber:
             await asyncio.sleep(30)
             return
 
-        # 发送订阅请求
-        subscribe_msg = json.dumps(
-            {
-                "method": "SubscribeAsync",
-                "args": [tag_codes],
-            }
+        # 发送订阅请求（标准 SignalR JSON Hub Protocol: type=1 Invocation）
+        subscribe_msg = (
+            json.dumps({"type": 1, "target": "SubscribeAsync", "arguments": [tag_codes]})
+            + "\x1e"
         )
         await self._ws.send(subscribe_msg)
         logger.info("已订阅 %d 个 Tag", len(tag_codes))
         self._subscribed_tags = set(tag_codes)
 
-        # 接收初始响应
+        # 接收初始响应（可能包含多条 \x1e 分隔的消息）
         raw = await self._ws.recv()
-        initial = json.loads(raw)
-        if initial.get("code") == 200 and initial.get("data"):
-            for item in initial["data"]:
-                await self._cache_value(item)
+        for part in raw.split("\x1e"):
+            if not part:
+                continue
+            initial = json.loads(part)
+            # 兼容两种格式：标准 SignalR 或自定义
+            data = initial.get("data") or initial.get("arguments", [None])[0]
+            if initial.get("code") == 200 and data:
+                for item in data:
+                    await self._cache_value(item)
 
-        # 持续接收推送
+        # 持续接收推送（一条 WebSocket 帧可能包含多条 \x1e 分隔的消息）
         async for raw_message in self._ws:
-            try:
-                msg = json.loads(raw_message)
-                if msg.get("event") == "updateRealValues":
-                    for item in msg.get("data", []):
-                        await self._cache_value(item)
-            except json.JSONDecodeError:
-                logger.warning("收到非 JSON 消息: %s", raw_message[:100])
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("处理实时数据消息失败: %s", exc)
+            for part in raw_message.split("\x1e"):
+                if not part:
+                    continue
+                try:
+                    msg = json.loads(part)
+                    # 兼容标准 SignalR（target/arguments）和自定义（event/data）两种格式
+                    target = msg.get("target") or msg.get("event")
+                    if target == "updateRealValues":
+                        data = msg.get("data") or msg.get("arguments", [[]])[0]
+                        for item in data:
+                            await self._cache_value(item)
+                except json.JSONDecodeError:
+                    logger.warning("收到非 JSON 消息: %s", part[:100])
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("处理实时数据消息失败: %s", exc)
 
     async def _get_active_tags(self) -> list[str]:
         """查询数据库获取全部活跃 Tag 的 tag_name."""
