@@ -353,24 +353,61 @@ const plantNodeOptions = computed(() => {
 });
 
 const columns: TableColumnsType = [
-  { title: '回路编号', dataIndex: 'tagName', key: 'tagName', width: 160 },
+  { title: '回路编号', dataIndex: 'tagName', key: 'tagName', width: 160, align: 'center' },
   {
     title: '名称',
     dataIndex: 'description',
     key: 'description',
     ellipsis: true,
+    align: 'center',
   },
-  { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 120 },
+  { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 120, align: 'center' },
   // v6.1 新增：测量量程 / 单位
   { title: '测量量程', key: 'pvRange', width: 130, align: 'center' },
   { title: '单位', key: 'pvUnit', width: 70, align: 'center' },
-  { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 100 },
-  { title: '设定值 SP', key: 'sp', width: 120 },
-  { title: '测量值 PV', key: 'pv', width: 120 },
-  { title: '输出值 OP', key: 'op', width: 120 },
-  { title: '控制方式', key: 'mode', width: 110 },
-  { title: '性能指数', dataIndex: 'score', key: 'score', width: 100 },
-  { title: '操作', key: 'action', width: 160, fixed: 'right' },
+  { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 100, align: 'center' },
+  {
+    title: '设定值 SP',
+    key: 'sp',
+    width: 120,
+    align: 'right',
+    customRender: ({ record }) => {
+      const val = (record as LoopApi.MonitorListItem).currentValues?.sp;
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
+    },
+  },
+  {
+    title: '测量值 PV',
+    key: 'pv',
+    width: 120,
+    align: 'right',
+    customRender: ({ record }) => {
+      const val = (record as LoopApi.MonitorListItem).currentValues?.pv;
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
+    },
+  },
+  {
+    title: '输出值 OP',
+    key: 'op',
+    width: 120,
+    align: 'right',
+    customRender: ({ record }) => {
+      const val = (record as LoopApi.MonitorListItem).currentValues?.op;
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
+    },
+  },
+  { title: '控制方式', key: 'mode', width: 110, align: 'center' },
+  {
+    title: '性能指数',
+    dataIndex: 'score',
+    key: 'score',
+    width: 100,
+    align: 'right',
+    customRender: ({ text }) => {
+      return text !== null && text !== undefined ? Number(text).toFixed(2) : '-';
+    },
+  },
+  { title: '操作', key: 'action', width: 160, fixed: 'right', align: 'center' },
 ];
 
 /** 提取列 key 为字符串 */
