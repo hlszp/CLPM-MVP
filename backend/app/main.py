@@ -30,6 +30,8 @@ from app.api.v1.endpoints import (
     dataplanner,
     datasource,
     diagnosis,
+    # v6.1: DCS 配置管理（品牌/型号/MODE 定义/映射矩阵）
+    dcs,
     grading_config,
     health,
     loop_level_weight,
@@ -260,6 +262,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(loop_mode_mapping.router)
     v1_router.include_router(loop_type_weight.router)
     v1_router.include_router(loop_level_weight.router)
+    # v6.1：DCS 配置管理（品牌/型号/MODE 定义/映射矩阵）
+    v1_router.include_router(dcs.router)
     # 实时数据查询（从 Redis 缓存读取 SignalR 订阅数据）
     v1_router.include_router(realtime.router)
     v1_router.include_router(ws_realtime.router)
