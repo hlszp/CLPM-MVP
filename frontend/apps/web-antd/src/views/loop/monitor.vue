@@ -249,6 +249,7 @@ const columns: TableColumnsType = [
     key: 'description',
     ellipsis: true,
   },
+  { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 120 },
   // v6.1 新增：测量量程 / 单位
   { title: '测量量程', key: 'pvRange', width: 130, align: 'center' },
   { title: '单位', key: 'pvUnit', width: 70, align: 'center' },
