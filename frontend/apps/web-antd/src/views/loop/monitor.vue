@@ -101,7 +101,7 @@ const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
 };
 
 const loopTypeOptions = [
-  { label: '全部', value: undefined },
+  { label: '全部', value: '' },
   ...Object.entries(LOOP_TYPE_MAP).map(([value, { label }]) => ({
     label,
     value,
@@ -295,9 +295,9 @@ async function loadLoopTypeStats() {
 /** 点击统计卡片自动筛选 */
 function handleTypeCardClick(type: string) {
   if (type === 'ALL') {
-    query.loopType = undefined;
+    query.loopType = '';
   } else {
-    query.loopType = query.loopType === type ? undefined : type;
+    query.loopType = query.loopType === type ? '' : type;
   }
   query.page = 1;
   loadList();
@@ -305,7 +305,7 @@ function handleTypeCardClick(type: string) {
 
 const query = reactive({
   plantNodeId: undefined as string | undefined,
-  loopType: undefined as string | undefined,
+  loopType: '' as string | undefined,
   keyword: '',
   page: 1,
   pageSize: 20,
@@ -609,7 +609,7 @@ async function loadList() {
   try {
     const data = await getLoopMonitorListApi({
       plantNodeId: query.plantNodeId,
-      loopType: query.loopType as LoopApi.LoopType | undefined,
+      loopType: query.loopType || undefined,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -980,9 +980,9 @@ onUnmounted(() => {
           <div
             class="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
             :style="{
-              backgroundColor: !query.loopType ? '#4B556315' : '#4B556308',
+              backgroundColor: query.loopType === '' ? '#4B556315' : '#4B556308',
               borderLeft: `3px solid #4B5563`,
-              borderBottom: !query.loopType ? `2px solid #4B5563` : 'none',
+              borderBottom: query.loopType === '' ? `2px solid #4B5563` : 'none',
             }"
             @click="handleTypeCardClick('ALL')"
           >
@@ -990,7 +990,7 @@ onUnmounted(() => {
               class="w-2 h-2 rounded-full"
               style="background-color: #4B5563"
             ></span>
-            <span class="text-sm text-gray-600 font-medium">合计</span>
+            <span class="text-sm text-gray-600 font-medium">全部</span>
             <span class="text-sm font-bold" style="color: #4B5563">
               {{ Object.values(loopTypeStats).reduce((sum, count) => sum + count, 0) }}
             </span>
