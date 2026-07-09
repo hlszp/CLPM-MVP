@@ -524,9 +524,35 @@ function renderTrendChart() {
 
 function renderStatusPieChart() {
   const rt = autoRateRt.value;
-  const autoCount = rt?.autoCount ?? 0;
-  const manualCount = rt?.manualCount ?? 0;
   const total = rt?.totalCount ?? 0;
+
+  // 5 种标准 MODE 值的回路数与中文标签 / 配色（对齐 app.constants.mode）
+  // 0=手动, 1=自动, 2=串级, 3=远程, 4=先控
+  const MODE_LABELS: Record<number, string> = {
+    0: '手动',
+    1: '自动',
+    2: '串级',
+    3: '远程',
+    4: '先控',
+  };
+  const MODE_COLORS: Record<number, string> = {
+    0: '#d4380d', // 红橙 - 手动（警示）
+    1: '#52c41a', // 绿 - 自动（正常）
+    2: '#1890ff', // 蓝 - 串级
+    3: '#722ed1', // 紫 - 远程
+    4: '#13c2c2', // 青 - 先控
+  };
+
+  const modeCounts = rt?.modeCounts ?? {};
+  const pieData = Object.keys(MODE_LABELS).map((modeKey) => {
+    const mode = Number.parseInt(modeKey, 10);
+    const count = modeCounts[modeKey] ?? modeCounts[mode] ?? 0;
+    return {
+      value: count,
+      name: MODE_LABELS[mode],
+      itemStyle: { color: MODE_COLORS[mode] },
+    };
+  });
 
   renderStatusPie({
     tooltip: {
@@ -540,7 +566,7 @@ function renderStatusPieChart() {
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: ['自动模式', '手动模式'],
+      data: Object.values(MODE_LABELS),
     },
     series: [
       {
@@ -558,10 +584,8 @@ function renderStatusPieChart() {
           label: { show: true, fontSize: 12, fontWeight: 'bold', color: chartColors.value.textStrong },
         },
         labelLine: { show: false },
-        data: [
-          { value: autoCount, name: '自动模式', itemStyle: { color: themeColors.value.SUCCESS } },
-          { value: manualCount, name: '手动模式', itemStyle: { color: themeColors.value.WARNING } },
-        ].filter((d) => (d.value ?? 0) > 0 || total === 0),
+        // 仅展示有数据的 MODE 值（或全部为 0 时显示全部以便占位）
+        data: total === 0 ? pieData : pieData.filter((d) => (d.value ?? 0) > 0),
       },
     ],
   });

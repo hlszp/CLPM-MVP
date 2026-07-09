@@ -117,13 +117,16 @@ async def get_auto_rate_rt_endpoint(
     - ``autoCount``: 自动模式回路数
     - ``manualCount``: 手动模式回路数
     - ``totalCount``: 有效回路总数
+    - ``modeCounts``: 5 种 MODE 各自的回路数（dict[int,int]，key 为 0/1/2/3/4）
     - ``readAt``: 统计时间（ISO 字符串）
 
     若 TDengine 不可用或无 MODE 数据，返回 ``rate=null``。
 
     设计依据：FDS v5.1 §5.3.6, UIUX v5.3 ①
 
-    v6.1 更新：支持递归聚合当前节点及所有下属节点的回路
+    v6.1 更新：
+    - 支持递归聚合当前节点及所有下属节点的回路
+    - modeCounts 字段用于前端饼图按 5 种 MODE 中文展示（0-手动/1-自动/2-串级/3-远程/4-先控）
     """
     from app.services.node_performance import collect_descendant_loop_ids, query_realtime_auto_rate
 
@@ -142,6 +145,7 @@ async def get_auto_rate_rt_endpoint(
                 "autoCount": 0,
                 "manualCount": 0,
                 "totalCount": 0,
+                "modeCounts": {"0": 0, "1": 0, "2": 0, "3": 0, "4": 0},
                 "readAt": None,
                 "message": "无活跃回路",
             }
@@ -155,6 +159,7 @@ async def get_auto_rate_rt_endpoint(
                 "autoCount": 0,
                 "manualCount": 0,
                 "totalCount": 0,
+                "modeCounts": {"0": 0, "1": 0, "2": 0, "3": 0, "4": 0},
                 "readAt": None,
                 "message": "TDengine 不可用或无 MODE 数据",
             }
@@ -166,6 +171,7 @@ async def get_auto_rate_rt_endpoint(
             "autoCount": data["auto_count"],
             "manualCount": data["manual_count"],
             "totalCount": data["total_count"],
+            "modeCounts": {str(k): v for k, v in data["mode_counts"].items()},
             "readAt": data["read_at"],
         }
     )

@@ -92,21 +92,20 @@ async def collect_descendant_loop_ids(
 # 实时自控率查询
 # ---------------------------------------------------------------------------
 
+from app.constants.mode import AUTO_MODES as DEFAULT_AUTO_MODES
 
-#: sys_config 中存储全局默认自动 MODE 集合的 key
+#: sys_config 中存储全局默认自动 MODE 集合的 key（可选覆盖）
 DEFAULT_AUTO_MODES_KEY = "loop.default_auto_modes"
 
 
 async def get_default_auto_modes(db: AsyncSession) -> set[int]:
-    """从 sys_config 读取全局默认自动 MODE 集合（P1 #15 修正）。
+    """读取全局默认自动 MODE 集合。
 
-    替代原硬编码 ``{1, 2, 3}``，管理员可通过 sys_config 表配置：
-    - key: ``loop.default_auto_modes``
-    - value: JSON 数组字符串，如 ``"[1, 2, 3]"``
+    优先从 sys_config 读取管理员配置（可选覆盖非标准 DCS 场景）；
+    无配置或解析失败时回退到行业默认 ``{1, 2, 3, 4}``（对齐算法说明 §4.0.3 + APC）。
 
-    无配置或解析失败时返回空集（不假设默认值），
-    此时无 LoopModeMapping 配置的回路不计入自动模式回路数。
-    此严格模式提醒管理员必须配置 sys_config.loop.default_auto_modes。
+    与 ``app.constants.mode.AUTO_MODES`` 保持一致，
+    确保实时统计与历史 KPI 计算口径统一。
 
     Returns:
         全局默认自动 MODE 值集合
@@ -118,11 +117,12 @@ async def get_default_auto_modes(db: AsyncSession) -> set[int]:
     )
     raw = result.scalar_one_or_none()
     if not raw:
-        logger.info(
-            "[实时自控率] sys_config.%s 未配置，回退空集（严格模式）",
+        logger.debug(
+            "[实时自控率] sys_config.%s 未配置，使用行业默认 %s",
             DEFAULT_AUTO_MODES_KEY,
+            sorted(DEFAULT_AUTO_MODES),
         )
-        return set()
+        return set(DEFAULT_AUTO_MODES)
     try:
         import json
 
@@ -130,19 +130,21 @@ async def get_default_auto_modes(db: AsyncSession) -> set[int]:
         if isinstance(modes, list):
             return {int(m) for m in modes}
         logger.warning(
-            "[实时自控率] sys_config.%s 值非 JSON 数组（%r），回退空集",
+            "[实时自控率] sys_config.%s 值非 JSON 数组（%r），回退行业默认 %s",
             DEFAULT_AUTO_MODES_KEY,
             raw,
+            sorted(DEFAULT_AUTO_MODES),
         )
-        return set()
+        return set(DEFAULT_AUTO_MODES)
     except (ValueError, TypeError) as exc:
         logger.warning(
-            "[实时自控率] sys_config.%s 值无效（%r），回退空集: %s",
+            "[实时自控率] sys_config.%s 值无效（%r），回退行业默认 %s: %s",
             DEFAULT_AUTO_MODES_KEY,
             raw,
+            sorted(DEFAULT_AUTO_MODES),
             exc,
         )
-        return set()
+        return set(DEFAULT_AUTO_MODES)
 
 
 async def query_realtime_auto_rate(
@@ -151,10 +153,10 @@ async def query_realtime_auto_rate(
 ) -> dict | None:
     """查询当前时刻处于自动模式的回路占比（实时自控率）。
 
-    从 TDengine 查询每个回路的最新 MODE 值，
-    根据该回路的投用定义（loop_mode_mapping）判断是否算自动模式。
-    无投用定义的回路回退到 ``sys_config`` 中 ``loop.default_auto_modes``
-    配置的全局默认值（默认空集，建议管理员配置）。
+    从 TDengine 查询每个回路的最新 MODE 值，按以下优先级判定是否自动：
+    1. 回路投用定义（``loop_mode_mapping``，按回路覆盖）
+    2. ``sys_config.loop.default_auto_modes``（全局覆盖，可选）
+    3. 行业默认 ``{1, 2, 3}``（对齐算法说明 §4.0.3，与 KPI 算法一致）
 
     Args:
         db: 异步数据库会话
@@ -225,8 +227,11 @@ async def query_realtime_auto_rate(
     mode_values = await asyncio.gather(*tasks)
 
     # --- 5. 按回路投用定义判断是否算自动 ---
+    # 同时按 5 种标准 MODE 值统计回路数（用于前端饼图中文展示）
+    # 0=手动, 1=自动, 2=串级, 3=远程, 4=先控
     auto_count = 0
     valid_count = 0
+    mode_counts: dict[int, int] = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
 
     for row, mode_val in zip(rows, mode_values, strict=False):
         if mode_val is None:
@@ -236,6 +241,12 @@ async def query_realtime_auto_rate(
         auto_modes = auto_mode_map.get(row.loop_id, default_auto_modes)
         if mode_val in auto_modes:
             auto_count += 1
+        # 统计各 MODE 值的回路数（仅记录 0-4 范围内的标准值，超范围归入手动）
+        if mode_val in mode_counts:
+            mode_counts[mode_val] += 1
+        else:
+            # 未知 MODE 值（如 DCS 推送非标准值）暂归入手动
+            mode_counts[0] += 1
 
     if valid_count == 0:
         logger.debug("[实时自控率] TDengine 无可用 MODE 数据")
@@ -243,10 +254,12 @@ async def query_realtime_auto_rate(
 
     rate = round(auto_count / valid_count * 100, 2)
     logger.debug(
-        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, 全局默认自动MODE=%s",
+        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, "
+        "mode_counts=%s, 全局默认自动MODE=%s",
         valid_count,
         auto_count,
         rate,
+        mode_counts,
         default_auto_modes,
     )
     return {
@@ -254,6 +267,7 @@ async def query_realtime_auto_rate(
         "auto_count": auto_count,
         "manual_count": valid_count - auto_count,
         "total_count": valid_count,
+        "mode_counts": mode_counts,
         "read_at": now.isoformat(),
     }
 

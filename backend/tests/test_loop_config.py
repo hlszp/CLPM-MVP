@@ -558,8 +558,8 @@ class TestRealtimeAutoRate:
 
     P1 #15 修正后，自动 MODE 来源优先级：
     1. LoopModeMapping 投用定义（回路级，最高优先级）
-    2. sys_config.loop.default_auto_modes（全局默认，无配置时为空集）
-    3. 空集 → 任何 MODE 值都不算自动（严格模式）
+    2. sys_config.loop.default_auto_modes（全局覆盖，可选）
+    3. 行业默认 {1, 2, 3}（无任何配置时回退，对齐算法说明 §4.0.3）
 
     DB execute 调用顺序（3 次）：
     1. sys_config 查询（scalar_one_or_none）
@@ -569,15 +569,15 @@ class TestRealtimeAutoRate:
 
     @pytest.mark.asyncio
     async def test_realtime_auto_rate_with_loop_config(self) -> None:
-        """有投用定义时按回路配置判断（sys_config 空集，不参与）。
+        """有投用定义时按回路配置判断（sys_config 空 → 行业默认 {1,2,3,4}）。
 
         loop-001 配置自动 MODE={1,2}（LoopModeMapping），
-        loop-002 无配置且 sys_config 空 → 默认空集。
-        TAG_001 返回 mode=1（在 {1,2} → 自动），TAG_002 返回 mode=4（不在 {} → 非自动）。
+        loop-002 无配置 → 回退行业默认 {1,2,3,4}。
+        TAG_001 返回 mode=1（在 {1,2} → 自动），TAG_002 返回 mode=0（不在 {1,2,3,4} → 手动）。
         期望：1/2 = 50.0%
         """
         db = AsyncMock()
-        # 1st execute: sys_config 查询（无配置 → 空集）
+        # 1st execute: sys_config 查询（无配置 → 行业默认 {1,2,3,4}）
         # 2nd execute: LoopModeMapping 投用定义（loop-001 有配置）
         mm_rows = [
             MagicMock(loop_id="loop-001", mode_value=1),
@@ -600,7 +600,7 @@ class TestRealtimeAutoRate:
             if tag_name == "TAG_001":
                 return [{"ts": "2026-06-22T08:00:00Z", "value": 1}]
             if tag_name == "TAG_002":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 4}]
+                return [{"ts": "2026-06-22T08:00:00Z", "value": 0}]
             return []
 
         with patch(
@@ -614,6 +614,12 @@ class TestRealtimeAutoRate:
         assert result["auto_count"] == 1
         assert result["manual_count"] == 1
         assert result["total_count"] == 2
+        # mode_counts 验证：mode=1 一个回路，mode=0 一个回路
+        assert result["mode_counts"][0] == 1
+        assert result["mode_counts"][1] == 1
+        assert result["mode_counts"][2] == 0
+        assert result["mode_counts"][3] == 0
+        assert result["mode_counts"][4] == 0
 
     @pytest.mark.asyncio
     async def test_realtime_auto_rate_with_sysconfig_default(self) -> None:
@@ -658,15 +664,16 @@ class TestRealtimeAutoRate:
         assert result["total_count"] == 2
 
     @pytest.mark.asyncio
-    async def test_realtime_auto_rate_empty_default_no_auto(self) -> None:
-        """无任何配置（sys_config 空 + 无 LoopModeMapping）→ 严格 0%。
+    async def test_realtime_auto_rate_empty_default_uses_industry_default(self) -> None:
+        """无任何配置（sys_config 空 + 无 LoopModeMapping）→ 回退行业默认 {1,2,3}。
 
-        P1 #15 修正：移除硬编码 {1,2,3} 后，
-        无 sys_config 配置时默认空集，任何 MODE 值都不算自动。
-        此场景提醒管理员必须配置 sys_config.loop.default_auto_modes。
+        修正：原 P1 #15 严格空集设计已废弃，
+        现默认与算法说明 §4.0.3 + KPI 计算器（auto_mode.py）保持一致：
+        MODE=1/2/3 计入自动，MODE=0 计入手动。
+        sys_config.loop.default_auto_modes 仅作可选覆盖，不强制配置。
         """
         db = AsyncMock()
-        # 1st execute: sys_config 查询（无配置 → 空集）
+        # 1st execute: sys_config 查询（无配置 → 行业默认 {1,2,3}）
         # 2nd execute: LoopModeMapping（空）
         # 3rd execute: MODE tag 映射
         tag_rows = [
@@ -695,16 +702,16 @@ class TestRealtimeAutoRate:
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
         assert result is not None
-        assert result["rate"] == Decimal("0.00")
-        assert result["auto_count"] == 0
-        assert result["manual_count"] == 2
+        assert result["rate"] == Decimal("100.00")
+        assert result["auto_count"] == 2
+        assert result["manual_count"] == 0
         assert result["total_count"] == 2
 
     @pytest.mark.asyncio
     async def test_realtime_auto_rate_invalid_sysconfig_value(self) -> None:
-        """sys_config 值非法（非 JSON 数组）时回退空集并记录告警。
+        """sys_config 值非法（非 JSON 数组）时回退行业默认 {1,2,3} 并记录告警。
 
-        验证 get_default_auto_modes 的异常分支容错：value="invalid" → 空集。
+        验证 get_default_auto_modes 的异常分支容错：value="invalid" → 行业默认。
         """
         db = AsyncMock()
         tag_rows = [
@@ -729,10 +736,10 @@ class TestRealtimeAutoRate:
         ):
             result = await query_realtime_auto_rate(db, ["loop-001"])
 
-        # 非法 sys_config → 空集 → mode=1 不在 {} → 非自动
+        # 非法 sys_config → 行业默认 {1,2,3} → mode=1 在 {1,2,3} → 自动
         assert result is not None
-        assert result["rate"] == Decimal("0.00")
-        assert result["auto_count"] == 0
+        assert result["rate"] == Decimal("100.00")
+        assert result["auto_count"] == 1
         assert result["total_count"] == 1
 
     @pytest.mark.asyncio
