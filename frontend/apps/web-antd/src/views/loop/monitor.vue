@@ -445,14 +445,10 @@ function handleRealtimeMessage(msg: {
     case 'MODE': {
       cv.mode = numValue;
       // 复用后端已有映射逻辑
-      cv.modeLabel =
-        numValue === 0
-          ? 'Manual'
-          : numValue === 1
-            ? 'Auto'
-            : numValue === 2
-              ? 'Cascade'
-              : 'Unknown';
+      if (numValue === 0) cv.modeLabel = 'Manual';
+      else if (numValue === 1) cv.modeLabel = 'Auto';
+      else if (numValue === 2) cv.modeLabel = 'Cascade';
+      else cv.modeLabel = 'Unknown';
       break;
     }
     case 'OP': {
@@ -964,11 +960,26 @@ onUnmounted(() => {
       <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
         <div class="flex items-center gap-4">
           <div
+            class="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-default"
+            :style="{
+              backgroundColor: '#1F2937',
+            }"
+          >
+            <span
+              class="w-2 h-2 rounded-full"
+              style="background-color: #60A5FA"
+            ></span>
+            <span class="text-sm text-white font-medium">合计</span>
+            <span class="text-sm font-bold text-white">
+              {{ Object.values(loopTypeStats).reduce((sum, count) => sum + count, 0) }}
+            </span>
+          </div>
+          <div
             v-for="(count, key) in loopTypeStats"
             :key="key"
             class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
             :style="{
-              backgroundColor: query.loopType === key ? LOOP_TYPE_COLOR_MAP[key] + '30' : LOOP_TYPE_COLOR_MAP[key] + '15',
+              backgroundColor: query.loopType === key ? `${LOOP_TYPE_COLOR_MAP[key]}30` : `${LOOP_TYPE_COLOR_MAP[key]}15`,
               borderLeft: `3px solid ${LOOP_TYPE_COLOR_MAP[key]}`,
               borderBottom: query.loopType === key ? `2px solid ${LOOP_TYPE_COLOR_MAP[key]}` : 'none',
             }"
