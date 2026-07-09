@@ -1,152 +1,17 @@
-<template>
-  <Page>
-    <div class="clpm-pid-dashboard">
-      <div class="clpm-pid-dashboard__header">
-        <div class="clpm-pid-dashboard__header-left">
-          <h1 class="clpm-pid-dashboard__title">评估看板</h1>
-        </div>
-        <div class="clpm-pid-dashboard__header-right">
-          <Select
-            v-model:value="timeWindow"
-            style="width: 140px"
-            size="small"
-            :options="timeWindowOptions"
-            @change="handleTimeWindowChange"
-          />
-        </div>
-      </div>
-
-      <div class="clpm-pid-dashboard__body">
-        <PlantNodeTree
-          card-title="工厂导航"
-          :width="200"
-          @select="onTreeSelect"
-        />
-
-        <div class="clpm-pid-dashboard__main">
-          <div class="clpm-pid-dashboard__top-row">
-            <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">实时自控率</div>
-              <EchartsUI ref="gauge1Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">{{ autoRateRt?.rate ?? '--' }}%</div>
-            </div>
-
-            <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">性能评分</div>
-              <EchartsUI ref="gauge2Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value" :style="{ color: scoreColor(aggregateData?.avgScore) }">
-                {{ aggregateData?.avgScore ?? '--' }}%
-              </div>
-            </div>
-
-            <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">自控率</div>
-              <EchartsUI ref="gauge3Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.autoModeRate ?? '--' }}%</div>
-            </div>
-
-            <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">平稳率</div>
-              <EchartsUI ref="gauge4Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.stabilityRate ?? '--' }}%</div>
-            </div>
-
-            <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">好值率</div>
-              <EchartsUI ref="gauge5Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.goodValueRate ?? '--' }}%</div>
-            </div>
-          </div>
-
-          <div class="clpm-pid-dashboard__middle-row">
-            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--status-pie">
-              <div class="clpm-pid-dashboard__card-header">
-                <span>回路状态统计</span>
-              </div>
-              <EchartsUI ref="statusPieChartRef" height="200px" />
-            </div>
-
-            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--trend">
-              <div class="clpm-pid-dashboard__card-header">
-                <span>性能指标趋势图</span>
-              </div>
-              <EchartsUI ref="trendChartRef" height="240px" />
-            </div>
-
-            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--pie">
-              <div class="clpm-pid-dashboard__card-header">
-                <span>回路等级占比</span>
-              </div>
-              <EchartsUI ref="pieChartRef" height="240px" />
-            </div>
-          </div>
-
-          <div class="clpm-pid-dashboard__bottom-row">
-            <div class="clpm-pid-dashboard__table-card">
-              <div class="clpm-pid-dashboard__card-header">
-                <span>装置/单元性能明细表</span>
-              </div>
-              <Table :columns="tableColumns" :data-source="tableData" :pagination="false" :scroll="{ y: 200 }">
-                <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'rating'">
-                    <span :class="['clpm-pid-dashboard__rating-tag', `clpm-pid-dashboard__rating-tag--${record.rating}`]">
-                      {{ ratingLabels[record.rating] }}
-                    </span>
-                  </template>
-                  <template v-if="column.key === 'autoRate'">
-                    <span>{{ record.autoRate }}%</span>
-                  </template>
-                  <template v-if="column.key === 'smoothRate'">
-                    <span>{{ record.smoothRate }}%</span>
-                  </template>
-                </template>
-              </Table>
-            </div>
-
-            <div class="clpm-pid-dashboard__top5-card">
-              <div class="clpm-pid-dashboard__card-header">
-                <span>TOP5回路</span>
-                <Tooltip :title="top5Sort === 'desc' ? '当前：评分最高，点击切换为最低' : '当前：评分最低，点击切换为最高'">
-                  <Button type="text" size="small" class="clpm-pid-dashboard__sort-btn" @click="top5Sort = top5Sort === 'desc' ? 'asc' : 'desc'">
-                    <IconifyIcon :icon="top5Sort === 'desc' ? 'ant-design:sort-descending-outlined' : 'ant-design:sort-ascending-outlined'" />
-                  </Button>
-                </Tooltip>
-              </div>
-              <Table :columns="top5Columns" :data-source="top5TableData" :pagination="false" :scroll="{ y: 200 }">
-                <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'score'">
-                    <span :style="{ color: scoreColor(record.score) }">{{ record.score }}</span>
-                  </template>
-                  <template v-if="column.key === 'diagnosis'">
-                    <Button type="text" size="small" :loading="diagnosisLoading" @click="handleDiagnosis(record.loopId)">
-                      <template #icon>
-                        <IconifyIcon icon="ant-design:right-outlined" />
-                      </template>
-                    </Button>
-                  </template>
-                </template>
-              </Table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </Page>
-</template>
-
 <script lang="ts" setup>
 import type { EchartsUIType } from '@vben/plugins/echarts';
-import type { MetricApi, DashboardApi, TimeWindow } from '#/api';
+
+import type { DashboardApi, MetricApi, TimeWindow } from '#/api';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Select, Table, Tooltip, message } from 'ant-design-vue';
-import { IconifyIcon } from '@vben/icons';
+import { Button, message, Select, Table, Tooltip } from 'ant-design-vue';
 
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -168,7 +33,7 @@ const timeWindow = ref<TimeWindow>('today');
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref<string>('全厂');
 
-function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
+function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
   if (node) {
     selectedPlantNodeId.value = node.id;
     selectedPlantNodeName.value = node.name;
@@ -277,7 +142,7 @@ const top5TableData = computed(() => {
     let truncated = fullName;
     let len = 0;
     for (const ch of fullName) {
-      len += ch.charCodeAt(0) > 0x7f ? 2 : 1;
+      len += ch.charCodeAt(0) > 0x7F ? 2 : 1;
       if (len > 32) { // 16 汉字 = 32
         truncated = fullName.slice(0, fullName.indexOf(ch)) + '…';
         break;
@@ -601,15 +466,14 @@ function renderPieChart() {
   const levelCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   items.forEach((item) => {
     const score = item.avgScore ?? 0;
-    const level = parseInt(getRatingLevel(score), 10);
+    const level = Number.parseInt(getRatingLevel(score), 10);
     levelCounts[level] = (levelCounts[level] ?? 0) + 1;
   });
 
   const total = items.length;
 
   // 按等级顺序（1→5）生成饼图数据
-  const pieData = thresholds
-    .slice()
+  const pieData = [...thresholds]
     .sort((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => a.level - b.level)
     .map((t: MetricApi.GradingThresholdItem) => ({
       value: levelCounts[t.level] ?? 0,
@@ -628,7 +492,7 @@ function renderPieChart() {
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: pieData.map((d: { value: number; name: string; itemStyle: { color: string } }) => d.name),
+      data: pieData.map((d: { itemStyle: { color: string }; name: string; value: number; }) => d.name),
     },
     series: [
       {
@@ -655,13 +519,13 @@ function renderPieChart() {
           label: { show: true, fontSize: 12, fontWeight: 'bold', color: chartColors.value.textStrong },
         },
         labelLine: { show: true, length: 10, length2: 10 },
-        data: pieData.filter((d: { value: number; name: string; itemStyle: { color: string } }) => (d.value ?? 0) > 0 || total === 0),
+        data: pieData.filter((d: { itemStyle: { color: string }; name: string; value: number; }) => (d.value ?? 0) > 0 || total === 0),
       },
     ],
   });
 }
 
-function scoreColor(score: number | null | undefined): string {
+function scoreColor(score: null | number | undefined): string {
   const val = score ?? 0;
   if (val >= 90) return themeColors.value.SUCCESS;
   if (val >= 80) return themeColors.value.INFO;
@@ -670,7 +534,7 @@ function scoreColor(score: number | null | undefined): string {
   return themeColors.value.DANGER;
 }
 
-function formatNumber(val: number | null | undefined, digits = 1): string {
+function formatNumber(val: null | number | undefined, digits = 1): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '--';
   return Number(val).toFixed(digits);
 }
@@ -783,26 +647,162 @@ onMounted(() => {
 });
 </script>
 
+<template>
+  <Page>
+    <div class="clpm-pid-dashboard">
+      <div class="clpm-pid-dashboard__header">
+        <div class="clpm-pid-dashboard__header-left">
+          <h1 class="clpm-pid-dashboard__title">评估看板</h1>
+        </div>
+        <div class="clpm-pid-dashboard__header-right">
+          <Select
+            v-model:value="timeWindow"
+            style="width: 140px"
+            size="small"
+            :options="timeWindowOptions"
+            @change="handleTimeWindowChange"
+          />
+        </div>
+      </div>
+
+      <div class="clpm-pid-dashboard__body">
+        <PlantNodeTree
+          card-title="工厂导航"
+          :width="200"
+          @select="onTreeSelect"
+        />
+
+        <div class="clpm-pid-dashboard__main">
+          <div class="clpm-pid-dashboard__top-row">
+            <div class="clpm-pid-dashboard__gauge-card">
+              <div class="clpm-pid-dashboard__gauge-title">实时自控率</div>
+              <EchartsUI ref="gauge1Ref" height="126px" />
+              <div class="clpm-pid-dashboard__gauge-value">{{ autoRateRt?.rate ?? '--' }}%</div>
+            </div>
+
+            <div class="clpm-pid-dashboard__gauge-card">
+              <div class="clpm-pid-dashboard__gauge-title">性能评分</div>
+              <EchartsUI ref="gauge2Ref" height="126px" />
+              <div class="clpm-pid-dashboard__gauge-value" :style="{ color: scoreColor(aggregateData?.avgScore) }">
+                {{ aggregateData?.avgScore ?? '--' }}%
+              </div>
+            </div>
+
+            <div class="clpm-pid-dashboard__gauge-card">
+              <div class="clpm-pid-dashboard__gauge-title">自控率</div>
+              <EchartsUI ref="gauge3Ref" height="126px" />
+              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.autoModeRate ?? '--' }}%</div>
+            </div>
+
+            <div class="clpm-pid-dashboard__gauge-card">
+              <div class="clpm-pid-dashboard__gauge-title">平稳率</div>
+              <EchartsUI ref="gauge4Ref" height="126px" />
+              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.stabilityRate ?? '--' }}%</div>
+            </div>
+
+            <div class="clpm-pid-dashboard__gauge-card">
+              <div class="clpm-pid-dashboard__gauge-title">好值率</div>
+              <EchartsUI ref="gauge5Ref" height="126px" />
+              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.goodValueRate ?? '--' }}%</div>
+            </div>
+          </div>
+
+          <div class="clpm-pid-dashboard__middle-row">
+            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--status-pie">
+              <div class="clpm-pid-dashboard__card-header">
+                <span>回路状态统计</span>
+              </div>
+              <EchartsUI ref="statusPieChartRef" height="200px" />
+            </div>
+
+            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--trend">
+              <div class="clpm-pid-dashboard__card-header">
+                <span>性能指标趋势图</span>
+              </div>
+              <EchartsUI ref="trendChartRef" height="240px" />
+            </div>
+
+            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--pie">
+              <div class="clpm-pid-dashboard__card-header">
+                <span>回路等级占比</span>
+              </div>
+              <EchartsUI ref="pieChartRef" height="240px" />
+            </div>
+          </div>
+
+          <div class="clpm-pid-dashboard__bottom-row">
+            <div class="clpm-pid-dashboard__table-card">
+              <div class="clpm-pid-dashboard__card-header">
+                <span>装置/单元性能明细表</span>
+              </div>
+              <Table :columns="tableColumns" :data-source="tableData" :pagination="false" :scroll="{ y: 200 }">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'rating'">
+                    <span class="clpm-pid-dashboard__rating-tag" :class="[`clpm-pid-dashboard__rating-tag--${record.rating}`]">
+                      {{ ratingLabels[record.rating] }}
+                    </span>
+                  </template>
+                  <template v-if="column.key === 'autoRate'">
+                    <span>{{ record.autoRate }}%</span>
+                  </template>
+                  <template v-if="column.key === 'smoothRate'">
+                    <span>{{ record.smoothRate }}%</span>
+                  </template>
+                </template>
+              </Table>
+            </div>
+
+            <div class="clpm-pid-dashboard__top5-card">
+              <div class="clpm-pid-dashboard__card-header">
+                <span>TOP5回路</span>
+                <Tooltip :title="top5Sort === 'desc' ? '当前：评分最高，点击切换为最低' : '当前：评分最低，点击切换为最高'">
+                  <Button type="text" size="small" class="clpm-pid-dashboard__sort-btn" @click="top5Sort = top5Sort === 'desc' ? 'asc' : 'desc'">
+                    <IconifyIcon :icon="top5Sort === 'desc' ? 'ant-design:sort-descending-outlined' : 'ant-design:sort-ascending-outlined'" />
+                  </Button>
+                </Tooltip>
+              </div>
+              <Table :columns="top5Columns" :data-source="top5TableData" :pagination="false" :scroll="{ y: 200 }">
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'score'">
+                    <span :style="{ color: scoreColor(record.score) }">{{ record.score }}</span>
+                  </template>
+                  <template v-if="column.key === 'diagnosis'">
+                    <Button type="text" size="small" :loading="diagnosisLoading" @click="handleDiagnosis(record.loopId)">
+                      <template #icon>
+                        <IconifyIcon icon="ant-design:right-outlined" />
+                      </template>
+                    </Button>
+                  </template>
+                </template>
+              </Table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Page>
+</template>
+
 <style lang="scss" scoped>
 .clpm-pid-dashboard {
   min-height: 100vh;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
   color: #334155;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
 .dark .clpm-pid-dashboard {
-  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
   color: #e2e8f0;
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
 }
 
 .clpm-pid-dashboard__header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 10px 24px;
-  background: linear-gradient(90deg, #ffffff 0%, #eff6ff 50%, #ffffff 100%);
-  border-bottom: 1px solid #e2e8f0;
+  justify-content: space-between;
   height: 56px;
+  padding: 10px 24px;
+  background: linear-gradient(90deg, #fff 0%, #eff6ff 50%, #fff 100%);
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .dark .clpm-pid-dashboard__header {
@@ -821,10 +821,10 @@ onMounted(() => {
 }
 
 .clpm-pid-dashboard__title {
+  margin: 0;
   font-size: 18px;
   font-weight: 600;
   color: #1e293b;
-  margin: 0;
 }
 
 .dark .clpm-pid-dashboard__title {
@@ -833,14 +833,14 @@ onMounted(() => {
 
 .clpm-pid-dashboard__body {
   display: flex;
-  padding: 16px;
   gap: 16px;
   height: calc(100vh - 56px);
+  padding: 16px;
 }
 
 .clpm-pid-dashboard__main {
-  flex: 1;
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
@@ -856,14 +856,14 @@ onMounted(() => {
 }
 
 .clpm-pid-dashboard__gauge-card {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 12px;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 6px;
+  align-items: center;
+  padding: 12px;
+  background: rgb(255 255 255 / 80%);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 
   &-title {
     font-size: 12px;
@@ -878,7 +878,7 @@ onMounted(() => {
 }
 
 .dark .clpm-pid-dashboard__gauge-card {
-  background: rgba(15, 23, 42, 0.8);
+  background: rgb(15 23 42 / 80%);
   border: 1px solid #334155;
 
   &-title {
@@ -896,10 +896,10 @@ onMounted(() => {
 }
 
 .clpm-pid-dashboard__chart-card {
-  background: rgba(255, 255, 255, 0.8);
+  padding: 16px;
+  background: rgb(255 255 255 / 80%);
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 16px;
 
   &--status-pie {
     width: 20%;
@@ -915,14 +915,14 @@ onMounted(() => {
 }
 
 .dark .clpm-pid-dashboard__chart-card {
-  background: rgba(15, 23, 42, 0.8);
+  background: rgb(15 23 42 / 80%);
   border: 1px solid #334155;
 }
 
 .clpm-pid-dashboard__card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 12px;
   font-size: 14px;
   font-weight: 500;
@@ -953,22 +953,22 @@ onMounted(() => {
 
 .clpm-pid-dashboard__bottom-row {
   display: flex;
-  gap: 12px;
   flex: 1;
+  gap: 12px;
 }
 
 .clpm-pid-dashboard__table-card {
-  width: 50%;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px;
   display: flex;
   flex-direction: column;
+  width: 50%;
+  padding: 16px;
+  background: rgb(255 255 255 / 80%);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 
 .dark .clpm-pid-dashboard__table-card {
-  background: rgba(15, 23, 42, 0.8);
+  background: rgb(15 23 42 / 80%);
   border: 1px solid #334155;
 }
 
@@ -985,17 +985,17 @@ onMounted(() => {
 }
 
 .clpm-pid-dashboard__top5-card {
-  width: 50%;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px;
   display: flex;
   flex-direction: column;
+  width: 50%;
+  padding: 16px;
+  background: rgb(255 255 255 / 80%);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 
 .dark .clpm-pid-dashboard__top5-card {
-  background: rgba(15, 23, 42, 0.8);
+  background: rgb(15 23 42 / 80%);
   border: 1px solid #334155;
 }
 
@@ -1021,42 +1021,50 @@ onMounted(() => {
   border-radius: 4px;
 
   &--1 {
-    background: rgba(34, 197, 94, 0.1);
     color: #22c55e;
+    background: rgb(34 197 94 / 10%);
   }
+
   &--2 {
-    background: rgba(59, 130, 246, 0.1);
     color: #3b82f6;
+    background: rgb(59 130 246 / 10%);
   }
+
   &--3 {
-    background: rgba(245, 158, 11, 0.1);
     color: #f59e0b;
+    background: rgb(245 158 11 / 10%);
   }
+
   &--4 {
-    background: rgba(249, 115, 22, 0.1);
     color: #f97316;
+    background: rgb(249 115 22 / 10%);
   }
+
   &--5 {
-    background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
+    background: rgb(239 68 68 / 10%);
   }
 }
 
 .dark .clpm-pid-dashboard__rating-tag {
   &--1 {
-    background: rgba(34, 197, 94, 0.2);
+    background: rgb(34 197 94 / 20%);
   }
+
   &--2 {
-    background: rgba(59, 130, 246, 0.2);
+    background: rgb(59 130 246 / 20%);
   }
+
   &--3 {
-    background: rgba(245, 158, 11, 0.2);
+    background: rgb(245 158 11 / 20%);
   }
+
   &--4 {
-    background: rgba(249, 115, 22, 0.2);
+    background: rgb(249 115 22 / 20%);
   }
+
   &--5 {
-    background: rgba(239, 68, 68, 0.2);
+    background: rgb(239 68 68 / 20%);
   }
 }
 
@@ -1064,7 +1072,7 @@ onMounted(() => {
   background: transparent;
 
   .ant-table-header {
-    background: rgba(241, 245, 249, 0.5);
+    background: rgb(241 245 249 / 50%);
   }
 
   .ant-table-body {
@@ -1072,24 +1080,24 @@ onMounted(() => {
   }
 
   .ant-table-cell {
-    color: #475569;
-    border-bottom: 1px solid #e2e8f0;
     padding: 6px 8px;
     font-size: 12px;
     line-height: 1.4;
+    color: #475569;
+    border-bottom: 1px solid #e2e8f0;
   }
 
   .ant-table-thead > tr > th {
-    color: #64748b;
-    background: rgba(241, 245, 249, 0.5);
-    border-bottom: 1px solid #e2e8f0;
-    padding: 8px 8px;
+    padding: 8px;
     font-size: 12px;
     font-weight: 500;
+    color: #64748b;
+    background: rgb(241 245 249 / 50%);
+    border-bottom: 1px solid #e2e8f0;
   }
 
   .ant-table-tbody > tr:hover > td {
-    background: rgba(59, 130, 246, 0.05);
+    background: rgb(59 130 246 / 5%);
   }
 
   .ant-table-tbody > tr {
@@ -1101,7 +1109,7 @@ onMounted(() => {
   background: transparent;
 
   .ant-table-header {
-    background: rgba(30, 41, 59, 0.5);
+    background: rgb(30 41 59 / 50%);
   }
 
   .ant-table-body {
@@ -1109,24 +1117,24 @@ onMounted(() => {
   }
 
   .ant-table-cell {
-    color: #cbd5e1;
-    border-bottom: 1px solid #334155;
     padding: 6px 8px;
     font-size: 12px;
     line-height: 1.4;
+    color: #cbd5e1;
+    border-bottom: 1px solid #334155;
   }
 
   .ant-table-thead > tr > th {
-    color: #94a3b8;
-    background: rgba(30, 41, 59, 0.5);
-    border-bottom: 1px solid #334155;
-    padding: 8px 8px;
+    padding: 8px;
     font-size: 12px;
     font-weight: 500;
+    color: #94a3b8;
+    background: rgb(30 41 59 / 50%);
+    border-bottom: 1px solid #334155;
   }
 
   .ant-table-tbody > tr:hover > td {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgb(59 130 246 / 10%);
   }
 
   .ant-table-tbody > tr {
@@ -1135,24 +1143,24 @@ onMounted(() => {
 }
 
 :deep(.ant-select-selector) {
-  background: rgba(241, 245, 249, 0.5) !important;
-  border: 1px solid #e2e8f0 !important;
   color: #334155 !important;
+  background: rgb(241 245 249 / 50%) !important;
+  border: 1px solid #e2e8f0 !important;
 }
 
 .dark :deep(.ant-select-selector) {
-  background: rgba(30, 41, 59, 0.5) !important;
-  border: 1px solid #334155 !important;
   color: #e2e8f0 !important;
+  background: rgb(30 41 59 / 50%) !important;
+  border: 1px solid #334155 !important;
 }
 
 :deep(.ant-btn) {
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid #3b82f6;
   color: #3b82f6;
+  background: rgb(59 130 246 / 10%);
+  border: 1px solid #3b82f6;
 }
 
 .dark :deep(.ant-btn) {
-  background: rgba(59, 130, 246, 0.2);
+  background: rgb(59 130 246 / 20%);
 }
 </style>

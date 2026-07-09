@@ -1,3 +1,6 @@
+import { mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
+
 /**
  * 历史重算页面 (recompute.vue) 单元测试
  *
@@ -13,9 +16,7 @@
  *   - mock API 模块返回固定数据
  *   - 不依赖真实网络请求
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { mount } from '@vue/test-utils';
-import { nextTick } from 'vue';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ============ Mock API ============
 // vi.mock 是 hoisted 的，必须用 vi.hoisted 包装 mock 函数
@@ -49,7 +50,7 @@ const {
         taskId: 'task-2',
         taskType: 'BACKFILL',
         status: 'SUCCESS',
-        progress: 1.0,
+        progress: 1,
         loopsTotal: 10,
         loopsDone: 10,
         createdAt: '2026-07-05T10:00:00+08:00',

@@ -18,29 +18,6 @@ import { IconifyIcon } from '@vben/icons';
 
 defineOptions({ name: 'ClpmNumeric' });
 
-interface Props {
-  /** 数值或字符串（位号/版本号等） */
-  value?: number | string | null | undefined;
-  /** 小数精度（仅数值生效），默认 0 */
-  precision?: number;
-  /** 单位（如 %、°C、PCS/min），等宽字体 */
-  unit?: string;
-  /** 趋势箭头：up=升（绿）、down=降（红）、flat=持平（灰） */
-  trend?: 'up' | 'down' | 'flat';
-  /** 是否使用等宽字体，默认 true（位号/Tag/版本号也建议 true） */
-  mono?: boolean;
-  /** 空值占位符，默认 '—'（用于 INCONCLUSIVE、无数据等） */
-  emptyText?: string;
-  /** 是否强制显示空值占位符（用于可信度 E 级、INCONCLUSIVE 等） */
-  empty?: boolean;
-  /** 数值字号，默认 inherit；可选 'xs' | 'sm' | 'md' | 'lg' | 'xl' */
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'inherit';
-  /** 千分位分隔，默认 false */
-  groupSeparator?: boolean;
-  /** 字重，默认 600 */
-  weight?: number;
-}
-
 const props = withDefaults(defineProps<Props>(), {
   value: null,
   precision: 0,
@@ -53,6 +30,29 @@ const props = withDefaults(defineProps<Props>(), {
   groupSeparator: false,
   weight: 600,
 });
+
+interface Props {
+  /** 数值或字符串（位号/版本号等） */
+  value?: null | number | string | undefined;
+  /** 小数精度（仅数值生效），默认 0 */
+  precision?: number;
+  /** 单位（如 %、°C、PCS/min），等宽字体 */
+  unit?: string;
+  /** 趋势箭头：up=升（绿）、down=降（红）、flat=持平（灰） */
+  trend?: 'down' | 'flat' | 'up';
+  /** 是否使用等宽字体，默认 true（位号/Tag/版本号也建议 true） */
+  mono?: boolean;
+  /** 空值占位符，默认 '—'（用于 INCONCLUSIVE、无数据等） */
+  emptyText?: string;
+  /** 是否强制显示空值占位符（用于可信度 E 级、INCONCLUSIVE 等） */
+  empty?: boolean;
+  /** 数值字号，默认 inherit；可选 'xs' | 'sm' | 'md' | 'lg' | 'xl' */
+  size?: 'inherit' | 'lg' | 'md' | 'sm' | 'xl' | 'xs';
+  /** 千分位分隔，默认 false */
+  groupSeparator?: boolean;
+  /** 字重，默认 600 */
+  weight?: number;
+}
 
 /** 格式化后的显示值 */
 const displayValue = computed(() => {
@@ -70,15 +70,11 @@ const displayValue = computed(() => {
     if (Number.isNaN(v) || !Number.isFinite(v)) return props.emptyText;
 
     let formatted: string;
-    if (props.precision > 0) {
-      formatted = v.toFixed(props.precision);
-    } else {
-      formatted = String(Math.round(v));
-    }
+    formatted = props.precision > 0 ? v.toFixed(props.precision) : String(Math.round(v));
 
     if (props.groupSeparator) {
       const [intPart = '', decPart] = formatted.split('.');
-      const intWithSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      const intWithSep = intPart.replaceAll(/\B(?=(\d{3})+(?!\d))/g, ',');
       formatted = decPart ? `${intWithSep}.${decPart}` : intWithSep;
     }
 
@@ -127,8 +123,7 @@ const emptyClass = computed(() =>
 
 <template>
   <span
-    :class="[
-      'clpm-numeric',
+    class="clpm-numeric" :class="[
       mono ? 'clpm-numeric--mono' : '',
       sizeClass,
       trendClass,
@@ -149,10 +144,10 @@ const emptyClass = computed(() =>
 <style scoped>
 .clpm-numeric {
   display: inline-flex;
-  align-items: baseline;
   gap: 2px;
-  color: hsl(var(--foreground));
+  align-items: baseline;
   line-height: 1.2;
+  color: hsl(var(--foreground));
 }
 
 .clpm-numeric--mono {
@@ -166,15 +161,19 @@ const emptyClass = computed(() =>
 .clpm-numeric--xs {
   font-size: 11px;
 }
+
 .clpm-numeric--sm {
   font-size: 12px;
 }
+
 .clpm-numeric--md {
   font-size: 14px;
 }
+
 .clpm-numeric--lg {
   font-size: 18px;
 }
+
 .clpm-numeric--xl {
   font-size: 24px;
 }
@@ -183,17 +182,19 @@ const emptyClass = computed(() =>
 .clpm-numeric--up {
   color: hsl(var(--status-ok));
 }
+
 .clpm-numeric--down {
   color: hsl(var(--status-error));
 }
+
 .clpm-numeric--flat {
   color: hsl(var(--status-neutral));
 }
 
 .clpm-numeric__trend-icon {
-  font-size: 0.85em;
   align-self: center;
   margin-right: 1px;
+  font-size: 0.85em;
 }
 
 .clpm-numeric__value {
@@ -201,15 +202,15 @@ const emptyClass = computed(() =>
 }
 
 .clpm-numeric__unit {
-  font-size: 0.75em;
-  color: hsl(var(--muted-foreground));
-  font-weight: 400;
   margin-left: 2px;
+  font-size: 0.75em;
+  font-weight: 400;
+  color: hsl(var(--muted-foreground));
 }
 
 /* 空占位使用中性色 + 较细字重 */
 .clpm-numeric--empty {
-  color: hsl(var(--muted-foreground));
   font-weight: 400;
+  color: hsl(var(--muted-foreground));
 }
 </style>

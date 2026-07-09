@@ -146,7 +146,7 @@ async function loadAvailableTags(keyword?: string) {
     const data = await getAasTagsApi({
       keyword: keyword || undefined,
       page: 1,
-      pageSize: 10000, // 加载所有测点以支持自动关联
+      pageSize: 10_000, // 加载所有测点以支持自动关联
     });
     availableTags.value = data.items;
   } catch {
@@ -233,7 +233,7 @@ function clearSlot(key: keyof typeof slotState) {
 
 /** 自动关联：根据回路位号匹配测点 */
 async function handleAutoLink() {
-  if (!selectedLoop.value?.tagName || !availableTags.value.length) {
+  if (!selectedLoop.value?.tagName || availableTags.value.length === 0) {
     message.warning('请先选择回路并加载可用测点');
     return;
   }

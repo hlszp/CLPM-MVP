@@ -24,10 +24,6 @@ import { RadioGroup, Switch, Table, Tag, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
-  DIAGNOSIS_LABEL_COLOR_MAP,
-  DIAGNOSIS_LABEL_NAME_MAP,
-} from '#/constants/diagnosis';
-import {
   ClpmDataCanvas,
   ClpmKpiCard,
   ClpmObjectSummaryBar,
@@ -37,6 +33,10 @@ import {
 } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
 
 const {
   isDark,
@@ -59,7 +59,7 @@ const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref<string>('全厂');
 const apiTreeData = ref<PlantNodeApi.PlantNode[]>([]);
 
-function onTreeSelect(node: PlantNodeApi.PlantNode | null) {
+function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
   if (node) {
     selectedPlantNodeId.value = node.id;
     selectedPlantNodeName.value = node.name;
@@ -75,7 +75,7 @@ function onTreeLoadComplete(treeData: PlantNodeApi.PlantNode[]) {
 }
 
 // ============ 筛选区 ============
-type GranularityType = 'day' | 'week' | 'month';
+type GranularityType = 'day' | 'month' | 'week';
 type TrendGranularityType = 'day' | 'hour';
 
 const granularity = ref<GranularityType>('day');
@@ -189,7 +189,7 @@ async function handleExportDailyReport() {
     ]
       .map((row) => row.join(','))
       .join('\n');
-    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -225,7 +225,7 @@ async function loadRealtimeAutoRate() {
 
 async function loadAnalytics() {
   const days =
-    granularity.value === 'day' ? 7 : granularity.value === 'week' ? 30 : 90;
+    granularity.value === 'day' ? 7 : (granularity.value === 'week' ? 30 : 90);
   const startTime = dayjs().subtract(days, 'day').format('YYYY-MM-DD HH:mm:ss');
   const endTime = dayjs().format('YYYY-MM-DD HH:mm:ss');
 
@@ -432,9 +432,9 @@ interface KpiCardItem {
 /** 6 个 KPI 卡片：对齐 ZL 致联工业设计参考 clpm_dashboard.html §"顶部 KPI 卡片区" */
 const kpiCardItems = computed<KpiCardItem[]>(() => {
   const kpi = overviewData.value?.kpi_cards;
-  const evaluatedCount = overviewData.value?.kpi_cards?.auto_mode_rate?.value !== undefined
-    ? 5
-    : 0;
+  const evaluatedCount = overviewData.value?.kpi_cards?.auto_mode_rate?.value === undefined
+    ? 0
+    : 5;
 
   // 综合性能趋势（用于 sparkline）
   const trendSeries = analyticsData.value?.kpiTrend?.series ?? [];
@@ -577,12 +577,23 @@ function handleLoopRowClick(record: DashboardApi.InefficientLoop) {
 function onSummaryAction(key: string) {
   const loopId = selectedLoop.value?.loop_id;
   if (!loopId) return;
-  if (key === 'diagnosis') {
-    router.push(`/diagnosis/detail/${loopId}`);
-  } else if (key === 'detail') {
+  switch (key) {
+  case 'detail': {
     router.push(`/loop/detail/${loopId}`);
-  } else if (key === 'tuning') {
+  
+  break;
+  }
+  case 'diagnosis': {
+    router.push(`/diagnosis/detail/${loopId}`);
+  
+  break;
+  }
+  case 'tuning': {
     router.push(`/tuning/workbench?loopId=${loopId}`);
+  
+  break;
+  }
+  // No default
   }
 }
 
@@ -693,9 +704,9 @@ function renderHealthGauge() {
   const color =
     score >= 80
       ? themeColors.value.SUCCESS
-      : score >= 60
+      : (score >= 60
         ? themeColors.value.WARNING
-        : themeColors.value.DANGER;
+        : themeColors.value.DANGER);
   renderHealthGaugeEcharts({
     series: [
       {
@@ -1009,7 +1020,7 @@ onUnmounted(() => {
               </span>
               <span class="text-sm opacity-70">%</span>
               <span class="text-xs mt-1 opacity-60">
-                {{ realtimeAutoRate?.readAt ? '更新于 ' + formatRealtimeText(realtimeAutoRate.readAt) : '暂无实时数据' }}
+                {{ realtimeAutoRate?.readAt ? `更新于 ${ formatRealtimeText(realtimeAutoRate.readAt)}` : '暂无实时数据' }}
               </span>
               <span v-if="realtimeAutoRate?.totalCount" class="text-xs mt-1 opacity-50">
                 {{ realtimeAutoRate.autoCount }}/{{ realtimeAutoRate.totalCount }} 回路
@@ -1102,8 +1113,8 @@ onUnmounted(() => {
                   key: 'auto_rate',
                   label: '自控率',
                   value:
-                    (loopSummary.key_metric?.auto_mode_rate?.toFixed(1) ??
-                      '—') + '%',
+                    `${loopSummary.key_metric?.auto_mode_rate?.toFixed(1) ??
+                      '—' }%`,
                   status: summaryStatus(
                     loopSummary.key_metric?.auto_mode_rate ?? 0,
                   ),
@@ -1112,8 +1123,8 @@ onUnmounted(() => {
                   key: 'steady_rate',
                   label: '平稳率',
                   value:
-                    (loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—') +
-                    '%',
+                    `${loopSummary.key_metric?.steady_rate?.toFixed(1) ?? '—' 
+                    }%`,
                   status: summaryStatus(loopSummary.key_metric?.steady_rate ?? 0),
                 },
               ]"

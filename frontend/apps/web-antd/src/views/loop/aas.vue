@@ -9,6 +9,9 @@
  */
 import type { TableColumnsType, UploadProps } from 'ant-design-vue';
 
+import type { DataSourceApi } from '#/api/datasource';
+import type { DcsApi } from '#/api/dcs';
+
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import {
@@ -39,7 +42,6 @@ import {
   testSignalrApi,
   updateDatasourceConfigApi,
 } from '#/api/datasource';
-import type { DataSourceApi } from '#/api/datasource';
 import {
   createModelApi,
   createVendorApi,
@@ -48,8 +50,8 @@ import {
   exportModelsApi,
   exportVendorsApi,
   getModeDefinitionsApi,
-  getModeMatrixApi,
   getModelsApi,
+  getModeMatrixApi,
   getVendorsApi,
   importModelsApi,
   importVendorsApi,
@@ -58,7 +60,6 @@ import {
   updateVendorApi,
   upsertModeMappingApi,
 } from '#/api/dcs';
-import type { DcsApi } from '#/api/dcs';
 
 defineOptions({ name: 'LoopAas' });
 
@@ -625,7 +626,7 @@ const cellEditForm = reactive({
 /** 打开单元格编辑弹窗（转置后：从行=型号、列=标准MODE 提取信息） */
 function openCellEdit(record: any, column: any) {
   const colKey = column.key as string;
-  const standardMode = parseInt(colKey.replace('mode_', ''), 10);
+  const standardMode = Number.parseInt(colKey.replace('mode_', ''), 10);
   const modeRow = matrix.value?.rows.find(
     (r: DcsApi.MatrixRow) => r.standardMode === standardMode,
   );
@@ -930,7 +931,7 @@ onMounted(loadConfig);
                     <span
                       class="inline-block h-4 w-4 rounded"
                       :style="{ backgroundColor: record.color }"
-                    />
+                    ></span>
                     <span class="text-xs text-gray-400">{{ record.color }}</span>
                   </div>
                 </template>
@@ -970,7 +971,7 @@ onMounted(loadConfig);
               class="mb-3"
               type="info"
               show-icon
-              :message="`第一行为本系统默认 MODE 映射；后续行为各 DCS 品牌型号的实际 MODE 值。点击单元格可编辑映射值。`"
+              message="第一行为本系统默认 MODE 映射；后续行为各 DCS 品牌型号的实际 MODE 值。点击单元格可编辑映射值。"
             />
             <Table
               :columns="matrixColumns"
@@ -1086,7 +1087,7 @@ onMounted(loadConfig);
     <!-- 矩阵单元格编辑弹窗 -->
     <Modal
       v-model:open="cellEditVisible"
-      :title="`编辑 MODE 映射`"
+      title="编辑 MODE 映射"
       :width="420"
       @ok="saveCellEdit"
     >

@@ -32,7 +32,7 @@ export namespace DcsApi {
     nameEn?: null | string;
     description?: null | string;
     sortOrder?: null | number;
-    isActive?: null | boolean;
+    isActive?: boolean | null;
   }
 
   /** DCS 型号（全局唯一 code） */
@@ -62,7 +62,7 @@ export namespace DcsApi {
     name?: null | string;
     description?: null | string;
     sortOrder?: null | number;
-    isActive?: null | boolean;
+    isActive?: boolean | null;
   }
 
   /** 标准 MODE 定义 */
@@ -81,7 +81,7 @@ export namespace DcsApi {
   export interface ModeDefinitionUpdate {
     labelZh?: null | string;
     labelEn?: null | string;
-    isAuto?: null | boolean;
+    isAuto?: boolean | null;
     color?: null | string;
     description?: null | string;
   }

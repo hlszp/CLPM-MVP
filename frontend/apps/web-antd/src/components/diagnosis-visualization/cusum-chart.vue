@@ -40,11 +40,11 @@ const options = computed(() => {
     value: [i, val],
   }));
 
-  const thresholdLine = Array(props.data.cusumPos.length)
+  const thresholdLine = Array.from({length: props.data.cusumPos.length})
     .fill(0)
     .map((_, i) => ({ value: [i, props.data.threshold] }));
 
-  const negThresholdLine = Array(props.data.cusumPos.length)
+  const negThresholdLine = Array.from({length: props.data.cusumPos.length})
     .fill(0)
     .map((_, i) => ({ value: [i, -props.data.threshold] }));
 

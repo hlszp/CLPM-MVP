@@ -10,20 +10,20 @@
 import type { TableColumnsType } from 'ant-design-vue';
 
 import type { TuningApi } from '#/api/tuning';
+import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { IconifyIcon } from '@vben/icons';
 import { Page } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 
 import { Alert, Button, Card, Spin, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
-import type { KpiStripItem } from '#/components/clpm';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { getTuningHistoryApi } from '#/api/tuning';
+import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TuningWorkbench' });
 
@@ -193,9 +193,9 @@ const kpiStripItems = computed<KpiStripItem[]>(() => [
     status:
       (avgFittingScore.value ?? 0) >= 80
         ? 'success'
-        : (avgFittingScore.value ?? 0) >= 60
+        : ((avgFittingScore.value ?? 0) >= 60
           ? 'warning'
-          : 'danger',
+          : 'danger'),
   },
   {
     key: 'recent',

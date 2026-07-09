@@ -6,26 +6,33 @@
  */
 
 type RealtimeMessage = {
+  collectTime: string;
+  quality: number;
   tagCode: string;
   value: string;
-  quality: number;
-  collectTime: string;
 };
 
 type MessageHandler = (msg: RealtimeMessage) => void;
 
 const RECONNECT_INTERVAL = 3000; // 重连间隔 3 秒
-const MAX_RECONNECT_DELAY = 30000; // 最大重连延迟 30 秒
+const MAX_RECONNECT_DELAY = 30_000; // 最大重连延迟 30 秒
 
 class RealtimeWebSocket {
-  private ws: WebSocket | null = null;
-  private token: string = '';
-  private handlers = new Set<MessageHandler>();
-  private connectionHandlers = new Set<() => void>();
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectAttempts = 0;
-  private isManualClose = false;
+  /**
+   * 是否已连接
+   */
+  get isConnected() {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
   private baseUrl: string;
+  private connectionHandlers = new Set<() => void>();
+  private handlers = new Set<MessageHandler>();
+  private isManualClose = false;
+  private reconnectAttempts = 0;
+  private reconnectTimer: null | ReturnType<typeof setTimeout> = null;
+  private token: string = '';
+
+  private ws: null | WebSocket = null;
 
   constructor() {
     // 从环境变量获取后端地址，构造 WebSocket URL
@@ -63,14 +70,6 @@ class RealtimeWebSocket {
   }
 
   /**
-   * 注册消息回调
-   */
-  onMessage(handler: MessageHandler): () => void {
-    this.handlers.add(handler);
-    return () => this.handlers.delete(handler);
-  }
-
-  /**
    * 注册连接状态变化回调（P2 #38 UX14）
    *
    * WS 连接成功 / 断开 / 重连成功时触发，调用方可据此切换轮询策略
@@ -80,15 +79,12 @@ class RealtimeWebSocket {
     return () => this.connectionHandlers.delete(handler);
   }
 
-  private _notifyConnectionChange() {
-    this.connectionHandlers.forEach((h) => h());
-  }
-
   /**
-   * 是否已连接
+   * 注册消息回调
    */
-  get isConnected() {
-    return this.ws?.readyState === WebSocket.OPEN;
+  onMessage(handler: MessageHandler): () => void {
+    this.handlers.add(handler);
+    return () => this.handlers.delete(handler);
   }
 
   private _doConnect() {
@@ -103,14 +99,14 @@ class RealtimeWebSocket {
       return;
     }
 
-    this.ws.onopen = () => {
+    this.ws.addEventListener('open', () => {
       this.reconnectAttempts = 0;
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
         console.log('[RealtimeWS] 已连接');
       }
       this._notifyConnectionChange();
-    };
+    });
 
     this.ws.onmessage = (event) => {
       try {
@@ -124,7 +120,7 @@ class RealtimeWebSocket {
       }
     };
 
-    this.ws.onclose = (event) => {
+    this.ws.addEventListener('close', (event) => {
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
         console.log(`[RealtimeWS] 连接关闭 (code=${event.code})`);
@@ -134,7 +130,7 @@ class RealtimeWebSocket {
       if (!this.isManualClose) {
         this._scheduleReconnect();
       }
-    };
+    });
 
     this.ws.onerror = () => {
       // P3 #57: 控制台日志环境守卫，生产环境不输出
@@ -142,6 +138,10 @@ class RealtimeWebSocket {
         console.warn('[RealtimeWS] 连接错误');
       }
     };
+  }
+
+  private _notifyConnectionChange() {
+    this.connectionHandlers.forEach((h) => h());
   }
 
   private _scheduleReconnect() {

@@ -11,19 +11,18 @@ import { Button, Card, Col, Row, Select, Spin, Tag } from 'ant-design-vue';
 
 import { getDiagnosisVisualizationApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
-import { DIAGNOSIS_LABEL_COLOR_MAP, DIAGNOSIS_LABEL_NAME_MAP } from '#/constants/diagnosis';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
-
-import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
-import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
-import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
-import ScatterChart from '#/components/diagnosis-visualization/scatter-chart.vue';
-import QualityTimelineChart from '#/components/diagnosis-visualization/quality-timeline-chart.vue';
-import SaturationChart from '#/components/diagnosis-visualization/saturation-chart.vue';
-import SlowResponseCard from '#/components/diagnosis-visualization/slow-response-card.vue';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
+import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
 import IaeCard from '#/components/diagnosis-visualization/iae-card.vue';
 import KanoCard from '#/components/diagnosis-visualization/kano-card.vue';
+import QualityTimelineChart from '#/components/diagnosis-visualization/quality-timeline-chart.vue';
+import SaturationChart from '#/components/diagnosis-visualization/saturation-chart.vue';
+import ScatterChart from '#/components/diagnosis-visualization/scatter-chart.vue';
+import SlowResponseCard from '#/components/diagnosis-visualization/slow-response-card.vue';
+import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
+import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { DIAGNOSIS_LABEL_COLOR_MAP, DIAGNOSIS_LABEL_NAME_MAP } from '#/constants/diagnosis';
 
 defineOptions({ name: 'DiagnosisVisualization' });
 
@@ -263,8 +262,8 @@ onMounted(async () => {
 .loading-container,
 .empty-container {
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   min-height: 400px;
 }
 
@@ -287,8 +286,8 @@ onMounted(async () => {
 
 .card-title-bar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   width: 100%;
 }
 
@@ -300,20 +299,20 @@ onMounted(async () => {
 
 .title-actions {
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
 }
 
 .summary-card {
   padding: 12px;
-  background: rgba(0, 0, 0, 0.04);
+  background: rgb(0 0 0 / 4%);
   border-radius: 8px;
 }
 
 .summary-label {
+  margin-bottom: 4px;
   font-size: 12px;
   color: #6b7280;
-  margin-bottom: 4px;
 }
 
 .summary-value {

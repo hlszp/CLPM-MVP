@@ -14,12 +14,13 @@
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { TuningApi } from '#/api/tuning';
+import type { SummaryAction, SummaryItem } from '#/components/clpm';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { IconifyIcon } from '@vben/icons';
 import { Page } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
@@ -38,10 +39,9 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmDataCanvas, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
-import type { SummaryAction, SummaryItem } from '#/components/clpm';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
+import { ClpmDataCanvas, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TuningSimulation' });
 
@@ -227,7 +227,7 @@ function getImprovementLabel(val: null | number | undefined): string {
 }
 
 /** ObjectSummaryBar 主指标：综合改善幅度 */
-const primarySummaryItem = computed<SummaryItem | null>(() => {
+const primarySummaryItem = computed<null | SummaryItem>(() => {
   if (!simulationResult.value) return null;
   const imp = simulationResult.value.improvement || {};
   const values = Object.values(imp).filter(
@@ -248,7 +248,7 @@ const primarySummaryItem = computed<SummaryItem | null>(() => {
     key: 'improvement',
     label: '综合改善幅度',
     value: `${sign}${pct.toFixed(1)}%`,
-    status: pct > 0 ? 'success' : pct < 0 ? 'danger' : 'neutral',
+    status: pct > 0 ? 'success' : (pct < 0 ? 'danger' : 'neutral'),
   };
 });
 

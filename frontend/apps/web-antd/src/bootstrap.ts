@@ -6,7 +6,6 @@ import { preferences } from '@vben/preferences';
 import { initStores } from '@vben/stores';
 import '@vben/styles';
 import '@vben/styles/antd';
-import '#/styles/industrial-light.css';
 
 import { useTitle } from '@vueuse/core';
 
@@ -17,6 +16,8 @@ import { initSetupVbenForm } from './adapter/form';
 import App from './app.vue';
 import { registerPermissionDirective } from './directives/permission';
 import { router } from './router';
+
+import '#/styles/industrial-light.css';
 
 async function bootstrap(namespace: string) {
   // 初始化组件适配器

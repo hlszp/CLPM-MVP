@@ -16,6 +16,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -36,14 +37,13 @@ import dayjs from 'dayjs';
 import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
-import type { KpiStripItem } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import { $t } from '#/locales';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -227,7 +227,7 @@ function handleRefresh() {
  *
  * 注：DiagnosisListItem 暂无 good_value_rate 字段，使用 confidence 作为代理
  */
-function deriveConfidenceLevel(confidence: number): ConfidenceLevel | '—' {
+function deriveConfidenceLevel(confidence: number): '—' | ConfidenceLevel {
   const rate = confidence * 100;
   if (rate >= 95) return 'A';
   if (rate >= 80) return 'B';

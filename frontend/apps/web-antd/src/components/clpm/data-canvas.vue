@@ -3,6 +3,26 @@ import { IconifyIcon } from '@vben/icons';
 
 defineOptions({ name: 'ClpmDataCanvas' });
 
+withDefaults(defineProps<Props>(), {
+  description: '',
+  empty: false,
+  emptyText: '暂无数据',
+  error: false,
+  errorText: '数据加载失败，请重试',
+  loading: false,
+  loadingVariant: 'skeleton',
+  partial: false,
+  partialText: '部分数据不可用，请结合可信度判断',
+  showPartialDetail: false,
+  skeletonRows: 4,
+  title: '',
+});
+
+const emit = defineEmits<{
+  'partial-detail': [];
+  retry: [];
+}>();
+
 interface Props {
   description?: string;
   empty?: boolean;
@@ -23,25 +43,6 @@ interface Props {
   title?: string;
 }
 
-withDefaults(defineProps<Props>(), {
-  description: '',
-  empty: false,
-  emptyText: '暂无数据',
-  error: false,
-  errorText: '数据加载失败，请重试',
-  loading: false,
-  loadingVariant: 'skeleton',
-  partial: false,
-  partialText: '部分数据不可用，请结合可信度判断',
-  showPartialDetail: false,
-  skeletonRows: 4,
-  title: '',
-});
-
-const emit = defineEmits<{
-  'partial-detail': [];
-  retry: [];
-}>();
 </script>
 
 <template>
@@ -235,6 +236,7 @@ const emit = defineEmits<{
   flex: 1 1 auto;
   min-height: 0;
   padding: 12px;
+
   /* 允许内容滚动：避免 Antd Table 分页栏被 overflow:hidden 裁切 */
   overflow: auto;
 }

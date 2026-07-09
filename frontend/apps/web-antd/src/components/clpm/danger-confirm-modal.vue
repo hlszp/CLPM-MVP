@@ -25,9 +25,31 @@ import { computed, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Input, Modal, Textarea, Tag } from 'ant-design-vue';
+import { Input, Modal, Tag, Textarea } from 'ant-design-vue';
 
 defineOptions({ name: 'ClpmDangerConfirmModal' });
+
+const props = withDefaults(defineProps<Props>(), {
+  target: '',
+  impactScope: '',
+  rollbackTip: '',
+  requireConfirmCode: true,
+  confirmCodePlaceholder: '请输入目标标识符以确认',
+  confirmCode: undefined,
+  requireReason: true,
+  showAuditNote: true,
+  confirmText: '',
+  cancelText: '取消',
+  auditNotePlaceholder: '工单号、审批单号等（可选）',
+  reasonPlaceholder: '请说明本次变更的原因（至少 10 个字符）',
+  loading: false,
+});
+
+const emit = defineEmits<{
+  cancel: [];
+  confirm: [payload: { auditNote: string; reason: string; }];
+  'update:open': [value: boolean];
+}>();
 
 interface Props {
   /** 是否打开（v-model:open） */
@@ -63,28 +85,6 @@ interface Props {
   /** 确认按钮 loading */
   loading?: boolean;
 }
-
-const props = withDefaults(defineProps<Props>(), {
-  target: '',
-  impactScope: '',
-  rollbackTip: '',
-  requireConfirmCode: true,
-  confirmCodePlaceholder: '请输入目标标识符以确认',
-  confirmCode: undefined,
-  requireReason: true,
-  showAuditNote: true,
-  confirmText: '',
-  cancelText: '取消',
-  auditNotePlaceholder: '工单号、审批单号等（可选）',
-  reasonPlaceholder: '请说明本次变更的原因（至少 10 个字符）',
-  loading: false,
-});
-
-const emit = defineEmits<{
-  'update:open': [value: boolean];
-  confirm: [payload: { reason: string; auditNote: string }];
-  cancel: [];
-}>();
 
 /** 用户输入的确认码 */
 const inputCode = ref('');
@@ -259,18 +259,18 @@ function handleConfirm() {
 
 .clpm-danger-confirm__summary {
   display: flex;
-  align-items: center;
   gap: 10px;
+  align-items: center;
   padding: 10px 12px;
-  background: hsl(var(--status-error) / 0.08);
-  border: 1px solid hsl(var(--status-error) / 0.3);
+  background: hsl(var(--status-error) / 8%);
+  border: 1px solid hsl(var(--status-error) / 30%);
   border-radius: var(--radius-industrial);
 }
 
 .clpm-danger-confirm__icon {
+  flex-shrink: 0;
   font-size: 18px;
   color: hsl(var(--status-error));
-  flex-shrink: 0;
 }
 
 .clpm-danger-confirm__summary-text {
@@ -279,16 +279,16 @@ function handleConfirm() {
 }
 
 .clpm-danger-confirm__action {
+  margin: 0 4px;
   font-weight: 700;
   color: hsl(var(--status-error));
-  margin: 0 4px;
 }
 
 .clpm-danger-confirm__target {
   font-family: var(--font-mono);
+  font-weight: 600;
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
   color: hsl(var(--foreground));
 }
 
@@ -301,13 +301,13 @@ function handleConfirm() {
 }
 
 .clpm-danger-confirm__label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 4px;
   font-size: 12px;
   font-weight: 500;
   color: hsl(var(--muted-foreground));
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 4px;
 }
 
 .clpm-danger-confirm__value {
@@ -322,23 +322,23 @@ function handleConfirm() {
 }
 
 .clpm-danger-confirm__required {
-  font-size: 10px;
   padding: 0 4px;
+  font-size: 10px;
   line-height: 14px;
 }
 
 .clpm-danger-confirm__hint {
+  margin-top: 2px;
   font-size: 11px;
   color: hsl(var(--muted-foreground));
-  margin-top: 2px;
 }
 
 .clpm-danger-confirm__code {
+  padding: 0 4px;
   font-family: var(--font-mono);
   font-weight: 600;
   color: hsl(var(--status-error));
-  background: hsl(var(--status-error) / 0.08);
-  padding: 0 4px;
+  background: hsl(var(--status-error) / 8%);
   border-radius: 2px;
 }
 </style>

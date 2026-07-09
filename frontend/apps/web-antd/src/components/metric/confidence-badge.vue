@@ -22,19 +22,6 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricConfidenceBadge' });
 
-type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
-
-interface Props {
-  /** 可信度等级，传 null/undefined 时不渲染任何内容 */
-  level?: ConfidenceLevel | null;
-  /** 有效数据率，0~1，用于 Tooltip 显示 */
-  validRate?: number | null;
-  /** 尺寸 */
-  size?: 'default' | 'small';
-  /** 是否显示等级文字，默认 true；为 false 时仅显示色块圆点 */
-  showLabel?: boolean;
-}
-
 const props = withDefaults(defineProps<Props>(), {
   level: null,
   validRate: null,
@@ -42,13 +29,26 @@ const props = withDefaults(defineProps<Props>(), {
   showLabel: true,
 });
 
+type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
+
+interface Props {
+  /** 可信度等级，传 null/undefined 时不渲染任何内容 */
+  level?: ConfidenceLevel | null;
+  /** 有效数据率，0~1，用于 Tooltip 显示 */
+  validRate?: null | number;
+  /** 尺寸 */
+  size?: 'default' | 'small';
+  /** 是否显示等级文字，默认 true；为 false 时仅显示色块圆点 */
+  showLabel?: boolean;
+}
+
 /** 响应式可信度色板（A/B/C/D/E → 浅/深色自适应） */
 const { confidenceColors } = useClpmTheme();
 
 /** 等级配置：Tag 颜色预设、色块圆点颜色 key、文字、是否为 INCONCLUSIVE */
 const levelConfig: Record<
   ConfidenceLevel,
-  { color: string; dotKey: keyof typeof confidenceColors.value; label: string; inconclusive?: boolean }
+  { color: string; dotKey: keyof typeof confidenceColors.value; inconclusive?: boolean; label: string; }
 > = {
   A: { color: 'green', dotKey: 'A', label: 'A' },
   B: { color: 'cyan', dotKey: 'B', label: 'B' },

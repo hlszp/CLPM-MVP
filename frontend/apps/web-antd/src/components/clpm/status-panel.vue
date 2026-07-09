@@ -9,16 +9,23 @@ import { computed } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import ClpmNumeric from './numeric.vue';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
 
+import ClpmNumeric from './numeric.vue';
+
 defineOptions({ name: 'ClpmStatusPanel' });
+
+const props = withDefaults(defineProps<Props>(), {
+  columns: 3,
+  bordered: true,
+  dense: false,
+});
 
 interface StatusItem {
   /** 项目标签 */
   label: string;
   /** 数值或文本 */
-  value?: number | string | null;
+  value?: null | number | string;
   /** 业务状态枚举（用于色相映射） */
   status?: string;
   /** 单位 */
@@ -28,7 +35,7 @@ interface StatusItem {
   /** 是否空值 */
   empty?: boolean;
   /** 趋势 */
-  trend?: 'up' | 'down' | 'flat';
+  trend?: 'down' | 'flat' | 'up';
   /** 副标题/说明 */
   hint?: string;
 }
@@ -45,12 +52,6 @@ interface Props {
   /** 紧凑模式 */
   dense?: boolean;
 }
-
-const props = withDefaults(defineProps<Props>(), {
-  columns: 3,
-  bordered: true,
-  dense: false,
-});
 
 const { getStatusMeta } = useIndustrialStatus();
 
@@ -73,8 +74,7 @@ const gridStyle = computed(() => ({
 
 <template>
   <div
-    :class="[
-      'clpm-status-panel',
+    class="clpm-status-panel" :class="[
       bordered ? 'clpm-status-panel--bordered' : '',
       dense ? 'clpm-status-panel--dense' : '',
     ]"
@@ -98,8 +98,7 @@ const gridStyle = computed(() => ({
             :empty="item.empty"
             size="lg"
             :weight="700"
-            :class="[
-              'clpm-status-panel__value',
+            class="clpm-status-panel__value" :class="[
               item.meta ? `clpm-status-panel__value--${item.meta.status}` : '',
             ]"
           />
@@ -125,15 +124,15 @@ const gridStyle = computed(() => ({
 
 .clpm-status-panel--bordered {
   padding: 12px;
+  background: hsl(var(--card));
   border: 1px solid hsl(var(--border-default));
   border-radius: var(--radius-industrial-lg);
-  background: hsl(var(--card));
   box-shadow: none;
 }
 
 .clpm-status-panel--dense {
-  padding: 8px;
   gap: 4px;
+  padding: 8px;
 }
 
 .clpm-status-panel__header {
@@ -164,14 +163,14 @@ const gridStyle = computed(() => ({
 
 .clpm-status-panel__label {
   font-size: 11px;
-  color: hsl(var(--muted-foreground));
   font-weight: 500;
+  color: hsl(var(--muted-foreground));
 }
 
 .clpm-status-panel__value-row {
   display: flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
 }
 
 .clpm-status-panel__value {
@@ -181,27 +180,31 @@ const gridStyle = computed(() => ({
 .clpm-status-panel__value--ok {
   color: hsl(var(--status-ok));
 }
+
 .clpm-status-panel__value--warning {
   color: hsl(var(--status-warning));
 }
+
 .clpm-status-panel__value--error {
   color: hsl(var(--status-error));
 }
+
 .clpm-status-panel__value--info {
   color: hsl(var(--status-info));
 }
+
 .clpm-status-panel__value--neutral {
   color: hsl(var(--status-neutral));
 }
 
 .clpm-status-panel__status-icon {
-  font-size: 14px;
   flex-shrink: 0;
+  font-size: 14px;
 }
 
 .clpm-status-panel__hint {
+  margin-top: 2px;
   font-size: 11px;
   color: hsl(var(--muted-foreground));
-  margin-top: 2px;
 }
 </style>

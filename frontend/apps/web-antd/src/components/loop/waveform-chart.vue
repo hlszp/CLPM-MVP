@@ -1,9 +1,46 @@
 <script lang="ts" setup>
+defineOptions({ name: 'WaveformChart' });
+
+const props = withDefaults(
+  defineProps<{
+    /** 是否启用时间点选择（默认 false）。启用后点击图表可选中最近时间点并 emit time-select */
+    enableTimeSelect?: boolean;
+    height?: string;
+    /** Phase 5：逐点异常原因码（如 'FROZEN,JUMP'） */
+    outlierReasons?: string[];
+    /** 外部设置的选中时间点（timestamp 字符串）。传入后在图表上以 markLine 标记 */
+    selectedTimestamp?: null | string;
+    /** 是否显示 MODE 阶梯线 + 切换标记（默认 true） */
+    showMode?: boolean;
+    trend: LoopApi.MonitorTrend;
+    /** Phase 5：逐点有效性标记（true=有效，false=无效）。存在时优先于 pvQuality */
+    validMask?: boolean[];
+  }>(),
+  { enableTimeSelect: false, selectedTimestamp: null, showMode: true },
+);
+
+const emit = defineEmits<{
+  (e: 'time-select', payload: { index: number; timestamp: string }): void;
+  /** 光标悬停时刻的值变化（鼠标移出画布时 payload 为 null，恢复默认） */
+  (
+    e: 'cursor-change',
+    payload: null | {
+      index: number;
+      mode: null | number;
+      op: null | number;
+      pv: null | number;
+      pvQuality: LoopApi.Quality;
+      sp: null | number;
+      timestamp: number;
+    },
+  ): void;
+}>();
+
 /** 时间戳精度转换：纳秒/微秒级→毫秒级 */
 function toMs(ts: number): number {
   const absTs = Math.abs(ts);
-  if (absTs >= 10000000000000000) return Math.floor(ts / 1000000);
-  if (absTs >= 10000000000000) return Math.floor(ts / 1000);
+  if (absTs >= 10_000_000_000_000_000) return Math.floor(ts / 1_000_000);
+  if (absTs >= 10_000_000_000_000) return Math.floor(ts / 1000);
   return ts;
 }
 
@@ -59,43 +96,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
-defineOptions({ name: 'WaveformChart' });
-
-const props = withDefaults(
-  defineProps<{
-    height?: string;
-    /** 是否启用时间点选择（默认 false）。启用后点击图表可选中最近时间点并 emit time-select */
-    enableTimeSelect?: boolean;
-    /** Phase 5：逐点异常原因码（如 'FROZEN,JUMP'） */
-    outlierReasons?: string[];
-    /** 外部设置的选中时间点（timestamp 字符串）。传入后在图表上以 markLine 标记 */
-    selectedTimestamp?: null | string;
-    /** 是否显示 MODE 阶梯线 + 切换标记（默认 true） */
-    showMode?: boolean;
-    trend: LoopApi.MonitorTrend;
-    /** Phase 5：逐点有效性标记（true=有效，false=无效）。存在时优先于 pvQuality */
-    validMask?: boolean[];
-  }>(),
-  { enableTimeSelect: false, selectedTimestamp: null, showMode: true },
-);
-
-const emit = defineEmits<{
-  (e: 'time-select', payload: { index: number; timestamp: string }): void;
-  /** 光标悬停时刻的值变化（鼠标移出画布时 payload 为 null，恢复默认） */
-  (
-    e: 'cursor-change',
-    payload: {
-      index: number;
-      mode: null | number;
-      op: null | number;
-      pv: null | number;
-      pvQuality: LoopApi.Quality;
-      sp: null | number;
-      timestamp: number;
-    } | null,
-  ): void;
-}>();
-
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts, resize, getChartInstance } = useEcharts(chartRef);
 
@@ -125,8 +125,8 @@ function bindClickEvent() {
     // 找到最近的时间点索引
     let nearestIdx = 0;
     let minDist = Infinity;
-    for (let i = 0; i < timestamps.length; i++) {
-      const dist = Math.abs(timestamps[i]! - xValue);
+    for (const [i, timestamp] of timestamps.entries()) {
+      const dist = Math.abs(timestamp! - xValue);
       if (dist < minDist) {
         minDist = dist;
         nearestIdx = i;
@@ -165,8 +165,8 @@ function bindCursorEvent() {
     // 找最近时间点索引
     let nearestIdx = 0;
     let minDist = Infinity;
-    for (let i = 0; i < timestamps.length; i++) {
-      const dist = Math.abs(timestamps[i]! - xValue);
+    for (const [i, timestamp] of timestamps.entries()) {
+      const dist = Math.abs(timestamp! - xValue);
       if (dist < minDist) {
         minDist = dist;
         nearestIdx = i;

@@ -14,12 +14,12 @@ export namespace TagApi {
     | 'FLOW'
     | 'LEVEL'
     | 'OTHER'
-    | 'PRESSURE'
     | 'POSITION'
+    | 'PRESSURE'
     | 'TEMPERATURE';
 
   /** 参数类型（PV/SP/OP/KP/TI/TD/MODE） */
-  export type TagType = 'MODE' | 'OP' | 'PV' | 'SP' | 'KP' | 'TI' | 'TD';
+  export type TagType = 'KP' | 'MODE' | 'OP' | 'PV' | 'SP' | 'TD' | 'TI';
 
   /** 质量戳（GOOD/BAD/UNCERTAIN） */
   export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN';
@@ -127,12 +127,12 @@ export function batchDeleteTagsApi(tagIds: string[]) {
 export function matchTagsForLoopApi(loopTagName: string) {
   return requestClient.get<
     Array<{
+      measureType?: string;
       role: string;
+      tagDescription?: string;
       tagId: string;
       tagName: string;
-      tagDescription?: string;
       tagType: string;
-      measureType?: string;
       unit?: string;
     }>
   >('/tags/match-loop', {

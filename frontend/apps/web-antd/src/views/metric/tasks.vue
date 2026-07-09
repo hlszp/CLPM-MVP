@@ -3,13 +3,13 @@ import { defineAsyncComponent, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Tabs, TabPane } from 'ant-design-vue';
+import { TabPane, Tabs } from 'ant-design-vue';
 
 import { ClpmPageToolbar } from '#/components/clpm';
 
 defineOptions({ name: 'MetricTasks' });
 
-type TabKey = 'manual' | 'auto' | 'history' | 'strategy';
+type TabKey = 'auto' | 'history' | 'manual' | 'strategy';
 
 const activeTab = ref<TabKey>('manual');
 
@@ -26,7 +26,7 @@ const AutoTab = defineAsyncComponent(() => import('#/views/task/list.vue'));
 const HistoryTab = defineAsyncComponent(() => import('./history-snapshots.vue'));
 const StrategyTab = defineAsyncComponent(() => import('./task-strategy.vue'));
 
-function handleTabChange(key: string | number) {
+function handleTabChange(key: number | string) {
   const k = String(key) as TabKey;
   activeTab.value = k;
   tabKeys.value[k] += 1;

@@ -32,17 +32,17 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { ClpmDataCanvas, ClpmDangerConfirmModal, ClpmPageToolbar } from '#/components/clpm';
 import {
   getDiagnosisMetricsApi,
   updateDiagnosisMetricApi,
 } from '#/api/diagnosis';
+import { ClpmDangerConfirmModal, ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'DiagnosisConfig' });
 
@@ -65,10 +65,10 @@ const dangerModalOpen = ref(false);
 const dangerModalLoading = ref(false);
 const dangerModalContext = ref<'submit' | 'toggleEnabled'>('submit');
 /** toggleEnabled 上下文：保存待切换的 record 与目标 checked */
-const pendingToggle = ref<{
+const pendingToggle = ref<null | {
   checked: boolean;
   record: DiagnosisApi.MetricItem;
-} | null>(null);
+}>(null);
 
 /** 8 类诊断标签选项 */
 const labelOptions = DIAGNOSIS_LABEL_OPTIONS;

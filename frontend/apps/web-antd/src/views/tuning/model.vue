@@ -33,9 +33,9 @@ import {
 import dayjs from 'dayjs';
 
 import { getLoopListApi } from '#/api/loop';
+import { identifyModelApi } from '#/api/tuning';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { identifyModelApi } from '#/api/tuning';
 
 defineOptions({ name: 'TuningModel' });
 

@@ -1,9 +1,9 @@
 <script lang="ts" setup>
 import { defineAsyncComponent, ref } from 'vue';
 
-import { TabPane, Tabs } from 'ant-design-vue';
-
 import { Page } from '@vben/common-ui';
+
+import { TabPane, Tabs } from 'ant-design-vue';
 
 defineOptions({ name: 'MetricConfig' });
 

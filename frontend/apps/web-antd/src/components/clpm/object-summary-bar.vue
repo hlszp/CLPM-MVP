@@ -25,23 +25,6 @@ export interface SummaryItem {
 
 defineOptions({ name: 'ClpmObjectSummaryBar' });
 
-interface Props {
-  actions?: SummaryAction[];
-  /** 当操作数量超过此值时，多余操作收进"更多"下拉，0 表示不收起 */
-  collapseAt?: number;
-  items?: SummaryItem[];
-  /** 加载态骨架屏 */
-  loading?: boolean;
-  /**
-   * 主指标：突出展示，大号数值
-   * 设置后在标题旁显示 24-28px 大号数值 + 标签
-   */
-  primaryItem?: SummaryItem | null;
-  subtitle?: string;
-  tags?: SummaryItem[];
-  title: string;
-}
-
 const props = withDefaults(defineProps<Props>(), {
   actions: () => [],
   collapseAt: 3,
@@ -55,6 +38,23 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   action: [key: string];
 }>();
+
+interface Props {
+  actions?: SummaryAction[];
+  /** 当操作数量超过此值时，多余操作收进"更多"下拉，0 表示不收起 */
+  collapseAt?: number;
+  items?: SummaryItem[];
+  /** 加载态骨架屏 */
+  loading?: boolean;
+  /**
+   * 主指标：突出展示，大号数值
+   * 设置后在标题旁显示 24-28px 大号数值 + 标签
+   */
+  primaryItem?: null | SummaryItem;
+  subtitle?: string;
+  tags?: SummaryItem[];
+  title: string;
+}
 
 /** 外露操作（前 collapseAt 个） */
 const visibleActions = computed(() => {
@@ -112,7 +112,7 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
           </span>
         </div>
 
-        <div v-if="tags.length" class="clpm-summary-bar__tags">
+        <div v-if="tags.length > 0" class="clpm-summary-bar__tags">
           <Tooltip v-for="tag in tags" :key="tag.key" :title="tag.label">
             <span
               class="clpm-summary-bar__tag"
@@ -125,7 +125,7 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
         </div>
       </div>
 
-      <div v-if="items.length" class="clpm-summary-bar__items">
+      <div v-if="items.length > 0" class="clpm-summary-bar__items">
         <div
           v-for="item in items"
           :key="item.key"
@@ -142,7 +142,7 @@ const hasMoreActions = computed(() => collapsedActions.value.length > 0);
       </div>
 
       <div
-        v-if="actions.length || $slots.actions || hasMoreActions"
+        v-if="actions.length > 0 || $slots.actions || hasMoreActions"
         class="clpm-summary-bar__actions"
       >
         <slot name="actions">

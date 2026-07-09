@@ -28,6 +28,8 @@ import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
+import { IconifyIcon } from '@vben/icons';
+
 import {
   Button,
   Card,
@@ -35,17 +37,14 @@ import {
   Input,
   Menu,
   MenuItem,
+  message,
   Modal,
   Spin,
   Tooltip,
   Tree,
   Upload,
-  message,
 } from 'ant-design-vue';
 
-import { IconifyIcon } from '@vben/icons';
-
-import { ClpmDangerConfirmModal } from '#/components/clpm';
 import {
   createPlantNodeApi,
   deletePlantNodeApi,
@@ -54,6 +53,7 @@ import {
   importPlantNodesApi,
   updatePlantNodeApi,
 } from '#/api/plant-node';
+import { ClpmDangerConfirmModal } from '#/components/clpm';
 
 interface TreeNode {
   children?: TreeNode[];
@@ -69,6 +69,23 @@ interface NodeTypeConfig {
   iconColor: string;
   label: string;
 }
+
+const props = withDefaults(defineProps<Props>(), {
+  cardTitle: '工厂模型',
+  width: 280,
+  showSearch: true,
+  showCollapseButtons: true,
+  showCrudButtons: false,
+  defaultExpandLevel: 1,
+  maxHeight: 'calc(100vh - 300px)',
+  showStats: false,
+  loopCounts: () => ({}),
+});
+
+const emit = defineEmits<{
+  (e: 'load-complete', treeData: PlantNodeApi.PlantNode[]): void;
+  (e: 'select', node: null | PlantNodeApi.PlantNode): void;
+}>();
 
 const NODE_TYPE_CONFIG: Record<string, NodeTypeConfig> = {
   AREA: {
@@ -132,30 +149,13 @@ interface Props {
   loopCounts?: Record<string, number>;
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  cardTitle: '工厂模型',
-  width: 280,
-  showSearch: true,
-  showCollapseButtons: true,
-  showCrudButtons: false,
-  defaultExpandLevel: 1,
-  maxHeight: 'calc(100vh - 300px)',
-  showStats: false,
-  loopCounts: () => ({}),
-});
-
-const emit = defineEmits<{
-  (e: 'load-complete', treeData: PlantNodeApi.PlantNode[]): void;
-  (e: 'select', node: PlantNodeApi.PlantNode | null): void;
-}>();
-
 const treeData = ref<TreeNode[]>([]);
 const treeLoading = ref(false);
 const treeSearchKeyword = ref('');
 const expandedKeys = ref<(number | string)[]>([]);
 const autoExpandParent = ref(true);
 const treeCollapsed = ref(false);
-const selectedNode = ref<TreeNode | null>(null);
+const selectedNode = ref<null | TreeNode>(null);
 const selectedKeys = ref<(number | string)[]>([]);
 
 // CRUD Modal
@@ -168,7 +168,7 @@ const crudLoading = ref(false);
 
 // 删除确认模态框（ZL §9 高危操作二次确认）
 const deleteModalVisible = ref(false);
-const deleteTargetNode = ref<TreeNode | null>(null);
+const deleteTargetNode = ref<null | TreeNode>(null);
 const deleteLoading = ref(false);
 /** 删除操作的影响范围描述 */
 const deleteImpactScope = computed(() => {
@@ -230,9 +230,22 @@ const treeStats = computed(() => {
   function walk(nodes: TreeNode[]) {
     for (const n of nodes) {
       const type = n.node?.type;
-      if (type === 'FACTORY') factoryCount++;
-      else if (type === 'AREA') areaCount++;
-      else if (type === 'UNIT') unitCount++;
+      switch (type) {
+      case 'AREA': {
+      areaCount++;
+      break;
+      }
+      case 'FACTORY': {
+      factoryCount++;
+      break;
+      }
+      case 'UNIT': { {
+      unitCount++;
+      // No default
+      }
+      break;
+      }
+      }
       // 只累加根节点的回路数（loopCountByNode 已递归包含子节点）
       // 避免父节点 + 子节点重复累加导致 totalLoops 放大
       if (type === 'FACTORY') {
@@ -288,7 +301,7 @@ async function loadTree() {
 
     // 清理无效的 expandedKeys：只保留新树中仍然存在的节点 key
     // 避免删除/移动节点后，旧 key 残留导致 Ant Tree 内部状态不一致
-    const validKeys = new Set<string | number>();
+    const validKeys = new Set<number | string>();
     function collectKeys(nodes: TreeNode[]) {
       for (const n of nodes) {
         validKeys.add(n.key);
@@ -619,7 +632,7 @@ defineExpose({ loadTree, expandAll, collapseAll });
       </span>
       <!-- 统计栏右侧：展开/折叠树节点按钮（最右侧） -->
       <template v-if="showCollapseButtons">
-        <span class="ml-auto" />
+        <span class="ml-auto"></span>
         <Tooltip title="全部展开">
           <Button type="text" size="small" @click="expandAll">
             <template #icon>
@@ -655,7 +668,7 @@ defineExpose({ loadTree, expandAll, collapseAll });
     </div>
 
     <Spin v-if="!treeCollapsed" :spinning="treeLoading">
-      <div class="overflow-auto" :style="{ maxHeight: maxHeight }">
+      <div class="overflow-auto" :style="{ maxHeight }">
         <Tree
           v-if="filteredTreeData.length > 0"
           :tree-data="filteredTreeData"
@@ -860,19 +873,19 @@ defineExpose({ loadTree, expandAll, collapseAll });
 
 /* 节点 hover 时增强视觉反馈 */
 .plant-node-tree :deep(.ant-tree-node-content-wrapper:hover) {
-  background-color: hsl(var(--accent) / 0.1);
+  background-color: hsl(var(--accent) / 10%);
 }
 
 /* 选中节点高亮 */
 .plant-node-tree :deep(.ant-tree-node-selected) {
-  background-color: hsl(var(--accent) / 0.15) !important;
+  background-color: hsl(var(--accent) / 15%) !important;
 }
 
 /* —— 节点容器 —— */
 .plant-node-tree__node {
   display: flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   width: 100%;
   padding: 2px 4px;
   border-radius: 4px;
@@ -880,49 +893,49 @@ defineExpose({ loadTree, expandAll, collapseAll });
 }
 
 .plant-node-tree__node:hover {
-  background-color: hsl(var(--accent) / 0.06);
+  background-color: hsl(var(--accent) / 6%);
 }
 
 /* 节点图标 */
 .plant-node-tree__node-icon {
-  font-size: 14px;
   flex-shrink: 0;
+  font-size: 14px;
 }
 
 /* 节点标题 */
 .plant-node-tree__node-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 13px;
   color: hsl(var(--foreground));
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* 回路数（右侧灰色数字） */
 .plant-node-tree__loop-count {
-  margin-left: auto;
   padding-left: 8px;
+  margin-left: auto;
   font-family: var(--font-mono);
+  font-size: 11px;
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
   color: hsl(var(--muted-foreground));
 }
 
 /* —— hover reveal 操作按钮组（ZL §2）—— */
 .plant-node-tree__actions {
   display: flex;
-  align-items: center;
+  visibility: hidden;
   gap: 2px;
+  align-items: center;
   margin-left: 8px;
   opacity: 0;
-  visibility: hidden;
   transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
 .plant-node-tree__node:hover .plant-node-tree__actions {
-  opacity: 1;
   visibility: visible;
+  opacity: 1;
 }
 
 /* 操作按钮样式：默认透明，hover 时浅灰背景 */
@@ -934,11 +947,11 @@ defineExpose({ loadTree, expandAll, collapseAll });
 }
 
 .plant-node-tree__action-btn:hover {
-  background-color: hsl(var(--accent) / 0.1) !important;
+  background-color: hsl(var(--accent) / 10%) !important;
 }
 
 .plant-node-tree__action-btn.ant-btn-dangerous:hover {
-  background-color: hsl(var(--destructive) / 0.1) !important;
+  background-color: hsl(var(--destructive) / 10%) !important;
 }
 
 /* 暗色模式徽章适配 */

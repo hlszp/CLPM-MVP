@@ -9,8 +9,9 @@ import { ref } from 'vue';
 
 import { Button, message } from 'ant-design-vue';
 
-import { ClpmDangerConfirmModal, ClpmPageToolbar } from '#/components/clpm';
 import { restoreWeightDefaultsApi } from '#/api/metric';
+import { ClpmDangerConfirmModal, ClpmPageToolbar } from '#/components/clpm';
+
 import TypeWeightContent from './type-weight.vue';
 
 defineOptions({ name: 'MetricWeightConfig' });

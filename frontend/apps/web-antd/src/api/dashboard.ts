@@ -115,23 +115,23 @@ export namespace DashboardApi {
   /** 装置级 KPI 看板单项（来自 unit_kpi_summary） */
   export interface BoardItem {
     nodeId: string;
-    nodeName: string | null;
-    snapshotTime: string | null;
-    avgScore: number | null;
-    autoModeRate: number | null;
-    stabilityRate: number | null;
-    effectiveAutoRate: number | null;
-    accuracyRate: number | null;
-    fastRate: number | null;
-    goodValueRate: number | null;
-    oscillationRate: number | null;
-    saturationRate: number | null;
+    nodeName: null | string;
+    snapshotTime: null | string;
+    avgScore: null | number;
+    autoModeRate: null | number;
+    stabilityRate: null | number;
+    effectiveAutoRate: null | number;
+    accuracyRate: null | number;
+    fastRate: null | number;
+    goodValueRate: null | number;
+    oscillationRate: null | number;
+    saturationRate: null | number;
     totalLoops: number;
     evaluatedLoops: number;
     inconclusiveLoops: number;
     excludedLoops: number;
     status: string;
-    algorithmVersion: string | null;
+    algorithmVersion: null | string;
   }
 
   /** 装置级 KPI 看板结果 */
@@ -142,13 +142,13 @@ export namespace DashboardApi {
 
   /** 实时自控率结果 */
   export interface AutoRateRt {
-    rate: number | null;
+    rate: null | number;
     autoCount: number;
     manualCount: number;
     totalCount: number;
     /** 5 种标准 MODE 值各自的回路数（key 为 "0"/"1"/"2"/"3"/"4"） */
     modeCounts?: Record<string, number>;
-    readAt: string | null;
+    readAt: null | string;
     message?: string;
   }
 
@@ -157,28 +157,28 @@ export namespace DashboardApi {
     items: BoardItem[];
     total: number;
     aggregate: {
-      nodeId: string | null;
-      nodeName: string | null;
-      avgScore: number | null;
-      autoModeRate: number | null;
-      stabilityRate: number | null;
-      effectiveAutoRate: number | null;
-      accuracyRate: number | null;
-      fastRate: number | null;
-      goodValueRate: number | null;
-      totalLoops: number;
+      accuracyRate: null | number;
+      autoModeRate: null | number;
+      avgScore: null | number;
+      effectiveAutoRate: null | number;
       evaluatedLoops: number;
-      inconclusiveLoops: number;
       excludedLoops: number;
+      fastRate: null | number;
+      goodValueRate: null | number;
+      inconclusiveLoops: number;
+      nodeId: null | string;
+      nodeName: null | string;
+      stabilityRate: null | number;
+      totalLoops: number;
     };
   }
 
   /** 节点级聚合趋势结果（v6.1 新增） */
   export interface BoardTrendResult {
     timestamps: string[];
-    avgScore: (number | null)[];
-    autoModeRate: (number | null)[];
-    stabilityRate: (number | null)[];
+    avgScore: (null | number)[];
+    autoModeRate: (null | number)[];
+    stabilityRate: (null | number)[];
     evaluatedLoops: number[];
     totalLoops: number;
   }

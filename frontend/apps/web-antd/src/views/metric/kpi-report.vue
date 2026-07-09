@@ -37,22 +37,22 @@ import dayjs from 'dayjs';
 // Ant Design Vue 的周选择器（picker="week"）依赖 isoWeek 插件进行周格式化
 import isoWeek from 'dayjs/plugin/isoWeek';
 
+import { getBoardAggregateApi } from '#/api/dashboard';
+import { getLoopListApi } from '#/api/loop';
+import { getGradingThresholdsApi, getLoopSnapshotsApi } from '#/api/metric';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
-import { getBoardAggregateApi } from '#/api/dashboard';
-import { getLoopListApi } from '#/api/loop';
-import { getGradingThresholdsApi, getLoopSnapshotsApi } from '#/api/metric';
-import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { flattenNodes } from '#/utils/plant-node';
 
+defineOptions({ name: 'MetricKpiReport' });
+
 // 注册 isoWeek 插件（周选择器内部调用 dayjs().isoWeek() 进行格式化）
 dayjs.extend(isoWeek);
-
-defineOptions({ name: 'MetricKpiReport' });
 
 const { themeColors } = useClpmTheme();
 
@@ -89,9 +89,7 @@ function collectDescendantIds(
         collectAllChildren(node, result);
         return true;
       }
-      if (node.children && node.children.length > 0) {
-        if (findAndCollect(node.children)) return true;
-      }
+      if (node.children && node.children.length > 0 && findAndCollect(node.children)) return true;
     }
     return false;
   };
@@ -136,20 +134,20 @@ interface LoopAggRow {
   loopId: string;
   loopTagName: string;
   loopName: string;
-  score: number | null;
-  accuracyRate: number | null;
-  fastRate: number | null;
-  steadyRate: number | null;
-  autoModeRate: number | null;
-  effectiveAutoRate: number | null;
-  saturationRate: number | null;
-  oscillationRate: number | null;
-  goodValueRate: number | null;
-  stictionIndex: number | null;
-  settlingTime: number | null;
-  outputTravelIndex: number | null;
-  idealSettlingTime: number | null;
-  validRate: number | null;
+  score: null | number;
+  accuracyRate: null | number;
+  fastRate: null | number;
+  steadyRate: null | number;
+  autoModeRate: null | number;
+  effectiveAutoRate: null | number;
+  saturationRate: null | number;
+  oscillationRate: null | number;
+  goodValueRate: null | number;
+  stictionIndex: null | number;
+  settlingTime: null | number;
+  outputTravelIndex: null | number;
+  idealSettlingTime: null | number;
+  validRate: null | number;
   /** 聚合的评估次数 */
   evalCount: number;
   /** 可信度分布（取众数或最低等级） */
@@ -175,7 +173,7 @@ const NUMERIC_AGG_FIELDS = [
 ] as const;
 
 /** 计算非 null 值的均值 */
-function meanOf(values: (number | null)[]): number | null {
+function meanOf(values: (null | number)[]): null | number {
   const valid = values.filter((v): v is number => v !== null && v !== undefined && !Number.isNaN(v));
   if (valid.length === 0) return null;
   return valid.reduce((s, v) => s + v, 0) / valid.length;
@@ -223,7 +221,7 @@ const aggregatedLoopData = computed<LoopAggRow[]>(() => {
       confidenceLevel: worstConfidence(snaps.map((s) => s.confidenceLevel)),
     };
     for (const field of NUMERIC_AGG_FIELDS) {
-      (row as any)[field] = meanOf(snaps.map((s) => s[field] as number | null));
+      (row as any)[field] = meanOf(snaps.map((s) => s[field] as null | number));
     }
     rows.push(row);
   }
@@ -252,7 +250,7 @@ const CONFIDENCE_META: Record<string, { color: string; label: string }> = {
 };
 
 /** 按评分计算性能等级 */
-function getRating(score: number | null | undefined): {
+function getRating(score: null | number | undefined): {
   color: string;
   label: string;
   level: number;
@@ -293,7 +291,7 @@ function getRating(score: number | null | undefined): {
 }
 
 // ============ 工具函数 ============
-function formatNumber(val: number | null | undefined, suffix = ''): string {
+function formatNumber(val: null | number | undefined, suffix = ''): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
 }
@@ -301,18 +299,18 @@ function formatNumber(val: number | null | undefined, suffix = ''): string {
 /** 根据时间维度计算时间范围 */
 function getTimeRange(): { end: string; start: string } {
   switch (timeDimension.value) {
-    case 'week': {
-      const w = selectedWeek.value || dayjs();
-      return {
-        start: w.startOf('week').format('YYYY-MM-DD HH:mm:ss'),
-        end: w.endOf('week').format('YYYY-MM-DD HH:mm:ss'),
-      };
-    }
     case 'month': {
       const m = selectedMonth.value || dayjs();
       return {
         start: m.startOf('month').format('YYYY-MM-DD HH:mm:ss'),
         end: m.endOf('month').format('YYYY-MM-DD HH:mm:ss'),
+      };
+    }
+    case 'week': {
+      const w = selectedWeek.value || dayjs();
+      return {
+        start: w.startOf('week').format('YYYY-MM-DD HH:mm:ss'),
+        end: w.endOf('week').format('YYYY-MM-DD HH:mm:ss'),
       };
     }
     default: {
@@ -328,11 +326,11 @@ function getTimeRange(): { end: string; start: string } {
 /** 当前时间维度对应的日期标签（用于"日期"列展示） */
 function currentDateLabel(): string {
   switch (timeDimension.value) {
-    case 'week': {
-      return selectedWeek.value?.format('YYYY-[W]WW') ?? '—';
-    }
     case 'month': {
       return selectedMonth.value?.format('YYYY-MM') ?? '—';
+    }
+    case 'week': {
+      return selectedWeek.value?.format('YYYY-[W]WW') ?? '—';
     }
     default: {
       return selectedDate.value?.format('YYYY-MM-DD') ?? '—';
@@ -341,7 +339,7 @@ function currentDateLabel(): string {
 }
 
 /** 提取记录的评分（综合报表用 avgScore，回路报表用聚合 score） */
-function getScore(record: Record<string, any>): number | null {
+function getScore(record: Record<string, any>): null | number {
   if (reportType.value === 'comprehensive') {
     return (record as DashboardApi.BoardItem).avgScore ?? null;
   }
@@ -352,13 +350,13 @@ function getScore(record: Record<string, any>): number | null {
 function isRateColumn(key: string): boolean {
   return [
     'accuracyRate',
-    'fastRate',
-    'steadyRate',
     'autoModeRate',
     'effectiveAutoRate',
-    'saturationRate',
-    'oscillationRate',
+    'fastRate',
     'goodValueRate',
+    'oscillationRate',
+    'saturationRate',
+    'steadyRate',
   ].includes(key);
 }
 
@@ -596,11 +594,7 @@ async function loadData() {
   loading.value = true;
   loadError.value = false;
   try {
-    if (reportType.value === 'comprehensive') {
-      await loadComprehensive();
-    } else {
-      await loadLoop();
-    }
+    await (reportType.value === 'comprehensive' ? loadComprehensive() : loadLoop());
   } catch (error: any) {
     loadError.value = true;
     console.error('加载 KPI 报表失败:', error);
@@ -642,7 +636,7 @@ async function handleExport() {
     );
     const csv = [headers, ...rows]
       .map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','),
+        row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','),
       )
       .join('\n');
     // UTF-8 BOM 保证 Excel 正确识别中文

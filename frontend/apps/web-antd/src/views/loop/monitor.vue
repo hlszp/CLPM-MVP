@@ -17,6 +17,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
  */
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { ColumnConfig, FilterPreset } from '#/composables/use-clpm-preferences';
 
 import {
   computed,
@@ -31,6 +32,7 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+import { useAccessStore } from '@vben/stores';
 
 import {
   Alert,
@@ -53,6 +55,7 @@ import {
   getLoopMonitorDetailApi,
   getLoopMonitorListApi,
 } from '#/api/loop';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmColumnSettings,
   ClpmDataCanvas,
@@ -61,13 +64,10 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
-import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { flattenNodes } from '#/utils/plant-node';
-import { useAccessStore } from '@vben/stores';
-import { realtimeWs } from '#/utils/realtime-ws';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
-import type { ColumnConfig, FilterPreset } from '#/composables/use-clpm-preferences';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { flattenNodes } from '#/utils/plant-node';
+import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'LoopMonitor' });
 
@@ -333,16 +333,16 @@ let wsConnectionUnsubscribe: (() => void) | null = null;
 
 /** WebSocket 实时数据：局部更新单条回路的 currentValues */
 function handleRealtimeMessage(msg: {
+  collectTime: string;
+  quality: number;
   tagCode: string;
   value: string;
-  quality: number;
-  collectTime: string;
 }) {
   // 解析 tagCode: "80FIC11906_PIDA.PV" → tagName="80FIC11906_PIDA", role="PV"
   const dotIdx = msg.tagCode.lastIndexOf('.');
-  if (dotIdx < 0) return;
-  const tagName = msg.tagCode.substring(0, dotIdx);
-  const role = msg.tagCode.substring(dotIdx + 1).toUpperCase();
+  if (dotIdx === -1) return;
+  const tagName = msg.tagCode.slice(0, Math.max(0, dotIdx));
+  const role = msg.tagCode.slice(Math.max(0, dotIdx + 1)).toUpperCase();
 
   // 在当前列表中找到对应回路并局部更新
   const item = monitorList.value.find((l) => l.tagName === tagName);
@@ -353,19 +353,6 @@ function handleRealtimeMessage(msg: {
   if (Number.isNaN(numValue)) return;
 
   switch (role) {
-    case 'PV': {
-      cv.pv = numValue;
-      cv.pvQuality = msg.quality as any;
-      break;
-    }
-    case 'SP': {
-      cv.sp = numValue;
-      break;
-    }
-    case 'OP': {
-      cv.op = numValue;
-      break;
-    }
     case 'MODE': {
       cv.mode = numValue;
       // 复用后端已有映射逻辑
@@ -377,6 +364,19 @@ function handleRealtimeMessage(msg: {
             : numValue === 2
               ? 'Cascade'
               : 'Unknown';
+      break;
+    }
+    case 'OP': {
+      cv.op = numValue;
+      break;
+    }
+    case 'PV': {
+      cv.pv = numValue;
+      cv.pvQuality = msg.quality as any;
+      break;
+    }
+    case 'SP': {
+      cv.sp = numValue;
       break;
     }
     default: {
@@ -840,9 +840,7 @@ onUnmounted(() => {
       <div class="flex items-center gap-2 text-sm text-gray-500">
         <span>自动刷新（{{ refreshInterval }}s）</span>
         <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
-        <span v-if="autoRefresh" class="text-xs text-gray-400"
-          >{{ countdown }}s 后刷新</span
-        >
+        <span v-if="autoRefresh" class="text-xs text-gray-400">{{ countdown }}s 后刷新</span>
       </div>
       <template #actions>
         <ClpmToolbarButton icon="search" label="查询" @click="handleSearch" />
@@ -1058,7 +1056,7 @@ onUnmounted(() => {
                         ? 'bg-amber-500'
                         : 'bg-rose-500'
                   "
-                />
+                ></span>
                 <ClpmNumeric
                   :value="(record as LoopApi.MonitorListItem).score"
                   :precision="1"
@@ -1410,7 +1408,7 @@ onUnmounted(() => {
                         ? '#F59E0B'
                         : '#F43F5E',
                 }"
-              />
+              ></div>
             </div>
             <div class="mt-1 text-xs text-gray-400">{{ item.desc }}</div>
           </div>
@@ -1486,14 +1484,14 @@ onUnmounted(() => {
 
 .loop-row-actions {
   display: flex;
+  visibility: hidden;
   gap: 1px;
   opacity: 0;
-  visibility: hidden;
   transition: all 0.2s ease;
 }
 
 :deep(.ant-table-row):hover .loop-row-actions {
-  opacity: 1;
   visibility: visible;
+  opacity: 1;
 }
 </style>

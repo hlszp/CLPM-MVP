@@ -50,13 +50,13 @@ import {
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { useIndustrialStatus } from '#/composables/use-industrial-status';
 
 import AbCompare from './ab-compare.vue';
 
