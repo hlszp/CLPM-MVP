@@ -190,13 +190,19 @@ async def get_loop_type_stats(db: AsyncSession, plant_node_id: str | None = None
 
 
 async def _get_control_mode_stats(
-    db: AsyncSession, conditions: list[Any],
+    db: AsyncSession,
+    conditions: list,
 ) -> dict[str, int]:
     """从全量回路中统计控制方式。"""
-    from app.services.monitor import _mode_value_to_label, _load_mode_mappings, get_subscriber
+    import logging
+
     from app.models.loop import LoopTagMapping
     from app.models.tag import TagRegistry
-    import logging
+    from app.services.monitor import (
+        _load_mode_mappings,
+        _mode_value_to_label,
+        get_subscriber,
+    )
 
     logger = logging.getLogger(__name__)
 
@@ -207,12 +213,15 @@ async def _get_control_mode_stats(
     if not all_loops:
         return {}
 
-    loop_ids = [str(l.id) for l in all_loops]
+    loop_ids = [str(lp.id) for lp in all_loops]
 
     mode_mapping_map = await _load_mode_mappings(db, loop_ids)
 
     mappings_result = await db.execute(
-        select(LoopTagMapping).where(LoopTagMapping.loop_id.in_(loop_ids), LoopTagMapping.tag_role == "MODE")
+        select(LoopTagMapping).where(
+            LoopTagMapping.loop_id.in_(loop_ids),
+            LoopTagMapping.tag_role == "MODE",
+        )
     )
     mode_mappings: dict[str, LoopTagMapping] = {}
     for m in mappings_result.scalars().all():
@@ -251,13 +260,19 @@ async def _get_control_mode_stats(
                 if cached and "value" in cached:
                     try:
                         mode_val = float(cached["value"])
-                        mode_label = _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id)) or "Unknown"
+                        mode_label = (
+                            _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id))
+                            or "Unknown"
+                        )
                     except (ValueError, TypeError):
                         pass
                 elif tag.last_value is not None:
                     try:
                         mode_val = float(tag.last_value)
-                        mode_label = _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id)) or "Unknown"
+                        mode_label = (
+                            _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id))
+                            or "Unknown"
+                        )
                     except (ValueError, TypeError):
                         pass
 
