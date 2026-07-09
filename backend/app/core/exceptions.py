@@ -21,6 +21,16 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _add_cors_headers(response: JSONResponse, request: Request) -> None:
+    """Add CORS headers to response for cross-origin requests."""
+    origin = request.headers.get("origin")
+    if origin and origin in settings.CORS_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Accept, Idempotency-Key"
+
+
 class BizError(Exception):
     """Business-level error carrying a stable error code and HTTP status."""
 
@@ -73,42 +83,49 @@ def register_exception_handlers(app: FastAPI) -> None:
     """Register all global exception handlers on the FastAPI app."""
 
     @app.exception_handler(BizError)
-    async def _handle_biz_error(_: Request, exc: BizError) -> JSONResponse:
-        return JSONResponse(
+    async def _handle_biz_error(request: Request, exc: BizError) -> JSONResponse:
+        response = JSONResponse(
             status_code=exc.status_code,
             content=jsonable_encoder(_error_body(exc.code, exc.message, exc.data)),
         )
+        _add_cors_headers(response, request)
+        return response
 
     @app.exception_handler(RequestValidationError)
-    async def _handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
-        # DEBUG 模式下保留完整错误信息（方便开发调试）
+    async def _handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         if settings.DEBUG:
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 content=jsonable_encoder(
                     _error_body("ERR_VALIDATION", "请求参数校验失败", exc.errors())
                 ),
             )
-        # 非 DEBUG 模式下脱敏：不暴露 loc（字段路径）、type（内部类型）、ctx（上下文）
-        sanitized = _sanitize_validation_errors(exc.errors())
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=jsonable_encoder(_error_body("ERR_VALIDATION", "输入校验失败", sanitized)),
-        )
+        else:
+            sanitized = _sanitize_validation_errors(exc.errors())
+            response = JSONResponse(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                content=jsonable_encoder(_error_body("ERR_VALIDATION", "输入校验失败", sanitized)),
+            )
+        _add_cors_headers(response, request)
+        return response
 
     @app.exception_handler(StarletteHTTPException)
-    async def _handle_http_exception(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def _handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = f"ERR_HTTP_{exc.status_code}"
         message = str(exc.detail) if exc.detail else "请求错误"
-        return JSONResponse(
+        response = JSONResponse(
             status_code=exc.status_code,
             content=jsonable_encoder(_error_body(code, message, None)),
         )
+        _add_cors_headers(response, request)
+        return response
 
     @app.exception_handler(Exception)
-    async def _handle_unhandled(_: Request, exc: Exception) -> JSONResponse:
+    async def _handle_unhandled(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled exception: %s", exc)
-        return JSONResponse(
+        response = JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=jsonable_encoder(_error_body("ERR_INTERNAL", "服务内部错误", None)),
         )
+        _add_cors_headers(response, request)
+        return response

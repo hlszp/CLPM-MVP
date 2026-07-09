@@ -37,6 +37,7 @@ import { useAccessStore } from '@vben/stores';
 import {
   Alert,
   Button,
+  Card,
   Input,
   message,
   Modal,
@@ -54,6 +55,7 @@ import {
   getLoopDetailApi,
   getLoopMonitorDetailApi,
   getLoopMonitorListApi,
+  getLoopTypeStatsApi,
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
@@ -99,7 +101,7 @@ const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
 };
 
 const loopTypeOptions = [
-  { label: '全部', value: undefined },
+  { label: '全部', value: '' },
   ...Object.entries(LOOP_TYPE_MAP).map(([value, { label }]) => ({
     label,
     value,
@@ -211,9 +213,118 @@ const kpiItems: {
 const loading = ref(false);
 const monitorList = ref<LoopApi.MonitorListItem[]>([]);
 const total = ref(0);
+
+/** 按回路类型统计数量（后端 API 获取，支持递归子节点） */
+const loopTypeStats = ref<Record<string, number>>({
+  TEMPERATURE: 0,
+  PRESSURE: 0,
+  LEVEL: 0,
+  FLOW: 0,
+  ANALYSIS: 0,
+  SPEED: 0,
+  OTHER: 0,
+});
+
+/** 按控制方式统计数量（从监控列表实时数据中统计） */
+const controlModeStats = ref<Record<string, number>>({});
+
+/** 控制方式颜色映射 */
+const CONTROL_MODE_COLOR_MAP: Record<string, string> = {
+  Auto: '#10b981',
+  Manual: '#ef4444',
+  Cascade: '#3b82f6',
+  Unknown: '#6b7280',
+};
+
+/** 回路类型颜色映射 */
+const LOOP_TYPE_COLOR_MAP: Record<string, string> = {
+  TEMPERATURE: '#ef4444',
+  PRESSURE: '#3b82f6',
+  LEVEL: '#10b981',
+  FLOW: '#06b6d4',
+  ANALYSIS: '#8b5cf6',
+  SPEED: '#f59e0b',
+  OTHER: '#6b7280',
+};
+
+/** 控制方式柱状图 */
+const modeChartRef = ref<EchartsUIType>();
+const { renderEcharts: renderModeChart } = useEcharts(modeChartRef);
+
+/** 更新控制方式柱状图 */
+function updateModeChart() {
+  const stats = controlModeStats.value;
+  const keys = Object.keys(stats);
+  const labels = keys;
+  const data = keys.map((k) => stats[k]);
+  const colors = keys.map((k) => CONTROL_MODE_COLOR_MAP[k] || '#6b7280');
+
+  renderModeChart({
+    animation: false,
+    grid: {
+      bottom: 0,
+      containLabel: true,
+      left: '1%',
+      right: '1%',
+      top: '5%',
+    },
+    series: [
+      {
+        barMaxWidth: 40,
+        data: data.map((v, i) => ({ value: v, itemStyle: { color: colors[i] } })),
+        type: 'bar',
+      },
+    ],
+    tooltip: {
+      axisPointer: { lineStyle: { width: 1 } },
+      trigger: 'axis',
+    },
+    xAxis: {
+      data: labels,
+      type: 'category',
+      axisLabel: { fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { fontSize: 11 },
+      splitLine: { show: false },
+    },
+  });
+}
+
+/** 自控率（自动控制回路数 / 总回路数） */
+const realtimeControlRate = computed(() => {
+  const autoCount = controlModeStats.value['Auto'] || 0;
+  const total = Object.values(controlModeStats.value).reduce((sum, count) => sum + count, 0);
+  return total > 0 ? Math.round((autoCount / total) * 100) : 0;
+});
+
+/** 加载回路类型统计 */
+async function loadLoopTypeStats() {
+  try {
+    const data = await getLoopTypeStatsApi(query.plantNodeId);
+    loopTypeStats.value = (data as any).loopTypeStats || (data as Record<string, number>);
+    controlModeStats.value = (data as any).controlModeStats || {};
+    updateModeChart();
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
+
+/** 点击统计卡片自动筛选 */
+function handleTypeCardClick(type: string) {
+  if (type === 'ALL') {
+    query.loopType = '';
+  } else {
+    query.loopType = query.loopType === type ? '' : type;
+  }
+  query.page = 1;
+  loadList();
+}
+
 const query = reactive({
   plantNodeId: undefined as string | undefined,
-  loopType: undefined as string | undefined,
+  loopType: '' as string | undefined,
   keyword: '',
   page: 1,
   pageSize: 20,
@@ -242,23 +353,65 @@ const plantNodeOptions = computed(() => {
 });
 
 const columns: TableColumnsType = [
-  { title: '回路编号', dataIndex: 'tagName', key: 'tagName', width: 160 },
+  { title: '回路编号', dataIndex: 'tagName', key: 'tagName', width: 160, align: 'center' },
   {
     title: '名称',
     dataIndex: 'description',
     key: 'description',
     ellipsis: true,
+    align: 'left',
   },
+  { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 120, align: 'center' },
   // v6.1 新增：测量量程 / 单位
   { title: '测量量程', key: 'pvRange', width: 130, align: 'center' },
   { title: '单位', key: 'pvUnit', width: 70, align: 'center' },
-  { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 100 },
-  { title: '设定值 SP', key: 'sp', width: 120 },
-  { title: '测量值 PV', key: 'pv', width: 120 },
-  { title: '输出值 OP', key: 'op', width: 120 },
-  { title: '控制方式', key: 'mode', width: 110 },
-  { title: '性能指数', dataIndex: 'score', key: 'score', width: 100 },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+  { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 100, align: 'center' },
+  {
+    title: '设定值 SP',
+    key: 'sp',
+    width: 120,
+    align: 'right',
+    customRender: ({ record }) => {
+      const val = (record as LoopApi.MonitorListItem).currentValues?.sp;
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
+    },
+    customCell: () => ({ style: { 'text-align': 'right' } }),
+  },
+  {
+    title: '测量值 PV',
+    key: 'pv',
+    width: 120,
+    align: 'right',
+    customRender: ({ record }) => {
+      const val = (record as LoopApi.MonitorListItem).currentValues?.pv;
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
+    },
+    customCell: () => ({ style: { 'text-align': 'right' } }),
+  },
+  {
+    title: '输出值 OP',
+    key: 'op',
+    width: 120,
+    align: 'right',
+    customRender: ({ record }) => {
+      const val = (record as LoopApi.MonitorListItem).currentValues?.op;
+      return val !== null && val !== undefined ? val.toFixed(2) : '-';
+    },
+    customCell: () => ({ style: { 'text-align': 'right' } }),
+  },
+  { title: '控制方式', key: 'mode', width: 110, align: 'center' },
+  {
+    title: '性能指数',
+    dataIndex: 'score',
+    key: 'score',
+    width: 100,
+    align: 'right',
+    customRender: ({ text }) => {
+      return text !== null && text !== undefined ? Number(text).toFixed(2) : '-';
+    },
+    customCell: () => ({ style: { 'text-align': 'right' } }),
+  },
+  { title: '操作', key: 'action', width: 160, fixed: 'right', align: 'center' },
 ];
 
 /** 提取列 key 为字符串 */
@@ -506,7 +659,7 @@ async function loadList() {
   try {
     const data = await getLoopMonitorListApi({
       plantNodeId: query.plantNodeId,
-      loopType: query.loopType as LoopApi.LoopType | undefined,
+      loopType: query.loopType ? (query.loopType as LoopApi.LoopType) : undefined,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -526,6 +679,7 @@ async function loadList() {
 function handleSearch() {
   query.page = 1;
   loadList();
+  loadLoopTypeStats();
 }
 
 function handleTableChange(pagination: TablePaginationConfig) {
@@ -796,8 +950,18 @@ function handleResetPreferences() {
 onMounted(() => {
   loadPlantNodes();
   loadList();
+  loadLoopTypeStats();
   startAutoRefresh();
 });
+
+watch(
+  () => query.plantNodeId,
+  () => {
+    query.page = 1;
+    loadList();
+    loadLoopTypeStats();
+  }
+);
 
 onUnmounted(() => {
   stopAutoRefresh();
@@ -858,6 +1022,93 @@ onUnmounted(() => {
         />
       </template>
     </ClpmPageToolbar>
+
+    <!-- v6.1 新增：统计卡片区域 -->
+    <div class="mt-3">
+      <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div
+              class="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: query.loopType === '' ? '#4B556315' : '#4B556308',
+                borderLeft: `3px solid #4B5563`,
+                borderBottom: query.loopType === '' ? `2px solid #4B5563` : 'none',
+              }"
+              @click="handleTypeCardClick('ALL')"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                style="background-color: #4B5563"
+              ></span>
+              <span class="text-sm text-gray-600 font-medium">全部</span>
+              <span class="text-sm font-bold" style="color: #4B5563">
+                {{ Object.values(loopTypeStats).reduce((sum, count) => sum + count, 0) }}
+              </span>
+            </div>
+            <div
+              v-for="(count, key) in loopTypeStats"
+              :key="key"
+              class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: query.loopType === key ? `${LOOP_TYPE_COLOR_MAP[key]}30` : `${LOOP_TYPE_COLOR_MAP[key]}15`,
+                borderLeft: `3px solid ${LOOP_TYPE_COLOR_MAP[key]}`,
+                borderBottom: query.loopType === key ? `2px solid ${LOOP_TYPE_COLOR_MAP[key]}` : 'none',
+              }"
+              @click="handleTypeCardClick(key)"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                :style="{ backgroundColor: LOOP_TYPE_COLOR_MAP[key] }"
+              ></span>
+              <span class="text-sm text-gray-600">
+                {{ { TEMPERATURE: '温度', PRESSURE: '压力', LEVEL: '液位', FLOW: '流量', ANALYSIS: '分析', SPEED: '速度', OTHER: '其他' }[key] }}
+              </span>
+              <span class="text-sm font-semibold" :style="{ color: LOOP_TYPE_COLOR_MAP[key] }">
+                {{ count }}
+              </span>
+            </div>
+          </div>
+          <div class="flex items-center gap-4">
+            <div
+              v-for="(count, key) in controlModeStats"
+              :key="key"
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{
+                backgroundColor: `${CONTROL_MODE_COLOR_MAP[key] || '#6b7280'}15`,
+                borderLeft: `3px solid ${CONTROL_MODE_COLOR_MAP[key] || '#6b7280'}`,
+              }"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                :style="{ backgroundColor: CONTROL_MODE_COLOR_MAP[key] || '#6b7280' }"
+              ></span>
+              <span class="text-sm text-gray-600">{{ key }}</span>
+              <span class="text-sm font-semibold" :style="{ color: CONTROL_MODE_COLOR_MAP[key] || '#6b7280' }">
+                {{ count }}
+              </span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-4 py-1.5 rounded-lg"
+              :style="{
+                backgroundColor: '#8b5cf615',
+                borderLeft: '3px solid #8b5cf6',
+              }"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                style="background-color: #8b5cf6"
+              ></span>
+              <span class="text-sm text-gray-600 font-medium">自控率</span>
+              <span class="text-sm font-bold" style="color: #8b5cf6">
+                {{ realtimeControlRate }}%
+              </span>
+            </div>
+            <EchartsUI ref="modeChartRef" style="width: 300px; height: 60px" />
+          </div>
+        </div>
+      </Card>
+    </div>
 
     <!-- 主区：回路列表（全宽，详情/趋势/性能通过 Modal 与跳转访问） -->
     <div class="mt-3 min-h-[calc(100vh-220px)]">
@@ -987,7 +1238,7 @@ onUnmounted(() => {
               </Tag>
             </template>
             <template v-else-if="column.key === 'sp'">
-              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.sp != null" class="flex items-baseline gap-1">
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.sp != null" class="flex items-baseline justify-end gap-1">
                 <ClpmNumeric
                   :value="(record as LoopApi.MonitorListItem).currentValues?.sp"
                   :precision="2"
@@ -999,7 +1250,7 @@ onUnmounted(() => {
               <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'pv'">
-              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.pv != null" class="flex items-baseline gap-1">
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.pv != null" class="flex items-baseline justify-end gap-1">
                 <ClpmNumeric
                   :value="(record as LoopApi.MonitorListItem).currentValues?.pv"
                   :precision="2"
@@ -1012,7 +1263,7 @@ onUnmounted(() => {
               <span v-else class="text-gray-400">—</span>
             </template>
             <template v-else-if="column.key === 'op'">
-              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.op != null" class="flex items-baseline gap-0.5">
+              <span v-if="(record as LoopApi.MonitorListItem).currentValues?.op != null" class="flex items-baseline justify-end gap-0.5">
                 <ClpmNumeric
                   :value="(record as LoopApi.MonitorListItem).currentValues?.op"
                   :precision="2"
@@ -1069,29 +1320,15 @@ onUnmounted(() => {
             </template>
             <template v-else-if="column.key === 'action'">
               <div class="flex items-center gap-1">
-                <Button
-                  type="link"
-                  size="small"
-                  @click="viewDetail(record as LoopApi.MonitorListItem)"
-                >
-                  详情
-                </Button>
-                <div class="loop-row-actions">
-                  <Button
-                    type="link"
-                    size="small"
-                    @click="openTrend(record as LoopApi.MonitorListItem)"
-                  >
-                    趋势
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    @click="openPerformance(record as LoopApi.MonitorListItem)"
-                  >
-                    性能
-                  </Button>
-                </div>
+                <Tag color="blue" class="cursor-pointer hover:opacity-80">
+                  <span @click="viewDetail(record as LoopApi.MonitorListItem)">详情</span>
+                </Tag>
+                <Tag color="green" class="cursor-pointer hover:opacity-80">
+                  <span @click="openTrend(record as LoopApi.MonitorListItem)">趋势</span>
+                </Tag>
+                <Tag color="orange" class="cursor-pointer hover:opacity-80">
+                  <span @click="openPerformance(record as LoopApi.MonitorListItem)">性能</span>
+                </Tag>
               </div>
             </template>
           </template>
@@ -1442,6 +1679,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+:deep(.ant-table-thead > tr > th) {
+  text-align: center !important;
+}
+
 .clpm-status-footer {
   display: flex;
   flex-wrap: wrap;
