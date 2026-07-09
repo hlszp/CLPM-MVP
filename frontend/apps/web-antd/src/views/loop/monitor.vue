@@ -225,6 +225,17 @@ const loopTypeStats = ref<Record<string, number>>({
   OTHER: 0,
 });
 
+/** 按控制方式统计数量 */
+const controlModeStats = ref<Record<string, number>>({});
+
+/** 控制方式颜色映射 */
+const CONTROL_MODE_COLOR_MAP: Record<string, string> = {
+  Auto: '#10b981',
+  Manual: '#ef4444',
+  Cascade: '#3b82f6',
+  Unknown: '#6b7280',
+};
+
 /** 回路类型颜色映射 */
 const LOOP_TYPE_COLOR_MAP: Record<string, string> = {
   TEMPERATURE: '#ef4444',
@@ -236,19 +247,19 @@ const LOOP_TYPE_COLOR_MAP: Record<string, string> = {
   OTHER: '#6b7280',
 };
 
-/** 柱状图 */
-const typeChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderTypeChart } = useEcharts(typeChartRef);
+/** 控制方式柱状图 */
+const modeChartRef = ref<EchartsUIType>();
+const { renderEcharts: renderModeChart } = useEcharts(modeChartRef);
 
-/** 更新柱状图 */
-function updateTypeChart() {
-  const stats = loopTypeStats.value;
-  const labels = ['温度', '压力', '液位', '流量', '分析', '速度', '其他'];
-  const keys = ['TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', 'ANALYSIS', 'SPEED', 'OTHER'];
+/** 更新控制方式柱状图 */
+function updateModeChart() {
+  const stats = controlModeStats.value;
+  const keys = Object.keys(stats);
+  const labels = keys;
   const data = keys.map((k) => stats[k]);
-  const colors = keys.map((k) => LOOP_TYPE_COLOR_MAP[k]);
+  const colors = keys.map((k) => CONTROL_MODE_COLOR_MAP[k] || '#6b7280');
 
-  renderTypeChart({
+  renderModeChart({
     grid: {
       bottom: 0,
       containLabel: true,
@@ -280,13 +291,21 @@ function updateTypeChart() {
   });
 }
 
-/** 加载回路类型统计 */
+/** 实时控制率（自动控制回路数 / 总回路数） */
+const realtimeControlRate = computed(() => {
+  const autoCount = controlModeStats.value['Auto'] || 0;
+  const total = Object.values(controlModeStats.value).reduce((sum, count) => sum + count, 0);
+  return total > 0 ? Math.round((autoCount / total) * 100) : 0;
+});
+
+/** 加载回路统计 */
 async function loadLoopTypeStats() {
   try {
     const data = await getLoopTypeStatsApi(query.plantNodeId);
-    loopTypeStats.value = data;
+    loopTypeStats.value = data.loopTypeStats as Record<string, number>;
+    controlModeStats.value = (data.controlModeStats || {}) as Record<string, number>;
     await nextTick();
-    updateTypeChart();
+    updateModeChart();
   } catch {
     // 错误已由拦截器处理
   }
@@ -609,7 +628,7 @@ async function loadList() {
   try {
     const data = await getLoopMonitorListApi({
       plantNodeId: query.plantNodeId,
-      loopType: query.loopType || undefined,
+      loopType: query.loopType ? (query.loopType as LoopApi.LoopType) : undefined,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -973,52 +992,88 @@ onUnmounted(() => {
       </template>
     </ClpmPageToolbar>
 
-    <!-- v6.1 新增：回路类型统计卡片 + 柱状图 -->
+    <!-- v6.1 新增：统计卡片区域 -->
     <div class="mt-3">
       <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
-        <div class="flex items-center gap-4">
-          <div
-            class="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
-            :style="{
-              backgroundColor: query.loopType === '' ? '#4B556315' : '#4B556308',
-              borderLeft: `3px solid #4B5563`,
-              borderBottom: query.loopType === '' ? `2px solid #4B5563` : 'none',
-            }"
-            @click="handleTypeCardClick('ALL')"
-          >
-            <span
-              class="w-2 h-2 rounded-full"
-              style="background-color: #4B5563"
-            ></span>
-            <span class="text-sm text-gray-600 font-medium">全部</span>
-            <span class="text-sm font-bold" style="color: #4B5563">
-              {{ Object.values(loopTypeStats).reduce((sum, count) => sum + count, 0) }}
-            </span>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div
+              class="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: query.loopType === '' ? '#4B556315' : '#4B556308',
+                borderLeft: `3px solid #4B5563`,
+                borderBottom: query.loopType === '' ? `2px solid #4B5563` : 'none',
+              }"
+              @click="handleTypeCardClick('ALL')"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                style="background-color: #4B5563"
+              ></span>
+              <span class="text-sm text-gray-600 font-medium">全部</span>
+              <span class="text-sm font-bold" style="color: #4B5563">
+                {{ Object.values(loopTypeStats).reduce((sum, count) => sum + count, 0) }}
+              </span>
+            </div>
+            <div
+              v-for="(count, key) in loopTypeStats"
+              :key="key"
+              class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: query.loopType === key ? `${LOOP_TYPE_COLOR_MAP[key]}30` : `${LOOP_TYPE_COLOR_MAP[key]}15`,
+                borderLeft: `3px solid ${LOOP_TYPE_COLOR_MAP[key]}`,
+                borderBottom: query.loopType === key ? `2px solid ${LOOP_TYPE_COLOR_MAP[key]}` : 'none',
+              }"
+              @click="handleTypeCardClick(key)"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                :style="{ backgroundColor: LOOP_TYPE_COLOR_MAP[key] }"
+              ></span>
+              <span class="text-sm text-gray-600">
+                {{ { TEMPERATURE: '温度', PRESSURE: '压力', LEVEL: '液位', FLOW: '流量', ANALYSIS: '分析', SPEED: '速度', OTHER: '其他' }[key] }}
+              </span>
+              <span class="text-sm font-semibold" :style="{ color: LOOP_TYPE_COLOR_MAP[key] }">
+                {{ count }}
+              </span>
+            </div>
           </div>
-          <div
-            v-for="(count, key) in loopTypeStats"
-            :key="key"
-            class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
-            :style="{
-              backgroundColor: query.loopType === key ? `${LOOP_TYPE_COLOR_MAP[key]}30` : `${LOOP_TYPE_COLOR_MAP[key]}15`,
-              borderLeft: `3px solid ${LOOP_TYPE_COLOR_MAP[key]}`,
-              borderBottom: query.loopType === key ? `2px solid ${LOOP_TYPE_COLOR_MAP[key]}` : 'none',
-            }"
-            @click="handleTypeCardClick(key)"
-          >
-            <span
-              class="w-2 h-2 rounded-full"
-              :style="{ backgroundColor: LOOP_TYPE_COLOR_MAP[key] }"
-            ></span>
-            <span class="text-sm text-gray-600">
-              {{ { TEMPERATURE: '温度', PRESSURE: '压力', LEVEL: '液位', FLOW: '流量', ANALYSIS: '分析', SPEED: '速度', OTHER: '其他' }[key] }}
-            </span>
-            <span class="text-sm font-semibold" :style="{ color: LOOP_TYPE_COLOR_MAP[key] }">
-              {{ count }}
-            </span>
-          </div>
-          <div class="flex-1 flex justify-end">
-            <EchartsUI ref="typeChartRef" style="width: 400px; height: 60px" />
+          <div class="flex items-center gap-4">
+            <div
+              v-for="(count, key) in controlModeStats"
+              :key="key"
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{
+                backgroundColor: `${CONTROL_MODE_COLOR_MAP[key] || '#6b7280'}15`,
+                borderLeft: `3px solid ${CONTROL_MODE_COLOR_MAP[key] || '#6b7280'}`,
+              }"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                :style="{ backgroundColor: CONTROL_MODE_COLOR_MAP[key] || '#6b7280' }"
+              ></span>
+              <span class="text-sm text-gray-600">{{ key }}</span>
+              <span class="text-sm font-semibold" :style="{ color: CONTROL_MODE_COLOR_MAP[key] || '#6b7280' }">
+                {{ count }}
+              </span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-4 py-1.5 rounded-lg"
+              :style="{
+                backgroundColor: '#8b5cf615',
+                borderLeft: '3px solid #8b5cf6',
+              }"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                style="background-color: #8b5cf6"
+              ></span>
+              <span class="text-sm text-gray-600 font-medium">实时控制率</span>
+              <span class="text-sm font-bold" style="color: #8b5cf6">
+                {{ realtimeControlRate }}%
+              </span>
+            </div>
+            <EchartsUI ref="modeChartRef" style="width: 300px; height: 60px" />
           </div>
         </div>
       </Card>
