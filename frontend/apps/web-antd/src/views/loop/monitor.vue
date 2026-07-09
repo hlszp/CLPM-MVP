@@ -37,6 +37,7 @@ import { useAccessStore } from '@vben/stores';
 import {
   Alert,
   Button,
+  Card,
   Input,
   message,
   Modal,
@@ -211,6 +212,80 @@ const kpiItems: {
 const loading = ref(false);
 const monitorList = ref<LoopApi.MonitorListItem[]>([]);
 const total = ref(0);
+
+/** 按回路类型统计数量 */
+const loopTypeStats = computed(() => {
+  const stats: Record<string, number> = {
+    TEMPERATURE: 0,
+    PRESSURE: 0,
+    LEVEL: 0,
+    FLOW: 0,
+    ANALYSIS: 0,
+    SPEED: 0,
+    OTHER: 0,
+  };
+  for (const item of monitorList.value) {
+    const type = item.loopType || 'OTHER';
+    stats[type] = (stats[type] || 0) + 1;
+  }
+  return stats;
+});
+
+/** 回路类型颜色映射 */
+const LOOP_TYPE_COLOR_MAP: Record<string, string> = {
+  TEMPERATURE: '#ef4444',
+  PRESSURE: '#3b82f6',
+  LEVEL: '#10b981',
+  FLOW: '#06b6d4',
+  ANALYSIS: '#8b5cf6',
+  SPEED: '#f59e0b',
+  OTHER: '#6b7280',
+};
+
+/** 柱状图 */
+const typeChartRef = ref<EchartsUIType>();
+const { renderEcharts: renderTypeChart } = useEcharts(typeChartRef);
+
+/** 更新柱状图 */
+function updateTypeChart() {
+  const stats = loopTypeStats.value;
+  const labels = ['温度', '压力', '液位', '流量', '分析', '速度', '其他'];
+  const keys = ['TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', 'ANALYSIS', 'SPEED', 'OTHER'];
+  const data = keys.map((k) => stats[k]);
+  const colors = keys.map((k) => LOOP_TYPE_COLOR_MAP[k]);
+
+  renderTypeChart({
+    grid: {
+      bottom: 0,
+      containLabel: true,
+      left: '1%',
+      right: '1%',
+      top: '5%',
+    },
+    series: [
+      {
+        barMaxWidth: 40,
+        data: data.map((v, i) => ({ value: v, itemStyle: { color: colors[i] } })),
+        type: 'bar',
+      },
+    ],
+    tooltip: {
+      axisPointer: { lineStyle: { width: 1 } },
+      trigger: 'axis',
+    },
+    xAxis: {
+      data: labels,
+      type: 'category',
+      axisLabel: { fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { fontSize: 11 },
+      splitLine: { show: false },
+    },
+  });
+}
+
 const query = reactive({
   plantNodeId: undefined as string | undefined,
   loopType: undefined as string | undefined,
@@ -259,7 +334,7 @@ const columns: TableColumnsType = [
   { title: '输出值 OP', key: 'op', width: 120 },
   { title: '控制方式', key: 'mode', width: 110 },
   { title: '性能指数', dataIndex: 'score', key: 'score', width: 100 },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+  { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ];
 
 /** 提取列 key 为字符串 */
@@ -514,6 +589,8 @@ async function loadList() {
     });
     monitorList.value = data.items;
     total.value = data.total;
+    await nextTick();
+    updateTypeChart();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -860,6 +937,37 @@ onUnmounted(() => {
       </template>
     </ClpmPageToolbar>
 
+    <!-- v6.1 新增：回路类型统计卡片 + 柱状图 -->
+    <div class="mt-3">
+      <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
+        <div class="flex items-center gap-4">
+          <div
+            v-for="(count, key) in loopTypeStats"
+            :key="key"
+            class="flex items-center gap-2 px-3 py-1 rounded"
+            :style="{
+              backgroundColor: LOOP_TYPE_COLOR_MAP[key] + '15',
+              borderLeft: `3px solid ${LOOP_TYPE_COLOR_MAP[key]}`,
+            }"
+          >
+            <span
+              class="w-2 h-2 rounded-full"
+              :style="{ backgroundColor: LOOP_TYPE_COLOR_MAP[key] }"
+            ></span>
+            <span class="text-sm text-gray-600">
+              {{ { TEMPERATURE: '温度', PRESSURE: '压力', LEVEL: '液位', FLOW: '流量', ANALYSIS: '分析', SPEED: '速度', OTHER: '其他' }[key] }}
+            </span>
+            <span class="text-sm font-semibold" :style="{ color: LOOP_TYPE_COLOR_MAP[key] }">
+              {{ count }}
+            </span>
+          </div>
+          <div class="flex-1 flex justify-end">
+            <EchartsUI ref="typeChartRef" style="width: 400px; height: 60px" />
+          </div>
+        </div>
+      </Card>
+    </div>
+
     <!-- 主区：回路列表（全宽，详情/趋势/性能通过 Modal 与跳转访问） -->
     <div class="mt-3 min-h-[calc(100vh-220px)]">
       <ClpmDataCanvas title="回路列表" :loading="loading">
@@ -1070,29 +1178,15 @@ onUnmounted(() => {
             </template>
             <template v-else-if="column.key === 'action'">
               <div class="flex items-center gap-1">
-                <Button
-                  type="link"
-                  size="small"
-                  @click="viewDetail(record as LoopApi.MonitorListItem)"
-                >
-                  详情
-                </Button>
-                <div class="loop-row-actions">
-                  <Button
-                    type="link"
-                    size="small"
-                    @click="openTrend(record as LoopApi.MonitorListItem)"
-                  >
-                    趋势
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    @click="openPerformance(record as LoopApi.MonitorListItem)"
-                  >
-                    性能
-                  </Button>
-                </div>
+                <Tag color="blue" class="cursor-pointer hover:opacity-80">
+                  <span @click="viewDetail(record as LoopApi.MonitorListItem)">详情</span>
+                </Tag>
+                <Tag color="green" class="cursor-pointer hover:opacity-80">
+                  <span @click="openTrend(record as LoopApi.MonitorListItem)">趋势</span>
+                </Tag>
+                <Tag color="orange" class="cursor-pointer hover:opacity-80">
+                  <span @click="openPerformance(record as LoopApi.MonitorListItem)">性能</span>
+                </Tag>
               </div>
             </template>
           </template>
@@ -1443,6 +1537,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+:deep(.ant-table-thead > tr > th) {
+  text-align: center !important;
+}
+
 .clpm-status-footer {
   display: flex;
   flex-wrap: wrap;
