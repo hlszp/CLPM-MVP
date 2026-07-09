@@ -373,11 +373,7 @@ const columns: TableColumnsType = [
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.sp;
-      return (
-        <span style="display: block; text-align: right;">
-          {val !== null && val !== undefined ? val.toFixed(2) : '-'}
-        </span>
-      );
+      return { children: val !== null && val !== undefined ? val.toFixed(2) : '-', style: { textAlign: 'right' } };
     },
   },
   {
@@ -387,11 +383,7 @@ const columns: TableColumnsType = [
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.pv;
-      return (
-        <span style="display: block; text-align: right;">
-          {val !== null && val !== undefined ? val.toFixed(2) : '-'}
-        </span>
-      );
+      return { children: val !== null && val !== undefined ? val.toFixed(2) : '-', style: { textAlign: 'right' } };
     },
   },
   {
@@ -401,11 +393,7 @@ const columns: TableColumnsType = [
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.op;
-      return (
-        <span style="display: block; text-align: right;">
-          {val !== null && val !== undefined ? val.toFixed(2) : '-'}
-        </span>
-      );
+      return { children: val !== null && val !== undefined ? val.toFixed(2) : '-', style: { textAlign: 'right' } };
     },
   },
   { title: '控制方式', key: 'mode', width: 110, align: 'center' },
@@ -1699,12 +1687,6 @@ onUnmounted(() => {
 <style scoped>
 :deep(.ant-table-thead > tr > th) {
   text-align: center !important;
-}
-
-:deep(.ant-table-column-sp),
-:deep(.ant-table-column-pv),
-:deep(.ant-table-column-op) {
-  text-align: right !important;
 }
 
 .clpm-status-footer {
