@@ -31,6 +31,45 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # ------------------------------------------------------------
+# 1.5 CORS 自动检测：将 __AUTO__ 替换为本机 IP
+# ------------------------------------------------------------
+# 支持 .env.prod 中 CORS_ORIGINS=["__AUTO__", "http://localhost"]
+# 部署时自动检测本机 IP，替换为 http://<IP>
+if grep -q '"__AUTO__"' "$ENV_FILE" 2>/dev/null; then
+    # 检测本机 IP（Linux: hostname -I；macOS: ipconfig getifaddr）
+    DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "$DETECTED_IP" ]; then
+        DETECTED_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
+    fi
+    if [ -n "$DETECTED_IP" ]; then
+        echo "检测到本机 IP：$DETECTED_IP"
+        echo "  替换 CORS_ORIGINS 中的 __AUTO__ → http://$DETECTED_IP"
+        # 使用 sed 替换 __AUTO__ 为实际 IP（保留其他来源）
+        # 兼容 macOS sed（需要 -i ''）和 Linux sed（-i 直接使用）
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|\"__AUTO__\"|\"http://$DETECTED_IP\"|g" "$ENV_FILE"
+        else
+            sed -i "s|\"__AUTO__\"|\"http://$DETECTED_IP\"|g" "$ENV_FILE"
+        fi
+        echo "  最终 CORS_ORIGINS=$(grep -E '^CORS_ORIGINS=' "$ENV_FILE" | cut -d'=' -f2-)"
+    else
+        echo "  [WARN] 无法自动检测本机 IP，请手动修改 $ENV_FILE 中的 CORS_ORIGINS"
+        echo "  将 \"__AUTO__\" 替换为 http://<服务器IP>"
+        # 移除 __AUTO__ 避免 Pydantic 校验失败（JSON 数组中不能有非 URL 字符串）
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' 's|"__AUTO__", ||g' "$ENV_FILE"
+            sed -i '' 's|, "__AUTO__"||g' "$ENV_FILE"
+            sed -i '' 's|"__AUTO__"|"http://localhost"|g' "$ENV_FILE"
+        else
+            sed -i 's|"__AUTO__", ||g' "$ENV_FILE"
+            sed -i 's|, "__AUTO__"||g' "$ENV_FILE"
+            sed -i 's|"__AUTO__"|"http://localhost"|g' "$ENV_FILE"
+        fi
+    fi
+    echo ""
+fi
+
+# ------------------------------------------------------------
 # 2. 检查 JWT_SECRET_KEY 是否已设置
 # ------------------------------------------------------------
 # 安全地读取 .env.prod（不使用 source，避免执行任意代码）
