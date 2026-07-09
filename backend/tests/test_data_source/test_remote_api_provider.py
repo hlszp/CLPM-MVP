@@ -130,7 +130,7 @@ async def test_query_fn_parses_successful_response():
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=api_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -174,7 +174,7 @@ async def test_query_fn_maps_quality_codes_correctly():
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=api_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -225,7 +225,7 @@ async def test_query_fn_handles_http_error():
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=error_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=error_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -254,7 +254,7 @@ async def test_query_fn_handles_business_error():
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=error_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=error_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -278,7 +278,7 @@ async def test_query_fn_handles_network_exception():
 
     provider = RemoteApiProvider()
     mock_client = MagicMock()
-    mock_client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+    mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
     with patch.object(provider, "_get_client", new=AsyncMock(return_value=mock_client)):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -310,7 +310,7 @@ async def test_query_fn_parses_iso_timestamps():
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=api_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -342,7 +342,7 @@ async def test_query_fn_handles_empty_string_values():
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=api_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -375,7 +375,7 @@ async def test_query_fn_skips_missing_tag_in_series():
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=api_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -409,7 +409,7 @@ async def test_query_fn_accepts_string_success_code_and_case_insensitive_tag_cod
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=api_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(
@@ -441,7 +441,7 @@ async def test_query_fn_pads_short_values_and_missing_qualities():
     with patch.object(
         provider,
         "_get_client",
-        new=AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=api_response))),
+        new=AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=api_response))),
     ):
         query_fn = provider.make_query_fn(db)
         result = await query_fn(

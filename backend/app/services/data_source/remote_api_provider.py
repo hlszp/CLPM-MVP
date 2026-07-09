@@ -200,9 +200,9 @@ class RemoteApiProvider:
 
             try:
                 client = await self._get_client()
-                resp = await client.post(
+                resp = await client.get(
                     settings.HISTORY_DATA_API_URL,
-                    json=request_body,
+                    params=request_body,
                 )
                 if resp.status_code != 200:
                     logger.warning(
@@ -294,9 +294,9 @@ class RemoteApiProvider:
 
         try:
             client = await self._get_client()
-            resp = await client.post(
+            resp = await client.get(
                 settings.HISTORY_DATA_API_URL,
-                json=request_body,
+                params=request_body,
             )
             if resp.status_code != 200:
                 logger.warning(

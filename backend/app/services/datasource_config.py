@@ -230,7 +230,7 @@ async def test_history_api_connection(
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+            resp = await client.get(url, params=payload, headers=headers)
         latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         if resp.status_code == 200:
             return {"success": True, "latencyMs": latency, "message": "历史数据 API 连接成功"}
