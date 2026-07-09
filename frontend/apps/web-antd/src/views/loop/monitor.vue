@@ -359,7 +359,7 @@ const columns: TableColumnsType = [
     dataIndex: 'description',
     key: 'description',
     ellipsis: true,
-    align: 'center',
+    align: 'left',
   },
   { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 120, align: 'center' },
   // v6.1 新增：测量量程 / 单位
