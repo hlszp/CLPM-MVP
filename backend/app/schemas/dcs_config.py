@@ -16,7 +16,6 @@ from pydantic import Field
 
 from app.schemas.base import CamelModel
 
-
 # ---------------------------------------------------------------------------
 # DcsVendor（DCS 品牌）
 # ---------------------------------------------------------------------------
@@ -146,9 +145,7 @@ class DcsModeMappingItem(CamelModel):
 class DcsModeMappingCreate(CamelModel):
     """MODE 映射创建请求。"""
 
-    dcs_model_id: str | None = Field(
-        None, description="关联型号 ID；NULL=本系统默认映射"
-    )
+    dcs_model_id: str | None = Field(None, description="关联型号 ID；NULL=本系统默认映射")
     standard_mode: int = Field(..., ge=0, le=4, description="标准 MODE 值 0-4")
     raw_mode_value: int = Field(..., description="该型号 DCS 实际 MODE 值")
     description: str | None = Field(None, max_length=500)
@@ -169,16 +166,12 @@ class DcsModeMappingUpdate(CamelModel):
 class ModeMatrixColumn(CamelModel):
     """矩阵列（一个型号一列）。"""
 
-    model_id: str | None = Field(
-        None, description="型号 ID；NULL=本系统默认列"
-    )
+    model_id: str | None = Field(None, description="型号 ID；NULL=本系统默认列")
     model_code: str | None = Field(None, description="型号 code；本系统默认列为 'default'")
     model_name: str | None = Field(None, description="型号名称；本系统默认列为 '本系统默认'")
     vendor_id: str | None = Field(None, description="所属品牌 ID")
     vendor_name: str | None = Field(None, description="所属品牌名称")
-    raw_mode_value: int | None = Field(
-        None, description="该型号的实际 MODE 值；NULL=未配置"
-    )
+    raw_mode_value: int | None = Field(None, description="该型号的实际 MODE 值；NULL=未配置")
 
 
 class ModeMatrixRow(CamelModel):
@@ -189,18 +182,14 @@ class ModeMatrixRow(CamelModel):
     label_en: str
     is_auto: bool
     color: str
-    columns: list[ModeMatrixColumn] = Field(
-        ..., description="各型号列（第一列为本系统默认）"
-    )
+    columns: list[ModeMatrixColumn] = Field(..., description="各型号列（第一列为本系统默认）")
 
 
 class ModeMatrixView(CamelModel):
     """MODE 映射矩阵视图（行=标准 MODE，列=各型号）。"""
 
     rows: list[ModeMatrixRow]
-    columns: list[ModeMatrixColumn] = Field(
-        ..., description="列头（第一列为本系统默认）"
-    )
+    columns: list[ModeMatrixColumn] = Field(..., description="列头（第一列为本系统默认）")
 
 
 # ---------------------------------------------------------------------------

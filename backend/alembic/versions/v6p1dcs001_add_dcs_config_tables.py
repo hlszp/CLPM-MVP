@@ -72,16 +72,41 @@ def upgrade() -> None:
             sa.column("sort_order", sa.Integer),
         ),
         [
-            {"code": "hollysys", "name": "和利时", "name_en": "HollySys",
-             "description": "北京和利时系统工程股份有限公司", "sort_order": 1},
-            {"code": "supcon", "name": "中控", "name_en": "SUPCON",
-             "description": "浙江中控技术股份有限公司", "sort_order": 2},
-            {"code": "honeywell", "name": "霍尼韦尔", "name_en": "Honeywell",
-             "description": "霍尼韦尔国际公司", "sort_order": 3},
-            {"code": "yokogawa", "name": "横河", "name_en": "Yokogawa",
-             "description": "横河电机株式会社", "sort_order": 4},
-            {"code": "emerson", "name": "艾默生", "name_en": "Emerson",
-             "description": "艾默生电气公司", "sort_order": 5},
+            {
+                "code": "hollysys",
+                "name": "和利时",
+                "name_en": "HollySys",
+                "description": "北京和利时系统工程股份有限公司",
+                "sort_order": 1,
+            },
+            {
+                "code": "supcon",
+                "name": "中控",
+                "name_en": "SUPCON",
+                "description": "浙江中控技术股份有限公司",
+                "sort_order": 2,
+            },
+            {
+                "code": "honeywell",
+                "name": "霍尼韦尔",
+                "name_en": "Honeywell",
+                "description": "霍尼韦尔国际公司",
+                "sort_order": 3,
+            },
+            {
+                "code": "yokogawa",
+                "name": "横河",
+                "name_en": "Yokogawa",
+                "description": "横河电机株式会社",
+                "sort_order": 4,
+            },
+            {
+                "code": "emerson",
+                "name": "艾默生",
+                "name_en": "Emerson",
+                "description": "艾默生电气公司",
+                "sort_order": 5,
+            },
         ],
     )
 
@@ -100,7 +125,9 @@ def upgrade() -> None:
             nullable=False,
             comment="所属品牌 ID",
         ),
-        sa.Column("code", sa.String(100), nullable=False, unique=True, comment="型号代码（全局唯一）"),
+        sa.Column(
+            "code", sa.String(100), nullable=False, unique=True, comment="型号代码（全局唯一）"
+        ),
         sa.Column("name", sa.String(200), nullable=False, comment="型号名称"),
         sa.Column("description", sa.String(500), nullable=True),
         sa.Column("sort_order", sa.Integer, nullable=False, server_default=sa.text("0")),
@@ -120,20 +147,42 @@ def upgrade() -> None:
 
     # 查询品牌 ID 以建立型号关联
     conn = op.get_bind()
-    vendors = {row.code: str(row.id) for row in conn.execute(sa.text("SELECT id, code FROM dcs_vendor"))}
+    vendors = {
+        row.code: str(row.id) for row in conn.execute(sa.text("SELECT id, code FROM dcs_vendor"))
+    }
 
     # 种子数据：每个品牌一个主流型号
     models_data = [
-        {"vendor_code": "hollysys", "model_code": "hollysys-macs",
-         "model_name": "MACS 系统", "description": "和利时 MACS V 集散控制系统"},
-        {"vendor_code": "supcon", "model_code": "supcon-ecs700",
-         "model_name": "ECS-700", "description": "中控 ECS-700 集散控制系统"},
-        {"vendor_code": "honeywell", "model_code": "honeywell-experion",
-         "model_name": "Experion PKS", "description": "霍尼韦尔 Experion 过程知识系统"},
-        {"vendor_code": "yokogawa", "model_code": "yokogawa-centum",
-         "model_name": "CENTUM CS3000", "description": "横河 CENTUM CS3000 集散控制系统"},
-        {"vendor_code": "emerson", "model_code": "emerson-deltav",
-         "model_name": "DeltaV", "description": "艾默生 DeltaV 集散控制系统"},
+        {
+            "vendor_code": "hollysys",
+            "model_code": "hollysys-macs",
+            "model_name": "MACS 系统",
+            "description": "和利时 MACS V 集散控制系统",
+        },
+        {
+            "vendor_code": "supcon",
+            "model_code": "supcon-ecs700",
+            "model_name": "ECS-700",
+            "description": "中控 ECS-700 集散控制系统",
+        },
+        {
+            "vendor_code": "honeywell",
+            "model_code": "honeywell-experion",
+            "model_name": "Experion PKS",
+            "description": "霍尼韦尔 Experion 过程知识系统",
+        },
+        {
+            "vendor_code": "yokogawa",
+            "model_code": "yokogawa-centum",
+            "model_name": "CENTUM CS3000",
+            "description": "横河 CENTUM CS3000 集散控制系统",
+        },
+        {
+            "vendor_code": "emerson",
+            "model_code": "emerson-deltav",
+            "model_name": "DeltaV",
+            "description": "艾默生 DeltaV 集散控制系统",
+        },
     ]
     op.bulk_insert(
         sa.table(
@@ -164,13 +213,25 @@ def upgrade() -> None:
         sa.Column(
             "id", UUID(as_uuid=False), primary_key=True, server_default=sa.text("gen_random_uuid()")
         ),
-        sa.Column("standard_mode", sa.Integer, nullable=False, unique=True, comment="标准 MODE 值 0-4"),
+        sa.Column(
+            "standard_mode", sa.Integer, nullable=False, unique=True, comment="标准 MODE 值 0-4"
+        ),
         sa.Column("label_zh", sa.String(20), nullable=False, comment="中文标签"),
         sa.Column("label_en", sa.String(20), nullable=False, comment="英文标签"),
-        sa.Column("is_auto", sa.Boolean, nullable=False, server_default=sa.text("FALSE"),
-                  comment="是否计入自控率"),
-        sa.Column("color", sa.String(20), nullable=False, server_default=sa.text("'#999999'"),
-                  comment="图表配色"),
+        sa.Column(
+            "is_auto",
+            sa.Boolean,
+            nullable=False,
+            server_default=sa.text("FALSE"),
+            comment="是否计入自控率",
+        ),
+        sa.Column(
+            "color",
+            sa.String(20),
+            nullable=False,
+            server_default=sa.text("'#999999'"),
+            comment="图表配色",
+        ),
         sa.Column("sort_order", sa.Integer, nullable=False, server_default=sa.text("0")),
         sa.Column("description", sa.String(500), nullable=True),
         sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
@@ -181,7 +242,9 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             onupdate=sa.func.now(),
         ),
-        sa.CheckConstraint("standard_mode IN (0, 1, 2, 3, 4)", name="ck_mode_definition_standard_mode"),
+        sa.CheckConstraint(
+            "standard_mode IN (0, 1, 2, 3, 4)", name="ck_mode_definition_standard_mode"
+        ),
         comment="标准 MODE 定义（配置驱动，替代硬编码 AUTO_MODES）",
     )
     op.create_index("idx_mode_definition_sort", "mode_definition", ["sort_order"])
@@ -199,21 +262,51 @@ def upgrade() -> None:
             sa.column("description", sa.String),
         ),
         [
-            {"standard_mode": 0, "label_zh": "手动", "label_en": "MANUAL",
-             "is_auto": False, "color": "#d4380d", "sort_order": 0,
-             "description": "操作员直接操作 OP"},
-            {"standard_mode": 1, "label_zh": "自动", "label_en": "AUTO",
-             "is_auto": True, "color": "#52c41a", "sort_order": 1,
-             "description": "单回路 PID 自动控制"},
-            {"standard_mode": 2, "label_zh": "串级", "label_en": "CAS",
-             "is_auto": True, "color": "#1890ff", "sort_order": 2,
-             "description": "主-副回路串级控制"},
-            {"standard_mode": 3, "label_zh": "远程", "label_en": "REMOTE",
-             "is_auto": True, "color": "#722ed1", "sort_order": 3,
-             "description": "SCADA/上位机远程设定"},
-            {"standard_mode": 4, "label_zh": "先控", "label_en": "APC",
-             "is_auto": True, "color": "#13c2c2", "sort_order": 4,
-             "description": "先进过程控制（MPC 等）"},
+            {
+                "standard_mode": 0,
+                "label_zh": "手动",
+                "label_en": "MANUAL",
+                "is_auto": False,
+                "color": "#d4380d",
+                "sort_order": 0,
+                "description": "操作员直接操作 OP",
+            },
+            {
+                "standard_mode": 1,
+                "label_zh": "自动",
+                "label_en": "AUTO",
+                "is_auto": True,
+                "color": "#52c41a",
+                "sort_order": 1,
+                "description": "单回路 PID 自动控制",
+            },
+            {
+                "standard_mode": 2,
+                "label_zh": "串级",
+                "label_en": "CAS",
+                "is_auto": True,
+                "color": "#1890ff",
+                "sort_order": 2,
+                "description": "主-副回路串级控制",
+            },
+            {
+                "standard_mode": 3,
+                "label_zh": "远程",
+                "label_en": "REMOTE",
+                "is_auto": True,
+                "color": "#722ed1",
+                "sort_order": 3,
+                "description": "SCADA/上位机远程设定",
+            },
+            {
+                "standard_mode": 4,
+                "label_zh": "先控",
+                "label_en": "APC",
+                "is_auto": True,
+                "color": "#13c2c2",
+                "sort_order": 4,
+                "description": "先进过程控制（MPC 等）",
+            },
         ],
     )
 
@@ -275,23 +368,31 @@ def upgrade() -> None:
             sa.column("description", sa.String),
         ),
         [
-            {"dcs_model_id": None, "standard_mode": sm, "raw_mode_value": sm,
-             "description": "本系统默认映射（1:1）"}
+            {
+                "dcs_model_id": None,
+                "standard_mode": sm,
+                "raw_mode_value": sm,
+                "description": "本系统默认映射（1:1）",
+            }
             for sm in range(5)
         ],
     )
 
     # 种子数据 2：每个型号 5 行映射（默认 1:1，可后续按实际品牌调整）
-    model_ids = {row.code: str(row.id) for row in conn.execute(sa.text("SELECT id, code FROM dcs_model"))}
+    model_ids = {
+        row.code: str(row.id) for row in conn.execute(sa.text("SELECT id, code FROM dcs_model"))
+    }
     model_mappings = []
     for model_code, model_id in model_ids.items():
         for sm in range(5):
-            model_mappings.append({
-                "dcs_model_id": model_id,
-                "standard_mode": sm,
-                "raw_mode_value": sm,
-                "description": f"{model_code} 默认映射（1:1，可按实际 DCS 调整）",
-            })
+            model_mappings.append(
+                {
+                    "dcs_model_id": model_id,
+                    "standard_mode": sm,
+                    "raw_mode_value": sm,
+                    "description": f"{model_code} 默认映射（1:1，可按实际 DCS 调整）",
+                }
+            )
     op.bulk_insert(
         sa.table(
             "dcs_mode_mapping",

@@ -95,9 +95,7 @@ async def get_mode_definitions(db: AsyncSession) -> list[dict]:
     """
     from app.models.mode_definition import ModeDefinition
 
-    result = await db.execute(
-        select(ModeDefinition).order_by(ModeDefinition.sort_order.asc())
-    )
+    result = await db.execute(select(ModeDefinition).order_by(ModeDefinition.sort_order.asc()))
     defs = result.scalars().all()
     return [
         {

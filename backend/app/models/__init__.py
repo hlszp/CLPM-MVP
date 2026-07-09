@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from app.models.audit import SysAuditLog
 from app.models.base import Base, TimestampMixin
-from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.dcs_mode_mapping import DcsModeMapping
 from app.models.dcs_model import DcsModel
 from app.models.dcs_vendor import DcsVendor
+from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight

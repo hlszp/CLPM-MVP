@@ -28,7 +28,9 @@ class DataSourceConfigInfo(CamelModel):
     )
 
     # 运行态标记（启动时初始化的实际状态，UI 用于提示"需重启生效"）
-    historyProviderActive: str = Field(..., description="当前生效的历史数据 Provider：tdengine / remote_api")
+    historyProviderActive: str = Field(
+        ..., description="当前生效的历史数据 Provider：tdengine / remote_api"
+    )
     signalrSubscriberRunning: bool = Field(..., description="实时订阅器是否在运行")
 
 

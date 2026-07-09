@@ -94,8 +94,7 @@ class RealtimeSubscriber:
     def _writeback_enabled(self) -> bool:
         """是否启用实时数据写回本地 TDengine 宽表。"""
         return (
-            settings.REALTIME_WRITEBACK_ENABLED
-            and settings.DATA_SOURCE_TYPE.lower() == "tdengine"
+            settings.REALTIME_WRITEBACK_ENABLED and settings.DATA_SOURCE_TYPE.lower() == "tdengine"
         )
 
     async def start(self) -> None:
@@ -302,13 +301,17 @@ class RealtimeSubscriber:
             tag_codes = list(batch.keys())
             placeholders = ",".join(f":tag_{i}" for i in range(len(tag_codes)))
 
-            case_value = "CASE tag_name " + " ".join(
-                f"WHEN :tag_{i} THEN :val_{i}" for i in range(len(tag_codes))
-            ) + " ELSE current_value END"
+            case_value = (
+                "CASE tag_name "
+                + " ".join(f"WHEN :tag_{i} THEN :val_{i}" for i in range(len(tag_codes)))
+                + " ELSE current_value END"
+            )
 
-            case_quality = "CASE tag_name " + " ".join(
-                f"WHEN :tag_{i} THEN :qual_{i}" for i in range(len(tag_codes))
-            ) + " ELSE quality END"
+            case_quality = (
+                "CASE tag_name "
+                + " ".join(f"WHEN :tag_{i} THEN :qual_{i}" for i in range(len(tag_codes)))
+                + " ELSE quality END"
+            )
 
             params: dict[str, Any] = {"sync_time": now}
             for i, tc in enumerate(tag_codes):

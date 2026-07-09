@@ -319,7 +319,9 @@ async def trigger_diagnosis_endpoint(
 
 @router.get("/tasks", response_model=ApiResponse[DiagnosisTaskListData])
 async def list_tasks_endpoint(
-    status: str | None = Query(None, description="任务状态筛选（PENDING/RUNNING/SUCCESS/FAILED/CANCELLED）"),
+    status: str | None = Query(
+        None, description="任务状态筛选（PENDING/RUNNING/SUCCESS/FAILED/CANCELLED）"
+    ),
     triggerType: str | None = Query(None, description="触发方式筛选（manual/auto）"),
     loopId: str | None = Query(None, description="按回路 ID 筛选"),
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),

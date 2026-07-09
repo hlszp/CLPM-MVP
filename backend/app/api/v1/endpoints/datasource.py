@@ -50,7 +50,8 @@ async def update_datasource_config_endpoint(
 ) -> dict:
     """更新数据源配置（仅 ADMIN）。
 
-    即时生效：historyApiUrl / historyApiToken / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
+    即时生效：historyApiUrl / historyApiToken / historyApiTimeout
+    / signalrHubUrl / signalrReconnectInterval
     重启生效：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）
     """
     data = await update_datasource_config(

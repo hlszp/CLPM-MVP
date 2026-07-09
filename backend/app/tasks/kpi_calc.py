@@ -250,7 +250,7 @@ async def _track_hourly_calculation(celery_task_id: str, ts_start: str | None = 
     ts_start_dt = _parse_ts_start(ts_start)
 
     # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
 
     _SHANGHAI = timezone(timedelta(hours=8))
     _title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"

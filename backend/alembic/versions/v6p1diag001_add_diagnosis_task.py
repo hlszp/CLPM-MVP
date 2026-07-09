@@ -64,9 +64,7 @@ def upgrade() -> None:
             ["loop_ledger.id"],
             ondelete="CASCADE",
         ),
-        sa.CheckConstraint(
-            "trigger_type IN ('manual', 'auto')", name="ck_diag_task_trigger_type"
-        ),
+        sa.CheckConstraint("trigger_type IN ('manual', 'auto')", name="ck_diag_task_trigger_type"),
         sa.CheckConstraint(
             "status IN ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED')",
             name="ck_diag_task_status",
@@ -147,9 +145,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # 删除 diagnosis_result.task_id 索引、外键、列
     op.drop_index("idx_diagnosis_result_task_id", table_name="diagnosis_result")
-    op.drop_constraint(
-        "fk_diagnosis_result_task_id", "diagnosis_result", type_="foreignkey"
-    )
+    op.drop_constraint("fk_diagnosis_result_task_id", "diagnosis_result", type_="foreignkey")
     op.drop_column("diagnosis_result", "task_id")
     # 删除 diagnosis_task 表
     op.drop_table("diagnosis_task")

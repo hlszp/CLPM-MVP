@@ -48,13 +48,9 @@ class DcsModel(Base, TimestampMixin):
         unique=True,
         comment="型号代码（全局唯一）：如 hollysys-macs / supcon-ecs700",
     )
-    name: Mapped[str] = mapped_column(
-        String(200), nullable=False, comment="型号名称"
-    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False, comment="型号名称")
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    sort_order: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, comment="排序权重"
-    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="排序权重")
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, comment="是否启用"
     )

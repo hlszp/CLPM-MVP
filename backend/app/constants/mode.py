@@ -32,11 +32,11 @@ class StandardMode(IntEnum):
     `loop_mode_mapping.mode_value` 列保持一致。
     """
 
-    MANUAL = 0   # 手动
-    AUTO = 1     # 自动
-    CAS = 2      # 串级
-    REMOTE = 3   # 远程
-    APC = 4      # 先控
+    MANUAL = 0  # 手动
+    AUTO = 1  # 自动
+    CAS = 2  # 串级
+    REMOTE = 3  # 远程
+    APC = 4  # 先控
 
 
 #: MODE 中文标签字典（用于前端展示 / 日志可读性）

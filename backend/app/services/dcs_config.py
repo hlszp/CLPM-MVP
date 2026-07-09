@@ -223,9 +223,7 @@ async def delete_vendor(db: AsyncSession, vendor_id: str, operator: str = "syste
             status_code=404,
         )
     # 检查是否有关联型号
-    model_count = await db.execute(
-        select(DcsModel).where(DcsModel.vendor_id == vendor_id).limit(1)
-    )
+    model_count = await db.execute(select(DcsModel).where(DcsModel.vendor_id == vendor_id).limit(1))
     if model_count.scalar_one_or_none():
         raise BizError(
             code="ERR_DCS_VENDOR_HAS_MODELS",
@@ -357,9 +355,7 @@ async def delete_model(db: AsyncSession, model_id: str, operator: str = "system"
 
 async def list_mode_definitions(db: AsyncSession) -> list[dict]:
     """获取全部标准 MODE 定义（按 sort_order 排序）。"""
-    result = await db.execute(
-        select(ModeDefinition).order_by(ModeDefinition.sort_order.asc())
-    )
+    result = await db.execute(select(ModeDefinition).order_by(ModeDefinition.sort_order.asc()))
     return [_mode_def_to_dict(d) for d in result.scalars().all()]
 
 
@@ -422,8 +418,7 @@ async def list_mode_mappings(
     )
     if dcs_model_id is not None:
         stmt = stmt.where(
-            (DcsModeMapping.dcs_model_id == dcs_model_id)
-            | (DcsModeMapping.dcs_model_id.is_(None))
+            (DcsModeMapping.dcs_model_id == dcs_model_id) | (DcsModeMapping.dcs_model_id.is_(None))
         )
     stmt = stmt.order_by(
         DcsModeMapping.dcs_model_id.asc().nullsfirst(),
@@ -444,9 +439,7 @@ async def upsert_mode_mapping(
 ) -> dict:
     """创建或更新 MODE 映射（按 dcs_model_id + standard_mode 幂等）."""
     # 查找现有记录
-    stmt = select(DcsModeMapping).where(
-        DcsModeMapping.standard_mode == standard_mode
-    )
+    stmt = select(DcsModeMapping).where(DcsModeMapping.standard_mode == standard_mode)
     if dcs_model_id:
         stmt = stmt.where(DcsModeMapping.dcs_model_id == dcs_model_id)
     else:
@@ -520,9 +513,7 @@ async def get_mode_matrix(db: AsyncSession) -> dict:
     models = models_result.scalars().all()
 
     # 查询所有 MODE 定义（按 sort_order 排序）
-    defs_result = await db.execute(
-        select(ModeDefinition).order_by(ModeDefinition.sort_order.asc())
-    )
+    defs_result = await db.execute(select(ModeDefinition).order_by(ModeDefinition.sort_order.asc()))
     defs = defs_result.scalars().all()
 
     # 查询所有映射

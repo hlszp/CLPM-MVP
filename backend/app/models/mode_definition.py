@@ -48,9 +48,7 @@ class ModeDefinition(Base, TimestampMixin):
         unique=True,
         comment="标准 MODE 值：0=手动/1=自动/2=串级/3=远程/4=先控",
     )
-    label_zh: Mapped[str] = mapped_column(
-        String(20), nullable=False, comment="中文标签"
-    )
+    label_zh: Mapped[str] = mapped_column(String(20), nullable=False, comment="中文标签")
     label_en: Mapped[str] = mapped_column(
         String(20), nullable=False, comment="英文标签（与 DDS mode_label 对齐）"
     )
@@ -66,9 +64,7 @@ class ModeDefinition(Base, TimestampMixin):
         default="#999999",
         comment="图表配色（Hex）",
     )
-    sort_order: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, comment="排序权重"
-    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="排序权重")
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     __table_args__ = (

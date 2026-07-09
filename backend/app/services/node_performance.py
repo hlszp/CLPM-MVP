@@ -241,8 +241,7 @@ async def query_realtime_auto_rate(
 
     rate = round(auto_count / valid_count * 100, 2)
     logger.debug(
-        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, "
-        "mode_counts=%s, auto_modes=%s",
+        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, mode_counts=%s, auto_modes=%s",
         valid_count,
         auto_count,
         rate,

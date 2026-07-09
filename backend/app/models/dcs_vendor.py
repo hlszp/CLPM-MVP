@@ -42,12 +42,8 @@ class DcsVendor(Base, TimestampMixin):
         unique=True,
         comment="品牌代码（唯一）：hollysys/supcon/honeywell/yokogawa/emerson",
     )
-    name: Mapped[str] = mapped_column(
-        String(100), nullable=False, comment="品牌中文名"
-    )
-    name_en: Mapped[str | None] = mapped_column(
-        String(100), nullable=True, comment="品牌英文名"
-    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False, comment="品牌中文名")
+    name_en: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="品牌英文名")
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="排序权重（越小越靠前）"
@@ -56,9 +52,7 @@ class DcsVendor(Base, TimestampMixin):
         Boolean, nullable=False, default=True, comment="是否启用"
     )
 
-    __table_args__ = (
-        Index("idx_dcs_vendor_sort", "sort_order"),
-    )
+    __table_args__ = (Index("idx_dcs_vendor_sort", "sort_order"),)
 
 
 __all__ = ["DcsVendor"]

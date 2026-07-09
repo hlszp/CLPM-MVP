@@ -29,9 +29,9 @@ from app.api.v1.endpoints import (
     dashboard,
     dataplanner,
     datasource,
-    diagnosis,
     # v6.1: DCS 配置管理（品牌/型号/MODE 定义/映射矩阵）
     dcs,
+    diagnosis,
     grading_config,
     health,
     loop_level_weight,
@@ -119,9 +119,7 @@ def _start_celery_beat() -> None:
             _celery_beat_process.pid,
         )
     except Exception as exc:
-        logger.warning(
-            "启动 Celery Beat 失败（定时任务将不会自动执行）: %s", exc
-        )
+        logger.warning("启动 Celery Beat 失败（定时任务将不会自动执行）: %s", exc)
 
 
 def _stop_celery_beat() -> None:

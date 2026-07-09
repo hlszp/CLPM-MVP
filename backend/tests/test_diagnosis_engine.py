@@ -1007,10 +1007,9 @@ class TestAnalyzeQuality:
     def test_q003_uncertain_quality(self) -> None:
         """Uncertain 占比 > 20% 应返回 Q003。"""
         # 30 个 Good + 20 个 Uncertain（占 40%）
-        data = (
-            [{"quality": "GOOD"} for _ in range(30)]
-            + [{"quality": "UNCERTAIN"} for _ in range(20)]
-        )
+        data = [{"quality": "GOOD"} for _ in range(30)] + [
+            {"quality": "UNCERTAIN"} for _ in range(20)
+        ]
         result = _analyze_quality(data)
         assert result["quality_pattern"] == "Q003"
         assert result["abnormal"] is True
@@ -1857,9 +1856,24 @@ class TestDeduplicateLabels:
     def test_duplicate_labels_keep_highest_confidence(self) -> None:
         """同一标签多条记录应保留置信度最高的。"""
         results = [
-            {"label": "OSCILLATION", "confidence": 0.5, "feature_values": {"a": 1}, "evidence": {"reasoning": "low"}},
-            {"label": "OSCILLATION", "confidence": 0.9, "feature_values": {"b": 2}, "evidence": {"reasoning": "high"}},
-            {"label": "OSCILLATION", "confidence": 0.7, "feature_values": {"c": 3}, "evidence": {"reasoning": "mid"}},
+            {
+                "label": "OSCILLATION",
+                "confidence": 0.5,
+                "feature_values": {"a": 1},
+                "evidence": {"reasoning": "low"},
+            },
+            {
+                "label": "OSCILLATION",
+                "confidence": 0.9,
+                "feature_values": {"b": 2},
+                "evidence": {"reasoning": "high"},
+            },
+            {
+                "label": "OSCILLATION",
+                "confidence": 0.7,
+                "feature_values": {"c": 3},
+                "evidence": {"reasoning": "mid"},
+            },
         ]
         processed = _deduplicate_labels(results)
         assert len(processed) == 1
@@ -1869,8 +1883,18 @@ class TestDeduplicateLabels:
     def test_merge_feature_values(self) -> None:
         """合并 feature_values，主记录优先。"""
         results = [
-            {"label": "OSCILLATION", "confidence": 0.9, "feature_values": {"a": 1, "b": 2}, "evidence": {}},
-            {"label": "OSCILLATION", "confidence": 0.5, "feature_values": {"b": 99, "c": 3}, "evidence": {}},
+            {
+                "label": "OSCILLATION",
+                "confidence": 0.9,
+                "feature_values": {"a": 1, "b": 2},
+                "evidence": {},
+            },
+            {
+                "label": "OSCILLATION",
+                "confidence": 0.5,
+                "feature_values": {"b": 99, "c": 3},
+                "evidence": {},
+            },
         ]
         processed = _deduplicate_labels(results)
         assert len(processed) == 1
@@ -1882,8 +1906,18 @@ class TestDeduplicateLabels:
     def test_cross_validated_algorithms_appended(self) -> None:
         """其他记录的 evidence 应追加到 cross_validated_algorithms。"""
         results = [
-            {"label": "VALVE_STICTION", "confidence": 0.9, "feature_values": {}, "evidence": {"reasoning": "primary", "algorithm": "A"}},
-            {"label": "VALVE_STICTION", "confidence": 0.7, "feature_values": {}, "evidence": {"reasoning": "secondary", "algorithm": "B"}},
+            {
+                "label": "VALVE_STICTION",
+                "confidence": 0.9,
+                "feature_values": {},
+                "evidence": {"reasoning": "primary", "algorithm": "A"},
+            },
+            {
+                "label": "VALVE_STICTION",
+                "confidence": 0.7,
+                "feature_values": {},
+                "evidence": {"reasoning": "secondary", "algorithm": "B"},
+            },
         ]
         processed = _deduplicate_labels(results)
         assert len(processed) == 1

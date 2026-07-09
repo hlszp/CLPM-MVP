@@ -1181,11 +1181,7 @@ async def export_loops(
             str(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else ""
         )
         # DCS 型号名称（空值表示使用本系统默认 MODE 映射）
-        dcs_model_str = (
-            dcs_model_map.get(str(loop.dcs_model_id))
-            if loop.dcs_model_id
-            else ""
-        )
+        dcs_model_str = dcs_model_map.get(str(loop.dcs_model_id)) if loop.dcs_model_id else ""
         ws.append(
             [
                 loop.tag_name,
@@ -1333,9 +1329,7 @@ async def import_loops(
                 op_output_upper_limit = None
         # DCS 型号：空值表示使用本系统默认 MODE 映射（dcs_model_id=NULL）
         dcs_model_name = (
-            _cell_str(row[_DCS_MODEL_COLUMN_INDEX])
-            if len(row) > _DCS_MODEL_COLUMN_INDEX
-            else ""
+            _cell_str(row[_DCS_MODEL_COLUMN_INDEX]) if len(row) > _DCS_MODEL_COLUMN_INDEX else ""
         )
         dcs_model_id: str | None = None
         if dcs_model_name:
