@@ -28,7 +28,7 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  'item-click': [item: KpiStripItem];
+  itemClick: [item: KpiStripItem];
 }>();
 
 interface Props {
@@ -67,7 +67,7 @@ function isClickable(item: KpiStripItem): boolean {
 /** 处理点击 */
 function handleClick(item: KpiStripItem) {
   if (!isClickable(item)) return;
-  emit('item-click', item);
+  emit('itemClick', item);
 }
 
 /**

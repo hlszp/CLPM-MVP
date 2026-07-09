@@ -113,7 +113,6 @@ async function loadLoopCounts() {
   try {
     const counts: Record<string, number> = {};
     let page = 1;
-    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
     const pageSize = 100;
     let total = 0;
     do {
@@ -1505,7 +1504,7 @@ async function loadAvailableTags(keyword?: string) {
     // 如果有回路位号，按前缀搜索相关测点
     const searchKeyword =
       keyword ||
-      (editingLoop.value?.tagName ? editingLoop.value.tagName : undefined);
+      (editingLoop.value?.tagName && editingLoop.value.tagName) || undefined;
     const data = await getTagListApi({
       keyword: searchKeyword,
       page: 1,

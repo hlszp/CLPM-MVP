@@ -258,7 +258,7 @@ function getRating(score: null | number | undefined): {
   if (score === null || score === undefined) {
     return { color: 'default', label: '—', level: 0 };
   }
-  const sorted = [...thresholds.value].sort((a, b) => a.level - b.level);
+  const sorted = [...thresholds.value].toSorted((a, b) => a.level - b.level);
   // level 1 为最高分区间，逐级递减
   for (const t of sorted) {
     if (score >= t.minScore && score < t.maxScore) {
@@ -545,9 +545,8 @@ async function loadLoop() {
   // 后端 pageSize 上限 100，循环分页拉取时间窗内全部快照
   const allItems: any[] = [];
   let page = 1;
-  // eslint-disable-next-line @typescript-eslint/no-magic-numbers
   const pageLimit = 100;
-  let total = 0;
+  let total: number;
   do {
     const result = await getLoopSnapshotsApi({
       startTime: start,
@@ -569,7 +568,6 @@ async function loadLoopDescMap() {
     const map = new Map<string, string>();
     // getLoopListApi 后端已支持递归子孙节点，只需传单个 plantNodeId
     let page = 1;
-    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
     const pageLimit = 100;
     let total = 0;
     do {

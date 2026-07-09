@@ -16,14 +16,21 @@ const props = withDefaults(
     /** Phase 5：逐点有效性标记（true=有效，false=无效）。存在时优先于 pvQuality */
     validMask?: boolean[];
   }>(),
-  { enableTimeSelect: false, selectedTimestamp: null, showMode: true },
+  {
+    enableTimeSelect: false,
+    height: '360px',
+    outlierReasons: () => [],
+    selectedTimestamp: null,
+    showMode: true,
+    validMask: () => [],
+  },
 );
 
 const emit = defineEmits<{
-  (e: 'time-select', payload: { index: number; timestamp: string }): void;
+  (e: 'timeSelect', payload: { index: number; timestamp: string }): void;
   /** 光标悬停时刻的值变化（鼠标移出画布时 payload 为 null，恢复默认） */
   (
-    e: 'cursor-change',
+    e: 'cursorChange',
     payload: null | {
       index: number;
       mode: null | number;
@@ -132,7 +139,7 @@ function bindClickEvent() {
         nearestIdx = i;
       }
     }
-    emit('time-select', {
+    emit('timeSelect', {
       timestamp: String(timestamps[nearestIdx]),
       index: nearestIdx,
     });
@@ -172,7 +179,7 @@ function bindCursorEvent() {
         nearestIdx = i;
       }
     }
-    emit('cursor-change', {
+    emit('cursorChange', {
       index: nearestIdx,
       mode: mode?.[nearestIdx] ?? null,
       op: op?.[nearestIdx] ?? null,
@@ -183,7 +190,7 @@ function bindCursorEvent() {
     });
   };
   outHandler = () => {
-    emit('cursor-change', null);
+    emit('cursorChange', null);
   };
   zr.on('mousemove', moveHandler);
   zr.on('mouseout', outHandler);

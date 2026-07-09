@@ -509,24 +509,14 @@ function handleRealtimeMessage(msg: {
     case 'MODE': {
       cv.mode = numValue;
       // 复用后端已有映射逻辑
+      let modeLabel = 'Unknown';
       switch (numValue) {
-        case 0: {
-          cv.modeLabel = 'Manual';
-          break;
-        }
-        case 1: {
-          cv.modeLabel = 'Auto';
-          break;
-        }
-        case 2: {
-          cv.modeLabel = 'Cascade';
-          break;
-        }
-        default: {
-          cv.modeLabel = 'Unknown';
-          break;
-        }
+        case 0: { modeLabel = 'Manual'; break; }
+        case 1: { modeLabel = 'Auto'; break; }
+        case 2: { modeLabel = 'Cascade'; break; }
+        default: { break; }
       }
+      cv.modeLabel = modeLabel;
       break;
     }
     case 'OP': {

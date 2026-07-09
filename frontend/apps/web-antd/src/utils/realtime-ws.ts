@@ -108,7 +108,7 @@ class RealtimeWebSocket {
       this._notifyConnectionChange();
     });
 
-    this.ws.onmessage = (event) => {
+    this.ws.addEventListener('message', (event) => {
       try {
         const data = JSON.parse(event.data);
         // 跳过心跳消息
@@ -118,7 +118,7 @@ class RealtimeWebSocket {
       } catch {
         // 非 JSON 消息，忽略
       }
-    };
+    });
 
     this.ws.addEventListener('close', (event) => {
       // P3 #57: 控制台日志环境守卫，生产环境不输出
@@ -132,12 +132,12 @@ class RealtimeWebSocket {
       }
     });
 
-    this.ws.onerror = () => {
+    this.ws.addEventListener('error', () => {
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
         console.warn('[RealtimeWS] 连接错误');
       }
-    };
+    });
   }
 
   private _notifyConnectionChange() {
