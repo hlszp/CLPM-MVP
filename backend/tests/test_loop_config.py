@@ -606,9 +606,11 @@ class TestRealtimeAutoRate:
                 return [{"ts": "2026-06-22T08:00:00Z", "value": 0}]
             return []
 
+        mock_provider = MagicMock()
+        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.core.tdengine.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
+            "app.services.data_source.factory.get_provider",
+            return_value=mock_provider,
         ):
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
@@ -659,9 +661,11 @@ class TestRealtimeAutoRate:
                 return [{"ts": "2026-06-22T08:00:00Z", "value": 2}]
             return []
 
+        mock_provider = MagicMock()
+        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.core.tdengine.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
+            "app.services.data_source.factory.get_provider",
+            return_value=mock_provider,
         ):
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
@@ -699,9 +703,11 @@ class TestRealtimeAutoRate:
                 return [{"ts": "2026-06-22T08:00:00Z", "value": 2}]
             return []
 
+        mock_provider = MagicMock()
+        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.core.tdengine.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
+            "app.services.data_source.factory.get_provider",
+            return_value=mock_provider,
         ):
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
@@ -737,9 +743,11 @@ class TestRealtimeAutoRate:
                 return [{"ts": "2026-06-22T08:00:00Z", "value": 0}]
             return []
 
+        mock_provider = MagicMock()
+        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.core.tdengine.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
+            "app.services.data_source.factory.get_provider",
+            return_value=mock_provider,
         ):
             result = await query_realtime_auto_rate(db, ["loop-001"])
 

@@ -18,7 +18,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
-from app.core.tdengine import query_trend_data
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.tag import TagRegistry
 
@@ -197,13 +196,18 @@ async def get_waveform(
             tags_map[str(t.id)] = t
 
     # 查询各角色的趋势数据（S3-A5: 并行查询 4 个 Tag）
+    # 通过数据源工厂适配 tdengine/remote_api，支持数据链路切换
+    from app.services.data_source.factory import get_provider
+
+    _provider = get_provider()
+
     async def _fetch_role(role: str) -> tuple[str, list[dict]]:
         mapping = mappings.get(role)
         if not mapping or str(mapping.tag_id) not in tags_map:
             return role, []
         tag = tags_map[str(mapping.tag_id)]
         try:
-            raw = await query_trend_data(tag.tag_name, td_start, td_end)
+            raw = await _provider.query_trend_data(tag.tag_name, td_start, td_end)
             return role, raw
         except Exception as exc:  # noqa: BLE001
             logger.warning("查询 %s 趋势数据失败: %s", role, exc)
