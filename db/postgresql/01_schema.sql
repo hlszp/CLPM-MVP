@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS metric_config (
     weight          DECIMAL(5,2),
     threshold       JSONB,
     control_type    VARCHAR(20)     DEFAULT 'STABLE',
+    grading_thresholds JSONB,
     is_enabled      BOOLEAN         DEFAULT TRUE,
     updated_by      VARCHAR(50),
     updated_at      TIMESTAMP,
