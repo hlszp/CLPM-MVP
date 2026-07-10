@@ -470,18 +470,29 @@ function updateGradeChart() {
 /** 加载全量统计数据 */
 async function loadStats() {
   try {
-    const params: Record<string, unknown> = { page: 1, pageSize: 200 };
-    if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
-    if (query.status) params.status = query.status;
+    const baseParams: Record<string, unknown> = { page: 1, pageSize: 100 };
+    if (query.plantNodeId) baseParams.plantNodeId = query.plantNodeId;
+    if (query.status) baseParams.status = query.status;
     if (query.controlType) {
       const matchedIds: string[] = [];
       for (const [id, loop] of loopMap.value.entries()) {
         if (loop.controlType === query.controlType) matchedIds.push(id);
       }
-      if (matchedIds.length > 0) params.loopId = matchedIds.join(',');
+      if (matchedIds.length > 0) baseParams.loopId = matchedIds.join(',');
     }
-    const result = await getLoopSnapshotsApi(params as any);
-    allSnapshots.value = result.items || [];
+
+    // 循环分页拉取全量数据（后端 pageSize 上限 100）
+    const allItems: KpiSnapshotItem[] = [];
+    let page = 1;
+    let totalCount = 0;
+    do {
+      const result = await getLoopSnapshotsApi({ ...baseParams, page } as any);
+      allItems.push(...(result.items || []));
+      totalCount = result.total ?? 0;
+      page += 1;
+    } while ((page - 1) * 100 < totalCount);
+
+    allSnapshots.value = allItems;
 
     // 计算等级分布
     const gStats: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -1052,9 +1063,9 @@ onMounted(async () => {
         <div class="grid grid-cols-3 items-center">
           <!-- 左：评估等级卡片组 -->
           <div class="flex items-center justify-start gap-2">
-            <span class="text-xs text-gray-400 mr-1">等级</span>
+            <span class="text-xs text-gray-400 mr-1 whitespace-nowrap">等级</span>
             <div
-              class="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               :style="{
                 backgroundColor: selectedGrade === null ? '#4B556315' : '#4B556308',
                 borderLeft: '3px solid #4B5563',
@@ -1063,13 +1074,13 @@ onMounted(async () => {
               @click="handleGradeCardClick(null)"
             >
               <span class="w-2 h-2 rounded-full" style="background-color: #4B5563"></span>
-              <span class="text-sm text-gray-600 font-medium">全部</span>
-              <span class="text-sm font-bold" style="color: #4B5563">{{ statsTotal }}</span>
+              <span class="text-sm text-gray-600">全部</span>
+              <span class="text-sm" style="color: #4B5563">{{ statsTotal }}</span>
             </div>
             <div
               v-for="grade in [1, 2, 3, 4, 5]"
               :key="grade"
-              class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               :style="{
                 backgroundColor: selectedGrade === grade ? `${GRADE_CARD_COLORS[grade]}30` : `${GRADE_CARD_COLORS[grade]}15`,
                 borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
@@ -1079,7 +1090,7 @@ onMounted(async () => {
             >
               <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"></span>
               <span class="text-sm text-gray-600">{{ GRADE_LABEL_MAP[grade] }}</span>
-              <span class="text-sm font-semibold" :style="{ color: GRADE_CARD_COLORS[grade] }">
+              <span class="text-sm" :style="{ color: GRADE_CARD_COLORS[grade] }">
                 {{ gradeStats[grade] || 0 }}
               </span>
             </div>
@@ -1087,11 +1098,11 @@ onMounted(async () => {
 
           <!-- 中：可信度卡片组 -->
           <div class="flex items-center justify-center gap-2">
-            <span class="text-xs text-gray-400 mr-1">可信度</span>
+            <span class="text-xs text-gray-400 mr-1 whitespace-nowrap">可信度</span>
             <div
               v-for="conf in ['A', 'B', 'C', 'D', 'E'] as ConfidenceLevel[]"
               :key="conf"
-              class="flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               :style="{
                 backgroundColor: selectedConfidence === conf ? `${CONFIDENCE_CARD_COLORS[conf]}30` : `${CONFIDENCE_CARD_COLORS[conf]}15`,
                 borderLeft: `3px solid ${CONFIDENCE_CARD_COLORS[conf]}`,
@@ -1101,7 +1112,7 @@ onMounted(async () => {
             >
               <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: CONFIDENCE_CARD_COLORS[conf] }"></span>
               <span class="text-sm text-gray-600">{{ conf }}</span>
-              <span class="text-sm font-semibold" :style="{ color: CONFIDENCE_CARD_COLORS[conf] }">
+              <span class="text-sm" :style="{ color: CONFIDENCE_CARD_COLORS[conf] }">
                 {{ confidenceStats[conf] || 0 }}
               </span>
             </div>
@@ -1110,28 +1121,28 @@ onMounted(async () => {
           <!-- 右：性能概览 + 迷你柱状图 -->
           <div class="flex items-center justify-end gap-3">
             <div
-              class="flex items-center gap-2 px-3 py-1 rounded"
+              class="flex items-center gap-2 px-3 py-1 rounded whitespace-nowrap"
               :style="{ backgroundColor: '#3B82F615', borderLeft: '3px solid #3B82F6' }"
             >
               <span class="w-2 h-2 rounded-full" style="background-color: #3B82F6"></span>
               <span class="text-sm text-gray-600">平均评分</span>
-              <span class="text-sm font-bold" style="color: #3B82F6">{{ avgScore.toFixed(1) }}</span>
+              <span class="text-sm" style="color: #3B82F6">{{ avgScore.toFixed(1) }}</span>
             </div>
             <div
-              class="flex items-center gap-2 px-3 py-1 rounded"
+              class="flex items-center gap-2 px-3 py-1 rounded whitespace-nowrap"
               :style="{ backgroundColor: '#10B98115', borderLeft: '3px solid #10B981' }"
             >
               <span class="w-2 h-2 rounded-full" style="background-color: #10B981"></span>
               <span class="text-sm text-gray-600">优良率</span>
-              <span class="text-sm font-bold" style="color: #10B981">{{ excellentRate }}%</span>
+              <span class="text-sm" style="color: #10B981">{{ excellentRate }}%</span>
             </div>
             <div
-              class="flex items-center gap-2 px-3 py-1 rounded"
+              class="flex items-center gap-2 px-3 py-1 rounded whitespace-nowrap"
               :style="{ backgroundColor: '#8b5cf615', borderLeft: '3px solid #8b5cf6' }"
             >
               <span class="w-2 h-2 rounded-full" style="background-color: #8b5cf6"></span>
               <span class="text-sm text-gray-600">合格率</span>
-              <span class="text-sm font-bold" style="color: #8b5cf6">{{ passRate }}%</span>
+              <span class="text-sm" style="color: #8b5cf6">{{ passRate }}%</span>
             </div>
             <EchartsUI ref="gradeChartRef" style="width: 200px; height: 60px" />
           </div>

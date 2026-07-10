@@ -1373,6 +1373,16 @@ async def list_loop_snapshots(
     if end is None:
         end = datetime.now(UTC).replace(tzinfo=None)
 
+    # 递归展开 plant_node_ids（包含子节点）
+    expanded_node_ids: list[str] | None = None
+    if plant_node_ids:
+        from app.services.loop import _get_descendant_node_ids
+
+        expanded_node_ids = list(plant_node_ids)
+        for nid in plant_node_ids:
+            descendants = await _get_descendant_node_ids(db, nid)
+            expanded_node_ids.extend(descendants)
+
     # 构建列表查询（join LoopLedger 获取 tag_name）
     stmt = (
         select(KpiSnapshotHourly, LoopLedger.tag_name)
@@ -1382,8 +1392,8 @@ async def list_loop_snapshots(
     )
     if loop_ids:
         stmt = stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
-    if plant_node_ids:
-        stmt = stmt.where(LoopLedger.unit_id.in_(plant_node_ids))
+    if expanded_node_ids:
+        stmt = stmt.where(LoopLedger.unit_id.in_(expanded_node_ids))
     if status_filter:
         stmt = stmt.where(KpiSnapshotHourly.status == status_filter)
     if confidence_level:
@@ -1396,10 +1406,10 @@ async def list_loop_snapshots(
     )
     if loop_ids:
         count_stmt = count_stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
-    if plant_node_ids:
+    if expanded_node_ids:
         count_stmt = count_stmt.join(
             LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id
-        ).where(LoopLedger.unit_id.in_(plant_node_ids))
+        ).where(LoopLedger.unit_id.in_(expanded_node_ids))
     if status_filter:
         count_stmt = count_stmt.where(KpiSnapshotHourly.status == status_filter)
     if confidence_level:
