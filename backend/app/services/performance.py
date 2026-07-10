@@ -1273,11 +1273,11 @@ async def list_loop_snapshots(
         (rows, total) — rows 为 [(KpiSnapshotHourly, tag_name), ...]，
         total 为符合条件的总记录数
     """
-    # 默认时间范围：近 7 天
+    # 默认时间范围：近 30 天（对齐项目 30 天时间窗口约定）
     # 注意：数据库 ts_start 字段为无时区类型，必须使用 naive datetime，
     # 否则 asyncpg 会抛 "can't subtract offset-naive and offset-aware datetimes"
     if start is None:
-        start = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=7)
+        start = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
     if end is None:
         end = datetime.now(UTC).replace(tzinfo=None)
 

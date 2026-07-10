@@ -309,7 +309,7 @@ async def list_loop_snapshots_endpoint(
     """查询回路小时指标快照列表（所有角色可查看）.
 
     按回路 ID / 装置 / 时间范围 / 状态 / 可信度筛选，分页返回。
-    默认时间范围为近 7 天，排序按 ts_start DESC。
+    默认时间范围为近 30 天，排序按 ts_start DESC。
     每条记录包含完整的 24 个 KPI 字段 + loopTagName。
     """
     # 解析逗号分隔的 ID 列表
