@@ -378,21 +378,7 @@ function render() {
           itemStyle: { color: markAreaColor },
           silent: true,
         },
-        markLine: showMode
-          ? {
-              data: modeChanges.map((ts) => ({
-                label: {
-                  formatter: () => fmtTimeShort(ts),
-                  position: 'insideEndTop',
-                  show: true,
-                },
-                xAxis: ts,
-              })),
-              lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
-              silent: true,
-              symbol: 'none',
-            }
-          : undefined,
+        markLine: undefined,
         name: 'PV',
         showSymbol: false,
         type: 'line',
@@ -416,21 +402,7 @@ function render() {
         data: pvData,
         itemStyle: { color: pvColor },
         lineStyle: { width: 2 },
-        markLine: showMode
-          ? {
-              data: modeChanges.map((ts) => ({
-                label: {
-                  formatter: () => fmtTimeShort(ts),
-                  position: 'insideEndTop',
-                  show: true,
-                },
-                xAxis: ts,
-              })),
-              lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
-              silent: true,
-              symbol: 'none',
-            }
-          : undefined,
+        markLine: undefined,
         name: 'PV',
         showSymbol: false,
         type: 'line',
@@ -445,21 +417,7 @@ function render() {
         data: pvData,
         itemStyle: { color: pvColor },
         lineStyle: { width: 2 },
-        markLine: showMode
-          ? {
-              data: modeChanges.map((ts) => ({
-                label: {
-                  formatter: () => fmtTimeShort(ts),
-                  position: 'insideEndTop',
-                  show: true,
-                },
-                xAxis: ts,
-              })),
-              lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
-              silent: true,
-              symbol: 'none',
-            }
-          : undefined,
+        markLine: undefined,
         name: 'PV',
         showSymbol: false,
         type: 'line',
@@ -531,6 +489,19 @@ function render() {
       data: modeData,
       itemStyle: { color: modeColor },
       lineStyle: { type: 'dotted', width: 1.5 },
+      markLine: {
+        data: modeChanges.map((ts) => ({
+          label: {
+            formatter: () => fmtTimeShort(ts),
+            position: 'insideEndTop',
+            show: true,
+          },
+          xAxis: ts,
+        })),
+        lineStyle: { color: markLineColor, type: 'dashed', width: 1 },
+        silent: true,
+        symbol: 'none',
+      },
       name: 'MODE',
       showSymbol: false,
       step: 'end',
