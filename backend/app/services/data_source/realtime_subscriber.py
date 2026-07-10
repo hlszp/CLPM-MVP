@@ -342,7 +342,14 @@ class RealtimeSubscriber:
                 v = batch[tc]["value"]
                 params[f"tag_{i}"] = tc
                 params[f"val_{i}"] = float(v) if v not in (None, "") else None
-                params[f"qual_{i}"] = batch[tc]["quality"]
+                # 质量码转换：整数(1=Good,192=OPC DA Good) → 字符串(GOOD/BAD/UNCERTAIN)
+                raw_q = batch[tc]["quality"]
+                if isinstance(raw_q, int | float):
+                    params[f"qual_{i}"] = "GOOD" if int(raw_q) in (1, 2, 3, 192) else "BAD"
+                elif isinstance(raw_q, str) and raw_q.upper() in ("GOOD", "BAD", "UNCERTAIN"):
+                    params[f"qual_{i}"] = raw_q.upper()
+                else:
+                    params[f"qual_{i}"] = "GOOD" if raw_q else "BAD"
 
             from sqlalchemy import text
 
