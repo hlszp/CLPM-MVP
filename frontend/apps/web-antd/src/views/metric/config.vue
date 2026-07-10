@@ -12,6 +12,9 @@ const activeTab = ref('definition');
 const DefinitionTab = defineAsyncComponent(() => import('./config-definition.vue'));
 const WeightTab = defineAsyncComponent(() => import('./weight-config.vue'));
 const GradingTab = defineAsyncComponent(() => import('./grading-threshold.vue'));
+const ConfidenceTab = defineAsyncComponent(
+  () => import('./confidence-threshold.vue'),
+);
 </script>
 
 <template>
@@ -25,6 +28,9 @@ const GradingTab = defineAsyncComponent(() => import('./grading-threshold.vue'))
       </TabPane>
       <TabPane key="grading" tab="定级阈值">
         <GradingTab />
+      </TabPane>
+      <TabPane key="confidence" tab="数据可信度">
+        <ConfidenceTab />
       </TabPane>
     </Tabs>
   </Page>

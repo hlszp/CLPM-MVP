@@ -47,14 +47,15 @@ class TestSettlingTime:
         assert result.value >= 0.0
 
     def test_insufficient_data(self):
-        """数据不足（< 100 点）→ settling=0。"""
+        """数据不足（< 100 点）→ INCONCLUSIVE（value=None）。"""
         n = 20
         pv = [50.0 + i * 0.1 for i in range(n)]
         sp = [50.0] * n
         bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="settling_time")
         calc = SettlingTimeCalculator()
         result = calc.calculate(bundle)
-        assert result.value == 0.0
+        assert result.value is None
+        assert result.confidence_level == "E"
         assert result.details["reason"] == "insufficient_data"
 
     def test_boundary_30_still_insufficient(self):
@@ -68,7 +69,8 @@ class TestSettlingTime:
         bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="settling_time")
         calc = SettlingTimeCalculator()
         result = calc.calculate(bundle)
-        assert result.value == 0.0
+        assert result.value is None
+        assert result.confidence_level == "E"
         assert result.details["reason"] == "insufficient_data"
         assert result.details["min_required"] == 100
 

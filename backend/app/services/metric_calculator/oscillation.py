@@ -65,10 +65,10 @@ class OscillationRateCalculator(MetricCalculatorBase):
         logger.debug("[振荡率] 输入: masked_points=%d", n)
 
         if n < 4:
-            return self._make_result(
+            return self._make_inconclusive(
                 bundle,
-                0.0,
-                {"is_oscillating": False, "oscillation_period": 0.0, "reason": "insufficient_data"},
+                "insufficient_data",
+                {"is_oscillating": False, "oscillation_period": 0.0, "sample_count": n},
             )
 
         errors = np.array([float(pv) - float(sp) for pv, sp in pairs], dtype=float)

@@ -424,6 +424,27 @@ export namespace MetricApi {
     thresholds: GradingThresholdItem[];
   }
 
+  /** 可信度阈值单项 */
+  export interface ConfidenceThresholdItem {
+    level: number;
+    name: string;
+    minRate: number;
+    description?: null | string;
+    color?: null | string;
+  }
+
+  /** 可信度阈值配置（5 级 A/B/C/D/E） */
+  export interface ConfidenceThresholdSchema {
+    thresholds: ConfidenceThresholdItem[];
+    updatedAt?: null | string;
+    updatedBy?: null | string;
+  }
+
+  /** 可信度阈值更新请求 */
+  export interface ConfidenceThresholdSaveRequest {
+    thresholds: ConfidenceThresholdItem[];
+  }
+
   /** 版本历史单项 */
   export interface VersionHistoryItem {
     version: number;
@@ -931,6 +952,31 @@ export function getGradingThresholdsApi() {
  */
 export function saveGradingThresholdsApi(data: MetricApi.GradingThresholdSaveRequest) {
   return requestClient.post<MetricApi.GradingThresholdSchema>(GRADING_BASE, data);
+}
+
+// ===========================================================================
+// 数据可信度阈值管理 API
+// ===========================================================================
+
+const CONFIDENCE_BASE = '/configs/confidence-thresholds';
+
+/**
+ * 获取当前数据可信度阈值
+ */
+export function getConfidenceThresholdsApi() {
+  return requestClient.get<MetricApi.ConfidenceThresholdSchema>(CONFIDENCE_BASE);
+}
+
+/**
+ * 更新数据可信度阈值 — 仅 ADMIN
+ */
+export function saveConfidenceThresholdsApi(
+  data: MetricApi.ConfidenceThresholdSaveRequest,
+) {
+  return requestClient.post<MetricApi.ConfidenceThresholdSchema>(
+    CONFIDENCE_BASE,
+    data,
+  );
 }
 
 // ===========================================================================

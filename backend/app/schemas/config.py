@@ -325,6 +325,46 @@ class GradingThresholdSaveRequest(CamelModel):
     thresholds: list[GradingThresholdItem] = Field(..., min_length=5, max_length=5)
 
 
+class ConfidenceThresholdItem(CamelModel):
+    """可信度阈值单项.
+
+    Attributes:
+        level: 等级编号 1-5（A/B/C/D/E）
+        name: 等级名称（A/B/C/D/E）
+        minRate: 最低有效数据率（含，0~1）
+        description: 等级描述
+        color: 显示颜色
+    """
+
+    level: int = Field(..., ge=1, le=5)
+    name: str
+    minRate: float = Field(..., ge=0, le=1)
+    description: str | None = None
+    color: str | None = None
+
+
+class ConfidenceThresholdSchema(CamelModel):
+    """可信度阈值配置（5 级 A/B/C/D/E）.
+
+    对齐算法说明 §3.7.2：
+    - A 级: valid_rate >= 0.95（数据充分）
+    - B 级: 0.80 <= valid_rate < 0.95（数据较充分）
+    - C 级: 0.60 <= valid_rate < 0.80（数据一般）
+    - D 级: 0.20 <= valid_rate < 0.60（数据不足）
+    - E 级: valid_rate < 0.20 → INCONCLUSIVE（可信度不足）
+    """
+
+    thresholds: list[ConfidenceThresholdItem] = Field(default_factory=list)
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+class ConfidenceThresholdSaveRequest(CamelModel):
+    """可信度阈值更新请求."""
+
+    thresholds: list[ConfidenceThresholdItem] = Field(..., min_length=5, max_length=5)
+
+
 class VersionHistoryItem(CamelModel):
     """版本历史单项.
 
@@ -350,6 +390,9 @@ class VersionHistorySchema(CamelModel):
 
 
 __all__ = [
+    "ConfidenceThresholdItem",
+    "ConfidenceThresholdSaveRequest",
+    "ConfidenceThresholdSchema",
     "ControlType",
     "DiagnosisConfigBatchResponse",
     "DiagnosisConfigBatchUpdateRequest",

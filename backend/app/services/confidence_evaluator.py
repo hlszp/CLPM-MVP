@@ -52,6 +52,21 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "stability_rate": 0.5,
 }
 
+# ---------------------------------------------------------------------------
+# 可信度阈值（可配置，通过 set_thresholds() 动态更新）
+# ---------------------------------------------------------------------------
+
+#: 算法默认可信度阈值（对齐算法说明 §3.7.2）
+DEFAULT_CONFIDENCE_THRESHOLDS: dict[str, float] = {
+    "A": 0.95,
+    "B": 0.80,
+    "C": 0.60,
+    "D": 0.20,
+}
+
+#: 运行时可信度阈值缓存（通过 set_thresholds() 更新）
+_threshold_cache: dict[str, float] = dict(DEFAULT_CONFIDENCE_THRESHOLDS)
+
 
 class ConfidenceEvaluator:
     """指标可信度评估器.
@@ -59,12 +74,44 @@ class ConfidenceEvaluator:
     提供可信度等级判定、数据血缘构建、综合评分计算三类能力。
     所有指标计算器与编排层共享本类的静态方法，保证可信度判定一致性。
 
+    可信度阈值默认值可通过 ``set_thresholds()`` 动态更新（由配置接口触发）。
+
     设计依据：算法说明 §3.7.1, §3.7.2, §4.10
     """
 
     @staticmethod
+    def set_thresholds(thresholds: dict[str, float] | None) -> None:
+        """更新运行时可信度阈值缓存.
+
+        由配置管理接口（confidence_config）在保存配置后调用。
+        传入 None 或空字典时重置为算法默认值。
+
+        Args:
+            thresholds: ``{"A": 0.95, "B": 0.80, "C": 0.60, "D": 0.20}``
+        """
+        global _threshold_cache
+        if not thresholds:
+            _threshold_cache = dict(DEFAULT_CONFIDENCE_THRESHOLDS)
+            logger.info("可信度阈值已重置为算法默认: %s", _threshold_cache)
+            return
+        _threshold_cache = {
+            "A": float(thresholds.get("A", DEFAULT_CONFIDENCE_THRESHOLDS["A"])),
+            "B": float(thresholds.get("B", DEFAULT_CONFIDENCE_THRESHOLDS["B"])),
+            "C": float(thresholds.get("C", DEFAULT_CONFIDENCE_THRESHOLDS["C"])),
+            "D": float(thresholds.get("D", DEFAULT_CONFIDENCE_THRESHOLDS["D"])),
+        }
+        logger.info("可信度阈值已更新: %s", _threshold_cache)
+
+    @staticmethod
+    def get_thresholds() -> dict[str, float]:
+        """获取当前运行时可信度阈值（副本）."""
+        return dict(_threshold_cache)
+
+    @staticmethod
     def evaluate(valid_rate: float) -> ConfidenceLevel:
         """根据有效数据率判定可信度等级（算法说明 §3.7.2）.
+
+        使用运行时阈值缓存（可通过 ``set_thresholds()`` 动态配置）。
 
         Args:
             valid_rate: 有效数据率 0~1
@@ -72,20 +119,21 @@ class ConfidenceEvaluator:
         Returns:
             可信度等级枚举 A/B/C/D/E
 
-        等级阈值：
+        等级阈值（默认值，可通过配置修改）：
             - A: valid_rate >= 0.95
             - B: 0.80 <= valid_rate < 0.95
             - C: 0.60 <= valid_rate < 0.80
             - D: 0.20 <= valid_rate < 0.60
             - E: valid_rate < 0.20 → INCONCLUSIVE
         """
-        if valid_rate >= 0.95:
+        t = _threshold_cache
+        if valid_rate >= t["A"]:
             return ConfidenceLevel.A
-        if valid_rate >= 0.80:
+        if valid_rate >= t["B"]:
             return ConfidenceLevel.B
-        if valid_rate >= 0.60:
+        if valid_rate >= t["C"]:
             return ConfidenceLevel.C
-        if valid_rate >= 0.20:
+        if valid_rate >= t["D"]:
             return ConfidenceLevel.D
         return ConfidenceLevel.E
 
@@ -313,6 +361,7 @@ __all__ = [
     "ALGORITHM_VERSION",
     "ConfidenceEvaluator",
     "CORE_METRIC_CODES",
+    "DEFAULT_CONFIDENCE_THRESHOLDS",
     "DEFAULT_WEIGHTS",
     "DISCOUNT_METRIC_CODE",
     "QUALITY_POLICY",

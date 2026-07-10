@@ -1533,13 +1533,16 @@ def _compute_kpis_three_layer(
         if calculator is None:
             logger.warning("[三层计算] Layer1: 指标 %s 无计算器注册，跳过", code)
             continue
-        # 输入摘要：数据点数 + 有效率
+        # 输入摘要：数据点数 + DataBlock级有效率（审计）+ 指标级有效率（可信度判定）
         block = bundle.data_block
+        db_vr = block.quality_summary.valid_rate if block.quality_summary else 0.0
+        metric_vr = len(bundle.masked_indices) / block.point_count if block.point_count > 0 else 0.0
         logger.info(
-            "[三层计算] Layer1: 指标=%s 输入 points=%d valid_rate=%.4f signals=%s",
+            "[三层计算] Layer1: 指标=%s points=%d db_valid_rate=%.4f(审计) metric_valid_rate=%.4f(可信度) signals=%s",
             code,
             block.point_count,
-            block.quality_summary.valid_rate if block.quality_summary else 0.0,
+            db_vr,
+            metric_vr,
             list(block.signals.keys()),
         )
         results[code] = calculator.calculate(bundle)
