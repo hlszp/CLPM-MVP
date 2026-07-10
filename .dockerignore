@@ -28,10 +28,11 @@
 **/.gitconfig
 
 # ---- 环境配置（敏感文件不进入镜像）----
+# 排除敏感环境文件，但保留 .env.production / .env.development（前端构建需要）
 **/.env
-**/.env.*
 **/.env.local
 **/.env.*.local
+# 不排除 .env.production 和 .env.development（Vite 构建时需要读取）
 
 # ---- 文档与测试（生产镜像不需要）----
 **/*.md
