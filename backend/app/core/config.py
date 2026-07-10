@@ -148,11 +148,12 @@ class Settings(BaseSettings):
         if self.POSTGRES_PASSWORD == _INSECURE_PG_PASSWORD:
             raise RuntimeError("生产环境不得使用开发默认数据库密码。")
 
-        # TDengine 密码校验
-        if not self.TDENGINE_PASSWORD:
-            raise RuntimeError("生产环境必须通过环境变量 TDENGINE_PASSWORD 设置 TDengine 密码。")
-        if self.TDENGINE_PASSWORD == _INSECURE_TD_PASSWORD:
-            raise RuntimeError("生产环境不得使用 TDengine 默认密码 taosdata。")
+        # TDengine 密码校验（仅 DATA_SOURCE_TYPE=tdengine 时需要）
+        if self.DATA_SOURCE_TYPE == "tdengine":
+            if not self.TDENGINE_PASSWORD:
+                raise RuntimeError("生产环境必须通过环境变量 TDENGINE_PASSWORD 设置 TDengine 密码。")
+            if self.TDENGINE_PASSWORD == _INSECURE_TD_PASSWORD:
+                raise RuntimeError("生产环境不得使用 TDengine 默认密码 taosdata。")
 
         # Redis 密码校验
         if not self.REDIS_PASSWORD:
