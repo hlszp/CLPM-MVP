@@ -77,11 +77,12 @@ class TestOscillationRate:
         assert "regularity" not in result.details
 
     def test_insufficient_data(self):
-        """数据不足（< 4 点）→ rate=0。"""
+        """数据不足（< 4 点）→ INCONCLUSIVE（value=None）。"""
         bundle = make_bundle({"pv": [50, 51], "sp": [50, 50]}, metric_code="oscillation_rate")
         calc = OscillationRateCalculator()
         result = calc.calculate(bundle)
-        assert result.value == 0.0
+        assert result.value is None
+        assert result.confidence_level == "E"
         assert result.details["is_oscillating"] is False
 
     def test_zero_crossings_below_threshold(self):

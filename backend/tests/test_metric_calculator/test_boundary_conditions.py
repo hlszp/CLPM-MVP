@@ -130,15 +130,16 @@ class TestFullBadQuality:
         assert result.value is None
         assert result.details["reason"] == "no_valid_pv_sp_pairs"
 
-    def test_oscillation_full_bad_returns_zero(self):
-        """100% Bad 质量：振荡率返回 0（mask 后无数据点 n<4）."""
+    def test_oscillation_full_bad_returns_inconclusive(self):
+        """100% Bad 质量：振荡率 INCONCLUSIVE（mask 后无数据点 n<4）."""
         n = 100
         pv = [50.0] * n
         sp = [50.0] * n
         bundle = self._make_full_bad_bundle("oscillation_rate", {"pv": pv, "sp": sp})
         result = OscillationRateCalculator().calculate(bundle)
-        # n<4 分支返回 0 而非 None
-        assert result.value == 0.0
+        # n<4 分支返回 INCONCLUSIVE（v6.1：数据不足时返回 None 而非 0）
+        assert result.value is None
+        assert result.confidence_level == "E"
         assert result.details["is_oscillating"] is False
 
     def test_saturation_full_bad_returns_none(self):

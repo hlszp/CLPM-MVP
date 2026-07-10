@@ -1,7 +1,10 @@
 """QualitySummary 生成模块.
 
 计算数据块的质量摘要，包括有效数据率、无效率、缺失率等。
-质量摘要是指标可信度判定的输入（算法说明 §3.7.2）。
+
+v6.1 变更：质量摘要仅用于**审计展示与数据血缘**，不参与可信度判定。
+可信度判定由指标级 valid_rate（基于 mask_expression）负责，
+即 ``MetricCalculatorBase._get_valid_rate()``。
 
 设计依据：算法说明 §3.4.2 步骤⑧, §3.7.2
 """
@@ -27,7 +30,15 @@ def compute_quality_summary(
     """生成数据质量摘要（算法说明 §3.4.2 步骤⑧）.
 
     计算 valid_rate / bad_rate / missing_rate。
-    valid_rate 是指标可信度判定的核心输入（算法说明 §3.7.2）。
+
+    .. note::
+        此处的 valid_rate 是**所有 tag 有效性的交集**，仅用于审计展示
+        和数据血缘（DataLineage）。**不参与可信度判定**。
+
+        可信度判定由指标级 valid_rate 负责，基于每个指标的
+        mask_expression（如 ``pv_valid && sp_valid``），仅筛选该指标
+        关心的 tag，不取全量交集。详见
+        :meth:`MetricCalculatorBase._get_valid_rate`。
 
     Args:
         validity: 有效性标记字典，key 为 ``{tag}_valid``
@@ -37,7 +48,7 @@ def compute_quality_summary(
         expected_interval_s: 期望采样间隔（秒），用于缺失检测
 
     Returns:
-        QualitySummary 质量摘要
+        QualitySummary 质量摘要（审计用）
 
     设计依据：算法说明 §3.4.2 步骤⑧, §3.7.2
     """
@@ -45,8 +56,11 @@ def compute_quality_summary(
     if total == 0:
         return QualitySummary()
 
-    # 取所有信号 valid 的交集作为"该时间戳是否有效"
-    # 即：该时间戳下所有 tag 的 valid 都为 True 才算有效
+    # 取所有信号 valid 的交集作为"该时间戳是否有效"（审计用）
+    # 注意：此交集仅用于审计展示和数据血缘，不参与可信度判定。
+    # 可信度判定使用指标级 mask_expression（如 pv_valid && sp_valid），
+    # 只筛选该指标需要的 tag，避免无关 tag（如 PID_P/PID_I/PID_D）
+    # 拉低有效数据率。
     all_valid = [True] * total
     for tag_validity in validity.values():
         for i, v in enumerate(tag_validity):

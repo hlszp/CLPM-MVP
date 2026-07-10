@@ -71,6 +71,14 @@ class FastRateCalculator(MetricCalculatorBase):
                 {"actual_settling_time": actual_t, "ideal_settling_time": ideal_t},
             )
 
+        # 实际稳态时间无效（settling_time 返回 INCONCLUSIVE）→ 快速率也 INCONCLUSIVE
+        if settling_result is not None and settling_result.value is None:
+            return self._make_inconclusive(
+                bundle,
+                "settling_time_inconclusive",
+                {"actual_settling_time": actual_t, "ideal_settling_time": round(ideal_t, 2)},
+            )
+
         # 实际稳态时间 ≤ 0（已稳态或辨识失败）→ 快速率 100%
         if actual_t <= 0:
             logger.debug("[快速率] actual_settling ≤ 0，返回 100")

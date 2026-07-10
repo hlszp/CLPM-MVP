@@ -67,11 +67,11 @@ class SettlingTimeCalculator(MetricCalculatorBase):
         logger.debug("[稳态时间] 输入: masked_points=%d", n)
 
         if n < MIN_POINTS:
-            logger.debug("[稳态时间] 数据不足（%d < %d），返回 0", n, MIN_POINTS)
-            return self._make_result(
+            logger.debug("[稳态时间] 数据不足（%d < %d），返回 INCONCLUSIVE", n, MIN_POINTS)
+            return self._make_inconclusive(
                 bundle,
-                0.0,
-                {"reason": "insufficient_data", "sample_count": n, "min_required": MIN_POINTS},
+                "insufficient_data",
+                {"sample_count": n, "min_required": MIN_POINTS},
             )
 
         # 控制偏差序列（PV - SP），去均值
