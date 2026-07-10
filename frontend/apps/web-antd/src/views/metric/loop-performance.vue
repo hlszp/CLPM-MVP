@@ -376,33 +376,43 @@ const selectedGrade = ref<number | null>(null);
 /** 当前选中的可信度筛选（null = 全部） */
 const selectedConfidence = ref<ConfidenceLevel | null>(null);
 
-/** 统计总数 */
-const statsTotal = computed(() =>
-  Object.values(gradeStats.value).reduce((sum, n) => sum + n, 0),
-);
+/** 按等级/可信度筛选后的快照（用于计算聚合指标） */
+const filteredSnapshots = computed(() => {
+  let result = allSnapshots.value;
+  if (selectedGrade.value !== null) {
+    result = result.filter((s) => getGrade(s.score) === selectedGrade.value);
+  }
+  if (selectedConfidence.value !== null) {
+    result = result.filter((s) => s.confidenceLevel === selectedConfidence.value);
+  }
+  return result;
+});
 
-/** 平均评分 */
+/** 统计总数（跟随卡片筛选） */
+const statsTotal = computed(() => filteredSnapshots.value.length);
+
+/** 平均评分（跟随卡片筛选） */
 const avgScore = computed(() => {
-  const scores = allSnapshots.value
+  const scores = filteredSnapshots.value
     .map((s) => s.score)
     .filter((s): s is number => s !== null && s !== undefined);
   if (scores.length === 0) return 0;
   return scores.reduce((sum, s) => sum + s, 0) / scores.length;
 });
 
-/** 优良率（score ≥ 80） */
+/** 优良率（score ≥ 80，跟随卡片筛选） */
 const excellentRate = computed(() => {
   if (statsTotal.value === 0) return 0;
-  const count = allSnapshots.value.filter(
+  const count = filteredSnapshots.value.filter(
     (s) => s.score !== null && s.score !== undefined && s.score >= 80,
   ).length;
   return Math.round((count / statsTotal.value) * 100);
 });
 
-/** 合格率（score ≥ 60） */
+/** 合格率（score ≥ 60，跟随卡片筛选） */
 const passRate = computed(() => {
   if (statsTotal.value === 0) return 0;
-  const count = allSnapshots.value.filter(
+  const count = filteredSnapshots.value.filter(
     (s) => s.score !== null && s.score !== undefined && s.score >= 60,
   ).length;
   return Math.round((count / statsTotal.value) * 100);
@@ -1009,59 +1019,66 @@ onMounted(async () => {
     <div class="mt-3">
       <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
         <div class="flex items-center justify-between">
-          <!-- 左侧：评估等级卡片 -->
-          <div class="flex items-center gap-2">
-            <div
-              class="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
-              :style="{
-                backgroundColor: selectedGrade === null ? '#4B556315' : '#4B556308',
-                borderLeft: '3px solid #4B5563',
-                borderBottom: selectedGrade === null ? '2px solid #4B5563' : 'none',
-              }"
-              @click="handleGradeCardClick(null)"
-            >
-              <span class="w-2 h-2 rounded-full" style="background-color: #4B5563"></span>
-              <span class="text-sm text-gray-600 font-medium">全部</span>
-              <span class="text-sm font-bold" style="color: #4B5563">{{ statsTotal }}</span>
+          <!-- 左侧：评估等级 + 可信度卡片 -->
+          <div class="flex items-center gap-4">
+            <!-- 评估等级卡片组 -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-400 mr-1">等级</span>
+              <div
+                class="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+                :style="{
+                  backgroundColor: selectedGrade === null ? '#4B556315' : '#4B556308',
+                  borderLeft: '3px solid #4B5563',
+                  borderBottom: selectedGrade === null ? '2px solid #4B5563' : 'none',
+                }"
+                @click="handleGradeCardClick(null)"
+              >
+                <span class="w-2 h-2 rounded-full" style="background-color: #4B5563"></span>
+                <span class="text-sm text-gray-600 font-medium">全部</span>
+                <span class="text-sm font-bold" style="color: #4B5563">{{ statsTotal }}</span>
+              </div>
+              <div
+                v-for="grade in [1, 2, 3, 4, 5]"
+                :key="grade"
+                class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                :style="{
+                  backgroundColor: selectedGrade === grade ? `${GRADE_CARD_COLORS[grade]}30` : `${GRADE_CARD_COLORS[grade]}15`,
+                  borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
+                  borderBottom: selectedGrade === grade ? `2px solid ${GRADE_CARD_COLORS[grade]}` : 'none',
+                }"
+                @click="handleGradeCardClick(grade)"
+              >
+                <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"></span>
+                <span class="text-sm text-gray-600">{{ GRADE_LABEL_MAP[grade] }}</span>
+                <span class="text-sm font-semibold" :style="{ color: GRADE_CARD_COLORS[grade] }">
+                  {{ gradeStats[grade] || 0 }}
+                </span>
+              </div>
             </div>
-            <div
-              v-for="grade in [1, 2, 3, 4, 5]"
-              :key="grade"
-              class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
-              :style="{
-                backgroundColor: selectedGrade === grade ? `${GRADE_CARD_COLORS[grade]}30` : `${GRADE_CARD_COLORS[grade]}15`,
-                borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
-                borderBottom: selectedGrade === grade ? `2px solid ${GRADE_CARD_COLORS[grade]}` : 'none',
-              }"
-              @click="handleGradeCardClick(grade)"
-            >
-              <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"></span>
-              <span class="text-sm text-gray-600">{{ GRADE_LABEL_MAP[grade] }}</span>
-              <span class="text-sm font-semibold" :style="{ color: GRADE_CARD_COLORS[grade] }">
-                {{ gradeStats[grade] || 0 }}
-              </span>
-            </div>
-          </div>
 
-          <!-- 中间：可信度卡片 -->
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-gray-400 mr-1">可信度</span>
-            <div
-              v-for="conf in ['A', 'B', 'C', 'D', 'E'] as ConfidenceLevel[]"
-              :key="conf"
-              class="flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
-              :style="{
-                backgroundColor: selectedConfidence === conf ? `${CONFIDENCE_CARD_COLORS[conf]}30` : `${CONFIDENCE_CARD_COLORS[conf]}15`,
-                borderLeft: `3px solid ${CONFIDENCE_CARD_COLORS[conf]}`,
-                borderBottom: selectedConfidence === conf ? `2px solid ${CONFIDENCE_CARD_COLORS[conf]}` : 'none',
-              }"
-              @click="handleConfidenceCardClick(conf)"
-            >
-              <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: CONFIDENCE_CARD_COLORS[conf] }"></span>
-              <span class="text-sm text-gray-600">{{ conf }}</span>
-              <span class="text-sm font-semibold" :style="{ color: CONFIDENCE_CARD_COLORS[conf] }">
-                {{ confidenceStats[conf] || 0 }}
-              </span>
+            <!-- 分隔线 -->
+            <div class="h-8 w-px bg-gray-200"></div>
+
+            <!-- 可信度卡片组 -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-400 mr-1">可信度</span>
+              <div
+                v-for="conf in ['A', 'B', 'C', 'D', 'E'] as ConfidenceLevel[]"
+                :key="conf"
+                class="flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                :style="{
+                  backgroundColor: selectedConfidence === conf ? `${CONFIDENCE_CARD_COLORS[conf]}30` : `${CONFIDENCE_CARD_COLORS[conf]}15`,
+                  borderLeft: `3px solid ${CONFIDENCE_CARD_COLORS[conf]}`,
+                  borderBottom: selectedConfidence === conf ? `2px solid ${CONFIDENCE_CARD_COLORS[conf]}` : 'none',
+                }"
+                @click="handleConfidenceCardClick(conf)"
+              >
+                <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: CONFIDENCE_CARD_COLORS[conf] }"></span>
+                <span class="text-sm text-gray-600">{{ conf }}</span>
+                <span class="text-sm font-semibold" :style="{ color: CONFIDENCE_CARD_COLORS[conf] }">
+                  {{ confidenceStats[conf] || 0 }}
+                </span>
+              </div>
             </div>
           </div>
 
