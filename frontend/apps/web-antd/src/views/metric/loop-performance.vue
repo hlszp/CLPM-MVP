@@ -330,13 +330,13 @@ const columns: TableColumnsType = [
   {
     title: '时间窗口',
     key: 'tsRange',
-    width: 140,
+    width: 170,
   },
   {
     title: '评估时间',
     key: 'tsEnd',
     dataIndex: 'tsEnd',
-    width: 140,
+    width: 120,
   },
   {
     title: '评估状态',
@@ -367,7 +367,13 @@ function formatTsRange(start: null | string, end: null | string): string {
   if (!s && !e) return '—';
   const fmt = 'MM-DD HH:mm';
   if (s && e) {
-    return `${dayjs(s).format(fmt)} ~ ${dayjs(e).format(fmt)}`;
+    const ds = dayjs(s);
+    const de = dayjs(e);
+    // 同一天：MM-DD HH:mm~HH:mm（省略第二个日期）
+    if (ds.isSame(de, 'day')) {
+      return `${ds.format(fmt)}~${de.format('HH:mm')}`;
+    }
+    return `${ds.format(fmt)} ~ ${de.format(fmt)}`;
   }
   return dayjs(e || s).format(fmt);
 }
@@ -884,7 +890,7 @@ onMounted(async () => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: LoopPerformanceRow) => `${record.loopId}-${record.tsStart}`"
-        :scroll="{ x: 1800 }"
+        :scroll="{ x: 1850 }"
         size="small"
         @change="handleTableChange"
       >

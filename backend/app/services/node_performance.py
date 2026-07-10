@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Integer, func, or_, select, text
+from sqlalchemy import Integer, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.loop import LoopLedger
@@ -30,29 +30,21 @@ from app.models.node_kpi import (
     KpiNodeSnapshotMonthly,
 )
 from app.models.plant_node import PlantNode
-from app.models.unit_kpi_summary import UnitKpiSummary
-from app.services import mode_resolver
 from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_status
 
 logger = logging.getLogger(__name__)
 
 # 参与加权聚合的 KPI 字段（与回路级快照对齐）
-# P1 #14: 补全 4 个缺失字段（stiction_index / settling_time /
-# output_trip_index / ideal_settling_time），节点级用回路重要性加权均值
 KPI_FIELDS = (
     "good_value_rate",
     "auto_mode_rate",
     "effective_auto_rate",
     "steady_rate",
     "accuracy_rate",
-    "fast_rate",
+    "fast_response_rate",
     "oscillation_rate",
     "saturation_rate",
     "score",
-    "stiction_index",
-    "settling_time",
-    "output_trip_index",
-    "ideal_settling_time",
 )
 
 
@@ -94,33 +86,15 @@ async def collect_descendant_loop_ids(
 # ---------------------------------------------------------------------------
 
 
-async def get_default_auto_modes(db: AsyncSession) -> set[int]:
-    """读取全局默认自动 MODE 集合（配置驱动）.
-
-    v6.1：从 ``mode_definition`` 配置表读取 ``is_auto=True`` 的 ``standard_mode``，
-    替代旧的 sys_config + 硬编码常量方案。表为空时回退到
-    ``app.constants.mode.AUTO_MODES``（{1, 2, 3, 4}）保证向后兼容。
-
-    Returns:
-        全局默认自动 MODE 值集合
-    """
-    return await mode_resolver.get_auto_modes(db)
-
-
 async def query_realtime_auto_rate(
     db: AsyncSession,
     loop_ids: list[str],
 ) -> dict | None:
-    """查询当前时刻处于自动模式的回路占比（实时自控率）.
+    """查询当前时刻处于自动模式的回路占比（实时自控率）。
 
-    v6.1：配置驱动的 MODE 值解析。从 TDengine 查询每个回路的最新 raw MODE 值，
-    按回路关联的 DCS 型号（``loop_ledger.dcs_model_id``）解析为标准 MODE 值，
-    再按 ``mode_definition`` 配置表判定是否计入自控率。
-
-    判定优先级：
-    1. 回路投用定义（``loop_mode_mapping``，按回路覆盖，直接匹配 raw mode）
-    2. DCS 型号映射 + ``mode_definition``（配置驱动，raw→standard→is_auto）
-    3. 行业默认 ``{1, 2, 3, 4}``（mode_definition 表为空时回退）
+    从 TDengine 查询每个回路的最新 MODE 值，
+    根据该回路的投用定义（loop_mode_mapping）判断是否算自动模式。
+    无投用定义的回路回退到默认 {1, 2, 3}（向后兼容）。
 
     Args:
         db: 异步数据库会话
@@ -132,28 +106,21 @@ async def query_realtime_auto_rate(
         - auto_count: 自动模式回路数
         - manual_count: 手动模式回路数
         - total_count: 有效回路总数
-        - mode_counts: 各标准 MODE 值的回路数（0-4）
         - read_at: 统计时间（ISO 字符串）
         TDengine 不可用或无数据时返回 None
     """
     if not loop_ids:
         return None
 
+    from app.core.tdengine import query_trend_data
     from app.models.loop import LoopTagMapping
     from app.models.loop_config import LoopModeMapping
     from app.models.tag import TagRegistry
-    from app.services.data_source.factory import get_provider
 
-    # 通过数据源工厂获取 Provider（根据 DATA_SOURCE_TYPE 配置自动选择
-    # tdengine / remote_api，支持数据链路切换）
-    provider = get_provider()
-
-    # --- 0. 读取自动 MODE 集合（从 mode_definition 配置表）---
-    auto_modes = await get_default_auto_modes(db)
-
-    # --- 1. 批量查询回路投用定义（per-loop 覆盖，向后兼容）---
+    # --- 1. 批量查询投用定义，构建 {loop_id: set(auto_mode_values)} ---
     mm_result = await db.execute(
-        select(LoopModeMapping.loop_id, LoopModeMapping.mode_value).where(
+        select(LoopModeMapping.loop_id, LoopModeMapping.mode_value)
+        .where(
             LoopModeMapping.loop_id.in_(loop_ids),
             LoopModeMapping.is_auto.is_(True),
         )
@@ -162,11 +129,10 @@ async def query_realtime_auto_rate(
     for row in mm_result.all():
         auto_mode_map.setdefault(row.loop_id, set()).add(row.mode_value)
 
-    # --- 2. 查询每个回路的 MODE tag 映射 + DCS 型号 ---
+    # --- 2. 查询每个回路的 MODE tag 映射 ---
     result = await db.execute(
-        select(LoopTagMapping.loop_id, TagRegistry.tag_name, LoopLedger.dcs_model_id)
+        select(LoopTagMapping.loop_id, TagRegistry.tag_name)
         .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
-        .outerjoin(LoopLedger, LoopTagMapping.loop_id == LoopLedger.id)
         .where(
             LoopTagMapping.loop_id.in_(loop_ids),
             LoopTagMapping.tag_role == "MODE",
@@ -178,79 +144,49 @@ async def query_realtime_auto_rate(
         logger.debug("[实时自控率] 无 MODE tag 映射，跳过")
         return None
 
-    # --- 2b. 按型号批量构建 raw→standard 映射表（缓存，避免逐回路查询）---
-    model_ids = {row.dcs_model_id for row in rows if row.dcs_model_id}
-    model_raw_maps: dict[str | None, dict[int, int]] = {}
-    for mid in model_ids:
-        model_raw_maps[mid] = await mode_resolver.build_raw_to_standard_map(db, mid)
-    # 本系统默认映射（dcs_model_id=NULL 的回路使用）
-    default_raw_map = await mode_resolver.build_raw_to_standard_map(db, None)
-    model_raw_maps[None] = default_raw_map
-
-    # --- 3. 查询时间窗：最近 5 分钟 ---
+    # --- 3. 从 tag_registry.current_value 读取最新 MODE 值（实时数据订阅写入）---
     now = datetime.now(UTC)
-    end_time = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    start_time = (now - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    tag_names = [row.tag_name for row in rows]
+    tag_result = await db.execute(
+        select(TagRegistry.tag_name, TagRegistry.current_value).where(
+            TagRegistry.tag_name.in_(tag_names)
+        )
+    )
+    tag_mode_map: dict[str, float | None] = {
+        row.tag_name: row.current_value for row in tag_result.all()
+    }
 
-    # --- 4. 并发查询所有回路的最新 MODE 值 ---
-    async def _get_latest_mode(tag_name: str) -> int | None:
-        try:
-            data = await provider.query_trend_data(tag_name, start_time, end_time)
-            if data:
-                return int(data[-1]["value"])
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("[实时自控率] 查询 %s 失败: %s", tag_name, exc)
-        return None
-
-    tasks = [_get_latest_mode(row.tag_name) for row in rows]
-    mode_values = await asyncio.gather(*tasks)
-
-    # --- 5. 判定自控率 + 统计标准 MODE 分布 ---
-    # mode_counts 按 5 种标准 MODE 值统计（0=手动, 1=自动, 2=串级, 3=远程, 4=先控）
+    # --- 4. 按回路投用定义判断是否算自动 ---
+    DEFAULT_AUTO_MODES = {1, 2, 3}  # 向后兼容默认值
     auto_count = 0
     valid_count = 0
     mode_counts: dict[int, int] = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
 
-    for row, raw_mode in zip(rows, mode_values, strict=False):
-        if raw_mode is None:
+    for row in rows:
+        mode_val = tag_mode_map.get(row.tag_name)
+        if mode_val is None:
+            continue
+        try:
+            mode_int = int(mode_val)
+        except (ValueError, TypeError):
             continue
         valid_count += 1
-
-        # 解析 raw MODE → standard MODE（按回路的 DCS 型号映射）
-        raw_map = model_raw_maps.get(row.dcs_model_id, default_raw_map)
-        standard_mode = raw_map.get(raw_mode, raw_mode)
-
-        # 判定是否自动：
-        # 1. 优先用回路投用定义（loop_mode_mapping，直接匹配 raw mode）
-        # 2. 无投用定义时，用 standard_mode 匹配 mode_definition 的 auto_modes
-        per_loop_auto = auto_mode_map.get(row.loop_id)
-        if per_loop_auto is not None:
-            is_auto = raw_mode in per_loop_auto
-        else:
-            is_auto = standard_mode in auto_modes
-
-        if is_auto:
+        # 统计各 MODE 值的数量（仅统计 0-4 标准模式）
+        if mode_int in mode_counts:
+            mode_counts[mode_int] += 1
+        # 取该回路的自动 MODE 集合，无配置时回退到默认
+        auto_modes = auto_mode_map.get(row.loop_id, DEFAULT_AUTO_MODES)
+        if mode_int in auto_modes:
             auto_count += 1
 
-        # 统计标准 MODE 分布（用于前端饼图）
-        if standard_mode in mode_counts:
-            mode_counts[standard_mode] += 1
-        else:
-            # 超出 0-4 范围的标准值暂归入手动
-            mode_counts[0] += 1
-
     if valid_count == 0:
-        logger.debug("[实时自控率] TDengine 无可用 MODE 数据")
+        logger.debug("[实时自控率] 无可用 MODE 数据（tag_registry.current_value 为空）")
         return None
 
     rate = round(auto_count / valid_count * 100, 2)
     logger.debug(
-        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%, mode_counts=%s, auto_modes=%s",
-        valid_count,
-        auto_count,
-        rate,
-        mode_counts,
-        sorted(auto_modes),
+        "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%",
+        valid_count, auto_count, rate,
     )
     return {
         "rate": Decimal(str(rate)),
@@ -265,51 +201,6 @@ async def query_realtime_auto_rate(
 # ---------------------------------------------------------------------------
 # 节点级快照聚合与持久化
 # ---------------------------------------------------------------------------
-
-
-async def _count_loops_by_evaluation(
-    db: AsyncSession, loop_ids: list[str], *, included: bool
-) -> int:
-    """统计 loop_ids 中 include_in_evaluation 为指定值的回路数。
-
-    v5.3 对齐 DDS v4.1 §2.17：用于 unit_kpi_summary.excluded_loops 统计。
-    """
-    if not loop_ids:
-        return 0
-    result = await db.execute(
-        select(func.count())
-        .select_from(LoopLedger)
-        .where(
-            LoopLedger.id.in_(loop_ids),
-            LoopLedger.include_in_evaluation.is_(included),
-        )
-    )
-    return int(result.scalar() or 0)
-
-
-async def _count_inconclusive_snapshots(
-    db: AsyncSession, loop_ids: list[str], ts_start: datetime, ts_end: datetime
-) -> int:
-    """统计时间窗内状态为 INCONCLUSIVE 的回路快照数。
-
-    v5.3 对齐 DDS v4.1 §2.17：用于 unit_kpi_summary.inconclusive_loops 统计。
-    只统计参评回路（include_in_evaluation=true）中的 INCONCLUSIVE 快照。
-    """
-    if not loop_ids:
-        return 0
-    result = await db.execute(
-        select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
-        .select_from(KpiSnapshotHourly)
-        .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
-        .where(
-            KpiSnapshotHourly.loop_id.in_(loop_ids),
-            KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
-            KpiSnapshotHourly.status == "INCONCLUSIVE",
-            LoopLedger.include_in_evaluation.is_(True),
-        )
-    )
-    return int(result.scalar() or 0)
 
 
 async def aggregate_node_snapshot(
@@ -334,38 +225,15 @@ async def aggregate_node_snapshot(
         logger.debug("[节点级聚合] plant_node_id=%s 无下属回路", plant_node_id)
         return None
 
-    logger.info(
-        "[节点级聚合] plant_node_id=%s 下属回路数=%d 时间窗=%s~%s",
-        plant_node_id,
-        len(loop_ids),
-        ts_start,
-        ts_end,
-    )
-
-    # 子查询：每个回路在时间窗内最新一条 SUCCESS/PARTIAL 快照
+    # 子查询：每个回路在时间窗内最新一条 SUCCESS 快照
     # 使用 DISTINCT ON (loop_id) 取每组最新
-    #
-    # 纳入 PARTIAL 的原因：PARTIAL 快照仅表示 good_value_rate / auto_mode_rate /
-    # steady_rate 中有部分为 NULL（如 OP/MODE 信号缺失或质量码无效），
-    # 但其他指标（accuracy_rate / score 等）仍有有效值。
-    # SQL 聚合中 col * weight_col 对 NULL 自然跳过（SUM 忽略 NULL），
-    # 不会污染其他字段的加权平均。INCONCLUSIVE 仍被排除（数据严重不足）。
-    #
-    # 可信度 E 级过滤（PRD §5.4.3 / FDS §5.3.10）：
-    # confidence_level='E' 表示有效数据率 < 20%，数据严重不足，
-    # 此类快照不参与节点级聚合，保证聚合结果可靠性。
-    # confidence_level 为 NULL 的旧数据（未评估可信度）仍纳入聚合。
     subq = (
         select(KpiSnapshotHourly)
         .where(
             KpiSnapshotHourly.loop_id.in_(loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
             KpiSnapshotHourly.ts_start <= ts_end,
-            KpiSnapshotHourly.status.in_(["SUCCESS", "PARTIAL"]),
-            or_(
-                KpiSnapshotHourly.confidence_level.is_(None),
-                KpiSnapshotHourly.confidence_level != "E",
-            ),
+            KpiSnapshotHourly.status == "SUCCESS",
         )
         .distinct(KpiSnapshotHourly.loop_id)
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
@@ -394,13 +262,8 @@ async def aggregate_node_snapshot(
     stmt = (
         select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
         .select_from(
-            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
-            )
-        )
-        .where(
-            # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路不参与装置级聚合
-            LoopLedger.include_in_evaluation.is_(True)
+            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id)
+            .outerjoin(LoopLevelWeight, LoopLedger.level == LoopLevelWeight.level)
         )
     )
     result = await db.execute(stmt)
@@ -409,9 +272,7 @@ async def aggregate_node_snapshot(
     if row.cnt == 0:
         logger.debug(
             "[节点级聚合] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照",
-            plant_node_id,
-            ts_start,
-            ts_end,
+            plant_node_id, ts_start, ts_end,
         )
         return None
 
@@ -422,47 +283,6 @@ async def aggregate_node_snapshot(
             plant_node_id,
         )
         return None
-
-    # 查询每回路明细（score + importance_level + weight），用于排查聚合偏差
-    detail_stmt = (
-        select(
-            subq.c.loop_id,
-            subq.c.score,
-            subq.c.status,
-            subq.c.confidence_level,
-            LoopLedger.tag_name,
-            LoopLedger.importance_level,
-            weight_col,
-        )
-        .select_from(
-            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
-            )
-        )
-        .where(
-            # v5.3 对齐 FDS §5.2.3 / DDS v4.1：不参评回路不参与装置级聚合
-            LoopLedger.include_in_evaluation.is_(True)
-        )
-    )
-    detail_result = await db.execute(detail_stmt)
-    detail_rows = detail_result.all()
-    logger.info(
-        "[节点级聚合] plant_node_id=%s 参与聚合回路明细（共 %d 条）:",
-        plant_node_id,
-        len(detail_rows),
-    )
-    for dr in detail_rows:
-        logger.info(
-            "[节点级聚合]   回路 loop_id=%s tag=%s importance_level=%s "
-            "weight=%s score=%s status=%s confidence=%s",
-            dr.loop_id,
-            dr.tag_name,
-            dr.importance_level,
-            dr.w,
-            float(dr.score) if dr.score is not None else None,
-            dr.status,
-            dr.confidence_level,
-        )
 
     def avg_value(field: str) -> Decimal | None:
         val = getattr(row, field)
@@ -481,36 +301,11 @@ async def aggregate_node_snapshot(
     realtime_auto_rate = _realtime_result["rate"] if _realtime_result else None
 
     logger.info(
-        "[节点级聚合] plant_node_id=%s 聚合结果: 回路数=%d, weight_sum=%.2f, "
-        "投自动回路数=%d, 投自动占比=%.2f%%, 实时自控率=%s, "
-        "加权综合评分=%s, 定级=%s",
-        plant_node_id,
-        row.cnt,
-        weight_sum_val,
-        auto_loop_count_val,
-        auto_loop_ratio,
-        realtime_auto_rate,
-        score_avg,
-        status,
+        "[节点级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "
+        "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, 定级=%s",
+        plant_node_id, row.cnt, auto_loop_count_val,
+        auto_loop_ratio, realtime_auto_rate, score_avg, status,
     )
-
-    # v5.3 对齐 DDS v4.1 §2.17：统计 total_loops / excluded_loops / inconclusive_loops
-    # total_loops: 节点下属所有 active 回路数（含不参评）
-    # excluded_loops: include_in_evaluation=false 的回路数
-    # inconclusive_loops: 参评但快照状态为 INCONCLUSIVE 的回路数
-    total_loops_val = len(loop_ids)
-    excluded_loops_val = await _count_loops_by_evaluation(db, loop_ids, included=False)
-    inconclusive_loops_val = await _count_inconclusive_snapshots(db, loop_ids, ts_start, ts_end)
-    # evaluated_loops: 参与聚合的回路数（已有有效快照且 include_in_evaluation=true）
-    evaluated_loops_val = int(row.cnt)
-
-    # unit_kpi_summary.status 映射：
-    # EMPTY=无有效评分, PARTIAL=部分回路 INCONCLUSIVE, SUCCESS=全部回路有有效评分
-    unit_status = "SUCCESS"
-    if evaluated_loops_val == 0:
-        unit_status = "EMPTY"
-    elif inconclusive_loops_val > 0:
-        unit_status = "PARTIAL"
 
     return {
         "plant_node_id": plant_node_id,
@@ -522,33 +317,19 @@ async def aggregate_node_snapshot(
         "effective_auto_rate": avg_value("effective_auto_rate"),
         "steady_rate": avg_value("steady_rate"),
         "accuracy_rate": avg_value("accuracy_rate"),
-        "fast_rate": avg_value("fast_rate"),
+        "fast_response_rate": avg_value("fast_response_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
-        # P1 #14: 补全 4 个字段（节点级加权均值，对齐 GB/T 44693.2-2024 §6.4）
-        "stiction_index": avg_value("stiction_index"),
-        "settling_time": avg_value("settling_time"),
-        "output_trip_index": avg_value("output_trip_index"),
-        "ideal_settling_time": avg_value("ideal_settling_time"),
         "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
         "realtime_auto_rate": realtime_auto_rate,
-        "loop_count": evaluated_loops_val,
+        "loop_count": int(row.cnt),
         "status": status,
         "algorithm_version": ALGORITHM_VERSION,
-        # v5.3 新增：unit_kpi_summary 聚合统计字段
-        "total_loops": total_loops_val,
-        "evaluated_loops": evaluated_loops_val,
-        "excluded_loops": excluded_loops_val,
-        "inconclusive_loops": inconclusive_loops_val,
-        "unit_status": unit_status,
     }
 
 
 async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
     """保存节点级快照（幂等：相同 plant_node_id + ts_start 覆盖更新）。
-
-    v5.3 对齐 DDS v4.1 §2.17：同时并行写入 ``unit_kpi_summary`` 表，
-    保留 ``kpi_node_snapshot_hourly`` 作为节点级快照主表（供日/月聚合与查询使用）。
 
     Args:
         db: 异步数据库会话
@@ -559,16 +340,6 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
     """
     plant_node_id = snap_data["plant_node_id"]
     ts_start = snap_data["ts_start"]
-
-    # v5.3：剥离 unit_kpi_summary 专属字段，避免传入 KpiNodeSnapshotHourly 报错
-    _unit_fields = (
-        "total_loops",
-        "evaluated_loops",
-        "excluded_loops",
-        "inconclusive_loops",
-        "unit_status",
-    )
-    node_snap_data = {k: v for k, v in snap_data.items() if k not in _unit_fields}
 
     # 查询是否已存在（幂等）
     existing_result = await db.execute(
@@ -581,106 +352,23 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
 
     if existing:
         # 覆盖更新
-        for key, val in node_snap_data.items():
+        for key, val in snap_data.items():
             if hasattr(existing, key):
                 setattr(existing, key, val)
         existing.created_at = datetime.now(UTC).replace(tzinfo=None)
         await db.flush()
-        logger.info(
-            "[节点级快照] 覆盖更新 plant_node_id=%s ts_start=%s score=%s status=%s",
-            plant_node_id,
-            ts_start,
-            snap_data.get("score"),
-            snap_data.get("status"),
-        )
+        logger.debug("[节点级快照] 覆盖更新 plant_node_id=%s, ts_start=%s", plant_node_id, ts_start)
     else:
         # 新增
         snap = KpiNodeSnapshotHourly(
             id=str(uuid4()),
-            **node_snap_data,
+            **snap_data,
         )
         db.add(snap)
         await db.flush()
-        logger.info(
-            "[节点级快照] 新增 plant_node_id=%s ts_start=%s score=%s status=%s",
-            plant_node_id,
-            ts_start,
-            snap_data.get("score"),
-            snap_data.get("status"),
-        )
-
-    # v5.3 对齐 DDS v4.1 §2.17：并行写入 unit_kpi_summary（装置级 KPI 汇总表）
-    await _save_unit_kpi_summary(db, snap_data)
+        logger.debug("[节点级快照] 新增 plant_node_id=%s, ts_start=%s", plant_node_id, ts_start)
 
     return snap_data
-
-
-async def _save_unit_kpi_summary(db: AsyncSession, snap_data: dict) -> None:
-    """保存装置级 KPI 汇总到 ``unit_kpi_summary`` 表（幂等）。
-
-    v5.3 对齐 DDS v4.1 §2.17 / 算法说明 §4.11：
-    - ``stability_rate`` ← ``steady_rate``（字段名对齐 DDS v4.1）
-    - ``avg_score`` ← ``score``（综合评分加权均值）
-    - ``status`` ← ``unit_status``（SUCCESS/PARTIAL/EMPTY 聚合状态）
-    """
-    node_id = snap_data["plant_node_id"]
-    snapshot_time = snap_data["ts_start"]
-
-    # 幂等查询
-    existing_result = await db.execute(
-        select(UnitKpiSummary).where(
-            UnitKpiSummary.node_id == node_id,
-            UnitKpiSummary.snapshot_time == snapshot_time,
-        )
-    )
-    existing = existing_result.scalar_one_or_none()
-
-    # 字段映射：snap_data key → UnitKpiSummary column
-    field_map = {
-        "avg_score": snap_data.get("score"),
-        "auto_mode_rate": snap_data.get("auto_mode_rate"),
-        "effective_auto_rate": snap_data.get("effective_auto_rate"),
-        "stability_rate": snap_data.get("steady_rate"),  # DDS v4.1 字段名对齐
-        "accuracy_rate": snap_data.get("accuracy_rate"),
-        "fast_rate": snap_data.get("fast_rate"),
-        "good_value_rate": snap_data.get("good_value_rate"),
-        "oscillation_rate": snap_data.get("oscillation_rate"),
-        "saturation_rate": snap_data.get("saturation_rate"),
-        "total_loops": snap_data.get("total_loops"),
-        "evaluated_loops": snap_data.get("evaluated_loops"),
-        "inconclusive_loops": snap_data.get("inconclusive_loops"),
-        "excluded_loops": snap_data.get("excluded_loops"),
-        "status": snap_data.get("unit_status"),
-        "algorithm_version": snap_data.get("algorithm_version"),
-    }
-
-    if existing:
-        for col, val in field_map.items():
-            setattr(existing, col, val)
-        await db.flush()
-        logger.info(
-            "[装置级汇总] 覆盖 unit_kpi_summary node_id=%s snapshot_time=%s avg_score=%s status=%s",
-            node_id,
-            snapshot_time,
-            field_map["avg_score"],
-            field_map["status"],
-        )
-    else:
-        summary = UnitKpiSummary(
-            id=str(uuid4()),
-            node_id=node_id,
-            snapshot_time=snapshot_time,
-            **field_map,
-        )
-        db.add(summary)
-        await db.flush()
-        logger.info(
-            "[装置级汇总] 新增 unit_kpi_summary node_id=%s snapshot_time=%s avg_score=%s status=%s",
-            node_id,
-            snapshot_time,
-            field_map["avg_score"],
-            field_map["status"],
-        )
 
 
 async def calculate_and_save_node_snapshot(
@@ -690,9 +378,6 @@ async def calculate_and_save_node_snapshot(
     ts_end: datetime,
 ) -> dict | None:
     """聚合并保存节点级快照（一步完成）。"""
-    # 剥离 tzinfo，对齐 KpiNodeSnapshotHourly 表的 TIMESTAMP WITHOUT TIME ZONE 列
-    ts_start = ts_start.replace(tzinfo=None) if ts_start.tzinfo else ts_start
-    ts_end = ts_end.replace(tzinfo=None) if ts_end.tzinfo else ts_end
     snap_data = await aggregate_node_snapshot(db, plant_node_id, ts_start, ts_end)
     if snap_data is None:
         return None
@@ -706,7 +391,6 @@ async def calculate_and_save_node_snapshot(
 
 def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None) -> dict:
     """快照对象转字典。"""
-
     def to_float(v):
         return float(v) if v is not None else None
 
@@ -721,16 +405,9 @@ def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None)
         "effectiveAutoRate": to_float(snap.effective_auto_rate),
         "steadyRate": to_float(snap.steady_rate),
         "accuracyRate": to_float(snap.accuracy_rate),
-        # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
-        "fastRate": to_float(snap.fast_rate),
+        "fastResponseRate": to_float(snap.fast_response_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
-        # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
-        "stictionIndex": to_float(snap.stiction_index),
-        # v5.3 对齐 DDS v4.1：steadyStateTime → settlingTime
-        "settlingTime": to_float(snap.settling_time),
-        "outputTravelIndex": to_float(snap.output_trip_index),
-        "idealSettlingTime": to_float(snap.ideal_settling_time),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
         "realtimeAutoRate": to_float(snap.realtime_auto_rate),
         "loopCount": snap.loop_count,
@@ -792,7 +469,8 @@ async def get_node_trend(
             "metricKey": field,
             "metricName": name,
             "values": [
-                float(getattr(s, field)) if getattr(s, field) is not None else None for s in snaps
+                float(getattr(s, field)) if getattr(s, field) is not None else None
+                for s in snaps
             ],
         }
 
@@ -865,40 +543,30 @@ async def get_node_ranking(
 
     items = []
     for idx, row in enumerate(rows, start=1):
-
         def to_float(v):
             return float(v) if v is not None else None
 
-        items.append(
-            {
-                "rank": idx,
-                "plantNodeId": str(row.plant_node_id),
-                "plantNodeName": row.name,
-                "plantNodeType": row.type,
-                "tsStart": row.ts_start.isoformat() if row.ts_start else None,
-                "score": to_float(row.score),
-                "goodValueRate": to_float(row.good_value_rate),
-                "autoModeRate": to_float(row.auto_mode_rate),
-                "effectiveAutoRate": to_float(row.effective_auto_rate),
-                "steadyRate": to_float(row.steady_rate),
-                "accuracyRate": to_float(row.accuracy_rate),
-                # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
-                "fastRate": to_float(row.fast_rate),
-                "oscillationRate": to_float(row.oscillation_rate),
-                "saturationRate": to_float(row.saturation_rate),
-                # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
-                "stictionIndex": to_float(row.stiction_index),
-                # v5.3 对齐 DDS v4.1：steadyStateTime → settlingTime
-                "settlingTime": to_float(row.settling_time),
-                "outputTravelIndex": to_float(row.output_trip_index),
-                "idealSettlingTime": to_float(row.ideal_settling_time),
-                "autoLoopRatio": to_float(row.auto_loop_ratio),
-                "realtimeAutoRate": to_float(row.realtime_auto_rate),
-                "loopCount": row.loop_count,
-                "status": row.status,
-                "algorithmVersion": row.algorithm_version,
-            }
-        )
+        items.append({
+            "rank": idx,
+            "plantNodeId": str(row.plant_node_id),
+            "plantNodeName": row.name,
+            "plantNodeType": row.type,
+            "tsStart": row.ts_start.isoformat() if row.ts_start else None,
+            "score": to_float(row.score),
+            "goodValueRate": to_float(row.good_value_rate),
+            "autoModeRate": to_float(row.auto_mode_rate),
+            "effectiveAutoRate": to_float(row.effective_auto_rate),
+            "steadyRate": to_float(row.steady_rate),
+            "accuracyRate": to_float(row.accuracy_rate),
+            "fastResponseRate": to_float(row.fast_response_rate),
+            "oscillationRate": to_float(row.oscillation_rate),
+            "saturationRate": to_float(row.saturation_rate),
+            "autoLoopRatio": to_float(row.auto_loop_ratio),
+            "realtimeAutoRate": to_float(row.realtime_auto_rate),
+            "loopCount": row.loop_count,
+            "status": row.status,
+            "algorithmVersion": row.algorithm_version,
+        })
     return items
 
 
@@ -909,7 +577,9 @@ async def get_nodes_overview(
 ) -> dict:
     """全厂总览：所有启用 KPI 评估的节点最新快照汇总。"""
     # 查询所有 is_kpi_enabled 的节点
-    node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
+    node_result = await db.execute(
+        select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
+    )
     enabled_nodes = node_result.scalars().all()
 
     if not enabled_nodes:
@@ -943,28 +613,25 @@ async def get_nodes_overview(
     status_dist: dict[str, int] = {}
     for row in rows:
         nid = str(row.plant_node_id)
-
         def to_float(v):
             return float(v) if v is not None else None
 
         status = row.status
         status_dist[status] = status_dist.get(status, 0) + 1
 
-        nodes.append(
-            {
-                "plantNodeId": nid,
-                "plantNodeName": node_name_map.get(nid),
-                "plantNodeType": node_type_map.get(nid),
-                "score": to_float(row.score),
-                "autoLoopRatio": to_float(row.auto_loop_ratio),
-                "realtimeAutoRate": to_float(row.realtime_auto_rate),
-                "steadyRate": to_float(row.steady_rate),
-                "effectiveAutoRate": to_float(row.effective_auto_rate),
-                "loopCount": row.loop_count,
-                "status": status,
-                "tsStart": row.ts_start.isoformat() if row.ts_start else None,
-            }
-        )
+        nodes.append({
+            "plantNodeId": nid,
+            "plantNodeName": node_name_map.get(nid),
+            "plantNodeType": node_type_map.get(nid),
+            "score": to_float(row.score),
+            "autoLoopRatio": to_float(row.auto_loop_ratio),
+            "realtimeAutoRate": to_float(row.realtime_auto_rate),
+            "steadyRate": to_float(row.steady_rate),
+            "effectiveAutoRate": to_float(row.effective_auto_rate),
+            "loopCount": row.loop_count,
+            "status": status,
+            "tsStart": row.ts_start.isoformat() if row.ts_start else None,
+        })
 
     # 按评分降序
     nodes.sort(key=lambda x: -(x["score"] or 0))
@@ -984,7 +651,6 @@ async def get_nodes_overview(
 
 def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None) -> dict:
     """监控快照对象转字典（兼容 hour/day/month 三种维度）。"""
-
     def to_float(v):
         return float(v) if v is not None else None
 
@@ -1011,16 +677,9 @@ def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None
         "effectiveAutoRate": to_float(snap.effective_auto_rate),
         "steadyRate": to_float(snap.steady_rate),
         "accuracyRate": to_float(snap.accuracy_rate),
-        # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
-        "fastRate": to_float(snap.fast_rate),
+        "fastResponseRate": to_float(snap.fast_response_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
-        # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
-        "stictionIndex": to_float(snap.stiction_index),
-        # v5.3 对齐 DDS v4.1：steadyStateTime → settlingTime
-        "settlingTime": to_float(snap.settling_time),
-        "outputTravelIndex": to_float(snap.output_trip_index),
-        "idealSettlingTime": to_float(snap.ideal_settling_time),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
         "realtimeAutoRate": to_float(snap.realtime_auto_rate),
         "loopCount": snap.loop_count,
@@ -1063,6 +722,7 @@ async def get_node_monitor_data(
             )
             .order_by(KpiNodeSnapshotHourly.ts_start.asc())
         )
+        time_col = "ts_start"
     elif dimension == "day":
         start_date = start.date() if isinstance(start, datetime) else start
         end_date = end.date() if isinstance(end, datetime) else end
@@ -1075,10 +735,9 @@ async def get_node_monitor_data(
             )
             .order_by(KpiNodeSnapshotDaily.stat_date.asc())
         )
+        time_col = "stat_date"
     elif dimension == "month":
-        start_month = (
-            start.date().replace(day=1) if isinstance(start, datetime) else start.replace(day=1)
-        )
+        start_month = start.date().replace(day=1) if isinstance(start, datetime) else start.replace(day=1)
         end_month = end.date().replace(day=1) if isinstance(end, datetime) else end.replace(day=1)
         stmt = (
             select(KpiNodeSnapshotMonthly)
@@ -1089,6 +748,7 @@ async def get_node_monitor_data(
             )
             .order_by(KpiNodeSnapshotMonthly.stat_month.asc())
         )
+        time_col = "stat_month"
     else:
         raise ValueError(f"不支持的维度: {dimension}，可选值: hour/day/month")
 
