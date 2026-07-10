@@ -50,7 +50,34 @@ COMMENT ON COLUMN sys_user.created_at IS '创建时间';
 COMMENT ON COLUMN sys_user.updated_at IS '更新时间';
 
 -- =============================================================================
--- 2. plant_node (工厂节点)
+-- 2. tag_registry (AAS Tag 注册表)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS tag_registry (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tag_name        VARCHAR(100)    NOT NULL,
+    tag_description VARCHAR(255),
+    tag_type        VARCHAR(20)     NOT NULL,
+    current_value   FLOAT,
+    quality         VARCHAR(20),
+    last_sync_at    TIMESTAMP       NOT NULL,
+    is_linked       BOOLEAN         DEFAULT FALSE,
+    CONSTRAINT uk_tag_registry_tag_name UNIQUE (tag_name),
+    CONSTRAINT ck_tag_registry_type     CHECK (tag_type IN ('PV', 'SP', 'OP', 'MODE', 'PID_P', 'PID_I', 'PID_D', 'OTHER')),
+    CONSTRAINT ck_tag_registry_quality  CHECK (quality IS NULL OR quality IN ('GOOD', 'BAD', 'UNCERTAIN'))
+);
+
+COMMENT ON TABLE  tag_registry IS 'AAS Tag 注册表（AAS 同步的 OPC Tag 位号信息）';
+COMMENT ON COLUMN tag_registry.id IS 'Tag 主键';
+COMMENT ON COLUMN tag_registry.tag_name IS 'Tag 位号名（OPC Item ID）';
+COMMENT ON COLUMN tag_registry.tag_description IS 'Tag 描述（来自 AAS）';
+COMMENT ON COLUMN tag_registry.tag_type IS 'Tag 类型：PV/SP/OP/MODE/PID_P/PID_I/PID_D/OTHER';
+COMMENT ON COLUMN tag_registry.current_value IS '当前值（最近一次同步快照）';
+COMMENT ON COLUMN tag_registry.quality IS '数据质量码：GOOD/BAD/UNCERTAIN';
+COMMENT ON COLUMN tag_registry.last_sync_at IS '最后同步时间';
+COMMENT ON COLUMN tag_registry.is_linked IS '是否已关联到回路';
+
+-- =============================================================================
+-- 3. plant_node (工厂节点)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS plant_node (
     id                      UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -124,33 +151,6 @@ COMMENT ON COLUMN loop_ledger.updated_by IS '最后更新人';
 COMMENT ON COLUMN loop_ledger.level IS '回路级别 1/2/3（默认3，对齐 GB/T 44693.2-2024 附表2，用于装置级聚合加权）';
 COMMENT ON COLUMN loop_ledger.modeattr_tag_id IS 'APC 识别位号 ID（位号值为 program 时算自动控制，影响有效自控率和投用率）';
 COMMENT ON COLUMN loop_ledger.data_retention_days IS '数据保存周期（天），NULL 表示用系统默认';
-
--- =============================================================================
--- 4. tag_registry (AAS Tag 注册表)
--- =============================================================================
-CREATE TABLE IF NOT EXISTS tag_registry (
-    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tag_name        VARCHAR(100)    NOT NULL,
-    tag_description VARCHAR(255),
-    tag_type        VARCHAR(20)     NOT NULL,
-    current_value   FLOAT,
-    quality         VARCHAR(20),
-    last_sync_at    TIMESTAMP       NOT NULL,
-    is_linked       BOOLEAN         DEFAULT FALSE,
-    CONSTRAINT uk_tag_registry_tag_name UNIQUE (tag_name),
-    CONSTRAINT ck_tag_registry_type     CHECK (tag_type IN ('PV', 'SP', 'OP', 'MODE', 'PID_P', 'PID_I', 'PID_D', 'OTHER')),
-    CONSTRAINT ck_tag_registry_quality  CHECK (quality IS NULL OR quality IN ('GOOD', 'BAD', 'UNCERTAIN'))
-);
-
-COMMENT ON TABLE  tag_registry IS 'AAS Tag 注册表（AAS 同步的 OPC Tag 位号信息）';
-COMMENT ON COLUMN tag_registry.id IS 'Tag 主键';
-COMMENT ON COLUMN tag_registry.tag_name IS 'Tag 位号名（OPC Item ID）';
-COMMENT ON COLUMN tag_registry.tag_description IS 'Tag 描述（来自 AAS）';
-COMMENT ON COLUMN tag_registry.tag_type IS 'Tag 类型：PV/SP/OP/MODE/PID_P/PID_I/PID_D/OTHER';
-COMMENT ON COLUMN tag_registry.current_value IS '当前值（最近一次同步快照）';
-COMMENT ON COLUMN tag_registry.quality IS '数据质量码：GOOD/BAD/UNCERTAIN';
-COMMENT ON COLUMN tag_registry.last_sync_at IS '最后同步时间';
-COMMENT ON COLUMN tag_registry.is_linked IS '是否已关联到回路';
 
 -- =============================================================================
 -- 5. loop_tag_mapping (回路-Tag 关联)
