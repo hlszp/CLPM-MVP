@@ -266,9 +266,9 @@ async def _get_control_mode_stats(
                         )
                     except (ValueError, TypeError):
                         pass
-                elif tag.last_value is not None:
+                elif tag.current_value is not None:
                     try:
-                        mode_val = float(tag.last_value)
+                        mode_val = float(tag.current_value)
                         mode_label = (
                             _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id))
                             or "Unknown"
