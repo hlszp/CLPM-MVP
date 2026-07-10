@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
+from app.core.tdengine import query_trend_data
 from app.models.audit import SysAuditLog
 from app.models.loop import LoopLedger
 from app.models.plant_node import PlantNode
@@ -27,12 +28,7 @@ from app.models.tag import TagRegistry
 logger = logging.getLogger(__name__)
 
 # 允许批量更新的字段白名单
-_BATCH_UPDATABLE_FIELDS = {
-    "is_monitored",
-    "is_stat_enabled",
-    "importance_level",
-    "include_in_evaluation",
-}
+_BATCH_UPDATABLE_FIELDS = {"is_monitored", "is_stat_enabled", "level"}
 
 
 async def _write_audit(
@@ -104,18 +100,20 @@ async def batch_update_loops(
             status_code=422,
         )
 
-    # 校验 importance_level 取值
-    if "importance_level" in updates and updates["importance_level"] is not None:
-        level = updates["importance_level"]
+    # 校验 level 取值
+    if "level" in updates and updates["level"] is not None:
+        level = updates["level"]
         if level not in (1, 2, 3):
             raise BizError(
                 code="ERR_BATCH_INVALID_FIELD",
-                message=f"importance_level 必须为 1/2/3，当前为 {level}",
+                message=f"level 必须为 1/2/3，当前为 {level}",
                 status_code=422,
             )
 
     # 查询待更新回路
-    result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids)))
+    result = await db.execute(
+        select(LoopLedger).where(LoopLedger.id.in_(loop_ids))
+    )
     loops = result.scalars().all()
 
     if not loops:
@@ -128,8 +126,7 @@ async def batch_update_loops(
             "loopId": str(loop.id),
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
-            "importanceLevel": loop.importance_level,
-            "includeInEvaluation": loop.include_in_evaluation,
+            "level": loop.level,
         }
 
         if "is_monitored" in updates and updates["is_monitored"] is not None:
@@ -139,18 +136,15 @@ async def batch_update_loops(
             # 当前 LoopLedger 无独立 is_stat_enabled 字段，复用 is_active 语义
             # 后续若新增字段可在此扩展
             loop.is_active = bool(updates["is_stat_enabled"])
-        if "importance_level" in updates and updates["importance_level"] is not None:
-            loop.importance_level = updates["importance_level"]
-        if "include_in_evaluation" in updates and updates["include_in_evaluation"] is not None:
-            loop.include_in_evaluation = bool(updates["include_in_evaluation"])
+        if "level" in updates and updates["level"] is not None:
+            loop.level = updates["level"]
         loop.updated_by = operator
 
         after = {
             "loopId": str(loop.id),
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
-            "importanceLevel": loop.importance_level,
-            "includeInEvaluation": loop.include_in_evaluation,
+            "level": loop.level,
         }
         audit_items.append({"before": before, "after": after})
 
@@ -170,7 +164,7 @@ async def batch_update_loops(
         operator=operator,
         operation_type="LOOP_BATCH_UPDATE",
         target_type="loop_ledger",
-        target_id=None,  # 批量操作无单一目标，完整列表在 before_value/after_value
+        target_id=",".join(str(loop.id) for loop in loops),
         before_value=before_json,
         after_value=after_json,
     )
@@ -178,9 +172,7 @@ async def batch_update_loops(
 
     logger.info(
         "[批量更新] 已更新 %d 个回路（操作人: %s, 字段: %s）",
-        len(loops),
-        operator,
-        list(updates.keys()),
+        len(loops), operator, list(updates.keys()),
     )
 
     return len(loops)
@@ -195,11 +187,8 @@ async def batch_delete_loops(
     db: AsyncSession,
     loop_ids: list[str],
     operator: str,
-) -> dict:
+) -> int:
     """批量软删除回路（is_active=False，不实际删除记录）。
-
-    P1 #9 修正：补 Tag 关联校验，有关联 Tag 的回路跳过并记入 skipped 列表，
-    与单删 delete_loop 行为对齐（单删有 Tag 直接抛错，批删跳过）。
 
     Args:
         db: 异步数据库会话
@@ -207,9 +196,7 @@ async def batch_delete_loops(
         operator: 操作人
 
     Returns:
-        {"deleted": int, "skipped": list[dict]}
-        - deleted: 软删除的回路数量
-        - skipped: 跳过的回路列表（每项含 loopId/reason）
+        软删除的回路数量
 
     Raises:
         BizError: ERR_BATCH_EMPTY (loop_ids 为空)
@@ -221,36 +208,18 @@ async def batch_delete_loops(
             status_code=422,
         )
 
-    result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids)))
+    result = await db.execute(
+        select(LoopLedger).where(LoopLedger.id.in_(loop_ids))
+    )
     loops = result.scalars().all()
 
     if not loops:
-        return {"deleted": 0, "skipped": []}
-
-    # P1 #9: 批量查询有关联 Tag 的回路 ID
-    from app.models.loop import LoopTagMapping
-
-    tag_result = await db.execute(
-        select(LoopTagMapping.loop_id)
-        .where(LoopTagMapping.loop_id.in_([str(lp.id) for lp in loops]))
-        .distinct()
-    )
-    loops_with_tags: set[str] = {str(row[0]) for row in tag_result.all()}
+        return 0
 
     audit_items: list[dict] = []
-    skipped: list[dict] = []
-    deleted_count = 0
-
     for loop in loops:
-        loop_id_str = str(loop.id)
-        if loop_id_str in loops_with_tags:
-            skipped.append(
-                {"loopId": loop_id_str, "tagName": loop.tag_name, "reason": "存在关联 Tag"}
-            )
-            continue
-
         before = {
-            "loopId": loop_id_str,
+            "loopId": str(loop.id),
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
             "status": loop.status,
@@ -259,46 +228,41 @@ async def batch_delete_loops(
         loop.status = "INACTIVE"
         loop.updated_by = operator
         after = {
-            "loopId": loop_id_str,
+            "loopId": str(loop.id),
             "tagName": loop.tag_name,
             "is_active": False,
             "status": "INACTIVE",
         }
         audit_items.append({"before": before, "after": after})
-        deleted_count += 1
 
-    if audit_items:
-        before_json = json.dumps(
-            [item["before"] for item in audit_items],
-            ensure_ascii=False,
-            default=str,
-        )
-        after_json = json.dumps(
-            [item["after"] for item in audit_items],
-            ensure_ascii=False,
-            default=str,
-        )
+    before_json = json.dumps(
+        [item["before"] for item in audit_items],
+        ensure_ascii=False,
+        default=str,
+    )
+    after_json = json.dumps(
+        [item["after"] for item in audit_items],
+        ensure_ascii=False,
+        default=str,
+    )
 
-        await _write_audit(
-            db=db,
-            operator=operator,
-            operation_type="LOOP_BATCH_DELETE",
-            target_type="loop_ledger",
-            target_id=None,  # 批量操作无单一目标，完整列表在 before_value/after_value
-            before_value=before_json,
-            after_value=after_json,
-        )
-
+    await _write_audit(
+        db=db,
+        operator=operator,
+        operation_type="LOOP_BATCH_DELETE",
+        target_type="loop_ledger",
+        target_id=",".join(str(loop.id) for loop in loops),
+        before_value=before_json,
+        after_value=after_json,
+    )
     await db.commit()
 
     logger.info(
-        "[批量软删除] 已软删除 %d 个回路，跳过 %d 个（操作人: %s）",
-        deleted_count,
-        len(skipped),
-        operator,
+        "[批量软删除] 已软删除 %d 个回路（操作人: %s）",
+        len(loops), operator,
     )
 
-    return {"deleted": deleted_count, "skipped": skipped}
+    return len(loops)
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +291,9 @@ async def check_node_monitor_trigger(
     Raises:
         BizError: ERR_NODE_NOT_FOUND (节点不存在)
     """
-    result = await db.execute(select(PlantNode).where(PlantNode.id == plant_node_id))
+    result = await db.execute(
+        select(PlantNode).where(PlantNode.id == plant_node_id)
+    )
     node = result.scalar_one_or_none()
     if node is None:
         raise BizError(
@@ -341,23 +307,22 @@ async def check_node_monitor_trigger(
         return True
 
     # 查询 monitor_tag_id 对应的 tag_name
-    tag_result = await db.execute(select(TagRegistry).where(TagRegistry.id == node.monitor_tag_id))
+    tag_result = await db.execute(
+        select(TagRegistry).where(TagRegistry.id == node.monitor_tag_id)
+    )
     tag = tag_result.scalar_one_or_none()
     if tag is None:
         # 配置了 monitor_tag_id 但 tag 已删除 → 默认监控
         logger.warning(
             "[SVC-10] 节点 %s 的 monitor_tag_id %s 对应 Tag 不存在，回退默认监控",
-            plant_node_id,
-            node.monitor_tag_id,
+            plant_node_id, node.monitor_tag_id,
         )
         return True
 
-    # 查询数据源最新值（最近 5 分钟，通过数据源工厂适配 tdengine/remote_api）
-    from app.services.data_source.factory import get_provider
-
+    # 查询 TDengine 最新值（最近 5 分钟）
     end_time = datetime.now(UTC).replace(tzinfo=None)
     start_time = end_time - timedelta(minutes=5)
-    trend_data = await get_provider().query_trend_data(
+    trend_data = await query_trend_data(
         tag_name=tag.tag_name,
         start_time=start_time.isoformat(),
         end_time=end_time.isoformat(),
@@ -367,8 +332,7 @@ async def check_node_monitor_trigger(
         # 无数据时默认不监控（避免误报）
         logger.info(
             "[SVC-10] 节点 %s 的监控位号 %s 无最近数据，返回 False",
-            plant_node_id,
-            tag.tag_name,
+            plant_node_id, tag.tag_name,
         )
         return False
 
@@ -389,11 +353,7 @@ async def check_node_monitor_trigger(
     matched = latest_str == trigger_str
     logger.info(
         "[SVC-10] 节点 %s 监控位号 %s 最新值=%s, 触发值=%s, 匹配=%s",
-        plant_node_id,
-        tag.tag_name,
-        latest_value,
-        trigger_value,
-        matched,
+        plant_node_id, tag.tag_name, latest_value, trigger_value, matched,
     )
     return matched
 

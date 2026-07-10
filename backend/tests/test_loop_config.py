@@ -15,12 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.contracts.data_types import ConfidenceLevel, DataLineage, MetricResult
 from app.core.exceptions import BizError
-from app.services.confidence_evaluator import (
-    ALGORITHM_VERSION as CONFIDENCE_ALGORITHM_VERSION,
-)
-from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.loop_config import (
     get_auto_mode_values,
     get_effective_mode_values,
@@ -32,6 +27,8 @@ from app.services.node_performance import (
     aggregate_node_snapshot,
     query_realtime_auto_rate,
 )
+from app.tasks.kpi_calc import _compute_composite_score_v2
+
 
 # ===========================================================================
 # 辅助函数：构造 mock 对象
@@ -103,78 +100,10 @@ def _make_kpi_values(
     """构造 KPI 值字典（默认 A=90, F=80, S=70, R=60）。"""
     return {
         "accuracy_rate": accuracy,
-        "fast_rate": fast_response,
+        "fast_response_rate": fast_response,
         "steady_rate": steady,
         "effective_auto_rate": effective_auto,
     }
-
-
-def _compute_composite_score_v2_via_evaluator(
-    kpi_values: dict[str, Decimal | None],
-    type_weights: dict[str, dict] | None,
-    score_type: str,
-) -> Decimal | None:
-    """通过 ConfidenceEvaluator.compute_composite_score 计算 v2 综合评分。
-
-    适配旧 ``_compute_composite_score_v2(kpi_values, type_weights, score_type)``
-    签名到 Phase 4 新接口 ``ConfidenceEvaluator.compute_composite_score(
-    metric_results, weights)``。
-
-    Phase 4 重构后 ``app.tasks.kpi_calc._compute_composite_score_v2`` 已删除，
-    本函数封装新接口调用，保留旧测试用例的调用方式。
-
-    旧 kpi_values key: accuracy_rate / fast_rate / steady_rate /
-        effective_auto_rate
-    新 metric_results key: accuracy_rate / fast_rate / stability_rate /
-        effective_auto_rate
-
-    type_weights[score_type] = {weight_a, weight_f, weight_s}（Decimal）
-    weights = {accuracy_rate, fast_rate, stability_rate}（float）
-
-    Returns:
-        综合评分 Decimal（INCONCLUSIVE 时返回 None）
-    """
-
-    def _to_result(code: str, value: Decimal | None) -> MetricResult:
-        if value is None:
-            return MetricResult(
-                metric_code=code,
-                value=None,
-                confidence_level=ConfidenceLevel.E.value,
-                lineage=DataLineage(algorithm_version=CONFIDENCE_ALGORITHM_VERSION),
-            )
-        return MetricResult(
-            metric_code=code,
-            value=float(value),
-            confidence_level=ConfidenceLevel.A.value,
-            lineage=DataLineage(algorithm_version=CONFIDENCE_ALGORITHM_VERSION),
-        )
-
-    metric_results: dict[str, MetricResult] = {
-        "accuracy_rate": _to_result("accuracy_rate", kpi_values.get("accuracy_rate")),
-        "fast_rate": _to_result("fast_rate", kpi_values.get("fast_rate")),
-        "stability_rate": _to_result("stability_rate", kpi_values.get("steady_rate")),
-    }
-    eff_auto = kpi_values.get("effective_auto_rate")
-    if eff_auto is not None:
-        metric_results["effective_auto_rate"] = _to_result("effective_auto_rate", eff_auto)
-
-    weights: dict[str, float] | None = None
-    if type_weights and score_type in type_weights:
-        w = type_weights[score_type]
-        weights = {
-            "accuracy_rate": float(w.get("weight_a", 0)),
-            "fast_rate": float(w.get("weight_f", 0)),
-            "stability_rate": float(w.get("weight_s", 0)),
-        }
-
-    result = ConfidenceEvaluator.compute_composite_score(
-        metric_results=metric_results,
-        weights=weights,
-    )
-    if result.value is None:
-        return None
-    return Decimal(str(result.value))
 
 
 def _make_agg_row(
@@ -194,14 +123,9 @@ def _make_agg_row(
     row.effective_auto_rate = Decimal("85.00")
     row.steady_rate = Decimal("80.00")
     row.accuracy_rate = Decimal("78.00")
-    row.fast_rate = Decimal("82.00")
+    row.fast_response_rate = Decimal("82.00")
     row.oscillation_rate = Decimal("15.00")
     row.saturation_rate = Decimal("8.00")
-    # P1 #14: 4 个新增诊断字段
-    row.stiction_index = Decimal("0.12")
-    row.settling_time = Decimal("135.00")
-    row.output_trip_index = Decimal("38.00")
-    row.ideal_settling_time = Decimal("180.00")
     return row
 
 
@@ -228,7 +152,9 @@ class TestModeMappingCRUD:
         """全量替换成功（3 条映射）。"""
         db = AsyncMock()
         # 1st execute: 查询旧数据（空）；2nd execute: delete（返回值不使用）
-        db.execute = AsyncMock(side_effect=[_make_scalars_mock([]), MagicMock()])
+        db.execute = AsyncMock(
+            side_effect=[_make_scalars_mock([]), MagicMock()]
+        )
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -349,7 +275,7 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("STABLE", 0.2, 0.3, 0.5)
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "STABLE")
+        score = _compute_composite_score_v2(kpi_values, type_weights, "STABLE")
 
         assert score == Decimal("46.20")
 
@@ -361,7 +287,7 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("SLOW", 0.3, 0.1, 0.6)
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "SLOW")
+        score = _compute_composite_score_v2(kpi_values, type_weights, "SLOW")
 
         assert score == Decimal("46.20")
 
@@ -373,7 +299,7 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("FAST", 0.2, 0.5, 0.3)
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "FAST")
+        score = _compute_composite_score_v2(kpi_values, type_weights, "FAST")
 
         assert score == Decimal("47.40")
 
@@ -385,56 +311,50 @@ class TestComputeCompositeScoreV2:
         type_weights = _make_type_weights("LOGIC", 0.0, 0.5, 0.6)
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "LOGIC")
+        score = _compute_composite_score_v2(kpi_values, type_weights, "LOGIC")
 
         assert score == Decimal("44.73")
 
-    def test_score_v2_r_missing_is_inconclusive(self) -> None:
-        """R 缺失时视为 INCONCLUSIVE（P1 #18 修正，原为降级 60%）。
+    def test_score_v2_r_missing(self) -> None:
+        """R 缺失时降级 60%（基础评分 * 0.6）。
 
-        设计文档 §4.10 未定义 R 缺失的降级逻辑，
-        原 base_score * 0.6 系数缺乏依据，统一并入 INCONCLUSIVE 路径。
+        基础评分 = (0.2*0.9 + 0.3*0.8 + 0.5*0.7) / 1.0 * 100 = 77.00
+        降级后 = 77.00 * 0.6 = 46.20
         """
         type_weights = _make_type_weights("STABLE", 0.2, 0.3, 0.5)
         kpi_values = _make_kpi_values(effective_auto=None)
 
-        score = _compute_composite_score_v2_via_evaluator(kpi_values, type_weights, "STABLE")
+        score = _compute_composite_score_v2(kpi_values, type_weights, "STABLE")
 
-        assert score is None
+        assert score == Decimal("46.20")
 
     def test_score_v2_no_weights(self) -> None:
-        """无权重配置时使用 ConfidenceEvaluator 默认权重（a=0.25, f=0.20, s=0.55）。
+        """无权重配置时回退平等加权（a=f=s=0.3333）。
 
-        Phase 4 重构后，weights=None 时不再回退平等加权，而是使用
-        ConfidenceEvaluator.DEFAULT_WEIGHTS（对齐国标附录 C 稳定型）。
-
-        基础评分 = (0.25*0.9 + 0.20*0.8 + 0.55*0.7) / 1.0 * 100 = 77.00
-        P = 77.00 * 0.6 = 46.20
+        基础评分 = 0.3333*(0.9+0.8+0.7) / 0.9999 * 100 ≈ 80.00
+        P = 80.00 * 0.6 = 48.00
         """
         kpi_values = _make_kpi_values()
 
-        score = _compute_composite_score_v2_via_evaluator(kpi_values, None, "STABLE")
+        score = _compute_composite_score_v2(kpi_values, None, "STABLE")
 
-        assert score == Decimal("46.20")
+        assert score == Decimal("48.00")
 
 
 class TestInferScoreType:
     """工艺类型→评分类型映射测试。"""
 
-    @pytest.mark.parametrize(
-        "loop_type,expected",
-        [
-            ("TEMPERATURE", "STABLE"),
-            ("PRESSURE", "STABLE"),
-            ("LEVEL", "SLOW"),
-            ("ANALYSIS", "SLOW"),
-            ("FLOW", "FAST"),
-            ("SPEED", "FAST"),
-            ("OTHER", "LOGIC"),
-            (None, "LOGIC"),
-            ("UNKNOWN", "LOGIC"),
-        ],
-    )
+    @pytest.mark.parametrize("loop_type,expected", [
+        ("TEMPERATURE", "STABLE"),
+        ("PRESSURE", "STABLE"),
+        ("LEVEL", "SLOW"),
+        ("ANALYSIS", "SLOW"),
+        ("FLOW", "FAST"),
+        ("SPEED", "FAST"),
+        ("OTHER", "LOGIC"),
+        (None, "LOGIC"),
+        ("UNKNOWN", "LOGIC"),
+    ])
     def test_infer_score_type(self, loop_type: str | None, expected: str) -> None:
         """工艺类型→评分类型映射（TEMPERATURE→STABLE 等）。"""
         assert infer_score_type(loop_type) == expected
@@ -555,62 +475,41 @@ class TestRealtimeAutoRate:
 
     验证 query_realtime_auto_rate 在有/无投用定义时的行为。
     使用 mock_db + mock TDengine（patch query_trend_data）。
-
-    v6.1：MODE 自动判定来源优先级（配置驱动）：
-    1. LoopModeMapping 投用定义（回路级，直接匹配 raw mode，最高优先级）
-    2. mode_definition 配置表（is_auto=True 的 standard_mode 集合）
-    3. 行业默认 {1, 2, 3, 4}（mode_definition 表为空时回退常量）
-
-    DB execute 调用顺序（4 次）：
-    1. mode_definition 查询（get_auto_modes → .all()）
-    2. LoopModeMapping 投用定义查询（.all()）
-    3. LoopTagMapping + LoopLedger join 查询（含 dcs_model_id，.all()）
-    4. dcs_mode_mapping 默认映射查询（build_raw_to_standard_map(None) → .all()）
     """
 
     @pytest.mark.asyncio
-    async def test_realtime_auto_rate_with_loop_config(self) -> None:
-        """有投用定义时按回路配置判断（mode_definition 空 → 回退常量 {1,2,3,4}）。
+    async def test_realtime_auto_rate_with_config(self) -> None:
+        """有投用定义时按配置判断。
 
-        loop-001 配置自动 MODE={1,2}（LoopModeMapping），
-        loop-002 无配置 → 回退 mode_definition 默认 {1,2,3,4}。
-        TAG_001 返回 mode=1（在 {1,2} → 自动），TAG_002 返回 mode=0（不在 {1,2,3,4} → 手动）。
+        loop-001 配置自动 MODE={1,2}，loop-002 无配置回退默认 {1,2,3}。
+        TAG_001 返回 mode=1（在 {1,2} → 自动），TAG_002 返回 mode=4（不在 {1,2,3} → 非自动）。
         期望：1/2 = 50.0%
         """
         db = AsyncMock()
-        # 1st execute: mode_definition 查询（空 → 回退常量 {1,2,3,4}）
-        # 2nd execute: LoopModeMapping 投用定义（loop-001 有配置）
+        # 1st execute: 投用定义查询（loop-001 有配置）
         mm_rows = [
             MagicMock(loop_id="loop-001", mode_value=1),
             MagicMock(loop_id="loop-001", mode_value=2),
         ]
-        # 3rd execute: MODE tag 映射查询（dcs_model_id=None → 使用默认映射）
+        # 2nd execute: MODE tag 映射查询
         tag_rows = [
-            MagicMock(loop_id="loop-001", tag_name="TAG_001", dcs_model_id=None),
-            MagicMock(loop_id="loop-002", tag_name="TAG_002", dcs_model_id=None),
+            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
+            MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        # 4th execute: dcs_mode_mapping 默认映射（空 → 1:1 回退）
         db.execute = AsyncMock(
-            side_effect=[
-                _make_rows_mock([]),  # mode_definition 空 → 常量 {1,2,3,4}
-                _make_rows_mock(mm_rows),  # LoopModeMapping
-                _make_rows_mock(tag_rows),  # LoopTagMapping + LoopLedger
-                _make_rows_mock([]),  # dcs_mode_mapping 默认空 → 1:1
-            ]
+            side_effect=[_make_rows_mock(mm_rows), _make_rows_mock(tag_rows)]
         )
 
         async def _mock_query_trend(tag_name: str, start: str, end: str):
             if tag_name == "TAG_001":
                 return [{"ts": "2026-06-22T08:00:00Z", "value": 1}]
             if tag_name == "TAG_002":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 0}]
+                return [{"ts": "2026-06-22T08:00:00Z", "value": 4}]
             return []
 
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
+            "app.core.tdengine.query_trend_data",
+            new=AsyncMock(side_effect=_mock_query_trend),
         ):
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
@@ -619,39 +518,24 @@ class TestRealtimeAutoRate:
         assert result["auto_count"] == 1
         assert result["manual_count"] == 1
         assert result["total_count"] == 2
-        # mode_counts 验证：mode=1 一个回路，mode=0 一个回路
-        assert result["mode_counts"][0] == 1
-        assert result["mode_counts"][1] == 1
-        assert result["mode_counts"][2] == 0
-        assert result["mode_counts"][3] == 0
-        assert result["mode_counts"][4] == 0
 
     @pytest.mark.asyncio
-    async def test_realtime_auto_rate_with_mode_definition(self) -> None:
-        """无回路配置时使用 mode_definition 配置表的 auto_modes={1,2,3}。
+    async def test_realtime_auto_rate_no_config(self) -> None:
+        """无配置时回退 {1,2,3}。
 
-        两个回路均无 LoopModeMapping，回退到 mode_definition（is_auto=True 的 {1,2,3}）。
+        两个回路均无投用定义，回退默认 {1,2,3}。
         TAG_001 返回 mode=1（在 {1,2,3} → 自动），TAG_002 返回 mode=2（在 {1,2,3} → 自动）。
         期望：2/2 = 100.0%
         """
         db = AsyncMock()
-        # mode_definition: is_auto=True 的 standard_mode = {1, 2, 3}
-        mode_def_rows = [
-            MagicMock(standard_mode=1),
-            MagicMock(standard_mode=2),
-            MagicMock(standard_mode=3),
-        ]
+        # 1st execute: 投用定义查询（空，无配置）
+        # 2nd execute: MODE tag 映射查询
         tag_rows = [
-            MagicMock(loop_id="loop-001", tag_name="TAG_001", dcs_model_id=None),
-            MagicMock(loop_id="loop-002", tag_name="TAG_002", dcs_model_id=None),
+            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
+            MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
         db.execute = AsyncMock(
-            side_effect=[
-                _make_rows_mock(mode_def_rows),  # mode_definition {1,2,3}
-                _make_rows_mock([]),  # LoopModeMapping 空
-                _make_rows_mock(tag_rows),  # LoopTagMapping + LoopLedger
-                _make_rows_mock([]),  # dcs_mode_mapping 默认空 → 1:1
-            ]
+            side_effect=[_make_rows_mock([]), _make_rows_mock(tag_rows)]
         )
 
         async def _mock_query_trend(tag_name: str, start: str, end: str):
@@ -661,11 +545,9 @@ class TestRealtimeAutoRate:
                 return [{"ts": "2026-06-22T08:00:00Z", "value": 2}]
             return []
 
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
+            "app.core.tdengine.query_trend_data",
+            new=AsyncMock(side_effect=_mock_query_trend),
         ):
             result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
@@ -673,89 +555,6 @@ class TestRealtimeAutoRate:
         assert result["rate"] == Decimal("100.00")
         assert result["auto_count"] == 2
         assert result["total_count"] == 2
-
-    @pytest.mark.asyncio
-    async def test_realtime_auto_rate_empty_default_uses_industry_default(self) -> None:
-        """无任何配置（mode_definition 空 + 无 LoopModeMapping）→ 回退行业默认 {1,2,3,4}。
-
-        v6.1：mode_definition 表为空时，mode_resolver 回退到
-        app.constants.mode.AUTO_MODES = {1, 2, 3, 4}（对齐算法说明 §4.0.3 + APC）。
-        MODE=1/2/3/4 计入自动，MODE=0 计入手动。
-        """
-        db = AsyncMock()
-        tag_rows = [
-            MagicMock(loop_id="loop-001", tag_name="TAG_001", dcs_model_id=None),
-            MagicMock(loop_id="loop-002", tag_name="TAG_002", dcs_model_id=None),
-        ]
-        db.execute = AsyncMock(
-            side_effect=[
-                _make_rows_mock([]),  # mode_definition 空 → 常量 {1,2,3,4}
-                _make_rows_mock([]),  # LoopModeMapping 空
-                _make_rows_mock(tag_rows),  # LoopTagMapping + LoopLedger
-                _make_rows_mock([]),  # dcs_mode_mapping 默认空 → 1:1
-            ]
-        )
-
-        async def _mock_query_trend(tag_name: str, start: str, end: str):
-            if tag_name == "TAG_001":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 1}]
-            if tag_name == "TAG_002":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 2}]
-            return []
-
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
-        with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
-        ):
-            result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
-
-        assert result is not None
-        assert result["rate"] == Decimal("100.00")
-        assert result["auto_count"] == 2
-        assert result["manual_count"] == 0
-        assert result["total_count"] == 2
-
-    @pytest.mark.asyncio
-    async def test_realtime_auto_rate_mode_not_in_auto_set(self) -> None:
-        """mode_definition 配置 auto_modes={1}，回路 MODE=0 → 不计入自动。
-
-        验证 mode_definition 配置表生效：只有 standard_mode=1 为 auto，
-        回路 mode=0 不在 {1} → 手动。
-        """
-        db = AsyncMock()
-        mode_def_rows = [MagicMock(standard_mode=1)]  # 只有 mode 1 为 auto
-        tag_rows = [
-            MagicMock(loop_id="loop-001", tag_name="TAG_001", dcs_model_id=None),
-        ]
-        db.execute = AsyncMock(
-            side_effect=[
-                _make_rows_mock(mode_def_rows),  # mode_definition {1}
-                _make_rows_mock([]),  # LoopModeMapping 空
-                _make_rows_mock(tag_rows),  # LoopTagMapping + LoopLedger
-                _make_rows_mock([]),  # dcs_mode_mapping 默认空 → 1:1
-            ]
-        )
-
-        async def _mock_query_trend(tag_name: str, start: str, end: str):
-            if tag_name == "TAG_001":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 0}]
-            return []
-
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
-        with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
-        ):
-            result = await query_realtime_auto_rate(db, ["loop-001"])
-
-        # mode=0 不在 {1} → 手动
-        assert result is not None
-        assert result["rate"] == Decimal("0.00")
-        assert result["auto_count"] == 0
-        assert result["total_count"] == 1
 
     @pytest.mark.asyncio
     async def test_realtime_auto_rate_no_loops(self) -> None:

@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -38,6 +38,7 @@ from app.schemas.performance import (
 from app.services.performance import (
     export_analytics_csv,
     get_analytics,
+    get_board,
     get_ranking,
     list_engine_rules,
     list_loop_snapshots,
@@ -121,6 +122,29 @@ async def update_rule_endpoint(
         is_enabled=body.isEnabled,
     )
     return success(data=data, message="更新成功")
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-004: 全局看板 API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/board", response_model=ApiResponse[dict])
+async def get_board_endpoint(
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    timeWindow: str = Query(
+        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """全局看板（所有角色）。Redis 缓存 5 分钟。"""
+    data = await get_board(
+        db=db,
+        plant_node_id=plantNodeId,
+        time_window=timeWindow,
+    )
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +257,9 @@ async def get_realtime_auto_rate_endpoint(
         all_ids.append(plantNodeId)
         stmt = stmt.where(LoopLedger.unit_id.in_(all_ids))
         # 查节点名
-        node_result = await db.execute(select(PlantNode.name).where(PlantNode.id == plantNodeId))
+        node_result = await db.execute(
+            select(PlantNode.name).where(PlantNode.id == plantNodeId)
+        )
         row = node_result.first()
         if row:
             plant_node_name = row[0]
@@ -299,8 +325,12 @@ async def list_loop_snapshots_endpoint(
     plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
     startTime: str | None = Query(None, description="起始时间（ISO 8601）"),
     endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
-    status: str | None = Query(None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"),
-    confidenceLevel: str | None = Query(None, description="可信度等级（A/B/C/D/E）"),
+    status: str | None = Query(
+        None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"
+    ),
+    confidenceLevel: str | None = Query(
+        None, description="可信度等级（A/B/C/D/E）"
+    ),
     page: int = Query(1, ge=1, description="页码（1-based）"),
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
@@ -313,9 +343,15 @@ async def list_loop_snapshots_endpoint(
     每条记录包含完整的 24 个 KPI 字段 + loopTagName。
     """
     # 解析逗号分隔的 ID 列表
-    loop_ids = [s.strip() for s in loopId.split(",") if s.strip()] if loopId else None
+    loop_ids = (
+        [s.strip() for s in loopId.split(",") if s.strip()]
+        if loopId
+        else None
+    )
     plant_node_ids = (
-        [s.strip() for s in plantNodeId.split(",") if s.strip()] if plantNodeId else None
+        [s.strip() for s in plantNodeId.split(",") if s.strip()]
+        if plantNodeId
+        else None
     )
 
     start_dt = _parse_dt(startTime)
@@ -336,7 +372,6 @@ async def list_loop_snapshots_endpoint(
     # 组装响应
     items: list[KpiSnapshotListItem] = []
     for snap, tag_name in rows:
-        # 解析 data_lineage（JSONB → DataLineageSchema）
         from app.schemas.performance import DataLineageSchema
 
         data_lineage = None

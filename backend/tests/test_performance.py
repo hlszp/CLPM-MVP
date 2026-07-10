@@ -110,7 +110,7 @@ def _make_node_snapshot(
     effective_auto_rate: Decimal = Decimal("82.00"),
     steady_rate: Decimal = Decimal("85.00"),
     accuracy_rate: Decimal = Decimal("80.00"),
-    fast_rate: Decimal = Decimal("75.00"),
+    fast_response_rate: Decimal = Decimal("75.00"),
     oscillation_rate: Decimal = Decimal("15.00"),
     saturation_rate: Decimal = Decimal("8.00"),
     auto_loop_ratio: Decimal = Decimal("100.00"),
@@ -131,14 +131,14 @@ def _make_node_snapshot(
     s.effective_auto_rate = effective_auto_rate
     s.steady_rate = steady_rate
     s.accuracy_rate = accuracy_rate
-    s.fast_rate = fast_rate
+    s.fast_response_rate = fast_response_rate
     s.oscillation_rate = oscillation_rate
     s.saturation_rate = saturation_rate
     s.auto_loop_ratio = auto_loop_ratio
     s.realtime_auto_rate = realtime_auto_rate
     s.loop_count = loop_count
     s.status = status
-    s.algorithm_version = "KPI_CALC_v2.0"
+    s.algorithm_version = "KPI_CALC_v1.0"
     return s
 
 
@@ -386,6 +386,87 @@ class TestEngineRuleUpdate:
 # ---------------------------------------------------------------------------
 
 
+class TestBoard:
+    """GET /api/v1/performance/board tests."""
+
+    def test_get_board_success(self, client, mock_db, fake_redis) -> None:
+        """认证用户可以获取全局看板（从节点级快照表读取）。"""
+        node_snaps = [_make_node_snapshot()]
+        trend_row = MagicMock()
+        trend_row.hour = datetime.now(UTC)
+        trend_row.avg_steady = Decimal("85.00")
+        status_row = MagicMock()
+        status_row.status = "GOOD"
+        status_row.cnt = 1
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalars_mock(node_snaps)
+            elif call_count[0] == 2:
+                return _make_all_rows_mock([trend_row])
+            else:
+                return _make_all_rows_mock([status_row])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/board",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        data = body["data"]
+        assert "filterScope" in data
+        assert "kpiCards" in data
+        assert "kpiSummary" in data
+        assert "steadyRateTrend" in data
+        assert "partialWarning" in data
+        # 9 张卡片（8 大 KPI + 综合评分）
+        assert len(data["kpiCards"]) == 9
+
+    def test_get_board_with_plant_node(self, client, mock_db, fake_redis) -> None:
+        """按装置筛选看板数据（从节点级快照表读取）。"""
+        plant_node = MagicMock()
+        plant_node.name = "测试装置"
+        node_snaps = [_make_node_snapshot()]
+        trend_row = MagicMock()
+        trend_row.hour = datetime.now(UTC)
+        trend_row.avg_steady = Decimal("85.00")
+        status_row = MagicMock()
+        status_row.status = "GOOD"
+        status_row.cnt = 1
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(plant_node)
+            elif call_count[0] == 2:
+                return _make_scalars_mock(node_snaps)
+            elif call_count[0] == 3:
+                return _make_all_rows_mock([trend_row])
+            else:
+                return _make_all_rows_mock([status_row])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.get(
+                "/api/v1/performance/board?plantNodeId=00000000-0000-0000-0000-000000000111",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_get_board_no_token(self, client) -> None:
+        """未认证请求返回 401。"""
+        resp = client.get("/api/v1/performance/board")
+        assert resp.status_code == 401
+
+
 # ---------------------------------------------------------------------------
 # S3-METRIC-005: 低效回路排行
 # ---------------------------------------------------------------------------
@@ -400,7 +481,6 @@ class TestRanking:
         loop = MagicMock()
         loop.id = snapshot.loop_id
         loop.tag_name = "101-FC-1023"
-        loop.description = "常减压装置进料流量控制"
         loop.unit_id = "00000000-0000-0000-0000-000000000111"
 
         call_count = [0]
@@ -557,12 +637,8 @@ class TestWeightSumValidator:
         # 不抛异常即通过
         WeightSumValidator.validate(
             [
-                Decimal("20"),
-                Decimal("20"),
-                Decimal("20"),
-                Decimal("15"),
-                Decimal("15"),
-                Decimal("10"),
+                Decimal("20"), Decimal("20"), Decimal("20"),
+                Decimal("15"), Decimal("15"), Decimal("10"),
             ]
         )
 
@@ -582,31 +658,283 @@ class TestWeightSumValidator:
 # ---------------------------------------------------------------------------
 
 
-# 已删除：TestKpiCalcEngine 类（13 个测试）— Phase 4 重构删除了 kpi_calc.py
-# 中的多个内部函数，原测试导入已失效。
-#
-# 删除的测试及替代测试位置：
-# - test_compute_kpis_basic / test_compute_kpis_empty / test_good_value_rate_before_filtering
-#   / test_good_value_rate_defaults_to_100
-#   → _compute_kpis 已替换为 _compute_kpis_three_layer（Phase 4 三层计算流程）
-#   → 参见 tests/test_kpi_calc.py: TestComputeKpisThreeLayer
-#
-# - test_compute_composite_score / test_compute_composite_score_disabled_metric
-#   → _compute_composite_score (v1) 已删除，改用 ConfidenceEvaluator.compute_composite_score
-#   → 参见 tests/test_metric_calculator/test_confidence_evaluator.py: TestComputeCompositeScore
-#
-# - test_is_auto_mode
-#   → _is_auto_mode 逻辑已移入 AutoModeRateCalculator（Phase 3）
-#   → 参见 tests/test_metric_calculator/test_auto_mode.py
-#
-# - test_detect_oscillation / test_detect_oscillation_amplitude_threshold
-#   → _compute_oscillation_rate 逻辑已移入 OscillationRateCalculator（Phase 3）
-#   → 参见 tests/test_metric_calculator/test_oscillation.py
-#
-# - test_align_timeseries / test_align_timeseries_tolerance_numeric
-#   / test_align_timeseries_tolerance_out_of_range / test_align_timeseries_iso_string_tolerance
-#   → _align_timeseries 逻辑已移入 PreprocessingPipeline（Phase 1）
-#   → 参见 tests/test_preprocessing/test_pipeline.py
+class TestKpiCalcEngine:
+    """KPI 计算引擎单元测试。"""
+
+    def test_compute_kpis_basic(self) -> None:
+        """测试 6 大 KPI 计算基础逻辑。"""
+        from app.tasks.kpi_calc import _compute_kpis
+
+        # 构造对齐的时序数据：10 个点，全部 Auto 模式，PV=SP
+        aligned = [
+            {
+                "ts": f"2026-06-22T08:00:{i:02d}",
+                "pv": 50.0,
+                "sp": 50.0,
+                "op": 50.0,
+                "mode": 1,  # Auto
+            }
+            for i in range(10)
+        ]
+        metric_configs: dict = {}
+        kpis = _compute_kpis(aligned, metric_configs)
+        # 全部 Good → good_value_rate = 100
+        assert kpis["good_value_rate"] == Decimal("100.00")
+        # 全部 Auto → auto_mode_rate = 100
+        assert kpis["auto_mode_rate"] == Decimal("100.00")
+        # PV == SP → steady_rate = 100
+        assert kpis["steady_rate"] == Decimal("100.00")
+        # PV == SP → accuracy_rate = 100
+        assert kpis["accuracy_rate"] == Decimal("100.00")
+        # op = 50 → saturation_rate = 0
+        assert kpis["saturation_rate"] == Decimal("0.00")
+
+    def test_compute_kpis_empty(self) -> None:
+        """空数据返回所有 None。"""
+        from app.tasks.kpi_calc import _compute_kpis
+
+        kpis = _compute_kpis([], {})
+        for code in (
+            "good_value_rate",
+            "auto_mode_rate",
+            "steady_rate",
+            "accuracy_rate",
+            "oscillation_rate",
+            "saturation_rate",
+        ):
+            assert kpis[code] is None
+
+    def test_compute_composite_score(self) -> None:
+        """测试综合评分计算（国标 4 分项加法公式）。"""
+        from app.tasks.kpi_calc import _compute_composite_score
+
+        # 构造 4 分项指标配置（对齐 GB/T 44693.2-2024）
+        configs = {
+            "accuracy_rate": _make_metric_config(
+                metric_code="accuracy_rate", weight=Decimal("30")
+            ),
+            "fast_response_rate": _make_metric_config(
+                metric_id="id2",
+                metric_code="fast_response_rate",
+                weight=Decimal("20"),
+            ),
+            "steady_rate": _make_metric_config(
+                metric_id="id3",
+                metric_code="steady_rate",
+                weight=Decimal("30"),
+            ),
+            "effective_auto_rate": _make_metric_config(
+                metric_id="id4",
+                metric_code="effective_auto_rate",
+                weight=Decimal("20"),
+            ),
+        }
+
+        kpi_values = {
+            "accuracy_rate": Decimal("100"),
+            "fast_response_rate": Decimal("100"),
+            "steady_rate": Decimal("100"),
+            "effective_auto_rate": Decimal("100"),
+        }
+
+        score = _compute_composite_score(kpi_values, configs)
+        # P = (30*1 + 20*1 + 30*1 + 20*1) / 100 * 100 = 100
+        assert score == Decimal("100.00")
+
+    def test_compute_composite_score_disabled_metric(self) -> None:
+        """停用的指标不参与评分（国标 4 分项加法公式）。"""
+        from app.tasks.kpi_calc import _compute_composite_score
+
+        configs = {
+            "accuracy_rate": _make_metric_config(
+                metric_code="accuracy_rate", weight=Decimal("30"), is_enabled=False
+            ),
+            "fast_response_rate": _make_metric_config(
+                metric_id="id2",
+                metric_code="fast_response_rate",
+                weight=Decimal("20"),
+                is_enabled=True,
+            ),
+            "steady_rate": _make_metric_config(
+                metric_id="id3",
+                metric_code="steady_rate",
+                weight=Decimal("30"),
+                is_enabled=True,
+            ),
+            "effective_auto_rate": _make_metric_config(
+                metric_id="id4",
+                metric_code="effective_auto_rate",
+                weight=Decimal("20"),
+                is_enabled=True,
+            ),
+        }
+        kpi_values = {
+            "accuracy_rate": Decimal("100"),
+            "fast_response_rate": Decimal("100"),
+            "steady_rate": Decimal("100"),
+            "effective_auto_rate": Decimal("100"),
+        }
+        score = _compute_composite_score(kpi_values, configs)
+        # accuracy_rate 停用，仅 3 指标参与
+        # P = (20*1 + 30*1 + 20*1) / (20+30+20) * 100 = 70/70 * 100 = 100
+        assert score == Decimal("100.00")
+
+    def test_is_auto_mode(self) -> None:
+        """测试 Auto 模式判定。"""
+        from app.tasks.kpi_calc import _is_auto_mode
+
+        assert _is_auto_mode(1) is True  # Auto
+        assert _is_auto_mode(2) is True  # Cascade
+        assert _is_auto_mode(3) is True  # Cascade
+        assert _is_auto_mode(0) is False  # Manual
+        assert _is_auto_mode(None) is False
+        assert _is_auto_mode("invalid") is False
+
+    def test_detect_oscillation(self) -> None:
+        """测试振荡检测（IAE 零交叉相似率法）。"""
+        from app.tasks.kpi_calc import _compute_oscillation_rate
+
+        # 单调递增 → 无振荡（零交叉点 < 4）
+        aligned_up = [{"pv": float(i), "sp": 0.0} for i in range(5)]
+        osc_rate, is_osc, _ = _compute_oscillation_rate(aligned_up)
+        assert osc_rate == 0
+        assert is_osc is False
+
+        # 交替变化 → 振荡（PV 围绕 SP 上下波动，产生正负交替偏差）
+        aligned_osc = [
+            {"pv": v, "sp": 0.0}
+            for v in [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0]
+        ]
+        osc_rate, is_osc, _ = _compute_oscillation_rate(aligned_osc)
+        assert osc_rate > 0
+
+    def test_align_timeseries(self) -> None:
+        """测试时序对齐。"""
+        from app.tasks.kpi_calc import _align_timeseries
+
+        pv_data = [
+            {"ts": "t1", "value": 10.0, "quality": "GOOD"},
+            {"ts": "t2", "value": 20.0, "quality": "GOOD"},
+        ]
+        sp_data = [{"ts": "t1", "value": 11.0}, {"ts": "t2", "value": 21.0}]
+        op_data = [{"ts": "t1", "value": 50.0}]
+        mode_data = [{"ts": "t1", "value": 1}]
+
+        aligned = _align_timeseries(pv_data, sp_data, op_data, mode_data)
+        assert len(aligned) == 2
+        assert aligned[0]["pv"] == 10.0
+        assert aligned[0]["sp"] == 11.0
+        assert aligned[0]["op"] == 50.0
+        assert aligned[0]["mode"] == 1
+        # t2 的 op/mode 缺失
+        assert aligned[1]["op"] is None
+        assert aligned[1]["mode"] is None
+
+    def test_align_timeseries_tolerance_numeric(self) -> None:
+        """测试时序对齐：数值时间戳容差匹配（±500ms）。"""
+        from app.tasks.kpi_calc import _align_timeseries
+
+        # PV 时间戳与 SP/OP 略有偏差（200ms），应在容差范围内匹配
+        pv_data = [
+            {"ts": 1000.0, "value": 10.0, "quality": "GOOD"},
+            {"ts": 1001.0, "value": 20.0, "quality": "GOOD"},
+        ]
+        sp_data = [
+            {"ts": 1000.2, "value": 11.0},  # 偏差 200ms
+            {"ts": 1001.1, "value": 21.0},  # 偏差 100ms
+        ]
+        op_data = [{"ts": 1000.3, "value": 50.0}]  # 偏差 300ms
+        mode_data = [{"ts": 1000.4, "value": 1}]  # 偏差 400ms
+
+        aligned = _align_timeseries(pv_data, sp_data, op_data, mode_data)
+        assert len(aligned) == 2
+        assert aligned[0]["pv"] == 10.0
+        assert aligned[0]["sp"] == 11.0
+        assert aligned[0]["op"] == 50.0
+        assert aligned[0]["mode"] == 1
+        # 第二个点只有 sp 在容差内
+        assert aligned[1]["sp"] == 21.0
+        assert aligned[1]["op"] is None
+        assert aligned[1]["mode"] is None
+
+    def test_align_timeseries_tolerance_out_of_range(self) -> None:
+        """测试时序对齐：超出容差范围（>500ms）不匹配。"""
+        from app.tasks.kpi_calc import _align_timeseries
+
+        pv_data = [{"ts": 1000.0, "value": 10.0, "quality": "GOOD"}]
+        # 偏差 600ms，超出容差
+        sp_data = [{"ts": 1000.6, "value": 11.0}]
+
+        aligned = _align_timeseries(pv_data, sp_data, [], [])
+        assert aligned[0]["sp"] is None
+
+    def test_align_timeseries_iso_string_tolerance(self) -> None:
+        """测试时序对齐：ISO 字符串时间戳容差匹配。"""
+        from app.tasks.kpi_calc import _align_timeseries
+
+        pv_data = [
+            {"ts": "2026-06-22T08:00:00.000Z", "value": 10.0, "quality": "GOOD"},
+        ]
+        # 偏差 200ms
+        sp_data = [{"ts": "2026-06-22T08:00:00.200Z", "value": 11.0}]
+
+        aligned = _align_timeseries(pv_data, sp_data, [], [])
+        assert aligned[0]["sp"] == 11.0
+
+    def test_detect_oscillation_amplitude_threshold(self) -> None:
+        """S4-B2: 振荡检测振幅阈值过滤噪声（IAE 零交叉相似率法）。"""
+        from app.tasks.kpi_calc import _compute_oscillation_rate
+
+        # 微小幅度交替变化（噪声级），零交叉点不足或相似率低
+        aligned_noise = [
+            {"pv": v, "sp": 50.0}
+            for v in [50.0, 50.001, 50.0, 50.001, 50.0, 50.001, 50.0]
+        ]
+        osc_rate, _, _ = _compute_oscillation_rate(aligned_noise)
+        # 噪声级振荡不应被判定为严重振荡
+        assert osc_rate == 0 or osc_rate <= Decimal("10")
+
+        # 大幅度交替变化（真实振荡），需 >= 4 个零交叉点（>= 2 个周期）
+        # PV 围绕 SP 上下波动，产生正负交替的偏差
+        aligned_osc = [
+            {"pv": v, "sp": 50.0}
+            for v in [45.0, 55.0, 45.0, 55.0, 45.0, 55.0, 45.0, 55.0, 45.0, 55.0, 45.0]
+        ]
+        osc_rate, is_osc, _ = _compute_oscillation_rate(aligned_osc)
+        assert osc_rate > 0
+
+    def test_good_value_rate_before_filtering(self) -> None:
+        """S4-B6: good_value_rate 在过滤前计算，反映真实数据质量。"""
+        from decimal import Decimal
+
+        from app.tasks.kpi_calc import _compute_kpis
+
+        # 构造对齐数据（已过滤 Bad 质量码）
+        aligned = [
+            {
+                "ts": f"t{i}",
+                "pv": 50.0,
+                "sp": 50.0,
+                "op": 50.0,
+                "mode": 1,
+            }
+            for i in range(10)
+        ]
+        # 好值率 80% 表示原始数据有 20% Bad 质量码（已过滤）
+        kpis = _compute_kpis(aligned, {}, good_value_rate=Decimal("80.00"))
+        assert kpis["good_value_rate"] == Decimal("80.00")
+
+    def test_good_value_rate_defaults_to_100(self) -> None:
+        """S4-B6: good_value_rate=None 时默认 100（向后兼容）。"""
+        from decimal import Decimal
+
+        from app.tasks.kpi_calc import _compute_kpis
+
+        aligned = [
+            {"ts": "t0", "pv": 50.0, "sp": 50.0, "op": 50.0, "mode": 1}
+        ]
+        kpis = _compute_kpis(aligned, {}, good_value_rate=None)
+        assert kpis["good_value_rate"] == Decimal("100.00")
 
 
 # ---------------------------------------------------------------------------
@@ -681,56 +1009,16 @@ class TestPerformanceService:
             await update_engine_rule(db, "nonexistent", "admin", rule_name="更新")
         assert exc_info.value.code == "ERR_RULE_NOT_FOUND"
 
-    async def test_update_engine_rule_eval_calc_cycle_returns_beat_warning(self) -> None:
-        """P3 #51: 更新 EVAL_CALC_CYCLE 规则时返回 Beat 重启提示。"""
-        from app.services.performance import update_engine_rule
-
-        rule = _make_engine_rule(rule_code="EVAL_CALC_CYCLE", rule_name="计算周期")
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(rule))
-        db.add = AsyncMock()
-        db.commit = AsyncMock()
-
-        # Mock _handle_engine_rule_changed 避免实际触发缓存失效/Celery 任务
-        with patch(
-            "app.services.performance._handle_engine_rule_changed",
-            new=AsyncMock(return_value="计算周期已变更，新调度需重启 Celery Beat 进程才能生效"),
-        ):
-            result = await update_engine_rule(db, "rule-id", "admin", rule_name="更新计算周期")
-
-        # 验证返回结果包含 warning 字段
-        assert "warning" in result
-        assert "Beat" in result["warning"]
-        assert "重启" in result["warning"]
-
-    async def test_update_engine_rule_other_rule_no_warning(self) -> None:
-        """P3 #51: 更新非 EVAL_CALC_CYCLE 规则时不返回 warning。"""
-        from app.services.performance import update_engine_rule
-
-        rule = _make_engine_rule(rule_code="SCHEDULE_CONCURRENCY", rule_name="并发数")
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(rule))
-        db.add = AsyncMock()
-        db.commit = AsyncMock()
-
-        with patch(
-            "app.services.performance._handle_engine_rule_changed",
-            new=AsyncMock(return_value=None),
-        ):
-            result = await update_engine_rule(db, "rule-id", "admin", rule_name="更新并发")
-
-        # 非计算周期规则不应返回 warning
-        assert "warning" not in result or result.get("warning") is None
-
     async def test_get_board_empty(self) -> None:
         """无快照数据时看板返回空 KPI 卡片。"""
         from app.services.performance import get_board
 
         db = AsyncMock()
         # get_board 在 plant_node_id=None 时跳过装置名查询，依次调用：
-        # 1. _aggregate_node_board → result.one() 期望 row.cnt=0（空节点）
-        # 2. _aggregate_node_steady_trend → result.all() 期望空列表
-        # 3. count_stmt (partialWarning) → result.all() 期望空列表
+        # 1. _aggregate_kpi_cards → result.one() 期望 row.cnt=0
+        # 2. _aggregate_kpi_summary → result.one() 期望 row.cnt=0
+        # 3. _aggregate_steady_trend → result.all() 期望空列表
+        # 4. count_stmt (partialWarning) → result.all() 期望空列表
         call_count = [0]
 
         async def execute_side_effect(stmt, *args, **kwargs):
@@ -755,38 +1043,6 @@ class TestPerformanceService:
         db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         result = await get_ranking(db)
         assert result == []
-
-    async def test_get_ranking_filters_confidence_level_e(self) -> None:
-        """P3 #50: confidence_level='E' 的快照不参与排行（与节点级聚合一致）。
-
-        验证 SQL 中包含 (confidence_level IS NULL OR confidence_level != 'E') 过滤，
-        与 node_performance.py 中节点级聚合的过滤条件保持一致。
-        """
-        from app.services.performance import get_ranking
-
-        db = AsyncMock()
-        # get_ranking 第 1 次 execute 为排行查询；后续 loop_map/unit_map/tracker 查询返回空
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                # 返回空列表（验证 SQL 已应用 confidence_level 过滤）
-                return _make_scalars_mock([])
-            return _make_scalars_mock([])
-
-        db.execute = AsyncMock(side_effect=execute_side_effect)
-        result = await get_ranking(db)
-        assert result == []
-
-        # 验证第 1 次 SQL 含 confidence_level 过滤条件（IS NULL OR != 'E'）
-        first_stmt = db.execute.call_args_list[0].args[0]
-        sql_text = str(first_stmt.compile(compile_kwargs={"literal_binds": True})).lower()
-        assert "confidence_level" in sql_text
-        # IS NULL 分支：保证 NULL 旧数据仍纳入排行
-        assert "is null" in sql_text or "isnull" in sql_text
-        # != 'E' 分支：排除有效数据率 < 20% 的快照
-        assert "e" in sql_text
 
     async def test_export_analytics_csv(self) -> None:
         """导出 CSV 包含表头和分区。"""
