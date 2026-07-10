@@ -28,12 +28,35 @@ const routes: RouteRecordRaw[] = [
     path: '/loop',
     children: [
       {
+        name: 'LoopAasSync',
+        path: '/loop/aas-sync',
+        component: () => import('#/views/loop/aas.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:refresh-cw',
+          order: 1,
+          title: '链路配置',
+        },
+      },
+      {
+        name: 'TagList',
+        path: '/tag/list',
+        component: () => import('#/views/tag/list.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:list',
+          order: 2,
+          title: '测点配置',
+        },
+      },
+      {
         name: 'LoopManage',
         path: '/loop/manage',
         component: () => import('#/views/loop/manage.vue'),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:network',
+          order: 3,
           title: '回路配置',
         },
       },
@@ -60,33 +83,14 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'TagList',
-        path: '/tag/list',
-        component: () => import('#/views/tag/list.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          icon: 'lucide:list',
-          title: '测点清单',
-        },
-      },
-      {
         name: 'LoopMonitor',
         path: '/loop/monitor',
         component: () => import('#/views/loop/monitor.vue'),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:gauge',
+          order: 4,
           title: '回路监控',
-        },
-      },
-      {
-        name: 'LoopAasSync',
-        path: '/loop/aas-sync',
-        component: () => import('#/views/loop/aas.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          icon: 'lucide:refresh-cw',
-          title: '数据接入',
         },
       },
       {
