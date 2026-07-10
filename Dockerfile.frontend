@@ -15,7 +15,8 @@ ENV NODE_OPTIONS=--max-old-space-size=8192 \
     CI=true
 
 # 启用 corepack 以使用 pnpm
-RUN npm i -g corepack@latest \
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm i -g corepack@latest \
     && corepack enable
 
 WORKDIR /app
@@ -23,12 +24,10 @@ WORKDIR /app
 # 拷贝整个 frontend monorepo（.dockerignore 已排除 node_modules/dist）
 COPY frontend/ ./
 
-# 安装依赖（严格按 lockfile）
+# 安装依赖（严格按 lockfile，使用淘宝镜像加速）
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
-
-# 调试：确认 .env.production 存在并显示内容
-RUN ls -la apps/web-antd/.env* && echo "=== .env.production ===" && cat apps/web-antd/.env.production
+    pnpm config set registry https://registry.npmmirror.com \
+    && pnpm install --frozen-lockfile
 
 # 确保 .env.production 在 monorepo 根目录也可用（loadEnv 使用 process.cwd()，可能指向根目录）
 RUN cp apps/web-antd/.env.production /app/.env.production
