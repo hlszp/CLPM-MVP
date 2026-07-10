@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS plant_node (
     updated_at              TIMESTAMP       DEFAULT NOW(),
     CONSTRAINT fk_plant_node_parent        FOREIGN KEY (parent_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
     CONSTRAINT fk_plant_node_monitor_tag   FOREIGN KEY (monitor_tag_id) REFERENCES tag_registry(id) ON DELETE RESTRICT,
-    CONSTRAINT ck_plant_node_type          CHECK (type IN ('FACTORY', 'UNIT', 'EQUIPMENT'))
+    CONSTRAINT ck_plant_node_type          CHECK (type IN ('FACTORY', 'AREA', 'UNIT', 'EQUIPMENT'))
 );
 
 COMMENT ON TABLE  plant_node IS '工厂节点（工厂 → 装置 → 单元多级层级树）';
