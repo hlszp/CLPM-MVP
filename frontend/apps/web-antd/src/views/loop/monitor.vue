@@ -225,15 +225,25 @@ const loopTypeStats = ref<Record<string, number>>({
   OTHER: 0,
 });
 
-/** 按控制方式统计数量（从监控列表实时数据中统计） */
+/** 按控制方式统计数量（MODE 数值: 0=手动,1=自动,2=串级,3=远程,4=先控） */
 const controlModeStats = ref<Record<string, number>>({});
 
-/** 控制方式颜色映射 */
-const CONTROL_MODE_COLOR_MAP: Record<string, string> = {
-  Auto: '#10b981',
-  Manual: '#ef4444',
-  Cascade: '#3b82f6',
-  Unknown: '#6b7280',
+/** 控制方式颜色映射（按 MODE 数值） */
+const MODE_COLOR_MAP: Record<string, string> = {
+  '0': '#ef4444', // 手动-红
+  '1': '#10b981', // 自动-绿
+  '2': '#3b82f6', // 串级-蓝
+  '3': '#f59e0b', // 远程-橙
+  '4': '#8b5cf6', // 先控-紫
+};
+
+/** MODE 标签映射 */
+const MODE_LABEL_MAP: Record<string, string> = {
+  '0': '手动',
+  '1': '自动',
+  '2': '串级',
+  '3': '远程',
+  '4': '先控',
 };
 
 /** 回路类型颜色映射 */
@@ -251,13 +261,13 @@ const LOOP_TYPE_COLOR_MAP: Record<string, string> = {
 const modeChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderModeChart } = useEcharts(modeChartRef);
 
-/** 更新控制方式柱状图 */
+/** 更新控制方式柱状图（固定 5 个类别） */
 function updateModeChart() {
   const stats = controlModeStats.value;
-  const keys = Object.keys(stats);
-  const labels = keys;
-  const data = keys.map((k) => stats[k]);
-  const colors = keys.map((k) => CONTROL_MODE_COLOR_MAP[k] || '#6b7280');
+  const modeKeys = ['0', '1', '2', '3', '4'];
+  const labels = modeKeys.map((k) => MODE_LABEL_MAP[k] || k);
+  const data = modeKeys.map((k) => stats[k] || 0);
+  const colors = modeKeys.map((k) => MODE_COLOR_MAP[k]);
 
   renderModeChart({
     animation: false,
@@ -292,11 +302,21 @@ function updateModeChart() {
   });
 }
 
+/** 自动回路数（MODE ≠ 0） */
+const autoModeCount = computed(() => {
+  const stats = controlModeStats.value;
+  return (stats['1'] || 0) + (stats['2'] || 0) + (stats['3'] || 0) + (stats['4'] || 0);
+});
+
+/** 手动回路数（MODE = 0） */
+const manualModeCount = computed(() => {
+  return controlModeStats.value['0'] || 0;
+});
+
 /** 自控率（自动控制回路数 / 总回路数） */
 const realtimeControlRate = computed(() => {
-  const autoCount = controlModeStats.value['Auto'] || 0;
-  const total = Object.values(controlModeStats.value).reduce((sum, count) => sum + count, 0);
-  return total > 0 ? Math.round((autoCount / total) * 100) : 0;
+  const total = autoModeCount.value + manualModeCount.value;
+  return total > 0 ? Math.round((autoModeCount.value / total) * 100) : 0;
 });
 
 /** 加载回路类型统计 */
@@ -1070,39 +1090,32 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="flex items-center gap-4">
+            <!-- 自动卡片（MODE ≠ 0） -->
             <div
-              v-for="(count, key) in controlModeStats"
-              :key="key"
               class="flex items-center gap-2 px-3 py-1 rounded"
-              :style="{
-                backgroundColor: `${CONTROL_MODE_COLOR_MAP[key] || '#6b7280'}15`,
-                borderLeft: `3px solid ${CONTROL_MODE_COLOR_MAP[key] || '#6b7280'}`,
-              }"
+              :style="{ backgroundColor: '#10b98115', borderLeft: '3px solid #10b981' }"
             >
-              <span
-                class="w-2 h-2 rounded-full"
-                :style="{ backgroundColor: CONTROL_MODE_COLOR_MAP[key] || '#6b7280' }"
-              ></span>
-              <span class="text-sm text-gray-600">{{ key }}</span>
-              <span class="text-sm font-semibold" :style="{ color: CONTROL_MODE_COLOR_MAP[key] || '#6b7280' }">
-                {{ count }}
-              </span>
+              <span class="w-2 h-2 rounded-full" style="background-color: #10b981"></span>
+              <span class="text-sm text-gray-600">自动</span>
+              <span class="text-sm font-semibold" style="color: #10b981">{{ autoModeCount }}</span>
             </div>
+            <!-- 手动卡片（MODE = 0） -->
+            <div
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{ backgroundColor: '#ef444415', borderLeft: '3px solid #ef4444' }"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #ef4444"></span>
+              <span class="text-sm text-gray-600">手动</span>
+              <span class="text-sm font-semibold" style="color: #ef4444">{{ manualModeCount }}</span>
+            </div>
+            <!-- 自控率卡片 -->
             <div
               class="flex items-center gap-2 px-4 py-1.5 rounded-lg"
-              :style="{
-                backgroundColor: '#8b5cf615',
-                borderLeft: '3px solid #8b5cf6',
-              }"
+              :style="{ backgroundColor: '#8b5cf615', borderLeft: '3px solid #8b5cf6' }"
             >
-              <span
-                class="w-2 h-2 rounded-full"
-                style="background-color: #8b5cf6"
-              ></span>
+              <span class="w-2 h-2 rounded-full" style="background-color: #8b5cf6"></span>
               <span class="text-sm text-gray-600 font-medium">自控率</span>
-              <span class="text-sm font-bold" style="color: #8b5cf6">
-                {{ realtimeControlRate }}%
-              </span>
+              <span class="text-sm font-bold" style="color: #8b5cf6">{{ realtimeControlRate }}%</span>
             </div>
             <EchartsUI ref="modeChartRef" style="width: 300px; height: 60px" />
           </div>

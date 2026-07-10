@@ -193,29 +193,25 @@ async def _get_control_mode_stats(
     db: AsyncSession,
     conditions: list,
 ) -> dict[str, int]:
-    """从全量回路中统计控制方式。"""
+    """从全量回路中按 MODE 数值统计（0=手动,1=自动,2=串级,3=远程,4=先控）。"""
     import logging
 
     from app.models.loop import LoopTagMapping
     from app.models.tag import TagRegistry
-    from app.services.monitor import (
-        _load_mode_mappings,
-        _mode_value_to_label,
-        get_subscriber,
-    )
+    from app.services.monitor import get_subscriber
 
     logger = logging.getLogger(__name__)
+
+    stats: dict[str, int] = {"0": 0, "1": 0, "2": 0, "3": 0, "4": 0}
 
     all_loops_stmt = select(LoopLedger).where(LoopLedger.is_active.is_(True), *conditions)
     all_result = await db.execute(all_loops_stmt)
     all_loops = all_result.scalars().all()
 
     if not all_loops:
-        return {}
+        return stats
 
     loop_ids = [str(lp.id) for lp in all_loops]
-
-    mode_mapping_map = await _load_mode_mappings(db, loop_ids)
 
     mappings_result = await db.execute(
         select(LoopTagMapping).where(
@@ -247,10 +243,9 @@ async def _get_control_mode_stats(
     except Exception as exc:  # noqa: BLE001
         logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
 
-    stats: dict[str, int] = {}
     for loop in all_loops:
         loop_id = str(loop.id)
-        mode_label = "Unknown"
+        mode_val: float | None = None
 
         mapping = mode_mappings.get(loop_id)
         if mapping:
@@ -260,23 +255,18 @@ async def _get_control_mode_stats(
                 if cached and "value" in cached:
                     try:
                         mode_val = float(cached["value"])
-                        mode_label = (
-                            _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id))
-                            or "Unknown"
-                        )
                     except (ValueError, TypeError):
                         pass
                 elif tag.current_value is not None:
                     try:
                         mode_val = float(tag.current_value)
-                        mode_label = (
-                            _mode_value_to_label(mode_val, mode_mapping_map.get(loop_id))
-                            or "Unknown"
-                        )
                     except (ValueError, TypeError):
                         pass
 
-        stats[mode_label] = stats.get(mode_label, 0) + 1
+        # 映射到 0-4，超出范围归为 Unknown（不计入）
+        key = str(int(mode_val)) if mode_val is not None and mode_val in (0, 1, 2, 3, 4) else "unknown"
+        if key in stats:
+            stats[key] += 1
 
     return stats
 
