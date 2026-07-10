@@ -320,7 +320,8 @@ class RealtimeSubscriber:
             return
 
         try:
-            now = datetime.now(UTC)
+            # last_sync_at 列为 TIMESTAMP WITHOUT TIME ZONE，需用 naive datetime
+            now = datetime.now(UTC).replace(tzinfo=None)
             # 构建批量 CASE WHEN 语句
             tag_codes = list(batch.keys())
             placeholders = ",".join(f":tag_{i}" for i in range(len(tag_codes)))
