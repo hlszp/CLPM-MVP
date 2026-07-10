@@ -706,6 +706,50 @@ INSERT INTO loop_level_weight (level, level_name, weight, description) VALUES
 ON CONFLICT (level) DO NOTHING;
 
 -- =============================================================================
+-- 19. report_config (自动报表配置) [DDS §2.13]
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS report_config (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name                VARCHAR(100)    NOT NULL,
+    report_period       VARCHAR(20)     NOT NULL,
+    recipients          TEXT            NOT NULL,
+    content_template    TEXT,
+    is_enabled          BOOLEAN         DEFAULT TRUE,
+    created_by          VARCHAR(50),
+    updated_by          VARCHAR(50),
+    created_at          TIMESTAMP       DEFAULT NOW(),
+    updated_at          TIMESTAMP       DEFAULT NOW(),
+    CONSTRAINT ck_report_config_period CHECK (report_period IN ('SHIFT', 'DAILY', 'WEEKLY', 'MONTHLY'))
+);
+
+COMMENT ON TABLE  report_config IS '自动报表配置（周期/收件人/内容模板）';
+
+CREATE INDEX IF NOT EXISTS idx_report_config_period ON report_config (report_period);
+CREATE INDEX IF NOT EXISTS idx_report_config_is_enabled ON report_config (is_enabled);
+
+-- =============================================================================
+-- 20. clpm_metric_data_requirement (指标数据需求契约) [DDS §2.15]
+--   定义每个指标对底层数据的契约化需求声明
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS clpm_metric_data_requirement (
+    id                      UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    metric_code             VARCHAR(50)     NOT NULL,
+    metric_name             VARCHAR(100)    NOT NULL,
+    tag_group               VARCHAR(20)     NOT NULL,
+    tags                    JSONB           NOT NULL,
+    sampling_strategy       VARCHAR(30)     NOT NULL,
+    quality_policy          VARCHAR(30)     NOT NULL,
+    mask_expression         VARCHAR(200),
+    aggregation_policy      VARCHAR(20),
+    depends_on              JSONB,
+    version                 VARCHAR(20)     DEFAULT 'v1',
+    updated_at              TIMESTAMP       DEFAULT NOW(),
+    CONSTRAINT uk_clpm_metric_data_req_code UNIQUE (metric_code)
+);
+
+COMMENT ON TABLE  clpm_metric_data_requirement IS '指标数据需求契约：定义每个指标的数据获取和预处理需求';
+
+-- =============================================================================
 -- 索引（高频查询字段）
 -- =============================================================================
 
