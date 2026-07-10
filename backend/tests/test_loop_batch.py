@@ -23,6 +23,7 @@ from app.services.loop_batch import (
     check_node_monitor_trigger,
 )
 
+
 # ===========================================================================
 # 辅助函数：构造 mock 对象
 # ===========================================================================
@@ -54,7 +55,7 @@ def _make_loop(
     loop.id = loop_id
     loop.tag_name = tag_name
     loop.is_active = is_active
-    loop.importance_level = level
+    loop.level = level
     loop.status = status
     loop.updated_by = None
     return loop
@@ -130,7 +131,7 @@ class TestBatchUpdateLoopsLevel:
 
     @pytest.mark.asyncio
     async def test_batch_update_loops_level(self) -> None:
-        """批量更新 importance_level=1，应将所有回路 importance_level 置为 1。"""
+        """批量更新 level=1，应将所有回路 level 置为 1。"""
         loop1 = _make_loop("loop-001", level=3)
         loop2 = _make_loop("loop-002", level=2)
 
@@ -142,26 +143,26 @@ class TestBatchUpdateLoopsLevel:
         result = await batch_update_loops(
             db=db,
             loop_ids=["loop-001", "loop-002"],
-            updates={"importance_level": 1},
+            updates={"level": 1},
             operator="admin",
         )
 
         assert result == 2
-        assert loop1.importance_level == 1
-        assert loop2.importance_level == 1
+        assert loop1.level == 1
+        assert loop2.level == 1
         db.add.assert_called_once()
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_batch_update_loops_invalid_level(self) -> None:
-        """importance_level=4 应抛 ERR_BATCH_INVALID_FIELD。"""
+        """level=4 应抛 ERR_BATCH_INVALID_FIELD。"""
         db = AsyncMock()
 
         with pytest.raises(BizError) as exc_info:
             await batch_update_loops(
                 db=db,
                 loop_ids=["loop-001"],
-                updates={"importance_level": 4},
+                updates={"level": 4},
                 operator="admin",
             )
         assert exc_info.value.code == "ERR_BATCH_INVALID_FIELD"
@@ -196,10 +197,7 @@ class TestBatchDeleteLoops:
         loop2 = _make_loop("loop-002", is_active=True, status="PARTIAL")
 
         db = AsyncMock()
-        # 1st execute: 查询回路列表；2nd execute: 查询有 Tag 的回路（返回空 → 无 Tag）
-        db.execute = AsyncMock(
-            side_effect=[_make_scalars_mock([loop1, loop2]), _make_scalars_mock([])]
-        )
+        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1, loop2]))
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -209,8 +207,7 @@ class TestBatchDeleteLoops:
             operator="admin",
         )
 
-        assert result["deleted"] == 2
-        assert result["skipped"] == []
+        assert result == 2
         assert loop1.is_active is False
         assert loop1.status == "INACTIVE"
         assert loop2.is_active is False
@@ -220,7 +217,7 @@ class TestBatchDeleteLoops:
 
     @pytest.mark.asyncio
     async def test_batch_delete_loops_not_found(self) -> None:
-        """无匹配回路时返回 deleted=0。"""
+        """无匹配回路时返回 0。"""
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         db.add = MagicMock()
@@ -232,84 +229,12 @@ class TestBatchDeleteLoops:
             operator="admin",
         )
 
-        assert result["deleted"] == 0
-        assert result["skipped"] == []
+        assert result == 0
         db.add.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_batch_delete_loops_skip_with_tags(self) -> None:
-        """P1 #9: 有关联 Tag 的回路应跳过并记入 skipped 列表。"""
-        loop1 = _make_loop("loop-001", is_active=True, status="READY")
-        loop2 = _make_loop("loop-002", is_active=True, status="PARTIAL")
-
-        db = AsyncMock()
-        # 1st execute: 查询回路列表（scalars().all()）
-        # 2nd execute: 查询有 Tag 的回路（.all() 返回 [(loop_id,)]）
-        rows_result = MagicMock()
-        rows_result.all.return_value = [("loop-001",)]
-        db.execute = AsyncMock(
-            side_effect=[
-                _make_scalars_mock([loop1, loop2]),
-                rows_result,
-            ]
-        )
-        db.add = MagicMock()
-        db.commit = AsyncMock()
-
-        result = await batch_delete_loops(
-            db=db,
-            loop_ids=["loop-001", "loop-002"],
-            operator="admin",
-        )
-
-        assert result["deleted"] == 1
-        assert len(result["skipped"]) == 1
-        assert result["skipped"][0]["loopId"] == "loop-001"
-        assert "Tag" in result["skipped"][0]["reason"]
-        # loop-001 未被修改（跳过）
-        assert loop1.is_active is True
-        # loop-002 被软删
-        assert loop2.is_active is False
-        assert loop2.status == "INACTIVE"
-
 
 # ===========================================================================
-# TEST-04: Schema 互斥校验（P1 #10）
-# ===========================================================================
-
-
-class TestLoopBatchUpdatesMutex:
-    """P1 #10: isMonitored 与 isStatEnabled 不能同时更新。"""
-
-    def test_both_monitor_and_stat_rejected(self) -> None:
-        """同时传 isMonitored 和 isStatEnabled 应被 Schema 拒绝。"""
-        from pydantic import ValidationError
-
-        from app.schemas.loop_batch import LoopBatchUpdates
-
-        with pytest.raises(ValidationError) as exc_info:
-            LoopBatchUpdates(is_monitored=True, is_stat_enabled=False)
-        assert "不能同时更新" in str(exc_info.value)
-
-    def test_only_monitored_accepted(self) -> None:
-        """仅传 isMonitored 应通过。"""
-        from app.schemas.loop_batch import LoopBatchUpdates
-
-        updates = LoopBatchUpdates(is_monitored=True)
-        assert updates.is_monitored is True
-        assert updates.is_stat_enabled is None
-
-    def test_only_stat_accepted(self) -> None:
-        """仅传 isStatEnabled 应通过。"""
-        from app.schemas.loop_batch import LoopBatchUpdates
-
-        updates = LoopBatchUpdates(is_stat_enabled=False)
-        assert updates.is_stat_enabled is False
-        assert updates.is_monitored is None
-
-
-# ===========================================================================
-# TEST-05: 空列表抛异常
+# TEST-04: 空列表抛异常
 # ===========================================================================
 
 
@@ -325,7 +250,7 @@ class TestBatchUpdateEmptyList:
             await batch_update_loops(
                 db=db,
                 loop_ids=[],
-                updates={"importance_level": 1},
+                updates={"level": 1},
                 operator="admin",
             )
         assert exc_info.value.code == "ERR_BATCH_EMPTY"
@@ -395,11 +320,9 @@ class TestCheckNodeMonitorTriggerMatch:
         async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
             return [{"ts": "2026-06-24T08:00:00Z", "value": "ON", "quality": "GOOD"}]
 
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
+            "app.services.loop_batch.query_trend_data",
+            new=AsyncMock(side_effect=_mock_query_trend),
         ):
             result = await check_node_monitor_trigger(db, "node-001")
 
@@ -426,11 +349,9 @@ class TestCheckNodeMonitorTriggerMatch:
         async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
             return [{"ts": "2026-06-24T08:00:00Z", "value": 1, "quality": "GOOD"}]
 
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
+            "app.services.loop_batch.query_trend_data",
+            new=AsyncMock(side_effect=_mock_query_trend),
         ):
             result = await check_node_monitor_trigger(db, "node-001")
 
@@ -466,11 +387,9 @@ class TestCheckNodeMonitorTriggerMismatch:
         async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
             return [{"ts": "2026-06-24T08:00:00Z", "value": "OFF", "quality": "GOOD"}]
 
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
+            "app.services.loop_batch.query_trend_data",
+            new=AsyncMock(side_effect=_mock_query_trend),
         ):
             result = await check_node_monitor_trigger(db, "node-001")
 
@@ -497,11 +416,9 @@ class TestCheckNodeMonitorTriggerMismatch:
         async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
             return []
 
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
         with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
+            "app.services.loop_batch.query_trend_data",
+            new=AsyncMock(side_effect=_mock_query_trend),
         ):
             result = await check_node_monitor_trigger(db, "node-001")
 

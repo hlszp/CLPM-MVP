@@ -72,7 +72,9 @@ class TestGetRecommendations:
         """多标签返回合并建议。"""
         from app.services.diagnosis_recommendation import get_recommendations
 
-        result = get_recommendations("loop-003", ["OSCILLATION", "STICTION", "TUNING"])
+        result = get_recommendations(
+            "loop-003", ["OSCILLATION", "STICTION", "TUNING"]
+        )
         # 3 个标签 × 3 条建议 = 9 条
         assert result["totalCount"] == 9
         recs = result["recommendations"]
@@ -144,7 +146,9 @@ class TestGetRecommendations:
         """重复标签应去重。"""
         from app.services.diagnosis_recommendation import get_recommendations
 
-        result = get_recommendations("loop-009", ["OSCILLATION", "OSCILLATION", "OSCILLATION"])
+        result = get_recommendations(
+            "loop-009", ["OSCILLATION", "OSCILLATION", "OSCILLATION"]
+        )
         # 去重后只有 3 条
         assert result["totalCount"] == 3
 
@@ -300,7 +304,9 @@ class TestGenerateDiagnosisReport:
             "diagnosedAt": "2026-06-22T08:00:00Z",
             "algorithmVersion": "DIAG_ENGINE_v1.0",
         }
-        recommendations = get_recommendations("loop-multi", ["OSCILLATION", "VALVE_STICTION"])
+        recommendations = get_recommendations(
+            "loop-multi", ["OSCILLATION", "VALVE_STICTION"]
+        )
 
         pdf_bytes = generate_diagnosis_report(
             loop_id="loop-multi",
@@ -492,24 +498,26 @@ class TestRecommendationsEndpoint:
         """通过 query 参数 tagCodes 获取推荐。"""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/recommendations?tagCodes=OSCILLATION,STICTION",
+                "/api/v1/diagnosis/loop-001/recommendations?tagCodes=OSCILLATION,STICTION",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"
         data = body["data"]
-        assert data["loopId"] == "00000000-0000-0000-0000-000000000001"
+        assert data["loopId"] == "loop-001"
         # OSCILLATION(3) + STICTION(3) = 6
         assert data["totalCount"] == 6
         assert len(data["recommendations"]) == 6
 
     def test_get_recommendations_no_token(self, client) -> None:
         """未认证请求返回 401。"""
-        resp = client.get("/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/recommendations")
+        resp = client.get("/api/v1/diagnosis/loop-001/recommendations")
         assert resp.status_code == 401
 
-    def test_get_recommendations_from_db(self, client, mock_db, fake_redis) -> None:
+    def test_get_recommendations_from_db(
+        self, client, mock_db, fake_redis
+    ) -> None:
         """不传 tagCodes 时从数据库读取。"""
         loop = _make_loop_mock()
 
@@ -536,12 +544,16 @@ class TestRecommendationsEndpoint:
         assert body["code"] == "0"
         assert body["data"]["totalCount"] == 3
 
-    def test_get_recommendations_loop_not_found(self, client, mock_db, fake_redis) -> None:
+    def test_get_recommendations_loop_not_found(
+        self, client, mock_db, fake_redis
+    ) -> None:
         """回路不存在返回 404。"""
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        mock_db.execute = AsyncMock(
+            return_value=_make_scalar_one_or_none_mock(None)
+        )
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/diagnosis/00000000-0000-0000-0000-000000000000/recommendations",
+                "/api/v1/diagnosis/nonexistent/recommendations",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
@@ -562,21 +574,18 @@ class TestReportEndpoint:
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                # get_diagnosis_detail: 1. loop (scalar_one_or_none)
+                # get_diagnosis_detail: loop
                 return _make_scalar_one_or_none_mock(loop)
             if call_count[0] == 2:
-                # get_diagnosis_detail: 2. latest_diag (scalar_one_or_none) → latest_record
-                return _make_scalar_one_or_none_mock(diag)
-            if call_count[0] == 3:
-                # get_diagnosis_detail: 3. diag_result (scalars) — task_id 为 truthy MagicMock
+                # get_diagnosis_detail: diag results
                 return _make_scalars_mock([diag])
-            if call_count[0] == 4:
-                # get_diagnosis_detail: 4. snapshot (scalar_one_or_none)
+            if call_count[0] == 3:
+                # get_diagnosis_detail: snapshot
                 return _make_scalar_one_or_none_mock(snapshot)
-            if call_count[0] == 5:
-                # get_recommendations_for_loop: 1. loop (scalar_one_or_none)
+            if call_count[0] == 4:
+                # get_recommendations_for_loop: loop
                 return _make_scalar_one_or_none_mock(loop)
-            # get_recommendations_for_loop: 2. distinct labels (.all())
+            # get_recommendations_for_loop: distinct labels
             m = MagicMock()
             m.all.return_value = [("OSCILLATION",)]
             return m
@@ -597,14 +606,16 @@ class TestReportEndpoint:
 
     def test_generate_report_no_token(self, client) -> None:
         """未认证请求返回 401。"""
-        resp = client.post("/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/report")
+        resp = client.post("/api/v1/diagnosis/loop-001/report")
         assert resp.status_code == 401
 
-    def test_generate_report_sponsor_forbidden(self, client, mock_db, fake_redis) -> None:
+    def test_generate_report_sponsor_forbidden(
+        self, client, mock_db, fake_redis
+    ) -> None:
         """SPONSOR 无权限生成报告（403）。"""
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.post(
-                "/api/v1/diagnosis/00000000-0000-0000-0000-000000000001/report",
+                "/api/v1/diagnosis/loop-001/report",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 403
