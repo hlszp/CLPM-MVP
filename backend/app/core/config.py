@@ -11,7 +11,6 @@ Loads environment variables from `.env` (case-sensitive).
 from __future__ import annotations
 
 import logging
-from urllib.parse import quote_plus
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -70,21 +69,6 @@ class Settings(BaseSettings):
     AAS_REQUEST_TIMEOUT_SECONDS: int = 30
     AAS_SECURITY_MODE: str = "SignAndEncrypt"  # None/Sign/SignAndEncrypt
 
-    # ---- 数据源切换 ----
-    # tdengine: 直接查 TDengine（默认）；remote_api: 通过外部 HTTP API 查询
-    DATA_SOURCE_TYPE: str = "tdengine"
-
-    # ---- 外部历史数据 API（HistoryDataAppService）----
-    HISTORY_DATA_API_URL: str = ""  # 如 http://localhost:8100/api/services/v1/HistoryData/Get
-    HISTORY_DATA_API_TOKEN: str = ""  # Bearer Token（可选）
-    HISTORY_DATA_API_TIMEOUT: float = 30.0  # 请求超时（秒）
-
-    # ---- 实时数据 SignalR/WebSocket ----
-    SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:8100/signalr/realValueForClpmHub
-    SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
-    SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连间隔（秒）
-    REALTIME_WRITEBACK_ENABLED: bool = False  # 是否将实时数据写回本地 TDengine 宽表（开发兼容）
-
     # ---- Alerting ----
     ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志
 
@@ -103,7 +87,7 @@ class Settings(BaseSettings):
     def postgres_dsn(self) -> str:
         """Async PostgreSQL DSN for SQLAlchemy 2.0."""
         return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{quote_plus(self.POSTGRES_PASSWORD)}"
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
@@ -111,7 +95,7 @@ class Settings(BaseSettings):
     def redis_url(self) -> str:
         """Redis URL with optional password."""
         if self.REDIS_PASSWORD:
-            return f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     @property
@@ -120,7 +104,7 @@ class Settings(BaseSettings):
         if self.CELERY_BROKER_URL:
             return self.CELERY_BROKER_URL
         if self.REDIS_PASSWORD:
-            return f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/1"
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/1"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/1"
 
     @property
@@ -129,7 +113,7 @@ class Settings(BaseSettings):
         if self.CELERY_RESULT_BACKEND:
             return self.CELERY_RESULT_BACKEND
         if self.REDIS_PASSWORD:
-            return f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/2"
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/2"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/2"
 
     def validate_security(self) -> None:
@@ -173,3 +157,4 @@ settings = Settings()
 
 # 启动时执行安全校验（仅生产环境）
 settings.validate_security()
+
