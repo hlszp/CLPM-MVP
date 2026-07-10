@@ -67,12 +67,12 @@ echo ""
 # ------------------------------------------------------------
 echo "2. 数据库 Schema 回滚..."
 echo "   当前 Alembic 版本："
-docker exec clpm-backend uv run alembic current 2>/dev/null || echo "   （无法获取当前版本，跳过 DB 回滚）"
+docker exec clpm-backend alembic current 2>/dev/null || echo "   （无法获取当前版本，跳过 DB 回滚）"
 echo ""
 read -p "是否回滚数据库 Schema（alembic downgrade -1）？(y/N) " db_confirm
 if [ "$db_confirm" = "y" ] || [ "$db_confirm" = "Y" ]; then
     echo "   执行 alembic downgrade -1..."
-    docker exec clpm-backend uv run alembic downgrade -1
+    docker exec clpm-backend alembic downgrade -1
     echo "   [OK] 数据库 Schema 已回退一个版本"
 else
     echo "   [SKIP] 跳过数据库 Schema 回滚"

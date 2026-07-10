@@ -174,28 +174,31 @@ sleep 30
 echo ""
 
 # ------------------------------------------------------------
-# 7. 执行数据库迁移（alembic upgrade head）
+# 7. 数据库版本同步
 # ------------------------------------------------------------
-echo "4. 执行数据库迁移..."
-if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend uv run alembic upgrade head 2>/dev/null; then
-    echo "  [OK] 数据库迁移完成"
+# PostgreSQL 容器首次启动时已通过 docker-entrypoint-initdb.d 自动执行
+# 01_schema.sql（建表）和 02_seed_data.sql（种子数据），无需手工 DDL。
+#
+# Alembic 版本同步策略：
+#   - 首次部署（alembic_version 表不存在）：stamp head 标记当前版本
+#   - 后续升级（alembic_version 表已存在）：upgrade head 执行增量迁移
+echo "4. 数据库版本同步..."
+CURRENT_REV=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend alembic current 2>/dev/null | grep -E '^[a-z0-9]' | head -1 || echo "")
+if [ -z "$CURRENT_REV" ]; then
+    echo "  首次部署：执行 alembic stamp head（标记当前版本，不重复执行 DDL）..."
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend alembic stamp head 2>/dev/null; then
+        echo "  [OK] Alembic 版本已标记为 head"
+    else
+        echo "  [WARN] alembic stamp head 失败（非首次部署时可忽略）"
+    fi
 else
-    echo "  [WARN] 数据库迁移失败（可能首次启动 schema 已通过 initdb 创建）"
-    echo "  查看日志：docker compose -f $COMPOSE_FILE logs backend"
-fi
-echo ""
-
-# ------------------------------------------------------------
-# 7.5 清理不需要的文档目录（生产环境不需要 docs）
-# ------------------------------------------------------------
-echo "4.5 清理文档目录..."
-if [ -d "docs" ]; then
-    rm -rf docs/
-    echo "  [OK] docs/ 目录已清理"
-fi
-if [ -d "e2e" ]; then
-    rm -rf e2e/
-    echo "  [OK] e2e/ 目录已清理"
+    echo "  当前版本：$CURRENT_REV，执行 alembic upgrade head..."
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend alembic upgrade head 2>/dev/null; then
+        echo "  [OK] 数据库迁移完成"
+    else
+        echo "  [WARN] 数据库迁移失败"
+        echo "  查看日志：docker compose -f $COMPOSE_FILE logs backend"
+    fi
 fi
 echo ""
 
@@ -243,7 +246,7 @@ fi
 echo "服务访问地址："
 echo "  前端：        $ACCESS_URL"
 echo "  后端 API：    $ACCESS_URL/api/v1（通过 nginx 反向代理）"
-echo "  API 文档：    $ACCESS_URL/api/docs（生产环境建议关闭）"
+echo "  默认账号：    admin / admin123（首次登录后请立即修改密码）"
 echo ""
 echo "常用运维命令："
 echo "  查看日志：    docker compose -f $COMPOSE_FILE logs -f"
