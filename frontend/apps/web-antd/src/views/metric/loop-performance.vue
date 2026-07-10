@@ -1015,105 +1015,6 @@ onMounted(async () => {
       </template>
     </ClpmPageToolbar>
 
-    <!-- 统计卡片区域 -->
-    <div class="mt-3">
-      <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
-        <div class="flex items-center justify-between">
-          <!-- 左侧：评估等级 + 可信度卡片 -->
-          <div class="flex items-center gap-4">
-            <!-- 评估等级卡片组 -->
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-gray-400 mr-1">等级</span>
-              <div
-                class="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
-                :style="{
-                  backgroundColor: selectedGrade === null ? '#4B556315' : '#4B556308',
-                  borderLeft: '3px solid #4B5563',
-                  borderBottom: selectedGrade === null ? '2px solid #4B5563' : 'none',
-                }"
-                @click="handleGradeCardClick(null)"
-              >
-                <span class="w-2 h-2 rounded-full" style="background-color: #4B5563"></span>
-                <span class="text-sm text-gray-600 font-medium">全部</span>
-                <span class="text-sm font-bold" style="color: #4B5563">{{ statsTotal }}</span>
-              </div>
-              <div
-                v-for="grade in [1, 2, 3, 4, 5]"
-                :key="grade"
-                class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
-                :style="{
-                  backgroundColor: selectedGrade === grade ? `${GRADE_CARD_COLORS[grade]}30` : `${GRADE_CARD_COLORS[grade]}15`,
-                  borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
-                  borderBottom: selectedGrade === grade ? `2px solid ${GRADE_CARD_COLORS[grade]}` : 'none',
-                }"
-                @click="handleGradeCardClick(grade)"
-              >
-                <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"></span>
-                <span class="text-sm text-gray-600">{{ GRADE_LABEL_MAP[grade] }}</span>
-                <span class="text-sm font-semibold" :style="{ color: GRADE_CARD_COLORS[grade] }">
-                  {{ gradeStats[grade] || 0 }}
-                </span>
-              </div>
-            </div>
-
-            <!-- 分隔线 -->
-            <div class="h-8 w-px bg-gray-200"></div>
-
-            <!-- 可信度卡片组 -->
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-gray-400 mr-1">可信度</span>
-              <div
-                v-for="conf in ['A', 'B', 'C', 'D', 'E'] as ConfidenceLevel[]"
-                :key="conf"
-                class="flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
-                :style="{
-                  backgroundColor: selectedConfidence === conf ? `${CONFIDENCE_CARD_COLORS[conf]}30` : `${CONFIDENCE_CARD_COLORS[conf]}15`,
-                  borderLeft: `3px solid ${CONFIDENCE_CARD_COLORS[conf]}`,
-                  borderBottom: selectedConfidence === conf ? `2px solid ${CONFIDENCE_CARD_COLORS[conf]}` : 'none',
-                }"
-                @click="handleConfidenceCardClick(conf)"
-              >
-                <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: CONFIDENCE_CARD_COLORS[conf] }"></span>
-                <span class="text-sm text-gray-600">{{ conf }}</span>
-                <span class="text-sm font-semibold" :style="{ color: CONFIDENCE_CARD_COLORS[conf] }">
-                  {{ confidenceStats[conf] || 0 }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 右侧：性能概览 + 迷你柱状图 -->
-          <div class="flex items-center gap-4">
-            <div
-              class="flex items-center gap-2 px-3 py-1 rounded"
-              :style="{ backgroundColor: '#3B82F615', borderLeft: '3px solid #3B82F6' }"
-            >
-              <span class="w-2 h-2 rounded-full" style="background-color: #3B82F6"></span>
-              <span class="text-sm text-gray-600">平均评分</span>
-              <span class="text-sm font-bold" style="color: #3B82F6">{{ avgScore.toFixed(1) }}</span>
-            </div>
-            <div
-              class="flex items-center gap-2 px-3 py-1 rounded"
-              :style="{ backgroundColor: '#10B98115', borderLeft: '3px solid #10B981' }"
-            >
-              <span class="w-2 h-2 rounded-full" style="background-color: #10B981"></span>
-              <span class="text-sm text-gray-600">优良率</span>
-              <span class="text-sm font-bold" style="color: #10B981">{{ excellentRate }}%</span>
-            </div>
-            <div
-              class="flex items-center gap-2 px-3 py-1 rounded"
-              :style="{ backgroundColor: '#8b5cf615', borderLeft: '3px solid #8b5cf6' }"
-            >
-              <span class="w-2 h-2 rounded-full" style="background-color: #8b5cf6"></span>
-              <span class="text-sm text-gray-600">合格率</span>
-              <span class="text-sm font-bold" style="color: #8b5cf6">{{ passRate }}%</span>
-            </div>
-            <EchartsUI ref="gradeChartRef" style="width: 200px; height: 60px" />
-          </div>
-        </div>
-      </Card>
-    </div>
-
     <!-- 筛选区 -->
     <div class="mb-4 mt-3 flex flex-wrap items-center gap-3">
       <TreeSelect
@@ -1143,6 +1044,99 @@ onMounted(async () => {
         @change="handleSearch"
       />
       <Button type="primary" @click="handleSearch">查询</Button>
+    </div>
+
+    <!-- 统计卡片区域（筛选区与列表区之间） -->
+    <div class="mb-4">
+      <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
+        <div class="grid grid-cols-3 items-center">
+          <!-- 左：评估等级卡片组 -->
+          <div class="flex items-center justify-start gap-2">
+            <span class="text-xs text-gray-400 mr-1">等级</span>
+            <div
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: selectedGrade === null ? '#4B556315' : '#4B556308',
+                borderLeft: '3px solid #4B5563',
+                borderBottom: selectedGrade === null ? '2px solid #4B5563' : 'none',
+              }"
+              @click="handleGradeCardClick(null)"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #4B5563"></span>
+              <span class="text-sm text-gray-600 font-medium">全部</span>
+              <span class="text-sm font-bold" style="color: #4B5563">{{ statsTotal }}</span>
+            </div>
+            <div
+              v-for="grade in [1, 2, 3, 4, 5]"
+              :key="grade"
+              class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: selectedGrade === grade ? `${GRADE_CARD_COLORS[grade]}30` : `${GRADE_CARD_COLORS[grade]}15`,
+                borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
+                borderBottom: selectedGrade === grade ? `2px solid ${GRADE_CARD_COLORS[grade]}` : 'none',
+              }"
+              @click="handleGradeCardClick(grade)"
+            >
+              <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"></span>
+              <span class="text-sm text-gray-600">{{ GRADE_LABEL_MAP[grade] }}</span>
+              <span class="text-sm font-semibold" :style="{ color: GRADE_CARD_COLORS[grade] }">
+                {{ gradeStats[grade] || 0 }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 中：可信度卡片组 -->
+          <div class="flex items-center justify-center gap-2">
+            <span class="text-xs text-gray-400 mr-1">可信度</span>
+            <div
+              v-for="conf in ['A', 'B', 'C', 'D', 'E'] as ConfidenceLevel[]"
+              :key="conf"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: selectedConfidence === conf ? `${CONFIDENCE_CARD_COLORS[conf]}30` : `${CONFIDENCE_CARD_COLORS[conf]}15`,
+                borderLeft: `3px solid ${CONFIDENCE_CARD_COLORS[conf]}`,
+                borderBottom: selectedConfidence === conf ? `2px solid ${CONFIDENCE_CARD_COLORS[conf]}` : 'none',
+              }"
+              @click="handleConfidenceCardClick(conf)"
+            >
+              <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: CONFIDENCE_CARD_COLORS[conf] }"></span>
+              <span class="text-sm text-gray-600">{{ conf }}</span>
+              <span class="text-sm font-semibold" :style="{ color: CONFIDENCE_CARD_COLORS[conf] }">
+                {{ confidenceStats[conf] || 0 }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 右：性能概览 + 迷你柱状图 -->
+          <div class="flex items-center justify-end gap-3">
+            <div
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{ backgroundColor: '#3B82F615', borderLeft: '3px solid #3B82F6' }"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #3B82F6"></span>
+              <span class="text-sm text-gray-600">平均评分</span>
+              <span class="text-sm font-bold" style="color: #3B82F6">{{ avgScore.toFixed(1) }}</span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{ backgroundColor: '#10B98115', borderLeft: '3px solid #10B981' }"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #10B981"></span>
+              <span class="text-sm text-gray-600">优良率</span>
+              <span class="text-sm font-bold" style="color: #10B981">{{ excellentRate }}%</span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{ backgroundColor: '#8b5cf615', borderLeft: '3px solid #8b5cf6' }"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #8b5cf6"></span>
+              <span class="text-sm text-gray-600">合格率</span>
+              <span class="text-sm font-bold" style="color: #8b5cf6">{{ passRate }}%</span>
+            </div>
+            <EchartsUI ref="gradeChartRef" style="width: 200px; height: 60px" />
+          </div>
+        </div>
+      </Card>
     </div>
 
     <!-- 回路性能列表 -->
