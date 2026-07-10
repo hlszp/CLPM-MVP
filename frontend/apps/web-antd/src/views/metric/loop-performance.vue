@@ -27,6 +27,7 @@ import type {
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import {
+  computed,
   nextTick,
   onMounted,
   reactive,
@@ -352,6 +353,159 @@ const columns: TableColumnsType = [
   },
 ];
 
+// ===== 统计卡片状态 =====
+
+/** 全量快照数据（用于统计，不参与分页） */
+const allSnapshots = ref<KpiSnapshotItem[]>([]);
+
+/** 评估等级统计（1~5 → 数量） */
+const gradeStats = ref<Record<number, number>>({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
+
+/** 可信度统计（A~E → 数量） */
+const confidenceStats = ref<Record<string, number>>({
+  A: 0,
+  B: 0,
+  C: 0,
+  D: 0,
+  E: 0,
+});
+
+/** 当前选中的等级筛选（null = 全部） */
+const selectedGrade = ref<number | null>(null);
+
+/** 当前选中的可信度筛选（null = 全部） */
+const selectedConfidence = ref<ConfidenceLevel | null>(null);
+
+/** 统计总数 */
+const statsTotal = computed(() =>
+  Object.values(gradeStats.value).reduce((sum, n) => sum + n, 0),
+);
+
+/** 平均评分 */
+const avgScore = computed(() => {
+  const scores = allSnapshots.value
+    .map((s) => s.score)
+    .filter((s): s is number => s !== null && s !== undefined);
+  if (scores.length === 0) return 0;
+  return scores.reduce((sum, s) => sum + s, 0) / scores.length;
+});
+
+/** 优良率（score ≥ 80） */
+const excellentRate = computed(() => {
+  if (statsTotal.value === 0) return 0;
+  const count = allSnapshots.value.filter(
+    (s) => s.score !== null && s.score !== undefined && s.score >= 80,
+  ).length;
+  return Math.round((count / statsTotal.value) * 100);
+});
+
+/** 合格率（score ≥ 60） */
+const passRate = computed(() => {
+  if (statsTotal.value === 0) return 0;
+  const count = allSnapshots.value.filter(
+    (s) => s.score !== null && s.score !== undefined && s.score >= 60,
+  ).length;
+  return Math.round((count / statsTotal.value) * 100);
+});
+
+/** 等级颜色映射（卡片背景 + 边框） */
+const GRADE_CARD_COLORS: Record<number, string> = {
+  1: '#10B981',
+  2: '#3B82F6',
+  3: '#F59E0B',
+  4: '#F97316',
+  5: '#EF4444',
+};
+
+/** 可信度颜色映射 */
+const CONFIDENCE_CARD_COLORS: Record<string, string> = {
+  A: '#10B981',
+  B: '#3B82F6',
+  C: '#F59E0B',
+  D: '#F97316',
+  E: '#EF4444',
+};
+
+/** 等级迷你柱状图 */
+const gradeChartRef = ref<EchartsUIType>();
+const { renderEcharts: renderGradeChart } = useEcharts(gradeChartRef);
+
+/** 渲染等级分布迷你柱状图 */
+function updateGradeChart() {
+  const grades = [1, 2, 3, 4, 5];
+  const labels = ['一级', '二级', '三级', '四级', '五级'];
+  const data = grades.map((g) => gradeStats.value[g] || 0);
+  const colors = grades.map((g) => GRADE_CARD_COLORS[g]);
+
+  renderGradeChart({
+    animation: false,
+    grid: { bottom: 0, containLabel: true, left: '1%', right: '1%', top: '5%' },
+    series: [
+      {
+        barMaxWidth: 30,
+        data: data.map((v, i) => ({ value: v, itemStyle: { color: colors[i] } })),
+        type: 'bar',
+      },
+    ],
+    tooltip: { axisPointer: { lineStyle: { width: 1 } }, trigger: 'axis' },
+    xAxis: { data: labels, type: 'category', axisLabel: { fontSize: 11 } },
+    yAxis: {
+      type: 'value',
+      axisLabel: { fontSize: 11 },
+      splitLine: { show: false },
+    },
+  });
+}
+
+/** 加载全量统计数据 */
+async function loadStats() {
+  try {
+    const params: Record<string, unknown> = { page: 1, pageSize: 200 };
+    if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
+    if (query.status) params.status = query.status;
+    if (query.controlType) {
+      const matchedIds: string[] = [];
+      for (const [id, loop] of loopMap.value.entries()) {
+        if (loop.controlType === query.controlType) matchedIds.push(id);
+      }
+      if (matchedIds.length > 0) params.loopId = matchedIds.join(',');
+    }
+    const result = await getLoopSnapshotsApi(params as any);
+    allSnapshots.value = result.items || [];
+
+    // 计算等级分布
+    const gStats: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    const cStats: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+    for (const snap of allSnapshots.value) {
+      const grade = getGrade(snap.score);
+      if (grade) gStats[grade] = (gStats[grade] || 0) + 1;
+      if (snap.confidenceLevel) {
+        cStats[snap.confidenceLevel] = (cStats[snap.confidenceLevel] || 0) + 1;
+      }
+    }
+    gradeStats.value = gStats;
+    confidenceStats.value = cStats;
+    updateGradeChart();
+  } catch {
+    // 静默失败
+  }
+}
+
+/** 点击等级卡片筛选 */
+function handleGradeCardClick(grade: number | null) {
+  selectedGrade.value = selectedGrade.value === grade ? null : grade;
+  query.page = 1;
+  loadList();
+}
+
+/** 点击可信度卡片筛选 */
+function handleConfidenceCardClick(conf: ConfidenceLevel | null) {
+  selectedConfidence.value =
+    selectedConfidence.value === conf ? null : conf;
+  query.page = 1;
+  loadList();
+}
+
 // ===== 工具函数 =====
 
 /** 时间字符串规范化（PostgreSQL timestamp without timezone 假定为 UTC） */
@@ -462,6 +616,7 @@ async function loadList() {
     };
     if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
     if (query.status) params.status = query.status;
+    if (selectedConfidence.value) params.confidenceLevel = selectedConfidence.value;
 
     // 按控制类型筛选：先在 loopMap 中找到匹配的 loopId，再传给快照接口
     if (query.controlType) {
@@ -480,7 +635,14 @@ async function loadList() {
     }
 
     const result = await getLoopSnapshotsApi(params as any);
-    rows.value = (result.items || []).map((snap) => {
+    let items = result.items || [];
+
+    // 等级筛选（客户端过滤，因为等级是从评分计算的）
+    if (selectedGrade.value !== null) {
+      items = items.filter((snap) => getGrade(snap.score) === selectedGrade.value);
+    }
+
+    rows.value = items.map((snap) => {
       const meta = snap.loopId ? loopMap.value.get(snap.loopId) : undefined;
       return {
         ...snap,
@@ -491,7 +653,7 @@ async function loadList() {
         controlMode: meta?.controlMode,
       };
     });
-    total.value = result.total;
+    total.value = selectedGrade.value !== null ? rows.value.length : result.total;
   } catch (error: any) {
     loadError.value = true;
     console.error('加载回路性能列表失败:', error);
@@ -503,7 +665,10 @@ async function loadList() {
 
 function handleSearch() {
   query.page = 1;
+  selectedGrade.value = null;
+  selectedConfidence.value = null;
   loadList();
+  loadStats();
 }
 
 function handleTableChange(pagination: TablePaginationConfig) {
@@ -820,6 +985,7 @@ watch(isDark, () => {
 onMounted(async () => {
   await Promise.all([loadPlantNodes(), loadLoopMap(), loadGradingThresholds()]);
   loadList();
+  loadStats();
 });
 </script>
 
@@ -838,6 +1004,98 @@ onMounted(async () => {
         </Button>
       </template>
     </ClpmPageToolbar>
+
+    <!-- 统计卡片区域 -->
+    <div class="mt-3">
+      <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
+        <div class="flex items-center justify-between">
+          <!-- 左侧：评估等级卡片 -->
+          <div class="flex items-center gap-2">
+            <div
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: selectedGrade === null ? '#4B556315' : '#4B556308',
+                borderLeft: '3px solid #4B5563',
+                borderBottom: selectedGrade === null ? '2px solid #4B5563' : 'none',
+              }"
+              @click="handleGradeCardClick(null)"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #4B5563"></span>
+              <span class="text-sm text-gray-600 font-medium">全部</span>
+              <span class="text-sm font-bold" style="color: #4B5563">{{ statsTotal }}</span>
+            </div>
+            <div
+              v-for="grade in [1, 2, 3, 4, 5]"
+              :key="grade"
+              class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: selectedGrade === grade ? `${GRADE_CARD_COLORS[grade]}30` : `${GRADE_CARD_COLORS[grade]}15`,
+                borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
+                borderBottom: selectedGrade === grade ? `2px solid ${GRADE_CARD_COLORS[grade]}` : 'none',
+              }"
+              @click="handleGradeCardClick(grade)"
+            >
+              <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"></span>
+              <span class="text-sm text-gray-600">{{ GRADE_LABEL_MAP[grade] }}</span>
+              <span class="text-sm font-semibold" :style="{ color: GRADE_CARD_COLORS[grade] }">
+                {{ gradeStats[grade] || 0 }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 中间：可信度卡片 -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-400 mr-1">可信度</span>
+            <div
+              v-for="conf in ['A', 'B', 'C', 'D', 'E'] as ConfidenceLevel[]"
+              :key="conf"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
+              :style="{
+                backgroundColor: selectedConfidence === conf ? `${CONFIDENCE_CARD_COLORS[conf]}30` : `${CONFIDENCE_CARD_COLORS[conf]}15`,
+                borderLeft: `3px solid ${CONFIDENCE_CARD_COLORS[conf]}`,
+                borderBottom: selectedConfidence === conf ? `2px solid ${CONFIDENCE_CARD_COLORS[conf]}` : 'none',
+              }"
+              @click="handleConfidenceCardClick(conf)"
+            >
+              <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: CONFIDENCE_CARD_COLORS[conf] }"></span>
+              <span class="text-sm text-gray-600">{{ conf }}</span>
+              <span class="text-sm font-semibold" :style="{ color: CONFIDENCE_CARD_COLORS[conf] }">
+                {{ confidenceStats[conf] || 0 }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 右侧：性能概览 + 迷你柱状图 -->
+          <div class="flex items-center gap-4">
+            <div
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{ backgroundColor: '#3B82F615', borderLeft: '3px solid #3B82F6' }"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #3B82F6"></span>
+              <span class="text-sm text-gray-600">平均评分</span>
+              <span class="text-sm font-bold" style="color: #3B82F6">{{ avgScore.toFixed(1) }}</span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{ backgroundColor: '#10B98115', borderLeft: '3px solid #10B981' }"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #10B981"></span>
+              <span class="text-sm text-gray-600">优良率</span>
+              <span class="text-sm font-bold" style="color: #10B981">{{ excellentRate }}%</span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-3 py-1 rounded"
+              :style="{ backgroundColor: '#8b5cf615', borderLeft: '3px solid #8b5cf6' }"
+            >
+              <span class="w-2 h-2 rounded-full" style="background-color: #8b5cf6"></span>
+              <span class="text-sm text-gray-600">合格率</span>
+              <span class="text-sm font-bold" style="color: #8b5cf6">{{ passRate }}%</span>
+            </div>
+            <EchartsUI ref="gradeChartRef" style="width: 200px; height: 60px" />
+          </div>
+        </div>
+      </Card>
+    </div>
 
     <!-- 筛选区 -->
     <div class="mb-4 mt-3 flex flex-wrap items-center gap-3">
