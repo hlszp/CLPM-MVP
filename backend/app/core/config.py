@@ -11,6 +11,7 @@ Loads environment variables from `.env` (case-sensitive).
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote_plus
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -102,7 +103,7 @@ class Settings(BaseSettings):
     def postgres_dsn(self) -> str:
         """Async PostgreSQL DSN for SQLAlchemy 2.0."""
         return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{quote_plus(self.POSTGRES_PASSWORD)}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
@@ -110,7 +111,7 @@ class Settings(BaseSettings):
     def redis_url(self) -> str:
         """Redis URL with optional password."""
         if self.REDIS_PASSWORD:
-            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+            return f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     @property
@@ -119,7 +120,7 @@ class Settings(BaseSettings):
         if self.CELERY_BROKER_URL:
             return self.CELERY_BROKER_URL
         if self.REDIS_PASSWORD:
-            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/1"
+            return f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/1"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/1"
 
     @property
@@ -128,7 +129,7 @@ class Settings(BaseSettings):
         if self.CELERY_RESULT_BACKEND:
             return self.CELERY_RESULT_BACKEND
         if self.REDIS_PASSWORD:
-            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/2"
+            return f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/2"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/2"
 
     def validate_security(self) -> None:
