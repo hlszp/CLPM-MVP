@@ -86,7 +86,7 @@ async def test_stop_cancels_running_task():
     """stop 应取消正在运行的任务."""
     with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
         mock_settings.SIGNALR_ENABLED = True
-        mock_settings.SIGNALR_HUB_URL = "ws://localhost:8100/signalr/realValueForClpmHub"
+        mock_settings.SIGNALR_HUB_URL = "ws://localhost:7106/signalr/realValueForClpmHub"
         mock_settings.SIGNALR_RECONNECT_INTERVAL = 1
 
         sub = RealtimeSubscriber()

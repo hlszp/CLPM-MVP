@@ -59,9 +59,9 @@ COPY --from=builder /app/apps/web-antd/dist /usr/share/nginx/html
 # 确保 nginx 用户对静态资源可读
 RUN chown -R nginx:nginx /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 7141
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost/ >/dev/null 2>&1 || exit 1
+    CMD curl -fsS http://localhost:7141/ >/dev/null 2>&1 || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

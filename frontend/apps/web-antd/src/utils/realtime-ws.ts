@@ -37,7 +37,7 @@ class RealtimeWebSocket {
   constructor() {
     // 从环境变量获取后端地址，构造 WebSocket URL
     const apiUrl = import.meta.env.VITE_GLOB_API_URL || '';
-    // apiUrl 格式: http://localhost:8001/api/v1 → ws://localhost:8001/api/v1/ws/realtime
+    // apiUrl 格式: http://localhost:7101/api/v1 → ws://localhost:7101/api/v1/ws/realtime
     const wsBaseUrl = apiUrl
       .replace(/^http:/, 'ws:')
       .replace(/^https:/, 'wss:')

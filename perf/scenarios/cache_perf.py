@@ -40,7 +40,7 @@ REDIS_CONFIG = {
     "db": int(os.environ.get("REDIS_DB", "0")),
 }
 
-API_HOST = os.environ.get("CLPM_PERF_HOST", "http://localhost:8001")
+API_HOST = os.environ.get("CLPM_PERF_HOST", "http://localhost:7101")
 API_USERNAME = os.environ.get("CLPM_PERF_USERNAME", "admin")
 API_PASSWORD = os.environ.get("CLPM_PERF_PASSWORD", "admin123")
 

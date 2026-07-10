@@ -32,7 +32,7 @@ from app.tasks.diagnosis_engine import run_loop_diagnosis
 TS_START = "2026-06-26T09:00:00Z"
 
 # API 基址
-API_BASE = "http://localhost:8001/api/v1"
+API_BASE = "http://localhost:7101/api/v1"
 
 # 管理员账号
 ADMIN_USERNAME = "admin"

@@ -214,7 +214,7 @@ echo ""
 # ------------------------------------------------------------
 echo "6. API 健康检查..."
 # S2-B3: 后端端口不暴露到宿主机，通过 docker exec 检查
-if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend curl -fsS http://localhost:8001/health >/dev/null 2>&1; then
+if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend curl -fsS http://localhost:7101/health >/dev/null 2>&1; then
     echo "  [OK] 后端 API 健康"
 else
     echo "  [FAIL] 后端 API 健康检查失败"

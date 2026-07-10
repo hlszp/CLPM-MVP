@@ -31,7 +31,7 @@ perf/
 ```bash
 cd backend
 cp .env.example .env          # 按需修改数据库连接配置
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 ```
 
 ### 3. 启动前端（仅前端性能测试需要）
@@ -39,7 +39,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```bash
 cd frontend
 pnpm install
-pnpm dev                      # 默认端口 5666
+pnpm dev                      # 默认端口 7100
 ```
 
 ### 4. 安装压测依赖
@@ -87,7 +87,7 @@ playwright install chromium   # 仅前端性能测试需要
 
 ```bash
 cd perf
-locust -f locustfile.py --host=http://localhost:8001
+locust -f locustfile.py --host=http://localhost:7101
 ```
 
 浏览器打开 http://localhost:8089，在 Web UI 中设置：
@@ -101,32 +101,32 @@ locust -f locustfile.py --host=http://localhost:8001
 cd perf
 
 # PERF-API-001: 登录接口（50 并发，2 分钟）
-locust -f locustfile.py --host=http://localhost:8001 \
+locust -f locustfile.py --host=http://localhost:7101 \
     --headless -u 50 -r 10 -t 120s --tags login \
     --html=reports/perf-api-001.html
 
 # PERF-API-002: 回路列表查询（100 并发，3 分钟）
-locust -f locustfile.py --host=http://localhost:8001 \
+locust -f locustfile.py --host=http://localhost:7101 \
     --headless -u 100 -r 10 -t 180s --tags perf-api-002 \
     --html=reports/perf-api-002.html
 
 # PERF-API-003: 回路监控列表（100 并发，3 分钟）
-locust -f locustfile.py --host=http://localhost:8001 \
+locust -f locustfile.py --host=http://localhost:7101 \
     --headless -u 100 -r 10 -t 180s --tags perf-api-003 \
     --html=reports/perf-api-003.html
 
 # PERF-API-004: 诊断列表（80 并发，3 分钟）
-locust -f locustfile.py --host=http://localhost:8001 \
+locust -f locustfile.py --host=http://localhost:7101 \
     --headless -u 80 -r 10 -t 180s --tags perf-api-004 \
     --html=reports/perf-api-004.html
 
 # PERF-API-005: 波形查询-24h（50 并发，2 分钟）
-locust -f locustfile.py --host=http://localhost:8001 \
+locust -f locustfile.py --host=http://localhost:7101 \
     --headless -u 50 -r 10 -t 120s --tags perf-api-005 \
     --html=reports/perf-api-005.html
 
 # PERF-API-006: 工作台聚合（100 并发，3 分钟）
-locust -f locustfile.py --host=http://localhost:8001 \
+locust -f locustfile.py --host=http://localhost:7101 \
     --headless -u 100 -r 10 -t 180s --tags perf-api-006 \
     --html=reports/perf-api-006.html
 ```
@@ -138,11 +138,11 @@ cd perf
 
 # 单独运行 PERF-API-001 登录压测
 locust -f scenarios/api_load.py:LoginLoadTest \
-    --host=http://localhost:8001 --headless -u 50 -r 10 -t 120s
+    --host=http://localhost:7101 --headless -u 50 -r 10 -t 120s
 
 # 单独运行 PERF-API-006 工作台聚合
 locust -f scenarios/api_load.py:DashboardLoadTest \
-    --host=http://localhost:8001 --headless -u 100 -r 10 -t 180s
+    --host=http://localhost:7101 --headless -u 100 -r 10 -t 180s
 ```
 
 ### 方式四：数据库性能测试
@@ -192,7 +192,7 @@ python frontend_perf.py --case all
 备选：使用 Lighthouse CLI 测量首屏加载（PERF-FE-001）
 
 ```bash
-npx lighthouse http://localhost:5666 \
+npx lighthouse http://localhost:7100 \
     --only-categories=performance \
     --output=json --output-path=reports/lighthouse.json \
     --chrome-flags="--headless"
@@ -205,8 +205,8 @@ npx lighthouse http://localhost:5666 \
 
 | 环境变量              | 默认值                  | 说明                     |
 |-----------------------|-------------------------|--------------------------|
-| CLPM_PERF_HOST        | http://localhost:8001   | 后端 API host            |
-| CLPM_PERF_FRONTEND_URL| http://localhost:5666   | 前端 URL                 |
+| CLPM_PERF_HOST        | http://localhost:7101   | 后端 API host            |
+| CLPM_PERF_FRONTEND_URL| http://localhost:7100   | 前端 URL                 |
 | CLPM_PERF_USERNAME    | admin                   | 登录用户名               |
 | CLPM_PERF_PASSWORD    | admin123                | 登录密码                 |
 | CLPM_PERF_USERS       | admin,ic_engineer,...   | 多用户轮换池（逗号分隔） |

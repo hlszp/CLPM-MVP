@@ -18,7 +18,7 @@
 | --- | --- | --- | --- |
 | `.env` | `VITE_APP_TITLE` | `CLPM 控制回路性能管理系统` | 应用标题 |
 | `.env` | `VITE_APP_NAMESPACE` | `clpm-web-antd` | 应用命名空间（缓存前缀） |
-| `.env.development` | `VITE_GLOB_API_URL` | `http://localhost:8001/api/v1` | 后端开发服务器地址 |
+| `.env.development` | `VITE_GLOB_API_URL` | `http://localhost:7101/api/v1` | 后端开发服务器地址 |
 | `.env.development` | `VITE_NITRO_MOCK` | `false` | 关闭内置 Mock 服务 |
 | `.env.production` | `VITE_GLOB_API_URL` | `/api/v1` | 生产环境通过反向代理转发 |
 
@@ -26,7 +26,7 @@
 
 ### 2. Vite 代理配置
 
-`apps/web-antd/vite.config.ts` 中的 `/api` 代理目标已改为 `http://localhost:8001`（CLPM 后端）。
+`apps/web-antd/vite.config.ts` 中的 `/api` 代理目标已改为 `http://localhost:7101`（CLPM 后端）。
 
 ### 3. Demo 内容清理
 
@@ -71,7 +71,7 @@
 # 安装依赖
 pnpm install
 
-# 启动开发服务器（端口 5666）
+# 启动开发服务器（端口 7100）
 pnpm dev:antd
 
 # 构建生产包
@@ -115,6 +115,6 @@ frontend/
 ## 后续开发指引
 
 1. **新增页面**: 在 `apps/web-antd/src/views/` 下创建，并在 `src/router/routes/modules/` 添加路由
-2. **API 对接**: 在 `apps/web-antd/src/api/` 下按模块创建 API 文件，后端基址为 `http://localhost:8001/api/v1`
+2. **API 对接**: 在 `apps/web-antd/src/api/` 下按模块创建 API 文件，后端基址为 `http://localhost:7101/api/v1`
 3. **权限配置**: 通过路由 `meta.authority` 字段和 `@vben/access` 的 `AccessControl` 组件实现
 4. **图表开发**: 使用 `echarts` 直接开发，或参考 `@vben/plugins` 中的 `useEcharts` 封装

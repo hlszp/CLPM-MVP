@@ -27,18 +27,18 @@ help: ## 显示所有可用命令
 # 开发环境
 # ============================================================
 
-dev: ## 启动后端开发服务器（热重载，端口 8001）
-	cd $(BACKEND_DIR) && uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+dev: ## 启动后端开发服务器（热重载，端口 7101）
+	cd $(BACKEND_DIR) && uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 
-dev-frontend: ## 启动前端开发服务器（端口 5666）
+dev-frontend: ## 启动前端开发服务器（端口 7100）
 	cd $(FRONTEND_DIR) && pnpm run dev:antd
 
 dev-all: ## 启动所有开发服务（基础设施 + 后端 + 前端）
 	@echo "==> 启动开发基础设施（PostgreSQL + TDengine + Redis）..."
 	docker compose -f $(DEV_COMPOSE) up -d
-	@echo "==> 启动后端开发服务器（后台运行，端口 8001）..."
-	cd $(BACKEND_DIR) && uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload &
-	@echo "==> 启动前端开发服务器（前台运行，端口 5666，Ctrl+C 退出）..."
+	@echo "==> 启动后端开发服务器（后台运行，端口 7101）..."
+	cd $(BACKEND_DIR) && uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload &
+	@echo "==> 启动前端开发服务器（前台运行，端口 7100，Ctrl+C 退出）..."
 	cd $(FRONTEND_DIR) && pnpm run dev:antd
 
 # ============================================================

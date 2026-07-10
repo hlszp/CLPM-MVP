@@ -19,7 +19,7 @@ class Config:
     TDENGINE_DB: str = os.getenv("TDENGINE_DB", "clpm_ts")
 
     # 服务端口
-    PORT: int = int(os.getenv("MOCK_DATA_SERVER_PORT", "8100"))
+    PORT: int = int(os.getenv("MOCK_DATA_SERVER_PORT", "7106"))
 
     # 实时数据生成间隔（秒）
     REALTIME_INTERVAL: float = float(os.getenv("REALTIME_INTERVAL", "1.0"))

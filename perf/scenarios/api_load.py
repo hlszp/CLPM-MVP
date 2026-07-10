@@ -6,11 +6,11 @@
 用法示例:
     # 单独运行 PERF-API-001 登录压测
     locust -f perf/scenarios/api_load.py:LoginLoadTest \
-        --host=http://localhost:8001 --headless -u 50 -r 10 -t 120s
+        --host=http://localhost:7101 --headless -u 50 -r 10 -t 120s
 
     # 单独运行 PERF-API-006 工作台聚合
     locust -f perf/scenarios/api_load.py:DashboardLoadTest \
-        --host=http://localhost:8001 --headless -u 100 -r 10 -t 180s
+        --host=http://localhost:7101 --headless -u 100 -r 10 -t 180s
 
 验收标准（P95）:
     PERF-API-001 登录接口        < 200ms
@@ -33,7 +33,7 @@ from locust import HttpUser, TaskSet, between, task
 # 公共配置
 # ---------------------------------------------------------------------------
 
-HOST = os.environ.get("CLPM_PERF_HOST", "http://localhost:8001")
+HOST = os.environ.get("CLPM_PERF_HOST", "http://localhost:7101")
 USERNAME = os.environ.get("CLPM_PERF_USERNAME", "admin")
 PASSWORD = os.environ.get("CLPM_PERF_PASSWORD", "admin123")
 USER_POOL = [

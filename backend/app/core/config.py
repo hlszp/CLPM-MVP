@@ -33,21 +33,21 @@ class Settings(BaseSettings):
 
     # ---- PostgreSQL ----
     POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: int = 5432
+    POSTGRES_PORT: int = 7102
     POSTGRES_USER: str = "clpm"
     POSTGRES_PASSWORD: str = ""  # 必填，通过 .env 设置
     POSTGRES_DB: str = "clpm"
 
     # ---- TDengine ----
     TDENGINE_HOST: str = "localhost"
-    TDENGINE_PORT: int = 6030
+    TDENGINE_PORT: int = 7104
     TDENGINE_USER: str = "root"
     TDENGINE_PASSWORD: str = ""  # 必填，通过 .env 设置
     TDENGINE_DB: str = "clpm_ts"
 
     # ---- Redis ----
     REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
+    REDIS_PORT: int = 7103
     REDIS_PASSWORD: str = ""  # 必填，通过 .env 设置
     REDIS_DB: int = 0
 
@@ -75,12 +75,12 @@ class Settings(BaseSettings):
     DATA_SOURCE_TYPE: str = "tdengine"
 
     # ---- 外部历史数据 API（HistoryDataAppService）----
-    HISTORY_DATA_API_URL: str = ""  # 如 http://localhost:8100/api/services/v1/HistoryData/Get
+    HISTORY_DATA_API_URL: str = ""  # 如 http://localhost:7106/api/services/v1/HistoryData/Get
     HISTORY_DATA_API_TOKEN: str = ""  # Bearer Token（可选）
     HISTORY_DATA_API_TIMEOUT: float = 30.0  # 请求超时（秒）
 
     # ---- 实时数据 SignalR/WebSocket ----
-    SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:8100/signalr/realValueForClpmHub
+    SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:7106/signalr/realValueForClpmHub
     SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
     SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连间隔（秒）
     REALTIME_WRITEBACK_ENABLED: bool = False  # 是否将实时数据写回本地 TDengine 宽表（开发兼容）
@@ -90,13 +90,10 @@ class Settings(BaseSettings):
 
     # ---- CORS ----
     CORS_ORIGINS: list[str] = [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5666",
-        "http://localhost:5667",
-        "http://localhost:5668",
-        "http://127.0.0.1:5666",
-        "http://127.0.0.1:5667",
+        "http://localhost:7100",
+        "http://localhost:7141",
+        "http://127.0.0.1:7100",
+        "http://127.0.0.1:7141",
     ]
 
     @property

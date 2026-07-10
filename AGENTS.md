@@ -59,14 +59,14 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 # 1. 基础设施
 docker compose -f deploy/docker/docker-compose.dev.yml up -d
 
-# 2. 后端 API (port 8001)
+# 2. 后端 API (port 7101)
 #    v6.1：后端启动时自动启动 Celery Beat 调度进程（定时任务自动执行）
-cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 
 # 3. Celery Worker（独立进程，必须单独启动；Beat 已随后端自动启动）
 cd backend && .venv/bin/celery -A app.tasks.celery_app worker -l info -Q default
 
-# 4. 前端 (port 5666)
+# 4. 前端 (port 7100)
 cd frontend && pnpm run dev:antd
 ```
 
@@ -87,7 +87,7 @@ cd e2e && pnpm exec playwright test
 
 - **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker
 - **Celery Beat 已自动启动**（v6.1）：后端 lifespan 中自动启动 Beat 调度进程，每小时 KPI 计算等定时任务自动执行，无需手动启动 Beat
-- **前端端口是 5666**（P2 #32 B8 修正：原 AGENTS.md 误写 5668，实际配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=5666`）
+- **前端端口是 7100**（端口统一规划：项目所有端口统一到 7100-7200 段，配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=7100`）
 - **前端 TypeScript 错误已全部修复**（v6.0 升级中清零，原 plant-node-tree.vue 3 个 + workbench.vue 3 个已修复）
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
 - **Git 分支**：当前在 `main` 分支；双机协作时使用 `mb/*`（mb 机器）或 `zp/*`（zp 机器）临时分支，详见 §双机协作开发规范

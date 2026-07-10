@@ -133,7 +133,7 @@ uv run alembic upgrade head
 ### 5. 启动开发服务器
 
 ```bash
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 ```
 
 ### 6. 默认账号
@@ -152,7 +152,7 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
 ```bash
 # 启动开发服务器（热重载）
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 
 # 运行测试
 uv run pytest -q
@@ -189,9 +189,9 @@ uv run python scripts/export_openapi.py
 
 | 文档 | URL | 说明 |
 |---|---|---|
-| Swagger UI | http://localhost:8001/docs | 交互式 API 调试 |
-| ReDoc | http://localhost:8001/redoc | 只读 API 文档 |
-| OpenAPI JSON | http://localhost:8001/openapi.json | OpenAPI 3.1 规范 |
+| Swagger UI | http://localhost:7101/docs | 交互式 API 调试 |
+| ReDoc | http://localhost:7101/redoc | 只读 API 文档 |
+| OpenAPI JSON | http://localhost:7101/openapi.json | OpenAPI 3.1 规范 |
 
 健康检查端点：`GET /health`（根路径，无业务前缀，用于容器探针）。
 
@@ -227,7 +227,7 @@ docker build -f Dockerfile.backend -t clpm-backend:latest .
 
 | 服务 | 容器 | 说明 |
 |---|---|---|
-| backend | clpm-backend | FastAPI + Uvicorn（仅容器间暴露 8001） |
+| backend | clpm-backend | FastAPI + Uvicorn（仅容器间暴露 7101） |
 | frontend | clpm-frontend | Nginx 静态托管 + 反向代理（80/443） |
 | celery-worker | clpm-celery-worker | 异步任务执行 |
 | celery-beat | clpm-celery-beat | 定时任务调度 |

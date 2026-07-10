@@ -55,10 +55,10 @@ cd backend
 cp .env.example .env          # 首次执行
 uv sync                        # 安装依赖
 uv run alembic upgrade head    # 执行数据库迁移
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 ```
 
-后端 API 文档：http://localhost:8001/docs
+后端 API 文档：http://localhost:7101/docs
 
 ### 3. 启动 Celery Worker（异步任务）
 
@@ -74,10 +74,10 @@ cd backend
 ```bash
 cd frontend
 pnpm install
-pnpm run dev:antd              # 默认端口 5666
+pnpm run dev:antd              # 默认端口 7100
 ```
 
-前端访问地址：http://localhost:5666
+前端访问地址：http://localhost:7100
 
 ### 5. 默认账号
 
@@ -124,7 +124,7 @@ CLPM 支持两种历史数据源模式，通过 `DATA_SOURCE_TYPE` 配置切换�
 
 ```bash
 DATA_SOURCE_TYPE=remote_api
-HISTORY_DATA_API_URL=http://localhost:8100/api/services/v1/HistoryData/Get
+HISTORY_DATA_API_URL=http://localhost:7106/api/services/v1/HistoryData/Get
 HISTORY_DATA_API_TOKEN=           # 可选，Bearer Token
 HISTORY_DATA_API_TIMEOUT=30.0
 ```
@@ -136,7 +136,7 @@ HISTORY_DATA_API_TIMEOUT=30.0
 #### 7.3 实时数据订阅（SignalR/WebSocket）
 
 ```bash
-SIGNALR_HUB_URL=ws://localhost:8100/signalr/realValueForClpmHub
+SIGNALR_HUB_URL=ws://localhost:7106/signalr/realValueForClpmHub
 SIGNALR_ENABLED=True             # 启用实时数据订阅
 SIGNALR_RECONNECT_INTERVAL=5     # 断线重连间隔（秒）
 REALTIME_WRITEBACK_ENABLED=False # 现场模式：只缓存/推送，不写回 CLPM 本地回路宽表
@@ -156,13 +156,13 @@ docker compose -f deploy/docker/docker-compose.dev.yml up -d mock-data-server
 # 方式 2：本地运行
 cd mock_data_server
 pip install -r requirements.txt
-PYTHONPATH=/path/to/CLPM python -m uvicorn mock_data_server.main:app --host 0.0.0.0 --port 8100
+PYTHONPATH=/path/to/CLPM python -m uvicorn mock_data_server.main:app --host 0.0.0.0 --port 7106
 ```
 
 服务启动后：
-- 历史数据 API：`POST http://localhost:8100/api/services/v1/HistoryData/Get`（查 TDengine）
-- 实时数据 Hub：`WS ws://localhost:8100/signalr/realValueForClpmHub`（正弦波模拟）
-- 健康检查：`GET http://localhost:8100/health`
+- 历史数据 API：`POST http://localhost:7106/api/services/v1/HistoryData/Get`（查 TDengine）
+- 实时数据 Hub：`WS ws://localhost:7106/signalr/realValueForClpmHub`（正弦波模拟）
+- 健康检查：`GET http://localhost:7106/health`
 
 > **注意**：`mock_data_server/` 是独立目录，正式项目可整体删除，不影响主应用。
 
@@ -172,7 +172,7 @@ PYTHONPATH=/path/to/CLPM python -m uvicorn mock_data_server.main:app --host 0.0.
 
 - Docker 24+ 与 Docker Compose v2
 - 服务器最低配置：4 核 CPU / 8GB 内存 / 50GB 磁盘
-- 开放端口：80（前端）、8001（后端 API，建议仅内网）、6030/6041（TDengine，建议仅内网）
+- 开放端口：7141（前端）、7101（后端 API，仅容器内部）、7104/7115（TDengine，建议仅内网）
 
 ### 部署步骤
 
@@ -211,7 +211,7 @@ cp .env.prod.example .env.prod
 docker compose -f docker-compose.prod.yml ps
 
 # 后端健康检查
-curl http://localhost:8001/health
+curl http://localhost:7101/health
 
 # 前端访问
 curl http://localhost/
@@ -222,7 +222,7 @@ curl http://localhost/
 | 服务 | 容器 | 端口 | 说明 |
 |---|---|---|---|
 | frontend | clpm-frontend | 80 | Nginx 静态托管 + /api/v1 反代 |
-| backend | clpm-backend | 8001 | FastAPI + Uvicorn |
+| backend | clpm-backend | 7101 | FastAPI + Uvicorn |
 | celery-worker | clpm-celery-worker | - | 异步任务执行 |
 | celery-beat | clpm-celery-beat | - | 定时任务调度 |
 | postgres | clpm-postgres | 5432 | 关系型业务数据 |
