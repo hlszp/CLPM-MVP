@@ -9,7 +9,7 @@ RealtimeSubscriber 广播的实时数据，推送给已连接的前端客户端�
       → 本端点订阅 → WebSocket 推送给前端
 
 前端连接时通过 query 参数传递 token 进行认证:
-    ws://localhost:8001/api/v1/ws/realtime?token=xxx
+    ws://localhost:7101/api/v1/ws/realtime?token=xxx
 """
 
 from __future__ import annotations

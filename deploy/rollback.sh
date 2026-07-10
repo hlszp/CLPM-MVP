@@ -100,7 +100,7 @@ echo "5. 验证服务状态..."
 docker compose -f "$COMPOSE_FILE" ps
 echo ""
 
-if docker exec clpm-backend curl -fsS http://localhost:8001/health >/dev/null 2>&1; then
+if docker exec clpm-backend curl -fsS http://localhost:7101/health >/dev/null 2>&1; then
     echo "  [OK] 后端 API 健康"
 else
     echo "  [FAIL] 后端 API 健康检查失败"

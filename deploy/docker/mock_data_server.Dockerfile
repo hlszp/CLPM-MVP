@@ -18,8 +18,8 @@ COPY mock_data_server/ /app/mock_data_server/
 # 设置 PYTHONPATH 以支持 `from mock_data_server.xxx import yyy` 导入
 ENV PYTHONPATH=/app
 
-EXPOSE 8100
+EXPOSE 7106
 
 CMD ["python", "-m", "uvicorn", "mock_data_server.main:app", \
      "--host", "0.0.0.0", \
-     "--port", "8100"]
+     "--port", "7106"]

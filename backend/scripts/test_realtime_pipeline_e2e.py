@@ -61,8 +61,8 @@ logger = logging.getLogger("e2e_realtime")
 # ============================================================================
 
 # 服务端点
-BACKEND_URL = "http://localhost:8001"
-MOCK_DATA_SERVER_URL = "http://localhost:8100"
+BACKEND_URL = "http://localhost:7101"
+MOCK_DATA_SERVER_URL = "http://localhost:7106"
 TDENGINE_REST_PORT = 6041  # 6030 + 11
 
 # TDengine
@@ -74,7 +74,7 @@ TD_DB = "clpm_ts"
 TD_REST_URL = f"http://{TD_HOST}:{TDENGINE_REST_PORT}/rest/sql"
 
 # 实时数据
-REALTIME_HUB_URL = "ws://localhost:8100/signalr/realValueForClpmHub"
+REALTIME_HUB_URL = "ws://localhost:7106/signalr/realValueForClpmHub"
 REALTIME_INTERVAL = 1.0  # 秒
 
 # 测试参数

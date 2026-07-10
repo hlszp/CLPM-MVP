@@ -18,8 +18,8 @@ from playwright.sync_api import sync_playwright
 
 SCREENSHOT_DIR = "/tmp/clpm-e2e-screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-BASE_URL = "http://localhost:5667"
-API_URL = "http://localhost:8001/api/v1"
+BASE_URL = "http://localhost:7100"
+API_URL = "http://localhost:7101/api/v1"
 
 USERNAME = "admin"
 PASSWORD = "admin123"

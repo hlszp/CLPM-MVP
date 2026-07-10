@@ -4,18 +4,18 @@
 
 用法示例:
     # 启动 Web UI（默认 http://localhost:8089）
-    locust -f perf/locustfile.py --host=http://localhost:8001
+    locust -f perf/locustfile.py --host=http://localhost:7101
 
     # 无头模式运行单个场景（PERF-API-001 登录接口）
-    locust -f perf/locustfile.py --host=http://localhost:8001 \
+    locust -f perf/locustfile.py --host=http://localhost:7101 \
         --headless -u 50 -r 10 -t 120s --tags login
 
     # 运行回路相关场景（PERF-API-002 + PERF-API-003）
-    locust -f perf/locustfile.py --host=http://localhost:8001 \
+    locust -f perf/locustfile.py --host=http://localhost:7101 \
         --headless -u 100 -r 10 -t 180s --tags loop
 
     # 运行全部场景
-    locust -f perf/locustfile.py --host=http://localhost:8001 \
+    locust -f perf/locustfile.py --host=http://localhost:7101 \
         --headless -u 100 -r 10 -t 180s
 
 环境变量（可选，覆盖默认值）:
@@ -38,7 +38,7 @@ from locust import HttpUser, between, task, tag
 # 配置（环境变量覆盖）
 # ---------------------------------------------------------------------------
 
-DEFAULT_HOST = os.environ.get("CLPM_PERF_HOST", "http://localhost:8001")
+DEFAULT_HOST = os.environ.get("CLPM_PERF_HOST", "http://localhost:7101")
 DEFAULT_USERNAME = os.environ.get("CLPM_PERF_USERNAME", "admin")
 DEFAULT_PASSWORD = os.environ.get("CLPM_PERF_PASSWORD", "admin123")
 # 多用户轮换池：5 个种子用户，密码均为 admin123

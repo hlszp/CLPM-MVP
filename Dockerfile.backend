@@ -68,11 +68,11 @@ COPY --from=builder --chown=clpm:clpm /app/pyproject.toml /app/pyproject.toml
 
 USER clpm
 
-EXPOSE 8001
+EXPOSE 7101
 
 # 健康检查：FastAPI /health 端点
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -fsS http://localhost:8001/health || exit 1
+    CMD curl -fsS http://localhost:7101/health || exit 1
 
 # S2-B6: Uvicorn 多 worker（生产环境 4 worker，充分利用多核）
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "4"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7101", "--workers", "4"]

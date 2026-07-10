@@ -9,7 +9,7 @@
         登录后访问工作台页面，测量 6 个 ECharts 图表的渲染完成时间。
 
 环境变量:
-    CLPM_PERF_FRONTEND_URL   前端 URL（默认 http://localhost:5666）
+    CLPM_PERF_FRONTEND_URL   前端 URL（默认 http://localhost:7100）
     CLPM_PERF_API_HOST       后端 API host（用于登录）
     CLPM_PERF_USERNAME       登录用户名
     CLPM_PERF_PASSWORD       登录密码
@@ -33,8 +33,8 @@ import os
 import sys
 import time
 
-FRONTEND_URL = os.environ.get("CLPM_PERF_FRONTEND_URL", "http://localhost:5666")
-API_HOST = os.environ.get("CLPM_PERF_API_HOST", "http://localhost:8001")
+FRONTEND_URL = os.environ.get("CLPM_PERF_FRONTEND_URL", "http://localhost:7100")
+API_HOST = os.environ.get("CLPM_PERF_API_HOST", "http://localhost:7101")
 USERNAME = os.environ.get("CLPM_PERF_USERNAME", "admin")
 PASSWORD = os.environ.get("CLPM_PERF_PASSWORD", "admin123")
 
@@ -53,7 +53,7 @@ def perf_fe_001() -> bool:
 
     使用 Playwright 测量 navigation 开始到 load 事件完成的时间。
     也可使用 Lighthouse CLI 替代:
-        npx lighthouse http://localhost:5666 --only-categories=performance \\
+        npx lighthouse http://localhost:7100 --only-categories=performance \\
             --output=json --output-path=perf-fe-001.json
         # 关注 first-contentful-paint / largest-contentful-paint 指标
     """
