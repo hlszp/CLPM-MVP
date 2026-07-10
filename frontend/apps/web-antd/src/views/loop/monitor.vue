@@ -237,13 +237,13 @@ const MODE_COLOR_MAP: Record<string, string> = {
   '4': '#8b5cf6', // 先控-紫
 };
 
-/** MODE 标签映射 */
+/** MODE 标签映射（柱状图英文标签） */
 const MODE_LABEL_MAP: Record<string, string> = {
-  '0': '手动',
-  '1': '自动',
-  '2': '串级',
-  '3': '远程',
-  '4': '先控',
+  '0': 'MAN',
+  '1': 'AUTO',
+  '2': 'CAS',
+  '3': 'RAC',
+  '4': 'APC',
 };
 
 /** 回路类型颜色映射 */
