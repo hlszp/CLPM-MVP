@@ -27,7 +27,13 @@ COPY frontend/ ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# 构建 web-antd 应用（需在 apps/web-antd 目录执行，确保 loadEnv() 能找到 .env.production）
+# 调试：确认 .env.production 存在并显示内容
+RUN ls -la apps/web-antd/.env* && echo "=== .env.production ===" && cat apps/web-antd/.env.production
+
+# 确保 .env.production 在 monorepo 根目录也可用（loadEnv 使用 process.cwd()，可能指向根目录）
+RUN cp apps/web-antd/.env.production /app/.env.production
+
+# 构建 web-antd 应用
 WORKDIR /app/apps/web-antd
 RUN pnpm vite build --mode production
 
