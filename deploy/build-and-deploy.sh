@@ -3,7 +3,8 @@
 # CLPM Docker 镜像构建与部署脚本（离线镜像方式）
 #
 # 用途：在本地（macOS）构建 linux/amd64 镜像，传输到 zpdev 服务器并部署
-# 服务器：192.168.13.113（zpdev）
+# 服务器：192.168.13.111（zpdev 局域网 IP）
+# 备选：Tailscale SSH（ssh zpdev，需 Tailscale 认证）
 #
 # 镜像产物目录：项目根目录下 releases/images/
 #   - clpm-images-YYYYMMDD-HHMMSS.tar.gz：每次构建的镜像包
@@ -41,9 +42,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-SERVER_IP="192.168.13.113"
-SERVER_USER="root"
-SERVER_DEPLOY_DIR="/opt/clpm"
+# SSH 目标：局域网直连（可覆盖为其他地址）
+# zpdev 局域网 IP: 192.168.13.111，用户: zhangping（docker 组）
+SSH_HOST="${SSH_HOST:-zhangping@192.168.13.111}"
+SERVER_DEPLOY_DIR="${SERVER_DEPLOY_DIR:-/home/zhangping/clpm}"
 LOCAL_TMP_DIR="${PROJECT_ROOT}/releases/images"
 
 BACKEND_IMAGE="clpm-backend:latest"
@@ -252,7 +254,7 @@ fi
 # Phase 2: 部署到服务器
 # ============================================================
 if [ "$DO_DEPLOY" = true ]; then
-    log_step "Phase 2: 部署到 ${SERVER_IP}"
+    log_step "Phase 2: 部署到 ${SSH_HOST}"
 
     # 确定要传输的镜像包
     if [ "$DO_BUILD" = true ]; then
@@ -270,8 +272,8 @@ if [ "$DO_DEPLOY" = true ]; then
 
     # --- 2.1 测试 SSH 连接 + 服务器前置检查 ---
     log_info "测试 SSH 连接..."
-    if ! ssh -o ConnectTimeout=5 "${SERVER_USER}@${SERVER_IP}" "echo OK" >/dev/null 2>&1; then
-        log_error "无法连接到 ${SERVER_USER}@${SERVER_IP}"
+    if ! ssh -o ConnectTimeout=5 "${SSH_HOST}" "echo OK" >/dev/null 2>&1; then
+        log_error "无法连接到 ${SSH_HOST}"
         log_error "请确认 SSH 免密配置或手动输入密码"
         exit 1
     fi
@@ -280,15 +282,15 @@ if [ "$DO_DEPLOY" = true ]; then
     # --- 2.2 服务器环境预检（端口/权限/目录/Docker） ---
     log_step "服务器环境预检"
 
-    SSH_PREFIX="ssh ${SERVER_USER}@${SERVER_IP}"
+    SSH_PREFIX="ssh ${SSH_HOST}"
 
     # 检查 1: Docker 可用性
     log_info "检查 Docker 可用性..."
     if ! $SSH_PREFIX "docker info" >/dev/null 2>&1; then
-        log_error "服务器上 Docker 不可用或 ${SERVER_USER} 无 docker 权限"
+        log_error "服务器上 Docker 不可用或当前用户无 docker 权限"
         log_error "修复方法："
         log_error "  1. 确认 Docker 已安装: docker --version"
-        log_error "  2. 确认用户在 docker 组: usermod -aG docker ${SERVER_USER}"
+        log_error "  2. 确认用户在 docker 组: usermod -aG docker \$USER"
         log_error "  3. 重启 Docker: systemctl restart docker"
         exit 1
     fi
@@ -355,8 +357,8 @@ if [ "$DO_DEPLOY" = true ]; then
     if ! $SSH_PREFIX "test -f ${SERVER_DEPLOY_DIR}/.env.prod"; then
         log_error ".env.prod 不存在: ${SERVER_DEPLOY_DIR}/.env.prod"
         log_error "请从 .env.prod.example 复制并填写真实配置:"
-        log_error "  scp .env.prod.example ${SERVER_USER}@${SERVER_IP}:${SERVER_DEPLOY_DIR}/.env.prod"
-        log_error "  ssh ${SERVER_USER}@${SERVER_IP} 'vi ${SERVER_DEPLOY_DIR}/.env.prod'"
+        log_error "  scp .env.prod.example ${SSH_HOST}:${SERVER_DEPLOY_DIR}/.env.prod"
+        log_error "  ssh ${SSH_HOST} 'vi ${SERVER_DEPLOY_DIR}/.env.prod'"
         exit 1
     fi
     log_info ".env.prod 存在 ✓"
@@ -377,23 +379,23 @@ if [ "$DO_DEPLOY" = true ]; then
 
     # --- 2.3 传输镜像包 ---
     log_step "传输镜像包到服务器"
-    log_info "scp ${DEPLOY_TAR} → ${SERVER_USER}@${SERVER_IP}:/tmp/"
-    scp "${DEPLOY_TAR}" "${SERVER_USER}@${SERVER_IP}:/tmp/clpm-images-latest.tar.gz"
+    log_info "scp ${DEPLOY_TAR} → ${SSH_HOST}:/tmp/"
+    scp "${DEPLOY_TAR}" "${SSH_HOST}:/tmp/clpm-images-latest.tar.gz"
     log_info "镜像包传输完成"
 
     # --- 2.4 同步部署文件（docker-compose、nginx 配置、db schema） ---
     log_step "同步部署配置文件"
     log_info "同步 docker-compose.prod.yml"
-    scp docker-compose.prod.yml "${SERVER_USER}@${SERVER_IP}:${SERVER_DEPLOY_DIR}/"
+    scp docker-compose.prod.yml "${SSH_HOST}:${SERVER_DEPLOY_DIR}/"
 
     log_info "同步 deploy/nginx.conf"
     $SSH_PREFIX "mkdir -p ${SERVER_DEPLOY_DIR}/deploy"
-    scp deploy/nginx.conf "${SERVER_USER}@${SERVER_IP}:${SERVER_DEPLOY_DIR}/deploy/"
+    scp deploy/nginx.conf "${SSH_HOST}:${SERVER_DEPLOY_DIR}/deploy/"
 
     log_info "同步 db/postgresql/*.sql"
     $SSH_PREFIX "mkdir -p ${SERVER_DEPLOY_DIR}/db/postgresql"
     scp db/postgresql/01_schema.sql db/postgresql/02_seed_data.sql \
-        "${SERVER_USER}@${SERVER_IP}:${SERVER_DEPLOY_DIR}/db/postgresql/"
+        "${SSH_HOST}:${SERVER_DEPLOY_DIR}/db/postgresql/"
 
     log_info "部署配置文件同步完成"
 
@@ -440,12 +442,12 @@ if [ "$DO_DEPLOY" = true ]; then
     if [ "${DEPLOY_EXIT:-0}" -ne 0 ]; then
         log_error "Docker Compose 启动失败（exit code: ${DEPLOY_EXIT}）"
         log_error "常见原因："
-        log_error "  1. 端口冲突 → 检查: ssh ${SERVER_USER}@${SERVER_IP} 'ss -tlnp | grep :7141'"
-        log_error "  2. .env.prod 配置错误 → 检查: ssh ${SERVER_USER}@${SERVER_IP} 'cat ${SERVER_DEPLOY_DIR}/.env.prod'"
-        log_error "  3. 镜像加载失败 → 检查: ssh ${SERVER_USER}@${SERVER_IP} 'docker images | grep clpm'"
-        log_error "  4. 磁盘空间不足 → 检查: ssh ${SERVER_USER}@${SERVER_IP} 'df -h'"
+        log_error "  1. 端口冲突 → 检查: ssh ${SSH_HOST} 'ss -tlnp | grep :7141'"
+        log_error "  2. .env.prod 配置错误 → 检查: ssh ${SSH_HOST} 'cat ${SERVER_DEPLOY_DIR}/.env.prod'"
+        log_error "  3. 镜像加载失败 → 检查: ssh ${SSH_HOST} 'docker images | grep clpm'"
+        log_error "  4. 磁盘空间不足 → 检查: ssh ${SSH_HOST} 'df -h'"
         log_error ""
-        log_error "查看详细日志: ssh ${SERVER_USER}@${SERVER_IP} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml logs'"
+        log_error "查看详细日志: ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml logs'"
         exit 1
     fi
 
@@ -474,7 +476,7 @@ if [ "$DO_DEPLOY" = true ]; then
         log_info "后端 API 健康 ✓"
     else
         log_error "后端 API 健康检查失败"
-        log_error "查看日志: ssh ${SERVER_USER}@${SERVER_IP} 'docker logs clpm-backend --tail 50'"
+        log_error "查看日志: ssh ${SSH_HOST} 'docker logs clpm-backend --tail 50'"
         # 输出最后 20 行日志帮助诊断
         log_error "--- 后端日志（最后 20 行）---"
         $SSH_PREFIX "docker logs clpm-backend --tail 20" 2>&1 | while read -r line; do log_error "  $line"; done
@@ -485,7 +487,7 @@ if [ "$DO_DEPLOY" = true ]; then
         log_info "前端 Nginx 健康 ✓"
     else
         log_error "前端 Nginx 健康检查失败"
-        log_error "查看日志: ssh ${SERVER_USER}@${SERVER_IP} 'docker logs clpm-frontend --tail 50'"
+        log_error "查看日志: ssh ${SSH_HOST} 'docker logs clpm-frontend --tail 50'"
         log_error "--- 前端日志（最后 20 行）---"
         $SSH_PREFIX "docker logs clpm-frontend --tail 20" 2>&1 | while read -r line; do log_error "  $line"; done
     fi
@@ -500,6 +502,12 @@ if [ "$DO_DEPLOY" = true ]; then
     # --- 2.8 完成 ---
     log_step "部署完成"
 
+    # 动态获取服务器 IP（通过 SSH 在服务器上执行 hostname -I）
+    SERVER_IP=$($SSH_PREFIX "hostname -I 2>/dev/null | awk '{print \$1}'" 2>/dev/null || echo "")
+    if [ -z "$SERVER_IP" ]; then
+        SERVER_IP="${SSH_HOST}"
+    fi
+
     echo ""
     echo "服务访问地址："
     echo "  前端：      http://${SERVER_IP}:7141"
@@ -507,10 +515,10 @@ if [ "$DO_DEPLOY" = true ]; then
     echo "  默认账号：  admin / admin123"
     echo ""
     echo "常用运维命令："
-    echo "  查看日志：  ssh ${SERVER_USER}@${SERVER_IP} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml logs -f'"
-    echo "  查看状态：  ssh ${SERVER_USER}@${SERVER_IP} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml ps'"
-    echo "  重启服务：  ssh ${SERVER_USER}@${SERVER_IP} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml restart'"
-    echo "  停止服务：  ssh ${SERVER_USER}@${SERVER_IP} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml down'"
+    echo "  查看日志：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml logs -f'"
+    echo "  查看状态：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml ps'"
+    echo "  重启服务：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml restart'"
+    echo "  停止服务：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml down'"
 fi
 
 echo ""

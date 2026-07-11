@@ -135,6 +135,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: clpm-redis
+    env_file: .env.prod
     command: redis-server --port 7103 --appendonly yes --requirepass ${REDIS_PASSWORD}
     environment:
       TZ: Asia/Shanghai
