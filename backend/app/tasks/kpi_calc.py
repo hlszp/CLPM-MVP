@@ -58,14 +58,17 @@ CONCURRENCY = 10
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def calculate_hourly_kpi(self: AsyncTask) -> dict:
+def calculate_hourly_kpi(self: AsyncTask, ts_start: str | None = None) -> dict:
     """每小时全量计算所有 ACTIVE 回路的 KPI 快照。
 
     失败自动重试 3 次，指数退避。
+
+    Args:
+        ts_start: 可选，指定计算时间窗起始（ISO 格式），None 时取上一个完整小时
     """
-    logger.info("KPI 计算任务开始, task_id=%s", self.request.id)
+    logger.info("KPI 计算任务开始, task_id=%s, ts_start=%s", self.request.id, ts_start)
     try:
-        result = self.run_async(_do_calculate())
+        result = self.run_async(_do_calculate(ts_start=ts_start))
         logger.info("KPI 计算任务完成: %s", result)
         return result
     except Exception:
@@ -95,9 +98,12 @@ def calculate_loop_kpi(loop_id: str, ts_start: str | None = None) -> dict:
 
 from celery.schedules import crontab  # noqa: E402
 
+# 默认计算周期（秒）— 可被 EngineRule EVAL_CALC_CYCLE 覆盖
+_DEFAULT_CALC_CYCLE_SECONDS = 3600.0
+
 _beat_entry = {
     "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
-    "schedule": 3600.0,  # 1 小时
+    "schedule": _DEFAULT_CALC_CYCLE_SECONDS,  # 1 小时（默认值，beat_init 时从 DB 覆盖）
 }
 
 # 合并到 celery_app 的 beat_schedule（与 aas_sync 的 beat 共存）
@@ -118,19 +124,106 @@ celery_app.conf.timezone = "Asia/Shanghai"
 
 
 # ---------------------------------------------------------------------------
+# beat_init 信号：Beat 启动时从 EngineRule 读取策略配置，动态更新调度周期
+# ---------------------------------------------------------------------------
+
+from celery.signals import beat_init  # noqa: E402
+
+
+@beat_init.connect
+def _apply_engine_rules(sender=None, **kwargs):
+    """Beat 启动时从 DB 读取 EngineRule，动态更新 beat_schedule。
+
+    支持 EngineRule：
+    - EVAL_CALC_CYCLE (cycle_minutes): KPI 计算周期，覆盖 kpi-calc-hourly 的 schedule
+    - EVAL_CALC_CYCLE.is_enabled=False: 禁用自动计算（从 beat_schedule 删除条目）
+
+    注意：修改策略后需重启 Celery Beat 进程才能生效（前端策略页面已提示）。
+    """
+    import asyncio
+
+    try:
+        rules = asyncio.run(_load_engine_rules_from_db())
+    except Exception as exc:
+        logger.warning("beat_init: 从 DB 读取 EngineRule 失败，使用默认调度周期: %s", exc)
+        return
+
+    if not rules:
+        return
+
+    calc_cycle = rules.get("EVAL_CALC_CYCLE")
+    if not calc_cycle:
+        return
+
+    is_enabled = calc_cycle.get("is_enabled", True)
+    cycle_minutes = calc_cycle.get("cycle_minutes", 60)
+
+    current_schedule = dict(celery_app.conf.beat_schedule or {})
+
+    if not is_enabled:
+        # 策略禁用 → 从 beat_schedule 删除 kpi-calc-hourly
+        current_schedule.pop("kpi-calc-hourly", None)
+        logger.info("beat_init: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
+    else:
+        # 策略启用 → 按配置的 cycle_minutes 更新周期
+        cycle_seconds = float(cycle_minutes) * 60.0
+        current_schedule["kpi-calc-hourly"] = {
+            "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
+            "schedule": cycle_seconds,
+        }
+        logger.info(
+            "beat_init: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
+            cycle_minutes,
+        )
+
+    celery_app.conf.beat_schedule = current_schedule
+
+
+async def _load_engine_rules_from_db() -> dict:
+    """从 DB 读取 EngineRule 配置，返回 {rule_code: {params, is_enabled}} 字典。"""
+    from sqlalchemy import select
+
+    from app.core.db import AsyncSessionLocal
+    from app.models.engine import EngineRule
+
+    result = {}
+    async with AsyncSessionLocal() as db:
+        stmt = select(EngineRule).where(EngineRule.rule_code.in_([
+            "EVAL_CALC_CYCLE",
+            "DATA_FETCH_WINDOW",
+            "SCHEDULE_CONCURRENCY",
+        ]))
+        rows = await db.execute(stmt)
+        for rule in rows.scalars().all():
+            result[rule.rule_code] = {
+                "params": rule.params or {},
+                "is_enabled": rule.is_enabled if rule.is_enabled is not None else True,
+                "cycle_minutes": (rule.params or {}).get("cycle_minutes", 60) if rule.rule_code == "EVAL_CALC_CYCLE" else None,
+            }
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 异步计算逻辑
 # ---------------------------------------------------------------------------
 
 
-async def _do_calculate() -> dict:
+async def _do_calculate(ts_start: str | None = None) -> dict:
     """执行全量 KPI 计算的实际 async 逻辑。"""
     from app.core.db import AsyncSessionLocal
     from app.core.tdengine import query_trend_data
 
-    # 计算时间窗（上一个完整小时）— naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
+    # 计算时间窗 — naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
     now = datetime.now(UTC).replace(tzinfo=None)
-    ts_end = now.replace(minute=0, second=0, microsecond=0)
-    ts_start = ts_end - timedelta(hours=1)
+    if ts_start:
+        try:
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+        ts_end_dt = ts_start_dt + timedelta(hours=1)
+    else:
+        ts_end_dt = now.replace(minute=0, second=0, microsecond=0)
+        ts_start_dt = ts_end_dt - timedelta(hours=1)
 
     # 主 session 仅用于查询回路列表和指标配置（只读，无并发）
     async with AsyncSessionLocal() as db:
@@ -168,8 +261,8 @@ async def _do_calculate() -> dict:
                         db=worker_db,
                         loop=loop,
                         metric_configs=metric_configs,
-                        ts_start=ts_start,
-                        ts_end=ts_end,
+                        ts_start=ts_start_dt,
+                        ts_end=ts_end_dt,
                         query_trend_fn=query_trend_data,
                         type_weights=type_weights,
                     )
@@ -208,8 +301,8 @@ async def _do_calculate() -> dict:
         "success": success_count,
         "inconclusive": inconclusive_count,
         "failed": failed_count,
-        "ts_start": ts_start.isoformat(),
-        "ts_end": ts_end.isoformat(),
+        "ts_start": ts_start_dt.isoformat(),
+        "ts_end": ts_end_dt.isoformat(),
     }
 
 
@@ -1372,6 +1465,7 @@ async def _save_snapshot(
 __all__ = [
     "ALGORITHM_VERSION",
     "AsyncTask",
+    "backfill_kpi_range",
     "calculate_daily_kpi",
     "calculate_hourly_kpi",
     "calculate_loop_kpi",
@@ -1526,6 +1620,240 @@ async def _do_calculate_single_node(
     if snap is None:
         return {"plantNodeId": plant_node_id, "status": "SKIPPED", "reason": "无下属回路数据"}
     return {"plantNodeId": plant_node_id, "status": "SUCCESS", "snapshot": snap}
+
+
+# ---------------------------------------------------------------------------
+# 回填任务（backfill_kpi_range）— 按小时窗口批量重算历史 KPI 快照
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.backfill_kpi_range",
+    bind=True,
+    base=AsyncTask,
+)
+def backfill_kpi_range(
+    self: AsyncTask,
+    ts_start: str,
+    ts_end: str,
+    loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+) -> dict:
+    """按小时窗口批量回填 KPI 快照（脚本/HTTP 触发）。
+
+    遍历 [ts_start, ts_end) 范围内的每个完整小时窗口，
+    对全量 ACTIVE/READY 回路计算 KPI，并同步触发节点级聚合。
+    幂等：相同 (loop_id, ts_start) 的快照会被 UPSERT 覆盖，可重复执行。
+
+    Args:
+        ts_start: 起始时间（ISO 8601，UTC）
+        ts_end: 结束时间（ISO 8601，UTC，不包含）
+        loop_ids: 回路 ID 过滤列表。None=全量；非空列表=仅这些回路；空列表=直接返回。
+        task_id: Redis 任务跟踪 ID（HTTP API 触发时传入）。
+    """
+    logger.info(
+        "KPI 回填任务开始, celery_id=%s, task_id=%s, range=%s~%s, loop_ids=%s",
+        self.request.id,
+        task_id or "(none)",
+        ts_start,
+        ts_end,
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
+
+    if task_id:
+        try:
+            self.run_async(_update_task_running(task_id))
+        except Exception:
+            logger.warning("更新任务 RUNNING 状态失败: task_id=%s", task_id, exc_info=True)
+
+    try:
+        result = self.run_async(_do_backfill(ts_start, ts_end, loop_ids=loop_ids, task_id=task_id))
+        logger.info("KPI 回填任务完成: %s", result)
+
+        if task_id:
+            try:
+                self.run_async(_update_task_success(task_id, result))
+            except Exception:
+                logger.warning("更新任务 SUCCESS 状态失败: task_id=%s", task_id, exc_info=True)
+
+        return result
+    except Exception as exc:
+        logger.exception("KPI 回填任务失败")
+
+        if task_id:
+            try:
+                self.run_async(_update_task_failed(task_id, str(exc)))
+            except Exception:
+                logger.warning("更新任务 FAILED 状态失败: task_id=%s", task_id, exc_info=True)
+        raise
+
+
+async def _update_task_running(task_id: str) -> None:
+    """将任务状态从 PENDING 更新为 RUNNING。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        current_stage="回填计算",
+        started_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_success(task_id: str, result: dict) -> None:
+    """将任务状态更新为 SUCCESS。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.SUCCESS,
+        progress=1.0,
+        current_stage="完成",
+        finished_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_failed(task_id: str, error_message: str) -> None:
+    """将任务状态更新为 FAILED。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.FAILED,
+        current_stage="失败",
+        error_message=error_message,
+        finished_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_progress(task_id: str, done: int, total: int) -> None:
+    """更新任务进度（每窗口完成后调用）。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    progress = done / total if total > 0 else 0.0
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        progress=progress,
+        loops_done=done,
+        current_stage=f"回填计算 [{done}/{total}]",
+    )
+
+
+async def _is_task_cancelled(task_id: str) -> bool:
+    """检查任务是否已被取消。"""
+    from app.core.redis import redis_client
+
+    raw = await redis_client.hget(f"task:{task_id}", "status")
+    if raw is None:
+        return False
+    return str(raw).upper() == "CANCELLED"
+
+
+async def _do_backfill(
+    ts_start: str,
+    ts_end: str,
+    loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+) -> dict:
+    """批量回填 async 逻辑：遍历小时窗口，每窗口全量回路计算 + 节点聚合。"""
+    start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
+    end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
+
+    windows: list[datetime] = []
+    cur = start_dt.replace(minute=0, second=0, microsecond=0)
+    while cur < end_dt:
+        windows.append(cur)
+        cur += timedelta(hours=1)
+
+    total = len(windows)
+
+    if loop_ids is not None and len(loop_ids) == 0:
+        return {
+            "total_windows": total,
+            "failed_windows": 0,
+            "loop_success": 0,
+            "loop_inconclusive": 0,
+            "loop_failed": 0,
+            "node_success": 0,
+            "failed_window_list": [],
+        }
+
+    logger.info(
+        "回填窗口数: %d (%s ~ %s), loop_ids=%s",
+        total,
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
+
+    agg_loop_success = 0
+    agg_loop_inconclusive = 0
+    agg_loop_failed = 0
+    agg_node_success = 0
+    failed_windows: list[str] = []
+
+    for i, w in enumerate(windows, 1):
+        if task_id:
+            try:
+                if await _is_task_cancelled(task_id):
+                    logger.info(
+                        "检测到取消标志，提前终止回填: task_id=%s, completed=%d/%d",
+                        task_id, i - 1, total,
+                    )
+                    return {
+                        "total_windows": total,
+                        "failed_windows": len(failed_windows),
+                        "loop_success": agg_loop_success,
+                        "loop_inconclusive": agg_loop_inconclusive,
+                        "loop_failed": agg_loop_failed,
+                        "node_success": agg_node_success,
+                        "failed_window_list": failed_windows,
+                        "cancelled": True,
+                        "completed_windows": i - 1,
+                    }
+            except Exception:
+                logger.warning("查询取消标志失败，继续执行: task_id=%s", task_id, exc_info=True)
+
+        try:
+            loop_result = await _do_calculate(ts_start=w.isoformat())
+            node_result = await _do_calculate_node_kpi()
+            agg_loop_success += loop_result.get("success", 0)
+            agg_loop_inconclusive += loop_result.get("inconclusive", 0)
+            agg_loop_failed += loop_result.get("failed", 0)
+            agg_node_success += node_result.get("success", 0)
+            logger.info(
+                "回填进度 [%d/%d] %s: loop_ok=%d, node_ok=%d",
+                i, total, w.isoformat(),
+                loop_result.get("success", 0),
+                node_result.get("success", 0),
+            )
+        except Exception as exc:  # noqa: BLE001
+            failed_windows.append(w.isoformat())
+            logger.warning("回填窗口 %s 失败: %s", w.isoformat(), exc)
+
+        if task_id:
+            try:
+                await _update_task_progress(task_id, i, total)
+            except Exception:
+                logger.warning(
+                    "更新任务进度失败: task_id=%s, window=%d/%d",
+                    task_id, i, total, exc_info=True,
+                )
+
+    return {
+        "total_windows": total,
+        "failed_windows": len(failed_windows),
+        "loop_success": agg_loop_success,
+        "loop_inconclusive": agg_loop_inconclusive,
+        "loop_failed": agg_loop_failed,
+        "node_success": agg_node_success,
+        "failed_window_list": failed_windows,
+    }
 
 
 # 节点级聚合不再使用独立 Beat 调度，改为回路级任务 _do_calculate() 完成后级联触发

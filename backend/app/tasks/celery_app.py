@@ -101,3 +101,14 @@ class AsyncTask(Task):
         except Exception:
             logger.exception("发送死信队列失败")
         super().on_failure(exc, task_id, args, kwargs, einfo)
+
+
+# v6.1 修复：显式导入任务模块，确保 Celery Beat 进程也能加载 beat_schedule。
+# include 参数只对 worker 生效，Beat 进程不会自动导入这些模块，
+# 导致 beat_schedule 中的定时调度计划（kpi-calc-hourly 等）不会被注册。
+# 必须放在 AsyncTask 类定义之后，避免循环导入。
+import app.tasks.aas_sync  # noqa: E402, F401
+import app.tasks.audit_archive  # noqa: E402, F401
+import app.tasks.diagnosis_engine  # noqa: E402, F401
+import app.tasks.kpi_calc  # noqa: E402, F401
+import app.tasks.report_generator  # noqa: E402, F401
