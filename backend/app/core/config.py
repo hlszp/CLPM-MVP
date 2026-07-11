@@ -117,7 +117,9 @@ class Settings(BaseSettings):
         if self.CELERY_BROKER_URL:
             return self.CELERY_BROKER_URL
         if self.REDIS_PASSWORD:
-            return f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/1"
+            return (
+                f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/1"
+            )
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/1"
 
     @property
@@ -126,7 +128,9 @@ class Settings(BaseSettings):
         if self.CELERY_RESULT_BACKEND:
             return self.CELERY_RESULT_BACKEND
         if self.REDIS_PASSWORD:
-            return f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/2"
+            return (
+                f"redis://:{quote_plus(self.REDIS_PASSWORD)}@{self.REDIS_HOST}:{self.REDIS_PORT}/2"
+            )
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/2"
 
     def validate_security(self) -> None:
@@ -149,7 +153,9 @@ class Settings(BaseSettings):
         # TDengine 密码校验（仅 DATA_SOURCE_TYPE=tdengine 时需要）
         if self.DATA_SOURCE_TYPE == "tdengine":
             if not self.TDENGINE_PASSWORD:
-                raise RuntimeError("生产环境必须通过环境变量 TDENGINE_PASSWORD 设置 TDengine 密码。")
+                raise RuntimeError(
+                    "生产环境必须通过环境变量 TDENGINE_PASSWORD 设置 TDengine 密码。"
+                )
             if self.TDENGINE_PASSWORD == _INSECURE_TD_PASSWORD:
                 raise RuntimeError("生产环境不得使用 TDengine 默认密码 taosdata。")
 
@@ -170,4 +176,3 @@ settings = Settings()
 
 # 启动时执行安全校验（仅生产环境）
 settings.validate_security()
-

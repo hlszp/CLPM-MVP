@@ -12,9 +12,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -112,15 +111,13 @@ async def query_realtime_auto_rate(
     if not loop_ids:
         return None
 
-    from app.core.tdengine import query_trend_data
     from app.models.loop import LoopTagMapping
     from app.models.loop_config import LoopModeMapping
     from app.models.tag import TagRegistry
 
     # --- 1. 批量查询投用定义，构建 {loop_id: set(auto_mode_values)} ---
     mm_result = await db.execute(
-        select(LoopModeMapping.loop_id, LoopModeMapping.mode_value)
-        .where(
+        select(LoopModeMapping.loop_id, LoopModeMapping.mode_value).where(
             LoopModeMapping.loop_id.in_(loop_ids),
             LoopModeMapping.is_auto.is_(True),
         )
@@ -186,7 +183,9 @@ async def query_realtime_auto_rate(
     rate = round(auto_count / valid_count * 100, 2)
     logger.debug(
         "[实时自控率] 有效回路=%d, 自动模式=%d, 实时自控率=%.2f%%",
-        valid_count, auto_count, rate,
+        valid_count,
+        auto_count,
+        rate,
     )
     return {
         "rate": Decimal(str(rate)),
@@ -259,11 +258,9 @@ async def aggregate_node_snapshot(
     ).label("auto_loop_count")
     total_count = func.count().label("cnt")
 
-    stmt = (
-        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
-        .select_from(
-            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id)
-            .outerjoin(LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level)
+    stmt = select(total_count, auto_loop_count, weight_sum_col, *weighted_cols).select_from(
+        subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
+            LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
         )
     )
     result = await db.execute(stmt)
@@ -272,7 +269,9 @@ async def aggregate_node_snapshot(
     if row.cnt == 0:
         logger.debug(
             "[节点级聚合] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照",
-            plant_node_id, ts_start, ts_end,
+            plant_node_id,
+            ts_start,
+            ts_end,
         )
         return None
 
@@ -303,8 +302,13 @@ async def aggregate_node_snapshot(
     logger.info(
         "[节点级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "
         "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, 定级=%s",
-        plant_node_id, row.cnt, auto_loop_count_val,
-        auto_loop_ratio, realtime_auto_rate, score_avg, status,
+        plant_node_id,
+        row.cnt,
+        auto_loop_count_val,
+        auto_loop_ratio,
+        realtime_auto_rate,
+        score_avg,
+        status,
     )
 
     return {
@@ -391,6 +395,7 @@ async def calculate_and_save_node_snapshot(
 
 def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None) -> dict:
     """快照对象转字典。"""
+
     def to_float(v):
         return float(v) if v is not None else None
 
@@ -469,8 +474,7 @@ async def get_node_trend(
             "metricKey": field,
             "metricName": name,
             "values": [
-                float(getattr(s, field)) if getattr(s, field) is not None else None
-                for s in snaps
+                float(getattr(s, field)) if getattr(s, field) is not None else None for s in snaps
             ],
         }
 
@@ -543,30 +547,33 @@ async def get_node_ranking(
 
     items = []
     for idx, row in enumerate(rows, start=1):
+
         def to_float(v):
             return float(v) if v is not None else None
 
-        items.append({
-            "rank": idx,
-            "plantNodeId": str(row.plant_node_id),
-            "plantNodeName": row.name,
-            "plantNodeType": row.type,
-            "tsStart": row.ts_start.isoformat() if row.ts_start else None,
-            "score": to_float(row.score),
-            "goodValueRate": to_float(row.good_value_rate),
-            "autoModeRate": to_float(row.auto_mode_rate),
-            "effectiveAutoRate": to_float(row.effective_auto_rate),
-            "steadyRate": to_float(row.steady_rate),
-            "accuracyRate": to_float(row.accuracy_rate),
-            "fastResponseRate": to_float(row.fast_rate),
-            "oscillationRate": to_float(row.oscillation_rate),
-            "saturationRate": to_float(row.saturation_rate),
-            "autoLoopRatio": to_float(row.auto_loop_ratio),
-            "realtimeAutoRate": to_float(row.realtime_auto_rate),
-            "loopCount": row.loop_count,
-            "status": row.status,
-            "algorithmVersion": row.algorithm_version,
-        })
+        items.append(
+            {
+                "rank": idx,
+                "plantNodeId": str(row.plant_node_id),
+                "plantNodeName": row.name,
+                "plantNodeType": row.type,
+                "tsStart": row.ts_start.isoformat() if row.ts_start else None,
+                "score": to_float(row.score),
+                "goodValueRate": to_float(row.good_value_rate),
+                "autoModeRate": to_float(row.auto_mode_rate),
+                "effectiveAutoRate": to_float(row.effective_auto_rate),
+                "steadyRate": to_float(row.steady_rate),
+                "accuracyRate": to_float(row.accuracy_rate),
+                "fastResponseRate": to_float(row.fast_rate),
+                "oscillationRate": to_float(row.oscillation_rate),
+                "saturationRate": to_float(row.saturation_rate),
+                "autoLoopRatio": to_float(row.auto_loop_ratio),
+                "realtimeAutoRate": to_float(row.realtime_auto_rate),
+                "loopCount": row.loop_count,
+                "status": row.status,
+                "algorithmVersion": row.algorithm_version,
+            }
+        )
     return items
 
 
@@ -577,9 +584,7 @@ async def get_nodes_overview(
 ) -> dict:
     """全厂总览：所有启用 KPI 评估的节点最新快照汇总。"""
     # 查询所有 is_kpi_enabled 的节点
-    node_result = await db.execute(
-        select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
-    )
+    node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
     enabled_nodes = node_result.scalars().all()
 
     if not enabled_nodes:
@@ -613,25 +618,28 @@ async def get_nodes_overview(
     status_dist: dict[str, int] = {}
     for row in rows:
         nid = str(row.plant_node_id)
+
         def to_float(v):
             return float(v) if v is not None else None
 
         status = row.status
         status_dist[status] = status_dist.get(status, 0) + 1
 
-        nodes.append({
-            "plantNodeId": nid,
-            "plantNodeName": node_name_map.get(nid),
-            "plantNodeType": node_type_map.get(nid),
-            "score": to_float(row.score),
-            "autoLoopRatio": to_float(row.auto_loop_ratio),
-            "realtimeAutoRate": to_float(row.realtime_auto_rate),
-            "steadyRate": to_float(row.steady_rate),
-            "effectiveAutoRate": to_float(row.effective_auto_rate),
-            "loopCount": row.loop_count,
-            "status": status,
-            "tsStart": row.ts_start.isoformat() if row.ts_start else None,
-        })
+        nodes.append(
+            {
+                "plantNodeId": nid,
+                "plantNodeName": node_name_map.get(nid),
+                "plantNodeType": node_type_map.get(nid),
+                "score": to_float(row.score),
+                "autoLoopRatio": to_float(row.auto_loop_ratio),
+                "realtimeAutoRate": to_float(row.realtime_auto_rate),
+                "steadyRate": to_float(row.steady_rate),
+                "effectiveAutoRate": to_float(row.effective_auto_rate),
+                "loopCount": row.loop_count,
+                "status": status,
+                "tsStart": row.ts_start.isoformat() if row.ts_start else None,
+            }
+        )
 
     # 按评分降序
     nodes.sort(key=lambda x: -(x["score"] or 0))
@@ -651,6 +659,7 @@ async def get_nodes_overview(
 
 def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None) -> dict:
     """监控快照对象转字典（兼容 hour/day/month 三种维度）。"""
+
     def to_float(v):
         return float(v) if v is not None else None
 
@@ -722,7 +731,6 @@ async def get_node_monitor_data(
             )
             .order_by(KpiNodeSnapshotHourly.ts_start.asc())
         )
-        time_col = "ts_start"
     elif dimension == "day":
         start_date = start.date() if isinstance(start, datetime) else start
         end_date = end.date() if isinstance(end, datetime) else end
@@ -735,9 +743,10 @@ async def get_node_monitor_data(
             )
             .order_by(KpiNodeSnapshotDaily.stat_date.asc())
         )
-        time_col = "stat_date"
     elif dimension == "month":
-        start_month = start.date().replace(day=1) if isinstance(start, datetime) else start.replace(day=1)
+        start_month = (
+            start.date().replace(day=1) if isinstance(start, datetime) else start.replace(day=1)
+        )
         end_month = end.date().replace(day=1) if isinstance(end, datetime) else end.replace(day=1)
         stmt = (
             select(KpiNodeSnapshotMonthly)
@@ -748,7 +757,6 @@ async def get_node_monitor_data(
             )
             .order_by(KpiNodeSnapshotMonthly.stat_month.asc())
         )
-        time_col = "stat_month"
     else:
         raise ValueError(f"不支持的维度: {dimension}，可选值: hour/day/month")
 

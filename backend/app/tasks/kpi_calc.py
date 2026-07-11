@@ -188,17 +188,24 @@ async def _load_engine_rules_from_db() -> dict:
 
     result = {}
     async with AsyncSessionLocal() as db:
-        stmt = select(EngineRule).where(EngineRule.rule_code.in_([
-            "EVAL_CALC_CYCLE",
-            "DATA_FETCH_WINDOW",
-            "SCHEDULE_CONCURRENCY",
-        ]))
+        stmt = select(EngineRule).where(
+            EngineRule.rule_code.in_(
+                [
+                    "EVAL_CALC_CYCLE",
+                    "DATA_FETCH_WINDOW",
+                    "SCHEDULE_CONCURRENCY",
+                ]
+            )
+        )
         rows = await db.execute(stmt)
         for rule in rows.scalars().all():
+            cycle_minutes = None
+            if rule.rule_code == "EVAL_CALC_CYCLE":
+                cycle_minutes = (rule.params or {}).get("cycle_minutes", 60)
             result[rule.rule_code] = {
                 "params": rule.params or {},
                 "is_enabled": rule.is_enabled if rule.is_enabled is not None else True,
-                "cycle_minutes": (rule.params or {}).get("cycle_minutes", 60) if rule.rule_code == "EVAL_CALC_CYCLE" else None,
+                "cycle_minutes": cycle_minutes,
             }
     return result
 
@@ -217,7 +224,9 @@ async def _do_calculate(ts_start: str | None = None) -> dict:
     now = datetime.now(UTC).replace(tzinfo=None)
     if ts_start:
         try:
-            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
         except ValueError:
             ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
         ts_end_dt = ts_start_dt + timedelta(hours=1)
@@ -246,6 +255,7 @@ async def _do_calculate(ts_start: str | None = None) -> dict:
 
         # 2.1 批量加载回路类型权重（v2 算法用）
         from app.services.loop_config import get_loop_type_weights_map
+
         type_weights = await get_loop_type_weights_map(db)
         logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
 
@@ -321,13 +331,13 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
         now = datetime.now(UTC).replace(tzinfo=None)
         if ts_start:
             try:
-                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
+                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                    tzinfo=None
+                )
             except ValueError:
                 ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
         else:
-            ts_start_dt = (now - timedelta(hours=1)).replace(
-                minute=0, second=0, microsecond=0
-            )
+            ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         ts_end_dt = ts_start_dt + timedelta(hours=1)
 
         metric_result = await db.execute(select(MetricConfig))
@@ -335,6 +345,7 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
 
         # 加载回路类型权重（v2 算法用）
         from app.services.loop_config import get_loop_type_weights_map
+
         type_weights = await get_loop_type_weights_map(db)
 
         snap = await _calculate_loop_kpi(
@@ -466,6 +477,7 @@ async def _calculate_loop_kpi(
     # 计算综合评分 — v2 按回路类型加权（对齐国标 GB/T 44693.2-2024）
     # P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R
     from app.services.loop_config import infer_score_type
+
     score_type = infer_score_type(loop.loop_type)
     score = _compute_composite_score_v2(kpi_values, type_weights, score_type)
 
@@ -630,9 +642,7 @@ def _align_timeseries(
                 "pv": pv,
                 "sp": _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values),
                 "op": _find_nearest_value(ts, op_ts_floats, op_map, op_values),
-                "mode": _find_nearest_value(
-                    ts, mode_ts_floats, mode_map, mode_values
-                ),
+                "mode": _find_nearest_value(ts, mode_ts_floats, mode_map, mode_values),
             }
         )
     return aligned
@@ -684,11 +694,7 @@ def _compute_kpis(
 
     # 自控率：sum(mode in [Auto, Cascade]) / count(*) * 100
     # mode 值：0=Manual, 1=Auto, 2/3=Cascade
-    auto_count = sum(
-        1
-        for d in aligned
-        if d.get("mode") is not None and _is_auto_mode(d["mode"])
-    )
+    auto_count = sum(1 for d in aligned if d.get("mode") is not None and _is_auto_mode(d["mode"]))
     auto_mode_rate = Decimal(auto_count) / Decimal(total) * Decimal("100")
 
     # 有效自控率 R = AutoRealTime / AllTime × 100
@@ -714,9 +720,7 @@ def _compute_kpis(
     # 公式: S = max(0, (1-Osc-k×σ_norm)/(1-Osc)) × 100
     # 其中: σ_norm = σ/U (偏差标准差/量程), Osc = 振荡率(0-1), k=10
     pv_sp_pairs = [
-        (d["pv"], d["sp"])
-        for d in aligned
-        if d.get("pv") is not None and d.get("sp") is not None
+        (d["pv"], d["sp"]) for d in aligned if d.get("pv") is not None and d.get("sp") is not None
     ]
     if pv_sp_pairs:
         errors = [pv - sp for pv, sp in pv_sp_pairs]
@@ -734,10 +738,13 @@ def _compute_kpis(
         sigma_norm = sigma / sp_span
         k = 10.0
         if osc_ratio < 1.0:
-            steady_val = max(
-                0.0,
-                (1.0 - osc_ratio - k * sigma_norm) / (1.0 - osc_ratio),
-            ) * 100
+            steady_val = (
+                max(
+                    0.0,
+                    (1.0 - osc_ratio - k * sigma_norm) / (1.0 - osc_ratio),
+                )
+                * 100
+            )
         else:
             steady_val = 0.0
         steady_rate = Decimal(str(steady_val))
@@ -747,8 +754,12 @@ def _compute_kpis(
         logger.debug(
             "[平稳率] σ=%.6f, U(sp_span)=%.4f, σ_norm=%.6f, "
             "osc_ratio=%.4f, k=%.1f, steady_rate=%.2f",
-            sigma, sp_span, sigma_norm,
-            osc_ratio, k, float(steady_rate),
+            sigma,
+            sp_span,
+            sigma_norm,
+            osc_ratio,
+            k,
+            float(steady_rate),
         )
     else:
         steady_rate = None
@@ -771,9 +782,9 @@ def _compute_kpis(
 
         # ── 日志：记录准确率中间计算值 ──
         logger.debug(
-            "[准确率] |Ē|=%.6f, |E|max=%.6f, "
-            "比值=%.4f, accuracy_rate=%.2f",
-            mean_abs_error, max_abs_error,
+            "[准确率] |Ē|=%.6f, |E|max=%.6f, 比值=%.4f, accuracy_rate=%.2f",
+            mean_abs_error,
+            max_abs_error,
             mean_abs_error / max_abs_error if max_abs_error > 0 else 0.0,
             float(accuracy_rate),
         )
@@ -791,9 +802,7 @@ def _compute_kpis(
 
     # 饱和率：duration(op >= 95 OR op <= 5) / duration(*) * 100
     saturation_count = sum(
-        1
-        for d in aligned
-        if d.get("op") is not None and (d["op"] >= 95 or d["op"] <= 5)
+        1 for d in aligned if d.get("op") is not None and (d["op"] >= 95 or d["op"] <= 5)
     )
     saturation_rate = Decimal(saturation_count) / Decimal(total) * Decimal("100")
 
@@ -880,7 +889,10 @@ def _calc_stiction_coeff(
 
     logger.debug(
         "[黏滞系数] OP 点数=%d, 方向变化次数=%d, reversal_rate=%.4f, stiction=%.2f",
-        n, direction_changes, reversal_rate, stiction,
+        n,
+        direction_changes,
+        reversal_rate,
+        stiction,
     )
     return _quantize(Decimal(str(stiction)))
 
@@ -926,7 +938,9 @@ def _calc_steady_state_time(
 
     # 计算时间窗时长（秒）：优先用时间戳差值，无法解析时按点数 × 1s 兜底
     ts_floats = [p[0] for p in pairs]
-    window_duration = max(ts_floats) - min(ts_floats) if max(ts_floats) > min(ts_floats) else len(pairs) * 1.0
+    window_duration = (
+        max(ts_floats) - min(ts_floats) if max(ts_floats) > min(ts_floats) else len(pairs) * 1.0
+    )
 
     # PV 量程兜底（SP 为 0 时用）
     pv_vals = [p[1] for p in pairs]
@@ -946,7 +960,10 @@ def _calc_steady_state_time(
 
     logger.debug(
         "[稳态时间] 对齐点数=%d, in_band=%d, window=%.1fs, steady_time=%.2f",
-        len(pairs), in_band, window_duration, steady_time,
+        len(pairs),
+        in_band,
+        window_duration,
+        steady_time,
     )
     return _quantize(Decimal(str(steady_time)))
 
@@ -984,7 +1001,9 @@ def _calc_output_travel_index(op_data: list[dict]) -> Decimal | None:
 
     # 时间窗时长（秒）
     ts_floats = [p[0] for p in op_points]
-    window_duration = max(ts_floats) - min(ts_floats) if max(ts_floats) > min(ts_floats) else len(op_points) * 1.0
+    window_duration = (
+        max(ts_floats) - min(ts_floats) if max(ts_floats) > min(ts_floats) else len(op_points) * 1.0
+    )
 
     # 理论最大变化率：OP 范围 0-100，每秒最大变化 100
     theoretical_max_rate = 100.0
@@ -996,7 +1015,10 @@ def _calc_output_travel_index(op_data: list[dict]) -> Decimal | None:
 
     logger.debug(
         "[行程指数] OP 点数=%d, total_travel=%.4f, window=%.1fs, travel_index=%.2f",
-        len(op_points), total_travel, window_duration, travel_index,
+        len(op_points),
+        total_travel,
+        window_duration,
+        travel_index,
     )
     return _quantize(Decimal(str(travel_index)))
 
@@ -1042,8 +1064,9 @@ def _compute_oscillation_rate(
     Returns:
         (oscillation_rate, is_oscillating, oscillation_period)
     """
-    pv_sp = [(d["pv"], d["sp"]) for d in aligned
-             if d.get("pv") is not None and d.get("sp") is not None]
+    pv_sp = [
+        (d["pv"], d["sp"]) for d in aligned if d.get("pv") is not None and d.get("sp") is not None
+    ]
     n = len(pv_sp)
 
     logger.debug("[振荡率] 输入: 总点数=%d, 有效PV-SP对=%d", len(aligned), n)
@@ -1095,7 +1118,7 @@ def _compute_oscillation_rate(
             return 0.0
         arr = np.array(values)
         best_j = 0
-        best_dist = float('inf')
+        best_dist = float("inf")
         for j in range(len(arr)):
             dist = float(np.sum((arr - arr[j]) ** 2))
             if dist < best_dist:
@@ -1120,14 +1143,18 @@ def _compute_oscillation_rate(
 
     period = None
     if is_osc and len(zero_crossings) >= 3:
-        intervals = [zero_crossings[i + 1] - zero_crossings[i]
-                     for i in range(len(zero_crossings) - 1)]
+        intervals = [
+            zero_crossings[i + 1] - zero_crossings[i] for i in range(len(zero_crossings) - 1)
+        ]
         period = float(np.median(intervals)) * 2
 
     logger.debug(
         "[振荡率] s_a(正面积相似率)=%.4f, s_b(负面积相似率)=%.4f, "
         "osc_rate=%.2f, is_osc=%s, period=%s",
-        s_a, s_b, osc_value, is_osc,
+        s_a,
+        s_b,
+        osc_value,
+        is_osc,
         f"{period:.1f}s" if period else "None",
     )
 
@@ -1151,8 +1178,9 @@ def _compute_fast_response_rate(
     """
     from app.tasks.arma import compute_ideal_settling_time, compute_settling_time
 
-    pv_sp = [(d["pv"], d["sp"]) for d in aligned
-             if d.get("pv") is not None and d.get("sp") is not None]
+    pv_sp = [
+        (d["pv"], d["sp"]) for d in aligned if d.get("pv") is not None and d.get("sp") is not None
+    ]
 
     logger.debug("[快速率] 输入: 点数=%d, pv_range=%.4f", len(pv_sp), pv_range)
 
@@ -1183,7 +1211,9 @@ def _compute_fast_response_rate(
 
     logger.debug(
         "[快速率] 理想稳态时间=%.1f, 实际=%.1f, fast_rate=%.2f",
-        ideal_settling, actual_settling, fast_rate,
+        ideal_settling,
+        actual_settling,
+        fast_rate,
     )
 
     return _quantize(Decimal(str(fast_rate)))
@@ -1214,9 +1244,9 @@ def _compute_composite_score(
 
     # 国标 4 分项指标（全部为"越高越好"，无需反向归一化）
     score_metrics = (
-        "accuracy_rate",        # A 准确率
-        "fast_response_rate",   # F 快速率
-        "steady_rate",          # S 平稳率
+        "accuracy_rate",  # A 准确率
+        "fast_response_rate",  # F 快速率
+        "steady_rate",  # S 平稳率
         "effective_auto_rate",  # R 有效自控率
     )
 
@@ -1243,14 +1273,16 @@ def _compute_composite_score(
         if not isinstance(value, Decimal):
             logger.debug(
                 "[综合评分] 指标 %s: value 非 Decimal（%s），转换为 Decimal",
-                code, type(value).__name__,
+                code,
+                type(value).__name__,
             )
             value = Decimal(str(value))
         w = config.weight
         if not isinstance(w, Decimal):
             logger.debug(
                 "[综合评分] 指标 %s: weight 非 Decimal（%s），转换为 Decimal",
-                code, type(w).__name__,
+                code,
+                type(w).__name__,
             )
             w = Decimal(str(w))
         # 归一化到 [0, 1]（4 指标均为正向：值/100）
@@ -1276,10 +1308,11 @@ def _compute_composite_score(
     score = weighted_sum / weight_total * Decimal("100")
     # 精度日志：记录 weighted_sum 和 weight_total 的有效精度位数
     logger.debug(
-        "[综合评分] weighted_sum=%s (digits=%d), weight_total=%s (digits=%d), "
-        "score=%.6f",
-        weighted_sum, len(weighted_sum.as_tuple().digits),
-        weight_total, len(weight_total.as_tuple().digits),
+        "[综合评分] weighted_sum=%s (digits=%d), weight_total=%s (digits=%d), score=%.6f",
+        weighted_sum,
+        len(weighted_sum.as_tuple().digits),
+        weight_total,
+        len(weight_total.as_tuple().digits),
         float(score),
     )
 
@@ -1320,9 +1353,7 @@ def _compute_composite_score_v2(
     """
     # 回退：无类型权重配置时用 v1 的平等加权
     if not type_weights or score_type not in type_weights:
-        logger.debug(
-            "[综合评分v2] score_type=%s 无权重配置，回退平等加权", score_type
-        )
+        logger.debug("[综合评分v2] score_type=%s 无权重配置，回退平等加权", score_type)
         # 平等加权：a=f=s=1/3，R 作为乘数
         a = f = s = Decimal("0.3333")
     else:
@@ -1338,7 +1369,14 @@ def _compute_composite_score_v2(
 
     logger.debug(
         "[综合评分v2] score_type=%s, a=%s, f=%s, s=%s, A=%s, F=%s, S=%s, R=%s",
-        score_type, a, f, s, A, F, S, R,
+        score_type,
+        a,
+        f,
+        s,
+        A,
+        F,
+        S,
+        R,
     )
 
     # 计算加权分子：(A*a + F*f + S*s)，缺失指标按 0 处理
@@ -1516,7 +1554,9 @@ def calculate_node_kpi_hourly(self: AsyncTask) -> dict:
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def calculate_node_kpi(plant_node_id: str, ts_start: str | None = None, ts_end: str | None = None) -> dict:
+def calculate_node_kpi(
+    plant_node_id: str, ts_start: str | None = None, ts_end: str | None = None
+) -> dict:
     """单节点 KPI 聚合（可手动触发，支持指定时间段）。
 
     Args:
@@ -1524,8 +1564,9 @@ def calculate_node_kpi(plant_node_id: str, ts_start: str | None = None, ts_end: 
         ts_start: 起始时间（ISO 8601），None 表示上一个完整小时
         ts_end: 结束时间（ISO 8601），None 表示 ts_start + 1 小时
     """
-    logger.info("单节点 KPI 聚合, plant_node_id=%s, ts_start=%s, ts_end=%s",
-                plant_node_id, ts_start, ts_end)
+    logger.info(
+        "单节点 KPI 聚合, plant_node_id=%s, ts_start=%s, ts_end=%s", plant_node_id, ts_start, ts_end
+    )
     return AsyncTask().run_async(_do_calculate_single_node(plant_node_id, ts_start, ts_end))
 
 
@@ -1542,9 +1583,7 @@ async def _do_calculate_node_kpi() -> dict:
 
     async with AsyncSessionLocal() as db:
         # 查询所有启用 KPI 评估的节点
-        node_result = await db.execute(
-            select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
-        )
+        node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
         nodes = list(node_result.scalars().all())
 
         if not nodes:
@@ -1594,7 +1633,9 @@ async def _do_calculate_single_node(
     now = datetime.now(UTC).replace(tzinfo=None)
     if ts_start:
         try:
-            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
         except ValueError:
             ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
     else:
@@ -1803,7 +1844,9 @@ async def _do_backfill(
                 if await _is_task_cancelled(task_id):
                     logger.info(
                         "检测到取消标志，提前终止回填: task_id=%s, completed=%d/%d",
-                        task_id, i - 1, total,
+                        task_id,
+                        i - 1,
+                        total,
                     )
                     return {
                         "total_windows": total,
@@ -1828,7 +1871,9 @@ async def _do_backfill(
             agg_node_success += node_result.get("success", 0)
             logger.info(
                 "回填进度 [%d/%d] %s: loop_ok=%d, node_ok=%d",
-                i, total, w.isoformat(),
+                i,
+                total,
+                w.isoformat(),
                 loop_result.get("success", 0),
                 node_result.get("success", 0),
             )
@@ -1842,7 +1887,10 @@ async def _do_backfill(
             except Exception:
                 logger.warning(
                     "更新任务进度失败: task_id=%s, window=%d/%d",
-                    task_id, i, total, exc_info=True,
+                    task_id,
+                    i,
+                    total,
+                    exc_info=True,
                 )
 
     return {
@@ -1913,7 +1961,8 @@ def calculate_monthly_kpi(self: AsyncTask, stat_month: str | None = None) -> dic
     写入 kpi_node_snapshot_monthly。
 
     Args:
-        stat_month: 统计月份（ISO 8601，月初），None 表示上个月（Beat 1 日 00:10 触发时聚合上个月数据）
+        stat_month: 统计月份（ISO 8601，月初），None 表示上个月
+            （Beat 1 日 00:10 触发时聚合上个月数据）
     """
     logger.info("节点级月聚合任务开始, task_id=%s, stat_month=%s", self.request.id, stat_month)
     try:

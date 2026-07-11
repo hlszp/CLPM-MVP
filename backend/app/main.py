@@ -25,6 +25,8 @@ from app.api.v1.endpoints import (
     algorithms,
     audit_logs,
     auth,
+    # v6.1: 数据可信度阈值配置
+    confidence_config,
     configs,
     dashboard,
     dataplanner,
@@ -33,8 +35,6 @@ from app.api.v1.endpoints import (
     dcs,
     diagnosis,
     grading_config,
-    # v6.1: 数据可信度阈值配置
-    confidence_config,
     health,
     loop_level_weight,
     loop_mode_mapping,

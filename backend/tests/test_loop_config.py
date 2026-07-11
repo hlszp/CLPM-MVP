@@ -29,7 +29,6 @@ from app.services.node_performance import (
 )
 from app.tasks.kpi_calc import _compute_composite_score_v2
 
-
 # ===========================================================================
 # 辅助函数：构造 mock 对象
 # ===========================================================================
@@ -152,9 +151,7 @@ class TestModeMappingCRUD:
         """全量替换成功（3 条映射）。"""
         db = AsyncMock()
         # 1st execute: 查询旧数据（空）；2nd execute: delete（返回值不使用）
-        db.execute = AsyncMock(
-            side_effect=[_make_scalars_mock([]), MagicMock()]
-        )
+        db.execute = AsyncMock(side_effect=[_make_scalars_mock([]), MagicMock()])
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -344,17 +341,20 @@ class TestComputeCompositeScoreV2:
 class TestInferScoreType:
     """工艺类型→评分类型映射测试。"""
 
-    @pytest.mark.parametrize("loop_type,expected", [
-        ("TEMPERATURE", "STABLE"),
-        ("PRESSURE", "STABLE"),
-        ("LEVEL", "SLOW"),
-        ("ANALYSIS", "SLOW"),
-        ("FLOW", "FAST"),
-        ("SPEED", "FAST"),
-        ("OTHER", "LOGIC"),
-        (None, "LOGIC"),
-        ("UNKNOWN", "LOGIC"),
-    ])
+    @pytest.mark.parametrize(
+        "loop_type,expected",
+        [
+            ("TEMPERATURE", "STABLE"),
+            ("PRESSURE", "STABLE"),
+            ("LEVEL", "SLOW"),
+            ("ANALYSIS", "SLOW"),
+            ("FLOW", "FAST"),
+            ("SPEED", "FAST"),
+            ("OTHER", "LOGIC"),
+            (None, "LOGIC"),
+            ("UNKNOWN", "LOGIC"),
+        ],
+    )
     def test_infer_score_type(self, loop_type: str | None, expected: str) -> None:
         """工艺类型→评分类型映射（TEMPERATURE→STABLE 等）。"""
         assert infer_score_type(loop_type) == expected
@@ -496,9 +496,7 @@ class TestRealtimeAutoRate:
             MagicMock(loop_id="loop-001", tag_name="TAG_001"),
             MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        db.execute = AsyncMock(
-            side_effect=[_make_rows_mock(mm_rows), _make_rows_mock(tag_rows)]
-        )
+        db.execute = AsyncMock(side_effect=[_make_rows_mock(mm_rows), _make_rows_mock(tag_rows)])
 
         async def _mock_query_trend(tag_name: str, start: str, end: str):
             if tag_name == "TAG_001":
@@ -534,9 +532,7 @@ class TestRealtimeAutoRate:
             MagicMock(loop_id="loop-001", tag_name="TAG_001"),
             MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        db.execute = AsyncMock(
-            side_effect=[_make_rows_mock([]), _make_rows_mock(tag_rows)]
-        )
+        db.execute = AsyncMock(side_effect=[_make_rows_mock([]), _make_rows_mock(tag_rows)])
 
         async def _mock_query_trend(tag_name: str, start: str, end: str):
             if tag_name == "TAG_001":

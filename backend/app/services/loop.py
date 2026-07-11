@@ -264,7 +264,11 @@ async def _get_control_mode_stats(
                         pass
 
         # 映射到 0-4，超出范围归为 Unknown（不计入）
-        key = str(int(mode_val)) if mode_val is not None and mode_val in (0, 1, 2, 3, 4) else "unknown"
+        key = (
+            str(int(mode_val))
+            if mode_val is not None and mode_val in (0, 1, 2, 3, 4)
+            else "unknown"
+        )
         if key in stats:
             stats[key] += 1
 

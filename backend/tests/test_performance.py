@@ -637,8 +637,12 @@ class TestWeightSumValidator:
         # 不抛异常即通过
         WeightSumValidator.validate(
             [
-                Decimal("20"), Decimal("20"), Decimal("20"),
-                Decimal("15"), Decimal("15"), Decimal("10"),
+                Decimal("20"),
+                Decimal("20"),
+                Decimal("20"),
+                Decimal("15"),
+                Decimal("15"),
+                Decimal("10"),
             ]
         )
 
@@ -710,9 +714,7 @@ class TestKpiCalcEngine:
 
         # 构造 4 分项指标配置（对齐 GB/T 44693.2-2024）
         configs = {
-            "accuracy_rate": _make_metric_config(
-                metric_code="accuracy_rate", weight=Decimal("30")
-            ),
+            "accuracy_rate": _make_metric_config(metric_code="accuracy_rate", weight=Decimal("30")),
             "fast_response_rate": _make_metric_config(
                 metric_id="id2",
                 metric_code="fast_response_rate",
@@ -802,8 +804,7 @@ class TestKpiCalcEngine:
 
         # 交替变化 → 振荡（PV 围绕 SP 上下波动，产生正负交替偏差）
         aligned_osc = [
-            {"pv": v, "sp": 0.0}
-            for v in [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0]
+            {"pv": v, "sp": 0.0} for v in [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0]
         ]
         osc_rate, is_osc, _ = _compute_oscillation_rate(aligned_osc)
         assert osc_rate > 0
@@ -887,8 +888,7 @@ class TestKpiCalcEngine:
 
         # 微小幅度交替变化（噪声级），零交叉点不足或相似率低
         aligned_noise = [
-            {"pv": v, "sp": 50.0}
-            for v in [50.0, 50.001, 50.0, 50.001, 50.0, 50.001, 50.0]
+            {"pv": v, "sp": 50.0} for v in [50.0, 50.001, 50.0, 50.001, 50.0, 50.001, 50.0]
         ]
         osc_rate, _, _ = _compute_oscillation_rate(aligned_noise)
         # 噪声级振荡不应被判定为严重振荡
@@ -930,9 +930,7 @@ class TestKpiCalcEngine:
 
         from app.tasks.kpi_calc import _compute_kpis
 
-        aligned = [
-            {"ts": "t0", "pv": 50.0, "sp": 50.0, "op": 50.0, "mode": 1}
-        ]
+        aligned = [{"ts": "t0", "pv": 50.0, "sp": 50.0, "op": 50.0, "mode": 1}]
         kpis = _compute_kpis(aligned, {}, good_value_rate=None)
         assert kpis["good_value_rate"] == Decimal("100.00")
 
