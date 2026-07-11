@@ -127,8 +127,8 @@ async def _do_calculate() -> dict:
     from app.core.db import AsyncSessionLocal
     from app.core.tdengine import query_trend_data
 
-    # 计算时间窗（上一个完整小时）
-    now = datetime.now(UTC)
+    # 计算时间窗（上一个完整小时）— naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
+    now = datetime.now(UTC).replace(tzinfo=None)
     ts_end = now.replace(minute=0, second=0, microsecond=0)
     ts_start = ts_end - timedelta(hours=1)
 
@@ -224,13 +224,13 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
         if loop is None:
             return {"loopId": loop_id, "status": "FAILED", "error": "回路不存在"}
 
-        # 时间窗
-        now = datetime.now(UTC)
+        # 时间窗 — naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
+        now = datetime.now(UTC).replace(tzinfo=None)
         if ts_start:
             try:
-                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
             except ValueError:
-                ts_start_dt = datetime.fromisoformat(ts_start)
+                ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
         else:
             ts_start_dt = (now - timedelta(hours=1)).replace(
                 minute=0, second=0, microsecond=0
@@ -1327,12 +1327,12 @@ async def _save_snapshot(
         existing.effective_auto_rate = effective_auto_rate
         existing.steady_rate = steady_rate
         existing.accuracy_rate = accuracy_rate
-        existing.fast_response_rate = fast_response_rate
+        existing.fast_rate = fast_response_rate
         existing.oscillation_rate = oscillation_rate
         existing.saturation_rate = saturation_rate
-        existing.stiction_coeff = stiction_coeff
-        existing.steady_state_time = steady_state_time
-        existing.output_travel_index = output_travel_index
+        existing.stiction_index = stiction_coeff
+        existing.settling_time = steady_state_time
+        existing.output_trip_index = output_travel_index
         snapshot_id = str(existing.id)
     else:
         # 新增记录
@@ -1349,12 +1349,12 @@ async def _save_snapshot(
             effective_auto_rate=effective_auto_rate,
             steady_rate=steady_rate,
             accuracy_rate=accuracy_rate,
-            fast_response_rate=fast_response_rate,
+            fast_rate=fast_response_rate,
             oscillation_rate=oscillation_rate,
             saturation_rate=saturation_rate,
-            stiction_coeff=stiction_coeff,
-            steady_state_time=steady_state_time,
-            output_travel_index=output_travel_index,
+            stiction_index=stiction_coeff,
+            settling_time=steady_state_time,
+            output_trip_index=output_travel_index,
         )
         db.add(snapshot)
 
@@ -1441,8 +1441,8 @@ async def _do_calculate_node_kpi() -> dict:
     from app.models.plant_node import PlantNode
     from app.services.node_performance import calculate_and_save_node_snapshot
 
-    # 时间窗：上一个完整小时（与回路级一致）
-    now = datetime.now(UTC)
+    # 时间窗：上一个完整小时（与回路级一致）— naive UTC
+    now = datetime.now(UTC).replace(tzinfo=None)
     ts_end = now.replace(minute=0, second=0, microsecond=0)
     ts_start = ts_end - timedelta(hours=1)
 
@@ -1497,20 +1497,20 @@ async def _do_calculate_single_node(
     from app.core.db import AsyncSessionLocal
     from app.services.node_performance import calculate_and_save_node_snapshot
 
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     if ts_start:
         try:
-            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
         except ValueError:
-            ts_start_dt = datetime.fromisoformat(ts_start)
+            ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
     else:
         ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
 
     if ts_end:
         try:
-            ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+            ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
         except ValueError:
-            ts_end_dt = datetime.fromisoformat(ts_end)
+            ts_end_dt = datetime.fromisoformat(ts_end).replace(tzinfo=None)
     else:
         ts_end_dt = ts_start_dt + timedelta(hours=1)
 
@@ -1610,7 +1610,7 @@ async def _do_calculate_daily(stat_date: str | None = None) -> dict:
         except ValueError:
             stat_date_dt = date.fromisoformat(stat_date)
     else:
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         stat_date_dt = (now - timedelta(days=1)).date()
 
     return await aggregate_all_nodes_daily(stat_date_dt)
@@ -1631,7 +1631,7 @@ async def _do_calculate_monthly(stat_month: str | None = None) -> dict:
         # 规范化为月初
         stat_month_dt = stat_month_dt.replace(day=1)
     else:
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         # 上个月月初
         if now.month == 1:
             stat_month_dt = date(now.year - 1, 12, 1)

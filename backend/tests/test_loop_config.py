@@ -123,7 +123,7 @@ def _make_agg_row(
     row.effective_auto_rate = Decimal("85.00")
     row.steady_rate = Decimal("80.00")
     row.accuracy_rate = Decimal("78.00")
-    row.fast_response_rate = Decimal("82.00")
+    row.fast_rate = Decimal("82.00")
     row.oscillation_rate = Decimal("15.00")
     row.saturation_rate = Decimal("8.00")
     return row

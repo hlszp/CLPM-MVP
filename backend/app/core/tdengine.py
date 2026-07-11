@@ -476,9 +476,9 @@ def _parse_ts_str(ts_str: str) -> datetime:
         return datetime.fromtimestamp(epoch, tz=None)
     except (ValueError, TypeError):
         pass
-    # 尝试 ISO 8601
+    # 尝试 ISO 8601 — strip tzinfo 保持 naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
     except (ValueError, TypeError):
         pass
     logger.warning("适配器: 无法解析时间戳 %r，使用当前时间兜底", s)
