@@ -360,22 +360,36 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
         elif celery_state in ("FAILURE", "REVOKED"):
             failed += 1
 
-    progress = done / total if total > 0 else 0.0
-    updates: dict[str, str] = {"progress": str(round(progress, 4))}
+    # 判断是否所有子任务都已到达终态
+    all_finished = (done + failed) == total
+    has_running = done == 0 and failed == 0
 
-    if done == total:
-        updates["status"] = TaskStatus.SUCCESS.value
-        updates["finished_at"] = _now_iso()
-        updates["progress"] = "1.0"
-    elif failed > 0 and (done + failed) == total:
-        updates["status"] = TaskStatus.FAILED.value
-        updates["finished_at"] = _now_iso()
-        updates["error_message"] = f"{failed}/{total} 子任务失败"
-    elif done > 0 or failed > 0:
+    # 仅在所有子任务完成时计算最终进度，避免覆盖 Celery 任务自身
+    # 通过 _update_task_progress 写入的中间进度值（progress/loops_done/current_stage）。
+    # 对于单 Celery 任务的场景（STANDARD/BACKFILL），中间进度由任务内部更新。
+    updates: dict[str, str] = {}
+
+    if all_finished:
+        progress = done / total if total > 0 else 0.0
+        updates["progress"] = str(round(progress, 4))
+        if done == total:
+            updates["status"] = TaskStatus.SUCCESS.value
+            updates["finished_at"] = _now_iso()
+            updates["progress"] = "1.0"
+        elif failed > 0:
+            updates["status"] = TaskStatus.FAILED.value
+            updates["finished_at"] = _now_iso()
+            updates["error_message"] = f"{failed}/{total} 子任务失败"
+    elif has_running:
+        # 所有子任务仍在运行，仅确保状态为 RUNNING（不覆盖 progress）
         updates["status"] = TaskStatus.RUNNING.value
         if not data.get("started_at"):
             updates["started_at"] = _now_iso()
-        updates["loops_done"] = str(done)
+    else:
+        # 部分完成部分运行，仅确保状态为 RUNNING（不覆盖 progress）
+        updates["status"] = TaskStatus.RUNNING.value
+        if not data.get("started_at"):
+            updates["started_at"] = _now_iso()
 
     if updates:
         await redis_client.hset(_task_key(task_id), mapping=updates)
