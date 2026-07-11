@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Integer, func, select
+from sqlalchemy import Integer, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -1398,12 +1398,19 @@ async def list_loop_snapshots(
 
     if latest_only:
         # 使用窗口函数取每个回路最新一条评估记录
-        # 子查询：对所有符合条件的快照按 loop_id 分组编号
+        # 优先返回非 INCONCLUSIVE（有实际评估结果）的记录；
+        # 如果某回路只有 INCONCLUSIVE 记录，则返回最新的 INCONCLUSIVE。
+        # 实现：按 loop_id 分组，先按 status 优先级排序（SUCCESS/PARTIAL 优先于 INCONCLUSIVE），
+        # 再按 ts_start DESC，取 rn=1。
         rn_col = (
             func.row_number()
             .over(
                 partition_by=KpiSnapshotHourly.loop_id,
-                order_by=KpiSnapshotHourly.ts_start.desc(),
+                order_by=[
+                    # CASE: status != 'INCONCLUSIVE' 排在前面
+                    case((KpiSnapshotHourly.status != "INCONCLUSIVE", 0), else_=1).asc(),
+                    KpiSnapshotHourly.ts_start.desc(),
+                ],
             )
             .label("rn")
         )
