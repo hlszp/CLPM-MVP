@@ -1345,6 +1345,8 @@ async def list_loop_snapshots(
     end: datetime | None = None,
     status_filter: str | None = None,
     confidence_level: str | None = None,
+    loop_tag_name: str | None = None,
+    latest_only: bool = True,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[tuple[KpiSnapshotHourly, str | None]], int]:
@@ -1358,6 +1360,9 @@ async def list_loop_snapshots(
         end: 结束时间（按 ts_start 过滤）；None=当前时间
         status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL）
         confidence_level: 可信度等级过滤（A/B/C/D/E）
+        loop_tag_name: 回路编号模糊匹配（ILIKE %keyword%）
+        latest_only: True=每个回路只返回最新一条评估记录（默认）；
+            False=返回所有快照（用于历史趋势/诊断历史）
         page: 页码（1-based）
         page_size: 每页条数
 
@@ -1373,42 +1378,86 @@ async def list_loop_snapshots(
     if end is None:
         end = datetime.now(UTC).replace(tzinfo=None)
 
-    # 构建列表查询（join LoopLedger 获取 tag_name）
-    stmt = (
-        select(KpiSnapshotHourly, LoopLedger.tag_name)
-        .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
-        .where(KpiSnapshotHourly.ts_start >= start)
-        .where(KpiSnapshotHourly.ts_start <= end)
-    )
-    if loop_ids:
-        stmt = stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+    # 递归展开 plant_node_ids（包含子节点）
+    expanded_node_ids: list[str] | None = None
     if plant_node_ids:
-        stmt = stmt.where(LoopLedger.unit_id.in_(plant_node_ids))
-    if status_filter:
-        stmt = stmt.where(KpiSnapshotHourly.status == status_filter)
-    if confidence_level:
-        stmt = stmt.where(KpiSnapshotHourly.confidence_level == confidence_level)
+        from app.services.loop import _get_descendant_node_ids
 
-    # count 查询（不加 limit/offset）
-    count_stmt = select(func.count()).select_from(KpiSnapshotHourly).where(
+        expanded_node_ids = list(plant_node_ids)
+        for nid in plant_node_ids:
+            descendants = await _get_descendant_node_ids(db, nid)
+            expanded_node_ids.extend(descendants)
+
+    # 构建基础 WHERE 条件列表
+    base_conditions: list = [
         KpiSnapshotHourly.ts_start >= start,
         KpiSnapshotHourly.ts_start <= end,
-    )
+    ]
     if loop_ids:
-        count_stmt = count_stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
-    if plant_node_ids:
-        count_stmt = count_stmt.join(
-            LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id
-        ).where(LoopLedger.unit_id.in_(plant_node_ids))
+        base_conditions.append(KpiSnapshotHourly.loop_id.in_(loop_ids))
+    if expanded_node_ids:
+        base_conditions.append(LoopLedger.unit_id.in_(expanded_node_ids))
     if status_filter:
-        count_stmt = count_stmt.where(KpiSnapshotHourly.status == status_filter)
+        base_conditions.append(KpiSnapshotHourly.status == status_filter)
     if confidence_level:
-        count_stmt = count_stmt.where(
+        base_conditions.append(
             KpiSnapshotHourly.confidence_level == confidence_level
         )
+    if loop_tag_name:
+        base_conditions.append(LoopLedger.tag_name.ilike(f"%{loop_tag_name}%"))
 
-    # 排序 + 分页
-    stmt = stmt.order_by(KpiSnapshotHourly.ts_start.desc())
+    need_loop_join = bool(expanded_node_ids or loop_tag_name)
+
+    if latest_only:
+        # 使用窗口函数取每个回路最新一条评估记录
+        # 子查询：对所有符合条件的快照按 loop_id 分组编号
+        rn_col = (
+            func.row_number()
+            .over(
+                partition_by=KpiSnapshotHourly.loop_id,
+                order_by=KpiSnapshotHourly.ts_start.desc(),
+            )
+            .label("rn")
+        )
+        subq_stmt = select(KpiSnapshotHourly.id.label("snap_id"), rn_col)
+        if need_loop_join:
+            subq_stmt = subq_stmt.outerjoin(
+                LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id
+            )
+        subq_stmt = subq_stmt.where(*base_conditions)
+        latest_subq = subq_stmt.subquery()
+
+        # 主查询：只取 rn=1 的 snapshot
+        stmt = (
+            select(KpiSnapshotHourly, LoopLedger.tag_name)
+            .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .join(latest_subq, KpiSnapshotHourly.id == latest_subq.c.snap_id)
+            .where(latest_subq.c.rn == 1)
+            .order_by(KpiSnapshotHourly.ts_start.desc())
+        )
+
+        # count：每个回路算一条，按 distinct loop_id 计数
+        count_stmt = (
+            select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
+            .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .where(*base_conditions)
+        )
+    else:
+        # 全量时间序列（历史趋势/诊断历史用）
+        stmt = (
+            select(KpiSnapshotHourly, LoopLedger.tag_name)
+            .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .where(*base_conditions)
+            .order_by(KpiSnapshotHourly.ts_start.desc())
+        )
+        count_stmt = (
+            select(func.count())
+            .select_from(KpiSnapshotHourly)
+            .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .where(*base_conditions)
+        )
+
+    # 分页
     if page > 0 and page_size > 0:
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
 

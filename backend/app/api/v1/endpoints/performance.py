@@ -331,6 +331,12 @@ async def list_loop_snapshots_endpoint(
     confidenceLevel: str | None = Query(
         None, description="可信度等级（A/B/C/D/E）"
     ),
+    loopTagName: str | None = Query(None, description="回路编号模糊搜索"),
+    latestOnly: bool = Query(
+        True,
+        description="True=每个回路只返回最新一条评估记录（默认）；"
+        "False=返回所有快照（历史趋势/诊断历史用）",
+    ),
     page: int = Query(1, ge=1, description="页码（1-based）"),
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
@@ -338,9 +344,9 @@ async def list_loop_snapshots_endpoint(
 ) -> dict:
     """查询回路小时指标快照列表（所有角色可查看）.
 
-    按回路 ID / 装置 / 时间范围 / 状态 / 可信度筛选，分页返回。
-    默认时间范围为近 30 天，排序按 ts_start DESC。
-    每条记录包含完整的 24 个 KPI 字段 + loopTagName。
+    按回路 ID / 装置 / 时间范围 / 状态 / 可信度 / 回路编号筛选，分页返回。
+    默认 latestOnly=True：每个回路只返回最新一条评估记录。
+    排序按 tsStart DESC。每条记录包含完整的 24 个 KPI 字段 + loopTagName。
     """
     # 解析逗号分隔的 ID 列表
     loop_ids = (
@@ -365,6 +371,8 @@ async def list_loop_snapshots_endpoint(
         end=end_dt,
         status_filter=status,
         confidence_level=confidenceLevel,
+        loop_tag_name=loopTagName,
+        latest_only=latestOnly,
         page=page,
         page_size=pageSize,
     )
