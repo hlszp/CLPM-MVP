@@ -131,7 +131,7 @@ def _make_node_snapshot(
     s.effective_auto_rate = effective_auto_rate
     s.steady_rate = steady_rate
     s.accuracy_rate = accuracy_rate
-    s.fast_response_rate = fast_response_rate
+    s.fast_rate = fast_response_rate
     s.oscillation_rate = oscillation_rate
     s.saturation_rate = saturation_rate
     s.auto_loop_ratio = auto_loop_ratio

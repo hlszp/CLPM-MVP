@@ -41,7 +41,7 @@ KPI_FIELDS = (
     "effective_auto_rate",
     "steady_rate",
     "accuracy_rate",
-    "fast_response_rate",
+    "fast_rate",
     "oscillation_rate",
     "saturation_rate",
     "score",
@@ -263,7 +263,7 @@ async def aggregate_node_snapshot(
         select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
         .select_from(
             subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id)
-            .outerjoin(LoopLevelWeight, LoopLedger.level == LoopLevelWeight.level)
+            .outerjoin(LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level)
         )
     )
     result = await db.execute(stmt)
@@ -317,7 +317,7 @@ async def aggregate_node_snapshot(
         "effective_auto_rate": avg_value("effective_auto_rate"),
         "steady_rate": avg_value("steady_rate"),
         "accuracy_rate": avg_value("accuracy_rate"),
-        "fast_response_rate": avg_value("fast_response_rate"),
+        "fast_rate": avg_value("fast_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
         "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
@@ -405,7 +405,7 @@ def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None)
         "effectiveAutoRate": to_float(snap.effective_auto_rate),
         "steadyRate": to_float(snap.steady_rate),
         "accuracyRate": to_float(snap.accuracy_rate),
-        "fastResponseRate": to_float(snap.fast_response_rate),
+        "fastResponseRate": to_float(snap.fast_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
@@ -558,7 +558,7 @@ async def get_node_ranking(
             "effectiveAutoRate": to_float(row.effective_auto_rate),
             "steadyRate": to_float(row.steady_rate),
             "accuracyRate": to_float(row.accuracy_rate),
-            "fastResponseRate": to_float(row.fast_response_rate),
+            "fastResponseRate": to_float(row.fast_rate),
             "oscillationRate": to_float(row.oscillation_rate),
             "saturationRate": to_float(row.saturation_rate),
             "autoLoopRatio": to_float(row.auto_loop_ratio),
@@ -677,7 +677,7 @@ def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None
         "effectiveAutoRate": to_float(snap.effective_auto_rate),
         "steadyRate": to_float(snap.steady_rate),
         "accuracyRate": to_float(snap.accuracy_rate),
-        "fastResponseRate": to_float(snap.fast_response_rate),
+        "fastResponseRate": to_float(snap.fast_rate),
         "oscillationRate": to_float(snap.oscillation_rate),
         "saturationRate": to_float(snap.saturation_rate),
         "autoLoopRatio": to_float(snap.auto_loop_ratio),
