@@ -333,9 +333,10 @@ async def _do_diagnose_single_loop(
         else:
             ts_start_dt = ts_end_dt - timedelta(hours=1)
 
-        # 如果有 task_id，更新任务状态为 RUNNING
+        # 如果有 task_id，更新任务状态为 RUNNING（立即 commit，避免卡在数据查询时状态仍为 PENDING）
         if task_id:
             await _update_task_status(db, task_id, "RUNNING")
+            await db.commit()
 
         try:
             result = await _diagnose_loop(
