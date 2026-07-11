@@ -881,13 +881,14 @@ async def list_tasks(
     plantNodeIds: str | None = Query(
         None, description="按装置 ID 筛选（逗号分隔，仅对 BACKFILL 任务生效）"
     ),
-    limit: int = Query(50, ge=1, le=200, description="返回条数（最多 200）"),
-    offset: int = Query(0, ge=0, description="偏移量"),
+    page: int = Query(1, ge=1, description="页码（从 1 开始）"),
+    pageSize: int = Query(20, ge=1, le=200, description="每页条数（最多 200）"),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """查询任务列表（按类型/状态/时间/装置筛选）.
 
     按创建时间倒序排列，支持分页。
+    对非终态任务惰性同步 Celery 任务状态，确保进度实时更新。
 
     设计依据：IDS §2.7.6.4, PRD §4.3.7.C
     """
@@ -930,10 +931,14 @@ async def list_tasks(
             if not any(pid in task_plant_nodes for pid in plant_node_filter):
                 continue
 
+        # 惰性同步 Celery 任务状态（非终态任务）
+        await _sync_task_status(tid, data)
+
         items.append(_task_to_response(data))
 
     total = len(items)
-    paginated = items[offset : offset + limit]
+    offset = (page - 1) * pageSize
+    paginated = items[offset : offset + pageSize]
 
     resp = TaskListResponse(items=paginated, total=total)
     return success(data=resp.model_dump())
