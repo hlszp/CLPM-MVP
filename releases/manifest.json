@@ -1,1 +1,12 @@
-[]
+[{
+  "version": "20260711-100517",
+  "buildTime": "2026-07-11 10:05:17",
+  "gitCommit": "1e86040",
+  "gitBranch": "main",
+  "images": [
+    {"name": "clpm-backend:latest", "size": "175MB"},
+    {"name": "clpm-frontend:latest", "size": "28MB"}
+  ],
+  "tarFile": "clpm-images-20260711-100514.tar.gz",
+  "tarSize": "208M"
+}]
