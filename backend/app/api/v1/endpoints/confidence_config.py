@@ -147,9 +147,7 @@ def _validate_thresholds(thresholds: list[ConfidenceThresholdItem]) -> None:
         if t.name != expected_name:
             raise BizError(
                 code="ERR_CONFIDENCE_NAME_MISMATCH",
-                message=(
-                    f"等级 {t.level} 的名称必须为 {expected_name}，当前为 {t.name}"
-                ),
+                message=(f"等级 {t.level} 的名称必须为 {expected_name}，当前为 {t.name}"),
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -172,9 +170,7 @@ def _validate_thresholds(thresholds: list[ConfidenceThresholdItem]) -> None:
     if sorted_by_level[0].minRate > 1.0 + 1e-6:
         raise BizError(
             code="ERR_CONFIDENCE_TOP_BOUND",
-            message=(
-                f"等级 1（A）的 minRate 不能超过 1.0，当前为 {sorted_by_level[0].minRate}"
-            ),
+            message=(f"等级 1（A）的 minRate 不能超过 1.0，当前为 {sorted_by_level[0].minRate}"),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -182,9 +178,7 @@ def _validate_thresholds(thresholds: list[ConfidenceThresholdItem]) -> None:
     if abs(sorted_by_level[-1].minRate) > 1e-6:
         raise BizError(
             code="ERR_CONFIDENCE_BOTTOM_BOUND",
-            message=(
-                f"等级 5（E）的 minRate 必须为 0，当前为 {sorted_by_level[-1].minRate}"
-            ),
+            message=(f"等级 5（E）的 minRate 必须为 0，当前为 {sorted_by_level[-1].minRate}"),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 

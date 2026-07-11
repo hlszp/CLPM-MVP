@@ -187,7 +187,7 @@ async def get_auto_rate_rt_endpoint(
 async def get_board_trend_endpoint(
     plantId: str | None = Query(None, description="按节点筛选；为空统计全厂；递归包含所有下属节点"),
     timeWindow: str = Query(
-        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
+        "today", description="时间窗：last_8_hours/today/yesterday/last_7_days/last_30_days"
     ),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
@@ -210,7 +210,9 @@ async def get_board_trend_endpoint(
     from datetime import datetime, timedelta
 
     now = datetime.now(UTC).replace(tzinfo=None)
-    if timeWindow == "today":
+    if timeWindow == "last_8_hours":
+        start = now - timedelta(hours=8)
+    elif timeWindow == "today":
         start = now - timedelta(hours=24)
     elif timeWindow == "yesterday":
         start = now - timedelta(days=2)

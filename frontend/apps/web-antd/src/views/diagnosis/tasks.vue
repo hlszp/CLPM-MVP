@@ -288,6 +288,13 @@ const loopRowSelection = computed(() => ({
   }),
 }));
 
+/** 全选当前筛选后的所有回路 */
+function handleSelectAllLoops() {
+  selectedLoopIds.value = filteredLoops.value
+    .filter((l) => l.isActive)
+    .map((l) => l.loopId);
+}
+
 /** 加载回路监控列表（含最新评分） */
 async function loadLoopList() {
   loopLoading.value = true;
@@ -499,27 +506,35 @@ async function handleBatchDelete() {
   });
 }
 
-/** 批量诊断：对选中行中待执行（PENDING）的任务触发诊断 */
+/** 批量诊断：对选中的任务行执行诊断（不创建新任务） */
 const batchDiagnoseLoading = ref(false);
 async function handleBatchTrigger() {
   const selected = taskList.value.filter((t) =>
     selectedRowKeys.value.includes(t.taskId),
   );
-  const eligible = selected.filter((t) => canDiagnose(t.status));
-  if (eligible.length === 0) {
-    message.warning('选中的任务中没有待执行的诊断任务');
+  if (selected.length === 0) {
+    message.warning('请先选中需要诊断的任务');
     return;
   }
   batchDiagnoseLoading.value = true;
   try {
-    const end = dayjs();
-    const start = end.subtract(24, 'hour');
-    await triggerDiagnosisApi({
-      loopIds: eligible.map((t) => t.loopId),
-      startTime: start.toISOString(),
-      endTime: end.toISOString(),
-    });
-    message.success(`已触发 ${eligible.length} 个回路的诊断任务`);
+    let successCount = 0;
+    let failCount = 0;
+    await Promise.all(
+      selected.map(async (t) => {
+        try {
+          await runDiagnosisTaskApi(t.taskId);
+          successCount++;
+        } catch {
+          failCount++;
+        }
+      }),
+    );
+    if (successCount > 0) {
+      message.success(`已执行 ${successCount} 个任务的诊断${failCount > 0 ? `，${failCount} 个失败` : ''}`);
+    } else {
+      message.error('全部诊断任务执行失败');
+    }
     selectedRowKeys.value = [];
     await loadTasks();
     startPolling();
@@ -865,9 +880,12 @@ onBeforeUnmount(() => {
         <div>
           <div class="mb-2 flex items-center justify-between">
             <span class="font-medium">选择回路</span>
-            <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
-              已选 {{ selectedLoopIds.length }} 个回路
-            </span>
+            <div class="flex items-center gap-3">
+              <Button size="small" type="link" @click="handleSelectAllLoops">全选</Button>
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
+                已选 {{ selectedLoopIds.length }} 个回路
+              </span>
+            </div>
           </div>
           <div class="mb-2 flex flex-wrap gap-2">
             <Select
