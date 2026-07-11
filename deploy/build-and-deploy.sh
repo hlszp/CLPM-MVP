@@ -5,6 +5,11 @@
 # 用途：在本地（macOS）构建 linux/amd64 镜像，传输到 zpdev 服务器并部署
 # 服务器：192.168.13.113（zpdev）
 #
+# 镜像产物目录：项目根目录下 releases/images/
+#   - clpm-images-YYYYMMDD-HHMMSS.tar.gz：每次构建的镜像包
+#   - clpm-images-latest.tar.gz：软链接，指向最新构建
+# 构建清单：releases/manifest.json（入 git，记录每次构建的版本/commit/大小）
+#
 # 用法：
 #   # 构建并部署（前端+后端+数据库schema+nginx配置）
 #   ./deploy/build-and-deploy.sh
@@ -39,7 +44,7 @@ cd "$PROJECT_ROOT"
 SERVER_IP="192.168.13.113"
 SERVER_USER="root"
 SERVER_DEPLOY_DIR="/opt/clpm"
-LOCAL_TMP_DIR="/tmp/clpm-deploy-images"
+LOCAL_TMP_DIR="${PROJECT_ROOT}/releases/images"
 
 BACKEND_IMAGE="clpm-backend:latest"
 FRONTEND_IMAGE="clpm-frontend:latest"
@@ -48,6 +53,7 @@ BACKEND_TAR="clpm-backend.tar.gz"
 FRONTEND_TAR="clpm-frontend.tar.gz"
 
 BUILD_PLATFORM="linux/amd64"
+MANIFEST_FILE="${PROJECT_ROOT}/releases/manifest.json"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -193,6 +199,53 @@ if [ "$DO_BUILD" = true ]; then
     # 同时保留固定名称的软链接（方便 --deploy-only 使用）
     ln -sf "${COMBINED_TAR}" "${LOCAL_TMP_DIR}/clpm-images-latest.tar.gz"
     log_info "软链接: ${LOCAL_TMP_DIR}/clpm-images-latest.tar.gz → ${COMBINED_TAR}"
+
+    # --- 更新构建清单 manifest.json ---
+    log_info "更新构建清单: ${MANIFEST_FILE}"
+
+    BUILD_VERSION="$(date +%Y%m%d-%H%M%S)"
+    GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    TAR_FILENAME="$(basename "${COMBINED_TAR}")"
+    TAR_SIZE_BYTES="$(stat -f%z "${COMBINED_TAR}" 2>/dev/null || stat -c%s "${COMBINED_TAR}" 2>/dev/null || echo 0)"
+
+    # 获取各镜像大小
+    BACKEND_SIZE="$(docker image inspect ${BACKEND_IMAGE} --format '{{.Size}}' 2>/dev/null | awk '{printf "%.0fMB", $1/1048576}' || echo unknown)"
+    FRONTEND_SIZE="$(docker image inspect ${FRONTEND_IMAGE} --format '{{.Size}}' 2>/dev/null | awk '{printf "%.0fMB", $1/1048576}' || echo unknown)"
+
+    # 构建 manifest 条目
+    ENTRY=$(cat <<MANIFEST_EOF
+{
+  "version": "${BUILD_VERSION}",
+  "buildTime": "$(date '+%Y-%m-%d %H:%M:%S')",
+  "gitCommit": "${GIT_COMMIT}",
+  "gitBranch": "${GIT_BRANCH}",
+  "images": [
+    {"name": "${BACKEND_IMAGE}", "size": "${BACKEND_SIZE}"},
+    {"name": "${FRONTEND_IMAGE}", "size": "${FRONTEND_SIZE}"}
+  ],
+  "tarFile": "${TAR_FILENAME}",
+  "tarSize": "${LOCAL_TAR_SIZE}"
+}
+MANIFEST_EOF
+)
+
+    # 读取现有 manifest 并追加（兼容空文件或 []）
+    if [ -f "${MANIFEST_FILE}" ]; then
+        EXISTING="$(cat "${MANIFEST_FILE}")"
+        # 去掉首尾的 [ ] 并去除空数组
+        EXISTING="$(echo "$EXISTING" | sed 's/^\[//;s/\]$//' | xargs)"
+    else
+        EXISTING=""
+    fi
+
+    if [ -z "$EXISTING" ]; then
+        echo "[${ENTRY}]" > "${MANIFEST_FILE}"
+    else
+        echo "[${EXISTING},${ENTRY}]" > "${MANIFEST_FILE}"
+    fi
+
+    log_info "构建清单已更新"
 fi
 
 # ============================================================

@@ -34,3 +34,7 @@ docs/预研文档/*.pdf
 # Celery Beat 运行时临时文件
 celerybeat-schedule*
 celerybeat.pid
+
+# Docker 镜像构建产物（大文件不入库，manifest.json 和 README.md 入库）
+releases/images/*.tar.gz
+releases/images/*.tar
