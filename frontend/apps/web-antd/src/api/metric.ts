@@ -1035,6 +1035,10 @@ export interface KpiSnapshotQueryParams {
   status?: KpiStatus;
   /** 可信度等级 */
   confidenceLevel?: ConfidenceLevel;
+  /** 回路编号模糊搜索 */
+  loopTagName?: string;
+  /** True=每个回路只返回最新一条评估记录（默认）；False=返回所有快照 */
+  latestOnly?: boolean;
   /** 页码 */
   page?: number;
   /** 每页条数 */

@@ -48,6 +48,7 @@ import {
   Descriptions,
   DescriptionsItem,
   Drawer,
+  Input,
   message,
   Modal,
   RadioGroup,
@@ -219,6 +220,7 @@ const query = reactive({
   plantNodeId: undefined as string | undefined,
   controlType: undefined as string | undefined,
   status: undefined as KpiStatus | undefined,
+  loopTagName: '' as string,
   page: 1,
   pageSize: 20,
 });
@@ -361,29 +363,14 @@ const allSnapshots = ref<KpiSnapshotItem[]>([]);
 /** 评估等级统计（1~5 → 数量） */
 const gradeStats = ref<Record<number, number>>({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
 
-/** 可信度统计（A~E → 数量） */
-const confidenceStats = ref<Record<string, number>>({
-  A: 0,
-  B: 0,
-  C: 0,
-  D: 0,
-  E: 0,
-});
-
 /** 当前选中的等级筛选（null = 全部） */
 const selectedGrade = ref<number | null>(null);
 
-/** 当前选中的可信度筛选（null = 全部） */
-const selectedConfidence = ref<ConfidenceLevel | null>(null);
-
-/** 按等级/可信度筛选后的快照（用于计算聚合指标） */
+/** 按等级筛选后的快照（用于计算聚合指标） */
 const filteredSnapshots = computed(() => {
   let result = allSnapshots.value;
   if (selectedGrade.value !== null) {
     result = result.filter((s) => getGrade(s.score) === selectedGrade.value);
-  }
-  if (selectedConfidence.value !== null) {
-    result = result.filter((s) => s.confidenceLevel === selectedConfidence.value);
   }
   return result;
 });
@@ -427,43 +414,33 @@ const GRADE_CARD_COLORS: Record<number, string> = {
   5: '#EF4444',
 };
 
-/** 可信度颜色映射 */
-const CONFIDENCE_CARD_COLORS: Record<string, string> = {
-  A: '#10B981',
-  B: '#3B82F6',
-  C: '#F59E0B',
-  D: '#F97316',
-  E: '#EF4444',
-};
-
-/** 等级迷你柱状图 */
+/** 等级饼状图 */
 const gradeChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderGradeChart } = useEcharts(gradeChartRef);
 
-/** 渲染等级分布迷你柱状图 */
+/** 渲染等级分布饼状图 */
 function updateGradeChart() {
   const grades = [1, 2, 3, 4, 5];
   const labels = ['一级', '二级', '三级', '四级', '五级'];
-  const data = grades.map((g) => gradeStats.value[g] || 0);
-  const colors = grades.map((g) => GRADE_CARD_COLORS[g]);
+  const data = grades.map((g) => ({
+    value: gradeStats.value[g] || 0,
+    itemStyle: { color: GRADE_CARD_COLORS[g] },
+    name: labels[g - 1],
+  }));
 
   renderGradeChart({
     animation: false,
-    grid: { bottom: 0, containLabel: true, left: '1%', right: '1%', top: '5%' },
     series: [
       {
-        barMaxWidth: 30,
-        data: data.map((v, i) => ({ value: v, itemStyle: { color: colors[i] } })),
-        type: 'bar',
+        data,
+        type: 'pie',
+        radius: ['40%', '75%'],
+        label: { show: false },
+        labelLine: { show: false },
+        emphasis: { label: { show: false } },
       },
     ],
-    tooltip: { axisPointer: { lineStyle: { width: 1 } }, trigger: 'axis' },
-    xAxis: { data: labels, type: 'category', axisLabel: { fontSize: 11 } },
-    yAxis: {
-      type: 'value',
-      axisLabel: { fontSize: 11 },
-      splitLine: { show: false },
-    },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
   });
 }
 
@@ -473,6 +450,7 @@ async function loadStats() {
     const baseParams: Record<string, unknown> = { page: 1, pageSize: 100 };
     if (query.plantNodeId) baseParams.plantNodeId = query.plantNodeId;
     if (query.status) baseParams.status = query.status;
+    if (query.loopTagName) baseParams.loopTagName = query.loopTagName;
     if (query.controlType) {
       const matchedIds: string[] = [];
       for (const [id, loop] of loopMap.value.entries()) {
@@ -496,16 +474,11 @@ async function loadStats() {
 
     // 计算等级分布
     const gStats: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    const cStats: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
     for (const snap of allSnapshots.value) {
       const grade = getGrade(snap.score);
       if (grade) gStats[grade] = (gStats[grade] || 0) + 1;
-      if (snap.confidenceLevel) {
-        cStats[snap.confidenceLevel] = (cStats[snap.confidenceLevel] || 0) + 1;
-      }
     }
     gradeStats.value = gStats;
-    confidenceStats.value = cStats;
     updateGradeChart();
   } catch {
     // 静默失败
@@ -515,14 +488,6 @@ async function loadStats() {
 /** 点击等级卡片筛选 */
 function handleGradeCardClick(grade: number | null) {
   selectedGrade.value = selectedGrade.value === grade ? null : grade;
-  query.page = 1;
-  loadList();
-}
-
-/** 点击可信度卡片筛选 */
-function handleConfidenceCardClick(conf: ConfidenceLevel | null) {
-  selectedConfidence.value =
-    selectedConfidence.value === conf ? null : conf;
   query.page = 1;
   loadList();
 }
@@ -637,7 +602,7 @@ async function loadList() {
     };
     if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
     if (query.status) params.status = query.status;
-    if (selectedConfidence.value) params.confidenceLevel = selectedConfidence.value;
+    if (query.loopTagName) params.loopTagName = query.loopTagName;
 
     // 按控制类型筛选：先在 loopMap 中找到匹配的 loopId，再传给快照接口
     if (query.controlType) {
@@ -687,7 +652,7 @@ async function loadList() {
 function handleSearch() {
   query.page = 1;
   selectedGrade.value = null;
-  selectedConfidence.value = null;
+  query.loopTagName = query.loopTagName?.trim() || '';
   loadList();
   loadStats();
 }
@@ -749,6 +714,7 @@ async function loadHistoryData() {
         loopId: historyRecord.value.loopId,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
+        latestOnly: false,
         page,
         pageSize: pageLimit,
       });
@@ -914,6 +880,7 @@ async function loadDiagHistory() {
   try {
     const params: Record<string, unknown> = {
       loopId: diagRecord.value.loopId,
+      latestOnly: false,
       page: diagHistoryPage.value,
       pageSize: diagHistoryPageSize.value,
     };
@@ -1038,6 +1005,14 @@ onMounted(async () => {
         style="width: 220px"
         @change="handleSearch"
       />
+      <Input
+        v-model:value="query.loopTagName"
+        placeholder="回路编号"
+        allow-clear
+        style="width: 180px"
+        @press-enter="handleSearch"
+        @change="($event) => !($event.target as HTMLInputElement).value && handleSearch()"
+      />
       <Select
         v-model:value="query.controlType"
         :options="controlTypeOptions"
@@ -1060,12 +1035,12 @@ onMounted(async () => {
     <!-- 统计卡片区域（筛选区与列表区之间） -->
     <div class="mb-4">
       <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
-        <div class="grid grid-cols-3 items-center">
+        <div class="flex items-center justify-between">
           <!-- 左：评估等级卡片组 -->
-          <div class="flex items-center justify-start gap-2">
+          <div class="flex items-center gap-1.5">
             <span class="text-xs text-gray-400 mr-1 whitespace-nowrap">等级</span>
             <div
-              class="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
+              class="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               :style="{
                 backgroundColor: selectedGrade === null ? '#4B556315' : '#4B556308',
                 borderLeft: '3px solid #4B5563',
@@ -1080,7 +1055,7 @@ onMounted(async () => {
             <div
               v-for="grade in [1, 2, 3, 4, 5]"
               :key="grade"
-              class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
+              class="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               :style="{
                 backgroundColor: selectedGrade === grade ? `${GRADE_CARD_COLORS[grade]}30` : `${GRADE_CARD_COLORS[grade]}15`,
                 borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
@@ -1096,32 +1071,10 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- 中：可信度卡片组 -->
-          <div class="flex items-center justify-center gap-2">
-            <span class="text-xs text-gray-400 mr-1 whitespace-nowrap">可信度</span>
+          <!-- 右：性能概览 + 饼状图 -->
+          <div class="flex items-center gap-2">
             <div
-              v-for="conf in ['A', 'B', 'C', 'D', 'E'] as ConfidenceLevel[]"
-              :key="conf"
-              class="flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
-              :style="{
-                backgroundColor: selectedConfidence === conf ? `${CONFIDENCE_CARD_COLORS[conf]}30` : `${CONFIDENCE_CARD_COLORS[conf]}15`,
-                borderLeft: `3px solid ${CONFIDENCE_CARD_COLORS[conf]}`,
-                borderBottom: selectedConfidence === conf ? `2px solid ${CONFIDENCE_CARD_COLORS[conf]}` : 'none',
-              }"
-              @click="handleConfidenceCardClick(conf)"
-            >
-              <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: CONFIDENCE_CARD_COLORS[conf] }"></span>
-              <span class="text-sm text-gray-600">{{ conf }}</span>
-              <span class="text-sm" :style="{ color: CONFIDENCE_CARD_COLORS[conf] }">
-                {{ confidenceStats[conf] || 0 }}
-              </span>
-            </div>
-          </div>
-
-          <!-- 右：性能概览 + 迷你柱状图 -->
-          <div class="flex items-center justify-end gap-3">
-            <div
-              class="flex items-center gap-2 px-3 py-1 rounded whitespace-nowrap"
+              class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
               :style="{ backgroundColor: '#3B82F615', borderLeft: '3px solid #3B82F6' }"
             >
               <span class="w-2 h-2 rounded-full" style="background-color: #3B82F6"></span>
@@ -1129,7 +1082,7 @@ onMounted(async () => {
               <span class="text-sm" style="color: #3B82F6">{{ avgScore.toFixed(1) }}</span>
             </div>
             <div
-              class="flex items-center gap-2 px-3 py-1 rounded whitespace-nowrap"
+              class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
               :style="{ backgroundColor: '#10B98115', borderLeft: '3px solid #10B981' }"
             >
               <span class="w-2 h-2 rounded-full" style="background-color: #10B981"></span>
@@ -1137,14 +1090,14 @@ onMounted(async () => {
               <span class="text-sm" style="color: #10B981">{{ excellentRate }}%</span>
             </div>
             <div
-              class="flex items-center gap-2 px-3 py-1 rounded whitespace-nowrap"
+              class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
               :style="{ backgroundColor: '#8b5cf615', borderLeft: '3px solid #8b5cf6' }"
             >
               <span class="w-2 h-2 rounded-full" style="background-color: #8b5cf6"></span>
               <span class="text-sm text-gray-600">合格率</span>
               <span class="text-sm" style="color: #8b5cf6">{{ passRate }}%</span>
             </div>
-            <EchartsUI ref="gradeChartRef" style="width: 200px; height: 60px" />
+            <EchartsUI ref="gradeChartRef" style="width: 56px; height: 56px" />
           </div>
         </div>
       </Card>
