@@ -802,7 +802,8 @@ class TestGetLoopMonitorDetail:
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["trendStatus"] == "OK"
         assert result["trend"]["sp"] == [52.0]
-        assert result["trend"]["pv"] == []
+        # PV 无趋势数据但对齐到 SP 时间戳，长度一致（值为 None）
+        assert result["trend"]["pv"] == [None]
 
     async def test_trend_op_only(self) -> None:
         """仅 OP 有趋势数据时以 OP 为基准对齐。"""

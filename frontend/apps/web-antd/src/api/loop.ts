@@ -381,6 +381,10 @@ export namespace LoopApi {
     op: (null | number)[];
     mode: (null | number)[];
     pvQuality: Quality[];
+    /** 采样间隔（秒），由后端根据时间范围动态计算（如 72h → 72s） */
+    sampleInterval?: number;
+    /** 是否触发了 LTTB 降采样 */
+    downsampled?: boolean;
   }
 
   /** 回路监控详情 - KPI 摘要（IDS v3.2 §2.2.14） */

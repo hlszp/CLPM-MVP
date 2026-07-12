@@ -99,9 +99,15 @@ class RemoteApiProvider:
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
         self._client_loop: asyncio.AbstractEventLoop | None = None
+        self._client_timeout: float | None = None
+        self._client_token: str | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """获取 httpx.AsyncClient 单例（Celery-safe）."""
+        """获取 httpx.AsyncClient 单例（Celery-safe）.
+
+        当 timeout 或 token 在运行时被修改（通过 UI 配置页面），
+        会自动重建 client 以使新配置即时生效。
+        """
         current_loop = asyncio.get_running_loop()
         # 注意：asyncio loop 的 is_closed 是方法，需要调用
         loop_closed = (
@@ -109,11 +115,15 @@ class RemoteApiProvider:
             and callable(getattr(self._client_loop, "is_closed", None))
             and self._client_loop.is_closed()
         )
+        current_timeout = settings.HISTORY_DATA_API_TIMEOUT
+        current_token = settings.HISTORY_DATA_API_TOKEN or ""
         need_recreate = (
             self._client is None
             or self._client.is_closed
             or self._client_loop is not current_loop
             or loop_closed
+            or self._client_timeout != current_timeout
+            or self._client_token != current_token
         )
         if need_recreate:
             if self._client is not None and not self._client.is_closed:
@@ -122,13 +132,20 @@ class RemoteApiProvider:
                 except Exception:  # noqa: BLE001
                     pass
             headers: dict[str, str] = {"Content-Type": "application/json"}
-            if settings.HISTORY_DATA_API_TOKEN:
-                headers["Authorization"] = f"Bearer {settings.HISTORY_DATA_API_TOKEN}"
+            if current_token:
+                headers["Authorization"] = f"Bearer {current_token}"
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
+                timeout=httpx.Timeout(current_timeout, connect=10.0),
                 headers=headers,
             )
             self._client_loop = current_loop
+            self._client_timeout = current_timeout
+            self._client_token = current_token
+            logger.info(
+                "RemoteApiProvider client 已重建: timeout=%ss, token=%s",
+                current_timeout,
+                "已设置" if current_token else "无",
+            )
         return self._client
 
     def make_query_fn(self, db: Any) -> QueryFn:
@@ -276,7 +293,8 @@ class RemoteApiProvider:
         return _query_fn
 
     async def query_trend_data(
-        self, tag_name: str, start_time: str, end_time: str
+        self, tag_name: str, start_time: str, end_time: str,
+        sample_interval: int = 1,
     ) -> list[dict[str, Any]]:
         """查询单个 tag 的趋势数据（兼容 app.core.tdengine.query_trend_data 签名）.
 
@@ -284,12 +302,16 @@ class RemoteApiProvider:
         返回 ``list[{"ts": str, "value": float|None, "quality": int}]``。
 
         质量码映射：外部 API(1=Good, 192=OPC DA Good) → CLPM(1=Good, 0=Bad)。
+
+        Args:
+            sample_interval: 采样间隔（秒），透传给远程 API 的 ``sampleInterval`` 参数。
+                根据时间范围动态计算（如 72h → 72s），固定目标点数 ~3600。
         """
         request_body = {
             "tagCodes": [tag_name],
             "startTime": start_time,
             "endTime": end_time,
-            "sampleInterval": 1,
+            "sampleInterval": sample_interval,
         }
 
         try:
@@ -350,4 +372,6 @@ class RemoteApiProvider:
             await self._client.aclose()
         self._client = None
         self._client_loop = None
+        self._client_timeout = None
+        self._client_token = None
         logger.info("RemoteApiProvider 已关闭")

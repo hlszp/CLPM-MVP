@@ -610,7 +610,7 @@ async def get_loop_monitor_detail(
                     read_at = ts
     current_values["readAt"] = read_at
 
-    # 查询趋势数据（从 TDengine）
+    # 查询趋势数据（并行 + 动态采样间隔，封装在 trend_service 中复用）
     trend_data: dict[str, Any] = {
         "timestamps": [],
         "pv": [],
@@ -618,65 +618,39 @@ async def get_loop_monitor_detail(
         "op": [],
         "mode": [],
         "pvQuality": [],
+        "sampleInterval": None,
+        "downsampled": False,
     }
     trend_status = "EMPTY"  # EMPTY / OK / PARTIAL
 
     # 计算时间范围
-    # TDengine REST API 按服务器时区解释无时区的时间字符串，
-    # 必须使用带 Z 后缀的 UTC 时间格式，否则时间范围会偏移
     delta = TREND_WINDOWS.get(trend_window, timedelta(hours=24))
     now = datetime.now(UTC)
     start_dt = now - delta
     start_time = start_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{start_dt.microsecond // 1000:03d}Z"
     end_time = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
-    # 查询 PV/SP/OP/MODE 的趋势数据
-    pv_trend: list[dict[str, Any]] = []
-    sp_trend: list[dict[str, Any]] = []
-    op_trend: list[dict[str, Any]] = []
-    mode_trend: list[dict[str, Any]] = []
+    # 调用封装的趋势查询服务（并行查询 4 个 tag + 动态采样间隔）
+    # 传入已加载的 tags_map / mappings，避免重复查询数据库
+    from app.services.trend_service import fetch_loop_trend
 
-    for role in ("PV", "SP", "OP", "MODE"):
-        mapping = mappings.get(role)
-        if mapping and str(mapping.tag_id) in tags_map:
-            tag = tags_map[str(mapping.tag_id)]
-            try:
-                # 通过数据源工厂查询（支持 tdengine / remote_api 切换）
-                from app.services.data_source.factory import get_provider
+    trend_result = await fetch_loop_trend(
+        db, loop_id, start_time, end_time,
+        target_points=3600,
+        tags_map=tags_map,
+        mappings=mappings,
+    )
 
-                raw_trend = await get_provider().query_trend_data(
-                    tag.tag_name, start_time, end_time
-                )
-                # LTTB 降采样
-                downsampled = lttb_downsample(raw_trend)
-                if role == "PV":
-                    pv_trend = downsampled
-                elif role == "SP":
-                    sp_trend = downsampled
-                elif role == "OP":
-                    op_trend = downsampled
-                elif role == "MODE":
-                    mode_trend = downsampled
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("查询 %s 趋势数据失败: %s", role, exc)
-
-    # 合并趋势数据（按时间戳对齐）
-    if pv_trend or sp_trend or op_trend or mode_trend:
+    if trend_result["pointCount"] > 0:
         trend_status = "OK"
-        # 简化处理：以 PV 的时间戳为基准（如有），否则用 SP
-        base_trend = pv_trend if pv_trend else (sp_trend if sp_trend else op_trend)
-        if base_trend:
-            # timestamps 统一转为毫秒数字（前端 ECharts time 轴要求 number[]）
-            trend_data["timestamps"] = [_ts_to_ms(d.get("ts")) for d in base_trend]
-            trend_data["pv"] = [d.get("value") for d in pv_trend] if pv_trend else []
-            trend_data["sp"] = [d.get("value") for d in sp_trend] if sp_trend else []
-            trend_data["op"] = [d.get("value") for d in op_trend] if op_trend else []
-            trend_data["mode"] = [d.get("value") for d in mode_trend] if mode_trend else []
-            # PV 质量码数组：数字码 → GOOD/BAD/UNCERTAIN（前端 Quality 类型）
-            if pv_trend:
-                trend_data["pvQuality"] = [
-                    _quality_code_to_label(d.get("quality", "GOOD")) for d in pv_trend
-                ]
+        trend_data["timestamps"] = trend_result["timestamps"]
+        trend_data["pv"] = trend_result["pv"]
+        trend_data["sp"] = trend_result["sp"]
+        trend_data["op"] = trend_result["op"]
+        trend_data["mode"] = trend_result["mode"]
+        trend_data["pvQuality"] = trend_result["pvQuality"]
+        trend_data["sampleInterval"] = trend_result["sampleInterval"]
+        trend_data["downsampled"] = trend_result["downsampled"]
 
     # TDengine 无数据时保持 EMPTY 状态，返回空数组（不再生成模拟数据）
     # 仿真脚本已持续向 TDengine 推送实时数据，趋势图直接展示真实历史数据

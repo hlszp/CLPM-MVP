@@ -209,8 +209,17 @@ async def test_history_api_connection(
     url: str | None,
     token: str | None,
     timeout: float,
+    tag_code: str | None = None,
 ) -> dict:
-    """测试外部历史数据 API 连通性（发一个最小查询请求，不校验数据内容）。"""
+    """测试外部历史数据 API 连通性（用真实 tag 发最小查询请求）。
+
+    Args:
+        url: 历史 API 地址
+        token: Bearer token（可选）
+        timeout: 超时秒数
+        tag_code: 真实 tag 位号。若提供则用此 tag 测试数据查询链路；
+            若不提供则回退到假 tag（仅测试 HTTP 连通性，不验证数据查询）。
+    """
     if not url:
         return {"success": False, "latencyMs": None, "message": "未配置历史数据 API 地址"}
 
@@ -218,8 +227,12 @@ async def test_history_api_connection(
     start = now
     one_sec_ago = now - timedelta(seconds=1)
 
+    # 优先使用真实 tag 验证数据查询链路；无 tag 时回退到假 tag（仅测 HTTP 连通性）
+    test_tag = tag_code or "__CONNECTIVITY_TEST__"
+    is_real_tag = tag_code is not None
+
     payload = {
-        "tagCodes": ["__CONNECTIVITY_TEST__"],
+        "tagCodes": [test_tag],
         "startTime": one_sec_ago.isoformat(),
         "endTime": now.isoformat(),
         "sampleInterval": 1,
@@ -233,11 +246,36 @@ async def test_history_api_connection(
             resp = await client.get(url, params=payload, headers=headers)
         latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         if resp.status_code == 200:
-            return {"success": True, "latencyMs": latency, "message": "历史数据 API 连接成功"}
+            # 检查响应体是否包含有效数据结构
+            try:
+                body = resp.json()
+                code = body.get("code")
+                if code != 200 and code != "200":
+                    return {
+                        "success": False,
+                        "latencyMs": latency,
+                        "message": f"业务码异常: code={code}, msg={body.get('message', '')}",
+                    }
+            except Exception:
+                pass
+            label = f"tag={test_tag}" if is_real_tag else "假tag（仅测连通性）"
+            return {
+                "success": True,
+                "latencyMs": latency,
+                "message": f"历史数据 API 连接成功（{label}, {latency}ms）",
+            }
         return {
             "success": False,
             "latencyMs": latency,
             "message": f"HTTP {resp.status_code}: {resp.text[:200]}",
+        }
+    except httpx.TimeoutException:
+        latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
+        label = f"tag={test_tag}" if is_real_tag else "假tag"
+        return {
+            "success": False,
+            "latencyMs": latency,
+            "message": f"请求超时（{label}, {latency}ms）— 远程 API 数据查询无响应",
         }
     except Exception as exc:
         latency = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)

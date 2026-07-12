@@ -255,6 +255,8 @@ export namespace DiagnosisApi {
     confidenceLevel?: string;
     downsampled?: boolean;
     pointCount?: number;
+    /** 采样间隔（秒），由后端根据时间范围动态计算（如 72h → 72s） */
+    sampleInterval?: number;
   }
 
   /** 波形查询参数（Phase 5 扩展 tagGroup/includeValidMask/maxPoints） */

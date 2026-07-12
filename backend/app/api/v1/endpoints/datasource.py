@@ -74,12 +74,29 @@ async def test_history_api_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
-    """测试历史数据 API 连通性（仅 ADMIN，使用当前已保存配置，不写入数据库）。"""
+    """测试历史数据 API 连通性（仅 ADMIN，使用当前已保存配置，不写入数据库）。
+
+    使用已关联的真实 Tag 位号验证数据查询链路，而非仅测 HTTP 连通性。
+    """
+    from sqlalchemy import select
+
+    from app.models.tag import TagRegistry
+
     config = await get_datasource_config(db)
+
+    # 查询第一个已关联的 Tag 位号，用于真实数据查询测试
+    tag_result = await db.execute(
+        select(TagRegistry.tag_name)
+        .where(TagRegistry.is_linked.is_(True))
+        .limit(1)
+    )
+    real_tag = tag_result.scalar_one_or_none()
+
     result = await test_history_api_connection(
         url=config["historyApiUrl"],
         token=config["historyApiToken"],
         timeout=config["historyApiTimeout"],
+        tag_code=real_tag,
     )
     return success(data=result)
 

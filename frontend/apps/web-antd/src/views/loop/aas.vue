@@ -87,6 +87,39 @@ const form = reactive({
   realtimeWritebackEnabled: false,
 });
 
+// 预设网络地址（公网 / 局域网）
+const HISTORY_API_URL_WAN = 'http://100.101.203.0/api/services/v1/HistoryData/Get';
+const HISTORY_API_URL_LAN = 'http://192.168.100.2:81/api/services/v1/HistoryData/Get';
+const SIGNALR_HUB_URL_WAN = 'ws://100.101.203.0/signalr/realValueForClpmHub';
+const SIGNALR_HUB_URL_LAN = 'ws://192.168.100.2:81/signalr/realValueForClpmHub';
+
+const historyApiNetwork = ref<'lan' | 'wan'>('wan');
+const historyApiUrlWan = ref(HISTORY_API_URL_WAN);
+const historyApiUrlLan = ref(HISTORY_API_URL_LAN);
+const signalrHubNetwork = ref<'lan' | 'wan'>('wan');
+const signalrHubUrlWan = ref(SIGNALR_HUB_URL_WAN);
+const signalrHubUrlLan = ref(SIGNALR_HUB_URL_LAN);
+
+// Radio 切换时同步地址到 form
+watch(historyApiNetwork, (val) => {
+  form.historyApiUrl = val === 'wan' ? historyApiUrlWan.value : historyApiUrlLan.value;
+});
+watch(historyApiUrlWan, (val) => {
+  if (historyApiNetwork.value === 'wan') form.historyApiUrl = val;
+});
+watch(historyApiUrlLan, (val) => {
+  if (historyApiNetwork.value === 'lan') form.historyApiUrl = val;
+});
+watch(signalrHubNetwork, (val) => {
+  form.signalrHubUrl = val === 'wan' ? signalrHubUrlWan.value : signalrHubUrlLan.value;
+});
+watch(signalrHubUrlWan, (val) => {
+  if (signalrHubNetwork.value === 'wan') form.signalrHubUrl = val;
+});
+watch(signalrHubUrlLan, (val) => {
+  if (signalrHubNetwork.value === 'lan') form.signalrHubUrl = val;
+});
+
 const historyTestResult = ref<DataSourceApi.TestResult | null>(null);
 const signalrTestResult = ref<DataSourceApi.TestResult | null>(null);
 
@@ -104,13 +137,40 @@ async function loadConfig() {
     const data = await getDatasourceConfigApi();
     config.value = data;
     form.dataSourceType = data.dataSourceType;
-    form.historyApiUrl = data.historyApiUrl ?? '';
     form.historyApiToken = data.historyApiToken ?? '';
     form.historyApiTimeout = data.historyApiTimeout;
-    form.signalrHubUrl = data.signalrHubUrl ?? '';
     form.signalrEnabled = data.signalrEnabled;
     form.signalrReconnectInterval = data.signalrReconnectInterval;
     form.realtimeWritebackEnabled = data.realtimeWritebackEnabled;
+
+    // 根据已保存的 URL 判断网络类型，同步预填地址
+    const savedHistoryUrl = data.historyApiUrl ?? '';
+    if (savedHistoryUrl.includes('100.101.203.0')) {
+      historyApiNetwork.value = 'wan';
+      historyApiUrlWan.value = savedHistoryUrl;
+    } else if (savedHistoryUrl.includes('192.168.100.2')) {
+      historyApiNetwork.value = 'lan';
+      historyApiUrlLan.value = savedHistoryUrl;
+    } else if (savedHistoryUrl) {
+      // 自定义地址：默认归到公网文本框
+      historyApiUrlWan.value = savedHistoryUrl;
+      historyApiNetwork.value = 'wan';
+    }
+    form.historyApiUrl = savedHistoryUrl;
+
+    const savedSignalrUrl = data.signalrHubUrl ?? '';
+    if (savedSignalrUrl.includes('100.101.203.0')) {
+      signalrHubNetwork.value = 'wan';
+      signalrHubUrlWan.value = savedSignalrUrl;
+    } else if (savedSignalrUrl.includes('192.168.100.2')) {
+      signalrHubNetwork.value = 'lan';
+      signalrHubUrlLan.value = savedSignalrUrl;
+    } else if (savedSignalrUrl) {
+      signalrHubUrlWan.value = savedSignalrUrl;
+      signalrHubNetwork.value = 'wan';
+    }
+    form.signalrHubUrl = savedSignalrUrl;
+
     historyTestResult.value = null;
     signalrTestResult.value = null;
   } finally {
@@ -739,9 +799,20 @@ onMounted(loadConfig);
 
               <template v-if="form.dataSourceType === 'remote_api'">
                 <FormItem label="API 地址">
+                  <Radio.Group v-model:value="historyApiNetwork" class="mb-2">
+                    <Radio value="wan">公网</Radio>
+                    <Radio value="lan">局域网</Radio>
+                  </Radio.Group>
                   <Input
-                    v-model:value="form.historyApiUrl"
-                    placeholder="http://192.168.1.100:8100/api/services/v1/HistoryData/Get"
+                    v-model:value="historyApiUrlWan"
+                    addon-before="公网"
+                    :class="{ 'border-blue-500': historyApiNetwork === 'wan' }"
+                  />
+                  <Input
+                    v-model:value="historyApiUrlLan"
+                    addon-before="局域网"
+                    class="mt-2"
+                    :class="{ 'border-blue-500': historyApiNetwork === 'lan' }"
                   />
                 </FormItem>
                 <FormItem label="鉴权 Token">
@@ -790,9 +861,20 @@ onMounted(loadConfig);
 
               <template v-if="form.signalrEnabled">
                 <FormItem label="SignalR Hub URL">
+                  <Radio.Group v-model:value="signalrHubNetwork" class="mb-2">
+                    <Radio value="wan">公网</Radio>
+                    <Radio value="lan">局域网</Radio>
+                  </Radio.Group>
                   <Input
-                    v-model:value="form.signalrHubUrl"
-                    placeholder="ws://192.168.1.100:8100/signalr/realValueForClpmHub"
+                    v-model:value="signalrHubUrlWan"
+                    addon-before="公网"
+                    :class="{ 'border-blue-500': signalrHubNetwork === 'wan' }"
+                  />
+                  <Input
+                    v-model:value="signalrHubUrlLan"
+                    addon-before="局域网"
+                    class="mt-2"
+                    :class="{ 'border-blue-500': signalrHubNetwork === 'lan' }"
                   />
                 </FormItem>
                 <FormItem label="断线重连间隔（秒）">

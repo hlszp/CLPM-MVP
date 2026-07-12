@@ -338,7 +338,22 @@ function findModeChangePoints(
 
 function render() {
   const { timestamps, pv, sp, op, mode, pvQuality } = props.trend;
-  if (!timestamps || timestamps.length === 0) return;
+  if (!timestamps || timestamps.length === 0) {
+    renderEcharts({
+      backgroundColor: 'transparent',
+      title: {
+        text: '暂无趋势数据',
+        left: 'center',
+        top: 'center',
+        textStyle: {
+          color: chartTextColor.value,
+          fontSize: 14,
+          fontWeight: 'normal',
+        },
+      },
+    });
+    return;
+  }
 
   const spData = buildSimpleData(timestamps, sp);
   const opData = buildSimpleData(timestamps, op);
@@ -540,8 +555,34 @@ function render() {
     });
   }
 
+  // 采样间隔提示（sampleInterval > 1 或触发降采样时显示）
+  const sampleInterval = props.trend.sampleInterval;
+  const downsampled = props.trend.downsampled;
+  const showSamplingHint =
+    (sampleInterval && sampleInterval > 1) || downsampled;
+  const samplingHint = showSamplingHint
+    ? `采样间隔: ${sampleInterval}s${downsampled ? ' (已降采样)' : ''}`
+    : '';
+
   renderEcharts({
     backgroundColor: 'transparent',
+    graphic: showSamplingHint
+      ? {
+          elements: [
+            {
+              right: 10,
+              style: {
+                fill: chartTextColor.value,
+                fontSize: 11,
+                text: samplingHint,
+              },
+              top: 28,
+              type: 'text',
+              z: 100,
+            },
+          ],
+        }
+      : undefined,
     dataZoom: showMode
       ? [
           // X 轴：滚轮 + 滑块
