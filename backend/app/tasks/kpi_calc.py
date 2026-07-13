@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from bisect import bisect_left
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -64,17 +64,74 @@ def calculate_hourly_kpi(self: AsyncTask, ts_start: str | None = None) -> dict:
     """每小时全量计算所有 ACTIVE 回路的 KPI 快照。
 
     失败自动重试 3 次，指数退避。
+    Beat 自动触发时创建 TaskRecord（triggered_by=system），使定时任务
+    也出现在「自动任务」页面。
 
     Args:
         ts_start: 可选，指定计算时间窗起始（ISO 格式），None 时取上一个完整小时
     """
     logger.info("KPI 计算任务开始, task_id=%s, ts_start=%s", self.request.id, ts_start)
     try:
-        result = self.run_async(_do_calculate(ts_start=ts_start))
+        result = self.run_async(_do_hourly_with_tracking(ts_start=ts_start))
         logger.info("KPI 计算任务完成: %s", result)
         return result
     except Exception:
         logger.exception("KPI 计算任务失败")
+        raise
+
+
+async def _do_hourly_with_tracking(ts_start: str | None = None) -> dict:
+    """执行每小时 KPI 计算并创建任务跟踪记录（系统自动触发）。
+
+    Beat 自动触发时调用此函数：先创建 TaskRecord（STANDARD / triggered_by=system），
+    再执行计算，最后更新终态。手动触发（API）仍走 ``trigger_standard_evaluation``，
+    由 API 层创建 TaskRecord。
+    """
+    from app.schemas.task import TaskStatus, TaskType
+    from app.services import task_tracker
+
+    # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
+    _SHANGHAI = timezone(timedelta(hours=8))
+    title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
+
+    task_id = await task_tracker.create_task(
+        task_type=TaskType.STANDARD,
+        created_by="system",
+        created_by_id="",
+        ts_start=ts_start,
+        triggered_by="system",
+        title=title,
+    )
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        started_at=datetime.now(UTC).isoformat(),
+        current_stage="开始计算",
+    )
+
+    try:
+        result = await _do_calculate(
+            ts_start=ts_start,
+            task_id=task_id,
+            window_index=1,
+            total_windows=1,
+        )
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.SUCCESS,
+            progress=1.0,
+            current_stage="完成",
+            finished_at=datetime.now(UTC).isoformat(),
+        )
+        return result
+    except Exception as exc:
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.FAILED,
+            error_message=str(exc),
+            finished_at=datetime.now(UTC).isoformat(),
+        )
         raise
 
 
@@ -127,29 +184,22 @@ celery_app.conf.timezone = "Asia/Shanghai"
 
 # ---------------------------------------------------------------------------
 # beat_init 信号：Beat 启动时从 EngineRule 读取策略配置，动态更新调度周期
+# + Redis Pub/Sub 监听线程：策略配置变更后即时重载（无需重启 Beat）
 # ---------------------------------------------------------------------------
 
 from celery.signals import beat_init  # noqa: E402
 
+# Redis pub/sub 频道：API 更新 EngineRule 后发布通知，Beat 订阅后即时重载
+BEAT_RELOAD_CHANNEL = "clpm:beat:reload"
 
-@beat_init.connect
-def _apply_engine_rules(sender=None, **kwargs):
-    """Beat 启动时从 DB 读取 EngineRule，动态更新 beat_schedule。
+
+def _apply_rules_to_schedule(rules: dict) -> None:
+    """将 EngineRule 配置应用到 celery_app.conf.beat_schedule。
 
     支持 EngineRule：
     - EVAL_CALC_CYCLE (cycle_minutes): KPI 计算周期，覆盖 kpi-calc-hourly 的 schedule
     - EVAL_CALC_CYCLE.is_enabled=False: 禁用自动计算（从 beat_schedule 删除条目）
-
-    注意：修改策略后需重启 Celery Beat 进程才能生效（前端策略页面已提示）。
     """
-    import asyncio
-
-    try:
-        rules = asyncio.run(_load_engine_rules_from_db())
-    except Exception as exc:
-        logger.warning("beat_init: 从 DB 读取 EngineRule 失败，使用默认调度周期: %s", exc)
-        return
-
     if not rules:
         return
 
@@ -163,22 +213,70 @@ def _apply_engine_rules(sender=None, **kwargs):
     current_schedule = dict(celery_app.conf.beat_schedule or {})
 
     if not is_enabled:
-        # 策略禁用 → 从 beat_schedule 删除 kpi-calc-hourly
         current_schedule.pop("kpi-calc-hourly", None)
-        logger.info("beat_init: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
+        logger.info("beat_schedule: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
     else:
-        # 策略启用 → 按配置的 cycle_minutes 更新周期
         cycle_seconds = float(cycle_minutes) * 60.0
         current_schedule["kpi-calc-hourly"] = {
             "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
             "schedule": cycle_seconds,
         }
         logger.info(
-            "beat_init: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
+            "beat_schedule: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
             cycle_minutes,
         )
 
     celery_app.conf.beat_schedule = current_schedule
+
+
+def _reload_beat_schedule_from_db() -> None:
+    """从 DB 读取 EngineRule 并更新 beat_schedule（同步包装，可在子线程调用）."""
+    try:
+        rules = asyncio.run(_load_engine_rules_from_db())
+    except Exception as exc:
+        logger.warning("reload_beat: 从 DB 读取 EngineRule 失败，保持当前调度周期: %s", exc)
+        return
+    _apply_rules_to_schedule(rules)
+
+
+def _start_beat_reload_listener() -> None:
+    """启动 Redis pub/sub 监听线程，收到通知后动态重载 beat_schedule。
+
+    API 端 update_engine_rule() 更新 EVAL_CALC_CYCLE 后会向
+    ``BEAT_RELOAD_CHANNEL`` 发布消息，本线程订阅后即时调用
+    ``_reload_beat_schedule_from_db()`` 完成热重载，无需重启 Beat 进程。
+    """
+    import threading
+
+    import redis as sync_redis
+
+    from app.core.config import settings
+
+    def _listener() -> None:
+        try:
+            client = sync_redis.from_url(settings.redis_url)
+            pubsub = client.pubsub()
+            pubsub.subscribe(BEAT_RELOAD_CHANNEL)
+            logger.info("Beat reload listener 已启动，订阅频道=%s", BEAT_RELOAD_CHANNEL)
+            for message in pubsub.listen():
+                if message["type"] == "message":
+                    logger.info("收到 Beat 重载通知: %s", message["data"])
+                    _reload_beat_schedule_from_db()
+        except Exception as exc:
+            logger.warning("Beat reload listener 异常: %s", exc)
+
+    thread = threading.Thread(target=_listener, daemon=True, name="beat-reload-listener")
+    thread.start()
+
+
+@beat_init.connect
+def _apply_engine_rules(sender=None, **kwargs):
+    """Beat 启动时从 DB 读取 EngineRule，动态更新调度周期。
+
+    同时启动 Redis pub/sub 监听线程，支持策略配置变更后即时生效（无需重启 Beat）。
+    """
+    _reload_beat_schedule_from_db()
+    _start_beat_reload_listener()
 
 
 async def _load_engine_rules_from_db() -> dict:
@@ -1841,9 +1939,13 @@ async def _update_backfill_progress(
     total_loops = total_windows * loops_per_window
     done_loops = (window_index - 1) * loops_per_window + done_in_window
     progress = done_loops / total_loops if total_loops > 0 else 0.0
-    stage = (
-        f"回填计算 窗口[{window_index}/{total_windows}] 回路[{done_in_window}/{loops_per_window}]"
-    )
+    if total_windows > 1:
+        stage = (
+            f"回填计算 窗口[{window_index}/{total_windows}]"
+            f" 回路[{done_in_window}/{loops_per_window}]"
+        )
+    else:
+        stage = f"指标计算 回路[{done_in_window}/{loops_per_window}]"
     await task_tracker.update_status(
         task_id,
         TaskStatus.RUNNING,

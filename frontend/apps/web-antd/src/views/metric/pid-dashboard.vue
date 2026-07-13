@@ -69,23 +69,26 @@ const top5List = computed(() => {
   return items.slice(0, 5);
 });
 
-// 定级阈值等级名称（level 1=优秀, 2=良好, 3=合格, 4=警告, 5=不合格）
-const ratingLabels: Record<string, string> = {
-  '1': '优秀',
-  '2': '良好',
-  '3': '合格',
-  '4': '警告',
-  '5': '不合格',
-};
-
 // 默认定级阈值（国标 GB/T 44693.2-2024 §6.3）
 const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
-  { level: 1, name: 'EXCELLENT', minScore: 90, maxScore: 100, color: '#52c41a' },
-  { level: 2, name: 'GOOD', minScore: 80, maxScore: 90, color: '#1890ff' },
-  { level: 3, name: 'FAIR', minScore: 60, maxScore: 80, color: '#faad14' },
-  { level: 4, name: 'WARNING', minScore: 40, maxScore: 60, color: '#fa8c16' },
-  { level: 5, name: 'POOR', minScore: 0, maxScore: 40, color: '#f5222d' },
+  { level: 1, name: 'EXCELLENT', label: '优秀', minScore: 90, maxScore: 100, color: '#52c41a' },
+  { level: 2, name: 'GOOD', label: '良好', minScore: 80, maxScore: 90, color: '#1890ff' },
+  { level: 3, name: 'FAIR', label: '合格', minScore: 60, maxScore: 80, color: '#faad14' },
+  { level: 4, name: 'WARNING', label: '警告', minScore: 40, maxScore: 60, color: '#fa8c16' },
+  { level: 5, name: 'POOR', label: '不合格', minScore: 0, maxScore: 40, color: '#f5222d' },
 ];
+
+// 定级阈值等级中文显示名（从配置读取，降级用默认值）
+const ratingLabels = computed<Record<string, string>>(() => {
+  const labels: Record<string, string> = {};
+  const thresholds = gradingThresholds.value.length > 0
+    ? gradingThresholds.value
+    : DEFAULT_THRESHOLDS;
+  for (const t of thresholds) {
+    labels[String(t.level)] = t.label ?? t.name;
+  }
+  return labels;
+});
 
 function getRatingLevel(score: number): string {
   const thresholds = gradingThresholds.value.length > 0
@@ -128,7 +131,7 @@ const tableData = computed(() => {
 
 const top5Columns = [
   { title: '序号', dataIndex: 'index', key: 'index', width: 40, align: 'center' as const },
-  { title: '位号', dataIndex: 'tagName', key: 'tagName', width: 90 },
+  { title: '位号', dataIndex: 'tagName', key: 'tagName', width: 140, ellipsis: true },
   { title: '名称', dataIndex: 'loopName', key: 'loopName', ellipsis: true },
   { title: '性能评分', dataIndex: 'score', key: 'score', width: 70, align: 'right' as const },
   { title: '平稳率', dataIndex: 'steadyRate', key: 'steadyRate', width: 65, align: 'right' as const },
@@ -137,23 +140,12 @@ const top5Columns = [
 
 const top5TableData = computed(() => {
   return top5List.value.map((item, index) => {
-    const fullName = item.loopName || item.tagName || '—';
-    // 最多显示 16 个字符（按字符长度计算，中文算 2），超出截断加省略号
-    let truncated = fullName;
-    let len = 0;
-    for (const ch of fullName) {
-      len += ch.codePointAt(0)! > 0x7F ? 2 : 1;
-      if (len > 32) { // 16 汉字 = 32
-        truncated = fullName.slice(0, fullName.indexOf(ch)) + '…';
-        break;
-      }
-    }
     return {
       key: item.loopId,
       index: index + 1,
       loopId: item.loopId,
       tagName: item.tagName,
-      loopName: truncated,
+      loopName: item.loopName || item.tagName || '—',
       score: formatNumber(item.score),
       steadyRate: `${formatNumber(item.steadyRate)}%`,
     };
@@ -409,15 +401,19 @@ function renderStatusPieChart() {
   };
 
   const modeCounts = rt?.modeCounts ?? {};
-  const pieData = Object.keys(MODE_LABELS).map((modeKey) => {
+  const allPieData = Object.keys(MODE_LABELS).map((modeKey) => {
     const mode = Number.parseInt(modeKey, 10);
-    const count = modeCounts[modeKey] ?? modeCounts[mode] ?? 0;
+    const count = modeCounts[modeKey] ?? 0;
     return {
       value: count,
-      name: MODE_LABELS[mode],
-      itemStyle: { color: MODE_COLORS[mode] },
+      name: MODE_LABELS[mode] ?? modeKey,
+      itemStyle: { color: MODE_COLORS[mode] ?? '#999' },
     };
   });
+
+  // 仅展示有数据的 MODE（全部为 0 时显示全部以便占位）
+  const pieData = total === 0 ? allPieData : allPieData.filter((d) => (d.value ?? 0) > 0);
+  const legendNames = pieData.map((d) => d.name);
 
   renderStatusPie({
     tooltip: {
@@ -431,7 +427,7 @@ function renderStatusPieChart() {
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: Object.values(MODE_LABELS),
+      data: legendNames,
     },
     series: [
       {
@@ -449,35 +445,35 @@ function renderStatusPieChart() {
           label: { show: true, fontSize: 12, fontWeight: 'bold', color: chartColors.value.textStrong },
         },
         labelLine: { show: false },
-        // 仅展示有数据的 MODE 值（或全部为 0 时显示全部以便占位）
-        data: total === 0 ? pieData : pieData.filter((d) => (d.value ?? 0) > 0),
+        data: pieData,
       },
     ],
   });
 }
 
 function renderPieChart() {
-  const items = boardAggregate.value?.items ?? [];
+  // 按回路评分均值计算等级占比（使用 rankingList 中的逐回路数据）
+  const loops = rankingList.value;
   const thresholds = gradingThresholds.value.length > 0
     ? gradingThresholds.value
     : DEFAULT_THRESHOLDS;
 
-  // 按等级统计数量（level 1=优秀 ~ level 5=不合格）
+  // 按等级统计回路数量（level 1=优秀 ~ level 5=不合格）
   const levelCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  items.forEach((item) => {
-    const score = item.avgScore ?? 0;
+  loops.forEach((item) => {
+    const score = item.score ?? 0;
     const level = Number.parseInt(getRatingLevel(score), 10);
     levelCounts[level] = (levelCounts[level] ?? 0) + 1;
   });
 
-  const total = items.length;
+  const total = loops.length;
 
   // 按等级顺序（1→5）生成饼图数据
   const pieData = [...thresholds]
     .toSorted((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => a.level - b.level)
     .map((t: MetricApi.GradingThresholdItem) => ({
       value: levelCounts[t.level] ?? 0,
-      name: ratingLabels[String(t.level)] ?? t.name,
+      name: ratingLabels.value[String(t.level)] ?? t.name,
       itemStyle: { color: t.color ?? themeColors.value.SUCCESS },
     }));
 
@@ -492,7 +488,7 @@ function renderPieChart() {
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: pieData.map((d: { itemStyle: { color: string }; name: string; value: number; }) => d.name),
+      data: pieData.filter((d: { value: number }) => (d.value ?? 0) > 0 || total === 0).map((d: { name: string }) => d.name),
     },
     series: [
       {
@@ -505,20 +501,11 @@ function renderPieChart() {
           borderColor: chartColors.value.border,
           borderWidth: 2,
         },
-        label: {
-          show: true,
-          position: 'outside',
-          fontSize: 11,
-          color: chartColors.value.text,
-          formatter: (params: any) => {
-            const percent = total > 0 ? ((params.value / total) * 100).toFixed(0) : 0;
-            return `${params.name}\n${params.value}个 ${percent}%`;
-          },
-        },
+        label: { show: false },
         emphasis: {
           label: { show: true, fontSize: 12, fontWeight: 'bold', color: chartColors.value.textStrong },
         },
-        labelLine: { show: true, length: 10, length2: 10 },
+        labelLine: { show: false },
         data: pieData.filter((d: { itemStyle: { color: string }; name: string; value: number; }) => (d.value ?? 0) > 0 || total === 0),
       },
     ],
@@ -598,9 +585,11 @@ async function loadRanking() {
       timeWindow: timeWindow.value,
       sortBy: 'score',
       sortOrder: top5Sort.value,
-      limit: 10,
+      limit: 100,
     });
     rankingList.value = data.filter((it) => it.includeInEvaluation !== false);
+    await nextTick();
+    renderPieChart();
   } catch {
     // ignore
   }
@@ -833,16 +822,16 @@ onMounted(() => {
 
 .clpm-pid-dashboard__body {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   height: calc(100vh - 56px);
-  padding: 16px;
+  padding: 12px;
 }
 
 .clpm-pid-dashboard__main {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
   overflow-y: auto;
 }
 
@@ -858,9 +847,9 @@ onMounted(() => {
 .clpm-pid-dashboard__gauge-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   align-items: center;
-  padding: 12px;
+  padding: 8px;
   background: rgb(255 255 255 / 80%);
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -892,11 +881,11 @@ onMounted(() => {
 
 .clpm-pid-dashboard__middle-row {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .clpm-pid-dashboard__chart-card {
-  padding: 16px;
+  padding: 8px 12px;
   background: rgb(255 255 255 / 80%);
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -923,7 +912,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   font-size: 14px;
   font-weight: 500;
   color: #334155;
@@ -954,14 +943,14 @@ onMounted(() => {
 .clpm-pid-dashboard__bottom-row {
   display: flex;
   flex: 1;
-  gap: 12px;
+  gap: 8px;
 }
 
 .clpm-pid-dashboard__table-card {
   display: flex;
   flex-direction: column;
   width: 50%;
-  padding: 16px;
+  padding: 8px 12px;
   background: rgb(255 255 255 / 80%);
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -988,7 +977,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   width: 50%;
-  padding: 16px;
+  padding: 8px 12px;
   background: rgb(255 255 255 / 80%);
   border: 1px solid #e2e8f0;
   border-radius: 8px;

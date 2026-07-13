@@ -16,7 +16,7 @@ import type { MetricApi } from '#/api/metric';
 import { computed, onMounted, reactive, ref } from 'vue';
 
 import {
-  Alert,
+  // Alert 已移除：策略配置变更后通过 Redis Pub/Sub 即时生效，无需 Beat 重启提示
   Card,
   Form,
   FormItem,
@@ -262,14 +262,6 @@ onMounted(() => {
     </ClpmPageToolbar>
 
     <div class="mt-4 space-y-4">
-      <!-- Beat 重启提示 -->
-      <Alert
-        v-if="ruleMap.EVAL_CALC_CYCLE?.warning"
-        type="warning"
-        show-icon
-        :message="ruleMap.EVAL_CALC_CYCLE.warning"
-      />
-
       <!-- 标准评估任务 -->
       <Card title="标准评估任务" :loading="loading">
         <template #extra>
@@ -378,7 +370,7 @@ onMounted(() => {
       :impact-scope="changeSummary.length > 0
         ? changeSummary.map((c) => `${c.field}: ${c.from} → ${c.to}`).join('；')
         : '策略配置变更'"
-      rollback-tip="变更后下一次评估调度将按新策略执行；计算周期变更需重启 Celery Beat 进程才能生效"
+      rollback-tip="变更后系统将自动通知 Beat 进程即时重载调度，无需重启服务"
       confirm-code="确认变更"
       confirm-code-placeholder="请输入 确认变更 以确认"
       :loading="saving"

@@ -91,10 +91,10 @@ def _build_board_item(summary: UnitKpiSummary, node_name: str) -> dict:
         "saturationRate": (
             float(summary.saturation_rate) if summary.saturation_rate is not None else None
         ),
-        "totalLoops": summary.total_loops,
-        "evaluatedLoops": summary.evaluated_loops,
-        "inconclusiveLoops": summary.inconclusive_loops,
-        "excludedLoops": summary.excluded_loops,
+        "totalLoops": summary.total_loops or 0,
+        "evaluatedLoops": summary.evaluated_loops or 0,
+        "inconclusiveLoops": summary.inconclusive_loops or 0,
+        "excludedLoops": summary.excluded_loops or 0,
         "status": summary.status,
         "algorithmVersion": summary.algorithm_version,
     }
@@ -295,24 +295,41 @@ async def get_board_trend_endpoint(
     result = await db.execute(stmt)
     rows = result.all()
 
+    # 构建按小时索引的数据字典
+    row_map: dict[str, any] = {}
+    for row in rows:
+        hour_key = row.hour.strftime("%Y-%m-%dT%H:00:00")
+        row_map[hour_key] = row
+
+    # 生成完整的小时序列（填充缺失的小时）
     timestamps: list[str] = []
     avg_score: list[float | None] = []
     auto_mode_rate: list[float | None] = []
     stability_rate: list[float | None] = []
     evaluated_loops: list[int] = []
 
-    for row in rows:
-        timestamps.append(row.hour.strftime("%Y-%m-%dT%H:00:00"))
-        total = row.total_evaluated or 0
-        evaluated_loops.append(total)
-        if total > 0:
-            avg_score.append(round(float(row.score_weighted_sum or 0) / total, 2))
-            auto_mode_rate.append(round(float(row.auto_weighted_sum or 0) / total, 2))
-            stability_rate.append(round(float(row.stable_weighted_sum or 0) / total, 2))
+    current = start.replace(minute=0, second=0, microsecond=0)
+    while current <= now:
+        hour_key = current.strftime("%Y-%m-%dT%H:00:00")
+        timestamps.append(hour_key)
+        row = row_map.get(hour_key)
+        if row is not None:
+            total = row.total_evaluated or 0
+            evaluated_loops.append(total)
+            if total > 0:
+                avg_score.append(round(float(row.score_weighted_sum or 0) / total, 2))
+                auto_mode_rate.append(round(float(row.auto_weighted_sum or 0) / total, 2))
+                stability_rate.append(round(float(row.stable_weighted_sum or 0) / total, 2))
+            else:
+                avg_score.append(None)
+                auto_mode_rate.append(None)
+                stability_rate.append(None)
         else:
+            evaluated_loops.append(0)
             avg_score.append(None)
             auto_mode_rate.append(None)
             stability_rate.append(None)
+        current += timedelta(hours=1)
 
     return success(
         data={
@@ -402,9 +419,9 @@ async def get_board_aggregate_endpoint(
         .subquery()
     )
 
-    # 查询每个子节点的最新快照
+    # 查询每个子节点的最新快照（含 node_type，避免 N+1 查询）
     stmt = (
-        select(UnitKpiSummary, PlantNode.name.label("node_name"))
+        select(UnitKpiSummary, PlantNode.name.label("node_name"), PlantNode.type.label("node_type"))
         .join(PlantNode, UnitKpiSummary.node_id == PlantNode.id)
         .join(
             subq,
@@ -416,7 +433,11 @@ async def get_board_aggregate_endpoint(
 
     result = await db.execute(stmt)
     rows = result.all()
-    items = [_build_board_item(summary, node_name) for summary, node_name in rows]
+    items = []
+    for summary, node_name, node_type in rows:
+        item = _build_board_item(summary, node_name)
+        item["_node_type"] = node_type
+        items.append(item)
 
     # 获取聚合节点名称
     node_name = None
@@ -479,19 +500,16 @@ async def get_board_aggregate_endpoint(
         inconclusive_loops = int(ic_result.scalar() or 0)
 
     # 计算聚合值（仅使用 UNIT 级节点数据加权，避免父子节点重复）
-    # 过滤出 UNIT 类型的节点
-    unit_items = []
+    # 过滤出 UNIT 类型的节点（使用查询结果中的 node_type，避免 N+1 查询）
+    unit_items = [item for item in items if item.get("_node_type") == "UNIT"]
     for item in items:
-        node_type_result = await db.execute(
-            select(PlantNode.type).where(PlantNode.id == item["nodeId"])
-        )
-        node_type = node_type_result.scalar_one_or_none()
-        if node_type == "UNIT":
-            unit_items.append(item)
+        item.pop("_node_type", None)
 
     # 按 UNIT 节点的 evaluatedLoops 加权平均
     total_unit_evaluated = sum(
-        item.get("evaluatedLoops", 0) for item in unit_items if item.get("evaluatedLoops") > 0
+        (item.get("evaluatedLoops") or 0)
+        for item in unit_items
+        if (item.get("evaluatedLoops") or 0) > 0
     )
 
     def weighted_avg(field: str) -> float | None:
@@ -501,7 +519,7 @@ async def get_board_aggregate_endpoint(
         count = 0
         for item in unit_items:
             val = item.get(field)
-            weight = item.get("evaluatedLoops", 0)
+            weight = item.get("evaluatedLoops") or 0
             if val is not None and weight > 0:
                 total += float(val) * weight
                 count += weight

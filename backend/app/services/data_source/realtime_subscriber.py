@@ -78,7 +78,6 @@ class RealtimeSubscriber:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
         self._flush_task: asyncio.Task | None = None
-        self._db_flush_task: asyncio.Task | None = None
         self._ws: Any = None
         self._running = False
         self._subscribed_tags: set[str] = set()
@@ -86,9 +85,6 @@ class RealtimeSubscriber:
             str, dict[str, Any]
         ] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
         self._buffer_lock = asyncio.Lock()
-        # DB 批量更新缓冲区：{tag_code: {"value": ..., "quality": ...}}
-        self._db_buffer: dict[str, dict[str, Any]] = {}
-        self._db_flush_lock = asyncio.Lock()
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -112,8 +108,6 @@ class RealtimeSubscriber:
         self._task = asyncio.create_task(self._run())
         if self._writeback_enabled:
             self._flush_task = asyncio.create_task(self._flush_loop())
-        # DB 批量更新任务（始终启动，不依赖 writeback）
-        self._db_flush_task = asyncio.create_task(self._db_flush_loop())
         logger.info(
             "实时数据订阅任务已启动 (hub=%s, writeback=%s)",
             settings.SIGNALR_HUB_URL,
@@ -137,19 +131,11 @@ class RealtimeSubscriber:
             except asyncio.CancelledError:
                 pass
             self._flush_task = None
-        if self._db_flush_task is not None:
-            self._db_flush_task.cancel()
-            try:
-                await self._db_flush_task
-            except asyncio.CancelledError:
-                pass
-            self._db_flush_task = None
         if self._ws is not None:
             await self._ws.close()
             self._ws = None
         # 停止前 flush 剩余数据
         await self._flush_buffer()
-        await self._db_flush_batch()
         logger.info("实时数据订阅已停止")
 
     async def _run(self) -> None:
@@ -246,7 +232,7 @@ class RealtimeSubscriber:
             return []
 
     async def _cache_value(self, item: dict) -> None:
-        """将实时值缓存到 Redis + 更新数据库 + 放入 TDengine 写入缓冲区 + Pub/Sub 广播."""
+        """将实时值缓存到 Redis + Pub/Sub 广播 + 可选写回 TDengine."""
         tag_code = item.get("tagCode", "")
         if not tag_code:
             return
@@ -264,13 +250,6 @@ class RealtimeSubscriber:
 
         # Pub/Sub 广播给 WebSocket 端点
         await redis_client.publish(_PUBSUB_CHANNEL, value)
-
-        # 放入 DB 批量更新缓冲区（限频写入，避免高频 DB 操作）
-        async with self._db_flush_lock:
-            self._db_buffer[tag_code] = {
-                "value": item.get("value"),
-                "quality": item.get("quality", 0),
-            }
 
         # 可选：写回本地 TDengine 回路宽表（仅开发/模拟兼容）。
         # 现场模式下，原始数据已由外部系统按“一 Tag 一表”存储，CLPM 只缓存/转发实时值。
@@ -296,79 +275,6 @@ class RealtimeSubscriber:
             loop_part, role = tag_code.rsplit(".", 1)
             return loop_part, role.upper()
         return tag_code, "PV"
-
-    async def _db_flush_loop(self) -> None:
-        """每 5 秒批量 flush DB 缓冲区，避免高频单条 UPDATE。"""
-        while self._running:
-            try:
-                await asyncio.sleep(5.0)
-                await self._db_flush_batch()
-            except asyncio.CancelledError:
-                break
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("DB 批量 flush 异常: %s", exc)
-
-    async def _db_flush_batch(self) -> None:
-        """将 DB 缓冲区的 tag 值批量更新到 PostgreSQL。"""
-        async with self._db_flush_lock:
-            if not self._db_buffer:
-                return
-            batch = dict(self._db_buffer)
-            self._db_buffer.clear()
-
-        if not batch:
-            return
-
-        try:
-            # last_sync_at 列为 TIMESTAMP WITHOUT TIME ZONE，需用 naive datetime
-            now = datetime.now(UTC).replace(tzinfo=None)
-            # 构建批量 CASE WHEN 语句
-            tag_codes = list(batch.keys())
-            placeholders = ",".join(f":tag_{i}" for i in range(len(tag_codes)))
-
-            case_value = (
-                "CASE tag_name "
-                + " ".join(f"WHEN :tag_{i} THEN :val_{i}" for i in range(len(tag_codes)))
-                + " ELSE current_value END"
-            )
-
-            case_quality = (
-                "CASE tag_name "
-                + " ".join(f"WHEN :tag_{i} THEN :qual_{i}" for i in range(len(tag_codes)))
-                + " ELSE quality END"
-            )
-
-            params: dict[str, Any] = {"sync_time": now}
-            for i, tc in enumerate(tag_codes):
-                v = batch[tc]["value"]
-                params[f"tag_{i}"] = tc
-                params[f"val_{i}"] = float(v) if v not in (None, "") else None
-                # 质量码转换：整数(1=Good,192=OPC DA Good) → 字符串(GOOD/BAD/UNCERTAIN)
-                raw_q = batch[tc]["quality"]
-                if isinstance(raw_q, int | float):
-                    params[f"qual_{i}"] = "GOOD" if int(raw_q) in (1, 2, 3, 192) else "BAD"
-                elif isinstance(raw_q, str) and raw_q.upper() in ("GOOD", "BAD", "UNCERTAIN"):
-                    params[f"qual_{i}"] = raw_q.upper()
-                else:
-                    params[f"qual_{i}"] = "GOOD" if raw_q else "BAD"
-
-            from sqlalchemy import text
-
-            async with AsyncSessionLocal() as db:
-                await db.execute(
-                    text(
-                        f"UPDATE tag_registry SET "
-                        f"current_value = {case_value}, "
-                        f"quality = {case_quality}, "
-                        f"last_sync_at = :sync_time "
-                        f"WHERE tag_name IN ({placeholders})"
-                    ),
-                    params,
-                )
-                await db.commit()
-            logger.debug("DB 批量更新 %d 个 tag 值", len(batch))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("DB 批量更新失败: %s", exc)
 
     async def get_cached_values(self, tag_codes: list[str]) -> list[dict]:
         """从 Redis 读取缓存的实时值.

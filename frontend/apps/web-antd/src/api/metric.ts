@@ -407,6 +407,8 @@ export namespace MetricApi {
   export interface GradingThresholdItem {
     level: number;
     name: string;
+    /** 中文显示名称（可配置，如"优秀"/"良好"/"合格"/"警告"/"不合格"） */
+    label?: null | string;
     minScore: number;
     maxScore: number;
     color?: null | string;

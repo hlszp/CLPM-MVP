@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
 import random
@@ -14,6 +15,16 @@ import time
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+
+def _deterministic_seed(tag_code: str) -> int:
+    """基于 tag_code 生成确定性随机种子（跨机器/跨进程一致）.
+
+    使用 MD5 哈希替代 Python 内置 hash()，避免 PYTHONHASHSEED
+    随机化导致不同进程生成不同的仿真值。
+    """
+    digest = hashlib.md5(tag_code.encode("utf-8")).hexdigest()  # noqa: S324
+    return int(digest[:8], 16) % 1000
 
 
 class RealtimeGenerator:
@@ -39,8 +50,8 @@ class RealtimeGenerator:
     def _get_tag_config(self, tag_code: str) -> dict:
         """获取或初始化 tag 配置（每个 tag 有不同的波形参数）."""
         if tag_code not in self._tag_configs:
-            # 基于 tag_code 哈希生成稳定的波形参数
-            seed = hash(tag_code) % 1000
+            # 确定性种子（MD5），确保跨机器/跨进程生成相同的仿真波形
+            seed = _deterministic_seed(tag_code)
             rng = random.Random(seed)
             self._tag_configs[tag_code] = {
                 "base": rng.uniform(20, 80),
@@ -54,11 +65,11 @@ class RealtimeGenerator:
     def _generate_mode_value(self, tag_code: str, now: float) -> int:
         """生成 MODE 离散值 0/1/2，至少 4 小时变化一次.
 
-        使用 tag_code hash 确定初始模式和相位偏移，
-        确保不同回路的 MODE 变化时刻不同但可复现。
+        使用确定性种子确定初始模式和相位偏移，
+        确保不同回路的 MODE 变化时刻不同但跨机器可复现。
         """
         if tag_code not in self._mode_states:
-            seed = hash(tag_code) % 1000
+            seed = _deterministic_seed(tag_code)
             rng = random.Random(seed)
             self._mode_states[tag_code] = {
                 "current": rng.choice(self._MODE_VALUES),

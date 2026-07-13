@@ -305,6 +305,45 @@ async def aggregate_node_snapshot(
     _realtime_result = await query_realtime_auto_rate(db, loop_ids)
     realtime_auto_rate = _realtime_result["rate"] if _realtime_result else None
 
+    # v6.1.2 修复：补充 UnitKpiSummary 所需的回路计数字段
+    total_loops_count = len(loop_ids)
+    evaluated_loops_count = int(row.cnt)
+
+    # excluded_loops: include_in_evaluation=False 的回路数
+    ex_result = await db.execute(
+        select(func.count())
+        .select_from(LoopLedger)
+        .where(
+            LoopLedger.id.in_(loop_ids),
+            LoopLedger.include_in_evaluation.is_(False),
+        )
+    )
+    excluded_loops_count = int(ex_result.scalar() or 0)
+
+    # inconclusive_loops: 只有 INCONCLUSIVE 快照但没有 SUCCESS 快照的回路数
+    ic_result = await db.execute(
+        select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
+        .select_from(KpiSnapshotHourly)
+        .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+        .where(
+            KpiSnapshotHourly.loop_id.in_(loop_ids),
+            KpiSnapshotHourly.ts_start >= ts_start,
+            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.status == "INCONCLUSIVE",
+            LoopLedger.include_in_evaluation.is_(True),
+            ~KpiSnapshotHourly.loop_id.in_(
+                select(KpiSnapshotHourly.loop_id)
+                .where(
+                    KpiSnapshotHourly.loop_id.in_(loop_ids),
+                    KpiSnapshotHourly.ts_start >= ts_start,
+                    KpiSnapshotHourly.ts_start <= ts_end,
+                    KpiSnapshotHourly.status == "SUCCESS",
+                )
+            ),
+        )
+    )
+    inconclusive_loops_count = int(ic_result.scalar() or 0)
+
     logger.info(
         "[节点级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "
         "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, 定级=%s",
@@ -340,6 +379,13 @@ async def aggregate_node_snapshot(
         "loop_count": int(row.cnt),
         "status": status,
         "algorithm_version": ALGORITHM_VERSION,
+        # v6.1.2: UnitKpiSummary 所需的回路计数字段
+        "total_loops": total_loops_count,
+        "evaluated_loops": evaluated_loops_count,
+        "inconclusive_loops": inconclusive_loops_count,
+        "excluded_loops": excluded_loops_count,
+        # unit_status: 聚合状态（SUCCESS/PARTIAL/EMPTY），不是性能定级
+        "unit_status": "PARTIAL" if inconclusive_loops_count > 0 else "SUCCESS",
     }
 
 

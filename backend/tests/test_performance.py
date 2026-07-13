@@ -481,6 +481,7 @@ class TestRanking:
         loop = MagicMock()
         loop.id = snapshot.loop_id
         loop.tag_name = "101-FC-1023"
+        loop.description = "101-FC-1023 进料流量控制"
         loop.unit_id = "00000000-0000-0000-0000-000000000111"
 
         call_count = [0]

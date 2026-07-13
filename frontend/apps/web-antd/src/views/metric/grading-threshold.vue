@@ -18,6 +18,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 
 import {
   Button,
+  Input,
   InputNumber,
   message,
   Modal,
@@ -51,38 +52,44 @@ const LEVEL_META: Record<
 
 /** 编辑态：以 level 为 key 存储编辑中的值 */
 const editState = reactive<
-  Record<number, { maxScore: number; minScore: number }>
+  Record<number, { label: string; maxScore: number; minScore: number }>
 >({});
 
 /** 获取编辑态（保证非 undefined，用于模板 v-model） */
-function editStateOf(level: number): { maxScore: number; minScore: number } {
+function editStateOf(level: number): { label: string; maxScore: number; minScore: number } {
   if (!editState[level]) {
-    editState[level] = { minScore: 0, maxScore: 0 };
+    editState[level] = { label: '', minScore: 0, maxScore: 0 };
   }
-  return editState[level] ?? { minScore: 0, maxScore: 0 };
+  return editState[level] ?? { label: '', minScore: 0, maxScore: 0 };
 }
 
 const columns: TableColumnsType = [
-  { title: '等级', dataIndex: 'level', key: 'level', width: 160 },
+  { title: '等级', dataIndex: 'level', key: 'level', width: 140 },
+  {
+    title: '中文显示名',
+    dataIndex: 'label',
+    key: 'label',
+    width: 140,
+  },
   {
     title: '最低分 (minScore)',
     dataIndex: 'minScore',
     key: 'minScore',
-    width: 180,
+    width: 160,
   },
   {
     title: '最高分 (maxScore)',
     dataIndex: 'maxScore',
     key: 'maxScore',
-    width: 180,
+    width: 160,
   },
   {
     title: '颜色（固定）',
     dataIndex: 'color',
     key: 'color',
-    width: 140,
+    width: 130,
   },
-  { title: '校验', key: 'validation', width: 180 },
+  { title: '校验', key: 'validation', width: 120 },
 ];
 
 /** 加载定级阈值 */
@@ -94,30 +101,33 @@ async function loadList() {
     // 同步编辑态
     for (const item of list.value) {
       editState[item.level] = {
+        label: item.label ?? LEVEL_META[item.level]?.cnLabel ?? `L${item.level}`,
         minScore: item.minScore,
         maxScore: item.maxScore,
       };
     }
     // 补全 5 级（后端可能未返回全部）
     const defaultLevels = [1, 2, 3, 4, 5];
-    const defaults: Record<number, { max: number; min: number }> = {
-      1: { min: 90, max: 100 },
-      2: { min: 80, max: 90 },
-      3: { min: 70, max: 80 },
-      4: { min: 60, max: 70 },
-      5: { min: 0, max: 60 },
+    const defaults: Record<number, { label: string; max: number; min: number }> = {
+      1: { label: '优秀', min: 90, max: 100 },
+      2: { label: '良好', min: 80, max: 90 },
+      3: { label: '合格', min: 60, max: 80 },
+      4: { label: '警告', min: 40, max: 60 },
+      5: { label: '不合格', min: 0, max: 40 },
     };
     for (const lv of defaultLevels) {
       if (!list.value.some((it) => it.level === lv)) {
         const placeholder: MetricApi.GradingThresholdItem = {
           level: lv,
           name: LEVEL_META[lv]?.name ?? `L${lv}`,
+          label: defaults[lv]?.label ?? `L${lv}`,
           minScore: defaults[lv]?.min ?? 0,
           maxScore: defaults[lv]?.max ?? 100,
           color: LEVEL_META[lv]?.color,
         };
         list.value.push(placeholder);
         editState[lv] = {
+          label: placeholder.label ?? '',
           minScore: placeholder.minScore,
           maxScore: placeholder.maxScore,
         };
@@ -172,6 +182,7 @@ async function confirmSave() {
     const thresholds = list.value.map((item) => ({
       level: item.level,
       name: item.name,
+      label: editState[item.level]?.label ?? item.label ?? '',
       minScore: editState[item.level]?.minScore ?? item.minScore,
       maxScore: editState[item.level]?.maxScore ?? item.maxScore,
       color: LEVEL_META[item.level]?.color ?? item.color,
@@ -238,6 +249,14 @@ onMounted(() => {
             {{ LEVEL_META[record.level]?.cnLabel ?? `L${record.level}` }}
             ({{ record.name }})
           </Tag>
+        </template>
+        <template v-else-if="column.key === 'label'">
+          <Input
+            v-model:value="editStateOf(record.level).label"
+            placeholder="如：优秀"
+            size="small"
+            style="width: 120px"
+          />
         </template>
         <template v-else-if="column.key === 'minScore'">
           <InputNumber

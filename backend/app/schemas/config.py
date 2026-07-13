@@ -291,6 +291,7 @@ class GradingThresholdItem(CamelModel):
     Attributes:
         level: 等级编号 1-5
         name: 等级名称（EXCELLENT/GOOD/FAIR/WARNING/POOR）
+        label: 中文显示名称（如"优秀"/"良好"/"合格"/"警告"/"不合格"），可配置
         minScore: 最低分（含）
         maxScore: 最高分（不含，最后一档为含）
         color: 显示颜色
@@ -298,6 +299,7 @@ class GradingThresholdItem(CamelModel):
 
     level: int = Field(..., ge=1, le=5)
     name: str
+    label: str | None = Field(None, max_length=20, description="中文显示名称，可配置")
     minScore: float = Field(..., ge=0, le=100)
     maxScore: float = Field(..., ge=0, le=100)
     color: str | None = None
