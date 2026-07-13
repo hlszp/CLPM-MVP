@@ -62,6 +62,7 @@ DEFAULT_GRADING_THRESHOLDS: list[dict] = [
     {
         "level": 1,
         "name": "EXCELLENT",
+        "label": "优秀",
         "minScore": 90.0,
         "maxScore": 100.0,
         "color": "#52c41a",
@@ -69,6 +70,7 @@ DEFAULT_GRADING_THRESHOLDS: list[dict] = [
     {
         "level": 2,
         "name": "GOOD",
+        "label": "良好",
         "minScore": 80.0,
         "maxScore": 90.0,
         "color": "#1890ff",
@@ -76,6 +78,7 @@ DEFAULT_GRADING_THRESHOLDS: list[dict] = [
     {
         "level": 3,
         "name": "FAIR",
+        "label": "合格",
         "minScore": 60.0,
         "maxScore": 80.0,
         "color": "#faad14",
@@ -83,6 +86,7 @@ DEFAULT_GRADING_THRESHOLDS: list[dict] = [
     {
         "level": 4,
         "name": "WARNING",
+        "label": "警告",
         "minScore": 40.0,
         "maxScore": 60.0,
         "color": "#fa8c16",
@@ -90,6 +94,7 @@ DEFAULT_GRADING_THRESHOLDS: list[dict] = [
     {
         "level": 5,
         "name": "POOR",
+        "label": "不合格",
         "minScore": 0.0,
         "maxScore": 40.0,
         "color": "#f5222d",

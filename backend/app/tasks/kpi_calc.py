@@ -184,29 +184,22 @@ celery_app.conf.timezone = "Asia/Shanghai"
 
 # ---------------------------------------------------------------------------
 # beat_init 信号：Beat 启动时从 EngineRule 读取策略配置，动态更新调度周期
+# + Redis Pub/Sub 监听线程：策略配置变更后即时重载（无需重启 Beat）
 # ---------------------------------------------------------------------------
 
 from celery.signals import beat_init  # noqa: E402
 
+# Redis pub/sub 频道：API 更新 EngineRule 后发布通知，Beat 订阅后即时重载
+BEAT_RELOAD_CHANNEL = "clpm:beat:reload"
 
-@beat_init.connect
-def _apply_engine_rules(sender=None, **kwargs):
-    """Beat 启动时从 DB 读取 EngineRule，动态更新 beat_schedule。
+
+def _apply_rules_to_schedule(rules: dict) -> None:
+    """将 EngineRule 配置应用到 celery_app.conf.beat_schedule。
 
     支持 EngineRule：
     - EVAL_CALC_CYCLE (cycle_minutes): KPI 计算周期，覆盖 kpi-calc-hourly 的 schedule
     - EVAL_CALC_CYCLE.is_enabled=False: 禁用自动计算（从 beat_schedule 删除条目）
-
-    注意：修改策略后需重启 Celery Beat 进程才能生效（前端策略页面已提示）。
     """
-    import asyncio
-
-    try:
-        rules = asyncio.run(_load_engine_rules_from_db())
-    except Exception as exc:
-        logger.warning("beat_init: 从 DB 读取 EngineRule 失败，使用默认调度周期: %s", exc)
-        return
-
     if not rules:
         return
 
@@ -220,22 +213,70 @@ def _apply_engine_rules(sender=None, **kwargs):
     current_schedule = dict(celery_app.conf.beat_schedule or {})
 
     if not is_enabled:
-        # 策略禁用 → 从 beat_schedule 删除 kpi-calc-hourly
         current_schedule.pop("kpi-calc-hourly", None)
-        logger.info("beat_init: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
+        logger.info("beat_schedule: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
     else:
-        # 策略启用 → 按配置的 cycle_minutes 更新周期
         cycle_seconds = float(cycle_minutes) * 60.0
         current_schedule["kpi-calc-hourly"] = {
             "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
             "schedule": cycle_seconds,
         }
         logger.info(
-            "beat_init: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
+            "beat_schedule: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
             cycle_minutes,
         )
 
     celery_app.conf.beat_schedule = current_schedule
+
+
+def _reload_beat_schedule_from_db() -> None:
+    """从 DB 读取 EngineRule 并更新 beat_schedule（同步包装，可在子线程调用）."""
+    try:
+        rules = asyncio.run(_load_engine_rules_from_db())
+    except Exception as exc:
+        logger.warning("reload_beat: 从 DB 读取 EngineRule 失败，保持当前调度周期: %s", exc)
+        return
+    _apply_rules_to_schedule(rules)
+
+
+def _start_beat_reload_listener() -> None:
+    """启动 Redis pub/sub 监听线程，收到通知后动态重载 beat_schedule。
+
+    API 端 update_engine_rule() 更新 EVAL_CALC_CYCLE 后会向
+    ``BEAT_RELOAD_CHANNEL`` 发布消息，本线程订阅后即时调用
+    ``_reload_beat_schedule_from_db()`` 完成热重载，无需重启 Beat 进程。
+    """
+    import threading
+
+    import redis as sync_redis
+
+    from app.core.config import settings
+
+    def _listener() -> None:
+        try:
+            client = sync_redis.from_url(settings.redis_url)
+            pubsub = client.pubsub()
+            pubsub.subscribe(BEAT_RELOAD_CHANNEL)
+            logger.info("Beat reload listener 已启动，订阅频道=%s", BEAT_RELOAD_CHANNEL)
+            for message in pubsub.listen():
+                if message["type"] == "message":
+                    logger.info("收到 Beat 重载通知: %s", message["data"])
+                    _reload_beat_schedule_from_db()
+        except Exception as exc:
+            logger.warning("Beat reload listener 异常: %s", exc)
+
+    thread = threading.Thread(target=_listener, daemon=True, name="beat-reload-listener")
+    thread.start()
+
+
+@beat_init.connect
+def _apply_engine_rules(sender=None, **kwargs):
+    """Beat 启动时从 DB 读取 EngineRule，动态更新调度周期。
+
+    同时启动 Redis pub/sub 监听线程，支持策略配置变更后即时生效（无需重启 Beat）。
+    """
+    _reload_beat_schedule_from_db()
+    _start_beat_reload_listener()
 
 
 async def _load_engine_rules_from_db() -> dict:

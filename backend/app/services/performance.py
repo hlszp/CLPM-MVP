@@ -281,6 +281,20 @@ async def update_engine_rule(
     )
     await db.commit()
 
+    # EVAL_CALC_CYCLE 变更后通知 Beat 进程即时重载调度（无需重启）
+    if rule.rule_code == "EVAL_CALC_CYCLE":
+        try:
+            await redis_client.publish(
+                "clpm:beat:reload",
+                json.dumps(
+                    {"rule_code": rule.rule_code, "updated_by": operator},
+                    ensure_ascii=False,
+                ),
+            )
+            logger.info("已通知 Beat 重载调度配置 (rule=%s)", rule.rule_code)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("通知 Beat 重载失败（调度将在下次 Beat 重启时生效）: %s", exc)
+
     return after
 
 
@@ -599,6 +613,13 @@ async def get_ranking(
     }
     sort_field_name = sort_field_map.get(sort_by, "score")
 
+    # 递归收集节点下属回路 ID（支持 FACTORY/AREA → UNIT 层级）
+    descendant_loop_ids: list[str] | None = None
+    if plant_node_id:
+        from app.services.node_performance import collect_descendant_loop_ids
+
+        descendant_loop_ids = await collect_descendant_loop_ids(db, plant_node_id)
+
     # 子查询：每个回路最新一条 SUCCESS 快照（PostgreSQL DISTINCT ON）
     base = (
         select(KpiSnapshotHourly)
@@ -607,10 +628,11 @@ async def get_ranking(
     )
     base = _apply_snapshot_filters(
         base,
-        plant_node_id=plant_node_id,
+        plant_node_id=None,
         start=start,
         end=now,
         status_filter="SUCCESS",
+        loop_ids=descendant_loop_ids,
     )
     subquery = base.subquery()
     snapshot_alias = aliased(KpiSnapshotHourly, subquery)
@@ -671,6 +693,7 @@ async def get_ranking(
             {
                 "loopId": loop_id,
                 "tagName": loop.tag_name,
+                "loopName": loop.description,
                 "unitName": unit_map.get(str(loop.unit_id)) if loop.unit_id else None,
                 "score": _to_float(snap.score),
                 "goodValueRate": _to_float(snap.good_value_rate),
@@ -853,16 +876,25 @@ def _apply_snapshot_filters(
     start: datetime | None = None,
     end: datetime | None = None,
     status_filter: str | None = None,
+    loop_ids: list[str] | None = None,
 ):
-    """为快照查询添加时间/状态/装置过滤条件。"""
+    """为快照查询添加时间/状态/装置过滤条件。
+
+    若提供 ``loop_ids``，直接按回路 ID 列表过滤（支持递归子节点）。
+    否则若提供 ``plant_node_id``，通过 join loop_ledger 按 unit_id 过滤（仅直接子节点）。
+    """
     if start is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start >= start)
     if end is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start <= end)
     if status_filter:
         stmt = stmt.where(KpiSnapshotHourly.status == status_filter)
-    if plant_node_id:
-        # 通过 join loop_ledger 过滤
+    if loop_ids is not None:
+        if loop_ids:
+            stmt = stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+        else:
+            stmt = stmt.where(False)
+    elif plant_node_id:
         stmt = stmt.join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id).where(
             LoopLedger.unit_id == plant_node_id
         )
