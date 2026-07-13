@@ -2,14 +2,16 @@
 
 设计要点：
 - Celery Beat 定时任务（每小时触发全量计算）
-- 从 TDengine 拉取回路时序数据（PV/SP/OP/MODE/PV_QUALITY）
+- 通过数据源工厂（factory.get_provider）获取历史时序数据（PV/SP/OP/MODE/PV_QUALITY）
+  - DATA_SOURCE_TYPE=remote_api: 从 AAS REST API 获取历史数据（生产模式）
+  - DATA_SOURCE_TYPE=tdengine: 从本地 TDengine 获取历史数据（开发/测试模式）
 - 按 metric_config 公式计算 6 大 KPI
-- 计算结果写入 kpi_snapshot_hourly 快照表
+- 计算结果写入 kpi_snapshot_hourly 快照表（PostgreSQL）
 - 任务幂等（相同 loop_id + ts_start 不重复写入）
 - 失败自动重试 3 次
 - 数据不足返回 INCONCLUSIVE 状态
 - PV 质量码为 Bad 的数据点剔除
-- TDengine 不可用时优雅降级（记录日志并跳过）
+- 数据源不可用时优雅降级（记录日志并跳过）
 """
 
 from __future__ import annotations
@@ -227,7 +229,11 @@ async def _do_calculate(
             空列表=直接返回 0 结果（用于 backfill 精准重算）。
     """
     from app.core.db import AsyncSessionLocal
-    from app.core.tdengine import query_trend_data
+    from app.services.data_source.factory import get_provider
+
+    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
+    # remote_api 模式下从 AAS REST API 获取历史数据；tdengine 模式下查本地 TDengine
+    query_trend_data = get_provider().query_trend_data
 
     # 空列表提前返回（backfill 调用时明确不需要计算任何回路）
     if loop_ids is not None and len(loop_ids) == 0:
@@ -333,7 +339,10 @@ async def _do_calculate(
 async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -> dict:
     """单回路 KPI 计算。"""
     from app.core.db import AsyncSessionLocal
-    from app.core.tdengine import query_trend_data
+    from app.services.data_source.factory import get_provider
+
+    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
+    query_trend_data = get_provider().query_trend_data
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
@@ -392,7 +401,7 @@ async def _calculate_loop_kpi(
         metric_configs: 指标配置字典 {metric_code: MetricConfig}
         ts_start: 时间窗起始
         ts_end: 时间窗结束
-        query_trend_fn: TDengine 查询函数（注入便于测试）
+        query_trend_fn: 历史数据查询函数（由 factory.get_provider 路由，注入便于测试）
         type_weights: 回路类型权重映射（v2 算法用），None 时回退 v1
 
     Returns:

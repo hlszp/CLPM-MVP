@@ -19,7 +19,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
-from app.core.tdengine import query_trend_data
 from app.models.audit import SysAuditLog
 from app.models.loop import LoopLedger
 from app.models.plant_node import PlantNode
@@ -315,7 +314,12 @@ async def check_node_monitor_trigger(
         )
         return True
 
-    # 查询 TDengine 最新值（最近 5 分钟）
+    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
+    from app.services.data_source.factory import get_provider
+
+    query_trend_data = get_provider().query_trend_data
+
+    # 查询历史数据最新值（最近 5 分钟）
     end_time = datetime.now(UTC).replace(tzinfo=None)
     start_time = end_time - timedelta(minutes=5)
     trend_data = await query_trend_data(
