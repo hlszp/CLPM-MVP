@@ -1841,13 +1841,17 @@ async def _update_backfill_progress(
     total_loops = total_windows * loops_per_window
     done_loops = (window_index - 1) * loops_per_window + done_in_window
     progress = done_loops / total_loops if total_loops > 0 else 0.0
+    stage = (
+        f"回填计算 窗口[{window_index}/{total_windows}]"
+        f" 回路[{done_in_window}/{loops_per_window}]"
+    )
     await task_tracker.update_status(
         task_id,
         TaskStatus.RUNNING,
         progress=progress,
         loops_done=done_loops,
         loops_total=total_loops,
-        current_stage=f"回填计算 窗口[{window_index}/{total_windows}] 回路[{done_in_window}/{loops_per_window}]",
+        current_stage=stage,
     )
 
 
