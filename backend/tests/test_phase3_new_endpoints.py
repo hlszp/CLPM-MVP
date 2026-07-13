@@ -17,6 +17,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 from tests.conftest import TEST_USERS, mock_current_user
+from tests.test_api_tasks import task_redis  # noqa: F401 — reuse FakeTaskRedis fixture
 
 # ---------------------------------------------------------------------------
 # 辅助函数
@@ -402,7 +403,7 @@ class TestAasSyncLogs:
 class TestTaskResults:
     """非标任务结果端点测试."""
 
-    def test_get_task_results_not_found(self, client, mock_db, fake_redis) -> None:
+    def test_get_task_results_not_found(self, client, mock_db, task_redis, fake_redis) -> None:
         """任务不存在时返回空列表 + taskStatus=NOT_FOUND."""
         # mock_db.execute 被 tasks.py 的 _get_task 调用（通过 redis_client.hgetall）
         # 以及 KpiSnapshotCustom 查询
@@ -431,7 +432,7 @@ class TestTaskResults:
         assert data["total"] == 0
         assert data["taskStatus"] == "NOT_FOUND"
 
-    def test_get_task_results_with_data(self, client, mock_db, fake_redis) -> None:
+    def test_get_task_results_with_data(self, client, mock_db, task_redis, fake_redis) -> None:
         """有结果数据时返回分页列表."""
         # mock task data in fake_redis
         fake_redis._strings.clear()
