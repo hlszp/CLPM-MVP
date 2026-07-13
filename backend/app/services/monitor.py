@@ -426,13 +426,15 @@ async def list_loop_monitor(
                     except (TypeError, ValueError):
                         current_values[field] = tag.current_value
                     if role == "PV":
-                        current_values["pvQuality"] = cached.get("quality", tag.quality)
+                        current_values["pvQuality"] = _quality_code_to_label(
+                            cached.get("quality", tag.quality)
+                        )
                     if cached.get("collectTime"):
                         read_at = cached["collectTime"]
                 else:
                     current_values[field] = tag.current_value
                     if role == "PV":
-                        current_values["pvQuality"] = tag.quality
+                        current_values["pvQuality"] = _quality_code_to_label(tag.quality)
                 if role == "MODE":
                     mode_val = current_values["mode"]
                     loop_mode_mapping = mode_mapping_map.get(str(loop.id))
