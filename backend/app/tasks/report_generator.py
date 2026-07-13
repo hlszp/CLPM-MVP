@@ -667,11 +667,19 @@ def _generate_csv_bytes(
 
 
 def _parse_iso_dt(s: str) -> datetime:
-    """解析 ISO 8601 时间字符串。"""
+    """解析 ISO 8601 时间字符串为 naive datetime。
+
+    兼容带 Z 后缀、带时区偏移、不带时区三种格式，统一剥离 tzinfo。
+    PostgreSQL 列为 TIMESTAMP WITHOUT TIME ZONE，asyncpg 不允许
+    tz-aware datetime 传入 naive 列。
+    """
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s)
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt
 
 
 __all__ = [

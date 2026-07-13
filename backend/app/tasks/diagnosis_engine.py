@@ -166,8 +166,8 @@ async def _do_run_diagnosis() -> dict:
         # 1. 查询最近一小时评分跌破阈值的回路
         snapshot_stmt = (
             select(KpiSnapshotHourly)
-            .where(KpiSnapshotHourly.ts_start >= ts_start)
-            .where(KpiSnapshotHourly.ts_start <= ts_end)
+            .where(KpiSnapshotHourly.ts_start >= ts_start_naive)
+            .where(KpiSnapshotHourly.ts_start <= ts_end_naive)
             .where(KpiSnapshotHourly.score < SCORE_THRESHOLD)
             .where(KpiSnapshotHourly.status == "SUCCESS")
         )
