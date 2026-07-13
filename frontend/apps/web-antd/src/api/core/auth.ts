@@ -44,6 +44,8 @@ export namespace AuthApi {
   /** 刷新 Token 返回结果（对齐 IDS v3.2 §5.2） */
   export interface RefreshTokenResult {
     accessToken: string;
+    /** 新的 refresh token（后端实现 rotation，每次刷新发放新的） */
+    refreshToken: string;
     expiresIn: number;
     tokenType: string;
   }

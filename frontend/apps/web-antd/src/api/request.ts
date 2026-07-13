@@ -62,9 +62,13 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     const resp = await refreshTokenApi(refreshToken, {
       __isRetryRequest: true,
     });
-    const newToken = resp.accessToken;
-    accessStore.setAccessToken(newToken);
-    return newToken;
+    // 后端实现 refresh token rotation：每次刷新发放新的 accessToken + refreshToken
+    // 必须同时保存两者，否则下次刷新会使用已黑名单的旧 refreshToken 导致失败
+    accessStore.setAccessToken(resp.accessToken);
+    if (resp.refreshToken) {
+      accessStore.setRefreshToken(resp.refreshToken);
+    }
+    return resp.accessToken;
   }
 
   function formatToken(token: null | string) {
