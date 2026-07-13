@@ -85,6 +85,7 @@ async function openDetail(record: Record<string, any>) {
         loopId,
         page: 1,
         pageSize: 24,
+        latestOnly: false,
       };
       const result = await getLoopSnapshotsApi(params);
       drawerTrendSnapshots.value = (result.items || []).toSorted((a, b) => {
@@ -226,6 +227,7 @@ async function loadList() {
     const params: any = {
       page: currentPage.value,
       pageSize: pageSize.value,
+      latestOnly: false,
     };
     if (filterLoopId.value) params.loopId = filterLoopId.value;
     if (filterPlantNodeId.value) params.plantNodeId = filterPlantNodeId.value;

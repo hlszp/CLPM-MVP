@@ -5,11 +5,14 @@
 
 安全：tag_name 白名单校验 + start_time/end_time ISO 格式校验，防止 SQL 注入。
 
-DDL 对齐（db/tdengine/01_supertable.sql v3.0）：
-- 超级表名: st_loop_data（非 tag_data）
-- 列: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality（非 val/quality）
-- TAGS: loop_id, unit_id（非 tag_name）
-- 子表命名: d_loop_<位号小写连字符转下划线>
+实际 TDengine schema（signal_sim 库，由外部 SignalR 写入服务创建）：
+- 子表名: t_<tag_name_lower>（保留完整 tag 名含角色后缀，如 t_41fic20021_pida_pv）
+- 列: ts, val（每个 tag 一张表，只有时间戳和值两列，无 pv/sp/op/mode 多列）
+- 无质量码列（查询时默认 GOOD）
+- TAGS: tag_code, loop_id, field, meas_type, unit_name, range_lo, range_hi
+
+注意: make_subtable_name() 生成 d_loop_* 格式表名，仅供本地仿真脚本使用；
+读取 signal_sim 库时使用 _parse_tag_to_table_column() 生成 t_* 格式表名。
 
 连接复用：httpx.AsyncClient 单例，避免频繁建连。
 """
@@ -52,8 +55,8 @@ _QUALITY_COLUMN_MAP: dict[str, str | None] = {
     "PID_D": None,
 }
 
-# TDengine REST API 端口（原生端口 + 11）
-_TD_REST_PORT = 6041
+# TDengine REST API 端口（原生端口 + 11，如 6030→6041, 7104→7115）
+_TD_REST_PORT = settings.TDENGINE_PORT + 11
 
 
 def _validate_tag_name(tag_name: str) -> str:
@@ -103,22 +106,29 @@ def make_subtable_name(loop_part: str) -> str:
 def _parse_tag_to_table_column(tag_name: str) -> tuple[str, str, str | None]:
     """将 tag_name 解析为子表名、数据列名、质量列名。
 
-    示例: "HDS-RX-TIC-101.PV" → ("d_loop_hds_rx_tic_101", "pv", "pv_quality")
+    实际 TDengine schema（signal_sim 库）：
+    - 子表名: t_<tag_name_lower>（保留完整 tag 名含角色后缀）
+    - 数据列: val（所有表统一为 val 列）
+    - 质量列: 无（实际表无质量码列，查询时默认 GOOD）
+
+    示例:
+        >>> _parse_tag_to_table_column("41FIC20021.PIDA.PV")
+        ('t_41fic20021_pida_pv', 'val', None)
+        >>> _parse_tag_to_table_column("LIC-101.SP")
+        ('t_lic_101_sp', 'val', None)
     """
-    # 按最后一个 "." 分割：loop_part 和 role
-    if "." in tag_name:
-        loop_part, role = tag_name.rsplit(".", 1)
-    else:
-        loop_part, role = tag_name, "PV"
+    # 子表名: t_<tag_name_lower>，保留完整 tag 名（含角色后缀）
+    normalized = tag_name.lower().replace("-", "_").replace(".", "_").replace(" ", "_")
+    normalized = re.sub(r"_+", "_", normalized)
+    subtable = "t_" + normalized
 
-    role_upper = role.upper()
-    column = _ROLE_COLUMN_MAP.get(role_upper, "pv")
-    quality_col = _QUALITY_COLUMN_MAP.get(role_upper)
+    # 实际 schema 统一使用 val 列（非 pv/sp/op/mode 等多列）
+    data_column = "val"
 
-    # 子表命名: 调用公共函数 make_subtable_name（P3 #54）
-    subtable = make_subtable_name(loop_part)
+    # 实际表无质量码列
+    quality_column = None
 
-    return subtable, column, quality_col
+    return subtable, data_column, quality_column
 
 
 # ---------------------------------------------------------------------------

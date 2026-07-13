@@ -227,7 +227,9 @@ const POLLING_INTERVAL = 5000;
 let pollingTimer: null | ReturnType<typeof setInterval> = null;
 
 function hasActiveTask(): boolean {
-  return taskList.value.some((t) => t.status === 'RUNNING');
+  return taskList.value.some(
+    (t) => t.status === 'RUNNING' || t.status === 'PENDING',
+  );
 }
 
 function updatePolling() {
