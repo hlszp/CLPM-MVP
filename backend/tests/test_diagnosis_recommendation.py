@@ -490,16 +490,17 @@ class TestRecommendationsEndpoint:
 
     def test_get_recommendations_with_tag_codes(self, client, fake_redis) -> None:
         """通过 query 参数 tagCodes 获取推荐。"""
+        loop_uuid = "00000000-0000-0000-0000-000000000201"
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/diagnosis/loop-001/recommendations?tagCodes=OSCILLATION,STICTION",
+                f"/api/v1/diagnosis/{loop_uuid}/recommendations?tagCodes=OSCILLATION,STICTION",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == "0"
         data = body["data"]
-        assert data["loopId"] == "loop-001"
+        assert data["loopId"] == loop_uuid
         # OSCILLATION(3) + STICTION(3) = 6
         assert data["totalCount"] == 6
         assert len(data["recommendations"]) == 6
@@ -538,10 +539,11 @@ class TestRecommendationsEndpoint:
 
     def test_get_recommendations_loop_not_found(self, client, mock_db, fake_redis) -> None:
         """回路不存在返回 404。"""
+        nonexistent_uuid = "00000000-0000-0000-0000-000000000999"
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/diagnosis/nonexistent/recommendations",
+                f"/api/v1/diagnosis/{nonexistent_uuid}/recommendations",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
@@ -562,18 +564,21 @@ class TestReportEndpoint:
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                # get_diagnosis_detail: loop
+                # get_diagnosis_detail: loop (scalar_one_or_none)
                 return _make_scalar_one_or_none_mock(loop)
             if call_count[0] == 2:
-                # get_diagnosis_detail: diag results
-                return _make_scalars_mock([diag])
+                # get_diagnosis_detail: latest diag (scalar_one_or_none)
+                return _make_scalar_one_or_none_mock(diag)
             if call_count[0] == 3:
-                # get_diagnosis_detail: snapshot
-                return _make_scalar_one_or_none_mock(snapshot)
+                # get_diagnosis_detail: task diags (scalars().all())
+                return _make_scalars_mock([diag])
             if call_count[0] == 4:
-                # get_recommendations_for_loop: loop
+                # get_diagnosis_detail: snapshot (scalar_one_or_none)
+                return _make_scalar_one_or_none_mock(snapshot)
+            if call_count[0] == 5:
+                # get_recommendations_for_loop: loop (scalar_one_or_none)
                 return _make_scalar_one_or_none_mock(loop)
-            # get_recommendations_for_loop: distinct labels
+            # get_recommendations_for_loop: distinct labels (.all())
             m = MagicMock()
             m.all.return_value = [("OSCILLATION",)]
             return m
