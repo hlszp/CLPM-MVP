@@ -63,7 +63,13 @@ class TestMakeSubtableName:
 
 
 class TestParseTagToTableColumn:
-    """_parse_tag_to_table_column 整合测试（验证 make_subtable_name 已正确接入）。"""
+    """_parse_tag_to_table_column 测试（对齐实际 signal_sim TDengine schema）。
+
+    实际 schema：
+    - 子表名: t_<tag_name_lower>（保留完整 tag 名含角色后缀）
+    - 数据列: val（所有表统一）
+    - 质量列: None（无质量码列）
+    """
 
     @pytest.mark.parametrize(
         ("tag_name", "expected_subtable", "expected_column", "expected_quality_col"),
@@ -71,64 +77,71 @@ class TestParseTagToTableColumn:
             # 标准 PV 角色
             (
                 "HDS-RX-TIC-101.PV",
-                "d_loop_hds_rx_tic_101",
-                "pv",
-                "pv_quality",
+                "t_hds_rx_tic_101_pv",
+                "val",
+                None,
             ),
-            # SP 角色（无质量列）
+            # SP 角色
             (
                 "LIC-101.SP",
-                "d_loop_lic_101",
-                "sp",
+                "t_lic_101_sp",
+                "val",
                 None,
             ),
             # OP 角色
             (
                 "LIC-101.OP",
-                "d_loop_lic_101",
-                "op",
+                "t_lic_101_op",
+                "val",
                 None,
             ),
             # MODE 角色
             (
                 "LIC-101.MODE",
-                "d_loop_lic_101",
-                "mode",
+                "t_lic_101_mode",
+                "val",
                 None,
             ),
             # PID_P 角色
             (
                 "LIC-101.PID_P",
-                "d_loop_lic_101",
-                "pid_p",
+                "t_lic_101_pid_p",
+                "val",
                 None,
             ),
             # PID_I 角色
             (
                 "LIC-101.PID_I",
-                "d_loop_lic_101",
-                "pid_i",
+                "t_lic_101_pid_i",
+                "val",
                 None,
             ),
             # PID_D 角色
             (
                 "LIC-101.PID_D",
-                "d_loop_lic_101",
-                "pid_d",
+                "t_lic_101_pid_d",
+                "val",
                 None,
             ),
-            # 无角色后缀（默认 PV）
+            # 无角色后缀（完整 tag 名直接转换）
             (
                 "LIC-101",
-                "d_loop_lic_101",
-                "pv",
-                "pv_quality",
+                "t_lic_101",
+                "val",
+                None,
             ),
-            # 未知角色（column 默认 pv，quality_col 走 _QUALITY_COLUMN_MAP.get → None）
+            # 未知角色（仍保留在表名中）
             (
                 "LIC-101.UNKNOWN",
-                "d_loop_lic_101",
-                "pv",
+                "t_lic_101_unknown",
+                "val",
+                None,
+            ),
+            # 三段式 tag 名（实际 signal_sim 格式）
+            (
+                "41FIC20021.PIDA.PV",
+                "t_41fic20021_pida_pv",
+                "val",
                 None,
             ),
         ],
@@ -145,23 +158,3 @@ class TestParseTagToTableColumn:
         assert subtable == expected_subtable
         assert column == expected_column
         assert quality_col == expected_quality_col
-
-    def test_parse_tag_uses_make_subtable_name(self) -> None:
-        """_parse_tag_to_table_column 的子表名应与 make_subtable_name 一致。
-
-        这是 P3 #54 的核心防护：确保 _parse_tag_to_table_column 调用
-        make_subtable_name 而非内联实现，防止规则散落回归。
-        """
-        # 测试多个典型 tag_name
-        test_cases = [
-            ("HDS-RX-TIC-101.PV", "HDS-RX-TIC-101"),
-            ("LIC-101.SP", "LIC-101"),
-            ("41FIC40504.PIDA.PV", "41FIC40504.PIDA"),
-        ]
-        for tag_name, expected_loop_part in test_cases:
-            subtable, _, _ = _parse_tag_to_table_column(tag_name)
-            assert subtable == make_subtable_name(expected_loop_part), (
-                f"_parse_tag_to_table_column({tag_name!r}) subtable "
-                f"({subtable!r}) != make_subtable_name({expected_loop_part!r}) "
-                f"({_:= make_subtable_name(expected_loop_part)!r})"
-            )
