@@ -69,7 +69,11 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
 # test_kpi_calc.py 导入了重构中删除的 _ALL_METRIC_CODES_DB 等变量，待后续修复
-addopts = "--ignore=tests/test_kpi_calc.py"
+# -m "not integration": 跳过集成测试（需真实 AAS API，仅本地运行）
+addopts = "--ignore=tests/test_kpi_calc.py -m 'not integration'"
+markers = [
+    "integration: 集成测试（需真实 AAS API 等外部服务，CI 跳过）",
+]
 
 [tool.mypy]
 python_version = "3.12"
