@@ -125,6 +125,11 @@ def _make_agg_row(
     row.fast_rate = Decimal("82.00")
     row.oscillation_rate = Decimal("15.00")
     row.saturation_rate = Decimal("8.00")
+    # P1 #14: 4 个诊断字段（None 表示无数据，avg_value 会返回 None）
+    row.stiction_index = None
+    row.settling_time = None
+    row.output_trip_index = None
+    row.ideal_settling_time = None
     return row
 
 
@@ -482,7 +487,8 @@ class TestRealtimeAutoRate:
         """有投用定义时按配置判断。
 
         loop-001 配置自动 MODE={1,2}，loop-002 无配置回退默认 {1,2,3}。
-        TAG_001 返回 mode=1（在 {1,2} → 自动），TAG_002 返回 mode=4（不在 {1,2,3} → 非自动）。
+        TAG_001 current_value=1（在 {1,2} → 自动），
+        TAG_002 current_value=4（不在 {1,2,3} → 非自动）。
         期望：1/2 = 50.0%
         """
         db = AsyncMock()
@@ -496,20 +502,20 @@ class TestRealtimeAutoRate:
             MagicMock(loop_id="loop-001", tag_name="TAG_001"),
             MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        db.execute = AsyncMock(side_effect=[_make_rows_mock(mm_rows), _make_rows_mock(tag_rows)])
+        # 3rd execute: tag_registry.current_value 读取最新 MODE 值
+        current_rows = [
+            MagicMock(tag_name="TAG_001", current_value=1),
+            MagicMock(tag_name="TAG_002", current_value=4),
+        ]
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_rows_mock(mm_rows),
+                _make_rows_mock(tag_rows),
+                _make_rows_mock(current_rows),
+            ]
+        )
 
-        async def _mock_query_trend(tag_name: str, start: str, end: str):
-            if tag_name == "TAG_001":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 1}]
-            if tag_name == "TAG_002":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 4}]
-            return []
-
-        with patch(
-            "app.core.tdengine.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
-        ):
-            result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
+        result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
         assert result is not None
         assert result["rate"] == Decimal("50.00")
@@ -522,7 +528,7 @@ class TestRealtimeAutoRate:
         """无配置时回退 {1,2,3}。
 
         两个回路均无投用定义，回退默认 {1,2,3}。
-        TAG_001 返回 mode=1（在 {1,2,3} → 自动），TAG_002 返回 mode=2（在 {1,2,3} → 自动）。
+        TAG_001 current_value=1（在 {1,2,3} → 自动），TAG_002 current_value=2（在 {1,2,3} → 自动）。
         期望：2/2 = 100.0%
         """
         db = AsyncMock()
@@ -532,20 +538,20 @@ class TestRealtimeAutoRate:
             MagicMock(loop_id="loop-001", tag_name="TAG_001"),
             MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        db.execute = AsyncMock(side_effect=[_make_rows_mock([]), _make_rows_mock(tag_rows)])
+        # 3rd execute: tag_registry.current_value 读取最新 MODE 值
+        current_rows = [
+            MagicMock(tag_name="TAG_001", current_value=1),
+            MagicMock(tag_name="TAG_002", current_value=2),
+        ]
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_rows_mock([]),
+                _make_rows_mock(tag_rows),
+                _make_rows_mock(current_rows),
+            ]
+        )
 
-        async def _mock_query_trend(tag_name: str, start: str, end: str):
-            if tag_name == "TAG_001":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 1}]
-            if tag_name == "TAG_002":
-                return [{"ts": "2026-06-22T08:00:00Z", "value": 2}]
-            return []
-
-        with patch(
-            "app.core.tdengine.query_trend_data",
-            new=AsyncMock(side_effect=_mock_query_trend),
-        ):
-            result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
+        result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
         assert result is not None
         assert result["rate"] == Decimal("100.00")

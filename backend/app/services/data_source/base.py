@@ -58,7 +58,11 @@ class HistoryDataProvider(Protocol):
         ...
 
     async def query_trend_data(
-        self, tag_name: str, start_time: str, end_time: str
+        self,
+        tag_name: str,
+        start_time: str,
+        end_time: str,
+        sample_interval: int = 1,
     ) -> list[dict[str, Any]]:
         """查询单个 tag 的趋势数据（兼容 query_trend_data 签名）.
 
@@ -66,6 +70,9 @@ class HistoryDataProvider(Protocol):
             tag_name: Tag 位号（如 "LIC-101.PV"）
             start_time: 开始时间（ISO 8601 字符串）
             end_time: 结束时间（ISO 8601 字符串）
+            sample_interval: 采样间隔（秒），默认 1s。
+                远程 API 模式下透传给外部接口；TDengine 模式下用于
+                后端 LTTB 降采样参考。
 
         Returns:
             趋势数据列表，每个元素为 ``{"ts": str, "value": float|None, "quality": int|str}``

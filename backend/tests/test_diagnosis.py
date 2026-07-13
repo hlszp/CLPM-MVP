@@ -785,7 +785,7 @@ class TestAnalyticsExport:
     def test_export_analytics_success(self, client, mock_db, fake_redis) -> None:
         """认证用户可以导出统计报表。"""
         with mock_current_user(TEST_USERS["admin"]):
-            with patch("app.api.v1.endpoints.diagnosis.export_diagnosis_statistics") as mock_task:
+            with patch("app.tasks.report_generator.export_diagnosis_statistics") as mock_task:
                 mock_result = MagicMock()
                 mock_result.id = "test-task-id"
                 mock_task.delay.return_value = mock_result

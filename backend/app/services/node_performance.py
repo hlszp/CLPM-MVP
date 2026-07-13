@@ -29,6 +29,7 @@ from app.models.node_kpi import (
     KpiNodeSnapshotMonthly,
 )
 from app.models.plant_node import PlantNode
+from app.models.unit_kpi_summary import UnitKpiSummary
 from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_status
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,11 @@ KPI_FIELDS = (
     "oscillation_rate",
     "saturation_rate",
     "score",
+    # P1 #14: 4 个诊断字段（与 KpiNodeSnapshotHourly 模型对齐）
+    "stiction_index",
+    "settling_time",
+    "output_trip_index",
+    "ideal_settling_time",
 )
 
 
@@ -324,6 +330,11 @@ async def aggregate_node_snapshot(
         "fast_rate": avg_value("fast_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
+        # P1 #14: 4 个诊断字段（与 KpiNodeSnapshotHourly 模型对齐）
+        "stiction_index": avg_value("stiction_index"),
+        "settling_time": avg_value("settling_time"),
+        "output_trip_index": avg_value("output_trip_index"),
+        "ideal_settling_time": avg_value("ideal_settling_time"),
         "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
         "realtime_auto_rate": realtime_auto_rate,
         "loop_count": int(row.cnt),
@@ -335,6 +346,9 @@ async def aggregate_node_snapshot(
 async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
     """保存节点级快照（幂等：相同 plant_node_id + ts_start 覆盖更新）。
 
+    v5.3：并行写入 KpiNodeSnapshotHourly + UnitKpiSummary（装置级汇总）。
+    UnitKpiSummary 仅写入装置类型节点（type=UNIT），其他类型节点跳过。
+
     Args:
         db: 异步数据库会话
         snap_data: aggregate_node_snapshot 返回的快照字典
@@ -344,6 +358,16 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
     """
     plant_node_id = snap_data["plant_node_id"]
     ts_start = snap_data["ts_start"]
+
+    # v5.3 字段分离：UnitKpiSummary 专用字段不写入 KpiNodeSnapshotHourly
+    _UNIT_FIELDS = {
+        "total_loops",
+        "evaluated_loops",
+        "excluded_loops",
+        "inconclusive_loops",
+        "unit_status",
+    }
+    node_snap_data = {k: v for k, v in snap_data.items() if k not in _UNIT_FIELDS}
 
     # 查询是否已存在（幂等）
     existing_result = await db.execute(
@@ -356,7 +380,7 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
 
     if existing:
         # 覆盖更新
-        for key, val in snap_data.items():
+        for key, val in node_snap_data.items():
             if hasattr(existing, key):
                 setattr(existing, key, val)
         existing.created_at = datetime.now(UTC).replace(tzinfo=None)
@@ -366,13 +390,68 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         # 新增
         snap = KpiNodeSnapshotHourly(
             id=str(uuid4()),
-            **snap_data,
+            **node_snap_data,
         )
         db.add(snap)
         await db.flush()
         logger.debug("[节点级快照] 新增 plant_node_id=%s, ts_start=%s", plant_node_id, ts_start)
 
+    # v5.3：并行写入 UnitKpiSummary（装置级汇总）
+    await _save_unit_kpi_summary(db, snap_data)
+
     return snap_data
+
+
+async def _save_unit_kpi_summary(db: AsyncSession, snap_data: dict) -> None:
+    """写入装置级 KPI 汇总（UnitKpiSummary）。
+
+    仅当 snap_data 包含 v5.3 聚合字段时写入，否则跳过。
+    幂等：相同 node_id + snapshot_time 覆盖更新。
+    """
+    node_id = snap_data["plant_node_id"]
+    snapshot_time = snap_data["ts_start"]
+
+    existing_result = await db.execute(
+        select(UnitKpiSummary).where(
+            UnitKpiSummary.node_id == node_id,
+            UnitKpiSummary.snapshot_time == snapshot_time,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+
+    unit_data = {
+        "node_id": node_id,
+        "snapshot_time": snapshot_time,
+        "avg_score": snap_data.get("score"),
+        "auto_mode_rate": snap_data.get("auto_mode_rate"),
+        "effective_auto_rate": snap_data.get("effective_auto_rate"),
+        "stability_rate": snap_data.get("steady_rate"),
+        "accuracy_rate": snap_data.get("accuracy_rate"),
+        "fast_rate": snap_data.get("fast_rate"),
+        "good_value_rate": snap_data.get("good_value_rate"),
+        "oscillation_rate": snap_data.get("oscillation_rate"),
+        "saturation_rate": snap_data.get("saturation_rate"),
+        "total_loops": snap_data.get("total_loops"),
+        "evaluated_loops": snap_data.get("evaluated_loops"),
+        "inconclusive_loops": snap_data.get("inconclusive_loops"),
+        "excluded_loops": snap_data.get("excluded_loops", 0),
+        "status": snap_data.get("unit_status", "SUCCESS"),
+        "algorithm_version": snap_data.get("algorithm_version"),
+    }
+
+    if existing:
+        for key, val in unit_data.items():
+            if hasattr(existing, key):
+                setattr(existing, key, val)
+        await db.flush()
+    else:
+        summary = UnitKpiSummary(
+            id=str(uuid4()),
+            **unit_data,
+        )
+        db.add(summary)
+        await db.flush()
+        logger.debug("[装置级汇总] 新增 node_id=%s, snapshot_time=%s", node_id, snapshot_time)
 
 
 async def calculate_and_save_node_snapshot(

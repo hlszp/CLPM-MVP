@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,8 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
-from app.models.loop import LoopLedger, LoopTagMapping
-from app.models.tag import TagRegistry
+from app.models.loop import LoopLedger
 
 logger = logging.getLogger(__name__)
 
@@ -184,127 +182,33 @@ async def get_waveform(
     td_start = start_time
     td_end = end_time
 
-    # 查询回路 Tag 关联
-    m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
-    mappings = {m.tag_role: m for m in m_result.scalars().all()}
+    # 调用封装的趋势查询服务（并行查询 + 动态采样间隔）
+    from app.services.trend_service import fetch_loop_trend
 
-    tag_ids = [str(m.tag_id) for m in mappings.values()]
-    tags_map: dict[str, TagRegistry] = {}
-    if tag_ids:
-        t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
-        for t in t_result.scalars().all():
-            tags_map[str(t.id)] = t
+    trend_result = await fetch_loop_trend(
+        db,
+        loop_id,
+        td_start,
+        td_end,
+        target_points=max_points,
+    )
 
-    # 查询各角色的趋势数据（S3-A5: 并行查询 4 个 Tag）
-    # 通过数据源工厂适配 tdengine/remote_api，支持数据链路切换
-    from app.services.data_source.factory import get_provider
-
-    _provider = get_provider()
-
-    async def _fetch_role(role: str) -> tuple[str, list[dict]]:
-        mapping = mappings.get(role)
-        if not mapping or str(mapping.tag_id) not in tags_map:
-            return role, []
-        tag = tags_map[str(mapping.tag_id)]
-        try:
-            raw = await _provider.query_trend_data(tag.tag_name, td_start, td_end)
-            return role, raw
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("查询 %s 趋势数据失败: %s", role, exc)
-            return role, []
-
-    results = await asyncio.gather(*[_fetch_role(r) for r in ("PV", "SP", "OP", "MODE")])
-    role_data: dict[str, list[dict]] = dict(results)
-
-    # 以 PV 的时间戳为基准对齐
-    pv_data = role_data.get("PV", [])
-    sp_data = role_data.get("SP", [])
-    op_data = role_data.get("OP", [])
-    mode_data = role_data.get("MODE", [])
-
-    base_data = pv_data if pv_data else (sp_data if sp_data else op_data)
-    if not base_data:
-        return {
-            "loopId": loop_id,
-            "tagName": loop.tag_name,
-            "timeRange": {"startTime": start_time, "endTime": end_time},
-            "timestamps": [],
-            "pv": [],
-            "sp": [],
-            "op": [],
-            "mode": [],
-            "pvQuality": [],
-            "downsampled": False,
-            "pointCount": 0,
-        }
-
-    # 构建 ts → value 映射
-    sp_map = {d.get("ts"): d.get("value") for d in sp_data}
-    op_map = {d.get("ts"): d.get("value") for d in op_data}
-    mode_map = {d.get("ts"): d.get("value") for d in mode_data}
-    pv_quality_map = {d.get("ts"): d.get("quality", "GOOD") for d in pv_data}
-
-    timestamps: list[int] = []
-    pv_list: list[float | None] = []
-    sp_list: list[float | None] = []
-    op_list: list[float | None] = []
-    mode_list: list[float | None] = []
-    pv_quality_list: list[str] = []
-
-    pv_map = {d.get("ts"): d.get("value") for d in pv_data}
-
-    for d in base_data:
-        ts = d.get("ts")
-        ts_millis = _ts_to_millis(ts)
-        if ts_millis is None:
-            continue
-        timestamps.append(ts_millis)
-
-        quality = pv_quality_map.get(ts, "GOOD")
-        quality_norm = str(quality).upper() if quality else "GOOD"
-        pv_quality_list.append(_quality_normalize(quality_norm))
-
-        # PV 质量码为 Bad 时，pv 值为 null
-        if quality_norm == "BAD":
-            pv_list.append(None)
-        else:
-            pv_value = pv_map.get(ts)
-            pv_list.append(pv_value)
-
-        sp_list.append(sp_map.get(ts))
-        op_list.append(op_map.get(ts))
-        mode_list.append(mode_map.get(ts))
-
-    # LTTB 降采样
-    downsampled = False
-    if len(timestamps) > max_points:
-        series_map = {
-            "pv": pv_list,
-            "sp": sp_list,
-            "op": op_list,
-            "mode": mode_list,
-            "pvQuality": pv_quality_list,
-        }
-        timestamps, series_map = lttb_downsample_multi_series(timestamps, series_map, max_points)
-        pv_list = series_map["pv"]
-        sp_list = series_map["sp"]
-        op_list = series_map["op"]
-        mode_list = series_map["mode"]
-        pv_quality_list = series_map["pvQuality"]
-        downsampled = True
+    # 质量码归一化为 Title Case（Good/Bad/Unknown），对齐波形接口契约
+    pv_quality = [_quality_normalize(q) for q in trend_result["pvQuality"]]
 
     return {
         "loopId": loop_id,
         "tagName": loop.tag_name,
         "timeRange": {"startTime": start_time, "endTime": end_time},
-        "timestamps": timestamps,
-        "pv": pv_list,
-        "sp": sp_list,
-        "op": op_list,
-        "mode": mode_list,
-        "pvQuality": pv_quality_list,
-        "downsampled": downsampled,
-        "pointCount": len(timestamps),
+        "timestamps": trend_result["timestamps"],
+        "pv": trend_result["pv"],
+        "sp": trend_result["sp"],
+        "op": trend_result["op"],
+        "mode": trend_result["mode"],
+        "pvQuality": pv_quality,
+        "downsampled": trend_result["downsampled"],
+        "pointCount": trend_result["pointCount"],
+        "sampleInterval": trend_result["sampleInterval"],
     }
 
 
