@@ -215,10 +215,23 @@ async def _load_engine_rules_from_db() -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def _do_calculate(ts_start: str | None = None) -> dict:
-    """执行全量 KPI 计算的实际 async 逻辑。"""
+async def _do_calculate(
+    ts_start: str | None = None,
+    loop_ids: list[str] | None = None,
+) -> dict:
+    """执行全量 KPI 计算的实际 async 逻辑。
+
+    Args:
+        ts_start: 时间窗起始（ISO 8601，UTC）；None 时取上一个完整计算周期
+        loop_ids: 回路 ID 过滤列表。None=全量；非空列表=仅这些回路；
+            空列表=直接返回 0 结果（用于 backfill 精准重算）。
+    """
     from app.core.db import AsyncSessionLocal
     from app.core.tdengine import query_trend_data
+
+    # 空列表提前返回（backfill 调用时明确不需要计算任何回路）
+    if loop_ids is not None and len(loop_ids) == 0:
+        return {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
 
     # 计算时间窗 — naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -236,13 +249,14 @@ async def _do_calculate(ts_start: str | None = None) -> dict:
 
     # 主 session 仅用于查询回路列表和指标配置（只读，无并发）
     async with AsyncSessionLocal() as db:
-        # 1. 查询所有 ACTIVE/READY 状态回路
-        loop_result = await db.execute(
-            select(LoopLedger).where(
-                LoopLedger.is_active.is_(True),
-                LoopLedger.status == "READY",
-            )
+        # 1. 查询所有 ACTIVE/READY 状态回路（支持 loop_ids 精准过滤）
+        stmt = select(LoopLedger).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
         )
+        if loop_ids is not None:
+            stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+        loop_result = await db.execute(stmt)
         loops = list(loop_result.scalars().all())
         logger.info("待计算回路数: %d", len(loops))
 
@@ -1863,7 +1877,7 @@ async def _do_backfill(
                 logger.warning("查询取消标志失败，继续执行: task_id=%s", task_id, exc_info=True)
 
         try:
-            loop_result = await _do_calculate(ts_start=w.isoformat())
+            loop_result = await _do_calculate(ts_start=w.isoformat(), loop_ids=loop_ids)
             node_result = await _do_calculate_node_kpi()
             agg_loop_success += loop_result.get("success", 0)
             agg_loop_inconclusive += loop_result.get("inconclusive", 0)
