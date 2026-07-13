@@ -175,34 +175,36 @@ async def fetch_loop_trend(
     logger.info(
         "趋势查询开始: loop=%s, range=%s~%s (%ds), targetPoints=%d → sampleInterval=%ds "
         "(计算: %ds / %d = %ds)",
-        loop_id, start_time, end_time, delta_seconds,
-        target_points, sample_interval,
-        delta_seconds, target_points, max(1, delta_seconds // target_points),
+        loop_id,
+        start_time,
+        end_time,
+        delta_seconds,
+        target_points,
+        sample_interval,
+        delta_seconds,
+        target_points,
+        max(1, delta_seconds // target_points),
     )
 
     # 2. 查询回路 Tag 关联（若调用方已预加载则直接复用，避免重复查询）
     if mappings is None:
-        m_result = await db.execute(
-            select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
-        )
+        m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
         mappings = {m.tag_role: m for m in m_result.scalars().all()}
 
     if tags_map is None:
         tag_ids = [str(m.tag_id) for m in mappings.values()]
         tags_map = {}
         if tag_ids:
-            t_result = await db.execute(
-                select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
-            )
+            t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
             for t in t_result.scalars().all():
                 tags_map[str(t.id)] = t
 
-    available_roles = [
-        r for r in roles if r in mappings and str(mappings[r].tag_id) in tags_map
-    ]
+    available_roles = [r for r in roles if r in mappings and str(mappings[r].tag_id) in tags_map]
     logger.info(
         "趋势查询 Tag 映射: loop=%s, 请求角色=%s, 有效角色=%s",
-        loop_id, list(roles), available_roles,
+        loop_id,
+        list(roles),
+        available_roles,
     )
 
     # 3. 并行查询各角色趋势数据
@@ -217,12 +219,17 @@ async def fetch_loop_trend(
         tag = tags_map[str(mapping.tag_id)]
         try:
             raw = await provider.query_trend_data(
-                tag.tag_name, start_time, end_time,
+                tag.tag_name,
+                start_time,
+                end_time,
                 sample_interval=sample_interval,
             )
             logger.debug(
                 "趋势查询角色数据: loop=%s, role=%s, tag=%s, 返回点数=%d",
-                loop_id, role, tag.tag_name, len(raw),
+                loop_id,
+                role,
+                tag.tag_name,
+                len(raw),
             )
             return role, raw
         except Exception as exc:  # noqa: BLE001
@@ -236,7 +243,8 @@ async def fetch_loop_trend(
     role_point_counts = {r: len(role_data.get(r, [])) for r in roles}
     logger.info(
         "趋势查询并行完成: loop=%s, 各角色点数=%s",
-        loop_id, role_point_counts,
+        loop_id,
+        role_point_counts,
     )
 
     # 4. 以 PV 的时间戳为基准对齐
@@ -299,7 +307,10 @@ async def fetch_loop_trend(
     if len(timestamps) > LTTB_THRESHOLD:
         logger.info(
             "趋势查询触发 LTTB 降采样: loop=%s, 原始点数=%d > 阈值=%d → 目标点数=%d",
-            loop_id, pre_downsample_count, LTTB_THRESHOLD, target_points,
+            loop_id,
+            pre_downsample_count,
+            LTTB_THRESHOLD,
+            target_points,
         )
         series_map = {
             "pv": pv_list,
@@ -308,9 +319,7 @@ async def fetch_loop_trend(
             "mode": mode_list,
             "pvQuality": pv_quality_list,
         }
-        timestamps, series_map = lttb_downsample_multi_series(
-            timestamps, series_map, target_points
-        )
+        timestamps, series_map = lttb_downsample_multi_series(timestamps, series_map, target_points)
         pv_list = series_map["pv"]
         sp_list = series_map["sp"]
         op_list = series_map["op"]
@@ -319,9 +328,10 @@ async def fetch_loop_trend(
         downsampled = True
 
     logger.info(
-        "趋势查询完成: loop=%s, sampleInterval=%ds, 最终点数=%d, 降采样=%s"
-        "%s, 基准角色=%s",
-        loop_id, sample_interval, len(timestamps),
+        "趋势查询完成: loop=%s, sampleInterval=%ds, 最终点数=%d, 降采样=%s%s, 基准角色=%s",
+        loop_id,
+        sample_interval,
+        len(timestamps),
         "是" if downsampled else "否",
         f"(原始={pre_downsample_count}→{len(timestamps)})" if downsampled else "",
         "PV" if pv_data else ("SP" if sp_data else "OP"),

@@ -186,7 +186,10 @@ async def get_waveform(
     from app.services.trend_service import fetch_loop_trend
 
     trend_result = await fetch_loop_trend(
-        db, loop_id, td_start, td_end,
+        db,
+        loop_id,
+        td_start,
+        td_end,
         target_points=max_points,
     )
 

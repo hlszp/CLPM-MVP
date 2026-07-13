@@ -635,7 +635,10 @@ async def get_loop_monitor_detail(
     from app.services.trend_service import fetch_loop_trend
 
     trend_result = await fetch_loop_trend(
-        db, loop_id, start_time, end_time,
+        db,
+        loop_id,
+        start_time,
+        end_time,
         target_points=3600,
         tags_map=tags_map,
         mappings=mappings,

@@ -86,9 +86,7 @@ async def test_history_api_endpoint(
 
     # 查询第一个已关联的 Tag 位号，用于真实数据查询测试
     tag_result = await db.execute(
-        select(TagRegistry.tag_name)
-        .where(TagRegistry.is_linked.is_(True))
-        .limit(1)
+        select(TagRegistry.tag_name).where(TagRegistry.is_linked.is_(True)).limit(1)
     )
     real_tag = tag_result.scalar_one_or_none()
 

@@ -293,7 +293,10 @@ class RemoteApiProvider:
         return _query_fn
 
     async def query_trend_data(
-        self, tag_name: str, start_time: str, end_time: str,
+        self,
+        tag_name: str,
+        start_time: str,
+        end_time: str,
         sample_interval: int = 1,
     ) -> list[dict[str, Any]]:
         """查询单个 tag 的趋势数据（兼容 app.core.tdengine.query_trend_data 签名）.
