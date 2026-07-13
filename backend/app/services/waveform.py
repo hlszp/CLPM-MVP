@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,8 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
-from app.models.loop import LoopLedger, LoopTagMapping
-from app.models.tag import TagRegistry
+from app.models.loop import LoopLedger
 
 logger = logging.getLogger(__name__)
 
