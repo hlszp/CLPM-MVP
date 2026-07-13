@@ -98,16 +98,48 @@ def _cell_float(value: object) -> float | None:
         return None
 
 
-def _build_tag_dict(tag: TagRegistry, loop_info: dict | None = None) -> dict:
-    """构建测点响应字典。"""
+def _build_tag_dict(
+    tag: TagRegistry,
+    loop_info: dict | None = None,
+    realtime_cache: dict | None = None,
+) -> dict:
+    """构建测点响应字典。
+
+    Args:
+        tag: 数据库 TagRegistry 记录
+        loop_info: 关联回路信息
+        realtime_cache: Redis 实时缓存（{tagCode: {value, quality, collectTime}}），
+            优先于数据库 current_value
+    """
+    cached = realtime_cache or {}
+    rt = cached.get(tag.tag_name)
+
+    if rt:
+        raw_val = rt.get("value")
+        current_value = float(raw_val) if raw_val not in (None, "") else tag.current_value
+        raw_quality = rt.get("quality")
+        if isinstance(raw_quality, int | float):
+            quality = "GOOD" if int(raw_quality) in (1, 2, 3, 192) else "BAD"
+        elif isinstance(raw_quality, str) and raw_quality.upper() in ("GOOD", "BAD", "UNCERTAIN"):
+            quality = raw_quality.upper()
+        else:
+            quality = tag.quality
+        last_sync_at = rt.get("collectTime") or (
+            tag.last_sync_at.isoformat() if tag.last_sync_at else None
+        )
+    else:
+        current_value = tag.current_value
+        quality = tag.quality
+        last_sync_at = tag.last_sync_at.isoformat() if tag.last_sync_at else None
+
     return {
         "id": str(tag.id),
         "tagName": tag.tag_name,
         "tagDescription": tag.tag_description,
         "tagType": tag.tag_type,
-        "currentValue": tag.current_value,
-        "quality": tag.quality,
-        "lastSyncAt": tag.last_sync_at.isoformat() if tag.last_sync_at else None,
+        "currentValue": current_value,
+        "quality": quality,
+        "lastSyncAt": last_sync_at,
         "isLinked": bool(tag.is_linked) if tag.is_linked is not None else False,
         "rangeMin": tag.range_min,
         "rangeMax": tag.range_max,
@@ -202,7 +234,27 @@ async def list_tags(
     tag_ids = [str(t.id) for t in tags]
     loop_map = await _get_tags_loop_info_map(db, tag_ids)
 
-    items = [_build_tag_dict(tag, loop_map.get(str(tag.id))) for tag in tags]
+    # 批量从 Redis 读取实时值（优先于数据库 current_value）
+    realtime_cache: dict[str, dict] = {}
+    if tags:
+        try:
+            from app.services.data_source.realtime_subscriber import get_subscriber
+
+            subscriber = get_subscriber()
+            tag_names = [t.tag_name for t in tags]
+            cached_list = await subscriber.get_cached_values(tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc:
+                    realtime_cache[tc] = item
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "从 Redis 读取实时值失败，回退到数据库值", exc_info=True
+            )
+
+    items = [_build_tag_dict(tag, loop_map.get(str(tag.id)), realtime_cache) for tag in tags]
 
     return {
         "items": items,
@@ -228,7 +280,26 @@ async def get_tag_detail(db: AsyncSession, tag_id: str) -> dict:
         )
 
     loop_map = await _get_tags_loop_info_map(db, [tag_id])
-    return _build_tag_dict(tag, loop_map.get(tag_id))
+
+    # 从 Redis 读取实时值（优先于数据库 current_value）
+    realtime_cache: dict[str, dict] = {}
+    try:
+        from app.services.data_source.realtime_subscriber import get_subscriber
+
+        subscriber = get_subscriber()
+        cached_list = await subscriber.get_cached_values([tag.tag_name])
+        for item in cached_list:
+            tc = item.get("tagCode")
+            if tc:
+                realtime_cache[tc] = item
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "从 Redis 读取实时值失败，回退到数据库值", exc_info=True
+        )
+
+    return _build_tag_dict(tag, loop_map.get(tag_id), realtime_cache)
 
 
 async def update_tag(
