@@ -220,6 +220,9 @@ async def _load_engine_rules_from_db() -> dict:
 async def _do_calculate(
     ts_start: str | None = None,
     loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+    window_index: int = 0,
+    total_windows: int = 0,
 ) -> dict:
     """执行全量 KPI 计算的实际 async 逻辑。
 
@@ -227,6 +230,9 @@ async def _do_calculate(
         ts_start: 时间窗起始（ISO 8601，UTC）；None 时取上一个完整计算周期
         loop_ids: 回路 ID 过滤列表。None=全量；非空列表=仅这些回路；
             空列表=直接返回 0 结果（用于 backfill 精准重算）。
+        task_id: Redis 任务跟踪 ID（backfill 调用时传入，用于逐回路进度更新）。
+        window_index: 当前窗口序号（1-based），用于细粒度进度计算。
+        total_windows: 总窗口数，用于细粒度进度计算。
     """
     from app.core.db import AsyncSessionLocal
     from app.services.data_source.factory import get_provider
@@ -281,8 +287,11 @@ async def _do_calculate(
 
     # 3. 并发计算（信号量限制并发数，每协程独立 session 避免并发共享）
     sem = asyncio.Semaphore(CONCURRENCY)
+    loops_count = len(loops)
+    completed_in_window = 0  # 当前窗口已完成回路数（闭包计数器）
 
     async def _calc_with_sem(loop: LoopLedger) -> dict | None:
+        nonlocal completed_in_window
         async with sem:
             # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
             async with AsyncSessionLocal() as worker_db:
@@ -301,6 +310,28 @@ async def _do_calculate(
                 except Exception:
                     await worker_db.rollback()
                     raise
+                finally:
+                    completed_in_window += 1
+                    # 逐回路更新进度（backfill 调用时 task_id 非空）
+                    if task_id and total_windows > 0 and loops_count > 0:
+                        try:
+                            await _update_backfill_progress(
+                                task_id,
+                                window_index,
+                                total_windows,
+                                completed_in_window,
+                                loops_count,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "逐回路进度更新失败: task_id=%s, window=%d/%d, loop=%d/%d",
+                                task_id,
+                                window_index,
+                                total_windows,
+                                completed_in_window,
+                                loops_count,
+                                exc_info=True,
+                            )
 
     tasks = [asyncio.create_task(_calc_with_sem(loop)) for loop in loops]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1793,18 +1824,30 @@ async def _update_task_failed(task_id: str, error_message: str) -> None:
     )
 
 
-async def _update_task_progress(task_id: str, done: int, total: int) -> None:
-    """更新任务进度（每窗口完成后调用）。"""
+async def _update_backfill_progress(
+    task_id: str,
+    window_index: int,
+    total_windows: int,
+    done_in_window: int,
+    loops_per_window: int,
+) -> None:
+    """更新回填任务细粒度进度（逐回路，前端进度条 ≤10s 刷新）。
+
+    进度 = (已完成窗口 × 每窗口回路数 + 当前窗口已完成回路数) / (总窗口 × 每窗口回路数)
+    """
     from app.schemas.task import TaskStatus
     from app.services import task_tracker
 
-    progress = done / total if total > 0 else 0.0
+    total_loops = total_windows * loops_per_window
+    done_loops = (window_index - 1) * loops_per_window + done_in_window
+    progress = done_loops / total_loops if total_loops > 0 else 0.0
     await task_tracker.update_status(
         task_id,
         TaskStatus.RUNNING,
         progress=progress,
-        loops_done=done,
-        current_stage=f"回填计算 [{done}/{total}]",
+        loops_done=done_loops,
+        loops_total=total_loops,
+        current_stage=f"回填计算 窗口[{window_index}/{total_windows}] 回路[{done_in_window}/{loops_per_window}]",
     )
 
 
@@ -1886,7 +1929,13 @@ async def _do_backfill(
                 logger.warning("查询取消标志失败，继续执行: task_id=%s", task_id, exc_info=True)
 
         try:
-            loop_result = await _do_calculate(ts_start=w.isoformat(), loop_ids=loop_ids)
+            loop_result = await _do_calculate(
+                ts_start=w.isoformat(),
+                loop_ids=loop_ids,
+                task_id=task_id,
+                window_index=i,
+                total_windows=total,
+            )
             node_result = await _do_calculate_node_kpi()
             agg_loop_success += loop_result.get("success", 0)
             agg_loop_inconclusive += loop_result.get("inconclusive", 0)
@@ -1903,18 +1952,6 @@ async def _do_backfill(
         except Exception as exc:  # noqa: BLE001
             failed_windows.append(w.isoformat())
             logger.warning("回填窗口 %s 失败: %s", w.isoformat(), exc)
-
-        if task_id:
-            try:
-                await _update_task_progress(task_id, i, total)
-            except Exception:
-                logger.warning(
-                    "更新任务进度失败: task_id=%s, window=%d/%d",
-                    task_id,
-                    i,
-                    total,
-                    exc_info=True,
-                )
 
     return {
         "total_windows": total,
