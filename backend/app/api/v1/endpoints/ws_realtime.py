@@ -86,7 +86,7 @@ async def realtime_websocket(websocket: WebSocket) -> None:
                 data = message["data"]
                 if isinstance(data, bytes):
                     data = data.decode("utf-8")
-                # 解析消息：realtime_simulator 发布批量数组，RealtimeSubscriber 发布单对象
+                # 解析消息：RealtimeSubscriber 发布单对象，兼容批量数组格式
                 parsed = json.loads(data)
                 if isinstance(parsed, list):
                     # 批量消息（数组）：逐条转发给前端
