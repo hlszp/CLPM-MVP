@@ -193,6 +193,9 @@ async def get_waveform(
         target_points=max_points,
     )
 
+    # 质量码归一化为 Title Case（Good/Bad/Unknown），对齐波形接口契约
+    pv_quality = [_quality_normalize(q) for q in trend_result["pvQuality"]]
+
     return {
         "loopId": loop_id,
         "tagName": loop.tag_name,
@@ -202,7 +205,7 @@ async def get_waveform(
         "sp": trend_result["sp"],
         "op": trend_result["op"],
         "mode": trend_result["mode"],
-        "pvQuality": trend_result["pvQuality"],
+        "pvQuality": pv_quality,
         "downsampled": trend_result["downsampled"],
         "pointCount": trend_result["pointCount"],
         "sampleInterval": trend_result["sampleInterval"],
