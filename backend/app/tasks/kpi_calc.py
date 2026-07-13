@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from bisect import bisect_left
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -64,17 +64,74 @@ def calculate_hourly_kpi(self: AsyncTask, ts_start: str | None = None) -> dict:
     """每小时全量计算所有 ACTIVE 回路的 KPI 快照。
 
     失败自动重试 3 次，指数退避。
+    Beat 自动触发时创建 TaskRecord（triggered_by=system），使定时任务
+    也出现在「自动任务」页面。
 
     Args:
         ts_start: 可选，指定计算时间窗起始（ISO 格式），None 时取上一个完整小时
     """
     logger.info("KPI 计算任务开始, task_id=%s, ts_start=%s", self.request.id, ts_start)
     try:
-        result = self.run_async(_do_calculate(ts_start=ts_start))
+        result = self.run_async(_do_hourly_with_tracking(ts_start=ts_start))
         logger.info("KPI 计算任务完成: %s", result)
         return result
     except Exception:
         logger.exception("KPI 计算任务失败")
+        raise
+
+
+async def _do_hourly_with_tracking(ts_start: str | None = None) -> dict:
+    """执行每小时 KPI 计算并创建任务跟踪记录（系统自动触发）。
+
+    Beat 自动触发时调用此函数：先创建 TaskRecord（STANDARD / triggered_by=system），
+    再执行计算，最后更新终态。手动触发（API）仍走 ``trigger_standard_evaluation``，
+    由 API 层创建 TaskRecord。
+    """
+    from app.schemas.task import TaskStatus, TaskType
+    from app.services import task_tracker
+
+    # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
+    _SHANGHAI = timezone(timedelta(hours=8))
+    title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
+
+    task_id = await task_tracker.create_task(
+        task_type=TaskType.STANDARD,
+        created_by="system",
+        created_by_id="",
+        ts_start=ts_start,
+        triggered_by="system",
+        title=title,
+    )
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        started_at=datetime.now(UTC).isoformat(),
+        current_stage="开始计算",
+    )
+
+    try:
+        result = await _do_calculate(
+            ts_start=ts_start,
+            task_id=task_id,
+            window_index=1,
+            total_windows=1,
+        )
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.SUCCESS,
+            progress=1.0,
+            current_stage="完成",
+            finished_at=datetime.now(UTC).isoformat(),
+        )
+        return result
+    except Exception as exc:
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.FAILED,
+            error_message=str(exc),
+            finished_at=datetime.now(UTC).isoformat(),
+        )
         raise
 
 
@@ -1841,9 +1898,13 @@ async def _update_backfill_progress(
     total_loops = total_windows * loops_per_window
     done_loops = (window_index - 1) * loops_per_window + done_in_window
     progress = done_loops / total_loops if total_loops > 0 else 0.0
-    stage = (
-        f"回填计算 窗口[{window_index}/{total_windows}] 回路[{done_in_window}/{loops_per_window}]"
-    )
+    if total_windows > 1:
+        stage = (
+            f"回填计算 窗口[{window_index}/{total_windows}]"
+            f" 回路[{done_in_window}/{loops_per_window}]"
+        )
+    else:
+        stage = f"指标计算 回路[{done_in_window}/{loops_per_window}]"
     await task_tracker.update_status(
         task_id,
         TaskStatus.RUNNING,
