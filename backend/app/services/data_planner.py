@@ -40,6 +40,7 @@ DataPlanner 负责指标驱动的数据获取与编排：
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -61,6 +62,21 @@ from app.services.preprocessing.pipeline import PREPROCESS_VERSION, Preprocessin
 from app.services.preprocessing.thresholds import get_threshold
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# 指标数据需求契约进程内缓存（静态数据，TTL 300s）
+# ---------------------------------------------------------------------------
+_REQUIREMENTS_CACHE: dict[str, Any] = {}
+_REQUIREMENTS_CACHE_TS: float = 0.0
+_REQUIREMENTS_CACHE_TTL = 300.0  # 5 分钟
+
+
+def clear_requirements_cache() -> None:
+    """清空指标契约进程内缓存（测试 / 配置变更时调用）."""
+    global _REQUIREMENTS_CACHE, _REQUIREMENTS_CACHE_TS
+    _REQUIREMENTS_CACHE = {}
+    _REQUIREMENTS_CACHE_TS = 0.0
+
 
 # TDengine 查询函数签名：按 tag 角色列表查询原始时序数据
 # 生产环境由适配器将现有 query_trend_data 包装为此签名；测试时注入 mock
@@ -153,6 +169,8 @@ class DataPlanner:
         self._bundle_cache = bundle_cache
         # 待写入 L2 缓存的 Key（request_bundles 中设置，_maybe_write_l2_cache 消费）
         self._pending_l2_key: str | None = None
+        # 预加载的 OP 限位 {loop_id: (lower, upper)}，批量计算时注入避免逐回路查 DB
+        self._preloaded_op_limits: dict[str, tuple[float | None, float | None]] | None = None
 
     # ------------------------------------------------------------------
     # 核心入口
@@ -199,22 +217,30 @@ class DataPlanner:
 
         # Phase 1: L2 Bundle 缓存查询（若启用，命中则直接返回，跳过查询与组装）
         # v6.1：缓存 key 包含 OP 限位，修改限位后自动失效
+        # v6.2：优先使用预加载的 OP 限位，避免逐回路查 DB
         op_lower: float | None = None
         op_upper: float | None = None
-        if self._bundle_cache is not None and metrics and self._db is not None:
-            from sqlalchemy import select
+        if self._bundle_cache is not None and metrics:
+            if self._preloaded_op_limits is not None:
+                # 使用预加载的 OP 限位（批量计算场景）
+                op_limits = self._preloaded_op_limits.get(loop_id)
+                if op_limits:
+                    op_lower, op_upper = op_limits
+            elif self._db is not None:
+                from sqlalchemy import select
 
-            from app.models.loop import LoopLedger
+                from app.models.loop import LoopLedger
 
-            op_result = await self._db.execute(
-                select(LoopLedger.op_output_lower_limit, LoopLedger.op_output_upper_limit).where(
-                    LoopLedger.id == loop_id
+                op_result = await self._db.execute(
+                    select(
+                        LoopLedger.op_output_lower_limit,
+                        LoopLedger.op_output_upper_limit,
+                    ).where(LoopLedger.id == loop_id)
                 )
-            )
-            op_row = op_result.first()
-            if op_row:
-                op_lower = float(op_row[0]) if op_row[0] is not None else None
-                op_upper = float(op_row[1]) if op_row[1] is not None else None
+                op_row = op_result.first()
+                if op_row:
+                    op_lower = float(op_row[0]) if op_row[0] is not None else None
+                    op_upper = float(op_row[1]) if op_row[1] is not None else None
 
         if self._bundle_cache is not None and metrics:
             l2_key = L2BundleCache.build_key(
@@ -291,7 +317,9 @@ class DataPlanner:
     # ------------------------------------------------------------------
 
     async def _load_requirements(self, metrics: list[str]) -> dict[str, Any]:
-        """从 clpm_metric_data_requirement 表读取指标契约.
+        """从 clpm_metric_data_requirement 表读取指标契约（带进程内缓存）.
+
+        静态数据（指标契约 rarely 变更），缓存 5 分钟，避免 1000 回路重复查询。
 
         Args:
             metrics: 指标代码列表
@@ -305,17 +333,25 @@ class DataPlanner:
             logger.debug("DataPlanner: db session 未注入，返回空契约")
             return {}
 
+        # 进程内缓存检查（静态数据，TTL 300s）
+        global _REQUIREMENTS_CACHE, _REQUIREMENTS_CACHE_TS
+        now = time.monotonic()
+        if _REQUIREMENTS_CACHE and (now - _REQUIREMENTS_CACHE_TS) < _REQUIREMENTS_CACHE_TTL:
+            # 从缓存中筛选请求的 metrics
+            return {code: row for code, row in _REQUIREMENTS_CACHE.items() if code in metrics}
+
+        # 缓存未命中或过期 → 查询全量并缓存
         from sqlalchemy import select
 
         from app.models.metric_data_requirement import ClpmMetricDataRequirement
 
-        result = await self._db.execute(
-            select(ClpmMetricDataRequirement).where(
-                ClpmMetricDataRequirement.metric_code.in_(metrics)
-            )
-        )
+        result = await self._db.execute(select(ClpmMetricDataRequirement))
         rows = result.scalars().all()
-        return {row.metric_code: row for row in rows}
+        _REQUIREMENTS_CACHE = {row.metric_code: row for row in rows}
+        _REQUIREMENTS_CACHE_TS = now
+        logger.info("DataPlanner 指标契约缓存已刷新: %d 条", len(_REQUIREMENTS_CACHE))
+
+        return {code: row for code, row in _REQUIREMENTS_CACHE.items() if code in metrics}
 
     # ------------------------------------------------------------------
     # Phase 3: 构建合并查询计划
@@ -691,6 +727,8 @@ class DataPlanner:
     async def _fill_op_output_limits(self, bundles: list[MetricDataBundle], loop_id: str) -> None:
         """v6.1 填充 OP 输出限位到每个 bundle 的 signals 字典.
 
+        v6.2 优化：优先使用预加载的 OP 限位（批量计算场景），避免逐回路查 DB。
+
         优先级（设计文档 §2.3）：
             1. Loop 表 op_output_lower_limit / op_output_upper_limit（非 NULL）
             2. OP Tag range_min / range_max（已关联且非 NULL）
@@ -702,6 +740,26 @@ class DataPlanner:
         """
         if not bundles:
             return
+
+        # v6.2：优先使用预加载的 OP 限位
+        if self._preloaded_op_limits is not None:
+            op_limits = self._preloaded_op_limits.get(loop_id)
+            if op_limits:
+                op_lower, op_upper = op_limits
+                for bundle in bundles:
+                    if op_lower is not None:
+                        bundle.data_block.signals["op_low"] = [op_lower]
+                    if op_upper is not None:
+                        bundle.data_block.signals["op_high"] = [op_upper]
+                if op_lower is not None or op_upper is not None:
+                    logger.debug(
+                        "DataPlanner 填充 OP 限位(预加载): loop=%s, op_low=%s, op_high=%s",
+                        loop_id,
+                        op_lower,
+                        op_upper,
+                    )
+            return
+
         if self._db is None:
             return
 

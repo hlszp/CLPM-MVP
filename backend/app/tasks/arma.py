@@ -78,11 +78,20 @@ def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarra
 def compute_green_function(
     ar_coeffs: np.ndarray, length: int = MAX_GREEN_FUNC_LENGTH
 ) -> np.ndarray:
-    """计算 AR(p) 模型的 Green 函数（单位脉冲响应）。
+    """计算 AR(p) 模型的 Green 函数（单位脉冲响应）— 解析解 + 递推回退.
+
+    优先使用特征根解析解（O(length)），避免双重循环。
+    解析解失败时（重根/数值不稳定）回退到递推。
 
     Green 函数递推公式：
         G(0) = 1
         G(k) = -Σᵢ₌₁ᵖ aᵢ · G(k-i)    for k ≥ 1
+
+    解析解（基于特征方程根）：
+        特征方程：z^p + a₁·z^(p-1) + ... + aₚ = 0
+        根 r₁, r₂, ..., rₚ（可含复根，共轭成对）
+        G(k) = Σᵢ cᵢ · rᵢᵏ
+        系数 cᵢ 由初始条件 G(0)=1, G(k<0)=0 确定
 
     Args:
         ar_coeffs: AR 系数 [a₁, a₂, ..., aₚ]
@@ -91,6 +100,73 @@ def compute_green_function(
     Returns:
         Green 函数序列 [G(0), G(1), ..., G(length-1)]
     """
+    p = len(ar_coeffs)
+    if p == 0:
+        g = np.zeros(length)
+        g[0] = 1.0
+        return g
+
+    # 尝试解析解
+    g = _green_function_analytic(ar_coeffs, length)
+    if g is not None:
+        return g
+
+    # 回退到递推
+    return _green_function_recursive(ar_coeffs, length)
+
+
+def _green_function_analytic(ar_coeffs: np.ndarray, length: int) -> np.ndarray | None:
+    """Green 函数解析解（基于特征根）.
+
+    对 AR(p) 模型，特征方程为：z^p + a₁·z^(p-1) + ... + aₚ = 0
+    注意：AR 模型 x(t) + a₁·x(t-1) + ... + aₚ·x(t-p) = e(t) 的
+    特征多项式是 z^p + a₁·z^(p-1) + ... + aₚ，对应 np.roots([1, a₁, ..., aₚ])。
+
+    Green 函数：G(k) = Σᵢ cᵢ · rᵢᵏ
+    初始条件：G(0) = 1, G(-1) = G(-2) = ... = 0
+
+    对于重根，解析解形式不同，此处返回 None 触发回退。
+    """
+    p = len(ar_coeffs)
+    # 特征多项式系数：[1, a₁, a₂, ..., aₚ]
+    poly_coeffs = np.concatenate([[1.0], ar_coeffs])
+    roots = np.roots(poly_coeffs)
+
+    # 检查是否有重根（重根需要不同形式的解析解）
+    if len(roots) != len(set(np.round(roots, decimals=10))):
+        return None
+
+    # 求解系数 cᵢ：G(k) = Σ cᵢ · rᵢᵏ
+    # 初始条件：G(0) = 1, G(1) = -a₁, G(2) = -a₁·G(1) - a₂·G(0), ...
+    # 前 p 个 G 值确定 p 个系数
+    # G(0) = 1
+    # G(k) = -Σᵢ₌₁ᵏ aᵢ · G(k-i)  for 1 ≤ k < p
+    g_init = np.zeros(p, dtype=complex)
+    g_init[0] = 1.0
+    for k in range(1, p):
+        s = 0.0
+        for i in range(1, k + 1):
+            s += float(ar_coeffs[i - 1]) * g_init[k - i]
+        g_init[k] = -s
+
+    # 构造 Vandermonde 矩阵：V[i][j] = roots[j]^i
+    vander = np.vander(roots, p, increasing=True).T
+    try:
+        coeffs = np.linalg.solve(vander, g_init)
+    except np.linalg.LinAlgError:
+        return None
+
+    # 计算 Green 函数：G(k) = Σ cᵢ · rᵢᵏ
+    # 向量化：构造 power 矩阵 [length × p]
+    k_arr = np.arange(length)
+    # power_matrix[k, i] = roots[i]^k
+    power_matrix = np.power(roots[np.newaxis, :], k_arr[:, np.newaxis])
+    g = np.real(np.sum(coeffs[np.newaxis, :] * power_matrix, axis=1))
+    return g
+
+
+def _green_function_recursive(ar_coeffs: np.ndarray, length: int) -> np.ndarray:
+    """Green 函数递推（回退方案，双重循环）."""
     p = len(ar_coeffs)
     g = np.zeros(length)
     g[0] = 1.0
@@ -186,20 +262,21 @@ def compute_settling_time(
         )
         return 0.0
 
-    # 步骤 3：找到 |G(k)| 首次持续低于 threshold 的时刻
+    # 步骤 3：找到 |G(k)| 首次持续低于 threshold 的时刻 — 向量化
     n_consecutive = max(3, int(10 / sample_interval_sec))
     abs_green = np.abs(green_func)
 
+    # 向量化：标记低于阈值的点，查找连续 n_consecutive 个 True 的起始位置
+    below = abs_green < threshold
     settling_index = 0
-    consecutive_count = 0
-    for k in range(1, len(abs_green)):
-        if abs_green[k] < threshold:
-            consecutive_count += 1
-            if consecutive_count >= n_consecutive:
-                settling_index = k - n_consecutive + 1
-                break
-        else:
-            consecutive_count = 0
+    if len(below) >= n_consecutive:
+        # 使用滑动窗口和：窗口内全部为 True 则和 = n_consecutive
+        ones = np.ones(n_consecutive, dtype=int)
+        window_sums = np.convolve(below.astype(int), ones, mode="valid")
+        # 找到第一个和为 n_consecutive 的窗口
+        valid_starts = np.where(window_sums == n_consecutive)[0]
+        if len(valid_starts) > 0:
+            settling_index = int(valid_starts[0])
 
     # 显式转换为 Python float，避免 numpy float64 在后续 Decimal(str(...)) 转换中
     # 引入多余精度（numpy float64 的 str 表示可能与 Python float 不同）
