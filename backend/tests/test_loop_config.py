@@ -27,7 +27,6 @@ from app.services.node_performance import (
     aggregate_node_snapshot,
     query_realtime_auto_rate,
 )
-from app.tasks.kpi_calc import _compute_composite_score_v2
 
 # ===========================================================================
 # 辅助函数：构造 mock 对象
@@ -72,37 +71,6 @@ def _make_scalar_one_or_none_mock(value: object) -> MagicMock:
     result = MagicMock()
     result.scalar_one_or_none.return_value = value
     return result
-
-
-def _make_type_weights(
-    score_type: str,
-    a: float,
-    f: float,
-    s: float,
-) -> dict[str, dict]:
-    """构造回路类型权重映射。"""
-    return {
-        score_type: {
-            "weight_a": Decimal(str(a)),
-            "weight_f": Decimal(str(f)),
-            "weight_s": Decimal(str(s)),
-        }
-    }
-
-
-def _make_kpi_values(
-    accuracy: Decimal | None = Decimal("90"),
-    fast_response: Decimal | None = Decimal("80"),
-    steady: Decimal | None = Decimal("70"),
-    effective_auto: Decimal | None = Decimal("60"),
-) -> dict[str, Decimal | None]:
-    """构造 KPI 值字典（默认 A=90, F=80, S=70, R=60）。"""
-    return {
-        "accuracy_rate": accuracy,
-        "fast_response_rate": fast_response,
-        "steady_rate": steady,
-        "effective_auto_rate": effective_auto,
-    }
 
 
 def _make_agg_row(
@@ -260,87 +228,8 @@ class TestModeMappingCRUD:
 # ===========================================================================
 # TEST-02: 评分算法 v2（4 种回路类型）
 # ===========================================================================
-
-
-class TestComputeCompositeScoreV2:
-    """评分算法 v2 测试 — 国标公式 P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R。
-
-    使用纯函数测试（不需要 mock DB）。
-    默认 KPI 值：A=90, F=80, S=70, R=60。
-    """
-
-    def test_score_v2_stable(self) -> None:
-        """稳定型：a=0.2, f=0.3, s=0.5。
-
-        P = (0.2*0.9 + 0.3*0.8 + 0.5*0.7) / 1.0 * 0.6 * 100 = 46.20
-        """
-        type_weights = _make_type_weights("STABLE", 0.2, 0.3, 0.5)
-        kpi_values = _make_kpi_values()
-
-        score = _compute_composite_score_v2(kpi_values, type_weights, "STABLE")
-
-        assert score == Decimal("46.20")
-
-    def test_score_v2_slow(self) -> None:
-        """慢速型：a=0.3, f=0.1, s=0.6。
-
-        P = (0.3*0.9 + 0.1*0.8 + 0.6*0.7) / 1.0 * 0.6 * 100 = 46.20
-        """
-        type_weights = _make_type_weights("SLOW", 0.3, 0.1, 0.6)
-        kpi_values = _make_kpi_values()
-
-        score = _compute_composite_score_v2(kpi_values, type_weights, "SLOW")
-
-        assert score == Decimal("46.20")
-
-    def test_score_v2_fast(self) -> None:
-        """快速型：a=0.2, f=0.5, s=0.3。
-
-        P = (0.2*0.9 + 0.5*0.8 + 0.3*0.7) / 1.0 * 0.6 * 100 = 47.40
-        """
-        type_weights = _make_type_weights("FAST", 0.2, 0.5, 0.3)
-        kpi_values = _make_kpi_values()
-
-        score = _compute_composite_score_v2(kpi_values, type_weights, "FAST")
-
-        assert score == Decimal("47.40")
-
-    def test_score_v2_logic(self) -> None:
-        """逻辑型：a=0.0, f=0.5, s=0.6。
-
-        P = (0.0*0.9 + 0.5*0.8 + 0.6*0.7) / 1.1 * 0.6 * 100 = 44.73
-        """
-        type_weights = _make_type_weights("LOGIC", 0.0, 0.5, 0.6)
-        kpi_values = _make_kpi_values()
-
-        score = _compute_composite_score_v2(kpi_values, type_weights, "LOGIC")
-
-        assert score == Decimal("44.73")
-
-    def test_score_v2_r_missing(self) -> None:
-        """R 缺失时降级 60%（基础评分 * 0.6）。
-
-        基础评分 = (0.2*0.9 + 0.3*0.8 + 0.5*0.7) / 1.0 * 100 = 77.00
-        降级后 = 77.00 * 0.6 = 46.20
-        """
-        type_weights = _make_type_weights("STABLE", 0.2, 0.3, 0.5)
-        kpi_values = _make_kpi_values(effective_auto=None)
-
-        score = _compute_composite_score_v2(kpi_values, type_weights, "STABLE")
-
-        assert score == Decimal("46.20")
-
-    def test_score_v2_no_weights(self) -> None:
-        """无权重配置时回退平等加权（a=f=s=0.3333）。
-
-        基础评分 = 0.3333*(0.9+0.8+0.7) / 0.9999 * 100 ≈ 80.00
-        P = 80.00 * 0.6 = 48.00
-        """
-        kpi_values = _make_kpi_values()
-
-        score = _compute_composite_score_v2(kpi_values, None, "STABLE")
-
-        assert score == Decimal("48.00")
+# v4.0 重构后 _compute_composite_score_v2 已被 ConfidenceEvaluator.compute_composite_score
+# 取代，旧测试已移除。评分算法测试在 test_kpi_calc.py::TestComputeKpisThreeLayer 中覆盖。
 
 
 class TestInferScoreType:

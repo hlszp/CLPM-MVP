@@ -1,17 +1,18 @@
 """Celery tasks for KPI performance calculation (IDS v3.2 §2.3 — S3-METRIC-003).
 
+v4.0 三层架构：
+- DataPlanner 统一取数（L1/L2 缓存 + 8 步预处理 + 查询计划合并）
+- 12 个 MetricCalculator 指标计算器（3 核心 + 1 综合 + 8 辅助）
+- ConfidenceEvaluator 可信度评估 + 综合评分（P = (A·a+F·f+S·s)/(a+f+s) × R）
+
 设计要点：
 - Celery Beat 定时任务（每小时触发全量计算）
-- 通过数据源工厂（factory.get_provider）获取历史时序数据（PV/SP/OP/MODE/PV_QUALITY）
-  - DATA_SOURCE_TYPE=remote_api: 从 AAS REST API 获取历史数据（生产模式）
-  - DATA_SOURCE_TYPE=tdengine: 从本地 TDengine 获取历史数据（开发/测试模式）
-- 按 metric_config 公式计算 6 大 KPI
-- 计算结果写入 kpi_snapshot_hourly 快照表（PostgreSQL）
-- 任务幂等（相同 loop_id + ts_start 不重复写入）
+- 通过 DataPlanner 获取预处理后的 MetricDataBundle
+- 三层计算编排：Layer1（无依赖指标）→ Layer2（有依赖指标）→ Layer3（综合评分）
+- 计算结果通过 UPSERT 写入 kpi_snapshot_hourly（含 7 个数据血缘字段）
+- 任务幂等（相同 loop_id + ts_start 的 UPSERT 覆盖更新）
 - 失败自动重试 3 次
 - 数据不足返回 INCONCLUSIVE 状态
-- PV 质量码为 Bad 的数据点剔除
-- 数据源不可用时优雅降级（记录日志并跳过）
 """
 
 from __future__ import annotations
@@ -26,10 +27,23 @@ from uuid import uuid4
 
 import numpy as np
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.contracts.data_types import (
+    ControlType,
+    DataBlock,
+    DataLineage,
+    MetricDataBundle,
+    MetricResult,
+    QualitySummary,
+    TagGroup,
+    TimeWindow,
+)
 from app.models.loop import LoopLedger, LoopTagMapping
-from app.models.metric import KpiSnapshotHourly, MetricConfig
+from app.models.metric import KpiSnapshotCustom, KpiSnapshotHourly, MetricConfig
 from app.models.tag import TagRegistry
+from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.metric_calculator import get_calculator
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -43,6 +57,40 @@ MIN_GOOD_RATIO = 0.20
 
 # 并发 worker 数
 CONCURRENCY = 10
+
+# ---------------------------------------------------------------------------
+# v4.0 指标代码映射（DB 列名 ↔ Calculator 代码）
+# ---------------------------------------------------------------------------
+
+# DB 列名 → Calculator 代码（唯一差异：steady_rate → stability_rate）
+_DB_TO_CALCULATOR_METRIC_CODE: dict[str, str] = {
+    "accuracy_rate": "accuracy_rate",
+    "fast_rate": "fast_rate",
+    "steady_rate": "stability_rate",  # DB 列名 steady_rate → Calculator stability_rate
+    "effective_auto_rate": "effective_auto_rate",
+    "good_value_rate": "good_value_rate",
+    "oscillation_rate": "oscillation_rate",
+    "saturation_rate": "saturation_rate",
+    "stiction_index": "stiction_index",
+    "output_trip_index": "output_trip_index",
+    "auto_mode_rate": "auto_mode_rate",
+    "settling_time": "settling_time",
+    "ideal_settling_time": "ideal_settling_time",
+}
+
+# Calculator 代码 → DB 列名（反向映射）
+_CALCULATOR_TO_DB_METRIC_CODE: dict[str, str] = {
+    v: k for k, v in _DB_TO_CALCULATOR_METRIC_CODE.items()
+}
+
+# 所有 DB 列名指标代码列表（传递给 DataPlanner.request_bundles 的 metrics 参数）
+_ALL_METRIC_CODES_DB: list[str] = list(_DB_TO_CALCULATOR_METRIC_CODE.keys())
+
+# Layer2 依赖关系：Calculator 代码 → 依赖的 Calculator 代码列表
+_LAYER2_DEPENDENCIES: dict[str, list[str]] = {
+    "stability_rate": ["oscillation_rate"],
+    "fast_rate": ["settling_time", "ideal_settling_time"],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +115,8 @@ def calculate_hourly_kpi(self: AsyncTask, ts_start: str | None = None) -> dict:
     Beat 自动触发时创建 TaskRecord（triggered_by=system），使定时任务
     也出现在「自动任务」页面。
 
+    若 task_tracker 不可用（Redis 异常），回退到直接调用 _do_calculate。
+
     Args:
         ts_start: 可选，指定计算时间窗起始（ISO 格式），None 时取上一个完整小时
     """
@@ -75,9 +125,21 @@ def calculate_hourly_kpi(self: AsyncTask, ts_start: str | None = None) -> dict:
         result = self.run_async(_do_hourly_with_tracking(ts_start=ts_start))
         logger.info("KPI 计算任务完成: %s", result)
         return result
-    except Exception:
-        logger.exception("KPI 计算任务失败")
-        raise
+    except Exception as exc:
+        # task_tracker 不可用时回退到直接计算（无任务跟踪）
+        logger.warning("KPI 计算任务跟踪失败，回退到直接计算: %s", exc)
+        ts_start_dt = _parse_ts_start(ts_start)
+        return self.run_async(_do_calculate(ts_start=ts_start_dt))
+
+
+def _parse_ts_start(ts_start: str | None) -> datetime | None:
+    """将 ISO 格式字符串解析为 datetime，None 时返回 None。"""
+    if not ts_start:
+        return None
+    try:
+        return datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.fromisoformat(ts_start)
 
 
 async def _do_hourly_with_tracking(ts_start: str | None = None) -> dict:
@@ -112,7 +174,7 @@ async def _do_hourly_with_tracking(ts_start: str | None = None) -> dict:
 
     try:
         result = await _do_calculate(
-            ts_start=ts_start,
+            ts_start=_parse_ts_start(ts_start),
             task_id=task_id,
             window_index=1,
             total_windows=1,
@@ -148,6 +210,39 @@ def calculate_loop_kpi(loop_id: str, ts_start: str | None = None) -> dict:
     """单回路 KPI 计算（可手动触发）。"""
     logger.info("单回路 KPI 计算, loop_id=%s", loop_id)
     return AsyncTask().run_async(_do_calculate_single_loop(loop_id, ts_start))
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_custom_loop_kpi",
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_custom_loop_kpi(
+    task_id: str,
+    loop_id: str,
+    ts_start: str,
+    ts_end: str | None = None,
+) -> dict:
+    """自定义任务单回路 KPI 计算（Celery 入口，P1 #12）。
+
+    Args:
+        task_id: 自定义任务 ID
+        loop_id: 回路 ID
+        ts_start: 时间窗起始（ISO 8601）
+        ts_end: 时间窗结束（ISO 8601），None 时使用 EngineRule 的 cycle_minutes
+    """
+    logger.info(
+        "自定义任务单回路 KPI 计算, task_id=%s, loop_id=%s, ts_start=%s, ts_end=%s",
+        task_id,
+        loop_id,
+        ts_start,
+        ts_end,
+    )
+    return AsyncTask().run_async(_do_calculate_custom_loop(task_id, loop_id, ts_start, ts_end))
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +411,7 @@ async def _load_engine_rules_from_db() -> dict:
 
 
 async def _do_calculate(
-    ts_start: str | None = None,
+    ts_start: str | datetime | None = None,
     loop_ids: list[str] | None = None,
     task_id: str | None = None,
     window_index: int = 0,
@@ -325,7 +420,7 @@ async def _do_calculate(
     """执行全量 KPI 计算的实际 async 逻辑。
 
     Args:
-        ts_start: 时间窗起始（ISO 8601，UTC）；None 时取上一个完整计算周期
+        ts_start: 时间窗起始（ISO 8601 字符串或 datetime）；None 时取上一个完整计算周期
         loop_ids: 回路 ID 过滤列表。None=全量；非空列表=仅这些回路；
             空列表=直接返回 0 结果（用于 backfill 精准重算）。
         task_id: Redis 任务跟踪 ID（backfill 调用时传入，用于逐回路进度更新）。
@@ -333,11 +428,6 @@ async def _do_calculate(
         total_windows: 总窗口数，用于细粒度进度计算。
     """
     from app.core.db import AsyncSessionLocal
-    from app.services.data_source.factory import get_provider
-
-    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
-    # remote_api 模式下从 AAS REST API 获取历史数据；tdengine 模式下查本地 TDengine
-    query_trend_data = get_provider().query_trend_data
 
     # 空列表提前返回（backfill 调用时明确不需要计算任何回路）
     if loop_ids is not None and len(loop_ids) == 0:
@@ -346,12 +436,15 @@ async def _do_calculate(
     # 计算时间窗 — naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
     now = datetime.now(UTC).replace(tzinfo=None)
     if ts_start:
-        try:
-            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
-                tzinfo=None
-            )
-        except ValueError:
-            ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+        if isinstance(ts_start, datetime):
+            ts_start_dt = ts_start.replace(tzinfo=None) if ts_start.tzinfo else ts_start
+        else:
+            try:
+                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                    tzinfo=None
+                )
+            except ValueError:
+                ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
         ts_end_dt = ts_start_dt + timedelta(hours=1)
     else:
         ts_end_dt = now.replace(minute=0, second=0, microsecond=0)
@@ -394,13 +487,14 @@ async def _do_calculate(
             # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
             async with AsyncSessionLocal() as worker_db:
                 try:
+                    data_planner = _build_data_planner(worker_db)
                     result = await _calculate_loop_kpi(
                         db=worker_db,
                         loop=loop,
                         metric_configs=metric_configs,
                         ts_start=ts_start_dt,
                         ts_end=ts_end_dt,
-                        query_trend_fn=query_trend_data,
+                        data_planner=data_planner,
                         type_weights=type_weights,
                     )
                     await worker_db.commit()
@@ -468,10 +562,6 @@ async def _do_calculate(
 async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -> dict:
     """单回路 KPI 计算。"""
     from app.core.db import AsyncSessionLocal
-    from app.services.data_source.factory import get_provider
-
-    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
-    query_trend_data = get_provider().query_trend_data
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
@@ -479,15 +569,13 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
         if loop is None:
             return {"loopId": loop_id, "status": "FAILED", "error": "回路不存在"}
 
-        # 时间窗 — naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
+        # 时间窗（保持 tzinfo：带 Z → aware UTC，不带 Z → naive）
         now = datetime.now(UTC).replace(tzinfo=None)
         if ts_start:
             try:
-                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
-                    tzinfo=None
-                )
+                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
             except ValueError:
-                ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+                ts_start_dt = datetime.fromisoformat(ts_start)
         else:
             ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         ts_end_dt = ts_start_dt + timedelta(hours=1)
@@ -500,17 +588,78 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
 
         type_weights = await get_loop_type_weights_map(db)
 
+        data_planner = _build_data_planner(db)
         snap = await _calculate_loop_kpi(
             db=db,
             loop=loop,
             metric_configs=metric_configs,
             ts_start=ts_start_dt,
             ts_end=ts_end_dt,
-            query_trend_fn=query_trend_data,
+            data_planner=data_planner,
             type_weights=type_weights,
         )
         await db.commit()
         return snap or {"loopId": loop_id, "status": "FAILED"}
+
+
+async def _do_calculate_custom_loop(
+    task_id: str,
+    loop_id: str,
+    ts_start: str,
+    ts_end: str | None = None,
+) -> dict:
+    """自定义任务单回路 KPI 计算（支持用户指定时间窗，P1 #12）。
+
+    与 _do_calculate_single_loop 的差异：
+    - 支持用户指定 ts_end（非默认 1 小时窗口）
+    - ts_end 为 None 时使用 EngineRule 的 cycle_minutes
+    - 写入 kpi_snapshot_custom（通过 custom_task_id 参数路由）
+
+    Args:
+        task_id: 自定义任务 ID
+        loop_id: 回路 ID
+        ts_start: 时间窗起始（ISO 8601）
+        ts_end: 时间窗结束（ISO 8601），None 时使用 EngineRule 的 cycle_minutes
+    """
+    from app.core.db import AsyncSessionLocal
+    from app.services.engine_rule_loader import get_engine_rule_loader
+    from app.services.loop_config import get_loop_type_weights_map
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
+        loop = result.scalar_one_or_none()
+        if loop is None:
+            return {"loopId": loop_id, "taskId": task_id, "status": "FAILED", "error": "回路不存在"}
+
+        # 解析 ts_start（保持 tzinfo：带 Z → aware UTC，不带 Z → naive）
+        ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+
+        # ts_end：用户提供 → 解析；未提供 → ts_start + cycle_minutes
+        if ts_end is not None:
+            ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+        else:
+            engine = get_engine_rule_loader()
+            cycle_minutes = await engine.get_calc_cycle_minutes()
+            ts_end_dt = ts_start_dt + timedelta(minutes=cycle_minutes)
+
+        metric_result = await db.execute(select(MetricConfig))
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+        type_weights = await get_loop_type_weights_map(db)
+
+        data_planner = _build_data_planner(db)
+        snap = await _calculate_loop_kpi(
+            db=db,
+            loop=loop,
+            metric_configs=metric_configs,
+            ts_start=ts_start_dt,
+            ts_end=ts_end_dt,
+            data_planner=data_planner,
+            type_weights=type_weights,
+            custom_task_id=task_id,
+        )
+        await db.commit()
+        return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
 
 
 async def _calculate_loop_kpi(
@@ -519,10 +668,16 @@ async def _calculate_loop_kpi(
     metric_configs: dict[str, MetricConfig],
     ts_start: datetime,
     ts_end: datetime,
-    query_trend_fn,
+    data_planner,
     type_weights: dict[str, dict] | None = None,
+    custom_task_id: str | None = None,
 ) -> dict | None:
-    """计算单回路 KPI 并写入快照（幂等）。
+    """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
+
+    v4.0 架构：DataPlanner → 12 Calculator → ConfidenceEvaluator
+    - 通过 data_planner.request_bundles 获取预处理后的 MetricDataBundle
+    - _compute_kpis_three_layer 编排三层计算
+    - _persist_snapshot 通过 UPSERT 写入快照（含 7 个数据血缘字段）
 
     Args:
         db: 异步数据库会话
@@ -530,136 +685,428 @@ async def _calculate_loop_kpi(
         metric_configs: 指标配置字典 {metric_code: MetricConfig}
         ts_start: 时间窗起始
         ts_end: 时间窗结束
-        query_trend_fn: 历史数据查询函数（由 factory.get_provider 路由，注入便于测试）
-        type_weights: 回路类型权重映射（v2 算法用），None 时回退 v1
+        data_planner: DataPlanner 实例（v4.0 统一取数）
+        type_weights: 回路类型权重映射（LoopTypeWeight）
+        custom_task_id: 自定义任务 ID（非 None 时写入 kpi_snapshot_custom）
 
     Returns:
         快照字典，包含 status 字段
     """
-    # 查询回路 Tag 关联
-    m_result = await db.execute(
-        select(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id))
-    )
-    mappings = {m.tag_role: m for m in m_result.scalars().all()}
-
-    # 查询 Tag 详情
-    tag_ids = [str(m.tag_id) for m in mappings.values()]
-    tags_map: dict[str, TagRegistry] = {}
-    if tag_ids:
-        t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
-        for t in t_result.scalars().all():
-            tags_map[str(t.id)] = t
-
-    # 获取 PV/SP/OP/MODE 的 tag_name
-    pv_tag_name = _get_tag_name(mappings, tags_map, "PV")
-    sp_tag_name = _get_tag_name(mappings, tags_map, "SP")
-    op_tag_name = _get_tag_name(mappings, tags_map, "OP")
-    mode_tag_name = _get_tag_name(mappings, tags_map, "MODE")
-
-    if not pv_tag_name or not sp_tag_name:
-        # 缺少必要 Tag，无法计算
-        snap = await _save_snapshot(
-            db=db,
-            loop_id=str(loop.id),
-            ts_start=ts_start,
-            ts_end=ts_end,
-            status="INCONCLUSIVE",
-        )
-        return snap
-
-    # 从 TDengine 拉取时序数据
-    start_iso = ts_start.isoformat()
-    end_iso = ts_end.isoformat()
-
-    try:
-        pv_data = await query_trend_fn(pv_tag_name, start_iso, end_iso)
-        sp_data = await query_trend_fn(sp_tag_name, start_iso, end_iso) if sp_tag_name else []
-        op_data = await query_trend_fn(op_tag_name, start_iso, end_iso) if op_tag_name else []
-        mode_data = await query_trend_fn(mode_tag_name, start_iso, end_iso) if mode_tag_name else []
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("TDengine 查询失败（回路 %s 跳过）: %s", loop.tag_name, exc)
-        snap = await _save_snapshot(
-            db=db,
-            loop_id=str(loop.id),
-            ts_start=ts_start,
-            ts_end=ts_end,
-            status="INCONCLUSIVE",
-        )
-        return snap
-
-    # 剔除 PV 质量码为 Bad 的数据点
-    pv_data_filtered = [d for d in pv_data if str(d.get("quality", "GOOD")).upper() != "BAD"]
-
-    # 数据不足判定
-    total_points = len(pv_data)
-    good_points = len(pv_data_filtered)
-    if total_points == 0 or good_points / max(total_points, 1) < MIN_GOOD_RATIO:
-        snap = await _save_snapshot(
-            db=db,
-            loop_id=str(loop.id),
-            ts_start=ts_start,
-            ts_end=ts_end,
-            status="INCONCLUSIVE",
-        )
-        return snap
-
-    # 好值率：在过滤前计算，反映真实数据质量
-    good_value_rate = Decimal(good_points) / Decimal(total_points) * Decimal("100")
-
-    # 按 ts 对齐 PV/SP/OP/MODE
-    aligned = _align_timeseries(pv_data_filtered, sp_data, op_data, mode_data)
-    if not aligned:
-        snap = await _save_snapshot(
-            db=db,
-            loop_id=str(loop.id),
-            ts_start=ts_start,
-            ts_end=ts_end,
-            status="INCONCLUSIVE",
-        )
-        return snap
-
-    # 计算 6 大 KPI（好值率在过滤前计算，其余指标基于过滤后数据）
-    kpi_values = _compute_kpis(aligned, metric_configs, good_value_rate=good_value_rate)
-
-    # 故障诊断扩展指标（基于原始时序数据，简化实现）
-    kpi_values["stiction_coeff"] = _calc_stiction_coeff(op_data, mode_data)
-    kpi_values["steady_state_time"] = _calc_steady_state_time(pv_data_filtered, sp_data)
-    kpi_values["output_travel_index"] = _calc_output_travel_index(op_data)
-
-    # 计算综合评分 — v2 按回路类型加权（对齐国标 GB/T 44693.2-2024）
-    # P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R
     from app.services.loop_config import infer_score_type
 
-    score_type = infer_score_type(loop.loop_type)
-    score = _compute_composite_score_v2(kpi_values, type_weights, score_type)
+    control_type = _loop_type_to_control_type(loop.loop_type)
+    time_window = TimeWindow(start=ts_start, end=ts_end)
 
-    # 判定状态
+    # 通过 DataPlanner 获取所有指标的 MetricDataBundle
+    try:
+        bundles = await data_planner.request_bundles(
+            loop_id=str(loop.id),
+            metrics=_ALL_METRIC_CODES_DB,
+            time_window=time_window,
+            control_type=control_type,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("DataPlanner 取数失败（回路 %s）: %s", loop.tag_name, exc)
+        return await _persist_snapshot(
+            db=db,
+            loop_id=str(loop.id),
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="INCONCLUSIVE",
+            custom_task_id=custom_task_id,
+        )
+
+    if not bundles:
+        logger.info("回路 %s 无数据（空 Bundle），返回 INCONCLUSIVE", loop.tag_name)
+        return await _persist_snapshot(
+            db=db,
+            loop_id=str(loop.id),
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="INCONCLUSIVE",
+            custom_task_id=custom_task_id,
+        )
+
+    # 构造虚拟 CONFIG bundle（提供 control_type 信号给 ideal_settling_time 计算器）
+    config_bundle = _build_config_bundle(str(loop.id), control_type)
+
+    # 构造权重映射（MetricConfig.weight > LoopTypeWeight > None）
+    score_type = infer_score_type(loop.loop_type)
+    weights = _build_weights_map(type_weights, score_type, metric_configs)
+
+    # 三层计算：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）
+    metric_results, composite_result = _compute_kpis_three_layer(
+        bundles, config_bundle, weights
+    )
+
+    # 综合评分为 None（R 可信度 E 级）→ INCONCLUSIVE
+    if composite_result.value is None:
+        logger.info("回路 %s 综合评分为 None（E 级），返回 INCONCLUSIVE", loop.tag_name)
+        return await _persist_snapshot(
+            db=db,
+            loop_id=str(loop.id),
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="INCONCLUSIVE",
+            custom_task_id=custom_task_id,
+        )
+
+    # 提取 KPI 值（Calculator 代码 → DB 列名）
+    kpi_values = _extract_kpi_values(metric_results)
+
+    # 提取数据血缘信息
+    lineage_info = _extract_lineage_info(metric_results, composite_result)
+
+    # 判定状态：必需指标缺失 → PARTIAL
     status = "SUCCESS"
-    # 如果某些 KPI 缺失（None），状态降级为 PARTIAL
     required_kpis = ("good_value_rate", "auto_mode_rate", "steady_rate")
     if any(kpi_values.get(k) is None for k in required_kpis):
         status = "PARTIAL"
 
-    snap = await _save_snapshot(
+    return await _persist_snapshot(
         db=db,
         loop_id=str(loop.id),
         ts_start=ts_start,
         ts_end=ts_end,
         status=status,
-        score=score,
+        custom_task_id=custom_task_id,
+        score=_quantize(Decimal(str(composite_result.value)))
+        if composite_result.value is not None
+        else None,
         good_value_rate=kpi_values.get("good_value_rate"),
         auto_mode_rate=kpi_values.get("auto_mode_rate"),
         effective_auto_rate=kpi_values.get("effective_auto_rate"),
         steady_rate=kpi_values.get("steady_rate"),
         accuracy_rate=kpi_values.get("accuracy_rate"),
-        fast_response_rate=kpi_values.get("fast_response_rate"),
+        fast_rate=kpi_values.get("fast_rate"),
         oscillation_rate=kpi_values.get("oscillation_rate"),
         saturation_rate=kpi_values.get("saturation_rate"),
-        stiction_coeff=kpi_values.get("stiction_coeff"),
-        steady_state_time=kpi_values.get("steady_state_time"),
-        output_travel_index=kpi_values.get("output_travel_index"),
+        stiction_index=kpi_values.get("stiction_index"),
+        output_trip_index=kpi_values.get("output_trip_index"),
+        settling_time=kpi_values.get("settling_time"),
+        ideal_settling_time=kpi_values.get("ideal_settling_time"),
+        **lineage_info,
     )
-    return snap
+
+
+# ---------------------------------------------------------------------------
+# v4.0 辅助函数
+# ---------------------------------------------------------------------------
+
+
+def _loop_type_to_control_type(loop_type: str | None) -> ControlType:
+    """将回路类型映射为 ControlType（DataPlanner 采样策略用）。
+
+    映射关系（对齐 DDS §2.3）：
+        FLOW → FLOW
+        PRESSURE → PRESSURE
+        TEMPERATURE → TEMPERATURE
+        LEVEL → LEVEL
+        ANALYSIS → COMPOSITION
+        其他（SPEED/OTHER/None/未知）→ FLOW（回退）
+    """
+    mapping = {
+        "FLOW": ControlType.FLOW,
+        "PRESSURE": ControlType.PRESSURE,
+        "TEMPERATURE": ControlType.TEMPERATURE,
+        "LEVEL": ControlType.LEVEL,
+        "ANALYSIS": ControlType.COMPOSITION,
+    }
+    if not loop_type:
+        return ControlType.FLOW
+    return mapping.get(loop_type.upper(), ControlType.FLOW)
+
+
+def _build_config_bundle(loop_id: str, control_type: ControlType) -> MetricDataBundle:
+    """构造虚拟 CONFIG bundle（提供 control_type 信号给 ideal_settling_time 计算器）。
+
+    CONFIG bundle 不查询数据库，直接构造一个 valid_rate=1.0 的 DataBlock，
+    signals 中包含 control_type 信号，供 IdealSettlingTimeCalculator 读取。
+    """
+    ts = datetime.now(UTC)
+    data_block = DataBlock(
+        data_block_id=f"config_{loop_id}",
+        loop_id=loop_id,
+        tag_group=TagGroup.CONFIG.value,
+        sampling_freq="config",
+        timestamps=[ts],
+        signals={"control_type": [control_type.value]},
+        validity={},
+        quality_summary=QualitySummary(
+            total_count=1, valid_count=1, valid_rate=1.0
+        ),
+        point_count=1,
+    )
+    return MetricDataBundle(
+        metric_code="ideal_settling_time",
+        data_block=data_block,
+        mask_expression="true",
+        masked_indices=[0],
+        lineage=DataLineage(
+            sampling_freq="config",
+            aggregation_policy="NONE",
+            quality_policy="CONFIG",
+            tag_group=TagGroup.CONFIG.value,
+            data_block_ids=[data_block.data_block_id],
+            valid_rate=1.0,
+            data_policy_version="config_v1",
+            algorithm_version=ALGORITHM_VERSION,
+        ),
+    )
+
+
+def _build_weights_map(
+    type_weights: dict[str, dict] | None,
+    score_type: str,
+    metric_configs: dict[str, MetricConfig] | None = None,
+) -> dict[str, float] | None:
+    """构造权重映射（Calculator 代码 → 权重值）。
+
+    优先级链：MetricConfig.weight > LoopTypeWeight > None
+
+    - 若 metric_configs 中 3 个核心指标（accuracy_rate/fast_rate/steady_rate）
+      的 weight 全部有效（非 None、非 0），则归一化后使用 MetricConfig 权重
+    - 否则回退到 LoopTypeWeight（type_weights[score_type]）
+    - 两者都无 → 返回 None（使用 ConfidenceEvaluator 默认权重）
+
+    Returns:
+        {"accuracy_rate": float, "fast_rate": float, "stability_rate": float}
+        或 None
+    """
+    # 核心指标 DB 列名 → Calculator 代码
+    core_metrics = (
+        ("accuracy_rate", "accuracy_rate"),
+        ("fast_rate", "fast_rate"),
+        ("steady_rate", "stability_rate"),
+    )
+
+    # 尝试 MetricConfig.weight 优先
+    if metric_configs is not None:
+        mc_weights = {}
+        all_valid = True
+        for db_code, calc_code in core_metrics:
+            config = metric_configs.get(db_code)
+            if config is not None and config.weight is not None and config.weight > 0:
+                mc_weights[calc_code] = float(config.weight)
+            else:
+                all_valid = False
+                break
+
+        if all_valid:
+            # 归一化到 0-1（总和应为 100，但容错处理非标准总和）
+            total = sum(mc_weights.values())
+            if total > 0:
+                return {k: v / total for k, v in mc_weights.items()}
+
+    # 回退到 LoopTypeWeight
+    if not type_weights or score_type not in type_weights:
+        return None
+
+    w = type_weights[score_type]
+    weight_a = w.get("weight_a", 0)
+    weight_f = w.get("weight_f", 0)
+    weight_s = w.get("weight_s", 0)
+
+    return {
+        "accuracy_rate": float(weight_a) if weight_a is not None else 0.0,
+        "fast_rate": float(weight_f) if weight_f is not None else 0.0,
+        "stability_rate": float(weight_s) if weight_s is not None else 0.0,
+    }
+
+
+def _compute_kpis_three_layer(
+    bundles: list[MetricDataBundle],
+    config_bundle: MetricDataBundle,
+    weights: dict[str, float] | None,
+) -> tuple[dict[str, MetricResult], MetricResult]:
+    """三层计算编排：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）。
+
+    Layer1: 10 个无依赖指标（accuracy_rate, effective_auto_rate, good_value_rate,
+            oscillation_rate, saturation_rate, stiction_index, output_trip_index,
+            auto_mode_rate, settling_time, ideal_settling_time）
+    Layer2: 2 个有依赖指标
+            - stability_rate ← oscillation_rate
+            - fast_rate ← settling_time + ideal_settling_time
+    Layer3: ConfidenceEvaluator.compute_composite_score(metric_results, weights)
+
+    Args:
+        bundles: DataPlanner 返回的 MetricDataBundle 列表（metric_code 为 DB 列名）
+        config_bundle: 虚拟 CONFIG bundle（提供 control_type 信号）
+        weights: 权重映射（None 时用默认权重）
+
+    Returns:
+        (metric_results dict[calc_code, MetricResult], composite MetricResult)
+    """
+    metric_results: dict[str, MetricResult] = {}
+
+    # 构建 bundle 索引：DB 列名 → bundle
+    bundle_map: dict[str, MetricDataBundle] = {b.metric_code: b for b in bundles}
+
+    # --- Layer1: 10 个无依赖指标 ---
+    # DB 列名列表（按 _DB_TO_CALCULATOR_METRIC_CODE 映射为 Calculator 代码）
+    layer1_db_codes = [
+        "accuracy_rate",
+        "effective_auto_rate",
+        "good_value_rate",
+        "oscillation_rate",
+        "saturation_rate",
+        "stiction_index",
+        "output_trip_index",
+        "auto_mode_rate",
+        "settling_time",
+    ]
+
+    for db_code in layer1_db_codes:
+        bundle = bundle_map.get(db_code)
+        if bundle is None:
+            continue
+        calc_code = _DB_TO_CALCULATOR_METRIC_CODE.get(db_code, db_code)
+        try:
+            calculator = get_calculator(calc_code)
+            result = calculator.calculate(bundle)
+            metric_results[calc_code] = result
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Layer1 指标 %s 计算失败: %s", calc_code, exc)
+
+    # ideal_settling_time 从 config_bundle 计算
+    try:
+        calculator = get_calculator("ideal_settling_time")
+        result = calculator.calculate(config_bundle)
+        metric_results["ideal_settling_time"] = result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ideal_settling_time 计算失败: %s", exc)
+
+    # --- Layer2: 2 个有依赖指标 ---
+    for calc_code, dep_codes in _LAYER2_DEPENDENCIES.items():
+        # 检查所有依赖是否已计算
+        deps = {dep: metric_results[dep] for dep in dep_codes if dep in metric_results}
+        if not deps:
+            continue
+
+        # 获取该指标的 bundle（DB 列名）
+        db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+        bundle = bundle_map.get(db_code)
+        if bundle is None:
+            continue
+
+        try:
+            calculator = get_calculator(calc_code)
+            calculator = calculator.with_dependencies(deps)
+            result = calculator.calculate(bundle)
+            metric_results[calc_code] = result
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Layer2 指标 %s 计算失败: %s", calc_code, exc)
+
+    # --- Layer3: 综合评分 ---
+    composite_result = ConfidenceEvaluator.compute_composite_score(
+        metric_results, weights=weights
+    )
+    metric_results["composite_score"] = composite_result
+
+    return metric_results, composite_result
+
+
+def _extract_kpi_values(
+    metric_results: dict[str, MetricResult],
+) -> dict[str, Decimal | None]:
+    """从 MetricResult 字典提取 KPI 值（Calculator 代码 → DB 列名）。
+
+    - 跳过 composite_score（不写入指标列）
+    - float 值转换为 Decimal（对齐 DB Numeric 类型）
+    - None 值保持 None
+    """
+    kpi_values: dict[str, Decimal | None] = {}
+
+    for calc_code, result in metric_results.items():
+        if calc_code == "composite_score":
+            continue
+        db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+        if result.value is None:
+            kpi_values[db_code] = None
+        elif isinstance(result.value, Decimal):
+            kpi_values[db_code] = result.value
+        else:
+            kpi_values[db_code] = Decimal(str(result.value))
+
+    return kpi_values
+
+
+def _extract_lineage_info(
+    metric_results: dict[str, MetricResult],
+    composite: MetricResult,
+) -> dict:
+    """提取数据血缘信息（优先 accuracy_rate lineage，其次 composite lineage）。
+
+    Returns:
+        dict 含: algorithm_version, sampling_freq, quality_policy,
+        valid_rate, confidence_level, data_lineage
+    """
+    # 优先从 accuracy_rate 的 lineage 取
+    accuracy_result = metric_results.get("accuracy_rate")
+    lineage = (
+        accuracy_result.lineage
+        if accuracy_result and accuracy_result.lineage
+        else (composite.lineage if composite and composite.lineage else None)
+    )
+
+    if lineage is not None:
+        valid_rate = (
+            Decimal(str(lineage.valid_rate)).quantize(Decimal("0.0001"))
+            if lineage.valid_rate is not None
+            else None
+        )
+        data_lineage_dict = {
+            "sampling_freq": lineage.sampling_freq,
+            "aggregation_policy": lineage.aggregation_policy,
+            "quality_policy": lineage.quality_policy,
+            "tag_group": lineage.tag_group,
+            "data_block_ids": lineage.data_block_ids,
+            "valid_rate": lineage.valid_rate,
+            "data_policy_version": lineage.data_policy_version,
+            "algorithm_version": lineage.algorithm_version,
+        }
+    else:
+        valid_rate = None
+        data_lineage_dict = {}
+
+    confidence_level = (
+        composite.confidence_level if composite and composite.confidence_level else "E"
+    )
+
+    return {
+        "algorithm_version": (
+            lineage.algorithm_version if lineage else ALGORITHM_VERSION
+        ),
+        "sampling_freq": lineage.sampling_freq if lineage else None,
+        "quality_policy": lineage.quality_policy if lineage else None,
+        "valid_rate": valid_rate,
+        "confidence_level": confidence_level,
+        "data_lineage": data_lineage_dict,
+    }
+
+
+def _build_data_planner(db):
+    """构造 DataPlanner 实例（工厂函数）。
+
+    从 get_provider().make_query_fn(db) 获取 TDengine 查询函数，
+    配合 L1DataBlockCache + MetricDataBundleAssembler 构造 DataPlanner。
+    """
+    from app.core.redis import redis_client
+    from app.services.cache.l1_datablock import L1DataBlockCache
+    from app.services.data_source.factory import get_provider
+    from app.services.data_planner import DataPlanner
+    from app.services.metric_data_bundle import MetricDataBundleAssembler
+
+    query_fn = get_provider().make_query_fn(db)
+    cache = L1DataBlockCache(redis_client)
+    assembler = MetricDataBundleAssembler()
+
+    return DataPlanner(
+        cache=cache,
+        tdengine_query_fn=query_fn,
+        assembler=assembler,
+        db=db,
+    )
 
 
 def _get_tag_name(
@@ -759,813 +1206,6 @@ def _find_nearest_value(
     return None
 
 
-def _align_timeseries(
-    pv_data: list[dict],
-    sp_data: list[dict],
-    op_data: list[dict],
-    mode_data: list[dict],
-) -> list[dict[str, Any]]:
-    """按 ts 对齐 PV/SP/OP/MODE 时序数据。
-
-    对齐策略：
-    1. 优先精确时间戳匹配（兼容字符串 ts 如 "t1"）
-    2. 若 ts 可转为数值，使用 bisect 最近邻匹配，容差 ±500ms
-    """
-    # 精确映射（兼容字符串 ts）
-    sp_map = {d.get("ts"): d.get("value") for d in sp_data}
-    op_map = {d.get("ts"): d.get("value") for d in op_data}
-    mode_map = {d.get("ts"): d.get("value") for d in mode_data}
-
-    # 数值索引（用于容差匹配）
-    sp_ts_floats, sp_ts_orig = _build_ts_index(sp_data)
-    op_ts_floats, op_ts_orig = _build_ts_index(op_data)
-    mode_ts_floats, mode_ts_orig = _build_ts_index(mode_data)
-    sp_values = [sp_map[t] for t in sp_ts_orig] if sp_ts_floats else None
-    op_values = [op_map[t] for t in op_ts_orig] if op_ts_floats else None
-    mode_values = [mode_map[t] for t in mode_ts_orig] if mode_ts_floats else None
-
-    aligned: list[dict[str, Any]] = []
-    for d in pv_data:
-        ts = d.get("ts")
-        pv = d.get("value")
-        aligned.append(
-            {
-                "ts": ts,
-                "pv": pv,
-                "sp": _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values),
-                "op": _find_nearest_value(ts, op_ts_floats, op_map, op_values),
-                "mode": _find_nearest_value(ts, mode_ts_floats, mode_map, mode_values),
-            }
-        )
-    return aligned
-
-
-def _compute_kpis(
-    aligned: list[dict[str, Any]],
-    metric_configs: dict[str, MetricConfig],
-    good_value_rate: Decimal | None = None,
-) -> dict[str, Decimal | None]:
-    """计算 7 大 KPI（对齐 GB/T 44693.2-2024）。
-
-    Args:
-        aligned: 对齐后的时序数据（已过滤 Bad 质量码）
-        metric_configs: 指标配置字典
-        good_value_rate: 好值率（在过滤前计算，反映真实数据质量）。
-            None 时默认 100.0（向后兼容）。
-
-    Returns:
-        {metric_code: Decimal value or None}
-
-    KPI 列表：
-        - good_value_rate: 好值率（仅显示，不参与综合评分加权）
-        - auto_mode_rate: 自控率（参与加权）
-        - effective_auto_rate: 有效自控率（作为乘数因子 R_auto）
-        - steady_rate: 平稳率（参与加权）
-        - accuracy_rate: 准确率（参与加权）
-        - fast_response_rate: 快速率（参与加权）
-        - oscillation_rate: 振荡率（参与加权）
-        - saturation_rate: 饱和率（参与加权）
-    """
-    total = len(aligned)
-    if total == 0:
-        return dict.fromkeys(
-            (
-                "good_value_rate",
-                "auto_mode_rate",
-                "effective_auto_rate",
-                "steady_rate",
-                "accuracy_rate",
-                "fast_response_rate",
-                "oscillation_rate",
-                "saturation_rate",
-            )
-        )
-
-    # 好值率：在过滤前计算，反映真实数据质量（由调用方传入）
-    good_value_rate_val = good_value_rate if good_value_rate is not None else Decimal("100.0")
-
-    # 自控率：sum(mode in [Auto, Cascade]) / count(*) * 100
-    # mode 值：0=Manual, 1=Auto, 2/3=Cascade
-    auto_count = sum(1 for d in aligned if d.get("mode") is not None and _is_auto_mode(d["mode"]))
-    auto_mode_rate = Decimal(auto_count) / Decimal(total) * Decimal("100")
-
-    # 有效自控率 R = AutoRealTime / AllTime × 100
-    # 国标 B.2：自控状态下输出不饱和且控制有效的时长占比
-    # pv_quality 质量码兼容两种约定：TDengine schema (1=Good) 和 OPC DA (192=Good)
-    effective_auto_count = sum(
-        1
-        for d in aligned
-        if d.get("mode") is not None
-        and _is_auto_mode(d["mode"])
-        and d.get("op") is not None
-        and 5 < d["op"] < 95  # 输出不饱和（非限位）
-        and _is_good_quality(d.get("pv_quality", 1))  # PV 质量码为 Good
-    )
-    effective_auto_rate = Decimal(effective_auto_count) / Decimal(total) * Decimal("100")
-
-    # 振荡率：IAE 零交叉相似率法（对齐 GB/T 44693.2-2024 附录 F.1）
-    # 需在平稳率之前计算，因为平稳率公式依赖振荡率
-    oscillation_rate, is_oscillating, osc_period = _compute_oscillation_rate(aligned)
-    osc_ratio = float(oscillation_rate) / 100.0
-
-    # 平稳率：对齐 GB/T 44693.2-2024 附录 B.5
-    # 公式: S = max(0, (1-Osc-k×σ_norm)/(1-Osc)) × 100
-    # 其中: σ_norm = σ/U (偏差标准差/量程), Osc = 振荡率(0-1), k=10
-    pv_sp_pairs = [
-        (d["pv"], d["sp"]) for d in aligned if d.get("pv") is not None and d.get("sp") is not None
-    ]
-    if pv_sp_pairs:
-        errors = [pv - sp for pv, sp in pv_sp_pairs]
-        sp_values = [sp for _, sp in pv_sp_pairs]
-        sigma = float(np.std(errors)) if len(errors) > 1 else 0.0
-        # U = SP 量程（max - min），SP 不变时用 PV 量程兜底
-        sp_span = max(sp_values) - min(sp_values)
-        if sp_span <= 0:
-            pv_vals = [pv for pv, _ in pv_sp_pairs]
-            sp_span = max(pv_vals) - min(pv_vals) if len(pv_vals) > 1 else 1.0
-        if sp_span <= 0:
-            sp_span = 1.0
-
-        # GB/T 44693.2 B.5: max(0, (1-Osc-k×σ_norm)/(1-Osc)) × 100
-        sigma_norm = sigma / sp_span
-        k = 10.0
-        if osc_ratio < 1.0:
-            steady_val = (
-                max(
-                    0.0,
-                    (1.0 - osc_ratio - k * sigma_norm) / (1.0 - osc_ratio),
-                )
-                * 100
-            )
-        else:
-            steady_val = 0.0
-        steady_rate = Decimal(str(steady_val))
-        steady_rate = max(Decimal("0"), min(Decimal("100"), steady_rate))
-
-        # ── 日志：记录平稳率中间计算值 ──
-        logger.debug(
-            "[平稳率] σ=%.6f, U(sp_span)=%.4f, σ_norm=%.6f, "
-            "osc_ratio=%.4f, k=%.1f, steady_rate=%.2f",
-            sigma,
-            sp_span,
-            sigma_norm,
-            osc_ratio,
-            k,
-            float(steady_rate),
-        )
-    else:
-        steady_rate = None
-
-    # 准确率：对齐 GB/T 44693.2-2024 附录 B.3
-    # 公式: A = (1 - |Ē| / |E|max) × 100
-    # 其中: |Ē| = 偏差绝对值均值, |E|max = 偏差绝对值最大值
-    if pv_sp_pairs:
-        abs_errors = [abs(pv - sp) for pv, sp in pv_sp_pairs]
-        mean_abs_error = sum(abs_errors) / len(abs_errors)
-        max_abs_error = max(abs_errors) if abs_errors else 0.0
-
-        if max_abs_error <= 0:
-            # 所有偏差为 0，准确率 100%
-            accuracy_rate = Decimal("100")
-        else:
-            accuracy_val = (1 - mean_abs_error / max_abs_error) * 100
-            accuracy_rate = Decimal(str(accuracy_val))
-            accuracy_rate = max(Decimal("0"), min(Decimal("100"), accuracy_rate))
-
-        # ── 日志：记录准确率中间计算值 ──
-        logger.debug(
-            "[准确率] |Ē|=%.6f, |E|max=%.6f, 比值=%.4f, accuracy_rate=%.2f",
-            mean_abs_error,
-            max_abs_error,
-            mean_abs_error / max_abs_error if max_abs_error > 0 else 0.0,
-            float(accuracy_rate),
-        )
-    else:
-        accuracy_rate = None
-
-    # 快速率：对齐 GB/T 44693.2-2024 附录 B.4 + F.4
-    # F = 理想稳态时间 / 实际稳态时间 × 100
-    # 实际稳态时间基于 ARMA Green 函数计算
-    pv_vals = [d["pv"] for d in aligned if d.get("pv") is not None]
-    pv_range = max(pv_vals) - min(pv_vals) if len(pv_vals) > 1 else 1.0
-    if pv_range == 0:
-        pv_range = 1.0
-    fast_response_rate = _compute_fast_response_rate(aligned, pv_range)
-
-    # 饱和率：duration(op >= 95 OR op <= 5) / duration(*) * 100
-    saturation_count = sum(
-        1 for d in aligned if d.get("op") is not None and (d["op"] >= 95 or d["op"] <= 5)
-    )
-    saturation_rate = Decimal(saturation_count) / Decimal(total) * Decimal("100")
-
-    # ── 日志：记录全部 KPI 计算结果汇总 ──
-    result = {
-        "good_value_rate": _quantize(good_value_rate_val),
-        "auto_mode_rate": _quantize(auto_mode_rate),
-        "effective_auto_rate": _quantize(effective_auto_rate),
-        "steady_rate": _quantize(steady_rate) if steady_rate is not None else None,
-        "accuracy_rate": _quantize(accuracy_rate) if accuracy_rate is not None else None,
-        "fast_response_rate": _quantize(fast_response_rate),
-        "oscillation_rate": _quantize(oscillation_rate),
-        "saturation_rate": _quantize(saturation_rate),
-    }
-    logger.debug(
-        "[KPI计算] 汇总: total=%d, gvr=%.2f, amr=%.2f, ear=%.2f, sr=%s, ar=%s, "
-        "frr=%.2f, or=%.2f, sat=%.2f",
-        total,
-        float(result["good_value_rate"]),
-        float(result["auto_mode_rate"]),
-        float(result["effective_auto_rate"]),
-        float(result["steady_rate"]) if result["steady_rate"] else "None",
-        float(result["accuracy_rate"]) if result["accuracy_rate"] else "None",
-        float(result["fast_response_rate"]),
-        float(result["oscillation_rate"]),
-        float(result["saturation_rate"]),
-    )
-    return result
-
-
-# ---------------------------------------------------------------------------
-# 故障诊断扩展指标（简化实现，后续可优化算法精度）
-# ---------------------------------------------------------------------------
-
-
-def _calc_stiction_coeff(
-    op_data: list[dict],
-    mode_data: list[dict],
-) -> Decimal | None:
-    """黏滞系数计算（0-100，0=无黏滞）。
-
-    简化算法：统计 OP 一阶差分方向变化频率。阀门黏滞会导致 OP 呈锯齿波，
-    方向反转频繁；反转频率越高，黏滞越严重。
-
-    Args:
-        op_data: OP 时序数据（list[dict]，含 ts/value）
-        mode_data: MODE 时序数据，用于筛选自动模式下的 OP（为空时用全部 OP）
-
-    Returns:
-        Decimal(0-100)，数据不足返回 None
-    """
-    if not op_data or len(op_data) < 3:
-        return None
-
-    # 筛选自动模式下的 OP 数据（mode_data 为空时用全部 OP）
-    if mode_data:
-        mode_map = {d.get("ts"): d.get("value") for d in mode_data}
-        op_values: list[float] = []
-        for d in op_data:
-            v = d.get("value")
-            if v is None:
-                continue
-            mode = mode_map.get(d.get("ts"))
-            if mode is not None and not _is_auto_mode(mode):
-                continue
-            op_values.append(float(v))
-    else:
-        op_values = [float(d["value"]) for d in op_data if d.get("value") is not None]
-
-    n = len(op_values)
-    if n < 3:
-        return None
-
-    # OP 一阶差分方向变化次数
-    diffs = np.diff(op_values)
-    direction_changes = 0
-    for i in range(1, len(diffs)):
-        if diffs[i - 1] * diffs[i] < 0:
-            direction_changes += 1
-
-    # 方向变化频率 = 方向变化次数 / (n-2)，归一化到 0-100
-    reversal_rate = direction_changes / max(n - 2, 1)
-    stiction = min(reversal_rate * 100, 100.0)
-
-    logger.debug(
-        "[黏滞系数] OP 点数=%d, 方向变化次数=%d, reversal_rate=%.4f, stiction=%.2f",
-        n,
-        direction_changes,
-        reversal_rate,
-        stiction,
-    )
-    return _quantize(Decimal(str(stiction)))
-
-
-def _calc_steady_state_time(
-    pv_data: list[dict],
-    sp_data: list[dict],
-) -> Decimal | None:
-    """稳态时间计算（秒）。
-
-    算法：PV 与 SP 偏差在 ±2% 范围内的时间占比 × 时间窗总时长（秒）。
-    偏差阈值取 |SP| 的 2%；SP 为 0 时取 PV 量程的 2% 兜底。
-
-    Args:
-        pv_data: PV 时序数据（list[dict]，含 ts/value）
-        sp_data: SP 时序数据
-
-    Returns:
-        Decimal（秒），数据不足返回 None
-    """
-    if not pv_data or not sp_data:
-        return None
-
-    # 对齐 PV/SP（复用容差匹配逻辑）
-    sp_map = {d.get("ts"): d.get("value") for d in sp_data}
-    sp_ts_floats, sp_ts_orig = _build_ts_index(sp_data)
-    sp_values = [sp_map[t] for t in sp_ts_orig] if sp_ts_floats else None
-
-    pairs: list[tuple[float, float, float]] = []  # (ts_float, pv, sp)
-    for d in pv_data:
-        pv = d.get("value")
-        if pv is None:
-            continue
-        ts = d.get("ts")
-        sp = _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values)
-        if sp is None:
-            continue
-        ts_f = _ts_to_float(ts)
-        pairs.append((ts_f if ts_f is not None else 0.0, float(pv), float(sp)))
-
-    if len(pairs) < 2:
-        return None
-
-    # 计算时间窗时长（秒）：优先用时间戳差值，无法解析时按点数 × 1s 兜底
-    ts_floats = [p[0] for p in pairs]
-    window_duration = (
-        max(ts_floats) - min(ts_floats) if max(ts_floats) > min(ts_floats) else len(pairs) * 1.0
-    )
-
-    # PV 量程兜底（SP 为 0 时用）
-    pv_vals = [p[1] for p in pairs]
-    pv_span = max(pv_vals) - min(pv_vals) if len(pv_vals) > 1 else 1.0
-    if pv_span <= 0:
-        pv_span = 1.0
-
-    # 偏差在 ±2% 范围内的点数
-    in_band = 0
-    for _, pv, sp in pairs:
-        threshold = abs(sp) * 0.02 if abs(sp) > 1e-9 else pv_span * 0.02
-        if abs(pv - sp) <= threshold:
-            in_band += 1
-
-    steady_ratio = in_band / len(pairs)
-    steady_time = steady_ratio * window_duration
-
-    logger.debug(
-        "[稳态时间] 对齐点数=%d, in_band=%d, window=%.1fs, steady_time=%.2f",
-        len(pairs),
-        in_band,
-        window_duration,
-        steady_time,
-    )
-    return _quantize(Decimal(str(steady_time)))
-
-
-def _calc_output_travel_index(op_data: list[dict]) -> Decimal | None:
-    """输出值行程指数计算（0-100）。
-
-    算法：OP 值变化总行程 / (时间窗时长 × 理论最大变化率)，归一化到 0-100。
-    理论最大变化率取 100（OP 量程 0-100，每秒最大变化 100）。
-
-    Args:
-        op_data: OP 时序数据（list[dict]，含 ts/value）
-
-    Returns:
-        Decimal(0-100)，数据不足返回 None
-    """
-    if not op_data or len(op_data) < 2:
-        return None
-
-    op_points: list[tuple[float, float]] = []  # (ts_float, op_value)
-    for d in op_data:
-        v = d.get("value")
-        if v is None:
-            continue
-        ts_f = _ts_to_float(d.get("ts"))
-        op_points.append((ts_f if ts_f is not None else 0.0, float(v)))
-
-    if len(op_points) < 2:
-        return None
-
-    op_values = [p[1] for p in op_points]
-    # OP 总行程 = Σ|Δop|
-    diffs = np.diff(op_values)
-    total_travel = float(np.sum(np.abs(diffs)))
-
-    # 时间窗时长（秒）
-    ts_floats = [p[0] for p in op_points]
-    window_duration = (
-        max(ts_floats) - min(ts_floats) if max(ts_floats) > min(ts_floats) else len(op_points) * 1.0
-    )
-
-    # 理论最大变化率：OP 范围 0-100，每秒最大变化 100
-    theoretical_max_rate = 100.0
-    max_possible = window_duration * theoretical_max_rate
-    if max_possible <= 0:
-        return None
-
-    travel_index = min(total_travel / max_possible * 100, 100.0)
-
-    logger.debug(
-        "[行程指数] OP 点数=%d, total_travel=%.4f, window=%.1fs, travel_index=%.2f",
-        len(op_points),
-        total_travel,
-        window_duration,
-        travel_index,
-    )
-    return _quantize(Decimal(str(travel_index)))
-
-
-def _is_auto_mode(mode_value: Any) -> bool:
-    """判断 mode 值是否为 Auto 或 Cascade。"""
-    try:
-        v = int(float(mode_value))
-        return v in (1, 2, 3)
-    except (ValueError, TypeError):
-        return False
-
-
-def _is_good_quality(pv_quality: Any) -> bool:
-    """判断 PV 质量码是否为 Good。
-
-    兼容两种约定：
-        - TDengine schema: 1 = Good
-        - OPC DA: 192 (0xC0) = Good
-    缺省值（None）视为 Good（容错）。
-    """
-    if pv_quality is None:
-        return True
-    try:
-        v = int(float(pv_quality))
-        return v in (1, 192)
-    except (ValueError, TypeError):
-        return False
-
-
-def _compute_oscillation_rate(
-    aligned: list[dict[str, Any]],
-) -> tuple[Decimal, bool, float | None]:
-    """计算振荡率 — IAE 零交叉相似率法（对齐 GB/T 44693.2-2024 附录 F.1）。
-
-    算法步骤：
-        1. 计算控制偏差 E = PV - SP
-        2. 识别零交叉点（偏差符号变化时刻）
-        3. 计算相邻零交叉间的 IAE（积分绝对误差）
-        4. 分别对正值段/负值段计算面积相似率 + 持续时间相似率
-        5. 振荡率 = min(面积相似率) × 100
-
-    Returns:
-        (oscillation_rate, is_oscillating, oscillation_period)
-    """
-    pv_sp = [
-        (d["pv"], d["sp"]) for d in aligned if d.get("pv") is not None and d.get("sp") is not None
-    ]
-    n = len(pv_sp)
-
-    logger.debug("[振荡率] 输入: 总点数=%d, 有效PV-SP对=%d", len(aligned), n)
-
-    if n < 4:
-        logger.debug("[振荡率] 有效点数 < 4，返回 0（数据不足）")
-        return Decimal("0"), False, None
-
-    errors = np.array([pv - sp for pv, sp in pv_sp], dtype=float)
-
-    # 步骤 2：识别零交叉点
-    zero_crossings: list[int] = []
-    for i in range(1, n):
-        if errors[i - 1] * errors[i] < 0:
-            zero_crossings.append(i)
-        elif errors[i - 1] == 0 and errors[i] != 0:
-            zero_crossings.append(i)
-
-    logger.debug("[振荡率] 零交叉点数=%d", len(zero_crossings))
-
-    if len(zero_crossings) < 4:
-        logger.debug("[振荡率] 零交叉点 < 4（不足 2 个周期），返回 0")
-        return Decimal("0"), False, None
-
-    # 步骤 3：计算相邻零交叉间的 IAE
-    segments: list[tuple[float, float, int]] = []
-    prev_cross = 0
-    for cross in zero_crossings + [n]:
-        seg = errors[prev_cross:cross]
-        if len(seg) == 0:
-            prev_cross = cross
-            continue
-        iae = float(np.sum(np.abs(seg)))
-        duration = float(cross - prev_cross)
-        sign = 1 if np.mean(seg) > 0 else -1
-        segments.append((iae, duration, sign))
-        prev_cross = cross
-
-    pos_iae = [s[0] for s in segments if s[2] > 0]
-    neg_iae = [s[0] for s in segments if s[2] < 0]
-
-    if not pos_iae or not neg_iae:
-        logger.debug("[振荡率] 正值段或负值段为空，返回 0")
-        return Decimal("0"), False, None
-
-    # 步骤 4：计算相似率（最小距离法）
-    def _similarity(values: list[float]) -> float:
-        if len(values) < 2:
-            return 0.0
-        arr = np.array(values)
-        best_j = 0
-        best_dist = float("inf")
-        for j in range(len(arr)):
-            dist = float(np.sum((arr - arr[j]) ** 2))
-            if dist < best_dist:
-                best_dist = dist
-                best_j = j
-        avg = arr[best_j]
-        if avg == 0:
-            return 0.0
-        cleaned = arr[(np.abs(arr / avg) >= 0.05) & (np.abs(arr / avg) <= 15)]
-        if len(cleaned) == 0:
-            return 0.0
-        new_avg = float(np.mean(cleaned))
-        similarity = 1.0 - abs(min(new_avg, float(avg)) - float(avg)) / abs(float(avg))
-        return max(0.0, min(1.0, similarity))
-
-    s_a = _similarity(pos_iae)
-    s_b = _similarity(neg_iae)
-
-    # 步骤 5：综合振荡率
-    osc_value = min(s_a, s_b) * 100
-    is_osc = s_a >= 0.4 and s_b >= 0.4
-
-    period = None
-    if is_osc and len(zero_crossings) >= 3:
-        intervals = [
-            zero_crossings[i + 1] - zero_crossings[i] for i in range(len(zero_crossings) - 1)
-        ]
-        period = float(np.median(intervals)) * 2
-
-    logger.debug(
-        "[振荡率] s_a(正面积相似率)=%.4f, s_b(负面积相似率)=%.4f, "
-        "osc_rate=%.2f, is_osc=%s, period=%s",
-        s_a,
-        s_b,
-        osc_value,
-        is_osc,
-        f"{period:.1f}s" if period else "None",
-    )
-
-    return _quantize(Decimal(str(osc_value))), is_osc, period
-
-
-def _compute_fast_response_rate(
-    aligned: list[dict[str, Any]],
-    pv_range: float = 1.0,
-) -> Decimal:
-    """计算快速率 F = 理想稳态时间 / 实际稳态时间 × 100。
-
-    对齐 GB/T 44693.2-2024 附录 B.4 + F.4。
-
-    算法：
-        1. 提取 PV 偏差序列（PV - SP，去均值）
-        2. ARMA(p,q) 模型辨识 → Green 函数（单位脉冲响应）
-        3. 实际稳态时间 = Green 函数衰减到 5% 的时刻
-        4. 理想稳态时间 = 按控制类型取默认值
-        5. F = min(理想 / 实际, 1.0) × 100
-    """
-    from app.tasks.arma import compute_ideal_settling_time, compute_settling_time
-
-    pv_sp = [
-        (d["pv"], d["sp"]) for d in aligned if d.get("pv") is not None and d.get("sp") is not None
-    ]
-
-    logger.debug("[快速率] 输入: 点数=%d, pv_range=%.4f", len(pv_sp), pv_range)
-
-    if len(pv_sp) < 30:
-        logger.debug("[快速率] 数据不足（%d < 30），返回 100（不惩罚）", len(pv_sp))
-        return Decimal("100.0")
-
-    # 偏差序列（PV - SP），去均值
-    errors = np.array([pv - sp for pv, sp in pv_sp], dtype=float)
-    errors = errors - np.mean(errors)
-
-    if np.std(errors) < 1e-9:
-        logger.debug("[快速率] 偏差恒定，返回 100（已处于稳态）")
-        return Decimal("100.0")
-
-    # ARMA 辨识 + Green 函数 → 实际稳态时间
-    actual_settling = compute_settling_time(errors, sample_interval_sec=1.0, threshold=0.05)
-
-    logger.debug("[快速率] 实际稳态时间=%.1f 秒", actual_settling)
-
-    if actual_settling <= 0:
-        logger.debug("[快速率] 稳态时间=0，返回 100")
-        return Decimal("100.0")
-
-    # 理想稳态时间
-    ideal_settling = compute_ideal_settling_time(pv_range, "STABLE")
-    fast_rate = min(ideal_settling / actual_settling, 1.0) * 100
-
-    logger.debug(
-        "[快速率] 理想稳态时间=%.1f, 实际=%.1f, fast_rate=%.2f",
-        ideal_settling,
-        actual_settling,
-        fast_rate,
-    )
-
-    return _quantize(Decimal(str(fast_rate)))
-
-
-def _compute_composite_score(
-    kpi_values: dict[str, Decimal | None],
-    metric_configs: dict[str, MetricConfig],
-) -> Decimal:
-    """计算综合评分 P = (Σ λᵢ × ηᵢ) / (Σ λᵢ) × 100（对齐 GB/T 44693.2-2024）。
-
-    国标 4 分项指标加法关系：
-        P = (λA·A + λF·F + λS·S + λR·R) / (λA + λF + λS + λR)
-
-    - A = accuracy_rate（准确率）
-    - F = fast_response_rate（快速率）
-    - S = steady_rate（平稳率）
-    - R = effective_auto_rate（有效自控率，平等参与加权，不再作为乘数）
-
-    不参与评分：好值率（仅显示）、自控率（仅显示）、振荡率/饱和率（已并入平稳率）
-    缺失指标按权重 0 处理（仅启用且配置了权重的指标参与）。
-    """
-    # ── 日志：记录输入参数 ──
-    logger.debug(
-        "[综合评分] 输入 KPI 值: %s",
-        {k: float(v) if v is not None else None for k, v in kpi_values.items()},
-    )
-
-    # 国标 4 分项指标（全部为"越高越好"，无需反向归一化）
-    score_metrics = (
-        "accuracy_rate",  # A 准确率
-        "fast_response_rate",  # F 快速率
-        "steady_rate",  # S 平稳率
-        "effective_auto_rate",  # R 有效自控率
-    )
-
-    weighted_sum = Decimal("0")
-    weight_total = Decimal("0")
-    weight_details: list[str] = []
-
-    for code in score_metrics:
-        value = kpi_values.get(code)
-        if value is None:
-            logger.debug("[综合评分] 指标 %s: 跳过（值为 None）", code)
-            continue
-        config = metric_configs.get(code)
-        if not config or not config.is_enabled or config.weight is None:
-            logger.debug(
-                "[综合评分] 指标 %s: 跳过（config=%s, enabled=%s, weight=%s）",
-                code,
-                bool(config),
-                config.is_enabled if config else None,
-                config.weight if config else None,
-            )
-            continue
-        # 精度保护：确保 value 和 weight 均为 Decimal，防止 float 混入导致精度丢失
-        if not isinstance(value, Decimal):
-            logger.debug(
-                "[综合评分] 指标 %s: value 非 Decimal（%s），转换为 Decimal",
-                code,
-                type(value).__name__,
-            )
-            value = Decimal(str(value))
-        w = config.weight
-        if not isinstance(w, Decimal):
-            logger.debug(
-                "[综合评分] 指标 %s: weight 非 Decimal（%s），转换为 Decimal",
-                code,
-                type(w).__name__,
-            )
-            w = Decimal(str(w))
-        # 归一化到 [0, 1]（4 指标均为正向：值/100）
-        eta_norm = value / Decimal("100")
-        eta_norm = max(Decimal("0"), min(Decimal("1"), eta_norm))
-        contribution = w * eta_norm
-        weighted_sum += contribution
-        weight_total += w
-        weight_details.append(
-            f"{code}: value={float(value):.2f}, weight={float(w):.2f}, "
-            f"eta_norm={float(eta_norm):.4f}(正向), contribution={float(contribution):.4f}"
-        )
-
-    # ── 日志：记录各指标加权明细 ──
-    for detail in weight_details:
-        logger.debug("[综合评分] 加权明细 → %s", detail)
-
-    if weight_total <= 0:
-        logger.warning("[综合评分] 所有权重总和为 0，无法计算评分，返回 0")
-        return Decimal("0.00")
-
-    # P = (Σ λᵢ × ηᵢ) / (Σ λᵢ) × 100（加法关系，R 平等参与加权）
-    score = weighted_sum / weight_total * Decimal("100")
-    # 精度日志：记录 weighted_sum 和 weight_total 的有效精度位数
-    logger.debug(
-        "[综合评分] weighted_sum=%s (digits=%d), weight_total=%s (digits=%d), score=%.6f",
-        weighted_sum,
-        len(weighted_sum.as_tuple().digits),
-        weight_total,
-        len(weight_total.as_tuple().digits),
-        float(score),
-    )
-
-    result = _quantize(score)
-    logger.debug("[综合评分] 最终评分: %.2f", float(result))
-    return result
-
-
-def _compute_composite_score_v2(
-    kpi_values: dict[str, Decimal | None],
-    type_weights: dict[str, dict] | None,
-    score_type: str,
-) -> Decimal:
-    """计算综合评分 v2 — 按回路类型加权（对齐 GB/T 44693.2-2024 附表1）。
-
-    国标公式：P = [(A*a)+(F*f)+(S*s)]/(a+f+s) * R
-
-    - A = accuracy_rate（准确率）
-    - F = fast_response_rate（快速率）
-    - S = steady_rate（平稳率）
-    - R = effective_auto_rate（有效自控率，作为乘数）
-    - a/f/s = 按 score_type 查 loop_type_weight 获取
-
-    与 v1 的区别：
-    - v1：4 指标平等加权，权重来自 metric_config
-    - v2：3 指标按回路类型加权，R 作为乘数，权重来自 loop_type_weight
-
-    缺失指标按权重 0 处理（该指标不参与，但分母仍含其权重）。
-    若 type_weights 无配置或 score_type 未找到，回退到 v1 逻辑。
-
-    Args:
-        kpi_values: KPI 值字典
-        type_weights: {score_type: {weight_a, weight_f, weight_s}} 映射
-        score_type: 回路评分类型（STABLE/SLOW/FAST/LOGIC）
-
-    Returns:
-        综合评分（Decimal，2 位小数）
-    """
-    # 回退：无类型权重配置时用 v1 的平等加权
-    if not type_weights or score_type not in type_weights:
-        logger.debug("[综合评分v2] score_type=%s 无权重配置，回退平等加权", score_type)
-        # 平等加权：a=f=s=1/3，R 作为乘数
-        a = f = s = Decimal("0.3333")
-    else:
-        w = type_weights[score_type]
-        a = w["weight_a"] if isinstance(w["weight_a"], Decimal) else Decimal(str(w["weight_a"]))
-        f = w["weight_f"] if isinstance(w["weight_f"], Decimal) else Decimal(str(w["weight_f"]))
-        s = w["weight_s"] if isinstance(w["weight_s"], Decimal) else Decimal(str(w["weight_s"]))
-
-    A = kpi_values.get("accuracy_rate")
-    F = kpi_values.get("fast_response_rate")
-    S = kpi_values.get("steady_rate")
-    R = kpi_values.get("effective_auto_rate")
-
-    logger.debug(
-        "[综合评分v2] score_type=%s, a=%s, f=%s, s=%s, A=%s, F=%s, S=%s, R=%s",
-        score_type,
-        a,
-        f,
-        s,
-        A,
-        F,
-        S,
-        R,
-    )
-
-    # 计算加权分子：(A*a + F*f + S*s)，缺失指标按 0 处理
-    weighted_sum = Decimal("0")
-    for val, w in [(A, a), (F, f), (S, s)]:
-        if val is not None:
-            if not isinstance(val, Decimal):
-                val = Decimal(str(val))
-            # 归一化到 [0, 1]
-            eta = max(Decimal("0"), min(Decimal("1"), val / Decimal("100")))
-            weighted_sum += w * eta
-
-    # 分母：a + f + s（固定，不因缺失指标而变化）
-    weight_total = a + f + s
-    if weight_total <= 0:
-        logger.warning("[综合评分v2] 权重总和为 0，返回 0")
-        return Decimal("0.00")
-
-    # 基础评分 = (A*a + F*f + S*s) / (a+f+s) * 100
-    base_score = weighted_sum / weight_total * Decimal("100")
-
-    # R 作为乘数：P = base_score * R/100
-    if R is not None:
-        if not isinstance(R, Decimal):
-            R = Decimal(str(R))
-        r_norm = max(Decimal("0"), min(Decimal("1"), R / Decimal("100")))
-        score = base_score * r_norm
-    else:
-        # R 缺失时，评分降级（仅用基础评分的 60%）
-        logger.debug("[综合评分v2] R 缺失，评分降级为基础评分的 60%%")
-        score = base_score * Decimal("0.6")
-
-    result = _quantize(score)
-    logger.debug("[综合评分v2] 最终评分: %.2f", float(result))
-    return result
-
-
 def _quantize(value: Decimal) -> Decimal:
     """量化到 2 位小数。"""
     return value.quantize(Decimal("0.01"))
@@ -1583,25 +1223,128 @@ async def _save_snapshot(
     effective_auto_rate: Decimal | None = None,
     steady_rate: Decimal | None = None,
     accuracy_rate: Decimal | None = None,
-    fast_response_rate: Decimal | None = None,
+    fast_rate: Decimal | None = None,
     oscillation_rate: Decimal | None = None,
     saturation_rate: Decimal | None = None,
-    stiction_coeff: Decimal | None = None,
-    steady_state_time: Decimal | None = None,
-    output_travel_index: Decimal | None = None,
+    stiction_index: Decimal | None = None,
+    settling_time: Decimal | None = None,
+    output_trip_index: Decimal | None = None,
+    ideal_settling_time: Decimal | None = None,
+    algorithm_version: str | None = None,
+    sampling_freq: str | None = None,
+    quality_policy: str | None = None,
+    valid_rate: Decimal | None = None,
+    confidence_level: str | None = None,
+    data_lineage: dict | None = None,
 ) -> dict:
-    """幂等写入快照（相同 loop_id + ts_start 不重复写入，覆盖更新）。"""
-    # 检查是否已存在
-    existing_result = await db.execute(
-        select(KpiSnapshotHourly).where(
+    """幂等写入快照（UPSERT 模式：相同 loop_id + ts_start 覆盖更新）.
+
+    v4.0 使用 PostgreSQL ``INSERT ... ON CONFLICT DO UPDATE``，
+    不再通过 select-then-add 模式，减少一次查询并避免并发竞争。
+    7 个数据血缘字段（ideal_settling_time/algorithm_version/sampling_freq/
+    quality_policy/valid_rate/confidence_level/data_lineage）随 UPSERT 写入。
+    """
+    snapshot_id = str(uuid4())
+
+    insert_values = {
+        "id": snapshot_id,
+        "loop_id": loop_id,
+        "ts_start": ts_start,
+        "ts_end": ts_end,
+        "status": status,
+        "score": score,
+        "good_value_rate": good_value_rate,
+        "auto_mode_rate": auto_mode_rate,
+        "effective_auto_rate": effective_auto_rate,
+        "steady_rate": steady_rate,
+        "accuracy_rate": accuracy_rate,
+        "fast_rate": fast_rate,
+        "oscillation_rate": oscillation_rate,
+        "saturation_rate": saturation_rate,
+        "stiction_index": stiction_index,
+        "settling_time": settling_time,
+        "output_trip_index": output_trip_index,
+        "ideal_settling_time": ideal_settling_time,
+        "algorithm_version": algorithm_version,
+        "sampling_freq": sampling_freq,
+        "quality_policy": quality_policy,
+        "valid_rate": valid_rate,
+        "confidence_level": confidence_level,
+        "data_lineage": data_lineage,
+    }
+
+    update_cols = {
+        k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")
+    }
+
+    stmt = pg_insert(KpiSnapshotHourly).values(**insert_values).on_conflict_do_update(
+        index_elements=["loop_id", "ts_start"],
+        set_=update_cols,
+    )
+    await db.execute(stmt)
+
+    # 查询实际写入的 id（UPSERT 后无论是新增还是更新，都能查到）
+    id_result = await db.execute(
+        select(KpiSnapshotHourly.id).where(
             KpiSnapshotHourly.loop_id == loop_id,
             KpiSnapshotHourly.ts_start == ts_start,
+        )
+    )
+    id_row = id_result.first()
+    actual_id = str(id_row[0]) if id_row else snapshot_id
+
+    return {
+        "loopId": loop_id,
+        "snapshotId": actual_id,
+        "tsStart": ts_start.isoformat(),
+        "tsEnd": ts_end.isoformat(),
+        "status": status,
+        "score": float(score) if score is not None else None,
+        "algorithmVersion": algorithm_version or ALGORITHM_VERSION,
+    }
+
+
+async def _save_custom_snapshot(
+    db,
+    task_id: str,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    status: str,
+    score: Decimal | None = None,
+    good_value_rate: Decimal | None = None,
+    auto_mode_rate: Decimal | None = None,
+    effective_auto_rate: Decimal | None = None,
+    steady_rate: Decimal | None = None,
+    accuracy_rate: Decimal | None = None,
+    fast_rate: Decimal | None = None,
+    oscillation_rate: Decimal | None = None,
+    saturation_rate: Decimal | None = None,
+    stiction_index: Decimal | None = None,
+    settling_time: Decimal | None = None,
+    output_trip_index: Decimal | None = None,
+    ideal_settling_time: Decimal | None = None,
+    algorithm_version: str | None = None,
+    sampling_freq: str | None = None,
+    quality_policy: str | None = None,
+    valid_rate: Decimal | None = None,
+    confidence_level: str | None = None,
+    data_lineage: dict | None = None,
+) -> dict:
+    """幂等写入自定义任务快照（select-then-add 模式）.
+
+    自定义任务快照使用 ``(task_id, loop_id)`` 作为唯一键，
+    通过 select-then-add/update 模式写入（与 hourly 表的 UPSERT 不同）。
+    """
+    existing_result = await db.execute(
+        select(KpiSnapshotCustom).where(
+            KpiSnapshotCustom.task_id == task_id,
+            KpiSnapshotCustom.loop_id == loop_id,
         )
     )
     existing = existing_result.scalar_one_or_none()
 
     if existing:
-        # 更新已有记录
         existing.ts_end = ts_end
         existing.status = status
         existing.score = score
@@ -1610,18 +1353,25 @@ async def _save_snapshot(
         existing.effective_auto_rate = effective_auto_rate
         existing.steady_rate = steady_rate
         existing.accuracy_rate = accuracy_rate
-        existing.fast_rate = fast_response_rate
+        existing.fast_rate = fast_rate
         existing.oscillation_rate = oscillation_rate
         existing.saturation_rate = saturation_rate
-        existing.stiction_index = stiction_coeff
-        existing.settling_time = steady_state_time
-        existing.output_trip_index = output_travel_index
+        existing.stiction_index = stiction_index
+        existing.settling_time = settling_time
+        existing.output_trip_index = output_trip_index
+        existing.ideal_settling_time = ideal_settling_time
+        existing.algorithm_version = algorithm_version
+        existing.sampling_freq = sampling_freq
+        existing.quality_policy = quality_policy
+        existing.valid_rate = valid_rate
+        existing.confidence_level = confidence_level
+        existing.data_lineage = data_lineage
         snapshot_id = str(existing.id)
     else:
-        # 新增记录
         snapshot_id = str(uuid4())
-        snapshot = KpiSnapshotHourly(
+        snapshot = KpiSnapshotCustom(
             id=snapshot_id,
+            task_id=task_id,
             loop_id=loop_id,
             ts_start=ts_start,
             ts_end=ts_end,
@@ -1632,30 +1382,75 @@ async def _save_snapshot(
             effective_auto_rate=effective_auto_rate,
             steady_rate=steady_rate,
             accuracy_rate=accuracy_rate,
-            fast_rate=fast_response_rate,
+            fast_rate=fast_rate,
             oscillation_rate=oscillation_rate,
             saturation_rate=saturation_rate,
-            stiction_index=stiction_coeff,
-            settling_time=steady_state_time,
-            output_trip_index=output_travel_index,
+            stiction_index=stiction_index,
+            settling_time=settling_time,
+            output_trip_index=output_trip_index,
+            ideal_settling_time=ideal_settling_time,
+            algorithm_version=algorithm_version,
+            sampling_freq=sampling_freq,
+            quality_policy=quality_policy,
+            valid_rate=valid_rate,
+            confidence_level=confidence_level,
+            data_lineage=data_lineage,
         )
         db.add(snapshot)
 
     return {
+        "taskId": task_id,
         "loopId": loop_id,
         "snapshotId": snapshot_id,
         "tsStart": ts_start.isoformat(),
         "tsEnd": ts_end.isoformat(),
         "status": status,
         "score": float(score) if score is not None else None,
-        "algorithmVersion": ALGORITHM_VERSION,
+        "algorithmVersion": algorithm_version or ALGORITHM_VERSION,
     }
+
+
+async def _persist_snapshot(
+    db,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    status: str,
+    custom_task_id: str | None = None,
+    **kwargs,
+) -> dict:
+    """统一快照持久化入口（根据 custom_task_id 分发到对应表）.
+
+    - ``custom_task_id=None`` → 写入 ``kpi_snapshot_hourly``（标准小时快照）
+    - ``custom_task_id`` 非 None → 写入 ``kpi_snapshot_custom``（自定义任务快照）
+
+    所有 kwargs 透传给对应的 _save_* 函数（KPI 值 + 7 个数据血缘字段）。
+    """
+    if custom_task_id is not None:
+        return await _save_custom_snapshot(
+            db=db,
+            task_id=custom_task_id,
+            loop_id=loop_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status=status,
+            **kwargs,
+        )
+    return await _save_snapshot(
+        db=db,
+        loop_id=loop_id,
+        ts_start=ts_start,
+        ts_end=ts_end,
+        status=status,
+        **kwargs,
+    )
 
 
 __all__ = [
     "ALGORITHM_VERSION",
     "AsyncTask",
     "backfill_kpi_range",
+    "calculate_custom_loop_kpi",
     "calculate_daily_kpi",
     "calculate_hourly_kpi",
     "calculate_loop_kpi",
