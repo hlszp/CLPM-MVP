@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CLPM Supervisord LaunchAgent
+  用途：macOS 开机自动启动 supervisord，进而拉起后端 API + Celery Worker
+
+  安装方式：
+    cp deploy/supervisord/com.clpm.supervisord.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.clpm.supervisord.plist
+
+  卸载方式：
+    launchctl unload ~/Library/LaunchAgents/com.clpm.supervisord.plist
+    rm ~/Library/LaunchAgents/com.clpm.supervisord.plist
+
+  注意：修改 USER 为你的实际用户名
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.clpm.supervisord</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/supervisord</string>
+        <string>-c</string>
+        <string>/Users/zhangping/DEV/CLPM/deploy/supervisord/supervisord.conf</string>
+        <string>--nodaemon</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PNPM_PATH</key>
+        <string>/opt/homebrew/bin/pnpm</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/zhangping/DEV/CLPM/deploy/supervisord/logs/launchd.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/zhangping/DEV/CLPM/deploy/supervisord/logs/launchd.err.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/zhangping/DEV/CLPM</string>
+</dict>
+</plist>
