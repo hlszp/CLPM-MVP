@@ -361,8 +361,8 @@ async def save_grading_thresholds(
         db=db,
         operator=user.username,
         operation_type="GRADING_THRESHOLD_UPDATE",
-        target_type="sys_config",
-        target_id=_KEY_CURRENT,
+        target_type=f"sys_config:{_KEY_CURRENT}",
+        target_id=str(uuid4()),
         before_value=before_snapshot,
         after_value=new_thresholds.model_dump_json(),
     )
