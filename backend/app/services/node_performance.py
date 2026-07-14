@@ -332,8 +332,7 @@ async def aggregate_node_snapshot(
             KpiSnapshotHourly.status == "INCONCLUSIVE",
             LoopLedger.include_in_evaluation.is_(True),
             ~KpiSnapshotHourly.loop_id.in_(
-                select(KpiSnapshotHourly.loop_id)
-                .where(
+                select(KpiSnapshotHourly.loop_id).where(
                     KpiSnapshotHourly.loop_id.in_(loop_ids),
                     KpiSnapshotHourly.ts_start >= ts_start,
                     KpiSnapshotHourly.ts_start <= ts_end,
