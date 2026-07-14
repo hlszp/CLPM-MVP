@@ -68,8 +68,10 @@ def benchmark_green_function() -> dict:
         max_diff = float("inf")
 
     speedup = t_recursive / t_analytic if t_analytic > 0 else float("inf")
-    print(f"  [Green 函数] 解析解: {t_analytic:.3f}ms, 递推: {t_recursive:.3f}ms, "
-          f"加速: {speedup:.1f}x, 最大误差: {max_diff:.2e}")
+    print(
+        f"  [Green 函数] 解析解: {t_analytic:.3f}ms, 递推: {t_recursive:.3f}ms, "
+        f"加速: {speedup:.1f}x, 最大误差: {max_diff:.2e}"
+    )
 
     return {
         "analytic_ms": round(t_analytic, 3),
@@ -106,8 +108,10 @@ def benchmark_similarity_rate() -> dict:
 
         speedup = t_original / t_vectorized if t_vectorized > 0 else float("inf")
         diff = abs(s_vectorized - s_original)
-        print(f"  [相似率 n={n_segments}] 向量化: {t_vectorized:.3f}ms, "
-              f"O(n²): {t_original:.3f}ms, 加速: {speedup:.1f}x, 误差: {diff:.2e}")
+        print(
+            f"  [相似率 n={n_segments}] 向量化: {t_vectorized:.3f}ms, "
+            f"O(n²): {t_original:.3f}ms, 加速: {speedup:.1f}x, 误差: {diff:.2e}"
+        )
 
         results[f"n_{n_segments}"] = {
             "vectorized_ms": round(t_vectorized, 3),
@@ -200,8 +204,10 @@ def benchmark_settling_time_search() -> dict:
 
         speedup = t_original / t_vectorized if t_vectorized > 0 else 0.0
         match = idx_vectorized == idx_original
-        print(f"  [稳态搜索-{label}] 向量化: {t_vectorized:.3f}ms, 逐点: {t_original:.3f}ms, "
-              f"加速: {speedup:.1f}x, 结果一致: {match} (idx={idx_vectorized})")
+        print(
+            f"  [稳态搜索-{label}] 向量化: {t_vectorized:.3f}ms, 逐点: {t_original:.3f}ms, "
+            f"加速: {speedup:.1f}x, 结果一致: {match} (idx={idx_vectorized})"
+        )
 
         results[label] = {
             "vectorized_ms": round(t_vectorized, 3),
@@ -241,8 +247,10 @@ def benchmark_zero_crossings() -> dict:
 
     speedup = t_original / t_vectorized if t_vectorized > 0 else float("inf")
     match = crossings_vectorized == crossings_original
-    print(f"  [零交叉] 向量化: {t_vectorized:.3f}ms, 循环: {t_original:.3f}ms, "
-          f"加速: {speedup:.1f}x, 结果一致: {match} (count={len(crossings_vectorized)})")
+    print(
+        f"  [零交叉] 向量化: {t_vectorized:.3f}ms, 循环: {t_original:.3f}ms, "
+        f"加速: {speedup:.1f}x, 结果一致: {match} (count={len(crossings_vectorized)})"
+    )
 
     return {
         "vectorized_ms": round(t_vectorized, 3),
@@ -329,13 +337,16 @@ async def benchmark_end_to_end() -> dict | None:
             data_planner = _build_data_planner(db, bundle_cache=_get_shared_bundle_cache())
             data_planner._config_loader = config_loader
             data_planner._preloaded_op_limits = {
-                str(lid): (cfg["op_lower"], cfg["op_upper"])
-                for lid, cfg in loop_configs.items()
+                str(lid): (cfg["op_lower"], cfg["op_upper"]) for lid, cfg in loop_configs.items()
             }
             await _calculate_loop_kpi(
-                db=db, loop=loop, metric_configs=metric_configs,
-                ts_start=ts_start, ts_end=ts_end,
-                data_planner=data_planner, type_weights=type_weights,
+                db=db,
+                loop=loop,
+                metric_configs=metric_configs,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                data_planner=data_planner,
+                type_weights=type_weights,
             )
     except Exception as e:
         print(f"  [端到端] 预热失败: {e}")
@@ -356,16 +367,20 @@ async def benchmark_end_to_end() -> dict | None:
                     for lid, cfg in loop_configs.items()
                 }
                 result = await _calculate_loop_kpi(
-                    db=db, loop=loop, metric_configs=metric_configs,
-                    ts_start=ts_start, ts_end=ts_end,
-                    data_planner=data_planner, type_weights=type_weights,
+                    db=db,
+                    loop=loop,
+                    metric_configs=metric_configs,
+                    ts_start=ts_start,
+                    ts_end=ts_end,
+                    data_planner=data_planner,
+                    type_weights=type_weights,
                 )
             elapsed = time.perf_counter() - t0
             times.append(elapsed)
             status = result.get("status", "UNKNOWN") if isinstance(result, dict) else "UNKNOWN"
-            print(f"  [端到端] 第 {i+1} 次: {elapsed:.3f}s, status={status}")
+            print(f"  [端到端] 第 {i + 1} 次: {elapsed:.3f}s, status={status}")
         except Exception as e:
-            print(f"  [端到端] 第 {i+1} 次失败: {e}")
+            print(f"  [端到端] 第 {i + 1} 次失败: {e}")
             return None
 
     avg_time = sum(times) / len(times)
@@ -379,9 +394,9 @@ async def benchmark_end_to_end() -> dict | None:
 
 
 def print_header(title: str) -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {title}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 def main() -> None:
@@ -421,9 +436,9 @@ def main() -> None:
     if "end_to_end" in results:
         print(f"  端到端单回路 1h: {results['end_to_end']['avg_time_s']}s")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  基准测试完成")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
