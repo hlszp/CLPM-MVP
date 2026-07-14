@@ -23,7 +23,7 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'DashboardWorkbench',
         path: '/dashboard/workbench',
-        component: () => import('#/views/dashboard/workbench.vue'),
+        component: () => import('#/views/metric/pid-dashboard.vue'),
         meta: {
           affixTab: true,
           icon: 'lucide:layout-dashboard',
