@@ -1699,10 +1699,15 @@ def calculate_node_kpi(
 
 
 async def _do_calculate_node_kpi() -> dict:
-    """执行节点级 KPI 聚合的实际 async 逻辑。"""
+    """执行节点级 KPI 聚合的实际 async 逻辑。
+
+    Phase 4 优化：使用 batch_calculate_and_save_node_snapshots 替代逐节点串行处理。
+    批量预加载树遍历/实时自控率/回路计数 + 并发聚合，将 ~9N 次 DB 查询降至
+    ~6 次批量查询 + 3N 次单节点查询。
+    """
     from app.core.db import AsyncSessionLocal
     from app.models.plant_node import PlantNode
-    from app.services.node_performance import calculate_and_save_node_snapshot
+    from app.services.node_performance import batch_calculate_and_save_node_snapshots
 
     # 时间窗：上一个完整小时（与回路级一致）— naive UTC
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -1714,39 +1719,28 @@ async def _do_calculate_node_kpi() -> dict:
         node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
         nodes = list(node_result.scalars().all())
 
-        if not nodes:
-            logger.info("无启用 KPI 评估的节点，跳过节点级聚合")
-            return {"total": 0, "success": 0, "skipped": 0}
+    if not nodes:
+        logger.info("无启用 KPI 评估的节点，跳过节点级聚合")
+        return {"total": 0, "success": 0, "skipped": 0}
 
-        logger.info("待聚合节点数: %d", len(nodes))
+    logger.info("待聚合节点数: %d（批量模式）", len(nodes))
 
-        success_count = 0
-        skipped_count = 0
-        for node in nodes:
-            try:
-                snap = await calculate_and_save_node_snapshot(
-                    db=db,
-                    plant_node_id=str(node.id),
-                    ts_start=ts_start,
-                    ts_end=ts_end,
-                )
-                if snap is None:
-                    skipped_count += 1
-                    logger.debug("节点 %s 无数据，跳过", node.name)
-                else:
-                    success_count += 1
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("节点 %s 聚合失败: %s", node.name, exc)
+    # 批量预加载 + 并发聚合 + 保存
+    result = await batch_calculate_and_save_node_snapshots(
+        nodes=nodes,
+        ts_start=ts_start,
+        ts_end=ts_end,
+        concurrency=10,
+    )
 
-        await db.commit()
-
-    return {
-        "total": len(nodes),
-        "success": success_count,
-        "skipped": skipped_count,
-        "ts_start": ts_start.isoformat(),
-        "ts_end": ts_end.isoformat(),
-    }
+    logger.info(
+        "节点级聚合完成: total=%d, success=%d, skipped=%d, failed=%d",
+        result["total"],
+        result["success"],
+        result["skipped"],
+        result["failed"],
+    )
+    return result
 
 
 async def _do_calculate_single_node(

@@ -899,8 +899,527 @@ async def get_node_monitor_data(
     }
 
 
+# ---------------------------------------------------------------------------
+# 批量优化（Phase 4：节点级聚合性能优化）
+# ---------------------------------------------------------------------------
+
+
+async def batch_collect_descendant_loop_ids(
+    db: AsyncSession,
+    node_ids: list[str],
+) -> dict[str, list[str]]:
+    """批量递归收集多个节点的下属回路 ID（1 次递归 CTE 替代 N 次）.
+
+    Args:
+        db: 异步数据库会话
+        node_ids: 需要收集回路的节点 ID 列表
+
+    Returns:
+        ``{node_id: [loop_id, ...]}`` 映射；无回路的节点对应空列表
+
+    设计依据：Phase 4 优化措施 1，将 N 次 ``collect_descendant_loop_ids`` 合并为
+    1 次递归 CTE + 1 次批量 loop 查询。
+    """
+    if not node_ids:
+        return {}
+
+    # 1 次递归 CTE：返回 (ancestor_node_id, descendant_node_id) 对
+    # 对每个 node_id 展开 its entire subtree
+    cte_sql = text("""
+        WITH RECURSIVE node_tree AS (
+            SELECT id AS root_id, id AS descendant_id
+            FROM plant_node
+            WHERE id = ANY(:node_ids)
+            UNION ALL
+            SELECT nt.root_id, child.id
+            FROM plant_node child
+            JOIN node_tree nt ON child.parent_id = nt.descendant_id
+        )
+        SELECT nt.root_id, l.id AS loop_id
+        FROM node_tree nt
+        JOIN loop_ledger l ON l.unit_id = nt.descendant_id
+        WHERE l.is_active = TRUE
+    """)
+
+    result = await db.execute(cte_sql, {"node_ids": node_ids})
+    mapping: dict[str, list[str]] = {nid: [] for nid in node_ids}
+    for row in result.all():
+        root_id = str(row.root_id)
+        if root_id in mapping:
+            mapping[root_id].append(str(row.loop_id))
+
+    total_loops = sum(len(v) for v in mapping.values())
+    logger.info(
+        "[批量树遍历] %d 节点 → %d 回路（1 次 CTE 替代 %d 次）",
+        len(node_ids),
+        total_loops,
+        len(node_ids),
+    )
+    return mapping
+
+
+async def batch_query_realtime_auto_rate(
+    db: AsyncSession,
+    node_to_loop_ids: dict[str, list[str]],
+) -> dict[str, dict | None]:
+    """批量查询多节点的实时自控率（3 次批量查询替代 3N 次）.
+
+    Args:
+        db: 异步数据库会话
+        node_to_loop_ids: ``{node_id: [loop_id, ...]}`` 映射
+
+    Returns:
+        ``{node_id: realtime_auto_rate_dict | None}`` 映射
+
+    设计依据：Phase 4 优化措施 2，将 N 次 ``query_realtime_auto_rate`` 合并为
+    3 次批量查询 + 内存计算。
+    """
+    from app.models.loop import LoopTagMapping
+    from app.models.loop_config import LoopModeMapping
+    from app.models.tag import TagRegistry
+
+    # 收集所有 loop_id（去重）
+    all_loop_ids = list({lid for lids in node_to_loop_ids.values() for lid in lids})
+    if not all_loop_ids:
+        return dict.fromkeys(node_to_loop_ids)
+
+    # 1. 批量查询投用定义
+    mm_result = await db.execute(
+        select(LoopModeMapping.loop_id, LoopModeMapping.mode_value).where(
+            LoopModeMapping.loop_id.in_(all_loop_ids),
+            LoopModeMapping.is_auto.is_(True),
+        )
+    )
+    auto_mode_map: dict[str, set[int]] = {}
+    for row in mm_result.all():
+        auto_mode_map.setdefault(str(row.loop_id), set()).add(row.mode_value)
+
+    # 2. 批量查询 MODE tag 映射
+    mt_result = await db.execute(
+        select(LoopTagMapping.loop_id, TagRegistry.tag_name)
+        .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+        .where(
+            LoopTagMapping.loop_id.in_(all_loop_ids),
+            LoopTagMapping.tag_role == "MODE",
+        )
+    )
+    mode_rows = mt_result.all()
+    if not mode_rows:
+        return dict.fromkeys(node_to_loop_ids)
+
+    tag_names = [row.tag_name for row in mode_rows]
+    # loop_id → tag_name 映射
+    loop_tag_map: dict[str, str] = {str(row.loop_id): row.tag_name for row in mode_rows}
+
+    # 3. 批量查询 tag_registry.current_value
+    tag_result = await db.execute(
+        select(TagRegistry.tag_name, TagRegistry.current_value).where(
+            TagRegistry.tag_name.in_(tag_names)
+        )
+    )
+    tag_mode_map: dict[str, float | None] = {
+        row.tag_name: row.current_value for row in tag_result.all()
+    }
+
+    # 4. 按节点计算实时自控率
+    DEFAULT_AUTO_MODES = {1, 2, 3}
+    now = datetime.now(UTC)
+    result_map: dict[str, dict | None] = {}
+
+    for node_id, loop_ids in node_to_loop_ids.items():
+        auto_count = 0
+        valid_count = 0
+        mode_counts: dict[int, int] = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
+
+        for loop_id in loop_ids:
+            tag_name = loop_tag_map.get(loop_id)
+            if tag_name is None:
+                continue
+            mode_val = tag_mode_map.get(tag_name)
+            if mode_val is None:
+                continue
+            try:
+                mode_int = int(mode_val)
+            except (ValueError, TypeError):
+                continue
+            valid_count += 1
+            if mode_int in mode_counts:
+                mode_counts[mode_int] += 1
+            auto_modes = auto_mode_map.get(loop_id, DEFAULT_AUTO_MODES)
+            if mode_int in auto_modes:
+                auto_count += 1
+
+        if valid_count == 0:
+            result_map[node_id] = None
+        else:
+            rate = round(auto_count / valid_count * 100, 2)
+            result_map[node_id] = {
+                "rate": Decimal(str(rate)),
+                "auto_count": auto_count,
+                "manual_count": valid_count - auto_count,
+                "total_count": valid_count,
+                "mode_counts": mode_counts,
+                "read_at": now.isoformat(),
+            }
+
+    logger.info(
+        "[批量实时自控率] %d 节点, %d 回路（3 次查询替代 %d 次）",
+        len(node_to_loop_ids),
+        len(all_loop_ids),
+        len(node_to_loop_ids) * 3,
+    )
+    return result_map
+
+
+async def batch_query_loop_counts(
+    db: AsyncSession,
+    node_to_loop_ids: dict[str, list[str]],
+    ts_start: datetime,
+    ts_end: datetime,
+) -> dict[str, dict]:
+    """批量查询多节点的 excluded/inconclusive 回路计数（2 次分组查询替代 2N 次）.
+
+    Args:
+        db: 异步数据库会话
+        node_to_loop_ids: ``{node_id: [loop_id, ...]}`` 映射
+        ts_start: 时间窗起始
+        ts_end: 时间窗结束
+
+    Returns:
+        ``{node_id: {excluded_loops, inconclusive_loops}}`` 映射
+
+    设计依据：Phase 4 优化措施 3
+    """
+    all_loop_ids = list({lid for lids in node_to_loop_ids.values() for lid in lids})
+    if not all_loop_ids:
+        return {nid: {"excluded_loops": 0, "inconclusive_loops": 0} for nid in node_to_loop_ids}
+
+    # 构造 loop_id → node_id 反向映射（一个 loop 可能属于多个 node 的后代）
+    loop_to_nodes: dict[str, list[str]] = {}
+    for node_id, loop_ids in node_to_loop_ids.items():
+        for lid in loop_ids:
+            loop_to_nodes.setdefault(lid, []).append(node_id)
+
+    # 1. 批量查询 excluded loops（include_in_evaluation=False）
+    ex_result = await db.execute(
+        select(LoopLedger.id).where(
+            LoopLedger.id.in_(all_loop_ids),
+            LoopLedger.include_in_evaluation.is_(False),
+        )
+    )
+    excluded_counts: dict[str, int] = dict.fromkeys(node_to_loop_ids, 0)
+    for row in ex_result.all():
+        lid = str(row.id)
+        for nid in loop_to_nodes.get(lid, []):
+            excluded_counts[nid] = excluded_counts.get(nid, 0) + 1
+
+    # 2. 批量查询 inconclusive loops
+    # 有 INCONCLUSIVE 快照但没有 SUCCESS 快照的回路
+    # 使用两个子查询：先找有 SUCCESS 的 loop_ids，再找有 INCONCLUSIVE 但不在 SUCCESS 列表中的
+    success_loops_result = await db.execute(
+        select(KpiSnapshotHourly.loop_id)
+        .where(
+            KpiSnapshotHourly.loop_id.in_(all_loop_ids),
+            KpiSnapshotHourly.ts_start >= ts_start,
+            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.status == "SUCCESS",
+        )
+        .distinct()
+    )
+    success_loop_ids = {str(row.loop_id) for row in success_loops_result.all()}
+
+    ic_result = await db.execute(
+        select(KpiSnapshotHourly.loop_id)
+        .where(
+            KpiSnapshotHourly.loop_id.in_(all_loop_ids),
+            KpiSnapshotHourly.ts_start >= ts_start,
+            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.status == "INCONCLUSIVE",
+        )
+        .distinct()
+    )
+    inconclusive_counts: dict[str, int] = dict.fromkeys(node_to_loop_ids, 0)
+    for row in ic_result.all():
+        lid = str(row.loop_id)
+        if lid not in success_loop_ids:
+            for nid in loop_to_nodes.get(lid, []):
+                inconclusive_counts[nid] = inconclusive_counts.get(nid, 0) + 1
+
+    result = {
+        nid: {
+            "excluded_loops": excluded_counts.get(nid, 0),
+            "inconclusive_loops": inconclusive_counts.get(nid, 0),
+        }
+        for nid in node_to_loop_ids
+    }
+    logger.info(
+        "[批量回路计数] %d 节点, %d 回路（2 次查询替代 %d 次）",
+        len(node_to_loop_ids),
+        len(all_loop_ids),
+        len(node_to_loop_ids) * 2,
+    )
+    return result
+
+
+async def aggregate_node_snapshot_with_presets(
+    db: AsyncSession,
+    plant_node_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    loop_ids: list[str],
+    realtime_result: dict | None,
+    counts: dict,
+) -> dict | None:
+    """聚合节点快照（使用预加载数据，避免重复 DB 查询）.
+
+    与 ``aggregate_node_snapshot`` 的区别：跳过 collect_descendant_loop_ids /
+    query_realtime_auto_rate / excluded/inconclusive count 查询，
+    直接使用传入的预加载数据。仅保留 1 次主聚合 SQL 查询。
+
+    Args:
+        db: 异步数据库会话
+        plant_node_id: 节点 ID
+        ts_start: 时间窗起始
+        ts_end: 时间窗结束
+        loop_ids: 预加载的下属回路 ID 列表
+        realtime_result: 预加载的实时自控率结果（None 表示无数据）
+        counts: 预加载的计数 ``{excluded_loops, inconclusive_loops}``
+
+    Returns:
+        节点级快照字典，无数据返回 None
+    """
+    if not loop_ids:
+        logger.debug("[节点级聚合-批量] plant_node_id=%s 无下属回路", plant_node_id)
+        return None
+
+    # 主聚合 SQL（与 aggregate_node_snapshot 相同）
+    subq = (
+        select(KpiSnapshotHourly)
+        .where(
+            KpiSnapshotHourly.loop_id.in_(loop_ids),
+            KpiSnapshotHourly.ts_start >= ts_start,
+            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.status == "SUCCESS",
+        )
+        .distinct(KpiSnapshotHourly.loop_id)
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+    ).subquery()
+
+    weight_col = func.coalesce(LoopLevelWeight.weight, Decimal("1.0")).label("w")
+    weight_sum_col = func.nullif(func.sum(weight_col), 0).label("weight_sum")
+
+    weighted_cols = []
+    for f in KPI_FIELDS:
+        col = getattr(subq.c, f)
+        weighted_cols.append((func.sum(col * weight_col) / weight_sum_col).label(f))
+
+    auto_loop_count = func.sum(
+        func.coalesce(
+            func.cast(subq.c.auto_mode_rate > 0, Integer),
+            0,
+        )
+    ).label("auto_loop_count")
+    total_count = func.count().label("cnt")
+
+    stmt = select(total_count, auto_loop_count, weight_sum_col, *weighted_cols).select_from(
+        subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
+            LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
+        )
+    )
+    result = await db.execute(stmt)
+    row = result.one()
+
+    if row.cnt == 0:
+        logger.debug(
+            "[节点级聚合-批量] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照",
+            plant_node_id,
+            ts_start,
+            ts_end,
+        )
+        return None
+
+    weight_sum_val = float(row.weight_sum) if row.weight_sum is not None else 0.0
+    if weight_sum_val == 0:
+        logger.warning(
+            "[节点级聚合-批量] plant_node_id=%s, SUM(weight)=0，无法计算加权平均",
+            plant_node_id,
+        )
+        return None
+
+    def avg_value(field: str) -> Decimal | None:
+        val = getattr(row, field)
+        if val is None:
+            return None
+        return Decimal(str(val)).quantize(Decimal("0.01"))
+
+    score_avg = avg_value("score")
+    auto_loop_count_val = int(row.auto_loop_count or 0)
+    auto_loop_ratio = round(auto_loop_count_val / int(row.cnt) * 100, 2)
+
+    status = _score_to_status(score_avg)
+
+    realtime_auto_rate = realtime_result["rate"] if realtime_result else None
+
+    total_loops_count = len(loop_ids)
+    evaluated_loops_count = int(row.cnt)
+    excluded_loops_count = counts.get("excluded_loops", 0)
+    inconclusive_loops_count = counts.get("inconclusive_loops", 0)
+
+    logger.info(
+        "[节点级聚合-批量] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "
+        "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, 定级=%s",
+        plant_node_id,
+        row.cnt,
+        auto_loop_count_val,
+        auto_loop_ratio,
+        realtime_auto_rate,
+        score_avg,
+        status,
+    )
+
+    return {
+        "plant_node_id": plant_node_id,
+        "ts_start": ts_start,
+        "ts_end": ts_end,
+        "score": score_avg,
+        "good_value_rate": avg_value("good_value_rate"),
+        "auto_mode_rate": avg_value("auto_mode_rate"),
+        "effective_auto_rate": avg_value("effective_auto_rate"),
+        "steady_rate": avg_value("steady_rate"),
+        "accuracy_rate": avg_value("accuracy_rate"),
+        "fast_rate": avg_value("fast_rate"),
+        "oscillation_rate": avg_value("oscillation_rate"),
+        "saturation_rate": avg_value("saturation_rate"),
+        "stiction_index": avg_value("stiction_index"),
+        "settling_time": avg_value("settling_time"),
+        "output_trip_index": avg_value("output_trip_index"),
+        "ideal_settling_time": avg_value("ideal_settling_time"),
+        "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
+        "realtime_auto_rate": realtime_auto_rate,
+        "loop_count": int(row.cnt),
+        "status": status,
+        "algorithm_version": ALGORITHM_VERSION,
+        "total_loops": total_loops_count,
+        "evaluated_loops": evaluated_loops_count,
+        "inconclusive_loops": inconclusive_loops_count,
+        "excluded_loops": excluded_loops_count,
+        "unit_status": "PARTIAL" if inconclusive_loops_count > 0 else "SUCCESS",
+    }
+
+
+async def batch_calculate_and_save_node_snapshots(
+    nodes: list,
+    ts_start: datetime,
+    ts_end: datetime,
+    concurrency: int = 10,
+) -> dict:
+    """批量聚合并保存多节点快照（预加载 + 并发处理）.
+
+    Phase 4 优化入口：将 N 个节点的聚合流程从 ~9N 次 DB 查询优化为
+    ~6 次批量查询 + 3N 次单节点查询（主聚合 SQL + 保存），并通过
+    asyncio.Semaphore 并发处理。
+
+    Args:
+        nodes: PlantNode 对象列表（is_kpi_enabled=True）
+        ts_start: 时间窗起始
+        ts_end: 时间窗结束
+        concurrency: 最大并发数
+
+    Returns:
+        ``{total, success, skipped, failed, ts_start, ts_end}``
+    """
+    import asyncio
+
+    from app.core.db import AsyncSessionLocal
+
+    if not nodes:
+        return {"total": 0, "success": 0, "skipped": 0, "failed": 0}
+
+    node_ids = [str(n.id) for n in nodes]
+
+    # Phase 1: 批量预加载（共享 session）
+    async with AsyncSessionLocal() as db:
+        # 措施 1：批量树遍历
+        node_to_loop_ids = await batch_collect_descendant_loop_ids(db, node_ids)
+
+        # 措施 2：批量实时自控率
+        node_to_realtime = await batch_query_realtime_auto_rate(db, node_to_loop_ids)
+
+        # 措施 3：批量回路计数
+        node_to_counts = await batch_query_loop_counts(db, node_to_loop_ids, ts_start, ts_end)
+
+    logger.info(
+        "[批量节点聚合] 预加载完成: %d 节点, 开始并发聚合（并发数=%d）",
+        len(nodes),
+        concurrency,
+    )
+
+    # Phase 2: 并发聚合 + 保存（每节点独立 session）
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _process_node(node) -> dict | None:
+        async with sem:
+            node_id = str(node.id)
+            loop_ids = node_to_loop_ids.get(node_id, [])
+            realtime_result = node_to_realtime.get(node_id)
+            counts = node_to_counts.get(node_id, {"excluded_loops": 0, "inconclusive_loops": 0})
+
+            if not loop_ids:
+                logger.debug("[批量节点聚合] 节点 %s 无下属回路，跳过", node.name)
+                return None
+
+            async with AsyncSessionLocal() as worker_db:
+                try:
+                    snap_data = await aggregate_node_snapshot_with_presets(
+                        db=worker_db,
+                        plant_node_id=node_id,
+                        ts_start=ts_start,
+                        ts_end=ts_end,
+                        loop_ids=loop_ids,
+                        realtime_result=realtime_result,
+                        counts=counts,
+                    )
+                    if snap_data is None:
+                        return None
+                    await save_node_snapshot(worker_db, snap_data)
+                    await worker_db.commit()
+                    return snap_data
+                except Exception:
+                    await worker_db.rollback()
+                    raise
+
+    tasks = [asyncio.create_task(_process_node(node)) for node in nodes]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    success_count = 0
+    skipped_count = 0
+    failed_count = 0
+    for r in results:
+        if isinstance(r, Exception):
+            failed_count += 1
+            logger.warning("[批量节点聚合] 节点聚合失败: %s", r)
+        elif r is None:
+            skipped_count += 1
+        else:
+            success_count += 1
+
+    return {
+        "total": len(nodes),
+        "success": success_count,
+        "skipped": skipped_count,
+        "failed": failed_count,
+        "ts_start": ts_start.isoformat(),
+        "ts_end": ts_end.isoformat(),
+    }
+
+
 __all__ = [
     "aggregate_node_snapshot",
+    "aggregate_node_snapshot_with_presets",
+    "batch_calculate_and_save_node_snapshots",
+    "batch_collect_descendant_loop_ids",
+    "batch_query_loop_counts",
+    "batch_query_realtime_auto_rate",
     "calculate_and_save_node_snapshot",
     "collect_descendant_loop_ids",
     "get_node_latest_snapshot",
