@@ -25,7 +25,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
-import numpy as np
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -55,8 +54,8 @@ ALGORITHM_VERSION_V1 = "KPI_CALC_v1.0"  # 向后兼容回退
 # 数据不足阈值：Good 数据占比 < 20% 视为 INCONCLUSIVE
 MIN_GOOD_RATIO = 0.20
 
-# 并发 worker 数
-CONCURRENCY = 10
+# 并发 worker 数（可被 EngineRule SCHEDULE_CONCURRENCY 覆盖）
+CONCURRENCY = 20
 
 # ---------------------------------------------------------------------------
 # v4.0 指标代码映射（DB 列名 ↔ Calculator 代码）
@@ -481,13 +480,31 @@ async def _do_calculate(
     loops_count = len(loops)
     completed_in_window = 0  # 当前窗口已完成回路数（闭包计数器）
 
+    # 批量预加载回路配置（OP 限位 + PV 量程 + config_version）
+    # 避免每回路在 DataPlanner._default_config_loader + _fill_op_output_limits 中
+    # 各查 3-5 次 DB（1000 回路 = 5000 次查询 → 1 次批量查询）
+    loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+
     async def _calc_with_sem(loop: LoopLedger) -> dict | None:
         nonlocal completed_in_window
         async with sem:
             # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
             async with AsyncSessionLocal() as worker_db:
                 try:
-                    data_planner = _build_data_planner(worker_db)
+                    # 传入预加载的回路配置，避免 DataPlanner 内部重复查询
+                    loop_cfg = loop_configs.get(str(loop.id))
+                    config_loader = _make_config_loader(loop_cfg)
+                    data_planner = _build_data_planner(
+                        worker_db,
+                        bundle_cache=_get_shared_bundle_cache(),
+                    )
+                    # 注入预加载的 config_loader
+                    data_planner._config_loader = config_loader
+                    # 注入预加载的 OP 限位（避免 _fill_op_output_limits 查 DB）
+                    data_planner._preloaded_op_limits = {
+                        str(lid): (cfg["op_lower"], cfg["op_upper"])
+                        for lid, cfg in loop_configs.items()
+                    }
                     result = await _calculate_loop_kpi(
                         db=worker_db,
                         loop=loop,
@@ -735,9 +752,7 @@ async def _calculate_loop_kpi(
     weights = _build_weights_map(type_weights, score_type, metric_configs)
 
     # 三层计算：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）
-    metric_results, composite_result = _compute_kpis_three_layer(
-        bundles, config_bundle, weights
-    )
+    metric_results, composite_result = _compute_kpis_three_layer(bundles, config_bundle, weights)
 
     # 综合评分为 None（R 可信度 E 级）→ INCONCLUSIVE
     if composite_result.value is None:
@@ -832,9 +847,7 @@ def _build_config_bundle(loop_id: str, control_type: ControlType) -> MetricDataB
         timestamps=[ts],
         signals={"control_type": [control_type.value]},
         validity={},
-        quality_summary=QualitySummary(
-            total_count=1, valid_count=1, valid_rate=1.0
-        ),
+        quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
         point_count=1,
     )
     return MetricDataBundle(
@@ -998,9 +1011,7 @@ def _compute_kpis_three_layer(
             logger.warning("Layer2 指标 %s 计算失败: %s", calc_code, exc)
 
     # --- Layer3: 综合评分 ---
-    composite_result = ConfidenceEvaluator.compute_composite_score(
-        metric_results, weights=weights
-    )
+    composite_result = ConfidenceEvaluator.compute_composite_score(metric_results, weights=weights)
     metric_results["composite_score"] = composite_result
 
     return metric_results, composite_result
@@ -1074,9 +1085,7 @@ def _extract_lineage_info(
     )
 
     return {
-        "algorithm_version": (
-            lineage.algorithm_version if lineage else ALGORITHM_VERSION
-        ),
+        "algorithm_version": (lineage.algorithm_version if lineage else ALGORITHM_VERSION),
         "sampling_freq": lineage.sampling_freq if lineage else None,
         "quality_policy": lineage.quality_policy if lineage else None,
         "valid_rate": valid_rate,
@@ -1085,28 +1094,198 @@ def _extract_lineage_info(
     }
 
 
-def _build_data_planner(db):
+def _build_data_planner(db, bundle_cache=None):
     """构造 DataPlanner 实例（工厂函数）。
 
     从 get_provider().make_query_fn(db) 获取 TDengine 查询函数，
-    配合 L1DataBlockCache + MetricDataBundleAssembler 构造 DataPlanner。
+    配合 L1DataBlockCache + L2BundleCache + MetricDataBundleAssembler 构造 DataPlanner。
+
+    Args:
+        db: 异步数据库会话
+        bundle_cache: 可选的 L2 Bundle 缓存实例。None 时自动创建（启用 L2 缓存）。
+            传入 False 可显式禁用 L2 缓存（用于测试）。
     """
     from app.core.redis import redis_client
     from app.services.cache.l1_datablock import L1DataBlockCache
-    from app.services.data_source.factory import get_provider
+    from app.services.cache.l2_bundle import L2BundleCache
     from app.services.data_planner import DataPlanner
+    from app.services.data_source.factory import get_provider
     from app.services.metric_data_bundle import MetricDataBundleAssembler
 
     query_fn = get_provider().make_query_fn(db)
     cache = L1DataBlockCache(redis_client)
     assembler = MetricDataBundleAssembler()
 
+    # L2 Bundle 缓存（默认启用，传入 False 显式禁用）
+    if bundle_cache is False:
+        l2_cache = None
+    elif bundle_cache is not None:
+        l2_cache = bundle_cache
+    else:
+        l2_cache = L2BundleCache(redis_client)
+
     return DataPlanner(
         cache=cache,
         tdengine_query_fn=query_fn,
         assembler=assembler,
         db=db,
+        bundle_cache=l2_cache,
     )
+
+
+# 共享 L2 Bundle 缓存实例（进程内单例，避免每回路创建）
+_shared_bundle_cache = None
+
+
+def _get_shared_bundle_cache():
+    """获取共享 L2 Bundle 缓存实例（懒初始化）."""
+    global _shared_bundle_cache
+    if _shared_bundle_cache is None:
+        from app.core.redis import redis_client
+        from app.services.cache.l2_bundle import L2BundleCache
+
+        _shared_bundle_cache = L2BundleCache(redis_client)
+    return _shared_bundle_cache
+
+
+async def _batch_load_loop_configs(db, loop_ids: list[str]) -> dict[str, dict]:
+    """批量预加载回路配置（OP 限位 + PV 量程 + config_version）.
+
+    一次性查询所有回路的配置信息，避免 DataPlanner 内部每回路查 3-5 次 DB。
+    1000 回路：5000 次 DB 查询 → 3 次批量查询。
+
+    Returns:
+        {loop_id: {op_lower, op_upper, range_min, range_max, config_version, updated_at}}
+    """
+    if not loop_ids:
+        return {}
+
+    from app.models.loop import LoopLedger, LoopTagMapping
+    from app.models.tag import TagRegistry
+
+    configs: dict[str, dict] = {}
+
+    # 1. 批量查询 LoopLedger（OP 限位 + updated_at）
+    loop_result = await db.execute(
+        select(
+            LoopLedger.id,
+            LoopLedger.op_output_lower_limit,
+            LoopLedger.op_output_upper_limit,
+            LoopLedger.updated_at,
+        ).where(LoopLedger.id.in_(loop_ids))
+    )
+    for row in loop_result.all():
+        loop_id = str(row[0])
+        configs[loop_id] = {
+            "op_lower": float(row[1]) if row[1] is not None else None,
+            "op_upper": float(row[2]) if row[2] is not None else None,
+            "range_min": 0.0,
+            "range_max": 100.0,
+            "config_version": f"cfg_{int(row[3].timestamp())}" if row[3] else "v1",
+        }
+
+    # 2. 批量查询 LoopTagMapping（所有回路的 tag 映射）
+    mapping_result = await db.execute(
+        select(LoopTagMapping.loop_id, LoopTagMapping.tag_role, LoopTagMapping.tag_id).where(
+            LoopTagMapping.loop_id.in_(loop_ids)
+        )
+    )
+    # {loop_id: {role: tag_id}}
+    loop_tags: dict[str, dict[str, str]] = {}
+    for row in mapping_result.all():
+        loop_id = str(row[0])
+        if loop_id not in loop_tags:
+            loop_tags[loop_id] = {}
+        loop_tags[loop_id][row[1]] = str(row[2])
+
+    # 3. 批量查询 PV tag 量程（所有 PV tag_id）
+    pv_tag_ids = [
+        tag_id for tags in loop_tags.values() for role, tag_id in tags.items() if role == "PV"
+    ]
+    tag_ranges: dict[str, tuple[float, float]] = {}
+    if pv_tag_ids:
+        tag_result = await db.execute(
+            select(TagRegistry.id, TagRegistry.range_min, TagRegistry.range_max).where(
+                TagRegistry.id.in_(pv_tag_ids)
+            )
+        )
+        for row in tag_result.all():
+            tag_ranges[str(row[0])] = (
+                float(row[1]) if row[1] is not None else 0.0,
+                float(row[2]) if row[2] is not None else 100.0,
+            )
+
+    # 4. 合并 PV 量程到 configs
+    for loop_id, tags in loop_tags.items():
+        pv_tag_id = tags.get("PV")
+        if pv_tag_id and pv_tag_id in tag_ranges and loop_id in configs:
+            configs[loop_id]["range_min"] = tag_ranges[pv_tag_id][0]
+            configs[loop_id]["range_max"] = tag_ranges[pv_tag_id][1]
+
+    # 5. OP tag 量程作为回退（Loop 表 OP 限位为 None 时）
+    op_tag_ids = [
+        tag_id for tags in loop_tags.values() for role, tag_id in tags.items() if role == "OP"
+    ]
+    op_tag_ranges: dict[str, tuple[float, float]] = {}
+    if op_tag_ids:
+        op_result = await db.execute(
+            select(TagRegistry.id, TagRegistry.range_min, TagRegistry.range_max).where(
+                TagRegistry.id.in_(op_tag_ids)
+            )
+        )
+        for row in op_result.all():
+            op_tag_ranges[str(row[0])] = (
+                float(row[1]) if row[1] is not None else None,
+                float(row[2]) if row[2] is not None else None,
+            )
+    for loop_id, tags in loop_tags.items():
+        if loop_id not in configs:
+            continue
+        cfg = configs[loop_id]
+        if cfg["op_lower"] is None or cfg["op_upper"] is None:
+            op_tag_id = tags.get("OP")
+            if op_tag_id and op_tag_id in op_tag_ranges:
+                op_min, op_max = op_tag_ranges[op_tag_id]
+                if cfg["op_lower"] is None and op_min is not None:
+                    cfg["op_lower"] = op_min
+                if cfg["op_upper"] is None and op_max is not None:
+                    cfg["op_upper"] = op_max
+
+    logger.info(
+        "批量预加载回路配置: %d 回路, %d PV tags, %d OP tags",
+        len(configs),
+        len(tag_ranges),
+        len(op_tag_ranges),
+    )
+    return configs
+
+
+def _make_config_loader(loop_cfg: dict | None):
+    """构造 config_loader 闭包（使用预加载的配置，避免 DB 查询）.
+
+    返回一个 async 函数，签名对齐 DataPlanner._default_config_loader：
+        async def loader(loop_id, control_type) -> LoopPreprocessConfig
+    """
+    from app.contracts.data_types import LoopPreprocessConfig
+
+    async def _loader(loop_id: str, control_type: ControlType) -> LoopPreprocessConfig:
+        if loop_cfg is None:
+            return LoopPreprocessConfig(
+                loop_id=loop_id,
+                control_type=control_type,
+                range_min=0.0,
+                range_max=100.0,
+                config_version="v1",
+            )
+        return LoopPreprocessConfig(
+            loop_id=loop_id,
+            control_type=control_type,
+            range_min=loop_cfg.get("range_min", 0.0),
+            range_max=loop_cfg.get("range_max", 100.0),
+            config_version=loop_cfg.get("config_version", "v1"),
+        )
+
+    return _loader
 
 
 def _get_tag_name(
@@ -1273,13 +1452,15 @@ async def _save_snapshot(
         "data_lineage": data_lineage,
     }
 
-    update_cols = {
-        k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")
-    }
+    update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")}
 
-    stmt = pg_insert(KpiSnapshotHourly).values(**insert_values).on_conflict_do_update(
-        index_elements=["loop_id", "ts_start"],
-        set_=update_cols,
+    stmt = (
+        pg_insert(KpiSnapshotHourly)
+        .values(**insert_values)
+        .on_conflict_do_update(
+            index_elements=["loop_id", "ts_start"],
+            set_=update_cols,
+        )
     )
     await db.execute(stmt)
 

@@ -862,6 +862,11 @@ class TestDoCalculate:
                 "app.tasks.kpi_calc._calculate_loop_kpi",
                 new_callable=AsyncMock,
             ) as mock_calc,
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -894,6 +899,11 @@ class TestDoCalculate:
                 "app.tasks.kpi_calc._calculate_loop_kpi",
                 new_callable=AsyncMock,
             ) as mock_calc,
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -928,6 +938,11 @@ class TestDoCalculate:
                 "app.tasks.kpi_calc._calculate_loop_kpi",
                 new_callable=AsyncMock,
             ) as mock_calc,
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)

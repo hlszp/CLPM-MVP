@@ -153,42 +153,50 @@ class OscillationRateCalculator(MetricCalculatorBase):
 
     @staticmethod
     def _find_zero_crossings(errors: np.ndarray) -> list[int]:
-        """识别零交叉点（偏差符号变化时刻）."""
-        crossings: list[int] = []
+        """识别零交叉点（偏差符号变化时刻）— 向量化实现."""
         n = len(errors)
-        for i in range(1, n):
-            if errors[i - 1] * errors[i] < 0:
-                crossings.append(i)
-            elif errors[i - 1] == 0 and errors[i] != 0:
-                crossings.append(i)
-        return crossings
+        if n < 2:
+            return []
+        # 向量化：符号变化 = sign(e[i-1]) != sign(e[i]) 且至少一个非零
+        signs = np.sign(errors)
+        # 严格符号变化（一正一负）
+        sign_change = signs[:-1] * signs[1:] < 0
+        # 零后非零（e[i-1]==0 且 e[i]!=0）
+        zero_to_nonzero = (signs[:-1] == 0) & (signs[1:] != 0)
+        crossings_mask = sign_change | zero_to_nonzero
+        return (np.where(crossings_mask)[0] + 1).tolist()
 
     @staticmethod
     def _compute_iae_segments(
         errors: np.ndarray, zero_crossings: list[int], n: int
     ) -> list[tuple[float, float, int]]:
-        """计算相邻零交叉间的 IAE 段.
+        """计算相邻零交叉间的 IAE 段 — 向量化实现.
 
         Returns:
             [(iae, duration, sign), ...] 每段的 IAE/时长/符号
         """
+        if not zero_crossings:
+            boundaries = [0, n]
+        else:
+            boundaries = [0] + list(zero_crossings) + [n]
+
         segments: list[tuple[float, float, int]] = []
-        prev = 0
-        for cross in zero_crossings + [n]:
-            seg = errors[prev:cross]
-            if len(seg) == 0:
-                prev = cross
+        for i in range(len(boundaries) - 1):
+            prev = boundaries[i]
+            cross = boundaries[i + 1]
+            if cross <= prev:
                 continue
+            seg = errors[prev:cross]
             iae = float(np.sum(np.abs(seg)))
             duration = float(cross - prev)
-            sign = 1 if float(np.mean(seg)) > 0 else -1
+            mean_val = float(np.mean(seg))
+            sign = 1 if mean_val > 0 else -1
             segments.append((iae, duration, sign))
-            prev = cross
         return segments
 
     @staticmethod
     def _similarity_rate(values: list[float]) -> float:
-        """计算相似率（最小距离法）.
+        """计算相似率（最小距离法）— 向量化实现.
 
         算法：
             1. 找到使 Σ(v_i - v_j)² 最小的 v_j 作为 avg
@@ -200,14 +208,15 @@ class OscillationRateCalculator(MetricCalculatorBase):
             return 0.0
         arr = np.array(values, dtype=float)
 
-        # 最小距离法求平均值
-        best_j = 0
-        best_dist = float("inf")
-        for j in range(len(arr)):
-            dist = float(np.sum((arr - arr[j]) ** 2))
-            if dist < best_dist:
-                best_dist = dist
-                best_j = j
+        # 向量化最小距离法：计算每个元素作为参考时的距离平方和
+        # dist[j] = Σ_i (arr[i] - arr[j])²
+        # 展开：= Σ_i arr[i]² - 2*arr[j]*Σ_i arr[i] + n*arr[j]²
+        # 向量化计算避免 O(n²) 双重循环
+        sum_arr = float(np.sum(arr))
+        sum_sq = float(np.sum(arr**2))
+        n = len(arr)
+        dists = sum_sq - 2.0 * arr * sum_arr + n * arr**2
+        best_j = int(np.argmin(dists))
         avg = float(arr[best_j])
         if abs(avg) < 1e-12:
             return 0.0

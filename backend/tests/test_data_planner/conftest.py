@@ -294,3 +294,13 @@ def preprocess_config():
         range_max=100.0,
         config_version="cfg_1000",
     )
+
+
+@pytest.fixture(autouse=True)
+def _clear_requirements_cache():
+    """每个测试前清空 DataPlanner 指标契约进程内缓存，避免跨测试污染."""
+    from app.services.data_planner import clear_requirements_cache
+
+    clear_requirements_cache()
+    yield
+    clear_requirements_cache()
