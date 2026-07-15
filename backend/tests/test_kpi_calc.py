@@ -54,6 +54,7 @@ from app.tasks.kpi_calc import (
     _quantize,
     _save_custom_snapshot,
     _save_snapshot,
+    _summarize_batch_results,
     _ts_to_float,
     calculate_hourly_kpi,
     calculate_loop_kpi,
@@ -820,7 +821,30 @@ class TestCalculateLoopKpi:
 
 
 # ===========================================================================
-# 4. _do_calculate 集成测试
+# 4. 批量计算编排辅助函数测试
+# ===========================================================================
+
+
+class TestBatchCalculationHelpers:
+    """标准与自定义入口共享的结果归类必须保持一致。"""
+
+    def test_summarize_batch_results(self) -> None:
+        results = [
+            {"status": "SUCCESS"},
+            {"status": "INCONCLUSIVE"},
+            None,
+            RuntimeError("database unavailable"),
+        ]
+
+        assert _summarize_batch_results(results) == {
+            "success": 1,
+            "inconclusive": 1,
+            "failed": 2,
+        }
+
+
+# ===========================================================================
+# 5. _do_calculate 集成测试
 # ===========================================================================
 
 

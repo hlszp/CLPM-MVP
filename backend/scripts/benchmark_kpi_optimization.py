@@ -352,9 +352,10 @@ async def benchmark_end_to_end() -> dict | None:
         print(f"  [端到端] 预热失败: {e}")
         return None
 
-    # 正式测量（3 次取平均）
+    # 正式测量：默认 10 次，使用 nearest-rank p95 评估热缓存 SLO。
+    runs = 10
     times = []
-    for i in range(3):
+    for i in range(runs):
         t0 = time.perf_counter()
         try:
             async with AsyncSessionLocal() as db:
@@ -378,17 +379,26 @@ async def benchmark_end_to_end() -> dict | None:
             elapsed = time.perf_counter() - t0
             times.append(elapsed)
             status = result.get("status", "UNKNOWN") if isinstance(result, dict) else "UNKNOWN"
-            print(f"  [端到端] 第 {i + 1} 次: {elapsed:.3f}s, status={status}")
+            print(f"  [端到端] 第 {i + 1}/{runs} 次: {elapsed:.3f}s, status={status}")
         except Exception as e:
             print(f"  [端到端] 第 {i + 1} 次失败: {e}")
             return None
 
+    times.sort()
+    p95_index = max(0, int(np.ceil(len(times) * 0.95)) - 1)
+    p95_time = times[p95_index]
     avg_time = sum(times) / len(times)
-    print(f"  [端到端] 平均: {avg_time:.3f}s (3 次)")
+    hot_slo_passed = p95_time <= 0.6
+    print(
+        f"  [端到端热缓存] 平均: {avg_time:.3f}s, p95: {p95_time:.3f}s, "
+        f"SLO p95≤0.600s: {'通过' if hot_slo_passed else '失败'}"
+    )
 
     return {
         "loop_name": loop_name,
         "avg_time_s": round(avg_time, 3),
+        "p95_time_s": round(p95_time, 3),
+        "hot_slo_passed": hot_slo_passed,
         "runs": [round(t, 3) for t in times],
     }
 
@@ -434,7 +444,11 @@ def main() -> None:
         print(f"  稳态搜索-{label} 加速: {val['speedup']}x")
     print(f"  零交叉检测加速: {results['zero_crossings']['speedup']}x")
     if "end_to_end" in results:
-        print(f"  端到端单回路 1h: {results['end_to_end']['avg_time_s']}s")
+        e2e = results["end_to_end"]
+        print(
+            f"  热缓存单回路 1h: avg={e2e['avg_time_s']}s, "
+            f"p95={e2e['p95_time_s']}s, SLO={'通过' if e2e['hot_slo_passed'] else '失败'}"
+        )
 
     print(f"\n{'=' * 60}")
     print("  基准测试完成")

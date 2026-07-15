@@ -581,6 +581,81 @@ async def _prewarm_cache_for_loops(
     }
 
 
+async def _run_batch_loop_calculations(
+    *,
+    loops: list[LoopLedger],
+    loop_configs: dict[str, dict],
+    metric_configs: dict[str, MetricConfig],
+    ts_start: datetime,
+    ts_end: datetime,
+    type_weights: dict[str, dict] | None,
+    custom_task_id: str | None = None,
+    on_completed=None,
+) -> list[dict | None | Exception]:
+    """Run loop KPI calculations with shared bounded-concurrency orchestration.
+
+    Each loop receives an independent database session. Standard and custom
+    batches differ only in snapshot destination and optional progress callback.
+    """
+    from app.core.db import AsyncSessionLocal
+
+    sem = asyncio.Semaphore(CONCURRENCY)
+    op_limits_map = {
+        str(loop_id): (cfg["op_lower"], cfg["op_upper"]) for loop_id, cfg in loop_configs.items()
+    }
+
+    async def _calculate_one(loop: LoopLedger) -> dict | None:
+        async with sem:
+            async with AsyncSessionLocal() as worker_db:
+                try:
+                    config_loader = _make_config_loader(loop_configs.get(str(loop.id)))
+                    data_planner = _build_data_planner(
+                        worker_db,
+                        bundle_cache=_get_shared_bundle_cache(),
+                    )
+                    data_planner._config_loader = config_loader
+                    data_planner._preloaded_op_limits = op_limits_map
+                    result = await _calculate_loop_kpi(
+                        db=worker_db,
+                        loop=loop,
+                        metric_configs=metric_configs,
+                        ts_start=ts_start,
+                        ts_end=ts_end,
+                        data_planner=data_planner,
+                        type_weights=type_weights,
+                        custom_task_id=custom_task_id,
+                    )
+                    await worker_db.commit()
+                    return result
+                except Exception:
+                    await worker_db.rollback()
+                    raise
+                finally:
+                    if on_completed is not None:
+                        try:
+                            await on_completed()
+                        except Exception:  # noqa: BLE001
+                            logger.warning("批量 KPI 进度更新失败", exc_info=True)
+
+    return await asyncio.gather(*[_calculate_one(loop) for loop in loops], return_exceptions=True)
+
+
+def _summarize_batch_results(results: list[dict | None | Exception]) -> dict[str, int]:
+    """Classify completed loop calculations consistently across batch entrypoints."""
+    summary = {"success": 0, "inconclusive": 0, "failed": 0}
+    for result in results:
+        if isinstance(result, Exception):
+            summary["failed"] += 1
+            logger.warning("回路计算失败: %s", result)
+        elif result is None:
+            summary["failed"] += 1
+        elif result.get("status") == "INCONCLUSIVE":
+            summary["inconclusive"] += 1
+        else:
+            summary["success"] += 1
+    return summary
+
+
 async def _do_calculate(
     ts_start: str | datetime | None = None,
     loop_ids: list[str] | None = None,
@@ -648,96 +723,31 @@ async def _do_calculate(
         loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
         logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
 
-    # 3. 并发计算（信号量限制并发数，每协程独立 session 避免并发共享）
-    sem = asyncio.Semaphore(CONCURRENCY)
-
-    # ------------------------------------------------------------------
-    # Phase 1: 预热 L1/L2 缓存（并行取数，高并发，无计算无 UPSERT）
-    # 将 TDengine 查询 + 预处理与后续计算分离，使 I/O 密集阶段可使用更高并发，
-    # 且计算阶段全部命中 L2 缓存（~0.04s/loop）。
-    # ------------------------------------------------------------------
-    # v6.2 优化测试：跳过 Phase 1 预热，直接在 Phase 2 中冷启动计算
-    # 原因：Phase 1 写缓存开销（zstd 压缩 + Redis 写入）占总时间 70%+，
-    # 且每小时新窗口的缓存无法复用，写缓存投入产出比低。
-    # t_prewarm_start = time.perf_counter()
-    # await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
-    # t_prewarm_elapsed = time.perf_counter() - t_prewarm_start
-    # logger.info(
-    #     "缓存预热完成: loops=%d, elapsed=%.3fs, avg=%.3fs/loop",
-    #     loops_count,
-    #     t_prewarm_elapsed,
-    #     t_prewarm_elapsed / max(loops_count, 1),
-    # )
-    logger.info("跳过 Phase 1 预热，Phase 2 直接冷启动计算")
-
-    # ------------------------------------------------------------------
-    # Phase 2: 并发计算（L2 缓存命中，每回路 ~0.04s）
-    # ------------------------------------------------------------------
-    sem = asyncio.Semaphore(CONCURRENCY)
     loops_count = len(loops)
-    completed_in_window = 0  # 当前窗口已完成回路数（闭包计数器）
+    completed_in_window = 0
 
-    async def _calc_with_sem(loop: LoopLedger) -> dict | None:
+    async def _on_completed() -> None:
         nonlocal completed_in_window
-        async with sem:
-            # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
-            async with AsyncSessionLocal() as worker_db:
-                try:
-                    # 传入预加载的回路配置，避免 DataPlanner 内部重复查询
-                    loop_cfg = loop_configs.get(str(loop.id))
-                    config_loader = _make_config_loader(loop_cfg)
-                    data_planner = _build_data_planner(
-                        worker_db,
-                        bundle_cache=_get_shared_bundle_cache(),
-                    )
-                    # 注入预加载的 config_loader
-                    data_planner._config_loader = config_loader
-                    # 注入预加载的 OP 限位（避免 _fill_op_output_limits 查 DB）
-                    data_planner._preloaded_op_limits = {
-                        str(lid): (cfg["op_lower"], cfg["op_upper"])
-                        for lid, cfg in loop_configs.items()
-                    }
-                    result = await _calculate_loop_kpi(
-                        db=worker_db,
-                        loop=loop,
-                        metric_configs=metric_configs,
-                        ts_start=ts_start_dt,
-                        ts_end=ts_end_dt,
-                        data_planner=data_planner,
-                        type_weights=type_weights,
-                    )
-                    await worker_db.commit()
-                    return result
-                except Exception:
-                    await worker_db.rollback()
-                    raise
-                finally:
-                    completed_in_window += 1
-                    # 逐回路更新进度（backfill 调用时 task_id 非空）
-                    if task_id and total_windows > 0 and loops_count > 0:
-                        try:
-                            await _update_backfill_progress(
-                                task_id,
-                                window_index,
-                                total_windows,
-                                completed_in_window,
-                                loops_count,
-                            )
-                        except Exception:
-                            logger.warning(
-                                "逐回路进度更新失败: task_id=%s, window=%d/%d, loop=%d/%d",
-                                task_id,
-                                window_index,
-                                total_windows,
-                                completed_in_window,
-                                loops_count,
-                                exc_info=True,
-                            )
+        completed_in_window += 1
+        if task_id and total_windows > 0 and loops_count > 0:
+            await _update_backfill_progress(
+                task_id,
+                window_index,
+                total_windows,
+                completed_in_window,
+                loops_count,
+            )
 
-    # 并发执行所有回路计算
     t_calc_start = time.perf_counter()
-    tasks = [asyncio.create_task(_calc_with_sem(loop)) for loop in loops]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await _run_batch_loop_calculations(
+        loops=loops,
+        loop_configs=loop_configs,
+        metric_configs=metric_configs,
+        ts_start=ts_start_dt,
+        ts_end=ts_end_dt,
+        type_weights=type_weights,
+        on_completed=_on_completed if task_id else None,
+    )
     t_calc_elapsed = time.perf_counter() - t_calc_start
     logger.info(
         "并发计算完成: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
@@ -746,20 +756,7 @@ async def _do_calculate(
         t_calc_elapsed,
         t_calc_elapsed / max(loops_count, 1),
     )
-
-    success_count = 0
-    inconclusive_count = 0
-    failed_count = 0
-    for r in results:
-        if isinstance(r, Exception):
-            failed_count += 1
-            logger.warning("回路计算失败: %s", r)
-        elif r is None:
-            failed_count += 1
-        elif r.get("status") == "INCONCLUSIVE":
-            inconclusive_count += 1
-        else:
-            success_count += 1
+    summary = _summarize_batch_results(results)
 
     # 级联触发节点级 KPI 聚合（确保回路快照已写入后再聚合，消除时序竞态）
     try:
@@ -770,9 +767,9 @@ async def _do_calculate(
 
     return {
         "total": len(loops),
-        "success": success_count,
-        "inconclusive": inconclusive_count,
-        "failed": failed_count,
+        "success": summary["success"],
+        "inconclusive": summary["inconclusive"],
+        "failed": summary["failed"],
         "ts_start": ts_start_dt.isoformat(),
         "ts_end": ts_end_dt.isoformat(),
     }
@@ -922,85 +919,46 @@ async def _do_calculate_custom_batch(
 
         loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
 
-    # Phase 1: 预热 L1/L2 缓存（并行取数，高并发）
-    t_prewarm_start = time.perf_counter()
-    await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
-    t_prewarm_elapsed = time.perf_counter() - t_prewarm_start
-    logger.info(
-        "自定义批量缓存预热完成: loops=%d, elapsed=%.3fs, avg=%.3fs/loop",
-        len(loops),
-        t_prewarm_elapsed,
-        t_prewarm_elapsed / max(len(loops), 1),
-    )
+        t_prewarm_start = time.perf_counter()
+        prewarm_result = await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
+        t_prewarm_elapsed = time.perf_counter() - t_prewarm_start
+        logger.info(
+            "自定义批量缓存预热完成: total=%d, succeeded=%d, failed=%d, elapsed=%.3fs",
+            prewarm_result["total"],
+            prewarm_result["succeeded"],
+            prewarm_result["failed"],
+            t_prewarm_elapsed,
+        )
 
-    # Phase 2: 并发计算（L2 缓存命中）
-    sem = asyncio.Semaphore(CONCURRENCY)
-    completed_count = 0
+        t_calc_start = time.perf_counter()
+        results = await _run_batch_loop_calculations(
+            loops=loops,
+            loop_configs=loop_configs,
+            metric_configs=metric_configs,
+            ts_start=ts_start_dt,
+            ts_end=ts_end_dt,
+            type_weights=type_weights,
+            custom_task_id=task_id,
+        )
+        t_calc_elapsed = time.perf_counter() - t_calc_start
+        logger.info(
+            "自定义批量计算完成: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
+            len(loops),
+            CONCURRENCY,
+            t_calc_elapsed,
+            t_calc_elapsed / max(len(loops), 1),
+        )
+        summary = _summarize_batch_results(results)
 
-    async def _calc_with_sem(loop: LoopLedger) -> dict | None:
-        nonlocal completed_count
-        async with sem:
-            async with AsyncSessionLocal() as worker_db:
-                try:
-                    loop_cfg = loop_configs.get(str(loop.id))
-                    config_loader = _make_config_loader(loop_cfg)
-                    data_planner = _build_data_planner(
-                        worker_db,
-                        bundle_cache=_get_shared_bundle_cache(),
-                    )
-                    data_planner._config_loader = config_loader
-                    data_planner._preloaded_op_limits = {
-                        str(lid): (cfg["op_lower"], cfg["op_upper"])
-                        for lid, cfg in loop_configs.items()
-                    }
-                    result = await _calculate_loop_kpi(
-                        db=worker_db,
-                        loop=loop,
-                        metric_configs=metric_configs,
-                        ts_start=ts_start_dt,
-                        ts_end=ts_end_dt,
-                        data_planner=data_planner,
-                        type_weights=type_weights,
-                        custom_task_id=task_id,
-                    )
-                    await worker_db.commit()
-                    return result
-                except Exception:
-                    await worker_db.rollback()
-                    raise
-                finally:
-                    completed_count += 1
-
-    t_calc_start = time.perf_counter()
-    tasks = [asyncio.create_task(_calc_with_sem(loop)) for loop in loops]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    t_calc_elapsed = time.perf_counter() - t_calc_start
-    logger.info(
-        "自定义批量计算完成: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
-        len(loops),
-        CONCURRENCY,
-        t_calc_elapsed,
-        t_calc_elapsed / max(len(loops), 1),
-    )
-
-    success_count = 0
-    failed_count = 0
-    for r in results:
-        if isinstance(r, Exception):
-            failed_count += 1
-            logger.warning("回路计算失败: %s", r)
-        elif r is None:
-            failed_count += 1
-        else:
-            success_count += 1
-
-    return {
-        "total": len(loops),
-        "success": success_count,
-        "failed": failed_count,
-        "ts_start": ts_start_dt.isoformat(),
-        "ts_end": ts_end_dt.isoformat(),
-    }
+        return {
+            "total": len(loops),
+            "success": summary["success"],
+            "inconclusive": summary["inconclusive"],
+            "failed": summary["failed"],
+            "prewarm": prewarm_result,
+            "ts_start": ts_start_dt.isoformat(),
+            "ts_end": ts_end_dt.isoformat(),
+        }
 
 
 async def _calculate_loop_kpi(
