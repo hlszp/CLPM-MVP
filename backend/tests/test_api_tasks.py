@@ -948,8 +948,30 @@ class TestNotificationRouteOrder:
 
 
 # ---------------------------------------------------------------------------
-# task_tracker 服务层单元测试
+# Celery 任务 ID 格式兼容
 # ---------------------------------------------------------------------------
+
+
+class TestCeleryTaskIdParsing:
+    """单任务 ID 与旧数组 ID 都可被状态和取消路径读取。"""
+
+    def test_single_task_id_is_supported(self) -> None:
+        from app.api.v1.endpoints.tasks import _parse_celery_task_ids
+
+        assert _parse_celery_task_ids({"celery_task_id": "celery-001"}) == ["celery-001"]
+
+    def test_legacy_task_id_array_is_supported(self) -> None:
+        from app.api.v1.endpoints.tasks import _parse_celery_task_ids
+
+        assert _parse_celery_task_ids({"celery_task_ids": '["celery-001", "celery-002"]'}) == [
+            "celery-001",
+            "celery-002",
+        ]
+
+    def test_invalid_task_id_value_is_ignored(self) -> None:
+        from app.api.v1.endpoints.tasks import _parse_celery_task_ids
+
+        assert _parse_celery_task_ids({"celery_task_ids": "not-json"}) == []
 
 
 class TestTaskTrackerService:

@@ -166,10 +166,16 @@ async def _get_client() -> httpx.AsyncClient:
         _client = httpx.AsyncClient(
             base_url=f"http://{settings.TDENGINE_HOST}:{_TD_REST_PORT}",
             auth=(settings.TDENGINE_USER, settings.TDENGINE_PASSWORD),
-            timeout=httpx.Timeout(10.0, connect=5.0),
-            # 禁用 keep-alive 连接池：避免 Celery 跨任务 event loop 复用
-            # 导致连接池绑定的 loop 已关闭（"Event loop is closed"）
-            limits=httpx.Limits(max_keepalive_connections=0),
+            timeout=httpx.Timeout(30.0, connect=5.0),
+            # 启用 keep-alive 连接池：大幅减少 TCP 建连开销
+            # 通过 _get_client 中的 loop 检测机制避免跨 event loop 问题
+            # 注意：TDengine REST API 服务端并发处理能力有限，
+            # 过高并发（>50）反而导致请求排队，性能下降
+            limits=httpx.Limits(
+                max_keepalive_connections=30,
+                max_connections=50,
+                keepalive_expiry=30.0,
+            ),
         )
         _client_loop = current_loop
     return _client
@@ -398,26 +404,42 @@ def make_dataplanner_query_fn(db: Any) -> Any:
             for t in t_result.scalars().all():
                 tags_map[str(t.id)] = t
 
-        # 3. 对每个 tag_role 查询 TDengine 数据
-        # TDengine 存储的时间带 Z 后缀（ISO 8601 UTC），查询时需保持一致
+        # 3. 对每个 tag_role 并行查询 TDengine 数据
+        # 优化：从串行改为并行（7 个 tag 同时查询，耗时从 7×RTT 降到 1×RTT）
         start_iso = (
             start.isoformat().replace("+00:00", "Z") if start.tzinfo else start.isoformat() + "Z"
         )
         end_iso = end.isoformat().replace("+00:00", "Z") if end.tzinfo else end.isoformat() + "Z"
 
-        # role_lower → rows（每行 {ts, value, quality}）
-        role_data: dict[str, list[dict[str, Any]]] = {}
-        for role_lower in tag_roles:
+        import asyncio as _asyncio
+
+        async def _query_single_tag(
+            role_lower: str,
+        ) -> tuple[str, list[dict[str, Any]]]:
+            """查询单个 tag 的时序数据。"""
             role_upper = role_lower.upper()
             mapping = mappings.get(role_upper)
             if not mapping:
                 logger.debug("适配器: 回路 %s 无 %s 角色映射，跳过", loop_id, role_upper)
-                continue
+                return role_lower, []
             tag = tags_map.get(str(mapping.tag_id))
             if not tag:
                 logger.debug("适配器: 回路 %s 的 %s tag 未找到，跳过", loop_id, role_upper)
-                continue
+                return role_lower, []
             rows = await query_trend_data(tag.tag_name, start_iso, end_iso)
+            return role_lower, rows
+
+        # 并行查询所有 tag
+        tag_results = await _asyncio.gather(
+            *[_query_single_tag(r) for r in tag_roles],
+            return_exceptions=True,
+        )
+        role_data: dict[str, list[dict[str, Any]]] = {}
+        for result in tag_results:
+            if isinstance(result, Exception):
+                logger.warning("适配器: tag 查询失败: %s", result)
+                continue
+            role_lower, rows = result
             role_data[role_lower] = rows
 
         # 4. 构建统一时间轴（所有 tag 共享同一 TDengine 子表，时间戳应一致；

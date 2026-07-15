@@ -164,6 +164,19 @@ class TestDetectFrozen:
         assert 3 in indices
         assert 4 in indices
 
+    def test_frozen_skips_nan_only_windows(self):
+        """少于两个有效点的窗口不会被冻结检测标记。"""
+        threshold = get_threshold(ControlType.FLOW)
+        values = [float("nan"), "invalid", 50.0, float("nan"), "invalid"]
+        assert detect_frozen(values, threshold) == []
+
+    def test_frozen_raw_marks_overlapping_windows_once(self):
+        """重叠冻结窗口的索引去重且按原始顺序输出。"""
+        threshold = get_threshold(ControlType.FLOW)
+        values = [10.0] * 8
+        results = detect_frozen_raw(values, threshold, range_min=0.0, range_max=100.0)
+        assert [index for index, _ in results] == list(range(8))
+
 
 # ---------------------------------------------------------------------------
 # 4. 跳变检测

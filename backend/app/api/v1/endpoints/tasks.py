@@ -310,6 +310,22 @@ def _calc_window_count(ts_start: str, ts_end: str, cycle_minutes: int = 60) -> i
     )
 
 
+def _parse_celery_task_ids(data: dict[str, Any]) -> list[str]:
+    """Return task IDs from the current single-ID or legacy array format."""
+    celery_task_id = data.get("celery_task_id")
+    if celery_task_id:
+        return [str(celery_task_id)]
+
+    celery_task_ids = data.get("celery_task_ids")
+    if not celery_task_ids:
+        return []
+    try:
+        parsed = json.loads(celery_task_ids)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return [str(task_id) for task_id in parsed] if isinstance(parsed, list) else []
+
+
 async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
     """从 Celery 同步任务状态到 Redis（惰性更新）.
 
@@ -328,24 +344,7 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
     if current_status in _TERMINAL_STATUSES:
         return
 
-    # 获取关联的 Celery 任务 ID
-    celery_ids_raw = data.get("celery_task_id") or data.get("celery_task_ids")
-    if not celery_ids_raw:
-        return
-
-    try:
-        if data.get("task_type") in (
-            TaskType.STANDARD.value,
-            TaskType.BACKFILL.value,
-        ):
-            # STANDARD/BACKFILL 用 celery_task_id（单数字符串）
-            celery_ids: list[str] = [celery_ids_raw]
-        else:
-            # CUSTOM 用 celery_task_ids（JSON 数组）
-            celery_ids = json.loads(celery_ids_raw)
-    except (json.JSONDecodeError, TypeError):
-        return
-
+    celery_ids = _parse_celery_task_ids(data)
     if not celery_ids:
         return
 
@@ -519,17 +518,15 @@ async def trigger_custom_evaluation(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    from app.tasks.kpi_calc import calculate_custom_loop_kpi
+    from app.tasks.kpi_calc import calculate_custom_batch_kpi
 
     task_id = str(uuid4())
     now = _now_iso()
 
-    # 对每个回路触发 Celery 任务（自定义任务，写入 kpi_snapshot_custom 不参与聚合）
-    # P1 #12: 透传 body.tsEnd，使用户指定的时间窗能传递到实际计算逻辑
-    celery_task_ids: list[str] = []
-    for loop_id in body.loopIds:
-        result = calculate_custom_loop_kpi.delay(task_id, loop_id, body.tsStart, body.tsEnd)
-        celery_task_ids.append(result.id)
+    celery_result = calculate_custom_batch_kpi.delay(
+        task_id, body.loopIds, body.tsStart, body.tsEnd
+    )
+    celery_task_id = celery_result.id
 
     task_data: dict[str, str] = {
         "task_id": task_id,
@@ -545,7 +542,7 @@ async def trigger_custom_evaluation(
         "error_message": "",
         "created_by": user.username,
         "created_by_id": str(user.id),
-        "celery_task_ids": json.dumps(celery_task_ids),
+        "celery_task_id": celery_task_id,
         "loop_ids": json.dumps(body.loopIds),
         "metrics": json.dumps(body.metrics),
         "ts_start": body.tsStart,
@@ -554,10 +551,10 @@ async def trigger_custom_evaluation(
     await _save_task(task_data)
 
     logger.info(
-        "自定义评估任务已触发: task_id=%s, loops=%d, celery_ids=%d, user=%s",
+        "自定义评估任务已触发: task_id=%s, loops=%d, celery_id=%s, user=%s",
         task_id,
         len(body.loopIds),
-        len(celery_task_ids),
+        celery_task_id,
         user.username,
     )
 
@@ -996,17 +993,12 @@ async def cancel_task(
     # 避免 _do_backfill 循环继续跑完所有窗口
     from app.tasks.celery_app import celery_app
 
-    celery_ids_raw = data.get("celery_task_id") or data.get("celery_task_ids")
-    if celery_ids_raw:
-        try:
-            if data.get("task_type") == TaskType.STANDARD.value:
-                celery_ids = [celery_ids_raw]
-            else:
-                celery_ids = json.loads(celery_ids_raw)
-            for cid in celery_ids:
-                celery_app.control.revoke(cid, terminate=True)
-        except (json.JSONDecodeError, TypeError):
-            logger.warning("解析 Celery 任务 ID 失败: task_id=%s", task_id)
+    celery_ids = _parse_celery_task_ids(data)
+    if celery_ids:
+        for cid in celery_ids:
+            celery_app.control.revoke(cid, terminate=True)
+    elif data.get("celery_task_id") or data.get("celery_task_ids"):
+        logger.warning("解析 Celery 任务 ID 失败: task_id=%s", task_id)
 
     updates = {
         "status": TaskStatus.CANCELLED.value,

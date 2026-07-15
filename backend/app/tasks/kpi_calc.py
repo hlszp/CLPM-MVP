@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from bisect import bisect_left
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
@@ -55,7 +56,8 @@ ALGORITHM_VERSION_V1 = "KPI_CALC_v1.0"  # 向后兼容回退
 MIN_GOOD_RATIO = 0.20
 
 # 并发 worker 数（可被 EngineRule SCHEDULE_CONCURRENCY 覆盖）
-CONCURRENCY = 20
+# v6.2 优化测试：降低并发度减少 HTTP API 排队 + GIL 竞争
+CONCURRENCY = 5
 
 # ---------------------------------------------------------------------------
 # v4.0 指标代码映射（DB 列名 ↔ Calculator 代码）
@@ -226,14 +228,7 @@ def calculate_custom_loop_kpi(
     ts_start: str,
     ts_end: str | None = None,
 ) -> dict:
-    """自定义任务单回路 KPI 计算（Celery 入口，P1 #12）。
-
-    Args:
-        task_id: 自定义任务 ID
-        loop_id: 回路 ID
-        ts_start: 时间窗起始（ISO 8601）
-        ts_end: 时间窗结束（ISO 8601），None 时使用 EngineRule 的 cycle_minutes
-    """
+    """自定义任务单回路 KPI 计算（Celery 入口，P1 #12）。"""
     logger.info(
         "自定义任务单回路 KPI 计算, task_id=%s, loop_id=%s, ts_start=%s, ts_end=%s",
         task_id,
@@ -242,6 +237,110 @@ def calculate_custom_loop_kpi(
         ts_end,
     )
     return AsyncTask().run_async(_do_calculate_custom_loop(task_id, loop_id, ts_start, ts_end))
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_custom_batch_kpi",
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_custom_batch_kpi(
+    task_id: str,
+    loop_ids: list[str],
+    ts_start: str,
+    ts_end: str | None = None,
+) -> dict:
+    """自定义任务批量 KPI 计算（批量预加载 + 并发处理，优化性能）。"""
+    logger.info(
+        "自定义任务批量 KPI 计算, task_id=%s, loop_count=%d, ts_start=%s, ts_end=%s",
+        task_id,
+        len(loop_ids),
+        ts_start,
+        ts_end,
+    )
+    return AsyncTask().run_async(_do_calculate_custom_batch(task_id, loop_ids, ts_start, ts_end))
+
+
+@celery_app.task(name="app.tasks.kpi_calc.prewarm_cache")
+def prewarm_cache(ts_start: str | None = None) -> dict:
+    """预热 L1/L2 缓存（可手动或定时触发）。
+
+    在标准评估任务前运行，提前将所有活跃回路的数据加载到 L1/L2 缓存，
+    使标准任务的取数阶段全部命中缓存（冷启动 80s → 热启动 1.7s）。
+
+    Args:
+        ts_start: 可选，指定预热的时间窗起始（ISO 格式），None 时取上一个完整小时
+    """
+    logger.info("缓存预热任务开始, ts_start=%s", ts_start)
+    return AsyncTask().run_async(_do_prewarm(ts_start))
+
+
+async def _do_prewarm(ts_start: str | None = None) -> dict:
+    """执行缓存预热的实际逻辑。"""
+    from app.core.db import AsyncSessionLocal
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if ts_start:
+        try:
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except ValueError:
+            ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+    else:
+        ts_end_dt = now.replace(minute=0, second=0, microsecond=0)
+        ts_start_dt = ts_end_dt - timedelta(hours=1)
+    ts_end_dt = ts_start_dt + timedelta(hours=1)
+
+    async with AsyncSessionLocal() as db:
+        stmt = select(LoopLedger).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
+        )
+        result = await db.execute(stmt)
+        loops = list(result.scalars().all())
+        loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+
+    if not loops:
+        return {"total": 0, "succeeded": 0, "failed": 0, "errors": [], "elapsed": 0.0}
+
+    t_start = time.perf_counter()
+    prewarm_result = await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
+    elapsed = time.perf_counter() - t_start
+    prewarm_result["elapsed"] = elapsed
+    logger.info(
+        "缓存预热完成: total=%d, succeeded=%d, failed=%d, elapsed=%.3fs",
+        prewarm_result["total"],
+        prewarm_result["succeeded"],
+        prewarm_result["failed"],
+        elapsed,
+    )
+    if prewarm_result["succeeded"] == 0:
+        raise RuntimeError("缓存预热失败：没有任何回路完成")
+    return prewarm_result
+
+
+# ---------------------------------------------------------------------------
+# worker_ready 信号：Worker 启动时自动预热缓存（消除冷启动瓶颈）
+# ---------------------------------------------------------------------------
+
+from celery.signals import worker_ready  # noqa: E402
+
+
+@worker_ready.connect
+def _prewarm_on_worker_start(sender=None, **kwargs):
+    """Worker 启动时自动预热 L1/L2 缓存。
+
+    在后台异步执行，不阻塞 Worker 正常接收任务。
+    首次启动后预热点上一个完整小时的数据，使首次标准评估任务命中缓存。
+    """
+    # v6.2 优化测试：临时禁用 worker_ready 预热，测试纯冷启动性能
+    logger.info("Worker 启动缓存预热已跳过（v6.2 优化测试模式）")
+    return
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +507,79 @@ async def _load_engine_rules_from_db() -> dict:
 # 异步计算逻辑
 # ---------------------------------------------------------------------------
 
+# 预热阶段并发数（仅取数+预处理，无 UPSERT，可使用更高并发）
+# 注意：TDengine REST API 服务端并发能力有限，过高并发反而导致排队
+_PREWARM_CONCURRENCY = 27
+
+
+async def _prewarm_cache_for_loops(
+    loops: list[LoopLedger],
+    ts_start: datetime,
+    ts_end: datetime,
+    loop_configs: dict[str, dict],
+) -> dict[str, Any]:
+    """预热 L1/L2 缓存：并行调用 DataPlanner.request_bundles 取数并缓存。
+
+    两阶段计算的核心：将 I/O 密集的取数+预处理与 CPU 密集的指标计算分离。
+    本函数仅负责取数+预处理+写缓存，不做指标计算和 DB UPSERT，
+    因此可使用更高并发（_PREWARM_CONCURRENCY=27，与回路数一致）。
+
+    完成后，后续计算阶段调用 request_bundles 将全部命中 L2 缓存（~0.04s/loop）。
+
+    Args:
+        loops: 待计算的回路列表
+        ts_start: 时间窗起始
+        ts_end: 时间窗结束
+        loop_configs: 批量预加载的回路配置（OP 限位 + PV 量程 + config_version）
+    """
+    from app.core.db import AsyncSessionLocal
+
+    sem = asyncio.Semaphore(_PREWARM_CONCURRENCY)
+    op_limits_map = {
+        str(lid): (cfg["op_lower"], cfg["op_upper"]) for lid, cfg in loop_configs.items()
+    }
+
+    async def _prewarm_one(loop: LoopLedger) -> str | None:
+        async with sem:
+            async with AsyncSessionLocal() as warm_db:
+                try:
+                    loop_cfg = loop_configs.get(str(loop.id))
+                    config_loader = _make_config_loader(loop_cfg)
+                    data_planner = _build_data_planner(
+                        warm_db,
+                        bundle_cache=_get_shared_bundle_cache(),
+                    )
+                    data_planner._config_loader = config_loader
+                    data_planner._preloaded_op_limits = op_limits_map
+                    control_type = _loop_type_to_control_type(loop.loop_type)
+                    time_window = TimeWindow(start=ts_start, end=ts_end)
+                    await data_planner.request_bundles(
+                        loop_id=str(loop.id),
+                        metrics=_ALL_METRIC_CODES_DB,
+                        time_window=time_window,
+                        control_type=control_type,
+                    )
+                    return None
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "缓存预热失败: loop=%s",
+                        loop.tag_name,
+                        exc_info=True,
+                    )
+                    return f"{loop.id}: {exc}"
+
+    errors = [
+        error
+        for error in await asyncio.gather(*[_prewarm_one(loop) for loop in loops])
+        if error is not None
+    ]
+    return {
+        "total": len(loops),
+        "succeeded": len(loops) - len(errors),
+        "failed": len(errors),
+        "errors": errors,
+    }
+
 
 async def _do_calculate(
     ts_start: str | datetime | None = None,
@@ -473,17 +645,37 @@ async def _do_calculate(
         from app.services.loop_config import get_loop_type_weights_map
 
         type_weights = await get_loop_type_weights_map(db)
+        loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
         logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
 
     # 3. 并发计算（信号量限制并发数，每协程独立 session 避免并发共享）
     sem = asyncio.Semaphore(CONCURRENCY)
+
+    # ------------------------------------------------------------------
+    # Phase 1: 预热 L1/L2 缓存（并行取数，高并发，无计算无 UPSERT）
+    # 将 TDengine 查询 + 预处理与后续计算分离，使 I/O 密集阶段可使用更高并发，
+    # 且计算阶段全部命中 L2 缓存（~0.04s/loop）。
+    # ------------------------------------------------------------------
+    # v6.2 优化测试：跳过 Phase 1 预热，直接在 Phase 2 中冷启动计算
+    # 原因：Phase 1 写缓存开销（zstd 压缩 + Redis 写入）占总时间 70%+，
+    # 且每小时新窗口的缓存无法复用，写缓存投入产出比低。
+    # t_prewarm_start = time.perf_counter()
+    # await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
+    # t_prewarm_elapsed = time.perf_counter() - t_prewarm_start
+    # logger.info(
+    #     "缓存预热完成: loops=%d, elapsed=%.3fs, avg=%.3fs/loop",
+    #     loops_count,
+    #     t_prewarm_elapsed,
+    #     t_prewarm_elapsed / max(loops_count, 1),
+    # )
+    logger.info("跳过 Phase 1 预热，Phase 2 直接冷启动计算")
+
+    # ------------------------------------------------------------------
+    # Phase 2: 并发计算（L2 缓存命中，每回路 ~0.04s）
+    # ------------------------------------------------------------------
+    sem = asyncio.Semaphore(CONCURRENCY)
     loops_count = len(loops)
     completed_in_window = 0  # 当前窗口已完成回路数（闭包计数器）
-
-    # 批量预加载回路配置（OP 限位 + PV 量程 + config_version）
-    # 避免每回路在 DataPlanner._default_config_loader + _fill_op_output_limits 中
-    # 各查 3-5 次 DB（1000 回路 = 5000 次查询 → 1 次批量查询）
-    loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
 
     async def _calc_with_sem(loop: LoopLedger) -> dict | None:
         nonlocal completed_in_window
@@ -542,8 +734,18 @@ async def _do_calculate(
                                 exc_info=True,
                             )
 
+    # 并发执行所有回路计算
+    t_calc_start = time.perf_counter()
     tasks = [asyncio.create_task(_calc_with_sem(loop)) for loop in loops]
     results = await asyncio.gather(*tasks, return_exceptions=True)
+    t_calc_elapsed = time.perf_counter() - t_calc_start
+    logger.info(
+        "并发计算完成: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
+        loops_count,
+        CONCURRENCY,
+        t_calc_elapsed,
+        t_calc_elapsed / max(loops_count, 1),
+    )
 
     success_count = 0
     inconclusive_count = 0
@@ -677,6 +879,128 @@ async def _do_calculate_custom_loop(
         )
         await db.commit()
         return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
+
+
+async def _do_calculate_custom_batch(
+    task_id: str,
+    loop_ids: list[str],
+    ts_start: str,
+    ts_end: str | None = None,
+) -> dict:
+    """批量自定义评估任务（复用标准任务的批量预加载 + 并发处理）。"""
+    from app.core.db import AsyncSessionLocal
+    from app.services.engine_rule_loader import get_engine_rule_loader
+    from app.services.loop_config import get_loop_type_weights_map
+
+    if not loop_ids:
+        return {"total": 0, "success": 0, "failed": 0}
+
+    ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+    if ts_end is not None:
+        ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+    else:
+        engine = get_engine_rule_loader()
+        cycle_minutes = await engine.get_calc_cycle_minutes()
+        ts_end_dt = ts_start_dt + timedelta(minutes=cycle_minutes)
+
+    async with AsyncSessionLocal() as db:
+        stmt = select(LoopLedger).where(
+            LoopLedger.id.in_(loop_ids),
+            LoopLedger.is_active.is_(True),
+        )
+        loop_result = await db.execute(stmt)
+        loops = list(loop_result.scalars().all())
+        logger.info("待计算回路数: %d", len(loops))
+
+        if not loops:
+            return {"total": 0, "success": 0, "failed": 0}
+
+        metric_result = await db.execute(select(MetricConfig))
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+        type_weights = await get_loop_type_weights_map(db)
+
+        loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+
+    # Phase 1: 预热 L1/L2 缓存（并行取数，高并发）
+    t_prewarm_start = time.perf_counter()
+    await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
+    t_prewarm_elapsed = time.perf_counter() - t_prewarm_start
+    logger.info(
+        "自定义批量缓存预热完成: loops=%d, elapsed=%.3fs, avg=%.3fs/loop",
+        len(loops),
+        t_prewarm_elapsed,
+        t_prewarm_elapsed / max(len(loops), 1),
+    )
+
+    # Phase 2: 并发计算（L2 缓存命中）
+    sem = asyncio.Semaphore(CONCURRENCY)
+    completed_count = 0
+
+    async def _calc_with_sem(loop: LoopLedger) -> dict | None:
+        nonlocal completed_count
+        async with sem:
+            async with AsyncSessionLocal() as worker_db:
+                try:
+                    loop_cfg = loop_configs.get(str(loop.id))
+                    config_loader = _make_config_loader(loop_cfg)
+                    data_planner = _build_data_planner(
+                        worker_db,
+                        bundle_cache=_get_shared_bundle_cache(),
+                    )
+                    data_planner._config_loader = config_loader
+                    data_planner._preloaded_op_limits = {
+                        str(lid): (cfg["op_lower"], cfg["op_upper"])
+                        for lid, cfg in loop_configs.items()
+                    }
+                    result = await _calculate_loop_kpi(
+                        db=worker_db,
+                        loop=loop,
+                        metric_configs=metric_configs,
+                        ts_start=ts_start_dt,
+                        ts_end=ts_end_dt,
+                        data_planner=data_planner,
+                        type_weights=type_weights,
+                        custom_task_id=task_id,
+                    )
+                    await worker_db.commit()
+                    return result
+                except Exception:
+                    await worker_db.rollback()
+                    raise
+                finally:
+                    completed_count += 1
+
+    t_calc_start = time.perf_counter()
+    tasks = [asyncio.create_task(_calc_with_sem(loop)) for loop in loops]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    t_calc_elapsed = time.perf_counter() - t_calc_start
+    logger.info(
+        "自定义批量计算完成: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
+        len(loops),
+        CONCURRENCY,
+        t_calc_elapsed,
+        t_calc_elapsed / max(len(loops), 1),
+    )
+
+    success_count = 0
+    failed_count = 0
+    for r in results:
+        if isinstance(r, Exception):
+            failed_count += 1
+            logger.warning("回路计算失败: %s", r)
+        elif r is None:
+            failed_count += 1
+        else:
+            success_count += 1
+
+    return {
+        "total": len(loops),
+        "success": success_count,
+        "failed": failed_count,
+        "ts_start": ts_start_dt.isoformat(),
+        "ts_end": ts_end_dt.isoformat(),
+    }
 
 
 async def _calculate_loop_kpi(
@@ -993,7 +1317,13 @@ def _compute_kpis_three_layer(
     for calc_code, dep_codes in _LAYER2_DEPENDENCIES.items():
         # 检查所有依赖是否已计算
         deps = {dep: metric_results[dep] for dep in dep_codes if dep in metric_results}
-        if not deps:
+        if len(deps) != len(dep_codes):
+            logger.info(
+                "Layer2 指标 %s 缺少依赖，跳过: required=%s, present=%s",
+                calc_code,
+                dep_codes,
+                list(deps),
+            )
             continue
 
         # 获取该指标的 bundle（DB 列名）

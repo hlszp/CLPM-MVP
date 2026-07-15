@@ -39,6 +39,7 @@ DataPlanner 负责指标驱动的数据获取与编排：
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -475,48 +476,18 @@ class DataPlanner:
 
         对于复用 BASE 的 tagGroup，从 BASE DataBlock 派生子集，不单独查询。
         未命中的 DataBlock 通过 Pipeline 批量写入缓存（减少 RTT）。
-
-        Args:
-            query_plan: 合并后的查询计划
-            loop_id: 回路 ID
-            time_window: 时间窗口
-            control_type: 控制类型
-            preprocess_config: 预处理配置
-
-        Returns:
-            ``{TagGroup: DataBlock}`` 字典
-
-        设计依据：数据流程图 §7.1 Phase 4-7
         """
         data_blocks: dict[TagGroup, DataBlock] = {}
-        # 待批量写入缓存的 (cache_key, DataBlock) 对
         pending_writes: list[tuple[str, DataBlock]] = []
 
-        for task in query_plan:
-            # 复用 BASE：从已查询的 BASE DataBlock 派生
-            if task.reused_from is not None:
-                base_block = data_blocks.get(task.reused_from)
-                if base_block is None:
-                    logger.warning(
-                        "无法派生 %s：BASE DataBlock 未就绪，跳过",
-                        task.tag_group.value,
-                    )
-                    continue
-                derived = self._derive_from_base(
-                    base_block, task.tag_group, task.tag_roles, loop_id
-                )
-                data_blocks[task.tag_group] = derived
-                logger.debug(
-                    "从 BASE 派生 %s: tags=%s, points=%d",
-                    task.tag_group.value,
-                    task.tag_roles,
-                    derived.point_count,
-                )
-                continue
+        # 分离非复用 task（需查缓存/TDengine）和复用 task（从 BASE 派生）
+        non_reuse_tasks = [t for t in query_plan if t.reused_from is None]
+        reuse_tasks = [t for t in query_plan if t.reused_from is not None]
 
-            # 构建缓存 Key
-            # pre_version: 预处理版本（PreprocessingPipeline 升级时递增）
-            # cfg_version: 回路配置版本（量程/控制类型变更时递增）
+        async def _process_non_reuse(
+            task: QueryTask,
+        ) -> tuple[TagGroup, DataBlock, tuple[str, DataBlock] | None]:
+            """处理单个非复用 task：查缓存 → 未命中查 TDengine + 预处理."""
             cache_key = L1DataBlockCache.build_key(
                 loop_id=loop_id,
                 tag_group=task.tag_group.value,
@@ -527,22 +498,46 @@ class DataPlanner:
                 pre_version=PREPROCESS_VERSION,
                 cfg_version=preprocess_config.config_version,
             )
-
-            # Phase 4: 查询缓存
             cached = await self._cache.get(cache_key)
             if cached is not None:
-                data_blocks[task.tag_group] = cached
-                continue
-
-            # Phase 5-6: 未命中 → 查询 TDengine + 8 步预处理
+                return task.tag_group, cached, None
             data_block = await self._query_and_preprocess(
                 loop_id=loop_id,
                 task=task,
                 time_window=time_window,
                 preprocess_config=preprocess_config,
             )
-            data_blocks[task.tag_group] = data_block
-            pending_writes.append((cache_key, data_block))
+            return task.tag_group, data_block, (cache_key, data_block)
+
+        # Phase 4-6: 并行执行所有非复用 task（asyncio.gather 释放事件循环）
+        if non_reuse_tasks:
+            results = await asyncio.gather(
+                *[_process_non_reuse(t) for t in non_reuse_tasks]
+            )
+            for tag_group, block, write_pair in results:
+                data_blocks[tag_group] = block
+                if write_pair is not None:
+                    pending_writes.append(write_pair)
+
+        # 复用 BASE：从已查询的 BASE DataBlock 派生子集
+        for task in reuse_tasks:
+            base_block = data_blocks.get(task.reused_from)
+            if base_block is None:
+                logger.warning(
+                    "无法派生 %s：BASE DataBlock 未就绪，跳过",
+                    task.tag_group.value,
+                )
+                continue
+            derived = self._derive_from_base(
+                base_block, task.tag_group, task.tag_roles, loop_id
+            )
+            data_blocks[task.tag_group] = derived
+            logger.debug(
+                "从 BASE 派生 %s: tags=%s, points=%d",
+                task.tag_group.value,
+                task.tag_roles,
+                derived.point_count,
+            )
 
         # Phase 7: Pipeline 批量写入未命中的 DataBlock
         if pending_writes:
@@ -581,6 +576,7 @@ class DataPlanner:
         )
 
         # Phase 5: 查询 TDengine
+        t_query_start = time.perf_counter()
         raw = await self._query_fn(
             loop_id,
             task.tag_roles,
@@ -588,19 +584,32 @@ class DataPlanner:
             time_window.end,
             task.interval_s,
         )
+        t_query_elapsed = time.perf_counter() - t_query_start
 
         if not raw.timestamps:
             logger.warning(
-                "TDengine 返回空数据: loop=%s, tagGroup=%s",
+                "TDengine 返回空数据: loop=%s, tagGroup=%s, query_time=%.3fs",
                 loop_id,
                 task.tag_group.value,
+                t_query_elapsed,
             )
             # 返回空 DataBlock（避免后续 KeyError）
             return self._empty_data_block(loop_id, task.tag_group, task.interval_s)
 
-        # Phase 6: 8 步预处理
+        # Phase 6: 8 步预处理（移至线程池释放事件循环，纯 Python CPU 密集型）
+        t_pre_start = time.perf_counter()
         pipeline = PreprocessingPipeline(preprocess_config)
-        data_block = pipeline.process(raw, task.tag_group)
+        data_block = await asyncio.to_thread(pipeline.process, raw, task.tag_group)
+        t_pre_elapsed = time.perf_counter() - t_pre_start
+
+        logger.info(
+            "DataPlanner 取数+预处理: loop=%s, tagGroup=%s, points=%d, query=%.3fs, preprocess=%.3fs",
+            loop_id,
+            task.tag_group.value,
+            data_block.point_count,
+            t_query_elapsed,
+            t_pre_elapsed,
+        )
 
         logger.debug(
             "预处理完成: loop=%s, tagGroup=%s, points=%d, valid_rate=%.4f",

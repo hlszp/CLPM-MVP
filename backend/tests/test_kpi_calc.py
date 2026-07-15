@@ -1610,7 +1610,7 @@ class TestComputeKpisThreeLayer:
 
     def test_bundle_db_code_mapped_to_calculator_code(self) -> None:
         """数据库列名正确映射为计算器代码（如 fast_rate → fast_rate）。"""
-        bundles = [_make_bundle("fast_rate")]
+        bundles = [_make_bundle("settling_time"), _make_bundle("fast_rate")]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
 
         mock_calc = MagicMock()
@@ -1687,6 +1687,27 @@ class TestComputeKpisThreeLayer:
                 found_fast_dep = True
                 break
         assert found_fast_dep, "fast_rate 未注入 settling_time + ideal_settling_time 依赖"
+
+    def test_layer2_fast_rate_skipped_when_dependency_is_missing(self) -> None:
+        """fast_rate 缺少任一声明依赖时不允许按不完整公式计算。"""
+        bundles = [_make_bundle("fast_rate")]
+        config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
+
+        mock_calc = MagicMock()
+        mock_calc.calculate.return_value = _make_metric_result("test", 80.0)
+        mock_calc.with_dependencies.return_value = mock_calc
+
+        with (
+            patch("app.tasks.kpi_calc.get_calculator", return_value=mock_calc),
+            patch("app.tasks.kpi_calc.ConfidenceEvaluator") as mock_conf,
+        ):
+            mock_conf.compute_composite_score.return_value = _make_metric_result(
+                "composite_score", 70.0
+            )
+            results, _ = _compute_kpis_three_layer(bundles, config_bundle, None)
+
+        assert "fast_rate" not in results
+        assert mock_calc.with_dependencies.call_count == 0
 
     def test_missing_bundle_skipped(self) -> None:
         """缺少 bundle 的指标被跳过（不调用计算器）。"""

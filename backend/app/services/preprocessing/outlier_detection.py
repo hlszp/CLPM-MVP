@@ -81,6 +81,59 @@ def detect_out_of_range(
     return results
 
 
+def _detect_frozen_indices(values: list[Any], win: int, std_threshold: float) -> list[int]:
+    """Return indices covered by a low-variance window in O(n) time.
+
+    This preserves the legacy semantics: conversion failures become NaN, windows
+    with fewer than two non-NaN values are ignored, and comparison is strict.
+    """
+    n = len(values)
+    if n < win:
+        return []
+
+    float_vals: list[float] = []
+    for value in values:
+        if is_nan_or_inf(value):
+            float_vals.append(float("nan"))
+        else:
+            try:
+                float_vals.append(float(value))
+            except (ValueError, TypeError):
+                float_vals.append(float("nan"))
+
+    arr = np.asarray(float_vals, dtype=float)
+    valid = ~np.isnan(arr)
+    # Variance is translation-invariant. Center before prefix sums so raw
+    # engineering values with a large offset do not lose small variance through
+    # sum-of-squares cancellation.
+    reference = arr[np.flatnonzero(valid)[0]] if np.any(valid) else 0.0
+    safe_values = np.where(valid, arr - reference, 0.0)
+    prefix_count = np.concatenate(([0], np.cumsum(valid, dtype=np.int64)))
+    prefix_sum = np.concatenate(([0.0], np.cumsum(safe_values)))
+    prefix_sum_sq = np.concatenate(([0.0], np.cumsum(safe_values * safe_values)))
+
+    counts = prefix_count[win:] - prefix_count[:-win]
+    sums = prefix_sum[win:] - prefix_sum[:-win]
+    sums_sq = prefix_sum_sq[win:] - prefix_sum_sq[:-win]
+    valid_windows = counts >= 2
+
+    variance = np.zeros_like(sums, dtype=float)
+    variance[valid_windows] = (
+        sums_sq[valid_windows] / counts[valid_windows]
+        - (sums[valid_windows] / counts[valid_windows]) ** 2
+    )
+    # Floating point cancellation can produce a tiny negative value for a
+    # constant signal; population standard deviation is never negative.
+    stds = np.sqrt(np.maximum(variance, 0.0))
+    frozen_windows = valid_windows & (stds < std_threshold)
+
+    coverage = np.zeros(n + 1, dtype=np.int64)
+    for start in np.flatnonzero(frozen_windows):
+        coverage[start] += 1
+        coverage[start + win] -= 1
+    return np.flatnonzero(np.cumsum(coverage[:-1]) > 0).tolist()
+
+
 def detect_frozen(
     values: list[Any], threshold: ControlTypeThreshold
 ) -> list[tuple[int, OutlierReason]]:
@@ -96,44 +149,11 @@ def detect_frozen(
     Returns:
         (index, OutlierReason.FROZEN) 列表
     """
-    n = len(values)
-    win = threshold.frozen_window_points
-    if n < win:
-        return []
-
-    # 将值转为 float 数组，NaN 用前值填充以避免干扰 std
-    float_vals: list[float] = []
-    for v in values:
-        if is_nan_or_inf(v):
-            float_vals.append(float("nan"))
-        else:
-            try:
-                float_vals.append(float(v))
-            except (ValueError, TypeError):
-                float_vals.append(float("nan"))
-
-    arr = np.array(float_vals, dtype=float)
-    # frozen_std_pct 是占量程百分比，阈值 = pct × range_span
-    # 此处 range_span 由调用方在归一化后为 100，原始值时由调用方传入
-    # 为通用起见，使用绝对阈值：threshold.frozen_std_pct * 100（归一化场景）
     std_threshold = threshold.frozen_std_pct * 100.0
-
-    results: list[tuple[int, OutlierReason]] = []
-    frozen_flags = [False] * n
-    for i in range(n - win + 1):
-        window = arr[i : i + win]
-        valid_mask = ~np.isnan(window)
-        if valid_mask.sum() < 2:
-            continue
-        std = float(np.std(window[valid_mask]))
-        if std < std_threshold:
-            for j in range(i, i + win):
-                frozen_flags[j] = True
-
-    for i, flag in enumerate(frozen_flags):
-        if flag:
-            results.append((i, OutlierReason.FROZEN))
-    return results
+    return [
+        (index, OutlierReason.FROZEN)
+        for index in _detect_frozen_indices(values, threshold.frozen_window_points, std_threshold)
+    ]
 
 
 def detect_frozen_raw(
@@ -153,41 +173,12 @@ def detect_frozen_raw(
     Returns:
         (index, OutlierReason.FROZEN) 列表
     """
-    n = len(values)
-    win = threshold.frozen_window_points
-    if n < win:
-        return []
-
-    float_vals: list[float] = []
-    for v in values:
-        if is_nan_or_inf(v):
-            float_vals.append(float("nan"))
-        else:
-            try:
-                float_vals.append(float(v))
-            except (ValueError, TypeError):
-                float_vals.append(float("nan"))
-
-    arr = np.array(float_vals, dtype=float)
     range_span = max(range_max - range_min, 1e-9)
     std_threshold = threshold.frozen_std_pct * range_span
-
-    results: list[tuple[int, OutlierReason]] = []
-    frozen_flags = [False] * n
-    for i in range(n - win + 1):
-        window = arr[i : i + win]
-        valid_mask = ~np.isnan(window)
-        if valid_mask.sum() < 2:
-            continue
-        std = float(np.std(window[valid_mask]))
-        if std < std_threshold:
-            for j in range(i, i + win):
-                frozen_flags[j] = True
-
-    for i, flag in enumerate(frozen_flags):
-        if flag:
-            results.append((i, OutlierReason.FROZEN))
-    return results
+    return [
+        (index, OutlierReason.FROZEN)
+        for index in _detect_frozen_indices(values, threshold.frozen_window_points, std_threshold)
+    ]
 
 
 def detect_jump(
