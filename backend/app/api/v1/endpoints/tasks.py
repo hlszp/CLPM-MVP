@@ -277,7 +277,14 @@ async def _active_custom_task_details(user_id: str | None = None) -> list[dict[s
     return active
 
 
-
+@router.get("/active", response_model=ApiResponse[dict])
+async def list_active_tasks(
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """列出当前活跃的手动任务占位信息."""
+    user_is_admin = user.role == "ADMIN"
+    items = await _active_custom_task_details(None if user_is_admin else str(user.id))
+    return success(data={"items": items, "total": len(items)})
 
 
 async def _query_loops_by_ids(db: AsyncSession, loop_ids: list[str]) -> list[LoopLedger]:

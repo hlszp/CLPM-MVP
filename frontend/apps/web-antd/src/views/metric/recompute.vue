@@ -40,10 +40,7 @@ import {
   startTaskApi,
   triggerBackfillApi,
 } from '#/api/task';
-import {
-  ClpmDangerConfirmModal,
-  ClpmDataCanvas,
-} from '#/components/clpm';
+import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricRecompute' });
@@ -408,18 +405,13 @@ async function handleSubmit() {
   }
 }
 
-// ============ 批量删除 ============
-const batchDeleteDangerOpen = ref(false);
-
-function handleBatchDelete() {
+// ============ 删除/取消任务 ============
+async function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的任务');
     return;
   }
-  batchDeleteDangerOpen.value = true;
-}
-
-async function handleBatchDeleteConfirm() {
+  if (!window.confirm(`确认删除已选 ${selectedRowKeys.value.length} 个任务？`)) return;
   batchDeleteLoading.value = true;
   try {
     const failed: string[] = [];
@@ -436,7 +428,6 @@ async function handleBatchDeleteConfirm() {
       message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
     }
     selectedRowKeys.value = [];
-    batchDeleteDangerOpen.value = false;
     loadList();
   } catch (error: any) {
     message.error(error?.message || '批量删除失败');
@@ -445,55 +436,25 @@ async function handleBatchDeleteConfirm() {
   }
 }
 
-// ============ 单条删除 ============
-const deleteDangerOpen = ref(false);
-const deleteDangerTarget = ref<null | TaskApi.TaskItem>(null);
-const deleteDangerLoading = ref(false);
-
-function openDeleteDanger(record: TaskApi.TaskItem) {
-  deleteDangerTarget.value = record;
-  deleteDangerOpen.value = true;
-}
-
-async function handleDelete() {
-  if (!deleteDangerTarget.value) return;
-  const task = deleteDangerTarget.value;
-  deleteDangerLoading.value = true;
+async function handleDelete(record: TaskApi.TaskItem) {
+  if (!window.confirm(`确认删除任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
   try {
-    await deleteTaskApi(task.taskId);
+    await deleteTaskApi(record.taskId);
     message.success('任务已删除');
-    deleteDangerOpen.value = false;
     loadList();
   } catch (error: any) {
     message.error(error?.message || '删除失败');
-  } finally {
-    deleteDangerLoading.value = false;
   }
 }
 
-// ============ 取消任务 ============
-const cancelDangerOpen = ref(false);
-const cancelDangerTarget = ref<null | TaskApi.TaskItem>(null);
-const cancelDangerLoading = ref(false);
-
-function openCancelDanger(record: TaskApi.TaskItem) {
-  cancelDangerTarget.value = record;
-  cancelDangerOpen.value = true;
-}
-
-async function handleCancel() {
-  if (!cancelDangerTarget.value) return;
-  const task = cancelDangerTarget.value;
-  cancelDangerLoading.value = true;
+async function handleCancel(record: TaskApi.TaskItem) {
+  if (!window.confirm(`确认取消任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
   try {
-    await cancelTaskApi(task.taskId);
+    await cancelTaskApi(record.taskId);
     message.success('任务已取消');
-    cancelDangerOpen.value = false;
     loadList();
   } catch (error: any) {
     message.error(error?.message || '取消失败');
-  } finally {
-    cancelDangerLoading.value = false;
   }
 }
 
@@ -691,14 +652,14 @@ onUnmounted(() => {
                 v-if="(record as TaskApi.TaskItem).status === 'RUNNING'"
                 type="link"
                 size="small"
-                @click="openCancelDanger(record as TaskApi.TaskItem)"
+                @click="handleCancel(record as TaskApi.TaskItem)"
               >
                 取消
               </Button>
               <Button
                 type="link"
                 size="small"
-                @click="openDeleteDanger(record as TaskApi.TaskItem)"
+                @click="handleDelete(record as TaskApi.TaskItem)"
               >
                 删除
               </Button>
@@ -807,41 +768,5 @@ onUnmounted(() => {
         </Space>
       </template>
     </Drawer>
-
-    <!-- 批量删除：危险确认弹窗 -->
-    <ClpmDangerConfirmModal
-      v-model:open="batchDeleteDangerOpen"
-      title="批量删除任务"
-      action="删除"
-      :target="`已选 ${selectedRowKeys.length} 个任务`"
-      impact-scope="将删除选中的任务记录，不可恢复"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      :loading="batchDeleteLoading"
-      @confirm="handleBatchDeleteConfirm"
-    />
-
-    <!-- 取消任务：危险确认弹窗 -->
-    <ClpmDangerConfirmModal
-      v-model:open="cancelDangerOpen"
-      title="取消任务"
-      action="取消"
-      :target="cancelDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
-      impact-scope="将终止正在运行的任务，已计算的结果保留"
-      rollback-tip="任务取消后可重新发起"
-      :loading="cancelDangerLoading"
-      @confirm="handleCancel"
-    />
-
-    <!-- 删除任务：危险确认弹窗 -->
-    <ClpmDangerConfirmModal
-      v-model:open="deleteDangerOpen"
-      title="删除任务"
-      action="删除"
-      :target="deleteDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
-      impact-scope="将删除该任务记录，不可恢复"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      :loading="deleteDangerLoading"
-      @confirm="handleDelete"
-    />
   </div>
 </template>

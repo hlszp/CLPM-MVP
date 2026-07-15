@@ -30,13 +30,11 @@ import dayjs from 'dayjs';
 
 import {
   cancelTaskApi,
+  deleteTaskApi,
   getTaskListApi,
   triggerStandardEvaluateApi,
 } from '#/api/task';
-import {
-  ClpmDangerConfirmModal,
-  ClpmDataCanvas,
-} from '#/components/clpm';
+import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TaskList' });
@@ -82,29 +80,25 @@ const taskTypeTextMap: Record<string, string> = {
 const drawerVisible = ref(false);
 const selectedTask = ref<null | TaskApi.TaskItem>(null);
 
-// ============ 取消任务 ============
-const cancelDangerOpen = ref(false);
-const cancelDangerTarget = ref<null | TaskApi.TaskItem>(null);
-const cancelDangerLoading = ref(false);
-
-function openCancelDanger(record: TaskApi.TaskItem) {
-  cancelDangerTarget.value = record;
-  cancelDangerOpen.value = true;
-}
-
-async function handleCancel() {
-  if (!cancelDangerTarget.value) return;
-  const task = cancelDangerTarget.value;
-  cancelDangerLoading.value = true;
+async function handleCancel(record: TaskApi.TaskItem) {
+  if (!window.confirm(`确认取消任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
   try {
-    await cancelTaskApi(task.taskId);
+    await cancelTaskApi(record.taskId);
     message.success('任务已取消');
-    cancelDangerOpen.value = false;
     loadList();
   } catch {
     // 错误已由拦截器处理
-  } finally {
-    cancelDangerLoading.value = false;
+  }
+}
+
+async function handleDelete(record: TaskApi.TaskItem) {
+  if (!window.confirm(`确认删除任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
+  try {
+    await deleteTaskApi(record.taskId);
+    message.success('任务已删除');
+    loadList();
+  } catch {
+    // 错误已由拦截器处理
   }
 }
 
@@ -449,16 +443,27 @@ onUnmounted(() => {
             <span class="font-mono">{{ formatDuration(record as TaskApi.TaskItem) }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <Button
-              v-if="(record as TaskApi.TaskItem).status === 'RUNNING' || (record as TaskApi.TaskItem).status === 'PENDING'"
-              type="link"
-              size="small"
-              danger
-              @click.stop="openCancelDanger(record as TaskApi.TaskItem)"
-            >
-              取消
-            </Button>
-            <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
+            <Space :size="4">
+              <Button
+                v-if="(record as TaskApi.TaskItem).status === 'RUNNING' || (record as TaskApi.TaskItem).status === 'PENDING'"
+                type="link"
+                size="small"
+                danger
+                @click.stop="handleCancel(record as TaskApi.TaskItem)"
+              >
+                取消
+              </Button>
+              <Button
+                v-if="['SUCCESS', 'FAILED', 'CANCELLED'].includes((record as TaskApi.TaskItem).status)"
+                type="link"
+                size="small"
+                danger
+                @click.stop="handleDelete(record as TaskApi.TaskItem)"
+              >
+                删除
+              </Button>
+              <span v-if="!['SUCCESS', 'FAILED', 'CANCELLED'].includes((record as TaskApi.TaskItem).status) && (record as TaskApi.TaskItem).status !== 'RUNNING' && (record as TaskApi.TaskItem).status !== 'PENDING'" :style="{ color: themeColors.NEUTRAL }">—</span>
+            </Space>
           </template>
         </template>
       </Table>
@@ -538,17 +543,5 @@ onUnmounted(() => {
         </div>
       </template>
     </Drawer>
-
-    <!-- 取消任务：危险确认弹窗 -->
-    <ClpmDangerConfirmModal
-      v-model:open="cancelDangerOpen"
-      title="取消任务"
-      action="取消"
-      :target="cancelDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
-      impact-scope="将终止正在运行的评估任务，已计算的结果保留"
-      rollback-tip="任务取消后可重新发起"
-      :loading="cancelDangerLoading"
-      @confirm="handleCancel"
-    />
   </div>
 </template>
