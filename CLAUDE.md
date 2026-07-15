@@ -2,6 +2,28 @@
 
 本项目是危化企业控制回路性能评估与优化平台（CLPM v6.0），7 阶段系统重构已全部完成，文档体系已统一升级至 v6.0。
 
+## KPI 优化进行中（2026-07-15）
+
+当前 KPI 性能整改已进入执行阶段，最近已完成并提交：
+- 会话生命周期修复
+- CUSTOM 单 Celery ID / 旧数组兼容
+- 预热结果真实统计与失败告警
+- Layer2 完整依赖收紧
+- 冻结检测 O(n) 等价实现
+- 标准/自定义批处理共享编排器
+- 热缓存 1h p95 0.6s 基准脚本
+- 27 回路 replay 容量脚本
+
+已知约束：
+- 0.6 秒只作为同窗口 L2 热缓存完整端到端 SLO
+- 冷缓存受外部历史数据 HTTP 0.7-0.9 秒基线限制，必须单独分阶段验收
+- 1000 回路容量测试当前采用多窗口 replay，不应伪装成 1000 个不同回路
+
+后续优先级：
+1. 继续完善 1000 回路 replay 容量门禁与统计口径
+2. 为热缓存单回路与冷缓存分阶段建立稳定基准
+3. 视结果再决定是否引入更深的外部数据源/缓存架构改造
+
 ## 必读入口
 
 先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v6.0。
@@ -150,43 +172,3 @@ v6.0 文档统一升级已完成，后续工作方向：
 **v6.0 升级前的所有版本已全部被 v6.0 取代**（2026-07-06 修订）：PRD v3.1/v4.0、FDS v3.0/v5.1、ADS v3.0/v4.0、DDS v3.0/v4.1、IDS v3.0/v4.0、UI/UX v5.1/v5.3、实现契约 v1.0、DESIGN v2.1 不再作为有效输入；如需追溯历史版本，请使用 git 历史。
 
 这些文件只用于历史追溯。
-
-
-## KPI 优化进行中（2026-07-15）
-
-当前 KPI 性能整改已进入执行阶段，最近已完成并提交：
-- 会话生命周期修复
-- CUSTOM 单 Celery ID / 旧数组兼容
-- 预热结果真实统计与失败告警
-- Layer2 完整依赖收紧
-- 冻结检测 O(n) 等价实现
-- 标准/自定义批处理共享编排器
-- 热缓存 1h p95 0.6s 基准脚本
-- 27 回路 replay 容量脚本
-
-已知约束：
-- 0.6 秒只作为同窗口 L2 热缓存完整端到端 SLO
-- 冷缓存受外部历史数据 HTTP 0.7-0.9 秒基线限制，必须单独分阶段验收
-- 1000 回路容量测试当前采用多窗口 replay，不应伪装成 1000 个不同回路
-
-后续优先级：
-1. 继续完善 1000 回路 replay 容量门禁与统计口径
-2. 为热缓存单回路与冷缓存分阶段建立稳定基准
-3. 视结果再决定是否引入更深的外部数据源/缓存架构改造
-
-When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
-
-Key routing rules:
-- Product ideas/brainstorming → invoke /office-hours
-- Strategy/scope → invoke /plan-ceo-review
-- Architecture → invoke /plan-eng-review
-- Design system/plan review → invoke /design-consultation or /plan-design-review
-- Full review pipeline → invoke /autoplan
-- Bugs/errors → invoke /investigate
-- QA/testing site behavior → invoke /qa or /qa-only
-- Code review/diff check → invoke /review
-- Visual polish → invoke /design-review
-- Ship/deploy/PR → invoke /ship or /land-and-deploy
-- Save progress → invoke /context-save
-- Resume context → invoke /context-restore
-- Author a backlog-ready spec/issue → invoke /spec
