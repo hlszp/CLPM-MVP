@@ -79,6 +79,8 @@ const taskTypeTextMap: Record<string, string> = {
 // ============ 详情 Drawer ============
 const drawerVisible = ref(false);
 const selectedTask = ref<null | TaskApi.TaskItem>(null);
+const selectedRowKeys = ref<string[]>([]);
+const batchDeleteLoading = ref(false);
 
 async function handleCancel(record: TaskApi.TaskItem) {
   if (!window.confirm(`确认取消任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
@@ -101,6 +103,43 @@ async function handleDelete(record: TaskApi.TaskItem) {
     // 错误已由拦截器处理
   }
 }
+
+async function handleBatchDelete() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择要删除的任务');
+    return;
+  }
+  if (!window.confirm(`确认删除已选 ${selectedRowKeys.value.length} 个任务？`)) return;
+  batchDeleteLoading.value = true;
+  try {
+    const failed: string[] = [];
+    for (const taskId of selectedRowKeys.value) {
+      try {
+        await deleteTaskApi(taskId);
+      } catch {
+        failed.push(taskId);
+      }
+    }
+    if (failed.length > 0) {
+      message.warning(`删除完成，${failed.length} 个任务删除失败（可能非终态）`);
+    } else {
+      message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
+    }
+    selectedRowKeys.value = [];
+    loadList();
+  } catch (error: any) {
+    message.error(error?.message || '批量删除失败');
+  } finally {
+    batchDeleteLoading.value = false;
+  }
+}
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: (number | string)[]) => {
+    selectedRowKeys.value = keys as string[];
+  },
+}));
 
 // ============ 列定义 ============
 const columns = computed<TableColumnsType>(() => [
@@ -334,7 +373,16 @@ onUnmounted(() => {
           :loading="triggerLoading"
           @click="handleTriggerStandard"
         >
+          <template #icon><RotateCw /></template>
           触发标准评估
+        </Button>
+        <Button
+          danger
+          :disabled="selectedRowKeys.length === 0"
+          :loading="batchDeleteLoading"
+          @click="handleBatchDelete"
+        >
+          批量删除
         </Button>
         <Button @click="loadList">
           <template #icon><RotateCw /></template>
@@ -374,6 +422,7 @@ onUnmounted(() => {
       <Table
         :columns="columns"
         :data-source="taskList"
+        :row-selection="rowSelection"
         :pagination="{
           current: currentPage,
           pageSize,
