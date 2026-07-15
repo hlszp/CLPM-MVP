@@ -133,22 +133,6 @@ export namespace TaskApi {
   }
 
   /** 任务通知项 */
-  export interface TaskNotification {
-    taskId: string;
-    taskType: TaskType;
-    status: TaskStatus;
-    progress?: null | number;
-    currentStage?: null | string;
-    message: string;
-    createdAt: string;
-  }
-
-  /** 通知列表响应 */
-  export interface NotificationListResult {
-    items: TaskNotification[];
-    total: number;
-  }
-
   /** 标记通知已读响应 */
   export interface MarkReadResult {
     taskId: string;
