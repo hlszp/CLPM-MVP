@@ -242,6 +242,44 @@ async def _count_active_custom_tasks(user_id: str | None = None) -> int:
     return count
 
 
+async def _active_custom_task_details(user_id: str | None = None) -> list[dict[str, Any]]:
+    """Return active custom/backfill tasks with the fields needed for troubleshooting."""
+    task_ids = await redis_client.zrange(_TASK_INDEX_KEY, 0, -1)
+    active: list[dict[str, Any]] = []
+    for tid in task_ids:
+        data = await _get_task(tid)
+        if not data:
+            continue
+        if data.get("task_type") not in (
+            TaskType.CUSTOM.value,
+            TaskType.BACKFILL.value,
+        ):
+            continue
+        if data.get("status") not in _ACTIVE_STATUSES:
+            continue
+        if user_id is not None and data.get("created_by_id") != str(user_id):
+            continue
+        active.append(
+            {
+                "task_id": data.get("task_id", ""),
+                "status": data.get("status", ""),
+                "task_type": data.get("task_type", ""),
+                "created_by": data.get("created_by", ""),
+                "created_by_id": data.get("created_by_id", ""),
+                "loops_total": data.get("loops_total", ""),
+                "loops_done": data.get("loops_done", ""),
+                "current_stage": data.get("current_stage", ""),
+                "ts_start": data.get("ts_start", ""),
+                "ts_end": data.get("ts_end", ""),
+                "title": data.get("title", ""),
+            }
+        )
+    return active
+
+
+
+
+
 async def _query_loops_by_ids(db: AsyncSession, loop_ids: list[str]) -> list[LoopLedger]:
     """按 ID 列表查询回路（校验存在性 + ACTIVE/READY 状态）."""
     result = await db.execute(
