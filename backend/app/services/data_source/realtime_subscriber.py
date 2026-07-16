@@ -149,6 +149,19 @@ class RealtimeSubscriber:
                     "实时数据订阅异常: %s，%ds 后重连", exc, settings.SIGNALR_RECONNECT_INTERVAL
                 )
                 await asyncio.sleep(settings.SIGNALR_RECONNECT_INTERVAL)
+            finally:
+                # 确保旧连接在任何情况下都被关闭，防止服务器侧 CLOSE_WAIT 堆积
+                await self._close_ws_safely()
+
+    async def _close_ws_safely(self) -> None:
+        """安全关闭 WebSocket 连接（幂等）。"""
+        if self._ws is not None:
+            try:
+                await self._ws.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("关闭旧 WebSocket 连接时异常（可忽略）: %s", exc)
+            finally:
+                self._ws = None
 
     async def _connect_and_subscribe(self) -> None:
         """连接 Hub 并订阅数据.
@@ -159,6 +172,9 @@ class RealtimeSubscriber:
         3. 接收握手响应 {}\\x1e（成功）或 {"error":"..."}\\x1e（失败）
         4. 之后所有消息以 \\x1e (Record Separator) 分帧
         """
+        # 先关闭残留的旧连接，防止泄漏
+        await self._close_ws_safely()
+
         self._ws = await websockets.connect(settings.SIGNALR_HUB_URL)
         logger.info("已连接实时数据 Hub: %s", settings.SIGNALR_HUB_URL)
 
