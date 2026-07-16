@@ -506,28 +506,30 @@ onUnmounted(() => {
             placeholder="搜索回路..."
             class="mb-2 w-full shrink-0 border px-2 py-1 text-sm"
           />
-          <Spin :spinning="loadingLoops" class="min-h-0 flex-1">
-            <CheckboxGroup
-              v-model:value="selectedLoopIds"
-              class="flex h-full flex-col overflow-y-auto"
-            >
-              <div
-                v-for="loop in paginatedLoops"
-                :key="loop.loopId"
-                class="flex shrink-0 items-center overflow-hidden py-0.5"
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <Spin :spinning="loadingLoops">
+              <CheckboxGroup
+                v-model:value="selectedLoopIds"
+                class="flex flex-col"
               >
-                <Checkbox :value="loop.loopId" class="overflow-hidden">
-                  <span class="inline-block max-w-[120px] truncate align-middle text-sm">{{ loop.tagName }}</span>
-                  <span
-                    v-if="loop.description"
-                    class="ml-1 inline-block max-w-[80px] truncate align-middle text-xs text-gray-400"
-                  >
-                    {{ loop.description }}
-                  </span>
-                </Checkbox>
-              </div>
-            </CheckboxGroup>
-          </Spin>
+                <div
+                  v-for="loop in paginatedLoops"
+                  :key="loop.loopId"
+                  class="flex shrink-0 items-center overflow-hidden py-0.5"
+                >
+                  <Checkbox :value="loop.loopId" class="overflow-hidden">
+                    <span class="inline-block max-w-[120px] truncate align-middle text-sm">{{ loop.tagName }}</span>
+                    <span
+                      v-if="loop.description"
+                      class="ml-1 inline-block max-w-[80px] truncate align-middle text-xs text-gray-400"
+                    >
+                      {{ loop.description }}
+                    </span>
+                  </Checkbox>
+                </div>
+              </CheckboxGroup>
+            </Spin>
+          </div>
           <div class="mt-2 shrink-0 text-xs text-gray-400">
             已选: {{ selectedLoopIds.length }}/{{ loops.length }}
           </div>
