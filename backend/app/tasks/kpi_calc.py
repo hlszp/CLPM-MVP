@@ -56,8 +56,7 @@ ALGORITHM_VERSION_V1 = "KPI_CALC_v1.0"  # 向后兼容回退
 MIN_GOOD_RATIO = 0.20
 
 # 并发 worker 数（可被 EngineRule SCHEDULE_CONCURRENCY 覆盖）
-# v6.2 优化测试：降低并发度减少 HTTP API 排队 + GIL 竞争
-CONCURRENCY = 5
+CONCURRENCY = 20
 
 # ---------------------------------------------------------------------------
 # v4.0 指标代码映射（DB 列名 ↔ Calculator 代码）
@@ -338,9 +337,8 @@ def _prewarm_on_worker_start(sender=None, **kwargs):
     在后台异步执行，不阻塞 Worker 正常接收任务。
     首次启动后预热点上一个完整小时的数据，使首次标准评估任务命中缓存。
     """
-    # v6.2 优化测试：临时禁用 worker_ready 预热，测试纯冷启动性能
-    logger.info("Worker 启动缓存预热已跳过（v6.2 优化测试模式）")
-    return
+    logger.info("Worker 启动自动预热 L1/L2 缓存...")
+    prewarm_cache.delay()
 
 
 # ---------------------------------------------------------------------------
@@ -355,12 +353,16 @@ _DEFAULT_CALC_CYCLE_SECONDS = 3600.0
 
 _beat_entry = {
     "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
-    "schedule": _DEFAULT_CALC_CYCLE_SECONDS,  # 1 小时（默认值，beat_init 时从 DB 覆盖）
+    "schedule": crontab(minute=0, hour="*"),  # 每小时 0 分触发（默认值，beat_init 时从 DB 覆盖）
 }
 
 # 合并到 celery_app 的 beat_schedule（与 aas_sync 的 beat 共存）
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
 _existing_beat["kpi-calc-hourly"] = _beat_entry
+_existing_beat["prewarm-cache"] = {
+    "task": "app.tasks.kpi_calc.prewarm_cache",
+    "schedule": crontab(minute=55, hour="*"),
+}
 # 节点级日聚合：每日 00:05 执行（聚合前一天的数据）
 _existing_beat["node-kpi-daily"] = {
     "task": "app.tasks.kpi_calc.calculate_daily_kpi",
@@ -409,10 +411,16 @@ def _apply_rules_to_schedule(rules: dict) -> None:
         current_schedule.pop("kpi-calc-hourly", None)
         logger.info("beat_schedule: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
     else:
-        cycle_seconds = float(cycle_minutes) * 60.0
+        if int(cycle_minutes) == 60:
+            schedule_expr = crontab(minute=0, hour='*')
+        elif int(cycle_minutes) > 0 and int(cycle_minutes) < 60:
+            schedule_expr = crontab(minute=f"*/{int(cycle_minutes)}")
+        else:
+            schedule_expr = float(cycle_minutes) * 60.0
+
         current_schedule["kpi-calc-hourly"] = {
             "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
-            "schedule": cycle_seconds,
+            "schedule": schedule_expr,
         }
         logger.info(
             "beat_schedule: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
