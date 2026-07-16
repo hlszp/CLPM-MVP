@@ -672,7 +672,10 @@ async def trigger_backfill(
     # 3. 计算窗口数与预估耗时
     window_count = _calc_window_count(body.tsStart, body.tsEnd)
     loop_count = len(loops)
-    estimated_duration_sec = loop_count * window_count * 2  # 每回路每窗口预估 2s
+    # 窗口内回路并发执行（CONCURRENCY=20），窗口间串行
+    _concurrency = 20
+    _batches = max(1, (loop_count + _concurrency - 1) // _concurrency)
+    estimated_duration_sec = _batches * window_count * 2  # 每批每窗口预估 2s
     sample_loop_names = [loop.tag_name or loop.id for loop in loops[:5]]
 
     # 4. dry-run 模式：返回预览，不触发 Celery
