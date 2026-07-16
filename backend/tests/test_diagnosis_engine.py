@@ -308,7 +308,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=AsyncMock(),
+            query_wide_fn=AsyncMock(),
         )
         assert result is None
 
@@ -332,7 +332,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=AsyncMock(),
+            query_wide_fn=AsyncMock(),
         )
         assert result is None
 
@@ -361,7 +361,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_fail_query,
+            query_wide_fn=_fail_query,
         )
         assert result is None
 
@@ -393,7 +393,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
         assert result is None
 
@@ -433,7 +433,7 @@ class TestDiagnoseLoop:
             diag_configs={"OSCILLATION": _make_diag_config()},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -474,7 +474,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -514,7 +514,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         # 过滤后 40 点 >= 32，应正常诊断
@@ -551,7 +551,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
         assert result is None
 
@@ -598,7 +598,7 @@ class TestDiagnoseLoop:
             diag_configs={"OSCILLATION": _make_diag_config()},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1473,7 +1473,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1528,7 +1528,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1581,7 +1581,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None

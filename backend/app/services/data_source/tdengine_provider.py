@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from app.services.data_source.base import QueryFn
@@ -77,22 +78,51 @@ class TDengineProvider:
             loop_part = tag_name.rsplit(".", 1)[0] if "." in tag_name else tag_name
             subtable = make_subtable_name(loop_part)
 
-            # 4. 构造查询时间范围（毫秒精度）
+            # 4. 构造查询时间范围
             start_str = _format_ts(start)
             end_str = _format_ts(end)
 
-            # 5. 宽表查询（一次查 7 列 + 质量码）
-            try:
-                rows = await query_wide_table_native(subtable, start_str, end_str)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("宽表查询失败 loop=%s subtable=%s: %s", loop_id, subtable, exc)
-                return RawTimeSeries(timestamps=[], signals={}, quality_codes={})
+            rows = None
+
+            # 5. 尝试从 Redis 1 小时缓存获取数据
+            from app.services.data_source.realtime_subscriber import get_subscriber
+            subscriber = get_subscriber()
+            if subscriber:
+                try:
+                    redis_rows = await subscriber.get_history_values(loop_part)
+                    if redis_rows:
+                        # 过滤指定时间范围
+                        filtered_rows = [
+                            row for row in redis_rows
+                            if start_str <= row["ts"] <= end_str
+                        ]
+                        if filtered_rows:
+                            first_ts = _parse_ts(filtered_rows[0]["ts"])
+                            last_ts = _parse_ts(filtered_rows[-1]["ts"])
+                            start_dt = _parse_ts(start)
+                            end_dt = _parse_ts(end)
+                            
+                            # 检查缓存是否覆盖了请求的时间范围（容差 60 秒）
+                            if isinstance(first_ts, datetime) and isinstance(last_ts, datetime) and isinstance(start_dt, datetime) and isinstance(end_dt, datetime):
+                                if (first_ts - start_dt).total_seconds() <= 60 and (end_dt - last_ts).total_seconds() <= 60:
+                                    rows = filtered_rows
+                                    logger.debug("命中 Redis 1 小时缓存: loop=%s, points=%d", loop_id, len(rows))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("读取 Redis 缓存失败 (loop=%s): %s", loop_id, exc)
+
+            # 6. 如果缓存未命中，回退到宽表查询（一次查 7 列 + 质量码）
+            if rows is None:
+                try:
+                    rows = await query_wide_table_native(subtable, start_str, end_str)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("宽表查询失败 loop=%s subtable=%s: %s", loop_id, subtable, exc)
+                    return RawTimeSeries(timestamps=[], signals={}, quality_codes={})
 
             if not rows:
                 logger.debug("宽表查询: 回路 %s 无数据 (subtable=%s)", loop_id, subtable)
                 return RawTimeSeries(timestamps=[], signals={}, quality_codes={})
 
-            # 6. 转换为 RawTimeSeries
+            # 7. 转换为 RawTimeSeries
             timestamps = [_parse_ts(row.get("ts")) for row in rows]
             signals: dict[str, list[Any]] = {}
             for role in tag_roles:

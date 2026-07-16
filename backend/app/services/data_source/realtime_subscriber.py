@@ -108,8 +108,7 @@ class RealtimeSubscriber:
 
         self._running = True
         self._task = asyncio.create_task(self._run())
-        if self._writeback_enabled:
-            self._flush_task = asyncio.create_task(self._flush_loop())
+        self._flush_task = asyncio.create_task(self._flush_loop())
         logger.info(
             "实时数据订阅任务已启动 (hub=%s, writeback=%s)",
             settings.SIGNALR_HUB_URL,
@@ -253,19 +252,17 @@ class RealtimeSubscriber:
         # Pub/Sub 广播给 WebSocket 端点
         await redis_client.publish(_PUBSUB_CHANNEL, value)
 
-        # 可选：写回本地 TDengine 回路宽表（仅开发/模拟兼容）。
-        # 现场模式下，原始数据已由外部系统按“一 Tag 一表”存储，CLPM 只缓存/转发实时值。
-        if self._writeback_enabled:
-            loop_part, role = self._parse_tag_code(tag_code)
-            if loop_part:
-                async with self._buffer_lock:
-                    if loop_part not in self._buffer:
-                        self._buffer[loop_part] = {}
-                    self._buffer[loop_part][role] = {
-                        "value": item.get("value"),
-                        "quality": item.get("quality"),
-                        "ts": item.get("collectTime", ""),
-                    }
+        # 放入内部缓冲区（供 _flush_buffer 写入 Redis 1 小时缓存及可选的 TDengine）
+        loop_part, role = self._parse_tag_code(tag_code)
+        if loop_part:
+            async with self._buffer_lock:
+                if loop_part not in self._buffer:
+                    self._buffer[loop_part] = {}
+                self._buffer[loop_part][role] = {
+                    "value": item.get("value"),
+                    "quality": item.get("quality"),
+                    "ts": item.get("collectTime", ""),
+                }
 
     def _parse_tag_code(self, tag_code: str) -> tuple[str, str]:
         """解析 tagCode 为回路部分和角色。
@@ -302,6 +299,23 @@ class RealtimeSubscriber:
                     pass
         return result
 
+    async def get_history_values(self, loop_part: str) -> list[dict]:
+        """从 Redis 获取过去 1 小时的缓存数据（按时间升序返回）。"""
+        key = f"{_REDIS_KEY_PREFIX}history:{loop_part}"
+        raw_list = await redis_client.lrange(key, 0, -1)
+        if not raw_list:
+            return []
+        
+        result = []
+        for raw in raw_list:
+            try:
+                result.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+        # Redis lpush 导致最新数据在前面，因此需要反转列表以满足时间升序
+        result.reverse()
+        return result
+
     async def _flush_loop(self) -> None:
         """按配置间隔 flush 缓冲区到 TDengine（默认 1 秒）。"""
         while self._running:
@@ -314,29 +328,51 @@ class RealtimeSubscriber:
                 logger.warning("TDengine flush 异常: %s", exc)
 
     async def _flush_buffer(self) -> None:
-        """将缓冲区数据批量写入 TDengine（一次 SQL 写入多个子表）。
-
-        数据架构优化 Phase 1：从单行 INSERT via REST 改为多表批量 INSERT via taosrest。
-        性能：27 回路 × 1 行 = 1 次 HTTP 请求（原方案 27 次）。
-        """
+        """将缓冲区数据批量写入 Redis 1 小时缓存（及可选的 TDengine）。"""
         async with self._buffer_lock:
             if not self._buffer:
                 return
             buffer_copy = dict(self._buffer)
             self._buffer.clear()
 
-        # 构造多表批量写入数据
+        # 1. 写入 Redis 1 小时缓存 (pipeline)
+        pipe = redis_client.pipeline()
         tables_rows: list[dict[str, Any]] = []
-        for loop_part, roles_data in buffer_copy.items():
-            subtable = make_subtable_name(loop_part)
-            row = self._build_row(roles_data)
-            tables_rows.append({
-                "subtable": subtable,
-                "loop_id": "",
-                "unit_id": "",
-                "rows": [row],
-            })
 
+        for loop_part, roles_data in buffer_copy.items():
+            row = self._build_row(roles_data)
+            row_dict = {
+                "ts": row[0],
+                "pv": row[1],
+                "sp": row[2],
+                "op": row[3],
+                "mode": row[4],
+                "pid_p": row[5],
+                "pid_i": row[6],
+                "pid_d": row[7],
+                "pv_quality": row[8],
+            }
+            key = f"{_REDIS_KEY_PREFIX}history:{loop_part}"
+            pipe.lpush(key, json.dumps(row_dict))
+            pipe.ltrim(key, 0, 3599)  # 1小时 = 3600点
+            pipe.expire(key, 7200)
+
+            # 为 TDengine 准备数据
+            if self._writeback_enabled:
+                subtable = make_subtable_name(loop_part)
+                tables_rows.append({
+                    "subtable": subtable,
+                    "loop_id": "",
+                    "unit_id": "",
+                    "rows": [row],
+                })
+
+        try:
+            await pipe.execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Redis 历史数据写入失败: %s", exc)
+
+        # 2. 批量写入 TDengine (如果启用)
         if not tables_rows:
             return
 
