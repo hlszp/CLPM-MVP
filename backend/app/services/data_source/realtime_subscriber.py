@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # Redis 缓存 key 前缀
 _REDIS_KEY_PREFIX = "realtime:"
-_REDIS_TTL = 60  # 秒
+_REDIS_TTL = 3600  # 秒（1 小时），确保页面刷新时能从缓存读取实时值
 _PUBSUB_CHANNEL = "realtime:updates"  # Pub/Sub 频道，供 WebSocket 端点订阅
 
 # tag_name 后缀 → DDL 列名映射（与 tdengine.py 保持一致）
@@ -91,9 +91,7 @@ class RealtimeSubscriber:
     @property
     def _writeback_enabled(self) -> bool:
         """是否启用实时数据写回本地 TDengine 宽表。"""
-        return (
-            settings.REALTIME_WRITEBACK_ENABLED and settings.DATA_SOURCE_TYPE.lower() == "tdengine"
-        )
+        return settings.REALTIME_WRITEBACK_ENABLED
 
     async def start(self) -> None:
         """启动订阅后台任务."""

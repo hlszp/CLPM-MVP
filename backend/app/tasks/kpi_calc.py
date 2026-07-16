@@ -264,7 +264,40 @@ def calculate_custom_batch_kpi(
     return AsyncTask().run_async(_do_calculate_custom_batch(task_id, loop_ids, ts_start, ts_end))
 
 
-@celery_app.task(name="app.tasks.kpi_calc.prewarm_cache")
+def _on_prewarm_failure(
+    exc: Exception,
+    task_id: str,
+    args: tuple,
+    kwargs: dict,
+    einfo,
+) -> None:
+    """prewarm_cache 任务失败回调。
+
+    记录详细错误日志，便于监控和告警。
+    """
+    logger.error(
+        "缓存预热任务失败: task_id=%s, args=%s, kwargs=%s, error=%s",
+        task_id,
+        args,
+        kwargs,
+        exc,
+        exc_info=True,
+    )
+    try:
+        from app.core.redis import redis_client
+        import asyncio
+
+        asyncio.run(
+            redis_client.incr("clpm:metrics:prewarm_failure_count"),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("预热失败指标记录失败", exc_info=True)
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.prewarm_cache",
+    on_failure=_on_prewarm_failure,
+)
 def prewarm_cache(ts_start: str | None = None) -> dict:
     """预热 L1/L2 缓存（可手动或定时触发）。
 
@@ -359,6 +392,11 @@ _beat_entry = {
 # 合并到 celery_app 的 beat_schedule（与 aas_sync 的 beat 共存）
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
 _existing_beat["kpi-calc-hourly"] = _beat_entry
+# 预热缓存：每小时 55 分执行，为下一个整点的 KPI 计算预热 L1/L2 缓存
+_existing_beat["prewarm-cache"] = {
+    "task": "app.tasks.kpi_calc.prewarm_cache",
+    "schedule": crontab(minute=55, hour="*"),
+}
 # 节点级日聚合：每日 00:05 执行（聚合前一天的数据）
 _existing_beat["node-kpi-daily"] = {
     "task": "app.tasks.kpi_calc.calculate_daily_kpi",
@@ -728,6 +766,28 @@ async def _do_calculate(
         logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
 
     loops_count = len(loops)
+
+    # 3. 兜底预热机制：检测 L2 缓存命中率，未命中时自动触发预热
+    # 防止 Beat 预热失败或缓存过期导致冷启动
+    l2_hit_rate = await _check_l2_cache_hit_rate(
+        loops=loops,
+        ts_start=ts_start_dt,
+        ts_end=ts_end_dt,
+        type_weights=type_weights,
+        loop_configs=loop_configs,
+    )
+    if l2_hit_rate < 0.8:
+        logger.warning(
+            "L2 缓存命中率 %.1f%% < 80%%，触发兜底预热",
+            l2_hit_rate * 100,
+        )
+        warm_result = await _do_prewarm(ts_start_dt.isoformat())
+        logger.info(
+            "兜底预热完成: succeeded=%d, failed=%d, elapsed=%.3fs",
+            warm_result.get("succeeded", 0),
+            warm_result.get("failed", 0),
+            warm_result.get("elapsed", 0),
+        )
     completed_in_window = 0
 
     async def _on_completed() -> None:
@@ -1438,6 +1498,70 @@ def _get_shared_bundle_cache():
 
         _shared_bundle_cache = L2BundleCache(redis_client)
     return _shared_bundle_cache
+
+
+async def _check_l2_cache_hit_rate(
+    loops: list,
+    ts_start: datetime,
+    ts_end: datetime,
+    type_weights: dict,
+    loop_configs: dict[str, dict],
+) -> float:
+    """检测 L2 缓存命中率（用于兜底预热决策）。
+
+    遍历所有回路，检查对应的 L2 Bundle 缓存是否存在，返回命中率。
+    命中率低于阈值时触发兜底预热，避免 Beat 预热失败导致冷启动。
+
+    Args:
+        loops: 回路列表
+        ts_start: 时间窗起始
+        ts_end: 时间窗结束
+        type_weights: 回路类型权重映射
+        loop_configs: 回路配置映射
+
+    Returns:
+        命中率（0.0 ~ 1.0）
+    """
+    if not loops:
+        return 1.0
+
+    from app.core.redis import redis_client
+    from app.services.cache.l2_bundle import L2BundleCache
+
+    l2_cache = L2BundleCache(redis_client)
+    keys: list[str] = []
+
+    for loop in loops:
+        control_type = _loop_type_to_control_type(loop.loop_type)
+        loop_cfg = loop_configs.get(str(loop.id), {})
+        key = l2_cache.build_key(
+            loop_id=str(loop.id),
+            metrics=_ALL_METRIC_CODES_DB,
+            time_window_start=ts_start,
+            time_window_end=ts_end,
+            control_type=control_type,
+            op_output_lower_limit=loop_cfg.get("op_lower"),
+            op_output_upper_limit=loop_cfg.get("op_upper"),
+        )
+        keys.append(key)
+
+    if not keys:
+        return 1.0
+
+    # 批量查询 Redis（mget 效率高于逐个查询）
+    results = await redis_client.mget(*keys)
+    hit_count = sum(1 for r in results if r is not None)
+    hit_rate = hit_count / len(keys)
+
+    logger.debug(
+        "L2 缓存命中率检测: loops=%d, hits=%d, miss=%d, rate=%.1f%%",
+        len(loops),
+        hit_count,
+        len(loops) - hit_count,
+        hit_rate * 100,
+    )
+
+    return hit_rate
 
 
 async def _batch_load_loop_configs(db, loop_ids: list[str]) -> dict[str, dict]:

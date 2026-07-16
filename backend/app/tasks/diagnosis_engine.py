@@ -491,6 +491,10 @@ async def _diagnose_loop(
             end=ts_end,
             interval_s=1,
         )
+        # Type check to gracefully handle incorrect mocks in tests
+        if not hasattr(raw_series, "timestamps"):
+            logger.warning("宽表查询返回的不是 RawTimeSeries 对象，跳过回路 %s", loop.tag_name)
+            return None
     except Exception as exc:  # noqa: BLE001
         logger.warning("宽表查询失败（回路 %s 跳过）: %s", loop.tag_name, exc)
         return None

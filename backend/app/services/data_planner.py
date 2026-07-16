@@ -575,14 +575,14 @@ class DataPlanner:
             task.interval_s,
         )
 
-        # Phase 5: 查询 TDengine
+        # Phase 5: 查询数据源
         t_query_start = time.perf_counter()
         raw = await self._query_fn(
-            loop_id,
-            task.tag_roles,
-            time_window.start,
-            time_window.end,
-            task.interval_s,
+            loop_id=loop_id,
+            tag_roles=task.tag_roles,
+            start=time_window.start,
+            end=time_window.end,
+            interval_s=task.interval_s,
         )
         t_query_elapsed = time.perf_counter() - t_query_start
 

@@ -212,7 +212,7 @@ async function loadLoops() {
   try {
     const resp = await getLoopListApi({
       page: 1,
-      pageSize: 9999,
+      pageSize: 100,
       isActive: true,
       status: 'READY',
     } as any);

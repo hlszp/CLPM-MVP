@@ -408,8 +408,9 @@ async def list_loops(
         for m in m_result.scalars().all():
             mappings_map.setdefault(str(m.loop_id), {})[m.tag_role] = m
 
-    # 批量查询 controlMode（MODE tag 的 current_value）
+    # 批量查询 controlMode（优先从 Redis 缓存读取，回退到数据库 current_value）
     mode_map: dict[str, str] = {}
+    mode_tag_map: dict[str, TagRegistry] = {}  # loop_id -> MODE Tag 对象
     if loop_ids:
         mode_result = await db.execute(
             select(LoopTagMapping, TagRegistry)
@@ -418,7 +419,36 @@ async def list_loops(
             .where(LoopTagMapping.tag_role == "MODE")
         )
         for mapping, tag in mode_result:
-            mode_map[str(mapping.loop_id)] = _mode_value_to_label(tag.current_value)
+            mode_tag_map[str(mapping.loop_id)] = tag
+
+    # 批量从 Redis 读取实时值
+    redis_cache: dict[str, dict] = {}
+    if mode_tag_map:
+        try:
+            from app.services.data_source.realtime_subscriber import get_subscriber
+
+            subscriber = get_subscriber()
+            tag_names = [tag.tag_name for tag in mode_tag_map.values() if tag.tag_name]
+            if tag_names:
+                cached_list = await subscriber.get_cached_values(tag_names)
+                for item in cached_list:
+                    tc = item.get("tagCode")
+                    if tc:
+                        redis_cache[tc] = item
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+
+    # 构建 mode_map（优先使用 Redis 缓存）
+    for loop_id, tag in mode_tag_map.items():
+        cached = redis_cache.get(tag.tag_name)
+        if cached and "value" in cached:
+            try:
+                mode_val = float(cached["value"])
+                mode_map[loop_id] = _mode_value_to_label(mode_val)
+            except (ValueError, TypeError):
+                mode_map[loop_id] = _mode_value_to_label(tag.current_value)
+        else:
+            mode_map[loop_id] = _mode_value_to_label(tag.current_value)
 
     # v6.1 批量查询 PV/OP Tag 量程与单位（设计文档 §4.1）
     # 数据来源：tag_registry.range_min/range_max/unit，通过 loop_tag_mapping JOIN
@@ -773,7 +803,23 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
                 "associated": False,
             }
 
-    # 构建 runtimeParams（从 Tag 当前值读取）
+    # 批量从 Redis 读取实时值（优先于数据库 current_value）
+    redis_cache: dict[str, dict] = {}
+    try:
+        from app.services.data_source.realtime_subscriber import get_subscriber
+
+        subscriber = get_subscriber()
+        all_tag_names = [tag.tag_name for tag in tags_map.values() if tag.tag_name]
+        if all_tag_names:
+            cached_list = await subscriber.get_cached_values(all_tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc:
+                    redis_cache[tc] = item
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+
+    # 构建 runtimeParams（优先从 Redis 缓存读取）
     runtime_params: dict = {
         "controlMode": None,
         "pidP": None,
@@ -785,19 +831,44 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
         mapping = mappings.get(role)
         if mapping and str(mapping.tag_id) in tags_map:
             tag = tags_map[str(mapping.tag_id)]
-            if role == "MODE":
-                runtime_params["controlMode"] = _mode_value_to_label(tag.current_value)
-            elif role == "PID_P":
-                runtime_params["pidP"] = tag.current_value
-            elif role == "PID_I":
-                runtime_params["pidI"] = tag.current_value
-            elif role == "PID_D":
-                runtime_params["pidD"] = tag.current_value
-            # readAt 取最新的 last_sync_at
-            if tag.last_sync_at:
-                ts = tag.last_sync_at.isoformat()
-                if runtime_params["readAt"] is None or ts > runtime_params["readAt"]:
-                    runtime_params["readAt"] = ts
+            cached = redis_cache.get(tag.tag_name)
+            if cached:
+                try:
+                    if role == "MODE":
+                        mode_val = float(cached.get("value"))
+                        runtime_params["controlMode"] = _mode_value_to_label(mode_val)
+                    elif role == "PID_P":
+                        runtime_params["pidP"] = float(cached.get("value"))
+                    elif role == "PID_I":
+                        runtime_params["pidI"] = float(cached.get("value"))
+                    elif role == "PID_D":
+                        runtime_params["pidD"] = float(cached.get("value"))
+                except (TypeError, ValueError):
+                    if role == "MODE":
+                        runtime_params["controlMode"] = _mode_value_to_label(tag.current_value)
+                    elif role == "PID_P":
+                        runtime_params["pidP"] = tag.current_value
+                    elif role == "PID_I":
+                        runtime_params["pidI"] = tag.current_value
+                    elif role == "PID_D":
+                        runtime_params["pidD"] = tag.current_value
+                if cached.get("collectTime"):
+                    ts = cached["collectTime"]
+                    if runtime_params["readAt"] is None or ts > runtime_params["readAt"]:
+                        runtime_params["readAt"] = ts
+            else:
+                if role == "MODE":
+                    runtime_params["controlMode"] = _mode_value_to_label(tag.current_value)
+                elif role == "PID_P":
+                    runtime_params["pidP"] = tag.current_value
+                elif role == "PID_I":
+                    runtime_params["pidI"] = tag.current_value
+                elif role == "PID_D":
+                    runtime_params["pidD"] = tag.current_value
+                if tag.last_sync_at:
+                    ts = tag.last_sync_at.isoformat()
+                    if runtime_params["readAt"] is None or ts > runtime_params["readAt"]:
+                        runtime_params["readAt"] = ts
 
     # aasSyncStatus
     last_sync = None

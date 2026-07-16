@@ -310,7 +310,7 @@ async def fetch_loop_trend(
         len(timestamps),
         "是" if downsampled else "否",
         f"(原始={pre_downsample_count}→{len(timestamps)})" if downsampled else "",
-        "PV" if pv_data else ("SP" if sp_data else "OP"),
+        "PV" if pv_list else ("SP" if sp_list else "OP"),
     )
 
     return {
