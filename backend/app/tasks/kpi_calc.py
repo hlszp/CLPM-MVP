@@ -359,10 +359,6 @@ _beat_entry = {
 # 合并到 celery_app 的 beat_schedule（与 aas_sync 的 beat 共存）
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
 _existing_beat["kpi-calc-hourly"] = _beat_entry
-_existing_beat["prewarm-cache"] = {
-    "task": "app.tasks.kpi_calc.prewarm_cache",
-    "schedule": crontab(minute=55, hour="*"),
-}
 # 节点级日聚合：每日 00:05 执行（聚合前一天的数据）
 _existing_beat["node-kpi-daily"] = {
     "task": "app.tasks.kpi_calc.calculate_daily_kpi",
