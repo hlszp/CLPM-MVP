@@ -361,6 +361,7 @@ async def _do_prewarm(ts_start: str | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 from celery.signals import worker_ready  # noqa: E402
+from celery import group  # noqa: E402
 
 
 @worker_ready.connect
@@ -2213,6 +2214,93 @@ async def _do_calculate_single_node(
 # ---------------------------------------------------------------------------
 
 
+# 每个子任务处理的窗口数（16 核 × 每核 2 窗口 → 最多 8 个子任务并行）
+_BACKFILL_BATCH_SIZE = 4
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc._backfill_window_batch",
+    bind=True,
+    base=AsyncTask,
+)
+def _backfill_window_batch(
+    self: AsyncTask,
+    window_isos: list[str],
+    loop_ids: list[str] | None = None,
+) -> dict:
+    """子任务：处理一批小时窗口（在独立 worker 进程中运行，利用多核 CPU）。
+
+    Args:
+        window_isos: 窗口起始时间列表（ISO 8601 字符串）
+        loop_ids: 回路 ID 过滤列表
+    """
+    logger.info("子任务处理 %d 个窗口: %s", len(window_isos), window_isos[0])
+
+    async def _run() -> dict:
+        from app.core.db import AsyncSessionLocal
+
+        windows = [
+            datetime.fromisoformat(w.replace("Z", "+00:00")).replace(tzinfo=None)
+            for w in window_isos
+        ]
+
+        # 预加载（子任务内 1 次）
+        async with AsyncSessionLocal() as db:
+            stmt = select(LoopLedger).where(
+                LoopLedger.is_active.is_(True),
+                LoopLedger.status == "READY",
+            )
+            if loop_ids is not None:
+                stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+            result = await db.execute(stmt)
+            loops = list(result.scalars().all())
+
+            if not loops:
+                return {"success": 0, "inconclusive": 0, "failed": 0, "failed_windows": []}
+
+            metric_result = await db.execute(select(MetricConfig))
+            metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+            from app.services.loop_config import get_loop_type_weights_map
+
+            type_weights = await get_loop_type_weights_map(db)
+            loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+
+        agg = {"success": 0, "inconclusive": 0, "failed": 0, "failed_windows": []}
+
+        for w in windows:
+            w_start = w
+            w_end = w + timedelta(hours=1)
+            try:
+                results = await _run_batch_loop_calculations(
+                    loops=loops,
+                    loop_configs=loop_configs,
+                    metric_configs=metric_configs,
+                    ts_start=w_start,
+                    ts_end=w_end,
+                    type_weights=type_weights,
+                    bundle_cache=False,
+                )
+                summary = _summarize_batch_results(results)
+                agg["success"] += summary["success"]
+                agg["inconclusive"] += summary["inconclusive"]
+                agg["failed"] += summary["failed"]
+                logger.info(
+                    "子任务窗口 %s: ok=%d, inconclusive=%d, failed=%d",
+                    w.isoformat(),
+                    summary["success"],
+                    summary["inconclusive"],
+                    summary["failed"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                agg["failed_windows"].append(w.isoformat())
+                logger.warning("子任务窗口 %s 失败: %s", w.isoformat(), exc)
+
+        return agg
+
+    return self.run_async(_run())
+
+
 @celery_app.task(
     name="app.tasks.kpi_calc.backfill_kpi_range",
     bind=True,
@@ -2253,7 +2341,82 @@ def backfill_kpi_range(
             logger.warning("更新任务 RUNNING 状态失败: task_id=%s", task_id, exc_info=True)
 
     try:
-        result = self.run_async(_do_backfill(ts_start, ts_end, loop_ids=loop_ids, task_id=task_id))
+        # ── 多进程并行回填：将窗口拆分为多个 batch，用 Celery group 并行 ──
+        start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
+        end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
+
+        windows: list[str] = []
+        cur = start_dt.replace(minute=0, second=0, microsecond=0)
+        while cur < end_dt:
+            windows.append(cur.isoformat())
+            cur += timedelta(hours=1)
+
+        total = len(windows)
+
+        if total == 0 or (loop_ids is not None and len(loop_ids) == 0):
+            result = {
+                "total_windows": total,
+                "failed_windows": 0,
+                "loop_success": 0,
+                "loop_inconclusive": 0,
+                "loop_failed": 0,
+                "node_success": 0,
+                "failed_window_list": [],
+            }
+        else:
+            # 拆分为多个 batch，每个 batch 最多 _BACKFILL_BATCH_SIZE 个窗口
+            batches = [
+                windows[i : i + _BACKFILL_BATCH_SIZE]
+                for i in range(0, len(windows), _BACKFILL_BATCH_SIZE)
+            ]
+            num_batches = len(batches)
+            logger.info(
+                "KPI 回填: %d 窗口 → %d 子任务（每批 %d 窗口），多进程并行",
+                total,
+                num_batches,
+                _BACKFILL_BATCH_SIZE,
+            )
+
+            # 用 Celery group 并行执行（每个子任务在不同 prefork 进程中运行）
+            job = group(
+                _backfill_window_batch.s(batch, loop_ids=loop_ids) for batch in batches
+            )
+            batch_results = job.apply_async().get(disable_sync_subtasks=False)
+
+            # 合并结果
+            agg_loop_success = sum(r.get("success", 0) for r in batch_results)
+            agg_loop_inconclusive = sum(r.get("inconclusive", 0) for r in batch_results)
+            agg_loop_failed = sum(r.get("failed", 0) for r in batch_results)
+            failed_window_list = [
+                w for r in batch_results for w in r.get("failed_windows", [])
+            ]
+
+            logger.info(
+                "KPI 回填回路计算完成: ok=%d, inconclusive=%d, failed=%d",
+                agg_loop_success,
+                agg_loop_inconclusive,
+                agg_loop_failed,
+            )
+
+            # 节点聚合（全部窗口完成后统一执行）
+            agg_node_success = 0
+            try:
+                agg_node_success = self.run_async(
+                    _do_backfill_node_aggregation(start_dt, end_dt)
+                )
+            except Exception:
+                logger.warning("回填节点聚合失败", exc_info=True)
+
+            result = {
+                "total_windows": total,
+                "failed_windows": len(failed_window_list),
+                "loop_success": agg_loop_success,
+                "loop_inconclusive": agg_loop_inconclusive,
+                "loop_failed": agg_loop_failed,
+                "node_success": agg_node_success,
+                "failed_window_list": failed_window_list,
+            }
+
         logger.info("KPI 回填任务完成: %s", result)
 
         if task_id:
@@ -2357,6 +2520,44 @@ async def _is_task_cancelled(task_id: str) -> bool:
     if raw is None:
         return False
     return str(raw).upper() == "CANCELLED"
+
+
+async def _do_backfill_node_aggregation(start_dt: datetime, end_dt: datetime) -> int:
+    """统一节点级聚合：遍历所有窗口执行节点 KPI 聚合。"""
+    from app.core.db import AsyncSessionLocal
+    from app.models.plant_node import PlantNode
+    from app.services.node_performance import batch_calculate_and_save_node_snapshots
+
+    async with AsyncSessionLocal() as db:
+        node_result = await db.execute(
+            select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
+        )
+        nodes = list(node_result.scalars().all())
+
+    if not nodes:
+        return 0
+
+    cur = start_dt.replace(minute=0, second=0, microsecond=0)
+    agg_node_success = 0
+    while cur < end_dt:
+        w_start = cur
+        w_end = cur + timedelta(hours=1)
+        result = await batch_calculate_and_save_node_snapshots(
+            nodes=nodes,
+            ts_start=w_start,
+            ts_end=w_end,
+            concurrency=10,
+        )
+        agg_node_success += result.get("success", 0)
+        cur += timedelta(hours=1)
+
+    logger.info(
+        "回填节点聚合完成: %s ~ %s, node_success=%d",
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+        agg_node_success,
+    )
+    return agg_node_success
 
 
 async def _do_backfill(
