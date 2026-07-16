@@ -361,6 +361,7 @@ async def _do_prewarm(ts_start: str | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 from celery.signals import worker_ready  # noqa: E402
+from celery import group  # noqa: E402
 
 
 @worker_ready.connect
@@ -2642,71 +2643,56 @@ async def _do_backfill(
     agg_loop_failed = 0
     failed_windows: list[str] = []
 
-    # ── Phase 2: 多进程并行计算（ProcessPoolExecutor 突破 GIL，利用多核） ──
-    from concurrent.futures import ProcessPoolExecutor
-    import os
-
-    # 将窗口拆分为 batches，每个 batch 在独立进程中运行
+    # ── Phase 2: 多进程并行计算（Celery group + 异步轮询，不阻塞事件循环） ──
     window_isos = [w.isoformat() for w in windows]
     batches = [
         window_isos[i : i + _BACKFILL_PROCESS_BATCH]
         for i in range(0, len(window_isos), _BACKFILL_PROCESS_BATCH)
     ]
     num_batches = len(batches)
-    # 进程数：取 CPU 核心数和 batch 数的较小值，上限 8（避免内存压力）
-    max_workers = min(os.cpu_count() or 4, num_batches, 8)
     logger.info(
-        "回填多进程并行: %d 窗口 → %d batches × %d 窗口, max_workers=%d",
+        "回填Celery并行: %d 窗口 → %d 子任务（每批 %d 窗口）",
         total,
         num_batches,
         _BACKFILL_PROCESS_BATCH,
-        max_workers,
     )
 
-    loop = asyncio.get_event_loop()
+    # 提交所有子任务（非阻塞）
+    job = group(
+        _backfill_window_batch.s(batch, loop_ids=loop_ids) for batch in batches
+    )
+    group_result = job.apply_async()
+
+    # 异步轮询结果（每 2 秒检查一次，不阻塞事件循环）
+    # Celery prefork 16 进程：1 个运行主任务，最多 15 个并行子任务
     completed_windows = 0
-
-    with ProcessPoolExecutor(max_workers=max_workers) as pool:
-        # 为每个 batch 创建 future
-        future_to_batch = {
-            loop.run_in_executor(
-                pool, _process_windows_subprocess, batch, loop_ids
-            ): batch
-            for batch in batches
-        }
-
-        # 逐个收集结果（完成一个收集一个，更新进度）
-        for future in asyncio.as_completed(list(future_to_batch.keys())):
-            batch = future_to_batch[future]
+    while not group_result.ready():
+        # 更新进度（基于已完成的子任务数）
+        completed = sum(1 for r in group_result.results if r.successful())
+        if completed > 0 and task_id and total > 0:
+            est_progress = (completed / num_batches) * total
             try:
-                batch_result = await future
-                agg_loop_success += batch_result.get("success", 0)
-                agg_loop_inconclusive += batch_result.get("inconclusive", 0)
-                agg_loop_failed += batch_result.get("failed", 0)
-                failed_windows.extend(batch_result.get("failed_windows", []))
-                completed_windows += len(batch)
-
-                # 更新进度
-                if task_id and total > 0:
-                    progress = completed_windows / total
-                    try:
-                        await _update_backfill_progress(
-                            task_id, completed_windows, total, loops_count, loops_count
-                        )
-                    except Exception:
-                        logger.warning("更新进度失败", exc_info=True)
-
-                logger.info(
-                    "回填进度 [%d/%d]: ok=%d, inconclusive=%d, failed=%d",
-                    completed_windows,
-                    total,
-                    batch_result.get("success", 0),
-                    batch_result.get("inconclusive", 0),
-                    batch_result.get("failed", 0),
+                await _update_backfill_progress(
+                    task_id, int(est_progress), total, loops_count, loops_count
                 )
-            except Exception as exc:  # noqa: BLE001
-                failed_windows.extend(batch)
-                logger.warning("回填 batch 失败: %s", exc)
+            except Exception:
+                pass
+        await asyncio.sleep(2)
+
+    # 收集所有子任务结果
+    batch_results = group_result.get()
+    for r in batch_results:
+        agg_loop_success += r.get("success", 0)
+        agg_loop_inconclusive += r.get("inconclusive", 0)
+        agg_loop_failed += r.get("failed", 0)
+        failed_windows.extend(r.get("failed_windows", []))
+
+    logger.info(
+        "回填回路计算完成: ok=%d, inconclusive=%d, failed=%d",
+        agg_loop_success,
+        agg_loop_inconclusive,
+        agg_loop_failed,
+    )
 
     # ── Phase 3: 统一节点级聚合（全部窗口完成后执行一次，而非每窗口重复） ──
     agg_node_success = 0
