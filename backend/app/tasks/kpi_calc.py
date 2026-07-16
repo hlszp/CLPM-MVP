@@ -2234,9 +2234,17 @@ def _backfill_window_batch(
         window_isos: 窗口起始时间列表（ISO 8601 字符串）
         loop_ids: 回路 ID 过滤列表
     """
-    logger.info("子任务处理 %d 个窗口: %s", len(window_isos), window_isos[0])
+    _sub_t0 = time.monotonic()
+    logger.info(
+        "[子任务] 启动: windows=%d, first=%s, loop_ids=%s",
+        len(window_isos),
+        window_isos[0] if window_isos else "(empty)",
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
 
     async def _run() -> dict:
+        import time as _time
+
         from app.core.db import AsyncSessionLocal
 
         windows = [
@@ -2245,6 +2253,7 @@ def _backfill_window_batch(
         ]
 
         # 预加载（子任务内 1 次）
+        _preload_t0 = _time.monotonic()
         async with AsyncSessionLocal() as db:
             stmt = select(LoopLedger).where(
                 LoopLedger.is_active.is_(True),
@@ -2256,6 +2265,7 @@ def _backfill_window_batch(
             loops = list(result.scalars().all())
 
             if not loops:
+                logger.warning("[子任务] 无可用回路，提前返回")
                 return {"success": 0, "inconclusive": 0, "failed": 0, "failed_windows": []}
 
             metric_result = await db.execute(select(MetricConfig))
@@ -2265,12 +2275,20 @@ def _backfill_window_batch(
 
             type_weights = await get_loop_type_weights_map(db)
             loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+        logger.info(
+            "[子任务] 预加载完成: loops=%d, metrics=%d, configs=%d, 耗时=%.2fs",
+            len(loops),
+            len(metric_configs),
+            len(loop_configs),
+            _time.monotonic() - _preload_t0,
+        )
 
         agg = {"success": 0, "inconclusive": 0, "failed": 0, "failed_windows": []}
 
-        for w in windows:
+        for w_idx, w in enumerate(windows, 1):
             w_start = w
             w_end = w + timedelta(hours=1)
+            _w_t0 = _time.monotonic()
             try:
                 results = await _run_batch_loop_calculations(
                     loops=loops,
@@ -2286,16 +2304,33 @@ def _backfill_window_batch(
                 agg["inconclusive"] += summary["inconclusive"]
                 agg["failed"] += summary["failed"]
                 logger.info(
-                    "子任务窗口 %s: ok=%d, inconclusive=%d, failed=%d",
+                    "[子任务] 窗口 %d/%d %s: ok=%d, inconclusive=%d, failed=%d, 耗时=%.2fs",
+                    w_idx,
+                    len(windows),
                     w.isoformat(),
                     summary["success"],
                     summary["inconclusive"],
                     summary["failed"],
+                    _time.monotonic() - _w_t0,
                 )
             except Exception as exc:  # noqa: BLE001
                 agg["failed_windows"].append(w.isoformat())
-                logger.warning("子任务窗口 %s 失败: %s", w.isoformat(), exc)
+                logger.exception(
+                    "[子任务] 窗口 %d/%d %s 失败: %s",
+                    w_idx,
+                    len(windows),
+                    w.isoformat(),
+                    exc,
+                )
 
+        logger.info(
+            "[子任务] 全部完成: windows=%d, ok=%d, inconclusive=%d, failed=%d, 总耗时=%.2fs",
+            len(windows),
+            agg["success"],
+            agg["inconclusive"],
+            agg["failed"],
+            _time.monotonic() - _sub_t0,
+        )
         return agg
 
     return self.run_async(_run())
@@ -2644,6 +2679,9 @@ async def _do_backfill(
     failed_windows: list[str] = []
 
     # ── Phase 2: 多进程并行计算（Celery group + 异步轮询，不阻塞事件循环） ──
+    import time as _time
+
+    _phase2_t0 = _time.monotonic()
     window_isos = [w.isoformat() for w in windows]
     batches = [
         window_isos[i : i + _BACKFILL_PROCESS_BATCH]
@@ -2651,22 +2689,45 @@ async def _do_backfill(
     ]
     num_batches = len(batches)
     logger.info(
-        "回填Celery并行: %d 窗口 → %d 子任务（每批 %d 窗口）",
+        "[Phase2] 启动 Celery 并行: %d 窗口 → %d 子任务（每批 %d 窗口）",
         total,
         num_batches,
         _BACKFILL_PROCESS_BATCH,
     )
 
     # 提交所有子任务（非阻塞）
+    _dispatch_t0 = _time.monotonic()
     job = group(
         _backfill_window_batch.s(batch, loop_ids=loop_ids) for batch in batches
     )
     group_result = job.apply_async()
+    _dispatch_ids = [r.id for r in group_result.results]
+    logger.info(
+        "[Phase2] 子任务已派发: %d 个, celery_ids=%s, 派发耗时=%.2fs",
+        len(_dispatch_ids),
+        _dispatch_ids[:5],  # 只打印前 5 个避免刷屏
+        _time.monotonic() - _dispatch_t0,
+    )
 
     # 异步轮询结果（每 2 秒检查一次，不阻塞事件循环）
     # Celery prefork 16 进程：1 个运行主任务，最多 15 个并行子任务
-    completed_windows = 0
+    _poll_count = 0
     while not group_result.ready():
+        _poll_count += 1
+        # 每 10 次轮询（~20s）打印一次详细状态
+        if _poll_count % 10 == 1:
+            _states = []
+            for i, r in enumerate(group_result.results):
+                st = r.state  # PENDING/STARTED/SUCCESS/FAILURE/RETRY
+                _states.append(f"batch{i}:{st}")
+            _done = sum(1 for r in group_result.results if r.successful())
+            logger.info(
+                "[Phase2] 轮询#%d: done=%d/%d, 状态=[%s]",
+                _poll_count,
+                _done,
+                num_batches,
+                ", ".join(_states[:8]),  # 前 8 个
+            )
         # 更新进度（基于已完成的子任务数）
         completed = sum(1 for r in group_result.results if r.successful())
         if completed > 0 and task_id and total > 0:
@@ -2676,24 +2737,67 @@ async def _do_backfill(
                     task_id, int(est_progress), total, loops_count, loops_count
                 )
             except Exception:
-                pass
+                logger.warning("[Phase2] 更新进度失败", exc_info=True)
         await asyncio.sleep(2)
 
+    logger.info(
+        "[Phase2] 所有子任务完成: 轮询次数=%d, 总耗时=%.2fs",
+        _poll_count,
+        _time.monotonic() - _phase2_t0,
+    )
+
     # 收集所有子任务结果（禁止在 task 内调用 .get()，直接访问 .result 属性）
+    _collect_t0 = _time.monotonic()
     for i, r in enumerate(group_result.results):
         batch = batches[i]
         try:
             if r.successful():
                 batch_result = r.result
+                logger.info(
+                    "[Phase2] 收集 batch%d/%d (%s) 成功: celery_id=%s, ok=%d, failed=%d",
+                    i + 1,
+                    num_batches,
+                    batch[0],
+                    r.id,
+                    batch_result.get("success", 0),
+                    batch_result.get("failed", 0),
+                )
             else:
+                # 子任务失败 — 记录详细错误
+                _err = r.result  # 异常对象
+                logger.error(
+                    "[Phase2] 收集 batch%d/%d (%s) 失败: celery_id=%s, state=%s, error=%s",
+                    i + 1,
+                    num_batches,
+                    batch[0],
+                    r.id,
+                    r.state,
+                    _err,
+                )
                 batch_result = {"success": 0, "inconclusive": 0, "failed": len(batch), "failed_windows": batch}
-        except Exception:
+        except Exception as exc:
+            logger.exception(
+                "[Phase2] 收集 batch%d/%d (%s) 异常: celery_id=%s",
+                i + 1,
+                num_batches,
+                batch[0],
+                r.id,
+            )
             batch_result = {"success": 0, "inconclusive": 0, "failed": len(batch), "failed_windows": batch}
 
         agg_loop_success += batch_result.get("success", 0)
         agg_loop_inconclusive += batch_result.get("inconclusive", 0)
         agg_loop_failed += batch_result.get("failed", 0)
         failed_windows.extend(batch_result.get("failed_windows", []))
+
+    logger.info(
+        "[Phase2] 结果汇总: ok=%d, inconclusive=%d, failed=%d, failed_windows=%d, 收集耗时=%.2fs",
+        agg_loop_success,
+        agg_loop_inconclusive,
+        agg_loop_failed,
+        len(failed_windows),
+        _time.monotonic() - _collect_t0,
+    )
 
     logger.info(
         "回填回路计算完成: ok=%d, inconclusive=%d, failed=%d",
@@ -2703,6 +2807,11 @@ async def _do_backfill(
     )
 
     # ── Phase 3: 统一节点级聚合（全部窗口完成后执行一次，而非每窗口重复） ──
+    _phase3_t0 = _time.monotonic()
+    logger.info(
+        "[Phase3] 节点级聚合开始: windows=%d",
+        total,
+    )
     agg_node_success = 0
     try:
         from app.models.plant_node import PlantNode
@@ -2714,8 +2823,15 @@ async def _do_backfill(
             )
             nodes = list(node_result.scalars().all())
 
+        logger.info(
+            "[Phase3] 加载 KPI 启用节点: %d 个, 耗时=%.2fs",
+            len(nodes),
+            _time.monotonic() - _phase3_t0,
+        )
+
         if nodes:
-            for w in windows:
+            _node_loop_t0 = _time.monotonic()
+            for n_idx, w in enumerate(windows, 1):
                 w_start = w
                 w_end = w + timedelta(hours=1)
                 node_result = await batch_calculate_and_save_node_snapshots(
@@ -2725,11 +2841,38 @@ async def _do_backfill(
                     concurrency=10,
                 )
                 agg_node_success += node_result.get("success", 0)
+                if n_idx % 10 == 0 or n_idx == total:
+                    logger.info(
+                        "[Phase3] 节点聚合进度 %d/%d %s: node_success=%d, 累计耗时=%.2fs",
+                        n_idx,
+                        total,
+                        w.isoformat(),
+                        agg_node_success,
+                        _time.monotonic() - _node_loop_t0,
+                    )
             logger.info(
-                "回填节点聚合完成: windows=%d, node_success=%d", total, agg_node_success
+                "[Phase3] 节点聚合完成: windows=%d, node_success=%d, 总耗时=%.2fs",
+                total,
+                agg_node_success,
+                _time.monotonic() - _phase3_t0,
             )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("回填节点聚合失败: %s", exc)
+        logger.exception(
+            "[Phase3] 节点聚合失败: %s (耗时=%.2fs)",
+            exc,
+            _time.monotonic() - _phase3_t0,
+        )
+
+    logger.info(
+        "[回填] 全流程完成: windows=%d, loop_ok=%d, loop_failed=%d, node_success=%d, Phase2=%.2fs, Phase3=%.2fs, 总耗时=%.2fs",
+        total,
+        agg_loop_success,
+        agg_loop_failed,
+        agg_node_success,
+        _time.monotonic() - _phase2_t0,
+        _time.monotonic() - _phase3_t0,
+        _time.monotonic() - _phase2_t0,
+    )
 
     return {
         "total_windows": total,
