@@ -122,6 +122,24 @@ class TDengineProvider:
                 logger.debug("宽表查询: 回路 %s 无数据 (subtable=%s)", loop_id, subtable)
                 return RawTimeSeries(timestamps=[], signals={}, quality_codes={})
 
+            # 6.5 前向填充 COV 列（sp/mode/pid_p/i/d）
+            # 这些角色采用变化时推送（COV），宽表中稀疏存储，需展开为完整曲线。
+            # 先查询窗口起点之前的最后有效值作为初始值（解决窗口开头为 NULL 的情况）。
+            from app.core.tdengine_native import (
+                COV_FILL_COLUMNS,
+                query_last_values_before,
+            )
+
+            initial = await query_last_values_before(subtable, start_str)
+            last_vals: dict[str, Any] = {c: initial.get(c) for c in COV_FILL_COLUMNS}
+            for row in rows:
+                for c in COV_FILL_COLUMNS:
+                    v = row.get(c)
+                    if v is None:
+                        row[c] = last_vals[c]
+                    else:
+                        last_vals[c] = v
+
             # 7. 转换为 RawTimeSeries
             timestamps = [_parse_ts(row.get("ts")) for row in rows]
             signals: dict[str, list[Any]] = {}

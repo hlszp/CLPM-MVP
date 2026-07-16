@@ -318,6 +318,51 @@ async def query_wide_table_native(
     return await execute_native(sql)
 
 
+# COV（变化时推送）列：这些角色稳定不变时不推送，在宽表中稀疏存储，
+# 查询时需前向填充展开。PV/OP 为高频连续量，不在此列。
+COV_FILL_COLUMNS = ("sp", "mode", "pid_p", "pid_i", "pid_d")
+
+
+async def query_last_values_before(
+    subtable: str,
+    start_time: str,
+) -> dict[str, Any]:
+    """查询窗口起点之前每个 COV 列的最后一个非 NULL 值（前向填充初始值）。
+
+    用于趋势/KPI 查询时展开 COV 稀疏数据：当查询窗口内某列开头为 NULL 时，
+    用窗口之前最后一次变化的值作为初始值。TDengine LAST() 自动忽略 NULL。
+
+    Args:
+        subtable: 子表名
+        start_time: 窗口开始时间（该时刻之前的最后有效值）
+
+    Returns:
+        {列名: 最后有效值}，无数据时返回空 dict
+    """
+    cols = ", ".join(f"LAST({c})" for c in COV_FILL_COLUMNS)
+    sql = (
+        f"SELECT {cols} "
+        f"FROM {settings.TDENGINE_DB}.{subtable} "
+        f"WHERE ts < '{start_time}'"
+    )
+    try:
+        rows = await execute_native(sql)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("查询 COV 初始值失败 (subtable=%s): %s", subtable, exc)
+        return {}
+    if not rows:
+        return {}
+    row = rows[0]
+    # execute_native 返回的列名形如 last(sp)，归一化为原列名
+    result: dict[str, Any] = {}
+    for col in COV_FILL_COLUMNS:
+        val = row.get(f"last({col})")
+        if val is None:
+            val = row.get(f"LAST({col})")
+        result[col] = val
+    return result
+
+
 # ---------------------------------------------------------------------------
 # 多表批量写入（RealtimeSubscriber 专用，一次 SQL 写入多个子表）
 # ---------------------------------------------------------------------------
