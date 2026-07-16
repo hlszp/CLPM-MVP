@@ -82,6 +82,13 @@ export function cancelImportApi(taskId: string) {
   );
 }
 
+/** 删除导入任务 */
+export function deleteImportApi(taskId: string) {
+  return requestClient.delete<{ taskId: string }>(
+    `/loops/data-import/${taskId}`,
+  );
+}
+
 /** 查询导入任务列表 */
 export function getImportTasksApi(params: { page: number; pageSize: number }) {
   return requestClient.get<LoopDataApi.ImportTaskList>(

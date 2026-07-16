@@ -36,6 +36,7 @@ import dayjs from 'dayjs';
 import { getLoopListApi, type LoopApi } from '#/api/loop';
 import {
   cancelImportApi,
+  deleteImportApi,
   getImportTasksApi,
   startImportApi,
   triggerBackfillApi,
@@ -174,7 +175,7 @@ const taskColumns: TableColumnsType = [
   {
     title: '操作',
     key: 'action',
-    width: 140,
+    width: 180,
     fixed: 'right',
     customRender: ({ record }) => {
       const isActive =
@@ -200,6 +201,18 @@ const taskColumns: TableColumnsType = [
               },
               () => '回算',
             ),
+        // 删除按钮：仅终态任务可删除（活跃任务需先取消）
+        h(
+          Button,
+          {
+            size: 'small',
+            type: 'link',
+            danger: true,
+            disabled: isActive,
+            onClick: () => handleDelete(record.taskId),
+          },
+          () => '删除',
+        ),
       ]);
     },
   },
@@ -303,6 +316,25 @@ async function handleBackfill(taskId: string) {
   } catch {
     message.error('触发回算失败');
   }
+}
+
+function handleDelete(taskId: string) {
+  Modal.confirm({
+    title: '确认删除',
+    content: '删除后该导入任务记录将不可恢复，确定删除吗？',
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await deleteImportApi(taskId);
+        message.success('已删除导入任务');
+        await loadTasks();
+      } catch {
+        message.error('删除失败');
+      }
+    },
+  });
 }
 
 function hasActiveTasks() {

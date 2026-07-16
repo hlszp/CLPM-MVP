@@ -667,9 +667,33 @@ async def cancel_import_task(task_id: str) -> dict[str, Any] | None:
     return _task_to_response(data)
 
 
+async def delete_import_task(task_id: str) -> bool:
+    """删除导入任务记录（从 Redis Hash 与索引中移除）.
+
+    仅允许删除非活跃任务（终态：SUCCESS/FAILED/CANCELLED）。
+    活跃任务（PENDING/RUNNING）需先取消再删除。
+
+    Returns:
+        True 删除成功；None 表示任务不存在（供 API 区分 404）
+    """
+    data = await _get_task(task_id)
+    if not data:
+        return None  # type: ignore[return-value]
+
+    status_val = str(data.get("status", "")).upper()
+    if status_val in (ImportStatus.PENDING.value, ImportStatus.RUNNING.value):
+        raise ValueError("任务正在执行中，请先取消再删除")
+
+    await redis_client.delete(_task_key(task_id))
+    await redis_client.zrem(_IMPORT_TASK_INDEX, task_id)
+    logger.info("导入任务已删除: task_id=%s", task_id)
+    return True
+
+
 __all__ = [
     "cancel_import_task",
     "create_import_task",
+    "delete_import_task",
     "get_import_task",
     "import_history_data",
     "list_import_tasks",

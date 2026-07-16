@@ -200,6 +200,36 @@ async def cancel_import(
     return success(data=data, message="导入任务已取消")
 
 
+@router.delete("/{task_id}", response_model=ApiResponse[dict])
+async def delete_import(
+    task_id: str,
+    _: SysUser = Depends(require_roles(*_IMPORT_ROLES)),
+) -> dict:
+    """删除导入任务记录.
+
+    仅允许删除终态任务（SUCCESS/FAILED/CANCELLED）；
+    活跃任务（PENDING/RUNNING）需先取消。
+    """
+    from app.services.data_import import delete_import_task
+
+    try:
+        result = await delete_import_task(task_id)
+    except ValueError as exc:
+        raise BizError(
+            code="ERR_TASK_ACTIVE",
+            message=str(exc),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        ) from exc
+
+    if result is None:
+        raise BizError(
+            code="ERR_TASK_NOT_FOUND",
+            message=f"导入任务不存在: {task_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    return success(data={"taskId": task_id}, message="导入任务已删除")
+
+
 @router.post("/{task_id}/backfill-kpi", response_model=ApiResponse[dict])
 async def trigger_backfill(
     task_id: str,
