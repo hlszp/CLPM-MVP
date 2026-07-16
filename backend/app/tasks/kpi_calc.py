@@ -633,11 +633,16 @@ async def _run_batch_loop_calculations(
     type_weights: dict[str, dict] | None,
     custom_task_id: str | None = None,
     on_completed=None,
+    bundle_cache=None,
 ) -> list[dict | None | Exception]:
     """Run loop KPI calculations with shared bounded-concurrency orchestration.
 
     Each loop receives an independent database session. Standard and custom
     batches differ only in snapshot destination and optional progress callback.
+
+    Args:
+        bundle_cache: L2 Bundle 缓存实例。None=使用共享缓存（标准/自定义评估），
+            False=禁用 L1/L2 缓存（backfill 场景，避免无用的缓存读写 I/O）。
     """
     from app.core.db import AsyncSessionLocal
 
@@ -653,7 +658,7 @@ async def _run_batch_loop_calculations(
                     config_loader = _make_config_loader(loop_configs.get(str(loop.id)))
                     data_planner = _build_data_planner(
                         worker_db,
-                        bundle_cache=_get_shared_bundle_cache(),
+                        bundle_cache=False if bundle_cache is False else _get_shared_bundle_cache(),
                     )
                     data_planner._config_loader = config_loader
                     data_planner._preloaded_op_limits = op_limits_map
@@ -1465,16 +1470,18 @@ def _build_data_planner(db, bundle_cache=None):
     from app.services.metric_data_bundle import MetricDataBundleAssembler
 
     query_fn = get_provider().make_query_fn(db)
-    cache = L1DataBlockCache(redis_client)
     assembler = MetricDataBundleAssembler()
 
-    # L2 Bundle 缓存（默认启用，传入 False 显式禁用）
+    # L2 Bundle 缓存（默认启用，传入 False 显式禁用 L1 + L2）
     if bundle_cache is False:
         l2_cache = None
-    elif bundle_cache is not None:
-        l2_cache = bundle_cache
+        cache = None  # 同时禁用 L1 缓存（backfill 场景，避免无用 Redis I/O）
     else:
-        l2_cache = L2BundleCache(redis_client)
+        cache = L1DataBlockCache(redis_client)
+        if bundle_cache is not None:
+            l2_cache = bundle_cache
+        else:
+            l2_cache = L2BundleCache(redis_client)
 
     return DataPlanner(
         cache=cache,
@@ -2358,7 +2365,16 @@ async def _do_backfill(
     loop_ids: list[str] | None = None,
     task_id: str | None = None,
 ) -> dict:
-    """批量回填 async 逻辑：遍历小时窗口，每窗口全量回路计算 + 节点聚合。"""
+    """批量回填 async 逻辑：遍历小时窗口，每窗口全量回路计算 + 最终统一节点聚合。
+
+    v4.1 优化（2026-07-16）：
+    - 预加载回路列表/配置/指标配置（1 次 PG 查询，而非 N×窗口次）
+    - 跳过 L2 缓存检查 + 兜底预热（backfill 场景缓存 Key 含时间窗口，必然 MISS）
+    - 使用 bundle_cache=False 禁用 L1/L2 缓存读写（backfill 不会复用，纯浪费 I/O）
+    - 节点级聚合改为全部窗口完成后统一执行一次（而非每窗口重复聚合）
+    """
+    from app.core.db import AsyncSessionLocal
+
     start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
     end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
 
@@ -2389,12 +2405,50 @@ async def _do_backfill(
         "all" if loop_ids is None else f"{len(loop_ids)} loops",
     )
 
+    # ── Phase 1: 预加载（全窗口共享，1 次 PG 查询） ──
+    async with AsyncSessionLocal() as db:
+        stmt = select(LoopLedger).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
+        )
+        if loop_ids is not None:
+            stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+        loop_result = await db.execute(stmt)
+        loops = list(loop_result.scalars().all())
+
+        if not loops:
+            return {
+                "total_windows": total,
+                "failed_windows": 0,
+                "loop_success": 0,
+                "loop_inconclusive": 0,
+                "loop_failed": 0,
+                "node_success": 0,
+                "failed_window_list": [],
+            }
+
+        metric_result = await db.execute(select(MetricConfig))
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+        from app.services.loop_config import get_loop_type_weights_map
+
+        type_weights = await get_loop_type_weights_map(db)
+        loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+
+    loops_count = len(loops)
+    logger.info(
+        "回填预加载完成: loops=%d, windows=%d, metric_configs=%d",
+        loops_count,
+        total,
+        len(metric_configs),
+    )
+
     agg_loop_success = 0
     agg_loop_inconclusive = 0
     agg_loop_failed = 0
-    agg_node_success = 0
     failed_windows: list[str] = []
 
+    # ── Phase 2: 逐窗口计算（跳过缓存，直接 TDengine → 预处理 → 计算 → UPSERT） ──
     for i, w in enumerate(windows, 1):
         if task_id:
             try:
@@ -2411,7 +2465,7 @@ async def _do_backfill(
                         "loop_success": agg_loop_success,
                         "loop_inconclusive": agg_loop_inconclusive,
                         "loop_failed": agg_loop_failed,
-                        "node_success": agg_node_success,
+                        "node_success": 0,
                         "failed_window_list": failed_windows,
                         "cancelled": True,
                         "completed_windows": i - 1,
@@ -2419,30 +2473,72 @@ async def _do_backfill(
             except Exception:
                 logger.warning("查询取消标志失败，继续执行: task_id=%s", task_id, exc_info=True)
 
+        w_start = w
+        w_end = w + timedelta(hours=1)
+
         try:
-            loop_result = await _do_calculate(
-                ts_start=w.isoformat(),
-                loop_ids=loop_ids,
-                task_id=task_id,
-                window_index=i,
-                total_windows=total,
+            results = await _run_batch_loop_calculations(
+                loops=loops,
+                loop_configs=loop_configs,
+                metric_configs=metric_configs,
+                ts_start=w_start,
+                ts_end=w_end,
+                type_weights=type_weights,
+                bundle_cache=False,  # ← 禁用 L1/L2 缓存，backfill 场景纯浪费 I/O
+                on_completed=None,
             )
-            node_result = await _do_calculate_node_kpi()
-            agg_loop_success += loop_result.get("success", 0)
-            agg_loop_inconclusive += loop_result.get("inconclusive", 0)
-            agg_loop_failed += loop_result.get("failed", 0)
-            agg_node_success += node_result.get("success", 0)
+            summary = _summarize_batch_results(results)
+            agg_loop_success += summary["success"]
+            agg_loop_inconclusive += summary["inconclusive"]
+            agg_loop_failed += summary["failed"]
+
+            # 更新进度
+            if task_id and total > 0:
+                await _update_backfill_progress(
+                    task_id, i, total, loops_count, loops_count
+                )
+
             logger.info(
-                "回填进度 [%d/%d] %s: loop_ok=%d, node_ok=%d",
+                "回填进度 [%d/%d] %s: ok=%d, inconclusive=%d, failed=%d",
                 i,
                 total,
                 w.isoformat(),
-                loop_result.get("success", 0),
-                node_result.get("success", 0),
+                summary["success"],
+                summary["inconclusive"],
+                summary["failed"],
             )
         except Exception as exc:  # noqa: BLE001
             failed_windows.append(w.isoformat())
             logger.warning("回填窗口 %s 失败: %s", w.isoformat(), exc)
+
+    # ── Phase 3: 统一节点级聚合（全部窗口完成后执行一次，而非每窗口重复） ──
+    agg_node_success = 0
+    try:
+        from app.models.plant_node import PlantNode
+        from app.services.node_performance import batch_calculate_and_save_node_snapshots
+
+        async with AsyncSessionLocal() as db:
+            node_result = await db.execute(
+                select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
+            )
+            nodes = list(node_result.scalars().all())
+
+        if nodes:
+            for w in windows:
+                w_start = w
+                w_end = w + timedelta(hours=1)
+                node_result = await batch_calculate_and_save_node_snapshots(
+                    nodes=nodes,
+                    ts_start=w_start,
+                    ts_end=w_end,
+                    concurrency=10,
+                )
+                agg_node_success += node_result.get("success", 0)
+            logger.info(
+                "回填节点聚合完成: windows=%d, node_success=%d", total, agg_node_success
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("回填节点聚合失败: %s", exc)
 
     return {
         "total_windows": total,

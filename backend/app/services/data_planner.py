@@ -144,7 +144,7 @@ class DataPlanner:
 
     def __init__(
         self,
-        cache: L1DataBlockCache,
+        cache: L1DataBlockCache | None,
         tdengine_query_fn: TDengineQueryFn,
         assembler: MetricDataBundleAssembler,
         db: Any | None = None,
@@ -498,7 +498,7 @@ class DataPlanner:
                 pre_version=PREPROCESS_VERSION,
                 cfg_version=preprocess_config.config_version,
             )
-            cached = await self._cache.get(cache_key)
+            cached = await self._cache.get(cache_key) if self._cache else None
             if cached is not None:
                 return task.tag_group, cached, None
             data_block = await self._query_and_preprocess(
@@ -539,8 +539,8 @@ class DataPlanner:
                 derived.point_count,
             )
 
-        # Phase 7: Pipeline 批量写入未命中的 DataBlock
-        if pending_writes:
+        # Phase 7: Pipeline 批量写入未命中的 DataBlock（cache=None 时跳过）
+        if pending_writes and self._cache:
             keys = [k for k, _ in pending_writes]
             blocks = [b for _, b in pending_writes]
             written = await self._cache.set_many(blocks, keys=keys)
