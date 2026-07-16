@@ -13,7 +13,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { LoopDataApi } from '#/api/loop-data';
 
-import { computed, h, onMounted, onUnmounted, ref } from 'vue';
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -24,12 +24,15 @@ import {
   DatePicker,
   message,
   Modal,
+  Pagination,
+  Progress,
   Radio,
   RadioGroup,
   Select,
   Spin,
   Table,
   Tag,
+  TreeSelect,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -41,11 +44,61 @@ import {
   startImportApi,
   triggerBackfillApi,
 } from '#/api/loop-data';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmPageToolbar } from '#/components/clpm';
 
 defineOptions({ name: 'LoopData' });
 
 const { RangePicker } = DatePicker;
+
+// --- 工厂模型节点树 ---
+interface TreeNode {
+  id: string;
+  name: string;
+  type: string;
+  parentId: null | string;
+  children?: TreeNode[];
+  pId?: string;
+  value?: string;
+  title?: string;
+  isLeaf?: boolean;
+}
+const plantTree = ref<TreeNode[]>([]);
+const selectedPlantNodeIds = ref<string[]>([]);
+
+/** 递归收集节点下所有 UNIT 子节点 ID */
+function collectUnitIds(nodes: TreeNode[], acc: Set<string>) {
+  for (const n of nodes) {
+    if (n.type === 'UNIT') acc.add(n.id);
+    if (n.children) collectUnitIds(n.children, acc);
+  }
+}
+
+/** 递归格式化树节点给 TreeSelect */
+function formatTreeForSelect(nodes: TreeNode[]): TreeNode[] {
+  return nodes.map((n) => {
+    const formatted: TreeNode = {
+      ...n,
+      value: n.id,
+      title: n.name,
+      pId: n.parentId ?? undefined,
+      isLeaf: n.type === 'UNIT',
+    };
+    if (n.children && n.children.length > 0) {
+      formatted.children = formatTreeForSelect(n.children);
+    }
+    return formatted;
+  });
+}
+
+async function loadPlantTree() {
+  try {
+    const resp = await getPlantNodeTreeApi();
+    plantTree.value = resp ?? [];
+  } catch {
+    // 静默处理
+  }
+}
 
 // --- 回路选择 ---
 const loops = ref<LoopApi.LoopListItem[]>([]);
@@ -53,14 +106,55 @@ const selectedLoopIds = ref<string[]>([]);
 const loadingLoops = ref(false);
 const searchKeyword = ref('');
 
+// --- 回路列表分页 ---
+const loopPage = ref(1);
+const loopPageSize = ref(50);
+const totalFilteredLoops = computed(() => filteredLoops.value.length);
+
+const paginatedLoops = computed(() => {
+  const start = (loopPage.value - 1) * loopPageSize.value;
+  return filteredLoops.value.slice(start, start + loopPageSize.value);
+});
+
+/** 节点筛选/搜索变化时重置分页到第 1 页 */
+watch([selectedPlantNodeIds, searchKeyword], () => {
+  loopPage.value = 1;
+});
+
 const filteredLoops = computed(() => {
-  if (!searchKeyword.value) return loops.value;
-  const kw = searchKeyword.value.toLowerCase();
-  return loops.value.filter(
-    (l) =>
-      l.tagName?.toLowerCase().includes(kw) ||
-      l.description?.toLowerCase().includes(kw),
-  );
+  let result = loops.value;
+
+  // 按工厂模型节点筛选
+  if (selectedPlantNodeIds.value.length > 0) {
+    const unitIdSet = new Set<string>();
+    for (const nodeId of selectedPlantNodeIds.value) {
+      const findNode = (nodes: TreeNode[]): TreeNode | null => {
+        for (const n of nodes) {
+          if (n.id === nodeId) return n;
+          if (n.children) {
+            const found = findNode(n.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const node = findNode(plantTree.value);
+      if (node) collectUnitIds(node.type === 'UNIT' ? [{ ...node, children: [] }] : [node], unitIdSet);
+    }
+    result = result.filter((l) => unitIdSet.has(l.unitId));
+  }
+
+  // 按关键词搜索
+  if (searchKeyword.value) {
+    const kw = searchKeyword.value.toLowerCase();
+    result = result.filter(
+      (l) =>
+        l.tagName?.toLowerCase().includes(kw) ||
+        l.description?.toLowerCase().includes(kw),
+    );
+  }
+
+  return result;
 });
 
 const allSelected = computed(
@@ -130,10 +224,18 @@ const taskColumns: TableColumnsType = [
   {
     title: '进度',
     key: 'progress',
-    width: 160,
+    width: 180,
     customRender: ({ record }) => {
       const pct = Math.round((record.progress ?? 0) * 100);
-      return `${record.importedCount}/${record.loopCount} (${pct}%)`;
+      return h('div', {}, [
+        h('div', { class: 'text-xs mb-1' }, `${record.importedCount}/${record.loopCount} (${pct}%)`),
+        h(Progress, {
+          percent: pct,
+          size: 'small',
+          strokeColor: record.status === 'FAILED' ? '#ff4d4f' : '#1890ff',
+          showInfo: false,
+        }),
+      ]);
     },
   },
   {
@@ -346,7 +448,7 @@ function hasActiveTasks() {
 // --- 生命周期 ---
 
 onMounted(async () => {
-  await Promise.all([loadLoops(), loadTasks()]);
+  await Promise.all([loadPlantTree(), loadLoops(), loadTasks()]);
   // 有活跃任务时轮询
   pollTimer = setInterval(() => {
     if (hasActiveTasks()) {
@@ -371,10 +473,10 @@ onUnmounted(() => {
       subtitle="从远端 API 导入历史数据到本地 TDengine，支持冲突处理与 KPI 回算"
     />
 
-    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+    <div class="mt-4 flex gap-4" style="height: calc(100vh - 200px)">
       <!-- 左侧：回路选择 -->
-      <div class="lg:col-span-1">
-        <div class="rounded border p-3">
+      <div class="flex w-72 flex-col">
+        <div class="flex flex-1 flex-col rounded border p-3">
           <div class="mb-2 flex items-center justify-between">
             <span class="font-medium">回路选择</span>
             <Checkbox
@@ -385,27 +487,40 @@ onUnmounted(() => {
               全选
             </Checkbox>
           </div>
+          <!-- 工厂模型节点树筛选 -->
+          <TreeSelect
+            v-model:value="selectedPlantNodeIds"
+            :tree-data="formatTreeForSelect(plantTree)"
+            :field-names="{ children: 'children', label: 'title', value: 'value' }"
+            tree-checkable
+            multiple
+            show-checked-strategy="SHOW_CHILD"
+            placeholder="按装置/单元筛选..."
+            class="mb-2 w-full shrink-0"
+            :allow-clear="true"
+            :max-tag-count="2"
+            size="small"
+          />
           <input
             v-model="searchKeyword"
             placeholder="搜索回路..."
-            class="mb-2 w-full border px-2 py-1 text-sm"
+            class="mb-2 w-full shrink-0 border px-2 py-1 text-sm"
           />
-          <Spin :spinning="loadingLoops">
+          <Spin :spinning="loadingLoops" class="flex-1 overflow-hidden">
             <CheckboxGroup
               v-model:value="selectedLoopIds"
-              class="flex flex-col"
-              style="max-height: 400px; overflow-y: auto"
+              class="flex h-full flex-col overflow-y-auto"
             >
               <div
-                v-for="loop in filteredLoops"
+                v-for="loop in paginatedLoops"
                 :key="loop.loopId"
-                class="flex items-center py-0.5"
+                class="flex shrink-0 items-center overflow-hidden py-0.5"
               >
-                <Checkbox :value="loop.loopId">
-                  <span class="text-sm">{{ loop.tagName }}</span>
+                <Checkbox :value="loop.loopId" class="overflow-hidden">
+                  <span class="inline-block max-w-[120px] truncate align-middle text-sm">{{ loop.tagName }}</span>
                   <span
                     v-if="loop.description"
-                    class="ml-1 text-xs text-gray-400"
+                    class="ml-1 inline-block max-w-[80px] truncate align-middle text-xs text-gray-400"
                   >
                     {{ loop.description }}
                   </span>
@@ -413,14 +528,23 @@ onUnmounted(() => {
               </div>
             </CheckboxGroup>
           </Spin>
-          <div class="mt-2 text-xs text-gray-400">
+          <div class="mt-2 shrink-0 text-xs text-gray-400">
             已选: {{ selectedLoopIds.length }}/{{ loops.length }}
           </div>
+          <Pagination
+            v-if="totalFilteredLoops > loopPageSize"
+            v-model:current="loopPage"
+            :total="totalFilteredLoops"
+            :page-size="loopPageSize"
+            size="small"
+            show-less-items
+            class="mt-2 shrink-0 text-center"
+          />
         </div>
       </div>
 
       <!-- 右侧：导入参数 + 任务列表 -->
-      <div class="lg:col-span-2">
+      <div class="flex-1">
         <!-- 导入参数 -->
         <div class="mb-4 rounded border p-4">
           <div class="mb-3 font-medium">历史数据导入</div>
