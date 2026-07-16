@@ -108,7 +108,7 @@ const searchKeyword = ref('');
 
 // --- 回路列表分页 ---
 const loopPage = ref(1);
-const loopPageSize = ref(50);
+const loopPageSize = ref(20);
 const totalFilteredLoops = computed(() => filteredLoops.value.length);
 
 const paginatedLoops = computed(() => {
@@ -506,7 +506,7 @@ onUnmounted(() => {
             placeholder="搜索回路..."
             class="mb-2 w-full shrink-0 border px-2 py-1 text-sm"
           />
-          <Spin :spinning="loadingLoops" class="flex-1 overflow-hidden">
+          <Spin :spinning="loadingLoops" class="min-h-0 flex-1">
             <CheckboxGroup
               v-model:value="selectedLoopIds"
               class="flex h-full flex-col overflow-y-auto"
@@ -532,10 +532,12 @@ onUnmounted(() => {
             已选: {{ selectedLoopIds.length }}/{{ loops.length }}
           </div>
           <Pagination
-            v-if="totalFilteredLoops > loopPageSize"
+            v-if="totalFilteredLoops > 0"
             v-model:current="loopPage"
+            v-model:page-size="loopPageSize"
             :total="totalFilteredLoops"
-            :page-size="loopPageSize"
+            show-size-changer
+            :page-size-options="['10', '20', '50', '100']"
             size="small"
             show-less-items
             class="mt-2 shrink-0 text-center"
