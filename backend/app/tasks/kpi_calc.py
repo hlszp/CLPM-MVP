@@ -2679,13 +2679,21 @@ async def _do_backfill(
                 pass
         await asyncio.sleep(2)
 
-    # 收集所有子任务结果
-    batch_results = group_result.get()
-    for r in batch_results:
-        agg_loop_success += r.get("success", 0)
-        agg_loop_inconclusive += r.get("inconclusive", 0)
-        agg_loop_failed += r.get("failed", 0)
-        failed_windows.extend(r.get("failed_windows", []))
+    # 收集所有子任务结果（禁止在 task 内调用 .get()，直接访问 .result 属性）
+    for i, r in enumerate(group_result.results):
+        batch = batches[i]
+        try:
+            if r.successful():
+                batch_result = r.result
+            else:
+                batch_result = {"success": 0, "inconclusive": 0, "failed": len(batch), "failed_windows": batch}
+        except Exception:
+            batch_result = {"success": 0, "inconclusive": 0, "failed": len(batch), "failed_windows": batch}
+
+        agg_loop_success += batch_result.get("success", 0)
+        agg_loop_inconclusive += batch_result.get("inconclusive", 0)
+        agg_loop_failed += batch_result.get("failed", 0)
+        failed_windows.extend(batch_result.get("failed_windows", []))
 
     logger.info(
         "回填回路计算完成: ok=%d, inconclusive=%d, failed=%d",
