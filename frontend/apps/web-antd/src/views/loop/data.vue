@@ -548,9 +548,9 @@ onUnmounted(() => {
       </div>
 
       <!-- 右侧：导入参数 + 任务列表 -->
-      <div class="flex-1">
+      <div class="flex flex-1 flex-col">
         <!-- 导入参数 -->
-        <div class="mb-4 rounded border p-4">
+        <div class="mb-4 shrink-0 rounded border p-4">
           <div class="mb-3 font-medium">历史数据导入</div>
           <div class="grid grid-cols-2 gap-4">
             <div>
@@ -597,21 +597,23 @@ onUnmounted(() => {
         </div>
 
         <!-- 任务列表 -->
-        <div class="rounded border p-4">
-          <div class="mb-3 flex items-center justify-between">
+        <div class="flex min-h-0 flex-1 flex-col rounded border p-4">
+          <div class="mb-3 flex shrink-0 items-center justify-between">
             <span class="font-medium">导入任务列表</span>
             <Button size="small" @click="loadTasks">刷新</Button>
           </div>
-          <Table
-            :columns="taskColumns"
-            :data-source="tasks"
-            :loading="taskLoading"
-            :pagination="taskPagination"
-            row-key="taskId"
-            size="small"
-            :scroll="{ x: 900 }"
-            @change="handleTaskPageChange"
-          />
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <Table
+              :columns="taskColumns"
+              :data-source="tasks"
+              :loading="taskLoading"
+              :pagination="taskPagination"
+              row-key="taskId"
+              size="small"
+              :scroll="{ x: 900 }"
+              @change="handleTaskPageChange"
+            />
+          </div>
         </div>
       </div>
     </div>
