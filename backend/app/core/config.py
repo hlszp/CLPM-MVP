@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     TDENGINE_USER: str = "root"
     TDENGINE_PASSWORD: str = ""  # 必填，通过 .env 设置
     TDENGINE_DB: str = "clpm_ts"
+    # 批量写入批次大小（一条 INSERT SQL 插入的行数，实测 1000 行 7ms）
+    TDENGINE_BATCH_SIZE: int = 1000
+    # 实时数据 flush 间隔（秒，RealtimeSubscriber 缓冲区刷新频率）
+    TDENGINE_FLUSH_INTERVAL: float = 1.0
 
     # ---- Redis ----
     REDIS_HOST: str = "localhost"
@@ -83,7 +87,8 @@ class Settings(BaseSettings):
     SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:7106/signalr/realValueForClpmHub
     SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
     SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连间隔（秒）
-    REALTIME_WRITEBACK_ENABLED: bool = False  # 是否将实时数据写回本地 TDengine 宽表（开发兼容）
+    # 是否将实时数据写回本地 TDengine 宽表（数据架构优化 Phase 1）
+    REALTIME_WRITEBACK_ENABLED: bool = True
 
     # ---- Alerting ----
     ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志

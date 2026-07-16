@@ -27,6 +27,8 @@ import websockets
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.core.redis import redis_client
+from app.core.tdengine import make_subtable_name
+from app.core.tdengine_native import batch_insert_multi
 from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
@@ -301,10 +303,10 @@ class RealtimeSubscriber:
         return result
 
     async def _flush_loop(self) -> None:
-        """每秒 flush 一次缓冲区到 TDengine."""
+        """按配置间隔 flush 缓冲区到 TDengine（默认 1 秒）。"""
         while self._running:
             try:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(settings.TDENGINE_FLUSH_INTERVAL)
                 await self._flush_buffer()
             except asyncio.CancelledError:
                 break
@@ -312,74 +314,101 @@ class RealtimeSubscriber:
                 logger.warning("TDengine flush 异常: %s", exc)
 
     async def _flush_buffer(self) -> None:
-        """将缓冲区数据写入 TDengine."""
+        """将缓冲区数据批量写入 TDengine（一次 SQL 写入多个子表）。
+
+        数据架构优化 Phase 1：从单行 INSERT via REST 改为多表批量 INSERT via taosrest。
+        性能：27 回路 × 1 行 = 1 次 HTTP 请求（原方案 27 次）。
+        """
         async with self._buffer_lock:
             if not self._buffer:
                 return
             buffer_copy = dict(self._buffer)
             self._buffer.clear()
 
+        # 构造多表批量写入数据
+        tables_rows: list[dict[str, Any]] = []
         for loop_part, roles_data in buffer_copy.items():
-            await self._write_loop_data(loop_part, roles_data)
-
-    async def _write_loop_data(self, loop_part: str, roles_data: dict[str, dict]) -> None:
-        """将单回路数据写入 TDengine.
-
-        TDengine 表结构（st_loop_data）：
-            ts TIMESTAMP, pv FLOAT, sp FLOAT, op FLOAT, mode TINYINT,
-            pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT
-        """
-        try:
-            # 子表命名：调用公共函数 make_subtable_name（P3 #54）
-            from app.core.tdengine import execute_sql, make_subtable_name
-
             subtable = make_subtable_name(loop_part)
+            row = self._build_row(roles_data)
+            tables_rows.append({
+                "subtable": subtable,
+                "loop_id": "",
+                "unit_id": "",
+                "rows": [row],
+            })
 
-            # 获取时间戳（取任意一个角色的时间戳）
-            ts_str = ""
-            for role_data in roles_data.values():
-                ts_str = role_data.get("ts", "")
-                if ts_str:
-                    break
-            if not ts_str:
-                ts_str = datetime.now(UTC).isoformat()
+        if not tables_rows:
+            return
 
-            # 构建 INSERT 语句：缺失值用 NULL
-            # 列顺序: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality
-            pv_val = roles_data.get("PV", {}).get("value")
-            sp_val = roles_data.get("SP", {}).get("value")
-            op_val = roles_data.get("OP", {}).get("value")
-            mode_val = roles_data.get("MODE", {}).get("value")
-            pid_p_val = roles_data.get("PID_P", {}).get("value")
-            pid_i_val = roles_data.get("PID_I", {}).get("value")
-            pid_d_val = roles_data.get("PID_D", {}).get("value")
-            pv_quality_val = roles_data.get("PV", {}).get("quality")
+        # 重试逻辑（3 次，指数退避）
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                count = await batch_insert_multi(tables_rows)
+                logger.debug("批量写入 %d 行到 %d 个子表", count, len(tables_rows))
+                return
+            except Exception as exc:  # noqa: BLE001
+                if attempt < max_retries - 1:
+                    wait = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                    logger.warning(
+                        "批量写入失败 (尝试 %d/%d): %s，%ds 后重试",
+                        attempt + 1, max_retries, exc, wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(
+                        "批量写入最终失败 (%d 个子表): %s", len(tables_rows), exc
+                    )
 
-            def fmt_val(v: Any) -> str:
-                if v is None or v == "":
-                    return "NULL"
-                try:
-                    # 数值类型：去掉引号
-                    return str(float(v))
-                except (ValueError, TypeError):
-                    # 非数值（如 MODE 可能是字符串）：加引号
-                    return f"'{str(v)}'"
+    def _build_row(self, roles_data: dict[str, dict]) -> tuple:
+        """构造单行数据。
 
-            sql = (
-                f"INSERT INTO {settings.TDENGINE_DB}.{subtable} VALUES "
-                f"('{ts_str}', {fmt_val(pv_val)}, {fmt_val(sp_val)}, {fmt_val(op_val)}, "
-                f"{fmt_val(mode_val)}, {fmt_val(pid_p_val)}, {fmt_val(pid_i_val)}, "
-                f"{fmt_val(pid_d_val)}, {fmt_val(pv_quality_val)})"
-            )
+        列顺序: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality
+        对应 st_loop_data 超级表 schema。
+        """
+        # 获取时间戳（取任意一个角色的时间戳）
+        ts_str = ""
+        for role_data in roles_data.values():
+            ts_str = role_data.get("ts", "")
+            if ts_str:
+                break
+        if not ts_str:
+            ts_str = datetime.now(UTC).isoformat()
 
-            result = await execute_sql(sql)
-            if not result:
-                logger.debug("TDengine 写入 %s 成功", loop_part)
-            else:
-                logger.warning("TDengine 写入 %s 返回: %s", loop_part, result[:50])
+        # 提取各角色值（缺失值用 None，_format_row 会转为 NULL）
+        pv_val = self._parse_float(roles_data.get("PV", {}).get("value"))
+        sp_val = self._parse_float(roles_data.get("SP", {}).get("value"))
+        op_val = self._parse_float(roles_data.get("OP", {}).get("value"))
+        mode_val = self._parse_int(roles_data.get("MODE", {}).get("value"))
+        pid_p_val = self._parse_float(roles_data.get("PID_P", {}).get("value"))
+        pid_i_val = self._parse_float(roles_data.get("PID_I", {}).get("value"))
+        pid_d_val = self._parse_float(roles_data.get("PID_D", {}).get("value"))
+        pv_quality_val = self._parse_int(roles_data.get("PV", {}).get("quality"))
 
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("写入 TDengine 失败 (%s): %s", loop_part, exc)
+        return (
+            ts_str, pv_val, sp_val, op_val, mode_val,
+            pid_p_val, pid_i_val, pid_d_val, pv_quality_val,
+        )
+
+    @staticmethod
+    def _parse_float(v: Any) -> float | None:
+        """安全解析 float，无效值返回 None。"""
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _parse_int(v: Any) -> int | None:
+        """安全解析 int，无效值返回 None。"""
+        if v is None or v == "":
+            return None
+        try:
+            return int(float(v))
+        except (ValueError, TypeError):
+            return None
 
 
 # 全局单例
