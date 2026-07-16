@@ -88,10 +88,37 @@ async def start_import(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    # 3. 触发 Celery 任务
+    # 3. 先创建导入任务记录（获取 task_id，传给 Celery 任务用于状态跟踪）
     from app.services.data_import import create_import_task
 
-    # 先创建一个占位 Celery task id
+    # 预生成 task_id，以便传给 Celery 任务
+    from uuid import uuid4 as _uuid4
+
+    task_id = str(_uuid4())
+    # 预写入 Redis 占位记录，确保 Celery 任务能更新状态
+    from app.services.data_import import _save_task, _now_iso
+
+    await _save_task({
+        "task_id": task_id,
+        "status": "PENDING",
+        "progress": "0",
+        "loop_count": str(len(body.loopIds)),
+        "imported_count": "0",
+        "error_count": "0",
+        "ts_start": body.tsStart,
+        "ts_end": body.tsEnd,
+        "conflict_strategy": body.conflictStrategy.value,
+        "trigger_backfill": "true" if body.triggerBackfill else "false",
+        "created_at": _now_iso(),
+        "started_at": "",
+        "finished_at": "",
+        "error_message": "",
+        "created_by": user.username,
+        "celery_task_id": "",
+        "loop_ids": "[]",
+    })
+
+    # 触发 Celery 任务，传入 task_id 用于状态跟踪
     from app.tasks.kpi_calc import import_history_data as import_task
 
     celery_result = import_task.delay(
@@ -101,18 +128,13 @@ async def start_import(
         interval=body.interval,
         conflict_strategy=body.conflictStrategy.value,
         trigger_backfill=body.triggerBackfill,
+        task_id=task_id,
     )
 
-    # 创建导入任务记录
-    task_id = await create_import_task(
-        loop_ids=body.loopIds,
-        ts_start=body.tsStart,
-        ts_end=body.tsEnd,
-        conflict_strategy=body.conflictStrategy.value,
-        trigger_backfill=body.triggerBackfill,
-        created_by=user.username,
-        celery_task_id=celery_result.id,
-    )
+    # 回填 celery_task_id
+    from app.services.data_import import _update_task
+
+    await _update_task(task_id, celery_task_id=celery_result.id)
 
     logger.info(
         "历史数据导入任务已触发: task_id=%s, celery_id=%s, loops=%d, user=%s",

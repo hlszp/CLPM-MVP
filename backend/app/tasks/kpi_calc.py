@@ -2468,7 +2468,8 @@ async def _do_backfill(
     name="app.tasks.kpi_calc.import_history_data",
     bind=True,
     base=AsyncTask,
-    time_limit=3600,  # 1 小时超时
+    time_limit=7200,  # 2 小时硬超时
+    soft_time_limit=6900,  # 115 分钟软超时（27 回路 × 14 小时数据量大）
 )
 def import_history_data(
     self: AsyncTask,
