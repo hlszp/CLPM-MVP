@@ -20,7 +20,6 @@ import { Page } from '@vben/common-ui';
 import {
   Button,
   Checkbox,
-  CheckboxGroup,
   DatePicker,
   message,
   Modal,
@@ -29,7 +28,6 @@ import {
   Radio,
   RadioGroup,
   Select,
-  Spin,
   Table,
   Tag,
   TreeSelect,
@@ -105,6 +103,22 @@ const loops = ref<LoopApi.LoopListItem[]>([]);
 const selectedLoopIds = ref<string[]>([]);
 const loadingLoops = ref(false);
 const searchKeyword = ref('');
+
+const loopColumns: TableColumnsType = [
+  {
+    title: '位号',
+    dataIndex: 'tagName',
+    key: 'tagName',
+    width: 130,
+    ellipsis: true,
+  },
+  {
+    title: '名称',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
+];
 
 // --- 回路列表分页 ---
 const loopPage = ref(1);
@@ -506,29 +520,21 @@ onUnmounted(() => {
             placeholder="搜索回路..."
             class="mb-2 w-full shrink-0 border px-2 py-1 text-sm"
           />
-          <div class="min-h-0 flex-1 overflow-y-auto">
-            <Spin :spinning="loadingLoops">
-              <CheckboxGroup
-                v-model:value="selectedLoopIds"
-                class="flex flex-col"
-              >
-                <div
-                  v-for="loop in paginatedLoops"
-                  :key="loop.loopId"
-                  class="flex shrink-0 items-center overflow-hidden py-0.5"
-                >
-                  <Checkbox :value="loop.loopId" class="overflow-hidden">
-                    <span class="inline-block max-w-[120px] truncate align-middle text-sm">{{ loop.tagName }}</span>
-                    <span
-                      v-if="loop.description"
-                      class="ml-1 inline-block max-w-[80px] truncate align-middle text-xs text-gray-400"
-                    >
-                      {{ loop.description }}
-                    </span>
-                  </Checkbox>
-                </div>
-              </CheckboxGroup>
-            </Spin>
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <Table
+              :columns="loopColumns"
+              :data-source="paginatedLoops"
+              :loading="loadingLoops"
+              :pagination="false"
+              :row-selection="{
+                selectedRowKeys: selectedLoopIds,
+                onChange: (keys: any) => (selectedLoopIds = keys as string[]),
+              }"
+              row-key="loopId"
+              size="small"
+              :scroll="{ y: 'calc(100% - 40px)' }"
+              class="h-full"
+            />
           </div>
           <div class="mt-2 shrink-0 text-xs text-gray-400">
             已选: {{ selectedLoopIds.length }}/{{ loops.length }}
