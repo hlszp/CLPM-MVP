@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta
 
@@ -115,7 +116,7 @@ async def start_import(
         "error_message": "",
         "created_by": user.username,
         "celery_task_id": "",
-        "loop_ids": "[]",
+        "loop_ids": json.dumps(body.loopIds),
     })
 
     # 触发 Celery 任务，传入 task_id 用于状态跟踪
