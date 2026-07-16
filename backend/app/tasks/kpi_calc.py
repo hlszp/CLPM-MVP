@@ -2332,6 +2332,66 @@ async def _do_backfill(
 
 
 # ---------------------------------------------------------------------------
+# 历史数据导入任务（Phase 3：从远端 HTTP API 拉取历史数据写入本地 TDengine）
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.import_history_data",
+    bind=True,
+    base=AsyncTask,
+    time_limit=3600,  # 1 小时超时
+)
+def import_history_data(
+    self: AsyncTask,
+    loop_ids: list[str],
+    ts_start: str,
+    ts_end: str,
+    interval: int = 1,
+    conflict_strategy: str = "overwrite",
+    trigger_backfill: bool = False,
+    task_id: str | None = None,
+) -> dict:
+    """历史数据导入 Celery 任务.
+
+    从远端 HTTP API 拉取历史数据，写入本地 TDengine 宽表。
+    支持冲突策略：overwrite（先 DELETE 再 INSERT）或 skip（直接 INSERT）。
+
+    Args:
+        loop_ids: 回路 ID 列表
+        ts_start: 开始时间 (ISO 8601)
+        ts_end: 结束时间 (ISO 8601)
+        interval: 采样间隔（秒），默认 1
+        conflict_strategy: 冲突策略，overwrite 或 skip
+        trigger_backfill: 是否在导入完成后触发 KPI 回算
+        task_id: Redis 任务跟踪 ID（API 触发时传入）
+    """
+    logger.info(
+        "历史数据导入任务开始, celery_id=%s, task_id=%s, loops=%d, range=%s~%s, strategy=%s",
+        self.request.id,
+        task_id or "(none)",
+        len(loop_ids),
+        ts_start,
+        ts_end,
+        conflict_strategy,
+    )
+
+    from app.services.data_import import import_history_data as _do_import
+
+    return self.run_async(
+        _do_import(
+            loop_ids=loop_ids,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            interval=interval,
+            conflict_strategy=conflict_strategy,
+            trigger_backfill=trigger_backfill,
+            task_id=task_id,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
 # 节点级日/月聚合任务（GB/T 44693.2-2024 §6.4 多级时间聚合）
 # ---------------------------------------------------------------------------
 

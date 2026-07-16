@@ -36,6 +36,8 @@ from app.api.v1.endpoints import (
     diagnosis,
     grading_config,
     health,
+    # Phase 3: 回路数据管理（历史数据导入）
+    loop_data,
     loop_level_weight,
     loop_mode_mapping,
     loop_type_weight,
@@ -240,6 +242,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(auth.router)
     v1_router.include_router(plant_nodes.router)
     v1_router.include_router(loops.router)
+    # Phase 3: 回路数据管理（历史数据导入）
+    v1_router.include_router(loop_data.router)
     v1_router.include_router(tags.router)
     v1_router.include_router(aas.router)
     v1_router.include_router(datasource.router)
