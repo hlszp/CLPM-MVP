@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -45,8 +46,10 @@ _IMPORT_TASK_INDEX = "import_task:index"
 # 远端 API Good 质量码集合
 _GOOD_QUALITY_CODES = frozenset({1, 192})
 
-# 每小时分块点数（1Hz × 3600s）
-_CHUNK_HOURS = 1
+# 动态分块参数
+_TARGET_CHUNKS = 30  # 目标分块数（每个回路最多发这么多 HTTP 请求）
+_MAX_CHUNK_HOURS = 24  # 单次请求最大时间跨度（防止超时和内存爆炸）
+_MIN_CHUNK_HOURS = 1  # 单次请求最小时间跨度
 
 # 角色列名映射（与 tdengine.py 保持一致）
 _ROLE_COLUMNS: dict[str, str] = {
@@ -58,6 +61,26 @@ _ROLE_COLUMNS: dict[str, str] = {
     "PID_I": "pid_i",
     "PID_D": "pid_d",
 }
+
+
+def _compute_chunk_hours(start_dt: datetime, end_dt: datetime) -> int:
+    """根据导入时间范围动态计算分块大小（小时）.
+
+    策略：以 _TARGET_CHUNKS 为锚点，均匀分割时间范围，
+    同时受 _MIN_CHUNK_HOURS / _MAX_CHUNK_HOURS 约束。
+    """
+    total_hours = (end_dt - start_dt).total_seconds() / 3600
+    if total_hours <= 0:
+        return _MIN_CHUNK_HOURS
+    chunk_hours = max(
+        _MIN_CHUNK_HOURS,
+        min(_MAX_CHUNK_HOURS, int(math.ceil(total_hours / _TARGET_CHUNKS))),
+    )
+    logger.info(
+        "动态分块: 总时长=%.1fh, 分块=%dh, 预计%d次HTTP请求",
+        total_hours, chunk_hours, math.ceil(total_hours / chunk_hours),
+    )
+    return chunk_hours
 
 
 # ---------------------------------------------------------------------------
@@ -246,44 +269,94 @@ async def import_history_data(
         )
 
     total = len(loop_ids)
-    succeeded = 0
-    failed = 0
     errors: list[str] = []
 
-    async with AsyncSessionLocal() as db:
-        for i, loop_id in enumerate(loop_ids, 1):
-            # 检查取消
-            if task_id and await _is_task_cancelled(task_id):
-                logger.info("导入任务已取消: task_id=%s, completed=%d/%d", task_id, i - 1, total)
-                break
+    # 批量预加载回路元数据（1 次 DB 会话，3 次 SQL 替代 3N 次）
+    db_session = AsyncSessionLocal()
+    try:
+        loop_data_map = await _batch_get_loop_data(db_session, loop_ids)
+    finally:
+        await db_session.close()
 
-            try:
-                count = await _import_single_loop(
-                    db, loop_id, start_dt, end_dt, interval, conflict_strategy
-                )
-                succeeded += 1
-                logger.info(
-                    "回路导入完成: loop_id=%s, points=%d (%d/%d)",
-                    loop_id,
-                    count,
-                    i,
-                    total,
-                )
-            except Exception as exc:
-                failed += 1
-                error_msg = f"loop {loop_id}: {exc}"
-                errors.append(error_msg)
-                logger.warning("回路导入失败: loop_id=%s, error=%s", loop_id, exc)
+    logger.info("批量预加载完成: %d/%d 个回路有 tag 映射", 
+                 sum(1 for v in loop_data_map.values() if v["role_tag_map"]), len(loop_ids))
 
-            # 更新进度
-            if task_id:
-                progress = i / total if total > 0 else 1.0
-                await _update_task(
-                    task_id,
-                    progress=round(progress, 4),
-                    imported_count=succeeded,
-                    error_count=failed,
-                )
+    # 计算动态分块大小
+    chunk_hours = _compute_chunk_hours(start_dt, end_dt)
+
+    # 共享 httpx.AsyncClient（连接池复用，避免每个 chunk 重建 TCP/TLS 连接）
+    token = settings.HISTORY_DATA_API_TOKEN
+    client_headers: dict[str, str] = {"Content-Type": "application/json"}
+    if token:
+        client_headers["Authorization"] = f"Bearer {token}"
+
+    import asyncio as _asyncio_sem
+
+    sem = _asyncio_sem.Semaphore(5)  # 最多 5 个回路并发
+    progress_lock = _asyncio_sem.Lock()
+    # 共享计数器（并发安全）
+    shared_succeeded = 0
+    shared_failed = 0
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
+        headers=client_headers,
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+    ) as shared_client:
+
+        async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
+            """带信号量控制的单回路导入，返回 (index, count, error)."""
+            nonlocal shared_succeeded, shared_failed
+            async with sem:
+                loop_meta = loop_data_map.get(lid, {"role_tag_map": {}, "unit_id": "", "subtable": ""})
+                if not loop_meta["role_tag_map"]:
+                    logger.warning("回路 %s 无有效 tag 映射，跳过", lid)
+                    async with progress_lock:
+                        shared_failed += 1
+                    return (i, 0, f"loop {lid}: 无有效 tag 映射")
+
+                try:
+                    count = await _import_single_loop(
+                        loop_id=lid,
+                        start_dt=start_dt,
+                        end_dt=end_dt,
+                        interval=interval,
+                        conflict_strategy=conflict_strategy,
+                        client=shared_client,
+                        subtable=loop_meta["subtable"],
+                        unit_id=loop_meta["unit_id"],
+                        role_tag_map=loop_meta["role_tag_map"],
+                        chunk_hours=chunk_hours,
+                    )
+                    logger.info(
+                        "回路导入完成: loop_id=%s, points=%d (%d/%d)",
+                        lid, count, i + 1, total,
+                    )
+                    async with progress_lock:
+                        shared_succeeded += 1
+                except Exception as exc:
+                    async with progress_lock:
+                        shared_failed += 1
+                    return (i, 0, f"loop {lid}: {exc}")
+
+                # 更新进度
+                if task_id:
+                    async with progress_lock:
+                        cur_s, cur_f = shared_succeeded, shared_failed
+                    await _update_task(
+                        task_id,
+                        progress=round((cur_s + cur_f) / total, 4) if total > 0 else 1.0,
+                        imported_count=cur_s,
+                        error_count=cur_f,
+                    )
+                return (i, count, "")
+
+        # 并发处理所有回路
+        tasks = [_import_with_sem(i, lid) for i, lid in enumerate(loop_ids)]
+        results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
+
+    succeeded = shared_succeeded
+    failed = shared_failed
 
     result = {
         "total": total,
@@ -320,43 +393,42 @@ async def import_history_data(
 
 
 async def _import_single_loop(
-    db: Any,
     loop_id: str,
     start_dt: datetime,
     end_dt: datetime,
     interval: int,
     conflict_strategy: str,
+    client: httpx.AsyncClient | None = None,
+    subtable: str = "",
+    unit_id: str = "",
+    role_tag_map: dict[str, str] | None = None,
+    chunk_hours: int = 1,
 ) -> int:
     """导入单个回路的历史数据.
+
+    Args:
+        client: 可选的共享 httpx.AsyncClient（连接池复用），为 None 时每次请求创建新连接
+        subtable: 已构造好的 TDengine 子表名
+        unit_id: 回路所属工艺单元 ID
+        role_tag_map: {role → tag_name} 预加载的 tag 映射
+        chunk_hours: 动态分块小时数
 
     Returns:
         导入的数据点数
     """
-    # 1. 查询回路 tag 映射
-    role_tag_map = await _get_loop_tag_mapping(db, loop_id)
     if not role_tag_map:
         logger.warning("回路 %s 无有效 tag 映射，跳过", loop_id)
         return 0
 
-    # 2. 从 tag_name 解析 loop_part，构造子表名
-    first_tag_name = next(iter(role_tag_map.values()))
-    loop_part = first_tag_name.rsplit(".", 1)[0] if "." in first_tag_name else first_tag_name
-    subtable = make_subtable_name(loop_part)
-
-    # 查询 loop 的 unit_id（用于 TAG）
-    loop = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
-    loop_obj = loop.scalar_one_or_none()
-    unit_id = str(loop_obj.unit_id) if loop_obj and loop_obj.unit_id else ""
-
-    # 3. 冲突处理：删除旧数据（overwrite 策略）
+    # 冲突处理：删除旧数据（overwrite 策略）
     if conflict_strategy == ConflictStrategy.OVERWRITE.value:
         await _delete_range(subtable, start_dt, end_dt)
 
-    # 4. 按小时分块拉取 + 写入
+    # 按动态分块拉取 + 写入
     total_count = 0
     chunk_start = start_dt
     while chunk_start < end_dt:
-        chunk_end = min(chunk_start + timedelta(hours=_CHUNK_HOURS), end_dt)
+        chunk_end = min(chunk_start + timedelta(hours=chunk_hours), end_dt)
 
         # 从远端 API 拉取数据
         raw_data = await _fetch_remote_history(
@@ -364,6 +436,7 @@ async def _import_single_loop(
             chunk_start.isoformat(),
             chunk_end.isoformat(),
             interval,
+            client=client,
         )
 
         if raw_data:
@@ -402,6 +475,79 @@ async def _get_loop_tag_mapping(db: Any, loop_id: str) -> dict[str, str]:
     return role_tag_map
 
 
+async def _batch_get_loop_data(
+    db: Any, loop_ids: list[str],
+) -> dict[str, dict]:
+    """批量预加载回路元数据（tag 映射 + unit_id）.
+
+    消除 N+1 查询问题：原本每个回路 3 次 SQL × N 个回路 = 3N 次，
+    现在合并为 3 次总 SQL。
+
+    Returns:
+        {loop_id: {role_tag_map, unit_id, subtable}}
+    """
+    if not loop_ids:
+        return {}
+
+    # 1. 一次性加载所有回路的 tag 映射
+    m_result = await db.execute(
+        select(LoopTagMapping).where(LoopTagMapping.loop_id.in_(loop_ids))
+    )
+    loop_mappings: dict[str, dict[str, str]] = {}  # loop_id → {role → tag_id}
+    all_tag_ids: list[str] = []
+    for m in m_result.scalars().all():
+        lid = str(m.loop_id)
+        if lid not in loop_mappings:
+            loop_mappings[lid] = {}
+        loop_mappings[lid][m.tag_role.upper()] = str(m.tag_id)
+        all_tag_ids.append(str(m.tag_id))
+
+    if not all_tag_ids:
+        return {lid: {"role_tag_map": {}, "unit_id": "", "subtable": ""} for lid in loop_ids}
+
+    # 2. 一次性加载所有 tag 名称
+    from uuid import UUID
+
+    unique_tag_ids = list(set(all_tag_ids))
+    t_result = await db.execute(
+        select(TagRegistry).where(TagRegistry.id.in_([UUID(tid) for tid in unique_tag_ids]))
+    )
+    tag_name_map = {str(t.id): t.tag_name for t in t_result.scalars().all()}
+
+    # 3. 一次性加载所有回路的 unit_id
+    l_result = await db.execute(
+        select(LoopLedger).where(LoopLedger.id.in_([UUID(lid) for lid in loop_ids]))
+    )
+    unit_map = {str(loop.id): str(loop.unit_id) if loop.unit_id else "" for loop in l_result.scalars().all()}
+
+    # 4. 组装结果
+    result: dict[str, dict] = {}
+    for lid in loop_ids:
+        role_tag_id_map = loop_mappings.get(lid, {})
+        role_tag_map: dict[str, str] = {}
+        for role, tag_id in role_tag_id_map.items():
+            tag_name = tag_name_map.get(tag_id)
+            if tag_name:
+                role_tag_map[role] = tag_name
+
+        unit_id = unit_map.get(lid, "")
+
+        # 构造子表名
+        subtable = ""
+        if role_tag_map:
+            first_tag_name = next(iter(role_tag_map.values()))
+            loop_part = first_tag_name.rsplit(".", 1)[0] if "." in first_tag_name else first_tag_name
+            subtable = make_subtable_name(loop_part)
+
+        result[lid] = {
+            "role_tag_map": role_tag_map,
+            "unit_id": unit_id,
+            "subtable": subtable,
+        }
+
+    return result
+
+
 async def _delete_range(subtable: str, start_dt: datetime, end_dt: datetime) -> None:
     """删除指定时间范围的数据（overwrite 策略）."""
     start_str = start_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -422,8 +568,12 @@ async def _fetch_remote_history(
     start_time: str,
     end_time: str,
     interval: int,
+    client: httpx.AsyncClient | None = None,
 ) -> tuple[list[str], dict[str, dict]] | None:
     """从远端 HTTP API 拉取历史数据.
+
+    Args:
+        client: 可选的共享 httpx.AsyncClient（连接池复用），为 None 时创建新连接
 
     Returns:
         (timestamps, series_map) 其中 series_map = {tagCode: {values, qualities}}
@@ -441,16 +591,23 @@ async def _fetch_remote_history(
     }
 
     try:
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        token = settings.HISTORY_DATA_API_TOKEN
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+        if client is not None:
+            resp = await client.get(
+                settings.HISTORY_DATA_API_URL, params=request_body
+            )
+        else:
+            headers: dict[str, str] = {"Content-Type": "application/json"}
+            token = settings.HISTORY_DATA_API_TOKEN
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
 
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
-            headers=headers,
-        ) as client:
-            resp = await client.get(settings.HISTORY_DATA_API_URL, params=request_body)
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
+                headers=headers,
+            ) as tmp_client:
+                resp = await tmp_client.get(
+                    settings.HISTORY_DATA_API_URL, params=request_body
+                )
 
         if resp.status_code != 200:
             logger.warning(

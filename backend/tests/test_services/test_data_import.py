@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -194,7 +194,16 @@ class TestImportHistoryData:
         from app.services.data_import import import_history_data
 
         mock_db = AsyncMock()
+        # 模拟 execute().scalars().all() 返回空列表（无 tag 映射）
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db.execute.return_value = mock_result
+
         mock_session = AsyncMock()
+        # mock_session 在 _batch_get_loop_data 中直接作为 db 使用，需要 execute 返回 mock_result
+        mock_session.execute.return_value = mock_result
         mock_session.__aenter__ = AsyncMock(return_value=mock_db)
         mock_session.__aexit__ = AsyncMock(return_value=None)
 

@@ -13,7 +13,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { LoopDataApi } from '#/api/loop-data';
 
-import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -21,6 +21,7 @@ import {
   Button,
   Checkbox,
   DatePicker,
+  Input,
   message,
   Modal,
   Pagination,
@@ -190,6 +191,35 @@ function handleSelectAll(e: any) {
     selectedLoopIds.value = [];
   }
 }
+
+/** 反选：当前筛选结果中，已选的取消，未选的选中 */
+function handleInvertSelection() {
+  const selectedSet = new Set(selectedLoopIds.value);
+  selectedLoopIds.value = filteredLoops.value
+    .filter((l) => !selectedSet.has(l.loopId))
+    .map((l) => l.loopId);
+}
+
+/** 清空所有选中 */
+function handleClearSelection() {
+  selectedLoopIds.value = [];
+}
+
+/** 是否显示分页器（数据量超过单页时才显示） */
+const showPagination = computed(() => totalFilteredLoops.value > loopPageSize.value);
+
+/** 是否有激活的筛选条件 */
+const hasActiveFilters = computed(
+  () => selectedPlantNodeIds.value.length > 0 || searchKeyword.value.trim().length > 0,
+);
+
+/** 筛选结果摘要文本 */
+const filterSummary = computed(() => {
+  if (!hasActiveFilters.value && !searchKeyword.value) return null;
+  const total = filteredLoops.value.length;
+  if (total === 0) return '无匹配回路';
+  return `筛选到 ${total} 个回路`;
+});
 
 // --- 导入参数 ---
 const timeRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
@@ -463,6 +493,21 @@ function hasActiveTasks() {
 
 onMounted(async () => {
   await Promise.all([loadPlantTree(), loadLoops(), loadTasks()]);
+  // DOM 渲染后检查 CSS 规则是否生效
+  await nextTick();
+  const cells = document.querySelectorAll('.loop-selection-table .ant-table-cell');
+  if (cells.length > 0) {
+    const firstCell = cells[0] as HTMLElement;
+    const style = getComputedStyle(firstCell);
+    console.log('[环路选择表格] 单元格数:', cells.length);
+    console.log('[环路选择表格] borderInlineEnd:', style.borderInlineEnd);
+    console.log('[环路选择表格] borderInlineEndWidth:', style.borderInlineEndWidth);
+    console.log('[环路选择表格] borderRight:', style.borderRight);
+    console.log('[环路选择表格] borderRightWidth:', style.borderRightWidth);
+    console.log('[环路选择表格] CSS规则匹配的 class:', firstCell.classList.toString());
+  } else {
+    console.warn('[环路选择表格] 未找到 .ant-table-cell 元素，class 选择器可能未匹配');
+  }
   // 有活跃任务时轮询
   pollTimer = setInterval(() => {
     if (hasActiveTasks()) {
@@ -489,38 +534,76 @@ onUnmounted(() => {
 
     <div class="mt-4 flex gap-4" style="height: calc(100vh - 200px)">
       <!-- 左侧：回路选择 -->
-      <div class="flex w-72 flex-col">
-        <div class="flex flex-1 flex-col rounded border p-3">
-          <div class="mb-2 flex items-center justify-between">
-            <span class="font-medium">回路选择</span>
+      <div class="flex w-[40%] flex-col">
+        <div class="flex flex-1 flex-col overflow-hidden rounded border border-gray-200 bg-white">
+          <!-- 面板头部 -->
+          <div class="shrink-0 border-b px-3 py-2.5" style="background: #fafafa;">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-semibold text-gray-800">回路选择</span>
+              <span class="text-xs text-gray-400">
+                {{ selectedLoopIds.length }}/{{ loops.length }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 筛选区 -->
+          <div class="shrink-0 space-y-2 px-3 py-2.5">
+            <TreeSelect
+              v-model:value="selectedPlantNodeIds"
+              :tree-data="formatTreeForSelect(plantTree)"
+              :field-names="{ children: 'children', label: 'title', value: 'value' }"
+              tree-checkable
+              multiple
+              show-checked-strategy="SHOW_CHILD"
+              placeholder="按装置/单元筛选..."
+              class="w-full"
+              :allow-clear="true"
+              :max-tag-count="2"
+              size="small"
+              tree-node-filter-prop="title"
+            />
+            <Input.Search
+              v-model:value="searchKeyword"
+              placeholder="搜索回路..."
+              size="small"
+              allow-clear
+            />
+            <!-- 筛选结果提示 -->
+            <div
+              v-if="filterSummary"
+              class="rounded bg-blue-50 px-2 py-1 text-xs text-blue-600"
+            >
+              {{ filterSummary }}
+            </div>
+          </div>
+
+          <!-- 操作条 -->
+          <div class="shrink-0 flex items-center justify-between border-t px-3 py-1.5" style="background: #fafafa;">
             <Checkbox
               :checked="allSelected"
               :indeterminate="indeterminate"
               @change="handleSelectAll"
             >
-              全选
+              <span class="text-xs">全选</span>
             </Checkbox>
+            <div class="flex gap-2">
+              <Button size="small" type="link" class="!text-xs !px-1" @click="handleInvertSelection">
+                反选
+              </Button>
+              <Button
+                size="small"
+                type="link"
+                class="!text-xs !px-1"
+                :disabled="selectedLoopIds.length === 0"
+                @click="handleClearSelection"
+              >
+                清空
+              </Button>
+            </div>
           </div>
-          <!-- 工厂模型节点树筛选 -->
-          <TreeSelect
-            v-model:value="selectedPlantNodeIds"
-            :tree-data="formatTreeForSelect(plantTree)"
-            :field-names="{ children: 'children', label: 'title', value: 'value' }"
-            tree-checkable
-            multiple
-            show-checked-strategy="SHOW_CHILD"
-            placeholder="按装置/单元筛选..."
-            class="mb-2 w-full shrink-0"
-            :allow-clear="true"
-            :max-tag-count="2"
-            size="small"
-          />
-          <input
-            v-model="searchKeyword"
-            placeholder="搜索回路..."
-            class="mb-2 w-full shrink-0 border px-2 py-1 text-sm"
-          />
-          <div class="min-h-0 flex-1 overflow-hidden">
+
+          <!-- 回路表格 -->
+          <div class="min-h-0 flex-1 overflow-y-auto">
             <Table
               :columns="loopColumns"
               :data-source="paginatedLoops"
@@ -532,29 +615,37 @@ onUnmounted(() => {
               }"
               row-key="loopId"
               size="small"
-              :scroll="{ y: 'calc(100% - 40px)' }"
-              class="h-full"
+              :bordered="false"
+              class="loop-selection-table"
+            >
+              <template #emptyText>
+                <div class="py-6 text-center text-gray-400">
+                  <div class="mb-1 text-lg">&#128269;</div>
+                  <div v-if="hasActiveFilters">筛选无结果，尝试调整筛选条件</div>
+                  <div v-else>暂无可用回路</div>
+                </div>
+              </template>
+            </Table>
+          </div>
+
+          <!-- 底部分页 -->
+          <div v-if="showPagination" class="shrink-0 border-t px-3 py-2">
+            <Pagination
+              v-model:current="loopPage"
+              v-model:page-size="loopPageSize"
+              :total="totalFilteredLoops"
+              show-size-changer
+              :page-size-options="['10', '20', '50', '100']"
+              size="small"
+              show-less-items
+              class="text-center"
             />
           </div>
-          <div class="mt-2 shrink-0 text-xs text-gray-400">
-            已选: {{ selectedLoopIds.length }}/{{ loops.length }}
-          </div>
-          <Pagination
-            v-if="totalFilteredLoops > 0"
-            v-model:current="loopPage"
-            v-model:page-size="loopPageSize"
-            :total="totalFilteredLoops"
-            show-size-changer
-            :page-size-options="['10', '20', '50', '100']"
-            size="small"
-            show-less-items
-            class="mt-2 shrink-0 text-center"
-          />
         </div>
       </div>
 
       <!-- 右侧：导入参数 + 任务列表 -->
-      <div class="flex flex-1 flex-col">
+      <div class="flex w-[60%] flex-col">
         <!-- 导入参数 -->
         <div class="mb-4 shrink-0 rounded border p-4">
           <div class="mb-3 font-medium">历史数据导入</div>
@@ -625,3 +716,12 @@ onUnmounted(() => {
     </div>
   </Page>
 </template>
+
+<style scoped>
+.loop-selection-table :deep(.ant-table-cell) {
+  border-inline-end: none !important;
+}
+.loop-selection-table :deep(.ant-table-thead > tr > th) {
+  border-inline-end: none !important;
+}
+</style>
