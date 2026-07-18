@@ -68,6 +68,7 @@ class TestBackfillTaskEvaluate:
         assert "sampleLoopNames" in data
         assert data["windowCount"] == 24  # 24 小时
         assert data["loopCount"] == 3
+        assert data["estimatedDurationSec"] == 48  # ceil(3/4) × 24 × 2s
         # dryRun 不应触发 Celery
         mock_task.delay.assert_not_called()
 

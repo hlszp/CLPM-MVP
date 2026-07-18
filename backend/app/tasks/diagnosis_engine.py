@@ -25,10 +25,12 @@ from uuid import uuid4
 import numpy as np
 from sqlalchemy import delete, select
 
+from app.contracts.data_types import QualityStatus, RawTimeSeries
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTask
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
+from app.services.preprocessing.quality_code import map_quality_code
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -210,6 +212,7 @@ async def _do_run_diagnosis() -> dict:
         async with sem:
             # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
             async with AsyncSessionLocal() as worker_db:
+                query_wide_fn = get_provider().make_query_fn(worker_db)
                 # 进入 RUNNING 状态
                 await _update_task_status(worker_db, task_id, "RUNNING")
                 await worker_db.commit()
@@ -220,7 +223,7 @@ async def _do_run_diagnosis() -> dict:
                         diag_configs=diag_configs,
                         ts_start=ts_start,
                         ts_end=ts_end,
-                        query_trend_fn=query_trend_fn,
+                        query_wide_fn=query_wide_fn,
                         task_id=task_id,
                     )
                     await worker_db.commit()
@@ -474,9 +477,6 @@ async def _diagnose_loop(
             tags_map[str(t.id)] = t
 
     pv_tag_name = _get_tag_name(mappings, tags_map, "PV")
-    sp_tag_name = _get_tag_name(mappings, tags_map, "SP")
-    op_tag_name = _get_tag_name(mappings, tags_map, "OP")
-    mode_tag_name = _get_tag_name(mappings, tags_map, "MODE")
 
     if not pv_tag_name:
         logger.warning("回路 %s 缺少 PV Tag", loop.tag_name)
@@ -491,8 +491,7 @@ async def _diagnose_loop(
             end=ts_end,
             interval_s=1,
         )
-        # Type check to gracefully handle incorrect mocks in tests
-        if not hasattr(raw_series, "timestamps"):
+        if not isinstance(raw_series, RawTimeSeries):
             logger.warning("宽表查询返回的不是 RawTimeSeries 对象，跳过回路 %s", loop.tag_name)
             return None
     except Exception as exc:  # noqa: BLE001
@@ -501,33 +500,47 @@ async def _diagnose_loop(
 
     # 数据不足判定
     if len(raw_series.timestamps) < MIN_DATA_POINTS:
-        logger.info("回路 %s 数据点不足 (%d < %d)", loop.tag_name, len(raw_series.timestamps), MIN_DATA_POINTS)
+        logger.info(
+            "回路 %s 数据点不足 (%d < %d)",
+            loop.tag_name,
+            len(raw_series.timestamps),
+            MIN_DATA_POINTS,
+        )
         return None
 
     # 构建对齐的数据并剔除 PV 质量码为 Bad 的点
-    pv_qualities = raw_series.quality_codes.get("pv_quality", [])
+    pv_quality_codes = raw_series.quality_codes.get("pv_quality", [])
+    pv_quality_data: list[dict[str, str]] = []
     aligned: list[dict[str, Any]] = []
     for i, ts in enumerate(raw_series.timestamps):
-        q = pv_qualities[i] if i < len(pv_qualities) else "GOOD"
-        if str(q).upper() == "BAD":
+        status = (
+            map_quality_code(pv_quality_codes[i])
+            if i < len(pv_quality_codes)
+            else QualityStatus.GOOD
+        )
+        quality_label = "UNCERTAIN" if status == QualityStatus.UNKNOWN else status.value.upper()
+        pv_quality_data.append({"quality": quality_label})
+        if status == QualityStatus.BAD:
             continue
-        
+
         pv_list = raw_series.signals.get("pv")
         pv_val = pv_list[i] if pv_list and i < len(pv_list) else None
         if pv_val is None:
             continue
-            
+
         sp_list = raw_series.signals.get("sp")
         op_list = raw_series.signals.get("op")
         mode_list = raw_series.signals.get("mode")
-        
-        aligned.append({
-            "ts": ts,
-            "pv": pv_val,
-            "sp": sp_list[i] if sp_list and i < len(sp_list) else None,
-            "op": op_list[i] if op_list and i < len(op_list) else None,
-            "mode": mode_list[i] if mode_list and i < len(mode_list) else None,
-        })
+
+        aligned.append(
+            {
+                "ts": ts,
+                "pv": pv_val,
+                "sp": sp_list[i] if sp_list and i < len(sp_list) else None,
+                "op": op_list[i] if op_list and i < len(op_list) else None,
+                "mode": mode_list[i] if mode_list and i < len(mode_list) else None,
+            }
+        )
 
     if len(aligned) < MIN_DATA_POINTS:
         logger.info("回路 %s 对齐后数据点不足", loop.tag_name)
@@ -563,7 +576,7 @@ async def _diagnose_loop(
 
     # 3. PV 质量码统计（P2-1：Q001-Q005 规则矩阵）
     quality_result = _analyze_quality(
-        pv_data,
+        pv_quality_data,
         threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
     )
 
@@ -2774,9 +2787,6 @@ def _compute_sample_interval(aligned: list[dict[str, Any]]) -> float:
     if not diffs:
         return 1.0
     return sum(diffs) / len(diffs)
-
-
-
 
 
 def _build_scatter_plot_data(aligned: list[dict[str, Any]]) -> dict[str, list[float]]:

@@ -7,11 +7,10 @@
 
 from __future__ import annotations
 
-import time
 import sys
-import json
+import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -38,7 +37,7 @@ def main() -> None:
         print(f"找到 {len(loop_ids)} 个回路\n")
 
         # 时间窗口：使用上一个完整小时（与标准任务一致，可能有缓存）
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ts_end = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
         ts_start = ts_end - timedelta(hours=1)
         ts_start_str = ts_start.replace(tzinfo=None).isoformat() + "Z"
@@ -47,7 +46,7 @@ def main() -> None:
 
         results = []
         for i in range(num_tests):
-            print(f"=== 第 {i+1}/{num_tests} 次测试 ===")
+            print(f"=== 第 {i + 1}/{num_tests} 次测试 ===")
             t0 = time.perf_counter()
 
             resp = client.post(
@@ -103,8 +102,8 @@ def main() -> None:
                 print(f"成功次数: {len(times)}")
                 print(f"最快: {min(times):.2f}s")
                 print(f"最慢: {max(times):.2f}s")
-                print(f"平均: {sum(times)/len(times):.2f}s")
-                print(f"中位数: {sorted(times)[len(times)//2]:.2f}s")
+                print(f"平均: {sum(times) / len(times):.2f}s")
+                print(f"中位数: {sorted(times)[len(times) // 2]:.2f}s")
                 print(f"16秒目标: {'✓ 达标' if max(times) <= 16 else '✗ 未达标'}")
             else:
                 print("所有测试均失败！")
@@ -113,7 +112,10 @@ def main() -> None:
         print("详细数据:")
         print(f"{'序号':>4} {'状态':>10} {'总耗时':>8} {'平均/回路':>10}")
         for r in results:
-            print(f"{r['test']:>4} {r['status']:>10} {r['total_time']:>7.2f}s {r['avg_per_loop']:>9.3f}s")
+            print(
+                f"{r['test']:>4} {r['status']:>10} {r['total_time']:>7.2f}s "
+                f"{r['avg_per_loop']:>9.3f}s"
+            )
 
 
 if __name__ == "__main__":

@@ -356,19 +356,22 @@ def _calc_window_count(ts_start: str, ts_end: str, cycle_minutes: int = 60) -> i
 
 
 def _parse_celery_task_ids(data: dict[str, Any]) -> list[str]:
-    """Return task IDs from the current single-ID or legacy array format."""
+    """Return all root, child, and callback task IDs without duplicates."""
+    task_ids: list[str] = []
     celery_task_id = data.get("celery_task_id")
     if celery_task_id:
-        return [str(celery_task_id)]
+        task_ids.append(str(celery_task_id))
 
     celery_task_ids = data.get("celery_task_ids")
     if not celery_task_ids:
-        return []
+        return task_ids
     try:
         parsed = json.loads(celery_task_ids)
     except (json.JSONDecodeError, TypeError):
-        return []
-    return [str(task_id) for task_id in parsed] if isinstance(parsed, list) else []
+        return task_ids
+    if isinstance(parsed, list):
+        task_ids.extend(str(task_id) for task_id in parsed)
+    return list(dict.fromkeys(task_ids))
 
 
 async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
@@ -436,17 +439,20 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
             updates["started_at"] = _now_iso()
 
     if updates:
-        await redis_client.hset(_task_key(task_id), mapping=updates)
-        data.update(updates)
-        # 终态转换时发送通知（Phase 5 补齐）
-        new_status = updates.get("status", "")
-        if new_status in _TERMINAL_STATUSES and current_status not in _TERMINAL_STATUSES:
-            try:
-                from app.services import task_tracker
+        from app.services import task_tracker
 
-                await task_tracker._send_notification(data)
-            except Exception:
-                logger.warning("任务通知发送失败: task_id=%s", task_id, exc_info=True)
+        new_status = TaskStatus(updates.pop("status"))
+        updated = await task_tracker.update_status(
+            task_id,
+            new_status,
+            progress=float(updates["progress"]) if "progress" in updates else None,
+            error_message=updates.get("error_message"),
+            started_at=updates.get("started_at"),
+            finished_at=updates.get("finished_at"),
+        )
+        if updated is not None:
+            data.clear()
+            data.update(updated)
 
 
 # ---------------------------------------------------------------------------
@@ -672,8 +678,8 @@ async def trigger_backfill(
     # 3. 计算窗口数与预估耗时
     window_count = _calc_window_count(body.tsStart, body.tsEnd)
     loop_count = len(loops)
-    # 窗口内回路并发执行（CONCURRENCY=20），窗口间串行
-    _concurrency = 20
+    # 回填子任务使用独立内层并发上限，与 kpi_calc 保持一致。
+    _concurrency = 4
     _batches = max(1, (loop_count + _concurrency - 1) // _concurrency)
     estimated_duration_sec = _batches * window_count * 2  # 每批每窗口预估 2s
     sample_loop_names = [loop.tag_name or loop.id for loop in loops[:5]]
@@ -1036,6 +1042,28 @@ async def cancel_task(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    # 先用 Redis CAS 抢占 CANCELLED 终态，避免读取后到写入前被 SUCCESS/FAILED 竞态覆盖。
+    from app.services import task_tracker
+
+    updated = await task_tracker.update_status(
+        task_id,
+        TaskStatus.CANCELLED,
+        finished_at=_now_iso(),
+    )
+    if updated is None:
+        raise BizError(
+            code="ERR_TASK_NOT_FOUND",
+            message=f"任务不存在: {task_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    if updated.get("status") != TaskStatus.CANCELLED.value:
+        raise BizError(
+            code="ERR_TASK_NOT_CANCELLABLE",
+            message=f"任务已处于终态: {updated.get('status', '')}，无法取消",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    data = updated
+
     # 撤销关联的 Celery 任务
     # 使用 terminate=True 强制终止正在执行的 worker 进程，
     # 避免 _do_backfill 循环继续跑完所有窗口
@@ -1047,21 +1075,6 @@ async def cancel_task(
             celery_app.control.revoke(cid, terminate=True)
     elif data.get("celery_task_id") or data.get("celery_task_ids"):
         logger.warning("解析 Celery 任务 ID 失败: task_id=%s", task_id)
-
-    updates = {
-        "status": TaskStatus.CANCELLED.value,
-        "finished_at": _now_iso(),
-    }
-    await redis_client.hset(_task_key(task_id), mapping=updates)
-    data.update(updates)
-
-    # 取消是终态转换，发送通知（Phase 5 补齐）
-    try:
-        from app.services import task_tracker
-
-        await task_tracker._send_notification(data)
-    except Exception:
-        logger.warning("任务取消通知发送失败: task_id=%s", task_id, exc_info=True)
 
     logger.info("任务已取消: task_id=%s, user=%s", task_id, user.username)
 
@@ -1098,6 +1111,9 @@ async def delete_task(
         )
 
     # 从 Redis 哈希与索引中删除
+    from app.services import task_tracker
+
+    await task_tracker.delete_task_auxiliary_keys(task_id)
     await redis_client.delete(_task_key(task_id))
     await redis_client.zrem(_TASK_INDEX_KEY, task_id)
 

@@ -50,9 +50,7 @@ class ImportRequest(CamelModel):
     tsStart: str = Field(..., description="导入时间范围起始（ISO 8601）")
     tsEnd: str = Field(..., description="导入时间范围结束（ISO 8601）")
     interval: int = Field(1, ge=1, description="采样间隔（秒）")
-    conflictStrategy: ConflictStrategy = Field(
-        ConflictStrategy.OVERWRITE, description="冲突策略"
-    )
+    conflictStrategy: ConflictStrategy = Field(ConflictStrategy.OVERWRITE, description="冲突策略")
     triggerBackfill: bool = Field(False, description="导入完成后触发 KPI 回算")
 
 

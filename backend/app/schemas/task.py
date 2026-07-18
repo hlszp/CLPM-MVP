@@ -161,7 +161,7 @@ class BackfillPreviewResult(CamelModel):
     Attributes:
         loopCount: 影响回路数
         windowCount: 影响小时窗口数
-        estimatedDurationSec: 预估耗时（秒，按 loopCount × windowCount × 2s 估算）
+        estimatedDurationSec: 预估耗时（秒，按回填内层并发批次估算）
         sampleLoopNames: 前 5 个回路名预览
     """
 

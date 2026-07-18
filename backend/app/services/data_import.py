@@ -63,6 +63,10 @@ _ROLE_COLUMNS: dict[str, str] = {
 }
 
 
+class HistoryDataSourceError(RuntimeError):
+    """远端历史数据源不可用或返回无效响应。"""
+
+
 def _compute_chunk_hours(start_dt: datetime, end_dt: datetime) -> int:
     """根据导入时间范围动态计算分块大小（小时）.
 
@@ -78,7 +82,9 @@ def _compute_chunk_hours(start_dt: datetime, end_dt: datetime) -> int:
     )
     logger.info(
         "动态分块: 总时长=%.1fh, 分块=%dh, 预计%d次HTTP请求",
-        total_hours, chunk_hours, math.ceil(total_hours / chunk_hours),
+        total_hours,
+        chunk_hours,
+        math.ceil(total_hours / chunk_hours),
     )
     return chunk_hours
 
@@ -278,8 +284,11 @@ async def import_history_data(
     finally:
         await db_session.close()
 
-    logger.info("批量预加载完成: %d/%d 个回路有 tag 映射", 
-                 sum(1 for v in loop_data_map.values() if v["role_tag_map"]), len(loop_ids))
+    logger.info(
+        "批量预加载完成: %d/%d 个回路有 tag 映射",
+        sum(1 for v in loop_data_map.values() if v["role_tag_map"]),
+        len(loop_ids),
+    )
 
     # 计算动态分块大小
     chunk_hours = _compute_chunk_hours(start_dt, end_dt)
@@ -298,6 +307,18 @@ async def import_history_data(
     shared_succeeded = 0
     shared_failed = 0
 
+    async def _record_progress() -> None:
+        if not task_id:
+            return
+        async with progress_lock:
+            cur_s, cur_f = shared_succeeded, shared_failed
+        await _update_task(
+            task_id,
+            progress=round((cur_s + cur_f) / total, 4) if total > 0 else 1.0,
+            imported_count=cur_s,
+            error_count=cur_f,
+        )
+
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
         headers=client_headers,
@@ -308,12 +329,19 @@ async def import_history_data(
             """带信号量控制的单回路导入，返回 (index, count, error)."""
             nonlocal shared_succeeded, shared_failed
             async with sem:
-                loop_meta = loop_data_map.get(lid, {"role_tag_map": {}, "unit_id": "", "subtable": ""})
+                if task_id and await _is_task_cancelled(task_id):
+                    return (i, 0, "")
+
+                loop_meta = loop_data_map.get(
+                    lid, {"role_tag_map": {}, "unit_id": "", "subtable": ""}
+                )
                 if not loop_meta["role_tag_map"]:
                     logger.warning("回路 %s 无有效 tag 映射，跳过", lid)
                     async with progress_lock:
                         shared_failed += 1
-                    return (i, 0, f"loop {lid}: 无有效 tag 映射")
+                    error = f"loop {lid}: 无有效 tag 映射"
+                    await _record_progress()
+                    return (i, 0, error)
 
                 try:
                     count = await _import_single_loop(
@@ -328,32 +356,37 @@ async def import_history_data(
                         role_tag_map=loop_meta["role_tag_map"],
                         chunk_hours=chunk_hours,
                     )
+                    if count <= 0:
+                        raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
                     logger.info(
                         "回路导入完成: loop_id=%s, points=%d (%d/%d)",
-                        lid, count, i + 1, total,
+                        lid,
+                        count,
+                        i + 1,
+                        total,
                     )
                     async with progress_lock:
                         shared_succeeded += 1
                 except Exception as exc:
                     async with progress_lock:
                         shared_failed += 1
-                    return (i, 0, f"loop {lid}: {exc}")
+                    error = f"loop {lid}: {exc}"
+                    logger.warning("回路导入失败: %s", error)
+                    await _record_progress()
+                    return (i, 0, error)
 
                 # 更新进度
-                if task_id:
-                    async with progress_lock:
-                        cur_s, cur_f = shared_succeeded, shared_failed
-                    await _update_task(
-                        task_id,
-                        progress=round((cur_s + cur_f) / total, 4) if total > 0 else 1.0,
-                        imported_count=cur_s,
-                        error_count=cur_f,
-                    )
+                await _record_progress()
                 return (i, count, "")
 
         # 并发处理所有回路
         tasks = [_import_with_sem(i, lid) for i, lid in enumerate(loop_ids)]
-        results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
+        task_results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
+        for task_result in task_results:
+            if isinstance(task_result, BaseException):
+                errors.append(f"导入协程异常: {task_result}")
+            elif task_result[2]:
+                errors.append(task_result[2])
 
     succeeded = shared_succeeded
     failed = shared_failed
@@ -377,7 +410,11 @@ async def import_history_data(
         await _update_task(
             task_id,
             status=final_status,
-            progress=1.0 if final_status == ImportStatus.SUCCESS.value else None,
+            progress=(
+                1.0
+                if final_status in (ImportStatus.SUCCESS.value, ImportStatus.FAILED.value)
+                else None
+            ),
             finished_at=_now_iso(),
             error_message="; ".join(errors[:3]) if errors else "",
         )
@@ -454,9 +491,7 @@ async def _import_single_loop(
 
 async def _get_loop_tag_mapping(db: Any, loop_id: str) -> dict[str, str]:
     """查询回路的 tag 映射（role → tag_name）."""
-    m_result = await db.execute(
-        select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
-    )
+    m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
     mappings = {m.tag_role.upper(): m for m in m_result.scalars().all()}
 
     tag_ids = [str(m.tag_id) for m in mappings.values()]
@@ -476,7 +511,8 @@ async def _get_loop_tag_mapping(db: Any, loop_id: str) -> dict[str, str]:
 
 
 async def _batch_get_loop_data(
-    db: Any, loop_ids: list[str],
+    db: Any,
+    loop_ids: list[str],
 ) -> dict[str, dict]:
     """批量预加载回路元数据（tag 映射 + unit_id）.
 
@@ -490,9 +526,7 @@ async def _batch_get_loop_data(
         return {}
 
     # 1. 一次性加载所有回路的 tag 映射
-    m_result = await db.execute(
-        select(LoopTagMapping).where(LoopTagMapping.loop_id.in_(loop_ids))
-    )
+    m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id.in_(loop_ids)))
     loop_mappings: dict[str, dict[str, str]] = {}  # loop_id → {role → tag_id}
     all_tag_ids: list[str] = []
     for m in m_result.scalars().all():
@@ -518,7 +552,9 @@ async def _batch_get_loop_data(
     l_result = await db.execute(
         select(LoopLedger).where(LoopLedger.id.in_([UUID(lid) for lid in loop_ids]))
     )
-    unit_map = {str(loop.id): str(loop.unit_id) if loop.unit_id else "" for loop in l_result.scalars().all()}
+    unit_map = {
+        str(loop.id): str(loop.unit_id) if loop.unit_id else "" for loop in l_result.scalars().all()
+    }
 
     # 4. 组装结果
     result: dict[str, dict] = {}
@@ -536,7 +572,9 @@ async def _batch_get_loop_data(
         subtable = ""
         if role_tag_map:
             first_tag_name = next(iter(role_tag_map.values()))
-            loop_part = first_tag_name.rsplit(".", 1)[0] if "." in first_tag_name else first_tag_name
+            loop_part = (
+                first_tag_name.rsplit(".", 1)[0] if "." in first_tag_name else first_tag_name
+            )
             subtable = make_subtable_name(loop_part)
 
         result[lid] = {
@@ -569,7 +607,7 @@ async def _fetch_remote_history(
     end_time: str,
     interval: int,
     client: httpx.AsyncClient | None = None,
-) -> tuple[list[str], dict[str, dict]] | None:
+) -> tuple[list[str], dict[str, dict]]:
     """从远端 HTTP API 拉取历史数据.
 
     Args:
@@ -577,11 +615,10 @@ async def _fetch_remote_history(
 
     Returns:
         (timestamps, series_map) 其中 series_map = {tagCode: {values, qualities}}
-        失败返回 None
+        远端不可用或响应无效时抛出 ``HistoryDataSourceError``。
     """
     if not settings.HISTORY_DATA_API_URL:
-        logger.warning("HISTORY_DATA_API_URL 未配置，无法拉取远端历史数据")
-        return None
+        raise HistoryDataSourceError("HISTORY_DATA_API_URL 未配置")
 
     request_body = {
         "tagCodes": tag_codes,
@@ -592,9 +629,7 @@ async def _fetch_remote_history(
 
     try:
         if client is not None:
-            resp = await client.get(
-                settings.HISTORY_DATA_API_URL, params=request_body
-            )
+            resp = await client.get(settings.HISTORY_DATA_API_URL, params=request_body)
         else:
             headers: dict[str, str] = {"Content-Type": "application/json"}
             token = settings.HISTORY_DATA_API_TOKEN
@@ -605,22 +640,16 @@ async def _fetch_remote_history(
                 timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
                 headers=headers,
             ) as tmp_client:
-                resp = await tmp_client.get(
-                    settings.HISTORY_DATA_API_URL, params=request_body
-                )
+                resp = await tmp_client.get(settings.HISTORY_DATA_API_URL, params=request_body)
 
         if resp.status_code != 200:
-            logger.warning(
-                "远端 API 返回 %s: %s",
-                resp.status_code,
-                resp.text[:200],
+            raise HistoryDataSourceError(
+                f"远端历史数据 API 返回 HTTP {resp.status_code}: {resp.text[:200]}"
             )
-            return None
 
         payload = resp.json()
         if payload.get("code") not in (200, "200", "0", 0):
-            logger.warning("远端 API 业务错误: %s", payload.get("message", ""))
-            return None
+            raise HistoryDataSourceError(f"远端历史数据 API 业务错误: {payload.get('message', '')}")
 
         data = payload.get("data") or {}
         timestamps = list(data.get("timestamps") or [])
@@ -638,9 +667,16 @@ async def _fetch_remote_history(
 
         return timestamps, series_map
 
-    except Exception as exc:
-        logger.warning("远端 API 拉取失败: %s", exc)
-        return None
+    except HistoryDataSourceError:
+        raise
+    except httpx.TimeoutException as exc:
+        raise HistoryDataSourceError(
+            f"远端历史数据 API 超时（{settings.HISTORY_DATA_API_TIMEOUT:g}s）"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HistoryDataSourceError(f"远端历史数据 API 请求失败: {exc}") from exc
+    except (TypeError, ValueError) as exc:
+        raise HistoryDataSourceError(f"远端历史数据 API 响应无效: {exc}") from exc
 
 
 def _convert_to_wide_rows(
@@ -766,9 +802,7 @@ async def _trigger_kpi_backfill(loop_ids: list[str], ts_start: str, ts_end: str)
     from app.tasks.kpi_calc import backfill_kpi_range
 
     backfill_kpi_range.delay(ts_start, ts_end, loop_ids=loop_ids)
-    logger.info(
-        "已触发 KPI 回算: loops=%d, range=%s~%s", len(loop_ids), ts_start, ts_end
-    )
+    logger.info("已触发 KPI 回算: loops=%d, range=%s~%s", len(loop_ids), ts_start, ts_end)
 
 
 # ---------------------------------------------------------------------------

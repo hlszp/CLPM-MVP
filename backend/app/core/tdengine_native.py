@@ -129,6 +129,7 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
     Raises:
         Exception: SQL 执行失败时抛出
     """
+
     def _execute() -> list[dict[str, Any]]:
         with TDengineConnectionPool.get_connection() as conn:
             cursor = conn.cursor()
@@ -136,11 +137,7 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
                 cursor.execute(sql)
                 rows = cursor.fetchall()
                 # description: [[name, type, bytes], ...]
-                fields = (
-                    [desc[0] for desc in cursor.description]
-                    if cursor.description
-                    else []
-                )
+                fields = [desc[0] for desc in cursor.description] if cursor.description else []
                 if not rows or not fields:
                     return []
                 return [dict(zip(fields, row, strict=False)) for row in rows]
@@ -164,6 +161,7 @@ async def execute_native_effective(sql: str) -> int:
     Raises:
         Exception: SQL 执行失败时抛出
     """
+
     def _execute() -> int:
         with TDengineConnectionPool.get_connection() as conn:
             cursor = conn.cursor()
@@ -340,11 +338,7 @@ async def query_last_values_before(
         {列名: 最后有效值}，无数据时返回空 dict
     """
     cols = ", ".join(f"LAST({c})" for c in COV_FILL_COLUMNS)
-    sql = (
-        f"SELECT {cols} "
-        f"FROM {settings.TDENGINE_DB}.{subtable} "
-        f"WHERE ts < '{start_time}'"
-    )
+    sql = f"SELECT {cols} FROM {settings.TDENGINE_DB}.{subtable} WHERE ts < '{start_time}'"
     try:
         rows = await execute_native(sql)
     except Exception as exc:  # noqa: BLE001
@@ -429,4 +423,3 @@ async def batch_insert_multi(
     sql = " ".join(parts)
     affected = await execute_native_effective(sql)
     return affected
-

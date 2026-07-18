@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import time
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from datetime import UTC
 
 import httpx
 
@@ -28,8 +30,9 @@ def main() -> None:
         loop_ids = [str(item["loopId"]) for item in items[:loop_count]]
         print(f"找到 {len(loop_ids)} 个回路")
 
-        from datetime import datetime, timedelta, timezone
-        now = datetime.now(timezone.utc)
+        from datetime import datetime, timedelta
+
+        now = datetime.now(UTC)
         ts_end = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
         ts_start = ts_end - timedelta(hours=1)
         ts_start_str = ts_start.replace(tzinfo=None).isoformat() + "Z"
@@ -40,7 +43,12 @@ def main() -> None:
         resp = client.post(
             f"{base_url}/tasks/custom/evaluate",
             headers={**headers, "Content-Type": "application/json"},
-            json={"loopIds": loop_ids, "metrics": ["accuracy_rate", "fast_rate", "steady_rate"], "tsStart": ts_start_str, "tsEnd": ts_end_str},
+            json={
+                "loopIds": loop_ids,
+                "metrics": ["accuracy_rate", "fast_rate", "steady_rate"],
+                "tsStart": ts_start_str,
+                "tsEnd": ts_end_str,
+            },
         )
         if resp.status_code != 200:
             print(f"任务提交失败: {resp.status_code}")

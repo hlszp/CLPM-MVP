@@ -12,8 +12,8 @@
 
 from __future__ import annotations
 
-import time
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -49,6 +49,7 @@ def main() -> None:
         # 测试 1：单回路评估
         print("=== 测试 1: 单回路评估 ===")
         from datetime import datetime, timedelta
+
         now = datetime.utcnow()
         ts_end = now.replace(minute=0, second=0, microsecond=0)
         ts_start = ts_end - timedelta(hours=1)
@@ -59,7 +60,12 @@ def main() -> None:
         resp = client.post(
             f"{base_url}/tasks/custom/evaluate",
             headers={**headers, "Content-Type": "application/json"},
-            json={"loopIds": [loop_ids[0]], "metrics": ["accuracy_rate", "fast_rate", "steady_rate"], "tsStart": ts_start_str, "tsEnd": ts_end_str},
+            json={
+                "loopIds": [loop_ids[0]],
+                "metrics": ["accuracy_rate", "fast_rate", "steady_rate"],
+                "tsStart": ts_start_str,
+                "tsEnd": ts_end_str,
+            },
         )
         data = resp.json()
         if resp.status_code != 200:
@@ -89,7 +95,12 @@ def main() -> None:
             resp = client.post(
                 f"{base_url}/tasks/custom/evaluate",
                 headers={**headers, "Content-Type": "application/json"},
-                json={"loopIds": loop_ids[:5], "metrics": ["accuracy_rate", "fast_rate", "steady_rate"], "tsStart": ts_start_str, "tsEnd": ts_end_str},
+                json={
+                    "loopIds": loop_ids[:5],
+                    "metrics": ["accuracy_rate", "fast_rate", "steady_rate"],
+                    "tsStart": ts_start_str,
+                    "tsEnd": ts_end_str,
+                },
             )
             data = resp.json()
             if resp.status_code != 200:
@@ -122,7 +133,12 @@ def main() -> None:
             resp = client.post(
                 f"{base_url}/tasks/custom/evaluate",
                 headers={**headers, "Content-Type": "application/json"},
-                json={"loopIds": loop_ids[:10], "metrics": ["accuracy_rate", "fast_rate", "steady_rate"], "tsStart": ts_start_str, "tsEnd": ts_end_str},
+                json={
+                    "loopIds": loop_ids[:10],
+                    "metrics": ["accuracy_rate", "fast_rate", "steady_rate"],
+                    "tsStart": ts_start_str,
+                    "tsEnd": ts_end_str,
+                },
             )
             data = resp.json()
             if resp.status_code != 200:

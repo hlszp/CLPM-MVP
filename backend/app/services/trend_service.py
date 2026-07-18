@@ -23,7 +23,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -207,28 +206,30 @@ async def fetch_loop_trend(
         available_roles,
     )
 
-    # 3. 宽表查询（一次查询所有角色）
-    from app.services.data_source.factory import get_provider
+    # 3. 宽表查询（一次查询所有角色）。无有效角色时直接返回空数据，
+    # 避免 Provider 重复查询映射，也避免对远端数据源发出无意义请求。
+    raw_series = None
+    if available_roles:
+        from app.services.data_source.factory import get_provider
 
-    provider = get_provider()
-    query_wide_fn = provider.make_query_fn(db)
-    
-    try:
-        raw_series = await query_wide_fn(
-            loop_id=loop_id,
-            tag_roles=available_roles,
-            start=start_time,
-            end=end_time,
-            interval_s=sample_interval,
-        )
-        logger.debug(
-            "宽表查询成功: loop=%s, 返回点数=%d",
-            loop_id,
-            len(raw_series.timestamps),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("宽表查询失败 (loop=%s): %s", loop_id, exc)
-        raw_series = None
+        provider = get_provider()
+        query_wide_fn = provider.make_query_fn(db)
+
+        try:
+            raw_series = await query_wide_fn(
+                loop_id=loop_id,
+                tag_roles=available_roles,
+                start=start_time,
+                end=end_time,
+                interval_s=sample_interval,
+            )
+            logger.debug(
+                "宽表查询成功: loop=%s, 返回点数=%d",
+                loop_id,
+                len(raw_series.timestamps),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("宽表查询失败 (loop=%s): %s", loop_id, exc)
 
     if not raw_series or not raw_series.timestamps:
         return {
@@ -251,7 +252,7 @@ async def fetch_loop_trend(
     pv_quality_list: list[str] = []
 
     pv_qualities = raw_series.quality_codes.get("pv_quality", [])
-    
+
     for i, ts in enumerate(raw_series.timestamps):
         ts_millis = _ts_to_millis(ts)
         if ts_millis is None:
