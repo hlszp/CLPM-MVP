@@ -86,9 +86,14 @@ def test_stop_beat_keeps_pid_file_owned_by_existing_process(tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_history_fetch_timeout_is_reported_as_data_source_error() -> None:
+async def test_history_fetch_timeout_is_reported_as_data_source_error(monkeypatch) -> None:
     """上游超时必须成为明确失败，不能伪装成空数据成功。"""
+    from app.core.config import settings
     from app.services.data_import import HistoryDataSourceError, _fetch_remote_history
+
+    # 测试需与本地 .env 解耦：CI 环境无 HISTORY_DATA_API_URL，
+    # 否则会提前命中"未配置"分支而非超时分支
+    monkeypatch.setattr(settings, "HISTORY_DATA_API_URL", "http://example.invalid/history")
 
     client = MagicMock()
     client.get = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
