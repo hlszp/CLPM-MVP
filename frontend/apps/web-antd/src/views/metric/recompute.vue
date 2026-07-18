@@ -22,6 +22,7 @@ import {
   FormItem,
   Input,
   message,
+  Modal,
   Progress,
   Select,
   Space,
@@ -57,6 +58,19 @@ const pageSize = ref(20);
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleteLoading = ref(false);
 
+function requestConfirmation(content: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    Modal.confirm({
+      cancelText: '取消',
+      content,
+      okText: '确认',
+      onCancel: () => resolve(false),
+      onOk: () => resolve(true),
+      title: '请确认',
+    });
+  });
+}
+
 // 筛选状态
 const filterStatus = ref<TaskApi.TaskStatus | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
@@ -69,7 +83,10 @@ const previewResult = ref<null | TaskApi.BackfillPreviewResult>(null);
 
 const form = ref({
   title: '',
-  tsRange: [dayjs().subtract(7, 'day').startOf('hour'), dayjs().startOf('hour')] as [dayjs.Dayjs, dayjs.Dayjs],
+  tsRange: [
+    dayjs().subtract(7, 'day').startOf('hour'),
+    dayjs().startOf('hour'),
+  ] as [dayjs.Dayjs, dayjs.Dayjs],
   plantNodeIds: [] as string[],
   loopIds: [] as string[],
 });
@@ -320,7 +337,10 @@ function openDrawer() {
   previewResult.value = null;
   form.value = {
     title: '',
-    tsRange: [dayjs().subtract(7, 'day').startOf('hour'), dayjs().startOf('hour')] as [dayjs.Dayjs, dayjs.Dayjs],
+    tsRange: [
+      dayjs().subtract(7, 'day').startOf('hour'),
+      dayjs().startOf('hour'),
+    ] as [dayjs.Dayjs, dayjs.Dayjs],
     plantNodeIds: [],
     loopIds: [],
   };
@@ -357,8 +377,7 @@ async function handlePreview() {
         form.value.plantNodeIds.length > 0
           ? form.value.plantNodeIds
           : undefined,
-      loopIds:
-        form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
+      loopIds: form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
       dryRun: true,
     });
     previewResult.value = result as TaskApi.BackfillPreviewResult;
@@ -389,8 +408,7 @@ async function handleSubmit() {
         form.value.plantNodeIds.length > 0
           ? form.value.plantNodeIds
           : undefined,
-      loopIds:
-        form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
+      loopIds: form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
       dryRun: false,
     });
     const taskId = (result as { taskId: string }).taskId;
@@ -411,7 +429,12 @@ async function handleBatchDelete() {
     message.warning('请先选择要删除的任务');
     return;
   }
-  if (!window.confirm(`确认删除已选 ${selectedRowKeys.value.length} 个任务？`)) return;
+  if (
+    !(await requestConfirmation(
+      `确认删除已选 ${selectedRowKeys.value.length} 个任务？`,
+    ))
+  )
+    return;
   batchDeleteLoading.value = true;
   try {
     const failed: string[] = [];
@@ -423,7 +446,9 @@ async function handleBatchDelete() {
       }
     }
     if (failed.length > 0) {
-      message.warning(`删除完成，${failed.length} 个任务删除失败（可能非终态）`);
+      message.warning(
+        `删除完成，${failed.length} 个任务删除失败（可能非终态）`,
+      );
     } else {
       message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
     }
@@ -437,7 +462,12 @@ async function handleBatchDelete() {
 }
 
 async function handleDelete(record: TaskApi.TaskItem) {
-  if (!window.confirm(`确认删除任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
+  if (
+    !(await requestConfirmation(
+      `确认删除任务 ${record.taskId.slice(-8).toUpperCase()}？`,
+    ))
+  )
+    return;
   try {
     await deleteTaskApi(record.taskId);
     message.success('任务已删除');
@@ -448,7 +478,12 @@ async function handleDelete(record: TaskApi.TaskItem) {
 }
 
 async function handleCancel(record: TaskApi.TaskItem) {
-  if (!window.confirm(`确认取消任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
+  if (
+    !(await requestConfirmation(
+      `确认取消任务 ${record.taskId.slice(-8).toUpperCase()}？`,
+    ))
+  )
+    return;
   try {
     await cancelTaskApi(record.taskId);
     message.success('任务已取消');
@@ -596,17 +631,23 @@ onUnmounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'taskTitle'">
-            <span class="font-medium">{{ getTaskTitle(record as TaskApi.TaskItem) }}</span>
+            <span class="font-medium">{{
+              getTaskTitle(record as TaskApi.TaskItem)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'taskType'">
             <Tag>{{ taskTypeTextMap[record.taskType] || record.taskType }}</Tag>
           </template>
           <template v-else-if="column.key === 'loopsTotal'">
-            <span v-if="record.loopsTotal" class="font-mono">{{ record.loopsTotal }}</span>
+            <span v-if="record.loopsTotal" class="font-mono">{{
+              record.loopsTotal
+            }}</span>
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'windowCount'">
-            <span v-if="record.windowCount" class="font-mono">{{ record.windowCount }}</span>
+            <span v-if="record.windowCount" class="font-mono">{{
+              record.windowCount
+            }}</span>
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'tsRange'">
@@ -635,7 +676,9 @@ onUnmounted(() => {
             <span class="clpm-num">{{ formatTime(record.createdAt) }}</span>
           </template>
           <template v-else-if="column.key === 'duration'">
-            <span class="font-mono">{{ formatDuration(record as TaskApi.TaskItem) }}</span>
+            <span class="font-mono">{{
+              formatDuration(record as TaskApi.TaskItem)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Space :size="4">
@@ -691,12 +734,16 @@ onUnmounted(() => {
             v-model:value="form.tsRange"
             :allow-clear="false"
             :disabled-date="(d: dayjs.Dayjs) => d.isAfter(dayjs())"
-            :show-time="{ format: 'HH:mm', defaultValue: [dayjs().startOf('hour'), dayjs().startOf('hour')] }"
+            :show-time="{
+              format: 'HH:mm',
+              defaultValue: [dayjs().startOf('hour'), dayjs().startOf('hour')],
+            }"
             format="YYYY-MM-DD HH:mm"
             style="width: 100%"
           />
           <div class="mt-1 text-xs" :style="{ color: themeColors.NEUTRAL }">
-            默认整点时刻（如 01:00~03:00），可精确到分钟；最大 30 天；按小时窗口批量重算
+            默认整点时刻（如 01:00~03:00），可精确到分钟；最大 30
+            天；按小时窗口批量重算
           </div>
         </FormItem>
 
@@ -735,17 +782,22 @@ onUnmounted(() => {
           v-if="previewResult"
           class="mt-4 rounded border border-blue-200 bg-blue-50 p-3"
         >
-          <div class="mb-2 font-medium" :style="{ color: themeColors.INFO }">影响范围预览</div>
+          <div class="mb-2 font-medium" :style="{ color: themeColors.INFO }">
+            影响范围预览
+          </div>
           <div class="text-sm">
             <div>回路数：{{ previewResult.loopCount }}</div>
             <div>小时窗口数：{{ previewResult.windowCount }}</div>
             <div>
-              预估耗时：{{ Math.ceil(previewResult.estimatedDurationSec / 60) }} 分钟
+              预估耗时：{{ Math.ceil(previewResult.estimatedDurationSec / 60) }}
+              分钟
             </div>
             <div v-if="previewResult.sampleLoopNames.length > 0">
               样本回路：
               {{ previewResult.sampleLoopNames.join(', ') }}
-              <span v-if="previewResult.loopCount > 5"> 等 {{ previewResult.loopCount }} 个</span>
+              <span v-if="previewResult.loopCount > 5">
+                等 {{ previewResult.loopCount }} 个</span
+              >
             </div>
           </div>
         </div>

@@ -415,12 +415,16 @@ if [ "$DO_DEPLOY" = true ]; then
     DEPLOY_OUTPUT=$($SSH_PREFIX "
         set -e
         cd ${SERVER_DEPLOY_DIR}
+        COMPOSE_PROFILE=''
+        if grep -qE '^DATA_SOURCE_TYPE=tdengine$' .env.prod; then
+            COMPOSE_PROFILE='--profile tdengine'
+        fi
 
         echo '=== 1. 停止旧服务 ==='
-        docker compose -f docker-compose.prod.yml down --remove-orphans 2>&1 || echo '[WARN] down 命令有警告（非首次部署可忽略）'
+        docker compose --env-file .env.prod -f docker-compose.prod.yml \${COMPOSE_PROFILE} down --remove-orphans 2>&1 || echo '[WARN] down 命令有警告（非首次部署可忽略）'
 
         echo '=== 2. 清理残留容器（防止容器名冲突） ==='
-        for c in clpm-backend clpm-frontend clpm-postgres clpm-redis clpm-celery-worker clpm-celery-beat; do
+        for c in clpm-backend clpm-frontend clpm-postgres clpm-tdengine clpm-redis clpm-celery-worker clpm-celery-beat; do
             if docker ps -a --format '{{.Names}}' | grep -q \"^\${c}\$\"; then
                 echo \"  移除残留容器: \$c\"
                 docker rm -f \"\$c\" 2>/dev/null || true
@@ -428,13 +432,13 @@ if [ "$DO_DEPLOY" = true ]; then
         done
 
         echo '=== 3. 启动新服务 ==='
-        docker compose -f docker-compose.prod.yml up -d 2>&1
+        docker compose --env-file .env.prod -f docker-compose.prod.yml \${COMPOSE_PROFILE} up -d 2>&1
 
         echo '=== 4. 等待服务启动（40秒） ==='
         sleep 40
 
         echo '=== 5. 服务状态 ==='
-        docker compose -f docker-compose.prod.yml ps
+        docker compose --env-file .env.prod -f docker-compose.prod.yml \${COMPOSE_PROFILE} ps
     " 2>&1) || DEPLOY_EXIT=$?
 
     echo "$DEPLOY_OUTPUT"
@@ -447,7 +451,7 @@ if [ "$DO_DEPLOY" = true ]; then
         log_error "  3. 镜像加载失败 → 检查: ssh ${SSH_HOST} 'docker images | grep clpm'"
         log_error "  4. 磁盘空间不足 → 检查: ssh ${SSH_HOST} 'df -h'"
         log_error ""
-        log_error "查看详细日志: ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml logs'"
+        log_error "查看详细日志: ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose --env-file .env.prod -f docker-compose.prod.yml logs'"
         exit 1
     fi
 
@@ -460,7 +464,11 @@ if [ "$DO_DEPLOY" = true ]; then
     log_info "检查容器运行状态..."
     UNHEALTHY_CONTAINERS=$($SSH_PREFIX "
         cd ${SERVER_DEPLOY_DIR}
-        docker compose -f docker-compose.prod.yml ps --format '{{.Name}} {{.Status}}' | \
+        COMPOSE_PROFILE=''
+        if grep -qE '^DATA_SOURCE_TYPE=tdengine$' .env.prod; then
+            COMPOSE_PROFILE='--profile tdengine'
+        fi
+        docker compose --env-file .env.prod -f docker-compose.prod.yml \${COMPOSE_PROFILE} ps --format '{{.Name}} {{.Status}}' | \
         grep -v 'Up' | grep -v 'healthy' || true
     " 2>/dev/null || echo "")
 
@@ -515,10 +523,10 @@ if [ "$DO_DEPLOY" = true ]; then
     echo "  默认账号：  admin / admin123"
     echo ""
     echo "常用运维命令："
-    echo "  查看日志：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml logs -f'"
-    echo "  查看状态：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml ps'"
-    echo "  重启服务：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml restart'"
-    echo "  停止服务：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose -f docker-compose.prod.yml down'"
+    echo "  查看日志：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f'"
+    echo "  查看状态：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose --env-file .env.prod -f docker-compose.prod.yml ps'"
+    echo "  重启服务：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose --env-file .env.prod -f docker-compose.prod.yml restart'"
+    echo "  停止服务：  ssh ${SSH_HOST} 'cd ${SERVER_DEPLOY_DIR} && docker compose --env-file .env.prod -f docker-compose.prod.yml down'"
 fi
 
 echo ""

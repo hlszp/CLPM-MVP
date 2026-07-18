@@ -40,7 +40,12 @@ import {
 } from 'ant-design-vue';
 
 import { createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
-import { ClpmDataCanvas, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TuningSimulation' });
@@ -226,6 +231,14 @@ function getImprovementLabel(val: null | number | undefined): string {
   return '持平';
 }
 
+function getImprovementStatus(
+  value: number,
+): NonNullable<SummaryItem['status']> {
+  if (value > 0) return 'success';
+  if (value < 0) return 'danger';
+  return 'neutral';
+}
+
 /** ObjectSummaryBar 主指标：综合改善幅度 */
 const primarySummaryItem = computed<null | SummaryItem>(() => {
   if (!simulationResult.value) return null;
@@ -248,7 +261,7 @@ const primarySummaryItem = computed<null | SummaryItem>(() => {
     key: 'improvement',
     label: '综合改善幅度',
     value: `${sign}${pct.toFixed(1)}%`,
-    status: pct > 0 ? 'success' : (pct < 0 ? 'danger' : 'neutral'),
+    status: getImprovementStatus(pct),
   };
 });
 

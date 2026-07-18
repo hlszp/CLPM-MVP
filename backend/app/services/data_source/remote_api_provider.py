@@ -158,6 +158,48 @@ class RemoteApiProvider:
             查询函数闭包
         """
 
+        # DataPlanner 会并发执行多个 tagGroup 查询，而这些查询共享同一个
+        # AsyncSession。先串行解析并缓存回路的角色-Tag 映射，避免同一个
+        # AsyncSession 被并发 execute；映射解析完成后的远程 HTTP I/O 仍可并发。
+        role_tag_names_cache: dict[str, dict[str, str]] = {}
+        mapping_lock = asyncio.Lock()
+
+        async def _resolve_role_tag_names(loop_id: str) -> dict[str, str]:
+            if loop_id in role_tag_names_cache:
+                return role_tag_names_cache[loop_id]
+
+            async with mapping_lock:
+                if loop_id in role_tag_names_cache:
+                    return role_tag_names_cache[loop_id]
+
+                from sqlalchemy import select
+
+                from app.models.loop import LoopTagMapping
+                from app.models.tag import TagRegistry
+
+                mapping_result = await db.execute(
+                    select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
+                )
+                mappings = {
+                    mapping.tag_role.upper(): mapping for mapping in mapping_result.scalars().all()
+                }
+
+                tag_ids = [str(mapping.tag_id) for mapping in mappings.values()]
+                tags_map: dict[str, Any] = {}
+                if tag_ids:
+                    tag_result = await db.execute(
+                        select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
+                    )
+                    tags_map = {str(tag.id): tag for tag in tag_result.scalars().all()}
+
+                resolved = {
+                    role: tag.tag_name
+                    for role, mapping in mappings.items()
+                    if (tag := tags_map.get(str(mapping.tag_id))) is not None
+                }
+                role_tag_names_cache[loop_id] = resolved
+                return resolved
+
         async def _query_fn(
             loop_id: str,
             tag_roles: list[str],
@@ -166,36 +208,17 @@ class RemoteApiProvider:
             interval_s: int,
         ):
             """远程 API 适配器闭包."""
-            from sqlalchemy import select
-
             from app.contracts.data_types import RawTimeSeries
-            from app.models.loop import LoopTagMapping
-            from app.models.tag import TagRegistry
 
-            # 1. 查询回路-Tag 映射
-            m_result = await db.execute(
-                select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
-            )
-            mappings = {m.tag_role.upper(): m for m in m_result.scalars().all()}
-
-            tag_ids = [str(m.tag_id) for m in mappings.values()]
-            tags_map: dict[str, Any] = {}
-            if tag_ids:
-                t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
-                for t in t_result.scalars().all():
-                    tags_map[str(t.id)] = t
-
-            # 2. 构建 tagCodes 列表（tag_name 作为 tagCode）
+            # 1-2. 串行解析并缓存回路映射，再按本次 tagGroup 选取 tagCodes。
+            all_role_tag_names = await _resolve_role_tag_names(loop_id)
             role_tag_names: dict[str, str] = {}  # role_lower → tag_name
             for role_lower in tag_roles:
                 role_upper = role_lower.upper()
-                mapping = mappings.get(role_upper)
-                if not mapping:
+                tag_name = all_role_tag_names.get(role_upper)
+                if not tag_name:
                     continue
-                tag = tags_map.get(str(mapping.tag_id))
-                if not tag:
-                    continue
-                role_tag_names[role_lower] = tag.tag_name
+                role_tag_names[role_lower] = tag_name
 
             if not role_tag_names:
                 logger.warning("远程API: 回路 %s 无有效 Tag 映射", loop_id)

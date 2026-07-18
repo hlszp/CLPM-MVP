@@ -2,7 +2,7 @@
 
 测试覆盖：
 - 纯函数：_detect_external_disturbance / _compute_sample_interval 等
-- _diagnose_loop 核心诊断逻辑（mock DB + query_trend_fn）
+- _diagnose_loop 核心诊断逻辑（mock DB + RawTimeSeries 宽表查询）
 - _do_run_diagnosis / _do_diagnose_single_loop 编排逻辑
 """
 
@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
+from app.contracts.data_types import RawTimeSeries
 from app.tasks.diagnosis_engine import (
     _analyze_pid_params,
     _analyze_quality,
@@ -103,18 +104,27 @@ def _make_diag_config(
     return c
 
 
-def _make_trend_data(
-    n: int = 50,
-    base_value: float = 50.0,
-    amplitude: float = 0.0,
-    quality: str = "GOOD",
-) -> list[dict[str, Any]]:
-    """构造 TDengine 趋势数据。"""
-    data: list[dict[str, Any]] = []
-    for i in range(n):
-        value = base_value + amplitude * float(np.sin(i * 0.5))
-        data.append({"ts": float(i), "value": value, "quality": quality})
-    return data
+def _make_raw_timeseries(
+    pv: list[Any],
+    *,
+    sp: list[Any] | None = None,
+    op: list[Any] | None = None,
+    mode: list[Any] | None = None,
+    pv_quality: list[int] | None = None,
+) -> RawTimeSeries:
+    """构造宽表查询返回的 RawTimeSeries。"""
+    signals = {"pv": pv}
+    if sp is not None:
+        signals["sp"] = sp
+    if op is not None:
+        signals["op"] = op
+    if mode is not None:
+        signals["mode"] = mode
+    return RawTimeSeries(
+        timestamps=[datetime(2026, 1, 1) + timedelta(seconds=i) for i in range(len(pv))],
+        signals=signals,
+        quality_codes={"pv_quality": pv_quality or [1] * len(pv)},
+    )
 
 
 def _make_scalar_one_or_none_mock(value: Any) -> MagicMock:
@@ -308,7 +318,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=AsyncMock(),
+            query_wide_fn=AsyncMock(),
         )
         assert result is None
 
@@ -332,7 +342,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=AsyncMock(),
+            query_wide_fn=AsyncMock(),
         )
         assert result is None
 
@@ -361,7 +371,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_fail_query,
+            query_wide_fn=_fail_query,
         )
         assert result is None
 
@@ -382,7 +392,7 @@ class TestDiagnoseLoop:
         )
 
         # 仅 10 个点（< MIN_DATA_POINTS=32）
-        short_data = _make_trend_data(n=10)
+        short_data = _make_raw_timeseries([50.0] * 10)
 
         async def _query_fn(*args, **kwargs):
             return short_data
@@ -393,7 +403,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
         assert result is None
 
@@ -417,15 +427,10 @@ class TestDiagnoseLoop:
 
         # 50 个点的振荡信号
         t = np.linspace(0, 10 * np.pi, 50)
-        osc_data = [
-            {"ts": float(i), "value": 50.0 + 10.0 * np.sin(ti), "quality": "GOOD"}
-            for i, ti in enumerate(t)
-        ]
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return osc_data
-            return []
+        async def _query_fn(**kwargs):
+            return osc_data
 
         result = await _diagnose_loop(
             db=db,
@@ -433,7 +438,7 @@ class TestDiagnoseLoop:
             diag_configs={"OSCILLATION": _make_diag_config()},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -461,12 +466,10 @@ class TestDiagnoseLoop:
         db.add = MagicMock()
 
         # 50 个点的稳定数据（无振荡）
-        stable_data = [{"ts": float(i), "value": 50.0, "quality": "GOOD"} for i in range(50)]
+        stable_data = _make_raw_timeseries([50.0] * 50)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return stable_data
-            return []
+        async def _query_fn(**kwargs):
+            return stable_data
 
         result = await _diagnose_loop(
             db=db,
@@ -474,7 +477,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -499,14 +502,10 @@ class TestDiagnoseLoop:
         db.add = MagicMock()
 
         # 50 个点，部分 Bad
-        data = _make_trend_data(n=50)
-        for i in range(10):
-            data[i]["quality"] = "BAD"
+        data = _make_raw_timeseries([50.0] * 50, pv_quality=[0] * 10 + [1] * 40)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return data
-            return []
+        async def _query_fn(**kwargs):
+            return data
 
         result = await _diagnose_loop(
             db=db,
@@ -514,7 +513,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         # 过滤后 40 点 >= 32，应正常诊断
@@ -538,12 +537,10 @@ class TestDiagnoseLoop:
         )
 
         # 50 个点全部 Bad
-        data = _make_trend_data(n=50, quality="BAD")
+        data = _make_raw_timeseries([50.0] * 50, pv_quality=[0] * 50)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return data
-            return []
+        async def _query_fn(**kwargs):
+            return data
 
         result = await _diagnose_loop(
             db=db,
@@ -551,7 +548,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
         assert result is None
 
@@ -579,18 +576,16 @@ class TestDiagnoseLoop:
         )
         db.add = MagicMock()
 
-        pv_data = _make_trend_data(n=50, base_value=50.0, amplitude=2.0)
+        pv_values = [50.0 + 2.0 * float(np.sin(i * 0.5)) for i in range(50)]
+        raw_series = _make_raw_timeseries(
+            pv_values,
+            sp=[50.0] * 50,
+            op=[50.0] * 50,
+            mode=[1] * 50,
+        )
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return pv_data
-            if tag_name == "LIC.SP":
-                return [{"ts": float(i), "value": 50.0} for i in range(50)]
-            if tag_name == "LIC.OP":
-                return [{"ts": float(i), "value": 50.0} for i in range(50)]
-            if tag_name == "LIC.MODE":
-                return [{"ts": float(i), "value": 1} for i in range(50)]
-            return []
+        async def _query_fn(**kwargs):
+            return raw_series
 
         result = await _diagnose_loop(
             db=db,
@@ -598,7 +593,7 @@ class TestDiagnoseLoop:
             diag_configs={"OSCILLATION": _make_diag_config()},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1454,18 +1449,13 @@ class TestDiagnoseLoopExtendedAlgorithms:
         op_vals = 50.0 + 20.0 * np.sign(np.sin(t))
         pv_vals = 50.0 + 15.0 * np.sin(t - np.pi / 4)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return [
-                    {"ts": float(i), "value": float(pv_vals[i]), "quality": "GOOD"}
-                    for i in range(n)
-                ]
-            if tag_name == "LIC.OP":
-                return [
-                    {"ts": float(i), "value": float(op_vals[i]), "quality": "GOOD"}
-                    for i in range(n)
-                ]
-            return []
+        raw_series = _make_raw_timeseries(
+            [float(value) for value in pv_vals],
+            op=[float(value) for value in op_vals],
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
 
         result = await _diagnose_loop(
             db=db,
@@ -1473,7 +1463,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1511,16 +1501,13 @@ class TestDiagnoseLoopExtendedAlgorithms:
             t = i - 50
             pv[i] = 100.0 + 40.0 * np.exp(-t * 0.02) * np.cos(t * 0.3)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return [
-                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"} for i in range(n)
-                ]
-            if tag_name == "LIC.SP":
-                return [
-                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"} for i in range(n)
-                ]
-            return []
+        raw_series = _make_raw_timeseries(
+            [float(value) for value in pv],
+            sp=[float(value) for value in sp],
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
 
         result = await _diagnose_loop(
             db=db,
@@ -1528,7 +1515,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1564,16 +1551,13 @@ class TestDiagnoseLoopExtendedAlgorithms:
         for shift_time in range(0, n, 200):
             pv[shift_time : shift_time + 100] += 8.0
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return [
-                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"} for i in range(n)
-                ]
-            if tag_name == "LIC.SP":
-                return [
-                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"} for i in range(n)
-                ]
-            return []
+        raw_series = _make_raw_timeseries(
+            [float(value) for value in pv],
+            sp=[float(value) for value in sp],
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
 
         result = await _diagnose_loop(
             db=db,
@@ -1581,7 +1565,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None

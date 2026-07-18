@@ -145,8 +145,7 @@ function render() {
           formatter: (v: number) => (v % 20 === 0 ? `${v}` : ''),
         },
         pointer: {
-          icon:
-            'path://M2,0 L-2,0 L-1,-90 L1,-90 Z',
+          icon: 'path://M2,0 L-2,0 L-1,-90 L1,-90 Z',
           length: '80%',
           width: 4,
           offsetCenter: [0, 0],
@@ -170,7 +169,9 @@ function render() {
         title: {
           show: false,
         },
-        data: [{ value: noEvaluatedLoops.value ? 0 : value, name: '实时自控率' }],
+        data: [
+          { value: noEvaluatedLoops.value ? 0 : value, name: '实时自控率' },
+        ],
       },
     ],
     graphic: [
@@ -180,9 +181,7 @@ function render() {
         left: 'center',
         top: '50%',
         style: {
-          text: noEvaluatedLoops.value
-            ? '无参评回路'
-            : `${value.toFixed(1)}%`,
+          text: noEvaluatedLoops.value ? '无参评回路' : `${value.toFixed(1)}%`,
           align: 'center',
           verticalAlign: 'middle',
           fill: noEvaluatedLoops.value
@@ -264,7 +263,9 @@ watch(isDark, () => {
         <Tag :color="badge.color" class="m-0">{{ badge.label }}</Tag>
         <div>
           <div class="text-sm font-medium">{{ title }}</div>
-          <div v-if="subtitle" class="text-xs text-gray-400">{{ subtitle }}</div>
+          <div v-if="subtitle" class="text-xs text-gray-400">
+            {{ subtitle }}
+          </div>
         </div>
       </div>
     </div>
@@ -287,10 +288,7 @@ watch(isDark, () => {
     </div>
 
     <!-- 卡片右下角：迷你 sparkline -->
-    <div
-      v-if="(history?.length ?? 0) > 0"
-      class="auto-rate-gauge__spark"
-    >
+    <div v-if="(history?.length ?? 0) > 0" class="auto-rate-gauge__spark">
       <EchartsUI ref="sparkRef" height="40px" width="120px" />
     </div>
   </Card>

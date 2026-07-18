@@ -7,10 +7,9 @@
 
 from __future__ import annotations
 
-import time
 import sys
+import time
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -30,12 +29,12 @@ def main() -> None:
         token = resp.json()["data"]["accessToken"]
         headers = {"Authorization": f"Bearer {token}"}
 
-        print(f"=== 端到端性能测试（标准评估任务） ===")
+        print("=== 端到端性能测试（标准评估任务） ===")
         print(f"计划测试次数: {num_tests}\n")
 
         results = []
         for i in range(num_tests):
-            print(f"--- 第 {i+1}/{num_tests} 次测试 ---")
+            print(f"--- 第 {i + 1}/{num_tests} 次测试 ---")
             t0 = time.perf_counter()
 
             # 使用标准评估任务（无并发限制）
@@ -85,8 +84,8 @@ def main() -> None:
                 print(f"成功次数: {len(times)}")
                 print(f"最快: {min(times):.2f}s")
                 print(f"最慢: {max(times):.2f}s")
-                print(f"平均: {sum(times)/len(times):.2f}s")
-                print(f"中位数: {sorted(times)[len(times)//2]:.2f}s")
+                print(f"平均: {sum(times) / len(times):.2f}s")
+                print(f"中位数: {sorted(times)[len(times) // 2]:.2f}s")
                 print(f"16秒目标: {'达标' if max(times) <= 16 else '未达标'}")
             else:
                 print("所有测试均失败！")

@@ -19,14 +19,18 @@ const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
 const isSlow = computed(() => props.data.ratio > 2);
-const statusColor = computed(() => (isSlow.value ? themeColors.value.DANGER : getSeriesColor('ok')));
+const statusColor = computed(() =>
+  isSlow.value ? themeColors.value.DANGER : getSeriesColor('ok'),
+);
 
 const ratioPercent = computed(() => (props.data.ratio * 100).toFixed(1));
 const ratioBarValue = computed(() => Math.min(100, props.data.ratio * 50));
 
 const options = computed(() => {
-  const barColor = isSlow.value ? themeColors.value.DANGER : getSeriesColor('ok');
-  
+  const barColor = isSlow.value
+    ? themeColors.value.DANGER
+    : getSeriesColor('ok');
+
   const option: any = {
     xAxis: {
       type: 'category',
@@ -52,7 +56,7 @@ const options = computed(() => {
       {
         type: 'bar',
         data: [ratioBarValue.value],
-        itemStyle: { 
+        itemStyle: {
           color: barColor,
           borderRadius: [0, 4, 4, 0],
         },
@@ -64,9 +68,13 @@ const options = computed(() => {
   return option;
 });
 
-watch(options, (newOptions) => {
-  renderEcharts(newOptions);
-}, { immediate: true });
+watch(
+  options,
+  (newOptions) => {
+    renderEcharts(newOptions);
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   renderEcharts(options.value);
@@ -77,7 +85,10 @@ onMounted(() => {
   <div class="slow-response-card">
     <div class="card-header">
       <div class="card-title">响应迟缓分析</div>
-      <div class="status-badge" :style="{ backgroundColor: statusColor, color: '#fff' }">
+      <div
+        class="status-badge"
+        :style="{ backgroundColor: statusColor, color: '#fff' }"
+      >
         {{ isSlow ? '响应迟缓' : '正常' }}
       </div>
     </div>
@@ -93,11 +104,15 @@ onMounted(() => {
         </div>
         <div class="metric-item">
           <span class="metric-label">预期时间常数</span>
-          <span class="metric-value">{{ data.expectedTimeConstant.toFixed(2) }}s</span>
+          <span class="metric-value"
+            >{{ data.expectedTimeConstant.toFixed(2) }}s</span
+          >
         </div>
         <div class="metric-item">
           <span class="metric-label">迟缓倍数</span>
-          <span class="metric-value" :style="{ color: statusColor }">{{ data.ratio.toFixed(2) }}x</span>
+          <span class="metric-value" :style="{ color: statusColor }"
+            >{{ data.ratio.toFixed(2) }}x</span
+          >
         </div>
         <div class="metric-item">
           <span class="metric-label">判定阈值</span>

@@ -36,6 +36,8 @@ from app.api.v1.endpoints import (
     diagnosis,
     grading_config,
     health,
+    # Phase 3: 回路数据管理（历史数据导入）
+    loop_data,
     loop_level_weight,
     loop_mode_mapping,
     loop_type_weight,
@@ -136,23 +138,29 @@ def _start_celery_beat() -> None:
 def _stop_celery_beat() -> None:
     """停止 Celery Beat 调度子进程。"""
     global _celery_beat_process
-    if _celery_beat_process is not None:
+    process = _celery_beat_process
+    if process is not None:
         logger.info("停止 Celery Beat 调度进程...")
-        _celery_beat_process.terminate()
+        process.terminate()
         try:
-            _celery_beat_process.wait(timeout=5)
+            process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            _celery_beat_process.kill()
-            _celery_beat_process.wait(timeout=3)
+            process.kill()
+            process.wait(timeout=3)
         _celery_beat_process = None
         logger.info("Celery Beat 调度进程已停止")
 
-    # 清理 PID 文件
-    pid_file = os.path.join(os.getcwd(), "celerybeat.pid")
-    try:
-        os.remove(pid_file)
-    except OSError:
-        pass
+        # 只清理由当前 FastAPI 实例创建的 Beat PID 文件。
+        # reload 子进程若只是检测到外部 Beat 并跳过启动，绝不能删除对方
+        # 的 PID 文件，否则下一次 reload 会再启动一个重复 Beat。
+        pid_file = os.path.join(os.getcwd(), "celerybeat.pid")
+        try:
+            with open(pid_file) as file:
+                pid_from_file = int(file.read().strip())
+            if pid_from_file == process.pid:
+                os.remove(pid_file)
+        except (FileNotFoundError, ProcessLookupError, ValueError, OSError):
+            pass
 
 
 @asynccontextmanager
@@ -240,6 +248,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(auth.router)
     v1_router.include_router(plant_nodes.router)
     v1_router.include_router(loops.router)
+    # Phase 3: 回路数据管理（历史数据导入）
+    v1_router.include_router(loop_data.router)
     v1_router.include_router(tags.router)
     v1_router.include_router(aas.router)
     v1_router.include_router(datasource.router)

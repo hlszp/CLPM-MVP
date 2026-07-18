@@ -51,7 +51,11 @@ import {
   getTagListApi,
   updateTagApi,
 } from '#/api/tag';
-import { ClpmDangerConfirmModal, ClpmDataCanvas, ClpmNumeric } from '#/components/clpm';
+import {
+  ClpmDangerConfirmModal,
+  ClpmDataCanvas,
+  ClpmNumeric,
+} from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { flattenNodes } from '#/utils/plant-node';
 import { realtimeWs } from '#/utils/realtime-ws';
@@ -395,8 +399,20 @@ function formatTime(t?: null | string): string {
   }
 }
 
-function getProgressWidth(record: { currentValue?: null | number; rangeMax?: null | number; rangeMin?: null | number; }): number {
-  if (record.currentValue == null || record.rangeMin == null || record.rangeMax == null) return 0;
+function getProgressWidth(record: {
+  currentValue?: null | number;
+  rangeMax?: null | number;
+  rangeMin?: null | number;
+}): number {
+  if (
+    record.currentValue === null ||
+    record.currentValue === undefined ||
+    record.rangeMin === null ||
+    record.rangeMin === undefined ||
+    record.rangeMax === null ||
+    record.rangeMax === undefined
+  )
+    return 0;
   const range = record.rangeMax - record.rangeMin;
   if (range <= 0) return 0;
   const ratio = (record.currentValue - record.rangeMin) / range;
@@ -469,6 +485,12 @@ const uploadProps: UploadProps = {
 // ===== WebSocket 实时更新 =====
 let wsUnsubscribe: (() => void) | null = null;
 
+function mapRealtimeQuality(quality: number): TagApi.Quality {
+  if (quality === 0) return 'BAD';
+  if (quality === 2) return 'UNCERTAIN';
+  return 'GOOD';
+}
+
 /** 处理 WebSocket 实时消息，更新匹配 tag 的 currentValue/quality/lastSyncAt */
 function handleRealtimeMessage(msg: {
   collectTime: string;
@@ -482,7 +504,7 @@ function handleRealtimeMessage(msg: {
   const numValue = Number.parseFloat(msg.value);
   if (Number.isNaN(numValue)) return;
   item.currentValue = numValue;
-  item.quality = msg.quality === 0 ? 'BAD' : (msg.quality === 2 ? 'UNCERTAIN' : 'GOOD');
+  item.quality = mapRealtimeQuality(msg.quality);
   item.lastSyncAt = msg.collectTime;
 }
 
@@ -584,6 +606,7 @@ onUnmounted(() => {
       </div>
 
       <Table
+        class="tag-config-table"
         :columns="columns"
         :data-source="tagList"
         :loading="loading"
@@ -598,7 +621,10 @@ onUnmounted(() => {
         :row-key="(record: TagApi.TagItem) => record.id"
         :row-selection="rowSelection"
         :scroll="{ x: 1860 }"
-        :row-class-name="(record: TagApi.TagItem) => record.quality === 'BAD' ? 'tag-row--bad' : ''"
+        :row-class-name="
+          (record: TagApi.TagItem) =>
+            record.quality === 'BAD' ? 'tag-row--bad' : ''
+        "
         size="small"
         @change="handleTableChange"
       >
@@ -623,28 +649,61 @@ onUnmounted(() => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'rangeMin'">
-            <ClpmNumeric v-if="record.rangeMin != null" :value="record.rangeMin" :precision="2" mono size="sm" />
+            <ClpmNumeric
+              v-if="record.rangeMin != null"
+              :value="record.rangeMin"
+              :precision="2"
+              mono
+              size="sm"
+            />
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'rangeMax'">
-            <ClpmNumeric v-if="record.rangeMax != null" :value="record.rangeMax" :precision="2" mono size="sm" />
+            <ClpmNumeric
+              v-if="record.rangeMax != null"
+              :value="record.rangeMax"
+              :precision="2"
+              mono
+              size="sm"
+            />
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'currentValue'">
             <div v-if="record.currentValue != null" class="flex flex-col gap-1">
-              <ClpmNumeric :value="record.currentValue" :precision="2" mono size="sm" :weight="600" />
-              <div v-if="record.rangeMin != null && record.rangeMax != null && record.rangeMax > record.rangeMin" class="w-full bg-gray-100 h-1 rounded-full overflow-hidden">
+              <ClpmNumeric
+                :value="record.currentValue"
+                :precision="2"
+                mono
+                size="sm"
+                :weight="600"
+              />
+              <div
+                v-if="
+                  record.rangeMin != null &&
+                  record.rangeMax != null &&
+                  record.rangeMax > record.rangeMin
+                "
+                class="w-full bg-gray-100 h-1 rounded-full overflow-hidden"
+              >
                 <div
                   class="h-1 rounded-full transition-all"
-                  :class="record.quality === 'BAD' ? 'bg-gray-400' : record.quality === 'UNCERTAIN' ? 'bg-amber-400' : 'bg-emerald-500'"
-                  :style="{ width: `${getProgressWidth(record) }%` }"
+                  :class="
+                    record.quality === 'BAD'
+                      ? 'bg-gray-400'
+                      : record.quality === 'UNCERTAIN'
+                        ? 'bg-amber-400'
+                        : 'bg-emerald-500'
+                  "
+                  :style="{ width: `${getProgressWidth(record)}%` }"
                 ></div>
               </div>
             </div>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'unit'">
-            <span v-if="record.unit" class="text-xs text-gray-500">{{ record.unit }}</span>
+            <span v-if="record.unit" class="text-xs text-gray-500">{{
+              record.unit
+            }}</span>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'quality'">
@@ -663,7 +722,10 @@ onUnmounted(() => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'lastSyncAt'">
-            <span v-if="record.lastSyncAt" class="text-xs text-gray-500 font-mono">
+            <span
+              v-if="record.lastSyncAt"
+              class="text-xs text-gray-500 font-mono"
+            >
               {{ formatTime(record.lastSyncAt) }}
             </span>
             <span v-else class="text-gray-400">—</span>
@@ -890,6 +952,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.tag-config-table :deep(.ant-table-tbody > tr.ant-table-row-selected > td) {
+  border-inline-end: none !important;
+  box-shadow: none !important;
+}
+
 .tag-row--bad {
   background-color: rgb(244 63 94 / 4%);
 }

@@ -123,7 +123,8 @@ const lastRefreshDisplay = computed(() => {
 const tooltipText = computed(() => {
   const parts: string[] = [`状态：${statusMeta.value.text}`];
   if (latencyDisplay.value) parts.push(`延迟：${latencyDisplay.value}`);
-  if (lastRefreshDisplay.value) parts.push(`最后刷新：${lastRefreshDisplay.value}`);
+  if (lastRefreshDisplay.value)
+    parts.push(`最后刷新：${lastRefreshDisplay.value}`);
   if (props.autoRefresh) parts.push(`自动刷新：${props.refreshInterval}s`);
   return parts.join(' · ');
 });
@@ -132,9 +133,8 @@ const tooltipText = computed(() => {
 <template>
   <Tooltip :title="tooltipText" placement="bottom">
     <div
-      class="clpm-realtime-status" :class="[
-        size === 'small' ? 'clpm-realtime-status--sm' : '',
-      ]"
+      class="clpm-realtime-status"
+      :class="[size === 'small' ? 'clpm-realtime-status--sm' : '']"
       :style="{
         color: statusMeta.color,
         background: statusMeta.bgColor,
@@ -143,9 +143,8 @@ const tooltipText = computed(() => {
     >
       <IconifyIcon
         :icon="statusMeta.icon"
-        class="clpm-realtime-status__icon" :class="[
-          statusMeta.pulse ? 'clpm-realtime-status__icon--pulse' : '',
-        ]"
+        class="clpm-realtime-status__icon"
+        :class="[statusMeta.pulse ? 'clpm-realtime-status__icon--pulse' : '']"
       />
       <span class="clpm-realtime-status__text">{{ statusMeta.text }}</span>
       <ClpmNumeric

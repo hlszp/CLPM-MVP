@@ -71,19 +71,55 @@ const top5List = computed(() => {
 
 // 默认定级阈值（国标 GB/T 44693.2-2024 §6.3）
 const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
-  { level: 1, name: 'EXCELLENT', label: '优秀', minScore: 90, maxScore: 100, color: '#52c41a' },
-  { level: 2, name: 'GOOD', label: '良好', minScore: 80, maxScore: 90, color: '#1890ff' },
-  { level: 3, name: 'FAIR', label: '合格', minScore: 60, maxScore: 80, color: '#faad14' },
-  { level: 4, name: 'WARNING', label: '警告', minScore: 40, maxScore: 60, color: '#fa8c16' },
-  { level: 5, name: 'POOR', label: '不合格', minScore: 0, maxScore: 40, color: '#f5222d' },
+  {
+    level: 1,
+    name: 'EXCELLENT',
+    label: '优秀',
+    minScore: 90,
+    maxScore: 100,
+    color: '#52c41a',
+  },
+  {
+    level: 2,
+    name: 'GOOD',
+    label: '良好',
+    minScore: 80,
+    maxScore: 90,
+    color: '#1890ff',
+  },
+  {
+    level: 3,
+    name: 'FAIR',
+    label: '合格',
+    minScore: 60,
+    maxScore: 80,
+    color: '#faad14',
+  },
+  {
+    level: 4,
+    name: 'WARNING',
+    label: '警告',
+    minScore: 40,
+    maxScore: 60,
+    color: '#fa8c16',
+  },
+  {
+    level: 5,
+    name: 'POOR',
+    label: '不合格',
+    minScore: 0,
+    maxScore: 40,
+    color: '#f5222d',
+  },
 ];
 
 // 定级阈值等级中文显示名（从配置读取，降级用默认值）
 const ratingLabels = computed<Record<string, string>>(() => {
   const labels: Record<string, string> = {};
-  const thresholds = gradingThresholds.value.length > 0
-    ? gradingThresholds.value
-    : DEFAULT_THRESHOLDS;
+  const thresholds =
+    gradingThresholds.value.length > 0
+      ? gradingThresholds.value
+      : DEFAULT_THRESHOLDS;
   for (const t of thresholds) {
     labels[String(t.level)] = t.label ?? t.name;
   }
@@ -91,29 +127,77 @@ const ratingLabels = computed<Record<string, string>>(() => {
 });
 
 function getRatingLevel(score: number): string {
-  const thresholds = gradingThresholds.value.length > 0
-    ? gradingThresholds.value
-    : DEFAULT_THRESHOLDS;
+  const thresholds =
+    gradingThresholds.value.length > 0
+      ? gradingThresholds.value
+      : DEFAULT_THRESHOLDS;
   // 按 minScore 降序匹配（level 1 = 最高分区间）
-  for (const t of [...thresholds].toSorted((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => b.minScore - a.minScore)) {
+  for (const t of [...thresholds].toSorted(
+    (a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) =>
+      b.minScore - a.minScore,
+  )) {
     if (score >= t.minScore) return String(t.level);
   }
   return '5'; // 最低等级
 }
 
 const tableColumns = [
-  { title: '序号', dataIndex: 'index', key: 'index', width: 60, align: 'center' as const },
-  { title: '名称', dataIndex: 'name', key: 'name', width: 150, align: 'left' as const },
-  { title: '性能评级', dataIndex: 'rating', key: 'rating', width: 80, align: 'center' as const },
-  { title: '性能评分', dataIndex: 'score', key: 'score', width: 80, align: 'right' as const },
-  { title: '平稳率', dataIndex: 'smoothRate', key: 'smoothRate', width: 80, align: 'right' as const },
-  { title: '自控率', dataIndex: 'autoRate', key: 'autoRate', width: 80, align: 'right' as const },
-  { title: '回路总数', dataIndex: 'totalLoops', key: 'totalLoops', width: 80, align: 'right' as const },
+  {
+    title: '序号',
+    dataIndex: 'index',
+    key: 'index',
+    width: 60,
+    align: 'center' as const,
+  },
+  {
+    title: '名称',
+    dataIndex: 'name',
+    key: 'name',
+    width: 150,
+    align: 'left' as const,
+  },
+  {
+    title: '性能评级',
+    dataIndex: 'rating',
+    key: 'rating',
+    width: 80,
+    align: 'center' as const,
+  },
+  {
+    title: '性能评分',
+    dataIndex: 'score',
+    key: 'score',
+    width: 80,
+    align: 'right' as const,
+  },
+  {
+    title: '平稳率',
+    dataIndex: 'smoothRate',
+    key: 'smoothRate',
+    width: 80,
+    align: 'right' as const,
+  },
+  {
+    title: '自控率',
+    dataIndex: 'autoRate',
+    key: 'autoRate',
+    width: 80,
+    align: 'right' as const,
+  },
+  {
+    title: '回路总数',
+    dataIndex: 'totalLoops',
+    key: 'totalLoops',
+    width: 80,
+    align: 'right' as const,
+  },
 ];
 
 const tableData = computed(() => {
   const items = boardAggregate.value?.items ?? [];
-  const sortedItems = [...items].toSorted((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
+  const sortedItems = [...items].toSorted(
+    (a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0),
+  );
   return sortedItems.map((item, index) => {
     const score = item.avgScore ?? 0;
     return {
@@ -130,12 +214,42 @@ const tableData = computed(() => {
 });
 
 const top5Columns = [
-  { title: '序号', dataIndex: 'index', key: 'index', width: 40, align: 'center' as const },
-  { title: '位号', dataIndex: 'tagName', key: 'tagName', width: 140, ellipsis: true },
+  {
+    title: '序号',
+    dataIndex: 'index',
+    key: 'index',
+    width: 40,
+    align: 'center' as const,
+  },
+  {
+    title: '位号',
+    dataIndex: 'tagName',
+    key: 'tagName',
+    width: 140,
+    ellipsis: true,
+  },
   { title: '名称', dataIndex: 'loopName', key: 'loopName', ellipsis: true },
-  { title: '性能评分', dataIndex: 'score', key: 'score', width: 70, align: 'right' as const },
-  { title: '平稳率', dataIndex: 'steadyRate', key: 'steadyRate', width: 65, align: 'right' as const },
-  { title: '', dataIndex: 'diagnosis', key: 'diagnosis', width: 40, align: 'center' as const },
+  {
+    title: '性能评分',
+    dataIndex: 'score',
+    key: 'score',
+    width: 70,
+    align: 'right' as const,
+  },
+  {
+    title: '平稳率',
+    dataIndex: 'steadyRate',
+    key: 'steadyRate',
+    width: 65,
+    align: 'right' as const,
+  },
+  {
+    title: '',
+    dataIndex: 'diagnosis',
+    key: 'diagnosis',
+    width: 40,
+    align: 'center' as const,
+  },
 ];
 
 const top5TableData = computed(() => {
@@ -229,9 +343,8 @@ function renderTrendChart() {
     return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:00`;
   });
 
-  const barDataTotal = (trend.totalLoops ?? 0) > 0
-    ? timestamps.map(() => trend.totalLoops)
-    : [];
+  const barDataTotal =
+    (trend.totalLoops ?? 0) > 0 ? timestamps.map(() => trend.totalLoops) : [];
   const barDataEvaluated = trend.evaluatedLoops ?? [];
 
   const showBar = timestamps.length <= 24;
@@ -241,7 +354,11 @@ function renderTrendChart() {
     xAxis: {
       type: 'category',
       data: timestamps,
-      axisLabel: { color: chartColors.value.text, fontSize: 10, rotate: timestamps.length > 12 ? 45 : 0 },
+      axisLabel: {
+        color: chartColors.value.text,
+        fontSize: 10,
+        rotate: timestamps.length > 12 ? 45 : 0,
+      },
       axisLine: { lineStyle: { color: chartColors.value.splitLine } },
       axisTick: { show: false },
     },
@@ -251,13 +368,19 @@ function renderTrendChart() {
         name: '回路数',
         nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
         axisLabel: { color: chartColors.value.text, fontSize: 10 },
-        splitLine: { lineStyle: { color: chartColors.value.splitLine, type: 'dashed' } },
+        splitLine: {
+          lineStyle: { color: chartColors.value.splitLine, type: 'dashed' },
+        },
       },
       {
         type: 'value',
         name: '百分比(%)',
         nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
-        axisLabel: { color: chartColors.value.text, fontSize: 10, formatter: '{value}%' },
+        axisLabel: {
+          color: chartColors.value.text,
+          fontSize: 10,
+          formatter: '{value}%',
+        },
         max: 100,
         splitLine: { show: false },
       },
@@ -265,19 +388,24 @@ function renderTrendChart() {
     series: [
       {
         name: '总回路数',
-        type: showBar ? 'bar' as const : 'line' as const,
+        type: showBar ? ('bar' as const) : ('line' as const),
         data: barDataTotal,
         itemStyle: { color: themeColors.value.INFO },
-        areaStyle: showBar ? undefined : {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: `${themeColors.value.INFO}40` },
-              { offset: 1, color: `${themeColors.value.INFO}05` },
-            ],
-          },
-        },
+        areaStyle: showBar
+          ? undefined
+          : {
+              color: {
+                type: 'linear',
+                x: 0,
+                y: 0,
+                x2: 0,
+                y2: 1,
+                colorStops: [
+                  { offset: 0, color: `${themeColors.value.INFO}40` },
+                  { offset: 1, color: `${themeColors.value.INFO}05` },
+                ],
+              },
+            },
         lineStyle: showBar ? undefined : { width: 2 },
         smooth: !showBar,
         symbol: 'circle',
@@ -285,19 +413,24 @@ function renderTrendChart() {
       },
       {
         name: '参评回路数',
-        type: showBar ? 'bar' as const : 'line' as const,
+        type: showBar ? ('bar' as const) : ('line' as const),
         data: barDataEvaluated,
         itemStyle: { color: themeColors.value.SUCCESS },
-        areaStyle: showBar ? undefined : {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: `${themeColors.value.SUCCESS}40` },
-              { offset: 1, color: `${themeColors.value.SUCCESS}05` },
-            ],
-          },
-        },
+        areaStyle: showBar
+          ? undefined
+          : {
+              color: {
+                type: 'linear',
+                x: 0,
+                y: 0,
+                x2: 0,
+                y2: 1,
+                colorStops: [
+                  { offset: 0, color: `${themeColors.value.SUCCESS}40` },
+                  { offset: 1, color: `${themeColors.value.SUCCESS}05` },
+                ],
+              },
+            },
         lineStyle: showBar ? undefined : { width: 2 },
         smooth: !showBar,
         symbol: 'circle',
@@ -316,7 +449,10 @@ function renderTrendChart() {
         areaStyle: {
           color: {
             type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
             colorStops: [
               { offset: 0, color: `${themeColors.value.WARNING}30` },
               { offset: 1, color: `${themeColors.value.WARNING}05` },
@@ -337,7 +473,10 @@ function renderTrendChart() {
         areaStyle: {
           color: {
             type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
             colorStops: [
               { offset: 0, color: `${themeColors.value.INFO}30` },
               { offset: 1, color: `${themeColors.value.INFO}05` },
@@ -358,7 +497,10 @@ function renderTrendChart() {
         areaStyle: {
           color: {
             type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
             colorStops: [
               { offset: 0, color: `${themeColors.value.SUCCESS}30` },
               { offset: 1, color: `${themeColors.value.SUCCESS}05` },
@@ -412,7 +554,8 @@ function renderStatusPieChart() {
   });
 
   // 仅展示有数据的 MODE（全部为 0 时显示全部以便占位）
-  const pieData = total === 0 ? allPieData : allPieData.filter((d) => (d.value ?? 0) > 0);
+  const pieData =
+    total === 0 ? allPieData : allPieData.filter((d) => (d.value ?? 0) > 0);
   const legendNames = pieData.map((d) => d.name);
 
   renderStatusPie({
@@ -420,7 +563,8 @@ function renderStatusPieChart() {
       trigger: 'item',
       position: 'right',
       formatter: (params: any) => {
-        const percent = total > 0 ? ((params.value / total) * 100).toFixed(1) : 0;
+        const percent =
+          total > 0 ? ((params.value / total) * 100).toFixed(1) : 0;
         return `${params.name}: ${params.value} (${percent}%)`;
       },
     },
@@ -442,7 +586,12 @@ function renderStatusPieChart() {
         },
         label: { show: false },
         emphasis: {
-          label: { show: true, fontSize: 12, fontWeight: 'bold', color: chartColors.value.textStrong },
+          label: {
+            show: true,
+            fontSize: 12,
+            fontWeight: 'bold',
+            color: chartColors.value.textStrong,
+          },
         },
         labelLine: { show: false },
         data: pieData,
@@ -454,9 +603,10 @@ function renderStatusPieChart() {
 function renderPieChart() {
   // 按回路评分均值计算等级占比（使用 rankingList 中的逐回路数据）
   const loops = rankingList.value;
-  const thresholds = gradingThresholds.value.length > 0
-    ? gradingThresholds.value
-    : DEFAULT_THRESHOLDS;
+  const thresholds =
+    gradingThresholds.value.length > 0
+      ? gradingThresholds.value
+      : DEFAULT_THRESHOLDS;
 
   // 按等级统计回路数量（level 1=优秀 ~ level 5=不合格）
   const levelCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -470,7 +620,10 @@ function renderPieChart() {
 
   // 按等级顺序（1→5）生成饼图数据
   const pieData = [...thresholds]
-    .toSorted((a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) => a.level - b.level)
+    .toSorted(
+      (a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) =>
+        a.level - b.level,
+    )
     .map((t: MetricApi.GradingThresholdItem) => ({
       value: levelCounts[t.level] ?? 0,
       name: ratingLabels.value[String(t.level)] ?? t.name,
@@ -481,14 +634,17 @@ function renderPieChart() {
     tooltip: {
       trigger: 'item',
       formatter: (params: any) => {
-        const percent = total > 0 ? ((params.value / total) * 100).toFixed(1) : 0;
+        const percent =
+          total > 0 ? ((params.value / total) * 100).toFixed(1) : 0;
         return `${params.name}: ${params.value}个 (${percent}%)`;
       },
     },
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: pieData.filter((d: { value: number }) => (d.value ?? 0) > 0 || total === 0).map((d: { name: string }) => d.name),
+      data: pieData
+        .filter((d: { value: number }) => (d.value ?? 0) > 0 || total === 0)
+        .map((d: { name: string }) => d.name),
     },
     series: [
       {
@@ -503,10 +659,18 @@ function renderPieChart() {
         },
         label: { show: false },
         emphasis: {
-          label: { show: true, fontSize: 12, fontWeight: 'bold', color: chartColors.value.textStrong },
+          label: {
+            show: true,
+            fontSize: 12,
+            fontWeight: 'bold',
+            color: chartColors.value.textStrong,
+          },
         },
         labelLine: { show: false },
-        data: pieData.filter((d: { itemStyle: { color: string }; name: string; value: number; }) => (d.value ?? 0) > 0 || total === 0),
+        data: pieData.filter(
+          (d: { itemStyle: { color: string }; name: string; value: number }) =>
+            (d.value ?? 0) > 0 || total === 0,
+        ),
       },
     ],
   });
@@ -544,11 +708,16 @@ async function handleDiagnosis(loopId: string) {
 
 async function loadBoard() {
   try {
-    const { getBoardAggregateApi, getBoardTrendApi } = await import('#/api/dashboard');
+    const { getBoardAggregateApi, getBoardTrendApi } =
+      await import('#/api/dashboard');
     const [aggregate, trend] = await Promise.all([
-      getBoardAggregateApi(selectedPlantNodeId.value ? { plantId: selectedPlantNodeId.value } : {}),
+      getBoardAggregateApi(
+        selectedPlantNodeId.value ? { plantId: selectedPlantNodeId.value } : {},
+      ),
       getBoardTrendApi({
-        ...(selectedPlantNodeId.value && { plantId: selectedPlantNodeId.value }),
+        ...(selectedPlantNodeId.value && {
+          plantId: selectedPlantNodeId.value,
+        }),
         timeWindow: timeWindow.value,
       }),
     ]);
@@ -567,7 +736,9 @@ async function loadBoard() {
 async function loadAutoRateRt() {
   try {
     const { getAutoRateRtApi } = await import('#/api/dashboard');
-    const data = await getAutoRateRtApi(selectedPlantNodeId.value ? { plantId: selectedPlantNodeId.value } : {});
+    const data = await getAutoRateRtApi(
+      selectedPlantNodeId.value ? { plantId: selectedPlantNodeId.value } : {},
+    );
     autoRateRt.value = data;
     await nextTick();
     updateGauges();
@@ -612,11 +783,33 @@ function loadAll() {
 }
 
 function updateGauges() {
-  renderGauge1(renderGaugeOption(autoRateRt.value?.rate ?? 0, themeColors.value.INFO));
-  renderGauge2(renderGaugeOption(aggregateData.value?.avgScore ?? 0, scoreColor(aggregateData.value?.avgScore)));
-  renderGauge3(renderGaugeOption(aggregateData.value?.autoModeRate ?? 0, themeColors.value.SUCCESS));
-  renderGauge4(renderGaugeOption(aggregateData.value?.stabilityRate ?? 0, themeColors.value.WARNING));
-  renderGauge5(renderGaugeOption(aggregateData.value?.goodValueRate ?? 0, themeColors.value.SUCCESS));
+  renderGauge1(
+    renderGaugeOption(autoRateRt.value?.rate ?? 0, themeColors.value.INFO),
+  );
+  renderGauge2(
+    renderGaugeOption(
+      aggregateData.value?.avgScore ?? 0,
+      scoreColor(aggregateData.value?.avgScore),
+    ),
+  );
+  renderGauge3(
+    renderGaugeOption(
+      aggregateData.value?.autoModeRate ?? 0,
+      themeColors.value.SUCCESS,
+    ),
+  );
+  renderGauge4(
+    renderGaugeOption(
+      aggregateData.value?.stabilityRate ?? 0,
+      themeColors.value.WARNING,
+    ),
+  );
+  renderGauge5(
+    renderGaugeOption(
+      aggregateData.value?.goodValueRate ?? 0,
+      themeColors.value.SUCCESS,
+    ),
+  );
 }
 
 watch(top5Sort, () => loadRanking());
@@ -666,13 +859,18 @@ onMounted(() => {
             <div class="clpm-pid-dashboard__gauge-card">
               <div class="clpm-pid-dashboard__gauge-title">实时自控率</div>
               <EchartsUI ref="gauge1Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">{{ autoRateRt?.rate ?? '--' }}%</div>
+              <div class="clpm-pid-dashboard__gauge-value">
+                {{ autoRateRt?.rate ?? '--' }}%
+              </div>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
               <div class="clpm-pid-dashboard__gauge-title">性能评分</div>
               <EchartsUI ref="gauge2Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value" :style="{ color: scoreColor(aggregateData?.avgScore) }">
+              <div
+                class="clpm-pid-dashboard__gauge-value"
+                :style="{ color: scoreColor(aggregateData?.avgScore) }"
+              >
                 {{ aggregateData?.avgScore ?? '--' }}%
               </div>
             </div>
@@ -680,38 +878,50 @@ onMounted(() => {
             <div class="clpm-pid-dashboard__gauge-card">
               <div class="clpm-pid-dashboard__gauge-title">自控率</div>
               <EchartsUI ref="gauge3Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.autoModeRate ?? '--' }}%</div>
+              <div class="clpm-pid-dashboard__gauge-value">
+                {{ aggregateData?.autoModeRate ?? '--' }}%
+              </div>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
               <div class="clpm-pid-dashboard__gauge-title">平稳率</div>
               <EchartsUI ref="gauge4Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.stabilityRate ?? '--' }}%</div>
+              <div class="clpm-pid-dashboard__gauge-value">
+                {{ aggregateData?.stabilityRate ?? '--' }}%
+              </div>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
               <div class="clpm-pid-dashboard__gauge-title">好值率</div>
               <EchartsUI ref="gauge5Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">{{ aggregateData?.goodValueRate ?? '--' }}%</div>
+              <div class="clpm-pid-dashboard__gauge-value">
+                {{ aggregateData?.goodValueRate ?? '--' }}%
+              </div>
             </div>
           </div>
 
           <div class="clpm-pid-dashboard__middle-row">
-            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--status-pie">
+            <div
+              class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--status-pie"
+            >
               <div class="clpm-pid-dashboard__card-header">
                 <span>回路状态统计</span>
               </div>
               <EchartsUI ref="statusPieChartRef" height="200px" />
             </div>
 
-            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--trend">
+            <div
+              class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--trend"
+            >
               <div class="clpm-pid-dashboard__card-header">
                 <span>性能指标趋势图</span>
               </div>
               <EchartsUI ref="trendChartRef" height="240px" />
             </div>
 
-            <div class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--pie">
+            <div
+              class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--pie"
+            >
               <div class="clpm-pid-dashboard__card-header">
                 <span>回路等级占比</span>
               </div>
@@ -724,10 +934,20 @@ onMounted(() => {
               <div class="clpm-pid-dashboard__card-header">
                 <span>装置/单元性能明细表</span>
               </div>
-              <Table :columns="tableColumns" :data-source="tableData" :pagination="false" :scroll="{ y: 200 }">
+              <Table
+                :columns="tableColumns"
+                :data-source="tableData"
+                :pagination="false"
+                :scroll="{ y: 200 }"
+              >
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'rating'">
-                    <span class="clpm-pid-dashboard__rating-tag" :class="[`clpm-pid-dashboard__rating-tag--${record.rating}`]">
+                    <span
+                      class="clpm-pid-dashboard__rating-tag"
+                      :class="[
+                        `clpm-pid-dashboard__rating-tag--${record.rating}`,
+                      ]"
+                    >
                       {{ ratingLabels[record.rating] }}
                     </span>
                   </template>
@@ -744,19 +964,48 @@ onMounted(() => {
             <div class="clpm-pid-dashboard__top5-card">
               <div class="clpm-pid-dashboard__card-header">
                 <span>TOP5回路</span>
-                <Tooltip :title="top5Sort === 'desc' ? '当前：评分最高，点击切换为最低' : '当前：评分最低，点击切换为最高'">
-                  <Button type="text" size="small" class="clpm-pid-dashboard__sort-btn" @click="top5Sort = top5Sort === 'desc' ? 'asc' : 'desc'">
-                    <IconifyIcon :icon="top5Sort === 'desc' ? 'ant-design:sort-descending-outlined' : 'ant-design:sort-ascending-outlined'" />
+                <Tooltip
+                  :title="
+                    top5Sort === 'desc'
+                      ? '当前：评分最高，点击切换为最低'
+                      : '当前：评分最低，点击切换为最高'
+                  "
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    class="clpm-pid-dashboard__sort-btn"
+                    @click="top5Sort = top5Sort === 'desc' ? 'asc' : 'desc'"
+                  >
+                    <IconifyIcon
+                      :icon="
+                        top5Sort === 'desc'
+                          ? 'ant-design:sort-descending-outlined'
+                          : 'ant-design:sort-ascending-outlined'
+                      "
+                    />
                   </Button>
                 </Tooltip>
               </div>
-              <Table :columns="top5Columns" :data-source="top5TableData" :pagination="false" :scroll="{ y: 200 }">
+              <Table
+                :columns="top5Columns"
+                :data-source="top5TableData"
+                :pagination="false"
+                :scroll="{ y: 200 }"
+              >
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'score'">
-                    <span :style="{ color: scoreColor(record.score) }">{{ record.score }}</span>
+                    <span :style="{ color: scoreColor(record.score) }">{{
+                      record.score
+                    }}</span>
                   </template>
                   <template v-if="column.key === 'diagnosis'">
-                    <Button type="text" size="small" :loading="diagnosisLoading" @click="handleDiagnosis(record.loopId)">
+                    <Button
+                      type="text"
+                      size="small"
+                      :loading="diagnosisLoading"
+                      @click="handleDiagnosis(record.loopId)"
+                    >
                       <template #icon>
                         <IconifyIcon icon="ant-design:right-outlined" />
                       </template>

@@ -33,8 +33,8 @@ fi
 # ------------------------------------------------------------
 # 1.5 CORS 自动检测：将 __AUTO__ 替换为本机 IP
 # ------------------------------------------------------------
-# 支持 .env.prod 中 CORS_ORIGINS=["__AUTO__", "http://localhost"]
-# 部署时自动检测本机 IP，替换为 http://<IP>
+# 支持 .env.prod 中 CORS_ORIGINS=["__AUTO__", "http://localhost:7141"]
+# 部署时自动检测本机 IP，替换为 http://<IP>:7141
 if grep -q '"__AUTO__"' "$ENV_FILE" 2>/dev/null; then
     # 检测本机 IP（Linux: hostname -I；macOS: ipconfig getifaddr）
     DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
@@ -43,13 +43,13 @@ if grep -q '"__AUTO__"' "$ENV_FILE" 2>/dev/null; then
     fi
     if [ -n "$DETECTED_IP" ]; then
         echo "检测到本机 IP：$DETECTED_IP"
-        echo "  替换 CORS_ORIGINS 中的 __AUTO__ → http://$DETECTED_IP"
+        echo "  替换 CORS_ORIGINS 中的 __AUTO__ → http://$DETECTED_IP:7141"
         # 使用 sed 替换 __AUTO__ 为实际 IP（保留其他来源）
         # 兼容 macOS sed（需要 -i ''）和 Linux sed（-i 直接使用）
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s|\"__AUTO__\"|\"http://$DETECTED_IP\"|g" "$ENV_FILE"
+            sed -i '' "s|\"__AUTO__\"|\"http://$DETECTED_IP:7141\"|g" "$ENV_FILE"
         else
-            sed -i "s|\"__AUTO__\"|\"http://$DETECTED_IP\"|g" "$ENV_FILE"
+            sed -i "s|\"__AUTO__\"|\"http://$DETECTED_IP:7141\"|g" "$ENV_FILE"
         fi
         echo "  最终 CORS_ORIGINS=$(grep -E '^CORS_ORIGINS=' "$ENV_FILE" | cut -d'=' -f2-)"
     else
@@ -59,11 +59,11 @@ if grep -q '"__AUTO__"' "$ENV_FILE" 2>/dev/null; then
         if [[ "$OSTYPE" == "darwin"* ]]; then
             sed -i '' 's|"__AUTO__", ||g' "$ENV_FILE"
             sed -i '' 's|, "__AUTO__"||g' "$ENV_FILE"
-            sed -i '' 's|"__AUTO__"|"http://localhost"|g' "$ENV_FILE"
+            sed -i '' 's|"__AUTO__"|"http://localhost:7141"|g' "$ENV_FILE"
         else
             sed -i 's|"__AUTO__", ||g' "$ENV_FILE"
             sed -i 's|, "__AUTO__"||g' "$ENV_FILE"
-            sed -i 's|"__AUTO__"|"http://localhost"|g' "$ENV_FILE"
+            sed -i 's|"__AUTO__"|"http://localhost:7141"|g' "$ENV_FILE"
         fi
     fi
     echo ""
@@ -99,7 +99,7 @@ check_required_no_placeholder() {
         echo "请修改 $ENV_FILE 中的 $var_name 为真实值"
         exit 1
     fi
-    if [[ "$var_value" == *"<change-me"* || "$var_value" == *"<generate"* ]]; then
+    if [[ "$var_value" == *"<"*">"* ]]; then
         echo "错误：${var_name} 仍为占位符（${var_value}）"
         echo "请修改 $ENV_FILE 中的 ${var_name} 为真实值"
         exit 1
@@ -111,7 +111,7 @@ check_no_placeholder() {
     local var_name="$1"
     local var_value
     var_value=$(grep -E "^${var_name}=" "$ENV_FILE" | cut -d'=' -f2-)
-    if [[ "$var_value" == *"<change-me"* || "$var_value" == *"<generate"* ]]; then
+    if [[ "$var_value" == *"<"*">"* ]]; then
         echo "错误：${var_name} 仍为占位符（${var_value}）"
         echo "请修改 $ENV_FILE 中的 ${var_name} 为真实值或留空"
         exit 1
@@ -126,10 +126,20 @@ check_required_no_placeholder "REDIS_PASSWORD"
 # 2.6 检查条件必填字段（开关启用时才校验）
 # ------------------------------------------------------------
 DATA_SOURCE_TYPE=$(grep -E "^DATA_SOURCE_TYPE=" "$ENV_FILE" | cut -d'=' -f2-)
+COMPOSE_PROFILE_ARGS=()
 if [ "$DATA_SOURCE_TYPE" = "remote_api" ]; then
     check_required_no_placeholder "HISTORY_DATA_API_URL"
     check_no_placeholder "HISTORY_DATA_API_TOKEN"
 fi
+
+if [ "$DATA_SOURCE_TYPE" = "tdengine" ]; then
+    check_required_no_placeholder "TDENGINE_PASSWORD"
+    COMPOSE_PROFILE_ARGS=(--profile tdengine)
+fi
+
+compose_prod() {
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${COMPOSE_PROFILE_ARGS[@]}" "$@"
+}
 
 SIGNALR_ENABLED=$(grep -E "^SIGNALR_ENABLED=" "$ENV_FILE" | cut -d'=' -f2- | tr '[:upper:]' '[:lower:]')
 if [ "$SIGNALR_ENABLED" = "true" ]; then
@@ -156,14 +166,14 @@ echo ""
 # 4. 构建 Docker 镜像
 # ------------------------------------------------------------
 echo "1. 构建 Docker 镜像..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
+compose_prod build
 echo ""
 
 # ------------------------------------------------------------
 # 5. 启动服务
 # ------------------------------------------------------------
 echo "2. 启动服务..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+compose_prod up -d
 echo ""
 
 # ------------------------------------------------------------
@@ -183,21 +193,21 @@ echo ""
 #   - 首次部署（alembic_version 表不存在）：stamp head 标记当前版本
 #   - 后续升级（alembic_version 表已存在）：upgrade head 执行增量迁移
 echo "4. 数据库版本同步..."
-CURRENT_REV=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend alembic current 2>/dev/null | grep -E '^[a-z0-9]' | head -1 || echo "")
+CURRENT_REV=$(compose_prod exec -T backend alembic current 2>/dev/null | grep -E '^[a-z0-9]' | head -1 || echo "")
 if [ -z "$CURRENT_REV" ]; then
     echo "  首次部署：执行 alembic stamp head（标记当前版本，不重复执行 DDL）..."
-    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend alembic stamp head 2>/dev/null; then
+    if compose_prod exec -T backend alembic stamp head 2>/dev/null; then
         echo "  [OK] Alembic 版本已标记为 head"
     else
         echo "  [WARN] alembic stamp head 失败（非首次部署时可忽略）"
     fi
 else
     echo "  当前版本：$CURRENT_REV，执行 alembic upgrade head..."
-    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend alembic upgrade head 2>/dev/null; then
+    if compose_prod exec -T backend alembic upgrade head 2>/dev/null; then
         echo "  [OK] 数据库迁移完成"
     else
         echo "  [WARN] 数据库迁移失败"
-        echo "  查看日志：docker compose -f $COMPOSE_FILE logs backend"
+        echo "  查看日志：docker compose --env-file $ENV_FILE -f $COMPOSE_FILE logs backend"
     fi
 fi
 echo ""
@@ -206,7 +216,7 @@ echo ""
 # 8. 验证服务状态
 # ------------------------------------------------------------
 echo "5. 验证服务状态..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
+compose_prod ps
 echo ""
 
 # ------------------------------------------------------------
@@ -214,19 +224,19 @@ echo ""
 # ------------------------------------------------------------
 echo "6. API 健康检查..."
 # S2-B3: 后端端口不暴露到宿主机，通过 docker exec 检查
-if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend curl -fsS http://localhost:7101/health >/dev/null 2>&1; then
+if compose_prod exec -T backend curl -fsS http://localhost:7101/health >/dev/null 2>&1; then
     echo "  [OK] 后端 API 健康"
 else
     echo "  [FAIL] 后端 API 健康检查失败"
-    echo "  查看日志：docker compose -f $COMPOSE_FILE logs backend"
+    echo "  查看日志：docker compose --env-file $ENV_FILE -f $COMPOSE_FILE logs backend"
     exit 1
 fi
 
-if curl -fsS http://localhost/ >/dev/null 2>&1; then
+if curl -fsS http://localhost:7141/ >/dev/null 2>&1; then
     echo "  [OK] 前端服务健康"
 else
     echo "  [FAIL] 前端服务健康检查失败"
-    echo "  查看日志：docker compose -f $COMPOSE_FILE logs frontend"
+    echo "  查看日志：docker compose --env-file $ENV_FILE -f $COMPOSE_FILE logs frontend"
     exit 1
 fi
 echo ""
@@ -239,9 +249,9 @@ echo ""
 # 自动获取服务器 IP（Linux）
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 if [ -n "$SERVER_IP" ]; then
-    ACCESS_URL="http://$SERVER_IP"
+    ACCESS_URL="http://$SERVER_IP:7141"
 else
-    ACCESS_URL="http://localhost"
+    ACCESS_URL="http://localhost:7141"
 fi
 echo "服务访问地址："
 echo "  前端：        $ACCESS_URL"
@@ -249,9 +259,9 @@ echo "  后端 API：    $ACCESS_URL/api/v1（通过 nginx 反向代理）"
 echo "  默认账号：    admin / admin123（首次登录后请立即修改密码）"
 echo ""
 echo "常用运维命令："
-echo "  查看日志：    docker compose -f $COMPOSE_FILE logs -f"
-echo "  查看状态：    docker compose -f $COMPOSE_FILE ps"
-echo "  停止服务：    docker compose -f $COMPOSE_FILE down"
-echo "  重启服务：    docker compose -f $COMPOSE_FILE restart"
+echo "  查看日志：    docker compose --env-file $ENV_FILE -f $COMPOSE_FILE logs -f"
+echo "  查看状态：    docker compose --env-file $ENV_FILE -f $COMPOSE_FILE ps"
+echo "  停止服务：    docker compose --env-file $ENV_FILE -f $COMPOSE_FILE down"
+echo "  重启服务：    docker compose --env-file $ENV_FILE -f $COMPOSE_FILE restart"
 echo "  数据备份：    ./deploy/backup.sh"
 echo "  数据回滚：    ./deploy/rollback.sh"

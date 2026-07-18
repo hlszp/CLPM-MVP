@@ -676,7 +676,7 @@ class TestCeleryBeatSchedule:
     """Celery Beat 调度配置测试。"""
 
     def test_beat_schedule_has_kpi_calc(self) -> None:
-        """Beat 调度应包含 KPI 计算任务。"""
+        """Beat 调度应包含 KPI 计算任务和预热任务。"""
         # 触发 kpi_calc 模块加载（注册 beat_schedule）
         import app.tasks.kpi_calc  # noqa: F401
         from app.tasks.celery_app import celery_app
@@ -684,7 +684,9 @@ class TestCeleryBeatSchedule:
         beat = celery_app.conf.beat_schedule
         assert "kpi-calc-hourly" in beat
         assert beat["kpi-calc-hourly"]["task"] == "app.tasks.kpi_calc.calculate_hourly_kpi"
-        assert beat["kpi-calc-hourly"]["schedule"] == 3600.0
+        # prewarm-cache 定时预热已废止（预热窗口与整点任务窗口错位一小时，从未命中）；
+        # 整点任务数据来源统一为 realtime 滚动 1 小时缓存 + TDengine 回源
+        assert "prewarm-cache" not in beat
 
 
 # ---------------------------------------------------------------------------

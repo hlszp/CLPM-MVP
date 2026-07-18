@@ -8,7 +8,7 @@ DataPlanner 负责指标驱动的数据获取与编排：
     5. 组装 MetricDataBundle（含 8 字段数据血缘）
 
 核心优化：
-    - tagGroup 复用：流量回路（FC）BASE 已是 1s，OP_HF/PVOP_HF/MODE_HF/QUALITY_HF
+    - tagGroup 复用：所有控制类型的 OP_HF/PVOP_HF/MODE_HF/QUALITY_HF
       直接从 BASE DataBlock 派生，仅需 1 次 TDengine 查询（算法说明 §3.5.2）
     - 缓存复用：多指标共享同一 tagGroup 时仅查询/预处理一次
     - Pipeline 批量写入：减少 Redis 网络往返
@@ -17,7 +17,9 @@ DataPlanner 负责指标驱动的数据获取与编排：
     KPI 计算路径**不进行 LTTB 降采样**。DataPlanner 按控制类型阈值决定采样率：
         - STABLE/SLOW/FAST/LOGIC 四类阈值由 ``get_threshold(control_type)`` 提供
         - interval_s 是固定值（典型为 1s，由 base_threshold.base_sampling_freq 决定）
-        - HF tagGroup（OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）固定 1s 高频采样
+        - HF tagGroup（OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）固定 1s 高频采样；
+          存在 BASE 组时 HF 组从 BASE 派生（宽表查询本身返回全列全量行，
+          派生不降低实际数据分辨率），interval_s=1 仅保留为元数据
     KPI 计算需要全量数据点参与运算（好值率/自控率/振荡率等指标依赖每个采样点），
     LTTB 降采样会破坏指标计算的准确性。
 
@@ -144,7 +146,7 @@ class DataPlanner:
 
     def __init__(
         self,
-        cache: L1DataBlockCache,
+        cache: L1DataBlockCache | None,
         tdengine_query_fn: TDengineQueryFn,
         assembler: MetricDataBundleAssembler,
         db: Any | None = None,
@@ -367,7 +369,12 @@ class DataPlanner:
 
         合并规则（算法说明 §3.5.2）：
             - 相同 tagGroup 的指标合并为一次查询（tags 取并集）
-            - 流量回路（FC）BASE=1s，OP_HF/PVOP_HF/MODE_HF/QUALITY_HF 复用 BASE
+            - 所有控制类型复用 BASE：OP_HF/PVOP_HF/MODE_HF/QUALITY_HF
+              从 BASE DataBlock 派生（宽表查询固定 SELECT 全部列，派生不丢数据），
+              每回路-窗口仅需 1 次 TDengine 查询；派生组 interval_s 固定 1s
+              （与原独立 HF 查询的取值一致，仅为元数据，派生不发起查询）
+            - 查询计划中无 BASE 组时（如波形接口按单 tagGroup 取数），
+              HF 组回退为独立查询（HF 固定 1s 采样）
             - CONFIG tagGroup 跳过（无时序数据，如 ideal_settling_time）
 
         Args:
@@ -381,8 +388,6 @@ class DataPlanner:
         """
         base_threshold = get_threshold(control_type)
         base_interval = base_threshold.base_sampling_freq
-        # 流量回路 BASE=1s，高频 tagGroup 可复用 BASE
-        reuse_base = base_interval == 1
 
         # 按 tagGroup 分组指标，并合并 tags
         grouped: dict[TagGroup, dict[str, Any]] = {}
@@ -401,6 +406,14 @@ class DataPlanner:
             for t in tags:
                 grouped[tag_group]["tag_roles"].add(t)
 
+        # 所有控制类型复用 BASE：宽表查询固定 SELECT 全部列，HF 组与 BASE 组
+        # 取数内容完全一致（同样的行、同样的列子集），独立查询只是重复拉取，
+        # 因此 HF tagGroup 一律从 BASE DataBlock 派生（此前仅 FC 回路复用，
+        # PC/TC/LC/CC 会把同一段数据重复拉 5 遍）。
+        # 仅当计划中存在 BASE 组时启用复用（KPI 路径固定请求全量 12 指标，始终
+        # 含 BASE）；无 BASE 组时（如波形接口按单 tagGroup 取数）HF 组保持独立查询。
+        reuse_base = TagGroup.BASE in grouped
+
         # 构建 QueryTask 列表
         tasks: list[QueryTask] = []
         base_tags: set[str] = set()
@@ -415,13 +428,15 @@ class DataPlanner:
         for tag_group, info in grouped.items():
             tag_roles = sorted(info["tag_roles"])
 
-            # 复用 BASE：HF tagGroup 标记为 reused_from=BASE
+            # 复用 BASE：HF tagGroup 标记为 reused_from=BASE。
+            # interval_s 固定 1s：与原独立 HF 查询的取值一致（FLOW 复用时
+            # base_interval 本就为 1），派生不发起查询，此值仅为元数据。
             if reuse_base and tag_group != TagGroup.BASE:
                 task = QueryTask(
                     tag_group=tag_group,
                     metrics=info["metrics"],
                     tag_roles=tag_roles,
-                    interval_s=base_interval,  # 复用 BASE 的采样率
+                    interval_s=1,
                     reused_from=TagGroup.BASE,
                 )
             elif tag_group == TagGroup.BASE and reuse_base:
@@ -498,7 +513,7 @@ class DataPlanner:
                 pre_version=PREPROCESS_VERSION,
                 cfg_version=preprocess_config.config_version,
             )
-            cached = await self._cache.get(cache_key)
+            cached = await self._cache.get(cache_key) if self._cache else None
             if cached is not None:
                 return task.tag_group, cached, None
             data_block = await self._query_and_preprocess(
@@ -511,9 +526,7 @@ class DataPlanner:
 
         # Phase 4-6: 并行执行所有非复用 task（asyncio.gather 释放事件循环）
         if non_reuse_tasks:
-            results = await asyncio.gather(
-                *[_process_non_reuse(t) for t in non_reuse_tasks]
-            )
+            results = await asyncio.gather(*[_process_non_reuse(t) for t in non_reuse_tasks])
             for tag_group, block, write_pair in results:
                 data_blocks[tag_group] = block
                 if write_pair is not None:
@@ -528,9 +541,7 @@ class DataPlanner:
                     task.tag_group.value,
                 )
                 continue
-            derived = self._derive_from_base(
-                base_block, task.tag_group, task.tag_roles, loop_id
-            )
+            derived = self._derive_from_base(base_block, task.tag_group, task.tag_roles, loop_id)
             data_blocks[task.tag_group] = derived
             logger.debug(
                 "从 BASE 派生 %s: tags=%s, points=%d",
@@ -539,8 +550,8 @@ class DataPlanner:
                 derived.point_count,
             )
 
-        # Phase 7: Pipeline 批量写入未命中的 DataBlock
-        if pending_writes:
+        # Phase 7: Pipeline 批量写入未命中的 DataBlock（cache=None 时跳过）
+        if pending_writes and self._cache:
             keys = [k for k, _ in pending_writes]
             blocks = [b for _, b in pending_writes]
             written = await self._cache.set_many(blocks, keys=keys)
@@ -575,14 +586,14 @@ class DataPlanner:
             task.interval_s,
         )
 
-        # Phase 5: 查询 TDengine
+        # Phase 5: 查询数据源
         t_query_start = time.perf_counter()
         raw = await self._query_fn(
-            loop_id,
-            task.tag_roles,
-            time_window.start,
-            time_window.end,
-            task.interval_s,
+            loop_id=loop_id,
+            tag_roles=task.tag_roles,
+            start=time_window.start,
+            end=time_window.end,
+            interval_s=task.interval_s,
         )
         t_query_elapsed = time.perf_counter() - t_query_start
 
@@ -603,7 +614,8 @@ class DataPlanner:
         t_pre_elapsed = time.perf_counter() - t_pre_start
 
         logger.info(
-            "DataPlanner 取数+预处理: loop=%s, tagGroup=%s, points=%d, query=%.3fs, preprocess=%.3fs",
+            "DataPlanner 取数+预处理: loop=%s, tagGroup=%s, points=%d, "
+            "query=%.3fs, preprocess=%.3fs",
             loop_id,
             task.tag_group.value,
             data_block.point_count,

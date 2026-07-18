@@ -142,7 +142,7 @@ async def test_cache_value_writes_to_redis():
     assert cached["tagCode"] == "LIC-101.PV"
     assert cached["value"] == "50.5"
     assert cached["quality"] == 0
-    assert sub._buffer == {}
+    assert "LIC-101" in sub._buffer
 
 
 @pytest.mark.asyncio

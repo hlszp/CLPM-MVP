@@ -214,8 +214,9 @@ const compositeFormula = 'P = (A·a + F·f + S·s) / (a + f + s) × R';
       </template>
       <template #description>
         <span class="text-xs">
-          A/F/S 为核心质量指标（准确率/快速率/稳定率），a/f/s 为对应权重（权重总和
-          100），R 为有效自控率（折扣因子，非加权项）。权重配置请前往"权重配置"页，定级阈值请前往"定级阈值"页。
+          A/F/S 为核心质量指标（准确率/快速率/稳定率），a/f/s
+          为对应权重（权重总和 100），R
+          为有效自控率（折扣因子，非加权项）。权重配置请前往"权重配置"页，定级阈值请前往"定级阈值"页。
         </span>
       </template>
     </Alert>
@@ -224,8 +225,9 @@ const compositeFormula = 'P = (A·a + F·f + S·s) / (a + f + s) × R';
       <div class="mb-4">
         <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
           按 3+1+8 分组展示：核心质量指标（CORE · 准确率 A / 快速率 F / 稳定率
-          S）+ 投用指标（COMMISSIONING · 有效自控率 R）+ 辅助诊断指标（AUXILIARY_DIAGNOSTIC
-          · 好值率/自控率/振荡率/饱和率等 8 项）。
+          S）+ 投用指标（COMMISSIONING · 有效自控率 R）+
+          辅助诊断指标（AUXILIARY_DIAGNOSTIC · 好值率/自控率/振荡率/饱和率等 8
+          项）。
         </p>
       </div>
 
@@ -244,7 +246,10 @@ const compositeFormula = 'P = (A·a + F·f + S·s) / (a + f + s) × R';
             </Tag>
           </template>
           <template v-else-if="column.key === 'formula'">
-            <span class="font-mono text-xs" :style="{ color: themeColors.NEUTRAL }">
+            <span
+              class="font-mono text-xs"
+              :style="{ color: themeColors.NEUTRAL }"
+            >
               {{ (record as MetricDefinition).formula || '—' }}
             </span>
           </template>

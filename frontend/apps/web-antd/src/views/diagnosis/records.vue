@@ -24,7 +24,10 @@ import { IconifyIcon } from '@vben/icons';
 import { Button, message, Modal, Select, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { deleteDiagnosisTaskApi, getDiagnosisRecordsApi } from '#/api/diagnosis';
+import {
+  deleteDiagnosisTaskApi,
+  getDiagnosisRecordsApi,
+} from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
@@ -456,7 +459,9 @@ onMounted(() => {
                 {{ tag.name }}
               </Tag>
               <span
-                v-if="getRecordTags(record as DiagnosisApi.TaskItem).length === 0"
+                v-if="
+                  getRecordTags(record as DiagnosisApi.TaskItem).length === 0
+                "
                 class="text-xs"
                 :style="{ color: themeColors.NEUTRAL }"
               >

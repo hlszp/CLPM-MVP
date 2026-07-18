@@ -104,9 +104,14 @@ async def test_signalr_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
-    """测试 SignalR Hub 连通性（仅 ADMIN，使用当前已保存配置，不写入数据库）。"""
-    config = await get_datasource_config(db)
-    result = await test_signalr_hub_connection(hub_url=config["signalrHubUrl"])
+    """测试 SignalR Hub 连通性（仅 ADMIN）。
+
+    使用当前内存中生效的配置（settings），而非数据库配置。
+    数据库配置需重启后端才生效，内存配置才是当前实际运行的配置。
+    """
+    from app.core.config import settings
+
+    result = await test_signalr_hub_connection(hub_url=settings.SIGNALR_HUB_URL)
     return success(data=result)
 
 

@@ -1,89 +1,68 @@
-"""backfill_kpi_range loop_ids 过滤测试."""
+"""Backfill dispatcher loop filtering tests."""
 
-from unittest.mock import AsyncMock, patch
+from __future__ import annotations
 
-import pytest
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 
-@pytest.mark.asyncio
-async def test_do_backfill_with_loop_ids_filter():
-    """_do_backfill 传入 loop_ids 时应只计算指定回路."""
-    from app.tasks.kpi_calc import _do_backfill
+def _mock_chord() -> tuple[MagicMock, MagicMock]:
+    canvas = MagicMock()
+    factory = MagicMock(return_value=canvas)
+    return factory, canvas
 
-    # mock _do_calculate 和 _do_calculate_node_kpi
-    with (
-        patch(
-            "app.tasks.kpi_calc._do_calculate",
-            new_callable=AsyncMock,
-            return_value={"success": 2, "inconclusive": 0, "failed": 0},
-        ) as mock_calc,
-        patch(
-            "app.tasks.kpi_calc._do_calculate_node_kpi",
-            new_callable=AsyncMock,
-            return_value={"success": 1},
-        ),
-    ):
-        result = await _do_backfill(
+
+def test_dispatch_backfill_with_loop_ids_filter() -> None:
+    """Valid loop UUIDs are forwarded unchanged to every child signature."""
+    from app.tasks.kpi_calc import _dispatch_backfill_chord
+
+    loop_ids = [str(uuid4()), str(uuid4())]
+    chord_factory, canvas = _mock_chord()
+    with patch("app.tasks.kpi_calc.chord", chord_factory):
+        result = _dispatch_backfill_chord(
             "2026-07-04T00:00:00Z",
-            "2026-07-04T02:00:00Z",
-            loop_ids=["loop-1", "loop-2"],
+            "2026-07-04T04:00:00Z",
+            loop_ids=loop_ids,
+            task_id="task-1",
         )
 
-    # 2 小时窗口 × 2 次调用 _do_calculate
-    assert mock_calc.call_count == 2
-    # 每次调用都应传入 loop_ids
-    for call in mock_calc.call_args_list:
-        assert call.kwargs.get("loop_ids") == ["loop-1", "loop-2"]
-    assert result["total_windows"] == 2
-    assert result["loop_success"] == 4  # 2 窗口 × 2 成功
+    chord_factory.assert_called_once()
+    canvas.apply_async.assert_called_once_with()
+    header = chord_factory.call_args.args[0]
+    # _BACKFILL_BATCH_SIZE=1：4 个窗口 → 4 个子任务
+    assert len(header) == 4
+    assert all(signature.kwargs["loop_ids"] == loop_ids for signature in header)
+    assert result["total_windows"] == 4
 
 
-@pytest.mark.asyncio
-async def test_do_backfill_without_loop_ids():
-    """_do_backfill 不传 loop_ids 时 _do_calculate 的 loop_ids 应为 None（全量）."""
-    from app.tasks.kpi_calc import _do_backfill
+def test_dispatch_backfill_without_loop_ids() -> None:
+    """None retains the all-active-loops behavior."""
+    from app.tasks.kpi_calc import _dispatch_backfill_chord
 
-    with (
-        patch(
-            "app.tasks.kpi_calc._do_calculate",
-            new_callable=AsyncMock,
-            return_value={"success": 5, "inconclusive": 0, "failed": 0},
-        ) as mock_calc,
-        patch(
-            "app.tasks.kpi_calc._do_calculate_node_kpi",
-            new_callable=AsyncMock,
-            return_value={"success": 1},
-        ),
-    ):
-        await _do_backfill("2026-07-04T00:00:00Z", "2026-07-04T01:00:00Z")
+    chord_factory, _ = _mock_chord()
+    with patch("app.tasks.kpi_calc.chord", chord_factory):
+        _dispatch_backfill_chord(
+            "2026-07-04T00:00:00Z",
+            "2026-07-04T01:00:00Z",
+            loop_ids=None,
+            task_id=None,
+        )
 
-    assert mock_calc.call_count == 1
-    # loop_ids 应为 None（保持原全量行为）
-    assert mock_calc.call_args.kwargs.get("loop_ids") is None
+    header = chord_factory.call_args.args[0]
+    assert header[0].kwargs["loop_ids"] is None
 
 
-@pytest.mark.asyncio
-async def test_do_backfill_empty_loop_ids():
-    """_do_backfill 传入空列表时应返回 0 窗口结果."""
-    from app.tasks.kpi_calc import _do_backfill
+def test_backfill_empty_loop_ids_returns_noop() -> None:
+    """The dispatcher task does not create a chord for an explicit empty selection."""
+    from app.tasks.kpi_calc import backfill_kpi_range
 
-    with (
-        patch(
-            "app.tasks.kpi_calc._do_calculate",
-            new_callable=AsyncMock,
-        ) as mock_calc,
-        patch(
-            "app.tasks.kpi_calc._do_calculate_node_kpi",
-            new_callable=AsyncMock,
-        ),
-    ):
-        result = await _do_backfill(
+    with patch("app.tasks.kpi_calc._dispatch_backfill_chord") as dispatch:
+        result = backfill_kpi_range.run(
             "2026-07-04T00:00:00Z",
             "2026-07-04T02:00:00Z",
             loop_ids=[],
         )
 
-    # 空列表应跳过计算
-    assert mock_calc.call_count == 0
+    dispatch.assert_not_called()
     assert result["total_windows"] == 2
     assert result["loop_success"] == 0

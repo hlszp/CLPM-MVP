@@ -429,15 +429,18 @@ class TestWaveform:
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
 
-        # Mock TDengine 查询
-        pv_data = [
-            {"ts": f"2026-06-22T08:00:{i:02d}Z", "value": 50.0 + i * 0.1, "quality": "GOOD"}
-            for i in range(10)
-        ]
+        # Mock 宽表查询
+        from app.contracts.data_types import RawTimeSeries
+
+        raw_series = RawTimeSeries(
+            timestamps=[f"2026-06-22T08:00:{i:02d}Z" for i in range(10)],
+            signals={"pv": [50.0 + i * 0.1 for i in range(10)]},
+            quality_codes={"pv_quality": ["GOOD"] * 10},
+        )
 
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.query_trend_data = AsyncMock(return_value=pv_data)
+            mock_provider.make_query_fn.return_value = AsyncMock(return_value=raw_series)
             mock_get_provider.return_value = mock_provider
             with mock_current_user(TEST_USERS["admin"]):
                 resp = client.get(
@@ -485,15 +488,21 @@ class TestWaveform:
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
 
-        pv_data = [
-            {"ts": "2026-06-22T08:00:00Z", "value": 50.0, "quality": "GOOD"},
-            {"ts": "2026-06-22T08:00:01Z", "value": 51.0, "quality": "BAD"},
-            {"ts": "2026-06-22T08:00:02Z", "value": 52.0, "quality": "GOOD"},
-        ]
+        from app.contracts.data_types import RawTimeSeries
+
+        raw_series = RawTimeSeries(
+            timestamps=[
+                "2026-06-22T08:00:00Z",
+                "2026-06-22T08:00:01Z",
+                "2026-06-22T08:00:02Z",
+            ],
+            signals={"pv": [50.0, 51.0, 52.0]},
+            quality_codes={"pv_quality": ["GOOD", "BAD", "GOOD"]},
+        )
 
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.query_trend_data = AsyncMock(return_value=pv_data)
+            mock_provider.make_query_fn.return_value = AsyncMock(return_value=raw_series)
             mock_get_provider.return_value = mock_provider
             with mock_current_user(TEST_USERS["admin"]):
                 resp = client.get(
@@ -983,50 +992,6 @@ class TestDiagnosisEngine:
         result = _dempster_shafer_fusion([("OSCILLATION", 0.8), ("OSCILLATION", 0.6)])
         # 相同标签融合后置信度应更高
         assert result >= 0.8
-
-    def test_align_timeseries_tolerance_numeric(self) -> None:
-        """测试时序对齐：数值时间戳容差匹配（±500ms）。"""
-        from app.tasks.diagnosis_engine import _align_timeseries
-
-        pv_data = [
-            {"ts": 1000.0, "value": 10.0, "quality": "GOOD"},
-            {"ts": 1001.0, "value": 20.0, "quality": "GOOD"},
-        ]
-        # 偏差 200ms / 100ms，在容差内
-        sp_data = [{"ts": 1000.2, "value": 11.0}, {"ts": 1001.1, "value": 21.0}]
-        op_data = [{"ts": 1000.3, "value": 50.0}]  # 偏差 300ms
-        mode_data = [{"ts": 1000.4, "value": 1}]  # 偏差 400ms
-
-        aligned = _align_timeseries(pv_data, sp_data, op_data, mode_data)
-        assert len(aligned) == 2
-        assert aligned[0]["pv"] == 10.0
-        assert aligned[0]["sp"] == 11.0
-        assert aligned[0]["op"] == 50.0
-        assert aligned[0]["mode"] == 1
-        assert aligned[1]["sp"] == 21.0
-        assert aligned[1]["op"] is None
-        assert aligned[1]["mode"] is None
-
-    def test_align_timeseries_tolerance_out_of_range(self) -> None:
-        """测试时序对齐：超出容差范围（>500ms）不匹配。"""
-        from app.tasks.diagnosis_engine import _align_timeseries
-
-        pv_data = [{"ts": 1000.0, "value": 10.0, "quality": "GOOD"}]
-        # 偏差 600ms，超出容差
-        sp_data = [{"ts": 1000.6, "value": 11.0}]
-
-        aligned = _align_timeseries(pv_data, sp_data, [], [])
-        assert aligned[0]["sp"] is None
-
-    def test_align_timeseries_exact_string(self) -> None:
-        """测试时序对齐：字符串 ts 精确匹配（向后兼容）。"""
-        from app.tasks.diagnosis_engine import _align_timeseries
-
-        pv_data = [{"ts": "t1", "value": 10.0, "quality": "GOOD"}]
-        sp_data = [{"ts": "t1", "value": 11.0}]
-
-        aligned = _align_timeseries(pv_data, sp_data, [], [])
-        assert aligned[0]["sp"] == 11.0
 
 
 # ---------------------------------------------------------------------------

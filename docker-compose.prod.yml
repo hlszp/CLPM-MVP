@@ -1,9 +1,9 @@
 # ============================================================
 # CLPM 生产环境 Docker Compose 编排
-# 启动: docker compose -f docker-compose.prod.yml up -d
-# 停止: docker compose -f docker-compose.prod.yml down
-# 重置: docker compose -f docker-compose.prod.yml down -v
-# 查看日志: docker compose -f docker-compose.prod.yml logs -f
+# 启动: docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+# 停止: docker compose --env-file .env.prod -f docker-compose.prod.yml down
+# 重置: docker compose --env-file .env.prod -f docker-compose.prod.yml down -v
+# 查看日志: docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f
 # ============================================================
 
 name: clpm-prod
@@ -133,16 +133,26 @@ services:
   # S2-B3: 不暴露端口到宿主机
   # ============================================================
   tdengine:
-    image: tdengine/tdengine:3.3.6.0
+    # TDengine 3.3.6.6 起 Docker 镜像才支持 TAOS_ROOT_PASSWORD。
+    # remote_api 是生产默认模式，不启动此 profile；deploy.sh 在
+    # DATA_SOURCE_TYPE=tdengine 时会自动启用。
+    profiles: ["tdengine"]
+    image: tdengine/tdengine:3.3.6.6
     container_name: clpm-tdengine
+    env_file: .env.prod
     environment:
       TAOS_FQDN: clpm-tdengine
+      TAOS_ROOT_PASSWORD: ${TDENGINE_PASSWORD}
       TZ: Asia/Shanghai
     volumes:
       - tdengine_data:/var/lib/taos
       - ./db/tdengine/01_supertable.sql:/root/init/01_supertable.sql:ro
     healthcheck:
-      test: ["CMD", "taos", "-s", "SELECT SERVER_VERSION();"]
+      test:
+        [
+          "CMD-SHELL",
+          'taos -u root -p"$${TAOS_ROOT_PASSWORD}" -s "SELECT SERVER_VERSION();"',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -169,7 +179,11 @@ services:
     image: redis:7-alpine
     container_name: clpm-redis
     env_file: .env.prod
-    command: redis-server --port 6379 --appendonly yes --requirepass ${REDIS_PASSWORD}
+    # 在容器内从 env_file 展开密码，避免依赖 Compose 进程的宿主机环境变量。
+    command:
+      - sh
+      - -c
+      - exec redis-server --port 6379 --appendonly yes --requirepass "$$REDIS_PASSWORD"
     environment:
       TZ: Asia/Shanghai
     volumes:
@@ -178,7 +192,11 @@ services:
     expose:
       - "6379"
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -p 6379 -a $${REDIS_PASSWORD} ping"]
+      test:
+        [
+          "CMD-SHELL",
+          'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli -p 6379 ping',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -208,7 +226,9 @@ services:
       dockerfile: Dockerfile.backend
     image: clpm-backend:latest
     container_name: clpm-celery-worker
-    command: celery -A app.tasks.celery_app worker -l info -Q default
+    # 回填任务 chord 会派发多个窗口子任务（每窗口 1 个），并发度直接决定回填吞吐。
+    # 默认 8（每子任务约吃满 1 核），请按宿主机可用核数调整 CELERY_WORKER_CONCURRENCY。
+    command: celery -A app.tasks.celery_app worker -l info -Q default --concurrency=${CELERY_WORKER_CONCURRENCY:-8}
     env_file: .env.prod
     environment:
       TZ: Asia/Shanghai
@@ -228,8 +248,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: "2.0"
+          # 与 --concurrency（默认 8）匹配：每子任务约 1 核 + 取数/预处理内存
+          memory: 6G
+          cpus: "8.0"
     # S2-B2: 日志轮转
     logging:
       driver: json-file

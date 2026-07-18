@@ -80,52 +80,72 @@ manager = ConnectionManager()
 async def realtime_hub(websocket: WebSocket) -> None:
     """SignalR Hub 模拟端点.
 
-    消息格式：
-    - 订阅: {"method": "SubscribeAsync", "args": [["TAG001", "TAG002"]]}
-    - 取消订阅: {"method": "UnsubscribeAsync", "args": [["TAG001"]]}
-    - 取消全部: {"method": "UnsubscribeAllAsync", "args": []}
+    支持两种协议格式：
+    - SignalR 协议: {"type": 1, "target": "SubscribeAsync", "arguments": [["TAG001"]]} + "\x1e"
+    - 自定义协议: {"method": "SubscribeAsync", "args": [["TAG001", "TAG002"]]}
     """
     await manager.connect(websocket)
     try:
         while True:
             raw = await websocket.receive_text()
-            try:
-                msg: dict[str, Any] = json.loads(raw)
-            except json.JSONDecodeError:
-                await websocket.send_text(
-                    json.dumps({"code": 400, "message": "Invalid JSON"})
-                )
-                continue
+            
+            for part in raw.split("\x1e"):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    msg: dict[str, Any] = json.loads(part)
+                except json.JSONDecodeError:
+                    await websocket.send_text(
+                        json.dumps({"code": 400, "message": "Invalid JSON"})
+                    )
+                    continue
 
-            method = msg.get("method", "")
-            args = msg.get("args", [])
+                method = msg.get("method", "")
+                target = msg.get("target", "")
+                args = msg.get("args", [])
+                arguments = msg.get("arguments", [])
 
-            if method == "SubscribeAsync":
-                tag_codes = args[0] if args else []
-                initial_data = manager.subscribe(websocket, tag_codes)
-                response = {
-                    "code": 200,
-                    "message": "success",
-                    "data": initial_data,
-                }
-                await websocket.send_text(json.dumps(response))
-                logger.info("客户端订阅 %d 个 tag", len(tag_codes))
+                if not method:
+                    method = target
+                if not args:
+                    args = arguments
 
-            elif method == "UnsubscribeAsync":
-                tag_codes = args[0] if args else []
-                manager.unsubscribe(websocket, tag_codes)
-                response = {"code": 200, "message": "success"}
-                await websocket.send_text(json.dumps(response))
+                if method == "SubscribeAsync":
+                    tag_codes = args[0] if args else []
+                    initial_data = manager.subscribe(websocket, tag_codes)
+                    response = {
+                        "code": 200,
+                        "message": "success",
+                        "data": initial_data,
+                    }
+                    await websocket.send_text(json.dumps(response))
+                    logger.info("客户端订阅 %d 个 tag", len(tag_codes))
 
-            elif method == "UnsubscribeAllAsync":
-                manager.unsubscribe_all(websocket)
-                response = {"code": 200, "message": "success"}
-                await websocket.send_text(json.dumps(response))
+                elif method == "UnsubscribeAsync":
+                    tag_codes = args[0] if args else []
+                    manager.unsubscribe(websocket, tag_codes)
+                    response = {"code": 200, "message": "success"}
+                    await websocket.send_text(json.dumps(response))
 
-            else:
-                await websocket.send_text(
-                    json.dumps({"code": 400, "message": f"Unknown method: {method}"})
-                )
+                elif method == "UnsubscribeAllAsync":
+                    manager.unsubscribe_all(websocket)
+                    response = {"code": 200, "message": "success"}
+                    await websocket.send_text(json.dumps(response))
+
+                elif msg.get("protocol") == "json" and msg.get("version") == 1:
+                    response = {
+                        "protocol": "json",
+                        "version": 1,
+                        "code": 1,
+                    }
+                    await websocket.send_text(json.dumps(response) + "\x1e")
+                    logger.info("SignalR 握手成功")
+
+                else:
+                    await websocket.send_text(
+                        json.dumps({"code": 400, "message": f"Unknown method: {method}"})
+                    )
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)

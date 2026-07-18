@@ -19,7 +19,9 @@ const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
 const isBias = computed(() => props.data.biasIndex > 0.5);
-const statusColor = computed(() => (isBias.value ? themeColors.value.DANGER : getSeriesColor('ok')));
+const statusColor = computed(() =>
+  isBias.value ? themeColors.value.DANGER : getSeriesColor('ok'),
+);
 
 const biasPercent = computed(() => (props.data.biasIndex * 100).toFixed(1));
 
@@ -29,7 +31,7 @@ const options = computed(() => {
     { name: 'N', value: props.data.countN, color: '#f472b6' },
     { name: 'Z', value: props.data.countZ, color: '#94a3b8' },
   ];
-  
+
   const option: any = {
     tooltip: {
       trigger: 'axis',
@@ -37,8 +39,8 @@ const options = computed(() => {
     },
     xAxis: {
       type: 'category',
-      data: types.map(t => t.name),
-      axisLabel: { 
+      data: types.map((t) => t.name),
+      axisLabel: {
         show: true,
         fontSize: 11,
         color: '#6b7280',
@@ -49,7 +51,7 @@ const options = computed(() => {
     yAxis: {
       type: 'value',
       show: false,
-      max: Math.max(...types.map(t => t.value), 5),
+      max: Math.max(...types.map((t) => t.value), 5),
     },
     grid: {
       top: 5,
@@ -61,7 +63,7 @@ const options = computed(() => {
     series: [
       {
         type: 'bar',
-        data: types.map(t => ({
+        data: types.map((t) => ({
           value: t.value,
           itemStyle: { color: t.color, borderRadius: 4 },
         })),
@@ -73,9 +75,13 @@ const options = computed(() => {
   return option;
 });
 
-watch(options, (newOptions) => {
-  renderEcharts(newOptions);
-}, { immediate: true });
+watch(
+  options,
+  (newOptions) => {
+    renderEcharts(newOptions);
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   renderEcharts(options.value);
@@ -86,7 +92,10 @@ onMounted(() => {
   <div class="kano-card">
     <div class="card-header">
       <div class="card-title">Kano 统计分析</div>
-      <div class="status-badge" :style="{ backgroundColor: statusColor, color: '#fff' }">
+      <div
+        class="status-badge"
+        :style="{ backgroundColor: statusColor, color: '#fff' }"
+      >
         {{ isBias ? '存在偏差' : '正常' }}
       </div>
     </div>
@@ -109,7 +118,9 @@ onMounted(() => {
         </div>
         <div class="metric-item">
           <span class="metric-label">偏差指数</span>
-          <span class="metric-value" :style="{ color: statusColor }">{{ biasPercent }}%</span>
+          <span class="metric-value" :style="{ color: statusColor }"
+            >{{ biasPercent }}%</span
+          >
         </div>
       </div>
     </div>

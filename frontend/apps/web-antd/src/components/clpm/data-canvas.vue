@@ -42,7 +42,6 @@ interface Props {
   skeletonRows?: number;
   title?: string;
 }
-
 </script>
 
 <template>

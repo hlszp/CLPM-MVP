@@ -48,7 +48,12 @@ const { confidenceColors } = useClpmTheme();
 /** 等级配置：Tag 颜色预设、色块圆点颜色 key、文字、是否为 INCONCLUSIVE */
 const levelConfig: Record<
   ConfidenceLevel,
-  { color: string; dotKey: keyof typeof confidenceColors.value; inconclusive?: boolean; label: string; }
+  {
+    color: string;
+    dotKey: keyof typeof confidenceColors.value;
+    inconclusive?: boolean;
+    label: string;
+  }
 > = {
   A: { color: 'green', dotKey: 'A', label: 'A' },
   B: { color: 'cyan', dotKey: 'B', label: 'B' },

@@ -2,7 +2,7 @@
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）。
 
-版本：**v6.1**（系统重构完成版 + ZL 工业设计规范对齐 — 7 阶段重构 Phase 0-6 全部交付 + v6.0 文档统一升级 + v6.1 设计对齐）
+产品文档基线：**v6.1**（当前需求、IA 与 ZL 工业设计规范口径）。后端运行时版本由 `APP_VERSION` 管理（当前默认 `1.0.0`），发布版本由 Git tag 管理；三者用途不同，不要求数值相同。
 
 ## 项目简介
 
@@ -11,7 +11,7 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 - **工作台门户**：12 项 KPI 指标看板（3+1+8 体系）+ 低效回路 Top10 + 趋势摘要 + 待办异常
 - **回路管理**：AAS Tag 同步 / 回路台账 / Tag 关联 / 实时监控
 - **性能评估**：KPI 看板 / 低效排行 / 统计分析 / 指标配置（指标定义 / 引擎规则 / 类型权重 / 级别权重 / 执行记录） / 可信度标识 / 工业桌面端驾驶舱样式
-- **诊断中心**：诊断配置 / 异常诊断（FFT 振荡检测 + D-S 证据融合）/ Action Tracker / 统计
+- **诊断中心**：诊断配置 / 异常诊断（FFT 振荡检测 + D-S 证据融合）/ Action Tracker / 统计；完整 KPI A/B 对比接口当前返回 501，列为 P1 待实现
 - **回路整定**：FOPDT/SOPDT/IPDT 模型辨识 + IMC/Lambda/Z-N/Cohen-Coon/SIMC 五种整定算法 + 闭环仿真
 - **评估任务**：标准/自定义评估任务全生命周期（触发 → 进度跟踪 → 阶段时间线 → 通知），作为性能评估执行体系的一部分
 - **系统管理**：用户管理 / 审计日志 / 权限矩阵 / 自动报表
@@ -30,9 +30,9 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 | 缓存/队列 | Redis 7 |
 | 鉴权 | JWT 双 Token（Access 30min / Refresh 7d）+ RBAC 五角色 + bcrypt + Redis 黑名单 |
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
-| v4.0 核心组件 | DataPlanner（统一数据读取）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
+| v4.0 核心组件 | DataPlanner（统一数据读取，L1/L2 缓存已接入；L3 Feature Cache 预留）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（1762 用例）+ Playwright E2E（27 用例）|
+| 测试 | pytest（1856 collected：1850 selected，1849 passed，1 skipped，6 deselected）+ Playwright E2E |
 
 ## 快速开始（开发环境）
 
@@ -172,7 +172,7 @@ PYTHONPATH=/path/to/CLPM python -m uvicorn mock_data_server.main:app --host 0.0.
 
 - Docker 24+ 与 Docker Compose v2
 - 服务器最低配置：4 核 CPU / 8GB 内存 / 50GB 磁盘
-- 开放端口：7141（前端）、7101（后端 API，仅容器内部）、7104/7115（TDengine，建议仅内网）
+- 宿主机开放端口：7141（前端与 `/api/v1` 反向代理）。PostgreSQL、Redis、后端 API，以及可选的 TDengine 仅在 Compose 网络内可达
 
 ### 部署步骤
 
@@ -187,9 +187,13 @@ cp .env.prod.example .env.prod
 | 配置项 | 说明 | 生成命令 |
 |---|---|---|
 | `POSTGRES_PASSWORD` | PostgreSQL 密码 | 自定义强密码 |
-| `TDENGINE_PASSWORD` | TDengine 密码 | 自定义强密码 |
+| `REDIS_PASSWORD` | Redis 密码 | 自定义强密码 |
 | `JWT_SECRET_KEY` | JWT 签名密钥（≥32 字符） | `openssl rand -hex 32` |
 | `CORS_ORIGINS` | 允许的前端域名 | `["https://your-domain.com"]` |
+| `HISTORY_DATA_API_URL` | 历史数据服务地址（`remote_api` 模式） | 现场数采服务地址 |
+| `TDENGINE_PASSWORD` | TDengine 密码（`tdengine` 模式） | 内置 3.3.6.6 实例的 root 初始密码，或外部实例凭据 |
+| `CELERY_WORKER_CONCURRENCY` | Celery worker 进程并发数 | `2`（应与 CPU/连接池容量联合调整） |
+| `AAS_ENDPOINT` | OPC UA 服务地址（`AAS_SYNC_ENABLED=True`） | 现场 OPC UA Endpoint |
 
 #### 2. 一键部署
 
@@ -200,7 +204,7 @@ cp .env.prod.example .env.prod
 部署脚本会自动完成：
 1. 校验 `.env.prod` 与 `JWT_SECRET_KEY`
 2. 构建 backend / frontend Docker 镜像（多阶段构建）
-3. 启动 7 个服务容器（backend / frontend / postgres / tdengine / redis / celery-worker / celery-beat）
+3. `remote_api` 默认模式启动 6 个服务容器；`tdengine` 模式额外自动启用 `tdengine` profile
 4. 等待健康检查并通过
 5. 输出服务访问地址
 
@@ -208,20 +212,20 @@ cp .env.prod.example .env.prod
 
 ```bash
 # 查看服务状态
-docker compose -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 
 # 后端健康检查
-curl http://localhost:7101/health
+curl http://localhost:7141/health
 
 # 前端访问
-curl http://localhost/
+curl http://localhost:7141/
 ```
 
 ### 服务架构
 
 | 服务 | 容器 | 端口 | 说明 |
 |---|---|---|---|
-| frontend | clpm-frontend | 80 | Nginx 静态托管 + /api/v1 反代 |
+| frontend | clpm-frontend | 7141 | Nginx 静态托管 + /api/v1 反代 |
 | backend | clpm-backend | 7101 | FastAPI + Uvicorn |
 | celery-worker | clpm-celery-worker | - | 异步任务执行 |
 | celery-beat | clpm-celery-beat | - | 定时任务调度 |
@@ -229,26 +233,37 @@ curl http://localhost/
 | tdengine | clpm-tdengine | 6030/6041 | 时序数据 |
 | redis | clpm-redis | 6379 | 缓存 + Celery Broker |
 
+`DATA_SOURCE_TYPE=remote_api` 时不启动内置 TDengine。切换为
+`DATA_SOURCE_TYPE=tdengine` 后，`deploy.sh` / `rollback.sh` 会自动带上
+`--profile tdengine`。手工执行 Compose 命令时也应加上该 profile：
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine up -d
+```
+
+内置实例固定使用 TDengine 3.3.6.6（该版本起镜像支持
+`TAOS_ROOT_PASSWORD`），使 `TDENGINE_PASSWORD` 真正应用到 root 账号。
+
 ### 常用运维命令
 
 ```bash
 # 查看实时日志
-docker compose -f docker-compose.prod.yml logs -f
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f
 
 # 查看指定服务日志
-docker compose -f docker-compose.prod.yml logs -f backend
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f backend
 
 # 重启服务
-docker compose -f docker-compose.prod.yml restart backend
+docker compose --env-file .env.prod -f docker-compose.prod.yml restart backend
 
 # 停止所有服务
-docker compose -f docker-compose.prod.yml down
+docker compose --env-file .env.prod -f docker-compose.prod.yml down
 
 # 停止并清除数据卷（慎用，会丢失数据）
-docker compose -f docker-compose.prod.yml down -v
+docker compose --env-file .env.prod -f docker-compose.prod.yml down -v
 
 # 重新构建并启动
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
 ### 版本回滚
@@ -261,16 +276,16 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ### HTTPS 配置
 
-当前生产 Nginx 配置默认将 HTTP 跳转到 HTTPS，并挂载以下证书文件：
+当前生产 Nginx 默认使用 7141 端口的 HTTP 模式。`deploy/nginx.conf` 底部提供 HTTPS 升级模板；启用时需配置证书挂载与 80/443 端口：
 
 - `deploy/ssl/fullchain.pem`（需自行创建）
 - `deploy/ssl/privkey.pem`（需自行创建）
 
-生产部署前必须准备证书文件（`deploy/ssl/` 目录默认不存在，需手动创建并放置证书），或按内网试运行需求调整 `deploy/nginx.conf` 为 HTTP-only 配置后再启动。证书更新后重新构建 frontend 镜像：
+开启 HTTPS 前需创建 `deploy/ssl/` 并放置证书，同时按模板更新 `deploy/nginx.conf` 和 `docker-compose.prod.yml`。证书或 Nginx 配置更新后重新构建 frontend 镜像：
 
 ```bash
-docker compose -f docker-compose.prod.yml build frontend
-docker compose -f docker-compose.prod.yml up -d frontend
+docker compose --env-file .env.prod -f docker-compose.prod.yml build frontend
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d frontend
 ```
 
 ### 数据库初始化
@@ -278,26 +293,24 @@ docker compose -f docker-compose.prod.yml up -d frontend
 PostgreSQL 容器首次启动会自动执行 `db/postgresql/01_schema.sql` 和 `db/postgresql/02_seed_data.sql` 完成建表与种子数据导入。如需重新初始化，需先清除数据卷：
 
 ```bash
-docker compose -f docker-compose.prod.yml down -v
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml down -v
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 ```
 
 ## 当前有效文档
 
 | 类型 | 文件 |
 |---|---|
-| 当前 PRD（v6.0） | `docs/设计文档/01-PRD/PRD.md` |
+| 当前 PRD（v6.1） | `docs/设计文档/01-PRD/PRD.md` |
 | 总体 FDS（v6.0） | `docs/设计文档/02-FDS/FDS.md` |
 | 交付架构设计（v6.0） | `docs/设计文档/03-ADS/ADS.md` |
 | 数据模型设计（v6.0） | `docs/设计文档/04-DDS/DDS.md` |
 | API 接口设计（v6.0） | `docs/设计文档/05-IDS/IDS.md` |
 | UI/UX 设计规范（v6.1） | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
-| 重构后实现契约（v2.0） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
-| **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
-| 原型设计基线 | `DESIGN.md`（v3.0，对齐实现契约 v2.0） |
+| 重构后实现契约（v2.1） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
+| v4.0 重构实施方案（历史实施蓝图） | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
+| 原型设计基线 | `DESIGN.md`（v3.0；视觉历史基线，现行路由以实现契约 v2.1 为准） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
-| 已批准产品化架构 | `/Users/zhangping/.gstack/projects/CLPM/zhangping-unknown-design-20260616-072247.md` |
-| 原型开发冻结任务书 | `docs/过程文档/prototype-development-freeze-v0.1-2026-06-16.md` |
 
 ## 推荐阅读顺序
 
@@ -315,17 +328,19 @@ docker compose -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | **v6.1** — 7 阶段系统重构（Phase 0-6）全部完成 + v6.0 文档统一升级 + v6.1 ZL 工业设计规范对齐，后端 1762 测试用例通过，前端 TypeScript 错误 0 |
+| 当前版本 | 产品文档基线 **v6.1**；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。当前后端结果：1856 collected，1850 selected，1849 passed，1 skipped，6 deselected |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 工作台门户、回路管理（AAS tag 同步/回路创建/tag 关联/监控）、性能评估（指标配置/引擎规则/看板/排行/统计）、诊断中心（指标配置/诊断/异常跟踪/统计）、系统管理；回路整定原型页面设计 |
 | 模块架构 | 6 模块 + 1 门户：工作台/回路管理/性能评估/诊断中心/回路整定/系统管理（任务管理是性能评估子模块），各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
 | 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED），诊断中心子模块 |
-| 工程主约束 | PRD v6.0 负责产品需求；实现契约 v2.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.0 负责视觉与交互 |
+| 工程主约束 | PRD v6.1 负责产品需求；实现契约 v2.1 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
 
-## v4.0 重构进度（2026-06-26 全部完成）
+## v4.0 重构历史（2026-06-26）
+
+下表记录当时 Phase 0-6 的实施提交，仅用于追溯，不替代当前代码、测试结果与实现契约的验收。
 
 | 阶段 | 内容 | Commit |
 |---|---|---|
@@ -336,7 +351,7 @@ docker compose -f docker-compose.prod.yml up -d
 | Phase 5 | API 接口层扩展（波形批量/DataPlanner/任务管理/诊断标签） | `39859e5` `0dfd37b` |
 | Phase 6 | 前端适配（4层架构：类型/API → 组件 → 页面 → 路由） | `86f356c` `3516641` `4bff65b` |
 | 修复 | Celery worker 任务注册修复 | `207c882` |
-| v6.0 文档统一升级 | PRD/ADS/IDS/FDS/DDS/实现契约/UIUX/DESIGN 全量升级到 v6.0；统一术语、状态机、API 路径与权限字段 | 待 commit |
+| v6.0 文档统一升级 | PRD/ADS/IDS/FDS/DDS/实现契约/UIUX/DESIGN 全量升级；统一术语、状态机、API 路径与权限字段 | 历史记录 |
 
 ## 目录说明
 
@@ -353,8 +368,7 @@ docker compose -f docker-compose.prod.yml up -d
 | `docs/设计文档/05-IDS/IDS.md` | 当前系统 API 接口设计 |
 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | 当前可视化设计与用户体验规范 |
 | `docs/设计文档/00-BASELINE/implementation-contract.md` | 重构后实现契约：IA、路由、API、权限、状态机、KPI 与阶段口径 |
-| `DESIGN.md` | 设计基线 v3.0（视觉/布局/组件/验收横切约束，对齐实现契约 v2.0） |
-| `docs/过程文档/prototype-development-freeze-v0.1-2026-06-16.md` | 原型开发任务书、页面清单、样例数据和技术栈冻结 |
+| `DESIGN.md` | 设计基线 v3.0（视觉/布局/组件历史基线；现行路由与实现口径以实现契约 v2.1 为准） |
 | `docs/设计文档/prototype/README.md` | 原型系统代码库入口说明 |
 | `backend/` | FastAPI 后端（API + Celery 任务 + 算法引擎） |
 | `frontend/` | Vue 3 前端 monorepo（web-antd 为生产应用） |

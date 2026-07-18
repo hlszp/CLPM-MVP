@@ -28,7 +28,13 @@ const displayValue = computed(() => {
 });
 
 const compareDelta = computed(() => {
-  if (props.value === null || props.value === undefined || props.compareValue === null || props.compareValue === undefined) return null;
+  if (
+    props.value === null ||
+    props.value === undefined ||
+    props.compareValue === null ||
+    props.compareValue === undefined
+  )
+    return null;
   return Number(props.value) - Number(props.compareValue);
 });
 
@@ -45,8 +51,12 @@ const isPositive = computed(() => {
 
 const gaugeColor = computed(() => {
   if (props.color) return props.color;
-  if (props.value === null || props.value === undefined) return themeColors.value.NEUTRAL;
-  const percent = ((props.value - (props.min || 0)) / ((props.max || 100) - (props.min || 0))) * 100;
+  if (props.value === null || props.value === undefined)
+    return themeColors.value.NEUTRAL;
+  const percent =
+    ((props.value - (props.min || 0)) /
+      ((props.max || 100) - (props.min || 0))) *
+    100;
   if (percent >= 80) return themeColors.value.SUCCESS;
   if (percent >= 60) return themeColors.value.WARNING;
   return themeColors.value.DANGER;
@@ -132,7 +142,10 @@ function renderChart() {
         axisLine: {
           lineStyle: {
             width: 8,
-            color: [[percent / 100, color], [percent / 100, 'transparent']],
+            color: [
+              [percent / 100, color],
+              [percent / 100, 'transparent'],
+            ],
           },
         },
         pointer: {
@@ -180,10 +193,22 @@ onMounted(() => {
           'clpm-kpi-gauge__compare--negative': isPositive === false,
         }"
       >
-        <svg v-if="isPositive === true" width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <svg
+          v-if="isPositive === true"
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          fill="none"
+        >
           <path d="M5 2L9 6L5 10L1 6L5 2Z" fill="currentColor" />
         </svg>
-        <svg v-else-if="isPositive === false" width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <svg
+          v-else-if="isPositive === false"
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          fill="none"
+        >
           <path d="M5 8L1 4L5 0L9 4L5 8Z" fill="currentColor" />
         </svg>
         {{ compareText }}

@@ -23,7 +23,9 @@ const tabKeys = ref<Record<TabKey, number>>({
 
 const ManualTab = defineAsyncComponent(() => import('./recompute.vue'));
 const AutoTab = defineAsyncComponent(() => import('#/views/task/list.vue'));
-const HistoryTab = defineAsyncComponent(() => import('./history-snapshots.vue'));
+const HistoryTab = defineAsyncComponent(
+  () => import('./history-snapshots.vue'),
+);
 const StrategyTab = defineAsyncComponent(() => import('./task-strategy.vue'));
 
 function handleTabChange(key: number | string) {

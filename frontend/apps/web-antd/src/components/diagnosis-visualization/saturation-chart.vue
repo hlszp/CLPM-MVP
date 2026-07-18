@@ -8,7 +8,9 @@ const props = defineProps<{
   disabled?: boolean;
 }>();
 
-const saturationRatePercent = computed(() => (props.data.saturationRate * 100).toFixed(1));
+const saturationRatePercent = computed(() =>
+  (props.data.saturationRate * 100).toFixed(1),
+);
 </script>
 
 <template>
@@ -20,11 +22,15 @@ const saturationRatePercent = computed(() => (props.data.saturationRate * 100).t
       <div class="metrics-grid">
         <div class="metric-item">
           <span class="metric-label">高饱和 (≥95%)</span>
-          <span class="metric-value highlight-error">{{ data.highSaturationCount }}次</span>
+          <span class="metric-value highlight-error"
+            >{{ data.highSaturationCount }}次</span
+          >
         </div>
         <div class="metric-item">
           <span class="metric-label">低饱和 (≤5%)</span>
-          <span class="metric-value highlight-warning">{{ data.lowSaturationCount }}次</span>
+          <span class="metric-value highlight-warning"
+            >{{ data.lowSaturationCount }}次</span
+          >
         </div>
         <div class="metric-item">
           <span class="metric-label">饱和率</span>
@@ -32,7 +38,9 @@ const saturationRatePercent = computed(() => (props.data.saturationRate * 100).t
         </div>
         <div class="metric-item">
           <span class="metric-label">饱和总次数</span>
-          <span class="metric-value">{{ data.highSaturationCount + data.lowSaturationCount }}次</span>
+          <span class="metric-value"
+            >{{ data.highSaturationCount + data.lowSaturationCount }}次</span
+          >
         </div>
       </div>
     </div>
@@ -88,11 +96,11 @@ const saturationRatePercent = computed(() => (props.data.saturationRate * 100).t
   font-size: 12px;
   font-weight: 600;
   color: #374151;
-  
+
   &.highlight-error {
     color: #ef4444;
   }
-  
+
   &.highlight-warning {
     color: #f59e0b;
   }

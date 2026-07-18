@@ -22,7 +22,12 @@ import { Alert, Button, Card, Spin, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getTuningHistoryApi } from '#/api/tuning';
-import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TuningWorkbench' });
@@ -172,6 +177,12 @@ const totalTasks = computed(() => {
   return historyStats.value?.totalTasks ?? 0;
 });
 
+function getFittingStatus(value: number): NonNullable<KpiStripItem['status']> {
+  if (value >= 80) return 'success';
+  if (value >= 60) return 'warning';
+  return 'danger';
+}
+
 const kpiStripItems = computed<KpiStripItem[]>(() => [
   {
     key: 'total',
@@ -190,12 +201,7 @@ const kpiStripItems = computed<KpiStripItem[]>(() => [
     label: '平均拟合度',
     value: (avgFittingScore.value ?? 0).toFixed(2),
     unit: '%',
-    status:
-      (avgFittingScore.value ?? 0) >= 80
-        ? 'success'
-        : ((avgFittingScore.value ?? 0) >= 60
-          ? 'warning'
-          : 'danger'),
+    status: getFittingStatus(avgFittingScore.value ?? 0),
   },
   {
     key: 'recent',

@@ -25,10 +25,12 @@ from uuid import uuid4
 import numpy as np
 from sqlalchemy import delete, select
 
+from app.contracts.data_types import QualityStatus, RawTimeSeries
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTask
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
+from app.services.preprocessing.quality_code import map_quality_code
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -151,9 +153,6 @@ async def _do_run_diagnosis() -> dict:
     from app.core.db import AsyncSessionLocal
     from app.services.data_source.factory import get_provider
 
-    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
-    query_trend_fn = get_provider().query_trend_data
-
     now = datetime.now(UTC)
     ts_end = now.replace(minute=0, second=0, microsecond=0)
     ts_start = ts_end - timedelta(hours=1)
@@ -213,6 +212,7 @@ async def _do_run_diagnosis() -> dict:
         async with sem:
             # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
             async with AsyncSessionLocal() as worker_db:
+                query_wide_fn = get_provider().make_query_fn(worker_db)
                 # 进入 RUNNING 状态
                 await _update_task_status(worker_db, task_id, "RUNNING")
                 await worker_db.commit()
@@ -223,7 +223,7 @@ async def _do_run_diagnosis() -> dict:
                         diag_configs=diag_configs,
                         ts_start=ts_start,
                         ts_end=ts_end,
-                        query_trend_fn=query_trend_fn,
+                        query_wide_fn=query_wide_fn,
                         task_id=task_id,
                     )
                     await worker_db.commit()
@@ -307,10 +307,10 @@ async def _do_diagnose_single_loop(
     from app.core.db import AsyncSessionLocal
     from app.services.data_source.factory import get_provider
 
-    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
-    query_trend_fn = get_provider().query_trend_data
-
     async with AsyncSessionLocal() as db:
+        # 获取宽表查询函数（适配 tdengine/remote_api）
+        query_wide_fn = get_provider().make_query_fn(db)
+
         # 加载诊断配置
         config_result = await db.execute(
             select(DiagnosisConfig).where(DiagnosisConfig.is_enabled.is_(True))
@@ -345,7 +345,7 @@ async def _do_diagnose_single_loop(
                 diag_configs=diag_configs,
                 ts_start=ts_start_dt,
                 ts_end=ts_end_dt,
-                query_trend_fn=query_trend_fn,
+                query_wide_fn=query_wide_fn,
                 task_id=task_id,
             )
             await db.commit()
@@ -432,7 +432,7 @@ async def _diagnose_loop(
     diag_configs: dict[str, DiagnosisConfig],
     ts_start: datetime,
     ts_end: datetime,
-    query_trend_fn,
+    query_wide_fn,
     task_id: str | None = None,
 ) -> dict | None:
     """对单回路执行诊断。
@@ -443,7 +443,7 @@ async def _diagnose_loop(
         diag_configs: 诊断配置字典
         ts_start: 时间窗起始
         ts_end: 时间窗结束
-        query_trend_fn: TDengine 查询函数
+        query_wide_fn: 宽表查询函数
         task_id: 关联诊断任务 ID（可选，用于关联 DiagnosisResult）
 
     Returns:
@@ -477,38 +477,71 @@ async def _diagnose_loop(
             tags_map[str(t.id)] = t
 
     pv_tag_name = _get_tag_name(mappings, tags_map, "PV")
-    sp_tag_name = _get_tag_name(mappings, tags_map, "SP")
-    op_tag_name = _get_tag_name(mappings, tags_map, "OP")
-    mode_tag_name = _get_tag_name(mappings, tags_map, "MODE")
 
     if not pv_tag_name:
         logger.warning("回路 %s 缺少 PV Tag", loop.tag_name)
         return None
 
-    # 从 TDengine 拉取数据
-    # TDengine 存储的时间带 Z 后缀（ISO 8601 UTC），查询时需保持一致
-    start_iso = ts_start.isoformat() + "Z"
-    end_iso = ts_end.isoformat() + "Z"
-
+    # 从数据源拉取数据（宽表查询，一次返回多列）
     try:
-        pv_data = await query_trend_fn(pv_tag_name, start_iso, end_iso)
-        sp_data = await query_trend_fn(sp_tag_name, start_iso, end_iso) if sp_tag_name else []
-        op_data = await query_trend_fn(op_tag_name, start_iso, end_iso) if op_tag_name else []
-        mode_data = await query_trend_fn(mode_tag_name, start_iso, end_iso) if mode_tag_name else []
+        raw_series = await query_wide_fn(
+            loop_id=loop_id,
+            tag_roles=["pv", "sp", "op", "mode"],
+            start=ts_start,
+            end=ts_end,
+            interval_s=1,
+        )
+        if not isinstance(raw_series, RawTimeSeries):
+            logger.warning("宽表查询返回的不是 RawTimeSeries 对象，跳过回路 %s", loop.tag_name)
+            return None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("TDengine 查询失败（回路 %s 跳过）: %s", loop.tag_name, exc)
+        logger.warning("宽表查询失败（回路 %s 跳过）: %s", loop.tag_name, exc)
         return None
 
     # 数据不足判定
-    if len(pv_data) < MIN_DATA_POINTS:
-        logger.info("回路 %s 数据点不足 (%d < %d)", loop.tag_name, len(pv_data), MIN_DATA_POINTS)
+    if len(raw_series.timestamps) < MIN_DATA_POINTS:
+        logger.info(
+            "回路 %s 数据点不足 (%d < %d)",
+            loop.tag_name,
+            len(raw_series.timestamps),
+            MIN_DATA_POINTS,
+        )
         return None
 
-    # 剔除 PV 质量码为 Bad 的数据点
-    pv_data_filtered = [d for d in pv_data if str(d.get("quality", "GOOD")).upper() != "BAD"]
+    # 构建对齐的数据并剔除 PV 质量码为 Bad 的点
+    pv_quality_codes = raw_series.quality_codes.get("pv_quality", [])
+    pv_quality_data: list[dict[str, str]] = []
+    aligned: list[dict[str, Any]] = []
+    for i, ts in enumerate(raw_series.timestamps):
+        status = (
+            map_quality_code(pv_quality_codes[i])
+            if i < len(pv_quality_codes)
+            else QualityStatus.GOOD
+        )
+        quality_label = "UNCERTAIN" if status == QualityStatus.UNKNOWN else status.value.upper()
+        pv_quality_data.append({"quality": quality_label})
+        if status == QualityStatus.BAD:
+            continue
 
-    # 按 ts 对齐
-    aligned = _align_timeseries(pv_data_filtered, sp_data, op_data, mode_data)
+        pv_list = raw_series.signals.get("pv")
+        pv_val = pv_list[i] if pv_list and i < len(pv_list) else None
+        if pv_val is None:
+            continue
+
+        sp_list = raw_series.signals.get("sp")
+        op_list = raw_series.signals.get("op")
+        mode_list = raw_series.signals.get("mode")
+
+        aligned.append(
+            {
+                "ts": ts,
+                "pv": pv_val,
+                "sp": sp_list[i] if sp_list and i < len(sp_list) else None,
+                "op": op_list[i] if op_list and i < len(op_list) else None,
+                "mode": mode_list[i] if mode_list and i < len(mode_list) else None,
+            }
+        )
+
     if len(aligned) < MIN_DATA_POINTS:
         logger.info("回路 %s 对齐后数据点不足", loop.tag_name)
         return None
@@ -543,7 +576,7 @@ async def _diagnose_loop(
 
     # 3. PV 质量码统计（P2-1：Q001-Q005 规则矩阵）
     quality_result = _analyze_quality(
-        pv_data,
+        pv_quality_data,
         threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
     )
 
@@ -2754,54 +2787,6 @@ def _compute_sample_interval(aligned: list[dict[str, Any]]) -> float:
     if not diffs:
         return 1.0
     return sum(diffs) / len(diffs)
-
-
-def _align_timeseries(
-    pv_data: list[dict],
-    sp_data: list[dict],
-    op_data: list[dict],
-    mode_data: list[dict],
-) -> list[dict[str, Any]]:
-    """按 ts 对齐 PV/SP/OP/MODE 时序数据。
-
-    对齐策略：
-    1. 优先精确时间戳匹配（兼容字符串 ts 如 "t1"）
-    2. 若 ts 可转为数值，使用 bisect 最近邻匹配，容差 ±500ms
-
-    辅助函数复用 kpi_calc 模块实现，保持两处对齐逻辑一致。
-    """
-    from app.tasks.kpi_calc import (
-        _build_ts_index,
-        _find_nearest_value,
-    )
-
-    # 精确映射（兼容字符串 ts）
-    sp_map = {d.get("ts"): d.get("value") for d in sp_data}
-    op_map = {d.get("ts"): d.get("value") for d in op_data}
-    mode_map = {d.get("ts"): d.get("value") for d in mode_data}
-
-    # 数值索引（用于容差匹配）
-    sp_ts_floats, sp_ts_orig = _build_ts_index(sp_data)
-    op_ts_floats, op_ts_orig = _build_ts_index(op_data)
-    mode_ts_floats, mode_ts_orig = _build_ts_index(mode_data)
-    sp_values = [sp_map[t] for t in sp_ts_orig] if sp_ts_floats else None
-    op_values = [op_map[t] for t in op_ts_orig] if op_ts_floats else None
-    mode_values = [mode_map[t] for t in mode_ts_orig] if mode_ts_floats else None
-
-    aligned: list[dict[str, Any]] = []
-    for d in pv_data:
-        ts = d.get("ts")
-        pv = d.get("value")
-        aligned.append(
-            {
-                "ts": ts,
-                "pv": pv,
-                "sp": _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values),
-                "op": _find_nearest_value(ts, op_ts_floats, op_map, op_values),
-                "mode": _find_nearest_value(ts, mode_ts_floats, mode_map, mode_values),
-            }
-        )
-    return aligned
 
 
 def _build_scatter_plot_data(aligned: list[dict[str, Any]]) -> dict[str, list[float]]:

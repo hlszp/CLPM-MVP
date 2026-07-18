@@ -55,7 +55,9 @@ export namespace DataSourceApi {
 
 /** 获取数据源配置 */
 export function getDatasourceConfigApi() {
-  return requestClient.get<DataSourceApi.DataSourceConfig>('/datasource/config');
+  return requestClient.get<DataSourceApi.DataSourceConfig>(
+    '/datasource/config',
+  );
 }
 
 /** 更新数据源配置 */

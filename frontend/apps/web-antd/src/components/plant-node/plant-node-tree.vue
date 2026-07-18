@@ -231,20 +231,18 @@ const treeStats = computed(() => {
     for (const n of nodes) {
       const type = n.node?.type;
       switch (type) {
-      case 'AREA': {
-      areaCount++;
-      break;
-      }
-      case 'FACTORY': {
-      factoryCount++;
-      break;
-      }
-      case 'UNIT': { {
-      unitCount++;
-      // No default
-      }
-      break;
-      }
+        case 'AREA': {
+          areaCount++;
+          break;
+        }
+        case 'FACTORY': {
+          factoryCount++;
+          break;
+        }
+        case 'UNIT': {
+          unitCount++;
+          break;
+        }
       }
       // 只累加根节点的回路数（loopCountByNode 已递归包含子节点）
       // 避免父节点 + 子节点重复累加导致 totalLoops 放大
@@ -309,16 +307,12 @@ async function loadTree() {
       }
     }
     collectKeys(newTreeData);
-    expandedKeys.value = expandedKeys.value.filter((k) =>
-      validKeys.has(k),
-    );
+    expandedKeys.value = expandedKeys.value.filter((k) => validKeys.has(k));
 
     // 仅在之前有选中节点但被清理时才 emit select(null)，
     // 首次加载 selectedKeys 本就为空，不应触发父组件重复加载
     const hadSelection = selectedKeys.value.length > 0;
-    selectedKeys.value = selectedKeys.value.filter((k) =>
-      validKeys.has(k),
-    );
+    selectedKeys.value = selectedKeys.value.filter((k) => validKeys.has(k));
     if (hadSelection && selectedKeys.value.length === 0) {
       selectedNode.value = null;
       emit('select', null);
@@ -539,7 +533,9 @@ defineExpose({ loadTree, expandAll, collapseAll });
     :body-style="{ padding: treeCollapsed ? '8px 4px' : '8px' }"
   >
     <template #title>
-      <span v-if="!treeCollapsed" class="text-sm font-semibold">{{ cardTitle }}</span>
+      <span v-if="!treeCollapsed" class="text-sm font-semibold">{{
+        cardTitle
+      }}</span>
     </template>
     <template #extra>
       <div class="flex gap-1">
@@ -558,10 +554,18 @@ defineExpose({ loadTree, expandAll, collapseAll });
         </Tooltip>
         <!-- 折叠整个树形面板（向左收起） -->
         <Tooltip :title="treeCollapsed ? '展开树面板' : '折叠树面板'">
-          <Button type="text" size="small" @click="treeCollapsed = !treeCollapsed">
+          <Button
+            type="text"
+            size="small"
+            @click="treeCollapsed = !treeCollapsed"
+          >
             <template #icon>
               <IconifyIcon
-                :icon="treeCollapsed ? 'ant-design:right-outlined' : 'ant-design:left-outlined'"
+                :icon="
+                  treeCollapsed
+                    ? 'ant-design:right-outlined'
+                    : 'ant-design:left-outlined'
+                "
               />
             </template>
           </Button>
@@ -709,10 +713,7 @@ defineExpose({ loadTree, expandAll, collapseAll });
                   {{ loopCountByNode[nodeData.key as string] }}
                 </span>
                 <!-- hover reveal 操作按钮组（ZL §2） -->
-                <div
-                  v-if="showCrudButtons"
-                  class="plant-node-tree__actions"
-                >
+                <div v-if="showCrudButtons" class="plant-node-tree__actions">
                   <Tooltip title="新增子节点">
                     <Button
                       type="text"
@@ -933,7 +934,9 @@ defineExpose({ loadTree, expandAll, collapseAll });
   align-items: center;
   margin-left: 8px;
   opacity: 0;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    visibility 0.15s ease;
 }
 
 .plant-node-tree__node:hover .plant-node-tree__actions {

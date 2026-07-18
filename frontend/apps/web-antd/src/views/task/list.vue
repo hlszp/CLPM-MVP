@@ -20,6 +20,7 @@ import {
   DatePicker,
   Drawer,
   message,
+  Modal,
   Progress,
   Select,
   Space,
@@ -82,8 +83,26 @@ const selectedTask = ref<null | TaskApi.TaskItem>(null);
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleteLoading = ref(false);
 
+function requestConfirmation(content: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    Modal.confirm({
+      cancelText: '取消',
+      content,
+      okText: '确认',
+      onCancel: () => resolve(false),
+      onOk: () => resolve(true),
+      title: '请确认',
+    });
+  });
+}
+
 async function handleCancel(record: TaskApi.TaskItem) {
-  if (!window.confirm(`确认取消任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
+  if (
+    !(await requestConfirmation(
+      `确认取消任务 ${record.taskId.slice(-8).toUpperCase()}？`,
+    ))
+  )
+    return;
   try {
     await cancelTaskApi(record.taskId);
     message.success('任务已取消');
@@ -94,7 +113,12 @@ async function handleCancel(record: TaskApi.TaskItem) {
 }
 
 async function handleDelete(record: TaskApi.TaskItem) {
-  if (!window.confirm(`确认删除任务 ${record.taskId.slice(-8).toUpperCase()}？`)) return;
+  if (
+    !(await requestConfirmation(
+      `确认删除任务 ${record.taskId.slice(-8).toUpperCase()}？`,
+    ))
+  )
+    return;
   try {
     await deleteTaskApi(record.taskId);
     message.success('任务已删除');
@@ -109,7 +133,12 @@ async function handleBatchDelete() {
     message.warning('请先选择要删除的任务');
     return;
   }
-  if (!window.confirm(`确认删除已选 ${selectedRowKeys.value.length} 个任务？`)) return;
+  if (
+    !(await requestConfirmation(
+      `确认删除已选 ${selectedRowKeys.value.length} 个任务？`,
+    ))
+  )
+    return;
   batchDeleteLoading.value = true;
   try {
     const failed: string[] = [];
@@ -121,7 +150,9 @@ async function handleBatchDelete() {
       }
     }
     if (failed.length > 0) {
-      message.warning(`删除完成，${failed.length} 个任务删除失败（可能非终态）`);
+      message.warning(
+        `删除完成，${failed.length} 个任务删除失败（可能非终态）`,
+      );
     } else {
       message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
     }
@@ -255,7 +286,9 @@ const POLLING_INTERVAL = 5000;
 let pollingTimer: null | ReturnType<typeof setInterval> = null;
 
 function hasActiveTask(): boolean {
-  return taskList.value.some((t) => t.status === 'RUNNING' || t.status === 'PENDING');
+  return taskList.value.some(
+    (t) => t.status === 'RUNNING' || t.status === 'PENDING',
+  );
 }
 
 function updatePolling() {
@@ -449,17 +482,23 @@ onUnmounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'taskTitle'">
-            <span class="font-medium">{{ getTaskTitle(record as TaskApi.TaskItem) }}</span>
+            <span class="font-medium">{{
+              getTaskTitle(record as TaskApi.TaskItem)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'taskType'">
             <Tag>{{ taskTypeTextMap[record.taskType] || record.taskType }}</Tag>
           </template>
           <template v-else-if="column.key === 'loopsTotal'">
-            <span v-if="record.loopsTotal" class="font-mono">{{ record.loopsTotal }}</span>
+            <span v-if="record.loopsTotal" class="font-mono">{{
+              record.loopsTotal
+            }}</span>
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'windowCount'">
-            <span v-if="record.windowCount" class="font-mono">{{ record.windowCount }}</span>
+            <span v-if="record.windowCount" class="font-mono">{{
+              record.windowCount
+            }}</span>
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'tsRange'">
@@ -489,12 +528,17 @@ onUnmounted(() => {
             <span class="clpm-num">{{ formatTime(record.createdAt) }}</span>
           </template>
           <template v-else-if="column.key === 'duration'">
-            <span class="font-mono">{{ formatDuration(record as TaskApi.TaskItem) }}</span>
+            <span class="font-mono">{{
+              formatDuration(record as TaskApi.TaskItem)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Space :size="4">
               <Button
-                v-if="(record as TaskApi.TaskItem).status === 'RUNNING' || (record as TaskApi.TaskItem).status === 'PENDING'"
+                v-if="
+                  (record as TaskApi.TaskItem).status === 'RUNNING' ||
+                  (record as TaskApi.TaskItem).status === 'PENDING'
+                "
                 type="link"
                 size="small"
                 danger
@@ -503,7 +547,11 @@ onUnmounted(() => {
                 取消
               </Button>
               <Button
-                v-if="['SUCCESS', 'FAILED', 'CANCELLED'].includes((record as TaskApi.TaskItem).status)"
+                v-if="
+                  ['SUCCESS', 'FAILED', 'CANCELLED'].includes(
+                    (record as TaskApi.TaskItem).status,
+                  )
+                "
                 type="link"
                 size="small"
                 danger
@@ -511,7 +559,17 @@ onUnmounted(() => {
               >
                 删除
               </Button>
-              <span v-if="!['SUCCESS', 'FAILED', 'CANCELLED'].includes((record as TaskApi.TaskItem).status) && (record as TaskApi.TaskItem).status !== 'RUNNING' && (record as TaskApi.TaskItem).status !== 'PENDING'" :style="{ color: themeColors.NEUTRAL }">—</span>
+              <span
+                v-if="
+                  !['SUCCESS', 'FAILED', 'CANCELLED'].includes(
+                    (record as TaskApi.TaskItem).status,
+                  ) &&
+                  (record as TaskApi.TaskItem).status !== 'RUNNING' &&
+                  (record as TaskApi.TaskItem).status !== 'PENDING'
+                "
+                :style="{ color: themeColors.NEUTRAL }"
+                >—</span
+              >
             </Space>
           </template>
         </template>
@@ -537,7 +595,9 @@ onUnmounted(() => {
           </div>
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">任务类型</span>
-            <Tag>{{ taskTypeTextMap[selectedTask.taskType] || selectedTask.taskType }}</Tag>
+            <Tag>{{
+              taskTypeTextMap[selectedTask.taskType] || selectedTask.taskType
+            }}</Tag>
           </div>
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">评估状态</span>
@@ -562,10 +622,14 @@ onUnmounted(() => {
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">时间窗口</span>
             <span class="font-mono text-xs">
-              {{ formatTime(selectedTask.tsStart) }} ~ {{ formatTime(selectedTask.tsEnd) }}
+              {{ formatTime(selectedTask.tsStart) }} ~
+              {{ formatTime(selectedTask.tsEnd) }}
             </span>
           </div>
-          <div v-if="selectedTask.loopsTotal" class="flex justify-between border-b pb-2">
+          <div
+            v-if="selectedTask.loopsTotal"
+            class="flex justify-between border-b pb-2"
+          >
             <span :style="{ color: themeColors.NEUTRAL }">回路进度</span>
             <span class="font-mono">
               {{ selectedTask.loopsDone || 0 }} / {{ selectedTask.loopsTotal }}
@@ -577,14 +641,18 @@ onUnmounted(() => {
           </div>
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">创建时间</span>
-            <span class="clpm-num">{{ formatTime(selectedTask.createdAt) }}</span>
+            <span class="clpm-num">{{
+              formatTime(selectedTask.createdAt)
+            }}</span>
           </div>
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">评估时长</span>
             <span class="font-mono">{{ formatDuration(selectedTask) }}</span>
           </div>
           <div v-if="selectedTask.errorMessage" class="border-b pb-2">
-            <div class="mb-1" :style="{ color: themeColors.NEUTRAL }">错误信息</div>
+            <div class="mb-1" :style="{ color: themeColors.NEUTRAL }">
+              错误信息
+            </div>
             <div class="rounded bg-red-50 p-2 text-sm text-red-600">
               {{ selectedTask.errorMessage }}
             </div>

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -38,6 +39,8 @@ class FakeTaskRedis:
         self._hashes: dict[str, dict[str, str]] = {}
         self._zsets: dict[str, dict[str, float]] = {}
         self._lists: dict[str, list[str]] = {}
+        self._sets: dict[str, set[str]] = {}
+        self._ttls: dict[str, int] = {}
 
     async def hset(self, key: str, mapping: dict | None = None, **kwargs) -> int:
         if key not in self._hashes:
@@ -104,6 +107,10 @@ class FakeTaskRedis:
             if key in self._lists:
                 del self._lists[key]
                 deleted += 1
+            if key in self._sets:
+                del self._sets[key]
+                deleted += 1
+            self._ttls.pop(key, None)
         return deleted
 
     async def zrem(self, key: str, *members: str) -> int:
@@ -119,6 +126,110 @@ class FakeTaskRedis:
     async def hget(self, key: str, field: str) -> str | None:
         """Get a single hash field."""
         return self._hashes.get(key, {}).get(field)
+
+    async def eval(self, script: str, numkeys: int, *args):  # noqa: PLR0911
+        """Implement the task_tracker Lua contracts atomically for service tests."""
+        keys = [str(value) for value in args[:numkeys]]
+        argv = [str(value) for value in args[numkeys:]]
+        task = self._hashes.get(keys[0]) if keys else None
+
+        if "CLPM_TASK_STATUS_CAS_V1" in script:
+            if task is None:
+                return ["MISSING", ""]
+            new_status = argv[0]
+            old_status = task.get("status", "")
+            if old_status in {"SUCCESS", "FAILED", "CANCELLED"} and old_status != new_status:
+                return ["BLOCKED", old_status]
+            task["status"] = new_status
+            for index in range(1, len(argv), 2):
+                field, value = argv[index], argv[index + 1]
+                if field in {"progress", "loops_done"} and task.get(field) not in {None, ""}:
+                    if float(value) < float(task[field]):
+                        continue
+                task[field] = value
+            return ["UPDATED", old_status]
+
+        if "CLPM_BACKFILL_DISPATCH_RESERVE_V1" in script:
+            if task is None:
+                return ["MISSING", "[]", ""]
+            state = task.get("backfill_dispatch_state")
+            existing_ids = task.get("backfill_child_task_ids")
+            callback = task.get("backfill_callback_task_id", "")
+            legacy_ids = task.get("celery_task_ids")
+            if state == "DISPATCHED" or (
+                state is None and (existing_ids or callback or legacy_ids)
+            ):
+                return ["EXISTING", existing_ids or legacy_ids or "[]", callback]
+            if state == "DISPATCHING":
+                task["backfill_dispatch_token"] = argv[0]
+                return ["RECOVER", existing_ids or "[]", callback]
+            task.update(
+                {
+                    "backfill_dispatch_state": "DISPATCHING",
+                    "backfill_dispatch_token": argv[0],
+                    "backfill_child_task_ids": argv[1],
+                    "backfill_callback_task_id": argv[2],
+                    "celery_task_ids": argv[3],
+                }
+            )
+            return ["CLAIMED", argv[1], argv[2]]
+
+        if "CLPM_BACKFILL_DISPATCH_COMPLETE_V1" in script:
+            if (
+                task is None
+                or task.get("backfill_dispatch_state") != "DISPATCHING"
+                or task.get("backfill_dispatch_token") != argv[0]
+            ):
+                return 0
+            task["backfill_dispatch_state"] = "DISPATCHED"
+            task.pop("backfill_dispatch_token", None)
+            return 1
+
+        if "CLPM_BACKFILL_DISPATCH_RELEASE_V1" in script:
+            if (
+                task is None
+                or task.get("backfill_dispatch_state") != "DISPATCHING"
+                or task.get("backfill_dispatch_token") != argv[0]
+            ):
+                return 0
+            for field in (
+                "backfill_dispatch_state",
+                "backfill_dispatch_token",
+                "backfill_child_task_ids",
+                "backfill_callback_task_id",
+                "celery_task_ids",
+            ):
+                task.pop(field, None)
+            return 1
+
+        if "CLPM_BACKFILL_PROGRESS_V1" in script:
+            if task is None:
+                return ["MISSING", "0", "0"]
+            current_done = int(task.get("backfill_done", "0") or 0)
+            current_progress = float(task.get("progress", "0") or 0)
+            if task.get("status") in {"SUCCESS", "FAILED", "CANCELLED"}:
+                return ["TERMINAL", str(current_done), str(current_progress)]
+            events = self._sets.setdefault(keys[1], set())
+            self._ttls[keys[1]] = int(argv[3])
+            if argv[0] in events:
+                return ["DUPLICATE", str(current_done), str(current_progress)]
+            events.add(argv[0])
+            total = int(argv[1])
+            done = min(current_done + 1, total)
+            progress = max(done / total if total else 0.0, current_progress)
+            task.update(
+                {
+                    "status": "RUNNING",
+                    "backfill_done": str(done),
+                    "progress": str(progress),
+                    "loops_done": str(done),
+                    "loops_total": str(total),
+                    "current_stage": argv[2],
+                }
+            )
+            return ["COUNTED", str(done), str(progress)]
+
+        raise AssertionError("Unsupported task_tracker Lua script")
 
 
 @pytest.fixture
@@ -520,6 +631,30 @@ class TestCancelTask:
         assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_TASK_NOT_CANCELLABLE"
 
+    def test_cancel_cas_preserves_terminal_update_after_stale_read(
+        self, client, task_redis, fake_redis
+    ) -> None:
+        """SUCCESS won after the endpoint read; cancellation CAS must not overwrite it."""
+        stale = _save_task_to_redis(task_redis, task_id="task-race", status="PENDING")
+
+        async def stale_read(_task_id: str) -> dict[str, str]:
+            task_redis._hashes["task:task-race"]["status"] = "SUCCESS"
+            return dict(stale)
+
+        with (
+            patch("app.api.v1.endpoints.tasks._get_task", side_effect=stale_read),
+            patch("app.tasks.celery_app.celery_app") as mock_celery_app,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/tasks/task-race/cancel",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 400
+        assert task_redis._hashes["task:task-race"]["status"] == "SUCCESS"
+        mock_celery_app.control.revoke.assert_not_called()
+
     def test_cancel_not_found(self, client, task_redis, fake_redis) -> None:
         """取消不存在的任务返回 404."""
         with mock_current_user(TEST_USERS["ic_engineer"]):
@@ -561,6 +696,9 @@ class TestDeleteTask:
             status="SUCCESS",
             task_type="BACKFILL",
         )
+        event_key = "task:task-del-success:backfill_progress_events"
+        task_redis._sets[event_key] = {"w1:loop-1"}
+        task_redis._ttls[event_key] = 604_800
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.delete(
                 "/api/v1/tasks/task-del-success",
@@ -573,6 +711,8 @@ class TestDeleteTask:
         assert body["data"]["deleted"] is True
         # 验证 Redis Hash 已删除
         assert "task:task-del-success" not in task_redis._hashes
+        assert event_key not in task_redis._sets
+        assert event_key not in task_redis._ttls
         # 验证索引 zset 中已移除
         assert "task-del-success" not in task_redis._zsets.get("task:index", {})
 
@@ -968,6 +1108,16 @@ class TestCeleryTaskIdParsing:
             "celery-002",
         ]
 
+    def test_root_and_canvas_task_ids_are_combined(self) -> None:
+        from app.api.v1.endpoints.tasks import _parse_celery_task_ids
+
+        assert _parse_celery_task_ids(
+            {
+                "celery_task_id": "dispatcher-001",
+                "celery_task_ids": '["child-001", "callback-001"]',
+            }
+        ) == ["dispatcher-001", "child-001", "callback-001"]
+
     def test_invalid_task_id_value_is_ignored(self) -> None:
         from app.api.v1.endpoints.tasks import _parse_celery_task_ids
 
@@ -1129,3 +1279,60 @@ class TestTaskTrackerService:
         # 验证通知列表被 ltrim 到 _NOTIFICATION_MAX 条
         notifications = await task_tracker.get_notifications("user-007", limit=200)
         assert len(notifications) == task_tracker._NOTIFICATION_MAX
+
+    async def test_concurrent_terminal_updates_keep_first_terminal(self, task_redis) -> None:
+        from app.schemas.task import TaskStatus, TaskType
+        from app.services import task_tracker
+
+        task_id = await task_tracker.create_task(
+            task_type=TaskType.CUSTOM,
+            created_by="admin",
+            created_by_id="",
+        )
+        await asyncio.gather(
+            task_tracker.update_status(task_id, TaskStatus.CANCELLED),
+            task_tracker.update_status(task_id, TaskStatus.FAILED),
+        )
+        first_terminal = (await task_tracker.get_task(task_id))["status"]
+        await task_tracker.update_status(task_id, TaskStatus.SUCCESS)
+        assert (await task_tracker.get_task(task_id))["status"] == first_terminal
+
+    async def test_backfill_progress_is_monotonic_and_duplicate_safe(self, task_redis) -> None:
+        from app.schemas.task import TaskType
+        from app.services import task_tracker
+
+        task_id = await task_tracker.create_task(
+            task_type=TaskType.BACKFILL,
+            created_by="admin",
+            created_by_id="",
+        )
+        assert (await task_tracker.get_task(task_id))["progress"] == ""
+        first = await task_tracker.record_backfill_progress_once(
+            task_id,
+            event_id="w1:loop-1",
+            total_loops=2,
+            current_stage="w1",
+        )
+        event_key = f"task:{task_id}:backfill_progress_events"
+        assert task_redis._ttls[event_key] == 604_800
+        task_redis._ttls[event_key] = 1
+        duplicate = await task_tracker.record_backfill_progress_once(
+            task_id,
+            event_id="w1:loop-1",
+            total_loops=2,
+            current_stage="w1 duplicate",
+        )
+        assert task_redis._ttls[event_key] == 604_800
+        second = await task_tracker.record_backfill_progress_once(
+            task_id,
+            event_id="w1:loop-2",
+            total_loops=2,
+            current_stage="w1",
+        )
+
+        assert first == (True, 1, 0.5)
+        assert duplicate == (False, 1, 0.5)
+        assert second == (True, 2, 1.0)
+        task = await task_tracker.get_task(task_id)
+        assert task["loops_done"] == "2"
+        assert task["progress"] == "1.0"

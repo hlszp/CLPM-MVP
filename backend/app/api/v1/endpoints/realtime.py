@@ -40,7 +40,7 @@ async def get_realtime_values(
     """查询 Tag 的实时值（从 Redis 缓存读取）.
 
     数据来源：RealtimeSubscriber 后台任务订阅 SignalR Hub，
-    实时值缓存在 Redis（TTL 60 秒）。
+    实时值缓存在 Redis（TTL 3600 秒，确保页面刷新时能从缓存读取实时值）。
 
     Args:
         tagCodes: Tag 编码列表（tag_name 格式，如 "LIC-101.PV"）

@@ -94,6 +94,17 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'LoopData',
+        path: '/loop/data',
+        component: () => import('#/views/loop/data.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:database',
+          order: 5,
+          title: '数据管理',
+        },
+      },
+      {
         name: 'LoopDetail',
         path: '/loop/detail/:id',
         component: () => import('#/views/loop/detail.vue'),

@@ -660,14 +660,18 @@ onBeforeUnmount(() => {
             </span>
           </template>
           <template v-else-if="column.key === 'confidence'">
-            <span class="clpm-num">{{ Number(record.confidence).toFixed(2) }}</span>
+            <span class="clpm-num">{{
+              Number(record.confidence).toFixed(2)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
               :color="getStatusMeta(record.actionStatus as string).color"
               :style="{
-                background: getStatusMeta(record.actionStatus as string).bgColor,
-                borderColor: getStatusMeta(record.actionStatus as string).borderColor,
+                background: getStatusMeta(record.actionStatus as string)
+                  .bgColor,
+                borderColor: getStatusMeta(record.actionStatus as string)
+                  .borderColor,
               }"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
@@ -709,7 +713,9 @@ onBeforeUnmount(() => {
                   v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
                   type="link"
                   size="small"
-                  @click="handleOpenAbCompare(record as DiagnosisApi.TrackerItem)"
+                  @click="
+                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
+                  "
                 >
                   A/B 对比
                 </Button>
@@ -734,10 +740,7 @@ onBeforeUnmount(() => {
                   v-if="getExportState(record.loopId)?.status === 'exporting'"
                 >
                   <Spin size="small" />
-                  <span
-                    class="text-xs"
-                    :style="{ color: themeColors.NEUTRAL }"
-                  >
+                  <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
                     导出中...
                   </span>
                 </template>

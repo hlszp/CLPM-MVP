@@ -86,8 +86,11 @@ cd e2e && pnpm exec playwright test
 ### 关键注意事项
 
 - **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker
+- **Worker 并发与回填性能**（2026-07-18 性能优化）：prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.prod` 中 `CELERY_WORKER_CONCURRENCY` 需按宿主机核数同步；回填任务按"1 窗口 = 1 个 chord 子任务"派发，27 回路 × 24h 实测约 52s（0.08s/回路时）；整点自动任务 27 回路 × 1h 实测约 1.9s（0.07s/回路时）。实测脚本：`backend/scripts/measure_backfill_perf.py`
+- **prewarm 预热策略已废止**（2026-07-18）：原"每小时 55 分"预热窗口与整点任务窗口错位一小时（预热的是上一任务已算完的窗口，从未命中），已移除 beat 条目、worker_ready 预热与 L2 兜底预热。整点任务数据来源统一为 **realtime 滚动缓存**（`realtime:history:*`，保留 75 分钟×1Hz=4500 点，provider 对近 1 小时窗口自动探测）+ TDengine 回源兜底；`prewarm_cache` 任务保留供手工/运维调用
+- **macOS fork 时区陷阱**：celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）
 - **Celery Beat 已自动启动**（v6.1）：后端 lifespan 中自动启动 Beat 调度进程，每小时 KPI 计算等定时任务自动执行，无需手动启动 Beat
-- **前端端口是 7100**（端口统一规划：项目所有端口统一到 7100-7200 段，配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=7100`）
+- **前端端口是 5666**（配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=5666`；项目端口统一规划到 7100-7200 段，后端 API 为 7101）
 - **前端 TypeScript 错误已全部修复**（v6.0 升级中清零，原 plant-node-tree.vue 3 个 + workbench.vue 3 个已修复）
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
 - **Git 分支**：当前在 `main` 分支；双机协作时使用 `mb/*`（mb 机器）或 `zp/*`（zp 机器）临时分支，详见 §双机协作开发规范

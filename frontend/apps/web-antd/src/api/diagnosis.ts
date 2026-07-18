@@ -559,7 +559,7 @@ export namespace DiagnosisApi {
     completedAt: null | string;
     timeRangeStart: null | string;
     timeRangeEnd: null | string;
-    labels: { confidence: number; label: string; }[];
+    labels: { confidence: number; label: string }[];
     isArchived: boolean;
     errorMessage: null | string;
   }
@@ -673,9 +673,7 @@ export function getWaveformApi(
  * - 单个回路失败不影响其他回路（失败信息放入 failed 列表）
  * - 每个回路独立应用 LTTB 降采样
  */
-export function getBatchWaveformApi(
-  data: DiagnosisApi.BatchWaveformRequest,
-) {
+export function getBatchWaveformApi(data: DiagnosisApi.BatchWaveformRequest) {
   return requestClient.post<DiagnosisApi.BatchWaveformResponse>(
     '/timeseries/batch/waveform',
     data,
@@ -853,9 +851,7 @@ export function triggerDiagnosisApi(data: DiagnosisApi.TriggerRequest) {
 /**
  * 获取诊断任务列表（未归档） — 每回路一行
  */
-export function getDiagnosisTasksApi(
-  params: DiagnosisApi.TaskListQueryParams,
-) {
+export function getDiagnosisTasksApi(params: DiagnosisApi.TaskListQueryParams) {
   return requestClient.get<PaginatedResponse<DiagnosisApi.TaskItem>>(
     '/diagnosis/tasks',
     { params },

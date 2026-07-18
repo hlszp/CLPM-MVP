@@ -26,7 +26,10 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { getGradingThresholdsApi, saveGradingThresholdsApi } from '#/api/metric';
+import {
+  getGradingThresholdsApi,
+  saveGradingThresholdsApi,
+} from '#/api/metric';
 import { ClpmToolbarButton } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
@@ -56,7 +59,11 @@ const editState = reactive<
 >({});
 
 /** 获取编辑态（保证非 undefined，用于模板 v-model） */
-function editStateOf(level: number): { label: string; maxScore: number; minScore: number } {
+function editStateOf(level: number): {
+  label: string;
+  maxScore: number;
+  minScore: number;
+} {
   if (!editState[level]) {
     editState[level] = { label: '', minScore: 0, maxScore: 0 };
   }
@@ -101,14 +108,18 @@ async function loadList() {
     // 同步编辑态
     for (const item of list.value) {
       editState[item.level] = {
-        label: item.label ?? LEVEL_META[item.level]?.cnLabel ?? `L${item.level}`,
+        label:
+          item.label ?? LEVEL_META[item.level]?.cnLabel ?? `L${item.level}`,
         minScore: item.minScore,
         maxScore: item.maxScore,
       };
     }
     // 补全 5 级（后端可能未返回全部）
     const defaultLevels = [1, 2, 3, 4, 5];
-    const defaults: Record<number, { label: string; max: number; min: number }> = {
+    const defaults: Record<
+      number,
+      { label: string; max: number; min: number }
+    > = {
       1: { label: '优秀', min: 90, max: 100 },
       2: { label: '良好', min: 80, max: 90 },
       3: { label: '合格', min: 60, max: 80 },
@@ -151,12 +162,18 @@ const violatedLevels = computed<number[]>(() => {
   const sorted = [...list.value].toSorted((a, b) => a.level - b.level);
   const violations: number[] = [];
   for (let i = 0; i < sorted.length - 1; i++) {
-    const cur = editState[sorted[i]!.level];
-    const next = editState[sorted[i + 1]!.level];
-    if (cur && next && // 当前等级的 minScore 应等于下一等级的 maxScore
-      cur.minScore !== next.maxScore) {
-        violations.push(sorted[i]!.level, sorted[i + 1]!.level);
-      }
+    const currentLevel = sorted[i];
+    const nextLevel = sorted[i + 1];
+    if (!currentLevel || !nextLevel) continue;
+    const cur = editState[currentLevel.level];
+    const next = editState[nextLevel.level];
+    if (
+      cur &&
+      next && // 当前等级的 minScore 应等于下一等级的 maxScore
+      cur.minScore !== next.maxScore
+    ) {
+      violations.push(currentLevel.level, nextLevel.level);
+    }
   }
   return [...new Set(violations)];
 });
@@ -169,7 +186,9 @@ const confirmLoading = ref(false);
 
 function handleSave() {
   if (!isValid.value) {
-    message.warning('定级阈值校验未通过：相邻等级 minScore/maxScore 须严格衔接');
+    message.warning(
+      '定级阈值校验未通过：相邻等级 minScore/maxScore 须严格衔接',
+    );
     return;
   }
   confirmVisible.value = true;
@@ -209,7 +228,8 @@ onMounted(() => {
     <div class="mb-3 flex items-center justify-between">
       <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
         配置 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR）。
-        相邻等级的分数区间须严格衔接（即 level N 的 minScore == level N+1 的 maxScore）。
+        相邻等级的分数区间须严格衔接（即 level N 的 minScore == level N+1 的
+        maxScore）。
       </p>
       <div class="flex gap-2">
         <ClpmToolbarButton
@@ -290,7 +310,10 @@ onMounted(() => {
                 background: LEVEL_META[record.level]?.color ?? record.color,
               }"
             ></span>
-            <span class="font-mono text-xs" :style="{ color: themeColors.NEUTRAL }">
+            <span
+              class="font-mono text-xs"
+              :style="{ color: themeColors.NEUTRAL }"
+            >
               {{ LEVEL_META[record.level]?.color ?? record.color }}
             </span>
           </div>
@@ -303,7 +326,9 @@ onMounted(() => {
           >
             ✗ 衔接断裂
           </span>
-          <span v-else class="text-xs" :style="{ color: themeColors.SUCCESS }">✓ 衔接正确</span>
+          <span v-else class="text-xs" :style="{ color: themeColors.SUCCESS }"
+            >✓ 衔接正确</span
+          >
         </template>
       </template>
     </Table>
@@ -333,7 +358,13 @@ onMounted(() => {
       <div class="space-y-3 py-2">
         <div class="text-sm">
           <div class="mb-2 font-medium">变更摘要</div>
-          <div class="rounded p-3" :style="{ border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted) / 42%)' }">
+          <div
+            class="rounded p-3"
+            :style="{
+              border: '1px solid hsl(var(--border))',
+              background: 'hsl(var(--muted) / 42%)',
+            }"
+          >
             <div
               v-for="item in list"
               :key="item.level"
@@ -351,7 +382,13 @@ onMounted(() => {
         </div>
         <div class="text-sm">
           <div class="mb-1 font-medium">影响范围</div>
-          <p class="rounded p-2 text-xs" :style="{ background: 'hsl(var(--status-warning) / 0.08)', color: 'hsl(var(--status-warning))' }">
+          <p
+            class="rounded p-2 text-xs"
+            :style="{
+              background: 'hsl(var(--status-warning) / 0.08)',
+              color: 'hsl(var(--status-warning))',
+            }"
+          >
             保存后将以新版本生效，所有回路的性能定级将在下次评估时按新阈值划分。
             可在「版本历史」Tab 查看历史版本并回滚。
           </p>

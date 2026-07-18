@@ -1,9 +1,9 @@
 # CLPM 产品需求文档 (PRD)
 
 **文档状态**: 正式版
-**当前版本**: v6.0（文档统一升级版）
-**发布日期**: 2026-07-06
-**基线来源**: PRD v4.0 + FDS v5.1 + DDS v4.1 + UIUX v5.3 + 实现契约 v1.0 + 关键算法设计说明 v2.0 + AAS Tag 模型澄清 + CLPM 后端研发智能体系统提示词与开发指导文档 + GB/T 44693.2-2024
+**当前版本**: v6.1（代码事实对齐版）
+**发布日期**: 2026-07-17
+**基线来源**: PRD v6.0 + FDS v6.0 + DDS v6.0 + UIUX v6.1 + 实现契约 v2.1 + 当前前后端代码 + GB/T 44693.2-2024
 
 ---
 
@@ -16,6 +16,7 @@
 | v4.0 | 2026-06-25 | 数据架构版：①指标体系重构为 3+1+8 结构（3 核心质量指标 + 1 投用指标 + 8 辅助诊断指标），好值率不再直接参与评分而是影响指标可信度；②综合评分公式更新为 `P = (A·a + F·f + S·s)/(a+f+s) × R`；③新增"数据质量与可信度需求"章节（数据血缘追溯/指标可信度 A-E 分级/INCONCLUSIVE 处理）；④新增"数据预处理需求"章节（KEEP_ALL_WITH_VALIDITY 质量策略/8 类异常值检测/控制类型差异化阈值/Metric Validity Mask）；⑤新增"诊断标签管理需求"章节（严重等级/来源指标/触发条件/状态管理）；⑥新增"任务管理需求"章节（标准评估任务/自定义评估任务/任务状态查询）；⑦新增"数据架构需求"章节（DataPlanner 数据编排/DataBlock 缓存/tagGroup 分组）。 | 数据架构组 |
 | v5.0 | 2026-07-04 | 文档对齐版（与 FDS v5.1 / DDS v4.1 / UIUX v5.3 同步发布，未单独发布）：①术语统一为"快速响应率/平稳率/有效自控率"；②KPI 体系统一为 3+1+8（12 项指标）；③状态机枚举对齐实现契约 v1.0（Action Tracker/Loop/KPI 快照/Tuning/PV Quality）；④角色枚举对齐 5 角色（ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT/SPONSOR）；⑤数据血缘字段统一为 5 独立字段 + data_lineage JSONB。 | 文档同步工程师 |
 | v6.0 | 2026-07-06 | 文档统一升级版：①与 FDS v5.1 / DDS v4.1 / UIUX v5.3 / 实现契约 v1.0 完成跨文档一致性对齐；②补全性能定级 5 级（EXCELLENT/GOOD/FAIR/WARNING/POOR）与 4 类权重模板（STABLE/SLOW/FAST/LOGIC）功能描述；③补全 Tag 管理独立入口（`/tag/list`）与历史重算（`/metric/recompute`）路由描述；④补全 Loop/Tuning/KPI 快照状态机完整枚举；⑤补全 5 角色 × 14 项操作权限矩阵引用；⑥引用实现契约 v1.0 §4.2 的 32 个路由清单；⑦数据模型对齐 DDS v4.1（17 张 PostgreSQL 表 + 1 个 TDengine 超级表）；⑧可信度 D 级阈值修正为 20%~60%、E 级修正为 <20%（对齐 FDS v5.1）；⑨诊断标签状态 RESOLVED→IMPLEMENTED，与 Action Tracker 状态枚举对齐；⑩装置级三大 KPI（自控率/好值率/平稳率）口径明确化。 | 文档治理组 |
+| v6.1 | 2026-07-17 | 代码事实对齐版：①前端 IA 对齐当前路由模块；②补登记 datasource/DCS/可信度阈值/历史数据导入 API；③ORM 表口径更新为 31 张；④明确 Diagnosis Tag 与 Action Tracker 使用两套独立状态机；⑤A/B 对比标记为 P1 未实现；⑥L3 Feature Cache 标记为预留、未接入运行链路；⑦澄清文档、运行时与发布 tag 的版本层级。 | 文档治理组 |
 
 ---
 
@@ -23,6 +24,8 @@
 
 ### 1.1 文档目的
 本文件将前期的预研需求、系统架构及最新的业务战略补充要求收敛为"面向最终产品交付"的正式产品需求文档。本文档详细规划了 CLPM 的完整功能模块与底层算法指标边界，作为后续功能规格设计 (FDS)、系统架构设计 (ADS) 及前后端开发的**唯一事实来源 (Single Source of Truth)**。
+
+版本号按用途分层管理：本文档的 v6.1 表示产品需求与设计基线；后端 `APP_VERSION`（当前默认 `1.0.0`）表示运行时 API 元数据；Git tag 表示可发布构建。三者不属于同一序列，不要求数值相同。
 
 ### 1.2 引用标准与规范
 本产品的业务逻辑、指标计算与工程实践需严格参考或符合以下行业标准及规范：
@@ -53,9 +56,9 @@
 
 * **关键算法设计说明 v2.0**：定义 3+1+8 指标体系结构、综合评分公式 `P = (A·a + F·f + S·s)/(a+f+s) × R`、8 类异常值检测算法、KEEP_ALL_WITH_VALIDITY 质量策略、tagGroup 分组与 Metric Validity Mask 机制、DataPlanner/DataBlock 数据架构与诊断标签体系。
 * **功能设计规范 FDS v6.0**：以本 PRD 为上位约束细化各模块的功能规格、KPI 计算器清单（3+1+8 = 12 项指标计算器）、5 级性能定级（EXCELLENT/GOOD/FAIR/WARNING/POOR）、4 类权重模板（STABLE/SLOW/FAST/LOGIC）、装置级三大 KPI（自控率/好值率/平稳率）、A/B/C/D/E 五级可信度（valid_rate 阈值 95/80/60/20%）。本 PRD 与 FDS v6.0 在 KPI 口径上保持一致。
-* **数据模型设计 DDS v6.0**：定义 26 张 PostgreSQL 表 + 1 个 TDengine 超级表 `st_loop_data` 的完整 Schema、27 类枚举值、5 个独立数据血缘字段 + `data_lineage` JSONB 子字段结构。本 PRD 中数据模型相关需求以 DDS v6.0 为事实来源。
-* **UI/UX 设计规范 UIUX v6.0**：定义 6 模块 + 1 门户的信息架构、32 个路由 path、25+ 页面清单、5 角色 × 14 项操作权限矩阵、15 个核心业务组件、7 类设计 Tokens。本 PRD 中模块清单、角色权限与路由引用以 UIUX v6.0 为事实来源。
-* **实现契约 v2.0**（`docs/设计文档/00-BASELINE/implementation-contract.md`）：记录 2026-06 重构后的真实信息架构、32 个路由、API 路径、5 角色权限契约与 5 类状态机枚举（Action Tracker/Loop/KPI 快照/Tuning/PV Quality）。**本 PRD 中所有状态机枚举、路由 path、角色英文枚举以实现契约 v2.0 为事实来源**；旧设计文档中与本契约冲突的命名（如 `RESOLVED`、`ACTIVE`/`PAUSED`/`DECOMMISSIONED`）统一视为旧命名。
+* **数据模型设计 DDS v6.0**：提供字段与关系设计；当前 ORM 表总数以实现契约 v2.1 §10 和 `backend/app/models/` 为事实来源，共 31 张 PostgreSQL ORM 表，另有 TDengine 时序表结构。
+* **UI/UX 设计规范 UIUX v6.1**：定义 6 模块 + 1 门户的信息架构、角色权限、组件与设计 Tokens。现行路由 path 以实现契约 v2.1 和前端路由模块为准。
+* **实现契约 v2.1**（`docs/设计文档/00-BASELINE/implementation-contract.md`）：记录当前真实信息架构、路由、API 路径、角色权限、状态机、KPI 与 ORM 清单。**本 PRD 中所有实现态枚举、路由 path、角色英文枚举以实现契约 v2.1 为事实来源**。
 * **CLPM 后端研发智能体系统提示词与开发指导文档**：约定后端研发智能体的开发规范、代码结构约定、模块分层、任务编排方式及 DataPlanner/DataBlock 缓存的工程实现要求，作为本 PRD 数据架构与任务管理需求的工程化基线。
 
 ---
@@ -87,7 +90,7 @@
 
 ## 3. 用户角色与权限模型 (RBAC)
 
-系统采用基于角色的访问控制，确保操作合规与安全审计。系统定义 5 个角色，英文枚举对齐实现契约 v1.0 §4.5 与 UIUX v6.0 §2.6。
+系统采用基于角色的访问控制，确保操作合规与安全审计。系统定义 5 个角色，英文枚举对齐实现契约 v2.1 §5 与 UIUX v6.1 §2.6。
 
 | 用户角色 | 英文枚举 | 核心关注点 / 典型场景 | 权限与职责边界 |
 |---|---|---|---|
@@ -99,7 +102,7 @@
 
 ### 3.1 权限矩阵
 
-5 角色 × 14 项操作权限的详细矩阵由 UIUX v6.0 §2.6 定义，本节仅列出关键边界：
+5 角色 × 14 项操作权限的详细矩阵由 UIUX v6.1 §2.6 定义，本节仅列出关键边界：
 
 | 操作类别 | ADMIN | IC_ENGINEER | PE_ENGINEER | EXPERT | SPONSOR |
 |---|---|---|---|---|---|
@@ -113,7 +116,7 @@
 | 用户与角色管理 | ✅ | ❌ | ❌ | ❌ | ❌ |
 | 审计日志查看 | ✅ | ❌ | ❌ | ❌ | ❌ |
 
-> 完整 14 项操作权限清单（含整定、报表、任务管理等）详见 UIUX v6.0 §2.6。SPONSOR 角色的只读边界以实现契约 v1.0 §4.5 为准。
+> 完整 14 项操作权限清单（含整定、报表、任务管理等）详见 UIUX v6.1 §2.6。SPONSOR 角色的只读边界以实现契约 v2.1 §5 为准。
 
 ---
 
@@ -121,22 +124,22 @@
 
 遵循"产品化、模块内聚自包含、配置驱动"的设计原则，系统规划以下 6 大功能模块 + 1 个门户入口。每个业务模块统一遵循"**配置 → 运行 → 分析**"三态自包含结构。
 
-> **模块口径声明（v6.0 对齐实现契约 v1.0 §4.2）**：本系统统一为 **6 模块 + 1 门户**（工作台门户 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理）。**任务管理为性能评估子模块**（路由 `/metric/tasks`、`/metric/task-strategy`），非独立模块。Tag 管理为回路管理子页（路由 `/tag/list`）。完整 32 个路由 path 清单详见实现契约 v1.0 §4.2 与 UIUX v6.0 §2.3。
+> **模块口径声明（v6.1，对齐实现契约 v2.1 §2）**：本系统统一为 **6 模块 + 1 门户**（工作台门户 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理）。评估任务为性能评估子模块（`/metric/tasks`），Tag 管理为回路管理子页（`/tag/list`）。现行路由以实现契约 v2.1 与 `frontend/apps/web-antd/src/router/routes/modules/` 为准。
 
 ### 4.0 模块总览
 
-| 模块 | 核心职责 | 设计原则 | 主要路由（详见实现契约 v1.0 §4.2） | 分期 |
+| 模块 | 核心职责 | 设计原则 | 主要路由（详见实现契约 v2.1 §2） | 分期 |
 |---|---|---|---|---|
 | 工作台（门户） | 全角色日常作业入口，聚合多模块数据 | 门户概念，只读聚合 | `/dashboard/workbench` | Phase 1 |
-| 回路管理 | 回路全生命周期：AAS tag 同步 → 回路创建 → tag 关联 → 运行监控；含 Tag 管理子页 | 实体内聚，配置+监控自包含 | `/loop/manage`、`/loop/detail/:id`、`/loop/monitor`、`/tag/list` | Phase 1 |
-| 性能评估 | KPI 评估全流程：指标配置 → 引擎规则 → 全局看板 → 低效排行 → 统计分析 → 任务管理 → 历史重算 | 功能内聚，配置+运行+分析自包含 | `/metric/dashboard`、`/metric/ranking`、`/metric/statistics`、`/metric/snapshots`、`/metric/recompute`、`/metric/config`、`/metric/weight-config`、`/metric/engine-config`、`/metric/task-strategy`、`/metric/tasks` | Phase 1 |
-| 诊断中心 | 诊断全流程：指标配置 → 诊断列表 → 诊断详情 → 异常跟踪 → A/B 对比 → 统计分析 | 功能内聚，配置+运行+跟踪+分析自包含 | `/diagnosis/list`、`/diagnosis/detail/:loopId`、`/diagnosis/waveform`、`/diagnosis/tracker`、`/diagnosis/ab-compare`、`/diagnosis/statistics`、`/diagnosis/config` | Phase 1 |
+| 回路管理 | 链路配置 → Tag/回路配置 → 运行监控 → 历史数据管理 | 实体内聚，配置+监控自包含 | `/loop/aas-sync`、`/tag/list`、`/loop/manage`、`/loop/monitor`、`/loop/data`、`/loop/detail/:id` | Phase 1 |
+| 性能评估 | 装置/回路性能 → 评估任务 → 聚合配置 → KPI 报表 | 功能内聚，配置+运行+分析自包含 | `/metric/pid-dashboard`、`/metric/loop-performance`、`/metric/tasks`、`/metric/config`、`/metric/kpi-report` | Phase 1 |
+| 诊断中心 | 诊断总览 → 诊断任务/记录 → 可视化/详情 → 异常跟踪 → 配置 | 功能内聚，配置+运行+跟踪+分析自包含 | `/diagnosis/overview`、`/diagnosis/tasks`、`/diagnosis/records`、`/diagnosis/visualization`、`/diagnosis/tracker`、`/diagnosis/config`、`/diagnosis/detail/:loopId` | Phase 1 |
 | 回路整定 | 整定全流程：工作台 → 模型辨识 → 整定算法 → 闭环仿真 → 效果统计 | 功能内聚，原型先行设计 | `/tuning/workbench`、`/tuning/model`、`/tuning/algorithm`、`/tuning/simulation`、`/tuning/stats` | Phase 2 |
 | 系统管理 | 系统运维：用户角色、审计日志、安全边界、自动报表 | 系统级配置 | `/system/users`、`/system/audit`、`/system/permissions`、`/system/reports` | Phase 1 |
 
 ### 4.1 工作台（门户）
 
-**性能总览首页**：全角色日常作业入口，聚合性能评估、诊断中心、Action Tracker 多模块数据。工作台采用"聚合工作台 + 隐藏详情页 + 专项配置页"设计原则（对齐实现契约 v1.0 §4.2），即工作台仅做数据聚合与摘要展示，单回路/诊断/整定详情通过路由跳转至独立详情页，避免内嵌展示造成的层级混乱；指标/算法/阈值等配置项下沉至各模块的专项配置页。
+**性能总览首页**：全角色日常作业入口，聚合性能评估、诊断中心、Action Tracker 多模块数据。工作台采用"聚合工作台 + 隐藏详情页 + 专项配置页"设计原则（对齐实现契约 v2.1 §2），即工作台仅做数据聚合与摘要展示，单回路/诊断/整定详情通过路由跳转至独立详情页，避免内嵌展示造成的层级混乱；指标/算法/阈值等配置项下沉至各模块的专项配置页。
 * **顶部筛选栏**：支持全厂/装置/单元级联筛选，日/周/月统计粒度单选（默认日统计）。
 * **KPI 卡片区**：展示自控率、平稳率、综合评分、报警次数、操作频次、好值率 6 项核心指标（基于 3+1+8 指标体系，UI 默认展示 3 核心质量指标 + 1 折扣因子 + 综合评分 + 好值率可信度指示）。**装置级三大 KPI 为自控率、好值率、平稳率**（对齐 FDS v6.0 §1.3 与 DB32/T 4822—2024 阈值要求，详见 §5.1）。
 * **低效回路列表**：展示低效回路优先清单（位号/评分/预诊标签/关键指标）。
@@ -149,7 +152,7 @@
 
 #### 4.2.0 回路状态机
 
-回路状态枚举对齐实现契约 v1.0 §4.6，共 3 个状态。历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED` 统一视为旧命名。
+回路状态枚举对齐实现契约 v2.1 §6，共 3 个状态。历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED` 统一视为旧命名。
 
 | 状态枚举 | 中文显示 | 含义 |
 |---|---|---|
@@ -159,7 +162,8 @@
 
 #### 4.2.1 AAS Tag 同步
 * **Tag 同步**：系统定期从 AAS 同步所有 OPC tag 位号信息（tag 名/描述/当前值/数据质量）。
-* **数据质量**：AAS 中的数据质量主要针对 **PV（过程测量）值**，PV tag 携带质量码（`GOOD` / `BAD` / `UNCERTAIN`，对齐实现契约 v1.0 §4.6 PV Quality 状态机）。
+* **数据质量**：AAS 中的数据质量主要针对 **PV（过程测量）值**，PV tag 携带质量码（`GOOD` / `BAD` / `UNCERTAIN`，对齐实现契约 v2.1 §6 PV Quality 状态机）。
+* **当前接口边界**：数据源配置与连接测试使用 `/api/v1/datasource/*`；DCS 品牌、型号与 MODE 映射配置使用 `/api/v1/dcs/*`，该接口不提供参数下写。
 
 #### 4.2.2 工厂层级配置
 * **工厂空间建模**：支持可视化的 `工厂 -> 装置 -> 单元` 多级层级结构配置。
@@ -191,7 +195,7 @@
 
 #### 4.2.6 Tag 管理子页（v6.0 新增）
 
-Tag 管理为回路管理模块的独立子页，路由 `/tag/list`（对齐实现契约 v1.0 §4.2 与 UIUX v6.0 §2.4）。
+Tag 管理为回路管理模块的独立子页，路由 `/tag/list`（对齐实现契约 v2.1 §2 与 UIUX v6.1）。
 
 * **Tag 列表**：展示 AAS 同步的所有 OPC tag 位号信息（tag 名/描述/当前值/数据质量/最后同步时间）。
 * **筛选与查询**：支持按 tag 类型（PV/SP/OP/MODE/PID_P/PID_I/PID_D）、数据质量（GOOD/BAD/UNCERTAIN）、是否已关联回路、所属装置筛选。
@@ -202,7 +206,7 @@ Tag 管理为回路管理模块的独立子页，路由 `/tag/list`（对齐实�
 
 本模块自包含"指标配置 → 引擎规则 → 全量持续计算 → 全局看板与低效排行 → 统计分析 → 任务管理 → 历史重算"全流程。
 
-#### 4.3.1 性能指标配置（路由 `/metric/config` + `/metric/weight-config`）
+#### 4.3.1 性能指标配置（路由 `/metric/config`）
 
 * **指标管理**：基于 3+1+8 指标体系管理 12 项指标（3 核心质量指标 A/F/S + 1 折扣因子 R + 8 扩展指标）的计算公式、权重、阈值、启用状态。详见 §5.1。
 * **权重约束**：3 核心质量指标 (A/F/S) 的权重总和须大于 0；权重按权重模板控制类型（STABLE/SLOW/FAST/LOGIC）默认配置。
@@ -213,9 +217,10 @@ Tag 管理为回路管理模块的独立子页，路由 `/tag/list`（对齐实�
   * `LOGIC`：逻辑控制回路，权重 = (0.0 / 0.4 / 0.6)，不考核准确率，侧重快速响应率与平稳率。
 * **性能定级配置（v6.0 新增，对齐 FDS v6.0 §1.3 与 DDS v6.0 §3.6 `metric_config.grading_thresholds`）**：系统支持 5 级性能定级阈值配置（EXCELLENT/GOOD/FAIR/WARNING/POOR），阈值作用于综合评分 P，由系统管理员按工厂/装置维度配置，详见 §5.1.5。
 * **指标数据需求配置（v6.0 新增，对齐 DDS v6.0 §3.2 `clpm_metric_data_requirement` 表）**：每个指标声明其数据需求，包括依赖 tagGroup（详见 §8.3）、采样频率、数据窗口长度、Metric Validity Mask（详见 §5.5.4）。DataPlanner 基于指标数据需求生成取数计划，详见 §8.1。
+* **可信度阈值配置**：系统管理员通过 `/api/v1/configs/confidence-thresholds` 维护 A/B/C/D/E 阈值；配置变更持久化到数据库、记录审计日志，并在处理该请求的 API 进程内即时更新可信度判定缓存。独立 Celery worker 的跨进程同步机制尚未实现，当前不承诺配置变更对全部运行时进程即时生效。
 * **指标启停**：指标停用后，相关指标显示 `INCONCLUSIVE`。停用核心质量指标时其权重置零并重新归一化；停用扩展指标不影响综合评分但影响诊断能力。
 
-#### 4.3.2 引擎规则配置（路由 `/metric/engine-config`）
+#### 4.3.2 引擎规则配置（`/metric/config` 内聚合配置 Tab）
 * **引擎管理**：配置评估引擎的计算周期、数据拉取规则、调度参数。
 * **规则变更**：规则变更需确认，变更记录审计日志。
 
@@ -225,11 +230,11 @@ Tag 管理为回路管理模块的独立子页，路由 `/tag/list`（对齐实�
 * **装置级三大 KPI（v6.0 明确，对齐 FDS v6.0 §1.3）**：装置级聚合输出三项核心 KPI —— **自控率 (auto_mode_rate) / 好值率 (good_value_rate) / 平稳率 (stability_rate，unit-level 聚合字段名)**。装置级 KPI 阈值要求对齐 DB32/T 4822—2024：自控率/平稳率 ≥ 95%。
 * **装置级汇总排除（v6.0 新增，对齐 DDS v6.0 §3.6 `unit_kpi_summary` 字段）**：装置级 KPI 汇总支持排除指定回路（`excluded_loops`，如停用回路、`include_in_evaluation=false` 回路、`INCONCLUSIVE` 快照），并维护汇总状态（`status`）。
 
-#### 4.3.4 全局看板与低效排行（路由 `/metric/dashboard` + `/metric/ranking`）
+#### 4.3.4 装置性能与回路性能（路由 `/metric/pid-dashboard` + `/metric/loop-performance`）
 * **全局看板**：展示 3+1+8 指标体系摘要卡片（3 核心质量指标 + 1 折扣因子 + 综合评分 + 好值率可信度指示）、全厂平稳率趋势、`PARTIAL` 警告横幅、**装置级三大 KPI 卡片（自控率/好值率/平稳率，对齐 DB32/T 4822—2024 ≥ 95% 阈值要求）**。
 * **低效回路排行**：多维筛选 + 排行表格（排名/位号/单元/评分/平稳率/预诊/计算状态/处理状态/可信度等级）。
 
-#### 4.3.5 性能统计报表（路由 `/metric/statistics`）
+#### 4.3.5 性能统计报表（路由 `/metric/kpi-report`）
 * **统计分析**：KPI 趋势对比折线图、装置评分排名柱状图、差等生分布饼图。
 * **条件筛选**：支持时间范围/装置/单元/指标筛选，图表结合呈现，支持导出。
 
@@ -238,7 +243,7 @@ Tag 管理为回路管理模块的独立子页，路由 `/tag/list`（对齐实�
 
 #### 4.3.7 任务管理 (Evaluation Tasks)
 
-任务管理为性能评估模块的子模块（非独立模块），路由 `/metric/tasks`（任务列表）+ `/metric/task-strategy`（任务策略配置），对齐实现契约 v1.0 §4.2 与 UIUX v6.0 §2.4。系统应支持两类评估任务，分别服务"持续监测"与"按需分析"两种场景。
+任务管理为性能评估模块的子模块（非独立模块），统一路由为 `/metric/tasks`；任务列表、历史重算、历史快照与任务策略均为该页面内部 Tab。系统应支持两类评估任务，分别服务"持续监测"与"按需分析"两种场景。
 
 **A. 标准评估任务 (Standard Evaluation Task)**
 * **触发方式**：每小时定时执行（cron 调度），全量回路覆盖。
@@ -255,31 +260,35 @@ Tag 管理为回路管理模块的独立子页，路由 `/tag/list`（对齐实�
 
 **C. 任务状态查询**
 * **任务状态机**：任务状态为 `PENDING` → `RUNNING` → `SUCCESS` / `FAILED` / `CANCELLED`。
-* **KPI 快照状态机（v6.0 明确，与任务状态机是两个独立对象，对齐实现契约 v1.0 §4.6）**：每条 KPI 快照记录的状态为 `SUCCESS`（成功，数据完整）/ `PARTIAL`（部分有效，部分指标 INCONCLUSIVE）/ `INCONCLUSIVE`（数据不足，综合评分留空）。任务状态与快照状态分离：一个 `SUCCESS` 任务可产出多条 `PARTIAL` 或 `INCONCLUSIVE` 快照（如某回路数据不足）。
+* **KPI 快照状态机（与任务状态机是两个独立对象，对齐实现契约 v2.1 §6）**：每条 KPI 快照记录的状态为 `SUCCESS`（成功，数据完整）/ `PARTIAL`（部分有效，部分指标 INCONCLUSIVE）/ `INCONCLUSIVE`（数据不足，综合评分留空）。任务状态与快照状态分离：一个 `SUCCESS` 任务可产出多条 `PARTIAL` 或 `INCONCLUSIVE` 快照（如某回路数据不足）。
 * **进度查看**：RUNNING 状态下展示进度（已处理回路数/总回路数、已计算指标数/总指标数、当前阶段：取数/预处理/指标计算/可信度判定）。
 * **结果查看**：SUCCESS 后可直接跳转结果详情；FAILED 展示失败原因（取数失败/算法异常/超时等）。
 * **任务列表**：支持按任务类型（标准/自定义）、状态、时间范围、创建人筛选查询。
 
-#### 4.3.8 历史重算 (Historical Recomputation，路由 `/metric/recompute`)
+#### 4.3.8 历史重算 (Historical Recomputation，`/metric/tasks` 内部 Tab)
 
-v6.0 新增需求，对齐实现契约 v1.0 §4.2 与 UIUX v6.0 §2.4。
+该能力在当前 IA 中并入评估任务页面，不暴露独立主菜单路由。
 
 * **重算场景**：当指标公式/权重/阈值/算法版本变更后，用户可对指定时间范围的历史数据触发重算，使历史快照与新配置对齐。
 * **重算范围**：支持按回路（单回路/多回路）、时间范围、目标指标子集选择重算范围。
 * **结果处理**：重算结果覆盖原 `kpi_snapshot_hourly` 记录（保留原值的版本快照入审计日志），不写入 `kpi_snapshot_custom`。
-* **并发控制**：重算任务复用自定义任务的并发配额（避免与标准任务资源抢占），重算进度在 `/metric/recompute` 页面展示。
+* **并发控制**：重算任务复用自定义任务的并发配额（避免与标准任务资源抢占），重算进度在 `/metric/tasks` 的历史重算 Tab 展示。
 * **审计留痕**：每次重算记录操作人、时间、范围、变更前后配置版本号。
 
-#### 4.3.9 快照查询（路由 `/metric/snapshots`）
+#### 4.3.8.1 回路历史数据导入
 
-v6.0 新增需求，对齐实现契约 v1.0 §4.2。
+回路历史数据导入使用 `/api/v1/loops/data-import/*`，支持预览、提交、进度查询、取消与删除；导入任务与历史重算任务在 UI 上统一归入任务型操作，但使用独立的接口与任务记录。
+
+#### 4.3.9 快照查询（`/metric/tasks` 内部 Tab）
+
+该能力在当前 IA 中并入评估任务页面，不暴露独立主菜单路由。
 
 * **快照列表**：支持按回路/装置/时间范围/快照状态（SUCCESS/PARTIAL/INCONCLUSIVE）/可信度等级（A/B/C/D/E）筛选 KPI 快照记录。
 * **快照详情**：展示单条快照的完整指标值、综合评分、可信度等级、数据血缘信息（详见 §5.4.1）。
 
 ### 4.4 诊断中心
 
-本模块自包含"指标配置 → 诊断列表 → 诊断详情 → 异常跟踪 → A/B 对比 → 统计分析"全流程。
+本模块自包含"指标配置 → 诊断任务/记录 → 诊断详情与可视化 → 异常跟踪 → 统计分析"全流程。
 
 #### 4.4.1 诊断指标配置（路由 `/diagnosis/config`）
 * **指标管理**：统一配置诊断指标（振荡检测 FFT、粘滞检测散点拟合、参数过激检测、质量码规则等）的算法类型、参数阈值、启用/停止、计算方法。
@@ -290,13 +299,14 @@ v6.0 新增需求，对齐实现契约 v1.0 §4.2。
 * **证据链追溯**：点击异常回路，直接呈现包含高频时序波形、特征散点图及逻辑推理过程的诊断详情。
 
 #### 4.4.3 异常跟踪（子模块，路由 `/diagnosis/tracker`）
-* **状态标签跟踪**：工程师对预诊结论确认后，更新处理状态标签（待处理 `PENDING`、处理中 `IN_PROGRESS`、已实施 `IMPLEMENTED`、已忽略 `IGNORED`），不走审批流。状态枚举对齐实现契约 v1.0 §4.6。
+* **状态标签跟踪**：工程师对预诊结论确认后，更新 Action Tracker 处理状态（待处理 `PENDING`、处理中 `IN_PROGRESS`、已实施 `IMPLEMENTED`、已忽略 `IGNORED`），不走审批流。状态枚举对齐实现契约 v2.1 §6。
 * **建议单导出**：一键导出包含波形与诊断结论的标准化 PDF《诊断建议书》。
 
-#### 4.4.4 时序对比验证 A/B Test（路由 `/diagnosis/ab-compare`）
-* 标记为"已实施"(`IMPLEMENTED`) 后，系统自动截取实施前后的数据窗口，生成 KPI 趋势对比视图。
+#### 4.4.4 时序对比验证 A/B Test（Tracker 抽屉，P1 未实现）
+* 标记为"已实施"(`IMPLEMENTED`) 后，系统可生成前后 24 小时数据窗口链接。
+* 完整 KPI A/B 对比接口 `GET /api/v1/diagnosis/ab-compare` 当前明确返回 HTTP 501；前端抽屉保留入口，但该能力不计入已交付验收，列为 P1 待实现。
 
-#### 4.4.5 诊断统计报表（路由 `/diagnosis/statistics`）
+#### 4.4.5 诊断统计报表（合入 `/diagnosis/overview`）
 * **统计分析**：预诊标签分布饼图、处理效率趋势折线、闭环时长分布柱状图。
 * **条件筛选**：支持时间范围/装置/预诊标签/处理状态筛选，图表结合呈现，支持导出。
 
@@ -306,7 +316,7 @@ v6.0 新增需求，对齐实现契约 v1.0 §4.2。
 
 #### 4.5.0 整定记录状态机
 
-整定记录状态枚举对齐实现契约 v1.0 §4.6，共 4 个状态：
+整定记录状态枚举对齐实现契约 v2.1 §6，共 4 个状态：
 
 | 状态枚举 | 中文显示 | 含义 |
 |---|---|---|
@@ -368,7 +378,7 @@ v6.0 新增需求，对齐实现契约 v1.0 §4.2。
 > * "快速响应率"（非"快速率"），英文 Fast Response Rate。
 > * "平稳率"（非"稳定率"），loop-level 字段名为 `steady_rate`，unit-level 聚合字段名为 `stability_rate`。
 > * "有效自控率"（非"自控率"）作为折扣因子 R；`AUTO_MODE_RATE` 作为基础统计指标，归入扩展指标。
-> * "已实施" `IMPLEMENTED`（非"已解决" `RESOLVED`），与 Action Tracker 状态枚举对齐。
+> * Action Tracker 使用"已实施" `IMPLEMENTED`；Diagnosis Tag 使用"已处理" `RESOLVED`，两者是不同对象，不互相替换。
 >
 > **命名规范说明**：扩展指标的 `metric_code` 以《关键算法设计说明 v2.0》、FDS v6.0 §1.3 与 DDS v4.1 数据库列名为准。原 PRD v3.x 中的 `VALVE_STICTION_RATE`/`OVERAGGRESSIVE_RATE`/`OVERCONSERVATIVE_RATE`/`EXTERNAL_DISTURBANCE_RATE`/`QUALITY_ABNORMAL_RATE` 已调整：前四项迁入诊断标签体系（详见 §5.2）；v4.0 的 `STICTION_COEFF`/`OUTPUT_TRAVEL_INDEX`/`STEADY_STATE_TIME` 在 v6.0 中对齐 FDS v5.1 重命名为 `STICTION`/`OUTPUT_TRIP_RATE`/`SETTLING_TIME`。
 
@@ -527,7 +537,7 @@ P = (A·a + F·f + S·s) / (a + f + s) × R
 
 #### 5.4.4 KPI 快照状态机 (KPI Snapshot State Machine，v6.0 新增)
 
-每条 KPI 快照记录的状态枚举对齐实现契约 v1.0 §4.6，共 3 个状态：
+每条 KPI 快照记录的状态枚举对齐实现契约 v2.1 §6，共 3 个状态：
 
 | 状态枚举 | 中文显示 | 含义 |
 |---|---|---|
@@ -599,9 +609,9 @@ P = (A·a + F·f + S·s) / (a + f + s) × R
 * **关联回路 / 关联评估快照**：标签所属回路与触发时的评估快照 ID。
 
 #### 5.6.2 标签状态管理
-诊断标签支持生命周期状态管理，区别于 §4.4.3 异常跟踪的处理状态（`PENDING`/`IN_PROGRESS`/`IMPLEMENTED`/`IGNORED`）：
+Diagnosis Tag 支持独立生命周期状态，区别于 §4.4.3 Action Tracker 的处理状态（`PENDING`/`IN_PROGRESS`/`IMPLEMENTED`/`IGNORED`）：
 * **活跃 (ACTIVE)**：标签在最近评估周期内被诊断算法持续触发，处于活跃状态。
-* **已实施 (IMPLEMENTED)**：工程师确认问题已处置且后续评估周期标签不再触发，手动标记为已实施。**（v6.0 修正：原 `RESOLVED` 已对齐 Action Tracker 状态枚举为 `IMPLEMENTED`，详见实现契约 v1.0 §4.6）**
+* **已处理 (RESOLVED)**：工程师确认该诊断标签已处理；这是 Diagnosis Tag 的有效枚举，不等同于 Action Tracker 的 `IMPLEMENTED`。
 * **已抑制 (SUPPRESSED)**：已知问题暂不处置（如计划检修），手动抑制以避免持续告警，需注明抑制原因与到期时间。
 * 状态变更记录审计日志，支持状态回退。
 
@@ -666,7 +676,7 @@ P = (A·a + F·f + S·s) / (a + f + s) × R
 
 本节定义系统在数据编排、数据缓存与数据分组方面的架构需求，支撑 3+1+8 指标体系的指标驱动取数、预处理缓存复用与多采样率数据组织。本节工程实现细节对齐《CLPM 后端研发智能体系统提示词与开发指导文档》。
 
-> **数据模型对齐说明（v6.0 新增）**：本系统的完整数据模型（17 张 PostgreSQL 表 + 1 个 TDengine 超级表 `st_loop_data`，含 27 类枚举值与 5+JSONB 数据血缘字段）以 DDS v6.0 §3.2 为事实来源。PRD 作为上位约束仅描述数据架构组件需求，不重复完整表清单。涉及的关键表包括：`loop_ledger`、`tag_registry`、`loop_tag_mapping`、`plant_node`、`metric_config`、`kpi_snapshot_hourly`、`kpi_snapshot_custom`、`unit_kpi_summary`、`clpm_metric_data_requirement`、`action_tracker`、`tuning_record`、`report_record`、`sys_user`、`sys_role`、`sys_user_role`、`sys_audit_log`、`report_schedule`（共 17 张 PostgreSQL 表）+ TDengine 超级表 `st_loop_data`（2 个 Tag 列 loop_id/plant_node_id，9 个 Field 列 ts/pv/sp/op/mode/quality/pid_p/pid_i/pid_d）。
+> **数据模型对齐说明（v6.1）**：当前 `backend/app/models/` 共定义 31 张 PostgreSQL ORM 表；完整清单以实现契约 v2.1 §10 的 `__tablename__` 盘点为准。DDS 提供字段/关系设计，但表总数不得再使用历史 17/26 张口径。TDengine 时序表结构独立统计。
 
 ### 8.1 DataPlanner 数据编排 (Data Orchestration)
 
@@ -680,7 +690,7 @@ P = (A·a + F·f + S·s) / (a + f + s) × R
 
 ### 8.2 DataBlock 缓存 (Data Block Cache)
 
-系统应提供 DataBlock 缓存组件，缓存预处理后的数据块，支撑多指标计算复用与性能优化：
+系统应提供分层缓存组件，缓存预处理数据块与组装结果，支撑多指标计算复用与性能优化。当前实现状态为：L1 DataBlock Cache 与 L2 MetricDataBundle Cache 已接入 DataPlanner；L3 Feature Cache 仅有实现与测试，尚未接入指标计算运行链路，属于预留能力。
 
 * **缓存对象**：DataBlock 是一次预处理产物，包含某个 tagGroup 在指定时间窗口内、带 validity 标记的时序数据点集合（详见 §5.5 质量策略）。
 * **缓存键 (Cache Key)**：由 `回路ID + tagGroup + 时间窗口 + 质量策略版本 + 阈值版本` 组合生成，确保阈值/策略变更后缓存自动失效。
