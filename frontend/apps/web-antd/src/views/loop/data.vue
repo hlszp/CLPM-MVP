@@ -11,9 +11,10 @@
  */
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
+import type { LoopApi } from '#/api/loop';
 import type { LoopDataApi } from '#/api/loop-data';
 
-import { computed, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -35,7 +36,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getLoopListApi, type LoopApi } from '#/api/loop';
+import { getLoopListApi } from '#/api/loop';
 import {
   cancelImportApi,
   deleteImportApi,
@@ -143,7 +144,7 @@ const filteredLoops = computed(() => {
   if (selectedPlantNodeIds.value.length > 0) {
     const unitIdSet = new Set<string>();
     for (const nodeId of selectedPlantNodeIds.value) {
-      const findNode = (nodes: TreeNode[]): TreeNode | null => {
+      const findNode = (nodes: TreeNode[]): null | TreeNode => {
         for (const n of nodes) {
           if (n.id === nodeId) return n;
           if (n.children) {
@@ -154,7 +155,11 @@ const filteredLoops = computed(() => {
         return null;
       };
       const node = findNode(plantTree.value);
-      if (node) collectUnitIds(node.type === 'UNIT' ? [{ ...node, children: [] }] : [node], unitIdSet);
+      if (node)
+        collectUnitIds(
+          node.type === 'UNIT' ? [{ ...node, children: [] }] : [node],
+          unitIdSet,
+        );
     }
     result = result.filter((l) => unitIdSet.has(l.unitId));
   }
@@ -185,11 +190,9 @@ const indeterminate = computed(
 );
 
 function handleSelectAll(e: any) {
-  if (e.target.checked) {
-    selectedLoopIds.value = filteredLoops.value.map((l) => l.loopId);
-  } else {
-    selectedLoopIds.value = [];
-  }
+  selectedLoopIds.value = e.target.checked
+    ? filteredLoops.value.map((l) => l.loopId)
+    : [];
 }
 
 /** 反选：当前筛选结果中，已选的取消，未选的选中 */
@@ -206,11 +209,15 @@ function handleClearSelection() {
 }
 
 /** 是否显示分页器（数据量超过单页时才显示） */
-const showPagination = computed(() => totalFilteredLoops.value > loopPageSize.value);
+const showPagination = computed(
+  () => totalFilteredLoops.value > loopPageSize.value,
+);
 
 /** 是否有激活的筛选条件 */
 const hasActiveFilters = computed(
-  () => selectedPlantNodeIds.value.length > 0 || searchKeyword.value.trim().length > 0,
+  () =>
+    selectedPlantNodeIds.value.length > 0 ||
+    searchKeyword.value.trim().length > 0,
 );
 
 /** 筛选结果摘要文本 */
@@ -240,39 +247,43 @@ const taskPagination = ref({
   total: 0,
 });
 
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: null | ReturnType<typeof setInterval> = null;
 
 const taskColumns: TableColumnsType = [
   {
     title: '任务ID',
     dataIndex: 'taskId',
     key: 'taskId',
-    width: 120,
+    width: 96,
     ellipsis: true,
-    customRender: ({ text }) => text.slice(0, 8) + '...',
+    customRender: ({ text }) => `${text.slice(0, 8)}...`,
   },
   {
     title: '回路数',
     dataIndex: 'loopCount',
     key: 'loopCount',
-    width: 80,
+    width: 56,
     align: 'center',
   },
   {
     title: '时间范围',
     key: 'timeRange',
-    width: 280,
+    width: 178,
     customRender: ({ record }) =>
       `${dayjs(record.tsStart).format('MM-DD HH:mm')} ~ ${dayjs(record.tsEnd).format('MM-DD HH:mm')}`,
   },
   {
     title: '进度',
     key: 'progress',
-    width: 180,
+    width: 136,
     customRender: ({ record }) => {
       const pct = Math.round((record.progress ?? 0) * 100);
       return h('div', {}, [
-        h('div', { class: 'text-xs mb-1' }, `${record.importedCount}/${record.loopCount} (${pct}%)`),
+        h(
+          'div',
+          { class: 'text-xs mb-1' },
+          `${record.importedCount}/${record.loopCount} (${pct}%)`,
+        ),
         h(Progress, {
           percent: pct,
           size: 'small',
@@ -286,7 +297,7 @@ const taskColumns: TableColumnsType = [
     title: '状态',
     dataIndex: 'status',
     key: 'status',
-    width: 100,
+    width: 72,
     align: 'center',
     customRender: ({ record }) => {
       const colorMap: Record<string, string> = {
@@ -314,15 +325,14 @@ const taskColumns: TableColumnsType = [
     title: '创建时间',
     dataIndex: 'createdAt',
     key: 'createdAt',
-    width: 160,
+    width: 126,
     customRender: ({ text }) =>
-      text ? dayjs(text).format('YYYY-MM-DD HH:mm:ss') : '-',
+      text ? dayjs(text).format('MM-DD HH:mm:ss') : '-',
   },
   {
     title: '操作',
     key: 'action',
-    width: 180,
-    fixed: 'right',
+    width: 104,
     customRender: ({ record }) => {
       const isActive =
         record.status === 'PENDING' || record.status === 'RUNNING';
@@ -415,8 +425,10 @@ async function handleStartImport() {
     return;
   }
 
-  const tsStart = timeRange.value[0]!.toISOString();
-  const tsEnd = timeRange.value[1]!.toISOString();
+  const [rangeStart, rangeEnd] = timeRange.value;
+  if (!rangeStart || !rangeEnd) return;
+  const tsStart = rangeStart.toISOString();
+  const tsEnd = rangeEnd.toISOString();
 
   Modal.confirm({
     title: '确认导入',
@@ -493,21 +505,6 @@ function hasActiveTasks() {
 
 onMounted(async () => {
   await Promise.all([loadPlantTree(), loadLoops(), loadTasks()]);
-  // DOM 渲染后检查 CSS 规则是否生效
-  await nextTick();
-  const cells = document.querySelectorAll('.loop-selection-table .ant-table-cell');
-  if (cells.length > 0) {
-    const firstCell = cells[0] as HTMLElement;
-    const style = getComputedStyle(firstCell);
-    console.log('[环路选择表格] 单元格数:', cells.length);
-    console.log('[环路选择表格] borderInlineEnd:', style.borderInlineEnd);
-    console.log('[环路选择表格] borderInlineEndWidth:', style.borderInlineEndWidth);
-    console.log('[环路选择表格] borderRight:', style.borderRight);
-    console.log('[环路选择表格] borderRightWidth:', style.borderRightWidth);
-    console.log('[环路选择表格] CSS规则匹配的 class:', firstCell.classList.toString());
-  } else {
-    console.warn('[环路选择表格] 未找到 .ant-table-cell 元素，class 选择器可能未匹配');
-  }
   // 有活跃任务时轮询
   pollTimer = setInterval(() => {
     if (hasActiveTasks()) {
@@ -522,7 +519,6 @@ onUnmounted(() => {
     pollTimer = null;
   }
 });
-
 </script>
 
 <template>
@@ -534,10 +530,15 @@ onUnmounted(() => {
 
     <div class="mt-4 flex gap-4" style="height: calc(100vh - 200px)">
       <!-- 左侧：回路选择 -->
-      <div class="flex w-[40%] flex-col">
-        <div class="flex flex-1 flex-col overflow-hidden rounded border border-gray-200 bg-white">
+      <div class="flex w-[30%] flex-col">
+        <div
+          class="flex flex-1 flex-col overflow-hidden rounded border border-gray-200 bg-white"
+        >
           <!-- 面板头部 -->
-          <div class="shrink-0 border-b px-3 py-2.5" style="background: #fafafa;">
+          <div
+            class="shrink-0 border-b px-3 py-2.5"
+            style="background: #fafafa"
+          >
             <div class="flex items-center justify-between">
               <span class="text-sm font-semibold text-gray-800">回路选择</span>
               <span class="text-xs text-gray-400">
@@ -551,7 +552,11 @@ onUnmounted(() => {
             <TreeSelect
               v-model:value="selectedPlantNodeIds"
               :tree-data="formatTreeForSelect(plantTree)"
-              :field-names="{ children: 'children', label: 'title', value: 'value' }"
+              :field-names="{
+                children: 'children',
+                label: 'title',
+                value: 'value',
+              }"
               tree-checkable
               multiple
               show-checked-strategy="SHOW_CHILD"
@@ -578,7 +583,10 @@ onUnmounted(() => {
           </div>
 
           <!-- 操作条 -->
-          <div class="shrink-0 flex items-center justify-between border-t px-3 py-1.5" style="background: #fafafa;">
+          <div
+            class="shrink-0 flex items-center justify-between border-t px-3 py-1.5"
+            style="background: #fafafa"
+          >
             <Checkbox
               :checked="allSelected"
               :indeterminate="indeterminate"
@@ -587,7 +595,12 @@ onUnmounted(() => {
               <span class="text-xs">全选</span>
             </Checkbox>
             <div class="flex gap-2">
-              <Button size="small" type="link" class="!text-xs !px-1" @click="handleInvertSelection">
+              <Button
+                size="small"
+                type="link"
+                class="!text-xs !px-1"
+                @click="handleInvertSelection"
+              >
                 反选
               </Button>
               <Button
@@ -621,7 +634,9 @@ onUnmounted(() => {
               <template #emptyText>
                 <div class="py-6 text-center text-gray-400">
                   <div class="mb-1 text-lg">&#128269;</div>
-                  <div v-if="hasActiveFilters">筛选无结果，尝试调整筛选条件</div>
+                  <div v-if="hasActiveFilters">
+                    筛选无结果，尝试调整筛选条件
+                  </div>
                   <div v-else>暂无可用回路</div>
                 </div>
               </template>
@@ -645,7 +660,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 右侧：导入参数 + 任务列表 -->
-      <div class="flex w-[60%] flex-col">
+      <div class="flex min-w-0 w-[70%] flex-col">
         <!-- 导入参数 -->
         <div class="mb-4 shrink-0 rounded border p-4">
           <div class="mb-3 font-medium">历史数据导入</div>
@@ -707,7 +722,7 @@ onUnmounted(() => {
               :pagination="taskPagination"
               row-key="taskId"
               size="small"
-              :scroll="{ x: 900 }"
+              :scroll="{ x: 768 }"
               @change="handleTaskPageChange"
             />
           </div>
@@ -721,7 +736,12 @@ onUnmounted(() => {
 .loop-selection-table :deep(.ant-table-cell) {
   border-inline-end: none !important;
 }
+
 .loop-selection-table :deep(.ant-table-thead > tr > th) {
   border-inline-end: none !important;
+}
+
+.loop-selection-table :deep(.ant-table-tbody > tr.ant-table-row-selected > td) {
+  box-shadow: none;
 }
 </style>

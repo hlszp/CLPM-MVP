@@ -88,8 +88,10 @@ const form = reactive({
 });
 
 // 预设网络地址（公网 / 局域网）
-const HISTORY_API_URL_WAN = 'http://100.101.203.0/api/services/v1/HistoryData/Get';
-const HISTORY_API_URL_LAN = 'http://192.168.100.2:81/api/services/v1/HistoryData/Get';
+const HISTORY_API_URL_WAN =
+  'http://100.101.203.0/api/services/v1/HistoryData/Get';
+const HISTORY_API_URL_LAN =
+  'http://192.168.100.2:81/api/services/v1/HistoryData/Get';
 const SIGNALR_HUB_URL_WAN = 'ws://100.101.203.0/signalr/realValueForClpmHub';
 const SIGNALR_HUB_URL_LAN = 'ws://192.168.100.2:81/signalr/realValueForClpmHub';
 
@@ -102,7 +104,8 @@ const signalrHubUrlLan = ref(SIGNALR_HUB_URL_LAN);
 
 // Radio 切换时同步地址到 form
 watch(historyApiNetwork, (val) => {
-  form.historyApiUrl = val === 'wan' ? historyApiUrlWan.value : historyApiUrlLan.value;
+  form.historyApiUrl =
+    val === 'wan' ? historyApiUrlWan.value : historyApiUrlLan.value;
 });
 watch(historyApiUrlWan, (val) => {
   if (historyApiNetwork.value === 'wan') form.historyApiUrl = val;
@@ -111,7 +114,8 @@ watch(historyApiUrlLan, (val) => {
   if (historyApiNetwork.value === 'lan') form.historyApiUrl = val;
 });
 watch(signalrHubNetwork, (val) => {
-  form.signalrHubUrl = val === 'wan' ? signalrHubUrlWan.value : signalrHubUrlLan.value;
+  form.signalrHubUrl =
+    val === 'wan' ? signalrHubUrlWan.value : signalrHubUrlLan.value;
 });
 watch(signalrHubUrlWan, (val) => {
   if (signalrHubNetwork.value === 'wan') form.signalrHubUrl = val;
@@ -282,7 +286,12 @@ const vendorColumns: TableColumnsType = [
   { title: '品牌代码', dataIndex: 'code', key: 'code', width: 140 },
   { title: '中文名', dataIndex: 'name', key: 'name', width: 140 },
   { title: '英文名', dataIndex: 'nameEn', key: 'nameEn', width: 140 },
-  { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+  {
+    title: '描述',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
   { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 80 },
   { title: '状态', dataIndex: 'isActive', key: 'isActive', width: 80 },
   { title: '操作', key: 'action', width: 120, fixed: 'right' },
@@ -292,7 +301,12 @@ const modelColumns: TableColumnsType = [
   { title: '型号代码', dataIndex: 'code', key: 'code', width: 180 },
   { title: '型号名称', dataIndex: 'name', key: 'name', width: 200 },
   { title: '品牌', dataIndex: 'vendorName', key: 'vendorName', width: 120 },
-  { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+  {
+    title: '描述',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
   { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 80 },
   { title: '状态', dataIndex: 'isActive', key: 'isActive', width: 80 },
   { title: '操作', key: 'action', width: 120, fixed: 'right' },
@@ -628,8 +642,9 @@ const matrixColumns = computed<TableColumnsType>(() => {
  * 每行包含 modelId/modelName/vendorName + 各标准 MODE 的映射值
  */
 const matrixData = computed(() => {
-  if (!matrix.value) return [];
-  return matrix.value.columns.map((col) => {
+  const currentMatrix = matrix.value;
+  if (!currentMatrix) return [];
+  return currentMatrix.columns.map((col) => {
     const modelKey = col.modelId ?? 'default';
     const row: Record<string, any> = {
       key: modelKey,
@@ -638,7 +653,7 @@ const matrixData = computed(() => {
       vendorName: col.vendorName ?? '—',
     };
     // 填充各标准 MODE 的映射值
-    for (const modeRow of matrix.value!.rows) {
+    for (const modeRow of currentMatrix.rows) {
       const cell = modeRow.columns.find(
         (c: DcsApi.MatrixColumn) => (c.modelId ?? 'default') === modelKey,
       );
@@ -760,7 +775,11 @@ onMounted(loadConfig);
                 </div>
                 <div class="flex items-center gap-2">
                   <span class="text-gray-500">实时订阅</span>
-                  <Tag :color="config?.signalrSubscriberRunning ? 'green' : 'default'">
+                  <Tag
+                    :color="
+                      config?.signalrSubscriberRunning ? 'green' : 'default'
+                    "
+                  >
                     {{ config?.signalrSubscriberRunning ? '运行中' : '未启动' }}
                   </Tag>
                 </div>
@@ -822,12 +841,20 @@ onMounted(loadConfig);
                   />
                 </FormItem>
                 <FormItem label="请求超时（秒）">
-                  <InputNumber v-model:value="form.historyApiTimeout" :max="120" :min="5" />
+                  <InputNumber
+                    v-model:value="form.historyApiTimeout"
+                    :max="120"
+                    :min="5"
+                  />
                 </FormItem>
               </template>
 
               <div class="flex items-center gap-3">
-                <Button type="primary" :loading="savingHistory" @click="saveHistoryConfig">
+                <Button
+                  type="primary"
+                  :loading="savingHistory"
+                  @click="saveHistoryConfig"
+                >
                   保存配置
                 </Button>
                 <Button
@@ -837,7 +864,10 @@ onMounted(loadConfig);
                 >
                   测试连接
                 </Button>
-                <Tag v-if="historyTestResult" :color="historyTestResult.success ? 'green' : 'red'">
+                <Tag
+                  v-if="historyTestResult"
+                  :color="historyTestResult.success ? 'green' : 'red'"
+                >
                   {{ historyTestResult.message
                   }}<template v-if="historyTestResult.latencyMs">
                     ({{ historyTestResult.latencyMs }}ms)
@@ -878,9 +908,16 @@ onMounted(loadConfig);
                   />
                 </FormItem>
                 <FormItem label="断线重连间隔（秒）">
-                  <InputNumber v-model:value="form.signalrReconnectInterval" :max="60" :min="1" />
+                  <InputNumber
+                    v-model:value="form.signalrReconnectInterval"
+                    :max="60"
+                    :min="1"
+                  />
                 </FormItem>
-                <FormItem v-if="form.dataSourceType === 'tdengine'" label="实时数据写回 TDengine">
+                <FormItem
+                  v-if="form.dataSourceType === 'tdengine'"
+                  label="实时数据写回 TDengine"
+                >
                   <div class="flex items-center gap-2">
                     <Switch v-model:checked="form.realtimeWritebackEnabled" />
                     <span class="text-gray-400 text-sm">
@@ -891,7 +928,11 @@ onMounted(loadConfig);
               </template>
 
               <div class="flex items-center gap-3">
-                <Button type="primary" :loading="savingSignalr" @click="saveSignalrConfig">
+                <Button
+                  type="primary"
+                  :loading="savingSignalr"
+                  @click="saveSignalrConfig"
+                >
                   保存配置
                 </Button>
                 <Button
@@ -901,7 +942,10 @@ onMounted(loadConfig);
                 >
                   测试连接
                 </Button>
-                <Tag v-if="signalrTestResult" :color="signalrTestResult.success ? 'green' : 'red'">
+                <Tag
+                  v-if="signalrTestResult"
+                  :color="signalrTestResult.success ? 'green' : 'red'"
+                >
                   {{ signalrTestResult.message
                   }}<template v-if="signalrTestResult.latencyMs">
                     ({{ signalrTestResult.latencyMs }}ms)
@@ -925,7 +969,11 @@ onMounted(loadConfig);
               <Upload v-bind="vendorUploadProps">
                 <Button size="small" :loading="vendorImporting">导入</Button>
               </Upload>
-              <Button size="small" :loading="vendorExporting" @click="handleExportVendors">
+              <Button
+                size="small"
+                :loading="vendorExporting"
+                @click="handleExportVendors"
+              >
                 导出
               </Button>
             </div>
@@ -940,7 +988,12 @@ onMounted(loadConfig);
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">
-                <Button type="link" size="small" @click="openVendorModal(record)">编辑</Button>
+                <Button
+                  type="link"
+                  size="small"
+                  @click="openVendorModal(record)"
+                  >编辑</Button
+                >
                 <Popconfirm
                   title="删除品牌？有关联型号时禁止删除"
                   @confirm="removeVendor(record)"
@@ -956,11 +1009,17 @@ onMounted(loadConfig);
         <Card size="small" title="DCS 型号">
           <template #extra>
             <div class="flex items-center gap-2">
-              <Button type="primary" size="small" @click="openModelModal()">新增型号</Button>
+              <Button type="primary" size="small" @click="openModelModal()"
+                >新增型号</Button
+              >
               <Upload v-bind="modelUploadProps">
                 <Button size="small" :loading="modelImporting">导入</Button>
               </Upload>
-              <Button size="small" :loading="modelExporting" @click="handleExportModels">
+              <Button
+                size="small"
+                :loading="modelExporting"
+                @click="handleExportModels"
+              >
                 导出
               </Button>
             </div>
@@ -975,7 +1034,9 @@ onMounted(loadConfig);
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">
-                <Button type="link" size="small" @click="openModelModal(record)">编辑</Button>
+                <Button type="link" size="small" @click="openModelModal(record)"
+                  >编辑</Button
+                >
                 <Popconfirm
                   title="删除型号？关联回路的 dcs_model_id 将置空"
                   @confirm="removeModel(record)"
@@ -995,12 +1056,37 @@ onMounted(loadConfig);
           <Card class="mb-4" size="small" title="标准 MODE 定义">
             <Table
               :columns="[
-                { title: 'MODE 值', dataIndex: 'standardMode', key: 'standardMode', width: 100 },
-                { title: '中文标签', dataIndex: 'labelZh', key: 'labelZh', width: 120 },
-                { title: '英文标签', dataIndex: 'labelEn', key: 'labelEn', width: 120 },
+                {
+                  title: 'MODE 值',
+                  dataIndex: 'standardMode',
+                  key: 'standardMode',
+                  width: 100,
+                },
+                {
+                  title: '中文标签',
+                  dataIndex: 'labelZh',
+                  key: 'labelZh',
+                  width: 120,
+                },
+                {
+                  title: '英文标签',
+                  dataIndex: 'labelEn',
+                  key: 'labelEn',
+                  width: 120,
+                },
                 { title: '颜色', dataIndex: 'color', key: 'color', width: 100 },
-                { title: '计入自控率', dataIndex: 'isAuto', key: 'isAuto', width: 120 },
-                { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+                {
+                  title: '计入自控率',
+                  dataIndex: 'isAuto',
+                  key: 'isAuto',
+                  width: 120,
+                },
+                {
+                  title: '描述',
+                  dataIndex: 'description',
+                  key: 'description',
+                  ellipsis: true,
+                },
               ]"
               :data-source="modeDefs"
               :pagination="false"
@@ -1014,7 +1100,9 @@ onMounted(loadConfig);
                       class="inline-block h-4 w-4 rounded"
                       :style="{ backgroundColor: record.color }"
                     ></span>
-                    <span class="text-xs text-gray-400">{{ record.color }}</span>
+                    <span class="text-xs text-gray-400">{{
+                      record.color
+                    }}</span>
                   </div>
                 </template>
                 <template v-if="column.key === 'isAuto'">
@@ -1069,7 +1157,11 @@ onMounted(loadConfig);
                 <template v-if="String(column.key ?? '').startsWith('mode_')">
                   <span
                     class="cursor-pointer font-mono"
-                    :class="record[String(column.dataIndex ?? '')] != null ? 'text-blue-600 hover:text-blue-800' : 'text-gray-300 hover:text-gray-500'"
+                    :class="
+                      record[String(column.dataIndex ?? '')] != null
+                        ? 'text-blue-600 hover:text-blue-800'
+                        : 'text-gray-300 hover:text-gray-500'
+                    "
                     @click="openCellEdit(record, column)"
                   >
                     {{ record[String(column.dataIndex ?? '')] ?? '—' }}
@@ -1138,9 +1230,7 @@ onMounted(loadConfig);
           <Select
             v-model:value="modelForm.vendorId"
             :disabled="modelModalMode === 'edit'"
-            :options="
-              vendors.map((v) => ({ label: v.name, value: v.id }))
-            "
+            :options="vendors.map((v) => ({ label: v.name, value: v.id }))"
             placeholder="选择品牌"
           />
         </FormItem>
@@ -1181,7 +1271,11 @@ onMounted(loadConfig);
           <Input :value="cellEditForm.standardLabel" disabled />
         </FormItem>
         <FormItem label="该型号实际 MODE 值">
-          <InputNumber v-model:value="cellEditForm.rawModeValue" :min="0" :max="999" />
+          <InputNumber
+            v-model:value="cellEditForm.rawModeValue"
+            :min="0"
+            :max="999"
+          />
           <p class="mt-1 text-xs text-gray-400">
             填写该 DCS 型号在此控制模式下实际推送的 MODE 值
           </p>

@@ -143,17 +143,22 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
           <span
             class="clpm-page-toolbar__status-divider"
             v-if="resolvedStatusText"
-            >·</span>
-          <span class="clpm-page-toolbar__status-meta">{{ lastRefresh }} 已刷新</span>
+            >·</span
+          >
+          <span class="clpm-page-toolbar__status-meta"
+            >{{ lastRefresh }} 已刷新</span
+          >
         </template>
         <template v-if="dataDelay">
           <span
             class="clpm-page-toolbar__status-divider"
             v-if="resolvedStatusText || lastRefresh"
-            >·</span>
+            >·</span
+          >
           <span
             class="clpm-page-toolbar__status-meta clpm-page-toolbar__status-meta--delay"
-            >数据延迟 {{ dataDelay }}</span>
+            >数据延迟 {{ dataDelay }}</span
+          >
         </template>
       </slot>
     </div>

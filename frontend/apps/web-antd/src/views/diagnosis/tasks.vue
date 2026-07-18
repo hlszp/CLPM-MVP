@@ -48,9 +48,7 @@ import {
 } from '#/api/diagnosis';
 import { getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import {
-  ClpmDataCanvas,
-} from '#/components/clpm';
+import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { DIAGNOSIS_LABEL_COLOR_MAP } from '#/constants/diagnosis';
 
@@ -222,14 +220,29 @@ const triggerTimeRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
 
 /** RangePicker 预设快捷选项 */
 const rangePresets = [
-  { label: '最近1小时', value: [dayjs().subtract(1, 'hour'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs] },
-  { label: '最近24小时', value: [dayjs().subtract(24, 'hour'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs] },
-  { label: '最近7天', value: [dayjs().subtract(7, 'day'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs] },
+  {
+    label: '最近1小时',
+    value: [dayjs().subtract(1, 'hour'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs],
+  },
+  {
+    label: '最近24小时',
+    value: [dayjs().subtract(24, 'hour'), dayjs()] as [
+      dayjs.Dayjs,
+      dayjs.Dayjs,
+    ],
+  },
+  {
+    label: '最近7天',
+    value: [dayjs().subtract(7, 'day'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs],
+  },
 ];
 
 /** 装置选项（从 plant node 树提取 AREA 节点） */
 const areaOptions = computed(() =>
-  areaNodes.value.map((n: PlantNodeApi.PlantNode) => ({ value: n.id, label: n.name })),
+  areaNodes.value.map((n: PlantNodeApi.PlantNode) => ({
+    value: n.id,
+    label: n.name,
+  })),
 );
 
 /** 单元选项（根据选中装置过滤） */
@@ -271,10 +284,34 @@ const filteredLoops = computed(() => {
 /** 回路选择表格列定义 */
 const loopColumns: TableColumnsType = [
   { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 120 },
-  { title: '名称', dataIndex: 'description', key: 'description', width: 160, ellipsis: true },
-  { title: '装置/单元', dataIndex: 'unitName', key: 'unitName', width: 120, ellipsis: true },
-  { title: '综合评分', dataIndex: 'score', key: 'score', width: 90, align: 'center' },
-  { title: '自控率', dataIndex: 'effectiveAutoRate', key: 'effectiveAutoRate', width: 80, align: 'center' },
+  {
+    title: '名称',
+    dataIndex: 'description',
+    key: 'description',
+    width: 160,
+    ellipsis: true,
+  },
+  {
+    title: '装置/单元',
+    dataIndex: 'unitName',
+    key: 'unitName',
+    width: 120,
+    ellipsis: true,
+  },
+  {
+    title: '综合评分',
+    dataIndex: 'score',
+    key: 'score',
+    width: 90,
+    align: 'center',
+  },
+  {
+    title: '自控率',
+    dataIndex: 'effectiveAutoRate',
+    key: 'effectiveAutoRate',
+    width: 80,
+    align: 'center',
+  },
 ];
 
 /** 回路选择表格行选择配置 */
@@ -377,9 +414,7 @@ async function handleTriggerConfirm() {
       startTime: start.toISOString(),
       endTime: end.toISOString(),
     });
-    message.success(
-      `已触发 ${selectedLoopIds.value.length} 个回路的诊断任务`,
-    );
+    message.success(`已触发 ${selectedLoopIds.value.length} 个回路的诊断任务`);
     triggerModalVisible.value = false;
     await loadTasks();
     startPolling();
@@ -404,7 +439,7 @@ function handleViewDetail(record: DiagnosisApi.TaskItem) {
 }
 
 /** 诊断标签中文映射 */
-const DIAG_LABEL_MAP: Record<string, { color: string; text: string; }> = {
+const DIAG_LABEL_MAP: Record<string, { color: string; text: string }> = {
   OSCILLATION: { text: '振荡', color: 'red' },
   VALVE_STICTION: { text: '阀门粘滞', color: 'volcano' },
   OVERAGGRESSIVE: { text: '参数过激', color: 'orange' },
@@ -531,7 +566,9 @@ async function handleBatchTrigger() {
       }),
     );
     if (successCount > 0) {
-      message.success(`已执行 ${successCount} 个任务的诊断${failCount > 0 ? `，${failCount} 个失败` : ''}`);
+      message.success(
+        `已执行 ${successCount} 个任务的诊断${failCount > 0 ? `，${failCount} 个失败` : ''}`,
+      );
     } else {
       message.error('全部诊断任务执行失败');
     }
@@ -636,8 +673,9 @@ function triggerTypeName(t: string): string {
 
 function labelColor(label: string): string {
   return (
-    DIAGNOSIS_LABEL_COLOR_MAP[label as keyof typeof DIAGNOSIS_LABEL_COLOR_MAP] ||
-    'default'
+    DIAGNOSIS_LABEL_COLOR_MAP[
+      label as keyof typeof DIAGNOSIS_LABEL_COLOR_MAP
+    ] || 'default'
   );
 }
 
@@ -661,8 +699,7 @@ function formatEvidence(
   if (!evidence || typeof evidence !== 'object') return [];
   return Object.entries(evidence).map(([k, v]) => ({
     key: k,
-    value:
-      typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v),
+    value: typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v),
   }));
 }
 
@@ -720,7 +757,9 @@ onBeforeUnmount(() => {
       <!-- 操作按钮区 -->
       <div class="mb-3 flex items-center gap-2">
         <Button type="primary" @click="openTriggerModal">
-          <template #icon><IconifyIcon icon="ant-design:plus-outlined" /></template>
+          <template #icon
+            ><IconifyIcon icon="ant-design:plus-outlined"
+          /></template>
           新增任务
         </Button>
         <Button
@@ -729,8 +768,12 @@ onBeforeUnmount(() => {
           :loading="batchDiagnoseLoading"
           @click="handleBatchTrigger"
         >
-          <template #icon><IconifyIcon icon="ant-design:thunderbolt-outlined" /></template>
-          批量诊断{{ selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : '' }}
+          <template #icon
+            ><IconifyIcon icon="ant-design:thunderbolt-outlined"
+          /></template>
+          批量诊断{{
+            selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : ''
+          }}
         </Button>
         <Button
           danger
@@ -738,7 +781,9 @@ onBeforeUnmount(() => {
           :loading="batchDeleteLoading"
           @click="handleBatchDelete"
         >
-          <template #icon><IconifyIcon icon="ant-design:delete-outlined" /></template>
+          <template #icon
+            ><IconifyIcon icon="ant-design:delete-outlined"
+          /></template>
           批量删除
         </Button>
       </div>
@@ -770,7 +815,9 @@ onBeforeUnmount(() => {
             </span>
           </template>
           <template v-else-if="column.key === 'accuracyScore'">
-            <span class="clpm-num">{{ formatScore(record.accuracyScore) }}</span>
+            <span class="clpm-num">{{
+              formatScore(record.accuracyScore)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'fastScore'">
             <span class="clpm-num">{{ formatScore(record.fastScore) }}</span>
@@ -779,14 +826,20 @@ onBeforeUnmount(() => {
             <span class="clpm-num">{{ formatScore(record.steadyScore) }}</span>
           </template>
           <template v-else-if="column.key === 'effectiveAutoRate'">
-            <span class="clpm-num">{{ formatRate(record.effectiveAutoRate) }}</span>
+            <span class="clpm-num">{{
+              formatRate(record.effectiveAutoRate)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'status'">
             <div class="flex flex-col items-center gap-1">
               <Tag
-                :color="statusConfig[record.status as DiagnosisApi.TaskStatus].color"
+                :color="
+                  statusConfig[record.status as DiagnosisApi.TaskStatus].color
+                "
               >
-                {{ statusConfig[record.status as DiagnosisApi.TaskStatus].text }}
+                {{
+                  statusConfig[record.status as DiagnosisApi.TaskStatus].text
+                }}
               </Tag>
               <!-- RUNNING 状态显示进度条 -->
               <Progress
@@ -840,7 +893,9 @@ onBeforeUnmount(() => {
             <Button
               type="link"
               size="small"
-              :disabled="!canViewResult(record.status as DiagnosisApi.TaskStatus)"
+              :disabled="
+                !canViewResult(record.status as DiagnosisApi.TaskStatus)
+              "
               @click="handleViewDetail(record as DiagnosisApi.TaskItem)"
             >
               详情
@@ -881,7 +936,9 @@ onBeforeUnmount(() => {
           <div class="mb-2 flex items-center justify-between">
             <span class="font-medium">选择回路</span>
             <div class="flex items-center gap-3">
-              <Button size="small" type="link" @click="handleSelectAllLoops">全选</Button>
+              <Button size="small" type="link" @click="handleSelectAllLoops"
+                >全选</Button
+              >
               <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
                 已选 {{ selectedLoopIds.length }} 个回路
               </span>
@@ -933,7 +990,9 @@ onBeforeUnmount(() => {
                 </span>
               </template>
               <template v-else-if="column.key === 'effectiveAutoRate'">
-                <span class="clpm-num">{{ formatRate(record.effectiveAutoRate) }}</span>
+                <span class="clpm-num">{{
+                  formatRate(record.effectiveAutoRate)
+                }}</span>
               </template>
             </template>
           </Table>
@@ -977,9 +1036,7 @@ onBeforeUnmount(() => {
             <div class="space-y-1 text-sm">
               <div>
                 <span :style="{ color: themeColors.NEUTRAL }">任务状态：</span>
-                <Tag
-                  :color="statusConfig[resultDetail.status].color"
-                >
+                <Tag :color="statusConfig[resultDetail.status].color">
                   {{ statusConfig[resultDetail.status].text }}
                 </Tag>
               </div>

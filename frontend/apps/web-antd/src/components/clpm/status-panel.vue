@@ -74,7 +74,8 @@ const gridStyle = computed(() => ({
 
 <template>
   <div
-    class="clpm-status-panel" :class="[
+    class="clpm-status-panel"
+    :class="[
       bordered ? 'clpm-status-panel--bordered' : '',
       dense ? 'clpm-status-panel--dense' : '',
     ]"
@@ -98,7 +99,8 @@ const gridStyle = computed(() => ({
             :empty="item.empty"
             size="lg"
             :weight="700"
-            class="clpm-status-panel__value" :class="[
+            class="clpm-status-panel__value"
+            :class="[
               item.meta ? `clpm-status-panel__value--${item.meta.status}` : '',
             ]"
           />
@@ -109,7 +111,9 @@ const gridStyle = computed(() => ({
             :style="{ color: item.meta.color }"
           />
         </div>
-        <div v-if="item.hint" class="clpm-status-panel__hint">{{ item.hint }}</div>
+        <div v-if="item.hint" class="clpm-status-panel__hint">
+          {{ item.hint }}
+        </div>
       </div>
     </div>
   </div>

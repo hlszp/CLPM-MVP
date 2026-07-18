@@ -280,7 +280,7 @@ watch(isDark, () => {
       :closable="false"
       message="只读建议 · 人工实施 · 需留痕"
       description="本平台不直接修改 DCS 的 P/I/D 参数，参数由授权人员人工实施并留痕。"
-      style="margin-bottom: 12px;"
+      style="margin-bottom: 12px"
     />
     <ClpmDataCanvas class="mb-4 mt-4" title="辨识筛选条件">
       <Form layout="inline">

@@ -14,7 +14,8 @@ const props = defineProps<{
   disabled?: boolean;
 }>();
 
-const { getTooltipPreset, getSeriesColor, themeColors, axisBase } = useEchartsPreset();
+const { getTooltipPreset, getSeriesColor, themeColors, axisBase } =
+  useEchartsPreset();
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
@@ -38,16 +39,19 @@ const options = computed(() => {
   const avgX = props.data.x.reduce((a, b) => a + b, 0) / props.data.x.length;
   const avgY = props.data.y.reduce((a, b) => a + b, 0) / props.data.y.length;
   const n = props.data.x.length;
-  const numerator = props.data.x.reduce((sum, x, i) => sum + (x - avgX) * ((props.data.y[i] ?? avgY) - avgY), 0);
+  const numerator = props.data.x.reduce(
+    (sum, x, i) => sum + (x - avgX) * ((props.data.y[i] ?? avgY) - avgY),
+    0,
+  );
   const denominator = Math.sqrt(
-    props.data.x.reduce((sum, x) => sum + Math.pow(x - avgX, 2), 0) *
-    props.data.y.reduce((sum, y) => sum + Math.pow(y - avgY, 2), 0),
+    props.data.x.reduce((sum, x) => sum + (x - avgX) ** 2, 0) *
+      props.data.y.reduce((sum, y) => sum + (y - avgY) ** 2, 0),
   );
   const correlation = denominator === 0 ? 0 : numerator / denominator;
 
-  const sx = props.data.x.reduce((sum, x) => sum + Math.pow(x - avgX, 2), 0) / n;
-  const sy = props.data.y.reduce((sum, y) => sum + Math.pow(y - avgY, 2), 0) / n;
-  const slope = sx === 0 ? 0 : correlation * sy / sx;
+  const sx = props.data.x.reduce((sum, x) => sum + (x - avgX) ** 2, 0) / n;
+  const sy = props.data.y.reduce((sum, y) => sum + (y - avgY) ** 2, 0) / n;
+  const slope = sx === 0 ? 0 : (correlation * sy) / sx;
   const intercept = avgY - slope * avgX;
 
   const minX = Math.min(...props.data.x);
@@ -117,9 +121,13 @@ const options = computed(() => {
   return option;
 });
 
-watch(options, (newOptions) => {
-  renderEcharts(newOptions);
-}, { immediate: true });
+watch(
+  options,
+  (newOptions) => {
+    renderEcharts(newOptions);
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   renderEcharts(options.value);

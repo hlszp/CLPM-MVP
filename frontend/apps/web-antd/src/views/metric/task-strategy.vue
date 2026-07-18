@@ -28,7 +28,11 @@ import {
 } from 'ant-design-vue';
 
 import { getRulesApi, updateRuleApi } from '#/api/metric';
-import { ClpmDangerConfirmModal, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import {
+  ClpmDangerConfirmModal,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricTaskStrategy' });
@@ -278,7 +282,10 @@ onMounted(() => {
                 :options="calcCycleOptions"
                 :disabled="!ruleEnabled.EVAL_CALC_CYCLE"
               />
-              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
+              <span
+                class="mt-1 block text-xs"
+                :style="{ color: themeColors.NEUTRAL }"
+              >
                 标准评估任务的执行间隔（由 EngineRule EVAL_CALC_CYCLE 配置）
               </span>
             </FormItem>
@@ -304,7 +311,10 @@ onMounted(() => {
                 class="w-full"
                 :disabled="!ruleEnabled.DATA_FETCH_WINDOW"
               />
-              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
+              <span
+                class="mt-1 block text-xs"
+                :style="{ color: themeColors.NEUTRAL }"
+              >
                 评估时拉取的历史数据天数（默认 30 天）
               </span>
             </FormItem>
@@ -316,7 +326,10 @@ onMounted(() => {
                 class="w-full"
                 :disabled="!ruleEnabled.DATA_FETCH_WINDOW"
               />
-              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
+              <span
+                class="mt-1 block text-xs"
+                :style="{ color: themeColors.NEUTRAL }"
+              >
                 数据采样间隔（默认 1 秒，由 DataPlanner 按需降采样）
               </span>
             </FormItem>
@@ -342,7 +355,10 @@ onMounted(() => {
                 class="w-full"
                 :disabled="!ruleEnabled.SCHEDULE_CONCURRENCY"
               />
-              <span class="mt-1 block text-xs" :style="{ color: themeColors.NEUTRAL }">
+              <span
+                class="mt-1 block text-xs"
+                :style="{ color: themeColors.NEUTRAL }"
+              >
                 Celery Worker 并发处理回路数（默认 10）
               </span>
             </FormItem>
@@ -367,9 +383,13 @@ onMounted(() => {
       title="确认变更策略配置"
       action="保存"
       target="标准评估任务策略"
-      :impact-scope="changeSummary.length > 0
-        ? changeSummary.map((c) => `${c.field}: ${c.from} → ${c.to}`).join('；')
-        : '策略配置变更'"
+      :impact-scope="
+        changeSummary.length > 0
+          ? changeSummary
+              .map((c) => `${c.field}: ${c.from} → ${c.to}`)
+              .join('；')
+          : '策略配置变更'
+      "
       rollback-tip="变更后系统将自动通知 Beat 进程即时重载调度，无需重启服务"
       confirm-code="确认变更"
       confirm-code-placeholder="请输入 确认变更 以确认"

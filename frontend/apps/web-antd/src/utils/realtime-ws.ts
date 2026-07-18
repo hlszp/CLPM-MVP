@@ -103,7 +103,7 @@ class RealtimeWebSocket {
       this.reconnectAttempts = 0;
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
-        console.log('[RealtimeWS] 已连接');
+        console.warn('[RealtimeWS] 已连接');
       }
       this._notifyConnectionChange();
     });
@@ -123,7 +123,7 @@ class RealtimeWebSocket {
     this.ws.addEventListener('close', (event) => {
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
-        console.log(`[RealtimeWS] 连接关闭 (code=${event.code})`);
+        console.warn(`[RealtimeWS] 连接关闭 (code=${event.code})`);
       }
       this.ws = null;
       this._notifyConnectionChange();
@@ -154,7 +154,7 @@ class RealtimeWebSocket {
     );
     // P3 #57: 控制台日志环境守卫，生产环境不输出
     if (import.meta.env.DEV) {
-      console.log(
+      console.warn(
         `[RealtimeWS] ${delay}ms 后重连 (第${this.reconnectAttempts}次)`,
       );
     }

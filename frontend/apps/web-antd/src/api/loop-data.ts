@@ -62,7 +62,7 @@ export namespace LoopDataApi {
 
 /** 开始历史数据导入 */
 export function startImportApi(data: LoopDataApi.ImportRequest) {
-  return requestClient.post<{ taskId: string; celeryTaskId: string }>(
+  return requestClient.post<{ celeryTaskId: string; taskId: string }>(
     '/loops/data-import/start',
     data,
   );

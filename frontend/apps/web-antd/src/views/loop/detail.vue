@@ -45,7 +45,13 @@ import {
 } from '#/api/diagnosis';
 import { getLoopDetailApi, getLoopMonitorDetailApi } from '#/api/loop';
 import { getLoopSnapshotsApi } from '#/api/metric';
-import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmTagAssociationBadge, ClpmToolbarButton } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+  ClpmTagAssociationBadge,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
@@ -85,15 +91,50 @@ const snapshotsDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 const snapshotsColumns = computed(() => [
   { title: '时间窗', key: 'tsRange', width: 110 },
   { title: '综合评分', key: 'score', dataIndex: 'score', width: 90 },
-  { title: '好值率', key: 'goodValueRate', dataIndex: 'goodValueRate', width: 80 },
-  { title: '自控率', key: 'autoModeRate', dataIndex: 'autoModeRate', width: 80 },
-  { title: '有效自控率', key: 'effectiveAutoRate', dataIndex: 'effectiveAutoRate', width: 100 },
+  {
+    title: '好值率',
+    key: 'goodValueRate',
+    dataIndex: 'goodValueRate',
+    width: 80,
+  },
+  {
+    title: '自控率',
+    key: 'autoModeRate',
+    dataIndex: 'autoModeRate',
+    width: 80,
+  },
+  {
+    title: '有效自控率',
+    key: 'effectiveAutoRate',
+    dataIndex: 'effectiveAutoRate',
+    width: 100,
+  },
   { title: '稳定率', key: 'steadyRate', dataIndex: 'steadyRate', width: 80 },
-  { title: '准确率', key: 'accuracyRate', dataIndex: 'accuracyRate', width: 80 },
+  {
+    title: '准确率',
+    key: 'accuracyRate',
+    dataIndex: 'accuracyRate',
+    width: 80,
+  },
   { title: '快速率', key: 'fastRate', dataIndex: 'fastRate', width: 80 },
-  { title: '振荡率', key: 'oscillationRate', dataIndex: 'oscillationRate', width: 80 },
-  { title: '饱和率', key: 'saturationRate', dataIndex: 'saturationRate', width: 80 },
-  { title: '可信度', key: 'confidenceLevel', dataIndex: 'confidenceLevel', width: 80 },
+  {
+    title: '振荡率',
+    key: 'oscillationRate',
+    dataIndex: 'oscillationRate',
+    width: 80,
+  },
+  {
+    title: '饱和率',
+    key: 'saturationRate',
+    dataIndex: 'saturationRate',
+    width: 80,
+  },
+  {
+    title: '可信度',
+    key: 'confidenceLevel',
+    dataIndex: 'confidenceLevel',
+    width: 80,
+  },
   { title: '状态', key: 'status', dataIndex: 'status', width: 100 },
 ]);
 const diagnosisLoading = ref(false);
@@ -219,13 +260,15 @@ const defaultSnapshot = computed<CursorSnapshot | null>(() => {
   const trend = monitorDetail.value?.trend;
   if (!trend || !trend.timestamps || trend.timestamps.length === 0) return null;
   const i = trend.timestamps.length - 1;
+  const timestamp = trend.timestamps[i];
+  if (timestamp === undefined) return null;
   return {
     mode: trend.mode?.[i] ?? null,
     op: trend.op?.[i] ?? null,
     pv: trend.pv?.[i] ?? null,
     pvQuality: trend.pvQuality?.[i] ?? 'GOOD',
     sp: trend.sp?.[i] ?? null,
-    timestamp: trend.timestamps[i]!,
+    timestamp,
   };
 });
 
@@ -451,7 +494,10 @@ function formatSnapshotTsEnd(ts: null | string | undefined): string {
   return dayjs(ts).format('MM-DD HH:00');
 }
 
-function formatSnapshotNumber(val: null | number | undefined, suffix = ''): string {
+function formatSnapshotNumber(
+  val: null | number | undefined,
+  suffix = '',
+): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
 }
@@ -607,9 +653,10 @@ onMounted(() => {
                   <span class="text-xs text-gray-400">
                     {{
                       cursorOverride
-                        ? `光标时刻：${ 
-                          fmtTime(displaySnapshot?.timestamp ?? null)}`
-                        : `刷新时间：${ lastRefreshText || '尚未刷新'}`
+                        ? `光标时刻：${fmtTime(
+                            displaySnapshot?.timestamp ?? null,
+                          )}`
+                        : `刷新时间：${lastRefreshText || '尚未刷新'}`
                     }}
                   </span>
                 </div>
@@ -826,32 +873,44 @@ onMounted(() => {
                 <template v-else-if="column.key === 'confidenceLevel'">
                   <Tag
                     v-if="record.confidenceLevel"
-                    :color="SNAPSHOT_CONFIDENCE_COLOR[record.confidenceLevel] || 'default'"
+                    :color="
+                      SNAPSHOT_CONFIDENCE_COLOR[record.confidenceLevel] ||
+                      'default'
+                    "
                   >
                     {{ record.confidenceLevel }}
                   </Tag>
                   <span v-else>—</span>
                 </template>
                 <template v-else-if="column.key === 'status'">
-                  <Tag :color="SNAPSHOT_STATUS_COLOR[record.status] || 'default'">
+                  <Tag
+                    :color="SNAPSHOT_STATUS_COLOR[record.status] || 'default'"
+                  >
                     {{ record.status }}
                   </Tag>
                 </template>
                 <template
                   v-else-if="
-                    ([
-                      'goodValueRate',
-                      'autoModeRate',
-                      'effectiveAutoRate',
-                      'steadyRate',
-                      'accuracyRate',
-                      'fastRate',
-                      'oscillationRate',
-                      'saturationRate',
-                    ] as string[]).includes(column.key as string)
+                    (
+                      [
+                        'goodValueRate',
+                        'autoModeRate',
+                        'effectiveAutoRate',
+                        'steadyRate',
+                        'accuracyRate',
+                        'fastRate',
+                        'oscillationRate',
+                        'saturationRate',
+                      ] as string[]
+                    ).includes(column.key as string)
                   "
                 >
-                  {{ formatSnapshotNumber(record[column.dataIndex as string], '%') }}
+                  {{
+                    formatSnapshotNumber(
+                      record[column.dataIndex as string],
+                      '%',
+                    )
+                  }}
                 </template>
               </template>
 

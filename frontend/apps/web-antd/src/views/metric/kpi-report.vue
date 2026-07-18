@@ -14,11 +14,7 @@
 import type { TableColumnsType } from 'ant-design-vue';
 
 import type { DashboardApi } from '#/api/dashboard';
-import type {
-  ConfidenceLevel,
-  KpiSnapshotItem,
-  MetricApi,
-} from '#/api/metric';
+import type { ConfidenceLevel, KpiSnapshotItem, MetricApi } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onMounted, ref, watch } from 'vue';
@@ -89,14 +85,16 @@ function collectDescendantIds(
         collectAllChildren(node, result);
         return true;
       }
-      if (node.children && node.children.length > 0 && findAndCollect(node.children)) return true;
+      if (
+        node.children &&
+        node.children.length > 0 &&
+        findAndCollect(node.children)
+      )
+        return true;
     }
     return false;
   };
-  const collectAllChildren = (
-    node: PlantNodeApi.PlantNode,
-    acc: string[],
-  ) => {
+  const collectAllChildren = (node: PlantNodeApi.PlantNode, acc: string[]) => {
     for (const child of node.children ?? []) {
       acc.push(child.id);
       collectAllChildren(child, acc);
@@ -109,10 +107,7 @@ function collectDescendantIds(
 /** 获取当前筛选条件下的有效 plantNodeId 字符串（逗号分隔） */
 function getEffectivePlantNodeIds(): string | undefined {
   if (!plantNodeId.value) return undefined;
-  const ids = collectDescendantIds(
-    plantNodeTree.value,
-    plantNodeId.value,
-  );
+  const ids = collectDescendantIds(plantNodeTree.value, plantNodeId.value);
   return ids.length > 0 ? ids.join(',') : plantNodeId.value;
 }
 
@@ -174,13 +169,17 @@ const NUMERIC_AGG_FIELDS = [
 
 /** 计算非 null 值的均值 */
 function meanOf(values: (null | number)[]): null | number {
-  const valid = values.filter((v): v is number => v !== null && v !== undefined && !Number.isNaN(v));
+  const valid = values.filter(
+    (v): v is number => v !== null && v !== undefined && !Number.isNaN(v),
+  );
   if (valid.length === 0) return null;
   return valid.reduce((s, v) => s + v, 0) / valid.length;
 }
 
 /** 取可信度等级的最差值（A→E，取字母序最大） */
-function worstConfidence(levels: (ConfidenceLevel | null)[]): ConfidenceLevel | null {
+function worstConfidence(
+  levels: (ConfidenceLevel | null)[],
+): ConfidenceLevel | null {
   const valid = levels.filter((v): v is ConfidenceLevel => !!v);
   if (valid.length === 0) return null;
   valid.sort((a, b) => b.localeCompare(a));
@@ -192,12 +191,14 @@ const aggregatedLoopData = computed<LoopAggRow[]>(() => {
   const groups = new Map<string, KpiSnapshotItem[]>();
   for (const snap of loopData.value) {
     const key = snap.loopId ?? snap.loopTagName ?? 'unknown';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(snap);
+    const group = groups.get(key) ?? [];
+    group.push(snap);
+    groups.set(key, group);
   }
   const rows: LoopAggRow[] = [];
   for (const [, snaps] of groups) {
-    const first = snaps[0]!;
+    const first = snaps[0];
+    if (!first) continue;
     const loopId = first.loopId ?? '';
     const row: LoopAggRow = {
       loopId,
@@ -380,7 +381,12 @@ const comprehensiveColumns = computed<TableColumnsType>(() => [
     sorter: (a: Record<string, any>, b: Record<string, any>) =>
       (a.avgScore ?? 0) - (b.avgScore ?? 0),
   },
-  { title: '准确率', dataIndex: 'accuracyRate', key: 'accuracyRate', width: 90 },
+  {
+    title: '准确率',
+    dataIndex: 'accuracyRate',
+    key: 'accuracyRate',
+    width: 90,
+  },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
   {
     title: '平稳率',
@@ -410,7 +416,12 @@ const loopColumns = computed<TableColumnsType>(() => [
     sorter: (a: Record<string, any>, b: Record<string, any>) =>
       (a.score ?? 0) - (b.score ?? 0),
   },
-  { title: '准确率', dataIndex: 'accuracyRate', key: 'accuracyRate', width: 90 },
+  {
+    title: '准确率',
+    dataIndex: 'accuracyRate',
+    key: 'accuracyRate',
+    width: 90,
+  },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
   {
     title: '平稳率',
@@ -592,7 +603,9 @@ async function loadData() {
   loading.value = true;
   loadError.value = false;
   try {
-    await (reportType.value === 'comprehensive' ? loadComprehensive() : loadLoop());
+    await (reportType.value === 'comprehensive'
+      ? loadComprehensive()
+      : loadLoop());
   } catch (error: any) {
     loadError.value = true;
     console.error('加载 KPI 报表失败:', error);
@@ -810,7 +823,10 @@ onMounted(() => {
           </template>
           <template v-else-if="column.key === 'confidenceLevel'">
             <Tag
-              v-if="record.confidenceLevel && CONFIDENCE_META[String(record.confidenceLevel)]"
+              v-if="
+                record.confidenceLevel &&
+                CONFIDENCE_META[String(record.confidenceLevel)]
+              "
               :color="CONFIDENCE_META[String(record.confidenceLevel)]!.color"
             >
               {{ CONFIDENCE_META[String(record.confidenceLevel)]!.label }}

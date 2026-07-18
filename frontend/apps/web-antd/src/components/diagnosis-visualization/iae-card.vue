@@ -19,17 +19,23 @@ const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
 const isOscillating = computed(() => props.data.oscillationIndex > 0.5);
-const statusColor = computed(() => (isOscillating.value ? themeColors.value.DANGER : getSeriesColor('ok')));
+const statusColor = computed(() =>
+  isOscillating.value ? themeColors.value.DANGER : getSeriesColor('ok'),
+);
 
-const similarityPercent = computed(() => (props.data.similarityRate * 100).toFixed(1));
-const oscillationPercent = computed(() => (props.data.oscillationIndex * 100).toFixed(1));
+const similarityPercent = computed(() =>
+  (props.data.similarityRate * 100).toFixed(1),
+);
+const oscillationPercent = computed(() =>
+  (props.data.oscillationIndex * 100).toFixed(1),
+);
 
 const options = computed(() => {
   const bars = [
     { name: 'OP零交叉', value: props.data.opZeroCrossCount, color: '#60a5fa' },
     { name: 'PV零交叉', value: props.data.pvZeroCrossCount, color: '#f472b6' },
   ];
-  
+
   const option: any = {
     tooltip: {
       trigger: 'axis',
@@ -37,8 +43,8 @@ const options = computed(() => {
     },
     xAxis: {
       type: 'category',
-      data: bars.map(b => b.name),
-      axisLabel: { 
+      data: bars.map((b) => b.name),
+      axisLabel: {
         show: true,
         fontSize: 10,
         color: '#6b7280',
@@ -49,7 +55,7 @@ const options = computed(() => {
     yAxis: {
       type: 'value',
       show: false,
-      max: Math.max(...bars.map(b => b.value), 10),
+      max: Math.max(...bars.map((b) => b.value), 10),
     },
     grid: {
       top: 5,
@@ -61,7 +67,7 @@ const options = computed(() => {
     series: [
       {
         type: 'bar',
-        data: bars.map(b => ({
+        data: bars.map((b) => ({
           value: b.value,
           itemStyle: { color: b.color, borderRadius: 4 },
         })),
@@ -73,9 +79,13 @@ const options = computed(() => {
   return option;
 });
 
-watch(options, (newOptions) => {
-  renderEcharts(newOptions);
-}, { immediate: true });
+watch(
+  options,
+  (newOptions) => {
+    renderEcharts(newOptions);
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   renderEcharts(options.value);
@@ -86,7 +96,10 @@ onMounted(() => {
   <div class="iae-card">
     <div class="card-header">
       <div class="card-title">IAE 零交叉分析</div>
-      <div class="status-badge" :style="{ backgroundColor: statusColor, color: '#fff' }">
+      <div
+        class="status-badge"
+        :style="{ backgroundColor: statusColor, color: '#fff' }"
+      >
         {{ isOscillating ? '存在振荡' : '正常' }}
       </div>
     </div>
@@ -109,7 +122,9 @@ onMounted(() => {
         </div>
         <div class="metric-item">
           <span class="metric-label">振荡指数</span>
-          <span class="metric-value" :style="{ color: statusColor }">{{ oscillationPercent }}%</span>
+          <span class="metric-value" :style="{ color: statusColor }"
+            >{{ oscillationPercent }}%</span
+          >
         </div>
       </div>
     </div>

@@ -830,20 +830,26 @@ export function getNodeSnapshotApi(nodeId: string) {
  */
 export function getNodeTrendApi(
   nodeId: string,
-  params: { endTime: string; startTime: string; },
+  params: { endTime: string; startTime: string },
 ) {
-  return requestClient.get<MetricApi.NodeTrendData>(`${NODE_BASE}/${nodeId}/trend`, {
-    params,
-  });
+  return requestClient.get<MetricApi.NodeTrendData>(
+    `${NODE_BASE}/${nodeId}/trend`,
+    {
+      params,
+    },
+  );
 }
 
 /**
  * 获取节点间性能排名 — GET /performance/nodes/ranking
  */
 export function getNodeRankingApi(params: MetricApi.NodeRankingQueryParams) {
-  return requestClient.get<MetricApi.NodeRankingItem[]>(`${NODE_BASE}/ranking`, {
-    params,
-  });
+  return requestClient.get<MetricApi.NodeRankingItem[]>(
+    `${NODE_BASE}/ranking`,
+    {
+      params,
+    },
+  );
 }
 
 /**
@@ -868,9 +874,12 @@ export function calculateNodeApi(
  * 汇总所有启用 KPI 评估的节点最新快照。
  */
 export function getNodesOverviewApi(params: { timeWindow: TimeWindow }) {
-  return requestClient.get<MetricApi.NodeOverviewData>(`${NODE_BASE}/overview`, {
-    params,
-  });
+  return requestClient.get<MetricApi.NodeOverviewData>(
+    `${NODE_BASE}/overview`,
+    {
+      params,
+    },
+  );
 }
 
 /**
@@ -907,7 +916,9 @@ export function getWeightTemplatesApi() {
 /**
  * 保存权重模板为新版本 — 仅 ADMIN
  */
-export function saveWeightTemplatesApi(data: MetricApi.WeightTemplateSaveRequest) {
+export function saveWeightTemplatesApi(
+  data: MetricApi.WeightTemplateSaveRequest,
+) {
   return requestClient.post<MetricApi.WeightTemplateSchema>(WEIGHT_BASE, data);
 }
 
@@ -915,7 +926,9 @@ export function saveWeightTemplatesApi(data: MetricApi.WeightTemplateSaveRequest
  * 获取权重模板版本历史 — FDS v5.1 §5.2.2
  */
 export function getWeightTemplateHistoryApi() {
-  return requestClient.get<MetricApi.VersionHistorySchema>(`${WEIGHT_BASE}/history`);
+  return requestClient.get<MetricApi.VersionHistorySchema>(
+    `${WEIGHT_BASE}/history`,
+  );
 }
 
 /**
@@ -952,8 +965,13 @@ export function getGradingThresholdsApi() {
 /**
  * 更新定级阈值 — 仅 ADMIN
  */
-export function saveGradingThresholdsApi(data: MetricApi.GradingThresholdSaveRequest) {
-  return requestClient.post<MetricApi.GradingThresholdSchema>(GRADING_BASE, data);
+export function saveGradingThresholdsApi(
+  data: MetricApi.GradingThresholdSaveRequest,
+) {
+  return requestClient.post<MetricApi.GradingThresholdSchema>(
+    GRADING_BASE,
+    data,
+  );
 }
 
 // ===========================================================================
@@ -966,7 +984,9 @@ const CONFIDENCE_BASE = '/configs/confidence-thresholds';
  * 获取当前数据可信度阈值
  */
 export function getConfidenceThresholdsApi() {
-  return requestClient.get<MetricApi.ConfidenceThresholdSchema>(CONFIDENCE_BASE);
+  return requestClient.get<MetricApi.ConfidenceThresholdSchema>(
+    CONFIDENCE_BASE,
+  );
 }
 
 /**

@@ -9,7 +9,9 @@ const props = defineProps<{
 }>();
 
 const badRatePercent = computed(() => (props.data.badRate * 100).toFixed(1));
-const goodRatePercent = computed(() => ((1 - props.data.badRate) * 100).toFixed(1));
+const goodRatePercent = computed(() =>
+  ((1 - props.data.badRate) * 100).toFixed(1),
+);
 </script>
 
 <template>
@@ -21,11 +23,15 @@ const goodRatePercent = computed(() => ((1 - props.data.badRate) * 100).toFixed(
       <div class="metrics-grid">
         <div class="metric-item">
           <span class="metric-label">坏点率</span>
-          <span class="metric-value highlight-error">{{ badRatePercent }}%</span>
+          <span class="metric-value highlight-error"
+            >{{ badRatePercent }}%</span
+          >
         </div>
         <div class="metric-item">
           <span class="metric-label">好点率</span>
-          <span class="metric-value highlight-success">{{ goodRatePercent }}%</span>
+          <span class="metric-value highlight-success"
+            >{{ goodRatePercent }}%</span
+          >
         </div>
         <div class="metric-item">
           <span class="metric-label">总点数</span>
@@ -89,11 +95,11 @@ const goodRatePercent = computed(() => ((1 - props.data.badRate) * 100).toFixed(
   font-size: 12px;
   font-weight: 600;
   color: #374151;
-  
+
   &.highlight-error {
     color: #ef4444;
   }
-  
+
   &.highlight-success {
     color: #10b981;
   }

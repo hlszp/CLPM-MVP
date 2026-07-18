@@ -20,80 +20,78 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ============ Mock API ============
 // vi.mock 是 hoisted 的，必须用 vi.hoisted 包装 mock 函数
-const {
-  cancelTaskApiMock,
-  deleteTaskApiMock,
-  getTaskListApiMock,
-} = vi.hoisted(() => ({
-  cancelTaskApiMock: vi.fn().mockResolvedValue({
-    taskId: 'task-1',
-    cancelled: true,
+const { cancelTaskApiMock, deleteTaskApiMock, getTaskListApiMock } = vi.hoisted(
+  () => ({
+    cancelTaskApiMock: vi.fn().mockResolvedValue({
+      taskId: 'task-1',
+      cancelled: true,
+    }),
+    deleteTaskApiMock: vi.fn().mockResolvedValue({
+      task_id: 'task-1',
+      deleted: true,
+    }),
+    getTaskListApiMock: vi.fn().mockResolvedValue({
+      items: [
+        {
+          taskId: 'task-1',
+          taskType: 'BACKFILL',
+          status: 'RUNNING',
+          progress: 0.5,
+          loopsTotal: 10,
+          loopsDone: 5,
+          createdAt: '2026-07-06T10:00:00+08:00',
+          tsStart: '2026-07-01T00:00:00+08:00',
+          tsEnd: '2026-07-06T00:00:00+08:00',
+        },
+        {
+          taskId: 'task-2',
+          taskType: 'BACKFILL',
+          status: 'SUCCESS',
+          progress: 1,
+          loopsTotal: 10,
+          loopsDone: 10,
+          createdAt: '2026-07-05T10:00:00+08:00',
+          tsStart: '2026-07-01T00:00:00+08:00',
+          tsEnd: '2026-07-06T00:00:00+08:00',
+        },
+        {
+          taskId: 'task-3',
+          taskType: 'BACKFILL',
+          status: 'CANCELLED',
+          progress: 0.3,
+          loopsTotal: 10,
+          loopsDone: 3,
+          createdAt: '2026-07-04T10:00:00+08:00',
+          tsStart: '2026-07-01T00:00:00+08:00',
+          tsEnd: '2026-07-06T00:00:00+08:00',
+        },
+        {
+          taskId: 'task-4',
+          taskType: 'BACKFILL',
+          status: 'FAILED',
+          progress: 0.7,
+          loopsTotal: 10,
+          loopsDone: 7,
+          createdAt: '2026-07-03T10:00:00+08:00',
+          tsStart: '2026-07-01T00:00:00+08:00',
+          tsEnd: '2026-07-06T00:00:00+08:00',
+        },
+        {
+          taskId: 'task-5',
+          taskType: 'BACKFILL',
+          status: 'PENDING',
+          progress: 0,
+          loopsTotal: 10,
+          loopsDone: 0,
+          createdAt: '2026-07-06T11:00:00+08:00',
+          tsStart: '2026-07-01T00:00:00+08:00',
+          tsEnd: '2026-07-06T00:00:00+08:00',
+        },
+      ],
+      total: 5,
+    }),
   }),
-  deleteTaskApiMock: vi.fn().mockResolvedValue({
-    task_id: 'task-1',
-    deleted: true,
-  }),
-  getTaskListApiMock: vi.fn().mockResolvedValue({
-    items: [
-      {
-        taskId: 'task-1',
-        taskType: 'BACKFILL',
-        status: 'RUNNING',
-        progress: 0.5,
-        loopsTotal: 10,
-        loopsDone: 5,
-        createdAt: '2026-07-06T10:00:00+08:00',
-        tsStart: '2026-07-01T00:00:00+08:00',
-        tsEnd: '2026-07-06T00:00:00+08:00',
-      },
-      {
-        taskId: 'task-2',
-        taskType: 'BACKFILL',
-        status: 'SUCCESS',
-        progress: 1,
-        loopsTotal: 10,
-        loopsDone: 10,
-        createdAt: '2026-07-05T10:00:00+08:00',
-        tsStart: '2026-07-01T00:00:00+08:00',
-        tsEnd: '2026-07-06T00:00:00+08:00',
-      },
-      {
-        taskId: 'task-3',
-        taskType: 'BACKFILL',
-        status: 'CANCELLED',
-        progress: 0.3,
-        loopsTotal: 10,
-        loopsDone: 3,
-        createdAt: '2026-07-04T10:00:00+08:00',
-        tsStart: '2026-07-01T00:00:00+08:00',
-        tsEnd: '2026-07-06T00:00:00+08:00',
-      },
-      {
-        taskId: 'task-4',
-        taskType: 'BACKFILL',
-        status: 'FAILED',
-        progress: 0.7,
-        loopsTotal: 10,
-        loopsDone: 7,
-        createdAt: '2026-07-03T10:00:00+08:00',
-        tsStart: '2026-07-01T00:00:00+08:00',
-        tsEnd: '2026-07-06T00:00:00+08:00',
-      },
-      {
-        taskId: 'task-5',
-        taskType: 'BACKFILL',
-        status: 'PENDING',
-        progress: 0,
-        loopsTotal: 10,
-        loopsDone: 0,
-        createdAt: '2026-07-06T11:00:00+08:00',
-        tsStart: '2026-07-01T00:00:00+08:00',
-        tsEnd: '2026-07-06T00:00:00+08:00',
-      },
-    ],
-    total: 5,
-  }),
-}));
+);
 
 vi.mock('#/api/task', () => ({
   cancelTaskApi: cancelTaskApiMock,
@@ -116,6 +114,7 @@ vi.mock('@vben/icons', () => ({
 }));
 
 // 导入组件（在 mock 之后）
+// oxlint-disable-next-line import/first -- Vitest mocks must be registered before the component import
 import Recompute from '../views/metric/recompute.vue';
 
 describe('历史重算页面 recompute.vue', () => {
@@ -141,7 +140,7 @@ describe('历史重算页面 recompute.vue', () => {
 
   // ============ 状态判定测试 ============
 
-  it('UT-RECOMP-001: isTaskActive 正确识别活跃任务', async () => {
+  it('uT-RECOMP-001: isTaskActive 正确识别活跃任务', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -169,7 +168,7 @@ describe('历史重算页面 recompute.vue', () => {
     expect(vm.isTaskActive({ status: 'CANCELLED' })).toBe(false);
   });
 
-  it('UT-RECOMP-002: isTaskTerminal 正确识别终态任务', async () => {
+  it('uT-RECOMP-002: isTaskTerminal 正确识别终态任务', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -199,7 +198,7 @@ describe('历史重算页面 recompute.vue', () => {
 
   // ============ 取消任务测试 ============
 
-  it('UT-RECOMP-003: handleCancel 调用 cancelTaskApi 并刷新列表', async () => {
+  it('uT-RECOMP-003: handleCancel 调用 cancelTaskApi 并刷新列表', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -228,7 +227,7 @@ describe('历史重算页面 recompute.vue', () => {
 
   // ============ 删除任务测试 ============
 
-  it('UT-RECOMP-004: handleDelete 调用 deleteTaskApi 并刷新列表', async () => {
+  it('uT-RECOMP-004: handleDelete 调用 deleteTaskApi 并刷新列表', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -254,7 +253,7 @@ describe('历史重算页面 recompute.vue', () => {
     expect(getTaskListApiMock).toHaveBeenCalled();
   });
 
-  it('UT-RECOMP-005: handleDelete 失败时显示错误提示', async () => {
+  it('uT-RECOMP-005: handleDelete 失败时显示错误提示', async () => {
     deleteTaskApiMock.mockRejectedValueOnce(new Error('任务未处于终态'));
     const wrapper = mount(Recompute, {
       global: {
@@ -286,7 +285,7 @@ describe('历史重算页面 recompute.vue', () => {
 
   // ============ 列定义测试 ============
 
-  it('UT-RECOMP-006: 操作列宽度足够容纳两个按钮（140px）', async () => {
+  it('uT-RECOMP-006: 操作列宽度足够容纳两个按钮（140px）', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -313,7 +312,7 @@ describe('历史重算页面 recompute.vue', () => {
     expect(actionCol.width).toBeGreaterThanOrEqual(140);
   });
 
-  it('UT-RECOMP-007: 列定义包含任务ID/时间窗/状态/进度/操作字段', async () => {
+  it('uT-RECOMP-007: 列定义包含任务ID/时间窗/状态/进度/操作字段', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -349,7 +348,7 @@ describe('历史重算页面 recompute.vue', () => {
 
   // ============ 状态映射测试 ============
 
-  it('UT-RECOMP-008: 状态颜色与文本映射覆盖 5 种状态', async () => {
+  it('uT-RECOMP-008: 状态颜色与文本映射覆盖 5 种状态', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -384,7 +383,7 @@ describe('历史重算页面 recompute.vue', () => {
 
   // ============ 工具函数测试 ============
 
-  it('UT-RECOMP-009: formatProgress 处理 null/undefined/数值', async () => {
+  it('uT-RECOMP-009: formatProgress 处理 null/undefined/数值', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -411,7 +410,7 @@ describe('历史重算页面 recompute.vue', () => {
     expect(vm.formatProgress(1)).toBe(100);
   });
 
-  it('UT-RECOMP-010: formatTime 处理空值与有效时间', async () => {
+  it('uT-RECOMP-010: formatTime 处理空值与有效时间', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {

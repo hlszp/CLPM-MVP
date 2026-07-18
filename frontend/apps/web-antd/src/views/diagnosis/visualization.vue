@@ -22,7 +22,10 @@ import SlowResponseCard from '#/components/diagnosis-visualization/slow-response
 import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
 import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { DIAGNOSIS_LABEL_COLOR_MAP, DIAGNOSIS_LABEL_NAME_MAP } from '#/constants/diagnosis';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
 
 defineOptions({ name: 'DiagnosisVisualization' });
 
@@ -31,7 +34,7 @@ const { themeColors } = useClpmTheme();
 const route = useRoute();
 const router = useRouter();
 
-const selectedLoopId = ref<string>(route.params.loopId as string || '');
+const selectedLoopId = ref<string>((route.params.loopId as string) || '');
 const timeWindow = ref<string>('last_7_days');
 const loops = ref<LoopApi.LoopListItem[]>([]);
 const loopsLoading = ref(false);
@@ -63,7 +66,9 @@ const compositeScoreColor = computed(() => {
   return themeColors.value.SUCCESS;
 });
 
-const confidencePercent = computed(() => ((data.value?.fusedConfidence ?? 0) * 100).toFixed(1));
+const confidencePercent = computed(() =>
+  ((data.value?.fusedConfidence ?? 0) * 100).toFixed(1),
+);
 
 const fetchLoops = async () => {
   loopsLoading.value = true;
@@ -83,7 +88,7 @@ const fetchLoops = async () => {
 const fetchVisualizationData = async (targetLoopId?: string) => {
   const id = targetLoopId ?? selectedLoopId.value;
   if (!id) return;
-  
+
   loading.value = true;
   try {
     const res = await getDiagnosisVisualizationApi(id);
@@ -105,12 +110,15 @@ const goBack = () => {
   router.back();
 };
 
-watch(() => route.params.loopId, (newId) => {
-  if (newId) {
-    selectedLoopId.value = newId as string;
-    fetchVisualizationData(newId as string);
-  }
-});
+watch(
+  () => route.params.loopId,
+  (newId) => {
+    if (newId) {
+      selectedLoopId.value = newId as string;
+      fetchVisualizationData(newId as string);
+    }
+  },
+);
 
 onMounted(async () => {
   await fetchLoops();
@@ -137,17 +145,23 @@ onMounted(async () => {
                   <Select
                     :loading="loopsLoading"
                     :value="selectedLoopId"
-                    :options="loops.map(l => ({ value: l.loopId, label: l.tagName }))"
+                    :options="
+                      loops.map((l) => ({ value: l.loopId, label: l.tagName }))
+                    "
                     placeholder="选择回路"
-                    style="width: 200px;"
+                    style="width: 200px"
                     @change="handleLoopChange"
                   />
                   <Select
                     :value="timeWindow"
                     :options="timeWindowOptions"
-                    style="width: 120px;"
+                    style="width: 120px"
                   />
-                  <Button @click="() => fetchVisualizationData()" :loading="loading">刷新数据</Button>
+                  <Button
+                    @click="() => fetchVisualizationData()"
+                    :loading="loading"
+                    >刷新数据</Button
+                  >
                   <Button type="text" @click="goBack">返回</Button>
                 </div>
               </div>
@@ -156,7 +170,10 @@ onMounted(async () => {
               <Col :span="6">
                 <div class="summary-card">
                   <div class="summary-label">综合评分</div>
-                  <div class="summary-value" :style="{ color: compositeScoreColor }">
+                  <div
+                    class="summary-value"
+                    :style="{ color: compositeScoreColor }"
+                  >
                     {{ data.compositeScore?.toFixed(1) ?? '-' }}
                   </div>
                 </div>
@@ -176,7 +193,9 @@ onMounted(async () => {
                       :key="label.label"
                       :color="labelColorMap[label.label] || 'default'"
                     >
-                      {{ labelNameMap[label.label] }} ({{ (label.confidence * 100).toFixed(0) }}%)
+                      {{ labelNameMap[label.label] }} ({{
+                        (label.confidence * 100).toFixed(0)
+                      }}%)
                     </Tag>
                   </div>
                 </div>

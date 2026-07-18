@@ -79,7 +79,7 @@ const LEVEL_META: Record<
 };
 
 /** 编辑态：以 level 为 key 存储编辑中的 minRate 值 */
-const editState = reactive<Record<number, { minRate: number}>>({});
+const editState = reactive<Record<number, { minRate: number }>>({});
 
 /** 获取编辑态（保证非 undefined，用于模板 v-model） */
 function editStateOf(level: number): { minRate: number } {
@@ -161,15 +161,18 @@ const violatedLevels = computed<number[]>(() => {
   const sorted = [...list.value].toSorted((a, b) => a.level - b.level);
   const violations: number[] = [];
   for (let i = 0; i < sorted.length - 1; i++) {
-    const cur = editState[sorted[i]!.level];
-    const next = editState[sorted[i + 1]!.level];
+    const currentLevel = sorted[i];
+    const nextLevel = sorted[i + 1];
+    if (!currentLevel || !nextLevel) continue;
+    const cur = editState[currentLevel.level];
+    const next = editState[nextLevel.level];
     if (
       cur &&
       next &&
       // 当前等级的 minRate 必须严格大于下一等级的 minRate
       cur.minRate <= next.minRate
     ) {
-      violations.push(sorted[i]!.level, sorted[i + 1]!.level);
+      violations.push(currentLevel.level, nextLevel.level);
     }
   }
   return [...new Set(violations)];
@@ -223,9 +226,9 @@ onMounted(() => {
   <div class="metric-confidence-threshold">
     <div class="mb-3 flex items-center justify-between">
       <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
-        配置 5 级数据可信度阈值（A/B/C/D/E）。
-        相邻等级的 minRate 须严格递减（A > B > C > D > E），
-        E 级 minRate 固定为 0（可信度不足，评估结果为 INCONCLUSIVE）。
+        配置 5 级数据可信度阈值（A/B/C/D/E）。 相邻等级的 minRate 须严格递减（A
+        > B > C > D > E）， E 级 minRate 固定为 0（可信度不足，评估结果为
+        INCONCLUSIVE）。
       </p>
       <div class="flex gap-2">
         <ClpmToolbarButton
@@ -317,11 +320,7 @@ onMounted(() => {
           >
             ✗ 未严格递减
           </span>
-          <span
-            v-else
-            class="text-xs"
-            :style="{ color: themeColors.SUCCESS }"
-          >
+          <span v-else class="text-xs" :style="{ color: themeColors.SUCCESS }">
             ✓ 递减正确
           </span>
         </template>
@@ -331,8 +330,8 @@ onMounted(() => {
     <div class="mt-3 text-xs" :style="{ color: themeColors.NEUTRAL }">
       <p>
         <strong>校验规则：</strong>
-        相邻等级须满足「level N 的 minRate > level N+1 的 minRate」，
-        例如：A级 minRate=0.95，则 B 级 minRate 须 &lt; 0.95。
+        相邻等级须满足「level N 的 minRate > level N+1 的 minRate」， 例如：A级
+        minRate=0.95，则 B 级 minRate 须 &lt; 0.95。
       </p>
       <p class="mt-1">
         <strong>颜色说明：</strong>

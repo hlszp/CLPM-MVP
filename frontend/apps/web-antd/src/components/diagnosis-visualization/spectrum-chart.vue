@@ -14,7 +14,8 @@ const props = defineProps<{
   disabled?: boolean;
 }>();
 
-const { getTooltipPreset, getSeriesColor, themeColors, axisBase } = useEchartsPreset();
+const { getTooltipPreset, getSeriesColor, themeColors, axisBase } =
+  useEchartsPreset();
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
@@ -113,9 +114,13 @@ const options = computed(() => {
   return option;
 });
 
-watch(options, (newOptions) => {
-  renderEcharts(newOptions);
-}, { immediate: true });
+watch(
+  options,
+  (newOptions) => {
+    renderEcharts(newOptions);
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   renderEcharts(options.value);

@@ -47,7 +47,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   cancel: [];
-  confirm: [payload: { auditNote: string; reason: string; }];
+  confirm: [payload: { auditNote: string; reason: string }];
   'update:open': [value: boolean];
 }>();
 
@@ -211,7 +211,10 @@ function handleConfirm() {
           show-count
           :disabled="loading"
         />
-        <div v-if="inputReason && !isReasonValid" class="clpm-danger-confirm__hint">
+        <div
+          v-if="inputReason && !isReasonValid"
+          class="clpm-danger-confirm__hint"
+        >
           至少 10 个字符（当前 {{ inputReason.trim().length }} 字符）
         </div>
       </div>

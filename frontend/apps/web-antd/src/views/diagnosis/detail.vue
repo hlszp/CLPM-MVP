@@ -32,7 +32,12 @@ import {
   getTrackerListApi,
   getWaveformApi,
 } from '#/api/diagnosis';
-import { ClpmDataCanvas, ClpmObjectSummaryBar, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmObjectSummaryBar,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -140,8 +145,20 @@ const trackerStatusColor = computed(() => {
     success: themeColors.value.SUCCESS,
     neutral: themeColors.value.NEUTRAL,
   };
-  return map[trackerStatusTag.value.status ?? 'neutral'] ?? themeColors.value.NEUTRAL;
+  return (
+    map[trackerStatusTag.value.status ?? 'neutral'] ?? themeColors.value.NEUTRAL
+  );
 });
+
+function getThresholdStatus(
+  value: number,
+  successThreshold: number,
+  warningThreshold: number,
+): NonNullable<SummaryItem['status']> {
+  if (value >= successThreshold) return 'success';
+  if (value >= warningThreshold) return 'warning';
+  return 'danger';
+}
 
 const summaryItems = computed<SummaryItem[]>(() => {
   if (!detail.value) return [];
@@ -150,23 +167,13 @@ const summaryItems = computed<SummaryItem[]>(() => {
       key: 'score',
       label: '综合评分',
       value: Number(detail.value.compositeScore).toFixed(2),
-      status:
-        detail.value.compositeScore >= 80
-          ? 'success'
-          : (detail.value.compositeScore >= 60
-            ? 'warning'
-            : 'danger'),
+      status: getThresholdStatus(detail.value.compositeScore, 80, 60),
     },
     {
       key: 'confidence',
       label: '融合置信度',
       value: Number(detail.value.fusedConfidence).toFixed(2),
-      status:
-        detail.value.fusedConfidence >= 0.8
-          ? 'success'
-          : (detail.value.fusedConfidence >= 0.5
-            ? 'warning'
-            : 'danger'),
+      status: getThresholdStatus(detail.value.fusedConfidence, 0.8, 0.5),
     },
     {
       key: 'risk',
@@ -396,7 +403,7 @@ function renderScatterChart() {
       const selectedTs = Number(selectedTime.value.timestamp);
       const WINDOW = 30_000; // 30 秒（ms）
       for (const [i, t] of ts.entries()) {
-        if (Math.abs(t! - selectedTs) <= WINDOW) {
+        if (Math.abs(t - selectedTs) <= WINDOW) {
           highlightedSet.add(i);
         }
       }
@@ -630,7 +637,11 @@ onMounted(() => {
                   height="320px"
                   @time-select="onTrendTimeSelect"
                 />
-                <div v-else class="py-12 text-center" :style="{ color: themeColors.NEUTRAL }">
+                <div
+                  v-else
+                  class="py-12 text-center"
+                  :style="{ color: themeColors.NEUTRAL }"
+                >
                   暂无波形数据
                 </div>
               </ClpmDataCanvas>
@@ -649,7 +660,11 @@ onMounted(() => {
                     {{ detail.evidenceChain.reasoning }}
                   </div>
                 </div>
-                <div v-else class="py-4 text-center" :style="{ color: themeColors.NEUTRAL }">
+                <div
+                  v-else
+                  class="py-4 text-center"
+                  :style="{ color: themeColors.NEUTRAL }"
+                >
                   暂无推理过程
                 </div>
               </div>
@@ -669,14 +684,23 @@ onMounted(() => {
                       :key="item.key"
                       class="rounded border p-3 text-center"
                     >
-                      <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">{{ item.key }}</div>
+                      <div
+                        class="text-xs"
+                        :style="{ color: themeColors.NEUTRAL }"
+                      >
+                        {{ item.key }}
+                      </div>
                       <div class="mt-1 text-lg font-medium">
                         {{ Number(item.value).toFixed(4) }}
                       </div>
                     </div>
                   </div>
                 </div>
-                <div v-else class="py-4 text-center" :style="{ color: themeColors.NEUTRAL }">
+                <div
+                  v-else
+                  class="py-4 text-center"
+                  :style="{ color: themeColors.NEUTRAL }"
+                >
                   暂无特征值
                 </div>
               </div>
@@ -708,7 +732,10 @@ onMounted(() => {
                     <Tag :color="labelColorMap[item.label]">
                       {{ item.labelName || labelNameMap[item.label] }}
                     </Tag>
-                    <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
+                    <span
+                      class="text-sm"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
                       置信度：
                       <span
                         class="font-medium clpm-num"
@@ -717,7 +744,10 @@ onMounted(() => {
                         {{ Number(item.confidence).toFixed(2) }}
                       </span>
                     </span>
-                    <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
+                    <span
+                      class="text-sm"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
                       算法：{{ item.algorithm }}
                     </span>
                   </div>
@@ -742,7 +772,9 @@ onMounted(() => {
             >
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">当前状态</div>
+                  <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">
+                    当前状态
+                  </div>
                   <div
                     class="mt-1 text-lg font-medium clpm-num"
                     :style="{ color: trackerStatusColor }"

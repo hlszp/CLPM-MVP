@@ -127,7 +127,9 @@ const valueColorVar = computed(() => {
 const progressFillVar = computed(() => iconColorVar.value);
 
 /** delta 方向：up/down/flat */
-function getDeltaDirection(delta: number | string | undefined): 'down' | 'flat' | 'up' {
+function getDeltaDirection(
+  delta: number | string | undefined,
+): 'down' | 'flat' | 'up' {
   if (delta === undefined || delta === '') return 'flat';
   const num = typeof delta === 'number' ? delta : Number.parseFloat(delta);
   if (Number.isNaN(num)) return 'flat';
@@ -164,12 +166,14 @@ const hasMicroChart = computed(
     (props.sparkline && props.sparkline.length >= 2),
 );
 
-const microChartType = computed<'bars' | 'line' | 'progress' | undefined>(() => {
-  if (props.progress !== undefined) return 'progress';
-  if (props.microBars && props.microBars.length > 0) return 'bars';
-  if (props.sparkline && props.sparkline.length >= 2) return 'line';
-  return undefined;
-});
+const microChartType = computed<'bars' | 'line' | 'progress' | undefined>(
+  () => {
+    if (props.progress !== undefined) return 'progress';
+    if (props.microBars && props.microBars.length > 0) return 'bars';
+    if (props.sparkline && props.sparkline.length >= 2) return 'line';
+    return undefined;
+  },
+);
 
 /** sparkline 最后一个点的 y 坐标 */
 const sparklineLastPointY = computed(() => {
@@ -243,7 +247,10 @@ function handleClick(event: MouseEvent) {
     </div>
 
     <!-- 底部上下文：左侧文字 + 右侧 delta -->
-    <div v-if="contextText || delta !== undefined" class="clpm-kpi-card__context">
+    <div
+      v-if="contextText || delta !== undefined"
+      class="clpm-kpi-card__context"
+    >
       <span v-if="contextText" class="clpm-kpi-card__context-text">
         {{ contextText }}
       </span>
@@ -258,7 +265,9 @@ function handleClick(event: MouseEvent) {
           <template v-else>→</template>
         </span>
         <span class="clpm-kpi-card__delta-text">{{ getDeltaText(delta) }}</span>
-        <span v-if="deltaUnit" class="clpm-kpi-card__delta-unit">{{ deltaUnit }}</span>
+        <span v-if="deltaUnit" class="clpm-kpi-card__delta-unit">{{
+          deltaUnit
+        }}</span>
       </span>
     </div>
 
@@ -279,10 +288,7 @@ function handleClick(event: MouseEvent) {
       </div>
 
       <!-- 迷你柱状图 -->
-      <div
-        v-else-if="microChartType === 'bars'"
-        class="clpm-kpi-card__bars"
-      >
+      <div v-else-if="microChartType === 'bars'" class="clpm-kpi-card__bars">
         <div
           v-for="(v, i) in microBars"
           :key="i"
@@ -332,7 +338,9 @@ function handleClick(event: MouseEvent) {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius-industrial-lg);
-  transition: box-shadow 0.2s ease, transform 0.15s ease;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
 }
 
 .clpm-kpi-card.is-clickable {
