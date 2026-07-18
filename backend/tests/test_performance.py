@@ -684,9 +684,9 @@ class TestCeleryBeatSchedule:
         beat = celery_app.conf.beat_schedule
         assert "kpi-calc-hourly" in beat
         assert beat["kpi-calc-hourly"]["task"] == "app.tasks.kpi_calc.calculate_hourly_kpi"
-        # 验证预热缓存任务已注册
-        assert "prewarm-cache" in beat
-        assert beat["prewarm-cache"]["task"] == "app.tasks.kpi_calc.prewarm_cache"
+        # prewarm-cache 定时预热已废止（预热窗口与整点任务窗口错位一小时，从未命中）；
+        # 整点任务数据来源统一为 realtime 滚动 1 小时缓存 + TDengine 回源
+        assert "prewarm-cache" not in beat
 
 
 # ---------------------------------------------------------------------------
