@@ -289,9 +289,7 @@ def _is_historical_window(end: Any) -> bool:
     end_dt = _parse_ts(end)
     if not isinstance(end_dt, datetime):
         return False
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(
-        seconds=_REDIS_REALTIME_SKIP_S
-    )
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=_REDIS_REALTIME_SKIP_S)
     return end_dt < cutoff
 
 

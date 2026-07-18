@@ -485,9 +485,7 @@ class TestSaveSnapshot:
         db = AsyncMock()
         db.add = MagicMock()
         # RETURNING 返回已存在快照的 id（UPDATE 分支不生成新 id）
-        db.execute = AsyncMock(
-            return_value=_make_returning_id_result_mock("existing-snapshot-id")
-        )
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("existing-snapshot-id"))
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)

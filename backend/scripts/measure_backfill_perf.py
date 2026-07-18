@@ -35,19 +35,36 @@ def main() -> None:
     ap.add_argument("--timeout", type=int, default=900, help="最长等待秒数")
     args = ap.parse_args()
 
-    login = req(args.base, "POST", "/api/v1/auth/login", {"username": "admin", "password": "admin123"})
-    token = login.get("accessToken") or login.get("access_token") or login.get("data", {}).get("accessToken")
+    login = req(
+        args.base,
+        "POST",
+        "/api/v1/auth/login",
+        {"username": "admin", "password": "admin123"},
+    )
+    token = (
+        login.get("accessToken")
+        or login.get("access_token")
+        or login.get("data", {}).get("accessToken")
+    )
     if not token:
         print("LOGIN_FAILED", json.dumps(login, ensure_ascii=False)[:300])
         sys.exit(1)
     print("login ok")
 
-    created = req(args.base, "POST", "/api/v1/tasks/backfill", {
-        "title": f"perf-measure-{int(time.time())}",
-        "tsStart": args.ts_start,
-        "tsEnd": args.ts_end,
-    }, token)
-    task_id = created.get("taskId") or created.get("task_id") or created.get("data", {}).get("taskId")
+    created = req(
+        args.base,
+        "POST",
+        "/api/v1/tasks/backfill",
+        {
+            "title": f"perf-measure-{int(time.time())}",
+            "tsStart": args.ts_start,
+            "tsEnd": args.ts_end,
+        },
+        token,
+    )
+    task_id = (
+        created.get("taskId") or created.get("task_id") or created.get("data", {}).get("taskId")
+    )
     if not task_id:
         print("CREATE_FAILED", json.dumps(created, ensure_ascii=False)[:300])
         sys.exit(1)
