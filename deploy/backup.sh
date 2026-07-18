@@ -28,19 +28,23 @@ echo "备份目录: ${BACKUP_SUBDIR}"
 echo ""
 echo "[1/3] PostgreSQL 备份..."
 
-# 从 .env.prod 读取数据库配置
-if [ -f .env.prod ]; then
-    export $(grep -v '^#' .env.prod | grep -E '^(POSTGRES_|PG|TDENGINE_)' | xargs)
-fi
+# 安全读取 .env.prod（不 source/执行配置内容）
+read_env_value() {
+    local key="$1"
+    if [ -f .env.prod ]; then
+        sed -n "s/^${key}=//p" .env.prod | tail -1
+    fi
+}
 
-PG_HOST="${POSTGRES_HOST:-clpm-postgres}"
-PG_PORT="${POSTGRES_PORT:-5432}"
-PG_USER="${POSTGRES_USER:-clpm}"
-PG_DB="${POSTGRES_DB:-clpm}"
+PG_USER="$(read_env_value POSTGRES_USER)"
+PG_USER="${PG_USER:-clpm}"
+PG_DB="$(read_env_value POSTGRES_DB)"
+PG_DB="${PG_DB:-clpm}"
 
-# TDengine 配置（与 .env.prod 中 TDENGINE_DB 保持一致，避免硬编码）
-TD_HOST="${TDENGINE_HOST:-clpm-tdengine}"
-TD_DB="${TDENGINE_DB:-clpm_ts}"
+# TDENGINE_HOST 是 Compose 网络内 DNS 名，不是 docker exec 所需的容器名。
+TD_CONTAINER="clpm-tdengine"
+TD_DB="$(read_env_value TDENGINE_DB)"
+TD_DB="${TD_DB:-clpm_ts}"
 
 PG_FILE="${BACKUP_SUBDIR}/postgres_${TIMESTAMP}.sql.gz"
 
@@ -63,17 +67,22 @@ echo "  [OK] PostgreSQL 备份完成: ${PG_FILE} (${PG_SIZE})"
 echo ""
 echo "[2/3] TDengine 备份..."
 
-TD_FILE="${BACKUP_SUBDIR}/tdengine_${TIMESTAMP}.sql.gz"
+TD_FILE="${BACKUP_SUBDIR}/tdengine_${TIMESTAMP}.tar.gz"
+TD_DUMP_NAME="tdengine_dump_${TIMESTAMP}"
+TD_CONTAINER_DUMP_DIR="/tmp/${TD_DUMP_NAME}"
+TD_LOCAL_DUMP_DIR="${BACKUP_SUBDIR}/${TD_DUMP_NAME}"
 
 # 通过 docker exec 在 tdengine 容器内执行 taos dump
-docker exec "$TD_HOST" taos -s "USE ${TD_DB}; SHOW TABLES;" >/dev/null 2>&1
-if [ $? -eq 0 ]; then
-    docker exec "$TD_HOST" taosdump -D "$TD_DB" 2>/dev/null | gzip > "$TD_FILE"
+if docker exec "$TD_CONTAINER" taos -s "USE ${TD_DB}; SHOW TABLES;" >/dev/null 2>&1; then
+    docker exec "$TD_CONTAINER" taosdump -D "$TD_DB" -o "$TD_CONTAINER_DUMP_DIR" >/dev/null
+    docker cp "${TD_CONTAINER}:${TD_CONTAINER_DUMP_DIR}" "$TD_LOCAL_DUMP_DIR" >/dev/null
+    tar -C "$BACKUP_SUBDIR" -czf "$TD_FILE" "$TD_DUMP_NAME"
+    rm -rf "$TD_LOCAL_DUMP_DIR"
+    docker exec "$TD_CONTAINER" rm -rf "$TD_CONTAINER_DUMP_DIR"
     TD_SIZE=$(du -h "$TD_FILE" | cut -f1)
     echo "  [OK] TDengine 备份完成: ${TD_FILE} (${TD_SIZE})"
 else
     echo "  [SKIP] TDengine 数据库 ${TD_DB} 不存在或不可达，跳过"
-    rm -f "$TD_FILE"
 fi
 
 # ------------------------------------------------------------

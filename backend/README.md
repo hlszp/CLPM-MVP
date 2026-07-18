@@ -228,7 +228,7 @@ docker build -f Dockerfile.backend -t clpm-backend:latest .
 | 服务 | 容器 | 说明 |
 |---|---|---|
 | backend | clpm-backend | FastAPI + Uvicorn（仅容器间暴露 7101） |
-| frontend | clpm-frontend | Nginx 静态托管 + 反向代理（80/443） |
+| frontend | clpm-frontend | Nginx 静态托管 + 反向代理（默认 HTTP 7141） |
 | celery-worker | clpm-celery-worker | 异步任务执行 |
 | celery-beat | clpm-celery-beat | 定时任务调度 |
 | postgres | clpm-postgres | 关系型业务数据 |
@@ -249,7 +249,8 @@ cp .env.prod.example .env.prod   # 编辑真实配置
 生产环境（`ENV=production`）启动时强制校验：
 
 - `JWT_SECRET_KEY` 必须设置且长度 ≥ 32 字符
-- `POSTGRES_PASSWORD` / `TDENGINE_PASSWORD` / `REDIS_PASSWORD` 必须设置且不得使用开发默认值
+- `POSTGRES_PASSWORD` / `REDIS_PASSWORD` 必须设置且不得使用开发默认值
+- `DATA_SOURCE_TYPE=tdengine` 时，`TDENGINE_PASSWORD` 必须与部署的 TDengine 实例一致
 - `AAS_SECURITY_MODE` 不得为 `None`（必须 Sign 或 SignAndEncrypt）
 
 ## 测试
