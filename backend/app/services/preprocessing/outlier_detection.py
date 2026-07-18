@@ -284,13 +284,16 @@ def detect_ts_anomaly(
 
     results: list[tuple[int, OutlierReason]] = []
     max_gap = expected_interval_s * 2.0
-    seen_ts: set[float] = set()
+    # 直接用 datetime 对象做重复检测（datetime 可哈希，等值判断语义一致）。
+    # 避免调用 ts.timestamp()：naive datetime 的 timestamp() 走 mktime/localtime，
+    # 在 fork 出的子进程（celery prefork worker）中会陷入 macOS 时区慢路径，
+    # 每次调用 ~0.5ms，3601 点 × 4 信号 ≈ 6-29s/窗口（实测证据见性能诊断记录）。
+    seen_ts: set[datetime] = set()
 
     for i, ts in enumerate(timestamps):
-        ts_epoch = ts.timestamp()
-        if ts_epoch in seen_ts:
+        if ts in seen_ts:
             results.append((i, OutlierReason.TS_ANOMALY))
-        seen_ts.add(ts_epoch)
+        seen_ts.add(ts)
 
     for i in range(1, n):
         gap = (timestamps[i] - timestamps[i - 1]).total_seconds()

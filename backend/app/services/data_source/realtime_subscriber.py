@@ -319,7 +319,7 @@ class RealtimeSubscriber:
         raw_list = await redis_client.lrange(key, 0, -1)
         if not raw_list:
             return []
-        
+
         result = []
         for raw in raw_list:
             try:
@@ -368,18 +368,22 @@ class RealtimeSubscriber:
             }
             key = f"{_REDIS_KEY_PREFIX}history:{loop_part}"
             pipe.lpush(key, json.dumps(row_dict))
-            pipe.ltrim(key, 0, 3599)  # 1小时 = 3600点
+            # 保留 75 分钟（1Hz×4500 点）：整点 KPI 任务计算"上一完整小时"，
+            # 需覆盖 [H-1, H)，恰 3600 点只有 ~60s 迟到余量，4500 点给出 ~15 分钟余量
+            pipe.ltrim(key, 0, 4499)
             pipe.expire(key, 7200)
 
             # 为 TDengine 准备数据
             if self._writeback_enabled:
                 subtable = make_subtable_name(loop_part)
-                tables_rows.append({
-                    "subtable": subtable,
-                    "loop_id": "",
-                    "unit_id": "",
-                    "rows": [row],
-                })
+                tables_rows.append(
+                    {
+                        "subtable": subtable,
+                        "loop_id": "",
+                        "unit_id": "",
+                        "rows": [row],
+                    }
+                )
 
         try:
             await pipe.execute()
@@ -399,16 +403,17 @@ class RealtimeSubscriber:
                 return
             except Exception as exc:  # noqa: BLE001
                 if attempt < max_retries - 1:
-                    wait = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s
+                    wait = 0.5 * (2**attempt)  # 0.5s, 1s, 2s
                     logger.warning(
                         "批量写入失败 (尝试 %d/%d): %s，%ds 后重试",
-                        attempt + 1, max_retries, exc, wait,
+                        attempt + 1,
+                        max_retries,
+                        exc,
+                        wait,
                     )
                     await asyncio.sleep(wait)
                 else:
-                    logger.error(
-                        "批量写入最终失败 (%d 个子表): %s", len(tables_rows), exc
-                    )
+                    logger.error("批量写入最终失败 (%d 个子表): %s", len(tables_rows), exc)
 
     def _build_row(self, roles_data: dict[str, dict]) -> tuple:
         """构造单行数据。
@@ -436,8 +441,15 @@ class RealtimeSubscriber:
         pv_quality_val = self._parse_int(roles_data.get("PV", {}).get("quality"))
 
         return (
-            ts_str, pv_val, sp_val, op_val, mode_val,
-            pid_p_val, pid_i_val, pid_d_val, pv_quality_val,
+            ts_str,
+            pv_val,
+            sp_val,
+            op_val,
+            mode_val,
+            pid_p_val,
+            pid_i_val,
+            pid_d_val,
+            pv_quality_val,
         )
 
     @staticmethod
