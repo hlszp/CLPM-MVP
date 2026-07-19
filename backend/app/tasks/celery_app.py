@@ -112,3 +112,39 @@ import app.tasks.audit_archive  # noqa: E402, F401
 import app.tasks.diagnosis_engine  # noqa: E402, F401
 import app.tasks.kpi_calc  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401
+
+
+def _preload_datasource_config_sync() -> None:
+    """在新事件循环中同步执行 sys_config 预载（供 worker 信号处理器调用）。"""
+    import asyncio
+
+    from app.core.db import AsyncSessionLocal
+    from app.services.datasource_config import preload_datasource_config
+
+    async def _preload() -> None:
+        async with AsyncSessionLocal() as db:
+            await preload_datasource_config(db)
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_preload())
+    finally:
+        loop.close()
+
+
+# worker_process_init 在每个 prefork 子进程初始化时触发（主进程不触发，
+# 但任务只在子进程执行）。Celery worker 是独立进程，不经过 FastAPI lifespan，
+# 若不预载，settings 中的业务 URL/Token 为空（.env 已移除），导入与远端取数
+# 任务会报 "HISTORY_DATA_API_URL 未配置"。子进程每次重建都会重新预载，
+# 因此 worker 生命周期内的配置变更最多在子进程回收后生效。
+from celery.signals import worker_process_init  # noqa: E402
+
+
+@worker_process_init.connect
+def _on_worker_process_init(**kwargs: object) -> None:
+    try:
+        _preload_datasource_config_sync()
+        logger.info("worker 子进程已从 sys_config 预载数据源配置")
+    except Exception as exc:  # noqa: BLE001
+        # 预载失败不阻塞 worker 启动，兜底 .env 默认值（与 API lifespan 行为一致）
+        logger.warning("worker 子进程预载数据源配置失败（将使用 .env 默认值）: %s", exc)
