@@ -244,6 +244,25 @@ async def update_datasource_config(
     return after
 
 
+async def preload_datasource_config(db: AsyncSession) -> None:
+    """启动时从 sys_config 预载数据源配置到 settings 内存。
+
+    应用场景：FastAPI lifespan startup 时调用，确保 SignalR 订阅器等
+    组件读取 settings 时获取的是 sys_config 中的运行时配置（真相源），
+    而不是 .env 中的初始默认值（可能为空）。
+
+    与 ``update_datasource_config`` 的区别：
+    - preload 只读取不写入，不触发 Tailscale 切换，不写审计日志
+    - update 是 UI 主动修改时调用，会触发副作用（Tailscale 切换 + 审计）
+    - preload 失败不应阻塞启动，调用方应 try/except 兜底
+    """
+    config = await get_datasource_config(db)
+    for field, attr in _SETTINGS_ATTR_MAP.items():
+        value = config.get(field)
+        if value is not None:
+            setattr(settings, attr, value)
+
+
 async def test_history_api_connection(
     url: str | None,
     token: str | None,
@@ -340,6 +359,7 @@ async def test_signalr_hub_connection(hub_url: str | None) -> dict:
 
 __all__ = [
     "get_datasource_config",
+    "preload_datasource_config",
     "test_history_api_connection",
     "test_signalr_hub_connection",
     "update_datasource_config",

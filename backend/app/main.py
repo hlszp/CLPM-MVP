@@ -177,6 +177,29 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("生产环境：Celery Beat 由独立容器接管，跳过 lifespan 启动")
 
+    # 从 sys_config 预载数据源配置到 settings（运行时真相源优先于 .env）
+    # 方案 B：.env 仅保留基础设施配置 + 合理默认值，业务 URL/Token/SignalR Hub
+    # 等由 sys_config 管理。预载确保 SignalR 订阅器等启动时组件读取到 sys_config
+    # 中的配置，而不是 .env 中的空值。预载失败不应阻塞启动，兜底使用 .env 默认值。
+    from app.core.db import AsyncSessionLocal
+    from app.services.datasource_config import preload_datasource_config
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await preload_datasource_config(db)
+        logger.info(
+            "数据源配置已从 sys_config 预载（network_mode=%s, signalr_enabled=%s, "
+            "history_api_url=%s, signalr_hub_url=%s）",
+            settings.NETWORK_MODE,
+            settings.SIGNALR_ENABLED,
+            "已配置" if settings.HISTORY_DATA_API_URL else "未配置",
+            "已配置" if settings.SIGNALR_HUB_URL else "未配置",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "从 sys_config 预载数据源配置失败（将使用 .env 默认值）: %s", exc
+        )
+
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
 
