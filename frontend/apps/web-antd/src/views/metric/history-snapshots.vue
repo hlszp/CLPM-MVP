@@ -56,6 +56,10 @@ const filterStatus = ref<KpiStatus | undefined>();
 const filterConfidence = ref<ConfidenceLevel | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 
+// 服务端排序状态（综合评分列，其余列按 tsStart DESC 默认序）
+const sortBy = ref<'score' | undefined>();
+const sortOrder = ref<'asc' | 'desc' | undefined>();
+
 // 装置树 + 回路列表
 const plantNodeTree = ref<any[]>([]);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
@@ -128,6 +132,14 @@ const columns = computed<TableColumnsType>(() => [
     dataIndex: 'score',
     width: 90,
     sorter: true,
+    // 受控排序：columns 为 computed（每次渲染新数组），非受控状态下 AntD
+    // 会在数据刷新后丢失内部排序态，导致第二次点击方向错乱
+    sortOrder:
+      sortBy.value === 'score' && sortOrder.value
+        ? (sortOrder.value === 'asc'
+          ? 'ascend'
+          : 'descend')
+        : null,
   },
   {
     title: '好值率',
@@ -230,8 +242,14 @@ async function loadList() {
     if (filterStatus.value) params.status = filterStatus.value;
     if (filterConfidence.value) params.confidenceLevel = filterConfidence.value;
     if (filterDateRange.value) {
-      params.startTime = filterDateRange.value[0].toISOString();
-      params.endTime = filterDateRange.value[1].toISOString();
+      params.startTime = filterDateRange.value[0].startOf('day').toISOString();
+      // 日期型 RangePicker 的结束值是当日 00:00，需扩展到 23:59:59
+      // 否则选「今天」只会命中 00:00 一个小时的快照
+      params.endTime = filterDateRange.value[1].endOf('day').toISOString();
+    }
+    if (sortBy.value && sortOrder.value) {
+      params.sortBy = sortBy.value;
+      params.sortOrder = sortOrder.value;
     }
     const result = await getLoopSnapshotsApi(params);
     snapshotList.value = result.items;
@@ -292,6 +310,21 @@ function handlePlantNodeChange(value: string | undefined) {
   loadList();
 }
 
+// ============ 表格变更（分页 + 服务端排序） ============
+function handleTableChange(p: any, _filters: any, sorter: any) {
+  currentPage.value = p.current;
+  pageSize.value = p.pageSize;
+  const s = Array.isArray(sorter) ? sorter[0] : sorter;
+  if (s?.order && (s.field === 'score' || s.columnKey === 'score')) {
+    sortBy.value = 'score';
+    sortOrder.value = s.order === 'ascend' ? 'asc' : 'desc';
+  } else {
+    sortBy.value = undefined;
+    sortOrder.value = undefined;
+  }
+  loadList();
+}
+
 // ============ 工具函数 ============
 /**
  * 时间窗：只显示结束时间的「MM-DD HH:00」。
@@ -321,6 +354,17 @@ function formatFullTime(ts: null | string | undefined): string {
 function formatNumber(val: null | number | undefined, suffix = ''): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
+}
+
+/**
+ * 综合评分展示（对齐 §7.2.6：可信度 E 级 = INCONCLUSIVE，评分数值不展示）。
+ */
+function formatScore(
+  val: null | number | undefined,
+  confidenceLevel: null | string | undefined,
+): string {
+  if (confidenceLevel === 'E') return '—';
+  return formatNumber(val);
 }
 
 const STATUS_COLOR_MAP: Record<string, string> = {
@@ -451,15 +495,11 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :scroll="{ x: 1800 }"
-        row-key="tsStart"
-        size="small"
-        @change="
-          (p: any) => {
-            currentPage = p.current;
-            pageSize = p.pageSize;
-            loadList();
-          }
+        :row-key="
+          (record: KpiSnapshotItem) => `${record.loopId}_${record.tsStart}`
         "
+        size="small"
+        @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'tsRange'">
@@ -469,7 +509,7 @@ onMounted(() => {
           </template>
           <template v-else-if="column.key === 'score'">
             <span class="clpm-num font-semibold">
-              {{ formatNumber(record.score) }}
+              {{ formatScore(record.score, record.confidenceLevel) }}
             </span>
           </template>
           <template v-else-if="column.key === 'confidenceLevel'">
@@ -569,7 +609,9 @@ onMounted(() => {
           </DescriptionsItem>
           <DescriptionsItem label="综合评分">
             <span class="clpm-num font-semibold">
-              {{ formatNumber(drawerRecord.score) }}
+              {{
+                formatScore(drawerRecord.score, drawerRecord.confidenceLevel)
+              }}
             </span>
           </DescriptionsItem>
           <DescriptionsItem label="可信度">
@@ -736,16 +778,18 @@ onMounted(() => {
                 class="clpm-num font-medium w-12 text-right"
                 :style="{
                   color:
-                    item.score !== null && item.score !== undefined
-                      ? item.score >= 80
-                        ? '#10B981'
-                        : item.score >= 60
-                          ? '#F59E0B'
-                          : '#F43F5E'
-                      : '#9CA3AF',
+                    item.confidenceLevel === 'E'
+                      ? '#9CA3AF'
+                      : item.score !== null && item.score !== undefined
+                        ? item.score >= 80
+                          ? '#10B981'
+                          : item.score >= 60
+                            ? '#F59E0B'
+                            : '#F43F5E'
+                        : '#9CA3AF',
                 }"
               >
-                {{ formatNumber(item.score) }}
+                {{ formatScore(item.score, item.confidenceLevel) }}
               </span>
               <Tag
                 v-if="item.confidenceLevel"
