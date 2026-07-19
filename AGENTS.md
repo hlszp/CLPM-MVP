@@ -84,6 +84,42 @@ cd frontend && pnpm run check:type
 cd e2e && pnpm exec playwright test
 ```
 
+### CI 提交前本地检查（避免 CI lint/format 门禁失败）
+
+```bash
+# backend ruff check + format（CI 门禁，提交前必跑）
+cd backend && uv run ruff check . && uv run ruff format --check .
+
+# 自动修复 ruff 问题
+cd backend && uv run ruff check . --fix && uv run ruff format .
+
+# frontend 格式化（CI oxfmt 门禁）
+cd frontend && pnpm run format
+```
+
+### 网络模式切换验证命令
+
+```bash
+# 查看当前路由走哪个接口（en0=局域网直连 / utun4=Tailscale 隧道）
+route get 192.168.100.2 | grep interface
+
+# 查看 tailscale accept-routes 状态（不需 sudo，RouteAll=true 即已启用）
+tailscale debug prefs | grep RouteAll
+
+# 后端启动日志确认 sys_config 预载
+grep "数据源配置已从 sys_config 预载" /tmp/clpm-backend.log
+
+# 查看 sys_config 当前网络模式
+docker exec clpm-postgres psql -U clpm -d clpm -t -c \
+  "SELECT value FROM sys_config WHERE key='datasource.network_mode';"
+
+# 查看最近 5 条 tailscale 切换审计日志
+docker exec clpm-postgres psql -U clpm -d clpm -c \
+  "SELECT operator, operation_type, before_value, after_value, operated_at \
+   FROM sys_audit_log WHERE operation_type='TAILSCALE_SWITCH' \
+   ORDER BY operated_at DESC LIMIT 5;"
+```
+
 ### 关键注意事项
 
 - **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker
@@ -356,6 +392,7 @@ v6.0 文档统一升级已完成，后续工作方向：
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
 | v6.0 文档统一升级 | `docs/过程文档/superpowers/plans/v6-consistency-check.md` → v6.0 各设计文档 | 文档已统一升级至 v6.0，需持续保持文档与代码一致性 |
 | 新功能开发 | PRD v6.0 → 实现契约 v2.0 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
+| 网络模式切换后续改进 | AGENTS.md → §关键注意事项（网络模式切换） | ① 反向切换验证（wan→lan）未单独测，可补测 `utun4→en0`；② 容器环境 Tailscale 不可用降级策略需确认（当前返回 `skipped`）；③ 公网模式 ping 延迟抖动大（6-63ms）可优化 DERP 节点或 Tailscale 直连；④ sudoers 仅覆盖 Intel Mac（`/usr/local/bin/tailscale`），Apple Silicon Mac 需适配 `/opt/homebrew/bin/tailscale` |
 
 ## Stale docs 防护
 
