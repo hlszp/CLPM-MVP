@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -48,6 +49,15 @@ _ROLE_COLUMN_MAP: dict[str, str] = {
     "PID_I": "pid_i",
     "PID_D": "pid_d",
 }
+
+
+def next_reconnect_delay(current: float, *, cap: float) -> float:
+    """计算下次重连等待秒数：当前等待翻倍，封顶 cap（指数退避）。
+
+    避免远端 Hub 不可用时固定小间隔重连对服务持续施压。
+    """
+    return min(current * 2, cap)
+
 
 # PV 角色对应的质量码列名
 _QUALITY_COLUMN_MAP: dict[str, str | None] = {
@@ -138,17 +148,26 @@ class RealtimeSubscriber:
         logger.info("实时数据订阅已停止")
 
     async def _run(self) -> None:
-        """主循环：连接 → 订阅 → 接收 → 重连."""
+        """主循环：连接 → 订阅 → 接收 → 重连（指数退避）."""
+        base_delay = float(settings.SIGNALR_RECONNECT_INTERVAL)
+        max_delay = float(settings.SIGNALR_RECONNECT_MAX_INTERVAL)
+        delay = base_delay
+        connected_at = 0.0
         while self._running:
             try:
+                connected_at = time.monotonic()
                 await self._connect_and_subscribe()
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "实时数据订阅异常: %s，%ds 后重连", exc, settings.SIGNALR_RECONNECT_INTERVAL
-                )
-                await asyncio.sleep(settings.SIGNALR_RECONNECT_INTERVAL)
+                # 连接健康存活超过 60s 才视为稳定连接，重置退避到 base；
+                # 否则先按当前退避等待，再翻倍（base → ×2 → … → max 封顶），
+                # 避免远端 Hub 不可用时固定小间隔重连持续施压
+                if time.monotonic() - connected_at > 60:
+                    delay = base_delay
+                logger.warning("实时数据订阅异常: %s，%.0fs 后重连", exc, delay)
+                await asyncio.sleep(delay)
+                delay = next_reconnect_delay(delay, cap=max_delay)
             finally:
                 # 确保旧连接在任何情况下都被关闭，防止服务器侧 CLOSE_WAIT 堆积
                 await self._close_ws_safely()

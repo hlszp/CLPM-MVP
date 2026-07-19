@@ -87,10 +87,16 @@ class Settings(BaseSettings):
     HISTORY_DATA_API_TOKEN: str = ""  # Bearer Token（可选）
     HISTORY_DATA_API_TIMEOUT: float = 120.0  # 请求超时（秒，远端大跨度查询可能慢）
 
+    # ---- 远端 API 调用保护（限流 + 熔断，防止压垮边缘 API 或向其持续施压）----
+    REMOTE_API_MAX_CONCURRENCY: int = 4  # 单进程对远端 API 的最大并发请求数
+    REMOTE_API_CIRCUIT_FAILURES: int = 5  # 连续失败达到该次数后触发熔断
+    REMOTE_API_CIRCUIT_OPEN_SECONDS: float = 300.0  # 熔断持续秒数，到期后半开探测
+
     # ---- 实时数据 SignalR/WebSocket ----
     SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:7106/signalr/realValueForClpmHub
     SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
-    SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连间隔（秒）
+    SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连基础间隔（秒，指数退避起点）
+    SIGNALR_RECONNECT_MAX_INTERVAL: int = 30  # 断线重连最大间隔（秒，指数退避上限）
     # 是否将实时数据写回本地 TDengine 宽表（数据架构优化 Phase 1）
     REALTIME_WRITEBACK_ENABLED: bool = True
 
