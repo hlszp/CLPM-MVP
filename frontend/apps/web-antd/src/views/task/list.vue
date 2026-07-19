@@ -87,13 +87,11 @@ const dangerAction = ref<'batch-delete' | 'cancel' | 'delete'>('delete');
 const dangerTask = ref<null | TaskApi.TaskItem>(null);
 const dangerLoading = ref(false);
 
-const dangerTitle = computed(() =>
-  dangerAction.value === 'cancel'
-    ? '取消评估任务'
-    : dangerAction.value === 'delete'
-      ? '删除任务记录'
-      : '批量删除任务',
-);
+const dangerTitle = computed(() => {
+  if (dangerAction.value === 'cancel') return '取消评估任务';
+  if (dangerAction.value === 'delete') return '删除任务记录';
+  return '批量删除任务';
+});
 
 const dangerVerb = computed(() =>
   dangerAction.value === 'cancel' ? '取消' : '删除',

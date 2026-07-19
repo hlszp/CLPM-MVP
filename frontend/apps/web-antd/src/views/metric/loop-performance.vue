@@ -317,12 +317,10 @@ const columns = computed<TableColumnsType>(() => [
     dataIndex: 'score',
     width: 90,
     sorter: true,
-    sortOrder:
-      query.sortBy === 'score'
-        ? query.sortOrder === 'asc'
-          ? 'ascend'
-          : 'descend'
-        : null,
+    sortOrder: (() => {
+      if (query.sortBy !== 'score') return null;
+      return query.sortOrder === 'asc' ? 'ascend' : 'descend';
+    })(),
   },
   {
     title: '准确率',
