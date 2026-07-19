@@ -357,3 +357,134 @@ async def test_list_loop_snapshots_default_time_is_naive() -> None:
         assert tv.tzinfo is None, (
             f"默认时间范围必须为 naive datetime（数据库 ts_start 无时区），但收到 aware: {tv}"
         )
+
+
+# ---------------------------------------------------------------------------
+# 回归测试：latestOnly 模式 score 排序（回路性能页表头排序）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_loop_snapshots_latest_only_sort_by_score() -> None:
+    """latest_only=True 时 sort_by="score" 应生成 score 排序（NULLS LAST）."""
+    from app.services.performance import list_loop_snapshots
+
+    db = AsyncMock()
+    captured_stmts: list = []
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        captured_stmts.append(stmt)
+        result = MagicMock()
+        result.all.return_value = []
+        result.scalar.return_value = 0
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    await list_loop_snapshots(db, latest_only=True, sort_by="score", sort_order="asc")
+
+    assert len(captured_stmts) >= 1
+    sql = str(captured_stmts[0].compile()).upper()
+    assert "ORDER BY" in sql
+    assert "SCORE ASC" in sql
+    assert "NULLS LAST" in sql
+
+
+@pytest.mark.asyncio
+async def test_list_loop_snapshots_default_sort_is_ts_start_desc() -> None:
+    """不传排序参数时保持默认 ts_start DESC（回归：不得改变既有行为）."""
+    from app.services.performance import list_loop_snapshots
+
+    db = AsyncMock()
+    captured_stmts: list = []
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        captured_stmts.append(stmt)
+        result = MagicMock()
+        result.all.return_value = []
+        result.scalar.return_value = 0
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    await list_loop_snapshots(db, latest_only=True)
+
+    sql = str(captured_stmts[0].compile()).upper()
+    assert "TS_START DESC" in sql
+
+
+# ---------------------------------------------------------------------------
+# 回归测试：_parse_dt 时区换算（带偏移输入必须先转 UTC 再去时区）
+# ---------------------------------------------------------------------------
+
+
+def test_parse_dt_converts_offset_to_utc() -> None:
+    """带 +08:00 偏移的输入应换算为 UTC naive，而非直接丢弃偏移."""
+    from app.api.v1.endpoints.performance import _parse_dt
+
+    dt = _parse_dt("2026-07-19T15:00:00+08:00")
+    assert dt == datetime(2026, 7, 19, 7, 0, 0)
+    assert dt is not None and dt.tzinfo is None
+
+    # Z 后缀同样按 UTC 处理
+    dt_z = _parse_dt("2026-07-19T07:00:00Z")
+    assert dt_z == datetime(2026, 7, 19, 7, 0, 0)
+
+    # 无时区输入按 UTC 原样保留（历史行为）
+    dt_naive = _parse_dt("2026-07-19T07:00:00")
+    assert dt_naive == datetime(2026, 7, 19, 7, 0, 0)
+
+    # 非法输入返回 None
+    assert _parse_dt("not-a-date") is None
+    assert _parse_dt(None) is None
+
+
+# ---------------------------------------------------------------------------
+# 回归测试：data_lineage 为 DB 存储的 snake_case 键时响应字段不为空
+# ---------------------------------------------------------------------------
+
+
+class TestDataLineageSnakeCase:
+    """DB JSONB 存的是 snake_case 键（DataLineage.to_dict），
+    响应 dataLineage 必须正确映射而非全空默认值。"""
+
+    def test_snake_case_lineage_mapped(self, client, mock_db, fake_redis) -> None:
+        snap = _make_snapshot_full()
+        snap.data_lineage = {
+            "sampling_freq": "5s",
+            "aggregation_policy": "MEAN",
+            "quality_policy": "KEEP_ALL",
+            "tag_group": "OP_HF",
+            "data_block_ids": ["blk_009"],
+            "valid_rate": 0.75,
+            "data_policy_version": "pre_v2",
+            "algorithm_version": "KPI_CALC_v2.1",
+        }
+        rows = [(snap, "tag1")]
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        lineage = resp.json()["data"]["items"][0]["dataLineage"]
+        assert lineage["samplingFreq"] == "5s"
+        assert lineage["aggregationPolicy"] == "MEAN"
+        assert lineage["qualityPolicy"] == "KEEP_ALL"
+        assert lineage["tagGroup"] == "OP_HF"
+        assert lineage["dataBlockIds"] == ["blk_009"]
+        assert lineage["validRate"] == 0.75
+        assert lineage["dataPolicyVersion"] == "pre_v2"
+        assert lineage["algorithmVersion"] == "KPI_CALC_v2.1"

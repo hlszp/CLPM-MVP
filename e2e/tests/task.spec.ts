@@ -81,7 +81,7 @@ test.describe('任务管理页面 E2E', () => {
   // E2E-TASK-001: 页面加载与 4 个 Tab
   test('E2E-TASK-001: 页面加载与 Tab 结构', async ({ page }) => {
     await page.goto('/metric/tasks');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证 4 个 Tab 存在（tasks.vue TabPane：手动任务/自动任务/评估历史/策略配置）
@@ -102,7 +102,7 @@ test.describe('任务管理页面 E2E', () => {
   // E2E-TASK-002: 默认「手动任务」Tab 内容
   test('E2E-TASK-002: 手动任务 Tab 表格与工具栏', async ({ page }) => {
     await page.goto('/metric/tasks');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 表格可见（recompute.vue Table）
@@ -129,7 +129,7 @@ test.describe('任务管理页面 E2E', () => {
   // E2E-TASK-003: 新建任务 Drawer（dry-run 预览，不提交）
   test('E2E-TASK-003: 新建任务 Drawer 表单', async ({ page }) => {
     await page.goto('/metric/tasks');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 点击「新建任务」打开 Drawer
@@ -197,7 +197,7 @@ test.describe('任务管理页面 E2E', () => {
   // E2E-TASK-004: 自动任务 Tab
   test('E2E-TASK-004: 自动任务 Tab', async ({ page }) => {
     await page.goto('/metric/tasks');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 切换到「自动任务」Tab（tasks.vue 切换时 tabKeys 自增强制重载）
@@ -249,7 +249,7 @@ test.describe('任务管理页面 E2E', () => {
   // E2E-TASK-005: 状态筛选下拉选项
   test('E2E-TASK-005: 状态筛选下拉选项', async ({ page }) => {
     await page.goto('/metric/tasks');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 点击状态筛选 Select（recompute.vue placeholder 状态筛选）
@@ -288,7 +288,7 @@ test.describe('任务管理页面 E2E', () => {
 
     // 验证左侧菜单不包含「评估任务」（metric.ts authority: ADMIN/IC_ENGINEER）
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
     const menuItem = page.getByText('评估任务', { exact: false }).first();
     const hasMenu = await menuItem.isVisible().catch(() => false);
@@ -297,7 +297,7 @@ test.describe('任务管理页面 E2E', () => {
     // 直接访问 URL：PE_ENGINEER 无权限
     // 路由守卫可能拦截（重定向到 403/首页）或允许访问但页面无操作按钮
     await page.goto('/metric/tasks');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     const redirected = !page.url().includes('/metric/tasks');

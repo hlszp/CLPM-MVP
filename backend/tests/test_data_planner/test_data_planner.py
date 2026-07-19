@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -850,3 +850,46 @@ class TestKpiPathNoLttbDownsampling:
         assert not hasattr(dp_module, "lttb_downsample_multi_series"), (
             "DataPlanner 模块不应定义/导入 lttb_downsample_multi_series 函数"
         )
+
+
+class TestRequirementCodeAliases:
+    """DB 列名 → 契约 metric_code 别名解析（_filter_requirements）.
+
+    回归背景：快照表列名 steady_rate 与契约表 metric_code stability_rate
+    命名不一致，按 DB 列名请求时契约查询为空，stability 指标静默跳过，
+    快照只剩 PARTIAL（2026-07-19 定位）。
+    """
+
+    def test_db_column_name_resolves_to_contract_code(self) -> None:
+        from app.services.data_planner import _filter_requirements
+
+        stability_row = MagicMock(metric_code="stability_rate")
+        with patch.dict(
+            "app.services.data_planner._REQUIREMENTS_CACHE",
+            {"stability_rate": stability_row},
+            clear=True,
+        ):
+            result = _filter_requirements(["steady_rate", "good_value_rate"])
+
+        # steady_rate 命中 stability_rate 契约行，且以请求方代码为键
+        assert result == {"steady_rate": stability_row}
+
+    def test_contract_code_still_works(self) -> None:
+        """直接按契约代码请求不受影响."""
+        from app.services.data_planner import _filter_requirements
+
+        stability_row = MagicMock(metric_code="stability_rate")
+        with patch.dict(
+            "app.services.data_planner._REQUIREMENTS_CACHE",
+            {"stability_rate": stability_row},
+            clear=True,
+        ):
+            result = _filter_requirements(["stability_rate"])
+
+        assert result == {"stability_rate": stability_row}
+
+    def test_unknown_code_filtered_out(self) -> None:
+        from app.services.data_planner import _filter_requirements
+
+        with patch.dict("app.services.data_planner._REQUIREMENTS_CACHE", {}, clear=True):
+            assert _filter_requirements(["steady_rate"]) == {}

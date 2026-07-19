@@ -414,9 +414,9 @@ async def get_board_aggregate_endpoint(
         .subquery()
     )
 
-    # 查询每个子节点的最新快照（含 node_type，避免 N+1 查询）
+    # 查询每个子节点的最新快照
     stmt = (
-        select(UnitKpiSummary, PlantNode.name.label("node_name"), PlantNode.type.label("node_type"))
+        select(UnitKpiSummary, PlantNode.name.label("node_name"))
         .join(PlantNode, UnitKpiSummary.node_id == PlantNode.id)
         .join(
             subq,
@@ -429,9 +429,8 @@ async def get_board_aggregate_endpoint(
     result = await db.execute(stmt)
     rows = result.all()
     items = []
-    for summary, node_name, node_type in rows:
+    for summary, node_name in rows:
         item = _build_board_item(summary, node_name)
-        item["_node_type"] = node_type
         items.append(item)
 
     # 获取聚合节点名称
@@ -494,25 +493,22 @@ async def get_board_aggregate_endpoint(
         )
         inconclusive_loops = int(ic_result.scalar() or 0)
 
-    # 计算聚合值（仅使用 UNIT 级节点数据加权，避免父子节点重复）
-    # 过滤出 UNIT 类型的节点（使用查询结果中的 node_type，避免 N+1 查询）
-    unit_items = [item for item in items if item.get("_node_type") == "UNIT"]
-    for item in items:
-        item.pop("_node_type", None)
-
-    # 按 UNIT 节点的 evaluatedLoops 加权平均
-    total_unit_evaluated = sum(
-        (item.get("evaluatedLoops") or 0)
-        for item in unit_items
-        if (item.get("evaluatedLoops") or 0) > 0
-    )
+    # 计算聚合值
+    # v6.1.3 修复：优先取当前节点自身的 unit_kpi_summary 行——该表按节点持久化了
+    # 递归聚合结果（含重要等级加权），是装置级聚合的权威口径，且与明细表首行一致；
+    # 原实现仅对 items 中的 UNIT 级节点加权，选中 FACTORY 或全厂（items 全为
+    # FACTORY 根节点）时无 UNIT 可加，聚合指标全部返回 NULL。
+    # 当前节点无快照（或全厂视图）时，退化为 items 间按 evaluatedLoops 加权平均：
+    # items 仅含当前节点+直接子节点（或全厂根节点），兄弟/根节点间回路不重叠，
+    # 不存在父子重复计数。
+    self_item = next((it for it in items if it.get("nodeId") == plantId), None) if plantId else None
 
     def weighted_avg(field: str) -> float | None:
-        if total_unit_evaluated == 0:
-            return None
+        if self_item is not None and self_item.get(field) is not None:
+            return round(float(self_item[field]), 2)
         total = 0.0
         count = 0
-        for item in unit_items:
+        for item in items:
             val = item.get(field)
             weight = item.get("evaluatedLoops") or 0
             if val is not None and weight > 0:

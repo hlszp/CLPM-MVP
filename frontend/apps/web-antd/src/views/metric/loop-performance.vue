@@ -1,16 +1,18 @@
 <script lang="ts" setup>
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+import type { Dayjs } from 'dayjs';
 
 /**
  * 回路性能列表页
  *
  * 对齐后端 GET /api/v1/performance/loops/snapshots
  * - 顶部工具栏：标题 + 刷新
- * - 筛选区：工厂模型节点 + 控制类型 + 评估状态
- * - 表格：回路编号 / 名称 / 类型 / 控制类型 / 控制方式 / 评估等级 / 综合评分 /
+ * - 筛选区：工厂模型节点 + 回路编号 + 控制类型 + 评估状态 + 可信度 + 时间范围
+ * - 表格：回路编号 / 名称 / 类型 / 控制类型 / 控制方式 / 评估等级 / 综合评分（服务端排序）/
  *   准确率 / 快速率 / 平稳率 / 有效自控率 / 可信度 / 时间窗口 / 评估时间 /
- *   评估状态 / 操作（详情、历史、诊断）
- * - 详情抽屉：回路基本信息 + 8 大 KPI + 4 大诊断指标 + 可信度 + 时间窗 + 评估时间
+ *   评估状态 / 操作（详情、历史、诊断）；行点击打开详情抽屉
+ * - 详情抽屉：回路基本信息 + 8 大 KPI + 5 项诊断/扩展指标（3+1+8 共 12 指标齐全）+
+ *   可信度 + 时间窗 + 评估时间 + 历史快照子表（最近 10 条）
  * - 历史 Modal：时间维度切换（8/12/24/72/168h） + ECharts 趋势图
  * - 诊断 Modal（90% 宽）：4 个 Tab（频谱分析 / 时域分析 / 诊断概览 / 评估历史）
  */
@@ -52,6 +54,7 @@ import {
   message,
   Modal,
   RadioGroup,
+  RangePicker,
   Row,
   Select,
   Spin,
@@ -180,6 +183,16 @@ const statusOptions = [
   { label: '部分', value: 'PARTIAL' },
 ];
 
+/** 可信度筛选选项 */
+const confidenceOptions = [
+  { label: '全部', value: undefined },
+  { label: 'A 优秀', value: 'A' },
+  { label: 'B 良好', value: 'B' },
+  { label: 'C 一般', value: 'C' },
+  { label: 'D 较差', value: 'D' },
+  { label: 'E 不足', value: 'E' },
+];
+
 /** 历史趋势时间窗选项（小时） */
 const historyWindowOptions = [
   { label: '8小时', value: 8 },
@@ -214,9 +227,15 @@ const query = reactive({
   plantNodeId: undefined as string | undefined,
   controlType: undefined as string | undefined,
   status: undefined as KpiStatus | undefined,
+  confidenceLevel: undefined as ConfidenceLevel | undefined,
   loopTagName: '' as string,
+  /** 时间范围（本地时间，提交时转 UTC ISO） */
+  timeRange: undefined as [Dayjs, Dayjs] | undefined,
   page: 1,
   pageSize: 20,
+  /** 服务端排序（仅综合评分列；undefined = 默认 tsStart DESC） */
+  sortBy: undefined as 'score' | undefined,
+  sortOrder: 'desc' as 'asc' | 'desc',
 });
 
 /** 回路元数据 Map（loopId → LoopListItem） */
@@ -251,7 +270,12 @@ function getGrade(score: null | number | undefined): null | number {
 
 // ===== 表格列定义 =====
 
-const columns: TableColumnsType = [
+/**
+ * 列定义（computed：综合评分列的 sortOrder 受控于 query 状态）。
+ * 注意：ClpmDataCanvas 默认 skeleton loading 会卸载 Table，
+ * 非受控排序态会在每次加载后丢失，因此这里显式受控。
+ */
+const columns = computed<TableColumnsType>(() => [
   {
     title: '回路编号',
     key: 'loopTagName',
@@ -293,6 +317,12 @@ const columns: TableColumnsType = [
     dataIndex: 'score',
     width: 90,
     sorter: true,
+    sortOrder:
+      query.sortBy === 'score'
+        ? query.sortOrder === 'asc'
+          ? 'ascend'
+          : 'descend'
+        : null,
   },
   {
     title: '准确率',
@@ -347,7 +377,7 @@ const columns: TableColumnsType = [
     width: 200,
     fixed: 'right' as const,
   },
-];
+]);
 
 // ===== 统计卡片状态 =====
 
@@ -444,33 +474,73 @@ function updateGradeChart() {
   });
 }
 
+/** 合并快照与回路元数据 */
+function mergeLoopMeta(snap: KpiSnapshotItem): LoopPerformanceRow {
+  const meta = snap.loopId ? loopMap.value.get(snap.loopId) : undefined;
+  return {
+    ...snap,
+    loopMeta: meta,
+    description: meta?.description,
+    loopType: meta?.loopType,
+    controlType: meta?.controlType,
+    controlMode: meta?.controlMode,
+  };
+}
+
+/**
+ * 组装快照查询参数（loadList / loadStats 共用）。
+ * 返回 null 表示控制类型筛选无匹配回路（结果必为空，无需请求）。
+ */
+function buildSnapshotParams(): null | Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
+  if (query.status) params.status = query.status;
+  if (query.confidenceLevel) params.confidenceLevel = query.confidenceLevel;
+  if (query.loopTagName) params.loopTagName = query.loopTagName;
+  if (query.timeRange?.[0]) params.startTime = query.timeRange[0].toISOString();
+  if (query.timeRange?.[1]) params.endTime = query.timeRange[1].toISOString();
+  if (query.sortBy) {
+    params.sortBy = query.sortBy;
+    params.sortOrder = query.sortOrder;
+  }
+  // 按控制类型筛选：先在 loopMap 中找到匹配的 loopId，再传给快照接口
+  if (query.controlType) {
+    const matchedIds: string[] = [];
+    for (const [id, loop] of loopMap.value.entries()) {
+      if (loop.controlType === query.controlType) matchedIds.push(id);
+    }
+    if (matchedIds.length === 0) return null;
+    params.loopId = matchedIds.join(',');
+  }
+  return params;
+}
+
+/** 循环分页拉取符合条件的全部快照（后端 pageSize 上限 100） */
+async function fetchAllSnapshots(
+  baseParams: Record<string, unknown>,
+): Promise<KpiSnapshotItem[]> {
+  const allItems: KpiSnapshotItem[] = [];
+  let page = 1;
+  let totalCount: number;
+  do {
+    const result = await getLoopSnapshotsApi({
+      ...baseParams,
+      page,
+      pageSize: 100,
+    } as any);
+    allItems.push(...(result.items || []));
+    totalCount = result.total ?? 0;
+    page += 1;
+  } while ((page - 1) * 100 < totalCount);
+  return allItems;
+}
+
 /** 加载全量统计数据 */
 async function loadStats() {
   try {
-    const baseParams: Record<string, unknown> = { page: 1, pageSize: 100 };
-    if (query.plantNodeId) baseParams.plantNodeId = query.plantNodeId;
-    if (query.status) baseParams.status = query.status;
-    if (query.loopTagName) baseParams.loopTagName = query.loopTagName;
-    if (query.controlType) {
-      const matchedIds: string[] = [];
-      for (const [id, loop] of loopMap.value.entries()) {
-        if (loop.controlType === query.controlType) matchedIds.push(id);
-      }
-      if (matchedIds.length > 0) baseParams.loopId = matchedIds.join(',');
-    }
-
-    // 循环分页拉取全量数据（后端 pageSize 上限 100）
-    const allItems: KpiSnapshotItem[] = [];
-    let page = 1;
-    let totalCount = 0;
-    do {
-      const result = await getLoopSnapshotsApi({ ...baseParams, page } as any);
-      allItems.push(...(result.items || []));
-      totalCount = result.total ?? 0;
-      page += 1;
-    } while ((page - 1) * 100 < totalCount);
-
-    allSnapshots.value = allItems;
+    const baseParams = buildSnapshotParams();
+    allSnapshots.value =
+      baseParams === null ? [] : await fetchAllSnapshots(baseParams);
 
     // 计算等级分布
     const gStats: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -533,6 +603,12 @@ function formatShortTime(ts: null | string | undefined): string {
 function formatNumber(val: null | number | undefined, suffix = ''): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
+}
+
+/** 0~1 比率（如 validRate）格式化为百分比 */
+function formatRatio(val: null | number | undefined): string {
+  if (val === null || val === undefined) return '—';
+  return `${(val * 100).toFixed(2)}%`;
 }
 
 function getMetricValue(
@@ -604,53 +680,35 @@ async function loadList() {
   loading.value = true;
   loadError.value = false;
   try {
-    const params: Record<string, unknown> = {
-      page: query.page,
-      pageSize: query.pageSize,
-    };
-    if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
-    if (query.status) params.status = query.status;
-    if (query.loopTagName) params.loopTagName = query.loopTagName;
-
-    // 按控制类型筛选：先在 loopMap 中找到匹配的 loopId，再传给快照接口
-    if (query.controlType) {
-      const matchedIds: string[] = [];
-      for (const [id, loop] of loopMap.value.entries()) {
-        if (loop.controlType === query.controlType) {
-          matchedIds.push(id);
-        }
-      }
-      if (matchedIds.length === 0) {
-        rows.value = [];
-        total.value = 0;
-        return;
-      }
-      params.loopId = matchedIds.join(',');
+    const params = buildSnapshotParams();
+    if (params === null) {
+      rows.value = [];
+      total.value = 0;
+      return;
     }
 
-    const result = await getLoopSnapshotsApi(params as any);
-    let items = result.items || [];
-
-    // 等级筛选（客户端过滤，因为等级是从评分计算的）
+    // 等级筛选：等级由评分派生，服务端无法过滤，
+    // 需拉全量 → 客户端过滤 → 客户端分页（保证总数与统计卡片一致）
     if (selectedGrade.value !== null) {
-      items = items.filter(
+      const allItems = await fetchAllSnapshots(params);
+      const filtered = allItems.filter(
         (snap) => getGrade(snap.score) === selectedGrade.value,
       );
+      total.value = filtered.length;
+      const startIdx = (query.page - 1) * query.pageSize;
+      rows.value = filtered
+        .slice(startIdx, startIdx + query.pageSize)
+        .map((snap) => mergeLoopMeta(snap));
+      return;
     }
 
-    rows.value = items.map((snap) => {
-      const meta = snap.loopId ? loopMap.value.get(snap.loopId) : undefined;
-      return {
-        ...snap,
-        loopMeta: meta,
-        description: meta?.description,
-        loopType: meta?.loopType,
-        controlType: meta?.controlType,
-        controlMode: meta?.controlMode,
-      };
-    });
-    total.value =
-      selectedGrade.value === null ? result.total : rows.value.length;
+    const result = await getLoopSnapshotsApi({
+      ...params,
+      page: query.page,
+      pageSize: query.pageSize,
+    } as any);
+    rows.value = (result.items || []).map((snap) => mergeLoopMeta(snap));
+    total.value = result.total;
   } catch (error: any) {
     loadError.value = true;
     console.error('加载回路性能列表失败:', error);
@@ -668,9 +726,22 @@ function handleSearch() {
   loadStats();
 }
 
-function handleTableChange(pagination: TablePaginationConfig) {
+function handleTableChange(
+  pagination: TablePaginationConfig,
+  _filters: unknown,
+  sorter: any,
+) {
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize || 20;
+  // 综合评分列服务端排序（升/降/取消三态）
+  const order = Array.isArray(sorter) ? sorter[0]?.order : sorter?.order;
+  if (order === 'ascend' || order === 'descend') {
+    query.sortBy = 'score';
+    query.sortOrder = order === 'ascend' ? 'asc' : 'desc';
+  } else {
+    query.sortBy = undefined;
+    query.sortOrder = 'desc';
+  }
   loadList();
 }
 
@@ -679,14 +750,48 @@ function handleTableChange(pagination: TablePaginationConfig) {
 const drawerVisible = ref(false);
 const drawerRecord = ref<LoopPerformanceRow | null>(null);
 
+/** 抽屉内历史快照子表（最近 10 条） */
+const drawerHistory = ref<KpiSnapshotItem[]>([]);
+const drawerHistoryLoading = ref(false);
+
+async function loadDrawerHistory(loopId: string) {
+  drawerHistoryLoading.value = true;
+  try {
+    const result = await getLoopSnapshotsApi({
+      loopId,
+      latestOnly: false,
+      page: 1,
+      pageSize: 10,
+    });
+    drawerHistory.value = result.items || [];
+  } catch {
+    drawerHistory.value = [];
+  } finally {
+    drawerHistoryLoading.value = false;
+  }
+}
+
 function openDetail(record: LoopPerformanceRow) {
   drawerRecord.value = record;
   drawerVisible.value = true;
+  drawerHistory.value = [];
+  if (record.loopId) {
+    loadDrawerHistory(record.loopId);
+  }
 }
 
 function closeDetail() {
   drawerVisible.value = false;
   drawerRecord.value = null;
+  drawerHistory.value = [];
+}
+
+/** 表格行点击 → 打开详情抽屉（对齐低效排行页行级交互） */
+function rowClick(record: LoopPerformanceRow) {
+  return {
+    onClick: () => openDetail(record),
+    style: { cursor: 'pointer' },
+  };
 }
 
 // ===== 历史 Modal =====
@@ -1050,6 +1155,22 @@ onMounted(async () => {
         style="width: 140px"
         @change="handleSearch"
       />
+      <Select
+        v-model:value="query.confidenceLevel"
+        :options="confidenceOptions"
+        placeholder="可信度"
+        allow-clear
+        style="width: 130px"
+        @change="handleSearch"
+      />
+      <RangePicker
+        v-model:value="query.timeRange"
+        show-time
+        format="MM-DD HH:mm"
+        :placeholder="['开始时间', '结束时间']"
+        style="width: 300px"
+        @change="handleSearch"
+      />
       <Button type="primary" @click="handleSearch">查询</Button>
     </div>
 
@@ -1182,6 +1303,7 @@ onMounted(async () => {
         :columns="columns"
         :data-source="rows"
         :loading="loading"
+        :custom-row="rowClick"
         :pagination="{
           current: query.page,
           pageSize: query.pageSize,
@@ -1335,7 +1457,7 @@ onMounted(async () => {
               <Button
                 type="link"
                 size="small"
-                @click="openDetail(record as LoopPerformanceRow)"
+                @click.stop="openDetail(record as LoopPerformanceRow)"
               >
                 <template #icon>
                   <IconifyIcon icon="ant-design:info-circle-outlined" />
@@ -1345,7 +1467,7 @@ onMounted(async () => {
               <Button
                 type="link"
                 size="small"
-                @click="openHistory(record as LoopPerformanceRow)"
+                @click.stop="openHistory(record as LoopPerformanceRow)"
               >
                 <template #icon>
                   <IconifyIcon icon="ant-design:history-outlined" />
@@ -1355,7 +1477,7 @@ onMounted(async () => {
               <Button
                 type="link"
                 size="small"
-                @click="openDiagnosis(record as LoopPerformanceRow)"
+                @click.stop="openDiagnosis(record as LoopPerformanceRow)"
               >
                 <template #icon>
                   <IconifyIcon icon="ant-design:stethoscope-outlined" />
@@ -1480,8 +1602,8 @@ onMounted(async () => {
           </DescriptionsItem>
         </Descriptions>
 
-        <!-- 4 大诊断指标 -->
-        <div class="mb-2 mt-4 text-sm font-medium">4 大诊断指标</div>
+        <!-- 诊断与扩展指标（不参与评分） -->
+        <div class="mb-2 mt-4 text-sm font-medium">诊断与扩展指标</div>
         <Descriptions
           :column="2"
           size="small"
@@ -1491,11 +1613,14 @@ onMounted(async () => {
           <DescriptionsItem label="饱和率">
             {{ formatNumber(drawerRecord.saturationRate, '%') }}
           </DescriptionsItem>
-          <DescriptionsItem label="振荡率">
-            {{ formatNumber(drawerRecord.oscillationRate, '%') }}
+          <DescriptionsItem label="输出跳变率">
+            {{ formatNumber(drawerRecord.outputTravelIndex) }}
           </DescriptionsItem>
           <DescriptionsItem label="阀门粘滞指数">
             {{ formatNumber(drawerRecord.stictionIndex) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="理想稳定时间">
+            {{ formatNumber(drawerRecord.idealSettlingTime, 's') }}
           </DescriptionsItem>
           <DescriptionsItem label="稳定时间">
             {{ formatNumber(drawerRecord.settlingTime, 's') }}
@@ -1534,12 +1659,101 @@ onMounted(async () => {
             </span>
           </DescriptionsItem>
           <DescriptionsItem label="有效数据率">
-            {{ formatNumber(drawerRecord.validRate) }}
+            {{ formatRatio(drawerRecord.validRate) }}
           </DescriptionsItem>
           <DescriptionsItem label="算法版本">
             {{ drawerRecord.algorithmVersion || '—' }}
           </DescriptionsItem>
         </Descriptions>
+
+        <!-- 历史快照子表（该回路最近 10 条评估记录） -->
+        <div class="mb-2 mt-4 text-sm font-medium">历史快照（最近 10 条）</div>
+        <Table
+          :columns="diagHistoryColumns"
+          :data-source="drawerHistory"
+          :loading="drawerHistoryLoading"
+          :pagination="false"
+          row-key="tsStart"
+          size="small"
+          :scroll="{ x: 680 }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'tsRange'">
+              <span class="font-mono text-xs">
+                {{
+                  formatTsRange(
+                    (record as KpiSnapshotItem).tsStart,
+                    (record as KpiSnapshotItem).tsEnd,
+                  )
+                }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'score'">
+              <span
+                class="font-semibold"
+                :style="{
+                  color: scoreColor((record as KpiSnapshotItem).score),
+                }"
+              >
+                {{ formatNumber((record as KpiSnapshotItem).score) }}
+              </span>
+            </template>
+            <template
+              v-else-if="
+                (
+                  [
+                    'accuracyRate',
+                    'fastRate',
+                    'steadyRate',
+                    'effectiveAutoRate',
+                  ] as string[]
+                ).includes(column.key as string)
+              "
+            >
+              <span class="font-mono text-xs">
+                {{
+                  formatNumber(
+                    getMetricValue(
+                      record as KpiSnapshotItem,
+                      column.dataIndex as string,
+                    ),
+                    '%',
+                  )
+                }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'confidenceLevel'">
+              <Badge
+                v-if="(record as KpiSnapshotItem).confidenceLevel"
+                :color="
+                  CONFIDENCE_COLOR_MAP[
+                    (record as KpiSnapshotItem).confidenceLevel!
+                  ]
+                "
+                :text="
+                  CONFIDENCE_LABEL_MAP[
+                    (record as KpiSnapshotItem).confidenceLevel!
+                  ]
+                "
+              />
+              <span v-else class="text-gray-400">—</span>
+            </template>
+            <template v-else-if="column.key === 'status'">
+              <Tag
+                :color="
+                  STATUS_COLOR_MAP[(record as KpiSnapshotItem).status] ||
+                  'default'
+                "
+                class="m-0"
+              >
+                {{
+                  STATUS_LABEL_MAP[(record as KpiSnapshotItem).status] ||
+                  (record as KpiSnapshotItem).status
+                }}
+              </Tag>
+            </template>
+          </template>
+        </Table>
       </template>
     </Drawer>
 

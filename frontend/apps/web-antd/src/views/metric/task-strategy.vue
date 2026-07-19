@@ -97,7 +97,11 @@ async function loadStrategy() {
   loading.value = true;
   try {
     const data = await getRulesApi();
-    rules.value = data?.items ?? [];
+    // 后端 GET /performance/rules 实际返回 RuleItem[] 数组（ApiResponse<list>），
+    // 兼容 { items } 与数组两种形态，避免解析失败导致策略不同步
+    rules.value = Array.isArray(data)
+      ? (data as unknown as MetricApi.RuleItem[])
+      : (data?.items ?? []);
     // 同步编辑态
     for (const r of rules.value) {
       ruleEnabled[r.ruleCode] = r.isEnabled;
@@ -359,7 +363,8 @@ onMounted(() => {
                 class="mt-1 block text-xs"
                 :style="{ color: themeColors.NEUTRAL }"
               >
-                Celery Worker 并发处理回路数（默认 10）
+                Celery Worker 并发处理回路数（由 EngineRule SCHEDULE_CONCURRENCY
+                配置）
               </span>
             </FormItem>
             <FormItem label="回路级别优先">

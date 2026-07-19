@@ -20,7 +20,6 @@ import {
   DatePicker,
   Drawer,
   message,
-  Modal,
   Progress,
   Select,
   Space,
@@ -35,7 +34,7 @@ import {
   getTaskListApi,
   triggerStandardEvaluateApi,
 } from '#/api/task';
-import { ClpmDataCanvas } from '#/components/clpm';
+import { ClpmDangerConfirmModal, ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TaskList' });
@@ -81,88 +80,111 @@ const taskTypeTextMap: Record<string, string> = {
 const drawerVisible = ref(false);
 const selectedTask = ref<null | TaskApi.TaskItem>(null);
 const selectedRowKeys = ref<string[]>([]);
-const batchDeleteLoading = ref(false);
 
-function requestConfirmation(content: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    Modal.confirm({
-      cancelText: '取消',
-      content,
-      okText: '确认',
-      onCancel: () => resolve(false),
-      onOk: () => resolve(true),
-      title: '请确认',
-    });
-  });
+// ============ 危险操作确认（§9.8：取消/删除任务强制 typed confirmation） ============
+const dangerVisible = ref(false);
+const dangerAction = ref<'batch-delete' | 'cancel' | 'delete'>('delete');
+const dangerTask = ref<null | TaskApi.TaskItem>(null);
+const dangerLoading = ref(false);
+
+const dangerTitle = computed(() =>
+  dangerAction.value === 'cancel'
+    ? '取消评估任务'
+    : dangerAction.value === 'delete'
+      ? '删除任务记录'
+      : '批量删除任务',
+);
+
+const dangerVerb = computed(() =>
+  dangerAction.value === 'cancel' ? '取消' : '删除',
+);
+
+const dangerTarget = computed(() => {
+  if (dangerAction.value === 'batch-delete') {
+    return `已选 ${selectedRowKeys.value.length} 个任务`;
+  }
+  return dangerTask.value
+    ? dangerTask.value.taskId.slice(-8).toUpperCase()
+    : '';
+});
+
+const dangerImpact = computed(() => {
+  if (dangerAction.value === 'batch-delete') {
+    return `将删除 ${selectedRowKeys.value.length} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
+  }
+  const t = dangerTask.value;
+  if (!t) return '';
+  const scope = `任务「${getTaskTitle(t)}」（创建时间 ${formatTime(t.createdAt)}）`;
+  return dangerAction.value === 'cancel'
+    ? `${scope}；取消后计算中止，已写入的快照保留`
+    : `${scope}；仅删除任务记录，不影响已写入的 KPI 快照`;
+});
+
+const dangerRollback = computed(() =>
+  dangerAction.value === 'cancel'
+    ? '取消不可撤销；如需评估可重新触发标准评估'
+    : '任务记录删除后不可恢复',
+);
+
+function openDanger(
+  action: 'batch-delete' | 'cancel' | 'delete',
+  task?: TaskApi.TaskItem,
+) {
+  dangerAction.value = action;
+  dangerTask.value = task ?? null;
+  dangerVisible.value = true;
 }
 
-async function handleCancel(record: TaskApi.TaskItem) {
-  if (
-    !(await requestConfirmation(
-      `确认取消任务 ${record.taskId.slice(-8).toUpperCase()}？`,
-    ))
-  )
-    return;
+async function handleDangerConfirm() {
+  dangerLoading.value = true;
   try {
-    await cancelTaskApi(record.taskId);
-    message.success('任务已取消');
+    if (dangerAction.value === 'cancel' && dangerTask.value) {
+      await cancelTaskApi(dangerTask.value.taskId);
+      message.success('任务已取消');
+    } else if (dangerAction.value === 'delete' && dangerTask.value) {
+      await deleteTaskApi(dangerTask.value.taskId);
+      message.success('任务已删除');
+    } else if (dangerAction.value === 'batch-delete') {
+      const failed: string[] = [];
+      for (const taskId of selectedRowKeys.value) {
+        try {
+          await deleteTaskApi(taskId);
+        } catch {
+          failed.push(taskId);
+        }
+      }
+      if (failed.length > 0) {
+        message.warning(
+          `删除完成，${failed.length} 个任务删除失败（可能非终态）`,
+        );
+      } else {
+        message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
+      }
+      selectedRowKeys.value = [];
+    }
+    dangerVisible.value = false;
     loadList();
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error: any) {
+    message.error(error?.message || '操作失败');
+  } finally {
+    dangerLoading.value = false;
   }
 }
 
-async function handleDelete(record: TaskApi.TaskItem) {
-  if (
-    !(await requestConfirmation(
-      `确认删除任务 ${record.taskId.slice(-8).toUpperCase()}？`,
-    ))
-  )
-    return;
-  try {
-    await deleteTaskApi(record.taskId);
-    message.success('任务已删除');
-    loadList();
-  } catch {
-    // 错误已由拦截器处理
-  }
+function handleCancel(record: TaskApi.TaskItem) {
+  openDanger('cancel', record);
 }
 
-async function handleBatchDelete() {
+function handleDelete(record: TaskApi.TaskItem) {
+  openDanger('delete', record);
+}
+
+function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的任务');
     return;
   }
-  if (
-    !(await requestConfirmation(
-      `确认删除已选 ${selectedRowKeys.value.length} 个任务？`,
-    ))
-  )
-    return;
-  batchDeleteLoading.value = true;
-  try {
-    const failed: string[] = [];
-    for (const taskId of selectedRowKeys.value) {
-      try {
-        await deleteTaskApi(taskId);
-      } catch {
-        failed.push(taskId);
-      }
-    }
-    if (failed.length > 0) {
-      message.warning(
-        `删除完成，${failed.length} 个任务删除失败（可能非终态）`,
-      );
-    } else {
-      message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
-    }
-    selectedRowKeys.value = [];
-    loadList();
-  } catch (error: any) {
-    message.error(error?.message || '批量删除失败');
-  } finally {
-    batchDeleteLoading.value = false;
-  }
+  openDanger('batch-delete');
 }
 
 const rowSelection = computed(() => ({
@@ -255,21 +277,26 @@ const columns = computed<TableColumnsType>(() => [
 ]);
 
 // ============ 加载列表 ============
+/** 组装列表查询参数（日期型 RangePicker 结束值需扩展到当日 23:59:59） */
+function buildQueryParams(): TaskApi.TaskListQueryParams {
+  const params: TaskApi.TaskListQueryParams = {
+    taskType: 'STANDARD',
+    page: currentPage.value,
+    pageSize: pageSize.value,
+  };
+  if (filterStatus.value) params.status = filterStatus.value;
+  if (filterDateRange.value) {
+    params.startTime = filterDateRange.value[0].startOf('day').toISOString();
+    params.endTime = filterDateRange.value[1].endOf('day').toISOString();
+  }
+  return params;
+}
+
 async function loadList() {
   loading.value = true;
   loadError.value = false;
   try {
-    const params: TaskApi.TaskListQueryParams = {
-      taskType: 'STANDARD',
-      page: currentPage.value,
-      pageSize: pageSize.value,
-    };
-    if (filterStatus.value) params.status = filterStatus.value;
-    if (filterDateRange.value) {
-      params.startTime = filterDateRange.value[0].toISOString();
-      params.endTime = filterDateRange.value[1].toISOString();
-    }
-    const result = await getTaskListApi(params);
+    const result = await getTaskListApi(buildQueryParams());
     taskList.value = result.items ?? [];
     totalCount.value = result.total ?? 0;
     updatePolling();
@@ -295,17 +322,7 @@ function updatePolling() {
   if (hasActiveTask() && !pollingTimer) {
     pollingTimer = setInterval(async () => {
       try {
-        const params: TaskApi.TaskListQueryParams = {
-          taskType: 'STANDARD',
-          page: currentPage.value,
-          pageSize: pageSize.value,
-        };
-        if (filterStatus.value) params.status = filterStatus.value;
-        if (filterDateRange.value) {
-          params.startTime = filterDateRange.value[0].toISOString();
-          params.endTime = filterDateRange.value[1].toISOString();
-        }
-        const result = await getTaskListApi(params);
+        const result = await getTaskListApi(buildQueryParams());
         taskList.value = result.items ?? [];
         totalCount.value = result.total ?? 0;
         if (!hasActiveTask()) {
@@ -412,7 +429,7 @@ onUnmounted(() => {
         <Button
           danger
           :disabled="selectedRowKeys.length === 0"
-          :loading="batchDeleteLoading"
+          :loading="dangerLoading && dangerAction === 'batch-delete'"
           @click="handleBatchDelete"
         >
           批量删除
@@ -660,5 +677,22 @@ onUnmounted(() => {
         </div>
       </template>
     </Drawer>
+
+    <!-- 危险操作确认（§9.8：取消/删除任务 typed confirmation 屏障） -->
+    <ClpmDangerConfirmModal
+      v-model:open="dangerVisible"
+      :title="dangerTitle"
+      :action="dangerVerb"
+      :target="dangerTarget"
+      :impact-scope="dangerImpact"
+      :rollback-tip="dangerRollback"
+      :require-confirm-code="dangerAction !== 'batch-delete'"
+      :confirm-code="dangerAction === 'batch-delete' ? '' : dangerTarget"
+      :confirm-code-placeholder="`请输入 ${dangerTarget} 以确认`"
+      :require-reason="false"
+      :show-audit-note="false"
+      :loading="dangerLoading"
+      @confirm="handleDangerConfirm"
+    />
   </div>
 </template>

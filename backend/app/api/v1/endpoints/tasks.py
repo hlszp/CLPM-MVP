@@ -129,6 +129,16 @@ def _to_str_or_none(value: Any) -> str | None:
     return str(value)
 
 
+def _parse_iso_dt(value: str | None) -> datetime | None:
+    """解析 ISO 8601 时间为 datetime（容忍 Z 后缀），失败返回 None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 async def _save_task(task_data: dict[str, str]) -> None:
     """保存任务状态到 Redis Hash 并更新索引.
 
@@ -188,6 +198,13 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         except (json.JSONDecodeError, TypeError):
             plant_node_ids = None
 
+    loops_total = _to_int(data.get("loops_total"))
+    # BACKFILL 运行期 loops_total 会被回填进度覆盖为「回路 × 窗口」工作项数
+    # （kpi_calc._update_backfill_progress / _increment_backfill_progress）。
+    # 任务列表的「评估回路」列语义为回路数，此处按 loop_ids 还原。
+    if data.get("task_type") == TaskType.BACKFILL.value and loop_ids:
+        loops_total = len(loop_ids)
+
     return TaskResponse(
         taskId=data.get("task_id", ""),
         taskType=TaskType(data.get("task_type", TaskType.STANDARD.value)),
@@ -195,7 +212,7 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         title=_to_str_or_none(data.get("title")),
         progress=_to_float(data.get("progress")),
         currentStage=_to_str_or_none(data.get("current_stage")),
-        loopsTotal=_to_int(data.get("loops_total")),
+        loopsTotal=loops_total,
         loopsDone=_to_int(data.get("loops_done")),
         windowCount=_to_int(data.get("window_count")),
         createdAt=data.get("created_at", ""),
@@ -655,6 +672,16 @@ async def trigger_backfill(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    # 禁止未来时间窗（对齐前端 RangePicker 禁未来日期；容忍 5 分钟时钟误差）
+    now_utc = datetime.now(UTC)
+    end_dt_aware = end_dt if end_dt.tzinfo is not None else end_dt.replace(tzinfo=UTC)
+    if end_dt_aware > now_utc + timedelta(minutes=5):
+        raise BizError(
+            code="ERR_BACKFILL_WINDOW_IN_FUTURE",
+            message="时间窗不能超过当前时间（未来时段无数据可重算）",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
     if (end_dt - start_dt) > timedelta(days=_MAX_BACKFILL_WINDOW_DAYS):
         raise BizError(
             code="ERR_BACKFILL_WINDOW_TOO_LARGE",
@@ -962,6 +989,11 @@ async def list_tasks(
         [pid.strip() for pid in plantNodeIds.split(",") if pid.strip()] if plantNodeIds else None
     )
 
+    # 预解析时间筛选（created_at 为 ISO 字符串，统一按 datetime 比较，
+    # 避免 "+00:00" 与 "Z" 混合格式下字符串比较在同秒边界误判）
+    start_dt_filter = _parse_iso_dt(startTime)
+    end_dt_filter = _parse_iso_dt(endTime)
+
     # 从索引获取所有 task_id（按创建时间倒序）
     task_ids = await redis_client.zrevrange(_TASK_INDEX_KEY, 0, -1)
 
@@ -978,11 +1010,13 @@ async def list_tasks(
         if status_filter and data.get("status") != status_filter:
             continue
         # 筛选：创建时间范围
-        created_at = data.get("created_at", "")
-        if startTime and created_at < startTime:
-            continue
-        if endTime and created_at > endTime:
-            continue
+        if start_dt_filter or end_dt_filter:
+            created_dt = _parse_iso_dt(data.get("created_at", ""))
+            if created_dt is not None:
+                if start_dt_filter and created_dt < start_dt_filter:
+                    continue
+                if end_dt_filter and created_dt > end_dt_filter:
+                    continue
 
         # 筛选：装置（仅对 BACKFILL 任务生效）
         if plant_node_filter:
