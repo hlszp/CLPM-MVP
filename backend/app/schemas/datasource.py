@@ -16,9 +16,7 @@ class DataSourceConfigInfo(CamelModel):
     """数据源配置信息。"""
 
     # 历史数据源（保留字段，固定 remote_api，UI 不暴露选择）
-    dataSourceType: str = Field(
-        ..., description="历史数据源类型（保留字段，固定 remote_api）"
-    )
+    dataSourceType: str = Field(..., description="历史数据源类型（保留字段，固定 remote_api）")
     # 网络模式（局域网/公网切换，控制 Tailscale 子网路由）
     networkMode: Literal["lan", "wan"] = Field(
         "lan", description="网络模式：lan 局域网直连 / wan 公网走 Tailscale"

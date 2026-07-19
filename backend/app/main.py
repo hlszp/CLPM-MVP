@@ -196,9 +196,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             "已配置" if settings.SIGNALR_HUB_URL else "未配置",
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "从 sys_config 预载数据源配置失败（将使用 .env 默认值）: %s", exc
-        )
+        logger.warning("从 sys_config 预载数据源配置失败（将使用 .env 默认值）: %s", exc)
 
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber

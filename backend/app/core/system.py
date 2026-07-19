@@ -85,9 +85,7 @@ def switch_network_mode(mode: str) -> dict:
             timeout=_TAILSCALE_TIMEOUT,
             check=False,
         )
-        latency_ms = int(
-            (datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000
-        )
+        latency_ms = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         if result.returncode == 0:
             label = "公网（安装子网路由）" if mode == "wan" else "局域网（移除子网路由）"
             logger.info("Tailscale 切换成功: %s", label)
@@ -104,9 +102,7 @@ def switch_network_mode(mode: str) -> dict:
             "latencyMs": latency_ms,
         }
     except subprocess.TimeoutExpired:
-        latency_ms = int(
-            (datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000
-        )
+        latency_ms = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         logger.warning("Tailscale 切换超时 (%ss)", _TAILSCALE_TIMEOUT)
         return {
             "status": "failed",
@@ -114,9 +110,7 @@ def switch_network_mode(mode: str) -> dict:
             "latencyMs": latency_ms,
         }
     except Exception as exc:
-        latency_ms = int(
-            (datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000
-        )
+        latency_ms = int((datetime.now(UTC).replace(tzinfo=None) - start).total_seconds() * 1000)
         logger.warning("Tailscale 切换异常: %s", exc)
         return {
             "status": "failed",

@@ -210,10 +210,7 @@ async def update_datasource_config(
 
     # 检测 networkMode 变化 → 触发 Tailscale 子网路由切换
     tailscale_result: dict | None = None
-    if (
-        kwargs.get("networkMode") is not None
-        and before["networkMode"] != after["networkMode"]
-    ):
+    if kwargs.get("networkMode") is not None and before["networkMode"] != after["networkMode"]:
         tailscale_result = switch_network_mode(after["networkMode"])
         # 审计日志记录 Tailscale 切换结果
         await _write_audit(

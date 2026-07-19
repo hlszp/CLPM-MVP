@@ -40,6 +40,7 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | 修复 | Celery worker 任务注册修复（include 参数替代 autodiscover_tasks） | `207c882` |
 | v6.0 升级 | 文档统一升级：PRD/FDS/ADS/DDS/IDS/UIUX → v6.0；实现契约 v1.0 → v2.0；DESIGN v2.1 → v3.0；测试数 1762；TS 错误 0 | 见 `docs/过程文档/superpowers/plans/v6-consistency-check.md` |
 | v6.1 升级 | ZL 工业设计规范对齐：诊断中心/指标管理页面清除硬编码 Tailwind 色类；高危操作确认统一改用 ClpmDangerConfirmModal；监控页面 KPI 指标按时间范围聚合 | `1585a7e` `4aea6b8` `80c38ef` `d5f532f` |
+| 网络模式切换 | 链路配置应用层局域网/公网动态切换：Tailscale subnet router + sudoers 免密 + sys_config 真相源 + lifespan 预载；.env 移除业务 URL/Token，统一由 sys_config 管理 | `6730b7f8` `ae0dff0c` `b09c816a` `ce5f4142` `b239b8b` `6a5fa30`（PR #75） |
 
 ## v6.0 核心架构组件
 
@@ -94,6 +95,13 @@ cd e2e && pnpm exec playwright test
 - **前端 TypeScript 错误已全部修复**（v6.0 升级中清零，原 plant-node-tree.vue 3 个 + workbench.vue 3 个已修复）
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
 - **Git 分支**：当前在 `main` 分支；双机协作时使用 `mb/*`（mb 机器）或 `zp/*`（zp 机器）临时分支，详见 §双机协作开发规范
+- **网络模式切换**（2026-07-19，PR #75）：UI 链路配置页（`/loop/aas-sync`）支持局域网/公网动态切换
+  - **配置真相源**：sys_config 数据库表（UI 配置一次即持久化）；.env 仅保留基础设施配置 + 合理默认值（TIMEOUT/RECONNECT_INTERVAL），已移除业务 URL/Token
+  - **lifespan 预载**：`app/main.py` lifespan startup 调用 `preload_datasource_config(db)` 从 sys_config 读取配置并 `setattr(settings, ...)`，确保 SignalR 订阅器等启动时组件读到运行时配置而非 .env 空值；预载失败不阻塞启动，兜底 .env 默认值
+  - **Tailscale 切换**：`app/core/system.py` `switch_network_mode(mode)` 通过 `sudo -n tailscale up --accept-routes={true|false} --reset=false` 动态切换子网路由；`shutil.which("tailscale")` 检测，容器内自动跳过
+  - **sudoers 免密**：`deploy/sudoers.d/clpm-tailscale`（Linux，clpm 用户）/ `clpm-tailscale.macos`（macOS，zhangping 用户）；精确匹配命令参数，`tailscale status` 不在白名单
+  - **路由验证**：`route get 192.168.100.2` 显示 `interface: en0`（局域网直连）或 `utun4`（Tailscale 隧道）；`tailscale debug prefs` 的 `RouteAll` 字段反映 accept-routes 状态
+  - **同模式跳过**：`update_datasource_config` 检测 `before == after` 时跳过 tailscale 命令，避免冗余 sudo 调用
 
 ## 核心决策
 
@@ -110,6 +118,7 @@ cd e2e && pnpm exec playwright test
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 原型/前端开发 | 当前生产前端为 Vue 3 + Vite + TypeScript + vue-vben-admin；重构后路由/页面以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
+| 网络模式 | 应用层局域网/公网切换（2026-07-19）：UI 单 URL 输入，Tailscale subnet router 透明转发；.env 移除业务 URL/Token（HISTORY_DATA_API_URL/HISTORY_DATA_API_TOKEN/SIGNALR_HUB_URL），sys_config 为运行时真相源；lifespan 启动通过 `preload_datasource_config()` 预载 sys_config 到 settings 内存；`sudo -n tailscale up --accept-routes={true\|false} --reset=false` 动态切换子网路由，sudoers 免密配置见 `deploy/sudoers.d/` |
 | 文档权威性 | PRD v6.0 负责产品需求；实现契约 v2.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互（已对齐 v6.1 代码，含 ZL 工业设计规范）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## 双机协作开发规范
