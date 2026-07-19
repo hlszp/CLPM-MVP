@@ -75,8 +75,12 @@ class Settings(BaseSettings):
     AAS_SECURITY_MODE: str = "SignAndEncrypt"  # None/Sign/SignAndEncrypt
 
     # ---- 数据源切换 ----
-    # tdengine: 直接查 TDengine（默认）；remote_api: 通过外部 HTTP API 查询
-    DATA_SOURCE_TYPE: str = "tdengine"
+    # tdengine: 直接查 TDengine（开发环境）；remote_api: 通过外部 HTTP API 查询（生产环境，默认）
+    DATA_SOURCE_TYPE: str = "remote_api"
+
+    # ---- 网络模式（局域网/公网切换，控制 Tailscale 子网路由）----
+    # lan: 局域网直连（默认，生产环境）；wan: 公网走 Tailscale（调试用）
+    NETWORK_MODE: str = "lan"
 
     # ---- 外部历史数据 API（HistoryDataAppService）----
     HISTORY_DATA_API_URL: str = ""  # 如 http://localhost:7106/api/services/v1/HistoryData/Get
