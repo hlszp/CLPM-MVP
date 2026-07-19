@@ -1,0 +1,18 @@
+# CLPM Tailscale 切换免密 sudo（Linux 生产服务器）
+#
+# 用途：允许 clpm 应用用户免密执行 tailscale up --accept-routes[=true|false] --reset=false
+#       用于应用层局域网/公网模式动态切换（详见 backend/app/core/system.py）
+#
+# 安装：
+#   sudo cp deploy/sudoers.d/clpm-tailscale /etc/sudoers.d/clpm-tailscale
+#   sudo chmod 440 /etc/sudoers.d/clpm-tailscale
+#   sudo visudo -c
+#
+# 验证（以 clpm 用户身份）：
+#   sudo -n /usr/bin/tailscale status
+#
+# 路径需根据生产服务器 `which tailscale` 调整（默认 /usr/bin/tailscale）
+# 故障排查：sudoers 路径不匹配会返回 "sudo: a password is required"，应用层返回 failed
+
+clpm ALL=(root) NOPASSWD: /usr/bin/tailscale up --accept-routes=true --reset=false
+clpm ALL=(root) NOPASSWD: /usr/bin/tailscale up --accept-routes=false --reset=false

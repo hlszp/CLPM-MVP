@@ -21,12 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.system import _is_tailscale_available, switch_network_mode
 from app.models.audit import SysAuditLog
 from app.models.sys_config import SysConfig
 
 # sys_config 表中的数据源配置键
 DATASOURCE_CONFIG_KEYS = {
     "dataSourceType": "datasource.type",
+    "networkMode": "datasource.network_mode",
     "historyApiUrl": "datasource.history_api_url",
     "historyApiToken": "datasource.history_api_token",
     "historyApiTimeout": "datasource.history_api_timeout",
@@ -39,6 +41,7 @@ DATASOURCE_CONFIG_KEYS = {
 # 字段 → settings 属性名 映射（用于同步内存）
 _SETTINGS_ATTR_MAP = {
     "dataSourceType": "DATA_SOURCE_TYPE",
+    "networkMode": "NETWORK_MODE",
     "historyApiUrl": "HISTORY_DATA_API_URL",
     "historyApiToken": "HISTORY_DATA_API_TOKEN",
     "historyApiTimeout": "HISTORY_DATA_API_TIMEOUT",
@@ -58,6 +61,7 @@ _TYPE_CASTERS: dict[str, type] = {
 
 _KEY_DESCRIPTIONS = {
     "dataSourceType": "历史数据源类型 tdengine/remote_api",
+    "networkMode": "网络模式 lan（局域网直连）/wan（公网走 Tailscale）",
     "historyApiUrl": "外部历史数据 API 地址",
     "historyApiToken": "外部历史数据 API 鉴权 Token",
     "historyApiTimeout": "外部历史数据 API 超时（秒）",
@@ -66,6 +70,9 @@ _KEY_DESCRIPTIONS = {
     "signalrReconnectInterval": "SignalR 断线重连间隔（秒）",
     "realtimeWritebackEnabled": "实时数据写回本地 TDengine 宽表（仅 tdengine 模式）",
 }
+
+# 支持的网络模式
+_VALID_NETWORK_MODES = {"lan", "wan"}
 
 
 async def _get_config_value(db: AsyncSession, key: str) -> str | None:
@@ -134,6 +141,7 @@ async def get_datasource_config(db: AsyncSession) -> dict:
 
     return {
         "dataSourceType": values["dataSourceType"] or settings.DATA_SOURCE_TYPE,
+        "networkMode": values["networkMode"] or settings.NETWORK_MODE,
         "historyApiUrl": (
             values["historyApiUrl"]
             if values["historyApiUrl"] is not None
@@ -160,6 +168,8 @@ async def get_datasource_config(db: AsyncSession) -> dict:
         # 运行态：从 settings 读取（启动时初始化的实际状态）
         "historyProviderActive": settings.DATA_SOURCE_TYPE,
         "signalrSubscriberRunning": settings.SIGNALR_ENABLED,
+        # tailscale 客户端可用性预检（容器内为 False）
+        "tailscaleAvailable": _is_tailscale_available(),
     }
 
 
@@ -170,10 +180,16 @@ async def update_datasource_config(
 ) -> dict:
     """更新数据源配置（即时同步到 settings 内存）。
 
-    即时生效项：historyApiUrl / historyApiToken / historyApiTimeout
-    / signalrHubUrl / signalrReconnectInterval
+    即时生效项：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken
+    / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
     重启生效项：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）
     """
+    # 校验 networkMode 值域
+    if kwargs.get("networkMode") is not None:
+        nm = kwargs["networkMode"]
+        if nm not in _VALID_NETWORK_MODES:
+            raise ValueError(f"不支持的 networkMode: {nm!r}，可选: lan / wan")
+
     before = await get_datasource_config(db)
     before_json = json.dumps(before, ensure_ascii=False)
 
@@ -191,6 +207,23 @@ async def update_datasource_config(
         setattr(settings, _SETTINGS_ATTR_MAP[field], value)
 
     after = await get_datasource_config(db)
+
+    # 检测 networkMode 变化 → 触发 Tailscale 子网路由切换
+    tailscale_result: dict | None = None
+    if kwargs.get("networkMode") is not None and before["networkMode"] != after["networkMode"]:
+        tailscale_result = switch_network_mode(after["networkMode"])
+        # 审计日志记录 Tailscale 切换结果
+        await _write_audit(
+            db=db,
+            operator=operator,
+            operation_type="TAILSCALE_SWITCH",
+            before_value=before["networkMode"],
+            after_value=(
+                f"{after['networkMode']} -> {tailscale_result['status']}: "
+                f"{tailscale_result['message']}"
+            ),
+        )
+
     after_json = json.dumps(after, ensure_ascii=False)
 
     await _write_audit(
@@ -202,7 +235,29 @@ async def update_datasource_config(
     )
     await db.commit()
 
+    # 若触发了 Tailscale 切换，在返回值中附加结果
+    if tailscale_result is not None:
+        after["tailscaleSwitch"] = tailscale_result
     return after
+
+
+async def preload_datasource_config(db: AsyncSession) -> None:
+    """启动时从 sys_config 预载数据源配置到 settings 内存。
+
+    应用场景：FastAPI lifespan startup 时调用，确保 SignalR 订阅器等
+    组件读取 settings 时获取的是 sys_config 中的运行时配置（真相源），
+    而不是 .env 中的初始默认值（可能为空）。
+
+    与 ``update_datasource_config`` 的区别：
+    - preload 只读取不写入，不触发 Tailscale 切换，不写审计日志
+    - update 是 UI 主动修改时调用，会触发副作用（Tailscale 切换 + 审计）
+    - preload 失败不应阻塞启动，调用方应 try/except 兜底
+    """
+    config = await get_datasource_config(db)
+    for field, attr in _SETTINGS_ATTR_MAP.items():
+        value = config.get(field)
+        if value is not None:
+            setattr(settings, attr, value)
 
 
 async def test_history_api_connection(
@@ -301,6 +356,7 @@ async def test_signalr_hub_connection(hub_url: str | None) -> dict:
 
 __all__ = [
     "get_datasource_config",
+    "preload_datasource_config",
     "test_history_api_connection",
     "test_signalr_hub_connection",
     "update_datasource_config",
