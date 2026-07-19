@@ -388,24 +388,19 @@ async def get_board_aggregate_endpoint(
         result = await db.execute(loop_query)
         loop_ids = [str(row[0]) for row in result.all()]
 
-    # 使用递归 CTE 获取当前节点及所有下属节点 ID 列表（用于查询 unit_kpi_summary）
+    # 明细表只列出当前节点及其直接子节点（不含本节点之外的下下层节点）：
+    # 第一行固定为当前节点统计，后续行为下一层子节点性能数据
     if plantId:
-        cte_sql = text("""
-            WITH RECURSIVE node_tree AS (
-                SELECT id FROM plant_node WHERE id = :node_id
-                UNION ALL
-                SELECT child.id FROM plant_node child
-                JOIN node_tree ON child.parent_id = node_tree.id
-            )
-            SELECT id FROM node_tree
-        """)
-        result = await db.execute(cte_sql, {"node_id": plantId})
-        descendant_ids = [str(row.id) for row in result.all()]
+        result = await db.execute(
+            select(PlantNode.id).where((PlantNode.id == plantId) | (PlantNode.parent_id == plantId))
+        )
+        item_node_ids = [str(row.id) for row in result.all()]
     else:
-        result = await db.execute(select(PlantNode.id))
-        descendant_ids = [str(row.id) for row in result.all()]
+        # 未指定节点时：列出全部根节点（顶层）
+        result = await db.execute(select(PlantNode.id).where(PlantNode.parent_id.is_(None)))
+        item_node_ids = [str(row.id) for row in result.all()]
 
-    if not descendant_ids:
+    if not item_node_ids:
         return success(data={"items": [], "total": 0})
 
     # 子查询：每个 node_id 的最大 snapshot_time
@@ -414,7 +409,7 @@ async def get_board_aggregate_endpoint(
             UnitKpiSummary.node_id.label("nid"),
             func.max(UnitKpiSummary.snapshot_time).label("max_ts"),
         )
-        .where(UnitKpiSummary.node_id.in_(descendant_ids))
+        .where(UnitKpiSummary.node_id.in_(item_node_ids))
         .group_by(UnitKpiSummary.node_id)
         .subquery()
     )

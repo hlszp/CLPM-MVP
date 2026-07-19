@@ -42,6 +42,7 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | v6.1 升级 | ZL 工业设计规范对齐：诊断中心/指标管理页面清除硬编码 Tailwind 色类；高危操作确认统一改用 ClpmDangerConfirmModal；监控页面 KPI 指标按时间范围聚合 | `1585a7e` `4aea6b8` `80c38ef` `d5f532f` |
 | 网络模式切换 | 链路配置应用层局域网/公网动态切换：Tailscale subnet router + sudoers 免密 + sys_config 真相源 + lifespan 预载；.env 移除业务 URL/Token，统一由 sys_config 管理 | `6730b7f8` `ae0dff0c` `b09c816a` `ce5f4142` `b239b8b` `6a5fa30`（PR #75） |
 | 数据导入韧性 | 历史导入 chunk 级重试（502/503/504/429 + 超时/网络异常，指数退避 1/2/4s 最多 3 次）+ 回路并发 5→2 + chunk 跨度 24h→3h + 远端超时默认 30s→120s | `b74a6b4`（PR #74） |
+| 数据链路修复 | Celery worker 经 `worker_process_init` 预载 sys_config（此前仅 API lifespan 预载，worker 取不到业务 URL 导致导入/远端取数全失败）；实时自控率/回路状态统计改读 Redis 实时缓存（原只读 PG `tag_registry.current_value`，AAS 停更后数据过期）；装置/单元性能明细表改为当前节点+直接子节点 | PR #79 |
 
 ## v6.0 核心架构组件
 
@@ -123,7 +124,9 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 
 ### 关键注意事项
 
-- **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker
+- **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker；sys_config 业务配置（URL/Token）变更对 worker 生效需重启 worker 或等子进程回收（worker_process_init 每子进程预载一次）
+- **Worker 静默挂死的识别与处置**（2026-07-19 实测）：worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspect` 无响应、日志停更数小时），表现为任务卡 PENDING、broker 队列持续积压。诊断：`docker exec clpm-redis redis-cli -n 1 LLEN default`（队列长度）+ `pgrep -P <worker_pid>`（池子进程数）。处置：`kill <主进程pid>`（必要时 -9）后重启 worker；积压消息会在重启后全部追平（导入/回填类重任务注意耗时）
+- **remote_api 模式下 KPI 不回读本地 TDengine**（2026-07-19 确认的架构现状）：`DATA_SOURCE_TYPE=remote_api` 时 DataPlanner 全量走远端 API，历史导入写入本地 TDengine 宽表的数据不参与 KPI 计算。远端 API 挂死（TCP 通但 HTTP 不应答）会导致回填全部空数据块 → 快照全 INCONCLUSIVE/PARTIAL → 饼图/TOP5/评级空白。远端服务恢复后需重新触发回填
 - **Worker 并发与回填性能**（2026-07-18 性能优化）：prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.prod` 中 `CELERY_WORKER_CONCURRENCY` 需按宿主机核数同步；回填任务按"1 窗口 = 1 个 chord 子任务"派发，27 回路 × 24h 实测约 52s（0.08s/回路时）；整点自动任务 27 回路 × 1h 实测约 1.9s（0.07s/回路时）。实测脚本：`backend/scripts/measure_backfill_perf.py`
 - **prewarm 预热策略已废止**（2026-07-18）：原"每小时 55 分"预热窗口与整点任务窗口错位一小时（预热的是上一任务已算完的窗口，从未命中），已移除 beat 条目、worker_ready 预热与 L2 兜底预热。整点任务数据来源统一为 **realtime 滚动缓存**（`realtime:history:*`，保留 75 分钟×1Hz=4500 点，provider 对近 1 小时窗口自动探测）+ TDengine 回源兜底；`prewarm_cache` 任务保留供手工/运维调用
 - **macOS fork 时区陷阱**：celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）

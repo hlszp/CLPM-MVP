@@ -97,8 +97,9 @@ async def query_realtime_auto_rate(
 ) -> dict | None:
     """查询当前时刻处于自动模式的回路占比（实时自控率）。
 
-    从 TDengine 查询每个回路的最新 MODE 值，
-    根据该回路的投用定义（loop_mode_mapping）判断是否算自动模式。
+    MODE 最新值优先读 Redis 实时缓存（SignalR 订阅器维护的 ``realtime:{tagCode}``），
+    缓存缺失时回退 PostgreSQL ``tag_registry.current_value``（仅 AAS 同步写入，可能过期），
+    然后根据该回路的投用定义（loop_mode_mapping）判断是否算自动模式。
     无投用定义的回路回退到默认 {1, 2, 3}（向后兼容）。
 
     Args:
@@ -147,17 +148,32 @@ async def query_realtime_auto_rate(
         logger.debug("[实时自控率] 无 MODE tag 映射，跳过")
         return None
 
-    # --- 3. 从 tag_registry.current_value 读取最新 MODE 值（实时数据订阅写入）---
+    # --- 3. 读取最新 MODE 值：优先 Redis 实时缓存（SignalR 订阅器维护），
+    #        缺失的 tag 回退 tag_registry.current_value（AAS 同步写入，可能过期）---
     now = datetime.now(UTC)
     tag_names = [row.tag_name for row in rows]
-    tag_result = await db.execute(
-        select(TagRegistry.tag_name, TagRegistry.current_value).where(
-            TagRegistry.tag_name.in_(tag_names)
+
+    tag_mode_map: dict[str, object] = {}
+    try:
+        from app.services.data_source.realtime_subscriber import get_subscriber
+
+        cached_list = await get_subscriber().get_cached_values(tag_names)
+        for item in cached_list:
+            tc = item.get("tagCode")
+            if tc:
+                tag_mode_map[tc] = item.get("value")
+    except Exception:
+        logger.warning("[实时自控率] 从 Redis 读取实时 MODE 值失败，回退数据库值", exc_info=True)
+
+    missing = [name for name in tag_names if tag_mode_map.get(name) in (None, "")]
+    if missing:
+        tag_result = await db.execute(
+            select(TagRegistry.tag_name, TagRegistry.current_value).where(
+                TagRegistry.tag_name.in_(missing)
+            )
         )
-    )
-    tag_mode_map: dict[str, float | None] = {
-        row.tag_name: row.current_value for row in tag_result.all()
-    }
+        for row in tag_result.all():
+            tag_mode_map[row.tag_name] = row.current_value
 
     # --- 4. 按回路投用定义判断是否算自动 ---
     DEFAULT_AUTO_MODES = {1, 2, 3}  # 向后兼容默认值
@@ -167,10 +183,10 @@ async def query_realtime_auto_rate(
 
     for row in rows:
         mode_val = tag_mode_map.get(row.tag_name)
-        if mode_val is None:
+        if mode_val is None or mode_val == "":
             continue
         try:
-            mode_int = int(mode_val)
+            mode_int = int(float(mode_val))  # type: ignore[arg-type]
         except (ValueError, TypeError):
             continue
         valid_count += 1
@@ -183,7 +199,7 @@ async def query_realtime_auto_rate(
             auto_count += 1
 
     if valid_count == 0:
-        logger.debug("[实时自控率] 无可用 MODE 数据（tag_registry.current_value 为空）")
+        logger.debug("[实时自控率] 无可用 MODE 数据（Redis 缓存与数据库值均为空）")
         return None
 
     rate = round(auto_count / valid_count * 100, 2)
