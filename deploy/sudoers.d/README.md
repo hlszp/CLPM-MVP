@@ -12,9 +12,9 @@ CLPM 链路配置页 `/loop/aas-sync` 切换"局域网/公网"时，后端通过
 |---|---|---|---|
 | `clpm-tailscale` | Linux 生产服务器 | `clpm` | `/usr/bin/tailscale` |
 | `clpm-tailscale.macos` | macOS 开发机（Intel） | `zhangping` | `/usr/local/bin/tailscale` |
-| `clpm-tailscale.macos` | macOS 开发机（Apple Silicon） | `zhangping` | `/opt/homebrew/bin/tailscale`（需手动改路径） |
+| `clpm-tailscale.macos-arm64` | macOS 开发机（Apple Silicon） | `zhangping` | `/opt/homebrew/bin/tailscale` |
 
-> Apple Silicon Mac 用户请将 `clpm-tailscale.macos` 中的 `/usr/local/bin/tailscale` 改为 `/opt/homebrew/bin/tailscale`。
+> 安装前先用 `which tailscale` 确认实际路径，选择对应文件；路径仍不一致时手动修改后再安装。
 
 ## 安装步骤
 
@@ -30,14 +30,14 @@ sudo chmod 440 /etc/sudoers.d/clpm-tailscale
 # 3. 语法校验
 sudo visudo -c
 
-# 4. 验证免密（以 clpm 用户身份）
-sudo -n /usr/bin/tailscale status
+# 4. 验证免密（sudo -l 列出授权，不执行命令；注意 tailscale status 不在白名单）
+sudo -nl | grep tailscale
 ```
 
 ### macOS 开发机（zhangping 用户）
 
 ```bash
-# 1. 拷贝到 /etc/sudoers.d/
+# 1. 拷贝到 /etc/sudoers.d/（Apple Silicon 改用 clpm-tailscale.macos-arm64）
 sudo cp deploy/sudoers.d/clpm-tailscale.macos /etc/sudoers.d/clpm-tailscale
 
 # 2. 设置权限
@@ -46,8 +46,10 @@ sudo chmod 440 /etc/sudoers.d/clpm-tailscale
 # 3. 语法校验
 sudo visudo -c
 
-# 4. 验证免密
-sudo -n /usr/local/bin/tailscale status
+# 4. 验证免密（注意：tailscale status 不在白名单，必然提示密码）
+sudo -nl | grep tailscale
+# 或用白名单命令做幂等验证（重复应用当前状态，无副作用）：
+sudo -n /usr/local/bin/tailscale up --accept-routes=false --reset=false
 ```
 
 ## 路径查询
