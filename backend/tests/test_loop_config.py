@@ -364,11 +364,18 @@ class TestAggregateNodeSnapshotLevelWeighting:
 # ===========================================================================
 
 
+def _mock_redis_subscriber(cached: list[dict] | None = None) -> MagicMock:
+    """构造 realtime subscriber mock，get_cached_values 返回指定缓存列表。"""
+    subscriber = MagicMock()
+    subscriber.get_cached_values = AsyncMock(return_value=cached or [])
+    return subscriber
+
+
 class TestRealtimeAutoRate:
     """实时自控率读投用定义测试。
 
     验证 query_realtime_auto_rate 在有/无投用定义时的行为。
-    使用 mock_db + mock TDengine（patch query_trend_data）。
+    使用 mock_db（PG 回退路径）+ mock Redis 订阅器（空缓存）。
     """
 
     @pytest.mark.asyncio
@@ -391,7 +398,7 @@ class TestRealtimeAutoRate:
             MagicMock(loop_id="loop-001", tag_name="TAG_001"),
             MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        # 3rd execute: tag_registry.current_value 读取最新 MODE 值
+        # 3rd execute: Redis 缓存缺失，回退 tag_registry.current_value
         current_rows = [
             MagicMock(tag_name="TAG_001", current_value=1),
             MagicMock(tag_name="TAG_002", current_value=4),
@@ -404,7 +411,11 @@ class TestRealtimeAutoRate:
             ]
         )
 
-        result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=_mock_redis_subscriber(),
+        ):
+            result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
         assert result is not None
         assert result["rate"] == Decimal("50.00")
@@ -427,7 +438,7 @@ class TestRealtimeAutoRate:
             MagicMock(loop_id="loop-001", tag_name="TAG_001"),
             MagicMock(loop_id="loop-002", tag_name="TAG_002"),
         ]
-        # 3rd execute: tag_registry.current_value 读取最新 MODE 值
+        # 3rd execute: Redis 缓存缺失，回退 tag_registry.current_value
         current_rows = [
             MagicMock(tag_name="TAG_001", current_value=1),
             MagicMock(tag_name="TAG_002", current_value=2),
@@ -440,7 +451,11 @@ class TestRealtimeAutoRate:
             ]
         )
 
-        result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=_mock_redis_subscriber(),
+        ):
+            result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
 
         assert result is not None
         assert result["rate"] == Decimal("100.00")
@@ -457,3 +472,140 @@ class TestRealtimeAutoRate:
         assert result is None
         # 空列表时应立即返回，不查询 DB
         db.execute.assert_not_called()
+
+
+class TestRealtimeAutoRateRedisSource:
+    """实时自控率 Redis 优先数据源测试。
+
+    回归背景：原实现只读 PG tag_registry.current_value（仅 AAS 同步写入，
+    AAS_SYNC_ENABLED=False 时数据永久过期），与 SignalR 实时订阅维护的
+    Redis 实时缓存（realtime:{tagCode}）脱节，导致回路状态统计/实时自控率
+    不随真实 MODE 变化。修复后：Redis 优先，缺失回退 PG。
+    """
+
+    @pytest.mark.asyncio
+    async def test_redis_hit_takes_priority_and_skips_pg(self) -> None:
+        """Redis 全命中时直接使用 Redis 值，不再查询 PG current_value。
+
+        Redis: TAG_001=1（自动）、TAG_002=0（手动）。
+        期望：1/2 = 50.0%，且 db.execute 只调用 2 次（投用定义 + tag 映射）。
+        """
+        db = AsyncMock()
+        tag_rows = [
+            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
+            MagicMock(loop_id="loop-002", tag_name="TAG_002"),
+        ]
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_rows_mock([]),
+                _make_rows_mock(tag_rows),
+            ]
+        )
+        cached = [
+            {"tagCode": "TAG_001", "value": "1", "quality": 1},
+            {"tagCode": "TAG_002", "value": "0", "quality": 1},
+        ]
+
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=_mock_redis_subscriber(cached),
+        ):
+            result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
+
+        assert result is not None
+        assert result["rate"] == Decimal("50.00")
+        assert result["auto_count"] == 1
+        assert result["manual_count"] == 1
+        assert result["total_count"] == 2
+        assert result["mode_counts"] == {0: 1, 1: 1, 2: 0, 3: 0, 4: 0}
+        # Redis 全命中：仅 2 次 DB 查询（投用定义 + tag 映射），无 current_value 回退查询
+        assert db.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_redis_partial_hit_falls_back_to_pg(self) -> None:
+        """Redis 部分命中时，缺失的 tag 回退 PG current_value。
+
+        Redis: TAG_001=1；PG: TAG_002=2。两者都计入统计。
+        期望：2/2 = 100.0%（默认 {1,2,3}）。
+        """
+        db = AsyncMock()
+        tag_rows = [
+            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
+            MagicMock(loop_id="loop-002", tag_name="TAG_002"),
+        ]
+        current_rows = [MagicMock(tag_name="TAG_002", current_value=2)]
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_rows_mock([]),
+                _make_rows_mock(tag_rows),
+                _make_rows_mock(current_rows),
+            ]
+        )
+        cached = [{"tagCode": "TAG_001", "value": "1", "quality": 1}]
+
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=_mock_redis_subscriber(cached),
+        ):
+            result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
+
+        assert result is not None
+        assert result["rate"] == Decimal("100.00")
+        assert result["auto_count"] == 2
+        assert result["total_count"] == 2
+        assert db.execute.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_redis_error_falls_back_to_pg(self) -> None:
+        """Redis 读取异常时回退 PG，不中断统计。"""
+        db = AsyncMock()
+        tag_rows = [
+            MagicMock(loop_id="loop-001", tag_name="TAG_001"),
+            MagicMock(loop_id="loop-002", tag_name="TAG_002"),
+        ]
+        current_rows = [
+            MagicMock(tag_name="TAG_001", current_value=1),
+            MagicMock(tag_name="TAG_002", current_value=2),
+        ]
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_rows_mock([]),
+                _make_rows_mock(tag_rows),
+                _make_rows_mock(current_rows),
+            ]
+        )
+        subscriber = MagicMock()
+        subscriber.get_cached_values = AsyncMock(side_effect=ConnectionError("redis down"))
+
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=subscriber,
+        ):
+            result = await query_realtime_auto_rate(db, ["loop-001", "loop-002"])
+
+        assert result is not None
+        assert result["rate"] == Decimal("100.00")
+        assert result["auto_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_redis_string_float_value_parsed(self) -> None:
+        """Redis 字符串值如 "1.0" 应解析为 MODE 1（自动）。"""
+        db = AsyncMock()
+        tag_rows = [MagicMock(loop_id="loop-001", tag_name="TAG_001")]
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_rows_mock([]),
+                _make_rows_mock(tag_rows),
+            ]
+        )
+        cached = [{"tagCode": "TAG_001", "value": "1.0", "quality": 1}]
+
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=_mock_redis_subscriber(cached),
+        ):
+            result = await query_realtime_auto_rate(db, ["loop-001"])
+
+        assert result is not None
+        assert result["auto_count"] == 1
+        assert result["mode_counts"][1] == 1
