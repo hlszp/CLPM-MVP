@@ -73,12 +73,38 @@ _REQUIREMENTS_CACHE: dict[str, Any] = {}
 _REQUIREMENTS_CACHE_TS: float = 0.0
 _REQUIREMENTS_CACHE_TTL = 300.0  # 5 分钟
 
+# DB 列名 → 契约 metric_code 别名（请求方用 DB 列名、契约表用 Calculator 代码时解析）。
+# 与 app.tasks.kpi_calc._DB_TO_CALCULATOR_METRIC_CODE 的唯一差异保持一致：
+# 快照表列名 steady_rate（平稳率）↔ 契约/计算器 stability_rate。
+# 缺失该映射会导致按 DB 列名请求时契约查询为空、对应指标静默跳过（快照只剩 PARTIAL）。
+_REQUIREMENT_CODE_ALIASES: dict[str, str] = {
+    "steady_rate": "stability_rate",
+}
+
 
 def clear_requirements_cache() -> None:
     """清空指标契约进程内缓存（测试 / 配置变更时调用）."""
     global _REQUIREMENTS_CACHE, _REQUIREMENTS_CACHE_TS
     _REQUIREMENTS_CACHE = {}
     _REQUIREMENTS_CACHE_TS = 0.0
+
+
+def _filter_requirements(metrics: list[str]) -> dict[str, Any]:
+    """按请求代码筛选契约，解析 DB 列名 → 契约 metric_code 别名.
+
+    返回字典以**请求方代码**为键（如 steady_rate），确保下游
+    ``_build_query_plan`` / ``_assemble_bundles`` 产出的 Bundle 沿用请求方命名。
+    """
+    resolved: dict[str, Any] = {}
+    for code in metrics:
+        row = _REQUIREMENTS_CACHE.get(code)
+        if row is None:
+            alias = _REQUIREMENT_CODE_ALIASES.get(code)
+            if alias:
+                row = _REQUIREMENTS_CACHE.get(alias)
+        if row is not None:
+            resolved[code] = row
+    return resolved
 
 
 # TDengine 查询函数签名：按 tag 角色列表查询原始时序数据
@@ -340,8 +366,8 @@ class DataPlanner:
         global _REQUIREMENTS_CACHE, _REQUIREMENTS_CACHE_TS
         now = time.monotonic()
         if _REQUIREMENTS_CACHE and (now - _REQUIREMENTS_CACHE_TS) < _REQUIREMENTS_CACHE_TTL:
-            # 从缓存中筛选请求的 metrics
-            return {code: row for code, row in _REQUIREMENTS_CACHE.items() if code in metrics}
+            # 从缓存中筛选请求的 metrics（含 DB 列名 → 契约代码别名解析）
+            return _filter_requirements(metrics)
 
         # 缓存未命中或过期 → 查询全量并缓存
         from sqlalchemy import select
@@ -354,7 +380,7 @@ class DataPlanner:
         _REQUIREMENTS_CACHE_TS = now
         logger.info("DataPlanner 指标契约缓存已刷新: %d 条", len(_REQUIREMENTS_CACHE))
 
-        return {code: row for code, row in _REQUIREMENTS_CACHE.items() if code in metrics}
+        return _filter_requirements(metrics)
 
     # ------------------------------------------------------------------
     # Phase 3: 构建合并查询计划
