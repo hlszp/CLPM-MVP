@@ -134,12 +134,10 @@ const columns = computed<TableColumnsType>(() => [
     sorter: true,
     // 受控排序：columns 为 computed（每次渲染新数组），非受控状态下 AntD
     // 会在数据刷新后丢失内部排序态，导致第二次点击方向错乱
-    sortOrder:
-      sortBy.value === 'score' && sortOrder.value
-        ? sortOrder.value === 'asc'
-          ? 'ascend'
-          : 'descend'
-        : null,
+    sortOrder: (() => {
+      if (sortBy.value !== 'score' || !sortOrder.value) return null;
+      return sortOrder.value === 'asc' ? 'ascend' : 'descend';
+    })(),
   },
   {
     title: '好值率',
