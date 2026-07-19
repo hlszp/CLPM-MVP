@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * CLPM Playwright E2E 测试配置
  *
- * - baseURL: 前端开发服务器 http://localhost:7100
+ * - baseURL: 前端开发服务器 http://localhost:5666
  * - 仅启用 chromium 项目
  * - webServer 自动启动前端开发服务（pnpm dev）
  * - 后端 API（http://localhost:7101）需手动启动
@@ -24,7 +24,7 @@ export default defineConfig({
   },
   timeout: 60_000,
   use: {
-    baseURL: 'http://localhost:7100',
+    baseURL: 'http://localhost:5666',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -44,7 +44,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'cd ../frontend/apps/web-antd && pnpm dev',
-    url: 'http://localhost:7100',
+    url: 'http://localhost:5666',
     reuseExistingServer: true,
     timeout: 120_000,
     cwd: process.cwd(),
