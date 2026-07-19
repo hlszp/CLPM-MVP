@@ -389,7 +389,7 @@ v6.0 文档统一升级已完成，后续工作方向：
 |---|---|---|
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
 | 前端 lint/格式化整理 | 前端代码 → `pnpm run lint` | 工作区已清理干净（2026-07-19）；如需进一步统一可跑 `pnpm run lint --fix` 后提交 |
-| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.0 → v6.0 新增页面 | 任务管理页面、可信度徽章、INCONCLUSIVE 展示需补 E2E |
+| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.0 → v6.0 新增页面 | 任务管理/可信度徽章/INCONCLUSIVE 已补（2026-07-19，PR #78：E2E-TASK-001~006 + E2E-CONF-001~004，含 playwright 端口 7100→5666 修正）；其余页面按 UI/UX v6.0 逐步补 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
 | v6.0 文档统一升级 | `docs/过程文档/superpowers/plans/v6-consistency-check.md` → v6.0 各设计文档 | 文档已统一升级至 v6.0，需持续保持文档与代码一致性 |
 | 新功能开发 | PRD v6.0 → 实现契约 v2.0 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
