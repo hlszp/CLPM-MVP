@@ -41,6 +41,7 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | v6.0 升级 | 文档统一升级：PRD/FDS/ADS/DDS/IDS/UIUX → v6.0；实现契约 v1.0 → v2.0；DESIGN v2.1 → v3.0；测试数 1762；TS 错误 0 | 见 `docs/过程文档/superpowers/plans/v6-consistency-check.md` |
 | v6.1 升级 | ZL 工业设计规范对齐：诊断中心/指标管理页面清除硬编码 Tailwind 色类；高危操作确认统一改用 ClpmDangerConfirmModal；监控页面 KPI 指标按时间范围聚合 | `1585a7e` `4aea6b8` `80c38ef` `d5f532f` |
 | 网络模式切换 | 链路配置应用层局域网/公网动态切换：Tailscale subnet router + sudoers 免密 + sys_config 真相源 + lifespan 预载；.env 移除业务 URL/Token，统一由 sys_config 管理 | `6730b7f8` `ae0dff0c` `b09c816a` `ce5f4142` `b239b8b` `6a5fa30`（PR #75） |
+| 数据导入韧性 | 历史导入 chunk 级重试（502/503/504/429 + 超时/网络异常，指数退避 1/2/4s 最多 3 次）+ 回路并发 5→2 + chunk 跨度 24h→3h + 远端超时默认 30s→120s | `b74a6b4`（PR #74） |
 
 ## v6.0 核心架构组件
 
@@ -135,7 +136,7 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
   - **配置真相源**：sys_config 数据库表（UI 配置一次即持久化）；.env 仅保留基础设施配置 + 合理默认值（TIMEOUT/RECONNECT_INTERVAL），已移除业务 URL/Token
   - **lifespan 预载**：`app/main.py` lifespan startup 调用 `preload_datasource_config(db)` 从 sys_config 读取配置并 `setattr(settings, ...)`，确保 SignalR 订阅器等启动时组件读到运行时配置而非 .env 空值；预载失败不阻塞启动，兜底 .env 默认值
   - **Tailscale 切换**：`app/core/system.py` `switch_network_mode(mode)` 通过 `sudo -n tailscale up --accept-routes={true|false} --reset=false` 动态切换子网路由；`shutil.which("tailscale")` 检测，容器内自动跳过
-  - **sudoers 免密**：`deploy/sudoers.d/clpm-tailscale`（Linux，clpm 用户）/ `clpm-tailscale.macos`（macOS，zhangping 用户）；精确匹配命令参数，`tailscale status` 不在白名单
+  - **sudoers 免密**：`deploy/sudoers.d/clpm-tailscale`（Linux，clpm 用户）/ `clpm-tailscale.macos`（Intel Mac，zhangping 用户）/ `clpm-tailscale.macos-arm64`（Apple Silicon Mac，zhangping 用户）；精确匹配命令参数，`tailscale status` 不在白名单（验证用 `sudo -nl | grep tailscale`）
   - **路由验证**：`route get 192.168.100.2` 显示 `interface: en0`（局域网直连）或 `utun4`（Tailscale 隧道）；`tailscale debug prefs` 的 `RouteAll` 字段反映 accept-routes 状态
   - **同模式跳过**：`update_datasource_config` 检测 `before == after` 时跳过 tailscale 命令，避免冗余 sudo 调用
 
@@ -387,12 +388,12 @@ v6.0 文档统一升级已完成，后续工作方向：
 | 方向 | 先读 | 关注点 |
 |---|---|---|
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
-| 前端 lint/格式化整理 | 当前工作区有 50+ 未提交的前端格式化改动 | 可考虑统一 `pnpm run lint --fix` 后提交 |
+| 前端 lint/格式化整理 | 前端代码 → `pnpm run lint` | 工作区已清理干净（2026-07-19）；如需进一步统一可跑 `pnpm run lint --fix` 后提交 |
 | E2E 测试补充 | `e2e/` 目录 → UI/UX v6.0 → v6.0 新增页面 | 任务管理页面、可信度徽章、INCONCLUSIVE 展示需补 E2E |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
 | v6.0 文档统一升级 | `docs/过程文档/superpowers/plans/v6-consistency-check.md` → v6.0 各设计文档 | 文档已统一升级至 v6.0，需持续保持文档与代码一致性 |
 | 新功能开发 | PRD v6.0 → 实现契约 v2.0 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
-| 网络模式切换后续改进 | AGENTS.md → §关键注意事项（网络模式切换） | ① 反向切换验证（wan→lan）未单独测，可补测 `utun4→en0`；② 容器环境 Tailscale 不可用降级策略需确认（当前返回 `skipped`）；③ 公网模式 ping 延迟抖动大（6-63ms）可优化 DERP 节点或 Tailscale 直连；④ sudoers 仅覆盖 Intel Mac（`/usr/local/bin/tailscale`），Apple Silicon Mac 需适配 `/opt/homebrew/bin/tailscale` |
+| 网络模式切换后续改进 | AGENTS.md → §关键注意事项（网络模式切换） | ①②④ 已完成（2026-07-19：wan→lan 反向切换实测通过，`utun4→en0` 路由正确恢复；容器降级经 18 单测确认返回 `skipped` 不阻断配置；新增 `deploy/sudoers.d/clpm-tailscale.macos-arm64` 覆盖 Apple Silicon）；③ 公网模式 ping 延迟抖动大（6-63ms）可优化 DERP 节点或 Tailscale 直连（未做，低优先级） |
 
 ## Stale docs 防护
 

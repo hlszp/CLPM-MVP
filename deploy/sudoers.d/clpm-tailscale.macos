@@ -8,12 +8,14 @@
 #   sudo chmod 440 /etc/sudoers.d/clpm-tailscale
 #   sudo visudo -c
 #
-# 验证：
-#   sudo -n /usr/local/bin/tailscale status
+# 验证（注意：tailscale status 不在白名单，`sudo -n tailscale status` 必然提示密码）：
+#   sudo -nl | grep tailscale        # 应列出下列两条授权
+#   或用白名单命令做幂等验证（重复应用当前状态，无副作用）：
+#   sudo -n /usr/local/bin/tailscale up --accept-routes=false --reset=false
 #
 # 路径需根据本机 `which tailscale` 调整：
-#   - Intel Mac:        /usr/local/bin/tailscale
-#   - Apple Silicon Mac: /opt/homebrew/bin/tailscale
+#   - Intel Mac:        /usr/local/bin/tailscale（本文件）
+#   - Apple Silicon Mac: /opt/homebrew/bin/tailscale（请用 clpm-tailscale.macos-arm64）
 #
 # 故障排查：sudoers 路径不匹配会返回 "sudo: a password is required"，应用层返回 failed
 

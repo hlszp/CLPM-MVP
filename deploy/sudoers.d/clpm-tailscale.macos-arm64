@@ -1,0 +1,24 @@
+# CLPM Tailscale 切换免密 sudo（macOS 开发机 — Apple Silicon）
+#
+# 用途：允许本地开发用户免密执行 tailscale up --accept-routes[=true|false] --reset=false
+#       用于应用层局域网/公网模式动态切换（详见 backend/app/core/system.py）
+#
+# 适用：Apple Silicon Mac（Homebrew 默认前缀 /opt/homebrew）
+#       Intel Mac 请使用 clpm-tailscale.macos（/usr/local/bin/tailscale）
+#
+# 安装：
+#   sudo cp deploy/sudoers.d/clpm-tailscale.macos-arm64 /etc/sudoers.d/clpm-tailscale
+#   sudo chmod 440 /etc/sudoers.d/clpm-tailscale
+#   sudo visudo -c
+#
+# 验证（注意：tailscale status 不在白名单，`sudo -n tailscale status` 必然提示密码）：
+#   sudo -nl | grep tailscale        # 应列出下列两条授权
+#   或用白名单命令做幂等验证（重复应用当前状态，无副作用）：
+#   sudo -n /opt/homebrew/bin/tailscale up --accept-routes=false --reset=false
+#
+# 路径需根据本机 `which tailscale` 确认，不一致时修改下列路径后再安装。
+#
+# 故障排查：sudoers 路径不匹配会返回 "sudo: a password is required"，应用层返回 failed
+
+zhangping ALL=(root) NOPASSWD: /opt/homebrew/bin/tailscale up --accept-routes=true --reset=false
+zhangping ALL=(root) NOPASSWD: /opt/homebrew/bin/tailscale up --accept-routes=false --reset=false

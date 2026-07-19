@@ -32,7 +32,7 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
 | v4.0 核心组件 | DataPlanner（统一数据读取，L1/L2 缓存已接入；L3 Feature Cache 预留）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（1856 collected：1850 selected，1849 passed，1 skipped，6 deselected）+ Playwright E2E |
+| 测试 | pytest（1891 collected：1885 selected，1884 passed，1 skipped，6 deselected）+ Playwright E2E |
 
 ## 快速开始（开发环境）
 
@@ -74,10 +74,10 @@ cd backend
 ```bash
 cd frontend
 pnpm install
-pnpm run dev:antd              # 默认端口 7100
+pnpm run dev:antd              # 默认端口 5666
 ```
 
-前端访问地址：http://localhost:7100
+前端访问地址：http://localhost:5666
 
 ### 5. 默认账号
 
