@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from app.schemas.base import CamelModel
@@ -13,9 +15,15 @@ from app.schemas.base import CamelModel
 class DataSourceConfigInfo(CamelModel):
     """数据源配置信息。"""
 
-    # 历史数据源
-    dataSourceType: str = Field(..., description="历史数据源类型：tdengine / remote_api")
-    historyApiUrl: str | None = Field(None, description="外部历史数据 API 地址（remote_api 模式）")
+    # 历史数据源（保留字段，固定 remote_api，UI 不暴露选择）
+    dataSourceType: str = Field(
+        ..., description="历史数据源类型（保留字段，固定 remote_api）"
+    )
+    # 网络模式（局域网/公网切换，控制 Tailscale 子网路由）
+    networkMode: Literal["lan", "wan"] = Field(
+        "lan", description="网络模式：lan 局域网直连 / wan 公网走 Tailscale"
+    )
+    historyApiUrl: str | None = Field(None, description="外部历史数据 API 地址")
     historyApiToken: str | None = Field(None, description="外部历史数据 API 鉴权 Token")
     historyApiTimeout: float = Field(30.0, description="外部历史数据 API 超时（秒）")
 
@@ -33,11 +41,26 @@ class DataSourceConfigInfo(CamelModel):
     )
     signalrSubscriberRunning: bool = Field(..., description="实时订阅器是否在运行")
 
+    # tailscale 客户端可用性预检（容器内为 False）
+    tailscaleAvailable: bool = Field(
+        False, description="tailscale 客户端是否可用（容器内为 False）"
+    )
+    # Tailscale 切换结果（仅 networkMode 变化时返回，GET 时为 null）
+    tailscaleSwitch: dict | None = Field(
+        None, description="Tailscale 切换结果（仅 networkMode 变化时返回）"
+    )
+
 
 class DataSourceConfigUpdate(CamelModel):
     """PUT /api/v1/datasource/config 请求体。所有字段可选，仅更新传入字段。"""
 
-    dataSourceType: str | None = Field(None, description="历史数据源类型：tdengine / remote_api")
+    # dataSourceType 已废弃：保留字段兼容旧前端，后端固定 remote_api
+    dataSourceType: str | None = Field(
+        None, description="（已废弃，保留兼容，固定 remote_api）", deprecated=True
+    )
+    networkMode: Literal["lan", "wan"] | None = Field(
+        None, description="网络模式：lan 局域网直连 / wan 公网走 Tailscale"
+    )
     historyApiUrl: str | None = Field(None, description="外部历史数据 API 地址")
     historyApiToken: str | None = Field(None, description="外部历史数据 API 鉴权 Token")
     historyApiTimeout: float | None = Field(None, description="外部历史数据 API 超时（秒）")

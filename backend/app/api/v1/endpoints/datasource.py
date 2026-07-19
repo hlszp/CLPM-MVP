@@ -50,14 +50,18 @@ async def update_datasource_config_endpoint(
 ) -> dict:
     """更新数据源配置（仅 ADMIN）。
 
-    即时生效：historyApiUrl / historyApiToken / historyApiTimeout
-    / signalrHubUrl / signalrReconnectInterval
+    即时生效：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken
+    / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
     重启生效：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）
+
+    注意：dataSourceType 固定为 remote_api（UI 已删除选择），忽略前端传入值。
     """
     data = await update_datasource_config(
         db=db,
         operator=user.username,
-        dataSourceType=body.dataSourceType,
+        # 固定 dataSourceType=remote_api，忽略前端传入值（兼容旧前端）
+        dataSourceType="remote_api",
+        networkMode=body.networkMode,
         historyApiUrl=body.historyApiUrl,
         historyApiToken=body.historyApiToken,
         historyApiTimeout=body.historyApiTimeout,
@@ -66,7 +70,20 @@ async def update_datasource_config_endpoint(
         signalrReconnectInterval=body.signalrReconnectInterval,
         realtimeWritebackEnabled=body.realtimeWritebackEnabled,
     )
-    return success(data=data, message="配置更新成功")
+
+    # 根据 tailscale 切换结果构造响应消息
+    msg = "配置更新成功"
+    tailscale_switch = data.get("tailscaleSwitch")
+    if tailscale_switch:
+        status = tailscale_switch["status"]
+        if status == "success":
+            msg = f"配置更新成功；{tailscale_switch['message']}"
+        elif status == "skipped":
+            msg = f"配置更新成功；Tailscale 跳过：{tailscale_switch['message']}"
+        else:
+            msg = f"配置已保存，但 Tailscale 切换失败：{tailscale_switch['message']}"
+
+    return success(data=data, message=msg)
 
 
 @router.post("/test-history-api", response_model=ApiResponse[DataSourceTestResult])
