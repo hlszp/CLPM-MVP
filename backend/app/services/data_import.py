@@ -48,8 +48,16 @@ _GOOD_QUALITY_CODES = frozenset({1, 192})
 
 # 动态分块参数
 _TARGET_CHUNKS = 30  # 目标分块数（每个回路最多发这么多 HTTP 请求）
-_MAX_CHUNK_HOURS = 24  # 单次请求最大时间跨度（防止超时和内存爆炸）
+# 单次请求最大时间跨度（h）：远端 API 在长跨度 + 高并发下易 504，
+# 从 24h 降至 3h，单次请求数据量减小，瞬时压力降低。
+_MAX_CHUNK_HOURS = 3
 _MIN_CHUNK_HOURS = 1  # 单次请求最小时间跨度
+
+# Chunk 级重试配置（应对远端 API 瞬时 504/超时，DERP 链路虽稳定但远端仍可能短时过载）
+_MAX_RETRIES = 3  # 最大重试次数（不含首次请求）
+_RETRY_BACKOFF_BASE = 1.0  # 指数退避基数（秒），重试间隔：1, 2, 4
+_RETRYABLE_STATUS_CODES = frozenset({502, 503, 504, 429})  # 可重试的 HTTP 状态码
+_RETRYABLE_HTTPX_EXCS = (httpx.TimeoutException, httpx.NetworkError)  # 可重试的网络异常
 
 # 角色列名映射（与 tdengine.py 保持一致）
 _ROLE_COLUMNS: dict[str, str] = {
@@ -301,7 +309,7 @@ async def import_history_data(
 
     import asyncio as _asyncio_sem
 
-    sem = _asyncio_sem.Semaphore(5)  # 最多 5 个回路并发
+    sem = _asyncio_sem.Semaphore(2)  # 远端 API 易在高并发下 504，限制最多 2 个回路并发
     progress_lock = _asyncio_sem.Lock()
     # 共享计数器（并发安全）
     shared_succeeded = 0
@@ -616,6 +624,12 @@ async def _fetch_remote_history(
     Returns:
         (timestamps, series_map) 其中 series_map = {tagCode: {values, qualities}}
         远端不可用或响应无效时抛出 ``HistoryDataSourceError``。
+
+    重试策略（P0 改造，应对远端瞬时 504/超时）:
+        - 可重试状态码：502/503/504/429
+        - 可重试异常：httpx.TimeoutException / httpx.NetworkError
+        - 指数退避：1s, 2s, 4s（最多重试 3 次）
+        - 4xx（非 429）等不可重试错误直接抛出
     """
     if not settings.HISTORY_DATA_API_URL:
         raise HistoryDataSourceError("HISTORY_DATA_API_URL 未配置")
@@ -627,56 +641,118 @@ async def _fetch_remote_history(
         "sampleInterval": interval,
     }
 
-    try:
-        if client is not None:
-            resp = await client.get(settings.HISTORY_DATA_API_URL, params=request_body)
-        else:
-            headers: dict[str, str] = {"Content-Type": "application/json"}
-            token = settings.HISTORY_DATA_API_TOKEN
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
+    import asyncio as _asyncio_retry
 
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
-                headers=headers,
-            ) as tmp_client:
-                resp = await tmp_client.get(settings.HISTORY_DATA_API_URL, params=request_body)
+    last_exc: Exception | None = None
+    last_status_code: int | None = None
+    last_resp_text: str = ""
 
-        if resp.status_code != 200:
+    # 首次请求 + 最多 _MAX_RETRIES 次重试
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            if client is not None:
+                resp = await client.get(settings.HISTORY_DATA_API_URL, params=request_body)
+            else:
+                headers: dict[str, str] = {"Content-Type": "application/json"}
+                token = settings.HISTORY_DATA_API_TOKEN
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
+                    headers=headers,
+                ) as tmp_client:
+                    resp = await tmp_client.get(settings.HISTORY_DATA_API_URL, params=request_body)
+
+            # 200 OK：业务层校验后返回
+            if resp.status_code == 200:
+                payload = resp.json()
+                if payload.get("code") not in (200, "200", "0", 0):
+                    # 业务错误不可重试（远端已正常响应，只是业务逻辑拒绝）
+                    raise HistoryDataSourceError(
+                        f"远端历史数据 API 业务错误: {payload.get('message', '')}"
+                    )
+
+                data = payload.get("data") or {}
+                timestamps = list(data.get("timestamps") or [])
+                series_list = list(data.get("series") or [])
+
+                # 构建 tagCode → series 映射
+                series_map: dict[str, dict] = {}
+                for series in series_list:
+                    tc = str(series.get("tagCode") or "")
+                    if tc:
+                        series_map[tc] = {
+                            "values": list(series.get("values") or []),
+                            "qualities": list(series.get("qualities") or []),
+                        }
+
+                return timestamps, series_map
+
+            # 非 200：判断是否可重试
+            last_status_code = resp.status_code
+            last_resp_text = resp.text[:200]
+
+            if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < _MAX_RETRIES:
+                wait = _RETRY_BACKOFF_BASE * (2**attempt)
+                logger.warning(
+                    "远端 API 返回 HTTP %d（可重试），%gs 后重试 (attempt %d/%d), "
+                    "tag_codes=%s, range=%s~%s",
+                    resp.status_code,
+                    wait,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    tag_codes[:2],
+                    start_time,
+                    end_time,
+                )
+                await _asyncio_retry.sleep(wait)
+                continue
+
+            # 不可重试状态码（4xx 等）或重试次数用完，直接抛出
             raise HistoryDataSourceError(
-                f"远端历史数据 API 返回 HTTP {resp.status_code}: {resp.text[:200]}"
+                f"远端历史数据 API 返回 HTTP {resp.status_code}: {last_resp_text}"
             )
 
-        payload = resp.json()
-        if payload.get("code") not in (200, "200", "0", 0):
-            raise HistoryDataSourceError(f"远端历史数据 API 业务错误: {payload.get('message', '')}")
+        except HistoryDataSourceError:
+            # 业务错误（如 code != 200）直接抛出，不重试
+            raise
+        except _RETRYABLE_HTTPX_EXCS as exc:
+            last_exc = exc
+            if attempt < _MAX_RETRIES:
+                wait = _RETRY_BACKOFF_BASE * (2**attempt)
+                logger.warning(
+                    "远端 API %s（可重试），%gs 后重试 (attempt %d/%d), tag_codes=%s, range=%s~%s",
+                    type(exc).__name__,
+                    wait,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    tag_codes[:2],
+                    start_time,
+                    end_time,
+                )
+                await _asyncio_retry.sleep(wait)
+                continue
+            # 重试次数用完
+            if isinstance(exc, httpx.TimeoutException):
+                raise HistoryDataSourceError(
+                    f"远端历史数据 API 超时（{settings.HISTORY_DATA_API_TIMEOUT:g}s，"
+                    f"已重试 {_MAX_RETRIES} 次）"
+                ) from exc
+            raise HistoryDataSourceError(
+                f"远端历史数据 API 网络错误（已重试 {_MAX_RETRIES} 次）: {exc}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            # 其他 httpx 异常（非 Timeout/Network）不可重试
+            raise HistoryDataSourceError(f"远端历史数据 API 请求失败: {exc}") from exc
+        except (TypeError, ValueError) as exc:
+            # JSON 解析等错误不可重试
+            raise HistoryDataSourceError(f"远端历史数据 API 响应无效: {exc}") from exc
 
-        data = payload.get("data") or {}
-        timestamps = list(data.get("timestamps") or [])
-        series_list = list(data.get("series") or [])
-
-        # 构建 tagCode → series 映射
-        series_map: dict[str, dict] = {}
-        for series in series_list:
-            tc = str(series.get("tagCode") or "")
-            if tc:
-                series_map[tc] = {
-                    "values": list(series.get("values") or []),
-                    "qualities": list(series.get("qualities") or []),
-                }
-
-        return timestamps, series_map
-
-    except HistoryDataSourceError:
-        raise
-    except httpx.TimeoutException as exc:
-        raise HistoryDataSourceError(
-            f"远端历史数据 API 超时（{settings.HISTORY_DATA_API_TIMEOUT:g}s）"
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise HistoryDataSourceError(f"远端历史数据 API 请求失败: {exc}") from exc
-    except (TypeError, ValueError) as exc:
-        raise HistoryDataSourceError(f"远端历史数据 API 响应无效: {exc}") from exc
+    # 理论上不会执行到这里（for 循环内所有路径都会 return 或 raise）
+    raise HistoryDataSourceError(
+        f"远端历史数据 API 重试失败（{last_status_code}）: {last_resp_text}"
+    ) from last_exc
 
 
 def _convert_to_wide_rows(

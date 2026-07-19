@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     # ---- 外部历史数据 API（HistoryDataAppService）----
     HISTORY_DATA_API_URL: str = ""  # 如 http://localhost:7106/api/services/v1/HistoryData/Get
     HISTORY_DATA_API_TOKEN: str = ""  # Bearer Token（可选）
-    HISTORY_DATA_API_TIMEOUT: float = 30.0  # 请求超时（秒）
+    HISTORY_DATA_API_TIMEOUT: float = 120.0  # 请求超时（秒，远端大跨度查询可能慢）
 
     # ---- 实时数据 SignalR/WebSocket ----
     SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:7106/signalr/realValueForClpmHub
