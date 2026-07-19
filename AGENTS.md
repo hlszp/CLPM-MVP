@@ -44,6 +44,7 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | 数据导入韧性 | 历史导入 chunk 级重试（502/503/504/429 + 超时/网络异常，指数退避 1/2/4s 最多 3 次）+ 回路并发 5→2 + chunk 跨度 24h→3h + 远端超时默认 30s→120s | `b74a6b4`（PR #74） |
 | 数据链路修复 | Celery worker 经 `worker_process_init` 预载 sys_config（此前仅 API lifespan 预载，worker 取不到业务 URL 导致导入/远端取数全失败）；实时自控率/回路状态统计改读 Redis 实时缓存（原只读 PG `tag_registry.current_value`，AAS 停更后数据过期）；装置/单元性能明细表改为当前节点+直接子节点 | PR #79 |
 | 远端调用保护 | RemoteApiProvider 全局限流（per-loop 信号量默认 4 并发，覆盖 DataPlanner 无界 gather）+ 熔断器（连续失败 5 次熔断 300s 快速失败、半开探测）；SignalR 重连指数退避 5s→30s 封顶。背景：2026-07-19 回填 8 worker × ~54 并发压垮远端边缘 API | PR #80 |
+| 性能评估四页治理 | 全面检查装置性能/回路性能/评估任务/KPI报表 4 页并修复 27 项：DataPlanner 契约查询 steady_rate→stability_rate 别名（快照只剩 PARTIAL 的回归）；装置聚合仪表盘全厂 null；快照服务端排序；_parse_dt 时区；DataLineage snake_case 血缘；策略配置裸数组解析；评估历史复合行键/日期 endOfDay；E 级评分掩码；kpi-report latestOnly=false + UTC 窗口；危险操作统一 ClpmDangerConfirmModal | PR #81 |
 
 ## v6.0 核心架构组件
 
