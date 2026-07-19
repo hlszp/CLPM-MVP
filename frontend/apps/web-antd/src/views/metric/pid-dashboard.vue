@@ -195,10 +195,16 @@ const tableColumns = [
 
 const tableData = computed(() => {
   const items = boardAggregate.value?.items ?? [];
-  const sortedItems = [...items].toSorted(
-    (a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0),
-  );
-  return sortedItems.map((item, index) => {
+  // 第一行固定为当前选中节点，其后仅列当前节点的下一层子节点（按评分降序）
+  // （后端 board/aggregate 已只返回当前节点 + 直接子节点）
+  const currentId = selectedPlantNodeId.value;
+  const currentRows = currentId
+    ? items.filter((it) => it.nodeId === currentId)
+    : [];
+  const childRows = items
+    .filter((it) => it.nodeId !== currentId)
+    .toSorted((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
+  return [...currentRows, ...childRows].map((item, index) => {
     const score = item.avgScore ?? 0;
     return {
       key: item.nodeId,
