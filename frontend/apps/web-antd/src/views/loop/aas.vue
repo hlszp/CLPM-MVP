@@ -818,8 +818,9 @@ onMounted(loadConfig);
               />
 
               <div class="text-gray-400 text-xs">
-                局域网模式移除 192.168.100.0/24 子网路由，直连 AAS；公网模式安装子网路由，通过 zpdev
-                Tailscale 转发。两模式 URL 相同，由 Tailscale 透明路由。
+                局域网模式移除 192.168.100.0/24 子网路由，直连
+                AAS；公网模式安装子网路由，通过 zpdev Tailscale 转发。两模式 URL
+                相同，由 Tailscale 透明路由。
               </div>
             </Form>
           </Card>

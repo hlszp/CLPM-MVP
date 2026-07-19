@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.datasource_config import (
-    DATASOURCE_CONFIG_KEYS,
     _SETTINGS_ATTR_MAP,
+    DATASOURCE_CONFIG_KEYS,
     get_datasource_config,
     update_datasource_config,
 )
@@ -46,11 +46,13 @@ class TestGetDatasourceConfig:
     async def test_returns_network_mode_default_lan(self) -> None:
         """sys_config 无 networkMode 时回退 settings 默认值 lan."""
         db = AsyncMock()
-        with patch("app.services.datasource_config.settings") as mock_settings, patch(
-            "app.services.datasource_config._is_tailscale_available", return_value=False
-        ), patch(
-            "app.services.datasource_config._get_config_value",
-            new=_mock_get_config_value({}),
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=False),
+            patch(
+                "app.services.datasource_config._get_config_value",
+                new=_mock_get_config_value({}),
+            ),
         ):
             mock_settings.DATA_SOURCE_TYPE = "remote_api"
             mock_settings.NETWORK_MODE = "lan"
@@ -74,11 +76,13 @@ class TestGetDatasourceConfig:
             "datasource.type": "remote_api",
             "datasource.network_mode": "wan",
         }
-        with patch("app.services.datasource_config.settings") as mock_settings, patch(
-            "app.services.datasource_config._is_tailscale_available", return_value=True
-        ), patch(
-            "app.services.datasource_config._get_config_value",
-            new=_mock_get_config_value(stored),
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=True),
+            patch(
+                "app.services.datasource_config._get_config_value",
+                new=_mock_get_config_value(stored),
+            ),
         ):
             mock_settings.DATA_SOURCE_TYPE = "remote_api"
             mock_settings.NETWORK_MODE = "lan"
@@ -117,19 +121,22 @@ class TestUpdateDatasourceConfigNetworkMode:
         stored = {
             "datasource.type": "remote_api",
         }
-        with patch("app.services.datasource_config.settings") as mock_settings, patch(
-            "app.services.datasource_config._is_tailscale_available", return_value=True
-        ), patch(
-            "app.services.datasource_config._get_config_value",
-            new=_mock_get_config_value(stored),
-        ), patch(
-            "app.services.datasource_config.switch_network_mode"
-        ) as mock_switch, patch(
-            "app.services.datasource_config._set_config_value",
-            new=AsyncMock(),
-        ), patch(
-            "app.services.datasource_config._write_audit",
-            new=AsyncMock(),
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=True),
+            patch(
+                "app.services.datasource_config._get_config_value",
+                new=_mock_get_config_value(stored),
+            ),
+            patch("app.services.datasource_config.switch_network_mode") as mock_switch,
+            patch(
+                "app.services.datasource_config._set_config_value",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.datasource_config._write_audit",
+                new=AsyncMock(),
+            ),
         ):
             mock_settings.DATA_SOURCE_TYPE = "remote_api"
             mock_settings.NETWORK_MODE = "lan"  # before 时为 lan
@@ -164,19 +171,22 @@ class TestUpdateDatasourceConfigNetworkMode:
             "datasource.type": "remote_api",
             "datasource.network_mode": "lan",
         }
-        with patch("app.services.datasource_config.settings") as mock_settings, patch(
-            "app.services.datasource_config._is_tailscale_available", return_value=True
-        ), patch(
-            "app.services.datasource_config._get_config_value",
-            new=_mock_get_config_value(stored),
-        ), patch(
-            "app.services.datasource_config.switch_network_mode"
-        ) as mock_switch, patch(
-            "app.services.datasource_config._set_config_value",
-            new=AsyncMock(),
-        ), patch(
-            "app.services.datasource_config._write_audit",
-            new=AsyncMock(),
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=True),
+            patch(
+                "app.services.datasource_config._get_config_value",
+                new=_mock_get_config_value(stored),
+            ),
+            patch("app.services.datasource_config.switch_network_mode") as mock_switch,
+            patch(
+                "app.services.datasource_config._set_config_value",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.datasource_config._write_audit",
+                new=AsyncMock(),
+            ),
         ):
             mock_settings.DATA_SOURCE_TYPE = "remote_api"
             mock_settings.NETWORK_MODE = "lan"
@@ -205,19 +215,22 @@ class TestUpdateDatasourceConfigNetworkMode:
             "datasource.network_mode": "lan",
             "datasource.history_api_url": "http://old.example.com/api",
         }
-        with patch("app.services.datasource_config.settings") as mock_settings, patch(
-            "app.services.datasource_config._is_tailscale_available", return_value=True
-        ), patch(
-            "app.services.datasource_config._get_config_value",
-            new=_mock_get_config_value(stored),
-        ), patch(
-            "app.services.datasource_config.switch_network_mode"
-        ) as mock_switch, patch(
-            "app.services.datasource_config._set_config_value",
-            new=AsyncMock(),
-        ), patch(
-            "app.services.datasource_config._write_audit",
-            new=AsyncMock(),
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=True),
+            patch(
+                "app.services.datasource_config._get_config_value",
+                new=_mock_get_config_value(stored),
+            ),
+            patch("app.services.datasource_config.switch_network_mode") as mock_switch,
+            patch(
+                "app.services.datasource_config._set_config_value",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.datasource_config._write_audit",
+                new=AsyncMock(),
+            ),
         ):
             mock_settings.DATA_SOURCE_TYPE = "remote_api"
             mock_settings.NETWORK_MODE = "lan"
@@ -236,4 +249,3 @@ class TestUpdateDatasourceConfigNetworkMode:
 
             mock_switch.assert_not_called()
             assert "tailscaleSwitch" not in data or data.get("tailscaleSwitch") is None
-

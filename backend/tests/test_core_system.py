@@ -12,8 +12,6 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.core.system import _is_tailscale_available, switch_network_mode
 
 
@@ -69,9 +67,7 @@ class TestSwitchNetworkMode:
 
     @patch("app.core.system._is_tailscale_available", return_value=True)
     @patch("app.core.system.subprocess.run")
-    def test_nonzero_returncode_returns_failed(
-        self, mock_run: MagicMock, _: MagicMock
-    ) -> None:
+    def test_nonzero_returncode_returns_failed(self, mock_run: MagicMock, _: MagicMock) -> None:
         """tailscale 返回非 0 时返回 failed."""
         mock_run.return_value = MagicMock(returncode=1, stderr=b"permission denied")
         result = switch_network_mode("wan")
@@ -103,9 +99,7 @@ class TestSwitchNetworkMode:
 
     @patch("app.core.system._is_tailscale_available", return_value=True)
     @patch("app.core.system.subprocess.run")
-    def test_success_returns_latency_ms(
-        self, mock_run: MagicMock, _: MagicMock
-    ) -> None:
+    def test_success_returns_latency_ms(self, mock_run: MagicMock, _: MagicMock) -> None:
         """成功时返回 latencyMs（int 类型）."""
         mock_run.return_value = MagicMock(returncode=0, stderr=b"")
         result = switch_network_mode("lan")
