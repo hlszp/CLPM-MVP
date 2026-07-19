@@ -319,9 +319,9 @@ const columns = computed<TableColumnsType>(() => [
     sorter: true,
     sortOrder:
       query.sortBy === 'score'
-        ? (query.sortOrder === 'asc'
+        ? query.sortOrder === 'asc'
           ? 'ascend'
-          : 'descend')
+          : 'descend'
         : null,
   },
   {

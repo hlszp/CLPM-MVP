@@ -90,9 +90,9 @@ const dangerLoading = ref(false);
 const dangerTitle = computed(() =>
   dangerAction.value === 'cancel'
     ? '取消评估任务'
-    : (dangerAction.value === 'delete'
+    : dangerAction.value === 'delete'
       ? '删除任务记录'
-      : '批量删除任务'),
+      : '批量删除任务',
 );
 
 const dangerVerb = computed(() =>

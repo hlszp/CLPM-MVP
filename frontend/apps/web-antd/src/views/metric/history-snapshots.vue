@@ -136,9 +136,9 @@ const columns = computed<TableColumnsType>(() => [
     // 会在数据刷新后丢失内部排序态，导致第二次点击方向错乱
     sortOrder:
       sortBy.value === 'score' && sortOrder.value
-        ? (sortOrder.value === 'asc'
+        ? sortOrder.value === 'asc'
           ? 'ascend'
-          : 'descend')
+          : 'descend'
         : null,
   },
   {
