@@ -43,6 +43,7 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | 网络模式切换 | 链路配置应用层局域网/公网动态切换：Tailscale subnet router + sudoers 免密 + sys_config 真相源 + lifespan 预载；.env 移除业务 URL/Token，统一由 sys_config 管理 | `6730b7f8` `ae0dff0c` `b09c816a` `ce5f4142` `b239b8b` `6a5fa30`（PR #75） |
 | 数据导入韧性 | 历史导入 chunk 级重试（502/503/504/429 + 超时/网络异常，指数退避 1/2/4s 最多 3 次）+ 回路并发 5→2 + chunk 跨度 24h→3h + 远端超时默认 30s→120s | `b74a6b4`（PR #74） |
 | 数据链路修复 | Celery worker 经 `worker_process_init` 预载 sys_config（此前仅 API lifespan 预载，worker 取不到业务 URL 导致导入/远端取数全失败）；实时自控率/回路状态统计改读 Redis 实时缓存（原只读 PG `tag_registry.current_value`，AAS 停更后数据过期）；装置/单元性能明细表改为当前节点+直接子节点 | PR #79 |
+| 远端调用保护 | RemoteApiProvider 全局限流（per-loop 信号量默认 4 并发，覆盖 DataPlanner 无界 gather）+ 熔断器（连续失败 5 次熔断 300s 快速失败、半开探测）；SignalR 重连指数退避 5s→30s 封顶。背景：2026-07-19 回填 8 worker × ~54 并发压垮远端边缘 API | PR #80 |
 
 ## v6.0 核心架构组件
 
