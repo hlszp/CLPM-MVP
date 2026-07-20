@@ -425,6 +425,70 @@ class TestDiagnosisDetail:
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_LOOP_NOT_FOUND"
 
+    def test_get_detail_exposes_confidence_level(self, client, mock_db, fake_redis) -> None:
+        """B5：详情响应透出最新一次诊断写入的 confidenceLevel/validRate。"""
+        loop = _make_loop()
+        diag = _make_diag_result(
+            feature_values={
+                "stiction_index": 0.78,
+                "confidence_level": "B",
+                "valid_rate": 0.875,
+            }
+        )
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return _make_scalar_one_or_none_mock(diag)
+            if call_count[0] == 3:
+                return _make_scalars_mock([diag])
+            return _make_scalar_one_or_none_mock(_make_snapshot())
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/diagnosis/{loop.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["confidenceLevel"] == "B"
+        assert data["validRate"] == 0.875
+
+    def test_get_detail_confidence_level_absent_for_legacy(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """B5：旧诊断记录（feature_values 无可信度键）透出 None。"""
+        loop = _make_loop()
+        diag = _make_diag_result()  # 默认 feature_values 不含 confidence_level
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return _make_scalar_one_or_none_mock(diag)
+            if call_count[0] == 3:
+                return _make_scalars_mock([diag])
+            return _make_scalar_one_or_none_mock(_make_snapshot())
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/diagnosis/{loop.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["confidenceLevel"] is None
+        assert data["validRate"] is None
+
     def test_get_detail_no_diag_result(self, client, mock_db, fake_redis) -> None:
         """回路无诊断结果返回 404。"""
         loop = _make_loop()
@@ -1553,3 +1617,92 @@ class TestFFTPrecision:
         assert result["amplitude"] < 2 * amplitude, (
             f"检测振幅 {result['amplitude']} 异常偏大（真实振幅 {amplitude}）"
         )
+
+
+# ---------------------------------------------------------------------------
+# B7：可视化存储瘦身后的端点读取测试
+# ---------------------------------------------------------------------------
+
+
+class TestDiagnosisVisualizationSlimming:
+    """B7：可视化数组仅存于主标签记录后，端点按回路聚合并集读取，输出结构不变。"""
+
+    async def test_visualization_reads_merged_feature_values(self) -> None:
+        """主记录承载数组 + 非主记录仅标量时，可视化端点输出键集与取值不变。"""
+        from app.services.diagnosis import get_diagnosis_visualization
+
+        loop = _make_loop()
+        # 主标签记录：瘦身后唯一的可视化数组载体
+        primary = _make_diag_result(
+            diag_label="OSCILLATION",
+            feature_values={
+                "fft_frequencies": [0.0, 0.04, 0.08],
+                "fft_amplitudes": [0.1, 5.0, 0.2],
+                "oscillation_frequency": 0.04,
+                "oscillation_amplitude": 5.0,
+                "oscillation_index": 0.9,
+                "cusum_timestamps": [1, 2, 3],
+                "cusum_pos": [0.0, 1.0, 2.0],
+                "cusum_neg": [0.0, -1.0, -2.0],
+                "cusum_shift_points": [2],
+                "cusum_threshold": 1.5,
+                "scatter_plot_x": [1.0, 2.0],
+                "scatter_plot_y": [3.0, 4.0],
+                "confidence_level": "B",
+                "valid_rate": 0.875,
+            },
+        )
+        # 非主标签记录：仅标量（瘦身后不再冗余数组）
+        secondary = _make_diag_result(
+            diag_label="QUALITY_ABNORMAL",
+            feature_values={
+                "bad_quality_rate": 0.125,
+                "total_points": 200,
+                "bad_points": 25,
+                "quality_pattern": "INTERMITTENT_BAD",
+                "confidence_level": "B",
+                "valid_rate": 0.875,
+            },
+        )
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),  # 1. 回路
+                _make_scalar_one_or_none_mock(primary),  # 2. 最新一条诊断
+                _make_scalars_mock([primary, secondary]),  # 3. 同任务全部记录
+                _make_scalar_one_or_none_mock(_make_snapshot()),  # 4. 最新评分
+            ]
+        )
+
+        data = await get_diagnosis_visualization(db, loop.id)
+
+        # 数组键来自主标签记录
+        assert data["spectrum"]["frequencies"] == [0.0, 0.04, 0.08]
+        assert data["spectrum"]["amplitudes"] == [0.1, 5.0, 0.2]
+        assert data["spectrum"]["peakFrequency"] == 0.04
+        assert data["spectrum"]["oscillationIndex"] == 0.9
+        assert data["cusumAnalysis"]["cusumPos"] == [0.0, 1.0, 2.0]
+        assert data["cusumAnalysis"]["cusumNeg"] == [0.0, -1.0, -2.0]
+        assert data["cusumAnalysis"]["shiftPoints"] == [2]
+        assert data["cusumAnalysis"]["threshold"] == 1.5
+        assert data["scatterPlot"]["x"] == [1.0, 2.0]
+        assert data["scatterPlot"]["y"] == [3.0, 4.0]
+        # 标量键可从非主标签记录聚合读取
+        assert data["qualityTimeline"]["badRate"] == 0.125
+        assert data["qualityTimeline"]["totalPoints"] == 200
+        assert data["qualityTimeline"]["badPoints"] == 25
+        # 顶层结构键集保持不变
+        for key in (
+            "spectrum",
+            "stepResponse",
+            "cusumAnalysis",
+            "scatterPlot",
+            "qualityTimeline",
+            "saturationAnalysis",
+            "slowResponse",
+            "choudhury",
+            "iaeAnalysis",
+            "kano",
+        ):
+            assert key in data

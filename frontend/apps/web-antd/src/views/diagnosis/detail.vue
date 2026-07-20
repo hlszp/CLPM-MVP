@@ -110,6 +110,31 @@ const riskLevel = computed<{
   return { label: 'LOW', status: 'primary' };
 });
 
+/** B5：可信度等级角标（A/B 绿、C 黄、D/E 红，基于有效数据率五级分级） */
+const confidenceLevelTag = computed<{
+  label: string;
+  status: SummaryItem['status'];
+}>(() => {
+  const level = detail.value?.confidenceLevel;
+  const validRate = detail.value?.validRate;
+  if (!level) return { label: '—', status: 'neutral' };
+  const statusMap: Record<string, SummaryItem['status']> = {
+    A: 'success',
+    B: 'success',
+    C: 'warning',
+    D: 'danger',
+    E: 'danger',
+  };
+  const rateText =
+    validRate === null || validRate === undefined
+      ? ''
+      : `（${(validRate * 100).toFixed(1)}%）`;
+  return {
+    label: `${level}${rateText}`,
+    status: statusMap[level] ?? 'neutral',
+  };
+});
+
 /** 处理状态文案与色彩 */
 const trackerStatusTag = computed<{
   label: string;
@@ -174,6 +199,12 @@ const summaryItems = computed<SummaryItem[]>(() => {
       label: '融合置信度',
       value: Number(detail.value.fusedConfidence).toFixed(2),
       status: getThresholdStatus(detail.value.fusedConfidence, 0.8, 0.5),
+    },
+    {
+      key: 'confidenceLevel',
+      label: '可信度',
+      value: confidenceLevelTag.value.label,
+      status: confidenceLevelTag.value.status,
     },
     {
       key: 'risk',

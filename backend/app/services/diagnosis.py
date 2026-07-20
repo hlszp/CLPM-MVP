@@ -446,6 +446,10 @@ async def get_diagnosis_detail(db: AsyncSession, loop_id: str) -> dict:
         "compositeScore": composite_score,
         "diagnosisLabels": diagnosis_labels,
         "fusedConfidence": fused_confidence,
+        # B5：可信度等级与有效数据率（取该回路最新一次诊断写入的值，
+        # 同一诊断任务各标签记录一致；旧数据无该键时为 None）
+        "confidenceLevel": feature_values.get("confidence_level"),
+        "validRate": feature_values.get("valid_rate"),
         "featureValues": feature_values,
         "evidenceChain": evidence_chain,
         "algorithmVersion": primary.algorithm_version,

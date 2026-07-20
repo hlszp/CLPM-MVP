@@ -26,12 +26,16 @@ import numpy as np
 from celery.schedules import crontab
 from sqlalchemy import delete, or_, select
 
-from app.contracts.data_types import QualityStatus, RawTimeSeries
+from app.contracts.data_types import ControlType, QualityStatus, RawTimeSeries
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag, DiagnosisTask
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
+from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import map_quality_code
+from app.services.preprocessing.quality_summary import compute_quality_summary
+from app.services.preprocessing.thresholds import get_threshold as get_outlier_threshold
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -77,6 +81,16 @@ _TAG_SOURCE_METRIC_FALLBACK: dict[str, str] = {
     "QUALITY_ABNORMAL": "PV_QUALITY_STATS",
     "OUTPUT_SATURATION": "OP_SATURATION_STATS",
     "MANUAL_REVIEW": "MANUAL_REVIEW",
+}
+
+# B4：loop_type → 预处理控制类型映射（与 kpi_calc._loop_type_to_control_type 对齐，
+# SPEED/OTHER/缺省回退 FLOW 通用阈值）
+_LOOP_TYPE_TO_CONTROL_TYPE: dict[str, ControlType] = {
+    "FLOW": ControlType.FLOW,
+    "PRESSURE": ControlType.PRESSURE,
+    "TEMPERATURE": ControlType.TEMPERATURE,
+    "LEVEL": ControlType.LEVEL,
+    "ANALYSIS": ControlType.COMPOSITION,
 }
 
 
@@ -786,6 +800,8 @@ async def _diagnose_loop(
     pv_quality_codes = raw_series.quality_codes.get("pv_quality", [])
     pv_quality_data: list[dict[str, str]] = []
     aligned: list[dict[str, Any]] = []
+    # aligned 各行对应的原始时序索引（B4：raw 级有效性标记用）
+    aligned_src_indices: list[int] = []
     for i, ts in enumerate(raw_series.timestamps):
         status = (
             map_quality_code(pv_quality_codes[i])
@@ -815,10 +831,34 @@ async def _diagnose_loop(
                 "mode": mode_list[i] if mode_list and i < len(mode_list) else None,
             }
         )
+        aligned_src_indices.append(i)
 
     if len(aligned) < MIN_DATA_POINTS:
         logger.info("回路 %s 对齐后数据点不足", loop.tag_name)
         return None
+
+    # B4 轻量数据质量预处理：复用 OutlierDetector 剔除 SPIKE/JUMP/OUT_OF_RANGE/NAN
+    # 异常点（pv/sp/op/ts 同步剔除保持对齐；TS_ANOMALY/HF_NOISE 仅标记不剔除），
+    # 并由 compute_quality_summary 得出 valid_rate（供 B5 可信度分级）。不改量纲/归一化。
+    aligned, valid_rate = _apply_outlier_preprocessing(
+        aligned,
+        aligned_src_indices,
+        raw_series,
+        loop,
+        mappings,
+        tags_map,
+    )
+    logger.info("回路 %s 数据质量摘要: valid_rate=%.4f", loop.tag_name, valid_rate)
+
+    # B5 可信度分级（算法说明 §3.7.2，与 KPI 链路 ConfidenceEvaluator 统一）：
+    # 基于 B4 有效数据率 valid_rate 判定 A/B/C/D/E，随每条 DiagnosisResult 落库
+    confidence_level = ConfidenceEvaluator.evaluate(valid_rate).value
+    logger.info(
+        "回路 %s 可信度分级: valid_rate=%.4f → %s",
+        loop.tag_name,
+        valid_rate,
+        confidence_level,
+    )
 
     # 执行各算法
     pv_values = np.array([d["pv"] for d in aligned if d.get("pv") is not None], dtype=float)
@@ -1383,18 +1423,32 @@ async def _diagnose_loop(
     active_tag_map: dict[str, Any] = {t.tag_code: t for t in active_tag_rows}
 
     # 写入诊断结果（每个标签一条记录）
+    # B7 可视化存储瘦身：全量可视化数组仅并入置信度最高的主标签记录，
+    # 其余记录只存自身标量 feature_values（可视化数组键已由主记录承载；
+    # 详情/可视化端点按回路聚合并集读取，对外输出结构不变）
+    primary_idx = max(
+        range(len(algorithm_results)),
+        key=lambda i: algorithm_results[i]["confidence"],
+    )
     diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
-    for result in algorithm_results:
+    for idx, result in enumerate(algorithm_results):
         confidence_decimal = Decimal(str(round(result["confidence"] * 100, 2)))
         evidence_chain = {
             **result["evidence"],
             "fused_confidence": fused_confidence,
         }
-        # 合并所有算法的可视化数据（无条件保存所有可视化数组）
-        feature_values = {
-            **all_visualization_data,
+        # B5：每条记录写入统一可信度等级与有效数据率（回路级，各标签一致）
+        own_features = {
             **result.get("feature_values", {}),
+            "confidence_level": confidence_level,
+            "valid_rate": valid_rate,
         }
+        if idx == primary_idx:
+            # 主标签记录：并入所有算法的可视化数据
+            feature_values = {**all_visualization_data, **own_features}
+        else:
+            # 非主标签记录：仅保留标量，不冗余存储可视化数组
+            feature_values = {k: v for k, v in own_features.items() if not isinstance(v, list)}
         diag_record = DiagnosisResult(
             id=str(uuid4()),
             loop_id=loop_id,
@@ -1416,6 +1470,8 @@ async def _diagnose_loop(
         "diagnosedAt": diagnosed_at.isoformat(),
         "labels": [r["label"] for r in algorithm_results],
         "fusedConfidence": fused_confidence,
+        "confidenceLevel": confidence_level,
+        "validRate": valid_rate,
         "algorithmVersion": DIAG_ALGORITHM_VERSION,
         "status": "SUCCESS",
     }
@@ -3238,6 +3294,135 @@ def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
 # ---------------------------------------------------------------------------
 # 辅助函数
 # ---------------------------------------------------------------------------
+
+
+def _resolve_pv_range(
+    mappings: dict[str, LoopTagMapping],
+    tags_map: dict[str, TagRegistry],
+) -> tuple[float, float]:
+    """解析 PV Tag 量程（B4 异常检测用），缺省或非法时回退 0.0~100.0。"""
+    mapping = mappings.get("PV")
+    tag = tags_map.get(str(mapping.tag_id)) if mapping else None
+    range_min = getattr(tag, "range_min", None)
+    range_max = getattr(tag, "range_max", None)
+    min_v = float(range_min) if isinstance(range_min, (int, float)) else 0.0
+    max_v = float(range_max) if isinstance(range_max, (int, float)) else 100.0
+    if max_v <= min_v:
+        return 0.0, 100.0
+    return min_v, max_v
+
+
+def _apply_outlier_preprocessing(
+    aligned: list[dict[str, Any]],
+    src_indices: list[int],
+    raw_series: RawTimeSeries,
+    loop: LoopLedger,
+    mappings: dict[str, LoopTagMapping],
+    tags_map: dict[str, TagRegistry],
+) -> tuple[list[dict[str, Any]], float]:
+    """B4 轻量数据质量预处理：异常点剔除 + 质量摘要。
+
+    复用预处理 Pipeline 的 OutlierDetector 对 PV（及 OP）执行异常值检测，
+    按 should_invalidate 规则剔除 SPIKE/JUMP/OUT_OF_RANGE/NAN 点
+    （pv/sp/op/ts 同步剔除保持对齐；TS_ANOMALY/HF_NOISE 仅标记不剔除；
+    冻结检测跳过——传感器卡死由 _detect_sensor_faults 作为诊断标签输出，
+    稳态恒值是正常工况，不作为数据质量异常剔除）。
+    全程在原始工程值上进行，不改量纲/归一化。剔除比例 >50% 时记日志并继续诊断。
+
+    Args:
+        aligned: 质量码过滤后的对齐数据（ts/pv/sp/op/mode）
+        src_indices: aligned 各行对应的原始时序索引（raw 级有效性标记用）
+        raw_series: 宽表查询原始时序
+        loop: 回路台账（loop_type 决定检测阈值表）
+        mappings: 回路 Tag 角色映射
+        tags_map: Tag 注册表（取 PV 量程）
+
+    Returns:
+        (剔除异常点后的 aligned, valid_rate 有效数据率 0~1)
+    """
+    n_raw = len(raw_series.timestamps)
+    try:
+        loop_type = loop.loop_type if isinstance(loop.loop_type, str) else ""
+        control_type = _LOOP_TYPE_TO_CONTROL_TYPE.get(loop_type.upper(), ControlType.FLOW)
+        detector = OutlierDetector(get_outlier_threshold(control_type))
+        range_min, range_max = _resolve_pv_range(mappings, tags_map)
+
+        ts_list = [d["ts"] for d in aligned]
+        pv_list = [d["pv"] for d in aligned]
+        pv_reasons = detector.detect_all(
+            tag_name="pv",
+            values=pv_list,
+            timestamps=ts_list,
+            range_min=range_min,
+            range_max=range_max,
+            quality_codes=None,
+            is_normalized=False,
+            skip_frozen=True,
+        )
+        invalid_idx = {
+            i for i, reasons in pv_reasons.items() if OutlierDetector.should_invalidate(reasons)
+        }
+
+        # OP 同步检测（接口支持多信号）：OP 缺失（None）点会被 detect_nan 标记，
+        # 缺失不等于数据质量异常，剔除时跳过
+        op_list = [d.get("op") for d in aligned]
+        if any(v is not None for v in op_list):
+            op_reasons = detector.detect_all(
+                tag_name="op",
+                values=op_list,
+                timestamps=ts_list,
+                range_min=range_min,
+                range_max=range_max,
+                quality_codes=None,
+                is_normalized=False,
+                skip_frozen=True,
+            )
+            for i, reasons in op_reasons.items():
+                if op_list[i] is None:
+                    continue
+                if OutlierDetector.should_invalidate(reasons):
+                    invalid_idx.add(i)
+
+        removed = len(invalid_idx)
+        if removed:
+            ratio = removed / len(aligned)
+            if ratio > 0.5:
+                logger.warning(
+                    "回路 %s 异常点剔除比例过高（%d/%d，%.1f%%），记日志并继续诊断",
+                    loop.tag_name,
+                    removed,
+                    len(aligned),
+                    ratio * 100,
+                )
+            else:
+                logger.info(
+                    "回路 %s 异常点剔除 %d/%d（%.1f%%）",
+                    loop.tag_name,
+                    removed,
+                    len(aligned),
+                    ratio * 100,
+                )
+
+        # raw 级有效性：质量码 Bad/PV 缺失（对齐段已剔除）+ 本次异常点剔除
+        kept_src = set(src_indices)
+        pv_valid = [i in kept_src for i in range(n_raw)]
+        for i in invalid_idx:
+            pv_valid[src_indices[i]] = False
+
+        summary = compute_quality_summary(
+            validity={"pv_valid": pv_valid},
+            timestamps=list(raw_series.timestamps),
+            point_count=n_raw,
+            quality_codes=None,
+            expected_interval_s=_compute_sample_interval(aligned),
+        )
+        filtered = [d for i, d in enumerate(aligned) if i not in invalid_idx]
+        return filtered, summary.valid_rate
+    except Exception as exc:  # noqa: BLE001
+        # 预处理失败不中断诊断：按未剔除数据继续，valid_rate 按对齐存活率兜底
+        logger.warning("回路 %s B4 异常点预处理失败，按未剔除继续: %s", loop.tag_name, exc)
+        fallback_rate = len(aligned) / n_raw if n_raw else 0.0
+        return aligned, round(fallback_rate, 4)
 
 
 def _get_tag_name(

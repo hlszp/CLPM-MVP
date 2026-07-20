@@ -145,6 +145,10 @@ export namespace DiagnosisApi {
     compositeScore: number;
     diagnosisLabels: DiagnosisLabelItem[];
     fusedConfidence: number;
+    /** B5：可信度等级 A/B/C/D/E（基于有效数据率，旧数据可能缺省） */
+    confidenceLevel?: 'A' | 'B' | 'C' | 'D' | 'E' | null;
+    /** B5：有效数据率 0~1（旧数据可能缺省） */
+    validRate?: null | number;
     featureValues: Record<string, number>;
     evidenceChain: EvidenceChain;
     algorithmVersion: string;
