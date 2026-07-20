@@ -7,11 +7,11 @@
 
 > **整改进展（2026-07-20）**：
 > - **Phase A（A1-A11）已全部合并**（PR #86/#87/#88 + 热修复 #91，另 #90 Beat 双触发修复、#92 metric 种子对齐同步合并）：死链/假 PDF/A-B 对比/统计口径/阈值配置/启停门控/调度对齐/漏诊/tag 写入方全部落地，main 全量 1930 passed。
-> - **Phase B（B1-B8）已完成开发**，3 个 PR 叠放待合并：
->   - PR #93 `zp/feat-diagnosis-b-scheduler`：B1 体检轨（每 8h 全回路体检，EngineRuleLoader 可配开关）+ B6 labels 子集（前后端贯通）+ B8 推荐映射修正（pytest 1941 passed）
->   - PR #94 `zp/feat-diagnosis-b-algorithms`：B2 传感器故障算法组（卡死/噪声突增/漂移，归入 QUALITY_ABNORMAL 子类型）+ B3 Harris 指数模型失配评估（故障注入测试 19 个，正常信号误报实测 0/20，pytest 1960 passed）
->   - PR #95 `zp/feat-diagnosis-b-quality`：B4 轻量预处理复用（SPIKE/JUMP/OUT_OF_RANGE/NAN 剔除，冻结段有意保留）+ B5 可信度 A-E 统一（与 KPI 同一 ConfidenceEvaluator，详情页角标）+ B7 可视化存储瘦身（全量数组仅入主标签记录，端点输出不变，pytest 1973 passed）
-> - 合并顺序建议：#93 → #94 → #95（叠放关系，按序合并 diff 自动收窄）。Phase C-E 待启动。
+> - **Phase B（B1-B8）已全部合并**（PR #93/#94/#95 + 文档 #96，main 全量 1973 passed）：
+>   - PR #93：B1 体检轨（每 8h 全回路体检，EngineRuleLoader 可配开关）+ B6 labels 子集（前后端贯通）+ B8 推荐映射修正
+>   - PR #94：B2 传感器故障算法组（卡死/噪声突增/漂移，归入 QUALITY_ABNORMAL 子类型）+ B3 Harris 指数模型失配评估（故障注入测试 19 个，正常信号误报实测 0/20）
+>   - PR #95：B4 轻量预处理复用（SPIKE/JUMP/OUT_OF_RANGE/NAN 剔除，冻结段有意保留）+ B5 可信度 A-E 统一（与 KPI 同一 ConfidenceEvaluator，详情页角标）+ B7 可视化存储瘦身（全量数组仅入主标签记录，端点输出不变）
+> - Phase C-E 待启动。
 
 ---
 
