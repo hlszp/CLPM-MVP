@@ -152,7 +152,7 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统；用户（管理员/工程师）可自助完成配置组态，减少开发团队介入 |
 | 模块架构 | 6 模块 + 1 门户：工作台 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理；各业务模块遵循"配置→运行→分析"三态自包含原则，减少跨模块依赖 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体）；回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D）；PID 参数与控制模式从关联 tag 只读读取；数据质量主要针对 PV 值（Good/Bad/Uncertain 质量码） |
-| **数据架构** | **导入走远端、计算全本地**（2026-07-20 用户定调）：① 历史数据有两个源——远端 AAS 历史数据接口（remote_api）有且仅有"数据管理→历史数据导入"手工任务可调用（`data_import.py` 独立客户端，不经 provider 工厂），本地 TDengine 是所有性能评估/回路诊断/回路整定等计算任务的唯一历史数据来源；② 任何计算任务**不得**自动降级/切换到远端 API 取数，本地数据不完整按 INCONCLUSIVE/数据不足提示，由用户导入补齐；③ 实时数据源唯一：SignalR Hub（`signalr_hub_url`），开发/生产一致；④ `DATA_SOURCE_TYPE` 配置项已废止（兼容保留，不再影响计算路径）；`get_provider()` 恒返回本地 TDengineProvider |
+| **数据架构** | **导入走远端、计算全本地**（2026-07-20 用户定调，决策记录：`docs/过程文档/data-architecture-decision-local-first-2026-07-20.md`）：① 历史数据有两个源——远端 AAS 历史数据接口（remote_api）有且仅有"数据管理→历史数据导入"手工任务可调用（`data_import.py` 独立客户端，不经 provider 工厂），本地 TDengine 是所有性能评估/回路诊断/回路整定等计算任务的唯一历史数据来源；② 任何计算任务**不得**自动降级/切换到远端 API 取数，本地数据不完整按 INCONCLUSIVE/数据不足提示，由用户导入补齐；③ 实时数据源唯一：SignalR Hub（`signalr_hub_url`），开发/生产一致；④ `DATA_SOURCE_TYPE` 配置项已废止（兼容保留，不再影响计算路径）；`get_provider()` 恒返回本地 TDengineProvider |
 | Action Tracker | 诊断中心子模块（子菜单路由），状态机 PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED，中文显示为待处理/处理中/已实施/已忽略 |
 | 统计分析 | 不设独立模块，分散到各业务模块的"分析"态；自动报表归入系统管理 |
 | 回路整定 | Phase 1 保留页面与实验/辅助接口，只输出建议、证据、风险和回退方案；不支持 DCS 参数下写，Phase 2 再完成生产级算法闭环 |
