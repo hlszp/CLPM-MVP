@@ -5,6 +5,13 @@
 - 审查依据：PRD v6.0 §4.4/§5.2/§5.6/§7、实现契约 v2.0、FDS v6.0 §5.4、ADS v6.0 §3/§6.4/§10.4、IDS v6.0 §2.4/§2.7/§2.9、UI/UX v6.1 §6.4/§7.10、GB/T 44693.2-2024、DB32/T 4822-2024
 - 审查方式：后端代码全量勘察（diagnosis_engine.py 2835 行 / services/diagnosis.py 1461 行 / 端点 956 行 / 5 个测试文件约 261 用例）、前端 7 页面全量勘察、7 份设计文档承诺提取
 
+> **整改进展（2026-07-19）**：Phase A（§5，A1-A11 全部 11 项 P0）已完成开发并创建 3 个 PR，待合并：
+> - PR #86 `zp/fix-diagnosis-p0-frontend`：A1 死链 + A7/A8 前端（check:type 零错误）
+> - PR #87 `zp/fix-diagnosis-p0-engine`：A5 种子阈值对齐+迁移 / A6 is_enabled 门控 / A7 孤儿函数删除 / A9 Beat crontab+去重 / A10 漏诊修复（pytest 1906 passed）
+> - PR #88 `zp/fix-diagnosis-p0-closure`：A2 同步 PDF / A3 A/B 对比实现 / A4 后端聚合统计 / A8 后端删除约束 / A11 tag 写入方+面板接线（pytest 1927 passed，check:type 零错误）
+>
+> 合并顺序建议：#86 → #87 → #88（#88 的 A11 落库段改动与 #87 门控段同文件不同区域，若冲突以 #87 为基线 rebase）。Phase B-E 待启动。
+
 ---
 
 ## 1. 执行摘要
