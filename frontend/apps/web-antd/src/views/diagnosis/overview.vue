@@ -352,9 +352,9 @@ function handleViewDetail(loopId: string) {
   router.push(`/diagnosis/detail/${loopId}`);
 }
 
-/** 跳转诊断列表 */
+/** 跳转诊断任务列表 */
 function handleViewAll() {
-  router.push('/diagnosis/list');
+  router.push('/diagnosis/tasks');
 }
 
 /** 重试加载 */
