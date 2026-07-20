@@ -31,6 +31,7 @@ from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag,
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
+from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import map_quality_code
 from app.services.preprocessing.quality_summary import compute_quality_summary
@@ -849,6 +850,16 @@ async def _diagnose_loop(
     )
     logger.info("回路 %s 数据质量摘要: valid_rate=%.4f", loop.tag_name, valid_rate)
 
+    # B5 可信度分级（算法说明 §3.7.2，与 KPI 链路 ConfidenceEvaluator 统一）：
+    # 基于 B4 有效数据率 valid_rate 判定 A/B/C/D/E，随每条 DiagnosisResult 落库
+    confidence_level = ConfidenceEvaluator.evaluate(valid_rate).value
+    logger.info(
+        "回路 %s 可信度分级: valid_rate=%.4f → %s",
+        loop.tag_name,
+        valid_rate,
+        confidence_level,
+    )
+
     # 执行各算法
     pv_values = np.array([d["pv"] for d in aligned if d.get("pv") is not None], dtype=float)
     sp_values = np.array([d["sp"] for d in aligned if d.get("sp") is not None], dtype=float)
@@ -1420,9 +1431,12 @@ async def _diagnose_loop(
             "fused_confidence": fused_confidence,
         }
         # 合并所有算法的可视化数据（无条件保存所有可视化数组）
+        # B5：每条记录写入统一可信度等级与有效数据率（回路级，各标签一致）
         feature_values = {
             **all_visualization_data,
             **result.get("feature_values", {}),
+            "confidence_level": confidence_level,
+            "valid_rate": valid_rate,
         }
         diag_record = DiagnosisResult(
             id=str(uuid4()),
@@ -1445,6 +1459,8 @@ async def _diagnose_loop(
         "diagnosedAt": diagnosed_at.isoformat(),
         "labels": [r["label"] for r in algorithm_results],
         "fusedConfidence": fused_confidence,
+        "confidenceLevel": confidence_level,
+        "validRate": valid_rate,
         "algorithmVersion": DIAG_ALGORITHM_VERSION,
         "status": "SUCCESS",
     }

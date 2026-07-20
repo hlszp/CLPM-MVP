@@ -425,6 +425,70 @@ class TestDiagnosisDetail:
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_LOOP_NOT_FOUND"
 
+    def test_get_detail_exposes_confidence_level(self, client, mock_db, fake_redis) -> None:
+        """B5：详情响应透出最新一次诊断写入的 confidenceLevel/validRate。"""
+        loop = _make_loop()
+        diag = _make_diag_result(
+            feature_values={
+                "stiction_index": 0.78,
+                "confidence_level": "B",
+                "valid_rate": 0.875,
+            }
+        )
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return _make_scalar_one_or_none_mock(diag)
+            if call_count[0] == 3:
+                return _make_scalars_mock([diag])
+            return _make_scalar_one_or_none_mock(_make_snapshot())
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/diagnosis/{loop.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["confidenceLevel"] == "B"
+        assert data["validRate"] == 0.875
+
+    def test_get_detail_confidence_level_absent_for_legacy(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """B5：旧诊断记录（feature_values 无可信度键）透出 None。"""
+        loop = _make_loop()
+        diag = _make_diag_result()  # 默认 feature_values 不含 confidence_level
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return _make_scalar_one_or_none_mock(diag)
+            if call_count[0] == 3:
+                return _make_scalars_mock([diag])
+            return _make_scalar_one_or_none_mock(_make_snapshot())
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/diagnosis/{loop.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["confidenceLevel"] is None
+        assert data["validRate"] is None
+
     def test_get_detail_no_diag_result(self, client, mock_db, fake_redis) -> None:
         """回路无诊断结果返回 404。"""
         loop = _make_loop()

@@ -3044,3 +3044,78 @@ class TestB4OutlierPreprocessing:
         assert result is not None
         assert result["status"] == "SUCCESS"
         assert "MANUAL_REVIEW" in result["labels"]
+
+
+# ===========================================================================
+# B5：可信度 A-E 统一（valid_rate → ConfidenceLevel）
+# ===========================================================================
+
+
+class TestB5ConfidenceLevel:
+    """B5：ConfidenceEvaluator.evaluate(valid_rate) 写入 DiagnosisResult 与返回 dict。"""
+
+    @staticmethod
+    def _extract_results(db: AsyncMock) -> list:
+        """从 db.add 调用中提取 DiagnosisResult 实例。"""
+        from app.models.diagnosis import DiagnosisResult
+
+        return [
+            call.args[0]
+            for call in db.add.call_args_list
+            if isinstance(call.args[0], DiagnosisResult)
+        ]
+
+    async def _run_with_quality(self, pv_quality: list[int]) -> tuple[dict, list]:
+        """以指定 PV 质量码执行诊断（平稳数据，无异常点干扰 valid_rate）。"""
+        from app.services.confidence_evaluator import ConfidenceEvaluator
+
+        # 隔离其他测试对运行时阈值缓存的修改
+        ConfidenceEvaluator.set_thresholds(None)
+
+        n = len(pv_quality)
+        pv = [50.0 + 0.01 * float(np.sin(i)) for i in range(n)]
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+        data = _make_raw_timeseries(pv, pv_quality=pv_quality)
+
+        async def _query_fn(**kwargs):
+            return data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+        return result, self._extract_results(db)
+
+    @pytest.mark.asyncio
+    async def test_valid_rate_096_gives_level_a(self) -> None:
+        """valid_rate=0.96（4 个 Bad 质量点）→ 可信度 A，写入落库与返回结构。"""
+        result, records = await self._run_with_quality([0] * 4 + [1] * 96)
+
+        assert result is not None
+        assert result["validRate"] == pytest.approx(0.96)
+        assert result["confidenceLevel"] == "A"
+        assert len(records) > 0
+        for record in records:
+            assert record.feature_values["confidence_level"] == "A"
+            assert record.feature_values["valid_rate"] == pytest.approx(0.96)
+
+    @pytest.mark.asyncio
+    async def test_valid_rate_05_gives_level_d(self) -> None:
+        """valid_rate=0.5（半数 Bad 质量点）→ 可信度 D。"""
+        result, records = await self._run_with_quality([0] * 50 + [1] * 50)
+
+        assert result is not None
+        assert result["validRate"] == pytest.approx(0.5)
+        assert result["confidenceLevel"] == "D"
+        assert len(records) > 0
+        for record in records:
+            assert record.feature_values["confidence_level"] == "D"
+            assert record.feature_values["valid_rate"] == pytest.approx(0.5)
