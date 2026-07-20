@@ -45,6 +45,7 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | 数据链路修复 | Celery worker 经 `worker_process_init` 预载 sys_config（此前仅 API lifespan 预载，worker 取不到业务 URL 导致导入/远端取数全失败）；实时自控率/回路状态统计改读 Redis 实时缓存（原只读 PG `tag_registry.current_value`，AAS 停更后数据过期）；装置/单元性能明细表改为当前节点+直接子节点 | PR #79 |
 | 远端调用保护 | RemoteApiProvider 全局限流（per-loop 信号量默认 4 并发，覆盖 DataPlanner 无界 gather）+ 熔断器（连续失败 5 次熔断 300s 快速失败、半开探测）；SignalR 重连指数退避 5s→30s 封顶。背景：2026-07-19 回填 8 worker × ~54 并发压垮远端边缘 API | PR #80 |
 | 性能评估四页治理 | 全面检查装置性能/回路性能/评估任务/KPI报表 4 页并修复 27 项：DataPlanner 契约查询 steady_rate→stability_rate 别名（快照只剩 PARTIAL 的回归）；装置聚合仪表盘全厂 null；快照服务端排序；_parse_dt 时区；DataLineage snake_case 血缘；策略配置裸数组解析；评估历史复合行键/日期 endOfDay；E 级评分掩码；kpi-report latestOnly=false + UTC 窗口；危险操作统一 ClpmDangerConfirmModal | PR #81 |
+| 诊断整改 Phase A+B | 诊断中心全面审查与整改（总计划：`docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md`）。Phase A 止血：前端死链、Tracker PDF 假链路改同步下载、A/B 对比端点实现（前后 7 天 8 项 KPI 聚合）、统计口径改后端聚合、阈值种子键名对齐+迁移 v6p1diag002、is_enabled 真正禁用算法、Beat crontab 化+任务去重、INCONCLUSIVE 漏诊修复、diagnosis_tag 写入方+标签面板接线。Phase B 自主诊断：体检轨每 8h 全回路体检、按需诊断 labels 子集、传感器故障算法组（卡死/噪声突增/漂移，归入质量异常子类型）、Harris 指数模型失配评估、异常值剔除预处理（SPIKE/JUMP/OUT_OF_RANGE/NAN）、可信度 A-E 随结论落库并展示、可视化存储瘦身（全量数组仅入主标签记录）、推荐映射修正。另：Beat 双触发修复（pidfile+pgrep 双重单例）、metric 种子对齐 CALCULATOR_REGISTRY、Alembic 合并迁移 v6p1merge002 | PR #86-#96 |
 
 ## v6.0 核心架构组件
 
@@ -133,6 +134,7 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 - **prewarm 预热策略已废止**（2026-07-18）：原"每小时 55 分"预热窗口与整点任务窗口错位一小时（预热的是上一任务已算完的窗口，从未命中），已移除 beat 条目、worker_ready 预热与 L2 兜底预热。整点任务数据来源统一为 **realtime 滚动缓存**（`realtime:history:*`，保留 75 分钟×1Hz=4500 点，provider 对近 1 小时窗口自动探测）+ TDengine 回源兜底；`prewarm_cache` 任务保留供手工/运维调用
 - **macOS fork 时区陷阱**：celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）
 - **Celery Beat 已自动启动**（v6.1）：后端 lifespan 中自动启动 Beat 调度进程，每小时 KPI 计算等定时任务自动执行，**严禁手工再启动 Beat**——两个 beat 并存会导致每个定时任务双触发（2026-07-20 实测 43 组同标题 STANDARD 任务）；lifespan 启动有 pidfile + pgrep 双重单例防护，重启后端不会重复拉起
+- **诊断双轨调度**（2026-07-20，PR #86-#96）：事件轨 `diagnosis-engine-hourly`（crontab 整点 10 分，score<60 或 score NULL 即 INCONCLUSIVE 回路触发深诊）+ 体检轨 `diagnosis-engine-checkup-8h`（crontab 0/8/16 点 20 分，全部 READY 回路 1h 窗口体检，`triggered_by='checkup-scheduler'`；开关经 EngineRuleLoader `DIAG_CHECKUP` rule params 配置，默认开）；诊断阈值配置**已真实生效**（种子键名已对齐算法读取键，存量库经 v6p1diag002 迁移），`is_enabled=False` 真正禁用对应算法；按需诊断支持 labels 子集
 - **前端端口是 5666**（配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=5666`；项目端口统一规划到 7100-7200 段，后端 API 为 7101）
 - **前端 TypeScript 错误已全部修复**（v6.0 升级中清零，原 plant-node-tree.vue 3 个 + workbench.vue 3 个已修复）
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
@@ -395,6 +397,7 @@ v6.0 文档统一升级已完成，后续工作方向：
 |---|---|---|
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
 | 前端 lint/格式化整理 | 前端代码 → `pnpm run lint` | 工作区已清理干净（2026-07-19）；如需进一步统一可跑 `pnpm run lint --fix` 后提交 |
+| 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；C 自助组态（阈值全入库/专家规则引擎化/三级阈值覆盖/配置版本回滚）、D 管理闭环（诊断自动建 Tracker 单/MOC 关联/整改效果自动验证）、E 规范符合性（GB/T 44693.2 用例验证 ≥90%/口径裁定/文档对齐） |
 | E2E 测试补充 | `e2e/` 目录 → UI/UX v6.0 → v6.0 新增页面 | 任务管理/可信度徽章/INCONCLUSIVE 已补（2026-07-19，PR #78：E2E-TASK-001~006 + E2E-CONF-001~004，含 playwright 端口 7100→5666 修正）；其余页面按 UI/UX v6.0 逐步补 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
 | v6.0 文档统一升级 | `docs/过程文档/superpowers/plans/v6-consistency-check.md` → v6.0 各设计文档 | 文档已统一升级至 v6.0，需持续保持文档与代码一致性 |
