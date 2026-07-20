@@ -825,8 +825,12 @@ onMounted(loadConfig);
             </Form>
           </Card>
 
-          <!-- 历史数据源配置 -->
-          <Card class="mb-4" size="small" title="历史数据源">
+          <!-- 历史数据源配置（仅数据导入时调用） -->
+          <Card
+            class="mb-4"
+            size="small"
+            title="历史数据导入接口（仅「数据管理 → 历史数据导入」时调用）"
+          >
             <Form layout="vertical" :model="form">
               <FormItem label="API 地址">
                 <Input
@@ -847,6 +851,10 @@ onMounted(loadConfig);
                   :min="5"
                 />
               </FormItem>
+
+              <div class="text-gray-400 mb-3 text-xs">
+                性能评估、回路诊断等计算任务一律读取本地 TDengine，不调用此接口。
+              </div>
 
               <div class="flex items-center gap-3">
                 <Button

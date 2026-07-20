@@ -105,45 +105,41 @@ cd e2e && pnpm install && pnpm exec playwright install chromium
 pnpm exec playwright test
 ```
 
-### 7. 外部数据源对接（可选）
+### 7. 数据源与数据链路
 
-CLPM 支持两种历史数据源模式，通过 `DATA_SOURCE_TYPE` 配置切换：
+架构决策（2026-07-20）：**导入走远端、计算全本地**。
 
-| 模式 | 配置值 | 适用场景 |
+| 数据 | 来源 | 说明 |
 |---|---|---|
-| 直连 TDengine | `tdengine`（开发/模拟默认） | CLPM 本地 TDengine 回路宽表 |
-| 外部 API | `remote_api`（现场推荐） | 现场 TDengine 一 Tag 一表，由底层接口完成多 Tag 时间戳与采样率对齐 |
+| 历史数据（计算用） | **本地 TDengine** | 性能评估、回路诊断、回路整定等所有计算任务唯一历史数据来源；数据不完整时按 INCONCLUSIVE/数据不足提示，**不会**自动降级到远端接口 |
+| 历史数据（采集用） | 远端 AAS 历史数据接口 | 有且仅有「数据管理 → 历史数据导入」任务调用，把远端数据补齐到本地 TDengine |
+| 实时数据 | SignalR Hub（唯一） | `ws://<现场>/signalr/realValueForClpmHub`，开发/生产一致；写入 Redis 实时缓存（页面实时监控）+ 可选写回本地 TDengine（KPI 计算） |
 
-#### 7.1 直连 TDengine（默认）
+#### 7.1 历史数据导入接口（remote_api）
 
-无需额外配置，后端直接查询本地 TDengine。
+在 UI「链路配置」页（`/loop/aas-sync`）配置一次即持久化到 sys_config：
 
-#### 7.2 外部 API 模式
+- 历史数据 API 地址：如 `http://192.168.100.2:81/api/services/v1/HistoryData/Get`
+- 鉴权 Token（可选）、请求超时
 
-修改 `backend/.env`：
+该接口**只在手工启动历史数据导入任务时**由 `data_import.py` 直接调用，任何计算任务（KPI 整点/回填/诊断/趋势）都不会调用它。对接接口规范见 `docs/设计文档/05-IDS/HisDATA_API.md`。
 
-```bash
-DATA_SOURCE_TYPE=remote_api
-HISTORY_DATA_API_URL=http://localhost:7106/api/services/v1/HistoryData/Get
-HISTORY_DATA_API_TOKEN=           # 可选，Bearer Token
-HISTORY_DATA_API_TIMEOUT=30.0
-```
+> 兼容说明：`DATA_SOURCE_TYPE` 环境变量已废止（仅作配置保留），不再影响计算路径的数据源选择。
 
-该模式下，CLPM 不直接读取现场 TDengine 物理表，只消费底层接口返回的 JSON 数据块：`timestamps` 为统一时间轴，`series` 为各 Tag 对齐后的值和质量码。
+#### 7.2 实时数据订阅（SignalR/WebSocket，唯一实时数据源）
 
-对接接口规范见 `docs/设计文档/05-IDS/HisDATA_API.md`。
+同样在「链路配置」页配置：
 
-#### 7.3 实时数据订阅（SignalR/WebSocket）
-
-```bash
-SIGNALR_HUB_URL=ws://localhost:7106/signalr/realValueForClpmHub
-SIGNALR_ENABLED=True             # 启用实时数据订阅
-SIGNALR_RECONNECT_INTERVAL=5     # 断线重连间隔（秒）
-REALTIME_WRITEBACK_ENABLED=False # 现场模式：只缓存/推送，不写回 CLPM 本地回路宽表
-```
+- SignalR Hub URL：如 `ws://192.168.100.2:81/signalr/realValueForClpmHub`
+- 断线重连基础间隔（指数退避 5s→30s 封顶）
+- 实时数据写回本地 TDengine 宽表（`REALTIME_WRITEBACK_ENABLED`，默认开启）
 
 对接接口规范见 `docs/设计文档/05-IDS/RealDATA_API.md`。
 实时值查询 API：`GET /api/v1/realtime?tagCodes=LIC-101.PV,TIC-101.PV`
+
+#### 7.3 网络链路（局域网/公网，与数据源无关）
+
+「链路配置」页的局域网/公网切换**只切换网络链路**（是否经 Tailscale 子网路由转发），数据源不变：公网外出时实时订阅与历史导入经 Tailscale 到达同一现场接口，回局域网后直连。
 
 #### 7.4 模拟远端数据服务（mock_data_server）
 
