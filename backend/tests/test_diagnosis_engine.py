@@ -1,7 +1,7 @@
 """诊断引擎 Celery 任务测试 (S4-DIAG-002).
 
 测试覆盖：
-- 纯函数：_detect_external_disturbance / _compute_sample_interval 等
+- 纯函数：_compute_sample_interval / _analyze_quality / _analyze_saturation 等
 - _diagnose_loop 核心诊断逻辑（mock DB + RawTimeSeries 宽表查询）
 - _do_run_diagnosis / _do_diagnose_single_loop 编排逻辑
 """
@@ -17,7 +17,6 @@ import pytest
 
 from app.contracts.data_types import RawTimeSeries
 from app.tasks.diagnosis_engine import (
-    _analyze_pid_params,
     _analyze_quality,
     _analyze_saturation,
     _analyze_step_response,
@@ -28,7 +27,6 @@ from app.tasks.diagnosis_engine import (
     _dempster_shafer_fusion,
     _detect_bias_shift,
     _detect_choudhury_nonlinearity,
-    _detect_external_disturbance,
     _detect_kano_stiction,
     _detect_oscillation_fft,
     _detect_oscillation_iae,
@@ -144,45 +142,6 @@ def _make_scalars_all_mock(items: list) -> MagicMock:
 # ===========================================================================
 # 纯函数测试
 # ===========================================================================
-
-
-class TestDetectExternalDisturbance:
-    """测试 _detect_external_disturbance() 外扰检测。"""
-
-    def test_short_data_returns_empty(self) -> None:
-        """数据不足时应返回未检测。"""
-        pv = np.array([1.0, 2.0, 3.0], dtype=float)
-        result = _detect_external_disturbance(pv)
-        assert result["detected"] is False
-        assert result["confidence"] == 0.0
-
-    def test_no_disturbance(self) -> None:
-        """低频信号（无外扰）应返回未检测。"""
-        pv = np.array([50.0 + 0.1 * i for i in range(100)], dtype=float)
-        result = _detect_external_disturbance(pv)
-        assert result["detected"] is False
-
-    def test_with_disturbance(self) -> None:
-        """高频信号应检测到外扰。"""
-        t = np.linspace(0, 10, 200)
-        pv = 50.0 + 10.0 * np.sin(2 * np.pi * 5 * t)  # 5Hz 高频
-        result = _detect_external_disturbance(pv)
-        assert result["detected"] is True
-        assert result["confidence"] > 0.0
-        assert result["frequency"] > 0.0
-
-    def test_empty_array(self) -> None:
-        """空数组应返回未检测。"""
-        pv = np.array([], dtype=float)
-        result = _detect_external_disturbance(pv)
-        assert result["detected"] is False
-
-    def test_with_sample_interval(self) -> None:
-        """指定采样间隔时应正确计算频率。"""
-        t = np.linspace(0, 10, 200)
-        pv = 50.0 + 10.0 * np.sin(2 * np.pi * 5 * t)
-        result = _detect_external_disturbance(pv, sample_interval=0.5)
-        assert result["detected"] is True
 
 
 class TestComputeSampleInterval:
@@ -803,65 +762,6 @@ class TestDetectValveStiction:
         assert "fitting_score" in result
 
 
-class TestAnalyzePidParams:
-    """测试 _analyze_pid_params() PID 增益分析。"""
-
-    def test_short_data_returns_empty(self) -> None:
-        """数据不足应返回默认值。"""
-        pv = np.array([1.0, 2.0], dtype=float)
-        sp = np.array([1.0, 2.0], dtype=float)
-        result = _analyze_pid_params(pv, sp)
-        assert result["overaggressive"] is False
-        assert result["overconservative"] is False
-
-    def test_steady_state_no_overshoot(self) -> None:
-        """稳态数据（无 SP 阶跃）应无过冲。"""
-        n = 100
-        sp = np.full(n, 50.0)
-        pv = np.full(n, 50.0)
-        result = _analyze_pid_params(pv, sp)
-        assert result["overaggressive"] is False
-        assert result["overshoot"] == 0.0
-
-    def test_overaggressive_with_overshoot(self) -> None:
-        """SP 阶跃后 PV 过冲应检测到过激。"""
-        n = 100
-        sp = np.zeros(n)
-        sp[50:] = 100.0  # SP 阶跃
-        # PV 过冲：超过 SP 目标值
-        pv = np.zeros(n)
-        pv[50:] = 100.0
-        pv[60:70] = 130.0  # 过冲 30%
-        result = _analyze_pid_params(pv, sp)
-        assert result["overaggressive"] is True
-        assert result["overshoot"] > 0.2
-
-    def test_overconservative_slow_response(self) -> None:
-        """响应缓慢且稳态误差大应检测到过保守。"""
-        n = 200
-        sp = np.zeros(n)
-        sp[50:] = 100.0  # SP 阶跃
-        # PV 响应非常慢，且稳态误差大
-        pv = np.zeros(n)
-        for i in range(50, n):
-            pv[i] = 80.0 + 0.001 * (i - 50)  # 缓慢上升，稳态误差 20
-        result = _analyze_pid_params(pv, sp)
-        # 响应时间长 + 稳态误差大 → 过保守
-        assert "overconservative" in result
-        assert "response_time" in result
-
-    def test_downward_step(self) -> None:
-        """下降阶跃应正确计算过冲。"""
-        n = 100
-        sp = np.full(n, 100.0)
-        sp[50:] = 0.0  # 下降阶跃
-        pv = np.full(n, 100.0)
-        pv[50:] = 0.0
-        pv[60:70] = -30.0  # 下冲
-        result = _analyze_pid_params(pv, sp)
-        assert result["overshoot"] > 0.0
-
-
 class TestAnalyzeSaturation:
     """测试 _analyze_saturation() OP 饱和率分析（P0-3 修复后）。"""
 
@@ -1460,7 +1360,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
         result = await _diagnose_loop(
             db=db,
             loop_id="loop-001",
-            diag_configs={},
+            diag_configs={"VALVE_STICTION": _make_diag_config("VALVE_STICTION")},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
             query_wide_fn=_query_fn,
@@ -1512,7 +1412,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
         result = await _diagnose_loop(
             db=db,
             loop_id="loop-001",
-            diag_configs={},
+            diag_configs={"OVERAGGRESSIVE": _make_diag_config("OVERAGGRESSIVE")},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
             query_wide_fn=_query_fn,
@@ -1562,7 +1462,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
         result = await _diagnose_loop(
             db=db,
             loop_id="loop-001",
-            diag_configs={},
+            diag_configs={"EXTERNAL_DISTURBANCE": _make_diag_config("EXTERNAL_DISTURBANCE")},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
             query_wide_fn=_query_fn,
@@ -1924,3 +1824,213 @@ class TestDeduplicateLabels:
     def test_empty_results_returns_empty(self) -> None:
         """空列表应返回空列表。"""
         assert _deduplicate_labels([]) == []
+
+
+# ===========================================================================
+# A5/A6/A9/A10 修复测试（诊断引擎正确性，2026-07-20）
+# ===========================================================================
+
+
+def _make_diagnose_db(loop: MagicMock, mappings: list, tags: list) -> AsyncMock:
+    """构造 _diagnose_loop 所需的 mock DB（loop/mapping/tags/delete 四次查询）。"""
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            _make_scalar_one_or_none_mock(loop),
+            _make_scalars_all_mock(mappings),
+            _make_scalars_all_mock(tags),
+            MagicMock(),  # delete(DiagnosisResult) 结果
+        ]
+    )
+    db.add = MagicMock()
+    return db
+
+
+class TestAlgorithmEnableGating:
+    """A6：is_enabled 门控——禁用（或配置不存在）的算法不执行、不产出标签。"""
+
+    @pytest.mark.asyncio
+    async def test_disabled_oscillation_produces_no_label(self) -> None:
+        """OSCILLATION 配置缺失（禁用）时，振荡信号也不产出 OSCILLATION 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        # 50 个点的振荡信号（启用时必检出，见 test_normal_diagnosis_with_oscillation）
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},  # 全部算法禁用
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" not in result["labels"]
+        # 全部禁用时仍走 MANUAL_REVIEW 兜底
+        assert result["labels"] == ["MANUAL_REVIEW"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_oscillation_produces_label(self) -> None:
+        """OSCILLATION 启用时，同样的振荡信号应产出 OSCILLATION 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" in result["labels"]
+
+    @pytest.mark.asyncio
+    async def test_disabled_quality_produces_no_label(self) -> None:
+        """QUALITY_ABNORMAL 禁用时，坏质量数据不产出 QUALITY_ABNORMAL 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        # 50 个点，每 5 个 1 个 Bad（占比 20%，启用时必触发 Q002）
+        data = _make_raw_timeseries([50.0] * 50, pv_quality=[1, 1, 1, 1, 0] * 10)
+
+        async def _query_fn(**kwargs):
+            return data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},  # 质量算法未启用
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "QUALITY_ABNORMAL" not in result["labels"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_quality_produces_label(self) -> None:
+        """QUALITY_ABNORMAL 启用时，同样的坏质量数据产出 QUALITY_ABNORMAL 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        data = _make_raw_timeseries([50.0] * 50, pv_quality=[1, 1, 1, 1, 0] * 10)
+
+        async def _query_fn(**kwargs):
+            return data
+
+        quality_config = _make_diag_config("QUALITY_ABNORMAL")
+        quality_config.threshold = None  # 使用算法默认阈值
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"QUALITY_ABNORMAL": quality_config},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "QUALITY_ABNORMAL" in result["labels"]
+
+
+class TestThresholdTakesEffect:
+    """A5：配置阈值经 _get_threshold 真实影响算法判定结果。"""
+
+    @pytest.mark.asyncio
+    async def test_quality_threshold_from_config_changes_verdict(self) -> None:
+        """20% Bad 占比默认触发 Q002；配置调高 q002_bad_rate 后不再触发。"""
+        pv_quality = [1, 1, 1, 1, 0] * 10  # Bad 占比 20%，无连续段
+
+        async def _run(threshold: dict | None) -> list[str]:
+            db = _make_diagnose_db(
+                _make_loop(),
+                [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+                [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+            )
+            data = _make_raw_timeseries([50.0] * 50, pv_quality=pv_quality)
+
+            async def _query_fn(**kwargs):
+                return data
+
+            quality_config = _make_diag_config("QUALITY_ABNORMAL")
+            quality_config.threshold = threshold
+            result = await _diagnose_loop(
+                db=db,
+                loop_id="loop-001",
+                diag_configs={"QUALITY_ABNORMAL": quality_config},
+                ts_start=datetime(2026, 1, 1, 0, 0, 0),
+                ts_end=datetime(2026, 1, 1, 1, 0, 0),
+                query_wide_fn=_query_fn,
+            )
+            assert result is not None
+            return result["labels"]
+
+        # 默认阈值（q002_bad_rate=0.1）：20% > 10% → 触发
+        assert "QUALITY_ABNORMAL" in await _run(None)
+        # 配置阈值调高到 0.9：20% < 90% → 不触发
+        assert "QUALITY_ABNORMAL" not in await _run({"q002_bad_rate": 0.9})
+
+    @pytest.mark.asyncio
+    async def test_saturation_threshold_from_config_changes_verdict(self) -> None:
+        """OP=99 默认判定高饱和；配置调高 op_high_limit 后不再判定。"""
+        op_m = _make_mapping(tag_role="OP", tag_id="tag-op")
+        op_tag = _make_tag(tag_id="tag-op", tag_name="LIC.OP")
+
+        async def _run(threshold: dict | None) -> list[str]:
+            db = _make_diagnose_db(
+                _make_loop(),
+                [_make_mapping(tag_role="PV", tag_id="tag-pv"), op_m],
+                [_make_tag(tag_id="tag-pv", tag_name="LIC.PV"), op_tag],
+            )
+            data = _make_raw_timeseries([50.0] * 50, op=[99.0] * 50)
+
+            async def _query_fn(**kwargs):
+                return data
+
+            saturation_config = _make_diag_config("OUTPUT_SATURATION")
+            saturation_config.threshold = threshold
+            result = await _diagnose_loop(
+                db=db,
+                loop_id="loop-001",
+                diag_configs={"OUTPUT_SATURATION": saturation_config},
+                ts_start=datetime(2026, 1, 1, 0, 0, 0),
+                ts_end=datetime(2026, 1, 1, 1, 0, 0),
+                query_wide_fn=_query_fn,
+            )
+            assert result is not None
+            return result["labels"]
+
+        # 默认限位（op_high_limit=100, epsilon=2）：99 ≥ 98 → 饱和
+        assert "OUTPUT_SATURATION" in await _run(None)
+        # 配置限位调高到 120：99 < 118 → 不饱和
+        assert "OUTPUT_SATURATION" not in await _run({"op_high_limit": 120.0})
