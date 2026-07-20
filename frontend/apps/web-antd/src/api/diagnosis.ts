@@ -98,6 +98,32 @@ export namespace DiagnosisApi {
     pageSize?: number;
   }
 
+  /** 列表聚合统计（后端 SQL group-by 对全部筛选结果聚合，不受分页影响） */
+  export interface DiagnosisAggregates {
+    total: number;
+    statusCounts: Record<string, number>;
+    labelCounts: Record<string, number>;
+    /** 近 7 天归档数（仅 records 接口返回） */
+    recent7Days?: number;
+  }
+
+  /** 诊断列表响应（含聚合统计） */
+  export interface DiagnosisListResult
+    extends PaginatedResponse<DiagnosisListItem> {
+    aggregates?: DiagnosisAggregates;
+  }
+
+  /** Tracker 列表响应（复用 /diagnosis/list，含聚合统计） */
+  export interface TrackerListResult extends PaginatedResponse<TrackerItem> {
+    aggregates?: DiagnosisAggregates;
+  }
+
+  /** 诊断记录列表响应（含聚合统计） */
+  export interface DiagnosisRecordListResult
+    extends PaginatedResponse<TaskItem> {
+    aggregates?: DiagnosisAggregates;
+  }
+
   /** 诊断详情 - 单个标签结果 */
   export interface DiagnosisLabelItem {
     label: DiagnosisLabel;
@@ -615,10 +641,9 @@ export function updateDiagnosisMetricApi(
 export function getDiagnosisListApi(
   params: DiagnosisApi.DiagnosisListQueryParams,
 ) {
-  return requestClient.get<PaginatedResponse<DiagnosisApi.DiagnosisListItem>>(
-    '/diagnosis/list',
-    { params },
-  );
+  return requestClient.get<DiagnosisApi.DiagnosisListResult>('/diagnosis/list', {
+    params,
+  });
 }
 
 /**
@@ -692,10 +717,9 @@ export function updateTrackerStatusApi(
  * 后端无 /tracker 列表端点，复用 /diagnosis/list 接口获取数据。
  */
 export function getTrackerListApi(params: DiagnosisApi.TrackerListQueryParams) {
-  return requestClient.get<PaginatedResponse<DiagnosisApi.TrackerItem>>(
-    '/diagnosis/list',
-    { params },
-  );
+  return requestClient.get<DiagnosisApi.TrackerListResult>('/diagnosis/list', {
+    params,
+  });
 }
 
 /**
@@ -901,7 +925,7 @@ export function deleteDiagnosisTaskApi(taskId: string) {
 export function getDiagnosisRecordsApi(
   params: DiagnosisApi.DiagnosisListQueryParams,
 ) {
-  return requestClient.get<PaginatedResponse<DiagnosisApi.TaskItem>>(
+  return requestClient.get<DiagnosisApi.DiagnosisRecordListResult>(
     '/diagnosis/records',
     { params },
   );

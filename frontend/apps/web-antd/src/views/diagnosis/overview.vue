@@ -58,7 +58,7 @@ const hasError = ref(false);
 /** 统计数据 */
 const analyticsData = ref<DiagnosisApi.AnalyticsResult | null>(null);
 
-/** 今日异常回路列表（用于状态计数 + Top 5） */
+/** 今日异常回路列表（用于 Top 5） */
 const todayDiagnosisList = ref<DiagnosisApi.DiagnosisListItem[]>([]);
 
 // ECharts refs
@@ -182,14 +182,11 @@ async function loadOverview() {
     analyticsData.value = analytics;
     todayDiagnosisList.value = todayList.items || [];
 
-    // 计算 KPI 数值
+    // 计算 KPI 数值（待处理/已闭环改用后端全量聚合计数，不受分页影响）
     const abnormalToday = todayList.total || 0;
-    const pendingCount = todayDiagnosisList.value.filter(
-      (item) => item.actionStatus === 'PENDING',
-    ).length;
-    const implementedCount = todayDiagnosisList.value.filter(
-      (item) => item.actionStatus === 'IMPLEMENTED',
-    ).length;
+    const statusCounts = todayList.aggregates?.statusCounts ?? {};
+    const pendingCount = statusCounts.PENDING ?? 0;
+    const implementedCount = statusCounts.IMPLEMENTED ?? 0;
     // 平均闭环时长取 efficiencyTrend 最后一个值
     const trend = analytics.efficiencyTrend;
     const avgCloseHours =

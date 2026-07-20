@@ -54,6 +54,8 @@ const router = useRouter();
 const loading = ref(false);
 const recordList = ref<DiagnosisApi.TaskItem[]>([]);
 const total = ref(0);
+/** 全量聚合统计（后端 SQL group-by，不受分页影响） */
+const aggregates = ref<DiagnosisApi.DiagnosisAggregates | null>(null);
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleteLoading = ref(false);
@@ -158,6 +160,7 @@ async function loadList() {
     });
     recordList.value = data.items || [];
     total.value = data.total || 0;
+    aggregates.value = data.aggregates ?? null;
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -238,19 +241,13 @@ async function handleBatchDelete() {
   });
 }
 
-/** KpiStrip 摘要指标：已归档总数 / 近 7 天归档 / 振荡类 / 阀门粘滞类 */
+/** KpiStrip 摘要指标：已归档总数 / 近 7 天归档 / 振荡类 / 阀门粘滞类（后端聚合口径） */
 const kpiStripItems = computed<KpiStripItem[]>(() => {
-  const totalCount = recordList.value.length;
-  const sevenDaysAgo = dayjs().subtract(7, 'day');
-  const recentCount = recordList.value.filter((item) =>
-    item.completedAt ? dayjs(item.completedAt).isAfter(sevenDaysAgo) : false,
-  ).length;
-  const oscillationCount = recordList.value.filter((item) =>
-    item.labels?.some((l) => l.label === 'OSCILLATION'),
-  ).length;
-  const stictionCount = recordList.value.filter((item) =>
-    item.labels?.some((l) => l.label === 'VALVE_STICTION'),
-  ).length;
+  const agg = aggregates.value;
+  const totalCount = agg?.total ?? total.value;
+  const recentCount = agg?.recent7Days ?? 0;
+  const oscillationCount = agg?.labelCounts?.OSCILLATION ?? 0;
+  const stictionCount = agg?.labelCounts?.VALVE_STICTION ?? 0;
 
   return [
     {

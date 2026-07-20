@@ -223,6 +223,35 @@ async def list_diagnosis(
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
 
+    # 聚合统计（A4）：对全部筛选结果按诊断标签/处理状态分组计数（不受分页影响）
+    agg_stmt = (
+        select(
+            DiagnosisResult.diag_label,
+            ActionTracker.action_status,
+            func.count(),
+        )
+        .join(
+            latest_sub,
+            and_(
+                DiagnosisResult.loop_id == latest_sub.c.loop_id,
+                DiagnosisResult.diagnosed_at == latest_sub.c.max_diagnosed_at,
+            ),
+        )
+        .join(LoopLedger, DiagnosisResult.loop_id == LoopLedger.id, isouter=True)
+        .outerjoin(ActionTracker, ActionTracker.loop_id == LoopLedger.id)
+    )
+    for cond in conditions:
+        agg_stmt = agg_stmt.where(cond)
+    agg_stmt = agg_stmt.group_by(DiagnosisResult.diag_label, ActionTracker.action_status)
+
+    status_counts: dict[str, int] = {}
+    label_counts: dict[str, int] = {}
+    for label, status, cnt in (await db.execute(agg_stmt)).all():
+        label_key = label or "MANUAL_REVIEW"
+        label_counts[label_key] = label_counts.get(label_key, 0) + int(cnt)
+        status_key = status or "PENDING"
+        status_counts[status_key] = status_counts.get(status_key, 0) + int(cnt)
+
     # 分页
     stmt = (
         base_stmt.order_by(DiagnosisResult.diagnosed_at.desc())
@@ -305,6 +334,11 @@ async def list_diagnosis(
         "total": total,
         "page": page,
         "pageSize": page_size,
+        "aggregates": {
+            "total": total,
+            "statusCounts": status_counts,
+            "labelCounts": label_counts,
+        },
     }
 
 
@@ -1298,6 +1332,45 @@ async def list_diagnosis_records(
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
 
+    # 聚合统计（A4）：对全部筛选结果按任务状态分组计数 + 近 7 天归档数（不受分页影响）
+    recent_threshold = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=7)
+    agg_stmt = select(
+        DiagnosisTask.status,
+        func.count(),
+        func.count().filter(DiagnosisTask.archived_at >= recent_threshold),
+    )
+    if plant_node_id:
+        agg_stmt = agg_stmt.join(LoopLedger, DiagnosisTask.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id == plant_node_id
+        )
+    for cond in conditions:
+        agg_stmt = agg_stmt.where(cond)
+    agg_stmt = agg_stmt.group_by(DiagnosisTask.status)
+
+    status_counts: dict[str, int] = {}
+    recent7d = 0
+    for status, cnt, recent_cnt in (await db.execute(agg_stmt)).all():
+        status_counts[status] = int(cnt)
+        recent7d += int(recent_cnt or 0)
+
+    # 标签计数：统计各诊断标签覆盖的记录（任务）数，多标签任务分别计入
+    task_id_sub = select(DiagnosisTask.id)
+    if plant_node_id:
+        task_id_sub = task_id_sub.join(LoopLedger, DiagnosisTask.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id == plant_node_id
+        )
+    for cond in conditions:
+        task_id_sub = task_id_sub.where(cond)
+    label_stmt = (
+        select(DiagnosisResult.diag_label, func.count(func.distinct(DiagnosisResult.task_id)))
+        .where(DiagnosisResult.task_id.in_(task_id_sub))
+        .where(DiagnosisResult.diag_label.is_not(None))
+        .group_by(DiagnosisResult.diag_label)
+    )
+    label_counts: dict[str, int] = {
+        label: int(cnt) for label, cnt in (await db.execute(label_stmt)).all()
+    }
+
     # 分页查询（按归档时间倒序）
     stmt = (
         base_stmt.order_by(DiagnosisTask.archived_at.desc())
@@ -1385,6 +1458,12 @@ async def list_diagnosis_records(
         "total": total,
         "page": page,
         "pageSize": page_size,
+        "aggregates": {
+            "total": total,
+            "statusCounts": status_counts,
+            "labelCounts": label_counts,
+            "recent7Days": recent7d,
+        },
     }
 
 

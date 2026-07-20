@@ -70,6 +70,14 @@ class DiagnosisListItem(CamelModel):
     algorithmVersion: str | None = None
 
 
+class DiagnosisAggregates(CamelModel):
+    """列表聚合统计（SQL group-by 对全部筛选结果聚合，不受分页影响）。"""
+
+    total: int = 0
+    statusCounts: dict[str, int] = Field(default_factory=dict)
+    labelCounts: dict[str, int] = Field(default_factory=dict)
+
+
 class DiagnosisListData(CamelModel):
     """诊断列表响应 data 块。"""
 
@@ -77,6 +85,7 @@ class DiagnosisListData(CamelModel):
     total: int = 0
     page: int = 1
     pageSize: int = 20
+    aggregates: DiagnosisAggregates | None = None
 
 
 class DiagnosisEvidence(CamelModel):
@@ -508,6 +517,12 @@ class DiagnosisRecordItem(DiagnosisTaskItem):
     """诊断记录列表项（已归档），结构与任务列表项一致。"""
 
 
+class DiagnosisRecordAggregates(DiagnosisAggregates):
+    """诊断记录聚合统计（含近 7 天归档数）。"""
+
+    recent7Days: int = 0
+
+
 class DiagnosisRecordListData(CamelModel):
     """诊断记录列表响应 data 块。"""
 
@@ -515,6 +530,7 @@ class DiagnosisRecordListData(CamelModel):
     total: int = 0
     page: int = 1
     pageSize: int = 20
+    aggregates: DiagnosisRecordAggregates | None = None
 
 
 __all__ = [
@@ -525,6 +541,7 @@ __all__ = [
     "AnalyticsExportRequest",
     "AnalyticsFilterScope",
     "CloseDurationItem",
+    "DiagnosisAggregates",
     "DiagnosisAnalyticsData",
     "DiagnosisConfigItem",
     "DiagnosisConfigUpdate",
@@ -533,6 +550,7 @@ __all__ = [
     "DiagnosisLabelDetail",
     "DiagnosisListData",
     "DiagnosisListItem",
+    "DiagnosisRecordAggregates",
     "DiagnosisRecordItem",
     "DiagnosisRecordListData",
     "DiagnosisReportRequest",

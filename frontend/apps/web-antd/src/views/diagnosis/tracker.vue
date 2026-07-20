@@ -100,6 +100,8 @@ const containerListeners = computed(() =>
 const loading = ref(false);
 const trackerList = ref<DiagnosisApi.TrackerItem[]>([]);
 const total = ref(0);
+/** 全量聚合统计（后端 SQL group-by，不受分页影响） */
+const aggregates = ref<DiagnosisApi.DiagnosisAggregates | null>(null);
 
 const query = reactive({
   diagnosisLabel: undefined as DiagnosisLabel | undefined,
@@ -184,46 +186,35 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 260, fixed: 'right' },
 ];
 
-/** KpiStrip 摘要指标：各状态计数 */
+/** KpiStrip 摘要指标：各状态计数（后端聚合口径，不受分页影响） */
 const kpiStripItems = computed<KpiStripItem[]>(() => {
-  const pendingCount = trackerList.value.filter(
-    (item) => item.actionStatus === 'PENDING',
-  ).length;
-  const inProgressCount = trackerList.value.filter(
-    (item) => item.actionStatus === 'IN_PROGRESS',
-  ).length;
-  const implementedCount = trackerList.value.filter(
-    (item) => item.actionStatus === 'IMPLEMENTED',
-  ).length;
-  const ignoredCount = trackerList.value.filter(
-    (item) => item.actionStatus === 'IGNORED',
-  ).length;
+  const counts = aggregates.value?.statusCounts ?? {};
   return [
     {
       key: 'pending',
       label: '待处理',
-      value: pendingCount,
+      value: counts.PENDING ?? 0,
       unit: '条',
       status: 'warning',
     },
     {
       key: 'in_progress',
       label: '处理中',
-      value: inProgressCount,
+      value: counts.IN_PROGRESS ?? 0,
       unit: '条',
       status: 'primary',
     },
     {
       key: 'implemented',
       label: '已实施',
-      value: implementedCount,
+      value: counts.IMPLEMENTED ?? 0,
       unit: '条',
       status: 'success',
     },
     {
       key: 'ignored',
       label: '已忽略',
-      value: ignoredCount,
+      value: counts.IGNORED ?? 0,
       unit: '条',
       status: 'neutral',
     },
@@ -262,6 +253,7 @@ async function loadList() {
     });
     trackerList.value = data.items || [];
     total.value = data.total || 0;
+    aggregates.value = data.aggregates ?? null;
   } catch {
     // 错误已由拦截器处理
   } finally {
