@@ -103,6 +103,30 @@ class TestGetRecommendations:
         assert result["totalCount"] == 3
         assert all(r["label"] == "SATURATION" for r in result["recommendations"])
 
+    def test_get_recommendations_quality_abnormal(self) -> None:
+        """B8：QUALITY_ABNORMAL 应映射到仪表检查方向专属模板（不再借用 NOISE）。"""
+        from app.services.diagnosis_recommendation import get_recommendations
+
+        result = get_recommendations("loop-005b", ["QUALITY_ABNORMAL"])
+        assert result["totalCount"] == 3
+        recs = result["recommendations"]
+        assert all(r["label"] == "QUALITY_ABNORMAL" for r in recs)
+        assert all(r["labelName"] == "PV 质量异常" for r in recs)
+        actions = {r["action"] for r in recs}
+        assert actions == {"校验变送器", "检查采样链路", "核查质量码配置"}
+
+    def test_get_recommendations_manual_review(self) -> None:
+        """B8：MANUAL_REVIEW 应映射到人工复核指引专属模板（不再借用 DEAD_BAND）。"""
+        from app.services.diagnosis_recommendation import get_recommendations
+
+        result = get_recommendations("loop-005c", ["MANUAL_REVIEW"])
+        assert result["totalCount"] == 3
+        recs = result["recommendations"]
+        assert all(r["label"] == "MANUAL_REVIEW" for r in recs)
+        assert all(r["labelName"] == "人工复核" for r in recs)
+        actions = {r["action"] for r in recs}
+        assert actions == {"核对诊断数据窗口", "扩大时间窗复诊", "检查回路组态"}
+
     def test_get_recommendations_unknown_label_skipped(self) -> None:
         """未知标签应被跳过，不报错。"""
         from app.services.diagnosis_recommendation import get_recommendations

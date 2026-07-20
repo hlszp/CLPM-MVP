@@ -111,6 +111,31 @@ def run_diagnosis_hourly(self: AsyncTask) -> dict:
 
 
 @celery_app.task(
+    name="app.tasks.diagnosis_engine.run_diagnosis_checkup",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def run_diagnosis_checkup(self: AsyncTask) -> dict:
+    """每 8 小时体检轨：对全部启用回路执行周期性健康检查（不受评分阈值限制）。
+
+    失败自动重试 3 次，指数退避。
+    """
+    logger.info("体检轨任务开始, task_id=%s", self.request.id)
+    try:
+        result = self.run_async(_do_run_checkup())
+        logger.info("体检轨任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("体检轨任务失败")
+        raise
+
+
+@celery_app.task(
     name="app.tasks.diagnosis_engine.run_loop_diagnosis",
     base=AsyncTask,
     autoretry_for=(Exception,),
@@ -125,6 +150,7 @@ def run_loop_diagnosis(
     task_id: str | None = None,
     time_range_start: str | None = None,
     time_range_end: str | None = None,
+    labels: list[str] | None = None,
 ) -> dict:
     """单回路诊断（可手动触发）。
 
@@ -132,17 +158,21 @@ def run_loop_diagnosis(
     - 旧参数：ts_start（向后兼容，自动推算 ts_end = ts_start + 1h）
     - 新参数：time_range_start / time_range_end（诊断任务专用，支持自定义时间窗）
 
+    labels（B6 按需诊断）为可选的诊断标签子集：None 表示全量执行；
+    指定子集时仅执行子集内标签对应的算法（MANUAL_REVIEW 兜底不受子集限制）。
+
     当 task_id 不为 None 时，会更新 diagnosis_task 状态：
     - 开始时：PENDING → RUNNING
     - 成功时：RUNNING → SUCCESS
     - 失败时：RUNNING → FAILED（记录 error_message）
     """
     logger.info(
-        "单回路诊断, loop_id=%s, task_id=%s, time_range=%s~%s",
+        "单回路诊断, loop_id=%s, task_id=%s, time_range=%s~%s, labels=%s",
         loop_id,
         task_id,
         time_range_start,
         time_range_end,
+        labels,
     )
     return AsyncTask().run_async(
         _do_diagnose_single_loop(
@@ -151,6 +181,7 @@ def run_loop_diagnosis(
             task_id=task_id,
             time_range_start=time_range_start,
             time_range_end=time_range_end,
+            labels=labels,
         )
     )
 
@@ -169,6 +200,11 @@ _beat_entry = {
 
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
 _existing_beat["diagnosis-engine-hourly"] = _beat_entry
+# 体检轨（B1）：每 8 小时对全部启用回路做健康检查，与事件轨 minute=10 错开
+_existing_beat["diagnosis-engine-checkup-8h"] = {
+    "task": "app.tasks.diagnosis_engine.run_diagnosis_checkup",
+    "schedule": crontab(minute=20, hour="*/8"),
+}
 celery_app.conf.beat_schedule = _existing_beat
 celery_app.conf.timezone = "Asia/Shanghai"
 
@@ -185,7 +221,6 @@ async def _do_run_diagnosis() -> dict:
     与手动触发的任务记录统一管理。
     """
     from app.core.db import AsyncSessionLocal
-    from app.services.data_source.factory import get_provider
 
     now = datetime.now(UTC)
     ts_end = now.replace(minute=0, second=0, microsecond=0)
@@ -260,6 +295,42 @@ async def _do_run_diagnosis() -> dict:
         await db.commit()
 
     # 4. 并发诊断（信号量限制并发数，每协程独立 session 避免并发共享）
+    diagnosed_count, failed_count = await _run_diag_tasks_concurrent(
+        loop_task_ids, diag_configs, ts_start, ts_end
+    )
+
+    return {
+        "total": len(loop_ids),
+        "diagnosed": diagnosed_count,
+        "failed": failed_count,
+        "skipped": len(loop_ids) - len(loop_task_ids),
+        "ts_start": ts_start.isoformat(),
+        "ts_end": ts_end.isoformat(),
+    }
+
+
+async def _run_diag_tasks_concurrent(
+    loop_task_ids: dict[str, str],
+    diag_configs: dict[str, DiagnosisConfig],
+    ts_start: datetime,
+    ts_end: datetime,
+) -> tuple[int, int]:
+    """并发执行诊断任务（信号量限流，每协程独立 session 避免并发共享）。
+
+    事件轨与体检轨共用：对每个 loop 进入 RUNNING → 诊断 → SUCCESS/FAILED 状态机。
+
+    Args:
+        loop_task_ids: loop_id → task_id 映射（仅含需执行的回路）
+        diag_configs: 诊断配置字典
+        ts_start: 时间窗起始
+        ts_end: 时间窗结束
+
+    Returns:
+        (diagnosed_count, failed_count)
+    """
+    from app.core.db import AsyncSessionLocal
+    from app.services.data_source.factory import get_provider
+
     sem = asyncio.Semaphore(CONCURRENCY)
 
     async def _diag_with_sem(loop_id: str, task_id: str) -> dict | None:
@@ -332,6 +403,88 @@ async def _do_run_diagnosis() -> dict:
         else:
             diagnosed_count += 1
 
+    return diagnosed_count, failed_count
+
+
+async def _do_run_checkup() -> dict:
+    """体检轨（B1）：对全部启用回路执行周期性健康检查。
+
+    与事件轨 _do_run_diagnosis 的区别：
+    - 覆盖对象：全部 status='READY' 的启用回路（不受评分阈值限制，健康回路也纳入）
+    - 任务标识：trigger_type='auto' + triggered_by='checkup-scheduler'
+    - 开关：EngineRule（rule_type='SCHEDULE', rule_code='DIAG_CHECKUP'）的
+      params.enabled 控制，默认启用；关闭时记日志并跳过
+    """
+    from app.core.db import AsyncSessionLocal
+    from app.services.engine_rule_loader import get_engine_rule_loader
+
+    now = datetime.now(UTC)
+    ts_end = now.replace(minute=0, second=0, microsecond=0)
+    ts_start = ts_end - timedelta(hours=1)
+    # naive datetime 用于入库（diagnosis_task.time_range_* 为 TIMESTAMP WITHOUT TIME ZONE）
+    ts_start_naive = ts_start.replace(tzinfo=None)
+    ts_end_naive = ts_end.replace(tzinfo=None)
+
+    # 主 session 仅用于开关检查、查询回路列表和诊断配置（只读，无并发）
+    async with AsyncSessionLocal() as db:
+        # 0. 开关检查（EngineRuleLoader 带 60s 缓存，规则缺失时回退默认启用）
+        checkup_params = await get_engine_rule_loader().get_params(db, "DIAG_CHECKUP")
+        if not checkup_params.get("enabled", True):
+            logger.info("体检轨调度已禁用（DIAG_CHECKUP.enabled=false），跳过本次运行")
+            return {"total": 0, "diagnosed": 0, "failed": 0, "disabled": True}
+
+        # 1. 查询全部启用回路（不受评分限制）
+        loop_result = await db.execute(select(LoopLedger).where(LoopLedger.status == "READY"))
+        loop_ids = [str(lo.id) for lo in loop_result.scalars().all() if lo.id]
+
+        logger.info("体检轨待检查回路数: %d", len(loop_ids))
+
+        if not loop_ids:
+            return {"total": 0, "diagnosed": 0, "failed": 0}
+
+        # 2. 加载诊断配置
+        config_result = await db.execute(
+            select(DiagnosisConfig).where(DiagnosisConfig.is_enabled.is_(True))
+        )
+        diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
+
+        # 3. 为每个回路创建 DiagnosisTask 记录（triggered_by='checkup-scheduler'）
+        # 去重：同回路同时间窗已存在 PENDING/RUNNING 任务时跳过创建与诊断，
+        # 避免与事件轨/手动触发重复建任务
+        existing_result = await db.execute(
+            select(DiagnosisTask.loop_id)
+            .where(DiagnosisTask.loop_id.in_(loop_ids))
+            .where(DiagnosisTask.time_range_start == ts_start_naive)
+            .where(DiagnosisTask.time_range_end == ts_end_naive)
+            .where(DiagnosisTask.status.in_(["PENDING", "RUNNING"]))
+        )
+        existing_loop_ids = {str(r) for r in existing_result.scalars().all()}
+
+        # 显式生成 id 避免 flush 依赖（兼容 mock 测试环境）
+        loop_task_ids: dict[str, str] = {}
+        for lid in loop_ids:
+            if lid in existing_loop_ids:
+                logger.info("回路 %s 同时间窗已有未完成任务，跳过创建", lid)
+                continue
+            task_id = str(uuid4())
+            task = DiagnosisTask(
+                id=task_id,
+                loop_id=lid,
+                trigger_type="auto",
+                triggered_by="checkup-scheduler",
+                status="PENDING",
+                time_range_start=ts_start_naive,
+                time_range_end=ts_end_naive,
+            )
+            db.add(task)
+            loop_task_ids[lid] = task_id
+        await db.commit()
+
+    # 4. 并发诊断（与事件轨共用并发执行逻辑）
+    diagnosed_count, failed_count = await _run_diag_tasks_concurrent(
+        loop_task_ids, diag_configs, ts_start, ts_end
+    )
+
     return {
         "total": len(loop_ids),
         "diagnosed": diagnosed_count,
@@ -348,12 +501,15 @@ async def _do_diagnose_single_loop(
     task_id: str | None = None,
     time_range_start: str | None = None,
     time_range_end: str | None = None,
+    labels: list[str] | None = None,
 ) -> dict:
     """单回路诊断。
 
     支持两种时间范围参数（向后兼容）：
     - 旧参数：ts_start（向后兼容，自动推算 ts_end = ts_start + 1h）
     - 新参数：time_range_start / time_range_end（诊断任务专用）
+
+    labels（B6 按需诊断）为可选的诊断标签子集，透传至 _diagnose_loop 做算法门控。
 
     当 task_id 不为 None 时，更新 diagnosis_task 状态机：
     - PENDING → RUNNING（开始时）
@@ -402,6 +558,7 @@ async def _do_diagnose_single_loop(
                 ts_end=ts_end_dt,
                 query_wide_fn=query_wide_fn,
                 task_id=task_id,
+                labels=labels,
             )
             await db.commit()
             if result is None:
@@ -547,6 +704,7 @@ async def _diagnose_loop(
     ts_end: datetime,
     query_wide_fn,
     task_id: str | None = None,
+    labels: list[str] | None = None,
 ) -> dict | None:
     """对单回路执行诊断。
 
@@ -558,6 +716,9 @@ async def _diagnose_loop(
         ts_end: 时间窗结束
         query_wide_fn: 宽表查询函数
         task_id: 关联诊断任务 ID（可选，用于关联 DiagnosisResult）
+        labels: 诊断标签子集（B6 按需诊断，可选）。None 表示全量执行；
+            指定子集时仅执行子集内标签对应的算法（在 is_enabled 门控之上叠加），
+            MANUAL_REVIEW 兜底标签不受子集限制
 
     Returns:
         诊断结果字典
@@ -675,13 +836,19 @@ async def _diagnose_loop(
 
     # 算法启停门控（FDS §5.4.1 指标启停）：diag_configs 仅含 is_enabled=True 的配置，
     # 禁用或配置不存在的算法不执行，以空结果占位（不产出标签、不参与证据融合）
-    osc_enabled = "OSCILLATION" in diag_configs
-    stiction_enabled = "VALVE_STICTION" in diag_configs
-    quality_enabled = "QUALITY_ABNORMAL" in diag_configs
-    saturation_enabled = "OUTPUT_SATURATION" in diag_configs
-    overaggressive_enabled = "OVERAGGRESSIVE" in diag_configs
-    overconservative_enabled = "OVERCONSERVATIVE" in diag_configs
-    disturbance_enabled = "EXTERNAL_DISTURBANCE" in diag_configs
+    # B6 标签子集门控：labels 为 None 表示全量；否则仅执行子集内的标签
+    def _in_labels(label: str) -> bool:
+        return labels is None or label in labels
+
+    osc_enabled = "OSCILLATION" in diag_configs and _in_labels("OSCILLATION")
+    stiction_enabled = "VALVE_STICTION" in diag_configs and _in_labels("VALVE_STICTION")
+    quality_enabled = "QUALITY_ABNORMAL" in diag_configs and _in_labels("QUALITY_ABNORMAL")
+    saturation_enabled = "OUTPUT_SATURATION" in diag_configs and _in_labels("OUTPUT_SATURATION")
+    overaggressive_enabled = "OVERAGGRESSIVE" in diag_configs and _in_labels("OVERAGGRESSIVE")
+    overconservative_enabled = "OVERCONSERVATIVE" in diag_configs and _in_labels("OVERCONSERVATIVE")
+    disturbance_enabled = "EXTERNAL_DISTURBANCE" in diag_configs and _in_labels(
+        "EXTERNAL_DISTURBANCE"
+    )
 
     # 1. FFT 频域分析（振荡检测）
     if osc_enabled:

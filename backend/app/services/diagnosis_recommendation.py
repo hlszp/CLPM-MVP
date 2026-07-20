@@ -10,6 +10,8 @@
 - NOISE（噪声）：1.增加滤波 2.检查传感器信号 3.排查电磁干扰
 - DEAD_BAND（死区）：1.调整阀门定位器 2.减少死区设置 3.检查执行机构间隙
 - TUNING（整定）：1.使用Lambda整定法 2.使用Cohen-Coon法 3.使用IMC法
+- QUALITY_ABNORMAL（PV 质量异常）：1.校验变送器 2.检查采样链路 3.核查质量码配置
+- MANUAL_REVIEW（人工复核）：1.核对诊断数据窗口 2.扩大时间窗复诊 3.检查回路组态
 
 每条建议包含：priority(1-3), action, description, target_module(整定/跟踪/none)。
 """
@@ -41,6 +43,8 @@ RECO_LABEL_NAMES: dict[str, str] = {
     "NOISE": "噪声",
     "DEAD_BAND": "死区",
     "TUNING": "整定",
+    "QUALITY_ABNORMAL": "PV 质量异常",
+    "MANUAL_REVIEW": "人工复核",
 }
 
 # 现有诊断引擎标签 → 推荐标签的映射（兼容现有诊断引擎输出）
@@ -51,8 +55,10 @@ _LABEL_ALIAS_MAP: dict[str, str] = {
     "OVERCONSERVATIVE": "SLUGGISH",
     "OVERAGGRESSIVE": "TUNING",
     "EXTERNAL_DISTURBANCE": "DEVIATION",
-    "QUALITY_ABNORMAL": "NOISE",
-    "MANUAL_REVIEW": "DEAD_BAND",
+    # QUALITY_ABNORMAL / MANUAL_REVIEW 直接同名映射到专属模板（B8：不再借用
+    # NOISE / DEAD_BAND 模板，避免仪表检查/人工复核建议被噪声/死区建议误导）
+    "QUALITY_ABNORMAL": "QUALITY_ABNORMAL",
+    "MANUAL_REVIEW": "MANUAL_REVIEW",
     # 直接同名兼容
     "STICTION": "STICTION",
     "SATURATION": "SATURATION",
@@ -232,13 +238,56 @@ RECOMMENDATION_TEMPLATES: dict[str, list[dict[str, Any]]] = {
             "target_module": "整定",
         },
     ],
+    "QUALITY_ABNORMAL": [
+        {
+            "priority": 1,
+            "action": "校验变送器",
+            "description": "PV 质量码异常通常源于变送器故障或漂移；安排仪表校验或更换变送器。",
+            "target_module": "none",
+        },
+        {
+            "priority": 2,
+            "action": "检查采样链路",
+            "description": (
+                "检查信号电缆、接线端子与采集卡件，排除接触不良或信号中断导致的质量异常。"
+            ),
+            "target_module": "none",
+        },
+        {
+            "priority": 3,
+            "action": "核查质量码配置",
+            "description": "核查 DCS/采集侧质量码映射与过滤配置，确认质量异常不是配置误报。",
+            "target_module": "none",
+        },
+    ],
+    "MANUAL_REVIEW": [
+        {
+            "priority": 1,
+            "action": "核对诊断数据窗口",
+            "description": "确认诊断时间窗内数据完整有效；数据缺口或工况切换期建议人工复核结论。",
+            "target_module": "none",
+        },
+        {
+            "priority": 2,
+            "action": "扩大时间窗复诊",
+            "description": "延长诊断时间窗重新执行诊断，排除短窗口内特征不明显导致的漏诊。",
+            "target_module": "none",
+        },
+        {
+            "priority": 3,
+            "action": "检查回路组态",
+            "description": "核对回路位号映射、控制模式与限位组态，确认诊断输入与现场实际一致。",
+            "target_module": "none",
+        },
+    ],
 }
 
 
 def _normalize_label(label: str) -> str | None:
-    """将任意诊断标签归一化为推荐模板的 8 类标签之一。
+    """将任意诊断标签归一化为推荐模板标签之一。
 
     兼容现有诊断引擎输出的标签（VALVE_STICTION 等）和推荐服务专用标签（STICTION 等）。
+    QUALITY_ABNORMAL / MANUAL_REVIEW 直接同名映射到专属模板（B8）。
     """
     if not label:
         return None

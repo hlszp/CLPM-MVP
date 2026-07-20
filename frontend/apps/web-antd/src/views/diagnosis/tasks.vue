@@ -48,6 +48,7 @@ import { getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { DIAGNOSIS_LABEL_OPTIONS } from '#/constants/diagnosis';
 
 defineOptions({ name: 'DiagnosisTasks' });
 
@@ -223,6 +224,13 @@ const triggerTimeRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
   dayjs(),
 ]);
 
+/** 按需诊断标签选项（B6：剔除兜底标签 MANUAL_REVIEW） */
+const triggerLabelOptions = DIAGNOSIS_LABEL_OPTIONS.filter(
+  (o) => o.value !== 'MANUAL_REVIEW',
+);
+/** 已选诊断标签（默认全选；全选时提交 labels=undefined 即全量） */
+const selectedLabels = ref<string[]>(triggerLabelOptions.map((o) => o.value));
+
 /** RangePicker 预设快捷选项 */
 const rangePresets = [
   {
@@ -396,6 +404,7 @@ function openTriggerModal() {
   loopAreaFilter.value = undefined;
   loopUnitFilter.value = undefined;
   triggerTimeRange.value = [dayjs().subtract(24, 'hour'), dayjs()];
+  selectedLabels.value = triggerLabelOptions.map((o) => o.value);
   triggerModalVisible.value = true;
   if (loopList.value.length === 0) {
     loadLoopList();
@@ -414,10 +423,16 @@ async function handleTriggerConfirm() {
   triggerLoading.value = true;
   try {
     const [start, end] = triggerTimeRange.value;
+    // 全选时提交 labels=undefined（后端按全量执行），否则提交标签子集
+    const labels =
+      selectedLabels.value.length === triggerLabelOptions.length
+        ? undefined
+        : selectedLabels.value;
     await triggerDiagnosisApi({
       loopIds: selectedLoopIds.value,
       startTime: start.toISOString(),
       endTime: end.toISOString(),
+      labels,
     });
     message.success(`已触发 ${selectedLoopIds.value.length} 个回路的诊断任务`);
     triggerModalVisible.value = false;
@@ -997,6 +1012,24 @@ onBeforeUnmount(() => {
               </template>
             </template>
           </Table>
+        </div>
+
+        <!-- 诊断标签（B6 按需诊断） -->
+        <div>
+          <div class="mb-2 flex items-center justify-between">
+            <span class="font-medium">诊断标签</span>
+            <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
+              默认全选（全量诊断）；可按需勾选标签子集
+            </span>
+          </div>
+          <Select
+            v-model:value="selectedLabels"
+            mode="multiple"
+            :options="triggerLabelOptions"
+            placeholder="选择诊断标签"
+            style="width: 100%"
+            :max-tag-count="4"
+          />
         </div>
 
         <!-- 诊断时间范围 -->

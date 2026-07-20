@@ -417,11 +417,16 @@ class DiagnosisTriggerRequest(CamelModel):
     """POST /diagnosis/trigger 请求体 — 触发诊断（支持批量）。
 
     支持单/批量回路诊断触发，可选时间范围（默认最近 1 小时）。
+    labels 为可选的诊断标签子集（B6 按需诊断）：为空/未传时执行全量算法；
+    仅接受 8 类标准标签（不含 MANUAL_REVIEW，其为兜底标签不受子集限制）。
     """
 
     loopIds: list[str] = Field(..., min_length=1, description="回路 ID 列表（至少 1 个）")
     startTime: str | None = Field(None, description="时间窗起始（ISO 8601，默认最近 1 小时）")
     endTime: str | None = Field(None, description="时间窗结束（ISO 8601，默认当前时间）")
+    labels: list[str] | None = Field(
+        None, description="诊断标签子集（可选，默认全量；不含 MANUAL_REVIEW）"
+    )
 
 
 class DiagnosisTaskTriggerItem(CamelModel):

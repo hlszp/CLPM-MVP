@@ -791,6 +791,7 @@ async def trigger_diagnosis(
     start_time: str | None = None,
     end_time: str | None = None,
     operator: str = "system",
+    labels: list[str] | None = None,
 ) -> dict:
     """触发诊断任务（手动，支持批量）。
 
@@ -803,12 +804,15 @@ async def trigger_diagnosis(
         start_time: 时间窗起始（ISO 8601，可选，默认最近 1 小时）
         end_time: 时间窗结束（ISO 8601，可选，默认当前时间）
         operator: 触发人用户名
+        labels: 诊断标签子集（B6 按需诊断，可选）。None/空列表 = 全量；
+            仅接受 8 类标准标签（不含 MANUAL_REVIEW，其为兜底标签不受子集限制）
 
     Returns:
         {tasks: [{taskId, loopId, status}, ...]}
 
     Raises:
         BizError: ERR_VALIDATION — loop_ids 为空
+        BizError: ERR_LABEL_INVALID — 标签不在 8 类枚举内或为 MANUAL_REVIEW
     """
     if not loop_ids:
         raise BizError(
@@ -816,6 +820,19 @@ async def trigger_diagnosis(
             message="回路 ID 列表不能为空",
             status_code=422,
         )
+
+    # B6：校验标签子集（空列表视为全量，归一化为 None）
+    if labels is not None:
+        valid_labels = set(DIAG_LABEL_NAMES) - {"MANUAL_REVIEW"}
+        for label in labels:
+            if label not in valid_labels:
+                raise BizError(
+                    code="ERR_LABEL_INVALID",
+                    message=(f"无效的诊断标签: {label}，可选值: {', '.join(sorted(valid_labels))}"),
+                    status_code=400,
+                )
+        if not labels:
+            labels = None
 
     # 延迟导入避免 Celery worker 循环依赖
     from app.tasks.diagnosis_engine import run_loop_diagnosis
@@ -855,14 +872,16 @@ async def trigger_diagnosis(
             task_id=item["taskId"],
             time_range_start=ts_start_dt.isoformat(),
             time_range_end=ts_end_dt.isoformat(),
+            labels=labels,
         )
 
     logger.info(
-        "诊断任务已触发: %d 个回路, operator=%s, range=%s~%s",
+        "诊断任务已触发: %d 个回路, operator=%s, range=%s~%s, labels=%s",
         len(loop_ids),
         operator,
         ts_start_dt.isoformat(),
         ts_end_dt.isoformat(),
+        labels or "全量",
     )
 
     return {"tasks": tasks_list}
@@ -1091,6 +1110,7 @@ async def run_diagnosis_task(
 
     读取该任务的 loop_id 和时间范围，重置状态为 PENDING 后提交 Celery 异步执行。
     适用于行级"诊断"按钮：对当前任务重新执行诊断。
+    注意：重跑始终执行全量算法（不传 labels 子集）。
 
     Raises:
         BizError: ERR_DIAG_TASK_NOT_FOUND
