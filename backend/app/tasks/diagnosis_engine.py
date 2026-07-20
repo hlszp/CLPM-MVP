@@ -23,7 +23,8 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-from sqlalchemy import delete, select
+from celery.schedules import crontab
+from sqlalchemy import delete, or_, select
 
 from app.contracts.data_types import QualityStatus, RawTimeSeries
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTask
@@ -130,7 +131,9 @@ def run_loop_diagnosis(
 
 _beat_entry = {
     "task": "app.tasks.diagnosis_engine.run_diagnosis_hourly",
-    "schedule": 3600.0,  # 1 小时
+    # 对齐 KPI 整点计算（crontab minute=0），在整点后第 10 分钟执行诊断，
+    # 避免裸 3600s 间隔与 KPI 计算相位错位导致漏诊
+    "schedule": crontab(minute=10),
 }
 
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
@@ -163,11 +166,17 @@ async def _do_run_diagnosis() -> dict:
     # 主 session 仅用于查询待诊断回路列表和诊断配置（只读，无并发）
     async with AsyncSessionLocal() as db:
         # 1. 查询最近一小时评分跌破阈值的回路
+        # 评分为 NULL（数据质量差 INCONCLUSIVE）的回路同样需要诊断，一并纳入
         snapshot_stmt = (
             select(KpiSnapshotHourly)
             .where(KpiSnapshotHourly.ts_start >= ts_start_naive)
             .where(KpiSnapshotHourly.ts_start <= ts_end_naive)
-            .where(KpiSnapshotHourly.score < SCORE_THRESHOLD)
+            .where(
+                or_(
+                    KpiSnapshotHourly.score < SCORE_THRESHOLD,
+                    KpiSnapshotHourly.score.is_(None),
+                )
+            )
             .where(KpiSnapshotHourly.status == "SUCCESS")
         )
         snap_result = await db.execute(snapshot_stmt)
@@ -188,9 +197,23 @@ async def _do_run_diagnosis() -> dict:
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
 
         # 3. 为每个回路创建 DiagnosisTask 记录（自动触发）
+        # 去重：同回路同时间窗已存在 PENDING/RUNNING 任务时跳过创建与诊断，
+        # 避免 Beat 重复运行（或手动补跑）重复建任务
+        existing_result = await db.execute(
+            select(DiagnosisTask.loop_id)
+            .where(DiagnosisTask.loop_id.in_(loop_ids))
+            .where(DiagnosisTask.time_range_start == ts_start_naive)
+            .where(DiagnosisTask.time_range_end == ts_end_naive)
+            .where(DiagnosisTask.status.in_(["PENDING", "RUNNING"]))
+        )
+        existing_loop_ids = {str(r) for r in existing_result.scalars().all()}
+
         # 显式生成 id 避免 flush 依赖（兼容 mock 测试环境）
         loop_task_ids: dict[str, str] = {}
         for lid in loop_ids:
+            if lid in existing_loop_ids:
+                logger.info("回路 %s 同时间窗已有未完成任务，跳过创建", lid)
+                continue
             task_id = str(uuid4())
             task = DiagnosisTask(
                 id=task_id,
@@ -282,6 +305,7 @@ async def _do_run_diagnosis() -> dict:
         "total": len(loop_ids),
         "diagnosed": diagnosed_count,
         "failed": failed_count,
+        "skipped": len(loop_ids) - len(loop_task_ids),
         "ts_start": ts_start.isoformat(),
         "ts_end": ts_end.isoformat(),
     }
@@ -560,38 +584,67 @@ async def _diagnose_loop(
     # 计算采样间隔（秒），用于 FFT 频率换算
     sample_interval = _compute_sample_interval(aligned)
 
-    # 1. FFT 频域分析（振荡检测）
-    osc_result = _detect_oscillation_fft(pv_values, sample_interval)
+    # 算法启停门控（FDS §5.4.1 指标启停）：diag_configs 仅含 is_enabled=True 的配置，
+    # 禁用或配置不存在的算法不执行，以空结果占位（不产出标签、不参与证据融合）
+    osc_enabled = "OSCILLATION" in diag_configs
+    stiction_enabled = "VALVE_STICTION" in diag_configs
+    quality_enabled = "QUALITY_ABNORMAL" in diag_configs
+    saturation_enabled = "OUTPUT_SATURATION" in diag_configs
+    overaggressive_enabled = "OVERAGGRESSIVE" in diag_configs
+    overconservative_enabled = "OVERCONSERVATIVE" in diag_configs
+    disturbance_enabled = "EXTERNAL_DISTURBANCE" in diag_configs
 
-    # 1b. IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法）
-    osc_iae_result = _detect_oscillation_iae(
-        pv_values,
-        sp_values,
-        sample_interval,
-        threshold=_get_threshold(diag_configs, "OSCILLATION", None, None),
-    )
+    # 1. FFT 频域分析（振荡检测）
+    if osc_enabled:
+        osc_result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        # 1b. IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法）
+        osc_iae_result = _detect_oscillation_iae(
+            pv_values,
+            sp_values,
+            sample_interval,
+            threshold=_get_threshold(diag_configs, "OSCILLATION", None, None),
+        )
+    else:
+        osc_result = _empty_osc_result()
+        osc_iae_result = _empty_oscillation_iae_result()
 
     # 2. PV-OP 散点拟合（阀门粘滞检测）
-    stiction_result = _detect_valve_stiction(pv_values, op_values)
+    if stiction_enabled:
+        stiction_result = _detect_valve_stiction(pv_values, op_values)
+    else:
+        stiction_result = _empty_stiction_result()
 
     # 3. PV 质量码统计（P2-1：Q001-Q005 规则矩阵）
-    quality_result = _analyze_quality(
-        pv_quality_data,
-        threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
-    )
+    if quality_enabled:
+        quality_result = _analyze_quality(
+            pv_quality_data,
+            threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
+        )
+    else:
+        quality_result = _empty_quality_result()
 
     # 4. OP 饱和率分析（P0-3：仅自控模式 + 绝对工程限位）
-    saturation_result = _analyze_saturation(
-        op_values,
-        mode_values if len(mode_values) > 0 else None,
-        threshold=_get_threshold(diag_configs, "OUTPUT_SATURATION", None, None),
-    )
+    if saturation_enabled:
+        saturation_result = _analyze_saturation(
+            op_values,
+            mode_values if len(mode_values) > 0 else None,
+            threshold=_get_threshold(diag_configs, "OUTPUT_SATURATION", None, None),
+        )
+    else:
+        saturation_result = _empty_saturation_result()
 
     # 5. Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测，设计依据：FDS §5.4.6）
-    choudhury_result = _detect_choudhury_nonlinearity(pv_values, op_values)
+    if stiction_enabled:
+        choudhury_result = _detect_choudhury_nonlinearity(pv_values, op_values)
+    else:
+        choudhury_result = _empty_choudhury_result()
 
     # 6. Kano 统计法粘滞检测（与 Choudhury 互为交叉验证）
-    kano_result = _detect_kano_stiction(pv_values, op_values)
+    if stiction_enabled:
+        kano_result = _detect_kano_stiction(pv_values, op_values)
+    else:
+        kano_result = _empty_kano_result()
 
     # 提取时间戳数组（供阶跃响应/响应迟缓/偏差突变算法使用）
     ts_values = np.array(
@@ -602,15 +655,24 @@ async def _diagnose_loop(
     ts_param = ts_values if len(ts_values) == len(pv_values) else None
 
     # 7. 完整阶跃响应分析（过冲/衰减比/稳态误差）
-    step_response_result = _analyze_step_response(pv_values, sp_values, op_values, ts_param)
+    if overaggressive_enabled:
+        step_response_result = _analyze_step_response(pv_values, sp_values, op_values, ts_param)
+    else:
+        step_response_result = _empty_step_response_result()
 
     # 8. 响应迟缓检测（一阶滞后拟合）
     # 控制类型从回路扩展属性获取（默认 PI）
-    control_type = getattr(loop, "control_type", None) or "PI"
-    slow_response_result = _detect_slow_response(pv_values, sp_values, control_type, ts_param)
+    if overconservative_enabled:
+        control_type = getattr(loop, "control_type", None) or "PI"
+        slow_response_result = _detect_slow_response(pv_values, sp_values, control_type, ts_param)
+    else:
+        slow_response_result = _empty_slow_response_result()
 
     # 9. 偏差突变检测（CUSUM）
-    bias_shift_result = _detect_bias_shift(pv_values, sp_values, ts_param)
+    if disturbance_enabled:
+        bias_shift_result = _detect_bias_shift(pv_values, sp_values, ts_param)
+    else:
+        bias_shift_result = _empty_bias_shift_result()
 
     # 收集所有算法结果（带置信度）
     algorithm_results: list[dict[str, Any]] = []
@@ -1050,6 +1112,40 @@ def _empty_stiction_result() -> dict[str, Any]:
     }
 
 
+def _empty_oscillation_iae_result() -> dict[str, Any]:
+    """空 IAE 振荡检测结果（OSCILLATION 算法禁用时占位）。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "similarity": 0.0,
+        "zero_crossing_count": 0,
+        "mean_period": 0.0,
+    }
+
+
+def _empty_quality_result() -> dict[str, Any]:
+    """空质量码分析结果（QUALITY_ABNORMAL 算法禁用时占位）。"""
+    return {
+        "abnormal": False,
+        "confidence": 0.0,
+        "bad_rate": 0.0,
+        "total": 0,
+        "bad_count": 0,
+        "quality_pattern": "NORMAL",
+    }
+
+
+def _empty_saturation_result() -> dict[str, Any]:
+    """空饱和率分析结果（OUTPUT_SATURATION 算法禁用时占位）。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "saturation_rate": 0.0,
+        "high_count": 0,
+        "low_count": 0,
+    }
+
+
 def _detect_oscillation_fft(pv_values: np.ndarray, sample_interval: float = 1.0) -> dict[str, Any]:
     """FFT 频域分析检测振荡。
 
@@ -1175,184 +1271,6 @@ def _detect_valve_stiction(pv_values: np.ndarray, op_values: np.ndarray) -> dict
     except Exception as exc:  # noqa: BLE001
         logger.warning("阀门粘滞检测失败: %s", exc)
         return _empty_stiction_result()
-
-
-def _analyze_pid_params(pv_values: np.ndarray, sp_values: np.ndarray) -> dict[str, Any]:
-    """PID 增益分析（参数过激/过保守）。
-
-    过冲检测：仅在 SP 阶跃后计算真正过冲（PV 超过新 SP 的幅度），
-    稳态数据不误报过冲。
-
-    Returns:
-        {overaggressive, overconservative, confidence, overshoot, settling_time,
-         response_time, steady_state_error}
-    """
-    min_len = min(len(pv_values), len(sp_values))
-    if min_len < 8:
-        return {
-            "overaggressive": False,
-            "overconservative": False,
-            "confidence": 0.0,
-            "overshoot": 0.0,
-            "settling_time": 0.0,
-            "response_time": 0.0,
-            "steady_state_error": 0.0,
-        }
-
-    try:
-        pv = pv_values[:min_len]
-        sp = sp_values[:min_len]
-        error = pv - sp
-
-        # SP 量程
-        sp_range = float(np.max(sp) - np.min(sp)) or 1.0
-
-        # 检测 SP 阶跃点（SP 变化超过 SP 量程的 5%）
-        sp_diff = np.abs(np.diff(sp))
-        step_threshold = sp_range * 0.05
-        step_indices = np.where(sp_diff > step_threshold)[0]
-
-        # 计算过冲：仅在 SP 阶跃后计算
-        overshoot = 0.0
-        if len(step_indices) > 0:
-            for step_idx in step_indices:
-                step_size = sp[step_idx + 1] - sp[step_idx]
-                if abs(step_size) < 1e-9:
-                    continue
-                new_sp = sp[step_idx + 1]
-                # 在阶跃后的窗口内寻找 PV 峰值
-                window_end = min(step_idx + 1 + min_len // 4, min_len)
-                pv_window = pv[step_idx + 1 : window_end]
-                if len(pv_window) == 0:
-                    continue
-                if step_size > 0:
-                    # 上升阶跃：过冲 = (PV_peak - new_SP) / step_size
-                    pv_peak = float(np.max(pv_window))
-                    if pv_peak > new_sp:
-                        overshoot = max(overshoot, (pv_peak - new_sp) / step_size)
-                else:
-                    # 下降阶跃：过冲 = (new_SP - PV_trough) / |step_size|
-                    pv_trough = float(np.min(pv_window))
-                    if pv_trough < new_sp:
-                        overshoot = max(overshoot, (new_sp - pv_trough) / abs(step_size))
-        else:
-            # 无 SP 阶跃：稳态数据，无过冲
-            overshoot = 0.0
-
-        # 稳定时间：误差收敛到 5% SP 范围内的时间
-        threshold = sp_range * 0.05
-        settling_idx = min_len
-        for i in range(min_len - 1, -1, -1):
-            if abs(error[i]) > threshold:
-                settling_idx = i + 1
-                break
-        settling_time = float(settling_idx) / max(min_len, 1)
-
-        # 响应时间：PV 首次到达 90% SP 的比例时间（仅在 SP 有变化时有意义）
-        if len(step_indices) > 0:
-            step_idx = step_indices[0]
-            target = sp[step_idx] + 0.9 * (sp[step_idx + 1] - sp[step_idx])
-            response_idx = step_idx
-            for i in range(step_idx + 1, min_len):
-                if abs(pv[i] - target) < threshold:
-                    response_idx = i
-                    break
-            response_time = float(response_idx - step_idx) / max(min_len, 1)
-        else:
-            response_time = 0.0
-
-        # 稳态误差：最后 10% 数据的平均误差
-        tail_len = max(1, min_len // 10)
-        steady_state_error = float(np.mean(np.abs(error[-tail_len:])))
-
-        # 过激判定：过冲 > 20%
-        overaggressive = bool(overshoot > 0.2)
-        # 过保守判定：响应时间 > 0.5 且稳态误差 > 5% SP 范围
-        overconservative = bool(response_time > 0.5 and steady_state_error > sp_range * 0.05)
-
-        confidence = 0.0
-        if overaggressive:
-            # 过冲超过 20% 判定为过激，但置信度不直接等于过冲值
-            # 使用更保守的置信度计算，避免过冲值很大时置信度直接到 100%
-            confidence = min(0.95, overshoot * 0.4)
-        elif overconservative:
-            # 响应时间过长判定为过保守，同样使用保守的置信度计算
-            confidence = min(0.95, response_time * 0.8)
-
-        return {
-            "overaggressive": overaggressive,
-            "overconservative": overconservative,
-            "confidence": confidence,
-            "overshoot": overshoot,
-            "settling_time": settling_time,
-            "response_time": response_time,
-            "steady_state_error": steady_state_error,
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("PID 增益分析失败: %s", exc)
-        return {
-            "overaggressive": False,
-            "overconservative": False,
-            "confidence": 0.0,
-            "overshoot": 0.0,
-            "settling_time": 0.0,
-            "response_time": 0.0,
-            "steady_state_error": 0.0,
-        }
-
-
-def _detect_external_disturbance(
-    pv_values: np.ndarray, sample_interval: float = 1.0
-) -> dict[str, Any]:
-    """频谱分析检测外扰频繁。
-
-    Args:
-        pv_values: PV 数据数组
-        sample_interval: 采样间隔（秒），用于频率换算
-
-    Returns:
-        {detected, confidence, frequency, amplitude}
-    """
-    if len(pv_values) < 8:
-        return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
-
-    try:
-        N = len(pv_values)
-        fs = 1.0 / sample_interval if sample_interval > 0 else 1.0  # 采样频率 (Hz)
-        pv_centered = pv_values - np.mean(pv_values)
-        fft_vals = np.fft.rfft(pv_centered)
-        fft_magnitude = np.abs(fft_vals)
-
-        if len(fft_magnitude) <= 2:
-            return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
-
-        # 检测高频分量（排除主频）
-        low_freq_energy = float(np.sum(fft_magnitude[1:3] ** 2))
-        high_freq_energy = float(np.sum(fft_magnitude[3:] ** 2))
-        total_energy = low_freq_energy + high_freq_energy
-
-        if total_energy <= 0:
-            return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
-
-        high_freq_ratio = high_freq_energy / total_energy
-        peak_idx = int(np.argmax(fft_magnitude[3:])) + 3
-        amplitude = float(fft_magnitude[peak_idx] / N)
-        # 频率 = peak_idx * fs / N（标准 FFT 频率换算公式）
-        frequency = float(peak_idx * fs / N)
-
-        # 外扰判定：高频能量占比 > 0.5
-        detected = high_freq_ratio > 0.5
-        confidence = min(1.0, high_freq_ratio) if detected else 0.0
-
-        return {
-            "detected": detected,
-            "confidence": confidence,
-            "frequency": frequency,
-            "amplitude": amplitude,
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("外扰检测失败: %s", exc)
-        return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
 
 
 def _analyze_quality(pv_data: list[dict], threshold: dict | None = None) -> dict[str, Any]:

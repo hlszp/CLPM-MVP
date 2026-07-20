@@ -894,34 +894,6 @@ class TestDiagnosisEngine:
         result = _detect_valve_stiction(pv, op)
         assert result["detected"] is False
 
-    def test_analyze_pid_params_normal(self) -> None:
-        """测试 PID 增益分析：正常参数。"""
-        import numpy as np
-
-        from app.tasks.diagnosis_engine import _analyze_pid_params
-
-        # PV 紧跟 SP：正常
-        sp = np.array([50.0] * 100, dtype=float)
-        pv = np.array([50.0] * 100, dtype=float)
-        result = _analyze_pid_params(pv, sp)
-        assert result["overaggressive"] is False
-        assert result["overconservative"] is False
-
-    def test_analyze_pid_params_overaggressive(self) -> None:
-        """测试 PID 增益分析：参数过激（SP 阶跃后有过冲）。"""
-        import numpy as np
-
-        from app.tasks.diagnosis_engine import _analyze_pid_params
-
-        # SP 从 0 阶跃到 50，PV 过冲到 70 后稳定到 50（过冲 40%）
-        sp = np.zeros(100)
-        sp[10:] = 50.0  # 第 10 个点 SP 阶跃到 50
-        pv = np.zeros(100)
-        pv[10:40] = 70.0  # 阶跃后过冲到 70（过冲 = (70-50)/50 = 0.4）
-        pv[40:] = 50.0  # 稳定到 50
-        result = _analyze_pid_params(pv, sp)
-        assert result["overaggressive"] is True
-
     def test_analyze_quality_normal(self) -> None:
         """测试 PV 质量码统计：正常。"""
         from app.tasks.diagnosis_engine import _analyze_quality
@@ -1003,7 +975,9 @@ class TestDiagnosisBeatSchedule:
     """Celery Beat 调度配置测试。"""
 
     def test_beat_schedule_has_diagnosis_engine(self) -> None:
-        """Beat 调度应包含诊断引擎任务。"""
+        """Beat 调度应包含诊断引擎任务（crontab，对齐 KPI 整点后第 10 分钟）。"""
+        from celery.schedules import crontab
+
         import app.tasks.diagnosis_engine  # noqa: F401
         from app.tasks.celery_app import celery_app
 
@@ -1013,7 +987,9 @@ class TestDiagnosisBeatSchedule:
             beat["diagnosis-engine-hourly"]["task"]
             == "app.tasks.diagnosis_engine.run_diagnosis_hourly"
         )
-        assert beat["diagnosis-engine-hourly"]["schedule"] == 3600.0
+        schedule = beat["diagnosis-engine-hourly"]["schedule"]
+        assert isinstance(schedule, crontab)
+        assert schedule.minute == {10}
 
 
 # ---------------------------------------------------------------------------
