@@ -81,6 +81,26 @@ def _is_production() -> bool:
     return os.environ.get("ENV", "").lower() == "production"
 
 
+def _any_beat_process_running() -> bool:
+    """pgrep 扫描是否已有 celery beat 进程在运行（Beat 单例兜底检查）.
+
+    pidfile 检查无法覆盖"pidfile 被另一个 beat 进程覆盖/删除"的场景
+    （如手工启动的 beat 与 lifespan 自动启动的 beat 共用同一路径）。
+    """
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["pgrep", "-f", "celery.*beat"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001
+        # pgrep 不可用（极简容器等）时视为无其他 beat，交由 pidfile 检查兜底
+        return False
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
 def _start_celery_beat() -> None:
     """启动 Celery Beat 调度子进程。
 
@@ -108,6 +128,13 @@ def _start_celery_beat() -> None:
                 os.remove(pid_file)
             except OSError:
                 pass
+
+    # 兜底：pidfile 可能被手工启动的 beat 覆盖/失效（同一 pidfile 路径被
+    # 两个 beat 共用时互相覆盖），用 pgrep 扫描确认无其他 celery beat
+    # 进程在运行。两个 beat 并存会导致每个定时任务双触发（2026-07-20 实测）。
+    if _any_beat_process_running():
+        logger.info("检测到已有 Celery Beat 进程在运行（pgrep 兜底），跳过启动")
+        return
 
     try:
         _celery_beat_process = subprocess.Popen(
