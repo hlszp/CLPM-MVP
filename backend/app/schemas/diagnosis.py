@@ -172,13 +172,6 @@ class TrackerStatusData(CamelModel):
     abComparison: dict[str, Any] | None = None
 
 
-class TrackerExportData(CamelModel):
-    """Tracker PDF 导出响应 data 块。"""
-
-    taskId: str
-    status: str = "PENDING"
-
-
 # ---------------------------------------------------------------------------
 # S4-DIAG-006: 诊断统计报表
 # ---------------------------------------------------------------------------
@@ -523,7 +516,6 @@ __all__ = [
     "RecommendationData",
     "RecommendationItem",
     "TagResolveRequest",
-    "TrackerExportData",
     "TrackerStatusData",
     "TrackerStatusUpdate",
     "WaveformData",

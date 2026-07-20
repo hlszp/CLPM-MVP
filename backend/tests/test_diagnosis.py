@@ -717,19 +717,47 @@ class TestTrackerExport:
     """POST /api/v1/tracker/{loopId}/export tests."""
 
     def test_export_pdf_success(self, client, mock_db, fake_redis) -> None:
-        """IC_ENGINEER 可以导出 PDF。"""
+        """IC_ENGINEER 可以导出 PDF（同步生成，直接返回 application/pdf）。"""
         loop = _make_loop()
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
+        diag = _make_diag_result()
+        snapshot = _make_snapshot()
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            # 1: export_tracker_pdf 校验回路
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            # 2~5: get_diagnosis_detail（loop / 最新诊断 / 该任务全部诊断 / 最新快照）
+            if call_count[0] == 2:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 3:
+                return _make_scalar_one_or_none_mock(diag)
+            if call_count[0] == 4:
+                return _make_scalars_mock([diag])
+            if call_count[0] == 5:
+                return _make_scalar_one_or_none_mock(snapshot)
+            # 6~7: get_recommendations_for_loop（loop / 去重标签）
+            if call_count[0] == 6:
+                return _make_scalar_one_or_none_mock(loop)
+            result = MagicMock()
+            result.all.return_value = [("VALVE_STICTION",)]
+            return result
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
                 f"/api/v1/tracker/{loop.id}/export",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["code"] == "0"
-        assert "taskId" in body["data"]
-        assert body["data"]["status"] == "PENDING"
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.content.startswith(b"%PDF")
+        disposition = resp.headers["content-disposition"]
+        assert "attachment" in disposition
+        # 文件名：CLPM-诊断建议书-[位号]-[日期].pdf（中文部分经 RFC 5987 编码）
+        assert "CLPM-" in disposition
 
     def test_export_pdf_loop_not_found(self, client, mock_db, fake_redis) -> None:
         """回路不存在返回 404。"""
@@ -740,6 +768,29 @@ class TestTrackerExport:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
+
+    def test_export_pdf_no_diag_result(self, client, mock_db, fake_redis) -> None:
+        """回路无诊断结果时返回 404（ERR_DIAG_RESULT_NOT_FOUND）。"""
+        loop = _make_loop()
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                # 1: export 校验回路；2: get_diagnosis_detail 查回路
+                return _make_scalar_one_or_none_mock(loop)
+            # 3: 无诊断结果
+            return _make_scalar_one_or_none_mock(None)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.post(
+                f"/api/v1/tracker/{loop.id}/export",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_DIAG_RESULT_NOT_FOUND"
 
 
 # ---------------------------------------------------------------------------

@@ -31,6 +31,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query
@@ -63,7 +64,6 @@ from app.schemas.diagnosis import (
     DiagnosisTriggerRequest,
     RecommendationData,
     TagResolveRequest,
-    TrackerExportData,
     TrackerStatusData,
     TrackerStatusUpdate,
     WaveformData,
@@ -621,15 +621,28 @@ async def update_tracker_status_endpoint(
     return success(data=data, message="状态更新成功")
 
 
-@tracker_router.post("/{loop_id}/export", response_model=ApiResponse[TrackerExportData])
+@tracker_router.post("/{loop_id}/export")
 async def export_tracker_endpoint(
     loop_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("IC_ENGINEER", "ADMIN", "PE_ENGINEER")),
-) -> dict:
-    """导出诊断建议书 PDF（异步任务，返回 taskId）。"""
-    data = await export_tracker_pdf(db=db, loop_id=str(loop_id))
-    return success(data=data, message="导出任务已提交")
+) -> Response:
+    """导出诊断建议书 PDF（同步生成，直接下载）。
+
+    复用 SVC-12 报告生成器，文件名格式：CLPM-诊断建议书-[位号]-[日期].pdf
+    """
+    pdf_bytes, filename = await export_tracker_pdf(db=db, loop_id=str(loop_id))
+    quoted_filename = quote(filename)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="CLPM-diagnosis-{loop_id}.pdf"; '
+                f"filename*=UTF-8''{quoted_filename}"
+            ),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

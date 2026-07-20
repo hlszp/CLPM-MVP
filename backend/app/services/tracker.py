@@ -4,7 +4,8 @@
 - 状态管理（PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED）
 - 状态变更记录审计日志
 - IMPLEMENTED 状态时自动生成 A/B 对比视图
-- PDF 导出为异步任务（Phase 1 返回模拟任务 ID）
+- A/B 对比：以实施时刻为界对比前后窗口 KPI 均值（kpi_snapshot_hourly）
+- PDF 导出为同步生成（复用 SVC-12 报告生成器，直接返回 PDF 文件）
 """
 
 from __future__ import annotations
@@ -23,6 +24,9 @@ from app.models.audit import SysAuditLog
 from app.models.diagnosis import DiagnosisResult
 from app.models.loop import LoopLedger
 from app.models.tracker import ActionTracker
+from app.services.diagnosis import get_diagnosis_detail
+from app.services.diagnosis_recommendation import get_recommendations_for_loop
+from app.services.diagnosis_report import generate_diagnosis_report
 
 logger = logging.getLogger(__name__)
 
@@ -205,13 +209,14 @@ async def _generate_ab_comparison(
 async def export_tracker_pdf(
     db: AsyncSession,
     loop_id: str,
-) -> dict:
-    """导出诊断建议书 PDF（异步任务）。
+) -> tuple[bytes, str]:
+    """同步生成诊断建议书 PDF，返回 (pdf_bytes, filename)。
 
-    Phase 1: 返回模拟任务 ID。
+    复用 SVC-12 报告生成器（app.services.diagnosis_report），
+    文件名格式：CLPM-诊断建议书-[位号]-[日期].pdf
 
     Raises:
-        BizError: ERR_LOOP_NOT_FOUND
+        BizError: ERR_LOOP_NOT_FOUND / ERR_DIAG_RESULT_NOT_FOUND
     """
     # 校验回路
     loop_result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
@@ -223,12 +228,20 @@ async def export_tracker_pdf(
             status_code=404,
         )
 
-    # Phase 1: 返回模拟任务 ID
-    task_id = str(uuid4())
-    return {
-        "taskId": task_id,
-        "status": "PENDING",
-    }
+    # 诊断快照 + 推荐方案（与 POST /diagnosis/{loopId}/report 相同数据源）
+    snapshot_data = await get_diagnosis_detail(db=db, loop_id=loop_id)
+    recommendations = await get_recommendations_for_loop(db=db, loop_id=loop_id)
+
+    pdf_bytes = generate_diagnosis_report(
+        loop_id=loop_id,
+        snapshot_data=snapshot_data,
+        recommendations=recommendations,
+    )
+
+    tag_name = loop.tag_name or loop_id
+    date_str = datetime.now(UTC).replace(tzinfo=None).strftime("%Y-%m-%d")
+    filename = f"CLPM-诊断建议书-{tag_name}-{date_str}.pdf"
+    return pdf_bytes, filename
 
 
 __all__ = ["export_tracker_pdf", "update_tracker_status"]

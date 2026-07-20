@@ -338,20 +338,6 @@ export namespace DiagnosisApi {
     pageSize?: number;
   }
 
-  /** PDF 导出参数 */
-  export interface PdfExportParams {
-    timeWindow?: string;
-    includeWaveform?: boolean;
-    includeScatterPlot?: boolean;
-  }
-
-  /** PDF 导出响应 */
-  export interface PdfExportResult {
-    taskId: string;
-    status: string;
-    checkUrl: string;
-  }
-
   /** 统计报表 - 标签分布项 */
   export interface LabelDistributionItem {
     label: DiagnosisLabel;
@@ -706,16 +692,15 @@ export function getTrackerListApi(params: DiagnosisApi.TrackerListQueryParams) {
 }
 
 /**
- * 导出诊断 PDF — IDS v3.2 §2.4（异步任务）
+ * 导出诊断建议书 PDF — IDS v3.2 §2.4（同步生成，直接下载）
+ *
+ * 返回 Blob，前端通过 URL.createObjectURL 触发下载。
+ * 文件名格式：CLPM-诊断建议书-[位号]-[日期].pdf
  */
-export function exportDiagnosisPdfApi(
-  loopId: string,
-  data: DiagnosisApi.PdfExportParams,
-) {
-  return requestClient.post<DiagnosisApi.PdfExportResult>(
-    `/tracker/${loopId}/export`,
-    data,
-  );
+export function exportDiagnosisPdfApi(loopId: string) {
+  return requestClient.download<Blob>(`/tracker/${loopId}/export`, {
+    method: 'POST',
+  });
 }
 
 /**
