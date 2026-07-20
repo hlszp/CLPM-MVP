@@ -600,6 +600,82 @@ class TestCancelDiagnosisTask:
 
 
 # ---------------------------------------------------------------------------
+# DELETE /api/v1/diagnosis/tasks/{taskId} — 删除诊断任务
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteDiagnosisTask:
+    """DELETE /api/v1/diagnosis/tasks/{taskId} tests."""
+
+    def test_delete_terminal_status_success(self, client, mock_db, fake_redis) -> None:
+        """终态（SUCCESS）任务可删除。"""
+        task = _make_task(status="SUCCESS", is_archived=True)
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(task))
+        mock_db.add = MagicMock()
+        mock_db.delete = AsyncMock()
+        mock_db.commit = AsyncMock()
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                f"/api/v1/diagnosis/tasks/{task.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"]["deleted"] is True
+        mock_db.delete.assert_awaited_once()
+
+    def test_delete_pending_success(self, client, mock_db, fake_redis) -> None:
+        """PENDING 任务可删除。"""
+        task = _make_task(status="PENDING", is_archived=False)
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(task))
+        mock_db.add = MagicMock()
+        mock_db.delete = AsyncMock()
+        mock_db.commit = AsyncMock()
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.delete(
+                f"/api/v1/diagnosis/tasks/{task.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_delete_running_rejected(self, client, mock_db, fake_redis) -> None:
+        """RUNNING 任务不可删除（400，须先取消）。"""
+        task = _make_task(status="RUNNING", is_archived=False)
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(task))
+        mock_db.delete = AsyncMock()
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                f"/api/v1/diagnosis/tasks/{task.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_DIAG_TASK_NOT_DELETABLE"
+        assert "请先取消" in resp.json()["message"]
+        mock_db.delete.assert_not_awaited()
+
+    def test_delete_not_found(self, client, mock_db, fake_redis) -> None:
+        """任务不存在返回 404。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                "/api/v1/diagnosis/tasks/nonexistent",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_DIAG_TASK_NOT_FOUND"
+
+    def test_delete_sponsor_forbidden(self, client, mock_db, fake_redis) -> None:
+        """SPONSOR 不能删除任务（403）。"""
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.delete(
+                "/api/v1/diagnosis/tasks/some-id",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # GET /api/v1/diagnosis/records — 诊断记录列表（已归档）
 # ---------------------------------------------------------------------------
 

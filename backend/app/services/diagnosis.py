@@ -1261,10 +1261,10 @@ async def delete_diagnosis_task(
     task_id: str,
     operator: str = "system",
 ) -> dict:
-    """物理删除诊断任务（测试期间放开所有限制，任意状态均可删除）。
+    """物理删除诊断任务（RUNNING 不可删除，须先取消）。
 
     Raises:
-        BizError: ERR_DIAG_TASK_NOT_FOUND
+        BizError: ERR_DIAG_TASK_NOT_FOUND / ERR_DIAG_TASK_NOT_DELETABLE
     """
     result = await db.execute(select(DiagnosisTask).where(DiagnosisTask.id == task_id))
     task = result.scalar_one_or_none()
@@ -1273,6 +1273,13 @@ async def delete_diagnosis_task(
             code="ERR_DIAG_TASK_NOT_FOUND",
             message="诊断任务不存在",
             status_code=404,
+        )
+
+    if task.status == "RUNNING":
+        raise BizError(
+            code="ERR_DIAG_TASK_NOT_DELETABLE",
+            message="任务执行中，请先取消",
+            status_code=400,
         )
 
     before_snapshot = json.dumps(

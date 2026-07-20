@@ -430,7 +430,7 @@ async def delete_task_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """物理删除诊断任务（仅 PENDING 可删除）。
+    """物理删除诊断任务（RUNNING 不可删除，须先取消）。
 
     仅 ADMIN/IC_ENGINEER/PE_ENGINEER 角色可操作。
 

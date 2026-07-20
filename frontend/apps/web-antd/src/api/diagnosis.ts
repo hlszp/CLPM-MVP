@@ -911,7 +911,7 @@ export function cancelDiagnosisTaskApi(taskId: string) {
 }
 
 /**
- * 物理删除诊断任务（仅 PENDING 可删除）
+ * 物理删除诊断任务（RUNNING 不可删除，须先取消）
  */
 export function deleteDiagnosisTaskApi(taskId: string) {
   return requestClient.delete<Record<string, unknown>>(
