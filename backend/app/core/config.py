@@ -74,8 +74,10 @@ class Settings(BaseSettings):
     AAS_REQUEST_TIMEOUT_SECONDS: int = 30
     AAS_SECURITY_MODE: str = "SignAndEncrypt"  # None/Sign/SignAndEncrypt
 
-    # ---- 数据源切换 ----
-    # tdengine: 直接查 TDengine（开发环境）；remote_api: 通过外部 HTTP API 查询（生产环境，默认）
+    # ---- 历史数据导入接口（已废止"数据源切换"概念）----
+    # 架构决策（2026-07-20）：计算类历史数据查询（性能评估/诊断/整定）一律走本地
+    # TDengine；远端历史数据接口（remote_api）仅"数据管理→历史数据导入"任务直接调用。
+    # 本配置仅作兼容保留，不再影响计算路径的数据源选择。
     DATA_SOURCE_TYPE: str = "remote_api"
 
     # ---- 网络模式（局域网/公网切换，控制 Tailscale 子网路由）----
@@ -165,14 +167,11 @@ class Settings(BaseSettings):
         if self.POSTGRES_PASSWORD == _INSECURE_PG_PASSWORD:
             raise RuntimeError("生产环境不得使用开发默认数据库密码。")
 
-        # TDengine 密码校验（仅 DATA_SOURCE_TYPE=tdengine 时需要）
-        if self.DATA_SOURCE_TYPE == "tdengine":
-            if not self.TDENGINE_PASSWORD:
-                raise RuntimeError(
-                    "生产环境必须通过环境变量 TDENGINE_PASSWORD 设置 TDengine 密码。"
-                )
-            if self.TDENGINE_PASSWORD == _INSECURE_TD_PASSWORD:
-                raise RuntimeError("生产环境不得使用 TDengine 默认密码 taosdata。")
+        # TDengine 密码校验（计算类历史数据查询一律走本地 TDengine，必须校验）
+        if not self.TDENGINE_PASSWORD:
+            raise RuntimeError("生产环境必须通过环境变量 TDENGINE_PASSWORD 设置 TDengine 密码。")
+        if self.TDENGINE_PASSWORD == _INSECURE_TD_PASSWORD:
+            raise RuntimeError("生产环境不得使用 TDengine 默认密码 taosdata。")
 
         # Redis 密码校验
         if not self.REDIS_PASSWORD:

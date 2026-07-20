@@ -165,8 +165,8 @@ async def get_datasource_config(db: AsyncSession) -> dict:
         "realtimeWritebackEnabled": _cast_value(
             "realtimeWritebackEnabled", values["realtimeWritebackEnabled"]
         ),
-        # 运行态：从 settings 读取（启动时初始化的实际状态）
-        "historyProviderActive": settings.DATA_SOURCE_TYPE,
+        # 运行态：计算类历史数据查询一律本地 TDengine（2026-07-20 架构决策）
+        "historyProviderActive": "tdengine",
         "signalrSubscriberRunning": settings.SIGNALR_ENABLED,
         # tailscale 客户端可用性预检（容器内为 False）
         "tailscaleAvailable": _is_tailscale_available(),

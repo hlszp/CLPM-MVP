@@ -168,7 +168,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: initialise resources on startup, clean up on shutdown."""
     setup_logging()
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
-    logger.info("数据源类型: %s", settings.DATA_SOURCE_TYPE)
+    logger.info("数据源: 计算=本地 TDengine（性能评估/诊断/整定），远端 API 仅历史数据导入任务调用")
 
     # v6.1：自动启动 Celery Beat 调度进程
     # 生产环境由 docker-compose 独立 celery-beat 服务接管，避免重复启动
