@@ -588,6 +588,8 @@ export namespace DiagnosisApi {
     loopIds: string[];
     startTime?: string;
     endTime?: string;
+    /** 诊断标签子集（可选，默认全量；不含 MANUAL_REVIEW） */
+    labels?: string[];
   }
 
   /** 诊断任务查询参数 */

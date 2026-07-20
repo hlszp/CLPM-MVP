@@ -150,6 +150,7 @@ def run_loop_diagnosis(
     task_id: str | None = None,
     time_range_start: str | None = None,
     time_range_end: str | None = None,
+    labels: list[str] | None = None,
 ) -> dict:
     """单回路诊断（可手动触发）。
 
@@ -157,17 +158,21 @@ def run_loop_diagnosis(
     - 旧参数：ts_start（向后兼容，自动推算 ts_end = ts_start + 1h）
     - 新参数：time_range_start / time_range_end（诊断任务专用，支持自定义时间窗）
 
+    labels（B6 按需诊断）为可选的诊断标签子集：None 表示全量执行；
+    指定子集时仅执行子集内标签对应的算法（MANUAL_REVIEW 兜底不受子集限制）。
+
     当 task_id 不为 None 时，会更新 diagnosis_task 状态：
     - 开始时：PENDING → RUNNING
     - 成功时：RUNNING → SUCCESS
     - 失败时：RUNNING → FAILED（记录 error_message）
     """
     logger.info(
-        "单回路诊断, loop_id=%s, task_id=%s, time_range=%s~%s",
+        "单回路诊断, loop_id=%s, task_id=%s, time_range=%s~%s, labels=%s",
         loop_id,
         task_id,
         time_range_start,
         time_range_end,
+        labels,
     )
     return AsyncTask().run_async(
         _do_diagnose_single_loop(
@@ -176,6 +181,7 @@ def run_loop_diagnosis(
             task_id=task_id,
             time_range_start=time_range_start,
             time_range_end=time_range_end,
+            labels=labels,
         )
     )
 
@@ -215,7 +221,6 @@ async def _do_run_diagnosis() -> dict:
     与手动触发的任务记录统一管理。
     """
     from app.core.db import AsyncSessionLocal
-    from app.services.data_source.factory import get_provider
 
     now = datetime.now(UTC)
     ts_end = now.replace(minute=0, second=0, microsecond=0)
@@ -496,12 +501,15 @@ async def _do_diagnose_single_loop(
     task_id: str | None = None,
     time_range_start: str | None = None,
     time_range_end: str | None = None,
+    labels: list[str] | None = None,
 ) -> dict:
     """单回路诊断。
 
     支持两种时间范围参数（向后兼容）：
     - 旧参数：ts_start（向后兼容，自动推算 ts_end = ts_start + 1h）
     - 新参数：time_range_start / time_range_end（诊断任务专用）
+
+    labels（B6 按需诊断）为可选的诊断标签子集，透传至 _diagnose_loop 做算法门控。
 
     当 task_id 不为 None 时，更新 diagnosis_task 状态机：
     - PENDING → RUNNING（开始时）
@@ -550,6 +558,7 @@ async def _do_diagnose_single_loop(
                 ts_end=ts_end_dt,
                 query_wide_fn=query_wide_fn,
                 task_id=task_id,
+                labels=labels,
             )
             await db.commit()
             if result is None:
@@ -695,6 +704,7 @@ async def _diagnose_loop(
     ts_end: datetime,
     query_wide_fn,
     task_id: str | None = None,
+    labels: list[str] | None = None,
 ) -> dict | None:
     """对单回路执行诊断。
 
@@ -706,6 +716,9 @@ async def _diagnose_loop(
         ts_end: 时间窗结束
         query_wide_fn: 宽表查询函数
         task_id: 关联诊断任务 ID（可选，用于关联 DiagnosisResult）
+        labels: 诊断标签子集（B6 按需诊断，可选）。None 表示全量执行；
+            指定子集时仅执行子集内标签对应的算法（在 is_enabled 门控之上叠加），
+            MANUAL_REVIEW 兜底标签不受子集限制
 
     Returns:
         诊断结果字典
@@ -823,13 +836,19 @@ async def _diagnose_loop(
 
     # 算法启停门控（FDS §5.4.1 指标启停）：diag_configs 仅含 is_enabled=True 的配置，
     # 禁用或配置不存在的算法不执行，以空结果占位（不产出标签、不参与证据融合）
-    osc_enabled = "OSCILLATION" in diag_configs
-    stiction_enabled = "VALVE_STICTION" in diag_configs
-    quality_enabled = "QUALITY_ABNORMAL" in diag_configs
-    saturation_enabled = "OUTPUT_SATURATION" in diag_configs
-    overaggressive_enabled = "OVERAGGRESSIVE" in diag_configs
-    overconservative_enabled = "OVERCONSERVATIVE" in diag_configs
-    disturbance_enabled = "EXTERNAL_DISTURBANCE" in diag_configs
+    # B6 标签子集门控：labels 为 None 表示全量；否则仅执行子集内的标签
+    def _in_labels(label: str) -> bool:
+        return labels is None or label in labels
+
+    osc_enabled = "OSCILLATION" in diag_configs and _in_labels("OSCILLATION")
+    stiction_enabled = "VALVE_STICTION" in diag_configs and _in_labels("VALVE_STICTION")
+    quality_enabled = "QUALITY_ABNORMAL" in diag_configs and _in_labels("QUALITY_ABNORMAL")
+    saturation_enabled = "OUTPUT_SATURATION" in diag_configs and _in_labels("OUTPUT_SATURATION")
+    overaggressive_enabled = "OVERAGGRESSIVE" in diag_configs and _in_labels("OVERAGGRESSIVE")
+    overconservative_enabled = "OVERCONSERVATIVE" in diag_configs and _in_labels("OVERCONSERVATIVE")
+    disturbance_enabled = "EXTERNAL_DISTURBANCE" in diag_configs and _in_labels(
+        "EXTERNAL_DISTURBANCE"
+    )
 
     # 1. FFT 频域分析（振荡检测）
     if osc_enabled:

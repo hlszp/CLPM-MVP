@@ -202,6 +202,57 @@ class TestTriggerDiagnosis:
             )
         assert resp.status_code == 422
 
+    def test_trigger_with_labels_subset(self, client, mock_db, fake_redis) -> None:
+        """B6：labels 子集应透传到 Celery 任务。"""
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            patch("app.tasks.diagnosis_engine.run_loop_diagnosis") as mock_celery,
+        ):
+            mock_celery.delay = MagicMock()
+            resp = client.post(
+                "/api/v1/diagnosis/trigger",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopIds": ["00000000-0000-0000-0000-000000000201"],
+                    "labels": ["VALVE_STICTION"],
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "0"
+        call_args = mock_celery.delay.call_args
+        assert call_args is not None
+        assert call_args.kwargs.get("labels") == ["VALVE_STICTION"]
+
+    def test_trigger_invalid_label_400(self, client, mock_db, fake_redis) -> None:
+        """B6：非法标签返回 400 ERR_LABEL_INVALID。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/diagnosis/trigger",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopIds": ["00000000-0000-0000-0000-000000000201"],
+                    "labels": ["NOT_A_LABEL"],
+                },
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_LABEL_INVALID"
+
+    def test_trigger_manual_review_label_rejected(self, client, mock_db, fake_redis) -> None:
+        """B6：MANUAL_REVIEW 为兜底标签，子集中不允许，返回 400。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/diagnosis/trigger",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopIds": ["00000000-0000-0000-0000-000000000201"],
+                    "labels": ["MANUAL_REVIEW"],
+                },
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_LABEL_INVALID"
+
     def test_trigger_sponsor_forbidden(self, client, mock_db, fake_redis) -> None:
         """SPONSOR 不能触发诊断任务（403）。"""
         with mock_current_user(TEST_USERS["sponsor"]):

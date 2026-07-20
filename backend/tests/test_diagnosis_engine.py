@@ -2398,3 +2398,69 @@ class TestDoRunCheckup:
         schedule = entry["schedule"]
         assert schedule.minute == {20}
         assert schedule.hour == {0, 8, 16}  # hour="*/8" 展开为 {0, 8, 16}
+
+
+class TestLabelsSubsetGating:
+    """B6：labels 子集门控——仅执行子集内标签对应的算法，MANUAL_REVIEW 兜底不受限。"""
+
+    @pytest.mark.asyncio
+    async def test_stiction_subset_skips_oscillation(self) -> None:
+        """labels=['VALVE_STICTION'] 时，振荡信号不产出 OSCILLATION 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        # 50 个点的振荡信号（全量执行时必检出 OSCILLATION）
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={
+                "OSCILLATION": _make_diag_config("OSCILLATION"),
+                "VALVE_STICTION": _make_diag_config("VALVE_STICTION"),
+            },
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+            labels=["VALVE_STICTION"],
+        )
+
+        assert result is not None
+        # 子集外的 OSCILLATION 不产出；产出标签均在子集内或为 MANUAL_REVIEW 兜底
+        assert "OSCILLATION" not in result["labels"]
+        assert set(result["labels"]) <= {"VALVE_STICTION", "MANUAL_REVIEW"}
+
+    @pytest.mark.asyncio
+    async def test_none_labels_runs_full(self) -> None:
+        """labels=None 时全量执行，同样的振荡信号应产出 OSCILLATION 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config("OSCILLATION")},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+            labels=None,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" in result["labels"]

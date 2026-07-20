@@ -328,6 +328,7 @@ async def trigger_diagnosis_endpoint(
         start_time=body.startTime,
         end_time=body.endTime,
         operator=user.username,
+        labels=body.labels,
     )
     return success(data=data, message=f"已触发 {len(data['tasks'])} 个诊断任务")
 
