@@ -22,6 +22,7 @@ from app.tasks.diagnosis_engine import (
     _analyze_saturation,
     _analyze_step_response,
     _apply_expert_rules,
+    _apply_outlier_preprocessing,
     _assess_model_mismatch,
     _build_scatter_plot_data,
     _compute_sample_interval,
@@ -1549,6 +1550,9 @@ class TestDiagnoseLoopExtendedAlgorithms:
         pv_m = _make_mapping(tag_role="PV", tag_id="tag-pv")
         sp_m = _make_mapping(tag_role="SP", tag_id="tag-sp")
         pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        # B4：PV 过冲峰值约 140，需配置匹配量程，否则超出默认 0~100 量程被剔除
+        pv_tag.range_min = 0.0
+        pv_tag.range_max = 200.0
         sp_tag = _make_tag(tag_id="tag-sp", tag_name="LIC.SP")
 
         db = AsyncMock()
@@ -2780,10 +2784,14 @@ class TestHarrisIndexIntegration:
         """OVERAGGRESSIVE 命中时，harris_index 并入其 evidence 作证据增强。"""
         loop = _make_loop()
         loop.control_type = "PID"
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        # B4：PV 过冲峰值约 140，需配置匹配量程，否则超出默认 0~100 量程被剔除
+        pv_tag.range_min = 0.0
+        pv_tag.range_max = 200.0
         db = _make_diagnose_db(
             loop,
             [_make_mapping(tag_role="PV", tag_id="tag-pv")],
-            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+            [pv_tag],
         )
 
         # 过激响应：SP 阶跃 + PV 低阻尼过冲振荡（偏差强相关 → harris > 2）
@@ -2852,3 +2860,187 @@ class TestHarrisIndexIntegration:
         records = self._extract_results(db)
         assert len(records) > 0
         assert "harris_index" not in records[0].feature_values
+
+
+# ===========================================================================
+# B4：轻量数据质量预处理（异常点剔除 + valid_rate）
+# ===========================================================================
+
+
+class TestB4OutlierPreprocessing:
+    """B4：_apply_outlier_preprocessing 单元测试 + FFT 抗尖峰回归。"""
+
+    @staticmethod
+    def _make_b4_inputs(
+        aligned: list[dict[str, Any]],
+        raw_series: RawTimeSeries,
+    ) -> tuple:
+        """构造 _apply_outlier_preprocessing 的入参（PV 量程 0~100）。"""
+        loop = _make_loop()
+        loop.loop_type = "FLOW"
+        pv_m = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        pv_tag.range_min = 0.0
+        pv_tag.range_max = 100.0
+        src_indices = list(range(len(aligned)))
+        return (
+            aligned,
+            src_indices,
+            raw_series,
+            loop,
+            {"PV": pv_m},
+            {"tag-pv": pv_tag},
+        )
+
+    @staticmethod
+    def _make_aligned(pv: list[float], op: list[Any] | None = None) -> list[dict[str, Any]]:
+        """由 PV 数组构造对齐数据（1s 间隔）。"""
+        return [
+            {
+                "ts": datetime(2026, 1, 1) + timedelta(seconds=i),
+                "pv": pv[i],
+                "sp": 50.0,
+                "op": op[i] if op else 50.0,
+                "mode": 1,
+            }
+            for i in range(len(pv))
+        ]
+
+    def test_normal_data_unchanged(self) -> None:
+        """正常数据：不剔除任何点，valid_rate=1.0，结论与改动前一致。"""
+        n = 60
+        pv = [50.0 + 5.0 * float(np.sin(i * 0.3)) for i in range(n)]
+        aligned = self._make_aligned(pv)
+        raw = _make_raw_timeseries(pv, sp=[50.0] * n, op=[50.0] * n)
+
+        filtered, valid_rate = _apply_outlier_preprocessing(*self._make_b4_inputs(aligned, raw))
+
+        assert len(filtered) == n
+        assert [d["pv"] for d in filtered] == pv
+        assert valid_rate == 1.0
+
+    def test_spike_points_removed(self) -> None:
+        """SPIKE/OUT_OF_RANGE 尖峰坏点被剔除（跳变跟随点一并剔除）。"""
+        n = 100
+        pv = [50.0 + 5.0 * float(np.sin(i * 0.2)) for i in range(n)]
+        for idx in (30, 60, 90):
+            pv[idx] = 150.0  # 尖峰坏点（超量程 + 跳变 + 尖峰）
+        aligned = self._make_aligned(pv)
+        raw = _make_raw_timeseries(pv, sp=[50.0] * n, op=[50.0] * n)
+
+        filtered, valid_rate = _apply_outlier_preprocessing(*self._make_b4_inputs(aligned, raw))
+
+        remaining = [d["pv"] for d in filtered]
+        assert len(filtered) < n
+        assert 150.0 not in remaining
+        assert all(abs(v - 50.0) <= 5.1 for v in remaining)
+        assert 0.0 < valid_rate < 1.0
+
+    def test_op_outlier_removed_sync(self) -> None:
+        """OP 异常点触发整行（pv/sp/op/ts）同步剔除，保持对齐。"""
+        n = 60
+        pv = [50.0 + i * 0.01 for i in range(n)]  # 微斜坡，每点可唯一标识
+        op: list[Any] = [50.0] * n
+        op[20] = 150.0  # OP 尖峰
+        aligned = self._make_aligned(pv, op=op)
+        raw = _make_raw_timeseries(pv, sp=[50.0] * n, op=op)
+
+        filtered, _ = _apply_outlier_preprocessing(*self._make_b4_inputs(aligned, raw))
+
+        remaining_pv = [d["pv"] for d in filtered]
+        assert len(filtered) < n
+        # OP 尖峰所在行（及跳变跟随行）的 PV 同步被剔除
+        assert 50.0 + 20 * 0.01 not in remaining_pv
+
+    def test_high_removal_ratio_logs_warning_and_continues(self, caplog) -> None:
+        """剔除比例 >50% 时记警告日志并继续（返回剩余数据，不抛异常）。"""
+        n = 40
+        pv = [150.0 if i % 2 == 0 else 50.0 for i in range(n)]  # 半数超量程
+        aligned = self._make_aligned(pv)
+        raw = _make_raw_timeseries(pv, sp=[50.0] * n, op=[50.0] * n)
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            filtered, valid_rate = _apply_outlier_preprocessing(*self._make_b4_inputs(aligned, raw))
+
+        assert "剔除比例过高" in caplog.text
+        # 超量程点及其跳变跟随点全部剔除，仍正常返回
+        assert len(filtered) <= n // 2
+        assert valid_rate <= 0.5
+
+    @pytest.mark.asyncio
+    async def test_fft_unpolluted_by_spikes(self) -> None:
+        """回归：含尖峰坏点的合成振荡数据，剔除后 FFT 结论与干净数据一致。"""
+        from app.models.diagnosis import DiagnosisResult
+
+        n = 200
+        t = np.arange(n)
+        base = 50.0 + 10.0 * np.sin(2.0 * np.pi * t / 25.0)
+        spiked = base.copy()
+        for idx in (60, 120, 180):
+            spiked[idx] = 150.0
+
+        async def _run(data: RawTimeSeries) -> tuple[dict, list]:
+            db = _make_diagnose_db(
+                _make_loop(),
+                [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+                [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+            )
+
+            async def _query_fn(**kwargs):
+                return data
+
+            result = await _diagnose_loop(
+                db=db,
+                loop_id="loop-001",
+                diag_configs={"OSCILLATION": _make_diag_config()},
+                ts_start=datetime(2026, 1, 1, 0, 0, 0),
+                ts_end=datetime(2026, 1, 1, 1, 0, 0),
+                query_wide_fn=_query_fn,
+            )
+            records = [
+                call.args[0]
+                for call in db.add.call_args_list
+                if isinstance(call.args[0], DiagnosisResult)
+            ]
+            return result, records
+
+        clean_result, clean_records = await _run(_make_raw_timeseries(base.tolist()))
+        spiked_result, spiked_records = await _run(_make_raw_timeseries(spiked.tolist()))
+
+        assert "OSCILLATION" in clean_result["labels"]
+        assert "OSCILLATION" in spiked_result["labels"]
+        f_clean = clean_records[0].feature_values["oscillation_frequency"]
+        f_spiked = spiked_records[0].feature_values["oscillation_frequency"]
+        # 尖峰未污染频谱：主频与干净数据一致（0.04 Hz 附近）
+        assert f_spiked == pytest.approx(f_clean, abs=0.01)
+        assert f_clean == pytest.approx(0.04, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_extreme_outlier_ratio_still_returns_result(self) -> None:
+        """剔除比例极高时诊断不中断：空数据降级为 MANUAL_REVIEW。"""
+        n = 64
+        pv = [150.0 if i % 2 == 0 else 50.0 for i in range(n)]
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+        data = _make_raw_timeseries(pv, sp=[50.0] * n, op=[50.0] * n)
+
+        async def _query_fn(**kwargs):
+            return data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert result["status"] == "SUCCESS"
+        assert "MANUAL_REVIEW" in result["labels"]
