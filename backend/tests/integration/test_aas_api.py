@@ -1,8 +1,12 @@
 """AAS REST API 集成测试 — 验证真实数据链路.
 
+架构决策（2026-07-20）：导入走远端、计算全本地。
+- 工厂 ``get_provider()`` 恒返回本地 TDengineProvider（计算路径）
+- 远端 HistoryData API 仅"历史数据导入"任务调用；本文件用
+  直接实例化的 ``RemoteApiProvider`` 验证该远端 API 契约
+
 测试前提：
 - AAS 服务可达（默认 http://192.168.100.2:81）
-- DATA_SOURCE_TYPE=remote_api
 - 数据库中有已配置的回路和 Tag
 
 运行方式：
@@ -58,19 +62,20 @@ pytestmark = [
 
 
 class TestFactoryRouting:
-    """验证 factory 根据配置正确路由到 RemoteApiProvider。"""
+    """验证工厂恒返回本地 TDengineProvider（计算全本地）。"""
 
-    def test_factory_returns_remote_api_provider(self):
-        """DATA_SOURCE_TYPE=remote_api 时应返回 RemoteApiProvider。"""
+    def test_factory_always_returns_tdengine_provider(self):
+        """工厂恒返回本地 TDengineProvider（计算任务不得走远端）。"""
+        from app.services.data_source.tdengine_provider import TDengineProvider
+
         provider = get_provider()
-        assert isinstance(provider, RemoteApiProvider), (
-            f"期望 RemoteApiProvider，实际 {type(provider).__name__}，"
-            "请检查 .env 中 DATA_SOURCE_TYPE=remote_api"
+        assert isinstance(provider, TDengineProvider), (
+            f"期望 TDengineProvider，实际 {type(provider).__name__}"
         )
 
     def test_provider_query_trend_data_is_callable(self):
-        """Provider 的 query_trend_data 方法可调用。"""
-        provider = get_provider()
+        """RemoteApiProvider（导入接口客户端）的 query_trend_data 方法可调用。"""
+        provider = RemoteApiProvider()
         assert callable(provider.query_trend_data)
 
 
@@ -85,7 +90,7 @@ class TestAasHistoryDataApi:
     @pytest.mark.asyncio
     async def test_query_trend_data_returns_non_empty(self):
         """查询最近 1 小时的 PV 趋势数据，应返回非空列表。"""
-        provider = get_provider()
+        provider = RemoteApiProvider()
         end_time = datetime.now(UTC).replace(tzinfo=None)
         start_time = end_time - timedelta(hours=1)
 
@@ -108,7 +113,7 @@ class TestAasHistoryDataApi:
     @pytest.mark.asyncio
     async def test_query_trend_data_sample_interval(self):
         """不同采样间隔应返回不同点数。"""
-        provider = get_provider()
+        provider = RemoteApiProvider()
         end_time = datetime.now(UTC).replace(tzinfo=None)
         start_time = end_time - timedelta(hours=1)
 
@@ -135,7 +140,7 @@ class TestAasHistoryDataApi:
     @pytest.mark.asyncio
     async def test_query_trend_data_nonexistent_tag(self):
         """查询不存在的 Tag 应返回空列表（不抛异常）。"""
-        provider = get_provider()
+        provider = RemoteApiProvider()
         end_time = datetime.now(UTC).replace(tzinfo=None)
         start_time = end_time - timedelta(minutes=5)
 
@@ -154,7 +159,10 @@ class TestAasHistoryDataApi:
 
 
 class TestKpiCalcViaFactory:
-    """验证 KPI 计算通过 factory 路由从 AAS 获取数据并计算指标。"""
+    """验证 KPI 计算通过 factory 路由从**本地 TDengine** 获取数据并计算指标。
+
+    架构决策后：KPI 不再从 AAS API 直接取数，本地数据来自实时写回或历史导入。
+    """
 
     @pytest.mark.asyncio
     async def test_do_calculate_single_loop_with_real_data(self):
