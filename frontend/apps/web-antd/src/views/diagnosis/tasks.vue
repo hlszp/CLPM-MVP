@@ -4,10 +4,10 @@
  *
  * 对齐 PRD §4.4 + 实现契约 v2.0
  * - 表格展示未归档诊断任务（每回路一行）
- * - 行级操作：诊断 / 取消 / 归档 / 结果（状态机控制按钮可用性）
+ * - 行级操作：诊断 / 取消 / 详情 / 归档 / 删除（状态机控制按钮可用性）
  * - RUNNING 状态行内显示进度条
  * - 触发诊断 Modal：多选回路 + 时间范围（含快捷选项）
- * - 结果查看 Drawer：诊断标签 + 证据链
+ * - 详情跳转诊断详情页（标签 + 证据链）
  * - PENDING/RUNNING 状态任务每 5 秒轮询，直到终态
  */
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
@@ -25,14 +25,11 @@ import { IconifyIcon } from '@vben/icons';
 import {
   Button,
   DatePicker,
-  Drawer,
-  Empty,
   Input,
   message,
   Modal,
   Progress,
   Select,
-  Spin,
   Table,
   Tag,
   Tooltip,
@@ -41,6 +38,7 @@ import dayjs from 'dayjs';
 
 import {
   archiveDiagnosisTaskApi,
+  cancelDiagnosisTaskApi,
   deleteDiagnosisTaskApi,
   getDiagnosisTasksApi,
   runDiagnosisTaskApi,
@@ -50,7 +48,6 @@ import { getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { DIAGNOSIS_LABEL_COLOR_MAP } from '#/constants/diagnosis';
 
 defineOptions({ name: 'DiagnosisTasks' });
 
@@ -124,6 +121,14 @@ function canViewResult(status: DiagnosisApi.TaskStatus): boolean {
 /** 归档：仅诊断完成（SUCCESS）可归档 */
 function canArchive(status: DiagnosisApi.TaskStatus): boolean {
   return status === 'SUCCESS';
+}
+/** 取消：仅待执行/执行中可取消 */
+function canCancel(status: DiagnosisApi.TaskStatus): boolean {
+  return status === 'PENDING' || status === 'RUNNING';
+}
+/** 删除：执行中（RUNNING）不可删除，须先取消 */
+function canDelete(status: DiagnosisApi.TaskStatus): boolean {
+  return status !== 'RUNNING';
 }
 
 const columns: TableColumnsType = [
@@ -425,10 +430,19 @@ async function handleTriggerConfirm() {
   }
 }
 
-// ============ 结果查看 Drawer ============
-const resultDrawerVisible = ref(false);
-const resultDetail = ref<DiagnosisApi.TaskDetail | null>(null);
-const resultLoading = ref(false);
+/** 取消：仅 PENDING/RUNNING 可取消 */
+async function handleCancel(record: DiagnosisApi.TaskItem) {
+  Modal.confirm({
+    title: '确认取消',
+    content: `确认取消回路 ${record.tagName} 的诊断任务？`,
+    okType: 'danger',
+    onOk: async () => {
+      await cancelDiagnosisTaskApi(record.taskId);
+      message.success('任务已取消');
+      await loadTasks();
+    },
+  });
+}
 
 /** 详情：跳转到诊断详情页 */
 function handleViewDetail(record: DiagnosisApi.TaskItem) {
@@ -509,19 +523,29 @@ async function handleDelete(record: DiagnosisApi.TaskItem) {
   });
 }
 
-/** 批量删除：删除选中的所有任务（测试期间不限制状态） */
+/** 批量删除：跳过执行中（RUNNING）任务，须先取消 */
 const batchDeleteLoading = ref(false);
 async function handleBatchDelete() {
-  const selected = taskList.value.filter((t) =>
+  const selectedAll = taskList.value.filter((t) =>
     selectedRowKeys.value.includes(t.taskId),
   );
+  const selected = selectedAll.filter((t) =>
+    canDelete(t.status as DiagnosisApi.TaskStatus),
+  );
+  const skipped = selectedAll.length - selected.length;
   if (selected.length === 0) {
-    message.warning('请先选择要删除的任务');
+    message.warning(
+      skipped > 0
+        ? '所选任务均在执行中，请先取消后再删除'
+        : '请先选择要删除的任务',
+    );
     return;
   }
   Modal.confirm({
     title: '确认批量删除',
-    content: `确认删除 ${selected.length} 个诊断任务？`,
+    content: `确认删除 ${selected.length} 个诊断任务？${
+      skipped > 0 ? `（已跳过 ${skipped} 个执行中任务）` : ''
+    }`,
     okType: 'danger',
     onOk: async () => {
       batchDeleteLoading.value = true;
@@ -669,38 +693,6 @@ function scoreColor(val: null | number | undefined): string {
 
 function triggerTypeName(t: string): string {
   return t === 'auto' ? '自动' : '手动';
-}
-
-function labelColor(label: string): string {
-  return (
-    DIAGNOSIS_LABEL_COLOR_MAP[
-      label as keyof typeof DIAGNOSIS_LABEL_COLOR_MAP
-    ] || 'default'
-  );
-}
-
-function labelName(label: string): string {
-  const map: Record<string, string> = {
-    EXTERNAL_DISTURBANCE: '外扰频繁',
-    MANUAL_REVIEW: '人工复核',
-    OSCILLATION: '振荡',
-    OUTPUT_SATURATION: '输出饱和',
-    OVERAGGRESSIVE: '参数过激',
-    OVERCONSERVATIVE: '参数过保守',
-    QUALITY_ABNORMAL: 'PV 质量异常',
-    VALVE_STICTION: '阀门粘滞',
-  };
-  return map[label] || label;
-}
-
-function formatEvidence(
-  evidence: Record<string, unknown>,
-): { key: string; value: string }[] {
-  if (!evidence || typeof evidence !== 'object') return [];
-  return Object.entries(evidence).map(([k, v]) => ({
-    key: k,
-    value: typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v),
-  }));
 }
 
 /** 行选择配置 */
@@ -880,7 +872,7 @@ onBeforeUnmount(() => {
             <span class="clpm-num">{{ formatTime(record.triggeredAt) }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <!-- 诊断 → 详情 → 归档 → 删除，基于状态机控制可用性 -->
+            <!-- 诊断 → 取消 → 详情 → 归档 → 删除，基于状态机控制可用性 -->
             <Button
               type="link"
               size="small"
@@ -889,6 +881,14 @@ onBeforeUnmount(() => {
               @click="handleRowDiagnose(record as DiagnosisApi.TaskItem)"
             >
               诊断
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              :disabled="!canCancel(record.status as DiagnosisApi.TaskStatus)"
+              @click="handleCancel(record as DiagnosisApi.TaskItem)"
+            >
+              取消
             </Button>
             <Button
               type="link"
@@ -912,6 +912,7 @@ onBeforeUnmount(() => {
               type="link"
               size="small"
               danger
+              :disabled="!canDelete(record.status as DiagnosisApi.TaskStatus)"
               @click="handleDelete(record as DiagnosisApi.TaskItem)"
             >
               删除
@@ -1015,119 +1016,5 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </Modal>
-
-    <!-- 结果查看 Drawer -->
-    <Drawer
-      v-model:open="resultDrawerVisible"
-      title="诊断结果"
-      placement="right"
-      width="480"
-      :destroy-on-close="true"
-    >
-      <Spin :spinning="resultLoading">
-        <div v-if="resultDetail" class="space-y-4">
-          <div
-            class="rounded border p-3"
-            style="border-color: hsl(var(--border))"
-          >
-            <div class="mb-2 text-base font-semibold">
-              {{ resultDetail.tagName }}
-            </div>
-            <div class="space-y-1 text-sm">
-              <div>
-                <span :style="{ color: themeColors.NEUTRAL }">任务状态：</span>
-                <Tag :color="statusConfig[resultDetail.status].color">
-                  {{ statusConfig[resultDetail.status].text }}
-                </Tag>
-              </div>
-              <div>
-                <span :style="{ color: themeColors.NEUTRAL }">触发方式：</span>
-                {{ triggerTypeName(resultDetail.triggerType) }}
-              </div>
-              <div>
-                <span :style="{ color: themeColors.NEUTRAL }">诊断时间：</span>
-                <span class="clpm-num">{{
-                  formatTime(resultDetail.triggeredAt)
-                }}</span>
-              </div>
-              <div>
-                <span :style="{ color: themeColors.NEUTRAL }">数据范围：</span>
-                <span class="clpm-num">{{
-                  `${formatTime(resultDetail.timeRangeStart)} ~ ${formatTime(
-                    resultDetail.timeRangeEnd,
-                  )}`
-                }}</span>
-              </div>
-              <div v-if="resultDetail.errorMessage">
-                <span :style="{ color: themeColors.DANGER }">错误信息：</span>
-                {{ resultDetail.errorMessage }}
-              </div>
-            </div>
-          </div>
-
-          <div v-if="resultDetail.results.length > 0">
-            <div class="mb-2 font-medium">诊断标签</div>
-            <div class="space-y-2">
-              <div
-                v-for="(item, idx) in resultDetail.results"
-                :key="idx"
-                class="flex items-center justify-between rounded border p-2"
-                style="border-color: hsl(var(--border))"
-              >
-                <Tag :color="labelColor(item.diagLabel)">
-                  {{ labelName(item.diagLabel) }}
-                </Tag>
-                <span
-                  class="clpm-num text-sm"
-                  :style="{
-                    color:
-                      item.confidence >= 0.8
-                        ? themeColors.DANGER
-                        : item.confidence >= 0.5
-                          ? themeColors.WARNING
-                          : themeColors.NEUTRAL,
-                  }"
-                >
-                  置信度 {{ (item.confidence * 100).toFixed(0) }}%
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="resultDetail.results.length > 0">
-            <div class="mb-2 font-medium">证据链</div>
-            <div class="space-y-3">
-              <div
-                v-for="(item, idx) in resultDetail.results"
-                :key="`evidence-${idx}`"
-                class="rounded border p-2"
-                style="border-color: hsl(var(--border))"
-              >
-                <div class="mb-1 text-sm font-medium">
-                  {{ labelName(item.diagLabel) }}
-                </div>
-                <ul class="ml-4 list-disc space-y-1 text-xs">
-                  <li
-                    v-for="ev in formatEvidence(item.evidenceChain)"
-                    :key="ev.key"
-                  >
-                    <span :style="{ color: themeColors.NEUTRAL }">
-                      {{ ev.key }}：
-                    </span>
-                    <span class="clpm-num">{{ ev.value }}</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          <Empty
-            v-if="resultDetail.results.length === 0"
-            description="暂无诊断结果"
-          />
-        </div>
-        <Empty v-else description="暂无数据" />
-      </Spin>
-    </Drawer>
   </Page>
 </template>

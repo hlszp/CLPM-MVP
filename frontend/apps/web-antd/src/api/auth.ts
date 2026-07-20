@@ -32,7 +32,7 @@ export type ClpmRole = (typeof CLPM_ROLES)[number];
  */
 export const ROLE_DEFAULT_HOME: Record<ClpmRole, string> = {
   ADMIN: '/dashboard',
-  EXPERT: '/diagnosis/list',
+  EXPERT: '/diagnosis/overview',
   IC_ENGINEER: '/dashboard',
   PE_ENGINEER: '/dashboard',
   SPONSOR: '/dashboard',
