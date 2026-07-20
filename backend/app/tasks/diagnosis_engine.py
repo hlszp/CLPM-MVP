@@ -877,8 +877,17 @@ async def _diagnose_loop(
             pv_quality_data,
             threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
         )
+
+        # 3b. 传感器故障检测（B2：卡死/噪声突增/漂移，与质量码统计并列，
+        # 命中时产出 QUALITY_ABNORMAL 标签，sensor_subtype 区分子类型）
+        sensor_fault_result = _detect_sensor_faults(
+            pv_values,
+            sp_values if len(sp_values) == len(pv_values) else None,
+            threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
+        )
     else:
         quality_result = _empty_quality_result()
+        sensor_fault_result = _empty_sensor_fault_result()
 
     # 4. OP 饱和率分析（P0-3：仅自控模式 + 绝对工程限位）
     if saturation_enabled:
@@ -1057,6 +1066,36 @@ async def _diagnose_loop(
             "total_points": quality_result["total"],
             "bad_points": quality_result["bad_count"],
             "quality_pattern": quality_result.get("quality_pattern", "NORMAL"),
+        }
+    )
+
+    # 传感器故障检测 → QUALITY_ABNORMAL（B2，sensor_subtype 区分子类型）
+    if sensor_fault_result["detected"]:
+        algorithm_results.append(
+            {
+                "label": "QUALITY_ABNORMAL",
+                "confidence": sensor_fault_result["confidence"],
+                "feature_values": {
+                    "sensor_subtype": sensor_fault_result["sensor_subtype"],
+                    "frozen_max_segment": sensor_fault_result["frozen_max_segment"],
+                    "frozen_segment_ratio": sensor_fault_result["frozen_segment_ratio"],
+                    "noise_std_ratio": sensor_fault_result["noise_std_ratio"],
+                    "drift_magnitude": sensor_fault_result["drift_magnitude"],
+                },
+                "evidence": {
+                    "reasoning": sensor_fault_result["reasoning"],
+                    "algorithm": "SENSOR_FAULT_v1.0",
+                },
+            }
+        )
+    # 无条件保存传感器故障可视化数据
+    all_visualization_data.update(
+        {
+            "sensor_fault_detected": sensor_fault_result["detected"],
+            "sensor_subtype": sensor_fault_result["sensor_subtype"],
+            "frozen_max_segment": sensor_fault_result["frozen_max_segment"],
+            "noise_std_ratio": sensor_fault_result["noise_std_ratio"],
+            "drift_magnitude": sensor_fault_result["drift_magnitude"],
         }
     )
 
@@ -1684,6 +1723,217 @@ def _analyze_quality(pv_data: list[dict], threshold: dict | None = None) -> dict
             "bad_count": 0,
             "quality_pattern": "NORMAL",
         }
+
+
+def _empty_sensor_fault_result() -> dict[str, Any]:
+    """空传感器故障检测结果（QUALITY_ABNORMAL 算法禁用时占位）。"""
+    return {
+        "detected": False,
+        "sensor_subtype": None,
+        "confidence": 0.0,
+        "frozen_max_segment": 0,
+        "frozen_segment_ratio": 0.0,
+        "noise_std_ratio": 1.0,
+        "drift_magnitude": 0.0,
+        "reasoning": "",
+    }
+
+
+def _rolling_std(x: np.ndarray, window: int) -> np.ndarray:
+    """滚动标准差（滑动窗口，O(n) 累积和实现）。
+
+    Args:
+        x: 输入数组
+        window: 窗口长度（点）
+
+    Returns:
+        长度为 len(x) - window + 1 的滚动标准差数组；x 短于 window 时返回空数组
+    """
+    n = len(x)
+    if n < window or window <= 0:
+        return np.array([], dtype=float)
+    c = np.cumsum(np.insert(x, 0, 0.0))
+    c2 = np.cumsum(np.insert(x * x, 0, 0.0))
+    sums = c[window:] - c[:-window]
+    sums2 = c2[window:] - c2[:-window]
+    mean = sums / window
+    var = sums2 / window - mean * mean
+    # 累积和浮点误差可能使理论零方差段出现微小负值
+    return np.sqrt(np.maximum(var, 0.0))
+
+
+def _detect_sensor_faults(
+    pv_values: np.ndarray,
+    sp_values: np.ndarray | None = None,
+    threshold: dict | None = None,
+) -> dict[str, Any]:
+    """传感器故障检测（B2：卡死/噪声突增/漂移三个子检测）。
+
+    子检测（命中即产出 QUALITY_ABNORMAL 标签，sensor_subtype 区分）：
+    - frozen（卡死/冻结）：滚动窗口（frozen_window 点）std < frozen_eps 的最长持续段，
+      占信号比例 > frozen_ratio → 传感器卡死（置信度 0.85）
+    - noisy（噪声突增）：前 noise_segment 比例段 vs 剩余段的滚动 std 中位数比值
+      > noise_ratio（任一侧突增）→ 噪声突增（置信度 0.7）
+    - drift（漂移）：等长 drift_segments 分段均值单调递进且首尾均值差
+      > drift_k × 全局 std → 漂移（置信度 0.65）；若 SP 提供且同向同步变化
+      （首尾段均值差同号且幅度 ≥ PV 漂移量的一半）则判为工艺真实变化，不判漂移
+
+    Args:
+        pv_values: PV 数据数组（工程单位）
+        sp_values: SP 数据数组（可选，需与 pv_values 等长；用于漂移/工艺变化区分）
+        threshold: 阈值配置（可选），支持键：
+            - frozen_window: 冻结判定滚动窗口点数（默认 300，1 秒采样下约 5 分钟）
+            - frozen_eps: 冻结判定滚动 std 阈值（默认 1e-4）
+            - frozen_ratio: 冻结段占信号比例阈值（默认 0.2）
+            - noise_ratio: 噪声突增 std 比值阈值（默认 3.0）
+            - noise_segment: 噪声对比前段比例（默认 0.5，即前后各半）
+            - drift_k: 漂移幅度系数（默认 2.0）
+            - drift_segments: 漂移分段数（默认 5）
+
+    Returns:
+        {detected, sensor_subtype, confidence, frozen_max_segment,
+         frozen_segment_ratio, noise_std_ratio, drift_magnitude, reasoning}
+    """
+    if threshold is None:
+        threshold = {}
+    frozen_window = int(threshold.get("frozen_window", 300))
+    frozen_eps = float(threshold.get("frozen_eps", 1e-4))
+    frozen_ratio = float(threshold.get("frozen_ratio", 0.2))
+    noise_ratio = float(threshold.get("noise_ratio", 3.0))
+    noise_segment = float(threshold.get("noise_segment", 0.5))
+    drift_k = float(threshold.get("drift_k", 2.0))
+    drift_segments = int(threshold.get("drift_segments", 5))
+
+    result = _empty_sensor_fault_result()
+
+    n = len(pv_values)
+    if n < MIN_DATA_POINTS:
+        return result
+
+    try:
+        hits: list[tuple[str, float, str]] = []  # (subtype, confidence, reasoning)
+
+        # --- 1. 卡死/冻结：滚动 std < eps 的最长持续段 ---
+        frozen_max_segment = 0
+        frozen_segment_ratio = 0.0
+        if n >= frozen_window:
+            rstd = _rolling_std(pv_values, frozen_window)
+            below = rstd < frozen_eps
+            # 最长连续 True 段；段内每个窗口均为冻结 → 冻结段长度 = run + window - 1
+            max_run = 0
+            run = 0
+            for b in below:
+                if b:
+                    run += 1
+                    max_run = max(max_run, run)
+                else:
+                    run = 0
+            if max_run > 0:
+                frozen_max_segment = max_run + frozen_window - 1
+                frozen_segment_ratio = frozen_max_segment / n
+            result["frozen_max_segment"] = frozen_max_segment
+            result["frozen_segment_ratio"] = frozen_segment_ratio
+            if frozen_segment_ratio > frozen_ratio:
+                hits.append(
+                    (
+                        "frozen",
+                        0.85,
+                        (
+                            f"传感器卡死：最长冻结段 {frozen_max_segment} 点"
+                            f"（占比 {frozen_segment_ratio:.2f} > {frozen_ratio:.2f}），"
+                            f"滚动 std < {frozen_eps}"
+                        ),
+                    )
+                )
+
+        # --- 2. 噪声突增：前段 vs 后段滚动 std 中位数比值 ---
+        noise_std_ratio = 1.0
+        split = int(n * noise_segment)
+        if split >= 16 and n - split >= 16:
+            win = max(10, min(30, split // 4, (n - split) // 4))
+            std_first = _rolling_std(pv_values[:split], win)
+            std_second = _rolling_std(pv_values[split:], win)
+            if len(std_first) > 0 and len(std_second) > 0:
+                med_first = float(np.median(std_first))
+                med_second = float(np.median(std_second))
+                denom = min(med_first, med_second)
+                numer = max(med_first, med_second)
+                # 分母近零（一侧完全平坦）时，另一侧有任何波动即视为极大比值
+                if denom > 1e-12:
+                    noise_std_ratio = numer / denom
+                else:
+                    noise_std_ratio = np.inf if numer > 1e-12 else 1.0
+                result["noise_std_ratio"] = (
+                    float(noise_std_ratio) if np.isfinite(noise_std_ratio) else 999.0
+                )
+                if noise_std_ratio > noise_ratio:
+                    hits.append(
+                        (
+                            "noisy",
+                            0.7,
+                            (
+                                f"传感器噪声突增：前后段滚动 std 中位数比值 "
+                                f"{result['noise_std_ratio']:.2f} > {noise_ratio:.2f}"
+                                f"（前段 {med_first:.4g} / 后段 {med_second:.4g}）"
+                            ),
+                        )
+                    )
+
+        # --- 3. 漂移：等长分段均值单调递进 + 幅度超阈值 ---
+        drift_magnitude = 0.0
+        seg_len = n // drift_segments
+        if seg_len >= 4:
+            means = np.array(
+                [
+                    float(np.mean(pv_values[i * seg_len : (i + 1) * seg_len]))
+                    for i in range(drift_segments)
+                ]
+            )
+            diffs = np.diff(means)
+            drift_magnitude = float(means[-1] - means[0])
+            result["drift_magnitude"] = drift_magnitude
+            monotonic = bool(np.all(diffs > 0)) or bool(np.all(diffs < 0))
+            global_std = float(np.std(pv_values))
+            if monotonic and abs(drift_magnitude) > drift_k * global_std:
+                # SP 同向同步变化 → 工艺真实变化而非传感器漂移
+                sp_synced = False
+                if sp_values is not None and len(sp_values) == n:
+                    sp_means = np.array(
+                        [
+                            float(np.mean(sp_values[i * seg_len : (i + 1) * seg_len]))
+                            for i in range(drift_segments)
+                        ]
+                    )
+                    sp_magnitude = float(sp_means[-1] - sp_means[0])
+                    if sp_magnitude * drift_magnitude > 0 and abs(sp_magnitude) >= 0.5 * abs(
+                        drift_magnitude
+                    ):
+                        sp_synced = True
+                if not sp_synced:
+                    hits.append(
+                        (
+                            "drift",
+                            0.65,
+                            (
+                                f"传感器漂移：分段均值单调递进，首尾均值差 "
+                                f"{drift_magnitude:.4g}（{abs(drift_magnitude) / global_std:.2f}σ"
+                                f" > {drift_k:.1f}σ）且 SP 未同向变化"
+                            ),
+                        )
+                    )
+
+        if hits:
+            # 多子类型同时命中时按严重度取最高（frozen > noisy > drift）
+            subtype, confidence, reasoning = max(hits, key=lambda h: h[1])
+            result["detected"] = True
+            result["sensor_subtype"] = subtype
+            result["confidence"] = confidence
+            result["reasoning"] = reasoning
+
+        return result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("传感器故障检测失败: %s", exc)
+        return _empty_sensor_fault_result()
 
 
 def _analyze_saturation(

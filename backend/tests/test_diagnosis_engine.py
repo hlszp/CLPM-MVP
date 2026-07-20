@@ -31,6 +31,7 @@ from app.tasks.diagnosis_engine import (
     _detect_kano_stiction,
     _detect_oscillation_fft,
     _detect_oscillation_iae,
+    _detect_sensor_faults,
     _detect_slow_response,
     _detect_valve_stiction,
     _diagnose_loop,
@@ -2464,3 +2465,190 @@ class TestLabelsSubsetGating:
 
         assert result is not None
         assert "OSCILLATION" in result["labels"]
+
+
+# ===========================================================================
+# B2：传感器故障检测（卡死/噪声突增/漂移）故障注入测试
+# ===========================================================================
+
+
+def _make_ar1_signal(n: int, phi: float = 0.7, noise_std: float = 0.5, seed: int = 0) -> np.ndarray:
+    """构造 AR(1) 正常过程信号（均值 50，固定种子）。"""
+    rng = np.random.RandomState(seed)
+    e = rng.normal(0.0, noise_std, n)
+    x = np.zeros(n)
+    for i in range(1, n):
+        x[i] = phi * x[i - 1] + e[i]
+    return 50.0 + x
+
+
+class TestDetectSensorFaults:
+    """B2：_detect_sensor_faults() 传感器故障算法组。"""
+
+    def test_short_data_returns_empty(self) -> None:
+        """数据点不足时不检出。"""
+        pv = np.array([50.0] * 10, dtype=float)
+        result = _detect_sensor_faults(pv)
+        assert result["detected"] is False
+        assert result["sensor_subtype"] is None
+
+    def test_frozen_segment_detected(self) -> None:
+        """中段 400 点常值（约 27% > 20% 占比阈值）应检出 frozen。"""
+        n = 1500
+        pv = _make_ar1_signal(n, seed=42)
+        pv[500:900] = 50.0  # 中段 400 点卡死
+        result = _detect_sensor_faults(pv)
+        assert result["detected"] is True
+        assert result["sensor_subtype"] == "frozen"
+        assert result["frozen_max_segment"] >= 400
+        assert result["confidence"] == 0.85
+
+    def test_noise_burst_detected(self) -> None:
+        """后半段噪声 std ×5（比值 5 > 3）应检出 noisy。"""
+        n = 1500
+        rng = np.random.RandomState(7)
+        pv = np.concatenate(
+            [
+                50.0 + rng.normal(0.0, 0.5, n // 2),
+                50.0 + rng.normal(0.0, 2.5, n - n // 2),
+            ]
+        )
+        result = _detect_sensor_faults(pv)
+        assert result["detected"] is True
+        assert result["sensor_subtype"] == "noisy"
+        assert result["noise_std_ratio"] > 3.0
+
+    def test_drift_detected_when_sp_constant(self) -> None:
+        """单调线性漂移 3.0（> 2σ）且 SP 不变应检出 drift。"""
+        n = 1500
+        rng = np.random.RandomState(11)
+        pv = 50.0 + np.linspace(0.0, 3.0, n) + rng.normal(0.0, 0.1, n)
+        sp = np.full(n, 50.0)
+        result = _detect_sensor_faults(pv, sp)
+        assert result["detected"] is True
+        assert result["sensor_subtype"] == "drift"
+        assert result["drift_magnitude"] > 2.0
+
+    def test_drift_not_detected_when_sp_synced(self) -> None:
+        """SP 同向同步变化（工艺真实变化）时不判 drift。"""
+        n = 1500
+        rng = np.random.RandomState(11)
+        drift = np.linspace(0.0, 3.0, n)
+        pv = 50.0 + drift + rng.normal(0.0, 0.1, n)
+        sp = 50.0 + drift  # SP 同向同步变化
+        result = _detect_sensor_faults(pv, sp)
+        assert result["detected"] is False
+
+    def test_normal_signals_low_false_positive(self) -> None:
+        """20 组 AR(1) 正常信号（种子固定）误报应 ≤ 2。"""
+        false_alarms = 0
+        for i in range(20):
+            pv = _make_ar1_signal(1000, seed=1000 + i)
+            if _detect_sensor_faults(pv)["detected"]:
+                false_alarms += 1
+        assert false_alarms <= 2
+
+    def test_threshold_override(self) -> None:
+        """阈值配置覆盖：放宽 frozen_ratio 后同样的卡死信号不检出。"""
+        n = 1500
+        pv = _make_ar1_signal(n, seed=42)
+        pv[500:900] = 50.0  # 占比约 0.27
+        result = _detect_sensor_faults(pv, threshold={"frozen_ratio": 0.5})
+        assert result["detected"] is False
+
+
+class TestSensorFaultGating:
+    """B2：传感器故障检测受 is_enabled 与 labels 子集门控（QUALITY_ABNORMAL）。"""
+
+    @staticmethod
+    def _frozen_data(n: int = 1500) -> RawTimeSeries:
+        """构造中段 400 点卡死的宽表数据（SP/OP 恒定）。"""
+        pv = _make_ar1_signal(n, seed=42)
+        pv[500:900] = 50.0
+        return _make_raw_timeseries(
+            pv.tolist(),
+            sp=[50.0] * n,
+            op=[50.0] * n,
+        )
+
+    @pytest.mark.asyncio
+    async def test_enabled_produces_quality_abnormal(self) -> None:
+        """QUALITY_ABNORMAL 启用时，卡死信号产出 QUALITY_ABNORMAL 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+        data = self._frozen_data()
+
+        async def _query_fn(**kwargs):
+            return data
+
+        quality_config = _make_diag_config("QUALITY_ABNORMAL")
+        quality_config.threshold = None  # 使用算法默认阈值
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"QUALITY_ABNORMAL": quality_config},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "QUALITY_ABNORMAL" in result["labels"]
+
+    @pytest.mark.asyncio
+    async def test_disabled_produces_no_label(self) -> None:
+        """QUALITY_ABNORMAL 禁用时，同样的卡死信号不产出标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+        data = self._frozen_data()
+
+        async def _query_fn(**kwargs):
+            return data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "QUALITY_ABNORMAL" not in result["labels"]
+
+    @pytest.mark.asyncio
+    async def test_labels_subset_excludes_quality(self) -> None:
+        """labels 子集不含 QUALITY_ABNORMAL 时，同样的卡死信号不产出标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+        data = self._frozen_data()
+
+        async def _query_fn(**kwargs):
+            return data
+
+        quality_config = _make_diag_config("QUALITY_ABNORMAL")
+        quality_config.threshold = None  # 使用算法默认阈值
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"QUALITY_ABNORMAL": quality_config},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+            labels=["OSCILLATION"],
+        )
+
+        assert result is not None
+        assert "QUALITY_ABNORMAL" not in result["labels"]
