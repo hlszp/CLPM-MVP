@@ -102,6 +102,18 @@ class EngineRuleLoader:
             self._cache[rule_code] = (now, params)
             return params
 
+    async def get_params(self, db: AsyncSession, rule_code: str) -> dict[str, Any]:
+        """获取指定 rule_code 的 params（公开入口，带缓存）.
+
+        Args:
+            db: 异步数据库会话
+            rule_code: 规则代码（如 DIAG_CHECKUP）
+
+        Returns:
+            params 字典；规则不存在/禁用时返回空字典（调用方自行回退默认值）
+        """
+        return await self._get_params(db, rule_code)
+
     async def get_calc_cycle_minutes(self, db: AsyncSession) -> int:
         """获取计算周期（分钟）.
 

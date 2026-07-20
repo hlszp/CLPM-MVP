@@ -35,6 +35,7 @@ from app.tasks.diagnosis_engine import (
     _detect_valve_stiction,
     _diagnose_loop,
     _do_diagnose_single_loop,
+    _do_run_checkup,
     _do_run_diagnosis,
     _get_tag_name,
     _get_threshold,
@@ -2261,3 +2262,139 @@ class TestSnapshotScoreFilter:
         stmt = mock_session.execute.call_args_list[0][0][0]
         compiled = str(stmt)
         assert "score IS NULL" in compiled
+
+
+# ===========================================================================
+# B1：体检轨调度（_do_run_checkup / Beat 注册）
+# ===========================================================================
+
+
+def _make_enabled_checkup_loader() -> MagicMock:
+    """构造 DIAG_CHECKUP 开关为启用的 EngineRuleLoader mock。"""
+    loader = MagicMock()
+    loader.get_params = AsyncMock(return_value={"enabled": True})
+    return loader
+
+
+class TestDoRunCheckup:
+    """B1：体检轨对全部启用回路建体检任务（不受评分限制）。"""
+
+    @pytest.mark.asyncio
+    async def test_healthy_loop_gets_checkup_task(self) -> None:
+        """健康回路（无快照/评分≥60）也会创建体检任务（triggered_by='checkup-scheduler'）。"""
+        loop = _make_loop()
+        diag_config = _make_diag_config()
+
+        main_session = AsyncMock()
+        main_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_all_mock([loop]),  # 启用回路查询
+                _make_scalars_all_mock([diag_config]),  # config 查询
+                _make_scalars_all_mock([]),  # 未完成任务去重查询（无已存在任务）
+            ]
+        )
+        main_session.commit = AsyncMock()
+        main_session.rollback = AsyncMock()
+        main_session.add = MagicMock()
+
+        # worker session：RUNNING → loop 查询 → 无 mapping → 返回 None → FAILED
+        worker_session = AsyncMock()
+        worker_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(None),  # _update_task_status RUNNING
+                _make_scalar_one_or_none_mock(loop),  # loop 查询
+                _make_scalars_all_mock([]),  # 无 mapping → 缺少 PV → 返回 None
+                _make_scalar_one_or_none_mock(None),  # _update_task_status FAILED
+            ]
+        )
+        worker_session.commit = AsyncMock()
+        worker_session.rollback = AsyncMock()
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_session_local,
+            patch(
+                "app.services.engine_rule_loader.get_engine_rule_loader",
+                return_value=_make_enabled_checkup_loader(),
+            ),
+        ):
+            mock_session_local.return_value.__aenter__ = AsyncMock(
+                side_effect=[main_session, worker_session]
+            )
+            mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
+            result = await _do_run_checkup()
+
+        assert result["total"] == 1
+        assert result["skipped"] == 0
+        # 缺少 PV Tag → 诊断失败，但体检任务已创建
+        assert result["failed"] == 1
+        main_session.add.assert_called_once()
+        task = main_session.add.call_args[0][0]
+        assert task.trigger_type == "auto"
+        assert task.triggered_by == "checkup-scheduler"
+        assert task.status == "PENDING"
+
+    @pytest.mark.asyncio
+    async def test_existing_pending_task_skipped(self) -> None:
+        """同回路同时间窗已有未完成任务时跳过创建与诊断。"""
+        loop = _make_loop()
+        diag_config = _make_diag_config()
+
+        main_session = AsyncMock()
+        main_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_all_mock([loop]),  # 启用回路查询
+                _make_scalars_all_mock([diag_config]),  # config 查询
+                _make_scalars_all_mock(["loop-001"]),  # 去重查询：已有未完成任务
+            ]
+        )
+        main_session.commit = AsyncMock()
+        main_session.rollback = AsyncMock()
+        main_session.add = MagicMock()
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_session_local,
+            patch(
+                "app.services.engine_rule_loader.get_engine_rule_loader",
+                return_value=_make_enabled_checkup_loader(),
+            ),
+        ):
+            mock_session_local.return_value.__aenter__.return_value = main_session
+            result = await _do_run_checkup()
+
+        assert result["total"] == 1
+        assert result["skipped"] == 1
+        assert result["diagnosed"] == 0
+        assert result["failed"] == 0
+        main_session.add.assert_not_called()  # 未创建新的 DiagnosisTask
+
+    @pytest.mark.asyncio
+    async def test_disabled_skips_run(self) -> None:
+        """DIAG_CHECKUP.enabled=false 时记日志并跳过，不查询回路。"""
+        loader = MagicMock()
+        loader.get_params = AsyncMock(return_value={"enabled": False})
+
+        mock_session = AsyncMock()
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_session_local,
+            patch(
+                "app.services.engine_rule_loader.get_engine_rule_loader",
+                return_value=loader,
+            ),
+        ):
+            mock_session_local.return_value.__aenter__.return_value = mock_session
+            result = await _do_run_checkup()
+
+        assert result["total"] == 0
+        assert result["disabled"] is True
+        mock_session.execute.assert_not_called()
+
+    def test_checkup_beat_entry_registered(self) -> None:
+        """Beat 注册 diagnosis-engine-checkup-8h 为 crontab(minute=20, hour='*/8')。"""
+        from app.tasks.diagnosis_engine import celery_app
+
+        entry = celery_app.conf.beat_schedule["diagnosis-engine-checkup-8h"]
+        assert entry["task"] == "app.tasks.diagnosis_engine.run_diagnosis_checkup"
+        schedule = entry["schedule"]
+        assert schedule.minute == {20}
+        assert schedule.hour == {0, 8, 16}  # hour="*/8" 展开为 {0, 8, 16}
