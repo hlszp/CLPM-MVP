@@ -1423,21 +1423,32 @@ async def _diagnose_loop(
     active_tag_map: dict[str, Any] = {t.tag_code: t for t in active_tag_rows}
 
     # 写入诊断结果（每个标签一条记录）
+    # B7 可视化存储瘦身：全量可视化数组仅并入置信度最高的主标签记录，
+    # 其余记录只存自身标量 feature_values（可视化数组键已由主记录承载；
+    # 详情/可视化端点按回路聚合并集读取，对外输出结构不变）
+    primary_idx = max(
+        range(len(algorithm_results)),
+        key=lambda i: algorithm_results[i]["confidence"],
+    )
     diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
-    for result in algorithm_results:
+    for idx, result in enumerate(algorithm_results):
         confidence_decimal = Decimal(str(round(result["confidence"] * 100, 2)))
         evidence_chain = {
             **result["evidence"],
             "fused_confidence": fused_confidence,
         }
-        # 合并所有算法的可视化数据（无条件保存所有可视化数组）
         # B5：每条记录写入统一可信度等级与有效数据率（回路级，各标签一致）
-        feature_values = {
-            **all_visualization_data,
+        own_features = {
             **result.get("feature_values", {}),
             "confidence_level": confidence_level,
             "valid_rate": valid_rate,
         }
+        if idx == primary_idx:
+            # 主标签记录：并入所有算法的可视化数据
+            feature_values = {**all_visualization_data, **own_features}
+        else:
+            # 非主标签记录：仅保留标量，不冗余存储可视化数组
+            feature_values = {k: v for k, v in own_features.items() if not isinstance(v, list)}
         diag_record = DiagnosisResult(
             id=str(uuid4()),
             loop_id=loop_id,

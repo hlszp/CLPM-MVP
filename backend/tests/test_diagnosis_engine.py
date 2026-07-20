@@ -3119,3 +3119,148 @@ class TestB5ConfidenceLevel:
         for record in records:
             assert record.feature_values["confidence_level"] == "D"
             assert record.feature_values["valid_rate"] == pytest.approx(0.5)
+
+
+# ===========================================================================
+# B7：可视化存储瘦身（全量数组仅入主标签记录）
+# ===========================================================================
+
+
+class TestB7VisualizationSlimming:
+    """B7：非主标签记录不再冗余存储全量可视化数组，端点键集不变。"""
+
+    @staticmethod
+    def _extract_results(db: AsyncMock) -> list:
+        """从 db.add 调用中提取 DiagnosisResult 实例。"""
+        from app.models.diagnosis import DiagnosisResult
+
+        return [
+            call.args[0]
+            for call in db.add.call_args_list
+            if isinstance(call.args[0], DiagnosisResult)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_multi_label_slimming(self) -> None:
+        """多标签时：仅主标签记录含全量可视化数组，非主记录仅标量且体积下降。"""
+        import json
+
+        n = 200
+        t = np.arange(n)
+        pv = 50.0 + 10.0 * np.sin(2.0 * np.pi * t / 25.0)
+        # 每 8 点一个孤立 Bad（占比 12.5% > 10% → Q002 间歇 Bad，confidence 0.6）
+        pv_quality = [0 if i % 8 == 0 else 1 for i in range(n)]
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+        data = _make_raw_timeseries(pv.tolist(), pv_quality=pv_quality)
+
+        async def _query_fn(**kwargs):
+            return data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={
+                "OSCILLATION": _make_diag_config("OSCILLATION"),
+                "QUALITY_ABNORMAL": _make_diag_config("QUALITY_ABNORMAL"),
+            },
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        records = self._extract_results(db)
+        # 振荡（~1.0）+ 质量异常（0.6）两条标签记录
+        assert len(records) == 2
+        labels = {r.diag_label for r in records}
+        assert labels == {"OSCILLATION", "QUALITY_ABNORMAL"}
+
+        # 仅置信度最高的主标签记录携带全量可视化数组
+        carriers = [r for r in records if "fft_frequencies" in (r.feature_values or {})]
+        assert len(carriers) == 1
+        primary = max(records, key=lambda r: float(r.confidence))
+        assert carriers[0] is primary
+
+        # 非主标签记录：不含任何数组（cusum/fft/step/scatter 等全量可视化键）
+        non_primary = [r for r in records if r is not primary]
+        viz_array_keys = {
+            "fft_frequencies",
+            "fft_amplitudes",
+            "scatter_plot_x",
+            "scatter_plot_y",
+            "step_timestamps",
+            "step_pv_response",
+            "cusum_timestamps",
+            "cusum_pos",
+            "cusum_neg",
+        }
+        for record in non_primary:
+            fv = record.feature_values or {}
+            assert not any(isinstance(v, list) for v in fv.values())
+            assert fv.keys().isdisjoint(viz_array_keys)
+            # B5 标量仍逐条记录写入
+            assert "confidence_level" in fv
+            assert "valid_rate" in fv
+
+        # 体积下降：非主记录 feature_values 远小于主记录
+        primary_size = len(json.dumps(primary.feature_values))
+        for record in non_primary:
+            assert len(json.dumps(record.feature_values)) < primary_size * 0.1
+
+        # 端点键集一致：各记录 feature_values 并集仍覆盖全部代表性可视化键
+        merged: dict = {}
+        for record in records:
+            merged.update(record.feature_values or {})
+        expected_keys = {
+            "fft_frequencies",
+            "fft_amplitudes",
+            "oscillation_frequency",
+            "scatter_plot_x",
+            "scatter_plot_y",
+            "step_timestamps",
+            "step_pv_response",
+            "cusum_timestamps",
+            "cusum_pos",
+            "cusum_neg",
+            "bad_quality_rate",
+            "quality_pattern",
+            "confidence_level",
+            "valid_rate",
+        }
+        assert expected_keys <= set(merged.keys())
+
+    @pytest.mark.asyncio
+    async def test_single_label_record_keeps_visualization(self) -> None:
+        """单标签（兜底 MANUAL_REVIEW）时唯一记录即主记录，保留全量可视化数组。"""
+        n = 64
+        pv = [50.0] * n  # 平稳数据 → 无算法命中 → MANUAL_REVIEW
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+        data = _make_raw_timeseries(pv)
+
+        async def _query_fn(**kwargs):
+            return data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        records = self._extract_results(db)
+        assert len(records) == 1
+        fv = records[0].feature_values
+        assert "fft_frequencies" in fv
+        assert "scatter_plot_x" in fv
+        assert fv["confidence_level"] == "A"
