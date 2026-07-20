@@ -100,17 +100,22 @@ INSERT INTO metric_config (id, metric_code, metric_name, formula, weight, thresh
 --   OSCILLATION/VALVE_STICTION/OVERAGGRESSIVE/OVERCONSERVATIVE/
 --   EXTERNAL_DISTURBANCE/QUALITY_ABNORMAL/OUTPUT_SATURATION/MANUAL_REVIEW
 -- calc_method 对齐算法设计说明 §5.1~§5.6 算法选型
--- threshold 使用 JSONB 结构 {min, max, alert}
+-- threshold 使用 JSONB 结构，键名对齐 diagnosis_engine._get_threshold 实际读取键：
+--   OSCILLATION:       {similarity_threshold, min_zero_crossings}
+--   QUALITY_ABNORMAL:  {q001_consecutive_bad, q002_bad_rate, q003_uncertain_rate,
+--                       q004_bad_duration, q005_min_bad, q005_max_bad}
+--   OUTPUT_SATURATION: {op_high_limit, op_low_limit, saturation_epsilon}
+--   其余标签算法暂未从配置读取阈值（代码内默认值），threshold 置 NULL
 -- =============================================================================
 
 INSERT INTO diagnosis_config (id, diag_code, diag_name, algorithm_type, calc_method, params, threshold, is_enabled, updated_by, updated_at, version) VALUES
-('00000000-0000-0000-0000-000000000501', 'OSCILLATION',         '振荡检测',           'IAE_FFT',         'IAE_ZERO_CROSSING',   '{"window_size": 1024, "overlap": 0.5, "snr_threshold": 5.0, "similarity_threshold": 0.4}'::json, '{"min": 0.4, "max": 1.0, "alert": "warning"}'::jsonb,  TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000502', 'VALVE_STICTION',      '阀门粘滞检测',       'SCATTER_FIT',     'CHOUDHURY_NGI_NLI',    '{"ngi_threshold": 0.001, "nli_threshold": 0.01, "stiction_threshold": 0.5, "r2_threshold": 0.7}'::json, '{"min": 0.5, "max": 100, "alert": "critical"}'::jsonb, TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000503', 'OVERAGGRESSIVE',      '参数过激检测',       'STEP_RESPONSE',   'EXPERT_RULE',          '{"overshoot_threshold": 25, "decay_ratio_threshold": 0.4, "harris_threshold": 0.4}'::json, '{"min": 25, "max": 100, "alert": "warning"}'::jsonb,    TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000504', 'OVERCONSERVATIVE',    '参数过保守检测',     'SETTLING_TIME',   'EXPERT_RULE',          '{"settling_ratio": 5.0, "iae_ratio": 2.0, "op_activity_min": 0.01}'::json, '{"min": 5.0, "max": 100, "alert": "warning"}'::jsonb,   TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000505', 'EXTERNAL_DISTURBANCE','外扰频繁检测',       'FREQ_ANALYSIS',   'KANO_STATISTICAL',     '{"window_size": 3600, "disturbance_threshold": 3, "freq_threshold": 5}'::json, '{"min": 5, "max": 100, "alert": "warning"}'::jsonb,     TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000506', 'QUALITY_ABNORMAL',    'PV 质量异常检测',    'QUALITY_CODE',    'EXPERT_RULE',          '{"bad_rate_threshold": 30, "uncertain_rate_threshold": 20, "freeze_duration": 300}'::json, '{"min": 20, "max": 100, "alert": "critical"}'::jsonb, TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000507', 'OUTPUT_SATURATION',   '输出饱和检测',       'OP_LIMIT_STAT',   'EXPERT_RULE',          '{"op_low": 0, "op_high": 100, "epsilon": 2}'::json, '{"min": 5, "max": 100, "alert": "warning"}'::jsonb,      TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000501', 'OSCILLATION',         '振荡检测',           'IAE_FFT',         'IAE_ZERO_CROSSING',   '{"window_size": 1024, "overlap": 0.5, "snr_threshold": 5.0, "similarity_threshold": 0.4}'::json, '{"similarity_threshold": 0.4, "min_zero_crossings": 3}'::jsonb,  TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000502', 'VALVE_STICTION',      '阀门粘滞检测',       'SCATTER_FIT',     'CHOUDHURY_NGI_NLI',    '{"ngi_threshold": 0.001, "nli_threshold": 0.01, "stiction_threshold": 0.5, "r2_threshold": 0.7}'::json, NULL, TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000503', 'OVERAGGRESSIVE',      '参数过激检测',       'STEP_RESPONSE',   'EXPERT_RULE',          '{"overshoot_threshold": 25, "decay_ratio_threshold": 0.4, "harris_threshold": 0.4}'::json, NULL,    TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000504', 'OVERCONSERVATIVE',    '参数过保守检测',     'SETTLING_TIME',   'EXPERT_RULE',          '{"settling_ratio": 5.0, "iae_ratio": 2.0, "op_activity_min": 0.01}'::json, NULL,   TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000505', 'EXTERNAL_DISTURBANCE','外扰频繁检测',       'FREQ_ANALYSIS',   'KANO_STATISTICAL',     '{"window_size": 3600, "disturbance_threshold": 3, "freq_threshold": 5}'::json, NULL,     TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000506', 'QUALITY_ABNORMAL',    'PV 质量异常检测',    'QUALITY_CODE',    'EXPERT_RULE',          '{"bad_rate_threshold": 30, "uncertain_rate_threshold": 20, "freeze_duration": 300}'::json, '{"q001_consecutive_bad": 10, "q002_bad_rate": 0.1, "q003_uncertain_rate": 0.2, "q004_bad_duration": 5, "q005_min_bad": 3, "q005_max_bad": 10}'::jsonb, TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000507', 'OUTPUT_SATURATION',   '输出饱和检测',       'OP_LIMIT_STAT',   'EXPERT_RULE',          '{"op_low": 0, "op_high": 100, "epsilon": 2}'::json, '{"op_high_limit": 100.0, "op_low_limit": 0.0, "saturation_epsilon": 2.0}'::jsonb,      TRUE, 'admin', NOW(), 1),
 ('00000000-0000-0000-0000-000000000508', 'MANUAL_REVIEW',       '人工复核',           'MANUAL',          'EXPERT_RULE',          '{"confidence_min": 0, "confidence_max": 50}'::json, NULL,                                                  TRUE, 'admin', NOW(), 1);
 
 -- =============================================================================
