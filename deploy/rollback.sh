@@ -15,10 +15,8 @@ cd "$PROJECT_ROOT"
 
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env.prod"
-COMPOSE_PROFILE_ARGS=()
-if grep -qE '^DATA_SOURCE_TYPE=tdengine$' "$ENV_FILE" 2>/dev/null; then
-    COMPOSE_PROFILE_ARGS=(--profile tdengine)
-fi
+# 计算类历史数据查询一律走本地 TDengine（2026-07-20 架构决策），恒启用 tdengine profile
+COMPOSE_PROFILE_ARGS=(--profile tdengine)
 
 compose_prod() {
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${COMPOSE_PROFILE_ARGS[@]}" "$@"
