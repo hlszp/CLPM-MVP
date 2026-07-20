@@ -853,7 +853,8 @@ onMounted(loadConfig);
               </FormItem>
 
               <div class="text-gray-400 mb-3 text-xs">
-                性能评估、回路诊断等计算任务一律读取本地 TDengine，不调用此接口。
+                性能评估、回路诊断等计算任务一律读取本地
+                TDengine，不调用此接口。
               </div>
 
               <div class="flex items-center gap-3">
