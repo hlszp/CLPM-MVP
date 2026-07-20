@@ -173,6 +173,45 @@ class TrackerStatusData(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# A/B 对比（GET /diagnosis/ab-compare）
+# ---------------------------------------------------------------------------
+
+
+class AbCompareKpiItem(CamelModel):
+    """A/B 对比单 KPI 项。"""
+
+    metricKey: str
+    metricName: str
+    unit: str = ""
+    before: float | None = None
+    after: float | None = None
+    change: float | None = None
+    changePct: float | None = None
+    # true=改善 / false=恶化 / None=持平或无数据
+    improved: bool | None = None
+
+
+class AbCompareWindow(CamelModel):
+    """A/B 对比窗口。"""
+
+    startTime: str
+    endTime: str
+    waveformUrl: str | None = None
+
+
+class AbCompareData(CamelModel):
+    """A/B 对比响应 data 块。"""
+
+    loopId: str
+    tagName: str | None = None
+    implementedAt: str | None = None
+    dataInsufficient: bool = False
+    beforeWindow: AbCompareWindow
+    afterWindow: AbCompareWindow
+    kpiComparison: list[AbCompareKpiItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # S4-DIAG-006: 诊断统计报表
 # ---------------------------------------------------------------------------
 
@@ -479,6 +518,9 @@ class DiagnosisRecordListData(CamelModel):
 
 
 __all__ = [
+    "AbCompareData",
+    "AbCompareKpiItem",
+    "AbCompareWindow",
     "AnalyticsExportData",
     "AnalyticsExportRequest",
     "AnalyticsFilterScope",

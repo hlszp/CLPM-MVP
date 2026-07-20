@@ -48,6 +48,7 @@ from app.models.loop import LoopLedger
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.diagnosis import (
+    AbCompareData,
     AnalyticsExportData,
     AnalyticsExportRequest,
     DiagnosisAnalyticsData,
@@ -92,7 +93,7 @@ from app.services.diagnosis_report import (
     export_diagnosis_statistics,
     generate_diagnosis_report,
 )
-from app.services.tracker import export_tracker_pdf, update_tracker_status
+from app.services.tracker import export_tracker_pdf, get_ab_compare, update_tracker_status
 from app.services.waveform import get_waveform
 
 logger = logging.getLogger(__name__)
@@ -273,20 +274,34 @@ async def export_statistics_csv_endpoint(
     )
 
 
-@router.get("/ab-compare")
+@router.get("/ab-compare", response_model=ApiResponse[AbCompareData])
 async def ab_compare_endpoint(
+    loopId: uuid.UUID = Query(..., description="回路 ID"),
+    implementedAt: str | None = Query(
+        None, description="实施时刻（ISO 8601），提供时自动截取 [T-7d,T) 与 (T,T+7d]"
+    ),
+    beforeStartTime: str | None = Query(None, description="Before 窗口开始（ISO 8601）"),
+    beforeEndTime: str | None = Query(None, description="Before 窗口结束（ISO 8601）"),
+    afterStartTime: str | None = Query(None, description="After 窗口开始（ISO 8601）"),
+    afterEndTime: str | None = Query(None, description="After 窗口结束（ISO 8601）"),
+    db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
-    """A/B 对比（尚未实现，P1 待补）。
+    """A/B 对比：实施前后两窗口 KPI 均值对比（kpi_snapshot_hourly）。
 
-    前端调用 ``GET /api/v1/diagnosis/ab-compare``，后端尚未实现该端点。
-    显式返回 501 Not Implemented，避免被 ``/{loop_id}`` 路由捕获导致 500 错误。
+    窗口二选一：implementedAt 自动截取 [T-7d,T) 与 (T,T+7d]；
+    或显式传入 before/after 窗口。实施后窗口数据不足 24h 时 dataInsufficient=true。
     """
-    raise BizError(
-        code="ERR_NOT_IMPLEMENTED",
-        message="A/B 对比功能尚未实现",
-        status_code=501,
+    data = await get_ab_compare(
+        db=db,
+        loop_id=str(loopId),
+        implemented_at=implementedAt,
+        before_start=beforeStartTime,
+        before_end=beforeEndTime,
+        after_start=afterStartTime,
+        after_end=afterEndTime,
     )
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------

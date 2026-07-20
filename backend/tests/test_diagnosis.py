@@ -793,6 +793,155 @@ class TestTrackerExport:
         assert resp.json()["code"] == "ERR_DIAG_RESULT_NOT_FOUND"
 
 
+class TestAbCompare:
+    """GET /api/v1/diagnosis/ab-compare tests."""
+
+    @staticmethod
+    def _make_window_agg_mock(count: int, avgs: list) -> MagicMock:
+        """构造窗口聚合查询（func.count + 8 项 func.avg）结果 mock。"""
+        result = MagicMock()
+        result.one.return_value = (count, *avgs)
+        return result
+
+    def test_ab_compare_success_with_implemented_at(self, client, mock_db, fake_redis) -> None:
+        """按 implementedAt 截取 [T-7d,T) 与 (T,T+7d]，返回 KPI 前后对比。"""
+        loop = _make_loop()
+        # 8 项 KPI 均值（顺序对齐 AB_COMPARE_KPIS）
+        before_avgs = [Decimal("40"), Decimal("70"), Decimal("80"), Decimal("60"),
+                       Decimal("90"), Decimal("20"), Decimal("10"), Decimal("30")]
+        after_avgs = [Decimal("50"), Decimal("75"), Decimal("85"), Decimal("65"),
+                      Decimal("95"), Decimal("10"), Decimal("5"), Decimal("20")]
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return self._make_window_agg_mock(100, before_avgs)
+            # after 窗口 200 条快照（>=24 → 数据充足）
+            return self._make_window_agg_mock(200, after_avgs)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/diagnosis/ab-compare?loopId={loop.id}"
+                "&implementedAt=2026-07-10T08:00:00Z",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        data = body["data"]
+        assert data["loopId"] == loop.id
+        assert data["tagName"] == loop.tag_name
+        assert data["implementedAt"] is not None
+        assert data["dataInsufficient"] is False
+        # 窗口：[T-7d,T) 与 (T,T+7d]
+        assert data["beforeWindow"]["startTime"].startswith("2026-07-03")
+        assert data["afterWindow"]["endTime"].startswith("2026-07-17")
+        assert "waveformUrl" in data["beforeWindow"]
+        assert "waveformUrl" in data["afterWindow"]
+        kpis = {item["metricKey"]: item for item in data["kpiComparison"]}
+        assert len(kpis) == 8
+        # 综合评分 40→50 上升，正向指标 → 改善
+        assert kpis["score"]["before"] == 40.0
+        assert kpis["score"]["after"] == 50.0
+        assert kpis["score"]["improved"] is True
+        # 振荡率 20→10 下降，负向指标 → 改善
+        assert kpis["oscillation_rate"]["improved"] is True
+        # 粘滞指数 30→20 下降，负向指标 → 改善
+        assert kpis["stiction_index"]["improved"] is True
+
+    def test_ab_compare_data_insufficient(self, client, mock_db, fake_redis) -> None:
+        """实施后窗口快照数 <24 时 dataInsufficient=true。"""
+        loop = _make_loop()
+        avgs = [Decimal("50")] * 8
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return self._make_window_agg_mock(100, avgs)
+            # after 窗口仅 10 条快照（<24 → 数据不足）
+            return self._make_window_agg_mock(10, avgs)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/diagnosis/ab-compare?loopId={loop.id}"
+                "&implementedAt=2026-07-10T08:00:00Z",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["dataInsufficient"] is True
+
+    def test_ab_compare_explicit_windows(self, client, mock_db, fake_redis) -> None:
+        """显式传入前后窗口参数时按显式窗口聚合。"""
+        loop = _make_loop()
+        avgs = [Decimal("50")] * 8
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return self._make_window_agg_mock(100, avgs)
+            return self._make_window_agg_mock(100, avgs)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/diagnosis/ab-compare?loopId={loop.id}"
+                "&beforeStartTime=2026-07-01 00:00:00&beforeEndTime=2026-07-07 00:00:00"
+                "&afterStartTime=2026-07-08 00:00:00&afterEndTime=2026-07-14 00:00:00",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["implementedAt"] is None
+        assert data["beforeWindow"]["startTime"].startswith("2026-07-01")
+        assert data["afterWindow"]["endTime"].startswith("2026-07-14")
+
+    def test_ab_compare_loop_not_found(self, client, mock_db, fake_redis) -> None:
+        """回路不存在返回 404。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/ab-compare?loopId=00000000-0000-0000-0000-000000000000"
+                "&implementedAt=2026-07-10T08:00:00Z",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_LOOP_NOT_FOUND"
+
+    def test_ab_compare_missing_window_params(self, client, mock_db, fake_redis) -> None:
+        """既无 implementedAt 也无完整窗口参数时返回 422。"""
+        loop = _make_loop()
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/diagnosis/ab-compare?loopId={loop.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "ERR_VALIDATION"
+
+    def test_ab_compare_no_token(self, client) -> None:
+        """未认证请求返回 401。"""
+        resp = client.get(
+            "/api/v1/diagnosis/ab-compare?loopId=00000000-0000-0000-0000-000000000001"
+            "&implementedAt=2026-07-10T08:00:00Z"
+        )
+        assert resp.status_code == 401
+
+
 # ---------------------------------------------------------------------------
 # S4-DIAG-006: 诊断统计报表
 # ---------------------------------------------------------------------------

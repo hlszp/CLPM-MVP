@@ -390,35 +390,42 @@ export namespace DiagnosisApi {
   export interface AbCompareKpiItem {
     metricKey: string;
     metricName: string;
-    before: number;
-    after: number;
     unit: string;
+    before: null | number;
+    after: null | number;
+    change: null | number;
+    changePct: null | number;
+    /** true=改善 / false=恶化 / null=持平或无数据 */
+    improved: boolean | null;
   }
 
-  /** A/B 对比 - 趋势数据 */
-  export interface AbCompareTrend {
-    before: { pv: (null | number)[]; timestamps: number[] };
-    after: { pv: (null | number)[]; timestamps: number[] };
+  /** A/B 对比 - 数据窗口 */
+  export interface AbCompareWindow {
+    startTime: string;
+    endTime: string;
+    waveformUrl?: string;
   }
 
   /** A/B 对比响应 */
   export interface AbCompareResult {
     loopId: string;
     tagName: string;
-    beforeRange: { endTime: string; startTime: string };
-    afterRange: { endTime: string; startTime: string };
-    trend: AbCompareTrend;
+    implementedAt: null | string;
+    /** 实施后窗口数据不足 24h 时为 true（评估数据采集中） */
+    dataInsufficient: boolean;
+    beforeWindow: AbCompareWindow;
+    afterWindow: AbCompareWindow;
     kpiComparison: AbCompareKpiItem[];
-    improvement: Record<string, number>;
   }
 
-  /** A/B 对比查询参数 */
+  /** A/B 对比查询参数（implementedAt 与显式窗口二选一） */
   export interface AbCompareQueryParams {
     loopId: string;
-    beforeStartTime: string;
-    beforeEndTime: string;
-    afterStartTime: string;
-    afterEndTime: string;
+    implementedAt?: string;
+    beforeStartTime?: string;
+    beforeEndTime?: string;
+    afterStartTime?: string;
+    afterEndTime?: string;
   }
 
   /** 解决方案推荐项（SVC-11） */

@@ -32,7 +32,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getAbCompareApi } from '#/api/diagnosis';
+import { getAbCompareApi, getWaveformApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -75,6 +75,19 @@ const loading = ref(false);
 const compareData = ref<DiagnosisApi.AbCompareResult | null>(null);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
 
+/** PV 趋势数据（通过波形接口按窗口拉取） */
+interface AbTrendWindow {
+  pv: (null | number)[];
+  timestamps: number[];
+}
+const trendData = ref<{ after: AbTrendWindow; before: AbTrendWindow } | null>(
+  null,
+);
+const trendLoading = ref(false);
+
+/** 用户是否手动改过时间窗（改过后不再使用 implementedAt 自动窗口） */
+const rangeTouched = ref(false);
+
 const filter = reactive({
   loopId: props.loopId || (route.query.loopId as string) || '',
   beforeRange: [dayjs().subtract(7, 'day'), dayjs().subtract(1, 'day')] as [
@@ -95,18 +108,6 @@ function autoSetWindows(implementedAtStr: string) {
   filter.beforeRange = [t.subtract(7, 'day'), t];
   filter.afterRange = [t, t.add(7, 'day')];
 }
-
-/** After 窗口数据是否不足 24h（FDS §5.4.4 提示"评估数据采集中"） */
-const isAfterDataInsufficient = computed(() => {
-  if (!filter.afterRange || filter.afterRange.length !== 2) return false;
-  const [aStart, aEnd] = filter.afterRange;
-  if (!aStart || !aEnd) return false;
-  // After 窗口结束时间超过当前时间 → 数据尚未采集完整
-  const now = dayjs();
-  const actualEnd = aEnd.isAfter(now) ? now : aEnd;
-  const durationHours = actualEnd.diff(aStart, 'hour');
-  return durationHours < 24;
-});
 
 // ECharts refs
 const trendChartRef = ref<EchartsUIType>();
@@ -147,33 +148,37 @@ async function loadData() {
     message.warning('请选择回路');
     return;
   }
-  if (
-    !filter.beforeRange ||
-    filter.beforeRange.length !== 2 ||
-    !filter.afterRange ||
-    filter.afterRange.length !== 2
-  ) {
-    message.warning('请选择时间范围');
-    return;
-  }
-  const [bStart, bEnd] = filter.beforeRange;
-  const [aStart, aEnd] = filter.afterRange;
-  if (!bStart || !bEnd || !aStart || !aEnd) {
-    message.warning('请选择时间范围');
-    return;
+  const params: DiagnosisApi.AbCompareQueryParams = { loopId: filter.loopId };
+  if (props.implementedAt && !rangeTouched.value) {
+    // 抽屉模式：以实施时刻 T 为界，后端自动截取 [T-7d,T) 与 (T,T+7d]
+    params.implementedAt = props.implementedAt;
+  } else {
+    if (
+      !filter.beforeRange ||
+      filter.beforeRange.length !== 2 ||
+      !filter.afterRange ||
+      filter.afterRange.length !== 2
+    ) {
+      message.warning('请选择时间范围');
+      return;
+    }
+    const [bStart, bEnd] = filter.beforeRange;
+    const [aStart, aEnd] = filter.afterRange;
+    if (!bStart || !bEnd || !aStart || !aEnd) {
+      message.warning('请选择时间范围');
+      return;
+    }
+    params.beforeStartTime = bStart.format('YYYY-MM-DD HH:mm:ss');
+    params.beforeEndTime = bEnd.format('YYYY-MM-DD HH:mm:ss');
+    params.afterStartTime = aStart.format('YYYY-MM-DD HH:mm:ss');
+    params.afterEndTime = aEnd.format('YYYY-MM-DD HH:mm:ss');
   }
   loading.value = true;
   try {
-    const data = await getAbCompareApi({
-      loopId: filter.loopId,
-      beforeStartTime: bStart.format('YYYY-MM-DD HH:mm:ss'),
-      beforeEndTime: bEnd.format('YYYY-MM-DD HH:mm:ss'),
-      afterStartTime: aStart.format('YYYY-MM-DD HH:mm:ss'),
-      afterEndTime: aEnd.format('YYYY-MM-DD HH:mm:ss'),
-    });
+    const data = await getAbCompareApi(params);
     compareData.value = data;
-    renderTrendChart();
     renderKpiChart();
+    await loadTrend();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -181,17 +186,50 @@ async function loadData() {
   }
 }
 
+/** 按返回窗口拉取 PV 波形用于趋势叠加图 */
+async function loadTrend() {
+  const data = compareData.value;
+  if (!data) {
+    trendData.value = null;
+    renderTrendChart();
+    return;
+  }
+  trendLoading.value = true;
+  try {
+    const [beforeWf, afterWf] = await Promise.all([
+      getWaveformApi(data.loopId, {
+        startTime: data.beforeWindow.startTime,
+        endTime: data.beforeWindow.endTime,
+      }),
+      getWaveformApi(data.loopId, {
+        startTime: data.afterWindow.startTime,
+        endTime: data.afterWindow.endTime,
+      }),
+    ]);
+    trendData.value = {
+      before: { pv: beforeWf.pv, timestamps: beforeWf.timestamps },
+      after: { pv: afterWf.pv, timestamps: afterWf.timestamps },
+    };
+  } catch {
+    // 波形加载失败不阻塞 KPI 对比展示
+    trendData.value = null;
+  } finally {
+    trendLoading.value = false;
+    renderTrendChart();
+  }
+}
+
 /** 渲染 PV 趋势叠加图 */
 function renderTrendChart() {
-  const data = compareData.value;
-  if (!data || !data.trend) {
+  const trend = trendData.value;
+  if (!trend) {
     renderTrend({
       title: { left: 'center', text: '暂无数据' },
     });
     return;
   }
 
-  const { before, after } = data.trend;
+  const { before, after } = trend;
   renderTrend({
     backgroundColor: 'transparent',
     dataZoom: [
@@ -315,25 +353,30 @@ function handleSearch() {
   loadData();
 }
 
-/** 计算改善幅度百分比 */
-function improvementText(key: string): string {
-  if (!compareData.value?.improvement) return '—';
-  const val = compareData.value.improvement[key];
-  if (val === null || val === undefined) return '—';
-  const sign = val >= 0 ? '+' : '';
-  return `${sign}${Number(val).toFixed(2)}%`;
+/** 手动修改时间窗后，不再使用 implementedAt 自动窗口 */
+function handleRangeTouched() {
+  rangeTouched.value = true;
 }
 
-function improvementColor(key: string): string {
-  if (!compareData.value?.improvement) return '';
-  const val = compareData.value.improvement[key];
-  if (val === null || val === undefined) return '';
-  // 对于评分/好值率等正向指标，>0 为绿色；对于振荡率/饱和率等负向指标，<0 为绿色
-  const negativeMetrics = ['oscillation_rate', 'saturation_rate'];
-  if (negativeMetrics.includes(key)) {
-    return val <= 0 ? themeColors.value.SUCCESS : themeColors.value.DANGER;
-  }
-  return val >= 0 ? themeColors.value.SUCCESS : themeColors.value.DANGER;
+/** KPI 数值展示（null → —） */
+function kpiValueText(val: null | number, unit: string): string {
+  if (val === null || val === undefined) return '—';
+  const text = Number(val).toFixed(2);
+  return unit ? `${text}${unit}` : text;
+}
+
+/** 变化幅度文本（changePct 百分比） */
+function changeText(kpi: DiagnosisApi.AbCompareKpiItem): string {
+  if (kpi.changePct === null || kpi.changePct === undefined) return '—';
+  const sign = kpi.changePct >= 0 ? '+' : '';
+  return `${sign}${Number(kpi.changePct).toFixed(2)}%`;
+}
+
+/** 变化方向颜色：改善绿 / 恶化红 / 持平平 */
+function changeColor(kpi: DiagnosisApi.AbCompareKpiItem): string {
+  if (kpi.improved === true) return themeColors.value.SUCCESS;
+  if (kpi.improved === false) return themeColors.value.DANGER;
+  return themeColors.value.NEUTRAL;
 }
 
 watch(
@@ -398,6 +441,7 @@ onMounted(() => {
             >
             <DatePicker.RangePicker
               v-model:value="filter.beforeRange"
+              @change="handleRangeTouched"
               :show-time="{ format: 'HH:mm' }"
               format="YYYY-MM-DD HH:mm"
               :placeholder="['开始', '结束']"
@@ -409,6 +453,7 @@ onMounted(() => {
             >
             <DatePicker.RangePicker
               v-model:value="filter.afterRange"
+              @change="handleRangeTouched"
               :show-time="{ format: 'HH:mm' }"
               format="YYYY-MM-DD HH:mm"
               :placeholder="['开始', '结束']"
@@ -422,7 +467,7 @@ onMounted(() => {
 
       <!-- 数据不足提示（FDS §5.4.4） -->
       <Alert
-        v-if="isAfterDataInsufficient"
+        v-if="compareData?.dataInsufficient"
         class="mb-4"
         type="warning"
         show-icon
@@ -432,7 +477,7 @@ onMounted(() => {
 
       <!-- 统计摘要 -->
       <ClpmDataCanvas v-if="compareData" class="mb-4" title="改善摘要">
-        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div
             v-for="kpi in compareData.kpiComparison"
             :key="kpi.metricKey"
@@ -443,18 +488,18 @@ onMounted(() => {
             </div>
             <div class="mt-1 text-sm">
               <span :style="{ color: themeColors.DANGER }">{{
-                Number(kpi.before).toFixed(2)
+                kpiValueText(kpi.before, kpi.unit)
               }}</span>
               →
               <span :style="{ color: themeColors.INFO }">{{
-                Number(kpi.after).toFixed(2)
+                kpiValueText(kpi.after, kpi.unit)
               }}</span>
             </div>
             <div
               class="mt-1 text-xs font-medium"
-              :style="{ color: improvementColor(kpi.metricKey) }"
+              :style="{ color: changeColor(kpi) }"
             >
-              {{ improvementText(kpi.metricKey) }}
+              {{ changeText(kpi) }}
             </div>
           </div>
         </div>
@@ -502,6 +547,7 @@ onMounted(() => {
           >
           <DatePicker.RangePicker
             v-model:value="filter.beforeRange"
+              @change="handleRangeTouched"
             :show-time="{ format: 'HH:mm' }"
             format="YYYY-MM-DD HH:mm"
             :placeholder="['开始', '结束']"
@@ -513,6 +559,7 @@ onMounted(() => {
           >
           <DatePicker.RangePicker
             v-model:value="filter.afterRange"
+              @change="handleRangeTouched"
             :show-time="{ format: 'HH:mm' }"
             format="YYYY-MM-DD HH:mm"
             :placeholder="['开始', '结束']"
@@ -526,7 +573,7 @@ onMounted(() => {
 
     <!-- 数据不足提示（FDS §5.4.4） -->
     <Alert
-      v-if="isAfterDataInsufficient"
+      v-if="compareData?.dataInsufficient"
       class="mb-4"
       type="warning"
       show-icon
@@ -536,7 +583,7 @@ onMounted(() => {
 
     <!-- 统计摘要 -->
     <ClpmDataCanvas v-if="compareData" class="mb-4" title="改善摘要">
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div
           v-for="kpi in compareData.kpiComparison"
           :key="kpi.metricKey"
@@ -547,18 +594,18 @@ onMounted(() => {
           </div>
           <div class="mt-1 text-sm">
             <span :style="{ color: themeColors.DANGER }">{{
-              Number(kpi.before).toFixed(2)
+              kpiValueText(kpi.before, kpi.unit)
             }}</span>
             →
             <span :style="{ color: themeColors.INFO }">{{
-              Number(kpi.after).toFixed(2)
+              kpiValueText(kpi.after, kpi.unit)
             }}</span>
           </div>
           <div
             class="mt-1 text-xs font-medium"
-            :style="{ color: improvementColor(kpi.metricKey) }"
+            :style="{ color: changeColor(kpi) }"
           >
-            {{ improvementText(kpi.metricKey) }}
+            {{ changeText(kpi) }}
           </div>
         </div>
       </div>
