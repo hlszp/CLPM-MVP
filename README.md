@@ -186,8 +186,7 @@ cp .env.prod.example .env.prod
 | `REDIS_PASSWORD` | Redis 密码 | 自定义强密码 |
 | `JWT_SECRET_KEY` | JWT 签名密钥（≥32 字符） | `openssl rand -hex 32` |
 | `CORS_ORIGINS` | 允许的前端域名 | `["https://your-domain.com"]` |
-| `HISTORY_DATA_API_URL` | 历史数据服务地址（`remote_api` 模式） | 现场数采服务地址 |
-| `TDENGINE_PASSWORD` | TDengine 密码（`tdengine` 模式） | 内置 3.3.6.6 实例的 root 初始密码，或外部实例凭据 |
+| `TDENGINE_PASSWORD` | TDengine 密码（**必填**，计算一律本地 TDengine） | 内置 3.3.6.6 实例的 root 初始密码，或外部实例凭据 |
 | `CELERY_WORKER_CONCURRENCY` | Celery worker 进程并发数 | `2`（应与 CPU/连接池容量联合调整） |
 | `AAS_ENDPOINT` | OPC UA 服务地址（`AAS_SYNC_ENABLED=True`） | 现场 OPC UA Endpoint |
 
@@ -200,7 +199,7 @@ cp .env.prod.example .env.prod
 部署脚本会自动完成：
 1. 校验 `.env.prod` 与 `JWT_SECRET_KEY`
 2. 构建 backend / frontend Docker 镜像（多阶段构建）
-3. `remote_api` 默认模式启动 6 个服务容器；`tdengine` 模式额外自动启用 `tdengine` profile
+3. 启动 7 个服务容器（恒启用 `tdengine` profile——计算类历史数据查询一律本地 TDengine）
 4. 等待健康检查并通过
 5. 输出服务访问地址
 
@@ -229,9 +228,9 @@ curl http://localhost:7141/
 | tdengine | clpm-tdengine | 6030/6041 | 时序数据 |
 | redis | clpm-redis | 6379 | 缓存 + Celery Broker |
 
-`DATA_SOURCE_TYPE=remote_api` 时不启动内置 TDengine。切换为
-`DATA_SOURCE_TYPE=tdengine` 后，`deploy.sh` / `rollback.sh` 会自动带上
-`--profile tdengine`。手工执行 Compose 命令时也应加上该 profile：
+计算类历史数据查询一律走本地 TDengine（2026-07-20 架构决策），
+`deploy.sh` / `rollback.sh` 恒启用 `--profile tdengine`，无需按数据源模式切换。
+手工执行 Compose 命令时也应加上该 profile：
 
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine up -d

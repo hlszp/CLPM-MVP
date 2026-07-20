@@ -146,17 +146,19 @@ CORS_ORIGINS=["__AUTO__", "http://localhost"]
 ### 4.2 .env.prod（按需修改项）
 
 ```bash
-# ---- 数据源模式 ----
-# tdengine: 本地 TDengine（适用于 TDengine 与 CLPM 同机部署）
-# remote_api: 对接外部工控数采系统（生产推荐）
+# ---- 数据源（2026-07-20 架构决策：导入走远端、计算全本地）----
+# 计算类历史数据查询（性能评估/诊断/整定）一律走本地 TDengine，必须提供
+# TDengine 凭据；DATA_SOURCE_TYPE 已废止（仅作配置兼容保留，不再影响计算路径）
 DATA_SOURCE_TYPE=remote_api
+TDENGINE_PASSWORD=<tdengine-root-password>
 
-# ---- 外部历史数据 API（DATA_SOURCE_TYPE=remote_api 时必填）----
-# 替换为工控数采系统提供的真实地址
+# ---- 历史数据导入接口（仅「数据管理 → 历史数据导入」任务调用）----
+# 部署后在 UI「链路配置」页（/loop/aas-sync）配置一次即持久化到 sys_config，
+# 也可提前在此填写（首次启动预载）
 HISTORY_DATA_API_URL=http://<industrial-data-server>/api/services/v1/HistoryData/Get
 HISTORY_DATA_API_TOKEN=<change-me-or-leave-empty-if-no-auth>
 
-# ---- 实时数据 SignalR ----
+# ---- 实时数据 SignalR（唯一实时数据源，UI 链路配置页管理）----
 # 替换为工控数采系统提供的真实 SignalR Hub 地址
 SIGNALR_HUB_URL=ws://<industrial-data-server>/signalr/realValueForClpmHub
 SIGNALR_ENABLED=False
@@ -207,9 +209,8 @@ REALTIME_WRITEBACK_ENABLED=False
 - [ ] `POSTGRES_PASSWORD` 和 `REDIS_PASSWORD` 已设置为强密码
 - [ ] 端口 7141 未被占用（`ss -tlnp | grep :7141`）
 - [ ] 防火墙已放行 7141 端口
-- [ ] `DATA_SOURCE_TYPE` 已根据现场环境选择（`tdengine` 或 `remote_api`）
-- [ ] 如使用 `remote_api`：`HISTORY_DATA_API_URL` 和 `SIGNALR_HUB_URL` 已填写真实地址
-- [ ] 如使用 `tdengine`：TDengine 服务已部署且可访问
+- [ ] TDengine 服务已部署且可访问（计算类历史数据查询一律本地，`TDENGINE_PASSWORD` 必填）
+- [ ] 历史数据导入接口与 SignalR Hub 地址已知（部署后在 UI「链路配置」页填写，仅导入任务/实时订阅使用）
 - [ ] 服务器磁盘剩余空间 ≥ 20 GB
 - [ ] 服务器时间已同步（`date` 确认时区为 Asia/Shanghai）
 
@@ -447,8 +448,8 @@ curl -X POST <HISTORY_DATA_API_URL> \
 ```
 
 **解决**：
-- 确认 `DATA_SOURCE_TYPE` 与现场环境匹配
-- 确认 `HISTORY_DATA_API_URL` 可从服务器访问
+- 确认 TDengine 可从服务器访问且凭据正确（计算类历史数据查询一律本地 TDengine）
+- 历史数据导入失败时：确认 `HISTORY_DATA_API_URL`（UI「链路配置」页/sys_config）可从服务器访问
 - 确认 `HISTORY_DATA_API_TOKEN` 有效（如需认证）
 - 检查网络防火墙是否放行了到工控数采系统的访问
 

@@ -123,19 +123,15 @@ check_required_no_placeholder "POSTGRES_PASSWORD"
 check_required_no_placeholder "REDIS_PASSWORD"
 
 # ------------------------------------------------------------
-# 2.6 检查条件必填字段（开关启用时才校验）
+# 2.6 数据源与 Profile（2026-07-20 架构决策：导入走远端、计算全本地）
 # ------------------------------------------------------------
+# 计算类历史数据查询一律走本地 TDengine，生产环境必须启动内置 TDengine
+# （或提供外部实例凭据），因此 TDENGINE_PASSWORD 恒为必填且恒启用
+# tdengine profile。历史数据导入接口 URL/Token 改由 sys_config 管理
+# （部署后在 UI「链路配置」页填写），不再从 .env.prod 校验。
 DATA_SOURCE_TYPE=$(grep -E "^DATA_SOURCE_TYPE=" "$ENV_FILE" | cut -d'=' -f2-)
-COMPOSE_PROFILE_ARGS=()
-if [ "$DATA_SOURCE_TYPE" = "remote_api" ]; then
-    check_required_no_placeholder "HISTORY_DATA_API_URL"
-    check_no_placeholder "HISTORY_DATA_API_TOKEN"
-fi
-
-if [ "$DATA_SOURCE_TYPE" = "tdengine" ]; then
-    check_required_no_placeholder "TDENGINE_PASSWORD"
-    COMPOSE_PROFILE_ARGS=(--profile tdengine)
-fi
+check_required_no_placeholder "TDENGINE_PASSWORD"
+COMPOSE_PROFILE_ARGS=(--profile tdengine)
 
 compose_prod() {
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${COMPOSE_PROFILE_ARGS[@]}" "$@"

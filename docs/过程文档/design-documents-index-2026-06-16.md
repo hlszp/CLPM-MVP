@@ -11,7 +11,7 @@
 ```text
 .
 ├── README.md                                    # 项目入口与当前共识
-├── CLAUDE.md                                    # Agent 指引与基线
+├── CLAUDE.md                                    # Agent 指引入口指针（细则统一维护在 AGENTS.md）
 ├── DESIGN.md                                    # 原型设计基线（v3.0，对齐 v6.0）
 ├── docs/
 │   ├── 设计文档/
