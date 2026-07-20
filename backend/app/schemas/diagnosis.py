@@ -70,6 +70,14 @@ class DiagnosisListItem(CamelModel):
     algorithmVersion: str | None = None
 
 
+class DiagnosisAggregates(CamelModel):
+    """列表聚合统计（SQL group-by 对全部筛选结果聚合，不受分页影响）。"""
+
+    total: int = 0
+    statusCounts: dict[str, int] = Field(default_factory=dict)
+    labelCounts: dict[str, int] = Field(default_factory=dict)
+
+
 class DiagnosisListData(CamelModel):
     """诊断列表响应 data 块。"""
 
@@ -77,6 +85,7 @@ class DiagnosisListData(CamelModel):
     total: int = 0
     page: int = 1
     pageSize: int = 20
+    aggregates: DiagnosisAggregates | None = None
 
 
 class DiagnosisEvidence(CamelModel):
@@ -172,11 +181,43 @@ class TrackerStatusData(CamelModel):
     abComparison: dict[str, Any] | None = None
 
 
-class TrackerExportData(CamelModel):
-    """Tracker PDF 导出响应 data 块。"""
+# ---------------------------------------------------------------------------
+# A/B 对比（GET /diagnosis/ab-compare）
+# ---------------------------------------------------------------------------
 
-    taskId: str
-    status: str = "PENDING"
+
+class AbCompareKpiItem(CamelModel):
+    """A/B 对比单 KPI 项。"""
+
+    metricKey: str
+    metricName: str
+    unit: str = ""
+    before: float | None = None
+    after: float | None = None
+    change: float | None = None
+    changePct: float | None = None
+    # true=改善 / false=恶化 / None=持平或无数据
+    improved: bool | None = None
+
+
+class AbCompareWindow(CamelModel):
+    """A/B 对比窗口。"""
+
+    startTime: str
+    endTime: str
+    waveformUrl: str | None = None
+
+
+class AbCompareData(CamelModel):
+    """A/B 对比响应 data 块。"""
+
+    loopId: str
+    tagName: str | None = None
+    implementedAt: str | None = None
+    dataInsufficient: bool = False
+    beforeWindow: AbCompareWindow
+    afterWindow: AbCompareWindow
+    kpiComparison: list[AbCompareKpiItem] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -476,6 +517,12 @@ class DiagnosisRecordItem(DiagnosisTaskItem):
     """诊断记录列表项（已归档），结构与任务列表项一致。"""
 
 
+class DiagnosisRecordAggregates(DiagnosisAggregates):
+    """诊断记录聚合统计（含近 7 天归档数）。"""
+
+    recent7Days: int = 0
+
+
 class DiagnosisRecordListData(CamelModel):
     """诊断记录列表响应 data 块。"""
 
@@ -483,13 +530,18 @@ class DiagnosisRecordListData(CamelModel):
     total: int = 0
     page: int = 1
     pageSize: int = 20
+    aggregates: DiagnosisRecordAggregates | None = None
 
 
 __all__ = [
+    "AbCompareData",
+    "AbCompareKpiItem",
+    "AbCompareWindow",
     "AnalyticsExportData",
     "AnalyticsExportRequest",
     "AnalyticsFilterScope",
     "CloseDurationItem",
+    "DiagnosisAggregates",
     "DiagnosisAnalyticsData",
     "DiagnosisConfigItem",
     "DiagnosisConfigUpdate",
@@ -498,6 +550,7 @@ __all__ = [
     "DiagnosisLabelDetail",
     "DiagnosisListData",
     "DiagnosisListItem",
+    "DiagnosisRecordAggregates",
     "DiagnosisRecordItem",
     "DiagnosisRecordListData",
     "DiagnosisReportRequest",
@@ -523,7 +576,6 @@ __all__ = [
     "RecommendationData",
     "RecommendationItem",
     "TagResolveRequest",
-    "TrackerExportData",
     "TrackerStatusData",
     "TrackerStatusUpdate",
     "WaveformData",

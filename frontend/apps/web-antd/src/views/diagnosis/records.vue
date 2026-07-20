@@ -3,9 +3,8 @@
  * 诊断记录页（原诊断列表改造，仅显示已归档数据）
  *
  * 对齐 PRD §4.4 + 实现契约 v2.0
- * - 顶部 KpiStrip：已归档总数 / 近 7 天归档 / 振荡类 / 阀门粘滞类
- * - 筛选栏（装置 / 诊断标签 / 时间窗）
- * - 表格展示已归档诊断记录（回路位号 / 装置 / 评分 / 诊断标签 / 置信度 / 归档时间 / 操作）
+ * - Tab「归档记录」：顶部 KpiStrip（后端聚合口径）+ 筛选栏 + 已归档记录表格
+ * - Tab「诊断标签」：diagnosis_tag 标签面板（FE-14，筛选 + 处理/抑制）
  * - 点击行跳转诊断详情页 /diagnosis/detail/:loopId
  * - 分页
  */
@@ -21,7 +20,16 @@ import { useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, message, Modal, Select, Table, Tag } from 'ant-design-vue';
+import {
+  Button,
+  message,
+  Modal,
+  Select,
+  Table,
+  TabPane,
+  Tabs,
+  Tag,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -35,6 +43,7 @@ import {
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import TagPanel from '#/components/diagnosis/tag-panel.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -54,6 +63,8 @@ const router = useRouter();
 const loading = ref(false);
 const recordList = ref<DiagnosisApi.TaskItem[]>([]);
 const total = ref(0);
+/** 全量聚合统计（后端 SQL group-by，不受分页影响） */
+const aggregates = ref<DiagnosisApi.DiagnosisAggregates | null>(null);
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleteLoading = ref(false);
@@ -69,6 +80,9 @@ const rowSelection = computed(() => ({
 /** 异常跟踪抽屉状态（FDS §5.4：从诊断记录页右侧滑出） */
 const trackerDrawerVisible = ref(false);
 const trackerLoopId = ref('');
+
+/** 当前激活 Tab：归档记录 / 诊断标签（A11） */
+const activeTab = ref('records');
 
 const query = reactive({
   plantNodeId: undefined as string | undefined,
@@ -158,6 +172,7 @@ async function loadList() {
     });
     recordList.value = data.items || [];
     total.value = data.total || 0;
+    aggregates.value = data.aggregates ?? null;
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -238,19 +253,13 @@ async function handleBatchDelete() {
   });
 }
 
-/** KpiStrip 摘要指标：已归档总数 / 近 7 天归档 / 振荡类 / 阀门粘滞类 */
+/** KpiStrip 摘要指标：已归档总数 / 近 7 天归档 / 振荡类 / 阀门粘滞类（后端聚合口径） */
 const kpiStripItems = computed<KpiStripItem[]>(() => {
-  const totalCount = recordList.value.length;
-  const sevenDaysAgo = dayjs().subtract(7, 'day');
-  const recentCount = recordList.value.filter((item) =>
-    item.completedAt ? dayjs(item.completedAt).isAfter(sevenDaysAgo) : false,
-  ).length;
-  const oscillationCount = recordList.value.filter((item) =>
-    item.labels?.some((l) => l.label === 'OSCILLATION'),
-  ).length;
-  const stictionCount = recordList.value.filter((item) =>
-    item.labels?.some((l) => l.label === 'VALVE_STICTION'),
-  ).length;
+  const agg = aggregates.value;
+  const totalCount = agg?.total ?? total.value;
+  const recentCount = agg?.recent7Days ?? 0;
+  const oscillationCount = agg?.labelCounts?.OSCILLATION ?? 0;
+  const stictionCount = agg?.labelCounts?.VALVE_STICTION ?? 0;
 
   return [
     {
@@ -366,162 +375,182 @@ onMounted(() => {
       </template>
     </ClpmPageToolbar>
 
-    <!-- 顶部 KpiStrip -->
-    <ClpmKpiStrip class="mt-4" :items="kpiStripItems" :loading="loading" />
+    <!-- 归档记录 / 诊断标签 Tab（A11：标签面板接入真实 diagnosis_tag 数据） -->
+    <Tabs v-model:active-key="activeTab" class="mt-4">
+      <TabPane key="records" tab="归档记录">
+        <!-- 顶部 KpiStrip -->
+        <ClpmKpiStrip :items="kpiStripItems" :loading="loading" />
 
-    <ClpmDataCanvas class="mt-3" title="诊断记录" :loading="loading">
-      <!-- 筛选栏 -->
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <Select
-          v-model:value="query.plantNodeId"
-          placeholder="装置/单元筛选"
-          style="width: 220px"
-          allow-clear
-          :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="query.diagnosisLabel"
-          placeholder="诊断标签"
-          style="width: 160px"
-          allow-clear
-          :options="labelOptions"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="query.timeWindow"
-          style="width: 140px"
-          :options="timeWindowOptions"
-          @change="handleSearch"
-        />
-        <Button type="primary" :loading="loading" @click="handleSearch">
-          查询
-        </Button>
-        <Button
-          danger
-          :disabled="selectedRowKeys.length === 0"
-          :loading="batchDeleteLoading"
-          @click="handleBatchDelete"
-        >
-          <template #icon>
-            <IconifyIcon icon="ant-design:delete-outlined" />
-          </template>
-          批量删除{{
-            selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : ''
-          }}
-        </Button>
-      </div>
-
-      <Table
-        :columns="columns"
-        :data-source="recordList"
-        :loading="loading"
-        :pagination="{
-          current: query.page,
-          pageSize: query.pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (t: number) => `共 ${t} 条`,
-        }"
-        :row-key="(record: DiagnosisApi.TaskItem) => record.taskId"
-        :row-selection="rowSelection"
-        :scroll="{ x: 1320 }"
-        size="middle"
-        :custom-row="
-          (record: DiagnosisApi.TaskItem) => ({
-            onClick: () => handleViewDetail(record.loopId),
-            style: { cursor: 'pointer' },
-          })
-        "
-        @change="handleTableChange"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'compositeScore'">
-            <span
-              class="clpm-num font-medium"
-              :style="{ color: themeColors.INFO }"
-            >
-              {{
-                record.compositeScore === null
-                  ? '—'
-                  : Number(record.compositeScore).toFixed(2)
-              }}
-            </span>
-          </template>
-          <template v-else-if="column.key === 'labels'">
-            <!-- 多 Tag 展示 -->
-            <div class="flex flex-wrap gap-1">
-              <Tag
-                v-for="tag in getRecordTags(record as DiagnosisApi.TaskItem)"
-                :key="tag.label"
-                :color="labelColorMap[tag.label as DiagnosisLabel] || 'default'"
-              >
-                {{ tag.name }}
-              </Tag>
-              <span
-                v-if="
-                  getRecordTags(record as DiagnosisApi.TaskItem).length === 0
-                "
-                class="text-xs"
-                :style="{ color: themeColors.NEUTRAL }"
-              >
-                —
-              </span>
-            </div>
-          </template>
-          <template v-else-if="column.key === 'triggerType'">
-            {{ triggerTypeName(record.triggerType) }}
-          </template>
-          <template v-else-if="column.key === 'triggeredAt'">
-            <div class="flex flex-col leading-tight">
-              <span class="clpm-num">{{ formatTime(record.triggeredAt) }}</span>
-              <span
-                v-if="formatRelativeTime(record.triggeredAt)"
-                class="text-xs text-muted-foreground"
-              >
-                {{ formatRelativeTime(record.triggeredAt) }}
-              </span>
-            </div>
-          </template>
-          <template v-else-if="column.key === 'completedAt'">
-            <!-- 归档时间列：使用 completedAt 作为归档时间近似值 -->
-            <div class="flex flex-col leading-tight">
-              <span class="clpm-num">{{ formatTime(record.completedAt) }}</span>
-              <span
-                v-if="formatRelativeTime(record.completedAt)"
-                class="text-xs text-muted-foreground"
-              >
-                {{ formatRelativeTime(record.completedAt) }}
-              </span>
-            </div>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <Button
-              type="link"
-              size="small"
-              @click.stop="handleViewDetail(record.loopId)"
-            >
-              查看详情
+        <ClpmDataCanvas class="mt-3" title="诊断记录" :loading="loading">
+          <!-- 筛选栏 -->
+          <div class="mb-4 flex flex-wrap items-center gap-3">
+            <Select
+              v-model:value="query.plantNodeId"
+              placeholder="装置/单元筛选"
+              style="width: 220px"
+              allow-clear
+              :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
+              @change="handleSearch"
+            />
+            <Select
+              v-model:value="query.diagnosisLabel"
+              placeholder="诊断标签"
+              style="width: 160px"
+              allow-clear
+              :options="labelOptions"
+              @change="handleSearch"
+            />
+            <Select
+              v-model:value="query.timeWindow"
+              style="width: 140px"
+              :options="timeWindowOptions"
+              @change="handleSearch"
+            />
+            <Button type="primary" :loading="loading" @click="handleSearch">
+              查询
             </Button>
             <Button
-              type="link"
-              size="small"
-              @click.stop="handleOpenTracker(record.loopId)"
-            >
-              异常跟踪
-            </Button>
-            <Button
-              type="link"
-              size="small"
               danger
-              @click.stop="handleDelete(record as DiagnosisApi.TaskItem)"
+              :disabled="selectedRowKeys.length === 0"
+              :loading="batchDeleteLoading"
+              @click="handleBatchDelete"
             >
-              删除
+              <template #icon>
+                <IconifyIcon icon="ant-design:delete-outlined" />
+              </template>
+              批量删除{{
+                selectedRowKeys.length > 0
+                  ? `（${selectedRowKeys.length}）`
+                  : ''
+              }}
             </Button>
-          </template>
-        </template>
-      </Table>
-    </ClpmDataCanvas>
+          </div>
+
+          <Table
+            :columns="columns"
+            :data-source="recordList"
+            :loading="loading"
+            :pagination="{
+              current: query.page,
+              pageSize: query.pageSize,
+              total,
+              showSizeChanger: true,
+              showTotal: (t: number) => `共 ${t} 条`,
+            }"
+            :row-key="(record: DiagnosisApi.TaskItem) => record.taskId"
+            :row-selection="rowSelection"
+            :scroll="{ x: 1320 }"
+            size="middle"
+            :custom-row="
+              (record: DiagnosisApi.TaskItem) => ({
+                onClick: () => handleViewDetail(record.loopId),
+                style: { cursor: 'pointer' },
+              })
+            "
+            @change="handleTableChange"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'compositeScore'">
+                <span
+                  class="clpm-num font-medium"
+                  :style="{ color: themeColors.INFO }"
+                >
+                  {{
+                    record.compositeScore === null
+                      ? '—'
+                      : Number(record.compositeScore).toFixed(2)
+                  }}
+                </span>
+              </template>
+              <template v-else-if="column.key === 'labels'">
+                <!-- 多 Tag 展示 -->
+                <div class="flex flex-wrap gap-1">
+                  <Tag
+                    v-for="tag in getRecordTags(
+                      record as DiagnosisApi.TaskItem,
+                    )"
+                    :key="tag.label"
+                    :color="
+                      labelColorMap[tag.label as DiagnosisLabel] || 'default'
+                    "
+                  >
+                    {{ tag.name }}
+                  </Tag>
+                  <span
+                    v-if="
+                      getRecordTags(record as DiagnosisApi.TaskItem).length ===
+                      0
+                    "
+                    class="text-xs"
+                    :style="{ color: themeColors.NEUTRAL }"
+                  >
+                    —
+                  </span>
+                </div>
+              </template>
+              <template v-else-if="column.key === 'triggerType'">
+                {{ triggerTypeName(record.triggerType) }}
+              </template>
+              <template v-else-if="column.key === 'triggeredAt'">
+                <div class="flex flex-col leading-tight">
+                  <span class="clpm-num">{{
+                    formatTime(record.triggeredAt)
+                  }}</span>
+                  <span
+                    v-if="formatRelativeTime(record.triggeredAt)"
+                    class="text-xs text-muted-foreground"
+                  >
+                    {{ formatRelativeTime(record.triggeredAt) }}
+                  </span>
+                </div>
+              </template>
+              <template v-else-if="column.key === 'completedAt'">
+                <!-- 归档时间列：使用 completedAt 作为归档时间近似值 -->
+                <div class="flex flex-col leading-tight">
+                  <span class="clpm-num">{{
+                    formatTime(record.completedAt)
+                  }}</span>
+                  <span
+                    v-if="formatRelativeTime(record.completedAt)"
+                    class="text-xs text-muted-foreground"
+                  >
+                    {{ formatRelativeTime(record.completedAt) }}
+                  </span>
+                </div>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <Button
+                  type="link"
+                  size="small"
+                  @click.stop="handleViewDetail(record.loopId)"
+                >
+                  查看详情
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  @click.stop="handleOpenTracker(record.loopId)"
+                >
+                  异常跟踪
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  @click.stop="handleDelete(record as DiagnosisApi.TaskItem)"
+                >
+                  删除
+                </Button>
+              </template>
+            </template>
+          </Table>
+        </ClpmDataCanvas>
+      </TabPane>
+
+      <TabPane key="tags" tab="诊断标签">
+        <TagPanel />
+      </TabPane>
+    </Tabs>
 
     <!-- 异常跟踪抽屉（FDS §5.4：从右侧滑出） -->
     <Tracker

@@ -31,6 +31,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query
@@ -47,6 +48,7 @@ from app.models.loop import LoopLedger
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.diagnosis import (
+    AbCompareData,
     AnalyticsExportData,
     AnalyticsExportRequest,
     DiagnosisAnalyticsData,
@@ -63,7 +65,6 @@ from app.schemas.diagnosis import (
     DiagnosisTriggerRequest,
     RecommendationData,
     TagResolveRequest,
-    TrackerExportData,
     TrackerStatusData,
     TrackerStatusUpdate,
     WaveformData,
@@ -92,7 +93,7 @@ from app.services.diagnosis_report import (
     export_diagnosis_statistics,
     generate_diagnosis_report,
 )
-from app.services.tracker import export_tracker_pdf, update_tracker_status
+from app.services.tracker import export_tracker_pdf, get_ab_compare, update_tracker_status
 from app.services.waveform import get_waveform
 
 logger = logging.getLogger(__name__)
@@ -273,20 +274,34 @@ async def export_statistics_csv_endpoint(
     )
 
 
-@router.get("/ab-compare")
+@router.get("/ab-compare", response_model=ApiResponse[AbCompareData])
 async def ab_compare_endpoint(
+    loopId: uuid.UUID = Query(..., description="回路 ID"),
+    implementedAt: str | None = Query(
+        None, description="实施时刻（ISO 8601），提供时自动截取 [T-7d,T) 与 (T,T+7d]"
+    ),
+    beforeStartTime: str | None = Query(None, description="Before 窗口开始（ISO 8601）"),
+    beforeEndTime: str | None = Query(None, description="Before 窗口结束（ISO 8601）"),
+    afterStartTime: str | None = Query(None, description="After 窗口开始（ISO 8601）"),
+    afterEndTime: str | None = Query(None, description="After 窗口结束（ISO 8601）"),
+    db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
-    """A/B 对比（尚未实现，P1 待补）。
+    """A/B 对比：实施前后两窗口 KPI 均值对比（kpi_snapshot_hourly）。
 
-    前端调用 ``GET /api/v1/diagnosis/ab-compare``，后端尚未实现该端点。
-    显式返回 501 Not Implemented，避免被 ``/{loop_id}`` 路由捕获导致 500 错误。
+    窗口二选一：implementedAt 自动截取 [T-7d,T) 与 (T,T+7d]；
+    或显式传入 before/after 窗口。实施后窗口数据不足 24h 时 dataInsufficient=true。
     """
-    raise BizError(
-        code="ERR_NOT_IMPLEMENTED",
-        message="A/B 对比功能尚未实现",
-        status_code=501,
+    data = await get_ab_compare(
+        db=db,
+        loop_id=str(loopId),
+        implemented_at=implementedAt,
+        before_start=beforeStartTime,
+        before_end=beforeEndTime,
+        after_start=afterStartTime,
+        after_end=afterEndTime,
     )
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +430,7 @@ async def delete_task_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """物理删除诊断任务（仅 PENDING 可删除）。
+    """物理删除诊断任务（RUNNING 不可删除，须先取消）。
 
     仅 ADMIN/IC_ENGINEER/PE_ENGINEER 角色可操作。
 
@@ -621,15 +636,28 @@ async def update_tracker_status_endpoint(
     return success(data=data, message="状态更新成功")
 
 
-@tracker_router.post("/{loop_id}/export", response_model=ApiResponse[TrackerExportData])
+@tracker_router.post("/{loop_id}/export")
 async def export_tracker_endpoint(
     loop_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("IC_ENGINEER", "ADMIN", "PE_ENGINEER")),
-) -> dict:
-    """导出诊断建议书 PDF（异步任务，返回 taskId）。"""
-    data = await export_tracker_pdf(db=db, loop_id=str(loop_id))
-    return success(data=data, message="导出任务已提交")
+) -> Response:
+    """导出诊断建议书 PDF（同步生成，直接下载）。
+
+    复用 SVC-12 报告生成器，文件名格式：CLPM-诊断建议书-[位号]-[日期].pdf
+    """
+    pdf_bytes, filename = await export_tracker_pdf(db=db, loop_id=str(loop_id))
+    quoted_filename = quote(filename)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="CLPM-diagnosis-{loop_id}.pdf"; '
+                f"filename*=UTF-8''{quoted_filename}"
+            ),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

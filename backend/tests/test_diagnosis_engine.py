@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -380,6 +381,7 @@ class TestDiagnoseLoop:
                 _make_scalars_all_mock([pv_mapping]),
                 _make_scalars_all_mock([pv_tag]),
                 MagicMock(),  # delete(DiagnosisResult) 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -420,6 +422,7 @@ class TestDiagnoseLoop:
                 _make_scalars_all_mock([pv_mapping]),
                 _make_scalars_all_mock([pv_tag]),
                 MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -456,6 +459,7 @@ class TestDiagnoseLoop:
                 _make_scalars_all_mock([pv_mapping]),
                 _make_scalars_all_mock([pv_tag]),
                 MagicMock(),
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -531,6 +535,7 @@ class TestDiagnoseLoop:
                 _make_scalars_all_mock([pv_m, sp_m, op_m, mode_m]),
                 _make_scalars_all_mock([pv_tag, sp_tag, op_tag, mode_tag]),
                 MagicMock(),
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -557,6 +562,166 @@ class TestDiagnoseLoop:
 
         assert result is not None
         assert result["status"] == "SUCCESS"
+
+
+# ===========================================================================
+# A11: diagnosis_tag 写入方（_diagnose_loop 落库段 upsert）
+# ===========================================================================
+
+
+class TestDiagnosisTagUpsert:
+    """诊断落库时同步 upsert diagnosis_tag（A11）。"""
+
+    @staticmethod
+    def _added_tags(db: AsyncMock) -> list:
+        """从 db.add 调用中提取 DiagnosisTag 实例。"""
+        from app.models.diagnosis import DiagnosisTag
+
+        return [
+            call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], DiagnosisTag)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_tag_created_on_diagnosis(self) -> None:
+        """诊断落库后生成 ACTIVE 标签（severity/source_metric 映射正确）。"""
+        loop = _make_loop()
+        pv_mapping = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_mapping]),
+                _make_scalars_all_mock([pv_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
+            ]
+        )
+        db.add = MagicMock()
+
+        # 50 个点的振荡信号
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" in result["labels"]
+        tags = self._added_tags(db)
+        osc_tags = [t for t in tags if t.tag_code == "OSCILLATION"]
+        assert len(osc_tags) == 1
+        tag = osc_tags[0]
+        assert tag.status == "ACTIVE"
+        assert tag.severity == "WARN"  # OSCILLATION → WARN
+        assert tag.tag_name == "振荡"
+        assert tag.source_metric == "FFT"  # 算法来源
+        assert tag.trigger_condition["algorithm"] == "FFT"
+        assert tag.trigger_value is not None
+
+    @pytest.mark.asyncio
+    async def test_existing_active_tag_updated_not_duplicated(self) -> None:
+        """同回路同标签已有 ACTIVE 行时更新触发快照，不重复建行。"""
+        loop = _make_loop()
+        pv_mapping = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+
+        existing_tag = MagicMock()
+        existing_tag.tag_code = "OSCILLATION"
+        existing_tag.status = "ACTIVE"
+        existing_tag.triggered_at = datetime(2026, 1, 1)
+        existing_tag.trigger_value = Decimal("0.1")
+        existing_tag.trigger_condition = {"algorithm": "FFT", "confidence": 0.1}
+        existing_tag.source_metric = "FFT"
+        existing_tag.severity = "WARN"
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_mapping]),
+                _make_scalars_all_mock([pv_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([existing_tag]),  # 已有 ACTIVE 标签
+            ]
+        )
+        db.add = MagicMock()
+
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" in result["labels"]
+        # 未新建 DiagnosisTag 行
+        assert self._added_tags(db) == []
+        # 已有标签的触发时间与触发快照被更新
+        assert existing_tag.triggered_at != datetime(2026, 1, 1)
+        assert existing_tag.trigger_condition["algorithm"] == "FFT"
+        assert existing_tag.trigger_condition["confidence"] > 0.1
+
+    @pytest.mark.asyncio
+    async def test_severity_mapping_for_manual_review(self) -> None:
+        """MANUAL_REVIEW 标签 severity=INFO、source_metric 兜底。"""
+        loop = _make_loop()
+        pv_mapping = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_mapping]),
+                _make_scalars_all_mock([pv_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
+            ]
+        )
+        db.add = MagicMock()
+
+        # 50 个点的稳定数据（无异常 → MANUAL_REVIEW 兜底标签）
+        stable_data = _make_raw_timeseries([50.0] * 50)
+
+        async def _query_fn(**kwargs):
+            return stable_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "MANUAL_REVIEW" in result["labels"]
+        tags = self._added_tags(db)
+        review_tags = [t for t in tags if t.tag_code == "MANUAL_REVIEW"]
+        assert len(review_tags) == 1
+        assert review_tags[0].severity == "INFO"
+        assert review_tags[0].source_metric == "MANUAL_REVIEW"
 
 
 # ===========================================================================
@@ -1340,6 +1505,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
                 _make_scalars_all_mock([pv_m, op_m]),
                 _make_scalars_all_mock([pv_tag, op_tag]),
                 MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -1389,6 +1555,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
                 _make_scalars_all_mock([pv_m, sp_m]),
                 _make_scalars_all_mock([pv_tag, sp_tag]),
                 MagicMock(),
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -1441,6 +1608,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
                 _make_scalars_all_mock([pv_m, sp_m]),
                 _make_scalars_all_mock([pv_tag, sp_tag]),
                 MagicMock(),
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
