@@ -26,7 +26,7 @@ import numpy as np
 from sqlalchemy import delete, select
 
 from app.contracts.data_types import QualityStatus, RawTimeSeries
-from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTask
+from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag, DiagnosisTask
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
@@ -46,6 +46,37 @@ CONCURRENCY = 5
 
 # 数据最少点数
 MIN_DATA_POINTS = 32
+
+# 诊断标签严重等级映射（A11：写入 diagnosis_tag.severity）
+_TAG_SEVERITY_MAP: dict[str, str] = {
+    "VALVE_STICTION": "ERROR",
+    "QUALITY_ABNORMAL": "ERROR",
+    "OSCILLATION": "WARN",
+    "OVERAGGRESSIVE": "WARN",
+    "OVERCONSERVATIVE": "WARN",
+    "OUTPUT_SATURATION": "WARN",
+    "EXTERNAL_DISTURBANCE": "INFO",
+    "MANUAL_REVIEW": "INFO",
+}
+
+# 诊断标签中文名（与 app.services.diagnosis.DIAG_LABEL_NAMES 保持一致）
+_TAG_LABEL_NAMES: dict[str, str] = {
+    "OSCILLATION": "振荡",
+    "VALVE_STICTION": "阀门粘滞",
+    "OVERAGGRESSIVE": "参数过激",
+    "OVERCONSERVATIVE": "参数过保守",
+    "EXTERNAL_DISTURBANCE": "外扰频繁",
+    "QUALITY_ABNORMAL": "PV 质量异常",
+    "OUTPUT_SATURATION": "输出饱和",
+    "MANUAL_REVIEW": "人工复核",
+}
+
+# evidence 未携带 algorithm 字段时的来源指标兜底（A11：写入 diagnosis_tag.source_metric）
+_TAG_SOURCE_METRIC_FALLBACK: dict[str, str] = {
+    "QUALITY_ABNORMAL": "PV_QUALITY_STATS",
+    "OUTPUT_SATURATION": "OP_SATURATION_STATS",
+    "MANUAL_REVIEW": "MANUAL_REVIEW",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +455,64 @@ async def _update_task_status(
         task.error_message = error_message
     if completed_at is not None:
         task.completed_at = completed_at
+
+
+def _upsert_diagnosis_tag(
+    db,
+    active_tag_map: dict[str, Any],
+    loop_id: str,
+    result: dict[str, Any],
+    diagnosed_at: datetime,
+) -> None:
+    """同步诊断标签到 diagnosis_tag 表（A11，IDS §2.4.10）。
+
+    同 loop_id + tag_code 已有 ACTIVE 行：更新最近触发时间与触发快照
+    （trigger_condition/trigger_value）；否则插入新 ACTIVE 行。
+
+    Args:
+        db: 异步数据库会话
+        active_tag_map: 该回路现有 ACTIVE 标签映射（tag_code → DiagnosisTag），
+            插入新行后会同步更新该映射，避免同批次重复建行
+        loop_id: 回路 ID
+        result: D-S 融合后的单条诊断标签结果（label/confidence/evidence）
+        diagnosed_at: 本次诊断时间
+    """
+    label = result["label"]
+    evidence = result.get("evidence") or {}
+    confidence = float(result.get("confidence") or 0.0)
+    algorithm = evidence.get("algorithm")
+    source_metric = algorithm or _TAG_SOURCE_METRIC_FALLBACK.get(label, "DIAG_ENGINE")
+    trigger_condition = {
+        "algorithm": algorithm,
+        "confidence": round(confidence, 4),
+        "reasoning": evidence.get("reasoning"),
+    }
+    trigger_value = Decimal(str(round(confidence, 4)))
+    severity = _TAG_SEVERITY_MAP.get(label, "INFO")
+
+    existing = active_tag_map.get(label)
+    if existing is not None:
+        existing.triggered_at = diagnosed_at
+        existing.trigger_condition = trigger_condition
+        existing.trigger_value = trigger_value
+        existing.source_metric = source_metric
+        existing.severity = severity
+        return
+
+    tag = DiagnosisTag(
+        id=str(uuid4()),
+        loop_id=loop_id,
+        tag_code=label,
+        tag_name=_TAG_LABEL_NAMES.get(label),
+        severity=severity,
+        source_metric=source_metric,
+        trigger_condition=trigger_condition,
+        trigger_value=trigger_value,
+        triggered_at=diagnosed_at,
+        status="ACTIVE",
+    )
+    db.add(tag)
+    active_tag_map[label] = tag
 
 
 async def _diagnose_loop(
@@ -985,6 +1074,21 @@ async def _diagnose_loop(
             )
         )
 
+    # A11：查询该回路现有 ACTIVE 诊断标签，供落库时 upsert（更新而非重复建行）
+    active_tag_rows = (
+        (
+            await db.execute(
+                select(DiagnosisTag).where(
+                    DiagnosisTag.loop_id == loop_id,
+                    DiagnosisTag.status == "ACTIVE",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    active_tag_map: dict[str, Any] = {t.tag_code: t for t in active_tag_rows}
+
     # 写入诊断结果（每个标签一条记录）
     diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
     for result in algorithm_results:
@@ -1010,6 +1114,8 @@ async def _diagnose_loop(
             task_id=task_id,
         )
         db.add(diag_record)
+        # A11：同步 upsert diagnosis_tag（D-S 融合后标签逐条处理）
+        _upsert_diagnosis_tag(db, active_tag_map, loop_id, result, diagnosed_at)
 
     return {
         "loopId": loop_id,
