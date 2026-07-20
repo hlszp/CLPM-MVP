@@ -128,7 +128,7 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 
 - **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker；sys_config 业务配置（URL/Token）变更对 worker 生效需重启 worker 或等子进程回收（worker_process_init 每子进程预载一次）
 - **Worker 静默挂死的识别与处置**（2026-07-19 实测）：worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspect` 无响应、日志停更数小时），表现为任务卡 PENDING、broker 队列持续积压。诊断：`docker exec clpm-redis redis-cli -n 1 LLEN default`（队列长度）+ `pgrep -P <worker_pid>`（池子进程数）。处置：`kill <主进程pid>`（必要时 -9）后重启 worker；积压消息会在重启后全部追平（导入/回填类重任务注意耗时）
-- **remote_api 模式下 KPI 不回读本地 TDengine**（2026-07-19 确认的架构现状）：`DATA_SOURCE_TYPE=remote_api` 时 DataPlanner 全量走远端 API，历史导入写入本地 TDengine 宽表的数据不参与 KPI 计算。远端 API 挂死（TCP 通但 HTTP 不应答）会导致回填全部空数据块 → 快照全 INCONCLUSIVE/PARTIAL → 饼图/TOP5/评级空白。远端服务恢复后需重新触发回填
+- **计算类历史数据查询一律本地 TDengine**（2026-07-20 架构决策）：`get_provider()` 恒返回 TDengineProvider，KPI/回填/诊断/趋势不再按 `DATA_SOURCE_TYPE` 分支走远端 API；本地数据不完整按 INCONCLUSIVE 提示（禁止自动降级到远端）。远端历史数据接口仅 `data_import.py`（历史数据导入任务）直接调用。历史教训（2026-07-19）：remote_api 模式下回填无界并发曾压垮远端 API、且远端挂死导致全部 INCONCLUSIVE
 - **Worker 并发与回填性能**（2026-07-18 性能优化）：prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.prod` 中 `CELERY_WORKER_CONCURRENCY` 需按宿主机核数同步；回填任务按"1 窗口 = 1 个 chord 子任务"派发，27 回路 × 24h 实测约 52s（0.08s/回路时）；整点自动任务 27 回路 × 1h 实测约 1.9s（0.07s/回路时）。实测脚本：`backend/scripts/measure_backfill_perf.py`
 - **prewarm 预热策略已废止**（2026-07-18）：原"每小时 55 分"预热窗口与整点任务窗口错位一小时（预热的是上一任务已算完的窗口，从未命中），已移除 beat 条目、worker_ready 预热与 L2 兜底预热。整点任务数据来源统一为 **realtime 滚动缓存**（`realtime:history:*`，保留 75 分钟×1Hz=4500 点，provider 对近 1 小时窗口自动探测）+ TDengine 回源兜底；`prewarm_cache` 任务保留供手工/运维调用
 - **macOS fork 时区陷阱**：celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）
@@ -152,6 +152,7 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统；用户（管理员/工程师）可自助完成配置组态，减少开发团队介入 |
 | 模块架构 | 6 模块 + 1 门户：工作台 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理；各业务模块遵循"配置→运行→分析"三态自包含原则，减少跨模块依赖 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体）；回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D）；PID 参数与控制模式从关联 tag 只读读取；数据质量主要针对 PV 值（Good/Bad/Uncertain 质量码） |
+| **数据架构** | **导入走远端、计算全本地**（2026-07-20 用户定调）：① 历史数据有两个源——远端 AAS 历史数据接口（remote_api）有且仅有"数据管理→历史数据导入"手工任务可调用（`data_import.py` 独立客户端，不经 provider 工厂），本地 TDengine 是所有性能评估/回路诊断/回路整定等计算任务的唯一历史数据来源；② 任何计算任务**不得**自动降级/切换到远端 API 取数，本地数据不完整按 INCONCLUSIVE/数据不足提示，由用户导入补齐；③ 实时数据源唯一：SignalR Hub（`signalr_hub_url`），开发/生产一致；④ `DATA_SOURCE_TYPE` 配置项已废止（兼容保留，不再影响计算路径）；`get_provider()` 恒返回本地 TDengineProvider |
 | Action Tracker | 诊断中心子模块（子菜单路由），状态机 PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED，中文显示为待处理/处理中/已实施/已忽略 |
 | 统计分析 | 不设独立模块，分散到各业务模块的"分析"态；自动报表归入系统管理 |
 | 回路整定 | Phase 1 保留页面与实验/辅助接口，只输出建议、证据、风险和回退方案；不支持 DCS 参数下写，Phase 2 再完成生产级算法闭环 |
@@ -160,7 +161,7 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 原型/前端开发 | 当前生产前端为 Vue 3 + Vite + TypeScript + vue-vben-admin；重构后路由/页面以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
-| 网络模式 | 应用层局域网/公网切换（2026-07-19）：UI 单 URL 输入，Tailscale subnet router 透明转发；.env 移除业务 URL/Token（HISTORY_DATA_API_URL/HISTORY_DATA_API_TOKEN/SIGNALR_HUB_URL），sys_config 为运行时真相源；lifespan 启动通过 `preload_datasource_config()` 预载 sys_config 到 settings 内存；`sudo -n tailscale up --accept-routes={true\|false} --reset=false` 动态切换子网路由，sudoers 免密配置见 `deploy/sudoers.d/` |
+| 网络模式 | 应用层局域网/公网切换（2026-07-19）：**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**——局域网/公网只是同一组数据源（远端历史导入接口 + SignalR Hub + 本地 TDengine）的两条可达路径。UI 单 URL 输入；.env 移除业务 URL/Token（HISTORY_DATA_API_URL/HISTORY_DATA_API_TOKEN/SIGNALR_HUB_URL），sys_config 为运行时真相源；lifespan 启动通过 `preload_datasource_config()` 预载 sys_config 到 settings 内存；`sudo -n tailscale up --accept-routes={true\|false} --reset=false` 动态切换子网路由，sudoers 免密配置见 `deploy/sudoers.d/` |
 | 文档权威性 | PRD v6.0 负责产品需求；实现契约 v2.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互（已对齐 v6.1 代码，含 ZL 工业设计规范）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## 双机协作开发规范
