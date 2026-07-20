@@ -22,6 +22,7 @@ from app.tasks.diagnosis_engine import (
     _analyze_saturation,
     _analyze_step_response,
     _apply_expert_rules,
+    _assess_model_mismatch,
     _build_scatter_plot_data,
     _compute_sample_interval,
     _deduplicate_labels,
@@ -2652,3 +2653,202 @@ class TestSensorFaultGating:
 
         assert result is not None
         assert "QUALITY_ABNORMAL" not in result["labels"]
+
+
+# ===========================================================================
+# B3：Harris 指数模型失配评估测试
+# ===========================================================================
+
+
+class TestAssessModelMismatch:
+    """B3：_assess_model_mismatch() Harris 指数模型失配评估。"""
+
+    def test_white_noise_near_minimum_variance(self) -> None:
+        """最小方差过程（白噪声偏差）harris_index 应 ≈ 1。"""
+        n = 1000
+        rng = np.random.RandomState(5)
+        sp = np.full(n, 50.0)
+        pv = sp + rng.normal(0.0, 0.5, n)
+        result = _assess_model_mismatch(pv, sp)
+        assert result["harris_index"] is not None
+        assert 0.8 < result["harris_index"] < 1.5
+        assert result["harris_warn"] is False
+
+    def test_oscillatory_error_high_index(self) -> None:
+        """振荡偏差（强相关、可预测）harris_index 应显著 > 2 并告警。"""
+        n = 1000
+        rng = np.random.RandomState(3)
+        sp = np.full(n, 50.0)
+        t = np.arange(n)
+        pv = sp + np.sin(2 * np.pi * t / 50.0) + rng.normal(0.0, 0.01, n)
+        result = _assess_model_mismatch(pv, sp)
+        assert result["harris_index"] is not None
+        assert result["harris_index"] > 2.0
+        assert result["harris_warn"] is True
+
+    def test_strongly_correlated_error_high_index(self) -> None:
+        """强相关偏差（AR(1) φ=0.9）harris_index 应 > 2。"""
+        n = 1000
+        e = _make_ar1_signal(n, phi=0.9, noise_std=0.5, seed=9) - 50.0
+        sp = np.full(n, 50.0)
+        pv = sp + e
+        result = _assess_model_mismatch(pv, sp)
+        assert result["harris_index"] is not None
+        assert result["harris_index"] > 2.0
+
+    def test_missing_sp_returns_none(self) -> None:
+        """SP 缺失时不评估，harris_index 为 None。"""
+        pv = np.linspace(0.0, 1.0, 100)
+        result = _assess_model_mismatch(pv)
+        assert result["harris_index"] is None
+        assert result["harris_warn"] is False
+
+    def test_short_data_returns_none(self) -> None:
+        """数据点不足时不评估。"""
+        pv = np.ones(10)
+        sp = np.ones(10)
+        result = _assess_model_mismatch(pv, sp)
+        assert result["harris_index"] is None
+
+    def test_warn_threshold_override(self) -> None:
+        """阈值配置覆盖：harris_warn 提高到 10 后同样的信号不告警。"""
+        n = 1000
+        e = _make_ar1_signal(n, phi=0.9, noise_std=0.5, seed=9) - 50.0
+        sp = np.full(n, 50.0)
+        pv = sp + e
+        result = _assess_model_mismatch(pv, sp, threshold={"harris_warn": 10.0})
+        assert result["harris_index"] is not None
+        assert 2.0 < result["harris_index"] < 10.0
+        assert result["harris_warn"] is False
+
+
+class TestHarrisIndexIntegration:
+    """B3：Harris 指数在 _diagnose_loop 中的可视化写入与证据增强。"""
+
+    @staticmethod
+    def _extract_results(db: AsyncMock) -> list:
+        """从 db.add 调用中提取 DiagnosisResult 实例。"""
+        from app.models.diagnosis import DiagnosisResult
+
+        return [
+            call.args[0]
+            for call in db.add.call_args_list
+            if isinstance(call.args[0], DiagnosisResult)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_harris_index_written_to_visualization(self) -> None:
+        """OVERAGGRESSIVE 启用时，振荡偏差信号的 harris_index 写入可视化数据。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        n = 1000
+        rng = np.random.RandomState(3)
+        sp = np.full(n, 50.0)
+        t = np.arange(n)
+        pv = sp + np.sin(2 * np.pi * t / 50.0) + rng.normal(0.0, 0.01, n)
+        data = _make_raw_timeseries(pv.tolist(), sp=sp.tolist())
+
+        async def _query_fn(**kwargs):
+            return data
+
+        config = _make_diag_config("OVERAGGRESSIVE")
+        config.threshold = None  # 使用算法默认阈值
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OVERAGGRESSIVE": config},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        records = self._extract_results(db)
+        assert len(records) > 0
+        harris_index = records[0].feature_values.get("harris_index")
+        assert harris_index is not None
+        assert harris_index > 2.0
+        assert records[0].feature_values.get("harris_warn") is True
+
+    @pytest.mark.asyncio
+    async def test_harris_merged_into_overaggressive_evidence(self) -> None:
+        """OVERAGGRESSIVE 命中时，harris_index 并入其 evidence 作证据增强。"""
+        loop = _make_loop()
+        loop.control_type = "PID"
+        db = _make_diagnose_db(
+            loop,
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        # 过激响应：SP 阶跃 + PV 低阻尼过冲振荡（偏差强相关 → harris > 2）
+        n = 500
+        sp = np.zeros(n)
+        sp[50:] = 100.0
+        pv = np.zeros(n)
+        for i in range(50, n):
+            t = i - 50
+            pv[i] = 100.0 + 40.0 * np.exp(-t * 0.005) * np.cos(t * 0.3)
+        data = _make_raw_timeseries(pv.tolist(), sp=sp.tolist())
+
+        async def _query_fn(**kwargs):
+            return data
+
+        config = _make_diag_config("OVERAGGRESSIVE")
+        config.threshold = None
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OVERAGGRESSIVE": config},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OVERAGGRESSIVE" in result["labels"]
+        records = self._extract_results(db)
+        agg = next(r for r in records if r.diag_label == "OVERAGGRESSIVE")
+        assert agg.evidence_chain.get("harris_index") is not None
+        assert agg.evidence_chain["harris_index"] > 2.0
+
+    @pytest.mark.asyncio
+    async def test_harris_not_computed_when_gated_off(self) -> None:
+        """OVERAGGRESSIVE/OVERCONSERVATIVE 均未启用时不评估 Harris 指数。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        n = 1000
+        sp = np.full(n, 50.0)
+        t = np.arange(n)
+        pv = sp + np.sin(2 * np.pi * t / 50.0)
+        data = _make_raw_timeseries(pv.tolist(), sp=sp.tolist())
+
+        async def _query_fn(**kwargs):
+            return data
+
+        config = _make_diag_config("QUALITY_ABNORMAL")
+        config.threshold = None
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"QUALITY_ABNORMAL": config},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        records = self._extract_results(db)
+        assert len(records) > 0
+        assert "harris_index" not in records[0].feature_values

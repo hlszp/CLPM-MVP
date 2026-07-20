@@ -939,6 +939,17 @@ async def _diagnose_loop(
     else:
         bias_shift_result = _empty_bias_shift_result()
 
+    # 10. Harris 指数模型失配评估（B3：不单独产出标签，
+    # 受 OVERAGGRESSIVE/OVERCONSERVATIVE 任一门控，供可视化与证据增强）
+    if overaggressive_enabled or overconservative_enabled:
+        harris_result = _assess_model_mismatch(
+            pv_values,
+            sp_values if len(sp_values) == len(pv_values) else None,
+            threshold=_get_threshold(diag_configs, "OVERAGGRESSIVE", None, None),
+        )
+    else:
+        harris_result = _empty_harris_result()
+
     # 收集所有算法结果（带置信度）
     algorithm_results: list[dict[str, Any]] = []
 
@@ -1299,6 +1310,20 @@ async def _diagnose_loop(
             "cusum_threshold": bias_shift_result.get("threshold", 0.0),
         }
     )
+
+    # Harris 指数模型失配评估（B3）：不产出标签，仅写入可视化数据；
+    # OVERAGGRESSIVE / OVERCONSERVATIVE 命中时并入其 evidence 作证据增强
+    if harris_result["harris_index"] is not None:
+        all_visualization_data.update(
+            {
+                "harris_index": harris_result["harris_index"],
+                "harris_warn": harris_result["harris_warn"],
+            }
+        )
+        for r in algorithm_results:
+            if r["label"] in ("OVERAGGRESSIVE", "OVERCONSERVATIVE"):
+                r["evidence"]["harris_index"] = harris_result["harris_index"]
+                r["evidence"]["harris_warn"] = harris_result["harris_warn"]
 
     # 兜底标签：无任何算法命中
     if not algorithm_results:
@@ -1934,6 +1959,71 @@ def _detect_sensor_faults(
     except Exception as exc:  # noqa: BLE001
         logger.warning("传感器故障检测失败: %s", exc)
         return _empty_sensor_fault_result()
+
+
+def _empty_harris_result() -> dict[str, Any]:
+    """空 Harris 指数评估结果（OVERAGGRESSIVE/OVERCONSERVATIVE 均未启用时占位）。"""
+    return {"harris_index": None, "harris_warn": False}
+
+
+def _assess_model_mismatch(
+    pv_values: np.ndarray,
+    sp_values: np.ndarray | None = None,
+    threshold: dict | None = None,
+) -> dict[str, Any]:
+    """Harris 指数模型失配评估（B3）。
+
+    以跟踪偏差 e = PV − SP（去均值）为对象，用 Yule-Walker 方程估计 AR(p)
+    模型，取其一步预测残差方差作为最小方差基准 σ²_mv 的 lag-1 近似：
+    harris_index = var(e) / σ²_mv（≥ 1，越大表示回路性能离最小方差基准越远）。
+    注意：无过程延迟信息时该 lag-1 近似偏保守，指数系统性偏高。
+    本评估不单独产出标签，结果仅供前端可视化与
+    OVERAGGRESSIVE/OVERCONSERVATIVE 命中时的证据增强。
+
+    Args:
+        pv_values: PV 数据数组（工程单位）
+        sp_values: SP 数据数组（需与 pv_values 等长；缺失或不等长时返回空结果）
+        threshold: 阈值配置（可选），支持键：
+            - harris_ar_order: AR 模型阶数 p（默认 10）
+            - harris_warn: 告警阈值（默认 2.0，harris_index > 该值时 harris_warn=True）
+
+    Returns:
+        {harris_index: float | None, harris_warn: bool}
+    """
+    if threshold is None:
+        threshold = {}
+    ar_order = int(threshold.get("harris_ar_order", 10))
+    warn_threshold = float(threshold.get("harris_warn", 2.0))
+
+    n = len(pv_values)
+    if sp_values is None or len(sp_values) != n or n < max(MIN_DATA_POINTS, 3 * ar_order):
+        return _empty_harris_result()
+
+    try:
+        e = np.asarray(pv_values, dtype=float) - np.asarray(sp_values, dtype=float)
+        e = e - np.mean(e)
+        var_e = float(np.mean(e * e))
+        if var_e <= 0.0:
+            return _empty_harris_result()
+
+        # 有偏自协方差序列（Yule-Walker 保证 Toeplitz 矩阵正定）
+        gamma = np.array([np.dot(e[k:], e[: n - k]) / n for k in range(ar_order + 1)])
+        idx = np.arange(ar_order)
+        r_matrix = gamma[np.abs(idx[:, None] - idx[None, :])]
+        ar_coeffs = np.linalg.solve(r_matrix, gamma[1:])
+        # 一步预测残差方差（最小方差基准的 lag-1 近似）
+        sigma2_mv = float(gamma[0] - ar_coeffs @ gamma[1:])
+        if sigma2_mv <= 0.0:
+            return _empty_harris_result()
+
+        harris_index = var_e / sigma2_mv
+        return {
+            "harris_index": float(harris_index),
+            "harris_warn": bool(harris_index > warn_threshold),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Harris 指数评估失败: %s", exc)
+        return _empty_harris_result()
 
 
 def _analyze_saturation(
