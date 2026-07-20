@@ -250,7 +250,7 @@ cp .env.prod.example .env.prod   # 编辑真实配置
 
 - `JWT_SECRET_KEY` 必须设置且长度 ≥ 32 字符
 - `POSTGRES_PASSWORD` / `REDIS_PASSWORD` 必须设置且不得使用开发默认值
-- `DATA_SOURCE_TYPE=tdengine` 时，`TDENGINE_PASSWORD` 必须与部署的 TDengine 实例一致
+- `TDENGINE_PASSWORD` 必须与部署的 TDengine 实例一致（计算类历史数据查询一律本地 TDengine，恒校验）
 - `AAS_SECURITY_MODE` 不得为 `None`（必须 Sign 或 SignAndEncrypt）
 
 ## 测试
