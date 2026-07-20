@@ -1,16 +1,18 @@
 <script lang="ts" setup>
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+import type { Dayjs } from 'dayjs';
 
 /**
  * 回路性能列表页
  *
  * 对齐后端 GET /api/v1/performance/loops/snapshots
  * - 顶部工具栏：标题 + 刷新
- * - 筛选区：工厂模型节点 + 控制类型 + 评估状态
- * - 表格：回路编号 / 名称 / 类型 / 控制类型 / 控制方式 / 评估等级 / 综合评分 /
+ * - 筛选区：工厂模型节点 + 回路编号 + 控制类型 + 评估状态 + 可信度 + 时间范围
+ * - 表格：回路编号 / 名称 / 类型 / 控制类型 / 控制方式 / 评估等级 / 综合评分（服务端排序）/
  *   准确率 / 快速率 / 平稳率 / 有效自控率 / 可信度 / 时间窗口 / 评估时间 /
- *   评估状态 / 操作（详情、历史、诊断）
- * - 详情抽屉：回路基本信息 + 8 大 KPI + 4 大诊断指标 + 可信度 + 时间窗 + 评估时间
+ *   评估状态 / 操作（详情、历史、诊断）；行点击打开详情抽屉
+ * - 详情抽屉：回路基本信息 + 8 大 KPI + 5 项诊断/扩展指标（3+1+8 共 12 指标齐全）+
+ *   可信度 + 时间窗 + 评估时间 + 历史快照子表（最近 10 条）
  * - 历史 Modal：时间维度切换（8/12/24/72/168h） + ECharts 趋势图
  * - 诊断 Modal（90% 宽）：4 个 Tab（频谱分析 / 时域分析 / 诊断概览 / 评估历史）
  */
@@ -52,6 +54,7 @@ import {
   message,
   Modal,
   RadioGroup,
+  RangePicker,
   Row,
   Select,
   Spin,
@@ -64,15 +67,9 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisVisualizationApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
-import {
-  getGradingThresholdsApi,
-  getLoopSnapshotsApi,
-} from '#/api/metric';
+import { getGradingThresholdsApi, getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
 import IaeCard from '#/components/diagnosis-visualization/iae-card.vue';
@@ -186,6 +183,16 @@ const statusOptions = [
   { label: '部分', value: 'PARTIAL' },
 ];
 
+/** 可信度筛选选项 */
+const confidenceOptions = [
+  { label: '全部', value: undefined },
+  { label: 'A 优秀', value: 'A' },
+  { label: 'B 良好', value: 'B' },
+  { label: 'C 一般', value: 'C' },
+  { label: 'D 较差', value: 'D' },
+  { label: 'E 不足', value: 'E' },
+];
+
 /** 历史趋势时间窗选项（小时） */
 const historyWindowOptions = [
   { label: '8小时', value: 8 },
@@ -220,9 +227,15 @@ const query = reactive({
   plantNodeId: undefined as string | undefined,
   controlType: undefined as string | undefined,
   status: undefined as KpiStatus | undefined,
+  confidenceLevel: undefined as ConfidenceLevel | undefined,
   loopTagName: '' as string,
+  /** 时间范围（本地时间，提交时转 UTC ISO） */
+  timeRange: undefined as [Dayjs, Dayjs] | undefined,
   page: 1,
   pageSize: 20,
+  /** 服务端排序（仅综合评分列；undefined = 默认 tsStart DESC） */
+  sortBy: undefined as 'score' | undefined,
+  sortOrder: 'desc' as 'asc' | 'desc',
 });
 
 /** 回路元数据 Map（loopId → LoopListItem） */
@@ -257,7 +270,12 @@ function getGrade(score: null | number | undefined): null | number {
 
 // ===== 表格列定义 =====
 
-const columns: TableColumnsType = [
+/**
+ * 列定义（computed：综合评分列的 sortOrder 受控于 query 状态）。
+ * 注意：ClpmDataCanvas 默认 skeleton loading 会卸载 Table，
+ * 非受控排序态会在每次加载后丢失，因此这里显式受控。
+ */
+const columns = computed<TableColumnsType>(() => [
   {
     title: '回路编号',
     key: 'loopTagName',
@@ -299,6 +317,10 @@ const columns: TableColumnsType = [
     dataIndex: 'score',
     width: 90,
     sorter: true,
+    sortOrder: (() => {
+      if (query.sortBy !== 'score') return null;
+      return query.sortOrder === 'asc' ? 'ascend' : 'descend';
+    })(),
   },
   {
     title: '准确率',
@@ -353,7 +375,7 @@ const columns: TableColumnsType = [
     width: 200,
     fixed: 'right' as const,
   },
-];
+]);
 
 // ===== 统计卡片状态 =====
 
@@ -361,10 +383,16 @@ const columns: TableColumnsType = [
 const allSnapshots = ref<KpiSnapshotItem[]>([]);
 
 /** 评估等级统计（1~5 → 数量） */
-const gradeStats = ref<Record<number, number>>({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
+const gradeStats = ref<Record<number, number>>({
+  1: 0,
+  2: 0,
+  3: 0,
+  4: 0,
+  5: 0,
+});
 
 /** 当前选中的等级筛选（null = 全部） */
-const selectedGrade = ref<number | null>(null);
+const selectedGrade = ref<null | number>(null);
 
 /** 按等级筛选后的快照（用于计算聚合指标） */
 const filteredSnapshots = computed(() => {
@@ -444,33 +472,73 @@ function updateGradeChart() {
   });
 }
 
+/** 合并快照与回路元数据 */
+function mergeLoopMeta(snap: KpiSnapshotItem): LoopPerformanceRow {
+  const meta = snap.loopId ? loopMap.value.get(snap.loopId) : undefined;
+  return {
+    ...snap,
+    loopMeta: meta,
+    description: meta?.description,
+    loopType: meta?.loopType,
+    controlType: meta?.controlType,
+    controlMode: meta?.controlMode,
+  };
+}
+
+/**
+ * 组装快照查询参数（loadList / loadStats 共用）。
+ * 返回 null 表示控制类型筛选无匹配回路（结果必为空，无需请求）。
+ */
+function buildSnapshotParams(): null | Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
+  if (query.status) params.status = query.status;
+  if (query.confidenceLevel) params.confidenceLevel = query.confidenceLevel;
+  if (query.loopTagName) params.loopTagName = query.loopTagName;
+  if (query.timeRange?.[0]) params.startTime = query.timeRange[0].toISOString();
+  if (query.timeRange?.[1]) params.endTime = query.timeRange[1].toISOString();
+  if (query.sortBy) {
+    params.sortBy = query.sortBy;
+    params.sortOrder = query.sortOrder;
+  }
+  // 按控制类型筛选：先在 loopMap 中找到匹配的 loopId，再传给快照接口
+  if (query.controlType) {
+    const matchedIds: string[] = [];
+    for (const [id, loop] of loopMap.value.entries()) {
+      if (loop.controlType === query.controlType) matchedIds.push(id);
+    }
+    if (matchedIds.length === 0) return null;
+    params.loopId = matchedIds.join(',');
+  }
+  return params;
+}
+
+/** 循环分页拉取符合条件的全部快照（后端 pageSize 上限 100） */
+async function fetchAllSnapshots(
+  baseParams: Record<string, unknown>,
+): Promise<KpiSnapshotItem[]> {
+  const allItems: KpiSnapshotItem[] = [];
+  let page = 1;
+  let totalCount: number;
+  do {
+    const result = await getLoopSnapshotsApi({
+      ...baseParams,
+      page,
+      pageSize: 100,
+    } as any);
+    allItems.push(...(result.items || []));
+    totalCount = result.total ?? 0;
+    page += 1;
+  } while ((page - 1) * 100 < totalCount);
+  return allItems;
+}
+
 /** 加载全量统计数据 */
 async function loadStats() {
   try {
-    const baseParams: Record<string, unknown> = { page: 1, pageSize: 100 };
-    if (query.plantNodeId) baseParams.plantNodeId = query.plantNodeId;
-    if (query.status) baseParams.status = query.status;
-    if (query.loopTagName) baseParams.loopTagName = query.loopTagName;
-    if (query.controlType) {
-      const matchedIds: string[] = [];
-      for (const [id, loop] of loopMap.value.entries()) {
-        if (loop.controlType === query.controlType) matchedIds.push(id);
-      }
-      if (matchedIds.length > 0) baseParams.loopId = matchedIds.join(',');
-    }
-
-    // 循环分页拉取全量数据（后端 pageSize 上限 100）
-    const allItems: KpiSnapshotItem[] = [];
-    let page = 1;
-    let totalCount = 0;
-    do {
-      const result = await getLoopSnapshotsApi({ ...baseParams, page } as any);
-      allItems.push(...(result.items || []));
-      totalCount = result.total ?? 0;
-      page += 1;
-    } while ((page - 1) * 100 < totalCount);
-
-    allSnapshots.value = allItems;
+    const baseParams = buildSnapshotParams();
+    allSnapshots.value =
+      baseParams === null ? [] : await fetchAllSnapshots(baseParams);
 
     // 计算等级分布
     const gStats: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -486,7 +554,7 @@ async function loadStats() {
 }
 
 /** 点击等级卡片筛选 */
-function handleGradeCardClick(grade: number | null) {
+function handleGradeCardClick(grade: null | number) {
   selectedGrade.value = selectedGrade.value === grade ? null : grade;
   query.page = 1;
   loadList();
@@ -533,6 +601,20 @@ function formatShortTime(ts: null | string | undefined): string {
 function formatNumber(val: null | number | undefined, suffix = ''): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
+}
+
+/** 0~1 比率（如 validRate）格式化为百分比 */
+function formatRatio(val: null | number | undefined): string {
+  if (val === null || val === undefined) return '—';
+  return `${(val * 100).toFixed(2)}%`;
+}
+
+function getMetricValue(
+  record: object,
+  dataIndex: string,
+): null | number | undefined {
+  const value = (record as unknown as Record<string, unknown>)[dataIndex];
+  return typeof value === 'number' ? value : undefined;
 }
 
 /** 综合评分颜色 */
@@ -596,50 +678,35 @@ async function loadList() {
   loading.value = true;
   loadError.value = false;
   try {
-    const params: Record<string, unknown> = {
+    const params = buildSnapshotParams();
+    if (params === null) {
+      rows.value = [];
+      total.value = 0;
+      return;
+    }
+
+    // 等级筛选：等级由评分派生，服务端无法过滤，
+    // 需拉全量 → 客户端过滤 → 客户端分页（保证总数与统计卡片一致）
+    if (selectedGrade.value !== null) {
+      const allItems = await fetchAllSnapshots(params);
+      const filtered = allItems.filter(
+        (snap) => getGrade(snap.score) === selectedGrade.value,
+      );
+      total.value = filtered.length;
+      const startIdx = (query.page - 1) * query.pageSize;
+      rows.value = filtered
+        .slice(startIdx, startIdx + query.pageSize)
+        .map((snap) => mergeLoopMeta(snap));
+      return;
+    }
+
+    const result = await getLoopSnapshotsApi({
+      ...params,
       page: query.page,
       pageSize: query.pageSize,
-    };
-    if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
-    if (query.status) params.status = query.status;
-    if (query.loopTagName) params.loopTagName = query.loopTagName;
-
-    // 按控制类型筛选：先在 loopMap 中找到匹配的 loopId，再传给快照接口
-    if (query.controlType) {
-      const matchedIds: string[] = [];
-      for (const [id, loop] of loopMap.value.entries()) {
-        if (loop.controlType === query.controlType) {
-          matchedIds.push(id);
-        }
-      }
-      if (matchedIds.length === 0) {
-        rows.value = [];
-        total.value = 0;
-        return;
-      }
-      params.loopId = matchedIds.join(',');
-    }
-
-    const result = await getLoopSnapshotsApi(params as any);
-    let items = result.items || [];
-
-    // 等级筛选（客户端过滤，因为等级是从评分计算的）
-    if (selectedGrade.value !== null) {
-      items = items.filter((snap) => getGrade(snap.score) === selectedGrade.value);
-    }
-
-    rows.value = items.map((snap) => {
-      const meta = snap.loopId ? loopMap.value.get(snap.loopId) : undefined;
-      return {
-        ...snap,
-        loopMeta: meta,
-        description: meta?.description,
-        loopType: meta?.loopType,
-        controlType: meta?.controlType,
-        controlMode: meta?.controlMode,
-      };
-    });
-    total.value = selectedGrade.value !== null ? rows.value.length : result.total;
+    } as any);
+    rows.value = (result.items || []).map((snap) => mergeLoopMeta(snap));
+    total.value = result.total;
   } catch (error: any) {
     loadError.value = true;
     console.error('加载回路性能列表失败:', error);
@@ -657,9 +724,22 @@ function handleSearch() {
   loadStats();
 }
 
-function handleTableChange(pagination: TablePaginationConfig) {
+function handleTableChange(
+  pagination: TablePaginationConfig,
+  _filters: unknown,
+  sorter: any,
+) {
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize || 20;
+  // 综合评分列服务端排序（升/降/取消三态）
+  const order = Array.isArray(sorter) ? sorter[0]?.order : sorter?.order;
+  if (order === 'ascend' || order === 'descend') {
+    query.sortBy = 'score';
+    query.sortOrder = order === 'ascend' ? 'asc' : 'desc';
+  } else {
+    query.sortBy = undefined;
+    query.sortOrder = 'desc';
+  }
   loadList();
 }
 
@@ -668,14 +748,48 @@ function handleTableChange(pagination: TablePaginationConfig) {
 const drawerVisible = ref(false);
 const drawerRecord = ref<LoopPerformanceRow | null>(null);
 
+/** 抽屉内历史快照子表（最近 10 条） */
+const drawerHistory = ref<KpiSnapshotItem[]>([]);
+const drawerHistoryLoading = ref(false);
+
+async function loadDrawerHistory(loopId: string) {
+  drawerHistoryLoading.value = true;
+  try {
+    const result = await getLoopSnapshotsApi({
+      loopId,
+      latestOnly: false,
+      page: 1,
+      pageSize: 10,
+    });
+    drawerHistory.value = result.items || [];
+  } catch {
+    drawerHistory.value = [];
+  } finally {
+    drawerHistoryLoading.value = false;
+  }
+}
+
 function openDetail(record: LoopPerformanceRow) {
   drawerRecord.value = record;
   drawerVisible.value = true;
+  drawerHistory.value = [];
+  if (record.loopId) {
+    loadDrawerHistory(record.loopId);
+  }
 }
 
 function closeDetail() {
   drawerVisible.value = false;
   drawerRecord.value = null;
+  drawerHistory.value = [];
+}
+
+/** 表格行点击 → 打开详情抽屉（对齐低效排行页行级交互） */
+function rowClick(record: LoopPerformanceRow) {
+  return {
+    onClick: () => openDetail(record),
+    style: { cursor: 'pointer' },
+  };
 }
 
 // ===== 历史 Modal =====
@@ -776,7 +890,11 @@ function renderHistoryTrend() {
       min: 0,
       max: 100,
       axisLabel: { color: textColor, fontSize: 11 },
-      splitLine: { lineStyle: { color: isDark.value ? 'rgba(255,255,255,0.08)' : '#E5E5E5' } },
+      splitLine: {
+        lineStyle: {
+          color: isDark.value ? 'rgba(255,255,255,0.08)' : '#E5E5E5',
+        },
+      },
     },
     series: [
       {
@@ -949,7 +1067,10 @@ const diagHistoryColumns: TableColumnsType = [
 ];
 
 function handleDiagHistoryTabChange() {
-  if (diagActiveTab.value === 'history' && diagHistorySnapshots.value.length === 0) {
+  if (
+    diagActiveTab.value === 'history' &&
+    diagHistorySnapshots.value.length === 0
+  ) {
     loadDiagHistory();
   }
 }
@@ -1011,7 +1132,10 @@ onMounted(async () => {
         allow-clear
         style="width: 180px"
         @press-enter="handleSearch"
-        @change="($event) => !($event.target as HTMLInputElement).value && handleSearch()"
+        @change="
+          ($event) =>
+            !($event.target as HTMLInputElement).value && handleSearch()
+        "
       />
       <Select
         v-model:value="query.controlType"
@@ -1029,6 +1153,22 @@ onMounted(async () => {
         style="width: 140px"
         @change="handleSearch"
       />
+      <Select
+        v-model:value="query.confidenceLevel"
+        :options="confidenceOptions"
+        placeholder="可信度"
+        allow-clear
+        style="width: 130px"
+        @change="handleSearch"
+      />
+      <RangePicker
+        v-model:value="query.timeRange"
+        show-time
+        format="MM-DD HH:mm"
+        :placeholder="['开始时间', '结束时间']"
+        style="width: 300px"
+        @change="handleSearch"
+      />
       <Button type="primary" @click="handleSearch">查询</Button>
     </div>
 
@@ -1038,34 +1178,57 @@ onMounted(async () => {
         <div class="flex items-center justify-between">
           <!-- 左：评估等级卡片组 -->
           <div class="flex items-center gap-1.5">
-            <span class="text-xs text-gray-400 mr-1 whitespace-nowrap">等级</span>
+            <span class="text-xs text-gray-400 mr-1 whitespace-nowrap"
+              >等级</span
+            >
             <div
               class="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               :style="{
-                backgroundColor: selectedGrade === null ? '#4B556315' : '#4B556308',
+                backgroundColor:
+                  selectedGrade === null ? '#4B556315' : '#4B556308',
                 borderLeft: '3px solid #4B5563',
-                borderBottom: selectedGrade === null ? '2px solid #4B5563' : 'none',
+                borderBottom:
+                  selectedGrade === null ? '2px solid #4B5563' : 'none',
               }"
               @click="handleGradeCardClick(null)"
             >
-              <span class="w-2 h-2 rounded-full" style="background-color: #4B5563"></span>
+              <span
+                class="w-2 h-2 rounded-full"
+                style="background-color: #4b5563"
+              ></span>
               <span class="text-sm text-gray-600">全部</span>
-              <span class="text-sm" style="color: #4B5563">{{ statsTotal }}</span>
+              <span class="text-sm" style="color: #4b5563">{{
+                statsTotal
+              }}</span>
             </div>
             <div
               v-for="grade in [1, 2, 3, 4, 5]"
               :key="grade"
               class="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               :style="{
-                backgroundColor: selectedGrade === grade ? `${GRADE_CARD_COLORS[grade]}30` : `${GRADE_CARD_COLORS[grade]}15`,
+                backgroundColor:
+                  selectedGrade === grade
+                    ? `${GRADE_CARD_COLORS[grade]}30`
+                    : `${GRADE_CARD_COLORS[grade]}15`,
                 borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
-                borderBottom: selectedGrade === grade ? `2px solid ${GRADE_CARD_COLORS[grade]}` : 'none',
+                borderBottom:
+                  selectedGrade === grade
+                    ? `2px solid ${GRADE_CARD_COLORS[grade]}`
+                    : 'none',
               }"
               @click="handleGradeCardClick(grade)"
             >
-              <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"></span>
-              <span class="text-sm text-gray-600">{{ GRADE_LABEL_MAP[grade] }}</span>
-              <span class="text-sm" :style="{ color: GRADE_CARD_COLORS[grade] }">
+              <span
+                class="w-2 h-2 rounded-full"
+                :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"
+              ></span>
+              <span class="text-sm text-gray-600">{{
+                GRADE_LABEL_MAP[grade]
+              }}</span>
+              <span
+                class="text-sm"
+                :style="{ color: GRADE_CARD_COLORS[grade] }"
+              >
                 {{ gradeStats[grade] || 0 }}
               </span>
             </div>
@@ -1075,27 +1238,51 @@ onMounted(async () => {
           <div class="flex items-center gap-2">
             <div
               class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
-              :style="{ backgroundColor: '#3B82F615', borderLeft: '3px solid #3B82F6' }"
+              :style="{
+                backgroundColor: '#3B82F615',
+                borderLeft: '3px solid #3B82F6',
+              }"
             >
-              <span class="w-2 h-2 rounded-full" style="background-color: #3B82F6"></span>
+              <span
+                class="w-2 h-2 rounded-full"
+                style="background-color: #3b82f6"
+              ></span>
               <span class="text-sm text-gray-600">平均评分</span>
-              <span class="text-sm" style="color: #3B82F6">{{ avgScore.toFixed(1) }}</span>
+              <span class="text-sm" style="color: #3b82f6">{{
+                avgScore.toFixed(1)
+              }}</span>
             </div>
             <div
               class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
-              :style="{ backgroundColor: '#10B98115', borderLeft: '3px solid #10B981' }"
+              :style="{
+                backgroundColor: '#10B98115',
+                borderLeft: '3px solid #10B981',
+              }"
             >
-              <span class="w-2 h-2 rounded-full" style="background-color: #10B981"></span>
+              <span
+                class="w-2 h-2 rounded-full"
+                style="background-color: #10b981"
+              ></span>
               <span class="text-sm text-gray-600">优良率</span>
-              <span class="text-sm" style="color: #10B981">{{ excellentRate }}%</span>
+              <span class="text-sm" style="color: #10b981"
+                >{{ excellentRate }}%</span
+              >
             </div>
             <div
               class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
-              :style="{ backgroundColor: '#8b5cf615', borderLeft: '3px solid #8b5cf6' }"
+              :style="{
+                backgroundColor: '#8b5cf615',
+                borderLeft: '3px solid #8b5cf6',
+              }"
             >
-              <span class="w-2 h-2 rounded-full" style="background-color: #8b5cf6"></span>
+              <span
+                class="w-2 h-2 rounded-full"
+                style="background-color: #8b5cf6"
+              ></span>
               <span class="text-sm text-gray-600">合格率</span>
-              <span class="text-sm" style="color: #8b5cf6">{{ passRate }}%</span>
+              <span class="text-sm" style="color: #8b5cf6"
+                >{{ passRate }}%</span
+              >
             </div>
             <EchartsUI ref="gradeChartRef" style="width: 56px; height: 56px" />
           </div>
@@ -1114,6 +1301,7 @@ onMounted(async () => {
         :columns="columns"
         :data-source="rows"
         :loading="loading"
+        :custom-row="rowClick"
         :pagination="{
           current: query.page,
           pageSize: query.pageSize,
@@ -1122,7 +1310,9 @@ onMounted(async () => {
           pageSizeOptions: ['20', '50', '100'],
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :row-key="(record: LoopPerformanceRow) => `${record.loopId}-${record.tsStart}`"
+        :row-key="
+          (record: LoopPerformanceRow) => `${record.loopId}-${record.tsStart}`
+        "
         :scroll="{ x: 1850 }"
         size="small"
         @change="handleTableChange"
@@ -1132,14 +1322,16 @@ onMounted(async () => {
             <Tag
               v-if="(record as LoopPerformanceRow).loopType"
               :color="
-                LOOP_TYPE_MAP[(record as LoopPerformanceRow).loopType ?? 'OTHER']
-                  ?.color ?? 'default'
+                LOOP_TYPE_MAP[
+                  (record as LoopPerformanceRow).loopType ?? 'OTHER'
+                ]?.color ?? 'default'
               "
               class="m-0"
             >
               {{
-                LOOP_TYPE_MAP[(record as LoopPerformanceRow).loopType ?? 'OTHER']
-                  ?.label ?? '其他'
+                LOOP_TYPE_MAP[
+                  (record as LoopPerformanceRow).loopType ?? 'OTHER'
+                ]?.label ?? '其他'
               }}
             </Tag>
             <span v-else class="text-gray-400">—</span>
@@ -1156,7 +1348,9 @@ onMounted(async () => {
           <template v-else-if="column.key === 'controlMode'">
             <Tag
               v-if="(record as LoopPerformanceRow).controlMode"
-              :color="controlModeColor((record as LoopPerformanceRow).controlMode)"
+              :color="
+                controlModeColor((record as LoopPerformanceRow).controlMode)
+              "
               class="m-0"
             >
               {{ (record as LoopPerformanceRow).controlMode }}
@@ -1180,27 +1374,32 @@ onMounted(async () => {
           <template v-else-if="column.key === 'score'">
             <span
               class="font-semibold"
-              :style="{ color: scoreColor((record as LoopPerformanceRow).score) }"
+              :style="{
+                color: scoreColor((record as LoopPerformanceRow).score),
+              }"
             >
               {{ formatNumber((record as LoopPerformanceRow).score) }}
             </span>
           </template>
           <template
             v-else-if="
-              ([
-                'accuracyRate',
-                'fastRate',
-                'steadyRate',
-                'effectiveAutoRate',
-              ] as string[]).includes(column.key as string)
+              (
+                [
+                  'accuracyRate',
+                  'fastRate',
+                  'steadyRate',
+                  'effectiveAutoRate',
+                ] as string[]
+              ).includes(column.key as string)
             "
           >
             <span class="font-mono text-xs">
               {{
                 formatNumber(
-                  (record as Record<string, unknown>)[
-                    column.dataIndex as string
-                  ] as number | null | undefined,
+                  getMetricValue(
+                    record as LoopPerformanceRow,
+                    column.dataIndex as string,
+                  ),
                   '%',
                 )
               }}
@@ -1210,10 +1409,14 @@ onMounted(async () => {
             <Badge
               v-if="(record as LoopPerformanceRow).confidenceLevel"
               :color="
-                CONFIDENCE_COLOR_MAP[(record as LoopPerformanceRow).confidenceLevel!]
+                CONFIDENCE_COLOR_MAP[
+                  (record as LoopPerformanceRow).confidenceLevel!
+                ]
               "
               :text="
-                CONFIDENCE_LABEL_MAP[(record as LoopPerformanceRow).confidenceLevel!]
+                CONFIDENCE_LABEL_MAP[
+                  (record as LoopPerformanceRow).confidenceLevel!
+                ]
               "
             />
             <span v-else class="text-gray-400">—</span>
@@ -1236,7 +1439,8 @@ onMounted(async () => {
           <template v-else-if="column.key === 'status'">
             <Tag
               :color="
-                STATUS_COLOR_MAP[(record as LoopPerformanceRow).status] || 'default'
+                STATUS_COLOR_MAP[(record as LoopPerformanceRow).status] ||
+                'default'
               "
               class="m-0"
             >
@@ -1251,7 +1455,7 @@ onMounted(async () => {
               <Button
                 type="link"
                 size="small"
-                @click="openDetail(record as LoopPerformanceRow)"
+                @click.stop="openDetail(record as LoopPerformanceRow)"
               >
                 <template #icon>
                   <IconifyIcon icon="ant-design:info-circle-outlined" />
@@ -1261,7 +1465,7 @@ onMounted(async () => {
               <Button
                 type="link"
                 size="small"
-                @click="openHistory(record as LoopPerformanceRow)"
+                @click.stop="openHistory(record as LoopPerformanceRow)"
               >
                 <template #icon>
                   <IconifyIcon icon="ant-design:history-outlined" />
@@ -1271,7 +1475,7 @@ onMounted(async () => {
               <Button
                 type="link"
                 size="small"
-                @click="openDiagnosis(record as LoopPerformanceRow)"
+                @click.stop="openDiagnosis(record as LoopPerformanceRow)"
               >
                 <template #icon>
                   <IconifyIcon icon="ant-design:stethoscope-outlined" />
@@ -1309,9 +1513,7 @@ onMounted(async () => {
             {{ drawerRecord.description || '—' }}
           </DescriptionsItem>
           <DescriptionsItem label="回路类型">
-            {{
-              LOOP_TYPE_MAP[drawerRecord.loopType ?? 'OTHER']?.label ?? '—'
-            }}
+            {{ LOOP_TYPE_MAP[drawerRecord.loopType ?? 'OTHER']?.label ?? '—' }}
           </DescriptionsItem>
           <DescriptionsItem label="控制类型">
             {{
@@ -1344,7 +1546,7 @@ onMounted(async () => {
               drawerRecord.loopMeta?.pvRange
                 ? `${drawerRecord.loopMeta.pvRange.min ?? '—'} ~ ${
                     drawerRecord.loopMeta.pvRange.max ?? '—'
-                  }${drawerRecord.loopMeta.pvUnit ? ` ${ drawerRecord.loopMeta.pvUnit}` : ''}`
+                  }${drawerRecord.loopMeta.pvUnit ? ` ${drawerRecord.loopMeta.pvUnit}` : ''}`
                 : '—'
             }}
           </DescriptionsItem>
@@ -1353,7 +1555,7 @@ onMounted(async () => {
               drawerRecord.loopMeta?.opRange
                 ? `${drawerRecord.loopMeta.opRange.min ?? '—'} ~ ${
                     drawerRecord.loopMeta.opRange.max ?? '—'
-                  }${drawerRecord.loopMeta.opUnit ? ` ${ drawerRecord.loopMeta.opUnit}` : ''}`
+                  }${drawerRecord.loopMeta.opUnit ? ` ${drawerRecord.loopMeta.opUnit}` : ''}`
                 : '—'
             }}
           </DescriptionsItem>
@@ -1361,7 +1563,12 @@ onMounted(async () => {
 
         <!-- 8 大性能评估 KPI -->
         <div class="mb-2 mt-4 text-sm font-medium">8 大性能评估 KPI 指标</div>
-        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+        <Descriptions
+          :column="2"
+          size="small"
+          bordered
+          :label-style="{ width: '120px' }"
+        >
           <DescriptionsItem label="综合评分">
             <span
               class="font-semibold"
@@ -1393,17 +1600,25 @@ onMounted(async () => {
           </DescriptionsItem>
         </Descriptions>
 
-        <!-- 4 大诊断指标 -->
-        <div class="mb-2 mt-4 text-sm font-medium">4 大诊断指标</div>
-        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+        <!-- 诊断与扩展指标（不参与评分） -->
+        <div class="mb-2 mt-4 text-sm font-medium">诊断与扩展指标</div>
+        <Descriptions
+          :column="2"
+          size="small"
+          bordered
+          :label-style="{ width: '120px' }"
+        >
           <DescriptionsItem label="饱和率">
             {{ formatNumber(drawerRecord.saturationRate, '%') }}
           </DescriptionsItem>
-          <DescriptionsItem label="振荡率">
-            {{ formatNumber(drawerRecord.oscillationRate, '%') }}
+          <DescriptionsItem label="输出跳变率">
+            {{ formatNumber(drawerRecord.outputTravelIndex) }}
           </DescriptionsItem>
           <DescriptionsItem label="阀门粘滞指数">
             {{ formatNumber(drawerRecord.stictionIndex) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="理想稳定时间">
+            {{ formatNumber(drawerRecord.idealSettlingTime, 's') }}
           </DescriptionsItem>
           <DescriptionsItem label="稳定时间">
             {{ formatNumber(drawerRecord.settlingTime, 's') }}
@@ -1412,7 +1627,12 @@ onMounted(async () => {
 
         <!-- 可信度 + 时间窗口 + 评估时间 -->
         <div class="mb-2 mt-4 text-sm font-medium">评估信息</div>
-        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+        <Descriptions
+          :column="2"
+          size="small"
+          bordered
+          :label-style="{ width: '120px' }"
+        >
           <DescriptionsItem label="可信度">
             <Badge
               v-if="drawerRecord.confidenceLevel"
@@ -1428,9 +1648,7 @@ onMounted(async () => {
           </DescriptionsItem>
           <DescriptionsItem label="时间窗口">
             <span class="font-mono text-xs">
-              {{
-                formatTsRange(drawerRecord.tsStart, drawerRecord.tsEnd)
-              }}
+              {{ formatTsRange(drawerRecord.tsStart, drawerRecord.tsEnd) }}
             </span>
           </DescriptionsItem>
           <DescriptionsItem label="评估时间">
@@ -1439,12 +1657,101 @@ onMounted(async () => {
             </span>
           </DescriptionsItem>
           <DescriptionsItem label="有效数据率">
-            {{ formatNumber(drawerRecord.validRate) }}
+            {{ formatRatio(drawerRecord.validRate) }}
           </DescriptionsItem>
           <DescriptionsItem label="算法版本">
             {{ drawerRecord.algorithmVersion || '—' }}
           </DescriptionsItem>
         </Descriptions>
+
+        <!-- 历史快照子表（该回路最近 10 条评估记录） -->
+        <div class="mb-2 mt-4 text-sm font-medium">历史快照（最近 10 条）</div>
+        <Table
+          :columns="diagHistoryColumns"
+          :data-source="drawerHistory"
+          :loading="drawerHistoryLoading"
+          :pagination="false"
+          row-key="tsStart"
+          size="small"
+          :scroll="{ x: 680 }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'tsRange'">
+              <span class="font-mono text-xs">
+                {{
+                  formatTsRange(
+                    (record as KpiSnapshotItem).tsStart,
+                    (record as KpiSnapshotItem).tsEnd,
+                  )
+                }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'score'">
+              <span
+                class="font-semibold"
+                :style="{
+                  color: scoreColor((record as KpiSnapshotItem).score),
+                }"
+              >
+                {{ formatNumber((record as KpiSnapshotItem).score) }}
+              </span>
+            </template>
+            <template
+              v-else-if="
+                (
+                  [
+                    'accuracyRate',
+                    'fastRate',
+                    'steadyRate',
+                    'effectiveAutoRate',
+                  ] as string[]
+                ).includes(column.key as string)
+              "
+            >
+              <span class="font-mono text-xs">
+                {{
+                  formatNumber(
+                    getMetricValue(
+                      record as KpiSnapshotItem,
+                      column.dataIndex as string,
+                    ),
+                    '%',
+                  )
+                }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'confidenceLevel'">
+              <Badge
+                v-if="(record as KpiSnapshotItem).confidenceLevel"
+                :color="
+                  CONFIDENCE_COLOR_MAP[
+                    (record as KpiSnapshotItem).confidenceLevel!
+                  ]
+                "
+                :text="
+                  CONFIDENCE_LABEL_MAP[
+                    (record as KpiSnapshotItem).confidenceLevel!
+                  ]
+                "
+              />
+              <span v-else class="text-gray-400">—</span>
+            </template>
+            <template v-else-if="column.key === 'status'">
+              <Tag
+                :color="
+                  STATUS_COLOR_MAP[(record as KpiSnapshotItem).status] ||
+                  'default'
+                "
+                class="m-0"
+              >
+                {{
+                  STATUS_LABEL_MAP[(record as KpiSnapshotItem).status] ||
+                  (record as KpiSnapshotItem).status
+                }}
+              </Tag>
+            </template>
+          </template>
+        </Table>
       </template>
     </Drawer>
 
@@ -1523,13 +1830,17 @@ onMounted(async () => {
                       :key="label.label"
                       :color="
                         (label.label &&
-                          DIAGNOSIS_LABEL_COLOR_MAP[label.label as keyof typeof DIAGNOSIS_LABEL_COLOR_MAP]) ||
+                          DIAGNOSIS_LABEL_COLOR_MAP[
+                            label.label as keyof typeof DIAGNOSIS_LABEL_COLOR_MAP
+                          ]) ||
                         'default'
                       "
                     >
                       {{
                         label.label &&
-                        DIAGNOSIS_LABEL_NAME_MAP[label.label as keyof typeof DIAGNOSIS_LABEL_NAME_MAP]
+                        DIAGNOSIS_LABEL_NAME_MAP[
+                          label.label as keyof typeof DIAGNOSIS_LABEL_NAME_MAP
+                        ]
                       }}
                       ({{ (label.confidence * 100).toFixed(0) }}%)
                     </Tag>
@@ -1540,7 +1851,10 @@ onMounted(async () => {
           </Card>
 
           <!-- 4 个 Tab 页 -->
-          <Tabs v-model:active-key="diagActiveTab" @change="handleDiagHistoryTabChange">
+          <Tabs
+            v-model:active-key="diagActiveTab"
+            @change="handleDiagHistoryTabChange"
+          >
             <!-- Tab 1: 诊断概览 -->
             <Tabs.TabPane key="overview" tab="诊断概览">
               <Row :gutter="[12, 12]">
@@ -1674,20 +1988,23 @@ onMounted(async () => {
                   </template>
                   <template
                     v-else-if="
-                      ([
-                        'accuracyRate',
-                        'fastRate',
-                        'steadyRate',
-                        'effectiveAutoRate',
-                      ] as string[]).includes(column.key as string)
+                      (
+                        [
+                          'accuracyRate',
+                          'fastRate',
+                          'steadyRate',
+                          'effectiveAutoRate',
+                        ] as string[]
+                      ).includes(column.key as string)
                     "
                   >
                     <span class="font-mono text-xs">
                       {{
                         formatNumber(
-                          (record as Record<string, unknown>)[
-                            column.dataIndex as string
-                          ] as number | null | undefined,
+                          getMetricValue(
+                            record as KpiSnapshotItem,
+                            column.dataIndex as string,
+                          ),
                           '%',
                         )
                       }}

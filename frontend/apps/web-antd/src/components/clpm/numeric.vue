@@ -70,7 +70,8 @@ const displayValue = computed(() => {
     if (Number.isNaN(v) || !Number.isFinite(v)) return props.emptyText;
 
     let formatted: string;
-    formatted = props.precision > 0 ? v.toFixed(props.precision) : String(Math.round(v));
+    formatted =
+      props.precision > 0 ? v.toFixed(props.precision) : String(Math.round(v));
 
     if (props.groupSeparator) {
       const [intPart = '', decPart] = formatted.split('.');
@@ -116,14 +117,13 @@ const sizeClass = computed(() => {
 });
 
 /** 是否为空占位（使用中性色） */
-const emptyClass = computed(() =>
-  isEmpty.value ? 'clpm-numeric--empty' : '',
-);
+const emptyClass = computed(() => (isEmpty.value ? 'clpm-numeric--empty' : ''));
 </script>
 
 <template>
   <span
-    class="clpm-numeric" :class="[
+    class="clpm-numeric"
+    :class="[
       mono ? 'clpm-numeric--mono' : '',
       sizeClass,
       trendClass,

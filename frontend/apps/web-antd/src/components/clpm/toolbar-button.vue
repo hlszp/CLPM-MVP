@@ -120,7 +120,8 @@ const activeClass = 'clpm-toolbar-btn--active';
 <template>
   <Tooltip v-if="needTooltip" :title="tooltipText">
     <Button
-      class="clpm-toolbar-btn" :class="[
+      class="clpm-toolbar-btn"
+      :class="[
         resolvedVariant === 'export' ? exportClass : '',
         isActive ? activeClass : '',
       ]"
@@ -143,7 +144,8 @@ const activeClass = 'clpm-toolbar-btn--active';
   </Tooltip>
   <Button
     v-else
-    class="clpm-toolbar-btn" :class="[
+    class="clpm-toolbar-btn"
+    :class="[
       resolvedVariant === 'export' ? exportClass : '',
       isActive ? activeClass : '',
     ]"

@@ -23,12 +23,15 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-from sqlalchemy import delete, select
+from celery.schedules import crontab
+from sqlalchemy import delete, or_, select
 
-from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTask
+from app.contracts.data_types import QualityStatus, RawTimeSeries
+from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag, DiagnosisTask
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
+from app.services.preprocessing.quality_code import map_quality_code
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,37 @@ CONCURRENCY = 5
 
 # 数据最少点数
 MIN_DATA_POINTS = 32
+
+# 诊断标签严重等级映射（A11：写入 diagnosis_tag.severity）
+_TAG_SEVERITY_MAP: dict[str, str] = {
+    "VALVE_STICTION": "ERROR",
+    "QUALITY_ABNORMAL": "ERROR",
+    "OSCILLATION": "WARN",
+    "OVERAGGRESSIVE": "WARN",
+    "OVERCONSERVATIVE": "WARN",
+    "OUTPUT_SATURATION": "WARN",
+    "EXTERNAL_DISTURBANCE": "INFO",
+    "MANUAL_REVIEW": "INFO",
+}
+
+# 诊断标签中文名（与 app.services.diagnosis.DIAG_LABEL_NAMES 保持一致）
+_TAG_LABEL_NAMES: dict[str, str] = {
+    "OSCILLATION": "振荡",
+    "VALVE_STICTION": "阀门粘滞",
+    "OVERAGGRESSIVE": "参数过激",
+    "OVERCONSERVATIVE": "参数过保守",
+    "EXTERNAL_DISTURBANCE": "外扰频繁",
+    "QUALITY_ABNORMAL": "PV 质量异常",
+    "OUTPUT_SATURATION": "输出饱和",
+    "MANUAL_REVIEW": "人工复核",
+}
+
+# evidence 未携带 algorithm 字段时的来源指标兜底（A11：写入 diagnosis_tag.source_metric）
+_TAG_SOURCE_METRIC_FALLBACK: dict[str, str] = {
+    "QUALITY_ABNORMAL": "PV_QUALITY_STATS",
+    "OUTPUT_SATURATION": "OP_SATURATION_STATS",
+    "MANUAL_REVIEW": "MANUAL_REVIEW",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +162,9 @@ def run_loop_diagnosis(
 
 _beat_entry = {
     "task": "app.tasks.diagnosis_engine.run_diagnosis_hourly",
-    "schedule": 3600.0,  # 1 小时
+    # 对齐 KPI 整点计算（crontab minute=0），在整点后第 10 分钟执行诊断，
+    # 避免裸 3600s 间隔与 KPI 计算相位错位导致漏诊
+    "schedule": crontab(minute=10),
 }
 
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
@@ -151,9 +187,6 @@ async def _do_run_diagnosis() -> dict:
     from app.core.db import AsyncSessionLocal
     from app.services.data_source.factory import get_provider
 
-    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
-    query_trend_fn = get_provider().query_trend_data
-
     now = datetime.now(UTC)
     ts_end = now.replace(minute=0, second=0, microsecond=0)
     ts_start = ts_end - timedelta(hours=1)
@@ -164,11 +197,17 @@ async def _do_run_diagnosis() -> dict:
     # 主 session 仅用于查询待诊断回路列表和诊断配置（只读，无并发）
     async with AsyncSessionLocal() as db:
         # 1. 查询最近一小时评分跌破阈值的回路
+        # 评分为 NULL（数据质量差 INCONCLUSIVE）的回路同样需要诊断，一并纳入
         snapshot_stmt = (
             select(KpiSnapshotHourly)
             .where(KpiSnapshotHourly.ts_start >= ts_start_naive)
             .where(KpiSnapshotHourly.ts_start <= ts_end_naive)
-            .where(KpiSnapshotHourly.score < SCORE_THRESHOLD)
+            .where(
+                or_(
+                    KpiSnapshotHourly.score < SCORE_THRESHOLD,
+                    KpiSnapshotHourly.score.is_(None),
+                )
+            )
             .where(KpiSnapshotHourly.status == "SUCCESS")
         )
         snap_result = await db.execute(snapshot_stmt)
@@ -189,9 +228,23 @@ async def _do_run_diagnosis() -> dict:
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
 
         # 3. 为每个回路创建 DiagnosisTask 记录（自动触发）
+        # 去重：同回路同时间窗已存在 PENDING/RUNNING 任务时跳过创建与诊断，
+        # 避免 Beat 重复运行（或手动补跑）重复建任务
+        existing_result = await db.execute(
+            select(DiagnosisTask.loop_id)
+            .where(DiagnosisTask.loop_id.in_(loop_ids))
+            .where(DiagnosisTask.time_range_start == ts_start_naive)
+            .where(DiagnosisTask.time_range_end == ts_end_naive)
+            .where(DiagnosisTask.status.in_(["PENDING", "RUNNING"]))
+        )
+        existing_loop_ids = {str(r) for r in existing_result.scalars().all()}
+
         # 显式生成 id 避免 flush 依赖（兼容 mock 测试环境）
         loop_task_ids: dict[str, str] = {}
         for lid in loop_ids:
+            if lid in existing_loop_ids:
+                logger.info("回路 %s 同时间窗已有未完成任务，跳过创建", lid)
+                continue
             task_id = str(uuid4())
             task = DiagnosisTask(
                 id=task_id,
@@ -213,6 +266,7 @@ async def _do_run_diagnosis() -> dict:
         async with sem:
             # 每协程独立 session，避免 AsyncSession 并发共享导致的不可预期错误
             async with AsyncSessionLocal() as worker_db:
+                query_wide_fn = get_provider().make_query_fn(worker_db)
                 # 进入 RUNNING 状态
                 await _update_task_status(worker_db, task_id, "RUNNING")
                 await worker_db.commit()
@@ -223,7 +277,7 @@ async def _do_run_diagnosis() -> dict:
                         diag_configs=diag_configs,
                         ts_start=ts_start,
                         ts_end=ts_end,
-                        query_trend_fn=query_trend_fn,
+                        query_wide_fn=query_wide_fn,
                         task_id=task_id,
                     )
                     await worker_db.commit()
@@ -282,6 +336,7 @@ async def _do_run_diagnosis() -> dict:
         "total": len(loop_ids),
         "diagnosed": diagnosed_count,
         "failed": failed_count,
+        "skipped": len(loop_ids) - len(loop_task_ids),
         "ts_start": ts_start.isoformat(),
         "ts_end": ts_end.isoformat(),
     }
@@ -307,10 +362,10 @@ async def _do_diagnose_single_loop(
     from app.core.db import AsyncSessionLocal
     from app.services.data_source.factory import get_provider
 
-    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
-    query_trend_fn = get_provider().query_trend_data
-
     async with AsyncSessionLocal() as db:
+        # 获取宽表查询函数（适配 tdengine/remote_api）
+        query_wide_fn = get_provider().make_query_fn(db)
+
         # 加载诊断配置
         config_result = await db.execute(
             select(DiagnosisConfig).where(DiagnosisConfig.is_enabled.is_(True))
@@ -345,7 +400,7 @@ async def _do_diagnose_single_loop(
                 diag_configs=diag_configs,
                 ts_start=ts_start_dt,
                 ts_end=ts_end_dt,
-                query_trend_fn=query_trend_fn,
+                query_wide_fn=query_wide_fn,
                 task_id=task_id,
             )
             await db.commit()
@@ -426,13 +481,71 @@ async def _update_task_status(
         task.completed_at = completed_at
 
 
+def _upsert_diagnosis_tag(
+    db,
+    active_tag_map: dict[str, Any],
+    loop_id: str,
+    result: dict[str, Any],
+    diagnosed_at: datetime,
+) -> None:
+    """同步诊断标签到 diagnosis_tag 表（A11，IDS §2.4.10）。
+
+    同 loop_id + tag_code 已有 ACTIVE 行：更新最近触发时间与触发快照
+    （trigger_condition/trigger_value）；否则插入新 ACTIVE 行。
+
+    Args:
+        db: 异步数据库会话
+        active_tag_map: 该回路现有 ACTIVE 标签映射（tag_code → DiagnosisTag），
+            插入新行后会同步更新该映射，避免同批次重复建行
+        loop_id: 回路 ID
+        result: D-S 融合后的单条诊断标签结果（label/confidence/evidence）
+        diagnosed_at: 本次诊断时间
+    """
+    label = result["label"]
+    evidence = result.get("evidence") or {}
+    confidence = float(result.get("confidence") or 0.0)
+    algorithm = evidence.get("algorithm")
+    source_metric = algorithm or _TAG_SOURCE_METRIC_FALLBACK.get(label, "DIAG_ENGINE")
+    trigger_condition = {
+        "algorithm": algorithm,
+        "confidence": round(confidence, 4),
+        "reasoning": evidence.get("reasoning"),
+    }
+    trigger_value = Decimal(str(round(confidence, 4)))
+    severity = _TAG_SEVERITY_MAP.get(label, "INFO")
+
+    existing = active_tag_map.get(label)
+    if existing is not None:
+        existing.triggered_at = diagnosed_at
+        existing.trigger_condition = trigger_condition
+        existing.trigger_value = trigger_value
+        existing.source_metric = source_metric
+        existing.severity = severity
+        return
+
+    tag = DiagnosisTag(
+        id=str(uuid4()),
+        loop_id=loop_id,
+        tag_code=label,
+        tag_name=_TAG_LABEL_NAMES.get(label),
+        severity=severity,
+        source_metric=source_metric,
+        trigger_condition=trigger_condition,
+        trigger_value=trigger_value,
+        triggered_at=diagnosed_at,
+        status="ACTIVE",
+    )
+    db.add(tag)
+    active_tag_map[label] = tag
+
+
 async def _diagnose_loop(
     db,
     loop_id: str,
     diag_configs: dict[str, DiagnosisConfig],
     ts_start: datetime,
     ts_end: datetime,
-    query_trend_fn,
+    query_wide_fn,
     task_id: str | None = None,
 ) -> dict | None:
     """对单回路执行诊断。
@@ -443,7 +556,7 @@ async def _diagnose_loop(
         diag_configs: 诊断配置字典
         ts_start: 时间窗起始
         ts_end: 时间窗结束
-        query_trend_fn: TDengine 查询函数
+        query_wide_fn: 宽表查询函数
         task_id: 关联诊断任务 ID（可选，用于关联 DiagnosisResult）
 
     Returns:
@@ -477,38 +590,71 @@ async def _diagnose_loop(
             tags_map[str(t.id)] = t
 
     pv_tag_name = _get_tag_name(mappings, tags_map, "PV")
-    sp_tag_name = _get_tag_name(mappings, tags_map, "SP")
-    op_tag_name = _get_tag_name(mappings, tags_map, "OP")
-    mode_tag_name = _get_tag_name(mappings, tags_map, "MODE")
 
     if not pv_tag_name:
         logger.warning("回路 %s 缺少 PV Tag", loop.tag_name)
         return None
 
-    # 从 TDengine 拉取数据
-    # TDengine 存储的时间带 Z 后缀（ISO 8601 UTC），查询时需保持一致
-    start_iso = ts_start.isoformat() + "Z"
-    end_iso = ts_end.isoformat() + "Z"
-
+    # 从数据源拉取数据（宽表查询，一次返回多列）
     try:
-        pv_data = await query_trend_fn(pv_tag_name, start_iso, end_iso)
-        sp_data = await query_trend_fn(sp_tag_name, start_iso, end_iso) if sp_tag_name else []
-        op_data = await query_trend_fn(op_tag_name, start_iso, end_iso) if op_tag_name else []
-        mode_data = await query_trend_fn(mode_tag_name, start_iso, end_iso) if mode_tag_name else []
+        raw_series = await query_wide_fn(
+            loop_id=loop_id,
+            tag_roles=["pv", "sp", "op", "mode"],
+            start=ts_start,
+            end=ts_end,
+            interval_s=1,
+        )
+        if not isinstance(raw_series, RawTimeSeries):
+            logger.warning("宽表查询返回的不是 RawTimeSeries 对象，跳过回路 %s", loop.tag_name)
+            return None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("TDengine 查询失败（回路 %s 跳过）: %s", loop.tag_name, exc)
+        logger.warning("宽表查询失败（回路 %s 跳过）: %s", loop.tag_name, exc)
         return None
 
     # 数据不足判定
-    if len(pv_data) < MIN_DATA_POINTS:
-        logger.info("回路 %s 数据点不足 (%d < %d)", loop.tag_name, len(pv_data), MIN_DATA_POINTS)
+    if len(raw_series.timestamps) < MIN_DATA_POINTS:
+        logger.info(
+            "回路 %s 数据点不足 (%d < %d)",
+            loop.tag_name,
+            len(raw_series.timestamps),
+            MIN_DATA_POINTS,
+        )
         return None
 
-    # 剔除 PV 质量码为 Bad 的数据点
-    pv_data_filtered = [d for d in pv_data if str(d.get("quality", "GOOD")).upper() != "BAD"]
+    # 构建对齐的数据并剔除 PV 质量码为 Bad 的点
+    pv_quality_codes = raw_series.quality_codes.get("pv_quality", [])
+    pv_quality_data: list[dict[str, str]] = []
+    aligned: list[dict[str, Any]] = []
+    for i, ts in enumerate(raw_series.timestamps):
+        status = (
+            map_quality_code(pv_quality_codes[i])
+            if i < len(pv_quality_codes)
+            else QualityStatus.GOOD
+        )
+        quality_label = "UNCERTAIN" if status == QualityStatus.UNKNOWN else status.value.upper()
+        pv_quality_data.append({"quality": quality_label})
+        if status == QualityStatus.BAD:
+            continue
 
-    # 按 ts 对齐
-    aligned = _align_timeseries(pv_data_filtered, sp_data, op_data, mode_data)
+        pv_list = raw_series.signals.get("pv")
+        pv_val = pv_list[i] if pv_list and i < len(pv_list) else None
+        if pv_val is None:
+            continue
+
+        sp_list = raw_series.signals.get("sp")
+        op_list = raw_series.signals.get("op")
+        mode_list = raw_series.signals.get("mode")
+
+        aligned.append(
+            {
+                "ts": ts,
+                "pv": pv_val,
+                "sp": sp_list[i] if sp_list and i < len(sp_list) else None,
+                "op": op_list[i] if op_list and i < len(op_list) else None,
+                "mode": mode_list[i] if mode_list and i < len(mode_list) else None,
+            }
+        )
+
     if len(aligned) < MIN_DATA_POINTS:
         logger.info("回路 %s 对齐后数据点不足", loop.tag_name)
         return None
@@ -527,38 +673,67 @@ async def _diagnose_loop(
     # 计算采样间隔（秒），用于 FFT 频率换算
     sample_interval = _compute_sample_interval(aligned)
 
-    # 1. FFT 频域分析（振荡检测）
-    osc_result = _detect_oscillation_fft(pv_values, sample_interval)
+    # 算法启停门控（FDS §5.4.1 指标启停）：diag_configs 仅含 is_enabled=True 的配置，
+    # 禁用或配置不存在的算法不执行，以空结果占位（不产出标签、不参与证据融合）
+    osc_enabled = "OSCILLATION" in diag_configs
+    stiction_enabled = "VALVE_STICTION" in diag_configs
+    quality_enabled = "QUALITY_ABNORMAL" in diag_configs
+    saturation_enabled = "OUTPUT_SATURATION" in diag_configs
+    overaggressive_enabled = "OVERAGGRESSIVE" in diag_configs
+    overconservative_enabled = "OVERCONSERVATIVE" in diag_configs
+    disturbance_enabled = "EXTERNAL_DISTURBANCE" in diag_configs
 
-    # 1b. IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法）
-    osc_iae_result = _detect_oscillation_iae(
-        pv_values,
-        sp_values,
-        sample_interval,
-        threshold=_get_threshold(diag_configs, "OSCILLATION", None, None),
-    )
+    # 1. FFT 频域分析（振荡检测）
+    if osc_enabled:
+        osc_result = _detect_oscillation_fft(pv_values, sample_interval)
+
+        # 1b. IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法）
+        osc_iae_result = _detect_oscillation_iae(
+            pv_values,
+            sp_values,
+            sample_interval,
+            threshold=_get_threshold(diag_configs, "OSCILLATION", None, None),
+        )
+    else:
+        osc_result = _empty_osc_result()
+        osc_iae_result = _empty_oscillation_iae_result()
 
     # 2. PV-OP 散点拟合（阀门粘滞检测）
-    stiction_result = _detect_valve_stiction(pv_values, op_values)
+    if stiction_enabled:
+        stiction_result = _detect_valve_stiction(pv_values, op_values)
+    else:
+        stiction_result = _empty_stiction_result()
 
     # 3. PV 质量码统计（P2-1：Q001-Q005 规则矩阵）
-    quality_result = _analyze_quality(
-        pv_data,
-        threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
-    )
+    if quality_enabled:
+        quality_result = _analyze_quality(
+            pv_quality_data,
+            threshold=_get_threshold(diag_configs, "QUALITY_ABNORMAL", None, None),
+        )
+    else:
+        quality_result = _empty_quality_result()
 
     # 4. OP 饱和率分析（P0-3：仅自控模式 + 绝对工程限位）
-    saturation_result = _analyze_saturation(
-        op_values,
-        mode_values if len(mode_values) > 0 else None,
-        threshold=_get_threshold(diag_configs, "OUTPUT_SATURATION", None, None),
-    )
+    if saturation_enabled:
+        saturation_result = _analyze_saturation(
+            op_values,
+            mode_values if len(mode_values) > 0 else None,
+            threshold=_get_threshold(diag_configs, "OUTPUT_SATURATION", None, None),
+        )
+    else:
+        saturation_result = _empty_saturation_result()
 
     # 5. Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测，设计依据：FDS §5.4.6）
-    choudhury_result = _detect_choudhury_nonlinearity(pv_values, op_values)
+    if stiction_enabled:
+        choudhury_result = _detect_choudhury_nonlinearity(pv_values, op_values)
+    else:
+        choudhury_result = _empty_choudhury_result()
 
     # 6. Kano 统计法粘滞检测（与 Choudhury 互为交叉验证）
-    kano_result = _detect_kano_stiction(pv_values, op_values)
+    if stiction_enabled:
+        kano_result = _detect_kano_stiction(pv_values, op_values)
+    else:
+        kano_result = _empty_kano_result()
 
     # 提取时间戳数组（供阶跃响应/响应迟缓/偏差突变算法使用）
     ts_values = np.array(
@@ -569,15 +744,24 @@ async def _diagnose_loop(
     ts_param = ts_values if len(ts_values) == len(pv_values) else None
 
     # 7. 完整阶跃响应分析（过冲/衰减比/稳态误差）
-    step_response_result = _analyze_step_response(pv_values, sp_values, op_values, ts_param)
+    if overaggressive_enabled:
+        step_response_result = _analyze_step_response(pv_values, sp_values, op_values, ts_param)
+    else:
+        step_response_result = _empty_step_response_result()
 
     # 8. 响应迟缓检测（一阶滞后拟合）
     # 控制类型从回路扩展属性获取（默认 PI）
-    control_type = getattr(loop, "control_type", None) or "PI"
-    slow_response_result = _detect_slow_response(pv_values, sp_values, control_type, ts_param)
+    if overconservative_enabled:
+        control_type = getattr(loop, "control_type", None) or "PI"
+        slow_response_result = _detect_slow_response(pv_values, sp_values, control_type, ts_param)
+    else:
+        slow_response_result = _empty_slow_response_result()
 
     # 9. 偏差突变检测（CUSUM）
-    bias_shift_result = _detect_bias_shift(pv_values, sp_values, ts_param)
+    if disturbance_enabled:
+        bias_shift_result = _detect_bias_shift(pv_values, sp_values, ts_param)
+    else:
+        bias_shift_result = _empty_bias_shift_result()
 
     # 收集所有算法结果（带置信度）
     algorithm_results: list[dict[str, Any]] = []
@@ -952,6 +1136,21 @@ async def _diagnose_loop(
             )
         )
 
+    # A11：查询该回路现有 ACTIVE 诊断标签，供落库时 upsert（更新而非重复建行）
+    active_tag_rows = (
+        (
+            await db.execute(
+                select(DiagnosisTag).where(
+                    DiagnosisTag.loop_id == loop_id,
+                    DiagnosisTag.status == "ACTIVE",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    active_tag_map: dict[str, Any] = {t.tag_code: t for t in active_tag_rows}
+
     # 写入诊断结果（每个标签一条记录）
     diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
     for result in algorithm_results:
@@ -977,6 +1176,8 @@ async def _diagnose_loop(
             task_id=task_id,
         )
         db.add(diag_record)
+        # A11：同步 upsert diagnosis_tag（D-S 融合后标签逐条处理）
+        _upsert_diagnosis_tag(db, active_tag_map, loop_id, result, diagnosed_at)
 
     return {
         "loopId": loop_id,
@@ -1014,6 +1215,40 @@ def _empty_stiction_result() -> dict[str, Any]:
         "confidence": 0.0,
         "stiction_index": 0.0,
         "fitting_score": 0.0,
+    }
+
+
+def _empty_oscillation_iae_result() -> dict[str, Any]:
+    """空 IAE 振荡检测结果（OSCILLATION 算法禁用时占位）。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "similarity": 0.0,
+        "zero_crossing_count": 0,
+        "mean_period": 0.0,
+    }
+
+
+def _empty_quality_result() -> dict[str, Any]:
+    """空质量码分析结果（QUALITY_ABNORMAL 算法禁用时占位）。"""
+    return {
+        "abnormal": False,
+        "confidence": 0.0,
+        "bad_rate": 0.0,
+        "total": 0,
+        "bad_count": 0,
+        "quality_pattern": "NORMAL",
+    }
+
+
+def _empty_saturation_result() -> dict[str, Any]:
+    """空饱和率分析结果（OUTPUT_SATURATION 算法禁用时占位）。"""
+    return {
+        "detected": False,
+        "confidence": 0.0,
+        "saturation_rate": 0.0,
+        "high_count": 0,
+        "low_count": 0,
     }
 
 
@@ -1142,184 +1377,6 @@ def _detect_valve_stiction(pv_values: np.ndarray, op_values: np.ndarray) -> dict
     except Exception as exc:  # noqa: BLE001
         logger.warning("阀门粘滞检测失败: %s", exc)
         return _empty_stiction_result()
-
-
-def _analyze_pid_params(pv_values: np.ndarray, sp_values: np.ndarray) -> dict[str, Any]:
-    """PID 增益分析（参数过激/过保守）。
-
-    过冲检测：仅在 SP 阶跃后计算真正过冲（PV 超过新 SP 的幅度），
-    稳态数据不误报过冲。
-
-    Returns:
-        {overaggressive, overconservative, confidence, overshoot, settling_time,
-         response_time, steady_state_error}
-    """
-    min_len = min(len(pv_values), len(sp_values))
-    if min_len < 8:
-        return {
-            "overaggressive": False,
-            "overconservative": False,
-            "confidence": 0.0,
-            "overshoot": 0.0,
-            "settling_time": 0.0,
-            "response_time": 0.0,
-            "steady_state_error": 0.0,
-        }
-
-    try:
-        pv = pv_values[:min_len]
-        sp = sp_values[:min_len]
-        error = pv - sp
-
-        # SP 量程
-        sp_range = float(np.max(sp) - np.min(sp)) or 1.0
-
-        # 检测 SP 阶跃点（SP 变化超过 SP 量程的 5%）
-        sp_diff = np.abs(np.diff(sp))
-        step_threshold = sp_range * 0.05
-        step_indices = np.where(sp_diff > step_threshold)[0]
-
-        # 计算过冲：仅在 SP 阶跃后计算
-        overshoot = 0.0
-        if len(step_indices) > 0:
-            for step_idx in step_indices:
-                step_size = sp[step_idx + 1] - sp[step_idx]
-                if abs(step_size) < 1e-9:
-                    continue
-                new_sp = sp[step_idx + 1]
-                # 在阶跃后的窗口内寻找 PV 峰值
-                window_end = min(step_idx + 1 + min_len // 4, min_len)
-                pv_window = pv[step_idx + 1 : window_end]
-                if len(pv_window) == 0:
-                    continue
-                if step_size > 0:
-                    # 上升阶跃：过冲 = (PV_peak - new_SP) / step_size
-                    pv_peak = float(np.max(pv_window))
-                    if pv_peak > new_sp:
-                        overshoot = max(overshoot, (pv_peak - new_sp) / step_size)
-                else:
-                    # 下降阶跃：过冲 = (new_SP - PV_trough) / |step_size|
-                    pv_trough = float(np.min(pv_window))
-                    if pv_trough < new_sp:
-                        overshoot = max(overshoot, (new_sp - pv_trough) / abs(step_size))
-        else:
-            # 无 SP 阶跃：稳态数据，无过冲
-            overshoot = 0.0
-
-        # 稳定时间：误差收敛到 5% SP 范围内的时间
-        threshold = sp_range * 0.05
-        settling_idx = min_len
-        for i in range(min_len - 1, -1, -1):
-            if abs(error[i]) > threshold:
-                settling_idx = i + 1
-                break
-        settling_time = float(settling_idx) / max(min_len, 1)
-
-        # 响应时间：PV 首次到达 90% SP 的比例时间（仅在 SP 有变化时有意义）
-        if len(step_indices) > 0:
-            step_idx = step_indices[0]
-            target = sp[step_idx] + 0.9 * (sp[step_idx + 1] - sp[step_idx])
-            response_idx = step_idx
-            for i in range(step_idx + 1, min_len):
-                if abs(pv[i] - target) < threshold:
-                    response_idx = i
-                    break
-            response_time = float(response_idx - step_idx) / max(min_len, 1)
-        else:
-            response_time = 0.0
-
-        # 稳态误差：最后 10% 数据的平均误差
-        tail_len = max(1, min_len // 10)
-        steady_state_error = float(np.mean(np.abs(error[-tail_len:])))
-
-        # 过激判定：过冲 > 20%
-        overaggressive = bool(overshoot > 0.2)
-        # 过保守判定：响应时间 > 0.5 且稳态误差 > 5% SP 范围
-        overconservative = bool(response_time > 0.5 and steady_state_error > sp_range * 0.05)
-
-        confidence = 0.0
-        if overaggressive:
-            # 过冲超过 20% 判定为过激，但置信度不直接等于过冲值
-            # 使用更保守的置信度计算，避免过冲值很大时置信度直接到 100%
-            confidence = min(0.95, overshoot * 0.4)
-        elif overconservative:
-            # 响应时间过长判定为过保守，同样使用保守的置信度计算
-            confidence = min(0.95, response_time * 0.8)
-
-        return {
-            "overaggressive": overaggressive,
-            "overconservative": overconservative,
-            "confidence": confidence,
-            "overshoot": overshoot,
-            "settling_time": settling_time,
-            "response_time": response_time,
-            "steady_state_error": steady_state_error,
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("PID 增益分析失败: %s", exc)
-        return {
-            "overaggressive": False,
-            "overconservative": False,
-            "confidence": 0.0,
-            "overshoot": 0.0,
-            "settling_time": 0.0,
-            "response_time": 0.0,
-            "steady_state_error": 0.0,
-        }
-
-
-def _detect_external_disturbance(
-    pv_values: np.ndarray, sample_interval: float = 1.0
-) -> dict[str, Any]:
-    """频谱分析检测外扰频繁。
-
-    Args:
-        pv_values: PV 数据数组
-        sample_interval: 采样间隔（秒），用于频率换算
-
-    Returns:
-        {detected, confidence, frequency, amplitude}
-    """
-    if len(pv_values) < 8:
-        return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
-
-    try:
-        N = len(pv_values)
-        fs = 1.0 / sample_interval if sample_interval > 0 else 1.0  # 采样频率 (Hz)
-        pv_centered = pv_values - np.mean(pv_values)
-        fft_vals = np.fft.rfft(pv_centered)
-        fft_magnitude = np.abs(fft_vals)
-
-        if len(fft_magnitude) <= 2:
-            return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
-
-        # 检测高频分量（排除主频）
-        low_freq_energy = float(np.sum(fft_magnitude[1:3] ** 2))
-        high_freq_energy = float(np.sum(fft_magnitude[3:] ** 2))
-        total_energy = low_freq_energy + high_freq_energy
-
-        if total_energy <= 0:
-            return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
-
-        high_freq_ratio = high_freq_energy / total_energy
-        peak_idx = int(np.argmax(fft_magnitude[3:])) + 3
-        amplitude = float(fft_magnitude[peak_idx] / N)
-        # 频率 = peak_idx * fs / N（标准 FFT 频率换算公式）
-        frequency = float(peak_idx * fs / N)
-
-        # 外扰判定：高频能量占比 > 0.5
-        detected = high_freq_ratio > 0.5
-        confidence = min(1.0, high_freq_ratio) if detected else 0.0
-
-        return {
-            "detected": detected,
-            "confidence": confidence,
-            "frequency": frequency,
-            "amplitude": amplitude,
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("外扰检测失败: %s", exc)
-        return {"detected": False, "confidence": 0.0, "frequency": 0.0, "amplitude": 0.0}
 
 
 def _analyze_quality(pv_data: list[dict], threshold: dict | None = None) -> dict[str, Any]:
@@ -2754,54 +2811,6 @@ def _compute_sample_interval(aligned: list[dict[str, Any]]) -> float:
     if not diffs:
         return 1.0
     return sum(diffs) / len(diffs)
-
-
-def _align_timeseries(
-    pv_data: list[dict],
-    sp_data: list[dict],
-    op_data: list[dict],
-    mode_data: list[dict],
-) -> list[dict[str, Any]]:
-    """按 ts 对齐 PV/SP/OP/MODE 时序数据。
-
-    对齐策略：
-    1. 优先精确时间戳匹配（兼容字符串 ts 如 "t1"）
-    2. 若 ts 可转为数值，使用 bisect 最近邻匹配，容差 ±500ms
-
-    辅助函数复用 kpi_calc 模块实现，保持两处对齐逻辑一致。
-    """
-    from app.tasks.kpi_calc import (
-        _build_ts_index,
-        _find_nearest_value,
-    )
-
-    # 精确映射（兼容字符串 ts）
-    sp_map = {d.get("ts"): d.get("value") for d in sp_data}
-    op_map = {d.get("ts"): d.get("value") for d in op_data}
-    mode_map = {d.get("ts"): d.get("value") for d in mode_data}
-
-    # 数值索引（用于容差匹配）
-    sp_ts_floats, sp_ts_orig = _build_ts_index(sp_data)
-    op_ts_floats, op_ts_orig = _build_ts_index(op_data)
-    mode_ts_floats, mode_ts_orig = _build_ts_index(mode_data)
-    sp_values = [sp_map[t] for t in sp_ts_orig] if sp_ts_floats else None
-    op_values = [op_map[t] for t in op_ts_orig] if op_ts_floats else None
-    mode_values = [mode_map[t] for t in mode_ts_orig] if mode_ts_floats else None
-
-    aligned: list[dict[str, Any]] = []
-    for d in pv_data:
-        ts = d.get("ts")
-        pv = d.get("value")
-        aligned.append(
-            {
-                "ts": ts,
-                "pv": pv,
-                "sp": _find_nearest_value(ts, sp_ts_floats, sp_map, sp_values),
-                "op": _find_nearest_value(ts, op_ts_floats, op_map, op_values),
-                "mode": _find_nearest_value(ts, mode_ts_floats, mode_map, mode_values),
-            }
-        )
-    return aligned
 
 
 def _build_scatter_plot_data(aligned: list[dict[str, Any]]) -> dict[str, list[float]]:

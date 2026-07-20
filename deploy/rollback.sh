@@ -14,6 +14,13 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 COMPOSE_FILE="docker-compose.prod.yml"
+ENV_FILE=".env.prod"
+# 计算类历史数据查询一律走本地 TDengine（2026-07-20 架构决策），恒启用 tdengine profile
+COMPOSE_PROFILE_ARGS=(--profile tdengine)
+
+compose_prod() {
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${COMPOSE_PROFILE_ARGS[@]}" "$@"
+}
 
 echo "=== CLPM 回滚到上一版本 ==="
 echo ""
@@ -83,7 +90,7 @@ echo ""
 # 6. 重启服务
 # ------------------------------------------------------------
 echo "3. 重启服务..."
-docker compose -f "$COMPOSE_FILE" up -d
+compose_prod up -d
 echo ""
 
 # ------------------------------------------------------------
@@ -97,7 +104,7 @@ echo ""
 # 8. 验证
 # ------------------------------------------------------------
 echo "5. 验证服务状态..."
-docker compose -f "$COMPOSE_FILE" ps
+compose_prod ps
 echo ""
 
 if docker exec clpm-backend curl -fsS http://localhost:7101/health >/dev/null 2>&1; then
@@ -107,7 +114,7 @@ else
     exit 1
 fi
 
-if curl -fsS http://localhost/ >/dev/null 2>&1; then
+if curl -fsS http://localhost:7141/ >/dev/null 2>&1; then
     echo "  [OK] 前端服务健康"
 else
     echo "  [FAIL] 前端服务健康检查失败"

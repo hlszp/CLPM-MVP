@@ -14,11 +14,7 @@
 import type { TableColumnsType } from 'ant-design-vue';
 
 import type { DashboardApi } from '#/api/dashboard';
-import type {
-  ConfidenceLevel,
-  KpiSnapshotItem,
-  MetricApi,
-} from '#/api/metric';
+import type { ConfidenceLevel, KpiSnapshotItem, MetricApi } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onMounted, ref, watch } from 'vue';
@@ -89,14 +85,16 @@ function collectDescendantIds(
         collectAllChildren(node, result);
         return true;
       }
-      if (node.children && node.children.length > 0 && findAndCollect(node.children)) return true;
+      if (
+        node.children &&
+        node.children.length > 0 &&
+        findAndCollect(node.children)
+      )
+        return true;
     }
     return false;
   };
-  const collectAllChildren = (
-    node: PlantNodeApi.PlantNode,
-    acc: string[],
-  ) => {
+  const collectAllChildren = (node: PlantNodeApi.PlantNode, acc: string[]) => {
     for (const child of node.children ?? []) {
       acc.push(child.id);
       collectAllChildren(child, acc);
@@ -109,10 +107,7 @@ function collectDescendantIds(
 /** 获取当前筛选条件下的有效 plantNodeId 字符串（逗号分隔） */
 function getEffectivePlantNodeIds(): string | undefined {
   if (!plantNodeId.value) return undefined;
-  const ids = collectDescendantIds(
-    plantNodeTree.value,
-    plantNodeId.value,
-  );
+  const ids = collectDescendantIds(plantNodeTree.value, plantNodeId.value);
   return ids.length > 0 ? ids.join(',') : plantNodeId.value;
 }
 
@@ -174,13 +169,17 @@ const NUMERIC_AGG_FIELDS = [
 
 /** 计算非 null 值的均值 */
 function meanOf(values: (null | number)[]): null | number {
-  const valid = values.filter((v): v is number => v !== null && v !== undefined && !Number.isNaN(v));
+  const valid = values.filter(
+    (v): v is number => v !== null && v !== undefined && !Number.isNaN(v),
+  );
   if (valid.length === 0) return null;
   return valid.reduce((s, v) => s + v, 0) / valid.length;
 }
 
 /** 取可信度等级的最差值（A→E，取字母序最大） */
-function worstConfidence(levels: (ConfidenceLevel | null)[]): ConfidenceLevel | null {
+function worstConfidence(
+  levels: (ConfidenceLevel | null)[],
+): ConfidenceLevel | null {
   const valid = levels.filter((v): v is ConfidenceLevel => !!v);
   if (valid.length === 0) return null;
   valid.sort((a, b) => b.localeCompare(a));
@@ -192,12 +191,14 @@ const aggregatedLoopData = computed<LoopAggRow[]>(() => {
   const groups = new Map<string, KpiSnapshotItem[]>();
   for (const snap of loopData.value) {
     const key = snap.loopId ?? snap.loopTagName ?? 'unknown';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(snap);
+    const group = groups.get(key) ?? [];
+    group.push(snap);
+    groups.set(key, group);
   }
   const rows: LoopAggRow[] = [];
   for (const [, snaps] of groups) {
-    const first = snaps[0]!;
+    const first = snaps[0];
+    if (!first) continue;
     const loopId = first.loopId ?? '';
     const row: LoopAggRow = {
       loopId,
@@ -296,46 +297,45 @@ function formatNumber(val: null | number | undefined, suffix = ''): string {
   return `${val.toFixed(2)}${suffix}`;
 }
 
-/** 根据时间维度计算时间范围 */
+/**
+ * 根据时间维度计算时间范围（UTC ISO 8601）。
+ * 后端快照 ts_start 为 UTC 存储（TIMESTAMP WITHOUT TIME ZONE），
+ * 本地选中的日/周/月边界必须先转为 UTC，否则窗口整体偏移 8 小时。
+ */
 function getTimeRange(): { end: string; start: string } {
   switch (timeDimension.value) {
     case 'month': {
       const m = selectedMonth.value || dayjs();
       return {
-        start: m.startOf('month').format('YYYY-MM-DD HH:mm:ss'),
-        end: m.endOf('month').format('YYYY-MM-DD HH:mm:ss'),
+        start: m.startOf('month').toISOString(),
+        end: m.endOf('month').toISOString(),
       };
     }
     case 'week': {
       const w = selectedWeek.value || dayjs();
       return {
-        start: w.startOf('week').format('YYYY-MM-DD HH:mm:ss'),
-        end: w.endOf('week').format('YYYY-MM-DD HH:mm:ss'),
+        start: w.startOf('week').toISOString(),
+        end: w.endOf('week').toISOString(),
       };
     }
     default: {
       const d = selectedDate.value || dayjs();
       return {
-        start: d.startOf('day').format('YYYY-MM-DD HH:mm:ss'),
-        end: d.endOf('day').format('YYYY-MM-DD HH:mm:ss'),
+        start: d.startOf('day').toISOString(),
+        end: d.endOf('day').toISOString(),
       };
     }
   }
 }
 
-/** 当前时间维度对应的日期标签（用于"日期"列展示） */
-function currentDateLabel(): string {
-  switch (timeDimension.value) {
-    case 'month': {
-      return selectedMonth.value?.format('YYYY-MM') ?? '—';
-    }
-    case 'week': {
-      return selectedWeek.value?.format('YYYY-[W]WW') ?? '—';
-    }
-    default: {
-      return selectedDate.value?.format('YYYY-MM-DD') ?? '—';
-    }
-  }
+/**
+ * 快照时间（后端 UTC 存储，无时区标记）转本地显示。
+ * 与 history-snapshots 页约定一致：无时区后缀按 UTC 处理。
+ */
+function formatSnapshotTime(ts: null | string | undefined): string {
+  if (!ts) return '—';
+  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
+  return dayjs(hasTimezone ? ts : `${ts}Z`).format('MM-DD HH:mm');
 }
 
 /** 提取记录的评分（综合报表用 avgScore，回路报表用聚合 score） */
@@ -360,33 +360,106 @@ function isRateColumn(key: string): boolean {
   ].includes(key);
 }
 
+/** 判断是否为纯数值列（扩展指标，非百分比） */
+function isPlainNumberColumn(key: string): boolean {
+  return [
+    'idealSettlingTime',
+    'outputTravelIndex',
+    'settlingTime',
+    'stictionIndex',
+  ].includes(key);
+}
+
+/** 判断是否为整数计数列 */
+function isCountColumn(key: string): boolean {
+  return ['evalCount', 'evaluatedLoops', 'inconclusiveLoops'].includes(key);
+}
+
+/** 评级分布统计（性能等级 → 行数，level 0 为未评级） */
+const ratingDistribution = computed<Record<number, number>>(() => {
+  const dist: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const row of currentData.value) {
+    const { level } = getRating(getScore(row));
+    dist[level] = (dist[level] ?? 0) + 1;
+  }
+  return dist;
+});
+
 // ============ 表格列定义 ============
 const comprehensiveColumns = computed<TableColumnsType>(() => [
   {
-    title: '装置',
+    title: '节点',
     dataIndex: 'nodeName',
-    key: 'plantName',
+    key: 'nodeName',
     width: 140,
     ellipsis: true,
   },
-  { title: '单元', key: 'unitName', width: 140, ellipsis: true },
-  { title: '日期', key: 'date', width: 120 },
-  { title: '性能等级', key: 'rating', width: 100 },
+  { title: '数据时间', key: 'snapshotTime', width: 110 },
+  { title: '性能等级', key: 'rating', width: 90 },
   {
     title: '性能评分',
     dataIndex: 'avgScore',
     key: 'score',
-    width: 100,
+    width: 90,
     sorter: (a: Record<string, any>, b: Record<string, any>) =>
       (a.avgScore ?? 0) - (b.avgScore ?? 0),
   },
-  { title: '准确率', dataIndex: 'accuracyRate', key: 'accuracyRate', width: 90 },
+  {
+    title: '准确率',
+    dataIndex: 'accuracyRate',
+    key: 'accuracyRate',
+    width: 90,
+  },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
   {
     title: '平稳率',
     dataIndex: 'stabilityRate',
     key: 'steadyRate',
     width: 90,
+  },
+  {
+    title: '自控率',
+    dataIndex: 'autoModeRate',
+    key: 'autoModeRate',
+    width: 90,
+  },
+  {
+    title: '有效自控率',
+    dataIndex: 'effectiveAutoRate',
+    key: 'effectiveAutoRate',
+    width: 110,
+  },
+  {
+    title: '好值率',
+    dataIndex: 'goodValueRate',
+    key: 'goodValueRate',
+    width: 90,
+  },
+  {
+    title: '饱和率',
+    dataIndex: 'saturationRate',
+    key: 'saturationRate',
+    width: 90,
+  },
+  {
+    title: '振荡率',
+    dataIndex: 'oscillationRate',
+    key: 'oscillationRate',
+    width: 90,
+  },
+  {
+    title: '参评回路数',
+    dataIndex: 'evaluatedLoops',
+    key: 'evaluatedLoops',
+    width: 100,
+    align: 'center',
+  },
+  {
+    title: '数据不足回路数',
+    dataIndex: 'inconclusiveLoops',
+    key: 'inconclusiveLoops',
+    width: 120,
+    align: 'center',
   },
 ]);
 
@@ -410,7 +483,12 @@ const loopColumns = computed<TableColumnsType>(() => [
     sorter: (a: Record<string, any>, b: Record<string, any>) =>
       (a.score ?? 0) - (b.score ?? 0),
   },
-  { title: '准确率', dataIndex: 'accuracyRate', key: 'accuracyRate', width: 90 },
+  {
+    title: '准确率',
+    dataIndex: 'accuracyRate',
+    key: 'accuracyRate',
+    width: 90,
+  },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
   {
     title: '平稳率',
@@ -449,6 +527,30 @@ const loopColumns = computed<TableColumnsType>(() => [
     width: 90,
   },
   {
+    title: '理想稳定时间',
+    dataIndex: 'idealSettlingTime',
+    key: 'idealSettlingTime',
+    width: 110,
+  },
+  {
+    title: '实际稳定时间',
+    dataIndex: 'settlingTime',
+    key: 'settlingTime',
+    width: 110,
+  },
+  {
+    title: '输出跳变率',
+    dataIndex: 'outputTravelIndex',
+    key: 'outputTravelIndex',
+    width: 100,
+  },
+  {
+    title: '阀门粘滞',
+    dataIndex: 'stictionIndex',
+    key: 'stictionIndex',
+    width: 90,
+  },
+  {
     title: '可信度',
     dataIndex: 'confidenceLevel',
     key: 'confidenceLevel',
@@ -484,7 +586,7 @@ const rowKeyField = computed(() =>
 );
 
 const tableScrollX = computed(() =>
-  reportType.value === 'comprehensive' ? 900 : 1700,
+  reportType.value === 'comprehensive' ? 1380 : 2110,
 );
 
 // ============ 数据加载 ============
@@ -543,6 +645,8 @@ async function loadLoop() {
   // 递归收集所选节点及其所有子孙节点 ID（支持选择工厂/装置等非末级节点）
   const effectivePlantNodeId = getEffectivePlantNodeIds();
   // 后端 pageSize 上限 100，循环分页拉取时间窗内全部快照
+  // latestOnly=false：返回窗口内全部快照（默认 true 只取每回路最新一条，
+  // 会导致日/周/月聚合失效、"评估次数"恒为 1）
   const allItems: any[] = [];
   let page = 1;
   const pageLimit = 100;
@@ -552,6 +656,7 @@ async function loadLoop() {
       startTime: start,
       endTime: end,
       plantNodeId: effectivePlantNodeId,
+      latestOnly: false,
       page,
       pageSize: pageLimit,
     });
@@ -592,7 +697,9 @@ async function loadData() {
   loading.value = true;
   loadError.value = false;
   try {
-    await (reportType.value === 'comprehensive' ? loadComprehensive() : loadLoop());
+    await (reportType.value === 'comprehensive'
+      ? loadComprehensive()
+      : loadLoop());
   } catch (error: any) {
     loadError.value = true;
     console.error('加载 KPI 报表失败:', error);
@@ -619,15 +726,20 @@ async function handleExport() {
         if (key === 'rating') {
           return getRating(getScore(row)).label;
         }
-        if (key === 'date') return currentDateLabel();
-        if (key === 'unitName' || key === 'loopName') {
+        if (key === 'snapshotTime') {
+          return formatSnapshotTime((row as Record<string, any>).snapshotTime);
+        }
+        if (key === 'loopName') {
           const val = (row as Record<string, any>)[key];
           return val ?? '';
         }
         const dataIndex = (c as any).dataIndex as string;
         if (!dataIndex) return '';
         const val = (row as Record<string, any>)[dataIndex];
-        if (val === null || val === undefined) return '';
+        if (val === null || val === undefined) {
+          return isCountColumn(key) ? '0' : '';
+        }
+        if (isCountColumn(key)) return String(val);
         if (typeof val === 'number') return val.toFixed(2);
         return String(val);
       }),
@@ -769,6 +881,23 @@ onMounted(() => {
       :empty="isEmpty"
       @retry="loadData"
     >
+      <div
+        v-if="currentData.length > 0"
+        class="mb-2 flex flex-wrap items-center gap-1 text-xs"
+      >
+        <span :style="{ color: themeColors.NEUTRAL }">评级分布</span>
+        <Tag
+          v-for="lv in 5"
+          :key="lv"
+          :color="LEVEL_META[lv]?.color"
+          class="mr-0"
+        >
+          {{ LEVEL_META[lv]?.label }} × {{ ratingDistribution[lv] ?? 0 }}
+        </Tag>
+        <Tag v-if="(ratingDistribution[0] ?? 0) > 0" class="mr-0">
+          未评级 × {{ ratingDistribution[0] }}
+        </Tag>
+      </div>
       <Table
         :columns="currentColumns"
         :data-source="currentData"
@@ -785,8 +914,10 @@ onMounted(() => {
           <template v-if="column.key === 'index'">
             {{ index + 1 }}
           </template>
-          <template v-else-if="column.key === 'date'">
-            <span class="font-mono text-xs">{{ currentDateLabel() }}</span>
+          <template v-else-if="column.key === 'snapshotTime'">
+            <span class="font-mono text-xs">{{
+              formatSnapshotTime(record.snapshotTime)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'rating'">
             <Tag
@@ -802,23 +933,30 @@ onMounted(() => {
               {{ formatNumber(getScore(record)) }}
             </span>
           </template>
-          <template v-else-if="column.key === 'unitName'">
-            <span :style="{ color: themeColors.NEUTRAL }">—</span>
-          </template>
           <template v-else-if="column.key === 'loopName'">
             <span>{{ record.loopName || record.loopTagName || '—' }}</span>
           </template>
           <template v-else-if="column.key === 'confidenceLevel'">
             <Tag
-              v-if="record.confidenceLevel && CONFIDENCE_META[String(record.confidenceLevel)]"
+              v-if="
+                record.confidenceLevel &&
+                CONFIDENCE_META[String(record.confidenceLevel)]
+              "
               :color="CONFIDENCE_META[String(record.confidenceLevel)]!.color"
             >
               {{ CONFIDENCE_META[String(record.confidenceLevel)]!.label }}
             </Tag>
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
-          <template v-else-if="column.key === 'evalCount'">
-            <span class="clpm-num font-mono">{{ record.evalCount || 0 }}</span>
+          <template v-else-if="isCountColumn(column.key as string)">
+            <span class="clpm-num font-mono">{{
+              record[column.dataIndex as string] ?? 0
+            }}</span>
+          </template>
+          <template v-else-if="isPlainNumberColumn(column.key as string)">
+            <span class="clpm-num">
+              {{ formatNumber(record[column.dataIndex as string]) }}
+            </span>
           </template>
           <template v-else-if="isRateColumn(column.key as string)">
             <span class="clpm-num">

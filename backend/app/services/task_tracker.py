@@ -39,6 +39,201 @@ _TASK_INDEX_KEY = "task:index"  # Sorted set: score=创建时间戳, member=task
 _NOTIFICATION_PREFIX = "task:notifications"
 _NOTIFICATION_MAX = 100  # 每用户最多保留 100 条通知
 
+_STATUS_CAS_LUA = r"""
+-- CLPM_TASK_STATUS_CAS_V1
+local task_key = KEYS[1]
+if redis.call('EXISTS', task_key) == 0 then
+  return {'MISSING', ''}
+end
+
+local new_status = ARGV[1]
+local old_status = redis.call('HGET', task_key, 'status') or ''
+local terminal = {SUCCESS=true, FAILED=true, CANCELLED=true}
+if terminal[old_status] and old_status ~= new_status then
+  return {'BLOCKED', old_status}
+end
+
+redis.call('HSET', task_key, 'status', new_status)
+for index = 2, #ARGV, 2 do
+  local field = ARGV[index]
+  local value = ARGV[index + 1]
+  if field == 'progress' or field == 'loops_done' then
+    local current = tonumber(redis.call('HGET', task_key, field) or '')
+    local incoming = tonumber(value)
+    if current == nil or incoming == nil or incoming >= current then
+      redis.call('HSET', task_key, field, value)
+    end
+  else
+    redis.call('HSET', task_key, field, value)
+  end
+end
+return {'UPDATED', old_status}
+"""
+
+_BACKFILL_DISPATCH_RESERVE_LUA = r"""
+-- CLPM_BACKFILL_DISPATCH_RESERVE_V1
+local task_key = KEYS[1]
+if redis.call('EXISTS', task_key) == 0 then
+  return {'MISSING', '[]', ''}
+end
+
+local state = redis.call('HGET', task_key, 'backfill_dispatch_state')
+local existing_ids = redis.call('HGET', task_key, 'backfill_child_task_ids')
+local existing_callback = redis.call('HGET', task_key, 'backfill_callback_task_id')
+local legacy_ids = redis.call('HGET', task_key, 'celery_task_ids')
+if state == 'DISPATCHED' or (not state and (existing_ids or existing_callback or legacy_ids)) then
+  return {'EXISTING', existing_ids or legacy_ids or '[]', existing_callback or ''}
+end
+if state == 'DISPATCHING' then
+  redis.call('HSET', task_key, 'backfill_dispatch_token', ARGV[1])
+  return {'RECOVER', existing_ids or '[]', existing_callback or ''}
+end
+
+redis.call(
+  'HSET', task_key,
+  'backfill_dispatch_state', 'DISPATCHING',
+  'backfill_dispatch_token', ARGV[1],
+  'backfill_child_task_ids', ARGV[2],
+  'backfill_callback_task_id', ARGV[3],
+  'celery_task_ids', ARGV[4]
+)
+return {'CLAIMED', ARGV[2], ARGV[3]}
+"""
+
+_BACKFILL_DISPATCH_COMPLETE_LUA = r"""
+-- CLPM_BACKFILL_DISPATCH_COMPLETE_V1
+local task_key = KEYS[1]
+if redis.call('HGET', task_key, 'backfill_dispatch_state') ~= 'DISPATCHING' then
+  return 0
+end
+if redis.call('HGET', task_key, 'backfill_dispatch_token') ~= ARGV[1] then
+  return 0
+end
+redis.call('HSET', task_key, 'backfill_dispatch_state', 'DISPATCHED')
+redis.call('HDEL', task_key, 'backfill_dispatch_token')
+return 1
+"""
+
+_BACKFILL_DISPATCH_RELEASE_LUA = r"""
+-- CLPM_BACKFILL_DISPATCH_RELEASE_V1
+local task_key = KEYS[1]
+if redis.call('HGET', task_key, 'backfill_dispatch_state') ~= 'DISPATCHING' then
+  return 0
+end
+if redis.call('HGET', task_key, 'backfill_dispatch_token') ~= ARGV[1] then
+  return 0
+end
+redis.call(
+  'HDEL', task_key,
+  'backfill_dispatch_state',
+  'backfill_dispatch_token',
+  'backfill_child_task_ids',
+  'backfill_callback_task_id',
+  'celery_task_ids'
+)
+return 1
+"""
+
+_BACKFILL_PROGRESS_LUA = r"""
+-- CLPM_BACKFILL_PROGRESS_V1
+local task_key = KEYS[1]
+local event_key = KEYS[2]
+if redis.call('EXISTS', task_key) == 0 then
+  return {'MISSING', '0', '0'}
+end
+
+local status = redis.call('HGET', task_key, 'status') or ''
+local terminal = {SUCCESS=true, FAILED=true, CANCELLED=true}
+local current_done = (tonumber(redis.call('HGET', task_key, 'backfill_done') or '') or 0)
+local current_progress = (tonumber(redis.call('HGET', task_key, 'progress') or '') or 0)
+if terminal[status] then
+  return {'TERMINAL', tostring(current_done), tostring(current_progress)}
+end
+local added = redis.call('SADD', event_key, ARGV[1])
+redis.call('EXPIRE', event_key, tonumber(ARGV[4]))
+if added == 0 then
+  return {'DUPLICATE', tostring(current_done), tostring(current_progress)}
+end
+
+local total = tonumber(ARGV[2]) or 0
+local done = redis.call('HINCRBY', task_key, 'backfill_done', 1)
+if total > 0 and done > total then
+  done = total
+  redis.call('HSET', task_key, 'backfill_done', tostring(done))
+end
+local progress = 0
+if total > 0 then
+  progress = done / total
+end
+if progress < current_progress then
+  progress = current_progress
+end
+redis.call(
+  'HSET', task_key,
+  'status', 'RUNNING',
+  'progress', tostring(progress),
+  'loops_done', tostring(done),
+  'loops_total', tostring(total),
+  'current_stage', ARGV[3]
+)
+return {'COUNTED', tostring(done), tostring(progress)}
+"""
+
+_BACKFILL_BATCH_CLAIM_LUA = r"""
+-- CLPM_BACKFILL_BATCH_CLAIM_V1
+local batch_key = KEYS[1]
+local state = redis.call('HGET', batch_key, 'state')
+if state == 'DONE' then
+  return {'DONE', redis.call('HGET', batch_key, 'result') or '{}'}
+end
+local redis_time = redis.call('TIME')
+local now = tonumber(redis_time[1])
+local lease_until = tonumber(redis.call('HGET', batch_key, 'lease_until') or '0')
+if state == 'RUNNING' and lease_until > now then
+  return {'BUSY', ''}
+end
+redis.call(
+  'HSET', batch_key,
+  'state', 'RUNNING',
+  'token', ARGV[1],
+  'lease_until', tostring(now + tonumber(ARGV[2]))
+)
+redis.call('EXPIRE', batch_key, tonumber(ARGV[3]))
+return {'CLAIMED', ''}
+"""
+
+_BACKFILL_BATCH_COMPLETE_LUA = r"""
+-- CLPM_BACKFILL_BATCH_COMPLETE_V1
+local batch_key = KEYS[1]
+if redis.call('HGET', batch_key, 'state') ~= 'RUNNING' then
+  return 0
+end
+if redis.call('HGET', batch_key, 'token') ~= ARGV[1] then
+  return 0
+end
+redis.call(
+  'HSET', batch_key,
+  'state', 'DONE',
+  'result', ARGV[2]
+)
+redis.call('HDEL', batch_key, 'token', 'lease_until')
+redis.call('EXPIRE', batch_key, tonumber(ARGV[3]))
+return 1
+"""
+
+_BACKFILL_BATCH_RELEASE_LUA = r"""
+-- CLPM_BACKFILL_BATCH_RELEASE_V1
+local batch_key = KEYS[1]
+if redis.call('HGET', batch_key, 'state') ~= 'RUNNING' then
+  return 0
+end
+if redis.call('HGET', batch_key, 'token') ~= ARGV[1] then
+  return 0
+end
+redis.call('DEL', batch_key)
+return 1
+"""
+
 # 活跃状态集合（用于并发计数）
 ACTIVE_STATUSES = frozenset({TaskStatus.PENDING.value, TaskStatus.RUNNING.value})
 
@@ -213,6 +408,149 @@ async def get_task(task_id: str) -> dict[str, str] | None:
     return data
 
 
+async def set_celery_task_ids(task_id: str, celery_task_ids: list[str]) -> None:
+    """Persist child/callback IDs so status sync and cancellation cover the whole canvas."""
+    await redis_client.hset(
+        _task_key(task_id),
+        mapping={"celery_task_ids": json.dumps(celery_task_ids)},
+    )
+
+
+async def reserve_backfill_dispatch(
+    task_id: str,
+    *,
+    reservation_token: str,
+    child_task_ids: list[str],
+    callback_task_id: str,
+) -> tuple[str, list[str], str]:
+    """Atomically reserve one Celery canvas per tracked backfill task."""
+    child_json = json.dumps(child_task_ids)
+    all_ids_json = json.dumps([*child_task_ids, callback_task_id])
+    raw = await redis_client.eval(
+        _BACKFILL_DISPATCH_RESERVE_LUA,
+        1,
+        _task_key(task_id),
+        reservation_token,
+        child_json,
+        callback_task_id,
+        all_ids_json,
+    )
+    code = str(raw[0])
+    stored_ids = json.loads(raw[1] or "[]")
+    stored_callback = str(raw[2] or "")
+    if code == "MISSING":
+        raise RuntimeError(f"回填任务不存在: {task_id}")
+    if not stored_callback and stored_ids:
+        stored_callback = str(stored_ids[-1])
+        stored_ids = stored_ids[:-1]
+    return code, [str(item) for item in stored_ids], stored_callback
+
+
+async def complete_backfill_dispatch(task_id: str, reservation_token: str) -> bool:
+    """Mark a reserved canvas as dispatched when the reservation still belongs to caller."""
+    result = await redis_client.eval(
+        _BACKFILL_DISPATCH_COMPLETE_LUA,
+        1,
+        _task_key(task_id),
+        reservation_token,
+    )
+    return bool(result)
+
+
+async def release_backfill_dispatch(task_id: str, reservation_token: str) -> bool:
+    """Release a pre-dispatch reservation after synchronous broker dispatch failure."""
+    result = await redis_client.eval(
+        _BACKFILL_DISPATCH_RELEASE_LUA,
+        1,
+        _task_key(task_id),
+        reservation_token,
+    )
+    return bool(result)
+
+
+async def record_backfill_progress_once(
+    task_id: str,
+    *,
+    event_id: str,
+    total_loops: int,
+    current_stage: str,
+) -> tuple[bool, int, float]:
+    """Atomically count one unique backfill completion and persist monotonic progress."""
+    raw = await redis_client.eval(
+        _BACKFILL_PROGRESS_LUA,
+        2,
+        _task_key(task_id),
+        f"{_task_key(task_id)}:backfill_progress_events",
+        event_id,
+        str(total_loops),
+        current_stage,
+        str(7 * 24 * 60 * 60),
+    )
+    code = str(raw[0])
+    return code == "COUNTED", int(float(raw[1])), float(raw[2])
+
+
+async def delete_task_auxiliary_keys(task_id: str) -> None:
+    """Delete enumerable per-task Redis keys; batch claim keys expire after seven days."""
+    await redis_client.delete(f"{_task_key(task_id)}:backfill_progress_events")
+
+
+async def claim_backfill_batch(
+    task_id: str,
+    batch_id: str,
+    *,
+    execution_token: str,
+    lease_seconds: int = 35 * 60,
+) -> tuple[str, dict[str, Any] | None]:
+    """Claim a deterministic child batch or return its cached completed result."""
+    raw = await redis_client.eval(
+        _BACKFILL_BATCH_CLAIM_LUA,
+        1,
+        f"{_task_key(task_id)}:backfill_batch:{batch_id}",
+        execution_token,
+        str(lease_seconds),
+        str(7 * 24 * 60 * 60),
+    )
+    state = str(raw[0])
+    result = json.loads(raw[1]) if state == "DONE" and raw[1] else None
+    return state, result
+
+
+async def complete_backfill_batch(
+    task_id: str,
+    batch_id: str,
+    *,
+    execution_token: str,
+    result: dict[str, Any],
+) -> bool:
+    """Persist one deterministic child result so redelivery can reuse it."""
+    raw = await redis_client.eval(
+        _BACKFILL_BATCH_COMPLETE_LUA,
+        1,
+        f"{_task_key(task_id)}:backfill_batch:{batch_id}",
+        execution_token,
+        json.dumps(result, ensure_ascii=False),
+        str(7 * 24 * 60 * 60),
+    )
+    return bool(raw)
+
+
+async def release_backfill_batch(
+    task_id: str,
+    batch_id: str,
+    *,
+    execution_token: str,
+) -> bool:
+    """Release a failed child claim; hard worker loss is recovered after the lease."""
+    raw = await redis_client.eval(
+        _BACKFILL_BATCH_RELEASE_LUA,
+        1,
+        f"{_task_key(task_id)}:backfill_batch:{batch_id}",
+        execution_token,
+    )
+    return bool(raw)
+
+
 async def update_status(
     task_id: str,
     status: TaskStatus,
@@ -241,12 +579,6 @@ async def update_status(
     Returns:
         更新后的任务字段字典；任务不存在返回 None
     """
-    data = await get_task(task_id)
-    if data is None:
-        logger.warning("更新任务状态失败：任务不存在 task_id=%s", task_id)
-        return None
-
-    old_status = data.get("status", "")
     updates: dict[str, str] = {"status": status.value}
     if progress is not None:
         updates["progress"] = str(round(progress, 4))
@@ -263,8 +595,33 @@ async def update_status(
     if finished_at is not None:
         updates["finished_at"] = finished_at
 
-    await redis_client.hset(_task_key(task_id), mapping=updates)
-    data.update(updates)
+    script_args: list[str] = [status.value]
+    for field, value in updates.items():
+        if field != "status":
+            script_args.extend((field, value))
+    raw = await redis_client.eval(
+        _STATUS_CAS_LUA,
+        1,
+        _task_key(task_id),
+        *script_args,
+    )
+    result_code = str(raw[0])
+    old_status = str(raw[1])
+    if result_code == "MISSING":
+        logger.warning("更新任务状态失败：任务不存在 task_id=%s", task_id)
+        return None
+
+    data = await get_task(task_id)
+    if data is None:
+        return None
+    if result_code == "BLOCKED":
+        logger.info(
+            "忽略终态覆盖: task_id=%s, %s→%s",
+            task_id,
+            old_status,
+            status.value,
+        )
+        return data
 
     # 终态转换时发送通知（仅在从非终态进入终态时）
     if status.value in TERMINAL_STATUSES and old_status not in TERMINAL_STATUSES:
@@ -434,11 +791,19 @@ async def mark_notification_read(user_id: str, task_id: str) -> bool:
 __all__ = [
     "ACTIVE_STATUSES",
     "TERMINAL_STATUSES",
+    "claim_backfill_batch",
+    "complete_backfill_batch",
     "count_active_custom_tasks",
+    "complete_backfill_dispatch",
     "create_task",
+    "delete_task_auxiliary_keys",
     "get_notifications",
     "get_task",
     "mark_notification_read",
+    "record_backfill_progress_once",
+    "release_backfill_batch",
+    "release_backfill_dispatch",
+    "reserve_backfill_dispatch",
     "task_to_response",
     "update_status",
 ]

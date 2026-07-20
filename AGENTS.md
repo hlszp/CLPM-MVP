@@ -40,6 +40,11 @@ PRD v6.0 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | 修复 | Celery worker 任务注册修复（include 参数替代 autodiscover_tasks） | `207c882` |
 | v6.0 升级 | 文档统一升级：PRD/FDS/ADS/DDS/IDS/UIUX → v6.0；实现契约 v1.0 → v2.0；DESIGN v2.1 → v3.0；测试数 1762；TS 错误 0 | 见 `docs/过程文档/superpowers/plans/v6-consistency-check.md` |
 | v6.1 升级 | ZL 工业设计规范对齐：诊断中心/指标管理页面清除硬编码 Tailwind 色类；高危操作确认统一改用 ClpmDangerConfirmModal；监控页面 KPI 指标按时间范围聚合 | `1585a7e` `4aea6b8` `80c38ef` `d5f532f` |
+| 网络模式切换 | 链路配置应用层局域网/公网动态切换：Tailscale subnet router + sudoers 免密 + sys_config 真相源 + lifespan 预载；.env 移除业务 URL/Token，统一由 sys_config 管理 | `6730b7f8` `ae0dff0c` `b09c816a` `ce5f4142` `b239b8b` `6a5fa30`（PR #75） |
+| 数据导入韧性 | 历史导入 chunk 级重试（502/503/504/429 + 超时/网络异常，指数退避 1/2/4s 最多 3 次）+ 回路并发 5→2 + chunk 跨度 24h→3h + 远端超时默认 30s→120s | `b74a6b4`（PR #74） |
+| 数据链路修复 | Celery worker 经 `worker_process_init` 预载 sys_config（此前仅 API lifespan 预载，worker 取不到业务 URL 导致导入/远端取数全失败）；实时自控率/回路状态统计改读 Redis 实时缓存（原只读 PG `tag_registry.current_value`，AAS 停更后数据过期）；装置/单元性能明细表改为当前节点+直接子节点 | PR #79 |
+| 远端调用保护 | RemoteApiProvider 全局限流（per-loop 信号量默认 4 并发，覆盖 DataPlanner 无界 gather）+ 熔断器（连续失败 5 次熔断 300s 快速失败、半开探测）；SignalR 重连指数退避 5s→30s 封顶。背景：2026-07-19 回填 8 worker × ~54 并发压垮远端边缘 API | PR #80 |
+| 性能评估四页治理 | 全面检查装置性能/回路性能/评估任务/KPI报表 4 页并修复 27 项：DataPlanner 契约查询 steady_rate→stability_rate 别名（快照只剩 PARTIAL 的回归）；装置聚合仪表盘全厂 null；快照服务端排序；_parse_dt 时区；DataLineage snake_case 血缘；策略配置裸数组解析；评估历史复合行键/日期 endOfDay；E 级评分掩码；kpi-report latestOnly=false + UTC 窗口；危险操作统一 ClpmDangerConfirmModal | PR #81 |
 
 ## v6.0 核心架构组件
 
@@ -83,14 +88,62 @@ cd frontend && pnpm run check:type
 cd e2e && pnpm exec playwright test
 ```
 
+### CI 提交前本地检查（避免 CI lint/format 门禁失败）
+
+```bash
+# backend ruff check + format（CI 门禁，提交前必跑）
+cd backend && uv run ruff check . && uv run ruff format --check .
+
+# 自动修复 ruff 问题
+cd backend && uv run ruff check . --fix && uv run ruff format .
+
+# frontend 格式化（CI oxfmt 门禁）
+cd frontend && pnpm run format
+```
+
+### 网络模式切换验证命令
+
+```bash
+# 查看当前路由走哪个接口（en0=局域网直连 / utun4=Tailscale 隧道）
+route get 192.168.100.2 | grep interface
+
+# 查看 tailscale accept-routes 状态（不需 sudo，RouteAll=true 即已启用）
+tailscale debug prefs | grep RouteAll
+
+# 后端启动日志确认 sys_config 预载
+grep "数据源配置已从 sys_config 预载" /tmp/clpm-backend.log
+
+# 查看 sys_config 当前网络模式
+docker exec clpm-postgres psql -U clpm -d clpm -t -c \
+  "SELECT value FROM sys_config WHERE key='datasource.network_mode';"
+
+# 查看最近 5 条 tailscale 切换审计日志
+docker exec clpm-postgres psql -U clpm -d clpm -c \
+  "SELECT operator, operation_type, before_value, after_value, operated_at \
+   FROM sys_audit_log WHERE operation_type='TAILSCALE_SWITCH' \
+   ORDER BY operated_at DESC LIMIT 5;"
+```
+
 ### 关键注意事项
 
-- **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker
-- **Celery Beat 已自动启动**（v6.1）：后端 lifespan 中自动启动 Beat 调度进程，每小时 KPI 计算等定时任务自动执行，无需手动启动 Beat
-- **前端端口是 7100**（端口统一规划：项目所有端口统一到 7100-7200 段，配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=7100`）
+- **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker；sys_config 业务配置（URL/Token）变更对 worker 生效需重启 worker 或等子进程回收（worker_process_init 每子进程预载一次）
+- **Worker 静默挂死的识别与处置**（2026-07-19 实测）：worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspect` 无响应、日志停更数小时），表现为任务卡 PENDING、broker 队列持续积压。诊断：`docker exec clpm-redis redis-cli -n 1 LLEN default`（队列长度）+ `pgrep -P <worker_pid>`（池子进程数）。处置：`kill <主进程pid>`（必要时 -9）后重启 worker；积压消息会在重启后全部追平（导入/回填类重任务注意耗时）
+- **计算类历史数据查询一律本地 TDengine**（2026-07-20 架构决策）：`get_provider()` 恒返回 TDengineProvider，KPI/回填/诊断/趋势不再按 `DATA_SOURCE_TYPE` 分支走远端 API；本地数据不完整按 INCONCLUSIVE 提示（禁止自动降级到远端）。远端历史数据接口仅 `data_import.py`（历史数据导入任务）直接调用。历史教训（2026-07-19）：remote_api 模式下回填无界并发曾压垮远端 API、且远端挂死导致全部 INCONCLUSIVE
+- **Worker 并发与回填性能**（2026-07-18 性能优化）：prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.prod` 中 `CELERY_WORKER_CONCURRENCY` 需按宿主机核数同步；回填任务按"1 窗口 = 1 个 chord 子任务"派发，27 回路 × 24h 实测约 52s（0.08s/回路时）；整点自动任务 27 回路 × 1h 实测约 1.9s（0.07s/回路时）。实测脚本：`backend/scripts/measure_backfill_perf.py`
+- **prewarm 预热策略已废止**（2026-07-18）：原"每小时 55 分"预热窗口与整点任务窗口错位一小时（预热的是上一任务已算完的窗口，从未命中），已移除 beat 条目、worker_ready 预热与 L2 兜底预热。整点任务数据来源统一为 **realtime 滚动缓存**（`realtime:history:*`，保留 75 分钟×1Hz=4500 点，provider 对近 1 小时窗口自动探测）+ TDengine 回源兜底；`prewarm_cache` 任务保留供手工/运维调用
+- **macOS fork 时区陷阱**：celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）
+- **Celery Beat 已自动启动**（v6.1）：后端 lifespan 中自动启动 Beat 调度进程，每小时 KPI 计算等定时任务自动执行，**严禁手工再启动 Beat**——两个 beat 并存会导致每个定时任务双触发（2026-07-20 实测 43 组同标题 STANDARD 任务）；lifespan 启动有 pidfile + pgrep 双重单例防护，重启后端不会重复拉起
+- **前端端口是 5666**（配置 `frontend/apps/web-antd/.env.development` 中 `VITE_PORT=5666`；项目端口统一规划到 7100-7200 段，后端 API 为 7101）
 - **前端 TypeScript 错误已全部修复**（v6.0 升级中清零，原 plant-node-tree.vue 3 个 + workbench.vue 3 个已修复）
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
 - **Git 分支**：当前在 `main` 分支；双机协作时使用 `mb/*`（mb 机器）或 `zp/*`（zp 机器）临时分支，详见 §双机协作开发规范
+- **网络模式切换**（2026-07-19，PR #75）：UI 链路配置页（`/loop/aas-sync`）支持局域网/公网动态切换
+  - **配置真相源**：sys_config 数据库表（UI 配置一次即持久化）；.env 仅保留基础设施配置 + 合理默认值（TIMEOUT/RECONNECT_INTERVAL），已移除业务 URL/Token
+  - **lifespan 预载**：`app/main.py` lifespan startup 调用 `preload_datasource_config(db)` 从 sys_config 读取配置并 `setattr(settings, ...)`，确保 SignalR 订阅器等启动时组件读到运行时配置而非 .env 空值；预载失败不阻塞启动，兜底 .env 默认值
+  - **Tailscale 切换**：`app/core/system.py` `switch_network_mode(mode)` 通过 `sudo -n tailscale up --accept-routes={true|false} --reset=false` 动态切换子网路由；`shutil.which("tailscale")` 检测，容器内自动跳过
+  - **sudoers 免密**：`deploy/sudoers.d/clpm-tailscale`（Linux，clpm 用户）/ `clpm-tailscale.macos`（Intel Mac，zhangping 用户）/ `clpm-tailscale.macos-arm64`（Apple Silicon Mac，zhangping 用户）；精确匹配命令参数，`tailscale status` 不在白名单（验证用 `sudo -nl | grep tailscale`）
+  - **路由验证**：`route get 192.168.100.2` 显示 `interface: en0`（局域网直连）或 `utun4`（Tailscale 隧道）；`tailscale debug prefs` 的 `RouteAll` 字段反映 accept-routes 状态
+  - **同模式跳过**：`update_datasource_config` 检测 `before == after` 时跳过 tailscale 命令，避免冗余 sudo 调用
 
 ## 核心决策
 
@@ -99,6 +152,7 @@ cd e2e && pnpm exec playwright test
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统；用户（管理员/工程师）可自助完成配置组态，减少开发团队介入 |
 | 模块架构 | 6 模块 + 1 门户：工作台 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理；各业务模块遵循"配置→运行→分析"三态自包含原则，减少跨模块依赖 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体）；回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D）；PID 参数与控制模式从关联 tag 只读读取；数据质量主要针对 PV 值（Good/Bad/Uncertain 质量码） |
+| **数据架构** | **导入走远端、计算全本地**（2026-07-20 用户定调，决策记录：`docs/过程文档/data-architecture-decision-local-first-2026-07-20.md`）：① 历史数据有两个源——远端 AAS 历史数据接口（remote_api）有且仅有"数据管理→历史数据导入"手工任务可调用（`data_import.py` 独立客户端，不经 provider 工厂），本地 TDengine 是所有性能评估/回路诊断/回路整定等计算任务的唯一历史数据来源；② 任何计算任务**不得**自动降级/切换到远端 API 取数，本地数据不完整按 INCONCLUSIVE/数据不足提示，由用户导入补齐；③ 实时数据源唯一：SignalR Hub（`signalr_hub_url`），开发/生产一致；④ `DATA_SOURCE_TYPE` 配置项已废止（兼容保留，不再影响计算路径）；`get_provider()` 恒返回本地 TDengineProvider |
 | Action Tracker | 诊断中心子模块（子菜单路由），状态机 PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED，中文显示为待处理/处理中/已实施/已忽略 |
 | 统计分析 | 不设独立模块，分散到各业务模块的"分析"态；自动报表归入系统管理 |
 | 回路整定 | Phase 1 保留页面与实验/辅助接口，只输出建议、证据、风险和回退方案；不支持 DCS 参数下写，Phase 2 再完成生产级算法闭环 |
@@ -107,6 +161,7 @@ cd e2e && pnpm exec playwright test
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 原型/前端开发 | 当前生产前端为 Vue 3 + Vite + TypeScript + vue-vben-admin；重构后路由/页面以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
+| 网络模式 | 应用层局域网/公网切换（2026-07-19）：**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**——局域网/公网只是同一组数据源（远端历史导入接口 + SignalR Hub + 本地 TDengine）的两条可达路径。UI 单 URL 输入；.env 移除业务 URL/Token（HISTORY_DATA_API_URL/HISTORY_DATA_API_TOKEN/SIGNALR_HUB_URL），sys_config 为运行时真相源；lifespan 启动通过 `preload_datasource_config()` 预载 sys_config 到 settings 内存；`sudo -n tailscale up --accept-routes={true\|false} --reset=false` 动态切换子网路由，sudoers 免密配置见 `deploy/sudoers.d/` |
 | 文档权威性 | PRD v6.0 负责产品需求；实现契约 v2.0 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互（已对齐 v6.1 代码，含 ZL 工业设计规范）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## 双机协作开发规范
@@ -339,11 +394,12 @@ v6.0 文档统一升级已完成，后续工作方向：
 | 方向 | 先读 | 关注点 |
 |---|---|---|
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
-| 前端 lint/格式化整理 | 当前工作区有 50+ 未提交的前端格式化改动 | 可考虑统一 `pnpm run lint --fix` 后提交 |
-| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.0 → v6.0 新增页面 | 任务管理页面、可信度徽章、INCONCLUSIVE 展示需补 E2E |
+| 前端 lint/格式化整理 | 前端代码 → `pnpm run lint` | 工作区已清理干净（2026-07-19）；如需进一步统一可跑 `pnpm run lint --fix` 后提交 |
+| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.0 → v6.0 新增页面 | 任务管理/可信度徽章/INCONCLUSIVE 已补（2026-07-19，PR #78：E2E-TASK-001~006 + E2E-CONF-001~004，含 playwright 端口 7100→5666 修正）；其余页面按 UI/UX v6.0 逐步补 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
 | v6.0 文档统一升级 | `docs/过程文档/superpowers/plans/v6-consistency-check.md` → v6.0 各设计文档 | 文档已统一升级至 v6.0，需持续保持文档与代码一致性 |
 | 新功能开发 | PRD v6.0 → 实现契约 v2.0 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
+| 网络模式切换后续改进 | AGENTS.md → §关键注意事项（网络模式切换） | ①②④ 已完成（2026-07-19：wan→lan 反向切换实测通过，`utun4→en0` 路由正确恢复；容器降级经 18 单测确认返回 `skipped` 不阻断配置；新增 `deploy/sudoers.d/clpm-tailscale.macos-arm64` 覆盖 Apple Silicon）；③ 公网模式 ping 延迟抖动大（6-63ms）可优化 DERP 节点或 Tailscale 直连（未做，低优先级） |
 
 ## Stale docs 防护
 

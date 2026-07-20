@@ -246,7 +246,7 @@ export function triggerBackfillApi(data: TaskApi.BackfillTaskCreateParams) {
  * 仅 PENDING 状态的 BACKFILL 任务可启动，启动后变为 RUNNING。
  */
 export function startTaskApi(taskId: string) {
-  return requestClient.post<{ celeryTaskId: string; taskId: string; }>(
+  return requestClient.post<{ celeryTaskId: string; taskId: string }>(
     `${BASE}/${taskId}/start`,
   );
 }
@@ -283,7 +283,7 @@ export function cancelTaskApi(taskId: string) {
  * 运行中任务必须先 cancel 再 delete。
  */
 export function deleteTaskApi(taskId: string) {
-  return requestClient.delete<{ deleted: boolean; task_id: string; }>(
+  return requestClient.delete<{ deleted: boolean; task_id: string }>(
     `${BASE}/${taskId}`,
   );
 }

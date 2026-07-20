@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     TDENGINE_USER: str = "root"
     TDENGINE_PASSWORD: str = ""  # 必填，通过 .env 设置
     TDENGINE_DB: str = "clpm_ts"
+    # 批量写入批次大小（一条 INSERT SQL 插入的行数，实测 1000 行 7ms）
+    TDENGINE_BATCH_SIZE: int = 1000
+    # 实时数据 flush 间隔（秒，RealtimeSubscriber 缓冲区刷新频率）
+    TDENGINE_FLUSH_INTERVAL: float = 1.0
 
     # ---- Redis ----
     REDIS_HOST: str = "localhost"
@@ -70,20 +74,33 @@ class Settings(BaseSettings):
     AAS_REQUEST_TIMEOUT_SECONDS: int = 30
     AAS_SECURITY_MODE: str = "SignAndEncrypt"  # None/Sign/SignAndEncrypt
 
-    # ---- 数据源切换 ----
-    # tdengine: 直接查 TDengine（默认）；remote_api: 通过外部 HTTP API 查询
-    DATA_SOURCE_TYPE: str = "tdengine"
+    # ---- 历史数据导入接口（已废止"数据源切换"概念）----
+    # 架构决策（2026-07-20）：计算类历史数据查询（性能评估/诊断/整定）一律走本地
+    # TDengine；远端历史数据接口（remote_api）仅"数据管理→历史数据导入"任务直接调用。
+    # 本配置仅作兼容保留，不再影响计算路径的数据源选择。
+    DATA_SOURCE_TYPE: str = "remote_api"
+
+    # ---- 网络模式（局域网/公网切换，控制 Tailscale 子网路由）----
+    # lan: 局域网直连（默认，生产环境）；wan: 公网走 Tailscale（调试用）
+    NETWORK_MODE: str = "lan"
 
     # ---- 外部历史数据 API（HistoryDataAppService）----
     HISTORY_DATA_API_URL: str = ""  # 如 http://localhost:7106/api/services/v1/HistoryData/Get
     HISTORY_DATA_API_TOKEN: str = ""  # Bearer Token（可选）
-    HISTORY_DATA_API_TIMEOUT: float = 30.0  # 请求超时（秒）
+    HISTORY_DATA_API_TIMEOUT: float = 120.0  # 请求超时（秒，远端大跨度查询可能慢）
+
+    # ---- 远端 API 调用保护（限流 + 熔断，防止压垮边缘 API 或向其持续施压）----
+    REMOTE_API_MAX_CONCURRENCY: int = 4  # 单进程对远端 API 的最大并发请求数
+    REMOTE_API_CIRCUIT_FAILURES: int = 5  # 连续失败达到该次数后触发熔断
+    REMOTE_API_CIRCUIT_OPEN_SECONDS: float = 300.0  # 熔断持续秒数，到期后半开探测
 
     # ---- 实时数据 SignalR/WebSocket ----
     SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:7106/signalr/realValueForClpmHub
     SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
-    SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连间隔（秒）
-    REALTIME_WRITEBACK_ENABLED: bool = False  # 是否将实时数据写回本地 TDengine 宽表（开发兼容）
+    SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连基础间隔（秒，指数退避起点）
+    SIGNALR_RECONNECT_MAX_INTERVAL: int = 30  # 断线重连最大间隔（秒，指数退避上限）
+    # 是否将实时数据写回本地 TDengine 宽表（数据架构优化 Phase 1）
+    REALTIME_WRITEBACK_ENABLED: bool = True
 
     # ---- Alerting ----
     ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志
@@ -150,14 +167,11 @@ class Settings(BaseSettings):
         if self.POSTGRES_PASSWORD == _INSECURE_PG_PASSWORD:
             raise RuntimeError("生产环境不得使用开发默认数据库密码。")
 
-        # TDengine 密码校验（仅 DATA_SOURCE_TYPE=tdengine 时需要）
-        if self.DATA_SOURCE_TYPE == "tdengine":
-            if not self.TDENGINE_PASSWORD:
-                raise RuntimeError(
-                    "生产环境必须通过环境变量 TDENGINE_PASSWORD 设置 TDengine 密码。"
-                )
-            if self.TDENGINE_PASSWORD == _INSECURE_TD_PASSWORD:
-                raise RuntimeError("生产环境不得使用 TDengine 默认密码 taosdata。")
+        # TDengine 密码校验（计算类历史数据查询一律走本地 TDengine，必须校验）
+        if not self.TDENGINE_PASSWORD:
+            raise RuntimeError("生产环境必须通过环境变量 TDENGINE_PASSWORD 设置 TDengine 密码。")
+        if self.TDENGINE_PASSWORD == _INSECURE_TD_PASSWORD:
+            raise RuntimeError("生产环境不得使用 TDengine 默认密码 taosdata。")
 
         # Redis 密码校验
         if not self.REDIS_PASSWORD:

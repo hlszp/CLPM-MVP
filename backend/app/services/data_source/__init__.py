@@ -1,13 +1,14 @@
-"""数据源抽象层 — 支持多数据源切换（TDengine / 远程 HTTP API）.
+"""数据源抽象层 — 计算类历史数据查询统一走本地 TDengine.
 
-通过 ``HistoryDataProvider`` 协议统一数据源接口，由工厂根据
-``DATA_SOURCE_TYPE`` 配置返回对应实现：
-
-- ``tdengine``: 直接查 TDengine（默认，生产链路）
-- ``remote_api``: 通过外部 HTTP API（HistoryDataAppService）查询
+架构决策（2026-07-20）：**导入走远端、计算全本地**。
+- 远端历史数据接口（remote_api）仅"数据管理→历史数据导入"任务直接调用
+  （services/data_import.py 自带独立 HTTP 客户端，不经本层）
+- 性能评估、回路诊断、回路整定等计算任务一律通过本层获取
+  本地 TDengineProvider（宽表查询 + Redis 实时缓存探测），
+  不得自动降级或切换到远端 API
 
 设计原则：DataPlanner 接收的 ``tdengine_query_fn`` 签名不变，
-Provider 负责将该签名的调用转发到具体数据源。
+Provider 负责将该签名的调用转发到本地 TDengine。
 """
 
 from __future__ import annotations

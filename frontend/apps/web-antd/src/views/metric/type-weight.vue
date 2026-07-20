@@ -25,10 +25,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import {
-  getWeightTemplatesApi,
-  saveWeightTemplatesApi,
-} from '#/api/metric';
+import { getWeightTemplatesApi, saveWeightTemplatesApi } from '#/api/metric';
 import { ClpmToolbarButton } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
@@ -251,7 +248,9 @@ function resetCurrentToDefault() {
     oscillationRate: 0,
     saturationRate: 0,
   };
-  message.info(`已重置 ${CONTROL_TYPE_MAP[activeControlType.value].label} 为国标默认值`);
+  message.info(
+    `已重置 ${CONTROL_TYPE_MAP[activeControlType.value].label} 为国标默认值`,
+  );
 }
 
 onMounted(() => {
@@ -263,8 +262,8 @@ onMounted(() => {
   <div class="metric-type-weight-content">
     <div class="mb-3 flex items-center justify-between">
       <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
-        配置 4 种控制类型（STABLE/SLOW/FAST/LOGIC）的 6 指标权重模板。
-        仅 3 项核心指标（稳定率 + 准确度 + 快速率）参与权重和校验，须=100。
+        配置 4 种控制类型（STABLE/SLOW/FAST/LOGIC）的 6 指标权重模板。 仅 3
+        项核心指标（稳定率 + 准确度 + 快速率）参与权重和校验，须=100。
       </p>
       <div class="flex gap-2">
         <ClpmToolbarButton
@@ -368,8 +367,14 @@ onMounted(() => {
           class="mt-3 rounded p-2 text-center text-sm"
           :style="
             coreWeightValid
-              ? { background: 'hsl(var(--status-ok) / 0.12)', color: 'hsl(var(--status-ok))' }
-              : { background: 'hsl(var(--status-error) / 0.12)', color: 'hsl(var(--status-error))' }
+              ? {
+                  background: 'hsl(var(--status-ok) / 0.12)',
+                  color: 'hsl(var(--status-ok))',
+                }
+              : {
+                  background: 'hsl(var(--status-error) / 0.12)',
+                  color: 'hsl(var(--status-error))',
+                }
           "
         >
           权重总和: {{ coreWeightTotal }}
@@ -379,7 +384,13 @@ onMounted(() => {
       </div>
 
       <!-- 3 项非核心指标（只读，固定为 0） -->
-      <div class="rounded p-4" :style="{ border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted) / 42%)' }">
+      <div
+        class="rounded p-4"
+        :style="{
+          border: '1px solid hsl(var(--border))',
+          background: 'hsl(var(--muted) / 42%)',
+        }"
+      >
         <div class="mb-3 font-medium" :style="{ color: themeColors.NEUTRAL }">
           非核心指标（固定为 0，不参与综合评分权重）
         </div>
@@ -389,7 +400,9 @@ onMounted(() => {
               <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
                 自动模式率 (autoModeRate)
               </span>
-              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">固定: 0</span>
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }"
+                >固定: 0</span
+              >
             </div>
             <InputNumber
               v-model:value="currentEdit.autoModeRate"
@@ -405,7 +418,9 @@ onMounted(() => {
               <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
                 振荡率 (oscillationRate)
               </span>
-              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">固定: 0</span>
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }"
+                >固定: 0</span
+              >
             </div>
             <InputNumber
               v-model:value="currentEdit.oscillationRate"
@@ -421,7 +436,9 @@ onMounted(() => {
               <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
                 饱和率 (saturationRate)
               </span>
-              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">固定: 0</span>
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }"
+                >固定: 0</span
+              >
             </div>
             <InputNumber
               v-model:value="currentEdit.saturationRate"
@@ -448,23 +465,31 @@ onMounted(() => {
           P_loop = (A·a + F·f + S·s) / (a + f + s) × (R / 100)
         </p>
         <p class="mt-2">
-          其中 A/F/S 为指标值，a/f/s 为对应权重（即上方 3 项核心指标权重）。
-          R 取值 0~100，反映自动模式有效时长占比。
+          其中 A/F/S 为指标值，a/f/s 为对应权重（即上方 3 项核心指标权重）。 R
+          取值 0~100，反映自动模式有效时长占比。
         </p>
       </div>
     </div>
 
     <!-- 适用场景说明 -->
-    <div class="mt-4 rounded p-4" :style="{ border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted) / 42%)' }">
-      <div class="mb-2 font-medium" :style="{ color: themeColors.NEUTRAL }">适用场景</div>
+    <div
+      class="mt-4 rounded p-4"
+      :style="{
+        border: '1px solid hsl(var(--border))',
+        background: 'hsl(var(--muted) / 42%)',
+      }"
+    >
+      <div class="mb-2 font-medium" :style="{ color: themeColors.NEUTRAL }">
+        适用场景
+      </div>
       <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
         {{ CONTROL_TYPE_MAP[activeControlType].scene }}
       </p>
       <div class="mt-2 text-xs" :style="{ color: themeColors.NEUTRAL }">
         <strong>国标默认值：</strong>
-        稳定率={{ DEFAULT_WEIGHTS[activeControlType].steadyRate }}%，
-        准确度={{ DEFAULT_WEIGHTS[activeControlType].accuracyRate }}%，
-        快速率={{ DEFAULT_WEIGHTS[activeControlType].fastRate }}%
+        稳定率={{ DEFAULT_WEIGHTS[activeControlType].steadyRate }}%， 准确度={{
+          DEFAULT_WEIGHTS[activeControlType].accuracyRate
+        }}%， 快速率={{ DEFAULT_WEIGHTS[activeControlType].fastRate }}%
       </div>
     </div>
 
@@ -481,9 +506,15 @@ onMounted(() => {
       <div class="space-y-3 py-2">
         <div class="text-sm">
           <div class="mb-2 font-medium">变更摘要（4 类控制类型）</div>
-          <div class="rounded p-3" :style="{ border: '1px solid hsl(var(--border))', background: 'hsl(var(--muted) / 42%)' }">
+          <div
+            class="rounded p-3"
+            :style="{
+              border: '1px solid hsl(var(--border))',
+              background: 'hsl(var(--muted) / 42%)',
+            }"
+          >
             <div
-              v-for="t in (['STABLE', 'SLOW', 'FAST', 'LOGIC'] as ControlType[])"
+              v-for="t in ['STABLE', 'SLOW', 'FAST', 'LOGIC'] as ControlType[]"
               :key="t"
               class="mb-1 flex justify-between text-xs"
             >
@@ -491,23 +522,25 @@ onMounted(() => {
                 {{ CONTROL_TYPE_MAP[t].label }}（{{ t }}）
               </span>
               <span class="font-mono">
-                S={{ editState[t].steadyRate }} /
-                A={{ editState[t].accuracyRate }} /
-                F={{ editState[t].fastRate }}
+                S={{ editState[t].steadyRate }} / A={{
+                  editState[t].accuracyRate
+                }}
+                / F={{ editState[t].fastRate }}
                 <span
                   :style="{
-                    color: editState[t].steadyRate +
-                      editState[t].accuracyRate +
-                      editState[t].fastRate ===
-                    100
-                      ? themeColors.SUCCESS
-                      : themeColors.DANGER
+                    color:
+                      editState[t].steadyRate +
+                        editState[t].accuracyRate +
+                        editState[t].fastRate ===
+                      100
+                        ? themeColors.SUCCESS
+                        : themeColors.DANGER,
                   }"
                 >
                   ({{
                     editState[t].steadyRate +
-                      editState[t].accuracyRate +
-                      editState[t].fastRate
+                    editState[t].accuracyRate +
+                    editState[t].fastRate
                   }})
                 </span>
               </span>
@@ -516,7 +549,13 @@ onMounted(() => {
         </div>
         <div class="text-sm">
           <div class="mb-1 font-medium">影响范围</div>
-          <p class="rounded p-2 text-xs" :style="{ background: 'hsl(var(--status-warning) / 0.08)', color: 'hsl(var(--status-warning))' }">
+          <p
+            class="rounded p-2 text-xs"
+            :style="{
+              background: 'hsl(var(--status-warning) / 0.08)',
+              color: 'hsl(var(--status-warning))',
+            }"
+          >
             保存后将以新版本生效，所有回路的综合性能评分将在下次评估时使用新权重。
             可在「版本历史」Tab 查看历史版本并回滚。
           </p>

@@ -97,6 +97,14 @@ async function handleViewDetail(record: LoopApi.LoopListItem) {
 type ViewMode = 'compact' | 'tags';
 const viewMode = ref<ViewMode>('compact');
 
+function formatOpLimit(
+  useDefault: boolean,
+  value: null | number | undefined,
+): string {
+  if (useDefault || value === null || value === undefined) return '默认';
+  return String(value);
+}
+
 // ===== 树（使用统一组件 PlantNodeTree）=====
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNode = ref<null | PlantNodeApi.PlantNode>(null);
@@ -288,28 +296,29 @@ const LOOP_TYPE_MAP: Record<string, { badgeClass: string; label: string }> = {
   },
 };
 
-const CONTROL_TYPE_MAP: Record<string, { badgeClass: string; label: string }> = {
-  STABLE: {
-    label: '稳定型',
-    badgeClass:
-      'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
-  },
-  SLOW: {
-    label: '慢速型',
-    badgeClass:
-      'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30',
-  },
-  FAST: {
-    label: '快速型',
-    badgeClass:
-      'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
-  },
-  LOGIC: {
-    label: '逻辑型',
-    badgeClass:
-      'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30',
-  },
-};
+const CONTROL_TYPE_MAP: Record<string, { badgeClass: string; label: string }> =
+  {
+    STABLE: {
+      label: '稳定型',
+      badgeClass:
+        'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
+    },
+    SLOW: {
+      label: '慢速型',
+      badgeClass:
+        'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30',
+    },
+    FAST: {
+      label: '快速型',
+      badgeClass:
+        'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
+    },
+    LOGIC: {
+      label: '逻辑型',
+      badgeClass:
+        'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/30',
+    },
+  };
 
 const LEVEL_LABEL: Record<number, string> = { 1: '1 级', 2: '2 级', 3: '3 级' };
 
@@ -336,7 +345,13 @@ const SLOT_LABELS: Record<string, string> = {
  */
 const dynamicColumns = computed<TableColumnsType>(() => {
   const baseCols: TableColumnsType = [
-    { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 130, fixed: 'left' },
+    {
+      title: '回路位号',
+      dataIndex: 'tagName',
+      key: 'tagName',
+      width: 130,
+      fixed: 'left',
+    },
     {
       title: '描述',
       dataIndex: 'description',
@@ -344,7 +359,13 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       ellipsis: true,
       width: 180,
     },
-    { title: '监控状态', dataIndex: 'status', key: 'status', width: 100, align: 'center' },
+    {
+      title: '监控状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      align: 'center',
+    },
   ];
 
   if (viewMode.value === 'tags') {
@@ -361,7 +382,13 @@ const dynamicColumns = computed<TableColumnsType>(() => {
   // v6.1：移除"评分"列（综合评分统一在回路监控页面查看）
   return [
     ...baseCols, // tagName + description + status
-    { title: '类型', dataIndex: 'loopType', key: 'loopType', width: 70, align: 'center' },
+    {
+      title: '类型',
+      dataIndex: 'loopType',
+      key: 'loopType',
+      width: 70,
+      align: 'center',
+    },
     {
       title: '控制类型',
       dataIndex: 'controlType',
@@ -445,7 +472,10 @@ function handleTableChange(pagination: TablePaginationConfig) {
 }
 
 /** v5.3：内联切换参评状态 */
-function handleToggleEvaluation(record: LoopApi.LoopListItem, checked: boolean) {
+function handleToggleEvaluation(
+  record: LoopApi.LoopListItem,
+  checked: boolean,
+) {
   if (checked) {
     updateLoopApi(record.loopId, { includeInEvaluation: true })
       .then(() => {
@@ -477,17 +507,16 @@ function handleToggleEvaluation(record: LoopApi.LoopListItem, checked: boolean) 
 }
 
 /** v5.3：抽屉中切换控制类型 — 提示将应用对应默认权重模板 */
-const pendingControlType = ref<'FAST' | 'LOGIC' | 'SLOW' | 'STABLE' | undefined>(
-  undefined,
-);
+const pendingControlType = ref<
+  'FAST' | 'LOGIC' | 'SLOW' | 'STABLE' | undefined
+>(undefined);
 function handleControlTypeChange(value: 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE') {
   if (!value) return;
   if (formState.controlType && value !== formState.controlType) {
     pendingControlType.value = value;
     Modal.warning({
       title: '确认切换控制类型',
-      content:
-        '切换控制类型将应用对应默认权重模板，是否继续？保存回路后生效。',
+      content: '切换控制类型将应用对应默认权重模板，是否继续？保存回路后生效。',
       okText: '确认切换',
       cancelText: '取消',
       onOk: () => {
@@ -592,14 +621,18 @@ const changeSummary = computed<DiffEntry[]>(() => {
           : '—',
       });
     }
-    if ((orig.importanceLevel ?? undefined) !== (formState.importanceLevel ?? undefined)) {
+    if (
+      (orig.importanceLevel ?? undefined) !==
+      (formState.importanceLevel ?? undefined)
+    ) {
       summary.push({
         field: '回路级别',
         from: orig.importanceLevel
           ? (LEVEL_LABEL[orig.importanceLevel] ?? String(orig.importanceLevel))
           : '—',
         to: formState.importanceLevel
-          ? (LEVEL_LABEL[formState.importanceLevel] ?? String(formState.importanceLevel))
+          ? (LEVEL_LABEL[formState.importanceLevel] ??
+            String(formState.importanceLevel))
           : '—',
       });
     }
@@ -636,16 +669,14 @@ const changeSummary = computed<DiffEntry[]>(() => {
       origUpper !== null && origUpper !== undefined
         ? String(origUpper)
         : '默认';
-    const newLowerStr = useDefaultOpLimits.value
-      ? '默认'
-      : (formState.opOutputLowerLimit === undefined
-          ? '默认'
-          : String(formState.opOutputLowerLimit));
-    const newUpperStr = useDefaultOpLimits.value
-      ? '默认'
-      : (formState.opOutputUpperLimit === undefined
-          ? '默认'
-          : String(formState.opOutputUpperLimit));
+    const newLowerStr = formatOpLimit(
+      useDefaultOpLimits.value,
+      formState.opOutputLowerLimit,
+    );
+    const newUpperStr = formatOpLimit(
+      useDefaultOpLimits.value,
+      formState.opOutputUpperLimit,
+    );
     if (origLowerStr !== newLowerStr || origUpperStr !== newUpperStr) {
       summary.push({
         field: 'OP 输出限位',
@@ -695,7 +726,9 @@ const changeSummary = computed<DiffEntry[]>(() => {
       summary.push({
         field: '回路级别',
         from: '保持原值',
-        to: LEVEL_LABEL[batchForm.importanceLevel] ?? String(batchForm.importanceLevel),
+        to:
+          LEVEL_LABEL[batchForm.importanceLevel] ??
+          String(batchForm.importanceLevel),
       });
     }
     // v5.3：批量参评状态
@@ -731,23 +764,23 @@ async function confirmSave() {
   confirmLoading.value = true;
   try {
     switch (confirmContextType.value) {
-    case 'batch': {
-      await doBatchConfigSubmit();
-      batchModalVisible.value = false;
-    
-    break;
-    }
-    case 'tagMapping': {
-      await doSaveTagMapping();
-    
-    break;
-    }
-    case 'update': {
-      await doSaveBasic();
-    
-    break;
-    }
-    // No default
+      case 'batch': {
+        await doBatchConfigSubmit();
+        batchModalVisible.value = false;
+
+        break;
+      }
+      case 'tagMapping': {
+        await doSaveTagMapping();
+
+        break;
+      }
+      case 'update': {
+        await doSaveBasic();
+
+        break;
+      }
+      // No default
     }
     confirmVisible.value = false;
   } catch (error) {
@@ -850,10 +883,7 @@ async function handleBatchConfigSubmit() {
 async function doBatchConfigSubmit() {
   batchSaving.value = true;
   const loopCount = selectedRowKeys.value.length;
-  const hide = message.loading(
-    `正在批量更新 ${loopCount} 个回路配置…`,
-    0,
-  );
+  const hide = message.loading(`正在批量更新 ${loopCount} 个回路配置…`, 0);
   try {
     const updates: LoopApi.LoopBatchUpdates = {};
     if (batchForm.isMonitored !== undefined) {
@@ -1084,7 +1114,9 @@ const opTagAssociated = computed(() => {
 });
 
 /** v6.1：DCS 型号列表（用于回路关联 DCS 型号选择） */
-const dcsModels = ref<{ code: string; id: string; name: string; vendorName?: null | string }[]>([]);
+const dcsModels = ref<
+  { code: string; id: string; name: string; vendorName?: null | string }[]
+>([]);
 let dcsModelsLoaded = false;
 async function loadDcsModels() {
   if (dcsModelsLoaded) return;
@@ -1151,22 +1183,26 @@ const opUpperLimitDisplay = computed<number | undefined>({
 function validateOpOutputLowerLimit(_rule: any, value: any): Promise<void> {
   if (useDefaultOpLimits.value) return Promise.resolve();
   if (value === undefined || value === null) {
-    return Promise.reject('请输入下限位或勾选「使用默认」');
+    return Promise.reject(new Error('请输入下限位或勾选「使用默认」'));
   }
   // OP Tag 已关联时严格校验量程范围
   if (opTagAssociated.value) {
     if (opTagRange.value.min !== null && value < opTagRange.value.min) {
-      return Promise.reject(`下限位不能低于 OP Tag 量程下限 ${opTagRange.value.min}`);
+      return Promise.reject(
+        new Error(`下限位不能低于 OP Tag 量程下限 ${opTagRange.value.min}`),
+      );
     }
     if (opTagRange.value.max !== null && value > opTagRange.value.max) {
-      return Promise.reject(`下限位不能超过 OP Tag 量程上限 ${opTagRange.value.max}`);
+      return Promise.reject(
+        new Error(`下限位不能超过 OP Tag 量程上限 ${opTagRange.value.max}`),
+      );
     }
   }
   if (
     formState.opOutputUpperLimit !== undefined &&
     value >= formState.opOutputUpperLimit
   ) {
-    return Promise.reject('下限位必须小于上限位');
+    return Promise.reject(new Error('下限位必须小于上限位'));
   }
   return Promise.resolve();
 }
@@ -1180,35 +1216,42 @@ function validateOpOutputLowerLimit(_rule: any, value: any): Promise<void> {
 function validateOpOutputUpperLimit(_rule: any, value: any): Promise<void> {
   if (useDefaultOpLimits.value) return Promise.resolve();
   if (value === undefined || value === null) {
-    return Promise.reject('请输入上限位或勾选「使用默认」');
+    return Promise.reject(new Error('请输入上限位或勾选「使用默认」'));
   }
   // OP Tag 已关联时严格校验量程范围
   if (opTagAssociated.value) {
     if (opTagRange.value.min !== null && value < opTagRange.value.min) {
-      return Promise.reject(`上限位不能低于 OP Tag 量程下限 ${opTagRange.value.min}`);
+      return Promise.reject(
+        new Error(`上限位不能低于 OP Tag 量程下限 ${opTagRange.value.min}`),
+      );
     }
     if (opTagRange.value.max !== null && value > opTagRange.value.max) {
-      return Promise.reject(`上限位不能超过 OP Tag 量程上限 ${opTagRange.value.max}`);
+      return Promise.reject(
+        new Error(`上限位不能超过 OP Tag 量程上限 ${opTagRange.value.max}`),
+      );
     }
   }
   if (
     formState.opOutputLowerLimit !== undefined &&
     value <= formState.opOutputLowerLimit
   ) {
-    return Promise.reject('上限位必须大于下限位');
+    return Promise.reject(new Error('上限位必须大于下限位'));
   }
   return Promise.resolve();
 }
 
 // 评分权重已移除（v6.1：回路级权重未被算法使用，统一由 MetricConfig.weight 全局配置管理）
 
-
 // ===== 筛选区紧凑化（P2-1）：已选筛选徽章 + 高级筛选 Popover =====
 const activeFilterCount = computed(() => {
   let count = 0;
   if (query.controlType) count++;
   if (query.importanceLevel) count++;
-  if (queryIncludeInEvaluation.value !== undefined && queryIncludeInEvaluation.value !== null) count++;
+  if (
+    queryIncludeInEvaluation.value !== undefined &&
+    queryIncludeInEvaluation.value !== null
+  )
+    count++;
   if (queryMonitorStatus.value) count++;
   if (query.status) count++;
   if (query.loopType) count++;
@@ -1249,7 +1292,10 @@ const activeFilterBadges = computed(() => {
     });
   }
 
-  if (queryIncludeInEvaluation.value !== undefined && queryIncludeInEvaluation.value !== null) {
+  if (
+    queryIncludeInEvaluation.value !== undefined &&
+    queryIncludeInEvaluation.value !== null
+  ) {
     const opt = evaluationOptions.find(
       (o) => o.value === queryIncludeInEvaluation.value,
     );
@@ -1502,9 +1548,7 @@ async function loadAvailableTags(keyword?: string) {
   tagSearchLoading.value = true;
   try {
     // 如果有回路位号，按前缀搜索相关测点
-    const searchKeyword =
-      keyword ||
-      (editingLoop.value?.tagName && editingLoop.value.tagName) || undefined;
+    const searchKeyword = keyword || editingLoop.value?.tagName || undefined;
     const data = await getTagListApi({
       keyword: searchKeyword,
       page: 1,
@@ -1791,10 +1835,7 @@ watch(
     <ClpmPageToolbar title="回路配置" />
 
     <!-- 单页布局：左侧工厂树 + 右侧回路表格（方案 A） -->
-    <div
-      class="flex gap-3"
-      style="height: calc(100vh - 220px)"
-    >
+    <div class="flex gap-3" style="height: calc(100vh - 220px)">
       <!-- 左侧工厂模型树 -->
       <PlantNodeTree
         card-title="工厂模型"
@@ -1890,7 +1931,9 @@ watch(
         </div>
 
         <!-- 筛选区（ZL 工业风格工具栏：左搜索 + 右高级筛选 Popover） -->
-        <div class="mb-3 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50/50 px-3 py-2">
+        <div
+          class="mb-3 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50/50 px-3 py-2"
+        >
           <Input
             v-model:value="query.keyword"
             placeholder="搜索位号/描述"
@@ -1900,7 +1943,10 @@ watch(
             @press-enter="handleSearch"
           >
             <template #prefix>
-              <IconifyIcon icon="ant-design:search-outlined" class="text-slate-400" />
+              <IconifyIcon
+                icon="ant-design:search-outlined"
+                class="text-slate-400"
+              />
             </template>
           </Input>
           <Button type="primary" size="small" @click="handleSearch">
@@ -1927,7 +1973,9 @@ watch(
             <Popover trigger="click" placement="bottomRight">
               <template #content>
                 <div class="w-64 space-y-3">
-                  <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <div
+                    class="text-xs font-semibold uppercase tracking-wider text-slate-500"
+                  >
                     高级筛选
                   </div>
                   <div>
@@ -2002,7 +2050,9 @@ watch(
                       @change="handleSearch"
                     />
                   </div>
-                  <div class="flex justify-between border-t border-slate-200 pt-2">
+                  <div
+                    class="flex justify-between border-t border-slate-200 pt-2"
+                  >
                     <Button size="small" type="link" @click="clearAllFilters">
                       清空筛选
                     </Button>
@@ -2036,6 +2086,7 @@ watch(
         </div>
 
         <Table
+          class="loop-config-table"
           :columns="dynamicColumns"
           :data-source="loopList"
           :loading="loading"
@@ -2050,15 +2101,19 @@ watch(
           :row-key="(record: LoopApi.LoopListItem) => record.loopId"
           :scroll="{ x: 1300 }"
           size="small"
-          :custom-row="(record: LoopApi.LoopListItem) => ({
-            class: record.includeInEvaluation === false ? 'row-not-evaluated' : '',
-          })"
+          :custom-row="
+            (record: LoopApi.LoopListItem) => ({
+              class:
+                record.includeInEvaluation === false ? 'row-not-evaluated' : '',
+            })
+          "
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'loopType'">
               <span
-                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none" :class="[
+                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+                :class="[
                   LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.badgeClass ??
                     'bg-slate-100 text-slate-700 border-slate-200',
                 ]"
@@ -2069,7 +2124,8 @@ watch(
             <template v-else-if="column.key === 'controlType'">
               <span
                 v-if="record.controlType"
-                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none" :class="[
+                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+                :class="[
                   CONTROL_TYPE_MAP[record.controlType]?.badgeClass ??
                     'bg-slate-100 text-slate-700 border-slate-200',
                 ]"
@@ -2084,22 +2140,34 @@ watch(
             <!-- v6.1 新增：PV 量程列 -->
             <template v-else-if="column.key === 'pvRange'">
               <span
-                v-if="record.pvRange && (record.pvRange.min !== null || record.pvRange.max !== null)"
+                v-if="
+                  record.pvRange &&
+                  (record.pvRange.min !== null || record.pvRange.max !== null)
+                "
                 class="font-mono text-xs text-slate-700"
               >
-                {{ record.pvRange.min ?? '—' }} ~ {{ record.pvRange.max ?? '—' }}
-                <span v-if="record.pvUnit" class="ml-0.5 text-slate-400">{{ record.pvUnit }}</span>
+                {{ record.pvRange.min ?? '—' }} ~
+                {{ record.pvRange.max ?? '—' }}
+                <span v-if="record.pvUnit" class="ml-0.5 text-slate-400">{{
+                  record.pvUnit
+                }}</span>
               </span>
               <span v-else class="text-slate-400">—</span>
             </template>
             <!-- v6.1 新增：OP 量程列 -->
             <template v-else-if="column.key === 'opRange'">
               <span
-                v-if="record.opRange && (record.opRange.min !== null || record.opRange.max !== null)"
+                v-if="
+                  record.opRange &&
+                  (record.opRange.min !== null || record.opRange.max !== null)
+                "
                 class="font-mono text-xs text-slate-700"
               >
-                {{ record.opRange.min ?? '—' }} ~ {{ record.opRange.max ?? '—' }}
-                <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{ record.opUnit }}</span>
+                {{ record.opRange.min ?? '—' }} ~
+                {{ record.opRange.max ?? '—' }}
+                <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{
+                  record.opUnit
+                }}</span>
               </span>
               <span v-else class="text-slate-400">—</span>
             </template>
@@ -2107,23 +2175,36 @@ watch(
             <template v-else-if="column.key === 'opOutputLimits'">
               <!-- 有限位值（自定义）：绿色高亮 -->
               <Tooltip
-                v-if="(record.opOutputLowerLimit !== null && record.opOutputLowerLimit !== undefined)
-                  || (record.opOutputUpperLimit !== null && record.opOutputUpperLimit !== undefined)"
+                v-if="
+                  (record.opOutputLowerLimit !== null &&
+                    record.opOutputLowerLimit !== undefined) ||
+                  (record.opOutputUpperLimit !== null &&
+                    record.opOutputUpperLimit !== undefined)
+                "
                 title="自定义 OP 输出限位（用于饱和率算法）"
               >
                 <span class="font-mono text-xs font-medium text-emerald-600">
-                  {{ record.opOutputLowerLimit ?? '—' }} ~ {{ record.opOutputUpperLimit ?? '—' }}
-                  <span v-if="record.opUnit" class="ml-0.5 text-emerald-400">{{ record.opUnit }}</span>
+                  {{ record.opOutputLowerLimit ?? '—' }} ~
+                  {{ record.opOutputUpperLimit ?? '—' }}
+                  <span v-if="record.opUnit" class="ml-0.5 text-emerald-400">{{
+                    record.opUnit
+                  }}</span>
                 </span>
               </Tooltip>
               <!-- 无限位值：直接显示 OP Tag 量程作为默认限位 -->
               <Tooltip
-                v-else-if="record.opRange && (record.opRange.min !== null || record.opRange.max !== null)"
+                v-else-if="
+                  record.opRange &&
+                  (record.opRange.min !== null || record.opRange.max !== null)
+                "
                 title="使用 OP Tag 量程作为限位"
               >
                 <span class="font-mono text-xs text-slate-600">
-                  {{ record.opRange.min ?? '—' }} ~ {{ record.opRange.max ?? '—' }}
-                  <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{ record.opUnit }}</span>
+                  {{ record.opRange.min ?? '—' }} ~
+                  {{ record.opRange.max ?? '—' }}
+                  <span v-if="record.opUnit" class="ml-0.5 text-slate-400">{{
+                    record.opUnit
+                  }}</span>
                 </span>
               </Tooltip>
               <!-- OP Tag 未关联且无限位值：系统默认 0 ~ 100 -->
@@ -2134,13 +2215,17 @@ watch(
             <template v-else-if="column.key === 'importanceLevel'">
               <span
                 v-if="record.importanceLevel"
-                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none" :class="[
+                class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+                :class="[
                   IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.badgeClass ??
                     'bg-slate-100 text-slate-700 border-slate-200',
                 ]"
               >
-                {{ IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.label ??
-                  LEVEL_LABEL[record.importanceLevel] ?? record.importanceLevel }}
+                {{
+                  IMPORTANCE_LEVEL_TAG[record.importanceLevel]?.label ??
+                  LEVEL_LABEL[record.importanceLevel] ??
+                  record.importanceLevel
+                }}
               </span>
               <span v-else class="text-slate-400">—</span>
             </template>
@@ -2174,7 +2259,8 @@ watch(
                   v-for="(val, key) in (record as LoopApi.LoopListItem)
                     .tagMappingStatus"
                   :key="key"
-                  class="inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium leading-none" :class="[
+                  class="inline-flex items-center rounded border px-1 py-0.5 text-[10px] font-medium leading-none"
+                  :class="[
                     val
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
                       : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
@@ -2308,7 +2394,9 @@ watch(
                 </FormItem>
               </div>
               <!-- v5.3：评估配置区（ZL 工业风格：浅灰底 + 左蓝色竖线 + 标题加粗） -->
-              <div class="mb-2 rounded border border-slate-200 border-l-4 border-l-blue-500 bg-slate-50 p-3">
+              <div
+                class="mb-2 rounded border border-slate-200 border-l-4 border-l-blue-500 bg-slate-50 p-3"
+              >
                 <div class="mb-2 text-sm font-semibold text-slate-700">
                   评估配置
                   <span class="ml-2 text-xs font-normal text-slate-400">
@@ -2335,7 +2423,11 @@ watch(
                     @change="
                       (e: any) =>
                         handleControlTypeChange(
-                          e.target.value as 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE',
+                          e.target.value as
+                            | 'FAST'
+                            | 'LOGIC'
+                            | 'SLOW'
+                            | 'STABLE',
                         )
                     "
                   />
@@ -2363,7 +2455,10 @@ watch(
                   <Switch
                     :checked="formState.includeInEvaluation"
                     :disabled="isViewMode"
-                    @change="(checked: any) => handleDrawerEvaluationChange(Boolean(checked))"
+                    @change="
+                      (checked: any) =>
+                        handleDrawerEvaluationChange(Boolean(checked))
+                    "
                   />
                   <span class="ml-2 text-xs text-gray-500">
                     {{
@@ -2385,7 +2480,9 @@ watch(
                     allow-clear
                     :options="
                       dcsModels.map((m) => ({
-                        label: m.vendorName ? `${m.vendorName} - ${m.name}` : m.name,
+                        label: m.vendorName
+                          ? `${m.vendorName} - ${m.name}`
+                          : m.name,
                         value: m.id,
                       }))
                     "
@@ -2401,7 +2498,9 @@ watch(
                 </FormItem>
               </div>
               <!-- v6.1：OP 输出限位配置区（ZL 工业风格：浅灰底 + 左蓝色竖线 + 标题加粗） -->
-              <div class="mb-2 rounded border border-slate-200 border-l-4 border-l-emerald-500 bg-slate-50 p-3">
+              <div
+                class="mb-2 rounded border border-slate-200 border-l-4 border-l-emerald-500 bg-slate-50 p-3"
+              >
                 <div class="mb-2 flex items-center justify-between">
                   <div class="text-sm font-semibold text-slate-700">
                     OP 输出限位
@@ -2412,7 +2511,10 @@ watch(
                   <Checkbox
                     :checked="useDefaultOpLimits"
                     :disabled="isViewMode"
-                    @change="(e: any) => handleUseDefaultOpLimitsChange(e.target.checked)"
+                    @change="
+                      (e: any) =>
+                        handleUseDefaultOpLimitsChange(e.target.checked)
+                    "
                   >
                     使用默认（= OP Tag 量程）
                   </Checkbox>
@@ -2425,13 +2527,21 @@ watch(
                   OP Tag 量程：
                   <span class="font-mono font-medium">
                     {{ opTagRange.min ?? '—' }} ~ {{ opTagRange.max ?? '—' }}
-                    <span v-if="opTagRange.unit" class="ml-0.5">{{ opTagRange.unit }}</span>
+                    <span v-if="opTagRange.unit" class="ml-0.5">{{
+                      opTagRange.unit
+                    }}</span>
                   </span>
-                  <span v-if="!useDefaultOpLimits" class="ml-2 text-emerald-500">
+                  <span
+                    v-if="!useDefaultOpLimits"
+                    class="ml-2 text-emerald-500"
+                  >
                     （限位值须在量程范围内）
                   </span>
                 </div>
-                <div v-else class="mb-2 rounded bg-amber-50 px-3 py-1 text-xs text-amber-700">
+                <div
+                  v-else
+                  class="mb-2 rounded bg-amber-50 px-3 py-1 text-xs text-amber-700"
+                >
                   尚未关联 OP Tag，限位值需人工填写（无范围校验）
                 </div>
                 <div class="grid grid-cols-2 gap-3">
@@ -2597,7 +2707,10 @@ watch(
               :loop-id="editingLoop.loopId"
               @saved="loadList"
             />
-            <div v-else-if="editingLoop && isViewMode" class="py-8 text-center text-gray-400">
+            <div
+              v-else-if="editingLoop && isViewMode"
+              class="py-8 text-center text-gray-400"
+            >
               投用定义为回路编辑专属配置，请通过"编辑"功能修改
             </div>
             <div v-else class="py-8 text-center text-gray-400">
@@ -2608,7 +2721,9 @@ watch(
       </Spin>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <Button @click="drawerVisible = false">{{ isViewMode ? '关闭' : '取消' }}</Button>
+          <Button @click="drawerVisible = false">{{
+            isViewMode ? '关闭' : '取消'
+          }}</Button>
           <Button
             v-if="!isViewMode"
             v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -2766,32 +2881,19 @@ watch(
   background-color: #f0f0f0 !important;
 }
 
-/* v6.1：选中行样式优化（淡蓝背景 + 左侧蓝色竖线，列分割线最细最淡） */
-.ant-table-tbody > tr.ant-table-row-selected > td {
+/* 选中行保留淡蓝背景，不显示任何纵向分隔线 */
+.loop-config-table .ant-table-tbody > tr.ant-table-row-selected > td {
   background-color: #eff6ff !important; /* blue-50 */
-  border-right-color: #eff6ff !important; /* 与背景同色，弱化列分割线 */
+  border-inline-end: none !important;
   border-bottom-color: #eff6ff !important; /* 与背景同色，弱化横向分割线 */
+  box-shadow: none !important;
 }
 
-.ant-table-tbody > tr.ant-table-row-selected:hover > td {
+.loop-config-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
   background-color: #dbeafe !important; /* blue-100 */
-  border-right-color: #dbeafe !important;
+  border-inline-end: none !important;
   border-bottom-color: #dbeafe !important;
-}
-
-/* 选中行的第一列左侧加蓝色竖线（视觉锚点） */
-.ant-table-tbody > tr.ant-table-row-selected > td:first-child {
-  position: relative;
-}
-
-.ant-table-tbody > tr.ant-table-row-selected > td:first-child::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 3px;
-  content: '';
-  background-color: #3b82f6; /* blue-500 */
+  box-shadow: none !important;
 }
 
 /* v6.1：抽屉表单紧凑布局（减小 FormItem 间距，确保保存按钮可见） */
@@ -2816,7 +2918,9 @@ watch(
   gap: 2px;
   align-items: center;
   opacity: 0;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    visibility 0.15s ease;
 }
 
 /* hover 行时显示更多操作 */

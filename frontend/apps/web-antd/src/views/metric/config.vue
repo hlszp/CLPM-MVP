@@ -9,9 +9,13 @@ defineOptions({ name: 'MetricConfig' });
 
 const activeTab = ref('definition');
 
-const DefinitionTab = defineAsyncComponent(() => import('./config-definition.vue'));
+const DefinitionTab = defineAsyncComponent(
+  () => import('./config-definition.vue'),
+);
 const WeightTab = defineAsyncComponent(() => import('./weight-config.vue'));
-const GradingTab = defineAsyncComponent(() => import('./grading-threshold.vue'));
+const GradingTab = defineAsyncComponent(
+  () => import('./grading-threshold.vue'),
+);
 const ConfidenceTab = defineAsyncComponent(
   () => import('./confidence-threshold.vue'),
 );

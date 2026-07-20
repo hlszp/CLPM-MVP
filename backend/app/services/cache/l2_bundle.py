@@ -18,10 +18,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
 import logging
+import threading
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
@@ -124,7 +126,8 @@ class L2BundleCache:
             logger.debug("L2 cache MISS: key=%s", cache_key)
             return None
         try:
-            bundles = _deserialize(raw)
+            # 反序列化（zstd 解压 + JSON 解析）移至线程池
+            bundles = await asyncio.to_thread(_deserialize, raw)
         except Exception:  # noqa: BLE001
             logger.warning("L2 cache 反序列化失败，丢弃脏数据: key=%s", cache_key, exc_info=True)
             await self._redis.delete(cache_key)
@@ -153,7 +156,8 @@ class L2BundleCache:
         """
         if ttl is None:
             ttl = DEFAULT_TTL
-        payload = _serialize(bundles)
+        # 序列化（JSON + zstd 压缩）移至线程池，避免 CPU 密集型操作阻塞事件循环
+        payload = await asyncio.to_thread(_serialize, bundles)
         await self._redis.setex(cache_key, ttl, payload)
         logger.debug(
             "L2 cache SET: key=%s, ttl=%ds, bundles=%d, payload_bytes=%d",
@@ -228,23 +232,26 @@ def _deserialize(payload: str) -> list[MetricDataBundle]:
     return [_bundle_from_dict(b) for b in bundles_data]
 
 
-# 单例压缩器（线程安全，与 L1 实现风格一致）
-_compressor_inst: zstandard.ZstdCompressor | None = None
-_decompressor_inst: zstandard.ZstdDecompressor | None = None
+# 线程局部压缩器（asyncio.to_thread 多线程安全）
+_zstd_local = threading.local()
 
 
 def _compressor_singleton() -> zstandard.ZstdCompressor:
-    global _compressor_inst
-    if _compressor_inst is None:
-        _compressor_inst = zstandard.ZstdCompressor(level=_ZSTD_LEVEL)
-    return _compressor_inst
+    """获取线程局部的 ZstdCompressor 实例（asyncio.to_thread 安全）."""
+    c = getattr(_zstd_local, "compressor", None)
+    if c is None:
+        c = zstandard.ZstdCompressor(level=_ZSTD_LEVEL)
+        _zstd_local.compressor = c
+    return c
 
 
 def _decompressor_singleton() -> zstandard.ZstdDecompressor:
-    global _decompressor_inst
-    if _decompressor_inst is None:
-        _decompressor_inst = zstandard.ZstdDecompressor()
-    return _decompressor_inst
+    """获取线程局部的 ZstdDecompressor 实例（asyncio.to_thread 安全）."""
+    d = getattr(_zstd_local, "decompressor", None)
+    if d is None:
+        d = zstandard.ZstdDecompressor()
+        _zstd_local.decompressor = d
+    return d
 
 
 def _json_default(obj: Any) -> Any:

@@ -19,14 +19,20 @@ const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
 const isSticky = computed(() => props.data.stictionIndex > 0.5);
-const statusColor = computed(() => (isSticky.value ? themeColors.value.DANGER : getSeriesColor('ok')));
+const statusColor = computed(() =>
+  isSticky.value ? themeColors.value.DANGER : getSeriesColor('ok'),
+);
 
-const stictionPercent = computed(() => (props.data.stictionIndex * 100).toFixed(1));
+const stictionPercent = computed(() =>
+  (props.data.stictionIndex * 100).toFixed(1),
+);
 const stictionBarValue = computed(() => props.data.stictionIndex * 100);
 
 const options = computed(() => {
-  const barColor = isSticky.value ? themeColors.value.DANGER : getSeriesColor('ok');
-  
+  const barColor = isSticky.value
+    ? themeColors.value.DANGER
+    : getSeriesColor('ok');
+
   const option: any = {
     xAxis: {
       type: 'category',
@@ -52,7 +58,7 @@ const options = computed(() => {
       {
         type: 'bar',
         data: [stictionBarValue.value],
-        itemStyle: { 
+        itemStyle: {
           color: barColor,
           borderRadius: [0, 4, 4, 0],
         },
@@ -64,9 +70,13 @@ const options = computed(() => {
   return option;
 });
 
-watch(options, (newOptions) => {
-  renderEcharts(newOptions);
-}, { immediate: true });
+watch(
+  options,
+  (newOptions) => {
+    renderEcharts(newOptions);
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   renderEcharts(options.value);
@@ -77,7 +87,10 @@ onMounted(() => {
   <div class="choudhury-card">
     <div class="card-header">
       <div class="card-title">非线性检测</div>
-      <div class="status-badge" :style="{ backgroundColor: statusColor, color: '#fff' }">
+      <div
+        class="status-badge"
+        :style="{ backgroundColor: statusColor, color: '#fff' }"
+      >
         {{ isSticky ? '阀门粘滞' : '正常' }}
       </div>
     </div>
@@ -97,7 +110,9 @@ onMounted(() => {
         </div>
         <div class="metric-item">
           <span class="metric-label">粘滞指数</span>
-          <span class="metric-value" :style="{ color: statusColor }">{{ data.stictionIndex.toFixed(3) }}</span>
+          <span class="metric-value" :style="{ color: statusColor }">{{
+            data.stictionIndex.toFixed(3)
+          }}</span>
         </div>
         <div class="metric-item">
           <span class="metric-label">判定阈值</span>

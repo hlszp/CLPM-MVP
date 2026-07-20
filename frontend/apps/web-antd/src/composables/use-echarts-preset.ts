@@ -111,7 +111,9 @@ export function useEchartsPreset() {
   }
 
   /** 系列色映射（业务状态 → ECharts 颜色） */
-  function getSeriesColor(status: 'error' | 'info' | 'neutral' | 'ok' | 'warning') {
+  function getSeriesColor(
+    status: 'error' | 'info' | 'neutral' | 'ok' | 'warning',
+  ) {
     const map = {
       ok: themeColors.value.SUCCESS,
       warning: themeColors.value.WARNING,

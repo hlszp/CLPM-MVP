@@ -560,6 +560,19 @@ async def get_loop_monitor_detail(
     mode_mapping_dict = await _load_mode_mappings(db, [loop_id])
     loop_mode_mapping = mode_mapping_dict.get(loop_id)
 
+    # 批量从 Redis 读取实时值，优先于 PostgreSQL current_value
+    redis_cache: dict[str, dict] = {}
+    try:
+        all_tag_names = [tag.tag_name for tag in tags_map.values() if tag.tag_name]
+        if all_tag_names:
+            cached_list = await get_subscriber().get_cached_values(all_tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc:
+                    redis_cache[tc] = item
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+
     # 构建当前值快照
     current_values: dict[str, Any] = {
         "pv": None,
@@ -581,35 +594,60 @@ async def get_loop_monitor_detail(
         mapping = mappings.get(role)
         if mapping and str(mapping.tag_id) in tags_map:
             tag = tags_map[str(mapping.tag_id)]
-            if role == "PV":
-                current_values["pv"] = tag.current_value
-                current_values["pvQuality"] = tag.quality
-            elif role == "SP":
-                current_values["sp"] = tag.current_value
-            elif role == "OP":
-                current_values["op"] = tag.current_value
-            elif role == "MODE":
-                current_values["mode"] = tag.current_value
-                current_values["modeLabel"] = _mode_value_to_label(
-                    tag.current_value, loop_mode_mapping
-                )
-                runtime_params["controlMode"] = _mode_value_to_label(
-                    tag.current_value, loop_mode_mapping
-                )
-            elif role == "PID_P":
-                runtime_params["pidP"] = tag.current_value
-            elif role == "PID_I":
-                runtime_params["pidI"] = tag.current_value
-            elif role == "PID_D":
-                runtime_params["pidD"] = tag.current_value
-            if tag.last_sync_at:
-                ts = (
-                    tag.last_sync_at.isoformat()
-                    if hasattr(tag.last_sync_at, "isoformat")
-                    else str(tag.last_sync_at)
-                )
-                if read_at is None or ts > read_at:
-                    read_at = ts
+            # 优先从 Redis 实时缓存读取
+            cached = redis_cache.get(tag.tag_name)
+            if cached:
+                try:
+                    if role in ("PV", "SP", "OP", "MODE"):
+                        current_values[role.lower()] = float(cached.get("value"))
+                    elif role in ("PID_P", "PID_I", "PID_D"):
+                        runtime_params[role.lower()] = float(cached.get("value"))
+                except (TypeError, ValueError):
+                    if role in ("PV", "SP", "OP", "MODE"):
+                        current_values[role.lower()] = tag.current_value
+                    elif role in ("PID_P", "PID_I", "PID_D"):
+                        runtime_params[role.lower()] = tag.current_value
+                if role == "PV":
+                    current_values["pvQuality"] = _quality_code_to_label(
+                        cached.get("quality", tag.quality)
+                    )
+                if role == "MODE":
+                    mode_val = current_values["mode"]
+                    current_values["modeLabel"] = _mode_value_to_label(mode_val, loop_mode_mapping)
+                    runtime_params["controlMode"] = current_values["modeLabel"]
+                if cached.get("collectTime"):
+                    if read_at is None or cached["collectTime"] > read_at:
+                        read_at = cached["collectTime"]
+            else:
+                if role == "PV":
+                    current_values["pv"] = tag.current_value
+                    current_values["pvQuality"] = tag.quality
+                elif role == "SP":
+                    current_values["sp"] = tag.current_value
+                elif role == "OP":
+                    current_values["op"] = tag.current_value
+                elif role == "MODE":
+                    current_values["mode"] = tag.current_value
+                    current_values["modeLabel"] = _mode_value_to_label(
+                        tag.current_value, loop_mode_mapping
+                    )
+                    runtime_params["controlMode"] = _mode_value_to_label(
+                        tag.current_value, loop_mode_mapping
+                    )
+                elif role == "PID_P":
+                    runtime_params["pidP"] = tag.current_value
+                elif role == "PID_I":
+                    runtime_params["pidI"] = tag.current_value
+                elif role == "PID_D":
+                    runtime_params["pidD"] = tag.current_value
+                if tag.last_sync_at:
+                    ts = (
+                        tag.last_sync_at.isoformat()
+                        if hasattr(tag.last_sync_at, "isoformat")
+                        else str(tag.last_sync_at)
+                    )
+                    if read_at is None or ts > read_at:
+                        read_at = ts
     current_values["readAt"] = read_at
 
     # 查询趋势数据（并行 + 动态采样间隔，封装在 trend_service 中复用）
@@ -760,7 +798,11 @@ def _aggregate_kpi_snapshots(snaps: list[KpiSnapshotHourly], read_at: str) -> di
                 vals.append((float(v), w))
         if not vals:
             return None
-        return sum(v * w for v, w in vals) / sum(w for _, w in vals)
+        denom = sum(w for _, w in vals)
+        if denom == 0:
+            # 所有权重均为 0 时退化为简单平均
+            return sum(v for v, _ in vals) / len(vals)
+        return sum(v * w for v, w in vals) / denom
 
     # 状态：全 SUCCESS → SUCCESS；否则 PARTIAL
     all_success = all(s.status == "SUCCESS" for s in snaps)

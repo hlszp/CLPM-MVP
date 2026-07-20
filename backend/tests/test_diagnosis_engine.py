@@ -1,22 +1,23 @@
 """诊断引擎 Celery 任务测试 (S4-DIAG-002).
 
 测试覆盖：
-- 纯函数：_detect_external_disturbance / _compute_sample_interval 等
-- _diagnose_loop 核心诊断逻辑（mock DB + query_trend_fn）
+- 纯函数：_compute_sample_interval / _analyze_quality / _analyze_saturation 等
+- _diagnose_loop 核心诊断逻辑（mock DB + RawTimeSeries 宽表查询）
 - _do_run_diagnosis / _do_diagnose_single_loop 编排逻辑
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
 
+from app.contracts.data_types import RawTimeSeries
 from app.tasks.diagnosis_engine import (
-    _analyze_pid_params,
     _analyze_quality,
     _analyze_saturation,
     _analyze_step_response,
@@ -27,7 +28,6 @@ from app.tasks.diagnosis_engine import (
     _dempster_shafer_fusion,
     _detect_bias_shift,
     _detect_choudhury_nonlinearity,
-    _detect_external_disturbance,
     _detect_kano_stiction,
     _detect_oscillation_fft,
     _detect_oscillation_iae,
@@ -103,18 +103,27 @@ def _make_diag_config(
     return c
 
 
-def _make_trend_data(
-    n: int = 50,
-    base_value: float = 50.0,
-    amplitude: float = 0.0,
-    quality: str = "GOOD",
-) -> list[dict[str, Any]]:
-    """构造 TDengine 趋势数据。"""
-    data: list[dict[str, Any]] = []
-    for i in range(n):
-        value = base_value + amplitude * float(np.sin(i * 0.5))
-        data.append({"ts": float(i), "value": value, "quality": quality})
-    return data
+def _make_raw_timeseries(
+    pv: list[Any],
+    *,
+    sp: list[Any] | None = None,
+    op: list[Any] | None = None,
+    mode: list[Any] | None = None,
+    pv_quality: list[int] | None = None,
+) -> RawTimeSeries:
+    """构造宽表查询返回的 RawTimeSeries。"""
+    signals = {"pv": pv}
+    if sp is not None:
+        signals["sp"] = sp
+    if op is not None:
+        signals["op"] = op
+    if mode is not None:
+        signals["mode"] = mode
+    return RawTimeSeries(
+        timestamps=[datetime(2026, 1, 1) + timedelta(seconds=i) for i in range(len(pv))],
+        signals=signals,
+        quality_codes={"pv_quality": pv_quality or [1] * len(pv)},
+    )
 
 
 def _make_scalar_one_or_none_mock(value: Any) -> MagicMock:
@@ -134,45 +143,6 @@ def _make_scalars_all_mock(items: list) -> MagicMock:
 # ===========================================================================
 # 纯函数测试
 # ===========================================================================
-
-
-class TestDetectExternalDisturbance:
-    """测试 _detect_external_disturbance() 外扰检测。"""
-
-    def test_short_data_returns_empty(self) -> None:
-        """数据不足时应返回未检测。"""
-        pv = np.array([1.0, 2.0, 3.0], dtype=float)
-        result = _detect_external_disturbance(pv)
-        assert result["detected"] is False
-        assert result["confidence"] == 0.0
-
-    def test_no_disturbance(self) -> None:
-        """低频信号（无外扰）应返回未检测。"""
-        pv = np.array([50.0 + 0.1 * i for i in range(100)], dtype=float)
-        result = _detect_external_disturbance(pv)
-        assert result["detected"] is False
-
-    def test_with_disturbance(self) -> None:
-        """高频信号应检测到外扰。"""
-        t = np.linspace(0, 10, 200)
-        pv = 50.0 + 10.0 * np.sin(2 * np.pi * 5 * t)  # 5Hz 高频
-        result = _detect_external_disturbance(pv)
-        assert result["detected"] is True
-        assert result["confidence"] > 0.0
-        assert result["frequency"] > 0.0
-
-    def test_empty_array(self) -> None:
-        """空数组应返回未检测。"""
-        pv = np.array([], dtype=float)
-        result = _detect_external_disturbance(pv)
-        assert result["detected"] is False
-
-    def test_with_sample_interval(self) -> None:
-        """指定采样间隔时应正确计算频率。"""
-        t = np.linspace(0, 10, 200)
-        pv = 50.0 + 10.0 * np.sin(2 * np.pi * 5 * t)
-        result = _detect_external_disturbance(pv, sample_interval=0.5)
-        assert result["detected"] is True
 
 
 class TestComputeSampleInterval:
@@ -308,7 +278,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=AsyncMock(),
+            query_wide_fn=AsyncMock(),
         )
         assert result is None
 
@@ -332,7 +302,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=AsyncMock(),
+            query_wide_fn=AsyncMock(),
         )
         assert result is None
 
@@ -361,7 +331,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_fail_query,
+            query_wide_fn=_fail_query,
         )
         assert result is None
 
@@ -382,7 +352,7 @@ class TestDiagnoseLoop:
         )
 
         # 仅 10 个点（< MIN_DATA_POINTS=32）
-        short_data = _make_trend_data(n=10)
+        short_data = _make_raw_timeseries([50.0] * 10)
 
         async def _query_fn(*args, **kwargs):
             return short_data
@@ -393,7 +363,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
         assert result is None
 
@@ -411,21 +381,17 @@ class TestDiagnoseLoop:
                 _make_scalars_all_mock([pv_mapping]),
                 _make_scalars_all_mock([pv_tag]),
                 MagicMock(),  # delete(DiagnosisResult) 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
 
         # 50 个点的振荡信号
         t = np.linspace(0, 10 * np.pi, 50)
-        osc_data = [
-            {"ts": float(i), "value": 50.0 + 10.0 * np.sin(ti), "quality": "GOOD"}
-            for i, ti in enumerate(t)
-        ]
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return osc_data
-            return []
+        async def _query_fn(**kwargs):
+            return osc_data
 
         result = await _diagnose_loop(
             db=db,
@@ -433,7 +399,7 @@ class TestDiagnoseLoop:
             diag_configs={"OSCILLATION": _make_diag_config()},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -456,17 +422,16 @@ class TestDiagnoseLoop:
                 _make_scalars_all_mock([pv_mapping]),
                 _make_scalars_all_mock([pv_tag]),
                 MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
 
         # 50 个点的稳定数据（无振荡）
-        stable_data = [{"ts": float(i), "value": 50.0, "quality": "GOOD"} for i in range(50)]
+        stable_data = _make_raw_timeseries([50.0] * 50)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return stable_data
-            return []
+        async def _query_fn(**kwargs):
+            return stable_data
 
         result = await _diagnose_loop(
             db=db,
@@ -474,7 +439,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -494,19 +459,16 @@ class TestDiagnoseLoop:
                 _make_scalars_all_mock([pv_mapping]),
                 _make_scalars_all_mock([pv_tag]),
                 MagicMock(),
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
 
         # 50 个点，部分 Bad
-        data = _make_trend_data(n=50)
-        for i in range(10):
-            data[i]["quality"] = "BAD"
+        data = _make_raw_timeseries([50.0] * 50, pv_quality=[0] * 10 + [1] * 40)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return data
-            return []
+        async def _query_fn(**kwargs):
+            return data
 
         result = await _diagnose_loop(
             db=db,
@@ -514,7 +476,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         # 过滤后 40 点 >= 32，应正常诊断
@@ -538,12 +500,10 @@ class TestDiagnoseLoop:
         )
 
         # 50 个点全部 Bad
-        data = _make_trend_data(n=50, quality="BAD")
+        data = _make_raw_timeseries([50.0] * 50, pv_quality=[0] * 50)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return data
-            return []
+        async def _query_fn(**kwargs):
+            return data
 
         result = await _diagnose_loop(
             db=db,
@@ -551,7 +511,7 @@ class TestDiagnoseLoop:
             diag_configs={},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
         assert result is None
 
@@ -575,22 +535,21 @@ class TestDiagnoseLoop:
                 _make_scalars_all_mock([pv_m, sp_m, op_m, mode_m]),
                 _make_scalars_all_mock([pv_tag, sp_tag, op_tag, mode_tag]),
                 MagicMock(),
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
 
-        pv_data = _make_trend_data(n=50, base_value=50.0, amplitude=2.0)
+        pv_values = [50.0 + 2.0 * float(np.sin(i * 0.5)) for i in range(50)]
+        raw_series = _make_raw_timeseries(
+            pv_values,
+            sp=[50.0] * 50,
+            op=[50.0] * 50,
+            mode=[1] * 50,
+        )
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return pv_data
-            if tag_name == "LIC.SP":
-                return [{"ts": float(i), "value": 50.0} for i in range(50)]
-            if tag_name == "LIC.OP":
-                return [{"ts": float(i), "value": 50.0} for i in range(50)]
-            if tag_name == "LIC.MODE":
-                return [{"ts": float(i), "value": 1} for i in range(50)]
-            return []
+        async def _query_fn(**kwargs):
+            return raw_series
 
         result = await _diagnose_loop(
             db=db,
@@ -598,11 +557,171 @@ class TestDiagnoseLoop:
             diag_configs={"OSCILLATION": _make_diag_config()},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
         assert result["status"] == "SUCCESS"
+
+
+# ===========================================================================
+# A11: diagnosis_tag 写入方（_diagnose_loop 落库段 upsert）
+# ===========================================================================
+
+
+class TestDiagnosisTagUpsert:
+    """诊断落库时同步 upsert diagnosis_tag（A11）。"""
+
+    @staticmethod
+    def _added_tags(db: AsyncMock) -> list:
+        """从 db.add 调用中提取 DiagnosisTag 实例。"""
+        from app.models.diagnosis import DiagnosisTag
+
+        return [
+            call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], DiagnosisTag)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_tag_created_on_diagnosis(self) -> None:
+        """诊断落库后生成 ACTIVE 标签（severity/source_metric 映射正确）。"""
+        loop = _make_loop()
+        pv_mapping = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_mapping]),
+                _make_scalars_all_mock([pv_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
+            ]
+        )
+        db.add = MagicMock()
+
+        # 50 个点的振荡信号
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" in result["labels"]
+        tags = self._added_tags(db)
+        osc_tags = [t for t in tags if t.tag_code == "OSCILLATION"]
+        assert len(osc_tags) == 1
+        tag = osc_tags[0]
+        assert tag.status == "ACTIVE"
+        assert tag.severity == "WARN"  # OSCILLATION → WARN
+        assert tag.tag_name == "振荡"
+        assert tag.source_metric == "FFT"  # 算法来源
+        assert tag.trigger_condition["algorithm"] == "FFT"
+        assert tag.trigger_value is not None
+
+    @pytest.mark.asyncio
+    async def test_existing_active_tag_updated_not_duplicated(self) -> None:
+        """同回路同标签已有 ACTIVE 行时更新触发快照，不重复建行。"""
+        loop = _make_loop()
+        pv_mapping = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+
+        existing_tag = MagicMock()
+        existing_tag.tag_code = "OSCILLATION"
+        existing_tag.status = "ACTIVE"
+        existing_tag.triggered_at = datetime(2026, 1, 1)
+        existing_tag.trigger_value = Decimal("0.1")
+        existing_tag.trigger_condition = {"algorithm": "FFT", "confidence": 0.1}
+        existing_tag.source_metric = "FFT"
+        existing_tag.severity = "WARN"
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_mapping]),
+                _make_scalars_all_mock([pv_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([existing_tag]),  # 已有 ACTIVE 标签
+            ]
+        )
+        db.add = MagicMock()
+
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" in result["labels"]
+        # 未新建 DiagnosisTag 行
+        assert self._added_tags(db) == []
+        # 已有标签的触发时间与触发快照被更新
+        assert existing_tag.triggered_at != datetime(2026, 1, 1)
+        assert existing_tag.trigger_condition["algorithm"] == "FFT"
+        assert existing_tag.trigger_condition["confidence"] > 0.1
+
+    @pytest.mark.asyncio
+    async def test_severity_mapping_for_manual_review(self) -> None:
+        """MANUAL_REVIEW 标签 severity=INFO、source_metric 兜底。"""
+        loop = _make_loop()
+        pv_mapping = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_mapping]),
+                _make_scalars_all_mock([pv_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
+            ]
+        )
+        db.add = MagicMock()
+
+        # 50 个点的稳定数据（无异常 → MANUAL_REVIEW 兜底标签）
+        stable_data = _make_raw_timeseries([50.0] * 50)
+
+        async def _query_fn(**kwargs):
+            return stable_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "MANUAL_REVIEW" in result["labels"]
+        tags = self._added_tags(db)
+        review_tags = [t for t in tags if t.tag_code == "MANUAL_REVIEW"]
+        assert len(review_tags) == 1
+        assert review_tags[0].severity == "INFO"
+        assert review_tags[0].source_metric == "MANUAL_REVIEW"
 
 
 # ===========================================================================
@@ -638,12 +757,13 @@ class TestDoRunDiagnosis:
 
         diag_config = _make_diag_config()
 
-        # 主 session：查询 snapshot + config + 创建 DiagnosisTask
+        # 主 session：查询 snapshot + config + 未完成任务去重 + 创建 DiagnosisTask
         main_session = AsyncMock()
         main_session.execute = AsyncMock(
             side_effect=[
                 _make_scalars_all_mock([snapshot]),  # snapshot 查询
                 _make_scalars_all_mock([diag_config]),  # config 查询
+                _make_scalars_all_mock([]),  # 未完成任务去重查询（无已存在任务）
             ]
         )
         main_session.commit = AsyncMock()
@@ -806,65 +926,6 @@ class TestDetectValveStiction:
         # 应该能计算 stiction_index
         assert "stiction_index" in result
         assert "fitting_score" in result
-
-
-class TestAnalyzePidParams:
-    """测试 _analyze_pid_params() PID 增益分析。"""
-
-    def test_short_data_returns_empty(self) -> None:
-        """数据不足应返回默认值。"""
-        pv = np.array([1.0, 2.0], dtype=float)
-        sp = np.array([1.0, 2.0], dtype=float)
-        result = _analyze_pid_params(pv, sp)
-        assert result["overaggressive"] is False
-        assert result["overconservative"] is False
-
-    def test_steady_state_no_overshoot(self) -> None:
-        """稳态数据（无 SP 阶跃）应无过冲。"""
-        n = 100
-        sp = np.full(n, 50.0)
-        pv = np.full(n, 50.0)
-        result = _analyze_pid_params(pv, sp)
-        assert result["overaggressive"] is False
-        assert result["overshoot"] == 0.0
-
-    def test_overaggressive_with_overshoot(self) -> None:
-        """SP 阶跃后 PV 过冲应检测到过激。"""
-        n = 100
-        sp = np.zeros(n)
-        sp[50:] = 100.0  # SP 阶跃
-        # PV 过冲：超过 SP 目标值
-        pv = np.zeros(n)
-        pv[50:] = 100.0
-        pv[60:70] = 130.0  # 过冲 30%
-        result = _analyze_pid_params(pv, sp)
-        assert result["overaggressive"] is True
-        assert result["overshoot"] > 0.2
-
-    def test_overconservative_slow_response(self) -> None:
-        """响应缓慢且稳态误差大应检测到过保守。"""
-        n = 200
-        sp = np.zeros(n)
-        sp[50:] = 100.0  # SP 阶跃
-        # PV 响应非常慢，且稳态误差大
-        pv = np.zeros(n)
-        for i in range(50, n):
-            pv[i] = 80.0 + 0.001 * (i - 50)  # 缓慢上升，稳态误差 20
-        result = _analyze_pid_params(pv, sp)
-        # 响应时间长 + 稳态误差大 → 过保守
-        assert "overconservative" in result
-        assert "response_time" in result
-
-    def test_downward_step(self) -> None:
-        """下降阶跃应正确计算过冲。"""
-        n = 100
-        sp = np.full(n, 100.0)
-        sp[50:] = 0.0  # 下降阶跃
-        pv = np.full(n, 100.0)
-        pv[50:] = 0.0
-        pv[60:70] = -30.0  # 下冲
-        result = _analyze_pid_params(pv, sp)
-        assert result["overshoot"] > 0.0
 
 
 class TestAnalyzeSaturation:
@@ -1444,6 +1505,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
                 _make_scalars_all_mock([pv_m, op_m]),
                 _make_scalars_all_mock([pv_tag, op_tag]),
                 MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -1454,26 +1516,21 @@ class TestDiagnoseLoopExtendedAlgorithms:
         op_vals = 50.0 + 20.0 * np.sign(np.sin(t))
         pv_vals = 50.0 + 15.0 * np.sin(t - np.pi / 4)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return [
-                    {"ts": float(i), "value": float(pv_vals[i]), "quality": "GOOD"}
-                    for i in range(n)
-                ]
-            if tag_name == "LIC.OP":
-                return [
-                    {"ts": float(i), "value": float(op_vals[i]), "quality": "GOOD"}
-                    for i in range(n)
-                ]
-            return []
+        raw_series = _make_raw_timeseries(
+            [float(value) for value in pv_vals],
+            op=[float(value) for value in op_vals],
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
 
         result = await _diagnose_loop(
             db=db,
             loop_id="loop-001",
-            diag_configs={},
+            diag_configs={"VALVE_STICTION": _make_diag_config("VALVE_STICTION")},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1498,6 +1555,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
                 _make_scalars_all_mock([pv_m, sp_m]),
                 _make_scalars_all_mock([pv_tag, sp_tag]),
                 MagicMock(),
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -1511,24 +1569,21 @@ class TestDiagnoseLoopExtendedAlgorithms:
             t = i - 50
             pv[i] = 100.0 + 40.0 * np.exp(-t * 0.02) * np.cos(t * 0.3)
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return [
-                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"} for i in range(n)
-                ]
-            if tag_name == "LIC.SP":
-                return [
-                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"} for i in range(n)
-                ]
-            return []
+        raw_series = _make_raw_timeseries(
+            [float(value) for value in pv],
+            sp=[float(value) for value in sp],
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
 
         result = await _diagnose_loop(
             db=db,
             loop_id="loop-001",
-            diag_configs={},
+            diag_configs={"OVERAGGRESSIVE": _make_diag_config("OVERAGGRESSIVE")},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1553,6 +1608,7 @@ class TestDiagnoseLoopExtendedAlgorithms:
                 _make_scalars_all_mock([pv_m, sp_m]),
                 _make_scalars_all_mock([pv_tag, sp_tag]),
                 MagicMock(),
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
             ]
         )
         db.add = MagicMock()
@@ -1564,24 +1620,21 @@ class TestDiagnoseLoopExtendedAlgorithms:
         for shift_time in range(0, n, 200):
             pv[shift_time : shift_time + 100] += 8.0
 
-        async def _query_fn(tag_name: str, *args, **kwargs):
-            if tag_name == "LIC.PV":
-                return [
-                    {"ts": float(i), "value": float(pv[i]), "quality": "GOOD"} for i in range(n)
-                ]
-            if tag_name == "LIC.SP":
-                return [
-                    {"ts": float(i), "value": float(sp[i]), "quality": "GOOD"} for i in range(n)
-                ]
-            return []
+        raw_series = _make_raw_timeseries(
+            [float(value) for value in pv],
+            sp=[float(value) for value in sp],
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
 
         result = await _diagnose_loop(
             db=db,
             loop_id="loop-001",
-            diag_configs={},
+            diag_configs={"EXTERNAL_DISTURBANCE": _make_diag_config("EXTERNAL_DISTURBANCE")},
             ts_start=datetime(2026, 1, 1, 0, 0, 0),
             ts_end=datetime(2026, 1, 1, 1, 0, 0),
-            query_trend_fn=_query_fn,
+            query_wide_fn=_query_fn,
         )
 
         assert result is not None
@@ -1940,3 +1993,271 @@ class TestDeduplicateLabels:
     def test_empty_results_returns_empty(self) -> None:
         """空列表应返回空列表。"""
         assert _deduplicate_labels([]) == []
+
+
+# ===========================================================================
+# A5/A6/A9/A10 修复测试（诊断引擎正确性，2026-07-20）
+# ===========================================================================
+
+
+def _make_diagnose_db(loop: MagicMock, mappings: list, tags: list) -> AsyncMock:
+    """构造 _diagnose_loop 所需的 mock DB（loop/mapping/tags/delete/ACTIVE标签 五次查询）。"""
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            _make_scalar_one_or_none_mock(loop),
+            _make_scalars_all_mock(mappings),
+            _make_scalars_all_mock(tags),
+            MagicMock(),  # delete(DiagnosisResult) 结果
+            _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
+        ]
+    )
+    db.add = MagicMock()
+    return db
+
+
+class TestAlgorithmEnableGating:
+    """A6：is_enabled 门控——禁用（或配置不存在）的算法不执行、不产出标签。"""
+
+    @pytest.mark.asyncio
+    async def test_disabled_oscillation_produces_no_label(self) -> None:
+        """OSCILLATION 配置缺失（禁用）时，振荡信号也不产出 OSCILLATION 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        # 50 个点的振荡信号（启用时必检出，见 test_normal_diagnosis_with_oscillation）
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={},  # 全部算法禁用
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" not in result["labels"]
+        # 全部禁用时仍走 MANUAL_REVIEW 兜底
+        assert result["labels"] == ["MANUAL_REVIEW"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_oscillation_produces_label(self) -> None:
+        """OSCILLATION 启用时，同样的振荡信号应产出 OSCILLATION 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        t = np.linspace(0, 10 * np.pi, 50)
+        osc_data = _make_raw_timeseries([50.0 + 10.0 * np.sin(ti) for ti in t])
+
+        async def _query_fn(**kwargs):
+            return osc_data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OSCILLATION" in result["labels"]
+
+    @pytest.mark.asyncio
+    async def test_disabled_quality_produces_no_label(self) -> None:
+        """QUALITY_ABNORMAL 禁用时，坏质量数据不产出 QUALITY_ABNORMAL 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        # 50 个点，每 5 个 1 个 Bad（占比 20%，启用时必触发 Q002）
+        data = _make_raw_timeseries([50.0] * 50, pv_quality=[1, 1, 1, 1, 0] * 10)
+
+        async def _query_fn(**kwargs):
+            return data
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OSCILLATION": _make_diag_config()},  # 质量算法未启用
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "QUALITY_ABNORMAL" not in result["labels"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_quality_produces_label(self) -> None:
+        """QUALITY_ABNORMAL 启用时，同样的坏质量数据产出 QUALITY_ABNORMAL 标签。"""
+        db = _make_diagnose_db(
+            _make_loop(),
+            [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+            [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+        )
+
+        data = _make_raw_timeseries([50.0] * 50, pv_quality=[1, 1, 1, 1, 0] * 10)
+
+        async def _query_fn(**kwargs):
+            return data
+
+        quality_config = _make_diag_config("QUALITY_ABNORMAL")
+        quality_config.threshold = None  # 使用算法默认阈值
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"QUALITY_ABNORMAL": quality_config},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "QUALITY_ABNORMAL" in result["labels"]
+
+
+class TestThresholdTakesEffect:
+    """A5：配置阈值经 _get_threshold 真实影响算法判定结果。"""
+
+    @pytest.mark.asyncio
+    async def test_quality_threshold_from_config_changes_verdict(self) -> None:
+        """20% Bad 占比默认触发 Q002；配置调高 q002_bad_rate 后不再触发。"""
+        pv_quality = [1, 1, 1, 1, 0] * 10  # Bad 占比 20%，无连续段
+
+        async def _run(threshold: dict | None) -> list[str]:
+            db = _make_diagnose_db(
+                _make_loop(),
+                [_make_mapping(tag_role="PV", tag_id="tag-pv")],
+                [_make_tag(tag_id="tag-pv", tag_name="LIC.PV")],
+            )
+            data = _make_raw_timeseries([50.0] * 50, pv_quality=pv_quality)
+
+            async def _query_fn(**kwargs):
+                return data
+
+            quality_config = _make_diag_config("QUALITY_ABNORMAL")
+            quality_config.threshold = threshold
+            result = await _diagnose_loop(
+                db=db,
+                loop_id="loop-001",
+                diag_configs={"QUALITY_ABNORMAL": quality_config},
+                ts_start=datetime(2026, 1, 1, 0, 0, 0),
+                ts_end=datetime(2026, 1, 1, 1, 0, 0),
+                query_wide_fn=_query_fn,
+            )
+            assert result is not None
+            return result["labels"]
+
+        # 默认阈值（q002_bad_rate=0.1）：20% > 10% → 触发
+        assert "QUALITY_ABNORMAL" in await _run(None)
+        # 配置阈值调高到 0.9：20% < 90% → 不触发
+        assert "QUALITY_ABNORMAL" not in await _run({"q002_bad_rate": 0.9})
+
+    @pytest.mark.asyncio
+    async def test_saturation_threshold_from_config_changes_verdict(self) -> None:
+        """OP=99 默认判定高饱和；配置调高 op_high_limit 后不再判定。"""
+        op_m = _make_mapping(tag_role="OP", tag_id="tag-op")
+        op_tag = _make_tag(tag_id="tag-op", tag_name="LIC.OP")
+
+        async def _run(threshold: dict | None) -> list[str]:
+            db = _make_diagnose_db(
+                _make_loop(),
+                [_make_mapping(tag_role="PV", tag_id="tag-pv"), op_m],
+                [_make_tag(tag_id="tag-pv", tag_name="LIC.PV"), op_tag],
+            )
+            data = _make_raw_timeseries([50.0] * 50, op=[99.0] * 50)
+
+            async def _query_fn(**kwargs):
+                return data
+
+            saturation_config = _make_diag_config("OUTPUT_SATURATION")
+            saturation_config.threshold = threshold
+            result = await _diagnose_loop(
+                db=db,
+                loop_id="loop-001",
+                diag_configs={"OUTPUT_SATURATION": saturation_config},
+                ts_start=datetime(2026, 1, 1, 0, 0, 0),
+                ts_end=datetime(2026, 1, 1, 1, 0, 0),
+                query_wide_fn=_query_fn,
+            )
+            assert result is not None
+            return result["labels"]
+
+        # 默认限位（op_high_limit=100, epsilon=2）：99 ≥ 98 → 饱和
+        assert "OUTPUT_SATURATION" in await _run(None)
+        # 配置限位调高到 120：99 < 118 → 不饱和
+        assert "OUTPUT_SATURATION" not in await _run({"op_high_limit": 120.0})
+
+
+class TestDoRunDiagnosisDedup:
+    """A9：同回路同时间窗已有未完成任务时跳过创建与诊断。"""
+
+    @pytest.mark.asyncio
+    async def test_existing_pending_task_skipped(self) -> None:
+        """已存在 PENDING/RUNNING 任务时不重复创建，也不重复诊断。"""
+        snapshot = MagicMock()
+        snapshot.loop_id = "loop-001"
+        diag_config = _make_diag_config()
+
+        main_session = AsyncMock()
+        main_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_all_mock([snapshot]),  # snapshot 查询
+                _make_scalars_all_mock([diag_config]),  # config 查询
+                _make_scalars_all_mock(["loop-001"]),  # 去重查询：已有未完成任务
+            ]
+        )
+        main_session.commit = AsyncMock()
+        main_session.rollback = AsyncMock()
+        main_session.add = MagicMock()
+
+        with patch("app.core.db.AsyncSessionLocal") as mock_session_local:
+            mock_session_local.return_value.__aenter__.return_value = main_session
+            result = await _do_run_diagnosis()
+
+        assert result["total"] == 1
+        assert result["skipped"] == 1
+        assert result["diagnosed"] == 0
+        assert result["failed"] == 0
+        main_session.add.assert_not_called()  # 未创建新的 DiagnosisTask
+
+
+class TestSnapshotScoreFilter:
+    """A10：score 为 NULL（INCONCLUSIVE）的快照也纳入自动诊断。"""
+
+    @pytest.mark.asyncio
+    async def test_score_null_included_in_filter_sql(self) -> None:
+        """快照筛选语句应包含 OR score IS NULL 分支。"""
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_all_mock([]),  # 无 snapshot
+            ]
+        )
+
+        with patch("app.core.db.AsyncSessionLocal") as mock_session_local:
+            mock_session_local.return_value.__aenter__.return_value = mock_session
+            result = await _do_run_diagnosis()
+
+        assert result["total"] == 0
+        # 第一个 execute 调用即快照筛选语句
+        stmt = mock_session.execute.call_args_list[0][0][0]
+        compiled = str(stmt)
+        assert "score IS NULL" in compiled

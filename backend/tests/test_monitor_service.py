@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.contracts.data_types import RawTimeSeries
 from app.core.exceptions import BizError
 from app.services.monitor import (
     _get_loop_tag_values,
@@ -130,6 +131,28 @@ def _make_rows_iterable_mock(rows: list) -> MagicMock:
     result = MagicMock()
     result.__iter__ = MagicMock(return_value=iter(rows))
     return result
+
+
+def _make_raw_series(
+    *,
+    timestamps: list[str],
+    pv: list[float] | None = None,
+    sp: list[float] | None = None,
+    op: list[float] | None = None,
+    mode: list[float] | None = None,
+    pv_quality: list[str] | None = None,
+) -> RawTimeSeries:
+    """构造宽表查询结果，与 DataProvider.make_query_fn 契约一致。"""
+    signals = {
+        role: values
+        for role, values in {"pv": pv, "sp": sp, "op": op, "mode": mode}.items()
+        if values is not None
+    }
+    return RawTimeSeries(
+        timestamps=timestamps,
+        signals=signals,
+        quality_codes={"pv_quality": pv_quality or ["GOOD"] * len(timestamps)},
+    )
 
 
 # ===========================================================================
@@ -548,13 +571,13 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock([snap]),  # KPI 快照查询
             ]
         )
-        pv_trend = [
-            {"ts": "2026-06-22T08:00:00Z", "value": 50.0, "quality": "GOOD"},
-            {"ts": "2026-06-22T08:00:01Z", "value": 50.5, "quality": "GOOD"},
-        ]
+        raw_series = _make_raw_series(
+            timestamps=["2026-06-22T08:00:00Z", "2026-06-22T08:00:01Z"],
+            pv=[50.0, 50.5],
+        )
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.query_trend_data = AsyncMock(return_value=pv_trend)
+            mock_provider.make_query_fn.return_value = AsyncMock(return_value=raw_series)
             mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["loopId"] == "loop-001"
@@ -620,7 +643,7 @@ class TestGetLoopMonitorDetail:
         )
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.query_trend_data = AsyncMock(
+            mock_provider.make_query_fn.return_value = AsyncMock(
                 side_effect=RuntimeError("TDengine 连接失败")
             )
             mock_get_provider.return_value = mock_provider
@@ -794,10 +817,13 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
-        sp_trend = [{"ts": "2026-06-22T08:00:00Z", "value": 52.0, "quality": "GOOD"}]
+        raw_series = _make_raw_series(
+            timestamps=["2026-06-22T08:00:00Z"],
+            sp=[52.0],
+        )
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.query_trend_data = AsyncMock(return_value=sp_trend)
+            mock_provider.make_query_fn.return_value = AsyncMock(return_value=raw_series)
             mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["trendStatus"] == "OK"
@@ -820,10 +846,13 @@ class TestGetLoopMonitorDetail:
                 _make_scalars_mock([]),  # KPI 快照查询
             ]
         )
-        op_trend = [{"ts": "2026-06-22T08:00:00Z", "value": 55.0, "quality": "GOOD"}]
+        raw_series = _make_raw_series(
+            timestamps=["2026-06-22T08:00:00Z"],
+            op=[55.0],
+        )
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.query_trend_data = AsyncMock(return_value=op_trend)
+            mock_provider.make_query_fn.return_value = AsyncMock(return_value=raw_series)
             mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["trendStatus"] == "OK"
@@ -847,7 +876,9 @@ class TestGetLoopMonitorDetail:
         )
         with patch("app.services.data_source.factory.get_provider") as mock_get_provider:
             mock_provider = MagicMock()
-            mock_provider.query_trend_data = AsyncMock(return_value=[])
+            mock_provider.make_query_fn.return_value = AsyncMock(
+                return_value=RawTimeSeries(timestamps=[], signals={})
+            )
             mock_get_provider.return_value = mock_provider
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["currentValues"]["readAt"] == "2026-06-22T10:00:00"

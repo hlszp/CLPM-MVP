@@ -1,4 +1,15 @@
 <script lang="ts" setup>
+/* oxlint-disable typescript/no-non-null-assertion -- chart series indexes are validated against the timestamp series */
+import type { EchartsUIType } from '@vben/plugins/echarts';
+
+import type { LoopApi } from '#/api/loop';
+
+import { nextTick, onMounted, ref, watch } from 'vue';
+
+import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+
 defineOptions({ name: 'WaveformChart' });
 
 const props = withDefaults(
@@ -93,16 +104,6 @@ function fmtTimeLong(ts: number): string {
  *   - 有 validMask（Phase 5）：无效时段用灰色虚线保留连线 + markArea 标识无效区间
  * - 始终启用 X+Y 双轴 dataZoom（inside + slider）
  */
-import type { EchartsUIType } from '@vben/plugins/echarts';
-
-import type { LoopApi } from '#/api/loop';
-
-import { nextTick, onMounted, ref, watch } from 'vue';
-
-import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
-
-import { useClpmTheme } from '#/composables/use-clpm-theme';
-
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts, resize, getChartInstance } = useEcharts(chartRef);
 

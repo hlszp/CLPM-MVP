@@ -23,7 +23,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -207,54 +206,32 @@ async def fetch_loop_trend(
         available_roles,
     )
 
-    # 3. 并行查询各角色趋势数据
-    from app.services.data_source.factory import get_provider
+    # 3. 宽表查询（一次查询所有角色）。无有效角色时直接返回空数据，
+    # 避免 Provider 重复查询映射，也避免对远端数据源发出无意义请求。
+    raw_series = None
+    if available_roles:
+        from app.services.data_source.factory import get_provider
 
-    provider = get_provider()
+        provider = get_provider()
+        query_wide_fn = provider.make_query_fn(db)
 
-    async def _fetch_role(role: str) -> tuple[str, list[dict]]:
-        mapping = mappings.get(role)
-        if not mapping or str(mapping.tag_id) not in tags_map:
-            return role, []
-        tag = tags_map[str(mapping.tag_id)]
         try:
-            raw = await provider.query_trend_data(
-                tag.tag_name,
-                start_time,
-                end_time,
-                sample_interval=sample_interval,
+            raw_series = await query_wide_fn(
+                loop_id=loop_id,
+                tag_roles=available_roles,
+                start=start_time,
+                end=end_time,
+                interval_s=sample_interval,
             )
             logger.debug(
-                "趋势查询角色数据: loop=%s, role=%s, tag=%s, 返回点数=%d",
+                "宽表查询成功: loop=%s, 返回点数=%d",
                 loop_id,
-                role,
-                tag.tag_name,
-                len(raw),
+                len(raw_series.timestamps),
             )
-            return role, raw
         except Exception as exc:  # noqa: BLE001
-            logger.warning("查询 %s 趋势数据失败: %s", role, exc)
-            return role, []
+            logger.warning("宽表查询失败 (loop=%s): %s", loop_id, exc)
 
-    results = await asyncio.gather(*[_fetch_role(r) for r in roles])
-    role_data: dict[str, list[dict]] = dict(results)
-
-    # 记录各角色返回点数
-    role_point_counts = {r: len(role_data.get(r, [])) for r in roles}
-    logger.info(
-        "趋势查询并行完成: loop=%s, 各角色点数=%s",
-        loop_id,
-        role_point_counts,
-    )
-
-    # 4. 以 PV 的时间戳为基准对齐
-    pv_data = role_data.get("PV", [])
-    sp_data = role_data.get("SP", [])
-    op_data = role_data.get("OP", [])
-    mode_data = role_data.get("MODE", [])
-
-    base_data = pv_data if pv_data else (sp_data if sp_data else op_data)
-    if not base_data:
+    if not raw_series or not raw_series.timestamps:
         return {
             "timestamps": [],
             "pv": [],
@@ -267,13 +244,6 @@ async def fetch_loop_trend(
             "downsampled": False,
         }
 
-    # 构建 ts → value 映射
-    pv_map = {d.get("ts"): d.get("value") for d in pv_data}
-    sp_map = {d.get("ts"): d.get("value") for d in sp_data}
-    op_map = {d.get("ts"): d.get("value") for d in op_data}
-    mode_map = {d.get("ts"): d.get("value") for d in mode_data}
-    pv_quality_map = {d.get("ts"): d.get("quality", "GOOD") for d in pv_data}
-
     timestamps: list[int] = []
     pv_list: list[float | None] = []
     sp_list: list[float | None] = []
@@ -281,25 +251,32 @@ async def fetch_loop_trend(
     mode_list: list[float | None] = []
     pv_quality_list: list[str] = []
 
-    for d in base_data:
-        ts = d.get("ts")
+    pv_qualities = raw_series.quality_codes.get("pv_quality", [])
+
+    for i, ts in enumerate(raw_series.timestamps):
         ts_millis = _ts_to_millis(ts)
         if ts_millis is None:
             continue
         timestamps.append(ts_millis)
 
-        quality_label = _quality_to_label(pv_quality_map.get(ts, "GOOD"))
+        q = pv_qualities[i] if i < len(pv_qualities) else "GOOD"
+        quality_label = _quality_to_label(q)
         pv_quality_list.append(quality_label)
+
+        pv_sig = raw_series.signals.get("pv")
+        sp_sig = raw_series.signals.get("sp")
+        op_sig = raw_series.signals.get("op")
+        mode_sig = raw_series.signals.get("mode")
 
         # PV 质量码为 BAD 时，pv 值为 null
         if quality_label == "BAD":
             pv_list.append(None)
         else:
-            pv_list.append(pv_map.get(ts))
+            pv_list.append(pv_sig[i] if pv_sig and i < len(pv_sig) else None)
 
-        sp_list.append(sp_map.get(ts))
-        op_list.append(op_map.get(ts))
-        mode_list.append(mode_map.get(ts))
+        sp_list.append(sp_sig[i] if sp_sig and i < len(sp_sig) else None)
+        op_list.append(op_sig[i] if op_sig and i < len(op_sig) else None)
+        mode_list.append(mode_sig[i] if mode_sig and i < len(mode_sig) else None)
 
     # 5. LTTB 降采样（如果点数仍超过阈值）
     downsampled = False
@@ -334,7 +311,7 @@ async def fetch_loop_trend(
         len(timestamps),
         "是" if downsampled else "否",
         f"(原始={pre_downsample_count}→{len(timestamps)})" if downsampled else "",
-        "PV" if pv_data else ("SP" if sp_data else "OP"),
+        "PV" if pv_list else ("SP" if sp_list else "OP"),
     )
 
     return {

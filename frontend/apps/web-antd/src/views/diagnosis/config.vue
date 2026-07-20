@@ -36,7 +36,11 @@ import {
   getDiagnosisMetricsApi,
   updateDiagnosisMetricApi,
 } from '#/api/diagnosis';
-import { ClpmDangerConfirmModal, ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDangerConfirmModal,
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,

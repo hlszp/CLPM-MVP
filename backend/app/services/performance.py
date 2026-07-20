@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Integer, case, func, select
+from sqlalchemy import Integer, case, func, nulls_last, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -73,6 +73,7 @@ KPI_NAME_MAP = {
 TIME_WINDOWS: dict[str, timedelta] = {
     "today": timedelta(days=1),
     "yesterday": timedelta(days=1),
+    "last_8_hours": timedelta(hours=8),
     "last_7_days": timedelta(days=7),
     "last_30_days": timedelta(days=30),
 }
@@ -1371,6 +1372,8 @@ async def list_loop_snapshots(
     latest_only: bool = True,
     page: int = 1,
     page_size: int = 20,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
 ) -> tuple[list[tuple[KpiSnapshotHourly, str | None]], int]:
     """查询回路小时指标快照列表（含回路名，分页）.
 
@@ -1387,6 +1390,9 @@ async def list_loop_snapshots(
             False=返回所有快照（用于历史趋势/诊断历史）
         page: 页码（1-based）
         page_size: 每页条数
+        sort_by: 排序字段（"score"=按综合评分，None/"ts_start"=按时间窗起始；
+            score 排序时 NULL 恒置末位，次排序 ts_start DESC）
+        sort_order: 排序方向（"asc"/"desc"，默认 desc）
 
     Returns:
         (rows, total) — rows 为 [(KpiSnapshotHourly, tag_name), ...]，
@@ -1453,12 +1459,22 @@ async def list_loop_snapshots(
         latest_subq = subq_stmt.subquery()
 
         # 主查询：只取 rn=1 的 snapshot
+        # 可选排序：score / ts_start（默认 ts_start DESC）；score 排序时 NULL 恒置末位
+        if sort_by == "score":
+            score_order = (
+                KpiSnapshotHourly.score.asc()
+                if sort_order == "asc"
+                else KpiSnapshotHourly.score.desc()
+            )
+            latest_order = [nulls_last(score_order), KpiSnapshotHourly.ts_start.desc()]
+        else:
+            latest_order = [KpiSnapshotHourly.ts_start.desc()]
         stmt = (
             select(KpiSnapshotHourly, LoopLedger.tag_name)
             .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
             .join(latest_subq, KpiSnapshotHourly.id == latest_subq.c.snap_id)
             .where(latest_subq.c.rn == 1)
-            .order_by(KpiSnapshotHourly.ts_start.desc())
+            .order_by(*latest_order)
         )
 
         # count：每个回路算一条，按 distinct loop_id 计数
@@ -1469,11 +1485,21 @@ async def list_loop_snapshots(
         )
     else:
         # 全量时间序列（历史趋势/诊断历史用）
+        # 可选排序：score / ts_start（默认 ts_start DESC）；score 排序时 NULL 恒置末位
+        if sort_by == "score":
+            score_order = (
+                KpiSnapshotHourly.score.asc()
+                if sort_order == "asc"
+                else KpiSnapshotHourly.score.desc()
+            )
+            order_clause = [nulls_last(score_order), KpiSnapshotHourly.ts_start.desc()]
+        else:
+            order_clause = [KpiSnapshotHourly.ts_start.desc()]
         stmt = (
             select(KpiSnapshotHourly, LoopLedger.tag_name)
             .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
             .where(*base_conditions)
-            .order_by(KpiSnapshotHourly.ts_start.desc())
+            .order_by(*order_clause)
         )
         count_stmt = (
             select(func.count())

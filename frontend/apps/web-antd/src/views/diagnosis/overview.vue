@@ -29,10 +29,7 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { Button, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import {
-  getDiagnosisAnalyticsApi,
-  getDiagnosisListApi,
-} from '#/api/diagnosis';
+import { getDiagnosisAnalyticsApi, getDiagnosisListApi } from '#/api/diagnosis';
 import {
   ClpmDataCanvas,
   ClpmKpiCard,
@@ -61,7 +58,7 @@ const hasError = ref(false);
 /** 统计数据 */
 const analyticsData = ref<DiagnosisApi.AnalyticsResult | null>(null);
 
-/** 今日异常回路列表（用于状态计数 + Top 5） */
+/** 今日异常回路列表（用于 Top 5） */
 const todayDiagnosisList = ref<DiagnosisApi.DiagnosisListItem[]>([]);
 
 // ECharts refs
@@ -185,25 +182,32 @@ async function loadOverview() {
     analyticsData.value = analytics;
     todayDiagnosisList.value = todayList.items || [];
 
-    // 计算 KPI 数值
+    // 计算 KPI 数值（待处理/已闭环改用后端全量聚合计数，不受分页影响）
     const abnormalToday = todayList.total || 0;
-    const pendingCount = todayDiagnosisList.value.filter(
-      (item) => item.actionStatus === 'PENDING',
-    ).length;
-    const implementedCount = todayDiagnosisList.value.filter(
-      (item) => item.actionStatus === 'IMPLEMENTED',
-    ).length;
+    const statusCounts = todayList.aggregates?.statusCounts ?? {};
+    const pendingCount = statusCounts.PENDING ?? 0;
+    const implementedCount = statusCounts.IMPLEMENTED ?? 0;
     // 平均闭环时长取 efficiencyTrend 最后一个值
     const trend = analytics.efficiencyTrend;
     const avgCloseHours =
-      trend && trend.avgCloseDurationHours && trend.avgCloseDurationHours.length > 0
-        ? trend.avgCloseDurationHours[trend.avgCloseDurationHours.length - 1] ?? 0
+      trend &&
+      trend.avgCloseDurationHours &&
+      trend.avgCloseDurationHours.length > 0
+        ? (trend.avgCloseDurationHours[
+            trend.avgCloseDurationHours.length - 1
+          ] ?? 0)
         : 0;
 
-    kpiCards.value[0]!.value = abnormalToday;
-    kpiCards.value[1]!.value = pendingCount;
-    kpiCards.value[2]!.value = implementedCount;
-    kpiCards.value[3]!.value = Number(avgCloseHours.toFixed(1));
+    const values = [
+      abnormalToday,
+      pendingCount,
+      implementedCount,
+      Number(avgCloseHours.toFixed(1)),
+    ];
+    for (const [index, value] of values.entries()) {
+      const card = kpiCards.value[index];
+      if (card) card.value = value;
+    }
 
     // 渲染图表
     nextTick(() => {
@@ -345,9 +349,9 @@ function handleViewDetail(loopId: string) {
   router.push(`/diagnosis/detail/${loopId}`);
 }
 
-/** 跳转诊断列表 */
+/** 跳转诊断任务列表 */
 function handleViewAll() {
-  router.push('/diagnosis/list');
+  router.push('/diagnosis/tasks');
 }
 
 /** 重试加载 */
@@ -478,9 +482,7 @@ onMounted(() => {
         :columns="topColumns"
         :data-source="topAbnormalLoops"
         :pagination="false"
-        :row-key="
-          (record: DiagnosisApi.DiagnosisListItem) => record.loopId
-        "
+        :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
         :scroll="{ x: 940 }"
         size="middle"
       >
@@ -505,8 +507,10 @@ onMounted(() => {
             <Tag
               :color="getStatusMeta(record.actionStatus as string).color"
               :style="{
-                background: getStatusMeta(record.actionStatus as string).bgColor,
-                borderColor: getStatusMeta(record.actionStatus as string).borderColor,
+                background: getStatusMeta(record.actionStatus as string)
+                  .bgColor,
+                borderColor: getStatusMeta(record.actionStatus as string)
+                  .borderColor,
               }"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}

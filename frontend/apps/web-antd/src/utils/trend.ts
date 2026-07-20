@@ -26,8 +26,8 @@ export const DEFAULT_TARGET_POINTS = 3600;
  * @returns 采样间隔（秒），最小为 1
  */
 export function computeSampleInterval(
-  startTime: string | Date,
-  endTime: string | Date,
+  startTime: Date | string,
+  endTime: Date | string,
   targetPoints: number = DEFAULT_TARGET_POINTS,
 ): number {
   const start = startTime instanceof Date ? startTime : new Date(startTime);

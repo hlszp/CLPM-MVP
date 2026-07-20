@@ -1,14 +1,16 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline  
-**当前版本**：v2.0  
-**发布日期**：2026-07-06  
+**当前版本**：v2.1
+**发布日期**：2026-07-17
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐  
-**v2.0 变更摘要**：追认代码实际存在的 API 领域与表结构，补全 3+1+8 KPI 体系说明
+**v2.1 变更摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态
 
 ## 1. 定位
 
 本文件记录 2026-06 重构后的真实信息架构、路由、API、权限、状态机与阶段口径。后续 PRD、UI/UX、DESIGN、README、测试与代码评审均以本文件作为实现契约入口。
+
+版本分层：产品文档使用 v6.1 表示需求与设计基线；后端 `APP_VERSION`（当前默认 `1.0.0`）用于运行时 API 元数据；Git tag 用于发布追踪。三者职责不同，发布时分别维护，不以数值相等作为一致性条件。
 
 本文件不是推翻 PRD/UI/UX，而是把重构后的设计意图固化为新的派生基线：
 
@@ -24,9 +26,9 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | 模块 | 当前设计意图 | 当前主要路由 |
 |---|---|---|
 | 工作台门户 | 全角色入口，聚合 KPI、低效回路、待处理异常与趋势 | `/dashboard/workbench` |
-| 回路管理 | 用一个聚合页承载工厂树、回路台账、Tag 关联、评估参数、投用定义 | `/loop/manage`、`/loop/detail/:id`、`/loop/monitor`、`/tag/list` |
-| 性能评估 | 保留重构后的 metric 命名，承载 KPI 看板、排行、统计、指标明细、历史重算、5 Tab 配置组 | `/metric/dashboard`、`/metric/ranking`、`/metric/statistics`、`/metric/snapshots`、`/metric/recompute`、`/metric/config`、`/metric/weight-config`、`/metric/engine-config`、`/metric/task-strategy`、`/metric/tasks` |
-| 诊断中心 | 诊断列表、详情、波形、异常跟踪、A/B 对比、统计、配置分离 | `/diagnosis/list`、`/diagnosis/detail/:loopId`、`/diagnosis/waveform`、`/diagnosis/tracker`、`/diagnosis/ab-compare`、`/diagnosis/statistics`、`/diagnosis/config` |
+| 回路管理 | 链路配置、测点配置、回路配置、监控、历史数据管理与隐藏详情页 | `/loop/aas-sync`、`/tag/list`、`/loop/manage`、`/loop/monitor`、`/loop/data`、`/loop/detail/:id` |
+| 性能评估 | 装置性能、回路性能、评估任务、聚合指标配置与 KPI 报表 | `/metric/pid-dashboard`、`/metric/loop-performance`、`/metric/tasks`、`/metric/config`、`/metric/kpi-report` |
+| 诊断中心 | 总览、任务、归档记录、可视化、异常跟踪、配置与隐藏详情页 | `/diagnosis/overview`、`/diagnosis/tasks`、`/diagnosis/records`、`/diagnosis/visualization`、`/diagnosis/tracker`、`/diagnosis/config`、`/diagnosis/detail/:loopId` |
 | 回路整定 | Phase 1 保留实验/辅助能力入口，承载工作台、模型、算法、仿真、统计 | `/tuning/workbench`、`/tuning/model`、`/tuning/algorithm`、`/tuning/simulation`、`/tuning/stats` |
 | 系统管理 | 用户、审计、权限矩阵、报表配置 | `/system/users`、`/system/audit`、`/system/permissions`、`/system/reports` |
 
@@ -36,10 +38,10 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 |---|---|---|
 | 首页 | 使用 `/dashboard/workbench` | `/` 可作为部署层默认入口，但产品路由以工作台路由为准。 |
 | 性能评估 | 保留 `/metric/*` | 不再强制回退到旧 UI/UX 的 `/performance/*`。如需兼容，可后续增加 redirect，不在菜单暴露。 |
-| 指标配置 Tab 聚合 | `/metric/config` + `/metric/weight-config` + `/metric/engine-config` + `/metric/task-strategy` + `/metric/tasks` | P2 #31 B8 修正：原契约列 `/metric/type-weight` / `/metric/level-weight` 已被 UI/UX 改造方案 v1.0 §6.1.4 合并为 `/metric/weight-config` 单 Tab，内含"类型权重 + 级别权重"两个子 Tab（子组件 `type-weight.vue` / `level-weight.vue` 作为 `weight-config.vue` 的内容组件，非孤儿视图）。 |
-| 回路管理 | 保留 `/loop/manage` 聚合页 | `/loop/factory`、`/loop/ledger` 视为旧设计路径，不再作为主菜单页。 |
+| 指标配置 Tab 聚合 | `/metric/config` | 指标定义、权重、定级、可信度等配置在聚合页内以 Tab 呈现；不再为内部 Tab 暴露独立主菜单路由。 |
+| 回路管理 | 保留 `/loop/manage` 聚合页 | `/loop/factory`、`/loop/ledger` 仅保留到 `/loop/manage` 的兼容重定向，不作为主菜单页。 |
 | Tag 管理 | 使用 `/tag/list` | AAS Tag 是独立资源入口，不强行塞回 `/loop/mapping`。 |
-| 诊断中心 | 以实际 7 页面为准 | waveform、ab-compare、config 是重构后显式页面。 |
+| 诊断中心 | 以当前聚合 IA 为准 | waveform 合入详情，统计合入总览，A/B 对比合入 Tracker 抽屉；旧视图文件可保留但不构成路由。A/B 数据接口当前返回 501，列为 P1 未实现。 |
 | 系统安全说明 | 暂并入权限/审计/README | 是否新增 `/system/safety` 另行评审。 |
 
 ## 4. API 契约
@@ -49,7 +51,7 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | 领域 | 当前实现路径 | 说明 |
 |---|---|---|
 | 性能配置与看板 | `/api/v1/performance/*` | KPI 看板、排行、分析、回路快照、实时自控率。 |
-| 诊断配置与跟踪 | `/api/v1/diagnosis/*` | 诊断列表、详情、波形、A/B 对比、统计；含 `/api/v1/tracker/*`（异常跟踪）与 `/api/v1/diagnosis/tags/*`（诊断标签）子路由。 |
+| 诊断配置与跟踪 | `/api/v1/diagnosis/*` | 诊断列表、详情、任务、记录、统计；含 `/api/v1/tracker/*`（异常跟踪）与 `/api/v1/diagnosis/tags/*`（诊断标签）子路由。`/api/v1/diagnosis/ab-compare` 当前返回 501，属于 P1 未实现。 |
 | 整定算法 | `/api/v1/tuning/*` | Phase 1 实验/辅助能力，不代表自动下写 DCS。 |
 | 用户管理 | `/api/v1/users/*` | 不强制改为 `/api/v1/system/users`。 |
 | 审计日志 | `/api/v1/audit-logs/*` | 系统管理 UI 可消费该路径。 |
@@ -74,14 +76,17 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | 实时数据 | `/api/v1/realtime/*` | 实时数据查询。 |
 | WebSocket | `/api/v1/ws/*` | 实时推送通道。 |
 | AAS 同步 | `/api/v1/aas/*` | AAS 配置、同步触发、同步状态与日志、Tag 列表。 |
-| 配置中心 | `/api/v1/configs/*` | 含 `metrics`/`diagnosis`/`loop-type-weights`/`loop-level-weights`/`weight-templates`/`grading-thresholds` 子领域。 |
+| 配置中心 | `/api/v1/configs/*` | 含 `metrics`/`diagnosis`/`loop-type-weights`/`loop-level-weights`/`weight-templates`/`grading-thresholds`/`confidence-thresholds` 子领域。 |
 | 算法独立调用 | `/api/v1/algorithms/*` | 含 `kpi`/`diagnosis`/`tuning`/`dataplanner` 子领域，用于算法独立调试与数据计划。 |
 | 任务管理 | `/api/v1/tasks/*` | 标准评估、自定义评估、历史重算、任务通知、取消、删除、结果查询。 |
 | 节点级 KPI | `/api/v1/performance/nodes/*` | 节点快照、趋势、排行、对比、总览、监控。 |
 | 异常跟踪 | `/api/v1/tracker/*` | diagnosis.py 内的子路由，承担 Action Tracker 状态机流转。 |
 | 诊断标签 | `/api/v1/diagnosis/tags/*` | 诊断标签管理。 |
 | 时间序列 | `/api/v1/timeseries/*` | 时间序列数据查询（tags.py 与 diagnosis.py 各一个 router）。 |
-| 健康检查 | `/api/v1/health` | 健康检查与就绪检查。 |
+| 健康检查 | `/health`、`/health/ready` | 容器存活与就绪检查，挂载在根路径，不使用业务 API 前缀。 |
+| 数据源配置 | `/api/v1/datasource/*` | 历史数据源连接测试、状态与配置管理。 |
+| DCS 配置 | `/api/v1/dcs/*` | DCS 品牌、型号、MODE 定义与映射矩阵管理；不包含 DCS 参数下写。 |
+| 回路历史数据导入 | `/api/v1/loops/data-import/*` | 导入预览、任务提交、状态查询、取消与删除。 |
 
 ### 4.4 API 契约规则
 
@@ -104,12 +109,13 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | 对象 | 标准枚举 | 中文显示 |
 |---|---|---|
 | Action Tracker | `PENDING` → `IN_PROGRESS` → `IMPLEMENTED` / `IGNORED` | 待处理、处理中、已实施、已忽略 |
+| Diagnosis Tag | `ACTIVE` / `RESOLVED` / `SUPPRESSED` | 活跃、已处理、已抑制 |
 | KPI 快照 | `SUCCESS` / `PARTIAL` / `INCONCLUSIVE` | 成功、部分有效、数据不足 |
 | Loop | `READY` / `PARTIAL` / `INACTIVE` | 就绪（配置完整可参与 KPI 计算）、部分配置（缺必需 Tag，不参与计算）、已停用（软删除，is_active=False） |
 | PV Quality | `GOOD` / `BAD` / `UNCERTAIN` | 好值、坏值、不确定 |
 | Tuning | `DRAFT` / `RUNNING` / `COMPLETED` / `ROLLED_BACK` | 草稿、运行中、已完成、已回退 |
 
-历史文档中的 `RESOLVED` 统一视为旧命名；当前代码与后续文档使用 `IMPLEMENTED`。
+`ActionTracker.action_status` 与 `DiagnosisTag.status` 是两个独立状态机。`IMPLEMENTED` 只用于 Action Tracker；`RESOLVED` 仍是 Diagnosis Tag 的当前有效枚举，不得跨对象替换。
 
 P1 #13 修正：历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED`（运行/暂停/退役）统一视为旧命名；当前代码与后续文档使用 `READY`/`PARTIAL`/`INACTIVE`（就绪/部分配置/已停用）。代码中的状态反映"配置完整性 + 删除状态"，而非"运行状态"：`READY` = 配置完整可参与 KPI 计算；`PARTIAL` = 缺必需 Tag，不参与计算；`INACTIVE` = 软删除（is_active=False）。
 
@@ -131,8 +137,8 @@ P1 #13 修正：历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED`（运行/�
 | | 振荡率 | `oscillation_rate` | 振荡识别占比 |
 | | 理想稳定时间 | `ideal_settling_time` | 理论稳定时间 |
 | | 实际稳定时间 | `settling_time` | 实测稳定时间 |
-| | 输出跳变率 | `output_trip_rate` | OP 跳变频率 |
-| | 阀门粘滞 | `stiction` | 阀门粘滞估计 |
+| | 输出跳变率 | `output_trip_index` | OP 跳变频率 |
+| | 阀门粘滞 | `stiction_index` | 阀门粘滞估计 |
 
 ### 7.2 综合评分公式
 
@@ -172,6 +178,12 @@ P = (A·a + F·f + S·s) / (a + f + s) × R
 
 PRD 对外合规口径仍强调 6 大核心 KPI（好值率、自控率、平稳率、准确率、振荡率、饱和率）；实现以 3+1+8 体系为算法增强、排序与内部诊断的依据，但 UI/报表需明确区分"核心 KPI"与"扩展指标"。
 
+### 7.6 缓存接入口径
+
+- L1 DataBlock 缓存已接入 DataPlanner，负责复用预处理后的数据块。
+- L2 MetricDataBundle 缓存已接入 DataPlanner，命中时跳过查询计划与 Bundle 组装。
+- L3 Feature Cache 已有实现与单元测试，但尚未接入当前指标计算运行链路，属于预留能力，不计入现行性能验收。
+
 ## 8. 阶段契约
 
 | 能力 | Phase 1 口径 |
@@ -189,9 +201,9 @@ PRD 对外合规口径仍强调 6 大核心 KPI（好值率、自控率、平稳
 - 旧路径可记录为历史兼容路径，但不作为主菜单验收项。
 - 新增页面必须先更新本契约，再更新路由、权限、测试与 UI/UX 页面清单。
 
-## 10. 代码实际 ORM 表清单（26 张）
+## 10. 代码实际 ORM 表清单（31 张）
 
-代码共定义 26 张 ORM 模型，作为 DDS v6.0 表清单的事实来源。详细字段定义见 DDS v6.0。
+当前 `backend/app/models/` 共定义 31 张 ORM 表。以下清单以代码中的 `__tablename__` 为事实来源；DDS 后续修订应同步此口径。
 
 | # | 类名 | __tablename__ | 文件 | 用途 |
 |---|---|---|---|---|
@@ -221,10 +233,15 @@ PRD 对外合规口径仍强调 6 大核心 KPI（好值率、自控率、平稳
 | 24 | `SysConfig` | `sys_config` | `models/sys_config.py` | 系统配置 |
 | 25 | `ReportRecord` | `report_record` | `models/report.py` | 报表记录 |
 | 26 | `ReportConfig` | `report_config` | `models/report_config.py` | 报表配置 |
+| 27 | `DiagnosisTask` | `diagnosis_task` | `models/diagnosis.py` | 诊断任务与归档状态 |
+| 28 | `DcsVendor` | `dcs_vendor` | `models/dcs_vendor.py` | DCS 品牌配置 |
+| 29 | `DcsModel` | `dcs_model` | `models/dcs_model.py` | DCS 型号配置 |
+| 30 | `ModeDefinition` | `mode_definition` | `models/mode_definition.py` | MODE 语义定义 |
+| 31 | `DcsModeMapping` | `dcs_mode_mapping` | `models/dcs_mode_mapping.py` | DCS MODE 映射矩阵 |
 
 注：DDS v4.1 中声明的 `report_schedule` 实际由代码 `report_config` 承载；`sys_role` / `sys_user_role` 代码无对应模型，角色以枚举形式实现。
 
-## 11. v2.0 变更记录
+## 11. 变更记录
 
 | 变更项 | v1.0 口径 | v2.0 口径 | 依据 |
 |---|---|---|---|
@@ -236,5 +253,10 @@ PRD 对外合规口径仍强调 6 大核心 KPI（好值率、自控率、平稳
 | 综合评分公式 | 未声明 | `P = (A·a + F·f + S·s)/(a+f+s) × R` | FDS v6.0 |
 | 4 类权重模板 | 未声明 | STABLE / SLOW / FAST / LOGIC | `endpoints/weight_config.py` |
 | 5 级性能定级 | 未声明 | EXCELLENT / GOOD / FAIR / WARNING / POOR | `endpoints/grading_config.py` |
-| ORM 表清单 | 未声明 | 26 张（见 §10） | `v6-code-facts.md` §2 |
+| ORM 表清单 | 未声明 | v2.0 为 26 张；v2.1 按当前代码更新为 31 张（见 §10） | `backend/app/models/` |
 | 状态机契约 | 已统一 | 与 v1.0 一致，无变更 | — |
+| 前端 IA | v2.0 的旧路由清单 | v2.1 对齐当前路由模块，聚合性能与诊断页面 | `frontend/apps/web-antd/src/router/routes/modules/` |
+| 新增 API 领域 | 未登记 | 补充 datasource、dcs、confidence-thresholds、loops/data-import | `backend/app/main.py` |
+| 诊断状态机 | RESOLVED 统一视为旧命名 | 区分 Diagnosis Tag 与 Action Tracker 两套枚举 | `models/diagnosis.py`、`models/tracker.py` |
+| A/B 对比 | 作为已存在能力列出 | 当前 API 返回 501，标记 P1 未实现 | `endpoints/diagnosis.py` |
+| L3 缓存 | 三层均视为已接入 | L3 仅保留实现与测试，未接入运行链路 | `services/data_planner.py` |

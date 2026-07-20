@@ -77,102 +77,80 @@ const testingSignalr = ref(false);
 const config = ref<DataSourceApi.DataSourceConfig | null>(null);
 
 const form = reactive({
-  dataSourceType: 'tdengine' as DataSourceApi.DataSourceType,
+  networkMode: 'lan' as DataSourceApi.NetworkMode,
   historyApiUrl: '',
   historyApiToken: '',
   historyApiTimeout: 30,
   signalrHubUrl: '',
   signalrEnabled: false,
   signalrReconnectInterval: 5,
-  realtimeWritebackEnabled: false,
 });
 
-// 预设网络地址（公网 / 局域网）
-const HISTORY_API_URL_WAN = 'http://100.101.203.0/api/services/v1/HistoryData/Get';
-const HISTORY_API_URL_LAN = 'http://192.168.100.2:81/api/services/v1/HistoryData/Get';
-const SIGNALR_HUB_URL_WAN = 'ws://100.101.203.0/signalr/realValueForClpmHub';
-const SIGNALR_HUB_URL_LAN = 'ws://192.168.100.2:81/signalr/realValueForClpmHub';
+// 默认局域网地址（公网切换由 Tailscale 子网路由透明转发，URL 不变）
+const DEFAULT_HISTORY_API_URL =
+  'http://192.168.100.2:81/api/services/v1/HistoryData/Get';
+const DEFAULT_SIGNALR_HUB_URL =
+  'ws://192.168.100.2:81/signalr/realValueForClpmHub';
 
-const historyApiNetwork = ref<'lan' | 'wan'>('wan');
-const historyApiUrlWan = ref(HISTORY_API_URL_WAN);
-const historyApiUrlLan = ref(HISTORY_API_URL_LAN);
-const signalrHubNetwork = ref<'lan' | 'wan'>('wan');
-const signalrHubUrlWan = ref(SIGNALR_HUB_URL_WAN);
-const signalrHubUrlLan = ref(SIGNALR_HUB_URL_LAN);
-
-// Radio 切换时同步地址到 form
-watch(historyApiNetwork, (val) => {
-  form.historyApiUrl = val === 'wan' ? historyApiUrlWan.value : historyApiUrlLan.value;
-});
-watch(historyApiUrlWan, (val) => {
-  if (historyApiNetwork.value === 'wan') form.historyApiUrl = val;
-});
-watch(historyApiUrlLan, (val) => {
-  if (historyApiNetwork.value === 'lan') form.historyApiUrl = val;
-});
-watch(signalrHubNetwork, (val) => {
-  form.signalrHubUrl = val === 'wan' ? signalrHubUrlWan.value : signalrHubUrlLan.value;
-});
-watch(signalrHubUrlWan, (val) => {
-  if (signalrHubNetwork.value === 'wan') form.signalrHubUrl = val;
-});
-watch(signalrHubUrlLan, (val) => {
-  if (signalrHubNetwork.value === 'lan') form.signalrHubUrl = val;
-});
+// 网络模式切换状态
+const switchingNetwork = ref(false);
+const tailscaleSwitchResult = ref<DataSourceApi.TailscaleSwitchResult | null>(
+  null,
+);
 
 const historyTestResult = ref<DataSourceApi.TestResult | null>(null);
 const signalrTestResult = ref<DataSourceApi.TestResult | null>(null);
 
 const needRestart = computed(() => {
   if (!config.value) return false;
-  return (
-    form.dataSourceType !== config.value.historyProviderActive ||
-    form.signalrEnabled !== config.value.signalrSubscriberRunning
-  );
+  return form.signalrEnabled !== config.value.signalrSubscriberRunning;
 });
+
+async function switchNetworkMode(mode: DataSourceApi.NetworkMode) {
+  if (form.networkMode === mode || switchingNetwork.value) return;
+  switchingNetwork.value = true;
+  tailscaleSwitchResult.value = null;
+  try {
+    const data = await updateDatasourceConfigApi({ networkMode: mode });
+    config.value = data;
+    form.networkMode = data.networkMode;
+    tailscaleSwitchResult.value = data.tailscaleSwitch;
+    if (data.tailscaleSwitch) {
+      const { status, message: msg } = data.tailscaleSwitch;
+      if (status === 'success') {
+        message.success(msg);
+      } else if (status === 'skipped') {
+        message.info(msg);
+      } else {
+        message.warning(msg);
+      }
+    }
+  } finally {
+    switchingNetwork.value = false;
+  }
+}
+
+// Radio.Group change 事件适配 — ant-design-vue 的 RadioChangeEvent.target.value 为 optional
+function handleNetworkModeChange(e: { target: { value?: unknown } }) {
+  const value = e?.target?.value as DataSourceApi.NetworkMode | undefined;
+  if (value) switchNetworkMode(value);
+}
 
 async function loadConfig() {
   loading.value = true;
   try {
     const data = await getDatasourceConfigApi();
     config.value = data;
-    form.dataSourceType = data.dataSourceType;
+    form.networkMode = data.networkMode;
+    form.historyApiUrl = data.historyApiUrl ?? '';
     form.historyApiToken = data.historyApiToken ?? '';
     form.historyApiTimeout = data.historyApiTimeout;
+    form.signalrHubUrl = data.signalrHubUrl ?? '';
     form.signalrEnabled = data.signalrEnabled;
     form.signalrReconnectInterval = data.signalrReconnectInterval;
-    form.realtimeWritebackEnabled = data.realtimeWritebackEnabled;
-
-    // 根据已保存的 URL 判断网络类型，同步预填地址
-    const savedHistoryUrl = data.historyApiUrl ?? '';
-    if (savedHistoryUrl.includes('100.101.203.0')) {
-      historyApiNetwork.value = 'wan';
-      historyApiUrlWan.value = savedHistoryUrl;
-    } else if (savedHistoryUrl.includes('192.168.100.2')) {
-      historyApiNetwork.value = 'lan';
-      historyApiUrlLan.value = savedHistoryUrl;
-    } else if (savedHistoryUrl) {
-      // 自定义地址：默认归到公网文本框
-      historyApiUrlWan.value = savedHistoryUrl;
-      historyApiNetwork.value = 'wan';
-    }
-    form.historyApiUrl = savedHistoryUrl;
-
-    const savedSignalrUrl = data.signalrHubUrl ?? '';
-    if (savedSignalrUrl.includes('100.101.203.0')) {
-      signalrHubNetwork.value = 'wan';
-      signalrHubUrlWan.value = savedSignalrUrl;
-    } else if (savedSignalrUrl.includes('192.168.100.2')) {
-      signalrHubNetwork.value = 'lan';
-      signalrHubUrlLan.value = savedSignalrUrl;
-    } else if (savedSignalrUrl) {
-      signalrHubUrlWan.value = savedSignalrUrl;
-      signalrHubNetwork.value = 'wan';
-    }
-    form.signalrHubUrl = savedSignalrUrl;
-
     historyTestResult.value = null;
     signalrTestResult.value = null;
+    tailscaleSwitchResult.value = null;
   } finally {
     loading.value = false;
   }
@@ -182,7 +160,6 @@ async function saveHistoryConfig() {
   savingHistory.value = true;
   try {
     const data = await updateDatasourceConfigApi({
-      dataSourceType: form.dataSourceType,
       historyApiUrl: form.historyApiUrl || undefined,
       historyApiToken: form.historyApiToken || undefined,
       historyApiTimeout: form.historyApiTimeout,
@@ -201,7 +178,6 @@ async function saveSignalrConfig() {
       signalrHubUrl: form.signalrHubUrl || undefined,
       signalrEnabled: form.signalrEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
-      realtimeWritebackEnabled: form.realtimeWritebackEnabled,
     });
     config.value = data;
     message.success('实时数据源配置已保存');
@@ -215,7 +191,6 @@ async function testHistory() {
   historyTestResult.value = null;
   try {
     const data = await updateDatasourceConfigApi({
-      dataSourceType: form.dataSourceType,
       historyApiUrl: form.historyApiUrl || undefined,
       historyApiToken: form.historyApiToken || undefined,
       historyApiTimeout: form.historyApiTimeout,
@@ -236,7 +211,6 @@ async function testSignalr() {
       signalrHubUrl: form.signalrHubUrl || undefined,
       signalrEnabled: form.signalrEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
-      realtimeWritebackEnabled: form.realtimeWritebackEnabled,
     });
     config.value = data;
     const result = await testSignalrApi();
@@ -282,7 +256,12 @@ const vendorColumns: TableColumnsType = [
   { title: '品牌代码', dataIndex: 'code', key: 'code', width: 140 },
   { title: '中文名', dataIndex: 'name', key: 'name', width: 140 },
   { title: '英文名', dataIndex: 'nameEn', key: 'nameEn', width: 140 },
-  { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+  {
+    title: '描述',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
   { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 80 },
   { title: '状态', dataIndex: 'isActive', key: 'isActive', width: 80 },
   { title: '操作', key: 'action', width: 120, fixed: 'right' },
@@ -292,7 +271,12 @@ const modelColumns: TableColumnsType = [
   { title: '型号代码', dataIndex: 'code', key: 'code', width: 180 },
   { title: '型号名称', dataIndex: 'name', key: 'name', width: 200 },
   { title: '品牌', dataIndex: 'vendorName', key: 'vendorName', width: 120 },
-  { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+  {
+    title: '描述',
+    dataIndex: 'description',
+    key: 'description',
+    ellipsis: true,
+  },
   { title: '排序', dataIndex: 'sortOrder', key: 'sortOrder', width: 80 },
   { title: '状态', dataIndex: 'isActive', key: 'isActive', width: 80 },
   { title: '操作', key: 'action', width: 120, fixed: 'right' },
@@ -628,8 +612,9 @@ const matrixColumns = computed<TableColumnsType>(() => {
  * 每行包含 modelId/modelName/vendorName + 各标准 MODE 的映射值
  */
 const matrixData = computed(() => {
-  if (!matrix.value) return [];
-  return matrix.value.columns.map((col) => {
+  const currentMatrix = matrix.value;
+  if (!currentMatrix) return [];
+  return currentMatrix.columns.map((col) => {
     const modelKey = col.modelId ?? 'default';
     const row: Record<string, any> = {
       key: modelKey,
@@ -638,7 +623,7 @@ const matrixData = computed(() => {
       vendorName: col.vendorName ?? '—',
     };
     // 填充各标准 MODE 的映射值
-    for (const modeRow of matrix.value!.rows) {
+    for (const modeRow of currentMatrix.rows) {
       const cell = modeRow.columns.find(
         (c: DcsApi.MatrixColumn) => (c.modelId ?? 'default') === modelKey,
       );
@@ -719,7 +704,7 @@ async function saveCellEdit() {
 // =========================================================================
 // Tab 切换时加载数据
 // =========================================================================
-watch(activeTab, (tab) => {
+watch(activeTab, (tab: string) => {
   if (tab === 'dcs' && vendors.value.length === 0) {
     loadVendors();
     loadModels();
@@ -743,24 +728,28 @@ onMounted(loadConfig);
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex flex-wrap items-center gap-6">
                 <div class="flex items-center gap-2">
-                  <span class="text-gray-500">历史数据源</span>
-                  <Tag
-                    :color="
-                      config?.historyProviderActive === 'remote_api'
-                        ? 'blue'
-                        : 'default'
-                    "
-                  >
+                  <span class="text-gray-500">网络模式</span>
+                  <Tag :color="form.networkMode === 'wan' ? 'purple' : 'green'">
                     {{
-                      config?.historyProviderActive === 'remote_api'
-                        ? '外部 API'
-                        : '本地 TDengine'
+                      form.networkMode === 'wan'
+                        ? '公网（Tailscale）'
+                        : '局域网直连'
                     }}
+                  </Tag>
+                  <Tag
+                    v-if="config && !config.tailscaleAvailable"
+                    color="default"
+                  >
+                    Tailscale 未安装
                   </Tag>
                 </div>
                 <div class="flex items-center gap-2">
                   <span class="text-gray-500">实时订阅</span>
-                  <Tag :color="config?.signalrSubscriberRunning ? 'green' : 'default'">
+                  <Tag
+                    :color="
+                      config?.signalrSubscriberRunning ? 'green' : 'default'
+                    "
+                  >
                     {{ config?.signalrSubscriberRunning ? '运行中' : '未启动' }}
                   </Tag>
                 </div>
@@ -783,61 +772,106 @@ onMounted(loadConfig);
             class="mb-4"
             type="warning"
             show-icon
-            message="部分配置需重启后端生效"
-            description="数据源类型切换与实时订阅启停在后端启动时初始化，修改后需重启后端服务才能完全生效。API 地址 / Token / 超时 / Hub URL / 重连间隔可即时生效。"
+            message="实时订阅启停需重启后端生效"
+            description="实时订阅器在后端启动时初始化，修改后需重启后端服务才能完全生效。API 地址 / Token / 超时 / Hub URL / 重连间隔 / 网络模式可即时生效。"
           />
 
-          <!-- 历史数据源配置 -->
-          <Card class="mb-4" size="small" title="历史数据源">
+          <!-- 网络模式切换 -->
+          <Card class="mb-4" size="small" title="网络模式">
             <Form layout="vertical" :model="form">
-              <FormItem label="数据源类型">
-                <Radio.Group v-model:value="form.dataSourceType">
-                  <Radio value="tdengine">本地 TDengine（开发环境）</Radio>
-                  <Radio value="remote_api">外部 API（生产环境）</Radio>
+              <FormItem label="链路路径">
+                <Radio.Group
+                  :value="form.networkMode"
+                  :disabled="switchingNetwork"
+                  @change="handleNetworkModeChange"
+                >
+                  <Radio value="lan">局域网（直连，默认）</Radio>
+                  <Radio value="wan">公网（走 Tailscale 子网路由）</Radio>
                 </Radio.Group>
               </FormItem>
 
-              <template v-if="form.dataSourceType === 'remote_api'">
-                <FormItem label="API 地址">
-                  <Radio.Group v-model:value="historyApiNetwork" class="mb-2">
-                    <Radio value="wan">公网</Radio>
-                    <Radio value="lan">局域网</Radio>
-                  </Radio.Group>
-                  <Input
-                    v-model:value="historyApiUrlWan"
-                    addon-before="公网"
-                    :class="{ 'border-blue-500': historyApiNetwork === 'wan' }"
-                  />
-                  <Input
-                    v-model:value="historyApiUrlLan"
-                    addon-before="局域网"
-                    class="mt-2"
-                    :class="{ 'border-blue-500': historyApiNetwork === 'lan' }"
-                  />
-                </FormItem>
-                <FormItem label="鉴权 Token">
-                  <Input.Password
-                    v-model:value="form.historyApiToken"
-                    placeholder="如需鉴权请填写"
-                  />
-                </FormItem>
-                <FormItem label="请求超时（秒）">
-                  <InputNumber v-model:value="form.historyApiTimeout" :max="120" :min="5" />
-                </FormItem>
-              </template>
+              <Alert
+                v-if="config && !config.tailscaleAvailable"
+                class="mb-2"
+                type="info"
+                show-icon
+                message="当前环境未检测到 tailscale 客户端（容器/未安装），切换将被静默跳过"
+              />
+
+              <Alert
+                v-if="tailscaleSwitchResult"
+                class="mb-2"
+                :type="
+                  tailscaleSwitchResult.status === 'success'
+                    ? 'success'
+                    : tailscaleSwitchResult.status === 'skipped'
+                      ? 'info'
+                      : 'error'
+                "
+                show-icon
+                :message="tailscaleSwitchResult.message"
+                :description="
+                  tailscaleSwitchResult.latencyMs !== null
+                    ? `耗时 ${tailscaleSwitchResult.latencyMs}ms`
+                    : undefined
+                "
+              />
+
+              <div class="text-gray-400 text-xs">
+                局域网模式移除 192.168.100.0/24 子网路由，直连
+                AAS；公网模式安装子网路由，通过 zpdev Tailscale 转发。两模式 URL
+                相同，由 Tailscale 透明路由。
+              </div>
+            </Form>
+          </Card>
+
+          <!-- 历史数据源配置（仅数据导入时调用） -->
+          <Card
+            class="mb-4"
+            size="small"
+            title="历史数据导入接口（仅「数据管理 → 历史数据导入」时调用）"
+          >
+            <Form layout="vertical" :model="form">
+              <FormItem label="API 地址">
+                <Input
+                  v-model:value="form.historyApiUrl"
+                  :placeholder="DEFAULT_HISTORY_API_URL"
+                />
+              </FormItem>
+              <FormItem label="鉴权 Token">
+                <Input.Password
+                  v-model:value="form.historyApiToken"
+                  placeholder="如需鉴权请填写"
+                />
+              </FormItem>
+              <FormItem label="请求超时（秒）">
+                <InputNumber
+                  v-model:value="form.historyApiTimeout"
+                  :max="120"
+                  :min="5"
+                />
+              </FormItem>
+
+              <div class="text-gray-400 mb-3 text-xs">
+                性能评估、回路诊断等计算任务一律读取本地
+                TDengine，不调用此接口。
+              </div>
 
               <div class="flex items-center gap-3">
-                <Button type="primary" :loading="savingHistory" @click="saveHistoryConfig">
+                <Button
+                  type="primary"
+                  :loading="savingHistory"
+                  @click="saveHistoryConfig"
+                >
                   保存配置
                 </Button>
-                <Button
-                  v-if="form.dataSourceType === 'remote_api'"
-                  :loading="testingHistory"
-                  @click="testHistory"
-                >
+                <Button :loading="testingHistory" @click="testHistory">
                   测试连接
                 </Button>
-                <Tag v-if="historyTestResult" :color="historyTestResult.success ? 'green' : 'red'">
+                <Tag
+                  v-if="historyTestResult"
+                  :color="historyTestResult.success ? 'green' : 'red'"
+                >
                   {{ historyTestResult.message
                   }}<template v-if="historyTestResult.latencyMs">
                     ({{ historyTestResult.latencyMs }}ms)
@@ -861,37 +895,26 @@ onMounted(loadConfig);
 
               <template v-if="form.signalrEnabled">
                 <FormItem label="SignalR Hub URL">
-                  <Radio.Group v-model:value="signalrHubNetwork" class="mb-2">
-                    <Radio value="wan">公网</Radio>
-                    <Radio value="lan">局域网</Radio>
-                  </Radio.Group>
                   <Input
-                    v-model:value="signalrHubUrlWan"
-                    addon-before="公网"
-                    :class="{ 'border-blue-500': signalrHubNetwork === 'wan' }"
-                  />
-                  <Input
-                    v-model:value="signalrHubUrlLan"
-                    addon-before="局域网"
-                    class="mt-2"
-                    :class="{ 'border-blue-500': signalrHubNetwork === 'lan' }"
+                    v-model:value="form.signalrHubUrl"
+                    :placeholder="DEFAULT_SIGNALR_HUB_URL"
                   />
                 </FormItem>
                 <FormItem label="断线重连间隔（秒）">
-                  <InputNumber v-model:value="form.signalrReconnectInterval" :max="60" :min="1" />
-                </FormItem>
-                <FormItem v-if="form.dataSourceType === 'tdengine'" label="实时数据写回 TDengine">
-                  <div class="flex items-center gap-2">
-                    <Switch v-model:checked="form.realtimeWritebackEnabled" />
-                    <span class="text-gray-400 text-sm">
-                      开启后实时数据将写回本地 TDengine 宽表（仅 tdengine 模式）
-                    </span>
-                  </div>
+                  <InputNumber
+                    v-model:value="form.signalrReconnectInterval"
+                    :max="60"
+                    :min="1"
+                  />
                 </FormItem>
               </template>
 
               <div class="flex items-center gap-3">
-                <Button type="primary" :loading="savingSignalr" @click="saveSignalrConfig">
+                <Button
+                  type="primary"
+                  :loading="savingSignalr"
+                  @click="saveSignalrConfig"
+                >
                   保存配置
                 </Button>
                 <Button
@@ -901,7 +924,10 @@ onMounted(loadConfig);
                 >
                   测试连接
                 </Button>
-                <Tag v-if="signalrTestResult" :color="signalrTestResult.success ? 'green' : 'red'">
+                <Tag
+                  v-if="signalrTestResult"
+                  :color="signalrTestResult.success ? 'green' : 'red'"
+                >
                   {{ signalrTestResult.message
                   }}<template v-if="signalrTestResult.latencyMs">
                     ({{ signalrTestResult.latencyMs }}ms)
@@ -925,7 +951,11 @@ onMounted(loadConfig);
               <Upload v-bind="vendorUploadProps">
                 <Button size="small" :loading="vendorImporting">导入</Button>
               </Upload>
-              <Button size="small" :loading="vendorExporting" @click="handleExportVendors">
+              <Button
+                size="small"
+                :loading="vendorExporting"
+                @click="handleExportVendors"
+              >
                 导出
               </Button>
             </div>
@@ -940,7 +970,12 @@ onMounted(loadConfig);
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">
-                <Button type="link" size="small" @click="openVendorModal(record)">编辑</Button>
+                <Button
+                  type="link"
+                  size="small"
+                  @click="openVendorModal(record)"
+                  >编辑</Button
+                >
                 <Popconfirm
                   title="删除品牌？有关联型号时禁止删除"
                   @confirm="removeVendor(record)"
@@ -956,11 +991,17 @@ onMounted(loadConfig);
         <Card size="small" title="DCS 型号">
           <template #extra>
             <div class="flex items-center gap-2">
-              <Button type="primary" size="small" @click="openModelModal()">新增型号</Button>
+              <Button type="primary" size="small" @click="openModelModal()"
+                >新增型号</Button
+              >
               <Upload v-bind="modelUploadProps">
                 <Button size="small" :loading="modelImporting">导入</Button>
               </Upload>
-              <Button size="small" :loading="modelExporting" @click="handleExportModels">
+              <Button
+                size="small"
+                :loading="modelExporting"
+                @click="handleExportModels"
+              >
                 导出
               </Button>
             </div>
@@ -975,7 +1016,9 @@ onMounted(loadConfig);
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">
-                <Button type="link" size="small" @click="openModelModal(record)">编辑</Button>
+                <Button type="link" size="small" @click="openModelModal(record)"
+                  >编辑</Button
+                >
                 <Popconfirm
                   title="删除型号？关联回路的 dcs_model_id 将置空"
                   @confirm="removeModel(record)"
@@ -995,12 +1038,37 @@ onMounted(loadConfig);
           <Card class="mb-4" size="small" title="标准 MODE 定义">
             <Table
               :columns="[
-                { title: 'MODE 值', dataIndex: 'standardMode', key: 'standardMode', width: 100 },
-                { title: '中文标签', dataIndex: 'labelZh', key: 'labelZh', width: 120 },
-                { title: '英文标签', dataIndex: 'labelEn', key: 'labelEn', width: 120 },
+                {
+                  title: 'MODE 值',
+                  dataIndex: 'standardMode',
+                  key: 'standardMode',
+                  width: 100,
+                },
+                {
+                  title: '中文标签',
+                  dataIndex: 'labelZh',
+                  key: 'labelZh',
+                  width: 120,
+                },
+                {
+                  title: '英文标签',
+                  dataIndex: 'labelEn',
+                  key: 'labelEn',
+                  width: 120,
+                },
                 { title: '颜色', dataIndex: 'color', key: 'color', width: 100 },
-                { title: '计入自控率', dataIndex: 'isAuto', key: 'isAuto', width: 120 },
-                { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+                {
+                  title: '计入自控率',
+                  dataIndex: 'isAuto',
+                  key: 'isAuto',
+                  width: 120,
+                },
+                {
+                  title: '描述',
+                  dataIndex: 'description',
+                  key: 'description',
+                  ellipsis: true,
+                },
               ]"
               :data-source="modeDefs"
               :pagination="false"
@@ -1014,7 +1082,9 @@ onMounted(loadConfig);
                       class="inline-block h-4 w-4 rounded"
                       :style="{ backgroundColor: record.color }"
                     ></span>
-                    <span class="text-xs text-gray-400">{{ record.color }}</span>
+                    <span class="text-xs text-gray-400">{{
+                      record.color
+                    }}</span>
                   </div>
                 </template>
                 <template v-if="column.key === 'isAuto'">
@@ -1069,7 +1139,11 @@ onMounted(loadConfig);
                 <template v-if="String(column.key ?? '').startsWith('mode_')">
                   <span
                     class="cursor-pointer font-mono"
-                    :class="record[String(column.dataIndex ?? '')] != null ? 'text-blue-600 hover:text-blue-800' : 'text-gray-300 hover:text-gray-500'"
+                    :class="
+                      record[String(column.dataIndex ?? '')] != null
+                        ? 'text-blue-600 hover:text-blue-800'
+                        : 'text-gray-300 hover:text-gray-500'
+                    "
                     @click="openCellEdit(record, column)"
                   >
                     {{ record[String(column.dataIndex ?? '')] ?? '—' }}
@@ -1138,9 +1212,7 @@ onMounted(loadConfig);
           <Select
             v-model:value="modelForm.vendorId"
             :disabled="modelModalMode === 'edit'"
-            :options="
-              vendors.map((v) => ({ label: v.name, value: v.id }))
-            "
+            :options="vendors.map((v) => ({ label: v.name, value: v.id }))"
             placeholder="选择品牌"
           />
         </FormItem>
@@ -1181,7 +1253,11 @@ onMounted(loadConfig);
           <Input :value="cellEditForm.standardLabel" disabled />
         </FormItem>
         <FormItem label="该型号实际 MODE 值">
-          <InputNumber v-model:value="cellEditForm.rawModeValue" :min="0" :max="999" />
+          <InputNumber
+            v-model:value="cellEditForm.rawModeValue"
+            :min="0"
+            :max="999"
+          />
           <p class="mt-1 text-xs text-gray-400">
             填写该 DCS 型号在此控制模式下实际推送的 MODE 值
           </p>

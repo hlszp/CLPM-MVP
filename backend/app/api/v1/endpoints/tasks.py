@@ -129,6 +129,16 @@ def _to_str_or_none(value: Any) -> str | None:
     return str(value)
 
 
+def _parse_iso_dt(value: str | None) -> datetime | None:
+    """解析 ISO 8601 时间为 datetime（容忍 Z 后缀），失败返回 None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 async def _save_task(task_data: dict[str, str]) -> None:
     """保存任务状态到 Redis Hash 并更新索引.
 
@@ -188,6 +198,13 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         except (json.JSONDecodeError, TypeError):
             plant_node_ids = None
 
+    loops_total = _to_int(data.get("loops_total"))
+    # BACKFILL 运行期 loops_total 会被回填进度覆盖为「回路 × 窗口」工作项数
+    # （kpi_calc._update_backfill_progress / _increment_backfill_progress）。
+    # 任务列表的「评估回路」列语义为回路数，此处按 loop_ids 还原。
+    if data.get("task_type") == TaskType.BACKFILL.value and loop_ids:
+        loops_total = len(loop_ids)
+
     return TaskResponse(
         taskId=data.get("task_id", ""),
         taskType=TaskType(data.get("task_type", TaskType.STANDARD.value)),
@@ -195,7 +212,7 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         title=_to_str_or_none(data.get("title")),
         progress=_to_float(data.get("progress")),
         currentStage=_to_str_or_none(data.get("current_stage")),
-        loopsTotal=_to_int(data.get("loops_total")),
+        loopsTotal=loops_total,
         loopsDone=_to_int(data.get("loops_done")),
         windowCount=_to_int(data.get("window_count")),
         createdAt=data.get("created_at", ""),
@@ -240,6 +257,51 @@ async def _count_active_custom_tasks(user_id: str | None = None) -> int:
             continue
         count += 1
     return count
+
+
+async def _active_custom_task_details(user_id: str | None = None) -> list[dict[str, Any]]:
+    """Return active custom/backfill tasks with the fields needed for troubleshooting."""
+    task_ids = await redis_client.zrange(_TASK_INDEX_KEY, 0, -1)
+    active: list[dict[str, Any]] = []
+    for tid in task_ids:
+        data = await _get_task(tid)
+        if not data:
+            continue
+        if data.get("task_type") not in (
+            TaskType.CUSTOM.value,
+            TaskType.BACKFILL.value,
+        ):
+            continue
+        if data.get("status") not in _ACTIVE_STATUSES:
+            continue
+        if user_id is not None and data.get("created_by_id") != str(user_id):
+            continue
+        active.append(
+            {
+                "task_id": data.get("task_id", ""),
+                "status": data.get("status", ""),
+                "task_type": data.get("task_type", ""),
+                "created_by": data.get("created_by", ""),
+                "created_by_id": data.get("created_by_id", ""),
+                "loops_total": data.get("loops_total", ""),
+                "loops_done": data.get("loops_done", ""),
+                "current_stage": data.get("current_stage", ""),
+                "ts_start": data.get("ts_start", ""),
+                "ts_end": data.get("ts_end", ""),
+                "title": data.get("title", ""),
+            }
+        )
+    return active
+
+
+@router.get("/active", response_model=ApiResponse[dict])
+async def list_active_tasks(
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """列出当前活跃的手动任务占位信息."""
+    user_is_admin = user.role == "ADMIN"
+    items = await _active_custom_task_details(None if user_is_admin else str(user.id))
+    return success(data={"items": items, "total": len(items)})
 
 
 async def _query_loops_by_ids(db: AsyncSession, loop_ids: list[str]) -> list[LoopLedger]:
@@ -310,6 +372,25 @@ def _calc_window_count(ts_start: str, ts_end: str, cycle_minutes: int = 60) -> i
     )
 
 
+def _parse_celery_task_ids(data: dict[str, Any]) -> list[str]:
+    """Return all root, child, and callback task IDs without duplicates."""
+    task_ids: list[str] = []
+    celery_task_id = data.get("celery_task_id")
+    if celery_task_id:
+        task_ids.append(str(celery_task_id))
+
+    celery_task_ids = data.get("celery_task_ids")
+    if not celery_task_ids:
+        return task_ids
+    try:
+        parsed = json.loads(celery_task_ids)
+    except (json.JSONDecodeError, TypeError):
+        return task_ids
+    if isinstance(parsed, list):
+        task_ids.extend(str(task_id) for task_id in parsed)
+    return list(dict.fromkeys(task_ids))
+
+
 async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
     """从 Celery 同步任务状态到 Redis（惰性更新）.
 
@@ -328,24 +409,7 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
     if current_status in _TERMINAL_STATUSES:
         return
 
-    # 获取关联的 Celery 任务 ID
-    celery_ids_raw = data.get("celery_task_id") or data.get("celery_task_ids")
-    if not celery_ids_raw:
-        return
-
-    try:
-        if data.get("task_type") in (
-            TaskType.STANDARD.value,
-            TaskType.BACKFILL.value,
-        ):
-            # STANDARD/BACKFILL 用 celery_task_id（单数字符串）
-            celery_ids: list[str] = [celery_ids_raw]
-        else:
-            # CUSTOM 用 celery_task_ids（JSON 数组）
-            celery_ids = json.loads(celery_ids_raw)
-    except (json.JSONDecodeError, TypeError):
-        return
-
+    celery_ids = _parse_celery_task_ids(data)
     if not celery_ids:
         return
 
@@ -392,17 +456,20 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
             updates["started_at"] = _now_iso()
 
     if updates:
-        await redis_client.hset(_task_key(task_id), mapping=updates)
-        data.update(updates)
-        # 终态转换时发送通知（Phase 5 补齐）
-        new_status = updates.get("status", "")
-        if new_status in _TERMINAL_STATUSES and current_status not in _TERMINAL_STATUSES:
-            try:
-                from app.services import task_tracker
+        from app.services import task_tracker
 
-                await task_tracker._send_notification(data)
-            except Exception:
-                logger.warning("任务通知发送失败: task_id=%s", task_id, exc_info=True)
+        new_status = TaskStatus(updates.pop("status"))
+        updated = await task_tracker.update_status(
+            task_id,
+            new_status,
+            progress=float(updates["progress"]) if "progress" in updates else None,
+            error_message=updates.get("error_message"),
+            started_at=updates.get("started_at"),
+            finished_at=updates.get("finished_at"),
+        )
+        if updated is not None:
+            data.clear()
+            data.update(updated)
 
 
 # ---------------------------------------------------------------------------
@@ -519,17 +586,15 @@ async def trigger_custom_evaluation(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
-    from app.tasks.kpi_calc import calculate_custom_loop_kpi
+    from app.tasks.kpi_calc import calculate_custom_batch_kpi
 
     task_id = str(uuid4())
     now = _now_iso()
 
-    # 对每个回路触发 Celery 任务（自定义任务，写入 kpi_snapshot_custom 不参与聚合）
-    # P1 #12: 透传 body.tsEnd，使用户指定的时间窗能传递到实际计算逻辑
-    celery_task_ids: list[str] = []
-    for loop_id in body.loopIds:
-        result = calculate_custom_loop_kpi.delay(task_id, loop_id, body.tsStart, body.tsEnd)
-        celery_task_ids.append(result.id)
+    celery_result = calculate_custom_batch_kpi.delay(
+        task_id, body.loopIds, body.tsStart, body.tsEnd
+    )
+    celery_task_id = celery_result.id
 
     task_data: dict[str, str] = {
         "task_id": task_id,
@@ -545,7 +610,7 @@ async def trigger_custom_evaluation(
         "error_message": "",
         "created_by": user.username,
         "created_by_id": str(user.id),
-        "celery_task_ids": json.dumps(celery_task_ids),
+        "celery_task_id": celery_task_id,
         "loop_ids": json.dumps(body.loopIds),
         "metrics": json.dumps(body.metrics),
         "ts_start": body.tsStart,
@@ -554,10 +619,10 @@ async def trigger_custom_evaluation(
     await _save_task(task_data)
 
     logger.info(
-        "自定义评估任务已触发: task_id=%s, loops=%d, celery_ids=%d, user=%s",
+        "自定义评估任务已触发: task_id=%s, loops=%d, celery_id=%s, user=%s",
         task_id,
         len(body.loopIds),
-        len(celery_task_ids),
+        celery_task_id,
         user.username,
     )
 
@@ -607,6 +672,16 @@ async def trigger_backfill(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    # 禁止未来时间窗（对齐前端 RangePicker 禁未来日期；容忍 5 分钟时钟误差）
+    now_utc = datetime.now(UTC)
+    end_dt_aware = end_dt if end_dt.tzinfo is not None else end_dt.replace(tzinfo=UTC)
+    if end_dt_aware > now_utc + timedelta(minutes=5):
+        raise BizError(
+            code="ERR_BACKFILL_WINDOW_IN_FUTURE",
+            message="时间窗不能超过当前时间（未来时段无数据可重算）",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
     if (end_dt - start_dt) > timedelta(days=_MAX_BACKFILL_WINDOW_DAYS):
         raise BizError(
             code="ERR_BACKFILL_WINDOW_TOO_LARGE",
@@ -630,7 +705,10 @@ async def trigger_backfill(
     # 3. 计算窗口数与预估耗时
     window_count = _calc_window_count(body.tsStart, body.tsEnd)
     loop_count = len(loops)
-    estimated_duration_sec = loop_count * window_count * 2  # 每回路每窗口预估 2s
+    # 回填子任务使用独立内层并发上限，与 kpi_calc 保持一致。
+    _concurrency = 4
+    _batches = max(1, (loop_count + _concurrency - 1) // _concurrency)
+    estimated_duration_sec = _batches * window_count * 2  # 每批每窗口预估 2s
     sample_loop_names = [loop.tag_name or loop.id for loop in loops[:5]]
 
     # 4. dry-run 模式：返回预览，不触发 Celery
@@ -911,6 +989,11 @@ async def list_tasks(
         [pid.strip() for pid in plantNodeIds.split(",") if pid.strip()] if plantNodeIds else None
     )
 
+    # 预解析时间筛选（created_at 为 ISO 字符串，统一按 datetime 比较，
+    # 避免 "+00:00" 与 "Z" 混合格式下字符串比较在同秒边界误判）
+    start_dt_filter = _parse_iso_dt(startTime)
+    end_dt_filter = _parse_iso_dt(endTime)
+
     # 从索引获取所有 task_id（按创建时间倒序）
     task_ids = await redis_client.zrevrange(_TASK_INDEX_KEY, 0, -1)
 
@@ -927,11 +1010,13 @@ async def list_tasks(
         if status_filter and data.get("status") != status_filter:
             continue
         # 筛选：创建时间范围
-        created_at = data.get("created_at", "")
-        if startTime and created_at < startTime:
-            continue
-        if endTime and created_at > endTime:
-            continue
+        if start_dt_filter or end_dt_filter:
+            created_dt = _parse_iso_dt(data.get("created_at", ""))
+            if created_dt is not None:
+                if start_dt_filter and created_dt < start_dt_filter:
+                    continue
+                if end_dt_filter and created_dt > end_dt_filter:
+                    continue
 
         # 筛选：装置（仅对 BACKFILL 任务生效）
         if plant_node_filter:
@@ -991,37 +1076,39 @@ async def cancel_task(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    # 先用 Redis CAS 抢占 CANCELLED 终态，避免读取后到写入前被 SUCCESS/FAILED 竞态覆盖。
+    from app.services import task_tracker
+
+    updated = await task_tracker.update_status(
+        task_id,
+        TaskStatus.CANCELLED,
+        finished_at=_now_iso(),
+    )
+    if updated is None:
+        raise BizError(
+            code="ERR_TASK_NOT_FOUND",
+            message=f"任务不存在: {task_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    if updated.get("status") != TaskStatus.CANCELLED.value:
+        raise BizError(
+            code="ERR_TASK_NOT_CANCELLABLE",
+            message=f"任务已处于终态: {updated.get('status', '')}，无法取消",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    data = updated
+
     # 撤销关联的 Celery 任务
     # 使用 terminate=True 强制终止正在执行的 worker 进程，
     # 避免 _do_backfill 循环继续跑完所有窗口
     from app.tasks.celery_app import celery_app
 
-    celery_ids_raw = data.get("celery_task_id") or data.get("celery_task_ids")
-    if celery_ids_raw:
-        try:
-            if data.get("task_type") == TaskType.STANDARD.value:
-                celery_ids = [celery_ids_raw]
-            else:
-                celery_ids = json.loads(celery_ids_raw)
-            for cid in celery_ids:
-                celery_app.control.revoke(cid, terminate=True)
-        except (json.JSONDecodeError, TypeError):
-            logger.warning("解析 Celery 任务 ID 失败: task_id=%s", task_id)
-
-    updates = {
-        "status": TaskStatus.CANCELLED.value,
-        "finished_at": _now_iso(),
-    }
-    await redis_client.hset(_task_key(task_id), mapping=updates)
-    data.update(updates)
-
-    # 取消是终态转换，发送通知（Phase 5 补齐）
-    try:
-        from app.services import task_tracker
-
-        await task_tracker._send_notification(data)
-    except Exception:
-        logger.warning("任务取消通知发送失败: task_id=%s", task_id, exc_info=True)
+    celery_ids = _parse_celery_task_ids(data)
+    if celery_ids:
+        for cid in celery_ids:
+            celery_app.control.revoke(cid, terminate=True)
+    elif data.get("celery_task_id") or data.get("celery_task_ids"):
+        logger.warning("解析 Celery 任务 ID 失败: task_id=%s", task_id)
 
     logger.info("任务已取消: task_id=%s, user=%s", task_id, user.username)
 
@@ -1058,6 +1145,9 @@ async def delete_task(
         )
 
     # 从 Redis 哈希与索引中删除
+    from app.services import task_tracker
+
+    await task_tracker.delete_task_auxiliary_keys(task_id)
     await redis_client.delete(_task_key(task_id))
     await redis_client.zrem(_TASK_INDEX_KEY, task_id)
 

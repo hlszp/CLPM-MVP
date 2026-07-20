@@ -13,11 +13,7 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
-import type {
-  ConfidenceLevel,
-  KpiSnapshotItem,
-  KpiStatus,
-} from '#/api/metric';
+import type { ConfidenceLevel, KpiSnapshotItem, KpiStatus } from '#/api/metric';
 
 import { computed, onMounted, ref } from 'vue';
 
@@ -59,6 +55,10 @@ const filterPlantNodeId = ref<string | undefined>();
 const filterStatus = ref<KpiStatus | undefined>();
 const filterConfidence = ref<ConfidenceLevel | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
+
+// 服务端排序状态（综合评分列，其余列按 tsStart DESC 默认序）
+const sortBy = ref<'score' | undefined>();
+const sortOrder = ref<'asc' | 'desc' | undefined>();
 
 // 装置树 + 回路列表
 const plantNodeTree = ref<any[]>([]);
@@ -132,6 +132,12 @@ const columns = computed<TableColumnsType>(() => [
     dataIndex: 'score',
     width: 90,
     sorter: true,
+    // 受控排序：columns 为 computed（每次渲染新数组），非受控状态下 AntD
+    // 会在数据刷新后丢失内部排序态，导致第二次点击方向错乱
+    sortOrder: (() => {
+      if (sortBy.value !== 'score' || !sortOrder.value) return null;
+      return sortOrder.value === 'asc' ? 'ascend' : 'descend';
+    })(),
   },
   {
     title: '好值率',
@@ -234,8 +240,14 @@ async function loadList() {
     if (filterStatus.value) params.status = filterStatus.value;
     if (filterConfidence.value) params.confidenceLevel = filterConfidence.value;
     if (filterDateRange.value) {
-      params.startTime = filterDateRange.value[0].toISOString();
-      params.endTime = filterDateRange.value[1].toISOString();
+      params.startTime = filterDateRange.value[0].startOf('day').toISOString();
+      // 日期型 RangePicker 的结束值是当日 00:00，需扩展到 23:59:59
+      // 否则选「今天」只会命中 00:00 一个小时的快照
+      params.endTime = filterDateRange.value[1].endOf('day').toISOString();
+    }
+    if (sortBy.value && sortOrder.value) {
+      params.sortBy = sortBy.value;
+      params.sortOrder = sortOrder.value;
     }
     const result = await getLoopSnapshotsApi(params);
     snapshotList.value = result.items;
@@ -296,6 +308,21 @@ function handlePlantNodeChange(value: string | undefined) {
   loadList();
 }
 
+// ============ 表格变更（分页 + 服务端排序） ============
+function handleTableChange(p: any, _filters: any, sorter: any) {
+  currentPage.value = p.current;
+  pageSize.value = p.pageSize;
+  const s = Array.isArray(sorter) ? sorter[0] : sorter;
+  if (s?.order && (s.field === 'score' || s.columnKey === 'score')) {
+    sortBy.value = 'score';
+    sortOrder.value = s.order === 'ascend' ? 'asc' : 'desc';
+  } else {
+    sortBy.value = undefined;
+    sortOrder.value = undefined;
+  }
+  loadList();
+}
+
 // ============ 工具函数 ============
 /**
  * 时间窗：只显示结束时间的「MM-DD HH:00」。
@@ -325,6 +352,17 @@ function formatFullTime(ts: null | string | undefined): string {
 function formatNumber(val: null | number | undefined, suffix = ''): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
+}
+
+/**
+ * 综合评分展示（对齐 §7.2.6：可信度 E 级 = INCONCLUSIVE，评分数值不展示）。
+ */
+function formatScore(
+  val: null | number | undefined,
+  confidenceLevel: null | string | undefined,
+): string {
+  if (confidenceLevel === 'E') return '—';
+  return formatNumber(val);
 }
 
 const STATUS_COLOR_MAP: Record<string, string> = {
@@ -398,7 +436,10 @@ onMounted(() => {
         show-search
         placeholder="回路筛选"
         allow-clear
-        :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())"
+        :filter-option="
+          (input: string, option: any) =>
+            option.label.toLowerCase().includes(input.toLowerCase())
+        "
         style="width: 220px"
         @change="loadList"
       />
@@ -452,82 +493,87 @@ onMounted(() => {
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :scroll="{ x: 1800 }"
-        row-key="tsStart"
-        size="small"
-        @change="
-          (p: any) => {
-            currentPage = p.current;
-            pageSize = p.pageSize;
-            loadList();
-          }
+        :row-key="
+          (record: KpiSnapshotItem) => `${record.loopId}_${record.tsStart}`
         "
+        size="small"
+        @change="handleTableChange"
       >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'tsRange'">
-          <span class="font-mono text-xs">
-            {{ formatTsEnd(record.tsEnd) }}
-          </span>
-        </template>
-        <template v-else-if="column.key === 'score'">
-          <span class="clpm-num font-semibold">
-            {{ formatNumber(record.score) }}
-          </span>
-        </template>
-        <template v-else-if="column.key === 'confidenceLevel'">
-          <Tag
-            v-if="record.confidenceLevel"
-            :color="CONFIDENCE_COLOR_MAP[record.confidenceLevel] || 'default'"
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'tsRange'">
+            <span class="font-mono text-xs">
+              {{ formatTsEnd(record.tsEnd) }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'score'">
+            <span class="clpm-num font-semibold">
+              {{ formatScore(record.score, record.confidenceLevel) }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'confidenceLevel'">
+            <Tag
+              v-if="record.confidenceLevel"
+              :color="CONFIDENCE_COLOR_MAP[record.confidenceLevel] || 'default'"
+            >
+              {{
+                CONFIDENCE_LABEL_MAP[record.confidenceLevel] ||
+                record.confidenceLevel
+              }}
+            </Tag>
+            <span v-else>—</span>
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <Tag :color="STATUS_COLOR_MAP[record.status] || 'default'">
+              {{ STATUS_LABEL_MAP[record.status] || record.status }}
+            </Tag>
+          </template>
+          <template
+            v-else-if="
+              (
+                [
+                  'goodValueRate',
+                  'autoModeRate',
+                  'effectiveAutoRate',
+                  'steadyRate',
+                  'accuracyRate',
+                  'fastRate',
+                  'oscillationRate',
+                  'saturationRate',
+                ] as string[]
+              ).includes(column.key as string)
+            "
           >
-            {{ CONFIDENCE_LABEL_MAP[record.confidenceLevel] || record.confidenceLevel }}
-          </Tag>
-          <span v-else>—</span>
+            <span class="clpm-num">
+              {{ formatNumber(record[column.dataIndex as string], '%') }}
+            </span>
+          </template>
+          <!-- 粘滞指数 / 稳态时间 / 输出行程指数 -->
+          <template
+            v-else-if="
+              (
+                [
+                  'stictionIndex',
+                  'settlingTime',
+                  'outputTravelIndex',
+                ] as string[]
+              ).includes(column.key as string)
+            "
+          >
+            <span class="clpm-num font-mono">
+              {{
+                column.key === 'settlingTime'
+                  ? formatNumber(record[column.dataIndex as string], 's')
+                  : formatNumber(record[column.dataIndex as string])
+              }}
+            </span>
+          </template>
+          <!-- 操作列：详情按钮 -->
+          <template v-else-if="column.key === 'action'">
+            <Button type="link" size="small" @click="openDetail(record)">
+              详情
+            </Button>
+          </template>
         </template>
-        <template v-else-if="column.key === 'status'">
-          <Tag :color="STATUS_COLOR_MAP[record.status] || 'default'">
-            {{ STATUS_LABEL_MAP[record.status] || record.status }}
-          </Tag>
-        </template>
-        <template
-          v-else-if="
-            ([
-              'goodValueRate',
-              'autoModeRate',
-              'effectiveAutoRate',
-              'steadyRate',
-              'accuracyRate',
-              'fastRate',
-              'oscillationRate',
-              'saturationRate',
-            ] as string[]).includes(column.key as string)
-          "
-        >
-          <span class="clpm-num">
-            {{ formatNumber(record[column.dataIndex as string], '%') }}
-          </span>
-        </template>
-        <!-- 粘滞指数 / 稳态时间 / 输出行程指数 -->
-        <template
-          v-else-if="
-            (['stictionIndex', 'settlingTime', 'outputTravelIndex'] as string[]).includes(
-              column.key as string,
-            )
-          "
-        >
-          <span class="clpm-num font-mono">
-            {{
-              column.key === 'settlingTime'
-                ? formatNumber(record[column.dataIndex as string], 's')
-                : formatNumber(record[column.dataIndex as string])
-            }}
-          </span>
-        </template>
-        <!-- 操作列：详情按钮 -->
-        <template v-else-if="column.key === 'action'">
-          <Button type="link" size="small" @click="openDetail(record)">
-            详情
-          </Button>
-        </template>
-      </template>
       </Table>
     </ClpmDataCanvas>
 
@@ -561,15 +607,22 @@ onMounted(() => {
           </DescriptionsItem>
           <DescriptionsItem label="综合评分">
             <span class="clpm-num font-semibold">
-              {{ formatNumber(drawerRecord.score) }}
+              {{
+                formatScore(drawerRecord.score, drawerRecord.confidenceLevel)
+              }}
             </span>
           </DescriptionsItem>
           <DescriptionsItem label="可信度">
             <Tag
               v-if="drawerRecord.confidenceLevel"
-              :color="CONFIDENCE_COLOR_MAP[drawerRecord.confidenceLevel] || 'default'"
+              :color="
+                CONFIDENCE_COLOR_MAP[drawerRecord.confidenceLevel] || 'default'
+              "
             >
-              {{ CONFIDENCE_LABEL_MAP[drawerRecord.confidenceLevel] || drawerRecord.confidenceLevel }}
+              {{
+                CONFIDENCE_LABEL_MAP[drawerRecord.confidenceLevel] ||
+                drawerRecord.confidenceLevel
+              }}
             </Tag>
             <span v-else>—</span>
           </DescriptionsItem>
@@ -585,7 +638,12 @@ onMounted(() => {
 
         <!-- 8 大 KPI -->
         <div class="mt-4 mb-2 text-sm font-medium">8 大 KPI 指标</div>
-        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+        <Descriptions
+          :column="2"
+          size="small"
+          bordered
+          :label-style="{ width: '120px' }"
+        >
           <DescriptionsItem label="好值率">
             {{ formatNumber(drawerRecord.goodValueRate, '%') }}
           </DescriptionsItem>
@@ -614,7 +672,12 @@ onMounted(() => {
 
         <!-- 诊断指标 -->
         <div class="mt-4 mb-2 text-sm font-medium">诊断指标</div>
-        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+        <Descriptions
+          :column="2"
+          size="small"
+          bordered
+          :label-style="{ width: '120px' }"
+        >
           <DescriptionsItem label="粘滞指数">
             {{ formatNumber(drawerRecord.stictionIndex) }}
           </DescriptionsItem>
@@ -631,7 +694,12 @@ onMounted(() => {
 
         <!-- 数据血缘 -->
         <div class="mt-4 mb-2 text-sm font-medium">数据血缘</div>
-        <Descriptions :column="2" size="small" bordered :label-style="{ width: '120px' }">
+        <Descriptions
+          :column="2"
+          size="small"
+          bordered
+          :label-style="{ width: '120px' }"
+        >
           <DescriptionsItem label="有效数据率">
             {{ formatNumber(drawerRecord.validRate) }}
           </DescriptionsItem>
@@ -648,35 +716,51 @@ onMounted(() => {
 
         <template v-if="drawerRecord.dataLineage">
           <div class="mt-4 mb-2 text-sm font-medium">数据血缘详情</div>
-          <div class="rounded p-3 font-mono text-xs" :style="{ background: 'hsl(var(--muted) / 42%)' }">
+          <div
+            class="rounded p-3 font-mono text-xs"
+            :style="{ background: 'hsl(var(--muted) / 42%)' }"
+          >
             <div>采样频率: {{ drawerRecord.dataLineage.samplingFreq }}</div>
-            <div>聚合策略: {{ drawerRecord.dataLineage.aggregationPolicy }}</div>
+            <div>
+              聚合策略: {{ drawerRecord.dataLineage.aggregationPolicy }}
+            </div>
             <div>质量策略: {{ drawerRecord.dataLineage.qualityPolicy }}</div>
             <div>tagGroup: {{ drawerRecord.dataLineage.tagGroup }}</div>
             <div>
-              数据块: {{ drawerRecord.dataLineage.dataBlockIds?.join(', ') || '—' }}
+              数据块:
+              {{ drawerRecord.dataLineage.dataBlockIds?.join(', ') || '—' }}
             </div>
             <div>有效数据率: {{ drawerRecord.dataLineage.validRate }}</div>
-            <div>预处理版本: {{ drawerRecord.dataLineage.dataPolicyVersion }}</div>
+            <div>
+              预处理版本: {{ drawerRecord.dataLineage.dataPolicyVersion }}
+            </div>
             <div>算法版本: {{ drawerRecord.dataLineage.algorithmVersion }}</div>
           </div>
         </template>
 
         <!-- 评分趋势 -->
-        <div class="mt-4 mb-2 text-sm font-medium">评分趋势（最近 24 小时）</div>
+        <div class="mt-4 mb-2 text-sm font-medium">
+          评分趋势（最近 24 小时）
+        </div>
         <div v-if="drawerTrendLoading" class="text-center py-4">加载中...</div>
         <template v-else-if="drawerTrendSnapshots.length > 0">
           <div class="p-3 rounded-lg border border-border bg-muted/30">
             <div class="flex items-center justify-center gap-2">
               <ScoreSparkline
-                :data="drawerTrendSnapshots.map((s) => (s.score ?? 0))"
+                :data="drawerTrendSnapshots.map((s) => s.score ?? 0)"
                 :width="560"
                 :height="50"
               />
             </div>
-            <div class="flex justify-between mt-2 text-xs text-muted-foreground">
+            <div
+              class="flex justify-between mt-2 text-xs text-muted-foreground"
+            >
               <span>{{ formatTsEnd(drawerTrendSnapshots[0]?.tsEnd) }}</span>
-              <span>{{ formatTsEnd(drawerTrendSnapshots[drawerTrendSnapshots.length - 1]?.tsEnd) }}</span>
+              <span>{{
+                formatTsEnd(
+                  drawerTrendSnapshots[drawerTrendSnapshots.length - 1]?.tsEnd,
+                )
+              }}</span>
             </div>
           </div>
           <div class="mt-2 max-h-[200px] overflow-y-auto space-y-1">
@@ -685,17 +769,25 @@ onMounted(() => {
               :key="index"
               class="flex items-center gap-3 text-xs"
             >
-              <span class="font-mono w-16 text-muted-foreground">{{ formatTsEnd(item.tsEnd) }}</span>
+              <span class="font-mono w-16 text-muted-foreground">{{
+                formatTsEnd(item.tsEnd)
+              }}</span>
               <span
                 class="clpm-num font-medium w-12 text-right"
                 :style="{
                   color:
-                    item.score !== null && item.score !== undefined
-                      ? (item.score >= 80 ? '#10B981' : item.score >= 60 ? '#F59E0B' : '#F43F5E')
-                      : '#9CA3AF',
+                    item.confidenceLevel === 'E'
+                      ? '#9CA3AF'
+                      : item.score !== null && item.score !== undefined
+                        ? item.score >= 80
+                          ? '#10B981'
+                          : item.score >= 60
+                            ? '#F59E0B'
+                            : '#F43F5E'
+                        : '#9CA3AF',
                 }"
               >
-                {{ formatNumber(item.score) }}
+                {{ formatScore(item.score, item.confidenceLevel) }}
               </span>
               <Tag
                 v-if="item.confidenceLevel"
@@ -707,7 +799,9 @@ onMounted(() => {
             </div>
           </div>
         </template>
-        <div v-else class="text-center py-4 text-muted-foreground">暂无趋势数据</div>
+        <div v-else class="text-center py-4 text-muted-foreground">
+          暂无趋势数据
+        </div>
       </template>
     </Drawer>
   </div>

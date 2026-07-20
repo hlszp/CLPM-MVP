@@ -40,14 +40,14 @@ const lastPointY = computed(() => {
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
-  const last = data[data.length - 1]!;
+  const last = data.at(-1) ?? 0;
   return props.height - ((last - min) / range) * (props.height - 2) - 1;
 });
 
 const lineColor = computed(() => {
   const data = props.data;
   if (!data || data.length < 2) return themeColors.value.NEUTRAL;
-  const last = data[data.length - 1]!;
+  const last = data.at(-1) ?? 0;
   if (last >= 80) return themeColors.value.SUCCESS;
   if (last >= 60) return themeColors.value.WARNING;
   return themeColors.value.DANGER;
@@ -70,12 +70,7 @@ const lineColor = computed(() => {
       stroke-linecap="round"
       stroke-linejoin="round"
     />
-    <circle
-      :cx="width"
-      :cy="lastPointY"
-      r="2"
-      :fill="lineColor"
-    />
+    <circle :cx="width" :cy="lastPointY" r="2" :fill="lineColor" />
   </svg>
 </template>
 

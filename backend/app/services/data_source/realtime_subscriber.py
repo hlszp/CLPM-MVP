@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -27,13 +28,15 @@ import websockets
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.core.redis import redis_client
+from app.core.tdengine import make_subtable_name
+from app.core.tdengine_native import batch_insert_multi
 from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
 
 # Redis 缓存 key 前缀
 _REDIS_KEY_PREFIX = "realtime:"
-_REDIS_TTL = 60  # 秒
+_REDIS_TTL = 3600  # 秒（1 小时），确保页面刷新时能从缓存读取实时值
 _PUBSUB_CHANNEL = "realtime:updates"  # Pub/Sub 频道，供 WebSocket 端点订阅
 
 # tag_name 后缀 → DDL 列名映射（与 tdengine.py 保持一致）
@@ -46,6 +49,15 @@ _ROLE_COLUMN_MAP: dict[str, str] = {
     "PID_I": "pid_i",
     "PID_D": "pid_d",
 }
+
+
+def next_reconnect_delay(current: float, *, cap: float) -> float:
+    """计算下次重连等待秒数：当前等待翻倍，封顶 cap（指数退避）。
+
+    避免远端 Hub 不可用时固定小间隔重连对服务持续施压。
+    """
+    return min(current * 2, cap)
+
 
 # PV 角色对应的质量码列名
 _QUALITY_COLUMN_MAP: dict[str, str | None] = {
@@ -89,9 +101,7 @@ class RealtimeSubscriber:
     @property
     def _writeback_enabled(self) -> bool:
         """是否启用实时数据写回本地 TDengine 宽表。"""
-        return (
-            settings.REALTIME_WRITEBACK_ENABLED and settings.DATA_SOURCE_TYPE.lower() == "tdengine"
-        )
+        return settings.REALTIME_WRITEBACK_ENABLED
 
     async def start(self) -> None:
         """启动订阅后台任务."""
@@ -106,8 +116,7 @@ class RealtimeSubscriber:
 
         self._running = True
         self._task = asyncio.create_task(self._run())
-        if self._writeback_enabled:
-            self._flush_task = asyncio.create_task(self._flush_loop())
+        self._flush_task = asyncio.create_task(self._flush_loop())
         logger.info(
             "实时数据订阅任务已启动 (hub=%s, writeback=%s)",
             settings.SIGNALR_HUB_URL,
@@ -139,17 +148,39 @@ class RealtimeSubscriber:
         logger.info("实时数据订阅已停止")
 
     async def _run(self) -> None:
-        """主循环：连接 → 订阅 → 接收 → 重连."""
+        """主循环：连接 → 订阅 → 接收 → 重连（指数退避）."""
+        base_delay = float(settings.SIGNALR_RECONNECT_INTERVAL)
+        max_delay = float(settings.SIGNALR_RECONNECT_MAX_INTERVAL)
+        delay = base_delay
+        connected_at = 0.0
         while self._running:
             try:
+                connected_at = time.monotonic()
                 await self._connect_and_subscribe()
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "实时数据订阅异常: %s，%ds 后重连", exc, settings.SIGNALR_RECONNECT_INTERVAL
-                )
-                await asyncio.sleep(settings.SIGNALR_RECONNECT_INTERVAL)
+                # 连接健康存活超过 60s 才视为稳定连接，重置退避到 base；
+                # 否则先按当前退避等待，再翻倍（base → ×2 → … → max 封顶），
+                # 避免远端 Hub 不可用时固定小间隔重连持续施压
+                if time.monotonic() - connected_at > 60:
+                    delay = base_delay
+                logger.warning("实时数据订阅异常: %s，%.0fs 后重连", exc, delay)
+                await asyncio.sleep(delay)
+                delay = next_reconnect_delay(delay, cap=max_delay)
+            finally:
+                # 确保旧连接在任何情况下都被关闭，防止服务器侧 CLOSE_WAIT 堆积
+                await self._close_ws_safely()
+
+    async def _close_ws_safely(self) -> None:
+        """安全关闭 WebSocket 连接（幂等）。"""
+        if self._ws is not None:
+            try:
+                await self._ws.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("关闭旧 WebSocket 连接时异常（可忽略）: %s", exc)
+            finally:
+                self._ws = None
 
     async def _connect_and_subscribe(self) -> None:
         """连接 Hub 并订阅数据.
@@ -160,6 +191,9 @@ class RealtimeSubscriber:
         3. 接收握手响应 {}\\x1e（成功）或 {"error":"..."}\\x1e（失败）
         4. 之后所有消息以 \\x1e (Record Separator) 分帧
         """
+        # 先关闭残留的旧连接，防止泄漏
+        await self._close_ws_safely()
+
         self._ws = await websockets.connect(settings.SIGNALR_HUB_URL)
         logger.info("已连接实时数据 Hub: %s", settings.SIGNALR_HUB_URL)
 
@@ -251,19 +285,17 @@ class RealtimeSubscriber:
         # Pub/Sub 广播给 WebSocket 端点
         await redis_client.publish(_PUBSUB_CHANNEL, value)
 
-        # 可选：写回本地 TDengine 回路宽表（仅开发/模拟兼容）。
-        # 现场模式下，原始数据已由外部系统按“一 Tag 一表”存储，CLPM 只缓存/转发实时值。
-        if self._writeback_enabled:
-            loop_part, role = self._parse_tag_code(tag_code)
-            if loop_part:
-                async with self._buffer_lock:
-                    if loop_part not in self._buffer:
-                        self._buffer[loop_part] = {}
-                    self._buffer[loop_part][role] = {
-                        "value": item.get("value"),
-                        "quality": item.get("quality"),
-                        "ts": item.get("collectTime", ""),
-                    }
+        # 放入内部缓冲区（供 _flush_buffer 写入 Redis 1 小时缓存及可选的 TDengine）
+        loop_part, role = self._parse_tag_code(tag_code)
+        if loop_part:
+            async with self._buffer_lock:
+                if loop_part not in self._buffer:
+                    self._buffer[loop_part] = {}
+                self._buffer[loop_part][role] = {
+                    "value": item.get("value"),
+                    "quality": item.get("quality"),
+                    "ts": item.get("collectTime", ""),
+                }
 
     def _parse_tag_code(self, tag_code: str) -> tuple[str, str]:
         """解析 tagCode 为回路部分和角色。
@@ -300,11 +332,28 @@ class RealtimeSubscriber:
                     pass
         return result
 
+    async def get_history_values(self, loop_part: str) -> list[dict]:
+        """从 Redis 获取过去 1 小时的缓存数据（按时间升序返回）。"""
+        key = f"{_REDIS_KEY_PREFIX}history:{loop_part}"
+        raw_list = await redis_client.lrange(key, 0, -1)
+        if not raw_list:
+            return []
+
+        result = []
+        for raw in raw_list:
+            try:
+                result.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue
+        # Redis lpush 导致最新数据在前面，因此需要反转列表以满足时间升序
+        result.reverse()
+        return result
+
     async def _flush_loop(self) -> None:
-        """每秒 flush 一次缓冲区到 TDengine."""
+        """按配置间隔 flush 缓冲区到 TDengine（默认 1 秒）。"""
         while self._running:
             try:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(settings.TDENGINE_FLUSH_INTERVAL)
                 await self._flush_buffer()
             except asyncio.CancelledError:
                 break
@@ -312,74 +361,135 @@ class RealtimeSubscriber:
                 logger.warning("TDengine flush 异常: %s", exc)
 
     async def _flush_buffer(self) -> None:
-        """将缓冲区数据写入 TDengine."""
+        """将缓冲区数据批量写入 Redis 1 小时缓存（及可选的 TDengine）。"""
         async with self._buffer_lock:
             if not self._buffer:
                 return
             buffer_copy = dict(self._buffer)
             self._buffer.clear()
 
+        # 1. 写入 Redis 1 小时缓存 (pipeline)
+        pipe = redis_client.pipeline()
+        tables_rows: list[dict[str, Any]] = []
+
         for loop_part, roles_data in buffer_copy.items():
-            await self._write_loop_data(loop_part, roles_data)
+            row = self._build_row(roles_data)
+            row_dict = {
+                "ts": row[0],
+                "pv": row[1],
+                "sp": row[2],
+                "op": row[3],
+                "mode": row[4],
+                "pid_p": row[5],
+                "pid_i": row[6],
+                "pid_d": row[7],
+                "pv_quality": row[8],
+            }
+            key = f"{_REDIS_KEY_PREFIX}history:{loop_part}"
+            pipe.lpush(key, json.dumps(row_dict))
+            # 保留 75 分钟（1Hz×4500 点）：整点 KPI 任务计算"上一完整小时"，
+            # 需覆盖 [H-1, H)，恰 3600 点只有 ~60s 迟到余量，4500 点给出 ~15 分钟余量
+            pipe.ltrim(key, 0, 4499)
+            pipe.expire(key, 7200)
 
-    async def _write_loop_data(self, loop_part: str, roles_data: dict[str, dict]) -> None:
-        """将单回路数据写入 TDengine.
+            # 为 TDengine 准备数据
+            if self._writeback_enabled:
+                subtable = make_subtable_name(loop_part)
+                tables_rows.append(
+                    {
+                        "subtable": subtable,
+                        "loop_id": "",
+                        "unit_id": "",
+                        "rows": [row],
+                    }
+                )
 
-        TDengine 表结构（st_loop_data）：
-            ts TIMESTAMP, pv FLOAT, sp FLOAT, op FLOAT, mode TINYINT,
-            pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT
-        """
         try:
-            # 子表命名：调用公共函数 make_subtable_name（P3 #54）
-            from app.core.tdengine import execute_sql, make_subtable_name
-
-            subtable = make_subtable_name(loop_part)
-
-            # 获取时间戳（取任意一个角色的时间戳）
-            ts_str = ""
-            for role_data in roles_data.values():
-                ts_str = role_data.get("ts", "")
-                if ts_str:
-                    break
-            if not ts_str:
-                ts_str = datetime.now(UTC).isoformat()
-
-            # 构建 INSERT 语句：缺失值用 NULL
-            # 列顺序: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality
-            pv_val = roles_data.get("PV", {}).get("value")
-            sp_val = roles_data.get("SP", {}).get("value")
-            op_val = roles_data.get("OP", {}).get("value")
-            mode_val = roles_data.get("MODE", {}).get("value")
-            pid_p_val = roles_data.get("PID_P", {}).get("value")
-            pid_i_val = roles_data.get("PID_I", {}).get("value")
-            pid_d_val = roles_data.get("PID_D", {}).get("value")
-            pv_quality_val = roles_data.get("PV", {}).get("quality")
-
-            def fmt_val(v: Any) -> str:
-                if v is None or v == "":
-                    return "NULL"
-                try:
-                    # 数值类型：去掉引号
-                    return str(float(v))
-                except (ValueError, TypeError):
-                    # 非数值（如 MODE 可能是字符串）：加引号
-                    return f"'{str(v)}'"
-
-            sql = (
-                f"INSERT INTO {settings.TDENGINE_DB}.{subtable} VALUES "
-                f"('{ts_str}', {fmt_val(pv_val)}, {fmt_val(sp_val)}, {fmt_val(op_val)}, "
-                f"{fmt_val(mode_val)}, {fmt_val(pid_p_val)}, {fmt_val(pid_i_val)}, "
-                f"{fmt_val(pid_d_val)}, {fmt_val(pv_quality_val)})"
-            )
-
-            result = await execute_sql(sql)
-            if not result:
-                logger.debug("TDengine 写入 %s 成功", loop_part)
-            else:
-                logger.warning("TDengine 写入 %s 返回: %s", loop_part, result[:50])
-
+            await pipe.execute()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("写入 TDengine 失败 (%s): %s", loop_part, exc)
+            logger.warning("Redis 历史数据写入失败: %s", exc)
+
+        # 2. 批量写入 TDengine (如果启用)
+        if not tables_rows:
+            return
+
+        # 重试逻辑（3 次，指数退避）
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                count = await batch_insert_multi(tables_rows)
+                logger.debug("批量写入 %d 行到 %d 个子表", count, len(tables_rows))
+                return
+            except Exception as exc:  # noqa: BLE001
+                if attempt < max_retries - 1:
+                    wait = 0.5 * (2**attempt)  # 0.5s, 1s, 2s
+                    logger.warning(
+                        "批量写入失败 (尝试 %d/%d): %s，%ds 后重试",
+                        attempt + 1,
+                        max_retries,
+                        exc,
+                        wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error("批量写入最终失败 (%d 个子表): %s", len(tables_rows), exc)
+
+    def _build_row(self, roles_data: dict[str, dict]) -> tuple:
+        """构造单行数据。
+
+        列顺序: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality
+        对应 st_loop_data 超级表 schema。
+        """
+        # 获取时间戳（取任意一个角色的时间戳）
+        ts_str = ""
+        for role_data in roles_data.values():
+            ts_str = role_data.get("ts", "")
+            if ts_str:
+                break
+        if not ts_str:
+            ts_str = datetime.now(UTC).isoformat()
+
+        # 提取各角色值（缺失值用 None，_format_row 会转为 NULL）
+        pv_val = self._parse_float(roles_data.get("PV", {}).get("value"))
+        sp_val = self._parse_float(roles_data.get("SP", {}).get("value"))
+        op_val = self._parse_float(roles_data.get("OP", {}).get("value"))
+        mode_val = self._parse_int(roles_data.get("MODE", {}).get("value"))
+        pid_p_val = self._parse_float(roles_data.get("PID_P", {}).get("value"))
+        pid_i_val = self._parse_float(roles_data.get("PID_I", {}).get("value"))
+        pid_d_val = self._parse_float(roles_data.get("PID_D", {}).get("value"))
+        pv_quality_val = self._parse_int(roles_data.get("PV", {}).get("quality"))
+
+        return (
+            ts_str,
+            pv_val,
+            sp_val,
+            op_val,
+            mode_val,
+            pid_p_val,
+            pid_i_val,
+            pid_d_val,
+            pv_quality_val,
+        )
+
+    @staticmethod
+    def _parse_float(v: Any) -> float | None:
+        """安全解析 float，无效值返回 None。"""
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _parse_int(v: Any) -> int | None:
+        """安全解析 int，无效值返回 None。"""
+        if v is None or v == "":
+            return None
+        try:
+            return int(float(v))
+        except (ValueError, TypeError):
+            return None
 
 
 # 全局单例

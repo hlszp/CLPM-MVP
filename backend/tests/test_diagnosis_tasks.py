@@ -600,6 +600,82 @@ class TestCancelDiagnosisTask:
 
 
 # ---------------------------------------------------------------------------
+# DELETE /api/v1/diagnosis/tasks/{taskId} — 删除诊断任务
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteDiagnosisTask:
+    """DELETE /api/v1/diagnosis/tasks/{taskId} tests."""
+
+    def test_delete_terminal_status_success(self, client, mock_db, fake_redis) -> None:
+        """终态（SUCCESS）任务可删除。"""
+        task = _make_task(status="SUCCESS", is_archived=True)
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(task))
+        mock_db.add = MagicMock()
+        mock_db.delete = AsyncMock()
+        mock_db.commit = AsyncMock()
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                f"/api/v1/diagnosis/tasks/{task.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"]["deleted"] is True
+        mock_db.delete.assert_awaited_once()
+
+    def test_delete_pending_success(self, client, mock_db, fake_redis) -> None:
+        """PENDING 任务可删除。"""
+        task = _make_task(status="PENDING", is_archived=False)
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(task))
+        mock_db.add = MagicMock()
+        mock_db.delete = AsyncMock()
+        mock_db.commit = AsyncMock()
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.delete(
+                f"/api/v1/diagnosis/tasks/{task.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_delete_running_rejected(self, client, mock_db, fake_redis) -> None:
+        """RUNNING 任务不可删除（400，须先取消）。"""
+        task = _make_task(status="RUNNING", is_archived=False)
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(task))
+        mock_db.delete = AsyncMock()
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                f"/api/v1/diagnosis/tasks/{task.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_DIAG_TASK_NOT_DELETABLE"
+        assert "请先取消" in resp.json()["message"]
+        mock_db.delete.assert_not_awaited()
+
+    def test_delete_not_found(self, client, mock_db, fake_redis) -> None:
+        """任务不存在返回 404。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                "/api/v1/diagnosis/tasks/nonexistent",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_DIAG_TASK_NOT_FOUND"
+
+    def test_delete_sponsor_forbidden(self, client, mock_db, fake_redis) -> None:
+        """SPONSOR 不能删除任务（403）。"""
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.delete(
+                "/api/v1/diagnosis/tasks/some-id",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # GET /api/v1/diagnosis/records — 诊断记录列表（已归档）
 # ---------------------------------------------------------------------------
 
@@ -608,7 +684,7 @@ class TestListDiagnosisRecords:
     """GET /api/v1/diagnosis/records tests."""
 
     def test_list_records_success(self, client, mock_db, fake_redis) -> None:
-        """认证用户可以获取已归档诊断记录列表。"""
+        """认证用户可以获取已归档诊断记录列表（含全量聚合统计）。"""
         task = _make_task(status="SUCCESS", is_archived=True)
         loop = _make_loop()
         node = MagicMock()
@@ -622,17 +698,23 @@ class TestListDiagnosisRecords:
             # 1: count
             if call_count[0] == 1:
                 return _make_scalar_mock(1)
-            # 2: 任务列表查询
+            # 2: 状态聚合（含近 7 天归档）
             if call_count[0] == 2:
-                return _make_scalars_all_mock([task])
-            # 3: 回路查询
+                return _make_rows_mock([("SUCCESS", 1, 1)])
+            # 3: 标签聚合
             if call_count[0] == 3:
-                return _make_scalars_all_mock([loop])
-            # 4: 装置查询
+                return _make_rows_mock([("OSCILLATION", 1)])
+            # 4: 任务列表查询
             if call_count[0] == 4:
-                return _make_scalars_all_mock([node])
-            # 5: 评分查询（6列）
+                return _make_scalars_all_mock([task])
+            # 5: 回路查询
             if call_count[0] == 5:
+                return _make_scalars_all_mock([loop])
+            # 6: 装置查询
+            if call_count[0] == 6:
+                return _make_scalars_all_mock([node])
+            # 7: 评分查询（6列）
+            if call_count[0] == 7:
                 return _make_rows_mock(
                     [
                         (
@@ -645,7 +727,7 @@ class TestListDiagnosisRecords:
                         )
                     ]
                 )
-            # 6: 诊断结果标签查询
+            # 8: 诊断结果标签查询
             return _make_rows_mock([])
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
@@ -666,6 +748,47 @@ class TestListDiagnosisRecords:
             assert "taskId" in item
             assert "isArchived" in item
             assert item["isArchived"] is True
+        # 聚合统计：对全部筛选结果聚合（A4）
+        assert data["aggregates"]["total"] == 1
+        assert data["aggregates"]["statusCounts"] == {"SUCCESS": 1}
+        assert data["aggregates"]["labelCounts"] == {"OSCILLATION": 1}
+        assert data["aggregates"]["recent7Days"] == 1
+
+    def test_list_records_aggregates_stable_across_pages(self, client, mock_db, fake_redis) -> None:
+        """翻页不影响记录聚合计数（A4）。"""
+        # 每个请求固定 4 步查询：count → 状态聚合 → 标签聚合 → 主查询（返回空页）
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            pos = (call_count[0] - 1) % 4
+            if pos == 0:
+                return _make_scalar_mock(12)
+            if pos == 1:
+                return _make_rows_mock([("SUCCESS", 10, 6), ("FAILED", 2, 1)])
+            if pos == 2:
+                return _make_rows_mock([("OSCILLATION", 7), ("VALVE_STICTION", 5)])
+            return _make_scalars_all_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp_p1 = client.get(
+                "/api/v1/diagnosis/records?page=1&pageSize=10",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+            resp_p2 = client.get(
+                "/api/v1/diagnosis/records?page=2&pageSize=10",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp_p1.status_code == 200
+        assert resp_p2.status_code == 200
+        agg_p1 = resp_p1.json()["data"]["aggregates"]
+        agg_p2 = resp_p2.json()["data"]["aggregates"]
+        assert agg_p1 == agg_p2
+        assert agg_p1["total"] == 12
+        assert agg_p1["statusCounts"] == {"SUCCESS": 10, "FAILED": 2}
+        assert agg_p1["labelCounts"] == {"OSCILLATION": 7, "VALVE_STICTION": 5}
+        assert agg_p1["recent7Days"] == 7
 
     def test_list_records_empty(self, client, mock_db, fake_redis) -> None:
         """无归档记录时返回空列表。"""
@@ -675,6 +798,9 @@ class TestListDiagnosisRecords:
             call_count[0] += 1
             if call_count[0] == 1:
                 return _make_scalar_mock(0)
+            # 2: 状态聚合；3: 标签聚合（均空）
+            if call_count[0] in (2, 3):
+                return _make_rows_mock([])
             return _make_scalars_all_mock([])
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
@@ -687,6 +813,8 @@ class TestListDiagnosisRecords:
         body = resp.json()
         assert body["code"] == "0"
         assert body["data"]["total"] == 0
+        assert body["data"]["aggregates"]["total"] == 0
+        assert body["data"]["aggregates"]["recent7Days"] == 0
 
     def test_list_records_no_token(self, client) -> None:
         """未认证请求返回 401。"""

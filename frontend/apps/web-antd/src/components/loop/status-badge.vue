@@ -52,9 +52,12 @@ const statusMap: Record<string, StatusConfig> = {
 
 const current = computed<StatusConfig>(() => {
   if (props.isActive === false) {
-    return statusMap.INACTIVE!;
+    return statusMap.INACTIVE as StatusConfig;
   }
-  return statusMap[props.status ?? 'INACTIVE'] ?? statusMap.INACTIVE!;
+  return (
+    statusMap[props.status ?? 'INACTIVE'] ??
+    (statusMap.INACTIVE as StatusConfig)
+  );
 });
 </script>
 

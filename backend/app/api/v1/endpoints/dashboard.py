@@ -388,24 +388,19 @@ async def get_board_aggregate_endpoint(
         result = await db.execute(loop_query)
         loop_ids = [str(row[0]) for row in result.all()]
 
-    # 使用递归 CTE 获取当前节点及所有下属节点 ID 列表（用于查询 unit_kpi_summary）
+    # 明细表只列出当前节点及其直接子节点（不含本节点之外的下下层节点）：
+    # 第一行固定为当前节点统计，后续行为下一层子节点性能数据
     if plantId:
-        cte_sql = text("""
-            WITH RECURSIVE node_tree AS (
-                SELECT id FROM plant_node WHERE id = :node_id
-                UNION ALL
-                SELECT child.id FROM plant_node child
-                JOIN node_tree ON child.parent_id = node_tree.id
-            )
-            SELECT id FROM node_tree
-        """)
-        result = await db.execute(cte_sql, {"node_id": plantId})
-        descendant_ids = [str(row.id) for row in result.all()]
+        result = await db.execute(
+            select(PlantNode.id).where((PlantNode.id == plantId) | (PlantNode.parent_id == plantId))
+        )
+        item_node_ids = [str(row.id) for row in result.all()]
     else:
-        result = await db.execute(select(PlantNode.id))
-        descendant_ids = [str(row.id) for row in result.all()]
+        # 未指定节点时：列出全部根节点（顶层）
+        result = await db.execute(select(PlantNode.id).where(PlantNode.parent_id.is_(None)))
+        item_node_ids = [str(row.id) for row in result.all()]
 
-    if not descendant_ids:
+    if not item_node_ids:
         return success(data={"items": [], "total": 0})
 
     # 子查询：每个 node_id 的最大 snapshot_time
@@ -414,14 +409,14 @@ async def get_board_aggregate_endpoint(
             UnitKpiSummary.node_id.label("nid"),
             func.max(UnitKpiSummary.snapshot_time).label("max_ts"),
         )
-        .where(UnitKpiSummary.node_id.in_(descendant_ids))
+        .where(UnitKpiSummary.node_id.in_(item_node_ids))
         .group_by(UnitKpiSummary.node_id)
         .subquery()
     )
 
-    # 查询每个子节点的最新快照（含 node_type，避免 N+1 查询）
+    # 查询每个子节点的最新快照
     stmt = (
-        select(UnitKpiSummary, PlantNode.name.label("node_name"), PlantNode.type.label("node_type"))
+        select(UnitKpiSummary, PlantNode.name.label("node_name"))
         .join(PlantNode, UnitKpiSummary.node_id == PlantNode.id)
         .join(
             subq,
@@ -434,9 +429,8 @@ async def get_board_aggregate_endpoint(
     result = await db.execute(stmt)
     rows = result.all()
     items = []
-    for summary, node_name, node_type in rows:
+    for summary, node_name in rows:
         item = _build_board_item(summary, node_name)
-        item["_node_type"] = node_type
         items.append(item)
 
     # 获取聚合节点名称
@@ -499,25 +493,22 @@ async def get_board_aggregate_endpoint(
         )
         inconclusive_loops = int(ic_result.scalar() or 0)
 
-    # 计算聚合值（仅使用 UNIT 级节点数据加权，避免父子节点重复）
-    # 过滤出 UNIT 类型的节点（使用查询结果中的 node_type，避免 N+1 查询）
-    unit_items = [item for item in items if item.get("_node_type") == "UNIT"]
-    for item in items:
-        item.pop("_node_type", None)
-
-    # 按 UNIT 节点的 evaluatedLoops 加权平均
-    total_unit_evaluated = sum(
-        (item.get("evaluatedLoops") or 0)
-        for item in unit_items
-        if (item.get("evaluatedLoops") or 0) > 0
-    )
+    # 计算聚合值
+    # v6.1.3 修复：优先取当前节点自身的 unit_kpi_summary 行——该表按节点持久化了
+    # 递归聚合结果（含重要等级加权），是装置级聚合的权威口径，且与明细表首行一致；
+    # 原实现仅对 items 中的 UNIT 级节点加权，选中 FACTORY 或全厂（items 全为
+    # FACTORY 根节点）时无 UNIT 可加，聚合指标全部返回 NULL。
+    # 当前节点无快照（或全厂视图）时，退化为 items 间按 evaluatedLoops 加权平均：
+    # items 仅含当前节点+直接子节点（或全厂根节点），兄弟/根节点间回路不重叠，
+    # 不存在父子重复计数。
+    self_item = next((it for it in items if it.get("nodeId") == plantId), None) if plantId else None
 
     def weighted_avg(field: str) -> float | None:
-        if total_unit_evaluated == 0:
-            return None
+        if self_item is not None and self_item.get(field) is not None:
+            return round(float(self_item[field]), 2)
         total = 0.0
         count = 0
-        for item in unit_items:
+        for item in items:
             val = item.get(field)
             weight = item.get("evaluatedLoops") or 0
             if val is not None and weight > 0:

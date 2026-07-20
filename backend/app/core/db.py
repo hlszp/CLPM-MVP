@@ -21,6 +21,7 @@ engine = create_async_engine(
     settings.postgres_dsn,
     echo=settings.DEBUG,
     poolclass=NullPool,
+    connect_args={"server_settings": {"application_name": "clpm-api"}},
 )
 
 # Session factory — use ``async with AsyncSessionLocal() as session:``.

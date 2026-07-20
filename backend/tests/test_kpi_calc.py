@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -54,6 +55,7 @@ from app.tasks.kpi_calc import (
     _quantize,
     _save_custom_snapshot,
     _save_snapshot,
+    _summarize_batch_results,
     _ts_to_float,
     calculate_hourly_kpi,
     calculate_loop_kpi,
@@ -127,11 +129,12 @@ def _make_scalar_one_or_none_mock(value: object) -> MagicMock:
     return result
 
 
-def _make_select_id_result_mock(snapshot_id: str) -> MagicMock:
-    """构造 _save_snapshot 第二次 db.execute（SELECT id）的返回值。
+def _make_returning_id_result_mock(snapshot_id: str) -> MagicMock:
+    """构造 _save_snapshot 中 db.execute（UPSERT ... RETURNING id）的返回值。
 
-    _save_snapshot 在 UPSERT 后用 ``select(KpiSnapshotHourly.id)`` 查询实际写入的 id，
-    返回值需支持 ``.first()`` 并返回一个可索引的 row（``row[0]`` 为 id 字符串）。
+    _save_snapshot 通过 ``on_conflict_do_update(...).returning(KpiSnapshotHourly.id)``
+    随 UPSERT 一并取回实际写入的 id，返回值需支持 ``.first()`` 并返回一个
+    可索引的 row（``row[0]`` 为 id 字符串）。
     """
     result = MagicMock()
     result.first.return_value = (snapshot_id,)
@@ -438,11 +441,11 @@ class TestSaveSnapshot:
 
     @pytest.mark.asyncio
     async def test_new_snapshot_executes_upsert(self) -> None:
-        """新增快照（existing=None）通过 UPSERT 写入，db.execute 调用 2 次。"""
+        """新增快照（existing=None）通过 UPSERT 写入，db.execute 调用 1 次。"""
         db = AsyncMock()
         db.add = MagicMock()
-        # 第一次 execute（UPSERT）返回无结果；第二次 execute（SELECT id）返回新 UUID
-        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("new-snapshot-id")])
+        # 唯一一次 execute（UPSERT ... RETURNING id）返回新 UUID
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("new-snapshot-id"))
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -457,8 +460,8 @@ class TestSaveSnapshot:
             good_value_rate=Decimal("96.80"),
         )
 
-        # UPSERT 模式：db.execute 被调用 2 次（1 次 UPSERT + 1 次 SELECT id），不调用 db.add
-        assert db.execute.call_count == 2
+        # UPSERT + RETURNING：db.execute 只调用 1 次，不调用 db.add
+        assert db.execute.call_count == 1
         db.add.assert_not_called()
         # 返回字典关键字段
         assert result["loopId"] == "loop-1"
@@ -475,16 +478,14 @@ class TestSaveSnapshot:
 
         v4.0 实现使用 ``INSERT ... ON CONFLICT DO UPDATE``，由数据库层处理
         UPDATE 分支，应用层不再读取/修改 ``existing`` 对象。本测试验证：
-        1. db.execute 被调用 2 次（UPSERT + SELECT id）
+        1. db.execute 被调用 1 次（UPSERT ... RETURNING id）
         2. 不调用 db.add
-        3. 返回字典的 snapshotId 来自 UPSERT 后的 SELECT 查询（即旧 id）
+        3. 返回字典的 snapshotId 来自 RETURNING 子句（即旧 id）
         """
         db = AsyncMock()
         db.add = MagicMock()
-        # 第二次 execute（SELECT id）返回已存在快照的 id（UPDATE 分支不生成新 id）
-        db.execute = AsyncMock(
-            side_effect=[None, _make_select_id_result_mock("existing-snapshot-id")]
-        )
+        # RETURNING 返回已存在快照的 id（UPDATE 分支不生成新 id）
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("existing-snapshot-id"))
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -498,8 +499,8 @@ class TestSaveSnapshot:
         )
 
         db.add.assert_not_called()
-        assert db.execute.call_count == 2
-        # 返回字典使用 UPSERT 后 SELECT 出的 id（即已存在快照的 id）
+        assert db.execute.call_count == 1
+        # 返回字典使用 RETURNING 取回的 id（即已存在快照的 id）
         assert result["snapshotId"] == "existing-snapshot-id"
         assert result["status"] == "INCONCLUSIVE"
         assert result["score"] is None
@@ -508,7 +509,7 @@ class TestSaveSnapshot:
     async def test_partial_status(self) -> None:
         """PARTIAL 状态写入。"""
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("partial-id"))
         db.add = MagicMock()
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
@@ -538,7 +539,7 @@ class TestSaveSnapshot:
         """
         db = AsyncMock()
         db.add = MagicMock()
-        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("new-uuid")])
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("new-uuid"))
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -565,8 +566,8 @@ class TestSaveSnapshot:
             data_lineage=lineage_dict,
         )
 
-        # 捕获第一次 db.execute 调用的 UPSERT 语句
-        assert db.execute.call_count == 2
+        # 捕获 db.execute 调用的 UPSERT 语句（仅 1 次调用）
+        assert db.execute.call_count == 1
         upsert_stmt = db.execute.call_args_list[0][0][0]
         set_dict = _extract_upsert_set_values(upsert_stmt)
         # 验证 7 个数据血缘字段在 ON CONFLICT DO UPDATE 的 set_ 字典中正确写入
@@ -588,7 +589,7 @@ class TestSaveSnapshot:
         """
         db = AsyncMock()
         db.add = MagicMock()
-        db.execute = AsyncMock(side_effect=[None, _make_select_id_result_mock("existing-snap-id")])
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("existing-snap-id"))
 
         ts_start = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC)
@@ -610,7 +611,7 @@ class TestSaveSnapshot:
         )
 
         db.add.assert_not_called()
-        assert db.execute.call_count == 2
+        assert db.execute.call_count == 1
         upsert_stmt = db.execute.call_args_list[0][0][0]
         set_dict = _extract_upsert_set_values(upsert_stmt)
         assert set_dict["ideal_settling_time"] == Decimal("60.0")
@@ -820,7 +821,30 @@ class TestCalculateLoopKpi:
 
 
 # ===========================================================================
-# 4. _do_calculate 集成测试
+# 4. 批量计算编排辅助函数测试
+# ===========================================================================
+
+
+class TestBatchCalculationHelpers:
+    """标准与自定义入口共享的结果归类必须保持一致。"""
+
+    def test_summarize_batch_results(self) -> None:
+        results = [
+            {"status": "SUCCESS"},
+            {"status": "INCONCLUSIVE"},
+            None,
+            RuntimeError("database unavailable"),
+        ]
+
+        assert _summarize_batch_results(results) == {
+            "success": 1,
+            "inconclusive": 1,
+            "failed": 2,
+        }
+
+
+# ===========================================================================
+# 5. _do_calculate 集成测试
 # ===========================================================================
 
 
@@ -862,6 +886,11 @@ class TestDoCalculate:
                 "app.tasks.kpi_calc._calculate_loop_kpi",
                 new_callable=AsyncMock,
             ) as mock_calc,
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -894,6 +923,11 @@ class TestDoCalculate:
                 "app.tasks.kpi_calc._calculate_loop_kpi",
                 new_callable=AsyncMock,
             ) as mock_calc,
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -928,6 +962,11 @@ class TestDoCalculate:
                 "app.tasks.kpi_calc._calculate_loop_kpi",
                 new_callable=AsyncMock,
             ) as mock_calc,
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -1063,7 +1102,14 @@ class TestCeleryTasks:
     def test_calculate_hourly_kpi_success(self) -> None:
         """calculate_hourly_kpi 正常执行返回结果。"""
         expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
-        with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
+        with (
+            patch(
+                "app.tasks.kpi_calc._do_hourly_with_tracking",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("task tracking unavailable"),
+            ),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
             mock_calc.return_value = expected
             result = calculate_hourly_kpi.run()
             assert result == expected
@@ -1073,9 +1119,16 @@ class TestCeleryTasks:
         from datetime import UTC, datetime
 
         expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
-        with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
+        with (
+            patch(
+                "app.tasks.kpi_calc._do_hourly_with_tracking",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("task tracking unavailable"),
+            ),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
             mock_calc.return_value = expected
-            # task_tracker 无 Redis 会抛异常，走 fallback 分支调用 _do_calculate
+            # 任务跟踪不可用时走 fallback 分支调用 _do_calculate
             result = calculate_hourly_kpi.run(ts_start="2026-06-22T08:00:00Z")
             assert result == expected
             # 验证 _do_calculate 收到解析后的 datetime（非 None）
@@ -1088,7 +1141,14 @@ class TestCeleryTasks:
     def test_calculate_hourly_kpi_ts_start_none_uses_default(self) -> None:
         """calculate_hourly_kpi 不传 ts_start 时 _do_calculate 收到 None（P1 #11）."""
         expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
-        with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
+        with (
+            patch(
+                "app.tasks.kpi_calc._do_hourly_with_tracking",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("task tracking unavailable"),
+            ),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
             mock_calc.return_value = expected
             result = calculate_hourly_kpi.run()
             assert result == expected
@@ -1097,7 +1157,14 @@ class TestCeleryTasks:
 
     def test_calculate_hourly_kpi_exception_reraises(self) -> None:
         """calculate_hourly_kpi 异常时重新抛出。"""
-        with patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc:
+        with (
+            patch(
+                "app.tasks.kpi_calc._do_hourly_with_tracking",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("task tracking unavailable"),
+            ),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
             mock_calc.side_effect = RuntimeError("DB down")
             with pytest.raises(RuntimeError, match="DB down"):
                 calculate_hourly_kpi.run()
@@ -1595,7 +1662,7 @@ class TestComputeKpisThreeLayer:
 
     def test_bundle_db_code_mapped_to_calculator_code(self) -> None:
         """数据库列名正确映射为计算器代码（如 fast_rate → fast_rate）。"""
-        bundles = [_make_bundle("fast_rate")]
+        bundles = [_make_bundle("settling_time"), _make_bundle("fast_rate")]
         config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
 
         mock_calc = MagicMock()
@@ -1672,6 +1739,27 @@ class TestComputeKpisThreeLayer:
                 found_fast_dep = True
                 break
         assert found_fast_dep, "fast_rate 未注入 settling_time + ideal_settling_time 依赖"
+
+    def test_layer2_fast_rate_skipped_when_dependency_is_missing(self) -> None:
+        """fast_rate 缺少任一声明依赖时不允许按不完整公式计算。"""
+        bundles = [_make_bundle("fast_rate")]
+        config_bundle = _build_config_bundle("loop-1", ControlType.FLOW)
+
+        mock_calc = MagicMock()
+        mock_calc.calculate.return_value = _make_metric_result("test", 80.0)
+        mock_calc.with_dependencies.return_value = mock_calc
+
+        with (
+            patch("app.tasks.kpi_calc.get_calculator", return_value=mock_calc),
+            patch("app.tasks.kpi_calc.ConfidenceEvaluator") as mock_conf,
+        ):
+            mock_conf.compute_composite_score.return_value = _make_metric_result(
+                "composite_score", 70.0
+            )
+            results, _ = _compute_kpis_three_layer(bundles, config_bundle, None)
+
+        assert "fast_rate" not in results
+        assert mock_calc.with_dependencies.call_count == 0
 
     def test_missing_bundle_skipped(self) -> None:
         """缺少 bundle 的指标被跳过（不调用计算器）。"""
@@ -2173,95 +2261,96 @@ class TestIsTaskCancelled:
         assert result is True
 
 
-class TestDoBackfillCancellation:
-    """_do_backfill 在任务被取消时提前终止.
+class TestBackfillWindowBatchCancellation:
+    """_backfill_window_batch 在任务被取消时提前终止.
 
     设计依据：当用户 POST /tasks/{task_id}/cancel 后，
-    _do_backfill 应在下个窗口开始前检测到 CANCELLED 状态并主动返回。
+    回填子任务应在下个窗口开始前检测到 CANCELLED 状态并主动返回。
     """
 
-    @pytest.mark.asyncio
-    async def test_backfill_returns_cancelled_when_status_is_cancelled(self) -> None:
+    @staticmethod
+    def _run_child(
+        *,
+        redis_status: str,
+        task_id: str | None,
+        windows: list[str],
+    ) -> tuple[dict, AsyncMock, MagicMock]:
+        from app.tasks.kpi_calc import _backfill_window_batch
+
+        loop = _make_loop()
+        loop_result = _make_scalars_mock([loop])
+        metric_result = _make_scalars_mock([])
+        db = MagicMock()
+        db.execute = AsyncMock(side_effect=[loop_result, metric_result])
+        session = MagicMock()
+        session.__aenter__ = AsyncMock(return_value=db)
+        session.__aexit__ = AsyncMock(return_value=False)
+
+        fake_redis = MagicMock()
+        fake_redis.hget = AsyncMock(return_value=redis_status)
+        task = MagicMock()
+        task.run_async.side_effect = asyncio.run
+        calculate = AsyncMock(return_value=[{"status": "SUCCESS"}])
+
+        with (
+            patch("app.core.db.AsyncSessionLocal", return_value=session),
+            patch("app.core.redis.redis_client", fake_redis),
+            patch(
+                "app.services.loop_config.get_loop_type_weights_map",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch("app.tasks.kpi_calc._run_batch_loop_calculations", calculate),
+            patch(
+                "app.tasks.kpi_calc._do_backfill_node_aggregation",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            result = _backfill_window_batch.run.__func__(
+                task,
+                windows,
+                task_id=task_id,
+            )
+
+        return result, calculate, fake_redis
+
+    def test_backfill_returns_cancelled_when_status_is_cancelled(self) -> None:
         """第一个窗口开始前检测到取消 → 立即返回 cancelled=True."""
-        from app.tasks.kpi_calc import _do_backfill
+        result, calculate, _ = self._run_child(
+            redis_status="CANCELLED",
+            task_id="task-cancel-test",
+            windows=["2026-07-06T08:00:00", "2026-07-06T09:00:00"],
+        )
 
-        fake_redis = MagicMock()
-        fake_redis.hget = AsyncMock(return_value="CANCELLED")
-        with (
-            patch("app.core.redis.redis_client", fake_redis),
-            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
-            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
-        ):
-            result = await _do_backfill(
-                ts_start="2026-07-06T08:00:00+00:00",
-                ts_end="2026-07-06T10:00:00+00:00",
-                loop_ids=None,
-                task_id="task-cancel-test",
-            )
-        # 应当提前终止，未执行任何窗口计算
         assert result["cancelled"] is True
-        assert result["completed_windows"] == 0
-        assert result["total_windows"] == 2
-        mock_calc.assert_not_called()
+        calculate.assert_not_awaited()
 
-    @pytest.mark.asyncio
-    async def test_backfill_completes_when_not_cancelled(self) -> None:
+    def test_backfill_completes_when_not_cancelled(self) -> None:
         """任务未取消 → 正常执行所有窗口，返回 cancelled 字段不出现或为 False."""
-        from app.tasks.kpi_calc import _do_backfill
+        result, calculate, _ = self._run_child(
+            redis_status="RUNNING",
+            task_id="task-running-test",
+            windows=["2026-07-06T08:00:00", "2026-07-06T09:00:00"],
+        )
 
-        fake_redis = MagicMock()
-        fake_redis.hget = AsyncMock(return_value="RUNNING")
-        with (
-            patch("app.core.redis.redis_client", fake_redis),
-            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
-            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
-        ):
-            mock_calc.return_value = {
-                "loop_success": 1,
-                "loop_inconclusive": 0,
-                "loop_failed": 0,
-                "node_success": 0,
-                "failed_window_list": [],
-            }
-            result = await _do_backfill(
-                ts_start="2026-07-06T08:00:00+00:00",
-                ts_end="2026-07-06T09:00:00+00:00",
-                loop_ids=None,
-                task_id="task-running-test",
-            )
-        # 1 个窗口正常完成
-        assert mock_calc.call_count == 1
-        assert result["total_windows"] == 1
-        # 未提前终止时，返回字典不含 cancelled 标志
+        assert calculate.await_count == 2
+        assert result["success"] == 2
         assert "cancelled" not in result or result["cancelled"] is False
 
-    @pytest.mark.asyncio
-    async def test_backfill_no_task_id_skips_cancel_check(self) -> None:
+    def test_backfill_no_task_id_skips_cancel_check(self) -> None:
         """task_id=None → 不查询 Redis 取消标志，正常执行."""
-        from app.tasks.kpi_calc import _do_backfill
+        result, calculate, fake_redis = self._run_child(
+            redis_status="CANCELLED",
+            task_id=None,
+            windows=["2026-07-06T08:00:00", "2026-07-06T09:00:00"],
+        )
 
-        fake_redis = MagicMock()
-        fake_redis.hget = AsyncMock(return_value="CANCELLED")  # 即使为 CANCELLED
-        with (
-            patch("app.core.redis.redis_client", fake_redis),
-            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
-            patch("app.services.task_tracker.update_status", new_callable=AsyncMock),
-        ):
-            mock_calc.return_value = {
-                "loop_success": 0,
-                "loop_inconclusive": 0,
-                "loop_failed": 0,
-                "node_success": 0,
-                "failed_window_list": [],
-            }
-            result = await _do_backfill(
-                ts_start="2026-07-06T08:00:00+00:00",
-                ts_end="2026-07-06T10:00:00+00:00",
-                loop_ids=None,
-                task_id=None,
-            )
-        # task_id=None 时不应查询取消标志
         fake_redis.hget.assert_not_called()
-        # 2 个窗口都执行
-        assert mock_calc.call_count == 2
-        assert result["total_windows"] == 2
+        assert calculate.await_count == 2
+        assert result["success"] == 2

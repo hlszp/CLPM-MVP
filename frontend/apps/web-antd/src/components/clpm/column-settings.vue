@@ -26,14 +26,18 @@ function toggleVisible(key: string) {
 function moveUp(index: number) {
   if (index === 0) return;
   const cols = [...props.columns];
-  [cols[index - 1]!, cols[index]!] = [cols[index]!, cols[index - 1]!];
+  const [column] = cols.splice(index, 1);
+  if (!column) return;
+  cols.splice(index - 1, 0, column);
   emit('update:columns', cols);
 }
 
 function moveDown(index: number) {
   if (index === props.columns.length - 1) return;
   const cols = [...props.columns];
-  [cols[index]!, cols[index + 1]!] = [cols[index + 1]!, cols[index]!];
+  const [column] = cols.splice(index, 1);
+  if (!column) return;
+  cols.splice(index + 1, 0, column);
   emit('update:columns', cols);
 }
 </script>

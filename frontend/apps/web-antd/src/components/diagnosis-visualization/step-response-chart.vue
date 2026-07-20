@@ -14,7 +14,8 @@ const props = defineProps<{
   disabled?: boolean;
 }>();
 
-const { getTooltipPreset, getSeriesColor, themeColors, axisBase } = useEchartsPreset();
+const { getTooltipPreset, getSeriesColor, themeColors, axisBase } =
+  useEchartsPreset();
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
@@ -40,7 +41,9 @@ const options = computed(() => {
     value: [i, sp],
   }));
 
-  const peakIdx = props.data.pvResponse.indexOf(Math.max(...props.data.pvResponse));
+  const peakIdx = props.data.pvResponse.indexOf(
+    Math.max(...props.data.pvResponse),
+  );
   const peakValue = props.data.pvResponse[peakIdx];
 
   const option: any = {
@@ -125,9 +128,13 @@ const options = computed(() => {
   return option;
 });
 
-watch(options, (newOptions) => {
-  renderEcharts(newOptions);
-}, { immediate: true });
+watch(
+  options,
+  (newOptions) => {
+    renderEcharts(newOptions);
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   renderEcharts(options.value);

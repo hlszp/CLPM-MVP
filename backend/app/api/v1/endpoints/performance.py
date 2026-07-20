@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -298,13 +298,20 @@ async def get_realtime_auto_rate_endpoint(
 
 
 def _parse_dt(s: str | None) -> datetime | None:
-    """解析 ISO 8601 时间字符串（兼容 Z 后缀），失败返回 None."""
+    """解析 ISO 8601 时间字符串（兼容 Z 后缀），失败返回 None.
+
+    带时区的输入先换算到 UTC 再去掉时区标记（DB 字段为 UTC naive）；
+    无时区输入按 UTC 解释（历史行为）。
+    """
     if not s:
         return None
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
 
 
 def _to_float(val) -> float | None:
@@ -331,6 +338,8 @@ async def list_loop_snapshots_endpoint(
         description="True=每个回路只返回最新一条评估记录（默认）；"
         "False=返回所有快照（历史趋势/诊断历史用）",
     ),
+    sortBy: str | None = Query(None, description="排序字段（score/tsStart，默认 tsStart）"),
+    sortOrder: str | None = Query(None, description="排序方向（asc/desc，默认 desc）"),
     page: int = Query(1, ge=1, description="页码（1-based）"),
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
@@ -340,7 +349,8 @@ async def list_loop_snapshots_endpoint(
 
     按回路 ID / 装置 / 时间范围 / 状态 / 可信度 / 回路编号筛选，分页返回。
     默认 latestOnly=True：每个回路只返回最新一条评估记录。
-    排序按 tsStart DESC。每条记录包含完整的 24 个 KPI 字段 + loopTagName。
+    默认排序按 tsStart DESC；sortBy=score&sortOrder=asc|desc 可按综合评分排序
+    （NULL 置末位，次排序 tsStart DESC）。每条记录包含完整的 24 个 KPI 字段 + loopTagName。
     """
     # 解析逗号分隔的 ID 列表
     loop_ids = [s.strip() for s in loopId.split(",") if s.strip()] if loopId else None
@@ -363,6 +373,8 @@ async def list_loop_snapshots_endpoint(
         latest_only=latestOnly,
         page=page,
         page_size=pageSize,
+        sort_by="score" if sortBy == "score" else None,
+        sort_order=sortOrder if sortOrder in ("asc", "desc") else None,
     )
 
     # 组装响应

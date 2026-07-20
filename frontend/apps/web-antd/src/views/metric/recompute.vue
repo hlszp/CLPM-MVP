@@ -10,7 +10,7 @@ import type { TableColumnsType } from 'ant-design-vue';
 
 import type { TaskApi } from '#/api/task';
 
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { Plus, RotateCw } from '@vben/icons';
 
@@ -40,10 +40,7 @@ import {
   startTaskApi,
   triggerBackfillApi,
 } from '#/api/task';
-import {
-  ClpmDangerConfirmModal,
-  ClpmDataCanvas,
-} from '#/components/clpm';
+import { ClpmDangerConfirmModal, ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricRecompute' });
@@ -58,7 +55,94 @@ const totalCount = ref(0);
 const currentPage = ref(1);
 const pageSize = ref(20);
 const selectedRowKeys = ref<string[]>([]);
-const batchDeleteLoading = ref(false);
+
+// ============ 危险操作确认（§9.8：取消/删除任务强制 typed confirmation） ============
+const dangerVisible = ref(false);
+const dangerAction = ref<'batch-delete' | 'cancel' | 'delete'>('delete');
+const dangerTask = ref<null | TaskApi.TaskItem>(null);
+const dangerLoading = ref(false);
+
+const dangerTitle = computed(() => {
+  if (dangerAction.value === 'cancel') return '取消评估任务';
+  if (dangerAction.value === 'delete') return '删除任务记录';
+  return '批量删除任务';
+});
+
+const dangerVerb = computed(() =>
+  dangerAction.value === 'cancel' ? '取消' : '删除',
+);
+
+const dangerTarget = computed(() => {
+  if (dangerAction.value === 'batch-delete') {
+    return `已选 ${selectedRowKeys.value.length} 个任务`;
+  }
+  return dangerTask.value
+    ? dangerTask.value.taskId.slice(-8).toUpperCase()
+    : '';
+});
+
+const dangerImpact = computed(() => {
+  if (dangerAction.value === 'batch-delete') {
+    return `将删除 ${selectedRowKeys.value.length} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
+  }
+  const t = dangerTask.value;
+  if (!t) return '';
+  const scope = `任务「${getTaskTitle(t)}」：${t.loopsTotal ?? '—'} 个回路 × ${t.windowCount ?? '—'} 个小时窗口（${formatTime(t.tsStart)} ~ ${formatTime(t.tsEnd)}）`;
+  return dangerAction.value === 'cancel'
+    ? `${scope}；取消后未计算的窗口不再执行，已写入的快照保留`
+    : `${scope}；仅删除任务记录，不影响已写入的 KPI 快照`;
+});
+
+const dangerRollback = computed(() =>
+  dangerAction.value === 'cancel'
+    ? '取消不可撤销；如需评估可重新发起重算任务'
+    : '任务记录删除后不可恢复',
+);
+
+function openDanger(
+  action: 'batch-delete' | 'cancel' | 'delete',
+  task?: TaskApi.TaskItem,
+) {
+  dangerAction.value = action;
+  dangerTask.value = task ?? null;
+  dangerVisible.value = true;
+}
+
+async function handleDangerConfirm() {
+  dangerLoading.value = true;
+  try {
+    if (dangerAction.value === 'cancel' && dangerTask.value) {
+      await cancelTaskApi(dangerTask.value.taskId);
+      message.success('任务已取消');
+    } else if (dangerAction.value === 'delete' && dangerTask.value) {
+      await deleteTaskApi(dangerTask.value.taskId);
+      message.success('任务已删除');
+    } else if (dangerAction.value === 'batch-delete') {
+      const failed: string[] = [];
+      for (const taskId of selectedRowKeys.value) {
+        try {
+          await deleteTaskApi(taskId);
+        } catch {
+          failed.push(taskId);
+        }
+      }
+      if (failed.length > 0) {
+        message.warning(
+          `删除完成，${failed.length} 个任务删除失败（可能非终态）`,
+        );
+      } else {
+        message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
+      }
+      selectedRowKeys.value = [];
+    }
+    dangerVisible.value = false;
+    loadList();
+  } catch (error: any) {
+    message.error(error?.message || '操作失败');
+  } finally {
+    dangerLoading.value = false;
+  }
+}
 
 // 筛选状态
 const filterStatus = ref<TaskApi.TaskStatus | undefined>();
@@ -72,7 +156,10 @@ const previewResult = ref<null | TaskApi.BackfillPreviewResult>(null);
 
 const form = ref({
   title: '',
-  tsRange: [dayjs().subtract(7, 'day').startOf('hour'), dayjs().startOf('hour')] as [dayjs.Dayjs, dayjs.Dayjs],
+  tsRange: [
+    dayjs().subtract(7, 'day').startOf('hour'),
+    dayjs().startOf('hour'),
+  ] as [dayjs.Dayjs, dayjs.Dayjs],
   plantNodeIds: [] as string[],
   loopIds: [] as string[],
 });
@@ -81,6 +168,16 @@ const form = ref({
 const plantNodeTreeData = ref<any[]>([]);
 // 回路选项（按已选装置过滤）
 const loopOptions = ref<{ label: string; value: string }[]>([]);
+
+// 预览结果仅在当前表单参数下有效：任何影响范围的参数变更后预览失效，
+// 强制用户重新 dry-run，避免按过期预览提交（Poka-Yoke 防呆）
+watch(
+  () => [form.value.tsRange, form.value.plantNodeIds, form.value.loopIds],
+  () => {
+    previewResult.value = null;
+  },
+  { deep: true },
+);
 
 // ============ 状态映射 ============
 const statusColorMap: Record<string, string> = {
@@ -195,21 +292,26 @@ const columns = computed<TableColumnsType>(() => [
 ]);
 
 // ============ 加载列表 ============
+/** 组装列表查询参数（日期型 RangePicker 结束值需扩展到当日 23:59:59） */
+function buildQueryParams(): TaskApi.TaskListQueryParams {
+  const params: TaskApi.TaskListQueryParams = {
+    taskType: 'BACKFILL',
+    page: currentPage.value,
+    pageSize: pageSize.value,
+  };
+  if (filterStatus.value) params.status = filterStatus.value;
+  if (filterDateRange.value) {
+    params.startTime = filterDateRange.value[0].startOf('day').toISOString();
+    params.endTime = filterDateRange.value[1].endOf('day').toISOString();
+  }
+  return params;
+}
+
 async function loadList() {
   loading.value = true;
   loadError.value = false;
   try {
-    const params: TaskApi.TaskListQueryParams = {
-      taskType: 'BACKFILL',
-      page: currentPage.value,
-      pageSize: pageSize.value,
-    };
-    if (filterStatus.value) params.status = filterStatus.value;
-    if (filterDateRange.value) {
-      params.startTime = filterDateRange.value[0].toISOString();
-      params.endTime = filterDateRange.value[1].toISOString();
-    }
-    const result = await getTaskListApi(params);
+    const result = await getTaskListApi(buildQueryParams());
     taskList.value = result.items;
     totalCount.value = result.total;
     updatePolling();
@@ -236,17 +338,7 @@ function updatePolling() {
   if (hasActiveTask() && !pollingTimer) {
     pollingTimer = setInterval(async () => {
       try {
-        const params: TaskApi.TaskListQueryParams = {
-          taskType: 'BACKFILL',
-          page: currentPage.value,
-          pageSize: pageSize.value,
-        };
-        if (filterStatus.value) params.status = filterStatus.value;
-        if (filterDateRange.value) {
-          params.startTime = filterDateRange.value[0].toISOString();
-          params.endTime = filterDateRange.value[1].toISOString();
-        }
-        const result = await getTaskListApi(params);
+        const result = await getTaskListApi(buildQueryParams());
         taskList.value = result.items;
         totalCount.value = result.total;
         if (!hasActiveTask()) {
@@ -323,7 +415,10 @@ function openDrawer() {
   previewResult.value = null;
   form.value = {
     title: '',
-    tsRange: [dayjs().subtract(7, 'day').startOf('hour'), dayjs().startOf('hour')] as [dayjs.Dayjs, dayjs.Dayjs],
+    tsRange: [
+      dayjs().subtract(7, 'day').startOf('hour'),
+      dayjs().startOf('hour'),
+    ] as [dayjs.Dayjs, dayjs.Dayjs],
     plantNodeIds: [],
     loopIds: [],
   };
@@ -360,8 +455,7 @@ async function handlePreview() {
         form.value.plantNodeIds.length > 0
           ? form.value.plantNodeIds
           : undefined,
-      loopIds:
-        form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
+      loopIds: form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
       dryRun: true,
     });
     previewResult.value = result as TaskApi.BackfillPreviewResult;
@@ -392,8 +486,7 @@ async function handleSubmit() {
         form.value.plantNodeIds.length > 0
           ? form.value.plantNodeIds
           : undefined,
-      loopIds:
-        form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
+      loopIds: form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
       dryRun: false,
     });
     const taskId = (result as { taskId: string }).taskId;
@@ -408,93 +501,21 @@ async function handleSubmit() {
   }
 }
 
-// ============ 批量删除 ============
-const batchDeleteDangerOpen = ref(false);
-
+// ============ 删除/取消任务（统一走 §9.8 危险确认模态框） ============
 function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的任务');
     return;
   }
-  batchDeleteDangerOpen.value = true;
+  openDanger('batch-delete');
 }
 
-async function handleBatchDeleteConfirm() {
-  batchDeleteLoading.value = true;
-  try {
-    const failed: string[] = [];
-    for (const taskId of selectedRowKeys.value) {
-      try {
-        await deleteTaskApi(taskId);
-      } catch {
-        failed.push(taskId);
-      }
-    }
-    if (failed.length > 0) {
-      message.warning(`删除完成，${failed.length} 个任务删除失败（可能非终态）`);
-    } else {
-      message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
-    }
-    selectedRowKeys.value = [];
-    batchDeleteDangerOpen.value = false;
-    loadList();
-  } catch (error: any) {
-    message.error(error?.message || '批量删除失败');
-  } finally {
-    batchDeleteLoading.value = false;
-  }
+function handleDelete(record: TaskApi.TaskItem) {
+  openDanger('delete', record);
 }
 
-// ============ 单条删除 ============
-const deleteDangerOpen = ref(false);
-const deleteDangerTarget = ref<null | TaskApi.TaskItem>(null);
-const deleteDangerLoading = ref(false);
-
-function openDeleteDanger(record: TaskApi.TaskItem) {
-  deleteDangerTarget.value = record;
-  deleteDangerOpen.value = true;
-}
-
-async function handleDelete() {
-  if (!deleteDangerTarget.value) return;
-  const task = deleteDangerTarget.value;
-  deleteDangerLoading.value = true;
-  try {
-    await deleteTaskApi(task.taskId);
-    message.success('任务已删除');
-    deleteDangerOpen.value = false;
-    loadList();
-  } catch (error: any) {
-    message.error(error?.message || '删除失败');
-  } finally {
-    deleteDangerLoading.value = false;
-  }
-}
-
-// ============ 取消任务 ============
-const cancelDangerOpen = ref(false);
-const cancelDangerTarget = ref<null | TaskApi.TaskItem>(null);
-const cancelDangerLoading = ref(false);
-
-function openCancelDanger(record: TaskApi.TaskItem) {
-  cancelDangerTarget.value = record;
-  cancelDangerOpen.value = true;
-}
-
-async function handleCancel() {
-  if (!cancelDangerTarget.value) return;
-  const task = cancelDangerTarget.value;
-  cancelDangerLoading.value = true;
-  try {
-    await cancelTaskApi(task.taskId);
-    message.success('任务已取消');
-    cancelDangerOpen.value = false;
-    loadList();
-  } catch (error: any) {
-    message.error(error?.message || '取消失败');
-  } finally {
-    cancelDangerLoading.value = false;
-  }
+function handleCancel(record: TaskApi.TaskItem) {
+  openDanger('cancel', record);
 }
 
 // ============ 工具函数 ============
@@ -572,7 +593,7 @@ onUnmounted(() => {
         <Button
           danger
           :disabled="selectedRowKeys.length === 0"
-          :loading="batchDeleteLoading"
+          :loading="dangerLoading && dangerAction === 'batch-delete'"
           @click="handleBatchDelete"
         >
           删除
@@ -635,17 +656,23 @@ onUnmounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'taskTitle'">
-            <span class="font-medium">{{ getTaskTitle(record as TaskApi.TaskItem) }}</span>
+            <span class="font-medium">{{
+              getTaskTitle(record as TaskApi.TaskItem)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'taskType'">
             <Tag>{{ taskTypeTextMap[record.taskType] || record.taskType }}</Tag>
           </template>
           <template v-else-if="column.key === 'loopsTotal'">
-            <span v-if="record.loopsTotal" class="font-mono">{{ record.loopsTotal }}</span>
+            <span v-if="record.loopsTotal" class="font-mono">{{
+              record.loopsTotal
+            }}</span>
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'windowCount'">
-            <span v-if="record.windowCount" class="font-mono">{{ record.windowCount }}</span>
+            <span v-if="record.windowCount" class="font-mono">{{
+              record.windowCount
+            }}</span>
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'tsRange'">
@@ -674,7 +701,9 @@ onUnmounted(() => {
             <span class="clpm-num">{{ formatTime(record.createdAt) }}</span>
           </template>
           <template v-else-if="column.key === 'duration'">
-            <span class="font-mono">{{ formatDuration(record as TaskApi.TaskItem) }}</span>
+            <span class="font-mono">{{
+              formatDuration(record as TaskApi.TaskItem)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Space :size="4">
@@ -691,14 +720,14 @@ onUnmounted(() => {
                 v-if="(record as TaskApi.TaskItem).status === 'RUNNING'"
                 type="link"
                 size="small"
-                @click="openCancelDanger(record as TaskApi.TaskItem)"
+                @click="handleCancel(record as TaskApi.TaskItem)"
               >
                 取消
               </Button>
               <Button
                 type="link"
                 size="small"
-                @click="openDeleteDanger(record as TaskApi.TaskItem)"
+                @click="handleDelete(record as TaskApi.TaskItem)"
               >
                 删除
               </Button>
@@ -730,12 +759,16 @@ onUnmounted(() => {
             v-model:value="form.tsRange"
             :allow-clear="false"
             :disabled-date="(d: dayjs.Dayjs) => d.isAfter(dayjs())"
-            :show-time="{ format: 'HH:mm', defaultValue: [dayjs().startOf('hour'), dayjs().startOf('hour')] }"
+            :show-time="{
+              format: 'HH:mm',
+              defaultValue: [dayjs().startOf('hour'), dayjs().startOf('hour')],
+            }"
             format="YYYY-MM-DD HH:mm"
             style="width: 100%"
           />
           <div class="mt-1 text-xs" :style="{ color: themeColors.NEUTRAL }">
-            默认整点时刻（如 01:00~03:00），可精确到分钟；最大 30 天；按小时窗口批量重算
+            默认整点时刻（如 01:00~03:00），可精确到分钟；最大 30
+            天；按小时窗口批量重算
           </div>
         </FormItem>
 
@@ -774,17 +807,22 @@ onUnmounted(() => {
           v-if="previewResult"
           class="mt-4 rounded border border-blue-200 bg-blue-50 p-3"
         >
-          <div class="mb-2 font-medium" :style="{ color: themeColors.INFO }">影响范围预览</div>
+          <div class="mb-2 font-medium" :style="{ color: themeColors.INFO }">
+            影响范围预览
+          </div>
           <div class="text-sm">
             <div>回路数：{{ previewResult.loopCount }}</div>
             <div>小时窗口数：{{ previewResult.windowCount }}</div>
             <div>
-              预估耗时：{{ Math.ceil(previewResult.estimatedDurationSec / 60) }} 分钟
+              预估耗时：{{ Math.ceil(previewResult.estimatedDurationSec / 60) }}
+              分钟
             </div>
             <div v-if="previewResult.sampleLoopNames.length > 0">
               样本回路：
               {{ previewResult.sampleLoopNames.join(', ') }}
-              <span v-if="previewResult.loopCount > 5"> 等 {{ previewResult.loopCount }} 个</span>
+              <span v-if="previewResult.loopCount > 5">
+                等 {{ previewResult.loopCount }} 个</span
+              >
             </div>
           </div>
         </div>
@@ -808,40 +846,21 @@ onUnmounted(() => {
       </template>
     </Drawer>
 
-    <!-- 批量删除：危险确认弹窗 -->
+    <!-- 危险操作确认（§9.8：取消/删除任务 typed confirmation 屏障） -->
     <ClpmDangerConfirmModal
-      v-model:open="batchDeleteDangerOpen"
-      title="批量删除任务"
-      action="删除"
-      :target="`已选 ${selectedRowKeys.length} 个任务`"
-      impact-scope="将删除选中的任务记录，不可恢复"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      :loading="batchDeleteLoading"
-      @confirm="handleBatchDeleteConfirm"
-    />
-
-    <!-- 取消任务：危险确认弹窗 -->
-    <ClpmDangerConfirmModal
-      v-model:open="cancelDangerOpen"
-      title="取消任务"
-      action="取消"
-      :target="cancelDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
-      impact-scope="将终止正在运行的任务，已计算的结果保留"
-      rollback-tip="任务取消后可重新发起"
-      :loading="cancelDangerLoading"
-      @confirm="handleCancel"
-    />
-
-    <!-- 删除任务：危险确认弹窗 -->
-    <ClpmDangerConfirmModal
-      v-model:open="deleteDangerOpen"
-      title="删除任务"
-      action="删除"
-      :target="deleteDangerTarget?.taskId?.slice(-8).toUpperCase() ?? ''"
-      impact-scope="将删除该任务记录，不可恢复"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      :loading="deleteDangerLoading"
-      @confirm="handleDelete"
+      v-model:open="dangerVisible"
+      :title="dangerTitle"
+      :action="dangerVerb"
+      :target="dangerTarget"
+      :impact-scope="dangerImpact"
+      :rollback-tip="dangerRollback"
+      :require-confirm-code="dangerAction !== 'batch-delete'"
+      :confirm-code="dangerAction === 'batch-delete' ? '' : dangerTarget"
+      :confirm-code-placeholder="`请输入 ${dangerTarget} 以确认`"
+      :require-reason="false"
+      :show-audit-note="false"
+      :loading="dangerLoading"
+      @confirm="handleDangerConfirm"
     />
   </div>
 </template>

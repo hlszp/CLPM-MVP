@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -94,13 +95,98 @@ class RemoteApiProvider:
     返回与 DataPlanner 兼容的 ``RawTimeSeries``。
 
     连接管理：httpx.AsyncClient 单例，支持 Celery 跨 event loop 复用。
+
+    调用保护（防止压垮边缘 API / 向不可用服务持续施压）：
+    - 限流：per-loop ``asyncio.Semaphore``（``REMOTE_API_MAX_CONCURRENCY``），
+      覆盖 DataPlanner 的无界 gather 并发
+    - 熔断：连续失败 ``REMOTE_API_CIRCUIT_FAILURES`` 次后熔断
+      ``REMOTE_API_CIRCUIT_OPEN_SECONDS`` 秒，期间请求快速失败，
+      到期后半开探测，成功即闭合
     """
+
+    # 计入熔断失败的 HTTP 状态码（服务端过载/不可用类；4xx 客户端错误不计入）
+    _CIRCUITABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
         self._client_loop: asyncio.AbstractEventLoop | None = None
         self._client_timeout: float | None = None
         self._client_token: str | None = None
+        # 限流信号量（随 event loop 重建，与 client 生命周期一致）
+        self._semaphore: asyncio.Semaphore | None = None
+        self._semaphore_loop: asyncio.AbstractEventLoop | None = None
+        # 熔断器状态（进程内）
+        self._cb_failures = 0
+        self._cb_open_until = 0.0  # time.monotonic() 截止时间，0 = 闭合
+        self._cb_last_open_log = 0.0
+
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        """获取限流信号量（Celery-safe：event loop 变化时重建）。"""
+        loop = asyncio.get_running_loop()
+        if self._semaphore is None or self._semaphore_loop is not loop or loop.is_closed():
+            self._semaphore = asyncio.Semaphore(settings.REMOTE_API_MAX_CONCURRENCY)
+            self._semaphore_loop = loop
+        return self._semaphore
+
+    # ---- 熔断器 ----
+
+    def _cb_is_open(self) -> bool:
+        return time.monotonic() < self._cb_open_until
+
+    def _cb_fail_fast(self) -> bool:
+        """熔断中返回 True（调用方应快速失败），并限频记录日志（60s 一次）。"""
+        if not self._cb_is_open():
+            return False
+        now = time.monotonic()
+        if now - self._cb_last_open_log > 60:
+            self._cb_last_open_log = now
+            logger.warning(
+                "远端 API 熔断中（%.0f 秒后进入半开探测），请求快速失败",
+                self._cb_open_until - now,
+            )
+        return True
+
+    def _cb_on_success(self) -> None:
+        if self._cb_failures > 0 or self._cb_open_until > 0:
+            logger.info("远端 API 熔断器闭合（请求成功，恢复正常调用）")
+        self._cb_failures = 0
+        self._cb_open_until = 0.0
+
+    def _cb_on_failure(self, reason: str) -> None:
+        self._cb_failures += 1
+        if self._cb_failures >= settings.REMOTE_API_CIRCUIT_FAILURES and not self._cb_is_open():
+            self._cb_open_until = time.monotonic() + settings.REMOTE_API_CIRCUIT_OPEN_SECONDS
+            logger.warning(
+                "远端 API 连续失败 %d 次，熔断 %.0f 秒（原因: %s）。"
+                "期间请求快速失败，避免向不可用服务持续施压",
+                self._cb_failures,
+                settings.REMOTE_API_CIRCUIT_OPEN_SECONDS,
+                reason,
+            )
+
+    async def _guarded_get(self, request_body: dict) -> httpx.Response | None:
+        """限流 + 熔断保护的 GET 请求。
+
+        返回 None 表示本次应返回空结果（熔断中或请求异常，均已记录日志并计入熔断）。
+        非 None 的响应由调用方继续按状态码处理；200 计入熔断成功，
+        过载类状态码（429/5xx）计入熔断失败，其他 4xx 不计入。
+        """
+        if self._cb_fail_fast():
+            return None
+        try:
+            client = await self._get_client()
+            async with self._get_semaphore():
+                resp = await client.get(settings.HISTORY_DATA_API_URL, params=request_body)
+        except Exception as exc:  # noqa: BLE001
+            self._cb_on_failure(f"{type(exc).__name__}: {exc}")
+            logger.warning("远程API请求失败: %s", exc)
+            return None
+
+        if resp.status_code == 200:
+            self._cb_on_success()
+        elif resp.status_code in self._CIRCUITABLE_STATUS:
+            self._cb_on_failure(f"HTTP {resp.status_code}")
+        return resp
 
     async def _get_client(self) -> httpx.AsyncClient:
         """获取 httpx.AsyncClient 单例（Celery-safe）.
@@ -158,6 +244,48 @@ class RemoteApiProvider:
             查询函数闭包
         """
 
+        # DataPlanner 会并发执行多个 tagGroup 查询，而这些查询共享同一个
+        # AsyncSession。先串行解析并缓存回路的角色-Tag 映射，避免同一个
+        # AsyncSession 被并发 execute；映射解析完成后的远程 HTTP I/O 仍可并发。
+        role_tag_names_cache: dict[str, dict[str, str]] = {}
+        mapping_lock = asyncio.Lock()
+
+        async def _resolve_role_tag_names(loop_id: str) -> dict[str, str]:
+            if loop_id in role_tag_names_cache:
+                return role_tag_names_cache[loop_id]
+
+            async with mapping_lock:
+                if loop_id in role_tag_names_cache:
+                    return role_tag_names_cache[loop_id]
+
+                from sqlalchemy import select
+
+                from app.models.loop import LoopTagMapping
+                from app.models.tag import TagRegistry
+
+                mapping_result = await db.execute(
+                    select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
+                )
+                mappings = {
+                    mapping.tag_role.upper(): mapping for mapping in mapping_result.scalars().all()
+                }
+
+                tag_ids = [str(mapping.tag_id) for mapping in mappings.values()]
+                tags_map: dict[str, Any] = {}
+                if tag_ids:
+                    tag_result = await db.execute(
+                        select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
+                    )
+                    tags_map = {str(tag.id): tag for tag in tag_result.scalars().all()}
+
+                resolved = {
+                    role: tag.tag_name
+                    for role, mapping in mappings.items()
+                    if (tag := tags_map.get(str(mapping.tag_id))) is not None
+                }
+                role_tag_names_cache[loop_id] = resolved
+                return resolved
+
         async def _query_fn(
             loop_id: str,
             tag_roles: list[str],
@@ -166,36 +294,17 @@ class RemoteApiProvider:
             interval_s: int,
         ):
             """远程 API 适配器闭包."""
-            from sqlalchemy import select
-
             from app.contracts.data_types import RawTimeSeries
-            from app.models.loop import LoopTagMapping
-            from app.models.tag import TagRegistry
 
-            # 1. 查询回路-Tag 映射
-            m_result = await db.execute(
-                select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
-            )
-            mappings = {m.tag_role.upper(): m for m in m_result.scalars().all()}
-
-            tag_ids = [str(m.tag_id) for m in mappings.values()]
-            tags_map: dict[str, Any] = {}
-            if tag_ids:
-                t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
-                for t in t_result.scalars().all():
-                    tags_map[str(t.id)] = t
-
-            # 2. 构建 tagCodes 列表（tag_name 作为 tagCode）
+            # 1-2. 串行解析并缓存回路映射，再按本次 tagGroup 选取 tagCodes。
+            all_role_tag_names = await _resolve_role_tag_names(loop_id)
             role_tag_names: dict[str, str] = {}  # role_lower → tag_name
             for role_lower in tag_roles:
                 role_upper = role_lower.upper()
-                mapping = mappings.get(role_upper)
-                if not mapping:
+                tag_name = all_role_tag_names.get(role_upper)
+                if not tag_name:
                     continue
-                tag = tags_map.get(str(mapping.tag_id))
-                if not tag:
-                    continue
-                role_tag_names[role_lower] = tag.tag_name
+                role_tag_names[role_lower] = tag_name
 
             if not role_tag_names:
                 logger.warning("远程API: 回路 %s 无有效 Tag 映射", loop_id)
@@ -216,11 +325,9 @@ class RemoteApiProvider:
             }
 
             try:
-                client = await self._get_client()
-                resp = await client.get(
-                    settings.HISTORY_DATA_API_URL,
-                    params=request_body,
-                )
+                resp = await self._guarded_get(request_body)
+                if resp is None:
+                    return RawTimeSeries(timestamps=[], signals={}, quality_codes={})
                 if resp.status_code != 200:
                     logger.warning(
                         "远程API返回 %s: %s",
@@ -318,11 +425,9 @@ class RemoteApiProvider:
         }
 
         try:
-            client = await self._get_client()
-            resp = await client.get(
-                settings.HISTORY_DATA_API_URL,
-                params=request_body,
-            )
+            resp = await self._guarded_get(request_body)
+            if resp is None:
+                return []
             if resp.status_code != 200:
                 logger.warning(
                     "远程API query_trend_data 返回 %s: %s",

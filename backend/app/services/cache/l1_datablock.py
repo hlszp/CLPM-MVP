@@ -17,10 +17,12 @@ MetricDataBundle 返回，跳过 TDengine 查询与 8 步预处理 Pipeline。
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
 import logging
+import threading
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
@@ -139,7 +141,7 @@ class L1DataBlockCache:
             logger.debug("L1 cache MISS: key=%s", data_block_id)
             return None
         try:
-            data_block = _deserialize(raw)
+            data_block = await asyncio.to_thread(_deserialize, raw)
         except Exception:  # noqa: BLE001
             logger.warning(
                 "L1 cache 反序列化失败，丢弃脏数据: key=%s", data_block_id, exc_info=True
@@ -173,7 +175,7 @@ class L1DataBlockCache:
         cache_key = key or self.build_key_from_block(data_block)
         if ttl is None:
             ttl = self.get_ttl(data_block.tag_group)
-        payload = _serialize(data_block)
+        payload = await asyncio.to_thread(_serialize, data_block)
         await self._redis.setex(cache_key, ttl, payload)
         ratio = _compression_ratio(data_block, payload)
         logger.debug(
@@ -214,18 +216,40 @@ class L1DataBlockCache:
         if not data_blocks:
             return 0
 
+        # 并行序列化所有 DataBlock（线程池避免阻塞事件循环）
+        async def _serialize_safe(
+            block: DataBlock,
+        ) -> tuple[str | None, str | None]:
+            try:
+                payload = await asyncio.to_thread(_serialize, block)
+                return payload, None
+            except Exception as exc:  # noqa: BLE001
+                return None, str(exc)
+
+        payloads = await asyncio.gather(
+            *[_serialize_safe(b) for b in data_blocks],
+            return_exceptions=True,
+        )
+
         pipe = self._redis.pipeline()
         written = 0
-        for idx, block in enumerate(data_blocks):
-            try:
-                payload = _serialize(block)
-            except Exception:  # noqa: BLE001
+        for idx, result in enumerate(payloads):
+            if isinstance(result, Exception):
                 logger.warning(
-                    "L1 cache set_many 序列化失败，跳过: block_id=%s",
-                    block.data_block_id,
-                    exc_info=True,
+                    "L1 cache set_many 序列化异常，跳过: block_id=%s",
+                    data_blocks[idx].data_block_id,
+                    exc_info=result,
                 )
                 continue
+            payload, err = result
+            if payload is None:
+                logger.warning(
+                    "L1 cache set_many 序列化失败，跳过: block_id=%s, err=%s",
+                    data_blocks[idx].data_block_id,
+                    err,
+                )
+                continue
+            block = data_blocks[idx]
             key = keys[idx] if keys is not None else self.build_key_from_block(block)
             block_ttl = ttl if ttl is not None else self.get_ttl(block.tag_group)
             pipe.setex(key, block_ttl, payload)
@@ -330,23 +354,26 @@ def _deserialize(payload: str) -> DataBlock:
     return _data_block_from_dict(data)
 
 
-# 单例压缩器（线程安全，避免重复创建）
-_compressor_inst: zstandard.ZstdCompressor | None = None
-_decompressor_inst: zstandard.ZstdDecompressor | None = None
+# 线程局部压缩器（asyncio.to_thread 多线程安全）
+_zstd_local = threading.local()
 
 
 def _compressor_singleton() -> zstandard.ZstdCompressor:
-    global _compressor_inst
-    if _compressor_inst is None:
-        _compressor_inst = zstandard.ZstdCompressor(level=_ZSTD_LEVEL)
-    return _compressor_inst
+    """获取线程局部的 ZstdCompressor 实例（asyncio.to_thread 安全）."""
+    c = getattr(_zstd_local, "compressor", None)
+    if c is None:
+        c = zstandard.ZstdCompressor(level=_ZSTD_LEVEL)
+        _zstd_local.compressor = c
+    return c
 
 
 def _decompressor_singleton() -> zstandard.ZstdDecompressor:
-    global _decompressor_inst
-    if _decompressor_inst is None:
-        _decompressor_inst = zstandard.ZstdDecompressor()
-    return _decompressor_inst
+    """获取线程局部的 ZstdDecompressor 实例（asyncio.to_thread 安全）."""
+    d = getattr(_zstd_local, "decompressor", None)
+    if d is None:
+        d = zstandard.ZstdDecompressor()
+        _zstd_local.decompressor = d
+    return d
 
 
 def _json_default(obj: Any) -> Any:

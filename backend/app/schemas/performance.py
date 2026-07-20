@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 
 from app.schemas.base import CamelModel
 
@@ -308,16 +308,35 @@ class DataLineageSchema(CamelModel):
         validRate: 有效数据率（0~1）
         dataPolicyVersion: 预处理版本（如 ``pre_v1``）
         algorithmVersion: 算法版本（如 ``KPI_CALC_v2.0``）
+    注意：DB JSONB 中存储的是 snake_case 键（DataLineage 数据类序列化），
+    因此每个字段通过 ``validation_alias=AliasChoices(camelCase, snake_case)``
+    同时接受两种输入；序列化输出仍为 camelCase。
     """
 
-    samplingFreq: str = ""
-    aggregationPolicy: str = ""
-    qualityPolicy: str = ""
-    tagGroup: str = ""
-    dataBlockIds: list[str] = Field(default_factory=list)
-    validRate: float = 0.0
-    dataPolicyVersion: str = "pre_v1"
-    algorithmVersion: str = "KPI_CALC_v2.0"
+    samplingFreq: str = Field(
+        default="", validation_alias=AliasChoices("samplingFreq", "sampling_freq")
+    )
+    aggregationPolicy: str = Field(
+        default="",
+        validation_alias=AliasChoices("aggregationPolicy", "aggregation_policy"),
+    )
+    qualityPolicy: str = Field(
+        default="", validation_alias=AliasChoices("qualityPolicy", "quality_policy")
+    )
+    tagGroup: str = Field(default="", validation_alias=AliasChoices("tagGroup", "tag_group"))
+    dataBlockIds: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("dataBlockIds", "data_block_ids"),
+    )
+    validRate: float = Field(default=0.0, validation_alias=AliasChoices("validRate", "valid_rate"))
+    dataPolicyVersion: str = Field(
+        default="pre_v1",
+        validation_alias=AliasChoices("dataPolicyVersion", "data_policy_version"),
+    )
+    algorithmVersion: str = Field(
+        default="KPI_CALC_v2.0",
+        validation_alias=AliasChoices("algorithmVersion", "algorithm_version"),
+    )
 
 
 class KpiSnapshotSchema(CamelModel):

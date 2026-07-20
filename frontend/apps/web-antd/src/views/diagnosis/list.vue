@@ -36,7 +36,12 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import {
@@ -552,8 +557,10 @@ onMounted(() => {
             <Tag
               :color="getStatusMeta(record.actionStatus as string).color"
               :style="{
-                background: getStatusMeta(record.actionStatus as string).bgColor,
-                borderColor: getStatusMeta(record.actionStatus as string).borderColor,
+                background: getStatusMeta(record.actionStatus as string)
+                  .bgColor,
+                borderColor: getStatusMeta(record.actionStatus as string)
+                  .borderColor,
               }"
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}

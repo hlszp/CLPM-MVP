@@ -22,7 +22,11 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { Alert, Button, Select, Table, Tag } from 'ant-design-vue';
 
 import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
-import { ClpmDataCanvas, ClpmKpiStrip, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmKpiStrip,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TuningStats' });
@@ -104,6 +108,12 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 110, fixed: 'right' },
 ];
 
+function getFittingStatus(value: number): NonNullable<KpiStripItem['status']> {
+  if (value >= 80) return 'success';
+  if (value >= 60) return 'warning';
+  return 'danger';
+}
+
 const kpiStripItems = computed<KpiStripItem[]>(() => {
   const totalTasksValue = historyStats.value?.totalTasks || 0;
   const avgFittingValue = avgFitting.value;
@@ -125,12 +135,7 @@ const kpiStripItems = computed<KpiStripItem[]>(() => {
       label: '平均拟合度',
       value: avgFittingValue.toFixed(2),
       unit: '%',
-      status:
-        avgFittingValue >= 80
-          ? 'success'
-          : (avgFittingValue >= 60
-            ? 'warning'
-            : 'danger'),
+      status: getFittingStatus(avgFittingValue),
     },
     {
       key: 'algorithms',
@@ -433,7 +438,7 @@ watch(isDark, () => {
       :closable="false"
       message="只读建议 · 人工实施 · 需留痕"
       description="本平台不直接修改 DCS 的 P/I/D 参数，参数由授权人员人工实施并留痕。"
-      style="margin-bottom: 12px;"
+      style="margin-bottom: 12px"
     />
     <div class="mb-4 mt-4">
       <ClpmKpiStrip :items="kpiStripItems" :loading="historyLoading" />

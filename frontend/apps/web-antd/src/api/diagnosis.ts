@@ -98,6 +98,30 @@ export namespace DiagnosisApi {
     pageSize?: number;
   }
 
+  /** 列表聚合统计（后端 SQL group-by 对全部筛选结果聚合，不受分页影响） */
+  export interface DiagnosisAggregates {
+    total: number;
+    statusCounts: Record<string, number>;
+    labelCounts: Record<string, number>;
+    /** 近 7 天归档数（仅 records 接口返回） */
+    recent7Days?: number;
+  }
+
+  /** 诊断列表响应（含聚合统计） */
+  export interface DiagnosisListResult extends PaginatedResponse<DiagnosisListItem> {
+    aggregates?: DiagnosisAggregates;
+  }
+
+  /** Tracker 列表响应（复用 /diagnosis/list，含聚合统计） */
+  export interface TrackerListResult extends PaginatedResponse<TrackerItem> {
+    aggregates?: DiagnosisAggregates;
+  }
+
+  /** 诊断记录列表响应（含聚合统计） */
+  export interface DiagnosisRecordListResult extends PaginatedResponse<TaskItem> {
+    aggregates?: DiagnosisAggregates;
+  }
+
   /** 诊断详情 - 单个标签结果 */
   export interface DiagnosisLabelItem {
     label: DiagnosisLabel;
@@ -338,20 +362,6 @@ export namespace DiagnosisApi {
     pageSize?: number;
   }
 
-  /** PDF 导出参数 */
-  export interface PdfExportParams {
-    timeWindow?: string;
-    includeWaveform?: boolean;
-    includeScatterPlot?: boolean;
-  }
-
-  /** PDF 导出响应 */
-  export interface PdfExportResult {
-    taskId: string;
-    status: string;
-    checkUrl: string;
-  }
-
   /** 统计报表 - 标签分布项 */
   export interface LabelDistributionItem {
     label: DiagnosisLabel;
@@ -404,35 +414,42 @@ export namespace DiagnosisApi {
   export interface AbCompareKpiItem {
     metricKey: string;
     metricName: string;
-    before: number;
-    after: number;
     unit: string;
+    before: null | number;
+    after: null | number;
+    change: null | number;
+    changePct: null | number;
+    /** true=改善 / false=恶化 / null=持平或无数据 */
+    improved: boolean | null;
   }
 
-  /** A/B 对比 - 趋势数据 */
-  export interface AbCompareTrend {
-    before: { pv: (null | number)[]; timestamps: number[] };
-    after: { pv: (null | number)[]; timestamps: number[] };
+  /** A/B 对比 - 数据窗口 */
+  export interface AbCompareWindow {
+    startTime: string;
+    endTime: string;
+    waveformUrl?: string;
   }
 
   /** A/B 对比响应 */
   export interface AbCompareResult {
     loopId: string;
     tagName: string;
-    beforeRange: { endTime: string; startTime: string };
-    afterRange: { endTime: string; startTime: string };
-    trend: AbCompareTrend;
+    implementedAt: null | string;
+    /** 实施后窗口数据不足 24h 时为 true（评估数据采集中） */
+    dataInsufficient: boolean;
+    beforeWindow: AbCompareWindow;
+    afterWindow: AbCompareWindow;
     kpiComparison: AbCompareKpiItem[];
-    improvement: Record<string, number>;
   }
 
-  /** A/B 对比查询参数 */
+  /** A/B 对比查询参数（implementedAt 与显式窗口二选一） */
   export interface AbCompareQueryParams {
     loopId: string;
-    beforeStartTime: string;
-    beforeEndTime: string;
-    afterStartTime: string;
-    afterEndTime: string;
+    implementedAt?: string;
+    beforeStartTime?: string;
+    beforeEndTime?: string;
+    afterStartTime?: string;
+    afterEndTime?: string;
   }
 
   /** 解决方案推荐项（SVC-11） */
@@ -504,14 +521,16 @@ export namespace DiagnosisApi {
     pageSize: number;
   }
 
-  /** 诊断标签查询参数 */
+  /** 诊断标签查询参数（对齐后端 /diagnosis/tags 参数名） */
   export interface DiagnosisTagQueryParams {
-    loopId?: string;
     tagType?: TagType;
     status?: TagStatus;
     severity?: TagSeverity;
-    startTime?: string;
-    endTime?: string;
+    plantNodeId?: string;
+    /** 时间范围开始（ISO 8601） */
+    tsStart?: string;
+    /** 时间范围结束（ISO 8601） */
+    tsEnd?: string;
     page?: number;
     pageSize?: number;
   }
@@ -559,7 +578,7 @@ export namespace DiagnosisApi {
     completedAt: null | string;
     timeRangeStart: null | string;
     timeRangeEnd: null | string;
-    labels: { confidence: number; label: string; }[];
+    labels: { confidence: number; label: string }[];
     isArchived: boolean;
     errorMessage: null | string;
   }
@@ -622,9 +641,11 @@ export function updateDiagnosisMetricApi(
 export function getDiagnosisListApi(
   params: DiagnosisApi.DiagnosisListQueryParams,
 ) {
-  return requestClient.get<PaginatedResponse<DiagnosisApi.DiagnosisListItem>>(
+  return requestClient.get<DiagnosisApi.DiagnosisListResult>(
     '/diagnosis/list',
-    { params },
+    {
+      params,
+    },
   );
 }
 
@@ -673,9 +694,7 @@ export function getWaveformApi(
  * - 单个回路失败不影响其他回路（失败信息放入 failed 列表）
  * - 每个回路独立应用 LTTB 降采样
  */
-export function getBatchWaveformApi(
-  data: DiagnosisApi.BatchWaveformRequest,
-) {
+export function getBatchWaveformApi(data: DiagnosisApi.BatchWaveformRequest) {
   return requestClient.post<DiagnosisApi.BatchWaveformResponse>(
     '/timeseries/batch/waveform',
     data,
@@ -701,23 +720,21 @@ export function updateTrackerStatusApi(
  * 后端无 /tracker 列表端点，复用 /diagnosis/list 接口获取数据。
  */
 export function getTrackerListApi(params: DiagnosisApi.TrackerListQueryParams) {
-  return requestClient.get<PaginatedResponse<DiagnosisApi.TrackerItem>>(
-    '/diagnosis/list',
-    { params },
-  );
+  return requestClient.get<DiagnosisApi.TrackerListResult>('/diagnosis/list', {
+    params,
+  });
 }
 
 /**
- * 导出诊断 PDF — IDS v3.2 §2.4（异步任务）
+ * 导出诊断建议书 PDF — IDS v3.2 §2.4（同步生成，直接下载）
+ *
+ * 返回 Blob，前端通过 URL.createObjectURL 触发下载。
+ * 文件名格式：CLPM-诊断建议书-[位号]-[日期].pdf
  */
-export function exportDiagnosisPdfApi(
-  loopId: string,
-  data: DiagnosisApi.PdfExportParams,
-) {
-  return requestClient.post<DiagnosisApi.PdfExportResult>(
-    `/tracker/${loopId}/export`,
-    data,
-  );
+export function exportDiagnosisPdfApi(loopId: string) {
+  return requestClient.download<Blob>(`/tracker/${loopId}/export`, {
+    method: 'POST',
+  });
 }
 
 /**
@@ -811,6 +828,19 @@ export function getDiagnosisTagsApi(
 }
 
 /**
+ * 查询指定回路的诊断标签 — IDS §2.4.11
+ */
+export function getLoopDiagnosisTagsApi(
+  loopId: string,
+  params: DiagnosisApi.DiagnosisTagQueryParams,
+) {
+  return requestClient.get<DiagnosisApi.DiagnosisTagListResult>(
+    `/diagnosis/tags/${loopId}`,
+    { params },
+  );
+}
+
+/**
  * 获取诊断标签详情 — IDS §2.4.10
  */
 export function getDiagnosisTagDetailApi(tagId: string) {
@@ -853,9 +883,7 @@ export function triggerDiagnosisApi(data: DiagnosisApi.TriggerRequest) {
 /**
  * 获取诊断任务列表（未归档） — 每回路一行
  */
-export function getDiagnosisTasksApi(
-  params: DiagnosisApi.TaskListQueryParams,
-) {
+export function getDiagnosisTasksApi(params: DiagnosisApi.TaskListQueryParams) {
   return requestClient.get<PaginatedResponse<DiagnosisApi.TaskItem>>(
     '/diagnosis/tasks',
     { params },
@@ -899,7 +927,7 @@ export function cancelDiagnosisTaskApi(taskId: string) {
 }
 
 /**
- * 物理删除诊断任务（仅 PENDING 可删除）
+ * 物理删除诊断任务（RUNNING 不可删除，须先取消）
  */
 export function deleteDiagnosisTaskApi(taskId: string) {
   return requestClient.delete<Record<string, unknown>>(
@@ -913,7 +941,7 @@ export function deleteDiagnosisTaskApi(taskId: string) {
 export function getDiagnosisRecordsApi(
   params: DiagnosisApi.DiagnosisListQueryParams,
 ) {
-  return requestClient.get<PaginatedResponse<DiagnosisApi.TaskItem>>(
+  return requestClient.get<DiagnosisApi.DiagnosisRecordListResult>(
     '/diagnosis/records',
     { params },
   );

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -454,6 +455,78 @@ async def test_query_fn_pads_short_values_and_missing_qualities():
 
     assert result.signals["pv"] == [10.0, None, None]
     assert result.quality_codes["pv_quality"] == [1, 0, 0]
+
+
+@pytest.mark.asyncio
+async def test_query_fn_serializes_and_caches_shared_session_mapping_queries():
+    """并发 tagGroup 只串行查询一次映射，远程 HTTP 请求保持并发。"""
+    pv_tag_id = "00000000-0000-0000-0000-000000000001"
+    mapping_result = MagicMock()
+    mapping_result.scalars.return_value.all.return_value = [_make_mapping("PV", pv_tag_id)]
+    tag_result = MagicMock()
+    tag_result.scalars.return_value.all.return_value = [_make_tag(pv_tag_id, "LIC-101.PV")]
+
+    class GuardedDb:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.active = 0
+            self.max_active = 0
+
+        async def execute(self, _statement):
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            try:
+                await asyncio.sleep(0.01)
+                result = mapping_result if self.calls == 0 else tag_result
+                self.calls += 1
+                return result
+            finally:
+                self.active -= 1
+
+    api_response = _make_api_response(
+        timestamps=["2026-06-28T08:00:00"],
+        series=[{"tagCode": "LIC-101.PV", "values": ["10"], "qualities": [1]}],
+    )
+
+    class GuardedClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.active = 0
+            self.max_active = 0
+
+        async def get(self, _url, *, params):
+            self.calls += 1
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            try:
+                await asyncio.sleep(0.01)
+                return api_response
+            finally:
+                self.active -= 1
+
+    db = GuardedDb()
+    client = GuardedClient()
+    provider = RemoteApiProvider()
+    with patch.object(provider, "_get_client", new=AsyncMock(return_value=client)):
+        query_fn = provider.make_query_fn(db)
+        results = await asyncio.gather(
+            *[
+                query_fn(
+                    "loop-001",
+                    ["pv"],
+                    datetime(2026, 6, 28, 8, 0, 0, tzinfo=UTC),
+                    datetime(2026, 6, 28, 9, 0, 0, tzinfo=UTC),
+                    1,
+                )
+                for _ in range(4)
+            ]
+        )
+
+    assert db.calls == 2
+    assert db.max_active == 1
+    assert client.calls == 4
+    assert client.max_active == 4
+    assert all(result.signals["pv"] == [10.0] for result in results)
 
 
 # ---------------------------------------------------------------------------

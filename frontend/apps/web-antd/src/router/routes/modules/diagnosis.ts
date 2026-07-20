@@ -94,7 +94,7 @@ const routes: RouteRecordRaw[] = [
       },
       {
         name: 'DiagnosisVisualization',
-        path: '/diagnosis/visualization',
+        path: '/diagnosis/visualization/:loopId?',
         component: () => import('#/views/diagnosis/visualization.vue'),
         meta: {
           authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],

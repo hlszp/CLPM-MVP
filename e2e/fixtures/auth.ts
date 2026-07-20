@@ -10,7 +10,7 @@ import { test as base, type Page, type APIRequestContext } from '@playwright/tes
 export const API_BASE_URL = 'http://localhost:7101/api/v1';
 
 /** 前端 baseURL */
-export const WEB_BASE_URL = 'http://localhost:7100';
+export const WEB_BASE_URL = 'http://localhost:5666';
 
 /** 登录页路径 */
 export const LOGIN_PATH = '/auth/login';
@@ -106,7 +106,7 @@ export async function loginViaApi(
  */
 export async function clearAccessToken(page: Page): Promise<void> {
   // 先确保在前端域名下，才能访问 localStorage
-  if (!page.url().includes('localhost:7100')) {
+  if (!page.url().includes('localhost:5666')) {
     await page.goto(WEB_BASE_URL, { waitUntil: 'domcontentloaded' });
   }
   await page.evaluate(() => {

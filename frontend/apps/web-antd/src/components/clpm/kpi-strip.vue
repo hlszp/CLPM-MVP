@@ -185,7 +185,9 @@ function getSparklineColor(status?: string): string {
         >
           <span class="clpm-kpi-strip__delta-arrow">
             <template v-if="getDeltaDirection(item.delta) === 'up'">↑</template>
-            <template v-else-if="getDeltaDirection(item.delta) === 'down'">↓</template>
+            <template v-else-if="getDeltaDirection(item.delta) === 'down'"
+              >↓</template
+            >
             <template v-else>→</template>
           </span>
           <span class="clpm-kpi-strip__delta-text">{{

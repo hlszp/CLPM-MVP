@@ -8,7 +8,7 @@ DataPlanner 负责指标驱动的数据获取与编排：
     5. 组装 MetricDataBundle（含 8 字段数据血缘）
 
 核心优化：
-    - tagGroup 复用：流量回路（FC）BASE 已是 1s，OP_HF/PVOP_HF/MODE_HF/QUALITY_HF
+    - tagGroup 复用：所有控制类型的 OP_HF/PVOP_HF/MODE_HF/QUALITY_HF
       直接从 BASE DataBlock 派生，仅需 1 次 TDengine 查询（算法说明 §3.5.2）
     - 缓存复用：多指标共享同一 tagGroup 时仅查询/预处理一次
     - Pipeline 批量写入：减少 Redis 网络往返
@@ -17,7 +17,9 @@ DataPlanner 负责指标驱动的数据获取与编排：
     KPI 计算路径**不进行 LTTB 降采样**。DataPlanner 按控制类型阈值决定采样率：
         - STABLE/SLOW/FAST/LOGIC 四类阈值由 ``get_threshold(control_type)`` 提供
         - interval_s 是固定值（典型为 1s，由 base_threshold.base_sampling_freq 决定）
-        - HF tagGroup（OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）固定 1s 高频采样
+        - HF tagGroup（OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）固定 1s 高频采样；
+          存在 BASE 组时 HF 组从 BASE 派生（宽表查询本身返回全列全量行，
+          派生不降低实际数据分辨率），interval_s=1 仅保留为元数据
     KPI 计算需要全量数据点参与运算（好值率/自控率/振荡率等指标依赖每个采样点），
     LTTB 降采样会破坏指标计算的准确性。
 
@@ -39,7 +41,9 @@ DataPlanner 负责指标驱动的数据获取与编排：
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -61,6 +65,47 @@ from app.services.preprocessing.pipeline import PREPROCESS_VERSION, Preprocessin
 from app.services.preprocessing.thresholds import get_threshold
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# 指标数据需求契约进程内缓存（静态数据，TTL 300s）
+# ---------------------------------------------------------------------------
+_REQUIREMENTS_CACHE: dict[str, Any] = {}
+_REQUIREMENTS_CACHE_TS: float = 0.0
+_REQUIREMENTS_CACHE_TTL = 300.0  # 5 分钟
+
+# DB 列名 → 契约 metric_code 别名（请求方用 DB 列名、契约表用 Calculator 代码时解析）。
+# 与 app.tasks.kpi_calc._DB_TO_CALCULATOR_METRIC_CODE 的唯一差异保持一致：
+# 快照表列名 steady_rate（平稳率）↔ 契约/计算器 stability_rate。
+# 缺失该映射会导致按 DB 列名请求时契约查询为空、对应指标静默跳过（快照只剩 PARTIAL）。
+_REQUIREMENT_CODE_ALIASES: dict[str, str] = {
+    "steady_rate": "stability_rate",
+}
+
+
+def clear_requirements_cache() -> None:
+    """清空指标契约进程内缓存（测试 / 配置变更时调用）."""
+    global _REQUIREMENTS_CACHE, _REQUIREMENTS_CACHE_TS
+    _REQUIREMENTS_CACHE = {}
+    _REQUIREMENTS_CACHE_TS = 0.0
+
+
+def _filter_requirements(metrics: list[str]) -> dict[str, Any]:
+    """按请求代码筛选契约，解析 DB 列名 → 契约 metric_code 别名.
+
+    返回字典以**请求方代码**为键（如 steady_rate），确保下游
+    ``_build_query_plan`` / ``_assemble_bundles`` 产出的 Bundle 沿用请求方命名。
+    """
+    resolved: dict[str, Any] = {}
+    for code in metrics:
+        row = _REQUIREMENTS_CACHE.get(code)
+        if row is None:
+            alias = _REQUIREMENT_CODE_ALIASES.get(code)
+            if alias:
+                row = _REQUIREMENTS_CACHE.get(alias)
+        if row is not None:
+            resolved[code] = row
+    return resolved
+
 
 # TDengine 查询函数签名：按 tag 角色列表查询原始时序数据
 # 生产环境由适配器将现有 query_trend_data 包装为此签名；测试时注入 mock
@@ -127,7 +172,7 @@ class DataPlanner:
 
     def __init__(
         self,
-        cache: L1DataBlockCache,
+        cache: L1DataBlockCache | None,
         tdengine_query_fn: TDengineQueryFn,
         assembler: MetricDataBundleAssembler,
         db: Any | None = None,
@@ -153,6 +198,8 @@ class DataPlanner:
         self._bundle_cache = bundle_cache
         # 待写入 L2 缓存的 Key（request_bundles 中设置，_maybe_write_l2_cache 消费）
         self._pending_l2_key: str | None = None
+        # 预加载的 OP 限位 {loop_id: (lower, upper)}，批量计算时注入避免逐回路查 DB
+        self._preloaded_op_limits: dict[str, tuple[float | None, float | None]] | None = None
 
     # ------------------------------------------------------------------
     # 核心入口
@@ -199,22 +246,30 @@ class DataPlanner:
 
         # Phase 1: L2 Bundle 缓存查询（若启用，命中则直接返回，跳过查询与组装）
         # v6.1：缓存 key 包含 OP 限位，修改限位后自动失效
+        # v6.2：优先使用预加载的 OP 限位，避免逐回路查 DB
         op_lower: float | None = None
         op_upper: float | None = None
-        if self._bundle_cache is not None and metrics and self._db is not None:
-            from sqlalchemy import select
+        if self._bundle_cache is not None and metrics:
+            if self._preloaded_op_limits is not None:
+                # 使用预加载的 OP 限位（批量计算场景）
+                op_limits = self._preloaded_op_limits.get(loop_id)
+                if op_limits:
+                    op_lower, op_upper = op_limits
+            elif self._db is not None:
+                from sqlalchemy import select
 
-            from app.models.loop import LoopLedger
+                from app.models.loop import LoopLedger
 
-            op_result = await self._db.execute(
-                select(LoopLedger.op_output_lower_limit, LoopLedger.op_output_upper_limit).where(
-                    LoopLedger.id == loop_id
+                op_result = await self._db.execute(
+                    select(
+                        LoopLedger.op_output_lower_limit,
+                        LoopLedger.op_output_upper_limit,
+                    ).where(LoopLedger.id == loop_id)
                 )
-            )
-            op_row = op_result.first()
-            if op_row:
-                op_lower = float(op_row[0]) if op_row[0] is not None else None
-                op_upper = float(op_row[1]) if op_row[1] is not None else None
+                op_row = op_result.first()
+                if op_row:
+                    op_lower = float(op_row[0]) if op_row[0] is not None else None
+                    op_upper = float(op_row[1]) if op_row[1] is not None else None
 
         if self._bundle_cache is not None and metrics:
             l2_key = L2BundleCache.build_key(
@@ -291,7 +346,9 @@ class DataPlanner:
     # ------------------------------------------------------------------
 
     async def _load_requirements(self, metrics: list[str]) -> dict[str, Any]:
-        """从 clpm_metric_data_requirement 表读取指标契约.
+        """从 clpm_metric_data_requirement 表读取指标契约（带进程内缓存）.
+
+        静态数据（指标契约 rarely 变更），缓存 5 分钟，避免 1000 回路重复查询。
 
         Args:
             metrics: 指标代码列表
@@ -305,17 +362,25 @@ class DataPlanner:
             logger.debug("DataPlanner: db session 未注入，返回空契约")
             return {}
 
+        # 进程内缓存检查（静态数据，TTL 300s）
+        global _REQUIREMENTS_CACHE, _REQUIREMENTS_CACHE_TS
+        now = time.monotonic()
+        if _REQUIREMENTS_CACHE and (now - _REQUIREMENTS_CACHE_TS) < _REQUIREMENTS_CACHE_TTL:
+            # 从缓存中筛选请求的 metrics（含 DB 列名 → 契约代码别名解析）
+            return _filter_requirements(metrics)
+
+        # 缓存未命中或过期 → 查询全量并缓存
         from sqlalchemy import select
 
         from app.models.metric_data_requirement import ClpmMetricDataRequirement
 
-        result = await self._db.execute(
-            select(ClpmMetricDataRequirement).where(
-                ClpmMetricDataRequirement.metric_code.in_(metrics)
-            )
-        )
+        result = await self._db.execute(select(ClpmMetricDataRequirement))
         rows = result.scalars().all()
-        return {row.metric_code: row for row in rows}
+        _REQUIREMENTS_CACHE = {row.metric_code: row for row in rows}
+        _REQUIREMENTS_CACHE_TS = now
+        logger.info("DataPlanner 指标契约缓存已刷新: %d 条", len(_REQUIREMENTS_CACHE))
+
+        return _filter_requirements(metrics)
 
     # ------------------------------------------------------------------
     # Phase 3: 构建合并查询计划
@@ -330,7 +395,12 @@ class DataPlanner:
 
         合并规则（算法说明 §3.5.2）：
             - 相同 tagGroup 的指标合并为一次查询（tags 取并集）
-            - 流量回路（FC）BASE=1s，OP_HF/PVOP_HF/MODE_HF/QUALITY_HF 复用 BASE
+            - 所有控制类型复用 BASE：OP_HF/PVOP_HF/MODE_HF/QUALITY_HF
+              从 BASE DataBlock 派生（宽表查询固定 SELECT 全部列，派生不丢数据），
+              每回路-窗口仅需 1 次 TDengine 查询；派生组 interval_s 固定 1s
+              （与原独立 HF 查询的取值一致，仅为元数据，派生不发起查询）
+            - 查询计划中无 BASE 组时（如波形接口按单 tagGroup 取数），
+              HF 组回退为独立查询（HF 固定 1s 采样）
             - CONFIG tagGroup 跳过（无时序数据，如 ideal_settling_time）
 
         Args:
@@ -344,8 +414,6 @@ class DataPlanner:
         """
         base_threshold = get_threshold(control_type)
         base_interval = base_threshold.base_sampling_freq
-        # 流量回路 BASE=1s，高频 tagGroup 可复用 BASE
-        reuse_base = base_interval == 1
 
         # 按 tagGroup 分组指标，并合并 tags
         grouped: dict[TagGroup, dict[str, Any]] = {}
@@ -364,6 +432,14 @@ class DataPlanner:
             for t in tags:
                 grouped[tag_group]["tag_roles"].add(t)
 
+        # 所有控制类型复用 BASE：宽表查询固定 SELECT 全部列，HF 组与 BASE 组
+        # 取数内容完全一致（同样的行、同样的列子集），独立查询只是重复拉取，
+        # 因此 HF tagGroup 一律从 BASE DataBlock 派生（此前仅 FC 回路复用，
+        # PC/TC/LC/CC 会把同一段数据重复拉 5 遍）。
+        # 仅当计划中存在 BASE 组时启用复用（KPI 路径固定请求全量 12 指标，始终
+        # 含 BASE）；无 BASE 组时（如波形接口按单 tagGroup 取数）HF 组保持独立查询。
+        reuse_base = TagGroup.BASE in grouped
+
         # 构建 QueryTask 列表
         tasks: list[QueryTask] = []
         base_tags: set[str] = set()
@@ -378,13 +454,15 @@ class DataPlanner:
         for tag_group, info in grouped.items():
             tag_roles = sorted(info["tag_roles"])
 
-            # 复用 BASE：HF tagGroup 标记为 reused_from=BASE
+            # 复用 BASE：HF tagGroup 标记为 reused_from=BASE。
+            # interval_s 固定 1s：与原独立 HF 查询的取值一致（FLOW 复用时
+            # base_interval 本就为 1），派生不发起查询，此值仅为元数据。
             if reuse_base and tag_group != TagGroup.BASE:
                 task = QueryTask(
                     tag_group=tag_group,
                     metrics=info["metrics"],
                     tag_roles=tag_roles,
-                    interval_s=base_interval,  # 复用 BASE 的采样率
+                    interval_s=1,
                     reused_from=TagGroup.BASE,
                 )
             elif tag_group == TagGroup.BASE and reuse_base:
@@ -439,48 +517,18 @@ class DataPlanner:
 
         对于复用 BASE 的 tagGroup，从 BASE DataBlock 派生子集，不单独查询。
         未命中的 DataBlock 通过 Pipeline 批量写入缓存（减少 RTT）。
-
-        Args:
-            query_plan: 合并后的查询计划
-            loop_id: 回路 ID
-            time_window: 时间窗口
-            control_type: 控制类型
-            preprocess_config: 预处理配置
-
-        Returns:
-            ``{TagGroup: DataBlock}`` 字典
-
-        设计依据：数据流程图 §7.1 Phase 4-7
         """
         data_blocks: dict[TagGroup, DataBlock] = {}
-        # 待批量写入缓存的 (cache_key, DataBlock) 对
         pending_writes: list[tuple[str, DataBlock]] = []
 
-        for task in query_plan:
-            # 复用 BASE：从已查询的 BASE DataBlock 派生
-            if task.reused_from is not None:
-                base_block = data_blocks.get(task.reused_from)
-                if base_block is None:
-                    logger.warning(
-                        "无法派生 %s：BASE DataBlock 未就绪，跳过",
-                        task.tag_group.value,
-                    )
-                    continue
-                derived = self._derive_from_base(
-                    base_block, task.tag_group, task.tag_roles, loop_id
-                )
-                data_blocks[task.tag_group] = derived
-                logger.debug(
-                    "从 BASE 派生 %s: tags=%s, points=%d",
-                    task.tag_group.value,
-                    task.tag_roles,
-                    derived.point_count,
-                )
-                continue
+        # 分离非复用 task（需查缓存/TDengine）和复用 task（从 BASE 派生）
+        non_reuse_tasks = [t for t in query_plan if t.reused_from is None]
+        reuse_tasks = [t for t in query_plan if t.reused_from is not None]
 
-            # 构建缓存 Key
-            # pre_version: 预处理版本（PreprocessingPipeline 升级时递增）
-            # cfg_version: 回路配置版本（量程/控制类型变更时递增）
+        async def _process_non_reuse(
+            task: QueryTask,
+        ) -> tuple[TagGroup, DataBlock, tuple[str, DataBlock] | None]:
+            """处理单个非复用 task：查缓存 → 未命中查 TDengine + 预处理."""
             cache_key = L1DataBlockCache.build_key(
                 loop_id=loop_id,
                 tag_group=task.tag_group.value,
@@ -491,25 +539,45 @@ class DataPlanner:
                 pre_version=PREPROCESS_VERSION,
                 cfg_version=preprocess_config.config_version,
             )
-
-            # Phase 4: 查询缓存
-            cached = await self._cache.get(cache_key)
+            cached = await self._cache.get(cache_key) if self._cache else None
             if cached is not None:
-                data_blocks[task.tag_group] = cached
-                continue
-
-            # Phase 5-6: 未命中 → 查询 TDengine + 8 步预处理
+                return task.tag_group, cached, None
             data_block = await self._query_and_preprocess(
                 loop_id=loop_id,
                 task=task,
                 time_window=time_window,
                 preprocess_config=preprocess_config,
             )
-            data_blocks[task.tag_group] = data_block
-            pending_writes.append((cache_key, data_block))
+            return task.tag_group, data_block, (cache_key, data_block)
 
-        # Phase 7: Pipeline 批量写入未命中的 DataBlock
-        if pending_writes:
+        # Phase 4-6: 并行执行所有非复用 task（asyncio.gather 释放事件循环）
+        if non_reuse_tasks:
+            results = await asyncio.gather(*[_process_non_reuse(t) for t in non_reuse_tasks])
+            for tag_group, block, write_pair in results:
+                data_blocks[tag_group] = block
+                if write_pair is not None:
+                    pending_writes.append(write_pair)
+
+        # 复用 BASE：从已查询的 BASE DataBlock 派生子集
+        for task in reuse_tasks:
+            base_block = data_blocks.get(task.reused_from)
+            if base_block is None:
+                logger.warning(
+                    "无法派生 %s：BASE DataBlock 未就绪，跳过",
+                    task.tag_group.value,
+                )
+                continue
+            derived = self._derive_from_base(base_block, task.tag_group, task.tag_roles, loop_id)
+            data_blocks[task.tag_group] = derived
+            logger.debug(
+                "从 BASE 派生 %s: tags=%s, points=%d",
+                task.tag_group.value,
+                task.tag_roles,
+                derived.point_count,
+            )
+
+        # Phase 7: Pipeline 批量写入未命中的 DataBlock（cache=None 时跳过）
+        if pending_writes and self._cache:
             keys = [k for k, _ in pending_writes]
             blocks = [b for _, b in pending_writes]
             written = await self._cache.set_many(blocks, keys=keys)
@@ -544,27 +612,42 @@ class DataPlanner:
             task.interval_s,
         )
 
-        # Phase 5: 查询 TDengine
+        # Phase 5: 查询数据源
+        t_query_start = time.perf_counter()
         raw = await self._query_fn(
-            loop_id,
-            task.tag_roles,
-            time_window.start,
-            time_window.end,
-            task.interval_s,
+            loop_id=loop_id,
+            tag_roles=task.tag_roles,
+            start=time_window.start,
+            end=time_window.end,
+            interval_s=task.interval_s,
         )
+        t_query_elapsed = time.perf_counter() - t_query_start
 
         if not raw.timestamps:
             logger.warning(
-                "TDengine 返回空数据: loop=%s, tagGroup=%s",
+                "TDengine 返回空数据: loop=%s, tagGroup=%s, query_time=%.3fs",
                 loop_id,
                 task.tag_group.value,
+                t_query_elapsed,
             )
             # 返回空 DataBlock（避免后续 KeyError）
             return self._empty_data_block(loop_id, task.tag_group, task.interval_s)
 
-        # Phase 6: 8 步预处理
+        # Phase 6: 8 步预处理（移至线程池释放事件循环，纯 Python CPU 密集型）
+        t_pre_start = time.perf_counter()
         pipeline = PreprocessingPipeline(preprocess_config)
-        data_block = pipeline.process(raw, task.tag_group)
+        data_block = await asyncio.to_thread(pipeline.process, raw, task.tag_group)
+        t_pre_elapsed = time.perf_counter() - t_pre_start
+
+        logger.info(
+            "DataPlanner 取数+预处理: loop=%s, tagGroup=%s, points=%d, "
+            "query=%.3fs, preprocess=%.3fs",
+            loop_id,
+            task.tag_group.value,
+            data_block.point_count,
+            t_query_elapsed,
+            t_pre_elapsed,
+        )
 
         logger.debug(
             "预处理完成: loop=%s, tagGroup=%s, points=%d, valid_rate=%.4f",
@@ -691,6 +774,8 @@ class DataPlanner:
     async def _fill_op_output_limits(self, bundles: list[MetricDataBundle], loop_id: str) -> None:
         """v6.1 填充 OP 输出限位到每个 bundle 的 signals 字典.
 
+        v6.2 优化：优先使用预加载的 OP 限位（批量计算场景），避免逐回路查 DB。
+
         优先级（设计文档 §2.3）：
             1. Loop 表 op_output_lower_limit / op_output_upper_limit（非 NULL）
             2. OP Tag range_min / range_max（已关联且非 NULL）
@@ -702,6 +787,26 @@ class DataPlanner:
         """
         if not bundles:
             return
+
+        # v6.2：优先使用预加载的 OP 限位
+        if self._preloaded_op_limits is not None:
+            op_limits = self._preloaded_op_limits.get(loop_id)
+            if op_limits:
+                op_lower, op_upper = op_limits
+                for bundle in bundles:
+                    if op_lower is not None:
+                        bundle.data_block.signals["op_low"] = [op_lower]
+                    if op_upper is not None:
+                        bundle.data_block.signals["op_high"] = [op_upper]
+                if op_lower is not None or op_upper is not None:
+                    logger.debug(
+                        "DataPlanner 填充 OP 限位(预加载): loop=%s, op_low=%s, op_high=%s",
+                        loop_id,
+                        op_lower,
+                        op_upper,
+                    )
+            return
+
         if self._db is None:
             return
 

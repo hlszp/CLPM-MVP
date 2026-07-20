@@ -8,6 +8,7 @@ coverage/
 !.claude/commands/
 .gstack/
 .omc/
+.trae/documents/
 test-results/
 playwright-report/
 *.tsbuildinfo
@@ -41,3 +42,9 @@ releases/images/*.tar
 
 # graphify 技能自动生成目录（不入库）
 graphify-out/
+
+# 性能实测与诊断产物（不入库）
+logs-frontend-dev.log
+output/
+.playwright-cli/
+__pycache__/
