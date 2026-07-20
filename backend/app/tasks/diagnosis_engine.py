@@ -23,7 +23,8 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-from sqlalchemy import delete, select
+from celery.schedules import crontab
+from sqlalchemy import delete, or_, select
 
 from app.contracts.data_types import QualityStatus, RawTimeSeries
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTask
@@ -130,7 +131,9 @@ def run_loop_diagnosis(
 
 _beat_entry = {
     "task": "app.tasks.diagnosis_engine.run_diagnosis_hourly",
-    "schedule": 3600.0,  # 1 小时
+    # 对齐 KPI 整点计算（crontab minute=0），在整点后第 10 分钟执行诊断，
+    # 避免裸 3600s 间隔与 KPI 计算相位错位导致漏诊
+    "schedule": crontab(minute=10),
 }
 
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
@@ -163,11 +166,17 @@ async def _do_run_diagnosis() -> dict:
     # 主 session 仅用于查询待诊断回路列表和诊断配置（只读，无并发）
     async with AsyncSessionLocal() as db:
         # 1. 查询最近一小时评分跌破阈值的回路
+        # 评分为 NULL（数据质量差 INCONCLUSIVE）的回路同样需要诊断，一并纳入
         snapshot_stmt = (
             select(KpiSnapshotHourly)
             .where(KpiSnapshotHourly.ts_start >= ts_start_naive)
             .where(KpiSnapshotHourly.ts_start <= ts_end_naive)
-            .where(KpiSnapshotHourly.score < SCORE_THRESHOLD)
+            .where(
+                or_(
+                    KpiSnapshotHourly.score < SCORE_THRESHOLD,
+                    KpiSnapshotHourly.score.is_(None),
+                )
+            )
             .where(KpiSnapshotHourly.status == "SUCCESS")
         )
         snap_result = await db.execute(snapshot_stmt)
@@ -188,9 +197,23 @@ async def _do_run_diagnosis() -> dict:
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
 
         # 3. 为每个回路创建 DiagnosisTask 记录（自动触发）
+        # 去重：同回路同时间窗已存在 PENDING/RUNNING 任务时跳过创建与诊断，
+        # 避免 Beat 重复运行（或手动补跑）重复建任务
+        existing_result = await db.execute(
+            select(DiagnosisTask.loop_id)
+            .where(DiagnosisTask.loop_id.in_(loop_ids))
+            .where(DiagnosisTask.time_range_start == ts_start_naive)
+            .where(DiagnosisTask.time_range_end == ts_end_naive)
+            .where(DiagnosisTask.status.in_(["PENDING", "RUNNING"]))
+        )
+        existing_loop_ids = {str(r) for r in existing_result.scalars().all()}
+
         # 显式生成 id 避免 flush 依赖（兼容 mock 测试环境）
         loop_task_ids: dict[str, str] = {}
         for lid in loop_ids:
+            if lid in existing_loop_ids:
+                logger.info("回路 %s 同时间窗已有未完成任务，跳过创建", lid)
+                continue
             task_id = str(uuid4())
             task = DiagnosisTask(
                 id=task_id,
@@ -282,6 +305,7 @@ async def _do_run_diagnosis() -> dict:
         "total": len(loop_ids),
         "diagnosed": diagnosed_count,
         "failed": failed_count,
+        "skipped": len(loop_ids) - len(loop_task_ids),
         "ts_start": ts_start.isoformat(),
         "ts_end": ts_end.isoformat(),
     }

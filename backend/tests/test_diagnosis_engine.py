@@ -592,12 +592,13 @@ class TestDoRunDiagnosis:
 
         diag_config = _make_diag_config()
 
-        # 主 session：查询 snapshot + config + 创建 DiagnosisTask
+        # 主 session：查询 snapshot + config + 未完成任务去重 + 创建 DiagnosisTask
         main_session = AsyncMock()
         main_session.execute = AsyncMock(
             side_effect=[
                 _make_scalars_all_mock([snapshot]),  # snapshot 查询
                 _make_scalars_all_mock([diag_config]),  # config 查询
+                _make_scalars_all_mock([]),  # 未完成任务去重查询（无已存在任务）
             ]
         )
         main_session.commit = AsyncMock()
@@ -2034,3 +2035,60 @@ class TestThresholdTakesEffect:
         assert "OUTPUT_SATURATION" in await _run(None)
         # 配置限位调高到 120：99 < 118 → 不饱和
         assert "OUTPUT_SATURATION" not in await _run({"op_high_limit": 120.0})
+
+
+class TestDoRunDiagnosisDedup:
+    """A9：同回路同时间窗已有未完成任务时跳过创建与诊断。"""
+
+    @pytest.mark.asyncio
+    async def test_existing_pending_task_skipped(self) -> None:
+        """已存在 PENDING/RUNNING 任务时不重复创建，也不重复诊断。"""
+        snapshot = MagicMock()
+        snapshot.loop_id = "loop-001"
+        diag_config = _make_diag_config()
+
+        main_session = AsyncMock()
+        main_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_all_mock([snapshot]),  # snapshot 查询
+                _make_scalars_all_mock([diag_config]),  # config 查询
+                _make_scalars_all_mock(["loop-001"]),  # 去重查询：已有未完成任务
+            ]
+        )
+        main_session.commit = AsyncMock()
+        main_session.rollback = AsyncMock()
+        main_session.add = MagicMock()
+
+        with patch("app.core.db.AsyncSessionLocal") as mock_session_local:
+            mock_session_local.return_value.__aenter__.return_value = main_session
+            result = await _do_run_diagnosis()
+
+        assert result["total"] == 1
+        assert result["skipped"] == 1
+        assert result["diagnosed"] == 0
+        assert result["failed"] == 0
+        main_session.add.assert_not_called()  # 未创建新的 DiagnosisTask
+
+
+class TestSnapshotScoreFilter:
+    """A10：score 为 NULL（INCONCLUSIVE）的快照也纳入自动诊断。"""
+
+    @pytest.mark.asyncio
+    async def test_score_null_included_in_filter_sql(self) -> None:
+        """快照筛选语句应包含 OR score IS NULL 分支。"""
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_all_mock([]),  # 无 snapshot
+            ]
+        )
+
+        with patch("app.core.db.AsyncSessionLocal") as mock_session_local:
+            mock_session_local.return_value.__aenter__.return_value = mock_session
+            result = await _do_run_diagnosis()
+
+        assert result["total"] == 0
+        # 第一个 execute 调用即快照筛选语句
+        stmt = mock_session.execute.call_args_list[0][0][0]
+        compiled = str(stmt)
+        assert "score IS NULL" in compiled

@@ -975,7 +975,9 @@ class TestDiagnosisBeatSchedule:
     """Celery Beat 调度配置测试。"""
 
     def test_beat_schedule_has_diagnosis_engine(self) -> None:
-        """Beat 调度应包含诊断引擎任务。"""
+        """Beat 调度应包含诊断引擎任务（crontab，对齐 KPI 整点后第 10 分钟）。"""
+        from celery.schedules import crontab
+
         import app.tasks.diagnosis_engine  # noqa: F401
         from app.tasks.celery_app import celery_app
 
@@ -985,7 +987,9 @@ class TestDiagnosisBeatSchedule:
             beat["diagnosis-engine-hourly"]["task"]
             == "app.tasks.diagnosis_engine.run_diagnosis_hourly"
         )
-        assert beat["diagnosis-engine-hourly"]["schedule"] == 3600.0
+        schedule = beat["diagnosis-engine-hourly"]["schedule"]
+        assert isinstance(schedule, crontab)
+        assert schedule.minute == {10}
 
 
 # ---------------------------------------------------------------------------
