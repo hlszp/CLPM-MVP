@@ -33,6 +33,7 @@ import dayjs from 'dayjs';
 
 import {
   getDiagnosisTagsApi,
+  getLoopDiagnosisTagsApi,
   updateDiagnosisTagStatusApi,
 } from '#/api/diagnosis';
 import {
@@ -60,21 +61,21 @@ const { RangePicker } = DatePicker;
 
 /** 查询表单状态 */
 const queryForm = reactive<{
-  endTime?: string;
   page: number;
   pageSize: number;
   severity?: DiagnosisApi.TagSeverity;
-  startTime?: string;
   status?: DiagnosisApi.TagStatus;
   tagType?: DiagnosisApi.TagType;
+  tsEnd?: string;
+  tsStart?: string;
 }>({
   page: 1,
   pageSize: 20,
   tagType: undefined,
   status: undefined,
   severity: undefined,
-  startTime: undefined,
-  endTime: undefined,
+  tsStart: undefined,
+  tsEnd: undefined,
 });
 
 /** 时间范围选择器值（dayjs 元组） */
@@ -230,14 +231,16 @@ async function loadList() {
       page: queryForm.page,
       pageSize: queryForm.pageSize,
     };
-    if (props.loopId) params.loopId = props.loopId;
     if (queryForm.tagType) params.tagType = queryForm.tagType;
     if (queryForm.status) params.status = queryForm.status;
     if (queryForm.severity) params.severity = queryForm.severity;
-    if (queryForm.startTime) params.startTime = queryForm.startTime;
-    if (queryForm.endTime) params.endTime = queryForm.endTime;
+    if (queryForm.tsStart) params.tsStart = queryForm.tsStart;
+    if (queryForm.tsEnd) params.tsEnd = queryForm.tsEnd;
 
-    const data = await getDiagnosisTagsApi(params);
+    // 指定回路时走 /diagnosis/tags/{loopId} 端点（IDS §2.4.11）
+    const data = props.loopId
+      ? await getLoopDiagnosisTagsApi(props.loopId, params)
+      : await getDiagnosisTagsApi(params);
     tagList.value = data.items || [];
     total.value = data.total ?? 0;
   } catch {
@@ -251,11 +254,11 @@ async function loadList() {
 function handleQuery() {
   queryForm.page = 1;
   if (timeRange.value && timeRange.value.length === 2) {
-    queryForm.startTime = timeRange.value[0]?.format('YYYY-MM-DD HH:mm:ss');
-    queryForm.endTime = timeRange.value[1]?.format('YYYY-MM-DD HH:mm:ss');
+    queryForm.tsStart = timeRange.value[0]?.format('YYYY-MM-DD HH:mm:ss');
+    queryForm.tsEnd = timeRange.value[1]?.format('YYYY-MM-DD HH:mm:ss');
   } else {
-    queryForm.startTime = undefined;
-    queryForm.endTime = undefined;
+    queryForm.tsStart = undefined;
+    queryForm.tsEnd = undefined;
   }
   loadList();
 }
@@ -265,8 +268,8 @@ function handleReset() {
   queryForm.tagType = undefined;
   queryForm.status = undefined;
   queryForm.severity = undefined;
-  queryForm.startTime = undefined;
-  queryForm.endTime = undefined;
+  queryForm.tsStart = undefined;
+  queryForm.tsEnd = undefined;
   queryForm.page = 1;
   timeRange.value = undefined;
   loadList();

@@ -579,8 +579,7 @@ onMounted(() => {
                   size="small"
                   :loading="exportingLoopId === record.loopId"
                   :disabled="
-                    exportingLoopId !== '' &&
-                    exportingLoopId !== record.loopId
+                    exportingLoopId !== '' && exportingLoopId !== record.loopId
                   "
                   @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
                 >

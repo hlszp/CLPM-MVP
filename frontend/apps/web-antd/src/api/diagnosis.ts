@@ -108,8 +108,7 @@ export namespace DiagnosisApi {
   }
 
   /** 诊断列表响应（含聚合统计） */
-  export interface DiagnosisListResult
-    extends PaginatedResponse<DiagnosisListItem> {
+  export interface DiagnosisListResult extends PaginatedResponse<DiagnosisListItem> {
     aggregates?: DiagnosisAggregates;
   }
 
@@ -119,8 +118,7 @@ export namespace DiagnosisApi {
   }
 
   /** 诊断记录列表响应（含聚合统计） */
-  export interface DiagnosisRecordListResult
-    extends PaginatedResponse<TaskItem> {
+  export interface DiagnosisRecordListResult extends PaginatedResponse<TaskItem> {
     aggregates?: DiagnosisAggregates;
   }
 
@@ -523,14 +521,16 @@ export namespace DiagnosisApi {
     pageSize: number;
   }
 
-  /** 诊断标签查询参数 */
+  /** 诊断标签查询参数（对齐后端 /diagnosis/tags 参数名） */
   export interface DiagnosisTagQueryParams {
-    loopId?: string;
     tagType?: TagType;
     status?: TagStatus;
     severity?: TagSeverity;
-    startTime?: string;
-    endTime?: string;
+    plantNodeId?: string;
+    /** 时间范围开始（ISO 8601） */
+    tsStart?: string;
+    /** 时间范围结束（ISO 8601） */
+    tsEnd?: string;
     page?: number;
     pageSize?: number;
   }
@@ -641,9 +641,12 @@ export function updateDiagnosisMetricApi(
 export function getDiagnosisListApi(
   params: DiagnosisApi.DiagnosisListQueryParams,
 ) {
-  return requestClient.get<DiagnosisApi.DiagnosisListResult>('/diagnosis/list', {
-    params,
-  });
+  return requestClient.get<DiagnosisApi.DiagnosisListResult>(
+    '/diagnosis/list',
+    {
+      params,
+    },
+  );
 }
 
 /**
@@ -820,6 +823,19 @@ export function getDiagnosisTagsApi(
 ) {
   return requestClient.get<DiagnosisApi.DiagnosisTagListResult>(
     '/diagnosis/tags',
+    { params },
+  );
+}
+
+/**
+ * 查询指定回路的诊断标签 — IDS §2.4.11
+ */
+export function getLoopDiagnosisTagsApi(
+  loopId: string,
+  params: DiagnosisApi.DiagnosisTagQueryParams,
+) {
+  return requestClient.get<DiagnosisApi.DiagnosisTagListResult>(
+    `/diagnosis/tags/${loopId}`,
     { params },
   );
 }

@@ -80,7 +80,7 @@ interface AbTrendWindow {
   pv: (null | number)[];
   timestamps: number[];
 }
-const trendData = ref<{ after: AbTrendWindow; before: AbTrendWindow } | null>(
+const trendData = ref<null | { after: AbTrendWindow; before: AbTrendWindow }>(
   null,
 );
 const trendLoading = ref(false);
@@ -547,7 +547,7 @@ onMounted(() => {
           >
           <DatePicker.RangePicker
             v-model:value="filter.beforeRange"
-              @change="handleRangeTouched"
+            @change="handleRangeTouched"
             :show-time="{ format: 'HH:mm' }"
             format="YYYY-MM-DD HH:mm"
             :placeholder="['开始', '结束']"
@@ -559,7 +559,7 @@ onMounted(() => {
           >
           <DatePicker.RangePicker
             v-model:value="filter.afterRange"
-              @change="handleRangeTouched"
+            @change="handleRangeTouched"
             :show-time="{ format: 'HH:mm' }"
             format="YYYY-MM-DD HH:mm"
             :placeholder="['开始', '结束']"
