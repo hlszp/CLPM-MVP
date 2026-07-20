@@ -2001,7 +2001,7 @@ class TestDeduplicateLabels:
 
 
 def _make_diagnose_db(loop: MagicMock, mappings: list, tags: list) -> AsyncMock:
-    """构造 _diagnose_loop 所需的 mock DB（loop/mapping/tags/delete 四次查询）。"""
+    """构造 _diagnose_loop 所需的 mock DB（loop/mapping/tags/delete/ACTIVE标签 五次查询）。"""
     db = AsyncMock()
     db.execute = AsyncMock(
         side_effect=[
@@ -2009,6 +2009,7 @@ def _make_diagnose_db(loop: MagicMock, mappings: list, tags: list) -> AsyncMock:
             _make_scalars_all_mock(mappings),
             _make_scalars_all_mock(tags),
             MagicMock(),  # delete(DiagnosisResult) 结果
+            _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
         ]
     )
     db.add = MagicMock()
