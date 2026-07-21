@@ -112,7 +112,8 @@ async def query_realtime_auto_rate(
         - auto_count: 自动模式回路数
         - manual_count: 手动模式回路数
         - total_count: 有效回路总数
-        - read_at: 统计时间（ISO 字符串）
+        - read_at: 数据最新时间（所读实时缓存 collectTime 的最大值，ISO 字符串；
+          全部回退 DB 值时为 None，表示实时流中断/数据可能过期）
         TDengine 不可用或无数据时返回 None
     """
     if not loop_ids:
@@ -150,10 +151,10 @@ async def query_realtime_auto_rate(
 
     # --- 3. 读取最新 MODE 值：优先 Redis 实时缓存（SignalR 订阅器维护），
     #        缺失的 tag 回退 tag_registry.current_value（AAS 同步写入，可能过期）---
-    now = datetime.now(UTC)
     tag_names = [row.tag_name for row in rows]
 
     tag_mode_map: dict[str, object] = {}
+    latest_collect_time: str | None = None
     try:
         from app.services.data_source.realtime_subscriber import get_subscriber
 
@@ -162,6 +163,10 @@ async def query_realtime_auto_rate(
             tc = item.get("tagCode")
             if tc:
                 tag_mode_map[tc] = item.get("value")
+                # 记录数据最新时间（collectTime 为 ISO 字符串，同格式可直接比较）
+                ct = item.get("collectTime")
+                if ct and (latest_collect_time is None or ct > latest_collect_time):
+                    latest_collect_time = ct
     except Exception:
         logger.warning("[实时自控率] 从 Redis 读取实时 MODE 值失败，回退数据库值", exc_info=True)
 
@@ -215,7 +220,7 @@ async def query_realtime_auto_rate(
         "manual_count": valid_count - auto_count,
         "total_count": valid_count,
         "mode_counts": mode_counts,
-        "read_at": now.isoformat(),
+        "read_at": latest_collect_time,
     }
 
 

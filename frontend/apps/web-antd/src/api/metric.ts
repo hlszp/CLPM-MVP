@@ -109,11 +109,6 @@ export namespace MetricApi {
     warning?: null | string;
   }
 
-  /** 引擎规则列表响应 */
-  export interface RuleListResult {
-    items: RuleItem[];
-  }
-
   /** 更新引擎规则参数（对齐后端 EngineRuleUpdate） */
   export interface RuleUpdateParams {
     ruleName?: string;
@@ -748,9 +743,10 @@ export function updateMetricApi(
 
 /**
  * 获取引擎规则列表 — IDS v3.2 §2.3
+ * 后端返回裸数组 ApiResponse<list[EngineRuleItem]>
  */
 export function getRulesApi() {
-  return requestClient.get<MetricApi.RuleListResult>(`${BASE}/rules`);
+  return requestClient.get<MetricApi.RuleItem[]>(`${BASE}/rules`);
 }
 
 /**
@@ -1140,7 +1136,7 @@ export interface KpiSnapshotQueryParams {
  * 查询回路小时指标快照列表
  *
  * 按回路/装置/时间范围/状态/可信度筛选，分页返回。
- * 默认时间范围为近 7 天，排序按 tsStart DESC。
+ * 默认时间范围为近 30 天，排序按 tsStart DESC。
  */
 export function getLoopSnapshotsApi(params: KpiSnapshotQueryParams) {
   return requestClient.get<KpiSnapshotListResult>(SNAPSHOTS_BASE, { params });

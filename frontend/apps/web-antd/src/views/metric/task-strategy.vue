@@ -96,12 +96,8 @@ const calcCycleOptions = [
 async function loadStrategy() {
   loading.value = true;
   try {
-    const data = await getRulesApi();
-    // 后端 GET /performance/rules 实际返回 RuleItem[] 数组（ApiResponse<list>），
-    // 兼容 { items } 与数组两种形态，避免解析失败导致策略不同步
-    rules.value = Array.isArray(data)
-      ? (data as unknown as MetricApi.RuleItem[])
-      : (data?.items ?? []);
+    // 后端 GET /performance/rules 返回裸数组（ApiResponse<list>）
+    rules.value = await getRulesApi();
     // 同步编辑态
     for (const r of rules.value) {
       ruleEnabled[r.ruleCode] = r.isEnabled;
