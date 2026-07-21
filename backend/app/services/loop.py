@@ -439,16 +439,24 @@ async def list_loops(
             logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
 
     # 构建 mode_map（优先使用 Redis 缓存）
+    # WS-C 6-3：按回路 dcs_model_id 构建 MODE 解析映射（dcs_mode_mapping 回退链）
+    loop_model_map: dict[str, str | None] = {
+        str(loop.id): (str(loop.dcs_model_id) if loop.dcs_model_id else None) for loop in loops
+    }
+    raw_to_standard_maps = await _build_raw_to_standard_maps(db, set(loop_model_map.values()))
     for loop_id, tag in mode_tag_map.items():
+        raw_to_standard = raw_to_standard_maps.get(loop_model_map.get(loop_id)) or (
+            raw_to_standard_maps.get(None) or {}
+        )
         cached = redis_cache.get(tag.tag_name)
         if cached and "value" in cached:
             try:
                 mode_val = float(cached["value"])
-                mode_map[loop_id] = _mode_value_to_label(mode_val)
+                mode_map[loop_id] = _mode_value_to_label(mode_val, raw_to_standard)
             except (ValueError, TypeError):
-                mode_map[loop_id] = _mode_value_to_label(tag.current_value)
+                mode_map[loop_id] = _mode_value_to_label(tag.current_value, raw_to_standard)
         else:
-            mode_map[loop_id] = _mode_value_to_label(tag.current_value)
+            mode_map[loop_id] = _mode_value_to_label(tag.current_value, raw_to_standard)
 
     # v6.1 批量查询 PV/OP Tag 量程与单位（设计文档 §4.1）
     # 数据来源：tag_registry.range_min/range_max/unit，通过 loop_tag_mapping JOIN
@@ -526,12 +534,49 @@ async def list_loops(
     }
 
 
-def _mode_value_to_label(value: float | None) -> str | None:
-    """MODE tag 值 → 控制模式标签。"""
+# 标准 MODE 值 → 前端 ControlMode 标签
+# 0-3 与原硬编码映射一致（与 monitor.py 默认映射对齐）；4=APC（先控）归并为 Auto（非手动）
+_STANDARD_MODE_TO_FRONTEND: dict[int, str] = {
+    0: "Manual",
+    1: "Auto",
+    2: "Cascade",
+    3: "Cascade",
+    4: "Auto",
+}
+
+
+async def _build_raw_to_standard_maps(
+    db: AsyncSession,
+    dcs_model_ids: set[str | None],
+) -> dict[str | None, dict[int, int]]:
+    """按 dcs_model_id 批量构建 raw MODE → standard MODE 映射（回退链）。
+
+    每个型号：dcs_mode_mapping 型号映射优先，本系统默认映射（dcs_model_id IS NULL）补充。
+    None 键对应本系统默认映射，供无 dcs_model 回路使用。
+    """
+    from app.services.mode_resolver import build_raw_to_standard_map
+
+    maps: dict[str | None, dict[int, int]] = {}
+    for model_id in dcs_model_ids:
+        maps[model_id] = await build_raw_to_standard_map(db, model_id)
+    return maps
+
+
+def _mode_value_to_label(
+    value: float | None,
+    raw_to_standard: dict[int, int] | None = None,
+) -> str | None:
+    """MODE tag 值 → 控制模式标签（配置驱动回退链）。
+
+    回退链：回路 dcs_model 映射（``raw_to_standard``，含本系统默认映射）→
+    raw 值本身（1:1）→ 标准 MODE 前端标签表。
+    无 dcs_model 回路传入本系统默认映射（种子数据为 1:1），行为与原硬编码一致。
+    """
     if value is None:
         return None
-    mapping = {0: "Manual", 1: "Auto", 2: "Cascade", 3: "Cascade"}
-    return mapping.get(int(value), "Unknown")
+    raw = int(value)
+    standard = raw_to_standard.get(raw, raw) if raw_to_standard else raw
+    return _STANDARD_MODE_TO_FRONTEND.get(standard, "Unknown")
 
 
 # 反向映射：控制模式标签 → MODE 值集合
@@ -834,6 +879,12 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
         logger.warning("从 Redis 读取实时值失败，回退到数据库值: %s", exc)
 
     # 构建 runtimeParams（优先从 Redis 缓存读取）
+    # WS-C 6-3：按回路 dcs_model_id 构建 MODE 解析映射（dcs_mode_mapping 回退链）
+    loop_dcs_model_id = str(loop.dcs_model_id) if loop.dcs_model_id else None
+    raw_to_standard_maps = await _build_raw_to_standard_maps(db, {loop_dcs_model_id})
+    raw_to_standard = raw_to_standard_maps.get(loop_dcs_model_id) or (
+        raw_to_standard_maps.get(None) or {}
+    )
     runtime_params: dict = {
         "controlMode": None,
         "pidP": None,
@@ -850,7 +901,9 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
                 try:
                     if role == "MODE":
                         mode_val = float(cached.get("value"))
-                        runtime_params["controlMode"] = _mode_value_to_label(mode_val)
+                        runtime_params["controlMode"] = _mode_value_to_label(
+                            mode_val, raw_to_standard
+                        )
                     elif role == "PID_P":
                         runtime_params["pidP"] = float(cached.get("value"))
                     elif role == "PID_I":
@@ -859,7 +912,9 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
                         runtime_params["pidD"] = float(cached.get("value"))
                 except (TypeError, ValueError):
                     if role == "MODE":
-                        runtime_params["controlMode"] = _mode_value_to_label(tag.current_value)
+                        runtime_params["controlMode"] = _mode_value_to_label(
+                            tag.current_value, raw_to_standard
+                        )
                     elif role == "PID_P":
                         runtime_params["pidP"] = tag.current_value
                     elif role == "PID_I":
@@ -872,7 +927,9 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
                         runtime_params["readAt"] = ts
             else:
                 if role == "MODE":
-                    runtime_params["controlMode"] = _mode_value_to_label(tag.current_value)
+                    runtime_params["controlMode"] = _mode_value_to_label(
+                        tag.current_value, raw_to_standard
+                    )
                 elif role == "PID_P":
                     runtime_params["pidP"] = tag.current_value
                 elif role == "PID_I":
@@ -980,6 +1037,7 @@ async def update_loop(
     op_output_upper_limit: float | None = None,
     dcs_model_id: str | None = None,
     ideal_settling_time: float | None = None,
+    unit_id: str | None = None,
     _op_lower_set: bool = False,
     _op_upper_set: bool = False,
     _dcs_model_id_set: bool = False,
@@ -988,7 +1046,7 @@ async def update_loop(
     """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间）。
 
     Raises:
-        BizError: ERR_LOOP_NOT_FOUND / ERR_OP_LIMIT_OUT_OF_RANGE
+        BizError: ERR_LOOP_NOT_FOUND / ERR_NODE_NOT_FOUND / ERR_OP_LIMIT_OUT_OF_RANGE
     """
     result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = result.scalar_one_or_none()
@@ -998,6 +1056,16 @@ async def update_loop(
             message="回路不存在",
             status_code=404,
         )
+
+    # WS-C 6-2：unitId 更新时校验目标工艺单元节点存在（与 create_loop 一致处理）
+    if unit_id is not None:
+        unit_result = await db.execute(select(PlantNode).where(PlantNode.id == unit_id))
+        if unit_result.scalar_one_or_none() is None:
+            raise BizError(
+                code="ERR_NODE_NOT_FOUND",
+                message="所属单元不存在",
+                status_code=404,
+            )
 
     # v6.1 校验 OP 输出限位范围
     # 查询 OP Tag 量程作为校验基准
@@ -1018,6 +1086,7 @@ async def update_loop(
 
     before = {
         "description": loop.description,
+        "unitId": str(loop.unit_id) if loop.unit_id else None,
         "scoreWeights": loop.score_weights,
         "isActive": loop.is_active,
         "remark": loop.remark,
@@ -1042,6 +1111,8 @@ async def update_loop(
 
     if description is not None:
         loop.description = description
+    if unit_id is not None:
+        loop.unit_id = unit_id
     if score_weights is not None:
         loop.score_weights = score_weights
     if is_active is not None:
@@ -1080,6 +1151,7 @@ async def update_loop(
 
     after = {
         "description": loop.description,
+        "unitId": str(loop.unit_id) if loop.unit_id else None,
         "scoreWeights": loop.score_weights,
         "isActive": loop.is_active,
         "remark": loop.remark,
@@ -1120,6 +1192,7 @@ async def update_loop(
     return {
         "loopId": str(loop.id),
         "description": loop.description,
+        "unitId": str(loop.unit_id) if loop.unit_id else None,
         "scoreWeights": loop.score_weights,
         "isActive": bool(loop.is_active),
         "remark": loop.remark,
@@ -1151,11 +1224,13 @@ async def delete_loop(
 ) -> dict:
     """软删除回路（P1 #9: 统一为软删，与批删行为对齐）。
 
-    校验：若回路有关联 Tag → ERR_LOOP_HAS_TAGS。
-    实际：置 is_active=False, status=INACTIVE（软删除，保留记录可追溯）。
+    级联解绑（WS-C 6-4）：软删回路前先删除 LoopTagMapping 关联记录
+    （通常 7 条：PV/SP/OP/MODE/PID_P/PID_I/PID_D），使有关联 Tag 的回路可删除。
+    解除关联后不再被任何回路引用的 Tag，其 is_linked 一并清除（is_linked 由映射派生）。
+    回路本体保持软删语义：置 is_active=False, status=INACTIVE（保留记录可追溯）。
 
     Raises:
-        BizError: ERR_LOOP_NOT_FOUND / ERR_LOOP_HAS_TAGS
+        BizError: ERR_LOOP_NOT_FOUND
     """
     result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = result.scalar_one_or_none()
@@ -1166,22 +1241,32 @@ async def delete_loop(
             status_code=404,
         )
 
-    # 校验是否有关联 Tag
-    tag_count_result = await db.execute(
-        select(func.count()).select_from(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
-    )
-    tag_count = tag_count_result.scalar() or 0
-    if tag_count > 0:
-        raise BizError(
-            code="ERR_LOOP_HAS_TAGS",
-            message=f"回路存在 {tag_count} 个关联 Tag，无法删除",
-            status_code=400,
-        )
-
     before_json = json.dumps(
         {"tagName": loop.tag_name, "is_active": loop.is_active, "status": loop.status},
         ensure_ascii=False,
     )
+
+    # 级联解绑：删除本回路的 LoopTagMapping 关联记录
+    mappings_result = await db.execute(
+        select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
+    )
+    mappings = mappings_result.scalars().all()
+    mapped_tag_ids = [str(m.tag_id) for m in mappings]
+    if mappings:
+        await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
+        # is_linked 由映射派生：仅当 Tag 不再被任何回路引用时才清除
+        for tag_id in mapped_tag_ids:
+            ref_count_result = await db.execute(
+                select(func.count())
+                .select_from(LoopTagMapping)
+                .where(LoopTagMapping.tag_id == tag_id)
+            )
+            if (ref_count_result.scalar() or 0) > 0:
+                continue
+            t_result = await db.execute(select(TagRegistry).where(TagRegistry.id == tag_id))
+            tag = t_result.scalar_one_or_none()
+            if tag:
+                tag.is_linked = False
 
     # 软删除（P1 #9: 与 batch_delete_loops 行为对齐）
     loop.is_active = False

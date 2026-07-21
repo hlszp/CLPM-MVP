@@ -328,7 +328,7 @@ async def update_loop_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。"""
+    """更新回路（描述/所属单元/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。"""
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
@@ -343,6 +343,7 @@ async def update_loop_endpoint(
         loop_id=loop_id,
         operator=user.username,
         description=body.description,
+        unit_id=body.unitId,
         score_weights=score_weights,
         is_active=body.isActive,
         remark=body.remark,
@@ -372,7 +373,7 @@ async def delete_loop_endpoint(
 ) -> dict:
     """删除回路（仅 ADMIN）。
 
-    校验：回路有关联 Tag → ERR_LOOP_HAS_TAGS。
+    级联解绑：软删回路前先删除 LoopTagMapping 关联记录，有关联 Tag 的回路可删除。
     """
     data = await delete_loop(db=db, loop_id=loop_id, operator=user.username)
     return success(data=data, message="删除成功")
