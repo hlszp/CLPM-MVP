@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -42,6 +42,10 @@ from app.services.data_source.remote_api_provider import (
 )
 
 logger = logging.getLogger(__name__)
+
+# 目标时区（Asia/Shanghai）—— TDengine 服务器本地时区，所有写入时间戳统一转至此，
+# 消除 naive datetime 在 TDengine 侧的 8h 偏移风险
+_TARGET_TZ = timezone(timedelta(hours=8))
 
 # 共享熔断/限流守卫：手工导入（worker）与断点续传补数（API 进程）复用同一
 # RemoteApiProvider 实例，进程内对远端历史 API 的并发（REMOTE_API_MAX_CONCURRENCY）
@@ -129,15 +133,19 @@ def _task_key(task_id: str) -> str:
 
 
 async def _save_task(task_data: dict[str, str]) -> None:
-    """保存导入任务到 Redis Hash 并更新索引."""
+    """保存导入任务到 Redis Hash 并更新索引（含 TTL 修剪）."""
     task_id = task_data["task_id"]
-    await redis_client.hset(_task_key(task_id), mapping=task_data)
+    ttl = int(settings.IMPORT_TASK_TTL_DAYS) * 86400
+    pipe = redis_client.pipeline()
+    pipe.hset(_task_key(task_id), mapping=task_data)
+    pipe.expire(_task_key(task_id), ttl)
     created_at = task_data.get("created_at", "")
     try:
         score = datetime.fromisoformat(created_at).timestamp()
     except (ValueError, TypeError):
         score = datetime.now(UTC).timestamp()
-    await redis_client.zadd(_IMPORT_TASK_INDEX, {task_id: score})
+    pipe.zadd(_IMPORT_TASK_INDEX, {task_id: score})
+    await pipe.execute()
 
 
 async def _get_task(task_id: str) -> dict[str, str] | None:
@@ -147,10 +155,14 @@ async def _get_task(task_id: str) -> dict[str, str] | None:
 
 
 async def _update_task(task_id: str, **fields: Any) -> None:
-    """更新导入任务字段."""
+    """更新导入任务字段（刷新 TTL，防止活跃任务过期）."""
     mapping = {k: _to_str(v) for k, v in fields.items() if v is not None}
     if mapping:
-        await redis_client.hset(_task_key(task_id), mapping=mapping)
+        ttl = int(settings.IMPORT_TASK_TTL_DAYS) * 86400
+        pipe = redis_client.pipeline()
+        pipe.hset(_task_key(task_id), mapping=mapping)
+        pipe.expire(_task_key(task_id), ttl)
+        await pipe.execute()
 
 
 def _to_str(value: Any) -> str:
@@ -302,142 +314,165 @@ async def import_history_data(
 
     total = len(loop_ids)
     errors: list[str] = []
+    terminal_set = False  # 正常流程是否已置终态（finally 兜底依据）
 
-    # 批量预加载回路元数据（1 次 DB 会话，3 次 SQL 替代 3N 次）
-    db_session = AsyncSessionLocal()
     try:
-        loop_data_map = await _batch_get_loop_data(db_session, loop_ids)
-    finally:
-        await db_session.close()
-
-    logger.info(
-        "批量预加载完成: %d/%d 个回路有 tag 映射",
-        sum(1 for v in loop_data_map.values() if v["role_tag_map"]),
-        len(loop_ids),
-    )
-
-    # 计算动态分块大小
-    chunk_hours = _compute_chunk_hours(start_dt, end_dt)
-
-    import asyncio as _asyncio_sem
-
-    sem = _asyncio_sem.Semaphore(2)  # 远端 API 易在高并发下 504，限制最多 2 个回路并发
-    progress_lock = _asyncio_sem.Lock()
-    # 共享计数器（并发安全）
-    shared_succeeded = 0
-    shared_failed = 0
-
-    async def _record_progress() -> None:
-        if not task_id:
-            return
-        async with progress_lock:
-            cur_s, cur_f = shared_succeeded, shared_failed
-        await _update_task(
-            task_id,
-            progress=round((cur_s + cur_f) / total, 4) if total > 0 else 1.0,
-            imported_count=cur_s,
-            error_count=cur_f,
-        )
-
-    async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
-        """带信号量控制的单回路导入，返回 (index, count, error)."""
-        nonlocal shared_succeeded, shared_failed
-        async with sem:
-            if task_id and await _is_task_cancelled(task_id):
-                return (i, 0, "")
-
-            loop_meta = loop_data_map.get(lid, {"role_tag_map": {}, "unit_id": "", "subtable": ""})
-            if not loop_meta["role_tag_map"]:
-                logger.warning("回路 %s 无有效 tag 映射，跳过", lid)
-                async with progress_lock:
-                    shared_failed += 1
-                error = f"loop {lid}: 无有效 tag 映射"
-                await _record_progress()
-                return (i, 0, error)
-
-            try:
-                count = await _import_single_loop(
-                    loop_id=lid,
-                    start_dt=start_dt,
-                    end_dt=end_dt,
-                    interval=interval,
-                    conflict_strategy=conflict_strategy,
-                    subtable=loop_meta["subtable"],
-                    unit_id=loop_meta["unit_id"],
-                    role_tag_map=loop_meta["role_tag_map"],
-                    chunk_hours=chunk_hours,
-                )
-                if count <= 0:
-                    raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
-                logger.info(
-                    "回路导入完成: loop_id=%s, points=%d (%d/%d)",
-                    lid,
-                    count,
-                    i + 1,
-                    total,
-                )
-                async with progress_lock:
-                    shared_succeeded += 1
-            except Exception as exc:
-                async with progress_lock:
-                    shared_failed += 1
-                error = f"loop {lid}: {exc}"
-                logger.warning("回路导入失败: %s", error)
-                await _record_progress()
-                return (i, 0, error)
-
-            # 更新进度
-            await _record_progress()
-            return (i, count, "")
-
-    # 并发处理所有回路
-    tasks = [_import_with_sem(i, lid) for i, lid in enumerate(loop_ids)]
-    task_results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
-    for task_result in task_results:
-        if isinstance(task_result, BaseException):
-            errors.append(f"导入协程异常: {task_result}")
-        elif task_result[2]:
-            errors.append(task_result[2])
-
-    succeeded = shared_succeeded
-    failed = shared_failed
-
-    result = {
-        "total": total,
-        "succeeded": succeeded,
-        "failed": failed,
-        "errors": errors[:10],  # 只保留前 10 条错误
-    }
-
-    # 更新任务终态
-    if task_id:
-        if await _is_task_cancelled(task_id):
-            final_status = ImportStatus.CANCELLED.value
-        elif succeeded > 0:
-            final_status = ImportStatus.SUCCESS.value
-        else:
-            final_status = ImportStatus.FAILED.value
-
-        await _update_task(
-            task_id,
-            status=final_status,
-            progress=(
-                1.0
-                if final_status in (ImportStatus.SUCCESS.value, ImportStatus.FAILED.value)
-                else None
-            ),
-            finished_at=_now_iso(),
-            error_message="; ".join(errors[:3]) if errors else "",
-        )
-
-    # 触发 KPI 回算
-    if trigger_backfill and succeeded > 0:
+        # 批量预加载回路元数据（1 次 DB 会话，3 次 SQL 替代 3N 次）
+        db_session = AsyncSessionLocal()
         try:
-            await _trigger_kpi_backfill(loop_ids, ts_start, ts_end)
-        except Exception as exc:
-            logger.warning("触发 KPI 回算失败: %s", exc)
+            loop_data_map = await _batch_get_loop_data(db_session, loop_ids)
+        finally:
+            await db_session.close()
 
-    return result
+        logger.info(
+            "批量预加载完成: %d/%d 个回路有 tag 映射",
+            sum(1 for v in loop_data_map.values() if v["role_tag_map"]),
+            len(loop_ids),
+        )
+
+        # 计算动态分块大小
+        chunk_hours = _compute_chunk_hours(start_dt, end_dt)
+
+        import asyncio as _asyncio_sem
+
+        sem = _asyncio_sem.Semaphore(2)  # 远端 API 易在高并发下 504，限制最多 2 个回路并发
+        progress_lock = _asyncio_sem.Lock()
+        # 共享计数器（并发安全）
+        shared_succeeded = 0
+        shared_failed = 0
+
+        async def _record_progress() -> None:
+            if not task_id:
+                return
+            async with progress_lock:
+                cur_s, cur_f = shared_succeeded, shared_failed
+            await _update_task(
+                task_id,
+                progress=round((cur_s + cur_f) / total, 4) if total > 0 else 1.0,
+                imported_count=cur_s,
+                error_count=cur_f,
+            )
+
+        async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
+            """带信号量控制的单回路导入，返回 (index, count, error)."""
+            nonlocal shared_succeeded, shared_failed
+            async with sem:
+                if task_id and await _is_task_cancelled(task_id):
+                    return (i, 0, "")
+
+                loop_meta = loop_data_map.get(
+                    lid, {"role_tag_map": {}, "unit_id": "", "subtable": ""}
+                )
+                if not loop_meta["role_tag_map"]:
+                    logger.warning("回路 %s 无有效 tag 映射，跳过", lid)
+                    async with progress_lock:
+                        shared_failed += 1
+                    error = f"loop {lid}: 无有效 tag 映射"
+                    await _record_progress()
+                    return (i, 0, error)
+
+                try:
+                    count = await _import_single_loop(
+                        loop_id=lid,
+                        start_dt=start_dt,
+                        end_dt=end_dt,
+                        interval=interval,
+                        conflict_strategy=conflict_strategy,
+                        subtable=loop_meta["subtable"],
+                        unit_id=loop_meta["unit_id"],
+                        role_tag_map=loop_meta["role_tag_map"],
+                        chunk_hours=chunk_hours,
+                        task_id=task_id,
+                    )
+                    if count <= 0:
+                        raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
+                    logger.info(
+                        "回路导入完成: loop_id=%s, points=%d (%d/%d)",
+                        lid,
+                        count,
+                        i + 1,
+                        total,
+                    )
+                    async with progress_lock:
+                        shared_succeeded += 1
+                except Exception as exc:
+                    async with progress_lock:
+                        shared_failed += 1
+                    error = f"loop {lid}: {exc}"
+                    logger.warning("回路导入失败: %s", error)
+                    await _record_progress()
+                    return (i, 0, error)
+
+                # 更新进度
+                await _record_progress()
+                return (i, count, "")
+
+        # 并发处理所有回路
+        tasks = [_import_with_sem(i, lid) for i, lid in enumerate(loop_ids)]
+        task_results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
+        for task_result in task_results:
+            if isinstance(task_result, BaseException):
+                errors.append(f"导入协程异常: {task_result}")
+            elif task_result[2]:
+                errors.append(task_result[2])
+
+        succeeded = shared_succeeded
+        failed = shared_failed
+
+        result = {
+            "total": total,
+            "succeeded": succeeded,
+            "failed": failed,
+            "errors": errors[:10],  # 只保留前 10 条错误
+        }
+
+        # 更新任务终态
+        if task_id:
+            if await _is_task_cancelled(task_id):
+                final_status = ImportStatus.CANCELLED.value
+            elif succeeded > 0:
+                final_status = ImportStatus.SUCCESS.value
+            else:
+                final_status = ImportStatus.FAILED.value
+
+            await _update_task(
+                task_id,
+                status=final_status,
+                progress=(
+                    1.0
+                    if final_status in (ImportStatus.SUCCESS.value, ImportStatus.FAILED.value)
+                    else None
+                ),
+                finished_at=_now_iso(),
+                error_message="; ".join(errors[:3]) if errors else "",
+            )
+            terminal_set = True
+
+        # 触发 KPI 回算
+        if trigger_backfill and succeeded > 0:
+            try:
+                await _trigger_kpi_backfill(loop_ids, ts_start, ts_end)
+            except Exception as exc:
+                logger.warning("触发 KPI 回算失败: %s", exc)
+
+        return result
+    except Exception:
+        # 异常中断时兜底置终态（不卡 RUNNING），然后重新抛出供上层处理
+        if task_id and not terminal_set:
+            try:
+                if await _is_task_cancelled(task_id):
+                    fallback_status = ImportStatus.CANCELLED.value
+                else:
+                    fallback_status = ImportStatus.FAILED.value
+                await _update_task(
+                    task_id,
+                    status=fallback_status,
+                    finished_at=_now_iso(),
+                    error_message="导入任务异常中断",
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("异常中断兜底终态更新失败: task_id=%s", task_id)
+        raise
 
 
 async def _import_single_loop(
@@ -450,6 +485,7 @@ async def _import_single_loop(
     unit_id: str = "",
     role_tag_map: dict[str, str] | None = None,
     chunk_hours: int = 1,
+    task_id: str | None = None,
 ) -> int:
     """导入单个回路的历史数据.
 
@@ -458,6 +494,7 @@ async def _import_single_loop(
         unit_id: 回路所属工艺单元 ID
         role_tag_map: {role → tag_name} 预加载的 tag 映射
         chunk_hours: 动态分块小时数
+        task_id: Redis 任务 ID（用于 chunk 级取消检查）
 
     Returns:
         导入的数据点数
@@ -470,10 +507,15 @@ async def _import_single_loop(
     if conflict_strategy == ConflictStrategy.OVERWRITE.value:
         await _delete_range(subtable, start_dt, end_dt)
 
-    # 按动态分块拉取 + 写入
+    # 按动态分块拉取 + 写入（每 chunk 前检查任务是否被取消）
     total_count = 0
     chunk_start = start_dt
     while chunk_start < end_dt:
+        # chunk 级取消检查：任务被取消时立即停止拉取，已写入的数据保留
+        if task_id and await _is_task_cancelled(task_id):
+            logger.info("回路 %s 导入被取消（已写入 %d 点），跳过剩余分块", loop_id, total_count)
+            return total_count
+
         chunk_end = min(chunk_start + timedelta(hours=chunk_hours), end_dt)
 
         # 从远端 API 拉取数据
@@ -847,22 +889,34 @@ def _map_quality(value: Any) -> int:
 
 
 def _parse_ts_str(ts_str: str) -> str | None:
-    """解析时间戳字符串为 TDengine 可接受的格式."""
+    """解析时间戳字符串为 TDengine 可接受的格式（显式 astimezone 到目标时区）.
+
+    - 带时区（含 Z 后缀）：astimezone 到 _TARGET_TZ（Asia/Shanghai）
+    - naive（无时区）：视为已在 _TARGET_TZ
+    - 返回 naive 字符串（TDengine 服务器本地时区解释）
+    """
     try:
         dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
-        if dt.tzinfo:
-            dt = dt.replace(tzinfo=None)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_TARGET_TZ)
+        else:
+            dt = dt.astimezone(_TARGET_TZ)
         return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     except (ValueError, TypeError):
         return None
 
 
 def _parse_dt(ts_str: str) -> datetime:
-    """解析 ISO 8601 时间字符串为 naive datetime."""
+    """解析 ISO 8601 时间字符串为 naive datetime（显式 astimezone 到目标时区）.
+
+    返回 naive datetime（已转换到 _TARGET_TZ，供 TDengine 本地时区解释）。
+    """
     dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-    if dt.tzinfo:
-        dt = dt.replace(tzinfo=None)
-    return dt
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_TARGET_TZ)
+    else:
+        dt = dt.astimezone(_TARGET_TZ)
+    return dt.replace(tzinfo=None)
 
 
 async def _trigger_kpi_backfill(loop_ids: list[str], ts_start: str, ts_end: str) -> None:
@@ -949,6 +1003,66 @@ async def delete_import_task(task_id: str) -> bool:
     return True
 
 
+async def sweep_stale_running_tasks() -> dict[str, Any]:
+    """清扫超时 RUNNING 导入任务（worker 被杀导致任务永久卡"执行中"）.
+
+    遍历导入任务索引，找出 RUNNING 且 started_at 距今超过
+    ``IMPORT_TASK_RUNNING_TIMEOUT_SECONDS`` 的任务，置为 FAILED。
+
+    Returns:
+        {"swept": N, "details": [...]}
+    """
+    timeout = int(settings.IMPORT_TASK_RUNNING_TIMEOUT_SECONDS)
+    now_ts = datetime.now(UTC).timestamp()
+    task_ids = await redis_client.zrange(_IMPORT_TASK_INDEX, 0, -1)
+    swept: list[str] = []
+    for tid in task_ids:
+        data = await _get_task(tid)
+        if not data:
+            continue
+        if data.get("status") != ImportStatus.RUNNING.value:
+            continue
+        started_at = data.get("started_at", "")
+        if not started_at:
+            continue
+        try:
+            started_ts = datetime.fromisoformat(started_at).timestamp()
+        except (ValueError, TypeError):
+            continue
+        if now_ts - started_ts < timeout:
+            continue
+        await _update_task(
+            tid,
+            status=ImportStatus.FAILED.value,
+            finished_at=_now_iso(),
+            error_message=f"RUNNING 超时（>{timeout}s），疑为 worker 异常终止",
+        )
+        swept.append(tid)
+        logger.warning("导入任务 RUNNING 超时已清扫: task_id=%s", tid)
+    return {"swept": len(swept), "details": swept}
+
+
+async def prune_import_task_index() -> int:
+    """修剪导入任务索引（移除已过期的任务 ID）.
+
+    Redis Hash 自带 TTL 过期自动删除，但 Sorted Set 索引不会自动清理。
+    本函数扫描索引中已不存在 Hash 的 task_id 并从索引移除。
+
+    Returns:
+        移除的条目数
+    """
+    task_ids = await redis_client.zrange(_IMPORT_TASK_INDEX, 0, -1)
+    removed = 0
+    for tid in task_ids:
+        data = await _get_task(tid)
+        if not data:
+            await redis_client.zrem(_IMPORT_TASK_INDEX, tid)
+            removed += 1
+    if removed:
+        logger.info("导入任务索引修剪: 移除 %d 个过期条目", removed)
+    return removed
+
+
 __all__ = [
     "cancel_import_task",
     "create_import_task",
@@ -956,4 +1070,6 @@ __all__ = [
     "get_import_task",
     "import_history_data",
     "list_import_tasks",
+    "prune_import_task_index",
+    "sweep_stale_running_tasks",
 ]
