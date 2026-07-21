@@ -88,6 +88,7 @@ import ScatterChart from '#/components/diagnosis-visualization/scatter-chart.vue
 import SlowResponseCard from '#/components/diagnosis-visualization/slow-response-card.vue';
 import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
 import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
+import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -1493,17 +1494,9 @@ onMounted(async () => {
               title="查看可信度详情"
               @click.stop="openConfidence(record as LoopPerformanceRow)"
             >
-              <Badge
-                :color="
-                  CONFIDENCE_COLOR_MAP[
-                    (record as LoopPerformanceRow).confidenceLevel!
-                  ]
-                "
-                :text="
-                  CONFIDENCE_LABEL_MAP[
-                    (record as LoopPerformanceRow).confidenceLevel!
-                  ]
-                "
+              <ConfidenceBadge
+                :level="(record as LoopPerformanceRow).confidenceLevel!"
+                :valid-rate="(record as LoopPerformanceRow).validRate"
               />
             </a>
             <span v-else class="text-gray-400">—</span>
@@ -1868,7 +1861,9 @@ onMounted(async () => {
             </DescriptionsItem>
             <DescriptionsItem label="数据源时间区间">
               <span class="font-mono text-xs">
-                {{ formatTsRange(confDetail.dataTsStart, confDetail.dataTsEnd) }}
+                {{
+                  formatTsRange(confDetail.dataTsStart, confDetail.dataTsEnd)
+                }}
               </span>
             </DescriptionsItem>
             <DescriptionsItem label="评估状态">
