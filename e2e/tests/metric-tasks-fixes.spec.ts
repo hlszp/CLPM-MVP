@@ -9,7 +9,7 @@
  * - F5 评估历史：E 级可信度评分掩码为「—」
  * - F6 手动任务：预览失效（表单变更后 确认重算 重新 disabled）
  * - F7 手动任务：BACKFILL 评估回路列显示回路数（27，而非工作项 594）
- * - F8 手动任务：行内 评估 → 删除（ClpmDangerConfirmModal typed confirmation）
+ * - F8 手动任务：行内 评估 → 删除（普通确认弹框，无需输入确认码）
  * - F9 自动任务：行点击详情抽屉 + 时间筛选（endOfDay）
  * - F10 手动任务：新建 Drawer 禁未来日期
  *
@@ -152,9 +152,14 @@ test('F3 评估历史综合评分列排序生效', async ({ page }) => {
   await switchTab(page, '评估历史');
 
   // 先限定到今天窗口，数据量适中且含 SUCCESS 快照
+  // （RangePicker 偶发未生效：填充后校验 total，未生效则重试一次）
   const picker = page.locator('.ant-picker-range:visible').first();
-  await fillDateRange(picker, '2026-07-19', '2026-07-19');
-  await page.waitForTimeout(2000);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await fillDateRange(picker, '2026-07-19', '2026-07-19');
+    await page.waitForTimeout(2500);
+    if ((await readTotal(page)) > 20) break;
+  }
+  expect(await readTotal(page)).toBeGreaterThan(20);
 
   const scoreHeader = page.locator('th', { hasText: '综合评分' }).first();
 
@@ -172,10 +177,12 @@ test('F3 评估历史综合评分列排序生效', async ({ page }) => {
     arr.every((v, i) => i === 0 || arr[i - 1]! >= v);
 
   // 第一次点击（AntD 默认 ascend）→ 服务端排序生效
+  // 注意：E 级 SUCCESS 行按设计掩码为「—」（F5），升序时低分 E 行排在前面，
+  // 可见数字可能只有 2 个；掩码行的真实分数也参与排序，故数字子序列仍单调
   await scoreHeader.click();
   await page.waitForTimeout(2000);
   const first = await readScores();
-  expect(first.length).toBeGreaterThan(3);
+  expect(first.length).toBeGreaterThanOrEqual(2);
   expect(isAsc(first) || isDesc(first)).toBeTruthy();
   const firstDir = isAsc(first) ? 'asc' : 'desc';
 
@@ -296,7 +303,7 @@ test('F6/F7/F10 手动任务：预览失效 + 评估回路列 + 禁未来日期'
   await page.waitForTimeout(500);
 });
 
-test('F8 手动任务：行内评估 → 删除（typed confirmation）', async ({
+test('F8 手动任务：行内评估 → 删除（普通确认弹框）', async ({
   page,
   request,
 }) => {
@@ -334,17 +341,13 @@ test('F8 手动任务：行内评估 → 删除（typed confirmation）', async 
     // 等待任务完成（轮询刷新，1 回路 1 窗口秒级）
     await expect(row).toContainText('成功', { timeout: 60_000 });
 
-    // 行内 删除 → ClpmDangerConfirmModal → typed confirmation
+    // 行内 删除 → 普通确认弹框（无需输入确认码）
     await row.getByRole('button', { name: '删除' }).click();
-    const modal = page.locator('.clpm-danger-confirm:visible');
+    const modal = page.locator('.ant-modal:visible');
     await expect(modal).toBeVisible({ timeout: 5000 });
+    await expect(modal).toContainText('删除任务记录');
     await expect(modal).toContainText(shortCode);
-    // 未输入确认码时确认按钮 disabled
-    const okBtn = modal.getByRole('button', { name: '确认删除' });
-    await expect(okBtn).toBeDisabled();
-    await modal.locator('input[placeholder*="请输入"]').fill(shortCode);
-    await expect(okBtn).toBeEnabled();
-    await okBtn.click();
+    await modal.getByRole('button', { name: /确\s*认/ }).click();
     await expect(page.locator('.ant-message')).toContainText('任务已删除');
     await expect(
       page.locator('tbody tr', { hasText: 'e2e-row-actions' }),
