@@ -115,6 +115,20 @@ class TestLoopCreate:
         assert body["data"]["tagName"] == "NEW-LOOP-001"
         assert body["data"]["status"] == "PARTIAL"
 
+    def test_create_loop_default_importance_level(self, client, mock_db, fake_redis) -> None:
+        """未传 importanceLevel/includeInEvaluation 时缺省兜底（2/True），不触发 NOT NULL 冲突。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/loops",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"tagName": "NEW-LOOP-002", "isActive": True},
+            )
+        assert resp.status_code == 201
+        data = resp.json()["data"]
+        assert data["importanceLevel"] == 2
+        assert data["includeInEvaluation"] is True
+
     def test_create_loop_duplicate(self, client, mock_db, fake_redis) -> None:
         """tag_name 重复返回 ERR_LOOP_DUPLICATE。"""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(LOOP_001))

@@ -1,6 +1,4 @@
 <script lang="ts" setup>
-import type { AasApi } from '#/api/aas';
-
 /**
  * 质量码标签组件
  *
@@ -14,10 +12,13 @@ import { computed } from 'vue';
 
 import { Tag } from 'ant-design-vue';
 
+/** 质量码（原 AasApi.Quality，AAS 前端 API 层已随 D1 决策下线） */
+type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
+
 defineOptions({ name: 'QualityTag' });
 
 const props = defineProps<{
-  quality?: AasApi.Quality;
+  quality?: Quality;
 }>();
 
 const qualityMap: Record<

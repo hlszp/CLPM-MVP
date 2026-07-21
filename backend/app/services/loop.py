@@ -682,6 +682,9 @@ async def create_loop(
     # v5.3 对齐 FDS §5.2.3 / DDS v4.1：include_in_evaluation 默认 True（参与评估）
     if include_in_evaluation is None:
         include_in_evaluation = True
+    # importance_level NOT NULL，缺省兜底为 2（对齐模型 default 与国标附表2）
+    if importance_level is None:
+        importance_level = 2
 
     loop = LoopLedger(
         id=str(uuid4()),
@@ -1715,8 +1718,11 @@ async def _import_one_row(
             status="PARTIAL",
             loop_type=loop_type,
             control_type=control_type,
-            importance_level=importance_level,
-            include_in_evaluation=include_in_evaluation,
+            # NOT NULL 列缺省兜底：等级默认 2、参评默认 True（对齐模型 default）
+            importance_level=importance_level if importance_level is not None else 2,
+            include_in_evaluation=(
+                include_in_evaluation if include_in_evaluation is not None else True
+            ),
             op_output_lower_limit=op_output_lower_limit,
             op_output_upper_limit=op_output_upper_limit,
             dcs_model_id=dcs_model_id,
