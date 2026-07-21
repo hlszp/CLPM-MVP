@@ -25,7 +25,9 @@ const BAD_CODES = new Set([0]);
  * - 字符串："GOOD"/"BAD"/"UNCERTAIN" 原样返回（向后兼容 MOCK 数据）
  * - 非法输入 → UNCERTAIN
  */
-export function mapQualityToLabel(quality: number | string | null | undefined): QualityLabel {
+export function mapQualityToLabel(
+  quality: null | number | string | undefined,
+): QualityLabel {
   if (quality === null || quality === undefined) return 'GOOD';
   if (typeof quality === 'string') {
     const upper = quality.toUpperCase();

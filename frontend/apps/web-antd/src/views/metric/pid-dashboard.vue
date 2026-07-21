@@ -16,6 +16,7 @@ import dayjs from 'dayjs';
 
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'PidDashboard' });
 
@@ -369,10 +370,12 @@ function renderTrendChart() {
   const trend = boardTrend.value;
   if (!trend || !trend.timestamps?.length) return;
 
-  const timestamps = trend.timestamps.map((ts) => {
-    const d = new Date(new Date(ts).getTime() + 8 * 3600 * 1000);
-    return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:00`;
-  });
+  // 性能 #11：用"补 Z 转本地"约定替代 +8h hack。
+  // 后端 timestamps 为无时区后缀的 ISO8601（如 "2026-07-22T10:00:00"），
+  // 补 "Z" 标记为 UTC 后由 dayjs 按本地时区渲染，跨时区正确。
+  const timestamps = trend.timestamps.map((ts) =>
+    dayjs(normalizeUtcTimestamp(ts)).format('M-D H:00'),
+  );
 
   const barDataTotal =
     (trend.totalLoops ?? 0) > 0 ? timestamps.map(() => trend.totalLoops) : [];

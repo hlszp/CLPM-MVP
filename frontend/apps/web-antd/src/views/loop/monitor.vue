@@ -221,7 +221,7 @@ const total = ref(0);
 /** Phase 10 UX 包：错误态/空态分离——loadList 抛错时记录错误信息，
  * 区分"接口异常"（errorState）与"接口正常但无数据"（空态）。
  * 错误已由全局拦截器 toast，这里仅用于渲染内联错误占位，避免误报"暂无数据"。 */
-const errorMessage = ref<string | null>(null);
+const errorMessage = ref<null | string>(null);
 
 /** 按回路类型统计数量（后端 API 获取，支持递归子节点） */
 const loopTypeStats = ref<Record<string, number>>({
@@ -721,9 +721,9 @@ async function loadList() {
     });
     monitorList.value = data.items;
     total.value = data.total;
-  } catch (err: any) {
+  } catch (error: any) {
     // 错误已由拦截器 toast；此处仅记录用于内联错误占位渲染
-    errorMessage.value = err?.message ?? '加载失败';
+    errorMessage.value = error?.message ?? '加载失败';
     // 出错时清空旧列表，避免显示过期数据混淆
     monitorList.value = [];
     total.value = 0;

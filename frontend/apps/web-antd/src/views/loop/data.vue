@@ -74,7 +74,7 @@ const plantTree = ref<TreeNode[]>([]);
  * 多选会强制前端 client-side filter，与"服务端分页"目标冲突。
  * TreeSelect 由 ``multiple`` 改为单选，递归子孙节点的过滤仍由后端完成。
  */
-const selectedPlantNodeId = ref<undefined | string>();
+const selectedPlantNodeId = ref<string | undefined>();
 
 /** 递归格式化树节点给 TreeSelect */
 function formatTreeForSelect(nodes: TreeNode[]): TreeNode[] {
@@ -141,7 +141,10 @@ const indeterminate = computed(() => {
   const selectedInPage = currentPageIds.value.filter((id) =>
     selectedLoopIds.value.includes(id),
   );
-  return selectedInPage.length > 0 && selectedInPage.length < currentPageIds.value.length;
+  return (
+    selectedInPage.length > 0 &&
+    selectedInPage.length < currentPageIds.value.length
+  );
 });
 
 function handleSelectAll(e: any) {
