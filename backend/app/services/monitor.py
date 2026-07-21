@@ -143,10 +143,14 @@ def _ts_to_ms(ts: Any) -> int:
 def _quality_code_to_label(q: Any) -> str:
     """质量码 → 前端标签（GOOD/BAD/UNCERTAIN）。
 
-    兼容两种 schema：
+    Phase 10 UX 包：与 ``preprocessing/quality_code.py`` 的 ``_GOOD_CODES={1,2,3,192}``
+    统一口径，修复"REST 路径把 2 当 UNCERTAIN、WS 路径把 2 当 UNCERTAIN"的语义冲突。
+
+    兼容多种 schema：
     - TDengine: 1=Good, 0=Bad
+    - OPC UA: 2=Good, 3=Good_Cascaded, 0=Bad
     - OPC DA: 192=Good
-    - 已是 GOOD/BAD 字符串则原样返回（向后兼容 MOCK 数据）
+    - 已是 GOOD/BAD/UNCERTAIN 字符串则原样返回（向后兼容 MOCK 数据）
     """
     if q is None:
         return "GOOD"
@@ -158,8 +162,8 @@ def _quality_code_to_label(q: Any) -> str:
         except (ValueError, TypeError):
             return "UNCERTAIN"
     if isinstance(q, (int, float)):
-        # TDengine: 1=Good; OPC DA: 192=Good; 0=Bad
-        if q in (1, 192):
+        # 与 preprocessing/quality_code.py 的 _GOOD_CODES={1,2,3,192} 对齐
+        if q in (1, 2, 3, 192):
             return "GOOD"
         if q == 0:
             return "BAD"

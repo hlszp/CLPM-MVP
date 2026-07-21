@@ -14,6 +14,9 @@ type RealtimeMessage = {
 
 type MessageHandler = (msg: RealtimeMessage) => void;
 
+/** WS 连接状态三态（Phase 10 UX 包：监控页在线状态栏） */
+export type ConnectionStatus = 'offline' | 'online' | 'reconnecting';
+
 const RECONNECT_INTERVAL = 3000; // 重连间隔 3 秒
 const MAX_RECONNECT_DELAY = 30_000; // 最大重连延迟 30 秒
 
@@ -23,6 +26,18 @@ class RealtimeWebSocket {
    */
   get isConnected() {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * 连接状态三态（Phase 10 UX 包：监控页在线状态栏）
+   * - online：WebSocket OPEN，实时推送正常
+   * - reconnecting：已断开但重连定时器在跑，自动恢复中
+   * - offline：尚未连接或手动关闭，无自动重连
+   */
+  get status(): ConnectionStatus {
+    if (this.ws?.readyState === WebSocket.OPEN) return 'online';
+    if (this.reconnectTimer !== null) return 'reconnecting';
+    return 'offline';
   }
   private baseUrl: string;
   private connectionHandlers = new Set<() => void>();

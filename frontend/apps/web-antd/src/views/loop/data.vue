@@ -14,7 +14,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { LoopApi } from '#/api/loop';
 import type { LoopDataApi } from '#/api/loop-data';
 
-import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, h, onMounted, onUnmounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -25,7 +25,6 @@ import {
   Input,
   message,
   Modal,
-  Pagination,
   Progress,
   Radio,
   RadioGroup,
@@ -64,15 +63,18 @@ interface TreeNode {
   isLeaf?: boolean;
 }
 const plantTree = ref<TreeNode[]>([]);
-const selectedPlantNodeIds = ref<string[]>([]);
 
-/** 递归收集节点下所有 UNIT 子节点 ID */
-function collectUnitIds(nodes: TreeNode[], acc: Set<string>) {
-  for (const n of nodes) {
-    if (n.type === 'UNIT') acc.add(n.id);
-    if (n.children) collectUnitIds(n.children, acc);
-  }
-}
+/**
+ * Phase 10 UX 包：回路列表改服务端分页
+ *
+ * 原实现 pageSize=100 一次性拉全量 READY 回路，>100 个回路静默丢失。
+ * 改为：plantNode 单选 + keyword + 服务端分页（page/pageSize 由后端返回 total）。
+ *
+ * 单选理由：后端 ``getLoopListApi`` 仅支持单个 ``plantNodeId``，
+ * 多选会强制前端 client-side filter，与"服务端分页"目标冲突。
+ * TreeSelect 由 ``multiple`` 改为单选，递归子孙节点的过滤仍由后端完成。
+ */
+const selectedPlantNodeId = ref<undefined | string>();
 
 /** 递归格式化树节点给 TreeSelect */
 function formatTreeForSelect(nodes: TreeNode[]): TreeNode[] {
@@ -96,15 +98,19 @@ async function loadPlantTree() {
     const resp = await getPlantNodeTreeApi();
     plantTree.value = resp ?? [];
   } catch {
-    // 静默处理
+    // 错误已由拦截器处理
   }
 }
 
-// --- 回路选择 ---
+// --- 回路选择（服务端分页） ---
 const loops = ref<LoopApi.LoopListItem[]>([]);
 const selectedLoopIds = ref<string[]>([]);
 const loadingLoops = ref(false);
 const searchKeyword = ref('');
+
+const loopPage = ref(1);
+const loopPageSize = ref(20);
+const totalLoops = ref(0);
 
 const loopColumns: TableColumnsType = [
   {
@@ -122,110 +128,74 @@ const loopColumns: TableColumnsType = [
   },
 ];
 
-// --- 回路列表分页 ---
-const loopPage = ref(1);
-const loopPageSize = ref(20);
-const totalFilteredLoops = computed(() => filteredLoops.value.length);
-
-const paginatedLoops = computed(() => {
-  const start = (loopPage.value - 1) * loopPageSize.value;
-  return filteredLoops.value.slice(start, start + loopPageSize.value);
-});
-
-/** 节点筛选/搜索变化时重置分页到第 1 页 */
-watch([selectedPlantNodeIds, searchKeyword], () => {
-  loopPage.value = 1;
-});
-
-const filteredLoops = computed(() => {
-  let result = loops.value;
-
-  // 按工厂模型节点筛选
-  if (selectedPlantNodeIds.value.length > 0) {
-    const unitIdSet = new Set<string>();
-    for (const nodeId of selectedPlantNodeIds.value) {
-      const findNode = (nodes: TreeNode[]): null | TreeNode => {
-        for (const n of nodes) {
-          if (n.id === nodeId) return n;
-          if (n.children) {
-            const found = findNode(n.children);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-      const node = findNode(plantTree.value);
-      if (node)
-        collectUnitIds(
-          node.type === 'UNIT' ? [{ ...node, children: [] }] : [node],
-          unitIdSet,
-        );
-    }
-    result = result.filter((l) => unitIdSet.has(l.unitId));
-  }
-
-  // 按关键词搜索
-  if (searchKeyword.value) {
-    const kw = searchKeyword.value.toLowerCase();
-    result = result.filter(
-      (l) =>
-        l.tagName?.toLowerCase().includes(kw) ||
-        l.description?.toLowerCase().includes(kw),
-    );
-  }
-
-  return result;
-});
+/** 当前页全选状态：仅针对当前页 loops，不再覆盖全部 totalLoops */
+const currentPageIds = computed(() => loops.value.map((l) => l.loopId));
 
 const allSelected = computed(
   () =>
-    filteredLoops.value.length > 0 &&
-    selectedLoopIds.value.length === filteredLoops.value.length,
+    currentPageIds.value.length > 0 &&
+    currentPageIds.value.every((id) => selectedLoopIds.value.includes(id)),
 );
 
-const indeterminate = computed(
-  () =>
-    selectedLoopIds.value.length > 0 &&
-    selectedLoopIds.value.length < filteredLoops.value.length,
-);
+const indeterminate = computed(() => {
+  const selectedInPage = currentPageIds.value.filter((id) =>
+    selectedLoopIds.value.includes(id),
+  );
+  return selectedInPage.length > 0 && selectedInPage.length < currentPageIds.value.length;
+});
 
 function handleSelectAll(e: any) {
-  selectedLoopIds.value = e.target.checked
-    ? filteredLoops.value.map((l) => l.loopId)
-    : [];
+  const pageIds = currentPageIds.value;
+  if (e.target.checked) {
+    // 选中当前页全部（合并到已选集合，去重）
+    const merged = new Set([...selectedLoopIds.value, ...pageIds]);
+    selectedLoopIds.value = [...merged];
+  } else {
+    // 取消当前页全部
+    const pageSet = new Set(pageIds);
+    selectedLoopIds.value = selectedLoopIds.value.filter(
+      (id) => !pageSet.has(id),
+    );
+  }
 }
 
-/** 反选：当前筛选结果中，已选的取消，未选的选中 */
+/** 反选：仅对当前页进行反选 */
 function handleInvertSelection() {
-  const selectedSet = new Set(selectedLoopIds.value);
-  selectedLoopIds.value = filteredLoops.value
-    .filter((l) => !selectedSet.has(l.loopId))
-    .map((l) => l.loopId);
+  const pageSet = new Set(currentPageIds.value);
+  const currentlySelectedInPage = selectedLoopIds.value.filter((id) =>
+    pageSet.has(id),
+  );
+  const currentlyUnselectedInPage = currentPageIds.value.filter(
+    (id) => !selectedLoopIds.value.includes(id),
+  );
+  const selectedOutsidePage = selectedLoopIds.value.filter(
+    (id) => !pageSet.has(id),
+  );
+  selectedLoopIds.value = [
+    ...selectedOutsidePage,
+    ...currentlyUnselectedInPage,
+  ];
+  // currentlySelectedInPage 被反选为未选
+  void currentlySelectedInPage;
 }
 
-/** 清空所有选中 */
+/** 清空所有选中（跨页） */
 function handleClearSelection() {
   selectedLoopIds.value = [];
 }
 
-/** 是否显示分页器（数据量超过单页时才显示） */
-const showPagination = computed(
-  () => totalFilteredLoops.value > loopPageSize.value,
-);
-
 /** 是否有激活的筛选条件 */
 const hasActiveFilters = computed(
   () =>
-    selectedPlantNodeIds.value.length > 0 ||
+    selectedPlantNodeId.value !== undefined ||
     searchKeyword.value.trim().length > 0,
 );
 
-/** 筛选结果摘要文本 */
+/** 筛选结果摘要文本（基于服务端 total） */
 const filterSummary = computed(() => {
-  if (!hasActiveFilters.value && !searchKeyword.value) return null;
-  const total = filteredLoops.value.length;
-  if (total === 0) return '无匹配回路';
-  return `筛选到 ${total} 个回路`;
+  if (!hasActiveFilters.value) return null;
+  if (totalLoops.value === 0) return '无匹配回路';
+  return `共 ${totalLoops.value} 个回路`;
 });
 
 // --- 导入参数 ---
@@ -376,22 +346,48 @@ const taskColumns: TableColumnsType = [
 
 // --- 方法 ---
 
+/**
+ * 加载回路列表（服务端分页）
+ *
+ * Phase 10 UX 包：取消"一次性 pageSize=100 + 默认全选"的旧实现，
+ * 改为标准服务端分页：
+ * - page / pageSize 由后端返回 total
+ * - keyword 下推到后端模糊搜索
+ * - plantNodeId 单选下推到后端递归子孙过滤
+ * - selectedLoopIds 不再默认全选，由用户显式勾选
+ */
 async function loadLoops() {
   loadingLoops.value = true;
   try {
     const resp = await getLoopListApi({
-      page: 1,
-      pageSize: 100,
+      page: loopPage.value,
+      pageSize: loopPageSize.value,
       isActive: true,
       status: 'READY',
+      keyword: searchKeyword.value.trim() || undefined,
+      plantNodeId: selectedPlantNodeId.value,
     } as any);
     loops.value = resp.items ?? [];
-    selectedLoopIds.value = loops.value.map((l) => l.loopId);
+    totalLoops.value = resp.total ?? 0;
+    // Phase 10 UX 包：取消默认全选——让用户显式选择要导入的回路，
+    // 避免误操作触发大批量远端拉取
   } catch {
-    message.error('加载回路列表失败');
+    // 错误已由全局拦截器 toast 透传后端 message，这里不再覆盖通用文案
   } finally {
     loadingLoops.value = false;
   }
+}
+
+function handleLoopPageChange(pag: TablePaginationConfig) {
+  loopPage.value = pag.current ?? 1;
+  loopPageSize.value = pag.pageSize ?? loopPageSize.value;
+  loadLoops();
+}
+
+/** 触发筛选时重置到第 1 页 */
+function handleLoopSearch() {
+  loopPage.value = 1;
+  loadLoops();
 }
 
 async function loadTasks() {
@@ -404,7 +400,7 @@ async function loadTasks() {
     tasks.value = resp.items ?? [];
     taskPagination.value.total = resp.total ?? 0;
   } catch {
-    // 静默处理
+    // 错误已由拦截器处理
   } finally {
     taskLoading.value = false;
   }
@@ -449,7 +445,8 @@ async function handleStartImport() {
         message.success('导入任务已启动');
         await loadTasks();
       } catch {
-        message.error('启动导入失败');
+        // Phase 10 UX 包：透传后端错误信息——全局拦截器已显示后端 message，
+        // 这里不再覆盖通用文案，避免双重 toast
       } finally {
         importing.value = false;
       }
@@ -457,14 +454,25 @@ async function handleStartImport() {
   });
 }
 
-async function handleCancel(taskId: string) {
-  try {
-    await cancelImportApi(taskId);
-    message.success('已取消导入任务');
-    await loadTasks();
-  } catch {
-    message.error('取消失败');
-  }
+/** Phase 10 UX 包：取消活跃导入任务加二次确认
+ * 取消活跃任务可能导致已拉取部分数据被丢弃，需用户显式确认 */
+function handleCancel(taskId: string) {
+  Modal.confirm({
+    title: '确认取消任务',
+    content: '取消后该导入任务将停止，已拉取的数据可能不完整。确定取消吗？',
+    okText: '取消任务',
+    okType: 'danger',
+    cancelText: '保留',
+    onOk: async () => {
+      try {
+        await cancelImportApi(taskId);
+        message.success('已取消导入任务');
+        await loadTasks();
+      } catch {
+        // 错误已由拦截器透传
+      }
+    },
+  });
 }
 
 async function handleBackfill(taskId: string) {
@@ -472,7 +480,7 @@ async function handleBackfill(taskId: string) {
     const resp = await triggerBackfillApi(taskId);
     message.success(`KPI 回算已触发，共 ${resp.loopCount} 个回路`);
   } catch {
-    message.error('触发回算失败');
+    // 错误已由拦截器透传
   }
 }
 
@@ -489,7 +497,7 @@ function handleDelete(taskId: string) {
         message.success('已删除导入任务');
         await loadTasks();
       } catch {
-        message.error('删除失败');
+        // 错误已由拦截器透传
       }
     },
   });
@@ -542,7 +550,7 @@ onUnmounted(() => {
             <div class="flex items-center justify-between">
               <span class="text-sm font-semibold text-gray-800">回路选择</span>
               <span class="text-xs text-gray-400">
-                {{ selectedLoopIds.length }}/{{ loops.length }}
+                {{ selectedLoopIds.length }}/{{ totalLoops }}
               </span>
             </div>
           </div>
@@ -550,28 +558,26 @@ onUnmounted(() => {
           <!-- 筛选区 -->
           <div class="shrink-0 space-y-2 px-3 py-2.5">
             <TreeSelect
-              v-model:value="selectedPlantNodeIds"
+              v-model:value="selectedPlantNodeId"
               :tree-data="formatTreeForSelect(plantTree)"
               :field-names="{
                 children: 'children',
                 label: 'title',
                 value: 'value',
               }"
-              tree-checkable
-              multiple
-              show-checked-strategy="SHOW_CHILD"
               placeholder="按装置/单元筛选..."
               class="w-full"
               :allow-clear="true"
-              :max-tag-count="2"
               size="small"
               tree-node-filter-prop="title"
+              @change="handleLoopSearch"
             />
             <Input.Search
               v-model:value="searchKeyword"
               placeholder="搜索回路..."
               size="small"
               allow-clear
+              @search="handleLoopSearch"
             />
             <!-- 筛选结果提示 -->
             <div
@@ -619,9 +625,18 @@ onUnmounted(() => {
           <div class="min-h-0 flex-1 overflow-y-auto">
             <Table
               :columns="loopColumns"
-              :data-source="paginatedLoops"
+              :data-source="loops"
               :loading="loadingLoops"
-              :pagination="false"
+              :pagination="{
+                current: loopPage,
+                pageSize: loopPageSize,
+                total: totalLoops,
+                showSizeChanger: true,
+                pageSizeOptions: ['10', '20', '50', '100'],
+                showTotal: (t: number) => `共 ${t} 个`,
+                size: 'small',
+                showLessItems: true,
+              }"
               :row-selection="{
                 selectedRowKeys: selectedLoopIds,
                 onChange: (keys: any) => (selectedLoopIds = keys as string[]),
@@ -630,6 +645,7 @@ onUnmounted(() => {
               size="small"
               :bordered="false"
               class="loop-selection-table"
+              @change="handleLoopPageChange"
             >
               <template #emptyText>
                 <div class="py-6 text-center text-gray-400">
@@ -641,20 +657,6 @@ onUnmounted(() => {
                 </div>
               </template>
             </Table>
-          </div>
-
-          <!-- 底部分页 -->
-          <div v-if="showPagination" class="shrink-0 border-t px-3 py-2">
-            <Pagination
-              v-model:current="loopPage"
-              v-model:page-size="loopPageSize"
-              :total="totalFilteredLoops"
-              show-size-changer
-              :page-size-options="['10', '20', '50', '100']"
-              size="small"
-              show-less-items
-              class="text-center"
-            />
           </div>
         </div>
       </div>

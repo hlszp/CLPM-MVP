@@ -72,6 +72,7 @@ import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { flattenNodes } from '#/utils/plant-node';
+import { mapQualityToLabel } from '#/utils/quality-code';
 import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'LoopMonitor' });
@@ -217,6 +218,10 @@ const kpiItems: {
 const loading = ref(false);
 const monitorList = ref<LoopApi.MonitorListItem[]>([]);
 const total = ref(0);
+/** Phase 10 UX 包：错误态/空态分离——loadList 抛错时记录错误信息，
+ * 区分"接口异常"（errorState）与"接口正常但无数据"（空态）。
+ * 错误已由全局拦截器 toast，这里仅用于渲染内联错误占位，避免误报"暂无数据"。 */
+const errorMessage = ref<string | null>(null);
 
 /** 按回路类型统计数量（后端 API 获取，支持递归子节点） */
 const loopTypeStats = ref<Record<string, number>>({
@@ -537,6 +542,12 @@ let countdownTimer: null | ReturnType<typeof setInterval> = null;
 let wsUnsubscribe: (() => void) | null = null;
 let wsConnectionUnsubscribe: (() => void) | null = null;
 
+/** Phase 10 UX 包：WS 连接状态响应式镜像（实时驱动状态栏在线/离线/重连中徽标）
+ * 通过 onConnectionChange 回调同步 realtimeWs.status 三态。 */
+const wsConnectionStatus = ref<'offline' | 'online' | 'reconnecting'>(
+  realtimeWs.status,
+);
+
 /** WebSocket 实时数据：局部更新单条回路的 currentValues */
 function handleRealtimeMessage(msg: {
   collectTime: string;
@@ -571,7 +582,9 @@ function handleRealtimeMessage(msg: {
     }
     case 'PV': {
       cv.pv = numValue;
-      cv.pvQuality = msg.quality as any;
+      // Phase 10 UX 包：WS 质量码统一映射（与后端 _GOOD_CODES={1,2,3,192} 对齐），
+      // 不再直接透传数字；原 `as any` 会把 2 当成 UNCERTAIN 与 REST 路径冲突
+      cv.pvQuality = mapQualityToLabel(msg.quality) as any;
       break;
     }
     case 'SP': {
@@ -697,6 +710,7 @@ async function loadPlantNodes() {
 /** 加载监控列表 */
 async function loadList() {
   loading.value = true;
+  errorMessage.value = null;
   try {
     const data = await getLoopMonitorListApi({
       plantNodeId: query.plantNodeId,
@@ -707,8 +721,12 @@ async function loadList() {
     });
     monitorList.value = data.items;
     total.value = data.total;
-  } catch {
-    // 错误已由拦截器处理
+  } catch (err: any) {
+    // 错误已由拦截器 toast；此处仅记录用于内联错误占位渲染
+    errorMessage.value = err?.message ?? '加载失败';
+    // 出错时清空旧列表，避免显示过期数据混淆
+    monitorList.value = [];
+    total.value = 0;
   } finally {
     loading.value = false;
     lastRefreshAt.value = new Date();
@@ -725,7 +743,9 @@ function handleSearch() {
 
 function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
-  query.pageSize = pagination.pageSize || 100;
+  // Phase 10 UX 包：pageSize 兜底——用 ?? 保留已有 query.pageSize，
+  // 避免 antd 异常时静默退到默认 20 导致已展示数据被截断
+  query.pageSize = pagination.pageSize ?? query.pageSize;
   loadList();
 }
 
@@ -899,7 +919,9 @@ function startAutoRefresh() {
     // P2 #38 UX14: WS 连接状态变化时切换轮询策略
     // - WS 在线 → 停止轮询（实时推送已覆盖）
     // - WS 断连 → 启动轮询 fallback
+    // Phase 10 UX 包：同时同步状态栏徽标（online/offline/reconnecting）
     wsConnectionUnsubscribe = realtimeWs.onConnectionChange(() => {
+      wsConnectionStatus.value = realtimeWs.status;
       if (realtimeWs.isConnected) {
         stopPolling();
       } else {
@@ -1262,7 +1284,22 @@ onUnmounted(() => {
             </Button>
           </Popover>
         </template>
+        <!-- Phase 10 UX 包：错误态分离——接口异常时显示内联错误占位，
+             避免与"接口正常但无数据"的空态混淆 -->
+        <Alert
+          v-if="errorMessage"
+          type="error"
+          show-icon
+          :message="`回路监控数据加载失败：${errorMessage}`"
+          description="请检查后端服务或稍后重试。错误详情已在页面右上角提示。"
+          class="mb-3"
+        >
+          <template #action>
+            <Button size="small" type="link" @click="loadList">重试</Button>
+          </template>
+        </Alert>
         <Table
+          v-if="!errorMessage"
           :columns="visibleColumns"
           :data-source="monitorList"
           :loading="loading"
@@ -1289,6 +1326,9 @@ onUnmounted(() => {
                 handleSelectLoop(record as LoopApi.MonitorListItem),
             })
           "
+          :locale="{
+            emptyText: '暂无监控数据',
+          }"
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
@@ -1458,7 +1498,7 @@ onUnmounted(() => {
       </ClpmDataCanvas>
     </div>
 
-    <!-- StatusFooter：最近刷新/数据延迟/自动刷新状态/选中回路 -->
+    <!-- StatusFooter：最近刷新/数据延迟/自动刷新状态/WS在线状态/选中回路 -->
     <div class="clpm-status-footer">
       <span>最近刷新：{{ lastRefreshText || '尚未刷新' }}</span>
       <span class="clpm-status-footer__divider">·</span>
@@ -1469,6 +1509,30 @@ onUnmounted(() => {
         <strong :class="autoRefresh ? 'is-active' : 'is-muted'">
           {{ autoRefresh ? `开启（${countdown}s）` : '关闭' }}
         </strong>
+      </span>
+      <span class="clpm-status-footer__divider">·</span>
+      <!-- Phase 10 UX 包：WS 在线状态徽标（online/offline/reconnecting） -->
+      <span class="flex items-center gap-1">
+        <span
+          class="inline-block w-2 h-2 rounded-full"
+          :style="{
+            backgroundColor:
+              wsConnectionStatus === 'online'
+                ? '#10B981'
+                : wsConnectionStatus === 'reconnecting'
+                  ? '#F59E0B'
+                  : '#9CA3AF',
+          }"
+        ></span>
+        <span class="text-xs">
+          {{
+            wsConnectionStatus === 'online'
+              ? 'WS 在线'
+              : wsConnectionStatus === 'reconnecting'
+                ? 'WS 重连中'
+                : 'WS 离线'
+          }}
+        </span>
       </span>
       <span class="clpm-status-footer__divider">·</span>
       <span>选中回路：{{ selectedLoop?.tagName ?? '—' }}</span>
