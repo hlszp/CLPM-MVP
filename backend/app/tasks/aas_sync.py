@@ -93,18 +93,11 @@ def trigger_sync() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Celery Beat 配置：每 5 分钟同步一次
+# Celery Beat 配置
 # ---------------------------------------------------------------------------
-
-
-# 追加方式注册 Beat 任务（避免覆盖其他模块的 beat_schedule）
-_existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
-_existing_beat["aas-tag-sync-every-5-minutes"] = {
-    "task": "app.tasks.aas_sync.sync_aas_tags",
-    "schedule": 300.0,  # 5 分钟
-}
-celery_app.conf.beat_schedule = _existing_beat
-celery_app.conf.timezone = "Asia/Shanghai"
-
+# 历史口径：曾注册 aas-tag-sync-every-5-minutes（每 5 分钟从 AAS 同步 Tag 清单）。
+# 2026-07-22 关闭：实际工程场景下 Tag 位号由用户手工导入/CRUD 维护，
+# 无需定时从 AAS 拉取。sync_aas_tags / trigger_sync 任务保留供必要时手工调用，
+# 但不再注册到 Beat 调度计划。
 
 __all__ = ["sync_aas_tags", "trigger_sync"]
