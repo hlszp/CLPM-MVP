@@ -1107,6 +1107,22 @@ const opTagRange = computed(() => {
   return { min: null, max: null, unit: null };
 });
 
+/**
+ * WS-C 6-5：PID 参数只读展示（来自 loopDetail.runtimeParams）
+ * 后端实时读取关联 PID_P/PID_I/PID_D Tag 当前值，前端只读不回写
+ */
+const pidParams = computed(() => {
+  const fmt = (v: null | number | undefined) =>
+    v === null || v === undefined ? '—' : String(v);
+  const rp = loopDetail.value?.runtimeParams;
+  return {
+    pidP: fmt(rp?.pidP),
+    pidI: fmt(rp?.pidI),
+    pidD: fmt(rp?.pidD),
+    readAt: rp?.readAt ?? null,
+  };
+});
+
 /** v6.1：是否使用默认限位（= OP Tag 量程） */
 const useDefaultOpLimits = ref(true);
 
@@ -1520,8 +1536,7 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
   // v6.1：读取 DCS 型号关联（列表项可能携带 dcsModelId）
   formState.dcsModelId = (record as any).dcsModelId ?? undefined;
   // 读取理想稳态时间（NULL=按控制类型默认值）
-  formState.idealSettlingTime =
-    (record as any).idealSettlingTime ?? undefined;
+  formState.idealSettlingTime = (record as any).idealSettlingTime ?? undefined;
   useDefaultOpLimits.value =
     formState.opOutputLowerLimit === undefined &&
     formState.opOutputUpperLimit === undefined;
@@ -2641,6 +2656,25 @@ watch(
                   留空按控制类型默认值：流量30/压力60/温度180/液位600/成分300，其他120
                 </div>
               </FormItem>
+              <!-- WS-C 6-5：PID 参数只读区（实时读取自关联 Tag，仅展示不回写） -->
+              <div v-if="editingLoop" class="mb-1 text-xs text-gray-500">
+                PID 参数（只读，实时读取自关联 Tag<span
+                  v-if="pidParams.readAt"
+                  class="ml-1 text-gray-400"
+                  >· {{ pidParams.readAt }}</span
+                >）
+              </div>
+              <div v-if="editingLoop" class="grid grid-cols-3 gap-3">
+                <FormItem label="比例增益 P">
+                  <Input :value="pidParams.pidP" disabled />
+                </FormItem>
+                <FormItem label="积分时间 I">
+                  <Input :value="pidParams.pidI" disabled />
+                </FormItem>
+                <FormItem label="微分时间 D">
+                  <Input :value="pidParams.pidD" disabled />
+                </FormItem>
+              </div>
               <FormItem name="isActive" label="启用状态">
                 <Switch
                   v-model:checked="formState.isActive"

@@ -233,7 +233,7 @@ async def update_tag_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
 ) -> dict:
-    """更新测点（描述/量程/单位/测点类型/TDengine tag ID）。"""
+    """更新测点（描述/量程/单位/测点类型/参数类型/TDengine tag ID）。"""
     data = await update_tag(
         db=db,
         tag_id=tag_id,
@@ -243,6 +243,7 @@ async def update_tag_endpoint(
         range_max=body.rangeMax,
         unit=body.unit,
         measure_type=body.measureType,
+        tag_type=body.tagType,
         tdengine_tag_id=body.tdengineTagId,
     )
     return success(data=data, message="更新成功")

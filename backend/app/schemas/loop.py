@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
 
 from app.schemas.base import CamelModel
 
@@ -43,6 +44,15 @@ class ScoreWeights(CamelModel):
 
 class LoopCreate(CamelModel):
     """POST /api/v1/loops 请求体。"""
+
+    # WS-C 6-1：拒绝未声明字段，避免前端拼写错误的字段被静默忽略
+    # （保留 CamelModel 的 alias_generator/populate_by_name/from_attributes 配置）
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+        extra="forbid",
+    )
 
     tagName: str = Field(..., min_length=1, max_length=100, description="回路位号（唯一）")
     description: str | None = Field(None, max_length=255, description="回路描述")
@@ -99,7 +109,17 @@ class LoopCreate(CamelModel):
 class LoopUpdate(CamelModel):
     """PUT /api/v1/loops/{id} 请求体。"""
 
+    # WS-C 6-1：拒绝未声明字段（同 LoopCreate）
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+        extra="forbid",
+    )
+
     description: str | None = Field(None, max_length=255)
+    # WS-C 6-2：允许更新所属单元（此前前端已发送但被静默忽略），service 层校验节点存在
+    unitId: str | None = Field(None, description="所属工艺单元 ID")
     scoreWeights: ScoreWeights | None = None
     isActive: bool | None = None
     remark: str | None = Field(None, max_length=500)
@@ -303,6 +323,7 @@ class LoopUpdateResult(CamelModel):
 
     loopId: str
     description: str | None = None
+    unitId: str | None = None
     scoreWeights: dict | None = None
     isActive: bool | None = None
     remark: str | None = None

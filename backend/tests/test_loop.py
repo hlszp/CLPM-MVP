@@ -5,7 +5,7 @@ Covers:
 - POST /api/v1/loops (create, ERR_LOOP_DUPLICATE check)
 - GET /api/v1/loops/{id} (detail)
 - PUT /api/v1/loops/{id} (update)
-- DELETE /api/v1/loops/{id} (delete, ERR_LOOP_HAS_TAGS check)
+- DELETE /api/v1/loops/{id} (delete, 级联解绑 LoopTagMapping)
 - Status derivation: READY/PARTIAL/INACTIVE
 """
 
@@ -209,24 +209,99 @@ class TestLoopDetail:
 class TestLoopDelete:
     """DELETE /api/v1/loops/{id} tests."""
 
-    def test_delete_loop_with_tags_fails(self, client, mock_db, fake_redis) -> None:
-        """有关联 Tag 的回路不能删除（ERR_LOOP_HAS_TAGS）。"""
-        call_count = [0]
+    def test_delete_loop_with_tags_cascades_unbind(self, client, mock_db, fake_redis) -> None:
+        """WS-C 6-4：有关联 Tag 的回路可删除——级联删除映射后软删回路。"""
+        loop = MagicMock()
+        loop.id = LOOP_001.id
+        loop.tag_name = LOOP_001.tag_name
+        loop.is_active = True
+        loop.status = "READY"
 
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _make_scalar_one_or_none_mock(LOOP_001)
-            return _make_scalar_mock(7)
+        mapping = MagicMock()
+        mapping.tag_id = "00000000-0000-0000-0000-000000000301"
 
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        tag = MagicMock()
+        tag.id = mapping.tag_id
+        tag.is_linked = True
+
+        results = [
+            _make_scalar_one_or_none_mock(loop),  # 1. select(LoopLedger)
+            _make_scalars_mock([mapping]),  # 2. select(LoopTagMapping) 现有关联
+            MagicMock(),  # 3. delete(LoopTagMapping)
+            _make_scalar_mock(0),  # 4. count(其他回路引用) = 0
+            _make_scalar_one_or_none_mock(tag),  # 5. select(TagRegistry) 取 tag
+        ]
+        mock_db.execute = AsyncMock(side_effect=results)
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.delete(
                 f"/api/v1/loops/{LOOP_001.id}",
                 headers={"Authorization": "Bearer fake-token"},
             )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "ERR_LOOP_HAS_TAGS"
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"]["deleted"] is True
+        # 回路软删 + 无其他引用的 Tag is_linked 清除
+        assert loop.is_active is False
+        assert loop.status == "INACTIVE"
+        assert tag.is_linked is False
+
+    def test_delete_loop_keeps_is_linked_when_other_loop_refs(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """WS-C 6-4：Tag 仍被其他回路引用时，级联解绑不清除其 is_linked。"""
+        loop = MagicMock()
+        loop.id = LOOP_001.id
+        loop.tag_name = LOOP_001.tag_name
+        loop.is_active = True
+        loop.status = "READY"
+
+        mapping = MagicMock()
+        mapping.tag_id = "00000000-0000-0000-0000-000000000301"
+
+        tag = MagicMock()
+        tag.id = mapping.tag_id
+        tag.is_linked = True
+
+        results = [
+            _make_scalar_one_or_none_mock(loop),  # 1. select(LoopLedger)
+            _make_scalars_mock([mapping]),  # 2. select(LoopTagMapping) 现有关联
+            MagicMock(),  # 3. delete(LoopTagMapping)
+            _make_scalar_mock(1),  # 4. count(其他回路引用) = 1 → 跳过 is_linked 清除
+        ]
+        mock_db.execute = AsyncMock(side_effect=results)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["deleted"] is True
+        assert loop.is_active is False
+        assert tag.is_linked is True
+
+    def test_delete_loop_without_tags_succeeds(self, client, mock_db, fake_redis) -> None:
+        """无关联 Tag 的回路正常软删（不执行映射删除）。"""
+        loop = MagicMock()
+        loop.id = LOOP_001.id
+        loop.tag_name = LOOP_001.tag_name
+        loop.is_active = True
+        loop.status = "PARTIAL"
+
+        results = [
+            _make_scalar_one_or_none_mock(loop),  # 1. select(LoopLedger)
+            _make_scalars_mock([]),  # 2. select(LoopTagMapping) → 无关联
+        ]
+        mock_db.execute = AsyncMock(side_effect=results)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["deleted"] is True
+        assert loop.is_active is False
+        assert loop.status == "INACTIVE"
 
     def test_delete_loop_ic_engineer_forbidden(self, client, mock_db, fake_redis) -> None:
         """IC_ENGINEER 不能删除回路（403，仅 ADMIN）。"""
@@ -334,6 +409,58 @@ class TestControlModeFilter:
 
         assert _mode_value_to_label(99.0) == "Unknown"
         assert _mode_value_to_label(-1.0) == "Unknown"
+
+
+class TestModeValueToLabelFallbackChain:
+    """WS-C 6-3: _mode_value_to_label 配置驱动回退链单元测试。
+
+    回退链：dcs_mode_mapping 型号映射（raw_to_standard）→ raw 1:1 → 标准标签表。
+    无映射配置时行为与原硬编码一致（0-3），4=APC 归并 Auto。
+    """
+
+    def test_none_value_returns_none(self) -> None:
+        from app.services.loop import _mode_value_to_label
+
+        assert _mode_value_to_label(None) is None
+
+    def test_no_mapping_keeps_legacy_labels(self) -> None:
+        """无 raw_to_standard 配置时保持原硬编码行为（兼容无 dcs_model 回路）。"""
+        from app.services.loop import _mode_value_to_label
+
+        assert _mode_value_to_label(0.0) == "Manual"
+        assert _mode_value_to_label(1.0) == "Auto"
+        assert _mode_value_to_label(2.0) == "Cascade"
+        assert _mode_value_to_label(3.0) == "Cascade"
+
+    def test_model_mapping_resolves_raw_value(self) -> None:
+        """型号映射将 DCS 原始值解析为标准 MODE 后再映射标签。
+
+        例：某型号 raw=10 表示自动（standard=1）→ "Auto"；raw=20 表示手动 → "Manual"。
+        """
+        from app.services.loop import _mode_value_to_label
+
+        raw_to_standard = {10: 1, 20: 0, 30: 2}
+        assert _mode_value_to_label(10.0, raw_to_standard) == "Auto"
+        assert _mode_value_to_label(20.0, raw_to_standard) == "Manual"
+        assert _mode_value_to_label(30.0, raw_to_standard) == "Cascade"
+
+    def test_raw_not_in_mapping_falls_back_1to1(self) -> None:
+        """raw 不在映射表时回退 1:1（raw 即 standard）。"""
+        from app.services.loop import _mode_value_to_label
+
+        raw_to_standard = {10: 1}
+        # raw=1 不在型号映射中 → 1:1 → standard=1 → Auto
+        assert _mode_value_to_label(1.0, raw_to_standard) == "Auto"
+        # raw=99 → 1:1 → 99 无标签 → Unknown
+        assert _mode_value_to_label(99.0, raw_to_standard) == "Unknown"
+
+    def test_apc_standard_maps_to_auto(self) -> None:
+        """standard=4（APC 先控）归并为 Auto（非手动）。"""
+        from app.services.loop import _mode_value_to_label
+
+        assert _mode_value_to_label(4.0) == "Auto"
+        raw_to_standard = {40: 4}
+        assert _mode_value_to_label(40.0, raw_to_standard) == "Auto"
 
 
 class TestLoopCreateNewFields:
@@ -1068,3 +1195,109 @@ class TestIdealSettlingTimeField:
                 json={"idealSettlingTime": -3},
             )
         assert resp.status_code == 422
+
+
+class TestLoopUpdateUnitId:
+    """WS-C 6-2：PUT 更新回路 unitId 落库校验。
+
+    - LoopUpdate schema 声明 unitId（此前前端已发送但被静默忽略）
+    - unitId 更新时校验目标工艺单元节点存在于 plant_node（与 create_loop 一致）
+    """
+
+    NEW_UNIT_ID = "00000000-0000-0000-0000-000000000222"
+
+    def test_loop_update_schema_has_unit_id(self) -> None:
+        from app.schemas.loop import LoopUpdate
+
+        assert "unitId" in LoopUpdate.model_fields
+
+    def test_update_loop_service_accepts_unit_id(self) -> None:
+        import inspect
+
+        from app.services.loop import update_loop
+
+        assert "unit_id" in inspect.signature(update_loop).parameters
+
+    def _mock_db_for_unit_update(self, mock_db, loop: MagicMock, node) -> None:
+        """按 update_loop(unit_id=...) 调用序配置 mock_db.execute：
+
+        1) select LoopLedger → scalar_one_or_none → loop
+        2) select PlantNode（unitId 存在性校验）→ scalar_one_or_none → node
+        3) _get_op_tag_range → first() → None（未关联 OP Tag）
+        4) _get_loop_tag_mappings → scalars().all() → []
+        """
+        first_result = MagicMock()
+        first_result.scalar_one_or_none.return_value = loop
+        node_result = MagicMock()
+        node_result.scalar_one_or_none.return_value = node
+        op_range_result = MagicMock()
+        op_range_result.first.return_value = None
+        mock_db.execute = AsyncMock(
+            side_effect=[first_result, node_result, op_range_result, _make_scalars_mock([])]
+        )
+
+    def test_update_api_unit_id_roundtrip(self, client, mock_db, fake_redis) -> None:
+        """更新 unitId 为存在的节点 → 200，回路 unit_id 落库并透传响应。"""
+        loop = TestIdealSettlingTimeField._make_update_loop_mock()
+        node = MagicMock()
+        node.id = self.NEW_UNIT_ID
+        self._mock_db_for_unit_update(mock_db, loop, node)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"unitId": self.NEW_UNIT_ID},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["unitId"] == self.NEW_UNIT_ID
+        assert loop.unit_id == self.NEW_UNIT_ID
+
+    def test_update_api_unit_id_not_found(self, client, mock_db, fake_redis) -> None:
+        """unitId 指向不存在的节点 → 404 ERR_NODE_NOT_FOUND，回路 unit_id 不变。"""
+        loop = TestIdealSettlingTimeField._make_update_loop_mock()
+        self._mock_db_for_unit_update(mock_db, loop, None)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"unitId": self.NEW_UNIT_ID},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_NODE_NOT_FOUND"
+        assert loop.unit_id == LOOP_001.unit_id
+
+
+class TestLoopSchemaExtraForbid:
+    """WS-C 6-1：LoopCreate/LoopUpdate 启用 extra="forbid"，未声明字段 422。"""
+
+    def test_create_loop_rejects_extra_field(self, client, mock_db, fake_redis) -> None:
+        """POST 携带未声明字段 → 422。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/loops",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"tagName": "NEW-LOOP-X", "unknownField": "x"},
+            )
+        assert resp.status_code == 422
+
+    def test_update_loop_rejects_extra_field(self, client, mock_db, fake_redis) -> None:
+        """PUT 携带未声明字段 → 422。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"remark": "ok", "unknownField": "x"},
+            )
+        assert resp.status_code == 422
+
+    def test_create_schema_rejects_extra_field(self) -> None:
+        """schema 层直接校验：未声明字段触发 ValidationError。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.schemas.loop import LoopCreate, LoopUpdate
+
+        with pytest.raises(ValidationError):
+            LoopCreate(tagName="X-1", unknownField="x")
+        with pytest.raises(ValidationError):
+            LoopUpdate(unknownField="x")

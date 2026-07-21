@@ -9,7 +9,7 @@ import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -212,11 +212,19 @@ async def update_loop_tags(
             new_mappings[role] = mapping
 
     # 更新 tag_registry.is_linked
-    # 先把之前关联的 tag 设为未关联
+    # 先把之前关联的 tag 设为未关联（仅当该 tag 不再被任何回路映射引用时）
+    # 注意：本回路的旧映射已在上方删除，此处剩余引用均来自其他回路
     for old_mapping in existing_mappings.values():
         old_tag_id = str(old_mapping.tag_id)
         if old_tag_id not in [tid for tid in role_tag_map.values() if tid]:
-            # 这个 tag 不再被关联
+            # 这个 tag 不再被本回路关联，检查是否仍被其他回路引用
+            ref_count_result = await db.execute(
+                select(func.count())
+                .select_from(LoopTagMapping)
+                .where(LoopTagMapping.tag_id == old_tag_id)
+            )
+            if (ref_count_result.scalar() or 0) > 0:
+                continue
             old_tag = existing_tags.get(old_tag_id)
             if old_tag is None:
                 t_r = await db.execute(select(TagRegistry).where(TagRegistry.id == old_tag_id))
