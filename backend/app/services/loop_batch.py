@@ -1,7 +1,7 @@
 """Loop batch operations & monitor trigger services (配置增强).
 
 提供：
-- ``batch_update_loops``: 批量更新回路（is_monitored/is_stat_enabled/level）
+- ``batch_update_loops``: 批量更新回路（监控/统计/重要等级/参评）
 - ``batch_delete_loops``: 批量软删除回路（is_active=False）
 - ``check_node_monitor_trigger``: SVC-10 位号触发监控检查
 
@@ -26,8 +26,13 @@ from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
 
-# 允许批量更新的字段白名单
-_BATCH_UPDATABLE_FIELDS = {"is_monitored", "is_stat_enabled", "level"}
+# 允许批量更新的字段白名单（v5.3：level → importance_level）
+_BATCH_UPDATABLE_FIELDS = {
+    "is_monitored",
+    "is_stat_enabled",
+    "importance_level",
+    "include_in_evaluation",
+}
 
 
 async def _write_audit(
@@ -64,7 +69,7 @@ async def batch_update_loops(
     updates: dict,
     operator: str,
 ) -> int:
-    """批量更新回路配置（is_monitored/is_stat_enabled/level）。
+    """批量更新回路配置（is_monitored/is_stat_enabled/importance_level/include_in_evaluation）。
 
     Args:
         db: 异步数据库会话
@@ -74,7 +79,8 @@ async def batch_update_loops(
             - is_stat_enabled: bool — 是否纳入统计（写入 is_kpi_enabled 不适用，
               此处映射到 is_active 的语义；当前 LoopLedger 无独立字段，
               实际写入 is_active 兼容；后续可扩展）
-            - level: int — 回路级别 1/2/3
+            - importance_level: int — 回路重要等级 1/2/3
+            - include_in_evaluation: bool — 是否参与评估
         operator: 操作人
 
     Returns:
@@ -99,13 +105,13 @@ async def batch_update_loops(
             status_code=422,
         )
 
-    # 校验 level 取值
-    if "level" in updates and updates["level"] is not None:
-        level = updates["level"]
+    # 校验 importance_level 取值
+    if "importance_level" in updates and updates["importance_level"] is not None:
+        level = updates["importance_level"]
         if level not in (1, 2, 3):
             raise BizError(
                 code="ERR_BATCH_INVALID_FIELD",
-                message=f"level 必须为 1/2/3，当前为 {level}",
+                message=f"importance_level 必须为 1/2/3，当前为 {level}",
                 status_code=422,
             )
 
@@ -116,14 +122,14 @@ async def batch_update_loops(
     if not loops:
         return 0
 
-    # 构造审计 before/after 摘要
-    audit_items: list[dict] = []
+    # 逐回路应用更新并写审计（target_id 为 UUID 单列，每回路一条）
     for loop in loops:
         before = {
             "loopId": str(loop.id),
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
-            "level": loop.level,
+            "importance_level": loop.importance_level,
+            "include_in_evaluation": loop.include_in_evaluation,
         }
 
         if "is_monitored" in updates and updates["is_monitored"] is not None:
@@ -133,38 +139,28 @@ async def batch_update_loops(
             # 当前 LoopLedger 无独立 is_stat_enabled 字段，复用 is_active 语义
             # 后续若新增字段可在此扩展
             loop.is_active = bool(updates["is_stat_enabled"])
-        if "level" in updates and updates["level"] is not None:
-            loop.level = updates["level"]
+        if "importance_level" in updates and updates["importance_level"] is not None:
+            loop.importance_level = updates["importance_level"]
+        if "include_in_evaluation" in updates and updates["include_in_evaluation"] is not None:
+            loop.include_in_evaluation = bool(updates["include_in_evaluation"])
         loop.updated_by = operator
 
         after = {
             "loopId": str(loop.id),
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
-            "level": loop.level,
+            "importance_level": loop.importance_level,
+            "include_in_evaluation": loop.include_in_evaluation,
         }
-        audit_items.append({"before": before, "after": after})
-
-    before_json = json.dumps(
-        [item["before"] for item in audit_items],
-        ensure_ascii=False,
-        default=str,
-    )
-    after_json = json.dumps(
-        [item["after"] for item in audit_items],
-        ensure_ascii=False,
-        default=str,
-    )
-
-    await _write_audit(
-        db=db,
-        operator=operator,
-        operation_type="LOOP_BATCH_UPDATE",
-        target_type="loop_ledger",
-        target_id=",".join(str(loop.id) for loop in loops),
-        before_value=before_json,
-        after_value=after_json,
-    )
+        await _write_audit(
+            db=db,
+            operator=operator,
+            operation_type="LOOP_BATCH_UPDATE",
+            target_type="loop_ledger",
+            target_id=str(loop.id),
+            before_value=json.dumps(before, ensure_ascii=False, default=str),
+            after_value=json.dumps(after, ensure_ascii=False, default=str),
+        )
     await db.commit()
 
     logger.info(
@@ -186,7 +182,7 @@ async def batch_delete_loops(
     db: AsyncSession,
     loop_ids: list[str],
     operator: str,
-) -> int:
+) -> dict:
     """批量软删除回路（is_active=False，不实际删除记录）。
 
     Args:
@@ -195,7 +191,8 @@ async def batch_delete_loops(
         operator: 操作人
 
     Returns:
-        软删除的回路数量
+        {"deleted": 软删除数量, "skipped": [{"loopId", "reason"}]}
+        skipped 为请求中但未找到的回路 ID
 
     Raises:
         BizError: ERR_BATCH_EMPTY (loop_ids 为空)
@@ -210,10 +207,13 @@ async def batch_delete_loops(
     result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids)))
     loops = result.scalars().all()
 
-    if not loops:
-        return 0
+    found_ids = {str(loop.id) for loop in loops}
+    skipped = [{"loopId": lid, "reason": "回路不存在"} for lid in loop_ids if lid not in found_ids]
 
-    audit_items: list[dict] = []
+    if not loops:
+        return {"deleted": 0, "skipped": skipped}
+
+    # 逐回路软删除并写审计（target_id 为 UUID 单列，每回路一条）
     for loop in loops:
         before = {
             "loopId": str(loop.id),
@@ -230,28 +230,15 @@ async def batch_delete_loops(
             "is_active": False,
             "status": "INACTIVE",
         }
-        audit_items.append({"before": before, "after": after})
-
-    before_json = json.dumps(
-        [item["before"] for item in audit_items],
-        ensure_ascii=False,
-        default=str,
-    )
-    after_json = json.dumps(
-        [item["after"] for item in audit_items],
-        ensure_ascii=False,
-        default=str,
-    )
-
-    await _write_audit(
-        db=db,
-        operator=operator,
-        operation_type="LOOP_BATCH_DELETE",
-        target_type="loop_ledger",
-        target_id=",".join(str(loop.id) for loop in loops),
-        before_value=before_json,
-        after_value=after_json,
-    )
+        await _write_audit(
+            db=db,
+            operator=operator,
+            operation_type="LOOP_BATCH_DELETE",
+            target_type="loop_ledger",
+            target_id=str(loop.id),
+            before_value=json.dumps(before, ensure_ascii=False, default=str),
+            after_value=json.dumps(after, ensure_ascii=False, default=str),
+        )
     await db.commit()
 
     logger.info(
@@ -260,7 +247,7 @@ async def batch_delete_loops(
         operator,
     )
 
-    return len(loops)
+    return {"deleted": len(loops), "skipped": skipped}
 
 
 # ---------------------------------------------------------------------------

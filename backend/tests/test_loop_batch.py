@@ -46,7 +46,8 @@ def _make_loop(
     loop_id: str = "loop-001",
     tag_name: str = "TAG-001",
     is_active: bool = True,
-    level: int | None = 3,
+    importance_level: int | None = 3,
+    include_in_evaluation: bool = True,
     status: str = "PARTIAL",
 ) -> MagicMock:
     """构造 LoopLedger mock。"""
@@ -54,7 +55,8 @@ def _make_loop(
     loop.id = loop_id
     loop.tag_name = tag_name
     loop.is_active = is_active
-    loop.level = level
+    loop.importance_level = importance_level
+    loop.include_in_evaluation = include_in_evaluation
     loop.status = status
     loop.updated_by = None
     return loop
@@ -115,8 +117,8 @@ class TestBatchUpdateLoopsMonitored:
         # 验证 is_active 被置为 True
         assert loop1.is_active is True
         assert loop2.is_active is True
-        # 验证审计日志写入
-        db.add.assert_called_once()
+        # 验证审计日志写入（每回路一条）
+        assert db.add.call_count == 2
         db.commit.assert_called_once()
 
 
@@ -126,13 +128,13 @@ class TestBatchUpdateLoopsMonitored:
 
 
 class TestBatchUpdateLoopsLevel:
-    """批量更新级别测试。"""
+    """批量更新重要等级测试。"""
 
     @pytest.mark.asyncio
     async def test_batch_update_loops_level(self) -> None:
-        """批量更新 level=1，应将所有回路 level 置为 1。"""
-        loop1 = _make_loop("loop-001", level=3)
-        loop2 = _make_loop("loop-002", level=2)
+        """批量更新 importance_level=1，应将所有回路 importance_level 置为 1。"""
+        loop1 = _make_loop("loop-001", importance_level=3)
+        loop2 = _make_loop("loop-002", importance_level=2)
 
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_make_scalars_mock([loop1, loop2]))
@@ -142,26 +144,48 @@ class TestBatchUpdateLoopsLevel:
         result = await batch_update_loops(
             db=db,
             loop_ids=["loop-001", "loop-002"],
-            updates={"level": 1},
+            updates={"importance_level": 1},
             operator="admin",
         )
 
         assert result == 2
-        assert loop1.level == 1
-        assert loop2.level == 1
+        assert loop1.importance_level == 1
+        assert loop2.importance_level == 1
+        assert db.add.call_count == 2
+        db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_update_loops_include_in_evaluation(self) -> None:
+        """批量更新 include_in_evaluation=False。"""
+        loop1 = _make_loop("loop-001", include_in_evaluation=True)
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1]))
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        result = await batch_update_loops(
+            db=db,
+            loop_ids=["loop-001"],
+            updates={"include_in_evaluation": False},
+            operator="admin",
+        )
+
+        assert result == 1
+        assert loop1.include_in_evaluation is False
         db.add.assert_called_once()
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_batch_update_loops_invalid_level(self) -> None:
-        """level=4 应抛 ERR_BATCH_INVALID_FIELD。"""
+        """importance_level=4 应抛 ERR_BATCH_INVALID_FIELD。"""
         db = AsyncMock()
 
         with pytest.raises(BizError) as exc_info:
             await batch_update_loops(
                 db=db,
                 loop_ids=["loop-001"],
-                updates={"level": 4},
+                updates={"importance_level": 4},
                 operator="admin",
             )
         assert exc_info.value.code == "ERR_BATCH_INVALID_FIELD"
@@ -206,17 +230,17 @@ class TestBatchDeleteLoops:
             operator="admin",
         )
 
-        assert result == 2
+        assert result == {"deleted": 2, "skipped": []}
         assert loop1.is_active is False
         assert loop1.status == "INACTIVE"
         assert loop2.is_active is False
         assert loop2.status == "INACTIVE"
-        db.add.assert_called_once()
+        assert db.add.call_count == 2
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_batch_delete_loops_not_found(self) -> None:
-        """无匹配回路时返回 0。"""
+        """无匹配回路时 deleted=0，全部进入 skipped。"""
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_make_scalars_mock([]))
         db.add = MagicMock()
@@ -228,8 +252,28 @@ class TestBatchDeleteLoops:
             operator="admin",
         )
 
-        assert result == 0
+        assert result["deleted"] == 0
+        assert result["skipped"] == [{"loopId": "loop-999", "reason": "回路不存在"}]
         db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_batch_delete_loops_partial_found(self) -> None:
+        """部分回路不存在时，不存在的进入 skipped。"""
+        loop1 = _make_loop("loop-001", is_active=True, status="READY")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1]))
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        result = await batch_delete_loops(
+            db=db,
+            loop_ids=["loop-001", "loop-999"],
+            operator="admin",
+        )
+
+        assert result["deleted"] == 1
+        assert result["skipped"] == [{"loopId": "loop-999", "reason": "回路不存在"}]
 
 
 # ===========================================================================
@@ -249,7 +293,7 @@ class TestBatchUpdateEmptyList:
             await batch_update_loops(
                 db=db,
                 loop_ids=[],
-                updates={"level": 1},
+                updates={"importance_level": 1},
                 operator="admin",
             )
         assert exc_info.value.code == "ERR_BATCH_EMPTY"
