@@ -488,6 +488,13 @@ class TestRolePermissions:
         assert "diagnosis:view" in perms
         assert "portal:view" in perms
         assert "tracker:*" in perms
+        # WS-D 性能#7 R1：放开回路配置入口（create/edit/export），对齐后端 require_roles
+        assert "loop:create" in perms
+        assert "loop:edit" in perms
+        assert "loop:export" in perms
+        # 不含 loop:delete（ADMIN 专属）、loop:import（IC_ENGINEER 专属）
+        assert "loop:delete" not in perms
+        assert "loop:import" not in perms
 
     def test_sponsor_permissions(self) -> None:
         from app.services.auth import get_permissions

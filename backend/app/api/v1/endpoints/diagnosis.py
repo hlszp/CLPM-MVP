@@ -473,7 +473,8 @@ async def list_records_endpoint(
 async def get_diagnosis_detail_endpoint(
     loop_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻诊断详情
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
 ) -> dict:
     """诊断详情（含 8 类标签数组 + 证据链 + 特征值）。"""
     data = await get_diagnosis_detail(db=db, loop_id=str(loop_id))
@@ -484,7 +485,8 @@ async def get_diagnosis_detail_endpoint(
 async def get_diagnosis_visualization_endpoint(
     loop_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻诊断可视化
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
 ) -> dict:
     """诊断可视化数据（包含 8 类算法的完整可视化数组）。
 
@@ -520,7 +522,8 @@ async def get_recommendations_endpoint(
         description="诊断标签列表（逗号分隔，可选。不传则从数据库读取该回路最新诊断标签）",
     ),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻诊断解决方案推荐
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
 ) -> dict:
     """获取解决方案推荐（SVC-11）。
 
@@ -591,7 +594,8 @@ async def get_waveform_endpoint(
     endTime: str = Query(..., description="结束时间（ISO 8601）"),
     maxPoints: int = Query(5000, ge=100, le=50000, description="最大数据点数"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻波形数据
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
 ) -> dict:
     """波形数据（含 PV 质量码 + LTTB 降采样）。
 

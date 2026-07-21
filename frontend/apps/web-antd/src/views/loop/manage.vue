@@ -1900,7 +1900,7 @@ watch(
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <!-- 左侧：新建与批量操作（默认显示，未选中回路时批量按钮禁用） -->
           <ClpmToolbarButton
-            v-permission="['ADMIN', 'IC_ENGINEER']"
+            v-permission="['loop:create']"
             icon="create"
             label="新建回路"
             @click="handleAdd"
@@ -1935,14 +1935,14 @@ watch(
           <span class="ml-auto"></span>
           <Upload v-bind="uploadProps">
             <ClpmToolbarButton
-              v-permission="['ADMIN', 'IC_ENGINEER']"
+              v-permission="['loop:import']"
               icon="import"
               label="导入"
               :loading="importing"
             />
           </Upload>
           <ClpmToolbarButton
-            v-permission="['ADMIN', 'IC_ENGINEER']"
+            v-permission="['loop:export']"
             icon="export"
             label="导出"
             :loading="exporting"
@@ -2327,7 +2327,7 @@ watch(
                 <span class="loop-action-cell__more">
                   <Tooltip title="编辑回路信息">
                     <Button
-                      v-permission="['ADMIN', 'IC_ENGINEER']"
+                      v-permission="['loop:edit']"
                       type="text"
                       size="small"
                       class="loop-action-btn"
@@ -2756,14 +2756,14 @@ watch(
               <!-- v6.1：view 模式隐藏底部操作按钮 -->
               <div v-if="!isViewMode" class="mt-4 flex justify-end gap-2">
                 <Button
-                  v-permission="['ADMIN', 'IC_ENGINEER']"
+                  v-permission="['loop:edit']"
                   type="default"
                   @click="handleAutoLink"
                 >
                   自动关联
                 </Button>
                 <Button
-                  v-permission="['ADMIN', 'IC_ENGINEER']"
+                  v-permission="['loop:edit']"
                   type="primary"
                   :loading="tagSaving"
                   @click="handleSaveTagMapping"
@@ -2804,7 +2804,7 @@ watch(
           }}</Button>
           <Button
             v-if="!isViewMode"
-            v-permission="['ADMIN', 'IC_ENGINEER']"
+            v-permission="['loop:edit']"
             type="primary"
             :loading="drawerSaving"
             @click="handleSaveBasic"
