@@ -20,6 +20,8 @@ export namespace DataSourceApi {
     message: string;
     /** 耗时（毫秒），skipped 时为 null */
     latencyMs: null | number;
+    /** 切换失败时已回滚 sys_config networkMode（仅 failed 时出现） */
+    rolledBack?: boolean;
   }
 
   /** 数据源配置信息 */
@@ -30,7 +32,7 @@ export namespace DataSourceApi {
     networkMode: NetworkMode;
     /** 外部历史数据 API 地址 */
     historyApiUrl: null | string;
-    /** 外部历史数据 API 鉴权 Token */
+    /** 外部历史数据 API 鉴权 Token（打码返回，保留前后各 4 位，不可用于真实调用） */
     historyApiToken: null | string;
     /** 外部历史数据 API 超时（秒） */
     historyApiTimeout: number;
@@ -44,7 +46,7 @@ export namespace DataSourceApi {
     realtimeWritebackEnabled: boolean;
     /** 当前生效的历史数据 Provider（启动时初始化，UI 用于提示"需重启生效"） */
     historyProviderActive: string;
-    /** 实时订阅器是否在运行（启动时初始化，UI 用于提示"需重启生效"） */
+    /** 实时订阅器真实运行状态（非配置镜像；启停变更需重启后端生效，UI 用于提示"需重启生效"） */
     signalrSubscriberRunning: boolean;
     /** tailscale 客户端是否可用（容器内为 false） */
     tailscaleAvailable: boolean;
@@ -52,13 +54,15 @@ export namespace DataSourceApi {
     tailscaleSwitch: null | TailscaleSwitchResult;
   }
 
-  /** 更新数据源配置参数（所有字段可选） */
+  /** 更新数据源配置参数（所有字段可选；不传=不变，字符串字段传空串=显式清空） */
   export interface DataSourceConfigUpdate {
     /** 已废弃，保留兼容（后端固定 remote_api） */
     dataSourceType?: DataSourceType;
     /** 网络模式：lan 局域网直连 / wan 公网走 Tailscale */
     networkMode?: NetworkMode;
+    /** 不传=不变，空串=清空 */
     historyApiUrl?: string;
+    /** 不传=不变，空串=清空，打码值回传=后端忽略 */
     historyApiToken?: string;
     historyApiTimeout?: number;
     signalrHubUrl?: string;

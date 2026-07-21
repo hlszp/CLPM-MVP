@@ -99,7 +99,8 @@ async def test_history_api_endpoint(
 
     from app.models.tag import TagRegistry
 
-    config = await get_datasource_config(db)
+    # 连通性测试需要原始 Token（mask_token=False），GET 响应中的打码值不可用
+    config = await get_datasource_config(db, mask_token=False)
 
     # 查询第一个已关联的 Tag 位号，用于真实数据查询测试
     tag_result = await db.execute(

@@ -7,12 +7,21 @@
   可即时生效（下次请求读取 settings 时生效）。
 - dataSourceType 切换需重启后端（Provider 单例在首次调用时创建，见 factory.py）。
 - signalrEnabled 切换需重启后端（订阅器后台任务在 lifespan 启动时初始化）。
+
+安全约定（2026-07-21 链路配置整改）：
+- GET 响应与审计日志中的 historyApiToken 一律打码（保留前后各 4 位）；
+  内部真实调用通过 mask_token=False 取原始值
+- 更新语义：字段不传＝不变；空串＝显式清空；打码值回传＝忽略
+- networkMode 触发的 Tailscale 切换失败时回滚 sys_config，保持 DB 与实际链路一致
 """
 
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -24,6 +33,12 @@ from app.core.config import settings
 from app.core.system import _is_tailscale_available, switch_network_mode
 from app.models.audit import SysAuditLog
 from app.models.sys_config import SysConfig
+
+logger = logging.getLogger(__name__)
+
+# Token 打码标记：保留前后各 4 位，中间以 **** 替代
+_TOKEN_MASK = "****"
+_TOKEN_KEEP = 4
 
 # sys_config 表中的数据源配置键
 DATASOURCE_CONFIG_KEYS = {
@@ -75,34 +90,42 @@ _KEY_DESCRIPTIONS = {
 _VALID_NETWORK_MODES = {"lan", "wan"}
 
 
-async def _get_config_value(db: AsyncSession, key: str) -> str | None:
-    result = await db.execute(select(SysConfig).where(SysConfig.key == key))
-    cfg = result.scalar_one_or_none()
-    return cfg.value if cfg else None
+async def _get_config_rows(db: AsyncSession, keys: Iterable[str]) -> dict[str, SysConfig]:
+    """一次 IN 查询批量读取 sys_config 行，返回 {key: row}。"""
+    result = await db.execute(select(SysConfig).where(SysConfig.key.in_(list(keys))))
+    return {row.key: row for row in result.scalars().all()}
 
 
-async def _set_config_value(
+async def _set_config_values(
     db: AsyncSession,
-    key: str,
-    value: str,
-    description: str | None,
+    items: dict[str, tuple[str, str | None]],
     operator: str,
 ) -> None:
-    result = await db.execute(select(SysConfig).where(SysConfig.key == key))
-    cfg = result.scalar_one_or_none()
-    if cfg is None:
-        cfg = SysConfig(
-            key=key,
-            value=value,
-            description=description,
-            updated_by=operator,
-            updated_at=datetime.now(UTC).replace(tzinfo=None),
-        )
-        db.add(cfg)
-    else:
-        cfg.value = value
-        cfg.updated_by = operator
-        cfg.updated_at = datetime.now(UTC).replace(tzinfo=None)
+    """批量写入 sys_config（一次 IN 查询取已存在行，存在则更新，否则新建）。
+
+    Args:
+        items: {sys_config key: (value, description)}
+    """
+    if not items:
+        return
+    existing = await _get_config_rows(db, items.keys())
+    now = datetime.now(UTC).replace(tzinfo=None)
+    for key, (value, description) in items.items():
+        cfg = existing.get(key)
+        if cfg is None:
+            db.add(
+                SysConfig(
+                    key=key,
+                    value=value,
+                    description=description,
+                    updated_by=operator,
+                    updated_at=now,
+                )
+            )
+        else:
+            cfg.value = value
+            cfg.updated_by = operator
+            cfg.updated_at = now
 
 
 async def _write_audit(
@@ -126,19 +149,70 @@ async def _write_audit(
 
 
 def _cast_value(field: str, raw: str | None):
-    """将 sys_config 字符串值转回原类型；raw 为 None 时回退到 settings 默认值。"""
+    """将 sys_config 字符串值转回原类型；raw 为 None 时回退到 settings 默认值。
+
+    脏数据容错：转换失败（如手工改库写入非数值）时回退原字符串并记日志，
+    避免 GET /config 因单条脏数据整体 500。
+    """
     if raw is None:
         return getattr(settings, _SETTINGS_ATTR_MAP[field])
     caster = _TYPE_CASTERS.get(field)
-    return caster(raw) if caster else raw
+    if caster is None:
+        return raw
+    try:
+        return caster(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "sys_config 脏数据：%s=%r 无法转换为目标类型，回退原字符串",
+            _SETTINGS_ATTR_MAP[field],
+            raw,
+        )
+        return raw
 
 
-async def get_datasource_config(db: AsyncSession) -> dict:
-    """获取数据源配置。优先 sys_config，缺失回退 settings 默认值。"""
-    values: dict[str, str | None] = {}
-    for field, key in DATASOURCE_CONFIG_KEYS.items():
-        values[field] = await _get_config_value(db, key)
+def _mask_token(token: str | None) -> str | None:
+    """Token 打码：保留前后各 4 位，中间以 **** 替代；长度不足则全打码。"""
+    if not token:
+        return token
+    if len(token) <= _TOKEN_KEEP * 2:
+        return _TOKEN_MASK
+    return f"{token[:_TOKEN_KEEP]}{_TOKEN_MASK}{token[-_TOKEN_KEEP:]}"
 
+
+def _signalr_subscriber_running() -> bool:
+    """查询 SignalR 订阅器真实运行状态（非 settings 配置镜像）。
+
+    订阅器在 lifespan 启动时初始化，signalrEnabled 配置变更需重启后端
+    才生效，因此运行状态必须读订阅器实例而非配置。
+    """
+    try:
+        from app.services.data_source.realtime_subscriber import get_subscriber
+
+        return bool(getattr(get_subscriber(), "_running", False))
+    except Exception:
+        logger.warning("无法获取 SignalR 订阅器运行状态，回退 settings 配置", exc_info=True)
+        return bool(settings.SIGNALR_ENABLED)
+
+
+async def get_datasource_config(db: AsyncSession, *, mask_token: bool = True) -> dict:
+    """获取数据源配置。优先 sys_config，缺失回退 settings 默认值（一次 IN 查询）。
+
+    Args:
+        mask_token: True（默认）时 historyApiToken 打码返回（保留前后各 4 位），
+            用于 GET 响应与审计日志；内部真实调用（如连通性测试、启动预载）
+            必须传 False 取原始 Token。
+    """
+    rows = await _get_config_rows(db, DATASOURCE_CONFIG_KEYS.values())
+    values: dict[str, str | None] = {
+        field: (row.value if (row := rows.get(key)) is not None else None)
+        for field, key in DATASOURCE_CONFIG_KEYS.items()
+    }
+
+    token = (
+        values["historyApiToken"]
+        if values["historyApiToken"] is not None
+        else settings.HISTORY_DATA_API_TOKEN
+    )
     return {
         "dataSourceType": values["dataSourceType"] or settings.DATA_SOURCE_TYPE,
         "networkMode": values["networkMode"] or settings.NETWORK_MODE,
@@ -147,11 +221,7 @@ async def get_datasource_config(db: AsyncSession) -> dict:
             if values["historyApiUrl"] is not None
             else settings.HISTORY_DATA_API_URL
         ),
-        "historyApiToken": (
-            values["historyApiToken"]
-            if values["historyApiToken"] is not None
-            else settings.HISTORY_DATA_API_TOKEN
-        ),
+        "historyApiToken": _mask_token(token) if mask_token else token,
         "historyApiTimeout": _cast_value("historyApiTimeout", values["historyApiTimeout"]),
         "signalrHubUrl": (
             values["signalrHubUrl"]
@@ -167,7 +237,7 @@ async def get_datasource_config(db: AsyncSession) -> dict:
         ),
         # 运行态：计算类历史数据查询一律本地 TDengine（2026-07-20 架构决策）
         "historyProviderActive": "tdengine",
-        "signalrSubscriberRunning": settings.SIGNALR_ENABLED,
+        "signalrSubscriberRunning": _signalr_subscriber_running(),
         # tailscale 客户端可用性预检（容器内为 False）
         "tailscaleAvailable": _is_tailscale_available(),
     }
@@ -183,6 +253,12 @@ async def update_datasource_config(
     即时生效项：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken
     / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
     重启生效项：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）
+
+    更新语义（PR 约定）：
+    - 字段不传（None）＝保持不变
+    - 字符串字段传空串 "" ＝显式清空（historyApiUrl / historyApiToken / signalrHubUrl）
+    - historyApiToken 传入含打码标记 **** 的值视为前端误回传打码 Token，忽略该字段
+    - networkMode 切换 Tailscale 失败时回滚 sys_config 与 settings，保持 DB 与实际链路一致
     """
     # 校验 networkMode 值域
     if kwargs.get("networkMode") is not None:
@@ -193,25 +269,58 @@ async def update_datasource_config(
     before = await get_datasource_config(db)
     before_json = json.dumps(before, ensure_ascii=False)
 
+    # 批量写入：收集待更新项后一次 IN 查询 upsert
+    items: dict[str, tuple[str, str | None]] = {}
+    settings_updates: dict[str, Any] = {}
     for field, value in kwargs.items():
         if value is None or field not in DATASOURCE_CONFIG_KEYS:
             continue
-        await _set_config_value(
-            db,
-            DATASOURCE_CONFIG_KEYS[field],
+        if field == "historyApiToken" and isinstance(value, str) and _TOKEN_MASK in value:
+            logger.warning(
+                "historyApiToken 传入打码值（含 %r），按误回传处理忽略本次更新", _TOKEN_MASK
+            )
+            continue
+        items[DATASOURCE_CONFIG_KEYS[field]] = (
             str(value).lower() if isinstance(value, bool) else str(value),
             _KEY_DESCRIPTIONS[field],
-            operator,
         )
-        # 同步 settings 内存
+        settings_updates[field] = value
+    await _set_config_values(db, items, operator)
+    # 同步 settings 内存
+    for field, value in settings_updates.items():
         setattr(settings, _SETTINGS_ATTR_MAP[field], value)
 
     after = await get_datasource_config(db)
 
     # 检测 networkMode 变化 → 触发 Tailscale 子网路由切换
     tailscale_result: dict | None = None
-    if kwargs.get("networkMode") is not None and before["networkMode"] != after["networkMode"]:
-        tailscale_result = switch_network_mode(after["networkMode"])
+    requested_mode = kwargs.get("networkMode")
+    if requested_mode is not None and before["networkMode"] != after["networkMode"]:
+        tailscale_result = dict(switch_network_mode(after["networkMode"]))
+        if tailscale_result["status"] == "failed":
+            # 回滚 sys_config 与 settings，避免 DB 记录的模式与实际路由发散
+            await _set_config_values(
+                db,
+                {
+                    DATASOURCE_CONFIG_KEYS["networkMode"]: (
+                        before["networkMode"],
+                        _KEY_DESCRIPTIONS["networkMode"],
+                    )
+                },
+                operator,
+            )
+            setattr(
+                settings,
+                _SETTINGS_ATTR_MAP["networkMode"],
+                before["networkMode"],
+            )
+            after = await get_datasource_config(db)
+            tailscale_result["rolledBack"] = True
+            tailscale_result["message"] = (
+                f"{tailscale_result['message']}；已回滚为 "
+                f"{before['networkMode']}（数据库与实际链路保持一致）"
+            )
+            logger.warning("Tailscale 切换失败，networkMode 已回滚为 %s", before["networkMode"])
         # 审计日志记录 Tailscale 切换结果
         await _write_audit(
             db=db,
@@ -219,8 +328,7 @@ async def update_datasource_config(
             operation_type="TAILSCALE_SWITCH",
             before_value=before["networkMode"],
             after_value=(
-                f"{after['networkMode']} -> {tailscale_result['status']}: "
-                f"{tailscale_result['message']}"
+                f"{requested_mode} -> {tailscale_result['status']}: {tailscale_result['message']}"
             ),
         )
 
@@ -253,7 +361,8 @@ async def preload_datasource_config(db: AsyncSession) -> None:
     - update 是 UI 主动修改时调用，会触发副作用（Tailscale 切换 + 审计）
     - preload 失败不应阻塞启动，调用方应 try/except 兜底
     """
-    config = await get_datasource_config(db)
+    # 预载必须取原始 Token（mask_token=False），否则 settings 会被写入打码值
+    config = await get_datasource_config(db, mask_token=False)
     for field, attr in _SETTINGS_ATTR_MAP.items():
         value = config.get(field)
         if value is not None:

@@ -18,6 +18,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Form,
   FormItem,
   Input,
@@ -98,6 +99,11 @@ const tailscaleSwitchResult = ref<DataSourceApi.TailscaleSwitchResult | null>(
   null,
 );
 
+// Token 安全语义（阶段 8）：GET 返回打码值，不回填表单；
+// 留空=不变，输入新值=覆盖，勾选清空=传空串显式清除
+const savedMaskedToken = ref('');
+const clearToken = ref(false);
+
 const historyTestResult = ref<DataSourceApi.TestResult | null>(null);
 const signalrTestResult = ref<DataSourceApi.TestResult | null>(null);
 
@@ -106,28 +112,39 @@ const needRestart = computed(() => {
   return form.signalrEnabled !== config.value.signalrSubscriberRunning;
 });
 
-async function switchNetworkMode(mode: DataSourceApi.NetworkMode) {
+function switchNetworkMode(mode: DataSourceApi.NetworkMode) {
   if (form.networkMode === mode || switchingNetwork.value) return;
-  switchingNetwork.value = true;
-  tailscaleSwitchResult.value = null;
-  try {
-    const data = await updateDatasourceConfigApi({ networkMode: mode });
-    config.value = data;
-    form.networkMode = data.networkMode;
-    tailscaleSwitchResult.value = data.tailscaleSwitch;
-    if (data.tailscaleSwitch) {
-      const { status, message: msg } = data.tailscaleSwitch;
-      if (status === 'success') {
-        message.success(msg);
-      } else if (status === 'skipped') {
-        message.info(msg);
-      } else {
-        message.warning(msg);
+  const targetLabel =
+    mode === 'wan' ? '公网（Tailscale 子网路由）' : '局域网（直连）';
+  // 二次确认：切换会瞬断实时数据链路（SignalR 自动重连），属高危操作
+  Modal.confirm({
+    title: '确认切换网络模式？',
+    content: `即将切换到「${targetLabel}」。切换瞬间会中断实时数据链路（SignalR 订阅将自动重连并补数），仅切换网络链路、不影响数据源选择。确认继续？`,
+    okText: '确认切换',
+    cancelText: '取消',
+    async onOk() {
+      switchingNetwork.value = true;
+      tailscaleSwitchResult.value = null;
+      try {
+        const data = await updateDatasourceConfigApi({ networkMode: mode });
+        config.value = data;
+        form.networkMode = data.networkMode;
+        tailscaleSwitchResult.value = data.tailscaleSwitch;
+        if (data.tailscaleSwitch) {
+          const { status, message: msg } = data.tailscaleSwitch;
+          if (status === 'success') {
+            message.success(msg);
+          } else if (status === 'skipped') {
+            message.info(msg);
+          } else {
+            message.warning(msg);
+          }
+        }
+      } finally {
+        switchingNetwork.value = false;
       }
-    }
-  } finally {
-    switchingNetwork.value = false;
-  }
+    },
+  });
 }
 
 // Radio.Group change 事件适配 — ant-design-vue 的 RadioChangeEvent.target.value 为 optional
@@ -143,7 +160,10 @@ async function loadConfig() {
     config.value = data;
     form.networkMode = data.networkMode;
     form.historyApiUrl = data.historyApiUrl ?? '';
-    form.historyApiToken = data.historyApiToken ?? '';
+    // Token 打码返回，不回填表单；仅在状态中展示打码值
+    form.historyApiToken = '';
+    savedMaskedToken.value = data.historyApiToken ?? '';
+    clearToken.value = false;
     form.historyApiTimeout = data.historyApiTimeout;
     form.signalrHubUrl = data.signalrHubUrl ?? '';
     form.signalrEnabled = data.signalrEnabled;
@@ -156,15 +176,37 @@ async function loadConfig() {
   }
 }
 
+/** 保存/测试后重置 Token 输入状态（响应中为打码值，仅用于展示） */
+function resetTokenState(data: DataSourceApi.DataSourceConfig) {
+  form.historyApiToken = '';
+  clearToken.value = false;
+  savedMaskedToken.value = data.historyApiToken ?? '';
+}
+
+/**
+ * 构造历史数据源更新载荷：
+ * - URL 传当前表单值（空串 = 显式清空）
+ * - Token：勾选清空 = 传空串；留空 = 不传（保持不变）；新值 = 覆盖
+ */
+function buildHistoryPayload(): DataSourceApi.DataSourceConfigUpdate {
+  const payload: DataSourceApi.DataSourceConfigUpdate = {
+    historyApiUrl: form.historyApiUrl,
+    historyApiTimeout: form.historyApiTimeout,
+  };
+  if (clearToken.value) {
+    payload.historyApiToken = '';
+  } else if (form.historyApiToken) {
+    payload.historyApiToken = form.historyApiToken;
+  }
+  return payload;
+}
+
 async function saveHistoryConfig() {
   savingHistory.value = true;
   try {
-    const data = await updateDatasourceConfigApi({
-      historyApiUrl: form.historyApiUrl || undefined,
-      historyApiToken: form.historyApiToken || undefined,
-      historyApiTimeout: form.historyApiTimeout,
-    });
+    const data = await updateDatasourceConfigApi(buildHistoryPayload());
     config.value = data;
+    resetTokenState(data);
     message.success('历史数据源配置已保存');
   } finally {
     savingHistory.value = false;
@@ -175,7 +217,7 @@ async function saveSignalrConfig() {
   savingSignalr.value = true;
   try {
     const data = await updateDatasourceConfigApi({
-      signalrHubUrl: form.signalrHubUrl || undefined,
+      signalrHubUrl: form.signalrHubUrl,
       signalrEnabled: form.signalrEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
     });
@@ -186,38 +228,51 @@ async function saveSignalrConfig() {
   }
 }
 
-async function testHistory() {
-  testingHistory.value = true;
-  historyTestResult.value = null;
-  try {
-    const data = await updateDatasourceConfigApi({
-      historyApiUrl: form.historyApiUrl || undefined,
-      historyApiToken: form.historyApiToken || undefined,
-      historyApiTimeout: form.historyApiTimeout,
-    });
-    config.value = data;
-    const result = await testHistoryApiApi();
-    historyTestResult.value = result;
-  } finally {
-    testingHistory.value = false;
-  }
+/** 测试连接会先按当前表单隐式保存配置，操作前显式提示确认 */
+function testHistory() {
+  Modal.confirm({
+    title: '测试连接',
+    content: '测试前将先按当前表单内容保存历史数据源配置，是否继续？',
+    okText: '保存并测试',
+    cancelText: '取消',
+    async onOk() {
+      testingHistory.value = true;
+      historyTestResult.value = null;
+      try {
+        const data = await updateDatasourceConfigApi(buildHistoryPayload());
+        config.value = data;
+        resetTokenState(data);
+        historyTestResult.value = await testHistoryApiApi();
+      } finally {
+        testingHistory.value = false;
+      }
+    },
+  });
 }
 
-async function testSignalr() {
-  testingSignalr.value = true;
-  signalrTestResult.value = null;
-  try {
-    const data = await updateDatasourceConfigApi({
-      signalrHubUrl: form.signalrHubUrl || undefined,
-      signalrEnabled: form.signalrEnabled,
-      signalrReconnectInterval: form.signalrReconnectInterval,
-    });
-    config.value = data;
-    const result = await testSignalrApi();
-    signalrTestResult.value = result;
-  } finally {
-    testingSignalr.value = false;
-  }
+/** 测试连接会先按当前表单隐式保存配置，操作前显式提示确认 */
+function testSignalr() {
+  Modal.confirm({
+    title: '测试连接',
+    content: '测试前将先按当前表单内容保存实时数据源配置，是否继续？',
+    okText: '保存并测试',
+    cancelText: '取消',
+    async onOk() {
+      testingSignalr.value = true;
+      signalrTestResult.value = null;
+      try {
+        const data = await updateDatasourceConfigApi({
+          signalrHubUrl: form.signalrHubUrl,
+          signalrEnabled: form.signalrEnabled,
+          signalrReconnectInterval: form.signalrReconnectInterval,
+        });
+        config.value = data;
+        signalrTestResult.value = await testSignalrApi();
+      } finally {
+        testingSignalr.value = false;
+      }
+    },
+  });
 }
 
 // =========================================================================
@@ -836,13 +891,28 @@ onMounted(loadConfig);
                 <Input
                   v-model:value="form.historyApiUrl"
                   :placeholder="DEFAULT_HISTORY_API_URL"
+                  allow-clear
                 />
               </FormItem>
               <FormItem label="鉴权 Token">
                 <Input.Password
                   v-model:value="form.historyApiToken"
-                  placeholder="如需鉴权请填写"
+                  :disabled="clearToken"
+                  :placeholder="
+                    savedMaskedToken
+                      ? `已保存：${savedMaskedToken}（留空保持不变）`
+                      : '如需鉴权请填写'
+                  "
                 />
+                <div v-if="savedMaskedToken" class="mt-1">
+                  <Checkbox v-model:checked="clearToken">
+                    清空已保存 Token
+                  </Checkbox>
+                </div>
+                <div class="text-gray-400 mt-1 text-xs">
+                  Token 打码显示（保留前后各 4 位）；留空 = 不变，输入新值 =
+                  覆盖，勾选清空 = 清除
+                </div>
               </FormItem>
               <FormItem label="请求超时（秒）">
                 <InputNumber
@@ -854,7 +924,7 @@ onMounted(loadConfig);
 
               <div class="text-gray-400 mb-3 text-xs">
                 性能评估、回路诊断等计算任务一律读取本地
-                TDengine，不调用此接口。
+                TDengine，不调用此接口。地址清空后保存即清除配置。
               </div>
 
               <div class="flex items-center gap-3">
@@ -898,6 +968,7 @@ onMounted(loadConfig);
                   <Input
                     v-model:value="form.signalrHubUrl"
                     :placeholder="DEFAULT_SIGNALR_HUB_URL"
+                    allow-clear
                   />
                 </FormItem>
                 <FormItem label="断线重连间隔（秒）">
