@@ -245,6 +245,19 @@ const controlModeText = computed(() => {
   );
 });
 
+/** WS-C 6-5：PID 参数只读展示（runtimeParams.pidP/pidI/pidD，实时读取自关联 Tag） */
+const pidParamText = computed(() => {
+  const fmt = (v: null | number | undefined) =>
+    v === null || v === undefined ? '—' : String(v);
+  const rp = loopDetail.value?.runtimeParams;
+  return {
+    pidP: fmt(rp?.pidP),
+    pidI: fmt(rp?.pidI),
+    pidD: fmt(rp?.pidD),
+    readAt: rp?.readAt || '—',
+  };
+});
+
 /** 趋势图光标快照：默认最右侧数据点，鼠标悬停时动态覆盖 */
 interface CursorSnapshot {
   mode: null | number;
@@ -718,6 +731,19 @@ onMounted(() => {
                   <Tag :color="themeColors.DANGER">
                     {{ dataQualitySummary.bad.toFixed(1) }}%
                   </Tag>
+                </DescriptionsItem>
+                <!-- WS-C 6-5：PID 参数只读区（实时读取自关联 Tag，仅展示） -->
+                <DescriptionsItem label="比例增益 P">
+                  {{ pidParamText.pidP }}
+                </DescriptionsItem>
+                <DescriptionsItem label="积分时间 I">
+                  {{ pidParamText.pidI }}
+                </DescriptionsItem>
+                <DescriptionsItem label="微分时间 D">
+                  {{ pidParamText.pidD }}
+                </DescriptionsItem>
+                <DescriptionsItem label="参数读取时间">
+                  {{ pidParamText.readAt }}
                 </DescriptionsItem>
               </Descriptions>
             </Card>

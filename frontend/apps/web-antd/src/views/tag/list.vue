@@ -154,7 +154,7 @@ const MEASURE_TYPE_MAP: Record<string, { color: string; label: string }> = {
   LEVEL: { label: '液位', color: '#86EFAC' },
   FLOW: { label: '流量', color: '#67E8F9' },
   ANALYSIS: { label: '分析', color: '#D8B4FE' },
-  POSITION: { label: '阀位', color: '#FDBA74' },
+  SPEED: { label: '速度', color: '#FDBA74' },
   OTHER: { label: '其他', color: '#CBD5E1' },
 };
 
@@ -172,9 +172,10 @@ const TAG_TYPE_MAP: Record<string, { color: string; label: string }> = {
   SP: { label: 'SP', color: '#86EFAC' },
   OP: { label: 'OP', color: '#FDBA74' },
   MODE: { label: 'MODE', color: '#D8B4FE' },
-  KP: { label: 'KP', color: '#67E8F9' },
-  TI: { label: 'TI', color: '#67E8F9' },
-  TD: { label: 'TD', color: '#67E8F9' },
+  PID_P: { label: 'PID_P', color: '#67E8F9' },
+  PID_I: { label: 'PID_I', color: '#67E8F9' },
+  PID_D: { label: 'PID_D', color: '#67E8F9' },
+  OTHER: { label: '其他', color: '#CBD5E1' },
 };
 
 const tagTypeOptions = [

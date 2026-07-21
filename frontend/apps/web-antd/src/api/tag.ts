@@ -8,18 +8,26 @@ import type { PageQuery, PaginatedResponse } from '#/api/types';
 import { requestClient } from '#/api/request';
 
 export namespace TagApi {
-  /** 测点类型（温度/压力/液位/流量/分析/阀位/其他） */
+  /** 测点类型（温度/压力/液位/流量/分析/速度/其他） */
   export type MeasureType =
     | 'ANALYSIS'
     | 'FLOW'
     | 'LEVEL'
     | 'OTHER'
-    | 'POSITION'
     | 'PRESSURE'
+    | 'SPEED'
     | 'TEMPERATURE';
 
-  /** 参数类型（PV/SP/OP/KP/TI/TD/MODE） */
-  export type TagType = 'KP' | 'MODE' | 'OP' | 'PV' | 'SP' | 'TD' | 'TI';
+  /** 参数类型（PV/SP/OP/MODE/PID_P/PID_I/PID_D/OTHER） */
+  export type TagType =
+    | 'MODE'
+    | 'OP'
+    | 'OTHER'
+    | 'PID_D'
+    | 'PID_I'
+    | 'PID_P'
+    | 'PV'
+    | 'SP';
 
   /** 质量戳（GOOD/BAD/UNCERTAIN） */
   export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN';
