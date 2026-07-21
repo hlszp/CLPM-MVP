@@ -112,6 +112,8 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 > **运行时验证（2026-07-22 执行）**：① 回路-4 worker 已加载新码 ✅（worker 20:16:02 启动 > W1 最后合并 20:13:25）。② 性能-4 重复任务清理 ✅（dry-run 441 条 → --execute 删除 → 复跑待删除 0 条，重复组归零；1 条 RUNNING 非终态正确保留）。③ 性能-3 PG 抽查 🔶受阻：代码已部署、worker 已加载新码，历史 INCONCLUSIVE 快照已有 92 条 confidence_level='E'（证逻辑生效），但 **7/21 16:00 后无新快照**（beat PID 3124 在跑、worker 20:16 重启，但评估任务未生成快照）——疑似实时数据链路断开或评估任务执行异常，**需排查**（不阻塞 W2 编码）。
 >
 > **W2 完成（2026-07-22）**：WS-D（PR #8，已合并 0c42d897——监控契约对齐 + R1 权限矩阵 SPONSOR 门控/PE_ENGINEER 配置放开）、WS-B2（PR #9，已合并 57eb59e6——停滞看门狗/checkpoint 分离/WS 参数放宽/SETNX 分布式锁/导入生命周期/链路监控 beat/时区显式转换）**全部 2 项合并完成**并同步 github 镜像；合并后门禁全绿（ruff 零告警 / pytest 2173 passed，较 W1 +55 / check:type 零错误）。回路-2/3/5/9、性能-7 验收关闭（详见 §8）。
+>
+> **W3 进行中（2026-07-22）**：WS-G 文档轨（G2，PR #10，已合并 52bf5997——D1-D6 全落地 + R2 权重口径 metric_config 唯一入口）；WS-G 代码轨（G1，已合并 2ab18e1a——回路-10 后端性能 DISTINCT ON/CTE/GROUP BY/合并IN/stats缓存 + 前端 UX 错误/空态/WS状态/服务端分页/质量码统一 + 性能-11 时间工具抽取消除 +8h hack + 性能-12 ranking 全量分页）**全部合并完成**并同步 github 镜像；合并后门禁全绿（ruff 零告警 / pytest 2174 passed，较 W2 +1 / check:type 零错误）。回路-10/性能-11/性能-12 验收关闭（详见 §8）。**剩余**：性能-13 部署走查（上线 gate）+ 性能-14 e2e 补盲；性能-2/3/10 待运行时验证（受阻于实时链路断开）。
 
 ## 6. 分支合并校验标准与流程
 
@@ -158,7 +160,7 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 | 回路-7 ✅ | 测点配置契约 | WS-C（PR #7，aaa24790） | W1 | 枚举对齐 KP/TI/TD→PID_P/I/D、POSITION→SPEED ✅；TagUpdate 参数类型 ✅；unitName 补齐 ✅；is_linked 仅由映射派生 ✅；导入忽略启用列 ✅ |
 | 回路-8 ✅ | 链路配置安全 | WS-E（PR #4，已合并 a6822d85） | W1 | 审计/GET Token 打码 ✅；Tailscale 失败回滚 sys_config ✅；可清空字段 ✅（405 行新单测在库） |
 | 回路-9 ✅ | 韧性增强包 | WS-B2（PR #9，已合并 57eb59e6） | W2 | 停滞看门狗 ✅（asyncio.wait_for recv 超时）；checkpoint 落库/接收分离 ✅；WS 参数 30/60/15 ✅；SETNX 分布式锁 ✅；导入 chunk 级取消+终态兜底 ✅；RUNNING 超时清扫 ✅；任务 TTL 30 天+索引修剪 ✅；data_link_monitor beat ✅；单测 44 项 ✅（realtime 22 + import 16 + monitor 6） |
-| 回路-10 | 性能 UX + 文档 | WS-G | W3 | DISTINCT ON/CTE 查询计划验证；PRD v6.1 发布，D1-D6 全落地 |
+| 回路-10 ✅ | 性能 UX + 文档 | WS-G 代码轨（已合并 2ab18e1a）+ 文档轨（PR #10，52bf5997） | W3 | 后端 DISTINCT ON/CTE/GROUP BY/合并IN/stats缓存 ✅；前端 错误/空态/WS状态/服务端分页/质量码统一 ✅；D1-D6 文档全落地 ✅；门禁 2174 passed |
 | 性能-1 ✅ | loops_total 根因 | PR-A1（gitea PR #2，已合并 f62e2275；worker 已重启加载新码） | W0 | 单测回填后 loops_total=回路数；e2e F7 断言保持 |
 | 性能-2 🔶 | 权重口径裁决 | WS-G 文档轨（PR #10，已合并 52bf5997） | W3 | 文档 ✅（PRD/FDS/DDS/契约/ADS 全库对齐 metric_config 唯一入口）；代码优先级链不变 ✅；**待运行时验证：指定回路改权重→回填分数按新权重** |
 | 性能-3 🔶 | INCONCLUSIVE 落 'E' | PR-A2（PR #3，已合并 5e378712） | W1 | 代码 ✅（显式传入不覆盖）；PG 抽查历史快照 92 条 confidence_level='E' ✅（证逻辑生效）；**7/21 16:00 后无新快照，待实时链路恢复后抽查新快照**（受阻于数据链路问题，非代码问题） |
@@ -169,8 +171,8 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 | 性能-8 ✅ | rules 契约 | WS-F（PR #5） | W1 | 裸数组契约已落地（api/metric.ts 删 RuleListResult） |
 | 性能-9 ✅ | 注释修正 | WS-F（PR #5） | W1 | 已随 PR 修正 |
 | 性能-10 🔶 | badge 死代码 | WS-F（PR #5，loop-performance 试点已合） | W1 | **待渲染一致性抽验，决定推广或删除组件** |
-| 性能-11 | +8h hack | WS-G | W3 | 统一时间工具替换，渲染不变 |
-| 性能-12 | ranking 全量 | WS-G | W3 | >100 回路时饼图计数完整 |
+| 性能-11 ✅ | +8h hack | WS-G 代码轨（已合并 2ab18e1a，676feeeb） | W3 | `normalizeUtcTimestamp`+`formatLocalTime` 抽取到 format.ts ✅；pid-dashboard +8h hack 消除 ✅；6 处重复补Z逻辑收敛 ✅；跨时区正确 |
+| 性能-12 ✅ | ranking 全量 | WS-G 代码轨（已合并 2ab18e1a，c16e893f） | W3 | 后端 ranking 加 offset 参数 ✅（Query ge=0 验证）；前端 loadRanking 循环分页拉全量 ✅（do-while 直到不足一页）；>100 回路饼图计数完整 |
 | 性能-13 | 部署走查 | WS-G | W3 | 测试机全流程跑通记录（上线 gate） |
 | 性能-14 | e2e 补盲 | WS-G | W3 | 新增 spec 全绿 |
 
