@@ -417,7 +417,7 @@ async def test_parallel_progress_uses_atomic_counter() -> None:
     record.assert_awaited_once_with(
         "task-1",
         event_id="w2:loop-1",
-        total_loops=8,
+        total_work_items=8,
         current_stage="回填计算 窗口[2/4]",
     )
 

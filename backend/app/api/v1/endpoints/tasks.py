@@ -199,11 +199,16 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
             plant_node_ids = None
 
     loops_total = _to_int(data.get("loops_total"))
-    # BACKFILL 运行期 loops_total 会被回填进度覆盖为「回路 × 窗口」工作项数
-    # （kpi_calc._update_backfill_progress / _increment_backfill_progress）。
-    # 任务列表的「评估回路」列语义为回路数，此处按 loop_ids 还原。
-    if data.get("task_type") == TaskType.BACKFILL.value and loop_ids:
-        loops_total = len(loop_ids)
+    loops_done = _to_int(data.get("loops_done"))
+    if data.get("task_type") == TaskType.BACKFILL.value and loops_total:
+        # BACKFILL 的细粒度进度按「回路×窗口」工作项记录在任务 hash 的
+        # work_items_total/work_items_done 字段；loops_total 恒为回路数
+        # （创建时写入，运行期不再被工作项数覆盖，2026-07-21 P0 根因修复）。
+        # 回路仅在全部窗口完成后才整体完成，此处按进度折算等效完成回路数，
+        # 保持 loopsDone/loopsTotal 同量纲展示。
+        progress = _to_float(data.get("progress"))
+        if progress is not None:
+            loops_done = round(progress * loops_total)
 
     return TaskResponse(
         taskId=data.get("task_id", ""),
@@ -213,7 +218,7 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         progress=_to_float(data.get("progress")),
         currentStage=_to_str_or_none(data.get("current_stage")),
         loopsTotal=loops_total,
-        loopsDone=_to_int(data.get("loops_done")),
+        loopsDone=loops_done,
         windowCount=_to_int(data.get("window_count")),
         createdAt=data.get("created_at", ""),
         startedAt=_to_str_or_none(data.get("started_at")),
