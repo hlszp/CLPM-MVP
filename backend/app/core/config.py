@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
     SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连基础间隔（秒，指数退避起点）
     SIGNALR_RECONNECT_MAX_INTERVAL: int = 30  # 断线重连最大间隔（秒，指数退避上限）
+    # WS 客户端参数（放宽默认值，适配过载边缘服务器）
+    SIGNALR_PING_INTERVAL: int = 30  # 心跳间隔（秒），默认 30
+    SIGNALR_PING_TIMEOUT: int = 60  # 心跳超时（秒），默认 60
+    SIGNALR_OPEN_TIMEOUT: int = 15  # 连接建立超时（秒），默认 15
+    # 数据停滞看门狗：N 秒无消息主动断开重连（覆盖"WS 活着但上游停推"盲区）
+    SIGNALR_STALL_TIMEOUT_SECONDS: int = 300  # 默认 5 分钟
     # 是否将实时数据写回本地 TDengine 宽表（数据架构优化 Phase 1）
     REALTIME_WRITEBACK_ENABLED: bool = True
 
@@ -109,6 +115,16 @@ class Settings(BaseSettings):
     GAP_BACKFILL_MAX_HOURS: int = 24  # 单次补数最大窗口（超出部分截断并告警，需手工导入）
     GAP_BACKFILL_RETRY_BASE_SECONDS: int = 300  # 补数失败重试起步退避（5 分钟，连接在线也生效）
     GAP_BACKFILL_RETRY_MAX_SECONDS: int = 1800  # 补数失败重试退避上限（30 分钟，指数翻倍封顶）
+    # 断点续传 SETNX 分布式锁（多副本防重复补数）
+    GAP_BACKFILL_LOCK_TTL_SECONDS: int = 7200  # 锁 TTL（2 小时，覆盖单次补数最长时长）
+
+    # ---- 导入任务生命周期 ----
+    IMPORT_TASK_TTL_DAYS: int = 30  # 导入任务 Redis 记录 TTL（天）
+    IMPORT_TASK_RUNNING_TIMEOUT_SECONDS: int = 7200  # RUNNING 超时阈值（2h，超时清扫置 FAILED）
+
+    # ---- 数据链路监控 ----
+    DATA_LINK_CHECK_INTERVAL_MINUTES: int = 10  # 链路健康检查 Beat 间隔（分钟）
+    DATA_LINK_FRESHNESS_THRESHOLD_MINUTES: int = 30  # TDengine 数据新鲜度阈值（分钟）
 
     # ---- Alerting ----
     ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志
