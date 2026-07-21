@@ -95,16 +95,19 @@ async def test_history_fetch_timeout_is_reported_as_data_source_error(monkeypatc
     # 否则会提前命中"未配置"分支而非超时分支
     monkeypatch.setattr(settings, "HISTORY_DATA_API_URL", "http://example.invalid/history")
 
-    client = MagicMock()
-    client.get = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
+    guard = MagicMock()
+    guard.fetch_history_guarded = AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
 
-    with pytest.raises(HistoryDataSourceError, match="远端历史数据 API 超时"):
+    with (
+        patch("app.services.data_import._get_remote_guard", return_value=guard),
+        patch("asyncio.sleep", new=AsyncMock()),
+        pytest.raises(HistoryDataSourceError, match="远端历史数据 API 超时"),
+    ):
         await _fetch_remote_history(
             ["LIC-101.PV"],
             "2026-07-17T00:00:00",
             "2026-07-17T01:00:00",
             1,
-            client=client,
         )
 
 

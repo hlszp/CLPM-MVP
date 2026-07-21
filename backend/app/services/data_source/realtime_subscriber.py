@@ -20,7 +20,13 @@ Redis 缓存:
   ``GAP_BACKFILL_MIN_GAP_SECONDS`` 即触发后台补数任务，调用
   ``data_import.import_history_data``（skip 策略，依赖 TDengine 同 ts 覆盖语义）
   补全缺口窗口，并触发受影响小时的 KPI 回算；
-- 单次补数窗口上限 ``GAP_BACKFILL_MAX_HOURS``，超出部分截断并告警，需手工导入。
+- 单次补数窗口上限 ``GAP_BACKFILL_MAX_HOURS``，超出部分截断并告警，需手工导入；
+- checkpoint 条件推进：仅补数全部成功（failed==0）才推进 checkpoint，
+  部分失败/异常时缺口保留，并启动延迟重试定时器
+  （``GAP_BACKFILL_RETRY_BASE_SECONDS`` 起步指数退避，
+  上限 ``GAP_BACKFILL_RETRY_MAX_SECONDS``，连接在线也生效）；
+- 补数执行经 ``task_tracker`` 登记任务记录（triggered_by=auto-backfill），
+  任务列表可见；失败接 ``alerting`` 告警。
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import websockets
@@ -71,6 +77,14 @@ def next_reconnect_delay(current: float, *, cap: float) -> float:
     避免远端 Hub 不可用时固定小间隔重连对服务持续施压。
     """
     return min(current * 2, cap)
+
+
+def backfill_retry_delay(retry_count: int, *, base: float, cap: float) -> float:
+    """补数失败第 retry_count 次重试的退避秒数：base 起步指数翻倍，封顶 cap。
+
+    retry_count 从 1 开始：base, 2*base, 4*base, ...，封顶 cap。
+    """
+    return min(base * (2 ** max(retry_count - 1, 0)), cap)
 
 
 # PV 角色对应的质量码列名
@@ -115,6 +129,10 @@ class RealtimeSubscriber:
         self._last_data_at: float | None = None  # 最后收到数据时间（epoch 秒，wall clock）
         self._last_checkpoint_write: float = 0.0  # 上次写 checkpoint 的 monotonic 时间
         self._backfill_task: asyncio.Task | None = None  # 进行中的补数任务（单实例守卫）
+        # 补数失败重试状态（连接在线也生效的延迟重试定时器）
+        self._backfill_retry_task: asyncio.Task | None = None  # 待执行的重试定时器
+        self._backfill_retry_count: int = 0  # 连续失败次数（决定指数退避间隔）
+        self._retry_window_start: float | None = None  # 待重试缺口起点（多次失败取最早）
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -168,6 +186,15 @@ class RealtimeSubscriber:
             except asyncio.CancelledError:
                 pass
             self._backfill_task = None
+        if self._backfill_retry_task is not None:
+            self._backfill_retry_task.cancel()
+            try:
+                await self._backfill_retry_task
+            except asyncio.CancelledError:
+                pass
+            self._backfill_retry_task = None
+        self._retry_window_start = None
+        self._backfill_retry_count = 0
         if self._ws is not None:
             await self._ws.close()
             self._ws = None
@@ -417,17 +444,24 @@ class RealtimeSubscriber:
     async def _run_gap_backfill(self, gap_start: float, gap_end: float) -> None:
         """执行断点续传：经远端历史数据接口补全缺口窗口，并触发 KPI 回算.
 
-        异常仅记日志不抛出（不影响实时订阅主循环）；失败时 checkpoint 不推进，
-        下次重连会基于原 checkpoint 再次尝试（天然重试）。
+        - checkpoint 条件推进：仅全部回路成功（failed==0）才推进 checkpoint；
+          部分失败/异常时缺口保留，启动延迟重试定时器（指数退避，连接在线也生效）
+        - 任务可观测：执行前经 task_tracker 登记任务记录（triggered_by=auto-backfill），
+          终态更新 SUCCESS/FAILED；失败接 alerting 告警
+        - 异常仅记日志不抛出（不影响实时订阅主循环）
         """
         from sqlalchemy import select
 
         from app.models.loop import LoopLedger
+        from app.schemas.task import TaskStatus, TaskType
+        from app.services import task_tracker
+        from app.services.alerting import send_alert
         from app.services.data_import import import_history_data
 
         started = time.monotonic()
         ts_start = datetime.fromtimestamp(gap_start, UTC).isoformat()
         ts_end = datetime.fromtimestamp(gap_end, UTC).isoformat()
+        task_id: str | None = None
         try:
             async with AsyncSessionLocal() as db:
                 result = await db.execute(
@@ -437,6 +471,27 @@ class RealtimeSubscriber:
             if not loop_ids:
                 logger.warning("断点续传跳过：无活跃回路")
                 return
+
+            # 任务登记：补数进任务列表（来源标记 auto-backfill，系统任务不通知个人）
+            _SHANGHAI = timezone(timedelta(hours=8))
+            title = f"断点续传补数-{datetime.now(_SHANGHAI).strftime('%m%d%H%M')}"
+            task_id = await task_tracker.create_task(
+                task_type=TaskType.BACKFILL,
+                created_by="system",
+                created_by_id="",
+                ts_start=ts_start,
+                ts_end=ts_end,
+                loop_ids=loop_ids,
+                loops_total=len(loop_ids),
+                current_stage="补数中",
+                triggered_by="auto-backfill",
+                title=title,
+            )
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.RUNNING,
+                started_at=datetime.now(UTC).isoformat(),
+            )
 
             import_result = await import_history_data(
                 loop_ids,
@@ -449,22 +504,166 @@ class RealtimeSubscriber:
                 # 缺口跨整点边界时重算受影响小时的 KPI
                 trigger_backfill=True,
             )
-            # 补数完成：checkpoint 推进到窗口末端，避免下次重连重复补
-            self._last_data_at = max(self._last_data_at or 0.0, gap_end)
-            await self._maybe_save_checkpoint(force=True)
+            total = import_result["total"]
+            succeeded = import_result["succeeded"]
+            failed = import_result["failed"]
+
+            if failed == 0:
+                # 补数全部成功：checkpoint 推进到窗口末端，避免下次重连重复补
+                self._last_data_at = max(self._last_data_at or 0.0, gap_end)
+                await self._maybe_save_checkpoint(force=True)
+                # 本次成功窗口覆盖待重试缺口时，清除重试状态
+                if self._retry_window_start is not None and gap_start <= self._retry_window_start:
+                    self._clear_backfill_retry()
+                await task_tracker.update_status(
+                    task_id,
+                    TaskStatus.SUCCESS,
+                    progress=1.0,
+                    loops_done=succeeded,
+                    current_stage="完成",
+                    finished_at=datetime.now(UTC).isoformat(),
+                )
+                logger.warning(
+                    "断点续传完成: range=%s~%s, loops=%d/%d, 耗时=%.1fs",
+                    ts_start,
+                    ts_end,
+                    succeeded,
+                    total,
+                    time.monotonic() - started,
+                )
+                return
+
+            # 部分失败：checkpoint 不推进，缺口保留待重试
+            errors = "; ".join(import_result.get("errors", [])[:3])
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.FAILED,
+                progress=round(succeeded / total, 4) if total > 0 else None,
+                loops_done=succeeded,
+                error_message=f"{failed}/{total} 回路补数失败: {errors}",
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            await send_alert(
+                "断点续传部分失败",
+                f"窗口 {ts_start}~{ts_end}：{failed}/{total} 回路补数失败（成功 {succeeded}），"
+                f"checkpoint 未推进，将按指数退避自动重试。{errors}",
+                severity="warning",
+            )
             logger.warning(
-                "断点续传完成: range=%s~%s, loops=%d/%d, failed=%d, 耗时=%.1fs",
+                "断点续传部分失败（checkpoint 不推进，将安排重试）: range=%s~%s, "
+                "loops=%d/%d, failed=%d, errors=%s",
                 ts_start,
                 ts_end,
-                import_result["succeeded"],
-                import_result["total"],
-                import_result["failed"],
-                time.monotonic() - started,
+                succeeded,
+                total,
+                failed,
+                errors,
             )
+            self._schedule_backfill_retry(gap_start)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
-            logger.error("断点续传失败（不影响实时订阅，下次重连将重试）: %s", exc)
+            # 任务终态与告警尽力而为（Redis 不可用时不再抛出，避免掩盖原始异常）
+            if task_id is not None:
+                try:
+                    await task_tracker.update_status(
+                        task_id,
+                        TaskStatus.FAILED,
+                        error_message=str(exc)[:500],
+                        finished_at=datetime.now(UTC).isoformat(),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                await send_alert(
+                    "断点续传失败",
+                    f"窗口 {ts_start}~{ts_end} 补数异常: {exc}。将按指数退避自动重试。",
+                    severity="warning",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            logger.error(
+                "断点续传失败（不影响实时订阅，将按退避重试）: range=%s~%s, error=%s",
+                ts_start,
+                ts_end,
+                exc,
+            )
+            self._schedule_backfill_retry(gap_start)
+
+    # ------------------------------------------------------------------
+    # 补数失败重试（指数退避定时器）
+    # ------------------------------------------------------------------
+
+    def _schedule_backfill_retry(self, gap_start: float) -> None:
+        """补数失败后安排延迟重试（指数退避，连接在线也生效）.
+
+        多次失败时重试窗口起点取最早值（后失败的长窗口不会掩盖先失败的短窗口）；
+        已有待执行定时器时取消重建（退避间隔按最新失败次数计算）。
+        """
+        if not settings.GAP_BACKFILL_ENABLED:
+            return
+        self._backfill_retry_count += 1
+        self._retry_window_start = (
+            min(self._retry_window_start, gap_start)
+            if self._retry_window_start is not None
+            else gap_start
+        )
+        delay = backfill_retry_delay(
+            self._backfill_retry_count,
+            base=float(settings.GAP_BACKFILL_RETRY_BASE_SECONDS),
+            cap=float(settings.GAP_BACKFILL_RETRY_MAX_SECONDS),
+        )
+        if self._backfill_retry_task is not None and not self._backfill_retry_task.done():
+            self._backfill_retry_task.cancel()
+        self._backfill_retry_task = asyncio.create_task(self._retry_gap_backfill(delay))
+        logger.warning(
+            "断点续传重试已安排：%.0fs 后第 %d 次重试（退避上限 %.0fs，窗口起点 %s）",
+            delay,
+            self._backfill_retry_count,
+            float(settings.GAP_BACKFILL_RETRY_MAX_SECONDS),
+            datetime.fromtimestamp(self._retry_window_start, UTC).isoformat(),
+        )
+
+    def _clear_backfill_retry(self) -> None:
+        """清除补数重试状态（缺口已成功补全时调用）。"""
+        self._backfill_retry_count = 0
+        self._retry_window_start = None
+        if self._backfill_retry_task is not None and not self._backfill_retry_task.done():
+            self._backfill_retry_task.cancel()
+        self._backfill_retry_task = None
+
+    async def _retry_gap_backfill(self, delay: float) -> None:
+        """重试定时器：延迟后对失败缺口重新执行补数.
+
+        重试窗口末端取触发时刻（而非原窗口末端），覆盖等待期间新产生的缺口；
+        定时器触发时若已有补数在执行（如重连触发），按同延迟原地重排兜底——
+        执行中的补数失败时会自行重排定时器，成功且覆盖本窗口时会清除重试状态。
+        """
+        try:
+            await asyncio.sleep(delay)
+            if not self._running:
+                return
+            if self._backfill_task is not None and not self._backfill_task.done():
+                logger.info("断点续传重试触发时已有补数在执行，按同延迟 %.0fs 重排", delay)
+                self._backfill_retry_task = asyncio.create_task(self._retry_gap_backfill(delay))
+                return
+            gap_start = self._retry_window_start
+            if gap_start is None:
+                return
+            gap_end = time.time() - _GAP_BACKFILL_END_MARGIN
+            if gap_end <= gap_start:
+                return
+            logger.warning(
+                "断点续传重试触发（第 %d 次）: range=%s~%s",
+                self._backfill_retry_count,
+                datetime.fromtimestamp(gap_start, UTC).isoformat(),
+                datetime.fromtimestamp(gap_end, UTC).isoformat(),
+            )
+            self._backfill_task = asyncio.create_task(self._run_gap_backfill(gap_start, gap_end))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("断点续传重试定时器异常: %s", exc)
 
     async def get_cached_values(self, tag_codes: list[str]) -> list[dict]:
         """从 Redis 读取缓存的实时值.

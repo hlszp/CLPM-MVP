@@ -231,15 +231,23 @@ class TestImportHistoryData:
 
 
 class TestFetchRemoteHistoryRetry:
-    """_fetch_remote_history 重试逻辑测试（P0 改造）.
+    """_fetch_remote_history 重试逻辑测试（P0 改造 + 共享熔断/限流）.
 
-    覆盖 5 个场景:
+    所有请求经共享守卫（RemoteApiProvider）发出，mock ``_get_remote_guard``
+    返回的守卫实例。覆盖场景:
     - 200 OK 不重试
     - 504 触发重试，重试后 200 成功
     - 504 重试 3 次仍失败，抛出 HistoryDataSourceError
     - 超时（httpx.TimeoutException）触发重试
     - 400 不可重试，直接抛出
+    - 熔断中（RemoteApiCircuitOpenError）快速失败，不重试
     """
+
+    def _make_guard(self, side_effect=None, return_value=None) -> MagicMock:
+        """构造 mock 共享守卫（fetch_history_guarded 为 AsyncMock）。"""
+        guard = MagicMock()
+        guard.fetch_history_guarded = AsyncMock(side_effect=side_effect, return_value=return_value)
+        return guard
 
     @pytest.fixture
     def _mock_settings(self):
@@ -273,19 +281,20 @@ class TestFetchRemoteHistoryRetry:
     @pytest.mark.asyncio
     async def test_200_ok_no_retry(self, _mock_settings):
         """200 OK 时不触发重试。"""
-        mock_client = AsyncMock()
-        mock_client.get.return_value = self._make_response(200)
+        mock_guard = self._make_guard(return_value=self._make_response(200))
 
-        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
+        ):
             result = await _fetch_remote_history(
                 tag_codes=["TI-101.PV"],
                 start_time="2026-07-15T10:00:00",
                 end_time="2026-07-15T11:00:00",
                 interval=1,
-                client=mock_client,
             )
 
-        assert mock_client.get.await_count == 1  # 只请求 1 次
+        assert mock_guard.fetch_history_guarded.await_count == 1  # 只请求 1 次
         assert mock_sleep.await_count == 0  # 没有重试等待
         timestamps, series_map = result
         assert len(timestamps) == 1
@@ -294,22 +303,25 @@ class TestFetchRemoteHistoryRetry:
     @pytest.mark.asyncio
     async def test_504_retry_then_success(self, _mock_settings):
         """504 触发重试，第 2 次成功。"""
-        mock_client = AsyncMock()
-        mock_client.get.side_effect = [
-            self._make_response(504),  # 首次 504
-            self._make_response(200),  # 重试成功
-        ]
+        mock_guard = self._make_guard(
+            side_effect=[
+                self._make_response(504),  # 首次 504
+                self._make_response(200),  # 重试成功
+            ]
+        )
 
-        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
+        ):
             result = await _fetch_remote_history(
                 tag_codes=["TI-101.PV"],
                 start_time="2026-07-15T10:00:00",
                 end_time="2026-07-15T11:00:00",
                 interval=1,
-                client=mock_client,
             )
 
-        assert mock_client.get.await_count == 2  # 共请求 2 次
+        assert mock_guard.fetch_history_guarded.await_count == 2  # 共请求 2 次
         assert mock_sleep.await_count == 1  # 重试等待 1 次
         timestamps, _ = result
         assert len(timestamps) == 1
@@ -317,43 +329,47 @@ class TestFetchRemoteHistoryRetry:
     @pytest.mark.asyncio
     async def test_504_retry_exhausted(self, _mock_settings):
         """504 重试 3 次仍失败，抛出 HistoryDataSourceError。"""
-        mock_client = AsyncMock()
-        mock_client.get.return_value = self._make_response(504)
+        mock_guard = self._make_guard(return_value=self._make_response(504))
 
-        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
-            with pytest.raises(HistoryDataSourceError) as exc_info:
-                await _fetch_remote_history(
-                    tag_codes=["TI-101.PV"],
-                    start_time="2026-07-15T10:00:00",
-                    end_time="2026-07-15T11:00:00",
-                    interval=1,
-                    client=mock_client,
-                )
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
+            pytest.raises(HistoryDataSourceError) as exc_info,
+        ):
+            await _fetch_remote_history(
+                tag_codes=["TI-101.PV"],
+                start_time="2026-07-15T10:00:00",
+                end_time="2026-07-15T11:00:00",
+                interval=1,
+            )
 
         # 首次 + 3 次重试 = 4 次请求
-        assert mock_client.get.await_count == 4
+        assert mock_guard.fetch_history_guarded.await_count == 4
         assert mock_sleep.await_count == 3
         assert "HTTP 504" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_timeout_retry(self, _mock_settings):
         """httpx.TimeoutException 触发重试，最终成功。"""
-        mock_client = AsyncMock()
-        mock_client.get.side_effect = [
-            httpx.ReadTimeout("read timeout"),  # 首次超时
-            self._make_response(200),  # 重试成功
-        ]
+        mock_guard = self._make_guard(
+            side_effect=[
+                httpx.ReadTimeout("read timeout"),  # 首次超时
+                self._make_response(200),  # 重试成功
+            ]
+        )
 
-        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
+        ):
             result = await _fetch_remote_history(
                 tag_codes=["TI-101.PV"],
                 start_time="2026-07-15T10:00:00",
                 end_time="2026-07-15T11:00:00",
                 interval=1,
-                client=mock_client,
             )
 
-        assert mock_client.get.await_count == 2
+        assert mock_guard.fetch_history_guarded.await_count == 2
         assert mock_sleep.await_count == 1
         timestamps, _ = result
         assert len(timestamps) == 1
@@ -361,80 +377,110 @@ class TestFetchRemoteHistoryRetry:
     @pytest.mark.asyncio
     async def test_timeout_retry_exhausted(self, _mock_settings):
         """超时重试 3 次仍失败，抛出包含'已重试 3 次'的错误。"""
-        mock_client = AsyncMock()
-        mock_client.get.side_effect = httpx.ReadTimeout("read timeout")
+        mock_guard = self._make_guard(side_effect=httpx.ReadTimeout("read timeout"))
 
-        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
-            with pytest.raises(HistoryDataSourceError) as exc_info:
-                await _fetch_remote_history(
-                    tag_codes=["TI-101.PV"],
-                    start_time="2026-07-15T10:00:00",
-                    end_time="2026-07-15T11:00:00",
-                    interval=1,
-                    client=mock_client,
-                )
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
+            pytest.raises(HistoryDataSourceError) as exc_info,
+        ):
+            await _fetch_remote_history(
+                tag_codes=["TI-101.PV"],
+                start_time="2026-07-15T10:00:00",
+                end_time="2026-07-15T11:00:00",
+                interval=1,
+            )
 
-        assert mock_client.get.await_count == 4  # 首次 + 3 次重试
+        assert mock_guard.fetch_history_guarded.await_count == 4  # 首次 + 3 次重试
         assert mock_sleep.await_count == 3
         assert "已重试 3 次" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_400_no_retry(self, _mock_settings):
         """400 不可重试，直接抛出。"""
-        mock_client = AsyncMock()
-        mock_client.get.return_value = self._make_response(400)
+        mock_guard = self._make_guard(return_value=self._make_response(400))
 
-        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
-            with pytest.raises(HistoryDataSourceError) as exc_info:
-                await _fetch_remote_history(
-                    tag_codes=["TI-101.PV"],
-                    start_time="2026-07-15T10:00:00",
-                    end_time="2026-07-15T11:00:00",
-                    interval=1,
-                    client=mock_client,
-                )
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
+            pytest.raises(HistoryDataSourceError) as exc_info,
+        ):
+            await _fetch_remote_history(
+                tag_codes=["TI-101.PV"],
+                start_time="2026-07-15T10:00:00",
+                end_time="2026-07-15T11:00:00",
+                interval=1,
+            )
 
-        assert mock_client.get.await_count == 1  # 只请求 1 次
+        assert mock_guard.fetch_history_guarded.await_count == 1  # 只请求 1 次
         assert mock_sleep.await_count == 0  # 无重试
         assert "HTTP 400" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_business_error_no_retry(self, _mock_settings):
         """HTTP 200 但业务 code != 200 时，不重试直接抛出。"""
-        mock_client = AsyncMock()
-        mock_client.get.return_value = self._make_response(
-            200,
-            payload={"code": 500, "message": "内部错误"},
+        mock_guard = self._make_guard(
+            return_value=self._make_response(
+                200,
+                payload={"code": 500, "message": "内部错误"},
+            )
         )
 
-        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
-            with pytest.raises(HistoryDataSourceError) as exc_info:
-                await _fetch_remote_history(
-                    tag_codes=["TI-101.PV"],
-                    start_time="2026-07-15T10:00:00",
-                    end_time="2026-07-15T11:00:00",
-                    interval=1,
-                    client=mock_client,
-                )
-
-        assert mock_client.get.await_count == 1  # 业务错误不重试
-        assert mock_sleep.await_count == 0
-        assert "业务错误" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_no_url_configured(self, _mock_settings):
-        """未配置 HISTORY_DATA_API_URL 时直接抛出。"""
-        _mock_settings.HISTORY_DATA_API_URL = ""
-        mock_client = AsyncMock()
-
-        with pytest.raises(HistoryDataSourceError) as exc_info:
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
+            pytest.raises(HistoryDataSourceError) as exc_info,
+        ):
             await _fetch_remote_history(
                 tag_codes=["TI-101.PV"],
                 start_time="2026-07-15T10:00:00",
                 end_time="2026-07-15T11:00:00",
                 interval=1,
-                client=mock_client,
+            )
+
+        assert mock_guard.fetch_history_guarded.await_count == 1  # 业务错误不重试
+        assert mock_sleep.await_count == 0
+        assert "业务错误" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_circuit_open_fast_fail_no_retry(self, _mock_settings):
+        """熔断中（RemoteApiCircuitOpenError）快速失败，不重试。"""
+        from app.services.data_source.remote_api_provider import RemoteApiCircuitOpenError
+
+        mock_guard = self._make_guard(side_effect=RemoteApiCircuitOpenError("熔断中"))
+
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            patch("asyncio.sleep", new=AsyncMock()) as mock_sleep,
+            pytest.raises(HistoryDataSourceError) as exc_info,
+        ):
+            await _fetch_remote_history(
+                tag_codes=["TI-101.PV"],
+                start_time="2026-07-15T10:00:00",
+                end_time="2026-07-15T11:00:00",
+                interval=1,
+            )
+
+        assert mock_guard.fetch_history_guarded.await_count == 1  # 不重试
+        assert mock_sleep.await_count == 0
+        assert "熔断中" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_no_url_configured(self, _mock_settings):
+        """未配置 HISTORY_DATA_API_URL 时直接抛出。"""
+        _mock_settings.HISTORY_DATA_API_URL = ""
+        mock_guard = self._make_guard()
+
+        with (
+            patch("app.services.data_import._get_remote_guard", return_value=mock_guard),
+            pytest.raises(HistoryDataSourceError) as exc_info,
+        ):
+            await _fetch_remote_history(
+                tag_codes=["TI-101.PV"],
+                start_time="2026-07-15T10:00:00",
+                end_time="2026-07-15T11:00:00",
+                interval=1,
             )
 
         assert "未配置" in str(exc_info.value)
-        assert mock_client.get.await_count == 0
+        assert mock_guard.fetch_history_guarded.await_count == 0

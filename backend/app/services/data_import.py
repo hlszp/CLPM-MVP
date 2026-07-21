@@ -36,8 +36,26 @@ from app.core.tdengine_native import batch_insert, execute_native_effective
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.tag import TagRegistry
 from app.schemas.loop_data import ConflictStrategy, ImportStatus
+from app.services.data_source.remote_api_provider import (
+    RemoteApiCircuitOpenError,
+    RemoteApiProvider,
+)
 
 logger = logging.getLogger(__name__)
+
+# 共享熔断/限流守卫：手工导入（worker）与断点续传补数（API 进程）复用同一
+# RemoteApiProvider 实例，进程内对远端历史 API 的并发（REMOTE_API_MAX_CONCURRENCY）
+# 与熔断状态统一收口，避免多路并发叠加压垮边缘 API。
+_remote_guard: RemoteApiProvider | None = None
+
+
+def _get_remote_guard() -> RemoteApiProvider:
+    """获取共享的远端 API 守卫单例（熔断器 + 全局限流信号量）."""
+    global _remote_guard
+    if _remote_guard is None:
+        _remote_guard = RemoteApiProvider()
+    return _remote_guard
+
 
 # Redis key 前缀
 _IMPORT_TASK_PREFIX = "import_task"
@@ -301,12 +319,6 @@ async def import_history_data(
     # 计算动态分块大小
     chunk_hours = _compute_chunk_hours(start_dt, end_dt)
 
-    # 共享 httpx.AsyncClient（连接池复用，避免每个 chunk 重建 TCP/TLS 连接）
-    token = settings.HISTORY_DATA_API_TOKEN
-    client_headers: dict[str, str] = {"Content-Type": "application/json"}
-    if token:
-        client_headers["Authorization"] = f"Bearer {token}"
-
     import asyncio as _asyncio_sem
 
     sem = _asyncio_sem.Semaphore(2)  # 远端 API 易在高并发下 504，限制最多 2 个回路并发
@@ -327,74 +339,65 @@ async def import_history_data(
             error_count=cur_f,
         )
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
-        headers=client_headers,
-        limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
-    ) as shared_client:
+    async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
+        """带信号量控制的单回路导入，返回 (index, count, error)."""
+        nonlocal shared_succeeded, shared_failed
+        async with sem:
+            if task_id and await _is_task_cancelled(task_id):
+                return (i, 0, "")
 
-        async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
-            """带信号量控制的单回路导入，返回 (index, count, error)."""
-            nonlocal shared_succeeded, shared_failed
-            async with sem:
-                if task_id and await _is_task_cancelled(task_id):
-                    return (i, 0, "")
-
-                loop_meta = loop_data_map.get(
-                    lid, {"role_tag_map": {}, "unit_id": "", "subtable": ""}
-                )
-                if not loop_meta["role_tag_map"]:
-                    logger.warning("回路 %s 无有效 tag 映射，跳过", lid)
-                    async with progress_lock:
-                        shared_failed += 1
-                    error = f"loop {lid}: 无有效 tag 映射"
-                    await _record_progress()
-                    return (i, 0, error)
-
-                try:
-                    count = await _import_single_loop(
-                        loop_id=lid,
-                        start_dt=start_dt,
-                        end_dt=end_dt,
-                        interval=interval,
-                        conflict_strategy=conflict_strategy,
-                        client=shared_client,
-                        subtable=loop_meta["subtable"],
-                        unit_id=loop_meta["unit_id"],
-                        role_tag_map=loop_meta["role_tag_map"],
-                        chunk_hours=chunk_hours,
-                    )
-                    if count <= 0:
-                        raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
-                    logger.info(
-                        "回路导入完成: loop_id=%s, points=%d (%d/%d)",
-                        lid,
-                        count,
-                        i + 1,
-                        total,
-                    )
-                    async with progress_lock:
-                        shared_succeeded += 1
-                except Exception as exc:
-                    async with progress_lock:
-                        shared_failed += 1
-                    error = f"loop {lid}: {exc}"
-                    logger.warning("回路导入失败: %s", error)
-                    await _record_progress()
-                    return (i, 0, error)
-
-                # 更新进度
+            loop_meta = loop_data_map.get(lid, {"role_tag_map": {}, "unit_id": "", "subtable": ""})
+            if not loop_meta["role_tag_map"]:
+                logger.warning("回路 %s 无有效 tag 映射，跳过", lid)
+                async with progress_lock:
+                    shared_failed += 1
+                error = f"loop {lid}: 无有效 tag 映射"
                 await _record_progress()
-                return (i, count, "")
+                return (i, 0, error)
 
-        # 并发处理所有回路
-        tasks = [_import_with_sem(i, lid) for i, lid in enumerate(loop_ids)]
-        task_results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
-        for task_result in task_results:
-            if isinstance(task_result, BaseException):
-                errors.append(f"导入协程异常: {task_result}")
-            elif task_result[2]:
-                errors.append(task_result[2])
+            try:
+                count = await _import_single_loop(
+                    loop_id=lid,
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                    interval=interval,
+                    conflict_strategy=conflict_strategy,
+                    subtable=loop_meta["subtable"],
+                    unit_id=loop_meta["unit_id"],
+                    role_tag_map=loop_meta["role_tag_map"],
+                    chunk_hours=chunk_hours,
+                )
+                if count <= 0:
+                    raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
+                logger.info(
+                    "回路导入完成: loop_id=%s, points=%d (%d/%d)",
+                    lid,
+                    count,
+                    i + 1,
+                    total,
+                )
+                async with progress_lock:
+                    shared_succeeded += 1
+            except Exception as exc:
+                async with progress_lock:
+                    shared_failed += 1
+                error = f"loop {lid}: {exc}"
+                logger.warning("回路导入失败: %s", error)
+                await _record_progress()
+                return (i, 0, error)
+
+            # 更新进度
+            await _record_progress()
+            return (i, count, "")
+
+    # 并发处理所有回路
+    tasks = [_import_with_sem(i, lid) for i, lid in enumerate(loop_ids)]
+    task_results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
+    for task_result in task_results:
+        if isinstance(task_result, BaseException):
+            errors.append(f"导入协程异常: {task_result}")
+        elif task_result[2]:
+            errors.append(task_result[2])
 
     succeeded = shared_succeeded
     failed = shared_failed
@@ -443,7 +446,6 @@ async def _import_single_loop(
     end_dt: datetime,
     interval: int,
     conflict_strategy: str,
-    client: httpx.AsyncClient | None = None,
     subtable: str = "",
     unit_id: str = "",
     role_tag_map: dict[str, str] | None = None,
@@ -452,7 +454,6 @@ async def _import_single_loop(
     """导入单个回路的历史数据.
 
     Args:
-        client: 可选的共享 httpx.AsyncClient（连接池复用），为 None 时每次请求创建新连接
         subtable: 已构造好的 TDengine 子表名
         unit_id: 回路所属工艺单元 ID
         role_tag_map: {role → tag_name} 预加载的 tag 映射
@@ -481,7 +482,6 @@ async def _import_single_loop(
             chunk_start.isoformat(),
             chunk_end.isoformat(),
             interval,
-            client=client,
         )
 
         if raw_data:
@@ -614,12 +614,11 @@ async def _fetch_remote_history(
     start_time: str,
     end_time: str,
     interval: int,
-    client: httpx.AsyncClient | None = None,
 ) -> tuple[list[str], dict[str, dict]]:
     """从远端 HTTP API 拉取历史数据.
 
-    Args:
-        client: 可选的共享 httpx.AsyncClient（连接池复用），为 None 时创建新连接
+    所有请求经共享守卫（``_get_remote_guard``）发出，复用 RemoteApiProvider 的
+    熔断器与全局限流信号量；熔断中直接快速失败（不重试）。
 
     Returns:
         (timestamps, series_map) 其中 series_map = {tagCode: {values, qualities}}
@@ -630,6 +629,7 @@ async def _fetch_remote_history(
         - 可重试异常：httpx.TimeoutException / httpx.NetworkError
         - 指数退避：1s, 2s, 4s（最多重试 3 次）
         - 4xx（非 429）等不可重试错误直接抛出
+        - 熔断中（RemoteApiCircuitOpenError）不可重试，直接抛出
     """
     if not settings.HISTORY_DATA_API_URL:
         raise HistoryDataSourceError("HISTORY_DATA_API_URL 未配置")
@@ -643,6 +643,7 @@ async def _fetch_remote_history(
 
     import asyncio as _asyncio_retry
 
+    guard = _get_remote_guard()
     last_exc: Exception | None = None
     last_status_code: int | None = None
     last_resp_text: str = ""
@@ -650,19 +651,7 @@ async def _fetch_remote_history(
     # 首次请求 + 最多 _MAX_RETRIES 次重试
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            if client is not None:
-                resp = await client.get(settings.HISTORY_DATA_API_URL, params=request_body)
-            else:
-                headers: dict[str, str] = {"Content-Type": "application/json"}
-                token = settings.HISTORY_DATA_API_TOKEN
-                if token:
-                    headers["Authorization"] = f"Bearer {token}"
-
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(settings.HISTORY_DATA_API_TIMEOUT, connect=10.0),
-                    headers=headers,
-                ) as tmp_client:
-                    resp = await tmp_client.get(settings.HISTORY_DATA_API_URL, params=request_body)
+            resp = await guard.fetch_history_guarded(request_body)
 
             # 200 OK：业务层校验后返回
             if resp.status_code == 200:
@@ -717,6 +706,9 @@ async def _fetch_remote_history(
         except HistoryDataSourceError:
             # 业务错误（如 code != 200）直接抛出，不重试
             raise
+        except RemoteApiCircuitOpenError as exc:
+            # 熔断中：退避秒级重试无意义（熔断持续数百秒），直接失败
+            raise HistoryDataSourceError(f"远端历史数据 API 熔断中，快速失败: {exc}") from exc
         except _RETRYABLE_HTTPX_EXCS as exc:
             last_exc = exc
             if attempt < _MAX_RETRIES:
