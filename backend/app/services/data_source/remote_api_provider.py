@@ -88,6 +88,10 @@ def _parse_response_payload(payload: dict[str, Any]) -> tuple[list[str], list[di
     return list(data.get("timestamps") or []), list(data.get("series") or [])
 
 
+class RemoteApiCircuitOpenError(RuntimeError):
+    """远端 API 熔断中，请求被快速失败（未发出 HTTP 请求）."""
+
+
 class RemoteApiProvider:
     """远程 HTTP API 数据源提供者.
 
@@ -171,8 +175,27 @@ class RemoteApiProvider:
         非 None 的响应由调用方继续按状态码处理；200 计入熔断成功，
         过载类状态码（429/5xx）计入熔断失败，其他 4xx 不计入。
         """
-        if self._cb_fail_fast():
+        try:
+            return await self.fetch_history_guarded(request_body)
+        except Exception:  # noqa: BLE001
             return None
+
+    async def fetch_history_guarded(self, request_body: dict) -> httpx.Response:
+        """限流 + 熔断保护的历史数据 GET 请求（供 data_import 直连路径复用）.
+
+        与 ``_guarded_get`` 共享同一限流信号量与熔断器，区别在失败语义：
+        - 熔断中：抛出 ``RemoteApiCircuitOpenError``（快速失败，未发 HTTP 请求）
+        - 请求异常：计入熔断后原样抛出（调用方自行决定是否重试）
+        - 200：计入熔断成功；429/5xx：计入熔断失败；其他 4xx 不计入
+
+        Returns:
+            httpx.Response，状态码/业务码处理与重试策略由调用方负责
+        """
+        if self._cb_fail_fast():
+            raise RemoteApiCircuitOpenError(
+                "远端 API 熔断中（连续失败达阈值），请求快速失败，"
+                f"{self._cb_open_until - time.monotonic():.0f} 秒后进入半开探测"
+            )
         try:
             client = await self._get_client()
             async with self._get_semaphore():
@@ -180,7 +203,7 @@ class RemoteApiProvider:
         except Exception as exc:  # noqa: BLE001
             self._cb_on_failure(f"{type(exc).__name__}: {exc}")
             logger.warning("远程API请求失败: %s", exc)
-            return None
+            raise
 
         if resp.status_code == 200:
             self._cb_on_success()
