@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     GAP_BACKFILL_ENABLED: bool = True
     GAP_BACKFILL_MIN_GAP_SECONDS: int = 60  # 小于该缺口不补（正常重连抖动）
     GAP_BACKFILL_MAX_HOURS: int = 24  # 单次补数最大窗口（超出部分截断并告警，需手工导入）
+    GAP_BACKFILL_RETRY_BASE_SECONDS: int = 300  # 补数失败重试起步退避（5 分钟，连接在线也生效）
+    GAP_BACKFILL_RETRY_MAX_SECONDS: int = 1800  # 补数失败重试退避上限（30 分钟，指数翻倍封顶）
 
     # ---- Alerting ----
     ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志
