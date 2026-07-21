@@ -107,7 +107,11 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 
 节点为协调目标而非承诺；阶段 3 时区实测若受远端环境限制按源文档既定策略顺延，不阻塞其他项。
 
-> **W1 执行状态（2026-07-21 回写，终态）**：PR-A2（#3）、WS-E（#4）、WS-F（#5）、WS-B1（#6）、WS-C（#7，aaa24790）**全部 5 项合并完成**并同步 github 镜像；合并后门禁全绿（ruff 零告警 / pytest 2118 passed，较基线 +62 / check:type 零错误）。WS-C 由续作代理+主线验收完成（首代理未产出）。运行时验证待办：性能-3 PG 抽查、性能-4 清理脚本 dry-run/执行、回路-4 worker 重启加载新码（随 W1 合并统一重启）。
+> **W1 执行状态（2026-07-22 回写，终态）**：PR-A2（#3）、WS-E（#4）、WS-F（#5）、WS-B1（#6）、WS-C（#7，aaa24790）**全部 5 项合并完成**并同步 github 镜像；合并后门禁全绿（ruff 零告警 / pytest 2118 passed，较基线 +62 / check:type 零错误）。WS-C 由续作代理+主线验收完成（首代理未产出）。
+>
+> **运行时验证（2026-07-22 执行）**：① 回路-4 worker 已加载新码 ✅（worker 20:16:02 启动 > W1 最后合并 20:13:25）。② 性能-4 重复任务清理 ✅（dry-run 441 条 → --execute 删除 → 复跑待删除 0 条，重复组归零；1 条 RUNNING 非终态正确保留）。③ 性能-3 PG 抽查 🔶受阻：代码已部署、worker 已加载新码，历史 INCONCLUSIVE 快照已有 92 条 confidence_level='E'（证逻辑生效），但 **7/21 16:00 后无新快照**（beat PID 3124 在跑、worker 20:16 重启，但评估任务未生成快照）——疑似实时数据链路断开或评估任务执行异常，**需排查**（不阻塞 W2 编码）。
+>
+> **W2 启动（2026-07-22）**：WS-D（监控契约+权限矩阵，worktree w2-ws-d）、WS-B2（韧性增强+时区，worktree w2-ws-b2）并行代理开发中。
 
 ## 6. 分支合并校验标准与流程
 
@@ -148,10 +152,10 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 | 回路-1 ✅ | P0 批量/导入崩溃 | PR-L1（gitea PR #1，已合并 4e37b7a7） | W0 | 已验收（2056 passed）；回归测试在库 |
 | 回路-2 🔶 | 孤儿页下线 | PR-L1 删页+死API ✅（PR #1）/ WS-D（:869 死链，待做） | W0/W2 | check:type 无残留引用；监控页跳转可达 |
 | 回路-3 | 时区口径 | WS-B2 | W2 | 远端实测比对记录；导入段与实时段 ts 连续抽查一致 |
-| 回路-4 ✅ | 断点续传加固 | WS-B1（PR #6，已合并 4aae0389） | W1 | 新单测：部分失败不推进/重试定时器/任务记录 ✅（PR 内含）；补数进任务列表且标记 auto-backfill ✅；**待 worker 重启加载新码** |
+| 回路-4 ✅ | 断点续传加固 | WS-B1（PR #6，已合并 4aae0389） | W1 | 新单测：部分失败不推进/重试定时器/任务记录 ✅（PR 内含）；补数进任务列表且标记 auto-backfill ✅；worker 已加载新码 ✅（20:16 重启 > 20:13 合并） |
 | 回路-5 | 监控契约对齐 | WS-D | W2 | 接口级测试 + check:type；loopStatus/kpiStatus 分离，无 PARTIAL 撞名 |
-| 回路-6 ✅ | 回路配置契约 | WS-C（PR #7，已合并 aaa24790）/ WS-D（权限） | W1/W2 | unitId 更新落库 ✅；删回路级联解绑 ✅；PID 只读区 ✅；extra=forbid 已启用 |
-| 回路-7 ✅ | 测点配置契约 | WS-C（PR #7） | W1 | 枚举对齐（PID_P/I/D、SPEED）✅；TagUpdate 参数类型 ✅；unitName ✅；is_linked 仅映射派生（导入忽略启用列 + 解关联查引用）✅；AAS 不回冲描述 ✅ |
+| 回路-6 | 回路配置契约 | WS-C（权限除外）/ WS-D（权限） | W1/W2 | unitId 更新落库；删回路级联解绑成功；PID 只读区可见 |
+| 回路-7 | 测点配置契约 | WS-C | W1 | 枚举筛选有结果、编辑 200；is_linked 仅由映射派生 |
 | 回路-8 ✅ | 链路配置安全 | WS-E（PR #4，已合并 a6822d85） | W1 | 审计/GET Token 打码 ✅；Tailscale 失败回滚 sys_config ✅；可清空字段 ✅（405 行新单测在库） |
 | 回路-9 | 韧性增强包 | WS-B2 | W2 | 看门狗模拟停滞触发重连；RUNNING 超时清扫生效；任务 TTL 30 天 |
 | 回路-10 | 性能 UX + 文档 | WS-G | W3 | DISTINCT ON/CTE 查询计划验证；PRD v6.1 发布，D1-D6 全落地 |
