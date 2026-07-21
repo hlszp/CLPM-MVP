@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -15,10 +16,13 @@ from app.services.data_import import (
     _convert_to_wide_rows,
     _fetch_remote_history,
     _map_quality,
+    _parse_dt,
     _parse_float_val,
     _parse_int_val,
     _parse_ts_str,
     _task_to_response,
+    prune_import_task_index,
+    sweep_stale_running_tasks,
 )
 
 
@@ -56,17 +60,55 @@ class TestParseHelpers:
         assert _map_quality("abc") == 0
 
     def test_parse_ts_str_iso(self):
+        """naive（无时区）视为已在目标时区 _TARGET_TZ（Asia/Shanghai）。"""
         result = _parse_ts_str("2026-07-15T10:00:00")
         assert result is not None
         assert "2026-07-15 10:00:00" in result
 
     def test_parse_ts_str_with_z(self):
+        """带 Z 后缀的 UTC 时间应显式 astimezone 到 Asia/Shanghai（+8h）。"""
         result = _parse_ts_str("2026-07-15T10:00:00Z")
         assert result is not None
-        assert "2026-07-15 10:00:00" in result
+        # 10:00 UTC → 18:00 CST
+        assert "2026-07-15 18:00:00" in result
+
+    def test_parse_ts_str_with_utc_offset(self):
+        """带 +00:00 偏移的 UTC 时间应转换到 Asia/Shanghai。"""
+        result = _parse_ts_str("2026-07-15T10:00:00+00:00")
+        assert result is not None
+        assert "2026-07-15 18:00:00" in result
+
+    def test_parse_ts_str_with_non_utc_offset(self):
+        """非 UTC 偏移（如 -05:00）应正确转换到 Asia/Shanghai。"""
+        result = _parse_ts_str("2026-07-15T05:00:00-05:00")
+        assert result is not None
+        # 05:00-05:00 = 10:00 UTC → 18:00 CST
+        assert "2026-07-15 18:00:00" in result
 
     def test_parse_ts_str_invalid(self):
         assert _parse_ts_str("invalid") is None
+
+    def test_parse_dt_naive(self):
+        """naive datetime 视为已在 _TARGET_TZ，返回 naive（无 tzinfo）。"""
+
+        dt = _parse_dt("2026-07-15T10:00:00")
+        assert dt.tzinfo is None
+        assert dt.year == 2026 and dt.hour == 10
+
+    def test_parse_dt_with_z(self):
+        """带 Z 后缀的 UTC 应 astimezone 到 _TARGET_TZ（+8h），返回 naive。"""
+
+        dt = _parse_dt("2026-07-15T10:00:00Z")
+        assert dt.tzinfo is None
+        # 10:00 UTC → 18:00 CST
+        assert dt.hour == 18
+
+    def test_parse_dt_with_offset(self):
+        """带 +00:00 偏移的 UTC 应转换到 _TARGET_TZ（+8h）。"""
+
+        dt = _parse_dt("2026-07-15T10:00:00+00:00")
+        assert dt.tzinfo is None
+        assert dt.hour == 18
 
 
 class TestConvertToWideRows:
@@ -484,3 +526,241 @@ class TestFetchRemoteHistoryRetry:
 
         assert "未配置" in str(exc_info.value)
         assert mock_guard.fetch_history_guarded.await_count == 0
+
+
+# ---------------------------------------------------------------------------
+# 导入任务生命周期测试（WS-B2）
+# ---------------------------------------------------------------------------
+
+
+class _FakeRedisImport:
+    """支持 pipeline/hset/hgetall/zadd/zrange/zrem/expire 的轻量 Redis mock.
+
+    pipeline 方法返回专用 _Pipe 对象，其 hset/expire/zadd 为同步排队，
+    execute 为 async 批量执行（与 redis-py async pipeline 行为一致）。
+    """
+
+    def __init__(self) -> None:
+        self._hashes: dict[str, dict[str, str]] = {}
+        self._zsets: dict[str, dict[str, float]] = {}
+
+    def pipeline(self):
+        return _FakePipe(self)
+
+    async def hget(self, key: str, field: str) -> str | None:
+        return self._hashes.get(key, {}).get(field)
+
+    async def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self._hashes.get(key, {}))
+
+    async def zadd(self, key: str, mapping: dict) -> int:
+        self._zsets.setdefault(key, {}).update(mapping)
+        return 1
+
+    async def zrange(self, key: str, start: int, stop: int) -> list[str]:
+        members = sorted(self._zsets.get(key, {}).items(), key=lambda x: x[1])
+        if stop == -1:
+            return [m for m, _ in members]
+        return [m for m, _ in members[start : stop + 1]]
+
+    async def zrevrange(self, key: str, start: int, stop: int) -> list[str]:
+        members = sorted(self._zsets.get(key, {}).items(), key=lambda x: -x[1])
+        if stop == -1:
+            return [m for m, _ in members]
+        return [m for m, _ in members[start : stop + 1]]
+
+    async def zrem(self, key: str, member: str) -> int:
+        if member in self._zsets.get(key, {}):
+            del self._zsets[key][member]
+            return 1
+        return 0
+
+
+class _FakePipe:
+    """Pipeline mock — hset/expire/zadd 同步排队，execute async 批量执行."""
+
+    def __init__(self, owner: _FakeRedisImport) -> None:
+        self._owner = owner
+        self._ops: list[tuple] = []
+
+    def hset(self, key: str, mapping: dict | None = None, **kwargs) -> Any:
+        if mapping is None:
+            mapping = kwargs
+        self._ops.append(("hset", key, mapping))
+        return self
+
+    def expire(self, key: str, ttl: int) -> Any:
+        self._ops.append(("expire", key, ttl))
+        return self
+
+    def zadd(self, key: str, mapping: dict) -> Any:
+        self._ops.append(("zadd", key, mapping))
+        return self
+
+    async def execute(self) -> list:
+        for op in self._ops:
+            kind = op[0]
+            if kind == "hset":
+                _, key, mapping = op
+                self._owner._hashes.setdefault(key, {}).update(mapping)
+            elif kind == "zadd":
+                _, key, mapping = op
+                self._owner._zsets.setdefault(key, {}).update(mapping)
+            # expire 是 no-op（mock 不模拟过期）
+        self._ops.clear()
+        return []
+
+
+@pytest.fixture
+def _mock_import_settings():
+    """Mock data_import settings for lifecycle tests."""
+    with patch("app.services.data_import.settings") as mock:
+        mock.IMPORT_TASK_TTL_DAYS = 30
+        mock.IMPORT_TASK_RUNNING_TIMEOUT_SECONDS = 7200
+        yield mock
+
+
+class TestSweepStaleRunningTasks:
+    """sweep_stale_running_tasks 测试 — 清扫超时 RUNNING 任务。"""
+
+    @pytest.mark.asyncio
+    async def test_sweeps_timed_out_running_task(self, _mock_import_settings):
+        """RUNNING 且 started_at 超过超时阈值的任务应被置为 FAILED。"""
+        from datetime import UTC, datetime, timedelta
+
+        fake = _FakeRedisImport()
+        # 构造一个 3 小时前 started_at 的 RUNNING 任务（超时阈值 7200s = 2h）
+        old_started = (datetime.now(UTC) - timedelta(hours=3)).isoformat()
+        fake._hashes["import_task:stale-1"] = {
+            "task_id": "stale-1",
+            "status": "RUNNING",
+            "started_at": old_started,
+        }
+        fake._zsets["import_task:index"] = {"stale-1": 1.0}
+
+        with patch("app.services.data_import.redis_client", fake):
+            result = await sweep_stale_running_tasks()
+
+        assert result["swept"] == 1
+        assert "stale-1" in result["details"]
+        assert fake._hashes["import_task:stale-1"]["status"] == "FAILED"
+
+    @pytest.mark.asyncio
+    async def test_skips_recent_running_task(self, _mock_import_settings):
+        """RUNNING 但 started_at 在阈值内的任务不应被清扫。"""
+        from datetime import UTC, datetime
+
+        fake = _FakeRedisImport()
+        recent_started = datetime.now(UTC).isoformat()
+        fake._hashes["import_task:fresh-1"] = {
+            "task_id": "fresh-1",
+            "status": "RUNNING",
+            "started_at": recent_started,
+        }
+        fake._zsets["import_task:index"] = {"fresh-1": 1.0}
+
+        with patch("app.services.data_import.redis_client", fake):
+            result = await sweep_stale_running_tasks()
+
+        assert result["swept"] == 0
+        assert fake._hashes["import_task:fresh-1"]["status"] == "RUNNING"
+
+    @pytest.mark.asyncio
+    async def test_skips_non_running_tasks(self, _mock_import_settings):
+        """非 RUNNING 状态（如 SUCCESS/FAILED）不应被清扫。"""
+        from datetime import UTC, datetime, timedelta
+
+        fake = _FakeRedisImport()
+        old_started = (datetime.now(UTC) - timedelta(hours=10)).isoformat()
+        fake._hashes["import_task:done-1"] = {
+            "task_id": "done-1",
+            "status": "SUCCESS",
+            "started_at": old_started,
+        }
+        fake._zsets["import_task:index"] = {"done-1": 1.0}
+
+        with patch("app.services.data_import.redis_client", fake):
+            result = await sweep_stale_running_tasks()
+
+        assert result["swept"] == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_task_without_started_at(self, _mock_import_settings):
+        """无 started_at 的 RUNNING 任务应跳过（无法判断超时）。"""
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:nostart-1"] = {
+            "task_id": "nostart-1",
+            "status": "RUNNING",
+            "started_at": "",
+        }
+        fake._zsets["import_task:index"] = {"nostart-1": 1.0}
+
+        with patch("app.services.data_import.redis_client", fake):
+            result = await sweep_stale_running_tasks()
+
+        assert result["swept"] == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_task_with_invalid_started_at(self, _mock_import_settings):
+        """started_at 格式无效的 RUNNING 任务应跳过。"""
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:badstart-1"] = {
+            "task_id": "badstart-1",
+            "status": "RUNNING",
+            "started_at": "not-a-date",
+        }
+        fake._zsets["import_task:index"] = {"badstart-1": 1.0}
+
+        with patch("app.services.data_import.redis_client", fake):
+            result = await sweep_stale_running_tasks()
+
+        assert result["swept"] == 0
+
+
+class TestPruneImportTaskIndex:
+    """prune_import_task_index 测试 — 修剪已过期任务的索引条目。"""
+
+    @pytest.mark.asyncio
+    async def test_prunes_expired_index_entries(self, _mock_import_settings):
+        """索引中存在但 Hash 已过期（不存在）的条目应被移除。"""
+        fake = _FakeRedisImport()
+        # "expired-1" 在索引中但 Hash 不存在（已 TTL 过期）
+        # "alive-1" 在索引中且 Hash 存在
+        fake._hashes["import_task:alive-1"] = {
+            "task_id": "alive-1",
+            "status": "success",
+        }
+        fake._zsets["import_task:index"] = {
+            "expired-1": 1.0,
+            "alive-1": 2.0,
+        }
+
+        with patch("app.services.data_import.redis_client", fake):
+            removed = await prune_import_task_index()
+
+        assert removed == 1
+        assert "expired-1" not in fake._zsets["import_task:index"]
+        assert "alive-1" in fake._zsets["import_task:index"]
+
+    @pytest.mark.asyncio
+    async def test_no_prune_when_all_alive(self, _mock_import_settings):
+        """所有索引条目都有对应 Hash 时不修剪。"""
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {"task_id": "t1", "status": "success"}
+        fake._hashes["import_task:t2"] = {"task_id": "t2", "status": "failed"}
+        fake._zsets["import_task:index"] = {"t1": 1.0, "t2": 2.0}
+
+        with patch("app.services.data_import.redis_client", fake):
+            removed = await prune_import_task_index()
+
+        assert removed == 0
+
+    @pytest.mark.asyncio
+    async def test_no_prune_when_index_empty(self, _mock_import_settings):
+        """空索引不修剪。"""
+        fake = _FakeRedisImport()
+
+        with patch("app.services.data_import.redis_client", fake):
+            removed = await prune_import_task_index()
+
+        assert removed == 0

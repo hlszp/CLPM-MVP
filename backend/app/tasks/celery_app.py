@@ -32,6 +32,7 @@ celery_app = Celery(
         "app.tasks.report_generator",
         "app.tasks.audit_archive",
         "app.tasks.dead_letter",
+        "app.tasks.data_link_monitor",
     ],
 )
 
@@ -109,6 +110,7 @@ class AsyncTask(Task):
 # 必须放在 AsyncTask 类定义之后，避免循环导入。
 import app.tasks.aas_sync  # noqa: E402, F401
 import app.tasks.audit_archive  # noqa: E402, F401
+import app.tasks.data_link_monitor  # noqa: E402, F401
 import app.tasks.diagnosis_engine  # noqa: E402, F401
 import app.tasks.kpi_calc  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401
