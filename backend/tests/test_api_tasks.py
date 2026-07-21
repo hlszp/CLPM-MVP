@@ -133,7 +133,7 @@ class FakeTaskRedis:
         argv = [str(value) for value in args[numkeys:]]
         task = self._hashes.get(keys[0]) if keys else None
 
-        if "CLPM_TASK_STATUS_CAS_V1" in script:
+        if "CLPM_TASK_STATUS_CAS_V2" in script:
             if task is None:
                 return ["MISSING", ""]
             new_status = argv[0]
@@ -143,7 +143,9 @@ class FakeTaskRedis:
             task["status"] = new_status
             for index in range(1, len(argv), 2):
                 field, value = argv[index], argv[index + 1]
-                if field in {"progress", "loops_done"} and task.get(field) not in {None, ""}:
+                if field in {"progress", "loops_done", "work_items_done"} and task.get(
+                    field
+                ) not in {None, ""}:
                     if float(value) < float(task[field]):
                         continue
                 task[field] = value
@@ -202,7 +204,7 @@ class FakeTaskRedis:
                 task.pop(field, None)
             return 1
 
-        if "CLPM_BACKFILL_PROGRESS_V1" in script:
+        if "CLPM_BACKFILL_PROGRESS_V2" in script:
             if task is None:
                 return ["MISSING", "0", "0"]
             current_done = int(task.get("backfill_done", "0") or 0)
@@ -222,8 +224,8 @@ class FakeTaskRedis:
                     "status": "RUNNING",
                     "backfill_done": str(done),
                     "progress": str(progress),
-                    "loops_done": str(done),
-                    "loops_total": str(total),
+                    "work_items_done": str(done),
+                    "work_items_total": str(total),
                     "current_stage": argv[2],
                 }
             )
@@ -1305,12 +1307,13 @@ class TestTaskTrackerService:
             task_type=TaskType.BACKFILL,
             created_by="admin",
             created_by_id="",
+            loops_total=2,
         )
         assert (await task_tracker.get_task(task_id))["progress"] == ""
         first = await task_tracker.record_backfill_progress_once(
             task_id,
             event_id="w1:loop-1",
-            total_loops=2,
+            total_work_items=4,
             current_stage="w1",
         )
         event_key = f"task:{task_id}:backfill_progress_events"
@@ -1319,20 +1322,24 @@ class TestTaskTrackerService:
         duplicate = await task_tracker.record_backfill_progress_once(
             task_id,
             event_id="w1:loop-1",
-            total_loops=2,
+            total_work_items=4,
             current_stage="w1 duplicate",
         )
         assert task_redis._ttls[event_key] == 604_800
         second = await task_tracker.record_backfill_progress_once(
             task_id,
             event_id="w1:loop-2",
-            total_loops=2,
+            total_work_items=4,
             current_stage="w1",
         )
 
-        assert first == (True, 1, 0.5)
-        assert duplicate == (False, 1, 0.5)
-        assert second == (True, 2, 1.0)
+        assert first == (True, 1, 0.25)
+        assert duplicate == (False, 1, 0.25)
+        assert second == (True, 2, 0.5)
         task = await task_tracker.get_task(task_id)
-        assert task["loops_done"] == "2"
-        assert task["progress"] == "1.0"
+        # 工作项进度写入独立字段；loops_total 恒为回路数（创建时写入），不被覆盖
+        assert task["work_items_done"] == "2"
+        assert task["work_items_total"] == "4"
+        assert task["loops_total"] == "2"
+        assert task["loops_done"] == ""
+        assert task["progress"] == "0.5"

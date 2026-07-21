@@ -2785,16 +2785,22 @@ async def _update_backfill_progress(
     done_in_window: int,
     loops_per_window: int,
 ) -> None:
-    """更新回填任务细粒度进度（逐回路，前端进度条 ≤10s 刷新）。
+    """更新回填/全量计算任务细粒度进度（逐回路，前端进度条 ≤10s 刷新）。
 
+    进度按工作项（回路 × 窗口）计算：
     进度 = (已完成窗口 × 每窗口回路数 + 当前窗口已完成回路数) / (总窗口 × 每窗口回路数)
+
+    工作项进度写入独立字段 ``work_items_total``/``work_items_done``；
+    ``loops_total`` 恒为回路数（即每窗口回路数），不再被工作项数覆盖
+    （2026-07-21 P0 根因修复）。``loops_done`` 仅在单窗口场景（STANDARD
+    全量计算，工作项 == 回路）写入回路完成数。
     """
     from app.schemas.task import TaskStatus
     from app.services import task_tracker
 
-    total_loops = total_windows * loops_per_window
-    done_loops = (window_index - 1) * loops_per_window + done_in_window
-    progress = done_loops / total_loops if total_loops > 0 else 0.0
+    total_work_items = total_windows * loops_per_window
+    done_work_items = (window_index - 1) * loops_per_window + done_in_window
+    progress = done_work_items / total_work_items if total_work_items > 0 else 0.0
     if total_windows > 1:
         stage = (
             f"回填计算 窗口[{window_index}/{total_windows}]"
@@ -2806,8 +2812,10 @@ async def _update_backfill_progress(
         task_id,
         TaskStatus.RUNNING,
         progress=progress,
-        loops_done=done_loops,
-        loops_total=total_loops,
+        loops_total=loops_per_window,
+        loops_done=done_in_window if total_windows == 1 else None,
+        work_items_total=total_work_items,
+        work_items_done=done_work_items,
         current_stage=stage,
     )
 
@@ -2820,15 +2828,19 @@ async def _increment_backfill_progress(
     *,
     event_id: str | None = None,
 ) -> None:
-    """按窗口+回路幂等计数，原子写入单调进度。"""
+    """按窗口+回路幂等计数，原子写入单调进度。
+
+    进度按「回路×窗口」工作项写入 ``work_items_total``/``work_items_done``，
+    不覆盖 ``loops_total``（恒为回路数）。
+    """
     from app.services import task_tracker
 
-    total_loops = total_windows * loops_per_window
+    total_work_items = total_windows * loops_per_window
     unique_event = event_id or f"window:{window_index}:legacy:{uuid4()}"
     await task_tracker.record_backfill_progress_once(
         task_id,
         event_id=unique_event,
-        total_loops=total_loops,
+        total_work_items=total_work_items,
         current_stage=f"回填计算 窗口[{window_index}/{total_windows}]",
     )
 

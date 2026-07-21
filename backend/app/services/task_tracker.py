@@ -40,7 +40,7 @@ _NOTIFICATION_PREFIX = "task:notifications"
 _NOTIFICATION_MAX = 100  # 每用户最多保留 100 条通知
 
 _STATUS_CAS_LUA = r"""
--- CLPM_TASK_STATUS_CAS_V1
+-- CLPM_TASK_STATUS_CAS_V2
 local task_key = KEYS[1]
 if redis.call('EXISTS', task_key) == 0 then
   return {'MISSING', ''}
@@ -57,7 +57,7 @@ redis.call('HSET', task_key, 'status', new_status)
 for index = 2, #ARGV, 2 do
   local field = ARGV[index]
   local value = ARGV[index + 1]
-  if field == 'progress' or field == 'loops_done' then
+  if field == 'progress' or field == 'loops_done' or field == 'work_items_done' then
     local current = tonumber(redis.call('HGET', task_key, field) or '')
     local incoming = tonumber(value)
     if current == nil or incoming == nil or incoming >= current then
@@ -135,7 +135,7 @@ return 1
 """
 
 _BACKFILL_PROGRESS_LUA = r"""
--- CLPM_BACKFILL_PROGRESS_V1
+-- CLPM_BACKFILL_PROGRESS_V2
 local task_key = KEYS[1]
 local event_key = KEYS[2]
 if redis.call('EXISTS', task_key) == 0 then
@@ -168,12 +168,15 @@ end
 if progress < current_progress then
   progress = current_progress
 end
+-- V2：细粒度进度按「回路×窗口」工作项写入独立字段 work_items_total/work_items_done。
+-- loops_total 恒为回路数（创建时写入），loops_done 语义为回路完成数，
+-- 两者均不再被工作项数覆盖（2026-07-21 P0 根因修复）。
 redis.call(
   'HSET', task_key,
   'status', 'RUNNING',
   'progress', tostring(progress),
-  'loops_done', tostring(done),
-  'loops_total', tostring(total),
+  'work_items_done', tostring(done),
+  'work_items_total', tostring(total),
   'current_stage', ARGV[3]
 )
 return {'COUNTED', tostring(done), tostring(progress)}
@@ -472,17 +475,21 @@ async def record_backfill_progress_once(
     task_id: str,
     *,
     event_id: str,
-    total_loops: int,
+    total_work_items: int,
     current_stage: str,
 ) -> tuple[bool, int, float]:
-    """Atomically count one unique backfill completion and persist monotonic progress."""
+    """Atomically count one unique backfill completion and persist monotonic progress.
+
+    进度按「回路×窗口」工作项计数，写入任务 hash 的 ``work_items_total`` /
+    ``work_items_done`` 字段；``loops_total``（回路数）不被覆盖。
+    """
     raw = await redis_client.eval(
         _BACKFILL_PROGRESS_LUA,
         2,
         _task_key(task_id),
         f"{_task_key(task_id)}:backfill_progress_events",
         event_id,
-        str(total_loops),
+        str(total_work_items),
         current_stage,
         str(7 * 24 * 60 * 60),
     )
@@ -558,6 +565,8 @@ async def update_status(
     progress: float | None = None,
     loops_total: int | None = None,
     loops_done: int | None = None,
+    work_items_total: int | None = None,
+    work_items_done: int | None = None,
     current_stage: str | None = None,
     error_message: str | None = None,
     started_at: str | None = None,
@@ -569,8 +578,10 @@ async def update_status(
         task_id: 任务 ID
         status: 新状态
         progress: 进度 0~1
-        loops_total: 总回路数（计算开始后才知道）
+        loops_total: 总回路数（计算开始后才知道；恒为回路数，非工作项数）
         loops_done: 已完成回路数
+        work_items_total: 总工作项数（回填场景 = 回路 × 窗口）
+        work_items_done: 已完成工作项数（单调递增）
         current_stage: 当前阶段
         error_message: 失败原因
         started_at: 开始执行时间
@@ -586,6 +597,10 @@ async def update_status(
         updates["loops_total"] = str(loops_total)
     if loops_done is not None:
         updates["loops_done"] = str(loops_done)
+    if work_items_total is not None:
+        updates["work_items_total"] = str(work_items_total)
+    if work_items_done is not None:
+        updates["work_items_done"] = str(work_items_done)
     if current_stage is not None:
         updates["current_stage"] = current_stage
     if error_message is not None:
