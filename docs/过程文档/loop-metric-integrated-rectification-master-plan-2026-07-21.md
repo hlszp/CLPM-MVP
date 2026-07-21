@@ -113,7 +113,7 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 >
 > **W2 完成（2026-07-22）**：WS-D（PR #8，已合并 0c42d897——监控契约对齐 + R1 权限矩阵 SPONSOR 门控/PE_ENGINEER 配置放开）、WS-B2（PR #9，已合并 57eb59e6——停滞看门狗/checkpoint 分离/WS 参数放宽/SETNX 分布式锁/导入生命周期/链路监控 beat/时区显式转换）**全部 2 项合并完成**并同步 github 镜像；合并后门禁全绿（ruff 零告警 / pytest 2173 passed，较 W1 +55 / check:type 零错误）。回路-2/3/5/9、性能-7 验收关闭（详见 §8）。
 >
-> **W3 进行中（2026-07-22）**：WS-G 文档轨（G2，PR #10，已合并 52bf5997——D1-D6 全落地 + R2 权重口径 metric_config 唯一入口）；WS-G 代码轨（G1，已合并 2ab18e1a——回路-10 后端性能 DISTINCT ON/CTE/GROUP BY/合并IN/stats缓存 + 前端 UX 错误/空态/WS状态/服务端分页/质量码统一 + 性能-11 时间工具抽取消除 +8h hack + 性能-12 ranking 全量分页）**全部合并完成**并同步 github 镜像；合并后门禁全绿（ruff 零告警 / pytest 2174 passed，较 W2 +1 / check:type 零错误）。回路-10/性能-11/性能-12 验收关闭（详见 §8）。**剩余**：性能-13 部署走查（上线 gate）+ 性能-14 e2e 补盲；性能-2/3/10 待运行时验证（受阻于实时链路断开）。
+> **W3 代码/文档轨全部合并（2026-07-22）**：WS-G 文档轨（G2，PR #10，已合并 52bf5997——D1-D6 全落地 + R2 权重口径 metric_config 唯一入口）；WS-G 代码轨（G1，已合并 2ab18e1a——回路-10 后端性能 DISTINCT ON/CTE/GROUP BY/合并IN/stats缓存 + 前端 UX 错误/空态/WS状态/服务端分页/质量码统一 + 性能-11 时间工具抽取消除 +8h hack + 性能-12 ranking 全量分页）；性能-14 e2e 补盲（已合并 e868bc3c——`performance-coverage.spec.ts` 353 行 3 用例全绿）。全部同步 github 镜像；合并后门禁全绿（ruff 零告警 / pytest 2174 passed / check:type 零错误 / e2e 3 新增用例全过）。回路-10/性能-11/性能-12/性能-14 验收关闭（详见 §8）。**剩余**：性能-13 部署走查待测试机实测（上线 gate）；性能-2/3/10 待运行时验证（受阻于实时链路断开，zpdev 离线）。
 
 ## 6. 分支合并校验标准与流程
 
@@ -174,7 +174,7 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 | 性能-11 ✅ | +8h hack | WS-G 代码轨（已合并 2ab18e1a，676feeeb） | W3 | `normalizeUtcTimestamp`+`formatLocalTime` 抽取到 format.ts ✅；pid-dashboard +8h hack 消除 ✅；6 处重复补Z逻辑收敛 ✅；跨时区正确 |
 | 性能-12 ✅ | ranking 全量 | WS-G 代码轨（已合并 2ab18e1a，c16e893f） | W3 | 后端 ranking 加 offset 参数 ✅（Query ge=0 验证）；前端 loadRanking 循环分页拉全量 ✅（do-while 直到不足一页）；>100 回路饼图计数完整 |
 | 性能-13 🔶 | 部署走查 | WS-G（文档级走查 2026-07-22） | W3 | docker-compose.prod.yml ✅（6 服务 + Beat 双触发防护 + TDengine profile 恒启用 + 端口安全 + 健康检查全覆盖 + 资源限制/日志轮转）；.env.prod.example ✅（全配置项 + 占位符 + 注释）；deploy.sh ✅（env/CORS/密码校验 → 构建 → 启动 → 健康检查 → Alembic 同步）；**待测试机实测**：Docker 构建/容器启动/Alembic stamp/nginx 代理/sys_config 首配 |
-| 性能-14 | e2e 补盲 | WS-G | W3 | 新增 spec 全绿 |
+| 性能-14 ✅ | e2e 补盲 | WS-G 代码轨（已合并 e868bc3c，880ca888） | W3 | 新增 `e2e/tests/performance-coverage.spec.ts`（353 行，3 用例）：E2E-PERF-007 KPI 报表页加载与时间窗切换 ✅；E2E-PERF-008 参数配置 Tab 开关与参数表 ✅（toggle 后还原，不实际保存避免数据污染）；E2E-PERF-009 理想稳态时间字段 ✅；3 用例 2 次稳定通过；全量 e2e 回归 42 passed，8 failed 均为既有环境问题（实时链路断开/zpdev 离线，非本次引入） |
 
 ## 9. Wave 0 立即执行步骤（命令级）
 
