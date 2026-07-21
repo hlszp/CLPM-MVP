@@ -586,12 +586,15 @@ async def get_ranking(
     plant_node_id: str | None = None,
     time_window: str = "today",
     limit: int = 20,
+    offset: int = 0,
     sort_by: str = "score",
     sort_order: str = "asc",
 ) -> list[dict]:
     """低效回路排行。
 
     Args:
+        limit: 返回条数（最多 100）
+        offset: 偏移量（配合 limit 实现分页拉全量）
         sort_by: 排序字段 score/steady_rate/good_value_rate
         sort_order: asc/desc（默认 asc，分数最低的在前）
     """
@@ -645,7 +648,7 @@ async def get_ranking(
     else:
         order_expr = sort_column.asc().nulls_last()
 
-    stmt = select(snapshot_alias).order_by(order_expr).limit(limit)
+    stmt = select(snapshot_alias).order_by(order_expr).limit(limit).offset(offset)
     result = await db.execute(stmt)
     snapshots = result.scalars().all()
 

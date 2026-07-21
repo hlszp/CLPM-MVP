@@ -785,17 +785,34 @@ async function loadAutoRateRt() {
   }
 }
 
+/**
+ * 性能 #12：循环分页拉全量 ranking（对齐 loop-performance 的 fetchAllSnapshots 模式）
+ *
+ * 后端 ranking 接口 limit 上限 100，单次请求 >100 回路时等级占比饼图少计。
+ * 新增 offset 参数后，前端循环拉取直到不足一页，合并全量再渲染饼图。
+ */
 async function loadRanking() {
   try {
     const { getRankingApi } = await import('#/api/metric');
-    const data = await getRankingApi({
-      plantNodeId: selectedPlantNodeId.value,
-      timeWindow: timeWindow.value,
-      sortBy: 'score',
-      sortOrder: top5Sort.value,
-      limit: 100,
-    });
-    rankingList.value = data.filter((it) => it.includeInEvaluation !== false);
+    const allItems: MetricApi.RankingItem[] = [];
+    let offset = 0;
+    const limit = 100;
+    let batch: MetricApi.RankingItem[] = [];
+    do {
+      batch = await getRankingApi({
+        plantNodeId: selectedPlantNodeId.value,
+        timeWindow: timeWindow.value,
+        sortBy: 'score',
+        sortOrder: top5Sort.value,
+        limit,
+        offset,
+      });
+      allItems.push(...batch);
+      offset += limit;
+    } while (batch.length === limit);
+    rankingList.value = allItems.filter(
+      (it) => it.includeInEvaluation !== false,
+    );
     await nextTick();
     renderPieChart();
   } catch {

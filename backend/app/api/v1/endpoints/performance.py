@@ -159,17 +159,23 @@ async def get_ranking_endpoint(
         "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
     ),
     limit: int = Query(20, ge=1, le=100, description="返回条数（最多 100）"),
+    offset: int = Query(0, ge=0, description="偏移量（配合 limit 实现分页拉全量）"),
     sortBy: str = Query("score", description="排序字段：score/steady_rate/good_value_rate"),
     sortOrder: str = Query("asc", description="排序方向：asc/desc"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
-    """低效回路排行（所有角色）。"""
+    """低效回路排行（所有角色）。
+
+    性能 #12：新增 ``offset`` 参数支持前端循环分页拉全量，
+    解决 >100 回路时等级占比饼图少计的问题。
+    """
     data = await get_ranking(
         db=db,
         plant_node_id=plantNodeId,
         time_window=timeWindow,
         limit=limit,
+        offset=offset,
         sort_by=sortBy,
         sort_order=sortOrder,
     )
