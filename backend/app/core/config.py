@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     # 是否将实时数据写回本地 TDengine 宽表（数据架构优化 Phase 1）
     REALTIME_WRITEBACK_ENABLED: bool = True
 
+    # ---- 断点续传（实时数据缺口自动补全）----
+    # SignalR 断线/进程重启导致的数据缺口，重连成功后自动调用远端历史数据接口补全
+    GAP_BACKFILL_ENABLED: bool = True
+    GAP_BACKFILL_MIN_GAP_SECONDS: int = 60  # 小于该缺口不补（正常重连抖动）
+    GAP_BACKFILL_MAX_HOURS: int = 24  # 单次补数最大窗口（超出部分截断并告警，需手工导入）
+
     # ---- Alerting ----
     ALERT_WEBHOOK_URL: str = ""  # 告警 webhook URL，为空则仅记录日志
 

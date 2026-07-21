@@ -12,6 +12,15 @@ Redis 缓存:
 - key: ``realtime:{tagCode}``
 - value: JSON ``{"value": "12.5", "quality": 0, "collectTime": "..."}``
 - TTL: 60 秒（超时自动清除过期数据）
+
+断点续传（Gap Backfill）:
+- 每次收到数据更新内存 ``_last_data_at``，并由 ``_flush_buffer`` 节流持久化到
+  Redis checkpoint（``realtime:gap:last_data_ts``，epoch 秒）；
+- 重连成功（含进程重启后首次连接）时检测缺口，超过
+  ``GAP_BACKFILL_MIN_GAP_SECONDS`` 即触发后台补数任务，调用
+  ``data_import.import_history_data``（skip 策略，依赖 TDengine 同 ts 覆盖语义）
+  补全缺口窗口，并触发受影响小时的 KPI 回算；
+- 单次补数窗口上限 ``GAP_BACKFILL_MAX_HOURS``，超出部分截断并告警，需手工导入。
 """
 
 from __future__ import annotations
@@ -38,6 +47,11 @@ logger = logging.getLogger(__name__)
 _REDIS_KEY_PREFIX = "realtime:"
 _REDIS_TTL = 3600  # 秒（1 小时），确保页面刷新时能从缓存读取实时值
 _PUBSUB_CHANNEL = "realtime:updates"  # Pub/Sub 频道，供 WebSocket 端点订阅
+
+# 断点续传 checkpoint（最后收到数据时间，epoch 秒字符串）
+_GAP_CHECKPOINT_KEY = "realtime:gap:last_data_ts"
+_GAP_CHECKPOINT_WRITE_INTERVAL = 30.0  # checkpoint 写 Redis 节流间隔（秒）
+_GAP_BACKFILL_END_MARGIN = 2.0  # 补数窗口末端留 2s 余量，避免与实时写入撞时间戳
 
 # tag_name 后缀 → DDL 列名映射（与 tdengine.py 保持一致）
 _ROLE_COLUMN_MAP: dict[str, str] = {
@@ -97,6 +111,10 @@ class RealtimeSubscriber:
             str, dict[str, Any]
         ] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
         self._buffer_lock = asyncio.Lock()
+        # 断点续传状态
+        self._last_data_at: float | None = None  # 最后收到数据时间（epoch 秒，wall clock）
+        self._last_checkpoint_write: float = 0.0  # 上次写 checkpoint 的 monotonic 时间
+        self._backfill_task: asyncio.Task | None = None  # 进行中的补数任务（单实例守卫）
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -115,6 +133,9 @@ class RealtimeSubscriber:
             return
 
         self._running = True
+        # 进程重启场景：从 Redis checkpoint 恢复最后数据时间，
+        # 使首次连接成功即可感知进程停机期间的数据缺口
+        await self._load_checkpoint()
         self._task = asyncio.create_task(self._run())
         self._flush_task = asyncio.create_task(self._flush_loop())
         logger.info(
@@ -140,6 +161,13 @@ class RealtimeSubscriber:
             except asyncio.CancelledError:
                 pass
             self._flush_task = None
+        if self._backfill_task is not None:
+            self._backfill_task.cancel()
+            try:
+                await self._backfill_task
+            except asyncio.CancelledError:
+                pass
+            self._backfill_task = None
         if self._ws is not None:
             await self._ws.close()
             self._ws = None
@@ -221,6 +249,9 @@ class RealtimeSubscriber:
         logger.info("已订阅 %d 个 Tag", len(tag_codes))
         self._subscribed_tags = set(tag_codes)
 
+        # 断点续传：连接成功（重连/进程重启后首连）即检测数据缺口并自动补数
+        await self._maybe_trigger_gap_backfill()
+
         # 接收初始响应（可能包含多条 \x1e 分隔的消息）
         raw = await self._ws.recv()
         for part in raw.split("\x1e"):
@@ -271,6 +302,9 @@ class RealtimeSubscriber:
         if not tag_code:
             return
 
+        # 断点续传：记录最后收到数据时间（wall clock）
+        self._last_data_at = time.time()
+
         # 写入 Redis
         key = f"{_REDIS_KEY_PREFIX}{tag_code}"
         payload = {
@@ -307,6 +341,130 @@ class RealtimeSubscriber:
             loop_part, role = tag_code.rsplit(".", 1)
             return loop_part, role.upper()
         return tag_code, "PV"
+
+    # ------------------------------------------------------------------
+    # 断点续传（Gap Backfill）
+    # ------------------------------------------------------------------
+
+    async def _load_checkpoint(self) -> None:
+        """启动时从 Redis 恢复最后数据时间 checkpoint（进程重启场景）。"""
+        try:
+            raw = await redis_client.get(_GAP_CHECKPOINT_KEY)
+            if raw:
+                self._last_data_at = float(raw)
+                logger.info(
+                    "断点续传 checkpoint 已恢复: last_data_at=%s",
+                    datetime.fromtimestamp(self._last_data_at, UTC).isoformat(),
+                )
+        except (ValueError, TypeError) as exc:
+            logger.warning("断点续传 checkpoint 格式无效，忽略: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("读取断点续传 checkpoint 失败（可忽略）: %s", exc)
+
+    async def _maybe_save_checkpoint(self, *, force: bool = False) -> None:
+        """将最后收到数据时间持久化到 Redis（节流 30s，供进程重启后恢复缺口起点）。"""
+        if self._last_data_at is None:
+            return
+        now = time.monotonic()
+        if not force and now - self._last_checkpoint_write < _GAP_CHECKPOINT_WRITE_INTERVAL:
+            return
+        try:
+            await redis_client.set(_GAP_CHECKPOINT_KEY, str(self._last_data_at))
+            self._last_checkpoint_write = now
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("写入断点续传 checkpoint 失败（可忽略）: %s", exc)
+
+    async def _maybe_trigger_gap_backfill(self) -> None:
+        """检测数据缺口并触发断点续传（连接/重连成功后调用）。"""
+        if not settings.GAP_BACKFILL_ENABLED:
+            return
+        if self._last_data_at is None:
+            return
+        if self._backfill_task is not None and not self._backfill_task.done():
+            logger.info("断点续传任务仍在执行中，跳过本次触发")
+            return
+
+        now = time.time()
+        gap_seconds = now - self._last_data_at
+        if gap_seconds < float(settings.GAP_BACKFILL_MIN_GAP_SECONDS):
+            return
+
+        max_seconds = float(settings.GAP_BACKFILL_MAX_HOURS) * 3600
+        gap_start = self._last_data_at
+        if gap_seconds > max_seconds:
+            logger.warning(
+                "数据缺口 %.1fh 超过单次补数上限（%dh），仅补最近 %dh；"
+                "更早数据请通过「数据管理→历史数据导入」手工补齐",
+                gap_seconds / 3600,
+                settings.GAP_BACKFILL_MAX_HOURS,
+                settings.GAP_BACKFILL_MAX_HOURS,
+            )
+            gap_start = now - max_seconds
+
+        # 末端留余量，避免与正在写入的实时行撞时间戳
+        gap_end = now - _GAP_BACKFILL_END_MARGIN
+        if gap_end <= gap_start:
+            return
+
+        logger.warning(
+            "检测到实时数据缺口 %.0fs（%s ~ %s），启动断点续传自动补数",
+            gap_seconds,
+            datetime.fromtimestamp(gap_start, UTC).isoformat(),
+            datetime.fromtimestamp(gap_end, UTC).isoformat(),
+        )
+        self._backfill_task = asyncio.create_task(self._run_gap_backfill(gap_start, gap_end))
+
+    async def _run_gap_backfill(self, gap_start: float, gap_end: float) -> None:
+        """执行断点续传：经远端历史数据接口补全缺口窗口，并触发 KPI 回算.
+
+        异常仅记日志不抛出（不影响实时订阅主循环）；失败时 checkpoint 不推进，
+        下次重连会基于原 checkpoint 再次尝试（天然重试）。
+        """
+        from sqlalchemy import select
+
+        from app.models.loop import LoopLedger
+        from app.services.data_import import import_history_data
+
+        started = time.monotonic()
+        ts_start = datetime.fromtimestamp(gap_start, UTC).isoformat()
+        ts_end = datetime.fromtimestamp(gap_end, UTC).isoformat()
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+                )
+                loop_ids = [str(row[0]) for row in result.all()]
+            if not loop_ids:
+                logger.warning("断点续传跳过：无活跃回路")
+                return
+
+            import_result = await import_history_data(
+                loop_ids,
+                ts_start,
+                ts_end,
+                interval=1,
+                # skip：依赖 TDengine 同 ts 覆盖语义；不可用 overwrite
+                # （overwrite 会先 DELETE 窗口，误删窗口边界内的实时行）
+                conflict_strategy="skip",
+                # 缺口跨整点边界时重算受影响小时的 KPI
+                trigger_backfill=True,
+            )
+            # 补数完成：checkpoint 推进到窗口末端，避免下次重连重复补
+            self._last_data_at = max(self._last_data_at or 0.0, gap_end)
+            await self._maybe_save_checkpoint(force=True)
+            logger.warning(
+                "断点续传完成: range=%s~%s, loops=%d/%d, failed=%d, 耗时=%.1fs",
+                ts_start,
+                ts_end,
+                import_result["succeeded"],
+                import_result["total"],
+                import_result["failed"],
+                time.monotonic() - started,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.error("断点续传失败（不影响实时订阅，下次重连将重试）: %s", exc)
 
     async def get_cached_values(self, tag_codes: list[str]) -> list[dict]:
         """从 Redis 读取缓存的实时值.
@@ -408,6 +566,9 @@ class RealtimeSubscriber:
             await pipe.execute()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Redis 历史数据写入失败: %s", exc)
+
+        # 断点续传 checkpoint 持久化（节流，进程重启后据此恢复缺口起点）
+        await self._maybe_save_checkpoint()
 
         # 2. 批量写入 TDengine (如果启用)
         if not tables_rows:
