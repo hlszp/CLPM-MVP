@@ -287,11 +287,12 @@ def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
     mock_parallel_session = AsyncMock()
     mock_parallel_session.execute = AsyncMock(return_value=universal_result)
 
-    # Patch the redis_client used by the auth/dashboard services and rate limit middleware.
+    # Patch the redis_client used by the auth/dashboard/loop services and rate limit middleware.
     with (
         patch("app.core.redis.redis_client", fake_redis),
         patch("app.services.auth.redis_client", fake_redis),
         patch("app.services.dashboard.redis_client", fake_redis),
+        patch("app.services.loop.redis_client", fake_redis),
         patch("app.middleware.rate_limit.redis_client", fake_redis),
         patch("app.middleware.idempotency.redis_client", fake_redis),
         patch("app.services.dashboard.AsyncSessionLocal") as mock_session_local,

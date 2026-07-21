@@ -183,6 +183,10 @@ async def match_tags_for_loop_endpoint(
     - 原 `["PV","SP","OP","MODE","KP","TI","TD"]` 与 schema/seed data 的
       `PID_P/PID_I/PID_D` 不一致，导致 PID 参数永远无法自动匹配。
     - 同时支持 `_` 和 `-` 两种分隔符（不同工厂命名约定不同）。
+
+    Phase 10 性能优化：原 7 次 ``for role in roles`` 单条 IN 查询合并为
+    1 次 IN 查询（14 个候选 tag_name 一次性 WHERE IN），减少 7 次 round-trip
+    到 1 次。返回顺序仍按 role 枚举顺序稳定输出。
     """
     from sqlalchemy import select
 
@@ -191,26 +195,37 @@ async def match_tags_for_loop_endpoint(
     # P3 #45: 与 loop_tag_mapping.tag_role CHECK 约束保持一致
     # （来源：db/postgresql/01_schema.sql:168 + AGENTS.md AAS 数据模型）
     loop_tag_roles = ("PV", "SP", "OP", "MODE", "PID_P", "PID_I", "PID_D")
-    matched_tags = []
 
+    # 一次性构造所有候选 tag_name（7 roles × 2 分隔符 = 14 个）
+    # 同时尝试 `_` 和 `-` 分隔符，兼容不同工厂命名约定
+    # （seed data 用 `T-HDS-001-PV`，部分 DCS 用 `80PIC31306_PV`）
+    all_candidates: list[str] = []
     for role in loop_tag_roles:
-        # 同时尝试 `_` 和 `-` 分隔符，兼容不同工厂命名约定
-        # （seed data 用 `T-HDS-001-PV`，部分 DCS 用 `80PIC31306_PV`）
-        candidates = [f"{loopTagName}_{role}", f"{loopTagName}-{role}"]
-        result = await db.execute(select(TagRegistry).where(TagRegistry.tag_name.in_(candidates)))
-        tag = result.scalar_one_or_none()
-        if tag:
-            matched_tags.append(
-                {
-                    "role": role,
-                    "tagId": str(tag.id),
-                    "tagName": tag.tag_name,
-                    "tagDescription": tag.tag_description,
-                    "tagType": tag.tag_type,
-                    "measureType": tag.measure_type,
-                    "unit": tag.unit,
-                }
-            )
+        all_candidates.append(f"{loopTagName}_{role}")
+        all_candidates.append(f"{loopTagName}-{role}")
+
+    result = await db.execute(select(TagRegistry).where(TagRegistry.tag_name.in_(all_candidates)))
+    matched_by_name = {tag.tag_name: tag for tag in result.scalars().all()}
+
+    # 按 role 枚举顺序稳定输出，每个 role 优先 `_` 分隔符（OPC DA 命名约定）
+    matched_tags: list[dict] = []
+    for role in loop_tag_roles:
+        for sep in ("_", "-"):
+            candidate = f"{loopTagName}{sep}{role}"
+            tag = matched_by_name.get(candidate)
+            if tag is not None:
+                matched_tags.append(
+                    {
+                        "role": role,
+                        "tagId": str(tag.id),
+                        "tagName": tag.tag_name,
+                        "tagDescription": tag.tag_description,
+                        "tagType": tag.tag_type,
+                        "measureType": tag.measure_type,
+                        "unit": tag.unit,
+                    }
+                )
+                break
 
     return success(data=matched_tags)
 
