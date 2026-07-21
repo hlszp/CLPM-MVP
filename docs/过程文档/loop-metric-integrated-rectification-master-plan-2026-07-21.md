@@ -160,7 +160,7 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 | 回路-9 ✅ | 韧性增强包 | WS-B2（PR #9，已合并 57eb59e6） | W2 | 停滞看门狗 ✅（asyncio.wait_for recv 超时）；checkpoint 落库/接收分离 ✅；WS 参数 30/60/15 ✅；SETNX 分布式锁 ✅；导入 chunk 级取消+终态兜底 ✅；RUNNING 超时清扫 ✅；任务 TTL 30 天+索引修剪 ✅；data_link_monitor beat ✅；单测 44 项 ✅（realtime 22 + import 16 + monitor 6） |
 | 回路-10 | 性能 UX + 文档 | WS-G | W3 | DISTINCT ON/CTE 查询计划验证；PRD v6.1 发布，D1-D6 全落地 |
 | 性能-1 ✅ | loops_total 根因 | PR-A1（gitea PR #2，已合并 f62e2275；worker 已重启加载新码） | W0 | 单测回填后 loops_total=回路数；e2e F7 断言保持 |
-| 性能-2 | 权重口径裁决 | WS-G | W3 | 指定回路改权重→回填分数按新权重；文档 grep 无旧口径 |
+| 性能-2 🔶 | 权重口径裁决 | WS-G 文档轨（PR #10，已合并 52bf5997） | W3 | 文档 ✅（PRD/FDS/DDS/契约/ADS 全库对齐 metric_config 唯一入口）；代码优先级链不变 ✅；**待运行时验证：指定回路改权重→回填分数按新权重** |
 | 性能-3 🔶 | INCONCLUSIVE 落 'E' | PR-A2（PR #3，已合并 5e378712） | W1 | 代码 ✅（显式传入不覆盖）；PG 抽查历史快照 92 条 confidence_level='E' ✅（证逻辑生效）；**7/21 16:00 后无新快照，待实时链路恢复后抽查新快照**（受阻于数据链路问题，非代码问题） |
 | 性能-4 ✅ | 重复任务清理 | PR-A2（PR #3，脚本已入库 `backend/scripts/cleanup_duplicate_standard_tasks.py`） | W1 | dry-run 441 条 → --execute 删除 → 复跑待删除 0 条 ✅；1 条 RUNNING 非终态正确保留 ✅（2026-07-22 执行） |
 | 性能-5 ✅ | gauges 时间窗 | WS-F（PR #5，已合并 012cd23b） | W1 | `/board/aggregate` 支持 timeWindow ✅；**待页面联调抽验** |
