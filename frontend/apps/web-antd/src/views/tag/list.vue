@@ -58,6 +58,7 @@ import {
 } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { flattenNodes } from '#/utils/plant-node';
+import { mapQualityToLabel } from '#/utils/quality-code';
 import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'TagList' });
@@ -486,10 +487,13 @@ const uploadProps: UploadProps = {
 // ===== WebSocket 实时更新 =====
 let wsUnsubscribe: (() => void) | null = null;
 
+/**
+ * Phase 10 UX 包：质量码统一映射（与后端 _GOOD_CODES={1,2,3,192} 对齐）
+ * 原实现把 quality===2 当 UNCERTAIN 是错误的——OPC UA 中 2=Good，
+ * 与 preprocessing/quality_code.py 权威语义冲突，已统一收敛到 utils/quality-code.ts。
+ */
 function mapRealtimeQuality(quality: number): TagApi.Quality {
-  if (quality === 0) return 'BAD';
-  if (quality === 2) return 'UNCERTAIN';
-  return 'GOOD';
+  return mapQualityToLabel(quality) as TagApi.Quality;
 }
 
 /** 处理 WebSocket 实时消息，更新匹配 tag 的 currentValue/quality/lastSyncAt */

@@ -43,6 +43,7 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { formatLocalTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'MetricKpiReport' });
@@ -333,9 +334,7 @@ function getTimeRange(): { end: string; start: string } {
  * 与 history-snapshots 页约定一致：无时区后缀按 UTC 处理。
  */
 function formatSnapshotTime(ts: null | string | undefined): string {
-  if (!ts) return '—';
-  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
-  return dayjs(hasTimezone ? ts : `${ts}Z`).format('MM-DD HH:mm');
+  return formatLocalTime(ts, 'MM-DD HH:mm');
 }
 
 /** 提取记录的评分（综合报表用 avgScore，回路报表用聚合 score） */

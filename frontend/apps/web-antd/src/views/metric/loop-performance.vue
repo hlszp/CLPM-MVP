@@ -94,6 +94,7 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
+import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricLoopPerformance' });
 
@@ -574,8 +575,7 @@ function handleGradeCardClick(grade: null | number) {
 /** 时间字符串规范化（PostgreSQL timestamp without timezone 假定为 UTC） */
 function normalizeTime(ts: null | string | undefined): null | string {
   if (!ts) return null;
-  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
-  return hasTimezone ? ts : `${ts}Z`;
+  return normalizeUtcTimestamp(ts);
 }
 
 function formatTsRange(start: null | string, end: null | string): string {
@@ -596,15 +596,11 @@ function formatTsRange(start: null | string, end: null | string): string {
 }
 
 function formatTime(ts: null | string | undefined): string {
-  const n = normalizeTime(ts);
-  if (!n) return '—';
-  return dayjs(n).format('YYYY-MM-DD HH:mm:ss');
+  return formatLocalTime(ts, 'YYYY-MM-DD HH:mm:ss');
 }
 
 function formatShortTime(ts: null | string | undefined): string {
-  const n = normalizeTime(ts);
-  if (!n) return '—';
-  return dayjs(n).format('MM-DD HH:mm');
+  return formatLocalTime(ts, 'MM-DD HH:mm');
 }
 
 function formatNumber(val: null | number | undefined, suffix = ''): string {

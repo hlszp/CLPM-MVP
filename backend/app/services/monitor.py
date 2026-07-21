@@ -143,10 +143,14 @@ def _ts_to_ms(ts: Any) -> int:
 def _quality_code_to_label(q: Any) -> str:
     """质量码 → 前端标签（GOOD/BAD/UNCERTAIN）。
 
-    兼容两种 schema：
+    Phase 10 UX 包：与 ``preprocessing/quality_code.py`` 的 ``_GOOD_CODES={1,2,3,192}``
+    统一口径，修复"REST 路径把 2 当 UNCERTAIN、WS 路径把 2 当 UNCERTAIN"的语义冲突。
+
+    兼容多种 schema：
     - TDengine: 1=Good, 0=Bad
+    - OPC UA: 2=Good, 3=Good_Cascaded, 0=Bad
     - OPC DA: 192=Good
-    - 已是 GOOD/BAD 字符串则原样返回（向后兼容 MOCK 数据）
+    - 已是 GOOD/BAD/UNCERTAIN 字符串则原样返回（向后兼容 MOCK 数据）
     """
     if q is None:
         return "GOOD"
@@ -158,8 +162,8 @@ def _quality_code_to_label(q: Any) -> str:
         except (ValueError, TypeError):
             return "UNCERTAIN"
     if isinstance(q, (int, float)):
-        # TDengine: 1=Good; OPC DA: 192=Good; 0=Bad
-        if q in (1, 192):
+        # 与 preprocessing/quality_code.py 的 _GOOD_CODES={1,2,3,192} 对齐
+        if q in (1, 2, 3, 192):
             return "GOOD"
         if q == 0:
             return "BAD"
@@ -284,13 +288,15 @@ async def _get_loop_tag_values(
 
 
 async def _get_descendant_node_ids(db: AsyncSession, parent_id: str) -> list[str]:
-    """递归获取所有子孙节点 ID。"""
-    result = await db.execute(select(PlantNode.id).where(PlantNode.parent_id == parent_id))
-    child_ids = [str(row[0]) for row in result]
-    all_ids = list(child_ids)
-    for child_id in child_ids:
-        all_ids.extend(await _get_descendant_node_ids(db, child_id))
-    return all_ids
+    """递归获取所有子孙节点 ID。
+
+    Phase 10 性能优化：原 N 次 select 递归收敛为 1 次 ``WITH RECURSIVE`` CTE
+    （``plant_node_tree.collect_descendant_node_ids``）。保留薄包装以维持公共 API，
+    ``performance.py`` 通过此名间接复用。
+    """
+    from app.services.plant_node_tree import collect_descendant_node_ids
+
+    return await collect_descendant_node_ids(db, parent_id)
 
 
 async def list_loop_monitor(
@@ -367,18 +373,18 @@ async def list_loop_monitor(
     # 批量查每个回路的最新 KPI 快照（DISTINCT ON 取每个 loop_id 的最新一条）
     snapshot_map: dict[str, KpiSnapshotHourly] = {}
     if loop_ids:
-        # PostgreSQL DISTINCT ON 语法：按 loop_id 分组取 ts_end 最大的一条
+        # PostgreSQL DISTINCT ON：按 loop_id 取 ts_end 最大的一条
+        # Phase 10 性能优化：原"ORDER BY + Python 层 if-not-in 取首条"会拉回全部行，
+        # 现用真正 DISTINCT ON 让 PG 在数据库层直接去重，减少回传行数。
         s_stmt = (
             select(KpiSnapshotHourly)
             .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+            .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
         s_result = await db.execute(s_stmt)
         for snap in s_result.scalars().all():
-            # 只保留每个 loop 的第一条（最新）
-            key = str(snap.loop_id)
-            if key not in snapshot_map:
-                snapshot_map[key] = snap
+            snapshot_map[str(snap.loop_id)] = snap
 
     # 批量查每个回路的 MODE 值映射配置（loop_mode_mapping 表）
     # 无配置的回路回退到默认映射（在 _mode_value_to_label 内处理）

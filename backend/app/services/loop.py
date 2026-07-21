@@ -11,14 +11,16 @@ from __future__ import annotations
 import io
 import json
 import logging
+import random
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import openpyxl
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
+from app.core.redis import redis_client
 from app.models.audit import SysAuditLog
 from app.models.dcs_model import DcsModel
 from app.models.loop import LoopLedger, LoopTagMapping
@@ -26,6 +28,11 @@ from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
+
+# Phase 10 性能优化：回路类型/控制方式统计 Redis 短 TTL 缓存
+# 60s TTL + ±10s 抖动，避免惊群；写入失败降级为直接查询（与 dashboard 缓存模式一致）
+LOOP_STATS_CACHE_KEY_TEMPLATE = "loop:stats:type:{plant_node_id}"
+LOOP_STATS_CACHE_TTL = 60
 
 # 必填 Tag 角色
 REQUIRED_ROLES = ("PV", "SP", "OP", "MODE")
@@ -133,17 +140,53 @@ async def _get_unit_name(db: AsyncSession, unit_id: str | None) -> str | None:
 
 
 async def _get_descendant_node_ids(db: AsyncSession, parent_id: str) -> list[str]:
-    """递归获取所有子孙节点 ID。"""
-    result = await db.execute(select(PlantNode.id).where(PlantNode.parent_id == parent_id))
-    child_ids = [str(row[0]) for row in result]
-    all_ids = list(child_ids)
-    for child_id in child_ids:
-        all_ids.extend(await _get_descendant_node_ids(db, child_id))
-    return all_ids
+    """递归获取所有子孙节点 ID。
+
+    Phase 10 性能优化：原 N 次 select 递归收敛为 1 次 ``WITH RECURSIVE`` CTE
+    （``plant_node_tree.collect_descendant_node_ids``）。保留薄包装以维持公共 API，
+    ``performance.py`` 通过此名间接复用。
+    """
+    from app.services.plant_node_tree import collect_descendant_node_ids
+
+    return await collect_descendant_node_ids(db, parent_id)
+
+
+def _loop_stats_cache_key(plant_node_id: str | None) -> str:
+    """构建 stats 缓存 key。"""
+    return LOOP_STATS_CACHE_KEY_TEMPLATE.format(plant_node_id=plant_node_id or "all")
+
+
+async def _read_loop_stats_cache(cache_key: str) -> dict | None:
+    """读取 stats 缓存，失败时返回 None（降级为直接查询）。"""
+    try:
+        cached = await redis_client.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("读取回路类型统计缓存失败，降级为直接查询: %s", exc)
+    return None
+
+
+async def _write_loop_stats_cache(cache_key: str, data: dict) -> None:
+    """写入 stats 缓存，失败时不报错（降级模式）。
+
+    使用 TTL 抖动（±10s）避免大量 key 同时过期导致惊群效应。
+    """
+    try:
+        ttl = LOOP_STATS_CACHE_TTL + random.randint(-10, 10)
+        await redis_client.setex(cache_key, ttl, json.dumps(data, default=str))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("写入回路类型统计缓存失败: %s", exc)
 
 
 async def get_loop_type_stats(db: AsyncSession, plant_node_id: str | None = None) -> dict:
     """按回路类型统计数量（支持递归子节点）。
+
+    Phase 10 性能优化：
+    - 子孙节点遍历用 1 次 CTE 替代 N 次递归 select
+    - loop_type 计数用 CTE 直接 JOIN loop_ledger + GROUP BY 一条 SQL 完成，
+      不再"先递归拿 ID 再 IN 查询"两步
+    - 整体结果加 60s Redis 短 TTL 缓存，减少重复计算
 
     Args:
         plant_node_id: 装置/单元 ID，为 None 时统计全部回路
@@ -151,19 +194,41 @@ async def get_loop_type_stats(db: AsyncSession, plant_node_id: str | None = None
     Returns:
         各回路类型的统计数量字典 + 控制方式统计
     """
-    conditions = []
-    if plant_node_id:
-        all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
-        all_node_ids.append(plant_node_id)
-        conditions.append(LoopLedger.unit_id.in_(all_node_ids))
+    cache_key = _loop_stats_cache_key(plant_node_id)
+    cached = await _read_loop_stats_cache(cache_key)
+    if cached is not None:
+        return cached
 
-    stmt = (
-        select(LoopLedger.loop_type, func.count())
-        .where(LoopLedger.is_active.is_(True), *conditions)
-        .group_by(LoopLedger.loop_type)
-    )
-    result = await db.execute(stmt)
-    rows = result.all()
+    if plant_node_id:
+        # CTE 一次返回子孙节点 + 自身 → JOIN loop_ledger + GROUP BY loop_type
+        # 一条 SQL 完成"递归子节点 + 按类型聚合"，省掉 IN 二次查询
+        stmt = text(
+            """
+            WITH RECURSIVE node_tree AS (
+                SELECT id FROM plant_node WHERE id = :plant_node_id
+                UNION ALL
+                SELECT child.id
+                FROM plant_node child
+                JOIN node_tree nt ON child.parent_id = nt.id
+            )
+            SELECT l.loop_type, COUNT(*) AS cnt
+            FROM loop_ledger l
+            JOIN node_tree nt ON l.unit_id = nt.id
+            WHERE l.is_active = TRUE
+            GROUP BY l.loop_type
+            """
+        )
+        result = await db.execute(stmt, {"plant_node_id": plant_node_id})
+        rows = result.all()
+    else:
+        # 无 plant_node_id：直接全表 GROUP BY，无需 CTE
+        stmt = (
+            select(LoopLedger.loop_type, func.count())
+            .where(LoopLedger.is_active.is_(True))
+            .group_by(LoopLedger.loop_type)
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
 
     type_stats: dict[str, int] = {
         "TEMPERATURE": 0,
@@ -174,19 +239,31 @@ async def get_loop_type_stats(db: AsyncSession, plant_node_id: str | None = None
         "SPEED": 0,
         "OTHER": 0,
     }
-    for loop_type, count in rows:
+    for row in rows:
+        loop_type = row[0]
+        count = row[1]
         key = loop_type or "OTHER"
         if key in type_stats:
             type_stats[key] = int(count)
         else:
             type_stats["OTHER"] += int(count)
 
+    # 控制方式统计依赖 Redis 实时 MODE 值，无法纯 SQL 聚合，仍走批量内存统计
+    # 但只取本范围回路（用 IN 一次拉回，避免逐节点查询）
+    conditions: list = []
+    if plant_node_id:
+        all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
+        all_node_ids.append(plant_node_id)
+        conditions.append(LoopLedger.unit_id.in_(all_node_ids))
+
     mode_stats = await _get_control_mode_stats(db, conditions)
 
-    return {
+    payload = {
         "loopTypeStats": type_stats,
         "controlModeStats": mode_stats,
     }
+    await _write_loop_stats_cache(cache_key, payload)
+    return payload
 
 
 async def _get_control_mode_stats(

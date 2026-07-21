@@ -38,6 +38,7 @@ import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import ScoreSparkline from '#/components/metric/score-sparkline.vue';
+import { formatLocalTime } from '#/utils/format';
 
 defineOptions({ name: 'MetricHistorySnapshots' });
 
@@ -331,10 +332,7 @@ function handleTableChange(p: any, _filters: any, sorter: any) {
  * 假定不带时区的时间字符串为 UTC，手动加 Z 标记后再转本地时区显示。
  */
 function formatTsEnd(ts: null | string | undefined): string {
-  if (!ts) return '—';
-  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
-  const normalized = hasTimezone ? ts : `${ts}Z`;
-  return dayjs(normalized).format('MM-DD HH:00');
+  return formatLocalTime(ts, 'MM-DD HH:00');
 }
 
 /**
@@ -343,10 +341,7 @@ function formatTsEnd(ts: null | string | undefined): string {
  * 显式标注 UTC+8，避免用户误认为显示的是 UTC 时间。
  */
 function formatFullTime(ts: null | string | undefined): string {
-  if (!ts) return '—';
-  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
-  const normalized = hasTimezone ? ts : `${ts}Z`;
-  return dayjs(normalized).format('YYYY-MM-DD HH:mm:ss [UTC+8]');
+  return formatLocalTime(ts, 'YYYY-MM-DD HH:mm:ss [UTC+8]');
 }
 
 function formatNumber(val: null | number | undefined, suffix = ''): string {

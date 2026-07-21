@@ -3,8 +3,12 @@
 验证：
 - 返回的 role 使用 PID_P/PID_I/PID_D（与 loop_tag_mapping.tag_role CHECK 约束一致）
 - 不再返回旧版 KP/TI/TD（与 schema 不一致）
-- 同时支持 `_` 和 `-` 分隔符的测点位号
+- 同时支持 `_` 和 `-` 两种分隔符
 - 仅返回数据库中存在的测点
+
+Phase 10 性能优化后：原 7 次 ``for role in roles`` 单条 IN 查询合并为
+1 次 IN 查询（14 个候选 tag_name 一次性 WHERE IN）。测试 mock 跟随调整为
+``db.execute`` 仅被调用 1 次，返回所有匹配 tag 列表。
 """
 
 from __future__ import annotations
@@ -26,9 +30,10 @@ def _make_tag(tag_id: str, tag_name: str, tag_type: str) -> MagicMock:
     return tag
 
 
-def _make_scalar_one_or_none(value) -> MagicMock:
+def _make_scalars_mock(tags: list) -> MagicMock:
+    """构造 .scalars().all() 返回 tags 的 mock 结果（合并 IN 查询返回多行）。"""
     result = MagicMock()
-    result.scalar_one_or_none.return_value = value
+    result.scalars.return_value.all.return_value = tags
     return result
 
 
@@ -47,21 +52,9 @@ class TestMatchTagsForLoop:
             "PID_I": _make_tag("t6", "T-HDS-001-PID_I", "PID_I"),
             "PID_D": _make_tag("t7", "T-HDS-001-PID_D", "PID_D"),
         }
-        # 候选 tag_name → tag 映射（与端点构造的候选名一致）
-        name_to_tag: dict[str, MagicMock] = {}
-        for role, tag in tags_by_role.items():
-            name_to_tag[f"T-HDS-001-{role}"] = tag
-            name_to_tag[f"T-HDS-001_{role}"] = tag
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            # 使用 literal_binds 让 IN 子句渲染为字面值，便于字符串匹配
-            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-            for name, tag in name_to_tag.items():
-                if name in compiled:
-                    return _make_scalar_one_or_none(tag)
-            return _make_scalar_one_or_none(None)
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        # 合并查询：一次性返回所有匹配 tag
+        all_tags = list(tags_by_role.values())
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock(all_tags))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -85,19 +78,7 @@ class TestMatchTagsForLoop:
     def test_underscore_separator_supported(self, client, mock_db, fake_redis) -> None:
         """P3 #45：同时支持 `_` 分隔符（部分 DCS 命名约定）。"""
         tag = _make_tag("t1", "80PIC31306_PV", "PV")
-        name_to_tag = {
-            "80PIC31306_PV": tag,
-            "80PIC31306-PV": tag,
-        }
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-            for name, t in name_to_tag.items():
-                if name in compiled:
-                    return _make_scalar_one_or_none(t)
-            return _make_scalar_one_or_none(None)
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([tag]))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -115,25 +96,13 @@ class TestMatchTagsForLoop:
 
     def test_partial_tags_only_returns_existing(self, client, mock_db, fake_redis) -> None:
         """P3 #45：仅 PV/SP/OP/MODE 存在时（缺 PID_*），只返回 4 个。"""
-        tags_by_role = {
-            "PV": _make_tag("t1", "T-HDC-003-PV", "PV"),
-            "SP": _make_tag("t2", "T-HDC-003-SP", "SP"),
-            "OP": _make_tag("t3", "T-HDC-003-OP", "OP"),
-            "MODE": _make_tag("t4", "T-HDC-003-MODE", "MODE"),
-        }
-        name_to_tag: dict[str, MagicMock] = {}
-        for role, tag in tags_by_role.items():
-            name_to_tag[f"T-HDC-003-{role}"] = tag
-            name_to_tag[f"T-HDC-003_{role}"] = tag
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-            for name, tag in name_to_tag.items():
-                if name in compiled:
-                    return _make_scalar_one_or_none(tag)
-            return _make_scalar_one_or_none(None)
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        tags = [
+            _make_tag("t1", "T-HDC-003-PV", "PV"),
+            _make_tag("t2", "T-HDC-003-SP", "SP"),
+            _make_tag("t3", "T-HDC-003-OP", "OP"),
+            _make_tag("t4", "T-HDC-003-MODE", "MODE"),
+        ]
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock(tags))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -151,7 +120,7 @@ class TestMatchTagsForLoop:
 
     def test_no_matching_tags_returns_empty(self, client, mock_db, fake_redis) -> None:
         """P3 #45：无匹配测点时返回空列表（而非错误）。"""
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none(None))
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -164,13 +133,12 @@ class TestMatchTagsForLoop:
         assert body["code"] == "0"
         assert body["data"] == []
 
-    def test_query_count_matches_role_count(self, client, mock_db, fake_redis) -> None:
-        """P3 #45：查询次数 = 7（每个 role 一次），验证 role 列表完整。
+    def test_query_count_is_single_in_query(self, client, mock_db, fake_redis) -> None:
+        """Phase 10 性能优化：合并 IN 查询后 db.execute 仅被调用 1 次。
 
-        防止回归：如果硬编码列表恢复为旧版 7 项但包含 KP/TI/TD，
-        查询次数仍是 7，但 role 值错误（由 test_returns_pid_p_pid_i_pid_d_roles 覆盖）。
+        防止回归：若恢复为 ``for role in roles`` 单条查询，调用次数会变 7。
         """
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none(None))
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
@@ -179,5 +147,30 @@ class TestMatchTagsForLoop:
             )
 
         assert resp.status_code == 200
-        # 7 个 role → 7 次 db.execute 调用
-        assert mock_db.execute.await_count == 7
+        # 合并 IN 查询后仅 1 次 db.execute 调用
+        assert mock_db.execute.await_count == 1
+
+    def test_underscore_preferred_over_dash_when_both_exist(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """Phase 10：同一 role 同时存在 `_` 和 `-` 分隔符时，优先返回 `_`。
+
+        合并查询会同时拿到两个 tag，按"OPC DA 命名约定优先 `_`"返回前者。
+        """
+        tag_underscore = _make_tag("t1", "LIC-101_PV", "PV")
+        tag_dash = _make_tag("t2", "LIC-101-PV", "PV")
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([tag_underscore, tag_dash]))
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tags/match-loop?loopTagName=LIC-101",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        data = body["data"]
+        assert len(data) == 1
+        assert data[0]["role"] == "PV"
+        # 优先返回 `_` 分隔符版本
+        assert data[0]["tagName"] == "LIC-101_PV"

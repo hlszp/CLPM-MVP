@@ -227,6 +227,8 @@ export namespace MetricApi {
   /** 排行查询参数 */
   export interface RankingQueryParams {
     limit?: number;
+    /** 偏移量（配合 limit 实现分页拉全量） */
+    offset?: number;
     plantNodeId?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';

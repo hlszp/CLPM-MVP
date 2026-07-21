@@ -9,6 +9,8 @@
  * 此处通过 re-export 保持向后兼容。
  */
 
+import dayjs from 'dayjs';
+
 export type { DiagnosisLabel } from '#/api/diagnosis';
 export {
   DIAGNOSIS_LABEL_NAME_MAP,
@@ -17,6 +19,48 @@ export {
 
 export { flattenNodes } from '#/utils/plant-node';
 export type { TreeNode } from '#/utils/plant-node';
+
+/**
+ * 规范化 UTC 时间戳（"补 Z 转本地"约定）
+ *
+ * 后端部分接口（dashboard trend、KPI 快照等）返回无时区后缀的 ISO8601 时间戳
+ * （如 "2026-07-22T10:00:00"），浏览器 `new Date()` / `dayjs()` 会将其解释为
+ * 本地时间，导致与后端 UTC 语义产生偏移。
+ *
+ * 本函数统一检测时间戳是否已含时区后缀（Z / +HH:MM / +HHMM），
+ * 若无则补 "Z" 标记为 UTC，再交由调用方用 `dayjs()` 按本地时区渲染。
+ *
+ * 与历史 `+8h` hack 的区别：hack 假设浏览器在 UTC+8 且叠加了本地时区偏移，
+ * 在非 UTC+8 环境下会双重偏移；"补 Z" 方案让 dayjs 正确解析为 UTC 后由本地
+ * 时区负责渲染偏移，跨时区正确。
+ *
+ * @param ts 时间戳字符串（ISO8601，可能含/不含时区后缀）
+ * @returns 规范化后的时间戳字符串（必定含时区信息）
+ */
+export function normalizeUtcTimestamp(ts: string): string {
+  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
+  return hasTimezone ? ts : `${ts}Z`;
+}
+
+/**
+ * 将后端时间戳规范化并格式化为本地时间字符串
+ *
+ * 封装"补 Z 转本地"约定（`normalizeUtcTimestamp` + `dayjs.format`），
+ * 消除各视图重复的 `hasTimezone` 检测逻辑与 `+8h` hack。
+ *
+ * @param ts 时间戳字符串（空值返回 fallback）
+ * @param fmt dayjs 格式串，默认 'YYYY-MM-DD HH:mm'
+ * @param fallback 空值占位，默认 '—'
+ * @returns 格式化后的本地时间字符串
+ */
+export function formatLocalTime(
+  ts: null | string | undefined,
+  fmt = 'YYYY-MM-DD HH:mm',
+  fallback = '—',
+): string {
+  if (!ts) return fallback;
+  return dayjs(normalizeUtcTimestamp(ts)).format(fmt);
+}
 
 /**
  * 格式化时间字符串为本地化展示

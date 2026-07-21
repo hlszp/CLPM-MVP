@@ -16,6 +16,7 @@ import dayjs from 'dayjs';
 
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'PidDashboard' });
 
@@ -369,10 +370,12 @@ function renderTrendChart() {
   const trend = boardTrend.value;
   if (!trend || !trend.timestamps?.length) return;
 
-  const timestamps = trend.timestamps.map((ts) => {
-    const d = new Date(new Date(ts).getTime() + 8 * 3600 * 1000);
-    return `${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:00`;
-  });
+  // 性能 #11：用"补 Z 转本地"约定替代 +8h hack。
+  // 后端 timestamps 为无时区后缀的 ISO8601（如 "2026-07-22T10:00:00"），
+  // 补 "Z" 标记为 UTC 后由 dayjs 按本地时区渲染，跨时区正确。
+  const timestamps = trend.timestamps.map((ts) =>
+    dayjs(normalizeUtcTimestamp(ts)).format('M-D H:00'),
+  );
 
   const barDataTotal =
     (trend.totalLoops ?? 0) > 0 ? timestamps.map(() => trend.totalLoops) : [];
@@ -782,17 +785,34 @@ async function loadAutoRateRt() {
   }
 }
 
+/**
+ * 性能 #12：循环分页拉全量 ranking（对齐 loop-performance 的 fetchAllSnapshots 模式）
+ *
+ * 后端 ranking 接口 limit 上限 100，单次请求 >100 回路时等级占比饼图少计。
+ * 新增 offset 参数后，前端循环拉取直到不足一页，合并全量再渲染饼图。
+ */
 async function loadRanking() {
   try {
     const { getRankingApi } = await import('#/api/metric');
-    const data = await getRankingApi({
-      plantNodeId: selectedPlantNodeId.value,
-      timeWindow: timeWindow.value,
-      sortBy: 'score',
-      sortOrder: top5Sort.value,
-      limit: 100,
-    });
-    rankingList.value = data.filter((it) => it.includeInEvaluation !== false);
+    const allItems: MetricApi.RankingItem[] = [];
+    let offset = 0;
+    const limit = 100;
+    let batch: MetricApi.RankingItem[] = [];
+    do {
+      batch = await getRankingApi({
+        plantNodeId: selectedPlantNodeId.value,
+        timeWindow: timeWindow.value,
+        sortBy: 'score',
+        sortOrder: top5Sort.value,
+        limit,
+        offset,
+      });
+      allItems.push(...batch);
+      offset += limit;
+    } while (batch.length === limit);
+    rankingList.value = allItems.filter(
+      (it) => it.includeInEvaluation !== false,
+    );
     await nextTick();
     renderPieChart();
   } catch {

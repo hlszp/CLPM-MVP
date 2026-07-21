@@ -43,6 +43,7 @@ import {
 } from '#/api/task';
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricRecompute' });
 
@@ -517,10 +518,7 @@ function handleCancel(record: TaskApi.TaskItem) {
 
 // ============ 工具函数 ============
 function formatTime(ts: null | string | undefined): string {
-  if (!ts) return '—';
-  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
-  const normalized = hasTimezone ? ts : `${ts}Z`;
-  return dayjs(normalized).format('YYYY-MM-DD HH:mm');
+  return formatLocalTime(ts, 'YYYY-MM-DD HH:mm');
 }
 
 function formatProgress(progress: null | number | undefined): number {
@@ -530,9 +528,7 @@ function formatProgress(progress: null | number | undefined): number {
 
 function parseTimestamp(ts: null | string | undefined): null | number {
   if (!ts) return null;
-  const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts);
-  const normalized = hasTimezone ? ts : `${ts}Z`;
-  const d = dayjs(normalized);
+  const d = dayjs(normalizeUtcTimestamp(ts));
   return d.isValid() ? d.valueOf() : null;
 }
 
