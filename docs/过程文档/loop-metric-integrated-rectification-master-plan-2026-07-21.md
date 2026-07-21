@@ -107,6 +107,8 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 
 节点为协调目标而非承诺；阶段 3 时区实测若受远端环境限制按源文档既定策略顺延，不阻塞其他项。
 
+> **W1 执行状态（2026-07-21 回写）**：PR-A2（#3）、WS-E（#4）、WS-F（#5）、WS-B1（#6）均已合并入 main（4aae0389）并同步 github 镜像；合并后门禁 ruff ✅，pytest/check:type 结果见当次会话记录。WS-C 因首代理未产出，已派续作代理重做为（分支 `zp/fix-loop-config-contracts`，阶段 6/7 全部 11 项改动在工作区），PR 待建——为 W1 唯一未完项。运行时验证待办：性能-3 PG 抽查、性能-4 清理脚本 dry-run/执行、回路-4 worker 重启加载新码。
+
 ## 6. 分支合并校验标准与流程
 
 ### 6.1 PR 门禁（逐项打勾，缺一不合）
@@ -146,23 +148,23 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 | 回路-1 ✅ | P0 批量/导入崩溃 | PR-L1（gitea PR #1，已合并 4e37b7a7） | W0 | 已验收（2056 passed）；回归测试在库 |
 | 回路-2 🔶 | 孤儿页下线 | PR-L1 删页+死API ✅（PR #1）/ WS-D（:869 死链，待做） | W0/W2 | check:type 无残留引用；监控页跳转可达 |
 | 回路-3 | 时区口径 | WS-B2 | W2 | 远端实测比对记录；导入段与实时段 ts 连续抽查一致 |
-| 回路-4 | 断点续传加固 | WS-B1 | W1 | 新单测：部分失败不推进/重试定时器/任务记录；补数进任务列表且标记 auto-backfill |
+| 回路-4 ✅ | 断点续传加固 | WS-B1（PR #6，已合并 4aae0389） | W1 | 新单测：部分失败不推进/重试定时器/任务记录 ✅（PR 内含）；补数进任务列表且标记 auto-backfill ✅；**待 worker 重启加载新码** |
 | 回路-5 | 监控契约对齐 | WS-D | W2 | 接口级测试 + check:type；loopStatus/kpiStatus 分离，无 PARTIAL 撞名 |
 | 回路-6 | 回路配置契约 | WS-C（权限除外）/ WS-D（权限） | W1/W2 | unitId 更新落库；删回路级联解绑成功；PID 只读区可见 |
 | 回路-7 | 测点配置契约 | WS-C | W1 | 枚举筛选有结果、编辑 200；is_linked 仅由映射派生 |
-| 回路-8 | 链路配置安全 | WS-E | W1 | 审计/GET Token 打码；Tailscale 失败回滚 sys_config；可清空字段 |
+| 回路-8 ✅ | 链路配置安全 | WS-E（PR #4，已合并 a6822d85） | W1 | 审计/GET Token 打码 ✅；Tailscale 失败回滚 sys_config ✅；可清空字段 ✅（405 行新单测在库） |
 | 回路-9 | 韧性增强包 | WS-B2 | W2 | 看门狗模拟停滞触发重连；RUNNING 超时清扫生效；任务 TTL 30 天 |
 | 回路-10 | 性能 UX + 文档 | WS-G | W3 | DISTINCT ON/CTE 查询计划验证；PRD v6.1 发布，D1-D6 全落地 |
 | 性能-1 ✅ | loops_total 根因 | PR-A1（gitea PR #2，已合并 f62e2275；worker 已重启加载新码） | W0 | 单测回填后 loops_total=回路数；e2e F7 断言保持 |
 | 性能-2 | 权重口径裁决 | WS-G | W3 | 指定回路改权重→回填分数按新权重；文档 grep 无旧口径 |
-| 性能-3 | INCONCLUSIVE 落 'E' | PR-A2 | W1 | PG 抽查新快照 confidence_level='E'；聚合展示不回归 |
-| 性能-4 | 重复任务清理 | PR-A2 | W1 | dry-run 输出 16 组；执行后重复组=0 |
-| 性能-5 | gauges 时间窗 | WS-F | W1 | curl 带 timeWindow 返回值随窗口变化；页面联动 |
-| 性能-6 | 实时过期提示 | WS-F | W1 | 断流出现"更新于 HH:mm"提示，恢复消失 |
+| 性能-3 🔶 | INCONCLUSIVE 落 'E' | PR-A2（PR #3，已合并 5e378712） | W1 | 代码 ✅（显式传入不覆盖）；**待 PG 抽查新快照 confidence_level='E'** |
+| 性能-4 🔶 | 重复任务清理 | PR-A2（PR #3，脚本已入库 `backend/scripts/cleanup_duplicate_standard_tasks.py`） | W1 | **待执行 dry-run 核对 16 组 → --execute 后重复组=0** |
+| 性能-5 ✅ | gauges 时间窗 | WS-F（PR #5，已合并 012cd23b） | W1 | `/board/aggregate` 支持 timeWindow ✅；**待页面联调抽验** |
+| 性能-6 ✅ | 实时过期提示 | WS-F（PR #5） | W1 | pid-dashboard 已实现；**待断流场景抽验** |
 | 性能-7 | SPONSOR 门控 | WS-D | W2 | e2e：sponsor 不见入口、直访被拒 |
-| 性能-8 | rules 契约 | WS-F | W1 | check:type + F1 用例过 |
-| 性能-9 | 注释修正 | WS-F | W1 | grep 无旧注释 |
-| 性能-10 | badge 死代码 | WS-F | W1 | 组件被引用或已删除；渲染一致 |
+| 性能-8 ✅ | rules 契约 | WS-F（PR #5） | W1 | 裸数组契约已落地（api/metric.ts 删 RuleListResult） |
+| 性能-9 ✅ | 注释修正 | WS-F（PR #5） | W1 | 已随 PR 修正 |
+| 性能-10 🔶 | badge 死代码 | WS-F（PR #5，loop-performance 试点已合） | W1 | **待渲染一致性抽验，决定推广或删除组件** |
 | 性能-11 | +8h hack | WS-G | W3 | 统一时间工具替换，渲染不变 |
 | 性能-12 | ranking 全量 | WS-G | W3 | >100 回路时饼图计数完整 |
 | 性能-13 | 部署走查 | WS-G | W3 | 测试机全流程跑通记录（上线 gate） |
