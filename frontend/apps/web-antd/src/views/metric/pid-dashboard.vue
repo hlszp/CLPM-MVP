@@ -12,6 +12,7 @@ import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { Button, message, Select, Table, Tooltip } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -29,6 +30,12 @@ const timeWindowOptions = [
 ];
 
 const timeWindow = ref<TimeWindow>('today');
+
+/** 当前时间窗中文标签（gauges 卡片统计窗口标注） */
+const timeWindowLabel = computed(
+  () =>
+    timeWindowOptions.find((o) => o.value === timeWindow.value)?.label ?? '',
+);
 
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref<string>('全厂');
@@ -51,6 +58,24 @@ function handleTimeWindowChange() {
 const boardAggregate = ref<DashboardApi.BoardAggregateResult | null>(null);
 const boardTrend = ref<DashboardApi.BoardTrendResult | null>(null);
 const autoRateRt = ref<DashboardApi.AutoRateRt | null>(null);
+
+/** 实时数据过期阈值（分钟），超过则标灰/警示 */
+const RT_STALE_MINUTES = 10;
+
+/** 实时数据新鲜度：readAt 为空（DB 回退）或超过阈值视为过期 */
+const rtStale = computed(() => {
+  const readAt = autoRateRt.value?.readAt;
+  if (!readAt) return true;
+  return dayjs().diff(dayjs(readAt), 'minute') > RT_STALE_MINUTES;
+});
+
+/** 实时数据更新时间小字（状态饼图/实时自控率卡片角标） */
+const rtReadAtText = computed(() => {
+  const readAt = autoRateRt.value?.readAt;
+  if (!readAt) return '实时数据中断';
+  return `数据更新于 ${dayjs(readAt).format('HH:mm')}`;
+});
+
 const rankingList = ref<MetricApi.RankingItem[]>([]);
 const diagnosisLoading = ref(false);
 const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
@@ -717,9 +742,12 @@ async function loadBoard() {
     const { getBoardAggregateApi, getBoardTrendApi } =
       await import('#/api/dashboard');
     const [aggregate, trend] = await Promise.all([
-      getBoardAggregateApi(
-        selectedPlantNodeId.value ? { plantId: selectedPlantNodeId.value } : {},
-      ),
+      getBoardAggregateApi({
+        ...(selectedPlantNodeId.value && {
+          plantId: selectedPlantNodeId.value,
+        }),
+        timeWindow: timeWindow.value,
+      }),
       getBoardTrendApi({
         ...(selectedPlantNodeId.value && {
           plantId: selectedPlantNodeId.value,
@@ -868,6 +896,14 @@ onMounted(() => {
               <div class="clpm-pid-dashboard__gauge-value">
                 {{ autoRateRt?.rate ?? '--' }}%
               </div>
+              <div
+                class="clpm-pid-dashboard__gauge-meta"
+                :class="{
+                  'clpm-pid-dashboard__gauge-meta--stale': rtStale,
+                }"
+              >
+                {{ rtReadAtText }}
+              </div>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
@@ -879,6 +915,9 @@ onMounted(() => {
               >
                 {{ aggregateData?.avgScore ?? '--' }}%
               </div>
+              <div class="clpm-pid-dashboard__gauge-meta">
+                统计窗口：{{ timeWindowLabel }}
+              </div>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
@@ -886,6 +925,9 @@ onMounted(() => {
               <EchartsUI ref="gauge3Ref" height="126px" />
               <div class="clpm-pid-dashboard__gauge-value">
                 {{ aggregateData?.autoModeRate ?? '--' }}%
+              </div>
+              <div class="clpm-pid-dashboard__gauge-meta">
+                统计窗口：{{ timeWindowLabel }}
               </div>
             </div>
 
@@ -895,6 +937,9 @@ onMounted(() => {
               <div class="clpm-pid-dashboard__gauge-value">
                 {{ aggregateData?.stabilityRate ?? '--' }}%
               </div>
+              <div class="clpm-pid-dashboard__gauge-meta">
+                统计窗口：{{ timeWindowLabel }}
+              </div>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
@@ -902,6 +947,9 @@ onMounted(() => {
               <EchartsUI ref="gauge5Ref" height="126px" />
               <div class="clpm-pid-dashboard__gauge-value">
                 {{ aggregateData?.goodValueRate ?? '--' }}%
+              </div>
+              <div class="clpm-pid-dashboard__gauge-meta">
+                统计窗口：{{ timeWindowLabel }}
               </div>
             </div>
           </div>
@@ -912,6 +960,14 @@ onMounted(() => {
             >
               <div class="clpm-pid-dashboard__card-header">
                 <span>回路状态统计</span>
+                <span
+                  class="clpm-pid-dashboard__card-meta"
+                  :class="{
+                    'clpm-pid-dashboard__card-meta--stale': rtStale,
+                  }"
+                >
+                  {{ rtReadAtText }}
+                </span>
               </div>
               <EchartsUI ref="statusPieChartRef" height="200px" />
             </div>
@@ -1131,6 +1187,42 @@ onMounted(() => {
 
   &-value {
     color: #f1f5f9;
+  }
+}
+
+.clpm-pid-dashboard__gauge-meta {
+  font-size: 10px;
+  line-height: 1.2;
+  color: #94a3b8;
+
+  &--stale {
+    color: #cbd5e1;
+  }
+}
+
+.dark .clpm-pid-dashboard__gauge-meta {
+  color: #64748b;
+
+  &--stale {
+    color: #475569;
+  }
+}
+
+.clpm-pid-dashboard__card-meta {
+  font-size: 11px;
+  font-weight: 400;
+  color: #94a3b8;
+
+  &--stale {
+    color: #cbd5e1;
+  }
+}
+
+.dark .clpm-pid-dashboard__card-meta {
+  color: #64748b;
+
+  &--stale {
+    color: #475569;
   }
 }
 

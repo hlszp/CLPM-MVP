@@ -171,6 +171,10 @@ export namespace DashboardApi {
       stabilityRate: null | number;
       totalLoops: number;
     };
+    /** 统计窗口回显（仅指定 timeWindow 时返回，v6.1.4） */
+    timeWindow?: string;
+    windowStart?: string;
+    windowEnd?: string;
   }
 
   /** 节点级聚合趋势结果（v6.1 新增） */
@@ -207,9 +211,13 @@ export function getAutoRateRtApi(params?: { plantId?: string }) {
 
 /**
  * 获取节点级聚合 KPI（v6.1 新增）
- * 递归聚合当前节点及所有下属节点的 KPI
+ * 递归聚合当前节点及所有下属节点的 KPI；
+ * v6.1.4：可选 timeWindow——缺省为每节点最新快照，指定后 rate 字段按窗口加权
  */
-export function getBoardAggregateApi(params?: { plantId?: string }) {
+export function getBoardAggregateApi(params?: {
+  plantId?: string;
+  timeWindow?: string;
+}) {
   return requestClient.get<DashboardApi.BoardAggregateResult>(
     '/dashboard/board/aggregate',
     {
