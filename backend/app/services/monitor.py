@@ -304,6 +304,8 @@ async def list_loop_monitor(
 ) -> dict:
     """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分）。"""
     conditions = []
+    # 与统计卡片口径统一：仅统计/展示 is_active=True 的回路（WS-D 阶段5）
+    conditions.append(LoopLedger.is_active.is_(True))
     if plant_node_id:
         # 递归获取所有子孙节点 ID，包含自身
         all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
@@ -410,6 +412,7 @@ async def list_loop_monitor(
             "mode": None,
             "modeLabel": None,
             "pvQuality": None,
+            "unit": None,
         }
         read_at = None
         control_mode = None
@@ -501,6 +504,9 @@ async def list_loop_monitor(
                     "max": float(tag.range_max) if tag.range_max is not None else None,
                 }
                 op_unit_val = tag.unit
+        # WS-D 阶段5：currentValues.unit 派生自 PV Tag 工程单位（PV/SP 共享）
+        if pv_unit_val is not None:
+            current_values["unit"] = pv_unit_val
 
         items.append(
             {
@@ -515,7 +521,10 @@ async def list_loop_monitor(
                 "currentValues": current_values,
                 "controlMode": control_mode,
                 "score": list_score,
-                "status": list_status,
+                # WS-D 阶段5：status 拆为 loopStatus（回路配置态）+ kpiStatus（评估态）
+                # 避免前端 LoopStatus.PARTIAL 与 KpiStatus.PARTIAL 撞名无法区分
+                "loopStatus": loop.status,
+                "kpiStatus": list_status,
                 "confidenceLevel": confidence_level,
                 "effectiveAutoRate": _rate(snap.effective_auto_rate) if snap else None,
                 "kpiSummary": kpi_summary,
@@ -542,8 +551,15 @@ async def get_loop_monitor_detail(
     """回路运行详情（7 Tag 当前值、PID 参数、波形数据）。
 
     Raises:
-        BizError: ERR_LOOP_NOT_FOUND
+        BizError: ERR_LOOP_NOT_FOUND / ERR_VALIDATION（非法 trendWindow）
     """
+    # WS-D 阶段5：非法 trendWindow 返回 400（原先静默回退到 24h）
+    if trend_window not in TREND_WINDOWS:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的趋势时间窗: {trend_window}，支持: {', '.join(sorted(TREND_WINDOWS))}",
+            status_code=400,
+        )
     result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = result.scalar_one_or_none()
     if loop is None:
@@ -581,6 +597,7 @@ async def get_loop_monitor_detail(
         "mode": None,
         "modeLabel": None,
         "pvQuality": None,
+        "unit": None,
         "readAt": None,
     }
     runtime_params: dict[str, Any] = {
@@ -594,6 +611,9 @@ async def get_loop_monitor_detail(
         mapping = mappings.get(role)
         if mapping and str(mapping.tag_id) in tags_map:
             tag = tags_map[str(mapping.tag_id)]
+            # WS-D 阶段5：PV Tag 工程单位派生 currentValues.unit（PV/SP 共享）
+            if role == "PV" and tag.unit:
+                current_values["unit"] = tag.unit
             # 优先从 Redis 实时缓存读取
             cached = redis_cache.get(tag.tag_name)
             if cached:
@@ -724,7 +744,9 @@ async def get_loop_monitor_detail(
             "oscillation_rate": None,
             "saturation_rate": None,
             "good_value_rate": None,
-            "status": "INCONCLUSIVE" if loop.status != "READY" else "GOOD",
+            # WS-D 阶段5：无快照时 KPI 状态恒为 INCONCLUSIVE（对齐评估口径，
+            # 原先 loop.status==READY 时返回 GOOD 是非法 KpiStatus 枚举值）
+            "status": "INCONCLUSIVE",
             "algorithm_version": ALGORITHM_VERSION,
             "calculatedAt": read_at,
         }
@@ -732,7 +754,9 @@ async def get_loop_monitor_detail(
     return {
         "loopId": str(loop.id),
         "tagName": loop.tag_name,
-        "status": loop.status,
+        # WS-D 阶段5：status 拆为 loopStatus（回路配置态）+ kpiStatus（评估态）
+        "loopStatus": loop.status,
+        "kpiStatus": kpi_summary.get("status"),
         "currentValues": current_values,
         "runtimeParams": runtime_params,
         "trend": trend_data,
