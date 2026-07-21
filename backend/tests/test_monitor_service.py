@@ -323,13 +323,42 @@ class TestListLoopMonitor:
         assert item["currentValues"]["modeLabel"] is None
         assert item["currentValues"]["pvQuality"] is None
         assert item["readAt"] is None
-        # 无 KPI 快照时 score/status/confidenceLevel 均为 None
+        # 无 KPI 快照时 score/kpiStatus/confidenceLevel 均为 None
         assert item["score"] is None
-        assert item["status"] is None
+        assert item["kpiStatus"] is None
         assert item["confidenceLevel"] is None
         assert item["kpiSummary"] is None
         assert item["isActive"] is True
         assert item["controlMode"] is None
+
+    async def test_is_active_filter_applied(self) -> None:
+        """WS-D 阶段5：list 与 stats 口径统一，仅返回 is_active=True 的回路。
+
+        通过断言生成的 SQL where 子句包含 is_active IS true，确保过滤条件已注入。
+        """
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_plant_node()]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+            ]
+        )
+        await list_loop_monitor(db)
+        # 第一次 db.execute 调用为 count_stmt，应包含 is_active 过滤
+        count_call = db.execute.await_args_list[0]
+        count_stmt = count_call.args[0]
+        compiled = str(count_stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "is_active IS true" in compiled
+        # 第二次 db.execute 调用为 list_stmt，同样应包含 is_active 过滤
+        list_call = db.execute.await_args_list[1]
+        list_stmt = list_call.args[0]
+        list_compiled = str(list_stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "is_active IS true" in list_compiled
 
     async def test_with_plant_node_filter(self) -> None:
         """带 plant_node_id 过滤时正确返回。"""
@@ -582,7 +611,9 @@ class TestGetLoopMonitorDetail:
             result = await get_loop_monitor_detail(db, "loop-001")
         assert result["loopId"] == "loop-001"
         assert result["tagName"] == "LIC-101"
-        assert result["status"] == "READY"
+        # WS-D 阶段5：status 拆分为 loopStatus（回路态）+ kpiStatus（评估态）
+        assert result["loopStatus"] == "READY"
+        assert result["kpiStatus"] == "GOOD"
         assert result["currentValues"]["pv"] == 50.0
         assert result["currentValues"]["sp"] == 52.0
         assert result["currentValues"]["op"] == 55.0
@@ -653,8 +684,11 @@ class TestGetLoopMonitorDetail:
         assert result["currentValues"]["pv"] == 50.0
 
     async def test_different_trend_windows(self) -> None:
-        """不同 trend_window 参数均能正常处理。"""
-        for window in ("last_1_hour", "last_24_hours", "last_7_days"):
+        """不同 trend_window 参数均能正常处理。
+
+        WS-D 阶段5：last_7_days 已从 TREND_WINDOWS 移除（后端不支持，仅诊断/看板维度使用 7 天窗）。
+        """
+        for window in ("last_1_hour", "last_24_hours", "last_72_hours"):
             loop = _make_loop()
             db = AsyncMock()
             db.execute = AsyncMock(
@@ -667,6 +701,25 @@ class TestGetLoopMonitorDetail:
             )
             result = await get_loop_monitor_detail(db, "loop-001", trend_window=window)
             assert result["trendStatus"] == "EMPTY"
+
+    async def test_invalid_trend_window_returns_400(self) -> None:
+        """WS-D 阶段5：非法 trend_window（如 last_7_days）返回 400 BizError。"""
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+            ]
+        )
+        with pytest.raises(BizError) as exc_info:
+            await get_loop_monitor_detail(db, "loop-001", trend_window="last_7_days")
+        # BizError status_code=400，code=ERR_VALIDATION
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.code == "ERR_VALIDATION"
+        assert "last_7_days" in exc_info.value.message
 
     async def test_non_ready_status(self) -> None:
         """回路状态非 READY 时 KPI 状态为 INCONCLUSIVE。"""
@@ -682,14 +735,15 @@ class TestGetLoopMonitorDetail:
         )
         result = await get_loop_monitor_detail(db, "loop-001")
         assert result["kpiSummary"]["status"] == "INCONCLUSIVE"
-        # P3 #53: 返回字段 status 应为回路状态（PARTIAL/INACTIVE/READY），
+        # WS-D 阶段5：loopStatus 字段为回路状态（PARTIAL/INACTIVE/READY），
         # 供前端区分 KPI 缺失原因（Tag 关联不完整 vs 数据不足）
-        assert result["status"] == "PARTIAL"
+        assert result["loopStatus"] == "PARTIAL"
+        assert result["kpiStatus"] == "INCONCLUSIVE"
 
     async def test_inactive_status_returned(self) -> None:
-        """P3 #53: 回路 INACTIVE 时返回字段 status='INACTIVE'。
+        """WS-D 阶段5: 回路 INACTIVE 时返回 loopStatus='INACTIVE'。
 
-        前端依据此字段提示「回路未激活，不参与 KPI 计算」，
+        前端依据 loopStatus 提示「回路未激活，不参与 KPI 计算」，
         与 PARTIAL（Tag 关联不完整）和 READY+INCONCLUSIVE（数据不足）区分。
         """
         loop = _make_loop(status="INACTIVE")
@@ -703,7 +757,8 @@ class TestGetLoopMonitorDetail:
             ]
         )
         result = await get_loop_monitor_detail(db, "loop-001")
-        assert result["status"] == "INACTIVE"
+        assert result["loopStatus"] == "INACTIVE"
+        assert result["kpiStatus"] == "INCONCLUSIVE"
         assert result["kpiSummary"]["status"] == "INCONCLUSIVE"
 
     async def test_algorithm_version_passthrough_from_snapshot(self) -> None:

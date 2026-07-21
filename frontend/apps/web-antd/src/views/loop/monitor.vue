@@ -133,8 +133,9 @@ const isPerfInconclusive = computed(
   () => perfDetail.value?.kpiSummary.status === 'INCONCLUSIVE',
 );
 
-/** P3 #53: 回路状态（READY/PARTIAL/INACTIVE）—— 用于区分 KPI 缺失原因 */
-const loopStatus = computed(() => perfDetail.value?.status);
+/** P3 #53: 回路状态（READY/PARTIAL/INACTIVE）—— 用于区分 KPI 缺失原因
+ * WS-D 阶段5：消费 backend loopStatus（前端不再硬编码） */
+const loopStatus = computed(() => perfDetail.value?.loopStatus);
 
 /** P3 #53: 回路状态非 READY（PARTIAL/INACTIVE），未参与 KPI 计算 */
 const isLoopNotReady = computed(() => {
@@ -559,27 +560,9 @@ function handleRealtimeMessage(msg: {
 
   switch (role) {
     case 'MODE': {
+      // WS-D 阶段5：MODE 值仅更新数值，modeLabel 由后端 loop_mode_mapping 配置驱动；
+      // WebSocket 推送不重算 modeLabel，保持后端权威，等下次列表刷新对齐。
       cv.mode = numValue;
-      // 复用后端已有映射逻辑
-      let modeLabel = 'Unknown';
-      switch (numValue) {
-        case 0: {
-          modeLabel = 'Manual';
-          break;
-        }
-        case 1: {
-          modeLabel = 'Auto';
-          break;
-        }
-        case 2: {
-          modeLabel = 'Cascade';
-          break;
-        }
-        default: {
-          break;
-        }
-      }
-      cv.modeLabel = modeLabel;
       break;
     }
     case 'OP': {
@@ -683,15 +666,10 @@ function modeColor(modeLabel: string): string {
   return '#CBD5E1';
 }
 
-/** MODE 中文标签映射：0=Manual, 1=Auto, 2=Cascade */
+/** MODE 中文标签映射：优先使用后端 loop_mode_mapping 配置生成的 modeLabel
+ * WS-D 阶段5：不再前端硬编码 0/1/2 → Manual/Auto/Cascade，统一由后端权威输出。 */
 function modeText(record: LoopApi.MonitorListItem): string {
-  const label = record.currentValues?.modeLabel;
-  if (label) return label;
-  const mode = record.currentValues?.mode;
-  if (mode === 0) return 'Manual';
-  if (mode === 1) return 'Auto';
-  if (mode === 2) return 'Cascade';
-  return '—';
+  return record.currentValues?.modeLabel || '—';
 }
 
 function formatTime(t: null | string | undefined): string {
@@ -863,10 +841,14 @@ function viewDetail(record: LoopApi.MonitorListItem) {
   router.push(`/loop/detail/${record.loopId}`);
 }
 
-/** P3 #53: 跳转到 Tag 关联管理（带当前回路 ID） */
+/** P3 #53: 跳转到回路管理（WS-D 阶段5：修复死链 /loop/tag-mapping → /loop/manage，
+ * tag-mapping 路由不存在，统一进入回路管理整合页维护 Tag 关联） */
 function goToTagMapping() {
   if (!currentRecord.value) return;
-  router.push(`/loop/tag-mapping?loopId=${currentRecord.value.loopId}`);
+  router.push({
+    path: '/loop/manage',
+    query: { loopId: currentRecord.value.loopId },
+  });
 }
 
 // ===== 自动刷新 =====

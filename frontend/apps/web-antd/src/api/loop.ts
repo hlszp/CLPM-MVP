@@ -30,12 +30,12 @@ export namespace LoopApi {
   /** 质量码（IDS v3.2 §2.2.5） */
   export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
-  /** 趋势时间窗（IDS v3.2 §2.2.14） */
+  /** 趋势时间窗（IDS v3.2 §2.2.14）
+   *  WS-D 阶段5：移除 last_7_days（后端 TREND_WINDOWS 不支持，仅诊断/看板维度使用 7 天窗） */
   export type TrendWindow =
     | 'last_1_hour'
     | 'last_2_hours'
     | 'last_4_hours'
-    | 'last_7_days'
     | 'last_8_hours'
     | 'last_24_hours'
     | 'last_72_hours';
@@ -356,7 +356,10 @@ export namespace LoopApi {
     controlMode: ControlMode;
     loopType?: LoopType;
     score: number;
-    status: LoopStatus;
+    /** 回路状态：READY/PARTIAL/INACTIVE（WS-D 阶段5：拆分 status） */
+    loopStatus: LoopStatus;
+    /** KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE（WS-D 阶段5：拆分 status） */
+    kpiStatus?: KpiStatus;
     confidenceLevel?: ConfidenceLevel;
     effectiveAutoRate?: number;
     kpiSummary?: KpiSummary;
@@ -415,8 +418,10 @@ export namespace LoopApi {
   export interface MonitorDetail {
     loopId: string;
     tagName: string;
-    /** 回路状态：READY/PARTIAL/INACTIVE（P3 #53：用于区分 KPI 缺失原因） */
-    status: LoopStatus;
+    /** 回路状态：READY/PARTIAL/INACTIVE（WS-D 阶段5：拆分 status） */
+    loopStatus: LoopStatus;
+    /** KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE（WS-D 阶段5：拆分 status） */
+    kpiStatus?: KpiStatus;
     currentValues: MonitorCurrentValues & { readAt: string };
     runtimeParams: {
       controlMode: ControlMode;

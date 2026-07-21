@@ -54,7 +54,12 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "portal:view",
     ],
     "PE_ENGINEER": [
+        # WS-D 性能#7 R1：放开回路配置入口（create/edit/export），对齐后端 require_roles
+        # 不含 loop:delete（ADMIN 专属）、loop:import（IC_ENGINEER 专属）
         "loop:view",
+        "loop:create",
+        "loop:edit",
+        "loop:export",
         "metric:view",
         "diagnosis:view",
         "portal:view",

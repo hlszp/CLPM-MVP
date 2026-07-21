@@ -437,7 +437,8 @@ async def get_loop_monitor_detail_endpoint(
         description="趋势数据时间窗：last_1_hour/last_2_hours/last_4_hours/last_8_hours/last_24_hours/last_72_hours",
     ),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻回路监控详情（趋势/性能）
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
 ) -> dict:
     """回路运行详情（7 Tag 当前值、PID 参数、波形数据）。"""
     data = await get_loop_monitor_detail(db=db, loop_id=loop_id, trend_window=trendWindow)
