@@ -32,6 +32,9 @@ class TagListItem(CamelModel):
     measureType: str | None = None
     tdengineTagId: str | None = None
     loop: TagLoopInfo | None = None
+    # WS-C 7-8：所属单元名称（经关联回路 loop → loop.unit_id → plant_node.name 派生；
+    # 一个 tag 可能被多个回路映射，取第一个映射回路的单元）
+    unitName: str | None = None
 
 
 class TagListData(CamelModel):
@@ -60,6 +63,8 @@ class TagDetail(CamelModel):
     measureType: str | None = None
     tdengineTagId: str | None = None
     loop: TagLoopInfo | None = None
+    # WS-C 7-8：同 TagListItem，所属单元名称（取第一个映射回路的单元）
+    unitName: str | None = None
 
 
 class TagUpdate(CamelModel):
@@ -70,6 +75,8 @@ class TagUpdate(CamelModel):
     rangeMax: float | None = None
     unit: str | None = Field(None, max_length=20)
     measureType: str | None = None
+    # WS-C 7-7：参数类型可编辑（合法值由 service 层按 TAG_TYPES 校验）
+    tagType: str | None = Field(None, description="参数类型 PV/SP/OP/MODE/PID_P/PID_I/PID_D/OTHER")
     tdengineTagId: str | None = Field(None, max_length=100)
 
 

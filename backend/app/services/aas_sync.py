@@ -300,16 +300,19 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
                 db.add(new_tag)
                 inserted += 1
             else:
-                # 更新（值或质量码变化时）
-                changed = (
-                    existing.current_value != aas_tag.get("current_value")
-                    or existing.quality != aas_tag.get("quality")
-                    or existing.tag_description != aas_tag.get("tag_description")
-                )
-                if changed:
+                # WS-C 7-11：手工编辑过的描述不被 AAS 回冲——仅当现有描述为空
+                # 或与 AAS 本次值一致（覆盖为无操作）时才写入
+                new_desc = aas_tag.get("tag_description")
+                desc_writable = not existing.tag_description or existing.tag_description == new_desc
+                value_changed = existing.current_value != aas_tag.get(
+                    "current_value"
+                ) or existing.quality != aas_tag.get("quality")
+                desc_changed = desc_writable and existing.tag_description != new_desc
+                if value_changed or desc_changed:
                     existing.current_value = aas_tag.get("current_value")
                     existing.quality = aas_tag.get("quality")
-                    existing.tag_description = aas_tag.get("tag_description")
+                    if desc_writable:
+                        existing.tag_description = new_desc
                     existing.last_sync_at = now
                     updated += 1
                 else:

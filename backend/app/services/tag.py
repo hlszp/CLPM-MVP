@@ -147,6 +147,9 @@ def _build_tag_dict(
         "measureType": tag.measure_type,
         "tdengineTagId": tag.tdengine_tag_id,
         "loop": loop_info,
+        # WS-C 7-8：所属单元名称从关联回路派生（_get_tags_loop_info_map 已带出；
+        # 一个 tag 可能被多个回路映射，取第一个映射回路的单元）
+        "unitName": (loop_info or {}).get("unitName"),
     }
 
 
@@ -311,12 +314,13 @@ async def update_tag(
     range_max: float | None = None,
     unit: str | None = None,
     measure_type: str | None = None,
+    tag_type: str | None = None,
     tdengine_tag_id: str | None = None,
 ) -> dict:
-    """更新测点（描述/量程/单位/测点类型/TDengine tag ID）。
+    """更新测点（描述/量程/单位/测点类型/参数类型/TDengine tag ID）。
 
     Raises:
-        BizError: ERR_TAG_NOT_FOUND
+        BizError: ERR_TAG_NOT_FOUND / ERR_TAG_TYPE_INVALID
     """
     result = await db.execute(select(TagRegistry).where(TagRegistry.id == tag_id))
     tag = result.scalar_one_or_none()
@@ -327,12 +331,21 @@ async def update_tag(
             status_code=404,
         )
 
+    # WS-C 7-7：tag_type 合法值校验（与导入路径一致，避免落库触发 CHECK 约束 500）
+    if tag_type is not None and tag_type.upper() not in TAG_TYPES:
+        raise BizError(
+            code="ERR_TAG_TYPE_INVALID",
+            message=f"参数类型无效: {tag_type}",
+            status_code=400,
+        )
+
     before = {
         "tagDescription": tag.tag_description,
         "rangeMin": tag.range_min,
         "rangeMax": tag.range_max,
         "unit": tag.unit,
         "measureType": tag.measure_type,
+        "tagType": tag.tag_type,
         "tdengineTagId": tag.tdengine_tag_id,
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
@@ -347,6 +360,8 @@ async def update_tag(
         tag.unit = unit
     if measure_type is not None:
         tag.measure_type = measure_type
+    if tag_type is not None:
+        tag.tag_type = tag_type.upper()
     if tdengine_tag_id is not None:
         tag.tdengine_tag_id = tdengine_tag_id
 
@@ -356,6 +371,7 @@ async def update_tag(
         "rangeMax": tag.range_max,
         "unit": tag.unit,
         "measureType": tag.measure_type,
+        "tagType": tag.tag_type,
         "tdengineTagId": tag.tdengine_tag_id,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -586,7 +602,7 @@ async def import_tags(
         6. 参数类型（tag_type）
         7. 所属单元（plant_node name，按名称查找）
         8. 原始ID（tdengine_tag_id）
-        9. 是否启用（is_linked，是/否）
+        9. 是否启用（WS-C 7-10：本列忽略不导入；is_linked 仅由回路映射派生）
     """
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
@@ -627,8 +643,7 @@ async def import_tags(
         tag_type = _cell_str(row[6]) if len(row) > 6 else ""
         plant_node_name = _cell_str(row[7]) if len(row) > 7 else ""
         tdengine_tag_id = _cell_str(row[8]) if len(row) > 8 else ""
-        is_linked_str = _cell_str(row[9]) if len(row) > 9 else "否"
-        is_linked = is_linked_str in ("是", "true", "True", "1", "YES", "yes", "Y", "y")
+        # WS-C 7-10：row[9]「是否启用」列忽略不导入（is_linked 仅由回路映射派生）
 
         # 校验 measure_type
         if measure_type and measure_type.upper() not in MEASURE_TYPES:
@@ -674,7 +689,6 @@ async def import_tags(
                     unit=unit or None,
                     tag_type=tag_type.upper() or None,
                     tdengine_tag_id=tdengine_tag_id or None,
-                    is_linked=is_linked,
                     operator=operator,
                 )
         except Exception as exc:  # noqa: BLE001
@@ -725,12 +739,13 @@ async def _import_one_row(
     unit: str | None,
     tag_type: str | None,
     tdengine_tag_id: str | None,
-    is_linked: bool,
     operator: str,
 ) -> bool:
     """处理单行导入，返回是否为更新（True）或新建（False）。
 
     在调用方的 SAVEPOINT 内执行，异常会触发回滚至 SAVEPOINT。
+    注意（WS-C 7-10）：不接收 is_linked——该字段仅由回路映射派生，
+    导入既不覆盖已有 tag 的 is_linked，新建 tag 也恒为 False。
     """
     result = await db.execute(select(TagRegistry).where(TagRegistry.tag_name == tag_name))
     tag = result.scalar_one_or_none()
@@ -763,7 +778,7 @@ async def _import_one_row(
             tag.tag_type = tag_type
         if tdengine_tag_id is not None:
             tag.tdengine_tag_id = tdengine_tag_id
-        tag.is_linked = is_linked
+        # WS-C 7-10：is_linked 不由导入覆盖（仅由回路映射派生）
 
         operation_type = "TAG_UPDATE"
     else:
@@ -778,7 +793,7 @@ async def _import_one_row(
             range_max=range_max,
             unit=unit,
             tdengine_tag_id=tdengine_tag_id,
-            is_linked=is_linked,
+            is_linked=False,  # WS-C 7-10：新建恒为 False，待回路映射后置 True
             last_sync_at=datetime.now(UTC).replace(tzinfo=None),
         )
         db.add(tag)
