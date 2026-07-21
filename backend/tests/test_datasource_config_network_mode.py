@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -17,11 +18,11 @@ from app.services.datasource_config import (
 )
 
 
-def _mock_get_config_value(stored: dict[str, str | None]):
-    """构造 _get_config_value 的 AsyncMock，根据 key 返回 stored 中的值."""
+def _mock_get_config_rows(stored: dict[str, str]):
+    """构造 _get_config_rows 的 AsyncMock，按 IN 查询语义返回 stored 中已存在的行."""
 
-    async def _impl(_db, key):
-        return stored.get(key)
+    async def _impl(_db, keys):
+        return {key: SimpleNamespace(key=key, value=stored[key]) for key in keys if key in stored}
 
     return AsyncMock(side_effect=_impl)
 
@@ -50,8 +51,8 @@ class TestGetDatasourceConfig:
             patch("app.services.datasource_config.settings") as mock_settings,
             patch("app.services.datasource_config._is_tailscale_available", return_value=False),
             patch(
-                "app.services.datasource_config._get_config_value",
-                new=_mock_get_config_value({}),
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows({}),
             ),
         ):
             mock_settings.DATA_SOURCE_TYPE = "remote_api"
@@ -80,8 +81,8 @@ class TestGetDatasourceConfig:
             patch("app.services.datasource_config.settings") as mock_settings,
             patch("app.services.datasource_config._is_tailscale_available", return_value=True),
             patch(
-                "app.services.datasource_config._get_config_value",
-                new=_mock_get_config_value(stored),
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows(stored),
             ),
         ):
             mock_settings.DATA_SOURCE_TYPE = "remote_api"
@@ -125,12 +126,12 @@ class TestUpdateDatasourceConfigNetworkMode:
             patch("app.services.datasource_config.settings") as mock_settings,
             patch("app.services.datasource_config._is_tailscale_available", return_value=True),
             patch(
-                "app.services.datasource_config._get_config_value",
-                new=_mock_get_config_value(stored),
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows(stored),
             ),
             patch("app.services.datasource_config.switch_network_mode") as mock_switch,
             patch(
-                "app.services.datasource_config._set_config_value",
+                "app.services.datasource_config._set_config_values",
                 new=AsyncMock(),
             ),
             patch(
@@ -175,12 +176,12 @@ class TestUpdateDatasourceConfigNetworkMode:
             patch("app.services.datasource_config.settings") as mock_settings,
             patch("app.services.datasource_config._is_tailscale_available", return_value=True),
             patch(
-                "app.services.datasource_config._get_config_value",
-                new=_mock_get_config_value(stored),
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows(stored),
             ),
             patch("app.services.datasource_config.switch_network_mode") as mock_switch,
             patch(
-                "app.services.datasource_config._set_config_value",
+                "app.services.datasource_config._set_config_values",
                 new=AsyncMock(),
             ),
             patch(
@@ -219,12 +220,12 @@ class TestUpdateDatasourceConfigNetworkMode:
             patch("app.services.datasource_config.settings") as mock_settings,
             patch("app.services.datasource_config._is_tailscale_available", return_value=True),
             patch(
-                "app.services.datasource_config._get_config_value",
-                new=_mock_get_config_value(stored),
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows(stored),
             ),
             patch("app.services.datasource_config.switch_network_mode") as mock_switch,
             patch(
-                "app.services.datasource_config._set_config_value",
+                "app.services.datasource_config._set_config_values",
                 new=AsyncMock(),
             ),
             patch(
