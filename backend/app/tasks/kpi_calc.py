@@ -1089,6 +1089,7 @@ async def _calculate_loop_kpi(
             ts_end=ts_end,
             status="INCONCLUSIVE",
             custom_task_id=custom_task_id,
+            confidence_level=composite_result.confidence_level,
             metrics_detail=metrics_detail,
         )
 
@@ -2035,8 +2036,15 @@ async def _persist_snapshot(
     产物）仅用于 loop_confidence_latest，不透传给 _save_* 函数；其余 kwargs
     透传（KPI 值 + 7 个数据血缘字段）。
     loop_confidence_latest 写入失败仅记日志，不影响主快照结果。
+
+    P0 #3：INCONCLUSIVE 快照的 ``confidence_level`` 缺省落 'E'
+    （对齐 §7.15 E↔INCONCLUSIVE 语义，使"非空最差等级"聚合能覆盖
+    INCONCLUSIVE 行）；调用方已传血缘等级（如 composite 评估产物）时沿用，
+    不覆盖。
     """
     metrics_detail = kwargs.pop("metrics_detail", None)
+    if status == "INCONCLUSIVE" and kwargs.get("confidence_level") is None:
+        kwargs["confidence_level"] = "E"
     if custom_task_id is not None:
         return await _save_custom_snapshot(
             db=db,

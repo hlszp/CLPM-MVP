@@ -2553,3 +2553,123 @@ class TestPersistSnapshotConfidenceLatest:
 
         # 仅 _save_custom_snapshot 的一次 select，无 loop_confidence_latest UPSERT
         assert db.execute.await_count == 1
+
+
+class TestPersistSnapshotInconclusiveConfidenceE:
+    """P0 #3: INCONCLUSIVE 快照 confidence_level 缺省落 'E'（§7.15 E↔INCONCLUSIVE）。"""
+
+    @pytest.mark.asyncio
+    async def test_hourly_inconclusive_defaults_confidence_level_e(self) -> None:
+        """小时路径 INCONCLUSIVE 未传等级 → 快照与最新表均落 'E'。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+
+        await _persist_snapshot(
+            db=db,
+            loop_id="loop-1",
+            ts_start=datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC),
+            ts_end=datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC),
+            status="INCONCLUSIVE",
+        )
+
+        assert db.execute.await_count == 2
+        snapshot_stmt = db.execute.await_args_list[0].args[0]
+        assert snapshot_stmt.table.name == "kpi_snapshot_hourly"
+        assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] == "E"
+        confidence_stmt = db.execute.await_args_list[1].args[0]
+        assert confidence_stmt.table.name == "loop_confidence_latest"
+        assert _extract_upsert_set_values(confidence_stmt)["confidence_level"] == "E"
+
+    @pytest.mark.asyncio
+    async def test_inconclusive_keeps_lineage_confidence_level(self) -> None:
+        """INCONCLUSIVE 已传血缘等级 → 沿用传入值，不被兜底覆盖。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+
+        await _persist_snapshot(
+            db=db,
+            loop_id="loop-1",
+            ts_start=datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC),
+            ts_end=datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC),
+            status="INCONCLUSIVE",
+            confidence_level="D",
+        )
+
+        snapshot_stmt = db.execute.await_args_list[0].args[0]
+        assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] == "D"
+
+    @pytest.mark.asyncio
+    async def test_custom_inconclusive_defaults_confidence_level_e(self) -> None:
+        """自定义任务路径 INCONCLUSIVE 未传等级 → 新增对象落 'E'。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        db.add = MagicMock()
+
+        await _persist_snapshot(
+            db=db,
+            custom_task_id="task-1",
+            loop_id="loop-1",
+            ts_start=datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC),
+            ts_end=datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC),
+            status="INCONCLUSIVE",
+        )
+
+        db.add.assert_called_once()
+        added_obj = db.add.call_args.args[0]
+        assert added_obj.status == "INCONCLUSIVE"
+        assert added_obj.confidence_level == "E"
+
+    @pytest.mark.asyncio
+    async def test_success_status_confidence_level_not_forced(self) -> None:
+        """非 INCONCLUSIVE 状态不触发兜底：未传等级保持 None。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+
+        await _persist_snapshot(
+            db=db,
+            loop_id="loop-1",
+            ts_start=datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC),
+            ts_end=datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC),
+            status="PARTIAL",
+            score=Decimal("50.00"),
+        )
+
+        snapshot_stmt = db.execute.await_args_list[0].args[0]
+        assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] is None
+
+    @pytest.mark.asyncio
+    async def test_composite_none_passes_lineage_confidence_to_persist(self) -> None:
+        """_calculate_loop_kpi 综合评分 None 路径沿用 composite 血缘等级（E）。"""
+        loop = _make_loop()
+        db = AsyncMock()
+
+        mock_planner = AsyncMock()
+        mock_planner.request_bundles = AsyncMock(return_value=[_make_bundle("accuracy_rate")])
+
+        metric_results = _make_full_metric_results(effective_auto=None)
+        composite_result = MetricResult(
+            metric_code="composite_score",
+            value=None,
+            confidence_level="E",
+            lineage=_make_data_lineage(),
+        )
+
+        with (
+            patch(
+                "app.tasks.kpi_calc._compute_kpis_three_layer",
+                return_value=(metric_results, composite_result),
+            ),
+            patch("app.tasks.kpi_calc._persist_snapshot", new_callable=AsyncMock) as mock_persist,
+        ):
+            mock_persist.return_value = {"status": "INCONCLUSIVE", "score": None}
+            result = await _calculate_loop_kpi(
+                db=db,
+                loop=loop,
+                metric_configs={},
+                ts_start=datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC),
+                ts_end=datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC),
+                data_planner=mock_planner,
+            )
+
+        assert result["status"] == "INCONCLUSIVE"
+        assert mock_persist.await_args.kwargs["confidence_level"] == "E"
