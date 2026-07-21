@@ -19,6 +19,9 @@ const GradingTab = defineAsyncComponent(
 const ConfidenceTab = defineAsyncComponent(
   () => import('./confidence-threshold.vue'),
 );
+const OutlierParamsTab = defineAsyncComponent(
+  () => import('./outlier-params.vue'),
+);
 </script>
 
 <template>
@@ -35,6 +38,9 @@ const ConfidenceTab = defineAsyncComponent(
       </TabPane>
       <TabPane key="confidence" tab="数据可信度">
         <ConfidenceTab />
+      </TabPane>
+      <TabPane key="outlier" tab="参数配置">
+        <OutlierParamsTab />
       </TabPane>
     </Tabs>
   </Page>

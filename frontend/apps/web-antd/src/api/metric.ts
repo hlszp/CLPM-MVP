@@ -447,6 +447,52 @@ export namespace MetricApi {
     thresholds: ConfidenceThresholdItem[];
   }
 
+  /** 异常值检测控制类型（回路物理类型：流量/压力/温度/液位/成分） */
+  export type OutlierControlType = 'CC' | 'FC' | 'LC' | 'PC' | 'TC';
+
+  /** 8 类异常值检测开关键 */
+  export type OutlierDetectorKey =
+    | 'frozen'
+    | 'hf_noise'
+    | 'jump'
+    | 'nan'
+    | 'out_of_range'
+    | 'qc_bad'
+    | 'spike'
+    | 'ts_anomaly';
+
+  /** 单控制类型的异常值检测参数（合并视图中全部非空） */
+  export interface OutlierThresholdParams {
+    baseSamplingFreq?: null | number;
+    frozenWindowPoints?: null | number;
+    frozenStdPct?: null | number;
+    jumpThresholdPct?: null | number;
+    spikeThresholdPct?: null | number;
+    noiseCutoffHz?: null | number;
+    minConsecutivePoints?: null | number;
+  }
+
+  /** 单控制类型阈值合并视图（含每项是否被覆盖标记） */
+  export interface OutlierThresholdViewItem {
+    controlType: OutlierControlType;
+    params: OutlierThresholdParams;
+    overridden: Record<string, boolean>;
+  }
+
+  /** 8 类异常值检测参数配置合并视图 */
+  export interface OutlierParamsSchema {
+    thresholds: OutlierThresholdViewItem[];
+    switches: Record<string, boolean>;
+    updatedAt?: null | string;
+    updatedBy?: null | string;
+  }
+
+  /** 8 类异常值检测参数配置保存请求（部分覆盖，未覆盖回落算法默认） */
+  export interface OutlierParamsSaveRequest {
+    thresholds: Partial<Record<OutlierControlType, OutlierThresholdParams>>;
+    switches: Partial<Record<OutlierDetectorKey, boolean>>;
+  }
+
   /** 版本历史单项 */
   export interface VersionHistoryItem {
     version: number;
@@ -1002,6 +1048,29 @@ export function saveConfidenceThresholdsApi(
 }
 
 // ===========================================================================
+// 8 类异常值检测参数配置 API（阈值覆盖 + 启停开关）
+// ===========================================================================
+
+const OUTLIER_PARAMS_BASE = '/configs/outlier-params';
+
+/**
+ * 获取异常值检测参数配置合并视图（默认值 + 覆盖标记 + 检测开关）
+ */
+export function getOutlierParamsApi() {
+  return requestClient.get<MetricApi.OutlierParamsSchema>(OUTLIER_PARAMS_BASE);
+}
+
+/**
+ * 更新异常值检测参数覆盖与检测开关 — 仅 ADMIN
+ */
+export function saveOutlierParamsApi(data: MetricApi.OutlierParamsSaveRequest) {
+  return requestClient.put<MetricApi.OutlierParamsSchema>(
+    OUTLIER_PARAMS_BASE,
+    data,
+  );
+}
+
+// ===========================================================================
 // 回路小时指标快照列表 — GET /performance/loops/snapshots
 // ===========================================================================
 
@@ -1075,4 +1144,46 @@ export interface KpiSnapshotQueryParams {
  */
 export function getLoopSnapshotsApi(params: KpiSnapshotQueryParams) {
   return requestClient.get<KpiSnapshotListResult>(SNAPSHOTS_BASE, { params });
+}
+
+// ===========================================================================
+// 回路最新可信度评估记录 — GET /loops/{loopId}/confidence-latest
+// ===========================================================================
+
+/** 单个子指标的计算值与可信度（metrics JSONB 元素） */
+export interface LoopConfidenceMetricDetail {
+  value: null | number;
+  confidence: ConfidenceLevel | null;
+}
+
+/** 回路最新一次可信度评估记录（loop_confidence_latest，每回路一条） */
+export interface LoopConfidenceLatestItem {
+  loopId: string;
+  /** 评估时间（快照写入时刻） */
+  evalTime: null | string;
+  /** 数据源时间区间 */
+  dataTsStart: null | string;
+  dataTsEnd: null | string;
+  status: KpiStatus;
+  score: null | number;
+  confidenceLevel: ConfidenceLevel | null;
+  validRate: null | number;
+  /**
+   * 12 子指标（3+1+8 体系）计算值与各自可信度，
+   * 键为 DB 列名（snake_case），如 accuracy_rate / steady_rate / settling_time
+   */
+  metrics: Record<string, LoopConfidenceMetricDetail>;
+  algorithmVersion: null | string;
+  updatedAt: null | string;
+}
+
+/**
+ * 获取回路最新一次可信度评估记录
+ *
+ * 无评估记录时后端返回 data=null（HTTP 200），前端据此展示"暂无评估记录"。
+ */
+export function getLoopConfidenceLatestApi(loopId: string) {
+  return requestClient.get<LoopConfidenceLatestItem | null>(
+    `/loops/${loopId}/confidence-latest`,
+  );
 }

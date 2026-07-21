@@ -43,6 +43,7 @@ from app.api.v1.endpoints import (
     loop_type_weight,
     loops,
     node_performance,
+    outlier_config,
     performance,
     plant_nodes,
     realtime,
@@ -225,6 +226,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("从 sys_config 预载数据源配置失败（将使用 .env 默认值）: %s", exc)
 
+    # 从 sys_config 预载异常值检测参数/开关到进程内缓存（热路径不查库，
+    # 预载失败回落 thresholds.py 算法默认值，不阻塞启动）
+    from app.services.preprocessing.outlier_params import preload_outlier_params
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await preload_outlier_params(db)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("从 sys_config 预载异常值检测参数失败（将使用算法默认值）: %s", exc)
+
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
 
@@ -324,6 +335,9 @@ def create_app() -> FastAPI:
     v1_router.include_router(grading_config.router)
     # v6.1: 数据可信度阈值管理
     v1_router.include_router(confidence_config.router)
+
+    # v6.2: 8 类异常值检测参数与启停开关配置
+    v1_router.include_router(outlier_config.router)
     # v4.0: 评估任务管理（标准/自定义）
     v1_router.include_router(eval_tasks.router)
     # S5 系统管理：用户管理、审计日志、报表配置
