@@ -173,7 +173,7 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 | 性能-10 🔶 | badge 死代码 | WS-F（PR #5，loop-performance 试点已合） | W1 | **待渲染一致性抽验，决定推广或删除组件** |
 | 性能-11 ✅ | +8h hack | WS-G 代码轨（已合并 2ab18e1a，676feeeb） | W3 | `normalizeUtcTimestamp`+`formatLocalTime` 抽取到 format.ts ✅；pid-dashboard +8h hack 消除 ✅；6 处重复补Z逻辑收敛 ✅；跨时区正确 |
 | 性能-12 ✅ | ranking 全量 | WS-G 代码轨（已合并 2ab18e1a，c16e893f） | W3 | 后端 ranking 加 offset 参数 ✅（Query ge=0 验证）；前端 loadRanking 循环分页拉全量 ✅（do-while 直到不足一页）；>100 回路饼图计数完整 |
-| 性能-13 | 部署走查 | WS-G | W3 | 测试机全流程跑通记录（上线 gate） |
+| 性能-13 🔶 | 部署走查 | WS-G（文档级走查 2026-07-22） | W3 | docker-compose.prod.yml ✅（6 服务 + Beat 双触发防护 + TDengine profile 恒启用 + 端口安全 + 健康检查全覆盖 + 资源限制/日志轮转）；.env.prod.example ✅（全配置项 + 占位符 + 注释）；deploy.sh ✅（env/CORS/密码校验 → 构建 → 启动 → 健康检查 → Alembic 同步）；**待测试机实测**：Docker 构建/容器启动/Alembic stamp/nginx 代理/sys_config 首配 |
 | 性能-14 | e2e 补盲 | WS-G | W3 | 新增 spec 全绿 |
 
 ## 9. Wave 0 立即执行步骤（命令级）
