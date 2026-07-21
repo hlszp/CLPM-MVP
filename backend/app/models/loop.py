@@ -124,6 +124,13 @@ class LoopLedger(Base):
         nullable=True,
         comment="关联 DCS 型号 ID；NULL=使用本系统默认 MODE 映射",
     )
+    # 理想稳态时间（秒），回路级手动配置（最高优先级，算法说明 §4.5）
+    # NULL 时由 IdealSettlingTimeCalculator 按 模型计算 > 控制类型默认值 回退
+    ideal_settling_time: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+        comment="理想稳态时间（秒），空则按控制类型默认值",
+    )
 
     __table_args__ = (
         CheckConstraint(

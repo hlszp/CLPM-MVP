@@ -46,6 +46,12 @@ class _FakeRedis:
         self.published.append((channel, message))
         return 1
 
+    async def get(self, key: str) -> str | None:
+        return self._data.get(key)
+
+    async def set(self, key: str, value: str) -> None:
+        self._data[key] = value
+
 
 # ---------------------------------------------------------------------------
 # 生命周期测试
@@ -334,3 +340,264 @@ async def test_stop_subscriber_resets_singleton():
         assert mod._subscriber is None
     finally:
         mod._subscriber = original
+
+
+# ---------------------------------------------------------------------------
+# 断点续传（Gap Backfill）测试
+# ---------------------------------------------------------------------------
+
+
+def _gap_settings(mock_settings) -> None:
+    """为 mock settings 补齐断点续传配置项."""
+    mock_settings.GAP_BACKFILL_ENABLED = True
+    mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 60
+    mock_settings.GAP_BACKFILL_MAX_HOURS = 24
+
+
+@pytest.mark.asyncio
+async def test_cache_value_updates_last_data_at():
+    """_cache_value 收到数据时应更新 _last_data_at."""
+    import time as _time
+
+    fake_redis = _FakeRedis()
+    sub = RealtimeSubscriber()
+    assert sub._last_data_at is None
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+    ):
+        mock_settings.REALTIME_WRITEBACK_ENABLED = False
+        before = _time.time()
+        await sub._cache_value({"tagCode": "LIC-101.PV", "value": "1", "collectTime": "t"})
+        after = _time.time()
+
+    assert sub._last_data_at is not None
+    assert before <= sub._last_data_at <= after
+
+
+@pytest.mark.asyncio
+async def test_load_checkpoint_restores_from_redis():
+    """start 时从 Redis checkpoint 恢复 _last_data_at."""
+    from app.services.data_source.realtime_subscriber import _GAP_CHECKPOINT_KEY
+
+    fake_redis = _FakeRedis()
+    fake_redis._data[_GAP_CHECKPOINT_KEY] = "1700000000.5"
+
+    sub = RealtimeSubscriber()
+    with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+        await sub._load_checkpoint()
+
+    assert sub._last_data_at == 1700000000.5
+
+
+@pytest.mark.asyncio
+async def test_load_checkpoint_ignores_invalid_value():
+    """checkpoint 格式无效时忽略且不抛异常."""
+    from app.services.data_source.realtime_subscriber import _GAP_CHECKPOINT_KEY
+
+    fake_redis = _FakeRedis()
+    fake_redis._data[_GAP_CHECKPOINT_KEY] = "not-a-float"
+
+    sub = RealtimeSubscriber()
+    with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+        await sub._load_checkpoint()
+
+    assert sub._last_data_at is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_save_checkpoint_throttled():
+    """checkpoint 写入应按 30s 节流，force=True 时立即写."""
+    from app.services.data_source.realtime_subscriber import _GAP_CHECKPOINT_KEY
+
+    fake_redis = _FakeRedis()
+    sub = RealtimeSubscriber()
+    sub._last_data_at = 1700000000.0
+
+    with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+        await sub._maybe_save_checkpoint()
+        assert fake_redis._data[_GAP_CHECKPOINT_KEY] == "1700000000.0"
+
+        # 30s 内再次调用被节流
+        sub._last_data_at = 1700000001.0
+        await sub._maybe_save_checkpoint()
+        assert fake_redis._data[_GAP_CHECKPOINT_KEY] == "1700000000.0"
+
+        # force 立即写
+        await sub._maybe_save_checkpoint(force=True)
+        assert fake_redis._data[_GAP_CHECKPOINT_KEY] == "1700000001.0"
+
+
+@pytest.mark.asyncio
+async def test_gap_backfill_skipped_when_gap_too_small():
+    """缺口小于 MIN_GAP 时不触发补数."""
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    sub._last_data_at = _time.time() - 10  # 10s < 60s
+
+    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+        _gap_settings(mock_settings)
+        await sub._maybe_trigger_gap_backfill()
+
+    assert sub._backfill_task is None
+
+
+@pytest.mark.asyncio
+async def test_gap_backfill_skipped_when_disabled():
+    """GAP_BACKFILL_ENABLED=False 时不触发补数."""
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    sub._last_data_at = _time.time() - 3600
+
+    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+        _gap_settings(mock_settings)
+        mock_settings.GAP_BACKFILL_ENABLED = False
+        await sub._maybe_trigger_gap_backfill()
+
+    assert sub._backfill_task is None
+
+
+@pytest.mark.asyncio
+async def test_gap_backfill_triggered_on_reconnect():
+    """缺口 ≥ MIN_GAP 时创建补数任务，窗口为 [last_data_at, now-2s]."""
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    last_data_at = _time.time() - 300  # 5 分钟缺口
+    sub._last_data_at = last_data_at
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill,
+    ):
+        _gap_settings(mock_settings)
+        before = _time.time()
+        await sub._maybe_trigger_gap_backfill()
+        after = _time.time()
+
+        assert sub._backfill_task is not None
+        await sub._backfill_task
+
+    mock_backfill.assert_awaited_once()
+    gap_start, gap_end = mock_backfill.await_args.args
+    assert gap_start == last_data_at
+    assert before - 2 <= gap_end <= after - 2
+
+
+@pytest.mark.asyncio
+async def test_gap_backfill_window_truncated_to_max_hours():
+    """缺口超过 MAX_HOURS 时窗口截断为最近 MAX_HOURS."""
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    sub._last_data_at = _time.time() - 48 * 3600  # 48h 缺口，上限 24h
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill,
+    ):
+        _gap_settings(mock_settings)
+        now = _time.time()
+        await sub._maybe_trigger_gap_backfill()
+        assert sub._backfill_task is not None
+        await sub._backfill_task
+
+    gap_start, _gap_end = mock_backfill.await_args.args
+    # 截断后起点 ≈ now - 24h（而非 48h 前）
+    assert abs(gap_start - (now - 24 * 3600)) < 5
+
+
+@pytest.mark.asyncio
+async def test_gap_backfill_dedup_while_running():
+    """已有补数任务在执行时不重复触发."""
+    import asyncio
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    sub._last_data_at = _time.time() - 3600
+
+    async def _pending():
+        await asyncio.sleep(100)
+
+    running_task = asyncio.create_task(_pending())
+    sub._backfill_task = running_task
+
+    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+        _gap_settings(mock_settings)
+        await sub._maybe_trigger_gap_backfill()
+
+    # 任务未被替换
+    assert sub._backfill_task is running_task
+    running_task.cancel()
+    try:
+        await running_task
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_run_gap_backfill_calls_import_with_skip_strategy():
+    """补数执行：调用 import_history_data（skip + trigger_backfill）并推进 checkpoint."""
+    import time as _time
+
+    fake_redis = _FakeRedis()
+    sub = RealtimeSubscriber()
+    gap_start = _time.time() - 600
+    gap_end = _time.time() - 2
+    sub._last_data_at = gap_start
+
+    mock_result = MagicMock()
+    mock_result.all.return_value = [("loop-1",), ("loop-2",)]
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(return_value=mock_result)
+    mock_session_ctx = AsyncMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch(
+            "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+            return_value=mock_session_ctx,
+        ),
+        patch(
+            "app.services.data_import.import_history_data",
+            new=AsyncMock(return_value={"total": 2, "succeeded": 2, "failed": 0, "errors": []}),
+        ) as mock_import,
+    ):
+        await sub._run_gap_backfill(gap_start, gap_end)
+
+    mock_import.assert_awaited_once()
+    kwargs = mock_import.await_args.kwargs
+    assert kwargs["conflict_strategy"] == "skip"
+    assert kwargs["trigger_backfill"] is True
+    loop_ids = mock_import.await_args.args[0]
+    assert loop_ids == ["loop-1", "loop-2"]
+    # checkpoint 推进到窗口末端
+    assert sub._last_data_at == gap_end
+
+
+@pytest.mark.asyncio
+async def test_run_gap_backfill_error_does_not_raise():
+    """补数异常被吞掉（记日志），不抛出、checkpoint 不推进."""
+    import time as _time
+
+    fake_redis = _FakeRedis()
+    sub = RealtimeSubscriber()
+    gap_start = _time.time() - 600
+    gap_end = _time.time() - 2
+    sub._last_data_at = gap_start
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch(
+            "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+            side_effect=Exception("DB error"),
+        ),
+    ):
+        await sub._run_gap_backfill(gap_start, gap_end)  # 不应抛出
+
+    assert sub._last_data_at == gap_start

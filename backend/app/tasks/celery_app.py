@@ -120,10 +120,18 @@ def _preload_datasource_config_sync() -> None:
 
     from app.core.db import AsyncSessionLocal
     from app.services.datasource_config import preload_datasource_config
+    from app.services.preprocessing.outlier_params import preload_outlier_params
 
     async def _preload() -> None:
         async with AsyncSessionLocal() as db:
             await preload_datasource_config(db)
+            # 同一会话继续预载异常值检测参数/开关到进程内缓存，
+            # 保证 worker 子进程的 Pipeline/诊断引擎读取到 sys_config 配置；
+            # 失败独立兜底（回落算法默认），不影响数据源配置预载结果
+            try:
+                await preload_outlier_params(db)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("worker 子进程预载异常值检测参数失败（将使用算法默认值）: %s", exc)
 
     loop = asyncio.new_event_loop()
     try:

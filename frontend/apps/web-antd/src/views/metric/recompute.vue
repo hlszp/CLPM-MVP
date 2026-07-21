@@ -22,6 +22,7 @@ import {
   FormItem,
   Input,
   message,
+  Modal,
   Progress,
   Select,
   Space,
@@ -40,7 +41,7 @@ import {
   startTaskApi,
   triggerBackfillApi,
 } from '#/api/task';
-import { ClpmDangerConfirmModal, ClpmDataCanvas } from '#/components/clpm';
+import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricRecompute' });
@@ -56,7 +57,7 @@ const currentPage = ref(1);
 const pageSize = ref(20);
 const selectedRowKeys = ref<string[]>([]);
 
-// ============ 危险操作确认（§9.8：取消/删除任务强制 typed confirmation） ============
+// ============ 危险操作确认（取消/删除任务：普通确认弹框，无需输入确认码） ============
 const dangerVisible = ref(false);
 const dangerAction = ref<'batch-delete' | 'cancel' | 'delete'>('delete');
 const dangerTask = ref<null | TaskApi.TaskItem>(null);
@@ -67,10 +68,6 @@ const dangerTitle = computed(() => {
   if (dangerAction.value === 'delete') return '删除任务记录';
   return '批量删除任务';
 });
-
-const dangerVerb = computed(() =>
-  dangerAction.value === 'cancel' ? '取消' : '删除',
-);
 
 const dangerTarget = computed(() => {
   if (dangerAction.value === 'batch-delete') {
@@ -501,7 +498,7 @@ async function handleSubmit() {
   }
 }
 
-// ============ 删除/取消任务（统一走 §9.8 危险确认模态框） ============
+// ============ 删除/取消任务（普通确认弹框） ============
 function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的任务');
@@ -847,20 +844,26 @@ onUnmounted(() => {
     </Drawer>
 
     <!-- 危险操作确认（§9.8：取消/删除任务 typed confirmation 屏障） -->
-    <ClpmDangerConfirmModal
+    <Modal
       v-model:open="dangerVisible"
       :title="dangerTitle"
-      :action="dangerVerb"
-      :target="dangerTarget"
-      :impact-scope="dangerImpact"
-      :rollback-tip="dangerRollback"
-      :require-confirm-code="dangerAction !== 'batch-delete'"
-      :confirm-code="dangerAction === 'batch-delete' ? '' : dangerTarget"
-      :confirm-code-placeholder="`请输入 ${dangerTarget} 以确认`"
-      :require-reason="false"
-      :show-audit-note="false"
-      :loading="dangerLoading"
-      @confirm="handleDangerConfirm"
-    />
+      :confirm-loading="dangerLoading"
+      ok-text="确认"
+      cancel-text="取消"
+      :ok-button-props="{
+        danger: dangerAction !== 'cancel',
+        type: dangerAction === 'cancel' ? 'primary' : 'default',
+      }"
+      @ok="handleDangerConfirm"
+    >
+      <div class="space-y-2">
+        <div>
+          <span class="text-gray-500">操作目标：</span>
+          <strong>{{ dangerTarget }}</strong>
+        </div>
+        <div class="text-gray-600">{{ dangerImpact }}</div>
+        <div class="text-gray-400 text-sm">{{ dangerRollback }}</div>
+      </div>
+    </Modal>
   </div>
 </template>

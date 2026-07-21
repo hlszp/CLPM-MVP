@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import Field, model_validator
 
 from app.schemas.base import CamelModel
@@ -84,6 +86,14 @@ class LoopCreate(CamelModel):
         None,
         description="关联 DCS 型号 ID；NULL=使用本系统默认 MODE 映射",
     )
+    # 理想稳态时间（秒），回路级手动配置（最高优先级，算法说明 §4.5）
+    # NULL 时由计算器按 模型计算 > 控制类型默认值 回退
+    idealSettlingTime: float | None = Field(
+        None,
+        gt=0,
+        le=86400,
+        description="理想稳态时间（秒），空则按控制类型默认值",
+    )
 
 
 class LoopUpdate(CamelModel):
@@ -125,6 +135,13 @@ class LoopUpdate(CamelModel):
     dcsModelId: str | None = Field(
         None,
         description="关联 DCS 型号 ID；NULL=使用本系统默认 MODE 映射",
+    )
+    # 理想稳态时间（秒），同 LoopCreate；PUT null 可清空（恢复按控制类型默认值）
+    idealSettlingTime: float | None = Field(
+        None,
+        gt=0,
+        le=86400,
+        description="理想稳态时间（秒），空则按控制类型默认值",
     )
 
 
@@ -183,6 +200,9 @@ class LoopListItem(CamelModel):
     opOutputLowerLimit: float | None = Field(None, description="OP 输出下限位")
     opOutputUpperLimit: float | None = Field(None, description="OP 输出上限位")
     dcsModelId: str | None = Field(None, description="关联 DCS 型号 ID")
+    idealSettlingTime: float | None = Field(
+        None, description="理想稳态时间（秒），空则按控制类型默认值"
+    )
 
 
 class LoopListData(CamelModel):
@@ -222,6 +242,9 @@ class LoopBasicInfo(CamelModel):
     opOutputLowerLimit: float | None = Field(None, description="OP 输出下限位")
     opOutputUpperLimit: float | None = Field(None, description="OP 输出上限位")
     dcsModelId: str | None = Field(None, description="关联 DCS 型号 ID")
+    idealSettlingTime: float | None = Field(
+        None, description="理想稳态时间（秒），空则按控制类型默认值"
+    )
     createdAt: str | None = None
     createdBy: str | None = None
     updatedAt: str | None = None
@@ -295,6 +318,7 @@ class LoopUpdateResult(CamelModel):
     opOutputLowerLimit: float | None = None
     opOutputUpperLimit: float | None = None
     dcsModelId: str | None = None
+    idealSettlingTime: float | None = None
     updatedAt: str | None = None
     updatedBy: str | None = None
 
@@ -383,9 +407,44 @@ class LoopImportResult(CamelModel):
     errors: list[LoopImportError] = []
 
 
+# ---------------------------------------------------------------------------
+# 回路最新可信度评估记录 schemas
+# ---------------------------------------------------------------------------
+
+
+class LoopConfidenceMetricDetail(CamelModel):
+    """单个子指标的计算值与可信度（loop_confidence_latest.metrics JSONB 元素）。"""
+
+    value: float | None = None
+    confidence: str | None = None
+
+
+class LoopConfidenceLatestItem(CamelModel):
+    """GET /api/v1/loops/{id}/confidence-latest 响应。
+
+    回路最新一次可信度评估记录（loop_confidence_latest，每回路一条）。
+    metrics 键为 DB 列名（snake_case），形如
+    ``{"accuracy_rate": {"value": 93.35, "confidence": "A"}, ...}``。
+    """
+
+    loop_id: str
+    eval_time: datetime | None = None
+    data_ts_start: datetime | None = None
+    data_ts_end: datetime | None = None
+    status: str = "INCONCLUSIVE"
+    score: float | None = None
+    confidence_level: str | None = None
+    valid_rate: float | None = None
+    metrics: dict[str, LoopConfidenceMetricDetail] = {}
+    algorithm_version: str | None = None
+    updated_at: datetime | None = None
+
+
 __all__ = [
     "LoopAasSyncStatus",
     "LoopBasicInfo",
+    "LoopConfidenceLatestItem",
+    "LoopConfidenceMetricDetail",
     "LoopCreate",
     "LoopDeleteResult",
     "LoopDetailData",

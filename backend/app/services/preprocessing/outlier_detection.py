@@ -27,7 +27,7 @@ from app.services.preprocessing.quality_code import (
     is_nan_or_inf,
     map_quality_code,
 )
-from app.services.preprocessing.thresholds import ControlTypeThreshold
+from app.services.preprocessing.thresholds import ControlTypeThreshold, is_detector_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -460,34 +460,43 @@ class OutlierDetector:
             for idx, reason in reasons:
                 all_reasons.setdefault(idx, []).append(reason)
 
+        # 各类检测可通过 sys_config（outlier_params.current）开关停用，
+        # 停用的检测不参与异常判断和标记（is_detector_enabled 读进程内缓存）。
+
         # 1. NaN/Inf/NULL
-        _add(detect_nan(values))
+        if is_detector_enabled("nan"):
+            _add(detect_nan(values))
 
         # 2. 超量程
-        _add(detect_out_of_range(values, eff_min, eff_max))
+        if is_detector_enabled("out_of_range"):
+            _add(detect_out_of_range(values, eff_min, eff_max))
 
         # 3. 冻结值（SP/MODE/PID 等常态为常量的信号跳过）
-        if not skip_frozen:
+        if not skip_frozen and is_detector_enabled("frozen"):
             if is_normalized:
                 _add(detect_frozen(values, self.threshold))
             else:
                 _add(detect_frozen_raw(values, self.threshold, range_min, range_max))
 
         # 4. 跳变
-        _add(detect_jump(values, self.threshold, range_min, range_max))
+        if is_detector_enabled("jump"):
+            _add(detect_jump(values, self.threshold, range_min, range_max))
 
         # 5. 尖峰
-        _add(detect_spike(values, self.threshold, range_min, range_max))
+        if is_detector_enabled("spike"):
+            _add(detect_spike(values, self.threshold, range_min, range_max))
 
         # 6. 时间戳异常（仅标记）
-        _add(detect_ts_anomaly(timestamps, expected_interval))
+        if is_detector_enabled("ts_anomaly"):
+            _add(detect_ts_anomaly(timestamps, expected_interval))
 
         # 7. 质量码异常（仅 PV 有质量码）
-        if quality_codes is not None:
+        if quality_codes is not None and is_detector_enabled("qc_bad"):
             _add(detect_qc_bad(quality_codes))
 
         # 8. 高频噪声（仅标记不滤波）
-        _add(detect_hf_noise(values, self.threshold, sampling_freq_hz))
+        if is_detector_enabled("hf_noise"):
+            _add(detect_hf_noise(values, self.threshold, sampling_freq_hz))
 
         logger.debug(
             "OutlierDetector: tag=%s, points=%d, anomalous=%d, reasons=%s",

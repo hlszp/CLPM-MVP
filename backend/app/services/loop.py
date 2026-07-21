@@ -510,6 +510,11 @@ async def list_loops(
                     else None
                 ),
                 "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
+                "idealSettlingTime": (
+                    float(loop.ideal_settling_time)
+                    if loop.ideal_settling_time is not None
+                    else None
+                ),
             }
         )
 
@@ -637,6 +642,7 @@ async def create_loop(
     op_output_lower_limit: float | None = None,
     op_output_upper_limit: float | None = None,
     dcs_model_id: str | None = None,
+    ideal_settling_time: float | None = None,
 ) -> dict:
     """创建回路。
 
@@ -693,6 +699,7 @@ async def create_loop(
         op_output_lower_limit=op_output_lower_limit,
         op_output_upper_limit=op_output_upper_limit,
         dcs_model_id=dcs_model_id,
+        ideal_settling_time=ideal_settling_time,
         score_weights=score_weights,
         remark=remark,
         created_by=operator,
@@ -723,6 +730,7 @@ async def create_loop(
                 "opOutputLowerLimit": op_output_lower_limit,
                 "opOutputUpperLimit": op_output_upper_limit,
                 "dcsModelId": dcs_model_id,
+                "idealSettlingTime": ideal_settling_time,
             },
             ensure_ascii=False,
         ),
@@ -748,6 +756,9 @@ async def create_loop(
             float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
         "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
+        "idealSettlingTime": (
+            float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
+        ),
         "isActive": bool(loop.is_active),
         "scoreWeights": loop.score_weights,
         "remark": loop.remark,
@@ -931,6 +942,9 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
                 else None
             ),
             "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
+            "idealSettlingTime": (
+                float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
+            ),
             "createdAt": loop.created_at.isoformat() if loop.created_at else None,
             "createdBy": loop.created_by,
             "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
@@ -962,11 +976,13 @@ async def update_loop(
     op_output_lower_limit: float | None = None,
     op_output_upper_limit: float | None = None,
     dcs_model_id: str | None = None,
+    ideal_settling_time: float | None = None,
     _op_lower_set: bool = False,
     _op_upper_set: bool = False,
     _dcs_model_id_set: bool = False,
+    _ideal_settling_time_set: bool = False,
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间）。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_OP_LIMIT_OUT_OF_RANGE
@@ -1015,6 +1031,9 @@ async def update_loop(
             float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
         "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
+        "idealSettlingTime": (
+            float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
+        ),
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -1047,6 +1066,9 @@ async def update_loop(
     # v6.1 DCS 型号关联：支持通过 PUT null 清空（回退到本系统默认 MODE 映射）
     if _dcs_model_id_set:
         loop.dcs_model_id = dcs_model_id
+    # 理想稳态时间：支持通过 PUT null 清空（恢复按控制类型默认值）
+    if _ideal_settling_time_set:
+        loop.ideal_settling_time = ideal_settling_time
     loop.updated_by = operator
 
     # 重新推导 status
@@ -1071,6 +1093,9 @@ async def update_loop(
             float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
         "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
+        "idealSettlingTime": (
+            float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
+        ),
         "status": new_status,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -1108,6 +1133,9 @@ async def update_loop(
             float(loop.op_output_upper_limit) if loop.op_output_upper_limit is not None else None
         ),
         "dcsModelId": str(loop.dcs_model_id) if loop.dcs_model_id else None,
+        "idealSettlingTime": (
+            float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
+        ),
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
         "updatedBy": loop.updated_by,
     }

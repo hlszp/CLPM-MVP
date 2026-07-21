@@ -128,6 +128,8 @@ export namespace LoopApi {
     opOutputUpperLimit?: null | number;
     /** v6.1 新增：关联 DCS 型号 ID（NULL=使用本系统默认 MODE 映射） */
     dcsModelId?: null | string;
+    /** 理想稳态时间（秒），空则按控制类型默认值 */
+    idealSettlingTime?: null | number;
   }
 
   /** 回路列表查询参数（IDS v3.2 §2.2.7） */
@@ -169,6 +171,8 @@ export namespace LoopApi {
     opOutputUpperLimit?: null | number;
     /** v6.1 新增：关联 DCS 型号 ID */
     dcsModelId?: null | string;
+    /** 理想稳态时间（秒），空则按控制类型默认值 */
+    idealSettlingTime?: null | number;
   }
 
   /** 更新回路参数（IDS v3.2 §2.2.10） */
@@ -191,6 +195,8 @@ export namespace LoopApi {
     opOutputUpperLimit?: null | number;
     /** v6.1 新增：关联 DCS 型号 ID */
     dcsModelId?: null | string;
+    /** 理想稳态时间（秒），空则按控制类型默认值 */
+    idealSettlingTime?: null | number;
   }
 
   /** 创建回路响应（IDS v3.2 §2.2.8） */
@@ -249,6 +255,8 @@ export namespace LoopApi {
     createdBy: string;
     updatedAt: string;
     updatedBy: string;
+    /** 理想稳态时间（秒），空则按控制类型默认值 */
+    idealSettlingTime?: null | number;
   }
 
   /** 回路详情 - Tag 关联映射（IDS v3.2 §2.2.9） */

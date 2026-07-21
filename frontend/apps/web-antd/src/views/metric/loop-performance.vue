@@ -13,6 +13,9 @@ import type { Dayjs } from 'dayjs';
  *   评估状态 / 操作（详情、历史、诊断）；行点击打开详情抽屉
  * - 详情抽屉：回路基本信息 + 8 大 KPI + 5 项诊断/扩展指标（3+1+8 共 12 指标齐全）+
  *   可信度 + 时间窗 + 评估时间 + 历史快照子表（最近 10 条）
+ * - 可信度抽屉：点击可信度单元格打开（不触发行抽屉），最新评估时间 / 数据源
+ *   时间区间 / 评估状态 / 综合评分 / 可信度 / 有效数据率 + 12 子指标值与各自
+ *   可信度（GET /api/v1/loops/{loopId}/confidence-latest）
  * - 历史 Modal：时间维度切换（8/12/24/72/168h） + ECharts 趋势图
  * - 诊断 Modal（90% 宽）：4 个 Tab（频谱分析 / 时域分析 / 诊断概览 / 评估历史）
  */
@@ -24,6 +27,7 @@ import type {
   ConfidenceLevel,
   KpiSnapshotItem,
   KpiStatus,
+  LoopConfidenceLatestItem,
   MetricApi,
 } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
@@ -67,7 +71,11 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisVisualizationApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
-import { getGradingThresholdsApi, getLoopSnapshotsApi } from '#/api/metric';
+import {
+  getGradingThresholdsApi,
+  getLoopConfidenceLatestApi,
+  getLoopSnapshotsApi,
+} from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
@@ -792,6 +800,79 @@ function rowClick(record: LoopPerformanceRow) {
   };
 }
 
+// ===== 可信度详情抽屉 =====
+
+/** 12 子指标元数据（3+1+8 体系，键为 DB 列名 snake_case） */
+const CONFIDENCE_METRIC_META: { key: string; label: string; unit: string }[] = [
+  { key: 'accuracy_rate', label: '准确率', unit: '%' },
+  { key: 'fast_rate', label: '快速率', unit: '%' },
+  { key: 'steady_rate', label: '平稳率', unit: '%' },
+  { key: 'effective_auto_rate', label: '有效自控率', unit: '%' },
+  { key: 'good_value_rate', label: '好值率', unit: '%' },
+  { key: 'auto_mode_rate', label: '自控率', unit: '%' },
+  { key: 'settling_time', label: '稳定时间', unit: 's' },
+  { key: 'ideal_settling_time', label: '理想稳定时间', unit: 's' },
+  { key: 'oscillation_rate', label: '振荡率', unit: '%' },
+  { key: 'saturation_rate', label: '饱和率', unit: '%' },
+  { key: 'stiction_index', label: '阀门粘滞指数', unit: '' },
+  { key: 'output_trip_index', label: '输出跳变率', unit: '' },
+];
+
+const confDrawerVisible = ref(false);
+const confDrawerLoading = ref(false);
+const confDrawerRecord = ref<LoopPerformanceRow | null>(null);
+const confDetail = ref<LoopConfidenceLatestItem | null>(null);
+
+const confMetricColumns: TableColumnsType = [
+  { title: '指标', key: 'label', dataIndex: 'label' },
+  {
+    title: '计算值',
+    key: 'value',
+    dataIndex: 'value',
+    width: 120,
+    align: 'right' as const,
+  },
+  {
+    title: '可信度',
+    key: 'confidence',
+    dataIndex: 'confidence',
+    width: 110,
+  },
+];
+
+/** 12 子指标表格行（按 3+1+8 顺序合并计算值与各自可信度） */
+const confMetricRows = computed(() => {
+  const metrics = confDetail.value?.metrics ?? {};
+  return CONFIDENCE_METRIC_META.map((meta) => ({
+    ...meta,
+    value: metrics[meta.key]?.value ?? null,
+    confidence: metrics[meta.key]?.confidence ?? null,
+  }));
+});
+
+/** 点击可信度单元格 → 打开可信度详情抽屉（不触发行抽屉） */
+async function openConfidence(record: LoopPerformanceRow) {
+  confDrawerRecord.value = record;
+  confDrawerVisible.value = true;
+  confDetail.value = null;
+  if (!record.loopId) return;
+  confDrawerLoading.value = true;
+  try {
+    confDetail.value = await getLoopConfidenceLatestApi(record.loopId);
+  } catch (error: any) {
+    console.error('加载可信度详情失败:', error);
+    message.error(error?.message || '加载可信度详情失败');
+  } finally {
+    confDrawerLoading.value = false;
+  }
+}
+
+function closeConfidence() {
+  confDrawerVisible.value = false;
+  confDrawerRecord.value = null;
+  confDetail.value = null;
+}
+
 // ===== 历史 Modal =====
 
 const historyModalVisible = ref(false);
@@ -1406,19 +1487,25 @@ onMounted(async () => {
             </span>
           </template>
           <template v-else-if="column.key === 'confidenceLevel'">
-            <Badge
+            <a
               v-if="(record as LoopPerformanceRow).confidenceLevel"
-              :color="
-                CONFIDENCE_COLOR_MAP[
-                  (record as LoopPerformanceRow).confidenceLevel!
-                ]
-              "
-              :text="
-                CONFIDENCE_LABEL_MAP[
-                  (record as LoopPerformanceRow).confidenceLevel!
-                ]
-              "
-            />
+              class="confidence-cell-link"
+              title="查看可信度详情"
+              @click.stop="openConfidence(record as LoopPerformanceRow)"
+            >
+              <Badge
+                :color="
+                  CONFIDENCE_COLOR_MAP[
+                    (record as LoopPerformanceRow).confidenceLevel!
+                  ]
+                "
+                :text="
+                  CONFIDENCE_LABEL_MAP[
+                    (record as LoopPerformanceRow).confidenceLevel!
+                  ]
+                "
+              />
+            </a>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'tsRange'">
@@ -1753,6 +1840,102 @@ onMounted(async () => {
           </template>
         </Table>
       </template>
+    </Drawer>
+
+    <!-- 可信度详情抽屉 -->
+    <Drawer
+      :open="confDrawerVisible"
+      :title="`可信度详情 - ${confDrawerRecord?.loopTagName ?? ''}`"
+      placement="right"
+      :width="560"
+      :mask-closable="true"
+      @close="closeConfidence"
+    >
+      <Spin :spinning="confDrawerLoading">
+        <template v-if="confDetail">
+          <!-- 评估概要 -->
+          <div class="mb-2 text-sm font-medium">评估概要</div>
+          <Descriptions
+            :column="2"
+            size="small"
+            bordered
+            :label-style="{ width: '110px' }"
+          >
+            <DescriptionsItem label="最新评估时间">
+              <span class="font-mono text-xs">
+                {{ formatTime(confDetail.evalTime) }}
+              </span>
+            </DescriptionsItem>
+            <DescriptionsItem label="数据源时间区间">
+              <span class="font-mono text-xs">
+                {{ formatTsRange(confDetail.dataTsStart, confDetail.dataTsEnd) }}
+              </span>
+            </DescriptionsItem>
+            <DescriptionsItem label="评估状态">
+              <Tag
+                :color="STATUS_COLOR_MAP[confDetail.status] || 'default'"
+                class="m-0"
+              >
+                {{ STATUS_LABEL_MAP[confDetail.status] || confDetail.status }}
+              </Tag>
+            </DescriptionsItem>
+            <DescriptionsItem label="综合评分">
+              <span
+                class="font-semibold"
+                :style="{ color: scoreColor(confDetail.score) }"
+              >
+                {{ formatNumber(confDetail.score) }}
+              </span>
+            </DescriptionsItem>
+            <DescriptionsItem label="可信度">
+              <Badge
+                v-if="confDetail.confidenceLevel"
+                :color="CONFIDENCE_COLOR_MAP[confDetail.confidenceLevel]"
+                :text="CONFIDENCE_LABEL_MAP[confDetail.confidenceLevel]"
+              />
+              <span v-else>—</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="有效数据率">
+              {{ formatRatio(confDetail.validRate) }}
+            </DescriptionsItem>
+            <DescriptionsItem label="算法版本" :span="2">
+              {{ confDetail.algorithmVersion || '—' }}
+            </DescriptionsItem>
+          </Descriptions>
+
+          <!-- 12 子指标明细 -->
+          <div class="mb-2 mt-4 text-sm font-medium">子指标可信度（3+1+8）</div>
+          <Table
+            :columns="confMetricColumns"
+            :data-source="confMetricRows"
+            :pagination="false"
+            row-key="key"
+            size="small"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'value'">
+                <span class="font-mono text-xs">
+                  {{ formatNumber(record.value, record.unit) }}
+                </span>
+              </template>
+              <template v-else-if="column.key === 'confidence'">
+                <Badge
+                  v-if="record.confidence"
+                  :color="CONFIDENCE_COLOR_MAP[record.confidence]"
+                  :text="CONFIDENCE_LABEL_MAP[record.confidence]"
+                />
+                <span v-else class="text-gray-400">—</span>
+              </template>
+            </template>
+          </Table>
+        </template>
+        <div
+          v-else-if="!confDrawerLoading"
+          class="py-12 text-center text-gray-400"
+        >
+          暂无评估记录
+        </div>
+      </Spin>
     </Drawer>
 
     <!-- 历史 Modal -->
@@ -2092,5 +2275,15 @@ onMounted(async () => {
 
 :deep(.ant-table-cell-wrap-all) {
   white-space: normal;
+}
+
+.confidence-cell-link {
+  display: inline-block;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.confidence-cell-link:hover {
+  opacity: 0.75;
 }
 </style>

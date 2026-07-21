@@ -846,3 +846,211 @@ class TestOpOutputLimitsOrmModel:
         assert upper_col is not None
         assert lower_col.nullable is True
         assert upper_col.nullable is True
+
+
+class TestIdealSettlingTimeField:
+    """理想稳态时间（ideal_settling_time）回路级配置。
+
+    覆盖：Schema 存在性/校验、Service 签名、ORM 列、API 创建/更新字段往返。
+    """
+
+    # ----- Schema 存在性 -----
+
+    def test_loop_create_schema_has_field(self) -> None:
+        from app.schemas.loop import LoopCreate
+
+        assert "idealSettlingTime" in LoopCreate.model_fields
+
+    def test_loop_update_schema_has_field(self) -> None:
+        from app.schemas.loop import LoopUpdate
+
+        assert "idealSettlingTime" in LoopUpdate.model_fields
+
+    def test_loop_list_item_schema_has_field(self) -> None:
+        from app.schemas.loop import LoopListItem
+
+        assert "idealSettlingTime" in LoopListItem.model_fields
+
+    def test_loop_basic_info_schema_has_field(self) -> None:
+        from app.schemas.loop import LoopBasicInfo
+
+        assert "idealSettlingTime" in LoopBasicInfo.model_fields
+
+    def test_loop_update_result_schema_has_field(self) -> None:
+        from app.schemas.loop import LoopUpdateResult
+
+        assert "idealSettlingTime" in LoopUpdateResult.model_fields
+
+    # ----- Schema 校验（> 0 且 <= 86400，可空） -----
+
+    def test_schema_rejects_non_positive_value(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        from app.schemas.loop import LoopCreate
+
+        with pytest.raises(ValidationError):
+            LoopCreate(tagName="X-IST-1", idealSettlingTime=0)
+        with pytest.raises(ValidationError):
+            LoopCreate(tagName="X-IST-1", idealSettlingTime=-5)
+
+    def test_schema_rejects_over_max_value(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        from app.schemas.loop import LoopCreate
+
+        with pytest.raises(ValidationError):
+            LoopCreate(tagName="X-IST-1", idealSettlingTime=86401)
+
+    def test_schema_accepts_valid_and_none(self) -> None:
+        from app.schemas.loop import LoopCreate
+
+        assert LoopCreate(tagName="X-IST-1", idealSettlingTime=45).idealSettlingTime == 45
+        assert LoopCreate(tagName="X-IST-1").idealSettlingTime is None
+
+    # ----- Service 签名 -----
+
+    def test_create_loop_service_accepts_field(self) -> None:
+        import inspect
+
+        from app.services.loop import create_loop
+
+        assert "ideal_settling_time" in inspect.signature(create_loop).parameters
+
+    def test_update_loop_service_accepts_field(self) -> None:
+        import inspect
+
+        from app.services.loop import update_loop
+
+        params = inspect.signature(update_loop).parameters
+        assert "ideal_settling_time" in params
+        assert "_ideal_settling_time_set" in params
+
+    # ----- ORM 模型 -----
+
+    def test_loop_ledger_has_nullable_column(self) -> None:
+        from app.models.loop import LoopLedger
+
+        col = LoopLedger.__table__.columns.get("ideal_settling_time")
+        assert col is not None
+        assert col.nullable is True
+
+    # ----- API 字段往返 -----
+
+    def test_create_api_roundtrip(self, client, mock_db, fake_redis) -> None:
+        """创建时写入 idealSettlingTime=45，响应透传该值。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/loops",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"tagName": "NEW-LOOP-IST", "isActive": True, "idealSettlingTime": 45},
+            )
+        assert resp.status_code == 201
+        assert resp.json()["data"]["idealSettlingTime"] == 45.0
+
+    def test_create_api_default_none(self, client, mock_db, fake_redis) -> None:
+        """创建时不传 idealSettlingTime，响应为 None（按控制类型默认值）。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/loops",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"tagName": "NEW-LOOP-IST2", "isActive": True},
+            )
+        assert resp.status_code == 201
+        assert resp.json()["data"]["idealSettlingTime"] is None
+
+    @staticmethod
+    def _make_update_loop_mock(ideal_settling_time: float | None = None) -> MagicMock:
+        """构造 update_loop 流程用的回路 mock（is_active=True，无限位配置）。"""
+        loop = MagicMock()
+        loop.id = LOOP_001.id
+        loop.tag_name = LOOP_001.tag_name
+        loop.description = "desc"
+        loop.unit_id = LOOP_001.unit_id
+        loop.score_weights = None
+        loop.is_active = True
+        loop.status = "PARTIAL"
+        loop.loop_type = "TEMPERATURE"
+        loop.control_type = "STABLE"
+        loop.importance_level = 2
+        loop.include_in_evaluation = True
+        loop.modeattr_tag_id = None
+        loop.data_retention_days = None
+        loop.op_output_lower_limit = None
+        loop.op_output_upper_limit = None
+        loop.dcs_model_id = None
+        loop.ideal_settling_time = ideal_settling_time
+        loop.remark = None
+        loop.updated_at = None
+        loop.updated_by = "admin"
+        return loop
+
+    def _mock_update_db(self, mock_db, loop: MagicMock) -> None:
+        """按 update_loop 调用序配置 mock_db.execute：
+
+        1) select LoopLedger → scalar_one_or_none → loop
+        2) _get_op_tag_range → first() → None（未关联 OP Tag）
+        3) _get_loop_tag_mappings → scalars().all() → []
+        """
+        first_result = MagicMock()
+        first_result.scalar_one_or_none.return_value = loop
+        op_range_result = MagicMock()
+        op_range_result.first.return_value = None
+        mock_db.execute = AsyncMock(
+            side_effect=[first_result, op_range_result, _make_scalars_mock([])]
+        )
+
+    def test_update_api_roundtrip(self, client, mock_db, fake_redis) -> None:
+        """更新 idealSettlingTime=120，响应透传该值且回路对象被赋值。"""
+        loop = self._make_update_loop_mock()
+        self._mock_update_db(mock_db, loop)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"idealSettlingTime": 120},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["idealSettlingTime"] == 120.0
+        assert loop.ideal_settling_time == 120
+
+    def test_update_api_clear_with_null(self, client, mock_db, fake_redis) -> None:
+        """显式 PUT null 清空 idealSettlingTime（恢复按控制类型默认值）。"""
+        loop = self._make_update_loop_mock(ideal_settling_time=90.0)
+        self._mock_update_db(mock_db, loop)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"idealSettlingTime": None},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["idealSettlingTime"] is None
+        assert loop.ideal_settling_time is None
+
+    def test_update_api_unset_field_keeps_value(self, client, mock_db, fake_redis) -> None:
+        """未传递 idealSettlingTime 字段时保持原值不变。"""
+        loop = self._make_update_loop_mock(ideal_settling_time=90.0)
+        self._mock_update_db(mock_db, loop)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"remark": "仅改备注"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["idealSettlingTime"] == 90.0
+        assert loop.ideal_settling_time == 90.0
+
+    def test_update_api_rejects_invalid_value(self, client, mock_db, fake_redis) -> None:
+        """idealSettlingTime <= 0 被 schema 校验拒绝（422）。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"idealSettlingTime": -3},
+            )
+        assert resp.status_code == 422

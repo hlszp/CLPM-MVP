@@ -1666,7 +1666,7 @@ PENDING（待处理） → IN_PROGRESS（处理中） → IMPLEMENTED（已实�
 #### 6.8.5 任务管理设计要点
 
 - **双轨隔离**：标准任务与自定义任务在列表、存储、聚合逻辑上严格隔离，UI 通过 Tab 明确区分
-- **可信度贯穿**：所有任务结果展示均带可信度角标（对齐 §7.15），可信度 E 级结果标注 INCONCLUSIVE
+- **可信度贯穿**：所有任务结果展示均带可信度角标（对齐 §7.15）；有效自控率 R 为 E 级/缺失的结果标注 INCONCLUSIVE，个别指标（非 R）为 E 级的结果正常展示并附灰色"可信度 E"角标
 - **血缘可追溯**：每个任务结果页展示数据血缘（对齐 §7.14），支持审计化追溯
 - **权限控制**：
   - 查看标准任务：全角色
@@ -1762,14 +1762,14 @@ PENDING（待处理） → IN_PROGRESS（处理中） → IMPLEMENTED（已实�
 | `B` | `--status-info` 深蓝 | 较高可信 | ✓ | 0.80 ≤ valid_rate < 0.95 | 正常展示 + 可信度角标 |
 | `C` | `--status-warning` 琥珀 | 中等可信 | ⚠ | 0.60 ≤ valid_rate < 0.80 | 显著标注 + tooltip "建议复核" |
 | `D` | `--status-danger` 警示红 | 低可信 | ⚠ | 0.20 ≤ valid_rate < 0.60 | 警告提示 + tooltip "数据有效率低，谨慎使用" |
-| `E` | `--status-neutral` 冷灰 | 极低可信 | ? | valid_rate < 0.20 | **标记 INCONCLUSIVE**，评分显示"—"，禁止参与聚合 |
+| `E` | `--status-neutral` 冷灰 | 极低可信 | ? | valid_rate < 0.20 | 如实标注"可信度 E"（灰标签）；**仅当 E 级发生在有效自控率 R 上时**才标记 INCONCLUSIVE、评分显示"—"、禁止参与聚合 |
 
 **展示规则**：
 - 角标形式：`[评分值] [可信度等级徽章]`，如 `78.5 [B]`
-- 可信度 E 级时：评分区域显示 `INCONCLUSIVE —`，评分数值不展示
-- 综合评分可信度 = min(A 可信度, F 可信度, S 可信度)，取最低等级
+- 有效自控率 R 为 E 级时：评分区域显示 `INCONCLUSIVE —`，评分数值不展示
+- 综合评分可信度 = min(A/F/S/R 可信度)，取核心指标 + R 中的最低等级
 - 悬浮提示展示 `valid_rate` 具体数值（如 "有效数据率 87.3%"）
-- 与计算状态标签（§7.2.1）联动：可信度 E 级时强制 `status=INCONCLUSIVE`
+- 与计算状态标签（§7.2.1）联动（2026-07-20 按当前代码实现修订）：个别指标（非 R）为 E 级时 status 仍为 SUCCESS（score 有值、参与聚合，灰标签提示）；仅 R 为 E 级/缺失时强制 `status=INCONCLUSIVE`
 
 ### 7.3 时序波形 (Time-Series Waveform)
 
@@ -1987,10 +1987,10 @@ Tag 关联管理页面使用的核心组件。
 └── 综合评分 P = 79.53 × 0.988 = 78.5
 ```
 
-**可信度展示**（v5.0 新增）：
+**可信度展示**（v5.0 新增，2026-07-20 按当前代码实现修订）：
 - 综合评分旁显示可信度角标（A/B/C/D/E，对齐 §3.1.6）
-- 综合评分可信度 = min(A 可信度, F 可信度, S 可信度)
-- 可信度 E 级时评分显示"—" + 标签"INCONCLUSIVE"
+- 综合评分可信度 = min(A/F/S/R 可信度)，取核心指标 + R 中的最低等级
+- 有效自控率 R 为 E 级/缺失时评分显示"—" + 标签"INCONCLUSIVE"；个别指标（非 R）为 E 级时评分正常显示、附灰色"可信度 E"角标
 
 **辅助诊断指标摘要**（v5.0 新增，折叠区域）：
 - 好值率：95.2%（影响可信度）
@@ -2349,15 +2349,16 @@ INACTIVE（已停用，loop_ledger.is_active=false，不参与任何计算与展
 - 状态枚举与实现契约 v2.0、DDS v6.0 `loop_ledger.status` 字段保持一致
 - 历史命名 `ACTIVE/PAUSED/DECOMMISSIONED` 已于 v6.0 废弃，统一视为旧命名
 
-#### 8.2.2 回路评估状态（`kpi_snapshot_hourly.status`，v5.0 更新：可信度联动）
+#### 8.2.2 回路评估状态（`kpi_snapshot_hourly.status`，v6.1 更新：可信度联动对齐当前代码实现）
 ```
-正常计算 → SUCCESS（输出评分，标注可信度 A/B/C/D 等级）
-valid_rate < 0.20（可信度 E 级） → INCONCLUSIVE（不计算评分、不参与聚合、灰色虚线保留连线）
+正常计算 → SUCCESS（输出评分，标注可信度 A/B/C/D/E 等级；个别指标 E 级不熔断）
+无数据（空 Bundle / 取数失败） → INCONCLUSIVE（评分 NULL、不参与聚合）
+有效自控率 R 缺失或可信度 E 级 → INCONCLUSIVE（综合评分 None → 评分 NULL、不参与聚合）
 0.20 ≤ valid_rate < 0.60（可信度 D 级） → SUCCESS + 警告"数据有效率低，谨慎使用"
-部分字段缺失 → PARTIAL（黄色横幅）
+必需指标（好值率/自控率/平稳率）任一缺失 → PARTIAL（黄色横幅）
 ```
-- 可信度等级由 `valid_rate` 自动判定（对齐 §3.1.6 / §7.2.6 / §7.15）
-- 可信度 E 级强制 `status=INCONCLUSIVE`，评分数值留空显示"—"
+- 可信度等级由指标级 `valid_rate` 自动判定（对齐 §3.1.6 / §7.2.6 / §7.15）
+- 仅 R 为 E 级/缺失时强制 `status=INCONCLUSIVE`，评分数值留空显示"—"；个别指标（非 R）为 E 级时 status 仍为 SUCCESS 并参与聚合
 - 可信度 C/D 级评分正常展示，但附加角标提示
 
 #### 8.2.3 Action Tracker 处理状态（`action_tracker.action_status`，v6.0 修订：状态枚举统一为实现契约 v2.0 标准枚举）
@@ -2420,7 +2421,7 @@ PENDING/PROCESSING → CANCELLED（仅自定义任务可取消）
 ```
 - 标准任务（STANDARD）：系统每小时定时触发，不可取消，结果写入 `kpi_snapshot_hourly` 参与聚合
 - 自定义任务（CUSTOM）：用户按需触发，可取消，结果写入 `kpi_snapshot_custom` 不参与聚合
-- 任务结果均带可信度角标（对齐 §7.15），可信度 E 级结果标注 INCONCLUSIVE
+- 任务结果均带可信度角标（对齐 §7.15）；有效自控率 R 为 E 级/缺失的结果标注 INCONCLUSIVE，个别指标（非 R）为 E 级的结果正常展示并附灰色"可信度 E"角标
 
 ---
 

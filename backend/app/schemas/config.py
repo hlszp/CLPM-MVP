@@ -367,6 +367,91 @@ class ConfidenceThresholdSaveRequest(CamelModel):
     thresholds: list[ConfidenceThresholdItem] = Field(..., min_length=5, max_length=5)
 
 
+# ---------------------------------------------------------------------------
+# 8 类异常值检测参数配置（sys_config outlier_params.current）
+# 设计依据：算法说明 §3.4.3-3.4.4, PRD §5.5.2-5.5.3
+# ---------------------------------------------------------------------------
+
+# 回路物理控制类型枚举（流量/压力/温度/液位/成分，对齐 contracts.ControlType 值）
+OutlierControlType = Literal["FC", "PC", "TC", "LC", "CC"]
+
+# 8 类异常值检测开关键（对齐 thresholds.DETECTOR_KEYS）
+DetectorKey = Literal[
+    "nan",
+    "out_of_range",
+    "frozen",
+    "jump",
+    "spike",
+    "ts_anomaly",
+    "qc_bad",
+    "hf_noise",
+]
+
+
+class OutlierThresholdParams(CamelModel):
+    """单控制类型的异常值检测参数（全部可选，None 表示未覆盖→回落算法默认）.
+
+    Attributes:
+        base_sampling_freq: 基础采样率（秒）
+        frozen_window_points: 冻结检测窗口点数（≥2）
+        frozen_std_pct: 冻结标准差阈值（占量程百分比，0~1）
+        jump_threshold_pct: 跳变阈值（占量程百分比，0~1）
+        spike_threshold_pct: 尖峰阈值（占量程百分比，0~1）
+        noise_cutoff_hz: 噪声截止频率（Hz，>0）
+        min_consecutive_points: 连续有效最短段点数（≥2）
+    """
+
+    base_sampling_freq: int | None = Field(None, ge=1, le=3600)
+    frozen_window_points: int | None = Field(None, ge=2, le=10000)
+    frozen_std_pct: float | None = Field(None, ge=0, le=1)
+    jump_threshold_pct: float | None = Field(None, ge=0, le=1)
+    spike_threshold_pct: float | None = Field(None, ge=0, le=1)
+    noise_cutoff_hz: float | None = Field(None, gt=0, le=1000)
+    min_consecutive_points: int | None = Field(None, ge=2, le=100000)
+
+
+class OutlierThresholdViewItem(CamelModel):
+    """单控制类型阈值合并视图（GET 响应）.
+
+    Attributes:
+        control_type: 控制类型（FC/PC/TC/LC/CC）
+        params: 合并后的生效参数（默认值叠加覆盖项，全部非空）
+        overridden: 各参数是否被覆盖（camelCase 参数名 → true=sys_config 覆盖，false=算法默认）
+    """
+
+    control_type: OutlierControlType
+    params: OutlierThresholdParams
+    overridden: dict[str, bool] = Field(default_factory=dict)
+
+
+class OutlierParamsSchema(CamelModel):
+    """8 类异常值检测参数配置合并视图（GET 响应）.
+
+    Attributes:
+        thresholds: 5 个控制类型的合并视图
+        switches: 8 类检测开关生效值（key=检测键，value=是否启用）
+        updated_at: 最近更新时间（ISO 8601）
+        updated_by: 最近更新人
+    """
+
+    thresholds: list[OutlierThresholdViewItem] = Field(default_factory=list)
+    switches: dict[str, bool] = Field(default_factory=dict)
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class OutlierParamsSaveRequest(CamelModel):
+    """8 类异常值检测参数配置保存请求（PUT，部分覆盖）.
+
+    Attributes:
+        thresholds: 按控制类型的参数覆盖（全部可选，未覆盖的参数回落默认）
+        switches: 检测开关覆盖（未列出的检测键保持默认 true）
+    """
+
+    thresholds: dict[OutlierControlType, OutlierThresholdParams] = Field(default_factory=dict)
+    switches: dict[DetectorKey, bool] = Field(default_factory=dict)
+
+
 class VersionHistoryItem(CamelModel):
     """版本历史单项.
 
@@ -396,6 +481,7 @@ __all__ = [
     "ConfidenceThresholdSaveRequest",
     "ConfidenceThresholdSchema",
     "ControlType",
+    "DetectorKey",
     "DiagnosisConfigBatchResponse",
     "DiagnosisConfigBatchUpdateRequest",
     "DiagnosisConfigItem",
@@ -410,6 +496,11 @@ __all__ = [
     "MetricConfigItem",
     "MetricConfigUpdateItem",
     "MetricThresholdSchema",
+    "OutlierControlType",
+    "OutlierParamsSaveRequest",
+    "OutlierParamsSchema",
+    "OutlierThresholdParams",
+    "OutlierThresholdViewItem",
     "VersionHistoryItem",
     "VersionHistorySchema",
     "WeightTemplateItem",
