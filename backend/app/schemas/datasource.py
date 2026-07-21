@@ -22,7 +22,9 @@ class DataSourceConfigInfo(CamelModel):
         "lan", description="网络模式：lan 局域网直连 / wan 公网走 Tailscale"
     )
     historyApiUrl: str | None = Field(None, description="外部历史数据 API 地址")
-    historyApiToken: str | None = Field(None, description="外部历史数据 API 鉴权 Token")
+    historyApiToken: str | None = Field(
+        None, description="外部历史数据 API 鉴权 Token（打码返回，保留前后各 4 位）"
+    )
     historyApiTimeout: float = Field(30.0, description="外部历史数据 API 超时（秒）")
 
     # 实时数据源
@@ -37,7 +39,9 @@ class DataSourceConfigInfo(CamelModel):
     historyProviderActive: str = Field(
         ..., description="当前生效的历史数据 Provider：tdengine / remote_api"
     )
-    signalrSubscriberRunning: bool = Field(..., description="实时订阅器是否在运行")
+    signalrSubscriberRunning: bool = Field(
+        ..., description="实时订阅器真实运行状态（非配置镜像，启停变更需重启后端生效）"
+    )
 
     # tailscale 客户端可用性预检（容器内为 False）
     tailscaleAvailable: bool = Field(
@@ -50,7 +54,10 @@ class DataSourceConfigInfo(CamelModel):
 
 
 class DataSourceConfigUpdate(CamelModel):
-    """PUT /api/v1/datasource/config 请求体。所有字段可选，仅更新传入字段。"""
+    """PUT /api/v1/datasource/config 请求体。
+
+    更新语义：字段不传（None）＝保持不变；字符串字段传空串 "" ＝显式清空。
+    """
 
     # dataSourceType 已废弃：保留字段兼容旧前端，后端固定 remote_api
     dataSourceType: str | None = Field(
@@ -59,8 +66,13 @@ class DataSourceConfigUpdate(CamelModel):
     networkMode: Literal["lan", "wan"] | None = Field(
         None, description="网络模式：lan 局域网直连 / wan 公网走 Tailscale"
     )
-    historyApiUrl: str | None = Field(None, description="外部历史数据 API 地址")
-    historyApiToken: str | None = Field(None, description="外部历史数据 API 鉴权 Token")
+    historyApiUrl: str | None = Field(
+        None, description="外部历史数据 API 地址（不传=不变，空串=清空）"
+    )
+    historyApiToken: str | None = Field(
+        None,
+        description="外部历史数据 API 鉴权 Token（不传=不变，空串=清空，打码值回传=忽略）",
+    )
     historyApiTimeout: float | None = Field(None, description="外部历史数据 API 超时（秒）")
     signalrHubUrl: str | None = Field(None, description="实时数据 SignalR Hub URL")
     signalrEnabled: bool | None = Field(None, description="是否启用实时数据订阅")
