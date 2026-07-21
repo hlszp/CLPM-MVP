@@ -1078,6 +1078,8 @@ const formState = reactive({
   opOutputUpperLimit: undefined as number | undefined,
   /** v6.1：关联 DCS 型号 ID（NULL=使用本系统默认 MODE 映射） */
   dcsModelId: undefined as string | undefined,
+  /** 理想稳态时间（秒），留空按控制类型默认值 */
+  idealSettlingTime: undefined as number | undefined,
 });
 
 /**
@@ -1107,6 +1109,18 @@ const opTagRange = computed(() => {
 
 /** v6.1：是否使用默认限位（= OP Tag 量程） */
 const useDefaultOpLimits = ref(true);
+
+/** 理想稳态时间默认值（秒）：跟随回路类型（对齐算法 §4.5 控制类型默认值 FC/PC/TC/LC/CC） */
+const idealSettlingTimeDefault = computed(() => {
+  const map: Record<string, number> = {
+    ANALYSIS: 300,
+    FLOW: 30,
+    LEVEL: 600,
+    PRESSURE: 60,
+    TEMPERATURE: 180,
+  };
+  return map[formState.loopType ?? ''] ?? 120;
+});
 
 /** v6.1：OP Tag 是否已关联（决定限位字段是否可编辑） */
 const opTagAssociated = computed(() => {
@@ -1457,6 +1471,7 @@ function handleAdd() {
   formState.opOutputLowerLimit = undefined;
   formState.opOutputUpperLimit = undefined;
   formState.dcsModelId = undefined;
+  formState.idealSettlingTime = undefined;
   useDefaultOpLimits.value = true;
   loadDcsModels();
   activeTab.value = 'basic';
@@ -1504,6 +1519,9 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
     upper !== null && upper !== undefined ? Number(upper) : undefined;
   // v6.1：读取 DCS 型号关联（列表项可能携带 dcsModelId）
   formState.dcsModelId = (record as any).dcsModelId ?? undefined;
+  // 读取理想稳态时间（NULL=按控制类型默认值）
+  formState.idealSettlingTime =
+    (record as any).idealSettlingTime ?? undefined;
   useDefaultOpLimits.value =
     formState.opOutputLowerLimit === undefined &&
     formState.opOutputUpperLimit === undefined;
@@ -1530,6 +1548,9 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
         : undefined;
     // v6.1：详情加载后同步 DCS 型号关联（详情响应更权威）
     formState.dcsModelId = (detail.basicInfo as any).dcsModelId ?? undefined;
+    // 详情加载后同步理想稳态时间（详情响应更权威）
+    formState.idealSettlingTime =
+      detail.basicInfo.idealSettlingTime ?? undefined;
     useDefaultOpLimits.value =
       formState.opOutputLowerLimit === undefined &&
       formState.opOutputUpperLimit === undefined;
@@ -1727,6 +1748,8 @@ async function doSaveBasic() {
           : (formState.opOutputUpperLimit ?? null),
         // v6.1：DCS 型号关联（undefined=未修改，null=清空，string=设值）
         dcsModelId: formState.dcsModelId ?? null,
+        // 理想稳态时间（秒，null=按控制类型默认值）
+        idealSettlingTime: formState.idealSettlingTime ?? null,
       });
       message.success('回路更新成功');
     } else {
@@ -1754,6 +1777,8 @@ async function doSaveBasic() {
           : (formState.opOutputUpperLimit ?? null),
         // v6.1：DCS 型号关联
         dcsModelId: formState.dcsModelId ?? null,
+        // 理想稳态时间（秒，null=按控制类型默认值）
+        idealSettlingTime: formState.idealSettlingTime ?? null,
       });
       message.success('回路创建成功');
       editingLoop.value = {
@@ -2597,6 +2622,25 @@ watch(
                   </FormItem>
                 </div>
               </div>
+              <FormItem
+                name="idealSettlingTime"
+                label="理想稳态时间（秒）"
+                tooltip="回路级手动配置（最高优先级），用于快速率计算的理想稳态时间基准"
+              >
+                <InputNumber
+                  v-model:value="formState.idealSettlingTime"
+                  :min="1"
+                  :max="86400"
+                  :precision="1"
+                  :step="1"
+                  style="width: 100%"
+                  :placeholder="`留空默认 ${idealSettlingTimeDefault} 秒（跟随回路类型）`"
+                  :disabled="isViewMode"
+                />
+                <div class="mt-1 text-xs text-gray-400">
+                  留空按控制类型默认值：流量30/压力60/温度180/液位600/成分300，其他120
+                </div>
+              </FormItem>
               <FormItem name="isActive" label="启用状态">
                 <Switch
                   v-model:checked="formState.isActive"

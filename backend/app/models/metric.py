@@ -11,6 +11,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -173,4 +174,53 @@ class KpiSnapshotCustom(Base):
         Index("ix_kpi_snapshot_custom_task", "task_id"),
         Index("ix_kpi_snapshot_custom_loop_ts", "loop_id", "ts_start"),
         {"comment": "自定义评估任务快照（按需触发，不参与装置级聚合）"},
+    )
+
+
+class LoopConfidenceLatest(Base):
+    """回路最新一次可信度评估结果（每回路仅一条，随小时快照 UPSERT 覆盖更新）。
+
+    与 ``kpi_snapshot_hourly``（历史序列）互补：本表只保留"最新一次评估"，
+    供回路性能页可信度抽屉快速查询单回路当前可信度详情。
+
+    ``metrics`` JSONB 存储 12 个 KPI 子指标（3+1+8 体系）的计算值与各自可信度，
+    键为 DB 列名（snake_case），形如::
+
+        {"accuracy_rate": {"value": 93.35, "confidence": "A"}, ...}
+    """
+
+    __tablename__ = "loop_confidence_latest"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    loop_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("loop_ledger.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # 评估时间（快照写入时刻，naive UTC）
+    eval_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # 数据源时间区间
+    data_ts_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    data_ts_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    confidence_level: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    valid_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')",
+            name="ck_loop_confidence_latest_status",
+        ),
+        CheckConstraint(
+            "confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E')",
+            name="ck_loop_confidence_latest_confidence",
+        ),
+        Index("idx_loop_confidence_latest_loop_id", "loop_id", unique=True),
+        {"comment": "回路最新一次可信度评估结果（每回路一条，随小时快照覆盖更新）"},
     )

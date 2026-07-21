@@ -14,19 +14,23 @@
 - GET    /api/v1/loops/{id}/tags    — 获取回路 Tag 关联状态
 - PUT    /api/v1/loops/{id}/tags    — 批量更新 Tag 关联
 - GET    /api/v1/loops/{id}/monitor — 回路运行详情
+- GET    /api/v1/loops/{id}/confidence-latest — 回路最新一次可信度评估记录
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.models.metric import LoopConfidenceLatest
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.loop import (
+    LoopConfidenceLatestItem,
     LoopCreate,
     LoopDeleteResult,
     LoopImportResult,
@@ -141,6 +145,7 @@ async def create_loop_endpoint(
         op_output_lower_limit=body.opOutputLowerLimit,
         op_output_upper_limit=body.opOutputUpperLimit,
         dcs_model_id=body.dcsModelId,
+        ideal_settling_time=body.idealSettlingTime,
     )
     return success(data=data, message="创建成功")
 
@@ -332,6 +337,7 @@ async def update_loop_endpoint(
     _fs = body.model_fields_set
     op_output_lower_limit = body.opOutputLowerLimit if "opOutputLowerLimit" in _fs else None
     op_output_upper_limit = body.opOutputUpperLimit if "opOutputUpperLimit" in _fs else None
+    ideal_settling_time = body.idealSettlingTime if "idealSettlingTime" in _fs else None
     data = await update_loop(
         db=db,
         loop_id=loop_id,
@@ -349,9 +355,11 @@ async def update_loop_endpoint(
         op_output_lower_limit=op_output_lower_limit,
         op_output_upper_limit=op_output_upper_limit,
         dcs_model_id=body.dcsModelId,
+        ideal_settling_time=ideal_settling_time,
         _op_lower_set="opOutputLowerLimit" in body.model_fields_set,
         _op_upper_set="opOutputUpperLimit" in body.model_fields_set,
         _dcs_model_id_set="dcsModelId" in body.model_fields_set,
+        _ideal_settling_time_set="idealSettlingTime" in body.model_fields_set,
     )
     return success(data=data, message="更新成功")
 
@@ -433,6 +441,46 @@ async def get_loop_monitor_detail_endpoint(
     """回路运行详情（7 Tag 当前值、PID 参数、波形数据）。"""
     data = await get_loop_monitor_detail(db=db, loop_id=loop_id, trend_window=trendWindow)
     return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# Loop Confidence Latest（回路最新一次可信度评估记录）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{loop_id}/confidence-latest", response_model=ApiResponse[dict])
+async def get_loop_confidence_latest_endpoint(
+    loop_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取回路最新一次可信度评估记录（含 12 子指标值与各自可信度）。
+
+    无评估记录时返回 ``data=null``（HTTP 200，不抛 404），
+    前端据此展示"暂无评估记录"。
+    """
+    result = await db.execute(
+        select(LoopConfidenceLatest).where(LoopConfidenceLatest.loop_id == loop_id)
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
+        return success(data=None)
+    # 显式构造（CamelModel 的 from_attributes 按 camelCase 别名取属性，
+    # 无法直接 model_validate snake_case 属性的 ORM 对象）
+    item = LoopConfidenceLatestItem(
+        loop_id=record.loop_id,
+        eval_time=record.eval_time,
+        data_ts_start=record.data_ts_start,
+        data_ts_end=record.data_ts_end,
+        status=record.status,
+        score=float(record.score) if record.score is not None else None,
+        confidence_level=record.confidence_level,
+        valid_rate=record.valid_rate,
+        metrics=record.metrics or {},
+        algorithm_version=record.algorithm_version,
+        updated_at=record.updated_at,
+    )
+    return success(data=item.model_dump(by_alias=True, mode="json"))
 
 
 __all__ = ["router"]

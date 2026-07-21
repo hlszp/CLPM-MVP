@@ -1394,6 +1394,44 @@ class TestBuildConfigBundle:
         assert bundle.lineage.valid_rate == 1.0
 
 
+class TestBuildConfigBundleIdealSettlingTime:
+    """回路级手动理想稳态时间注入（loop_ledger.ideal_settling_time → CONFIG signals）。"""
+
+    def test_manual_value_injected_into_signals(self) -> None:
+        """ideal_settling_time > 0 时注入 signals['ideal_settling_time']。"""
+        bundle = _build_config_bundle("loop-1", ControlType.FLOW, 90.0)
+        assert bundle.data_block.signals["ideal_settling_time"] == [90.0]
+
+    def test_manual_value_drives_calculator_manual_branch(self) -> None:
+        """注入手动值时 IdealSettlingTimeCalculator 走 manual 分支（最高优先级）。"""
+        from app.services.metric_calculator.ideal_settling_time import (
+            IdealSettlingTimeCalculator,
+        )
+
+        bundle = _build_config_bundle("loop-1", ControlType.FLOW, 90.0)
+        result = IdealSettlingTimeCalculator().calculate(bundle)
+        assert result.value == 90.0
+        assert result.details["source"] == "manual"
+
+    def test_no_manual_value_falls_back_to_type_default(self) -> None:
+        """未传手动值时不注入信号，calculator 走控制类型默认值分支（FC=30）。"""
+        from app.services.metric_calculator.ideal_settling_time import (
+            IdealSettlingTimeCalculator,
+        )
+
+        bundle = _build_config_bundle("loop-1", ControlType.FLOW)
+        assert "ideal_settling_time" not in bundle.data_block.signals
+        result = IdealSettlingTimeCalculator().calculate(bundle)
+        assert result.value == 30.0
+        assert result.details["source"] == "default"
+
+    def test_non_positive_manual_value_not_injected(self) -> None:
+        """ideal_settling_time <= 0 时不注入信号（回退默认值分支）。"""
+        for bad in (0.0, -10.0):
+            bundle = _build_config_bundle("loop-1", ControlType.FLOW, bad)
+            assert "ideal_settling_time" not in bundle.data_block.signals
+
+
 class TestBuildWeightsMap:
     """测试 _build_weights_map() 权重映射。"""
 
@@ -2354,3 +2392,164 @@ class TestBackfillWindowBatchCancellation:
         fake_redis.hget.assert_not_called()
         assert calculate.await_count == 2
         assert result["success"] == 2
+
+
+# ===========================================================================
+# loop_confidence_latest 同步写入测试
+# ===========================================================================
+
+
+class TestExtractMetricsDetail:
+    """_extract_metrics_detail — 12 子指标值+可信度提取（metrics JSONB 产物）."""
+
+    def test_extracts_values_and_confidence(self) -> None:
+        from app.tasks.kpi_calc import _extract_metrics_detail
+
+        metric_results = {
+            "accuracy_rate": _make_metric_result("accuracy_rate", 93.35, "A"),
+            "stability_rate": _make_metric_result("stability_rate", 88.0, "B"),
+            "fast_rate": _make_metric_result("fast_rate", None, "E"),
+            "composite_score": _make_metric_result("composite_score", 90.0, "A"),
+        }
+
+        detail = _extract_metrics_detail(metric_results)
+
+        # composite_score 不进入子指标 JSONB
+        assert "composite_score" not in detail
+        # Calculator 代码 stability_rate → DB 列名 steady_rate
+        assert detail["steady_rate"] == {"value": 88.0, "confidence": "B"}
+        assert detail["accuracy_rate"] == {"value": 93.35, "confidence": "A"}
+        # None 值保留 None（INCONCLUSIVE 指标）
+        assert detail["fast_rate"] == {"value": None, "confidence": "E"}
+
+    def test_empty_metric_results_returns_empty_dict(self) -> None:
+        from app.tasks.kpi_calc import _extract_metrics_detail
+
+        assert _extract_metrics_detail({}) == {}
+
+
+class TestPersistSnapshotConfidenceLatest:
+    """_persist_snapshot 小时路径同步 UPSERT loop_confidence_latest."""
+
+    @staticmethod
+    def _confidence_stmt(db: AsyncMock, call_index: int):
+        return db.execute.await_args_list[call_index].args[0]
+
+    @pytest.mark.asyncio
+    async def test_hourly_path_upserts_confidence_latest(self) -> None:
+        """写 kpi_snapshot_hourly 后同步 UPSERT loop_confidence_latest（按 loop_id 冲突覆盖）。"""
+        from sqlalchemy.dialects import postgresql
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+
+        ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
+        ts_end = datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC)
+        metrics_detail = {"accuracy_rate": {"value": 93.35, "confidence": "A"}}
+
+        result = await _persist_snapshot(
+            db=db,
+            loop_id="loop-1",
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="SUCCESS",
+            score=Decimal("90.00"),
+            valid_rate=Decimal("0.9500"),
+            confidence_level="A",
+            algorithm_version=ALGORITHM_VERSION,
+            metrics_detail=metrics_detail,
+        )
+
+        assert result["status"] == "SUCCESS"
+        # 两次 execute：kpi_snapshot_hourly UPSERT + loop_confidence_latest UPSERT
+        assert db.execute.await_count == 2
+
+        stmt = self._confidence_stmt(db, 1)
+        assert stmt.table.name == "loop_confidence_latest"
+        compiled = str(stmt.compile(dialect=postgresql.dialect()))
+        assert "ON CONFLICT (loop_id) DO UPDATE" in compiled
+
+        set_values = _extract_upsert_set_values(stmt)
+        assert set_values["status"] == "SUCCESS"
+        assert set_values["score"] == Decimal("90.00")
+        assert set_values["valid_rate"] == 0.95  # Decimal → float
+        assert set_values["confidence_level"] == "A"
+        assert set_values["metrics"] == metrics_detail
+        assert set_values["data_ts_start"] == ts_start
+        assert set_values["data_ts_end"] == ts_end
+        assert set_values["algorithm_version"] == ALGORITHM_VERSION
+        assert "eval_time" in set_values
+        assert "updated_at" in set_values
+        # id / loop_id 不参与冲突更新
+        assert "id" not in set_values
+        assert "loop_id" not in set_values
+
+    @pytest.mark.asyncio
+    async def test_second_write_carries_latest_values(self) -> None:
+        """两次写同回路：第二次 UPSERT 的 set_ 为最新值（冲突即覆盖为最新记录）。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+
+        kwargs = {
+            "db": db,
+            "loop_id": "loop-1",
+            "ts_start": datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC),
+            "ts_end": datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC),
+            "status": "SUCCESS",
+            "score": Decimal("80.00"),
+            "confidence_level": "B",
+            "metrics_detail": {"accuracy_rate": {"value": 80.0, "confidence": "B"}},
+        }
+        await _persist_snapshot(**kwargs)
+        kwargs["score"] = Decimal("95.00")
+        kwargs["confidence_level"] = "A"
+        kwargs["metrics_detail"] = {"accuracy_rate": {"value": 95.0, "confidence": "A"}}
+        await _persist_snapshot(**kwargs)
+
+        # 每次 2 条 execute（主快照 + 最新表），共 4 条；最后一次为最新值
+        assert db.execute.await_count == 4
+        stmt = self._confidence_stmt(db, 3)
+        assert stmt.table.name == "loop_confidence_latest"
+        set_values = _extract_upsert_set_values(stmt)
+        assert set_values["score"] == Decimal("95.00")
+        assert set_values["confidence_level"] == "A"
+        assert set_values["metrics"] == {"accuracy_rate": {"value": 95.0, "confidence": "A"}}
+
+    @pytest.mark.asyncio
+    async def test_confidence_latest_failure_does_not_affect_snapshot(self) -> None:
+        """loop_confidence_latest 写库失败仅记日志，主快照结果正常返回。"""
+        ok_result = _make_returning_id_result_mock("snap-1")
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[ok_result, RuntimeError("boom")])
+
+        result = await _persist_snapshot(
+            db=db,
+            loop_id="loop-1",
+            ts_start=datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC),
+            ts_end=datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC),
+            status="SUCCESS",
+            score=Decimal("90.00"),
+        )
+
+        assert result["snapshotId"] == "snap-1"
+        assert db.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_custom_path_skips_confidence_latest(self) -> None:
+        """自定义任务快照（custom_task_id 非 None）不写 loop_confidence_latest。"""
+        db = AsyncMock()
+        # _save_custom_snapshot 走 select-then-add：select 返回 None → db.add 新对象
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+
+        await _persist_snapshot(
+            db=db,
+            custom_task_id="task-1",
+            loop_id="loop-1",
+            ts_start=datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC),
+            ts_end=datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC),
+            status="SUCCESS",
+            metrics_detail={"accuracy_rate": {"value": 1.0, "confidence": "A"}},
+        )
+
+        # 仅 _save_custom_snapshot 的一次 select，无 loop_confidence_latest UPSERT
+        assert db.execute.await_count == 1

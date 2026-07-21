@@ -15,7 +15,12 @@ from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
-from app.models.metric import KpiSnapshotCustom, KpiSnapshotHourly, MetricConfig
+from app.models.metric import (
+    KpiSnapshotCustom,
+    KpiSnapshotHourly,
+    LoopConfidenceLatest,
+    MetricConfig,
+)
 from app.models.metric_data_requirement import ClpmMetricDataRequirement
 from app.models.mode_definition import ModeDefinition
 from app.models.node_kpi import (
@@ -49,6 +54,7 @@ __all__ = [
     "EngineRule",
     "KpiSnapshotHourly",
     "KpiSnapshotCustom",
+    "LoopConfidenceLatest",
     "ClpmMetricDataRequirement",
     "DiagnosisTag",
     "UnitKpiSummary",

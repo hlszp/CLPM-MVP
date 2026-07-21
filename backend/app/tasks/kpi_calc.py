@@ -40,7 +40,12 @@ from app.contracts.data_types import (
     TimeWindow,
 )
 from app.models.loop import LoopLedger, LoopTagMapping
-from app.models.metric import KpiSnapshotCustom, KpiSnapshotHourly, MetricConfig
+from app.models.metric import (
+    KpiSnapshotCustom,
+    KpiSnapshotHourly,
+    LoopConfidenceLatest,
+    MetricConfig,
+)
 from app.models.tag import TagRegistry
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.metric_calculator import get_calculator
@@ -1061,8 +1066,8 @@ async def _calculate_loop_kpi(
             custom_task_id=custom_task_id,
         )
 
-    # 构造虚拟 CONFIG bundle（提供 control_type 信号给 ideal_settling_time 计算器）
-    config_bundle = _build_config_bundle(str(loop.id), control_type)
+    # 构造虚拟 CONFIG bundle（提供 control_type / 手动理想稳态时间信号给计算器）
+    config_bundle = _build_config_bundle(str(loop.id), control_type, loop.ideal_settling_time)
 
     # 构造权重映射（MetricConfig.weight > LoopTypeWeight > None）
     score_type = infer_score_type(loop.loop_type)
@@ -1070,6 +1075,9 @@ async def _calculate_loop_kpi(
 
     # 三层计算：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）
     metric_results, composite_result = _compute_kpis_three_layer(bundles, config_bundle, weights)
+
+    # 12 子指标值+可信度（随 loop_confidence_latest 存储）
+    metrics_detail = _extract_metrics_detail(metric_results)
 
     # 综合评分为 None（R 可信度 E 级）→ INCONCLUSIVE
     if composite_result.value is None:
@@ -1081,6 +1089,7 @@ async def _calculate_loop_kpi(
             ts_end=ts_end,
             status="INCONCLUSIVE",
             custom_task_id=custom_task_id,
+            metrics_detail=metrics_detail,
         )
 
     # 提取 KPI 值（Calculator 代码 → DB 列名）
@@ -1102,6 +1111,7 @@ async def _calculate_loop_kpi(
         ts_end=ts_end,
         status=status,
         custom_task_id=custom_task_id,
+        metrics_detail=metrics_detail,
         score=_quantize(Decimal(str(composite_result.value)))
         if composite_result.value is not None
         else None,
@@ -1149,20 +1159,38 @@ def _loop_type_to_control_type(loop_type: str | None) -> ControlType:
     return mapping.get(loop_type.upper(), ControlType.FLOW)
 
 
-def _build_config_bundle(loop_id: str, control_type: ControlType) -> MetricDataBundle:
+def _build_config_bundle(
+    loop_id: str,
+    control_type: ControlType,
+    ideal_settling_time: float | None = None,
+) -> MetricDataBundle:
     """构造虚拟 CONFIG bundle（提供 control_type 信号给 ideal_settling_time 计算器）。
 
     CONFIG bundle 不查询数据库，直接构造一个 valid_rate=1.0 的 DataBlock，
     signals 中包含 control_type 信号，供 IdealSettlingTimeCalculator 读取。
+
+    Args:
+        loop_id: 回路 ID
+        control_type: 控制类型（FC/PC/TC/LC/CC）
+        ideal_settling_time: 回路级手动配置的理想稳态时间（秒，loop_ledger.ideal_settling_time）。
+            非 None 且 > 0 时注入 signals，calculator 走 manual 分支（最高优先级）
     """
     ts = datetime.now(UTC)
+    signals: dict[str, list] = {"control_type": [control_type.value]}
+    if ideal_settling_time is not None:
+        try:
+            manual_ist = float(ideal_settling_time)
+        except (TypeError, ValueError):
+            manual_ist = 0.0
+        if manual_ist > 0:
+            signals["ideal_settling_time"] = [manual_ist]
     data_block = DataBlock(
         data_block_id=f"config_{loop_id}",
         loop_id=loop_id,
         tag_group=TagGroup.CONFIG.value,
         sampling_freq="config",
         timestamps=[ts],
-        signals={"control_type": [control_type.value]},
+        signals=signals,
         validity={},
         quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
         point_count=1,
@@ -1338,6 +1366,32 @@ def _compute_kpis_three_layer(
     metric_results["composite_score"] = composite_result
 
     return metric_results, composite_result
+
+
+def _extract_metrics_detail(
+    metric_results: dict[str, MetricResult],
+) -> dict[str, dict]:
+    """提取 12 子指标的计算值与各自可信度（loop_confidence_latest.metrics JSONB）。
+
+    键为 DB 列名（snake_case），形如::
+
+        {"accuracy_rate": {"value": 93.35, "confidence": "A"}, ...}
+
+    - 跳过 composite_score（综合评分单独存储于 score / confidence_level 列）
+    - value 为 None 时保留 None（该指标 INCONCLUSIVE）
+    """
+    detail: dict[str, dict] = {}
+
+    for calc_code, result in metric_results.items():
+        if calc_code == "composite_score":
+            continue
+        db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+        detail[db_code] = {
+            "value": float(result.value) if result.value is not None else None,
+            "confidence": result.confidence_level,
+        }
+
+    return detail
 
 
 def _extract_kpi_values(
@@ -1807,6 +1861,54 @@ async def _save_snapshot(
     }
 
 
+async def _save_confidence_latest(
+    db,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    status: str,
+    score: Decimal | None = None,
+    confidence_level: str | None = None,
+    valid_rate: Decimal | float | None = None,
+    metrics: dict | None = None,
+    algorithm_version: str | None = None,
+) -> None:
+    """UPSERT 写入 loop_confidence_latest（按 loop_id 冲突覆盖全部字段）。
+
+    每回路仅保留"最新一次评估"记录：评估时间取写入时刻（naive UTC），
+    数据源时间区间取快照窗口。metrics 为 12 子指标 JSONB
+    （``_extract_metrics_detail`` 产物），无子指标数据时存空对象。
+    """
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    insert_values = {
+        "id": str(uuid4()),
+        "loop_id": loop_id,
+        "eval_time": now,
+        "data_ts_start": ts_start,
+        "data_ts_end": ts_end,
+        "status": status,
+        "score": score,
+        "confidence_level": confidence_level,
+        "valid_rate": float(valid_rate) if valid_rate is not None else None,
+        "metrics": metrics if metrics is not None else {},
+        "algorithm_version": algorithm_version,
+        "updated_at": now,
+    }
+
+    update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id")}
+
+    stmt = (
+        pg_insert(LoopConfidenceLatest)
+        .values(**insert_values)
+        .on_conflict_do_update(
+            index_elements=["loop_id"],
+            set_=update_cols,
+        )
+    )
+    await db.execute(stmt)
+
+
 async def _save_custom_snapshot(
     db,
     task_id: str,
@@ -1924,11 +2026,17 @@ async def _persist_snapshot(
 ) -> dict:
     """统一快照持久化入口（根据 custom_task_id 分发到对应表）.
 
-    - ``custom_task_id=None`` → 写入 ``kpi_snapshot_hourly``（标准小时快照）
-    - ``custom_task_id`` 非 None → 写入 ``kpi_snapshot_custom``（自定义任务快照）
+    - ``custom_task_id=None`` → 写入 ``kpi_snapshot_hourly``（标准小时快照），
+      并同步 UPSERT ``loop_confidence_latest``（每回路最新一条可信度记录）
+    - ``custom_task_id`` 非 None → 写入 ``kpi_snapshot_custom``（自定义任务快照，
+      不更新 loop_confidence_latest）
 
-    所有 kwargs 透传给对应的 _save_* 函数（KPI 值 + 7 个数据血缘字段）。
+    ``metrics_detail`` kwarg（12 子指标值+可信度，``_extract_metrics_detail``
+    产物）仅用于 loop_confidence_latest，不透传给 _save_* 函数；其余 kwargs
+    透传（KPI 值 + 7 个数据血缘字段）。
+    loop_confidence_latest 写入失败仅记日志，不影响主快照结果。
     """
+    metrics_detail = kwargs.pop("metrics_detail", None)
     if custom_task_id is not None:
         return await _save_custom_snapshot(
             db=db,
@@ -1939,7 +2047,7 @@ async def _persist_snapshot(
             status=status,
             **kwargs,
         )
-    return await _save_snapshot(
+    result = await _save_snapshot(
         db=db,
         loop_id=loop_id,
         ts_start=ts_start,
@@ -1947,6 +2055,26 @@ async def _persist_snapshot(
         status=status,
         **kwargs,
     )
+    try:
+        await _save_confidence_latest(
+            db=db,
+            loop_id=loop_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status=status,
+            score=kwargs.get("score"),
+            confidence_level=kwargs.get("confidence_level"),
+            valid_rate=kwargs.get("valid_rate"),
+            metrics=metrics_detail,
+            algorithm_version=kwargs.get("algorithm_version"),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "loop_confidence_latest 写入失败（回路 %s），主快照不受影响",
+            loop_id,
+            exc_info=True,
+        )
+    return result
 
 
 __all__ = [
