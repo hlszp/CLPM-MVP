@@ -149,7 +149,7 @@ AAS Integration Service 定期从 AAS 同步所有 OPC Tag 位号信息，写入
 > 1. `formula` 字段标注为**废弃**（deprecated）：v5.0 起 12 项指标的算法公式已按 GB/T 44693.2-2024 与《关键算法设计说明 v2.0》固化为独立函数模块（详见 FDS §5.3.1.3），不再支持用户自定义公式覆盖。底层表保留该字段以兼容历史数据，但不再开放 API 与 UI 入口。
 > 2. `control_type` 字段标注为**迁移至 `loop_ledger`**：因控制类型是回路属性而非指标属性，同一套权重模板适用于所有回路，仅按回路控制类型套用。底层表保留该字段以兼容历史数据，但新写入应使用 `loop_ledger.control_type`。
 > 3. 新增 `grading_thresholds` 字段（JSONB）：5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR），国标默认值详见 FDS §5.3.7.1，可在"权重配置管理"页面手工配置覆盖。
-> 4. `weight` 字段语义调整：按控制类型分 4 套模板（STABLE/SLOW/FAST/LOGIC），仅在 3 项核心指标 (A/F/S) 上配置；权重总和须为 1.0（即 100%）；8 项辅助诊断指标不参与评分，权重置 NULL。
+> 4. `weight` 字段语义调整 [R2 口径，2026-07-22]：`metric_config.weight` 为唯一用户入口（按 `metric_code` 单值存储），仅在 3 项核心指标 (A/F/S) 上配置；权重总和须为 1.0（即 100%）；8 项辅助诊断指标不参与评分，权重置 NULL。4 类控制类型模板（`loop_type_weight` 表）降级为出厂默认/兜底，仅当 `metric_config.weight` 缺失时按回路 `control_type` 回退取值。
 
 | 字段 | 类型 | 说明 | 约束 |
 |---|---|---|---|
@@ -157,7 +157,7 @@ AAS Integration Service 定期从 AAS 同步所有 OPC Tag 位号信息，写入
 | metric_code | VARCHAR(50) | 指标代码: `GOOD_VALUE_RATE`, `AUTO_MODE_RATE`, `STEADY_RATE`, `ACCURACY_RATE`, `OSCILLATION_RATE`, `SATURATION_RATE`, `FAST_RATE`, `EFFECTIVE_AUTO_RATE`, `STICTION_INDEX`, `OUTPUT_TRIP_INDEX`, `SETTLING_TIME`, `IDEAL_SETTLING_TIME` | UNIQUE, NOT NULL |
 | metric_name | VARCHAR(100) | 指标名称 (如: 好值率) | NOT NULL |
 | formula | TEXT | ~~计算公式（已废弃）~~ [v4.1 标注废弃] 12 项指标算法已固化为独立函数模块（FDS §5.3.1.3），不再支持用户自定义公式。字段保留以兼容历史数据，不开放 API/UI | |
-| weight | DECIMAL(5,2) | 权重 (3 项核心指标 A/F/S 权重，按 control_type 分 4 套模板；总和须为 1.0；辅助诊断指标置 NULL) | |
+| weight | DECIMAL(5,2) | 权重 (3 项核心指标 A/F/S 权重，`metric_config.weight` 唯一用户入口；4 类模板 `loop_type_weight` 为出厂默认兜底，R2 口径；总和须为 1.0；辅助诊断指标置 NULL) | |
 | threshold | JSONB | 阈值对象 `{"min": number, "max": number, "alert": number}`，对应最小值/最大值/告警阈值，用于触发诊断与告警 | |
 | control_type | VARCHAR(20) | ~~控制类型（已迁移至 `loop_ledger.control_type`）~~ [v4.1 标注迁移] 字段保留以兼容历史数据，新写入应使用 `loop_ledger.control_type` | DEFAULT 'STABLE' |
 | grading_thresholds | JSONB | 性能定级 5 级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR），国标默认值详见 FDS §5.3.7.1，可在权重配置管理页面手工配置覆盖 [v4.1 新增] | |

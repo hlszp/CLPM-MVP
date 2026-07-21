@@ -1,10 +1,10 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline  
-**当前版本**：v2.1
-**发布日期**：2026-07-17
+**当前版本**：v2.0
+**发布日期**：2026-07-22
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐  
-**v2.1 变更摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态
+**v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
 
 ## 1. 定位
 
@@ -104,6 +104,8 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | EXPERT | 可查看诊断与整定相关页面，可参与异常跟踪和专家建议。 |
 | SPONSOR | 只看工作台、性能汇总、诊断统计等汇总视图；不可进入单回路诊断详情、波形证据或异常跟踪编辑。 |
 
+> **数据管理权限口径（D3，2026-07-21 对齐）**：历史数据导入（`/api/v1/loops/data-import/*`）与删除操作维持现状——允许 ADMIN / IC_ENGINEER 角色执行导入与删除；Tag 编辑/导入（D2）同口径。当前权限矩阵尚未在代码层全量落地角色门控，标注为"待统一完善"，后续随回路管理整改阶段 6/7 一并收敛。
+
 ## 6. 状态机契约
 
 | 对象 | 标准枚举 | 中文显示 |
@@ -150,10 +152,12 @@ P = (A·a + F·f + S·s) / (a + f + s) × R
 - `A` = accuracy_rate（准确率）
 - `F` = fast_rate（快速响应率）
 - `S` = steady_rate / stability_rate（平稳率）
-- `a / f / s` = 类型权重（来自 4 类权重模板）
+- `a / f / s` = 核心指标权重（R2 口径：`metric_config.weight` 为唯一用户入口；4 类权重模板 `loop_type_weight` 为出厂默认兜底。优先级链 `MetricConfig.weight` > `LoopTypeWeight` > `None`）
 - `R` = effective_auto_rate（有效自控率，折扣因子）
 
-### 7.3 4 类权重模板
+### 7.3 4 类权重模板（出厂默认 / 兜底，R2 口径）
+
+> **R2 权重口径裁决（2026-07-22）**：`metric_config.weight`（权重配置管理页面）为唯一用户入口；以下 4 类模板降级为出厂默认 / 兜底回退——仅当 `metric_config` 中 3 项核心指标权重缺失时按回路 `control_type` 回退取值。
 
 | 模板 | 适用回路类型 | 权重倾向 |
 |---|---|---|
@@ -253,9 +257,9 @@ PRD 对外合规口径仍强调 6 大核心 KPI（好值率、自控率、平稳
 | 综合评分公式 | 未声明 | `P = (A·a + F·f + S·s)/(a+f+s) × R` | FDS v6.0 |
 | 4 类权重模板 | 未声明 | STABLE / SLOW / FAST / LOGIC | `endpoints/weight_config.py` |
 | 5 级性能定级 | 未声明 | EXCELLENT / GOOD / FAIR / WARNING / POOR | `endpoints/grading_config.py` |
-| ORM 表清单 | 未声明 | v2.0 为 26 张；v2.1 按当前代码更新为 31 张（见 §10） | `backend/app/models/` |
+| ORM 表清单 | 未声明 | v2.0 按当前代码更新为 31 张（见 §10） | `backend/app/models/` |
 | 状态机契约 | 已统一 | 与 v1.0 一致，无变更 | — |
-| 前端 IA | v2.0 的旧路由清单 | v2.1 对齐当前路由模块，聚合性能与诊断页面 | `frontend/apps/web-antd/src/router/routes/modules/` |
+| 前端 IA | v1.0 的旧路由清单 | v2.0 对齐当前路由模块，聚合性能与诊断页面 | `frontend/apps/web-antd/src/router/routes/modules/` |
 | 新增 API 领域 | 未登记 | 补充 datasource、dcs、confidence-thresholds、loops/data-import | `backend/app/main.py` |
 | 诊断状态机 | RESOLVED 统一视为旧命名 | 区分 Diagnosis Tag 与 Action Tracker 两套枚举 | `models/diagnosis.py`、`models/tracker.py` |
 | A/B 对比 | 作为已存在能力列出 | 当前 API 返回 501，标记 P1 未实现 | `endpoints/diagnosis.py` |
