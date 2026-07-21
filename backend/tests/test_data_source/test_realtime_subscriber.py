@@ -352,6 +352,33 @@ def _gap_settings(mock_settings) -> None:
     mock_settings.GAP_BACKFILL_ENABLED = True
     mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 60
     mock_settings.GAP_BACKFILL_MAX_HOURS = 24
+    mock_settings.GAP_BACKFILL_RETRY_BASE_SECONDS = 300
+    mock_settings.GAP_BACKFILL_RETRY_MAX_SECONDS = 1800
+
+
+def _mock_loop_db(loop_ids: list[str]) -> AsyncMock:
+    """构造返回指定回路 ID 列表的 mock AsyncSessionLocal 上下文."""
+    mock_result = MagicMock()
+    mock_result.all.return_value = [(lid,) for lid in loop_ids]
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(return_value=mock_result)
+    mock_session_ctx = AsyncMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+    return mock_session_ctx
+
+
+async def _cancel_retry_task(sub: RealtimeSubscriber) -> None:
+    """取消补数重试定时器，避免 300s 睡眠任务泄漏到事件循环 teardown."""
+    import asyncio
+
+    task = sub._backfill_retry_task
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 @pytest.mark.asyncio
@@ -540,8 +567,10 @@ async def test_gap_backfill_dedup_while_running():
 
 @pytest.mark.asyncio
 async def test_run_gap_backfill_calls_import_with_skip_strategy():
-    """补数执行：调用 import_history_data（skip + trigger_backfill）并推进 checkpoint."""
+    """补数成功：import(skip+trigger_backfill)、任务登记 auto-backfill、checkpoint 推进."""
     import time as _time
+
+    from app.schemas.task import TaskStatus, TaskType
 
     fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
@@ -549,24 +578,21 @@ async def test_run_gap_backfill_calls_import_with_skip_strategy():
     gap_end = _time.time() - 2
     sub._last_data_at = gap_start
 
-    mock_result = MagicMock()
-    mock_result.all.return_value = [("loop-1",), ("loop-2",)]
-    mock_db = AsyncMock()
-    mock_db.execute = AsyncMock(return_value=mock_result)
-    mock_session_ctx = AsyncMock()
-    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
-    mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
-
     with (
         patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
         patch(
             "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
-            return_value=mock_session_ctx,
+            return_value=_mock_loop_db(["loop-1", "loop-2"]),
         ),
         patch(
             "app.services.data_import.import_history_data",
             new=AsyncMock(return_value={"total": 2, "succeeded": 2, "failed": 0, "errors": []}),
         ) as mock_import,
+        patch(
+            "app.services.task_tracker.create_task",
+            new=AsyncMock(return_value="task-1"),
+        ) as mock_create,
+        patch("app.services.task_tracker.update_status", new=AsyncMock()) as mock_update,
     ):
         await sub._run_gap_backfill(gap_start, gap_end)
 
@@ -578,11 +604,27 @@ async def test_run_gap_backfill_calls_import_with_skip_strategy():
     assert loop_ids == ["loop-1", "loop-2"]
     # checkpoint 推进到窗口末端
     assert sub._last_data_at == gap_end
+    # 任务登记：BACKFILL + auto-backfill 来源标记 + 系统创建
+    mock_create.assert_awaited_once()
+    create_kwargs = mock_create.await_args.kwargs
+    assert create_kwargs["task_type"] == TaskType.BACKFILL
+    assert create_kwargs["triggered_by"] == "auto-backfill"
+    assert create_kwargs["created_by"] == "system"
+    assert create_kwargs["loops_total"] == 2
+    # 状态流转：RUNNING → SUCCESS
+    statuses = [c.args[1] for c in mock_update.await_args_list]
+    assert statuses == [TaskStatus.RUNNING, TaskStatus.SUCCESS]
+    success_call = mock_update.await_args_list[-1]
+    assert success_call.kwargs["progress"] == 1.0
+    assert success_call.kwargs["loops_done"] == 2
+    # 全部成功，不安排重试
+    assert sub._backfill_retry_task is None
+    assert sub._backfill_retry_count == 0
 
 
 @pytest.mark.asyncio
 async def test_run_gap_backfill_error_does_not_raise():
-    """补数异常被吞掉（记日志），不抛出、checkpoint 不推进."""
+    """补数异常被吞掉（记日志），不抛出、checkpoint 不推进、安排重试."""
     import time as _time
 
     fake_redis = _FakeRedis()
@@ -597,7 +639,234 @@ async def test_run_gap_backfill_error_does_not_raise():
             "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
             side_effect=Exception("DB error"),
         ),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch("app.services.task_tracker.update_status", new=AsyncMock()),
+        patch("app.services.alerting.send_alert", new=AsyncMock()) as mock_alert,
     ):
+        _gap_settings(mock_settings)
         await sub._run_gap_backfill(gap_start, gap_end)  # 不应抛出
+        # 重试定时器已安排（连接在线也生效），测试后取消避免泄漏
+        assert sub._backfill_retry_task is not None
+        assert sub._backfill_retry_count == 1
+        assert sub._retry_window_start == gap_start
+        await _cancel_retry_task(sub)
 
     assert sub._last_data_at == gap_start
+    mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_gap_backfill_partial_failure_keeps_checkpoint():
+    """部分失败：checkpoint 不推进，任务记 FAILED 并告警，安排延迟重试."""
+    import time as _time
+
+    from app.schemas.task import TaskStatus, TaskType
+
+    fake_redis = _FakeRedis()
+    sub = RealtimeSubscriber()
+    gap_start = _time.time() - 600
+    gap_end = _time.time() - 2
+    sub._last_data_at = gap_start
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch(
+            "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+            return_value=_mock_loop_db(["loop-1", "loop-2"]),
+        ),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch(
+            "app.services.data_import.import_history_data",
+            new=AsyncMock(
+                return_value={
+                    "total": 2,
+                    "succeeded": 1,
+                    "failed": 1,
+                    "errors": ["loop-2: HTTP 504"],
+                }
+            ),
+        ),
+        patch(
+            "app.services.task_tracker.create_task",
+            new=AsyncMock(return_value="task-1"),
+        ) as mock_create,
+        patch("app.services.task_tracker.update_status", new=AsyncMock()) as mock_update,
+        patch("app.services.alerting.send_alert", new=AsyncMock()) as mock_alert,
+    ):
+        _gap_settings(mock_settings)
+        await sub._run_gap_backfill(gap_start, gap_end)
+        retry_task = sub._backfill_retry_task
+        await _cancel_retry_task(sub)
+
+    # checkpoint 不推进，缺口保留待重试
+    assert sub._last_data_at == gap_start
+    # 任务登记仍带 auto-backfill 来源标记
+    assert mock_create.await_args.kwargs["task_type"] == TaskType.BACKFILL
+    assert mock_create.await_args.kwargs["triggered_by"] == "auto-backfill"
+    # 状态流转：RUNNING → FAILED（含失败摘要与部分进度）
+    statuses = [c.args[1] for c in mock_update.await_args_list]
+    assert statuses == [TaskStatus.RUNNING, TaskStatus.FAILED]
+    failed_call = mock_update.await_args_list[-1]
+    assert failed_call.kwargs["loops_done"] == 1
+    assert failed_call.kwargs["progress"] == 0.5
+    assert "1/2" in failed_call.kwargs["error_message"]
+    # 告警已发送
+    mock_alert.assert_awaited_once()
+    assert "部分失败" in mock_alert.await_args.args[0]
+    # 重试已安排（窗口起点为失败缺口起点）
+    assert retry_task is not None
+    assert sub._backfill_retry_count == 1
+    assert sub._retry_window_start == gap_start
+
+
+# ---------------------------------------------------------------------------
+# 补数失败重试（指数退避定时器）测试
+# ---------------------------------------------------------------------------
+
+
+def test_backfill_retry_delay_exponential_backoff():
+    """退避间隔：base 起步指数翻倍，封顶 cap（5min 起步、30min 上限语义）."""
+    from app.services.data_source.realtime_subscriber import backfill_retry_delay
+
+    assert backfill_retry_delay(1, base=300, cap=1800) == 300
+    assert backfill_retry_delay(2, base=300, cap=1800) == 600
+    assert backfill_retry_delay(3, base=300, cap=1800) == 1200
+    assert backfill_retry_delay(4, base=300, cap=1800) == 1800  # 封顶
+    assert backfill_retry_delay(10, base=300, cap=1800) == 1800  # 持续封顶
+
+
+@pytest.mark.asyncio
+async def test_schedule_backfill_retry_recreates_timer_and_keeps_earliest_window():
+    """多次失败：定时器取消重建（退避按最新次数），重试窗口起点保持最早."""
+    import asyncio
+
+    sub = RealtimeSubscriber()
+    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+        _gap_settings(mock_settings)
+
+        sub._schedule_backfill_retry(1000.0)
+        first_task = sub._backfill_retry_task
+        assert first_task is not None
+        assert sub._backfill_retry_count == 1
+        assert sub._retry_window_start == 1000.0
+
+        # 第二次失败（更晚的缺口起点）：旧定时器取消，新定时器重建，起点仍取最早
+        sub._schedule_backfill_retry(2000.0)
+        second_task = sub._backfill_retry_task
+        assert second_task is not None
+        assert second_task is not first_task
+        assert sub._backfill_retry_count == 2
+        assert sub._retry_window_start == 1000.0
+        with pytest.raises(asyncio.CancelledError):
+            await first_task
+
+        await _cancel_retry_task(sub)
+
+
+@pytest.mark.asyncio
+async def test_schedule_backfill_retry_skipped_when_disabled():
+    """GAP_BACKFILL_ENABLED=False 时不安排重试."""
+    sub = RealtimeSubscriber()
+    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+        _gap_settings(mock_settings)
+        mock_settings.GAP_BACKFILL_ENABLED = False
+        sub._schedule_backfill_retry(1000.0)
+
+    assert sub._backfill_retry_task is None
+    assert sub._backfill_retry_count == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_gap_backfill_triggers_backfill_after_delay():
+    """重试定时器到期后对失败缺口重新执行补数（窗口末端取触发时刻）."""
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    sub._running = True
+    gap_start = _time.time() - 900
+    sub._retry_window_start = gap_start
+    sub._backfill_retry_count = 1
+
+    with patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill:
+        await sub._retry_gap_backfill(0.01)
+        assert sub._backfill_task is not None
+        await sub._backfill_task
+
+    mock_backfill.assert_awaited_once()
+    called_start, called_end = mock_backfill.await_args.args
+    assert called_start == gap_start
+    assert called_end > gap_start  # 末端取触发时刻（覆盖等待期间新缺口）
+
+
+@pytest.mark.asyncio
+async def test_retry_gap_backfill_reschedules_when_backfill_running():
+    """定时器到期时已有补数在执行：按同延迟原地重排，不并发补数."""
+    import asyncio
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    sub._running = True
+    sub._retry_window_start = _time.time() - 900
+    sub._backfill_retry_count = 1
+
+    async def _pending():
+        await asyncio.sleep(100)
+
+    running_task = asyncio.create_task(_pending())
+    sub._backfill_task = running_task
+    try:
+        with patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill:
+            await sub._retry_gap_backfill(0.01)
+            # 未触发新补数，而是重排了定时器
+            mock_backfill.assert_not_awaited()
+            assert sub._backfill_retry_task is not None
+            assert sub._backfill_retry_task is not running_task
+            await _cancel_retry_task(sub)
+    finally:
+        running_task.cancel()
+        try:
+            await running_task
+        except asyncio.CancelledError:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_backfill_retry_timer():
+    """stop 应取消待执行的补数重试定时器并重置状态（防泄漏）."""
+    import asyncio
+
+    sub = RealtimeSubscriber()
+
+    async def _pending():
+        await asyncio.sleep(100)
+
+    sub._backfill_retry_task = asyncio.create_task(_pending())
+    sub._backfill_retry_count = 3
+    sub._retry_window_start = 1234.0
+
+    await sub.stop()
+
+    assert sub._backfill_retry_task is None
+    assert sub._backfill_retry_count == 0
+    assert sub._retry_window_start is None
+
+
+@pytest.mark.asyncio
+async def test_clear_backfill_retry_resets_state():
+    """缺口成功补全后清除重试状态（取消定时器、归零失败计数）."""
+    import asyncio
+
+    sub = RealtimeSubscriber()
+
+    async def _pending():
+        await asyncio.sleep(100)
+
+    sub._backfill_retry_task = asyncio.create_task(_pending())
+    sub._backfill_retry_count = 2
+    sub._retry_window_start = 1000.0
+
+    sub._clear_backfill_retry()
+
+    assert sub._backfill_retry_task is None
+    assert sub._backfill_retry_count == 0
+    assert sub._retry_window_start is None
