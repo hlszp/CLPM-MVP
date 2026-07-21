@@ -152,10 +152,12 @@ P = (A·a + F·f + S·s) / (a + f + s) × R
 - `A` = accuracy_rate（准确率）
 - `F` = fast_rate（快速响应率）
 - `S` = steady_rate / stability_rate（平稳率）
-- `a / f / s` = 类型权重（来自 4 类权重模板）
+- `a / f / s` = 核心指标权重（R2 口径：`metric_config.weight` 为唯一用户入口；4 类权重模板 `loop_type_weight` 为出厂默认兜底。优先级链 `MetricConfig.weight` > `LoopTypeWeight` > `None`）
 - `R` = effective_auto_rate（有效自控率，折扣因子）
 
-### 7.3 4 类权重模板
+### 7.3 4 类权重模板（出厂默认 / 兜底，R2 口径）
+
+> **R2 权重口径裁决（2026-07-22）**：`metric_config.weight`（权重配置管理页面）为唯一用户入口；以下 4 类模板降级为出厂默认 / 兜底回退——仅当 `metric_config` 中 3 项核心指标权重缺失时按回路 `control_type` 回退取值。
 
 | 模板 | 适用回路类型 | 权重倾向 |
 |---|---|---|

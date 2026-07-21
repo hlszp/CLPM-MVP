@@ -23,6 +23,7 @@
 | v5.0 | 2026-07-04 | 性能评估模块业务逻辑修订版：①§5.2.3 回路台账新增 `control_type` / `importance_level` / `include_in_evaluation` 三字段及"回路评估参与配置说明"；②§5.3.7 重构为两类评分体系（回路级性能评分 + 综合性能评分）+ 装置级三大 KPI（综合性能/平均自控率/稳定率）+ 实时自控率；③§5.3.4 全局看板重构（装置级三大 KPI 卡片 + 实时自控率条幅 + 稳定率趋势 + 可信度标签）；④§5.3.1.2 清理废弃字段（formula/control_type/data_contract 迁移说明），新增"配置字段维护入口总览"；⑤§5.3.1.1 固化 12 项指标算法定义（编号 ①~⑫）；⑥修正准确率/稳定率/综合评分/行程指数/时间分母等公式与口径；⑦性能定级 5 级（EXCELLENT/GOOD/FAIR/WARNING/POOR，国标默认阈值可在"权重配置管理"页面手工覆盖）。 | 系统设计团队 |
 | v5.1 | 2026-07-04 | DDS 对齐版：①**表名/字段名全面对齐 DDS v4.1**——`loops` → `loop_ledger`；`kpi_snapshot_unit_hourly` → `unit_kpi_summary`；`fast_response_rate` → `fast_rate`；`output_travel_index` → `output_trip_index`；`steady_state_time` → `settling_time`；装置级 `composite_score` → `avg_score`、`avg_auto_rate` → `auto_mode_rate`、`stability_rate` 保持不变；`N_eval` / `N_inconclusive` / `N_excluded` → `evaluated_loops` / `inconclusive_loops` / `excluded_loops`；②`importance_level` 字段类型由字符串枚举 `LEVEL_1` / `LEVEL_2` / `LEVEL_3` 改为**数值类型 `1` / `2` / `3`**，对齐后端接口；③全文术语"平稳率"统一为"稳定率"；④标注 DDS 应同步补齐 `loop_ledger.control_type` / `importance_level` / `include_in_evaluation` 字段、`metric_config.grading_thresholds` 字段、`unit_kpi_summary.excluded_loops` / `status` 字段。 | 系统设计团队 |
 | v6.0 | 2026-07-06 | v6.0 文档统一升级版：①引用文档版本全面对齐——PRD v3.1 → v6.0、DDS v4.1 → v6.0、UI/UX v5.3 → v6.0、实现契约 v1.0 → v2.0；②§5.3.7.3 装置级三大 KPI 章节补充**节点级 KPI 聚合说明**（`kpi_node_snapshot_hourly` / `kpi_node_snapshot_daily` / `kpi_node_snapshot_monthly` 三张表，按工厂层级节点聚合小时/日/月三级快照）；③§5.3.11 任务管理章节补充**代码实际 API 领域概览**（algorithms / tasks / dashboard / realtime / ws / aas / configs / performance/nodes 等领域）；④设计依据补充实现契约 v2.0 与 UI/UX v6.0 引用。对齐 v6.0 基线（`v6-baseline-extract.md` + `v6-code-facts.md`）。 | 系统设计团队 |
+| v6.0 | 2026-07-22 | R2 权重口径裁决对齐（基于 `metric-module-health-check-plan-2026-07-21.md` #2）：①§5.3.1.2 权重配置——`metric_config.weight` 为唯一用户入口，4 类控制类型模板（`loop_type_weight`）降级为出厂默认/兜底；②§5.3.7.1 评分计算——明确优先级链 `MetricConfig.weight` > `LoopTypeWeight` > `None`；③§5.3.7.4 对比矩阵与 §8.2 算法版本清单同步更新。代码（`kpi_calc._build_weights_map`）不变。 | 文档治理组 |
 
 ### 1.3 设计原则
 本 FDS 遵循 PRD v6.0 确立的四项产品化设计原则：
@@ -261,7 +262,7 @@ CLPM 性能指标体系由"3 核心 + 1 投用 + 8 辅助诊断"三层结构构�
 **指标配置管理详细规则** [v5.0 重构]：
 
 * **阈值配置（threshold）**：JSONB 结构，格式 `{min: Float, max: Float, alert: Float}`，对应最小值/最大值/告警阈值。例如稳定率阈值 `{min: 80, max: 100, alert: 90}` 表示低于 90 触发告警，低于 80 视为不合格。**维护入口**：性能评估 → 指标配置页面。
-* **权重配置（weight）**：3 项核心指标 (A/F/S) 权重，按控制类型分 4 套模板（STABLE/SLOW/FAST/LOGIC），国标默认值详见 §5.3.7.1。**维护入口**：性能评估 → **权重配置管理**页面（详见 §5.3.7.1），按控制类型分组维护，支持版本化保存与回滚。
+* **权重配置（weight）** [R2 口径，2026-07-22 裁决]：3 项核心指标 (A/F/S) 权重，以 **`metric_config.weight`（按 metric_code 单值存储）为唯一用户入口**；4 类控制类型权重模板（`loop_type_weight` 表，STABLE/SLOW/FAST/LOGIC）降级为**出厂默认 / 兜底回退**，不再作为用户主配置范式。**维护入口**：性能评估 → **权重配置管理**页面（详见 §5.3.7.1），按指标编辑权重值。运行时优先级链：`MetricConfig.weight`（3 核心指标权重全部有效→归一化使用）> `LoopTypeWeight`（按回路 `control_type` 取出厂模板）> `None`（不计算综合评分），对应 `kpi_calc._build_weights_map` 实现。
 * **控制类型（control_type）**：枚举值 `STABLE` / `SLOW` / `FAST` / `LOGIC`，存储于**回路台账**（非指标配置），决定该回路自动套用的权重模板。**维护入口**：回路管理 → 回路台账（§5.2.3）。
 * **重要等级（importance_level）** [v5.0 新增，v5.1 类型修订]：**数值类型** `1` / `2` / `3`（一/二/三级，整数），存储于**回路台账**（`loop_ledger.importance_level`），决定该回路在装置级聚合中的权重（一级=3、二级=2、三级=1）。**维护入口**：回路管理 → 回路台账（§5.2.3）。**类型规范**：前后端数据交互统一使用 int 类型（1/2/3），不使用字符串枚举（`LEVEL_1`/`LEVEL_2`/`LEVEL_3`），确保与后端 ORM 模型与 API Schema 一致。
 * **是否参与评估（include_in_evaluation）** [v5.0 新增]：Boolean，默认 `true`，存储于**回路台账**，决定该回路是否进入综合性能评分与装置级 KPI 聚合。**维护入口**：回路管理 → 回路台账（§5.2.3）。
@@ -279,7 +280,8 @@ CLPM 性能指标体系由"3 核心 + 1 投用 + 8 辅助诊断"三层结构构�
 | 字段 | 所属表 | 维护入口 | 维护角色 |
 |---|---|---|---|
 | `threshold` | `metric_config` | 性能评估 → 指标配置 | 系统管理员 |
-| `weight`（4 套模板）| `metric_config`（按 control_type 分组）| 性能评估 → 权重配置管理 | 系统管理员 |
+| `weight` | `metric_config`（按 metric_code 单值）| 性能评估 → 权重配置管理 | 系统管理员 |
+| `weight`（出厂默认）| `loop_type_weight`（4 类模板兜底）| 系统内部（用户改 `metric_config.weight` 后自动失效）| 系统维护 |
 | `grading_thresholds` | `metric_config`（全局）| 性能评估 → 权重配置管理 | 系统管理员 |
 | `control_type` | `loop_ledger` | 回路管理 → 回路台账 | 仪控工程师 / 系统管理员 |
 | `importance_level` | `loop_ledger` | 回路管理 → 回路台账 | 仪控工程师 / 系统管理员 |
@@ -546,13 +548,15 @@ T = k_stable × sample_interval
 
 | 功能点 | 输入参数 / 前置条件 | 处理规则 | 输出结果 / 界面表现 | 异常处理 |
 |---|---|---|---|---|
-| **回路级评分计算** | 3 核心指标值 (A/F/S)、回路控制类型权重 (a/f/s)、投用指标 R（有效自控率 ②）。 | 按公式 **`P_loop = (A·a + F·f + S·s)/(a+f+s) × (R/100)`** 计算单回路综合评分（0~100）。其中 A=准确率 ③、F=快速率 ④、S=稳定率 ⑤，(a+f+s)=1.0；R 为有效自控率 ②，∈ [0, 100]（百分比），公式中需除以 100 转为小数。8 项辅助诊断指标不参与评分。 | 评分落库至 `kpi_snapshot_hourly.score`，供看板、排行与综合性能评分调用。 | 某项核心指标因数据不足无法计算时，该指标权重按比例分配给其他核心指标。 |
-| **权重模板（按控制类型）** | 回路控制类型（STABLE/SLOW/FAST/LOGIC）。 | 按控制类型分 4 类权重模板（国标默认值，可在"权重配置管理"页面手工配置覆盖，详见 §5.3.1.2）。 | 自动套用对应权重模板。 | 控制类型未配置时默认套用 STABLE 模板。 |
-| **权重配置管理** [v5.0 新增] | 4 类控制类型的 12 个权重值（a/f/s × 4）+ 性能定级阈值（5 级 × 4 边界）。 | 系统管理 → 性能评估 → **权重配置管理**页面，按控制类型分组展示 4 套权重模板与定级阈值；管理员可手工编辑覆盖国标默认值；变更需二次确认 + 审计日志；版本化保存（保留历史版本，支持回滚）。 | 配置页表格按控制类型分 4 组，每组 3 个权重输入框 + 实时归一校验。 | 权重总和 ≠ 100% 时禁用保存；定级阈值边界需严格递增。 |
+| **回路级评分计算** [R2 口径，2026-07-22 裁决] | 3 核心指标值 (A/F/S)、权重 (a/f/s)、投用指标 R（有效自控率 ②）。权重来源按优先级链取值：`MetricConfig.weight`（3 核心指标全部有效→归一化）> `LoopTypeWeight`（按回路 `control_type` 取出厂模板）> `None`。 | 按公式 **`P_loop = (A·a + F·f + S·s)/(a+f+s) × (R/100)`** 计算单回路综合评分（0~100）。其中 A=准确率 ③、F=快速率 ④、S=稳定率 ⑤，(a+f+s)=1.0；R 为有效自控率 ②，∈ [0, 100]（百分比），公式中需除以 100 转为小数。8 项辅助诊断指标不参与评分。 | 评分落库至 `kpi_snapshot_hourly.score`，供看板、排行与综合性能评分调用。 | 某项核心指标因数据不足无法计算时，该指标权重按比例分配给其他核心指标。 |
+| **权重模板（出厂默认 / 兜底）** [R2 口径] | 回路控制类型（STABLE/SLOW/FAST/LOGIC）。 | 4 类控制类型权重模板为国标**出厂默认值**，存储于 `loop_type_weight` 表；当 `metric_config.weight`（用户在权重配置管理页面维护）3 核心指标全部有效时，优先使用 `metric_config` 权重并归一化，模板自动失效；仅当 `metric_config` 权重缺失时回退到按 `control_type` 取出厂模板。 | 自动按优先级链取值。 | 控制类型未配置且 `metric_config` 权重缺失时默认套用 STABLE 模板。 |
+| **权重配置管理** [v5.0 新增，R2 口径修订] | 3 项核心指标 (A/F/S) 的 `metric_config.weight` 值 + 性能定级阈值（5 级 × 4 边界）。 | 系统管理 → 性能评估 → **权重配置管理**页面，按指标编辑权重值（`metric_config.weight`，唯一用户入口）；管理员可手工编辑覆盖国标默认值；变更需二次确认 + 审计日志。**4 类控制类型模板（`loop_type_weight`）作为出厂默认兜底，不作为用户主配置入口**。 | 配置页表格按指标展示权重输入框 + 实时归一校验。 | 核心权重总和 ≠ 100% 时禁用保存；定级阈值边界需严格递增。 |
 | **性能定级** | 回路级评分 P_loop。 | 按国标 5 级分类（可在权重配置管理页面手工配置阈值）： | 评分落库时同步计算定级，看板以颜色标签展示。 | - |
 | **INCONCLUSIVE 处理** [v6.1 修订，对齐当前代码实现] | ① 无数据（空 Bundle / 取数失败）；② 综合评分为 None（有效自控率 R 缺失或可信度为 E 级）。 | 整条快照标记为 `INCONCLUSIVE`，回路级评分置为 NULL（不以 0 分掩盖数据缺失）。该回路不参与综合性能评分与装置级聚合计算，但在装置级报告中单独统计数量与占比。**注意：个别指标（非 R）可信度为 E 级不再触发 INCONCLUSIVE**——confidence_level 如实记为 E，status 仍为 SUCCESS、score 有值且参与聚合；综合评分可信度取核心指标 + R 中的最低等级。 | 快照状态字段 `status = INCONCLUSIVE`，`score = NULL`；E 级 SUCCESS 快照以灰色"可信度 E"标签提示。 | - |
 
-**回路级评分权重模板（4 类控制类型，国标默认值）** [v5.0 修订，对齐 GB/T 44693.2-2024 附录 C]：
+**回路级评分权重模板（4 类控制类型，出厂默认值，兜底使用）** [v5.0 修订，R2 口径 2026-07-22]：
+
+> **R2 权重口径裁决（2026-07-22）**：`metric_config.weight`（权重配置管理页面）为**唯一用户入口**；以下 4 类控制类型模板（`loop_type_weight` 表）降级为**出厂默认 / 兜底回退**——仅当 `metric_config` 中 3 项核心指标权重缺失时，才按回路 `control_type` 回退取值。运行时优先级链：`MetricConfig.weight` > `LoopTypeWeight` > `None`（对应 `kpi_calc._build_weights_map`）。
 
 | 控制类型 | a (准确率 ③) | f (快速率 ④) | s (稳定率 ⑤) | 适用场景 |
 |---|:---:|:---:|:---:|---|
@@ -561,7 +565,7 @@ T = k_stable × sample_interval
 | **FAST（快速型）** | 0.2 | 0.5 | 0.3 | 副回路、速度控制 |
 | **LOGIC（逻辑型）** | 0.0 | 0.4 | 0.6 | 安全动作、联锁保护 |
 
-* **权重归一**：a + f + s = 1.0，权重模板为国标默认值，**可在"权重配置管理"页面手工配置覆盖**。
+* **权重归一**：a + f + s = 1.0。用户在"权重配置管理"页面维护 `metric_config.weight`（3 核心指标全部有效时归一化使用）；出厂模板仅兜底，不在用户主配置流程中直接编辑。
 * **R 折扣因子**：R ∈ [0, 100]（百分比），反映回路实际投用情况；公式中 `R/100` 转为小数 [0, 1]；R=0 时回路级评分为 0，R=100 时回路级评分为核心指标加权均值。
 * **INCONCLUSIVE 触发**（2026-07-20 按当前代码实现修订）：仅在 ① 无数据（空 Bundle / 取数失败）或 ② 综合评分为 None（有效自控率 R 缺失或可信度为 E 级）时，整条快照标记 INCONCLUSIVE 且不参与综合性能评分与装置级聚合；个别指标（非 R）为 E 级时快照仍为 SUCCESS 并参与聚合（详见 §5.3.10）。
 
@@ -647,11 +651,11 @@ Redis 实时键
 | 维度 | 回路级性能评分 | 综合性能评分 |
 |---|---|---|
 | **计算层级** | 单回路 | 单元级 / 装置级 |
-| **权重来源** | 回路控制类型（STABLE/SLOW/FAST/LOGIC）| 回路重要等级（一级/二级/三级）|
+| **权重来源** [R2 口径] | `metric_config.weight`（唯一用户入口）> `loop_type_weight`（出厂兜底）| 回路重要等级（一级/二级/三级）|
 | **权重用途** | 加权 A/F/S 三项核心质量指标 | 加权回路级评分 P_loop |
-| **权重值** | a/f/s（4 类模板，国标默认）| 3/2/1（国标默认）|
+| **权重值** | `metric_config.weight`（用户维护）；4 类模板为出厂默认兜底 | 3/2/1（国标默认）|
 | **计算公式** | `P_loop = (A·a + F·f + S·s)/(a+f+s) × (R/100)` | `P_composite = Σ(w_level × P_loop) / Σ w_level` |
-| **配置入口** | 权重配置管理页面（按控制类型分组）| 回路台账（每回路配置重要等级）|
+| **配置入口** | 权重配置管理页面（按指标编辑 `metric_config.weight`）| 回路台账（每回路配置重要等级）|
 | **参评条件** | `status = Ready` | `include_in_evaluation=true` AND `status=Ready` AND 非 INCONCLUSIVE |
 | **落库位置** | `kpi_snapshot_hourly.score` | `unit_kpi_summary.avg_score` |
 
@@ -1073,7 +1077,7 @@ CLPM 系统的核心设计理念是**"绝对真实，不掩盖数据缺失"**。
 | 算法类别 | 算法名称 | 当前版本 | 说明 |
 |---|---|---|---|
 | `KPI_CALC` | 3+1+8 指标计算 | v2.0 | 3 核心(A/F/S) + 1 投用(R) + 8 辅助诊断指标，对齐《关键算法设计说明 v2.0》 |
-| `SCORE_CALC` | 综合评分 | v2.0 | `P = (A·a + F·f + S·s)/(a+f+s) × R`，按控制类型 4 类权重 |
+| `SCORE_CALC` | 综合评分 | v2.0 | `P = (A·a + F·f + S·s)/(a+f+s) × R`；权重优先级链 `MetricConfig.weight` > `LoopTypeWeight` > `None`（R2 口径） |
 | `DATA_PLANNER` | 数据编排层 | v1.0 | tagGroup 合并查询计划 + DataBlock 缓存 + MetricDataBundle 分发 |
 | `QUALITY_MASK` | 质量码处理 | v1.0 | KEEP_ALL_WITH_VALIDITY 策略 + Metric Validity Mask |
 | `CREDIBILITY` | 指标可信度 | v1.0 | A/B/C/D/E 五级，基于 valid_rate 分级 |
