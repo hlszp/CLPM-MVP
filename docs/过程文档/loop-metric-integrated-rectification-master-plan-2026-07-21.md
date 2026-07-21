@@ -143,8 +143,8 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 
 | 项 | 内容 | WS/PR | 波次 | 验收标准 |
 |---|---|---|---|---|
-| 回路-1 | P0 批量/导入崩溃 | PR-L1 | W0 | 已验收（2056 passed）；回归测试在库 |
-| 回路-2 | 孤儿页下线 | PR-L1（删页+死API）/ WS-D（:869 死链） | W0/W2 | check:type 无残留引用；监控页跳转可达 |
+| 回路-1 ✅ | P0 批量/导入崩溃 | PR-L1（gitea PR #1，已合并 4e37b7a7） | W0 | 已验收（2056 passed）；回归测试在库 |
+| 回路-2 🔶 | 孤儿页下线 | PR-L1 删页+死API ✅（PR #1）/ WS-D（:869 死链，待做） | W0/W2 | check:type 无残留引用；监控页跳转可达 |
 | 回路-3 | 时区口径 | WS-B2 | W2 | 远端实测比对记录；导入段与实时段 ts 连续抽查一致 |
 | 回路-4 | 断点续传加固 | WS-B1 | W1 | 新单测：部分失败不推进/重试定时器/任务记录；补数进任务列表且标记 auto-backfill |
 | 回路-5 | 监控契约对齐 | WS-D | W2 | 接口级测试 + check:type；loopStatus/kpiStatus 分离，无 PARTIAL 撞名 |
@@ -153,7 +153,7 @@ task_tracker(Redis) ◄── kpi_calc / data_import / 【新增】auto-backfill
 | 回路-8 | 链路配置安全 | WS-E | W1 | 审计/GET Token 打码；Tailscale 失败回滚 sys_config；可清空字段 |
 | 回路-9 | 韧性增强包 | WS-B2 | W2 | 看门狗模拟停滞触发重连；RUNNING 超时清扫生效；任务 TTL 30 天 |
 | 回路-10 | 性能 UX + 文档 | WS-G | W3 | DISTINCT ON/CTE 查询计划验证；PRD v6.1 发布，D1-D6 全落地 |
-| 性能-1 | loops_total 根因 | PR-A1 | W0 | 单测回填后 loops_total=回路数；e2e F7 断言保持 |
+| 性能-1 ✅ | loops_total 根因 | PR-A1（gitea PR #2，已合并 f62e2275；worker 已重启加载新码） | W0 | 单测回填后 loops_total=回路数；e2e F7 断言保持 |
 | 性能-2 | 权重口径裁决 | WS-G | W3 | 指定回路改权重→回填分数按新权重；文档 grep 无旧口径 |
 | 性能-3 | INCONCLUSIVE 落 'E' | PR-A2 | W1 | PG 抽查新快照 confidence_level='E'；聚合展示不回归 |
 | 性能-4 | 重复任务清理 | PR-A2 | W1 | dry-run 输出 16 组；执行后重复组=0 |
