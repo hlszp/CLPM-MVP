@@ -107,6 +107,12 @@ def _make_tracker(
     t.evidence_url = None
     t.updated_by = "ic_engineer"
     t.updated_at = datetime.now(UTC)
+    t.created_at = datetime.now(UTC)
+    # D3: MOC 关联字段
+    t.comment = None
+    t.moc_ref = None
+    t.moc_not_applicable = None
+    t.moc_reason = None
     return t
 
 
@@ -766,7 +772,7 @@ class TestTrackerStatusUpdate:
             resp = client.patch(
                 f"/api/v1/tracker/{loop.id}/status",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"status": "IMPLEMENTED"},
+                json={"status": "IMPLEMENTED", "mocRef": "MOC-2026-001"},
             )
         assert resp.status_code == 200
         body = resp.json()
@@ -825,6 +831,70 @@ class TestTrackerStatusUpdate:
             json={"status": "IN_PROGRESS"},
         )
         assert resp.status_code == 401
+
+    # ------------------------------------------------------------------
+    # D3: MOC 必填校验测试
+    # ------------------------------------------------------------------
+
+    def test_implemented_without_moc_returns_422(self, client, mock_db, fake_redis) -> None:
+        """D3：标记 IMPLEMENTED 但未提供 MOC 关联时应返回 422。"""
+        loop = _make_loop()
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.patch(
+                f"/api/v1/tracker/{loop.id}/status",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"status": "IMPLEMENTED"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "ERR_MOC_REQUIRED"
+
+    def test_implemented_moc_na_without_reason_returns_422(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """D3：标记 IMPLEMENTED 且勾选 MOC 不适用但未填写依据时应返回 422。"""
+        loop = _make_loop()
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.patch(
+                f"/api/v1/tracker/{loop.id}/status",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"status": "IMPLEMENTED", "mocNotApplicable": True},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "ERR_MOC_REQUIRED"
+
+    def test_implemented_moc_na_with_reason_success(self, client, mock_db, fake_redis) -> None:
+        """D3：标记 IMPLEMENTED 勾选不适用并填写依据时应成功。"""
+        loop = _make_loop()
+        tracker = _make_tracker()
+        diag = _make_diag_result()
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return _make_scalar_one_or_none_mock(tracker)
+            return _make_scalar_one_or_none_mock(diag)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.patch(
+                f"/api/v1/tracker/{loop.id}/status",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "status": "IMPLEMENTED",
+                    "mocNotApplicable": True,
+                    "mocReason": "现场手动调整，无系统变更",
+                },
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"]["actionStatus"] == "IMPLEMENTED"
 
 
 class TestTrackerExport:

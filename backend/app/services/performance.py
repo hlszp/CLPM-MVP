@@ -670,18 +670,23 @@ async def get_ranking(
             for node in u_result.scalars().all():
                 unit_map[str(node.id)] = node.name
 
-    # 查询预诊断（从 action_tracker 取最新诊断标签）
+    # 查询预诊断（从 action_tracker 取最新开放态诊断标签）
+    # D1/D2 整改：仅取 PENDING/IN_PROGRESS 的 tracker，避免已闭环的历史记录
+    # 干扰预诊断展示；同一回路可能有多个标签的 tracker，取最新一条
     diagnosis_map: dict[str, str] = {}
     action_status_map: dict[str, str] = {}
     if loop_ids:
         t_result = await db.execute(
-            select(ActionTracker).where(ActionTracker.loop_id.in_(loop_ids))
+            select(ActionTracker)
+            .where(ActionTracker.loop_id.in_(loop_ids))
+            .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
+            .order_by(ActionTracker.created_at.desc().nulls_last())
         )
         for tracker in t_result.scalars().all():
             lid = str(tracker.loop_id) if tracker.loop_id else ""
-            if lid and tracker.diagnosis_label:
+            if lid and tracker.diagnosis_label and lid not in diagnosis_map:
                 diagnosis_map[lid] = tracker.diagnosis_label
-            if lid and tracker.action_status:
+            if lid and tracker.action_status and lid not in action_status_map:
                 action_status_map[lid] = tracker.action_status
 
     # 构建排行项（SQL 已完成去重、排序、截断）
@@ -1338,15 +1343,21 @@ async def _aggregate_bad_actor_distribution(
     db: AsyncSession,
     snapshots: list[KpiSnapshotHourly],
 ) -> list[dict]:
-    """聚合坏演员分布（从 action_tracker 取诊断标签）。"""
+    """聚合坏演员分布（从 action_tracker 取开放态诊断标签）。
+
+    D1/D2 整改：仅统计 PENDING/IN_PROGRESS 的 tracker，避免已闭环的历史
+    记录膨胀坏演员计数。
+    """
     loop_ids = [str(s.loop_id) for s in snapshots if s.loop_id]
     if not loop_ids:
         return []
 
-    # 查询 action_tracker 中诊断标签
+    # 查询 action_tracker 中开放态诊断标签
     unique_loop_ids = list(set(loop_ids))
     t_result = await db.execute(
-        select(ActionTracker).where(ActionTracker.loop_id.in_(unique_loop_ids))
+        select(ActionTracker)
+        .where(ActionTracker.loop_id.in_(unique_loop_ids))
+        .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
     )
     label_count: dict[str, int] = {}
     for tracker in t_result.scalars().all():

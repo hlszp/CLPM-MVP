@@ -59,14 +59,20 @@ async def update_tracker_status(
     status: str,
     evidence_url: str | None = None,
     remark: str | None = None,
+    comment: str | None = None,
+    moc_ref: str | None = None,
+    moc_not_applicable: bool | None = None,
+    moc_reason: str | None = None,
 ) -> dict:
     """更新 Action Tracker 状态。
 
     - 仅 IC_ENGINEER 可操作（在 endpoint 层鉴权）
     - 标记 IMPLEMENTED 后自动生成 A/B 对比视图
+    - D3: 标记 IMPLEMENTED 时必须提供 moc_ref 或
+      (moc_not_applicable=True + moc_reason)，对齐危化企业变更管理要求
 
     Raises:
-        BizError: ERR_LOOP_NOT_FOUND / ERR_TRACKER_NOT_FOUND
+        BizError: ERR_LOOP_NOT_FOUND / ERR_TRACKER_NOT_FOUND / ERR_MOC_REQUIRED
     """
     if status not in VALID_STATUSES:
         raise BizError(
@@ -74,6 +80,22 @@ async def update_tracker_status(
             message=f"无效的状态值，必须为 {', '.join(VALID_STATUSES)} 之一",
             status_code=400,
         )
+
+    # D3: MOC 必填校验（仅 IMPLEMENTED 状态）
+    if status == "IMPLEMENTED":
+        if moc_not_applicable is True:
+            if not moc_reason or not moc_reason.strip():
+                raise BizError(
+                    code="ERR_MOC_REQUIRED",
+                    message="标记已实施且 MOC 不适用时，必须填写依据说明",
+                    status_code=422,
+                )
+        elif not moc_ref or not moc_ref.strip():
+            raise BizError(
+                code="ERR_MOC_REQUIRED",
+                message="标记已实施时必须提供 MOC 变更管理关联编号，或勾选'不适用'并填写依据说明",
+                status_code=422,
+            )
 
     # 校验回路
     loop_result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
@@ -129,6 +151,14 @@ async def update_tracker_status(
     tracker.action_status = status
     if evidence_url is not None:
         tracker.evidence_url = evidence_url
+    if comment is not None:
+        tracker.comment = comment
+    if moc_ref is not None:
+        tracker.moc_ref = moc_ref
+    if moc_not_applicable is not None:
+        tracker.moc_not_applicable = moc_not_applicable
+    if moc_reason is not None:
+        tracker.moc_reason = moc_reason
     tracker.updated_by = operator
     tracker.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
@@ -138,6 +168,8 @@ async def update_tracker_status(
             "actionStatus": tracker.action_status,
             "evidenceUrl": tracker.evidence_url,
             "remark": remark,
+            "mocRef": tracker.moc_ref,
+            "mocNotApplicable": tracker.moc_not_applicable,
         },
         ensure_ascii=False,
         default=str,
@@ -170,6 +202,11 @@ async def update_tracker_status(
         "evidenceUrl": tracker.evidence_url,
         "updatedBy": tracker.updated_by,
         "updatedAt": tracker.updated_at.isoformat() if tracker.updated_at else None,
+        "createdAt": tracker.created_at.isoformat() if tracker.created_at else None,
+        "comment": tracker.comment,
+        "mocRef": tracker.moc_ref,
+        "mocNotApplicable": tracker.moc_not_applicable,
+        "mocReason": tracker.moc_reason,
         "abComparison": ab_comparison,
     }
 

@@ -637,6 +637,10 @@ async def update_tracker_status_endpoint(
         status=body.status,
         evidence_url=body.evidenceUrl,
         remark=body.remark,
+        comment=body.comment,
+        moc_ref=body.mocRef,
+        moc_not_applicable=body.mocNotApplicable,
+        moc_reason=body.mocReason,
     )
     return success(data=data, message="状态更新成功")
 

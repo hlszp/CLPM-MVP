@@ -31,6 +31,7 @@ from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag,
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
+from app.models.tracker import ActionTracker
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.diagnosis_trigger_config import get_trigger_config
 from app.services.preprocessing.outlier_detection import OutlierDetector
@@ -403,6 +404,15 @@ async def _run_diag_tasks_concurrent(
                         query_wide_fn=query_wide_fn,
                         task_id=task_id,
                     )
+                    # D1：诊断产出标签时自动创建 ActionTracker（PENDING）
+                    if result is not None and result.get("labels"):
+                        await _auto_create_trackers(
+                            worker_db,
+                            loop_id,
+                            result["labels"],
+                            result.get("labelToDiagId", {}),
+                            datetime.fromisoformat(result["diagnosedAt"]),
+                        )
                     await worker_db.commit()
                     # 根据诊断结果更新任务状态
                     now_naive = datetime.now(UTC).replace(tzinfo=None)
@@ -614,6 +624,15 @@ async def _do_diagnose_single_loop(
                 task_id=task_id,
                 labels=labels,
             )
+            # D1：诊断产出标签时自动创建 ActionTracker（PENDING）
+            if result is not None and result.get("labels"):
+                await _auto_create_trackers(
+                    db,
+                    loop_id,
+                    result["labels"],
+                    result.get("labelToDiagId", {}),
+                    datetime.fromisoformat(result["diagnosedAt"]),
+                )
             await db.commit()
             if result is None:
                 # _diagnose_loop 返回 None 表示诊断未执行成功
@@ -748,6 +767,60 @@ def _upsert_diagnosis_tag(
     )
     db.add(tag)
     active_tag_map[label] = tag
+
+
+async def _auto_create_trackers(
+    db,
+    loop_id: str,
+    labels: list[str],
+    label_to_diag_id: dict[str, str],
+    diagnosed_at: datetime,
+) -> None:
+    """D1：诊断产出标签时自动创建 ActionTracker（PENDING）。
+
+    同一回路同一标签在 PENDING/IN_PROGRESS 状态下不重复建单
+    （uk_action_tracker_open 部分唯一索引约束）。闭环后新诊断可再建新单，
+    历史记录保留。
+
+    Args:
+        db: 异步数据库会话
+        loop_id: 回路 ID
+        labels: 诊断标签列表
+        label_to_diag_id: 标签到诊断结果 ID 的映射
+        diagnosed_at: 诊断时间
+    """
+    labels = [lbl for lbl in labels if lbl]
+    if not labels:
+        return
+
+    # 查询该回路已有的开放态 tracker（PENDING/IN_PROGRESS），避免重复建单
+    existing_result = await db.execute(
+        select(ActionTracker.diagnosis_label)
+        .where(ActionTracker.loop_id == loop_id)
+        .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
+        .where(ActionTracker.diagnosis_label.in_(labels))
+    )
+    existing_labels = {str(r) for r in existing_result.scalars().all()}
+
+    for label in labels:
+        if label in existing_labels:
+            continue
+        tracker = ActionTracker(
+            id=str(uuid4()),
+            loop_id=loop_id,
+            diagnosis_label=label,
+            action_status="PENDING",
+            diagnosis_result_id=label_to_diag_id.get(label),
+            created_at=diagnosed_at,
+            updated_at=diagnosed_at,
+        )
+        db.add(tracker)
+        logger.info(
+            "D1 自动建单: loop_id=%s label=%s diag_result_id=%s",
+            loop_id,
+            label,
+            label_to_diag_id.get(label),
+        )
 
 
 async def _diagnose_loop(
@@ -1472,6 +1545,8 @@ async def _diagnose_loop(
         key=lambda i: algorithm_results[i]["confidence"],
     )
     diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
+    # D1：收集 label → diag_record_id 映射，供调用方自动建单使用
+    label_to_diag_id: dict[str, str] = {}
     for idx, result in enumerate(algorithm_results):
         confidence_decimal = Decimal(str(round(result["confidence"] * 100, 2)))
         evidence_chain = {
@@ -1502,6 +1577,7 @@ async def _diagnose_loop(
             task_id=task_id,
         )
         db.add(diag_record)
+        label_to_diag_id[result["label"]] = diag_record.id
         # A11：同步 upsert diagnosis_tag（D-S 融合后标签逐条处理）
         _upsert_diagnosis_tag(db, active_tag_map, loop_id, result, diagnosed_at)
 
@@ -1515,6 +1591,8 @@ async def _diagnose_loop(
         "validRate": valid_rate,
         "algorithmVersion": DIAG_ALGORITHM_VERSION,
         "status": "SUCCESS",
+        # D1：供调用方自动建单使用（label → diag_result_id 映射）
+        "labelToDiagId": label_to_diag_id,
     }
 
 

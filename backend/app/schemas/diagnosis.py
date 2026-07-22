@@ -167,6 +167,11 @@ class TrackerStatusUpdate(CamelModel):
     status: ActionStatus = Field(..., description="处理状态")
     evidenceUrl: str | None = Field(None, max_length=255)
     remark: str | None = None
+    # D3: MOC 关联（标记 IMPLEMENTED 时必填 moc_ref 或 moc_not_applicable+moc_reason）
+    comment: str | None = Field(None, max_length=500, description="处理意见/审查备注")
+    mocRef: str | None = Field(None, max_length=255, description="MOC 变更管理关联编号")
+    mocNotApplicable: bool | None = Field(None, description="MOC 是否不适用")
+    mocReason: str | None = Field(None, max_length=500, description="MOC 不适用时的依据说明")
 
 
 class TrackerStatusData(CamelModel):
@@ -178,6 +183,11 @@ class TrackerStatusData(CamelModel):
     evidenceUrl: str | None = None
     updatedBy: str | None = None
     updatedAt: str | None = None
+    createdAt: str | None = None
+    comment: str | None = None
+    mocRef: str | None = None
+    mocNotApplicable: bool | None = None
+    mocReason: str | None = None
     abComparison: dict[str, Any] | None = None
 
 

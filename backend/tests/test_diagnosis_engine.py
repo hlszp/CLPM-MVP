@@ -25,6 +25,7 @@ from app.tasks.diagnosis_engine import (
     _apply_expert_rules,
     _apply_outlier_preprocessing,
     _assess_model_mismatch,
+    _auto_create_trackers,
     _build_scatter_plot_data,
     _compute_sample_interval,
     _deduplicate_labels,
@@ -3427,3 +3428,101 @@ class TestB7VisualizationSlimming:
         assert "fft_frequencies" in fv
         assert "scatter_plot_x" in fv
         assert fv["confidence_level"] == "A"
+
+
+# ===========================================================================
+# D1: _auto_create_trackers 单元测试
+# ===========================================================================
+
+
+class TestAutoCreateTrackers:
+    """测试 _auto_create_trackers() 自动建单逻辑。"""
+
+    @pytest.mark.asyncio
+    async def test_creates_trackers_for_new_labels(self) -> None:
+        """新标签应创建对应的 ActionTracker（PENDING）。"""
+        db = AsyncMock()
+        # 查询已有开放态 tracker → 返回空
+        db.execute = AsyncMock(return_value=_make_scalars_all_mock([]))
+        db.add = MagicMock()
+
+        labels = ["OSCILLATION", "VALVE_STICTION"]
+        label_to_diag_id = {
+            "OSCILLATION": "diag-id-1",
+            "VALVE_STICTION": "diag-id-2",
+        }
+        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
+
+        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
+
+        # 应创建 2 个 tracker
+        assert db.add.call_count == 2
+        added_labels = {call.args[0].diagnosis_label for call in db.add.call_args_list}
+        assert added_labels == {"OSCILLATION", "VALVE_STICTION"}
+
+    @pytest.mark.asyncio
+    async def test_skips_labels_with_existing_open_tracker(self) -> None:
+        """已有开放态 tracker 的标签应跳过建单。"""
+        db = AsyncMock()
+        # 查询 select(ActionTracker.diagnosis_label) 返回标签字符串列表
+        db.execute = AsyncMock(return_value=_make_scalars_all_mock(["OSCILLATION"]))
+        db.add = MagicMock()
+
+        labels = ["OSCILLATION", "VALVE_STICTION"]
+        label_to_diag_id = {"OSCILLATION": "diag-1", "VALVE_STICTION": "diag-2"}
+        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
+
+        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
+
+        # 只创建 1 个新 tracker（VALVE_STICTION）
+        assert db.add.call_count == 1
+        added_label = db.add.call_args_list[0].args[0].diagnosis_label
+        assert added_label == "VALVE_STICTION"
+
+    @pytest.mark.asyncio
+    async def test_empty_labels_does_nothing(self) -> None:
+        """空标签列表应直接返回，不执行查询。"""
+        db = AsyncMock()
+        db.execute = AsyncMock()
+        db.add = MagicMock()
+
+        await _auto_create_trackers(db, "loop-001", [], {}, datetime(2026, 7, 22, 10, 0, 0))
+
+        db.execute.assert_not_called()
+        db.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_labels_with_none_filtered_out(self) -> None:
+        """None 或空字符串标签应被过滤。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_all_mock([]))
+        db.add = MagicMock()
+
+        labels = ["OSCILLATION", None, "", "VALVE_STICTION"]
+        label_to_diag_id = {"OSCILLATION": "diag-1", "VALVE_STICTION": "diag-2"}
+        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
+
+        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
+
+        assert db.add.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_new_tracker_has_correct_fields(self) -> None:
+        """新建 tracker 应有正确的字段值（PENDING、diagnosis_result_id 等）。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_all_mock([]))
+        db.add = MagicMock()
+
+        labels = ["OSCILLATION"]
+        label_to_diag_id = {"OSCILLATION": "diag-result-id-123"}
+        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
+
+        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
+
+        assert db.add.call_count == 1
+        tracker = db.add.call_args_list[0].args[0]
+        assert tracker.loop_id == "loop-001"
+        assert tracker.diagnosis_label == "OSCILLATION"
+        assert tracker.action_status == "PENDING"
+        assert tracker.diagnosis_result_id == "diag-result-id-123"
+        assert tracker.created_at == diagnosed_at
