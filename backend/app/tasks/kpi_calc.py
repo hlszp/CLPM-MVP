@@ -3278,6 +3278,83 @@ async def _do_backfill(
 # ---------------------------------------------------------------------------
 
 
+async def _check_import_idempotency(task_id: str | None) -> dict | None:
+    """历史数据导入任务幂等预检查（防 worker 崩溃后重投重复执行）.
+
+    在 Celery 任务入口读取 Redis 任务记录：
+    - 已终态（SUCCESS/FAILED/CANCELLED）→ 返回缓存结果，跳过执行
+    - RUNNING 且 started_at 未超时 → 返回跳过结果（防并发重投）
+    - RUNNING 但超时（前次 worker 已死）→ 返回 None，允许接续执行
+    - PENDING/不存在/task_id 为 None → 返回 None，正常执行
+
+    Returns:
+        非 None 表示应跳过执行，直接返回该结果；None 表示通过检查正常执行。
+    """
+    if not task_id:
+        return None
+
+    from app.core.config import settings
+    from app.schemas.loop_data import ImportStatus
+    from app.services.data_import import _build_cached_result, _get_task
+
+    data = await _get_task(task_id)
+    if not data:
+        return None  # 记录不存在（理论上 API 已预写 PENDING），防御性放过
+
+    status = str(data.get("status", "")).upper()
+    terminal = {
+        ImportStatus.SUCCESS.value,
+        ImportStatus.FAILED.value,
+        ImportStatus.CANCELLED.value,
+    }
+
+    if status in terminal:
+        logger.warning(
+            "检测到导入任务重投且已终态: task_id=%s, status=%s, 跳过执行",
+            task_id,
+            status,
+        )
+        return _build_cached_result(data)
+
+    if status == ImportStatus.RUNNING.value:
+        started_at = data.get("started_at", "")
+        if started_at:
+            try:
+                started_ts = datetime.fromisoformat(started_at).timestamp()
+            except (ValueError, TypeError):
+                started_ts = 0.0
+            now_ts = datetime.now(UTC).timestamp()
+            threshold = int(settings.IMPORT_TASK_RUNNING_TIMEOUT_SECONDS)
+            age = now_ts - started_ts
+            if age < threshold:
+                # 前次 worker 仍在执行窗口内 → 跳过（防并发重投）
+                logger.warning(
+                    "导入任务重投且 RUNNING 未超时: task_id=%s, age=%.0fs, threshold=%ds, 跳过执行",
+                    task_id,
+                    age,
+                    threshold,
+                )
+                return {
+                    "total": int(data.get("loop_count", 0)),
+                    "succeeded": 0,
+                    "failed": 0,
+                    "errors": [f"concurrent redelivery skipped (age={age:.0f}s)"],
+                    "skipped_redelivery": True,
+                }
+            # RUNNING 超时 → 前次 worker 已死，允许接续执行
+            logger.warning(
+                "导入任务重投且 RUNNING 已超时: task_id=%s, age=%.0fs, 接续执行（覆盖 RUNNING）",
+                task_id,
+                age,
+            )
+            return None
+        # started_at 缺失：异常数据，放行交 _do_import 内 CAS 兜底
+        return None
+
+    # PENDING → 正常执行
+    return None
+
+
 @celery_app.task(
     name="app.tasks.kpi_calc.import_history_data",
     bind=True,
@@ -3300,6 +3377,9 @@ def import_history_data(
     从远端 HTTP API 拉取历史数据，写入本地 TDengine 宽表。
     支持冲突策略：overwrite（先 DELETE 再 INSERT）或 skip（直接 INSERT）。
 
+    幂等防护：入口预检查 + _do_import 内 CAS 双重保护，防止 worker 崩溃后
+    broker 重投导致重复执行（task_acks_late + task_reject_on_worker_lost）。
+
     Args:
         loop_ids: 回路 ID 列表
         ts_start: 开始时间 (ISO 8601)
@@ -3318,6 +3398,15 @@ def import_history_data(
         ts_end,
         conflict_strategy,
     )
+
+    # 幂等预检查（A 方案）：已终态或 RUNNING 未超时则短路返回，不进入 _do_import
+    cached = self.run_async(_check_import_idempotency(task_id))
+    if cached is not None:
+        logger.info(
+            "导入任务幂等预检查命中短路: task_id=%s, 返回缓存结果",
+            task_id or "(none)",
+        )
+        return cached
 
     from app.services.data_import import import_history_data as _do_import
 

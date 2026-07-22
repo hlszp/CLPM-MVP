@@ -575,6 +575,47 @@ class _FakeRedisImport:
             return 1
         return 0
 
+    async def eval(self, script: str, numkeys: int, key: str, *args: str) -> list:
+        """模拟 _IMPORT_TASK_CAS_LUA 语义（data_import CAS 专用）.
+
+        其他 Lua 脚本不支持 —— _FakeRedisImport 仅用于 data_import 测试，
+        该模块唯一使用 eval 的位置是 _update_task_cas。
+        """
+        from app.services.data_import import _IMPORT_TASK_CAS_LUA
+
+        if script != _IMPORT_TASK_CAS_LUA:
+            raise NotImplementedError(f"_FakeRedisImport.eval 不支持该脚本: {script[:60]}...")
+
+        if key not in self._hashes:
+            return ["MISSING", ""]
+
+        new_status = args[0] if len(args) > 0 else ""
+        old_status = self._hashes[key].get("status", "")
+        terminal = {"SUCCESS", "FAILED", "CANCELLED"}
+
+        if new_status != "":
+            if old_status in terminal and old_status != new_status:
+                return ["BLOCKED", old_status]
+            self._hashes[key]["status"] = new_status
+
+        # field/value 对从 args[2] 开始（args[0]=new_status, args[1]=ttl）
+        for i in range(2, len(args), 2):
+            field = args[i]
+            value = args[i + 1]
+            if field in ("progress", "imported_count", "error_count"):
+                current_raw = self._hashes[key].get(field)
+                try:
+                    current_f = float(current_raw) if current_raw not in (None, "") else None
+                    incoming_f = float(value)
+                    if current_f is None or incoming_f >= current_f:
+                        self._hashes[key][field] = value
+                except (ValueError, TypeError):
+                    self._hashes[key][field] = value
+            else:
+                self._hashes[key][field] = value
+
+        return ["UPDATED", old_status]
+
 
 class _FakePipe:
     """Pipeline mock — hset/expire/zadd 同步排队，execute async 批量执行."""
@@ -764,3 +805,237 @@ class TestPruneImportTaskIndex:
             removed = await prune_import_task_index()
 
         assert removed == 0
+
+
+# ---------------------------------------------------------------------------
+# 幂等防护测试（CAS 终态守卫 + 缓存重构 + _do_import 短路）
+# ---------------------------------------------------------------------------
+
+
+class TestImportTaskCAS:
+    """_update_task_cas Lua CAS 行为测试。"""
+
+    @pytest.mark.asyncio
+    async def test_blocks_running_overwrite_success(self, _mock_import_settings):
+        """已 SUCCESS 时置 RUNNING → BLOCKED，状态不变。"""
+        from app.services.data_import import _update_task_cas
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {"status": "SUCCESS", "imported_count": "27"}
+        with patch("app.services.data_import.redis_client", fake):
+            code, old = await _update_task_cas("t1", new_status="RUNNING", started_at="x")
+        assert code == "BLOCKED"
+        assert old == "SUCCESS"
+        assert fake._hashes["import_task:t1"]["status"] == "SUCCESS"  # 未被覆盖
+
+    @pytest.mark.asyncio
+    async def test_allows_pending_to_running(self, _mock_import_settings):
+        """PENDING → RUNNING 正常 UPDATED。"""
+        from app.services.data_import import _update_task_cas
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {"status": "PENDING"}
+        with patch("app.services.data_import.redis_client", fake):
+            code, old = await _update_task_cas("t1", new_status="RUNNING", started_at="x")
+        assert code == "UPDATED"
+        assert old == "PENDING"
+        assert fake._hashes["import_task:t1"]["status"] == "RUNNING"
+
+    @pytest.mark.asyncio
+    async def test_blocks_cancel_after_success(self, _mock_import_settings):
+        """SUCCESS → CANCELLED 被 BLOCKED（取消已完成任务）。"""
+        from app.services.data_import import _update_task_cas
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {"status": "SUCCESS"}
+        with patch("app.services.data_import.redis_client", fake):
+            code, old = await _update_task_cas("t1", new_status="CANCELLED", finished_at="x")
+        assert code == "BLOCKED"
+        assert old == "SUCCESS"
+        assert fake._hashes["import_task:t1"]["status"] == "SUCCESS"
+
+    @pytest.mark.asyncio
+    async def test_monotonic_progress(self, _mock_import_settings):
+        """progress 倒退被忽略（0.8 → 0.5 不写入）。"""
+        from app.services.data_import import _update_task_cas
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {"status": "RUNNING", "progress": "0.8"}
+        with patch("app.services.data_import.redis_client", fake):
+            await _update_task_cas("t1", new_status="RUNNING", progress=0.5)
+        assert fake._hashes["import_task:t1"]["progress"] == "0.8"  # 未被 0.5 覆盖
+
+    @pytest.mark.asyncio
+    async def test_missing_task(self, _mock_import_settings):
+        """任务不存在返回 MISSING。"""
+        from app.services.data_import import _update_task_cas
+
+        fake = _FakeRedisImport()
+        with patch("app.services.data_import.redis_client", fake):
+            code, old = await _update_task_cas("nonexistent", new_status="RUNNING")
+        assert code == "MISSING"
+        assert old == ""
+
+    @pytest.mark.asyncio
+    async def test_running_to_running_not_blocked(self, _mock_import_settings):
+        """RUNNING → RUNNING（接续执行场景）不被 BLOCKED。"""
+        from app.services.data_import import _update_task_cas
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {"status": "RUNNING"}
+        with patch("app.services.data_import.redis_client", fake):
+            code, old = await _update_task_cas("t1", new_status="RUNNING", started_at="x")
+        assert code == "UPDATED"
+        assert old == "RUNNING"
+
+
+class TestBuildCachedResult:
+    """_build_cached_result 重构逻辑测试。"""
+
+    def test_uses_persisted_result_json(self):
+        """优先用持久化的 result JSON 字段。"""
+        from app.services.data_import import _build_cached_result
+
+        data = {
+            "status": "SUCCESS",
+            "result": '{"total": 27, "succeeded": 27, "failed": 0, "errors": []}',
+            "loop_count": "27",
+            "imported_count": "27",
+            "error_count": "0",
+            "error_message": "",
+        }
+        r = _build_cached_result(data)
+        assert r["total"] == 27
+        assert r["succeeded"] == 27
+        assert r["skipped_redelivery"] is True
+
+    def test_fallback_reconstruct_when_no_result(self):
+        """result 字段缺失时用 loop_count/imported_count 兜底重构。"""
+        from app.services.data_import import _build_cached_result
+
+        data = {
+            "status": "SUCCESS",
+            "result": "",
+            "loop_count": "10",
+            "imported_count": "8",
+            "error_count": "2",
+            "error_message": "",
+        }
+        r = _build_cached_result(data)
+        assert r["total"] == 10
+        assert r["succeeded"] == 8  # SUCCESS 时用 imported_count
+        assert r["failed"] == 0  # 非 FAILED 时 failed=0
+        assert r["skipped_redelivery"] is True
+
+    def test_fallback_failed_status(self):
+        """FAILED 状态兜底重构。"""
+        from app.services.data_import import _build_cached_result
+
+        data = {
+            "status": "FAILED",
+            "result": "",
+            "loop_count": "10",
+            "imported_count": "3",
+            "error_count": "7",
+            "error_message": "超时",
+        }
+        r = _build_cached_result(data)
+        assert r["succeeded"] == 0  # 非 SUCCESS 时 succeeded=0
+        assert r["failed"] == 7
+        assert "超时" in r["errors"]
+
+
+class TestImportHistoryDataCasShortCircuit:
+    """_do_import 已终态时 CAS 短路测试。"""
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_already_success(self, _mock_import_settings):
+        """任务已 SUCCESS → _do_import 开头 CAS BLOCKED，返回缓存结果不执行导入。"""
+        from app.services.data_import import import_history_data
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {
+            "task_id": "t1",
+            "status": "SUCCESS",
+            "loop_count": "5",
+            "imported_count": "5",
+            "error_count": "0",
+            "result": '{"total": 5, "succeeded": 5, "failed": 0, "errors": []}',
+        }
+        with patch("app.services.data_import.redis_client", fake):
+            result = await import_history_data(
+                loop_ids=["loop-1"],
+                ts_start="2026-07-15T00:00:00",
+                ts_end="2026-07-15T01:00:00",
+                task_id="t1",
+            )
+        assert result["skipped_redelivery"] is True
+        assert result["total"] == 5
+        # status 未被 RUNNING 覆盖
+        assert fake._hashes["import_task:t1"]["status"] == "SUCCESS"
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_already_failed(self, _mock_import_settings):
+        """任务已 FAILED → 同上短路。"""
+        from app.services.data_import import import_history_data
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {
+            "task_id": "t1",
+            "status": "FAILED",
+            "loop_count": "5",
+            "imported_count": "0",
+            "error_count": "5",
+            "result": "",
+            "error_message": "远端不可用",
+        }
+        with patch("app.services.data_import.redis_client", fake):
+            result = await import_history_data(
+                loop_ids=["loop-1"],
+                ts_start="2026-07-15T00:00:00",
+                ts_end="2026-07-15T01:00:00",
+                task_id="t1",
+            )
+        assert result["skipped_redelivery"] is True
+        assert fake._hashes["import_task:t1"]["status"] == "FAILED"
+
+
+class TestCancelImportTaskCas:
+    """cancel_import_task CAS 行为测试。"""
+
+    @pytest.mark.asyncio
+    async def test_cancel_running_task(self, _mock_import_settings):
+        """RUNNING 任务可正常取消（CANCELLED）。"""
+        from app.services.data_import import cancel_import_task
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {
+            "task_id": "t1",
+            "status": "RUNNING",
+            "celery_task_id": "",
+        }
+        with patch("app.services.data_import.redis_client", fake):
+            resp = await cancel_import_task("t1")
+        assert resp is not None
+        assert resp["status"] == "CANCELLED"
+        assert "was_blocked" not in resp
+
+    @pytest.mark.asyncio
+    async def test_cancel_already_success_blocked(self, _mock_import_settings):
+        """已 SUCCESS 任务取消被 CAS 拒绝，返回实际状态 + was_blocked。"""
+        from app.services.data_import import cancel_import_task
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:t1"] = {
+            "task_id": "t1",
+            "status": "SUCCESS",
+            "celery_task_id": "",
+            "loop_count": "5",
+            "imported_count": "5",
+            "error_count": "0",
+        }
+        with patch("app.services.data_import.redis_client", fake):
+            resp = await cancel_import_task("t1")
+        assert resp is not None
+        assert resp["status"] == "SUCCESS"  # 未变 CANCELLED
+        assert resp.get("was_blocked") is True

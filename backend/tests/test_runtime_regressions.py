@@ -121,6 +121,7 @@ async def test_zero_point_import_marks_loop_and_task_failed() -> None:
     session = MagicMock()
     session.close = AsyncMock()
     update_task = AsyncMock()
+    update_task_cas = AsyncMock(return_value=("UPDATED", ""))
 
     with (
         patch.object(db_module, "AsyncSessionLocal", return_value=session),
@@ -140,6 +141,7 @@ async def test_zero_point_import_marks_loop_and_task_failed() -> None:
         patch.object(data_import, "_import_single_loop", new=AsyncMock(return_value=0)),
         patch.object(data_import, "_is_task_cancelled", new=AsyncMock(return_value=False)),
         patch.object(data_import, "_update_task", new=update_task),
+        patch.object(data_import, "_update_task_cas", new=update_task_cas),
     ):
         result = await data_import.import_history_data(
             loop_ids=["loop-1"],
@@ -152,7 +154,7 @@ async def test_zero_point_import_marks_loop_and_task_failed() -> None:
     assert result["failed"] == 1
     assert "未返回可导入数据" in result["errors"][0]
     assert any(
-        call.kwargs.get("status") == ImportStatus.FAILED.value
+        call.kwargs.get("new_status") == ImportStatus.FAILED.value
         and "未返回可导入数据" in call.kwargs.get("error_message", "")
-        for call in update_task.await_args_list
+        for call in update_task_cas.await_args_list
     )
