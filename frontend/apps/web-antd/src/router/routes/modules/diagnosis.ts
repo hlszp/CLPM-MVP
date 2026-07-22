@@ -9,11 +9,11 @@ import type { RouteRecordRaw } from 'vue-router';
  * v6.1 IA 调整说明：
  * - 新增 DiagnosisOverview 作为诊断中心默认着陆页（替代原直接进入列表）
  * - 新增 DiagnosisTasks 页面（未归档诊断任务管理 + 触发诊断 + 结果查看 + 归档）
- * - 原 DiagnosisList 改造为 DiagnosisRecords（仅显示已归档数据，list.vue 保留便于回退）
+ * - 原 DiagnosisList 改造为 DiagnosisRecords（仅显示已归档数据）
  * - 移除 DiagnosisWaveform 路由（能力已合并入 DiagnosisDetail）
  * - 移除 DiagnosisABCompare 路由（能力已合并入 DiagnosisTracker 的 Drawer 模式）
  * - 移除 DiagnosisStatistics 路由（能力已合并入 DiagnosisOverview）
- * - 原 waveform.vue / ab-compare.vue / statistics.vue 文件保留，便于回退
+ * - 原 ab-compare.vue 文件保留，便于回退（list.vue/waveform.vue/statistics.vue 已清理）
  *
  * 角色权限（PRD §3）：
  * - ADMIN：全部（含配置）

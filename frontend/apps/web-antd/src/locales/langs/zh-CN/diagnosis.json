@@ -3,27 +3,6 @@
   "overview": {
     "title": "诊断总览"
   },
-  "list": {
-    "title": "诊断列表",
-    "plantNodePlaceholder": "装置/单元筛选",
-    "labelPlaceholder": "诊断标签",
-    "statusPlaceholder": "处理状态",
-    "timeWindowPlaceholder": "时间窗",
-    "columns": {
-      "loopTag": "回路位号",
-      "unit": "装置",
-      "score": "综合评分",
-      "label": "诊断标签",
-      "confidence": "置信度",
-      "status": "处理状态",
-      "diagnosedAt": "诊断时间",
-      "action": "操作"
-    },
-    "actions": {
-      "detail": "详情",
-      "refresh": "刷新"
-    }
-  },
   "detail": {
     "title": "诊断详情",
     "compositeScore": "综合评分",
@@ -34,16 +13,6 @@
     "actions": {
       "waveform": "波形查看",
       "tracker": "异常跟踪"
-    }
-  },
-  "waveform": {
-    "title": "波形分析",
-    "loopPlaceholder": "选择回路",
-    "timeRange": "时间范围",
-    "downsample": "降采样",
-    "tabs": {
-      "waveform": "波形趋势",
-      "scatter": "PV-OP 散点"
     }
   },
   "tracker": {
@@ -64,13 +33,6 @@
   },
   "abCompare": {
     "title": "A/B 对比"
-  },
-  "statistics": {
-    "title": "统计报表",
-    "labelDistribution": "标签分布",
-    "efficiencyTrend": "处理效率趋势",
-    "closeDuration": "闭环时长分布",
-    "export": "导出 CSV"
   },
   "config": {
     "title": "诊断指标配置",
@@ -93,7 +55,7 @@
     "OSCILLATION": "振荡",
     "VALVE_STICTION": "阀门粘滞",
     "OVERAGGRESSIVE": "参数过激",
-    "OVERCONSERVATIVE": "参数过保守",
+    "OVERCONSERVATIVE": "参数保守",
     "EXTERNAL_DISTURBANCE": "外扰频繁",
     "QUALITY_ABNORMAL": "PV 质量异常",
     "OUTPUT_SATURATION": "输出饱和",

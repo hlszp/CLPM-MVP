@@ -3,27 +3,6 @@
   "overview": {
     "title": "Diagnosis Overview"
   },
-  "list": {
-    "title": "Diagnosis List",
-    "plantNodePlaceholder": "Plant / Unit Filter",
-    "labelPlaceholder": "Diagnosis Label",
-    "statusPlaceholder": "Action Status",
-    "timeWindowPlaceholder": "Time Window",
-    "columns": {
-      "loopTag": "Loop Tag",
-      "unit": "Unit",
-      "score": "Composite Score",
-      "label": "Diagnosis Label",
-      "confidence": "Confidence",
-      "status": "Action Status",
-      "diagnosedAt": "Diagnosed At",
-      "action": "Action"
-    },
-    "actions": {
-      "detail": "Detail",
-      "refresh": "Refresh"
-    }
-  },
   "detail": {
     "title": "Diagnosis Detail",
     "compositeScore": "Composite Score",
@@ -34,16 +13,6 @@
     "actions": {
       "waveform": "Waveform",
       "tracker": "Action Tracker"
-    }
-  },
-  "waveform": {
-    "title": "Waveform Analysis",
-    "loopPlaceholder": "Select Loop",
-    "timeRange": "Time Range",
-    "downsample": "Downsample",
-    "tabs": {
-      "waveform": "Waveform Trend",
-      "scatter": "PV-OP Scatter"
     }
   },
   "tracker": {
@@ -64,13 +33,6 @@
   },
   "abCompare": {
     "title": "A/B Compare"
-  },
-  "statistics": {
-    "title": "Statistics Report",
-    "labelDistribution": "Label Distribution",
-    "efficiencyTrend": "Efficiency Trend",
-    "closeDuration": "Close Duration Distribution",
-    "export": "Export CSV"
   },
   "config": {
     "title": "Diagnosis Metric Config",
