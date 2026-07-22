@@ -370,7 +370,7 @@ async def import_history_data(
 
         async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
             """带信号量控制的单回路导入，返回 (index, count, error)."""
-            nonlocal shared_succeeded, shared_failed
+            nonlocal shared_succeeded, shared_failed, shared_completed_units
             async with sem:
                 if task_id and await _is_task_cancelled(task_id):
                     return (i, 0, "")
