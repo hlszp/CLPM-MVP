@@ -12,6 +12,12 @@
 >   - PR #94：B2 传感器故障算法组（卡死/噪声突增/漂移，归入 QUALITY_ABNORMAL 子类型）+ B3 Harris 指数模型失配评估（故障注入测试 19 个，正常信号误报实测 0/20）
 >   - PR #95：B4 轻量预处理复用（SPIKE/JUMP/OUT_OF_RANGE/NAN 剔除，冻结段有意保留）+ B5 可信度 A-E 统一（与 KPI 同一 ConfidenceEvaluator，详情页角标）+ B7 可视化存储瘦身（全量数组仅入主标签记录，端点输出不变）
 > - Phase C-E 待启动。
+> 
+> **跨模块影响勘察（2026-07-22）**：对照 Phase C/D/E 未启动任务实测诊断整改对回路管理、性能评估两模块的影响面——
+> - **Phase A/B 复核**：git log + 代码 grep 双重核实已全部落地（纠正首轮勘察误判：`diagnosis_engine.py` 实际在 `backend/app/tasks/` 非 `services/`），测试 298 例符合"只增不减"
+> - **隐藏耦合（已登记 §7 第 7 条）**：`services/performance.py` L673/L1341 两处只读引用 `action_tracker`（回路排行榜预诊断标签 + 坏演员分布），D1/D2 会改变其查询语义，**实施 D1/D2 须同步修改 performance.py**（补状态过滤 + order_by 取最新），否则性能评估看板失真
+> - **E4 利好**：回路删除为软删（`services/loop.py:1297` delete_loop 置 is_active=False，batch_delete_loops 同口径），外键 ON DELETE CASCADE 实际不触发，"历史诊断保留"天然满足，E4 仅需补验证测试
+> - **C6 不冲突**：诊断 SCORE_THRESHOLD 入 sys_config 与 KPI 的 `grading_thresholds.current`（5 级定级）为不同 key，互不影响；D4 A/B 闭环只读 KpiSnapshotHourly，不改 KPI 代码
 
 ---
 
@@ -255,6 +261,7 @@ Week 11-12 Phase E（规范符合性）    → 合规验证报告 + 文档对齐
 4. **规则引擎安全**：simpleeval 沙箱表达式必须白名单函数 + 超时保护 + 单测覆盖恶意表达式。
 5. **双机协作**：整改涉及前后端 + DB 迁移 + 文档，按 AGENTS.md §双机协作规范走 `zp/feat-diagnosis-*` 分支 + PR；A 阶段 hotfix 可自合并，B/C/D 阶段涉及模型与契约变更须对方 review。
 6. **测试纪律**：每个 Phase 交付时诊断相关测试总数只增不减；A 阶段修复需先补失败测试再改代码（防回归）。
+7. **跨模块隐藏耦合：performance.py 读 ActionTracker（2026-07-22 勘察发现）**：性能评估模块 `services/performance.py` 已在两处只读引用 `action_tracker` 表——L673-690 回路排行榜"预诊断标签"列（`select(ActionTracker).where(loop_id.in_(...))` 遍历后写覆盖，无状态过滤、无时间排序）；L1341-1360 "坏演员分布"统计（按 `diagnosis_label` 计数，不过滤 `action_status`，IGNORED 也被算作坏演员）。**D1（诊断→Tracker 自动建单）与 D2（Tracker 模型补全）会直接改变这两处查询的结果语义**：D1 后同回路 PENDING 记录大量增加会导致坏演员计数膨胀、预诊断标签覆盖顺序不可预测。**实施 D1/D2 时必须同步修改 `services/performance.py`**：L673 补 `where(action_status.in_(['PENDING','IN_PROGRESS']))` + `order_by` 取每回路最新一条；L1341 明确只统计未闭环状态（PENDING/IN_PROGRESS），避免 IGNORED/IMPLEMENTED 污染分布。D2 新增 `created_at` 列后可用其做更精确的"最新一条"排序（优于 `updated_at`，状态变更时会变）。否则性能评估看板的预诊断列与坏演员分布会失真。**利好**：回路删除为软删（`services/loop.py:1297` delete_loop 置 `is_active=False`，`batch_delete_loops` 同口径），诊断/Tracker 表的 `loop_id` 外键虽为 `ON DELETE CASCADE` 但实际不触发，E4"回路删除时历史诊断保留"天然满足，仅需补验证测试。
 
 ---
 
