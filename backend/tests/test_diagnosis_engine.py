@@ -18,6 +18,7 @@ import pytest
 
 from app.contracts.data_types import RawTimeSeries
 from app.tasks.diagnosis_engine import (
+    _THRESHOLD_SCHEMA,
     _analyze_quality,
     _analyze_saturation,
     _analyze_step_response,
@@ -42,6 +43,7 @@ from app.tasks.diagnosis_engine import (
     _do_run_diagnosis,
     _get_tag_name,
     _get_threshold,
+    _validate_threshold_config,
 )
 
 # ===========================================================================
@@ -1690,6 +1692,167 @@ class TestGetThreshold:
         config.threshold = {"k1": 1.0, "k2": 2.0}
         result = _get_threshold({"OSCILLATION": config}, "OSCILLATION", None, None)
         assert result == {"k1": 1.0, "k2": 2.0}
+
+
+class TestThresholdSchema:
+    """整改计划 C1：阈值键名 schema 登记与校验。"""
+
+    def test_schema_contains_all_diag_codes(self) -> None:
+        """_THRESHOLD_SCHEMA 登记了 4 个 diag_code。"""
+        assert set(_THRESHOLD_SCHEMA.keys()) == {
+            "OSCILLATION",
+            "QUALITY_ABNORMAL",
+            "OUTPUT_SATURATION",
+            "OVERAGGRESSIVE",
+        }
+
+    def test_oscillation_keys(self) -> None:
+        assert set(_THRESHOLD_SCHEMA["OSCILLATION"].keys()) == {
+            "similarity_threshold",
+            "min_zero_crossings",
+        }
+
+    def test_quality_abnormal_keys(self) -> None:
+        """QUALITY_ABNORMAL 包含 Q001-Q005 + 传感器故障 7 键 = 13 键。"""
+        keys = set(_THRESHOLD_SCHEMA["QUALITY_ABNORMAL"].keys())
+        assert keys == {
+            "q001_consecutive_bad",
+            "q002_bad_rate",
+            "q003_uncertain_rate",
+            "q004_bad_duration",
+            "q005_min_bad",
+            "q005_max_bad",
+            "frozen_window",
+            "frozen_eps",
+            "frozen_ratio",
+            "noise_ratio",
+            "noise_segment",
+            "drift_k",
+            "drift_segments",
+        }
+
+    def test_output_saturation_keys(self) -> None:
+        assert set(_THRESHOLD_SCHEMA["OUTPUT_SATURATION"].keys()) == {
+            "op_high_limit",
+            "op_low_limit",
+            "saturation_epsilon",
+        }
+
+    def test_overaggressive_keys(self) -> None:
+        assert set(_THRESHOLD_SCHEMA["OVERAGGRESSIVE"].keys()) == {
+            "harris_ar_order",
+            "harris_warn",
+        }
+
+
+class TestValidateThresholdConfig:
+    """整改计划 C1：_validate_threshold_config 批量校验。"""
+
+    def test_all_configs_complete_no_warning(self, caplog) -> None:
+        """所有配置完整时不产生告警。"""
+        configs = {}
+        for diag_code, keys in _THRESHOLD_SCHEMA.items():
+            cfg = MagicMock()
+            cfg.threshold = dict(keys)
+            configs[diag_code] = cfg
+
+        with caplog.at_level("WARNING"):
+            _validate_threshold_config(configs)
+
+        assert not any("缺失" in r.message or "NULL" in r.message for r in caplog.records)
+
+    def test_missing_config_warns(self, caplog) -> None:
+        """缺少某个 diag_code 配置时告警。"""
+        configs = {}
+        for diag_code, keys in _THRESHOLD_SCHEMA.items():
+            if diag_code == "OVERAGGRESSIVE":
+                continue
+            cfg = MagicMock()
+            cfg.threshold = dict(keys)
+            configs[diag_code] = cfg
+
+        with caplog.at_level("WARNING"):
+            _validate_threshold_config(configs)
+
+        assert any("OVERAGGRESSIVE" in r.message for r in caplog.records)
+
+    def test_null_threshold_warns(self, caplog) -> None:
+        """threshold 为 NULL 时告警。"""
+        cfg = MagicMock()
+        cfg.threshold = None
+        configs = {"OVERAGGRESSIVE": cfg}
+
+        with caplog.at_level("WARNING"):
+            _validate_threshold_config(configs)
+
+        assert any("NULL" in r.message for r in caplog.records)
+
+    def test_missing_keys_warns(self, caplog) -> None:
+        """配置缺失部分键时告警。"""
+        cfg = MagicMock()
+        # 只有 Q001，缺失其余 12 键
+        cfg.threshold = {"q001_consecutive_bad": 10}
+        configs = {"QUALITY_ABNORMAL": cfg}
+
+        with caplog.at_level("WARNING"):
+            _validate_threshold_config(configs)
+
+        assert any("缺失" in r.message for r in caplog.records)
+
+
+class TestGetThresholdWarnings:
+    """整改计划 C1：_get_threshold 缺省告警日志。"""
+
+    def test_warns_when_config_missing_for_known_code(self, caplog) -> None:
+        """已知 diag_code 缺失配置时告警。"""
+        with caplog.at_level("WARNING"):
+            result = _get_threshold({}, "OSCILLATION", "similarity_threshold", 0.4)
+        assert result == 0.4
+        assert any("OSCILLATION" in r.message for r in caplog.records)
+
+    def test_warns_when_threshold_null_for_known_code(self, caplog) -> None:
+        """已知 diag_code 的 threshold 为 NULL 时告警。"""
+        cfg = MagicMock()
+        cfg.threshold = None
+        with caplog.at_level("WARNING"):
+            result = _get_threshold(
+                {"OSCILLATION": cfg}, "OSCILLATION", "similarity_threshold", 0.4
+            )
+        assert result == 0.4
+        assert any("NULL" in r.message for r in caplog.records)
+
+    def test_warns_when_known_key_missing(self, caplog) -> None:
+        """schema 登记的键在 threshold dict 中缺失时告警。"""
+        cfg = MagicMock()
+        cfg.threshold = {}
+        with caplog.at_level("WARNING"):
+            result = _get_threshold(
+                {"OSCILLATION": cfg}, "OSCILLATION", "similarity_threshold", 0.4
+            )
+        assert result == 0.4
+        assert any(
+            "缺失" in r.message and "similarity_threshold" in r.message for r in caplog.records
+        )
+
+    def test_warns_for_unregistered_key(self, caplog) -> None:
+        """未登记的键名告警（可能拼写错误）。"""
+        cfg = MagicMock()
+        cfg.threshold = {}
+        with caplog.at_level("WARNING"):
+            result = _get_threshold({"OSCILLATION": cfg}, "OSCILLATION", "typo_key", 0.5)
+        assert result == 0.5
+        assert any("未在 _THRESHOLD_SCHEMA 中登记" in r.message for r in caplog.records)
+
+    def test_no_warning_when_key_found(self, caplog) -> None:
+        """键存在时不告警。"""
+        cfg = MagicMock()
+        cfg.threshold = {"similarity_threshold": 0.6}
+        with caplog.at_level("WARNING"):
+            result = _get_threshold(
+                {"OSCILLATION": cfg}, "OSCILLATION", "similarity_threshold", 0.4
+            )
+        assert result == 0.6
+        assert not any("OSCILLATION" in r.message and "缺失" in r.message for r in caplog.records)
 
 
 class TestDetectOscillationIae:

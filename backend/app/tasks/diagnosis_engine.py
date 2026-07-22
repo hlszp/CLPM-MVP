@@ -32,6 +32,7 @@ from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
 from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.diagnosis_trigger_config import get_trigger_config
 from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import map_quality_code
 from app.services.preprocessing.quality_summary import compute_quality_summary
@@ -43,14 +44,9 @@ logger = logging.getLogger(__name__)
 # 算法版本号
 DIAG_ALGORITHM_VERSION = "DIAG_ENGINE_v1.0"
 
-# 评分阈值：跌破此值触发诊断
-SCORE_THRESHOLD = Decimal("60")
-
-# 并发 worker 数
-CONCURRENCY = 5
-
-# 数据最少点数
-MIN_DATA_POINTS = 32
+# 整改计划 C6：触发条件从 sys_config 配置读取（diagnosis_trigger.current）
+# 热路径通过 get_trigger_config() 读取进程内缓存，保存后立即生效，不查库。
+# 默认值：score_threshold=60, concurrency=5, min_data_points=32
 
 # 诊断标签严重等级映射（A11：写入 diagnosis_tag.severity）
 _TAG_SEVERITY_MAP: dict[str, str] = {
@@ -91,6 +87,43 @@ _LOOP_TYPE_TO_CONTROL_TYPE: dict[str, ControlType] = {
     "TEMPERATURE": ControlType.TEMPERATURE,
     "LEVEL": ControlType.LEVEL,
     "ANALYSIS": ControlType.COMPOSITION,
+}
+
+# 整改计划 C1：阈值键名 schema 登记（diag_code → {key: default}）
+# 所有算法通过 _get_threshold 读取的阈值键名及其代码默认值集中登记于此，
+# 便于迁移种子数据对齐与运行时缺省告警。
+_THRESHOLD_SCHEMA: dict[str, dict[str, Any]] = {
+    "OSCILLATION": {
+        "similarity_threshold": 0.4,
+        "min_zero_crossings": 3,
+    },
+    "QUALITY_ABNORMAL": {
+        # 质量码规则矩阵 Q001-Q005（_analyze_quality）
+        "q001_consecutive_bad": 10,
+        "q002_bad_rate": 0.1,
+        "q003_uncertain_rate": 0.2,
+        "q004_bad_duration": 5,
+        "q005_min_bad": 3,
+        "q005_max_bad": 10,
+        # 传感器故障检测（_detect_sensor_faults，共享 QUALITY_ABNORMAL diag_code）
+        "frozen_window": 300,
+        "frozen_eps": 1e-4,
+        "frozen_ratio": 0.2,
+        "noise_ratio": 3.0,
+        "noise_segment": 0.5,
+        "drift_k": 2.0,
+        "drift_segments": 5,
+    },
+    "OUTPUT_SATURATION": {
+        "op_high_limit": 100.0,
+        "op_low_limit": 0.0,
+        "saturation_epsilon": 2.0,
+    },
+    "OVERAGGRESSIVE": {
+        # Harris 指数模型失配评估（_assess_model_mismatch）
+        "harris_ar_order": 10,
+        "harris_warn": 2.0,
+    },
 }
 
 
@@ -139,6 +172,10 @@ def run_diagnosis_checkup(self: AsyncTask) -> dict:
 
     失败自动重试 3 次，指数退避。
     """
+    # 整改计划 C6：体检轨可配开关（checkup_enabled）
+    if not get_trigger_config().checkup_enabled:
+        logger.info("体检轨已禁用（checkup_enabled=False），跳过本次执行")
+        return {"total": 0, "diagnosed": 0, "failed": 0, "skipped": "checkup_disabled"}
     logger.info("体检轨任务开始, task_id=%s", self.request.id)
     try:
         result = self.run_async(_do_run_checkup())
@@ -253,7 +290,7 @@ async def _do_run_diagnosis() -> dict:
             .where(KpiSnapshotHourly.ts_start <= ts_end_naive)
             .where(
                 or_(
-                    KpiSnapshotHourly.score < SCORE_THRESHOLD,
+                    KpiSnapshotHourly.score < get_trigger_config().score_threshold,
                     KpiSnapshotHourly.score.is_(None),
                 )
             )
@@ -275,6 +312,7 @@ async def _do_run_diagnosis() -> dict:
             select(DiagnosisConfig).where(DiagnosisConfig.is_enabled.is_(True))
         )
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
+        _validate_threshold_config(diag_configs)
 
         # 3. 为每个回路创建 DiagnosisTask 记录（自动触发）
         # 去重：同回路同时间窗已存在 PENDING/RUNNING 任务时跳过创建与诊断，
@@ -345,7 +383,7 @@ async def _run_diag_tasks_concurrent(
     from app.core.db import AsyncSessionLocal
     from app.services.data_source.factory import get_provider
 
-    sem = asyncio.Semaphore(CONCURRENCY)
+    sem = asyncio.Semaphore(get_trigger_config().concurrency)
 
     async def _diag_with_sem(loop_id: str, task_id: str) -> dict | None:
         async with sem:
@@ -461,6 +499,7 @@ async def _do_run_checkup() -> dict:
             select(DiagnosisConfig).where(DiagnosisConfig.is_enabled.is_(True))
         )
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
+        _validate_threshold_config(diag_configs)
 
         # 3. 为每个回路创建 DiagnosisTask 记录（triggered_by='checkup-scheduler'）
         # 去重：同回路同时间窗已存在 PENDING/RUNNING 任务时跳过创建与诊断，
@@ -541,6 +580,7 @@ async def _do_diagnose_single_loop(
             select(DiagnosisConfig).where(DiagnosisConfig.is_enabled.is_(True))
         )
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
+        _validate_threshold_config(diag_configs)
 
         now = datetime.now(UTC)
         # 解析时间范围：优先使用 time_range_start/time_range_end，其次 ts_start
@@ -787,12 +827,13 @@ async def _diagnose_loop(
         return None
 
     # 数据不足判定
-    if len(raw_series.timestamps) < MIN_DATA_POINTS:
+    min_points = get_trigger_config().min_data_points
+    if len(raw_series.timestamps) < min_points:
         logger.info(
             "回路 %s 数据点不足 (%d < %d)",
             loop.tag_name,
             len(raw_series.timestamps),
-            MIN_DATA_POINTS,
+            min_points,
         )
         return None
 
@@ -833,7 +874,7 @@ async def _diagnose_loop(
         )
         aligned_src_indices.append(i)
 
-    if len(aligned) < MIN_DATA_POINTS:
+    if len(aligned) < min_points:
         logger.info("回路 %s 对齐后数据点不足", loop.tag_name)
         return None
 
@@ -1888,7 +1929,7 @@ def _detect_sensor_faults(
     result = _empty_sensor_fault_result()
 
     n = len(pv_values)
-    if n < MIN_DATA_POINTS:
+    if n < get_trigger_config().min_data_points:
         return result
 
     try:
@@ -2052,7 +2093,8 @@ def _assess_model_mismatch(
     warn_threshold = float(threshold.get("harris_warn", 2.0))
 
     n = len(pv_values)
-    if sp_values is None or len(sp_values) != n or n < max(MIN_DATA_POINTS, 3 * ar_order):
+    min_points = get_trigger_config().min_data_points
+    if sp_values is None or len(sp_values) != n or n < max(min_points, 3 * ar_order):
         return _empty_harris_result()
 
     try:
@@ -2912,6 +2954,11 @@ def _get_threshold(
 ) -> Any:
     """从诊断配置表中读取阈值参数（P0-1 配置表与算法对齐）。
 
+    整改计划 C1：增加键名 schema 校验与缺省告警日志。
+    - diag_code 在 diag_configs 中不存在时告警（配置缺失，使用代码默认值）
+    - key 在 threshold dict 中缺失时告警（使用默认值）
+    - key 不在 _THRESHOLD_SCHEMA 登记表中时告警（未知键名，可能拼写错误）
+
     Args:
         diag_configs: 诊断配置字典 {diag_code: DiagnosisConfig}
         diag_code: 诊断标签代码（如 "OSCILLATION"）
@@ -2923,13 +2970,70 @@ def _get_threshold(
     """
     config = diag_configs.get(diag_code)
     if config is None:
+        if diag_code in _THRESHOLD_SCHEMA:
+            logger.warning(
+                "诊断配置 %s 在数据库中不存在（is_enabled=True 未返回），使用代码默认值",
+                diag_code,
+            )
         return default
     threshold = getattr(config, "threshold", None)
     if threshold is None:
+        if diag_code in _THRESHOLD_SCHEMA:
+            logger.warning(
+                "诊断配置 %s 的 threshold 为 NULL，使用代码默认值",
+                diag_code,
+            )
         return default
     if key is None:
         return threshold
+    if key not in threshold:
+        known = _THRESHOLD_SCHEMA.get(diag_code, {})
+        if key in known:
+            logger.warning(
+                "阈值键 %s 在配置 %s 中缺失，使用默认值 %s",
+                key,
+                diag_code,
+                default,
+            )
+        else:
+            logger.warning(
+                "阈值键 %s 未在 _THRESHOLD_SCHEMA 中登记（diag_code=%s），"
+                "可能键名拼写错误，使用默认值 %s",
+                key,
+                diag_code,
+                default,
+            )
     return threshold.get(key, default)
+
+
+def _validate_threshold_config(diag_configs: dict[str, Any]) -> None:
+    """校验已加载的诊断配置与 _THRESHOLD_SCHEMA 的一致性（整改计划 C1）.
+
+    在加载 diag_configs 后调用，一次性告警所有缺失的配置项与阈值键，
+    便于管理员在配置页补齐。运行时 _get_threshold 仍会逐键告警兜底。
+    """
+    for diag_code, schema_keys in _THRESHOLD_SCHEMA.items():
+        config = diag_configs.get(diag_code)
+        if config is None:
+            logger.warning(
+                "诊断配置 %s 未启用或不存在（阈值将全部使用代码默认值）",
+                diag_code,
+            )
+            continue
+        threshold = getattr(config, "threshold", None)
+        if threshold is None:
+            logger.warning(
+                "诊断配置 %s 的 threshold 为 NULL（阈值将全部使用代码默认值）",
+                diag_code,
+            )
+            continue
+        missing = [k for k in schema_keys if k not in threshold]
+        if missing:
+            logger.warning(
+                "诊断配置 %s 缺失阈值键 %s（将使用代码默认值）",
+                diag_code,
+                missing,
+            )
 
 
 def _apply_expert_rules(algorithm_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -3546,6 +3650,8 @@ __all__ = [
     "_detect_oscillation_iae",
     "_detect_slow_response",
     "_get_threshold",
+    "_THRESHOLD_SCHEMA",
+    "_validate_threshold_config",
     "run_diagnosis_hourly",
     "run_loop_diagnosis",
 ]

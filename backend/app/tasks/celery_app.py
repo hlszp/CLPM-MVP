@@ -139,6 +139,13 @@ def _preload_datasource_config_sync() -> None:
                 await preload_outlier_params(db)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("worker 子进程预载异常值检测参数失败（将使用算法默认值）: %s", exc)
+            # 预载诊断触发条件（整改计划 C6，失败回落默认值）
+            try:
+                from app.services.diagnosis_trigger_config import preload_diagnosis_trigger
+
+                await preload_diagnosis_trigger(db)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("worker 子进程预载诊断触发条件失败（将使用默认值）: %s", exc)
 
     loop = asyncio.new_event_loop()
     try:

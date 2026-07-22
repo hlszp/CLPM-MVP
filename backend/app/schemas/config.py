@@ -476,6 +476,40 @@ class VersionHistorySchema(CamelModel):
     items: list[VersionHistoryItem] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# 诊断触发条件配置（整改计划 C6 — 触发条件可配）
+# ---------------------------------------------------------------------------
+
+
+class DiagnosisTriggerSchema(CamelModel):
+    """诊断触发条件配置（sys_config 存储，运行时缓存）.
+
+    存储 key: ``diagnosis_trigger.current``，结构见
+    ``app.services.diagnosis_trigger_config``。
+
+    保存后立即刷新进程内缓存，热路径（diagnosis_engine）通过
+    ``get_trigger_config()`` 读取，不查库。
+    """
+
+    score_threshold: float = Field(
+        default=60.0, ge=0, le=100, description="评分阈值：跌破此值触发诊断"
+    )
+    concurrency: int = Field(default=5, ge=1, le=50, description="并发 worker 数")
+    min_data_points: int = Field(default=32, ge=8, description="数据最少点数（低于此值跳过诊断）")
+    checkup_enabled: bool = Field(default=True, description="体检轨是否启用（每 8h 全回路体检）")
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class DiagnosisTriggerSaveRequest(CamelModel):
+    """诊断触发条件配置保存请求."""
+
+    score_threshold: float = Field(ge=0, le=100)
+    concurrency: int = Field(ge=1, le=50)
+    min_data_points: int = Field(ge=8)
+    checkup_enabled: bool
+
+
 __all__ = [
     "ConfidenceThresholdItem",
     "ConfidenceThresholdSaveRequest",
@@ -487,6 +521,8 @@ __all__ = [
     "DiagnosisConfigItem",
     "DiagnosisConfigUpdateItem",
     "DiagnosisLabel",
+    "DiagnosisTriggerSaveRequest",
+    "DiagnosisTriggerSchema",
     "GradingThresholdItem",
     "GradingThresholdSaveRequest",
     "GradingThresholdSchema",

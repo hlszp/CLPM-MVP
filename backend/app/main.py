@@ -36,6 +36,7 @@ from app.api.v1.endpoints import (
     # v6.1: DCS 配置管理（品牌/型号/MODE 定义/映射矩阵）
     dcs,
     diagnosis,
+    diagnosis_trigger_config,
     grading_config,
     health,
     # Phase 3: 回路数据管理（历史数据导入）
@@ -322,6 +323,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("从 sys_config 预载异常值检测参数失败（将使用算法默认值）: %s", exc)
 
+    # 从 sys_config 预载诊断触发条件到进程内缓存（整改计划 C6，
+    # 预载失败回落默认值 score_threshold=60/concurrency=5/min_data_points=32，不阻塞启动）
+    from app.services.diagnosis_trigger_config import preload_diagnosis_trigger
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await preload_diagnosis_trigger(db)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("从 sys_config 预载诊断触发条件失败（将使用默认值）: %s", exc)
+
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
 
@@ -425,6 +436,7 @@ def create_app() -> FastAPI:
 
     # v6.2: 8 类异常值检测参数与启停开关配置
     v1_router.include_router(outlier_config.router)
+    v1_router.include_router(diagnosis_trigger_config.router)
     # v4.0: 评估任务管理（标准/自定义）
     v1_router.include_router(eval_tasks.router)
     # S5 系统管理：用户管理、审计日志、报表配置
