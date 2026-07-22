@@ -333,6 +333,10 @@ async def import_history_data(
         # 计算动态分块大小
         chunk_hours = _compute_chunk_hours(start_dt, end_dt)
 
+        # 计算总小时窗口数，用于进度计算
+        total_hours = math.ceil((end_dt - start_dt).total_seconds() / 3600)
+        total_units = total * total_hours  # 总进度单位 = 回路数 × 小时数
+
         import asyncio as _asyncio_sem
 
         sem = _asyncio_sem.Semaphore(2)  # 远端 API 易在高并发下 504，限制最多 2 个回路并发
@@ -340,18 +344,29 @@ async def import_history_data(
         # 共享计数器（并发安全）
         shared_succeeded = 0
         shared_failed = 0
+        shared_completed_units = 0  # 完成的小时窗口数
 
-        async def _record_progress() -> None:
+        async def _record_progress(chunk_complete: int = 0) -> None:
             if not task_id:
                 return
+            nonlocal shared_completed_units
             async with progress_lock:
                 cur_s, cur_f = shared_succeeded, shared_failed
+                if chunk_complete > 0:
+                    shared_completed_units += chunk_complete
+                cur_units = shared_completed_units
+            # 进度 = 完成的小时窗口数 / 总小时窗口数
+            progress_value = round(cur_units / total_units, 4) if total_units > 0 else 1.0
             await _update_task(
                 task_id,
-                progress=round((cur_s + cur_f) / total, 4) if total > 0 else 1.0,
+                progress=progress_value,
                 imported_count=cur_s,
                 error_count=cur_f,
             )
+
+        async def _on_chunk_complete() -> None:
+            """小时分块完成时的进度回调."""
+            await _record_progress(chunk_complete=1)
 
         async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
             """带信号量控制的单回路导入，返回 (index, count, error)."""
@@ -367,6 +382,8 @@ async def import_history_data(
                     logger.warning("回路 %s 无有效 tag 映射，跳过", lid)
                     async with progress_lock:
                         shared_failed += 1
+                        # 无 tag 映射时，跳过所有小时窗口，直接计入进度
+                        shared_completed_units += total_hours
                     error = f"loop {lid}: 无有效 tag 映射"
                     await _record_progress()
                     return (i, 0, error)
@@ -383,6 +400,7 @@ async def import_history_data(
                         role_tag_map=loop_meta["role_tag_map"],
                         chunk_hours=chunk_hours,
                         task_id=task_id,
+                        on_chunk_complete=_on_chunk_complete,
                     )
                     if count <= 0:
                         raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
@@ -398,12 +416,14 @@ async def import_history_data(
                 except Exception as exc:
                     async with progress_lock:
                         shared_failed += 1
+                        # 失败时，跳过剩余小时窗口，直接计入进度
+                        shared_completed_units += total_hours - shared_completed_units % total_hours
                     error = f"loop {lid}: {exc}"
                     logger.warning("回路导入失败: %s", error)
                     await _record_progress()
                     return (i, 0, error)
 
-                # 更新进度
+                # 更新进度（回路完成时确保进度准确）
                 await _record_progress()
                 return (i, count, "")
 
@@ -486,6 +506,7 @@ async def _import_single_loop(
     role_tag_map: dict[str, str] | None = None,
     chunk_hours: int = 1,
     task_id: str | None = None,
+    on_chunk_complete: callable | None = None,
 ) -> int:
     """导入单个回路的历史数据.
 
@@ -495,6 +516,7 @@ async def _import_single_loop(
         role_tag_map: {role → tag_name} 预加载的 tag 映射
         chunk_hours: 动态分块小时数
         task_id: Redis 任务 ID（用于 chunk 级取消检查）
+        on_chunk_complete: 每完成一个小时分块时的回调函数
 
     Returns:
         导入的数据点数
@@ -535,6 +557,10 @@ async def _import_single_loop(
                 total_count += count
 
         chunk_start = chunk_end
+
+        # 小时分块完成时触发进度回调
+        if on_chunk_complete:
+            await on_chunk_complete()
 
     return total_count
 

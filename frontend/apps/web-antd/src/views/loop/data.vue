@@ -248,14 +248,14 @@ const taskColumns: TableColumnsType = [
   {
     title: '进度',
     key: 'progress',
-    width: 136,
+    width: 150,
     customRender: ({ record }) => {
       const pct = Math.round((record.progress ?? 0) * 100);
       return h('div', {}, [
         h(
           'div',
           { class: 'text-xs mb-1' },
-          `${record.importedCount}/${record.loopCount} (${pct}%)`,
+          `${record.status === 'RUNNING' ? '执行中...' : ''} ${pct}%`,
         ),
         h(Progress, {
           percent: pct,
