@@ -42,6 +42,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 | TaskTracker | `app/services/task_tracker.py` | 任务全生命周期跟踪（create/update_status），Redis 状态存储 + 通知 |
 | 预处理 Pipeline | `app/services/preprocessing/` (quality_code/thresholds/outlier_detection/validity_mask/quality_summary/pipeline) | 8 步流水线 + 8 类异常值检测 |
 | MetricCalculator | `app/tasks/kpi_calc.py` | 12 个 KPI 指标计算器（3 核心 + 1 综合 + 8 辅助），通过 DataPlanner.request_bundles() 获取数据 |
+| 数据完整性检查 | `app/services/data_integrity.py` | 本地 TDengine 宽表完整性检查：按小时分桶对 7 列分别 `COUNT(col)` 统计列级缺失；缺失=无记录或列 NULL，质量码非 Good 但有值不算缺失；首尾不足整点桶按实际秒数算预期点数。API：`POST /loops/data-import/integrity-check` |
 
 ## 开发环境运行指南
 
