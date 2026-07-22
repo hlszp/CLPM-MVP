@@ -405,7 +405,7 @@ function handleSummaryAction(key: string) {
     trackerDrawerVisible.value = true;
   }
   if (key === 'visualization') {
-    router.push(`/diagnosis/visualization/${loopId}`);
+    router.push({ path: '/diagnosis/visualization', query: { loopId } });
   }
 }
 

@@ -34,7 +34,7 @@ const { themeColors } = useClpmTheme();
 const route = useRoute();
 const router = useRouter();
 
-const selectedLoopId = ref<string>((route.params.loopId as string) || '');
+const selectedLoopId = ref<string>((route.query.loopId as string) || '');
 const timeWindow = ref<string>('last_7_days');
 const loops = ref<LoopApi.LoopListItem[]>([]);
 const loopsLoading = ref(false);
@@ -111,7 +111,7 @@ const goBack = () => {
 };
 
 watch(
-  () => route.params.loopId,
+  () => route.query.loopId,
   (newId) => {
     if (newId) {
       selectedLoopId.value = newId as string;
