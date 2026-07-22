@@ -141,9 +141,7 @@ class LoopIntegrityDetail(CamelModel):
     colDetails: dict[str, ColumnIntegrityDetail] | None = Field(
         None, description="各数据列的完整性明细 pv/sp/op/mode/pid_p/pid_i/pid_d"
     )
-    missingColumns: list[str] | None = Field(
-        None, description="有缺失的列名列表"
-    )
+    missingColumns: list[str] | None = Field(None, description="有缺失的列名列表")
 
 
 class TimeGap(CamelModel):

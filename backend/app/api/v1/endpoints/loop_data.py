@@ -22,6 +22,7 @@ from app.schemas.loop_data import (
     ImportRequest,
     ImportTaskListResponse,
     ImportTaskResponse,
+    IntegrityCheckRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,70 @@ async def start_import(
         data={"taskId": task_id, "celeryTaskId": celery_result.id},
         message=f"导入任务已启动，共 {len(body.loopIds)} 个回路",
     )
+
+
+@router.post("/integrity-check", response_model=ApiResponse[dict])
+async def check_integrity(
+    body: IntegrityCheckRequest,
+    user: SysUser = Depends(require_roles(*_IMPORT_ROLES)),
+) -> dict:
+    """数据完整性检查.
+
+    对本地 TDengine 宽表做完整性检查，输出：
+    - 整体完整度（百分比）
+    - 主要时间缺口（哪些时间段缺数据，小时粒度）
+    - 主要回路缺口（哪些回路缺数据）
+
+    仅查本地 TDengine，不调远端 API。
+    """
+    # 1. 校验时间范围
+    try:
+        start_dt = datetime.fromisoformat(body.tsStart.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(body.tsEnd.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise BizError(
+            code="ERR_INVALID_TIME_FORMAT",
+            message=f"时间格式无效: {exc}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        ) from exc
+
+    if start_dt >= end_dt:
+        raise BizError(
+            code="ERR_INVALID_TIME_RANGE",
+            message="tsStart 必须早于 tsEnd",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if (end_dt - start_dt) > timedelta(days=_MAX_IMPORT_WINDOW_DAYS):
+        raise BizError(
+            code="ERR_INTEGRITY_WINDOW_TOO_LARGE",
+            message=(
+                f"检查时间窗不能超过 {_MAX_IMPORT_WINDOW_DAYS} 天"
+                f"（当前: {(end_dt - start_dt).days} 天）"
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 2. 执行检查
+    from app.core.db import AsyncSessionLocal
+    from app.services.data_integrity import check_integrity as _check
+
+    async with AsyncSessionLocal() as db:
+        result = await _check(
+            db=db,
+            loop_ids=body.loopIds,
+            ts_start=body.tsStart,
+            ts_end=body.tsEnd,
+            expected_interval_s=body.expectedInterval,
+        )
+
+    logger.info(
+        "完整性检查完成: loops=%d, overall=%.2f%%, user=%s",
+        result["loopCount"],
+        result["overallCompleteness"] * 100,
+        user.username,
+    )
+    return success(data=result, message="完整性检查完成")
 
 
 @router.get("/tasks", response_model=ApiResponse[ImportTaskListResponse])

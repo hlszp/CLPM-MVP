@@ -40,6 +40,7 @@ import dayjs from 'dayjs';
 import { getLoopListApi } from '#/api/loop';
 import {
   cancelImportApi,
+  checkIntegrityApi,
   deleteImportApi,
   getImportTasksApi,
   startImportApi,
@@ -47,6 +48,7 @@ import {
 } from '#/api/loop-data';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmPageToolbar } from '#/components/clpm';
+import IntegrityReportDrawer from './components/integrity-report-drawer.vue';
 
 defineOptions({ name: 'LoopData' });
 
@@ -212,6 +214,11 @@ const interval = ref(1);
 const conflictStrategy = ref<LoopDataApi.ConflictStrategy>('overwrite');
 const triggerBackfill = ref(false);
 const importing = ref(false);
+
+// --- 数据完整性检查 ---
+const integrityChecking = ref(false);
+const integrityDrawerVisible = ref(false);
+const integrityResult = ref<LoopDataApi.IntegrityCheckResult | null>(null);
 
 // --- 任务列表 ---
 const tasks = ref<LoopDataApi.ImportTask[]>([]);
@@ -430,6 +437,70 @@ async function loadTasks() {
 function handleTaskPageChange(pag: TablePaginationConfig) {
   taskPagination.value.current = pag.current ?? 1;
   loadTasks();
+}
+
+// --- 数据完整性检查 ---
+
+/** 检查完整性：loopIds 优先用已选回路，未选则传 undefined 查全部 READY */
+async function handleCheckIntegrity() {
+  if (!timeRange.value || timeRange.value.length !== 2) return;
+  const [rangeStart, rangeEnd] = timeRange.value;
+  if (!rangeStart || !rangeEnd) return;
+
+  const loopIds =
+    selectedLoopIds.value.length > 0 ? selectedLoopIds.value : undefined;
+
+  integrityChecking.value = true;
+  // 先打开 Drawer 显示 loading 占位
+  integrityDrawerVisible.value = true;
+  try {
+    const result = await checkIntegrityApi({
+      loopIds,
+      tsStart: rangeStart.toISOString(),
+      tsEnd: rangeEnd.toISOString(),
+      expectedInterval: interval.value,
+    });
+    integrityResult.value = result;
+  } catch {
+    // 错误已由拦截器透传
+    integrityDrawerVisible.value = false;
+  } finally {
+    integrityChecking.value = false;
+  }
+}
+
+/** 基于完整性检查结果一键补齐（强制 skip 策略，AGENTS.md 红线） */
+function handleBackfillFromIntegrity(
+  loopIds: string[],
+  tsStart: string,
+  tsEnd: string,
+) {
+  Modal.confirm({
+    title: '确认补齐缺失数据',
+    content: `将对 ${loopIds.length} 个回路从远端导入缺失时段数据，采用 skip 策略（仅补缺口，不覆盖已有数据）。时间范围 ${dayjs(tsStart).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(tsEnd).format('YYYY-MM-DD HH:mm')}`,
+    okText: '开始补齐',
+    cancelText: '取消',
+    onOk: async () => {
+      importing.value = true;
+      try {
+        await startImportApi({
+          loopIds,
+          tsStart,
+          tsEnd,
+          interval: interval.value,
+          conflictStrategy: 'skip',
+          triggerBackfill: triggerBackfill.value,
+        });
+        message.success('补齐任务已启动');
+        integrityDrawerVisible.value = false;
+        await loadTasks();
+      } catch {
+        // 错误已由拦截器透传
+      } finally {
+        importing.value = false;
+      }
+    },
+  });
 }
 
 async function handleStartImport() {
@@ -743,6 +814,14 @@ onUnmounted(() => {
               </Checkbox>
             </Tooltip>
             <Button
+              size="small"
+              :loading="integrityChecking"
+              :disabled="!timeRange || timeRange.length !== 2"
+              @click="handleCheckIntegrity"
+            >
+              检查完整性
+            </Button>
+            <Button
               type="primary"
               size="small"
               :loading="importing"
@@ -786,6 +865,17 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 数据完整性检查报告抽屉 -->
+    <IntegrityReportDrawer
+      v-model:visible="integrityDrawerVisible"
+      :result="integrityResult"
+      :loading="integrityChecking"
+      :ts-start="timeRange?.[0]?.toISOString() ?? ''"
+      :ts-end="timeRange?.[1]?.toISOString() ?? ''"
+      :expected-interval="interval"
+      @backfill="handleBackfillFromIntegrity"
+    />
   </Page>
 </template>
 
