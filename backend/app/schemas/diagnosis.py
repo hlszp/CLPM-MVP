@@ -49,6 +49,137 @@ class DiagnosisConfigUpdate(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# C2: 专家规则引擎
+# ---------------------------------------------------------------------------
+
+# 动作类型枚举
+RuleActionType = Literal[
+    "REMOVE_LABEL", "ADD_LABEL", "KEEP_HIGHEST", "FILTER_ONLY", "SORT_PRIORITY"
+]
+
+
+class DiagnosisRuleItem(CamelModel):
+    """规则配置项（响应）。"""
+
+    ruleId: str
+    ruleCode: str
+    ruleName: str
+    priority: int
+    conditionExpr: str
+    actionType: RuleActionType
+    actionParams: dict[str, Any] = Field(default_factory=dict)
+    isEnabled: bool = True
+    version: int = 1
+    updatedBy: str | None = None
+    updatedAt: str | None = None
+
+
+class DiagnosisRuleUpdate(CamelModel):
+    """PUT /diagnosis/rules/{ruleId} 请求体。"""
+
+    ruleName: str | None = Field(None, max_length=100)
+    conditionExpr: str | None = Field(None, max_length=2000)
+    actionType: RuleActionType | None = None
+    actionParams: dict[str, Any] | None = None
+    priority: int | None = Field(None, ge=0, le=999)
+    isEnabled: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# C3: 差异化阈值覆盖
+# ---------------------------------------------------------------------------
+
+ThresholdScopeType = Literal["loop_type", "plant", "loop"]
+
+
+class ThresholdOverrideItem(CamelModel):
+    """阈值覆盖项（响应）。"""
+
+    overrideId: str
+    diagCode: str
+    scopeType: ThresholdScopeType
+    scopeId: str
+    threshold: dict[str, Any] = Field(default_factory=dict)
+    version: int = 1
+    updatedBy: str | None = None
+    updatedAt: str | None = None
+
+
+class ThresholdOverrideUpsert(CamelModel):
+    """POST /diagnosis/threshold-overrides 请求体。"""
+
+    diagCode: str = Field(..., max_length=50)
+    scopeType: ThresholdScopeType
+    scopeId: str = Field(..., max_length=100)
+    threshold: dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# C4: 配置版本与回滚
+# ---------------------------------------------------------------------------
+
+
+class DiagnosisThresholdVersionItem(CamelModel):
+    """阈值版本历史项（从 sys_audit_log 读取）。"""
+
+    auditLogId: str
+    version: int = 1
+    beforeValue: dict[str, Any] | None = None
+    afterValue: dict[str, Any] | None = None
+    operatedBy: str | None = None
+    operatedAt: str | None = None
+
+
+class DiagnosisThresholdRollbackRequest(CamelModel):
+    """POST /diagnosis/metrics/{diagId}/rollback 请求体。"""
+
+    auditLogId: str = Field(..., description="目标版本的审计日志 ID")
+
+
+# ---------------------------------------------------------------------------
+# C5: 关键配置审批流
+# ---------------------------------------------------------------------------
+
+ConfigChangeTargetType = Literal["config", "rule", "trigger"]
+ConfigChangeType = Literal["update", "enable", "disable"]
+ConfigChangeStatus = Literal["PENDING", "APPROVED", "REJECTED"]
+
+
+class ConfigChangeRequestItem(CamelModel):
+    """变更请求项（响应）。"""
+
+    changeId: str
+    targetType: ConfigChangeTargetType
+    targetId: str
+    changeType: ConfigChangeType
+    beforeValue: dict[str, Any] | None = None
+    afterValue: dict[str, Any] | None = None
+    status: ConfigChangeStatus = "PENDING"
+    requestedBy: str
+    requestedAt: str | None = None
+    reviewedBy: str | None = None
+    reviewedAt: str | None = None
+    reviewNote: str | None = None
+    effectiveFrom: str | None = None
+
+
+class ConfigChangeCreateRequest(CamelModel):
+    """POST /diagnosis/config-changes 请求体。"""
+
+    targetType: ConfigChangeTargetType
+    targetId: str = Field(..., max_length=100)
+    changeType: ConfigChangeType
+    beforeValue: dict[str, Any] | None = None
+    afterValue: dict[str, Any] | None = None
+
+
+class ConfigChangeReviewRequest(CamelModel):
+    """POST /diagnosis/config-changes/{id}/approve|reject 请求体。"""
+
+    reviewNote: str | None = Field(None, max_length=500)
+
+
+# ---------------------------------------------------------------------------
 # S4-DIAG-003: 诊断列表与详情
 # ---------------------------------------------------------------------------
 

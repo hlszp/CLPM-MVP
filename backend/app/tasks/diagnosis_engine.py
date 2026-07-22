@@ -27,12 +27,21 @@ from celery.schedules import crontab
 from sqlalchemy import delete, or_, select
 
 from app.contracts.data_types import ControlType, QualityStatus, RawTimeSeries
-from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag, DiagnosisTask
+from app.models.diagnosis import (
+    DiagnosisConfig,
+    DiagnosisResult,
+    DiagnosisRule,
+    DiagnosisTag,
+    DiagnosisTask,
+    DiagnosisThresholdOverride,
+)
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
 from app.models.tracker import ActionTracker
 from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.diagnosis_rule import apply_rules as apply_db_rules
+from app.services.diagnosis_rule import get_active_rules
 from app.services.diagnosis_trigger_config import get_trigger_config
 from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import map_quality_code
@@ -347,9 +356,19 @@ async def _do_run_diagnosis() -> dict:
             loop_task_ids[lid] = task_id
         await db.commit()
 
+        # C2: 加载专家规则（在 with 块内加载，传给并发执行）
+        rules = await get_active_rules(db)
+        # C3: 预加载阈值差异化覆盖
+        threshold_overrides = await _load_threshold_overrides(db)
+
     # 4. 并发诊断（信号量限制并发数，每协程独立 session 避免并发共享）
     diagnosed_count, failed_count = await _run_diag_tasks_concurrent(
-        loop_task_ids, diag_configs, ts_start, ts_end
+        loop_task_ids,
+        diag_configs,
+        ts_start,
+        ts_end,
+        rules=rules,
+        threshold_overrides=threshold_overrides,
     )
 
     return {
@@ -367,6 +386,8 @@ async def _run_diag_tasks_concurrent(
     diag_configs: dict[str, DiagnosisConfig],
     ts_start: datetime,
     ts_end: datetime,
+    rules: list[DiagnosisRule] | None = None,
+    threshold_overrides: list[DiagnosisThresholdOverride] | None = None,
 ) -> tuple[int, int]:
     """并发执行诊断任务（信号量限流，每协程独立 session 避免并发共享）。
 
@@ -377,6 +398,8 @@ async def _run_diag_tasks_concurrent(
         diag_configs: 诊断配置字典
         ts_start: 时间窗起始
         ts_end: 时间窗结束
+        rules: 专家规则列表（C2 规则引擎，可选）
+        threshold_overrides: 阈值差异化覆盖列表（C3，可选）
 
     Returns:
         (diagnosed_count, failed_count)
@@ -403,6 +426,8 @@ async def _run_diag_tasks_concurrent(
                         ts_end=ts_end,
                         query_wide_fn=query_wide_fn,
                         task_id=task_id,
+                        rules=rules,
+                        threshold_overrides=threshold_overrides,
                     )
                     # D1：诊断产出标签时自动创建 ActionTracker（PENDING）
                     if result is not None and result.get("labels"):
@@ -543,9 +568,19 @@ async def _do_run_checkup() -> dict:
             loop_task_ids[lid] = task_id
         await db.commit()
 
+        # C2: 加载专家规则（在 with 块内加载，传给并发执行）
+        rules = await get_active_rules(db)
+        # C3: 预加载阈值差异化覆盖
+        threshold_overrides = await _load_threshold_overrides(db)
+
     # 4. 并发诊断（与事件轨共用并发执行逻辑）
     diagnosed_count, failed_count = await _run_diag_tasks_concurrent(
-        loop_task_ids, diag_configs, ts_start, ts_end
+        loop_task_ids,
+        diag_configs,
+        ts_start,
+        ts_end,
+        rules=rules,
+        threshold_overrides=threshold_overrides,
     )
 
     return {
@@ -592,6 +627,11 @@ async def _do_diagnose_single_loop(
         diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
         _validate_threshold_config(diag_configs)
 
+        # C2: 加载专家规则
+        rules = await get_active_rules(db)
+        # C3: 加载阈值差异化覆盖（caller 级预载，避免 _diagnose_loop 内查库）
+        threshold_overrides = await _load_threshold_overrides(db)
+
         now = datetime.now(UTC)
         # 解析时间范围：优先使用 time_range_start/time_range_end，其次 ts_start
         if time_range_end:
@@ -623,6 +663,8 @@ async def _do_diagnose_single_loop(
                 query_wide_fn=query_wide_fn,
                 task_id=task_id,
                 labels=labels,
+                rules=rules,
+                threshold_overrides=threshold_overrides,
             )
             # D1：诊断产出标签时自动创建 ActionTracker（PENDING）
             if result is not None and result.get("labels"):
@@ -832,6 +874,8 @@ async def _diagnose_loop(
     query_wide_fn,
     task_id: str | None = None,
     labels: list[str] | None = None,
+    rules: list[DiagnosisRule] | None = None,
+    threshold_overrides: list[DiagnosisThresholdOverride] | None = None,
 ) -> dict | None:
     """对单回路执行诊断。
 
@@ -846,6 +890,9 @@ async def _diagnose_loop(
         labels: 诊断标签子集（B6 按需诊断，可选）。None 表示全量执行；
             指定子集时仅执行子集内标签对应的算法（在 is_enabled 门控之上叠加），
             MANUAL_REVIEW 兜底标签不受子集限制
+        rules: 专家规则列表（C2 规则引擎，可选）。None 时回退到硬编码规则
+        threshold_overrides: 阈值差异化覆盖列表（C3，可选）。
+            由调用者预加载，_diagnose_loop 内纯内存合并，不查 DB。
 
     Returns:
         诊断结果字典
@@ -865,6 +912,10 @@ async def _diagnose_loop(
     if loop is None:
         logger.warning("回路 %s 不存在", loop_id)
         return None
+
+    # C3 差异化阈值：按回路类型/装置/回路级覆盖合并阈值（纯内存合并，不查 DB）
+    if threshold_overrides:
+        diag_configs = _merge_threshold_overrides(diag_configs, threshold_overrides, loop)
 
     # 查询 Tag 关联
     m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
@@ -1493,7 +1544,11 @@ async def _diagnose_loop(
         )
 
     # 应用专家规则矩阵 R01-R06（FDS §5.4.6）
-    algorithm_results = _apply_expert_rules(algorithm_results)
+    # C2：优先使用 DB 规则引擎，无规则时回退到硬编码规则
+    if rules:
+        algorithm_results = apply_db_rules(algorithm_results, rules)
+    else:
+        algorithm_results = _apply_expert_rules(algorithm_results)
 
     # 标签去重（P1-4：同一标签保留置信度最高的记录）
     algorithm_results = _deduplicate_labels(algorithm_results)
@@ -1545,6 +1600,15 @@ async def _diagnose_loop(
         key=lambda i: algorithm_results[i]["confidence"],
     )
     diagnosed_at = datetime.now(UTC).replace(tzinfo=None)
+    # C4: 记录诊断时使用的阈值版本快照（取所有配置的最大版本号）
+    # 防御式计算：空 diag_configs 或 version 非整数时回落到 1
+    try:
+        threshold_version = max(
+            (int(c.version or 1) for c in diag_configs.values()),
+            default=1,
+        )
+    except (TypeError, ValueError):
+        threshold_version = 1
     # D1：收集 label → diag_record_id 映射，供调用方自动建单使用
     label_to_diag_id: dict[str, str] = {}
     for idx, result in enumerate(algorithm_results):
@@ -1573,6 +1637,8 @@ async def _diagnose_loop(
             feature_values=feature_values,
             evidence_chain=evidence_chain,
             algorithm_version=DIAG_ALGORITHM_VERSION,
+            # C4: 记录诊断时使用的阈值版本快照（取所有配置的最大版本号）
+            threshold_version=threshold_version,
             diagnosed_at=diagnosed_at,
             task_id=task_id,
         )
@@ -3022,6 +3088,70 @@ def _detect_bias_shift(
     except Exception as exc:  # noqa: BLE001
         logger.warning("偏差突变检测失败: %s", exc)
         return _empty_bias_shift_result()
+
+
+async def _load_threshold_overrides(
+    db,
+) -> list[DiagnosisThresholdOverride]:
+    """从 DB 预加载所有阈值覆盖（调用者层一次性加载，C3 差异化阈值）。
+
+    查询失败时返回空列表（不阻塞诊断，回退到全局默认阈值）。
+    """
+    try:
+        result = await db.execute(select(DiagnosisThresholdOverride))
+        return list(result.scalars().all())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预加载阈值覆盖失败，回退到全局默认: %s", exc)
+        return []
+
+
+def _merge_threshold_overrides(
+    diag_configs: dict[str, DiagnosisConfig],
+    overrides: list[DiagnosisThresholdOverride],
+    loop: LoopLedger,
+) -> dict[str, DiagnosisConfig]:
+    """纯内存合并阈值覆盖（C3 差异化阈值，不查 DB）。
+
+    按优先级（高→低）合并覆盖：回路级 → 装置级 → 回路类型模板 → 全局默认。
+    返回合并后的 diag_configs 副本（不修改原字典）。
+    """
+    loop_id = str(loop.id)
+    unit_id = str(loop.unit_id) if loop.unit_id else None
+    loop_type = loop.loop_type or "OTHER"
+
+    # 过滤出匹配此回路的覆盖
+    scope_ids: dict[str, str] = {"loop": loop_id, "loop_type": loop_type}
+    if unit_id:
+        scope_ids["plant"] = unit_id
+
+    matched = [
+        ov
+        for ov in overrides
+        if ov.scope_type in scope_ids and scope_ids[ov.scope_type] == ov.scope_id
+    ]
+    if not matched:
+        return diag_configs
+
+    # 按优先级排序：loop > plant > loop_type
+    priority_map = {"loop": 0, "plant": 1, "loop_type": 2}
+    matched.sort(key=lambda o: priority_map.get(o.scope_type, 99))
+
+    import copy
+
+    merged: dict[str, DiagnosisConfig] = {k: copy.copy(v) for k, v in diag_configs.items()}
+
+    for ov in matched:
+        cfg = merged.get(ov.diag_code)
+        if cfg is None:
+            continue
+        base_threshold = dict(cfg.threshold) if cfg.threshold else {}
+        if ov.threshold:
+            base_threshold.update(ov.threshold)
+            new_cfg = copy.copy(cfg)
+            new_cfg.threshold = base_threshold
+            merged[ov.diag_code] = new_cfg
+
+    return merged
 
 
 def _get_threshold(

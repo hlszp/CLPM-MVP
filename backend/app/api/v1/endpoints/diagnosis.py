@@ -51,20 +51,29 @@ from app.schemas.diagnosis import (
     AbCompareData,
     AnalyticsExportData,
     AnalyticsExportRequest,
+    ConfigChangeCreateRequest,
+    ConfigChangeRequestItem,
+    ConfigChangeReviewRequest,
     DiagnosisAnalyticsData,
     DiagnosisConfigItem,
     DiagnosisConfigUpdate,
     DiagnosisListData,
     DiagnosisRecordListData,
     DiagnosisReportRequest,
+    DiagnosisRuleItem,
+    DiagnosisRuleUpdate,
     DiagnosisTagListResponse,
     DiagnosisTagSchema,
     DiagnosisTaskDetail,
     DiagnosisTaskListData,
+    DiagnosisThresholdRollbackRequest,
+    DiagnosisThresholdVersionItem,
     DiagnosisTriggerData,
     DiagnosisTriggerRequest,
     RecommendationData,
     TagResolveRequest,
+    ThresholdOverrideItem,
+    ThresholdOverrideUpsert,
     TrackerStatusData,
     TrackerStatusUpdate,
     WaveformData,
@@ -92,6 +101,15 @@ from app.services.diagnosis_recommendation import (
 from app.services.diagnosis_report import (
     export_diagnosis_statistics,
     generate_diagnosis_report,
+)
+from app.services.diagnosis_rule import list_rules, update_rule
+from app.services.diagnosis_threshold import (
+    delete_override,
+    list_templates,
+    upsert_override,
+)
+from app.services.diagnosis_threshold import (
+    list_overrides as list_threshold_overrides,
 )
 from app.services.tracker import export_tracker_pdf, get_ab_compare, update_tracker_status
 from app.services.waveform import get_waveform
@@ -146,6 +164,227 @@ async def update_metric_endpoint(
         is_enabled=body.isEnabled,
     )
     return success(data=data, message="更新成功")
+
+
+# ---------------------------------------------------------------------------
+# C2: 专家规则引擎 API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/rules", response_model=ApiResponse[list[DiagnosisRuleItem]])
+async def list_rules_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取专家规则列表（所有角色可查看）。"""
+    data = await list_rules(db)
+    return success(data=data)
+
+
+@router.put("/rules/{rule_id}", response_model=ApiResponse[DiagnosisRuleItem])
+async def update_rule_endpoint(
+    rule_id: str,
+    body: DiagnosisRuleUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """更新专家规则配置（仅 ADMIN）。"""
+    data = await update_rule(
+        db=db,
+        rule_id=rule_id,
+        operator=user.username,
+        rule_name=body.ruleName,
+        condition_expr=body.conditionExpr,
+        action_type=body.actionType,
+        action_params=body.actionParams,
+        priority=body.priority,
+        is_enabled=body.isEnabled,
+    )
+    return success(data=data, message="更新成功")
+
+
+# ---------------------------------------------------------------------------
+# C3: 差异化阈值覆盖 API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/threshold-overrides", response_model=ApiResponse[list[ThresholdOverrideItem]])
+async def list_threshold_overrides_endpoint(
+    scopeType: str | None = Query(None, description="覆盖范围：loop_type/plant/loop"),
+    scopeId: str | None = Query(None, description="范围标识"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取阈值覆盖列表（可按 scope 筛选，所有角色可查看）。"""
+    data = await list_threshold_overrides(db, scope_type=scopeType, scope_id=scopeId)
+    return success(data=data)
+
+
+@router.get("/threshold-templates", response_model=ApiResponse[list[ThresholdOverrideItem]])
+async def list_threshold_templates_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取控制类型模板列表（loop_type scope 的预置阈值模板）。"""
+    data = await list_templates(db)
+    return success(data=data)
+
+
+@router.post(
+    "/threshold-overrides",
+    response_model=ApiResponse[ThresholdOverrideItem],
+)
+async def upsert_threshold_override_endpoint(
+    body: ThresholdOverrideUpsert,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """创建或更新阈值覆盖（仅 ADMIN）。"""
+    data = await upsert_override(
+        db=db,
+        operator=user.username,
+        diag_code=body.diagCode,
+        scope_type=body.scopeType,
+        scope_id=body.scopeId,
+        threshold=body.threshold,
+    )
+    return success(data=data, message="阈值覆盖已保存")
+
+
+@router.delete("/threshold-overrides/{override_id}")
+async def delete_threshold_override_endpoint(
+    override_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """删除阈值覆盖（仅 ADMIN）。"""
+    await delete_override(db, override_id, user.username)
+    return success(data=None, message="阈值覆盖已删除")
+
+
+# ---------------------------------------------------------------------------
+# C4: 配置版本与回滚 API
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/metrics/{diag_id}/versions",
+    response_model=ApiResponse[list[DiagnosisThresholdVersionItem]],
+)
+async def list_threshold_versions_endpoint(
+    diag_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取诊断配置的版本历史（从 sys_audit_log 读取，所有角色可查看）。"""
+    from app.services.diagnosis_threshold import list_config_versions
+
+    data = await list_config_versions(db, diag_id)
+    return success(data=data)
+
+
+@router.post(
+    "/metrics/{diag_id}/rollback",
+    response_model=ApiResponse[DiagnosisConfigItem],
+)
+async def rollback_threshold_endpoint(
+    diag_id: str,
+    body: DiagnosisThresholdRollbackRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """回滚诊断配置到指定版本（仅 ADMIN）。"""
+    from app.services.diagnosis_threshold import rollback_config
+
+    data = await rollback_config(db, diag_id, body.auditLogId, user.username)
+    return success(data=data, message="已回滚到指定版本")
+
+
+# ---------------------------------------------------------------------------
+# C5: 关键配置审批流 API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/config-changes", response_model=ApiResponse[list[ConfigChangeRequestItem]])
+async def list_config_changes_endpoint(
+    status: str | None = Query(None, description="状态筛选：PENDING/APPROVED/REJECTED"),
+    targetType: str | None = Query(None, description="目标类型：config/rule/trigger"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取关键配置变更请求列表（所有角色可查看）。"""
+    from app.services.diagnosis_approval import list_change_requests
+
+    data = await list_change_requests(db, status=status, target_type=targetType)
+    return success(data=data)
+
+
+@router.post(
+    "/config-changes",
+    response_model=ApiResponse[ConfigChangeRequestItem],
+)
+async def create_config_change_endpoint(
+    body: ConfigChangeCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """创建关键配置变更请求（仅 ADMIN，需第二人审批后生效）。"""
+    from app.services.diagnosis_approval import create_change_request
+
+    data = await create_change_request(
+        db=db,
+        operator=user.username,
+        target_type=body.targetType,
+        target_id=body.targetId,
+        change_type=body.changeType,
+        before_value=body.beforeValue,
+        after_value=body.afterValue,
+    )
+    return success(data=data, message="变更请求已创建，待审批")
+
+
+@router.post(
+    "/config-changes/{change_id}/approve",
+    response_model=ApiResponse[ConfigChangeRequestItem],
+)
+async def approve_config_change_endpoint(
+    change_id: str,
+    body: ConfigChangeReviewRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "EXPERT")),
+) -> dict:
+    """审批通过变更请求并自动应用（ADMIN/EXPERT，审批人不能与申请人相同）。"""
+    from app.services.diagnosis_approval import approve_change_request
+
+    data = await approve_change_request(
+        db=db,
+        change_id=change_id,
+        reviewer=user.username,
+        review_note=body.reviewNote,
+    )
+    return success(data=data, message="变更已审批通过并生效")
+
+
+@router.post(
+    "/config-changes/{change_id}/reject",
+    response_model=ApiResponse[ConfigChangeRequestItem],
+)
+async def reject_config_change_endpoint(
+    change_id: str,
+    body: ConfigChangeReviewRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "EXPERT")),
+) -> dict:
+    """拒绝变更请求（ADMIN/EXPERT，审批人不能与申请人相同）。"""
+    from app.services.diagnosis_approval import reject_change_request
+
+    data = await reject_change_request(
+        db=db,
+        change_id=change_id,
+        reviewer=user.username,
+        review_note=body.reviewNote,
+    )
+    return success(data=data, message="变更已拒绝")
 
 
 # ---------------------------------------------------------------------------

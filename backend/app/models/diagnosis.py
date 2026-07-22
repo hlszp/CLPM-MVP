@@ -65,6 +65,8 @@ class DiagnosisResult(Base):
     feature_values: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     evidence_chain: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # C4: 阈值版本号（记录诊断时使用的配置版本，可追溯当时阈值）
+    threshold_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     diagnosed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     # 关联诊断任务（可选，向后兼容：旧记录 task_id 为 NULL）
     task_id: Mapped[str | None] = mapped_column(
@@ -195,4 +197,159 @@ class DiagnosisTag(Base):
         Index("ix_diagnosis_tag_loop_status", "loop_id", "status"),
         Index("ix_diagnosis_tag_severity", "severity", "triggered_at"),
         {"comment": "诊断标签表：用于故障定位和告警（振荡/阀门粘滞/输出饱和/PV质量异常等）"},
+    )
+
+
+class DiagnosisRule(Base):
+    """专家规则配置（C2 规则引擎化，DDL §7.2）。
+
+    将硬编码的 R01-R08 专家规则迁入数据库表，支持 UI 新增/停用/修改，
+    运行时用 simpleeval 安全沙箱求值条件表达式。
+
+    设计依据：FDS §5.4.6 / 整改计划 C2
+    """
+
+    __tablename__ = "diagnosis_rule"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    # 规则代码（R01-R08，唯一）
+    rule_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    # 规则名称（中文显示）
+    rule_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # 执行优先级（数值越小越先执行）
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    # 条件表达式（simpleeval 安全沙箱求值）
+    condition_expr: Mapped[str] = mapped_column(Text, nullable=False)
+    # 动作类型：REMOVE_LABEL / ADD_LABEL / KEEP_HIGHEST / FILTER_ONLY / SORT_PRIORITY
+    action_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # 动作参数（JSON：label / labels / keep / confidence / priority_map 等）
+    action_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # 是否启用
+    is_enabled: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("true"), default=True, nullable=False
+    )
+    # 版本号（C4 版本回滚依赖）
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "action_type IN ('REMOVE_LABEL', 'ADD_LABEL', 'KEEP_HIGHEST', "
+            "'FILTER_ONLY', 'SORT_PRIORITY')",
+            name="ck_diag_rule_action_type",
+        ),
+        Index("uk_diagnosis_rule_code", "rule_code", unique=True),
+        Index("idx_diagnosis_rule_priority", "priority"),
+    )
+
+
+class DiagnosisThresholdOverride(Base):
+    """诊断阈值差异化覆盖（C3 差异化阈值，FDS §5.4.1）。
+
+    支持"全局默认 → 回路类型模板 → 装置级 → 回路级"四级阈值覆盖。
+    全局默认存储在 ``DiagnosisConfig.threshold``；本表存储各级覆盖。
+
+    优先级（高→低）：
+    1. loop: 回路级覆盖（scope_id = loop_id）
+    2. plant: 装置级覆盖（scope_id = plant_node_id）
+    3. loop_type: 回路类型模板（scope_id = FLOW/TEMPERATURE/LEVEL/PRESSURE/…）
+    4. 全局默认（DiagnosisConfig）
+
+    设计依据：整改计划 C3 / FDS §5.4.1
+    """
+
+    __tablename__ = "diagnosis_threshold_override"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    # 诊断算法代码（关联 diagnosis_config.diag_code）
+    diag_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    # 覆盖范围：loop_type（回路类型模板）/ plant（装置级）/ loop（回路级）
+    scope_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # 范围标识：loop_type 时为 FLOW/TEMPERATURE/…；plant 时为 plant_node_id；loop 时为 loop_id
+    scope_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    # 覆盖的阈值 JSON（与 DiagnosisConfig.threshold 同结构）
+    threshold: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "scope_type IN ('loop_type', 'plant', 'loop')",
+            name="ck_diag_threshold_override_scope",
+        ),
+        Index(
+            "uk_diag_threshold_override",
+            "diag_code",
+            "scope_type",
+            "scope_id",
+            unique=True,
+        ),
+        Index("idx_diag_threshold_override_scope", "scope_type", "scope_id"),
+    )
+
+
+class DiagnosisConfigChange(Base):
+    """关键配置变更审批（C5 审批流，ADS §1）。
+
+    危化企业关键诊断配置变更（触发阈值、规则启停等）须经第二人审批后方可生效。
+    "双人确认"：审批人不能与申请人相同。
+
+    状态机：PENDING → APPROVED（已审批，自动应用）/ REJECTED（已拒绝）
+
+    设计依据：整改计划 C5 / ADS §1
+    """
+
+    __tablename__ = "diagnosis_config_change"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    # 变更目标类型：config（诊断指标配置）/ rule（专家规则）/ trigger（触发条件）
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # 目标 ID（diagnosis_config.id / diagnosis_rule.id / 'trigger'）
+    target_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    # 变更类型：update / enable / disable
+    change_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # 变更前值（JSON）
+    before_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 变更后值（JSON）
+    after_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 审批状态：PENDING / APPROVED / REJECTED
+    status: Mapped[str] = mapped_column(
+        String(20), server_default=text("'PENDING'"), nullable=False
+    )
+    # 申请人
+    requested_by: Mapped[str] = mapped_column(String(50), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    # 审批人
+    reviewed_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 审批意见
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 生效时间（审批通过后立即生效）
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "target_type IN ('config', 'rule', 'trigger')",
+            name="ck_diag_config_change_target",
+        ),
+        CheckConstraint(
+            "change_type IN ('update', 'enable', 'disable')",
+            name="ck_diag_config_change_type",
+        ),
+        CheckConstraint(
+            "status IN ('PENDING', 'APPROVED', 'REJECTED')",
+            name="ck_diag_config_change_status",
+        ),
+        Index("idx_diag_config_change_status", "status"),
+        Index("idx_diag_config_change_target", "target_type", "target_id"),
     )

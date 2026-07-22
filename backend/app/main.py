@@ -333,6 +333,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("从 sys_config 预载诊断触发条件失败（将使用默认值）: %s", exc)
 
+    # 预载诊断专家规则到进程内缓存（整改计划 C2，
+    # 预载失败回退到空列表，触发 _diagnose_loop 硬编码规则兜底，不阻塞启动）
+    from app.services.diagnosis_rule import preload_rules
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await preload_rules(db)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预载诊断专家规则失败（将回退到硬编码规则）: %s", exc)
+
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
 

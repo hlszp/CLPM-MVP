@@ -146,6 +146,13 @@ def _preload_datasource_config_sync() -> None:
                 await preload_diagnosis_trigger(db)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("worker 子进程预载诊断触发条件失败（将使用默认值）: %s", exc)
+            # 预载诊断专家规则（整改计划 C2，失败回退到空列表，触发硬编码规则兜底）
+            try:
+                from app.services.diagnosis_rule import preload_rules
+
+                await preload_rules(db)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("worker 子进程预载诊断专家规则失败（将回退到硬编码规则）: %s", exc)
 
     loop = asyncio.new_event_loop()
     try:

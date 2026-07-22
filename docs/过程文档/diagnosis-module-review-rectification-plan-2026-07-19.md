@@ -18,6 +18,11 @@
 > - **隐藏耦合（已登记 §7 第 7 条）**：`services/performance.py` L673/L1341 两处只读引用 `action_tracker`（回路排行榜预诊断标签 + 坏演员分布），D1/D2 会改变其查询语义，**实施 D1/D2 须同步修改 performance.py**（补状态过滤 + order_by 取最新），否则性能评估看板失真
 > - **E4 利好**：回路删除为软删（`services/loop.py:1297` delete_loop 置 is_active=False，batch_delete_loops 同口径），外键 ON DELETE CASCADE 实际不触发，"历史诊断保留"天然满足，E4 仅需补验证测试
 > - **C6 不冲突**：诊断 SCORE_THRESHOLD 入 sys_config 与 KPI 的 `grading_thresholds.current`（5 级定级）为不同 key，互不影响；D4 A/B 闭环只读 KpiSnapshotHourly，不改 KPI 代码
+>
+> **整改进展（2026-07-23）**：Batch 1（D7+C6+C1）+ Batch 2（D2+D1+D3）+ Batch 3（C2+C3+C4+C5）已合并，main 全量 2299 passed。
+> - **Batch 1**（commit `f2fd23a`/`ca5ed69`/`4907b0d`）：D7 删除前端死文件 3 个；C6 触发条件可配（diagnosis_trigger_config 服务+API+18 测试）；C1 阈值 Schema 校验（`_THRESHOLD_SCHEMA` 注册表 + 3 级警告日志 + 迁移种子）
+> - **Batch 2**（commit `e991aa3`）：D2 Tracker 模型补全（6 列 + 部分唯一索引 `uk_action_tracker_open`）；D1 诊断产出标签自动建单（`_auto_create_trackers` + 事件轨/体检轨/单回路三入口 + `labelToDiagId` 返回映射）；D3 标记已实施强制 MOC 关联（moc_ref 或 moc_not_applicable+reason）；同步修复 performance.py 隐藏耦合（L673/L1341 补 PENDING/IN_PROGRESS 状态过滤 + created_at DESC 排序）+8 回归测试
+> - **Batch 3**（C2+C3+C4+C5）：C2 专家规则引擎化（`DiagnosisRule` 模型 + simpleeval 安全沙箱 + 5 种动作 + 三级缓存 + lifespan/worker 预载 + 18 测试）；C3 差异化阈值（`DiagnosisThresholdOverride` 三级 scope 覆盖 + 4 套控制类型模板种子 + caller 级预载 + 纯内存合并）；C4 配置版本与回滚（`threshold_version` 列 + 审计日志版本历史 + 一键回滚恢复 `before_value`）；C5 关键配置审批流（`DiagnosisConfigChange` 双人确认 + PENDING→APPROVED/REJECTED 状态机 + 审批通过自动应用 config/rule/trigger 三种目标 + 全程审计）；+32 新测试（C3/C4/C5 CRUD + 审批流 + 回滚 + 双人确认拦截）
 
 ---
 

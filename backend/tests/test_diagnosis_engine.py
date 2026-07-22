@@ -52,6 +52,32 @@ from app.tasks.diagnosis_engine import (
 # ===========================================================================
 
 
+@pytest.fixture(autouse=True)
+def _patch_rule_and_threshold_loaders():
+    """Patch get_active_rules 和 _load_threshold_overrides 避免 db.execute 消费 side_effect。
+
+    编排层函数（_do_run_diagnosis / _do_run_checkup / _do_diagnose_single_loop）
+    内部调用 get_active_rules 和 _load_threshold_overrides，二者都会触发 db.execute。
+    测试用 side_effect 列表精确控制 db.execute 返回值，若不 patch 这两个加载器，
+    它们会消费 side_effect 项导致后续查询错位。
+
+    _diagnose_loop 接受 rules/threshold_overrides 为显式参数，不内部调用加载器，故不受影响。
+    """
+    with (
+        patch(
+            "app.tasks.diagnosis_engine.get_active_rules",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.tasks.diagnosis_engine._load_threshold_overrides",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        yield
+
+
 def _make_loop(
     loop_id: str = "loop-001",
     tag_name: str = "LIC-101",
