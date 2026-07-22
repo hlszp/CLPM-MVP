@@ -130,7 +130,8 @@ def upgrade() -> None:
             sa.text(
                 "INSERT INTO diagnosis_threshold_override "
                 "(id, diag_code, scope_type, scope_id, threshold, version) "
-                "VALUES (:id, :diag_code, 'loop_type', :scope_id, :threshold, 1)"
+                "VALUES (CAST(:id AS UUID), :diag_code, 'loop_type', :scope_id, "
+                "CAST(:threshold AS JSONB), 1)"
             ).bindparams(
                 id=str(uuid4()),
                 diag_code=t["diag_code"],

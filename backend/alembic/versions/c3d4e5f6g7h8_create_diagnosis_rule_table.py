@@ -142,8 +142,9 @@ def upgrade() -> None:
                 "INSERT INTO diagnosis_rule "
                 "(id, rule_code, rule_name, priority, condition_expr, "
                 "action_type, action_params, is_enabled, version) "
-                "VALUES (:id, :rule_code, :rule_name, :priority, "
-                ":condition_expr, :action_type, :action_params, true, 1)"
+                "VALUES (CAST(:id AS UUID), :rule_code, :rule_name, :priority, "
+                ":condition_expr, :action_type, CAST(:action_params AS JSONB), "
+                "true, 1)"
             ).bindparams(
                 id=str(uuid4()),
                 rule_code=r["rule_code"],
