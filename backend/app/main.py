@@ -143,6 +143,7 @@ def _start_celery_beat() -> None:
         return
 
     try:
+        os.makedirs("logs", exist_ok=True)
         _celery_beat_process = subprocess.Popen(
             [
                 sys.executable,
@@ -157,11 +158,11 @@ def _start_celery_beat() -> None:
                 pid_file,
             ],
             cwd=os.getcwd(),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=open("logs/celery-beat.log", "a"),
+            stderr=open("logs/celery-beat.log", "a"),
         )
         logger.info(
-            "Celery Beat 调度进程已启动 (PID=%s)，定时任务将自动执行",
+            "Celery Beat 调度进程已启动 (PID=%s)，定时任务将自动执行，日志: logs/celery-beat.log",
             _celery_beat_process.pid,
         )
     except Exception as exc:
@@ -230,6 +231,7 @@ def _start_celery_worker() -> None:
         return
 
     try:
+        os.makedirs("logs", exist_ok=True)
         _celery_worker_process = subprocess.Popen(
             [
                 sys.executable,
@@ -244,11 +246,11 @@ def _start_celery_worker() -> None:
                 "default",
             ],
             cwd=os.getcwd(),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=open("logs/celery-worker.log", "a"),
+            stderr=open("logs/celery-worker.log", "a"),
         )
         logger.info(
-            "Celery Worker 进程已启动 (PID=%s)，任务队列开始消费",
+            "Celery Worker 进程已启动 (PID=%s)，任务队列开始消费，日志: logs/celery-worker.log",
             _celery_worker_process.pid,
         )
     except Exception as exc:
