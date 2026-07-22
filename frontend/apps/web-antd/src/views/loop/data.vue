@@ -10,6 +10,7 @@
  * - 查看导入任务列表，支持取消和回算
  */
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+import type { TableRowSelection } from 'ant-design-vue/lib/table/interface';
 
 import type { LoopApi } from '#/api/loop';
 import type { LoopDataApi } from '#/api/loop-data';
@@ -31,6 +32,7 @@ import {
   Select,
   Table,
   Tag,
+  Tooltip,
   TreeSelect,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -218,7 +220,23 @@ const taskPagination = ref({
   current: 1,
   pageSize: 10,
   total: 0,
+  showSizeChanger: false,
 });
+const selectedTaskIds = ref<string[]>([]);
+
+const taskRowSelection = computed<TableRowSelection<LoopDataApi.ImportTask>>(() => ({
+  selectedRowKeys: selectedTaskIds.value,
+  onChange: (keys: (string | number)[]) => {
+    selectedTaskIds.value = keys as string[];
+  },
+  getCheckboxProps: (record: LoopDataApi.ImportTask) => {
+    const isActive =
+      record.status === 'PENDING' || record.status === 'RUNNING';
+    return {
+      disabled: isActive,
+    };
+  },
+}));
 
 let pollTimer: null | ReturnType<typeof setInterval> = null;
 
@@ -506,6 +524,32 @@ function handleDelete(taskId: string) {
   });
 }
 
+function handleBatchDelete() {
+  if (selectedTaskIds.value.length === 0) {
+    message.warning('请选择要删除的任务');
+    return;
+  }
+  Modal.confirm({
+    title: '确认批量删除',
+    content: `将删除 ${selectedTaskIds.value.length} 个任务记录，删除后不可恢复。确定删除吗？`,
+    okText: '批量删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        for (const taskId of selectedTaskIds.value) {
+          await deleteImportApi(taskId);
+        }
+        message.success(`已删除 ${selectedTaskIds.value.length} 个导入任务`);
+        selectedTaskIds.value = [];
+        await loadTasks();
+      } catch {
+        // 错误已由拦截器透传
+      }
+    },
+  });
+}
+
 function hasActiveTasks() {
   return tasks.value.some(
     (t) => t.status === 'PENDING' || t.status === 'RUNNING',
@@ -537,6 +581,7 @@ onUnmounted(() => {
     <ClpmPageToolbar
       title="数据管理"
       subtitle="从远端 API 导入历史数据到本地 TDengine，支持冲突处理与 KPI 回算"
+      compact
     />
 
     <div class="mt-4 flex gap-4" style="height: calc(100vh - 200px)">
@@ -667,43 +712,39 @@ onUnmounted(() => {
       <!-- 右侧：导入参数 + 任务列表 -->
       <div class="flex min-w-0 w-[70%] flex-col">
         <!-- 导入参数 -->
-        <div class="mb-4 shrink-0 rounded border p-4">
-          <div class="mb-3 font-medium">历史数据导入</div>
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="mb-1 block text-sm text-gray-500">时间范围</label>
+        <div class="mb-4 shrink-0 rounded border p-3">
+          <div class="flex items-center gap-3 flex-wrap">
+            <Tooltip title="选择历史数据的时间范围">
               <RangePicker
                 v-model:value="timeRange"
                 show-time
                 format="YYYY-MM-DD HH:mm"
-                class="w-full"
+                size="small"
+                :placeholder="['开始时间', '结束时间']"
               />
-            </div>
-            <div>
-              <label class="mb-1 block text-sm text-gray-500">采样间隔</label>
-              <Select v-model:value="interval" class="w-full">
-                <Select.Option :value="1">1 秒</Select.Option>
-                <Select.Option :value="5">5 秒</Select.Option>
-                <Select.Option :value="10">10 秒</Select.Option>
-                <Select.Option :value="60">1 分钟</Select.Option>
+            </Tooltip>
+            <Tooltip title="数据采样间隔，支持1秒/5秒/10秒/1分钟">
+              <Select v-model:value="interval" size="small" style="width: 100px">
+                <Select.Option :value="1">1s</Select.Option>
+                <Select.Option :value="5">5s</Select.Option>
+                <Select.Option :value="10">10s</Select.Option>
+                <Select.Option :value="60">1m</Select.Option>
               </Select>
-            </div>
-            <div>
-              <label class="mb-1 block text-sm text-gray-500">冲突策略</label>
+            </Tooltip>
+            <Tooltip title="冲突策略：覆盖（手工优先）/ 跳过（保留已有）">
               <RadioGroup v-model:value="conflictStrategy">
-                <Radio value="overwrite">覆盖（手工优先）</Radio>
-                <Radio value="skip">跳过（保留已有）</Radio>
+                <Radio value="overwrite">覆盖</Radio>
+                <Radio value="skip">跳过</Radio>
               </RadioGroup>
-            </div>
-            <div class="flex items-end">
+            </Tooltip>
+            <Tooltip title="导入完成后自动触发KPI回算">
               <Checkbox v-model:checked="triggerBackfill">
-                导入后自动触发 KPI 回算
+                触发KPI
               </Checkbox>
-            </div>
-          </div>
-          <div class="mt-4 flex justify-end">
+            </Tooltip>
             <Button
               type="primary"
+              size="small"
               :loading="importing"
               :disabled="selectedLoopIds.length === 0"
               @click="handleStartImport"
@@ -717,7 +758,17 @@ onUnmounted(() => {
         <div class="flex min-h-0 flex-1 flex-col rounded border p-4">
           <div class="mb-3 flex shrink-0 items-center justify-between">
             <span class="font-medium">导入任务列表</span>
-            <Button size="small" @click="loadTasks">刷新</Button>
+            <div class="flex gap-2">
+              <Button
+                size="small"
+                danger
+                :disabled="selectedTaskIds.length === 0"
+                @click="handleBatchDelete"
+              >
+                批量删除 ({{ selectedTaskIds.length }})
+              </Button>
+              <Button size="small" @click="loadTasks">刷新</Button>
+            </div>
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto">
             <Table
@@ -728,6 +779,7 @@ onUnmounted(() => {
               row-key="taskId"
               size="small"
               :scroll="{ x: 768 }"
+              :row-selection="taskRowSelection"
               @change="handleTaskPageChange"
             />
           </div>

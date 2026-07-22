@@ -103,7 +103,7 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
       v-if="title || subtitle || $slots.context"
       class="clpm-page-toolbar__context"
     >
-      <div>
+      <div class="clpm-page-toolbar__title-row">
         <div v-if="title" class="clpm-page-toolbar__title">{{ title }}</div>
         <div v-if="subtitle" class="clpm-page-toolbar__subtitle">
           {{ subtitle }}
@@ -188,6 +188,12 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
   gap: 10px;
   align-items: center;
   min-width: 0;
+}
+
+.clpm-page-toolbar__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .clpm-page-toolbar__title {
