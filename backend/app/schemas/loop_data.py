@@ -92,6 +92,85 @@ class ImportTaskResponse(CamelModel):
     triggerBackfill: bool = False
 
 
+class IntegrityStatus(StrEnum):
+    """回路数据完整性状态."""
+
+    COMPLETE = "COMPLETE"  # 完整度 >= 95%
+    PARTIAL = "PARTIAL"  # 20% <= 完整度 < 95%
+    MISSING = "MISSING"  # 完整度 < 20% 或无数据
+
+
+class IntegrityCheckRequest(CamelModel):
+    """数据完整性检查请求.
+
+    Attributes:
+        loopIds: 目标回路 ID 列表（不传则查全部 READY 回路）
+        tsStart: 检查时间范围起始（ISO 8601）
+        tsEnd: 检查时间范围结束（ISO 8601）
+        expectedInterval: 预期采样间隔（秒），默认 1
+    """
+
+    loopIds: list[str] | None = Field(None, description="目标回路 ID 列表，不传则查全部 READY 回路")
+    tsStart: str = Field(..., description="检查时间范围起始（ISO 8601）")
+    tsEnd: str = Field(..., description="检查时间范围结束（ISO 8601）")
+    expectedInterval: int = Field(1, ge=1, le=3600, description="预期采样间隔（秒）")
+
+
+class ColumnIntegrityDetail(CamelModel):
+    """单列完整性明细."""
+
+    expectedPoints: int
+    actualPoints: int
+    completeness: float  # 0.0 ~ 1.0
+
+
+class LoopIntegrityDetail(CamelModel):
+    """单回路完整性明细."""
+
+    loopId: str
+    tagName: str | None = None
+    subtable: str
+    expectedPoints: int
+    actualPoints: int
+    completeness: float  # 0.0 ~ 1.0
+    firstTs: str | None = None
+    lastTs: str | None = None
+    status: IntegrityStatus
+    missingHourCount: int
+    # 列级缺失明细（2026-07-22 新增：各列分别的完整度）
+    colDetails: dict[str, ColumnIntegrityDetail] | None = Field(
+        None, description="各数据列的完整性明细 pv/sp/op/mode/pid_p/pid_i/pid_d"
+    )
+    missingColumns: list[str] | None = Field(
+        None, description="有缺失的列名列表"
+    )
+
+
+class TimeGap(CamelModel):
+    """时间缺口（小时粒度）."""
+
+    startTs: str
+    endTs: str
+    affectedLoopCount: int
+    affectedLoopIds: list[str]
+
+
+class IntegrityCheckResponse(CamelModel):
+    """完整性检查响应."""
+
+    overallCompleteness: float  # 0.0 ~ 1.0
+    loopCount: int
+    completeLoopCount: int
+    partialLoopCount: int
+    missingLoopCount: int
+    loopDetails: list[LoopIntegrityDetail]
+    timeGaps: list[TimeGap]
+    tsStart: str
+    tsEnd: str
+    expectedInterval: int
+    checkedAt: str
+
+
 class ImportTaskListResponse(CamelModel):
     """导入任务列表响应."""
 
@@ -100,9 +179,15 @@ class ImportTaskListResponse(CamelModel):
 
 
 __all__ = [
+    "ColumnIntegrityDetail",
     "ConflictStrategy",
     "ImportRequest",
     "ImportStatus",
     "ImportTaskListResponse",
     "ImportTaskResponse",
+    "IntegrityCheckRequest",
+    "IntegrityCheckResponse",
+    "IntegrityStatus",
+    "LoopIntegrityDetail",
+    "TimeGap",
 ]

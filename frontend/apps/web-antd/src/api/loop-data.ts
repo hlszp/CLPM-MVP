@@ -58,6 +58,67 @@ export namespace LoopDataApi {
     items: ImportTask[];
     total: number;
   }
+
+  /** 回路数据完整性状态 */
+  export type IntegrityStatus = 'COMPLETE' | 'MISSING' | 'PARTIAL';
+
+  /** 数据完整性检查请求 */
+  export interface IntegrityCheckRequest {
+    /** 目标回路 ID 列表，不传则查全部 READY 回路 */
+    loopIds?: string[];
+    tsStart: string;
+    tsEnd: string;
+    /** 预期采样间隔（秒），默认 1 */
+    expectedInterval?: number;
+  }
+
+  /** 单列完整性明细 */
+  export interface ColumnIntegrityDetail {
+    expectedPoints: number;
+    actualPoints: number;
+    completeness: number;
+  }
+
+  /** 单回路完整性明细 */
+  export interface LoopIntegrityDetail {
+    loopId: string;
+    tagName?: string;
+    subtable: string;
+    expectedPoints: number;
+    actualPoints: number;
+    completeness: number;
+    firstTs?: string;
+    lastTs?: string;
+    status: IntegrityStatus;
+    missingHourCount: number;
+    /** 各数据列的完整性明细 pv/sp/op/mode/pid_p/pid_i/pid_d */
+    colDetails?: Record<string, ColumnIntegrityDetail>;
+    /** 有缺失的列名列表 */
+    missingColumns?: string[];
+  }
+
+  /** 时间缺口 */
+  export interface TimeGap {
+    startTs: string;
+    endTs: string;
+    affectedLoopCount: number;
+    affectedLoopIds: string[];
+  }
+
+  /** 完整性检查响应 */
+  export interface IntegrityCheckResult {
+    overallCompleteness: number;
+    loopCount: number;
+    completeLoopCount: number;
+    partialLoopCount: number;
+    missingLoopCount: number;
+    loopDetails: LoopIntegrityDetail[];
+    timeGaps: TimeGap[];
+    tsStart: string;
+    tsEnd: string;
+    expectedInterval: number;
+    checkedAt: string;
+  }
 }
 
 /** 开始历史数据导入 */
@@ -101,5 +162,13 @@ export function getImportTasksApi(params: { page: number; pageSize: number }) {
 export function triggerBackfillApi(taskId: string) {
   return requestClient.post<{ celeryTaskId: string; loopCount: number }>(
     `/loops/data-import/${taskId}/backfill-kpi`,
+  );
+}
+
+/** 数据完整性检查 */
+export function checkIntegrityApi(data: LoopDataApi.IntegrityCheckRequest) {
+  return requestClient.post<LoopDataApi.IntegrityCheckResult>(
+    '/loops/data-import/integrity-check',
+    data,
   );
 }

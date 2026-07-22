@@ -97,6 +97,16 @@ const loopColumns = computed(() => [
   },
   { title: '缺失小时', dataIndex: 'missingHourCount', key: 'missingHourCount', width: 90 },
   {
+    title: '缺失列',
+    key: 'missingColumns',
+    width: 120,
+    customRender: ({ record }: { record: LoopDataApi.LoopIntegrityDetail }) => {
+      const cols = record.missingColumns ?? [];
+      if (cols.length === 0) return '—';
+      return cols.map((c) => c.toUpperCase()).join(', ');
+    },
+  },
+  {
     title: '首条时间',
     dataIndex: 'firstTs',
     key: 'firstTs',
@@ -230,7 +240,7 @@ function handleBackfill() {
             :row-selection="rowSelection"
             size="small"
             :pagination="{ pageSize: 20, showSizeChanger: false }"
-            :scroll="{ x: 900, y: 400 }"
+            :scroll="{ x: 1050, y: 400 }"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'status'">
@@ -255,6 +265,33 @@ function handleBackfill() {
                 {{ record.actualPoints.toLocaleString() }} /
                 {{ record.expectedPoints.toLocaleString() }}
               </template>
+            </template>
+            <template #expandedRowRender="{ record }">
+              <div
+                v-if="record.colDetails"
+                class="integrity-col-details"
+              >
+                <span class="integrity-col-details-title">列级完整度：</span>
+                <span
+                  v-for="(detail, col) in record.colDetails"
+                  :key="col"
+                  class="integrity-col-item"
+                >
+                  <span class="integrity-col-name">{{ String(col).toUpperCase() }}</span>
+                  <Progress
+                    :percent="Math.round(detail.completeness * 100)"
+                    size="small"
+                    :show-info="true"
+                    :status="
+                      detail.completeness >= 0.95
+                        ? 'success'
+                        : detail.completeness >= 0.2
+                          ? 'active'
+                          : 'exception'
+                    "
+                  />
+                </span>
+              </div>
             </template>
           </Table>
         </Tabs.TabPane>
@@ -335,6 +372,34 @@ function handleBackfill() {
 .integrity-footer-count {
   font-size: 13px;
   color: hsl(var(--foreground) / 70%);
+}
+
+.integrity-col-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 8px 16px;
+  align-items: center;
+}
+
+.integrity-col-details-title {
+  font-size: 12px;
+  color: hsl(var(--foreground) / 60%);
+  width: 100%;
+}
+
+.integrity-col-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.integrity-col-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 80%);
+  width: 48px;
 }
 
 @media (max-width: 768px) {
