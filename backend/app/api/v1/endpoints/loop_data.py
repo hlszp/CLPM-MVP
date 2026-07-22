@@ -118,6 +118,7 @@ async def start_import(
             "created_by": user.username,
             "celery_task_id": "",
             "loop_ids": json.dumps(body.loopIds),
+            "result": "",
         }
     )
 

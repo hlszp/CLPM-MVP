@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -43,6 +43,7 @@ from app.tasks.kpi_calc import (
     _build_ts_index,
     _build_weights_map,
     _calculate_loop_kpi,
+    _check_import_idempotency,
     _compute_kpis_three_layer,
     _do_calculate,
     _do_calculate_single_loop,
@@ -2734,3 +2735,123 @@ class TestPersistSnapshotInconclusiveConfidenceE:
 
         assert result["status"] == "INCONCLUSIVE"
         assert mock_persist.await_args.kwargs["confidence_level"] == "E"
+
+
+class TestCheckImportIdempotency:
+    """_check_import_idempotency 幂等预检查测试.
+
+    覆盖 5 个逻辑分支：
+    - task_id=None → 返回 None
+    - _get_task 返回 None（记录不存在）→ 返回 None
+    - PENDING → 返回 None（正常执行）
+    - SUCCESS/FAILED/CANCELLED → 返回 _build_cached_result（含 skipped_redelivery）
+    - RUNNING 未超时 → 返回跳过结果；RUNNING 超时 / started_at 缺失 → 返回 None
+    """
+
+    @pytest.mark.asyncio
+    async def test_none_task_id_returns_none(self) -> None:
+        """task_id=None 时直接返回 None，不查 Redis。"""
+        result = await _check_import_idempotency(None)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_task_record_missing_returns_none(self) -> None:
+        """Redis 中无任务记录时返回 None（防御性放行）。"""
+        with patch("app.services.data_import._get_task", new=AsyncMock(return_value=None)):
+            result = await _check_import_idempotency("nonexistent-task-id")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_pending_status_returns_none(self) -> None:
+        """PENDING 状态返回 None，允许正常执行。"""
+        task_data = {"status": "PENDING", "loop_count": "5"}
+        with patch("app.services.data_import._get_task", new=AsyncMock(return_value=task_data)):
+            result = await _check_import_idempotency("pending-task-id")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_success_status_returns_cached_result(self) -> None:
+        """SUCCESS 终态返回缓存结果，含 skipped_redelivery=True。"""
+        task_data = {
+            "status": "SUCCESS",
+            "loop_count": "5",
+            "imported_count": "5",
+            "error_count": "0",
+            "result": '{"total": 5, "succeeded": 5, "failed": 0, "errors": []}',
+        }
+        with patch("app.services.data_import._get_task", new=AsyncMock(return_value=task_data)):
+            result = await _check_import_idempotency("success-task-id")
+        assert result is not None
+        assert result["skipped_redelivery"] is True
+        assert result["total"] == 5
+        assert result["succeeded"] == 5
+
+    @pytest.mark.asyncio
+    async def test_failed_status_returns_cached_result(self) -> None:
+        """FAILED 终态返回缓存结果。"""
+        task_data = {
+            "status": "FAILED",
+            "loop_count": "5",
+            "imported_count": "3",
+            "error_count": "2",
+            "error_message": "连接超时",
+        }
+        with patch("app.services.data_import._get_task", new=AsyncMock(return_value=task_data)):
+            result = await _check_import_idempotency("failed-task-id")
+        assert result is not None
+        assert result["skipped_redelivery"] is True
+        assert result["failed"] == 2
+
+    @pytest.mark.asyncio
+    async def test_cancelled_status_returns_cached_result(self) -> None:
+        """CANCELLED 终态返回缓存结果。"""
+        task_data = {
+            "status": "CANCELLED",
+            "loop_count": "5",
+            "imported_count": "0",
+            "error_count": "0",
+        }
+        with patch("app.services.data_import._get_task", new=AsyncMock(return_value=task_data)):
+            result = await _check_import_idempotency("cancelled-task-id")
+        assert result is not None
+        assert result["skipped_redelivery"] is True
+
+    @pytest.mark.asyncio
+    async def test_running_not_expired_returns_skip(self) -> None:
+        """RUNNING 且 started_at 未超时（60s < 7200s 阈值）→ 返回跳过结果。"""
+        started_at = (datetime.now(UTC) - timedelta(seconds=60)).isoformat()
+        task_data = {
+            "status": "RUNNING",
+            "loop_count": "5",
+            "started_at": started_at,
+        }
+        with patch("app.services.data_import._get_task", new=AsyncMock(return_value=task_data)):
+            result = await _check_import_idempotency("running-task-id")
+        assert result is not None
+        assert result["skipped_redelivery"] is True
+        assert "concurrent redelivery skipped" in result["errors"][0]
+
+    @pytest.mark.asyncio
+    async def test_running_expired_returns_none(self) -> None:
+        """RUNNING 且 started_at 已超时（8000s > 7200s 阈值）→ 返回 None（接续执行）。"""
+        started_at = (datetime.now(UTC) - timedelta(seconds=8000)).isoformat()
+        task_data = {
+            "status": "RUNNING",
+            "loop_count": "5",
+            "started_at": started_at,
+        }
+        with patch("app.services.data_import._get_task", new=AsyncMock(return_value=task_data)):
+            result = await _check_import_idempotency("expired-task-id")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_running_missing_started_at_returns_none(self) -> None:
+        """RUNNING 但 started_at 缺失 → 返回 None（交 _do_import CAS 兜底）。"""
+        task_data = {
+            "status": "RUNNING",
+            "loop_count": "5",
+            "started_at": "",
+        }
+        with patch("app.services.data_import._get_task", new=AsyncMock(return_value=task_data)):
+            result = await _check_import_idempotency("no-started-at-task-id")
+        assert result is None

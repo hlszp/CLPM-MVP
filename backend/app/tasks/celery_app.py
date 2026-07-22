@@ -60,6 +60,11 @@ celery_app.conf.update(
     ),
     task_default_queue="default",
     task_default_routing_key="default",
+    # Redis broker 默认 visibility_timeout=3600s（1h），而 import_history_data
+    # 的 time_limit=7200s（2h）。未配置时任务跑满 1h 即被 broker 自动重投给另一个
+    # worker，造成并发执行。设为 9000s（2.5h，> time_limit 留 0.5h 缓冲）。
+    broker_transport_options={"visibility_timeout": 9000},
+    result_backend_transport_options={"visibility_timeout": 9000},
 )
 
 # Task modules are explicitly listed in the include parameter above

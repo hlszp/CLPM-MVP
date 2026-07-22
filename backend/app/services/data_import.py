@@ -65,6 +65,48 @@ def _get_remote_guard() -> RemoteApiProvider:
 _IMPORT_TASK_PREFIX = "import_task"
 _IMPORT_TASK_INDEX = "import_task:index"
 
+# 导入任务状态 CAS 脚本（参考 task_tracker._STATUS_CAS_LUA 改造）。
+# 语义：若 old_status 已是终态且 new_status 不同 → BLOCKED（不覆盖），防止重投
+# 任务用 RUNNING 覆盖已 SUCCESS 等终态；progress/imported_count/error_count 单调
+# 递增；末尾 EXPIRE 刷新 TTL。
+# ARGV 布局：[1]=new_status（空串表示不更新 status）, [2]=ttl_seconds, [3..]=field/value 对
+_IMPORT_TASK_CAS_LUA = r"""
+-- CLPM_IMPORT_TASK_CAS_V1
+local task_key = KEYS[1]
+if redis.call('EXISTS', task_key) == 0 then
+  return {'MISSING', ''}
+end
+
+local new_status = ARGV[1]
+local ttl_seconds = ARGV[2]
+local old_status = redis.call('HGET', task_key, 'status') or ''
+local terminal = {SUCCESS=true, FAILED=true, CANCELLED=true}
+
+if new_status ~= '' then
+  if terminal[old_status] and old_status ~= new_status then
+    return {'BLOCKED', old_status}
+  end
+  redis.call('HSET', task_key, 'status', new_status)
+end
+
+for index = 3, #ARGV, 2 do
+  local field = ARGV[index]
+  local value = ARGV[index + 1]
+  if field == 'progress' or field == 'imported_count' or field == 'error_count' then
+    local current = tonumber(redis.call('HGET', task_key, field) or '')
+    local incoming = tonumber(value)
+    if current == nil or incoming == nil or incoming >= current then
+      redis.call('HSET', task_key, field, value)
+    end
+  else
+    redis.call('HSET', task_key, field, value)
+  end
+end
+
+redis.call('EXPIRE', task_key, ttl_seconds)
+return {'UPDATED', old_status}
+"""
+
 # 远端 API Good 质量码集合
 _GOOD_QUALITY_CODES = frozenset({1, 192})
 
@@ -155,7 +197,12 @@ async def _get_task(task_id: str) -> dict[str, str] | None:
 
 
 async def _update_task(task_id: str, **fields: Any) -> None:
-    """更新导入任务字段（刷新 TTL，防止活跃任务过期）."""
+    """更新导入任务字段（刷新 TTL，防止活跃任务过期）.
+
+    非状态字段的普通更新（如 progress、celery_task_id 回填）。涉及状态变更
+    （status=RUNNING/SUCCESS/FAILED/CANCELLED）应使用 ``_update_task_cas``，
+    后者通过 Lua CAS 防止终态被重投任务覆盖。
+    """
     mapping = {k: _to_str(v) for k, v in fields.items() if v is not None}
     if mapping:
         ttl = int(settings.IMPORT_TASK_TTL_DAYS) * 86400
@@ -163,6 +210,68 @@ async def _update_task(task_id: str, **fields: Any) -> None:
         pipe.hset(_task_key(task_id), mapping=mapping)
         pipe.expire(_task_key(task_id), ttl)
         await pipe.execute()
+
+
+async def _update_task_cas(
+    task_id: str,
+    *,
+    new_status: str | None = None,
+    **fields: Any,
+) -> tuple[str, str]:
+    """CAS 版本任务更新（状态变更专用，防终态被重投任务覆盖）.
+
+    通过 ``_IMPORT_TASK_CAS_LUA`` 原子执行：若任务已处于终态（SUCCESS/FAILED/
+    CANCELLED）且本次 new_status 不同 → 返回 BLOCKED 不更新；终态→同终态
+    （如 SUCCESS→SUCCESS）允许更新其它字段。progress/imported_count/error_count
+    单调递增。
+
+    Args:
+        task_id: 任务 ID
+        new_status: 新状态；None/空串表示本次不更新 status（仅更新其它字段）
+        **fields: 附带更新的字段（如 started_at/finished_at/result/error_message）
+
+    Returns:
+        (result_code, old_status) — code ∈ {'MISSING', 'BLOCKED', 'UPDATED'}
+    """
+    mapping = {k: v for k, v in fields.items() if v is not None}
+    ttl = int(settings.IMPORT_TASK_TTL_DAYS) * 86400
+    script_args: list[str] = [new_status or "", str(ttl)]
+    for field, value in mapping.items():
+        script_args.extend((_to_str(field), _to_str(value)))
+    raw = await redis_client.eval(
+        _IMPORT_TASK_CAS_LUA,
+        1,
+        _task_key(task_id),
+        *script_args,
+    )
+    return str(raw[0]), str(raw[1])
+
+
+def _build_cached_result(data: dict[str, Any]) -> dict[str, Any]:
+    """从 Redis 任务记录重构导入返回结果（供幂等短路复用）.
+
+    优先用持久化的 ``result`` JSON 字段；缺失时用 loop_count/imported_count/
+    error_count 兜底重构。附加 ``skipped_redelivery=True`` 标记，供调用方区分
+    正常执行结果与重投跳过结果。
+    """
+    raw = data.get("result", "")
+    if raw:
+        try:
+            r = json.loads(raw)
+            r["skipped_redelivery"] = True
+            return r
+        except (ValueError, TypeError):
+            pass
+    status = str(data.get("status", "")).upper()
+    return {
+        "total": _to_int(data.get("loop_count")),
+        "succeeded": _to_int(data.get("imported_count"))
+        if status == ImportStatus.SUCCESS.value
+        else 0,
+        "failed": _to_int(data.get("error_count")) if status == ImportStatus.FAILED.value else 0,
+        "errors": [data.get("error_message", "")] if data.get("error_message") else [],
+        "skipped_redelivery": True,
+    }
 
 
 def _to_str(value: Any) -> str:
@@ -258,6 +367,7 @@ async def create_import_task(
         "created_by": created_by,
         "celery_task_id": celery_task_id,
         "loop_ids": json.dumps(loop_ids),
+        "result": "",
     }
     await _save_task(task_data)
     logger.info(
@@ -306,11 +416,30 @@ async def import_history_data(
     end_dt = _parse_dt(ts_end)
 
     if task_id:
-        await _update_task(
+        cas_code, old_status = await _update_task_cas(
             task_id,
-            status=ImportStatus.RUNNING.value,
+            new_status=ImportStatus.RUNNING.value,
             started_at=_now_iso(),
         )
+        if cas_code == "BLOCKED":
+            # 已终态（入口预检查漏网的 TOCTOU 窗口兜底）— 不执行导入
+            logger.warning(
+                "CAS 拒绝覆盖终态: task_id=%s, existing=%s, 跳过执行",
+                task_id,
+                old_status,
+            )
+            existing = await _get_task(task_id)
+            if existing:
+                return _build_cached_result(existing)
+            return {
+                "total": len(loop_ids),
+                "succeeded": 0,
+                "failed": 0,
+                "errors": [f"任务已处于终态 {old_status}"],
+                "skipped_redelivery": True,
+            }
+        if cas_code == "MISSING":
+            logger.warning("任务记录不存在: task_id=%s, 继续执行（无状态跟踪）", task_id)
 
     total = len(loop_ids)
     errors: list[str] = []
@@ -455,9 +584,9 @@ async def import_history_data(
             else:
                 final_status = ImportStatus.FAILED.value
 
-            await _update_task(
+            cas_code, _old = await _update_task_cas(
                 task_id,
-                status=final_status,
+                new_status=final_status,
                 progress=(
                     1.0
                     if final_status in (ImportStatus.SUCCESS.value, ImportStatus.FAILED.value)
@@ -465,7 +594,15 @@ async def import_history_data(
                 ),
                 finished_at=_now_iso(),
                 error_message="; ".join(errors[:3]) if errors else "",
+                result=result,
             )
+            if cas_code == "BLOCKED":
+                logger.info(
+                    "终态 CAS 被拒（已由先到者置终态）: task_id=%s, existing=%s, target=%s",
+                    task_id,
+                    _old,
+                    final_status,
+                )
             terminal_set = True
 
         # 触发 KPI 回算
@@ -484,12 +621,19 @@ async def import_history_data(
                     fallback_status = ImportStatus.CANCELLED.value
                 else:
                     fallback_status = ImportStatus.FAILED.value
-                await _update_task(
+                cas_code, _old = await _update_task_cas(
                     task_id,
-                    status=fallback_status,
+                    new_status=fallback_status,
                     finished_at=_now_iso(),
                     error_message="导入任务异常中断",
                 )
+                if cas_code == "BLOCKED":
+                    logger.info(
+                        "异常兜底终态 CAS 被拒: task_id=%s, existing=%s, target=%s",
+                        task_id,
+                        _old,
+                        fallback_status,
+                    )
             except Exception:  # noqa: BLE001
                 logger.warning("异常中断兜底终态更新失败: task_id=%s", task_id)
         raise
@@ -997,11 +1141,22 @@ async def cancel_import_task(task_id: str) -> dict[str, Any] | None:
         except Exception:
             logger.warning("撤销 Celery 任务失败: %s", celery_task_id)
 
-    await _update_task(
+    cas_code, old_status = await _update_task_cas(
         task_id,
-        status=ImportStatus.CANCELLED.value,
+        new_status=ImportStatus.CANCELLED.value,
         finished_at=_now_iso(),
     )
+    if cas_code == "BLOCKED":
+        # 任务已处于终态（SUCCESS/FAILED），无法取消已完成任务
+        logger.info(
+            "取消任务被 CAS 拒绝（已终态）: task_id=%s, existing=%s",
+            task_id,
+            old_status,
+        )
+        fresh = await _get_task(task_id) or data
+        resp = _task_to_response(fresh)
+        resp["was_blocked"] = True
+        return resp
     data["status"] = ImportStatus.CANCELLED.value
     return _task_to_response(data)
 
@@ -1057,12 +1212,20 @@ async def sweep_stale_running_tasks() -> dict[str, Any]:
             continue
         if now_ts - started_ts < timeout:
             continue
-        await _update_task(
+        cas_code, _old = await _update_task_cas(
             tid,
-            status=ImportStatus.FAILED.value,
+            new_status=ImportStatus.FAILED.value,
             finished_at=_now_iso(),
             error_message=f"RUNNING 超时（>{timeout}s），疑为 worker 异常终止",
         )
+        if cas_code == "BLOCKED":
+            # 原 worker 恰好同时完成（置 SUCCESS），CAS 拒绝覆盖终态
+            logger.info(
+                "清扫 RUNNING 任务 CAS 被拒（原 worker 已置终态）: task_id=%s, existing=%s",
+                tid,
+                _old,
+            )
+            continue
         swept.append(tid)
         logger.warning("导入任务 RUNNING 超时已清扫: task_id=%s", tid)
     return {"swept": len(swept), "details": swept}
