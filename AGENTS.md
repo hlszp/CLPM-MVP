@@ -52,13 +52,10 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.0 是重构后 IA/路�
 docker compose -f deploy/docker/docker-compose.dev.yml up -d
 
 # 2. 后端 API (port 7101)
-#    v6.1：后端启动时自动启动 Celery Beat 调度进程（定时任务自动执行）
+#    v6.1：后端启动时自动启动 Celery Beat 调度进程和 Celery Worker 任务执行进程
 cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 
-# 3. Celery Worker（独立进程，必须单独启动；Beat 已随后端自动启动）
-cd backend && .venv/bin/celery -A app.tasks.celery_app worker -l info -Q default
-
-# 4. 前端 (port 5666)
+# 3. 前端 (port 5666)
 cd frontend && pnpm run dev:antd
 ```
 
@@ -92,8 +89,8 @@ cd frontend && pnpm run format
 
 行为红线（始终遵守）：
 
-- **Celery worker 是独立进程**：与 FastAPI（`--reload`）分开启动，后端代码更新后需重启 worker；sys_config 业务配置变更对 worker 生效需重启 worker 或等子进程回收
-- **Celery Beat 已自动启动**（v6.1 lifespan）：**严禁手工再启动 Beat**，两个 beat 并存会导致定时任务双触发
+- **Celery Worker 和 Beat 随后端自动启动**（v6.1 lifespan）：后端启动时自动拉起 Worker 和 Beat 子进程，无需手动启动；**严禁手工再启动**，多个 worker/beat 并存会导致任务重复消费或双触发
+- **后端代码更新后需重启后端**：`uvicorn --reload` 只重载 Python 文件，不会重新执行 lifespan，也不会重启 Worker/Beat 子进程；修改 Celery 任务代码后需重启后端让新代码生效
 - **计算类历史数据查询一律本地 TDengine**：`get_provider()` 恒返回 TDengineProvider，禁止计算任务自动降级到远端 API；远端历史接口仅 `data_import.py` 调用。决策记录：`docs/过程文档/data-architecture-decision-local-first-2026-07-20.md`
 - **模型变更必须与迁移同批应用**：ORM 改动与 alembic 迁移同批提交，且先应用迁移再让代码进入运行环境（2026-07-21 教训）
 - **热路径禁止对 naive datetime 逐点调 `.timestamp()`**（macOS fork 时区慢路径陷阱，背景见 ops-runbook）

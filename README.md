@@ -60,16 +60,9 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 
 后端 API 文档：http://localhost:7101/docs
 
-### 3. 启动 Celery Worker（异步任务）
+> **v6.1 说明**：后端启动时自动启动 Celery Beat（定时调度）和 Celery Worker（任务执行）子进程，无需手动启动。修改 Celery 任务代码后需重启后端让新代码生效。
 
-```bash
-cd backend
-.venv/bin/celery -A app.tasks.celery_app worker -l info -Q default
-```
-
-> **注意**：Celery worker 是独立进程，与 FastAPI（`--reload`）分开启动。后端代码更新后需重启 worker 才能生效。
-
-### 4. 启动前端
+### 3. 启动前端
 
 ```bash
 cd frontend

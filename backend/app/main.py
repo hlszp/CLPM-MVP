@@ -5,8 +5,10 @@ Wires up logging, CORS, global exception handlers and route prefixes:
 - ``/api/v1/*`` for business endpoints (auth, ...)
 - ``/docs`` and ``/redoc`` for OpenAPI documentation
 
-v6.1：lifespan 中自动启动 Celery Beat 调度进程，确保每小时 KPI 计算
-等定时任务在项目启动后自动执行，无需手动启动 Beat。
+v6.1：lifespan 中自动启动 Celery Beat 调度进程和 Celery Worker 任务执行
+进程，确保每小时 KPI 计算等定时任务、手动触发任务（历史数据导入、KPI 回算等）
+在项目启动后自动执行，无需手动启动 Beat / Worker。
+生产环境由 docker-compose 独立 celery-beat / celery-worker 容器接管，跳过。
 """
 
 from __future__ import annotations
@@ -71,6 +73,9 @@ logger = get_logger(__name__)
 
 # Celery Beat 子进程引用（lifespan 管理）
 _celery_beat_process: subprocess.Popen | None = None
+
+# Celery Worker 子进程引用（lifespan 管理）
+_celery_worker_process: subprocess.Popen | None = None
 
 
 def _is_production() -> bool:
@@ -191,6 +196,84 @@ def _stop_celery_beat() -> None:
             pass
 
 
+def _any_worker_process_running() -> bool:
+    """pgrep 扫描是否已有 celery worker 进程在运行（单例兜底检查）。
+
+    避免 lifespan 自动启动的 worker 与手工启动的 worker 并存，导致任务
+    被重复消费（多 worker 竞争同一队列）。
+    """
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["pgrep", "-f", "celery.*worker"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def _start_celery_worker() -> None:
+    """启动 Celery Worker 子进程。
+
+    在 FastAPI lifespan 中调用，确保手动触发的任务（历史数据导入、
+    KPI 回算、自定义评估等）和 Beat 派发的定时任务都有 worker 执行。
+
+    与 Beat 不同，worker 没有 pidfile，使用 pgrep 做单例检查。
+    """
+    global _celery_worker_process
+
+    if _any_worker_process_running():
+        logger.info("检测到已有 Celery Worker 进程在运行，跳过启动")
+        return
+
+    try:
+        _celery_worker_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "celery",
+                "-A",
+                "app.tasks.celery_app",
+                "worker",
+                "-l",
+                "info",
+                "-Q",
+                "default",
+            ],
+            cwd=os.getcwd(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info(
+            "Celery Worker 进程已启动 (PID=%s)，任务队列开始消费",
+            _celery_worker_process.pid,
+        )
+    except Exception as exc:
+        logger.warning("启动 Celery Worker 失败（任务将不会自动执行）: %s", exc)
+
+
+def _stop_celery_worker() -> None:
+    """停止 Celery Worker 子进程。"""
+    global _celery_worker_process
+    process = _celery_worker_process
+    if process is not None:
+        logger.info("停止 Celery Worker 进程...")
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+        _celery_worker_process = None
+        logger.info("Celery Worker 进程已停止")
+    else:
+        # lifespan 未创建的 worker（手工启动的）不在此处停止
+        logger.debug("无 lifespan 管理的 Worker 进程，跳过停止")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: initialise resources on startup, clean up on shutdown."""
@@ -198,12 +281,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
     logger.info("数据源: 计算=本地 TDengine（性能评估/诊断/整定），远端 API 仅历史数据导入任务调用")
 
-    # v6.1：自动启动 Celery Beat 调度进程
-    # 生产环境由 docker-compose 独立 celery-beat 服务接管，避免重复启动
+    # v6.1：自动启动 Celery Beat 调度进程和 Celery Worker 任务执行进程
+    # 生产环境由 docker-compose 独立 celery-beat / celery-worker 容器接管，避免重复启动
     if not _is_production():
         _start_celery_beat()
+        _start_celery_worker()
     else:
-        logger.info("生产环境：Celery Beat 由独立容器接管，跳过 lifespan 启动")
+        logger.info("生产环境：Celery Beat / Worker 由独立容器接管，跳过 lifespan 启动")
 
     # 从 sys_config 预载数据源配置到 settings（运行时真相源优先于 .env）
     # 方案 B：.env 仅保留基础设施配置 + 合理默认值，业务 URL/Token/SignalR Hub
@@ -245,8 +329,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     logger.info("Shutting down %s", settings.APP_NAME)
 
-    # 停止 Celery Beat
+    # 停止 Celery Worker 和 Beat
     if not _is_production():
+        _stop_celery_worker()
         _stop_celery_beat()
 
     # 停止实时数据订阅
