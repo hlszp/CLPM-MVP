@@ -1217,6 +1217,67 @@ class TestCeleryTasks:
 
 
 # ===========================================================================
+# 6.0b calculate_custom_batch_kpi 批量任务入口测试（回归防护）
+# ===========================================================================
+
+
+class TestCalculateCustomBatchKpi:
+    """批量自定义 KPI 任务入口测试。
+
+    回归背景：commit 5cae2e5a 误删 ``calculate_custom_batch_kpi`` 定义，
+    但 ``endpoints/tasks.py`` 仍调用它导致 ImportError → 500。本组测试
+    锁定「任务可导入 + 参数透传 + 空回路早退」三项契约，防止再次回归。
+    """
+
+    def test_calculate_custom_batch_kpi_importable(self) -> None:
+        """calculate_custom_batch_kpi 必须可从 kpi_calc 导入（回归防护）。"""
+        from app.tasks.kpi_calc import calculate_custom_batch_kpi
+
+        assert calculate_custom_batch_kpi.name == "app.tasks.kpi_calc.calculate_custom_batch_kpi"
+
+    def test_calculate_custom_batch_kpi_passthrough_with_ts_end(self) -> None:
+        """透传 task_id/loop_ids/ts_start/ts_end 给 _do_calculate_custom_batch。"""
+        from app.tasks.kpi_calc import calculate_custom_batch_kpi
+
+        expected = {"total": 2, "success": 2, "failed": 0}
+        with patch(
+            "app.tasks.kpi_calc._do_calculate_custom_batch", new_callable=AsyncMock
+        ) as mock_fn:
+            mock_fn.return_value = expected
+            result = calculate_custom_batch_kpi.run(
+                "t-batch", ["loop-1", "loop-2"], "2026-06-22T08:00:00Z", "2026-06-22T09:30:00Z"
+            )
+            assert result == expected
+            call_args = mock_fn.call_args
+            assert call_args.args[0] == "t-batch"
+            assert call_args.args[1] == ["loop-1", "loop-2"]
+            assert call_args.args[2] == "2026-06-22T08:00:00Z"
+            assert call_args.args[3] == "2026-06-22T09:30:00Z"
+
+    def test_calculate_custom_batch_kpi_passthrough_ts_end_none(self) -> None:
+        """不传 ts_end 时 _do_calculate_custom_batch 收到 None。"""
+        from app.tasks.kpi_calc import calculate_custom_batch_kpi
+
+        expected = {"total": 1, "success": 1, "failed": 0}
+        with patch(
+            "app.tasks.kpi_calc._do_calculate_custom_batch", new_callable=AsyncMock
+        ) as mock_fn:
+            mock_fn.return_value = expected
+            result = calculate_custom_batch_kpi.run("t-batch", ["loop-1"], "2026-06-22T08:00:00Z")
+            assert result == expected
+            call_args = mock_fn.call_args
+            assert call_args.args[3] is None
+
+    @pytest.mark.asyncio
+    async def test_do_calculate_custom_batch_empty_loops(self) -> None:
+        """空 loop_ids 列表直接返回零结果，不触发取数/计算。"""
+        from app.tasks.kpi_calc import _do_calculate_custom_batch
+
+        result = await _do_calculate_custom_batch("t-batch", [], "2026-06-22T08:00:00Z")
+        assert result == {"total": 0, "success": 0, "failed": 0}
+
+
+# ===========================================================================
 # 6.1 _do_calculate_custom_loop 时间窗测试（P1 #12）
 # ===========================================================================
 
