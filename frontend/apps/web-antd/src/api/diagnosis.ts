@@ -643,6 +643,18 @@ export namespace DiagnosisApi {
     labels?: string[];
   }
 
+  /** 触发诊断响应中的单个任务项（对齐后端 DiagnosisTaskTriggerItem） */
+  export interface TriggerTaskItem {
+    taskId: string;
+    loopId: string;
+    status: TaskStatus;
+  }
+
+  /** 触发诊断响应 data 块（对齐后端 DiagnosisTriggerData，非裸数组） */
+  export interface TriggerResult {
+    tasks: TriggerTaskItem[];
+  }
+
   /** 诊断任务查询参数 */
   export interface TaskListQueryParams {
     status?: string;
@@ -939,7 +951,7 @@ export function updateDiagnosisTagStatusApi(
  * 返回创建的任务列表（每回路一个任务）。
  */
 export function triggerDiagnosisApi(data: DiagnosisApi.TriggerRequest) {
-  return requestClient.post<DiagnosisApi.TaskItem[]>(
+  return requestClient.post<DiagnosisApi.TriggerResult>(
     '/diagnosis/trigger',
     data,
   );

@@ -226,13 +226,13 @@ export function useLoopAnalysis() {
     Object.assign(diag, defaultDiagState());
     loading.value = true;
     try {
-      const tasks = await triggerDiagnosisApi({
+      const result = await triggerDiagnosisApi({
         endTime: config.endTime,
         labels: config.labels.length > 0 ? config.labels : undefined,
         loopIds: [config.loopId],
         startTime: config.startTime,
       });
-      const first = tasks[0];
+      const first = result?.tasks?.[0];
       if (first) {
         diag.taskId = first.taskId;
         diag.status = first.status;
