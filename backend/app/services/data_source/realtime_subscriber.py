@@ -435,6 +435,21 @@ class RealtimeSubscriber:
                     "ts": item.get("collectTime", ""),
                 }
 
+        # MODE 变化时主动失效回路统计缓存（loop:stats:type:*），确保监控页
+        # 自动/手动/自控率卡片下次查询拿到最新值，而非等 60s TTL 自然过期。
+        # MODE 低频变化（小时级），失效代价低。
+        if role == "MODE":
+            asyncio.create_task(self._invalidate_loop_stats_cache())
+
+    async def _invalidate_loop_stats_cache(self) -> None:
+        """MODE 变化时失效回路统计缓存，确保监控卡片下次查询拿到最新值."""
+        try:
+            async for key in redis_client.scan_iter(match="loop:stats:type:*"):
+                await redis_client.delete(key)
+        except Exception as exc:  # noqa: BLE001
+            # 失败可忽略：60s TTL 自然过期，最多延迟 1 分钟
+            logger.debug("失效 loop 统计缓存失败（可忽略，TTL 60s 自然过期）: %s", exc)
+
     def _parse_tag_code(self, tag_code: str) -> tuple[str, str]:
         """解析 tagCode 为回路部分和角色。
 

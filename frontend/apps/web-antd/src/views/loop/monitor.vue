@@ -349,6 +349,16 @@ async function loadLoopTypeStats() {
   }
 }
 
+/** 节流刷新统计卡片：1 秒内多次 MODE 推送只触发一次 stats 重载，避免打爆 API */
+let statsRefreshTimer: null | ReturnType<typeof setTimeout> = null;
+function scheduleStatsRefresh() {
+  if (statsRefreshTimer) return;
+  statsRefreshTimer = setTimeout(() => {
+    statsRefreshTimer = null;
+    loadLoopTypeStats();
+  }, 1000);
+}
+
 /** 点击统计卡片自动筛选 */
 function handleTypeCardClick(type: string) {
   if (type === 'ALL') {
@@ -571,9 +581,19 @@ function handleRealtimeMessage(msg: {
 
   switch (role) {
     case 'MODE': {
-      // WS-D 阶段5：MODE 值仅更新数值，modeLabel 由后端 loop_mode_mapping 配置驱动；
-      // WebSocket 推送不重算 modeLabel，保持后端权威，等下次列表刷新对齐。
+      // 本地重算 modeLabel/controlMode（与后端 _mode_value_to_label 默认映射一致），
+      // 使监控列表"控制方式"列实时反映 MODE 变化；若有 loop_mode_mapping 自定义配置，
+      // 下次列表刷新会对齐。同时节流触发统计卡片刷新。
       cv.mode = numValue;
+      if (numValue === 0) {
+        cv.modeLabel = 'Manual';
+        if (item.controlMode !== undefined) item.controlMode = 'Manual';
+      } else if (numValue >= 1) {
+        cv.modeLabel = 'Auto';
+        if (item.controlMode !== undefined) item.controlMode = 'Auto';
+      }
+      // 未知 MODE 值不覆盖 modeLabel（保持后端权威值）
+      scheduleStatsRefresh();
       break;
     }
     case 'OP': {
@@ -883,6 +903,7 @@ function startPolling() {
   countdown.value = refreshInterval;
   refreshTimer = setInterval(() => {
     loadList();
+    loadLoopTypeStats();
     countdown.value = refreshInterval;
   }, refreshInterval * 1000);
   countdownTimer = setInterval(() => {
