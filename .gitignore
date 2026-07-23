@@ -48,3 +48,6 @@ logs-frontend-dev.log
 output/
 .playwright-cli/
 __pycache__/
+
+# Turbo 缓存
+.turbo/
