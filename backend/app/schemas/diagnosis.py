@@ -180,6 +180,46 @@ class ConfigChangeReviewRequest(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# 算法元数据（GET /diagnosis/algorithms/meta — Batch 4 算法价值传递）
+# ---------------------------------------------------------------------------
+
+
+class DiagnosisAlgorithmMetaItem(CamelModel):
+    """单条诊断算法展示元数据。
+
+    用于前端"算法价值传递卡片"渲染：算法名、原理说明、关键特征值字段名、
+    阈值字段名、对应可视化数据块键名、当前生效阈值快照。
+    """
+
+    label: str = Field(..., description="诊断标签码（8 类之一）")
+    labelName: str = Field(..., description="标签中文名")
+    algorithmName: str = Field(..., description="算法中文名")
+    algorithmVersion: str = Field("DIAG_ENGINE_v1.0", description="算法版本号")
+    principle: str = Field(..., description="算法原理说明")
+    featureKeys: list[str] = Field(
+        default_factory=list, description="关键特征值字段名（对应 featureValues）"
+    )
+    thresholdKeys: list[str] = Field(
+        default_factory=list, description="阈值字段名（对应 DiagnosisConfig.threshold）"
+    )
+    visualizationKey: str | None = Field(
+        None, description="对应可视化数据块键名（spectrum/scatterPlot 等）"
+    )
+    confidenceLevelExplanation: str | None = Field(None, description="置信度等级释义（A-E 五级）")
+    isEnabled: bool = True
+    threshold: dict[str, Any] | None = Field(
+        None, description="当前生效阈值快照（从 DiagnosisConfig 读取）"
+    )
+
+
+class DiagnosisAlgorithmMetaList(CamelModel):
+    """算法元数据列表响应 data 块。"""
+
+    items: list[DiagnosisAlgorithmMetaItem] = Field(default_factory=list)
+    total: int = 0
+
+
+# ---------------------------------------------------------------------------
 # S4-DIAG-003: 诊断列表与详情
 # ---------------------------------------------------------------------------
 
@@ -688,6 +728,8 @@ __all__ = [
     "AnalyticsFilterScope",
     "CloseDurationItem",
     "DiagnosisAggregates",
+    "DiagnosisAlgorithmMetaItem",
+    "DiagnosisAlgorithmMetaList",
     "DiagnosisAnalyticsData",
     "DiagnosisConfigItem",
     "DiagnosisConfigUpdate",

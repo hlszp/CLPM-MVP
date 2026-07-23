@@ -48,12 +48,12 @@ from app.models.loop import LoopLedger
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.diagnosis import (
-    AbCompareData,
     AnalyticsExportData,
     AnalyticsExportRequest,
     ConfigChangeCreateRequest,
     ConfigChangeRequestItem,
     ConfigChangeReviewRequest,
+    DiagnosisAlgorithmMetaList,
     DiagnosisAnalyticsData,
     DiagnosisConfigItem,
     DiagnosisConfigUpdate,
@@ -86,6 +86,7 @@ from app.services.diagnosis import (
     get_diagnosis_detail,
     get_diagnosis_task_detail,
     get_diagnosis_visualization,
+    list_algorithm_meta,
     list_diagnosis,
     list_diagnosis_configs,
     list_diagnosis_records,
@@ -513,7 +514,7 @@ async def export_statistics_csv_endpoint(
     )
 
 
-@router.get("/ab-compare", response_model=ApiResponse[AbCompareData])
+@router.get("/ab-compare", response_model=ApiResponse[dict])
 async def ab_compare_endpoint(
     loopId: uuid.UUID = Query(..., description="回路 ID"),
     implementedAt: str | None = Query(
@@ -523,6 +524,9 @@ async def ab_compare_endpoint(
     beforeEndTime: str | None = Query(None, description="Before 窗口结束（ISO 8601）"),
     afterStartTime: str | None = Query(None, description="After 窗口开始（ISO 8601）"),
     afterEndTime: str | None = Query(None, description="After 窗口结束（ISO 8601）"),
+    includeDiagnosis: bool = Query(
+        False, description="是否返回诊断标签对比（before/after 标签 + 标签变化）"
+    ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -530,6 +534,11 @@ async def ab_compare_endpoint(
 
     窗口二选一：implementedAt 自动截取 [T-7d,T) 与 (T,T+7d]；
     或显式传入 before/after 窗口。实施后窗口数据不足 24h 时 dataInsufficient=true。
+
+    includeDiagnosis=true 时额外返回 beforeDiagnosisLabels/afterDiagnosisLabels/
+    labelChanges（Batch 4 回路分析页 A/B 对比增强）。
+
+    Note: response_model 改为 dict 以兼容 includeDiagnosis 扩展字段。
     """
     data = await get_ab_compare(
         db=db,
@@ -539,6 +548,7 @@ async def ab_compare_endpoint(
         before_end=beforeEndTime,
         after_start=afterStartTime,
         after_end=afterEndTime,
+        include_diagnosis=includeDiagnosis,
     )
     return success(data=data)
 
@@ -717,6 +727,23 @@ async def get_diagnosis_detail_endpoint(
 ) -> dict:
     """诊断详情（含 8 类标签数组 + 证据链 + 特征值）。"""
     data = await get_diagnosis_detail(db=db, loop_id=str(loop_id))
+    return success(data=data)
+
+
+@router.get("/algorithms/meta", response_model=ApiResponse[DiagnosisAlgorithmMetaList])
+async def get_algorithm_meta_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取 8 类诊断算法展示元数据 + 当前生效阈值快照（Batch 4 算法价值传递）。
+
+    返回每类标签的算法中文名、原理说明、关键特征值字段名、阈值字段名、
+    对应可视化数据块键名、可信度等级释义、以及从 DiagnosisConfig 读取的当前阈值快照。
+    供前端"算法价值传递卡片"渲染，避免前端硬编码算法说明。
+
+    设计依据：Batch 4 F1 — 算法价值传递
+    """
+    data = await list_algorithm_meta(db)
     return success(data=data)
 
 

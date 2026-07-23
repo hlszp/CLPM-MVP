@@ -51,6 +51,201 @@ CLOSE_DURATION_BUCKETS = [
     ("72h+", 72, None),
 ]
 
+# 可信度等级释义（Batch 4 算法价值传递，对齐 ConfidenceEvaluator A-E 五级）
+CONFIDENCE_LEVEL_EXPLANATION: str = (
+    "A(≥95%)数据完整可信 / B(90-95%)基本可信 / C(80-90%)仅作参考 / "
+    "D(60-80%)证据不足 / E(<60%)不可信（INCONCLUSIVE）"
+)
+
+# ---------------------------------------------------------------------------
+# Batch 4 算法价值传递：8 类诊断算法静态展示元数据
+# 对应 diagnosis_engine._THRESHOLD_SCHEMA 的阈值键名（C1 已登记），
+# 以及 services/diagnosis.get_diagnosis_visualization 的 10 个可视化数据块键名。
+# ---------------------------------------------------------------------------
+ALGORITHM_META_STATIC: dict[str, dict[str, Any]] = {
+    "OSCILLATION": {
+        "algorithmName": "FFT 频谱分析 + IAE 零交叉相似度",
+        "principle": (
+            "对 PV 信号做快速傅里叶变换（FFT）识别主频与振荡能量，"
+            "结合 IAE（绝对误差积分）零交叉周期相似度判定周期性振荡。"
+            "振荡指数 = 频谱主峰能量占比；相似度阈值过滤伪振荡。"
+        ),
+        "featureKeys": [
+            "oscillation_index",
+            "oscillation_frequency",
+            "oscillation_amplitude",
+            "iae_similarity",
+            "iae_zero_crossing_count",
+            "iae_mean_period",
+        ],
+        "thresholdKeys": ["similarity_threshold", "min_zero_crossings"],
+        "visualizationKey": "spectrum",
+    },
+    "VALVE_STICTION": {
+        "algorithmName": "椭圆拟合 + Choudhury 非线性检测 + Kano 统计",
+        "principle": (
+            "综合三种粘滞检测交叉验证：①PV-OP 散点椭圆拟合（拟合度 fitting_score）；"
+            "②Choudhury NGI/NLI 非线性指数判定非线性来源；"
+            "③Kano 粘滞比（PV-OP 相关性与标准差比）。多算法一致才下结论，降低误报。"
+        ),
+        "featureKeys": [
+            "stiction_index",
+            "fitting_score",
+            "ngi",
+            "nli",
+            "choudhury_stiction_index",
+            "kano_stiction_ratio",
+            "pv_op_correlation",
+            "std_ratio",
+        ],
+        "thresholdKeys": [],
+        "visualizationKey": "scatterPlot",
+    },
+    "OVERAGGRESSIVE": {
+        "algorithmName": "阶跃响应分析 + Harris 指数模型失配评估",
+        "principle": (
+            "通过阶跃响应特征（超调量 overshoot、衰减比 decay_ratio、稳态误差）"
+            "判定参数是否过激；结合 Harris 指数（最小方差基准，AR 模型估计实际方差/理论最小方差）"
+            "量化整定改善空间。Harris 指数显著 >1 提示整定可改善。"
+        ),
+        "featureKeys": [
+            "overshoot",
+            "decay_ratio",
+            "steady_state_error",
+            "harris_index",
+        ],
+        "thresholdKeys": ["harris_ar_order", "harris_warn"],
+        "visualizationKey": "stepResponse",
+    },
+    "OVERCONSERVATIVE": {
+        "algorithmName": "响应迟缓检测（时间常数比）",
+        "principle": (
+            "辨识回路实际时间常数与期望时间常数之比，比值显著 >1 提示响应过慢、"
+            "参数偏保守。结合阶跃响应稳态误差判定是否需要重新整定。"
+        ),
+        "featureKeys": [
+            "time_constant",
+            "expected_time_constant",
+            "ratio",
+        ],
+        "thresholdKeys": [],
+        "visualizationKey": "slowResponse",
+    },
+    "EXTERNAL_DISTURBANCE": {
+        "algorithmName": "CUSUM 累积和偏差突变检测",
+        "principle": (
+            "对 PV 偏差做 CUSUM 累积和，检测均值漂移点（shift_points）与漂移幅度（max_cusum）。"
+            "连续漂移提示外部扰动频繁进入回路，而非整定问题。"
+        ),
+        "featureKeys": [
+            "cusum_pos",
+            "cusum_neg",
+            "cusum_shift_points",
+            "cusum_threshold",
+            "shift_count",
+            "max_cusum",
+        ],
+        "thresholdKeys": [],
+        "visualizationKey": "cusumAnalysis",
+    },
+    "QUALITY_ABNORMAL": {
+        "algorithmName": "质量码规则矩阵 Q001-Q005 + 传感器故障检测",
+        "principle": (
+            "①Q001-Q005 五条质量码规则（连续坏点/坏值率/不确定率/"
+            "坏值时长/坏值计数）判定 PV 质量异常；"
+            "②传感器故障检测（卡死/冻结值、噪声突增、漂移）作为子类型，"
+            "归入 QUALITY_ABNORMAL。覆盖工厂最常见的数据源类故障。"
+        ),
+        "featureKeys": [
+            "bad_quality_rate",
+            "total_points",
+            "bad_points",
+            "quality_pattern",
+        ],
+        "thresholdKeys": [
+            "q001_consecutive_bad",
+            "q002_bad_rate",
+            "q003_uncertain_rate",
+            "q004_bad_duration",
+            "q005_min_bad",
+            "q005_max_bad",
+            "frozen_window",
+            "frozen_eps",
+            "frozen_ratio",
+            "noise_ratio",
+            "noise_segment",
+            "drift_k",
+            "drift_segments",
+        ],
+        "visualizationKey": "qualityTimeline",
+    },
+    "OUTPUT_SATURATION": {
+        "algorithmName": "OP 饱和度统计",
+        "principle": (
+            "统计 OP（操作变量）在高/低限附近的停留时长占比（saturation_rate），"
+            "及高低饱和次数。饱和率高提示调节阀长期满开/全关，存在物理限幅或参数不当。"
+            "对齐 NAMUR NE 43 饱和值判定口径。"
+        ),
+        "featureKeys": [
+            "saturation_rate",
+            "high_saturation_count",
+            "low_saturation_count",
+        ],
+        "thresholdKeys": ["op_high_limit", "op_low_limit", "saturation_epsilon"],
+        "visualizationKey": "saturationAnalysis",
+    },
+    "MANUAL_REVIEW": {
+        "algorithmName": "兜底标签（无自动算法）",
+        "principle": (
+            "当自动算法均未触发，但综合评分偏低或数据存在不确定性时，"
+            "标记为人工复核，由工程师介入判断。不参与自动阈值判定。"
+        ),
+        "featureKeys": [],
+        "thresholdKeys": [],
+        "visualizationKey": None,
+    },
+}
+
+
+async def list_algorithm_meta(db: AsyncSession) -> dict[str, Any]:
+    """获取 8 类诊断算法展示元数据 + 当前生效阈值快照（Batch 4 算法价值传递）。
+
+    合并静态展示元数据（ALGORITHM_META_STATIC）与运行时阈值快照（DiagnosisConfig），
+    供前端算法价值传递卡片渲染算法名/原理/阈值/特征值，避免前端硬编码。
+
+    Returns:
+        {"items": [...], "total": 8}
+    """
+    # 一次性加载全部诊断配置（diag_code → DiagnosisConfig）
+    config_result = await db.execute(select(DiagnosisConfig))
+    diag_configs = {c.diag_code: c for c in config_result.scalars().all()}
+
+    items: list[dict[str, Any]] = []
+    for label, meta in ALGORITHM_META_STATIC.items():
+        cfg = diag_configs.get(label)
+        threshold_snapshot = None
+        is_enabled = True
+        if cfg is not None:
+            threshold_snapshot = cfg.threshold
+            is_enabled = bool(cfg.is_enabled) if cfg.is_enabled is not None else True
+        items.append(
+            {
+                "label": label,
+                "labelName": DIAG_LABEL_NAMES.get(label, label),
+                "algorithmName": meta["algorithmName"],
+                "algorithmVersion": DIAG_ALGORITHM_VERSION,
+                "principle": meta["principle"],
+                "featureKeys": meta["featureKeys"],
+                "thresholdKeys": meta["thresholdKeys"],
+                "visualizationKey": meta["visualizationKey"],
+                "confidenceLevelExplanation": CONFIDENCE_LEVEL_EXPLANATION,
+                "isEnabled": is_enabled,
+                "threshold": threshold_snapshot,
+            }
+        )
+
+    return {"items": items, "total": len(items)}
+
 
 # ---------------------------------------------------------------------------
 # 审计日志辅助

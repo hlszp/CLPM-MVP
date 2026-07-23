@@ -318,6 +318,83 @@ async def _aggregate_kpi_window(
     return int(row[0] or 0), list(row[1:])
 
 
+async def _collect_window_labels(
+    db: AsyncSession,
+    loop_id: str,
+    start: datetime,
+    end: datetime,
+    *,
+    start_exclusive: bool = False,
+    end_exclusive: bool = False,
+) -> list[dict[str, Any]]:
+    """收集窗口内的诊断标签（每个标签取最新一条，Batch 4 A/B 对比增强）。
+
+    confidence 在 DB 中以 0-100 存储，此处归一化为 0-1。
+
+    Returns:
+        [{"label": str, "confidence": float|None, "diagnosedAt": str|None}, ...]
+    """
+    conds: list[Any] = [
+        DiagnosisResult.loop_id == loop_id,
+        DiagnosisResult.diag_label.isnot(None),
+    ]
+    ts = DiagnosisResult.diagnosed_at
+    conds.append(ts > start if start_exclusive else ts >= start)
+    conds.append(ts < end if end_exclusive else ts <= end)
+    # 每个标签取最新一条（按标签分组后取最新时间）
+    stmt = (
+        select(DiagnosisResult)
+        .where(*conds)
+        .order_by(DiagnosisResult.diag_label, DiagnosisResult.diagnosed_at.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    seen: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        if not r.diag_label or r.diag_label in seen:
+            continue
+        conf = None
+        if r.confidence is not None:
+            conf = round(float(r.confidence) / 100.0, 4)
+        seen[r.diag_label] = {
+            "label": r.diag_label,
+            "confidence": conf,
+            "diagnosedAt": r.diagnosed_at.isoformat() if r.diagnosed_at else None,
+        }
+    return list(seen.values())
+
+
+def _diff_label_changes(
+    before: list[dict[str, Any]], after: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """计算前后窗口诊断标签差异（新增/消失/置信度变化）。"""
+    before_map = {item["label"]: item for item in before}
+    after_map = {item["label"]: item for item in after}
+    all_labels = set(before_map) | set(after_map)
+    changes: list[dict[str, Any]] = []
+    for label in sorted(all_labels):
+        b = before_map.get(label)
+        a = after_map.get(label)
+        if b is None and a is not None:
+            changes.append({"label": label, "change": "added", "afterConfidence": a["confidence"]})
+        elif b is not None and a is None:
+            changes.append(
+                {"label": label, "change": "removed", "beforeConfidence": b["confidence"]}
+            )
+        elif b is not None and a is not None:
+            b_conf = b["confidence"]
+            a_conf = a["confidence"]
+            if b_conf is not None and a_conf is not None and abs(a_conf - b_conf) > 0.01:
+                changes.append(
+                    {
+                        "label": label,
+                        "change": "confidence_changed",
+                        "beforeConfidence": b_conf,
+                        "afterConfidence": a_conf,
+                    }
+                )
+    return changes
+
+
 async def get_ab_compare(
     db: AsyncSession,
     loop_id: str,
@@ -327,6 +404,7 @@ async def get_ab_compare(
     before_end: str | None = None,
     after_start: str | None = None,
     after_end: str | None = None,
+    include_diagnosis: bool = False,
 ) -> dict[str, Any]:
     """A/B 对比：实施前后两窗口 KPI 均值对比（kpi_snapshot_hourly）。
 
@@ -335,6 +413,9 @@ async def get_ab_compare(
     - before_start/before_end/after_start/after_end：显式窗口（闭区间）
 
     实施后窗口快照数 < 24（不足 24h 数据）时 dataInsufficient=true。
+
+    include_diagnosis=True 时额外返回 beforeDiagnosisLabels/afterDiagnosisLabels/
+    labelChanges（标签新增/消失/置信度变化），用于 Batch 4 回路分析页 A/B 对比增强。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_VALIDATION
@@ -350,11 +431,14 @@ async def get_ab_compare(
         )
 
     resolved_at: datetime | None = None
+    # 窗口互斥标志（[T-7d,T) 与 (T,T+7d]，显式窗口为闭区间）
+    b_end_excl = a_start_excl = False
     if implemented_at:
         resolved_at = _parse_iso_dt(implemented_at)
         b_start, b_end = resolved_at - timedelta(days=7), resolved_at
         a_start, a_end = resolved_at, resolved_at + timedelta(days=7)
-        # [T-7d,T) 与 (T,T+7d]
+        b_end_excl = True
+        a_start_excl = True
         before_count, before_avgs = await _aggregate_kpi_window(
             db, loop_id, b_start, b_end, end_exclusive=True
         )
@@ -403,6 +487,19 @@ async def get_ab_compare(
             }
         )
 
+    # Batch 4 F1d：诊断标签对比（可选，include_diagnosis=True 时返回）
+    before_diagnosis_labels: list[dict[str, Any]] | None = None
+    after_diagnosis_labels: list[dict[str, Any]] | None = None
+    label_changes: list[dict[str, Any]] | None = None
+    if include_diagnosis:
+        before_diagnosis_labels = await _collect_window_labels(
+            db, loop_id, b_start, b_end, end_exclusive=b_end_excl
+        )
+        after_diagnosis_labels = await _collect_window_labels(
+            db, loop_id, a_start, a_end, start_exclusive=a_start_excl
+        )
+        label_changes = _diff_label_changes(before_diagnosis_labels, after_diagnosis_labels)
+
     return {
         "loopId": loop_id,
         "tagName": loop.tag_name,
@@ -419,6 +516,9 @@ async def get_ab_compare(
             "waveformUrl": _build_waveform_url(loop_id, a_start, a_end),
         },
         "kpiComparison": kpi_items,
+        "beforeDiagnosisLabels": before_diagnosis_labels,
+        "afterDiagnosisLabels": after_diagnosis_labels,
+        "labelChanges": label_changes,
     }
 
 
