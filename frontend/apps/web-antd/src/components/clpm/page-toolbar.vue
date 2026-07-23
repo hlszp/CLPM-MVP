@@ -192,8 +192,8 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
 
 .clpm-page-toolbar__title-row {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
 .clpm-page-toolbar__title {

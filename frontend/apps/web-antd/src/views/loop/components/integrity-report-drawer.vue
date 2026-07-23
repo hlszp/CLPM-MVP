@@ -9,6 +9,8 @@
   父组件通过 @backfill 事件接收选中回路，复用既有 startImportApi。
 -->
 <script setup lang="ts">
+import type { LoopDataApi } from '#/api/loop-data';
+
 import { computed, h, ref, watch } from 'vue';
 
 import {
@@ -23,7 +25,6 @@ import {
 import dayjs from 'dayjs';
 
 import { ClpmKpiCard } from '#/components/clpm';
-import type { LoopDataApi } from '#/api/loop-data';
 
 interface Props {
   visible: boolean;
@@ -37,8 +38,8 @@ interface Props {
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  'update:visible': [visible: boolean];
   backfill: [loopIds: string[], tsStart: string, tsEnd: string];
+  'update:visible': [visible: boolean];
 }>();
 
 const activeTab = ref<'loop' | 'time'>('loop');
@@ -77,7 +78,13 @@ const overallStatus = computed<'error' | 'ok' | 'warning'>(() => {
 
 // 按回路表格列
 const loopColumns = computed(() => [
-  { title: '位号', dataIndex: 'tagName', key: 'tagName', width: 140, ellipsis: true },
+  {
+    title: '位号',
+    dataIndex: 'tagName',
+    key: 'tagName',
+    width: 140,
+    ellipsis: true,
+  },
   {
     title: '状态',
     dataIndex: 'status',
@@ -95,7 +102,12 @@ const loopColumns = computed(() => [
     key: 'points',
     width: 140,
   },
-  { title: '缺失小时', dataIndex: 'missingHourCount', key: 'missingHourCount', width: 90 },
+  {
+    title: '缺失小时',
+    dataIndex: 'missingHourCount',
+    key: 'missingHourCount',
+    width: 90,
+  },
   {
     title: '缺失列',
     key: 'missingColumns',
@@ -110,14 +122,14 @@ const loopColumns = computed(() => [
     title: '首条时间',
     dataIndex: 'firstTs',
     key: 'firstTs',
-    customRender: ({ text }: { text: string | null }) =>
+    customRender: ({ text }: { text: null | string }) =>
       text ? dayjs(text).format('MM-DD HH:mm') : '—',
   },
   {
     title: '末条时间',
     dataIndex: 'lastTs',
     key: 'lastTs',
-    customRender: ({ text }: { text: string | null }) =>
+    customRender: ({ text }: { text: null | string }) =>
       text ? dayjs(text).format('MM-DD HH:mm') : '—',
   },
 ]);
@@ -147,7 +159,11 @@ const timeColumns = computed(() => [
       const count = record.affectedLoopIds.length;
       return h(
         Tooltip,
-        { title: record.affectedLoopIds.slice(0, 20).join(', ') + (count > 20 ? '...' : '') },
+        {
+          title:
+            record.affectedLoopIds.slice(0, 20).join(', ') +
+            (count > 20 ? '...' : ''),
+        },
         () => `${count} 个回路`,
       );
     },
@@ -157,7 +173,7 @@ const timeColumns = computed(() => [
 // 表格行选择配置
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedLoopIds.value,
-  onChange: (keys: (string | number)[]) => {
+  onChange: (keys: (number | string)[]) => {
     selectedLoopIds.value = keys.map(String);
   },
 }));
@@ -165,7 +181,10 @@ const rowSelection = computed(() => ({
 const hasSelected = computed(() => selectedLoopIds.value.length > 0);
 
 function statusTag(status: LoopDataApi.IntegrityStatus) {
-  const map: Record<LoopDataApi.IntegrityStatus, { color: string; text: string }> = {
+  const map: Record<
+    LoopDataApi.IntegrityStatus,
+    { color: string; text: string }
+  > = {
     COMPLETE: { color: 'success', text: '完整' },
     PARTIAL: { color: 'warning', text: '部分' },
     MISSING: { color: 'error', text: '缺失' },
@@ -226,12 +245,13 @@ function handleBackfill() {
       <div class="integrity-meta">
         检查范围：{{ dayjs(result.tsStart).format('YYYY-MM-DD HH:mm') }} ~
         {{ dayjs(result.tsEnd).format('YYYY-MM-DD HH:mm') }}
-        ｜ 采样间隔：{{ result.expectedInterval }}s
-        ｜ 检查时间：{{ dayjs(result.checkedAt).format('YYYY-MM-DD HH:mm:ss') }}
+        ｜ 采样间隔：{{ result.expectedInterval }}s ｜ 检查时间：{{
+          dayjs(result.checkedAt).format('YYYY-MM-DD HH:mm:ss')
+        }}
       </div>
 
       <!-- 双 Tab 表格 -->
-      <Tabs v-model:activeKey="activeTab">
+      <Tabs v-model:active-key="activeTab">
         <Tabs.TabPane key="loop" tab="按回路">
           <Table
             :columns="loopColumns"
@@ -267,17 +287,16 @@ function handleBackfill() {
               </template>
             </template>
             <template #expandedRowRender="{ record }">
-              <div
-                v-if="record.colDetails"
-                class="integrity-col-details"
-              >
+              <div v-if="record.colDetails" class="integrity-col-details">
                 <span class="integrity-col-details-title">列级完整度：</span>
                 <span
                   v-for="(detail, col) in record.colDetails"
                   :key="col"
                   class="integrity-col-item"
                 >
-                  <span class="integrity-col-name">{{ String(col).toUpperCase() }}</span>
+                  <span class="integrity-col-name">{{
+                    String(col).toUpperCase()
+                  }}</span>
                   <Progress
                     :percent="Math.round(detail.completeness * 100)"
                     size="small"
@@ -320,9 +339,7 @@ function handleBackfill() {
         <span class="integrity-footer-count">
           已选 {{ selectedLoopIds.length }} 个回路待补齐
         </span>
-        <Tooltip
-          title="补齐采用 skip 策略，保留已有数据，仅从远端拉取缺失时段"
-        >
+        <Tooltip title="补齐采用 skip 策略，保留已有数据，仅从远端拉取缺失时段">
           <Button
             type="primary"
             :disabled="!hasSelected"
@@ -378,28 +395,28 @@ function handleBackfill() {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 24px;
-  padding: 8px 16px;
   align-items: center;
+  padding: 8px 16px;
 }
 
 .integrity-col-details-title {
+  width: 100%;
   font-size: 12px;
   color: hsl(var(--foreground) / 60%);
-  width: 100%;
 }
 
 .integrity-col-item {
   display: inline-flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   min-width: 160px;
 }
 
 .integrity-col-name {
+  width: 48px;
   font-size: 12px;
   font-weight: 600;
   color: hsl(var(--foreground) / 80%);
-  width: 48px;
 }
 
 @media (max-width: 768px) {

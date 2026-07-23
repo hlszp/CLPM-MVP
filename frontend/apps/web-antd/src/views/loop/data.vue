@@ -48,6 +48,7 @@ import {
 } from '#/api/loop-data';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmPageToolbar } from '#/components/clpm';
+
 import IntegrityReportDrawer from './components/integrity-report-drawer.vue';
 
 defineOptions({ name: 'LoopData' });
@@ -231,19 +232,21 @@ const taskPagination = ref({
 });
 const selectedTaskIds = ref<string[]>([]);
 
-const taskRowSelection = computed<TableRowSelection<LoopDataApi.ImportTask>>(() => ({
-  selectedRowKeys: selectedTaskIds.value,
-  onChange: (keys: (string | number)[]) => {
-    selectedTaskIds.value = keys as string[];
-  },
-  getCheckboxProps: (record: LoopDataApi.ImportTask) => {
-    const isActive =
-      record.status === 'PENDING' || record.status === 'RUNNING';
-    return {
-      disabled: isActive,
-    };
-  },
-}));
+const taskRowSelection = computed<TableRowSelection<LoopDataApi.ImportTask>>(
+  () => ({
+    selectedRowKeys: selectedTaskIds.value,
+    onChange: (keys: (number | string)[]) => {
+      selectedTaskIds.value = keys as string[];
+    },
+    getCheckboxProps: (record: LoopDataApi.ImportTask) => {
+      const isActive =
+        record.status === 'PENDING' || record.status === 'RUNNING';
+      return {
+        disabled: isActive,
+      };
+    },
+  }),
+);
 
 let pollTimer: null | ReturnType<typeof setInterval> = null;
 
@@ -795,7 +798,11 @@ onUnmounted(() => {
               />
             </Tooltip>
             <Tooltip title="数据采样间隔，支持1秒/5秒/10秒/1分钟">
-              <Select v-model:value="interval" size="small" style="width: 100px">
+              <Select
+                v-model:value="interval"
+                size="small"
+                style="width: 100px"
+              >
                 <Select.Option :value="1">1s</Select.Option>
                 <Select.Option :value="5">5s</Select.Option>
                 <Select.Option :value="10">10s</Select.Option>
@@ -809,9 +816,7 @@ onUnmounted(() => {
               </RadioGroup>
             </Tooltip>
             <Tooltip title="导入完成后自动触发KPI回算">
-              <Checkbox v-model:checked="triggerBackfill">
-                触发KPI
-              </Checkbox>
+              <Checkbox v-model:checked="triggerBackfill"> 触发KPI </Checkbox>
             </Tooltip>
             <Button
               size="small"
