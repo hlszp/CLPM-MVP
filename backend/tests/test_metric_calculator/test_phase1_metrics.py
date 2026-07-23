@@ -748,13 +748,13 @@ class TestOscillationAmplitude:
     def test_none_pair_filtered(self):
         """P0：pair 含 None → 过滤整对，不 TypeError。"""
         bundle = make_bundle(
-            {"pv": [55.0, None, 55.0], "sp": [50.0, 50.0, 50.0]},
+            {"pv": [55.0, None, 55.0, 55.0], "sp": [50.0, 50.0, 50.0, 50.0]},
             metric_code="oscillation_amplitude",
         )
         result = OscillationAmplitudeCalculator().calculate(bundle)
-        # 过滤后 abs_errs=[5, 5], amp=5.0
+        # 过滤后 abs_errs=[5, 5, 5], amp=5.0, n=3（满足 MIN_POINTS=3）
         assert result.value == 5.0
-        assert result.details["n"] == 2
+        assert result.details["n"] == 3
 
     def test_sinusoidal_amplitude(self):
         """正弦振荡 → amp ≈ 理论平均绝对偏差。"""
