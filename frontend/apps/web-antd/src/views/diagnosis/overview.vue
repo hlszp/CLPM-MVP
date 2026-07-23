@@ -349,6 +349,11 @@ function handleViewDetail(loopId: string) {
   router.push(`/diagnosis/detail/${loopId}`);
 }
 
+/** F4：一键诊断 — 跳转回路分析页并预填 loopId */
+function handleQuickDiagnose(loopId: string) {
+  router.push({ path: '/diagnosis/loop-analysis', query: { loopId } });
+}
+
 /** 跳转诊断任务列表 */
 function handleViewAll() {
   router.push('/diagnosis/tasks');
@@ -523,6 +528,13 @@ onMounted(() => {
               @click="handleViewDetail(record.loopId)"
             >
               查看详情
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              @click="handleQuickDiagnose(record.loopId)"
+            >
+              一键诊断
             </Button>
           </template>
         </template>

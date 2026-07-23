@@ -51,6 +51,16 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'DiagnosisLoopAnalysis',
+        path: '/diagnosis/loop-analysis',
+        component: () => import('#/views/diagnosis/loop-analysis.vue'),
+        meta: {
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:flask-conical',
+          title: '回路分析',
+        },
+      },
+      {
         name: 'DiagnosisTasks',
         path: '/diagnosis/tasks',
         component: () => import('#/views/diagnosis/tasks.vue'),

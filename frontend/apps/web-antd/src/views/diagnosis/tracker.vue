@@ -289,6 +289,14 @@ async function handleSubmitStatus() {
     message.success('状态更新成功');
     statusModalVisible.value = false;
     await loadList();
+    // F7：状态置为"已实施"后自动弹出 A/B 对比 Drawer（FDS §5.4.4）
+    if (statusForm.status === 'IMPLEMENTED' && editingItem.value) {
+      handleOpenAbCompare({
+        ...editingItem.value,
+        actionStatus: 'IMPLEMENTED',
+        updatedAt: new Date().toISOString(),
+      });
+    }
   } catch {
     // 错误已由拦截器处理
   } finally {

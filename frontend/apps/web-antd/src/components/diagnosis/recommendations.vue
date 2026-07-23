@@ -14,17 +14,24 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { computed } from 'vue';
 
-import { Card, Empty, Spin, Tag } from 'ant-design-vue';
+import { Button, Card, Empty, Spin, Tag } from 'ant-design-vue';
 
 defineOptions({ name: 'DiagnosisRecommendations' });
 
 const props = defineProps<{
+  /** 是否显示"采纳并创建跟踪"按钮（F6） */
+  adoptable?: boolean;
   /** 是否显示卡片边框（嵌入 Tab 时可关闭） */
   bordered?: boolean;
   /** 加载中 */
   loading?: boolean;
   /** 推荐数据 */
   recommendations?: DiagnosisApi.RecommendationItem[];
+}>();
+
+const emit = defineEmits<{
+  /** F6：采纳建议 → 创建/跳转跟踪 */
+  (e: 'adopt', rec: DiagnosisApi.RecommendationItem): void;
 }>();
 
 /** 优先级配置 */
@@ -118,6 +125,11 @@ const totalCount = computed(() => props.recommendations?.length ?? 0);
               </div>
               <div class="text-sm leading-relaxed text-gray-600">
                 {{ rec.description }}
+              </div>
+              <div v-if="adoptable" class="mt-2 flex justify-end">
+                <Button type="link" size="small" @click="emit('adopt', rec)">
+                  采纳并创建跟踪
+                </Button>
               </div>
             </div>
           </div>

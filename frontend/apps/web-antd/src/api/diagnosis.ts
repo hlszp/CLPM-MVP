@@ -434,6 +434,24 @@ export namespace DiagnosisApi {
     waveformUrl?: string;
   }
 
+  /** A/B 对比 - 窗口内诊断标签快照（includeDiagnosis=true 时返回） */
+  export interface DiagnosisWindowLabel {
+    label: DiagnosisLabel;
+    labelName: string;
+    /** 置信度 0~1（后端由 0-100 归一化） */
+    confidence: number;
+    diagnosedAt: string;
+  }
+
+  /** A/B 对比 - 标签变更项 */
+  export interface LabelChangeItem {
+    label: DiagnosisLabel;
+    /** added=新增 / removed=消失 / confidence_changed=置信度变化 */
+    change: 'added' | 'confidence_changed' | 'removed';
+    beforeConfidence?: number;
+    afterConfidence?: number;
+  }
+
   /** A/B 对比响应 */
   export interface AbCompareResult {
     loopId: string;
@@ -444,6 +462,12 @@ export namespace DiagnosisApi {
     beforeWindow: AbCompareWindow;
     afterWindow: AbCompareWindow;
     kpiComparison: AbCompareKpiItem[];
+    /** includeDiagnosis=true 时返回：处置前窗口最新标签快照 */
+    beforeDiagnosisLabels?: DiagnosisWindowLabel[];
+    /** includeDiagnosis=true 时返回：处置后窗口最新标签快照 */
+    afterDiagnosisLabels?: DiagnosisWindowLabel[];
+    /** includeDiagnosis=true 时返回：标签新增/消失/置信度变化 */
+    labelChanges?: LabelChangeItem[];
   }
 
   /** A/B 对比查询参数（implementedAt 与显式窗口二选一） */
@@ -454,6 +478,29 @@ export namespace DiagnosisApi {
     beforeEndTime?: string;
     afterStartTime?: string;
     afterEndTime?: string;
+    /** true 时额外返回诊断标签对比（beforeDiagnosisLabels/afterDiagnosisLabels/labelChanges） */
+    includeDiagnosis?: boolean;
+  }
+
+  /** 算法元数据项（对齐 app.schemas.diagnosis.DiagnosisAlgorithmMetaItem） */
+  export interface AlgorithmMetaItem {
+    label: DiagnosisLabel;
+    labelName: string;
+    algorithmName: string;
+    algorithmVersion: string;
+    principle: string;
+    featureKeys: string[];
+    thresholdKeys: string[];
+    visualizationKey: null | string;
+    confidenceLevelExplanation: null | string;
+    isEnabled: boolean;
+    threshold: null | Record<string, number>;
+  }
+
+  /** 算法元数据列表响应 */
+  export interface AlgorithmMetaList {
+    items: AlgorithmMetaItem[];
+    total: number;
   }
 
   /** 解决方案推荐项（SVC-11） */
@@ -771,6 +818,18 @@ export function getAbCompareApi(params: DiagnosisApi.AbCompareQueryParams) {
   return requestClient.get<DiagnosisApi.AbCompareResult>(
     '/diagnosis/ab-compare',
     { params },
+  );
+}
+
+/**
+ * 获取算法展示元数据 — Batch 4 算法价值传递
+ *
+ * 返回 8 类诊断算法的中文名、原理、关键特征值字段名、阈值快照、置信度等级释义。
+ * 前端算法卡片直接渲染，避免硬编码。
+ */
+export function getAlgorithmMetaApi() {
+  return requestClient.get<DiagnosisApi.AlgorithmMetaList>(
+    '/diagnosis/algorithms/meta',
   );
 }
 

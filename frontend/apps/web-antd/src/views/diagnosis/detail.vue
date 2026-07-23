@@ -415,6 +415,14 @@ function handleTrackerClose() {
   loadTrackerStatus();
 }
 
+/** F6：采纳推荐方案 → 跳转异常跟踪页并预填回路与标签 */
+function handleAdoptRecommendation(rec: DiagnosisApi.RecommendationItem) {
+  router.push({
+    path: '/diagnosis/tracker',
+    query: { loopId, label: rec.label },
+  });
+}
+
 /** 渲染散点图（证据链中的 PV-OP 散点，支持 D2 联动高亮） */
 function renderScatterChart() {
   const scatter = detail.value?.evidenceChain?.scatterPlot;
@@ -795,6 +803,8 @@ onMounted(() => {
             <Recommendations
               :recommendations="recommendations"
               :loading="recommendationsLoading"
+              adoptable
+              @adopt="handleAdoptRecommendation"
             />
 
             <ClpmDataCanvas

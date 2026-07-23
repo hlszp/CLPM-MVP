@@ -115,9 +115,9 @@ const router = useRouter();
 function canDiagnose(status: DiagnosisApi.TaskStatus): boolean {
   return status === 'PENDING';
 }
-/** 结果：仅诊断完成（SUCCESS）可查看 */
+/** 结果：SUCCESS 可查看结果；PENDING/RUNNING 可跳详情看历史诊断 */
 function canViewResult(status: DiagnosisApi.TaskStatus): boolean {
-  return status === 'SUCCESS';
+  return status === 'SUCCESS' || status === 'PENDING' || status === 'RUNNING';
 }
 /** 归档：仅诊断完成（SUCCESS）可归档 */
 function canArchive(status: DiagnosisApi.TaskStatus): boolean {
