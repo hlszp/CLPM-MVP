@@ -47,7 +47,7 @@ const selectedLabels = ref<DiagnosisLabel[]>([...props.state.config.labels]);
 async function loadLoops() {
   loading.value = true;
   try {
-    const data = await getLoopListApi({ page: 1, pageSize: 500 });
+    const data = await getLoopListApi({ page: 1, pageSize: 100 });
     const list: LoopApi.LoopListItem[] = data.items || [];
     loopOptions.value = list.map((l) => ({
       label: l.tagName,
