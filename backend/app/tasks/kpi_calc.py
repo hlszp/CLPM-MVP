@@ -68,7 +68,11 @@ CONCURRENCY = 5
 # v4.0 指标代码映射（DB 列名 ↔ Calculator 代码）
 # ---------------------------------------------------------------------------
 
-# DB 列名 → Calculator 代码（唯一差异：steady_rate → stability_rate）
+# DB 列名 → Calculator 代码
+# 唯一历史差异：steady_rate → stability_rate
+# Phase 1 新增 14 个指标（HiaMonitor 借鉴，2026-07-23）：DB 列名与 Calculator 代码一致，
+# 其中 valve_operating_range 为虚拟条目（无单一 DB 列，结果存 details，
+# Task 6 从 details 提取 op_min/op_max 写入 valve_op_min/valve_op_max 列）
 _DB_TO_CALCULATOR_METRIC_CODE: dict[str, str] = {
     "accuracy_rate": "accuracy_rate",
     "fast_rate": "fast_rate",
@@ -82,6 +86,21 @@ _DB_TO_CALCULATOR_METRIC_CODE: dict[str, str] = {
     "auto_mode_rate": "auto_mode_rate",
     "settling_time": "settling_time",
     "ideal_settling_time": "ideal_settling_time",
+    # Phase 1 新增（HiaMonitor 借鉴，2026-07-23）
+    "instrument_fault_rate": "instrument_fault_rate",
+    "pv_mean": "pv_mean",
+    "pv_std": "pv_std",
+    "sp_mean": "sp_mean",
+    "sp_std": "sp_std",
+    "op_mean": "op_mean",
+    "op_std": "op_std",
+    "error_mean": "error_mean",
+    "error_std": "error_std",
+    "valve_linearity": "valve_linearity",
+    "valve_nonlinearity": "valve_nonlinearity",
+    "valve_operating_range": "valve_operating_range",  # 虚拟条目（见上方注释）
+    "setpoint_crossing_count": "setpoint_crossing_count",
+    "oscillation_amplitude": "oscillation_amplitude",
 }
 
 # Calculator 代码 → DB 列名（反向映射）
@@ -1280,9 +1299,13 @@ def _compute_kpis_three_layer(
 ) -> tuple[dict[str, MetricResult], MetricResult]:
     """三层计算编排：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）。
 
-    Layer1: 10 个无依赖指标（accuracy_rate, effective_auto_rate, good_value_rate,
+    Layer1: 23 个无依赖指标
+            原有 9 个（accuracy_rate, effective_auto_rate, good_value_rate,
             oscillation_rate, saturation_rate, stiction_index, output_trip_index,
-            auto_mode_rate, settling_time, ideal_settling_time）
+            auto_mode_rate, settling_time）+ ideal_settling_time（从 config_bundle 计算）
+            Phase 1 新增 14 个（instrument_fault_rate, pv/sp/op_mean, pv/sp/op_std,
+            error_mean, error_std, valve_linearity, valve_nonlinearity,
+            valve_operating_range, setpoint_crossing_count, oscillation_amplitude）
     Layer2: 2 个有依赖指标
             - stability_rate ← oscillation_rate
             - fast_rate ← settling_time + ideal_settling_time
@@ -1301,9 +1324,11 @@ def _compute_kpis_three_layer(
     # 构建 bundle 索引：DB 列名 → bundle
     bundle_map: dict[str, MetricDataBundle] = {b.metric_code: b for b in bundles}
 
-    # --- Layer1: 10 个无依赖指标 ---
+    # --- Layer1: 无依赖指标 ---
     # DB 列名列表（按 _DB_TO_CALCULATOR_METRIC_CODE 映射为 Calculator 代码）
+    # ideal_settling_time 从 config_bundle 单独计算（见下方），不在此列表中
     layer1_db_codes = [
+        # 原有 9 个
         "accuracy_rate",
         "effective_auto_rate",
         "good_value_rate",
@@ -1313,6 +1338,21 @@ def _compute_kpis_three_layer(
         "output_trip_index",
         "auto_mode_rate",
         "settling_time",
+        # Phase 1 新增 14 个（HiaMonitor 借鉴，2026-07-23）
+        "instrument_fault_rate",
+        "pv_mean",
+        "pv_std",
+        "sp_mean",
+        "sp_std",
+        "op_mean",
+        "op_std",
+        "error_mean",
+        "error_std",
+        "valve_linearity",
+        "valve_nonlinearity",
+        "valve_operating_range",
+        "setpoint_crossing_count",
+        "oscillation_amplitude",
     ]
 
     for db_code in layer1_db_codes:

@@ -2096,8 +2096,8 @@ class TestMetricCodeMapping:
     """测试 metric_code 双向映射常量。"""
 
     def test_db_to_calculator_mapping_complete(self) -> None:
-        """_DB_TO_CALCULATOR_METRIC_CODE 包含全部 12 对映射。"""
-        assert len(_DB_TO_CALCULATOR_METRIC_CODE) == 12
+        """_DB_TO_CALCULATOR_METRIC_CODE 包含全部 26 对映射（12 原有 + 14 Phase 1）。"""
+        assert len(_DB_TO_CALCULATOR_METRIC_CODE) == 26
 
     def test_reverse_mapping_consistent(self) -> None:
         """反向映射与正向映射一致。"""
@@ -2115,6 +2115,28 @@ class TestMetricCodeMapping:
         assert _DB_TO_CALCULATOR_METRIC_CODE["stiction_index"] == "stiction_index"
         assert _DB_TO_CALCULATOR_METRIC_CODE["settling_time"] == "settling_time"
         assert _DB_TO_CALCULATOR_METRIC_CODE["output_trip_index"] == "output_trip_index"
+
+    def test_phase1_mappings_present(self) -> None:
+        """Phase 1 新增 14 个指标映射存在且 DB 列名 = 计算器代码（无重命名）。"""
+        phase1_codes = [
+            "instrument_fault_rate",
+            "pv_mean",
+            "pv_std",
+            "sp_mean",
+            "sp_std",
+            "op_mean",
+            "op_std",
+            "error_mean",
+            "error_std",
+            "valve_linearity",
+            "valve_nonlinearity",
+            "valve_operating_range",
+            "setpoint_crossing_count",
+            "oscillation_amplitude",
+        ]
+        for code in phase1_codes:
+            assert _DB_TO_CALCULATOR_METRIC_CODE[code] == code
+            assert _CALCULATOR_TO_DB_METRIC_CODE[code] == code
 
 
 # ===========================================================================

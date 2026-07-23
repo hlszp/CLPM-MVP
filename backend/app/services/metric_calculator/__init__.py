@@ -1,9 +1,11 @@
-"""指标计算器注册表（Phase 3 任务 3.2）.
+"""指标计算器注册表（Phase 3 任务 3.2 + Phase 1 HiaMonitor 借鉴）.
 
-集中注册 12 个指标计算器，提供按 metric_code 查找计算器实例的能力。
-编排层（Phase 4）通过本模块获取计算器实例并组装依赖关系。
+集中注册 26 个指标计算器（12 原有 + 14 Phase 1 新增），提供按
+metric_code 查找计算器实例的能力。编排层（Phase 4）通过本模块
+获取计算器实例并组装依赖关系。
 
-设计依据：算法说明 §4.0, §3.6；数据流程图 §7.5
+设计依据：算法说明 §4.0, §3.6；数据流程图 §7.5；
+CLPM_v6.1_HiaMonitor借鉴重构计划.md v1.1 §3-§4
 """
 
 from __future__ import annotations
@@ -16,12 +18,32 @@ from app.services.metric_calculator.effective_auto import EffectiveAutoRateCalcu
 from app.services.metric_calculator.fast_rate import FastRateCalculator
 from app.services.metric_calculator.good_value import GoodValueRateCalculator
 from app.services.metric_calculator.ideal_settling_time import IdealSettlingTimeCalculator
+from app.services.metric_calculator.instrument_fault import InstrumentFaultRateCalculator
 from app.services.metric_calculator.oscillation import OscillationRateCalculator
 from app.services.metric_calculator.output_trip import OutputTripIndexCalculator
 from app.services.metric_calculator.saturation import SaturationRateCalculator
+from app.services.metric_calculator.setpoint_crossing import (
+    OscillationAmplitudeCalculator,
+    SetpointCrossingCountCalculator,
+)
 from app.services.metric_calculator.settling_time import SettlingTimeCalculator
 from app.services.metric_calculator.stability import StabilityRateCalculator
+from app.services.metric_calculator.statistics import (
+    ErrorMeanCalculator,
+    ErrorStdCalculator,
+    OpMeanCalculator,
+    OpStdCalculator,
+    PvMeanCalculator,
+    PvStdCalculator,
+    SpMeanCalculator,
+    SpStdCalculator,
+)
 from app.services.metric_calculator.stiction import StictionIndexCalculator
+from app.services.metric_calculator.valve_diagnosis import (
+    ValveLinearityCalculator,
+    ValveNonlinearityCalculator,
+    ValveOperatingRangeCalculator,
+)
 
 #: 计算器注册表 {metric_code: calculator_class}
 CALCULATOR_REGISTRY: dict[str, type[MetricCalculator]] = {
@@ -37,6 +59,21 @@ CALCULATOR_REGISTRY: dict[str, type[MetricCalculator]] = {
     "auto_mode_rate": AutoModeRateCalculator,
     "settling_time": SettlingTimeCalculator,
     "ideal_settling_time": IdealSettlingTimeCalculator,
+    # Phase 1 新增（HiaMonitor 借鉴，2026-07-23）
+    "instrument_fault_rate": InstrumentFaultRateCalculator,
+    "pv_mean": PvMeanCalculator,
+    "pv_std": PvStdCalculator,
+    "sp_mean": SpMeanCalculator,
+    "sp_std": SpStdCalculator,
+    "op_mean": OpMeanCalculator,
+    "op_std": OpStdCalculator,
+    "error_mean": ErrorMeanCalculator,
+    "error_std": ErrorStdCalculator,
+    "valve_linearity": ValveLinearityCalculator,
+    "valve_nonlinearity": ValveNonlinearityCalculator,
+    "valve_operating_range": ValveOperatingRangeCalculator,
+    "setpoint_crossing_count": SetpointCrossingCountCalculator,
+    "oscillation_amplitude": OscillationAmplitudeCalculator,
 }
 
 #: 核心质量指标代码（参与综合评分加权）
@@ -59,6 +96,21 @@ AUXILIARY_METRIC_CODES: tuple[str, ...] = (
     "auto_mode_rate",
     "settling_time",
     "ideal_settling_time",
+    # Phase 1 新增（DISPLAY_ONLY + 1 AGGREGATABLE）
+    "instrument_fault_rate",
+    "pv_mean",
+    "pv_std",
+    "sp_mean",
+    "sp_std",
+    "op_mean",
+    "op_std",
+    "error_mean",
+    "error_std",
+    "valve_linearity",
+    "valve_nonlinearity",
+    "valve_operating_range",
+    "setpoint_crossing_count",
+    "oscillation_amplitude",
 )
 
 
@@ -94,16 +146,30 @@ __all__ = [
     "AccuracyRateCalculator",
     "AutoModeRateCalculator",
     "EffectiveAutoRateCalculator",
+    "ErrorMeanCalculator",
+    "ErrorStdCalculator",
     "FastRateCalculator",
     "GoodValueRateCalculator",
     "IdealSettlingTimeCalculator",
+    "InstrumentFaultRateCalculator",
     "MetricCalculatorBase",
+    "OpMeanCalculator",
+    "OpStdCalculator",
+    "OscillationAmplitudeCalculator",
     "OscillationRateCalculator",
     "OutputTripIndexCalculator",
+    "PvMeanCalculator",
+    "PvStdCalculator",
     "SaturationRateCalculator",
+    "SetpointCrossingCountCalculator",
     "SettlingTimeCalculator",
+    "SpMeanCalculator",
+    "SpStdCalculator",
     "StabilityRateCalculator",
     "StictionIndexCalculator",
+    "ValveLinearityCalculator",
+    "ValveNonlinearityCalculator",
+    "ValveOperatingRangeCalculator",
     "get_all_calculators",
     "get_calculator",
 ]

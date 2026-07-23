@@ -88,8 +88,7 @@ class OscillationAmplitudeCalculator(MetricCalculatorBase):
     """振荡幅值计算器。
 
     计算 PV 偏离 SP 的平均绝对偏差：amplitude = mean(|PV - SP|)。
-    L2 指标（depends_on oscillation_rate），但计算器本身不读取
-    oscillation_rate 的结果——依赖声明仅供三层编排保证执行顺序。
+    L1 指标（无依赖），计算器独立计算，不依赖 oscillation_rate 结果。
     """
 
     @property
