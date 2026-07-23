@@ -432,17 +432,26 @@ async def _load_window_items(
     result = await db.execute(latest_stmt)
     latest_rows = result.all()
 
-    # 每节点窗口内 rate 字段加权和（权重=evaluated_loops，与 board/trend 同口径）
+    # 每节点窗口内 rate 字段加权和（权重=evaluated_loops，与 board/trend 同口径）。
+    # 关键：每个字段使用独立的「非 NULL 分母」——SUM(evaluated_loops) FILTER (WHERE
+    # field IS NOT NULL)。旧实现用统一 eval_sum 作所有字段分母，当某字段在部分快照为
+    # NULL（如新增 instrument_fault_rate 在旧快照中为 NULL）时，这些快照的
+    # evaluated_loops 仍计入分母，导致窗口加权均值被稀释到接近 0。
     w_stmt = (
         select(
             UnitKpiSummary.node_id.label("nid"),
             *[
                 func.sum(getattr(UnitKpiSummary, field) * UnitKpiSummary.evaluated_loops).label(
-                    field
+                    f"{field}_wsum"
                 )
                 for field in _WINDOW_RATE_FIELD_KEYS
             ],
-            func.sum(UnitKpiSummary.evaluated_loops).label("eval_sum"),
+            *[
+                func.sum(UnitKpiSummary.evaluated_loops)
+                .filter(getattr(UnitKpiSummary, field).is_not(None))
+                .label(f"{field}_esum")
+                for field in _WINDOW_RATE_FIELD_KEYS
+            ],
         )
         .where(
             UnitKpiSummary.node_id.in_(item_node_ids),
@@ -458,11 +467,11 @@ async def _load_window_items(
     for summary, node_name in latest_rows:
         item = _build_board_item(summary, node_name)
         w = w_map.get(str(summary.node_id))
-        eval_sum = int(w.eval_sum or 0) if w is not None else 0
         for field, key in _WINDOW_RATE_FIELD_KEYS.items():
-            if eval_sum > 0:
-                weighted_sum = getattr(w, field)
-                item[key] = round(float(weighted_sum or 0) / eval_sum, 2)
+            wsum = getattr(w, f"{field}_wsum") if w is not None else None
+            esum = getattr(w, f"{field}_esum") if w is not None else None
+            if esum and float(esum) > 0:
+                item[key] = round(float(wsum or 0) / float(esum), 2)
             else:
                 item[key] = None
         items.append(item)
