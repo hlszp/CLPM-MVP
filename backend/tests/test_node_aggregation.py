@@ -38,6 +38,7 @@ def _make_hourly_snapshot(
     fast_rate: Decimal = Decimal("82.00"),
     oscillation_rate: Decimal = Decimal("15.00"),
     saturation_rate: Decimal = Decimal("8.00"),
+    instrument_fault_rate: Decimal = Decimal("5.00"),
     auto_loop_ratio: Decimal = Decimal("66.67"),
     realtime_auto_rate: Decimal | None = Decimal("70.00"),
     loop_count: int = 10,
@@ -58,6 +59,7 @@ def _make_hourly_snapshot(
     snap.fast_rate = fast_rate
     snap.oscillation_rate = oscillation_rate
     snap.saturation_rate = saturation_rate
+    snap.instrument_fault_rate = instrument_fault_rate
     snap.auto_loop_ratio = auto_loop_ratio
     snap.realtime_auto_rate = realtime_auto_rate
     snap.loop_count = loop_count
@@ -78,6 +80,7 @@ def _make_daily_snapshot(
     fast_rate: Decimal = Decimal("81.00"),
     oscillation_rate: Decimal = Decimal("14.00"),
     saturation_rate: Decimal = Decimal("7.00"),
+    instrument_fault_rate: Decimal = Decimal("4.00"),
     auto_loop_ratio: Decimal = Decimal("65.00"),
     realtime_auto_rate: Decimal | None = Decimal("68.00"),
     loop_count: int = 10,
@@ -97,6 +100,7 @@ def _make_daily_snapshot(
     snap.fast_rate = fast_rate
     snap.oscillation_rate = oscillation_rate
     snap.saturation_rate = saturation_rate
+    snap.instrument_fault_rate = instrument_fault_rate
     snap.auto_loop_ratio = auto_loop_ratio
     snap.realtime_auto_rate = realtime_auto_rate
     snap.loop_count = loop_count

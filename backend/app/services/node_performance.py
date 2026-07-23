@@ -44,6 +44,7 @@ KPI_FIELDS = (
     "fast_rate",
     "oscillation_rate",
     "saturation_rate",
+    "instrument_fault_rate",  # Phase 1 新增：仪表故障率（AGGREGATABLE）
     "score",
     # P1 #14: 4 个诊断字段（与 KpiNodeSnapshotHourly 模型对齐）
     "stiction_index",
@@ -389,6 +390,7 @@ async def aggregate_node_snapshot(
         "fast_rate": avg_value("fast_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
+        "instrument_fault_rate": avg_value("instrument_fault_rate"),
         # P1 #14: 4 个诊断字段（与 KpiNodeSnapshotHourly 模型对齐）
         "stiction_index": avg_value("stiction_index"),
         "settling_time": avg_value("settling_time"),

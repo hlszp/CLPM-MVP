@@ -93,6 +93,8 @@ def _make_agg_row(
     row.fast_rate = Decimal("82.00")
     row.oscillation_rate = Decimal("15.00")
     row.saturation_rate = Decimal("8.00")
+    # Phase 1 新增：仪表故障率（AGGREGATABLE）
+    row.instrument_fault_rate = Decimal("3.00")
     # P1 #14: 4 个诊断字段（None 表示无数据，avg_value 会返回 None）
     row.stiction_index = None
     row.settling_time = None

@@ -71,6 +71,7 @@ AGGREGATE_FIELDS = (
     "fast_rate",
     "oscillation_rate",
     "saturation_rate",
+    "instrument_fault_rate",  # Phase 1 新增：仪表故障率（AGGREGATABLE）
     "auto_loop_ratio",
 )
 
@@ -212,6 +213,7 @@ async def aggregate_daily_snapshot(
         "fast_rate": agg.get("fast_rate"),
         "oscillation_rate": agg.get("oscillation_rate"),
         "saturation_rate": agg.get("saturation_rate"),
+        "instrument_fault_rate": agg.get("instrument_fault_rate"),
         "auto_loop_ratio": agg.get("auto_loop_ratio"),
         "realtime_auto_rate": realtime_auto_rate,
         "loop_count": loop_count,
@@ -364,6 +366,7 @@ async def aggregate_monthly_snapshot(
         "fast_rate": agg.get("fast_rate"),
         "oscillation_rate": agg.get("oscillation_rate"),
         "saturation_rate": agg.get("saturation_rate"),
+        "instrument_fault_rate": agg.get("instrument_fault_rate"),
         "auto_loop_ratio": agg.get("auto_loop_ratio"),
         "realtime_auto_rate": realtime_auto_rate,
         "loop_count": loop_count,

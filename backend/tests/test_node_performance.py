@@ -41,6 +41,7 @@ def _make_loop_snapshot(
     good_value_rate: Decimal = Decimal("100.00"),
     oscillation_rate: Decimal = Decimal("10.00"),
     saturation_rate: Decimal = Decimal("5.00"),
+    instrument_fault_rate: Decimal = Decimal("3.00"),
     stiction_index: Decimal = Decimal("0.10"),
     settling_time: Decimal = Decimal("120.00"),
     output_trip_index: Decimal = Decimal("35.00"),
@@ -62,6 +63,7 @@ def _make_loop_snapshot(
     snap.good_value_rate = good_value_rate
     snap.oscillation_rate = oscillation_rate
     snap.saturation_rate = saturation_rate
+    snap.instrument_fault_rate = instrument_fault_rate
     snap.stiction_index = stiction_index
     snap.settling_time = settling_time
     snap.output_trip_index = output_trip_index
@@ -207,6 +209,8 @@ class TestAggregateNodeSnapshot:
         mock_row.fast_rate = Decimal("82.00")
         mock_row.oscillation_rate = Decimal("15.00")
         mock_row.saturation_rate = Decimal("8.00")
+        # Phase 1 新增：仪表故障率（AGGREGATABLE）
+        mock_row.instrument_fault_rate = Decimal("3.00")
         # P1 #14: 4 个新增诊断字段
         mock_row.stiction_index = Decimal("0.12")
         mock_row.settling_time = Decimal("135.00")
@@ -232,6 +236,8 @@ class TestAggregateNodeSnapshot:
         assert result["auto_loop_ratio"] == Decimal("66.67")  # 2/3*100
         assert result["status"] == "GOOD"  # score=80 → GOOD
         assert result["score"] == Decimal("80.00")
+        # Phase 1 新增：仪表故障率参与节点级聚合
+        assert result["instrument_fault_rate"] == Decimal("3.00")
         # P1 #14: 验证 4 个新增字段被正确序列化
         assert result["stiction_index"] == Decimal("0.12")
         assert result["settling_time"] == Decimal("135.00")

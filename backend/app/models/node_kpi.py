@@ -52,6 +52,8 @@ class KpiNodeSnapshotHourly(Base):
     fast_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Phase 1 新增：仪表故障率（AGGREGATABLE，参与节点级加权聚合）
+    instrument_fault_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     # P1 #14: 补全 4 个字段（与回路级 KpiSnapshotHourly 对齐）
     stiction_index: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
@@ -105,6 +107,8 @@ class KpiNodeSnapshotDaily(Base):
     fast_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Phase 1 新增：仪表故障率（AGGREGATABLE）
+    instrument_fault_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     # P1 #14: 补全 4 个字段（与回路级 KpiSnapshotHourly 对齐）
     stiction_index: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
@@ -161,6 +165,8 @@ class KpiNodeSnapshotMonthly(Base):
     fast_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Phase 1 新增：仪表故障率（AGGREGATABLE）
+    instrument_fault_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     # P1 #14: 补全 4 个字段（与回路级 KpiSnapshotHourly 对齐）
     stiction_index: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     settling_time: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
