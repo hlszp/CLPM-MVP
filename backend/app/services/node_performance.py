@@ -1317,6 +1317,7 @@ async def aggregate_node_snapshot_with_presets(
         "fast_rate": avg_value("fast_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
+        "instrument_fault_rate": avg_value("instrument_fault_rate"),
         "stiction_index": avg_value("stiction_index"),
         "settling_time": avg_value("settling_time"),
         "output_trip_index": avg_value("output_trip_index"),
