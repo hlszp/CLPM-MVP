@@ -113,6 +113,7 @@ def _make_node_snapshot(
     fast_response_rate: Decimal = Decimal("75.00"),
     oscillation_rate: Decimal = Decimal("15.00"),
     saturation_rate: Decimal = Decimal("8.00"),
+    instrument_fault_rate: Decimal = Decimal("3.00"),
     auto_loop_ratio: Decimal = Decimal("100.00"),
     realtime_auto_rate: Decimal = Decimal("87.50"),
     loop_count: int = 4,
@@ -134,6 +135,7 @@ def _make_node_snapshot(
     s.fast_rate = fast_response_rate
     s.oscillation_rate = oscillation_rate
     s.saturation_rate = saturation_rate
+    s.instrument_fault_rate = instrument_fault_rate
     s.auto_loop_ratio = auto_loop_ratio
     s.realtime_auto_rate = realtime_auto_rate
     s.loop_count = loop_count
@@ -425,8 +427,8 @@ class TestBoard:
         assert "kpiSummary" in data
         assert "steadyRateTrend" in data
         assert "partialWarning" in data
-        # 9 张卡片（8 大 KPI + 综合评分）
-        assert len(data["kpiCards"]) == 9
+        # 10 张卡片（8 大 KPI + 综合评分 + 仪表故障率）
+        assert len(data["kpiCards"]) == 10
 
     def test_get_board_with_plant_node(self, client, mock_db, fake_redis) -> None:
         """按装置筛选看板数据（从节点级快照表读取）。"""
@@ -764,7 +766,7 @@ class TestPerformanceService:
             mock_redis.get = AsyncMock(return_value=None)
             mock_redis.setex = AsyncMock(return_value=None)
             result = await get_board(db, plant_node_id=None, time_window="today")
-        assert len(result["kpiCards"]) == 9
+        assert len(result["kpiCards"]) == 10
         assert all(c["status"] == "INCONCLUSIVE" for c in result["kpiCards"])
 
     async def test_get_ranking_empty(self) -> None:

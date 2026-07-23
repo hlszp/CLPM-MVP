@@ -303,6 +303,7 @@ const gauge2Ref = ref<EchartsUIType>();
 const gauge3Ref = ref<EchartsUIType>();
 const gauge4Ref = ref<EchartsUIType>();
 const gauge5Ref = ref<EchartsUIType>();
+const gauge6Ref = ref<EchartsUIType>();
 const trendChartRef = ref<EchartsUIType>();
 const pieChartRef = ref<EchartsUIType>();
 const statusPieChartRef = ref<EchartsUIType>();
@@ -312,11 +313,30 @@ const { renderEcharts: renderGauge2 } = useEcharts(gauge2Ref);
 const { renderEcharts: renderGauge3 } = useEcharts(gauge3Ref);
 const { renderEcharts: renderGauge4 } = useEcharts(gauge4Ref);
 const { renderEcharts: renderGauge5 } = useEcharts(gauge5Ref);
+const { renderEcharts: renderGauge6 } = useEcharts(gauge6Ref);
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 const { renderEcharts: renderPie } = useEcharts(pieChartRef);
 const { renderEcharts: renderStatusPie } = useEcharts(statusPieChartRef);
 
-function renderGaugeOption(value: number, color: string) {
+function renderGaugeOption(
+  value: number,
+  color: string,
+  opts?: { inverted?: boolean; max?: number },
+) {
+  const max = opts?.max ?? 100;
+  // inverted=true 适用于"越低越好"的指标（如仪表故障率）：低值绿、高值红
+  const colorStops = opts?.inverted
+    ? [
+        [0.33, themeColors.value.SUCCESS],
+        [0.5, themeColors.value.WARNING],
+        [1, themeColors.value.DANGER],
+      ]
+    : [
+        [0.3, themeColors.value.DANGER],
+        [0.5, themeColors.value.WARNING],
+        [0.75, themeColors.value.INFO],
+        [1, themeColors.value.SUCCESS],
+      ];
   return {
     series: [
       {
@@ -324,19 +344,14 @@ function renderGaugeOption(value: number, color: string) {
         startAngle: 220,
         endAngle: -40,
         min: 0,
-        max: 100,
+        max,
         splitNumber: 5,
         radius: '108%',
         center: ['50%', '55%'],
         axisLine: {
           lineStyle: {
             width: 6,
-            color: [
-              [0.3, themeColors.value.DANGER],
-              [0.5, themeColors.value.WARNING],
-              [0.75, themeColors.value.INFO],
-              [1, themeColors.value.SUCCESS],
-            ],
+            color: colorStops,
           },
         },
         pointer: {
@@ -864,6 +879,14 @@ function updateGauges() {
       themeColors.value.SUCCESS,
     ),
   );
+  // 仪表故障率（越低越好）：inverted 配色 + max=30 聚焦低值区间
+  renderGauge6(
+    renderGaugeOption(
+      aggregateData.value?.instrumentFaultRate ?? 0,
+      themeColors.value.DANGER,
+      { inverted: true, max: 30 },
+    ),
+  );
 }
 
 watch(top5Sort, () => loadRanking());
@@ -967,6 +990,25 @@ onMounted(() => {
               <EchartsUI ref="gauge5Ref" height="126px" />
               <div class="clpm-pid-dashboard__gauge-value">
                 {{ aggregateData?.goodValueRate ?? '--' }}%
+              </div>
+              <div class="clpm-pid-dashboard__gauge-meta">
+                统计窗口：{{ timeWindowLabel }}
+              </div>
+            </div>
+
+            <div class="clpm-pid-dashboard__gauge-card">
+              <div class="clpm-pid-dashboard__gauge-title">仪表故障率</div>
+              <EchartsUI ref="gauge6Ref" height="126px" />
+              <div
+                class="clpm-pid-dashboard__gauge-value"
+                :style="{
+                  color:
+                    (aggregateData?.instrumentFaultRate ?? 0) > 10
+                      ? themeColors.DANGER
+                      : themeColors.SUCCESS,
+                }"
+              >
+                {{ aggregateData?.instrumentFaultRate ?? '--' }}%
               </div>
               <div class="clpm-pid-dashboard__gauge-meta">
                 统计窗口：{{ timeWindowLabel }}

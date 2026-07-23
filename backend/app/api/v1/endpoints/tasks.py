@@ -1269,6 +1269,11 @@ def _build_task_result_item(snapshot: KpiSnapshotCustom, loop_tag_name: str | No
         "saturationRate": (
             float(snapshot.saturation_rate) if snapshot.saturation_rate is not None else None
         ),
+        "instrumentFaultRate": (
+            float(snapshot.instrument_fault_rate)
+            if snapshot.instrument_fault_rate is not None
+            else None
+        ),
         "autoModeRate": (
             float(snapshot.auto_mode_rate) if snapshot.auto_mode_rate is not None else None
         ),

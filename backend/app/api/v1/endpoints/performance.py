@@ -412,6 +412,7 @@ async def list_loop_snapshots_endpoint(
                 accuracyRate=_to_float(snap.accuracy_rate),
                 oscillationRate=_to_float(snap.oscillation_rate),
                 saturationRate=_to_float(snap.saturation_rate),
+                instrumentFaultRate=_to_float(snap.instrument_fault_rate),
                 fastRate=_to_float(snap.fast_rate),
                 stictionIndex=_to_float(snap.stiction_index),
                 settlingTime=_to_float(snap.settling_time),

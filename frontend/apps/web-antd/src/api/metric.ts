@@ -157,6 +157,7 @@ export namespace MetricApi {
     fastRate: number;
     oscillationRate: number;
     saturationRate: number;
+    instrumentFaultRate: number;
     compositeScore: number;
     status: KpiStatus;
     algorithmVersion: string;
@@ -208,6 +209,7 @@ export namespace MetricApi {
     fastRate: number;
     oscillationRate: number;
     saturationRate: number;
+    instrumentFaultRate: number;
     status: KpiStatus;
     algorithmVersion: string;
     preDiagnosis?: string;
@@ -549,6 +551,7 @@ export namespace MetricApi {
     goodValueRate: null | number;
     oscillationRate: null | number;
     saturationRate: null | number;
+    instrumentFaultRate: null | number;
     autoModeRate: null | number;
     stictionIndex: null | number;
     outputTripIndex: null | number;
@@ -596,6 +599,7 @@ export namespace MetricApi {
     fastRate?: null | number;
     oscillationRate?: null | number;
     saturationRate?: null | number;
+    instrumentFaultRate?: null | number;
     autoLoopRatio?: null | number;
     realtimeAutoRate?: null | number;
     loopCount: number;
@@ -619,6 +623,7 @@ export namespace MetricApi {
     fastRate?: null | number;
     oscillationRate?: null | number;
     saturationRate?: null | number;
+    instrumentFaultRate?: null | number;
     autoLoopRatio?: null | number;
     realtimeAutoRate?: null | number;
     loopCount: number;
@@ -694,6 +699,7 @@ export namespace MetricApi {
     fastRate?: null | number;
     oscillationRate?: null | number;
     saturationRate?: null | number;
+    instrumentFaultRate?: null | number;
     autoLoopRatio?: null | number;
     realtimeAutoRate?: null | number;
     loopCount: number;
@@ -1088,6 +1094,7 @@ export interface KpiSnapshotItem {
   accuracyRate: null | number;
   oscillationRate: null | number;
   saturationRate: null | number;
+  instrumentFaultRate: null | number;
   fastRate: null | number;
   stictionIndex: null | number;
   settlingTime: null | number;

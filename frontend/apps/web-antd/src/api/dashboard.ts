@@ -126,6 +126,7 @@ export namespace DashboardApi {
     goodValueRate: null | number;
     oscillationRate: null | number;
     saturationRate: null | number;
+    instrumentFaultRate: null | number;
     totalLoops: number;
     evaluatedLoops: number;
     inconclusiveLoops: number;
@@ -166,6 +167,7 @@ export namespace DashboardApi {
       fastRate: null | number;
       goodValueRate: null | number;
       inconclusiveLoops: number;
+      instrumentFaultRate: null | number;
       nodeId: null | string;
       nodeName: null | string;
       stabilityRate: null | number;

@@ -124,6 +124,7 @@ class KpiSummary(CamelModel):
     fast_rate: float | None = None
     oscillation_rate: float | None = None
     saturation_rate: float | None = None
+    instrument_fault_rate: float | None = None
     composite_score: float | None = None
     status: str = "INCONCLUSIVE"
     algorithm_version: str = "KPI_CALC_v1.0"
@@ -179,6 +180,7 @@ class RankingItem(CamelModel):
     fastRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
+    instrumentFaultRate: float | None = None
     status: str = "INCONCLUSIVE"
     algorithmVersion: str = "KPI_CALC_v1.0"
     preDiagnosis: str | None = None
@@ -392,6 +394,7 @@ class KpiSnapshotSchema(CamelModel):
     accuracyRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
+    instrumentFaultRate: float | None = None
     # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
     fastRate: float | None = None
     # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
@@ -428,6 +431,7 @@ class KpiSnapshotListItem(CamelModel):
     accuracyRate: float | None = None
     oscillationRate: float | None = None
     saturationRate: float | None = None
+    instrumentFaultRate: float | None = None
     fastRate: float | None = None
     stictionIndex: float | None = None
     settlingTime: float | None = None

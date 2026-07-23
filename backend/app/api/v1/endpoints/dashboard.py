@@ -91,6 +91,11 @@ def _build_board_item(summary: UnitKpiSummary, node_name: str) -> dict:
         "saturationRate": (
             float(summary.saturation_rate) if summary.saturation_rate is not None else None
         ),
+        "instrumentFaultRate": (
+            float(summary.instrument_fault_rate)
+            if summary.instrument_fault_rate is not None
+            else None
+        ),
         "totalLoops": summary.total_loops or 0,
         "evaluatedLoops": summary.evaluated_loops or 0,
         "inconclusiveLoops": summary.inconclusive_loops or 0,
@@ -384,6 +389,7 @@ _WINDOW_RATE_FIELD_KEYS = {
     "good_value_rate": "goodValueRate",
     "oscillation_rate": "oscillationRate",
     "saturation_rate": "saturationRate",
+    "instrument_fault_rate": "instrumentFaultRate",
 }
 
 
@@ -660,6 +666,7 @@ async def get_board_aggregate_endpoint(
         "accuracyRate": weighted_avg("accuracyRate"),
         "fastRate": weighted_avg("fastRate"),
         "goodValueRate": weighted_avg("goodValueRate"),
+        "instrumentFaultRate": weighted_avg("instrumentFaultRate"),
         "totalLoops": total_loops,
         "evaluatedLoops": evaluated_loops,
         "inconclusiveLoops": inconclusive_loops,

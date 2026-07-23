@@ -65,6 +65,7 @@ KPI_NAME_MAP = {
     "fast_rate": "快速率",
     "oscillation_rate": "振荡率",
     "saturation_rate": "饱和率",
+    "instrument_fault_rate": "仪表故障率",
     "composite_score": "综合评分",
     "auto_loop_ratio": "投自动回路占比",
 }
@@ -497,6 +498,22 @@ async def _aggregate_node_board(
             "algorithmVersion": ALGORITHM_VERSION,
         }
     )
+    # Phase 1 新增：仪表故障率卡片（辅助诊断指标，越低越好）
+    fault_avg = weighted_avg("instrument_fault_rate")
+    cards.append(
+        {
+            "metricKey": "instrument_fault_rate",
+            "metricName": KPI_NAME_MAP["instrument_fault_rate"],
+            "value": fault_avg,
+            "unit": "%",
+            "status": _kpi_status(
+                "instrument_fault_rate",
+                fault_avg,
+                _default_threshold("instrument_fault_rate"),
+            ),
+            "algorithmVersion": ALGORITHM_VERSION,
+        }
+    )
 
     # 构建 KPI 汇总
     auto_loop_ratio = weighted_avg("auto_loop_ratio")
@@ -510,6 +527,7 @@ async def _aggregate_node_board(
         "fast_rate": weighted_avg("fast_rate"),
         "oscillation_rate": weighted_avg("oscillation_rate"),
         "saturation_rate": weighted_avg("saturation_rate"),
+        "instrument_fault_rate": weighted_avg("instrument_fault_rate"),
         "composite_score": score_avg,
         "auto_loop_ratio": auto_loop_ratio,
         "realtime_auto_rate": realtime_auto_rate,
@@ -533,6 +551,7 @@ def _empty_kpi_summary() -> dict:
         "fast_rate": None,
         "oscillation_rate": None,
         "saturation_rate": None,
+        "instrument_fault_rate": None,
         "composite_score": None,
         "auto_loop_ratio": None,
         "realtime_auto_rate": None,
@@ -713,6 +732,7 @@ async def get_ranking(
                 "fastRate": _to_float(snap.fast_rate),
                 "oscillationRate": _to_float(snap.oscillation_rate),
                 "saturationRate": _to_float(snap.saturation_rate),
+                "instrumentFaultRate": _to_float(snap.instrument_fault_rate),
                 "status": _score_to_status(snap.score),
                 "algorithmVersion": ALGORITHM_VERSION,
                 "preDiagnosis": diagnosis_map.get(loop_id),
@@ -969,8 +989,8 @@ def _kpi_status(metric_code: str, value: float | None, threshold: dict | None) -
     alert = threshold.get("alert")
     if alert is None:
         return "GOOD"
-    # oscillation_rate / saturation_rate 是越低越好
-    if metric_code in ("oscillation_rate", "saturation_rate"):
+    # oscillation_rate / saturation_rate / instrument_fault_rate 是越低越好
+    if metric_code in ("oscillation_rate", "saturation_rate", "instrument_fault_rate"):
         if value <= alert:
             return "GOOD"
         if value <= alert * 1.5:
@@ -990,8 +1010,8 @@ async def _aggregate_kpi_cards(
     start: datetime,
     end: datetime,
 ) -> list[dict]:
-    """聚合 KPI 卡片（6 大 KPI + 综合评分 = 7 张卡片）— SQL 聚合。"""
-    fields = (*KPI_METRIC_CODES, "score")
+    """聚合 KPI 卡片（6 大 KPI + 综合评分 + 仪表故障率 = 9 张卡片）— SQL 聚合。"""
+    fields = (*KPI_METRIC_CODES, "score", "instrument_fault_rate")
     avg_cols = [func.avg(getattr(KpiSnapshotHourly, f)).label(f) for f in fields]
     stmt = _apply_snapshot_filters(
         select(func.count().label("cnt"), *avg_cols),
@@ -1032,6 +1052,22 @@ async def _aggregate_kpi_cards(
             "algorithmVersion": ALGORITHM_VERSION,
         }
     )
+    # Phase 1 新增：仪表故障率卡片（辅助诊断指标，越低越好）
+    fault_avg = _to_float(row.instrument_fault_rate)
+    cards.append(
+        {
+            "metricKey": "instrument_fault_rate",
+            "metricName": KPI_NAME_MAP["instrument_fault_rate"],
+            "value": round(fault_avg, 2) if fault_avg is not None else None,
+            "unit": "%",
+            "status": _kpi_status(
+                "instrument_fault_rate",
+                fault_avg,
+                _default_threshold("instrument_fault_rate"),
+            ),
+            "algorithmVersion": ALGORITHM_VERSION,
+        }
+    )
     return cards
 
 
@@ -1059,6 +1095,17 @@ def _empty_kpi_cards() -> list[dict]:
             "algorithmVersion": ALGORITHM_VERSION,
         }
     )
+    # Phase 1 新增：仪表故障率空卡片
+    cards.append(
+        {
+            "metricKey": "instrument_fault_rate",
+            "metricName": KPI_NAME_MAP["instrument_fault_rate"],
+            "value": None,
+            "unit": "%",
+            "status": "INCONCLUSIVE",
+            "algorithmVersion": ALGORITHM_VERSION,
+        }
+    )
     return cards
 
 
@@ -1073,6 +1120,7 @@ def _default_threshold(metric_code: str) -> dict:
         "fast_rate": {"min": 0, "max": 100, "alert": 80},
         "oscillation_rate": {"min": 0, "max": 100, "alert": 20},
         "saturation_rate": {"min": 0, "max": 100, "alert": 15},
+        "instrument_fault_rate": {"min": 0, "max": 100, "alert": 10},
     }
     return defaults.get(metric_code, {})
 
@@ -1092,8 +1140,7 @@ async def _aggregate_kpi_summary(
     P0#11: 投自动回路占比 — 统计 auto_mode_rate > 0 的回路数占比，
            反映装置内有多少回路实际投入自动控制。
     """
-    fields = (*KPI_METRIC_CODES, "score")
-    # 使用 COALESCE 处理 NULL 权重（默认 1.0），确保不丢失数据点
+    fields = (*KPI_METRIC_CODES, "score", "instrument_fault_rate")
     weight_col = func.coalesce(LoopLedger.score_weight, Decimal("1.0")).label("w")
     # SUM(weight) 可能因所有权重显式为 0 而等于 0，使用 NULLIF 避免 SQL 除零
     weight_sum_col = func.nullif(func.sum(weight_col), 0).label("weight_sum")
@@ -1137,6 +1184,7 @@ async def _aggregate_kpi_summary(
         "fast_rate": None,
         "oscillation_rate": None,
         "saturation_rate": None,
+        "instrument_fault_rate": None,
         "composite_score": None,
         "auto_loop_ratio": None,
         "status": "INCONCLUSIVE",
@@ -1185,6 +1233,7 @@ async def _aggregate_kpi_summary(
         "fast_rate": avg_value("fast_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
+        "instrument_fault_rate": avg_value("instrument_fault_rate"),
         "composite_score": score_avg,
         "auto_loop_ratio": auto_loop_ratio,
         "status": _score_to_status(score_avg),

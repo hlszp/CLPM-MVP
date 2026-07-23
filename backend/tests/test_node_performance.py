@@ -92,6 +92,7 @@ def _make_node_snapshot(
     snap.fast_rate = Decimal("82.00")
     snap.oscillation_rate = Decimal("15.00")
     snap.saturation_rate = Decimal("8.00")
+    snap.instrument_fault_rate = Decimal("3.00")
     snap.stiction_index = Decimal("0.15")
     snap.settling_time = Decimal("150.00")
     snap.output_trip_index = Decimal("42.00")
