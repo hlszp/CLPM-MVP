@@ -346,7 +346,7 @@ class TestAasSyncStatus:
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
             compiled = str(stmt.compile()).lower()
-            if "count" in compiled:
+            if "count(*)" in compiled:
                 return _make_scalar_mock(10)
             if "group_by" in compiled:
                 return _make_all_mock([])
@@ -415,7 +415,7 @@ class TestTaskResults:
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
             compiled = str(stmt.compile()).lower()
-            if "count" in compiled:
+            if "count(*)" in compiled:
                 return _make_scalar_mock(0)
             return _make_all_mock([])
 
@@ -454,6 +454,7 @@ class TestTaskResults:
         snapshot.good_value_rate = 95.0
         snapshot.oscillation_rate = 10.0
         snapshot.saturation_rate = 5.0
+        snapshot.instrument_fault_rate = None
         snapshot.auto_mode_rate = 80.0
         snapshot.stiction_index = None
         snapshot.output_trip_index = None
@@ -476,7 +477,7 @@ class TestTaskResults:
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
             compiled = str(stmt.compile()).lower()
-            if "count" in compiled:
+            if "count(*)" in compiled:
                 return _make_scalar_mock(1)
             # 返回 (snapshot, loop_tag_name) 元组列表
             result = MagicMock()
