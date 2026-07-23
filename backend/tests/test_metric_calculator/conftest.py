@@ -82,6 +82,7 @@ def make_data_block(
     sampling_freq: str = "1s",
     quality_summary: QualitySummary | None = None,
     consecutive_segments: list[tuple[int, int]] | None = None,
+    outlier_reasons: dict[str, list[list[str]]] | None = None,
     data_block_id: str = "db_test_BASE_1s",
     loop_id: str = "L001",
 ) -> DataBlock:
@@ -95,6 +96,8 @@ def make_data_block(
         sampling_freq: 采样频率标签
         quality_summary: 质量摘要；None 时自动构造 valid_rate=1.0
         consecutive_segments: 连续有效段
+        outlier_reasons: 每点异常原因码字典，key 为 tag，value 为 list[list[str]]；
+            None 时空字典（Phase 1 instrument_fault_rate 测试用）
         data_block_id: 数据块 ID
         loop_id: 回路 ID
     """
@@ -119,6 +122,7 @@ def make_data_block(
         timestamps=timestamps,
         signals=signals,
         validity=validity,
+        outlier_reasons=outlier_reasons or {},
         quality_summary=quality_summary,
         consecutive_segments=consecutive_segments or [(0, n - 1)] if n > 0 else [],
         point_count=n,
@@ -134,6 +138,7 @@ def make_bundle(
     tag_group: str = "BASE",
     sampling_freq: str = "1s",
     quality_summary: QualitySummary | None = None,
+    outlier_reasons: dict[str, list[list[str]]] | None = None,
     n: int | None = None,
 ) -> MetricDataBundle:
     """构造测试用 MetricDataBundle.
@@ -148,6 +153,7 @@ def make_bundle(
         tag_group=tag_group,
         sampling_freq=sampling_freq,
         quality_summary=quality_summary,
+        outlier_reasons=outlier_reasons,
     )
     # 简化 mask：空表达式 → 全部索引；否则取所有 valid 为 True 的索引交集
     if not mask_expression or not mask_expression.strip():
