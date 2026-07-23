@@ -96,6 +96,27 @@ class KpiSnapshotHourly(Base):
     valid_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
     confidence_level: Mapped[str | None] = mapped_column(CHAR(1), nullable=True)
     data_lineage: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # --- Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）---
+    # 仪表故障率复用既有 outlier_detection 结果，AGGREGATABLE（参与节点聚合）
+    instrument_fault_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # PV/SP/OP/偏差 统计指标，DISPLAY_ONLY（不参与节点聚合，避免均值再平均失真）
+    pv_mean: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    pv_std: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    sp_mean: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    sp_std: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    op_mean: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    op_std: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    error_mean: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    error_std: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    # 阀门诊断指标，DISPLAY_ONLY
+    valve_linearity: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    valve_nonlinearity: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    valve_op_min: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    valve_op_max: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    oscillation_amplitude: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    # Numeric(10,0) 对齐全 Decimal 管道（_extract_kpi_values），非 Integer
+    setpoint_crossing_count: Mapped[Decimal | None] = mapped_column(Numeric(10, 0), nullable=True)
+    time_constant: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -163,6 +184,23 @@ class KpiSnapshotCustom(Base):
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime, server_default=func.now(), nullable=True
     )
+    # --- Phase 1 新增指标（与 kpi_snapshot_hourly 对齐，2026-07-23）---
+    instrument_fault_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    pv_mean: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    pv_std: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    sp_mean: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    sp_std: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    op_mean: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    op_std: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    error_mean: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    error_std: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    valve_linearity: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    valve_nonlinearity: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    valve_op_min: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    valve_op_max: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    oscillation_amplitude: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    setpoint_crossing_count: Mapped[Decimal | None] = mapped_column(Numeric(10, 0), nullable=True)
+    time_constant: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
