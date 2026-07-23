@@ -49,6 +49,7 @@ from app.tasks.kpi_calc import (
     _do_calculate_single_loop,
     _extract_kpi_values,
     _extract_lineage_info,
+    _extract_valve_op_range,
     _find_nearest_value,
     _get_tag_name,
     _loop_type_to_control_type,
@@ -2877,3 +2878,206 @@ class TestCheckImportIdempotency:
         with patch("app.services.data_import._get_task", new=AsyncMock(return_value=task_data)):
             result = await _check_import_idempotency("no-started-at-task-id")
         assert result is None
+
+
+# ===========================================================================
+# Phase 1 持久化接线测试（Task 6，HiaMonitor 借鉴，2026-07-23）
+# ===========================================================================
+
+
+class TestExtractValveOpRange:
+    """测试 _extract_valve_op_range() 从 details 提取 op_min/op_max。"""
+
+    def test_normal_extraction(self) -> None:
+        """正常结果 → 从 details 提取 op_min/op_max 为 Decimal。"""
+        vor_result = MetricResult(
+            metric_code="valve_operating_range",
+            value=70.0,
+            confidence_level="A",
+            lineage=_make_data_lineage(),
+            details={"op_min": 10.0, "op_max": 80.0, "span": 70.0},
+        )
+        op_min, op_max = _extract_valve_op_range({"valve_operating_range": vor_result})
+        assert op_min == Decimal("10.0")
+        assert op_max == Decimal("80.0")
+
+    def test_no_result_in_metric_results(self) -> None:
+        """metric_results 无 valve_operating_range 键 → (None, None)。"""
+        op_min, op_max = _extract_valve_op_range({})
+        assert op_min is None
+        assert op_max is None
+
+    def test_inconclusive_result(self) -> None:
+        """valve_operating_range value=None（INCONCLUSIVE）→ (None, None)。"""
+        vor_result = MetricResult(
+            metric_code="valve_operating_range",
+            value=None,
+            confidence_level="E",
+            lineage=_make_data_lineage(),
+            details={"reason": "insufficient_data"},
+        )
+        op_min, op_max = _extract_valve_op_range({"valve_operating_range": vor_result})
+        assert op_min is None
+        assert op_max is None
+
+    def test_empty_details(self) -> None:
+        """details 为空 dict → (None, None)。"""
+        vor_result = MetricResult(
+            metric_code="valve_operating_range",
+            value=50.0,
+            confidence_level="A",
+            lineage=_make_data_lineage(),
+            details={},
+        )
+        op_min, op_max = _extract_valve_op_range({"valve_operating_range": vor_result})
+        assert op_min is None
+        assert op_max is None
+
+    def test_none_details(self) -> None:
+        """details 为 None → (None, None)。"""
+        vor_result = MetricResult(
+            metric_code="valve_operating_range",
+            value=50.0,
+            confidence_level="A",
+            lineage=_make_data_lineage(),
+            details=None,  # type: ignore[arg-type]
+        )
+        op_min, op_max = _extract_valve_op_range({"valve_operating_range": vor_result})
+        assert op_min is None
+        assert op_max is None
+
+
+class TestSaveSnapshotPhase1Columns:
+    """测试 _save_snapshot() 接受并持久化 Phase 1 新增 15 列。"""
+
+    @pytest.mark.asyncio
+    async def test_phase1_columns_accepted_in_upsert(self) -> None:
+        """传入 Phase 1 指标值 → UPSERT 正常执行，不报错。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("phase1-snap-id"))
+
+        ts_start = datetime(2026, 7, 23, 8, 0, 0, tzinfo=UTC)
+        ts_end = datetime(2026, 7, 23, 9, 0, 0, tzinfo=UTC)
+
+        result = await _save_snapshot(
+            db=db,
+            loop_id="loop-phase1",
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="SUCCESS",
+            score=Decimal("82.00"),
+            # Phase 1 新增指标
+            instrument_fault_rate=Decimal("5.00"),
+            pv_mean=Decimal("50.123"),
+            pv_std=Decimal("2.456"),
+            sp_mean=Decimal("48.000"),
+            sp_std=Decimal("1.000"),
+            op_mean=Decimal("55.500"),
+            op_std=Decimal("3.000"),
+            error_mean=Decimal("2.123"),
+            error_std=Decimal("1.500"),
+            valve_linearity=Decimal("0.95"),
+            valve_nonlinearity=Decimal("0.05"),
+            valve_op_min=Decimal("10.00"),
+            valve_op_max=Decimal("80.00"),
+            setpoint_crossing_count=Decimal("7"),
+            oscillation_amplitude=Decimal("3.50"),
+        )
+
+        assert db.execute.call_count == 1
+        assert result["snapshotId"] == "phase1-snap-id"
+        assert result["status"] == "SUCCESS"
+
+    @pytest.mark.asyncio
+    async def test_phase1_columns_default_none(self) -> None:
+        """不传 Phase 1 指标值 → 默认 None，UPSERT 仍正常执行。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("default-id"))
+
+        ts_start = datetime(2026, 7, 23, 8, 0, 0, tzinfo=UTC)
+        ts_end = datetime(2026, 7, 23, 9, 0, 0, tzinfo=UTC)
+
+        result = await _save_snapshot(
+            db=db,
+            loop_id="loop-1",
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="INCONCLUSIVE",
+        )
+
+        assert db.execute.call_count == 1
+        assert result["status"] == "INCONCLUSIVE"
+
+
+class TestSaveCustomSnapshotPhase1Columns:
+    """测试 _save_custom_snapshot() 接受并持久化 Phase 1 新增 15 列。"""
+
+    @pytest.mark.asyncio
+    async def test_new_custom_snapshot_writes_phase1_columns(self) -> None:
+        """新增 custom 快照时 Phase 1 指标写入 KpiSnapshotCustom 对象。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        db.add = MagicMock()
+
+        ts_start = datetime(2026, 7, 23, 8, 0, 0, tzinfo=UTC)
+        ts_end = datetime(2026, 7, 23, 9, 0, 0, tzinfo=UTC)
+
+        await _save_custom_snapshot(
+            db=db,
+            task_id="task-phase1-001",
+            loop_id="loop-phase1",
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="SUCCESS",
+            score=Decimal("85.00"),
+            instrument_fault_rate=Decimal("3.00"),
+            pv_mean=Decimal("50.000"),
+            valve_op_min=Decimal("10.00"),
+            valve_op_max=Decimal("80.00"),
+            setpoint_crossing_count=Decimal("5"),
+            oscillation_amplitude=Decimal("2.50"),
+        )
+
+        db.add.assert_called_once()
+        added = db.add.call_args.args[0]
+        assert added.instrument_fault_rate == Decimal("3.00")
+        assert added.pv_mean == Decimal("50.000")
+        assert added.valve_op_min == Decimal("10.00")
+        assert added.valve_op_max == Decimal("80.00")
+        assert added.setpoint_crossing_count == Decimal("5")
+        assert added.oscillation_amplitude == Decimal("2.50")
+
+    @pytest.mark.asyncio
+    async def test_update_existing_custom_snapshot_writes_phase1_columns(self) -> None:
+        """更新已有 custom 快照时 Phase 1 指标赋值到 existing 对象。"""
+        existing = MagicMock()
+        existing.id = "existing-custom-id"
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(existing))
+        db.add = MagicMock()
+
+        ts_start = datetime(2026, 7, 23, 8, 0, 0, tzinfo=UTC)
+        ts_end = datetime(2026, 7, 23, 9, 0, 0, tzinfo=UTC)
+
+        await _save_custom_snapshot(
+            db=db,
+            task_id="task-phase1-002",
+            loop_id="loop-phase1",
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status="SUCCESS",
+            score=Decimal("90.00"),
+            instrument_fault_rate=Decimal("1.00"),
+            valve_linearity=Decimal("0.98"),
+            valve_nonlinearity=Decimal("0.02"),
+            error_mean=Decimal("0.500"),
+            error_std=Decimal("0.300"),
+        )
+
+        db.add.assert_not_called()
+        assert existing.instrument_fault_rate == Decimal("1.00")
+        assert existing.valve_linearity == Decimal("0.98")
+        assert existing.valve_nonlinearity == Decimal("0.02")
+        assert existing.error_mean == Decimal("0.500")
+        assert existing.error_std == Decimal("0.300")

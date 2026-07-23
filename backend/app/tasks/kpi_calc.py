@@ -1115,6 +1115,9 @@ async def _calculate_loop_kpi(
     # 提取 KPI 值（Calculator 代码 → DB 列名）
     kpi_values = _extract_kpi_values(metric_results)
 
+    # 提取阀门运行区间 op_min/op_max（从 valve_operating_range details，Task 6）
+    valve_op_min, valve_op_max = _extract_valve_op_range(metric_results)
+
     # 提取数据血缘信息
     lineage_info = _extract_lineage_info(metric_results, composite_result)
 
@@ -1147,6 +1150,22 @@ async def _calculate_loop_kpi(
         output_trip_index=kpi_values.get("output_trip_index"),
         settling_time=kpi_values.get("settling_time"),
         ideal_settling_time=kpi_values.get("ideal_settling_time"),
+        # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+        instrument_fault_rate=kpi_values.get("instrument_fault_rate"),
+        pv_mean=kpi_values.get("pv_mean"),
+        pv_std=kpi_values.get("pv_std"),
+        sp_mean=kpi_values.get("sp_mean"),
+        sp_std=kpi_values.get("sp_std"),
+        op_mean=kpi_values.get("op_mean"),
+        op_std=kpi_values.get("op_std"),
+        error_mean=kpi_values.get("error_mean"),
+        error_std=kpi_values.get("error_std"),
+        valve_linearity=kpi_values.get("valve_linearity"),
+        valve_nonlinearity=kpi_values.get("valve_nonlinearity"),
+        valve_op_min=valve_op_min,
+        valve_op_max=valve_op_max,
+        setpoint_crossing_count=kpi_values.get("setpoint_crossing_count"),
+        oscillation_amplitude=kpi_values.get("oscillation_amplitude"),
         **lineage_info,
     )
 
@@ -1458,6 +1477,30 @@ def _extract_kpi_values(
             kpi_values[db_code] = Decimal(str(result.value))
 
     return kpi_values
+
+
+def _extract_valve_op_range(
+    metric_results: dict[str, MetricResult],
+) -> tuple[Decimal | None, Decimal | None]:
+    """从 valve_operating_range MetricResult details 提取 op_min/op_max（Task 6）.
+
+    valve_operating_range 计算器的 ``value`` 是 span（max-min），无单一 DB 列；
+    实际 DB 列 ``valve_op_min`` / ``valve_op_max`` 需从 ``result.details`` 提取。
+
+    Returns:
+        (valve_op_min, valve_op_max)，均为 Decimal | None；
+        计算器不存在 / INCONCLUSIVE / details 缺失时返回 (None, None)
+    """
+    vor_result = metric_results.get("valve_operating_range")
+    if vor_result is None or vor_result.value is None:
+        return None, None
+    details = vor_result.details or {}
+    op_min = details.get("op_min")
+    op_max = details.get("op_max")
+    return (
+        Decimal(str(op_min)) if op_min is not None else None,
+        Decimal(str(op_max)) if op_max is not None else None,
+    )
 
 
 def _extract_lineage_info(
@@ -1835,6 +1878,22 @@ async def _save_snapshot(
     valid_rate: Decimal | None = None,
     confidence_level: str | None = None,
     data_lineage: dict | None = None,
+    # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+    instrument_fault_rate: Decimal | None = None,
+    pv_mean: Decimal | None = None,
+    pv_std: Decimal | None = None,
+    sp_mean: Decimal | None = None,
+    sp_std: Decimal | None = None,
+    op_mean: Decimal | None = None,
+    op_std: Decimal | None = None,
+    error_mean: Decimal | None = None,
+    error_std: Decimal | None = None,
+    valve_linearity: Decimal | None = None,
+    valve_nonlinearity: Decimal | None = None,
+    valve_op_min: Decimal | None = None,
+    valve_op_max: Decimal | None = None,
+    setpoint_crossing_count: Decimal | None = None,
+    oscillation_amplitude: Decimal | None = None,
 ) -> dict:
     """幂等写入快照（UPSERT 模式：相同 loop_id + ts_start 覆盖更新）.
 
@@ -1842,6 +1901,7 @@ async def _save_snapshot(
     不再通过 select-then-add 模式，减少一次查询并避免并发竞争。
     7 个数据血缘字段（ideal_settling_time/algorithm_version/sampling_freq/
     quality_policy/valid_rate/confidence_level/data_lineage）随 UPSERT 写入。
+    Phase 1 新增 15 个指标列随 UPSERT 写入（time_constant 无计算器，保持 NULL）。
     实际写入行的 id 通过 ``RETURNING id`` 随 UPSERT 一并取回（新增与
     UPDATE 分支均返回），不再单独 SELECT 回查。
     """
@@ -1872,6 +1932,22 @@ async def _save_snapshot(
         "valid_rate": valid_rate,
         "confidence_level": confidence_level,
         "data_lineage": data_lineage,
+        # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+        "instrument_fault_rate": instrument_fault_rate,
+        "pv_mean": pv_mean,
+        "pv_std": pv_std,
+        "sp_mean": sp_mean,
+        "sp_std": sp_std,
+        "op_mean": op_mean,
+        "op_std": op_std,
+        "error_mean": error_mean,
+        "error_std": error_std,
+        "valve_linearity": valve_linearity,
+        "valve_nonlinearity": valve_nonlinearity,
+        "valve_op_min": valve_op_min,
+        "valve_op_max": valve_op_max,
+        "setpoint_crossing_count": setpoint_crossing_count,
+        "oscillation_amplitude": oscillation_amplitude,
     }
 
     update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")}
@@ -1976,6 +2052,22 @@ async def _save_custom_snapshot(
     valid_rate: Decimal | None = None,
     confidence_level: str | None = None,
     data_lineage: dict | None = None,
+    # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+    instrument_fault_rate: Decimal | None = None,
+    pv_mean: Decimal | None = None,
+    pv_std: Decimal | None = None,
+    sp_mean: Decimal | None = None,
+    sp_std: Decimal | None = None,
+    op_mean: Decimal | None = None,
+    op_std: Decimal | None = None,
+    error_mean: Decimal | None = None,
+    error_std: Decimal | None = None,
+    valve_linearity: Decimal | None = None,
+    valve_nonlinearity: Decimal | None = None,
+    valve_op_min: Decimal | None = None,
+    valve_op_max: Decimal | None = None,
+    setpoint_crossing_count: Decimal | None = None,
+    oscillation_amplitude: Decimal | None = None,
 ) -> dict:
     """幂等写入自定义任务快照（select-then-add 模式）.
 
@@ -2012,6 +2104,22 @@ async def _save_custom_snapshot(
         existing.valid_rate = valid_rate
         existing.confidence_level = confidence_level
         existing.data_lineage = data_lineage
+        # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+        existing.instrument_fault_rate = instrument_fault_rate
+        existing.pv_mean = pv_mean
+        existing.pv_std = pv_std
+        existing.sp_mean = sp_mean
+        existing.sp_std = sp_std
+        existing.op_mean = op_mean
+        existing.op_std = op_std
+        existing.error_mean = error_mean
+        existing.error_std = error_std
+        existing.valve_linearity = valve_linearity
+        existing.valve_nonlinearity = valve_nonlinearity
+        existing.valve_op_min = valve_op_min
+        existing.valve_op_max = valve_op_max
+        existing.setpoint_crossing_count = setpoint_crossing_count
+        existing.oscillation_amplitude = oscillation_amplitude
         snapshot_id = str(existing.id)
     else:
         snapshot_id = str(uuid4())
@@ -2041,6 +2149,22 @@ async def _save_custom_snapshot(
             valid_rate=valid_rate,
             confidence_level=confidence_level,
             data_lineage=data_lineage,
+            # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+            instrument_fault_rate=instrument_fault_rate,
+            pv_mean=pv_mean,
+            pv_std=pv_std,
+            sp_mean=sp_mean,
+            sp_std=sp_std,
+            op_mean=op_mean,
+            op_std=op_std,
+            error_mean=error_mean,
+            error_std=error_std,
+            valve_linearity=valve_linearity,
+            valve_nonlinearity=valve_nonlinearity,
+            valve_op_min=valve_op_min,
+            valve_op_max=valve_op_max,
+            setpoint_crossing_count=setpoint_crossing_count,
+            oscillation_amplitude=oscillation_amplitude,
         )
         db.add(snapshot)
 
