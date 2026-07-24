@@ -42,6 +42,7 @@ def _make_summary(
     s.good_value_rate = Decimal("96.00")
     s.oscillation_rate = Decimal("15.00")
     s.saturation_rate = Decimal("8.00")
+    s.instrument_fault_rate = Decimal("2.00")
     s.total_loops = 12
     s.evaluated_loops = evaluated_loops
     s.inconclusive_loops = 1
@@ -56,19 +57,31 @@ def _make_weighted_row(
     eval_sum: int = 10,
     avg_score_sum: float = 800.0,
 ) -> MagicMock:
-    """构造窗口加权和行 mock（字段为加权和，非均值）。"""
+    """构造窗口加权和行 mock（字段为加权和，非均值）。
+
+    ``_load_window_items`` 按字段独立标签 ``{field}_wsum`` / ``{field}_esum``
+    读取（每字段独立「非 NULL 分母」，见 dashboard._load_window_items），
+    故 mock 需为每个 rate 字段设置对应标签，而非旧的统一 ``eval_sum``。
+    """
     row = MagicMock()
     row.nid = node_id
-    row.avg_score = Decimal(str(avg_score_sum))
-    row.auto_mode_rate = Decimal("880.0")
-    row.stability_rate = Decimal("850.0")
-    row.effective_auto_rate = Decimal("820.0")
-    row.accuracy_rate = Decimal("780.0")
-    row.fast_rate = Decimal("750.0")
-    row.good_value_rate = Decimal("960.0")
-    row.oscillation_rate = Decimal("150.0")
-    row.saturation_rate = Decimal("80.0")
-    row.eval_sum = eval_sum
+    # 各 rate 字段加权和（分子）= 单回路均值 × eval_sum；
+    # 分母 esum=eval_sum（mock 假设所有快照该字段均非 NULL）。
+    field_sums = {
+        "avg_score": avg_score_sum,
+        "auto_mode_rate": 880.0,
+        "stability_rate": 850.0,
+        "effective_auto_rate": 820.0,
+        "accuracy_rate": 780.0,
+        "fast_rate": 750.0,
+        "good_value_rate": 960.0,
+        "oscillation_rate": 150.0,
+        "saturation_rate": 80.0,
+        "instrument_fault_rate": 20.0,
+    }
+    for field, s in field_sums.items():
+        setattr(row, f"{field}_wsum", Decimal(str(s)))
+        setattr(row, f"{field}_esum", eval_sum)
     return row
 
 
