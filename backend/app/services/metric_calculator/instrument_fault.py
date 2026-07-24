@@ -14,6 +14,10 @@
 复用既有 ``outlier_detection`` 预处理结果（DataBlock.outlier_reasons），
 无需新增预处理步骤。SPIKE/NaN/QC_BAD/HF_NOISE/TS_ANOMALY 不计入仪表故障。
 
+核心计算逻辑已抽取为独立工具函数
+``app.utils.instrument_fault_rate.calculate_instrument_fault_rate``，
+本计算器委托调用该函数，确保逻辑单一来源、其他模块可直接复用。
+
 定位：AGGREGATABLE 辅助指标，参与节点级聚合。
 
 设计依据：CLPM_v6.1_HiaMonitor借鉴重构计划.md v1.1 §3
@@ -23,19 +27,11 @@ from __future__ import annotations
 
 import logging
 
-from app.contracts.data_types import MetricDataBundle, MetricResult, OutlierReason
+from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.metric_calculator.base import MetricCalculatorBase
+from app.utils.instrument_fault_rate import calculate_instrument_fault_rate
 
 logger = logging.getLogger(__name__)
-
-#: 仪表故障原因码集合（仅超限/冻结/突变 三类）
-_FAULT_REASONS: frozenset[str] = frozenset(
-    {
-        OutlierReason.OUT_OF_RANGE.value,
-        OutlierReason.FROZEN.value,
-        OutlierReason.JUMP.value,
-    }
-)
 
 
 class InstrumentFaultRateCalculator(MetricCalculatorBase):
@@ -47,6 +43,9 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
 
     可信度仍用 mask ``valid_rate``：故障点 pv_valid=False → 排除出 mask
     → valid_rate 降低 → 可信度降级（合理：数据有效率低则可信度低）。
+
+    核心计算委托 ``app.utils.instrument_fault_rate`` 工具函数，
+    便于其他模块在脱离 MetricDataBundle 抽象时直接复用。
     """
 
     @property
@@ -72,51 +71,36 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
         if n <= 0:
             return self._make_inconclusive(bundle, "empty_data_block")
 
-        # 读取 PV 异常原因码（可能缺失或长度不足，需补齐）
+        # 读取 PV 异常原因码
         pv_reasons = block.outlier_reasons.get("pv", [])
-        if len(pv_reasons) < n:
-            pv_reasons = pv_reasons + [[] for _ in range(n - len(pv_reasons))]
 
-        freeze_count = 0
-        mutation_count = 0
-        overrange_count = 0
-        fault_pts = 0
+        # 委托独立工具函数执行核心计算
+        result = calculate_instrument_fault_rate(pv_reasons, point_count=n)
 
-        for reasons in pv_reasons[:n]:
-            reason_set = set(reasons)
-            fault_reasons = reason_set & _FAULT_REASONS
-            if fault_reasons:
-                fault_pts += 1
-                if OutlierReason.FROZEN.value in fault_reasons:
-                    freeze_count += 1
-                if OutlierReason.JUMP.value in fault_reasons:
-                    mutation_count += 1
-                if OutlierReason.OUT_OF_RANGE.value in fault_reasons:
-                    overrange_count += 1
-
-        fault_rate = self._clamp((fault_pts / n) * 100.0)
+        if result is None:
+            return self._make_inconclusive(bundle, "empty_data_block")
 
         logger.debug(
             "[仪表故障率] fault_pts=%d/%d, rate=%.2f%%, freeze=%d, jump=%d, oor=%d",
-            fault_pts,
-            n,
-            fault_rate,
-            freeze_count,
-            mutation_count,
-            overrange_count,
+            result.fault_point_count,
+            result.sample_count,
+            result.fault_rate,
+            result.freeze_count,
+            result.mutation_count,
+            result.overrange_count,
         )
 
         return self._make_result(
             bundle,
-            fault_rate,
+            result.fault_rate,
             {
-                "fault_rate": round(fault_rate, 2),
-                "freeze_count": freeze_count,
-                "mutation_count": mutation_count,
-                "overrange_count": overrange_count,
-                "fault_point_count": fault_pts,
-                "sample_count": n,
-                "source": "outlier_reasons",
+                "fault_rate": result.fault_rate,
+                "freeze_count": result.freeze_count,
+                "mutation_count": result.mutation_count,
+                "overrange_count": result.overrange_count,
+                "fault_point_count": result.fault_point_count,
+                "sample_count": result.sample_count,
+                "source": result.source,
             },
         )
 
