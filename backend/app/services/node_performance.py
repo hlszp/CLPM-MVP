@@ -286,10 +286,16 @@ async def aggregate_node_snapshot(
     ).label("auto_loop_count")
     total_count = func.count().label("cnt")
 
-    stmt = select(total_count, auto_loop_count, weight_sum_col, *weighted_cols).select_from(
-        subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-            LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
+    # S1：仅聚合 include_in_evaluation=True 的回路（False 回路仍算单回路 KPI 供详情页展示，
+    # 但不进入节点级加权评分 / loop_count / auto_loop_ratio），与下方 inconclusive 查询口径一致
+    stmt = (
+        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
+        .select_from(
+            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
+                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
+            )
         )
+        .where(LoopLedger.include_in_evaluation.is_(True))
     )
     result = await db.execute(stmt)
     row = result.one()
@@ -1248,10 +1254,16 @@ async def aggregate_node_snapshot_with_presets(
     ).label("auto_loop_count")
     total_count = func.count().label("cnt")
 
-    stmt = select(total_count, auto_loop_count, weight_sum_col, *weighted_cols).select_from(
-        subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-            LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
+    # S1：仅聚合 include_in_evaluation=True 的回路（False 回路仍算单回路 KPI 供详情页展示，
+    # 但不进入节点级加权评分 / loop_count / auto_loop_ratio），与下方 inconclusive 查询口径一致
+    stmt = (
+        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
+        .select_from(
+            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
+                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
+            )
         )
+        .where(LoopLedger.include_in_evaluation.is_(True))
     )
     result = await db.execute(stmt)
     row = result.one()

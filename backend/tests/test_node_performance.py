@@ -245,6 +245,78 @@ class TestAggregateNodeSnapshot:
         assert result["output_trip_index"] == Decimal("38.00")
         assert result["ideal_settling_time"] == Decimal("180.00")
 
+    @pytest.mark.asyncio
+    async def test_aggregation_filters_include_in_evaluation_false(self):
+        """S1：include_in_evaluation=False 的回路不进入节点聚合。
+
+        主聚合 SQL 须含 LoopLedger.include_in_evaluation = true 过滤，
+        确保被排除的回路不污染加权评分 / loop_count / auto_loop_ratio。
+        回归背景：该字段此前仅在 dashboard 计数与 inconclusive 查询使用，
+        主聚合 SQL 漏过滤，导致 include_in_evaluation=False 回路仍被聚合。
+        """
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        main_result = MagicMock()
+        main_row = MagicMock()
+        main_row.cnt = 2
+        main_row.weight_sum = Decimal("2.0")
+        main_row.auto_loop_count = 1
+        main_row.score = Decimal("80.00")
+        # 其余聚合字段置 None（avg_value 对 None 返回 None，不参与断言）
+        for f in (
+            "good_value_rate",
+            "auto_mode_rate",
+            "effective_auto_rate",
+            "steady_rate",
+            "accuracy_rate",
+            "fast_rate",
+            "oscillation_rate",
+            "saturation_rate",
+            "instrument_fault_rate",
+            "stiction_index",
+            "settling_time",
+            "output_trip_index",
+            "ideal_settling_time",
+        ):
+            setattr(main_row, f, None)
+        main_result.one.return_value = main_row
+
+        # 后续 excluded/inconclusive 计数查询返回 0
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = 0
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            return main_result if len(captured_stmts) == 1 else scalar_result
+
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["loop-001", "loop-002", "loop-003"],
+            ),
+            patch(
+                "app.services.node_performance.query_realtime_auto_rate",
+                return_value=None,
+            ),
+        ):
+            result = await aggregate_node_snapshot(
+                db,
+                "node-001",
+                datetime.now(UTC).replace(tzinfo=None),
+                datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
+            )
+
+        assert result is not None
+        # 主聚合 SQL（第一次 db.execute）须含 include_in_evaluation 过滤
+        main_sql = str(captured_stmts[0].compile(compile_kwargs={"literal_binds": True}))
+        assert "include_in_evaluation" in main_sql
+        assert "true" in main_sql.lower()
+        # loop_count 反映过滤后回路数（2，而非 3）
+        assert result["loop_count"] == 2
+
 
 # ---------------------------------------------------------------------------
 # save_node_snapshot 测试
