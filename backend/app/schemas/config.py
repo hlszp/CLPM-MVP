@@ -452,6 +452,77 @@ class OutlierParamsSaveRequest(CamelModel):
     switches: dict[DetectorKey, bool] = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# 算法参数配置（P0-B 配置化基础设施）
+# ---------------------------------------------------------------------------
+
+
+class AlgorithmParamsControlItem(CamelModel):
+    """单个 metric_code × control_type 的算法参数项.
+
+    Attributes:
+        controlType: 控制类型（STABLE/SLOW/FAST/LOGIC）
+        params: 当前生效参数（默认值 + 覆盖合并后）
+        defaults: 算法默认参数（无覆盖时的回退值）
+        overridden: 是否被覆盖（params != defaults）
+    """
+
+    controlType: ControlType
+    params: dict[str, Any] = Field(default_factory=dict)
+    defaults: dict[str, Any] = Field(default_factory=dict)
+    overridden: bool = False
+
+
+class AlgorithmParamsMetricGroup(CamelModel):
+    """单个指标的所有控制类型参数组.
+
+    Attributes:
+        metricCode: 指标代码
+        metricName: 指标中文名
+        items: 4 个控制类型的参数项列表
+    """
+
+    metricCode: str
+    metricName: str
+    items: list[AlgorithmParamsControlItem] = Field(default_factory=list)
+
+
+class AlgorithmParamsSchema(CamelModel):
+    """算法参数配置合并视图（全部指标 × 全部控制类型）.
+
+    Attributes:
+        metrics: 按指标分组的参数列表
+        updatedAt: 最近更新时间
+        updatedBy: 最近更新人
+    """
+
+    metrics: list[AlgorithmParamsMetricGroup] = Field(default_factory=list)
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+class AlgorithmParamsSaveItem(CamelModel):
+    """单个控制类型的参数保存项.
+
+    Attributes:
+        controlType: 控制类型
+        params: 要覆盖的参数键值对（部分覆盖，未列出的参数保持原值）
+    """
+
+    controlType: ControlType
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlgorithmParamsSaveRequest(CamelModel):
+    """算法参数保存请求（按指标 code，含 4 控制类型的部分覆盖）.
+
+    Attributes:
+        items: 4 控制类型的参数覆盖项（可只传部分控制类型）
+    """
+
+    items: list[AlgorithmParamsSaveItem] = Field(default_factory=list)
+
+
 class VersionHistoryItem(CamelModel):
     """版本历史单项.
 
@@ -511,6 +582,11 @@ class DiagnosisTriggerSaveRequest(CamelModel):
 
 
 __all__ = [
+    "AlgorithmParamsControlItem",
+    "AlgorithmParamsMetricGroup",
+    "AlgorithmParamsSaveItem",
+    "AlgorithmParamsSaveRequest",
+    "AlgorithmParamsSchema",
     "ConfidenceThresholdItem",
     "ConfidenceThresholdSaveRequest",
     "ConfidenceThresholdSchema",

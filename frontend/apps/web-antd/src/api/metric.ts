@@ -725,6 +725,44 @@ export namespace MetricApi {
     sortOrder?: 'asc' | 'desc';
     limit?: number;
   }
+
+  // ========================================================================
+  // P0-B A6 算法参数配置（3 指标 × 4 控制类型）
+  // 后端端点 /configs/algorithm-params，响应为合并视图（含 defaults + overridden）
+  // ========================================================================
+
+  /** 算法参数单项（metric × controlType） */
+  export interface AlgorithmParamsControlItem {
+    controlType: ControlType;
+    params: Record<string, any>;
+    defaults: Record<string, any>;
+    overridden: boolean;
+  }
+
+  /** 指标参数组 */
+  export interface AlgorithmParamsMetricGroup {
+    metricCode: string;
+    metricName: string;
+    items: AlgorithmParamsControlItem[];
+  }
+
+  /** 全部算法参数合并视图 */
+  export interface AlgorithmParamsSchema {
+    metrics: AlgorithmParamsMetricGroup[];
+    updatedAt?: null | string;
+    updatedBy?: null | string;
+  }
+
+  /** 保存项 */
+  export interface AlgorithmParamsSaveItem {
+    controlType: ControlType;
+    params: Record<string, any>;
+  }
+
+  /** 保存请求 */
+  export interface AlgorithmParamsSaveRequest {
+    items: AlgorithmParamsSaveItem[];
+  }
 }
 
 const BASE = '/performance';
@@ -1107,6 +1145,19 @@ export interface KpiSnapshotItem {
   validRate: null | number;
   confidenceLevel: ConfidenceLevel | null;
   dataLineage: MetricApi.DataLineage | null;
+  // Phase 1 新增指标（HiaMonitor 借鉴）
+  pvMean: null | number;
+  pvStd: null | number;
+  spMean: null | number;
+  spStd: null | number;
+  opMean: null | number;
+  opStd: null | number;
+  valveLinearity: null | number;
+  valveNonlinearity: null | number;
+  valveOpMin: null | number;
+  valveOpMax: null | number;
+  oscillationAmplitude: null | number;
+  setpointCrossingCount: null | number;
 }
 
 /** 快照列表响应 */
@@ -1190,5 +1241,40 @@ export interface LoopConfidenceLatestItem {
 export function getLoopConfidenceLatestApi(loopId: string) {
   return requestClient.get<LoopConfidenceLatestItem | null>(
     `/loops/${loopId}/confidence-latest`,
+  );
+}
+
+// ===========================================================================
+// P0-B A6 算法参数配置 API（3 指标 × 4 控制类型，对齐 AlgorithmParamsController）
+// ===========================================================================
+
+const ALGO_PARAMS_BASE = '/configs/algorithm-params';
+
+/**
+ * 获取全部算法参数合并视图（3 指标 × 4 控制类型，含 defaults/overridden）
+ */
+export function getAlgorithmParamsApi() {
+  return requestClient.get<MetricApi.AlgorithmParamsSchema>(ALGO_PARAMS_BASE);
+}
+
+/**
+ * 获取单个指标的算法参数（4 控制类型）
+ */
+export function getMetricAlgorithmParamsApi(metricCode: string) {
+  return requestClient.get<MetricApi.AlgorithmParamsMetricGroup>(
+    `${ALGO_PARAMS_BASE}/${metricCode}`,
+  );
+}
+
+/**
+ * 更新单个指标的算法参数 — 仅 ADMIN，部分覆盖合并
+ */
+export function saveMetricAlgorithmParamsApi(
+  metricCode: string,
+  data: MetricApi.AlgorithmParamsSaveRequest,
+) {
+  return requestClient.put<MetricApi.AlgorithmParamsMetricGroup>(
+    `${ALGO_PARAMS_BASE}/${metricCode}`,
+    data,
   );
 }

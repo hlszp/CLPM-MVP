@@ -135,10 +135,12 @@ class LoopPreprocessConfig:
 
     Attributes:
         loop_id: 回路 ID
-        control_type: 控制类型（决定阈值表）
+        control_type: 控制类型（FC/PC/TC/LC/CC，决定采样频率与异常值阈值表）
         range_min: 量程下限（归一化 + 超量程检测用）
         range_max: 量程上限
         config_version: 配置版本号（缓存失效依据）
+        response_category: 响应类别（STABLE/SLOW/FAST/LOGIC，来自 loop_ledger.control_type，
+            用于算法参数配置查询；None 时计算器回落 STABLE 默认值）
     """
 
     loop_id: str
@@ -146,6 +148,7 @@ class LoopPreprocessConfig:
     range_min: float
     range_max: float
     config_version: str = "v1"
+    response_category: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +219,9 @@ class DataBlock:
     config_version: str = "v1"
     preprocess_version: str = "pre_v1"
     point_count: int = 0
+    # P0-B: 控制类型（STABLE/SLOW/FAST/LOGIC），由 DataPlanner 从
+    # LoopPreprocessConfig.control_type 注入，供计算器读取算法参数配置
+    control_type: str | None = None
 
     def __post_init__(self) -> None:
         if not self.point_count and self.timestamps:

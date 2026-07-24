@@ -1628,13 +1628,14 @@ async def _batch_load_loop_configs(db, loop_ids: list[str]) -> dict[str, dict]:
 
     configs: dict[str, dict] = {}
 
-    # 1. 批量查询 LoopLedger（OP 限位 + updated_at）
+    # 1. 批量查询 LoopLedger（OP 限位 + updated_at + control_type 响应类别）
     loop_result = await db.execute(
         select(
             LoopLedger.id,
             LoopLedger.op_output_lower_limit,
             LoopLedger.op_output_upper_limit,
             LoopLedger.updated_at,
+            LoopLedger.control_type,
         ).where(LoopLedger.id.in_(loop_ids))
     )
     for row in loop_result.all():
@@ -1645,6 +1646,8 @@ async def _batch_load_loop_configs(db, loop_ids: list[str]) -> dict[str, dict]:
             "range_min": 0.0,
             "range_max": 100.0,
             "config_version": f"cfg_{int(row[3].timestamp())}" if row[3] else "v1",
+            # P0-B: 响应类别（STABLE/SLOW/FAST/LOGIC），供指标计算器读取算法参数
+            "control_type": row[4],
         }
 
     # 2. 批量查询 LoopTagMapping（所有回路的 tag 映射）
@@ -1746,6 +1749,8 @@ def _make_config_loader(loop_cfg: dict | None):
             range_min=loop_cfg.get("range_min", 0.0),
             range_max=loop_cfg.get("range_max", 100.0),
             config_version=loop_cfg.get("config_version", "v1"),
+            # P0-B: 响应类别（STABLE/SLOW/FAST/LOGIC）来自 loop_ledger.control_type
+            response_category=loop_cfg.get("control_type"),
         )
 
     return _loader

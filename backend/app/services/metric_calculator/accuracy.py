@@ -21,10 +21,16 @@ from __future__ import annotations
 import logging
 import math
 
+import numpy as np
+
 from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
+
+#: 算法回退默认值（与 algorithm_config._DEFAULTS 一致，配置缺失时使用）
+_DEFAULT_E_MAX_PERCENTILE = 100
 
 
 class AccuracyRateCalculator(MetricCalculatorBase):
@@ -62,6 +68,15 @@ class AccuracyRateCalculator(MetricCalculatorBase):
         # |E|_max：优先从 CONFIG 信号读取（管理员手工指定），
         # 否则从数据计算 Σ[max(|E_i|) - |E_i|] / n（对齐 FDS v5.1 / 算法 v2.1）
         e_max = self._read_e_max(bundle, abs_errors)
+
+        # P0-B: 算法参数 e_max_percentile（默认 100=不截断，与原算法一致）
+        # <100 时对数据驱动 e_max 做百分位截断，抑制极端偏差对 |E|_max 的抬升
+        params = get_algorithm_params("accuracy_rate", bundle.data_block.control_type)
+        e_max_percentile = float(params.get("e_max_percentile", _DEFAULT_E_MAX_PERCENTILE))
+        if e_max_percentile < 100 and e_max > 0 and abs_errors:
+            percentile_cap = float(np.percentile(abs_errors, e_max_percentile))
+            if percentile_cap > 0:
+                e_max = min(e_max, percentile_cap)
 
         # e_max == 0 表示所有偏差相等（无离散度），A = 100%（对齐算法 v2.1 §4.4.4 步骤 8）
         if e_max <= 0:

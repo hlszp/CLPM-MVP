@@ -6,6 +6,7 @@ Imports all model modules so that ``Base.metadata`` is fully populated when
 
 from __future__ import annotations
 
+from app.models.algorithm_parameter import AlgorithmParameter
 from app.models.audit import SysAuditLog
 from app.models.base import Base, TimestampMixin
 from app.models.dcs_mode_mapping import DcsModeMapping
@@ -41,6 +42,7 @@ from app.models.unit_kpi_summary import UnitKpiSummary
 __all__ = [
     "Base",
     "TimestampMixin",
+    "AlgorithmParameter",
     "SysUser",
     "PlantNode",
     "LoopLedger",

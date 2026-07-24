@@ -27,15 +27,20 @@ import logging
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
 
-#: 振荡判定相似率阈值
+#: 振荡判定相似率阈值（配置缺失时的算法回退默认值，与 algorithm_config._DEFAULTS 一致）
 SIMILARITY_THRESHOLD = 0.4
 
 #: 最少零交叉点数（至少 2 个完整周期）
 MIN_ZERO_CROSSINGS = 4
+
+#: 相似率过滤比率的算法回退默认值（与 algorithm_config._DEFAULTS 一致）
+_DEFAULT_MIN_RATIO = 0.05
+_DEFAULT_MAX_RATIO = 15.0
 
 
 class OscillationRateCalculator(MetricCalculatorBase):
@@ -71,6 +76,12 @@ class OscillationRateCalculator(MetricCalculatorBase):
                 {"is_oscillating": False, "oscillation_period": 0.0, "sample_count": n},
             )
 
+        # P0-B: 从配置链读取算法参数（control_type 为响应类别 STABLE/SLOW/FAST/LOGIC）
+        params = get_algorithm_params("oscillation_rate", bundle.data_block.control_type)
+        similarity_threshold = float(params.get("similarity_threshold", SIMILARITY_THRESHOLD))
+        min_ratio = float(params.get("min_ratio", _DEFAULT_MIN_RATIO))
+        max_ratio = float(params.get("max_ratio", _DEFAULT_MAX_RATIO))
+
         errors = np.array([float(pv) - float(sp) for pv, sp in pairs], dtype=float)
 
         # 步骤 2：识别零交叉点
@@ -104,17 +115,17 @@ class OscillationRateCalculator(MetricCalculatorBase):
             )
 
         # 步骤 4：计算 IAE 相似率 S_A/S_B（最小距离法）
-        s_a = self._similarity_rate(pos_iae)
-        s_b = self._similarity_rate(neg_iae)
+        s_a = self._similarity_rate(pos_iae, min_ratio, max_ratio)
+        s_b = self._similarity_rate(neg_iae, min_ratio, max_ratio)
 
         # 步骤 5：计算持续时间相似率 S_TA/S_TB（设计文档 §4.6.2 步骤 5，同一算法）
         # 注：设计文档伪代码 line 19-22 综合判定仅用 S_A/S_B，S_TA/S_TB 作为辅助诊断输出
-        s_ta = self._similarity_rate(pos_dur)
-        s_tb = self._similarity_rate(neg_dur)
+        s_ta = self._similarity_rate(pos_dur, min_ratio, max_ratio)
+        s_tb = self._similarity_rate(neg_dur, min_ratio, max_ratio)
 
         # 步骤 6：综合振荡率（设计文档 §4.6.2 步骤 6）
         osc_value = min(s_a, s_b) * 100.0
-        is_osc = s_a >= SIMILARITY_THRESHOLD and s_b >= SIMILARITY_THRESHOLD
+        is_osc = s_a >= similarity_threshold and s_b >= similarity_threshold
 
         # 振荡周期 = 2 × 平均半周期（设计文档伪代码 line 23-25）
         period = 0.0
@@ -195,12 +206,16 @@ class OscillationRateCalculator(MetricCalculatorBase):
         return segments
 
     @staticmethod
-    def _similarity_rate(values: list[float]) -> float:
+    def _similarity_rate(
+        values: list[float],
+        min_ratio: float = _DEFAULT_MIN_RATIO,
+        max_ratio: float = _DEFAULT_MAX_RATIO,
+    ) -> float:
         """计算相似率（最小距离法）— 向量化实现.
 
         算法：
             1. 找到使 Σ(v_i - v_j)² 最小的 v_j 作为 avg
-            2. 清除不相似数据（|v/avg| < 0.05 或 > 15）
+            2. 清除不相似数据（|v/avg| < min_ratio 或 > max_ratio）
             3. 重新计算平均值 cleaned_avg
             4. similarity = 1 - |min(cleaned_avg, avg) - avg| / |avg|
         """
@@ -221,9 +236,9 @@ class OscillationRateCalculator(MetricCalculatorBase):
         if abs(avg) < 1e-12:
             return 0.0
 
-        # 清除不相似数据
+        # 清除不相似数据（min_ratio/max_ratio 来自算法参数配置）
         ratios = np.abs(arr / avg)
-        cleaned = arr[(ratios >= 0.05) & (ratios <= 15)]
+        cleaned = arr[(ratios >= min_ratio) & (ratios <= max_ratio)]
         if len(cleaned) == 0:
             return 0.0
 

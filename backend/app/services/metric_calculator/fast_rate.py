@@ -20,9 +20,14 @@ import logging
 import math
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
+
+#: 算法回退默认值（与 algorithm_config._DEFAULTS 一致，配置缺失时使用）
+_DEFAULT_IDEAL_SETTLING_RATIO = 1.0
+_DEFAULT_SETTLING_TOLERANCE = 0.0
 
 
 class FastRateCalculator(MetricCalculatorBase):
@@ -71,6 +76,17 @@ class FastRateCalculator(MetricCalculatorBase):
                 {"actual_settling_time": actual_t, "ideal_settling_time": ideal_t},
             )
 
+        # P0-B: 从配置链读取算法参数（control_type 为响应类别 STABLE/SLOW/FAST/LOGIC）
+        # 阈值 = ideal_t × ideal_settling_ratio × (1 + settling_tolerance)
+        # 默认 ideal_settling_ratio=1.0, settling_tolerance=0.0
+        # → 阈值=ideal_t（与原 actual_t<=ideal_t 一致）
+        params = get_algorithm_params("fast_rate", bundle.data_block.control_type)
+        ideal_settling_ratio = float(
+            params.get("ideal_settling_ratio", _DEFAULT_IDEAL_SETTLING_RATIO)
+        )
+        settling_tolerance = float(params.get("settling_tolerance", _DEFAULT_SETTLING_TOLERANCE))
+        fast_threshold = ideal_t * ideal_settling_ratio * (1.0 + settling_tolerance)
+
         # 实际稳态时间无效（settling_time 返回 INCONCLUSIVE）→ 快速率也 INCONCLUSIVE
         if settling_result is not None and settling_result.value is None:
             return self._make_inconclusive(
@@ -92,9 +108,9 @@ class FastRateCalculator(MetricCalculatorBase):
                 },
             )
 
-        # T ≤ T' → 快速率 100%
-        if actual_t <= ideal_t:
-            logger.debug("[快速率] T=%.1f ≤ T'=%.1f，返回 100", actual_t, ideal_t)
+        # T ≤ 阈值 → 快速率 100%
+        if actual_t <= fast_threshold:
+            logger.debug("[快速率] T=%.1f ≤ 阈值=%.1f，返回 100", actual_t, fast_threshold)
             return self._make_result(
                 bundle,
                 100.0,
@@ -105,15 +121,15 @@ class FastRateCalculator(MetricCalculatorBase):
                 },
             )
 
-        # T > T' → F = 1/e^((T-T')/T') × 100
+        # T > 阈值 → F = 1/e^((T-T')/T') × 100
         ratio = (actual_t - ideal_t) / ideal_t
         fast_rate = (1.0 / math.exp(ratio)) * 100.0
         fast_rate = self._clamp(fast_rate)
 
         logger.debug(
-            "[快速率] T=%.1f > T'=%.1f, ratio=%.4f, F=%.2f",
+            "[快速率] T=%.1f > 阈值=%.1f, ratio=%.4f, F=%.2f",
             actual_t,
-            ideal_t,
+            fast_threshold,
             ratio,
             fast_rate,
         )

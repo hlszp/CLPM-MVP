@@ -24,6 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.endpoints import (
     aas,
+    # P0-B: 指标算法参数配置
+    algorithm_config,
     algorithms,
     audit_logs,
     auth,
@@ -323,6 +325,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("从 sys_config 预载异常值检测参数失败（将使用算法默认值）: %s", exc)
 
+    # P0-B: 从 algorithm_parameter 表预载指标算法参数到进程内缓存
+    # 预载失败回落算法默认值，不阻塞启动
+    from app.services.algorithm_config import preload_algorithm_params
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await preload_algorithm_params(db)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预载指标算法参数失败（将使用算法默认值）: %s", exc)
+
     # 从 sys_config 预载诊断触发条件到进程内缓存（整改计划 C6，
     # 预载失败回落默认值 score_threshold=60/concurrency=5/min_data_points=32，不阻塞启动）
     from app.services.diagnosis_trigger_config import preload_diagnosis_trigger
@@ -446,6 +458,8 @@ def create_app() -> FastAPI:
 
     # v6.2: 8 类异常值检测参数与启停开关配置
     v1_router.include_router(outlier_config.router)
+    # P0-B: 算法参数配置
+    v1_router.include_router(algorithm_config.router)
     v1_router.include_router(diagnosis_trigger_config.router)
     # v4.0: 评估任务管理（标准/自定义）
     v1_router.include_router(eval_tasks.router)

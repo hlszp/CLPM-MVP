@@ -61,6 +61,16 @@ const routes: RouteRecordRaw[] = [
           title: '自动报表',
         },
       },
+      {
+        name: 'SystemAlgorithmParams',
+        path: '/system/algorithm-params',
+        component: () => import('#/views/system/algorithm-params/index.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:sliders-horizontal',
+          title: '算法参数配置',
+        },
+      },
     ],
   },
 ];

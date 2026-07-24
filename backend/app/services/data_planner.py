@@ -704,6 +704,8 @@ class DataPlanner:
             config_version=base_block.config_version,
             preprocess_version=base_block.preprocess_version,
             point_count=base_block.point_count,
+            # P0-B: 派生 DataBlock 继承 BASE 的响应类别
+            control_type=base_block.control_type,
         )
 
     # ------------------------------------------------------------------
@@ -945,12 +947,17 @@ class DataPlanner:
         else:
             config_version = "v1"
 
+        # P0-B: 响应类别（STABLE/SLOW/FAST/LOGIC）来自 loop_ledger.control_type，
+        # 供指标计算器读取算法参数；None 时计算器回落 STABLE 默认值
+        response_category = loop.control_type if loop else None
+
         return LoopPreprocessConfig(
             loop_id=loop_id,
             control_type=control_type,
             range_min=range_min,
             range_max=range_max,
             config_version=config_version,
+            response_category=response_category,
         )
 
 

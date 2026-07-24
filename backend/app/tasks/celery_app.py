@@ -153,6 +153,13 @@ def _preload_datasource_config_sync() -> None:
                 await preload_rules(db)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("worker 子进程预载诊断专家规则失败（将回退到硬编码规则）: %s", exc)
+            # P0-B: 预载指标算法参数（失败回落算法默认值）
+            try:
+                from app.services.algorithm_config import preload_algorithm_params
+
+                await preload_algorithm_params(db)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("worker 子进程预载指标算法参数失败（将使用算法默认值）: %s", exc)
 
     loop = asyncio.new_event_loop()
     try:

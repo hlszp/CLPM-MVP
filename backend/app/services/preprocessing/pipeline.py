@@ -161,6 +161,8 @@ class PreprocessingPipeline:
             config_version=self.config.config_version,
             preprocess_version=PREPROCESS_VERSION,
             point_count=n,
+            # P0-B: 注入响应类别（STABLE/SLOW/FAST/LOGIC），供指标计算器读取算法参数
+            control_type=self.config.response_category,
         )
 
         logger.debug(
