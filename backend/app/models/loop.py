@@ -24,6 +24,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
+#: 复杂回路角色常量（P4 RFC 方案 A）
+COMPLEX_ROLE_MAIN = "MAIN"
+COMPLEX_ROLE_SUB = "SUB"
+
 
 class LoopLedger(Base):
     """Loop ledger — core entity of the system (DDL §3)."""
@@ -131,6 +135,19 @@ class LoopLedger(Base):
         nullable=True,
         comment="理想稳态时间（秒），空则按控制类型默认值",
     )
+    # P4 复杂回路分组（RFC 决策点 1 方案 A）：同 complex_loop_group_id 的回路归为一个
+    # 物理控制回路（串级/超驰/NooM），节点聚合时按 group 去重（MAIN 代表）。
+    # 两者同时为 NULL = 普通单回路；同时非 NULL = 属于某复杂回路组（见 ck_*_coherence）。
+    complex_loop_group_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        nullable=True,
+        comment="复杂回路分组 ID；同 ID 回路归为一个物理控制回路，NULL=普通单回路",
+    )
+    complex_role: Mapped[str | None] = mapped_column(
+        String(10),
+        nullable=True,
+        comment="复杂回路角色：MAIN(主回路,聚合代表) / SUB(副回路)；NULL=普通单回路",
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -146,11 +163,24 @@ class LoopLedger(Base):
             "importance_level IN (1, 2, 3)",
             name="ck_loop_ledger_importance_level",
         ),
+        # P4：复杂回路角色取值校验
+        CheckConstraint(
+            "complex_role IS NULL OR complex_role IN ('MAIN', 'SUB')",
+            name="ck_loop_ledger_complex_role",
+        ),
+        # P4：分组 ID 与角色一致性——两者须同时为 NULL 或同时非 NULL
+        CheckConstraint(
+            "(complex_loop_group_id IS NULL AND complex_role IS NULL) "
+            "OR (complex_loop_group_id IS NOT NULL AND complex_role IS NOT NULL)",
+            name="ck_loop_ledger_complex_group_coherence",
+        ),
         Index("uk_loop_ledger_tag_name", "tag_name", unique=True),
         Index("idx_loop_ledger_unit_id", "unit_id"),
         Index("idx_loop_ledger_status", "status"),
         Index("idx_loop_ledger_tag_name", "tag_name"),
         Index("idx_loop_ledger_importance_level", "importance_level"),
+        # P4：按分组 ID 查询同组回路（聚合去重用）
+        Index("idx_loop_ledger_complex_group", "complex_loop_group_id"),
     )
 
 
