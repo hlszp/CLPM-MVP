@@ -411,6 +411,22 @@ class KpiSnapshotSchema(CamelModel):
     validRate: float | None = None
     confidenceLevel: str | None = None  # A/B/C/D/E
     dataLineage: DataLineageSchema | None = None
+    # --- Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）---
+    # 统计指标
+    pvMean: float | None = None
+    pvStd: float | None = None
+    spMean: float | None = None
+    spStd: float | None = None
+    opMean: float | None = None
+    opStd: float | None = None
+    # 阀门诊断指标
+    valveLinearity: float | None = None
+    valveNonlinearity: float | None = None
+    valveOpMin: float | None = None
+    valveOpMax: float | None = None
+    # 振荡/穿越指标
+    oscillationAmplitude: float | None = None
+    setpointCrossingCount: int | None = None
 
 
 class KpiSnapshotListItem(CamelModel):
@@ -444,6 +460,19 @@ class KpiSnapshotListItem(CamelModel):
     validRate: float | None = None
     confidenceLevel: str | None = None
     dataLineage: DataLineageSchema | None = None
+    # --- Phase 1 新增指标 ---
+    pvMean: float | None = None
+    pvStd: float | None = None
+    spMean: float | None = None
+    spStd: float | None = None
+    opMean: float | None = None
+    opStd: float | None = None
+    valveLinearity: float | None = None
+    valveNonlinearity: float | None = None
+    valveOpMin: float | None = None
+    valveOpMax: float | None = None
+    oscillationAmplitude: float | None = None
+    setpointCrossingCount: int | None = None
 
 
 class KpiSnapshotListData(CamelModel):

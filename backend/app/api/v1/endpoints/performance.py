@@ -425,6 +425,23 @@ async def list_loop_snapshots_endpoint(
                 validRate=_to_float(snap.valid_rate),
                 confidenceLevel=snap.confidence_level,
                 dataLineage=data_lineage,
+                # Phase 1 新增指标
+                pvMean=_to_float(snap.pv_mean),
+                pvStd=_to_float(snap.pv_std),
+                spMean=_to_float(snap.sp_mean),
+                spStd=_to_float(snap.sp_std),
+                opMean=_to_float(snap.op_mean),
+                opStd=_to_float(snap.op_std),
+                valveLinearity=_to_float(snap.valve_linearity),
+                valveNonlinearity=_to_float(snap.valve_nonlinearity),
+                valveOpMin=_to_float(snap.valve_op_min),
+                valveOpMax=_to_float(snap.valve_op_max),
+                oscillationAmplitude=_to_float(snap.oscillation_amplitude),
+                setpointCrossingCount=(
+                    int(snap.setpoint_crossing_count)
+                    if snap.setpoint_crossing_count is not None
+                    else None
+                ),
             )
         )
 

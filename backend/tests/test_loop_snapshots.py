@@ -69,6 +69,19 @@ def _make_snapshot_full(
         "dataPolicyVersion": "pre_v1",
         "algorithmVersion": "KPI_CALC_v2.0",
     }
+    # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+    s.pv_mean = Decimal("50.12")
+    s.pv_std = Decimal("2.34")
+    s.sp_mean = Decimal("50.00")
+    s.sp_std = Decimal("0.10")
+    s.op_mean = Decimal("55.60")
+    s.op_std = Decimal("8.90")
+    s.valve_linearity = Decimal("0.92")
+    s.valve_nonlinearity = Decimal("0.08")
+    s.valve_op_min = Decimal("12.30")
+    s.valve_op_max = Decimal("88.70")
+    s.oscillation_amplitude = Decimal("3.45")
+    s.setpoint_crossing_count = 7
     return s
 
 
@@ -309,6 +322,57 @@ class TestListLoopSnapshots:
         assert "validRate" in item
         assert "confidenceLevel" in item
         assert "dataLineage" in item
+        # Phase 1 新增指标（HiaMonitor 借鉴）
+        assert "pvMean" in item
+        assert "pvStd" in item
+        assert "spMean" in item
+        assert "spStd" in item
+        assert "opMean" in item
+        assert "opStd" in item
+        assert "valveLinearity" in item
+        assert "valveNonlinearity" in item
+        assert "valveOpMin" in item
+        assert "valveOpMax" in item
+        assert "oscillationAmplitude" in item
+        assert "setpointCrossingCount" in item
+
+    def test_list_snapshots_phase1_metric_values(self, client, mock_db, fake_redis) -> None:
+        """Phase 1 新增指标值正确序列化（Decimal→float，int 保留）。"""
+        snap = _make_snapshot_full()
+        rows = [(snap, "tag1")]
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        item = resp.json()["data"]["items"][0]
+        # 信号统计（Decimal → float）
+        assert item["pvMean"] == 50.12
+        assert item["pvStd"] == 2.34
+        assert item["spMean"] == 50.0
+        assert item["spStd"] == 0.1
+        assert item["opMean"] == 55.6
+        assert item["opStd"] == 8.9
+        # 阀门诊断
+        assert item["valveLinearity"] == 0.92
+        assert item["valveNonlinearity"] == 0.08
+        assert item["valveOpMin"] == 12.3
+        assert item["valveOpMax"] == 88.7
+        # 振荡/穿越（振幅 Decimal→float，穿越次数 int）
+        assert item["oscillationAmplitude"] == 3.45
+        assert item["setpointCrossingCount"] == 7
 
     def test_list_snapshots_no_token(self, client) -> None:
         """未认证返回 401."""

@@ -83,10 +83,13 @@ import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
 import IaeCard from '#/components/diagnosis-visualization/iae-card.vue';
 import KanoCard from '#/components/diagnosis-visualization/kano-card.vue';
 import QualityTimelineChart from '#/components/diagnosis-visualization/quality-timeline-chart.vue';
+import RadarChart from '#/components/diagnosis-visualization/radar-chart.vue';
 import SaturationChart from '#/components/diagnosis-visualization/saturation-chart.vue';
 import ScatterChart from '#/components/diagnosis-visualization/scatter-chart.vue';
+import ScoreBreakdown from '#/components/diagnosis-visualization/score-breakdown.vue';
 import SlowResponseCard from '#/components/diagnosis-visualization/slow-response-card.vue';
 import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
+import StatisticsBarChart from '#/components/diagnosis-visualization/statistics-bar-chart.vue';
 import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -757,6 +760,15 @@ const drawerRecord = ref<LoopPerformanceRow | null>(null);
 const drawerHistory = ref<KpiSnapshotItem[]>([]);
 const drawerHistoryLoading = ref(false);
 
+/** 抽屉 Tab：性能详情 / 综合评估 */
+const drawerTab = ref<'comprehensive' | 'detail'>('detail');
+
+/** 抽屉综合评估 Tab 所需的诊断可视化数据（PV-OP 散点图等） */
+const drawerDiagData = ref<DiagnosisApi.DiagnosisVisualizationData | null>(
+  null,
+);
+const drawerDiagLoading = ref(false);
+
 async function loadDrawerHistory(loopId: string) {
   drawerHistoryLoading.value = true;
   try {
@@ -774,10 +786,39 @@ async function loadDrawerHistory(loopId: string) {
   }
 }
 
+/** 加载抽屉综合评估 Tab 所需诊断可视化数据 */
+async function loadDrawerDiag() {
+  if (!drawerRecord.value?.loopId) return;
+  drawerDiagLoading.value = true;
+  try {
+    drawerDiagData.value = await getDiagnosisVisualizationApi(
+      drawerRecord.value.loopId,
+    );
+  } catch (error: any) {
+    console.error('加载综合评估诊断数据失败:', error);
+    drawerDiagData.value = null;
+  } finally {
+    drawerDiagLoading.value = false;
+  }
+}
+
+/** 抽屉 Tab 切换：首次切到综合评估时懒加载诊断数据 */
+function handleDrawerTabChange(key: number | string) {
+  if (
+    String(key) === 'comprehensive' &&
+    drawerDiagData.value === null &&
+    !drawerDiagLoading.value
+  ) {
+    loadDrawerDiag();
+  }
+}
+
 function openDetail(record: LoopPerformanceRow) {
   drawerRecord.value = record;
   drawerVisible.value = true;
   drawerHistory.value = [];
+  drawerTab.value = 'detail';
+  drawerDiagData.value = null;
   if (record.loopId) {
     loadDrawerHistory(record.loopId);
   }
@@ -787,6 +828,8 @@ function closeDetail() {
   drawerVisible.value = false;
   drawerRecord.value = null;
   drawerHistory.value = [];
+  drawerTab.value = 'detail';
+  drawerDiagData.value = null;
 }
 
 /** 表格行点击 → 打开详情抽屉（对齐低效排行页行级交互） */
@@ -1574,260 +1617,346 @@ onMounted(async () => {
       @close="closeDetail"
     >
       <template v-if="drawerRecord">
-        <!-- 回路基本信息 -->
-        <div class="mb-2 text-sm font-medium">回路基本信息</div>
-        <Descriptions
-          :column="2"
+        <Tabs
+          v-model:active-key="drawerTab"
           size="small"
-          bordered
-          :label-style="{ width: '120px' }"
+          @change="handleDrawerTabChange"
         >
-          <DescriptionsItem label="回路编号">
-            {{ drawerRecord.loopTagName || '—' }}
-          </DescriptionsItem>
-          <DescriptionsItem label="回路名称">
-            {{ drawerRecord.description || '—' }}
-          </DescriptionsItem>
-          <DescriptionsItem label="回路类型">
-            {{ LOOP_TYPE_MAP[drawerRecord.loopType ?? 'OTHER']?.label ?? '—' }}
-          </DescriptionsItem>
-          <DescriptionsItem label="控制类型">
-            {{
-              drawerRecord.controlType
-                ? (CONTROL_TYPE_MAP[drawerRecord.controlType] ??
-                  drawerRecord.controlType)
-                : '—'
-            }}
-          </DescriptionsItem>
-          <DescriptionsItem label="控制方式">
-            <Tag
-              v-if="drawerRecord.controlMode"
-              :color="controlModeColor(drawerRecord.controlMode)"
+          <Tabs.TabPane key="detail" tab="性能详情">
+            <!-- 回路基本信息 -->
+            <div class="mb-2 text-sm font-medium">回路基本信息</div>
+            <Descriptions
+              :column="2"
+              size="small"
+              bordered
+              :label-style="{ width: '120px' }"
             >
-              {{ drawerRecord.controlMode }}
-            </Tag>
-            <span v-else>—</span>
-          </DescriptionsItem>
-          <DescriptionsItem label="评估等级">
-            <Tag
-              v-if="getGrade(drawerRecord.score)"
-              :color="GRADE_COLOR_MAP[getGrade(drawerRecord.score)!]"
-            >
-              {{ GRADE_LABEL_MAP[getGrade(drawerRecord.score)!] }}
-            </Tag>
-            <span v-else>—</span>
-          </DescriptionsItem>
-          <DescriptionsItem label="PV 量程">
-            {{
-              drawerRecord.loopMeta?.pvRange
-                ? `${drawerRecord.loopMeta.pvRange.min ?? '—'} ~ ${
-                    drawerRecord.loopMeta.pvRange.max ?? '—'
-                  }${drawerRecord.loopMeta.pvUnit ? ` ${drawerRecord.loopMeta.pvUnit}` : ''}`
-                : '—'
-            }}
-          </DescriptionsItem>
-          <DescriptionsItem label="OP 量程">
-            {{
-              drawerRecord.loopMeta?.opRange
-                ? `${drawerRecord.loopMeta.opRange.min ?? '—'} ~ ${
-                    drawerRecord.loopMeta.opRange.max ?? '—'
-                  }${drawerRecord.loopMeta.opUnit ? ` ${drawerRecord.loopMeta.opUnit}` : ''}`
-                : '—'
-            }}
-          </DescriptionsItem>
-        </Descriptions>
-
-        <!-- 8 大性能评估 KPI -->
-        <div class="mb-2 mt-4 text-sm font-medium">8 大性能评估 KPI 指标</div>
-        <Descriptions
-          :column="2"
-          size="small"
-          bordered
-          :label-style="{ width: '120px' }"
-        >
-          <DescriptionsItem label="综合评分">
-            <span
-              class="font-semibold"
-              :style="{ color: scoreColor(drawerRecord.score) }"
-            >
-              {{ formatNumber(drawerRecord.score) }}
-            </span>
-          </DescriptionsItem>
-          <DescriptionsItem label="准确率">
-            {{ formatNumber(drawerRecord.accuracyRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="快速率">
-            {{ formatNumber(drawerRecord.fastRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="平稳率">
-            {{ formatNumber(drawerRecord.steadyRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="有效自控率">
-            {{ formatNumber(drawerRecord.effectiveAutoRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="自控率">
-            {{ formatNumber(drawerRecord.autoModeRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="好值率">
-            {{ formatNumber(drawerRecord.goodValueRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="振荡率">
-            {{ formatNumber(drawerRecord.oscillationRate, '%') }}
-          </DescriptionsItem>
-        </Descriptions>
-
-        <!-- 诊断与扩展指标（不参与评分） -->
-        <div class="mb-2 mt-4 text-sm font-medium">诊断与扩展指标</div>
-        <Descriptions
-          :column="2"
-          size="small"
-          bordered
-          :label-style="{ width: '120px' }"
-        >
-          <DescriptionsItem label="饱和率">
-            {{ formatNumber(drawerRecord.saturationRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="输出跳变率">
-            {{ formatNumber(drawerRecord.outputTravelIndex) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="阀门粘滞指数">
-            {{ formatNumber(drawerRecord.stictionIndex) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="理想稳定时间">
-            {{ formatNumber(drawerRecord.idealSettlingTime, 's') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="稳定时间">
-            {{ formatNumber(drawerRecord.settlingTime, 's') }}
-          </DescriptionsItem>
-        </Descriptions>
-
-        <!-- 可信度 + 时间窗口 + 评估时间 -->
-        <div class="mb-2 mt-4 text-sm font-medium">评估信息</div>
-        <Descriptions
-          :column="2"
-          size="small"
-          bordered
-          :label-style="{ width: '120px' }"
-        >
-          <DescriptionsItem label="可信度">
-            <Badge
-              v-if="drawerRecord.confidenceLevel"
-              :color="CONFIDENCE_COLOR_MAP[drawerRecord.confidenceLevel]"
-              :text="CONFIDENCE_LABEL_MAP[drawerRecord.confidenceLevel]"
-            />
-            <span v-else>—</span>
-          </DescriptionsItem>
-          <DescriptionsItem label="评估状态">
-            <Tag :color="STATUS_COLOR_MAP[drawerRecord.status] || 'default'">
-              {{ STATUS_LABEL_MAP[drawerRecord.status] || drawerRecord.status }}
-            </Tag>
-          </DescriptionsItem>
-          <DescriptionsItem label="时间窗口">
-            <span class="font-mono text-xs">
-              {{ formatTsRange(drawerRecord.tsStart, drawerRecord.tsEnd) }}
-            </span>
-          </DescriptionsItem>
-          <DescriptionsItem label="评估时间">
-            <span class="font-mono text-xs">
-              {{ formatTime(drawerRecord.tsEnd) }}
-            </span>
-          </DescriptionsItem>
-          <DescriptionsItem label="有效数据率">
-            {{ formatRatio(drawerRecord.validRate) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="算法版本">
-            {{ drawerRecord.algorithmVersion || '—' }}
-          </DescriptionsItem>
-        </Descriptions>
-
-        <!-- 历史快照子表（该回路最近 10 条评估记录） -->
-        <div class="mb-2 mt-4 text-sm font-medium">历史快照（最近 10 条）</div>
-        <Table
-          :columns="diagHistoryColumns"
-          :data-source="drawerHistory"
-          :loading="drawerHistoryLoading"
-          :pagination="false"
-          row-key="tsStart"
-          size="small"
-          :scroll="{ x: 680 }"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'tsRange'">
-              <span class="font-mono text-xs">
+              <DescriptionsItem label="回路编号">
+                {{ drawerRecord.loopTagName || '—' }}
+              </DescriptionsItem>
+              <DescriptionsItem label="回路名称">
+                {{ drawerRecord.description || '—' }}
+              </DescriptionsItem>
+              <DescriptionsItem label="回路类型">
                 {{
-                  formatTsRange(
-                    (record as KpiSnapshotItem).tsStart,
-                    (record as KpiSnapshotItem).tsEnd,
-                  )
+                  LOOP_TYPE_MAP[drawerRecord.loopType ?? 'OTHER']?.label ?? '—'
                 }}
-              </span>
-            </template>
-            <template v-else-if="column.key === 'score'">
-              <span
-                class="font-semibold"
-                :style="{
-                  color: scoreColor((record as KpiSnapshotItem).score),
-                }"
-              >
-                {{ formatNumber((record as KpiSnapshotItem).score) }}
-              </span>
-            </template>
-            <template
-              v-else-if="
-                (
-                  [
-                    'accuracyRate',
-                    'fastRate',
-                    'steadyRate',
-                    'effectiveAutoRate',
-                  ] as string[]
-                ).includes(column.key as string)
-              "
+              </DescriptionsItem>
+              <DescriptionsItem label="控制类型">
+                {{
+                  drawerRecord.controlType
+                    ? (CONTROL_TYPE_MAP[drawerRecord.controlType] ??
+                      drawerRecord.controlType)
+                    : '—'
+                }}
+              </DescriptionsItem>
+              <DescriptionsItem label="控制方式">
+                <Tag
+                  v-if="drawerRecord.controlMode"
+                  :color="controlModeColor(drawerRecord.controlMode)"
+                >
+                  {{ drawerRecord.controlMode }}
+                </Tag>
+                <span v-else>—</span>
+              </DescriptionsItem>
+              <DescriptionsItem label="评估等级">
+                <Tag
+                  v-if="getGrade(drawerRecord.score)"
+                  :color="GRADE_COLOR_MAP[getGrade(drawerRecord.score)!]"
+                >
+                  {{ GRADE_LABEL_MAP[getGrade(drawerRecord.score)!] }}
+                </Tag>
+                <span v-else>—</span>
+              </DescriptionsItem>
+              <DescriptionsItem label="PV 量程">
+                {{
+                  drawerRecord.loopMeta?.pvRange
+                    ? `${drawerRecord.loopMeta.pvRange.min ?? '—'} ~ ${
+                        drawerRecord.loopMeta.pvRange.max ?? '—'
+                      }${drawerRecord.loopMeta.pvUnit ? ` ${drawerRecord.loopMeta.pvUnit}` : ''}`
+                    : '—'
+                }}
+              </DescriptionsItem>
+              <DescriptionsItem label="OP 量程">
+                {{
+                  drawerRecord.loopMeta?.opRange
+                    ? `${drawerRecord.loopMeta.opRange.min ?? '—'} ~ ${
+                        drawerRecord.loopMeta.opRange.max ?? '—'
+                      }${drawerRecord.loopMeta.opUnit ? ` ${drawerRecord.loopMeta.opUnit}` : ''}`
+                    : '—'
+                }}
+              </DescriptionsItem>
+            </Descriptions>
+
+            <!-- 8 大性能评估 KPI -->
+            <div class="mb-2 mt-4 text-sm font-medium">
+              8 大性能评估 KPI 指标
+            </div>
+            <Descriptions
+              :column="2"
+              size="small"
+              bordered
+              :label-style="{ width: '120px' }"
             >
-              <span class="font-mono text-xs">
-                {{
-                  formatNumber(
-                    getMetricValue(
-                      record as KpiSnapshotItem,
-                      column.dataIndex as string,
-                    ),
-                    '%',
-                  )
-                }}
-              </span>
-            </template>
-            <template v-else-if="column.key === 'confidenceLevel'">
-              <Badge
-                v-if="(record as KpiSnapshotItem).confidenceLevel"
-                :color="
-                  CONFIDENCE_COLOR_MAP[
-                    (record as KpiSnapshotItem).confidenceLevel!
-                  ]
-                "
-                :text="
-                  CONFIDENCE_LABEL_MAP[
-                    (record as KpiSnapshotItem).confidenceLevel!
-                  ]
-                "
-              />
-              <span v-else class="text-gray-400">—</span>
-            </template>
-            <template v-else-if="column.key === 'status'">
-              <Tag
-                :color="
-                  STATUS_COLOR_MAP[(record as KpiSnapshotItem).status] ||
-                  'default'
-                "
-                class="m-0"
-              >
-                {{
-                  STATUS_LABEL_MAP[(record as KpiSnapshotItem).status] ||
-                  (record as KpiSnapshotItem).status
-                }}
-              </Tag>
-            </template>
-          </template>
-        </Table>
+              <DescriptionsItem label="综合评分">
+                <span
+                  class="font-semibold"
+                  :style="{ color: scoreColor(drawerRecord.score) }"
+                >
+                  {{ formatNumber(drawerRecord.score) }}
+                </span>
+              </DescriptionsItem>
+              <DescriptionsItem label="准确率">
+                {{ formatNumber(drawerRecord.accuracyRate, '%') }}
+              </DescriptionsItem>
+              <DescriptionsItem label="快速率">
+                {{ formatNumber(drawerRecord.fastRate, '%') }}
+              </DescriptionsItem>
+              <DescriptionsItem label="平稳率">
+                {{ formatNumber(drawerRecord.steadyRate, '%') }}
+              </DescriptionsItem>
+              <DescriptionsItem label="有效自控率">
+                {{ formatNumber(drawerRecord.effectiveAutoRate, '%') }}
+              </DescriptionsItem>
+              <DescriptionsItem label="自控率">
+                {{ formatNumber(drawerRecord.autoModeRate, '%') }}
+              </DescriptionsItem>
+              <DescriptionsItem label="好值率">
+                {{ formatNumber(drawerRecord.goodValueRate, '%') }}
+              </DescriptionsItem>
+              <DescriptionsItem label="振荡率">
+                {{ formatNumber(drawerRecord.oscillationRate, '%') }}
+              </DescriptionsItem>
+            </Descriptions>
+
+            <!-- 诊断与扩展指标（不参与评分） -->
+            <div class="mb-2 mt-4 text-sm font-medium">诊断与扩展指标</div>
+            <Descriptions
+              :column="2"
+              size="small"
+              bordered
+              :label-style="{ width: '120px' }"
+            >
+              <DescriptionsItem label="饱和率">
+                {{ formatNumber(drawerRecord.saturationRate, '%') }}
+              </DescriptionsItem>
+              <DescriptionsItem label="输出跳变率">
+                {{ formatNumber(drawerRecord.outputTravelIndex) }}
+              </DescriptionsItem>
+              <DescriptionsItem label="阀门粘滞指数">
+                {{ formatNumber(drawerRecord.stictionIndex) }}
+              </DescriptionsItem>
+              <DescriptionsItem label="理想稳定时间">
+                {{ formatNumber(drawerRecord.idealSettlingTime, 's') }}
+              </DescriptionsItem>
+              <DescriptionsItem label="稳定时间">
+                {{ formatNumber(drawerRecord.settlingTime, 's') }}
+              </DescriptionsItem>
+            </Descriptions>
+
+            <!-- 可信度 + 时间窗口 + 评估时间 -->
+            <div class="mb-2 mt-4 text-sm font-medium">评估信息</div>
+            <Descriptions
+              :column="2"
+              size="small"
+              bordered
+              :label-style="{ width: '120px' }"
+            >
+              <DescriptionsItem label="可信度">
+                <Badge
+                  v-if="drawerRecord.confidenceLevel"
+                  :color="CONFIDENCE_COLOR_MAP[drawerRecord.confidenceLevel]"
+                  :text="CONFIDENCE_LABEL_MAP[drawerRecord.confidenceLevel]"
+                />
+                <span v-else>—</span>
+              </DescriptionsItem>
+              <DescriptionsItem label="评估状态">
+                <Tag
+                  :color="STATUS_COLOR_MAP[drawerRecord.status] || 'default'"
+                >
+                  {{
+                    STATUS_LABEL_MAP[drawerRecord.status] || drawerRecord.status
+                  }}
+                </Tag>
+              </DescriptionsItem>
+              <DescriptionsItem label="时间窗口">
+                <span class="font-mono text-xs">
+                  {{ formatTsRange(drawerRecord.tsStart, drawerRecord.tsEnd) }}
+                </span>
+              </DescriptionsItem>
+              <DescriptionsItem label="评估时间">
+                <span class="font-mono text-xs">
+                  {{ formatTime(drawerRecord.tsEnd) }}
+                </span>
+              </DescriptionsItem>
+              <DescriptionsItem label="有效数据率">
+                {{ formatRatio(drawerRecord.validRate) }}
+              </DescriptionsItem>
+              <DescriptionsItem label="算法版本">
+                {{ drawerRecord.algorithmVersion || '—' }}
+              </DescriptionsItem>
+            </Descriptions>
+
+            <!-- 历史快照子表（该回路最近 10 条评估记录） -->
+            <div class="mb-2 mt-4 text-sm font-medium">
+              历史快照（最近 10 条）
+            </div>
+            <Table
+              :columns="diagHistoryColumns"
+              :data-source="drawerHistory"
+              :loading="drawerHistoryLoading"
+              :pagination="false"
+              row-key="tsStart"
+              size="small"
+              :scroll="{ x: 680 }"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'tsRange'">
+                  <span class="font-mono text-xs">
+                    {{
+                      formatTsRange(
+                        (record as KpiSnapshotItem).tsStart,
+                        (record as KpiSnapshotItem).tsEnd,
+                      )
+                    }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'score'">
+                  <span
+                    class="font-semibold"
+                    :style="{
+                      color: scoreColor((record as KpiSnapshotItem).score),
+                    }"
+                  >
+                    {{ formatNumber((record as KpiSnapshotItem).score) }}
+                  </span>
+                </template>
+                <template
+                  v-else-if="
+                    (
+                      [
+                        'accuracyRate',
+                        'fastRate',
+                        'steadyRate',
+                        'effectiveAutoRate',
+                      ] as string[]
+                    ).includes(column.key as string)
+                  "
+                >
+                  <span class="font-mono text-xs">
+                    {{
+                      formatNumber(
+                        getMetricValue(
+                          record as KpiSnapshotItem,
+                          column.dataIndex as string,
+                        ),
+                        '%',
+                      )
+                    }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'confidenceLevel'">
+                  <Badge
+                    v-if="(record as KpiSnapshotItem).confidenceLevel"
+                    :color="
+                      CONFIDENCE_COLOR_MAP[
+                        (record as KpiSnapshotItem).confidenceLevel!
+                      ]
+                    "
+                    :text="
+                      CONFIDENCE_LABEL_MAP[
+                        (record as KpiSnapshotItem).confidenceLevel!
+                      ]
+                    "
+                  />
+                  <span v-else class="text-gray-400">—</span>
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <Tag
+                    :color="
+                      STATUS_COLOR_MAP[(record as KpiSnapshotItem).status] ||
+                      'default'
+                    "
+                    class="m-0"
+                  >
+                    {{
+                      STATUS_LABEL_MAP[(record as KpiSnapshotItem).status] ||
+                      (record as KpiSnapshotItem).status
+                    }}
+                  </Tag>
+                </template>
+              </template>
+            </Table>
+          </Tabs.TabPane>
+
+          <!-- 综合评估 Tab -->
+          <Tabs.TabPane key="comprehensive" tab="综合评估">
+            <Row :gutter="[12, 12]">
+              <!-- Row 1 左：核心指标雷达图 -->
+              <Col :span="12">
+                <Card :bordered="false" class="chart-card">
+                  <RadarChart
+                    :accuracy="drawerRecord.accuracyRate"
+                    :fast="drawerRecord.fastRate"
+                    :stability="drawerRecord.steadyRate"
+                  />
+                </Card>
+              </Col>
+              <!-- Row 1 右：综合评分分解 -->
+              <!-- 默认权重 40/30/30；可通过 getLoopTypeWeightsApi() 按控制类型获取实际配置权重 -->
+              <Col :span="12">
+                <Card :bordered="false" class="chart-card">
+                  <ScoreBreakdown
+                    :score="drawerRecord.score"
+                    :accuracy="drawerRecord.accuracyRate"
+                    :fast="drawerRecord.fastRate"
+                    :stability="drawerRecord.steadyRate"
+                    :effective-auto-rate="drawerRecord.effectiveAutoRate"
+                    :weight-a="40"
+                    :weight-f="30"
+                    :weight-s="30"
+                  />
+                </Card>
+              </Col>
+              <!-- Row 2 左：PV-OP 散点图（复用诊断组件，需懒加载 diagData） -->
+              <Col :span="12">
+                <Card :bordered="false" class="chart-card">
+                  <ScatterChart
+                    v-if="drawerDiagData"
+                    :data="drawerDiagData.scatterPlot"
+                  />
+                  <div
+                    v-else
+                    class="flex h-full items-center justify-center text-gray-400"
+                  >
+                    {{ drawerDiagLoading ? '加载中...' : '暂无散点数据' }}
+                  </div>
+                </Card>
+              </Col>
+              <!-- Row 2 右：信号统计与阀门诊断 -->
+              <Col :span="12">
+                <Card :bordered="false" class="chart-card">
+                  <StatisticsBarChart
+                    :pv-mean="drawerRecord.pvMean"
+                    :pv-std="drawerRecord.pvStd"
+                    :sp-mean="drawerRecord.spMean"
+                    :sp-std="drawerRecord.spStd"
+                    :op-mean="drawerRecord.opMean"
+                    :op-std="drawerRecord.opStd"
+                    :valve-linearity="drawerRecord.valveLinearity"
+                    :valve-nonlinearity="drawerRecord.valveNonlinearity"
+                    :valve-op-min="drawerRecord.valveOpMin"
+                    :valve-op-max="drawerRecord.valveOpMax"
+                    :oscillation-amplitude="drawerRecord.oscillationAmplitude"
+                    :setpoint-crossing-count="
+                      drawerRecord.setpointCrossingCount
+                    "
+                  />
+                </Card>
+              </Col>
+            </Row>
+          </Tabs.TabPane>
+        </Tabs>
       </template>
     </Drawer>
 
