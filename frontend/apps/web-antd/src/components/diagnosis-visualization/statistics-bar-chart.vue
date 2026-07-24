@@ -17,18 +17,18 @@ import { useEchartsPreset } from '#/composables/use-echarts-preset';
  * 所有字段可为 null，全 null 时显示"暂无数据"。
  */
 const props = defineProps<{
-  pvMean: null | number;
-  pvStd: null | number;
-  spMean: null | number;
-  spStd: null | number;
   opMean: null | number;
   opStd: null | number;
+  oscillationAmplitude: null | number;
+  pvMean: null | number;
+  pvStd: null | number;
+  setpointCrossingCount: null | number;
+  spMean: null | number;
+  spStd: null | number;
   valveLinearity: null | number;
   valveNonlinearity: null | number;
-  valveOpMin: null | number;
   valveOpMax: null | number;
-  oscillationAmplitude: null | number;
-  setpointCrossingCount: null | number;
+  valveOpMin: null | number;
 }>();
 
 const { getTooltipPreset, getSeriesColor, themeColors, chartColors, axisBase } =

@@ -15,11 +15,11 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 const props = withDefaults(
   defineProps<{
-    score: null | number;
     accuracy: null | number;
-    fast: null | number;
-    stability: null | number;
     effectiveAutoRate: null | number;
+    fast: null | number;
+    score: null | number;
+    stability: null | number;
     weightA?: number;
     weightF?: number;
     weightS?: number;
