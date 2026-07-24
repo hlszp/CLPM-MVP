@@ -426,7 +426,7 @@
     }
   }
   ```
-* **说明**：回路位号在所属单元内唯一；新建回路默认状态为 `PARTIAL`（待关联 tag）；`scoreWeights` 仅含 3 项核心指标（accuracy_rate/fast_rate/steady_rate，权重和=100），投用指标 `effective_auto_rate` 作为折扣因子 R 不纳入权重和（对齐 §2.8 3+1+8 体系）；`scoreWeights` 可不传，缺省继承自性能指标配置默认值，权重总和须为 100%，否则返回 `ERR_METRIC_WEIGHT_SUM`；`controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`；`importanceLevel` 枚举值 `HIGH`/`MEDIUM`/`LOW`；`includeInEvaluation` 为 `false` 时该回路不参与装置级 KPI 汇总。
+* **说明**：回路位号在所属单元内唯一；新建回路默认状态为 `PARTIAL`（待关联 tag）；`scoreWeights` 仅含 3 项核心指标（accuracy_rate/fast_rate/steady_rate，权重和=100），投用指标 `effective_auto_rate` 作为折扣因子 R 不纳入权重和（对齐 §2.8 3+1+8 体系）；`scoreWeights` 可不传，缺省继承自性能指标配置默认值，权重总和须为 100%，否则返回 `ERR_METRIC_WEIGHT_SUM`；`controlType` 枚举值 `STABLE`/`SLOW`/`FAST`/`LOGIC`；`importanceLevel` 枚举值 `HIGH`/`MEDIUM`/`LOW`；`includeInEvaluation` 为 `false` 时该回路不参与装置级 KPI 汇总。v6.1 新增 `complexLoopGroupId`/`complexRole` 可选字段（通常通过 §2.2.16 批量分组 API 建立，不建议在创建回路时直接指定）。
 
 #### 2.2.9 获取回路详情 (Get Loop Detail)
 
@@ -790,6 +790,73 @@
   ```
 * **说明**：列表视图与卡片视图返回数据结构一致，仅前端渲染方式不同；回路处于 `PARTIAL` 时卡片置灰，悬浮提示缺失项；`status` 枚举值对齐实现契约 v2.0 §4.6：`READY`/`PARTIAL`/`INACTIVE`。
   v6.1 新增 `pvRange`/`pvUnit`/`opRange`/`opUnit` 字段（从关联 Tag 引用，不冗余存储），用于在列表中展示量程和单位。
+  v6.1 新增 `complexLoopGroupId`/`complexRole` 字段（可空），用于回路列表展示分组状态。
+
+#### 2.2.16 批量建立复杂回路分组 (Batch Group Loops) [v6.1 新增]
+
+* **URL**: `POST /api/v1/loops/batch-grouping`
+* **权限**: 执行层及以上（IC_ENGINEER/ADMIN）
+* **说明**: 将 2-20 个回路归为一个复杂控制回路（如串级/超驰），系统自动生成分组 UUID，并按 `mainLoopId` 指定主回路（MAIN），其余回路设为副回路（SUB）。每个分组仅允许一个 MAIN。
+* **Request Body**:
+  ```json
+  {
+    "loopIds": ["uuid-001", "uuid-002", "uuid-003"],
+    "mainLoopId": "uuid-001"
+  }
+  ```
+* **Response (200 OK)**:
+  ```json
+  {
+    "code": "0",
+    "message": "批量分组成功",
+    "data": {
+      "groupId": "uuid-group",
+      "affected": 3,
+      "assignments": [
+        { "loopId": "uuid-001", "tagName": "TIC-101", "role": "MAIN" },
+        { "loopId": "uuid-002", "tagName": "FIC-102", "role": "SUB" },
+        { "loopId": "uuid-003", "tagName": "LIC-103", "role": "SUB" }
+      ]
+    }
+  }
+  ```
+* **校验规则**:
+  * `loopIds` 须包含 2-20 个回路 ID，否则返回 `ERR_VALIDATION`（422）。
+  * `mainLoopId` 须在 `loopIds` 列表中，否则返回 `ERR_COMPLEX_GROUP_MAIN_NOT_IN_LIST`（400）。
+  * 所有 `loopIds` 须存在且属于同一工艺单元（最佳实践，非强制）。
+  * 分组建立后，原回路若已属于其他分组，将被覆盖为新分组成员。
+* **关联错误码**: `ERR_COMPLEX_GROUP_MAIN_NOT_IN_LIST`、`ERR_LOOP_NOT_FOUND`、`ERR_PERMISSION_DENIED`
+
+#### 2.2.17 获取复杂回路分组列表 (List Complex Groups) [v6.1 新增]
+
+* **URL**: `GET /api/v1/loops/complex-groups`
+* **权限**: 查看层及以上（所有角色可访问）
+* **说明**: 返回当前系统中所有复杂回路分组，按 `groupId` 聚合，每组包含主回路和副回路列表。用于回路管理页展示分组概览。
+* **Response (200 OK)**:
+  ```json
+  {
+    "code": "0",
+    "data": [
+      {
+        "groupId": "uuid-group-1",
+        "mainLoop": {
+          "loopId": "uuid-001",
+          "tagName": "TIC-101",
+          "description": "反应器入口温度"
+        },
+        "subLoops": [
+          {
+            "loopId": "uuid-002",
+            "tagName": "FIC-102",
+            "description": "进料流量"
+          }
+        ],
+        "memberCount": 2
+      }
+    ]
+  }
+  ```
+* **说明**: 仅返回 `complex_loop_group_id IS NOT NULL` 的回路；未分组的单回路不在此接口返回。`mainLoop` 为 `complex_role = MAIN` 的回路；若某分组 MAIN 缺席（异常状态），`mainLoop` 为 `null`。
 
 ---
 

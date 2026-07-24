@@ -74,6 +74,8 @@
 | control_type | VARCHAR(20) | 控制类型: `STABLE`(稳定型), `SLOW`(慢速型), `FAST`(快速型), `LOGIC`(逻辑型)，决定该回路自动套用的权重模板 [v4.1 新增] | NOT NULL, DEFAULT 'STABLE' |
 | importance_level | SMALLINT | 重要等级：`1`(一级)、`2`(二级)、`3`(三级)，决定装置级聚合权重（一级=3、二级=2、三级=1）。**前后端数据交互统一使用 int 类型**，不使用字符串枚举 [v4.1 新增] | NOT NULL, DEFAULT 2 |
 | include_in_evaluation | BOOLEAN | 是否参与评估：`TRUE` 时回路进入综合性能评分与装置级 KPI 聚合；`FALSE` 时单回路 KPI 仍正常计算但不参与装置级统计。默认 `TRUE` [v4.1 新增] | NOT NULL, DEFAULT TRUE |
+| complex_loop_group_id | UUID | 复杂回路分组 ID；同 ID 的回路归为一个物理控制回路（如串级/超驰），节点聚合时按组去重为 1 个代表。`NULL` = 普通单回路 [v6.1 新增] | |
+| complex_role | VARCHAR(10) | 复杂回路角色：`MAIN`（主回路，聚合代表）/ `SUB`（副回路）。`NULL` = 普通单回路。须与 `complex_loop_group_id` 同时为空或同时设置 [v6.1 新增] | |
 
 **状态语义**：
 * `READY`：PV/SP/OP/MODE 四个必填 Tag 全部关联成功，回路进入评估流程。
@@ -100,6 +102,22 @@
 **include_in_evaluation 语义**（对齐 FDS v6.0 §5.2.3 回路评估参与配置说明）：
 * `TRUE` 且回路 `status=READY` 且回路 KPI 快照 `status ≠ INCONCLUSIVE`：进入综合性能评分（详见 FDS §5.3.7.2）与装置级三大 KPI 聚合（综合性能 / 平均自控率 / 稳定率，详见 FDS §5.3.7.3）。
 * `FALSE`：单回路 KPI 仍按引擎规则正常计算（可在回路监控、诊断中心查看），但不进入综合性能评分、不参与装置级聚合、不出现在低效回路排行。典型场景：试运行回路、临时停用回路、非关键测量回路、未完成调试的新回路。
+
+**复杂回路分组语义**（对齐 RFC `complex-loop-aggregation-rfc-2026-07-24.md` 决策点 1-2）[v6.1 新增]：
+
+* `complex_loop_group_id` 与 `complex_role` 须**同时为空**（普通单回路）或**同时非空**（复杂回路组成员），由 CHECK 约束保证一致性。
+* 同一 `complex_loop_group_id` 的回路归为一个物理控制回路（如串级控制的主/副回路、超驰控制的多回路组）。
+* 每个分组**仅允许一个 `MAIN` 回路**（主回路），业务层通过 `_validate_complex_group` 强制唯一性。
+* `MAIN` 缺席时，节点聚合退化取 `confidence_level` 最高的成员作为代表（A > B > C > D > E，`None` 最低）。
+* 节点聚合时，同组回路仅保留代表参与加权平均，其余成员被去重剔除——`loop_count` 按去重后的组数计（单回路计 1，复杂组计 1）。
+* Tag 关联模型不扩展：复杂回路各成员各自关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），CLTM 只读 tag 不下写，副回路 SP 是主回路 OP 的场景无需特殊处理。
+
+**约束**：
+* `CHECK (complex_role IN ('MAIN', 'SUB'))`
+* `CHECK ((complex_loop_group_id IS NULL AND complex_role IS NULL) OR (complex_loop_group_id IS NOT NULL AND complex_role IS NOT NULL))`
+
+**索引**：
+* `idx_loop_ledger_complex_group` (`complex_loop_group_id`) — 用于复杂组去重查询
 
 ### 2.3 AAS Tag 注册表 (tag_registry)
 
@@ -675,7 +693,7 @@ CREATE TABLE unit_kpi_summary (
 | ideal_settling_time | DECIMAL(8,2) | 理想稳态时间（秒） | |
 | auto_loop_ratio | DECIMAL(5,2) | 投用率（自动回路占比，%） | |
 | realtime_auto_rate | DECIMAL(5,2) | 实时自控率（取窗口末尾瞬时值，非聚合） | |
-| loop_count | INTEGER | 参与聚合的回路数 | NOT NULL, DEFAULT 0 |
+| loop_count | INTEGER | 参与聚合的回路数（复杂回路去重后的组数：单回路计 1，复杂组计 1）[v6.1 更新] | NOT NULL, DEFAULT 0 |
 | status | VARCHAR(20) | 聚合状态: `EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`/`INCONCLUSIVE` | NOT NULL |
 | algorithm_version | VARCHAR(30) | 算法版本号 | |
 | created_at | TIMESTAMP | 记录创建时间 | NOT NULL, DEFAULT NOW() |
@@ -717,7 +735,7 @@ CREATE TABLE unit_kpi_summary (
 | ideal_settling_time | DECIMAL(8,2) | 理想稳态时间（秒） | |
 | auto_loop_ratio | DECIMAL(5,2) | 投用率 (%) | |
 | realtime_auto_rate | DECIMAL(5,2) | 实时自控率（取当日最后一次小时快照值） | |
-| loop_count | INTEGER | 参与聚合的回路数 | NOT NULL, DEFAULT 0 |
+| loop_count | INTEGER | 参与聚合的回路数（复杂回路去重后的组数：单回路计 1，复杂组计 1）[v6.1 更新] | NOT NULL, DEFAULT 0 |
 | status | VARCHAR(20) | 聚合状态: `EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`/`INCONCLUSIVE` | NOT NULL |
 | algorithm_version | VARCHAR(30) | 算法版本号 | |
 | created_at | TIMESTAMP | 记录创建时间 | NOT NULL, DEFAULT NOW() |
@@ -758,7 +776,7 @@ CREATE TABLE unit_kpi_summary (
 | ideal_settling_time | DECIMAL(8,2) | 理想稳态时间（秒） | |
 | auto_loop_ratio | DECIMAL(5,2) | 投用率 (%) | |
 | realtime_auto_rate | DECIMAL(5,2) | 实时自控率（取当月最后一次小时快照值） | |
-| loop_count | INTEGER | 参与聚合的回路数 | NOT NULL, DEFAULT 0 |
+| loop_count | INTEGER | 参与聚合的回路数（复杂回路去重后的组数：单回路计 1，复杂组计 1）[v6.1 更新] | NOT NULL, DEFAULT 0 |
 | status | VARCHAR(20) | 聚合状态: `EXCELLENT`/`GOOD`/`FAIR`/`WARNING`/`POOR`/`INCONCLUSIVE` | NOT NULL |
 | algorithm_version | VARCHAR(30) | 算法版本号 | |
 | created_at | TIMESTAMP | 记录创建时间 | NOT NULL, DEFAULT NOW() |

@@ -188,6 +188,50 @@ PRD 对外合规口径仍强调 6 大核心 KPI（好值率、自控率、平稳
 - L2 MetricDataBundle 缓存已接入 DataPlanner，命中时跳过查询计划与 Bundle 组装。
 - L3 Feature Cache 已有实现与单元测试，但尚未接入当前指标计算运行链路，属于预留能力，不计入现行性能验收。
 
+### 7.7 节点聚合去重规则 [v6.1 新增]
+
+节点级 KPI 聚合（`node_performance.py`）在构建加权平均前，对输入回路执行两阶段预处理：`include_in_evaluation` 过滤 + 复杂回路组去重。代码位置：`_fetch_and_aggregate_loops` / `_dedup_complex_groups` / `_pick_group_representative`。
+
+**两阶段预处理流程**：
+
+```
+SQL 查询回路级 SUCCESS 快照
+  ↓
+① S1: WHERE include_in_evaluation = True  — 排除不参评回路
+  ↓
+② S3: _dedup_complex_groups(rows)  — 复杂组按 complex_loop_group_id 去重
+  ↓
+Python 按 importance_level 权重加权平均
+```
+
+**S1：include_in_evaluation 过滤**
+
+在 SQL 查询阶段追加 `.where(LoopLedger.include_in_evaluation.is_(True))`，排除标记为不参评的回路。被排除回路的单回路 KPI 仍正常计算（供回路详情页展示），仅不进入节点聚合输入。
+
+**S3：复杂回路组去重**
+
+- `complex_loop_group_id` 为空（普通单回路）：全部保留。
+- 同一 `complex_loop_group_id` 的回路组：仅保留 1 个代表，其余剔除。
+- **代表选择规则**（`_pick_group_representative`）：
+  1. 优先取 `complex_role = MAIN` 的成员（主回路）；
+  2. `MAIN` 缺席时，退化取 `confidence_level` 最高的成员（A > B > C > D > E，`None` 最低）。
+- 去重后 DEBUG 日志：`[节点级聚合-S3] 输入回路=N, 去重后代表=M, 复杂组=K`
+
+**loop_count 口径**
+
+`loop_count` = 去重后的回路组数（单回路计 1，复杂组计 1，不论组内几行）。小时/日/月快照均沿用此口径；日/月聚合的 `_max_loop_count` 取窗口内各小时快照 loop_count 最大值，无需改动。
+
+历史快照保留当时口径，不回填（RFC 决策点 3/6）。复杂回路配置变更（group 重组）后，历史快照 loop_count 与现状可能不一致，属可接受偏差。
+
+**加权聚合公式**
+
+```
+weight_total = Σ(representative.importance_level_weight)    // level 1→3, 2→2, 3→1
+avg_score = Σ(representative.score × weight) / weight_total
+avg_field = Σ(representative.field × weight) / weight_total  // 对所有 KPI 字段同理
+auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
+```
+
 ## 8. 阶段契约
 
 | 能力 | Phase 1 口径 |
