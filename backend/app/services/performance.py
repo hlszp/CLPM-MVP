@@ -500,6 +500,24 @@ async def _aggregate_node_board(
     )
     # Phase 1 新增：仪表故障率卡片（辅助诊断指标，越低越好）
     fault_avg = weighted_avg("instrument_fault_rate")
+    # 诊断日志：逐节点打印仪表故障率，便于排查数据为空问题
+    ifr_node_details = [
+        {
+            "node_id": str(s.plant_node_id),
+            "instrument_fault_rate": _to_float(s.instrument_fault_rate),
+            "loop_count": s.loop_count,
+        }
+        for s in snaps
+    ]
+    ifr_node_non_null = [d for d in ifr_node_details if d["instrument_fault_rate"] is not None]
+    logger.info(
+        "[多节点聚合-仪表故障率] 节点数=%d, 有值=%d, 无值=%d, 加权均值=%s, 详情=%s",
+        len(snaps),
+        len(ifr_node_non_null),
+        len(ifr_node_details) - len(ifr_node_non_null),
+        fault_avg,
+        ifr_node_details,
+    )
     cards.append(
         {
             "metricKey": "instrument_fault_rate",
@@ -1213,6 +1231,17 @@ async def _aggregate_kpi_summary(
     auto_loop_count_val = _to_float(row.auto_loop_count) or 0.0
     auto_loop_ratio = round(auto_loop_count_val / float(row.cnt) * 100, 2)
 
+    # 仪表故障率诊断日志
+    ifr_avg = avg_value("instrument_fault_rate")
+    logger.info(
+        "[装置级聚合-仪表故障率] plant_node_id=%s, 回路数=%d, "
+        "SQL加权仪表故障率=%s, 加权综合评分=%s",
+        plant_node_id,
+        row.cnt,
+        ifr_avg,
+        score_avg,
+    )
+
     logger.debug(
         "[装置级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%.0f, "
         "投自动回路占比=%.2f%%, SUM(weight)=%.4f, 加权综合评分=%s",
@@ -1233,7 +1262,7 @@ async def _aggregate_kpi_summary(
         "fast_rate": avg_value("fast_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
-        "instrument_fault_rate": avg_value("instrument_fault_rate"),
+        "instrument_fault_rate": ifr_avg,
         "composite_score": score_avg,
         "auto_loop_ratio": auto_loop_ratio,
         "status": _score_to_status(score_avg),

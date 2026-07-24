@@ -367,6 +367,26 @@ async def _fetch_and_aggregate_loops(
     loop_count = len(representatives)
     auto_loop_ratio = round(auto_loop_count_val / loop_count * 100, 2) if loop_count else 0.0
 
+    # 仪表故障率诊断日志：逐回路打印值与权重，便于排查数据为空问题
+    ifr_details = [
+        {
+            "loop_id": str(r.loop_id),
+            "instrument_fault_rate": r.instrument_fault_rate,
+            "weight": float(r.weight or 0),
+        }
+        for r in representatives
+    ]
+    ifr_non_null = [d for d in ifr_details if d["instrument_fault_rate"] is not None]
+    ifr_avg = avg_value("instrument_fault_rate")
+    logger.info(
+        "[节点级聚合-仪表故障率] 代表回路=%d, 有值=%d, 无值=%d, 加权均值=%s, 详情=%s",
+        len(representatives),
+        len(ifr_non_null),
+        len(ifr_details) - len(ifr_non_null),
+        ifr_avg,
+        ifr_details,
+    )
+
     return {
         "score": avg_value("score"),
         "good_value_rate": avg_value("good_value_rate"),
@@ -377,7 +397,7 @@ async def _fetch_and_aggregate_loops(
         "fast_rate": avg_value("fast_rate"),
         "oscillation_rate": avg_value("oscillation_rate"),
         "saturation_rate": avg_value("saturation_rate"),
-        "instrument_fault_rate": avg_value("instrument_fault_rate"),
+        "instrument_fault_rate": ifr_avg,
         "stiction_index": avg_value("stiction_index"),
         "settling_time": avg_value("settling_time"),
         "output_trip_index": avg_value("output_trip_index"),
@@ -471,13 +491,15 @@ async def aggregate_node_snapshot(
 
     logger.info(
         "[节点级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "
-        "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, 定级=%s",
+        "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, "
+        "加权仪表故障率=%s, 定级=%s",
         plant_node_id,
         agg["loop_count"],
         auto_loop_count_val,
         agg["auto_loop_ratio"],
         realtime_auto_rate,
         score_avg,
+        agg["instrument_fault_rate"],
         status,
     )
 
