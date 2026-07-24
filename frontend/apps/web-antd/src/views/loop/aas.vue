@@ -53,6 +53,7 @@ import {
   getModeDefinitionsApi,
   getModelsApi,
   getModeMatrixApi,
+  getPidStructuresApi,
   getVendorsApi,
   importModelsApi,
   importVendorsApi,
@@ -61,6 +62,8 @@ import {
   updateVendorApi,
   upsertModeMappingApi,
 } from '#/api/dcs';
+
+import PidStructureDrawer from './components/pid-structure-drawer.vue';
 
 defineOptions({ name: 'LoopAas' });
 
@@ -406,7 +409,7 @@ async function saveVendor() {
     vendorModalVisible.value = false;
     await loadVendors();
     // 如果当前在矩阵 Tab，同步刷新矩阵（品牌名可能变化）
-    if (matrix.value) await loadMatrix();
+    if (matrix.value) await loadMatrixWithPid();
   } catch {
     // error handled by request interceptor
   }
@@ -473,7 +476,7 @@ async function saveModel() {
     modelModalVisible.value = false;
     await loadModels();
     // 如果当前在矩阵 Tab，同步刷新矩阵（新增型号会作为新行出现）
-    if (matrix.value) await loadMatrix();
+    if (matrix.value) await loadMatrixWithPid();
   } catch {
     // error handled by request interceptor
   }
@@ -581,7 +584,7 @@ function handleImportModelBeforeUpload(file: File): boolean {
       );
       loadModels();
       // 矩阵视图也需刷新（新增型号会作为新列）
-      if (matrix.value) loadMatrix();
+      if (matrix.value) loadMatrixWithPid();
     })
     .catch((error) => {
       hide();
@@ -600,29 +603,67 @@ const modelUploadProps: UploadProps = {
 };
 
 // =========================================================================
-// Tab 3: MODE 矩阵（转置：行=DCS 型号，列=标准 MODE）
+// Tab 3: DCS 型号映射（MODE 矩阵 + PID 结构合并）
 // =========================================================================
 const matrixLoading = ref(false);
 const matrix = ref<DcsApi.ModeMatrixView | null>(null);
 const modeDefs = ref<DcsApi.ModeDefinition[]>([]);
+const pidStructMap = ref<Map<string, DcsApi.PidStructure>>(new Map());
 
-async function loadMatrix() {
+async function loadMatrixWithPid() {
   matrixLoading.value = true;
   try {
-    const [matrixData, defsData] = await Promise.all([
+    const [matrixData, defsData, pidData] = await Promise.all([
       getModeMatrixApi(),
       getModeDefinitionsApi(),
+      getPidStructuresApi(),
     ]);
     matrix.value = matrixData;
     modeDefs.value = defsData;
+    pidStructMap.value = new Map((pidData ?? []).map((s) => [s.dcsModelId, s]));
   } finally {
     matrixLoading.value = false;
   }
 }
 
+// PID 抽屉状态
+interface PidModelRow {
+  id: string;
+  code: string;
+  name: string;
+  vendorName?: null | string;
+  structure?: DcsApi.PidStructure | null;
+}
+
+const pidDrawerOpen = ref(false);
+const pidEditingModel = ref<null | PidModelRow>(null);
+
+function openPidDrawer(record: any) {
+  if (!record.modelId) return;
+  pidEditingModel.value = {
+    id: record.modelId,
+    code: record.modelCode ?? '',
+    name: record.modelName ?? '',
+    vendorName: record.vendorName ?? '',
+    structure: record.pidStructure ?? null,
+  };
+  pidDrawerOpen.value = true;
+}
+
+function onPidSaved(data: DcsApi.PidStructure) {
+  pidStructMap.value.set(data.dcsModelId, data);
+  pidStructMap.value = new Map(pidStructMap.value);
+}
+
+function onPidDeleted(modelId: string) {
+  pidStructMap.value.delete(modelId);
+  pidStructMap.value = new Map(pidStructMap.value);
+}
+
 /**
- * 转置后的矩阵列定义：品牌 | 型号名称 | MODE 0 | MODE 1 | ... | MODE 4 | 操作
- * - MODE 列标题显示"标准值 - 中文标签"，计入自控率的列加蓝色 Tag
+ * 转置后的矩阵列定义：品牌 | 型号名称 | MODE 0 | ... | MODE 4 | PID 结构 | 操作
+ * - MODE 列标题显示"标准值 - 中文标签"
+ * - PID 结构列显示紧凑 Tag（增益·秒/秒），点击打开编辑抽屉
  */
 const matrixColumns = computed<TableColumnsType>(() => {
   if (!matrix.value) return [];
@@ -652,8 +693,13 @@ const matrixColumns = computed<TableColumnsType>(() => {
       align: 'center',
     });
   }
-  // 操作列
+  // PID 结构列（紧凑 Tag，点击打开编辑抽屉）
   cols.push({
+    title: 'PID 结构',
+    key: 'pid',
+    width: 110,
+    align: 'center',
+  }, {
     title: '操作',
     key: 'action',
     width: 80,
@@ -674,8 +720,12 @@ const matrixData = computed(() => {
     const row: Record<string, any> = {
       key: modelKey,
       modelId: col.modelId,
+      modelCode: col.modelCode ?? '',
       modelName: col.modelName ?? '本系统默认',
       vendorName: col.vendorName ?? '—',
+      pidStructure: col.modelId
+        ? (pidStructMap.value.get(col.modelId) ?? null)
+        : null,
     };
     // 填充各标准 MODE 的映射值
     for (const modeRow of currentMatrix.rows) {
@@ -695,7 +745,7 @@ async function toggleModeAuto(record: any, checked: any) {
     message.success(
       `${record.labelZh}（MODE=${record.standardMode}）已${checked ? '计入' : '移出'}自控率`,
     );
-    await loadMatrix();
+    await loadMatrixWithPid();
   } catch {
     // error handled by request interceptor
   }
@@ -707,7 +757,7 @@ async function removeModelFromMatrix(record: any) {
   try {
     await deleteModelApi(record.modelId);
     message.success('型号已删除');
-    await Promise.all([loadMatrix(), loadModels()]);
+    await Promise.all([loadMatrixWithPid(), loadModels()]);
   } catch {
     // error handled by request interceptor
   }
@@ -750,7 +800,7 @@ async function saveCellEdit() {
     });
     message.success('映射已保存');
     cellEditVisible.value = false;
-    await loadMatrix();
+    await loadMatrixWithPid();
   } catch {
     // error handled by request interceptor
   }
@@ -764,7 +814,7 @@ watch(activeTab, (tab: string) => {
     loadVendors();
     loadModels();
   } else if (tab === 'matrix') {
-    if (!matrix.value) loadMatrix();
+    if (!matrix.value) loadMatrixWithPid();
     if (vendors.value.length === 0) loadVendors();
   }
 });
@@ -1102,8 +1152,8 @@ onMounted(loadConfig);
         </Card>
       </TabPane>
 
-      <!-- Tab 3: MODE 矩阵 -->
-      <TabPane key="matrix" tab="MODE 矩阵">
+      <!-- Tab 3: DCS 型号映射（MODE 矩阵 + PID 结构合并） -->
+      <TabPane key="matrix" tab="DCS 型号映射">
         <Spin :spinning="matrixLoading">
           <!-- 标准 MODE 定义（精简表，可折叠 isAuto 开关） -->
           <Card class="mb-4" size="small" title="标准 MODE 定义">
@@ -1173,7 +1223,7 @@ onMounted(loadConfig);
           <!-- MODE 映射矩阵（转置：行=DCS 型号，列=标准 MODE） -->
           <Card size="small">
             <template #title>
-              <span>MODE 映射矩阵</span>
+              <span>DCS 型号映射矩阵</span>
             </template>
             <template #extra>
               <div class="flex items-center gap-2">
@@ -1194,7 +1244,7 @@ onMounted(loadConfig);
               class="mb-3"
               type="info"
               show-icon
-              message="第一行为本系统默认 MODE 映射；后续行为各 DCS 品牌型号的实际 MODE 值。点击单元格可编辑映射值。"
+              message="第一行为本系统默认 MODE 映射；后续行为各 DCS 型号。点击 MODE 单元格编辑映射值，点击 PID 状态 Tag 编辑 PID 结构。"
             />
             <Table
               :columns="matrixColumns"
@@ -1219,6 +1269,36 @@ onMounted(loadConfig);
                   >
                     {{ record[String(column.dataIndex ?? '')] ?? '—' }}
                   </span>
+                </template>
+                <!-- PID 结构列：紧凑 Tag，点击打开编辑抽屉 -->
+                <template v-else-if="column.key === 'pid'">
+                  <Tag
+                    v-if="record.modelId && record.pidStructure"
+                    :color="
+                      record.pidStructure.dFilterEnabled ? 'blue' : 'green'
+                    "
+                    class="cursor-pointer"
+                    @click="openPidDrawer(record)"
+                  >
+                    {{
+                      `${record.pidStructure.pType === 'PROPORTION'
+                        ? '增益'
+                        : '比例度' 
+                      }·${ 
+                      record.pidStructure.iUnit === 'SECONDS' ? '秒' : '分' 
+                      }/${ 
+                      record.pidStructure.dUnit === 'SECONDS' ? '秒' : '分'}`
+                    }}
+                  </Tag>
+                  <Tag
+                    v-else-if="record.modelId"
+                    color="default"
+                    class="cursor-pointer"
+                    @click="openPidDrawer(record)"
+                  >
+                    默认
+                  </Tag>
+                  <span v-else class="text-xs text-gray-300">—</span>
                 </template>
                 <!-- 操作列：删除型号（本系统默认行不显示） -->
                 <template v-else-if="column.key === 'action'">
@@ -1335,5 +1415,13 @@ onMounted(loadConfig);
         </FormItem>
       </Form>
     </Modal>
+
+    <!-- PID 结构编辑抽屉 -->
+    <PidStructureDrawer
+      v-model:open="pidDrawerOpen"
+      :model="pidEditingModel"
+      @success="onPidSaved"
+      @deleted="onPidDeleted"
+    />
   </div>
 </template>

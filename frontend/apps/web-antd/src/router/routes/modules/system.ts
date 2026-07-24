@@ -72,12 +72,12 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'SystemPidTemplate',
+        name: 'SystemPidTemplateDeprecated',
         path: '/system/pid-template',
-        component: () => import('#/views/system/pid-template/index.vue'),
+        redirect: '/loop/aas-sync',
         meta: {
           authority: ['ADMIN'],
-          icon: 'lucide:settings-2',
+          hideInMenu: true,
           title: 'PID 结构模板',
         },
       },

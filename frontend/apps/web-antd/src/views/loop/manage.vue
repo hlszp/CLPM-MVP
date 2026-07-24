@@ -3106,7 +3106,7 @@ watch(
             placeholder="请选择主回路"
             :options="
               groupCandidateLoops.map((lp) => ({
-                label: `${lp.tagName}${lp.description ? ` · ${ lp.description}` : ''}`,
+                label: `${lp.tagName}${lp.description ? ` · ${lp.description}` : ''}`,
                 value: lp.loopId,
               }))
             "

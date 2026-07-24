@@ -151,10 +151,10 @@ export namespace DcsApi {
     modelCode?: null | string;
     modelName?: null | string;
     pType: 'PROPORTION' | 'PROPORTION_BAND';
-    iUnit: 'SECONDS' | 'MINUTES';
-    dUnit: 'SECONDS' | 'MINUTES';
+    iUnit: 'MINUTES' | 'SECONDS';
+    dUnit: 'MINUTES' | 'SECONDS';
     dFilterEnabled: boolean;
-    dFilterUnit?: null | 'SECONDS' | 'MINUTES';
+    dFilterUnit?: 'MINUTES' | 'SECONDS' | null;
     dFilterMultiplier: boolean;
     description?: null | string;
     createdAt?: null | string;
@@ -164,10 +164,10 @@ export namespace DcsApi {
   /** PID 结构模板 upsert 请求 */
   export interface PidStructureUpsert {
     pType: 'PROPORTION' | 'PROPORTION_BAND';
-    iUnit: 'SECONDS' | 'MINUTES';
-    dUnit: 'SECONDS' | 'MINUTES';
+    iUnit: 'MINUTES' | 'SECONDS';
+    dUnit: 'MINUTES' | 'SECONDS';
     dFilterEnabled: boolean;
-    dFilterUnit?: null | 'SECONDS' | 'MINUTES';
+    dFilterUnit?: 'MINUTES' | 'SECONDS' | null;
     dFilterMultiplier: boolean;
     description?: null | string;
   }
