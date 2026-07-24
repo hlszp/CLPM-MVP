@@ -352,11 +352,16 @@ async def _fetch_and_aggregate_loops(
 
     def avg_value(field: str) -> Decimal | None:
         # 与原 SQL 一致：SUM(field*weight) / SUM(weight)，NULL 字段跳过（不参与分子）
+        # 全 NULL 时返回 None（与 performance.py weighted_avg 语义一致，避免 0.00 误导）
         numerator = Decimal("0")
+        has_value = False
         for r in representatives:
             val = getattr(r, field)
             if val is not None:
                 numerator += Decimal(str(val)) * Decimal(str(r.weight or 0))
+                has_value = True
+        if not has_value:
+            return None
         return (numerator / weight_total).quantize(Decimal("0.01"))
 
     auto_loop_count_val = sum(
