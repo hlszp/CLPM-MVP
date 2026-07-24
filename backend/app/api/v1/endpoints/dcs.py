@@ -21,6 +21,10 @@
 - POST   /api/v1/dcs/mode-mappings              — 创建/更新 MODE 映射（仅 ADMIN）
 - DELETE /api/v1/dcs/mode-mappings/{mapping_id} — 删除 MODE 映射（仅 ADMIN）
 - GET    /api/v1/dcs/mode-matrix                — 获取 MODE 映射矩阵视图
+- GET    /api/v1/dcs/pid-structures             — 获取全部 PID 结构模板
+- GET    /api/v1/dcs/models/{model_id}/pid-structure — 获取某型号 PID 结构
+- PUT    /api/v1/dcs/models/{model_id}/pid-structure — upsert 某型号 PID 结构（仅 ADMIN）
+- DELETE /api/v1/dcs/models/{model_id}/pid-structure — 删除某型号 PID 结构（仅 ADMIN）
 """
 
 from __future__ import annotations
@@ -40,6 +44,8 @@ from app.schemas.dcs_config import (
     DcsModelUpdate,
     DcsModeMappingCreate,
     DcsModeMappingItem,
+    DcsPidStructureItem,
+    DcsPidStructureUpsert,
     DcsVendorCreate,
     DcsVendorItem,
     DcsVendorUpdate,
@@ -60,6 +66,9 @@ from app.services.dcs_config import (
     delete_model as svc_delete_model,
 )
 from app.services.dcs_config import (
+    delete_pid_structure as svc_delete_pid_structure,
+)
+from app.services.dcs_config import (
     delete_vendor as svc_delete_vendor,
 )
 from app.services.dcs_config import (
@@ -70,6 +79,9 @@ from app.services.dcs_config import (
 )
 from app.services.dcs_config import (
     get_mode_matrix as svc_get_mode_matrix,
+)
+from app.services.dcs_config import (
+    get_pid_structure as svc_get_pid_structure,
 )
 from app.services.dcs_config import (
     import_models as svc_import_models,
@@ -87,6 +99,9 @@ from app.services.dcs_config import (
     list_models as svc_list_models,
 )
 from app.services.dcs_config import (
+    list_pid_structures as svc_list_pid_structures,
+)
+from app.services.dcs_config import (
     list_vendors as svc_list_vendors,
 )
 from app.services.dcs_config import (
@@ -100,6 +115,9 @@ from app.services.dcs_config import (
 )
 from app.services.dcs_config import (
     upsert_mode_mapping as svc_upsert_mapping,
+)
+from app.services.dcs_config import (
+    upsert_pid_structure as svc_upsert_pid_structure,
 )
 
 router = APIRouter(prefix="/dcs", tags=["dcs"])
@@ -406,6 +424,75 @@ async def get_mode_matrix_endpoint(
     """
     data = await svc_get_mode_matrix(db)
     return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# DcsPidStructure（DCS 型号 PID 结构模板，1:1）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pid-structures", response_model=ApiResponse[list[DcsPidStructureItem]])
+async def list_pid_structures_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取全部 PID 结构模板（含型号信息，所有认证用户可读）。"""
+    data = await svc_list_pid_structures(db)
+    return success(data=data)
+
+
+@router.get(
+    "/models/{model_id}/pid-structure",
+    response_model=ApiResponse[DcsPidStructureItem | None],
+)
+async def get_pid_structure_endpoint(
+    model_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """获取某型号的 PID 结构模板；未配置返回 data=null。"""
+    data = await svc_get_pid_structure(db, model_id)
+    return success(data=data)
+
+
+@router.put(
+    "/models/{model_id}/pid-structure",
+    response_model=ApiResponse[DcsPidStructureItem],
+)
+async def upsert_pid_structure_endpoint(
+    model_id: str,
+    body: DcsPidStructureUpsert,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """创建或更新某型号的 PID 结构模板（仅 ADMIN，按 model_id 幂等）。
+
+    d_filter_enabled=True 时 d_filter_unit 必填（SECONDS/MINUTES）。
+    """
+    data = await svc_upsert_pid_structure(
+        db=db,
+        model_id=model_id,
+        p_type=body.p_type,
+        i_unit=body.i_unit,
+        d_unit=body.d_unit,
+        d_filter_enabled=body.d_filter_enabled,
+        d_filter_unit=body.d_filter_unit,
+        d_filter_multiplier=body.d_filter_multiplier,
+        description=body.description,
+        operator=user.username,
+    )
+    return success(data=data, message="保存成功")
+
+
+@router.delete("/models/{model_id}/pid-structure", response_model=ApiResponse[dict])
+async def delete_pid_structure_endpoint(
+    model_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """删除某型号的 PID 结构模板（仅 ADMIN）。"""
+    await svc_delete_pid_structure(db=db, model_id=model_id, operator=user.username)
+    return success(data={"deleted": True}, message="删除成功")
 
 
 __all__ = ["router"]

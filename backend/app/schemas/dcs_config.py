@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field
+from typing import Literal
+
+from pydantic import Field, model_validator
 
 from app.schemas.base import CamelModel
 
@@ -193,6 +195,61 @@ class ModeMatrixView(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# DcsPidStructure（DCS 型号 PID 结构模板，1:1）
+# ---------------------------------------------------------------------------
+
+#: 比例项类型可选值
+PType = Literal["PROPORTION", "PROPORTION_BAND"]
+#: 时间单位可选值
+TimeUnit = Literal["SECONDS", "MINUTES"]
+
+
+class DcsPidStructureItem(CamelModel):
+    """PID 结构模板项（响应）。
+
+    字段名保持 snake_case，CamelModel 自动生成 camelCase 别名（dcsModelId/pType…），
+    对齐 DcsModelItem 模式：服务层返回 snake_case dict 可被 populate_by_name 校验通过，
+    JSON 序列化输出 camelCase 给前端。
+    """
+
+    id: str
+    dcs_model_id: str = Field(..., description="关联型号 ID")
+    model_code: str | None = None
+    model_name: str | None = None
+    p_type: PType
+    i_unit: TimeUnit
+    d_unit: TimeUnit
+    d_filter_enabled: bool
+    d_filter_unit: TimeUnit | None = None
+    d_filter_multiplier: bool
+    description: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class DcsPidStructureUpsert(CamelModel):
+    """PID 结构模板创建/更新请求（按 dcs_model_id 幂等 upsert）。
+
+    d_filter_enabled=True 时 d_filter_unit 必填（与 DB CHECK 约束一致）。
+    前端以 camelCase（pType/iUnit…）提交，alias_generator 自动映射。
+    """
+
+    p_type: PType = Field("PROPORTION", description="比例项类型")
+    i_unit: TimeUnit = Field("SECONDS", description="积分时间单位")
+    d_unit: TimeUnit = Field("SECONDS", description="微分时间单位")
+    d_filter_enabled: bool = Field(False, description="是否启用微分滤波")
+    d_filter_unit: TimeUnit | None = Field(None, description="微分滤波单位（启用时必填）")
+    d_filter_multiplier: bool = Field(False, description="微分滤波是否为乘法因子")
+    description: str | None = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def _check_filter_unit(self) -> DcsPidStructureUpsert:
+        if self.d_filter_enabled and self.d_filter_unit is None:
+            raise ValueError("d_filter_enabled=True 时 d_filter_unit 必填（SECONDS/MINUTES）")
+        return self
+
+
+# ---------------------------------------------------------------------------
 # 导入结果（v6.1：品牌/型号 Excel 导入导出）
 # ---------------------------------------------------------------------------
 
@@ -224,6 +281,8 @@ __all__ = [
     "DcsModelCreate",
     "DcsModelItem",
     "DcsModelUpdate",
+    "DcsPidStructureItem",
+    "DcsPidStructureUpsert",
     "DcsVendorCreate",
     "DcsVendorItem",
     "DcsVendorUpdate",
@@ -232,4 +291,6 @@ __all__ = [
     "ModeMatrixColumn",
     "ModeMatrixRow",
     "ModeMatrixView",
+    "PType",
+    "TimeUnit",
 ]

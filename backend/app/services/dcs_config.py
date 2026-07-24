@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BizError
 from app.models.dcs_mode_mapping import DcsModeMapping
 from app.models.dcs_model import DcsModel
+from app.models.dcs_pid_structure import DcsPidStructure
 from app.models.dcs_vendor import DcsVendor
 from app.models.mode_definition import ModeDefinition
 
@@ -902,6 +903,141 @@ async def import_models(
     }
 
 
+# ---------------------------------------------------------------------------
+# DcsPidStructure（DCS 型号 PID 结构模板，1:1）
+# ---------------------------------------------------------------------------
+
+
+def _pid_structure_to_dict(s: DcsPidStructure, model: DcsModel | None = None) -> dict:
+    return {
+        "id": str(s.id),
+        "dcs_model_id": str(s.dcs_model_id),
+        "model_code": model.code if model else None,
+        "model_name": model.name if model else None,
+        "p_type": s.p_type,
+        "i_unit": s.i_unit,
+        "d_unit": s.d_unit,
+        "d_filter_enabled": bool(s.d_filter_enabled),
+        "d_filter_unit": s.d_filter_unit,
+        "d_filter_multiplier": bool(s.d_filter_multiplier),
+        "description": s.description,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+    }
+
+
+async def _get_model_or_raise(db: AsyncSession, model_id: str) -> DcsModel:
+    """加载型号，不存在抛 404。"""
+    result = await db.execute(select(DcsModel).where(DcsModel.id == model_id))
+    model = result.scalar_one_or_none()
+    if not model:
+        raise BizError(
+            code="ERR_DCS_MODEL_NOT_FOUND",
+            message=f"DCS 型号不存在: {model_id}",
+            status_code=404,
+        )
+    return model
+
+
+async def get_pid_structure(db: AsyncSession, model_id: str) -> dict | None:
+    """获取某型号的 PID 结构模板；未配置返回 None。"""
+    model = await _get_model_or_raise(db, model_id)
+    result = await db.execute(
+        select(DcsPidStructure).where(DcsPidStructure.dcs_model_id == model_id)
+    )
+    structure = result.scalar_one_or_none()
+    if not structure:
+        return None
+    return _pid_structure_to_dict(structure, model)
+
+
+async def list_pid_structures(db: AsyncSession) -> list[dict]:
+    """获取全部 PID 结构模板（含型号信息，按型号 code 排序）。"""
+    result = await db.execute(
+        select(DcsPidStructure, DcsModel)
+        .join(DcsModel, DcsPidStructure.dcs_model_id == DcsModel.id, isouter=True)
+        .order_by(DcsModel.code.asc())
+    )
+    rows = result.all()
+    return [_pid_structure_to_dict(s, m) for s, m in rows]
+
+
+async def upsert_pid_structure(
+    db: AsyncSession,
+    model_id: str,
+    *,
+    p_type: str,
+    i_unit: str,
+    d_unit: str,
+    d_filter_enabled: bool,
+    d_filter_unit: str | None,
+    d_filter_multiplier: bool,
+    description: str | None = None,
+    operator: str = "system",
+) -> dict:
+    """按 model_id 幂等 upsert PID 结构模板（1:1）。
+
+    d_filter_enabled=True 时 d_filter_unit 必填（与 DB CHECK 约束一致）。
+    """
+    model = await _get_model_or_raise(db, model_id)
+
+    result = await db.execute(
+        select(DcsPidStructure).where(DcsPidStructure.dcs_model_id == model_id)
+    )
+    structure = result.scalar_one_or_none()
+
+    if structure is None:
+        structure = DcsPidStructure(
+            id=str(uuid4()),
+            dcs_model_id=model_id,
+            p_type=p_type,
+            i_unit=i_unit,
+            d_unit=d_unit,
+            d_filter_enabled=d_filter_enabled,
+            d_filter_unit=d_filter_unit,
+            d_filter_multiplier=d_filter_multiplier,
+            description=description,
+        )
+        db.add(structure)
+        logger.info("[DCS PID 结构] 新增 model=%s(%s) by %s", model.code, p_type, operator)
+    else:
+        structure.p_type = p_type
+        structure.i_unit = i_unit
+        structure.d_unit = d_unit
+        structure.d_filter_enabled = d_filter_enabled
+        structure.d_filter_unit = d_filter_unit
+        structure.d_filter_multiplier = d_filter_multiplier
+        structure.description = description
+        logger.info("[DCS PID 结构] 更新 model=%s by %s", model.code, operator)
+
+    await db.commit()
+    await db.refresh(structure)
+    return _pid_structure_to_dict(structure, model)
+
+
+async def delete_pid_structure(
+    db: AsyncSession,
+    model_id: str,
+    *,
+    operator: str = "system",
+) -> None:
+    """删除某型号的 PID 结构模板（型号不存在抛 404；结构不存在抛 404）。"""
+    await _get_model_or_raise(db, model_id)
+    result = await db.execute(
+        select(DcsPidStructure).where(DcsPidStructure.dcs_model_id == model_id)
+    )
+    structure = result.scalar_one_or_none()
+    if not structure:
+        raise BizError(
+            code="ERR_DCS_PID_STRUCTURE_NOT_FOUND",
+            message=f"该型号未配置 PID 结构模板: {model_id}",
+            status_code=404,
+        )
+    await db.execute(delete(DcsPidStructure).where(DcsPidStructure.dcs_model_id == model_id))
+    await db.commit()
+    logger.info("[DCS PID 结构] 删除 model_id=%s by %s", model_id, operator)
+
+
 __all__ = [
     # Vendor
     "create_vendor",
@@ -925,4 +1061,9 @@ __all__ = [
     "get_mode_matrix",
     "list_mode_mappings",
     "upsert_mode_mapping",
+    # PidStructure
+    "delete_pid_structure",
+    "get_pid_structure",
+    "list_pid_structures",
+    "upsert_pid_structure",
 ]

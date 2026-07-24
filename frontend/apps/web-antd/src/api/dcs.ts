@@ -143,6 +143,34 @@ export namespace DcsApi {
     failed: number;
     errors: ImportError[];
   }
+
+  /** PID 结构模板项（响应） */
+  export interface PidStructure {
+    id: string;
+    dcsModelId: string;
+    modelCode?: null | string;
+    modelName?: null | string;
+    pType: 'PROPORTION' | 'PROPORTION_BAND';
+    iUnit: 'SECONDS' | 'MINUTES';
+    dUnit: 'SECONDS' | 'MINUTES';
+    dFilterEnabled: boolean;
+    dFilterUnit?: null | 'SECONDS' | 'MINUTES';
+    dFilterMultiplier: boolean;
+    description?: null | string;
+    createdAt?: null | string;
+    updatedAt?: null | string;
+  }
+
+  /** PID 结构模板 upsert 请求 */
+  export interface PidStructureUpsert {
+    pType: 'PROPORTION' | 'PROPORTION_BAND';
+    iUnit: 'SECONDS' | 'MINUTES';
+    dUnit: 'SECONDS' | 'MINUTES';
+    dFilterEnabled: boolean;
+    dFilterUnit?: null | 'SECONDS' | 'MINUTES';
+    dFilterMultiplier: boolean;
+    description?: null | string;
+  }
 }
 
 /** 品牌 CRUD */
@@ -244,4 +272,29 @@ export function deleteModeMappingApi(mappingId: string) {
 /** MODE 映射矩阵视图 */
 export function getModeMatrixApi() {
   return requestClient.get<DcsApi.ModeMatrixView>('/dcs/mode-matrix');
+}
+
+/** PID 结构模板（P5） */
+export function getPidStructuresApi() {
+  return requestClient.get<DcsApi.PidStructure[]>('/dcs/pid-structures');
+}
+
+export function getPidStructureApi(modelId: string) {
+  return requestClient.get<DcsApi.PidStructure | null>(
+    `/dcs/models/${modelId}/pid-structure`,
+  );
+}
+
+export function upsertPidStructureApi(
+  modelId: string,
+  data: DcsApi.PidStructureUpsert,
+) {
+  return requestClient.put<DcsApi.PidStructure>(
+    `/dcs/models/${modelId}/pid-structure`,
+    data,
+  );
+}
+
+export function deletePidStructureApi(modelId: string) {
+  return requestClient.delete(`/dcs/models/${modelId}/pid-structure`);
 }

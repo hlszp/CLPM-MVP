@@ -71,6 +71,16 @@ const routes: RouteRecordRaw[] = [
           title: '算法参数配置',
         },
       },
+      {
+        name: 'SystemPidTemplate',
+        path: '/system/pid-template',
+        component: () => import('#/views/system/pid-template/index.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:settings-2',
+          title: 'PID 结构模板',
+        },
+      },
     ],
   },
 ];
