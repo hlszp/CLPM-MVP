@@ -103,6 +103,40 @@ def _make_agg_row(
     return row
 
 
+def _make_perf_loop_row(
+    loop_id: str,
+    *,
+    weight: Decimal = Decimal("1.0"),
+    score: Decimal = Decimal("80"),
+    auto_mode_rate: Decimal = Decimal("88"),
+) -> MagicMock:
+    """构造 _fetch_and_aggregate_loops 返回的单回路行 mock（S3 Python 聚合格式）。
+
+    complex_loop_group_id=None（普通单回路），confidence_level='A'。
+    """
+    row = MagicMock()
+    row.loop_id = loop_id
+    row.weight = weight
+    row.confidence_level = "A"
+    row.complex_loop_group_id = None
+    row.complex_role = None
+    row.score = score
+    row.auto_mode_rate = auto_mode_rate
+    row.good_value_rate = Decimal("95.00")
+    row.effective_auto_rate = Decimal("85.00")
+    row.steady_rate = Decimal("80.00")
+    row.accuracy_rate = Decimal("78.00")
+    row.fast_rate = Decimal("82.00")
+    row.oscillation_rate = Decimal("15.00")
+    row.saturation_rate = Decimal("8.00")
+    row.instrument_fault_rate = Decimal("3.00")
+    row.stiction_index = None
+    row.settling_time = None
+    row.output_trip_index = None
+    row.ideal_settling_time = None
+    return row
+
+
 # ===========================================================================
 # TEST-01: 投用定义 CRUD
 # ===========================================================================
@@ -273,19 +307,24 @@ class TestAggregateNodeSnapshotLevelWeighting:
     async def test_aggregate_node_snapshot_level_weighting(self) -> None:
         """验证按 level 加权（mock loop_level_weight 表数据）。
 
-        3 条回路分别 level=1/2/3，权重 3.0/2.0/1.0，weight_sum=6.0。
+        3 条回路分别 level=1/2/3，权重 3.0/2.0/1.0，score 均为 80，
+        加权均值 = (80*3 + 80*2 + 80*1)/6 = 80.00。
         """
         db = AsyncMock()
-        # mock 聚合查询返回（加权计算由 SQL 完成，mock 返回最终聚合值）
-        agg_row = _make_agg_row(
-            cnt=3,
-            auto_loop_count=2,
-            weight_sum=Decimal("6.0"),
-            score=Decimal("80.00"),
-        )
-        agg_result = MagicMock()
-        agg_result.one.return_value = agg_row
-        db.execute = AsyncMock(return_value=agg_result)
+        # S3：_fetch_and_aggregate_loops 调 result.all() 返回 per-loop 行
+        rows = [
+            _make_perf_loop_row("l1", weight=Decimal("3.0")),
+            _make_perf_loop_row("l2", weight=Decimal("2.0")),
+            _make_perf_loop_row("l3", weight=Decimal("1.0"), auto_mode_rate=Decimal("0")),
+        ]
+        agg_result = _make_rows_mock(rows)
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = 0
+
+        async def _execute(stmt, *a, **kw):
+            return agg_result if stmt.is_select else scalar_result
+
+        db.execute = AsyncMock(side_effect=_execute)
 
         with (
             patch(
@@ -322,18 +361,24 @@ class TestAggregateNodeSnapshotLevelWeighting:
     async def test_aggregate_node_snapshot_no_level(self) -> None:
         """level=NULL 时回退 1.0。
 
-        2 条回路 level=NULL，COALESCE 到 1.0，weight_sum=2.0。
+        2 条回路 level=NULL，COALESCE 到 1.0，score 均为 75，
+        加权均值 = (75*1 + 75*1)/2 = 75.00。
         """
         db = AsyncMock()
-        agg_row = _make_agg_row(
-            cnt=2,
-            auto_loop_count=1,
-            weight_sum=Decimal("2.0"),
-            score=Decimal("75.00"),
-        )
-        agg_result = MagicMock()
-        agg_result.one.return_value = agg_row
-        db.execute = AsyncMock(return_value=agg_result)
+        rows = [
+            _make_perf_loop_row("l1", weight=Decimal("1.0"), score=Decimal("75")),
+            _make_perf_loop_row(
+                "l2", weight=Decimal("1.0"), score=Decimal("75"), auto_mode_rate=Decimal("0")
+            ),
+        ]
+        agg_result = _make_rows_mock(rows)
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = 0
+
+        async def _execute(stmt, *a, **kw):
+            return agg_result if stmt.is_select else scalar_result
+
+        db.execute = AsyncMock(side_effect=_execute)
 
         with (
             patch(

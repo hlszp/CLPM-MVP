@@ -17,10 +17,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Integer, func, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.loop import LoopLedger
+from app.models.loop import COMPLEX_ROLE_MAIN, LoopLedger
 from app.models.loop_config import LoopLevelWeight
 from app.models.metric import KpiSnapshotHourly
 from app.models.node_kpi import (
@@ -230,6 +230,164 @@ async def query_realtime_auto_rate(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# P4 S3：复杂回路组去重（Python 层，方案 B）
+# ---------------------------------------------------------------------------
+
+#: confidence_level 排序键（A 最佳 → E 最差，None 视为最低）
+_CONFIDENCE_RANK: dict[str, int] = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
+
+
+def _confidence_rank(level: str | None) -> int:
+    """confidence_level → 排序键，越小越优；None 视为最低。"""
+    if level is None:
+        return 99
+    return _CONFIDENCE_RANK.get(level, 99)
+
+
+def _pick_group_representative(members: list) -> object:
+    """从复杂回路组成员中选代表（RFC 决策点 2）。
+
+    - 有 complex_role=MAIN 的成员 → 取 MAIN（多个 MAIN 取首个，业务层应保证唯一）
+    - MAIN 缺席 → 取 confidence 最高（A>B>C>D>E，None 最低）的成员
+    """
+    mains = [m for m in members if m.complex_role == COMPLEX_ROLE_MAIN]
+    if mains:
+        return mains[0]
+    return min(members, key=lambda m: _confidence_rank(m.confidence_level))
+
+
+def _dedup_complex_groups(rows: list) -> list:
+    """复杂回路组去重（RFC 决策点 2）。
+
+    - complex_loop_group_id 为空（普通单回路）：全部保留
+    - 同 complex_loop_group_id 的组：仅保留一个代表（MAIN 优先，否则 confidence 最高）
+
+    Returns:
+        去重后的回路行列表（单回路 + 每组代表）
+    """
+    singles = [r for r in rows if r.complex_loop_group_id is None]
+    groups: dict[str, list] = {}
+    for r in rows:
+        gid = r.complex_loop_group_id
+        if gid is not None:
+            groups.setdefault(gid, []).append(r)
+
+    representatives = list(singles)
+    for members in groups.values():
+        representatives.append(_pick_group_representative(members))
+    logger.debug(
+        "[节点级聚合-S3] 输入回路=%d, 去重后代表=%d, 复杂组=%d",
+        len(rows),
+        len(representatives),
+        len(groups),
+    )
+    return representatives
+
+
+async def _fetch_and_aggregate_loops(
+    db: AsyncSession,
+    loop_ids: list[str],
+    ts_start: datetime,
+    ts_end: datetime,
+) -> dict | None:
+    """P4 S3：获取回路级 SUCCESS 快照 → 复杂组去重 → Python 加权聚合。
+
+    替代原单 SQL 聚合：先查每回路最新 SUCCESS 快照 + 复杂分组/角色/权重，
+    再 Python 按 complex_loop_group_id 去重（MAIN 代表，缺席退化 confidence 最高），
+    最后按 importance_level 权重加权平均。
+
+    Returns:
+        聚合结果 dict（含各 KPI 字段加权均值 / loop_count / auto_loop_count /
+        auto_loop_ratio），无 SUCCESS 快照或权重为 0 返回 None。
+    """
+    # 子查询：每个回路在时间窗内最新一条 SUCCESS 快照（DISTINCT ON loop_id）
+    subq = (
+        select(KpiSnapshotHourly)
+        .where(
+            KpiSnapshotHourly.loop_id.in_(loop_ids),
+            KpiSnapshotHourly.ts_start >= ts_start,
+            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.status == "SUCCESS",
+        )
+        .distinct(KpiSnapshotHourly.loop_id)
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+    ).subquery()
+
+    # 外层 JOIN loop_ledger + loop_level_weight，取回路级字段 + 复杂分组/角色 + 权重
+    # level=NULL 时 OUTER JOIN 不匹配，COALESCE 到 1.0（等同 level=3）
+    weight_col = func.coalesce(LoopLevelWeight.weight, Decimal("1.0")).label("weight")
+    fields = [getattr(subq.c, f).label(f) for f in KPI_FIELDS]
+
+    # S1：仅聚合 include_in_evaluation=True 的回路
+    stmt = (
+        select(
+            subq.c.loop_id.label("loop_id"),
+            subq.c.confidence_level.label("confidence_level"),
+            *fields,
+            LoopLedger.complex_loop_group_id,
+            LoopLedger.complex_role,
+            weight_col,
+        )
+        .select_from(
+            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
+                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
+            )
+        )
+        .where(LoopLedger.include_in_evaluation.is_(True))
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    if not rows:
+        return None
+
+    # P4 S3：复杂回路组去重（MAIN 代表 / confidence 回退）
+    representatives = _dedup_complex_groups(rows)
+
+    weight_total = sum(Decimal(str(r.weight or 0)) for r in representatives)
+    if weight_total == 0:
+        logger.warning("[节点级聚合-S3] SUM(weight)=0，无法计算加权平均")
+        return None
+
+    def avg_value(field: str) -> Decimal | None:
+        # 与原 SQL 一致：SUM(field*weight) / SUM(weight)，NULL 字段跳过（不参与分子）
+        numerator = Decimal("0")
+        for r in representatives:
+            val = getattr(r, field)
+            if val is not None:
+                numerator += Decimal(str(val)) * Decimal(str(r.weight or 0))
+        return (numerator / weight_total).quantize(Decimal("0.01"))
+
+    auto_loop_count_val = sum(
+        1
+        for r in representatives
+        if r.auto_mode_rate is not None and Decimal(str(r.auto_mode_rate)) > 0
+    )
+    loop_count = len(representatives)
+    auto_loop_ratio = round(auto_loop_count_val / loop_count * 100, 2) if loop_count else 0.0
+
+    return {
+        "score": avg_value("score"),
+        "good_value_rate": avg_value("good_value_rate"),
+        "auto_mode_rate": avg_value("auto_mode_rate"),
+        "effective_auto_rate": avg_value("effective_auto_rate"),
+        "steady_rate": avg_value("steady_rate"),
+        "accuracy_rate": avg_value("accuracy_rate"),
+        "fast_rate": avg_value("fast_rate"),
+        "oscillation_rate": avg_value("oscillation_rate"),
+        "saturation_rate": avg_value("saturation_rate"),
+        "instrument_fault_rate": avg_value("instrument_fault_rate"),
+        "stiction_index": avg_value("stiction_index"),
+        "settling_time": avg_value("settling_time"),
+        "output_trip_index": avg_value("output_trip_index"),
+        "ideal_settling_time": avg_value("ideal_settling_time"),
+        "loop_count": loop_count,
+        "auto_loop_count": auto_loop_count_val,
+        "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
+    }
+
+
 async def aggregate_node_snapshot(
     db: AsyncSession,
     plant_node_id: str,
@@ -252,55 +410,9 @@ async def aggregate_node_snapshot(
         logger.debug("[节点级聚合] plant_node_id=%s 无下属回路", plant_node_id)
         return None
 
-    # 子查询：每个回路在时间窗内最新一条 SUCCESS 快照
-    # 使用 DISTINCT ON (loop_id) 取每组最新
-    subq = (
-        select(KpiSnapshotHourly)
-        .where(
-            KpiSnapshotHourly.loop_id.in_(loop_ids),
-            KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
-            KpiSnapshotHourly.status == "SUCCESS",
-        )
-        .distinct(KpiSnapshotHourly.loop_id)
-        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
-    ).subquery()
-
-    # 外层 JOIN loop_ledger + loop_level_weight，按回路级别加权聚合（v2，对齐附表2）
-    # level=NULL 时 OUTER JOIN 不匹配，COALESCE 到 1.0（等同 level=3）
-    weight_col = func.coalesce(LoopLevelWeight.weight, Decimal("1.0")).label("w")
-    weight_sum_col = func.nullif(func.sum(weight_col), 0).label("weight_sum")
-
-    # 加权聚合列（必须引用子查询 subq.c，而非原表 KpiSnapshotHourly，避免笛卡尔积）
-    weighted_cols = []
-    for f in KPI_FIELDS:
-        col = getattr(subq.c, f)
-        weighted_cols.append((func.sum(col * weight_col) / weight_sum_col).label(f))
-
-    # 投自动回路占比
-    auto_loop_count = func.sum(
-        func.coalesce(
-            func.cast(subq.c.auto_mode_rate > 0, Integer),
-            0,
-        )
-    ).label("auto_loop_count")
-    total_count = func.count().label("cnt")
-
-    # S1：仅聚合 include_in_evaluation=True 的回路（False 回路仍算单回路 KPI 供详情页展示，
-    # 但不进入节点级加权评分 / loop_count / auto_loop_ratio），与下方 inconclusive 查询口径一致
-    stmt = (
-        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
-        .select_from(
-            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
-            )
-        )
-        .where(LoopLedger.include_in_evaluation.is_(True))
-    )
-    result = await db.execute(stmt)
-    row = result.one()
-
-    if row.cnt == 0:
+    # P4 S3：复杂组去重 + Python 加权聚合（替代原单 SQL 聚合）
+    agg = await _fetch_and_aggregate_loops(db, loop_ids, ts_start, ts_end)
+    if agg is None:
         logger.debug(
             "[节点级聚合] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照",
             plant_node_id,
@@ -309,23 +421,8 @@ async def aggregate_node_snapshot(
         )
         return None
 
-    weight_sum_val = float(row.weight_sum) if row.weight_sum is not None else 0.0
-    if weight_sum_val == 0:
-        logger.warning(
-            "[节点级聚合] plant_node_id=%s, SUM(weight)=0，无法计算加权平均",
-            plant_node_id,
-        )
-        return None
-
-    def avg_value(field: str) -> Decimal | None:
-        val = getattr(row, field)
-        if val is None:
-            return None
-        return Decimal(str(val)).quantize(Decimal("0.01"))
-
-    score_avg = avg_value("score")
-    auto_loop_count_val = int(row.auto_loop_count or 0)
-    auto_loop_ratio = round(auto_loop_count_val / int(row.cnt) * 100, 2)
+    score_avg = agg["score"]
+    auto_loop_count_val = agg["auto_loop_count"]
 
     status = _score_to_status(score_avg)
 
@@ -334,8 +431,9 @@ async def aggregate_node_snapshot(
     realtime_auto_rate = _realtime_result["rate"] if _realtime_result else None
 
     # v6.1.2 修复：补充 UnitKpiSummary 所需的回路计数字段
+    # P4 S3：loop_count 为去重后回路组数（单回路 + 每复杂组代表）
     total_loops_count = len(loop_ids)
-    evaluated_loops_count = int(row.cnt)
+    evaluated_loops_count = agg["loop_count"]
 
     # excluded_loops: include_in_evaluation=False 的回路数
     ex_result = await db.execute(
@@ -375,9 +473,9 @@ async def aggregate_node_snapshot(
         "[节点级聚合] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "
         "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, 定级=%s",
         plant_node_id,
-        row.cnt,
+        agg["loop_count"],
         auto_loop_count_val,
-        auto_loop_ratio,
+        agg["auto_loop_ratio"],
         realtime_auto_rate,
         score_avg,
         status,
@@ -388,23 +486,23 @@ async def aggregate_node_snapshot(
         "ts_start": ts_start,
         "ts_end": ts_end,
         "score": score_avg,
-        "good_value_rate": avg_value("good_value_rate"),
-        "auto_mode_rate": avg_value("auto_mode_rate"),
-        "effective_auto_rate": avg_value("effective_auto_rate"),
-        "steady_rate": avg_value("steady_rate"),
-        "accuracy_rate": avg_value("accuracy_rate"),
-        "fast_rate": avg_value("fast_rate"),
-        "oscillation_rate": avg_value("oscillation_rate"),
-        "saturation_rate": avg_value("saturation_rate"),
-        "instrument_fault_rate": avg_value("instrument_fault_rate"),
+        "good_value_rate": agg["good_value_rate"],
+        "auto_mode_rate": agg["auto_mode_rate"],
+        "effective_auto_rate": agg["effective_auto_rate"],
+        "steady_rate": agg["steady_rate"],
+        "accuracy_rate": agg["accuracy_rate"],
+        "fast_rate": agg["fast_rate"],
+        "oscillation_rate": agg["oscillation_rate"],
+        "saturation_rate": agg["saturation_rate"],
+        "instrument_fault_rate": agg["instrument_fault_rate"],
         # P1 #14: 4 个诊断字段（与 KpiNodeSnapshotHourly 模型对齐）
-        "stiction_index": avg_value("stiction_index"),
-        "settling_time": avg_value("settling_time"),
-        "output_trip_index": avg_value("output_trip_index"),
-        "ideal_settling_time": avg_value("ideal_settling_time"),
-        "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
+        "stiction_index": agg["stiction_index"],
+        "settling_time": agg["settling_time"],
+        "output_trip_index": agg["output_trip_index"],
+        "ideal_settling_time": agg["ideal_settling_time"],
+        "auto_loop_ratio": agg["auto_loop_ratio"],
         "realtime_auto_rate": realtime_auto_rate,
-        "loop_count": int(row.cnt),
+        "loop_count": agg["loop_count"],
         "status": status,
         "algorithm_version": ALGORITHM_VERSION,
         # v6.1.2: UnitKpiSummary 所需的回路计数字段
@@ -1225,50 +1323,9 @@ async def aggregate_node_snapshot_with_presets(
         logger.debug("[节点级聚合-批量] plant_node_id=%s 无下属回路", plant_node_id)
         return None
 
-    # 主聚合 SQL（与 aggregate_node_snapshot 相同）
-    subq = (
-        select(KpiSnapshotHourly)
-        .where(
-            KpiSnapshotHourly.loop_id.in_(loop_ids),
-            KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
-            KpiSnapshotHourly.status == "SUCCESS",
-        )
-        .distinct(KpiSnapshotHourly.loop_id)
-        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
-    ).subquery()
-
-    weight_col = func.coalesce(LoopLevelWeight.weight, Decimal("1.0")).label("w")
-    weight_sum_col = func.nullif(func.sum(weight_col), 0).label("weight_sum")
-
-    weighted_cols = []
-    for f in KPI_FIELDS:
-        col = getattr(subq.c, f)
-        weighted_cols.append((func.sum(col * weight_col) / weight_sum_col).label(f))
-
-    auto_loop_count = func.sum(
-        func.coalesce(
-            func.cast(subq.c.auto_mode_rate > 0, Integer),
-            0,
-        )
-    ).label("auto_loop_count")
-    total_count = func.count().label("cnt")
-
-    # S1：仅聚合 include_in_evaluation=True 的回路（False 回路仍算单回路 KPI 供详情页展示，
-    # 但不进入节点级加权评分 / loop_count / auto_loop_ratio），与下方 inconclusive 查询口径一致
-    stmt = (
-        select(total_count, auto_loop_count, weight_sum_col, *weighted_cols)
-        .select_from(
-            subq.join(LoopLedger, subq.c.loop_id == LoopLedger.id).outerjoin(
-                LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level
-            )
-        )
-        .where(LoopLedger.include_in_evaluation.is_(True))
-    )
-    result = await db.execute(stmt)
-    row = result.one()
-
-    if row.cnt == 0:
+    # P4 S3：复杂组去重 + Python 加权聚合（与 aggregate_node_snapshot 共用）
+    agg = await _fetch_and_aggregate_loops(db, loop_ids, ts_start, ts_end)
+    if agg is None:
         logger.debug(
             "[节点级聚合-批量] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照",
             plant_node_id,
@@ -1277,30 +1334,16 @@ async def aggregate_node_snapshot_with_presets(
         )
         return None
 
-    weight_sum_val = float(row.weight_sum) if row.weight_sum is not None else 0.0
-    if weight_sum_val == 0:
-        logger.warning(
-            "[节点级聚合-批量] plant_node_id=%s, SUM(weight)=0，无法计算加权平均",
-            plant_node_id,
-        )
-        return None
-
-    def avg_value(field: str) -> Decimal | None:
-        val = getattr(row, field)
-        if val is None:
-            return None
-        return Decimal(str(val)).quantize(Decimal("0.01"))
-
-    score_avg = avg_value("score")
-    auto_loop_count_val = int(row.auto_loop_count or 0)
-    auto_loop_ratio = round(auto_loop_count_val / int(row.cnt) * 100, 2)
+    score_avg = agg["score"]
+    auto_loop_count_val = agg["auto_loop_count"]
 
     status = _score_to_status(score_avg)
 
     realtime_auto_rate = realtime_result["rate"] if realtime_result else None
 
+    # P4 S3：loop_count 为去重后回路组数
     total_loops_count = len(loop_ids)
-    evaluated_loops_count = int(row.cnt)
+    evaluated_loops_count = agg["loop_count"]
     excluded_loops_count = counts.get("excluded_loops", 0)
     inconclusive_loops_count = counts.get("inconclusive_loops", 0)
 
@@ -1308,9 +1351,9 @@ async def aggregate_node_snapshot_with_presets(
         "[节点级聚合-批量] plant_node_id=%s, 回路数=%d, 投自动回路数=%d, "
         "投自动占比=%.2f%%, 实时自控率=%s, 加权综合评分=%s, 定级=%s",
         plant_node_id,
-        row.cnt,
+        agg["loop_count"],
         auto_loop_count_val,
-        auto_loop_ratio,
+        agg["auto_loop_ratio"],
         realtime_auto_rate,
         score_avg,
         status,
@@ -1321,22 +1364,22 @@ async def aggregate_node_snapshot_with_presets(
         "ts_start": ts_start,
         "ts_end": ts_end,
         "score": score_avg,
-        "good_value_rate": avg_value("good_value_rate"),
-        "auto_mode_rate": avg_value("auto_mode_rate"),
-        "effective_auto_rate": avg_value("effective_auto_rate"),
-        "steady_rate": avg_value("steady_rate"),
-        "accuracy_rate": avg_value("accuracy_rate"),
-        "fast_rate": avg_value("fast_rate"),
-        "oscillation_rate": avg_value("oscillation_rate"),
-        "saturation_rate": avg_value("saturation_rate"),
-        "instrument_fault_rate": avg_value("instrument_fault_rate"),
-        "stiction_index": avg_value("stiction_index"),
-        "settling_time": avg_value("settling_time"),
-        "output_trip_index": avg_value("output_trip_index"),
-        "ideal_settling_time": avg_value("ideal_settling_time"),
-        "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
+        "good_value_rate": agg["good_value_rate"],
+        "auto_mode_rate": agg["auto_mode_rate"],
+        "effective_auto_rate": agg["effective_auto_rate"],
+        "steady_rate": agg["steady_rate"],
+        "accuracy_rate": agg["accuracy_rate"],
+        "fast_rate": agg["fast_rate"],
+        "oscillation_rate": agg["oscillation_rate"],
+        "saturation_rate": agg["saturation_rate"],
+        "instrument_fault_rate": agg["instrument_fault_rate"],
+        "stiction_index": agg["stiction_index"],
+        "settling_time": agg["settling_time"],
+        "output_trip_index": agg["output_trip_index"],
+        "ideal_settling_time": agg["ideal_settling_time"],
+        "auto_loop_ratio": agg["auto_loop_ratio"],
         "realtime_auto_rate": realtime_auto_rate,
-        "loop_count": int(row.cnt),
+        "loop_count": agg["loop_count"],
         "status": status,
         "algorithm_version": ALGORITHM_VERSION,
         "total_loops": total_loops_count,

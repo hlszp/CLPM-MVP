@@ -148,6 +148,45 @@ class TestCollectDescendantLoopIds:
 # ---------------------------------------------------------------------------
 
 
+def _make_loop_row(
+    loop_id: str,
+    *,
+    weight: Decimal = Decimal("1.0"),
+    score: Decimal = Decimal("80"),
+    auto_mode_rate: Decimal = Decimal("88"),
+    confidence_level: str | None = "A",
+    complex_group_id: str | None = None,
+    complex_role: str | None = None,
+) -> MagicMock:
+    """构造 _fetch_and_aggregate_loops 返回的单回路行 mock。
+
+    S3 重构后聚合改为 Python 层：每行需含 KPI 字段 + 复杂分组/角色/权重/confidence。
+    未指定的 KPI 字段使用与 test_aggregate_calculates_weighted_average 一致的默认值。
+    """
+    row = MagicMock()
+    row.loop_id = loop_id
+    row.weight = weight
+    row.confidence_level = confidence_level
+    row.complex_loop_group_id = complex_group_id
+    row.complex_role = complex_role
+    row.score = score
+    row.auto_mode_rate = auto_mode_rate
+    # 其余 KPI 字段默认值（与原 test_aggregate_calculates_weighted_average 对齐）
+    row.good_value_rate = Decimal("95.00")
+    row.effective_auto_rate = Decimal("85.00")
+    row.steady_rate = Decimal("80.00")
+    row.accuracy_rate = Decimal("78.00")
+    row.fast_rate = Decimal("82.00")
+    row.oscillation_rate = Decimal("15.00")
+    row.saturation_rate = Decimal("8.00")
+    row.instrument_fault_rate = Decimal("3.00")
+    row.stiction_index = Decimal("0.12")
+    row.settling_time = Decimal("135.00")
+    row.output_trip_index = Decimal("38.00")
+    row.ideal_settling_time = Decimal("180.00")
+    return row
+
+
 class TestAggregateNodeSnapshot:
     """加权聚合回路级快照。"""
 
@@ -169,15 +208,11 @@ class TestAggregateNodeSnapshot:
 
     @pytest.mark.asyncio
     async def test_aggregate_returns_none_when_no_snapshots(self):
-        """有回路但无快照时返回 None。"""
+        """有回路但无 SUCCESS 快照时返回 None。"""
         db = AsyncMock()
-        # 子查询返回空
+        # _fetch_and_aggregate_loops 调 result.all() 返回空列表 → None
         mock_result = MagicMock()
-        mock_row = MagicMock()
-        mock_row.cnt = 0
-        mock_row.weight_sum = None
-        mock_row.auto_loop_count = 0
-        mock_result.one.return_value = mock_row
+        mock_result.all.return_value = []
         db.execute = AsyncMock(return_value=mock_result)
 
         with patch(
@@ -194,35 +229,49 @@ class TestAggregateNodeSnapshot:
 
     @pytest.mark.asyncio
     async def test_aggregate_calculates_weighted_average(self):
-        """正确计算加权平均值。"""
+        """正确计算加权平均值（3 个普通单回路，等权 1.0）。"""
         db = AsyncMock()
-        mock_result = MagicMock()
-        mock_row = MagicMock()
-        mock_row.cnt = 3
-        mock_row.weight_sum = Decimal("3.0")
-        mock_row.auto_loop_count = 2
-        mock_row.score = Decimal("80.00")
-        mock_row.good_value_rate = Decimal("95.00")
-        mock_row.auto_mode_rate = Decimal("88.00")
-        mock_row.effective_auto_rate = Decimal("85.00")
-        mock_row.steady_rate = Decimal("80.00")
-        mock_row.accuracy_rate = Decimal("78.00")
-        mock_row.fast_rate = Decimal("82.00")
-        mock_row.oscillation_rate = Decimal("15.00")
-        mock_row.saturation_rate = Decimal("8.00")
-        # Phase 1 新增：仪表故障率（AGGREGATABLE）
-        mock_row.instrument_fault_rate = Decimal("3.00")
-        # P1 #14: 4 个新增诊断字段
-        mock_row.stiction_index = Decimal("0.12")
-        mock_row.settling_time = Decimal("135.00")
-        mock_row.output_trip_index = Decimal("38.00")
-        mock_row.ideal_settling_time = Decimal("180.00")
-        mock_result.one.return_value = mock_row
-        db.execute = AsyncMock(return_value=mock_result)
+        # 3 个普通单回路（complex_loop_group_id=None），权重均为 1.0
+        rows = [
+            _make_loop_row(
+                "loop-001",
+                weight=Decimal("1.0"),
+                score=Decimal("80"),
+                auto_mode_rate=Decimal("88"),
+            ),
+            _make_loop_row(
+                "loop-002",
+                weight=Decimal("1.0"),
+                score=Decimal("80"),
+                auto_mode_rate=Decimal("88"),
+            ),
+            _make_loop_row(
+                "loop-003",
+                weight=Decimal("1.0"),
+                score=Decimal("80"),
+                auto_mode_rate=Decimal("0"),  # 非自动 → auto_loop_ratio=2/3
+            ),
+        ]
+        main_result = MagicMock()
+        main_result.all.return_value = rows
+        # 后续 excluded/inconclusive 计数查询返回 0
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = 0
 
-        with patch(
-            "app.services.node_performance.collect_descendant_loop_ids",
-            return_value=["loop-001", "loop-002", "loop-003"],
+        async def _execute(stmt, *a, **kw):
+            return main_result if stmt.is_select else scalar_result
+
+        db.execute = AsyncMock(side_effect=_execute)
+
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["loop-001", "loop-002", "loop-003"],
+            ),
+            patch(
+                "app.services.node_performance.query_realtime_auto_rate",
+                return_value=None,
+            ),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -247,42 +296,21 @@ class TestAggregateNodeSnapshot:
 
     @pytest.mark.asyncio
     async def test_aggregation_filters_include_in_evaluation_false(self):
-        """S1：include_in_evaluation=False 的回路不进入节点聚合。
+        """S1：主聚合 SQL 须含 include_in_evaluation = true 过滤。
 
-        主聚合 SQL 须含 LoopLedger.include_in_evaluation = true 过滤，
-        确保被排除的回路不污染加权评分 / loop_count / auto_loop_ratio。
         回归背景：该字段此前仅在 dashboard 计数与 inconclusive 查询使用，
         主聚合 SQL 漏过滤，导致 include_in_evaluation=False 回路仍被聚合。
+        S3 重构后过滤逻辑在 _fetch_and_aggregate_loops，仍须验证 SQL 含过滤。
         """
         db = AsyncMock()
         captured_stmts: list = []
 
+        rows = [
+            _make_loop_row("loop-001", weight=Decimal("1.0")),
+            _make_loop_row("loop-002", weight=Decimal("1.0")),
+        ]
         main_result = MagicMock()
-        main_row = MagicMock()
-        main_row.cnt = 2
-        main_row.weight_sum = Decimal("2.0")
-        main_row.auto_loop_count = 1
-        main_row.score = Decimal("80.00")
-        # 其余聚合字段置 None（avg_value 对 None 返回 None，不参与断言）
-        for f in (
-            "good_value_rate",
-            "auto_mode_rate",
-            "effective_auto_rate",
-            "steady_rate",
-            "accuracy_rate",
-            "fast_rate",
-            "oscillation_rate",
-            "saturation_rate",
-            "instrument_fault_rate",
-            "stiction_index",
-            "settling_time",
-            "output_trip_index",
-            "ideal_settling_time",
-        ):
-            setattr(main_row, f, None)
-        main_result.one.return_value = main_row
-
-        # 后续 excluded/inconclusive 计数查询返回 0
+        main_result.all.return_value = rows
         scalar_result = MagicMock()
         scalar_result.scalar.return_value = 0
 
@@ -314,8 +342,126 @@ class TestAggregateNodeSnapshot:
         main_sql = str(captured_stmts[0].compile(compile_kwargs={"literal_binds": True}))
         assert "include_in_evaluation" in main_sql
         assert "true" in main_sql.lower()
-        # loop_count 反映过滤后回路数（2，而非 3）
+        # loop_count 反映去重后回路数（2 个单回路）
         assert result["loop_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_aggregate_dedup_complex_group_picks_main(self):
+        """S3：复杂回路组去重——MAIN+SUB 同组，仅 MAIN 进入聚合。
+
+        2 个单回路 + 1 个串级组（MAIN score=90 + SUB score=50），
+        去重后 loop_count=3（2 单回路 + 1 组代表），score 受 MAIN 主导。
+        """
+        db = AsyncMock()
+        rows = [
+            _make_loop_row("s1", weight=Decimal("1.0"), score=Decimal("70")),
+            _make_loop_row("s2", weight=Decimal("1.0"), score=Decimal("70")),
+            _make_loop_row(
+                "cascade-main",
+                weight=Decimal("1.0"),
+                score=Decimal("90"),
+                complex_group_id="grp-1",
+                complex_role="MAIN",
+            ),
+            _make_loop_row(
+                "cascade-sub",
+                weight=Decimal("1.0"),
+                score=Decimal("50"),
+                complex_group_id="grp-1",
+                complex_role="SUB",
+            ),
+        ]
+        main_result = MagicMock()
+        main_result.all.return_value = rows
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = 0
+
+        async def _execute(stmt, *a, **kw):
+            return main_result if stmt.is_select else scalar_result
+
+        db.execute = AsyncMock(side_effect=_execute)
+
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["s1", "s2", "cascade-main", "cascade-sub"],
+            ),
+            patch(
+                "app.services.node_performance.query_realtime_auto_rate",
+                return_value=None,
+            ),
+        ):
+            result = await aggregate_node_snapshot(
+                db,
+                "node-001",
+                datetime.now(UTC).replace(tzinfo=None),
+                datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
+            )
+
+        assert result is not None
+        # 去重后：2 单回路 + 1 组代表 = 3（SUB 被排除）
+        assert result["loop_count"] == 3
+        # 加权平均 = (70 + 70 + 90) / 3 = 76.67（SUB 的 50 不参与）
+        assert result["score"] == Decimal("76.67")
+
+    @pytest.mark.asyncio
+    async def test_aggregate_dedup_falls_back_to_highest_confidence(self):
+        """S3：MAIN 缺席时退化取 confidence 最高的 SUB 代表。
+
+        1 个串级组含 2 个 SUB（无 MAIN）：confidence B(score=60) 与 D(score=80)，
+        去重后取 confidence=B 的 SUB（A>B>C>D>E，B 优于 D），score=60 进入聚合。
+        """
+        db = AsyncMock()
+        rows = [
+            _make_loop_row(
+                "sub-b",
+                weight=Decimal("1.0"),
+                score=Decimal("60"),
+                complex_group_id="grp-1",
+                complex_role="SUB",
+                confidence_level="B",
+            ),
+            _make_loop_row(
+                "sub-d",
+                weight=Decimal("1.0"),
+                score=Decimal("80"),
+                complex_group_id="grp-1",
+                complex_role="SUB",
+                confidence_level="D",
+            ),
+        ]
+        main_result = MagicMock()
+        main_result.all.return_value = rows
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = 0
+
+        async def _execute(stmt, *a, **kw):
+            return main_result if stmt.is_select else scalar_result
+
+        db.execute = AsyncMock(side_effect=_execute)
+
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["sub-b", "sub-d"],
+            ),
+            patch(
+                "app.services.node_performance.query_realtime_auto_rate",
+                return_value=None,
+            ),
+        ):
+            result = await aggregate_node_snapshot(
+                db,
+                "node-001",
+                datetime.now(UTC).replace(tzinfo=None),
+                datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
+            )
+
+        assert result is not None
+        # 去重后：1 组代表 = 1
+        assert result["loop_count"] == 1
+        # 取 confidence=B 的 SUB（score=60），而非 score 更高但 confidence=D 的 SUB
+        assert result["score"] == Decimal("60.00")
 
 
 # ---------------------------------------------------------------------------
