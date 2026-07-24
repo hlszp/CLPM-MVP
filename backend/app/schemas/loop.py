@@ -104,6 +104,13 @@ class LoopCreate(CamelModel):
         le=86400,
         description="理想稳态时间（秒），空则按控制类型默认值",
     )
+    # P4 S4：复杂回路分组（RFC 决策点 1 方案 A）
+    complexLoopGroupId: str | None = Field(
+        None, description="复杂回路分组 ID；同 ID 回路归为一个物理控制回路，NULL=普通单回路"
+    )
+    complexRole: str | None = Field(
+        None, description="复杂回路角色：MAIN(主回路,聚合代表) / SUB(副回路)；NULL=普通单回路"
+    )
 
 
 class LoopUpdate(CamelModel):
@@ -163,6 +170,9 @@ class LoopUpdate(CamelModel):
         le=86400,
         description="理想稳态时间（秒），空则按控制类型默认值",
     )
+    # P4 S4：复杂回路分组（PUT null 可清空，解除分组）
+    complexLoopGroupId: str | None = Field(None, description="复杂回路分组 ID；NULL=普通单回路")
+    complexRole: str | None = Field(None, description="复杂回路角色：MAIN / SUB；NULL=普通单回路")
 
 
 class TagMappingSlot(CamelModel):
@@ -223,6 +233,8 @@ class LoopListItem(CamelModel):
     idealSettlingTime: float | None = Field(
         None, description="理想稳态时间（秒），空则按控制类型默认值"
     )
+    complexLoopGroupId: str | None = Field(None, description="复杂回路分组 ID")
+    complexRole: str | None = Field(None, description="复杂回路角色：MAIN / SUB")
 
 
 class LoopListData(CamelModel):
@@ -265,6 +277,8 @@ class LoopBasicInfo(CamelModel):
     idealSettlingTime: float | None = Field(
         None, description="理想稳态时间（秒），空则按控制类型默认值"
     )
+    complexLoopGroupId: str | None = Field(None, description="复杂回路分组 ID")
+    complexRole: str | None = Field(None, description="复杂回路角色：MAIN / SUB")
     createdAt: str | None = None
     createdBy: str | None = None
     updatedAt: str | None = None
@@ -340,6 +354,8 @@ class LoopUpdateResult(CamelModel):
     opOutputUpperLimit: float | None = None
     dcsModelId: str | None = None
     idealSettlingTime: float | None = None
+    complexLoopGroupId: str | None = None
+    complexRole: str | None = None
     updatedAt: str | None = None
     updatedBy: str | None = None
 
@@ -461,14 +477,60 @@ class LoopConfidenceLatestItem(CamelModel):
     updated_at: datetime | None = None
 
 
+# ---------------------------------------------------------------------------
+# P4 S4：复杂回路分组 schemas
+# ---------------------------------------------------------------------------
+
+
+class LoopBatchGroupingRequest(CamelModel):
+    """POST /api/v1/loops/batch-grouping 请求体。
+
+    将 2-20 个回路建立复杂回路分组（串级/超驰等），系统自动生成 group ID，
+    指定一个 MAIN 回路，其余自动为 SUB。
+    """
+
+    loopIds: list[str] = Field(
+        ..., min_length=2, max_length=20, description="回路 ID 列表（2-20 个）"
+    )
+    mainLoopId: str = Field(..., description="主回路 ID（须在 loopIds 中，设为 MAIN）")
+
+
+class LoopGroupAssignment(CamelModel):
+    """批量分组后的单回路分配结果。"""
+
+    loopId: str
+    tagName: str
+    role: str  # 'MAIN' | 'SUB'
+
+
+class LoopBatchGroupingResult(CamelModel):
+    """POST /api/v1/loops/batch-grouping 响应。"""
+
+    groupId: str = Field(..., description="新生成的分组 ID")
+    affected: int = Field(..., description="受影响的回路数")
+    assignments: list[LoopGroupAssignment] = Field(..., description="各回路的分组角色分配")
+
+
+class ComplexGroupItem(CamelModel):
+    """GET /api/v1/loops/complex-groups 响应项。"""
+
+    groupId: str = Field(..., description="分组 ID")
+    mainTagName: str | None = Field(None, description="主回路位号（MAIN 回路的 tagName）")
+    memberCount: int = Field(..., description="组成员数")
+
+
 __all__ = [
+    "ComplexGroupItem",
     "LoopAasSyncStatus",
     "LoopBasicInfo",
+    "LoopBatchGroupingRequest",
+    "LoopBatchGroupingResult",
     "LoopConfidenceLatestItem",
     "LoopConfidenceMetricDetail",
     "LoopCreate",
     "LoopDeleteResult",
     "LoopDetailData",
+    "LoopGroupAssignment",
     "LoopImportError",
     "LoopImportResult",
     "LoopListItem",

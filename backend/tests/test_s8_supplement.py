@@ -145,6 +145,9 @@ LOOP_001.created_by = "admin"
 LOOP_001.updated_by = None
 LOOP_001.score_weights = None
 LOOP_001.remark = None
+# P4 S4：复杂回路分组字段（默认 None = 普通单回路）
+LOOP_001.complex_loop_group_id = None
+LOOP_001.complex_role = None
 
 
 class TestLoopPermissionAndValidation:

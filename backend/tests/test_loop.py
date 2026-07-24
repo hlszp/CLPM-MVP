@@ -39,6 +39,9 @@ LOOP_001.importance_level = 3
 LOOP_001.include_in_evaluation = True
 LOOP_001.modeattr_tag_id = None
 LOOP_001.data_retention_days = None
+# P4 S4：复杂回路分组字段（默认 None = 普通单回路）
+LOOP_001.complex_loop_group_id = None
+LOOP_001.complex_role = None
 
 
 def _make_scalars_mock(items: list) -> MagicMock:
@@ -1125,6 +1128,9 @@ class TestIdealSettlingTimeField:
         loop.dcs_model_id = None
         loop.ideal_settling_time = ideal_settling_time
         loop.remark = None
+        # P4 S4：复杂回路分组字段（默认 None = 普通单回路）
+        loop.complex_loop_group_id = None
+        loop.complex_role = None
         loop.updated_at = None
         loop.updated_by = "admin"
         return loop

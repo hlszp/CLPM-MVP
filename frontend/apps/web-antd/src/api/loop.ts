@@ -89,6 +89,9 @@ export namespace LoopApi {
     max: null | number;
   }
 
+  /** 复杂回路角色：MAIN(主回路,聚合代表) / SUB(副回路)；NULL=普通单回路 */
+  export type ComplexRole = 'MAIN' | 'SUB';
+
   /** 回路列表项（IDS v3.2 §2.2.7） */
   export interface LoopListItem {
     loopId: string;
@@ -130,6 +133,10 @@ export namespace LoopApi {
     dcsModelId?: null | string;
     /** 理想稳态时间（秒），空则按控制类型默认值 */
     idealSettlingTime?: null | number;
+    /** P4 S4：复杂回路分组 ID（同 ID 归为一个物理控制回路，NULL=普通单回路） */
+    complexLoopGroupId?: null | string;
+    /** P4 S4：复杂回路角色（MAIN/SUB，NULL=普通单回路） */
+    complexRole?: ComplexRole | null;
   }
 
   /** 回路列表查询参数（IDS v3.2 §2.2.7） */
@@ -173,6 +180,10 @@ export namespace LoopApi {
     dcsModelId?: null | string;
     /** 理想稳态时间（秒），空则按控制类型默认值 */
     idealSettlingTime?: null | number;
+    /** P4 S4：复杂回路分组 ID（NULL=普通单回路） */
+    complexLoopGroupId?: null | string;
+    /** P4 S4：复杂回路角色（MAIN/SUB，NULL=普通单回路） */
+    complexRole?: ComplexRole | null;
   }
 
   /** 更新回路参数（IDS v3.2 §2.2.10） */
@@ -197,6 +208,10 @@ export namespace LoopApi {
     dcsModelId?: null | string;
     /** 理想稳态时间（秒），空则按控制类型默认值 */
     idealSettlingTime?: null | number;
+    /** P4 S4：复杂回路分组 ID（PUT null 可清空，解除分组） */
+    complexLoopGroupId?: null | string;
+    /** P4 S4：复杂回路角色（PUT null 可清空，解除分组） */
+    complexRole?: ComplexRole | null;
   }
 
   /** 创建回路响应（IDS v3.2 §2.2.8） */
@@ -211,6 +226,10 @@ export namespace LoopApi {
     remark?: string;
     createdAt: string;
     createdBy: string;
+    /** P4 S4：复杂回路分组 ID */
+    complexLoopGroupId?: null | string;
+    /** P4 S4：复杂回路角色 */
+    complexRole?: ComplexRole | null;
   }
 
   /** 更新回路响应（IDS v3.2 §2.2.10） */
@@ -222,6 +241,10 @@ export namespace LoopApi {
     remark?: string;
     updatedAt: string;
     updatedBy: string;
+    /** P4 S4：复杂回路分组 ID */
+    complexLoopGroupId?: null | string;
+    /** P4 S4：复杂回路角色 */
+    complexRole?: ComplexRole | null;
   }
 
   /** 删除回路响应（IDS v3.2 §2.2.11） */
@@ -257,6 +280,10 @@ export namespace LoopApi {
     updatedBy: string;
     /** 理想稳态时间（秒），空则按控制类型默认值 */
     idealSettlingTime?: null | number;
+    /** P4 S4：复杂回路分组 ID */
+    complexLoopGroupId?: null | string;
+    /** P4 S4：复杂回路角色 */
+    complexRole?: ComplexRole | null;
   }
 
   /** 回路详情 - Tag 关联映射（IDS v3.2 §2.2.9） */
@@ -499,6 +526,42 @@ export namespace LoopApi {
     /** 受影响的回路 ID 列表 */
     loopIds: string[];
   }
+
+  /** P4 S4：批量分组请求参数 */
+  export interface LoopBatchGroupingParams {
+    /** 回路 ID 列表（2-20 个） */
+    loopIds: string[];
+    /** 主回路 ID（须在 loopIds 中，设为 MAIN） */
+    mainLoopId: string;
+  }
+
+  /** P4 S4：批量分组后单回路分配结果 */
+  export interface LoopGroupAssignment {
+    loopId: string;
+    tagName: string;
+    /** 分组角色：MAIN(主回路) / SUB(副回路) */
+    role: ComplexRole;
+  }
+
+  /** P4 S4：批量分组响应 */
+  export interface LoopBatchGroupingResult {
+    /** 新生成的分组 ID */
+    groupId: string;
+    /** 受影响的回路数 */
+    affected: number;
+    /** 各回路的分组角色分配（MAIN 在前） */
+    assignments: LoopGroupAssignment[];
+  }
+
+  /** P4 S4：复杂回路分组列表项 */
+  export interface ComplexGroupItem {
+    /** 分组 ID */
+    groupId: string;
+    /** 主回路位号（MAIN 回路的 tagName，无 MAIN 时为 null） */
+    mainTagName: null | string;
+    /** 组成员数 */
+    memberCount: number;
+  }
 }
 
 /**
@@ -635,4 +698,24 @@ export function batchConfigLoopsApi(data: LoopApi.LoopBatchConfigParams) {
     '/loops/batch-config',
     data,
   );
+}
+
+/**
+ * 批量建立复杂回路分组（P4 S4） — 将 2-20 个回路归为一个复杂控制回路，
+ * 系统自动生成 group ID，指定一个 MAIN 回路（聚合代表），其余自动为 SUB。
+ *
+ * 仅 ADMIN / IC_ENGINEER 可调用。
+ */
+export function batchGroupLoopsApi(data: LoopApi.LoopBatchGroupingParams) {
+  return requestClient.post<LoopApi.LoopBatchGroupingResult>(
+    '/loops/batch-grouping',
+    data,
+  );
+}
+
+/**
+ * 查询所有复杂回路分组（P4 S4） — 返回分组列表，含主回路位号与组成员数。
+ */
+export function getComplexGroupsApi() {
+  return requestClient.get<LoopApi.ComplexGroupItem[]>('/loops/complex-groups');
 }

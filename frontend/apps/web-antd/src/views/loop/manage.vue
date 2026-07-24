@@ -53,6 +53,7 @@ import {
 import { getModelsApi } from '#/api/dcs';
 import {
   batchConfigLoopsApi,
+  batchGroupLoopsApi,
   createLoopApi,
   deleteLoopApi,
   getLoopDetailApi,
@@ -429,6 +430,13 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       width: 60,
       align: 'center',
     },
+    // P4 S4：复杂回路分组列（MAIN/SUB 角色标签）
+    {
+      title: '分组',
+      key: 'complexGroup',
+      width: 70,
+      align: 'center',
+    },
     { title: '操作', key: 'action', width: 100, fixed: 'right' },
   ];
 });
@@ -682,6 +690,25 @@ const changeSummary = computed<DiffEntry[]>(() => {
         field: 'OP 输出限位',
         from: `${origLowerStr} ~ ${origUpperStr}`,
         to: `${newLowerStr} ~ ${newUpperStr}`,
+      });
+    }
+    // P4 S4：复杂回路分组变更对比
+    const origGroup = formState._origComplexLoopGroupId ?? null;
+    const origRole = formState._origComplexRole ?? null;
+    const newGroup = formState.complexLoopGroupId ?? null;
+    const newRole = formState.complexRole ?? null;
+    const groupChanged =
+      (origGroup ?? null) !== (newGroup ?? null) ||
+      (origRole ?? null) !== (newRole ?? null);
+    if (groupChanged) {
+      const fmt = (gid: null | string, role: null | string) => {
+        if (!gid || !role) return '未分组';
+        return `${role === 'MAIN' ? '主回路' : '副回路'} ${gid.slice(0, 8)}…`;
+      };
+      summary.push({
+        field: '回路分组',
+        from: fmt(origGroup, origRole),
+        to: fmt(newGroup, newRole),
       });
     }
     // 评分权重对比已移除（v6.1：回路级权重未参与计算）
@@ -974,6 +1001,63 @@ async function handleBatchDangerConfirm() {
 const importing = ref(false);
 const exporting = ref(false);
 
+// ===== P4 S4：批量回路分组 =====
+const groupModalVisible = ref(false);
+const groupSaving = ref(false);
+/** 批量分组选中的主回路 ID */
+const groupMainLoopId = ref<string | undefined>(undefined);
+
+/** 批量分组弹窗中可选的回路列表（来自当前勾选行） */
+const groupCandidateLoops = computed(() => {
+  return loopList.value.filter((lp) =>
+    selectedRowKeys.value.includes(lp.loopId),
+  );
+});
+
+/** 打开批量分组弹窗 */
+function handleBatchGroup() {
+  const count = selectedRowKeys.value.length;
+  if (count < 2) {
+    message.warning('请至少勾选 2 个回路进行分组');
+    return;
+  }
+  if (count > 20) {
+    message.warning('单次分组最多 20 个回路，请减少选择数量');
+    return;
+  }
+  // 默认选中第一个候选为主回路
+  groupMainLoopId.value = groupCandidateLoops.value[0]?.loopId;
+  groupModalVisible.value = true;
+}
+
+/** 批量分组提交 */
+async function handleBatchGroupSubmit() {
+  if (!groupMainLoopId.value) {
+    message.warning('请选择主回路');
+    return;
+  }
+  groupSaving.value = true;
+  const hide = message.loading('正在建立复杂回路分组…', 0);
+  try {
+    const result = await batchGroupLoopsApi({
+      loopIds: selectedRowKeys.value,
+      mainLoopId: groupMainLoopId.value,
+    });
+    hide();
+    const mainTag =
+      result.assignments.find((a) => a.role === 'MAIN')?.tagName ?? '';
+    message.success(`分组成功：${result.affected} 个回路，主回路 ${mainTag}`);
+    groupModalVisible.value = false;
+    selectedRowKeys.value = [];
+    await loadList();
+  } catch (error) {
+    hide();
+    console.error('操作失败:', error);
+  } finally {
+    groupSaving.value = false;
+  }
+}
+
 async function handleExport() {
   exporting.value = true;
   const hide = message.loading('正在生成导出文件，请稍候…', 0);
@@ -1080,6 +1164,13 @@ const formState = reactive({
   dcsModelId: undefined as string | undefined,
   /** 理想稳态时间（秒），留空按控制类型默认值 */
   idealSettlingTime: undefined as number | undefined,
+  /** P4 S4：复杂回路分组 ID（NULL=普通单回路） */
+  complexLoopGroupId: undefined as string | undefined,
+  /** P4 S4：复杂回路角色（MAIN/SUB，NULL=普通单回路） */
+  complexRole: undefined as LoopApi.ComplexRole | undefined,
+  /** P4 S4：原始分组信息快照（用于判断是否变更 + 解除分组确认） */
+  _origComplexLoopGroupId: undefined as string | undefined,
+  _origComplexRole: undefined as LoopApi.ComplexRole | undefined,
 });
 
 /**
@@ -1137,6 +1228,30 @@ const idealSettlingTimeDefault = computed(() => {
   };
   return map[formState.loopType ?? ''] ?? 120;
 });
+
+/**
+ * P4 S4：复杂回路分组状态
+ * - 'none'：普通单回路（未分组）
+ * - 'main'：主回路（聚合代表）
+ * - 'sub'：副回路
+ */
+const complexGroupStatus = computed<'main' | 'none' | 'sub'>(() => {
+  if (!formState.complexLoopGroupId) return 'none';
+  return formState.complexRole === 'MAIN' ? 'main' : 'sub';
+});
+
+/** P4 S4：分组 ID 截断显示（UUID 仅显示前 8 位） */
+const complexGroupIdShort = computed(() => {
+  const gid = formState.complexLoopGroupId;
+  if (!gid) return '';
+  return gid.length > 8 ? `${gid.slice(0, 8)}…` : gid;
+});
+
+/** P4 S4：解除回路分组（清空 complexLoopGroupId / complexRole） */
+function handleUngroupLoop() {
+  formState.complexLoopGroupId = undefined;
+  formState.complexRole = undefined;
+}
 
 /** v6.1：OP Tag 是否已关联（决定限位字段是否可编辑） */
 const opTagAssociated = computed(() => {
@@ -1488,6 +1603,11 @@ function handleAdd() {
   formState.opOutputUpperLimit = undefined;
   formState.dcsModelId = undefined;
   formState.idealSettlingTime = undefined;
+  // P4 S4：新建回路默认未分组
+  formState.complexLoopGroupId = undefined;
+  formState.complexRole = undefined;
+  formState._origComplexLoopGroupId = undefined;
+  formState._origComplexRole = undefined;
   useDefaultOpLimits.value = true;
   loadDcsModels();
   activeTab.value = 'basic';
@@ -1537,6 +1657,10 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
   formState.dcsModelId = (record as any).dcsModelId ?? undefined;
   // 读取理想稳态时间（NULL=按控制类型默认值）
   formState.idealSettlingTime = (record as any).idealSettlingTime ?? undefined;
+  // P4 S4：读取复杂回路分组（列表项可能携带）
+  formState.complexLoopGroupId =
+    (record as any).complexLoopGroupId ?? undefined;
+  formState.complexRole = (record as any).complexRole ?? undefined;
   useDefaultOpLimits.value =
     formState.opOutputLowerLimit === undefined &&
     formState.opOutputUpperLimit === undefined;
@@ -1566,6 +1690,13 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
     // 详情加载后同步理想稳态时间（详情响应更权威）
     formState.idealSettlingTime =
       detail.basicInfo.idealSettlingTime ?? undefined;
+    // P4 S4：详情加载后同步复杂回路分组（详情响应更权威）
+    formState.complexLoopGroupId =
+      detail.basicInfo.complexLoopGroupId ?? undefined;
+    formState.complexRole = detail.basicInfo.complexRole ?? undefined;
+    // 快照原始值，用于判断是否变更
+    formState._origComplexLoopGroupId = formState.complexLoopGroupId;
+    formState._origComplexRole = formState.complexRole;
     useDefaultOpLimits.value =
       formState.opOutputLowerLimit === undefined &&
       formState.opOutputUpperLimit === undefined;
@@ -1765,7 +1896,13 @@ async function doSaveBasic() {
         dcsModelId: formState.dcsModelId ?? null,
         // 理想稳态时间（秒，null=按控制类型默认值）
         idealSettlingTime: formState.idealSettlingTime ?? null,
+        // P4 S4：复杂回路分组（仅当变更时发送，null=解除分组）
+        complexLoopGroupId: formState.complexLoopGroupId ?? null,
+        complexRole: formState.complexRole ?? null,
       });
+      // P4 S4：保存后更新原始快照
+      formState._origComplexLoopGroupId = formState.complexLoopGroupId;
+      formState._origComplexRole = formState.complexRole;
       message.success('回路更新成功');
     } else {
       if (!formState.unitId) {
@@ -1913,6 +2050,14 @@ watch(
             :disabled="selectedRowKeys.length === 0"
             disabled-reason="请先选择回路"
             @click="handleBatchConfig"
+          />
+          <ClpmToolbarButton
+            v-permission="['ADMIN', 'IC_ENGINEER']"
+            icon="ant-design:group-outlined"
+            label="批量分组"
+            :disabled="selectedRowKeys.length < 2"
+            disabled-reason="至少选择 2 个回路"
+            @click="handleBatchGroup"
           />
           <ClpmToolbarButton
             v-permission="['ADMIN']"
@@ -2286,6 +2431,17 @@ watch(
                 "
               />
             </template>
+            <!-- P4 S4：复杂回路分组列 -->
+            <template v-else-if="column.key === 'complexGroup'">
+              <Tag
+                v-if="record.complexLoopGroupId && record.complexRole"
+                :color="record.complexRole === 'MAIN' ? 'purple' : 'blue'"
+                class="m-0"
+              >
+                {{ record.complexRole === 'MAIN' ? '主' : '副' }}
+              </Tag>
+              <span v-else class="text-slate-400">—</span>
+            </template>
             <template v-else-if="column.key === 'status'">
               <StatusBadge
                 :status="record.status"
@@ -2656,6 +2812,61 @@ watch(
                   留空按控制类型默认值：流量30/压力60/温度180/液位600/成分300，其他120
                 </div>
               </FormItem>
+              <!-- P4 S4：复杂回路分组配置区 -->
+              <div
+                class="mb-2 rounded border border-l-4 border-l-violet-400 bg-violet-50/40 p-3"
+              >
+                <div class="mb-2 flex items-center gap-2">
+                  <span class="text-sm font-semibold text-slate-700"
+                    >回路分组</span
+                  >
+                  <Tooltip
+                    title="复杂回路分组用于串级/超驰等场景，同组回路在装置级聚合时按 MAIN 代表去重。建议使用工具栏「批量分组」按钮建立分组。"
+                  >
+                    <IconifyIcon
+                      icon="mdi:information-outline"
+                      class="text-xs text-gray-400"
+                    />
+                  </Tooltip>
+                </div>
+                <!-- 已分组状态 -->
+                <template v-if="complexGroupStatus !== 'none'">
+                  <div class="flex items-center gap-2">
+                    <Tag
+                      :color="complexGroupStatus === 'main' ? 'purple' : 'blue'"
+                      class="m-0"
+                    >
+                      {{
+                        complexGroupStatus === 'main'
+                          ? '主回路 MAIN'
+                          : '副回路 SUB'
+                      }}
+                    </Tag>
+                    <span class="text-xs text-gray-500">
+                      分组 {{ complexGroupIdShort }}
+                    </span>
+                    <Button
+                      v-if="!isViewMode"
+                      type="link"
+                      size="small"
+                      danger
+                      class="ml-auto px-0"
+                      @click="handleUngroupLoop"
+                    >
+                      解除分组
+                    </Button>
+                  </div>
+                </template>
+                <!-- 未分组状态 -->
+                <template v-else>
+                  <div class="text-xs text-gray-500">
+                    普通单回路（未分组）
+                    <span class="ml-1 text-gray-400">
+                      · 可通过工具栏「批量分组」建立复杂回路分组
+                    </span>
+                  </div>
+                </template>
+              </div>
               <!-- WS-C 6-5：PID 参数只读区（实时读取自关联 Tag，仅展示不回写） -->
               <div v-if="editingLoop" class="mb-1 text-xs text-gray-500">
                 PID 参数（只读，实时读取自关联 Tag<span
@@ -2864,6 +3075,65 @@ watch(
             allow-clear
             :options="batchEvaluationOptions"
           />
+        </FormItem>
+      </Form>
+    </Modal>
+
+    <!-- P4 S4：批量分组弹窗 -->
+    <Modal
+      v-model:open="groupModalVisible"
+      title="批量建立复杂回路分组"
+      width="560px"
+      :confirm-loading="groupSaving"
+      ok-text="确认分组"
+      cancel-text="取消"
+      @ok="handleBatchGroupSubmit"
+    >
+      <div
+        class="mb-3 rounded border border-l-4 border-l-violet-400 bg-violet-50/40 p-3 text-xs text-gray-600"
+      >
+        将已选中的
+        <span class="font-medium text-violet-600">{{
+          selectedRowKeys.length
+        }}</span>
+        个回路归为一个复杂控制回路（串级/超驰等），系统自动生成分组
+        ID，指定一个主回路 MAIN（聚合代表），其余自动为 SUB 副回路。
+      </div>
+      <Form layout="vertical" class="pt-1">
+        <FormItem label="选择主回路（MAIN）" required>
+          <Select
+            v-model:value="groupMainLoopId"
+            placeholder="请选择主回路"
+            :options="
+              groupCandidateLoops.map((lp) => ({
+                label: `${lp.tagName}${lp.description ? ` · ${ lp.description}` : ''}`,
+                value: lp.loopId,
+              }))
+            "
+          />
+          <div class="mt-1 text-xs text-gray-400">
+            主回路将作为该分组的聚合代表，参与装置级 KPI 去重统计
+          </div>
+        </FormItem>
+        <FormItem label="分组预览">
+          <div class="rounded border border-gray-200 bg-gray-50 p-2">
+            <div class="mb-1 text-xs text-gray-500">
+              共 {{ groupCandidateLoops.length }} 个回路
+            </div>
+            <div class="flex flex-wrap gap-1">
+              <Tag
+                v-for="lp in groupCandidateLoops"
+                :key="lp.loopId"
+                :color="lp.loopId === groupMainLoopId ? 'purple' : 'blue'"
+                class="m-0"
+              >
+                {{ lp.tagName }}
+                <span class="ml-0.5 opacity-60">
+                  {{ lp.loopId === groupMainLoopId ? 'MAIN' : 'SUB' }}
+                </span>
+              </Tag>
+            </div>
+          </div>
         </FormItem>
       </Form>
     </Modal>

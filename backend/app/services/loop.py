@@ -23,7 +23,7 @@ from app.core.exceptions import BizError
 from app.core.redis import redis_client
 from app.models.audit import SysAuditLog
 from app.models.dcs_model import DcsModel
-from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.loop import COMPLEX_ROLE_MAIN, LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
 
@@ -600,6 +600,10 @@ async def list_loops(
                     if loop.ideal_settling_time is not None
                     else None
                 ),
+                "complexLoopGroupId": (
+                    str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
+                ),
+                "complexRole": loop.complex_role,
             }
         )
 
@@ -746,6 +750,75 @@ def _validate_op_output_limits(
         )
 
 
+async def _validate_complex_group(
+    db: AsyncSession,
+    complex_loop_group_id: str | None,
+    complex_role: str | None,
+    exclude_loop_id: str | None = None,
+) -> None:
+    """校验复杂回路分组字段（P4 S4）。
+
+    校验规则：
+    1. 一致性：group_id 和 role 须同时为 NULL 或同时非 NULL
+    2. 角色取值：role 须为 'MAIN' / 'SUB' / None
+    3. MAIN 唯一性：若 role == 'MAIN'，同 group_id 下不能已有其他 MAIN 回路
+    4. group_id 格式：须为合法 UUID
+
+    Raises:
+        BizError: ERR_COMPLEX_GROUP_COHERENCE / ERR_COMPLEX_GROUP_ROLE_INVALID
+                  / ERR_COMPLEX_GROUP_MAIN_EXISTS / ERR_COMPLEX_GROUP_ID_INVALID
+    """
+    # 1. 一致性校验
+    has_group = complex_loop_group_id is not None
+    has_role = complex_role is not None
+    if has_group != has_role:
+        raise BizError(
+            code="ERR_COMPLEX_GROUP_COHERENCE",
+            message="复杂回路分组 ID 与角色须同时为空或同时设置",
+            status_code=400,
+        )
+
+    # 两者均为 NULL = 普通单回路，无需进一步校验
+    if not has_group:
+        return
+
+    # 2. 角色取值校验
+    if complex_role not in ("MAIN", "SUB"):
+        raise BizError(
+            code="ERR_COMPLEX_GROUP_ROLE_INVALID",
+            message=f"复杂回路角色须为 MAIN 或 SUB，当前为 {complex_role}",
+            status_code=400,
+        )
+
+    # 3. group_id UUID 格式校验
+    try:
+        import uuid
+
+        uuid.UUID(str(complex_loop_group_id))
+    except (ValueError, AttributeError):
+        raise BizError(
+            code="ERR_COMPLEX_GROUP_ID_INVALID",
+            message=f"复杂回路分组 ID 须为合法 UUID，当前为 {complex_loop_group_id}",
+            status_code=400,
+        ) from None
+
+    # 4. MAIN 唯一性校验
+    if complex_role == COMPLEX_ROLE_MAIN:
+        existing_main = await db.execute(
+            select(LoopLedger.id).where(
+                LoopLedger.complex_loop_group_id == complex_loop_group_id,
+                LoopLedger.complex_role == COMPLEX_ROLE_MAIN,
+            )
+        )
+        existing_id = existing_main.scalar_one_or_none()
+        if existing_id is not None and str(existing_id) != str(exclude_loop_id or ""):
+            raise BizError(
+                code="ERR_COMPLEX_GROUP_MAIN_EXISTS",
+                message="该分组已存在 MAIN 回路，一个分组仅允许一个 MAIN",
+                status_code=400,
+            )
+
+
 async def create_loop(
     db: AsyncSession,
     tag_name: str,
@@ -765,12 +838,15 @@ async def create_loop(
     op_output_upper_limit: float | None = None,
     dcs_model_id: str | None = None,
     ideal_settling_time: float | None = None,
+    complex_loop_group_id: str | None = None,
+    complex_role: str | None = None,
 ) -> dict:
     """创建回路。
 
     Raises:
         BizError: ERR_LOOP_DUPLICATE (tag_name 重复) / ERR_NODE_NOT_FOUND (unit_id 不存在)
                   / ERR_OP_LIMIT_OUT_OF_RANGE (OP 输出限位校验失败)
+                  / ERR_COMPLEX_GROUP_* (复杂回路分组校验失败)
     """
     # tag_name 唯一校验
     existing = await db.execute(select(LoopLedger).where(LoopLedger.tag_name == tag_name))
@@ -799,6 +875,9 @@ async def create_loop(
         op_range_max=None,
     )
 
+    # P4 S4：校验复杂回路分组字段
+    await _validate_complex_group(db, complex_loop_group_id, complex_role)
+
     # 新建回路默认状态：INACTIVE（未激活）或 PARTIAL（已激活但无 Tag）
     status = "PARTIAL" if is_active else "INACTIVE"
     # v5.3 对齐 FDS §5.2.3 / DDS v4.1：include_in_evaluation 默认 True（参与评估）
@@ -825,6 +904,8 @@ async def create_loop(
         op_output_upper_limit=op_output_upper_limit,
         dcs_model_id=dcs_model_id,
         ideal_settling_time=ideal_settling_time,
+        complex_loop_group_id=complex_loop_group_id,
+        complex_role=complex_role,
         score_weights=score_weights,
         remark=remark,
         created_by=operator,
@@ -884,6 +965,10 @@ async def create_loop(
         "idealSettlingTime": (
             float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
         ),
+        "complexLoopGroupId": (
+            str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
+        ),
+        "complexRole": loop.complex_role,
         "isActive": bool(loop.is_active),
         "scoreWeights": loop.score_weights,
         "remark": loop.remark,
@@ -1082,6 +1167,10 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
             "idealSettlingTime": (
                 float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
             ),
+            "complexLoopGroupId": (
+                str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
+            ),
+            "complexRole": loop.complex_role,
             "createdAt": loop.created_at.isoformat() if loop.created_at else None,
             "createdBy": loop.created_by,
             "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
@@ -1119,11 +1208,16 @@ async def update_loop(
     _op_upper_set: bool = False,
     _dcs_model_id_set: bool = False,
     _ideal_settling_time_set: bool = False,
+    complex_loop_group_id: str | None = None,
+    complex_role: str | None = None,
+    _complex_group_set: bool = False,
+    _complex_role_set: bool = False,
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间）。
+    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间/复杂回路分组）。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_NODE_NOT_FOUND / ERR_OP_LIMIT_OUT_OF_RANGE
+                  / ERR_COMPLEX_GROUP_*
     """
     result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = result.scalar_one_or_none()
@@ -1161,6 +1255,15 @@ async def update_loop(
         op_range_max=op_range_max,
     )
 
+    # P4 S4：校验复杂回路分组（生效值 = 更新值优先，否则保持原值）
+    effective_group = (
+        complex_loop_group_id
+        if _complex_group_set
+        else (str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None)
+    )
+    effective_role = complex_role if _complex_role_set else loop.complex_role
+    await _validate_complex_group(db, effective_group, effective_role, exclude_loop_id=loop_id)
+
     before = {
         "description": loop.description,
         "unitId": str(loop.unit_id) if loop.unit_id else None,
@@ -1183,6 +1286,10 @@ async def update_loop(
         "idealSettlingTime": (
             float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
         ),
+        "complexLoopGroupId": (
+            str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
+        ),
+        "complexRole": loop.complex_role,
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -1220,6 +1327,12 @@ async def update_loop(
     # 理想稳态时间：支持通过 PUT null 清空（恢复按控制类型默认值）
     if _ideal_settling_time_set:
         loop.ideal_settling_time = ideal_settling_time
+    # P4 S4：复杂回路分组——支持通过 PUT null 清空（解除分组）
+    # _complex_group_set / _complex_role_set 标记区分"未传递"和"传递了 NULL"
+    if _complex_group_set:
+        loop.complex_loop_group_id = complex_loop_group_id
+    if _complex_role_set:
+        loop.complex_role = complex_role
     loop.updated_by = operator
 
     # 重新推导 status
@@ -1248,6 +1361,10 @@ async def update_loop(
         "idealSettlingTime": (
             float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
         ),
+        "complexLoopGroupId": (
+            str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
+        ),
+        "complexRole": loop.complex_role,
         "status": new_status,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -1289,6 +1406,10 @@ async def update_loop(
         "idealSettlingTime": (
             float(loop.ideal_settling_time) if loop.ideal_settling_time is not None else None
         ),
+        "complexLoopGroupId": (
+            str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
+        ),
+        "complexRole": loop.complex_role,
         "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,
         "updatedBy": loop.updated_by,
     }
@@ -1371,6 +1492,143 @@ async def delete_loop(
         "deleted": True,
         "deletedAt": datetime.now(UTC).replace(tzinfo=None).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# 复杂回路分组 (P4 S4)
+# ---------------------------------------------------------------------------
+
+
+async def batch_group_loops(
+    db: AsyncSession,
+    loop_ids: list[str],
+    main_loop_id: str,
+    operator: str,
+) -> dict:
+    """批量建立复杂回路分组（P4 S4）。
+
+    将 2-20 个回路归为一个复杂控制回路（串级/超驰等），系统自动生成新的 group_id，
+    指定其中一个为 MAIN（聚合代表），其余自动为 SUB。
+
+    Args:
+        loop_ids: 回路 ID 列表（2-20 个）
+        main_loop_id: 主回路 ID（须在 loop_ids 中）
+        operator: 操作人
+
+    Raises:
+        BizError: ERR_COMPLEX_GROUP_MAIN_NOT_IN_LIST / ERR_LOOP_NOT_FOUND
+                  / ERR_COMPLEX_GROUP_MAIN_EXISTS（所选主回路已是其他分组 MAIN）
+    """
+    # 1. 主回路须在列表中
+    if main_loop_id not in loop_ids:
+        raise BizError(
+            code="ERR_COMPLEX_GROUP_MAIN_NOT_IN_LIST",
+            message="主回路 ID 须在 loopIds 列表中",
+            status_code=400,
+        )
+
+    # 2. 查询全部目标回路（一次 IN 查询，去重避免重复 ID）
+    unique_ids = list(dict.fromkeys(loop_ids))
+    result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(unique_ids)))
+    loops = result.scalars().all()
+    if len(loops) != len(unique_ids):
+        found_ids = {str(lp.id) for lp in loops}
+        missing = [i for i in unique_ids if i not in found_ids]
+        raise BizError(
+            code="ERR_LOOP_NOT_FOUND",
+            message=f"以下回路不存在: {missing}",
+            status_code=404,
+        )
+
+    # 3. 校验主回路当前是否已是其他分组的 MAIN（避免跨分组重复 MAIN）
+    main_loop = next((lp for lp in loops if str(lp.id) == main_loop_id), None)
+    if main_loop is None:
+        raise BizError(
+            code="ERR_LOOP_NOT_FOUND",
+            message=f"主回路 {main_loop_id} 不存在",
+            status_code=404,
+        )
+    if main_loop.complex_loop_group_id and main_loop.complex_role == COMPLEX_ROLE_MAIN:
+        raise BizError(
+            code="ERR_COMPLEX_GROUP_MAIN_EXISTS",
+            message=(
+                f"回路 {main_loop.tag_name} 已是其他分组的 MAIN 回路，请先解除其原分组再行分配"
+            ),
+            status_code=400,
+        )
+
+    # 4. 生成新分组 ID，批量赋值
+    new_group_id = str(uuid4())
+    assignments: list[dict] = []
+    for lp in loops:
+        role = COMPLEX_ROLE_MAIN if str(lp.id) == main_loop_id else "SUB"
+        lp.complex_loop_group_id = new_group_id
+        lp.complex_role = role
+        lp.updated_by = operator
+        assignments.append({"loopId": str(lp.id), "tagName": lp.tag_name, "role": role})
+
+    # 5. 审计日志
+    await _write_audit(
+        db=db,
+        operator=operator,
+        operation_type="LOOP_BATCH_GROUPING",
+        target_type="loop_ledger",
+        target_id=new_group_id,
+        after_value=json.dumps(
+            {
+                "groupId": new_group_id,
+                "mainLoopId": main_loop_id,
+                "mainTagName": main_loop.tag_name,
+                "memberCount": len(loops),
+                "assignments": assignments,
+            },
+            ensure_ascii=False,
+        ),
+    )
+    await db.commit()
+
+    # 按 MAIN 在前、SUB 其后排序，便于前端展示
+    assignments.sort(key=lambda a: 0 if a["role"] == COMPLEX_ROLE_MAIN else 1)
+
+    return {
+        "groupId": new_group_id,
+        "affected": len(loops),
+        "assignments": assignments,
+    }
+
+
+async def list_complex_groups(db: AsyncSession) -> list[dict]:
+    """查询所有复杂回路分组（P4 S4）。
+
+    仅统计 is_active=True 的回路，按 group_id 聚合，提取 MAIN 回路位号与组成员数。
+    单回路（complex_loop_group_id IS NULL）不在统计范围内。
+
+    Returns:
+        分组列表，每项含 groupId / mainTagName / memberCount
+    """
+    stmt = text(
+        """
+        SELECT complex_loop_group_id,
+               MAX(CASE WHEN complex_role = 'MAIN' THEN tag_name END) AS main_tag_name,
+               COUNT(*) AS member_count
+        FROM loop_ledger
+        WHERE complex_loop_group_id IS NOT NULL
+          AND is_active = TRUE
+        GROUP BY complex_loop_group_id
+        ORDER BY MAX(CASE WHEN complex_role = 'MAIN' THEN tag_name END)
+        """
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return [
+        {
+            "groupId": str(row[0]),
+            "mainTagName": row[1],
+            "memberCount": int(row[2]),
+        }
+        for row in rows
+    ]
 
 
 # ---------------------------------------------------------------------------

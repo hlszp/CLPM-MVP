@@ -1,10 +1,13 @@
 """Loop ledger endpoints (IDS v3.2 §2.2.7~2.2.15).
 
-路由顺序：固定路径（/monitor、/export、/import、/batch-config）必须在 {loop_id} 之前声明。
+路由顺序：固定路径（/monitor、/export、/import、/batch-config、/batch-grouping、
+/complex-groups）必须在 {loop_id} 之前声明。
 
 - GET    /api/v1/loops              — 分页查询回路列表
 - POST   /api/v1/loops              — 创建回路
 - POST   /api/v1/loops/batch-config — 批量配置回路（仅 ADMIN）
+- POST   /api/v1/loops/batch-grouping — 批量建立复杂回路分组（ADMIN/IC_ENGINEER）
+- GET    /api/v1/loops/complex-groups — 查询所有复杂回路分组
 - GET    /api/v1/loops/monitor      — 回路监控列表
 - GET    /api/v1/loops/export       — 导出回路 Excel
 - POST   /api/v1/loops/import       — 批量导入回路 Excel
@@ -30,6 +33,9 @@ from app.models.metric import LoopConfidenceLatest
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.loop import (
+    ComplexGroupItem,
+    LoopBatchGroupingRequest,
+    LoopBatchGroupingResult,
     LoopConfidenceLatestItem,
     LoopCreate,
     LoopDeleteResult,
@@ -43,12 +49,14 @@ from app.schemas.loop import (
 )
 from app.schemas.loop_batch import LoopBatchConfigRequest, LoopBatchConfigResult
 from app.services.loop import (
+    batch_group_loops,
     create_loop,
     delete_loop,
     export_loops,
     get_loop_detail,
     get_loop_type_stats,
     import_loops,
+    list_complex_groups,
     list_loops,
     update_loop,
 )
@@ -146,6 +154,8 @@ async def create_loop_endpoint(
         op_output_upper_limit=body.opOutputUpperLimit,
         dcs_model_id=body.dcsModelId,
         ideal_settling_time=body.idealSettlingTime,
+        complex_loop_group_id=body.complexLoopGroupId,
+        complex_role=body.complexRole,
     )
     return success(data=data, message="创建成功")
 
@@ -210,6 +220,41 @@ async def batch_config_loops_endpoint(
         skipped=skipped,
     )
     return success(data=result.model_dump(by_alias=True), message="批量操作成功")
+
+
+# ---------------------------------------------------------------------------
+# Loop Complex Grouping (固定路径，必须在 {loop_id} 之前)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/batch-grouping", response_model=ApiResponse[LoopBatchGroupingResult])
+async def batch_group_loops_endpoint(
+    body: LoopBatchGroupingRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """批量建立复杂回路分组（仅 ADMIN / IC_ENGINEER）。
+
+    将 2-20 个回路归为一个复杂控制回路（串级/超驰等），系统自动生成 group ID，
+    指定一个 MAIN 回路（聚合代表），其余自动为 SUB。
+    """
+    data = await batch_group_loops(
+        db=db,
+        loop_ids=body.loopIds,
+        main_loop_id=body.mainLoopId,
+        operator=user.username,
+    )
+    return success(data=data, message="批量分组成功")
+
+
+@router.get("/complex-groups", response_model=ApiResponse[list[ComplexGroupItem]])
+async def list_complex_groups_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """查询所有复杂回路分组（含主回路位号与组成员数）。"""
+    data = await list_complex_groups(db=db)
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +373,7 @@ async def update_loop_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
 ) -> dict:
-    """更新回路（描述/所属单元/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位）。"""
+    """更新回路（描述/所属单元/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间/复杂回路分组）。"""
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
@@ -338,6 +383,8 @@ async def update_loop_endpoint(
     op_output_lower_limit = body.opOutputLowerLimit if "opOutputLowerLimit" in _fs else None
     op_output_upper_limit = body.opOutputUpperLimit if "opOutputUpperLimit" in _fs else None
     ideal_settling_time = body.idealSettlingTime if "idealSettlingTime" in _fs else None
+    complex_loop_group_id = body.complexLoopGroupId if "complexLoopGroupId" in _fs else None
+    complex_role = body.complexRole if "complexRole" in _fs else None
     data = await update_loop(
         db=db,
         loop_id=loop_id,
@@ -361,6 +408,10 @@ async def update_loop_endpoint(
         _op_upper_set="opOutputUpperLimit" in body.model_fields_set,
         _dcs_model_id_set="dcsModelId" in body.model_fields_set,
         _ideal_settling_time_set="idealSettlingTime" in body.model_fields_set,
+        complex_loop_group_id=complex_loop_group_id,
+        complex_role=complex_role,
+        _complex_group_set="complexLoopGroupId" in body.model_fields_set,
+        _complex_role_set="complexRole" in body.model_fields_set,
     )
     return success(data=data, message="更新成功")
 
