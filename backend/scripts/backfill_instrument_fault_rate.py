@@ -4,9 +4,12 @@
 复用 DataPlanner 基础设施（TDengine 取数 + 预处理），但仅请求 PV 信号。
 
 流程：
-1. 从 kpi_snapshot_hourly 查出所有 SUCCESS 但 instrument_fault_rate IS NULL 的 (loop_id, ts_start) 对
-2. 逐小时窗口：DataPlanner.request_bundles(["instrument_fault_rate"]) → InstrumentFaultRateCalculator → UPDATE
-3. 全部 loop 级更新完成后，逐小时窗口执行 batch_calculate_and_save_node_snapshots 更新 UnitKpiSummary
+1. 查出 kpi_snapshot_hourly 中 SUCCESS 但 instrument_fault_rate IS NULL 的
+   (loop_id, ts_start) 对
+2. 逐小时窗口：DataPlanner.request_bundles(["instrument_fault_rate"])
+   → InstrumentFaultRateCalculator → UPDATE
+3. loop 级更新完成后，逐小时窗口执行 batch_calculate_and_save_node_snapshots
+   更新 UnitKpiSummary
 
 用法：
     cd backend && uv run python scripts/backfill_instrument_fault_rate.py
@@ -71,8 +74,10 @@ async def _backfill_window(
     loop_configs: dict[str, dict],
 ) -> dict:
     """回填单个小时窗口内所有回路的 instrument_fault_rate."""
+    from sqlalchemy import select, update
+
+    from app.contracts.data_types import TimeWindow
     from app.core.db import AsyncSessionLocal
-    from app.contracts.data_types import ControlType, TimeWindow
     from app.models.loop import LoopLedger
     from app.models.metric import KpiSnapshotHourly
     from app.services.data_planner import DataPlanner
@@ -80,7 +85,6 @@ async def _backfill_window(
     from app.services.metric_calculator.instrument_fault import InstrumentFaultRateCalculator
     from app.services.metric_data_bundle import MetricDataBundleAssembler
     from app.tasks.kpi_calc import _loop_type_to_control_type, _make_config_loader
-    from sqlalchemy import select, update
 
     window_end = window_start + timedelta(hours=1)
     window_snapshots = [s for s in snapshots if s["ts_start"] == window_start]
@@ -194,15 +198,14 @@ async def _backfill_window(
 
 async def _backfill_node_aggregation(windows: list[datetime]) -> int:
     """逐小时窗口执行节点级聚合（更新 UnitKpiSummary）."""
+    from sqlalchemy import select
+
     from app.core.db import AsyncSessionLocal
     from app.models.plant_node import PlantNode
     from app.services.node_performance import batch_calculate_and_save_node_snapshots
-    from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
-        node_result = await db.execute(
-            select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
-        )
+        node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
         nodes = list(node_result.scalars().all())
 
     if not nodes:
