@@ -44,10 +44,44 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
     "fast_rate": {
         # settling_tolerance=0.0 + ideal_settling_ratio=1.0
         # → 阈值=ideal_t，与原 actual_t<=ideal_t 一致
-        "STABLE": {"ideal_settling_ratio": 1.0, "settling_tolerance": 0.0},
-        "SLOW": {"ideal_settling_ratio": 1.0, "settling_tolerance": 0.0},
-        "FAST": {"ideal_settling_ratio": 1.0, "settling_tolerance": 0.0},
-        "LOGIC": {"ideal_settling_ratio": 1.0, "settling_tolerance": 0.0},
+        # P2 抗扰性分析参数：anti_disturbance_enabled 默认 False（零回归），
+        # 开启后用扰动恢复时间替代 ARMA 稳态时间作为 fast_rate 公式的 T 值。
+        "STABLE": {
+            "ideal_settling_ratio": 1.0,
+            "settling_tolerance": 0.0,
+            "anti_disturbance_enabled": False,
+            "disturbance_band_sigma": 2.0,
+            "recovery_persistence": 5,
+            "min_disturbance_duration": 3.0,
+            "sp_step_sigma": 3.0,
+        },
+        "SLOW": {
+            "ideal_settling_ratio": 1.0,
+            "settling_tolerance": 0.0,
+            "anti_disturbance_enabled": False,
+            "disturbance_band_sigma": 2.0,
+            "recovery_persistence": 5,
+            "min_disturbance_duration": 3.0,
+            "sp_step_sigma": 3.0,
+        },
+        "FAST": {
+            "ideal_settling_ratio": 1.0,
+            "settling_tolerance": 0.0,
+            "anti_disturbance_enabled": False,
+            "disturbance_band_sigma": 2.0,
+            "recovery_persistence": 5,
+            "min_disturbance_duration": 3.0,
+            "sp_step_sigma": 3.0,
+        },
+        "LOGIC": {
+            "ideal_settling_ratio": 1.0,
+            "settling_tolerance": 0.0,
+            "anti_disturbance_enabled": False,
+            "disturbance_band_sigma": 2.0,
+            "recovery_persistence": 5,
+            "min_disturbance_duration": 3.0,
+            "sp_step_sigma": 3.0,
+        },
     },
     "accuracy_rate": {
         # e_max_percentile=100 → 不对数据驱动 e_max 做百分位截断，与原算法一致

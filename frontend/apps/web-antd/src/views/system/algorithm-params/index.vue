@@ -21,6 +21,7 @@ import {
   Drawer,
   InputNumber,
   message,
+  Switch,
   Table,
   Tag,
 } from 'ant-design-vue';
@@ -63,6 +64,8 @@ interface ParamMeta {
   max: number;
   step: number;
   precision: number;
+  /** 渲染类型：number（默认数值输入）| switch（布尔开关，存 0/1） */
+  type?: 'number' | 'switch';
 }
 
 /** 指标元数据（中文名 + 参数列定义与校验边界） */
@@ -113,6 +116,47 @@ const METRIC_META: Record<string, { params: ParamMeta[] }> = {
         step: 0.01,
         precision: 3,
       },
+      {
+        key: 'anti_disturbance_enabled',
+        title: '抗扰性分析',
+        min: 0,
+        max: 1,
+        step: 1,
+        precision: 0,
+        type: 'switch',
+      },
+      {
+        key: 'disturbance_band_sigma',
+        title: '扰动带(σ)',
+        min: 0.5,
+        max: 5,
+        step: 0.1,
+        precision: 2,
+      },
+      {
+        key: 'recovery_persistence',
+        title: '恢复持续点数',
+        min: 1,
+        max: 20,
+        step: 1,
+        precision: 0,
+      },
+      {
+        key: 'min_disturbance_duration',
+        title: '最小扰动时长(s)',
+        min: 0,
+        max: 60,
+        step: 0.5,
+        precision: 1,
+      },
+      {
+        key: 'sp_step_sigma',
+        title: 'SP阶跃阈值(σ)',
+        min: 1,
+        max: 10,
+        step: 0.5,
+        precision: 1,
+      },
     ],
   },
   accuracy_rate: {
@@ -155,7 +199,7 @@ const loadedParams = reactive<
 >({});
 
 /** 当前编辑的指标 */
-const editingMetric = ref<null | MetricApi.AlgorithmParamsMetricGroup>(null);
+const editingMetric = ref<MetricApi.AlgorithmParamsMetricGroup | null>(null);
 const drawerOpen = ref(false);
 
 // ---------------------------------------------------------------------------
@@ -254,11 +298,17 @@ function ensureEditRow(
   metricCode: string,
   controlType: string,
 ): Record<string, number> {
-  if (!editParams[metricCode]) editParams[metricCode] = {};
-  if (!editParams[metricCode]![controlType]) {
-    editParams[metricCode]![controlType] = {};
+  let metric = editParams[metricCode];
+  if (!metric) {
+    metric = {};
+    editParams[metricCode] = metric;
   }
-  return editParams[metricCode]![controlType]!;
+  let row = metric[controlType];
+  if (!row) {
+    row = {};
+    metric[controlType] = row;
+  }
+  return row;
 }
 
 /** 取某指标某控制类型某参数的默认值（用于 placeholder 与恢复） */
@@ -271,6 +321,13 @@ function defaultValue(
   return item?.defaults?.[paramKey];
 }
 
+/** 将配置值归一化为 number（兼容后端布尔默认值 false/true → 0/1）。 */
+function toNum(val: unknown): number {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'boolean') return val ? 1 : 0;
+  return 0;
+}
+
 function handleOpenEdit(group: MetricApi.AlgorithmParamsMetricGroup) {
   editingMetric.value = group;
   const mc = group.metricCode;
@@ -281,11 +338,14 @@ function handleOpenEdit(group: MetricApi.AlgorithmParamsMetricGroup) {
     for (const p of paramMetaOf(mc)) {
       const v = item?.params?.[p.key];
       const def = item?.defaults?.[p.key];
-      row[p.key] =
-        typeof v === 'number' ? v : typeof def === 'number' ? def : 0;
+      row[p.key] = v !== null && v !== undefined ? toNum(v) : toNum(def);
     }
-    if (!loadedParams[mc]) loadedParams[mc] = {};
-    loadedParams[mc]![ct] = { ...row };
+    let loaded = loadedParams[mc];
+    if (!loaded) {
+      loaded = {};
+      loadedParams[mc] = loaded;
+    }
+    loaded[ct] = { ...row };
   }
   drawerOpen.value = true;
 }
@@ -297,8 +357,23 @@ function handleResetControl(controlType: ControlType) {
   const row = ensureEditRow(mc, controlType);
   for (const p of paramMetaOf(mc)) {
     const def = defaultValue(editingMetric.value, controlType, p.key);
-    row[p.key] = typeof def === 'number' ? def : 0;
+    row[p.key] = toNum(def);
   }
+}
+
+/**
+ * Switch 参数变更处理器。
+ * Ant Design Vue 的 Switch @change 签名为 (checked: CheckedType, e: Event)，
+ * CheckedType = boolean | string | number，故此处用联合类型承接并归一化为 0/1。
+ */
+function handleParamSwitch(
+  controlType: string,
+  paramKey: string,
+  checked: boolean | number | string,
+): void {
+  const mc = editingMetricCode.value;
+  if (!mc) return;
+  ensureEditRow(mc, controlType)[paramKey] = checked === true ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -322,10 +397,12 @@ const changes = computed<ChangeItem[]>(() => {
       const c = cur[p.key];
       const l = loaded[p.key];
       if (c === undefined || l === undefined || c === l) continue;
+      const fmt = (v: number) =>
+        p.type === 'switch' ? (v === 1 ? '开启' : '关闭') : String(v);
       out.push({
         label: `${CONTROL_TYPE_META[ct].label}(${ct}) · ${p.title}`,
-        from: String(l),
-        to: String(c),
+        from: fmt(l),
+        to: fmt(c),
       });
     }
   }
@@ -478,7 +555,23 @@ onMounted(() => {
                 paramMetaOf(group.metricCode).some((p) => p.key === column.key)
               "
             >
-              <span class="font-mono">
+              <span
+                v-if="
+                  paramMetaOf(group.metricCode).find(
+                    (p) => p.key === column.key,
+                  )?.type === 'switch'
+                "
+                class="text-sm"
+              >
+                {{
+                  (record as MetricApi.AlgorithmParamsControlItem).params?.[
+                    String(column.key)
+                  ] === 1
+                    ? '开启'
+                    : '关闭'
+                }}
+              </span>
+              <span v-else class="font-mono">
                 {{
                   (record as MetricApi.AlgorithmParamsControlItem).params?.[
                     String(column.key)
@@ -551,10 +644,24 @@ onMounted(() => {
                 <span class="text-sm">{{ p.title }}</span>
                 <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
                   默认：
-                  {{ defaultValue(editingMetric, ct, p.key) ?? '—' }}
+                  {{
+                    p.type === 'switch'
+                      ? defaultValue(editingMetric, ct, p.key)
+                        ? '开启'
+                        : '关闭'
+                      : (defaultValue(editingMetric, ct, p.key) ?? '—')
+                  }}
                 </span>
               </div>
+              <Switch
+                v-if="p.type === 'switch'"
+                :checked="
+                  ensureEditRow(editingMetric.metricCode, ct)[p.key] === 1
+                "
+                @change="(checked) => handleParamSwitch(ct, p.key, checked)"
+              />
               <InputNumber
+                v-else
                 v-model:value="
                   ensureEditRow(editingMetric.metricCode, ct)[p.key]
                 "

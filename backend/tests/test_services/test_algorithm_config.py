@@ -157,9 +157,26 @@ def test_apply_runtime_refreshes_cache(reset_cache):
     assert ac.get_algorithm_params("fast_rate", "STABLE") == {
         "ideal_settling_ratio": 1.0,
         "settling_tolerance": 0.0,
+        "anti_disturbance_enabled": False,
+        "disturbance_band_sigma": 2.0,
+        "recovery_persistence": 5,
+        "min_disturbance_duration": 3.0,
+        "sp_step_sigma": 3.0,
     }
     ac.apply_runtime({"fast_rate": {"STABLE": {"settling_tolerance": 0.1}}})
     assert ac.get_algorithm_params("fast_rate", "STABLE")["settling_tolerance"] == 0.1
+
+
+def test_fast_rate_anti_disturbance_defaults(reset_cache):
+    """P2: fast_rate 4 控制类型均含抗扰参数且默认关闭（零回归）。"""
+    ac.apply_runtime({})
+    for ct in ("STABLE", "SLOW", "FAST", "LOGIC"):
+        params = ac.get_algorithm_params("fast_rate", ct)
+        assert params["anti_disturbance_enabled"] is False
+        assert params["disturbance_band_sigma"] == 2.0
+        assert params["recovery_persistence"] == 5
+        assert params["min_disturbance_duration"] == 3.0
+        assert params["sp_step_sigma"] == 3.0
 
 
 def test_build_merged_view_marks_overridden(reset_cache):
