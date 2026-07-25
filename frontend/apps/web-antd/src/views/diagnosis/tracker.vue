@@ -25,6 +25,7 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
+  Checkbox,
   Drawer,
   Dropdown,
   Form,
@@ -229,7 +230,14 @@ const statusForm = reactive({
   status: 'PENDING' as DiagnosisApi.ActionStatus,
   comment: '',
   changeRemark: '',
+  // D3: MOC 变更管理关联（仅 IMPLEMENTED 时必填）
+  mocRef: '',
+  mocNotApplicable: false,
+  mocReason: '',
 });
+
+/** D3: 当前是否需要展示 MOC 字段（仅 IMPLEMENTED 状态） */
+const showMocFields = computed(() => statusForm.status === 'IMPLEMENTED');
 
 // A/B 对比抽屉
 const abCompareVisible = ref(false);
@@ -272,12 +280,26 @@ function handleTableChange(pagination: TablePaginationConfig) {
   loadList();
 }
 
-/** 提交状态更新（含变更说明审计字段） */
+/** 提交状态更新（含变更说明审计字段 + D3 MOC 校验） */
 async function handleSubmitStatus() {
   if (!editingItem.value) return;
   if (!statusForm.changeRemark.trim()) {
     message.warning('请填写变更说明');
     return;
+  }
+  // D3: IMPLEMENTED 状态校验 MOC 变更管理关联
+  if (statusForm.status === 'IMPLEMENTED') {
+    if (statusForm.mocNotApplicable) {
+      if (!statusForm.mocReason.trim()) {
+        message.warning('勾选 MOC 不适用时，必须填写依据说明');
+        return;
+      }
+    } else if (!statusForm.mocRef.trim()) {
+      message.warning(
+        '标记已实施时必须填写 MOC 变更管理关联编号，或勾选"不适用"并填写依据说明',
+      );
+      return;
+    }
   }
   statusModalLoading.value = true;
   try {
@@ -285,6 +307,14 @@ async function handleSubmitStatus() {
       status: statusForm.status,
       comment: statusForm.comment,
       changeRemark: statusForm.changeRemark,
+      // D3: 仅 IMPLEMENTED 时传递 MOC 字段，其他状态不传避免覆盖已有值
+      ...(statusForm.status === 'IMPLEMENTED'
+        ? {
+            mocRef: statusForm.mocRef.trim() || undefined,
+            mocNotApplicable: statusForm.mocNotApplicable || undefined,
+            mocReason: statusForm.mocReason.trim() || undefined,
+          }
+        : {}),
     });
     message.success('状态更新成功');
     statusModalVisible.value = false;
@@ -321,6 +351,10 @@ function handleStatusMenuClick(
   statusForm.status = key as DiagnosisApi.ActionStatus;
   statusForm.comment = record.comment || '';
   statusForm.changeRemark = '';
+  // D3: 预填已有 MOC 信息（已实施记录可查看历史值），新操作默认清空
+  statusForm.mocRef = record.mocRef || '';
+  statusForm.mocNotApplicable = record.mocNotApplicable || false;
+  statusForm.mocReason = record.mocReason || '';
   statusModalVisible.value = true;
 }
 
@@ -600,12 +634,12 @@ onMounted(() => {
       </Table>
     </ClpmDataCanvas>
 
-    <!-- 状态更新 Modal（含变更说明审计字段） -->
+    <!-- 状态更新 Modal（含变更说明审计字段 + D3 MOC 变更管理关联） -->
     <Modal
       v-model:open="statusModalVisible"
       title="更新处理状态"
       :confirm-loading="statusModalLoading"
-      width="520px"
+      width="560px"
       @ok="handleSubmitStatus"
     >
       <Form :model="statusForm" layout="vertical" class="pt-4">
@@ -631,6 +665,46 @@ onMounted(() => {
             :rows="3"
           />
         </FormItem>
+
+        <!-- D3: MOC 变更管理关联（仅 IMPLEMENTED 状态展示，危化企业变更管理合规要求） -->
+        <template v-if="showMocFields">
+          <div class="moc-section-title">
+            MOC 变更管理关联
+            <span class="moc-section-hint">
+              （危化企业变更管理合规要求，标记"已实施"时必填）
+            </span>
+          </div>
+          <FormItem
+            v-if="!statusForm.mocNotApplicable"
+            label="MOC 关联编号"
+            required
+          >
+            <Input
+              v-model:value="statusForm.mocRef"
+              placeholder="请填写变更管理工单编号，例如：MOC-2026-001"
+              :maxlength="255"
+              allow-clear
+            />
+          </FormItem>
+          <FormItem>
+            <Checkbox v-model:checked="statusForm.mocNotApplicable">
+              此变更不涉及 MOC（如仅参数微调、无需变更管理审批）
+            </Checkbox>
+          </FormItem>
+          <FormItem
+            v-if="statusForm.mocNotApplicable"
+            label="不适用依据说明"
+            required
+          >
+            <Input.TextArea
+              v-model:value="statusForm.mocReason"
+              placeholder="请说明为何此变更不涉及 MOC 变更管理，例如：仅 PID 参数微调，未改变控制方案与联锁逻辑"
+              :rows="3"
+              :maxlength="500"
+              show-count
+            />
+          </FormItem>
+        </template>
       </Form>
     </Modal>
 
@@ -674,6 +748,22 @@ onMounted(() => {
 .status-flow-bar__alt {
   margin: 0 2px;
   font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* D3: MOC 变更管理关联区块标题 */
+.moc-section-title {
+  padding-top: 12px;
+  margin: 12px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  border-top: 1px solid hsl(var(--border));
+}
+
+.moc-section-hint {
+  font-size: 12px;
+  font-weight: 400;
   color: hsl(var(--muted-foreground));
 }
 </style>

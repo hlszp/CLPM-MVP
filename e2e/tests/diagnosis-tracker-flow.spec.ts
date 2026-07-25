@@ -207,3 +207,178 @@ test.describe('D1 诊断→自动建单→列表可见 全流程', () => {
     console.log(`[E2E-D1] 门户卡自动建单徽标可见`);
   });
 });
+
+test.describe('D3 MOC 变更管理闭环', () => {
+  test('E2E-DIAG-D3: 标记已实施时 MOC 必填校验 + 字段写入 + UI 展示', async ({
+    page,
+    request,
+    loginAs,
+  }) => {
+    test.setTimeout(120_000);
+
+    // 1. API 登录（IC_ENGINEER 有 tracker 编辑权限）
+    const login: LoginResult = await loginViaApi(
+      request,
+      ACCOUNTS.IC_ENGINEER.username,
+      ACCOUNTS.IC_ENGINEER.password,
+    );
+    const authHeaders = {
+      Authorization: `Bearer ${login.accessToken}`,
+      'Content-Type': 'application/json',
+    };
+
+    // 2. 查找一个有 PENDING tracker 的回路（若无则触发诊断新建）
+    let loopId: string = '';
+    let loopTagName: string = '';
+    const listResp = await request.get(
+      `${API_BASE_URL}/diagnosis/list?actionStatus=PENDING&page=1&pageSize=50&timeWindow=last_7_days`,
+      { headers: authHeaders },
+    );
+    expect(listResp.ok()).toBeTruthy();
+    const listBody = await listResp.json();
+    const pendingItems: any[] = listBody?.data?.items ?? [];
+
+    if (pendingItems.length > 0) {
+      loopId = pendingItems[0].loopId;
+      loopTagName = pendingItems[0].tagName;
+      console.log(`[E2E-D3] 复用已有 PENDING tracker 回路: ${loopTagName} (${loopId})`);
+    } else {
+      // 无 PENDING tracker：挑一个有诊断标签的回路，清理后触发诊断
+      const allResp = await request.get(
+        `${API_BASE_URL}/diagnosis/list?page=1&pageSize=50&timeWindow=last_7_days`,
+        { headers: authHeaders },
+      );
+      const allBody = await allResp.json();
+      const allItems: any[] = allBody?.data?.items ?? [];
+      const candidate = allItems.find(
+        (it) => it.diagnosisLabel && it.diagnosisLabel !== 'MANUAL_REVIEW',
+      );
+      expect(candidate, '应存在可产出诊断标签的回路').toBeTruthy();
+      loopId = candidate.loopId;
+      loopTagName = candidate.tagName;
+
+      await clearOpenTrackers(request, loopId, authHeaders);
+      const endTime = new Date().toISOString();
+      const startTime = new Date(Date.now() - 1 * 3600 * 1000).toISOString();
+      const triggerResp = await request.post(`${API_BASE_URL}/diagnosis/trigger`, {
+        headers: authHeaders,
+        data: { loopIds: [loopId], startTime, endTime },
+      });
+      expect(triggerResp.ok()).toBeTruthy();
+      const triggerBody = await triggerResp.json();
+      const taskId: string = triggerBody.data.tasks[0].taskId;
+      const { status } = await pollTaskStatus(request, taskId, authHeaders);
+      expect(status, `诊断任务未成功: ${status}`).toBe('SUCCESS');
+      console.log(`[E2E-D3] 触发诊断新建 PENDING tracker: ${loopTagName}`);
+    }
+
+    // 3. 测试 MOC 必填校验：IMPLEMENTED 不带 MOC → 422
+    const noMocResp = await request.patch(
+      `${API_BASE_URL}/tracker/${loopId}/status`,
+      {
+        headers: authHeaders,
+        data: {
+          status: 'IMPLEMENTED',
+          changeRemark: 'E2E 测试：无 MOC 应拒绝',
+        },
+      },
+    );
+    expect(noMocResp.status(), '无 MOC 应返回 422').toBe(422);
+    const noMocBody = await noMocResp.json();
+    expect(noMocBody.code, '错误码应为 ERR_MOC_REQUIRED').toBe('ERR_MOC_REQUIRED');
+    console.log('[E2E-D3] 无 MOC 拒绝通过 (422 ERR_MOC_REQUIRED)');
+
+    // 4. 测试 MOC 不适用但无依据 → 422
+    const naNoReasonResp = await request.patch(
+      `${API_BASE_URL}/tracker/${loopId}/status`,
+      {
+        headers: authHeaders,
+        data: {
+          status: 'IMPLEMENTED',
+          mocNotApplicable: true,
+          changeRemark: 'E2E 测试：不适用无依据应拒绝',
+        },
+      },
+    );
+    expect(naNoReasonResp.status(), '不适用无依据应返回 422').toBe(422);
+    expect((await naNoReasonResp.json()).code).toBe('ERR_MOC_REQUIRED');
+    console.log('[E2E-D3] 不适用无依据拒绝通过 (422)');
+
+    // 5. 测试 MOC 成功：IMPLEMENTED + mocRef → 200
+    const mocRef = `MOC-E2E-${Date.now()}`;
+    const successResp = await request.patch(
+      `${API_BASE_URL}/tracker/${loopId}/status`,
+      {
+        headers: authHeaders,
+        data: {
+          status: 'IMPLEMENTED',
+          mocRef,
+          changeRemark: 'E2E 测试：MOC 闭环成功',
+          comment: '已联系仪表班确认并实施',
+        },
+      },
+    );
+    expect(successResp.ok(), `IMPLEMENTED + mocRef 应成功: ${successResp.status()}`).toBeTruthy();
+    const successBody = await successResp.json();
+    expect(successBody.data.actionStatus).toBe('IMPLEMENTED');
+    expect(successBody.data.mocRef).toBe(mocRef);
+    expect(successBody.data.abComparison, 'IMPLEMENTED 应生成 A/B 对比').toBeTruthy();
+    console.log(`[E2E-D3] MOC 闭环成功: mocRef=${mocRef}`);
+
+    // 6. API 验证列表返回 MOC 字段（IMPLEMENTED 记录）
+    const implResp = await request.get(
+      `${API_BASE_URL}/diagnosis/list?loopId=${loopId}&actionStatus=IMPLEMENTED&page=1&pageSize=10&timeWindow=last_7_days`,
+      { headers: authHeaders },
+    );
+    const implBody = await implResp.json();
+    const implItems: any[] = implBody?.data?.items ?? [];
+    const implItem = implItems.find((it) => it.mocRef === mocRef);
+    expect(implItem, '列表应返回含 mocRef 的已实施记录').toBeTruthy();
+    console.log('[E2E-D3] 列表 MOC 字段返回验证通过');
+
+    // 7. UI 验证：Tracker 列表页 + 状态更新 Modal MOC 字段展示
+    await loginAs('IC_ENGINEER');
+    await page.goto('/diagnosis/tracker');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1500);
+
+    // 表格渲染
+    await expect(page.locator('.ant-table').first()).toBeVisible({
+      timeout: 10_000,
+    });
+    const tableRows = page.locator('.ant-table-tbody tr.ant-table-row');
+    await expect(tableRows.first()).toBeVisible({ timeout: 10_000 });
+
+    // 找到 PENDING 状态的行（如果有），点击状态更新下拉菜单选"已实施"，验证 MOC 字段出现
+    // 注意：刚刚已将 loopId 的 tracker 置为 IMPLEMENTED，需找一个仍为 PENDING 的行
+    const pendingRow = tableRows.filter({ hasText: '待处理' }).first();
+    const hasPendingRow = await pendingRow.isVisible().catch(() => false);
+
+    if (hasPendingRow) {
+      // 点击该行的"更新状态"下拉按钮
+      await pendingRow.getByRole('button', { name: '更新状态' }).click();
+      await page.waitForTimeout(500);
+      // 选择"已实施"（菜单项在 body 下的 .ant-dropdown-menu）
+      const implementedItem = page
+        .locator('.ant-dropdown-menu-item')
+        .filter({ hasText: '已实施' });
+      await implementedItem.click();
+      await page.waitForTimeout(500);
+
+      // Modal 应出现
+      const modal = page.locator('.ant-modal').last();
+      await expect(modal).toBeVisible({ timeout: 5000 });
+
+      // 切换到"已实施"后 MOC 区块应出现
+      await expect(modal.getByText('MOC 变更管理关联')).toBeVisible({
+        timeout: 3000,
+      });
+      console.log('[E2E-D3] UI MOC 字段展示验证通过');
+
+      // 关闭 Modal（取消）
+      await page.keyboard.press('Escape');
+    } else {
+      console.log('[E2E-D3] 无 PENDING 行可测 UI MOC 展示，跳过 UI 断言');
+    }
+  });
+});

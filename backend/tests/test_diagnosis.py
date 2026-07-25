@@ -1526,6 +1526,108 @@ class TestTrackerService:
         assert open_tracker.triggered_by == "ic_engineer"  # 建单人不变（手工建单）
         assert result["actionStatus"] == "IN_PROGRESS"
 
+    # ------------------------------------------------------------------
+    # D3: MOC 字段写入验证（闭环后新建 tracker + MOC 关联）
+    # ------------------------------------------------------------------
+
+    async def test_implemented_writes_moc_ref_to_new_tracker(self) -> None:
+        """闭环后新建 tracker 并标记 IMPLEMENTED，moc_ref 被正确写入。
+
+        D3：开放态查询返回 None → 新建手工 tracker，
+        IMPLEMENTED + mocRef 时新 tracker 的 moc_ref 字段被设置。
+        """
+        from app.services.tracker import update_tracker_status
+
+        db = AsyncMock()
+        loop = _make_loop()
+        diag = MagicMock()
+        diag.diag_label = "OSCILLATION"
+        # execute 顺序：loop → 开放态 tracker(None) → 最新诊断结果 → IMPLEMENTED 后查 diag(A/B 对比)
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalar_one_or_none_mock(None),
+                _make_scalar_one_or_none_mock(diag),
+                _make_scalar_one_or_none_mock(diag),
+            ]
+        )
+        db.add = MagicMock()
+
+        result = await update_tracker_status(
+            db,
+            loop.id,
+            "ic_engineer",
+            status="IMPLEMENTED",
+            moc_ref="MOC-2026-0725-001",
+        )
+
+        # 新 tracker 的 moc_ref 被写入
+        new_tracker = db.add.call_args_list[0].args[0]
+        assert new_tracker.action_status == "IMPLEMENTED"
+        assert new_tracker.moc_ref == "MOC-2026-0725-001"
+        assert new_tracker.trigger_type == "manual"
+        # 响应包含 MOC 字段
+        assert result["mocRef"] == "MOC-2026-0725-001"
+        assert result["actionStatus"] == "IMPLEMENTED"
+        assert result["abComparison"] is not None
+
+    async def test_implemented_moc_na_writes_reason_to_tracker(self) -> None:
+        """IMPLEMENTED + MOC 不适用 + 依据说明，字段被正确写入 tracker。"""
+        from app.services.tracker import update_tracker_status
+
+        db = AsyncMock()
+        loop = _make_loop()
+        tracker = _make_tracker(loop_id=loop.id, action_status="PENDING")
+        diag = MagicMock()
+        diag.diag_label = "VALVE_STICTION"
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalar_one_or_none_mock(tracker),
+                _make_scalar_one_or_none_mock(diag),
+            ]
+        )
+        db.add = MagicMock()
+
+        reason = "仅 PID 参数微调，未改变控制方案与联锁逻辑"
+        result = await update_tracker_status(
+            db,
+            loop.id,
+            "ic_engineer",
+            status="IMPLEMENTED",
+            moc_not_applicable=True,
+            moc_reason=reason,
+        )
+
+        # 原地更新的 tracker 的 MOC 字段被写入
+        assert tracker.action_status == "IMPLEMENTED"
+        assert tracker.moc_not_applicable is True
+        assert tracker.moc_reason == reason
+        assert tracker.moc_ref is None
+        # 响应包含 MOC 字段
+        assert result["mocNotApplicable"] is True
+        assert result["mocReason"] == reason
+
+    async def test_non_implemented_status_does_not_require_moc(self) -> None:
+        """非 IMPLEMENTED 状态（如 IN_PROGRESS/IGNORED）不要求 MOC 字段。"""
+        from app.services.tracker import update_tracker_status
+
+        db = AsyncMock()
+        loop = _make_loop()
+        tracker = _make_tracker(loop_id=loop.id, action_status="PENDING")
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalar_one_or_none_mock(tracker),
+            ]
+        )
+        db.add = MagicMock()
+
+        # IGNORED 不需要 MOC
+        result = await update_tracker_status(db, loop.id, "ic_engineer", status="IGNORED")
+        assert result["actionStatus"] == "IGNORED"
+        assert tracker.action_status == "IGNORED"
+
 
 class TestWaveformService:
     """Waveform service 单元测试。"""

@@ -252,6 +252,10 @@ class DiagnosisListItem(CamelModel):
     updatedAt: str | None = Field(None, description="最近处理时间 ISO 8601")
     comment: str | None = Field(None, description="处理意见/审查备注")
     updatedBy: str | None = Field(None, description="最近处理人")
+    # D3: MOC 变更管理关联（IMPLEMENTED 时存在，用于审计追溯）
+    mocRef: str | None = Field(None, description="MOC 变更管理关联编号")
+    mocNotApplicable: bool | None = Field(None, description="MOC 是否不适用")
+    mocReason: str | None = Field(None, description="MOC 不适用时的依据说明")
 
 
 class DiagnosisAggregates(CamelModel):

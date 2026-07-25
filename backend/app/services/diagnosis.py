@@ -522,6 +522,10 @@ async def list_diagnosis(
         updated_at_val = tracker.updated_at.isoformat() if tracker and tracker.updated_at else None
         comment_val = tracker.comment if tracker else None
         updated_by_val = tracker.updated_by if tracker else None
+        # D3: MOC 变更管理关联（IMPLEMENTED 时存在）
+        moc_ref_val = tracker.moc_ref if tracker else None
+        moc_not_applicable_val = tracker.moc_not_applicable if tracker else None
+        moc_reason_val = tracker.moc_reason if tracker else None
 
         items.append(
             {
@@ -542,6 +546,9 @@ async def list_diagnosis(
                 "updatedAt": updated_at_val,
                 "comment": comment_val,
                 "updatedBy": updated_by_val,
+                "mocRef": moc_ref_val,
+                "mocNotApplicable": moc_not_applicable_val,
+                "mocReason": moc_reason_val,
                 "diagnosedAt": diag_result.diagnosed_at.isoformat()
                 if diag_result.diagnosed_at
                 else None,

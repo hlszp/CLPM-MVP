@@ -341,6 +341,12 @@ export namespace DiagnosisApi {
     comment?: string;
     /** 变更说明（审计字段，预留） */
     changeRemark?: string;
+    /** D3: MOC 变更管理关联编号（IMPLEMENTED 时必填，或勾选不适用） */
+    mocRef?: string;
+    /** D3: MOC 是否不适用 */
+    mocNotApplicable?: boolean;
+    /** D3: MOC 不适用时的依据说明（mocNotApplicable=true 时必填） */
+    mocReason?: string;
   }
 
   /** Tracker 记录项 */
@@ -363,6 +369,12 @@ export namespace DiagnosisApi {
     triggeredBy?: string;
     /** D1: 严重等级 */
     severity?: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
+    /** D3: MOC 变更管理关联编号（IMPLEMENTED 时存在） */
+    mocRef?: string;
+    /** D3: MOC 是否不适用 */
+    mocNotApplicable?: boolean;
+    /** D3: MOC 不适用时的依据说明 */
+    mocReason?: string;
   }
 
   /** Tracker 列表查询参数 */
