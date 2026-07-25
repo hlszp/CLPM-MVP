@@ -353,6 +353,12 @@ export namespace DiagnosisApi {
     updatedAt: string;
     comment?: string;
     updatedBy?: string;
+    /** D1: 建单方式 auto/manual */
+    triggerType?: 'auto' | 'manual';
+    /** D1: 建单人 */
+    triggeredBy?: string;
+    /** D1: 严重等级 */
+    severity?: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
   }
 
   /** Tracker 列表查询参数 */

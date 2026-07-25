@@ -107,18 +107,21 @@ async def update_tracker_status(
             status_code=404,
         )
 
-    # 查询该回路最新的 tracker 记录
+    # 查询该回路最新的开放态 tracker（PENDING/IN_PROGRESS）
+    # D1 整改：仅操作开放态记录；若最新一条已闭环（IMPLEMENTED/IGNORED），
+    # 不再覆盖历史，而是新建一条 tracker（保留闭环历史）。
     tracker_result = await db.execute(
         select(ActionTracker)
         .where(ActionTracker.loop_id == loop_id)
-        .order_by(ActionTracker.updated_at.desc().nulls_last())
+        .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
+        .order_by(ActionTracker.created_at.desc().nulls_last())
         .limit(1)
     )
     tracker = tracker_result.scalar_one_or_none()
 
     if tracker is None:
-        # 自动创建一条 tracker 记录
-        # 取该回路最新的诊断标签
+        # 无开放态 tracker（全部已闭环或从未建单）：新建一条手工 tracker
+        # 取该回路最新的诊断标签作为建单依据
         diag_result = await db.execute(
             select(DiagnosisResult)
             .where(DiagnosisResult.loop_id == loop_id)
@@ -133,6 +136,8 @@ async def update_tracker_status(
             loop_id=loop_id,
             diagnosis_label=diagnosis_label,
             action_status="PENDING",
+            trigger_type="manual",
+            triggered_by=operator,
         )
         db.add(tracker)
 
@@ -207,6 +212,9 @@ async def update_tracker_status(
         "mocRef": tracker.moc_ref,
         "mocNotApplicable": tracker.moc_not_applicable,
         "mocReason": tracker.moc_reason,
+        "triggerType": tracker.trigger_type,
+        "triggeredBy": tracker.triggered_by,
+        "severity": tracker.severity,
         "abComparison": ab_comparison,
     }
 

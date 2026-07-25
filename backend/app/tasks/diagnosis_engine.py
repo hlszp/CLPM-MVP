@@ -25,6 +25,7 @@ from uuid import uuid4
 import numpy as np
 from celery.schedules import crontab
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import IntegrityError
 
 from app.contracts.data_types import ControlType, QualityStatus, RawTimeSeries
 from app.models.diagnosis import (
@@ -824,6 +825,10 @@ async def _auto_create_trackers(
     （uk_action_tracker_open 部分唯一索引约束）。闭环后新诊断可再建新单，
     历史记录保留。
 
+    并发防护：SELECT 预过滤 + INSERT 之间存在竞态窗口，唯一索引
+    uk_action_tracker_open 是最终防线；INSERT 触发 IntegrityError 时
+    回滚该单条并跳过（视为已被并发建单）。
+
     Args:
         db: 异步数据库会话
         loop_id: 回路 ID
@@ -847,20 +852,36 @@ async def _auto_create_trackers(
     for label in labels:
         if label in existing_labels:
             continue
+        severity = _TAG_SEVERITY_MAP.get(label, "INFO")
         tracker = ActionTracker(
             id=str(uuid4()),
             loop_id=loop_id,
             diagnosis_label=label,
             action_status="PENDING",
+            trigger_type="auto",
+            triggered_by="system",
+            severity=severity,
             diagnosis_result_id=label_to_diag_id.get(label),
             created_at=diagnosed_at,
             updated_at=diagnosed_at,
         )
-        db.add(tracker)
+        # 用 SAVEPOINT 包裹单条插入：并发被抢先建单时仅回滚该条，
+        # 不影响外层事务中已写入的 diagnosis_result / diagnosis_tag。
+        try:
+            async with db.begin_nested():
+                db.add(tracker)
+        except IntegrityError:
+            logger.info(
+                "D1 自动建单跳过（并发已建单）: loop_id=%s label=%s",
+                loop_id,
+                label,
+            )
+            continue
         logger.info(
-            "D1 自动建单: loop_id=%s label=%s diag_result_id=%s",
+            "D1 自动建单: loop_id=%s label=%s severity=%s diag_result_id=%s",
             loop_id,
             label,
+            severity,
             label_to_diag_id.get(label),
         )
 

@@ -504,6 +504,10 @@ async def list_diagnosis(
         composite_score = _to_float(score_map.get(loop_id))
         action_status_val = tracker.action_status if tracker else "PENDING"
         algorithm_version = diag_result.algorithm_version
+        # D1：建单来源与严重等级（tracker 可能为 None）
+        trigger_type_val = tracker.trigger_type if tracker else None
+        triggered_by_val = tracker.triggered_by if tracker else None
+        severity_val = tracker.severity if tracker else None
 
         items.append(
             {
@@ -517,6 +521,9 @@ async def list_diagnosis(
                 "fusedConfidence": fused_confidence,
                 "algorithm": algorithm_version,
                 "actionStatus": action_status_val,
+                "triggerType": trigger_type_val,
+                "triggeredBy": triggered_by_val,
+                "severity": severity_val,
                 "diagnosedAt": diag_result.diagnosed_at.isoformat()
                 if diag_result.diagnosed_at
                 else None,

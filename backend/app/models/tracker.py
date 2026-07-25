@@ -27,6 +27,10 @@ class ActionTracker(Base):
     列与 (loop_id, diagnosis_label) 开放态唯一约束。同一回路同一标签在
     PENDING/IN_PROGRESS 状态下不可重复建单（D1 自动建单依赖此约束），
     闭环后新诊断可再建新单（历史记录保留）。
+
+    整改计划 D1：追加 trigger_type / triggered_by / severity 三列，区分
+    系统自动建单（auto）与用户手工建单（manual），并冗余诊断严重等级
+    便于按优先级筛选。
     """
 
     __tablename__ = "action_tracker"
@@ -62,10 +66,28 @@ class ActionTracker(Base):
         nullable=True,
     )
 
+    # ========== D1 追加列（迁移 d1a2b3c4e5f6）==========
+    # 建单方式：auto（系统自动）/ manual（用户手工）。默认 manual 保证存量兼容。
+    trigger_type: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default=text("'manual'")
+    )
+    # 建单人：auto 时为 'system'，manual 时为用户名
+    triggered_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # 严重等级（从 diagnosis_tag.severity 冗余，建单后不再变化）
+    severity: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED')",
             name="ck_action_tracker_status",
+        ),
+        CheckConstraint(
+            "trigger_type IN ('auto', 'manual')",
+            name="ck_action_tracker_trigger_type",
+        ),
+        CheckConstraint(
+            "severity IS NULL OR severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')",
+            name="ck_action_tracker_severity",
         ),
         # D2: 同一回路同一标签在开放态（PENDING/IN_PROGRESS）下唯一，
         # 闭环后允许新建（历史保留）。D1 自动建单依赖此约束防重复。
@@ -81,4 +103,12 @@ class ActionTracker(Base):
         ),
         Index("idx_action_tracker_loop_id", "loop_id"),
         Index("idx_action_tracker_action_status", "action_status"),
+        # D1: 按建单方式 / 严重等级筛选，建单时间排序
+        Index("idx_action_tracker_trigger_type", "trigger_type"),
+        Index("idx_action_tracker_severity_status", "severity", "action_status"),
+        Index(
+            "idx_action_tracker_loop_created",
+            "loop_id",
+            text("created_at DESC"),
+        ),
     )

@@ -1431,11 +1431,14 @@ async def _aggregate_bad_actor_distribution(
         return []
 
     # 查询 action_tracker 中开放态诊断标签
+    # D1 整改：补 created_at DESC 排序，确保同一回路多条记录时取到最新一条
+    # （与 L717 回路排行榜预诊断标签查询口径一致）
     unique_loop_ids = list(set(loop_ids))
     t_result = await db.execute(
         select(ActionTracker)
         .where(ActionTracker.loop_id.in_(unique_loop_ids))
         .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
+        .order_by(ActionTracker.created_at.desc().nulls_last())
     )
     label_count: dict[str, int] = {}
     for tracker in t_result.scalars().all():

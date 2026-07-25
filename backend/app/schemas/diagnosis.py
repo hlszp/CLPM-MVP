@@ -359,6 +359,10 @@ class TrackerStatusData(CamelModel):
     mocRef: str | None = None
     mocNotApplicable: bool | None = None
     mocReason: str | None = None
+    # D1：建单来源与严重等级
+    triggerType: str | None = Field(None, description="建单方式：auto/manual")
+    triggeredBy: str | None = Field(None, description="建单人")
+    severity: str | None = Field(None, description="严重等级 INFO/WARN/ERROR/CRITICAL")
     abComparison: dict[str, Any] | None = None
 
 

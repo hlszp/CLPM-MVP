@@ -113,6 +113,10 @@ def _make_tracker(
     t.moc_ref = None
     t.moc_not_applicable = None
     t.moc_reason = None
+    # D1: 建单来源与严重等级
+    t.trigger_type = "manual"
+    t.triggered_by = "ic_engineer"
+    t.severity = "WARN"
     return t
 
 
@@ -1457,6 +1461,70 @@ class TestTrackerService:
         with pytest.raises(BizError) as exc_info:
             await update_tracker_status(db, loop.id, "ic_engineer", status="INVALID")
         assert exc_info.value.code == "ERR_VALIDATION"
+
+    async def test_creates_new_when_latest_tracker_closed(self) -> None:
+        """最新 tracker 已闭环（IMPLEMENTED/IGNORED）时新建而非覆盖历史。
+
+        D1 整改：开放态查询返回 None → 新建手工 tracker，
+        trigger_type='manual'、triggered_by=operator。
+        """
+        from app.services.tracker import update_tracker_status
+
+        db = AsyncMock()
+        loop = _make_loop()
+        diag = MagicMock()
+        diag.diag_label = "OSCILLATION"
+        # execute 顺序：loop → 开放态 tracker(None) → 最新诊断结果
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalar_one_or_none_mock(None),
+                _make_scalar_one_or_none_mock(diag),
+            ]
+        )
+        db.add = MagicMock()
+
+        result = await update_tracker_status(db, loop.id, "ic_engineer", status="IN_PROGRESS")
+
+        # db.add 调用 2 次：新 tracker + 审计日志
+        assert db.add.call_count == 2
+        new_tracker = db.add.call_args_list[0].args[0]
+        assert new_tracker.action_status == "IN_PROGRESS"
+        assert new_tracker.diagnosis_label == "OSCILLATION"
+        # D1: 手工建单来源
+        assert new_tracker.trigger_type == "manual"
+        assert new_tracker.triggered_by == "ic_engineer"
+        # 响应包含 D1 字段
+        assert result["triggerType"] == "manual"
+        assert result["triggeredBy"] == "ic_engineer"
+
+    async def test_updates_existing_open_tracker(self) -> None:
+        """存在开放态 tracker 时原地更新，不新建。"""
+        from app.services.tracker import update_tracker_status
+
+        db = AsyncMock()
+        loop = _make_loop()
+        open_tracker = _make_tracker(
+            loop_id=loop.id, action_status="PENDING", diagnosis_label="OSCILLATION"
+        )
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalar_one_or_none_mock(open_tracker),
+            ]
+        )
+        db.add = MagicMock()
+
+        result = await update_tracker_status(db, loop.id, "ic_engineer", status="IN_PROGRESS")
+
+        # 仅审计日志被 add（不新建 tracker）
+        assert db.add.call_count == 1
+        audit_log = db.add.call_args_list[0].args[0]
+        assert audit_log.operation_type == "TRACKER_STATUS_UPDATE"
+        # 原开放态 tracker 被原地更新
+        assert open_tracker.action_status == "IN_PROGRESS"
+        assert open_tracker.triggered_by == "ic_engineer"  # 建单人不变（手工建单）
+        assert result["actionStatus"] == "IN_PROGRESS"
 
 
 class TestWaveformService:
