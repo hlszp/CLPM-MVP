@@ -862,8 +862,10 @@ async def _auto_create_trackers(
             triggered_by="system",
             severity=severity,
             diagnosis_result_id=label_to_diag_id.get(label),
-            created_at=diagnosed_at,
-            updated_at=diagnosed_at,
+            # created_at 不显式设置：沿用 server_default=now()，与 manual tracker
+            # 口径一致（本地时间）。之前用 diagnosed_at(UTC naive) 会导致 auto/manual
+            # tracker 的 created_at 时区不一致，sortBy=created_at 排序错乱。
+            # updated_at 初始为 None（建单时尚无处理记录）。
         )
         # 用 SAVEPOINT 包裹单条插入：并发被抢先建单时仅回滚该条，
         # 不影响外层事务中已写入的 diagnosis_result / diagnosis_tag。

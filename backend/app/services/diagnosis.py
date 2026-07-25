@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, desc, func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -362,10 +362,17 @@ async def list_diagnosis(
     diagnosis_label: str | None = None,
     action_status: str | None = None,
     time_window: str | None = None,
+    sort_by: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
     """诊断列表（分页 + 筛选）。
+
+    Args:
+        sort_by: 排序字段。支持 ``diagnosed_at``（默认，诊断时间降序）
+            与 ``created_at``（tracker 建单时间降序，nulls_last）。
+            工作台聚合卡"最近建单"使用 ``created_at`` 以确保新建 tracker
+            出现在列表顶部；诊断列表页保持 ``diagnosed_at``。
 
     Returns:
         {items, total, page, pageSize}
@@ -447,12 +454,14 @@ async def list_diagnosis(
         status_key = status or "PENDING"
         status_counts[status_key] = status_counts.get(status_key, 0) + int(cnt)
 
-    # 分页
-    stmt = (
-        base_stmt.order_by(DiagnosisResult.diagnosed_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
+    # 分页 + 排序
+    # sort_by 白名单：diagnosed_at（默认）按诊断时间；created_at 按 tracker 建单时间
+    # created_at 排序时 tracker 可能为 None（LEFT JOIN），用 nulls_last 确保空值排后
+    if sort_by == "created_at":
+        order_col = nullslast(desc(ActionTracker.created_at))
+    else:
+        order_col = desc(DiagnosisResult.diagnosed_at)
+    stmt = base_stmt.order_by(order_col).offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(stmt)
     rows = result.all()
 
@@ -508,6 +517,11 @@ async def list_diagnosis(
         trigger_type_val = tracker.trigger_type if tracker else None
         triggered_by_val = tracker.triggered_by if tracker else None
         severity_val = tracker.severity if tracker else None
+        # D2：建单时间与处理信息（工作台聚合卡"最近建单"按 createdAt 排序）
+        created_at_val = tracker.created_at.isoformat() if tracker and tracker.created_at else None
+        updated_at_val = tracker.updated_at.isoformat() if tracker and tracker.updated_at else None
+        comment_val = tracker.comment if tracker else None
+        updated_by_val = tracker.updated_by if tracker else None
 
         items.append(
             {
@@ -524,6 +538,10 @@ async def list_diagnosis(
                 "triggerType": trigger_type_val,
                 "triggeredBy": triggered_by_val,
                 "severity": severity_val,
+                "createdAt": created_at_val,
+                "updatedAt": updated_at_val,
+                "comment": comment_val,
+                "updatedBy": updated_by_val,
                 "diagnosedAt": diag_result.diagnosed_at.isoformat()
                 if diag_result.diagnosed_at
                 else None,

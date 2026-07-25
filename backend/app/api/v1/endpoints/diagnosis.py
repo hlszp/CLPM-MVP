@@ -401,6 +401,10 @@ async def list_diagnosis_endpoint(
     timeWindow: str | None = Query(
         None, description="时间窗：last_24_hours/last_7_days/last_30_days"
     ),
+    sortBy: str | None = Query(
+        None,
+        description="排序字段：diagnosed_at(默认,诊断时间) / created_at(tracker建单时间)",
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -413,6 +417,7 @@ async def list_diagnosis_endpoint(
         diagnosis_label=diagnosisLabel,
         action_status=actionStatus,
         time_window=timeWindow,
+        sort_by=sortBy,
         page=page,
         page_size=pageSize,
     )

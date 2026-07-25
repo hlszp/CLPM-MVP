@@ -3578,7 +3578,10 @@ class TestAutoCreateTrackers:
         assert tracker.diagnosis_label == "OSCILLATION"
         assert tracker.action_status == "PENDING"
         assert tracker.diagnosis_result_id == "diag-result-id-123"
-        assert tracker.created_at == diagnosed_at
+        # created_at 不显式设置：沿用 server_default=now()，与 manual tracker 口径一致
+        # （避免 UTC naive 与数据库本地时间混用导致 sortBy=created_at 排序错乱）
+        assert tracker.created_at is None
+        assert tracker.updated_at is None
         # D1: 自动建单来源 + 严重等级（OSCILLATION → WARN）
         assert tracker.trigger_type == "auto"
         assert tracker.triggered_by == "system"

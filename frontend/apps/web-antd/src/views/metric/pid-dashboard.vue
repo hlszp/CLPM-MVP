@@ -18,6 +18,8 @@ import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { normalizeUtcTimestamp } from '#/utils/format';
 
+import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
+
 defineOptions({ name: 'PidDashboard' });
 
 const { isDark, themeColors, chartColors } = useClpmTheme();
@@ -1139,6 +1141,11 @@ onMounted(() => {
               </Table>
             </div>
           </div>
+
+          <!-- D1：诊断与异常跟踪聚合卡（门户卡，自包含拉取近 7 天聚合） -->
+          <div class="clpm-pid-dashboard__diag-row">
+            <DiagnosisSummaryCard />
+          </div>
         </div>
       </div>
     </div>
@@ -1363,6 +1370,11 @@ onMounted(() => {
   background: rgb(255 255 255 / 80%);
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+}
+
+/* D1：诊断与异常跟踪聚合卡行（门户卡，全宽） */
+.clpm-pid-dashboard__diag-row {
+  margin-top: 8px;
 }
 
 .dark .clpm-pid-dashboard__table-card {

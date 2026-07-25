@@ -225,7 +225,11 @@ class DiagnosisAlgorithmMetaList(CamelModel):
 
 
 class DiagnosisListItem(CamelModel):
-    """诊断列表项。"""
+    """诊断列表项。
+
+    D1 扩展：triggerType/triggeredBy/severity/createdAt/updatedAt/comment/updatedBy
+    用于区分自动建单与手工建单，并支持工作台聚合卡按建单时间排序与展示来源徽标。
+    """
 
     loopId: str
     tagName: str
@@ -239,6 +243,15 @@ class DiagnosisListItem(CamelModel):
     actionStatus: ActionStatus = "PENDING"
     diagnosedAt: str
     algorithmVersion: str | None = None
+    # D1：建单来源与严重等级（tracker 可能为 None，此时建单信息缺省）
+    triggerType: str | None = Field(None, description="建单方式：auto(系统自动) / manual(用户手工)")
+    triggeredBy: str | None = Field(None, description="建单人：auto 时为 system")
+    severity: str | None = Field(None, description="严重等级 INFO/WARN/ERROR/CRITICAL")
+    # D2：建单时间与处理信息（工作台聚合卡"最近建单"按 createdAt 排序）
+    createdAt: str | None = Field(None, description="建单时间 ISO 8601")
+    updatedAt: str | None = Field(None, description="最近处理时间 ISO 8601")
+    comment: str | None = Field(None, description="处理意见/审查备注")
+    updatedBy: str | None = Field(None, description="最近处理人")
 
 
 class DiagnosisAggregates(CamelModel):

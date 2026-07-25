@@ -88,12 +88,16 @@ export namespace DiagnosisApi {
     algorithmVersion: string;
   }
 
+  /** 列表排序字段：diagnosed_at(默认,诊断时间) / created_at(tracker建单时间) */
+  export type DiagnosisSortBy = 'created_at' | 'diagnosed_at';
+
   /** 诊断列表查询参数 */
   export interface DiagnosisListQueryParams {
     plantNodeId?: string;
     diagnosisLabel?: DiagnosisLabel;
     actionStatus?: ActionStatus;
     timeWindow?: TimeWindow;
+    sortBy?: DiagnosisSortBy;
     page?: number;
     pageSize?: number;
   }
@@ -368,6 +372,8 @@ export namespace DiagnosisApi {
     actionStatus?: ActionStatus;
     loopId?: string;
     timeWindow?: TimeWindow;
+    /** 排序字段：聚合卡"最近建单"用 created_at；默认 diagnosed_at */
+    sortBy?: DiagnosisSortBy;
     page?: number;
     pageSize?: number;
   }
