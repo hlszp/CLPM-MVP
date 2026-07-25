@@ -17,7 +17,6 @@ import dayjs from 'dayjs';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { normalizeUtcTimestamp } from '#/utils/format';
-
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 
 defineOptions({ name: 'PidDashboard' });

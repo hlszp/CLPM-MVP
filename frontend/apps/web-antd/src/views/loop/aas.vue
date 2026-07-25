@@ -694,17 +694,20 @@ const matrixColumns = computed<TableColumnsType>(() => {
     });
   }
   // PID 结构列（紧凑 Tag，点击打开编辑抽屉）
-  cols.push({
-    title: 'PID 结构',
-    key: 'pid',
-    width: 110,
-    align: 'center',
-  }, {
-    title: '操作',
-    key: 'action',
-    width: 80,
-    fixed: 'right',
-  });
+  cols.push(
+    {
+      title: 'PID 结构',
+      key: 'pid',
+      width: 110,
+      align: 'center',
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      fixed: 'right',
+    },
+  );
   return cols;
 });
 
@@ -1281,13 +1284,15 @@ onMounted(loadConfig);
                     @click="openPidDrawer(record)"
                   >
                     {{
-                      `${record.pidStructure.pType === 'PROPORTION'
-                        ? '增益'
-                        : '比例度' 
-                      }·${ 
-                      record.pidStructure.iUnit === 'SECONDS' ? '秒' : '分' 
-                      }/${ 
-                      record.pidStructure.dUnit === 'SECONDS' ? '秒' : '分'}`
+                      `${
+                        record.pidStructure.pType === 'PROPORTION'
+                          ? '增益'
+                          : '比例度'
+                      }·${
+                        record.pidStructure.iUnit === 'SECONDS' ? '秒' : '分'
+                      }/${
+                        record.pidStructure.dUnit === 'SECONDS' ? '秒' : '分'
+                      }`
                     }}
                   </Tag>
                   <Tag

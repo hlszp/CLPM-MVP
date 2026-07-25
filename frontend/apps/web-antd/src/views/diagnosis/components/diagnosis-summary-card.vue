@@ -111,7 +111,7 @@ const labelBars = computed(() => {
       color: DIAGNOSIS_LABEL_COLOR_HEX_MAP[label] ?? '#8c8c8c',
     }))
     .filter((b) => b.count > 0)
-    .sort((a, b) => b.count - a.count)
+    .toSorted((a, b) => b.count - a.count)
     .slice(0, 6);
 });
 
@@ -162,7 +162,10 @@ defineExpose({ refresh: load });
   <div class="diag-summary-card" data-testid="diagnosis-summary-card">
     <div class="diag-summary-card__header">
       <div class="diag-summary-card__title-group">
-        <IconifyIcon icon="ant-design:alert-outlined" class="diag-summary-card__icon" />
+        <IconifyIcon
+          icon="ant-design:alert-outlined"
+          class="diag-summary-card__icon"
+        />
         <div>
           <div class="diag-summary-card__title">诊断与异常跟踪</div>
           <div class="diag-summary-card__subtitle">近 7 天 · 全厂聚合</div>
@@ -188,7 +191,12 @@ defineExpose({ refresh: load });
       </div>
     </div>
 
-    <Skeleton v-if="loading" :loading="loading" active :paragraph="{ rows: 4 }" />
+    <Skeleton
+      v-if="loading"
+      :loading="loading"
+      active
+      :paragraph="{ rows: 4 }"
+    />
     <template v-else>
       <!-- 状态分布 KpiStrip -->
       <ClpmKpiStrip
@@ -212,7 +220,7 @@ defineExpose({ refresh: load });
             <span
               class="diag-label-bars__dot"
               :style="{ background: bar.color }"
-            />
+            ></span>
             <span class="diag-label-bars__name">{{ bar.name }}</span>
             <div class="diag-label-bars__track">
               <div
@@ -221,7 +229,7 @@ defineExpose({ refresh: load });
                   width: `${(bar.count / labelMax) * 100}%`,
                   background: bar.color,
                 }"
-              />
+              ></div>
             </div>
             <span class="diag-label-bars__count">{{ bar.count }}</span>
           </li>
@@ -247,7 +255,9 @@ defineExpose({ refresh: load });
           >
             <span class="diag-recent-list__tag">{{ item.tagName }}</span>
             <Tag
-              :color="DIAGNOSIS_LABEL_COLOR_MAP[item.diagnosisLabel as DiagnosisLabel]"
+              :color="
+                DIAGNOSIS_LABEL_COLOR_MAP[item.diagnosisLabel as DiagnosisLabel]
+              "
               class="diag-recent-list__label"
             >
               {{ item.labelName || getDiagnosisLabelName(item.diagnosisLabel) }}
@@ -292,9 +302,9 @@ defineExpose({ refresh: load });
 
 .diag-summary-card__header {
   display: flex;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
 }
 
 .diag-summary-card__title-group {
@@ -342,9 +352,9 @@ defineExpose({ refresh: load });
   align-items: center;
   font-size: 13px;
   color: hsl(var(--primary));
+  cursor: pointer;
   background: none;
   border: none;
-  cursor: pointer;
   transition: opacity 0.2s;
 
   &:hover {
@@ -396,8 +406,8 @@ defineExpose({ refresh: load });
 
 .diag-label-bars__name {
   overflow: hidden;
-  color: hsl(var(--foreground));
   text-overflow: ellipsis;
+  color: hsl(var(--foreground));
   white-space: nowrap;
 }
 
@@ -475,9 +485,9 @@ defineExpose({ refresh: load });
 .diag-recent-list__time {
   flex: 1;
   overflow: hidden;
-  color: hsl(var(--muted-foreground));
   text-overflow: ellipsis;
-  white-space: nowrap;
+  color: hsl(var(--muted-foreground));
   text-align: right;
+  white-space: nowrap;
 }
 </style>
