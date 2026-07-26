@@ -432,9 +432,18 @@ function buildCsvFileName(startDate: string, endDate: string): string {
 async function handleExportCsv() {
   if (exportingCsv.value) return;
   exportingCsv.value = true;
+  const { startDate, endDate } = timeWindowToRange(query.timeWindow);
+  const params = { startDate, endDate };
+  console.warn('[tracker.handleExportCsv] 请求导出', {
+    timeWindow: query.timeWindow,
+    ...params,
+  });
   try {
-    const { startDate, endDate } = timeWindowToRange(query.timeWindow);
-    const blob = await exportDiagnosisStatisticsApi({ startDate, endDate });
+    const blob = await exportDiagnosisStatisticsApi(params);
+    console.warn('[tracker.handleExportCsv] 响应成功', {
+      size: blob.size,
+      type: blob.type,
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -444,7 +453,8 @@ async function handleExportCsv() {
     a.remove();
     URL.revokeObjectURL(url);
     message.success('诊断统计 CSV 已导出');
-  } catch {
+  } catch (error) {
+    console.error('[tracker.handleExportCsv] 导出失败', { params, error });
     // 错误已由拦截器处理
   } finally {
     exportingCsv.value = false;
