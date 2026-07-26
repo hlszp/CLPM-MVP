@@ -34,6 +34,7 @@ import dayjs from 'dayjs';
 
 import {
   deleteDiagnosisTaskApi,
+  exportDiagnosisStatisticsApi,
   getDiagnosisRecordsApi,
 } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
@@ -68,6 +69,8 @@ const aggregates = ref<DiagnosisApi.DiagnosisAggregates | null>(null);
 const plantNodes = ref<PlantNodeApi.PlantNode[]>([]);
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleteLoading = ref(false);
+/** 工具栏 CSV 统计导出 loading（防重复点击） */
+const exportingCsv = ref(false);
 
 /** 行选择配置 */
 const rowSelection = computed(() => ({
@@ -205,6 +208,66 @@ function handleOpenTracker(loopId: string) {
 /** 工具栏：刷新 */
 function handleRefresh() {
   loadList();
+}
+
+/**
+ * 将 timeWindow 枚举转为 [startDate, endDate] ISO 字符串（对齐后端 _build_time_window_condition 口径）。
+ * last_24_hours → 24h / last_7_days → 7d / last_30_days → 30d
+ */
+function timeWindowToRange(timeWindow: DiagnosisApi.TimeWindow): {
+  endDate: string;
+  startDate: string;
+} {
+  const now = dayjs();
+  const map: Record<DiagnosisApi.TimeWindow, number> = {
+    last_24_hours: 24,
+    last_7_days: 7 * 24,
+    last_30_days: 30 * 24,
+  };
+  const hours = map[timeWindow] ?? 24 * 7;
+  return {
+    startDate: now.subtract(hours, 'hour').toISOString(),
+    endDate: now.toISOString(),
+  };
+}
+
+/** 生成 CSV 导出文件名：CLPM-诊断统计_[start]_[end].csv */
+function buildCsvFileName(startDate: string, endDate: string): string {
+  const s = startDate.slice(0, 10);
+  const e = endDate.slice(0, 10);
+  return `CLPM-诊断统计_${s}_${e}.csv`;
+}
+
+/**
+ * 工具栏 CSV 统计导出（SVC-13：GET /diagnosis/statistics/export）。
+ *
+ * 按当前 timeWindow 推导时间范围，并透传 plantNodeId 筛选，
+ * 导出诊断标签统计 CSV（UTF-8 with BOM）。
+ */
+async function handleExportCsv() {
+  if (exportingCsv.value) return;
+  exportingCsv.value = true;
+  try {
+    const { startDate, endDate } = timeWindowToRange(query.timeWindow);
+    const blob = await exportDiagnosisStatisticsApi({
+      startDate,
+      endDate,
+      plantNodeId: query.plantNodeId,
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = buildCsvFileName(startDate, endDate);
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    message.success('诊断统计 CSV 已导出');
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    exportingCsv.value = false;
+  }
 }
 
 /** 行级删除 */
@@ -369,8 +432,8 @@ onMounted(() => {
         <ClpmToolbarButton
           icon="export"
           label="导出"
-          disabled
-          disabled-reason="导出功能开发中，待后端接口支持"
+          :loading="exportingCsv"
+          @click="handleExportCsv"
         />
       </template>
     </ClpmPageToolbar>

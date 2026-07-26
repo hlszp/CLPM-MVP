@@ -37,9 +37,11 @@ import {
   Table,
   Tag,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import {
   exportDiagnosisPdfApi,
+  exportDiagnosisStatisticsApi,
   getTrackerListApi,
   updateTrackerStatusApi,
 } from '#/api/diagnosis';
@@ -247,6 +249,9 @@ const abCompareImplementedAt = ref('');
 /** 正在导出 PDF 的回路 ID（空串表示无导出中任务，防重复点击） */
 const exportingLoopId = ref('');
 
+/** 工具栏 CSV 统计导出 loading（防重复点击） */
+const exportingCsv = ref(false);
+
 /** 加载列表 */
 async function loadList() {
   loading.value = true;
@@ -390,6 +395,62 @@ async function handleExportPdf(record: DiagnosisApi.TrackerItem) {
   }
 }
 
+/**
+ * 将 timeWindow 枚举转为 [startDate, endDate] ISO 字符串（对齐后端 _build_time_window_condition 口径）。
+ * last_24_hours → 24h / last_7_days → 7d / last_30_days → 30d
+ */
+function timeWindowToRange(timeWindow: DiagnosisApi.TimeWindow): {
+  endDate: string;
+  startDate: string;
+} {
+  const now = dayjs();
+  const map: Record<DiagnosisApi.TimeWindow, number> = {
+    last_24_hours: 24,
+    last_7_days: 7 * 24,
+    last_30_days: 30 * 24,
+  };
+  const hours = map[timeWindow] ?? 24 * 7;
+  return {
+    startDate: now.subtract(hours, 'hour').toISOString(),
+    endDate: now.toISOString(),
+  };
+}
+
+/** 生成 CSV 导出文件名：CLPM-异常跟踪统计_[start]_[end].csv */
+function buildCsvFileName(startDate: string, endDate: string): string {
+  const s = startDate.slice(0, 10);
+  const e = endDate.slice(0, 10);
+  return `CLPM-异常跟踪统计_${s}_${e}.csv`;
+}
+
+/**
+ * 工具栏 CSV 统计导出（SVC-13：GET /diagnosis/statistics/export）。
+ *
+ * 按当前 timeWindow 推导时间范围，导出诊断标签统计 CSV（UTF-8 with BOM）。
+ * 与行级"导出 PDF"按钮互补：CSV 适合整体统计汇报，PDF 适合单回路建议书。
+ */
+async function handleExportCsv() {
+  if (exportingCsv.value) return;
+  exportingCsv.value = true;
+  try {
+    const { startDate, endDate } = timeWindowToRange(query.timeWindow);
+    const blob = await exportDiagnosisStatisticsApi({ startDate, endDate });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = buildCsvFileName(startDate, endDate);
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    message.success('诊断统计 CSV 已导出');
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    exportingCsv.value = false;
+  }
+}
+
 /** 打开 A/B 对比 */
 function handleOpenAbCompare(record: DiagnosisApi.TrackerItem) {
   abCompareLoopId.value = record.loopId;
@@ -411,8 +472,8 @@ function handleRefresh() {
   loadList();
 }
 
-// P2 #37 UX13: 导出/批量处理功能开发中，按钮改为 disabled + tooltip
-// （原 message.info 让用户困惑，现在按钮灰显并悬浮显示原因）
+// P2 #37 UX13: 批量处理功能开发中，按钮保持 disabled + tooltip；
+// 导出按钮已接通 SVC-13 CSV 统计导出（D5）
 
 function formatTime(t: string): string {
   if (!t) return '—';
@@ -490,8 +551,8 @@ onMounted(() => {
         <ClpmToolbarButton
           icon="export"
           label="导出"
-          disabled
-          disabled-reason="导出功能开发中，待后端接口支持"
+          :loading="exportingCsv"
+          @click="handleExportCsv"
         />
         <ClpmToolbarButton
           icon="ant-design:thunderbolt-outlined"
