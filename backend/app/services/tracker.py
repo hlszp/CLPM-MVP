@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -654,10 +654,156 @@ async def update_verification_config(
     }
 
 
+# ---------------------------------------------------------------------------
+# D4-3 整改有效率统计（GET /api/v1/tracker/effectiveness）
+# ---------------------------------------------------------------------------
+
+# 时间窗口 → 天数映射（last_90_days 扩展支持）
+_EFFECTIVENESS_WINDOW_DAYS: dict[str, int] = {
+    "last_7_days": 7,
+    "last_30_days": 30,
+    "last_90_days": 90,
+}
+
+
+async def get_tracker_effectiveness(
+    db: AsyncSession,
+    *,
+    time_window: str = "last_30_days",
+    plant_node_id: str | None = None,
+) -> dict[str, Any]:
+    """计算整改有效率统计。
+
+    Args:
+        time_window: last_7_days / last_30_days / last_90_days
+        plant_node_id: 装置/单元筛选（对应 LoopLedger.unit_id）
+
+    Returns:
+        TrackerEffectivenessData dict
+    """
+    days = _EFFECTIVENESS_WINDOW_DAYS.get(time_window, 30)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    window_start = now - timedelta(days=days)
+
+    # 构建 plantNodeId 筛选 JOIN（如需）
+    plant_filter = None
+    if plant_node_id:
+        plant_filter = LoopLedger.unit_id == plant_node_id
+
+    # 1. 时间窗口内已实施数（IMPLEMENTED 且 updated_at 在窗口内）
+    impl_stmt = select(func.count(ActionTracker.id)).where(
+        ActionTracker.action_status == "IMPLEMENTED",
+        ActionTracker.updated_at >= window_start,
+    )
+    if plant_filter is not None:
+        impl_stmt = impl_stmt.join(LoopLedger, ActionTracker.loop_id == LoopLedger.id).where(
+            plant_filter
+        )
+    total_implemented = (await db.execute(impl_stmt)).scalar() or 0
+
+    # 2. 已验证数 / 改善数 / 恶化数（effect_verified_at 在窗口内）
+    verified_base = select(ActionTracker).where(
+        ActionTracker.effect_verified.is_not(None),
+        ActionTracker.effect_verified_at >= window_start,
+    )
+    if plant_filter is not None:
+        verified_base = verified_base.join(
+            LoopLedger, ActionTracker.loop_id == LoopLedger.id
+        ).where(plant_filter)
+
+    verified_count_stmt = select(func.count()).select_from(verified_base.subquery())
+    verified_count = (await db.execute(verified_count_stmt)).scalar() or 0
+
+    improved_count_stmt = select(func.count()).select_from(
+        verified_base.where(ActionTracker.effect_verified.is_(True)).subquery()
+    )
+    improved_count = (await db.execute(improved_count_stmt)).scalar() or 0
+
+    deteriorated_count_stmt = select(func.count()).select_from(
+        verified_base.where(ActionTracker.effect_verified.is_(False)).subquery()
+    )
+    deteriorated_count = (await db.execute(deteriorated_count_stmt)).scalar() or 0
+
+    # 3. 当前待验证数（IMPLEMENTED 且 effect_verified IS NULL，不限窗口）
+    pending_stmt = select(func.count(ActionTracker.id)).where(
+        ActionTracker.action_status == "IMPLEMENTED",
+        ActionTracker.effect_verified.is_(None),
+    )
+    if plant_filter is not None:
+        pending_stmt = pending_stmt.join(LoopLedger, ActionTracker.loop_id == LoopLedger.id).where(
+            plant_filter
+        )
+    pending_count = (await db.execute(pending_stmt)).scalar() or 0
+
+    # 4. 整改有效率
+    effective_rate = round(improved_count / verified_count, 4) if verified_count > 0 else None
+
+    # 5. 每日有效率趋势（按 effect_verified_at 日期分组）
+    trend_stmt = (
+        select(
+            func.date_trunc("day", ActionTracker.effect_verified_at).label("day"),
+            func.count(ActionTracker.id).label("verified"),
+            func.count(case((ActionTracker.effect_verified.is_(True), 1))).label("improved"),
+        )
+        .where(
+            ActionTracker.effect_verified.is_not(None),
+            ActionTracker.effect_verified_at >= window_start,
+        )
+        .group_by("day")
+        .order_by("day")
+    )
+    if plant_filter is not None:
+        trend_stmt = trend_stmt.join(LoopLedger, ActionTracker.loop_id == LoopLedger.id).where(
+            plant_filter
+        )
+    trend_rows = (await db.execute(trend_stmt)).all()
+
+    trend: list[dict[str, Any]] = []
+    for row in trend_rows:
+        day_dt = row.day
+        if day_dt.tzinfo is not None:
+            day_dt = day_dt.replace(tzinfo=None)
+        verified = row.verified or 0
+        improved = row.improved or 0
+        day_rate = round(improved / verified, 4) if verified > 0 else None
+        trend.append(
+            {
+                "date": day_dt.strftime("%Y-%m-%d"),
+                "verifiedCount": verified,
+                "improvedCount": improved,
+                "effectiveRate": day_rate,
+            }
+        )
+
+    logger.info(
+        "整改有效率统计: window=%s, days=%d, implemented=%d, verified=%d, "
+        "improved=%d, deteriorated=%d, pending=%d, rate=%s",
+        time_window,
+        days,
+        total_implemented,
+        verified_count,
+        improved_count,
+        deteriorated_count,
+        pending_count,
+        effective_rate,
+    )
+
+    return {
+        "totalImplemented": total_implemented,
+        "verifiedCount": verified_count,
+        "improvedCount": improved_count,
+        "deterioratedCount": deteriorated_count,
+        "effectiveRate": effective_rate,
+        "pendingVerificationCount": pending_count,
+        "trend": trend,
+    }
+
+
 __all__ = [
     "export_tracker_pdf",
     "get_ab_compare",
     "get_verification_config",
+    "get_tracker_effectiveness",
     "update_tracker_status",
     "update_verification_config",
 ]

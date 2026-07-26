@@ -74,6 +74,7 @@ from app.schemas.diagnosis import (
     TagResolveRequest,
     ThresholdOverrideItem,
     ThresholdOverrideUpsert,
+    TrackerEffectivenessData,
     TrackerStatusData,
     TrackerStatusUpdate,
     TrackerVerificationConfig,
@@ -116,6 +117,7 @@ from app.services.diagnosis_threshold import (
 from app.services.tracker import (
     export_tracker_pdf,
     get_ab_compare,
+    get_tracker_effectiveness,
     get_verification_config,
     update_tracker_status,
     update_verification_config,
@@ -986,6 +988,33 @@ async def update_verification_config_endpoint(
         db, interval_hours=body.intervalHours, operator=user.username
     )
     return success(data=data, message="验证周期已更新")
+
+
+# ---------------------------------------------------------------------------
+# D4-3 整改有效率统计 API
+# ---------------------------------------------------------------------------
+
+
+@tracker_router.get(
+    "/effectiveness",
+    response_model=ApiResponse[TrackerEffectivenessData],
+)
+async def get_tracker_effectiveness_endpoint(
+    timeWindow: str = Query(
+        "last_30_days",
+        description="时间窗口：last_7_days / last_30_days / last_90_days",
+    ),
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """整改有效率统计（所有角色可查）。
+
+    返回时间窗口内的已实施/已验证/改善/恶化数量、整改有效率、待验证数和每日趋势。
+    依赖 D4-1 的 effect_verified 字段和 D4-2 的周期任务回写结果。
+    """
+    data = await get_tracker_effectiveness(db, time_window=timeWindow, plant_node_id=plantNodeId)
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------

@@ -409,6 +409,32 @@ class TrackerVerificationConfig(CamelModel):
     updatedAt: str | None = Field(None, description="最后修改时间 ISO 8601")
 
 
+class EffectivenessTrendItem(CamelModel):
+    """D4-3 整改有效率趋势单日数据。"""
+
+    date: str = Field(..., description="日期 YYYY-MM-DD")
+    verifiedCount: int = Field(..., description="当日验证数")
+    improvedCount: int = Field(..., description="当日改善数")
+    effectiveRate: float | None = Field(None, description="当日有效率（0~1），无验证数据时为 null")
+
+
+class TrackerEffectivenessData(CamelModel):
+    """D4-3 整改有效率统计响应。"""
+
+    totalImplemented: int = Field(..., description="时间窗口内已实施数（IMPLEMENTED）")
+    verifiedCount: int = Field(..., description="时间窗口内已验证数")
+    improvedCount: int = Field(..., description="时间窗口内改善数")
+    deterioratedCount: int = Field(..., description="时间窗口内恶化数")
+    effectiveRate: float | None = Field(
+        None,
+        description="整改有效率 = improvedCount / verifiedCount，无验证数据时为 null",
+    )
+    pendingVerificationCount: int = Field(
+        ..., description="当前待验证数（IMPLEMENTED 但 effect_verified IS NULL）"
+    )
+    trend: list[EffectivenessTrendItem] = Field(..., description="近 N 天每日有效率趋势")
+
+
 # ---------------------------------------------------------------------------
 # A/B 对比（GET /diagnosis/ab-compare）
 # ---------------------------------------------------------------------------
@@ -814,6 +840,8 @@ __all__ = [
     "TrackerStatusData",
     "TrackerStatusUpdate",
     "TrackerVerificationConfig",
+    "EffectivenessTrendItem",
+    "TrackerEffectivenessData",
     "WaveformData",
     "WaveformTimeRange",
 ]

@@ -520,6 +520,26 @@ export namespace DiagnosisApi {
     updatedAt?: string;
   }
 
+  /** D4-3 整改有效率趋势单日数据 */
+  export interface EffectivenessTrendItem {
+    date: string;
+    verifiedCount: number;
+    improvedCount: number;
+    effectiveRate: null | number;
+  }
+
+  /** D4-3 整改有效率统计响应 */
+  export interface TrackerEffectivenessData {
+    totalImplemented: number;
+    verifiedCount: number;
+    improvedCount: number;
+    deterioratedCount: number;
+    /** 整改有效率 = improvedCount / verifiedCount，无验证数据时为 null */
+    effectiveRate: null | number;
+    pendingVerificationCount: number;
+    trend: EffectivenessTrendItem[];
+  }
+
   /** 算法元数据项（对齐 app.schemas.diagnosis.DiagnosisAlgorithmMetaItem） */
   export interface AlgorithmMetaItem {
     label: DiagnosisLabel;
@@ -1079,5 +1099,19 @@ export function updateVerificationConfigApi(intervalHours: number) {
       data: { intervalHours },
       method: 'PATCH',
     },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// D4-3 整改有效率统计 API
+// ---------------------------------------------------------------------------
+
+export function getTrackerEffectivenessApi(params?: {
+  plantNodeId?: string;
+  timeWindow?: 'last_30_days' | 'last_7_days' | 'last_90_days';
+}) {
+  return requestClient.get<DiagnosisApi.TrackerEffectivenessData>(
+    '/tracker/effectiveness',
+    { params },
   );
 }

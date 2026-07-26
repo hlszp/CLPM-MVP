@@ -1,11 +1,16 @@
-"""D4-2 Tracker 整改效果自动验证任务测试.
+"""D4-2/D4-3 Tracker 整改效果验证测试.
 
 覆盖：
+D4-2:
 - beat schedule 注册（tracker-verification-hourly）
 - _judge_effect 判定逻辑（改善/恶化/持平）
 - _get_verification_interval_hours 读取（默认/合法/非法/过小）
 - 周期任务主流程（mock get_ab_compare，验证回写 effect_verified）
 - dataInsufficient 跳过逻辑
+
+D4-3:
+- 整改有效率统计 service（空数据/有数据/有效率计算）
+- 整改有效率统计 API（端点可访问/参数校验）
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.services.tracker import get_tracker_effectiveness
 from app.tasks.tracker_verification import (
     VERIFICATION_INTERVAL_DEFAULT,
     _get_verification_interval_hours,
@@ -376,3 +382,181 @@ class TestVerificationConfigAPI:
                 json={"intervalHours": 0},
             )
         assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# D4-3 整改有效率统计测试
+# ---------------------------------------------------------------------------
+
+
+def _make_scalar_mock(value):
+    """构造一个 scalar() 返回 value 的 mock 结果。"""
+    mock_result = MagicMock()
+    mock_result.scalar = MagicMock(return_value=value)
+    return mock_result
+
+
+class TestGetTrackerEffectiveness:
+    """D4-3 整改有效率统计 service 测试。"""
+
+    @pytest.mark.asyncio
+    async def test_empty_data_returns_zeros(self) -> None:
+        """无验证数据时返回全 0 和 null effectiveRate。"""
+        db = MagicMock()
+        # 5 次 execute：impl / verified / improved / deteriorated / pending / trend
+        # 全部返回 0
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_mock(0),  # total_implemented
+                _make_scalar_mock(0),  # verified_count
+                _make_scalar_mock(0),  # improved_count
+                _make_scalar_mock(0),  # deteriorated_count
+                _make_scalar_mock(0),  # pending_count
+                MagicMock(all=MagicMock(return_value=[])),  # trend
+            ]
+        )
+
+        result = await get_tracker_effectiveness(db, time_window="last_30_days")
+
+        assert result["totalImplemented"] == 0
+        assert result["verifiedCount"] == 0
+        assert result["improvedCount"] == 0
+        assert result["deterioratedCount"] == 0
+        assert result["effectiveRate"] is None
+        assert result["pendingVerificationCount"] == 0
+        assert result["trend"] == []
+
+    @pytest.mark.asyncio
+    async def test_effective_rate_calculation(self) -> None:
+        """有验证数据时正确计算 effectiveRate = improved / verified。"""
+        db = MagicMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_mock(10),  # total_implemented
+                _make_scalar_mock(8),  # verified_count
+                _make_scalar_mock(6),  # improved_count
+                _make_scalar_mock(2),  # deteriorated_count
+                _make_scalar_mock(2),  # pending_count
+                MagicMock(all=MagicMock(return_value=[])),  # trend
+            ]
+        )
+
+        result = await get_tracker_effectiveness(db, time_window="last_30_days")
+
+        assert result["totalImplemented"] == 10
+        assert result["verifiedCount"] == 8
+        assert result["improvedCount"] == 6
+        assert result["deterioratedCount"] == 2
+        assert result["effectiveRate"] == 0.75  # 6/8
+        assert result["pendingVerificationCount"] == 2
+
+    @pytest.mark.asyncio
+    async def test_all_improved_rate_is_one(self) -> None:
+        """全部改善时 effectiveRate=1.0。"""
+        db = MagicMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_mock(5),  # total_implemented
+                _make_scalar_mock(5),  # verified_count
+                _make_scalar_mock(5),  # improved_count
+                _make_scalar_mock(0),  # deteriorated_count
+                _make_scalar_mock(0),  # pending_count
+                MagicMock(all=MagicMock(return_value=[])),  # trend
+            ]
+        )
+
+        result = await get_tracker_effectiveness(db, time_window="last_7_days")
+        assert result["effectiveRate"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_all_deteriorated_rate_is_zero(self) -> None:
+        """全部恶化时 effectiveRate=0.0。"""
+        db = MagicMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_mock(3),  # total_implemented
+                _make_scalar_mock(3),  # verified_count
+                _make_scalar_mock(0),  # improved_count
+                _make_scalar_mock(3),  # deteriorated_count
+                _make_scalar_mock(0),  # pending_count
+                MagicMock(all=MagicMock(return_value=[])),  # trend
+            ]
+        )
+
+        result = await get_tracker_effectiveness(db, time_window="last_90_days")
+        assert result["effectiveRate"] == 0.0
+
+
+class TestEffectivenessAPI:
+    """D4-3 整改有效率统计 API 测试。"""
+
+    def test_effectiveness_endpoint_accessible(self, client, mock_db, fake_redis) -> None:
+        """所有角色可访问整改有效率统计接口。"""
+        mock_result = MagicMock()
+        mock_result.scalar = MagicMock(return_value=0)
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_result,  # total_implemented
+                mock_result,  # verified_count
+                mock_result,  # improved_count
+                mock_result,  # deteriorated_count
+                mock_result,  # pending_count
+                MagicMock(all=MagicMock(return_value=[])),  # trend
+            ]
+        )
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.get(
+                "/api/v1/tracker/effectiveness",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "totalImplemented" in body["data"]
+        assert "verifiedCount" in body["data"]
+        assert "improvedCount" in body["data"]
+        assert "deterioratedCount" in body["data"]
+        assert "effectiveRate" in body["data"]
+        assert "pendingVerificationCount" in body["data"]
+        assert "trend" in body["data"]
+
+    def test_effectiveness_with_time_window_param(self, client, mock_db, fake_redis) -> None:
+        """支持 timeWindow 查询参数。"""
+        mock_result = MagicMock()
+        mock_result.scalar = MagicMock(return_value=0)
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_result,
+                mock_result,
+                mock_result,
+                mock_result,
+                mock_result,
+                MagicMock(all=MagicMock(return_value=[])),
+            ]
+        )
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tracker/effectiveness?timeWindow=last_7_days",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_effectiveness_all_roles_can_access(self, client, mock_db, fake_redis) -> None:
+        """所有角色（含 sponsor）均可访问。"""
+        mock_result = MagicMock()
+        mock_result.scalar = MagicMock(return_value=0)
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                mock_result,
+                mock_result,
+                mock_result,
+                mock_result,
+                mock_result,
+                MagicMock(all=MagicMock(return_value=[])),
+            ]
+        )
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.get(
+                "/api/v1/tracker/effectiveness",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
