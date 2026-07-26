@@ -216,6 +216,12 @@ async def update_tracker_status(
         "triggeredBy": tracker.triggered_by,
         "severity": tracker.severity,
         "abComparison": ab_comparison,
+        # D4: 整改效果验证（初始为 None，T+7d 由周期任务回写）
+        "effectVerified": tracker.effect_verified,
+        "effectVerifiedAt": tracker.effect_verified_at.isoformat()
+        if tracker.effect_verified_at
+        else None,
+        "abCompareSummary": tracker.ab_compare_summary,
     }
 
 

@@ -375,6 +375,12 @@ export namespace DiagnosisApi {
     mocNotApplicable?: boolean;
     /** D3: MOC 不适用时的依据说明 */
     mocReason?: string;
+    /** D4: 整改效果验证（T+7d 自动回写，True=改善 / False=恶化或无明显变化 / null=未验证） */
+    effectVerified?: boolean | null;
+    /** D4: 整改效果验证时间 */
+    effectVerifiedAt?: string;
+    /** D4: A/B 对比结果快照（改善/恶化指标数 + 关键 KPI 变化） */
+    abCompareSummary?: Record<string, unknown>;
   }
 
   /** Tracker 列表查询参数 */

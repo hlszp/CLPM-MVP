@@ -14,7 +14,7 @@ from sqlalchemy import (
     String,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -31,6 +31,10 @@ class ActionTracker(Base):
     整改计划 D1：追加 trigger_type / triggered_by / severity 三列，区分
     系统自动建单（auto）与用户手工建单（manual），并冗余诊断严重等级
     便于按优先级筛选。
+
+    整改计划 D4：追加 effect_verified / effect_verified_at / ab_compare_summary
+    三列，承载 T+7d 自动验证的整改效果结果。Celery 周期任务对 IMPLEMENTED
+    满 7 天的 tracker 调用 A/B 对比，回写验证状态与快照，供整改有效率统计。
     """
 
     __tablename__ = "action_tracker"
@@ -76,6 +80,14 @@ class ActionTracker(Base):
     # 严重等级（从 diagnosis_tag.severity 冗余，建单后不再变化）
     severity: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # ========== D4 追加列（迁移 e4f5g6h7i8j9）==========
+    # 整改效果验证：T+7d 由 Celery 周期任务自动计算 A/B 对比后回写
+    # True=改善 / False=恶化或无明显变化 / None=未验证（未到 T+7d 或数据不足）
+    effect_verified: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    effect_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # A/B 对比结果快照（改善/恶化指标数 + 关键 KPI 变化），避免每次查看都重算
+    ab_compare_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED')",
@@ -110,5 +122,13 @@ class ActionTracker(Base):
             "idx_action_tracker_loop_created",
             "loop_id",
             text("created_at DESC"),
+        ),
+        # D4: 按验证结果筛选（整改有效率卡片）
+        Index("idx_action_tracker_effect_verified", "effect_verified"),
+        # D4: 周期任务查询 "IMPLEMENTED 且 updated_at <= now()-7d 且未验证"
+        Index(
+            "idx_action_tracker_status_updated",
+            "action_status",
+            "updated_at",
         ),
     )

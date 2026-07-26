@@ -117,6 +117,10 @@ def _make_tracker(
     t.trigger_type = "manual"
     t.triggered_by = "ic_engineer"
     t.severity = "WARN"
+    # D4: 整改效果验证（默认未验证）
+    t.effect_verified = None
+    t.effect_verified_at = None
+    t.ab_compare_summary = None
     return t
 
 
@@ -785,6 +789,38 @@ class TestTrackerStatusUpdate:
         assert body["data"]["abComparison"] is not None
         assert "beforeWindow" in body["data"]["abComparison"]
         assert "afterWindow" in body["data"]["abComparison"]
+
+    def test_update_status_returns_d4_effect_fields(self, client, mock_db, fake_redis) -> None:
+        """D4：状态更新响应应包含 effect_verified 系列字段（初始为 None）。"""
+        loop = _make_loop()
+        tracker = _make_tracker()
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            if call_count[0] == 2:
+                return _make_scalar_one_or_none_mock(tracker)
+            return _make_scalar_one_or_none_mock(None)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.patch(
+                f"/api/v1/tracker/{loop.id}/status",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"status": "IN_PROGRESS"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        # D4 字段存在且初始为 None（未到 T+7d 验证周期）
+        assert "effectVerified" in body["data"]
+        assert body["data"]["effectVerified"] is None
+        assert "effectVerifiedAt" in body["data"]
+        assert body["data"]["effectVerifiedAt"] is None
+        assert "abCompareSummary" in body["data"]
+        assert body["data"]["abCompareSummary"] is None
 
     def test_update_status_invalid(self, client, mock_db, fake_redis) -> None:
         """无效状态返回 422。"""

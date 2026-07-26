@@ -526,6 +526,13 @@ async def list_diagnosis(
         moc_ref_val = tracker.moc_ref if tracker else None
         moc_not_applicable_val = tracker.moc_not_applicable if tracker else None
         moc_reason_val = tracker.moc_reason if tracker else None
+        # D4: 整改效果验证（T+7d 自动回写）
+        effect_verified_val = tracker.effect_verified if tracker else None
+        effect_verified_at_val = (
+            tracker.effect_verified_at.isoformat()
+            if tracker and tracker.effect_verified_at
+            else None
+        )
 
         items.append(
             {
@@ -549,6 +556,8 @@ async def list_diagnosis(
                 "mocRef": moc_ref_val,
                 "mocNotApplicable": moc_not_applicable_val,
                 "mocReason": moc_reason_val,
+                "effectVerified": effect_verified_val,
+                "effectVerifiedAt": effect_verified_at_val,
                 "diagnosedAt": diag_result.diagnosed_at.isoformat()
                 if diag_result.diagnosed_at
                 else None,

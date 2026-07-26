@@ -256,6 +256,11 @@ class DiagnosisListItem(CamelModel):
     mocRef: str | None = Field(None, description="MOC 变更管理关联编号")
     mocNotApplicable: bool | None = Field(None, description="MOC 是否不适用")
     mocReason: str | None = Field(None, description="MOC 不适用时的依据说明")
+    # D4: 整改效果验证（T+7d 自动回写，整改有效率统计依赖）
+    effectVerified: bool | None = Field(
+        None, description="整改效果：True=改善 / False=恶化或无明显变化 / None=未验证"
+    )
+    effectVerifiedAt: str | None = Field(None, description="整改效果验证时间 ISO 8601")
 
 
 class DiagnosisAggregates(CamelModel):
@@ -381,6 +386,14 @@ class TrackerStatusData(CamelModel):
     triggeredBy: str | None = Field(None, description="建单人")
     severity: str | None = Field(None, description="严重等级 INFO/WARN/ERROR/CRITICAL")
     abComparison: dict[str, Any] | None = None
+    # D4：整改效果验证（T+7d 自动回写）
+    effectVerified: bool | None = Field(
+        None, description="整改效果：True=改善 / False=恶化或无明显变化 / None=未验证"
+    )
+    effectVerifiedAt: str | None = Field(None, description="整改效果验证时间 ISO 8601")
+    abCompareSummary: dict[str, Any] | None = Field(
+        None, description="A/B 对比结果快照（改善/恶化指标数 + 关键 KPI 变化）"
+    )
 
 
 # ---------------------------------------------------------------------------
