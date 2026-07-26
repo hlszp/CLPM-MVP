@@ -512,6 +512,14 @@ export namespace DiagnosisApi {
     includeDiagnosis?: boolean;
   }
 
+  /** D4-2 整改效果验证周期配置 */
+  export interface TrackerVerificationConfig {
+    /** 验证周期（小时），IMPLEMENTED 后等待 N 小时触发验证，默认 24 */
+    intervalHours: number;
+    updatedBy?: string;
+    updatedAt?: string;
+  }
+
   /** 算法元数据项（对齐 app.schemas.diagnosis.DiagnosisAlgorithmMetaItem） */
   export interface AlgorithmMetaItem {
     label: DiagnosisLabel;
@@ -1051,5 +1059,25 @@ export function getDiagnosisRecordsApi(
   return requestClient.get<DiagnosisApi.DiagnosisRecordListResult>(
     '/diagnosis/records',
     { params },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// D4-2 整改效果验证周期配置 API
+// ---------------------------------------------------------------------------
+
+export function getVerificationConfigApi() {
+  return requestClient.get<DiagnosisApi.TrackerVerificationConfig>(
+    '/tracker/verification-config',
+  );
+}
+
+export function updateVerificationConfigApi(intervalHours: number) {
+  return requestClient.request<DiagnosisApi.TrackerVerificationConfig>(
+    '/tracker/verification-config',
+    {
+      data: { intervalHours },
+      method: 'PATCH',
+    },
   );
 }

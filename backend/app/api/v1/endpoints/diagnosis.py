@@ -76,6 +76,7 @@ from app.schemas.diagnosis import (
     ThresholdOverrideUpsert,
     TrackerStatusData,
     TrackerStatusUpdate,
+    TrackerVerificationConfig,
     WaveformData,
 )
 from app.services.diagnosis import (
@@ -112,7 +113,13 @@ from app.services.diagnosis_threshold import (
 from app.services.diagnosis_threshold import (
     list_overrides as list_threshold_overrides,
 )
-from app.services.tracker import export_tracker_pdf, get_ab_compare, update_tracker_status
+from app.services.tracker import (
+    export_tracker_pdf,
+    get_ab_compare,
+    get_verification_config,
+    update_tracker_status,
+    update_verification_config,
+)
 from app.services.waveform import get_waveform
 
 logger = logging.getLogger(__name__)
@@ -938,6 +945,47 @@ async def export_tracker_endpoint(
             ),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# D4-2 整改效果验证周期配置 API
+# ---------------------------------------------------------------------------
+
+
+@tracker_router.get(
+    "/verification-config",
+    response_model=ApiResponse[TrackerVerificationConfig],
+)
+async def get_verification_config_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """读取整改效果验证周期配置（所有角色可查）。
+
+    返回 sys_config 中 ``tracker.verification_interval_hours`` 的值，默认 24 小时。
+    Celery 周期任务每小时读取此配置，决定哪些 IMPLEMENTED tracker 到达验证时机。
+    """
+    data = await get_verification_config(db)
+    return success(data=data)
+
+
+@tracker_router.patch(
+    "/verification-config",
+    response_model=ApiResponse[TrackerVerificationConfig],
+)
+async def update_verification_config_endpoint(
+    body: TrackerVerificationConfig,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """更新整改效果验证周期配置（仅 ADMIN）。
+
+    验证周期范围 1~720 小时，修改后下一周期任务执行时立即生效（无需重启）。
+    """
+    data = await update_verification_config(
+        db, interval_hours=body.intervalHours, operator=user.username
+    )
+    return success(data=data, message="验证周期已更新")
 
 
 # ---------------------------------------------------------------------------

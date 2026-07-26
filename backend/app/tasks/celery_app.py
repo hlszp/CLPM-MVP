@@ -33,6 +33,7 @@ celery_app = Celery(
         "app.tasks.audit_archive",
         "app.tasks.dead_letter",
         "app.tasks.data_link_monitor",
+        "app.tasks.tracker_verification",
     ],
 )
 
@@ -119,6 +120,7 @@ import app.tasks.data_link_monitor  # noqa: E402, F401
 import app.tasks.diagnosis_engine  # noqa: E402, F401
 import app.tasks.kpi_calc  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401
+import app.tasks.tracker_verification  # noqa: E402, F401
 
 
 def _preload_datasource_config_sync() -> None:

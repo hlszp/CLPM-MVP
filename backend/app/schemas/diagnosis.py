@@ -396,6 +396,19 @@ class TrackerStatusData(CamelModel):
     )
 
 
+class TrackerVerificationConfig(CamelModel):
+    """D4-2 整改效果验证周期配置（可人工调节）。"""
+
+    intervalHours: int = Field(
+        ...,
+        ge=1,
+        le=720,
+        description="验证周期（小时），IMPLEMENTED 后等待 N 小时触发验证，默认 24",
+    )
+    updatedBy: str | None = Field(None, description="最后修改人")
+    updatedAt: str | None = Field(None, description="最后修改时间 ISO 8601")
+
+
 # ---------------------------------------------------------------------------
 # A/B 对比（GET /diagnosis/ab-compare）
 # ---------------------------------------------------------------------------
@@ -800,6 +813,7 @@ __all__ = [
     "TagResolveRequest",
     "TrackerStatusData",
     "TrackerStatusUpdate",
+    "TrackerVerificationConfig",
     "WaveformData",
     "WaveformTimeRange",
 ]

@@ -24,6 +24,7 @@ from app.models.audit import SysAuditLog
 from app.models.diagnosis import DiagnosisResult
 from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly
+from app.models.sys_config import SysConfig
 from app.models.tracker import ActionTracker
 from app.services.diagnosis import get_diagnosis_detail
 from app.services.diagnosis_recommendation import get_recommendations_for_loop
@@ -574,4 +575,89 @@ async def export_tracker_pdf(
     return pdf_bytes, filename
 
 
-__all__ = ["export_tracker_pdf", "get_ab_compare", "update_tracker_status"]
+# ---------------------------------------------------------------------------
+# D4-2 整改效果验证周期配置（GET/PATCH /api/v1/tracker/verification-config）
+# ---------------------------------------------------------------------------
+
+# sys_config key：整改效果验证周期（小时），默认 24
+TRACKER_VERIFICATION_INTERVAL_KEY = "tracker.verification_interval_hours"
+TRACKER_VERIFICATION_INTERVAL_DEFAULT = 24
+
+
+async def get_verification_config(db: AsyncSession) -> dict[str, Any]:
+    """读取整改效果验证周期配置。
+
+    sys_config 无此 key 时返回默认值 24。
+    """
+    result = await db.execute(
+        select(SysConfig).where(SysConfig.key == TRACKER_VERIFICATION_INTERVAL_KEY)
+    )
+    cfg = result.scalar_one_or_none()
+    if cfg is None or not cfg.value:
+        return {
+            "intervalHours": TRACKER_VERIFICATION_INTERVAL_DEFAULT,
+            "updatedBy": None,
+            "updatedAt": None,
+        }
+    try:
+        hours = int(cfg.value)
+    except (ValueError, TypeError):
+        hours = TRACKER_VERIFICATION_INTERVAL_DEFAULT
+    return {
+        "intervalHours": hours,
+        "updatedBy": cfg.updated_by,
+        "updatedAt": cfg.updated_at.isoformat() if cfg.updated_at else None,
+    }
+
+
+async def update_verification_config(
+    db: AsyncSession, *, interval_hours: int, operator: str
+) -> dict[str, Any]:
+    """更新整改效果验证周期配置（upsert sys_config）。
+
+    Args:
+        interval_hours: 验证周期（小时），范围 1~720
+        operator: 操作人 username
+    """
+    if not 1 <= interval_hours <= 720:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message="验证周期需在 1~720 小时之间",
+            status_code=422,
+        )
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    result = await db.execute(
+        select(SysConfig).where(SysConfig.key == TRACKER_VERIFICATION_INTERVAL_KEY)
+    )
+    cfg = result.scalar_one_or_none()
+    if cfg is None:
+        cfg = SysConfig(
+            key=TRACKER_VERIFICATION_INTERVAL_KEY,
+            value=str(interval_hours),
+            description="D4-2 整改效果验证周期（小时），IMPLEMENTED 后等待 N 小时触发验证",
+            updated_by=operator,
+            updated_at=now,
+        )
+        db.add(cfg)
+    else:
+        cfg.value = str(interval_hours)
+        cfg.updated_by = operator
+        cfg.updated_at = now
+    await db.commit()
+
+    logger.info("整改效果验证周期已更新: %d 小时, operator=%s", interval_hours, operator)
+    return {
+        "intervalHours": interval_hours,
+        "updatedBy": operator,
+        "updatedAt": now.isoformat(),
+    }
+
+
+__all__ = [
+    "export_tracker_pdf",
+    "get_ab_compare",
+    "get_verification_config",
+    "update_tracker_status",
+    "update_verification_config",
+]
