@@ -18,6 +18,7 @@ import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { normalizeUtcTimestamp } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
+import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
 
 defineOptions({ name: 'PidDashboard' });
 
@@ -1141,9 +1142,10 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- D1：诊断与异常跟踪聚合卡（门户卡，自包含拉取近 7 天聚合） -->
+          <!-- D1/D4：诊断聚合卡 + 整改有效率卡（门户卡，两列并列） -->
           <div class="clpm-pid-dashboard__diag-row">
             <DiagnosisSummaryCard />
+            <TrackerEffectivenessCard />
           </div>
         </div>
       </div>
@@ -1371,9 +1373,16 @@ onMounted(() => {
   border-radius: 8px;
 }
 
-/* D1：诊断与异常跟踪聚合卡行（门户卡，全宽） */
+/* D1/D4：诊断聚合卡 + 整改有效率卡行（两列并列，窄屏堆叠） */
 .clpm-pid-dashboard__diag-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
   margin-top: 8px;
+
+  @media (width <= 1200px) {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dark .clpm-pid-dashboard__table-card {

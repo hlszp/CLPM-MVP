@@ -1108,7 +1108,7 @@ export function updateVerificationConfigApi(intervalHours: number) {
 
 export function getTrackerEffectivenessApi(params?: {
   plantNodeId?: string;
-  timeWindow?: 'last_30_days' | 'last_7_days' | 'last_90_days';
+  timeWindow?: 'last_7_days' | 'last_30_days' | 'last_90_days';
 }) {
   return requestClient.get<DiagnosisApi.TrackerEffectivenessData>(
     '/tracker/effectiveness',
