@@ -229,10 +229,18 @@ def generate_diagnosis_report(
         ]
         feat_rows = [feat_header]
         for k, v in feature_values.items():
-            try:
-                v_str = f"{float(v):.4f}"
-            except (TypeError, ValueError):
-                v_str = str(v)
+            if isinstance(v, (list, tuple)):
+                # 数组类指标（如 fft_frequencies/amplitudes）只显示长度，
+                # 避免 str(list) 撑爆表格 cell 触发 reportlab LayoutError
+                v_str = f"[数组，长度 {len(v)}]"
+            else:
+                try:
+                    v_str = f"{float(v):.4f}"
+                except (TypeError, ValueError):
+                    v_str = str(v)
+            # 截断超长字符串（如 evidence JSON），保护 PDF 布局
+            if len(v_str) > 200:
+                v_str = f"{v_str[:200]}..."
             feat_rows.append([Paragraph(str(k), cell_style), Paragraph(v_str, cell_style)])
         feat_table = Table(feat_rows, colWidths=[60 * mm, 100 * mm])
         feat_table.setStyle(
@@ -473,11 +481,21 @@ async def export_diagnosis_statistics(
 
 
 def _parse_iso_datetime(s: str) -> datetime:
-    """解析 ISO 8601 时间字符串。"""
+    """解析 ISO 8601 时间字符串为 naive datetime。
+
+    前端 dayjs().toISOString() 产出带 ``Z`` 的 UTC 字符串，解析后为 offset-aware datetime；
+    但 DiagnosisResult.diagnosed_at 列为 ``TIMESTAMP WITHOUT TIME ZONE``（naive），
+    asyncpg 绑定 aware datetime 到 naive 列会抛
+    ``can't subtract offset-naive and offset-aware datetimes``。
+    故在此统一去 tzinfo，与 DB 列口径及 tracker.py 的 _parse_iso_dt 保持一致。
+    """
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s)
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt
 
 
 __all__ = [
