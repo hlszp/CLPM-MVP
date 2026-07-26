@@ -87,6 +87,14 @@ def _judge_effect(ab_result: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
     deteriorated_count = sum(1 for item in kpi_comparison if item.get("improved") is False)
     unchanged_count = sum(1 for item in kpi_comparison if item.get("improved") is None)
 
+    logger.info(
+        "A/B 对比判定: improved=%d, deteriorated=%d, unchanged=%d, dataInsufficient=%s",
+        improved_count,
+        deteriorated_count,
+        unchanged_count,
+        ab_result.get("dataInsufficient", False),
+    )
+
     # 改善指标数 > 恶化指标数 → 改善；反之 → 恶化；相等或全持平 → 已验证（无明显变化）
     if improved_count > deteriorated_count:
         effect_verified = True
@@ -95,6 +103,13 @@ def _judge_effect(ab_result: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
     else:
         # 改善==恶化（含全持平）→ 已验证，无明显变化
         effect_verified = True
+
+    logger.info(
+        "最终判定: effect_verified=%s (improved=%d vs deteriorated=%d)",
+        effect_verified,
+        improved_count,
+        deteriorated_count,
+    )
 
     summary = {
         "improvedCount": improved_count,
@@ -137,6 +152,14 @@ async def _verify_single_tracker(db: AsyncSession, tracker: ActionTracker) -> bo
     else:
         implemented_at_iso = implemented_at.isoformat()
 
+    logger.info(
+        "开始验证 tracker %s: loop_id=%s, label=%s, implemented_at=%s",
+        tracker.id,
+        tracker.loop_id,
+        tracker.diagnosis_label,
+        implemented_at_iso,
+    )
+
     try:
         ab_result = await get_ab_compare(
             db,
@@ -146,6 +169,13 @@ async def _verify_single_tracker(db: AsyncSession, tracker: ActionTracker) -> bo
     except Exception:
         logger.exception("tracker %s A/B 对比计算失败，跳过本次验证", tracker.id)
         return False
+
+    logger.info(
+        "tracker %s A/B 对比完成: dataInsufficient=%s, kpiCount=%d",
+        tracker.id,
+        ab_result.get("dataInsufficient", False),
+        len(ab_result.get("kpiComparison", [])),
+    )
 
     # 数据不足 → 跳过，等下一周期重试
     if ab_result.get("dataInsufficient"):

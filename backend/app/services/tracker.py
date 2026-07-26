@@ -98,6 +98,16 @@ async def update_tracker_status(
                 status_code=422,
             )
 
+    logger.info(
+        "Tracker 状态变更请求: loop_id=%s, operator=%s, target_status=%s, "
+        "moc_ref=%s, moc_not_applicable=%s",
+        loop_id,
+        operator,
+        status,
+        moc_ref,
+        moc_not_applicable,
+    )
+
     # 校验回路
     loop_result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = loop_result.scalar_one_or_none()
@@ -196,9 +206,24 @@ async def update_tracker_status(
 
     await db.commit()
 
+    logger.info(
+        "Tracker 状态变更完成: tracker_id=%s, loop_id=%s, %s → %s, operator=%s, trigger_type=%s",
+        tracker.id,
+        loop_id,
+        before_status,
+        tracker.action_status,
+        operator,
+        tracker.trigger_type,
+    )
+
     # IMPLEMENTED 状态时自动生成 A/B 对比视图
     ab_comparison = None
     if status == "IMPLEMENTED":
+        logger.info(
+            "Tracker 标记 IMPLEMENTED，开始生成 A/B 对比视图: tracker_id=%s, loop_id=%s",
+            tracker.id,
+            loop_id,
+        )
         ab_comparison = await _generate_ab_comparison(db, loop_id, tracker)
 
     return {
@@ -445,6 +470,16 @@ async def get_ab_compare(
             status_code=404,
         )
 
+    logger.info(
+        "A/B 对比开始: loop_id=%s, tag=%s, implemented_at=%s, "
+        "explicit_window=%s, include_diagnosis=%s",
+        loop_id,
+        loop.tag_name,
+        implemented_at,
+        bool(before_start and before_end and after_start and after_end),
+        include_diagnosis,
+    )
+
     resolved_at: datetime | None = None
     # 窗口互斥标志（[T-7d,T) 与 (T,T+7d]，显式窗口为闭区间）
     b_end_excl = a_start_excl = False
@@ -471,6 +506,15 @@ async def get_ab_compare(
             message="缺少 implementedAt 或完整的前后窗口参数",
             status_code=422,
         )
+
+    data_insufficient = after_count < AB_MIN_AFTER_SNAPSHOTS
+    logger.info(
+        "A/B 对比窗口数据: loop_id=%s, before_count=%d, after_count=%d, data_insufficient=%s",
+        loop_id,
+        before_count,
+        after_count,
+        data_insufficient,
+    )
 
     kpi_items: list[dict[str, Any]] = []
     for (field, name, unit, higher_better), b_raw, a_raw in zip(
@@ -776,16 +820,19 @@ async def get_tracker_effectiveness(
         )
 
     logger.info(
-        "整改有效率统计: window=%s, days=%d, implemented=%d, verified=%d, "
-        "improved=%d, deteriorated=%d, pending=%d, rate=%s",
+        "整改有效率统计: window=%s, days=%d, plant_node_id=%s, "
+        "implemented=%d, verified=%d, improved=%d, deteriorated=%d, "
+        "pending=%d, rate=%s, trend_points=%d",
         time_window,
         days,
+        plant_node_id,
         total_implemented,
         verified_count,
         improved_count,
         deteriorated_count,
         pending_count,
         effective_rate,
+        len(trend),
     )
 
     return {
