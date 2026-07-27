@@ -727,6 +727,8 @@ class DiagnosisTaskItem(CamelModel):
     timeRangeEnd: str | None = None
     labels: list[DiagnosisLabelItem] = Field(default_factory=list)
     isArchived: bool = False
+    archivedAt: str | None = None
+    archivedBy: str | None = None
     errorMessage: str | None = None
 
 
@@ -769,6 +771,8 @@ class DiagnosisTaskDetail(CamelModel):
     timeRangeEnd: str | None = None
     errorMessage: str | None = None
     isArchived: bool = False
+    archivedAt: str | None = None
+    archivedBy: str | None = None
     results: list[DiagnosisTaskResultItem] = Field(default_factory=list)
 
 

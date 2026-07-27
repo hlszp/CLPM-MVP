@@ -145,8 +145,8 @@ const columns: TableColumnsType = [
   },
   {
     title: '归档时间',
-    dataIndex: 'completedAt',
-    key: 'completedAt',
+    dataIndex: 'archivedAt',
+    key: 'archivedAt',
     width: 170,
   },
   { title: '操作', key: 'action', width: 220, fixed: 'right' },
@@ -577,17 +577,17 @@ onMounted(() => {
                   </span>
                 </div>
               </template>
-              <template v-else-if="column.key === 'completedAt'">
-                <!-- 归档时间列：使用 completedAt 作为归档时间近似值 -->
+              <template v-else-if="column.key === 'archivedAt'">
+                <!-- 归档时间列：显示真实归档时间（自动归档/手动归档） -->
                 <div class="flex flex-col leading-tight">
                   <span class="clpm-num">{{
-                    formatTime(record.completedAt)
+                    formatTime(record.archivedAt)
                   }}</span>
                   <span
-                    v-if="formatRelativeTime(record.completedAt)"
+                    v-if="formatRelativeTime(record.archivedAt)"
                     class="text-xs text-muted-foreground"
                   >
-                    {{ formatRelativeTime(record.completedAt) }}
+                    {{ formatRelativeTime(record.archivedAt) }}
                   </span>
                 </div>
               </template>

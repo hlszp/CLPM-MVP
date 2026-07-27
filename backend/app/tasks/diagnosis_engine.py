@@ -753,6 +753,15 @@ async def _update_task_status(
     if completed_at is not None:
         task.completed_at = completed_at
 
+    # 自动归档：SUCCESS 状态任务自动归档，免手动操作。
+    # 归档后任务从"诊断任务"列表移入"诊断记录"页面。
+    # FAILED 任务不自动归档，保留在任务列表供用户排查后手动归档。
+    if status == "SUCCESS":
+        task.is_archived = True
+        task.archived_at = datetime.now(UTC).replace(tzinfo=None)
+        task.archived_by = "system-auto"
+        logger.info("诊断任务 %s 成功完成，已自动归档", task_id)
+
 
 def _upsert_diagnosis_tag(
     db,

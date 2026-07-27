@@ -689,6 +689,8 @@ export namespace DiagnosisApi {
     timeRangeEnd: null | string;
     labels: { confidence: number; label: string }[];
     isArchived: boolean;
+    archivedAt: null | string;
+    archivedBy: null | string;
     errorMessage: null | string;
   }
 

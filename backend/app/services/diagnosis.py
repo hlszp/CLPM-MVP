@@ -1784,6 +1784,8 @@ def _task_to_dict(
         "timeRangeStart": task.time_range_start.isoformat() if task.time_range_start else None,
         "timeRangeEnd": task.time_range_end.isoformat() if task.time_range_end else None,
         "isArchived": bool(task.is_archived),
+        "archivedAt": task.archived_at.isoformat() if task.archived_at else None,
+        "archivedBy": task.archived_by,
         "errorMessage": task.error_message,
     }
 
