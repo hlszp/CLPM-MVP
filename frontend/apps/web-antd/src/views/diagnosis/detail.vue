@@ -46,8 +46,6 @@ import {
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
 
-import Tracker from './tracker.vue';
-
 defineOptions({ name: 'DiagnosisDetail' });
 
 const { isDark, themeColors } = useClpmTheme();
@@ -65,9 +63,6 @@ const waveform = ref<DiagnosisApi.WaveformResult | null>(null);
 const recommendations = ref<DiagnosisApi.RecommendationItem[]>([]);
 const trackerStatus = ref<DiagnosisApi.ActionStatus | null>(null);
 const timeWindow = ref<DiagnosisApi.TimeWindow>('last_24_hours');
-
-/** 异常跟踪 Drawer 可见性 */
-const trackerDrawerVisible = ref(false);
 
 // ===== D2 多图联动：趋势图 ↔ 散点图 =====
 /** 当前选中时间点（由趋势图或散点图点击触发） */
@@ -402,17 +397,12 @@ function handleRefresh() {
 /** 摘要条操作点击 */
 function handleSummaryAction(key: string) {
   if (key === 'track') {
-    trackerDrawerVisible.value = true;
+    // F13：统一跳转异常跟踪独立页，替代原抽屉模式
+    router.push({ path: '/diagnosis/tracker', query: { loopId } });
   }
   if (key === 'visualization') {
     router.push({ path: '/diagnosis/visualization', query: { loopId } });
   }
-}
-
-/** 跟踪 Drawer 关闭后刷新跟踪状态 */
-function handleTrackerClose() {
-  trackerDrawerVisible.value = false;
-  loadTrackerStatus();
 }
 
 /** F6：采纳推荐方案 → 跳转异常跟踪页并预填回路与标签 */
@@ -624,7 +614,7 @@ onMounted(() => {
           icon="track"
           label="加入跟踪"
           variant="primary"
-          @click="trackerDrawerVisible = true"
+          @click="handleSummaryAction('track')"
         />
         <ClpmToolbarButton
           icon="export"
@@ -827,7 +817,7 @@ onMounted(() => {
                   icon="track"
                   label="异常跟踪"
                   variant="primary"
-                  @click="trackerDrawerVisible = true"
+                  @click="handleSummaryAction('track')"
                 />
               </div>
             </ClpmDataCanvas>
@@ -836,13 +826,7 @@ onMounted(() => {
       </div>
     </Spin>
 
-    <!-- 异常跟踪 Drawer（与 P1-2 约定接口） -->
-    <Tracker
-      v-if="trackerDrawerVisible"
-      :drawer-mode="true"
-      :loop-id="loopId"
-      @close="handleTrackerClose"
-    />
+    <!-- F13：Tracker 抽屉已移除，统一跳转 /diagnosis/tracker?loopId=xxx -->
   </Page>
 </template>
 

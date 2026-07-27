@@ -108,6 +108,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/diagnosis/visualization.vue'),
         meta: {
           authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],
+          hideInMenu: true, // F12: 功能已迁移到 loop-analysis.vue，从菜单隐藏
           icon: 'lucide:bar-chart-2',
           title: '诊断可视化',
         },

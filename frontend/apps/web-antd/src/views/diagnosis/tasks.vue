@@ -149,34 +149,6 @@ const columns: TableColumnsType = [
     align: 'center',
   },
   {
-    title: '准确率',
-    dataIndex: 'accuracyScore',
-    key: 'accuracyScore',
-    width: 80,
-    align: 'center',
-  },
-  {
-    title: '快速率',
-    dataIndex: 'fastScore',
-    key: 'fastScore',
-    width: 80,
-    align: 'center',
-  },
-  {
-    title: '平稳率',
-    dataIndex: 'steadyScore',
-    key: 'steadyScore',
-    width: 80,
-    align: 'center',
-  },
-  {
-    title: '自控率',
-    dataIndex: 'effectiveAutoRate',
-    key: 'effectiveAutoRate',
-    width: 80,
-    align: 'center',
-  },
-  {
     title: '任务状态',
     dataIndex: 'status',
     key: 'status',
@@ -187,20 +159,8 @@ const columns: TableColumnsType = [
     title: '触发方式',
     dataIndex: 'triggerType',
     key: 'triggerType',
-    width: 90,
+    width: 120,
     align: 'center',
-  },
-  {
-    title: '结果',
-    dataIndex: 'diagLabels',
-    key: 'diagLabels',
-    width: 180,
-  },
-  {
-    title: '创建时间',
-    dataIndex: 'triggeredAt',
-    key: 'triggeredAt',
-    width: 160,
   },
   { title: '操作', key: 'action', width: 260, fixed: 'right' },
 ];
@@ -482,10 +442,6 @@ const DIAG_LABEL_MAP: Record<string, { color: string; text: string }> = {
 
 function diagLabelText(label: string): string {
   return DIAG_LABEL_MAP[label]?.text ?? label;
-}
-
-function diagLabelColor(label: string): string {
-  return DIAG_LABEL_MAP[label]?.color ?? 'default';
 }
 
 // ============ 批量操作 ============ 诊断 / 归档 / 删除（确认弹窗） ============
@@ -814,28 +770,22 @@ onBeforeUnmount(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'compositeScore'">
-            <span
-              class="clpm-num font-medium"
-              :style="{ color: scoreColor(record.compositeScore) }"
-            >
-              {{ formatScore(record.compositeScore) }}
-            </span>
-          </template>
-          <template v-else-if="column.key === 'accuracyScore'">
-            <span class="clpm-num">{{
-              formatScore(record.accuracyScore)
-            }}</span>
-          </template>
-          <template v-else-if="column.key === 'fastScore'">
-            <span class="clpm-num">{{ formatScore(record.fastScore) }}</span>
-          </template>
-          <template v-else-if="column.key === 'steadyScore'">
-            <span class="clpm-num">{{ formatScore(record.steadyScore) }}</span>
-          </template>
-          <template v-else-if="column.key === 'effectiveAutoRate'">
-            <span class="clpm-num">{{
-              formatRate(record.effectiveAutoRate)
-            }}</span>
+            <Tooltip>
+              <template #title>
+                <div class="text-xs leading-relaxed">
+                  <div>准确率：{{ formatScore(record.accuracyScore) }}</div>
+                  <div>快速率：{{ formatScore(record.fastScore) }}</div>
+                  <div>平稳率：{{ formatScore(record.steadyScore) }}</div>
+                  <div>自控率：{{ formatRate(record.effectiveAutoRate) }}</div>
+                </div>
+              </template>
+              <span
+                class="clpm-num font-medium cursor-help"
+                :style="{ color: scoreColor(record.compositeScore) }"
+              >
+                {{ formatScore(record.compositeScore) }}
+              </span>
+            </Tooltip>
           </template>
           <template v-else-if="column.key === 'status'">
             <div class="flex flex-col items-center gap-1">
@@ -861,30 +811,34 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <template v-else-if="column.key === 'triggerType'">
-            {{ triggerTypeName(record.triggerType) }}
-          </template>
-          <template v-else-if="column.key === 'diagLabels'">
-            <template v-if="record.diagLabels && record.diagLabels.length > 0">
-              <Tag
-                v-for="label in record.diagLabels"
-                :key="label"
-                :color="diagLabelColor(label)"
-                size="small"
-                style="margin-bottom: 2px"
-              >
-                {{ diagLabelText(label) }}
-              </Tag>
-            </template>
-            <Tooltip
-              v-else-if="record.status === 'FAILED' && record.errorMessage"
-              :title="record.errorMessage"
-            >
-              <Tag color="error" size="small">诊断失败</Tag>
+            <Tooltip>
+              <template #title>
+                <div class="text-xs leading-relaxed">
+                  <div>创建时间：{{ formatTime(record.triggeredAt) }}</div>
+                  <template
+                    v-if="record.diagLabels && record.diagLabels.length > 0"
+                  >
+                    <div>
+                      诊断标签：{{
+                        record.diagLabels.map(diagLabelText).join('、')
+                      }}
+                    </div>
+                  </template>
+                  <template
+                    v-else-if="
+                      record.status === 'FAILED' && record.errorMessage
+                    "
+                  >
+                    <div style="color: #ff7875">
+                      错误：{{ record.errorMessage }}
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <span class="cursor-help">
+                {{ triggerTypeName(record.triggerType) }}
+              </span>
             </Tooltip>
-            <span v-else style="color: var(--text-color-secondary)">—</span>
-          </template>
-          <template v-else-if="column.key === 'triggeredAt'">
-            <span class="clpm-num">{{ formatTime(record.triggeredAt) }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <!-- 诊断 → 取消 → 详情 → 归档 → 删除，基于状态机控制可用性 -->
@@ -906,6 +860,7 @@ onBeforeUnmount(() => {
               取消
             </Button>
             <Button
+              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
               type="link"
               size="small"
               :disabled="

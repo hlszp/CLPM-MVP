@@ -326,8 +326,10 @@ test.describe('D3 MOC 变更管理闭环', () => {
     console.log(`[E2E-D3] MOC 闭环成功: mocRef=${mocRef}`);
 
     // 6. API 验证列表返回 MOC 字段（IMPLEMENTED 记录）
+    // 使用 last_30_days 窗口 + 大 pageSize，确保刚更新的记录在结果中
+    // （列表按 diagnosis.created_at 排序，刚更新的 tracker 不会浮到顶部）
     const implResp = await request.get(
-      `${API_BASE_URL}/diagnosis/list?loopId=${loopId}&actionStatus=IMPLEMENTED&page=1&pageSize=10&timeWindow=last_7_days`,
+      `${API_BASE_URL}/diagnosis/list?loopId=${loopId}&actionStatus=IMPLEMENTED&page=1&pageSize=100&timeWindow=last_30_days`,
       { headers: authHeaders },
     );
     const implBody = await implResp.json();
@@ -346,32 +348,57 @@ test.describe('D3 MOC 变更管理闭环', () => {
     await expect(page.locator('.ant-table').first()).toBeVisible({
       timeout: 10_000,
     });
+
+    // 筛选"待处理"状态，确保 PENDING 行在第一页可见（默认按创建时间降序混合展示）
+    const statusFilter = page
+      .locator('.ant-select')
+      .filter({ hasText: '处理状态' })
+      .first();
+    if (await statusFilter.isVisible().catch(() => false)) {
+      await statusFilter.click();
+      await page.waitForTimeout(300);
+      const pendingOption = page
+        .locator('.ant-select-item')
+        .filter({ hasText: '待处理' });
+      await expect(pendingOption).toBeVisible({ timeout: 3_000 });
+      await pendingOption.click();
+      await page.waitForTimeout(1000);
+    }
+
     const tableRows = page.locator('.ant-table-tbody tr.ant-table-row');
     await expect(tableRows.first()).toBeVisible({ timeout: 10_000 });
 
-    // 找到 PENDING 状态的行（如果有），点击状态更新下拉菜单选"已实施"，验证 MOC 字段出现
-    // 注意：刚刚已将 loopId 的 tracker 置为 IMPLEMENTED，需找一个仍为 PENDING 的行
+    // 找到 PENDING 状态的行（筛选后应至少有一行），点击状态更新下拉菜单选"已实施"，验证 MOC 字段出现
     const pendingRow = tableRows.filter({ hasText: '待处理' }).first();
     const hasPendingRow = await pendingRow.isVisible().catch(() => false);
 
     if (hasPendingRow) {
-      // 点击该行的"更新状态"下拉按钮
-      await pendingRow.getByRole('button', { name: '更新状态' }).click();
-      await page.waitForTimeout(500);
-      // 选择"已实施"（菜单项在 body 下的 .ant-dropdown-menu）
-      const implementedItem = page
-        .locator('.ant-dropdown-menu-item')
-        .filter({ hasText: '已实施' });
-      await implementedItem.click();
-      await page.waitForTimeout(500);
+      // 点击该行的"更新状态"按钮（直接打开 Modal，无需 Dropdown 中转）
+      const updateStatusBtn = pendingRow.getByRole('button', {
+        name: '更新状态',
+      });
+      await expect(updateStatusBtn).toBeVisible({ timeout: 5_000 });
+      await updateStatusBtn.click();
 
       // Modal 应出现
       const modal = page.locator('.ant-modal').last();
-      await expect(modal).toBeVisible({ timeout: 5000 });
+      await expect(modal).toBeVisible({ timeout: 5_000 });
+
+      // 在 Modal 内切换状态为"已实施"（通过 Select 组件）
+      const statusSelect = modal.locator('.ant-select').first();
+      await statusSelect.click();
+      await page.waitForTimeout(300);
+      // 使用 .last() 避免与工具栏状态筛选器的下拉选项冲突
+      const implementedOption = page
+        .locator('.ant-select-item')
+        .filter({ hasText: '已实施' })
+        .last();
+      await expect(implementedOption).toBeVisible({ timeout: 3_000 });
+      await implementedOption.click();
 
       // 切换到"已实施"后 MOC 区块应出现
       await expect(modal.getByText('MOC 变更管理关联')).toBeVisible({
-        timeout: 3000,
+        timeout: 3_000,
       });
       console.log('[E2E-D3] UI MOC 字段展示验证通过');
 

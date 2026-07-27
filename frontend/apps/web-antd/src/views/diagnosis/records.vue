@@ -53,8 +53,6 @@ import {
 } from '#/constants/diagnosis';
 import { flattenNodes } from '#/utils/plant-node';
 
-import Tracker from './tracker.vue';
-
 defineOptions({ name: 'DiagnosisRecords' });
 
 const { themeColors } = useClpmTheme();
@@ -79,10 +77,6 @@ const rowSelection = computed(() => ({
     selectedRowKeys.value = keys.map(String);
   },
 }));
-
-/** 异常跟踪抽屉状态（FDS §5.4：从诊断记录页右侧滑出） */
-const trackerDrawerVisible = ref(false);
-const trackerLoopId = ref('');
 
 /** 当前激活 Tab：归档记录 / 诊断标签（A11） */
 const activeTab = ref('records');
@@ -199,10 +193,9 @@ function handleViewDetail(loopId: string) {
   router.push(`/diagnosis/detail/${loopId}`);
 }
 
-/** 打开异常跟踪抽屉（FDS §5.4） */
+/** 跳转异常跟踪页（F13：统一独立页入口，替代原抽屉模式） */
 function handleOpenTracker(loopId: string) {
-  trackerLoopId.value = loopId;
-  trackerDrawerVisible.value = true;
+  router.push({ path: '/diagnosis/tracker', query: { loopId } });
 }
 
 /** 工具栏：刷新 */
@@ -624,13 +617,6 @@ onMounted(() => {
         <TagPanel />
       </TabPane>
     </Tabs>
-
-    <!-- 异常跟踪抽屉（FDS §5.4：从右侧滑出） -->
-    <Tracker
-      v-if="trackerDrawerVisible"
-      :drawer-mode="true"
-      :loop-id="trackerLoopId"
-      @close="trackerDrawerVisible = false"
-    />
+    <!-- F13：Tracker 抽屉已移除，统一跳转 /diagnosis/tracker?loopId=xxx -->
   </Page>
 </template>

@@ -1,3 +1,9 @@
+/**
+ * @deprecated 此页面功能已迁移到 loop-analysis.vue（Batch 4 回路分析页）。
+ * 当前保留用于历史兼容，不在菜单中显示（hideInMenu: true）。
+ * 新功能请在 loop-analysis.vue 中实现，不要在此文件中新增功能。
+ * 后续版本将在确认无引用后删除此文件。
+ */
 <script lang="ts" setup>
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';

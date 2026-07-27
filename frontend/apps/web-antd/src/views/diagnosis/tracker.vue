@@ -19,15 +19,15 @@ import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { useUserStore } from '@vben/stores';
 
 import {
   Button,
   Checkbox,
   Drawer,
-  Dropdown,
   Form,
   FormItem,
   Input,
@@ -81,9 +81,30 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const route = useRoute();
+const userStore = useUserStore();
 
 const { getStatusMeta } = useIndustrialStatus();
 const { themeColors } = useClpmTheme();
+
+/**
+ * 角色判断（替代 v-permission 传角色名的误用——v-permission 校验 accessCodes 权限码，
+ * 传角色名会导致 el.remove() 误删组件 DOM，Dropdown 内部状态被破坏后菜单无法展开）
+ */
+const userRoles = computed(() => userStore.userInfo?.roles ?? []);
+const canEditStatus = computed(() =>
+  userRoles.value.some((r) => r === 'IC_ENGINEER'),
+);
+const canViewAbCompare = computed(() =>
+  userRoles.value.some((r) =>
+    ['IC_ENGINEER', 'ADMIN', 'EXPERT'].includes(r),
+  ),
+);
+const canExportPdf = computed(() =>
+  userRoles.value.some((r) =>
+    ['IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'].includes(r),
+  ),
+);
 
 /**
  * 动态容器：抽屉模式用 Drawer，独立页模式用 Page
@@ -339,21 +360,10 @@ async function handleSubmitStatus() {
   }
 }
 
-/** 状态快捷下拉菜单 */
-function getStatusMenuActions(record: DiagnosisApi.TrackerItem) {
-  return statusOptions.map((s) => ({
-    key: s.value,
-    label: s.label,
-    disabled: s.value === record.actionStatus,
-  }));
-}
-
-function handleStatusMenuClick(
-  record: DiagnosisApi.TrackerItem,
-  { key }: { key: string },
-) {
+/** 打开状态更新 Modal（直接打开，Modal 内含状态 Select，无需 Dropdown 快捷选择） */
+function handleOpenStatusModal(record: DiagnosisApi.TrackerItem) {
   editingItem.value = record;
-  statusForm.status = key as DiagnosisApi.ActionStatus;
+  statusForm.status = record.actionStatus as DiagnosisApi.ActionStatus;
   statusForm.comment = record.comment || '';
   statusForm.changeRemark = '';
   // D3: 预填已有 MOC 信息（已实施记录可查看历史值），新操作默认清空
@@ -504,6 +514,10 @@ function statusName(status: DiagnosisApi.ActionStatus): string {
 }
 
 onMounted(() => {
+  // F13：独立页模式下从路由 query 读取 loopId 预选回路
+  if (!props.drawerMode && route.query.loopId) {
+    query.loopId = String(route.query.loopId);
+  }
   loadList();
 });
 </script>
@@ -660,24 +674,18 @@ onMounted(() => {
                 >
                   详情
                 </Button>
-                <Dropdown
-                  v-permission="['IC_ENGINEER']"
-                  trigger="click"
-                  :menu="{
-                    items: getStatusMenuActions(
-                      record as DiagnosisApi.TrackerItem,
-                    ),
-                    onClick: ({ key }: any) =>
-                      handleStatusMenuClick(
-                        record as DiagnosisApi.TrackerItem,
-                        { key },
-                      ),
-                  }"
-                >
-                  <Button type="link" size="small">更新状态</Button>
-                </Dropdown>
                 <Button
-                  v-permission="['IC_ENGINEER', 'ADMIN', 'EXPERT']"
+                  v-if="canEditStatus"
+                  type="link"
+                  size="small"
+                  @click="
+                    handleOpenStatusModal(record as DiagnosisApi.TrackerItem)
+                  "
+                >
+                  更新状态
+                </Button>
+                <Button
+                  v-if="canViewAbCompare"
                   type="link"
                   size="small"
                   @click="
@@ -687,7 +695,7 @@ onMounted(() => {
                   A/B 对比
                 </Button>
                 <Button
-                  v-permission="['IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
+                  v-if="canExportPdf"
                   type="link"
                   size="small"
                   :loading="exportingLoopId === record.loopId"
