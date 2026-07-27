@@ -1,10 +1,11 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline  
-**当前版本**：v2.0
-**发布日期**：2026-07-22
+**当前版本**：v2.1
+**发布日期**：2026-07-27
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐  
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
+**v2.1 修订摘要**：同步诊断中心 Batch 4-6 交付成果——A/B 对比已实现（含 `includeDiagnosis` 扩展）；登记 `GET /diagnosis/algorithms/meta`、`GET /diagnosis/statistics/export`、`GET /tracker/effectiveness`、`GET|PATCH /tracker/verification-config`；补全 Tracker 子路由清单；更新诊断中心路由决策（A/B 对比不再返回 501）；登记诊断任务自动归档机制与 D1-D6 功能扩展
 
 ## 1. 定位
 
@@ -41,7 +42,7 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | 指标配置 Tab 聚合 | `/metric/config` | 指标定义、权重、定级、可信度等配置在聚合页内以 Tab 呈现；不再为内部 Tab 暴露独立主菜单路由。 |
 | 回路管理 | 保留 `/loop/manage` 聚合页 | `/loop/factory`、`/loop/ledger` 仅保留到 `/loop/manage` 的兼容重定向，不作为主菜单页。 |
 | Tag 管理 | 使用 `/tag/list` | AAS Tag 是独立资源入口，不强行塞回 `/loop/mapping`。 |
-| 诊断中心 | 以当前聚合 IA 为准 | waveform 合入详情，统计合入总览，A/B 对比合入 Tracker 抽屉；旧视图文件可保留但不构成路由。A/B 数据接口当前返回 501，列为 P1 未实现。 |
+| 诊断中心 | 以当前聚合 IA 为准 | waveform 合入详情，统计合入总览，A/B 对比合入 Tracker 抽屉；旧视图文件可保留但不构成路由。A/B 对比已实现（`GET /diagnosis/ab-compare`，含 `includeDiagnosis` 扩展，Batch 4）；诊断报告导出已实现（CSV `GET /diagnosis/statistics/export` + PDF `POST /tracker/{loopId}/export`，D5）。 |
 | 系统安全说明 | 暂并入权限/审计/README | 是否新增 `/system/safety` 另行评审。 |
 
 ## 4. API 契约
@@ -51,7 +52,7 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | 领域 | 当前实现路径 | 说明 |
 |---|---|---|
 | 性能配置与看板 | `/api/v1/performance/*` | KPI 看板、排行、分析、回路快照、实时自控率。 |
-| 诊断配置与跟踪 | `/api/v1/diagnosis/*` | 诊断列表、详情、任务、记录、统计；含 `/api/v1/tracker/*`（异常跟踪）与 `/api/v1/diagnosis/tags/*`（诊断标签）子路由。`/api/v1/diagnosis/ab-compare` 当前返回 501，属于 P1 未实现。 |
+| 诊断配置与跟踪 | `/api/v1/diagnosis/*` | 诊断列表、详情、任务、记录、统计；含 `/api/v1/tracker/*`（异常跟踪，子路由见 §4.5）与 `/api/v1/diagnosis/tags/*`（诊断标签）子路由。A/B 对比已实现（`GET /diagnosis/ab-compare`，含 `includeDiagnosis` 扩展，Batch 4）；算法元数据已实现（`GET /diagnosis/algorithms/meta`，Batch 4）；诊断统计导出已实现（`GET /diagnosis/statistics/export`，D5）。 |
 | 整定算法 | `/api/v1/tuning/*` | Phase 1 实验/辅助能力，不代表自动下写 DCS。 |
 | 用户管理 | `/api/v1/users/*` | 不强制改为 `/api/v1/system/users`。 |
 | 审计日志 | `/api/v1/audit-logs/*` | 系统管理 UI 可消费该路径。 |
@@ -80,7 +81,7 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | 算法独立调用 | `/api/v1/algorithms/*` | 含 `kpi`/`diagnosis`/`tuning`/`dataplanner` 子领域，用于算法独立调试与数据计划。 |
 | 任务管理 | `/api/v1/tasks/*` | 标准评估、自定义评估、历史重算、任务通知、取消、删除、结果查询。 |
 | 节点级 KPI | `/api/v1/performance/nodes/*` | 节点快照、趋势、排行、对比、总览、监控。 |
-| 异常跟踪 | `/api/v1/tracker/*` | diagnosis.py 内的子路由，承担 Action Tracker 状态机流转。 |
+| 异常跟踪 | `/api/v1/tracker/*` | diagnosis.py 内的子路由（`tracker_router`），承担 Action Tracker 状态机流转、诊断建议书 PDF 导出、整改有效率统计与验证周期配置。详细子路由见 §4.5。 |
 | 诊断标签 | `/api/v1/diagnosis/tags/*` | 诊断标签管理。 |
 | 时间序列 | `/api/v1/timeseries/*` | 时间序列数据查询（tags.py 与 diagnosis.py 各一个 router）。 |
 | 健康检查 | `/health`、`/health/ready` | 容器存活与就绪检查，挂载在根路径，不使用业务 API 前缀。 |
@@ -93,6 +94,28 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 - 所有 API 默认以 `/api/v1/` 为前缀；新增领域不得绕过此前缀。
 - 新增 API 领域必须先在本契约 §4 登记路径与说明，再落地代码与测试。
 - 算法独立调用接口（`/api/v1/algorithms/*`）仅用于调试与数据计划，不暴露给业务 UI 作为主入口。
+
+### 4.5 Tracker 子路由清单（`tracker_router`，2026-07-27 v2.1 补充）
+
+Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/api/v1/endpoints/diagnosis.py`。
+
+| 方法 | 路径 | 功能 | 批次 |
+|---|---|---|---|
+| `PATCH` | `/{loopId}/status` | 更新 Action Tracker 处理状态（PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED）；IMPLEMENTED 时必填 `mocRef` 或 `mocNotApplicable`+`mocReason`（D3 MOC 校验） | D2/D3 |
+| `POST` | `/{loopId}/export` | 导出诊断建议书 PDF（reportlab + STSong-Light 中文字体） | D5 |
+| `GET` | `/{loopId}` | 查询单回路 Tracker 详情（含 D1 建单来源、D4 整改效果验证字段） | D1/D4 |
+| `PATCH` | `/{loopId}` | 更新 Tracker 补充字段（comment/updatedBy 等） | D2 |
+| `GET` | `/effectiveness` | 整改有效率统计（支持 `timeWindow` + `plantNodeId` 筛选，返回已实施/已验证/改善/恶化数 + 每日趋势） | D4-3 |
+| `GET` | `/verification-config` | 读取整改效果验证周期配置（从 `sys_config` 读取 `tracker.verification_interval_hours`，默认 24h） | D4-2 |
+| `PATCH` | `/verification-config` | 更新验证周期（1~720h，可人工调节） | D4-2 |
+
+**A/B 对比接口**（`diagnosis_router`，非 `tracker_router`）：
+
+| 方法 | 路径 | 功能 | 批次 |
+|---|---|---|---|
+| `GET` | `/api/v1/diagnosis/ab-compare` | 实施前后两窗口 KPI 均值对比（`kpi_snapshot_hourly`）；支持 `implementedAt` 自动截取 [T-7d,T) 与 (T,T+7d]，或显式传入 `beforeStartTime/beforeEndTime/afterStartTime/afterEndTime`；`includeDiagnosis=true` 时额外返回 before/after 诊断标签对比（Batch 4 回路分析页增强） | F7/Batch 4 |
+| `GET` | `/api/v1/diagnosis/algorithms/meta` | 8 类诊断算法展示元数据 + 当前生效阈值快照（Batch 4 算法价值传递） | F1/Batch 4 |
+| `GET` | `/api/v1/diagnosis/statistics/export` | 诊断统计 CSV 导出（支持 `startDate/endDate/plantNodeId` 筛选） | D5 |
 
 ## 5. 权限契约
 
@@ -112,12 +135,15 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 |---|---|---|
 | Action Tracker | `PENDING` → `IN_PROGRESS` → `IMPLEMENTED` / `IGNORED` | 待处理、处理中、已实施、已忽略 |
 | Diagnosis Tag | `ACTIVE` / `RESOLVED` / `SUPPRESSED` | 活跃、已处理、已抑制 |
+| Diagnosis Task | `PENDING` → `RUNNING` → `SUCCESS` / `FAILED` / `CANCELLED` | 待执行、执行中、成功、失败、已取消 |
 | KPI 快照 | `SUCCESS` / `PARTIAL` / `INCONCLUSIVE` | 成功、部分有效、数据不足 |
 | Loop | `READY` / `PARTIAL` / `INACTIVE` | 就绪（配置完整可参与 KPI 计算）、部分配置（缺必需 Tag，不参与计算）、已停用（软删除，is_active=False） |
 | PV Quality | `GOOD` / `BAD` / `UNCERTAIN` | 好值、坏值、不确定 |
 | Tuning | `DRAFT` / `RUNNING` / `COMPLETED` / `ROLLED_BACK` | 草稿、运行中、已完成、已回退 |
 
 `ActionTracker.action_status` 与 `DiagnosisTag.status` 是两个独立状态机。`IMPLEMENTED` 只用于 Action Tracker；`RESOLVED` 仍是 Diagnosis Tag 的当前有效枚举，不得跨对象替换。
+
+**诊断任务自动归档**（v2.1，2026-07-27）：`DiagnosisTask` 状态更新为 `SUCCESS` 时自动设置 `is_archived=True`、`archived_at=now()`、`archived_by="system-auto"`，任务从"诊断任务"列表移入"诊断记录"页面。`FAILED`/`CANCELLED` 任务不自动归档，保留在任务列表供用户排查后手动归档。
 
 P1 #13 修正：历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED`（运行/暂停/退役）统一视为旧命名；当前代码与后续文档使用 `READY`/`PARTIAL`/`INACTIVE`（就绪/部分配置/已停用）。代码中的状态反映"配置完整性 + 删除状态"，而非"运行状态"：`READY` = 配置完整可参与 KPI 计算；`PARTIAL` = 缺必需 Tag，不参与计算；`INACTIVE` = 软删除（is_active=False）。
 
