@@ -363,6 +363,7 @@ async def list_diagnosis(
     action_status: str | None = None,
     time_window: str | None = None,
     sort_by: str | None = None,
+    loop_ids: list[str] | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
@@ -373,6 +374,9 @@ async def list_diagnosis(
             与 ``created_at``（tracker 建单时间降序，nulls_last）。
             工作台聚合卡"最近建单"使用 ``created_at`` 以确保新建 tracker
             出现在列表顶部；诊断列表页保持 ``diagnosed_at``。
+        loop_ids: 按回路 ID 列表批量筛选（D6 入口整合：loop/monitor.vue
+            每页 20 条回路需批量查询最新诊断标签）。传入时 latest_sub
+            子查询仅扫描指定回路，避免全表 group by。
 
     Returns:
         {items, total, page, pageSize}
@@ -393,15 +397,14 @@ async def list_diagnosis(
         conditions.append(time_cond)
 
     # 子查询：每个 loop_id 的最新 diagnosed_at
-    latest_sub = (
-        select(
-            DiagnosisResult.loop_id,
-            func.max(DiagnosisResult.diagnosed_at).label("max_diagnosed_at"),
-        )
-        .where(DiagnosisResult.loop_id.is_not(None))
-        .group_by(DiagnosisResult.loop_id)
-        .subquery()
-    )
+    # D6 入口整合：loop_ids 批量过滤下推到子查询，避免全表 group by 扫描
+    latest_stmt = select(
+        DiagnosisResult.loop_id,
+        func.max(DiagnosisResult.diagnosed_at).label("max_diagnosed_at"),
+    ).where(DiagnosisResult.loop_id.is_not(None))
+    if loop_ids:
+        latest_stmt = latest_stmt.where(DiagnosisResult.loop_id.in_(loop_ids))
+    latest_sub = latest_stmt.group_by(DiagnosisResult.loop_id).subquery()
 
     # 主查询
     base_stmt = (

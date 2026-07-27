@@ -98,6 +98,11 @@ export namespace DiagnosisApi {
     actionStatus?: ActionStatus;
     timeWindow?: TimeWindow;
     sortBy?: DiagnosisSortBy;
+    /**
+     * 按回路 ID 列表批量筛选（D6 入口整合：loop/monitor.vue 批量查诊断标签）
+     * 后端 FastAPI list[str] = Query(None) 接受重复参数 ?loopIds=a&loopIds=b
+     */
+    loopIds?: string[];
     page?: number;
     pageSize?: number;
   }
@@ -762,6 +767,9 @@ export function updateDiagnosisMetricApi(
 
 /**
  * 获取诊断列表 — IDS v3.2 §2.4
+ *
+ * D6 入口整合：loopIds 数组参数以 repeat 格式序列化（?loopIds=a&loopIds=b），
+ * 对齐后端 FastAPI `list[str] = Query(None)` 默认解析方式。
  */
 export function getDiagnosisListApi(
   params: DiagnosisApi.DiagnosisListQueryParams,
@@ -770,6 +778,7 @@ export function getDiagnosisListApi(
     '/diagnosis/list',
     {
       params,
+      paramsSerializer: 'repeat',
     },
   );
 }

@@ -381,6 +381,73 @@ class TestDiagnosisList:
         assert body["code"] == "0"
         assert body["data"]["total"] == 0
 
+    def test_list_diagnosis_with_loop_ids(self, client, mock_db, fake_redis) -> None:
+        """D6 入口整合：loopIds 批量过滤参数正确传递到 service 层。
+
+        loop/monitor.vue 每页 20 条回路需批量查询最新诊断标签，后端
+        list_diagnosis 新增 loop_ids 参数，下推到 latest_sub 子查询避免全表扫描。
+        本测试 spy service 函数，验证 query 参数 ?loopIds=a&loopIds=b
+        被正确解析为 list[str] 并传递。
+        """
+        captured: dict = {}
+
+        async def fake_list_diagnosis(db, **kwargs):
+            captured.update(kwargs)
+            return {
+                "items": [],
+                "total": 0,
+                "page": kwargs.get("page", 1),
+                "pageSize": kwargs.get("page_size", 20),
+                "aggregates": {"total": 0, "statusCounts": {}, "labelCounts": {}},
+            }
+
+        with (
+            patch(
+                "app.api.v1.endpoints.diagnosis.list_diagnosis",
+                new=fake_list_diagnosis,
+            ),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get(
+                "/api/v1/diagnosis/list?loopIds=loop-a&loopIds=loop-b&pageSize=50",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        # 关键断言：loopIds 重复 query 参数被 FastAPI 解析为 list[str]
+        assert captured["loop_ids"] == ["loop-a", "loop-b"]
+        assert captured["page"] == 1
+        assert captured["page_size"] == 50
+
+    def test_list_diagnosis_no_loop_ids_defaults_none(self, client, mock_db, fake_redis) -> None:
+        """D6：不传 loopIds 时 service 层收到 None（不做过滤，兼容现有调用方）。"""
+        captured: dict = {}
+
+        async def fake_list_diagnosis(db, **kwargs):
+            captured.update(kwargs)
+            return {
+                "items": [],
+                "total": 0,
+                "page": 1,
+                "pageSize": 20,
+                "aggregates": {"total": 0, "statusCounts": {}, "labelCounts": {}},
+            }
+
+        with (
+            patch(
+                "app.api.v1.endpoints.diagnosis.list_diagnosis",
+                new=fake_list_diagnosis,
+            ),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get(
+                "/api/v1/diagnosis/list",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert captured["loop_ids"] is None
+
     def test_list_diagnosis_no_token(self, client) -> None:
         """未认证请求返回 401。"""
         resp = client.get("/api/v1/diagnosis/list")

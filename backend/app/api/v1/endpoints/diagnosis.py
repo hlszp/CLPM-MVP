@@ -414,12 +414,16 @@ async def list_diagnosis_endpoint(
         None,
         description="排序字段：diagnosed_at(默认,诊断时间) / created_at(tracker建单时间)",
     ),
+    loopIds: list[str] | None = Query(
+        None,
+        description="按回路 ID 列表批量筛选（D6：loop/monitor.vue 批量查诊断标签）",
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
-    """诊断列表（分页，支持 plantNodeId/diagnosisLabel/actionStatus/timeWindow 筛选）。"""
+    """诊断列表（分页，支持 plantNodeId/diagnosisLabel/actionStatus/timeWindow/loopIds 筛选）。"""
     data = await list_diagnosis(
         db=db,
         plant_node_id=plantNodeId,
@@ -427,6 +431,7 @@ async def list_diagnosis_endpoint(
         action_status=actionStatus,
         time_window=timeWindow,
         sort_by=sortBy,
+        loop_ids=loopIds,
         page=page,
         page_size=pageSize,
     )
