@@ -259,4 +259,64 @@ test.describe('回路管理 E2E', () => {
     // 注意：不实际触发同步，只验证 UI 元素存在
     expect(page.url()).toContain('/loop/aas-sync');
   });
+
+  // E2E-LOOP-007: 回路监控诊断标签列跳转（D6 入口整合）
+  // 路由 /loop/monitor：表格新增"诊断标签"列（D6）
+  //   - 有诊断：显示彩色 Tag（.ant-tag），点击跳转 /diagnosis/detail/:loopId
+  //   - 无诊断：显示可点击 "—"，点击跳转 /diagnosis/detail/:loopId（触发新诊断）
+  // 数据源：loadList 后并行调用 getDiagnosisListApi({loopIds}) 建立 diagLabelMap
+  test('E2E-LOOP-007: 回路监控诊断标签列跳转', async ({ page }) => {
+    await page.goto('/loop/monitor');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // 1. 验证表头包含"诊断标签"列（D6 入口整合新增）
+    const tableHeader = page.locator('.ant-table-thead').first();
+    await expect(tableHeader).toBeVisible({ timeout: 15_000 });
+    const headerText = await tableHeader.innerText();
+    expect(headerText).toContain('诊断标签');
+
+    // 2. 等待表格数据加载
+    const firstRow = page.locator('.ant-table-tbody tr').first();
+    const hasRow = await firstRow.isVisible({ timeout: 10_000 }).catch(() => false);
+    if (!hasRow) {
+      // 无数据时仅验证列存在
+      return;
+    }
+
+    // 3. 定位"诊断标签"列索引（避免与操作列的 Tag 混淆）
+    const headers = page.locator('.ant-table-thead th');
+    const headerCount = await headers.count();
+    let diagColIndex = -1;
+    for (let i = 0; i < headerCount; i++) {
+      const text = await headers.nth(i).innerText();
+      if (text.includes('诊断标签')) {
+        diagColIndex = i;
+        break;
+      }
+    }
+    expect(diagColIndex).toBeGreaterThanOrEqual(0);
+
+    // 4. 在第一行诊断标签列中查找可点击元素
+    //    monitor.vue: 有诊断显示 .ant-tag，无诊断显示 "—"（均可点击跳转）
+    const diagCell = firstRow.locator('td').nth(diagColIndex);
+    const diagTag = diagCell.locator('.ant-tag').first();
+    const dashText = diagCell.getByText('—', { exact: true }).first();
+
+    const hasDiagTag = await diagTag.isVisible().catch(() => false);
+    const hasDash = await dashText.isVisible().catch(() => false);
+
+    if (hasDiagTag) {
+      // 有诊断标签：点击 Tag 跳转诊断详情页
+      await diagTag.click();
+      await page.waitForURL(/\/diagnosis\/detail\//, { timeout: 15_000 });
+      expect(page.url()).toMatch(/\/diagnosis\/detail\//);
+    } else if (hasDash) {
+      // 无诊断标签：点击 "—" 跳转诊断详情页（触发新诊断）
+      await dashText.click();
+      await page.waitForURL(/\/diagnosis\/detail\//, { timeout: 15_000 });
+      expect(page.url()).toMatch(/\/diagnosis\/detail\//);
+    }
+    // 两者都不可见时，仅验证列存在（容错：诊断 API 未返回或渲染异常）
+  });
 });
