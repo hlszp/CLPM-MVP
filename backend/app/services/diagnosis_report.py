@@ -62,6 +62,8 @@ def generate_diagnosis_report(
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     from reportlab.platypus import (
         Paragraph,
         SimpleDocTemplate,
@@ -69,6 +71,11 @@ def generate_diagnosis_report(
         Table,
         TableStyle,
     )
+
+    # 注册中文 CID 字体：Helvetica 不含中文字符，直接使用会导致 PDF 中文乱码。
+    # STSong-Light 是 reportlab 内置的 Adobe CID 字体，无需额外 TTF 文件，
+    # 支持简体中文。CID 字体无独立 bold 变体，标题层级靠 fontSize + textColor 区分。
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -85,7 +92,7 @@ def generate_diagnosis_report(
     title_style = ParagraphStyle(
         "ChTitle",
         parent=styles["Title"],
-        fontName="Helvetica-Bold",
+        fontName="STSong-Light",
         fontSize=20,
         leading=26,
         alignment=1,  # center
@@ -94,7 +101,7 @@ def generate_diagnosis_report(
     heading_style = ParagraphStyle(
         "ChHeading",
         parent=styles["Heading2"],
-        fontName="Helvetica-Bold",
+        fontName="STSong-Light",
         fontSize=14,
         leading=18,
         spaceBefore=12,
@@ -104,7 +111,7 @@ def generate_diagnosis_report(
     body_style = ParagraphStyle(
         "ChBody",
         parent=styles["BodyText"],
-        fontName="Helvetica",
+        fontName="STSong-Light",
         fontSize=10,
         leading=15,
         spaceAfter=4,
@@ -112,14 +119,14 @@ def generate_diagnosis_report(
     cell_style = ParagraphStyle(
         "ChCell",
         parent=styles["BodyText"],
-        fontName="Helvetica",
+        fontName="STSong-Light",
         fontSize=9,
         leading=12,
     )
     cell_header_style = ParagraphStyle(
         "ChCellHeader",
         parent=styles["BodyText"],
-        fontName="Helvetica-Bold",
+        fontName="STSong-Light",
         fontSize=9,
         leading=12,
         textColor=colors.white,
