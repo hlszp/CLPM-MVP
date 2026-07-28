@@ -11,10 +11,11 @@
  * 页面源码依据：
  *   frontend/apps/web-antd/src/views/metric/loop-performance.vue
  *   - STATUS_LABEL_MAP：SUCCESS→成功 INCONCLUSIVE→不确定 PARTIAL→部分
- *   - CONFIDENCE_LABEL_MAP：A 优秀 / B 良好 / C 一般 / D 较差 / E 不足
- *   - CONFIDENCE_COLOR_MAP：A=green B=blue C=gold D=orange E=red（Badge 渲染）
+ *   - 表格列：可信度（ConfidenceBadge 组件渲染，A/B/C/D/INCONCLUSIVE，无值时显示 —）
+ *   - 详情抽屉：CONFIDENCE_LABEL_MAP 全称（A 优秀 / B 良好 / C 一般 / D 较差 / E 不足）
  *   - 筛选区：Select placeholder=评估状态（选项 全部/成功/不确定/部分）
- *   - 表格列：可信度（Badge，无值时显示 —）
+ *   注意：表格用 ConfidenceBadge 渲染缩写（A/B/C/D/INCONCLUSIVE），
+ *   与详情抽屉的 CONFIDENCE_LABEL_MAP 全称不同，E2E 正则需分别匹配。
  *   frontend/apps/web-antd/src/views/metric/history-snapshots.vue（/metric/tasks 评估历史 Tab）
  *   - 筛选区：Select placeholder=状态（成功/不确定/部分）、Select placeholder=可信度（A~E）
  *   - 表格列：可信度（Tag）、状态（Tag）
@@ -33,8 +34,17 @@
  */
 import { test, expect } from '../fixtures/auth.js';
 
-/** 可信度文案正则（Badge/Tag 文本或占位符 —） */
-const CONFIDENCE_RE = /^([A-E]\s*(优秀|良好|一般|较差|不足)|—)$/;
+/**
+ * 可信度文案正则
+ *
+ * 两种渲染模式需分别匹配：
+ * - CONFIDENCE_BADGE_RE：loop-performance 表格用 ConfidenceBadge 组件，渲染缩写
+ *   （A/B/C/D/INCONCLUSIVE），E 级标记为 INCONCLUSIVE（评分留空）
+ * - CONFIDENCE_TAG_RE：history-snapshots 表格用 Tag + CONFIDENCE_LABEL_MAP，渲染全称
+ *   （A 优秀/B 良好/C 一般/D 较差/E 不足）
+ */
+const CONFIDENCE_BADGE_RE = /^(A|B|C|D|INCONCLUSIVE|—)$/;
+const CONFIDENCE_TAG_RE = /^([A-E]\s*(优秀|良好|一般|较差|不足)|—)$/;
 
 test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
   test.beforeEach(async ({ page, loginAs }) => {
@@ -56,7 +66,8 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
     const headerText = await table.locator('.ant-table-thead').innerText();
     expect(headerText).toContain('可信度');
 
-    // 若有数据行（防御性）：首行可信度单元格 ∈ {A 优秀, B 良好, C 一般, D 较差, E 不足, —}
+    // 若有数据行（防御性）：首行可信度单元格 ∈ {A, B, C, D, INCONCLUSIVE, —}
+    // ConfidenceBadge 渲染缩写，E 级显示 INCONCLUSIVE
     const firstRow = table.locator('.ant-table-tbody tr.ant-table-row').first();
     const hasRow = await firstRow.isVisible().catch(() => false);
     if (hasRow) {
@@ -67,8 +78,8 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
         await firstRow.locator('td').nth(confIdx).innerText()
       ).trim();
       expect(
-        CONFIDENCE_RE.test(cellText),
-        `可信度单元格应为 A~E 徽章或 —，实际为「${cellText}」`,
+        CONFIDENCE_BADGE_RE.test(cellText),
+        `可信度单元格应为 A/B/C/D/INCONCLUSIVE 徽章或 —，实际为「${cellText}」`,
       ).toBeTruthy();
     }
   });
@@ -161,6 +172,7 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
     ).toHaveCount(0, { timeout: 5_000 });
 
     // 表格有数据时（防御性）：首行可信度 Tag 文案 ∈ {A 优秀, ..., E 不足}（无值时显示 —）
+    // history-snapshots.vue 用 Tag + CONFIDENCE_LABEL_MAP 渲染全称
     const table = activePane.locator('.ant-table').first();
     const firstRow = table.locator('.ant-table-tbody tr.ant-table-row').first();
     const hasRow = await firstRow.isVisible().catch(() => false);
@@ -172,8 +184,8 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
         await firstRow.locator('td').nth(confIdx).innerText()
       ).trim();
       expect(
-        CONFIDENCE_RE.test(cellText),
-        `可信度单元格应为 A~E Tag 或 —，实际为「${cellText}」`,
+        CONFIDENCE_TAG_RE.test(cellText),
+        `可信度单元格应为 A~E 全称 Tag 或 —，实际为「${cellText}」`,
       ).toBeTruthy();
     }
   });

@@ -18,7 +18,14 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { KpiStripItem } from '#/components/clpm';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import {
+  computed,
+  defineAsyncComponent,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -58,8 +65,7 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
-
-import AbCompare from './ab-compare.vue';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisTracker' });
 
@@ -80,6 +86,8 @@ const emit = defineEmits<{
   (e: 'close'): void;
 }>();
 
+const AbCompare = defineAsyncComponent(() => import('./ab-compare.vue'));
+
 const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
@@ -92,17 +100,13 @@ const { themeColors } = useClpmTheme();
  * 传角色名会导致 el.remove() 误删组件 DOM，Dropdown 内部状态被破坏后菜单无法展开）
  */
 const userRoles = computed(() => userStore.userInfo?.roles ?? []);
-const canEditStatus = computed(() =>
-  userRoles.value.some((r) => r === 'IC_ENGINEER'),
-);
+const canEditStatus = computed(() => userRoles.value.includes('IC_ENGINEER'));
 const canViewAbCompare = computed(() =>
-  userRoles.value.some((r) =>
-    ['IC_ENGINEER', 'ADMIN', 'EXPERT'].includes(r),
-  ),
+  userRoles.value.some((r) => ['ADMIN', 'EXPERT', 'IC_ENGINEER'].includes(r)),
 );
 const canExportPdf = computed(() =>
   userRoles.value.some((r) =>
-    ['IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'].includes(r),
+    ['EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'].includes(r),
   ),
 );
 
@@ -444,16 +448,8 @@ async function handleExportCsv() {
   exportingCsv.value = true;
   const { startDate, endDate } = timeWindowToRange(query.timeWindow);
   const params = { startDate, endDate };
-  console.warn('[tracker.handleExportCsv] 请求导出', {
-    timeWindow: query.timeWindow,
-    ...params,
-  });
   try {
     const blob = await exportDiagnosisStatisticsApi(params);
-    console.warn('[tracker.handleExportCsv] 响应成功', {
-      size: blob.size,
-      type: blob.type,
-    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -463,8 +459,7 @@ async function handleExportCsv() {
     a.remove();
     URL.revokeObjectURL(url);
     message.success('诊断统计 CSV 已导出');
-  } catch (error) {
-    console.error('[tracker.handleExportCsv] 导出失败', { params, error });
+  } catch {
     // 错误已由拦截器处理
   } finally {
     exportingCsv.value = false;
@@ -495,22 +490,30 @@ function handleRefresh() {
 // P2 #37 UX13: 批量处理功能开发中，按钮保持 disabled + tooltip；
 // 导出按钮已接通 SVC-13 CSV 统计导出（D5）
 
-function formatTime(t: string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
-}
-
 function labelName(label: DiagnosisLabel): string {
   return getDiagnosisLabelName(label);
 }
 
 function statusName(status: DiagnosisApi.ActionStatus): string {
   return statusOptions.find((o) => o.value === status)?.label || status;
+}
+
+/**
+ * 状态标签 Tag 属性：一次调用 getStatusMeta 并返回仅含 color/style 的对象，
+ * 避免模板内对同一 status 重复调用 3 次 getStatusMeta（P1-1d）。
+ */
+function statusTagAttrs(status: DiagnosisApi.ActionStatus): {
+  color: string;
+  style: { background: string; borderColor: string };
+} {
+  const meta = getStatusMeta(status);
+  return {
+    color: meta.color,
+    style: {
+      background: meta.bgColor,
+      borderColor: meta.borderColor,
+    },
+  };
 }
 
 onMounted(() => {
@@ -520,6 +523,20 @@ onMounted(() => {
   }
   loadList();
 });
+
+/**
+ * P1-5a：监听 route.query.loopId 变化（独立页模式）。
+ * onMounted 中读取 route.query.loopId 是一次性的，路由参数变化时需重新加载列表。
+ */
+watch(
+  () => route.query.loopId,
+  (newId) => {
+    if (!props.drawerMode && newId) {
+      query.loopId = String(newId);
+      loadList();
+    }
+  },
+);
 </script>
 
 <template>
@@ -647,13 +664,9 @@ onMounted(() => {
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
-              :color="getStatusMeta(record.actionStatus as string).color"
-              :style="{
-                background: getStatusMeta(record.actionStatus as string)
-                  .bgColor,
-                borderColor: getStatusMeta(record.actionStatus as string)
-                  .borderColor,
-              }"
+              v-bind="
+                statusTagAttrs(record.actionStatus as DiagnosisApi.ActionStatus)
+              "
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>

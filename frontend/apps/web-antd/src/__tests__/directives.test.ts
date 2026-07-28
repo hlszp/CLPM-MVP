@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { defineComponent, h, ref } from 'vue';
 
-import { useAccessStore } from '@vben/stores';
+import { useAccessStore, useUserStore } from '@vben/stores';
 
 /**
  * 关键交互逻辑单元测试
@@ -48,13 +48,26 @@ describe('关键交互逻辑测试', () => {
 
   /**
    * 创建带 v-permission 指令的测试组件（使用模板语法）
+   * @param permission 绑定值（角色名或权限码）
+   * @param accessCodes 用户拥有的权限码
+   * @param roles 用户拥有的角色（P2-1 增强）
    */
   function createPermissionTestComponent(
     permission: string | string[],
     accessCodes: string[],
+    roles: string[] = [],
   ) {
     const accessStore = useAccessStore();
     accessStore.setAccessCodes(accessCodes);
+
+    const userStore = useUserStore();
+    userStore.setUserInfo({
+      username: 'tester',
+      realName: 'tester',
+      userId: 'tester',
+      avatar: '',
+      roles,
+    });
 
     return mount(
       defineComponent({
@@ -94,6 +107,38 @@ describe('关键交互逻辑测试', () => {
     expect(hasPermission(codes, 'loop:create')).toBe(true);
     expect(hasPermission(codes, 'loop:edit')).toBe(true);
     expect(hasPermission(codes, 'system:user')).toBe(false);
+  });
+
+  // ===== P2-1: v-permission 角色名匹配增强 =====
+
+  // UT-INTERACT-PERMISSION-ROLE-1: 传入角色名且用户拥有该角色时元素可见
+  it('uT-INTERACT-PERMISSION-ROLE-1: 角色名匹配—有角色时元素可见', () => {
+    const wrapper = createPermissionTestComponent(
+      ['ADMIN', 'IC_ENGINEER'],
+      [],
+      ['IC_ENGINEER'],
+    );
+    expect(wrapper.find('button').exists()).toBe(true);
+  });
+
+  // UT-INTERACT-PERMISSION-ROLE-2: 传入角色名且用户无该角色时元素被移除
+  it('uT-INTERACT-PERMISSION-ROLE-2: 角色名匹配—无角色时元素被移除', () => {
+    const wrapper = createPermissionTestComponent(
+      ['ADMIN', 'IC_ENGINEER'],
+      [],
+      ['SPONSOR'],
+    );
+    expect(wrapper.find('button').exists()).toBe(false);
+  });
+
+  // UT-INTERACT-PERMISSION-ROLE-3: 角色名与权限码混用，命中任一即显示
+  it('uT-INTERACT-PERMISSION-ROLE-3: 角色名与权限码混用—命中权限码即显示', () => {
+    const wrapper = createPermissionTestComponent(
+      ['ADMIN', 'loop:create'],
+      ['loop:create'],
+      ['SPONSOR'],
+    );
+    expect(wrapper.find('button').exists()).toBe(true);
   });
 
   // ===== 表格分页交互测试 =====

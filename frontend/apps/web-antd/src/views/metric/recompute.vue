@@ -332,6 +332,20 @@ function hasActiveTask(): boolean {
   );
 }
 
+/** 判断任务是否处于活跃状态（PENDING/RUNNING） */
+function isTaskActive(task: { status: string }): boolean {
+  return task.status === 'PENDING' || task.status === 'RUNNING';
+}
+
+/** 判断任务是否处于终态（SUCCESS/FAILED/CANCELLED） */
+function isTaskTerminal(task: { status: string }): boolean {
+  return (
+    task.status === 'SUCCESS' ||
+    task.status === 'FAILED' ||
+    task.status === 'CANCELLED'
+  );
+}
+
 function updatePolling() {
   if (hasActiveTask() && !pollingTimer) {
     pollingTimer = setInterval(async () => {
@@ -571,6 +585,20 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopPolling();
+});
+
+// 暴露给单元测试的接口（<script setup> 默认私有，需 defineExpose 才能被 vm 访问）
+defineExpose({
+  columns,
+  formatProgress,
+  formatTime,
+  handleCancel,
+  handleDangerConfirm,
+  handleDelete,
+  isTaskActive,
+  isTaskTerminal,
+  statusColorMap,
+  statusTextMap,
 });
 </script>
 

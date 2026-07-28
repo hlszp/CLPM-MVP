@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils';
 
-import { describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Tracker from '../views/diagnosis/tracker.vue';
 
@@ -24,7 +25,37 @@ vi.mock('#/constants/diagnosis', () => ({
   getDiagnosisLabelName: (label: string) => label,
 }));
 
+vi.mock('#/composables/use-clpm-theme', () => ({
+  useClpmTheme: () => ({
+    themeColors: {
+      value: {
+        SUCCESS: '#10b981',
+        WARNING: '#f59e0b',
+        DANGER: '#f43f5e',
+        INFO: '#3b82f6',
+        NEUTRAL: '#64748b',
+        ACCENT: '#0d9488',
+      },
+    },
+  }),
+}));
+
+vi.mock('#/composables/use-industrial-status', () => ({
+  useIndustrialStatus: () => ({
+    getStatusMeta: (status: string) => ({
+      status,
+      tokenVar: '--x',
+      color: 'default',
+      bgColor: '',
+      borderColor: '',
+      defaultText: status,
+      icon: '',
+    }),
+  }),
+}));
+
 vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
   useRouter: () => ({
     push: vi.fn(),
   }),
@@ -55,11 +86,22 @@ vi.mock('@vben/common-ui', () => ({
   Page: { template: '<div><slot /></div>' },
 }));
 
+vi.mock('#/components/clpm', () => ({
+  ClpmDataCanvas: { template: '<div><slot /></div>' },
+  ClpmKpiStrip: { template: '<div />' },
+  ClpmPageToolbar: { template: '<div><slot /></div>' },
+  ClpmToolbarButton: { template: '<button><slot /></button>' },
+}));
+
 vi.mock('../views/diagnosis/ab-compare.vue', () => ({
   default: { template: '<div />' },
 }));
 
 describe('diagnosisTracker', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
   it('passes loopId into tracker list query in drawer mode', async () => {
     getTrackerListApiMock.mockResolvedValue({ items: [], total: 0 });
 

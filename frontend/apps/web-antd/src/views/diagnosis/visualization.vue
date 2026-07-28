@@ -1,9 +1,7 @@
-/**
- * @deprecated 此页面功能已迁移到 loop-analysis.vue（Batch 4 回路分析页）。
- * 当前保留用于历史兼容，不在菜单中显示（hideInMenu: true）。
- * 新功能请在 loop-analysis.vue 中实现，不要在此文件中新增功能。
- * 后续版本将在确认无引用后删除此文件。
- */
+/** * @deprecated 此页面功能已迁移到 loop-analysis.vue（Batch 4 回路分析页）。 *
+当前保留用于历史兼容，不在菜单中显示（hideInMenu: true）。 * 新功能请在
+loop-analysis.vue 中实现，不要在此文件中新增功能。 *
+后续版本将在确认无引用后删除此文件。 */
 <script lang="ts" setup>
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
@@ -80,12 +78,12 @@ const fetchLoops = async () => {
   loopsLoading.value = true;
   try {
     const res = await getLoopListApi({ page: 1, pageSize: 100 });
-    loops.value = res.items;
-    if (!selectedLoopId.value && res.items.length > 0 && res.items[0]) {
+    loops.value = res.items || [];
+    if (!selectedLoopId.value && res.items?.length > 0 && res.items[0]) {
       selectedLoopId.value = res.items[0].loopId;
     }
-  } catch (error) {
-    console.error('Failed to fetch loops:', error);
+  } catch {
+    // 错误已由拦截器处理
   } finally {
     loopsLoading.value = false;
   }
@@ -99,17 +97,24 @@ const fetchVisualizationData = async (targetLoopId?: string) => {
   try {
     const res = await getDiagnosisVisualizationApi(id);
     data.value = res;
-  } catch (error) {
-    console.error('Failed to fetch visualization data:', error);
+  } catch {
+    // 错误已由拦截器处理
   } finally {
     loading.value = false;
   }
 };
 
-const handleLoopChange = (value: unknown) => {
-  const strValue = String(value);
-  selectedLoopId.value = strValue;
-  fetchVisualizationData(strValue);
+const handleLoopChange = (value: any) => {
+  if (!value || typeof value !== 'string') return;
+  selectedLoopId.value = value;
+  fetchVisualizationData(value);
+};
+
+/** P0-7: 时间窗切换需重新加载数据 */
+const handleTimeWindowChange = (value: any) => {
+  if (!value || typeof value !== 'string') return;
+  timeWindow.value = value;
+  fetchVisualizationData();
 };
 
 const goBack = () => {
@@ -162,6 +167,7 @@ onMounted(async () => {
                     :value="timeWindow"
                     :options="timeWindowOptions"
                     style="width: 120px"
+                    @change="handleTimeWindowChange"
                   />
                   <Button
                     @click="() => fetchVisualizationData()"

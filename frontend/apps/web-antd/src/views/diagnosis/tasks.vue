@@ -49,6 +49,8 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { DIAGNOSIS_LABEL_OPTIONS } from '#/constants/diagnosis';
+import { runWithConcurrency } from '#/utils/concurrency';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisTasks' });
 
@@ -59,8 +61,8 @@ const taskList = ref<DiagnosisApi.TaskItem[]>([]);
 const total = ref(0);
 const selectedRowKeys = ref<string[]>([]);
 
-/** 轮询定时器（PENDING/RUNNING 状态任务每 5 秒刷新） */
-let pollTimer: null | ReturnType<typeof setInterval> = null;
+/** 轮询定时器（PENDING/RUNNING 状态任务每 5 秒刷新）；递归 setTimeout 防止慢请求堆积 */
+let pollTimer: null | ReturnType<typeof setTimeout> = null;
 
 const query = reactive({
   status: undefined as string | undefined,
@@ -191,8 +193,8 @@ const triggerLabelOptions = DIAGNOSIS_LABEL_OPTIONS.filter(
 /** 已选诊断标签（默认全选；全选时提交 labels=undefined 即全量） */
 const selectedLabels = ref<string[]>(triggerLabelOptions.map((o) => o.value));
 
-/** RangePicker 预设快捷选项 */
-const rangePresets = [
+/** RangePicker 预设快捷选项（P0-5: 改 computed，每次打开 Modal 时重新计算时间戳） */
+const rangePresets = computed(() => [
   {
     label: '最近1小时',
     value: [dayjs().subtract(1, 'hour'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs],
@@ -208,7 +210,7 @@ const rangePresets = [
     label: '最近7天',
     value: [dayjs().subtract(7, 'day'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs],
   },
-];
+]);
 
 /** 装置选项（从 plant node 树提取 AREA 节点） */
 const areaOptions = computed(() =>
@@ -521,10 +523,18 @@ async function handleBatchDelete() {
     onOk: async () => {
       batchDeleteLoading.value = true;
       try {
-        await Promise.all(
-          selected.map((t) => deleteDiagnosisTaskApi(t.taskId)),
+        // allSettled 语义 + 并发限制：单项失败不中断其余删除
+        const { fulfilled, rejected } = await runWithConcurrency(
+          selected,
+          (t) => deleteDiagnosisTaskApi(t.taskId),
         );
-        message.success(`已删除 ${selected.length} 个任务`);
+        if (rejected === 0) {
+          message.success(`已删除 ${fulfilled} 个任务`);
+        } else {
+          message.warning(
+            `已删除 ${fulfilled} 个任务，${rejected} 个失败（错误已记录）`,
+          );
+        }
         selectedRowKeys.value = [];
         await loadTasks();
       } catch {
@@ -548,21 +558,13 @@ async function handleBatchTrigger() {
   }
   batchDiagnoseLoading.value = true;
   try {
-    let successCount = 0;
-    let failCount = 0;
-    await Promise.all(
-      selected.map(async (t) => {
-        try {
-          await runDiagnosisTaskApi(t.taskId);
-          successCount++;
-        } catch {
-          failCount++;
-        }
-      }),
+    // allSettled 语义 + 并发限制：批量诊断并发数受控，单项失败不中断其余
+    const { fulfilled, rejected } = await runWithConcurrency(selected, (t) =>
+      runDiagnosisTaskApi(t.taskId),
     );
-    if (successCount > 0) {
+    if (fulfilled > 0) {
       message.success(
-        `已执行 ${successCount} 个任务的诊断${failCount > 0 ? `，${failCount} 个失败` : ''}`,
+        `已执行 ${fulfilled} 个任务的诊断${rejected > 0 ? `，${rejected} 个失败` : ''}`,
       );
     } else {
       message.error('全部诊断任务执行失败');
@@ -603,7 +605,12 @@ async function loadTasks(silent = false) {
 function startPolling() {
   stopPolling();
   pollCount = 0;
-  pollTimer = setInterval(async () => {
+  schedulePoll();
+}
+
+/** 递归 setTimeout：等上一次 loadTasks 完成后再排定下一次，避免慢请求时回调堆积 */
+function schedulePoll() {
+  pollTimer = setTimeout(async () => {
     pollCount++;
     if (pollCount > MAX_POLL_COUNT) {
       stopPolling();
@@ -613,13 +620,17 @@ function startPolling() {
     const hasActive = taskList.value.some(
       (t) => t.status === 'PENDING' || t.status === 'RUNNING',
     );
-    if (!hasActive) stopPolling();
+    if (!hasActive) {
+      stopPolling();
+      return;
+    }
+    schedulePoll();
   }, 5000);
 }
 
 function stopPolling() {
   if (pollTimer) {
-    clearInterval(pollTimer);
+    clearTimeout(pollTimer);
     pollTimer = null;
   }
 }
@@ -644,15 +655,6 @@ function formatScore(val: null | number | undefined): string {
 function formatRate(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
   return `${(val * 100).toFixed(1)}%`;
-}
-
-function formatTime(t: null | string | undefined): string {
-  if (!t) return '—';
-  try {
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
 }
 
 function scoreColor(val: null | number | undefined): string {
@@ -791,11 +793,13 @@ onBeforeUnmount(() => {
             <div class="flex flex-col items-center gap-1">
               <Tag
                 :color="
-                  statusConfig[record.status as DiagnosisApi.TaskStatus].color
+                  statusConfig[record.status as DiagnosisApi.TaskStatus]
+                    ?.color ?? 'default'
                 "
               >
                 {{
-                  statusConfig[record.status as DiagnosisApi.TaskStatus].text
+                  statusConfig[record.status as DiagnosisApi.TaskStatus]
+                    ?.text ?? record.status
                 }}
               </Tag>
               <!-- RUNNING 状态显示进度条 -->

@@ -45,6 +45,7 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisDetail' });
 
@@ -52,7 +53,10 @@ const { isDark, themeColors } = useClpmTheme();
 
 const route = useRoute();
 const router = useRouter();
-const loopId = route.params.loopId as string;
+/** P0-1: loopId 改为 ref，配合 watch 实现路由参数变化时重新加载 */
+const loopId = ref(route.params.loopId as string);
+/** P0-3: 请求版本号，防止 timeWindow 快速切换时旧请求覆盖新数据 */
+let requestVersion = 0;
 
 const loading = ref(false);
 const waveformLoading = ref(false);
@@ -242,7 +246,7 @@ const summaryActions = computed<SummaryAction[]>(() => {
 
 /** FE-12 三段式：问题定位路径 Steps */
 const problemPathSteps = computed(() => {
-  if (!detail.value || detail.value.diagnosisLabels.length === 0) {
+  if (!detail.value || !detail.value.diagnosisLabels?.length) {
     return [
       {
         title: '数据采集',
@@ -297,17 +301,19 @@ function getTimeRange(tw: DiagnosisApi.TimeWindow): [dayjs.Dayjs, dayjs.Dayjs] {
   }
 }
 
-/** 加载诊断详情 */
+/** 加载诊断详情（P0-3: 版本号保护，丢弃过期响应） */
 async function loadDetail() {
+  const version = ++requestVersion;
   loading.value = true;
   try {
-    const data = await getDiagnosisDetailApi(loopId, timeWindow.value);
+    const data = await getDiagnosisDetailApi(loopId.value, timeWindow.value);
+    if (version !== requestVersion) return; // 过期响应丢弃
     detail.value = data;
     renderScatterChart();
   } catch {
     // 错误已由拦截器处理
   } finally {
-    loading.value = false;
+    if (version === requestVersion) loading.value = false;
   }
 }
 
@@ -324,30 +330,32 @@ function loadAll() {
 
 /** 加载时序波形数据 */
 async function loadWaveform() {
-  if (!loopId) return;
+  if (!loopId.value) return;
+  const version = ++requestVersion;
   waveformLoading.value = true;
   try {
     const [start, end] = getTimeRange(timeWindow.value);
-    const data = await getWaveformApi(loopId, {
+    const data = await getWaveformApi(loopId.value, {
       startTime: start.format('YYYY-MM-DD HH:mm:ss'),
       endTime: end.format('YYYY-MM-DD HH:mm:ss'),
       downsample: true,
       maxPoints: 2000,
     });
+    if (version !== requestVersion) return; // 过期响应丢弃
     waveform.value = data;
   } catch {
     // 错误已由拦截器处理
   } finally {
-    waveformLoading.value = false;
+    if (version === requestVersion) waveformLoading.value = false;
   }
 }
 
 /** 加载解决方案推荐（FE-13） */
 async function loadRecommendations() {
-  if (!loopId) return;
+  if (!loopId.value) return;
   recommendationsLoading.value = true;
   try {
-    const data = await getRecommendationsApi(loopId);
+    const data = await getRecommendationsApi(loopId.value);
     recommendations.value = data.recommendations ?? [];
   } catch {
     // 错误已由拦截器处理
@@ -358,9 +366,13 @@ async function loadRecommendations() {
 
 /** 加载异常跟踪状态（复用 /diagnosis/list 端点） */
 async function loadTrackerStatus() {
-  if (!loopId) return;
+  if (!loopId.value) return;
   try {
-    const res = await getTrackerListApi({ loopId, page: 1, pageSize: 1 });
+    const res = await getTrackerListApi({
+      loopId: loopId.value,
+      page: 1,
+      pageSize: 1,
+    });
     trackerStatus.value = res.items[0]?.actionStatus ?? null;
   } catch {
     // 错误已由拦截器处理
@@ -369,14 +381,14 @@ async function loadTrackerStatus() {
 
 /** FE-14: 生成并下载诊断建议书 PDF */
 async function handleGenerateReport() {
-  if (!loopId) return;
+  if (!loopId.value) return;
   reportGenerating.value = true;
   try {
-    const blob = await generateDiagnosisReportApi(loopId);
+    const blob = await generateDiagnosisReportApi(loopId.value);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `诊断建议书_${detail.value?.tagName ?? loopId}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
+    a.download = `诊断建议书_${detail.value?.tagName ?? loopId.value}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
     document.body.append(a);
     a.click();
     a.remove();
@@ -391,17 +403,23 @@ async function handleGenerateReport() {
 
 /** 刷新（重新加载全部数据） */
 function handleRefresh() {
-  loadDetail();
+  loadAll();
 }
 
 /** 摘要条操作点击 */
 function handleSummaryAction(key: string) {
   if (key === 'track') {
     // F13：统一跳转异常跟踪独立页，替代原抽屉模式
-    router.push({ path: '/diagnosis/tracker', query: { loopId } });
+    router.push({
+      path: '/diagnosis/tracker',
+      query: { loopId: loopId.value },
+    });
   }
   if (key === 'visualization') {
-    router.push({ path: '/diagnosis/visualization', query: { loopId } });
+    router.push({
+      path: '/diagnosis/visualization',
+      query: { loopId: loopId.value },
+    });
   }
 }
 
@@ -409,7 +427,7 @@ function handleSummaryAction(key: string) {
 function handleAdoptRecommendation(rec: DiagnosisApi.RecommendationItem) {
   router.push({
     path: '/diagnosis/tracker',
-    query: { loopId, label: rec.label },
+    query: { loopId: loopId.value, label: rec.label },
   });
 }
 
@@ -544,16 +562,6 @@ function handleBack() {
   router.back();
 }
 
-function formatTime(t: null | string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
-}
-
 /** 格式化证据对象 */
 function formatEvidence(evidence: Record<string, unknown>): string {
   if (!evidence || Object.keys(evidence).length === 0) return '—';
@@ -567,24 +575,39 @@ function formatEvidence(evidence: Record<string, unknown>): string {
     .join('\n');
 }
 
-/** 格式化特征值 */
-function featureEntries(
-  features: Record<string, number>,
-): { key: string; value: number }[] {
+/** 特征值列表（computed：避免模板内 v-if 与 v-for 两次调用 featureEntries 重复计算） */
+const featureEntriesList = computed<{ key: string; value: number }[]>(() => {
+  const features = detail.value?.featureValues;
   if (!features) return [];
   return Object.entries(features).map(([k, v]) => ({ key: k, value: v }));
-}
+});
 
 watch(timeWindow, () => {
   loadAll();
 });
+
+// P0-1: 路由参数变化时更新 loopId 并重新加载（组件复用场景）
+watch(
+  () => route.params.loopId,
+  (newLoopId) => {
+    if (newLoopId && newLoopId !== loopId.value) {
+      loopId.value = newLoopId as string;
+      selectedTime.value = null;
+      loadAll();
+    }
+  },
+);
 
 // D2 联动：选中时间变化时重渲散点图（更新高亮 ±30s 窗口）
 watch(selectedTime, () => {
   nextTick(() => renderScatterChart());
 });
 
-// ===== 主题切换重渲图表 =====
+// ===== 主题切换重渲散点图 =====
+// 注意：此 watch 非冗余，不能删除。useEcharts 内部虽在 isDark 切换时用 cacheOptions
+// 重渲，但 cacheOptions 中 bake 了旧 themeColors（DANGER/INFO），重渲后点位色值会停留在
+// 旧主题。此处需用新 themeColors 重建 options 才能正确呈现深/浅色点位。
+// 依据：use-clpm-theme.ts §关键约束（cacheOptions 不会自动重算色值）。
 watch(isDark, () => {
   nextTick(() => {
     renderScatterChart();
@@ -700,16 +723,12 @@ onMounted(() => {
 
               <div class="mt-4">
                 <div class="mb-2 font-medium">特征值</div>
-                <div
-                  v-if="
-                    detail && featureEntries(detail.featureValues).length > 0
-                  "
-                >
+                <div v-if="featureEntriesList.length > 0">
                   <div
                     class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4"
                   >
                     <div
-                      v-for="item in featureEntries(detail.featureValues)"
+                      v-for="item in featureEntriesList"
                       :key="item.key"
                       class="rounded border p-3 text-center"
                     >

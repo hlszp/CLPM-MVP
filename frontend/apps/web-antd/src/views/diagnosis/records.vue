@@ -51,6 +51,8 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { runWithConcurrency } from '#/utils/concurrency';
+import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'DiagnosisRecords' });
@@ -91,6 +93,11 @@ const query = reactive({
 
 /** 8 类诊断标签选项 */
 const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
+
+/** 装置/单元下拉选项（computed：避免模板内 plantNodes.map 每次重渲染重复计算） */
+const plantNodeOptions = computed(() =>
+  plantNodes.value.map((n) => ({ label: n.name, value: n.id })),
+);
 
 /** 标签颜色映射 */
 const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
@@ -246,16 +253,8 @@ async function handleExportCsv() {
     endDate,
     plantNodeId: query.plantNodeId,
   };
-  console.warn('[records.handleExportCsv] 请求导出', {
-    timeWindow: query.timeWindow,
-    ...params,
-  });
   try {
     const blob = await exportDiagnosisStatisticsApi(params);
-    console.warn('[records.handleExportCsv] 响应成功', {
-      size: blob.size,
-      type: blob.type,
-    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -265,8 +264,7 @@ async function handleExportCsv() {
     a.remove();
     URL.revokeObjectURL(url);
     message.success('诊断统计 CSV 已导出');
-  } catch (error) {
-    console.error('[records.handleExportCsv] 导出失败', { params, error });
+  } catch {
     // 错误已由拦截器处理
   } finally {
     exportingCsv.value = false;
@@ -304,10 +302,18 @@ async function handleBatchDelete() {
     onOk: async () => {
       batchDeleteLoading.value = true;
       try {
-        await Promise.all(
-          selectedRowKeys.value.map((id) => deleteDiagnosisTaskApi(id)),
+        // allSettled 语义 + 并发限制：单项失败不中断其余删除，避免打满后端连接
+        const { fulfilled, rejected } = await runWithConcurrency(
+          selectedRowKeys.value,
+          (id) => deleteDiagnosisTaskApi(id),
         );
-        message.success(`已删除 ${count} 条记录`);
+        if (rejected === 0) {
+          message.success(`已删除 ${fulfilled} 条记录`);
+        } else {
+          message.warning(
+            `已删除 ${fulfilled} 条记录，${rejected} 条失败（错误已记录）`,
+          );
+        }
         selectedRowKeys.value = [];
         await loadList();
       } catch {
@@ -358,15 +364,6 @@ const kpiStripItems = computed<KpiStripItem[]>(() => {
     },
   ];
 });
-
-function formatTime(t: null | string | undefined): string {
-  if (!t) return '—';
-  try {
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
-}
 
 /**
  * 相对时间格式化（如"2小时前"/"3天前"）
@@ -455,7 +452,7 @@ onMounted(() => {
               placeholder="装置/单元筛选"
               style="width: 220px"
               allow-clear
-              :options="plantNodes.map((n) => ({ label: n.name, value: n.id }))"
+              :options="plantNodeOptions"
               @change="handleSearch"
             />
             <Select

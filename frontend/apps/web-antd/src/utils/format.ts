@@ -68,17 +68,21 @@ export function formatLocalTime(
  * 强制使用北京时区（Asia/Shanghai, UTC+8）展示，与后端 Celery Beat 时区配置一致，
  * 避免依赖浏览器本地时区导致跨地区显示不一致。
  *
+ * 无效日期（NaN）统一返回 "—"，避免渲染出 "Invalid Date" 字样。
+ *
  * @param t ISO8601 时间字符串或空值
- * @returns 格式化后的时间字符串，空值返回 "—"
+ * @returns 格式化后的时间字符串，空值/无效值返回 "—"
  */
 export function formatTime(t: null | string | undefined): string {
   if (!t) return '—';
   try {
-    return new Date(t).toLocaleString('zh-CN', {
+    const d = new Date(t);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('zh-CN', {
       timeZone: 'Asia/Shanghai',
     });
   } catch {
-    return t;
+    return '—';
   }
 }
 

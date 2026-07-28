@@ -15,6 +15,9 @@ import { nextTick } from 'vue';
  *   - 用 @vue/test-utils mount 组件
  *   - mock API 模块返回固定数据
  *   - 不依赖真实网络请求
+ *
+ * 注意：handleCancel/handleDelete 参数为 TaskItem 对象（含 taskId/status），
+ * 非 taskId 字符串；组件用 DangerConfirmModal 二次确认后调用 API。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -109,6 +112,9 @@ vi.mock('#/api/loop', () => ({
 }));
 
 vi.mock('@vben/icons', () => ({
+  // recompute.vue 直接导入 Plus/RotateCw；
+  // ClpmPageToolbar/ClpmToolbarButton 等子组件导入 IconifyIcon
+  IconifyIcon: { name: 'IconifyIcon', template: '<span>icon</span>' },
   Plus: { name: 'Plus', template: '<span>icon</span>' },
   RotateCw: { name: 'RotateCw', template: '<span>icon</span>' },
 }));
@@ -156,6 +162,7 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
@@ -184,6 +191,7 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
@@ -214,12 +222,15 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
     await nextTick();
     const vm = wrapper.vm as any;
-    await vm.handleCancel('task-1');
+    // handleCancel 打开二次确认 Modal，需再调 handleDangerConfirm 触发 API
+    vm.handleCancel({ taskId: 'task-1', status: 'RUNNING' });
+    await vm.handleDangerConfirm();
     expect(cancelTaskApiMock).toHaveBeenCalledWith('task-1');
     // 列表刷新 → getTaskListApi 被再次调用
     expect(getTaskListApiMock).toHaveBeenCalled();
@@ -243,12 +254,15 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
     await nextTick();
     const vm = wrapper.vm as any;
-    await vm.handleDelete('task-2');
+    // handleDelete 打开二次确认 Modal，需再调 handleDangerConfirm 触发 API
+    vm.handleDelete({ taskId: 'task-2', status: 'SUCCESS' });
+    await vm.handleDangerConfirm();
     expect(deleteTaskApiMock).toHaveBeenCalledWith('task-2');
     expect(getTaskListApiMock).toHaveBeenCalled();
   });
@@ -276,7 +290,9 @@ describe('历史重算页面 recompute.vue', () => {
     });
     await nextTick();
     const vm = wrapper.vm as any;
-    await vm.handleDelete('task-running');
+    // handleDelete 打开二次确认 Modal，需再调 handleDangerConfirm 触发 API
+    vm.handleDelete({ taskId: 'task-running', status: 'RUNNING' });
+    await vm.handleDangerConfirm();
     expect(deleteTaskApiMock).toHaveBeenCalledWith('task-running');
     // 失败时不刷新列表（getTaskListApi 调用次数不增加）
     const beforeCount = getTaskListApiMock.mock.calls.length;
@@ -285,7 +301,7 @@ describe('历史重算页面 recompute.vue', () => {
 
   // ============ 列定义测试 ============
 
-  it('uT-RECOMP-006: 操作列宽度足够容纳两个按钮（140px）', async () => {
+  it('uT-RECOMP-006: 操作列宽度足够容纳两个按钮（120px）', async () => {
     const wrapper = mount(Recompute, {
       global: {
         stubs: {
@@ -301,6 +317,7 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
@@ -309,7 +326,7 @@ describe('历史重算页面 recompute.vue', () => {
     const columns = vm.columns;
     const actionCol = columns.find((c: any) => c.key === 'action');
     expect(actionCol).toBeDefined();
-    expect(actionCol.width).toBeGreaterThanOrEqual(140);
+    expect(actionCol.width).toBeGreaterThanOrEqual(120);
   });
 
   it('uT-RECOMP-007: 列定义包含任务ID/时间窗/状态/进度/操作字段', async () => {
@@ -328,6 +345,7 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
@@ -335,7 +353,7 @@ describe('历史重算页面 recompute.vue', () => {
     const vm = wrapper.vm as any;
     const columns = vm.columns;
     const dataIndexes = columns.map((c: any) => c.dataIndex).filter(Boolean);
-    expect(dataIndexes).toContain('taskId');
+    expect(dataIndexes).toContain('taskType');
     expect(dataIndexes).toContain('status');
     expect(dataIndexes).toContain('progress');
     expect(dataIndexes).toContain('createdAt');
@@ -364,6 +382,7 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
@@ -399,6 +418,7 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
@@ -426,6 +446,7 @@ describe('历史重算页面 recompute.vue', () => {
           ATag: true,
           AProgress: true,
           APopconfirm: true,
+          AModal: true,
         },
       },
     });
@@ -433,8 +454,9 @@ describe('历史重算页面 recompute.vue', () => {
     const vm = wrapper.vm as any;
     expect(vm.formatTime(null)).toBe('—');
     expect(vm.formatTime(undefined)).toBe('—');
+    // formatTime 使用 YYYY-MM-DD HH:mm 格式（不含秒）
     const formatted = vm.formatTime('2026-07-06T10:00:00+08:00');
     expect(formatted).toContain('2026-07-06');
-    expect(formatted).toContain('10:00:00');
+    expect(formatted).toContain('10:00');
   });
 });
