@@ -415,3 +415,75 @@ async def test_redis_cache_partial_coverage_falls_back_to_wide_query() -> None:
 
     mock_wide.assert_awaited_once()
     assert len(result.timestamps) == 3
+
+
+def test_no_module_level_asyncio_lock() -> None:
+    """结构性回归：tdengine_provider 模块级不得存在 asyncio.Lock。
+
+    历史 bug（2026-07-28 定位）：模块级 ``asyncio.Lock`` 在竞争时绑定
+    当前事件循环，而 Celery worker 每个任务可能运行在新事件循环——一旦
+    发生竞争，后续任务的宽表解析全部抛 "bound to a different event
+    loop"，DataPlanner 全回路取数失败、KPI 快照批量 INCONCLUSIVE，
+    只能重启 worker 恢复。修复：去掉模块级锁（并发重复解析无害）。
+    本断言直接锁定"不得重新引入模块级 asyncio 同步原语"。
+    """
+    import asyncio as _asyncio
+
+    offenders = [
+        name
+        for name, value in vars(provider_module).items()
+        if isinstance(value, _asyncio.Lock | _asyncio.Semaphore | _asyncio.Event)
+    ]
+    assert offenders == [], f"模块级 asyncio 同步原语: {offenders}"
+
+
+def test_resolve_subtable_survives_across_event_loops() -> None:
+    """冒烟：跨事件循环顺序解析两条回路，均正常返回（修复前此路径即
+    抛 RuntimeError 的根源路径，配合结构性断言共同防护）。"""
+    import asyncio as _asyncio
+
+    async def _concurrent_resolve() -> None:
+        """在同一循环内制造解析竞争（旧实现在此绑定锁到本循环）."""
+        provider_module._subtable_cache.clear()
+        with (
+            patch(
+                "app.core.tdengine_native.query_wide_table_native",
+                new=AsyncMock(return_value=_wide_rows()),
+            ),
+            patch(
+                "app.core.tdengine_native.query_last_values_before",
+                new=AsyncMock(return_value={}),
+            ),
+        ):
+            end = datetime.now(UTC) - timedelta(hours=2)
+            start = end - timedelta(hours=1)
+            fn_a = TDengineProvider().make_query_fn(_make_db_with_mapping())
+            fn_b = TDengineProvider().make_query_fn(_make_db_with_mapping())
+            await _asyncio.gather(
+                fn_a(loop_id="loop-a", tag_roles=["pv"], start=start, end=end, interval_s=1),
+                fn_b(loop_id="loop-b", tag_roles=["pv"], start=start, end=end, interval_s=1),
+            )
+
+    async def _resolve_once() -> int:
+        """在新循环内再次解析（旧实现在此抛 RuntimeError）."""
+        provider_module._subtable_cache.clear()
+        with (
+            patch(
+                "app.core.tdengine_native.query_wide_table_native",
+                new=AsyncMock(return_value=_wide_rows()),
+            ),
+            patch(
+                "app.core.tdengine_native.query_last_values_before",
+                new=AsyncMock(return_value={}),
+            ),
+        ):
+            query_fn = TDengineProvider().make_query_fn(_make_db_with_mapping())
+            end = datetime.now(UTC) - timedelta(hours=2)
+            start = end - timedelta(hours=1)
+            result = await query_fn(
+                loop_id="loop-c", tag_roles=["pv"], start=start, end=end, interval_s=1
+            )
+            return len(result.timestamps)
+
+    _asyncio.run(_concurrent_resolve())  # 事件循环 1：制造竞争
+    assert _asyncio.run(_resolve_once()) == 3  # 事件循环 2：不得抛异常

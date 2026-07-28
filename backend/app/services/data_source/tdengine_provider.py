@@ -39,14 +39,17 @@ logger = logging.getLogger(__name__)
 # 进程内跨闭包共享 TTL 缓存（300s，与 DataPlanner 指标契约缓存口径一致）。
 # 仅缓存成功解析的结果：解析为 None（未配置映射）时不缓存，避免「先查询
 # 后配置映射」的场景被 5 分钟陈旧的 negative 缓存卡住。
-# 并发安全：模块级 asyncio.Lock 防止同一回路并发重复解析。锁只会在单进程
-# 单事件循环内发生竞争（Celery worker 每进程同一时刻只运行一个 AsyncTask
-# 事件循环；跨循环均为顺序使用，无跨环竞争）。
+# 并发安全：不使用 asyncio.Lock。历史教训（2026-07-28 定位）：模块级
+# asyncio.Lock 在 Python 3.10+ 于首次竞争时绑定当前事件循环，而 Celery
+# worker 每个任务可能运行在新事件循环——一旦发生过一次竞争，后续所有任务的
+# 解析都会抛 "bound to a different event loop"，导致 DataPlanner 全回路取数
+# 失败、KPI 快照批量 INCONCLUSIVE，且只能重启 worker 恢复（2026-07-20 起
+# 反复出现）。去掉锁的最坏后果是两个并发解析重复执行相同的 PG 查询并写入
+# 相同的缓存值，无害；正确性不依赖互斥。
 # ---------------------------------------------------------------------------
 _SUBTABLE_CACHE_TTL_S = 300.0
 # loop_id → (subtable, loop_part, expire_ts)，expire_ts 基于 time.monotonic()
 _subtable_cache: dict[str, tuple[str, str, float]] = {}
-_subtable_cache_lock = asyncio.Lock()
 
 # Redis 实时缓存只保存最近 1 小时数据；窗口 end 早于 (now - 65 分钟) 时
 # 判定为历史窗口并跳过探测（1 小时 + 5 分钟余量，容忍时钟偏差与边界窗口）
@@ -93,43 +96,38 @@ class TDengineProvider:
             if cached is not None and cached[2] > time.monotonic():
                 return cached[0], cached[1]
 
-            async with _subtable_cache_lock:
-                cached = _subtable_cache.get(loop_id)
-                if cached is not None and cached[2] > time.monotonic():
-                    return cached[0], cached[1]
+            # 无锁解析（见文件头设计说明）：并发重复解析无害，禁止使用
+            # 模块级 asyncio.Lock（跨事件循环绑定会拖垮全部取数）。
+            from sqlalchemy import select
 
-                from sqlalchemy import select
+            from app.models.loop import LoopTagMapping
+            from app.models.tag import TagRegistry
 
-                from app.models.loop import LoopTagMapping
-                from app.models.tag import TagRegistry
+            mapping_result = await db.execute(
+                select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
+            )
+            mappings = list(mapping_result.scalars().all())
+            if not mappings:
+                logger.debug("宽表查询: 回路 %s 无 tag 映射", loop_id)
+                return None
 
-                mapping_result = await db.execute(
-                    select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
-                )
-                mappings = list(mapping_result.scalars().all())
-                if not mappings:
-                    logger.debug("宽表查询: 回路 %s 无 tag 映射", loop_id)
-                    return None
+            tag_ids = [str(mapping.tag_id) for mapping in mappings]
+            tag_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
+            tags = list(tag_result.scalars().all())
+            if not tags:
+                logger.debug("宽表查询: 回路 %s 无 tag 记录", loop_id)
+                return None
 
-                tag_ids = [str(mapping.tag_id) for mapping in mappings]
-                tag_result = await db.execute(
-                    select(TagRegistry).where(TagRegistry.id.in_(tag_ids))
-                )
-                tags = list(tag_result.scalars().all())
-                if not tags:
-                    logger.debug("宽表查询: 回路 %s 无 tag 记录", loop_id)
-                    return None
-
-                tag_name = tags[0].tag_name
-                loop_part = tag_name.rsplit(".", 1)[0] if "." in tag_name else tag_name
-                subtable = make_subtable_name(loop_part)
-                # 仅缓存成功解析的结果（None 不缓存，见文件头设计说明）
-                _subtable_cache[loop_id] = (
-                    subtable,
-                    loop_part,
-                    time.monotonic() + _SUBTABLE_CACHE_TTL_S,
-                )
-                return subtable, loop_part
+            tag_name = tags[0].tag_name
+            loop_part = tag_name.rsplit(".", 1)[0] if "." in tag_name else tag_name
+            subtable = make_subtable_name(loop_part)
+            # 仅缓存成功解析的结果（None 不缓存，见文件头设计说明）
+            _subtable_cache[loop_id] = (
+                subtable,
+                loop_part,
+                time.monotonic() + _SUBTABLE_CACHE_TTL_S,
+            )
+            return subtable, loop_part
 
         async def _query_fn_wide(
             loop_id: str,
