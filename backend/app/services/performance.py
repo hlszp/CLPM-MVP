@@ -30,6 +30,7 @@ from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly, MetricConfig
 from app.models.node_kpi import KpiNodeSnapshotHourly
 from app.models.plant_node import PlantNode
+from app.models.sys_config import SysConfig
 from app.models.tracker import ActionTracker
 from app.schemas.performance import WeightSumValidator
 
@@ -1454,9 +1455,70 @@ async def _aggregate_bad_actor_distribution(
 # 回路小时指标快照列表
 # ---------------------------------------------------------------------------
 
+# 性能等级名称（按 level 1-5 顺序，对齐 GB/T 44693.2-2024 §6.3）
+GRADE_NAMES = ("EXCELLENT", "GOOD", "FAIR", "WARNING", "POOR")
 
-async def list_loop_snapshots(
+
+async def _load_grading_thresholds(db: AsyncSession) -> list[dict]:
+    """加载当前生效的 5 级定级阈值（按 level 升序）。
+
+    读取 sys_config['grading_thresholds.current']（写入口径见 grading_config 端点）；
+    未配置或解析失败时回退国标默认阈值（90/80/60/40）。
+    """
+    from app.api.v1.endpoints.grading_config import (
+        _KEY_CURRENT,
+        DEFAULT_GRADING_THRESHOLDS,
+    )
+
+    result = await db.execute(select(SysConfig).where(SysConfig.key == _KEY_CURRENT))
+    cfg = result.scalar_one_or_none()
+    if cfg and cfg.value:
+        try:
+            thresholds = json.loads(cfg.value).get("thresholds")
+            if isinstance(thresholds, list) and thresholds:
+                return sorted(thresholds, key=lambda t: t["level"])
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            logger.warning("定级阈值解析失败，回退国标默认: %s", exc)
+    return list(DEFAULT_GRADING_THRESHOLDS)
+
+
+def _score_grade_condition(score_col, threshold: dict):
+    """单个等级的 score 区间条件.
+
+    区间连续：level 1 取 [minScore, +∞)，其余取 [minScore, maxScore)。
+    与前端 getGrade 语义一致：前端按 level 顺序首个命中返回，
+    等价于 level 1 下界闭区间、其余等级左闭右开。
+    """
+    cond = score_col >= threshold["minScore"]
+    if threshold["level"] != 1:
+        cond = cond & (score_col < threshold["maxScore"])
+    return cond
+
+
+def _grade_case(score_col, thresholds: list[dict]):
+    """构建 score → 等级名 的 SQL CASE 表达式（NULL/未命中 → INCONCLUSIVE）。"""
+    branches = [(_score_grade_condition(score_col, t), t["name"]) for t in thresholds]
+    return case(*branches, else_="INCONCLUSIVE")
+
+
+def _grade_filter_condition(grade: str, thresholds: list[dict]):
+    """构建等级筛选 WHERE 条件。
+
+    grade ∈ EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE（大小写不敏感）；
+    INCONCLUSIVE 对应 score IS NULL。未知等级返回 None。
+    """
+    g = grade.strip().upper()
+    if g == "INCONCLUSIVE":
+        return KpiSnapshotHourly.score.is_(None)
+    for t in thresholds:
+        if t["name"] == g:
+            return _score_grade_condition(KpiSnapshotHourly.score, t)
+    return None
+
+
+async def _build_snapshot_conditions(
     db: AsyncSession,
+    *,
     loop_ids: list[str] | None = None,
     plant_node_ids: list[str] | None = None,
     start: datetime | None = None,
@@ -1464,34 +1526,15 @@ async def list_loop_snapshots(
     status_filter: str | None = None,
     confidence_level: str | None = None,
     loop_tag_name: str | None = None,
-    latest_only: bool = True,
-    page: int = 1,
-    page_size: int = 20,
-    sort_by: str | None = None,
-    sort_order: str | None = None,
-) -> tuple[list[tuple[KpiSnapshotHourly, str | None]], int]:
-    """查询回路小时指标快照列表（含回路名，分页）.
+) -> tuple[list, bool]:
+    """构建快照查询的基础 WHERE 条件（快照列表与等级分布共用，保证口径一致）.
 
-    Args:
-        db: 异步 DB 会话
-        loop_ids: 回路 ID 列表过滤；None=不按回路过滤
-        plant_node_ids: 装置 ID 列表过滤（LoopLedger.unit_id）；None=不按装置过滤
-        start: 起始时间（按 ts_start 过滤）；None=默认近 30 天
-        end: 结束时间（按 ts_start 过滤）；None=当前时间
-        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL）
-        confidence_level: 可信度等级过滤（A/B/C/D/E）
-        loop_tag_name: 回路编号模糊匹配（ILIKE %keyword%）
-        latest_only: True=每个回路只返回最新一条评估记录（默认）；
-            False=返回所有快照（用于历史趋势/诊断历史）
-        page: 页码（1-based）
-        page_size: 每页条数
-        sort_by: 排序字段（"score"=按综合评分，None/"ts_start"=按时间窗起始；
-            score 排序时 NULL 恒置末位，次排序 ts_start DESC）
-        sort_order: 排序方向（"asc"/"desc"，默认 desc）
+    注意：性能等级（grade）筛选不在此处——等级由"每回路最新一条快照"的
+    score 派生，必须在 latestOnly 窗口取数之后应用（见 list_loop_snapshots）。
 
     Returns:
-        (rows, total) — rows 为 [(KpiSnapshotHourly, tag_name), ...]，
-        total 为符合条件的总记录数
+        (conditions, need_loop_join) — need_loop_join 表示子查询是否需要
+        join loop_ledger（装置过滤或回路编号模糊搜索时）
     """
     # 默认时间范围：近 30 天（对齐项目 30 天时间窗口约定）
     # 注意：数据库 ts_start 字段为无时区类型，必须使用 naive datetime，
@@ -1511,23 +1554,182 @@ async def list_loop_snapshots(
             descendants = await _get_descendant_node_ids(db, nid)
             expanded_node_ids.extend(descendants)
 
-    # 构建基础 WHERE 条件列表
-    base_conditions: list = [
+    conditions: list = [
         KpiSnapshotHourly.ts_start >= start,
         KpiSnapshotHourly.ts_start <= end,
     ]
     if loop_ids:
-        base_conditions.append(KpiSnapshotHourly.loop_id.in_(loop_ids))
+        conditions.append(KpiSnapshotHourly.loop_id.in_(loop_ids))
     if expanded_node_ids:
-        base_conditions.append(LoopLedger.unit_id.in_(expanded_node_ids))
+        conditions.append(LoopLedger.unit_id.in_(expanded_node_ids))
     if status_filter:
-        base_conditions.append(KpiSnapshotHourly.status == status_filter)
+        conditions.append(KpiSnapshotHourly.status == status_filter)
     if confidence_level:
-        base_conditions.append(KpiSnapshotHourly.confidence_level == confidence_level)
+        conditions.append(KpiSnapshotHourly.confidence_level == confidence_level)
     if loop_tag_name:
-        base_conditions.append(LoopLedger.tag_name.ilike(f"%{loop_tag_name}%"))
+        conditions.append(LoopLedger.tag_name.ilike(f"%{loop_tag_name}%"))
 
     need_loop_join = bool(expanded_node_ids or loop_tag_name)
+    return conditions, need_loop_join
+
+
+async def _build_grade_condition(db: AsyncSession, grade: str):
+    """构建性能等级筛选条件（基于当前生效的定级阈值）.
+
+    Returns:
+        SQLAlchemy 条件表达式（作用于 KpiSnapshotHourly.score）
+
+    Raises:
+        BizError: ERR_INVALID_GRADE（grade 非合法等级名）
+    """
+    thresholds = await _load_grading_thresholds(db)
+    grade_cond = _grade_filter_condition(grade, thresholds)
+    if grade_cond is None:
+        raise BizError(
+            code="ERR_INVALID_GRADE",
+            message=(
+                f"无效的性能等级: {grade}（可选：EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE）"
+            ),
+            status_code=400,
+        )
+    return grade_cond
+
+
+async def get_grade_distribution(
+    db: AsyncSession,
+    loop_ids: list[str] | None = None,
+    plant_node_ids: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    status_filter: str | None = None,
+    confidence_level: str | None = None,
+    loop_tag_name: str | None = None,
+) -> dict:
+    """各性能等级的回路数分布（SQL 聚合，每回路取最新一条快照）.
+
+    与快照列表 latestOnly=True 同口径：同一组筛选条件下，
+    各等级计数之和（含 INCONCLUSIVE）== 列表 total。
+    等级判定使用 sys_config 当前生效的定级阈值（与前端等级卡片一致），
+    score 为 NULL 计入 INCONCLUSIVE。
+
+    Returns:
+        {"EXCELLENT": n, "GOOD": n, "FAIR": n, "WARNING": n, "POOR": n,
+         "INCONCLUSIVE": n, "total": n}
+    """
+    conditions, need_loop_join = await _build_snapshot_conditions(
+        db,
+        loop_ids=loop_ids,
+        plant_node_ids=plant_node_ids,
+        start=start,
+        end=end,
+        status_filter=status_filter,
+        confidence_level=confidence_level,
+        loop_tag_name=loop_tag_name,
+    )
+    thresholds = await _load_grading_thresholds(db)
+
+    # 子查询：每个回路最新一条快照（优先非 INCONCLUSIVE，口径同快照列表 latestOnly）
+    rn_col = (
+        func.row_number()
+        .over(
+            partition_by=KpiSnapshotHourly.loop_id,
+            order_by=[
+                case((KpiSnapshotHourly.status != "INCONCLUSIVE", 0), else_=1).asc(),
+                KpiSnapshotHourly.ts_start.desc(),
+            ],
+        )
+        .label("rn")
+    )
+    subq_stmt = select(
+        KpiSnapshotHourly.id.label("snap_id"),
+        KpiSnapshotHourly.score.label("score"),
+        rn_col,
+    )
+    if need_loop_join:
+        subq_stmt = subq_stmt.outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+    latest_subq = subq_stmt.where(*conditions).subquery()
+
+    grade_col = _grade_case(latest_subq.c.score, thresholds).label("grade")
+    stmt = (
+        select(grade_col, func.count().label("cnt"))
+        .where(latest_subq.c.rn == 1)
+        .group_by(grade_col)
+    )
+    result = await db.execute(stmt)
+
+    distribution: dict[str, int] = dict.fromkeys(GRADE_NAMES, 0)
+    distribution["INCONCLUSIVE"] = 0
+    total = 0
+    for row in result.all():
+        # 防御：自定义阈值配置了非国标等级名时并入 INCONCLUSIVE
+        key = row.grade if row.grade in distribution else "INCONCLUSIVE"
+        distribution[key] += row.cnt
+        total += row.cnt
+    distribution["total"] = total
+    return distribution
+
+
+async def list_loop_snapshots(
+    db: AsyncSession,
+    loop_ids: list[str] | None = None,
+    plant_node_ids: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    status_filter: str | None = None,
+    confidence_level: str | None = None,
+    loop_tag_name: str | None = None,
+    grade: str | None = None,
+    latest_only: bool = True,
+    page: int = 1,
+    page_size: int = 20,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+) -> tuple[list[tuple[KpiSnapshotHourly, str | None]], int]:
+    """查询回路小时指标快照列表（含回路名，分页）.
+
+    Args:
+        db: 异步 DB 会话
+        loop_ids: 回路 ID 列表过滤；None=不按回路过滤
+        plant_node_ids: 装置 ID 列表过滤（LoopLedger.unit_id）；None=不按装置过滤
+        start: 起始时间（按 ts_start 过滤）；None=默认近 30 天
+        end: 结束时间（按 ts_start 过滤）；None=当前时间
+        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL）
+        confidence_level: 可信度等级过滤（A/B/C/D/E）
+        loop_tag_name: 回路编号模糊匹配（ILIKE %keyword%）
+        grade: 性能等级筛选（EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE），
+            按当前定级阈值在服务端过滤；latest_only=True 时按"每回路最新一条"
+            快照的 score 判定（与 /grade-distribution 及前端等级卡片口径一致）；
+            None=不按等级筛选（向后兼容）
+        latest_only: True=每个回路只返回最新一条评估记录（默认）；
+            False=返回所有快照（用于历史趋势/诊断历史）
+        page: 页码（1-based）
+        page_size: 每页条数
+        sort_by: 排序字段（"score"=按综合评分，None/"ts_start"=按时间窗起始；
+            score 排序时 NULL 恒置末位，次排序 ts_start DESC）
+        sort_order: 排序方向（"asc"/"desc"，默认 desc）
+
+    Returns:
+        (rows, total) — rows 为 [(KpiSnapshotHourly, tag_name), ...]，
+        total 为符合条件的总记录数
+
+    Raises:
+        BizError: ERR_INVALID_GRADE（grade 非合法等级名）
+    """
+    base_conditions, need_loop_join = await _build_snapshot_conditions(
+        db,
+        loop_ids=loop_ids,
+        plant_node_ids=plant_node_ids,
+        start=start,
+        end=end,
+        status_filter=status_filter,
+        confidence_level=confidence_level,
+        loop_tag_name=loop_tag_name,
+    )
+
+    # 等级筛选条件（grade 由最新快照的 score 派生，需在窗口取数后应用）
+    grade_cond = None
+    if grade:
+        grade_cond = await _build_grade_condition(db, grade)
 
     if latest_only:
         # 使用窗口函数取每个回路最新一条评估记录
@@ -1569,17 +1771,29 @@ async def list_loop_snapshots(
             .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
             .join(latest_subq, KpiSnapshotHourly.id == latest_subq.c.snap_id)
             .where(latest_subq.c.rn == 1)
-            .order_by(*latest_order)
         )
+        # 等级筛选作用于"每回路最新一条"的 score（与前端等级卡片口径一致）：
+        # 先窗口取最新，再按等级过滤，total 与 /grade-distribution 对应桶一致
+        if grade_cond is not None:
+            stmt = stmt.where(grade_cond)
+        stmt = stmt.order_by(*latest_order)
 
-        # count：每个回路算一条，按 distinct loop_id 计数
-        count_stmt = (
-            select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
-            .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
-            .where(*base_conditions)
-        )
+        if grade_cond is not None:
+            # count：对筛选后的最新快照集合计数（口径与列表一致）
+            count_stmt = select(func.count()).select_from(
+                stmt.with_only_columns(KpiSnapshotHourly.id).order_by(None).subquery()
+            )
+        else:
+            # count：每个回路算一条，按 distinct loop_id 计数
+            count_stmt = (
+                select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
+                .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+                .where(*base_conditions)
+            )
     else:
-        # 全量时间序列（历史趋势/诊断历史用）
+        # 全量时间序列（历史趋势/诊断历史用）：等级筛选按行应用
+        if grade_cond is not None:
+            base_conditions.append(grade_cond)
         # 可选排序：score / ts_start（默认 ts_start DESC）；score 排序时 NULL 恒置末位
         if sort_by == "score":
             score_order = (
@@ -1620,11 +1834,13 @@ async def list_loop_snapshots(
 __all__ = [
     "ALGORITHM_VERSION",
     "DASHBOARD_CACHE_TTL",
+    "GRADE_NAMES",
     "KPI_METRIC_CODES",
     "KPI_NAME_MAP",
     "export_analytics_csv",
     "get_analytics",
     "get_board",
+    "get_grade_distribution",
     "get_ranking",
     "list_engine_rules",
     "list_loop_snapshots",

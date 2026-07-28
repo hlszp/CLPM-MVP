@@ -552,3 +552,287 @@ class TestDataLineageSnakeCase:
         assert lineage["validRate"] == 0.75
         assert lineage["dataPolicyVersion"] == "pre_v2"
         assert lineage["algorithmVersion"] == "KPI_CALC_v2.1"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 性能项：grade 服务端筛选 + 等级分布聚合端点
+# ---------------------------------------------------------------------------
+
+
+def _make_sys_config_none_result() -> MagicMock:
+    """构造 select(SysConfig) 未命中（回退国标默认阈值）的 execute 结果."""
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    return result
+
+
+def _make_grade_rows_result(rows: list[tuple[str, int]]) -> MagicMock:
+    """构造等级聚合查询（grade, cnt）的 execute 结果."""
+    mock_rows = [MagicMock(grade=g, cnt=c) for g, c in rows]
+    result = MagicMock()
+    result.all.return_value = mock_rows
+    return result
+
+
+class TestListLoopSnapshotsGradeFilter:
+    """GET /api/v1/performance/loops/snapshots?grade=..."""
+
+    def test_grade_filter_success(self, client, mock_db, fake_redis) -> None:
+        """按性能等级筛选（服务端过滤），响应结构不变."""
+        snap = _make_snapshot_full(score=Decimal("95.00"))
+        rows = [(snap, "tag1")]
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # 第 1 次：读取定级阈值 sys_config（未配置 → 国标默认）
+                return _make_sys_config_none_result()
+            if call_count[0] == 2:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots?grade=EXCELLENT&page=1&pageSize=20",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert body["data"]["total"] == 1
+        assert body["data"]["page"] == 1
+        assert body["data"]["pageSize"] == 20
+        assert body["data"]["items"][0]["score"] == 95.0
+
+    def test_grade_filter_inconclusive(self, client, mock_db, fake_redis) -> None:
+        """grade=INCONCLUSIVE 筛选 score 为 NULL 的快照."""
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_sys_config_none_result()
+            if call_count[0] == 2:
+                return _make_list_result([])
+            return _make_count_result(0)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots?grade=INCONCLUSIVE",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["total"] == 0
+
+    def test_invalid_grade_returns_400(self, client, mock_db, fake_redis) -> None:
+        """非法等级名返回 400 ERR_INVALID_GRADE."""
+        mock_db.execute = AsyncMock(return_value=_make_sys_config_none_result())
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots?grade=SUPERB",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_INVALID_GRADE"
+
+
+@pytest.mark.asyncio
+async def test_list_loop_snapshots_grade_filter_sql() -> None:
+    """grade 筛选应生成 score 区间 WHERE 条件（EXCELLENT → score >= 90）."""
+    from app.services.performance import list_loop_snapshots
+
+    db = AsyncMock()
+    captured_stmts: list = []
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        captured_stmts.append(stmt)
+        result = MagicMock()
+        result.all.return_value = []
+        result.scalar.return_value = 0
+        result.scalar_one_or_none.return_value = None
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    await list_loop_snapshots(db, grade="EXCELLENT")
+
+    # 第 1 条 SQL 是 sys_config 查询，第 2 条是快照列表查询
+    assert len(captured_stmts) >= 2
+    compiled = captured_stmts[1].compile()
+    params = list(compiled.params.values())
+    # 国标默认 EXCELLENT 下界 90 应作为绑定参数出现
+    assert 90.0 in params or 90 in params, f"缺少 score >= 90 绑定参数: {compiled.params}"
+
+
+@pytest.mark.asyncio
+async def test_list_loop_snapshots_grade_inconclusive_sql() -> None:
+    """grade=INCONCLUSIVE 应生成 score IS NULL 条件."""
+    from app.services.performance import list_loop_snapshots
+
+    db = AsyncMock()
+    captured_stmts: list = []
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        captured_stmts.append(stmt)
+        result = MagicMock()
+        result.all.return_value = []
+        result.scalar.return_value = 0
+        result.scalar_one_or_none.return_value = None
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    await list_loop_snapshots(db, grade="inconclusive")  # 大小写不敏感
+
+    assert len(captured_stmts) >= 2
+    sql = str(captured_stmts[1].compile()).upper()
+    assert "SCORE IS NULL" in sql
+
+
+@pytest.mark.asyncio
+async def test_list_loop_snapshots_without_grade_no_config_query() -> None:
+    """不传 grade 时不读取定级阈值（向后兼容：SQL 次数与旧行为一致）."""
+    from app.services.performance import list_loop_snapshots
+
+    db = AsyncMock()
+    captured_stmts: list = []
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        captured_stmts.append(stmt)
+        result = MagicMock()
+        result.all.return_value = []
+        result.scalar.return_value = 0
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    await list_loop_snapshots(db)
+
+    # 旧行为：仅 列表查询 + count 查询 2 条 SQL（无 sys_config 查询）
+    assert len(captured_stmts) == 2
+
+
+class TestGradeDistributionEndpoint:
+    """GET /api/v1/performance/grade-distribution"""
+
+    def test_grade_distribution_success(self, client, mock_db, fake_redis) -> None:
+        """聚合端点返回各等级计数与 total."""
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_sys_config_none_result()
+            return _make_grade_rows_result([("EXCELLENT", 2), ("GOOD", 3), ("INCONCLUSIVE", 1)])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/grade-distribution",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        data = body["data"]
+        assert data["EXCELLENT"] == 2
+        assert data["GOOD"] == 3
+        assert data["FAIR"] == 0
+        assert data["WARNING"] == 0
+        assert data["POOR"] == 0
+        assert data["INCONCLUSIVE"] == 1
+        assert data["total"] == 6
+
+    def test_grade_distribution_with_filters(self, client, mock_db, fake_redis) -> None:
+        """支持 plantNodeId / 时间窗 / 状态等筛选参数."""
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_sys_config_none_result()
+            return _make_grade_rows_result([("POOR", 4)])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/grade-distribution"
+                f"?plantNodeId={PLANT_NODE_ID}"
+                "&startTime=2026-07-01T00:00:00Z&endTime=2026-07-05T00:00:00Z"
+                "&status=SUCCESS",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["POOR"] == 4
+        assert data["total"] == 4
+
+    def test_grade_distribution_empty(self, client, mock_db, fake_redis) -> None:
+        """无数据时各等级为 0、total 为 0."""
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_sys_config_none_result()
+            return _make_grade_rows_result([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/grade-distribution",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 0
+        grade_keys = ("EXCELLENT", "GOOD", "FAIR", "WARNING", "POOR", "INCONCLUSIVE")
+        assert all(data[g] == 0 for g in grade_keys)
+
+    def test_grade_distribution_no_token(self, client) -> None:
+        """未认证返回 401."""
+        resp = client.get("/api/v1/performance/grade-distribution")
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_grade_distribution_sql_group_by() -> None:
+    """等级分布应生成 GROUP BY 等级的聚合 SQL（服务端下推，非全量拉取）."""
+    from app.services.performance import get_grade_distribution
+
+    db = AsyncMock()
+    captured_stmts: list = []
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        captured_stmts.append(stmt)
+        result = MagicMock()
+        result.all.return_value = []
+        result.scalar_one_or_none.return_value = None
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    distribution = await get_grade_distribution(db)
+
+    assert len(captured_stmts) == 2  # sys_config + 聚合查询（仅 2 条 SQL，无全量拉取）
+    sql = str(captured_stmts[1].compile()).upper()
+    assert "GROUP BY" in sql
+    assert "CASE" in sql
+    assert "ROW_NUMBER" in sql  # 每回路最新一条（口径同列表 latestOnly）
+    assert distribution["total"] == 0

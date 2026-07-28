@@ -10,6 +10,7 @@
 - GET    /api/v1/performance/analytics          — 统计报表数据
 - POST   /api/v1/performance/analytics/export   — 导出报表（CSV）
 - GET    /api/v1/performance/loops/snapshots    — 回路小时指标快照列表
+- GET    /api/v1/performance/grade-distribution — 各性能等级回路数分布（SQL 聚合）
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from app.services.performance import (
     export_analytics_csv,
     get_analytics,
     get_board,
+    get_grade_distribution,
     get_ranking,
     list_engine_rules,
     list_loop_snapshots,
@@ -330,6 +332,48 @@ def _to_float(val) -> float | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# 各性能等级回路数分布（Phase 4 性能项：替代前端全量拉取客户端统计）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/grade-distribution", response_model=ApiResponse[dict])
+async def get_grade_distribution_endpoint(
+    loopId: str | None = Query(None, description="回路 ID（逗号分隔多个）"),
+    plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
+    startTime: str | None = Query(None, description="起始时间（ISO 8601）"),
+    endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
+    status: str | None = Query(None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"),
+    confidenceLevel: str | None = Query(None, description="可信度等级（A/B/C/D/E）"),
+    loopTagName: str | None = Query(None, description="回路编号模糊搜索"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """各性能等级回路数分布（所有角色）.
+
+    每回路取最新一条快照（口径同 /loops/snapshots 默认 latestOnly=True），
+    SQL 层 GROUP BY 等级聚合，返回
+    {EXCELLENT, GOOD, FAIR, WARNING, POOR, INCONCLUSIVE, total}。
+    等级判定使用当前生效的定级阈值（/configs/grading-thresholds）。
+    """
+    loop_ids = [s.strip() for s in loopId.split(",") if s.strip()] if loopId else None
+    plant_node_ids = (
+        [s.strip() for s in plantNodeId.split(",") if s.strip()] if plantNodeId else None
+    )
+
+    data = await get_grade_distribution(
+        db=db,
+        loop_ids=loop_ids,
+        plant_node_ids=plant_node_ids,
+        start=_parse_dt(startTime),
+        end=_parse_dt(endTime),
+        status_filter=status,
+        confidence_level=confidenceLevel,
+        loop_tag_name=loopTagName,
+    )
+    return success(data=data)
+
+
 @router.get("/loops/snapshots", response_model=ApiResponse[KpiSnapshotListData])
 async def list_loop_snapshots_endpoint(
     loopId: str | None = Query(None, description="回路 ID（逗号分隔多个）"),
@@ -339,6 +383,11 @@ async def list_loop_snapshots_endpoint(
     status: str | None = Query(None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"),
     confidenceLevel: str | None = Query(None, description="可信度等级（A/B/C/D/E）"),
     loopTagName: str | None = Query(None, description="回路编号模糊搜索"),
+    grade: str | None = Query(
+        None,
+        description="性能等级筛选（EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE），"
+        "服务端按当前定级阈值过滤；不传则行为不变",
+    ),
     latestOnly: bool = Query(
         True,
         description="True=每个回路只返回最新一条评估记录（默认）；"
@@ -353,10 +402,12 @@ async def list_loop_snapshots_endpoint(
 ) -> dict:
     """查询回路小时指标快照列表（所有角色可查看）.
 
-    按回路 ID / 装置 / 时间范围 / 状态 / 可信度 / 回路编号筛选，分页返回。
+    按回路 ID / 装置 / 时间范围 / 状态 / 可信度 / 回路编号 / 性能等级筛选，分页返回。
     默认 latestOnly=True：每个回路只返回最新一条评估记录。
     默认排序按 tsStart DESC；sortBy=score&sortOrder=asc|desc 可按综合评分排序
     （NULL 置末位，次排序 tsStart DESC）。每条记录包含完整的 24 个 KPI 字段 + loopTagName。
+    grade 参数（Phase 4 性能项）：服务端按当前定级阈值过滤等级，
+    替代前端"全量拉取→客户端过滤→客户端分页"。
     """
     # 解析逗号分隔的 ID 列表
     loop_ids = [s.strip() for s in loopId.split(",") if s.strip()] if loopId else None
@@ -376,6 +427,7 @@ async def list_loop_snapshots_endpoint(
         status_filter=status,
         confidence_level=confidenceLevel,
         loop_tag_name=loopTagName,
+        grade=grade,
         latest_only=latestOnly,
         page=page,
         page_size=pageSize,
