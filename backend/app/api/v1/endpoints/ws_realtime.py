@@ -10,6 +10,10 @@ RealtimeSubscriber 广播的实时数据，推送给已连接的前端客户端�
 
 前端连接时通过 query 参数传递 token 进行认证:
     ws://localhost:7101/api/v1/ws/realtime?token=xxx
+
+注: 浏览器原生 WebSocket API 不支持自定义请求头，前端
+``src/utils/realtime-ws.ts`` 仅支持 query 传参，故保留 query 方式；
+服务端侧与 HTTP 接口对齐，校验 token 类型（必须 access）与黑名单状态。
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.redis import redis_client
+from app.services.auth import is_token_blacklisted
 from app.services.data_source.realtime_subscriber import _PUBSUB_CHANNEL
 
 logger = logging.getLogger(__name__)
@@ -29,7 +34,13 @@ router = APIRouter(prefix="/ws", tags=["WebSocket实时推送"])
 
 
 async def _verify_token(websocket: WebSocket) -> bool:
-    """从 query 参数验证 JWT token."""
+    """从 query 参数验证 JWT token.
+
+    与 ``app.api.deps.get_current_user`` 的校验口径对齐：
+    - 签名/有效期合法
+    - ``type == "access"``（拒绝 refresh token 直连）
+    - jti 未在黑名单中（拒绝已吊销 token）
+    """
     from app.core.security import decode_token
 
     token = websocket.query_params.get("token", "")
@@ -37,9 +48,16 @@ async def _verify_token(websocket: WebSocket) -> bool:
         return False
     try:
         payload = decode_token(token)
-        return payload is not None and payload.get("sub") is not None
     except Exception:  # noqa: BLE001
         return False
+    if not payload or payload.get("sub") is None:
+        return False
+    if payload.get("type") != "access":
+        return False
+    jti = payload.get("jti", "")
+    if jti and await is_token_blacklisted(jti):
+        return False
+    return True
 
 
 @router.websocket("/realtime")

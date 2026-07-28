@@ -39,6 +39,11 @@ LOGIN_FAIL_WINDOW_MINUTES = 15
 KEY_LOGIN_FAIL = "login_fail:{username}"
 KEY_TOKEN_BLACKLIST = "token_blacklist:{jti}"
 KEY_USER_TOKENS = "user_tokens:{user_id}"
+KEY_TOKEN_PAIR = "token_pair:{access_jti}"
+
+# Blacklist TTL upper bound: the longest possible token lifetime
+# (remember-me refresh token = 30 days).
+MAX_BLACKLIST_TTL = 30 * 24 * 3600
 
 # ---------------------------------------------------------------------------
 # Role → permissions mapping (aligned with PRD §3 and IDS §5.4).
@@ -75,6 +80,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "metric:view",
         "diagnosis:view",
         "tracker:review",
+        # 实现契约 §5：EXPERT 可查看整定相关页面（整定写端点本就对 EXPERT 开放）
+        "tuning:view",
     ],
 }
 
@@ -145,21 +152,48 @@ async def _blacklist_token(jti: str, ttl: int) -> None:
 
 
 async def _track_user_token(user_id: str, jti: str, ttl: int) -> None:
-    """Track a jti under the user's token set (for batch revocation)."""
+    """Track a jti under the user's token set (for batch revocation).
+
+    Each member is stored as ``"{jti}:{exp_epoch}"`` so batch revocation can
+    blacklist every token for exactly its remaining lifetime (remember-me
+    refresh tokens live 30 days, well beyond a plain 7-day blacklist TTL).
+    """
     key = KEY_USER_TOKENS.format(user_id=user_id)
-    await redis_client.sadd(key, jti)
+    exp_epoch = int(datetime.now(UTC).timestamp()) + ttl
+    await redis_client.sadd(key, f"{jti}:{exp_epoch}")
     await redis_client.expire(key, ttl)
 
 
+async def _track_token_pair(access_jti: str, refresh_jti: str, refresh_ttl: int) -> None:
+    """Record which refresh token was issued together with an access token.
+
+    The pair key expires together with the refresh token, so its remaining
+    TTL mirrors the refresh token's remaining lifetime — used by ``logout``
+    to blacklist the paired refresh token for exactly as long as needed.
+    """
+    key = KEY_TOKEN_PAIR.format(access_jti=access_jti)
+    await redis_client.setex(key, refresh_ttl, refresh_jti)
+
+
 async def _revoke_all_user_tokens(user_id: str) -> None:
-    """Blacklist all tracked jtis for a user (used on password change)."""
+    """Blacklist all tracked jtis for a user (used on password change).
+
+    Each blacklist entry lives for the token's actual remaining lifetime
+    (capped at 30 days) so a remember-me refresh token cannot resurrect
+    after a short fixed TTL expires.
+    """
     key = KEY_USER_TOKENS.format(user_id=user_id)
-    jtis = await redis_client.smembers(key)
-    for jti_str in jtis:
-        jti = jti_str if isinstance(jti_str, str) else jti_str.decode()
-        # Use a fixed TTL (max refresh token lifetime) since we may not have
-        # the original payload handy.
-        await _blacklist_token(jti, 7 * 24 * 3600)
+    members = await redis_client.smembers(key)
+    now = int(datetime.now(UTC).timestamp())
+    for member in members:
+        member_str = member if isinstance(member, str) else member.decode()
+        jti, sep, exp_str = member_str.rpartition(":")
+        if not sep or not exp_str.isdigit():
+            # Legacy member without expiry info — fall back to the max lifetime.
+            jti, ttl = member_str, MAX_BLACKLIST_TTL
+        else:
+            ttl = min(max(int(exp_str) - now, 1), MAX_BLACKLIST_TTL)
+        await _blacklist_token(jti, ttl)
     await redis_client.delete(key)
 
 
@@ -290,6 +324,8 @@ async def _issue_tokens(
     refresh_ttl = 30 * 24 * 3600 if remember_me else 7 * 24 * 3600
     await _track_user_token(user_id, access_jti, expires_in)
     await _track_user_token(user_id, refresh_jti, refresh_ttl)
+    # Pair access → refresh so logout can revoke both (P1 token lifecycle).
+    await _track_token_pair(access_jti, refresh_jti, refresh_ttl)
 
     return AuthTokens(
         accessToken=access_token,
@@ -387,7 +423,11 @@ async def refresh_tokens(
 
 
 async def logout(access_token_str: str) -> None:
-    """Blacklist the current access token (and its paired refresh if tracked).
+    """Blacklist the current access token and its paired refresh token.
+
+    The paired refresh token is located via the ``token_pair:{access_jti}``
+    key recorded at issuance; without this, a logged-out session could keep
+    minting new access tokens for up to 7/30 days.
 
     Raises ``BizError`` if the token is invalid.
     """
@@ -409,6 +449,17 @@ async def logout(access_token_str: str) -> None:
 
     ttl = get_token_remaining_ttl(payload)
     await _blacklist_token(jti, ttl)
+
+    # Revoke the refresh token issued together with this access token.
+    pair_key = KEY_TOKEN_PAIR.format(access_jti=jti)
+    refresh_jti = await redis_client.get(pair_key)
+    if refresh_jti:
+        refresh_jti_str = refresh_jti if isinstance(refresh_jti, str) else refresh_jti.decode()
+        # The pair key expires with the refresh token, so its remaining TTL
+        # mirrors the refresh token's remaining lifetime.
+        refresh_ttl = max(await redis_client.ttl(pair_key), 1)
+        await _blacklist_token(refresh_jti_str, refresh_ttl)
+        await redis_client.delete(pair_key)
 
 
 async def change_password(

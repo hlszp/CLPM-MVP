@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from tests.conftest import (
     TEST_PASSWORD,
     TEST_USERS,
@@ -266,6 +268,70 @@ class TestLogout:
         resp = client.post("/api/v1/auth/logout")
         assert resp.status_code == 401
 
+    def test_logout_revokes_paired_refresh_token(self, client, mock_db, fake_redis) -> None:
+        """After logout, the paired refresh token is also revoked (P1 token lifecycle).
+
+        Previously only the 30-min access token was blacklisted — the 7/30-day
+        refresh token could keep minting new access tokens after "logout".
+        """
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        data = login_resp.json()["data"]
+        access_token = data["accessToken"]
+        refresh_token = data["refreshToken"]
+
+        resp = client.post(
+            "/api/v1/auth/logout", headers={"Authorization": f"Bearer {access_token}"}
+        )
+        assert resp.status_code == 200
+
+        # 配套 refresh token 已吊销，无法再换新 access token。
+        resp = client.post(
+            "/api/v1/auth/refresh",
+            json={"refreshToken": refresh_token},
+        )
+        assert resp.status_code == 401
+        assert resp.json()["code"] == "ERR_TOKEN_INVALID"
+
+    def test_logout_does_not_revoke_other_sessions(self, client, mock_db, fake_redis) -> None:
+        """Logout revokes only the current session's tokens, not other devices'."""
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
+        # Two logins = two independent sessions (e.g. PC + mobile).
+        session_a = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        ).json()["data"]
+        session_b = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        ).json()["data"]
+
+        # Logout session A.
+        resp = client.post(
+            "/api/v1/auth/logout",
+            headers={"Authorization": f"Bearer {session_a['accessToken']}"},
+        )
+        assert resp.status_code == 200
+
+        # Session B's refresh token must still work.
+        with patch("app.core.db.AsyncSessionLocal") as mock_session_local:
+            mock_session = AsyncMock()
+            mock_session.execute = AsyncMock(
+                return_value=make_db_execute_return(TEST_USERS["admin"])
+            )
+            mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            resp = client.post(
+                "/api/v1/auth/refresh",
+                json={"refreshToken": session_b["refreshToken"]},
+            )
+        assert resp.status_code == 200
+        assert "accessToken" in resp.json()["data"]
+
 
 # ===========================================================================
 # S1-AUTH-003: /auth/me + Change password
@@ -328,6 +394,36 @@ class TestChangePassword:
         # Old token should be revoked.
         resp = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"})
         assert resp.status_code == 401
+
+    def test_change_password_blacklist_ttl_covers_remember_me(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """Blacklist TTL must cover a remember-me refresh token's real lifetime (P2).
+
+        remember-me refresh tokens live 30 days; a fixed 7-day blacklist TTL
+        would let the revoked token resurrect on day 8.
+        """
+        from app.core.security import decode_token
+
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD, "rememberMe": True},
+        )
+        data = login_resp.json()["data"]
+        access_token = data["accessToken"]
+        refresh_jti = decode_token(data["refreshToken"])["jti"]
+
+        resp = client.put(
+            "/api/v1/auth/password",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={"oldPassword": TEST_PASSWORD, "newPassword": "NewPass@2026"},
+        )
+        assert resp.status_code == 200
+
+        # 黑名单 TTL 必须覆盖 30 天剩余有效期（远超旧的固定 7 天）。
+        ttl = fake_redis._ttls[f"token_blacklist:{refresh_jti}"]
+        assert 7 * 24 * 3600 < ttl <= 30 * 24 * 3600
 
     def test_change_password_wrong_old(self, client, mock_db, fake_redis) -> None:
         """Wrong old password returns ERR_INVALID_CREDENTIALS."""
@@ -396,6 +492,43 @@ class TestChangePassword:
             json={"oldPassword": TEST_PASSWORD, "newPassword": "Ab1"},
         )
         assert resp.status_code == 422
+
+
+# ===========================================================================
+# Token lifecycle unit tests (P1+P2: logout pairing / blacklist TTL)
+# ===========================================================================
+
+
+class TestRevokeAllUserTokens:
+    """Unit tests for blacklist TTL semantics on batch revocation."""
+
+    @pytest.mark.asyncio
+    async def test_ttl_matches_each_tokens_remaining_lifetime(self, fake_redis) -> None:
+        """Each token is blacklisted for its own remaining lifetime, not a fixed 7d."""
+        from app.services import auth as auth_service
+
+        with patch.object(auth_service, "redis_client", fake_redis):
+            await auth_service._track_user_token("u-1", "jti-30d", 30 * 24 * 3600)
+            await auth_service._track_user_token("u-1", "jti-30m", 30 * 60)
+            await auth_service._revoke_all_user_tokens("u-1")
+
+        # 30 天 remember-me refresh：TTL 远超旧的固定 7 天。
+        assert fake_redis._ttls["token_blacklist:jti-30d"] > 7 * 24 * 3600
+        # 30 分钟 access：TTL 按其自身剩余有效期，而非 7 天。
+        assert fake_redis._ttls["token_blacklist:jti-30m"] <= 30 * 60
+        # 跟踪集合已清空。
+        assert await fake_redis.smembers("user_tokens:u-1") == set()
+
+    @pytest.mark.asyncio
+    async def test_legacy_member_without_exp_uses_max_ttl(self, fake_redis) -> None:
+        """Legacy set members (plain jti, no exp suffix) fall back to the 30-day cap."""
+        from app.services import auth as auth_service
+
+        await fake_redis.sadd("user_tokens:u-2", "legacy-jti")
+        with patch.object(auth_service, "redis_client", fake_redis):
+            await auth_service._revoke_all_user_tokens("u-2")
+
+        assert fake_redis._ttls["token_blacklist:legacy-jti"] == 30 * 24 * 3600
 
 
 # ===========================================================================
