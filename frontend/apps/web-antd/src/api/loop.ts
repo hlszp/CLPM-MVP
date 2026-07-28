@@ -278,6 +278,20 @@ export namespace LoopApi {
     createdBy: string;
     updatedAt: string;
     updatedBy: string;
+    /** v6.1 新增：PV 量程（从 PV Tag 引用） */
+    pvRange?: null | RangeInfo;
+    /** v6.1 新增：PV 工程单位 */
+    pvUnit?: null | string;
+    /** v6.1 新增：OP 量程（从 OP Tag 引用） */
+    opRange?: null | RangeInfo;
+    /** v6.1 新增：OP 工程单位 */
+    opUnit?: null | string;
+    /** v6.1 新增：OP 输出下限位（NULL 时取 OP Tag range_min） */
+    opOutputLowerLimit?: null | number;
+    /** v6.1 新增：OP 输出上限位（NULL 时取 OP Tag range_max） */
+    opOutputUpperLimit?: null | number;
+    /** v6.1 新增：关联 DCS 型号 ID（NULL=使用本系统默认 MODE 映射） */
+    dcsModelId?: null | string;
     /** 理想稳态时间（秒），空则按控制类型默认值 */
     idealSettlingTime?: null | number;
     /** P4 S4：复杂回路分组 ID */

@@ -15,11 +15,14 @@ import type { TableRowSelection } from 'ant-design-vue/lib/table/interface';
 import type { LoopApi } from '#/api/loop';
 import type { LoopDataApi } from '#/api/loop-data';
 
-import { computed, h, onMounted, onUnmounted, ref } from 'vue';
+import { computed, h, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { useUserStore } from '@vben/stores';
 
 import {
+  Alert,
   Button,
   Checkbox,
   DatePicker,
@@ -48,12 +51,33 @@ import {
 } from '#/api/loop-data';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmPageToolbar } from '#/components/clpm';
+import { usePolling } from '#/composables/use-polling';
+import { runWithConcurrency } from '#/utils/concurrency';
 
 import IntegrityReportDrawer from './components/integrity-report-drawer.vue';
 
 defineOptions({ name: 'LoopData' });
 
 const { RangePicker } = DatePicker;
+
+/**
+ * 导入功能角色（与后端 loop_data.py `_IMPORT_ROLES` 对齐：
+ * 导入/完整性检查/任务管理端点均 require_roles(ADMIN, IC_ENGINEER, PE_ENGINEER)）
+ */
+const IMPORT_ROLES = ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'];
+
+const route = useRoute();
+const userStore = useUserStore();
+
+/**
+ * 当前用户是否具备导入管理权限。
+ * 模板按钮走 v-permission 指令；表格 customRender 内 h() 渲染的按钮
+ * 无法用指令，改用本 computed 控制显隐（对齐 v-permission 文档的选型建议）。
+ */
+const canManageImports = computed(() => {
+  const roles = userStore.userInfo?.roles ?? [];
+  return roles.some((r) => IMPORT_ROLES.includes(r));
+});
 
 // --- 工厂模型节点树 ---
 interface TreeNode {
@@ -111,6 +135,8 @@ async function loadPlantTree() {
 const loops = ref<LoopApi.LoopListItem[]>([]);
 const selectedLoopIds = ref<string[]>([]);
 const loadingLoops = ref(false);
+/** 回路列表加载错误（三态分离：接口异常 vs 接口正常但无数据） */
+const loopsError = ref<null | string>(null);
 const searchKeyword = ref('');
 
 const loopPage = ref(1);
@@ -224,6 +250,8 @@ const integrityResult = ref<LoopDataApi.IntegrityCheckResult | null>(null);
 // --- 任务列表 ---
 const tasks = ref<LoopDataApi.ImportTask[]>([]);
 const taskLoading = ref(false);
+/** 任务列表加载错误（三态分离：接口异常 vs 接口正常但无数据） */
+const tasksError = ref<null | string>(null);
 const taskPagination = ref({
   current: 1,
   pageSize: 10,
@@ -248,7 +276,28 @@ const taskRowSelection = computed<TableRowSelection<LoopDataApi.ImportTask>>(
   }),
 );
 
-let pollTimer: null | ReturnType<typeof setInterval> = null;
+/**
+ * 任务轮询：统一走 usePolling（递归 setTimeout 防堆积、页面隐藏自动暂停、
+ * 卸载自动清理）。按需启停——仅在存在活跃导入任务（PENDING/RUNNING）时轮询，
+ * 无活跃任务即停止，避免空转请求。
+ */
+const { start: startTaskPolling, stop: stopTaskPolling } = usePolling(
+  async () => {
+    await loadTasks();
+    // 本轮刷新后若无活跃任务，停止轮询
+    if (!hasActiveTasks()) stopTaskPolling();
+  },
+  { interval: 5000 },
+);
+
+/** 按任务活跃度同步轮询开关（任务列表加载/任务操作完成后调用） */
+function syncTaskPolling() {
+  if (hasActiveTasks()) {
+    startTaskPolling();
+  } else {
+    stopTaskPolling();
+  }
+}
 
 const taskColumns: TableColumnsType = [
   {
@@ -335,6 +384,10 @@ const taskColumns: TableColumnsType = [
     key: 'action',
     width: 104,
     customRender: ({ record }) => {
+      // 无导入管理角色时不渲染操作按钮（后端端点同样 require_roles，避免 403）
+      if (!canManageImports.value) {
+        return h('span', { class: 'text-xs text-gray-400' }, '—');
+      }
       const isActive =
         record.status === 'PENDING' || record.status === 'RUNNING';
       return h('div', { class: 'flex gap-1' }, [
@@ -389,6 +442,7 @@ const taskColumns: TableColumnsType = [
  */
 async function loadLoops() {
   loadingLoops.value = true;
+  loopsError.value = null;
   try {
     const resp = await getLoopListApi({
       page: loopPage.value,
@@ -402,8 +456,11 @@ async function loadLoops() {
     totalLoops.value = resp.total ?? 0;
     // Phase 10 UX 包：取消默认全选——让用户显式选择要导入的回路，
     // 避免误操作触发大批量远端拉取
-  } catch {
-    // 错误已由全局拦截器 toast 透传后端 message，这里不再覆盖通用文案
+  } catch (error: any) {
+    // 错误已由全局拦截器 toast 透传后端 message；此处仅记录用于内联错误占位
+    loopsError.value = error?.message ?? '加载失败';
+    loops.value = [];
+    totalLoops.value = 0;
   } finally {
     loadingLoops.value = false;
   }
@@ -423,6 +480,7 @@ function handleLoopSearch() {
 
 async function loadTasks() {
   taskLoading.value = true;
+  tasksError.value = null;
   try {
     const resp = await getImportTasksApi({
       page: taskPagination.value.current,
@@ -430,8 +488,11 @@ async function loadTasks() {
     });
     tasks.value = resp.items ?? [];
     taskPagination.value.total = resp.total ?? 0;
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error: any) {
+    // 错误已由拦截器 toast；此处仅记录用于内联错误占位。
+    // 注意保留旧 tasks 不清空：轮询任务依赖 hasActiveTasks() 判活，
+    // 清空会导致瞬时网络抖动后轮询永久停止，无法自动恢复。
+    tasksError.value = error?.message ?? '加载失败';
   } finally {
     taskLoading.value = false;
   }
@@ -497,6 +558,7 @@ function handleBackfillFromIntegrity(
         message.success('补齐任务已启动');
         integrityDrawerVisible.value = false;
         await loadTasks();
+        syncTaskPolling();
       } catch {
         // 错误已由拦截器透传
       } finally {
@@ -539,6 +601,7 @@ async function handleStartImport() {
         });
         message.success('导入任务已启动');
         await loadTasks();
+        syncTaskPolling();
       } catch {
         // Phase 10 UX 包：透传后端错误信息——全局拦截器已显示后端 message，
         // 这里不再覆盖通用文案，避免双重 toast
@@ -563,6 +626,7 @@ function handleCancel(taskId: string) {
         await cancelImportApi(taskId);
         message.success('已取消导入任务');
         await loadTasks();
+        syncTaskPolling();
       } catch {
         // 错误已由拦截器透传
       }
@@ -591,6 +655,7 @@ function handleDelete(taskId: string) {
         await deleteImportApi(taskId);
         message.success('已删除导入任务');
         await loadTasks();
+        syncTaskPolling();
       } catch {
         // 错误已由拦截器透传
       }
@@ -610,16 +675,17 @@ function handleBatchDelete() {
     okType: 'danger',
     cancelText: '取消',
     onOk: async () => {
-      try {
-        for (const taskId of selectedTaskIds.value) {
-          await deleteImportApi(taskId);
-        }
-        message.success(`已删除 ${selectedTaskIds.value.length} 个导入任务`);
-        selectedTaskIds.value = [];
-        await loadTasks();
-      } catch {
-        // 错误已由拦截器透传
+      // 批量删除走并发控制（allSettled 语义：单项失败不中断其余项）
+      const { fulfilled } = await runWithConcurrency(
+        selectedTaskIds.value,
+        (taskId) => deleteImportApi(taskId),
+      );
+      if (fulfilled > 0) {
+        message.success(`已删除 ${fulfilled} 个导入任务`);
       }
+      selectedTaskIds.value = [];
+      await loadTasks();
+      syncTaskPolling();
     },
   });
 }
@@ -633,20 +699,14 @@ function hasActiveTasks() {
 // --- 生命周期 ---
 
 onMounted(async () => {
-  await Promise.all([loadPlantTree(), loadLoops(), loadTasks()]);
-  // 有活跃任务时轮询
-  pollTimer = setInterval(() => {
-    if (hasActiveTasks()) {
-      loadTasks();
-    }
-  }, 5000);
-});
-
-onUnmounted(() => {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
+  // 空态引导跳转（/loop/data?loopId=xxx）：预选该回路，便于直接发起导入
+  const presetLoopId = route.query.loopId;
+  if (typeof presetLoopId === 'string' && presetLoopId) {
+    selectedLoopIds.value = [presetLoopId];
   }
+  await Promise.all([loadPlantTree(), loadLoops(), loadTasks()]);
+  // 按需启动轮询：仅在有活跃导入任务时开启（usePolling 组件卸载时自动清理）
+  syncTaskPolling();
 });
 </script>
 
@@ -743,9 +803,24 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 回路表格 -->
+          <!-- 回路表格（错误态与空态分离：接口异常显示内联错误占位） -->
           <div class="min-h-0 flex-1 overflow-y-auto">
+            <Alert
+              v-if="loopsError"
+              type="error"
+              show-icon
+              :message="`回路列表加载失败：${loopsError}`"
+              description="请检查后端服务或稍后重试。"
+              class="m-2"
+            >
+              <template #action>
+                <Button size="small" type="link" @click="loadLoops">
+                  重试
+                </Button>
+              </template>
+            </Alert>
             <Table
+              v-if="!loopsError"
               :columns="loopColumns"
               :data-source="loops"
               :loading="loadingLoops"
@@ -819,6 +894,7 @@ onUnmounted(() => {
               <Checkbox v-model:checked="triggerBackfill"> 触发KPI </Checkbox>
             </Tooltip>
             <Button
+              v-permission="IMPORT_ROLES"
               size="small"
               :loading="integrityChecking"
               :disabled="!timeRange || timeRange.length !== 2"
@@ -827,6 +903,7 @@ onUnmounted(() => {
               检查完整性
             </Button>
             <Button
+              v-permission="IMPORT_ROLES"
               type="primary"
               size="small"
               :loading="importing"
@@ -844,6 +921,7 @@ onUnmounted(() => {
             <span class="font-medium">导入任务列表</span>
             <div class="flex gap-2">
               <Button
+                v-permission="IMPORT_ROLES"
                 size="small"
                 danger
                 :disabled="selectedTaskIds.length === 0"
@@ -855,7 +933,22 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto">
+            <Alert
+              v-if="tasksError"
+              type="error"
+              show-icon
+              :message="`导入任务列表加载失败：${tasksError}`"
+              description="请检查后端服务或稍后重试。"
+              class="mb-2"
+            >
+              <template #action>
+                <Button size="small" type="link" @click="loadTasks">
+                  重试
+                </Button>
+              </template>
+            </Alert>
             <Table
+              v-if="!tasksError"
               :columns="taskColumns"
               :data-source="tasks"
               :loading="taskLoading"

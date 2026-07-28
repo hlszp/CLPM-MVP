@@ -60,6 +60,7 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
+import { formatLocalTime, formatTime } from '#/utils/format';
 
 defineOptions({ name: 'LoopDetail' });
 
@@ -455,14 +456,9 @@ function handleTrendWindowChange() {
   loadMonitorDetail();
 }
 
-function formatTime(t: null | string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
+/** 空态引导：跳转数据管理页导入该回路历史数据 */
+function goImportData() {
+  router.push({ path: '/loop/data', query: { loopId } });
 }
 
 function handleTabChange(key: number | string) {
@@ -501,10 +497,9 @@ async function loadSnapshots() {
   }
 }
 
-/** 时间窗：只显示结束时间的「MM-DD HH:00」 */
+/** 时间窗：只显示结束时间的「MM-DD HH:00」（naive 视为 UTC，走统一时间约定） */
 function formatSnapshotTsEnd(ts: null | string | undefined): string {
-  if (!ts) return '—';
-  return dayjs(ts).format('MM-DD HH:00');
+  return formatLocalTime(ts, 'MM-DD HH:00');
 }
 
 function formatSnapshotNumber(
@@ -583,10 +578,13 @@ onMounted(() => {
             <ClpmDataCanvas
               title="性能指标"
               :loading="monitorLoading"
-              :empty="!monitorDetail"
+              :empty="!monitorLoading && !monitorDetail"
               empty-text="暂无 KPI 数据"
+              empty-reason="可能原因：本地 TDengine 暂无该回路历史数据（尚未导入），或该回路未参与本期评估。"
+              empty-action-text="去导入数据"
               :partial="isInconclusive"
               partial-text="该回路本期评估数据不足，结果不确定。有效数据率低于 20%，KPI 仅供参考。"
+              @empty-action="goImportData"
             >
               <template #extra>
                 <span class="text-xs text-gray-400">
@@ -608,8 +606,11 @@ onMounted(() => {
             <ClpmDataCanvas
               title="PV/SP/OP 趋势波形"
               :loading="monitorLoading"
-              :empty="!monitorDetail"
+              :empty="!monitorLoading && !monitorDetail"
               empty-text="暂无趋势数据"
+              empty-reason="可能原因：本地 TDengine 暂无该回路历史趋势数据（尚未导入），或该回路未参与评估。"
+              empty-action-text="去导入数据"
+              @empty-action="goImportData"
             >
               <template #extra>
                 <RadioGroup

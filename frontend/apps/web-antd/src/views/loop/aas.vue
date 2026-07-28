@@ -6,6 +6,10 @@
  * - Tab 1: 数据源（历史 TDengine/API + 实时 SignalR）
  * - Tab 2: DCS 系统（品牌/型号 CRUD）
  * - Tab 3: MODE 矩阵（映射矩阵视图 + MODE 定义编辑）
+ *
+ * 2026-07-28：迁移 CLPM 统一组件体系（ClpmPageToolbar + ClpmDataCanvas +
+ * ClpmDangerConfirmModal），删除/切换/测试等确认流全部由危险确认模态承载；
+ * 写操作按钮补 v-permission="['ADMIN']"（对齐后端 datasource.py/dcs.py 写端点）。
  */
 import type { TableColumnsType, UploadProps } from 'ant-design-vue';
 
@@ -13,6 +17,8 @@ import type { DataSourceApi } from '#/api/datasource';
 import type { DcsApi } from '#/api/dcs';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+
+import { Page } from '@vben/common-ui';
 
 import {
   Alert,
@@ -25,10 +31,8 @@ import {
   InputNumber,
   message,
   Modal,
-  Popconfirm,
   Radio,
   Select,
-  Spin,
   Switch,
   Table,
   TabPane,
@@ -62,6 +66,11 @@ import {
   updateVendorApi,
   upsertModeMappingApi,
 } from '#/api/dcs';
+import {
+  ClpmDangerConfirmModal,
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 
 import PidStructureDrawer from './components/pid-structure-drawer.vue';
 
@@ -73,6 +82,8 @@ const activeTab = ref('datasource');
 // Tab 1: 数据源配置
 // =========================================================================
 const loading = ref(false);
+/** 数据源配置加载失败态（ClpmDataCanvas error + retry） */
+const configError = ref(false);
 const savingHistory = ref(false);
 const savingSignalr = ref(false);
 const testingHistory = ref(false);
@@ -115,39 +126,54 @@ const needRestart = computed(() => {
   return form.signalrEnabled !== config.value.signalrSubscriberRunning;
 });
 
+// ===== 危险确认弹窗状态（ClpmDangerConfirmModal）=====
+// 网络模式切换（瞬断实时链路，属高危操作）
+const networkSwitchOpen = ref(false);
+const networkSwitchTarget = ref<DataSourceApi.NetworkMode | null>(null);
+// 测试连接（先按当前表单隐式保存配置，操作前显式确认）
+const testHistoryOpen = ref(false);
+const testSignalrOpen = ref(false);
+
+const networkSwitchTargetLabel = computed(() =>
+  networkSwitchTarget.value === 'wan'
+    ? '公网（Tailscale 子网路由）'
+    : '局域网（直连）',
+);
+
+/** 打开网络模式切换危险确认弹窗 */
 function switchNetworkMode(mode: DataSourceApi.NetworkMode) {
   if (form.networkMode === mode || switchingNetwork.value) return;
-  const targetLabel =
-    mode === 'wan' ? '公网（Tailscale 子网路由）' : '局域网（直连）';
-  // 二次确认：切换会瞬断实时数据链路（SignalR 自动重连），属高危操作
-  Modal.confirm({
-    title: '确认切换网络模式？',
-    content: `即将切换到「${targetLabel}」。切换瞬间会中断实时数据链路（SignalR 订阅将自动重连并补数），仅切换网络链路、不影响数据源选择。确认继续？`,
-    okText: '确认切换',
-    cancelText: '取消',
-    async onOk() {
-      switchingNetwork.value = true;
-      tailscaleSwitchResult.value = null;
-      try {
-        const data = await updateDatasourceConfigApi({ networkMode: mode });
-        config.value = data;
-        form.networkMode = data.networkMode;
-        tailscaleSwitchResult.value = data.tailscaleSwitch;
-        if (data.tailscaleSwitch) {
-          const { status, message: msg } = data.tailscaleSwitch;
-          if (status === 'success') {
-            message.success(msg);
-          } else if (status === 'skipped') {
-            message.info(msg);
-          } else {
-            message.warning(msg);
-          }
-        }
-      } finally {
-        switchingNetwork.value = false;
+  networkSwitchTarget.value = mode;
+  networkSwitchOpen.value = true;
+}
+
+/** 网络模式切换危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function confirmNetworkSwitch() {
+  const mode = networkSwitchTarget.value;
+  if (!mode) return;
+  switchingNetwork.value = true;
+  tailscaleSwitchResult.value = null;
+  try {
+    const data = await updateDatasourceConfigApi({ networkMode: mode });
+    config.value = data;
+    form.networkMode = data.networkMode;
+    tailscaleSwitchResult.value = data.tailscaleSwitch;
+    if (data.tailscaleSwitch) {
+      const { status, message: msg } = data.tailscaleSwitch;
+      if (status === 'success') {
+        message.success(msg);
+      } else if (status === 'skipped') {
+        message.info(msg);
+      } else {
+        message.warning(msg);
       }
-    },
-  });
+    }
+    networkSwitchOpen.value = false;
+  } catch {
+    // 错误提示由请求拦截器统一处理；Radio 绑定的是 form.networkMode，失败时自动停留在原模式
+  } finally {
+    switchingNetwork.value = false;
+  }
 }
 
 // Radio.Group change 事件适配 — ant-design-vue 的 RadioChangeEvent.target.value 为 optional
@@ -158,6 +184,7 @@ function handleNetworkModeChange(e: { target: { value?: unknown } }) {
 
 async function loadConfig() {
   loading.value = true;
+  configError.value = false;
   try {
     const data = await getDatasourceConfigApi();
     config.value = data;
@@ -174,6 +201,9 @@ async function loadConfig() {
     historyTestResult.value = null;
     signalrTestResult.value = null;
     tailscaleSwitchResult.value = null;
+  } catch {
+    // 错误提示由请求拦截器统一处理，此处仅更新本地错误态供 ClpmDataCanvas 展示
+    configError.value = true;
   } finally {
     loading.value = false;
   }
@@ -211,6 +241,8 @@ async function saveHistoryConfig() {
     config.value = data;
     resetTokenState(data);
     message.success('历史数据源配置已保存');
+  } catch {
+    // 错误提示由请求拦截器统一处理
   } finally {
     savingHistory.value = false;
   }
@@ -226,6 +258,8 @@ async function saveSignalrConfig() {
     });
     config.value = data;
     message.success('实时数据源配置已保存');
+  } catch {
+    // 错误提示由请求拦截器统一处理
   } finally {
     savingSignalr.value = false;
   }
@@ -233,57 +267,61 @@ async function saveSignalrConfig() {
 
 /** 测试连接会先按当前表单隐式保存配置，操作前显式提示确认 */
 function testHistory() {
-  Modal.confirm({
-    title: '测试连接',
-    content: '测试前将先按当前表单内容保存历史数据源配置，是否继续？',
-    okText: '保存并测试',
-    cancelText: '取消',
-    async onOk() {
-      testingHistory.value = true;
-      historyTestResult.value = null;
-      try {
-        const data = await updateDatasourceConfigApi(buildHistoryPayload());
-        config.value = data;
-        resetTokenState(data);
-        historyTestResult.value = await testHistoryApiApi();
-      } finally {
-        testingHistory.value = false;
-      }
-    },
-  });
+  testHistoryOpen.value = true;
+}
+
+/** 历史数据源"保存并测试"确认回调（ClpmDangerConfirmModal @confirm） */
+async function confirmTestHistory() {
+  testingHistory.value = true;
+  historyTestResult.value = null;
+  try {
+    const data = await updateDatasourceConfigApi(buildHistoryPayload());
+    config.value = data;
+    resetTokenState(data);
+    historyTestResult.value = await testHistoryApiApi();
+    testHistoryOpen.value = false;
+  } catch {
+    // 错误提示由请求拦截器统一处理
+  } finally {
+    testingHistory.value = false;
+  }
 }
 
 /** 测试连接会先按当前表单隐式保存配置，操作前显式提示确认 */
 function testSignalr() {
-  Modal.confirm({
-    title: '测试连接',
-    content: '测试前将先按当前表单内容保存实时数据源配置，是否继续？',
-    okText: '保存并测试',
-    cancelText: '取消',
-    async onOk() {
-      testingSignalr.value = true;
-      signalrTestResult.value = null;
-      try {
-        const data = await updateDatasourceConfigApi({
-          signalrHubUrl: form.signalrHubUrl,
-          signalrEnabled: form.signalrEnabled,
-          signalrReconnectInterval: form.signalrReconnectInterval,
-        });
-        config.value = data;
-        signalrTestResult.value = await testSignalrApi();
-      } finally {
-        testingSignalr.value = false;
-      }
-    },
-  });
+  testSignalrOpen.value = true;
+}
+
+/** 实时数据源"保存并测试"确认回调（ClpmDangerConfirmModal @confirm） */
+async function confirmTestSignalr() {
+  testingSignalr.value = true;
+  signalrTestResult.value = null;
+  try {
+    const data = await updateDatasourceConfigApi({
+      signalrHubUrl: form.signalrHubUrl,
+      signalrEnabled: form.signalrEnabled,
+      signalrReconnectInterval: form.signalrReconnectInterval,
+    });
+    config.value = data;
+    signalrTestResult.value = await testSignalrApi();
+    testSignalrOpen.value = false;
+  } catch {
+    // 错误提示由请求拦截器统一处理
+  } finally {
+    testingSignalr.value = false;
+  }
 }
 
 // =========================================================================
 // Tab 2: DCS 系统（品牌/型号管理）
 // =========================================================================
 const vendorsLoading = ref(false);
+/** 品牌列表加载失败态（ClpmDataCanvas error + retry） */
+const vendorsError = ref(false);
 const vendors = ref<DcsApi.Vendor[]>([]);
 const modelsLoading = ref(false);
+/** 型号列表加载失败态（ClpmDataCanvas error + retry） */
+const modelsError = ref(false);
 const models = ref<DcsApi.Model[]>([]);
 
 const vendorModalVisible = ref(false);
@@ -309,6 +347,23 @@ const modelForm = reactive({
   sortOrder: 0,
   isActive: true,
 });
+
+// ===== 删除危险确认弹窗状态（ClpmDangerConfirmModal）=====
+const vendorDeleteOpen = ref(false);
+const vendorDeleteTarget = ref<DcsApi.Vendor | null>(null);
+const vendorDeleteLoading = ref(false);
+
+/** 删除型号目标（Tab 2 表格与 MODE 矩阵共用同一确认弹窗） */
+interface ModelDeleteTarget {
+  id: string;
+  code: string;
+  /** 是否从矩阵视图发起（决定删除后刷新范围） */
+  fromMatrix: boolean;
+}
+
+const modelDeleteOpen = ref(false);
+const modelDeleteTarget = ref<ModelDeleteTarget | null>(null);
+const modelDeleteLoading = ref(false);
 
 const vendorColumns: TableColumnsType = [
   { title: '品牌代码', dataIndex: 'code', key: 'code', width: 140 },
@@ -342,8 +397,12 @@ const modelColumns: TableColumnsType = [
 
 async function loadVendors() {
   vendorsLoading.value = true;
+  vendorsError.value = false;
   try {
     vendors.value = await getVendorsApi();
+  } catch {
+    // 错误提示由请求拦截器统一处理，此处仅更新本地错误态供 ClpmDataCanvas 展示
+    vendorsError.value = true;
   } finally {
     vendorsLoading.value = false;
   }
@@ -351,8 +410,12 @@ async function loadVendors() {
 
 async function loadModels() {
   modelsLoading.value = true;
+  modelsError.value = false;
   try {
     models.value = await getModelsApi();
+  } catch {
+    // 错误提示由请求拦截器统一处理，此处仅更新本地错误态供 ClpmDataCanvas 展示
+    modelsError.value = true;
   } finally {
     modelsLoading.value = false;
   }
@@ -411,18 +474,31 @@ async function saveVendor() {
     // 如果当前在矩阵 Tab，同步刷新矩阵（品牌名可能变化）
     if (matrix.value) await loadMatrixWithPid();
   } catch {
-    // error handled by request interceptor
+    // 错误提示由请求拦截器统一处理
   }
 }
 
-async function removeVendor(record: any) {
+/** 打开删除品牌危险确认弹窗 */
+function openVendorDelete(record: any) {
+  vendorDeleteTarget.value = record;
+  vendorDeleteOpen.value = true;
+}
+
+/** 删除品牌危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function confirmVendorDelete() {
+  const record = vendorDeleteTarget.value;
+  if (!record) return;
+  vendorDeleteLoading.value = true;
   try {
     await deleteVendorApi(record.id);
     message.success('品牌已删除');
+    vendorDeleteOpen.value = false;
     await loadVendors();
     await loadModels();
   } catch {
-    // error handled by request interceptor
+    // 错误提示由请求拦截器统一处理
+  } finally {
+    vendorDeleteLoading.value = false;
   }
 }
 
@@ -478,17 +554,34 @@ async function saveModel() {
     // 如果当前在矩阵 Tab，同步刷新矩阵（新增型号会作为新行出现）
     if (matrix.value) await loadMatrixWithPid();
   } catch {
-    // error handled by request interceptor
+    // 错误提示由请求拦截器统一处理
   }
 }
 
-async function removeModel(record: any) {
+/** 打开删除型号危险确认弹窗（Tab 2 表格与 MODE 矩阵共用） */
+function openModelDelete(target: ModelDeleteTarget) {
+  modelDeleteTarget.value = target;
+  modelDeleteOpen.value = true;
+}
+
+/** 删除型号危险确认回调（ClpmDangerConfirmModal @confirm） */
+async function confirmModelDelete() {
+  const target = modelDeleteTarget.value;
+  if (!target) return;
+  modelDeleteLoading.value = true;
   try {
-    await deleteModelApi(record.id);
+    await deleteModelApi(target.id);
     message.success('型号已删除');
-    await loadModels();
+    modelDeleteOpen.value = false;
+    if (target.fromMatrix) {
+      await Promise.all([loadMatrixWithPid(), loadModels()]);
+    } else {
+      await loadModels();
+    }
   } catch {
-    // error handled by request interceptor
+    // 错误提示由请求拦截器统一处理
+  } finally {
+    modelDeleteLoading.value = false;
   }
 }
 
@@ -606,12 +699,15 @@ const modelUploadProps: UploadProps = {
 // Tab 3: DCS 型号映射（MODE 矩阵 + PID 结构合并）
 // =========================================================================
 const matrixLoading = ref(false);
+/** MODE 矩阵加载失败态（ClpmDataCanvas error + retry） */
+const matrixError = ref(false);
 const matrix = ref<DcsApi.ModeMatrixView | null>(null);
 const modeDefs = ref<DcsApi.ModeDefinition[]>([]);
 const pidStructMap = ref<Map<string, DcsApi.PidStructure>>(new Map());
 
 async function loadMatrixWithPid() {
   matrixLoading.value = true;
+  matrixError.value = false;
   try {
     const [matrixData, defsData, pidData] = await Promise.all([
       getModeMatrixApi(),
@@ -621,6 +717,9 @@ async function loadMatrixWithPid() {
     matrix.value = matrixData;
     modeDefs.value = defsData;
     pidStructMap.value = new Map((pidData ?? []).map((s) => [s.dcsModelId, s]));
+  } catch {
+    // 错误提示由请求拦截器统一处理，此处仅更新本地错误态供 ClpmDataCanvas 展示
+    matrixError.value = true;
   } finally {
     matrixLoading.value = false;
   }
@@ -750,19 +849,7 @@ async function toggleModeAuto(record: any, checked: any) {
     );
     await loadMatrixWithPid();
   } catch {
-    // error handled by request interceptor
-  }
-}
-
-/** 从矩阵页面删除型号 */
-async function removeModelFromMatrix(record: any) {
-  if (!record.modelId) return;
-  try {
-    await deleteModelApi(record.modelId);
-    message.success('型号已删除');
-    await Promise.all([loadMatrixWithPid(), loadModels()]);
-  } catch {
-    // error handled by request interceptor
+    // 错误提示由请求拦截器统一处理
   }
 }
 
@@ -805,7 +892,7 @@ async function saveCellEdit() {
     cellEditVisible.value = false;
     await loadMatrixWithPid();
   } catch {
-    // error handled by request interceptor
+    // 错误提示由请求拦截器统一处理
   }
 }
 
@@ -826,11 +913,23 @@ onMounted(loadConfig);
 </script>
 
 <template>
-  <div class="p-4">
-    <Tabs v-model:active-key="activeTab">
+  <Page>
+    <ClpmPageToolbar
+      title="数据接入"
+      subtitle="数据源 · DCS 系统 · MODE 矩阵"
+      compact
+    />
+
+    <Tabs v-model:active-key="activeTab" class="mt-4">
       <!-- Tab 1: 数据源 -->
       <TabPane key="datasource" tab="数据源">
-        <Spin :spinning="loading">
+        <ClpmDataCanvas
+          :loading="loading"
+          loading-variant="opacity"
+          :error="configError"
+          error-text="数据源配置加载失败，请重试"
+          @retry="loadConfig"
+        >
           <!-- 顶部状态条 -->
           <Card class="mb-4" :body-style="{ padding: '16px' }" size="small">
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -889,6 +988,7 @@ onMounted(loadConfig);
             <Form layout="vertical" :model="form">
               <FormItem label="链路路径">
                 <Radio.Group
+                  v-permission="['ADMIN']"
                   :value="form.networkMode"
                   :disabled="switchingNetwork"
                   @change="handleNetworkModeChange"
@@ -982,13 +1082,18 @@ onMounted(loadConfig);
 
               <div class="flex items-center gap-3">
                 <Button
+                  v-permission="['ADMIN']"
                   type="primary"
                   :loading="savingHistory"
                   @click="saveHistoryConfig"
                 >
                   保存配置
                 </Button>
-                <Button :loading="testingHistory" @click="testHistory">
+                <Button
+                  v-permission="['ADMIN']"
+                  :loading="testingHistory"
+                  @click="testHistory"
+                >
                   测试连接
                 </Button>
                 <Tag
@@ -1035,6 +1140,7 @@ onMounted(loadConfig);
 
               <div class="flex items-center gap-3">
                 <Button
+                  v-permission="['ADMIN']"
                   type="primary"
                   :loading="savingSignalr"
                   @click="saveSignalrConfig"
@@ -1043,6 +1149,7 @@ onMounted(loadConfig);
                 </Button>
                 <Button
                   v-if="form.signalrEnabled"
+                  v-permission="['ADMIN']"
                   :loading="testingSignalr"
                   @click="testSignalr"
                 >
@@ -1060,29 +1167,44 @@ onMounted(loadConfig);
               </div>
             </Form>
           </Card>
-        </Spin>
+        </ClpmDataCanvas>
       </TabPane>
 
       <!-- Tab 2: DCS 系统 -->
       <TabPane key="dcs" tab="DCS 系统">
         <!-- 品牌管理 -->
-        <Card class="mb-4" size="small" title="DCS 品牌">
+        <ClpmDataCanvas
+          class="mb-4"
+          title="DCS 品牌"
+          :error="vendorsError"
+          error-text="品牌列表加载失败，请重试"
+          @retry="loadVendors"
+        >
           <template #extra>
-            <div class="flex items-center gap-2">
-              <Button type="primary" size="small" @click="openVendorModal()">
-                新增品牌
-              </Button>
-              <Upload v-bind="vendorUploadProps">
-                <Button size="small" :loading="vendorImporting">导入</Button>
-              </Upload>
+            <Button
+              v-permission="['ADMIN']"
+              type="primary"
+              size="small"
+              @click="openVendorModal()"
+            >
+              新增品牌
+            </Button>
+            <Upload v-bind="vendorUploadProps">
               <Button
+                v-permission="['ADMIN']"
                 size="small"
-                :loading="vendorExporting"
-                @click="handleExportVendors"
+                :loading="vendorImporting"
               >
-                导出
+                导入
               </Button>
-            </div>
+            </Upload>
+            <Button
+              size="small"
+              :loading="vendorExporting"
+              @click="handleExportVendors"
+            >
+              导出
+            </Button>
           </template>
           <Table
             :columns="vendorColumns"
@@ -1095,40 +1217,55 @@ onMounted(loadConfig);
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">
                 <Button
+                  v-permission="['ADMIN']"
                   type="link"
                   size="small"
                   @click="openVendorModal(record)"
                   >编辑</Button
                 >
-                <Popconfirm
-                  title="删除品牌？有关联型号时禁止删除"
-                  @confirm="removeVendor(record)"
+                <Button
+                  v-permission="['ADMIN']"
+                  type="link"
+                  size="small"
+                  danger
+                  @click="openVendorDelete(record)"
+                  >删除</Button
                 >
-                  <Button type="link" size="small" danger>删除</Button>
-                </Popconfirm>
               </template>
             </template>
           </Table>
-        </Card>
+        </ClpmDataCanvas>
 
         <!-- 型号管理 -->
-        <Card size="small" title="DCS 型号">
+        <ClpmDataCanvas
+          title="DCS 型号"
+          :error="modelsError"
+          error-text="型号列表加载失败，请重试"
+          @retry="loadModels"
+        >
           <template #extra>
-            <div class="flex items-center gap-2">
-              <Button type="primary" size="small" @click="openModelModal()"
-                >新增型号</Button
-              >
-              <Upload v-bind="modelUploadProps">
-                <Button size="small" :loading="modelImporting">导入</Button>
-              </Upload>
+            <Button
+              v-permission="['ADMIN']"
+              type="primary"
+              size="small"
+              @click="openModelModal()"
+              >新增型号</Button
+            >
+            <Upload v-bind="modelUploadProps">
               <Button
+                v-permission="['ADMIN']"
                 size="small"
-                :loading="modelExporting"
-                @click="handleExportModels"
+                :loading="modelImporting"
+                >导入</Button
               >
-                导出
-              </Button>
-            </div>
+            </Upload>
+            <Button
+              size="small"
+              :loading="modelExporting"
+              @click="handleExportModels"
+            >
+              导出
+            </Button>
           </template>
           <Table
             :columns="modelColumns"
@@ -1140,24 +1277,42 @@ onMounted(loadConfig);
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">
-                <Button type="link" size="small" @click="openModelModal(record)"
+                <Button
+                  v-permission="['ADMIN']"
+                  type="link"
+                  size="small"
+                  @click="openModelModal(record)"
                   >编辑</Button
                 >
-                <Popconfirm
-                  title="删除型号？关联回路的 dcs_model_id 将置空"
-                  @confirm="removeModel(record)"
+                <Button
+                  v-permission="['ADMIN']"
+                  type="link"
+                  size="small"
+                  danger
+                  @click="
+                    openModelDelete({
+                      id: record.id,
+                      code: record.code,
+                      fromMatrix: false,
+                    })
+                  "
+                  >删除</Button
                 >
-                  <Button type="link" size="small" danger>删除</Button>
-                </Popconfirm>
               </template>
             </template>
           </Table>
-        </Card>
+        </ClpmDataCanvas>
       </TabPane>
 
       <!-- Tab 3: DCS 型号映射（MODE 矩阵 + PID 结构合并） -->
       <TabPane key="matrix" tab="DCS 型号映射">
-        <Spin :spinning="matrixLoading">
+        <ClpmDataCanvas
+          :loading="matrixLoading"
+          loading-variant="opacity"
+          :error="matrixError"
+          error-text="MODE 矩阵加载失败，请重试"
+          @retry="loadMatrixWithPid"
+        >
           <!-- 标准 MODE 定义（精简表，可折叠 isAuto 开关） -->
           <Card class="mb-4" size="small" title="标准 MODE 定义">
             <Table
@@ -1213,6 +1368,7 @@ onMounted(loadConfig);
                 </template>
                 <template v-if="column.key === 'isAuto'">
                   <Switch
+                    v-permission="['ADMIN']"
                     :checked="record.isAuto"
                     checked-children="是"
                     un-checked-children="否"
@@ -1230,10 +1386,15 @@ onMounted(loadConfig);
             </template>
             <template #extra>
               <div class="flex items-center gap-2">
-                <Button size="small" @click="openVendorModal()">
+                <Button
+                  v-permission="['ADMIN']"
+                  size="small"
+                  @click="openVendorModal()"
+                >
                   + 新增品牌
                 </Button>
                 <Button
+                  v-permission="['ADMIN']"
                   size="small"
                   type="primary"
                   :disabled="vendors.length === 0"
@@ -1307,21 +1468,27 @@ onMounted(loadConfig);
                 </template>
                 <!-- 操作列：删除型号（本系统默认行不显示） -->
                 <template v-else-if="column.key === 'action'">
-                  <Popconfirm
+                  <Button
                     v-if="record.modelId"
-                    title="确认删除该型号？"
-                    ok-text="删除"
-                    cancel-text="取消"
-                    @confirm="removeModelFromMatrix(record)"
+                    v-permission="['ADMIN']"
+                    type="link"
+                    size="small"
+                    danger
+                    @click="
+                      openModelDelete({
+                        id: record.modelId,
+                        code: record.modelCode,
+                        fromMatrix: true,
+                      })
+                    "
+                    >删除</Button
                   >
-                    <a class="text-sm text-red-500">删除</a>
-                  </Popconfirm>
                   <span v-else class="text-xs text-gray-300">默认</span>
                 </template>
               </template>
             </Table>
           </Card>
-        </Spin>
+        </ClpmDataCanvas>
       </TabPane>
     </Tabs>
 
@@ -1421,6 +1588,78 @@ onMounted(loadConfig);
       </Form>
     </Modal>
 
+    <!-- 网络模式切换：危险确认弹窗（瞬断实时链路，轻量确认） -->
+    <ClpmDangerConfirmModal
+      v-model:open="networkSwitchOpen"
+      title="切换网络模式"
+      action="切换"
+      :target="networkSwitchTargetLabel"
+      impact-scope="切换瞬间会中断实时数据链路（SignalR 订阅将自动重连并补数）；仅切换网络链路、不影响数据源选择"
+      rollback-tip="可随时切换回原模式"
+      confirm-text="确认切换"
+      :require-confirm-code="false"
+      :require-reason="false"
+      :show-audit-note="false"
+      :loading="switchingNetwork"
+      @confirm="confirmNetworkSwitch"
+    />
+
+    <!-- 测试历史数据源连接：先隐式保存配置，操作前显式确认 -->
+    <ClpmDangerConfirmModal
+      v-model:open="testHistoryOpen"
+      title="测试历史数据源连接"
+      action="保存并测试"
+      impact-scope="将先按当前表单内容保存历史数据源配置，再发起连接测试"
+      confirm-text="保存并测试"
+      :require-confirm-code="false"
+      :require-reason="false"
+      :show-audit-note="false"
+      :loading="testingHistory"
+      @confirm="confirmTestHistory"
+    />
+
+    <!-- 测试实时数据源连接：先隐式保存配置，操作前显式确认 -->
+    <ClpmDangerConfirmModal
+      v-model:open="testSignalrOpen"
+      title="测试实时数据源连接"
+      action="保存并测试"
+      impact-scope="将先按当前表单内容保存实时数据源配置，再发起连接测试"
+      confirm-text="保存并测试"
+      :require-confirm-code="false"
+      :require-reason="false"
+      :show-audit-note="false"
+      :loading="testingSignalr"
+      @confirm="confirmTestSignalr"
+    />
+
+    <!-- 删除 DCS 品牌：危险确认弹窗 -->
+    <ClpmDangerConfirmModal
+      v-model:open="vendorDeleteOpen"
+      title="删除 DCS 品牌"
+      action="删除"
+      :target="vendorDeleteTarget?.code ?? ''"
+      impact-scope="将删除该品牌；存在关联型号时后端将拒绝删除"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入品牌代码以确认"
+      :loading="vendorDeleteLoading"
+      @confirm="confirmVendorDelete"
+    />
+
+    <!-- 删除 DCS 型号：危险确认弹窗（Tab 2 表格与 MODE 矩阵共用） -->
+    <ClpmDangerConfirmModal
+      v-model:open="modelDeleteOpen"
+      title="删除 DCS 型号"
+      action="删除"
+      :target="modelDeleteTarget?.code ?? ''"
+      impact-scope="将删除该型号，关联回路的 dcs_model_id 将置空"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入型号代码以确认"
+      :loading="modelDeleteLoading"
+      @confirm="confirmModelDelete"
+    />
+
     <!-- PID 结构编辑抽屉 -->
     <PidStructureDrawer
       v-model:open="pidDrawerOpen"
@@ -1428,5 +1667,5 @@ onMounted(loadConfig);
       @success="onPidSaved"
       @deleted="onPidDeleted"
     />
-  </div>
+  </Page>
 </template>

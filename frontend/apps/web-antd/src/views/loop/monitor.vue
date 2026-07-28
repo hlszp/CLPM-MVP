@@ -13,7 +13,7 @@ import type { DiagnosisLabel } from '#/api/diagnosis';
  * - 详情展示交由详情页：避免与 /loop/detail/:id 内容重合
  * - 趋势 Modal：复用 WaveformChart 组件（与回路详情页风格统一）
  * - 性能 Modal：ECharts 仪表盘 + 6 大 KPI 卡片（含权重）
- * - 30 秒自动刷新（Switch 开关 + 倒计时）
+ * - 30 秒自动刷新（Switch 开关；WS 在线走实时推送，断连走 usePolling 轮询 fallback）
  * - StatusFooter：最近刷新/数据延迟/自动刷新状态/选中回路
  */
 import type { LoopApi } from '#/api/loop';
@@ -74,9 +74,19 @@ import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
+  LOOP_TYPE_COLOR_MAP,
+  LOOP_TYPE_LABEL_MAP,
+  LOOP_TYPE_TAG_COLOR_MAP,
+  MODE_COLOR_MAP,
+  MODE_LABEL_MAP,
+  useLoopPalettes,
+} from '#/composables/use-loop-palettes';
+import { usePolling } from '#/composables/use-polling';
+import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 import { mapQualityToLabel } from '#/utils/quality-code';
 import { realtimeWs } from '#/utils/realtime-ws';
@@ -84,6 +94,7 @@ import { realtimeWs } from '#/utils/realtime-ws';
 defineOptions({ name: 'LoopMonitor' });
 
 const { isDark, themeColors } = useClpmTheme();
+const { modeLabelColor } = useLoopPalettes();
 
 const router = useRouter();
 
@@ -99,20 +110,10 @@ const {
 
 // ===== 常量 =====
 
-/** 回路类型映射（label + color）- 使用中性色调，避免混淆状态语义色 */
-const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  TEMPERATURE: { label: '温度', color: '#FCA5A5' },
-  PRESSURE: { label: '压力', color: '#93C5FD' },
-  LEVEL: { label: '液位', color: '#86EFAC' },
-  FLOW: { label: '流量', color: '#67E8F9' },
-  ANALYSIS: { label: '分析', color: '#D8B4FE' },
-  SPEED: { label: '速度', color: '#FDBA74' },
-  OTHER: { label: '其他', color: '#CBD5E1' },
-};
-
+/** 回路类型筛选选项（label 取自共享色板常量 LOOP_TYPE_LABEL_MAP） */
 const loopTypeOptions = [
   { label: '全部', value: '' },
-  ...Object.entries(LOOP_TYPE_MAP).map(([value, { label }]) => ({
+  ...Object.entries(LOOP_TYPE_LABEL_MAP).map(([value, label]) => ({
     label,
     value,
   })),
@@ -128,12 +129,17 @@ const trendWindowOptions: { label: string; value: LoopApi.TrendWindow }[] = [
   { label: '72h', value: 'last_72_hours' },
 ];
 
-/** KPI 状态映射 - 使用 ZL 语义色 */
-const kpiStatusMap: Record<string, { color: string; label: string }> = {
-  SUCCESS: { color: '#10B981', label: '良好' },
-  INCONCLUSIVE: { color: '#CBD5E1', label: '未确定' },
-  PARTIAL: { color: '#F59E0B', label: '部分' },
-};
+/**
+ * KPI 状态映射 - ZL 语义色（响应式 themeColors）
+ * INCONCLUSIVE 文案统一为「数据不足」（对齐 confidence-badge、规范 §7.9）
+ */
+const kpiStatusMap = computed<Record<string, { color: string; label: string }>>(
+  () => ({
+    SUCCESS: { color: themeColors.value.SUCCESS, label: '良好' },
+    INCONCLUSIVE: { color: themeColors.value.NEUTRAL, label: '数据不足' },
+    PARTIAL: { color: themeColors.value.WARNING, label: '部分' },
+  }),
+);
 
 /** 性能 Modal 中 KPI 结果是否为 INCONCLUSIVE */
 const isPerfInconclusive = computed(
@@ -251,35 +257,6 @@ const loopTypeStats = ref<Record<string, number>>({
 
 /** 按控制方式统计数量（MODE 数值: 0=手动,1=自动,2=串级,3=远程,4=先控） */
 const controlModeStats = ref<Record<string, number>>({});
-
-/** 控制方式颜色映射（按 MODE 数值） */
-const MODE_COLOR_MAP: Record<string, string> = {
-  '0': '#ef4444', // 手动-红
-  '1': '#10b981', // 自动-绿
-  '2': '#3b82f6', // 串级-蓝
-  '3': '#f59e0b', // 远程-橙
-  '4': '#8b5cf6', // 先控-紫
-};
-
-/** MODE 标签映射（柱状图英文标签） */
-const MODE_LABEL_MAP: Record<string, string> = {
-  '0': 'MAN',
-  '1': 'AUTO',
-  '2': 'CAS',
-  '3': 'RAC',
-  '4': 'APC',
-};
-
-/** 回路类型颜色映射 */
-const LOOP_TYPE_COLOR_MAP: Record<string, string> = {
-  TEMPERATURE: '#ef4444',
-  PRESSURE: '#3b82f6',
-  LEVEL: '#10b981',
-  FLOW: '#06b6d4',
-  ANALYSIS: '#8b5cf6',
-  SPEED: '#f59e0b',
-  OTHER: '#6b7280',
-};
 
 /** 控制方式柱状图 */
 const modeChartRef = ref<EchartsUIType>();
@@ -563,11 +540,23 @@ function handleResetColumns() {
 
 const autoRefresh = ref(true);
 const refreshInterval = 30; // fallback 轮询间隔（秒），仅在 WS 断连时生效
-const countdown = ref(refreshInterval);
-let refreshTimer: null | ReturnType<typeof setInterval> = null;
-let countdownTimer: null | ReturnType<typeof setInterval> = null;
 let wsUnsubscribe: (() => void) | null = null;
 let wsConnectionUnsubscribe: (() => void) | null = null;
+
+/**
+ * WS 断连 fallback 轮询：统一走 usePolling
+ * （递归 setTimeout 防堆积、页面隐藏自动暂停、可见恢复立即补跑、卸载自动清理）
+ */
+const {
+  isPolling: isFallbackPolling,
+  start: startPolling,
+  stop: stopPolling,
+} = usePolling(
+  async () => {
+    await Promise.all([loadList(), loadLoopTypeStats()]);
+  },
+  { interval: refreshInterval * 1000 },
+);
 
 /** Phase 10 UX 包：WS 连接状态响应式镜像（实时驱动状态栏在线/离线/重连中徽标）
  * 通过 onConnectionChange 回调同步 realtimeWs.status 三态。 */
@@ -708,28 +697,15 @@ function handleSelectLoop(record: LoopApi.MonitorListItem) {
 
 // ===== 工具函数 =====
 
-/** MODE 颜色映射：Auto=绿 / Manual=橙 / Cascade=蓝 - 使用 ZL 语义色 */
-function modeColor(modeLabel: string): string {
-  if (modeLabel === 'Auto') return '#10B981';
-  if (modeLabel === 'Manual') return '#F59E0B';
-  if (modeLabel === 'Cascade') return '#3B82F6';
-  return '#CBD5E1';
+/** MODE 徽标颜色：委托共享色板 useLoopPalettes（ZL 语义色，随主题切换） */
+function modeColor(modeLabel: null | string | undefined): string {
+  return modeLabelColor(modeLabel);
 }
 
 /** MODE 中文标签映射：优先使用后端 loop_mode_mapping 配置生成的 modeLabel
  * WS-D 阶段5：不再前端硬编码 0/1/2 → Manual/Auto/Cascade，统一由后端权威输出。 */
 function modeText(record: LoopApi.MonitorListItem): string {
   return record.currentValues?.modeLabel || '—';
-}
-
-function formatTime(t: null | string | undefined): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
 }
 
 // ===== 数据加载 =====
@@ -954,38 +930,6 @@ function goToTagMapping() {
 
 // ===== 自动刷新 =====
 
-/**
- * 启动低频轮询 fallback
- *
- * 仅在 WS 断连时使用，避免与 WS 实时推送重复请求。
- */
-function startPolling() {
-  if (refreshTimer) return;
-  countdown.value = refreshInterval;
-  refreshTimer = setInterval(() => {
-    loadList();
-    loadLoopTypeStats();
-    countdown.value = refreshInterval;
-  }, refreshInterval * 1000);
-  countdownTimer = setInterval(() => {
-    if (countdown.value > 0) countdown.value -= 1;
-  }, 1000);
-}
-
-/**
- * 停止低频轮询
- */
-function stopPolling() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
-}
-
 function startAutoRefresh() {
   stopAutoRefresh();
   if (!autoRefresh.value) return;
@@ -1153,9 +1097,9 @@ onUnmounted(() => {
       <div class="flex items-center gap-2 text-sm text-gray-500">
         <span>自动刷新（{{ refreshInterval }}s）</span>
         <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
-        <span v-if="autoRefresh" class="text-xs text-gray-400"
-          >{{ countdown }}s 后刷新</span
-        >
+        <span v-if="autoRefresh" class="text-xs text-gray-400">
+          {{ isFallbackPolling ? 'WS 断连，轮询刷新中' : 'WS 实时推送' }}
+        </span>
       </div>
       <template #actions>
         <ClpmToolbarButton icon="search" label="查询" @click="handleSearch" />
@@ -1183,19 +1127,26 @@ onUnmounted(() => {
               class="flex items-center gap-2 px-4 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
               :style="{
                 backgroundColor:
-                  query.loopType === '' ? '#4B556315' : '#4B556308',
-                borderLeft: `3px solid #4B5563`,
+                  query.loopType === ''
+                    ? `${themeColors.NEUTRAL}15`
+                    : `${themeColors.NEUTRAL}08`,
+                borderLeft: `3px solid ${themeColors.NEUTRAL}`,
                 borderBottom:
-                  query.loopType === '' ? `2px solid #4B5563` : 'none',
+                  query.loopType === ''
+                    ? `2px solid ${themeColors.NEUTRAL}`
+                    : 'none',
               }"
               @click="handleTypeCardClick('ALL')"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                style="background-color: #4b5563"
+                :style="{ backgroundColor: themeColors.NEUTRAL }"
               ></span>
               <span class="text-sm text-gray-600 font-medium">全部</span>
-              <span class="text-sm font-bold" style="color: #4b5563">
+              <span
+                class="text-sm font-bold"
+                :style="{ color: themeColors.NEUTRAL }"
+              >
                 {{
                   Object.values(loopTypeStats).reduce(
                     (sum, count) => sum + count,
@@ -1226,17 +1177,7 @@ onUnmounted(() => {
                 :style="{ backgroundColor: LOOP_TYPE_COLOR_MAP[key] }"
               ></span>
               <span class="text-sm text-gray-600">
-                {{
-                  {
-                    TEMPERATURE: '温度',
-                    PRESSURE: '压力',
-                    LEVEL: '液位',
-                    FLOW: '流量',
-                    ANALYSIS: '分析',
-                    SPEED: '速度',
-                    OTHER: '其他',
-                  }[key]
-                }}
+                {{ LOOP_TYPE_LABEL_MAP[key] }}
               </span>
               <span
                 class="text-sm font-semibold"
@@ -1251,50 +1192,56 @@ onUnmounted(() => {
             <div
               class="flex items-center gap-2 px-3 py-1 rounded"
               :style="{
-                backgroundColor: '#10b98115',
-                borderLeft: '3px solid #10b981',
+                backgroundColor: `${themeColors.SUCCESS}15`,
+                borderLeft: `3px solid ${themeColors.SUCCESS}`,
               }"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                style="background-color: #10b981"
+                :style="{ backgroundColor: themeColors.SUCCESS }"
               ></span>
               <span class="text-sm text-gray-600">自动</span>
-              <span class="text-sm font-semibold" style="color: #10b981">{{
-                autoModeCount
-              }}</span>
+              <span
+                class="text-sm font-semibold"
+                :style="{ color: themeColors.SUCCESS }"
+                >{{ autoModeCount }}</span
+              >
             </div>
             <!-- 手动卡片（MODE = 0） -->
             <div
               class="flex items-center gap-2 px-3 py-1 rounded"
               :style="{
-                backgroundColor: '#ef444415',
-                borderLeft: '3px solid #ef4444',
+                backgroundColor: `${MODE_COLOR_MAP['0']}15`,
+                borderLeft: `3px solid ${MODE_COLOR_MAP['0']}`,
               }"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                style="background-color: #ef4444"
+                :style="{ backgroundColor: MODE_COLOR_MAP['0'] }"
               ></span>
               <span class="text-sm text-gray-600">手动</span>
-              <span class="text-sm font-semibold" style="color: #ef4444">{{
-                manualModeCount
-              }}</span>
+              <span
+                class="text-sm font-semibold"
+                :style="{ color: MODE_COLOR_MAP['0'] }"
+                >{{ manualModeCount }}</span
+              >
             </div>
             <!-- 自控率卡片 -->
             <div
               class="flex items-center gap-2 px-4 py-1.5 rounded-lg"
               :style="{
-                backgroundColor: '#8b5cf615',
-                borderLeft: '3px solid #8b5cf6',
+                backgroundColor: `${themeColors.ACCENT}15`,
+                borderLeft: `3px solid ${themeColors.ACCENT}`,
               }"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                style="background-color: #8b5cf6"
+                :style="{ backgroundColor: themeColors.ACCENT }"
               ></span>
               <span class="text-sm text-gray-600 font-medium">自控率</span>
-              <span class="text-sm font-bold" style="color: #8b5cf6"
+              <span
+                class="text-sm font-bold"
+                :style="{ color: themeColors.ACCENT }"
                 >{{ realtimeControlRate }}%</span
               >
             </div>
@@ -1306,7 +1253,15 @@ onUnmounted(() => {
 
     <!-- 主区：回路列表（全宽，详情/趋势/性能通过 Modal 与跳转访问） -->
     <div class="mt-3 min-h-[calc(100vh-220px)]">
-      <ClpmDataCanvas title="回路列表" :loading="loading">
+      <ClpmDataCanvas
+        title="回路列表"
+        :loading="loading"
+        :empty="!loading && !errorMessage && monitorList.length === 0"
+        empty-text="暂无监控数据"
+        empty-reason="可能原因：当前筛选无匹配回路；或回路已创建但本地 TDengine 暂无历史数据、尚未参与评估，可先到数据管理导入历史数据。"
+        empty-action-text="去导入数据"
+        @empty-action="router.push('/loop/data')"
+      >
         <template #extra>
           <ClpmColumnSettings
             :columns="columnConfigs"
@@ -1408,9 +1363,6 @@ onUnmounted(() => {
                 handleSelectLoop(record as LoopApi.MonitorListItem),
             })
           "
-          :locale="{
-            emptyText: '暂无监控数据',
-          }"
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
@@ -1442,16 +1394,16 @@ onUnmounted(() => {
             <template v-else-if="column.key === 'loopType'">
               <Tag
                 :color="
-                  LOOP_TYPE_MAP[
+                  LOOP_TYPE_TAG_COLOR_MAP[
                     (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
-                  ]?.color ?? 'default'
+                  ] ?? 'default'
                 "
                 class="m-0"
               >
                 {{
-                  LOOP_TYPE_MAP[
+                  LOOP_TYPE_LABEL_MAP[
                     (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
-                  ]?.label ?? '其他'
+                  ] ?? '其他'
                 }}
               </Tag>
             </template>
@@ -1618,7 +1570,13 @@ onUnmounted(() => {
       <span>
         自动刷新：
         <strong :class="autoRefresh ? 'is-active' : 'is-muted'">
-          {{ autoRefresh ? `开启（${countdown}s）` : '关闭' }}
+          {{
+            autoRefresh
+              ? isFallbackPolling
+                ? `开启（轮询 ${refreshInterval}s）`
+                : '开启（WS 实时）'
+              : '关闭'
+          }}
         </strong>
       </span>
       <span class="clpm-status-footer__divider">·</span>
@@ -1629,10 +1587,10 @@ onUnmounted(() => {
           :style="{
             backgroundColor:
               wsConnectionStatus === 'online'
-                ? '#10B981'
+                ? themeColors.SUCCESS
                 : wsConnectionStatus === 'reconnecting'
-                  ? '#F59E0B'
-                  : '#9CA3AF',
+                  ? themeColors.WARNING
+                  : themeColors.NEUTRAL,
           }"
         ></span>
         <span class="text-xs">
@@ -1860,12 +1818,12 @@ onUnmounted(() => {
                 class="mt-1 text-3xl font-bold"
                 :style="{
                   color: isPerfInconclusive
-                    ? '#9CA3AF'
+                    ? themeColors.NEUTRAL
                     : (perfDetail.kpiSummary.composite_score ?? 0) >= 80
-                      ? '#10B981'
+                      ? themeColors.SUCCESS
                       : (perfDetail.kpiSummary.composite_score ?? 0) >= 60
-                        ? '#F59E0B'
-                        : '#F43F5E',
+                        ? themeColors.WARNING
+                        : themeColors.DANGER,
                 }"
               >
                 {{ perfDetail.kpiSummary.composite_score?.toFixed(1) ?? '—' }}
@@ -1902,10 +1860,10 @@ onUnmounted(() => {
                   (perfDetail.kpiSummary[item.key] as null | number) == null
                     ? 'transparent'
                     : (perfDetail.kpiSummary[item.key] as number) >= 80
-                      ? 'rgba(16, 185, 129, 0.06)'
+                      ? `${themeColors.SUCCESS}0F`
                       : (perfDetail.kpiSummary[item.key] as number) >= 60
-                        ? 'rgba(245, 158, 11, 0.06)'
-                        : 'rgba(244, 63, 94, 0.06)',
+                        ? `${themeColors.WARNING}0F`
+                        : `${themeColors.DANGER}0F`,
               }"
             >
               <div class="flex items-center justify-between">
@@ -1926,12 +1884,12 @@ onUnmounted(() => {
                   :style="{
                     color:
                       (perfDetail.kpiSummary[item.key] as null | number) == null
-                        ? '#9CA3AF'
+                        ? themeColors.NEUTRAL
                         : (perfDetail.kpiSummary[item.key] as number) >= 80
-                          ? '#10B981'
+                          ? themeColors.SUCCESS
                           : (perfDetail.kpiSummary[item.key] as number) >= 60
-                            ? '#F59E0B'
-                            : '#F43F5E',
+                            ? themeColors.WARNING
+                            : themeColors.DANGER,
                   }"
                 >
                   {{
@@ -1952,10 +1910,10 @@ onUnmounted(() => {
                     width: `${perfDetail.kpiSummary[item.key]}%`,
                     backgroundColor:
                       (perfDetail.kpiSummary[item.key] as number) >= 80
-                        ? '#10B981'
+                        ? themeColors.SUCCESS
                         : (perfDetail.kpiSummary[item.key] as number) >= 60
-                          ? '#F59E0B'
-                          : '#F43F5E',
+                          ? themeColors.WARNING
+                          : themeColors.DANGER,
                   }"
                 ></div>
               </div>
