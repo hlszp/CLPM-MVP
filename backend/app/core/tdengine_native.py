@@ -26,6 +26,7 @@ import asyncio
 import logging
 import threading
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from app.core.config import settings
@@ -305,6 +306,10 @@ async def query_wide_table_native(
 
     替代原 make_dataplanner_query_fn 中的 7 次窄表查询。
 
+    大窗口内存控制（P2 修复）：窗口超过 ``_CHUNK_THRESHOLD_DAYS`` 天时
+    按自然日分片顺序查询并流式拼接，避免 30 天 × 1s ≈ 2.6M 行全量物化；
+    返回结构与单片查询完全一致（ts 升序行列表）。
+
     Args:
         subtable: 子表名（如 d_loop_lic_101）
         start_time: 开始时间（ISO 格式）
@@ -316,13 +321,96 @@ async def query_wide_table_native(
     Raises:
         Exception: 查询失败
     """
-    sql = (
+    start_dt = _try_parse_iso(start_time)
+    end_dt = _try_parse_iso(end_time)
+    if (
+        start_dt is None
+        or end_dt is None
+        or end_dt <= start_dt
+        or (end_dt - start_dt) <= timedelta(days=_CHUNK_THRESHOLD_DAYS)
+    ):
+        # 小窗口或无法解析的时间串：保持原有单条查询行为
+        return await execute_native(_build_wide_sql(subtable, start_time, end_time))
+
+    chunks = _daily_chunks(start_dt, end_dt)
+    aware = start_dt.tzinfo is not None or end_dt.tzinfo is not None
+    logger.debug(
+        "宽表大窗口分片查询: subtable=%s, 窗口 %.1f 天 → %d 片",
+        subtable,
+        (end_dt - start_dt).total_seconds() / 86400,
+        len(chunks),
+    )
+    rows: list[dict[str, Any]] = []
+    last = len(chunks) - 1
+    for i, (c_start, c_end, inclusive_end) in enumerate(chunks):
+        # 首尾片边界使用原始时间串，避免重格式化的精度漂移
+        c_start_str = start_time if i == 0 else _format_chunk_ts(c_start, aware)
+        c_end_str = end_time if i == last else _format_chunk_ts(c_end, aware)
+        sql = _build_wide_sql(subtable, c_start_str, c_end_str, inclusive_end=inclusive_end)
+        rows.extend(await execute_native(sql))
+    return rows
+
+
+# 大窗口分片阈值：超过 7 天的窗口按自然日分片查询，控制单次结果集内存
+_CHUNK_THRESHOLD_DAYS = 7
+
+
+def _build_wide_sql(
+    subtable: str,
+    start_time: str,
+    end_time: str,
+    *,
+    inclusive_end: bool = True,
+) -> str:
+    """构造宽表查询 SQL（inclusive_end=False 用于中间分片的半开区间）。"""
+    end_op = "<=" if inclusive_end else "<"
+    return (
         f"SELECT ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality "
         f"FROM {settings.TDENGINE_DB}.{subtable} "
-        f"WHERE ts >= '{start_time}' AND ts <= '{end_time}' "
+        f"WHERE ts >= '{start_time}' AND ts {end_op} '{end_time}' "
         f"ORDER BY ts ASC"
     )
-    return await execute_native(sql)
+
+
+def _try_parse_iso(ts_str: str) -> datetime | None:
+    """尝试解析 ISO 8601 时间串，失败返回 None（回退单条查询）。"""
+    try:
+        return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _daily_chunks(start_dt: datetime, end_dt: datetime) -> list[tuple[datetime, datetime, bool]]:
+    """将 [start_dt, end_dt] 按自然日切分为分片区间.
+
+    返回 [(chunk_start, chunk_end, inclusive_end), ...]：中间分片为
+    半开区间 [start, next_midnight)，末片闭区间 [..., end_dt]，
+    拼接后与单片 `ts >= start AND ts <= end` 语义等价（无重复无遗漏）。
+    """
+    chunks: list[tuple[datetime, datetime, bool]] = []
+    cursor = start_dt
+    while True:
+        day_after = cursor + timedelta(days=1)
+        next_midnight = day_after.replace(hour=0, minute=0, second=0, microsecond=0)
+        if next_midnight >= end_dt:
+            chunks.append((cursor, end_dt, True))
+            break
+        chunks.append((cursor, next_midnight, False))
+        cursor = next_midnight
+    return chunks
+
+
+def _format_chunk_ts(dt: datetime, aware: bool) -> str:
+    """格式化分片边界时间串，与调用方输入口径保持一致.
+
+    aware 输入（如带 Z 的 UTC 串）输出带 Z 的 UTC 串；naive 输入输出
+    naive 串（保持原样透传语义，服务器按 +8 解释）。
+    """
+    if aware:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
 
 
 # COV（变化时推送）列：这些角色稳定不变时不推送，在宽表中稀疏存储，

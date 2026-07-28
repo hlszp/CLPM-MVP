@@ -2,8 +2,11 @@
 
 使用 TDengine REST API（httpx）查询波形数据。
 开发环境 TDengine 可能无数据，返回空数组 + 明确状态标识，不报错。
+调用方传 ``raise_on_error=True`` 时，连接/查询失败抛 ``TDengineError``，
+用于区分"数据源不可用"与"该时段真无数据"（如数据完整性检查）。
 
-安全：tag_name 白名单校验 + start_time/end_time ISO 格式校验，防止 SQL 注入。
+安全：tag_name 白名单校验 + start_time/end_time ISO 格式校验，防止 SQL 注入；
+make_subtable_name() 白名单归一化非法字符，防宽表 SQL 拼接注入。
 
 实际 TDengine schema（signal_sim 库，由外部 SignalR 写入服务创建）：
 - 子表名: t_<tag_name_lower>（保留完整 tag 名含角色后缀，如 t_41fic20021_pida_pv）
@@ -32,6 +35,20 @@ logger = logging.getLogger(__name__)
 
 # tag_name 白名单：仅允许字母、数字、下划线、连字符、点号（如 HDS-RX-TIC-101.PV）
 _TAG_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-\s]{1,128}$")
+
+# 子表名合法字符（小写后）：字母、数字、下划线、连字符、点号；
+# 其余字符（引号、空格、分号、中文等）一律归一化为下划线，防宽表 SQL 拼接注入
+_ILLEGAL_SUBTABLE_CHAR = re.compile(r"[^a-z0-9_\-.]+")
+
+
+class TDengineError(Exception):
+    """TDengine 数据源不可用或查询失败.
+
+    用于区分"查询失败"与"该时段真无数据"：连接失败 / HTTP 非 200 /
+    TDengine 返回非零 code / SQL 错误均抛此异常（调用方传
+    ``raise_on_error=True`` 时），不再静默降级为空列表。
+    """
+
 
 # tag_name 后缀 → DDL 列名映射
 _ROLE_COLUMN_MAP: dict[str, str] = {
@@ -80,6 +97,8 @@ def make_subtable_name(loop_part: str) -> str:
 
     规则：
         - 全部转小写
+        - 白名单归一化：非字母/数字/下划线/连字符/点号的字符
+          （引号、空格、分号、中文等）替换为下划线，防 SQL 拼接注入
         - 连字符 `-` 和点号 `.` 替换为下划线 `_`
         - 合并连续多个下划线为单个下划线
         - 加 `d_loop_` 前缀
@@ -91,6 +110,8 @@ def make_subtable_name(loop_part: str) -> str:
         'd_loop_41fic40504_pida'
         >>> make_subtable_name("LIC-101")
         'd_loop_lic_101'
+        >>> make_subtable_name("LIC'101")
+        'd_loop_lic_101'
 
     Args:
         loop_part: 回路位号部分（不含 .PV/.SP 等角色后缀）
@@ -98,7 +119,8 @@ def make_subtable_name(loop_part: str) -> str:
     Returns:
         TDengine 子表名（d_loop_<normalized>）
     """
-    name = loop_part.lower().replace("-", "_").replace(".", "_")
+    name = _ILLEGAL_SUBTABLE_CHAR.sub("_", loop_part.lower())
+    name = name.replace("-", "_").replace(".", "_")
     name = re.sub(r"_+", "_", name)
     return "d_loop_" + name
 
@@ -202,64 +224,69 @@ async def close_client() -> None:
     _client_loop = None
 
 
-async def execute_sql(sql: str) -> list[dict[str, Any]]:
+async def _execute_sql_once(sql: str) -> list[dict[str, Any]]:
+    """执行一次 TDengine SQL，失败抛 TDengineError（内部使用）。"""
+    client = await _get_client()
+    resp = await client.post("/rest/sql", content=sql)
+    if resp.status_code != 200:
+        raise TDengineError(f"TDengine REST API 返回 {resp.status_code}: {resp.text[:200]}")
+    payload = resp.json()
+    if payload.get("code") != 0:
+        raise TDengineError(f"TDengine 执行错误: {payload.get('message', '')}")
+    column_meta = payload.get("column_meta", [])
+    col_names = [c[0] for c in column_meta]
+    data_rows = payload.get("data", [])
+    return [dict(zip(col_names, row, strict=False)) for row in data_rows]
+
+
+def _degrade_or_raise(exc: Exception, raise_on_error: bool, context: str) -> list[dict[str, Any]]:
+    """统一错误出口：raise_on_error=True 抛 TDengineError，否则记日志返回空列表."""
+    if raise_on_error:
+        if isinstance(exc, TDengineError):
+            raise exc
+        raise TDengineError(f"{context}: {exc}") from exc
+    logger.warning("%s（返回空列表）: %s", context, exc)
+    return []
+
+
+async def execute_sql(sql: str, *, raise_on_error: bool = False) -> list[dict[str, Any]]:
     """执行任意 TDengine SQL（仅供内部可信调用，如健康检查、监控）。
 
     Args:
         sql: SQL 语句（调用方需自行确保安全，不接受外部输入）
+        raise_on_error: True 时连接/查询失败抛 TDengineError（区分"数据源不可用"
+            与"该时段无数据"）；False 保持旧行为，失败返回空列表
 
     Returns:
-        行列表，每项 {column: value}。失败返回空列表。
+        行列表，每项 {column: value}。失败返回空列表（raise_on_error=False 时）。
+
+    Raises:
+        TDengineError: raise_on_error=True 且连接/查询失败时
     """
     try:
-        client = await _get_client()
-        resp = await client.post("/rest/sql", content=sql)
-        if resp.status_code != 200:
-            logger.warning(
-                "TDengine REST API 返回 %s: %s",
-                resp.status_code,
-                resp.text[:200],
-            )
-            return []
-        payload = resp.json()
-        if payload.get("code") != 0:
-            logger.warning("TDengine 执行错误: %s", payload.get("message", ""))
-            return []
-        column_meta = payload.get("column_meta", [])
-        col_names = [c[0] for c in column_meta]
-        data_rows = payload.get("data", [])
-        return [dict(zip(col_names, row, strict=False)) for row in data_rows]
+        return await _execute_sql_once(sql)
+    except TDengineError as exc:
+        return _degrade_or_raise(exc, raise_on_error, "TDengine 执行失败")
     except RuntimeError as exc:
         # Celery 跨任务 event loop 关闭后，httpx 连接可能失效，重置后重试一次
         if "Event loop is closed" in str(exc) or "Event loop is not running" in str(exc):
             logger.warning("TDengine 请求失败（%s），重置 client 后重试", exc)
             await _reset_client()
             try:
-                client = await _get_client()
-                resp = await client.post("/rest/sql", content=sql)
-                if resp.status_code != 200:
-                    return []
-                payload = resp.json()
-                if payload.get("code") != 0:
-                    return []
-                column_meta = payload.get("column_meta", [])
-                col_names = [c[0] for c in column_meta]
-                data_rows = payload.get("data", [])
-                return [dict(zip(col_names, row, strict=False)) for row in data_rows]
+                return await _execute_sql_once(sql)
             except Exception as exc2:  # noqa: BLE001
-                logger.warning("TDengine 重试仍失败: %s", exc2)
-                return []
-        logger.warning("TDengine 执行失败（返回空列表）: %s", exc)
-        return []
+                return _degrade_or_raise(exc2, raise_on_error, "TDengine 重试仍失败")
+        return _degrade_or_raise(exc, raise_on_error, "TDengine 执行失败")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("TDengine 执行失败（返回空列表）: %s", exc)
-        return []
+        return _degrade_or_raise(exc, raise_on_error, "TDengine 执行失败")
 
 
 async def query_trend_data(
     tag_name: str,
     start_time: str,
     end_time: str,
+    *,
+    raise_on_error: bool = False,
 ) -> list[dict[str, Any]]:
     """从 TDengine 查询 Tag 的趋势数据。
 
@@ -267,12 +294,16 @@ async def query_trend_data(
         tag_name: Tag 位号名（如 HDS-RX-TIC-101.PV，白名单校验）
         start_time: 起始时间（ISO 格式校验）
         end_time: 结束时间（ISO 格式校验）
+        raise_on_error: True 时连接/查询失败抛 TDengineError（区分"数据源不可用"
+            与"该时段无数据"）；False 保持旧行为，失败返回空数组
 
     Returns:
-        数据点列表，每项 {ts, value, quality}。连接失败或无数据返回空数组。
+        数据点列表，每项 {ts, value, quality}。无数据返回空数组；
+        raise_on_error=False 时连接失败也返回空数组。
 
     Raises:
         ValueError: tag_name 或时间格式不合法
+        TDengineError: raise_on_error=True 且连接/查询失败时
     """
     # 安全校验：防止 SQL 注入
     safe_tag_name = _validate_tag_name(tag_name)
@@ -300,57 +331,41 @@ async def query_trend_data(
         )
 
     try:
-        client = await _get_client()
-        resp = await client.post("/rest/sql", content=sql)
-        if resp.status_code != 200:
-            logger.warning(
-                "TDengine REST API 返回 %s: %s",
-                resp.status_code,
-                resp.text[:200],
-            )
-            return []
-        payload = resp.json()
-        # TDengine REST 响应：{"code":0,"data":[[...]],"column_meta":[...]}
-        if payload.get("code") != 0:
-            logger.warning("TDengine 查询错误: %s", payload.get("message", ""))
-            return []
-        data_rows = payload.get("data", [])
-        rows: list[dict[str, Any]] = []
-        for row in data_rows:
-            ts_val = row[0]
-            value = float(row[1]) if len(row) > 1 and row[1] is not None else None
-            quality = str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
-            rows.append({"ts": str(ts_val), "value": value, "quality": quality})
-        return rows
+        return await _query_trend_once(sql)
+    except TDengineError as exc:
+        return _degrade_or_raise(exc, raise_on_error, "TDengine 查询失败")
     except RuntimeError as exc:
         # Celery 跨任务 event loop 关闭后，httpx 连接可能失效，重置后重试一次
         if "Event loop is closed" in str(exc) or "Event loop is not running" in str(exc):
             logger.warning("TDengine 查询失败（%s），重置 client 后重试", exc)
             await _reset_client()
             try:
-                client = await _get_client()
-                resp = await client.post("/rest/sql", content=sql)
-                if resp.status_code != 200:
-                    return []
-                payload = resp.json()
-                if payload.get("code") != 0:
-                    return []
-                data_rows = payload.get("data", [])
-                rows: list[dict[str, Any]] = []
-                for row in data_rows:
-                    ts_val = row[0]
-                    value = float(row[1]) if len(row) > 1 and row[1] is not None else None
-                    quality = str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
-                    rows.append({"ts": str(ts_val), "value": value, "quality": quality})
-                return rows
+                return await _query_trend_once(sql)
             except Exception as exc2:  # noqa: BLE001
-                logger.warning("TDengine 查询重试仍失败: %s", exc2)
-                return []
-        logger.warning("TDengine 查询失败（返回空数组）: %s", exc)
-        return []
+                return _degrade_or_raise(exc2, raise_on_error, "TDengine 查询重试仍失败")
+        return _degrade_or_raise(exc, raise_on_error, "TDengine 查询失败")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("TDengine 查询失败（返回空数组）: %s", exc)
-        return []
+        return _degrade_or_raise(exc, raise_on_error, "TDengine 查询失败")
+
+
+async def _query_trend_once(sql: str) -> list[dict[str, Any]]:
+    """执行一次趋势查询，失败抛 TDengineError（内部使用）。"""
+    client = await _get_client()
+    resp = await client.post("/rest/sql", content=sql)
+    if resp.status_code != 200:
+        raise TDengineError(f"TDengine REST API 返回 {resp.status_code}: {resp.text[:200]}")
+    payload = resp.json()
+    # TDengine REST 响应：{"code":0,"data":[[...]],"column_meta":[...]}
+    if payload.get("code") != 0:
+        raise TDengineError(f"TDengine 查询错误: {payload.get('message', '')}")
+    data_rows = payload.get("data", [])
+    rows: list[dict[str, Any]] = []
+    for row in data_rows:
+        ts_val = row[0]
+        value = float(row[1]) if len(row) > 1 and row[1] is not None else None
+        quality = str(row[2]) if len(row) > 2 and row[2] is not None else "GOOD"
+        rows.append({"ts": str(ts_val), "value": value, "quality": quality})
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +465,11 @@ def make_dataplanner_query_fn(db: Any) -> Any:
                 ts_set.add(str(row.get("ts")))
         sorted_ts_str = sorted(ts_set)
 
-        timestamps = [_parse_ts_str(ts) for ts in sorted_ts_str]
+        # 解析失败的时间戳（_parse_ts_str 返回 None）直接跳过该点，
+        # 不用 datetime.now() 兜底——兜底值会污染时序对齐（P2 修复）
+        ts_pairs = [(ts, dt) for ts in sorted_ts_str if (dt := _parse_ts_str(ts)) is not None]
+        sorted_ts_str = [ts for ts, _ in ts_pairs]
+        timestamps = [dt for _, dt in ts_pairs]
 
         # 5. 构建信号值和质量码字典
         signals: dict[str, list[Any]] = {}
@@ -492,32 +511,34 @@ def make_dataplanner_query_fn(db: Any) -> Any:
     return _query_fn
 
 
-def _parse_ts_str(ts_str: str) -> datetime:
+def _parse_ts_str(ts_str: str) -> datetime | None:
     """将时间戳字符串解析为 datetime（兼容多种格式）。
 
     Args:
         ts_str: 时间戳字符串（ISO 8601 或 epoch）
 
     Returns:
-        datetime 对象（解析失败时返回当前时间兜底）
+        datetime 对象；解析失败返回 None（由调用方跳过该点，
+        不用 datetime.now() 兜底，避免污染时序对齐）
     """
     s = ts_str.strip()
     # 尝试 epoch 秒
     try:
         epoch = float(s)
         return datetime.fromtimestamp(epoch, tz=None)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError, OSError):
         pass
     # 尝试 ISO 8601 — strip tzinfo 保持 naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
     try:
         return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
     except (ValueError, TypeError):
         pass
-    logger.warning("适配器: 无法解析时间戳 %r，使用当前时间兜底", s)
-    return datetime.now()
+    logger.warning("适配器: 无法解析时间戳 %r，跳过该数据点", s)
+    return None
 
 
 __all__ = [
+    "TDengineError",
     "query_trend_data",
     "execute_sql",
     "close_client",
