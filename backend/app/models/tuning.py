@@ -1,4 +1,11 @@
-"""``tuning_record`` model — loop tuning task records (Phase 2)."""
+"""``tuning_record`` model — loop tuning task records (Phase 2).
+
+Phase 2.2 扩展（2026-07-28）：
+- 新增 identify_method / data_source / confidence_level 等辨识元数据字段
+- 新增 pid_candidates / candidate_results 支持多 PID 对比
+- 新增 task_id 关联 Celery 异步任务
+- 状态机对齐实现契约：DRAFT/RUNNING/IDENTIFIED/SIMULATED/COMPLETED/INCONCLUSIVE/ROLLED_BACK
+"""
 
 from __future__ import annotations
 
@@ -7,6 +14,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -43,6 +51,24 @@ class TuningRecord(Base):
     created_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
 
+    # Phase 2.2 新增字段（辨识元数据）
+    identify_method: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    data_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    time_window_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    time_window_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confidence_level: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    confidence_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    excitation_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    residual_test_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    # Phase 2.3 新增字段（多 PID 对比）
+    pid_candidates: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    candidate_results: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Phase 2.2 新增字段（异步任务关联）
+    task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "model_type IN ('FOPDT', 'SOPDT', 'IPDT')",
@@ -53,7 +79,19 @@ class TuningRecord(Base):
             name="ck_tuning_record_algo",
         ),
         CheckConstraint(
-            "status IN ('PENDING', 'IDENTIFIED', 'SIMULATED', 'APPLIED', 'VERIFIED')",
+            "status IN ('DRAFT', 'RUNNING', 'IDENTIFIED', 'SIMULATED', "
+            "'COMPLETED', 'INCONCLUSIVE', 'ROLLED_BACK', "
+            "'PENDING', 'APPLIED', 'VERIFIED')",
             name="ck_tuning_record_status",
+        ),
+        CheckConstraint(
+            "identify_method IS NULL OR identify_method IN ("
+            "'HISTORICAL_ARX', 'HISTORICAL_ARMAX', 'HISTORICAL_IV', "
+            "'STEP_TWO_POINT', 'STEP_AREA', 'STEP_NLS')",
+            name="ck_tuning_record_identify_method",
+        ),
+        CheckConstraint(
+            "data_source IS NULL OR data_source IN ('HISTORY', 'STEP_EXPERIMENT')",
+            name="ck_tuning_record_data_source",
         ),
     )

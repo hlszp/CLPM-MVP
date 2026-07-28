@@ -718,9 +718,20 @@ def _record_to_dict(
         "status": record.status,
         "createdBy": record.created_by,
         "createdAt": record.created_at.isoformat() if record.created_at else None,
+        # Phase 2.2 新增字段（可选）
+        "identifyMethod": record.identify_method,
+        "dataSource": record.data_source,
+        "confidenceLevel": record.confidence_level,
+        "confidenceReason": record.confidence_reason,
+        "excitationScore": float(record.excitation_score) if record.excitation_score else None,
+        "residualTestPassed": record.residual_test_passed,
+        "taskId": record.task_id,
+        "completedAt": record.completed_at.isoformat() if record.completed_at else None,
     }
     if include_detail:
         data["simulationResult"] = record.simulation_result
+        data["pidCandidates"] = record.pid_candidates
+        data["candidateResults"] = record.candidate_results
     return data
 
 
