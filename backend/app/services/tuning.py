@@ -297,6 +297,71 @@ def _min_confidence(level_a: str, level_b: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# 可辨识片段预览（Phase 2.2）
+# ---------------------------------------------------------------------------
+
+
+async def preview_identify_segments(
+    db: AsyncSession,
+    loop_id: str,
+    start_time: str,
+    end_time: str,
+) -> dict[str, Any]:
+    """预览数据窗口内的可辨识片段（只做激励检测，不执行辨识）.
+
+    Returns:
+        dict with loopId/totalSegments/segments/sufficientCount
+    """
+    loop = await _get_loop(db, loop_id)
+    control_type_str = loop.control_type or "TC"
+
+    signals = await _fetch_preprocessed_signals(db, loop_id, start_time, end_time, control_type_str)
+
+    pv = signals["pv"]
+    op = signals["op"]
+
+    if len(pv) < 10 or len(op) < 10:
+        return {
+            "loopId": loop_id,
+            "totalSegments": 0,
+            "segments": [],
+            "sufficientCount": 0,
+        }
+
+    import numpy as np
+
+    from app.services.tuning_identification.excitation import (
+        check_excitation,
+        excitation_score,
+    )
+
+    # Phase 2 初版：将整个数据窗口作为单个片段评估
+    # 后续可按 MODE 变化点切分为多片段
+    u = np.array(op, dtype=float)
+    y = np.array(pv, dtype=float)
+    d = 1  # 默认滞后 1 步
+    exc_result = check_excitation(u, y, d)
+
+    score = excitation_score(exc_result.condition_number, exc_result.significant_changes)
+
+    segment = {
+        "startIdx": 0,
+        "endIdx": len(pv) - 1,
+        "mode": "AUTO",
+        "excitationScore": score,
+        "conditionNumber": exc_result.condition_number,
+        "isSufficient": exc_result.is_sufficient,
+    }
+
+    return {
+        "loopId": loop_id,
+        "totalSegments": 1,
+        "segments": [segment],
+        "sufficientCount": 1 if exc_result.is_sufficient else 0,
+    }
+
+
+# ---------------------------------------------------------------------------
 # 模型辨识
 # ---------------------------------------------------------------------------
 
@@ -628,6 +693,15 @@ async def create_tuning_task(
     simulation_result: dict[str, Any] | None = None,
     status: str = "SIMULATED",
     created_by: str | None = None,
+    # Phase 2.2 新增字段
+    identify_method: str | None = None,
+    data_source: str | None = None,
+    confidence_level: str | None = None,
+    confidence_reason: str | None = None,
+    excitation_score: float | None = None,
+    residual_test_passed: bool | None = None,
+    pid_candidates: dict[str, Any] | None = None,
+    candidate_results: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """创建整定任务记录。"""
     # 校验回路
@@ -644,6 +718,15 @@ async def create_tuning_task(
         fitting_score=fitting_score,
         status=status,
         created_by=created_by,
+        # Phase 2.2 元数据
+        identify_method=identify_method,
+        data_source=data_source,
+        confidence_level=confidence_level,
+        confidence_reason=confidence_reason,
+        excitation_score=excitation_score,
+        residual_test_passed=residual_test_passed,
+        pid_candidates=pid_candidates,
+        candidate_results=candidate_results,
     )
     db.add(record)
     await db.commit()
@@ -821,6 +904,7 @@ def _record_to_dict(
 __all__ = [
     "identify_model",
     "identify_model_from_history",
+    "preview_identify_segments",
     "tune_pid",
     "run_simulation",
     "_simulate_multi_pid",

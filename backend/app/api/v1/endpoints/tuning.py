@@ -5,9 +5,14 @@
 - GET    /api/v1/tuning/tasks                  — 整定任务列表（分页 + 筛选）
 - GET    /api/v1/tuning/tasks/{taskId}         — 整定任务详情
 - POST   /api/v1/tuning/tasks                  — 保存整定任务
-- POST   /api/v1/tuning/identify               — 模型辨识
+- POST   /api/v1/tuning/identify               — 模型辨识（阶跃实验路径，同步）
+- POST   /api/v1/tuning/identify/history        — 历史数据辨识（Phase 2，异步）
+- POST   /api/v1/tuning/identify/segments       — 可辨识片段预览（Phase 2）
+- GET    /api/v1/tuning/tasks/{taskId}/status   — 异步任务进度查询（Phase 2）
+- POST   /api/v1/tuning/tasks/{taskId}/cancel   — 取消异步任务（Phase 2）
 - POST   /api/v1/tuning/tune                   — PID 整定
-- POST   /api/v1/tuning/simulate               — 闭环仿真
+- POST   /api/v1/tuning/simulate               — 闭环仿真（支持多 PID 对比）
+- POST   /api/v1/tuning/compare                — 多 PID 对比仿真（Phase 2）
 - GET    /api/v1/tuning/history                — 整定历史统计
 """
 
@@ -27,10 +32,14 @@ from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.tuning import (
     CreateTuningTaskRequest,
+    IdentifySegmentsRequest,
+    IdentifySegmentsResult,
+    ModelIdentifyHistoryRequest,
     ModelIdentifyRequest,
     ModelIdentifyResult,
     SimulateRequest,
     SimulationResult,
+    TaskProgress,
     TuneRequest,
     TuneResult,
     TuningHistoryStats,
@@ -44,6 +53,7 @@ from app.services.tuning import (
     get_tuning_task_detail,
     identify_model,
     list_tuning_tasks,
+    preview_identify_segments,
     run_simulation,
     tune_pid,
 )
@@ -76,7 +86,7 @@ async def identify_model_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
-    """模型辨识（ADMIN/IC_ENGINEER/EXPERT）。
+    """模型辨识（阶跃实验路径，同步；ADMIN/IC_ENGINEER/EXPERT）。
 
     从 TDengine 拉取波形数据，执行 FOPDT/SOPDT/IPDT 模型辨识。
     """
@@ -87,6 +97,65 @@ async def identify_model_endpoint(
         end_time=body.endTime,
         model_type=body.modelType,
         method=body.method,
+    )
+    return success(data=data)
+
+
+@router.post("/identify/history", response_model=ApiResponse[dict])
+async def identify_history_endpoint(
+    body: ModelIdentifyHistoryRequest,
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+) -> dict:
+    """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
+
+    提交异步 Celery 任务，返回 taskId 供前端轮询进度。
+    辨识策略 AUTO=优先历史,失败兜底阶跃 / HISTORY_ONLY / STEP_ONLY。
+    """
+    from app.tasks.tuning import identify_model_task
+
+    # STEP_ONLY 策略走同步阶跃路径（向后兼容）
+    if body.identifyStrategy == "STEP_ONLY":
+        # 委托同步 identify_model，但需要 db
+        from app.core.db import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            data = await identify_model(
+                db=db,
+                loop_id=body.loopId,
+                start_time=body.startTime,
+                end_time=body.endTime,
+                model_type="FOPDT",
+                method=None,
+            )
+        return success(data=data)
+
+    # AUTO / HISTORY_ONLY → 异步任务
+    task = identify_model_task.delay(
+        loop_id=body.loopId,
+        start_time=body.startTime,
+        end_time=body.endTime,
+        candidate_model_types=body.candidateModelTypes,
+        theta_estimate=body.thetaEstimate,
+        created_by=user.username,
+    )
+    return success(data={"taskId": task.id, "status": "PENDING"})
+
+
+@router.post("/identify/segments", response_model=ApiResponse[IdentifySegmentsResult])
+async def identify_segments_endpoint(
+    body: IdentifySegmentsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+) -> dict:
+    """可辨识片段预览（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    对数据窗口执行激励检测，返回可辨识片段列表（不执行辨识）。
+    """
+    data = await preview_identify_segments(
+        db=db,
+        loop_id=body.loopId,
+        start_time=body.startTime,
+        end_time=body.endTime,
     )
     return success(data=data)
 
@@ -141,8 +210,13 @@ async def simulate_endpoint(
 ) -> dict:
     """闭环仿真（ADMIN/IC_ENGINEER/EXPERT）。
 
-    对比当前 PID 与推荐 PID 的阶跃响应。
+    对比当前 PID 与推荐 PID 的阶跃响应（Phase 2 支持多 PID 候选对比）。
     """
+    # Phase 2：pid_candidates 转为 dict 列表透传
+    pid_candidates_dicts: list[dict] | None = None
+    if body.pidCandidates:
+        pid_candidates_dicts = [c.model_dump() for c in body.pidCandidates]
+
     data = await run_simulation(
         model_type=body.modelType,
         model_params=body.modelParams.model_dump(exclude_none=True),
@@ -152,6 +226,41 @@ async def simulate_endpoint(
         sim_step=body.simStep,
         setpoint_step=body.setpointStep,
         disturbance_type=body.disturbanceType,
+        pid_candidates=pid_candidates_dicts,
+    )
+    return success(data=data)
+
+
+@router.post("/compare", response_model=ApiResponse[SimulationResult])
+async def compare_pids_endpoint(
+    body: SimulateRequest,
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+) -> dict:
+    """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    与 /simulate 共享 SimulateRequest，区别在于 pidCandidates 为必传，
+    返回 candidateResponses 含每组 PID 的响应曲线与指标。
+    """
+    if not body.pidCandidates or len(body.pidCandidates) < 2:
+        from app.core.exceptions import BizError
+
+        raise BizError(
+            code="ERR_INVALID_REQUEST",
+            message="多 PID 对比至少需要 2 组候选 PID 参数",
+            status_code=400,
+        )
+
+    from app.services.tuning import _simulate_multi_pid
+
+    candidates_dicts = [c.model_dump() for c in body.pidCandidates]
+    data = _simulate_multi_pid(
+        model_type=body.modelType,
+        model_params=body.modelParams.model_dump(exclude_none=True),
+        current_pid=body.currentPid.model_dump() if body.currentPid else None,
+        pid_candidates=candidates_dicts,
+        sim_duration=body.simDuration,
+        sim_step=body.simStep,
+        setpoint_step=body.setpointStep,
     )
     return success(data=data)
 
@@ -194,6 +303,50 @@ async def get_task_detail_endpoint(
     return success(data=data)
 
 
+@router.get("/tasks/{task_id}/status", response_model=ApiResponse[TaskProgress])
+async def get_task_status_endpoint(
+    task_id: str,
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """异步任务进度查询（Phase 2；所有登录用户）。
+
+    task_id 为 Celery 任务 ID（字符串），非 TuningRecord UUID。
+    """
+    from app.services.tuning_progress import get_progress
+
+    data = await get_progress(task_id)
+    if data is None:
+        from app.core.exceptions import BizError
+
+        raise BizError(
+            code="ERR_TUNING_TASK_NOT_FOUND",
+            message="任务进度记录不存在",
+            status_code=404,
+        )
+    return success(data=data)
+
+
+@router.post("/tasks/{task_id}/cancel", response_model=ApiResponse[dict])
+async def cancel_task_endpoint(
+    task_id: str,
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+) -> dict:
+    """取消异步整定任务（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    task_id 为 Celery 任务 ID。仅 PENDING/RUNNING 状态可取消。
+    """
+    from celery.result import AsyncResult
+
+    from app.tasks.celery_app import celery_app
+
+    result = AsyncResult(task_id, app=celery_app)
+    if result.state in ("PENDING", "RUNNING", "STARTED"):
+        result.revoke(terminate=True, signal="SIGTERM")
+        return success(data={"taskId": task_id, "status": "CANCELLED"})
+    # 已终态（SUCCESS/FAILED/REVOKED）不可取消
+    return success(data={"taskId": task_id, "status": result.state})
+
+
 @router.post("/tasks", status_code=201, response_model=ApiResponse[dict])
 async def create_task_endpoint(
     body: CreateTuningTaskRequest,
@@ -213,6 +366,15 @@ async def create_task_endpoint(
         simulation_result=body.simulationResult,
         status=body.status,
         created_by=user.username,
+        # Phase 2.2 元数据
+        identify_method=body.identifyMethod,
+        data_source=body.dataSource,
+        confidence_level=body.confidenceLevel,
+        confidence_reason=body.confidenceReason,
+        excitation_score=body.excitationScore,
+        residual_test_passed=body.residualTestPassed,
+        pid_candidates=body.pidCandidates,
+        candidate_results=body.candidateResults,
     )
     # 审计日志（S1-B7）
     log = SysAuditLog(
