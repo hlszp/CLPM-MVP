@@ -41,6 +41,10 @@ RUN pnpm vite build --mode production
 # ============================================================
 FROM nginx:alpine AS runtime
 
+# 构建时注入版本号（git tag 或 commit，由 build-and-deploy.sh 传入）
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 ENV TZ=Asia/Shanghai
 
 # 安装 curl 用于 healthcheck

@@ -17,6 +17,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        # 版本号注入镜像 ENV（git tag 或 commit），deploy.sh 构建时可用
+        # APP_VERSION=xxx 前缀指定，默认 dev
+        APP_VERSION: ${APP_VERSION:-dev}
     image: clpm-backend:latest
     container_name: clpm-backend
     # S2-B3: 端口不映射到宿主机，仅容器间网络可达
@@ -60,6 +64,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
     image: clpm-frontend:latest
     container_name: clpm-frontend
     ports:
@@ -224,6 +230,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
     image: clpm-backend:latest
     container_name: clpm-celery-worker
     # 回填任务 chord 会派发多个窗口子任务（每窗口 1 个），并发度直接决定回填吞吐。
@@ -269,6 +277,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
     image: clpm-backend:latest
     container_name: clpm-celery-beat
     command: celery -A app.tasks.celery_app beat -l info --schedule /tmp/celerybeat-schedule
@@ -278,9 +288,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    # 健康检查：检测 celery beat 进程存活
+    # 健康检查：beat 是无 broker 探测接口的单进程调度器。
+    # 之前用 celery inspect ping 探测的是 worker 而非 beat（beat 容器内无 worker），
+    # 永远 unhealthy。改为校验 PID 1 命令行含 beat（/proc 任意 Linux 容器可用，
+    # slim 镜像无 pgrep）。
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping --timeout 5 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "grep -aq beat /proc/1/cmdline"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -332,6 +345,117 @@ services:
   #   networks:
   #     - clpm-net
 
+  # ============================================================
+  # Prometheus - 指标采集与告警（可选 profile：monitoring）
+  # 启用: docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine --profile monitoring up -d
+  # 不暴露端口到宿主机：通过 Grafana 或 SSH 隧道（ssh -L 9090:localhost:9090 需自行映射）访问
+  # ============================================================
+  prometheus:
+    profiles: ["monitoring"]
+    image: prom/prometheus:v2.53.4
+    container_name: clpm-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    expose:
+      - "9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9090/-/healthy >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # Grafana - 可观测性面板（可选 profile：monitoring）
+  # 预置 CLPM 总览 dashboard（deploy/grafana/dashboards）与 Prometheus 数据源
+  # 不暴露端口到宿主机：SSH 隧道访问（ssh -L 3100:<服务器IP>:3100 需自行映射，
+  # 或临时加 ports 映射）。默认账号 admin / ${GRAFANA_ADMIN_PASSWORD:-admin}
+  # ============================================================
+  grafana:
+    profiles: ["monitoring"]
+    image: grafana/grafana:11.1.0
+    container_name: clpm-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      TZ: Asia/Shanghai
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    expose:
+      - "3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
+  # ============================================================
+  # Node Exporter - 宿主机磁盘/CPU/内存指标（可选 profile：monitoring）
+  # 磁盘告警（ClpmNodeDiskLow）依赖此服务
+  # ============================================================
+  node-exporter:
+    profiles: ["monitoring"]
+    image: prom/node-exporter:v1.8.2
+    container_name: clpm-node-exporter
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - /:/host:ro,rslave
+    expose:
+      - "9100"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.2"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+    networks:
+      - clpm-net
+
 # ============================================================
 # 数据卷
 # ============================================================
@@ -342,6 +466,10 @@ volumes:
     name: clpm_tdengine_data
   redis_data:
     name: clpm_redis_data
+  prometheus_data:
+    name: clpm_prometheus_data
+  grafana_data:
+    name: clpm_grafana_data
 
 # ============================================================
 # 网络

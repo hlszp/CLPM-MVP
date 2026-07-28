@@ -41,6 +41,11 @@ RUN uv sync --frozen
 # ============================================================
 FROM python:3.12-slim AS runtime
 
+# 构建时注入版本号（git tag 或 commit，由 build-and-deploy.sh 传入），
+# 运行时可通过 process env 定位镜像对应的代码版本，辅助排障与回滚核对
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \

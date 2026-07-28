@@ -72,9 +72,19 @@ TD_DUMP_NAME="tdengine_dump_${TIMESTAMP}"
 TD_CONTAINER_DUMP_DIR="/tmp/${TD_DUMP_NAME}"
 TD_LOCAL_DUMP_DIR="${BACKUP_SUBDIR}/${TD_DUMP_NAME}"
 
-# 通过 docker exec 在 tdengine 容器内执行 taos dump
-if docker exec "$TD_CONTAINER" taos -s "USE ${TD_DB}; SHOW TABLES;" >/dev/null 2>&1; then
-    docker exec "$TD_CONTAINER" taosdump -D "$TD_DB" -o "$TD_CONTAINER_DUMP_DIR" >/dev/null
+# 生产 TDengine 已通过 TAOS_ROOT_PASSWORD 改密，备份必须带 root 凭据，
+# 否则认证失败会静默跳过（原 [SKIP] 分支），造成"有备份流程、无备份数据"。
+TD_PASSWORD="$(read_env_value TDENGINE_PASSWORD)"
+if [ -z "$TD_PASSWORD" ]; then
+    echo "  [FAIL] .env.prod 未设置 TDENGINE_PASSWORD，无法备份 TDengine"
+    exit 1
+fi
+
+# 通过 docker exec 在 tdengine 容器内执行 taos dump（带 root 凭据）。
+# 认证失败/库不可达/导出失败均为硬失败：备份是部署与容灾的前置保障，
+# 静默跳过会让运维误以为数据可回滚。
+if docker exec "$TD_CONTAINER" taos -u root -p"$TD_PASSWORD" -s "USE ${TD_DB}; SHOW TABLES;" >/dev/null 2>&1; then
+    docker exec "$TD_CONTAINER" taosdump -u root -p"$TD_PASSWORD" -D "$TD_DB" -o "$TD_CONTAINER_DUMP_DIR" >/dev/null
     docker cp "${TD_CONTAINER}:${TD_CONTAINER_DUMP_DIR}" "$TD_LOCAL_DUMP_DIR" >/dev/null
     tar -C "$BACKUP_SUBDIR" -czf "$TD_FILE" "$TD_DUMP_NAME"
     rm -rf "$TD_LOCAL_DUMP_DIR"
@@ -82,7 +92,9 @@ if docker exec "$TD_CONTAINER" taos -s "USE ${TD_DB}; SHOW TABLES;" >/dev/null 2
     TD_SIZE=$(du -h "$TD_FILE" | cut -f1)
     echo "  [OK] TDengine 备份完成: ${TD_FILE} (${TD_SIZE})"
 else
-    echo "  [SKIP] TDengine 数据库 ${TD_DB} 不存在或不可达，跳过"
+    echo "  [FAIL] TDengine 数据库 ${TD_DB} 不可达或认证失败（容器 ${TD_CONTAINER}）"
+    echo "  排查：docker ps | grep tdengine；确认 .env.prod 的 TDENGINE_PASSWORD 与容器 TAOS_ROOT_PASSWORD 一致"
+    exit 1
 fi
 
 # ------------------------------------------------------------

@@ -1,0 +1,54 @@
+# ============================================================
+# CLPM 基础告警规则（Phase 5 监控最小闭环）
+# 覆盖：后端 down、Celery 任务失败率、宿主机磁盘水位
+# 说明：celery_task_total 指标已定义（app/core/metrics.py），
+#       告警在指标接入埋点后自动生效（无数据时不触发，属预期）
+# ============================================================
+groups:
+  - name: clpm-basics
+    rules:
+      # 后端 /metrics 不可达（容器 down 或应用卡死）
+      - alert: ClpmBackendDown
+        expr: up{job="clpm-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CLPM 后端 /metrics 不可达"
+          description: "Prometheus 已连续 2 分钟无法抓取 backend:7101/metrics，后端容器可能 down 或应用无响应。"
+
+      # Celery 任务失败率 > 10%（10 分钟窗口）
+      - alert: ClpmCeleryTaskFailureRateHigh
+        expr: |
+          sum(rate(celery_task_total{status=~"failed|failure|error"}[10m]))
+            /
+          clamp_min(sum(rate(celery_task_total[10m])), 0.001) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery 任务失败率超过 10%"
+          description: "最近 10 分钟 Celery 任务失败率超过 10%，请检查 clpm-celery-worker 日志。"
+
+      # 宿主机根分区可用空间 < 15%
+      - alert: ClpmNodeDiskLow
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|ramfs"}
+            /
+          node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|ramfs"} < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "宿主机根分区可用空间低于 15%"
+          description: "磁盘水位过低可能导致 TDengine/PostgreSQL 写失败或镜像拉取失败，请及时清理。"
+
+      # 关键容器 down（prometheus/node-exporter 抓取目标失联）
+      - alert: ClpmScrapeTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "监控抓取目标失联：{{ $labels.job }}"
+          description: "Prometheus 已连续 5 分钟无法抓取 {{ $labels.job }}（{{ $labels.instance }}）。"

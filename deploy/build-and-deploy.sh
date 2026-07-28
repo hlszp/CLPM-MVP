@@ -27,6 +27,9 @@
 #   # 跳过后端，只构建部署前端
 #   ./deploy/build-and-deploy.sh --frontend-only
 #
+#   # 跳过构建前测试门禁（紧急修复用，常规部署不建议）
+#   ./deploy/build-and-deploy.sh --skip-gate
+#
 # 前置条件：
 #   1. 本机已安装 Docker Desktop（启用 linux/amd64 跨平台构建）
 #   2. 本机能 SSH 到 root@192.168.13.113（免密或交互式密码）
@@ -57,6 +60,21 @@ FRONTEND_TAR="clpm-frontend.tar.gz"
 BUILD_PLATFORM="linux/amd64"
 MANIFEST_FILE="${PROJECT_ROOT}/releases/manifest.json"
 
+# 公共函数库：Alembic 版本同步（部署=迁移一体，失败即中止）
+# shellcheck source=deploy/lib-migrate.sh
+source "${SCRIPT_DIR}/lib-migrate.sh"
+
+# ------------------------------------------------------------
+# 版本标识（2026-07-28 Phase 5：镜像版本 tag + 回滚可用）
+# ------------------------------------------------------------
+# 构建时除 :latest 外同时打 commit tag 与 manifest 版本 tag，
+# 否则服务器上永远只有 :latest，rollback.sh 找不到历史镜像。
+GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+# APP_VERSION：git tag（如 v6.2.0）或 commit，注入镜像 ENV 供排障定位
+APP_VERSION="$(git describe --tags --always 2>/dev/null || echo "${GIT_COMMIT}")"
+BUILD_VERSION="$(date +%Y%m%d-%H%M%S)"
+
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -76,6 +94,7 @@ BUILD_ONLY=false
 DEPLOY_ONLY=false
 BACKEND_ONLY=false
 FRONTEND_ONLY=false
+SKIP_GATE=false
 
 for arg in "$@"; do
     case $arg in
@@ -83,6 +102,7 @@ for arg in "$@"; do
         --deploy-only)  DEPLOY_ONLY=true ;;
         --backend-only) BACKEND_ONLY=true ;;
         --frontend-only) FRONTEND_ONLY=true ;;
+        --skip-gate)    SKIP_GATE=true ;;
         *) log_error "未知参数: $arg"; exit 1 ;;
     esac
 done
@@ -119,6 +139,24 @@ elif [ "$FRONTEND_ONLY" = true ]; then
 fi
 
 # ============================================================
+# Phase 0: 构建前测试门禁（2026-07-28 Phase 5）
+# ============================================================
+# 与 lefthook pre-push 门禁同口径：ruff + pytest + 前端类型检查。
+# 任何一项失败即中止，避免把未通过本地门禁的代码构建进生产镜像。
+if [ "$DO_BUILD" = true ] && [ "$SKIP_GATE" = false ]; then
+    log_step "Phase 0: 构建前测试门禁"
+    log_info "后端：ruff check + format check"
+    (cd backend && uv run ruff check . && uv run ruff format --check .)
+    log_info "后端：pytest -x -q"
+    (cd backend && uv run pytest -x -q)
+    log_info "前端：check:type"
+    (cd frontend && pnpm run check:type)
+    log_info "测试门禁全部通过 ✓"
+elif [ "$DO_BUILD" = true ]; then
+    log_warn "已通过 --skip-gate 跳过构建前测试门禁（仅限紧急修复场景）"
+fi
+
+# ============================================================
 # Phase 1: 构建镜像
 # ============================================================
 if [ "$DO_BUILD" = true ]; then
@@ -135,18 +173,24 @@ if [ "$DO_BUILD" = true ]; then
 
     # --- 构建后端镜像 ---
     if [ "$BUILD_BACKEND" = true ]; then
-        log_info "构建后端镜像: ${BACKEND_IMAGE}"
+        log_info "构建后端镜像: ${BACKEND_IMAGE}（另打 tag: ${GIT_COMMIT}, ${BUILD_VERSION}；APP_VERSION=${APP_VERSION}）"
         if [ "$USE_BUILDX" = true ]; then
             docker buildx build \
                 --platform "${BUILD_PLATFORM}" \
                 --load \
                 -t "${BACKEND_IMAGE}" \
+                -t "clpm-backend:${GIT_COMMIT}" \
+                -t "clpm-backend:${BUILD_VERSION}" \
+                --build-arg "APP_VERSION=${APP_VERSION}" \
                 -f Dockerfile.backend \
                 .
         else
             docker build \
                 --platform "${BUILD_PLATFORM}" \
                 -t "${BACKEND_IMAGE}" \
+                -t "clpm-backend:${GIT_COMMIT}" \
+                -t "clpm-backend:${BUILD_VERSION}" \
+                --build-arg "APP_VERSION=${APP_VERSION}" \
                 -f Dockerfile.backend \
                 .
         fi
@@ -155,18 +199,24 @@ if [ "$DO_BUILD" = true ]; then
 
     # --- 构建前端镜像 ---
     if [ "$BUILD_FRONTEND" = true ]; then
-        log_info "构建前端镜像: ${FRONTEND_IMAGE}"
+        log_info "构建前端镜像: ${FRONTEND_IMAGE}（另打 tag: ${GIT_COMMIT}, ${BUILD_VERSION}）"
         if [ "$USE_BUILDX" = true ]; then
             docker buildx build \
                 --platform "${BUILD_PLATFORM}" \
                 --load \
                 -t "${FRONTEND_IMAGE}" \
+                -t "clpm-frontend:${GIT_COMMIT}" \
+                -t "clpm-frontend:${BUILD_VERSION}" \
+                --build-arg "APP_VERSION=${APP_VERSION}" \
                 -f Dockerfile.frontend \
                 .
         else
             docker build \
                 --platform "${BUILD_PLATFORM}" \
                 -t "${FRONTEND_IMAGE}" \
+                -t "clpm-frontend:${GIT_COMMIT}" \
+                -t "clpm-frontend:${BUILD_VERSION}" \
+                --build-arg "APP_VERSION=${APP_VERSION}" \
                 -f Dockerfile.frontend \
                 .
         fi
@@ -178,19 +228,21 @@ if [ "$DO_BUILD" = true ]; then
 
     mkdir -p "${LOCAL_TMP_DIR}"
 
+    # 导出时包含全部 tag（latest + commit + manifest 版本），
+    # 服务器 docker load 后才能保留版本 tag 供 rollback.sh 回滚
     IMAGES_TO_SAVE=""
     if [ "$BUILD_BACKEND" = true ]; then
-        IMAGES_TO_SAVE="${BACKEND_IMAGE}"
+        IMAGES_TO_SAVE="${BACKEND_IMAGE} clpm-backend:${GIT_COMMIT} clpm-backend:${BUILD_VERSION}"
     fi
     if [ "$BUILD_FRONTEND" = true ]; then
         if [ -n "$IMAGES_TO_SAVE" ]; then
-            IMAGES_TO_SAVE="${IMAGES_TO_SAVE} ${FRONTEND_IMAGE}"
+            IMAGES_TO_SAVE="${IMAGES_TO_SAVE} ${FRONTEND_IMAGE} clpm-frontend:${GIT_COMMIT} clpm-frontend:${BUILD_VERSION}"
         else
-            IMAGES_TO_SAVE="${FRONTEND_IMAGE}"
+            IMAGES_TO_SAVE="${FRONTEND_IMAGE} clpm-frontend:${GIT_COMMIT} clpm-frontend:${BUILD_VERSION}"
         fi
     fi
 
-    COMBINED_TAR="${LOCAL_TMP_DIR}/clpm-images-$(date +%Y%m%d-%H%M%S).tar.gz"
+    COMBINED_TAR="${LOCAL_TMP_DIR}/clpm-images-${BUILD_VERSION}.tar.gz"
     log_info "导出镜像到: ${COMBINED_TAR}"
     log_info "包含镜像: ${IMAGES_TO_SAVE}"
     docker save ${IMAGES_TO_SAVE} | gzip > "${COMBINED_TAR}"
@@ -205,9 +257,6 @@ if [ "$DO_BUILD" = true ]; then
     # --- 更新构建清单 manifest.json ---
     log_info "更新构建清单: ${MANIFEST_FILE}"
 
-    BUILD_VERSION="$(date +%Y%m%d-%H%M%S)"
-    GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-    GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
     TAR_FILENAME="$(basename "${COMBINED_TAR}")"
     TAR_SIZE_BYTES="$(stat -f%z "${COMBINED_TAR}" 2>/dev/null || stat -c%s "${COMBINED_TAR}" 2>/dev/null || echo 0)"
 
@@ -215,16 +264,17 @@ if [ "$DO_BUILD" = true ]; then
     BACKEND_SIZE="$(docker image inspect ${BACKEND_IMAGE} --format '{{.Size}}' 2>/dev/null | awk '{printf "%.0fMB", $1/1048576}' || echo unknown)"
     FRONTEND_SIZE="$(docker image inspect ${FRONTEND_IMAGE} --format '{{.Size}}' 2>/dev/null | awk '{printf "%.0fMB", $1/1048576}' || echo unknown)"
 
-    # 构建 manifest 条目
+    # 构建 manifest 条目（images 记录全部 tag，回滚时按 commit/版本 tag 定位）
     ENTRY=$(cat <<MANIFEST_EOF
 {
   "version": "${BUILD_VERSION}",
   "buildTime": "$(date '+%Y-%m-%d %H:%M:%S')",
   "gitCommit": "${GIT_COMMIT}",
   "gitBranch": "${GIT_BRANCH}",
+  "appVersion": "${APP_VERSION}",
   "images": [
-    {"name": "${BACKEND_IMAGE}", "size": "${BACKEND_SIZE}"},
-    {"name": "${FRONTEND_IMAGE}", "size": "${FRONTEND_SIZE}"}
+    {"name": "${BACKEND_IMAGE}", "tags": ["latest", "${GIT_COMMIT}", "${BUILD_VERSION}"], "size": "${BACKEND_SIZE}"},
+    {"name": "${FRONTEND_IMAGE}", "tags": ["latest", "${GIT_COMMIT}", "${BUILD_VERSION}"], "size": "${FRONTEND_SIZE}"}
   ],
   "tarFile": "${TAR_FILENAME}",
   "tarSize": "${LOCAL_TAR_SIZE}"
@@ -392,6 +442,9 @@ if [ "$DO_DEPLOY" = true ]; then
     $SSH_PREFIX "mkdir -p ${SERVER_DEPLOY_DIR}/deploy"
     scp deploy/nginx.conf "${SSH_HOST}:${SERVER_DEPLOY_DIR}/deploy/"
 
+    log_info "同步监控配置（deploy/grafana、deploy/prometheus）"
+    scp -r deploy/grafana deploy/prometheus "${SSH_HOST}:${SERVER_DEPLOY_DIR}/deploy/"
+
     log_info "同步 db/postgresql/*.sql"
     $SSH_PREFIX "mkdir -p ${SERVER_DEPLOY_DIR}/db/postgresql"
     scp db/postgresql/01_schema.sql db/postgresql/02_seed_data.sql \
@@ -408,6 +461,29 @@ if [ "$DO_DEPLOY" = true ]; then
         docker images | grep clpm
     "
     log_info "镜像加载完成"
+
+    # --- 2.55 部署前自动备份（升级场景，失败即中止） ---
+    log_step "部署前自动备份"
+    BACKUP_OUTPUT=$($SSH_PREFIX "
+        if docker ps --format '{{.Names}}' | grep -q '^clpm-postgres$'; then
+            if [ -f ${SERVER_DEPLOY_DIR}/deploy/backup.sh ]; then
+                cd ${SERVER_DEPLOY_DIR} && bash deploy/backup.sh
+            else
+                echo '[WARN] 服务器上无 deploy/backup.sh，跳过备份（建议补齐备份脚本）'
+            fi
+        else
+            echo '[INFO] 首次部署（无运行中容器），跳过部署前备份'
+        fi
+    " 2>&1) || BACKUP_EXIT=$?
+
+    echo "$BACKUP_OUTPUT"
+
+    if [ "${BACKUP_EXIT:-0}" -ne 0 ]; then
+        log_error "部署前备份失败（exit code: ${BACKUP_EXIT}），中止部署"
+        log_error "避免在无回退数据的情况下变更镜像/schema；请排查备份后重试"
+        exit 1
+    fi
+    log_info "部署前备份完成 ✓"
 
     # --- 2.6 重启服务（含错误捕获和自动处理） ---
     log_step "重启 Docker Compose 服务"
@@ -457,6 +533,24 @@ if [ "$DO_DEPLOY" = true ]; then
 
     log_info "服务重启完成"
 
+    # --- 2.65 数据库版本同步（部署=迁移一体，失败即中止） ---
+    log_step "数据库版本同步（Alembic）"
+
+    # lib-migrate.sh 要求的容器命令执行器：通过 SSH 在服务器 backend 容器内执行
+    backend_exec() {
+        $SSH_PREFIX "docker exec -i clpm-backend $*"
+    }
+
+    if alembic_sync_head; then
+        log_info "数据库版本同步完成 ✓"
+    else
+        log_error "数据库迁移失败，中止部署（新代码不允许跑在旧 schema 上）"
+        log_error "排查：ssh ${SSH_HOST} 'docker exec -it clpm-backend alembic current'"
+        log_error "      ssh ${SSH_HOST} 'docker logs clpm-backend --tail 50'"
+        log_error "迁移修复后可执行 ./deploy/rollback.sh 回滚镜像，再重新部署"
+        exit 1
+    fi
+
     # --- 2.7 健康检查 ---
     log_step "健康检查"
 
@@ -500,11 +594,34 @@ if [ "$DO_DEPLOY" = true ]; then
         $SSH_PREFIX "docker logs clpm-frontend --tail 20" 2>&1 | while read -r line; do log_error "  $line"; done
     fi
 
-    log_info "检查 Celery Worker..."
+    log_info "检查 Celery Worker（inspect ping）..."
     if $SSH_PREFIX "docker exec clpm-celery-worker celery -A app.tasks.celery_app inspect ping -d celery@\$(hostname) --timeout 5" 2>/dev/null | grep -q pong; then
         log_info "Celery Worker 健康 ✓"
     else
-        log_warn "Celery Worker 健康检查超时（可能仍在启动，非致命）"
+        log_error "Celery Worker 健康检查失败（inspect ping 无 pong）"
+        log_error "异步任务（KPI 计算/诊断/回填）将不执行，部署视为失败"
+        log_error "查看日志: ssh ${SSH_HOST} 'docker logs clpm-celery-worker --tail 50'"
+        exit 1
+    fi
+
+    log_info "检查 Celery 调度链路（inspect scheduled）..."
+    if $SSH_PREFIX "docker exec clpm-celery-worker celery -A app.tasks.celery_app inspect scheduled --timeout 5" 2>/dev/null | grep -q 'celery@'; then
+        log_info "Celery 调度链路正常 ✓"
+    else
+        log_error "Celery inspect scheduled 无响应（broker 链路异常）"
+        log_error "查看日志: ssh ${SSH_HOST} 'docker logs clpm-celery-worker --tail 50'"
+        exit 1
+    fi
+
+    log_info "检查 Celery Beat 容器健康状态..."
+    BEAT_HEALTH=$($SSH_PREFIX "docker inspect -f '{{.State.Health.Status}}' clpm-celery-beat" 2>/dev/null || echo "unknown")
+    if [ "$BEAT_HEALTH" = "healthy" ]; then
+        log_info "Celery Beat 健康 ✓"
+    else
+        log_error "Celery Beat 容器健康状态异常: ${BEAT_HEALTH}"
+        log_error "定时任务（KPI 快照/诊断调度）将不触发，部署视为失败"
+        log_error "查看日志: ssh ${SSH_HOST} 'docker logs clpm-celery-beat --tail 50'"
+        exit 1
     fi
 
     # --- 2.8 完成 ---

@@ -1,0 +1,30 @@
+# ============================================================
+# CLPM Prometheus 配置（profile: monitoring）
+# 抓取目标：backend /metrics（已加内网白名单，compose 网络内可达）、
+#           prometheus 自监控、node-exporter（宿主机磁盘/资源）
+# ============================================================
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  # CLPM 后端应用指标（FastAPI /metrics，仅内网白名单可访问；
+  # clpm-prod-net 为 172.x 网段，在白名单内）
+  - job_name: clpm-backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:7101"]
+        labels:
+          service: clpm-backend
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # 宿主机指标（磁盘告警依赖）
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]

@@ -1,42 +1,28 @@
-# EXAMPLE USAGE:
-#
-#   Refer for explanation to following link:
-#   https://lefthook.dev/configuration/
-#
-# pre-push:
-#   jobs:
-#     - name: packages audit
-#       tags:
-#         - frontend
-#         - security
-#       run: yarn audit
-#
-#     - name: gems audit
-#       tags:
-#         - backend
-#         - security
-#       run: bundle audit
-#
-# pre-commit:
-#   parallel: true
-#   jobs:
-#     - run: yarn eslint {staged_files}
-#       glob: "*.{js,ts,jsx,tsx}"
-#
-#     - name: rubocop
-#       glob: "*.rb"
-#       exclude:
-#         - config/application.rb
-#         - config/routes.rb
-#       run: bundle exec rubocop --force-exclusion -- {all_files}
-#
-#     - name: govet
-#       files: git ls-files -m
-#       glob: "*.go"
-#       run: go vet -- {files}
-#
-#     - script: "hello.js"
-#       runner: node
-#
-#     - script: "hello.go"
-#       runner: go run
+# ============================================================
+# CLPM Git 钩子门禁（lefthook）
+# 与 build-and-deploy.sh Phase 0 构建门禁同口径：
+# gitea 侧无 CI，本地检查即门禁（见 AGENTS.md「CI 提交前本地检查」）
+# ============================================================
+
+pre-push:
+  # 串行执行：后端门禁失败则不必再跑前端，尽快反馈
+  parallel: false
+  jobs:
+    - name: backend ruff check + format
+      run: cd backend && uv run ruff check . && uv run ruff format --check .
+
+    - name: backend pytest
+      run: cd backend && uv run pytest -x -q
+
+    - name: frontend type check
+      run: cd frontend && pnpm run check:type
+
+pre-commit:
+  parallel: true
+  jobs:
+    # 仅对暂存的 Python 文件做 ruff 检查（快速反馈，全量检查在 pre-push）
+    # root 指定后 glob 与 {staged_files} 均相对 backend/ 解析
+    - name: ruff staged
+      root: backend/
+      glob: "*.py"
+      run: uv run ruff check {staged_files}
