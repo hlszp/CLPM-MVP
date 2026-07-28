@@ -37,6 +37,8 @@ import {
 } from '#/api/task';
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePolling } from '#/composables/use-polling';
+import { runWithConcurrency } from '#/utils/concurrency';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'TaskList' });
@@ -141,18 +143,13 @@ async function handleDangerConfirm() {
       await deleteTaskApi(dangerTask.value.taskId);
       message.success('任务已删除');
     } else if (dangerAction.value === 'batch-delete') {
-      const failed: string[] = [];
-      for (const taskId of selectedRowKeys.value) {
-        try {
-          await deleteTaskApi(taskId);
-        } catch {
-          failed.push(taskId);
-        }
-      }
-      if (failed.length > 0) {
-        message.warning(
-          `删除完成，${failed.length} 个任务删除失败（可能非终态）`,
-        );
+      // 并发批量删除（runWithConcurrency 内置 allSettled 语义，单项失败不中断）
+      const { rejected } = await runWithConcurrency(
+        selectedRowKeys.value,
+        (taskId) => deleteTaskApi(taskId),
+      );
+      if (rejected > 0) {
+        message.warning(`删除完成，${rejected} 个任务删除失败（可能非终态）`);
       } else {
         message.success(`已删除 ${selectedRowKeys.value.length} 个任务`);
       }
@@ -160,8 +157,8 @@ async function handleDangerConfirm() {
     }
     dangerVisible.value = false;
     loadList();
-  } catch (error: any) {
-    message.error(error?.message || '操作失败');
+  } catch {
+    // 错误已由拦截器处理
   } finally {
     dangerLoading.value = false;
   }
@@ -306,7 +303,6 @@ async function loadList() {
 
 // ============ 自动刷新（polling 活跃任务） ============
 const POLLING_INTERVAL = 5000;
-let pollingTimer: null | ReturnType<typeof setInterval> = null;
 
 function hasActiveTask(): boolean {
   return taskList.value.some(
@@ -314,29 +310,24 @@ function hasActiveTask(): boolean {
   );
 }
 
-function updatePolling() {
-  if (hasActiveTask() && !pollingTimer) {
-    pollingTimer = setInterval(async () => {
-      try {
-        const result = await getTaskListApi(buildQueryParams());
-        taskList.value = result.items ?? [];
-        totalCount.value = result.total ?? 0;
-        if (!hasActiveTask()) {
-          stopPolling();
-        }
-      } catch (error) {
-        console.error('自动刷新失败:', error);
-      }
-    }, POLLING_INTERVAL);
-  } else if (!hasActiveTask() && pollingTimer) {
-    stopPolling();
-  }
-}
+/** 轮询拉取列表；无活跃任务时自动停止（usePolling 失败熔断 3 次后停止） */
+const { start: startPolling, stop: stopPolling } = usePolling(
+  async () => {
+    const result = await getTaskListApi(buildQueryParams());
+    taskList.value = result.items ?? [];
+    totalCount.value = result.total ?? 0;
+    if (!hasActiveTask()) {
+      stopPolling();
+    }
+  },
+  { interval: POLLING_INTERVAL },
+);
 
-function stopPolling() {
-  if (pollingTimer) {
-    clearInterval(pollingTimer);
-    pollingTimer = null;
+function updatePolling() {
+  if (hasActiveTask()) {
+    startPolling();
+  } else {
+    stopPolling();
   }
 }
 

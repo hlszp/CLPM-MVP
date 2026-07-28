@@ -28,6 +28,7 @@ import {
   ClpmPageToolbar,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningStats' });
 
@@ -237,17 +238,6 @@ function fittingColor(val: null | number | undefined): string {
   return themeColors.value.DANGER;
 }
 
-/** 时间格式化 */
-function formatTime(t: string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
-}
-
 /** 拟合度格式化 */
 function formatFitting(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
@@ -272,39 +262,32 @@ const avgFitting = computed(() => {
   return v;
 });
 
-/** 算法分类色板（响应式，深色模式下使用更亮的色值） */
-const algoColors = computed<Record<string, string>>(() =>
-  isDark.value
-    ? {
-        COHEN_COON: '#a78bfa',
-        IMC: '#60a5fa',
-        LAMBDA: '#22c55e',
-        SIMC: '#2dd4bf',
-        ZN: '#fbbf24',
-      }
-    : {
-        COHEN_COON: '#722ed1',
-        IMC: '#1890ff',
-        LAMBDA: '#52c41a',
-        SIMC: '#13c2c2',
-        ZN: '#fa8c16',
-      },
-);
+/**
+ * 算法分类色板（ZL 工业语义色板，随主题响应）
+ * 注：色板无紫色，COHEN_COON 以 NEUTRAL(slate) 兜底保持分类可区分
+ */
+const algoColors = computed<Record<string, string>>(() => ({
+  COHEN_COON: themeColors.value.NEUTRAL,
+  IMC: themeColors.value.INFO,
+  LAMBDA: themeColors.value.SUCCESS,
+  SIMC: themeColors.value.ACCENT,
+  ZN: themeColors.value.WARNING,
+}));
 
-/** 状态分布柱状图色板（Phase 2 响应式） */
+/** 状态分布柱状图色板（ZL 工业语义色板，随主题响应） */
 const statusChartColors = computed<Record<string, string>>(() => ({
   // Phase 2 新枚举
   COMPLETED: themeColors.value.SUCCESS,
   RUNNING: themeColors.value.INFO,
-  IDENTIFIED: isDark.value ? '#2dd4bf' : '#13c2c2',
-  SIMULATED: isDark.value ? '#60a5fa' : '#1890ff',
+  IDENTIFIED: themeColors.value.ACCENT,
+  SIMULATED: themeColors.value.INFO,
   INCONCLUSIVE: themeColors.value.WARNING,
   ROLLED_BACK: themeColors.value.DANGER,
-  DRAFT: isDark.value ? '#9ca3af' : '#d9d9d9',
+  DRAFT: themeColors.value.NEUTRAL,
   // 兼容旧枚举
   APPLIED: themeColors.value.SUCCESS,
-  PENDING: isDark.value ? '#9ca3af' : '#d9d9d9',
-  VERIFIED: isDark.value ? '#4ade80' : '#389e0d',
+  PENDING: themeColors.value.NEUTRAL,
+  VERIFIED: themeColors.value.SUCCESS,
 }));
 
 /** 加载历史统计 */

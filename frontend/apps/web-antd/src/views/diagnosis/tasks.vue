@@ -719,15 +719,20 @@ onBeforeUnmount(() => {
         </Button>
       </div>
 
-      <!-- 操作按钮区 -->
+      <!-- 操作按钮区（触发类按钮对齐后端 require_roles("ADMIN","IC_ENGINEER","PE_ENGINEER")） -->
       <div class="mb-3 flex items-center gap-2">
-        <Button type="primary" @click="openTriggerModal">
+        <Button
+          v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
+          type="primary"
+          @click="openTriggerModal"
+        >
           <template #icon
             ><IconifyIcon icon="ant-design:plus-outlined"
           /></template>
           新增任务
         </Button>
         <Button
+          v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
           type="primary"
           :disabled="selectedRowKeys.length === 0"
           :loading="batchDiagnoseLoading"
@@ -846,7 +851,9 @@ onBeforeUnmount(() => {
           </template>
           <template v-else-if="column.key === 'action'">
             <!-- 诊断 → 取消 → 详情 → 归档 → 删除，基于状态机控制可用性 -->
+            <!-- 行级"诊断"对齐后端 POST /tasks/{id}/run require_roles("ADMIN","IC_ENGINEER","PE_ENGINEER") -->
             <Button
+              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
               type="link"
               size="small"
               :disabled="!canDiagnose(record.status as DiagnosisApi.TaskStatus)"

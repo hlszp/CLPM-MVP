@@ -6,7 +6,7 @@
  * - 主区 65/35 左右分栏：
  *   - 左侧 65%：趋势图（WaveformChart）+ PV-OP 散点图 + 证据链
  *   - 右侧 35%：问题定位路径 + 推荐动作 + 跟踪状态
- * - 顶部：回路基本信息 + 综合评分 + 融合置信度 + 风险等级 + 处理状态 + 时间窗切换
+ * - 顶部：回路基本信息 + 综合评分 + 最高标签置信度 + 风险等级 + 处理状态 + 时间窗切换
  * - FE-14：诊断建议书 PDF 导出按钮
  * - 异常跟踪以 Drawer 形式打开（与 P1-2 约定接口）
  */
@@ -195,7 +195,8 @@ const summaryItems = computed<SummaryItem[]>(() => {
     },
     {
       key: 'confidence',
-      label: '融合置信度',
+      // 后端 Phase 1 起 fusedConfidence 语义为"同标签多算法融合后的最高标签置信度"（不再跨标签融合）
+      label: '最高标签置信度',
       value: Number(detail.value.fusedConfidence).toFixed(2),
       status: getThresholdStatus(detail.value.fusedConfidence, 0.8, 0.5),
     },
@@ -546,16 +547,17 @@ function clearSelection() {
   selectedTime.value = null;
 }
 
-/** 格式化选中时间戳为可读字符串 */
+/**
+ * 格式化选中时间戳（epoch ms 字符串）为可读字符串。
+ * 渲染统一走 utils/format 的 formatTime（Asia/Shanghai 时区），
+ * 保留非数值输入回退原文的既有行为。
+ */
 function formatSelectedTime(ts: string): string {
   const n = Number(ts);
   if (Number.isNaN(n)) return ts;
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(n).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return ts;
-  }
+  const d = new Date(n);
+  if (Number.isNaN(d.getTime())) return ts;
+  return formatTime(d.toISOString());
 }
 
 function handleBack() {

@@ -29,6 +29,7 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningWorkbench' });
 
@@ -316,17 +317,6 @@ function handleRefresh() {
 /** 工具栏：新建整定，跳转模型辨识 */
 function handleCreate() {
   router.push('/tuning/model');
-}
-
-/** 时间格式化 */
-function formatTime(t: string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
 }
 
 /** 拟合度格式化 */

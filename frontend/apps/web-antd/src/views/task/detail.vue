@@ -38,6 +38,8 @@ import {
   markNotificationReadApi,
 } from '#/api/task';
 import { ClpmPageToolbar } from '#/components/clpm';
+import { usePolling } from '#/composables/use-polling';
+import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'TaskDetail' });
 
@@ -49,8 +51,6 @@ const loading = ref(false);
 const task = ref<null | TaskApi.TaskItem>(null);
 const notifications = ref<TaskApi.TaskNotification[]>([]);
 const cancelLoading = ref(false);
-
-let pollTimer: null | ReturnType<typeof setInterval> = null;
 
 // ---- 状态映射 ----
 const statusColorMap: Record<TaskApi.TaskStatus, string> = {
@@ -91,11 +91,16 @@ const currentStageIndex = computed(() => {
   return stageOrder.indexOf(task.value.currentStage);
 });
 
-/** 耗时 */
+/** 耗时（后端时间戳 naive 视为 UTC，补 Z 后再与本地当前时刻比较） */
 const duration = computed(() => {
   if (!task.value?.startedAt) return '—';
-  const end = task.value.finishedAt ? dayjs(task.value.finishedAt) : dayjs();
-  const diff = end.diff(dayjs(task.value.startedAt), 'second');
+  const start = dayjs(normalizeUtcTimestamp(task.value.startedAt));
+  if (!start.isValid()) return '—';
+  const end = task.value.finishedAt
+    ? dayjs(normalizeUtcTimestamp(task.value.finishedAt))
+    : dayjs();
+  const diff = end.diff(start, 'second');
+  if (diff < 0) return '—';
   if (diff < 60) return `${diff}s`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
   return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
@@ -150,28 +155,27 @@ function handleBack() {
   router.push('/tasks');
 }
 
-// ---- 轮询 ----
-function startPolling() {
-  stopPolling();
-  pollTimer = setInterval(() => {
-    if (isActive.value) {
-      loadDetail();
-      loadNotifications();
+// ---- 轮询（活跃任务每 5s 刷新；进入终态后自动停止，usePolling 负责防堆积/隐藏暂停/失败熔断） ----
+const { start: startPolling, stop: stopPolling } = usePolling(
+  async () => {
+    if (!isActive.value) {
+      stopPolling();
+      return;
     }
-  }, 5000);
-}
-
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-}
+    await loadDetail();
+    await loadNotifications();
+  },
+  { interval: 5000 },
+);
 
 // ---- 工具函数 ----
+/**
+ * 时间展示统一走 utils/format 约定（naive 视为 UTC 补 Z 转本地）；
+ * 保留无效值回退原文的既有行为。
+ */
 function formatTime(time?: null | string): string {
   if (!time) return '—';
-  const d = dayjs(time);
+  const d = dayjs(normalizeUtcTimestamp(time));
   return d.isValid() ? d.format('YYYY-MM-DD HH:mm:ss') : time;
 }
 

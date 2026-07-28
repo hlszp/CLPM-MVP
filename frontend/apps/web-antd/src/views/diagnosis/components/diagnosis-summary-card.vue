@@ -29,6 +29,7 @@ import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisSummaryCard' });
 
@@ -142,15 +143,6 @@ function statusName(status: DiagnosisApi.ActionStatus): string {
     IGNORED: '已忽略',
   };
   return map[status] ?? status;
-}
-
-function formatTime(t: string): string {
-  if (!t) return '—';
-  try {
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
 }
 
 onMounted(load);

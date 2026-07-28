@@ -47,6 +47,7 @@ import {
   DIAGNOSIS_LABEL_OPTIONS,
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisConfig' });
 
@@ -292,16 +293,6 @@ async function doSubmit() {
     // 错误已由拦截器处理
   } finally {
     modalLoading.value = false;
-  }
-}
-
-function formatTime(t: string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
   }
 }
 

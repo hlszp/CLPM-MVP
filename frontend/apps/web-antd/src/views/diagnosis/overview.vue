@@ -44,6 +44,7 @@ import {
   getDiagnosisLabelName,
 } from '#/constants/diagnosis';
 import { $t } from '#/locales';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisOverview' });
 
@@ -375,16 +376,6 @@ function labelName(label: DiagnosisLabel): string {
 
 function statusName(status: DiagnosisApi.ActionStatus): string {
   return statusOptions.find((o) => o.value === status)?.label || status;
-}
-
-/** 时间格式化（北京时间） */
-function formatTime(t: string): string {
-  if (!t) return '—';
-  try {
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
 }
 
 /** 置信度颜色 */

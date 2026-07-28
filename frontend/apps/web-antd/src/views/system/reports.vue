@@ -7,7 +7,7 @@
  * - 新增/编辑配置弹窗
  * - "立即生成"按钮触发异步任务
  * - 任务进度查询（轮询 taskId）
- * - ADMIN + IC_ENGINEER 可见
+ * - 仅 ADMIN 可见（路由与后端 reports.py 全端点均已收紧 ADMIN）
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
@@ -39,6 +39,8 @@ import {
   updateReportConfigApi,
 } from '#/api/system';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import { usePolling } from '#/composables/use-polling';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemReports' });
 
@@ -116,7 +118,46 @@ interface TaskProgress {
 }
 
 const taskProgressMap = ref<Map<string, TaskProgress>>(new Map());
-let pollTimer: null | ReturnType<typeof setInterval> = null;
+
+/** 轮询一次全部进行中的生成任务（单任务失败跳过本次，不中断其余任务） */
+async function pollTaskProgress() {
+  if (taskProgressMap.value.size === 0) {
+    stopPolling();
+    return;
+  }
+  const entries = [...taskProgressMap.value.entries()];
+  for (const [configId, progress] of entries) {
+    try {
+      const taskResult = await getReportTaskStatusApi(progress.taskId);
+      taskProgressMap.value.set(configId, {
+        ...progress,
+        status: taskResult.status,
+        progress: taskResult.progress ?? 0,
+        message: taskResult.message || '',
+      });
+      if (taskResult.status === 'COMPLETED' || taskResult.status === 'FAILED') {
+        if (taskResult.status === 'COMPLETED') {
+          message.success(`报表「${recordName(configId)}」生成完成`);
+        } else {
+          message.error(`报表「${recordName(configId)}」生成失败`);
+        }
+        taskProgressMap.value.delete(configId);
+        await loadList();
+      }
+    } catch {
+      // 轮询失败，跳过本次
+    }
+  }
+  if (taskProgressMap.value.size === 0) {
+    stopPolling();
+  }
+}
+
+/** 任务进度轮询（3s，usePolling 防堆积 + 页面隐藏自动暂停） */
+const { start: startPolling, stop: stopPolling } = usePolling(
+  pollTaskProgress,
+  { interval: 3000 },
+);
 
 /** 加载报表配置列表 */
 async function loadList() {
@@ -220,54 +261,6 @@ async function handleGenerate(record: SystemApi.ReportConfig) {
   }
 }
 
-/** 开始轮询任务状态 */
-function startPolling() {
-  if (pollTimer) return;
-  pollTimer = setInterval(async () => {
-    if (taskProgressMap.value.size === 0) {
-      stopPolling();
-      return;
-    }
-    const entries = [...taskProgressMap.value.entries()];
-    for (const [configId, progress] of entries) {
-      try {
-        const taskResult = await getReportTaskStatusApi(progress.taskId);
-        taskProgressMap.value.set(configId, {
-          ...progress,
-          status: taskResult.status,
-          progress: taskResult.progress ?? 0,
-          message: taskResult.message || '',
-        });
-        if (
-          taskResult.status === 'COMPLETED' ||
-          taskResult.status === 'FAILED'
-        ) {
-          if (taskResult.status === 'COMPLETED') {
-            message.success(`报表「${recordName(configId)}」生成完成`);
-          } else {
-            message.error(`报表「${recordName(configId)}」生成失败`);
-          }
-          taskProgressMap.value.delete(configId);
-          await loadList();
-        }
-      } catch {
-        // 轮询失败，跳过本次
-      }
-    }
-    if (taskProgressMap.value.size === 0) {
-      stopPolling();
-    }
-  }, 3000);
-}
-
-/** 停止轮询 */
-function stopPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-}
-
 /** 根据 configId 获取报表名称 */
 function recordName(configId: string): string {
   const report = reportList.value.find((r) => r.id === configId);
@@ -297,16 +290,6 @@ function taskStatusLabel(status: SystemApi.ReportTaskStatus): string {
     FAILED: '失败',
   };
   return map[status] || status;
-}
-
-function formatTime(t?: string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
 }
 
 function periodLabel(period: string): string {

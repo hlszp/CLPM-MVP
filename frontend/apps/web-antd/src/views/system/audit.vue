@@ -31,6 +31,7 @@ import dayjs from 'dayjs';
 
 import { getAuditLogListApi } from '#/api/system';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemAudit' });
 
@@ -156,16 +157,6 @@ function handleTableChange(pagination: TablePaginationConfig) {
 function handleViewDetail(record: SystemApi.AuditLog) {
   selectedLog.value = record;
   drawerVisible.value = true;
-}
-
-function formatTime(t?: string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
-  }
 }
 
 function operationLabel(op: SystemApi.OperationType): string {

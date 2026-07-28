@@ -192,7 +192,7 @@ onMounted(async () => {
               </Col>
               <Col :span="6">
                 <div class="summary-card">
-                  <div class="summary-label">融合置信度</div>
+                  <div class="summary-label">最高标签置信度</div>
                   <div class="summary-value">{{ confidencePercent }}%</div>
                 </div>
               </Col>

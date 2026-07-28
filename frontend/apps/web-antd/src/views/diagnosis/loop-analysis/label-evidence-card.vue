@@ -7,7 +7,7 @@
  *  - 算法中文名 + 原理说明（2 行截断 + tooltip 全文）
  *  - 关键特征值（按 meta.featureKeys 从 evidence 取值）
  *  - 阈值判定（meta.threshold 配置 + 触发标记）
- *  - 置信度 / 融合置信度 / 证据摘要
+ *  - 置信度 / 最高标签置信度 / 证据摘要
  *  - 置信度等级释义（A-E 五级）
  *
  * 降级：meta 为空时只显示标签名 + 置信度 + 证据，兼容旧数据。
@@ -31,7 +31,7 @@ const props = withDefaults(
   defineProps<{
     /** 可信度等级 A-E */
     confidenceLevel?: 'A' | 'B' | 'C' | 'D' | 'E' | null;
-    /** 详情级融合置信度 0~1 */
+    /** 详情级最高标签置信度 0~1（同标签多算法融合后的最高值，不再跨标签融合） */
     fusedConfidence?: number;
     /** 单标签诊断结果 */
     item: DiagnosisApi.DiagnosisLabelItem;
@@ -115,7 +115,7 @@ const confidencePct = computed(() => {
   return Number.isFinite(v) ? Math.round(v * 100) : 0;
 });
 
-/** 融合置信度百分比 */
+/** 最高标签置信度百分比（同标签多算法融合后的最高值，不再跨标签融合） */
 const fusedPct = computed(() => {
   if (props.fusedConfidence === undefined) return null;
   const v = Number(props.fusedConfidence);
@@ -235,7 +235,7 @@ function formatValue(raw: unknown): string {
       </div>
       <div v-if="fusedPct !== null" class="flex-1">
         <div class="mb-1 flex justify-between text-xs">
-          <span :style="{ color: themeColors.NEUTRAL }">融合置信度</span>
+          <span :style="{ color: themeColors.NEUTRAL }">最高标签置信度</span>
           <span class="font-mono">{{ fusedPct }}%</span>
         </div>
         <Progress

@@ -96,8 +96,13 @@ const { getStatusMeta } = useIndustrialStatus();
 const { themeColors } = useClpmTheme();
 
 /**
- * 角色判断（替代 v-permission 传角色名的误用——v-permission 校验 accessCodes 权限码，
- * 传角色名会导致 el.remove() 误删组件 DOM，Dropdown 内部状态被破坏后菜单无法展开）
+ * 角色判断（v-if 模式：Dropdown/状态流转等承载内部状态的交互组件不用 v-permission，
+ * 避免历史 el.remove() 破坏组件内部状态的问题；v-permission 已修 Comment 占位版，
+ * 但本页按钮均为响应式角色判断，v-if 语义更直观）
+ *
+ * 与后端 require_roles 对齐（deps.py 无 ADMIN 通配，严格按角色枚举）：
+ * - 更新状态：PATCH /tracker/{loop_id}/status → require_roles("IC_ENGINEER")
+ * - 导出 PDF：POST /tracker/{loop_id}/export → require_roles("IC_ENGINEER","ADMIN","PE_ENGINEER")
  */
 const userRoles = computed(() => userStore.userInfo?.roles ?? []);
 const canEditStatus = computed(() => userRoles.value.includes('IC_ENGINEER'));
@@ -106,7 +111,7 @@ const canViewAbCompare = computed(() =>
 );
 const canExportPdf = computed(() =>
   userRoles.value.some((r) =>
-    ['EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'].includes(r),
+    ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'].includes(r),
   ),
 );
 

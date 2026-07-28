@@ -36,6 +36,7 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemAlgorithmParams' });
 
@@ -465,15 +466,6 @@ async function handleSave() {
     // 错误已由拦截器处理
   } finally {
     saving.value = false;
-  }
-}
-
-function formatTime(t?: null | string): string {
-  if (!t) return '—';
-  try {
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
   }
 }
 

@@ -43,6 +43,7 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
 } from '#/components/clpm';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemUsers' });
 
@@ -288,16 +289,6 @@ async function handleSubmitReset() {
     // 错误已由拦截器处理
   } finally {
     resetModalLoading.value = false;
-  }
-}
-
-function formatTime(t?: string): string {
-  if (!t) return '—';
-  try {
-    // 强制北京时间（UTC+8）
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
   }
 }
 

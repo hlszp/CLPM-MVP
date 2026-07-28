@@ -10,8 +10,9 @@
  */
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 
-import { onMounted, onUnmounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 
+import { message } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -29,6 +30,7 @@ import {
   TaskApi,
   triggerCustomEvaluateApi,
 } from '#/api/task';
+import { usePolling } from '#/composables/use-polling';
 
 /** 12 个 metric code（对齐 metric_calculator.CALCULATOR_REGISTRY，前端固化） */
 export const ALL_METRIC_CODES = [
@@ -135,22 +137,28 @@ export function useLoopAnalysis() {
   const algorithmMeta = ref<DiagnosisApi.AlgorithmMetaList | null>(null);
   const loading = ref(false);
 
-  let kpiTimer: null | ReturnType<typeof setInterval> = null;
-  let diagTimer: null | ReturnType<typeof setInterval> = null;
+  /**
+   * KPI 评估轮询（usePolling：递归 setTimeout 防堆积 + 页面隐藏暂停 +
+   * 连续 3 次失败才熔断；熔断时提示用户，避免一次网络抖动永久卡死进度条）
+   */
+  const kpiPolling = usePolling(pollKpiTask, {
+    interval: POLL_INTERVAL,
+    onGiveUp: () => {
+      kpi.errorMessage =
+        '任务进度刷新已停止（连续获取状态失败），请检查网络后重新触发评估';
+      message.warning('KPI 评估进度刷新中断，请检查网络后重新触发评估');
+    },
+  });
 
-  function clearKpiTimer() {
-    if (kpiTimer) {
-      clearInterval(kpiTimer);
-      kpiTimer = null;
-    }
-  }
-
-  function clearDiagTimer() {
-    if (diagTimer) {
-      clearInterval(diagTimer);
-      diagTimer = null;
-    }
-  }
+  /** 诊断任务轮询（同 KPI 轮询约定） */
+  const diagPolling = usePolling(pollDiagTask, {
+    interval: POLL_INTERVAL,
+    onGiveUp: () => {
+      diag.errorMessage =
+        '任务进度刷新已停止（连续获取状态失败），请检查网络后重新触发诊断';
+      message.warning('诊断任务进度刷新中断，请检查网络后重新触发诊断');
+    },
+  });
 
   /** 加载算法元数据（onMounted 时调一次） */
   async function loadAlgorithmMeta() {
@@ -164,7 +172,7 @@ export function useLoopAnalysis() {
   /** Step 2：触发 KPI 评估 */
   async function triggerKpiEvaluation() {
     if (!config.loopId) return;
-    clearKpiTimer();
+    kpiPolling.stop();
     Object.assign(kpi, defaultKpiState());
     loading.value = true;
     try {
@@ -176,7 +184,7 @@ export function useLoopAnalysis() {
       });
       kpi.taskId = task.taskId;
       kpi.status = task.status;
-      startKpiPoll();
+      kpiPolling.start();
     } catch {
       // 错误已由拦截器处理
     } finally {
@@ -184,28 +192,23 @@ export function useLoopAnalysis() {
     }
   }
 
-  function startKpiPoll() {
-    clearKpiTimer();
-    kpiTimer = setInterval(pollKpiTask, POLL_INTERVAL);
-  }
-
+  /**
+   * 轮询 KPI 任务状态；错误不捕获，交由 usePolling 计入连续失败熔断。
+   * 到达终态时主动停止轮询。
+   */
   async function pollKpiTask() {
     if (!kpi.taskId) return;
-    try {
-      const task = await getTaskDetailApi(kpi.taskId);
-      kpi.status = task.status;
-      kpi.progress = task.progress ?? 0;
-      kpi.currentStage = task.currentStage ?? '';
-      if (TaskApi.TERMINAL_STATUSES.includes(task.status)) {
-        clearKpiTimer();
-        if (task.status === 'SUCCESS') {
-          await loadKpiResults();
-        } else {
-          kpi.errorMessage = task.errorMessage || '评估未成功完成';
-        }
+    const task = await getTaskDetailApi(kpi.taskId);
+    kpi.status = task.status;
+    kpi.progress = task.progress ?? 0;
+    kpi.currentStage = task.currentStage ?? '';
+    if (TaskApi.TERMINAL_STATUSES.includes(task.status)) {
+      kpiPolling.stop();
+      if (task.status === 'SUCCESS') {
+        await loadKpiResults();
+      } else {
+        kpi.errorMessage = task.errorMessage || '评估未成功完成';
       }
-    } catch {
-      clearKpiTimer();
     }
   }
 
@@ -222,7 +225,7 @@ export function useLoopAnalysis() {
   /** Step 3：触发诊断 */
   async function triggerDiagnosis() {
     if (!config.loopId) return;
-    clearDiagTimer();
+    diagPolling.stop();
     Object.assign(diag, defaultDiagState());
     loading.value = true;
     try {
@@ -236,7 +239,7 @@ export function useLoopAnalysis() {
       if (first) {
         diag.taskId = first.taskId;
         diag.status = first.status;
-        startDiagPoll();
+        diagPolling.start();
       }
     } catch {
       // 错误已由拦截器处理
@@ -245,26 +248,21 @@ export function useLoopAnalysis() {
     }
   }
 
-  function startDiagPoll() {
-    clearDiagTimer();
-    diagTimer = setInterval(pollDiagTask, POLL_INTERVAL);
-  }
-
+  /**
+   * 轮询诊断任务状态；错误不捕获，交由 usePolling 计入连续失败熔断。
+   * 到达终态时主动停止轮询。
+   */
   async function pollDiagTask() {
     if (!diag.taskId) return;
-    try {
-      const task = await getDiagnosisTaskDetailApi(diag.taskId);
-      diag.status = task.status;
-      if (TaskApi.TERMINAL_STATUSES.includes(task.status)) {
-        clearDiagTimer();
-        if (task.status === 'SUCCESS') {
-          await loadDiagnosisResults();
-        } else {
-          diag.errorMessage = task.errorMessage || '诊断未成功完成';
-        }
+    const task = await getDiagnosisTaskDetailApi(diag.taskId);
+    diag.status = task.status;
+    if (TaskApi.TERMINAL_STATUSES.includes(task.status)) {
+      diagPolling.stop();
+      if (task.status === 'SUCCESS') {
+        await loadDiagnosisResults();
+      } else {
+        diag.errorMessage = task.errorMessage || '诊断未成功完成';
       }
-    } catch {
-      clearDiagTimer();
     }
   }
 
@@ -293,8 +291,8 @@ export function useLoopAnalysis() {
 
   /** 切换回路时清空所有结果 */
   function resetResults() {
-    clearKpiTimer();
-    clearDiagTimer();
+    kpiPolling.stop();
+    diagPolling.stop();
     Object.assign(kpi, defaultKpiState());
     Object.assign(diag, defaultDiagState());
   }
@@ -303,10 +301,7 @@ export function useLoopAnalysis() {
     loadAlgorithmMeta();
   });
 
-  onUnmounted(() => {
-    clearKpiTimer();
-    clearDiagTimer();
-  });
+  // 轮询清理由 usePolling 的 onScopeDispose 兜底（组件卸载自动停止）
 
   // 用 reactive 包裹返回值，使 ref 在父模板与子组件 props 中自动解包，
   // 子组件可直接用 state.current / state.algorithmMeta 访问，无需 .value。

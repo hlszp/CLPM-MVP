@@ -57,6 +57,7 @@ import {
   ClpmNumeric,
 } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
+import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 import { mapQualityToLabel } from '#/utils/quality-code';
 import { realtimeWs } from '#/utils/realtime-ws';
@@ -65,6 +66,7 @@ defineOptions({ name: 'TagList' });
 
 // List state
 const loading = ref(false);
+const loadError = ref(false);
 const tagList = ref<TagApi.TagItem[]>([]);
 const total = ref(0);
 const query = reactive({
@@ -260,6 +262,7 @@ async function loadPlantNodes() {
 /** 加载测点列表 */
 async function loadList() {
   loading.value = true;
+  loadError.value = false;
   try {
     const data = await getTagListApi({
       plantNodeId: query.plantNodeId,
@@ -274,11 +277,24 @@ async function loadList() {
     tagList.value = data.items;
     total.value = data.total;
   } catch {
-    // 错误已由拦截器处理
+    // 错误 toast 已由拦截器处理，此处仅更新本地错误态
+    loadError.value = true;
   } finally {
     loading.value = false;
   }
 }
+
+/** 是否有生效的筛选条件（有筛选时空列表不触发画布空态，避免筛选区被空态替换） */
+const hasActiveFilter = computed(
+  () =>
+    !!(
+      query.plantNodeId ||
+      query.measureType ||
+      query.tagType ||
+      query.isLinked !== undefined ||
+      query.keyword
+    ),
+);
 
 function handleSearch() {
   query.page = 1;
@@ -389,15 +405,6 @@ async function handleViewDetail(record: TagApi.TagItem) {
     // 错误已由拦截器处理，保留列表数据展示
   } finally {
     detailLoading.value = false;
-  }
-}
-
-function formatTime(t?: null | string): string {
-  if (!t) return '—';
-  try {
-    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  } catch {
-    return t;
   }
 }
 
@@ -537,7 +544,16 @@ onUnmounted(() => {
 
 <template>
   <Page title="测点清单">
-    <ClpmDataCanvas title="测点清单" :loading="loading">
+    <ClpmDataCanvas
+      title="测点清单"
+      :loading="loading"
+      :error="loadError"
+      :empty="
+        !loading && !loadError && tagList.length === 0 && !hasActiveFilter
+      "
+      empty-text="暂无测点数据"
+      @retry="loadList"
+    >
       <!-- 筛选区 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
