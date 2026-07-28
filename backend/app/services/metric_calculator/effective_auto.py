@@ -74,13 +74,19 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
         e_max = self._read_e_max(bundle)
 
         # 采用零阶保持模型：每个采样点代表一个时间间隔（最后一个点沿用前段时长）
-        # 数组长度可能不一致（信号与时间戳长度不齐），循环上界取各数组最小长度防止 IndexError
+        # 循环上界取 mode/时间戳最小长度防 IndexError。注意 op/pv/sp 是可选信号
+        # （MODE_HF tagGroup 只含 mode+op），缺失时不得把上界截断为 0——
+        # 否则 total_duration=0 误报 zero_total_duration（2026-07-28 回归教训：
+        # 上一版对全部 5 个数组取 min，导致缺 pv/sp 时全回路 INCONCLUSIVE）。
         durations = self._point_durations(masked_ts)
-        bound = min(n, len(durations), len(masked_op), len(masked_pv), len(masked_sp))
+        bound = min(n, len(durations))
         durations = durations[:bound]
         total_duration = sum(durations)
         if total_duration <= 0:
             return self._make_inconclusive(bundle, "zero_total_duration")
+
+        has_op = len(masked_op) > 0
+        has_pv_sp = len(masked_pv) > 0 and len(masked_sp) > 0
 
         auto_duration = 0.0
         effective_duration = 0.0
@@ -92,13 +98,15 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
                 continue
             auto_duration += segment
 
-            # OP 饱和检查
-            op_val = _to_float(masked_op[i])
-            is_saturated = (op_val <= op_low + epsilon) or (op_val >= op_high - epsilon)
+            # OP 饱和检查（op 信号缺失时不判饱和）
+            is_saturated = False
+            if has_op and i < len(masked_op):
+                op_val = _to_float(masked_op[i])
+                is_saturated = (op_val <= op_low + epsilon) or (op_val >= op_high - epsilon)
 
-            # 偏差检查
+            # 偏差检查（pv/sp 信号缺失时视为偏差合理）
             is_deviation_ok = True
-            if e_max > 0:
+            if e_max > 0 and has_pv_sp and i < len(masked_pv) and i < len(masked_sp):
                 deviation = abs(_to_float(masked_pv[i]) - _to_float(masked_sp[i]))
                 is_deviation_ok = deviation < e_max
 

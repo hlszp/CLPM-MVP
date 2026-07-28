@@ -139,3 +139,42 @@ class TestEffectiveAutoRate:
         result = calc.calculate(bundle)
         assert result.value == 100.0
         assert result.details["total_duration_s"] == 50.0
+
+
+class TestMissingOptionalSignals:
+    """回归：MODE_HF tagGroup 只含 mode+op（缺 pv/sp）时不得误报 zero_total_duration。
+
+    2026-07-28 线上回归：上一版 IndexError 防护对全部 5 个数组取 min 长度，
+    缺 pv/sp 时循环上界被截断为 0 → total_duration=0 → 全回路 INCONCLUSIVE。
+    """
+
+    def test_missing_pv_sp_still_computes(self):
+        """缺 pv/sp 信号（mode+op only）→ 正常出分，不报 zero_total_duration。"""
+        n = 100
+        bundle = make_bundle(
+            {"mode": [1] * n, "op": [50.0] * n},
+            metric_code="effective_auto_rate",
+        )
+        result = EffectiveAutoRateCalculator().calculate(bundle)
+        assert result.value == 100.0
+        assert result.details["auto_mode_rate"] == 100.0
+
+    def test_missing_op_treated_as_unsaturated(self):
+        """缺 op 信号 → 不判饱和，mode 全自动 → R=100。"""
+        n = 100
+        bundle = make_bundle(
+            {"mode": [1] * n},
+            metric_code="effective_auto_rate",
+        )
+        result = EffectiveAutoRateCalculator().calculate(bundle)
+        assert result.value == 100.0
+
+    def test_missing_mode_still_insufficient(self):
+        """缺 mode 信号（n=0）→ 仍 INCONCLUSIVE(insufficient_data)。"""
+        bundle = make_bundle(
+            {"op": [50.0] * 100},
+            metric_code="effective_auto_rate",
+        )
+        result = EffectiveAutoRateCalculator().calculate(bundle)
+        assert result.value is None
+        assert result.details.get("reason") == "insufficient_data"
