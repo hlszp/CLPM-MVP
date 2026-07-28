@@ -7,7 +7,7 @@
 
 缓存 Key 格式（任务规范）::
 
-    pdb_l2:{loopId}:{metrics_hash}:{window_hash}:{control_type}
+    pdb_l2:{loopId}:{metrics_hash}:{window_hash}:{control_type}:{op_limits_hash}:{cfg_version}
 
 序列化链路（与 L1 一致，兼容 ``decode_responses=True`` 的 Redis 客户端）::
 
@@ -85,17 +85,21 @@ class L2BundleCache:
         control_type: str,
         op_output_lower_limit: float | None = None,
         op_output_upper_limit: float | None = None,
+        cfg_version: str = "v1",
     ) -> str:
         """生成 L2 缓存 Key.
 
         Key 格式（任务规范）::
 
-            pdb_l2:{loopId}:{metrics_hash}:{window_hash}:{control_type}:{op_limits_hash}
+            pdb_l2:{loopId}:{metrics_hash}:{window_hash}:{control_type}:{op_limits_hash}:{cfg_version}
 
         - ``metrics_hash``：对 metrics 列表排序后取 MD5 前 8 位，
           确保相同指标集合（无论顺序）命中同一 Key
         - ``window_hash``：时间窗口短哈希（与 L1 ``time_window_hash`` 一致）
         - ``op_limits_hash``：OP 输出限位哈希（用于区分不同限位配置的缓存）
+        - ``cfg_version``：配置版本（与 L1 同一 ``cfg_{updated_at}`` 口径），
+          量程变更/tag 重关联/契约变更后旧 bundle 不再命中，
+          不必等待 TTL（600s）自然过期
 
         设计依据：ADS §10.7.1, 任务规范, loop-range-and-output-limits-design-v1.0.md §4.3
         """
@@ -103,7 +107,8 @@ class L2BundleCache:
         window_hash = _time_window_hash(time_window_start, time_window_end)
         op_limits_hash = _op_limits_hash(op_output_lower_limit, op_output_upper_limit)
         return (
-            f"{_KEY_PREFIX}:{loop_id}:{metrics_hash}:{window_hash}:{control_type}:{op_limits_hash}"
+            f"{_KEY_PREFIX}:{loop_id}:{metrics_hash}:{window_hash}:"
+            f"{control_type}:{op_limits_hash}:{cfg_version}"
         )
 
     # ------------------------------------------------------------------

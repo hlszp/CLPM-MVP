@@ -204,3 +204,82 @@ class TestScanBehavior:
         deleted = await invalidator.invalidate_all()
         assert deleted == 50
         assert len(fake_redis.keys) == 0
+
+
+# ---------------------------------------------------------------------------
+# 多层覆盖（L1 pdb: / L2 pdb_l2: / L3 pdb_l3:）
+# ---------------------------------------------------------------------------
+
+
+def _write_l2_l3_keys(redis: FakeCacheRedis, loop_id: str, cfg_version: str = "cfg_12") -> None:
+    """直接向 FakeRedis 写入该回路的 L2/L3 Key（绕过序列化，仅验证失效范围）."""
+    redis._store[f"pdb_l2:{loop_id}:mh123456:wh123456:TC:ol123456:{cfg_version}"] = "v"
+    redis._store[f"pdb_l3:{loop_id}:accuracy_rate:mean:wh123456"] = "v"
+
+
+class TestMultiLayerCoverage:
+    """失效器应同时覆盖 L1（pdb:）/ L2（pdb_l2:）/ L3（pdb_l3:）三种前缀."""
+
+    @pytest.mark.asyncio
+    async def test_invalidate_loop_covers_l1_l2_l3(self, fake_redis: FakeCacheRedis) -> None:
+        """invalidate_loop 应删除该回路 L1+L2+L3 全部 Key，不影响其他回路."""
+        await _populate_cache(fake_redis, loop_id="TC101")  # 4 个 L1 Key
+        _write_l2_l3_keys(fake_redis, "TC101")
+        _write_l2_l3_keys(fake_redis, "FC201")
+        assert len(fake_redis.keys) == 8
+
+        invalidator = CacheInvalidator(fake_redis)
+        deleted = await invalidator.invalidate_loop("TC101")
+
+        assert deleted == 6  # 4 L1 + 1 L2 + 1 L3
+        assert len(fake_redis.keys) == 2
+        for key in fake_redis.keys:
+            assert "FC201" in key
+
+    @pytest.mark.asyncio
+    async def test_invalidate_loop_keep_version_keeps_new_l2(
+        self, fake_redis: FakeCacheRedis
+    ) -> None:
+        """keep_version 应同时保留新版本 L1 与 L2 Key（L2 Key 含 cfg_version）."""
+        await _populate_cache(fake_redis, loop_id="TC101", config_version="cfg_12")
+        _write_l2_l3_keys(fake_redis, "TC101", cfg_version="cfg_12")
+        _write_l2_l3_keys(fake_redis, "TC101", cfg_version="cfg_13")
+        # 上面的 L3 Key 相同（不含版本），实际写入 4 L1 + 2 L2 + 1 L3
+        l2_keys = [k for k in fake_redis.keys if k.startswith("pdb_l2:")]
+        assert len(l2_keys) == 2
+
+        invalidator = CacheInvalidator(fake_redis)
+        deleted = await invalidator.invalidate_loop("TC101", config_version="cfg_13")
+
+        remaining = fake_redis.keys
+        # 旧版本 L2（cfg_12）被删除，新版本 L2（cfg_13）保留
+        assert not any(k.startswith("pdb_l2:") and "cfg_12" in k for k in remaining)
+        assert any(k.startswith("pdb_l2:") and "cfg_13" in k for k in remaining)
+        assert deleted > 0
+
+    @pytest.mark.asyncio
+    async def test_invalidate_all_covers_l1_l2_l3(self, fake_redis: FakeCacheRedis) -> None:
+        """invalidate_all 应清空三种前缀，保留非 pdb 前缀 Key."""
+        await _populate_cache(fake_redis, loop_id="TC101")
+        _write_l2_l3_keys(fake_redis, "TC101")
+        fake_redis._store["other:key"] = "value"
+
+        invalidator = CacheInvalidator(fake_redis)
+        deleted = await invalidator.invalidate_all()
+
+        assert deleted == 6
+        assert fake_redis.keys == ["other:key"]
+
+    @pytest.mark.asyncio
+    async def test_invalidate_metric_config_covers_all_layers(
+        self, fake_redis: FakeCacheRedis
+    ) -> None:
+        """指标配置变更的全量清理应覆盖 L1/L2/L3."""
+        await _populate_cache(fake_redis, loop_id="TC101")
+        _write_l2_l3_keys(fake_redis, "TC101")
+
+        invalidator = CacheInvalidator(fake_redis)
+        deleted = await invalidator.invalidate_metric_config("accuracy_rate")
+
+        assert deleted == 6
+        assert len(fake_redis.keys) == 0

@@ -647,6 +647,50 @@ class TestEdgeCases:
         assert bundles[0].masked_indices == []
 
     @pytest.mark.asyncio
+    async def test_empty_data_block_not_written_to_l1(self) -> None:
+        """TDengine 返回空数据时，空 DataBlock 不应写入 L1（禁止负缓存）.
+
+        修复问题：「先算后导」场景下空块进 L1（TTL 3600s），
+        backfill 补齐数据后最长 1h 仍命中空块。
+        """
+        requirements = [
+            build_requirement("accuracy_rate", TagGroup.BASE, ["pv", "sp"], "pv_valid && sp_valid"),
+        ]
+        db = _make_db(requirements)
+        redis = FakeCacheRedis()
+        query_log: list = []
+
+        async def empty_query_fn(loop_id, tag_roles, start, end, interval_s):
+            from app.contracts.data_types import RawTimeSeries
+
+            query_log.append({"loop_id": loop_id, "tags": list(tag_roles)})
+            return RawTimeSeries(timestamps=[], signals={})
+
+        planner = DataPlanner(
+            cache=L1DataBlockCache(redis),
+            tdengine_query_fn=empty_query_fn,
+            assembler=MetricDataBundleAssembler(),
+            db=db,
+            config_loader=_make_config_loader(),
+        )
+
+        bundles = await planner.request_bundles(
+            "L001", ["accuracy_rate"], _time_window(), ControlType.TEMPERATURE
+        )
+        # 空 DataBlock 仍返回 Bundle（INCONCLUSIVE 口径不变）
+        assert len(bundles) == 1
+        assert bundles[0].data_block.point_count == 0
+        # 空块不写入 L1（无负缓存）
+        assert len(redis.keys) == 0
+
+        # 第二次请求：无负缓存兜底，应重新回源查询
+        await planner.request_bundles(
+            "L001", ["accuracy_rate"], _time_window(), ControlType.TEMPERATURE
+        )
+        assert len(query_log) == 2
+        assert len(redis.keys) == 0
+
+    @pytest.mark.asyncio
     async def test_no_db_returns_empty_when_no_config_loader(self) -> None:
         """无 db 且无 config_loader 时，_load_requirements 返回空."""
         planner = DataPlanner(

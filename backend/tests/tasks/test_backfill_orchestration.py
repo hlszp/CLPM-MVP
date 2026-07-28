@@ -243,6 +243,7 @@ async def test_finalize_backfill_success() -> None:
     with (
         patch("app.tasks.kpi_calc._is_task_cancelled", new_callable=AsyncMock, return_value=False),
         patch("app.tasks.kpi_calc._update_task_success", new_callable=AsyncMock) as update,
+        patch("app.tasks.kpi_calc._invalidate_backfill_cache", new_callable=AsyncMock),
     ):
         result = await _do_finalize_backfill(
             batches,
@@ -264,6 +265,7 @@ async def test_finalize_backfill_failure_sets_failed_terminal_state() -> None:
     with (
         patch("app.tasks.kpi_calc._is_task_cancelled", new_callable=AsyncMock, return_value=False),
         patch("app.tasks.kpi_calc._update_task_failed", new_callable=AsyncMock) as update,
+        patch("app.tasks.kpi_calc._invalidate_backfill_cache", new_callable=AsyncMock),
     ):
         result = await _do_finalize_backfill(
             [{"success": 0, "inconclusive": 0, "failed": 1, "failed_windows": ["w1"]}],
@@ -285,6 +287,9 @@ async def test_finalize_backfill_preserves_cancelled_state() -> None:
         patch("app.tasks.kpi_calc._is_task_cancelled", new_callable=AsyncMock, return_value=True),
         patch("app.tasks.kpi_calc._update_task_success", new_callable=AsyncMock) as success,
         patch("app.tasks.kpi_calc._update_task_failed", new_callable=AsyncMock) as failed,
+        patch(
+            "app.tasks.kpi_calc._invalidate_backfill_cache", new_callable=AsyncMock
+        ) as invalidate,
     ):
         result = await _do_finalize_backfill(
             [],
@@ -297,6 +302,83 @@ async def test_finalize_backfill_preserves_cancelled_state() -> None:
     assert result["cancelled"] is True
     success.assert_not_awaited()
     failed.assert_not_awaited()
+    invalidate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_finalize_backfill_invalidates_loop_cache_on_success() -> None:
+    """回填成功后应对涉及回路触发缓存失效（清除「先算后导」负缓存）."""
+    from app.tasks.kpi_calc import _do_finalize_backfill
+
+    batches = [
+        {"success": 2, "inconclusive": 0, "failed": 0, "node_success": 1, "failed_windows": []}
+    ]
+    with (
+        patch("app.tasks.kpi_calc._is_task_cancelled", new_callable=AsyncMock, return_value=False),
+        patch("app.tasks.kpi_calc._update_task_success", new_callable=AsyncMock),
+        patch(
+            "app.tasks.kpi_calc._invalidate_backfill_cache", new_callable=AsyncMock
+        ) as invalidate,
+    ):
+        result = await _do_finalize_backfill(
+            batches,
+            "2026-07-04T00:00:00Z",
+            "2026-07-04T01:00:00Z",
+            total_windows=1,
+            task_id="task-1",
+            loop_ids=["L1", "L2"],
+        )
+
+    assert result["status"] == "SUCCESS"
+    invalidate.assert_awaited_once_with(["L1", "L2"])
+
+
+@pytest.mark.asyncio
+async def test_invalidate_backfill_cache_per_loop() -> None:
+    """指定 loop_ids 时应逐回路失效（invalidate_loop 覆盖 pdb:/pdb_l2:/pdb_l3:）."""
+    from app.tasks.kpi_calc import _invalidate_backfill_cache
+
+    with patch("app.services.cache.invalidation.CacheInvalidator") as mock_invalidator_cls:
+        inv = mock_invalidator_cls.return_value
+        inv.invalidate_loop = AsyncMock(return_value=3)
+        inv.invalidate_all = AsyncMock(return_value=99)
+
+        deleted = await _invalidate_backfill_cache(["L1", "L2"])
+
+    assert deleted == 6
+    assert inv.invalidate_loop.await_count == 2
+    inv.invalidate_all.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalidate_backfill_cache_all_when_loop_ids_none() -> None:
+    """loop_ids=None（全量回填）时应退化为全量清理."""
+    from app.tasks.kpi_calc import _invalidate_backfill_cache
+
+    with patch("app.services.cache.invalidation.CacheInvalidator") as mock_invalidator_cls:
+        inv = mock_invalidator_cls.return_value
+        inv.invalidate_loop = AsyncMock(return_value=3)
+        inv.invalidate_all = AsyncMock(return_value=99)
+
+        deleted = await _invalidate_backfill_cache(None)
+
+    assert deleted == 99
+    inv.invalidate_all.assert_awaited_once()
+    inv.invalidate_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalidate_backfill_cache_failure_returns_zero() -> None:
+    """缓存失效异常不应阻断回填主流程，返回 0."""
+    from app.tasks.kpi_calc import _invalidate_backfill_cache
+
+    with patch(
+        "app.services.cache.invalidation.CacheInvalidator",
+        side_effect=RuntimeError("redis down"),
+    ):
+        deleted = await _invalidate_backfill_cache(["L1"])
+
+    assert deleted == 0
 
 
 @pytest.mark.asyncio

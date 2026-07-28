@@ -297,7 +297,7 @@ class TestL2KeyGeneration:
     """L2 缓存 Key 生成测试."""
 
     def test_build_key_format(self) -> None:
-        """Key 应符合 pdb_l2:{loopId}:{metrics_hash}:{window_hash}:{control_type}."""
+        """Key 应符合 pdb_l2:{loopId}:{metrics}:{window}:{ctrl}:{op_limits}:{cfg}."""
         start = datetime(2024, 1, 1, 10, 0, 0)
         end = datetime(2024, 1, 1, 11, 0, 0)
         key = L2BundleCache.build_key(
@@ -313,6 +313,26 @@ class TestL2KeyGeneration:
         assert len(parts[2]) == 8  # metrics_hash 8 位
         assert len(parts[3]) == 8  # window_hash 8 位
         assert parts[4] == "TC"
+        assert len(parts[5]) == 8  # op_limits_hash 8 位
+        assert parts[6] == "v1"  # cfg_version 默认值
+
+    def test_build_key_different_cfg_version_differ(self) -> None:
+        """不同 cfg_version 应生成不同 Key（配置变更后旧 bundle 不命中）."""
+        start = datetime(2024, 1, 1, 10, 0, 0)
+        end = datetime(2024, 1, 1, 11, 0, 0)
+        k1 = L2BundleCache.build_key("L1", ["a"], start, end, "TC", cfg_version="cfg_1000")
+        k2 = L2BundleCache.build_key("L1", ["a"], start, end, "TC", cfg_version="cfg_2000")
+        assert k1 != k2
+        assert k1.endswith(":cfg_1000")
+        assert k2.endswith(":cfg_2000")
+
+    def test_build_key_same_cfg_version_same_key(self) -> None:
+        """相同 cfg_version（显式传入）应与一致参数生成相同 Key."""
+        start = datetime(2024, 1, 1, 10, 0, 0)
+        end = datetime(2024, 1, 1, 11, 0, 0)
+        k1 = L2BundleCache.build_key("L1", ["a"], start, end, "TC", cfg_version="cfg_1000")
+        k2 = L2BundleCache.build_key("L1", ["a"], start, end, "TC", cfg_version="cfg_1000")
+        assert k1 == k2
 
     def test_build_key_metrics_order_invariant(self) -> None:
         """相同指标集合（不同顺序）应生成相同 Key."""
@@ -656,7 +676,7 @@ class TestDataPlannerL2Integration:
             bundle_cache=l2_cache,
         )
 
-        # 预写 L2 缓存（模拟命中）
+        # 预写 L2 缓存（模拟命中，cfg_version 与 config_loader 一致）
         bundles = _make_bundles()
         l2_key = L2BundleCache.build_key(
             loop_id="TC101",
@@ -664,6 +684,7 @@ class TestDataPlannerL2Integration:
             time_window_start=_time_window().start,
             time_window_end=_time_window().end,
             control_type=ControlType.TEMPERATURE.value,
+            cfg_version="cfg_1000",
         )
         await l2_cache.set(l2_key, bundles)
 
@@ -803,3 +824,67 @@ class TestDataPlannerL2Integration:
         l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
         assert len(l2_keys) == 1
         assert redis._ttls[l2_keys[0]] == 600
+
+    @pytest.mark.asyncio
+    async def test_cfg_version_change_misses_old_l2_bundle(self) -> None:
+        """配置版本变更（量程/tag 重关联）后，L2 不应命中旧 bundle.
+
+        修复问题：L2 Key 仅含 loop/metrics/window/control_type/op_limits，
+        配置变更后旧 bundle 仍会命中至 TTL（600s）过期。
+        """
+        redis = FakeCacheRedis()
+        l1_cache = L1DataBlockCache(redis)
+        l2_cache = L2BundleCache(redis)
+        query_log: list = []
+        requirements = [
+            build_requirement(
+                "accuracy_rate",
+                TagGroup.BASE,
+                ["pv", "sp"],
+                mask_expression="pv_valid && sp_valid",
+            ),
+        ]
+        db = _make_db(requirements)
+
+        def _planner(cfg_version: str) -> DataPlanner:
+            return DataPlanner(
+                cache=l1_cache,
+                tdengine_query_fn=_make_query_fn(query_log),
+                assembler=MetricDataBundleAssembler(),
+                db=db,
+                config_loader=_make_config_loader(config_version=cfg_version),
+                bundle_cache=l2_cache,
+            )
+
+        # 第一次请求（cfg_1000）：L2 未命中 → 查 TDengine + 写 L2
+        await _planner("cfg_1000").request_bundles(
+            loop_id="TC101",
+            metrics=["accuracy_rate"],
+            time_window=_time_window(),
+            control_type=ControlType.TEMPERATURE,
+        )
+        assert len(query_log) == 1
+        l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
+        assert len(l2_keys) == 1
+        assert l2_keys[0].endswith(":cfg_1000")
+
+        # 相同配置版本：L2 命中，不查 TDengine
+        await _planner("cfg_1000").request_bundles(
+            loop_id="TC101",
+            metrics=["accuracy_rate"],
+            time_window=_time_window(),
+            control_type=ControlType.TEMPERATURE,
+        )
+        assert len(query_log) == 1
+
+        # 配置版本变更（cfg_2000）：L2 未命中 → 重新查 TDengine + 写新 Key
+        await _planner("cfg_2000").request_bundles(
+            loop_id="TC101",
+            metrics=["accuracy_rate"],
+            time_window=_time_window(),
+            control_type=ControlType.TEMPERATURE,
+        )
+        assert len(query_log) == 2
+        l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
+        assert len(l2_keys) == 2
+        assert any(k.endswith(":cfg_2000") for k in l2_keys)

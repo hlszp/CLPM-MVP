@@ -244,9 +244,15 @@ class DataPlanner:
             control_type.value,
         )
 
+        # 加载回路预处理配置（含 range_min/range_max/config_version）
+        # 提前到 Phase 1 之前：L2 缓存 Key 需纳入 cfg_version，
+        # 量程变更/tag 重关联/契约变更（updated_at 变化）后旧 bundle 不再命中。
+        preprocess_config = await self._config_loader(loop_id, control_type)
+
         # Phase 1: L2 Bundle 缓存查询（若启用，命中则直接返回，跳过查询与组装）
         # v6.1：缓存 key 包含 OP 限位，修改限位后自动失效
         # v6.2：优先使用预加载的 OP 限位，避免逐回路查 DB
+        # v6.2：缓存 key 包含 cfg_version（与 L1 同一 cfg_{updated_at} 口径）
         op_lower: float | None = None
         op_upper: float | None = None
         if self._bundle_cache is not None and metrics:
@@ -280,6 +286,7 @@ class DataPlanner:
                 control_type=control_type.value,
                 op_output_lower_limit=op_lower,
                 op_output_upper_limit=op_upper,
+                cfg_version=preprocess_config.config_version,
             )
             cached_bundles = await self._bundle_cache.get(l2_key)
             if cached_bundles is not None:
@@ -299,9 +306,6 @@ class DataPlanner:
         if not requirements:
             logger.warning("DataPlanner: 未找到任何指标契约: metrics=%s", metrics)
             return []
-
-        # 加载回路预处理配置（含 range_min/range_max/config_version）
-        preprocess_config = await self._config_loader(loop_id, control_type)
 
         # Phase 3: 合并查询计划（按 tagGroup 分组）
         query_plan = self._build_query_plan(requirements, control_type)
@@ -548,6 +552,17 @@ class DataPlanner:
                 time_window=time_window,
                 preprocess_config=preprocess_config,
             )
+            if data_block.point_count == 0:
+                # 空 DataBlock 不写 L1（负缓存）：否则「先算后导」场景下
+                # backfill 补齐数据后最长 TTL 内仍命中空块（2026-07 Phase 2 修复）。
+                # 空块仍返回参与 Bundle 组装（INCONCLUSIVE 口径不变），仅不缓存。
+                logger.info(
+                    "DataPlanner 空 DataBlock 跳过 L1 写入: loop=%s, tagGroup=%s, key=%s",
+                    loop_id,
+                    task.tag_group.value,
+                    cache_key,
+                )
+                return task.tag_group, data_block, None
             return task.tag_group, data_block, (cache_key, data_block)
 
         # Phase 4-6: 并行执行所有非复用 task（asyncio.gather 释放事件循环）

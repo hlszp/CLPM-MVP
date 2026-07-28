@@ -1,10 +1,11 @@
 """配置变更缓存失效模块.
 
 在回路量程/控制类型变更、指标配置变更或预处理版本升级时，
-主动删除受影响的 DataBlock 缓存，避免脏数据被复用。
+主动删除受影响的缓存，避免脏数据被复用。
 
 失效策略（ADS §10.7.3）：
-    - 回路配置变更 → 失效该回路全部 L1 DataBlock（``pdb:{loopId}:*``）
+    - 回路配置变更 → 失效该回路全部 L1/L2/L3 缓存（``pdb*:{loopId}:*``，
+      覆盖 ``pdb:`` / ``pdb_l2:`` / ``pdb_l3:`` 三种前缀）
     - 指标配置变更 → 失效所有相关回路该 tagGroup 的 DataBlock
     - 配置版本递增 → 旧版本 Key 自然过期 + 主动 DEL 加速
 
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 # L1 DataBlock 缓存 Key 前缀（与 l1_datablock 保持一致）
 _L1_PREFIX = "pdb"
+
+# 全部缓存层 Key 的 glob 前缀（覆盖 L1 ``pdb:`` / L2 ``pdb_l2:`` / L3 ``pdb_l3:``）
+_CACHE_GLOB_PREFIX = "pdb*"
 
 # SCAN 每批返回的 Key 数量（避免单批过大阻塞 Redis）
 _SCAN_COUNT = 200
@@ -48,7 +52,9 @@ class CacheInvalidator:
     async def invalidate_loop(self, loop_id: str, config_version: str | None = None) -> int:
         """回路配置变更时，删除该回路所有（旧版本）缓存.
 
-        失效范围（ADS §10.7.3）：回路量程/控制类型变更 → 该回路全部 DataBlock。
+        失效范围（ADS §10.7.3）：回路量程/控制类型/tag 重关联变更 →
+        该回路全部缓存。glob 模式 ``pdb*:{loopId}:*`` 同时覆盖
+        L1（``pdb:``）、L2（``pdb_l2:``）、L3（``pdb_l3:``）三种前缀。
         若指定 ``config_version``，仅删除不含该版本的旧 Key；
         未指定则删除该回路所有 Key。
 
@@ -61,7 +67,7 @@ class CacheInvalidator:
 
         设计依据：ADS §10.7.3, 数据流程图 §7.4
         """
-        pattern = f"{_L1_PREFIX}:{loop_id}:*"
+        pattern = f"{_CACHE_GLOB_PREFIX}:{loop_id}:*"
         deleted = await self._scan_and_delete(pattern, keep_version=config_version)
         logger.warning(
             "缓存失效（回路配置变更）: loop_id=%s, new_cfg_version=%s, deleted=%d",
@@ -75,8 +81,8 @@ class CacheInvalidator:
         """指标配置变更时，删除所有相关缓存.
 
         指标配置变更（如 mask_expression / tag_group 调整）影响所有回路
-        中依赖该指标的 DataBlock。由于无法精确反查受影响回路列表，
-        此处采取保守策略：清空全部 L1 DataBlock 缓存。
+        中依赖该指标的缓存。由于无法精确反查受影响回路列表，
+        此处采取保守策略：清空全部 L1/L2/L3 缓存（``pdb*:*``）。
 
         Args:
             metric_code: 指标代码
@@ -86,7 +92,7 @@ class CacheInvalidator:
 
         设计依据：ADS §10.7.3
         """
-        pattern = f"{_L1_PREFIX}:*"
+        pattern = f"{_CACHE_GLOB_PREFIX}:*"
         deleted = await self._scan_and_delete(pattern)
         logger.warning(
             "缓存失效（指标配置变更）: metric_code=%s, deleted=%d (全量清理)",
@@ -101,7 +107,10 @@ class CacheInvalidator:
         """按 tagGroup 精准失效（质量策略切换时使用）.
 
         失效范围（ADS §10.7.3）：``quality_policy`` 切换 →
-        该回路该 tagGroup 的 DataBlock。
+        该回路该 tagGroup 的 L1 DataBlock。
+        仅覆盖 L1（``pdb:``）：L2/L3 的 Key 不含 tagGroup 段，
+        无法按 tagGroup 精准定位；如需连 L2/L3 一起失效，
+        请使用 ``invalidate_loop``。
 
         Args:
             loop_id: 回路 ID
@@ -124,11 +133,13 @@ class CacheInvalidator:
         return deleted
 
     async def invalidate_all(self) -> int:
-        """清空全部 L1 DataBlock 缓存（预处理版本升级时使用）.
+        """清空全部 L1/L2/L3 缓存（预处理版本升级时使用）.
+
+        glob 模式 ``pdb*:*`` 覆盖 ``pdb:`` / ``pdb_l2:`` / ``pdb_l3:`` 三种前缀。
 
         设计依据：ADS §10.7.3
         """
-        deleted = await self._scan_and_delete(f"{_L1_PREFIX}:*")
+        deleted = await self._scan_and_delete(f"{_CACHE_GLOB_PREFIX}:*")
         logger.warning("缓存失效（全量清理，预处理版本升级）: deleted=%d", deleted)
         return deleted
 

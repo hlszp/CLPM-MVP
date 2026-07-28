@@ -2825,6 +2825,7 @@ def _dispatch_backfill_chord(
         ts_end=ts_end,
         total_windows=len(windows),
         task_id=task_id,
+        loop_ids=loop_ids,
     ).set(task_id=callback_task_id)
     callback.link_error(_backfill_chord_error.s(task_id=task_id))
     chord(header, callback).apply_async()
@@ -2893,6 +2894,7 @@ def _finalize_backfill(
     ts_end: str,
     total_windows: int,
     task_id: str | None = None,
+    loop_ids: list[str] | None = None,
 ) -> dict:
     """Chord callback: aggregate child results and set the business terminal state."""
     try:
@@ -2903,6 +2905,7 @@ def _finalize_backfill(
                 ts_end,
                 total_windows=total_windows,
                 task_id=task_id,
+                loop_ids=loop_ids,
             )
         )
     except Exception as exc:
@@ -2929,6 +2932,43 @@ def _backfill_chord_error(
     return {"status": "FAILED", "error": error}
 
 
+async def _invalidate_backfill_cache(loop_ids: list[str] | None) -> int:
+    """回填完成后失效相关回路的 L1/L2/L3 缓存.
+
+    「先算后导」场景：数据补齐前计算可能已缓存空 DataBlock（L1 负缓存）
+    或基于空块的 Bundle（L2）。回填完成后主动失效涉及回路的
+    ``pdb:`` / ``pdb_l2:`` / ``pdb_l3:`` Key，保证后续计算读取新数据。
+
+    Args:
+        loop_ids: 本次回填涉及的回路 ID；``None`` 表示全量回填，
+            退化为全量清理（``pdb*:*``）
+
+    Returns:
+        删除的 Key 数量；失效失败时返回 0（不阻断回填主流程）
+    """
+    try:
+        from app.core.redis import redis_client
+        from app.services.cache.invalidation import CacheInvalidator
+
+        invalidator = CacheInvalidator(redis_client)
+        if loop_ids is None:
+            deleted = await invalidator.invalidate_all()
+        else:
+            deleted = 0
+            for loop_id in loop_ids:
+                deleted += await invalidator.invalidate_loop(str(loop_id))
+        logger.info(
+            "回填完成后缓存失效: loop_ids=%s, deleted=%d",
+            "all" if loop_ids is None else f"{len(loop_ids)} loops",
+            deleted,
+        )
+        return deleted
+    except Exception:
+        # 缓存失效失败不应阻断回填终态（缓存条目会随 TTL 自然过期）
+        logger.warning("回填完成后缓存失效失败，忽略", exc_info=True)
+        return 0
+
+
 async def _do_finalize_backfill(
     batch_results: list[dict],
     ts_start: str,
@@ -2936,6 +2976,7 @@ async def _do_finalize_backfill(
     *,
     total_windows: int,
     task_id: str | None,
+    loop_ids: list[str] | None = None,
 ) -> dict:
     """Aggregate chord results; node aggregation only runs after clean headers."""
     if task_id and await _is_task_cancelled(task_id):
@@ -2961,6 +3002,10 @@ async def _do_finalize_backfill(
     if result.get("cancelled") or (task_id and await _is_task_cancelled(task_id)):
         result["cancelled"] = True
         return result
+
+    # 回填完成（无论全部成功还是部分窗口失败）：失效涉及回路的
+    # L1/L2/L3 缓存，清除「先算后导」留下的空块负缓存与旧 Bundle
+    await _invalidate_backfill_cache(loop_ids)
 
     if result["loop_failed"] or result["failed_windows"]:
         result["status"] = "FAILED"
