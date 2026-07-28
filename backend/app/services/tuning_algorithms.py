@@ -97,27 +97,27 @@ def identify_fopdt(
         method: 辨识方法 TWO_POINT/AREA（默认 TWO_POINT）
 
     Returns:
-        {K, tau, theta, fitting_score, fitted_pv}
+        {K, tau, theta, fitting_score, fitted_pv, reason}
+        辨识失败时 K/tau/theta 均为 None，reason 给出失败原因，
+        禁止带病参数进入下游整定。
     """
     n = len(pv_values)
     if n < 10 or mv_step == 0:
-        return {
-            "K": None,
-            "tau": None,
-            "theta": None,
-            "fitting_score": 0.0,
-            "fitted_pv": [],
-        }
+        return _fopdt_failure("数据点不足（<10）或阶跃幅值为零")
 
     pv = np.array(pv_values, dtype=float)
     ts = np.array(timestamps, dtype=float)
 
     pv_initial = pv[0]
-    pv_final = pv[-1]
+    # 稳态终值取末 N 点均值，减少单点漂移/噪声对 K 的影响
+    n_final = min(10, n)
+    pv_final = float(np.mean(pv[-n_final:]))
     delta_pv = pv_final - pv_initial
 
     # 过程增益
     K = delta_pv / mv_step
+    if not math.isfinite(K) or K == 0:
+        return _fopdt_failure("过程增益无效（K=0 或非有限值），PV 无有效阶跃响应")
 
     # 两点法
     result_two_point = _fopdt_two_point(pv, ts, pv_initial, pv_final, delta_pv)
@@ -131,6 +131,9 @@ def identify_fopdt(
     else:  # TWO_POINT 或未知方法默认两点法
         params = result_two_point
 
+    if params["tau"] is None or params["theta"] is None:
+        return _fopdt_failure(params["reason"] or "辨识失败")
+
     fitted_pv = _fopdt_simulate_curve(K, params["tau"], params["theta"], ts, pv_initial, mv_step)
     fitting_score = _calc_r2(pv, fitted_pv)
 
@@ -140,6 +143,20 @@ def identify_fopdt(
         "theta": round(params["theta"], 4),
         "fitting_score": round(fitting_score * 100, 2),
         "fitted_pv": fitted_pv.tolist(),
+        "reason": None,
+    }
+
+
+def _fopdt_failure(reason: str) -> dict[str, Any]:
+    """FOPDT 辨识失败统一返回：参数全 None，禁止带病参数进整定。"""
+    logger.warning("FOPDT 辨识失败: %s", reason)
+    return {
+        "K": None,
+        "tau": None,
+        "theta": None,
+        "fitting_score": 0.0,
+        "fitted_pv": [],
+        "reason": reason,
     }
 
 
@@ -149,8 +166,12 @@ def _fopdt_two_point(
     pv_initial: float,
     pv_final: float,
     delta_pv: float,
-) -> dict[str, float]:
-    """两点法：28.3% 和 63.2% 终值时间。"""
+) -> dict[str, float | None]:
+    """两点法：28.3% 和 63.2% 终值时间。
+
+    失败时返回 {"tau": None, "theta": None, "reason": ...}，
+    不再返回量纲错误的兜底参数。
+    """
     target_283 = pv_initial + 0.283 * delta_pv
     target_632 = pv_initial + 0.632 * delta_pv
 
@@ -162,17 +183,25 @@ def _fopdt_two_point(
         t1 = _find_time_at_value(pv, ts, pv_initial + 0.2 * delta_pv)
         t2 = _find_time_at_value(pv, ts, pv_initial + 0.6 * delta_pv)
         if t1 is None or t2 is None or t2 <= t1:
-            return {"tau": float(t2 or 30.0), "theta": float(t1 or 5.0)}
+            return {
+                "tau": None,
+                "theta": None,
+                "reason": "两点法失败：响应曲线未到达目标百分比或时间顺序异常",
+            }
 
     tau = 1.5 * (t2 - t1)
     theta = t2 - tau
 
     if tau <= 0:
-        tau = abs(tau) + 1.0
+        return {
+            "tau": None,
+            "theta": None,
+            "reason": f"两点法辨识失败：tau={tau:.4f} <= 0（t1={t1:.4f}, t2={t2:.4f}）",
+        }
     if theta < 0:
         theta = 0.0
 
-    return {"tau": tau, "theta": theta}
+    return {"tau": tau, "theta": theta, "reason": None}
 
 
 def _fopdt_area_method(
@@ -183,8 +212,12 @@ def _fopdt_area_method(
     delta_pv: float,
     mv_step: float,
     pv_final_points: int = 10,
-) -> dict[str, float]:
+) -> dict[str, float | None]:
     """面积法：积分响应曲线下面积。
+
+    归一化面积 A1* 是一阶加纯滞后过程的平均驻留时间，即 A1* = τ + θ，
+    因此 τ = A1* − θ（θ 取响应开始时间），避免滞后双重计入。
+    失败时返回 {"tau": None, "theta": None, "reason": ...}。
 
     Args:
         pv_final_points: 计算稳态终值使用的末尾采样点数（均值），减少漂移影响。
@@ -198,26 +231,32 @@ def _fopdt_area_method(
     a1 = float(np.sum(0.5 * (diff[:-1] + diff[1:]) * dt))
 
     K = delta_pv / mv_step
-    if K == 0:
-        return {"tau": 30.0, "theta": 5.0}
+    if K == 0 or not math.isfinite(K):
+        return {"tau": None, "theta": None, "reason": "面积法失败：过程增益为零或非有限值"}
 
     # 归一化面积
     a1_star = a1 / (K * mv_step)
-
-    # tau = A1*
-    tau = a1_star
+    if not math.isfinite(a1_star):
+        return {"tau": None, "theta": None, "reason": "面积法失败：归一化面积 A1* 非有限值"}
 
     # theta = response_start - step_input
     # 找响应开始点（PV 开始变化的时间）
     response_start_idx = _find_response_start(pv, pv_initial)
     theta = float(ts[response_start_idx]) - float(ts[0]) if response_start_idx > 0 else 0.0
 
+    # A1* = τ + θ（平均驻留时间），故 τ = A1* − θ
+    tau = a1_star - theta
+
     if tau <= 0:
-        tau = 30.0
+        return {
+            "tau": None,
+            "theta": None,
+            "reason": f"面积法辨识失败：tau = A1*({a1_star:.4f}) - θ({theta:.4f}) <= 0",
+        }
     if theta < 0:
         theta = 0.0
 
-    return {"tau": tau, "theta": theta}
+    return {"tau": tau, "theta": theta, "reason": None}
 
 
 def _find_time_at_value(pv: np.ndarray, ts: np.ndarray, target: float) -> float | None:
@@ -276,23 +315,21 @@ def identify_sopdt(
     """SOPDT 模型辨识（非线性最小二乘拟合）。
 
     G(s) = K * exp(-theta*s) / (T1*T2*s^2 + (T1+T2)*s + 1)
+
+    辨识失败时参数全 None 并置 identification_failed=True，
+    禁止带病参数进入下游整定。
     """
     n = len(pv_values)
     if n < 10 or mv_step == 0:
-        return {
-            "K": None,
-            "T1": None,
-            "T2": None,
-            "theta": None,
-            "fitting_score": 0.0,
-            "fitted_pv": [],
-        }
+        return _sopdt_failure("数据点不足（<10）或阶跃幅值为零")
 
     pv = np.array(pv_values, dtype=float)
     ts = np.array(timestamps, dtype=float)
     pv_initial = pv[0]
     pv_final = pv[-1]
     K = (pv_final - pv_initial) / mv_step
+    if not math.isfinite(K) or K == 0:
+        return _sopdt_failure("过程增益无效（K=0 或非有限值），PV 无有效阶跃响应")
 
     # 先用 FOPDT 估计初始值
     fopdt_result = identify_fopdt(pv_values, timestamps, mv_step, method="AREA")
@@ -304,29 +341,41 @@ def identify_sopdt(
 
     def objective(x):
         T1, T2, theta = x
-        if T1 <= 0 or T2 <= 0 or theta < 0:
-            return 1e10
         fitted = _sopdt_simulate_curve(K, T1, T2, theta, ts, pv_initial, mv_step)
-        return float(np.sum((pv - fitted) ** 2))
+        sse = float(np.sum((pv - fitted) ** 2))
+        # 非有限 SSE（如输入含 NaN/Inf）以大惩罚值驱赶单纯形离开
+        return sse if math.isfinite(sse) else 1e10
 
     try:
         result = minimize(
             objective,
             x0,
             method="Nelder-Mead",
+            # 物理边界：时间常数为正、滞后非负（替代原 1e10 惩罚）
+            bounds=[(1e-3, None), (1e-3, None), (0.0, None)],
             options={"maxiter": 5000, "xatol": 1e-6, "fatol": 1e-10},
         )
-        T1, T2, theta = result.x
     except Exception as exc:  # noqa: BLE001
-        logger.warning("SOPDT 辨识失败: %s", exc)
-        T1, T2, theta = x0
+        logger.warning("SOPDT 辨识异常: %s", exc)
+        return _sopdt_failure(f"非线性最小二乘求解异常: {exc}")
 
-    T1 = max(T1, 0.01)
-    T2 = max(T2, 0.01)
-    theta = max(theta, 0.0)
+    T1, T2, theta = float(result.x[0]), float(result.x[1]), float(result.x[2])
+    sse_final = float(result.fun)
+    if not result.success:
+        # 未收敛不直接判失败：T1≈T2 可交换脊线上 xatol/fatol 判据可能不触发，
+        # 但单纯形已到达最优点；以最终 SSE 与拟合度门槛做质量闸口
+        logger.warning(
+            "SOPDT Nelder-Mead 未完全收敛（%s），以最终 SSE/拟合度校验结果", result.message
+        )
+    if not math.isfinite(sse_final):
+        return _sopdt_failure("最终 SSE 非有限值，优化失败")
+    if not all(math.isfinite(v) for v in (T1, T2, theta)) or T1 <= 0 or T2 <= 0 or theta < 0:
+        return _sopdt_failure("优化结果参数越界（T1/T2 非正或 θ 为负）")
 
     fitted_pv = _sopdt_simulate_curve(K, T1, T2, theta, ts, pv_initial, mv_step)
     fitting_score = _calc_r2(pv, fitted_pv)
+    if not math.isfinite(fitting_score) or fitting_score < _SOPDT_MIN_R2:
+        return _sopdt_failure(f"拟合度过低：R²={fitting_score:.4f} < {_SOPDT_MIN_R2}")
 
     return {
         "K": round(K, 6),
@@ -335,6 +384,27 @@ def identify_sopdt(
         "theta": round(theta, 4),
         "fitting_score": round(fitting_score * 100, 2),
         "fitted_pv": fitted_pv.tolist(),
+        "identification_failed": False,
+        "reason": None,
+    }
+
+
+# SOPDT 辨识可接受的最低拟合度（R²），低于此值判定辨识失败
+_SOPDT_MIN_R2 = 0.5
+
+
+def _sopdt_failure(reason: str) -> dict[str, Any]:
+    """SOPDT 辨识失败统一返回：参数全 None + identification_failed 标志。"""
+    logger.warning("SOPDT 辨识失败: %s", reason)
+    return {
+        "K": None,
+        "T1": None,
+        "T2": None,
+        "theta": None,
+        "fitting_score": 0.0,
+        "fitted_pv": [],
+        "identification_failed": True,
+        "reason": reason,
     }
 
 
@@ -558,7 +628,7 @@ def tune_simc(K: float, tau: float, theta: float, tau_c_ratio: float = 1.0) -> P
 
     FOPDT 模型 G(s)=K·exp(-θs)/(τs+1) 的 SIMC-PI 整定规则：
     Kc = (1/K) · τ / (θ + τc)
-    Ti = τ
+    Ti = min(τ, 4(θ + τc))
     Td = 0  （FOPDT 使用 PI 控制，无微分项）
 
     τc = tau_c_ratio × θ（默认 tau_c_ratio=1.0）
@@ -575,7 +645,8 @@ def tune_simc(K: float, tau: float, theta: float, tau_c_ratio: float = 1.0) -> P
         tau_c = 0.1
 
     kc = (1.0 / K) * tau / (theta + tau_c)
-    ti = tau
+    # PI 分支（§6.7）：Ti = min(τ, 4(θ+τc))，大 τ 过程积分时间被封顶
+    ti = min(tau, 4.0 * (theta + tau_c))
     td = 0.0  # FOPDT 时 SIMC 使用 PI 控制，Td=0（Skogestad 2001）
 
     return PIDParams(kp=round(kc, 6), ti=round(ti, 4), td=round(td, 4))
@@ -667,7 +738,9 @@ def _simulate_pid_response(
 
     # PID 状态（增量式）
     e_prev = 0.0
-    e_prev2 = 0.0
+    # PV 历史（微分对测量值，消除 SP 阶跃时的 derivative kick）
+    y_prev = 0.0
+    y_prev2 = 0.0
 
     # 被控对象参数
     K = float(model_params.get("K", 1.0))
@@ -708,20 +781,27 @@ def _simulate_pid_response(
         """FOPDT 导数: dx/dt = (-x + K*u) / tau."""
         return (-state + K * u) / tau
 
+    # 积分步长过大时自动细分子步，保证 RK4 精度（子步长 ≤ τ/4）
+    n_sub = max(1, math.ceil(4.0 * sim_step / tau))
+    h = sim_step / n_sub
+    if n_sub > 1:
+        logger.warning(
+            "仿真步长 sim_step=%.4f 超过 tau/4=%.4f，RK4 自动细分为 %d 子步",
+            sim_step,
+            tau / 4.0,
+            n_sub,
+        )
+
     for k in range(1, n_steps + 1):
         # 误差
         e = sp[k] - pv[k - 1]
 
-        # 增量式 PID
-        delta_u = 0.0
+        # 增量式 PID：比例/积分对误差，微分对测量值 PV（消除 SP 阶跃 derivative kick）
+        d2_pv = pv[k - 1] - 2.0 * y_prev + y_prev2
         if pid.ti > 0:
-            delta_u = pid.kp * (
-                (e - e_prev)
-                + sim_step / pid.ti * e
-                + pid.td / sim_step * (e - 2 * e_prev + e_prev2)
-            )
+            delta_u = pid.kp * ((e - e_prev) + sim_step / pid.ti * e - pid.td / sim_step * d2_pv)
         else:
-            delta_u = pid.kp * ((e - e_prev) + pid.td / sim_step * (e - 2 * e_prev + e_prev2))
+            delta_u = pid.kp * ((e - e_prev) - pid.td / sim_step * d2_pv)
 
         op[k] = op[k - 1] + delta_u
 
@@ -736,31 +816,30 @@ def _simulate_pid_response(
 
         if is_sopdt:
             # SOPDT: G(s) = K / (τ²s² + 2τξs + 1) * e^(-θs)
-            # RK4 积分
-            k1_1, k1_2 = _deriv_sopdt(x1, x2, delayed_op)
-            k2_1, k2_2 = _deriv_sopdt(
-                x1 + 0.5 * sim_step * k1_1, x2 + 0.5 * sim_step * k1_2, delayed_op
-            )
-            k3_1, k3_2 = _deriv_sopdt(
-                x1 + 0.5 * sim_step * k2_1, x2 + 0.5 * sim_step * k2_2, delayed_op
-            )
-            k4_1, k4_2 = _deriv_sopdt(x1 + sim_step * k3_1, x2 + sim_step * k3_2, delayed_op)
-            x1 = x1 + sim_step / 6.0 * (k1_1 + 2 * k2_1 + 2 * k3_1 + k4_1)
-            x2 = x2 + sim_step / 6.0 * (k1_2 + 2 * k2_2 + 2 * k3_2 + k4_2)
+            # RK4 积分（必要时细分子步）
+            for _ in range(n_sub):
+                k1_1, k1_2 = _deriv_sopdt(x1, x2, delayed_op)
+                k2_1, k2_2 = _deriv_sopdt(x1 + 0.5 * h * k1_1, x2 + 0.5 * h * k1_2, delayed_op)
+                k3_1, k3_2 = _deriv_sopdt(x1 + 0.5 * h * k2_1, x2 + 0.5 * h * k2_2, delayed_op)
+                k4_1, k4_2 = _deriv_sopdt(x1 + h * k3_1, x2 + h * k3_2, delayed_op)
+                x1 = x1 + h / 6.0 * (k1_1 + 2 * k2_1 + 2 * k3_1 + k4_1)
+                x2 = x2 + h / 6.0 * (k1_2 + 2 * k2_2 + 2 * k3_2 + k4_2)
             pv[k] = x1
         else:
             # FOPDT: dx/dt = (-x + K*u) / tau
-            # RK4 积分
-            k1 = _deriv_fopdt(x, delayed_op)
-            k2 = _deriv_fopdt(x + 0.5 * sim_step * k1, delayed_op)
-            k3 = _deriv_fopdt(x + 0.5 * sim_step * k2, delayed_op)
-            k4 = _deriv_fopdt(x + sim_step * k3, delayed_op)
-            x = x + sim_step / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
+            # RK4 积分（必要时细分子步）
+            for _ in range(n_sub):
+                k1 = _deriv_fopdt(x, delayed_op)
+                k2 = _deriv_fopdt(x + 0.5 * h * k1, delayed_op)
+                k3 = _deriv_fopdt(x + 0.5 * h * k2, delayed_op)
+                k4 = _deriv_fopdt(x + h * k3, delayed_op)
+                x = x + h / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
             pv[k] = x
 
-        # 更新误差历史
-        e_prev2 = e_prev
+        # 更新误差与 PV 历史
         e_prev = e
+        y_prev2 = y_prev
+        y_prev = pv[k - 1]
 
     return {"pv": pv, "op": op, "sp": sp}
 

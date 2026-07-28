@@ -591,13 +591,16 @@ class TestBoundaryConditions:
     # ---- FOPDT 辨识边界 ----
 
     def test_fopdt_constant_pv(self):
-        """PV 恒定不变（delta_pv=0, K=0）应返回兜底值而非崩溃。"""
+        """PV 恒定不变（delta_pv=0, K=0）应判定辨识失败，返回 None 参数而非兜底值。"""
         pv_values = [50.0] * 100
         timestamps = [float(i) for i in range(100)]
         result = identify_fopdt(pv_values, timestamps, 10.0)
-        # K=0 时应安全返回，不抛异常
-        assert result["K"] is not None
-        assert result["fitting_score"] >= 0.0
+        # K=0 时判定辨识失败，禁止带病参数进整定
+        assert result["K"] is None
+        assert result["tau"] is None
+        assert result["theta"] is None
+        assert result["fitting_score"] == 0.0
+        assert result["reason"] is not None
 
     def test_fopdt_negative_mv_step(self):
         """负 MV 阶跃（反向作用过程）应正确辨识。"""
