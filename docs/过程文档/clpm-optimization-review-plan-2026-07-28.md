@@ -38,7 +38,23 @@
 
 文档同步：§6.1.3 面积法公式修正、§3.4.3 FROZEN 改 MARK_ONLY 口径、§6.8.1 增量 PID 微分对 PV，均已加注 2026-07-28 修订。
 
-遗留（转 Phase 2-4）：fusedConfidence 语义变化（跨标签融合值→最高标签置信度）需前端知悉；stiction 低相关 INCONCLUSIVE 需前端知悉；`frozen_fault_min_minutes` 未接 sys_config 覆盖链路（outlier_params.py）；诊断 IAE min/max_ratio 未接 algorithm_config 配置链（默认一致）。
+遗留（转 Phase 3-4）：fusedConfidence 语义变化（跨标签融合值→最高标签置信度）需前端知悉；stiction 低相关 INCONCLUSIVE 需前端知悉；`frozen_fault_min_minutes` 未接 sys_config 覆盖链路（outlier_params.py）；诊断 IAE min/max_ratio 未接 algorithm_config 配置链（默认一致）。
+
+**Phase 2：✅ 完成（5 个子任务，全量 pytest 2778 通过，`alembic check` 退出码 0）**
+
+| 任务 | 状态 | 交付摘要 |
+|---|---|---|
+| T2.2 故障 vs 无数据 | ✅ | TDengineError + raise_on_error；完整性检查报"数据源不可用"而非全量缺失；_parse_ts_str 禁用 now() 兜底 |
+| T2.3 完整性 COV 口径 | ✅ | COV 列按起点前值+变化点判定，仅 PV/OP 按点数，消除系统性误报 |
+| T2.4 overwrite 防护 | ✅ | schema 层强制 tsEnd ≤ now−5min（422），消除误删实时行敞口 |
+| T2.5 tag 白名单 | ✅ | make_subtable_name 归一化 + schemas/AAS/Excel 全入口 pattern 校验 |
+| T2.6 重关联治理 | ✅ | 变更检测→响应 warning"旧数据不可达"+缓存失效+_subtable_cache 清除 |
+| T2.7 缓存闭环 | ✅ | 空块不写 L1；L2 key 加 cfg_version；失效器 pdb* 全前缀；backfill 主动失效 |
+| T2.8 alembic 收敛 | ✅ | 迁移 `d4e5f6a7b8c9` 已应用：target_id String(36)、时间戳列 NOT NULL、生产索引补入模型、uk_* 统一 UniqueConstraint；env.py 注释噪声过滤后 `alembic check` 退出码 0（纳入口径：结构性漂移即失败） |
+| T2.9 实时链路 | ✅ | gap backfill 过滤无映射回路（消除告警风暴）；flush 带真实 TAGS；行 ts 取 PV collectTime |
+| T2.10 分片+NaN 拦截 | ✅ | 宽表超 7 天按日分片；NaN/Inf 写 NULL |
+
+遗留：存量空 TAG 子表需 ALTER TABLE 治理（低优先）；`_delete_range` 直调路径无防护（仅端点入口暴露 overwrite）；data_link_monitor/health 仍默认降级（监控场景合理）。
 
 ---
 
