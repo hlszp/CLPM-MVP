@@ -1,11 +1,12 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline  
-**当前版本**：v2.1
-**发布日期**：2026-07-27
+**当前版本**：v2.2
+**发布日期**：2026-07-28
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐  
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
 **v2.1 修订摘要**：同步诊断中心 Batch 4-6 交付成果——A/B 对比已实现（含 `includeDiagnosis` 扩展）；登记 `GET /diagnosis/algorithms/meta`、`GET /diagnosis/statistics/export`、`GET /tracker/effectiveness`、`GET|PATCH /tracker/verification-config`；补全 Tracker 子路由清单；更新诊断中心路由决策（A/B 对比不再返回 501）；登记诊断任务自动归档机制与 D1-D6 功能扩展
+**v2.2 修订摘要**：同步 2026-07-28 全维度优化整改（Phase 0-5）——登记 `GET /performance/grade-distribution` 与 `/loops/snapshots?grade=`；权限码服务端落地（`require_perms`，loop/tuning/diagnosis 读端点收口）替代"待统一"标注；登记首次登录强制改密（`must_change_password`）；前端路由收紧（reports/aas-sync 仅 ADMIN、EXPERT→/diagnosis、SPONSOR→/metric）。整改全貌见 `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md`
 
 ## 1. 定位
 
@@ -116,6 +117,8 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 | `GET` | `/api/v1/diagnosis/ab-compare` | 实施前后两窗口 KPI 均值对比（`kpi_snapshot_hourly`）；支持 `implementedAt` 自动截取 [T-7d,T) 与 (T,T+7d]，或显式传入 `beforeStartTime/beforeEndTime/afterStartTime/afterEndTime`；`includeDiagnosis=true` 时额外返回 before/after 诊断标签对比（Batch 4 回路分析页增强） | F7/Batch 4 |
 | `GET` | `/api/v1/diagnosis/algorithms/meta` | 8 类诊断算法展示元数据 + 当前生效阈值快照（Batch 4 算法价值传递） | F1/Batch 4 |
 | `GET` | `/api/v1/diagnosis/statistics/export` | 诊断统计 CSV 导出（支持 `startDate/endDate/plantNodeId` 筛选） | D5 |
+| `GET` | `/api/v1/performance/grade-distribution` | 等级分布统计下推：窗口函数取每回路最新快照后 SQL 聚合各等级计数（EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE + total），阈值读 `sys_config['grading_thresholds.current']`；参数同 `/loops/snapshots`（2026-07-28 优化整改 Phase 4） | 优化整改 |
+| `GET` | `/api/v1/performance/loops/snapshots?grade=` | 快照列表新增 `grade` 参数：服务端按等级名筛选+分页（在 latestOnly 取最新之后应用，与分布桶计数一致）；不传时行为不变（2026-07-28） | 优化整改 |
 
 ## 5. 权限契约
 
@@ -127,7 +130,11 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 | EXPERT | 可查看诊断与整定相关页面，可参与异常跟踪和专家建议。 |
 | SPONSOR | 只看工作台、性能汇总、诊断统计等汇总视图；不可进入单回路诊断详情、波形证据或异常跟踪编辑。 |
 
-> **数据管理权限口径（D3，2026-07-21 对齐）**：历史数据导入（`/api/v1/loops/data-import/*`）与删除操作维持现状——允许 ADMIN / IC_ENGINEER 角色执行导入与删除；Tag 编辑/导入（D2）同口径。当前权限矩阵尚未在代码层全量落地角色门控，标注为"待统一完善"，后续随回路管理整改阶段 6/7 一并收敛。
+> **数据管理权限口径（D3，2026-07-21 对齐）**：历史数据导入（`/api/v1/loops/data-import/*`）与删除操作维持现状——允许 ADMIN / IC_ENGINEER 角色执行导入与删除；Tag 编辑/导入（D2）同口径。
+>
+> **权限码服务端落地（2026-07-28 优化整改 Phase 3）**：`ROLE_PERMISSIONS`（"模块:操作"码）此前只下发不执行；现已新增 `require_perms()` 依赖（通配匹配、ADMIN 全通），回路（`loop:view`）/整定（`tuning:view`）/诊断（`diagnosis:view`）三模块读端点已收口；EXPERT 映射补 `tuning:view`。前端路由同步收紧（`/system/reports`、`/loop/aas-sync` 仅 ADMIN；EXPERT 仅诊断+整定，默认首页 `/diagnosis`；SPONSOR 默认首页 `/metric`）。剩余收敛项：tasks 列表 `metric:view`、`diagnosis:detail` 粒度码（SPONSOR 仅汇总）、tracker 读端点（待 IC 映射补齐）。
+>
+> **首次登录强制改密（2026-07-28 Phase 5）**：`sys_user.must_change_password` 为 True 时（种子用户初始为 True），登录/ME 响应带 `mustChangePassword`，非 GET 且非改密/登出端点一律 403 `ERR_PASSWORD_CHANGE_REQUIRED`，改密成功清标志并吊销全部 token。
 
 ## 6. 状态机契约
 

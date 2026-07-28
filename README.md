@@ -32,7 +32,7 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
 | v4.0 核心组件 | DataPlanner（统一数据读取，L1/L2 缓存已接入；L3 Feature Cache 预留）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（2568 collected：2559 passed，1 skipped，8 deselected）+ vitest（371 passed）+ Playwright E2E（55 passed） |
+| 测试 | pytest（2983 passed，1 skipped，15 deselected）+ vitest（415 passed）+ Playwright E2E（57 passed） |
 
 ## 快速开始（开发环境）
 
@@ -83,6 +83,8 @@ pnpm run dev:antd              # 默认端口 5666
 | pe_engineer | PE_ENGINEER | 监控/评估/工作台 |
 | expert | EXPERT | 诊断/整定 |
 | sponsor | SPONSOR | 工作台只读 |
+
+> **首次登录强制改密（2026-07-28 起）**：全新部署（含生产 initdb 种子）的 5 个种子用户 `must_change_password=True`，登录后除改密/登出外所有写操作返回 403，改密成功后自动解除；dev 库已改密账户不受影响。前端强制跳转改密页待落地（当前依赖用户自行改密）。
 
 ### 6. 运行测试
 
@@ -190,11 +192,13 @@ cp .env.prod.example .env.prod
 ```
 
 部署脚本会自动完成：
-1. 校验 `.env.prod` 与 `JWT_SECRET_KEY`
-2. 构建 backend / frontend Docker 镜像（多阶段构建）
+1. 校验 `.env.prod` 与 `JWT_SECRET_KEY`（含 `ENV=production` 强制校验）
+2. 构建 backend / frontend Docker 镜像（多阶段构建，同时打 `latest` + git SHA + 版本号 tag，回滚可用）
 3. 启动 7 个服务容器（恒启用 `tdengine` profile——计算类历史数据查询一律本地 TDengine）
-4. 等待健康检查并通过
+4. 等待健康检查并通过（含 celery `inspect ping`/`scheduled` 硬断言，失败即中止）
 5. 输出服务访问地址
+
+> **2026-07-28 部署链路加固**：两条部署路径（`deploy.sh` / `build-and-deploy.sh`）均强制执行 `alembic upgrade head`（公共函数 `deploy/lib-migrate.sh`，失败即中止）；已有部署升级前自动执行 `deploy/backup.sh`（TDengine 备份带 root 凭据，失败硬中止）；构建前跑测试门禁（ruff + pytest + check:type，`--skip-gate` 可紧急跳过）。
 
 #### 3. 验证部署
 
@@ -208,6 +212,14 @@ curl http://localhost:7141/health
 # 前端访问
 curl http://localhost:7141/
 ```
+
+#### 4. 监控（可选 monitoring profile，2026-07-28 新增）
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine --profile monitoring up -d
+```
+
+启用 Prometheus（抓 `backend:7101/metrics`，内网白名单口径）+ Grafana（接 `deploy/grafana/` 现成 dashboard）+ node-exporter，告警规则见 `deploy/prometheus/alerts.yml`（后端 down、Celery 失败率、磁盘、抓取失联）。监控服务不暴露宿主端口，经 SSH 隧道或自行加端口映射访问。
 
 ### 服务架构
 
@@ -295,9 +307,9 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 数据模型设计（v6.0） | `docs/设计文档/04-DDS/DDS.md` |
 | API 接口设计（v6.0） | `docs/设计文档/05-IDS/IDS.md` |
 | UI/UX 设计规范（v6.1） | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
-| 重构后实现契约（v2.1） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
+| 重构后实现契约（v2.2） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
 | v4.0 重构实施方案（历史实施蓝图） | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
-| 原型设计基线 | `DESIGN.md`（v3.0；视觉历史基线，现行路由以实现契约 v2.1 为准） |
+| 原型设计基线 | `DESIGN.md`（v3.0；视觉历史基线，现行路由以实现契约 v2.2 为准） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 
 ## 推荐阅读顺序
@@ -316,13 +328,13 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | 产品文档基线 **v6.1**；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。全量测试基线（2026-07-28）：pytest 2559 passed / vitest 371 passed / E2E 55 passed |
+| 当前版本 | 产品文档基线 **v6.1**；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。全量测试基线（2026-07-28）：pytest 2983 passed / vitest 415 passed / E2E 57 passed / `alembic check` 退出码 0 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 工作台门户、回路管理（AAS tag 同步/回路创建/tag 关联/监控）、性能评估（指标配置/引擎规则/看板/排行/统计）、诊断中心（指标配置/诊断/异常跟踪/统计）、系统管理；回路整定原型页面设计 |
 | 模块架构 | 6 模块 + 1 门户：工作台/回路管理/性能评估/诊断中心/回路整定/系统管理（任务管理是性能评估子模块），各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
 | 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED），诊断中心子模块 |
-| 工程主约束 | PRD v6.1 负责产品需求；实现契约 v2.1 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互 |
+| 工程主约束 | PRD v6.1 负责产品需求；实现契约 v2.2 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
 
@@ -356,7 +368,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | `docs/设计文档/05-IDS/IDS.md` | 当前系统 API 接口设计 |
 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | 当前可视化设计与用户体验规范 |
 | `docs/设计文档/00-BASELINE/implementation-contract.md` | 重构后实现契约：IA、路由、API、权限、状态机、KPI 与阶段口径 |
-| `DESIGN.md` | 设计基线 v3.0（视觉/布局/组件历史基线；现行路由与实现口径以实现契约 v2.1 为准） |
+| `DESIGN.md` | 设计基线 v3.0（视觉/布局/组件历史基线；现行路由与实现口径以实现契约 v2.2 为准） |
 | `docs/设计文档/prototype/README.md` | 原型系统代码库入口说明 |
 | `backend/` | FastAPI 后端（API + Celery 任务 + 算法引擎） |
 | `frontend/` | Vue 3 前端 monorepo（web-antd 为生产应用） |

@@ -33,25 +33,23 @@
 | E2E/单测全量修复 | ✅ 55 E2E + 371 单测全通过 | 2026-07-28 |
 | E 规范符合性验证 | ⏳ 待启动（GB/T 44693.2 用例验证 ≥90%） | — |
 
-### 2.2 全量测试基线（2026-07-28）
+### 2.2 全量测试基线（2026-07-28 更新）
 
 | 测试套件 | 结果 | 命令 |
 |---|---|---|
-| 后端 pytest | ✅ 2559 passed, 1 skipped, 8 deselected | `cd backend && uv run pytest -q` |
+| 后端 pytest | ✅ 2983 passed, 1 skipped, 15 deselected | `cd backend && uv run pytest -q` |
 | 前端类型检查 | ✅ 2/2 packages 通过 | `cd frontend && pnpm run check:type` |
-| 前端单元测试 | ✅ 371 passed | `cd frontend && pnpm exec vitest run` |
-| E2E 端到端 | ✅ 55 passed | `cd e2e && pnpm exec playwright test` |
+| 前端单元测试 | ✅ 415 passed | `cd frontend && pnpm exec vitest run` |
+| E2E 端到端 | ✅ 57 passed | `cd e2e && pnpm exec playwright test` |
+| schema 漂移检查 | ✅ 退出码 0 | `cd backend && uv run alembic check` |
 
-**三者全绿是提交门禁**（gitea 侧无 CI，本地检查即门禁）。
+**五者全绿是提交门禁**（gitea 侧无 CI；lefthook 已配置 pre-push 自动门禁：ruff + pytest -x + check:type）。
 
-### 2.3 最近提交
+### 2.3 当前状态（2026-07-28 晚）
 
-```
-a738147c docs: 同步 Batch 5 治理完成状态 + 全量测试基线
-8fc3a2d1 fix: Batch 5 专项治理 + E2E/单测既有失败修复（17文件 +1002/-356）
-10d96f02 feat(diagnosis): Batch 5 页面优化 F8-F13 — UX 提升 + 架构整洁
-245514ad docs: 实现契约 v2.0→v2.1 + AGENTS.md 同步诊断中心 Batch 4-6 交付
-```
+2026-07-28 完成**全维度评审与六阶段优化整改 Phase 0-5**（~90 项问题，35+ commit）：算法 P0×3（振荡满分/饱和诊断失效/TDengine 时区 8h 偏移）与 P1 全修、数据正确性（缓存闭环/schema 收敛迁移 `d4e5f6a7b8c9`/`c3d4e5f6a7b8`）、后端健壮性（任务系统/token 生命周期/权限码落地/可观测性/限流）、前端公共件与页面整改、部署迁移一体+监控门禁+首次登录强制改密（迁移 `f6a7b8c9d0e1`）。当天还根除了全回路 INCONCLUSIVE 事故（模块级 asyncio.Lock 跨事件循环绑定，ops-runbook 已记录）。
+
+全貌与遗留清单：`docs/过程文档/clpm-optimization-review-plan-2026-07-28.md`（持续更新，取代本节历史提交列表）。
 
 ---
 
@@ -115,8 +113,13 @@ a738147c docs: 同步 Batch 5 治理完成状态 + 全量测试基线
 | 工具 | 路径 | 用途 |
 |---|---|---|
 | runWithConcurrency | `utils/concurrency.ts` | 批量请求并发控制（默认 8），allSettled 语义，避免连接池压力 |
-| formatTime / formatLocalTime | `utils/format.ts` | 统一时间格式化（北京时区 / "补 Z 转本地"约定），禁止各视图重复实现 |
-| v-permission 指令 | `directives/permission.ts` | 同时支持角色名（精确匹配）+ 权限码（通配匹配） |
+| formatTime / formatLocalTime | `utils/format.ts` | 统一时间格式化（naive 一律视为 UTC 补 Z 转本地，唯一约定），禁止各视图重复实现 |
+| v-permission 指令 | `directives/permission.ts` | 同时支持角色名（精确匹配）+ 权限码（通配匹配）；无权时 Comment 占位（不再 el.remove）；交互组件（Dropdown 等）优先 v-if |
+| usePolling | `composables/use-polling.ts` | 轮询通用件：防堆积递归 setTimeout、页面隐藏暂停、连续 3 次失败熔断 onGiveUp、卸载自清理 |
+| useScoreColor | `composables/use-score-color.ts` | 评分颜色统一：动态 gradingThresholds 定档，null/NaN → 中性灰（严禁红色） |
+| useLoopPalettes | `composables/use-loop-palettes.ts` | loopType/MODE 共享色板常量 + modeLabelColor |
+| require_perms | `backend/app/api/deps.py` | 服务端权限码依赖工厂（模块:操作，通配匹配，ADMIN 全通） |
+| upload_guard | `backend/app/api/upload_guard.py` | Excel 上传统一守卫：10MB 分块读取上限 + 5000 行流式上限 |
 
 ---
 
@@ -174,11 +177,13 @@ PENDING → IN_PROGRESS → IMPLEMENTED
 
 | # | 问题 | 优先级 | 状态 | 说明 |
 |---|---|---|---|---|
-| 1 | E 规范符合性验证 | 高 | ⏳ 待启动 | GB/T 44693.2 用例验证 ≥90%，诊断整改 Phase E |
-| 2 | Celery worker 容器 include 参数 | 中 | ⏳ 待验证 | 生产部署时需验证 worker 容器 include 参数生效 |
+| 1 | E 规范符合性验证 | 高 | ⏳ 待启动 | GB/T 44693.2 用例验证 ≥90%，即优化整改 Phase 6（唯一未启动阶段） |
+| 2 | Celery worker 容器 include 参数 | 中 | ✅ 已闭环 | 部署后 celery inspect ping/scheduled 硬断言（2026-07-28 Phase 5） |
 | 3 | 公网模式 ping 延迟抖动 | 低 | ⏳ 待优化 | Tailscale 公网模式延迟抖动，仅余此一项 |
-| 4 | 后端细粒度权限码校验 | 中 | ⏳ 待统一 | 前端已接入 v-permission，后端部分 API 缺角色检查（实现契约 §5 标注"待统一"） |
-| 5 | 前端权限矩阵完整实现 | 中 | ⏳ 待完善 | 权限矩阵未完全实现，部分 API 可能缺角色检查 |
+| 4 | 后端细粒度权限码校验 | 中 | ✅ 已落地 | require_perms 三模块读端点收口（2026-07-28 Phase 3）；剩余：tasks 列表 metric:view、diagnosis:detail 粒度码、tracker 读端点 |
+| 5 | 前端权限矩阵完整实现 | 中 | ✅ 已对齐 | 路由/按钮/后端三方对齐（2026-07-28 Phase 4）；EXPERT→/diagnosis、SPONSOR→/metric 首页已落地 |
+| 6 | 历史快照 8h 偏移口径 | 中 | ⏳ 待决策 | 2026-07-28 时区修复前的历史快照为旧偏移窗口口径，如需校正按数据留存范围全面历史重算 |
+| 7 | 前端强制改密跳转 | 中 | ⏳ 待实施 | 后端 mustChangePassword 已就绪（Phase 5），前端登录后需引导致改密页 |
 
 ---
 
@@ -187,11 +192,12 @@ PENDING → IN_PROGRESS → IMPLEMENTED
 | 方向 | 先读 | 关注点 |
 |---|---|---|
 | Bug 修复 / 功能增强 | README → AGENTS → 设计文档 → 代码 | "问题定位→修复实施→测试验证→效果确认"闭环 |
-| 诊断整改 Phase E | `diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | GB/T 44693.2 用例验证 ≥90% |
-| E2E 测试补充 | `e2e/` → UI/UX v6.1 → 新增页面 | 现有 55 全通过，后续按 UI/UX v6.1 新页面逐步补 |
-| 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数 |
-| 新功能开发 | PRD v6.1 → 实现契约 v2.1 → v4.0 实施方案 → 设计文档 | 模块"配置→运行→分析"三态自包含原则 |
-| 回路整定 Phase 2 | PRD §回路整定 | 生产级算法闭环（Phase 1 只输出建议） |
+| **优化整改 Phase 6（GB/T 符合性）** | `clpm-optimization-review-plan-2026-07-28.md` §三 Phase 6 + §一算法清单 | 唯一未启动阶段：附录 B/F 用例 ≥90%；含 T1.6 粘滞 θ 补偿增强项 |
+| 诊断整改 Phase E | 同上（已并入 Phase 6） | 原 diagnosis-module-review-rectification-plan §5 已被优化整改计划吸收 |
+| E2E 测试补充 | `e2e/` → UI/UX v6.1 → 新增页面 | 现有 57 全通过，后续按新页面逐步补 |
+| 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | 新链路：迁移强制+部署前备份+celery 断言；monitoring profile 启用验证 |
+| 新功能开发 | PRD v6.1 → 实现契约 v2.2 → v4.0 实施方案 → 设计文档 | 模块"配置→运行→分析"三态自包含原则 |
+| 回路整定 Phase 2 | PRD §回路整定（另一会话推进中） | 生产级算法闭环（Phase 1 只输出建议） |
 
 ---
 
@@ -220,8 +226,9 @@ PENDING → IN_PROGRESS → IMPLEMENTED
 ### 8.3 CI 提交前本地检查（必跑）
 
 ```bash
-# 后端 ruff
+# 后端 ruff + schema 漂移检查
 cd backend && uv run ruff check . && uv run ruff format --check .
+cd backend && uv run alembic check   # 退出码必须为 0（结构性漂移即失败）
 
 # 前端格式化 + 类型检查
 cd frontend && pnpm run format && pnpm run check:type
@@ -231,6 +238,8 @@ cd backend && uv run pytest -q
 cd frontend && pnpm exec vitest run
 cd e2e && pnpm exec playwright test
 ```
+
+> lefthook 已配置 pre-push 自动门禁（ruff + pytest -x + check:type），首次 `pnpm install` 后生效。
 
 ### 8.4 代码风格约定
 

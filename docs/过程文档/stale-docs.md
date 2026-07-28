@@ -18,6 +18,7 @@
 - `prototype-development-freeze-v0.1-2026-06-16.md`（任务书已被 UI/UX v4.0 25 页面清单取代）
 - `p0-contract-backbone-design-v0.1-2026-06-16.md`（P0 模型已被 Phase 1/Action Tracker 模型取代）
 - `core-algorithm-confidence-design-v0.1-2026-06-16.md`（可信度设计已并入 ADS v3.0 与 DDS v3.0）
+- `TROUBLESHOOTING.md`（根目录，2026-07-17 故障排查交接记录；所述问题已随 PR #72 解决，文件头已自标"不再反映当前系统状态"，仅历史追溯）
 
 ## 已删除的 v0.1 文件
 

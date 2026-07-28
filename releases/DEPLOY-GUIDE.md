@@ -2,6 +2,13 @@
 
 本指南面向现场实施人员，涵盖部署前准备、配置修改、部署执行和验证全流程。
 
+> **2026-07-28 部署链路更新**（详 README「生产部署」节）：
+> - 两条部署路径均**强制执行 alembic 迁移**（失败即中止）；升级前**自动备份**（TDengine 带凭据，失败硬中止）
+> - 镜像同时打 `latest` + git SHA + 版本号 tag，回滚可用；构建注入 `APP_VERSION`
+> - 部署后强制 celery `inspect ping`/`scheduled` 断言；`.env.prod` 必须含 `ENV=production`
+> - 可选监控：`--profile monitoring`（Prometheus + Grafana + 告警规则）
+> - **首次登录强制改密**：种子用户登录后须先改密才能进行写操作
+
 ---
 
 ## 1. 部署架构概览
