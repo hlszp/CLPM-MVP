@@ -1775,12 +1775,17 @@ def _ts_to_float(ts: Any) -> float | None:
     """将时间戳转换为浮点数（秒级 epoch）。
 
     支持 int/float/datetime/ISO 字符串；无法转换时返回 None。
+    naive datetime / 无时区 ISO 字符串按 UTC 处理（补 Z 口径）：
+    避免 naive .timestamp() 的本地时区慢路径（macOS fork 陷阱，项目红线），
+    并保证结果与后端部署时区无关。
     """
     if ts is None:
         return None
     if isinstance(ts, (int, float)):
         return float(ts)
     if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
         return float(ts.timestamp())
     # 字符串：先尝试数值，再尝试 ISO 解析
     s = str(ts)
@@ -1790,6 +1795,8 @@ def _ts_to_float(ts: Any) -> float | None:
         pass
     try:
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
         return float(dt.timestamp())
     except (ValueError, TypeError):
         return None
@@ -1805,7 +1812,27 @@ def _build_ts_index(data: list[dict]) -> tuple[list[float], list[Any]]:
     Returns:
         (sorted_ts_floats, sorted_original_ts) — 同序排列；
         若任意 ts 无法转数值，返回空列表。
+
+    性能：全部为 datetime 时走向量化快速路径——仅首点做一次 epoch 换算，
+    其余点用 timedelta.total_seconds() 差分（纯算术），避免逐点
+    naive .timestamp() 的时区慢路径（项目红线）。
     """
+    if not data:
+        return [], []
+
+    # 向量化快速路径：所有 ts 均为 datetime
+    first_ts = data[0].get("ts")
+    if isinstance(first_ts, datetime) and all(isinstance(d.get("ts"), datetime) for d in data):
+        base = first_ts if first_ts.tzinfo is not None else first_ts.replace(tzinfo=UTC)
+        base_f = float(base.timestamp())
+        dt_pairs: list[tuple[float, Any]] = []
+        for d in data:
+            ts_orig = d["ts"]
+            ts_aware = ts_orig if ts_orig.tzinfo is not None else ts_orig.replace(tzinfo=UTC)
+            dt_pairs.append((base_f + (ts_aware - base).total_seconds(), ts_orig))
+        dt_pairs.sort(key=lambda p: p[0])
+        return [p[0] for p in dt_pairs], [p[1] for p in dt_pairs]
+
     pairs: list[tuple[float, Any]] = []
     for d in data:
         ts_orig = d.get("ts")

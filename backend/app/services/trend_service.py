@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -52,7 +52,11 @@ def _parse_iso_datetime(s: str) -> datetime:
 
 
 def _ts_to_millis(ts: Any) -> int | None:
-    """将时间戳（字符串或 datetime）转为毫秒整数。"""
+    """将时间戳（字符串或 datetime）转为毫秒整数。
+
+    naive（无时区）输入按 UTC 处理（补 Z 口径）：返回前端的毫秒时间戳
+    与后端部署时区无关，避免 naive .timestamp() 被解释为本地墙钟。
+    """
     if ts is None:
         return None
     if isinstance(ts, (int, float)):
@@ -61,6 +65,8 @@ def _ts_to_millis(ts: Any) -> int | None:
     if isinstance(ts, str):
         try:
             dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
             return int(dt.timestamp() * 1000)
         except (ValueError, TypeError):
             try:
@@ -68,6 +74,10 @@ def _ts_to_millis(ts: Any) -> int | None:
                 return int(v * 1000) if v < 1e12 else int(v)
             except (ValueError, TypeError):
                 return None
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        return int(ts.timestamp() * 1000)
     if hasattr(ts, "timestamp"):
         return int(ts.timestamp() * 1000)
     return None

@@ -123,18 +123,26 @@ def _ts_to_ms(ts: Any) -> int:
 
     TDengine REST API 返回的 ts 为字符串（如 '2026-06-25T17:29:22.000Z'），
     前端 MonitorTrend.timestamps 类型为 number[]（毫秒），需统一转换。
+    naive（无时区）输入按 UTC 处理（补 Z 口径）：返回前端的毫秒时间戳
+    与后端部署时区无关，避免 naive .timestamp() 被解释为本地墙钟。
     """
     if isinstance(ts, (int, float)):
         return int(ts)
     if isinstance(ts, str):
         try:
             dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
             return int(dt.timestamp() * 1000)
         except (ValueError, TypeError):
             try:
                 return int(float(ts))
             except (ValueError, TypeError):
                 return 0
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        return int(ts.timestamp() * 1000)
     if hasattr(ts, "timestamp"):
         return int(ts.timestamp() * 1000)
     return 0

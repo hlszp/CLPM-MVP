@@ -9,6 +9,12 @@
 - 历史窗口（end 早于 now-65min）跳过 Redis 实时 1 小时缓存探测（必然 miss）
 - COV 前向填充 + RawTimeSeries 转换移入 ``asyncio.to_thread``，
   避免 3600 行 × dict 的纯 CPU 处理阻塞事件循环内其他并发回路
+
+时区口径（P0-3 修复）：
+- 写入侧将 ts 转 Asia/Shanghai 墙钟存储，服务器按 +8 解释 naive 字符串
+- 查询边界经 ``_format_ts`` 统一输出带 Z 的 UTC ISO 串（naive 视为 UTC）
+- Redis 1 小时缓存行 ts 为 +8 墙钟字符串，经 ``_stored_ts_to_utc_naive``
+  转 UTC 后再与窗口比较（直接字符串比较恒假，缓存永不命中）
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from app.services.data_source.base import QueryFn
@@ -45,6 +51,13 @@ _subtable_cache_lock = asyncio.Lock()
 # Redis 实时缓存只保存最近 1 小时数据；窗口 end 早于 (now - 65 分钟) 时
 # 判定为历史窗口并跳过探测（1 小时 + 5 分钟余量，容忍时钟偏差与边界窗口）
 _REDIS_REALTIME_SKIP_S = 65 * 60
+
+# 存储侧时区（Asia/Shanghai）：写入侧（realtime_subscriber._normalize_ts /
+# data_import）统一将 ts 转为 +8 墙钟字符串落库，TDengine 服务器按 +8 解释
+# naive 时间字符串（实证：CAST('2026-07-28 10:00:00' AS TIMESTAMP) →
+# 2026-07-28T02:00:00Z）。Redis 1 小时缓存行的 ts 同为 +8 墙钟字符串，
+# 与 UTC 查询窗口比较前必须显式按此时区解析，不能直接字符串比较。
+_STORED_TZ = timezone(timedelta(hours=8))
 
 
 class TDengineProvider:
@@ -156,23 +169,27 @@ class TDengineProvider:
                     try:
                         redis_rows = await subscriber.get_history_values(loop_part)
                         if redis_rows:
-                            # 过滤指定时间范围
-                            filtered_rows = [
-                                row for row in redis_rows if start_str <= row["ts"] <= end_str
-                            ]
+                            start_dt = _parse_ts(start)
+                            end_dt = _parse_ts(end)
+                            if isinstance(start_dt, datetime) and isinstance(end_dt, datetime):
+                                # 缓存行 ts 为 +8 墙钟字符串（与落库口径一致），
+                                # 须逐行解析为 UTC 时刻再与窗口（naive UTC）比较；
+                                # 命中行的 ts 就地改写为 UTC naive 字符串，使
+                                # 下游 _rows_to_raw_series 输出与宽表路径一致。
+                                filtered_rows = []
+                                for row in redis_rows:
+                                    row_ts = _stored_ts_to_utc_naive(row.get("ts", ""))
+                                    if row_ts is not None and start_dt <= row_ts <= end_dt:
+                                        row["ts"] = row_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                                        filtered_rows.append(row)
+                            else:
+                                filtered_rows = []
                             if filtered_rows:
                                 first_ts = _parse_ts(filtered_rows[0]["ts"])
                                 last_ts = _parse_ts(filtered_rows[-1]["ts"])
-                                start_dt = _parse_ts(start)
-                                end_dt = _parse_ts(end)
 
                                 # 检查缓存是否覆盖了请求的时间范围（容差 60 秒）
-                                if (
-                                    isinstance(first_ts, datetime)
-                                    and isinstance(last_ts, datetime)
-                                    and isinstance(start_dt, datetime)
-                                    and isinstance(end_dt, datetime)
-                                ):
+                                if isinstance(first_ts, datetime) and isinstance(last_ts, datetime):
                                     if (first_ts - start_dt).total_seconds() <= 60 and (
                                         end_dt - last_ts
                                     ).total_seconds() <= 60:
@@ -250,29 +267,62 @@ class TDengineProvider:
 
 
 def _format_ts(dt: Any) -> str:
-    """格式化 datetime 为 TDengine 查询时间字符串（毫秒精度）。"""
-    from datetime import datetime
+    """格式化查询时间边界为带 Z 的 UTC ISO 串（毫秒精度）。
 
+    时区口径（P0-3 修复）：写入侧将 ts 转为 Asia/Shanghai 墙钟存储，
+    TDengine 服务器按 +8 解释 naive 字符串（实证：naive '10:00:00' →
+    存储为 02:00Z）。naive datetime 在本代码库约定为 UTC，若直接
+    strftime 成 naive 字符串拼接 WHERE，会被服务器当成 +8 墙钟，
+    过滤窗口比意图早 8 小时。因此统一输出带 Z 的 UTC ISO 串，让
+    服务器按 UTC 解释（与 trend_service 趋势路径透传 Z 串的口径一致，
+    该路径已验证正常工作）。
+
+    - naive datetime：视为 UTC
+    - aware datetime：先转 UTC
+    - 字符串：原样透传（调用方自带时区信息，如趋势路径的 Z 后缀 ISO 串）
+    """
     if isinstance(dt, datetime):
-        return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(UTC).replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     return str(dt)
 
 
-def _parse_ts(ts_val: Any) -> Any:
-    """解析 TDengine 返回的时间戳为 datetime。
+def _stored_ts_to_utc_naive(ts_val: Any) -> datetime | None:
+    """解析存储侧（+8 墙钟）时间字符串并转为 naive UTC，失败返回 None。
 
-    taosrest 默认返回 datetime 对象（convert_timestamp=True）。
+    Redis 1 小时缓存行与 TDengine 落库行的 ts 均为 Asia/Shanghai 墙钟
+    字符串（见 _STORED_TZ 注释），与 UTC 查询窗口比较前必须显式按
+    存储时区解析再转 UTC；字符串直接比较会导致缓存永不命中。
+    带时区信息的字符串（含 Z）按其实际时区转换。
     """
-    from datetime import datetime
+    try:
+        dt = datetime.fromisoformat(str(ts_val).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_STORED_TZ)
+    return dt.astimezone(UTC).replace(tzinfo=None)
 
+
+def _parse_ts(ts_val: Any) -> Any:
+    """解析 TDengine 返回的时间戳为 naive UTC datetime。
+
+    taosrest 连接已固定 timezone=UTC（见 TDengineConnectionPool._create_connection），
+    TIMESTAMP 列返回 aware UTC datetime；aware 输入先 astimezone 到 UTC 再去
+    tzinfo（而非直接丢弃时区），避免 aware 非 UTC 时间被错当成 UTC。
+    """
     if isinstance(ts_val, datetime):
         # 保持 naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
-        return ts_val.replace(tzinfo=None) if ts_val.tzinfo else ts_val
+        return ts_val.astimezone(UTC).replace(tzinfo=None) if ts_val.tzinfo else ts_val
     if isinstance(ts_val, str):
         try:
-            return datetime.fromisoformat(ts_val.replace("Z", "+00:00")).replace(tzinfo=None)
+            dt = datetime.fromisoformat(ts_val.replace("Z", "+00:00"))
         except (ValueError, TypeError):
-            pass
+            return ts_val
+        # naive 字符串按调用方约定视为 UTC（存储侧 +8 墙钟串由
+        # _stored_ts_to_utc_naive 专门处理，不走这里）
+        return dt.astimezone(UTC).replace(tzinfo=None) if dt.tzinfo else dt
     return ts_val
 
 

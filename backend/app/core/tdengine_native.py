@@ -58,7 +58,15 @@ class TDengineConnectionPool:
 
     @classmethod
     def _create_connection(cls) -> Any:
-        """创建新的 taosrest 连接。"""
+        """创建新的 taosrest 连接。
+
+        timezone=UTC：taosrest 默认将 TIMESTAMP 列转为客户端本地时区的
+        naive datetime（环境相关，+8 机器上得到 +8 墙钟），显式指定 UTC
+        后返回 aware UTC datetime，由上层 ``_parse_ts`` 统一转 naive UTC，
+        保证查询结果时间戳口径与部署机器时区无关（P0-3 修复）。
+        """
+        from datetime import UTC
+
         from taosrest import connect
 
         url = f"http://{settings.TDENGINE_HOST}:{_TD_REST_PORT}"
@@ -67,6 +75,7 @@ class TDengineConnectionPool:
             user=settings.TDENGINE_USER,
             password=settings.TDENGINE_PASSWORD,
             database=settings.TDENGINE_DB,
+            timezone=UTC,
         )
         cls._created_count += 1
         logger.debug("创建 TDengine REST 连接 #%d (url=%s)", cls._created_count, url)

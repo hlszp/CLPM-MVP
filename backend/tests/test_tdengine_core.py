@@ -158,3 +158,19 @@ class TestParseTagToTableColumn:
         assert subtable == expected_subtable
         assert column == expected_column
         assert quality_col == expected_quality_col
+
+
+class TestConnectionPoolTimezone:
+    """P0-3：taosrest 连接固定 timezone=UTC，TIMESTAMP 列返回 aware UTC."""
+
+    def test_create_connection_pins_utc_timezone(self) -> None:
+        from datetime import UTC
+        from unittest.mock import MagicMock, patch
+
+        from app.core.tdengine_native import TDengineConnectionPool
+
+        with patch("taosrest.connect", return_value=MagicMock()) as mock_connect:
+            TDengineConnectionPool._create_connection()
+
+        assert mock_connect.call_count == 1
+        assert mock_connect.call_args.kwargs["timezone"] is UTC

@@ -22,13 +22,18 @@
 - 列完整度 = actual_col_count / expected_col_count
 - 回路完整度 = 所有列 actual 之和 / 所有列 expected 之和
 - 缺失小时桶：任一列 actual < expected 视为该小时有缺失
+
+时区口径（P0-3 修复）：
+- 查询边界经 ``_to_utc_z`` 统一为带 Z 的 UTC 串（服务器按 +8 解释 naive 串）
+- 期望桶枚举与 REST 返回桶键统一按 naive UTC（epoch 小时）对齐，
+  带时区输入一律 astimezone(UTC) 后再去 tzinfo，不直接丢弃时区
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -149,10 +154,12 @@ async def _query_loop_bucket(
     async with sem:
         # 构造各列的 COUNT 表达式
         count_cols = ", ".join(f"COUNT({c}) AS cnt_{c}" for c in _DATA_COLUMNS)
+        # 查询边界统一归一化为带 Z 的 UTC 串：服务器按 +8 解释 naive 字符串，
+        # 直接拼 naive 输入会使过滤窗口偏移 8 小时（P0-3 修复口径）
         sql = (
             f"SELECT _wstart AS bucket_start, {count_cols} "
             f"FROM {settings.TDENGINE_DB}.{subtable} "
-            f"WHERE ts >= '{ts_start}' AND ts <= '{ts_end}' "
+            f"WHERE ts >= '{_to_utc_z(ts_start)}' AND ts <= '{_to_utc_z(ts_end)}' "
             f"INTERVAL(1h) ORDER BY bucket_start ASC"
         )
         rows = await execute_sql(sql)
@@ -321,10 +328,26 @@ def _classify_status(completeness: float) -> str:
 
 
 def _parse_dt(ts_str: str) -> datetime:
-    """解析 ISO 8601 时间字符串为 naive datetime."""
+    """解析 ISO 8601 时间字符串为 naive UTC datetime.
+
+    时区口径（P0-3 修复）：带时区的输入（含 Z / +08:00 偏移）先
+    astimezone 到 UTC 再去 tzinfo，而非直接丢弃时区（直接丢弃会把
+    +8 墙钟错当成 UTC，桶键与 TDengine REST 返回的 UTC 桶错位 8 小时）；
+    naive 输入按本代码库约定视为 UTC。
+    """
     s = ts_str.replace("Z", "+00:00")
     dt = datetime.fromisoformat(s)
-    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+    return dt.astimezone(UTC).replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _to_utc_z(ts_str: str) -> str:
+    """将 ISO 8601 时间字符串归一化为带 Z 的 UTC 串（SQL 查询边界用）.
+
+    TDengine 服务器按 +8 解释 naive 时间字符串，naive 输入直接拼 WHERE
+    会使过滤窗口偏移 8 小时；统一输出带 Z 的 UTC 串让服务器按 UTC 解释。
+    """
+    dt = _parse_dt(ts_str)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def _normalize_bucket_key(bucket_str: str) -> str:
@@ -365,7 +388,12 @@ def _enumerate_hour_buckets_with_expected(
 
 
 def _parse_bucket_str(bucket_str: str) -> datetime:
-    """解析 TDengine 返回的 bucket_start 字符串为 datetime."""
+    """解析 TDengine 返回的 bucket_start 字符串为 naive UTC datetime.
+
+    REST 返回的 INTERVAL 桶起点为 UTC（如 '2026-07-28T02:00:00.000Z'，
+    已实证）；带时区输入先 astimezone 到 UTC 再去 tzinfo，naive 输入
+    视为 UTC（与 _parse_dt 口径一致），保证桶键与期望枚举按 epoch 对齐。
+    """
     for fmt in (
         "%Y-%m-%d %H:%M:%S.%f",
         "%Y-%m-%d %H:%M:%S",
@@ -377,10 +405,11 @@ def _parse_bucket_str(bucket_str: str) -> datetime:
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(bucket_str.replace("Z", "+00:00")).replace(tzinfo=None)
+        dt = datetime.fromisoformat(bucket_str.replace("Z", "+00:00"))
+        return dt.astimezone(UTC).replace(tzinfo=None) if dt.tzinfo else dt
     except ValueError:
         logger.warning("无法解析 bucket 时间 %r，使用当前时间兜底", bucket_str)
-        return datetime.now()
+        return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _empty_response(ts_start: str, ts_end: str, expected_interval_s: int) -> dict[str, Any]:
