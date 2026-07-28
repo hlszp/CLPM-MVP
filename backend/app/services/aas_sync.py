@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import BizError
+from app.core.tdengine import _TAG_NAME_PATTERN
 from app.models.loop import LoopLedger
 from app.models.tag import TagRegistry
 
@@ -281,9 +282,19 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
         inserted = 0
         updated = 0
         unchanged = 0
+        skipped = 0
+        skipped_tags: list[str] = []
 
         for aas_tag in aas_tags:
             tag_name = aas_tag["tag_name"]
+            # P2：tag 名白名单校验（与 core/tdengine._TAG_NAME_PATTERN 一致）——
+            # 非法 tag 名（如含单引号）一旦入库，后续 TDengine SQL 拼接会引发
+            # 语法错误甚至注入；此处跳过并记录，不中断整体同步
+            if not tag_name or not _TAG_NAME_PATTERN.match(str(tag_name)):
+                skipped += 1
+                skipped_tags.append(str(tag_name))
+                logger.warning("AAS 同步跳过非法 tag 名: %r", tag_name)
+                continue
             existing = existing_tags.get(tag_name)
             if existing is None:
                 # 新增
@@ -342,6 +353,8 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
             "inserted": inserted,
             "updated": updated,
             "unchanged": unchanged,
+            "skipped": skipped,
+            "skipped_tags": skipped_tags,
             "duration_ms": duration_ms,
         }
         logger.info("AAS 同步完成: %s", stats)

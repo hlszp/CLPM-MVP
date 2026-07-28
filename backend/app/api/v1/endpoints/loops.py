@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.models.loop import LoopLedger
 from app.models.metric import LoopConfidenceLatest
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -52,12 +53,15 @@ from app.services.loop import (
     batch_group_loops,
     create_loop,
     delete_loop,
+    detect_tag_reassignment,
     export_loops,
     get_loop_detail,
+    get_loop_role_tag_names,
     get_loop_type_stats,
     import_loops,
     list_complex_groups,
     list_loops,
+    notify_tag_reassignment,
     update_loop,
 )
 from app.services.loop_batch import batch_delete_loops, batch_update_loops
@@ -459,7 +463,11 @@ async def update_loop_tags_endpoint(
     PID_P/PID_I/PID_D 可选。
     全部必填为 null → ERR_LOOP_TAG_REQUIRED。
     Tag 不存在于 tag_registry → ERR_TAG_NOT_FOUND。
+    tag 名发生变更时响应带 warnings（历史数据在新 subtable 下重新开始）。
     """
+    # P2：变更前记录各角色 tag 名，用于检测 tag 重关联（历史数据孤儿化风险）。
+    # 回路不存在时由 update_loop_tags 抛出 ERR_LOOP_NOT_FOUND，此处查询返回空 dict
+    before_role_tags = await get_loop_role_tag_names(db, loop_id)
     data = await update_loop_tags(
         db=db,
         loop_id=loop_id,
@@ -472,6 +480,14 @@ async def update_loop_tags_endpoint(
         pid_i=body.pid_i,
         pid_d=body.pid_d,
     )
+    after_role_tags = {t["role"]: t["tagName"] for t in data["tags"] if t.get("tagName")}
+    changed_roles = detect_tag_reassignment(before_role_tags, after_role_tags)
+    if changed_roles:
+        loop_tag_name = await db.scalar(select(LoopLedger.tag_name).where(LoopLedger.id == loop_id))
+        warning = await notify_tag_reassignment(
+            loop_id, str(loop_tag_name or loop_id), changed_roles
+        )
+        data["warnings"] = [warning]
     return success(data=data, message="Tag 关联更新成功")
 
 

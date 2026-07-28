@@ -21,11 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
 from app.core.redis import redis_client
+from app.core.tdengine import _TAG_NAME_PATTERN
 from app.models.audit import SysAuditLog
 from app.models.dcs_model import DcsModel
 from app.models.loop import COMPLEX_ROLE_MAIN, LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
+from app.services.cache.invalidation import CacheInvalidator
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,74 @@ ROLE_TO_FIELD = {
     "PID_I": "pid_i",
     "PID_D": "pid_d",
 }
+
+# P2：tag 重关联（改关联 / Excel 覆盖式删建映射）会使 TDengine subtable 名
+# 派生自新 tag 名，旧 subtable 中的历史数据立即不可达——检测到变更时在响应中
+# 返回此 warning，并失效该回路的 L1 DataBlock 缓存与 subtable 解析缓存
+TAG_REASSIGN_WARNING = "tag 变更将导致历史数据在新 subtable 下重新开始，旧数据不可达"
+
+
+def _clear_subtable_cache(loop_id: str) -> None:
+    """清除 tdengine_provider 模块级 subtable 解析缓存中该回路的条目。
+
+    tdengine_provider._subtable_cache 暂无公开清除函数，此处直接 pop 模块级 dict
+    （GIL 下 dict.pop 原子安全；该缓存为单进程 300s TTL 缓存，见 tdengine_provider
+    文件头设计说明）。
+    """
+    from app.services.data_source import tdengine_provider
+
+    tdengine_provider._subtable_cache.pop(loop_id, None)
+
+
+async def get_loop_role_tag_names(db: AsyncSession, loop_id: str) -> dict[str, str]:
+    """查询回路当前各角色关联的 tag 名（role → tag_name，未关联的角色不出现）。"""
+    result = await db.execute(
+        select(LoopTagMapping.tag_role, TagRegistry.tag_name)
+        .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+        .where(LoopTagMapping.loop_id == loop_id)
+    )
+    return dict(result.all())
+
+
+def detect_tag_reassignment(
+    old_role_tags: dict[str, str], new_role_tags: dict[str, str]
+) -> list[str]:
+    """对比变更前后各角色 tag 名，返回发生变化（含新增/移除）的角色列表。
+
+    角色顺序固定为 ALL_ROLES，保证 warning 文案与测试断言稳定。
+    """
+    return [
+        role
+        for role in ALL_ROLES
+        if (role in old_role_tags or role in new_role_tags)
+        and old_role_tags.get(role) != new_role_tags.get(role)
+    ]
+
+
+async def notify_tag_reassignment(
+    loop_id: str, loop_tag_name: str, changed_roles: list[str]
+) -> str:
+    """tag 重关联后置处理：warning + 失效 L1 缓存 + 清除 subtable 解析缓存。
+
+    缓存失效失败不阻断主流程（缓存本身可安全降级为 miss 后重建）。
+
+    Returns:
+        面向调用方的 warning 文案（追加到响应 warnings 中）
+    """
+    warning = f"回路 {loop_tag_name}（角色 {'/'.join(changed_roles)}）：{TAG_REASSIGN_WARNING}"
+    logger.warning(
+        "tag 重关联: loop_id=%s, changed_roles=%s — %s",
+        loop_id,
+        changed_roles,
+        TAG_REASSIGN_WARNING,
+    )
+    _clear_subtable_cache(loop_id)
+    try:
+        await CacheInvalidator(redis_client).invalidate_loop(loop_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("L1 缓存失效失败（不影响关联变更）: loop_id=%s", loop_id, exc_info=True)
+    return warning
+
 
 # v6.1：回路类型 / 控制类型 中英文双向映射（Excel 导入导出用）
 # 导出时英→中（用户友好），导入时中→英（容错识别）
@@ -1875,7 +1945,9 @@ async def import_loops(
     """批量导入回路（Excel .xlsx）。
 
     逐行处理：回路编号已存在则更新，否则新建。
-    返回 {total, inserted, updated, failed, errors[]}。
+    含非法字符 tag 名的行整行跳过并计入 failed/errors，不中断整体导入。
+    返回 {total, inserted, updated, failed, errors[], warnings[]}；
+    warnings 记录 tag 重关联（历史数据在新 subtable 下重新开始）的回路。
     """
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
@@ -1894,6 +1966,8 @@ async def import_loops(
     updated = 0
     failed = 0
     errors: list[dict] = []
+    # P2：tag 重关联记录（loop_id, 回路位号, 变更角色），提交后统一做缓存失效 + warning
+    tag_reassigned: list[tuple[str, str, list[str]]] = []
 
     # 缓存：plant_node name → id，tag name → id，dcs_model name → id
     plant_node_cache: dict[str, str] = {}
@@ -1914,6 +1988,28 @@ async def import_loops(
         role_tag_values: dict[str, str] = {}
         for col_idx, role in _IMPORT_ROLE_COLUMNS.items():
             role_tag_values[role] = _cell_str(row[col_idx]) if len(row) > col_idx else ""
+
+        # P2：tag 名白名单校验（与 core/tdengine._TAG_NAME_PATTERN 一致）——
+        # 含单引号等非法字符的 tag 名会在 TDengine SQL 拼接时引发语法错误甚至
+        # 注入，整行跳过并记录，不中断整体导入
+        invalid_tag_names = ([tag_name] if not _TAG_NAME_PATTERN.match(tag_name) else []) + [
+            t for t in role_tag_values.values() if t and not _TAG_NAME_PATTERN.match(t)
+        ]
+        if invalid_tag_names:
+            failed += 1
+            errors.append(
+                {
+                    "row": row_idx,
+                    "tagName": tag_name,
+                    "message": "tag 名含非法字符（仅允许字母/数字/下划线/连字符/点号/空白，"
+                    f"1~128 字符）: {', '.join(invalid_tag_names)}",
+                }
+            )
+            logger.warning(
+                "Excel 导入跳过非法 tag 名: row=%d, names=%s", row_idx, invalid_tag_names
+            )
+            continue
+
         unit_name = _cell_str(row[6]) if len(row) > 6 else ""
         is_active_str = _cell_str(row[7]) if len(row) > 7 else "是"
         is_active = is_active_str in ("是", "true", "True", "1", "YES", "yes", "Y", "y")
@@ -2014,7 +2110,7 @@ async def import_loops(
         try:
             # 使用 SAVEPOINT 保证单行失败不影响其他行
             async with db.begin_nested():
-                is_update = await _import_one_row(
+                is_update, changed_loop_id, changed_roles = await _import_one_row(
                     db=db,
                     tag_name=tag_name,
                     description=description,
@@ -2038,6 +2134,8 @@ async def import_loops(
             errors.append({"row": row_idx, "tagName": tag_name, "message": str(exc)})
             continue
 
+        if changed_roles:
+            tag_reassigned.append((changed_loop_id, tag_name, changed_roles))
         if is_update:
             updated += 1
         else:
@@ -2045,12 +2143,21 @@ async def import_loops(
 
     await db.commit()
 
+    # P2：tag 重关联后置处理（warning + 缓存失效），提交后执行——
+    # 若提前失效后事务回滚，会导致缓存被无谓清空且 warning 与库内状态不符
+    warnings: list[str] = []
+    for reassigned_loop_id, reassigned_loop_tag, reassigned_roles in tag_reassigned:
+        warnings.append(
+            await notify_tag_reassignment(reassigned_loop_id, reassigned_loop_tag, reassigned_roles)
+        )
+
     return {
         "total": total,
         "inserted": inserted,
         "updated": updated,
         "failed": failed,
         "errors": errors,
+        "warnings": warnings,
     }
 
 
@@ -2072,8 +2179,15 @@ async def _import_one_row(
     op_output_upper_limit: float | None = None,
     dcs_model_id: str | None = None,
     remark: str | None = None,
-) -> bool:
-    """处理单行导入，返回是否为更新（True）或新建（False）。
+) -> tuple[bool, str, list[str]]:
+    """处理单行导入。
+
+    Returns:
+        (is_update, loop_id, changed_roles)：
+        - is_update: True 为更新已存在回路，False 为新建
+        - loop_id: 回路 ID
+        - changed_roles: 更新场景下各角色 tag 名发生变化的角色列表（新建恒为 []），
+          供调用方在提交后做 tag 重关联 warning + 缓存失效
 
     在调用方的 SAVEPOINT 内执行，异常会触发回滚至 SAVEPOINT。
     """
@@ -2126,9 +2240,12 @@ async def _import_one_row(
         if remark is not None:
             loop.remark = remark
         loop.updated_by = operator
+        # P2：删除旧映射前记录各角色 tag 名，用于检测 tag 重关联（历史数据孤儿化风险）
+        old_role_tag_names = await get_loop_role_tag_names(db, str(loop.id))
         # 删除现有关联 Tag
         await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id)))
     else:
+        old_role_tag_names: dict[str, str] = {}
         loop = LoopLedger(
             id=str(uuid4()),
             tag_name=tag_name,
@@ -2216,7 +2333,13 @@ async def _import_one_row(
     )
 
     await db.flush()
-    return is_update
+
+    # P2：对比变更前后各角色 tag 名（新建回路无历史，恒为空）
+    new_role_tag_names = {role: t for role, t in role_tag_values.items() if t}
+    changed_roles = (
+        detect_tag_reassignment(old_role_tag_names, new_role_tag_names) if is_update else []
+    )
+    return is_update, str(loop.id), changed_roles
 
 
 __all__ = [
@@ -2227,12 +2350,16 @@ __all__ = [
     "LOOP_TYPE_FROM_CN",
     "CONTROL_TYPE_TO_CN",
     "CONTROL_TYPE_FROM_CN",
+    "TAG_REASSIGN_WARNING",
     "create_loop",
     "delete_loop",
     "derive_loop_status",
+    "detect_tag_reassignment",
     "export_loops",
     "get_loop_detail",
+    "get_loop_role_tag_names",
     "import_loops",
     "list_loops",
+    "notify_tag_reassignment",
     "update_loop",
 ]

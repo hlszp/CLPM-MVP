@@ -419,6 +419,8 @@ class LoopTagMappingUpdateResponse(CamelModel):
     tags: list[dict]
     updatedAt: str | None = None
     updatedBy: str | None = None
+    # P2：tag 重关联告警（历史数据在新 subtable 下重新开始，旧数据不可达）
+    warnings: list[str] = []
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +444,8 @@ class LoopImportResult(CamelModel):
     updated: int
     failed: int
     errors: list[LoopImportError] = []
+    # P2：tag 重关联告警（历史数据在新 subtable 下重新开始，旧数据不可达）
+    warnings: list[str] = []
 
 
 # ---------------------------------------------------------------------------

@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from pydantic import Field
 
+from app.core.tdengine import _TAG_NAME_PATTERN
 from app.schemas.base import CamelModel
+
+# tag 名白名单（与 app.core.tdengine._TAG_NAME_PATTERN 同一来源，单一事实源）：
+# 仅允许字母、数字、下划线、连字符、点号、空白，1~128 字符。
+# 含单引号等特殊字符的 tag 名会在 TDengine SQL 拼接时引发语法错误甚至注入，
+# 因此在入口 schema 统一拦截（FastAPI 请求模型命中时返回 422）。
+TAG_NAME_PATTERN: str = _TAG_NAME_PATTERN.pattern
 
 
 class TagLoopInfo(CamelModel):
@@ -19,7 +26,7 @@ class TagListItem(CamelModel):
     """测点列表项。"""
 
     id: str
-    tagName: str
+    tagName: str = Field(pattern=TAG_NAME_PATTERN)
     tagDescription: str | None = None
     tagType: str
     currentValue: float | None = None
@@ -50,7 +57,7 @@ class TagDetail(CamelModel):
     """测点详情。"""
 
     id: str
-    tagName: str
+    tagName: str = Field(pattern=TAG_NAME_PATTERN)
     tagDescription: str | None = None
     tagType: str
     currentValue: float | None = None
@@ -98,7 +105,7 @@ class TagBatchDeleteFailure(CamelModel):
     """批量删除中单个失败项。"""
 
     tagId: str
-    tagName: str | None = None
+    tagName: str | None = Field(None, pattern=TAG_NAME_PATTERN)
     reason: str
 
 
@@ -114,7 +121,7 @@ class TagImportError(CamelModel):
     """测点导入单行错误。"""
 
     row: int
-    tagName: str | None = None
+    tagName: str | None = Field(None, pattern=TAG_NAME_PATTERN)
     message: str
 
 
