@@ -33,6 +33,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.1 是重构后 IA/路�
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
 | v6 交付历史 | `docs/过程文档/v6-delivery-history.md` | Phase 0-6 + 后续全部 PR |
 | 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0（全维度评审 ~90 项问题 + 六阶段方案）；**Phase 0/1/2 已完成**（2026-07-28：算法 P0×3+P1 全修、TDengine 时区修复、综合评分口径、阈值配置化迁移 `c3d4e5f6a7b8`、schema 收敛迁移 `d4e5f6a7b8c9`；pytest 2778 全绿、`alembic check` 退出码 0） |
+| **回路整定 Phase 2 技术方案** | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **已执行**（分支 `feat/tuning-phase2`，2026-07-28）：历史数据过程对象辨识（ARX/ARMAX/IV 算法栈）+ 异步任务化 + 多 PID 对比仿真；pytest 2840 全绿、`alembic check` 退出码 0 |
 
 ## v6.0 核心架构组件
 
@@ -44,6 +45,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.1 是重构后 IA/路�
 | 预处理 Pipeline | `app/services/preprocessing/` (quality_code/thresholds/outlier_detection/validity_mask/quality_summary/pipeline) | 8 步流水线 + 8 类异常值检测 |
 | MetricCalculator | `app/tasks/kpi_calc.py` | 12 个 KPI 指标计算器（3 核心 + 1 综合 + 8 辅助），通过 DataPlanner.request_bundles() 获取数据 |
 | 数据完整性检查 | `app/services/data_integrity.py` | 本地 TDengine 宽表完整性检查：按小时分桶对 7 列分别 `COUNT(col)` 统计列级缺失；缺失=无记录或列 NULL，质量码非 Good 但有值不算缺失；首尾不足整点桶按实际秒数算预期点数。API：`POST /loops/data-import/integrity-check` |
+| 过程对象辨识算法栈 | `app/services/tuning_identification/` (excitation/nonparametric/arx/armax/iv/order_selection/discrete_to_continuous/pipeline) | 回路整定 Phase 2：基于历史 OP/PV 时序辨识过程对象 G(s)=PV/OP；分层算法栈（激励检测→非参数粗估→ARX/ARMAX/IV 参数化辨识→阶次选择 AIC/BIC→离散→连续转换→可信度评估）；接入 DataPlanner 8 步预处理 + ConfidenceEvaluator A/B/C/D/E 等级 |
 
 ## 开发环境运行指南
 
@@ -117,7 +119,7 @@ cd frontend && pnpm run format
 | **数据架构** | **导入走远端、计算全本地**（2026-07-20 定调）：远端 AAS 历史接口仅"数据管理→历史数据导入"手工任务可调用；本地 TDengine 是所有计算任务唯一历史数据源；本地数据不完整按 INCONCLUSIVE 提示，由用户导入补齐；实时数据源唯一为 SignalR Hub。详见 `docs/过程文档/data-architecture-decision-local-first-2026-07-20.md` |
 | Action Tracker | 诊断中心子模块（子菜单路由），状态机 PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED，中文显示为待处理/处理中/已实施/已忽略 |
 | 统计分析 | 不设独立模块，分散到各业务模块的"分析"态；自动报表归入系统管理 |
-| 回路整定 | Phase 1 保留页面与实验/辅助接口，只输出建议、证据、风险和回退方案；不支持 DCS 参数下写，Phase 2 再完成生产级算法闭环 |
+| 回路整定 | **Phase 2 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：基于历史数据自动辨识过程对象 G(s)=PV/OP（ARX/ARMAX/IV 算法栈 + DataPlanner + ConfidenceEvaluator）+ 异步任务化 + 多 PID 参数响应对比；保留阶跃实验为兜底路径；仍只输出建议、证据、风险和回退方案，不支持 DCS 参数下写 |
 | 技术护城河 | 可信数据 + 可解释诊断 + 可验证整定 + 安全闭环 + 规模化交付 |
 | 安全边界 | 平台不直接修改 DCS 的 P/I/D 参数，只输出建议、证据、风险和回退方案；参数由授权人员人工实施并留痕 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
@@ -141,6 +143,7 @@ cd frontend && pnpm run format
 | 方向 | 先读 | 关注点 |
 |---|---|---|
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
+| 回路整定 Phase 2 后续 | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **Phase 2.0-2.5 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：算法栈 + DataPlanner 接入 + 异步任务化 + 多 PID 对比 + 前端重构 + 全量门禁通过；待合并 main 后更新设计文档（PRD/FDS/ADS/IDS/契约 版本号升级）+ GB/T 44693.2 整定用例验证 |
 | 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |
 | E2E 测试补充 | `e2e/` 目录 → UI/UX v6.1 → v6.1 新增页面 | **全量 E2E 55/55 通过**（2026-07-28）：performance/confidence/metric-tasks 已对齐 772d99a0 重构后路由；后续按 UI/UX v6.1 新增页面逐步补 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
