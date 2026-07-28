@@ -4,6 +4,12 @@
 - FOPDT/SOPDT/IPDT 模型辨识
 - IMC/Lambda/Z-N/Cohen-Coon/SIMC PID 整定
 - 闭环仿真（RK4 + 增量式 PID）
+
+Phase 2 扩展（2026-07-28）：
+- 历史数据辨识（identifyStrategy/candidateModelTypes/confidenceLevel）
+- 多 PID 对比（pidCandidates/candidateResponses）
+- 异步任务（TaskProgress）
+- 状态机对齐实现契约（DRAFT/RUNNING/IDENTIFIED/SIMULATED/COMPLETED/INCONCLUSIVE/ROLLED_BACK）
 """
 
 from __future__ import annotations
@@ -25,8 +31,41 @@ ModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 # 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC
 TuningAlgorithm = Literal["IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"]
 
-# 整定任务状态：PENDING/IDENTIFIED/SIMULATED/APPLIED/VERIFIED
-TuningTaskStatus = Literal["PENDING", "IDENTIFIED", "SIMULATED", "APPLIED", "VERIFIED"]
+# 整定任务状态（Phase 2 新枚举 + 兼容旧枚举）
+TuningTaskStatus = Literal[
+    # Phase 2 新枚举
+    "DRAFT",
+    "RUNNING",
+    "IDENTIFIED",
+    "SIMULATED",
+    "COMPLETED",
+    "INCONCLUSIVE",
+    "ROLLED_BACK",
+    # 旧枚举（兼容期保留）
+    "PENDING",
+    "APPLIED",
+    "VERIFIED",
+]
+
+# 辨识策略
+IdentifyStrategy = Literal["AUTO", "HISTORY_ONLY", "STEP_ONLY"]
+
+# 辨识方法
+IdentifyMethod = Literal[
+    "HISTORICAL_ARX",
+    "HISTORICAL_ARMAX",
+    "HISTORICAL_IV",
+    "STEP_TWO_POINT",
+    "STEP_AREA",
+    "STEP_NLS",
+]
+
+# 数据来源
+DataSource = Literal["HISTORY", "STEP_EXPERIMENT"]
+
+# 可信度等级
+ConfidenceLevel = Literal["A", "B", "C", "D", "E", "INCONCLUSIVE"]
+
 
 # ---------------------------------------------------------------------------
 # 模型辨识
@@ -34,7 +73,7 @@ TuningTaskStatus = Literal["PENDING", "IDENTIFIED", "SIMULATED", "APPLIED", "VER
 
 
 class ModelIdentifyRequest(CamelModel):
-    """POST /tuning/identify 请求体。"""
+    """POST /tuning/identify 请求体（阶跃实验路径，保留向后兼容）。"""
 
     loopId: str = Field(..., description="回路 ID")
     startTime: str = Field(..., description="起始时间 ISO 8601")
@@ -43,6 +82,21 @@ class ModelIdentifyRequest(CamelModel):
     method: str | None = Field(
         None, description="辨识方法: TWO_POINT/AREA（仅 FOPDT，默认 TWO_POINT）"
     )
+
+
+class ModelIdentifyHistoryRequest(CamelModel):
+    """POST /tuning/identify/history 请求体（Phase 2 历史数据辨识路径）."""
+
+    loopId: str = Field(..., description="回路 ID")
+    startTime: str = Field(..., description="起始时间 ISO 8601")
+    endTime: str = Field(..., description="结束时间 ISO 8601")
+    identifyStrategy: IdentifyStrategy = Field(
+        "AUTO", description="辨识策略: AUTO(优先历史,失败兜底阶跃)/HISTORY_ONLY/STEP_ONLY"
+    )
+    candidateModelTypes: list[ModelType] | None = Field(
+        None, description="候选模型阶次列表，默认 [FOPDT, SOPDT]"
+    )
+    thetaEstimate: float | None = Field(None, description="纯滞后预估值（秒），None 自动估计")
 
 
 class ModelParams(CamelModel):
@@ -55,8 +109,21 @@ class ModelParams(CamelModel):
     T2: float | None = Field(None, description="SOPDT 第二时间常数（秒）")
 
 
+class CandidateModel(CamelModel):
+    """候选模型（多阶次并行辨识结果之一）。"""
+
+    modelType: ModelType
+    params: ModelParams
+    fittingScore: float = Field(..., description="拟合度 R²（%）")
+    confidence: ConfidenceLevel
+    identifyMethod: IdentifyMethod | None = None
+    residualTestPassed: bool | None = None
+    excitationScore: float | None = None
+    reason: str | None = None
+
+
 class ModelIdentifyResult(CamelModel):
-    """模型辨识结果。"""
+    """模型辨识结果（阶跃实验路径）。"""
 
     modelType: ModelType
     params: ModelParams
@@ -69,6 +136,30 @@ class ModelIdentifyResult(CamelModel):
     )
 
 
+class ModelIdentifyHistoryResult(CamelModel):
+    """历史数据辨识结果（Phase 2 路径）."""
+
+    success: bool
+    modelType: str | None = None
+    params: dict[str, Any] | None = None
+    fittingScore: float | None = Field(None, description="拟合度 R²（%）")
+    confidenceLevel: ConfidenceLevel | None = None
+    dataConfidenceLevel: ConfidenceLevel | None = Field(
+        None, description="数据质量可信度（基于 valid_rate）"
+    )
+    confidenceReason: str | None = None
+    excitationScore: float | None = None
+    residualTestPassed: bool | None = None
+    identifyMethod: IdentifyMethod | None = None
+    candidateModels: list[CandidateModel] | None = None
+    algorithmVersion: str | None = None
+    dataPoints: int | None = None
+    validRate: float | None = Field(None, description="有效数据率 0~1")
+    samplingFreq: float | None = Field(None, description="采样频率（Hz）")
+    reason: str | None = None
+    tagName: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # PID 整定
 # ---------------------------------------------------------------------------
@@ -77,6 +168,15 @@ class ModelIdentifyResult(CamelModel):
 class PidParams(CamelModel):
     """PID 参数。"""
 
+    kp: float = Field(..., description="比例增益")
+    ti: float = Field(..., description="积分时间（秒）")
+    td: float = Field(0.0, description="微分时间（秒）")
+
+
+class PidParamsWithLabel(CamelModel):
+    """带标签的 PID 参数（用于多 PID 对比）."""
+
+    label: str = Field(..., description="PID 标签（如 IMC λ=1.0）")
     kp: float = Field(..., description="比例增益")
     ti: float = Field(..., description="积分时间（秒）")
     td: float = Field(0.0, description="微分时间（秒）")
@@ -118,6 +218,9 @@ class SimulateRequest(CamelModel):
     modelParams: ModelParams
     currentPid: PidParams
     recommendedPid: PidParams
+    pidCandidates: list[PidParamsWithLabel] | None = Field(
+        None, description="多组候选 PID 参数（Phase 2 新增，向后兼容）"
+    )
     simDuration: float = Field(600.0, description="仿真时长（秒）")
     simStep: float = Field(1.0, description="仿真步长（秒）")
     setpointStep: float = Field(1.0, description="设定值阶跃幅值")
@@ -128,9 +231,17 @@ class SimulationMetrics(CamelModel):
     """仿真性能指标。"""
 
     riseTime: float | None = Field(None, description="上升时间（秒）")
-    overshoot: float = Field(None, description="超调量（%）")
+    overshoot: float | None = Field(None, description="超调量（%）")
     settlingTime: float | None = Field(None, description="稳定时间（秒）")
     itae: float | None = Field(None, description="ITAE 积分")
+
+
+class CandidateResponse(CamelModel):
+    """候选 PID 响应（多 PID 对比）."""
+
+    label: str = Field(..., description="PID 标签")
+    response: dict[str, list[float]]
+    metrics: SimulationMetrics
 
 
 class SimulationResult(CamelModel):
@@ -142,6 +253,8 @@ class SimulationResult(CamelModel):
     currentMetrics: SimulationMetrics
     recommendedMetrics: SimulationMetrics
     improvement: dict[str, float | None]
+    # Phase 2 新增：多 PID 对比
+    candidateResponses: list[CandidateResponse] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +276,15 @@ class TuningTaskItem(CamelModel):
     status: TuningTaskStatus
     createdBy: str | None = None
     createdAt: str
+    # Phase 2.2 新增字段
+    identifyMethod: IdentifyMethod | None = None
+    dataSource: DataSource | None = None
+    confidenceLevel: ConfidenceLevel | None = None
+    confidenceReason: str | None = None
+    excitationScore: float | None = None
+    residualTestPassed: bool | None = None
+    taskId: str | None = None
+    completedAt: str | None = None
 
 
 class TuningTaskDetail(TuningTaskItem):
@@ -170,6 +292,9 @@ class TuningTaskDetail(TuningTaskItem):
 
     simulationResult: dict[str, Any] | None = None
     currentPid: dict[str, Any] | None = None
+    # Phase 2.2 新增
+    pidCandidates: dict[str, Any] | None = None
+    candidateResults: dict[str, Any] | None = None
 
 
 class CreateTuningTaskRequest(CamelModel):
@@ -184,6 +309,65 @@ class CreateTuningTaskRequest(CamelModel):
     fittingScore: float | None = None
     simulationResult: dict[str, Any] | None = None
     status: TuningTaskStatus = Field("SIMULATED", description="任务状态")
+    # Phase 2.2 新增
+    identifyMethod: IdentifyMethod | None = None
+    dataSource: DataSource | None = None
+    confidenceLevel: ConfidenceLevel | None = None
+    confidenceReason: str | None = None
+    excitationScore: float | None = None
+    residualTestPassed: bool | None = None
+    pidCandidates: dict[str, Any] | None = None
+    candidateResults: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
+# 异步任务进度（Phase 2.2 新增）
+# ---------------------------------------------------------------------------
+
+
+class TaskProgress(CamelModel):
+    """异步任务进度。"""
+
+    taskId: str
+    status: str = Field(..., description="任务状态: PENDING/RUNNING/SUCCESS/FAILED")
+    progress: float = Field(0.0, description="进度 0~100")
+    stage: str | None = Field(None, description="当前阶段: excitation/nonparametric/identify/...")
+    message: str | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# 辨识片段预览（Phase 2.2 新增）
+# ---------------------------------------------------------------------------
+
+
+class IdentifySegment(CamelModel):
+    """可辨识片段预览。"""
+
+    startIdx: int
+    endIdx: int
+    mode: str | None = None
+    excitationScore: float | None = None
+    conditionNumber: float | None = None
+    isSufficient: bool = False
+
+
+class IdentifySegmentsRequest(CamelModel):
+    """POST /tuning/identify/segments 请求体."""
+
+    loopId: str
+    startTime: str
+    endTime: str
+
+
+class IdentifySegmentsResult(CamelModel):
+    """可辨识片段预览结果。"""
+
+    loopId: str
+    totalSegments: int
+    segments: list[IdentifySegment]
+    sufficientCount: int = Field(0, description="激励充分片段数")
 
 
 # ---------------------------------------------------------------------------
