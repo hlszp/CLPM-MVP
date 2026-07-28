@@ -12,6 +12,7 @@ from sqlalchemy import (
     Float,
     Index,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -61,7 +62,7 @@ class TagRegistry(Base):
             "('TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', 'ANALYSIS', 'SPEED', 'OTHER')",
             name="ck_tag_registry_measure_type",
         ),
-        Index("uk_tag_registry_tag_name", "tag_name", unique=True),
+        UniqueConstraint("tag_name", name="uk_tag_registry_tag_name"),
         Index("idx_tag_registry_tag_name", "tag_name"),
         Index("idx_tag_registry_tag_type", "tag_type"),
         Index("idx_tag_registry_is_linked", "is_linked"),

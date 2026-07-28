@@ -22,6 +22,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -75,7 +76,7 @@ class LoopModeMapping(Base):
             "mode_label IN ('AUTO', 'CAS', 'REMOTE', 'APC', 'MANUAL')",
             name="ck_loop_mode_mapping_label",
         ),
-        Index("uk_loop_mode_mapping_loop_mode", "loop_id", "mode_value", unique=True),
+        UniqueConstraint("loop_id", "mode_value", name="uk_loop_mode_mapping_loop_mode"),
         Index("idx_loop_mode_mapping_loop_id", "loop_id"),
     )
 

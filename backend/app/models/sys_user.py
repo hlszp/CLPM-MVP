@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,7 +37,7 @@ class SysUser(Base):
             "role IN ('ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT')",
             name="ck_sys_user_role",
         ),
-        Index("uk_sys_user_username", "username", unique=True),
-        Index("uk_sys_user_email", "email", unique=True),
+        UniqueConstraint("username", name="uk_sys_user_username"),
+        UniqueConstraint("email", name="uk_sys_user_email"),
         Index("idx_sys_user_is_active", "is_active"),
     )

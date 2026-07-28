@@ -17,6 +17,7 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -174,11 +175,13 @@ class LoopLedger(Base):
             "OR (complex_loop_group_id IS NOT NULL AND complex_role IS NOT NULL)",
             name="ck_loop_ledger_complex_group_coherence",
         ),
-        Index("uk_loop_ledger_tag_name", "tag_name", unique=True),
+        UniqueConstraint("tag_name", name="uk_loop_ledger_tag_name"),
         Index("idx_loop_ledger_unit_id", "unit_id"),
         Index("idx_loop_ledger_status", "status"),
         Index("idx_loop_ledger_tag_name", "tag_name"),
         Index("idx_loop_ledger_importance_level", "importance_level"),
+        # 库中已有（v6p1dcs001 迁移创建），补入元数据避免 autogen 误 DROP
+        Index("idx_loop_ledger_dcs_model", "dcs_model_id"),
         # P4：按分组 ID 查询同组回路（聚合去重用）
         Index("idx_loop_ledger_complex_group", "complex_loop_group_id"),
     )
@@ -211,7 +214,7 @@ class LoopTagMapping(Base):
             "tag_role IN ('PV', 'SP', 'OP', 'MODE', 'PID_P', 'PID_I', 'PID_D')",
             name="ck_loop_tag_mapping_role",
         ),
-        Index("uk_loop_tag_mapping_loop_role", "loop_id", "tag_role", unique=True),
+        UniqueConstraint("loop_id", "tag_role", name="uk_loop_tag_mapping_loop_role"),
         Index("idx_loop_tag_mapping_loop_id", "loop_id"),
         Index("idx_loop_tag_mapping_tag_id", "tag_id"),
     )

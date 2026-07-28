@@ -16,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -44,7 +45,7 @@ class DiagnosisConfig(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     version: Mapped[int | None] = mapped_column(Integer, default=1, nullable=True)
 
-    __table_args__ = (Index("uk_diagnosis_config_code", "diag_code", unique=True),)
+    __table_args__ = (UniqueConstraint("diag_code", name="uk_diagnosis_config_code"),)
 
 
 class DiagnosisResult(Base):

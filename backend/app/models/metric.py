@@ -55,7 +55,7 @@ class MetricConfig(Base):
             "control_type IN ('STABLE', 'SLOW', 'FAST', 'LOGIC')",
             name="ck_metric_config_control_type",
         ),
-        Index("uk_metric_config_code", "metric_code", unique=True),
+        UniqueConstraint("metric_code", name="uk_metric_config_code"),
     )
 
 
@@ -131,6 +131,8 @@ class KpiSnapshotHourly(Base):
         Index("idx_kpi_snapshot_loop_id", "loop_id"),
         Index("idx_kpi_snapshot_ts_start", "ts_start"),
         Index("idx_kpi_snapshot_status", "status"),
+        # 库中已有（x4c5d6e7f8a9 迁移创建），补入元数据避免 autogen 误 DROP
+        Index("idx_kpi_snapshot_ts_loop", "ts_start", "loop_id"),
         # UNIQUE 约束：每个回路每小时仅允许一条快照（q1a2b3c4d5e6 迁移）
         UniqueConstraint("loop_id", "ts_start", name="uq_kpi_snapshot_hourly_loop_ts"),
         {"comment": "每小时性能评估快照（好值率基于 PV 质量码统计）"},

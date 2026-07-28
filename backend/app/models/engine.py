@@ -9,8 +9,8 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Index,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -39,5 +39,5 @@ class EngineRule(Base):
             "rule_type IN ('CALC_CYCLE', 'DATA_FETCH', 'SCHEDULE')",
             name="ck_engine_rule_type",
         ),
-        Index("uk_engine_rule_code", "rule_code", unique=True),
+        UniqueConstraint("rule_code", name="uk_engine_rule_code"),
     )

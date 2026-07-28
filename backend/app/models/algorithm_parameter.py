@@ -21,9 +21,9 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Index,
     Integer,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -68,11 +68,10 @@ class AlgorithmParameter(Base):
             "control_type IN ('STABLE', 'SLOW', 'FAST', 'LOGIC')",
             name="ck_algorithm_parameter_control_type",
         ),
-        Index(
-            "uk_algorithm_param_code_type",
+        UniqueConstraint(
             "metric_code",
             "control_type",
-            unique=True,
+            name="uk_algorithm_param_code_type",
         ),
     )
 
