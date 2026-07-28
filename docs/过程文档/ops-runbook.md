@@ -49,6 +49,16 @@ worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspe
 - 诊断：`docker exec clpm-redis redis-cli -n 1 LLEN default`（队列长度）+ `pgrep -P <worker_pid>`（池子进程数）
 - 处置：`kill <主进程pid>`（必要时 -9）后重启 worker；积压消息会在重启后全部追平（导入/回填类重任务注意耗时）
 
+### 全回路 INCONCLUSIVE 瘫痪（"bound to a different event loop"，2026-07-28 定位，已根治）
+
+**症状**：某时刻起所有回路 KPI 快照批量 INCONCLUSIVE/E（valid_rate 与 data_lineage 为 NULL），TDengine 数据实际存在；日志特征 `DataPlanner 取数失败（回路 xxx）: <asyncio.locks.Lock object ... [locked]> is bound to a different event loop`。
+
+**根因**：`tdengine_provider.py` 模块级 `_subtable_cache_lock = asyncio.Lock()` 在 Python 3.10+ 于首次竞争时绑定当前事件循环，而 Celery worker 每任务可能运行在新事件循环——竞争发生后所有任务的宽表解析抛 RuntimeError，只能重启 worker 恢复（2026-07-20 起日志反复出现）。
+
+**根治**（commit `fix(data): 移除模块级 asyncio.Lock`）：删除模块级锁（并发重复解析无害），回归测试结构性断言模块级不得存在 asyncio 同步原语。**排查同类问题时先 grep 日志中的 `bound to a different event loop`，并检查是否还有其他模块级 asyncio 原语。**
+
+**恢复**：重启后端后，对受影响时段执行历史重算（性能评估 → 历史重算）回填 INCONCLUSIVE 窗口。
+
 ### Worker 并发与回填性能（2026-07-18 性能优化）
 
 prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.prod` 中 `CELERY_WORKER_CONCURRENCY` 需按宿主机核数同步；回填任务按"1 窗口 = 1 个 chord 子任务"派发，27 回路 × 24h 实测约 52s（0.08s/回路时）；整点自动任务 27 回路 × 1h 实测约 1.9s（0.07s/回路时）。实测脚本：`backend/scripts/measure_backfill_perf.py`
