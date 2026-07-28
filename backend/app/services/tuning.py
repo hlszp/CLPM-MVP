@@ -258,7 +258,42 @@ async def identify_model_from_history(
     d["dataPoints"] = len(pv)
     d["validRate"] = signals["valid_rate"]
     d["samplingFreq"] = signals["sampling_freq"]
+
+    # ConfidenceEvaluator 接入：数据质量可信度（基于 valid_rate）
+    # 与算法内部可信度（R²+残差+激励）取较低者，确保保守评级
+    data_confidence = _evaluate_data_confidence(signals["valid_rate"])
+    algo_confidence = result.best_model.confidence.value if result.best_model else "E"
+    final_confidence = _min_confidence(data_confidence, algo_confidence)
+    d["confidenceLevel"] = final_confidence
+    d["dataConfidenceLevel"] = data_confidence
+    d["confidenceReason"] = (
+        f"data_quality={data_confidence}(valid_rate={signals['valid_rate']:.3f}), "
+        f"algorithm={algo_confidence}(R²={d.get('fittingScore', 0):.1f}%), "
+        f"final={final_confidence}"
+    )
     return d
+
+
+def _evaluate_data_confidence(valid_rate: float) -> str:
+    """通过 ConfidenceEvaluator 评估数据质量可信度.
+
+    复用平台统一的 valid_rate → A/B/C/D/E 口径（算法说明 §3.7.2）。
+    """
+    from app.services.confidence_evaluator import ConfidenceEvaluator
+
+    level = ConfidenceEvaluator.evaluate(valid_rate)
+    return level.value
+
+
+def _min_confidence(level_a: str, level_b: str) -> str:
+    """取两个可信度等级的较低者（保守评级）.
+
+    A > B > C > D > E > INCONCLUSIVE
+    """
+    order = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1, "INCONCLUSIVE": 0}
+    a_rank = order.get(level_a, 0)
+    b_rank = order.get(level_b, 0)
+    return level_a if a_rank <= b_rank else level_b
 
 
 # ---------------------------------------------------------------------------
