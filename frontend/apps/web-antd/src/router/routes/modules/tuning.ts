@@ -1,9 +1,9 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 回路整定路由模块（Phase 2，原型先行）
+ * 回路整定路由模块（Phase 2 已落地）
  *
- * 对齐 UI/UX v4.1 §4.2 + PRD §4.5
+ * 对齐 UI/UX v6.1 §4.2 + PRD v6.1 §4.5 + 实现契约 v2.1
  * - 整定工作台 / 模型辨识 / 整定算法 / 闭环仿真 / 效果统计
  *
  * 角色权限（PRD §3）：

@@ -48,13 +48,20 @@ const algorithmOptions: { label: string; value: TuningApi.Algorithm }[] = [
   { label: 'SIMC 简化 IMC', value: 'SIMC' },
 ];
 
-/** 状态选项 */
+/** 状态选项（Phase 2 对齐实现契约 v2.1 状态机） */
 const statusOptions: { label: string; value: TuningApi.TaskStatus }[] = [
-  { label: '待辨识', value: 'PENDING' },
+  // Phase 2 新枚举
+  { label: '草稿', value: 'DRAFT' },
+  { label: '执行中', value: 'RUNNING' },
   { label: '已辨识', value: 'IDENTIFIED' },
   { label: '已仿真', value: 'SIMULATED' },
-  { label: '已应用', value: 'APPLIED' },
-  { label: '已验证', value: 'VERIFIED' },
+  { label: '已完成', value: 'COMPLETED' },
+  { label: '不确定', value: 'INCONCLUSIVE' },
+  { label: '已回退', value: 'ROLLED_BACK' },
+  // 旧枚举（兼容期保留）
+  { label: '待辨识（旧）', value: 'PENDING' },
+  { label: '已应用（旧）', value: 'APPLIED' },
+  { label: '已验证（旧）', value: 'VERIFIED' },
 ];
 
 /** 查询参数 */
@@ -162,9 +169,26 @@ function statusName(status: TuningApi.TaskStatus): string {
   return statusOptions.find((o) => o.value === status)?.label || status;
 }
 
-/** 状态颜色映射 */
+/** 状态颜色映射（Phase 2 对齐实现契约 v2.1 状态机） */
 function statusColor(status: TuningApi.TaskStatus): string {
   switch (status) {
+    // Phase 2 新枚举
+    case 'COMPLETED': {
+      return 'green';
+    }
+    case 'RUNNING': {
+      return 'processing';
+    }
+    case 'INCONCLUSIVE': {
+      return 'orange';
+    }
+    case 'ROLLED_BACK': {
+      return 'red';
+    }
+    case 'DRAFT': {
+      return 'default';
+    }
+    // 兼容旧枚举
     case 'APPLIED': {
       return 'green';
     }
@@ -230,9 +254,10 @@ function formatFitting(val: null | number | undefined): string {
   return `${val?.toFixed(2) ?? '0.00'}%`;
 }
 
-/** 已应用任务数 */
+/** 已应用任务数（Phase 2：COMPLETED + 兼容旧 APPLIED） */
 const appliedCount = computed(() => {
-  return historyStats.value?.byStatus?.APPLIED || 0;
+  const byStatus = historyStats.value?.byStatus || {};
+  return (byStatus.COMPLETED || 0) + (byStatus.APPLIED || 0);
 });
 
 /** 算法种类数 */
@@ -266,12 +291,19 @@ const algoColors = computed<Record<string, string>>(() =>
       },
 );
 
-/** 状态分布柱状图色板（响应式） */
+/** 状态分布柱状图色板（Phase 2 响应式） */
 const statusChartColors = computed<Record<string, string>>(() => ({
-  APPLIED: themeColors.value.SUCCESS,
+  // Phase 2 新枚举
+  COMPLETED: themeColors.value.SUCCESS,
+  RUNNING: themeColors.value.INFO,
   IDENTIFIED: isDark.value ? '#2dd4bf' : '#13c2c2',
+  SIMULATED: isDark.value ? '#60a5fa' : '#1890ff',
+  INCONCLUSIVE: themeColors.value.WARNING,
+  ROLLED_BACK: themeColors.value.DANGER,
+  DRAFT: isDark.value ? '#9ca3af' : '#d9d9d9',
+  // 兼容旧枚举
+  APPLIED: themeColors.value.SUCCESS,
   PENDING: isDark.value ? '#9ca3af' : '#d9d9d9',
-  SIMULATED: themeColors.value.INFO,
   VERIFIED: isDark.value ? '#4ade80' : '#389e0d',
 }));
 
@@ -348,20 +380,26 @@ function renderPieChart() {
   });
 }
 
-/** 渲染状态分布柱状图 */
+/** 渲染状态分布柱状图（Phase 2 对齐新状态机） */
 function renderBarChart() {
   const byStatus = historyStats.value?.byStatus || {};
-  const statusOrder: TuningApi.TaskStatus[] = [
-    'PENDING',
+  // Phase 2 状态机优先 + 兼容旧枚举（仅展示有数据的）
+  const allStatuses: TuningApi.TaskStatus[] = [
+    'DRAFT',
+    'RUNNING',
     'IDENTIFIED',
     'SIMULATED',
+    'COMPLETED',
+    'INCONCLUSIVE',
+    'ROLLED_BACK',
+    'PENDING',
     'APPLIED',
     'VERIFIED',
   ];
+  const statusOrder = allStatuses.filter((s) => (byStatus[s] || 0) > 0);
   const colorMap = statusChartColors.value;
 
-  const hasData = statusOrder.some((s) => (byStatus[s] || 0) > 0);
-  if (!hasData) {
+  if (statusOrder.length === 0) {
     renderBar({
       title: { left: 'center', text: '暂无数据' },
     });

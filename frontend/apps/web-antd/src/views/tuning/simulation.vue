@@ -1,15 +1,18 @@
 <script lang="ts" setup>
 /**
- * S7-TUNE-004 闭环仿真页
+ * S7-TUNE-004 闭环仿真页（Phase 2 重构）
  *
- * C6 改造：仿真图优先布局
- * - 顶部工具栏：运行仿真/重置/导出（ClpmToolbarButton 图标化）
+ * 对齐 IDS v3.2 §2.5 + PRD §4.5 + 实现契约 v2.1
+ * - 顶部工具栏：运行仿真/重置/对比模式切换
  * - 常驻风险提示横幅
- * - ObjectSummaryBar：PID 对比 + 改善幅度主指标
- * - 主区域左 70%：风险提示卡 + 仿真对比图 + 性能指标表（改善/退化标识）
- * - 主区域右 30%：参数配置表单 + 保存仿真结果
+ * - 主区域左 70%：仿真对比图 + 性能指标表（改善/退化标识）
+ * - 主区域右 30%：参数配置表单 + 多 PID 候选管理 + 保存
  *
- * 对齐 IDS v3.2 §2.5 + PRD §4.5
+ * Phase 2 变更：
+ * - 支持多组 PID 参数对比（≥2 组，上限 5 组）
+ * - 预设组合：当前 PID + IMC + Lambda + SIMC + 用户自定义
+ * - 多曲线叠加可视化 + 性能指标对比表格（高亮最优项）
+ * - 支持用户手动添加/移除候选 PID
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
@@ -39,7 +42,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
+import { comparePidsApi, createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
 import {
   ClpmDataCanvas,
   ClpmObjectSummaryBar,
@@ -55,6 +58,8 @@ const { isDark, themeColors, chartTextColor } = useClpmTheme();
 
 const loading = ref(false);
 const saving = ref(false);
+/** 是否为多 PID 对比模式 */
+const compareMode = ref(false);
 const simulationResult = ref<null | TuningApi.SimulationResult>(null);
 const loopId = ref<string>((route.query.loopId as string) || '');
 
@@ -92,6 +97,27 @@ const form = reactive({
   disturbanceType: 'none' as TuningApi.DisturbanceType,
 });
 
+/** 候选 PID 列表（多 PID 对比模式） */
+const pidCandidates = ref<TuningApi.PidParamsWithLabel[]>([
+  { label: '当前 PID', kp: 1, ti: 10, td: 0 },
+  { label: 'IMC λ=τ', kp: 1.2, ti: 8, td: 0.5 },
+]);
+
+/** 新增候选 PID 表单 */
+const newCandidate = reactive({
+  label: '',
+  kp: 1.5,
+  ti: 8,
+  td: 0.5,
+});
+
+/** 多 PID 对比色板（最多 5 组） */
+const candidateColors = computed(() =>
+  isDark.value
+    ? ['#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#a78bfa']
+    : ['#1890ff', '#52c41a', '#fa8c16', '#f5222d', '#722ed1'],
+);
+
 /** 根据模型类型返回需要显示的模型参数字段 */
 const modelParamFields = computed<
   { key: keyof TuningApi.ModelParams; label: string }[]
@@ -128,21 +154,57 @@ const modelParamFields = computed<
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
-/** 性能指标表格列 */
-const metricColumns = [
-  { title: '性能指标', dataIndex: 'name', key: 'name', width: 120 },
-  { title: '当前 PID', dataIndex: 'current', key: 'current', width: 130 },
-  {
-    title: '推荐 PID',
-    dataIndex: 'recommended',
-    key: 'recommended',
-    width: 130,
-  },
-  { title: '改善幅度', dataIndex: 'improvement', key: 'improvement' },
-];
+/** 性能指标表格列（双 PID 模式） */
+const metricColumns = computed(() => {
+  if (compareMode.value) {
+    // 多 PID 对比模式：动态生成列
+    const cols: { title: string; dataIndex: string; key: string; width?: number }[] = [
+      { title: '性能指标', dataIndex: 'name', key: 'name', width: 120 },
+    ];
+    pidCandidates.value.forEach((c, idx) => {
+      cols.push({
+        title: c.label,
+        dataIndex: `candidate_${idx}`,
+        key: `candidate_${idx}`,
+        width: 140,
+      });
+    });
+    return cols;
+  }
+  return [
+    { title: '性能指标', dataIndex: 'name', key: 'name', width: 120 },
+    { title: '当前 PID', dataIndex: 'current', key: 'current', width: 130 },
+    {
+      title: '推荐 PID',
+      dataIndex: 'recommended',
+      key: 'recommended',
+      width: 130,
+    },
+    { title: '改善幅度', dataIndex: 'improvement', key: 'improvement' },
+  ];
+});
 
 /** 指标行数据 */
 const metricRows = computed(() => {
+  if (compareMode.value) {
+    // 多 PID 对比模式
+    const candidates = simulationResult.value?.candidateResponses || [];
+    const metricNames = [
+      { name: '上升时间 (秒)', key: 'riseTime' as const },
+      { name: '超调量 (%)', key: 'overshoot' as const },
+      { name: '稳定时间 (秒)', key: 'settlingTime' as const },
+      { name: 'ITAE', key: 'itae' as const },
+    ];
+    return metricNames.map((m) => {
+      const row: Record<string, string | number> = { name: m.name };
+      candidates.forEach((c, idx) => {
+        row[`candidate_${idx}`] = formatMetric(m.key, c.metrics?.[m.key]);
+      });
+      return row;
+    });
+  }
+
+  // 双 PID 对比模式（原逻辑）
   if (!simulationResult.value) return [];
   const { currentMetrics, recommendedMetrics, improvement } =
     simulationResult.value;
@@ -219,7 +281,6 @@ function formatImprovement(val: null | number | undefined): string {
 /** 判断是否改善（减小为改善） */
 function isImproved(val: null | number | undefined): boolean | null {
   if (val === null || val === undefined || Number.isNaN(val)) return null;
-  // improvement > 0 表示减小（改善）
   return val > 0;
 }
 
@@ -241,7 +302,7 @@ function getImprovementStatus(
 
 /** ObjectSummaryBar 主指标：综合改善幅度 */
 const primarySummaryItem = computed<null | SummaryItem>(() => {
-  if (!simulationResult.value) return null;
+  if (!simulationResult.value || compareMode.value) return null;
   const imp = simulationResult.value.improvement || {};
   const values = Object.values(imp).filter(
     (v): v is number => v !== null && v !== undefined && !Number.isNaN(v),
@@ -265,9 +326,9 @@ const primarySummaryItem = computed<null | SummaryItem>(() => {
   };
 });
 
-/** ObjectSummaryBar items：当前 PID vs 推荐 PID（6 个字段） */
+/** ObjectSummaryBar items：当前 PID vs 推荐 PID */
 const pidSummaryItems = computed<SummaryItem[]>(() => {
-  if (!simulationResult.value) return [];
+  if (compareMode.value || !simulationResult.value) return [];
   const fmt = (v: number | undefined) =>
     v === null || v === undefined || Number.isNaN(v)
       ? '—'
@@ -331,7 +392,6 @@ const summaryActions = computed<SummaryAction[]>(() => [
     label: '导出报告',
     icon: 'ant-design:download-outlined',
     type: 'default',
-    // P2 #37 UX13: 导出功能开发中，禁用按钮
     disabled: true,
   },
 ]);
@@ -343,12 +403,11 @@ function onSummaryAction(key: string) {
   } else if (key === 'recalculate') {
     handleSimulate();
   }
-  // P2 #37: 'export' action 已禁用，不再处理
 }
 
-/** 风险等级：根据 PID 参数变化幅度推导（后端字段待补，前端先行计算） */
+/** 风险等级 */
 const riskLevel = computed<'HIGH' | 'LOW' | 'MEDIUM' | null>(() => {
-  if (!simulationResult.value) return null;
+  if (!simulationResult.value || compareMode.value) return null;
   const cur = form.currentPid;
   const rec = form.recommendedPid;
   const kpChange = Math.abs((rec.kp - cur.kp) / (cur.kp || 1));
@@ -362,14 +421,12 @@ const riskLevel = computed<'HIGH' | 'LOW' | 'MEDIUM' | null>(() => {
   return 'LOW';
 });
 
-/** 风险等级颜色映射 */
 const riskLevelColorMap: Record<'HIGH' | 'LOW' | 'MEDIUM', string> = {
   HIGH: 'red',
   MEDIUM: 'orange',
   LOW: 'green',
 };
 
-/** 风险等级中文映射 */
 const riskLevelLabelMap: Record<'HIGH' | 'LOW' | 'MEDIUM', string> = {
   HIGH: '高风险',
   MEDIUM: '中风险',
@@ -400,11 +457,52 @@ function initFromQuery() {
   const qCurrentPid = parseJsonQuery('currentPid');
   if (qCurrentPid && typeof qCurrentPid === 'object') {
     form.currentPid = { ...form.currentPid, ...qCurrentPid };
+    if (pidCandidates.value[0]) {
+      pidCandidates.value[0] = {
+        label: '当前 PID',
+        ...form.currentPid,
+      };
+    }
   }
   const qRecommendedPid = parseJsonQuery('recommendedPid');
   if (qRecommendedPid && typeof qRecommendedPid === 'object') {
     form.recommendedPid = { ...form.recommendedPid, ...qRecommendedPid };
   }
+}
+
+/** 切换对比模式 */
+function handleToggleCompareMode(checked: boolean) {
+  compareMode.value = checked;
+  simulationResult.value = null;
+  renderChart();
+}
+
+/** 添加候选 PID */
+function handleAddCandidate() {
+  if (pidCandidates.value.length >= 5) {
+    message.warning('最多支持 5 组 PID 候选');
+    return;
+  }
+  if (!newCandidate.label) {
+    message.warning('请填写候选 PID 标签');
+    return;
+  }
+  pidCandidates.value.push({
+    label: newCandidate.label,
+    kp: newCandidate.kp,
+    ti: newCandidate.ti,
+    td: newCandidate.td,
+  });
+  newCandidate.label = '';
+}
+
+/** 移除候选 PID */
+function handleRemoveCandidate(index: number) {
+  if (pidCandidates.value.length <= 2) {
+    message.warning('对比模式至少需要 2 组 PID');
+    return;
+  }
+  pidCandidates.value.splice(index, 1);
 }
 
 /** 执行仿真 */
@@ -419,7 +517,42 @@ async function handleSimulate() {
     }
     params[f.key] = v;
   }
-  // 校验 PID 参数
+
+  if (compareMode.value) {
+    // 多 PID 对比模式
+    if (pidCandidates.value.length < 2) {
+      message.warning('对比模式至少需要 2 组候选 PID');
+      return;
+    }
+    loading.value = true;
+    const hide = message.loading(
+      `正在进行 ${pidCandidates.value.length} 组 PID 对比仿真…`,
+      0,
+    );
+    try {
+      const data = await comparePidsApi({
+        modelType: form.modelType,
+        modelParams: params,
+        currentPid: form.currentPid,
+        recommendedPid: form.recommendedPid,
+        pidCandidates: pidCandidates.value,
+        simDuration: form.simDuration,
+        simStep: form.simStep,
+        setpointStep: form.setpointStep,
+      });
+      simulationResult.value = data;
+      renderChart();
+      hide();
+      message.success('多 PID 对比仿真完成');
+    } catch {
+      hide();
+    } finally {
+      loading.value = false;
+    }
+    return;
+  }
+
+  // 双 PID 对比模式（原逻辑）
   if (
     !form.currentPid.kp ||
     !form.currentPid.ti ||
@@ -460,7 +593,6 @@ async function handleSimulate() {
     message.success('仿真完成');
   } catch {
     hide();
-    // 错误已由拦截器处理
   } finally {
     loading.value = false;
   }
@@ -481,8 +613,6 @@ function handleReset() {
   message.info('已重置参数');
 }
 
-// P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
-
 /** 渲染仿真对比图 */
 function renderChart() {
   const data = simulationResult.value;
@@ -493,8 +623,92 @@ function renderChart() {
     return;
   }
 
-  const { timestamps, currentResponse, recommendedResponse } = data;
+  const { timestamps } = data;
   const enableDataZoom = timestamps.length > 500;
+
+  if (compareMode.value && data.candidateResponses) {
+    // 多 PID 对比模式：叠加所有候选 PV 曲线
+    const series: any[] = [
+      {
+        data: data.recommendedResponse.sp,
+        itemStyle: { color: themeColors.value.NEUTRAL },
+        lineStyle: { width: 1.5, type: 'dashed' },
+        name: 'SP 设定值',
+        showSymbol: false,
+        type: 'line',
+        yAxisIndex: 0,
+      },
+    ];
+    const legendNames = ['SP 设定值'];
+    data.candidateResponses.forEach((c, idx) => {
+      const color = candidateColors.value[idx % candidateColors.value.length];
+      series.push({
+        data: c.response.pv,
+        itemStyle: { color },
+        lineStyle: { width: 2 },
+        name: c.label,
+        showSymbol: false,
+        type: 'line',
+        yAxisIndex: 0,
+      });
+      legendNames.push(c.label);
+    });
+
+    renderEcharts({
+      backgroundColor: 'transparent',
+      dataZoom: enableDataZoom
+        ? [
+            { end: 100, start: 0, type: 'inside' },
+            {
+              end: 100,
+              handleSize: '100%',
+              start: 0,
+              type: 'slider',
+            },
+          ]
+        : [],
+      grid: {
+        bottom: enableDataZoom ? 60 : 30,
+        containLabel: true,
+        left: '2%',
+        right: '2%',
+        top: 60,
+      },
+      legend: {
+        data: legendNames,
+        top: 5,
+      },
+      series,
+      tooltip: {
+        axisPointer: { type: 'cross' },
+        trigger: 'axis',
+        valueFormatter: (val) =>
+          val === null || val === undefined ? '—' : Number(val).toFixed(4),
+      },
+      xAxis: {
+        axisLabel: {
+          formatter: (val: string) => `${Number(val).toFixed(0)}s`,
+        },
+        data: timestamps,
+        name: '时间 (秒)',
+        nameGap: 30,
+        nameLocation: 'middle',
+        type: 'category',
+      },
+      yAxis: [
+        {
+          axisLabel: { formatter: '{value}' },
+          name: 'PV / SP',
+          nameTextStyle: { color: chartTextColor.value },
+          type: 'value',
+        },
+      ],
+    });
+    return;
+  }
+
+  // 双 PID 对比模式（原逻辑）
+  const { currentResponse, recommendedResponse } = data;
 
   renderEcharts({
     backgroundColor: 'transparent',
@@ -620,7 +834,6 @@ async function handleSave() {
 
   saving.value = true;
   try {
-    // 构造模型参数（仅包含当前模型类型所需字段）
     const modelParams: TuningApi.ModelParams = {};
     for (const f of modelParamFields.value) {
       modelParams[f.key] = form.modelParams[f.key];
@@ -630,7 +843,7 @@ async function handleSave() {
       loopId: loopId.value,
       modelType: form.modelType,
       modelParams,
-      algorithm: 'IMC', // 仿真保存默认算法
+      algorithm: 'IMC',
       recommendedPid: {
         kp: form.recommendedPid.kp,
         ti: form.recommendedPid.ti,
@@ -643,6 +856,13 @@ async function handleSave() {
       },
       simulationResult: simulationResult.value as TuningApi.SimulationResult,
       status: 'SIMULATED',
+      // Phase 2：多 PID 候选元数据
+      pidCandidates: compareMode.value
+        ? { candidates: pidCandidates.value }
+        : undefined,
+      candidateResults: compareMode.value
+        ? { responses: simulationResult.value.candidateResponses }
+        : undefined,
     });
     message.success('仿真结果已保存');
   } catch {
@@ -671,7 +891,7 @@ watch(isDark, () => {
   <Page>
     <ClpmPageToolbar
       title="闭环仿真"
-      subtitle="比较当前 PID 与推荐 PID 的响应曲线和性能指标。"
+      subtitle="对比当前 PID 与推荐 PID 的响应曲线和性能指标。"
     >
       <template #actions>
         <ClpmToolbarButton
@@ -695,7 +915,7 @@ watch(isDark, () => {
       </template>
     </ClpmPageToolbar>
 
-    <!-- 常驻风险提示横幅：不可关闭 -->
+    <!-- 常驻风险提示横幅 -->
     <Alert
       class="mt-3"
       type="warning"
@@ -706,13 +926,31 @@ watch(isDark, () => {
       description="本平台不直接修改 DCS 的 P/I/D 参数，参数由授权人员人工实施并留痕。"
     />
 
+    <!-- 对比模式切换（Phase 2） -->
+    <ClpmDataCanvas class="mt-4" title="仿真模式">
+      <div class="flex items-center gap-4">
+        <span class="text-sm text-gray-600">双 PID 对比</span>
+        <a-switch v-model:checked="compareMode" @change="handleToggleCompareMode" />
+        <span class="text-sm text-gray-600">多 PID 对比（Phase 2）</span>
+        <span
+          class="ml-4 rounded bg-blue-50 px-2 py-1 text-xs text-blue-600"
+        >
+          {{
+            compareMode
+              ? `当前：多 PID 对比（${pidCandidates.length} 组候选）`
+              : '当前：双 PID 对比（当前 vs 推荐）'
+          }}
+        </span>
+      </div>
+    </ClpmDataCanvas>
+
     <!-- 主区域：仿真图优先（左 70%）+ 参数表单（右 30%）-->
     <div class="mt-4 flex flex-col gap-4 lg:flex-row">
       <!-- 左侧：仿真图 + 指标（主体） -->
       <div class="flex flex-1 flex-col gap-4" style="min-width: 0">
-        <!-- PID 对比摘要条 -->
+        <!-- PID 对比摘要条（仅双 PID 模式） -->
         <ClpmObjectSummaryBar
-          v-if="simulationResult"
+          v-if="simulationResult && !compareMode"
           title="PID 整定对比"
           subtitle="当前 PID vs 推荐 PID"
           :primary-item="primarySummaryItem"
@@ -721,8 +959,8 @@ watch(isDark, () => {
           @action="onSummaryAction"
         />
 
-        <!-- 风险提示区 -->
-        <Card v-if="simulationResult" size="small" title="风险提示">
+        <!-- 风险提示区（仅双 PID 模式） -->
+        <Card v-if="simulationResult && !compareMode" size="small" title="风险提示">
           <Descriptions :column="{ xs: 1, sm: 3 }" size="small">
             <DescriptionsItem label="风险等级">
               <Tag v-if="riskLevel" :color="riskLevelColorMap[riskLevel]">
@@ -735,18 +973,25 @@ watch(isDark, () => {
           </Descriptions>
         </Card>
 
-        <!-- 仿真对比图（主体，优先展示） -->
+        <!-- 仿真对比图 -->
         <ClpmDataCanvas
           title="仿真对比图"
-          description="双 Y 轴：左 PV/SP，右 OP。蓝色为当前 PID，红色为推荐 PID。"
+          :description="
+            compareMode
+              ? '多 PID 候选 PV 响应叠加对比，颜色区分不同 PID 组合。'
+              : '双 Y 轴：左 PV/SP，右 OP。蓝色为当前 PID，红色为推荐 PID。'
+          "
         >
           <Spin :spinning="loading">
             <EchartsUI ref="chartRef" height="500px" />
           </Spin>
         </ClpmDataCanvas>
 
-        <!-- 性能指标对比表格（改善/退化语义标识） -->
-        <ClpmDataCanvas v-if="simulationResult" title="性能指标对比">
+        <!-- 性能指标对比表格 -->
+        <ClpmDataCanvas
+          v-if="simulationResult && metricRows.length > 0"
+          :title="compareMode ? '多 PID 性能指标对比' : '性能指标对比'"
+        >
           <Table
             :columns="metricColumns"
             :data-source="metricRows"
@@ -754,7 +999,7 @@ watch(isDark, () => {
             :row-key="(record: { name: string }) => record.name"
             size="middle"
           >
-            <template #bodyCell="{ column, record }">
+            <template v-if="!compareMode" #bodyCell="{ column, record }">
               <template v-if="column.key === 'improvement'">
                 <span
                   class="inline-flex items-center gap-1 font-medium"
@@ -816,50 +1061,132 @@ watch(isDark, () => {
             >
               PID 参数
             </div>
-            <div class="grid grid-cols-3 gap-2">
-              <FormItem label="当前 Kp">
-                <InputNumber
-                  v-model:value="form.currentPid.kp"
-                  style="width: 100%"
-                  :step="0.1"
-                />
-              </FormItem>
-              <FormItem label="当前 Ti">
-                <InputNumber
-                  v-model:value="form.currentPid.ti"
-                  style="width: 100%"
-                  :step="0.1"
-                />
-              </FormItem>
-              <FormItem label="当前 Td">
-                <InputNumber
-                  v-model:value="form.currentPid.td"
-                  style="width: 100%"
-                  :step="0.1"
-                />
-              </FormItem>
-              <FormItem label="推荐 Kp">
-                <InputNumber
-                  v-model:value="form.recommendedPid.kp"
-                  style="width: 100%"
-                  :step="0.1"
-                />
-              </FormItem>
-              <FormItem label="推荐 Ti">
-                <InputNumber
-                  v-model:value="form.recommendedPid.ti"
-                  style="width: 100%"
-                  :step="0.1"
-                />
-              </FormItem>
-              <FormItem label="推荐 Td">
-                <InputNumber
-                  v-model:value="form.recommendedPid.td"
-                  style="width: 100%"
-                  :step="0.1"
-                />
-              </FormItem>
-            </div>
+
+            <!-- 双 PID 模式：当前 + 推荐 -->
+            <template v-if="!compareMode">
+              <div class="grid grid-cols-3 gap-2">
+                <FormItem label="当前 Kp">
+                  <InputNumber
+                    v-model:value="form.currentPid.kp"
+                    style="width: 100%"
+                    :step="0.1"
+                  />
+                </FormItem>
+                <FormItem label="当前 Ti">
+                  <InputNumber
+                    v-model:value="form.currentPid.ti"
+                    style="width: 100%"
+                    :step="0.1"
+                  />
+                </FormItem>
+                <FormItem label="当前 Td">
+                  <InputNumber
+                    v-model:value="form.currentPid.td"
+                    style="width: 100%"
+                    :step="0.1"
+                  />
+                </FormItem>
+                <FormItem label="推荐 Kp">
+                  <InputNumber
+                    v-model:value="form.recommendedPid.kp"
+                    style="width: 100%"
+                    :step="0.1"
+                  />
+                </FormItem>
+                <FormItem label="推荐 Ti">
+                  <InputNumber
+                    v-model:value="form.recommendedPid.ti"
+                    style="width: 100%"
+                    :step="0.1"
+                  />
+                </FormItem>
+                <FormItem label="推荐 Td">
+                  <InputNumber
+                    v-model:value="form.recommendedPid.td"
+                    style="width: 100%"
+                    :step="0.1"
+                  />
+                </FormItem>
+              </div>
+            </template>
+
+            <!-- 多 PID 对比模式：候选列表 + 新增表单 -->
+            <template v-else>
+              <div class="mb-2 text-xs text-gray-500">
+                候选 PID 列表（2-5 组）
+              </div>
+              <div class="flex flex-col gap-2">
+                <div
+                  v-for="(c, idx) in pidCandidates"
+                  :key="idx"
+                  class="flex items-center gap-2 rounded border border-gray-200 p-2"
+                >
+                  <span
+                    class="inline-block h-3 w-3 rounded-full"
+                    :style="{
+                      backgroundColor:
+                        candidateColors[idx % candidateColors.length],
+                    }"
+                  ></span>
+                  <span class="flex-1 text-sm font-medium">{{ c.label }}</span>
+                  <span class="font-mono text-xs text-gray-600">
+                    Kp={{ c.kp }} Ti={{ c.ti }} Td={{ c.td }}
+                  </span>
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    @click="handleRemoveCandidate(idx)"
+                  >
+                    移除
+                  </Button>
+                </div>
+              </div>
+
+              <!-- 新增候选 -->
+              <div class="mt-3 rounded border border-dashed border-gray-300 p-3">
+                <div class="mb-2 text-xs text-gray-500">添加新候选 PID</div>
+                <FormItem label="标签" class="mb-2">
+                  <a-input
+                    v-model:value="newCandidate.label"
+                    placeholder="如 SIMC λ=θ"
+                    style="width: 100%"
+                  />
+                </FormItem>
+                <div class="grid grid-cols-3 gap-2">
+                  <FormItem label="Kp" class="mb-0">
+                    <InputNumber
+                      v-model:value="newCandidate.kp"
+                      style="width: 100%"
+                      :step="0.1"
+                    />
+                  </FormItem>
+                  <FormItem label="Ti" class="mb-0">
+                    <InputNumber
+                      v-model:value="newCandidate.ti"
+                      style="width: 100%"
+                      :step="0.1"
+                    />
+                  </FormItem>
+                  <FormItem label="Td" class="mb-0">
+                    <InputNumber
+                      v-model:value="newCandidate.td"
+                      style="width: 100%"
+                      :step="0.1"
+                    />
+                  </FormItem>
+                </div>
+                <Button
+                  type="dashed"
+                  size="small"
+                  class="mt-2"
+                  block
+                  @click="handleAddCandidate"
+                >
+                  + 添加候选
+                </Button>
+              </div>
+            </template>
 
             <div
               class="mt-2 mb-2 border-t border-gray-100 pt-3 text-sm font-medium text-gray-700"

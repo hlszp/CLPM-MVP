@@ -55,20 +55,34 @@ const modelTypeNameMap: Record<TuningApi.ModelType, string> = {
   IPDT: 'IPDT 积分加纯滞后',
 };
 
-/** 任务状态显示名映射 */
+/** 任务状态显示名映射（Phase 2 对齐实现契约 v2.1 状态机） */
 const statusNameMap: Record<TuningApi.TaskStatus, string> = {
-  PENDING: '待辨识',
+  // Phase 2 新枚举
+  DRAFT: '草稿',
+  RUNNING: '执行中',
   IDENTIFIED: '已辨识',
   SIMULATED: '已仿真',
+  COMPLETED: '已完成',
+  INCONCLUSIVE: '不确定',
+  ROLLED_BACK: '已回退',
+  // 旧枚举（兼容期保留）
+  PENDING: '待辨识',
   APPLIED: '已应用',
   VERIFIED: '已验证',
 };
 
-/** 任务状态颜色映射 */
+/** 任务状态颜色映射（Phase 2 对齐实现契约 v2.1 状态机） */
 const statusColorMap: Record<TuningApi.TaskStatus, string> = {
-  PENDING: 'default',
+  // Phase 2 新枚举
+  DRAFT: 'default',
+  RUNNING: 'processing',
   IDENTIFIED: 'cyan',
   SIMULATED: 'blue',
+  COMPLETED: 'green',
+  INCONCLUSIVE: 'orange',
+  ROLLED_BACK: 'red',
+  // 旧枚举（兼容期保留）
+  PENDING: 'default',
   APPLIED: 'green',
   VERIFIED: 'success',
 };
@@ -154,10 +168,14 @@ const recentTasks = computed(() => {
   return list.slice(0, 10);
 });
 
-/** 已完成任务数（APPLIED + SIMULATED） */
+/** 已完成任务数（Phase 2：COMPLETED + SIMULATED + 兼容旧 APPLIED） */
 const completedCount = computed(() => {
   const byStatus = historyStats.value?.byStatus || {};
-  return (byStatus.APPLIED || 0) + (byStatus.SIMULATED || 0);
+  return (
+    (byStatus.COMPLETED || 0) +
+    (byStatus.SIMULATED || 0) +
+    (byStatus.APPLIED || 0)
+  );
 });
 
 /** 近 7 天任务数 */
@@ -211,10 +229,15 @@ const kpiStripItems = computed<KpiStripItem[]>(() => [
   },
 ]);
 
-/** 待整定数（PENDING + IDENTIFIED） */
+/** 待整定数（Phase 2：DRAFT/RUNNING/PENDING + IDENTIFIED） */
 const pendingTuningCount = computed(() => {
   const byStatus = historyStats.value?.byStatus || {};
-  return (byStatus.PENDING || 0) + (byStatus.IDENTIFIED || 0);
+  return (
+    (byStatus.DRAFT || 0) +
+    (byStatus.RUNNING || 0) +
+    (byStatus.PENDING || 0) +
+    (byStatus.IDENTIFIED || 0)
+  );
 });
 
 /**

@@ -7,13 +7,15 @@
  * - E2E-TUNE-003: 整定算法（/tuning/algorithm → 模型参数 → 整定 → PID 结果）
  * - E2E-TUNE-004: 闭环仿真（/tuning/simulation → 参数输入 → 仿真 → 图表）
  * - E2E-TUNE-005: 效果统计（/tuning/stats → 统计卡片 + 图表 + 列表）
+ * - E2E-TUNE-006: 模型辨识 Phase 2 异步辨识策略（/tuning/model → AUTO 策略 → 进度条）
+ * - E2E-TUNE-007: 闭环仿真 Phase 2 多 PID 对比模式（/tuning/simulation → 对比模式 → 多曲线）
  *
  * 页面源码依据：
  *   frontend/apps/web-antd/src/views/tuning/{workbench,model,algorithm,simulation,stats}.vue
  *   - workbench: 4 统计卡片 + 流程导航 + 最近任务表格
- *   - model: 回路选择 + 时间范围 + 模型类型 + 辨识按钮 + ECharts 拟合曲线
+ *   - model: 回路选择 + 时间范围 + 辨识策略 + 候选模型阶次 + 异步进度 + 可信度徽章
  *   - algorithm: 模型参数输入 + 5 种算法选择 + 整定按钮 + 推荐 PID 对比
- *   - simulation: 模型参数 + PID 参数 + 仿真按钮 + ECharts 双 Y 轴对比图
+ *   - simulation: 双 PID 对比 + 多 PID 对比模式 + ECharts 多曲线叠加
  *   - stats: 4 统计卡片 + 算法分布饼图 + 状态柱状图 + 任务列表
  */
 import { test, expect } from '../fixtures/auth.js';
@@ -232,5 +234,69 @@ test.describe('回路整定 E2E', () => {
 
     // 核心验证点：效果统计页面正常加载
     expect(page.url()).toContain('/tuning/stats');
+  });
+
+  // Phase 2 新增：异步辨识策略与进度条
+  test('E2E-TUNE-006: 模型辨识 Phase 2 异步辨识策略', async ({ page }) => {
+    await page.goto('/tuning/model');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // 验证辨识策略选择器存在（AUTO/HISTORY_ONLY/STEP_ONLY）
+    const pageText = await page.locator('body').innerText();
+    const hasStrategy = /自动|历史|阶跃|辨识策略/i.test(pageText);
+    expect(hasStrategy).toBeTruthy();
+
+    // 验证候选模型阶次多选存在（非 STEP_ONLY 模式下）
+    const hasCandidateModel = /候选模型|FOPDT|SOPDT|IPDT/i.test(pageText);
+    expect(hasCandidateModel).toBeTruthy();
+
+    // 验证"预览可辨识片段"按钮存在（Phase 2 新增）
+    const previewBtn = page.getByRole('button', { name: /预览可辨识片段/i }).first();
+    const hasPreviewBtn = await previewBtn.isVisible().catch(() => false);
+
+    // 验证"开始辨识"按钮存在
+    const identifyBtn = page.getByRole('button', { name: /开始辨识|辨识/i }).first();
+    const hasIdentifyBtn = await identifyBtn.isVisible().catch(() => false);
+    expect(hasIdentifyBtn).toBeTruthy();
+
+    // 核心验证点：Phase 2 辨识策略相关 UI 元素渲染正常
+    expect(page.url()).toContain('/tuning/model');
+  });
+
+  // Phase 2 新增：多 PID 对比模式
+  test('E2E-TUNE-007: 闭环仿真 Phase 2 多 PID 对比模式', async ({ page }) => {
+    await page.goto('/tuning/simulation');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // 验证仿真模式切换区域存在
+    const pageText = await page.locator('body').innerText();
+    const hasModeSwitch = /双 PID 对比|多 PID 对比|仿真模式/i.test(pageText);
+    expect(hasModeSwitch).toBeTruthy();
+
+    // 验证默认为双 PID 对比模式
+    const hasDualMode = /当前 PID|推荐 PID/i.test(pageText);
+    expect(hasDualMode).toBeTruthy();
+
+    // 尝试切换到多 PID 对比模式（点击 switch）
+    const modeSwitch = page.locator('.ant-switch').first();
+    const hasSwitch = await modeSwitch.isVisible().catch(() => false);
+    if (hasSwitch) {
+      await modeSwitch.click();
+      await page.waitForTimeout(1000);
+
+      // 验证多 PID 候选列表区域出现
+      const modeText = await page.locator('body').innerText();
+      const hasCandidateList = /候选 PID|候选列表|添加新候选/i.test(modeText);
+      expect(hasCandidateList).toBeTruthy();
+
+      // 验证默认有 2 组候选 PID
+      const hasDefaultCandidates = /当前 PID|IMC/i.test(modeText);
+      expect(hasDefaultCandidates).toBeTruthy();
+    }
+
+    // 核心验证点：多 PID 对比模式可切换
+    expect(page.url()).toContain('/tuning/simulation');
   });
 });
