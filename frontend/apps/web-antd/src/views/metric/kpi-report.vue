@@ -699,10 +699,10 @@ async function loadData() {
     await (reportType.value === 'comprehensive'
       ? loadComprehensive()
       : loadLoop());
-  } catch (error: any) {
+  } catch (error) {
     loadError.value = true;
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层只更新本地 error 态
     console.error('加载 KPI 报表失败:', error);
-    message.error(error?.message || '加载失败');
   } finally {
     loading.value = false;
   }

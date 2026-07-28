@@ -149,6 +149,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-001: isTaskActive 正确识别活跃任务', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -178,6 +179,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-002: isTaskTerminal 正确识别终态任务', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -209,6 +211,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-003: handleCancel 调用 cancelTaskApi 并刷新列表', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -241,6 +244,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-004: handleDelete 调用 deleteTaskApi 并刷新列表', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -271,6 +275,7 @@ describe('历史重算页面 recompute.vue', () => {
     deleteTaskApiMock.mockRejectedValueOnce(new Error('任务未处于终态'));
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -304,6 +309,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-006: 操作列宽度足够容纳两个按钮（120px）', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -332,6 +338,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-007: 列定义包含任务ID/时间窗/状态/进度/操作字段', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -369,6 +376,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-008: 状态颜色与文本映射覆盖 5 种状态', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -405,6 +413,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-009: formatProgress 处理 null/undefined/数值', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,
@@ -433,6 +442,7 @@ describe('历史重算页面 recompute.vue', () => {
   it('uT-RECOMP-010: formatTime 处理空值与有效时间', async () => {
     const wrapper = mount(Recompute, {
       global: {
+        directives: { permission: {} },
         stubs: {
           AButton: true,
           ATable: true,

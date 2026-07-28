@@ -1168,6 +1168,15 @@ export interface KpiSnapshotListResult {
   pageSize: number;
 }
 
+/** 性能等级名（服务端 grade 筛选与 grade-distribution 聚合的键） */
+export type GradeName =
+  | 'EXCELLENT'
+  | 'FAIR'
+  | 'GOOD'
+  | 'INCONCLUSIVE'
+  | 'POOR'
+  | 'WARNING';
+
 /** 快照列表查询参数 */
 export interface KpiSnapshotQueryParams {
   /** 回路 ID（逗号分隔多个） */
@@ -1184,8 +1193,14 @@ export interface KpiSnapshotQueryParams {
   confidenceLevel?: ConfidenceLevel;
   /** 回路编号模糊搜索 */
   loopTagName?: string;
+  /** 性能等级筛选（服务端按当前定级阈值过滤；不传则行为不变） */
+  grade?: GradeName;
   /** True=每个回路只返回最新一条评估记录（默认）；False=返回所有快照 */
   latestOnly?: boolean;
+  /** 排序字段（score/tsStart，默认 tsStart） */
+  sortBy?: 'score' | 'tsStart';
+  /** 排序方向（asc/desc，默认 desc） */
+  sortOrder?: 'asc' | 'desc';
   /** 页码 */
   page?: number;
   /** 每页条数 */
@@ -1200,6 +1215,42 @@ export interface KpiSnapshotQueryParams {
  */
 export function getLoopSnapshotsApi(params: KpiSnapshotQueryParams) {
   return requestClient.get<KpiSnapshotListResult>(SNAPSHOTS_BASE, { params });
+}
+
+// ===========================================================================
+// 各性能等级回路数分布 — GET /performance/grade-distribution
+// ===========================================================================
+
+/** 各性能等级回路数分布（SQL 聚合，口径同快照列表 latestOnly=True） */
+export interface GradeDistributionResult {
+  EXCELLENT: number;
+  GOOD: number;
+  FAIR: number;
+  WARNING: number;
+  POOR: number;
+  /** score 为 NULL（数据不足）的回路数 */
+  INCONCLUSIVE: number;
+  /** 全部回路数（各等级计数之和，含 INCONCLUSIVE） */
+  total: number;
+}
+
+/** 等级分布查询参数（同快照列表筛选口径，无分页/排序/grade） */
+export type GradeDistributionQueryParams = Omit<
+  KpiSnapshotQueryParams,
+  'grade' | 'latestOnly' | 'page' | 'pageSize' | 'sortBy' | 'sortOrder'
+>;
+
+/**
+ * 查询各性能等级回路数分布
+ *
+ * 服务端 GROUP BY 等级聚合，替代前端"全量拉取快照→客户端统计"。
+ * 等级判定使用当前生效的定级阈值（/configs/grading-thresholds）。
+ */
+export function getGradeDistributionApi(params: GradeDistributionQueryParams) {
+  return requestClient.get<GradeDistributionResult>(
+    `${BASE}/grade-distribution`,
+    { params },
+  );
 }
 
 // ===========================================================================

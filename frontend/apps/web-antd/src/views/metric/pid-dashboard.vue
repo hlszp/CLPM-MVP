@@ -1,7 +1,12 @@
 <script lang="ts" setup>
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { DashboardApi, MetricApi, TimeWindow } from '#/api';
+import type {
+  DashboardApi,
+  GradeDistributionResult,
+  MetricApi,
+  TimeWindow,
+} from '#/api';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
@@ -16,6 +21,8 @@ import dayjs from 'dayjs';
 
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { MODE_COLOR_MAP } from '#/composables/use-loop-palettes';
+import { useScoreColor } from '#/composables/use-score-color';
 import { normalizeUtcTimestamp } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
@@ -82,6 +89,8 @@ const rtReadAtText = computed(() => {
 const rankingList = ref<MetricApi.RankingItem[]>([]);
 const diagnosisLoading = ref(false);
 const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
+/** 各性能等级回路数分布（服务端 SQL 聚合，喂"回路等级占比"饼图） */
+const gradeDistribution = ref<GradeDistributionResult | null>(null);
 
 const top5Sort = ref<'asc' | 'desc'>('desc');
 
@@ -97,76 +106,63 @@ const top5List = computed(() => {
   return items.slice(0, 5);
 });
 
-// 默认定级阈值（国标 GB/T 44693.2-2024 §6.3）
+// 默认定级阈值（国标 GB/T 44693.2-2024 §6.3，与 use-score-color 内部默认值同口径；
+// 不配置 color 字段：配色统一走 gradeColor 的阈值配置色 > ZL 语义色降级链）
 const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
-  {
-    level: 1,
-    name: 'EXCELLENT',
-    label: '优秀',
-    minScore: 90,
-    maxScore: 100,
-    color: '#52c41a',
-  },
-  {
-    level: 2,
-    name: 'GOOD',
-    label: '良好',
-    minScore: 80,
-    maxScore: 90,
-    color: '#1890ff',
-  },
-  {
-    level: 3,
-    name: 'FAIR',
-    label: '合格',
-    minScore: 60,
-    maxScore: 80,
-    color: '#faad14',
-  },
-  {
-    level: 4,
-    name: 'WARNING',
-    label: '警告',
-    minScore: 40,
-    maxScore: 60,
-    color: '#fa8c16',
-  },
-  {
-    level: 5,
-    name: 'POOR',
-    label: '不合格',
-    minScore: 0,
-    maxScore: 40,
-    color: '#f5222d',
-  },
+  { level: 1, name: 'EXCELLENT', label: '优秀', minScore: 90, maxScore: 100 },
+  { level: 2, name: 'GOOD', label: '良好', minScore: 80, maxScore: 90 },
+  { level: 3, name: 'FAIR', label: '合格', minScore: 60, maxScore: 80 },
+  { level: 4, name: 'WARNING', label: '警告', minScore: 40, maxScore: 60 },
+  { level: 5, name: 'POOR', label: '不合格', minScore: 0, maxScore: 40 },
 ];
+
+/** 生效阈值集：动态配置优先，为空时降级默认阈值 */
+const effectiveThresholds = computed<MetricApi.GradingThresholdItem[]>(() =>
+  gradingThresholds.value.length > 0
+    ? gradingThresholds.value
+    : DEFAULT_THRESHOLDS,
+);
 
 // 定级阈值等级中文显示名（从配置读取，降级用默认值）
 const ratingLabels = computed<Record<string, string>>(() => {
   const labels: Record<string, string> = {};
-  const thresholds =
-    gradingThresholds.value.length > 0
-      ? gradingThresholds.value
-      : DEFAULT_THRESHOLDS;
-  for (const t of thresholds) {
+  for (const t of effectiveThresholds.value) {
     labels[String(t.level)] = t.label ?? t.name;
   }
   return labels;
 });
 
-function getRatingLevel(score: number): string {
-  const thresholds =
-    gradingThresholds.value.length > 0
-      ? gradingThresholds.value
-      : DEFAULT_THRESHOLDS;
-  // 按 minScore 降序匹配（level 1 = 最高分区间）
-  for (const t of [...thresholds].toSorted(
-    (a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) =>
-      b.minScore - a.minScore,
+/**
+ * 等级配色：阈值项自带 color 优先，未配置时按档位降级到 ZL 语义色
+ * （降级链与 use-score-color 一致；无评分场景不调用本函数）
+ */
+function gradeColor(level: number): string {
+  const t = effectiveThresholds.value.find((item) => item.level === level);
+  if (t?.color) return t.color;
+  const fallbackByLevel: Record<number, string> = {
+    1: themeColors.value.SUCCESS,
+    2: themeColors.value.INFO,
+    3: themeColors.value.WARNING,
+    4: themeColors.value.DANGER,
+    5: themeColors.value.DANGER,
+  };
+  return fallbackByLevel[level] ?? themeColors.value.NEUTRAL;
+}
+
+/**
+ * 按评分判定等级（level 字符串，'1' 最优；无评分返回 null）
+ * 匹配逻辑与 useScoreColor 一致：按 minScore 降序首个 score >= minScore，都不命中取最低档
+ */
+function getRatingLevel(score: null | number | undefined): null | string {
+  if (score === null || score === undefined || Number.isNaN(score)) return null;
+  for (const t of [...effectiveThresholds.value].toSorted(
+    (a, b) => b.minScore - a.minScore,
   )) {
     if (score >= t.minScore) return String(t.level);
   }
-  return '5'; // 最低等级
+  return String(
+    effectiveThresholds.value[effectiveThresholds.value.length - 1]?.level ?? 5,
+  );
 }
 
 const tableColumns = [
@@ -233,13 +229,14 @@ const tableData = computed(() => {
     .filter((it) => it.nodeId !== currentId)
     .toSorted((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
   return [...currentRows, ...childRows].map((item, index) => {
-    const score = item.avgScore ?? 0;
+    const rating = getRatingLevel(item.avgScore);
     return {
       key: item.nodeId,
       index: index + 1,
       name: item.nodeName ?? '',
-      rating: getRatingLevel(score),
-      score: formatNumber(score),
+      rating,
+      ratingColor: rating ? gradeColor(Number(rating)) : '',
+      score: formatNumber(item.avgScore),
       totalLoops: item.totalLoops ?? 0,
       autoRate: formatNumber(item.autoModeRate),
       smoothRate: formatNumber(item.stabilityRate),
@@ -295,6 +292,7 @@ const top5TableData = computed(() => {
       tagName: item.tagName,
       loopName: item.loopName || item.tagName || '—',
       score: formatNumber(item.score),
+      scoreColor: scoreColor(item.score),
       steadyRate: `${formatNumber(item.steadyRate)}%`,
     };
   });
@@ -576,31 +574,24 @@ function renderStatusPieChart() {
   const rt = autoRateRt.value;
   const total = rt?.totalCount ?? 0;
 
-  // 5 种标准 MODE 值的回路数与中文标签 / 配色（对齐 app.constants.mode）
-  // 0=手动, 1=自动, 2=串级, 3=远程, 4=先控
-  const MODE_LABELS: Record<number, string> = {
-    0: '手动',
-    1: '自动',
-    2: '串级',
-    3: '远程',
-    4: '先控',
-  };
-  const MODE_COLORS: Record<number, string> = {
-    0: '#d4380d', // 红橙 - 手动（警示）
-    1: '#52c41a', // 绿 - 自动（正常）
-    2: '#1890ff', // 蓝 - 串级
-    3: '#722ed1', // 紫 - 远程
-    4: '#13c2c2', // 青 - 先控
+  // 5 种标准 MODE 值的回路数与中文标签（对齐 app.constants.mode）
+  // 0=手动, 1=自动, 2=串级, 3=远程, 4=先控；配色统一走共享色板 use-loop-palettes
+  const MODE_LABELS: Record<string, string> = {
+    '0': '手动',
+    '1': '自动',
+    '2': '串级',
+    '3': '远程',
+    '4': '先控',
   };
 
   const modeCounts = rt?.modeCounts ?? {};
   const allPieData = Object.keys(MODE_LABELS).map((modeKey) => {
-    const mode = Number.parseInt(modeKey, 10);
-    const count = modeCounts[modeKey] ?? 0;
     return {
-      value: count,
-      name: MODE_LABELS[mode] ?? modeKey,
-      itemStyle: { color: MODE_COLORS[mode] ?? '#999' },
+      value: modeCounts[modeKey] ?? 0,
+      name: MODE_LABELS[modeKey] ?? modeKey,
+      itemStyle: {
+        color: MODE_COLOR_MAP[modeKey] ?? themeColors.value.NEUTRAL,
+      },
     };
   });
 
@@ -652,34 +643,27 @@ function renderStatusPieChart() {
 }
 
 function renderPieChart() {
-  // 按回路评分均值计算等级占比（使用 rankingList 中的逐回路数据）
-  const loops = rankingList.value;
-  const thresholds =
-    gradingThresholds.value.length > 0
-      ? gradingThresholds.value
-      : DEFAULT_THRESHOLDS;
+  const dist = gradeDistribution.value;
+  if (!dist) return;
 
-  // 按等级统计回路数量（level 1=优秀 ~ level 5=不合格）
-  const levelCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  loops.forEach((item) => {
-    const score = item.score ?? 0;
-    const level = Number.parseInt(getRatingLevel(score), 10);
-    levelCounts[level] = (levelCounts[level] ?? 0) + 1;
-  });
+  const distMap = dist as unknown as Record<string, number>;
+  // 按等级顺序（1→5）生成饼图数据；INCONCLUSIVE（数据不足）以中性灰单列
+  const pieData = [
+    ...[...effectiveThresholds.value]
+      .toSorted((a, b) => a.level - b.level)
+      .map((t) => ({
+        value: distMap[t.name] ?? 0,
+        name: ratingLabels.value[String(t.level)] ?? t.name,
+        itemStyle: { color: gradeColor(t.level) },
+      })),
+    {
+      value: dist.INCONCLUSIVE ?? 0,
+      name: '数据不足',
+      itemStyle: { color: themeColors.value.NEUTRAL },
+    },
+  ];
 
-  const total = loops.length;
-
-  // 按等级顺序（1→5）生成饼图数据
-  const pieData = [...thresholds]
-    .toSorted(
-      (a: MetricApi.GradingThresholdItem, b: MetricApi.GradingThresholdItem) =>
-        a.level - b.level,
-    )
-    .map((t: MetricApi.GradingThresholdItem) => ({
-      value: levelCounts[t.level] ?? 0,
-      name: ratingLabels.value[String(t.level)] ?? t.name,
-      itemStyle: { color: t.color ?? themeColors.value.SUCCESS },
-    }));
+  const total = dist.total ?? 0;
 
   renderPie({
     tooltip: {
@@ -727,13 +711,19 @@ function renderPieChart() {
   });
 }
 
+/** 看板平均性能评分颜色（单一响应式源，随阈值配置与明暗主题联动） */
+const { color: avgScoreColor } = useScoreColor(
+  () => aggregateData.value?.avgScore,
+  gradingThresholds,
+);
+
+/**
+ * 评分 → 颜色（表单元格等按值取色场景）。
+ * 统一走 useScoreColor：动态 gradingThresholds 定档，null/NaN → ZL 中性灰
+ * （"数据不足"不是"不合格"，严禁渲染为故障红）。
+ */
 function scoreColor(score: null | number | undefined): string {
-  if (score === null || score === undefined) return themeColors.value.DANGER;
-  if (score >= 90) return themeColors.value.SUCCESS;
-  if (score >= 80) return themeColors.value.INFO;
-  if (score >= 70) return themeColors.value.WARNING;
-  if (score >= 60) return '#f97316';
-  return themeColors.value.DANGER;
+  return useScoreColor(score, gradingThresholds).color.value;
 }
 
 function formatNumber(val: null | number | undefined, digits = 1): string {
@@ -750,7 +740,7 @@ async function handleDiagnosis(loopId: string) {
     message.success('诊断任务已创建');
     router.push('/diagnosis/tasks');
   } catch {
-    message.error('创建诊断任务失败');
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层不重复提示
     console.error('[CLPM] 创建诊断任务失败');
   } finally {
     diagnosisLoading.value = false;
@@ -803,37 +793,52 @@ async function loadAutoRateRt() {
 }
 
 /**
- * 性能 #12：循环分页拉全量 ranking（对齐 loop-performance 的 fetchAllSnapshots 模式）
- *
- * 后端 ranking 接口 limit 上限 100，单次请求 >100 回路时等级占比饼图少计。
- * 新增 offset 参数后，前端循环拉取直到不足一页，合并全量再渲染饼图。
+ * TOP5 排行：服务端排序 + limit 单次请求（原循环分页拉全量仅为喂饼图，
+ * 饼图已改走 /grade-distribution 服务端聚合，排行只需首屏 5 条）
  */
 async function loadRanking() {
   try {
     const { getRankingApi } = await import('#/api/metric');
-    const allItems: MetricApi.RankingItem[] = [];
-    let offset = 0;
-    const limit = 100;
-    let batch: MetricApi.RankingItem[] = [];
-    do {
-      batch = await getRankingApi({
+    const items = await getRankingApi({
+      plantNodeId: selectedPlantNodeId.value,
+      timeWindow: timeWindow.value,
+      sortBy: 'score',
+      sortOrder: top5Sort.value,
+      limit: 5,
+    });
+    rankingList.value = items.filter((it) => it.includeInEvaluation !== false);
+  } catch {
+    // 错误 toast 由拦截器统一处理；保留旧数据
+  }
+}
+
+/** timeWindow → 滚动窗口毫秒数（口径同后端 TIME_WINDOWS：today=近 24h） */
+const TIME_WINDOW_DURATION_MS: Record<string, number> = {
+  last_8_hours: 8 * 3_600_000,
+  today: 24 * 3_600_000,
+  yesterday: 24 * 3_600_000,
+  last_7_days: 7 * 24 * 3_600_000,
+  last_30_days: 30 * 24 * 3_600_000,
+};
+
+/** 加载等级分布（服务端 GROUP BY 聚合，替代前端全量拉取统计） */
+async function loadGradeDistribution() {
+  try {
+    const { getGradeDistributionApi } = await import('#/api/metric');
+    const end = dayjs();
+    const durationMs =
+      TIME_WINDOW_DURATION_MS[timeWindow.value] ?? 24 * 3_600_000;
+    gradeDistribution.value = await getGradeDistributionApi({
+      ...(selectedPlantNodeId.value && {
         plantNodeId: selectedPlantNodeId.value,
-        timeWindow: timeWindow.value,
-        sortBy: 'score',
-        sortOrder: top5Sort.value,
-        limit,
-        offset,
-      });
-      allItems.push(...batch);
-      offset += limit;
-    } while (batch.length === limit);
-    rankingList.value = allItems.filter(
-      (it) => it.includeInEvaluation !== false,
-    );
+      }),
+      startTime: end.subtract(durationMs, 'millisecond').toISOString(),
+      endTime: end.toISOString(),
+    });
     await nextTick();
     renderPieChart();
   } catch {
-    // ignore
+    // 错误 toast 由拦截器统一处理；饼图保留旧数据
   }
 }
 
@@ -851,6 +856,7 @@ function loadAll() {
   loadBoard();
   loadAutoRateRt();
   loadRanking();
+  loadGradeDistribution();
 }
 
 function updateGauges() {
@@ -858,10 +864,7 @@ function updateGauges() {
     renderGaugeOption(autoRateRt.value?.rate ?? 0, themeColors.value.INFO),
   );
   renderGauge2(
-    renderGaugeOption(
-      aggregateData.value?.avgScore ?? 0,
-      scoreColor(aggregateData.value?.avgScore),
-    ),
+    renderGaugeOption(aggregateData.value?.avgScore ?? 0, avgScoreColor.value),
   );
   renderGauge3(
     renderGaugeOption(
@@ -956,7 +959,7 @@ onMounted(() => {
               <EchartsUI ref="gauge2Ref" height="126px" />
               <div
                 class="clpm-pid-dashboard__gauge-value"
-                :style="{ color: scoreColor(aggregateData?.avgScore) }"
+                :style="{ color: avgScoreColor }"
               >
                 {{ aggregateData?.avgScore ?? '--' }}%
               </div>
@@ -1069,13 +1072,16 @@ onMounted(() => {
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'rating'">
                     <span
+                      v-if="record.rating"
                       class="clpm-pid-dashboard__rating-tag"
-                      :class="[
-                        `clpm-pid-dashboard__rating-tag--${record.rating}`,
-                      ]"
+                      :style="{
+                        color: record.ratingColor,
+                        backgroundColor: `${record.ratingColor}1A`,
+                      }"
                     >
                       {{ ratingLabels[record.rating] }}
                     </span>
+                    <span v-else>—</span>
                   </template>
                   <template v-if="column.key === 'autoRate'">
                     <span>{{ record.autoRate }}%</span>
@@ -1121,7 +1127,7 @@ onMounted(() => {
               >
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'score'">
-                    <span :style="{ color: scoreColor(record.score) }">{{
+                    <span :style="{ color: record.scoreColor }">{{
                       record.score
                     }}</span>
                   </template>
@@ -1154,15 +1160,19 @@ onMounted(() => {
 </template>
 
 <style lang="scss" scoped>
+/*
+ * 配色统一走 vben 设计令牌 CSS 变量（--background/--card/--foreground/
+ * --muted-foreground/--border/--primary/--muted），明暗主题自动响应，
+ * 不再需要 .dark 覆写块。
+ */
 .clpm-pid-dashboard {
   min-height: 100vh;
-  color: #334155;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-}
-
-.dark .clpm-pid-dashboard {
-  color: #e2e8f0;
-  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  color: hsl(var(--foreground));
+  background: linear-gradient(
+    180deg,
+    hsl(var(--background)) 0%,
+    hsl(var(--background-deep)) 100%
+  );
 }
 
 .clpm-pid-dashboard__header {
@@ -1171,13 +1181,13 @@ onMounted(() => {
   justify-content: space-between;
   height: 56px;
   padding: 10px 24px;
-  background: linear-gradient(90deg, #fff 0%, #eff6ff 50%, #fff 100%);
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.dark .clpm-pid-dashboard__header {
-  background: linear-gradient(90deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);
-  border-bottom: 1px solid #334155;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--card)) 0%,
+    hsl(var(--primary) / 8%) 50%,
+    hsl(var(--card)) 100%
+  );
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .clpm-pid-dashboard__header-left {
@@ -1194,11 +1204,7 @@ onMounted(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #1e293b;
-}
-
-.dark .clpm-pid-dashboard__title {
-  color: #f1f5f9;
+  color: hsl(var(--foreground));
 }
 
 .clpm-pid-dashboard__body {
@@ -1231,68 +1237,39 @@ onMounted(() => {
   gap: 2px;
   align-items: center;
   padding: 8px;
-  background: rgb(255 255 255 / 80%);
-  border: 1px solid #e2e8f0;
+  background: hsl(var(--card) / 80%);
+  border: 1px solid hsl(var(--border));
   border-radius: 8px;
 
   &-title {
     font-size: 12px;
-    color: #64748b;
+    color: hsl(var(--muted-foreground));
   }
 
   &-value {
     font-size: 16px;
     font-weight: 600;
-    color: #1e293b;
-  }
-}
-
-.dark .clpm-pid-dashboard__gauge-card {
-  background: rgb(15 23 42 / 80%);
-  border: 1px solid #334155;
-
-  &-title {
-    color: #94a3b8;
-  }
-
-  &-value {
-    color: #f1f5f9;
+    color: hsl(var(--foreground));
   }
 }
 
 .clpm-pid-dashboard__gauge-meta {
   font-size: 10px;
   line-height: 1.2;
-  color: #94a3b8;
+  color: hsl(var(--muted-foreground));
 
   &--stale {
-    color: #cbd5e1;
-  }
-}
-
-.dark .clpm-pid-dashboard__gauge-meta {
-  color: #64748b;
-
-  &--stale {
-    color: #475569;
+    color: hsl(var(--muted-foreground) / 60%);
   }
 }
 
 .clpm-pid-dashboard__card-meta {
   font-size: 11px;
   font-weight: 400;
-  color: #94a3b8;
+  color: hsl(var(--muted-foreground));
 
   &--stale {
-    color: #cbd5e1;
-  }
-}
-
-.dark .clpm-pid-dashboard__card-meta {
-  color: #64748b;
-
-  &--stale {
-    color: #475569;
+    color: hsl(var(--muted-foreground) / 60%);
   }
 }
 
@@ -1303,8 +1280,8 @@ onMounted(() => {
 
 .clpm-pid-dashboard__chart-card {
   padding: 8px 12px;
-  background: rgb(255 255 255 / 80%);
-  border: 1px solid #e2e8f0;
+  background: hsl(var(--card) / 80%);
+  border: 1px solid hsl(var(--border));
   border-radius: 8px;
 
   &--status-pie {
@@ -1320,11 +1297,6 @@ onMounted(() => {
   }
 }
 
-.dark .clpm-pid-dashboard__chart-card {
-  background: rgb(15 23 42 / 80%);
-  border: 1px solid #334155;
-}
-
 .clpm-pid-dashboard__card-header {
   display: flex;
   align-items: center;
@@ -1332,28 +1304,16 @@ onMounted(() => {
   margin-bottom: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: #334155;
-}
-
-.dark .clpm-pid-dashboard__card-header {
-  color: #e2e8f0;
+  color: hsl(var(--foreground));
 }
 
 .clpm-pid-dashboard__sort-btn {
   padding: 2px 6px;
-  color: #64748b;
+  color: hsl(var(--muted-foreground));
   cursor: pointer;
 
   &:hover {
-    color: #3b82f6;
-  }
-}
-
-.dark .clpm-pid-dashboard__sort-btn {
-  color: #94a3b8;
-
-  &:hover {
-    color: #3b82f6;
+    color: hsl(var(--primary));
   }
 }
 
@@ -1368,8 +1328,8 @@ onMounted(() => {
   flex-direction: column;
   width: 50%;
   padding: 8px 12px;
-  background: rgb(255 255 255 / 80%);
-  border: 1px solid #e2e8f0;
+  background: hsl(var(--card) / 80%);
+  border: 1px solid hsl(var(--border));
   border-radius: 8px;
 }
 
@@ -1385,112 +1345,33 @@ onMounted(() => {
   }
 }
 
-.dark .clpm-pid-dashboard__table-card {
-  background: rgb(15 23 42 / 80%);
-  border: 1px solid #334155;
-}
-
-.dark .clpm-pid-dashboard__table-card :deep(.ant-table-content) {
-  color: #f1f5f9;
-}
-
-.dark .clpm-pid-dashboard__table-card :deep(.ant-table-thead > tr > th) {
-  color: #94a3b8;
-}
-
-.dark .clpm-pid-dashboard__table-card :deep(.ant-table-tbody > tr > td) {
-  color: #f1f5f9;
-}
-
 .clpm-pid-dashboard__top5-card {
   display: flex;
   flex-direction: column;
   width: 50%;
   padding: 8px 12px;
-  background: rgb(255 255 255 / 80%);
-  border: 1px solid #e2e8f0;
+  background: hsl(var(--card) / 80%);
+  border: 1px solid hsl(var(--border));
   border-radius: 8px;
-}
-
-.dark .clpm-pid-dashboard__top5-card {
-  background: rgb(15 23 42 / 80%);
-  border: 1px solid #334155;
-}
-
-.dark .clpm-pid-dashboard__top5-card :deep(.ant-table-content) {
-  color: #f1f5f9;
-}
-
-.dark .clpm-pid-dashboard__top5-card :deep(.ant-table-thead > tr > th) {
-  color: #94a3b8;
-}
-
-.dark .clpm-pid-dashboard__top5-card :deep(.ant-table-tbody > tr > td) {
-  color: #f1f5f9;
 }
 
 .clpm-pid-dashboard__top5-card :deep(.ant-table-tbody > tr > td) {
   white-space: nowrap;
 }
 
+/* 评级标签底色为行内 style（等级色 + 10% 透明背景，色值随阈值配置），
+   此处仅保留布局属性 */
 .clpm-pid-dashboard__rating-tag {
   padding: 2px 8px;
   font-size: 12px;
   border-radius: 4px;
-
-  &--1 {
-    color: #22c55e;
-    background: rgb(34 197 94 / 10%);
-  }
-
-  &--2 {
-    color: #3b82f6;
-    background: rgb(59 130 246 / 10%);
-  }
-
-  &--3 {
-    color: #f59e0b;
-    background: rgb(245 158 11 / 10%);
-  }
-
-  &--4 {
-    color: #f97316;
-    background: rgb(249 115 22 / 10%);
-  }
-
-  &--5 {
-    color: #ef4444;
-    background: rgb(239 68 68 / 10%);
-  }
-}
-
-.dark .clpm-pid-dashboard__rating-tag {
-  &--1 {
-    background: rgb(34 197 94 / 20%);
-  }
-
-  &--2 {
-    background: rgb(59 130 246 / 20%);
-  }
-
-  &--3 {
-    background: rgb(245 158 11 / 20%);
-  }
-
-  &--4 {
-    background: rgb(249 115 22 / 20%);
-  }
-
-  &--5 {
-    background: rgb(239 68 68 / 20%);
-  }
 }
 
 :deep(.ant-table) {
   background: transparent;
 
   .ant-table-header {
-    background: rgb(241 245 249 / 50%);
+    background: hsl(var(--muted) / 50%);
   }
 
   .ant-table-body {
@@ -1501,58 +1382,21 @@ onMounted(() => {
     padding: 6px 8px;
     font-size: 12px;
     line-height: 1.4;
-    color: #475569;
-    border-bottom: 1px solid #e2e8f0;
+    color: hsl(var(--foreground));
+    border-bottom: 1px solid hsl(var(--border));
   }
 
   .ant-table-thead > tr > th {
     padding: 8px;
     font-size: 12px;
     font-weight: 500;
-    color: #64748b;
-    background: rgb(241 245 249 / 50%);
-    border-bottom: 1px solid #e2e8f0;
+    color: hsl(var(--muted-foreground));
+    background: hsl(var(--muted) / 50%);
+    border-bottom: 1px solid hsl(var(--border));
   }
 
   .ant-table-tbody > tr:hover > td {
-    background: rgb(59 130 246 / 5%);
-  }
-
-  .ant-table-tbody > tr {
-    height: 32px;
-  }
-}
-
-.dark :deep(.ant-table) {
-  background: transparent;
-
-  .ant-table-header {
-    background: rgb(30 41 59 / 50%);
-  }
-
-  .ant-table-body {
-    background: transparent;
-  }
-
-  .ant-table-cell {
-    padding: 6px 8px;
-    font-size: 12px;
-    line-height: 1.4;
-    color: #cbd5e1;
-    border-bottom: 1px solid #334155;
-  }
-
-  .ant-table-thead > tr > th {
-    padding: 8px;
-    font-size: 12px;
-    font-weight: 500;
-    color: #94a3b8;
-    background: rgb(30 41 59 / 50%);
-    border-bottom: 1px solid #334155;
-  }
-
-  .ant-table-tbody > tr:hover > td {
-    background: rgb(59 130 246 / 10%);
+    background: hsl(var(--primary) / 5%);
   }
 
   .ant-table-tbody > tr {
@@ -1561,24 +1405,14 @@ onMounted(() => {
 }
 
 :deep(.ant-select-selector) {
-  color: #334155 !important;
-  background: rgb(241 245 249 / 50%) !important;
-  border: 1px solid #e2e8f0 !important;
-}
-
-.dark :deep(.ant-select-selector) {
-  color: #e2e8f0 !important;
-  background: rgb(30 41 59 / 50%) !important;
-  border: 1px solid #334155 !important;
+  color: hsl(var(--foreground)) !important;
+  background: hsl(var(--muted) / 50%) !important;
+  border: 1px solid hsl(var(--border)) !important;
 }
 
 :deep(.ant-btn) {
-  color: #3b82f6;
-  background: rgb(59 130 246 / 10%);
-  border: 1px solid #3b82f6;
-}
-
-.dark :deep(.ant-btn) {
-  background: rgb(59 130 246 / 20%);
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 10%);
+  border: 1px solid hsl(var(--primary));
 }
 </style>

@@ -43,6 +43,7 @@ import {
 } from '#/api/task';
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePolling } from '#/composables/use-polling';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricRecompute' });
@@ -135,8 +136,9 @@ async function handleDangerConfirm() {
     }
     dangerVisible.value = false;
     loadList();
-  } catch (error: any) {
-    message.error(error?.message || '操作失败');
+  } catch (error) {
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，确认框保持打开供重试
+    console.error('危险操作执行失败:', error);
   } finally {
     dangerLoading.value = false;
   }
@@ -314,9 +316,9 @@ async function loadList() {
     totalCount.value = result.total;
     updatePolling();
   } catch (error) {
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层只更新本地 error 态
     console.error('加载任务列表失败:', error);
     loadError.value = true;
-    message.error('加载任务列表失败');
   } finally {
     loading.value = false;
   }
@@ -324,7 +326,6 @@ async function loadList() {
 
 // ============ 自动刷新（polling 活跃任务） ============
 const POLLING_INTERVAL = 5000;
-let pollingTimer: null | ReturnType<typeof setInterval> = null;
 
 function hasActiveTask(): boolean {
   return taskList.value.some(
@@ -346,29 +347,24 @@ function isTaskTerminal(task: { status: string }): boolean {
   );
 }
 
-function updatePolling() {
-  if (hasActiveTask() && !pollingTimer) {
-    pollingTimer = setInterval(async () => {
-      try {
-        const result = await getTaskListApi(buildQueryParams());
-        taskList.value = result.items;
-        totalCount.value = result.total;
-        if (!hasActiveTask()) {
-          stopPolling();
-        }
-      } catch (error) {
-        console.error('自动刷新失败:', error);
-      }
-    }, POLLING_INTERVAL);
-  } else if (!hasActiveTask() && pollingTimer) {
-    stopPolling();
-  }
-}
+/** 轮询拉取列表；无活跃任务时自动停止（usePolling 失败熔断 3 次后停止） */
+const { start: startPolling, stop: stopPolling } = usePolling(
+  async () => {
+    const result = await getTaskListApi(buildQueryParams());
+    taskList.value = result.items;
+    totalCount.value = result.total;
+    if (!hasActiveTask()) {
+      stopPolling();
+    }
+  },
+  { interval: POLLING_INTERVAL },
+);
 
-function stopPolling() {
-  if (pollingTimer) {
-    clearInterval(pollingTimer);
-    pollingTimer = null;
+function updatePolling() {
+  if (hasActiveTask()) {
+    startPolling();
+  } else {
+    stopPolling();
   }
 }
 
@@ -472,9 +468,9 @@ async function handlePreview() {
     });
     previewResult.value = result as TaskApi.BackfillPreviewResult;
     message.success('预览完成');
-  } catch (error: any) {
+  } catch (error) {
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层不重复提示
     console.error('预览失败:', error);
-    message.error(error?.message || '预览失败');
   } finally {
     previewLoading.value = false;
   }
@@ -505,9 +501,9 @@ async function handleSubmit() {
     message.success(`任务已创建: ${taskId}`);
     drawerVisible.value = false;
     loadList();
-  } catch (error: any) {
+  } catch (error) {
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层不重复提示
     console.error('提交失败:', error);
-    message.error(error?.message || '提交失败');
   } finally {
     drawerLoading.value = false;
   }
@@ -571,8 +567,9 @@ async function handleStartTask(record: TaskApi.TaskItem) {
     await startTaskApi(record.taskId);
     message.success('任务已开始执行');
     loadList();
-  } catch (error: any) {
-    message.error(error?.message || '启动任务失败');
+  } catch (error) {
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层不重复提示
+    console.error('启动任务失败:', error);
   } finally {
     startLoading.value = false;
   }
@@ -607,7 +604,12 @@ defineExpose({
     <!-- 工具栏：左侧操作按钮 + 右侧筛选 -->
     <div class="mb-3 flex items-center justify-between gap-3">
       <Space>
-        <Button type="primary" @click="openDrawer">
+        <!-- 新建任务（触发 /tasks/backfill）：后端 require_roles(ADMIN, IC_ENGINEER) -->
+        <Button
+          v-permission="['ADMIN', 'IC_ENGINEER']"
+          type="primary"
+          @click="openDrawer"
+        >
           <template #icon><Plus /></template>
           新建任务
         </Button>

@@ -25,7 +25,9 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type {
   ConfidenceLevel,
+  GradeName,
   KpiSnapshotItem,
+  KpiSnapshotQueryParams,
   KpiStatus,
   LoopConfidenceLatestItem,
   MetricApi,
@@ -72,6 +74,7 @@ import dayjs from 'dayjs';
 import { getDiagnosisVisualizationApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import {
+  getGradeDistributionApi,
   getGradingThresholdsApi,
   getLoopConfidenceLatestApi,
   getLoopSnapshotsApi,
@@ -94,6 +97,12 @@ import StepResponseChart from '#/components/diagnosis-visualization/step-respons
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
+  LOOP_TYPE_LABEL_MAP,
+  LOOP_TYPE_TAG_COLOR_MAP,
+  useLoopPalettes,
+} from '#/composables/use-loop-palettes';
+import { useScoreColor } from '#/composables/use-score-color';
+import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
@@ -101,20 +110,13 @@ import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricLoopPerformance' });
 
-const { isDark, themeColors } = useClpmTheme();
+const { isDark, themeColors, chartColors } = useClpmTheme();
+const { modeLabelColor } = useLoopPalettes();
 
 // ===== 常量映射 =====
 
-/** 回路类型映射（label + color） */
-const LOOP_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  TEMPERATURE: { label: '温度', color: '#FCA5A5' },
-  PRESSURE: { label: '压力', color: '#93C5FD' },
-  LEVEL: { label: '液位', color: '#86EFAC' },
-  FLOW: { label: '流量', color: '#67E8F9' },
-  ANALYSIS: { label: '分析', color: '#D8B4FE' },
-  SPEED: { label: '速度', color: '#FDBA74' },
-  OTHER: { label: '其他', color: '#CBD5E1' },
-};
+// 回路类型 label / Tag 浅色统一走共享色板 use-loop-palettes
+// （LOOP_TYPE_LABEL_MAP / LOOP_TYPE_TAG_COLOR_MAP），视图层不再重复定义
 
 /** 控制类型映射 */
 const CONTROL_TYPE_MAP: Record<string, string> = {
@@ -123,14 +125,6 @@ const CONTROL_TYPE_MAP: Record<string, string> = {
   FAST: '快速型',
   LOGIC: '逻辑型',
 };
-
-/** 控制方式颜色映射 */
-function controlModeColor(mode?: string): string {
-  if (mode === 'Auto') return '#10B981';
-  if (mode === 'Manual') return '#F59E0B';
-  if (mode === 'Cascade') return '#3B82F6';
-  return '#CBD5E1';
-}
 
 /** 评估状态映射 */
 const STATUS_COLOR_MAP: Record<string, string> = {
@@ -261,24 +255,50 @@ const plantNodeTree = ref<PlantNodeApi.PlantNode[]>([]);
 
 const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
 
-/** 根据综合评分判定评估等级（1~5） */
+/** 国标默认等级名（level → name），阈值配置未加载时兜底 */
+const DEFAULT_GRADE_NAME_BY_LEVEL: Record<number, string> = {
+  1: 'EXCELLENT',
+  2: 'GOOD',
+  3: 'FAIR',
+  4: 'WARNING',
+  5: 'POOR',
+};
+
+/** 等级名 → level（动态阈值配置优先，兜底国标默认名；未知名返回 null） */
+function gradeLevelByName(name: string): null | number {
+  const t = gradingThresholds.value.find((item) => item.name === name);
+  if (t) return t.level;
+  for (const [level, defaultName] of Object.entries(
+    DEFAULT_GRADE_NAME_BY_LEVEL,
+  )) {
+    if (defaultName === name) return Number(level);
+  }
+  return null;
+}
+
+/** level → 服务端 grade 筛选等级名（动态阈值配置优先，兜底国标默认名） */
+function gradeNameByLevel(level: number): GradeName {
+  return (gradingThresholds.value.find((item) => item.level === level)?.name ??
+    DEFAULT_GRADE_NAME_BY_LEVEL[level] ??
+    'POOR') as GradeName;
+}
+
+/**
+ * 根据综合评分判定评估等级（1~5；无评分返回 null）。
+ * 统一走 useScoreColor 判定链：动态 gradingThresholds 定档，
+ * 配置未加载时降级 GB/T 44693.2-2024 §6.3 默认阈值。
+ */
 function getGrade(score: null | number | undefined): null | number {
-  if (score === null || score === undefined) return null;
-  if (gradingThresholds.value.length === 0) {
-    // 默认阈值兜底
-    if (score >= 90) return 1;
-    if (score >= 80) return 2;
-    if (score >= 70) return 3;
-    if (score >= 60) return 4;
-    return 5;
-  }
-  for (const t of gradingThresholds.value) {
-    if (score >= t.minScore && score <= t.maxScore) {
-      return t.level;
-    }
-  }
-  // 兜底：取最低级
-  return 5;
+  const level = useScoreColor(score, gradingThresholds).level.value;
+  return level === null ? null : Number(level);
+}
+
+/**
+ * 综合评分颜色。统一走 useScoreColor：动态阈值定档，
+ * null/NaN → ZL 中性灰（INCONCLUSIVE 是"数据不足"，严禁渲染为故障红）。
+ */
+function scoreColor(val: null | number | undefined): string {
+  return useScoreColor(val, gradingThresholds).color.value;
 }
 
 // ===== 表格列定义 =====
@@ -392,10 +412,7 @@ const columns = computed<TableColumnsType>(() => [
 
 // ===== 统计卡片状态 =====
 
-/** 全量快照数据（用于统计，不参与分页） */
-const allSnapshots = ref<KpiSnapshotItem[]>([]);
-
-/** 评估等级统计（1~5 → 数量） */
+/** 评估等级统计（1~5 → 数量），来自服务端 /grade-distribution 聚合 */
 const gradeStats = ref<Record<number, number>>({
   1: 0,
   2: 0,
@@ -404,56 +421,45 @@ const gradeStats = ref<Record<number, number>>({
   5: 0,
 });
 
-/** 当前选中的等级筛选（null = 全部） */
+/** 统计总数（服务端聚合 total，含 INCONCLUSIVE；不随等级卡片筛选变化） */
+const statsTotal = ref(0);
+
+/** 当前选中的等级筛选（null = 全部；服务端 grade 参数过滤） */
 const selectedGrade = ref<null | number>(null);
 
-/** 按等级筛选后的快照（用于计算聚合指标） */
-const filteredSnapshots = computed(() => {
-  let result = allSnapshots.value;
-  if (selectedGrade.value !== null) {
-    result = result.filter((s) => getGrade(s.score) === selectedGrade.value);
-  }
-  return result;
-});
-
-/** 统计总数（跟随卡片筛选） */
-const statsTotal = computed(() => filteredSnapshots.value.length);
-
-/** 平均评分（跟随卡片筛选） */
-const avgScore = computed(() => {
-  const scores = filteredSnapshots.value
-    .map((s) => s.score)
-    .filter((s): s is number => s !== null && s !== undefined);
-  if (scores.length === 0) return 0;
-  return scores.reduce((sum, s) => sum + s, 0) / scores.length;
-});
-
-/** 优良率（score ≥ 80，跟随卡片筛选） */
+/** 优良率（一级+二级占比，即默认 score≥80 档，随定级阈值配置联动） */
 const excellentRate = computed(() => {
   if (statsTotal.value === 0) return 0;
-  const count = filteredSnapshots.value.filter(
-    (s) => s.score !== null && s.score !== undefined && s.score >= 80,
-  ).length;
+  const count = (gradeStats.value[1] ?? 0) + (gradeStats.value[2] ?? 0);
   return Math.round((count / statsTotal.value) * 100);
 });
 
-/** 合格率（score ≥ 60，跟随卡片筛选） */
+/** 合格率（一~三级占比，即默认 score≥60 档，随定级阈值配置联动） */
 const passRate = computed(() => {
   if (statsTotal.value === 0) return 0;
-  const count = filteredSnapshots.value.filter(
-    (s) => s.score !== null && s.score !== undefined && s.score >= 60,
-  ).length;
+  const count =
+    (gradeStats.value[1] ?? 0) +
+    (gradeStats.value[2] ?? 0) +
+    (gradeStats.value[3] ?? 0);
   return Math.round((count / statsTotal.value) * 100);
 });
 
-/** 等级颜色映射（卡片背景 + 边框） */
-const GRADE_CARD_COLORS: Record<number, string> = {
-  1: '#10B981',
-  2: '#3B82F6',
-  3: '#F59E0B',
-  4: '#F97316',
-  5: '#EF4444',
-};
+/**
+ * 等级卡片配色：阈值项自带 color 优先，未配置按档位降级 ZL 语义色
+ * （降级链与 use-score-color 一致）
+ */
+function gradeCardColor(level: number): string {
+  const t = gradingThresholds.value.find((item) => item.level === level);
+  if (t?.color) return t.color;
+  const fallbackByLevel: Record<number, string> = {
+    1: themeColors.value.SUCCESS,
+    2: themeColors.value.INFO,
+    3: themeColors.value.WARNING,
+    4: themeColors.value.DANGER,
+    5: themeColors.value.DANGER,
+  };
+  return fallbackByLevel[level] ?? themeColors.value.NEUTRAL;
+}
 
 /** 等级饼状图 */
 const gradeChartRef = ref<EchartsUIType>();
@@ -465,7 +471,7 @@ function updateGradeChart() {
   const labels = ['一级', '二级', '三级', '四级', '五级'];
   const data = grades.map((g) => ({
     value: gradeStats.value[g] || 0,
-    itemStyle: { color: GRADE_CARD_COLORS[g] },
+    itemStyle: { color: gradeCardColor(g) },
     name: labels[g - 1],
   }));
 
@@ -499,21 +505,17 @@ function mergeLoopMeta(snap: KpiSnapshotItem): LoopPerformanceRow {
 }
 
 /**
- * 组装快照查询参数（loadList / loadStats 共用）。
+ * 组装快照查询参数（loadList / loadStats 共用；不含分页/排序/等级筛选）。
  * 返回 null 表示控制类型筛选无匹配回路（结果必为空，无需请求）。
  */
-function buildSnapshotParams(): null | Record<string, unknown> {
-  const params: Record<string, unknown> = {};
+function buildSnapshotParams(): KpiSnapshotQueryParams | null {
+  const params: KpiSnapshotQueryParams = {};
   if (query.plantNodeId) params.plantNodeId = query.plantNodeId;
   if (query.status) params.status = query.status;
   if (query.confidenceLevel) params.confidenceLevel = query.confidenceLevel;
   if (query.loopTagName) params.loopTagName = query.loopTagName;
   if (query.timeRange?.[0]) params.startTime = query.timeRange[0].toISOString();
   if (query.timeRange?.[1]) params.endTime = query.timeRange[1].toISOString();
-  if (query.sortBy) {
-    params.sortBy = query.sortBy;
-    params.sortOrder = query.sortOrder;
-  }
   // 按控制类型筛选：先在 loopMap 中找到匹配的 loopId，再传给快照接口
   if (query.controlType) {
     const matchedIds: string[] = [];
@@ -526,43 +528,29 @@ function buildSnapshotParams(): null | Record<string, unknown> {
   return params;
 }
 
-/** 循环分页拉取符合条件的全部快照（后端 pageSize 上限 100） */
-async function fetchAllSnapshots(
-  baseParams: Record<string, unknown>,
-): Promise<KpiSnapshotItem[]> {
-  const allItems: KpiSnapshotItem[] = [];
-  let page = 1;
-  let totalCount: number;
-  do {
-    const result = await getLoopSnapshotsApi({
-      ...baseParams,
-      page,
-      pageSize: 100,
-    } as any);
-    allItems.push(...(result.items || []));
-    totalCount = result.total ?? 0;
-    page += 1;
-  } while ((page - 1) * 100 < totalCount);
-  return allItems;
-}
-
-/** 加载全量统计数据 */
+/** 加载等级分布统计（服务端 SQL 聚合，替代全量拉取客户端统计） */
 async function loadStats() {
   try {
-    const baseParams = buildSnapshotParams();
-    allSnapshots.value =
-      baseParams === null ? [] : await fetchAllSnapshots(baseParams);
-
-    // 计算等级分布
+    const params = buildSnapshotParams();
+    if (params === null) {
+      gradeStats.value = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      statsTotal.value = 0;
+      updateGradeChart();
+      return;
+    }
+    const dist = await getGradeDistributionApi(params);
+    // 等级名 → level 归集（INCONCLUSIVE/total 不计入 1~5 级卡片）
     const gStats: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    for (const snap of allSnapshots.value) {
-      const grade = getGrade(snap.score);
-      if (grade) gStats[grade] = (gStats[grade] || 0) + 1;
+    for (const [name, count] of Object.entries(dist)) {
+      if (name === 'total' || name === 'INCONCLUSIVE') continue;
+      const level = gradeLevelByName(name);
+      if (level !== null) gStats[level] = (gStats[level] ?? 0) + count;
     }
     gradeStats.value = gStats;
+    statsTotal.value = dist.total ?? 0;
     updateGradeChart();
   } catch {
-    // 静默失败
+    // 统计卡片保留旧数据；错误 toast 由 api/request.ts 拦截器统一弹出
   }
 }
 
@@ -625,14 +613,6 @@ function getMetricValue(
   return typeof value === 'number' ? value : undefined;
 }
 
-/** 综合评分颜色 */
-function scoreColor(val: null | number | undefined): string {
-  if (val === null || val === undefined) return '#9CA3AF';
-  if (val >= 80) return themeColors.value.SUCCESS;
-  if (val >= 60) return themeColors.value.WARNING;
-  return themeColors.value.DANGER;
-}
-
 // ===== 数据加载 =====
 
 /** 加载工厂节点 */
@@ -693,32 +673,27 @@ async function loadList() {
       return;
     }
 
-    // 等级筛选：等级由评分派生，服务端无法过滤，
-    // 需拉全量 → 客户端过滤 → 客户端分页（保证总数与统计卡片一致）
+    // 等级筛选：服务端 grade 参数按当前定级阈值过滤（level → 等级名映射），
+    // 替代原"全量拉取 → 客户端过滤 → 客户端分页"
     if (selectedGrade.value !== null) {
-      const allItems = await fetchAllSnapshots(params);
-      const filtered = allItems.filter(
-        (snap) => getGrade(snap.score) === selectedGrade.value,
-      );
-      total.value = filtered.length;
-      const startIdx = (query.page - 1) * query.pageSize;
-      rows.value = filtered
-        .slice(startIdx, startIdx + query.pageSize)
-        .map((snap) => mergeLoopMeta(snap));
-      return;
+      params.grade = gradeNameByLevel(selectedGrade.value);
+    }
+    if (query.sortBy) {
+      params.sortBy = query.sortBy;
+      params.sortOrder = query.sortOrder;
     }
 
     const result = await getLoopSnapshotsApi({
       ...params,
       page: query.page,
       pageSize: query.pageSize,
-    } as any);
+    });
     rows.value = (result.items || []).map((snap) => mergeLoopMeta(snap));
     total.value = result.total;
-  } catch (error: any) {
+  } catch (error) {
     loadError.value = true;
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层只更新本地 error 态
     console.error('加载回路性能列表失败:', error);
-    message.error(error?.message || '加载失败');
   } finally {
     loading.value = false;
   }
@@ -899,9 +874,9 @@ async function openConfidence(record: LoopPerformanceRow) {
   confDrawerLoading.value = true;
   try {
     confDetail.value = await getLoopConfidenceLatestApi(record.loopId);
-  } catch (error: any) {
+  } catch (error) {
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，抽屉内展示"暂无评估记录"
     console.error('加载可信度详情失败:', error);
-    message.error(error?.message || '加载可信度详情失败');
   } finally {
     confDrawerLoading.value = false;
   }
@@ -964,9 +939,9 @@ async function loadHistoryData() {
     });
     await nextTick();
     renderHistoryTrend();
-  } catch (error: any) {
+  } catch (error) {
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层不重复提示
     console.error('加载历史趋势失败:', error);
-    message.error(error?.message || '加载历史趋势失败');
   } finally {
     historyLoading.value = false;
   }
@@ -1013,7 +988,7 @@ function renderHistoryTrend() {
       axisLabel: { color: textColor, fontSize: 11 },
       splitLine: {
         lineStyle: {
-          color: isDark.value ? 'rgba(255,255,255,0.08)' : '#E5E5E5',
+          color: chartColors.value.splitLine,
         },
       },
     },
@@ -1095,9 +1070,9 @@ async function openDiagnosis(record: LoopPerformanceRow) {
   diagLoading.value = true;
   try {
     diagData.value = await getDiagnosisVisualizationApi(record.loopId);
-  } catch (error: any) {
+  } catch (error) {
+    // 错误 toast 由 api/request.ts 拦截器统一弹出，Modal 内展示"暂无诊断可视化数据"
     console.error('加载诊断可视化数据失败:', error);
-    message.error(error?.message || '加载诊断可视化数据失败');
   } finally {
     diagLoading.value = false;
   }
@@ -1117,7 +1092,7 @@ async function loadDiagHistory() {
   if (!diagRecord.value?.loopId) return;
   diagHistoryLoading.value = true;
   try {
-    const params: Record<string, unknown> = {
+    const params: KpiSnapshotQueryParams = {
       loopId: diagRecord.value.loopId,
       latestOnly: false,
       page: diagHistoryPage.value,
@@ -1126,7 +1101,7 @@ async function loadDiagHistory() {
     if (diagHistoryStatus.value) params.status = diagHistoryStatus.value;
     if (diagHistoryConfidence.value)
       params.confidenceLevel = diagHistoryConfidence.value;
-    const result = await getLoopSnapshotsApi(params as any);
+    const result = await getLoopSnapshotsApi(params);
     diagHistorySnapshots.value = result.items || [];
     diagHistoryTotal.value = result.total;
   } catch {
@@ -1306,19 +1281,23 @@ onMounted(async () => {
               class="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               :style="{
                 backgroundColor:
-                  selectedGrade === null ? '#4B556315' : '#4B556308',
-                borderLeft: '3px solid #4B5563',
+                  selectedGrade === null
+                    ? `${themeColors.NEUTRAL}15`
+                    : `${themeColors.NEUTRAL}08`,
+                borderLeft: `3px solid ${themeColors.NEUTRAL}`,
                 borderBottom:
-                  selectedGrade === null ? '2px solid #4B5563' : 'none',
+                  selectedGrade === null
+                    ? `2px solid ${themeColors.NEUTRAL}`
+                    : 'none',
               }"
               @click="handleGradeCardClick(null)"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                style="background-color: #4b5563"
+                :style="{ backgroundColor: themeColors.NEUTRAL }"
               ></span>
               <span class="text-sm text-gray-600">全部</span>
-              <span class="text-sm" style="color: #4b5563">{{
+              <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">{{
                 statsTotal
               }}</span>
             </div>
@@ -1329,79 +1308,60 @@ onMounted(async () => {
               :style="{
                 backgroundColor:
                   selectedGrade === grade
-                    ? `${GRADE_CARD_COLORS[grade]}30`
-                    : `${GRADE_CARD_COLORS[grade]}15`,
-                borderLeft: `3px solid ${GRADE_CARD_COLORS[grade]}`,
+                    ? `${gradeCardColor(grade)}30`
+                    : `${gradeCardColor(grade)}15`,
+                borderLeft: `3px solid ${gradeCardColor(grade)}`,
                 borderBottom:
                   selectedGrade === grade
-                    ? `2px solid ${GRADE_CARD_COLORS[grade]}`
+                    ? `2px solid ${gradeCardColor(grade)}`
                     : 'none',
               }"
               @click="handleGradeCardClick(grade)"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                :style="{ backgroundColor: GRADE_CARD_COLORS[grade] }"
+                :style="{ backgroundColor: gradeCardColor(grade) }"
               ></span>
               <span class="text-sm text-gray-600">{{
                 GRADE_LABEL_MAP[grade]
               }}</span>
-              <span
-                class="text-sm"
-                :style="{ color: GRADE_CARD_COLORS[grade] }"
-              >
+              <span class="text-sm" :style="{ color: gradeCardColor(grade) }">
                 {{ gradeStats[grade] || 0 }}
               </span>
             </div>
           </div>
 
-          <!-- 右：性能概览 + 饼状图 -->
+          <!-- 右：性能概览 + 饼状图（优良/合格率由服务端等级分布推导） -->
           <div class="flex items-center gap-2">
             <div
               class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
               :style="{
-                backgroundColor: '#3B82F615',
-                borderLeft: '3px solid #3B82F6',
+                backgroundColor: `${themeColors.SUCCESS}15`,
+                borderLeft: `3px solid ${themeColors.SUCCESS}`,
               }"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                style="background-color: #3b82f6"
-              ></span>
-              <span class="text-sm text-gray-600">平均评分</span>
-              <span class="text-sm" style="color: #3b82f6">{{
-                avgScore.toFixed(1)
-              }}</span>
-            </div>
-            <div
-              class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
-              :style="{
-                backgroundColor: '#10B98115',
-                borderLeft: '3px solid #10B981',
-              }"
-            >
-              <span
-                class="w-2 h-2 rounded-full"
-                style="background-color: #10b981"
+                :style="{ backgroundColor: themeColors.SUCCESS }"
               ></span>
               <span class="text-sm text-gray-600">优良率</span>
-              <span class="text-sm" style="color: #10b981"
+              <span class="text-sm" :style="{ color: themeColors.SUCCESS }"
                 >{{ excellentRate }}%</span
               >
             </div>
             <div
               class="flex items-center gap-1.5 px-2 py-1 rounded whitespace-nowrap"
               :style="{
-                backgroundColor: '#8b5cf615',
-                borderLeft: '3px solid #8b5cf6',
+                backgroundColor: `${themeColors.ACCENT}15`,
+                borderLeft: `3px solid ${themeColors.ACCENT}`,
               }"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                style="background-color: #8b5cf6"
+                :style="{ backgroundColor: themeColors.ACCENT }"
               ></span>
               <span class="text-sm text-gray-600">合格率</span>
-              <span class="text-sm" style="color: #8b5cf6"
+              <span class="text-sm" :style="{ color: themeColors.ACCENT }"
                 >{{ passRate }}%</span
               >
             </div>
@@ -1443,16 +1403,16 @@ onMounted(async () => {
             <Tag
               v-if="(record as LoopPerformanceRow).loopType"
               :color="
-                LOOP_TYPE_MAP[
+                LOOP_TYPE_TAG_COLOR_MAP[
                   (record as LoopPerformanceRow).loopType ?? 'OTHER'
-                ]?.color ?? 'default'
+                ] ?? 'default'
               "
               class="m-0"
             >
               {{
-                LOOP_TYPE_MAP[
+                LOOP_TYPE_LABEL_MAP[
                   (record as LoopPerformanceRow).loopType ?? 'OTHER'
-                ]?.label ?? '其他'
+                ] ?? '其他'
               }}
             </Tag>
             <span v-else class="text-gray-400">—</span>
@@ -1470,7 +1430,7 @@ onMounted(async () => {
             <Tag
               v-if="(record as LoopPerformanceRow).controlMode"
               :color="
-                controlModeColor((record as LoopPerformanceRow).controlMode)
+                modeLabelColor((record as LoopPerformanceRow).controlMode)
               "
               class="m-0"
             >
@@ -1639,7 +1599,7 @@ onMounted(async () => {
               </DescriptionsItem>
               <DescriptionsItem label="回路类型">
                 {{
-                  LOOP_TYPE_MAP[drawerRecord.loopType ?? 'OTHER']?.label ?? '—'
+                  LOOP_TYPE_LABEL_MAP[drawerRecord.loopType ?? 'OTHER'] ?? '—'
                 }}
               </DescriptionsItem>
               <DescriptionsItem label="控制类型">
@@ -1653,7 +1613,7 @@ onMounted(async () => {
               <DescriptionsItem label="控制方式">
                 <Tag
                   v-if="drawerRecord.controlMode"
-                  :color="controlModeColor(drawerRecord.controlMode)"
+                  :color="modeLabelColor(drawerRecord.controlMode)"
                 >
                   {{ drawerRecord.controlMode }}
                 </Tag>
@@ -2366,13 +2326,13 @@ onMounted(async () => {
 .summary-label {
   margin-bottom: 4px;
   font-size: 12px;
-  color: #6b7280;
+  color: hsl(var(--muted-foreground));
 }
 
 .summary-value {
   font-size: 24px;
   font-weight: 700;
-  color: #1f2937;
+  color: hsl(var(--foreground));
 }
 
 .summary-tags {
