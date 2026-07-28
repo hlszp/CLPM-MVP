@@ -133,21 +133,31 @@ _LAYER2_DEPENDENCIES: dict[str, list[str]] = {
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def calculate_hourly_kpi(self: AsyncTask, ts_start: str | None = None) -> dict:
+def calculate_hourly_kpi(
+    self: AsyncTask, ts_start: str | None = None, task_id: str | None = None
+) -> dict:
     """每小时全量计算所有 ACTIVE 回路的 KPI 快照。
 
     失败自动重试 3 次，指数退避。
-    Beat 自动触发时创建 TaskRecord（triggered_by=system），使定时任务
-    也出现在「自动任务」页面。
+    Beat 自动触发（task_id=None）时创建 TaskRecord（triggered_by=system），
+    使定时任务也出现在「自动任务」页面；API 手动触发（task_id 非 None）
+    时复用 API 层已创建的记录，避免同一计算产生两条任务记录。
+    同一小时窗口通过 Redis SETNX 锁互斥（手动与 Beat 不会并发计算）。
 
     若 task_tracker 不可用（Redis 异常），回退到直接调用 _do_calculate。
 
     Args:
         ts_start: 可选，指定计算时间窗起始（ISO 格式），None 时取上一个完整小时
+        task_id: 可选，API 手动触发时传入的已创建任务记录 ID
     """
-    logger.info("KPI 计算任务开始, task_id=%s, ts_start=%s", self.request.id, ts_start)
+    logger.info(
+        "KPI 计算任务开始, celery_id=%s, ts_start=%s, task_id=%s",
+        self.request.id,
+        ts_start,
+        task_id,
+    )
     try:
-        result = self.run_async(_do_hourly_with_tracking(ts_start=ts_start))
+        result = self.run_async(_do_hourly_with_tracking(ts_start=ts_start, task_id=task_id))
         logger.info("KPI 计算任务完成: %s", result)
         return result
     except Exception as exc:
@@ -167,59 +177,112 @@ def _parse_ts_start(ts_start: str | None) -> datetime | None:
         return datetime.fromisoformat(ts_start)
 
 
-async def _do_hourly_with_tracking(ts_start: str | None = None) -> dict:
-    """执行每小时 KPI 计算并创建任务跟踪记录（系统自动触发）。
+# 小时窗计算互斥锁（手动触发与整点 Beat 对同一窗口互斥，SETNX + TTL）
+_HOURLY_CALC_LOCK_PREFIX = "task:hourly_calc_lock"
+_HOURLY_CALC_LOCK_TTL_SECONDS = 7200  # 与评估任务 RUNNING 超时清扫阈值对齐，兜底防死锁
 
-    Beat 自动触发时调用此函数：先创建 TaskRecord（STANDARD / triggered_by=system），
-    再执行计算，最后更新终态。手动触发（API）仍走 ``trigger_standard_evaluation``，
-    由 API 层创建 TaskRecord。
+
+def _hourly_window_lock_key(ts_start: str | None) -> str:
+    """计算小时窗口互斥锁 Redis key（默认窗口口径与 _do_calculate 一致）."""
+    ts_start_dt = _parse_ts_start(ts_start)
+    if ts_start_dt is None:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        ts_start_dt = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+    elif ts_start_dt.tzinfo is not None:
+        # 与 _do_calculate 的 naive 化口径一致（直接剥离 tzinfo）
+        ts_start_dt = ts_start_dt.replace(tzinfo=None)
+    return f"{_HOURLY_CALC_LOCK_PREFIX}:{ts_start_dt.strftime('%Y%m%d%H')}"
+
+
+async def _do_hourly_with_tracking(
+    ts_start: str | None = None,
+    task_id: str | None = None,
+) -> dict:
+    """执行每小时 KPI 计算并维护任务跟踪记录.
+
+    task_id 为 None（Beat 自动触发）时创建 TaskRecord（STANDARD /
+    triggered_by=system）；task_id 非 None（API 手动触发）时复用 API 层
+    已创建的记录（避免双写，其进度/终态由本函数推进）。
+
+    同一小时窗口通过 Redis SETNX 锁互斥（手动触发与整点 Beat 不会并发
+    _do_calculate）；锁带 TTL 兜底，持有者在 finally 中按 token 释放。
     """
+    from app.core.redis import redis_client
     from app.schemas.task import TaskStatus, TaskType
     from app.services import task_tracker
 
-    # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
-    _SHANGHAI = timezone(timedelta(hours=8))
-    title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
-
-    task_id = await task_tracker.create_task(
-        task_type=TaskType.STANDARD,
-        created_by="system",
-        created_by_id="",
-        ts_start=ts_start,
-        triggered_by="system",
-        title=title,
+    lock_key = _hourly_window_lock_key(ts_start)
+    lock_token = task_id or str(uuid4())
+    acquired = await redis_client.set(
+        lock_key, lock_token, nx=True, ex=_HOURLY_CALC_LOCK_TTL_SECONDS
     )
-
-    await task_tracker.update_status(
-        task_id,
-        TaskStatus.RUNNING,
-        started_at=datetime.now(UTC).isoformat(),
-        current_stage="开始计算",
-    )
+    if not acquired:
+        logger.warning(
+            "同一小时窗口已有评估任务在执行，跳过本次计算: lock=%s, task_id=%s",
+            lock_key,
+            task_id,
+        )
+        if task_id:
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.FAILED,
+                error_message="同一时间窗已有评估任务在执行，本次触发已跳过",
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+        return {"skipped": True, "reason": "window_locked", "lock": lock_key}
 
     try:
-        result = await _do_calculate(
-            ts_start=_parse_ts_start(ts_start),
-            task_id=task_id,
-            window_index=1,
-            total_windows=1,
-        )
+        if task_id is None:
+            # Beat 自动触发：创建系统任务记录
+            # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
+            _SHANGHAI = timezone(timedelta(hours=8))
+            title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
+            task_id = await task_tracker.create_task(
+                task_type=TaskType.STANDARD,
+                created_by="system",
+                created_by_id="",
+                ts_start=ts_start,
+                triggered_by="system",
+                title=title,
+            )
+
         await task_tracker.update_status(
             task_id,
-            TaskStatus.SUCCESS,
-            progress=1.0,
-            current_stage="完成",
-            finished_at=datetime.now(UTC).isoformat(),
+            TaskStatus.RUNNING,
+            started_at=datetime.now(UTC).isoformat(),
+            current_stage="开始计算",
         )
-        return result
-    except Exception as exc:
-        await task_tracker.update_status(
-            task_id,
-            TaskStatus.FAILED,
-            error_message=str(exc),
-            finished_at=datetime.now(UTC).isoformat(),
-        )
-        raise
+
+        try:
+            result = await _do_calculate(
+                ts_start=_parse_ts_start(ts_start),
+                task_id=task_id,
+                window_index=1,
+                total_windows=1,
+            )
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.SUCCESS,
+                progress=1.0,
+                current_stage="完成",
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            return result
+        except Exception as exc:
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.FAILED,
+                error_message=str(exc),
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            raise
+    finally:
+        # 仅持锁者释放（token 校验，避免误删 TTL 超时后他人重获的锁）
+        try:
+            if await redis_client.get(lock_key) == lock_token:
+                await redis_client.delete(lock_key)
+        except Exception:  # noqa: BLE001
+            logger.warning("释放小时窗计算锁失败: %s", lock_key, exc_info=True)
 
 
 @celery_app.task(

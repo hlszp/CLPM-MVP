@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -25,6 +25,20 @@ from tests.conftest import TEST_USERS, mock_current_user
 # ---------------------------------------------------------------------------
 # FakeTaskRedis — 支持 Hash + Sorted Set 操作的内存 Redis mock
 # ---------------------------------------------------------------------------
+
+
+class _FakePipeline:
+    """Fake Redis pipeline：收集 hgetall 命令，execute 时批量返回."""
+
+    def __init__(self, redis: FakeTaskRedis) -> None:
+        self._redis = redis
+        self._commands: list[tuple[str, str]] = []
+
+    def hgetall(self, key: str) -> None:
+        self._commands.append(("hgetall", key))
+
+    async def execute(self) -> list[dict[str, str]]:
+        return [dict(self._redis._hashes.get(key, {})) for _, key in self._commands]
 
 
 class FakeTaskRedis:
@@ -40,7 +54,35 @@ class FakeTaskRedis:
         self._zsets: dict[str, dict[str, float]] = {}
         self._lists: dict[str, list[str]] = {}
         self._sets: dict[str, set[str]] = {}
+        self._strings: dict[str, str] = {}
         self._ttls: dict[str, int] = {}
+
+    def pipeline(self, transaction: bool = True) -> _FakePipeline:
+        return _FakePipeline(self)
+
+    async def set(
+        self,
+        key: str,
+        value: str,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> bool | None:
+        if nx and key in self._strings:
+            return None
+        self._strings[key] = value
+        if ex is not None:
+            self._ttls[key] = ex
+        return True
+
+    async def get(self, key: str) -> str | None:
+        return self._strings.get(key)
+
+    async def hsetnx(self, key: str, field: str, value: str) -> int:
+        h = self._hashes.setdefault(key, {})
+        if field in h:
+            return 0
+        h[field] = value
+        return 1
 
     async def hset(self, key: str, mapping: dict | None = None, **kwargs) -> int:
         if key not in self._hashes:
@@ -72,6 +114,17 @@ class FakeTaskRedis:
         if end == -1:
             return members[start:]
         return members[start : end + 1]
+
+    async def zrevrangebyscore(
+        self,
+        key: str,
+        max: float | str,
+        min: float | str,
+    ) -> list[str]:
+        max_v = float("inf") if max == "+inf" else float(max)
+        min_v = float("-inf") if min == "-inf" else float(min)
+        items = sorted(self._zsets.get(key, {}).items(), key=lambda x: -x[1])
+        return [m for m, s in items if min_v <= s <= max_v]
 
     async def lpush(self, key: str, *values: str) -> int:
         """List push to head (newest first)."""
@@ -109,6 +162,9 @@ class FakeTaskRedis:
                 deleted += 1
             if key in self._sets:
                 del self._sets[key]
+                deleted += 1
+            if key in self._strings:
+                del self._strings[key]
                 deleted += 1
             self._ttls.pop(key, None)
         return deleted
@@ -231,6 +287,33 @@ class FakeTaskRedis:
             )
             return ["COUNTED", str(done), str(progress)]
 
+        if "CLPM_TASK_SLOT_ACQUIRE_V1" in script:
+            user_key, system_key = keys[0], keys[1]
+            user_limit, system_limit, ttl = int(argv[0]), int(argv[1]), int(argv[2])
+            user_count = int(self._strings.get(user_key, "0")) + 1
+            self._strings[user_key] = str(user_count)
+            if user_count == 1:
+                self._ttls[user_key] = ttl
+            if user_count > user_limit:
+                self._strings[user_key] = str(user_count - 1)
+                return 0
+            system_count = int(self._strings.get(system_key, "0")) + 1
+            self._strings[system_key] = str(system_count)
+            if system_count == 1:
+                self._ttls[system_key] = ttl
+            if system_count > system_limit:
+                self._strings[system_key] = str(system_count - 1)
+                self._strings[user_key] = str(user_count - 1)
+                return 2
+            return 1
+
+        if "CLPM_TASK_SLOT_RELEASE_V1" in script:
+            for key in keys:
+                current = int(self._strings.get(key, "0"))
+                if current > 0:
+                    self._strings[key] = str(current - 1)
+            return 1
+
         raise AssertionError("Unsupported task_tracker Lua script")
 
 
@@ -332,8 +415,13 @@ class TestStandardTaskEvaluate:
         assert data["status"] == "PENDING"
         assert data["createdBy"] == "ic_engineer"
         assert data["taskId"]  # non-empty UUID
-        # P1 #11: 验证 tsStart 透传给 Celery 任务
-        mock_celery.delay.assert_called_once_with(ts_start="2026-06-22T08:00:00Z")
+        # P1 #11: 验证 tsStart 透传给 Celery 任务；task_id 复用 API 层记录（防双写）
+        mock_celery.delay.assert_called_once_with(
+            ts_start="2026-06-22T08:00:00Z", task_id=data["taskId"]
+        )
+        # 仅创建一条任务记录（Celery 侧不再重复建记录）
+        task_keys = [k for k in task_redis._hashes if k.startswith("task:")]
+        assert task_keys == [f"task:{data['taskId']}"]
 
     def test_standard_evaluate_admin(self, client, task_redis, fake_redis) -> None:
         """ADMIN 可以触发标准评估任务（不传 tsStart 时 ts_start=None）."""
@@ -349,7 +437,9 @@ class TestStandardTaskEvaluate:
             )
         assert resp.status_code == 200
         # P1 #11: 未传 tsStart 时 ts_start=None（取上一个完整计算周期）
-        mock_celery.delay.assert_called_once_with(ts_start=None)
+        mock_celery.delay.assert_called_once()
+        assert mock_celery.delay.call_args.kwargs["ts_start"] is None
+        assert mock_celery.delay.call_args.kwargs["task_id"]
 
     def test_standard_evaluate_sponsor_forbidden(self, client, task_redis, fake_redis) -> None:
         """SPONSOR 不能触发评估任务（403）."""
@@ -436,16 +526,9 @@ class TestCustomTaskEvaluate:
         assert resp.json()["code"] == "ERR_INVALID_REQUEST"
 
     def test_custom_evaluate_concurrency_limit_user(self, client, task_redis, fake_redis) -> None:
-        """单用户活跃任务超过 3 个时返回 429."""
-        # 预先创建 3 个活跃任务
-        for i in range(3):
-            _save_task_to_redis(
-                task_redis,
-                task_id=f"existing-task-{i}",
-                task_type="CUSTOM",
-                status="PENDING",
-                created_by_id="00000000-0000-0000-0000-000000000002",  # ic_engineer
-            )
+        """单用户并发占用计数达到 3 时返回 429（原子槽位计数）."""
+        # 预先将单用户并发计数器占满（等效于已有 3 个活跃任务持有槽位）
+        task_redis._strings["task:concurrency:user:00000000-0000-0000-0000-000000000002"] = "3"
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
                 "/api/v1/tasks/custom/evaluate",
@@ -587,6 +670,366 @@ class TestListTasks:
         """未认证请求返回 401."""
         resp = client.get("/api/v1/tasks")
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/tasks — 分页/时间窗/同步路径（Phase 3 健壮性整改）
+# ---------------------------------------------------------------------------
+
+
+def _save_task_with_created_at(
+    fake: FakeTaskRedis,
+    task_id: str,
+    created_at: datetime,
+    **kwargs,
+) -> dict[str, str]:
+    """写入任务并显式指定 created_at（覆盖索引 score）."""
+    data = _save_task_to_redis(fake, task_id=task_id, **kwargs)
+    data["created_at"] = created_at.isoformat()
+    fake._zsets["task:index"][task_id] = created_at.timestamp()
+    return data
+
+
+class TestListTasksRobustness:
+    """任务列表：索引时间窗截取 + 先分页后取详情 + 不逐条同步 AsyncResult."""
+
+    def test_list_tasks_pagination(self, client, task_redis, fake_redis) -> None:
+        """25 条任务按创建时间倒序分页，page=2&pageSize=10 返回正确的切片."""
+        base = datetime.now(UTC)
+        for i in range(25):
+            _save_task_with_created_at(
+                task_redis,
+                task_id=f"task-page-{i:02d}",
+                created_at=base - timedelta(minutes=24 - i),
+                status="SUCCESS",
+            )
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tasks?page=2&pageSize=10",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 25
+        assert len(data["items"]) == 10
+        # 倒序第 11~20 条：task-page-14 … task-page-05
+        assert data["items"][0]["taskId"] == "task-page-14"
+        assert data["items"][-1]["taskId"] == "task-page-05"
+
+    def test_list_tasks_does_not_sync_celery_per_item(self, client, task_redis, fake_redis) -> None:
+        """列表路径不调用 _sync_task_status；单任务详情仍保留惰性同步."""
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-nosync",
+            status="PENDING",
+            celery_task_id="celery-nosync",
+        )
+        with (
+            patch(
+                "app.api.v1.endpoints.tasks._sync_task_status",
+                new_callable=AsyncMock,
+            ) as mock_sync,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get(
+                "/api/v1/tasks",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+            assert resp.status_code == 200
+            mock_sync.assert_not_called()
+
+            resp = client.get(
+                "/api/v1/tasks/task-nosync",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+            assert resp.status_code == 200
+            mock_sync.assert_called_once()
+
+    def test_list_tasks_default_window_excludes_old(self, client, task_redis, fake_redis) -> None:
+        """未传 startTime 时默认仅扫描最近 30 天；显式时间窗可覆盖更早任务."""
+        now = datetime.now(UTC)
+        _save_task_with_created_at(
+            task_redis, task_id="task-old", created_at=now - timedelta(days=40), status="SUCCESS"
+        )
+        _save_task_with_created_at(
+            task_redis, task_id="task-recent", created_at=now, status="SUCCESS"
+        )
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tasks",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()["data"]
+            assert data["total"] == 1
+            assert data["items"][0]["taskId"] == "task-recent"
+
+            start = (now - timedelta(days=60)).isoformat()
+            resp = client.get(
+                "/api/v1/tasks",
+                params={"startTime": start},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["data"]["total"] == 2
+
+
+# ---------------------------------------------------------------------------
+# RUNNING 超时清扫（Phase 3 健壮性整改 ②）
+# ---------------------------------------------------------------------------
+
+
+class TestSweepStaleRunningEvalTasks:
+    """sweep_stale_running_eval_tasks：超时 RUNNING 任务清扫."""
+
+    async def test_sweep_marks_stale_running_failed(self, task_redis, fake_redis) -> None:
+        """RUNNING 超过 7200s 的任务置 FAILED；未超时与终态任务不受影响."""
+        from app.api.v1.endpoints.tasks import (
+            EVAL_TASK_RUNNING_TIMEOUT_SECONDS,
+            sweep_stale_running_eval_tasks,
+        )
+
+        now = datetime.now(UTC)
+        stale_age = EVAL_TASK_RUNNING_TIMEOUT_SECONDS + 600
+        stale_started = (now - timedelta(seconds=stale_age)).isoformat()
+        fresh_started = (now - timedelta(seconds=3600)).isoformat()
+        _save_task_to_redis(
+            task_redis, task_id="task-stale", status="RUNNING", started_at=stale_started
+        )
+        _save_task_to_redis(
+            task_redis, task_id="task-fresh", status="RUNNING", started_at=fresh_started
+        )
+        _save_task_to_redis(task_redis, task_id="task-done", status="SUCCESS")
+
+        result = await sweep_stale_running_eval_tasks()
+
+        assert result["swept"] == 1
+        assert result["details"] == ["task-stale"]
+        stale = task_redis._hashes["task:task-stale"]
+        assert stale["status"] == "FAILED"
+        assert "RUNNING 超时" in stale["error_message"]
+        assert stale["finished_at"]
+        assert task_redis._hashes["task:task-fresh"]["status"] == "RUNNING"
+        assert task_redis._hashes["task:task-done"]["status"] == "SUCCESS"
+
+    async def test_sweep_releases_concurrency_slot(self, task_redis, fake_redis) -> None:
+        """清扫置 FAILED 后释放任务占用的并发槽位."""
+        from app.api.v1.endpoints.tasks import sweep_stale_running_eval_tasks
+
+        stale_started = (datetime.now(UTC) - timedelta(seconds=8000)).isoformat()
+        data = _save_task_to_redis(
+            task_redis,
+            task_id="task-stale-slot",
+            task_type="CUSTOM",
+            status="RUNNING",
+            started_at=stale_started,
+            created_by_id="user-slot",
+        )
+        data["slot_acquired"] = "1"
+        task_redis._strings["task:concurrency:user:user-slot"] = "1"
+        task_redis._strings["task:concurrency:system"] = "1"
+
+        result = await sweep_stale_running_eval_tasks()
+
+        assert result["swept"] == 1
+        assert task_redis._strings["task:concurrency:user:user-slot"] == "0"
+        assert task_redis._strings["task:concurrency:system"] == "0"
+
+    async def test_maybe_sweep_throttled(self, task_redis, fake_redis) -> None:
+        """节流 key 存在时不触发清扫."""
+        from app.api.v1.endpoints.tasks import _maybe_sweep_stale_running
+
+        stale_started = (datetime.now(UTC) - timedelta(seconds=8000)).isoformat()
+        _save_task_to_redis(
+            task_redis, task_id="task-throttled", status="RUNNING", started_at=stale_started
+        )
+        task_redis._strings["task:sweep:last"] = "1"
+
+        await _maybe_sweep_stale_running()
+
+        assert task_redis._hashes["task:task-throttled"]["status"] == "RUNNING"
+
+
+# ---------------------------------------------------------------------------
+# 手动标准评估：单记录 + 小时窗互斥（Phase 3 健壮性整改 ③）
+# ---------------------------------------------------------------------------
+
+
+class TestHourlyWindowMutex:
+    """_do_hourly_with_tracking：复用外部 task_id + SETNX 小时窗互斥."""
+
+    async def test_manual_trigger_reuses_existing_record(self, task_redis, fake_redis) -> None:
+        """传入 task_id 时复用 API 层记录推进状态，不新建记录，锁最终释放."""
+        from app.tasks.kpi_calc import _do_hourly_with_tracking
+
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-A",
+            task_type="STANDARD",
+            status="PENDING",
+            celery_task_id="celery-A",
+        )
+        expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+        with (
+            patch("app.core.redis.redis_client", task_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
+            mock_calc.return_value = expected
+            result = await _do_hourly_with_tracking(
+                ts_start="2026-06-22T08:00:00Z", task_id="task-A"
+            )
+
+        assert result == expected
+        data = task_redis._hashes["task:task-A"]
+        assert data["status"] == "SUCCESS"
+        assert data["progress"] == "1.0"
+        assert data["started_at"]
+        assert data["finished_at"]
+        # 未创建新任务记录
+        task_keys = [k for k in task_redis._hashes if k.startswith("task:")]
+        assert task_keys == ["task:task-A"]
+        # 小时窗锁已释放
+        assert "task:hourly_calc_lock:2026062208" not in task_redis._strings
+
+    async def test_window_lock_conflict_skips_and_marks_failed(
+        self, task_redis, fake_redis
+    ) -> None:
+        """同一小时窗锁被占用（如 Beat 在执行）时跳过计算，任务置 FAILED."""
+        from app.tasks.kpi_calc import _do_hourly_with_tracking
+
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-B",
+            task_type="STANDARD",
+            status="PENDING",
+            celery_task_id="celery-B",
+        )
+        # 模拟 Beat 已持有同一窗口锁
+        task_redis._strings["task:hourly_calc_lock:2026062208"] = "beat-token"
+
+        with (
+            patch("app.core.redis.redis_client", task_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
+            result = await _do_hourly_with_tracking(
+                ts_start="2026-06-22T08:00:00Z", task_id="task-B"
+            )
+
+        assert result["skipped"] is True
+        assert result["reason"] == "window_locked"
+        mock_calc.assert_not_called()
+        data = task_redis._hashes["task:task-B"]
+        assert data["status"] == "FAILED"
+        assert "同一时间窗" in data["error_message"]
+        # 不释放他人持有的锁
+        assert task_redis._strings["task:hourly_calc_lock:2026062208"] == "beat-token"
+
+    async def test_beat_path_creates_system_record(self, task_redis, fake_redis) -> None:
+        """task_id=None（Beat 触发）时仍创建 triggered_by=system 的任务记录."""
+        from app.tasks.kpi_calc import _do_hourly_with_tracking
+
+        expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+        with (
+            patch("app.core.redis.redis_client", task_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
+            mock_calc.return_value = expected
+            result = await _do_hourly_with_tracking(ts_start="2026-06-22T08:00:00Z")
+
+        assert result == expected
+        task_keys = [k for k in task_redis._hashes if k.startswith("task:")]
+        assert len(task_keys) == 1
+        data = task_redis._hashes[task_keys[0]]
+        assert data["triggered_by"] == "system"
+        assert data["created_by"] == "system"
+        assert data["status"] == "SUCCESS"
+        assert "task:hourly_calc_lock:2026062208" not in task_redis._strings
+
+
+# ---------------------------------------------------------------------------
+# 并发槽位原子占用（Phase 3 健壮性整改 ④）
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrencySlot:
+    """并发上限：Lua INCR 原子占用，TOCTOU 防护."""
+
+    async def test_concurrent_acquire_at_most_per_user_limit(self, task_redis, fake_redis) -> None:
+        """并发 10 个占用请求，最多 3 个通过（单用户上限）."""
+        from app.api.v1.endpoints.tasks import _try_acquire_concurrency_slot
+
+        results = await asyncio.gather(
+            *[_try_acquire_concurrency_slot("user-race") for _ in range(10)]
+        )
+        acquired = [r for r in results if r is None]
+        rejected = [r for r in results if r is not None]
+        assert len(acquired) == 3
+        assert len(rejected) == 7
+        assert task_redis._strings["task:concurrency:user:user-race"] == "3"
+
+    async def test_system_limit_rejected(self, task_redis, fake_redis) -> None:
+        """系统级计数达到 20 时拒绝（占用会回滚用户计数）."""
+        from app.api.v1.endpoints.tasks import _try_acquire_concurrency_slot
+
+        task_redis._strings["task:concurrency:system"] = "20"
+        error = await _try_acquire_concurrency_slot("user-sys")
+        assert error is not None
+        assert "系统" in error
+        # 用户计数已回滚
+        assert task_redis._strings["task:concurrency:user:user-sys"] == "0"
+
+    async def test_release_idempotent(self, task_redis, fake_redis) -> None:
+        """槽位释放幂等：重复释放仅生效一次."""
+        from app.api.v1.endpoints.tasks import (
+            _release_concurrency_slot,
+            _try_acquire_concurrency_slot,
+        )
+
+        assert await _try_acquire_concurrency_slot("user-rel") is None
+        assert task_redis._strings["task:concurrency:user:user-rel"] == "1"
+
+        data = _save_task_to_redis(
+            task_redis,
+            task_id="task-rel",
+            task_type="CUSTOM",
+            status="RUNNING",
+            created_by_id="user-rel",
+        )
+        data["slot_acquired"] = "1"
+
+        await _release_concurrency_slot("task-rel", data)
+        assert task_redis._strings["task:concurrency:user:user-rel"] == "0"
+        # 再次释放不重复扣减（计数器非负）
+        await _release_concurrency_slot("task-rel", data)
+        assert task_redis._strings["task:concurrency:user:user-rel"] == "0"
+
+    def test_cancel_releases_slot(self, client, task_redis, fake_redis) -> None:
+        """取消 CUSTOM 任务后释放其并发槽位."""
+        data = _save_task_to_redis(
+            task_redis,
+            task_id="task-cancel-slot",
+            task_type="CUSTOM",
+            status="RUNNING",
+            celery_task_id="celery-slot",
+            created_by_id="00000000-0000-0000-0000-000000000002",  # ic_engineer
+        )
+        data["slot_acquired"] = "1"
+        task_redis._strings["task:concurrency:user:00000000-0000-0000-0000-000000000002"] = "1"
+        task_redis._strings["task:concurrency:system"] = "1"
+
+        with (
+            patch("app.tasks.celery_app.celery_app") as mock_celery_app,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery_app.control.revoke = MagicMock()
+            resp = client.post(
+                "/api/v1/tasks/task-cancel-slot/cancel",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        user_counter = "task:concurrency:user:00000000-0000-0000-0000-000000000002"
+        assert task_redis._strings[user_counter] == "0"
+        assert task_redis._strings["task:concurrency:system"] == "0"
 
 
 # ---------------------------------------------------------------------------

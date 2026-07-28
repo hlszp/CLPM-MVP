@@ -66,6 +66,56 @@ _TASK_INDEX_KEY = "task:index"  # Sorted set: score=创建时间戳, member=task
 MAX_CUSTOM_PER_USER = 3
 MAX_CUSTOM_SYSTEM = 20
 
+# 任务列表默认时间窗（天）：未显式传 startTime 时仅扫描最近 N 天索引，
+# 避免 task:index 无 TTL 单调增长导致的全量扫描
+_TASK_LIST_DEFAULT_WINDOW_DAYS = 30
+
+# 列表详情批量读取的 pipeline 分块大小
+_TASK_LIST_PIPELINE_CHUNK = 200
+
+# 评估任务 RUNNING 超时阈值（秒）：超时清扫置 FAILED
+# （与导入任务 IMPORT_TASK_RUNNING_TIMEOUT_SECONDS=7200 同口径）
+EVAL_TASK_RUNNING_TIMEOUT_SECONDS = 7200
+
+# RUNNING 超时清扫节流间隔（秒）：列表接口按此频率惰性触发清扫
+_SWEEP_INTERVAL_SECONDS = 60
+
+# 并发占用计数器 TTL（秒）：与 RUNNING 超时对齐，兜底防计数泄漏
+_CONCURRENCY_COUNTER_TTL_SECONDS = EVAL_TASK_RUNNING_TIMEOUT_SECONDS
+
+_CONCURRENCY_USER_PREFIX = "task:concurrency:user"
+_CONCURRENCY_SYSTEM_KEY = "task:concurrency:system"
+_SWEEP_THROTTLE_KEY = "task:sweep:last"
+
+# 并发槽位原子占用（INCR + 限值回滚，防 check-then-act TOCTOU）
+_SLOT_ACQUIRE_LUA = r"""
+-- CLPM_TASK_SLOT_ACQUIRE_V1
+local user_count = redis.call('INCR', KEYS[1])
+if user_count == 1 then redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3])) end
+if user_count > tonumber(ARGV[1]) then
+  redis.call('DECR', KEYS[1])
+  return 0
+end
+local system_count = redis.call('INCR', KEYS[2])
+if system_count == 1 then redis.call('EXPIRE', KEYS[2], tonumber(ARGV[3])) end
+if system_count > tonumber(ARGV[2]) then
+  redis.call('DECR', KEYS[2])
+  redis.call('DECR', KEYS[1])
+  return 2
+end
+return 1
+"""
+
+# 并发槽位释放（计数器不为负；key 已过期则跳过）
+_SLOT_RELEASE_LUA = r"""
+-- CLPM_TASK_SLOT_RELEASE_V1
+for i = 1, 2 do
+  local current = tonumber(redis.call('GET', KEYS[i]) or '0')
+  if current > 0 then redis.call('DECR', KEYS[i]) end
+end
+return 1
+"""
+
 # 允许创建任务的角色（PRD §4.3.7）
 _TASK_CREATOR_ROLES = ("IC_ENGINEER", "PE_ENGINEER", "ADMIN")
 
@@ -170,6 +220,156 @@ async def _get_task(task_id: str) -> dict[str, str] | None:
     if not data:
         return None
     return data
+
+
+async def _batch_get_tasks(task_ids: list[str]) -> list[dict[str, str] | None]:
+    """pipeline 批量读取任务 Hash（分块，避免单次 pipeline 过大）.
+
+    Args:
+        task_ids: 任务 ID 列表
+
+    Returns:
+        与 task_ids 等长的字段字典列表；不存在的任务对应位置为 None
+    """
+    if not task_ids:
+        return []
+    results: list[dict[str, str] | None] = []
+    for start in range(0, len(task_ids), _TASK_LIST_PIPELINE_CHUNK):
+        chunk = task_ids[start : start + _TASK_LIST_PIPELINE_CHUNK]
+        pipe = redis_client.pipeline(transaction=False)
+        for tid in chunk:
+            pipe.hgetall(_task_key(tid))
+        for data in await pipe.execute():
+            results.append(data or None)
+    return results
+
+
+def _user_concurrency_key(user_id: str) -> str:
+    """构造单用户并发占用计数器 key."""
+    return f"{_CONCURRENCY_USER_PREFIX}:{user_id}"
+
+
+async def _try_acquire_concurrency_slot(user_id: str) -> str | None:
+    """原子占用一个自定义任务并发槽位（Lua INCR+TTL，防 check-then-act TOCTOU）.
+
+    用户与系统两级计数器在同一 Lua 脚本内原子占用，超限自动回滚；
+    计数器带 TTL 兜底，即使释放路径遗漏也会最终自愈。
+
+    Returns:
+        None 表示占用成功；否则返回 429 错误消息
+    """
+    code = int(
+        await redis_client.eval(
+            _SLOT_ACQUIRE_LUA,
+            2,
+            _user_concurrency_key(user_id),
+            _CONCURRENCY_SYSTEM_KEY,
+            str(MAX_CUSTOM_PER_USER),
+            str(MAX_CUSTOM_SYSTEM),
+            str(_CONCURRENCY_COUNTER_TTL_SECONDS),
+        )
+    )
+    if code == 1:
+        return None
+    if code == 0:
+        return f"您当前的活跃自定义任务数已达单用户上限 {MAX_CUSTOM_PER_USER}"
+    return f"系统当前的活跃自定义任务数已达系统上限 {MAX_CUSTOM_SYSTEM}"
+
+
+async def _release_slot_counters(user_id: str) -> None:
+    """直接释放并发计数器（不校验任务 Hash 标记，用于建记录前失败的回滚）."""
+    await redis_client.eval(
+        _SLOT_RELEASE_LUA,
+        2,
+        _user_concurrency_key(user_id),
+        _CONCURRENCY_SYSTEM_KEY,
+    )
+
+
+async def _release_concurrency_slot(task_id: str, data: dict[str, str]) -> None:
+    """释放任务占用的并发槽位（幂等：HSETNX 标记保证仅释放一次）.
+
+    仅 CUSTOM/BACKFILL 任务占用槽位；存量任务无 slot_acquired 标记，
+    未占用计数器，直接跳过。
+    """
+    if data.get("slot_acquired") != "1":
+        return
+    if data.get("task_type") not in (
+        TaskType.CUSTOM.value,
+        TaskType.BACKFILL.value,
+    ):
+        return
+    try:
+        first = await redis_client.hsetnx(_task_key(task_id), "slot_released", "1")
+        if not first:
+            return
+        await _release_slot_counters(data.get("created_by_id", ""))
+    except Exception:  # noqa: BLE001
+        logger.warning("释放并发槽位失败: task_id=%s", task_id, exc_info=True)
+
+
+async def sweep_stale_running_eval_tasks() -> dict[str, Any]:
+    """清扫超时 RUNNING 的评估任务（worker 异常终止导致任务永久卡 RUNNING）.
+
+    AsyncResult.state 在 result backend 过期后恒返回 PENDING，仅靠惰性同步
+    无法发现 worker 已死。本函数遍历任务索引，将 RUNNING 且 started_at 距今
+    超过 ``EVAL_TASK_RUNNING_TIMEOUT_SECONDS`` 的任务经 task_tracker CAS
+    置为 FAILED 并释放并发槽位（与导入任务 sweep_stale_running_tasks 同口径）。
+
+    Returns:
+        {"swept": N, "details": [...]}
+    """
+    from app.services import task_tracker
+
+    now_ts = datetime.now(UTC).timestamp()
+    task_ids = await redis_client.zrange(_TASK_INDEX_KEY, 0, -1)
+    swept: list[str] = []
+    for data in await _batch_get_tasks(task_ids):
+        if not data:
+            continue
+        if data.get("status") != TaskStatus.RUNNING.value:
+            continue
+        started_dt = _parse_iso_dt(data.get("started_at"))
+        if started_dt is None:
+            continue
+        if started_dt.tzinfo is None:
+            started_dt = started_dt.replace(tzinfo=UTC)
+        if now_ts - started_dt.timestamp() < EVAL_TASK_RUNNING_TIMEOUT_SECONDS:
+            continue
+        task_id = data.get("task_id", "")
+        updated = await task_tracker.update_status(
+            task_id,
+            TaskStatus.FAILED,
+            error_message=(
+                f"RUNNING 超时（>{EVAL_TASK_RUNNING_TIMEOUT_SECONDS}s），疑为 worker 异常终止"
+            ),
+            finished_at=_now_iso(),
+        )
+        if updated is None or updated.get("status") != TaskStatus.FAILED.value:
+            # 原 worker 恰好同时置终态，CAS 拒绝覆盖
+            continue
+        swept.append(task_id)
+        logger.warning("评估任务 RUNNING 超时已清扫: task_id=%s", task_id)
+        await _release_concurrency_slot(task_id, updated)
+    return {"swept": len(swept), "details": swept}
+
+
+async def _maybe_sweep_stale_running() -> None:
+    """节流触发 RUNNING 超时清扫（列表接口惰性调用，间隔见 _SWEEP_INTERVAL_SECONDS）."""
+    try:
+        should_sweep = await redis_client.set(
+            _SWEEP_THROTTLE_KEY, "1", nx=True, ex=_SWEEP_INTERVAL_SECONDS
+        )
+    except Exception:  # noqa: BLE001
+        return
+    if not should_sweep:
+        return
+    try:
+        result = await sweep_stale_running_eval_tasks()
+        if result["swept"]:
+            logger.warning("评估任务 RUNNING 超时清扫完成: %s", result)
+    except Exception:  # noqa: BLE001
+        logger.warning("评估任务 RUNNING 超时清扫失败", exc_info=True)
 
 
 def _task_to_response(data: dict[str, Any]) -> TaskResponse:
@@ -475,6 +675,9 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
         if updated is not None:
             data.clear()
             data.update(updated)
+            if new_status.value in _TERMINAL_STATUSES:
+                # 进入终态时释放并发槽位（幂等）
+                await _release_concurrency_slot(task_id, data)
 
 
 # ---------------------------------------------------------------------------
@@ -504,7 +707,9 @@ async def trigger_standard_evaluation(
     _title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
 
     # 触发 Celery 任务（P1 #11: 透传 body.tsStart，None 时取上一个完整计算周期）
-    celery_result = calculate_hourly_kpi.delay(ts_start=body.tsStart)
+    # 透传 task_id 复用本记录（避免 Celery 侧重复建记录的双写问题）；
+    # 手动触发与整点 Beat 的小时窗互斥由 calculate_hourly_kpi 内 SETNX 锁保证
+    celery_result = calculate_hourly_kpi.delay(ts_start=body.tsStart, task_id=task_id)
     celery_task_id = celery_result.id
 
     task_data: dict[str, str] = {
@@ -570,24 +775,12 @@ async def trigger_custom_evaluation(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    # 并发限制检查
-    user_active = await _count_active_custom_tasks(user_id=str(user.id))
-    if user_active >= MAX_CUSTOM_PER_USER:
+    # 并发限制：Lua 原子占用槽位（INCR+TTL），防 check-then-act TOCTOU
+    acquire_error = await _try_acquire_concurrency_slot(str(user.id))
+    if acquire_error is not None:
         raise BizError(
             code="ERR_TASK_CONCURRENCY_LIMIT",
-            message=(
-                f"您当前已有 {user_active} 个活跃自定义任务，超过单用户上限 {MAX_CUSTOM_PER_USER}"
-            ),
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
-
-    system_active = await _count_active_custom_tasks()
-    if system_active >= MAX_CUSTOM_SYSTEM:
-        raise BizError(
-            code="ERR_TASK_CONCURRENCY_LIMIT",
-            message=(
-                f"系统当前有 {system_active} 个活跃自定义任务，超过系统上限 {MAX_CUSTOM_SYSTEM}"
-            ),
+            message=acquire_error,
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
@@ -596,9 +789,14 @@ async def trigger_custom_evaluation(
     task_id = str(uuid4())
     now = _now_iso()
 
-    celery_result = calculate_custom_batch_kpi.delay(
-        task_id, body.loopIds, body.tsStart, body.tsEnd
-    )
+    try:
+        celery_result = calculate_custom_batch_kpi.delay(
+            task_id, body.loopIds, body.tsStart, body.tsEnd
+        )
+    except Exception:
+        # 投递失败：回滚已占用的槽位（任务记录尚未创建）
+        await _release_slot_counters(str(user.id))
+        raise
     celery_task_id = celery_result.id
 
     task_data: dict[str, str] = {
@@ -620,6 +818,7 @@ async def trigger_custom_evaluation(
         "metrics": json.dumps(body.metrics),
         "ts_start": body.tsStart,
         "ts_end": body.tsEnd,
+        "slot_acquired": "1",
     }
     await _save_task(task_data)
 
@@ -729,20 +928,12 @@ async def trigger_backfill(
             message=f"预览：将重算 {loop_count} 个回路 × {window_count} 个窗口",
         )
 
-    # 5. 正式提交：并发限制校验（BACKFILL 计入 CUSTOM 并发池）
-    user_active = await _count_active_custom_tasks(user_id=str(user.id))
-    if user_active >= MAX_CUSTOM_PER_USER:
+    # 5. 正式提交：并发限制（BACKFILL 计入 CUSTOM 并发池，Lua 原子占用槽位）
+    acquire_error = await _try_acquire_concurrency_slot(str(user.id))
+    if acquire_error is not None:
         raise BizError(
             code="ERR_TASK_CONCURRENCY_LIMIT",
-            message=(f"您当前已有 {user_active} 个活跃任务，超过单用户上限 {MAX_CUSTOM_PER_USER}"),
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
-
-    system_active = await _count_active_custom_tasks()
-    if system_active >= MAX_CUSTOM_SYSTEM:
-        raise BizError(
-            code="ERR_TASK_CONCURRENCY_LIMIT",
-            message=(f"系统当前有 {system_active} 个活跃任务，超过系统上限 {MAX_CUSTOM_SYSTEM}"),
+            message=acquire_error,
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
@@ -772,6 +963,7 @@ async def trigger_backfill(
         "ts_end": body.tsEnd,
         "loop_ids": json.dumps(final_loop_ids),
         "plant_node_ids": _to_str(body.plantNodeIds),
+        "slot_acquired": "1",
     }
     await _save_task(task_data)
 
@@ -831,22 +1023,8 @@ async def start_task(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    # 并发限制校验
-    user_active = await _count_active_custom_tasks(user_id=str(user.id))
-    if user_active >= MAX_CUSTOM_PER_USER:
-        raise BizError(
-            code="ERR_TASK_CONCURRENCY_LIMIT",
-            message=(f"您当前已有 {user_active} 个活跃任务，超过单用户上限 {MAX_CUSTOM_PER_USER}"),
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
-
-    system_active = await _count_active_custom_tasks()
-    if system_active >= MAX_CUSTOM_SYSTEM:
-        raise BizError(
-            code="ERR_TASK_CONCURRENCY_LIMIT",
-            message=(f"系统当前有 {system_active} 个活跃任务，超过系统上限 {MAX_CUSTOM_SYSTEM}"),
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
+    # 并发限制：任务创建时已原子占用并发槽位（slot_acquired=1），
+    # 启动不新增占用，无需重复校验
 
     # 读取任务参数
     ts_start = data.get("ts_start", "")
@@ -984,8 +1162,11 @@ async def list_tasks(
 ) -> dict:
     """查询任务列表（按类型/状态/时间/装置筛选）.
 
-    按创建时间倒序排列，支持分页。
-    对非终态任务惰性同步 Celery 任务状态，确保进度实时更新。
+    按创建时间倒序排列，支持分页。索引按时间窗 ZRANGEBYSCORE 截取，
+    无筛选时索引层先分页再 pipeline 批量读取当前页详情。
+    列表路径不做 Celery AsyncResult 惰性同步（同步 Redis 调用会阻塞
+    event loop），进度以任务运行期写入的 Redis 字段为准；同时按节流
+    间隔惰性清扫超时 RUNNING 任务。
 
     设计依据：IDS §2.7.6.4, PRD §4.3.7.C
     """
@@ -999,12 +1180,34 @@ async def list_tasks(
     start_dt_filter = _parse_iso_dt(startTime)
     end_dt_filter = _parse_iso_dt(endTime)
 
-    # 从索引获取所有 task_id（按创建时间倒序）
-    task_ids = await redis_client.zrevrange(_TASK_INDEX_KEY, 0, -1)
+    # 惰性触发 RUNNING 超时清扫（节流，见 _SWEEP_INTERVAL_SECONDS）
+    await _maybe_sweep_stale_running()
 
-    items: list[TaskResponse] = []
-    for tid in task_ids:
-        data = await _get_task(tid)
+    # 索引按时间窗 ZRANGEBYSCORE 截取（score=创建时间戳）：显式时间筛选优先，
+    # 未传 startTime 时兜底最近 N 天，避免索引无 TTL 单调增长后的全量扫描
+    if start_dt_filter:
+        min_score: float | str = start_dt_filter.timestamp()
+    else:
+        min_score = (datetime.now(UTC) - timedelta(days=_TASK_LIST_DEFAULT_WINDOW_DAYS)).timestamp()
+    max_score: float | str = end_dt_filter.timestamp() if end_dt_filter else "+inf"
+    task_ids = await redis_client.zrevrangebyscore(_TASK_INDEX_KEY, max_score, min_score)
+
+    offset = (page - 1) * pageSize
+
+    if not (taskType or status_filter or plant_node_filter):
+        # 无哈希字段筛选：索引层先分页，仅 pipeline 读取当前页详情。
+        # 列表路径不再逐条 _sync_task_status（AsyncResult.state 是 Celery 同步
+        # Redis 调用，串行执行会阻塞 event loop）；进度由任务运行期写入的
+        # Redis 字段直接展示，单任务详情接口仍保留惰性同步。
+        total = len(task_ids)
+        page_data = await _batch_get_tasks(task_ids[offset : offset + pageSize])
+        items = [_task_to_response(data) for data in page_data if data is not None]
+        resp = TaskListResponse(items=items, total=total)
+        return success(data=resp.model_dump())
+
+    # 有筛选：pipeline 批量读取窗口内详情后内存筛选，再分页
+    matched: list[TaskResponse] = []
+    for data in await _batch_get_tasks(task_ids):
         if data is None:
             continue
 
@@ -1014,7 +1217,7 @@ async def list_tasks(
         # 筛选：状态
         if status_filter and data.get("status") != status_filter:
             continue
-        # 筛选：创建时间范围
+        # 筛选：创建时间范围（score 回退 now() 的索引条目需按 created_at 复核）
         if start_dt_filter or end_dt_filter:
             created_dt = _parse_iso_dt(data.get("created_at", ""))
             if created_dt is not None:
@@ -1035,14 +1238,10 @@ async def list_tasks(
             if not any(pid in task_plant_nodes for pid in plant_node_filter):
                 continue
 
-        # 惰性同步 Celery 任务状态（非终态任务）
-        await _sync_task_status(tid, data)
+        matched.append(_task_to_response(data))
 
-        items.append(_task_to_response(data))
-
-    total = len(items)
-    offset = (page - 1) * pageSize
-    paginated = items[offset : offset + pageSize]
+    total = len(matched)
+    paginated = matched[offset : offset + pageSize]
 
     resp = TaskListResponse(items=paginated, total=total)
     return success(data=resp.model_dump())
@@ -1102,6 +1301,9 @@ async def cancel_task(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
     data = updated
+
+    # 取消成功：释放并发槽位（幂等）
+    await _release_concurrency_slot(task_id, data)
 
     # 撤销关联的 Celery 任务
     # 使用 terminate=True 强制终止正在执行的 worker 进程，
