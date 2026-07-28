@@ -56,7 +56,21 @@
 | T2.9 实时链路 | ✅ | gap backfill 过滤无映射回路（消除告警风暴）；flush 带真实 TAGS；行 ts 取 PV collectTime |
 | T2.10 分片+NaN 拦截 | ✅ | 宽表超 7 天按日分片；NaN/Inf 写 NULL |
 
-遗留：存量空 TAG 子表需 ALTER TABLE 治理（低优先）；`_delete_range` 直调路径无防护（仅端点入口暴露 overwrite）；data_link_monitor/health 仍默认降级（监控场景合理）。
+Phase 2 遗留：存量空 TAG 子表需 ALTER TABLE 治理（低优先）；`_delete_range` 直调路径无防护（仅端点入口暴露 overwrite）；data_link_monitor/health 仍默认降级（监控场景合理）。
+
+**Phase 3：✅ 完成（5 个子任务，全量 pytest 2966 通过）**
+| 任务 | 状态 | 交付摘要 |
+|---|---|---|
+| T3.1/3.2/3.3/3.10b 任务系统 | ✅ | 列表时间窗+先分页+pipeline；RUNNING 超时清扫；手动评估复用 task_id+SETNX 小时窗互斥；Lua 原子并发槽位 |
+| T3.5/3.6 token+WS | ✅ | logout 经 token_pair 吊销配套 refresh；黑名单 TTL 按实际剩余有效期（修 30 天复活漏洞）；WS 校验 type+黑名单 |
+| T3.4 权限码（D5） | ✅ | require_perms 工厂（通配+ADMIN 全通）；回路/整定/诊断读端点收口；EXPERT 补 tuning:view |
+| T3.10a Excel 上限 | ✅ | upload_guard 统一 10MB/5000 行，5 处上传端点收口 422 |
+| T3.7 可观测性 | ✅ | metrics 路由模板 label + 内网白名单；readiness degraded 503 |
+| T3.9 worker 治理 | ✅ | -Q default,dead_letter；max_tasks_per_child=50；result_expires=7d；pgrep 收窄；fd 泄漏修复；崩溃看门狗（告警不拉起） |
+| T3.8 限流 | ✅ | PUT 改密限流修复；IP 口径统一 XFF；登录 IP+账号双维度 |
+| T3.10c 进度计数 | ✅ | per-loop 计数器，失败补偿 max(total-loop_done,0) |
+
+遗留：tasks 列表 created_by 越权未收口（tasks.py 需接 metric:view）；`diagnosis:detail` 粒度码缺口（SPONSOR 仅汇总视图的严格收口需新码+前端同步）；tracker 读端点待 IC 映射补齐后收口；WS token query 参数待前端改 subprotocol 两端同批切换；前端需兜住 SPONSOR/PE 直访 403 页面（Phase 4）；登录默认限流 10/分钟（收紧到 5 需联动 3 个 auth 测试）；chunk_hours>1 时导入进度成功路径偏低（一行修法待评估）。
 
 **事故修复（2026-07-28 下午，北京时 10:00 起全回路 INCONCLUSIVE 事件）**：①`tdengine_provider` 模块级 `asyncio.Lock` 跨事件循环绑定致全回路取数瘫痪（commit `f45f498a`，7-20 起反复发作的根因，已根治并加结构性回归断言）；②Phase 1 数组长度防护在 `effective_auto_rate` 上对全部 5 数组取 min，MODE_HF tagGroup 无 pv/sp 致上界截断为 0 误报 zero_total_duration（commit `fix(metric): 有效自控率缺 pv/sp 信号时误报`，已修复并加三场景回归）。两轮回填验证：北京时 10:00-14:00 快照恢复 20 SUCCESS/7 INCONCLUSIVE（7 条为基线既有恒 INCONCLUSIVE 回路），平均分 ~61.5。**注意：今日 10:00 前的历史快照均为旧 8h 偏移窗口口径，如需校正历史需按数据留存范围做全面历史重算。**
 
