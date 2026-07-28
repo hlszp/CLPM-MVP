@@ -493,13 +493,19 @@ async def import_history_data(
                 error_count=cur_f,
             )
 
-        async def _on_chunk_complete() -> None:
-            """小时分块完成时的进度回调."""
-            await _record_progress(chunk_complete=1)
-
         async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
             """带信号量控制的单回路导入，返回 (index, count, error)."""
             nonlocal shared_succeeded, shared_failed, shared_completed_units
+            # 按回路记录已完成的小时窗口数（多回路并发交错时，
+            # 不能用共享计数器取模推算本回路进度）
+            loop_done = 0
+
+            async def _on_chunk_complete() -> None:
+                """小时分块完成时的进度回调（按回路计数）."""
+                nonlocal loop_done
+                loop_done += 1
+                await _record_progress(chunk_complete=1)
+
             async with sem:
                 if task_id and await _is_task_cancelled(task_id):
                     return (i, 0, "")
@@ -545,8 +551,9 @@ async def import_history_data(
                 except Exception as exc:
                     async with progress_lock:
                         shared_failed += 1
-                        # 失败时，跳过剩余小时窗口，直接计入进度
-                        shared_completed_units += total_hours - shared_completed_units % total_hours
+                        # 失败时补齐本回路剩余小时窗口（按本回路已完成数计算，
+                        # 不能用共享计数器取模——多回路并发交错时会失真）
+                        shared_completed_units += max(total_hours - loop_done, 0)
                     error = f"loop {lid}: {exc}"
                     logger.warning("回路导入失败: %s", error)
                     await _record_progress()

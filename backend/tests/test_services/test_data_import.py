@@ -1082,3 +1082,179 @@ class TestCancelImportTaskCas:
         assert resp is not None
         assert resp["status"] == "SUCCESS"  # 未变 CANCELLED
         assert resp.get("was_blocked") is True
+
+
+class TestImportProgressPerLoop:
+    """多回路并发导入的进度计数（per-loop counter 修复）.
+
+    修复前：失败补偿用共享计数器取模
+    （``shared_completed_units += total_hours - shared_completed_units % total_hours``），
+    多回路并发交错时共享计数器含其他回路的窗口数，取模结果≠本回路已完成窗口数，
+    导致进度失真（总量≠total_units，progress 越界或无法到达 1.0）。
+    修复后：按回路记录已完成窗口数（loop_done），失败时补 ``total_hours - loop_done``。
+    """
+
+    @pytest.mark.asyncio
+    async def test_interleaved_progress_monotonic_and_exact(self):
+        """3 回路交错导入（1 成功 / 1 中途失败 / 1 无映射跳过）进度单调且精确到 1.0."""
+        import asyncio
+
+        from app.services import data_import as di
+
+        fake = _FakeRedisImport()
+        ts_start = "2026-07-15T00:00:00+00:00"
+        ts_end = "2026-07-15T06:00:00+00:00"  # 6 小时 → total_hours=6，3 回路 → total_units=18
+        loop_ids = ["loop-A", "loop-B", "loop-C"]
+        loop_data_map = {
+            "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
+            "loop-B": {"role_tag_map": {"PV": "B.PV"}, "unit_id": "u1", "subtable": "t_b"},
+            "loop-C": {"role_tag_map": {}, "unit_id": "", "subtable": ""},
+        }
+
+        async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
+            """loop-A 完成全部 6 窗口；loop-B 完成 2 窗口后失败（交错执行）."""
+            if loop_id == "loop-A":
+                for _ in range(6):
+                    await asyncio.sleep(0)  # 让出事件循环，制造并发交错
+                    if on_chunk_complete:
+                        await on_chunk_complete()
+                return 100
+            if loop_id == "loop-B":
+                for _ in range(2):
+                    await asyncio.sleep(0)
+                    if on_chunk_complete:
+                        await on_chunk_complete()
+                raise HistoryDataSourceError("远端历史数据 API 504")
+            return 0
+
+        progress_updates: list[float] = []
+        orig_update_task = di._update_task
+
+        async def spy_update_task(task_id, **fields):
+            if "progress" in fields:
+                progress_updates.append(float(fields["progress"]))
+            await orig_update_task(task_id, **fields)
+
+        mock_session = AsyncMock()  # AsyncSessionLocal() → 仅需 close()
+
+        with (
+            patch("app.services.data_import.redis_client", fake),
+            patch(
+                "app.services.data_import._batch_get_loop_data",
+                new=AsyncMock(return_value=loop_data_map),
+            ),
+            patch(
+                "app.services.data_import._import_single_loop",
+                side_effect=fake_import_single_loop,
+            ),
+            patch("app.services.data_import._update_task", side_effect=spy_update_task),
+            patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+        ):
+            task_id = await di.create_import_task(
+                loop_ids=loop_ids,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                conflict_strategy="skip",
+                trigger_backfill=False,
+                created_by="tester",
+                celery_task_id="celery-1",
+            )
+            result = await di.import_history_data(
+                loop_ids=loop_ids,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                conflict_strategy="skip",
+                task_id=task_id,
+            )
+
+        assert result["succeeded"] == 1
+        assert result["failed"] == 2  # loop-B 失败 + loop-C 无映射跳过
+        # 进度序列：单调递增、不越界，且全部回路结束后恰好到达 1.0
+        # （A 6 + B 2+补4 + C 跳过6 = 18 = total_units）
+        assert progress_updates
+        assert all(0.0 <= p <= 1.0 for p in progress_updates)
+        assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
+        assert progress_updates[-1] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_failure_compensation_uses_loop_own_progress(self):
+        """失败补偿只补本回路剩余窗口（确定时序验证 per-loop 口径）.
+
+        确定时序：loop-A 先完成 5 窗口并等待，loop-B 完成 2 窗口后失败，
+        随后 loop-A 完成最后 1 窗口。B 失败时共享计数器=7（A 5 + B 2）：
+        - 旧逻辑补 6 - 7 % 6 = 5（错误，总量 13 > total_units=12，progress 越界 >1.0）
+        - 新逻辑补 6 - 2 = 4（正确，总量 12 = total_units，progress 恰好到 1.0）
+        """
+        import asyncio
+
+        from app.services import data_import as di
+
+        fake = _FakeRedisImport()
+        ts_start = "2026-07-15T00:00:00+00:00"
+        ts_end = "2026-07-15T06:00:00+00:00"  # total_hours=6，2 回路 → total_units=12
+        loop_ids = ["loop-A", "loop-B"]
+        loop_data_map = {
+            "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
+            "loop-B": {"role_tag_map": {"PV": "B.PV"}, "unit_id": "u1", "subtable": "t_b"},
+        }
+
+        a_part_done = asyncio.Event()
+        b_failed = asyncio.Event()
+
+        async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
+            if loop_id == "loop-A":
+                for _ in range(5):
+                    if on_chunk_complete:
+                        await on_chunk_complete()
+                a_part_done.set()
+                await b_failed.wait()  # 等 B 失败后再完成最后 1 窗口
+                if on_chunk_complete:
+                    await on_chunk_complete()
+                return 100
+            if loop_id == "loop-B":
+                await a_part_done.wait()  # 确保失败时 A 已计入 5 窗口
+                for _ in range(2):
+                    if on_chunk_complete:
+                        await on_chunk_complete()
+                b_failed.set()
+                raise HistoryDataSourceError("远端历史数据 API 504")
+            return 0
+
+        progress_updates: list[float] = []
+        orig_update_task = di._update_task
+
+        async def spy_update_task(task_id, **fields):
+            if "progress" in fields:
+                progress_updates.append(float(fields["progress"]))
+            await orig_update_task(task_id, **fields)
+
+        mock_session = AsyncMock()
+
+        with (
+            patch("app.services.data_import.redis_client", fake),
+            patch(
+                "app.services.data_import._batch_get_loop_data",
+                new=AsyncMock(return_value=loop_data_map),
+            ),
+            patch(
+                "app.services.data_import._import_single_loop",
+                side_effect=fake_import_single_loop,
+            ),
+            patch("app.services.data_import._update_task", side_effect=spy_update_task),
+            patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+        ):
+            result = await di.import_history_data(
+                loop_ids=loop_ids,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                conflict_strategy="skip",
+                task_id="t-progress",
+            )
+
+        assert result["succeeded"] == 1
+        assert result["failed"] == 1
+        # 单调递增且不越界（旧逻辑此处会出现 13/12 ≈ 1.0833 > 1.0）
+        assert progress_updates
+        assert all(0.0 <= p <= 1.0 for p in progress_updates)
+        assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
+        assert progress_updates[-1] == 1.0
