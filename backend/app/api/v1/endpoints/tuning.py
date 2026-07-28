@@ -25,7 +25,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
@@ -68,7 +68,7 @@ router = APIRouter(prefix="/tuning", tags=["tuning"])
 
 @router.get("/methods", response_model=ApiResponse[list[TuningMethodInfo]])
 async def get_methods_endpoint(
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("tuning:view")),
 ) -> dict:
     """获取整定方法信息（所有角色可查看）。"""
     data = get_tuning_methods()
@@ -278,7 +278,7 @@ async def list_tasks_endpoint(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("tuning:view")),
 ) -> dict:
     """整定任务列表（分页 + 筛选）。"""
     data = await list_tuning_tasks(
@@ -296,7 +296,7 @@ async def list_tasks_endpoint(
 async def get_task_detail_endpoint(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("tuning:view")),
 ) -> dict:
     """整定任务详情。"""
     data = await get_tuning_task_detail(db=db, task_id=str(task_id))
@@ -306,9 +306,9 @@ async def get_task_detail_endpoint(
 @router.get("/tasks/{task_id}/status", response_model=ApiResponse[TaskProgress])
 async def get_task_status_endpoint(
     task_id: str,
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("tuning:view")),
 ) -> dict:
-    """异步任务进度查询（Phase 2；所有登录用户）。
+    """异步任务进度查询（Phase 2；需 tuning:view 权限码）。
 
     task_id 为 Celery 任务 ID（字符串），非 TuningRecord UUID。
     """
@@ -399,7 +399,7 @@ async def create_task_endpoint(
 @router.get("/history", response_model=ApiResponse[TuningHistoryStats])
 async def get_history_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("tuning:view")),
 ) -> dict:
     """整定历史统计。"""
     data = await get_tuning_history_stats(db=db)

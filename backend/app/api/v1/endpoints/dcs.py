@@ -34,6 +34,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
+from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -184,7 +185,7 @@ async def import_vendors_endpoint(
     逐行处理：品牌代码已存在则更新，否则新建。
     返回 {total, inserted, updated, failed, errors[]}。
     """
-    file_bytes = await file.read()
+    file_bytes = await read_excel_upload(file)
     data = await svc_import_vendors(db=db, file_bytes=file_bytes, operator=user.username)
     return success(data=data, message="导入完成")
 
@@ -284,7 +285,7 @@ async def import_models_endpoint(
     通过品牌代码查找 vendor_id（品牌必须存在）。
     返回 {total, inserted, updated, failed, errors[]}。
     """
-    file_bytes = await file.read()
+    file_bytes = await read_excel_upload(file)
     data = await svc_import_models(db=db, file_bytes=file_bytes, operator=user.username)
     return success(data=data, message="导入完成")
 

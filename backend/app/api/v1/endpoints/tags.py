@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
+from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.loop import LoopLedger
@@ -143,7 +144,7 @@ async def import_tags_endpoint(
     逐行处理：位号已存在则更新，否则新建。
     返回 {total, inserted, updated, failed, errors[]}。
     """
-    file_bytes = await file.read()
+    file_bytes = await read_excel_upload(file)
     data = await import_tags(db=db, file_bytes=file_bytes, operator=user.username)
     return success(data=data, message="导入完成")
 

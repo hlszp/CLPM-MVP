@@ -1959,7 +1959,9 @@ async def import_loops(
         ) from exc
 
     ws = wb.active
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    # P2：read_only 流式逐行处理，不转 list 全量物化（防超大表打爆 API 进程内存）；
+    # 文件大小（10MB）与数据行数（5000 行）上限由 API 层 upload_guard.read_excel_upload 统一拦截
+    rows = ws.iter_rows(min_row=2, values_only=True)
 
     total = 0
     inserted = 0

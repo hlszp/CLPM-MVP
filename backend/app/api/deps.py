@@ -7,6 +7,9 @@ Usage in endpoints::
 
     @router.delete("/{id}", dependencies=[Depends(require_roles("ADMIN"))])
     async def delete_loop(...): ...
+
+    @router.get("", dependencies=[Depends(require_perms("loop:view"))])
+    async def list_loops(...): ...
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.security import JWTError, decode_token
 from app.models.sys_user import SysUser
-from app.services.auth import is_token_blacklisted
+from app.services.auth import ROLE_PERMISSIONS, is_token_blacklisted
 
 # Token extraction — auto-populates Swagger UI "Authorize" button.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -120,8 +123,56 @@ def require_roles(*roles: str) -> Callable[..., Awaitable[SysUser]]:
     return _check
 
 
+# ---------------------------------------------------------------------------
+# Permission-code guard（"模块:操作" 码，与前端 v-permission 口径一致）
+# ---------------------------------------------------------------------------
+
+
+def _perm_matches(granted: str, required: str) -> bool:
+    """Match one granted permission code against a required code.
+
+    通配规则（与前端 v-permission 一致）：
+    - ``*`` 全通（ADMIN）；
+    - ``模块:*`` 匹配该模块下任意操作码（如 ``loop:*`` 匹配 ``loop:view``）；
+    - 其余按精确匹配。
+    """
+    if granted == "*" or granted == required:
+        return True
+    return granted.endswith(":*") and required.startswith(granted[:-1])
+
+
+def has_perms(role: str, *codes: str) -> bool:
+    """Return True if ``role``'s granted codes cover all of ``codes``."""
+    granted = ROLE_PERMISSIONS.get(role, [])
+    return all(any(_perm_matches(g, code) for g in granted) for code in codes)
+
+
+def require_perms(*codes: str) -> Callable[..., Awaitable[SysUser]]:
+    """Return a dependency that enforces the user's role holds all ``codes``.
+
+    基于 ``ROLE_PERMISSIONS`` 映射做服务端权限码校验（P2 D5：权限码只下发
+    不执行的问题修复，先覆盖敏感读端点）。用法::
+
+        @router.get("", dependencies=[Depends(require_perms("loop:view"))])
+        async def list_loops(...): ...
+    """
+
+    async def _check(user: SysUser = Depends(get_current_user)) -> SysUser:
+        if not has_perms(user.role, *codes):
+            raise BizError(
+                code="ERR_PERMISSION_DENIED",
+                message=f"权限不足，需要权限码: {', '.join(codes)}",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        return user
+
+    return _check
+
+
 __all__ = [
     "get_current_user",
+    "has_perms",
     "oauth2_scheme",
+    "require_perms",
     "require_roles",
 ]

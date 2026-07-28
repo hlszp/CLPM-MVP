@@ -27,7 +27,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_perms, require_roles
+from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.models.loop import LoopLedger
 from app.models.metric import LoopConfidenceLatest
@@ -102,7 +103,7 @@ async def list_loops_endpoint(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """分页查询回路列表。"""
     # v5.3 对齐 DDS v4.1：level → importanceLevel（保留 level 向后兼容）
@@ -254,7 +255,7 @@ async def batch_group_loops_endpoint(
 @router.get("/complex-groups", response_model=ApiResponse[list[ComplexGroupItem]])
 async def list_complex_groups_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """查询所有复杂回路分组（含主回路位号与组成员数）。"""
     data = await list_complex_groups(db=db)
@@ -275,7 +276,7 @@ async def list_loop_monitor_endpoint(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分）。"""
     data = await list_loop_monitor(
@@ -294,7 +295,7 @@ async def list_loop_monitor_endpoint(
 async def get_loop_type_stats_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选（含子节点）"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """按回路类型统计数量（支持递归子节点）。"""
     stats = await get_loop_type_stats(db=db, plant_node_id=plantNodeId)
@@ -349,7 +350,7 @@ async def import_loops_endpoint(
     逐行处理：回路编号已存在则更新，否则新建。
     返回 {total, inserted, updated, failed, errors[]}。
     """
-    file_bytes = await file.read()
+    file_bytes = await read_excel_upload(file)
     data = await import_loops(db=db, file_bytes=file_bytes, operator=user.username)
     return success(data=data, message="导入完成")
 
@@ -363,7 +364,7 @@ async def import_loops_endpoint(
 async def get_loop_detail_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取回路详情。"""
     data = await get_loop_detail(db=db, loop_id=loop_id)
@@ -443,7 +444,7 @@ async def delete_loop_endpoint(
 async def get_loop_tags_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取回路 7 个 Tag 槽位关联状态。"""
     data = await get_loop_tags(db=db, loop_id=loop_id)
@@ -521,7 +522,7 @@ async def get_loop_monitor_detail_endpoint(
 async def get_loop_confidence_latest_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取回路最新一次可信度评估记录（含 12 子指标值与各自可信度）。
 

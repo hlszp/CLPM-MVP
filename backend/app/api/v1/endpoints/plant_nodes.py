@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
+from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -106,7 +107,7 @@ async def import_plant_nodes_endpoint(
     逐行处理：节点名称 + 父节点已存在则更新，否则新建。
     返回 {total, inserted, updated, failed, errors[]}。
     """
-    file_bytes = await file.read()
+    file_bytes = await read_excel_upload(file)
     data = await import_plant_nodes(db=db, file_bytes=file_bytes, operator=user.username)
     return success(data=data, message="导入完成")
 

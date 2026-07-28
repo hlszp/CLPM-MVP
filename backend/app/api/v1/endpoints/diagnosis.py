@@ -39,7 +39,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -147,7 +147,7 @@ tags_router = APIRouter(prefix="/diagnosis/tags", tags=["diagnosis-tags"])
 @router.get("/metrics", response_model=ApiResponse[list[DiagnosisConfigItem]])
 async def list_metrics_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """获取诊断指标配置列表（所有角色可查看）。"""
     data = await list_diagnosis_configs(db)
@@ -184,7 +184,7 @@ async def update_metric_endpoint(
 @router.get("/rules", response_model=ApiResponse[list[DiagnosisRuleItem]])
 async def list_rules_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """获取专家规则列表（所有角色可查看）。"""
     data = await list_rules(db)
@@ -223,7 +223,7 @@ async def list_threshold_overrides_endpoint(
     scopeType: str | None = Query(None, description="覆盖范围：loop_type/plant/loop"),
     scopeId: str | None = Query(None, description="范围标识"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """获取阈值覆盖列表（可按 scope 筛选，所有角色可查看）。"""
     data = await list_threshold_overrides(db, scope_type=scopeType, scope_id=scopeId)
@@ -233,7 +233,7 @@ async def list_threshold_overrides_endpoint(
 @router.get("/threshold-templates", response_model=ApiResponse[list[ThresholdOverrideItem]])
 async def list_threshold_templates_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """获取控制类型模板列表（loop_type scope 的预置阈值模板）。"""
     data = await list_templates(db)
@@ -284,7 +284,7 @@ async def delete_threshold_override_endpoint(
 async def list_threshold_versions_endpoint(
     diag_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """获取诊断配置的版本历史（从 sys_audit_log 读取，所有角色可查看）。"""
     from app.services.diagnosis_threshold import list_config_versions
@@ -320,7 +320,7 @@ async def list_config_changes_endpoint(
     status: str | None = Query(None, description="状态筛选：PENDING/APPROVED/REJECTED"),
     targetType: str | None = Query(None, description="目标类型：config/rule/trigger"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """获取关键配置变更请求列表（所有角色可查看）。"""
     from app.services.diagnosis_approval import list_change_requests
@@ -421,7 +421,7 @@ async def list_diagnosis_endpoint(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """诊断列表（分页，支持 plantNodeId/diagnosisLabel/actionStatus/timeWindow/loopIds 筛选）。"""
     data = await list_diagnosis(
@@ -447,7 +447,7 @@ async def get_analytics_endpoint(
     actionStatus: str | None = Query(None, description="按处理状态筛选"),
     granularity: str = Query("day", description="粒度：hour/day/week/month"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """诊断统计报表（标签分布/效率趋势/闭环时长分布）。"""
     data = await get_diagnosis_analytics(
@@ -466,7 +466,7 @@ async def get_analytics_endpoint(
 async def export_analytics_endpoint(
     body: AnalyticsExportRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """导出统计报表（异步任务，返回 taskId）。
 
@@ -511,7 +511,7 @@ async def export_statistics_csv_endpoint(
     endDate: str = Query(..., description="结束日期（ISO 8601）"),
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> Response:
     """导出诊断统计 CSV（SVC-13）。
 
@@ -547,7 +547,7 @@ async def ab_compare_endpoint(
         False, description="是否返回诊断标签对比（before/after 标签 + 标签变化）"
     ),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """A/B 对比：实施前后两窗口 KPI 均值对比（kpi_snapshot_hourly）。
 
@@ -612,7 +612,7 @@ async def list_tasks_endpoint(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """诊断任务列表（仅未归档，分页 + 筛选）。
 
@@ -634,7 +634,7 @@ async def list_tasks_endpoint(
 async def get_task_detail_endpoint(
     task_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """诊断任务详情（含关联的诊断结果列表）。
 
@@ -719,7 +719,7 @@ async def list_records_endpoint(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """诊断记录列表（仅已归档，分页 + 筛选）。
 
@@ -752,7 +752,7 @@ async def get_diagnosis_detail_endpoint(
 @router.get("/algorithms/meta", response_model=ApiResponse[DiagnosisAlgorithmMetaList])
 async def get_algorithm_meta_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """获取 8 类诊断算法展示元数据 + 当前生效阈值快照（Batch 4 算法价值传递）。
 
@@ -1199,7 +1199,7 @@ async def list_diagnosis_tags_endpoint(
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """查询诊断标签列表（多条件筛选，IDS §2.4.10）。
 
@@ -1232,7 +1232,7 @@ async def list_loop_diagnosis_tags_endpoint(
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """查询指定回路的诊断标签（IDS §2.4.11）。
 
