@@ -38,6 +38,8 @@
 
 文档同步：§6.1.3 面积法公式修正、§3.4.3 FROZEN 改 MARK_ONLY 口径、§6.8.1 增量 PID 微分对 PV，均已加注 2026-07-28 修订。
 
+**T1.6 后续任务（粘滞方法论增强，2026-07-28 评审确认）**：当前椭圆法（瞬时 (PV,OP) 配对 + PCA，St=b/a）**未考虑过程时间常数 τ 与纯滞后 θ**——大 θ 回路瞬时配对会把椭圆拉宽（旧实现误报粘滞，现 r² 门控下丢覆盖）；大 τ 慢过程 PV 低通滤波同样展宽散点；且粘滞/滞后/外扰椭圆形状不可区分是方法族固有局限（Choudhury/Kano/Bacci di Capaci 综述）。增强项（建议排在 Phase 6 之前）：①**θ 补偿**：OP-PV 互相关估计 θ̂ 或复用整定模块 FOPDT 辨识的 θ，平移对齐后再拟合椭圆；②**振荡段门控**：仅在极限环/振荡时段评估（Kano/Choudhury 适用前提），平稳段不评估；③（远期）两参数 (S,J) 模型法定量，嵌入辨识模型 (τ,θ) 网格搜索。现状 r² 门控"宁缺毋错"可接受，诊断侧 Choudhury/Kano 独立实现不受影响。
+
 遗留（转 Phase 3-4）：fusedConfidence 语义变化（跨标签融合值→最高标签置信度）需前端知悉；stiction 低相关 INCONCLUSIVE 需前端知悉；`frozen_fault_min_minutes` 未接 sys_config 覆盖链路（outlier_params.py）；诊断 IAE min/max_ratio 未接 algorithm_config 配置链（默认一致）。
 
 **Phase 2：✅ 完成（5 个子任务，全量 pytest 2778 通过，`alembic check` 退出码 0）**
