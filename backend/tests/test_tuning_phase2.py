@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -347,3 +347,315 @@ class TestPhase2API:
             mock_redis.hgetall = AsyncMock(return_value={})
             resp = client.get("/api/v1/tuning/tasks/nonexistent-task/status")
         assert resp.status_code == 404
+
+    # ------------------------------------------------------------------
+    # POST /identify/history — 异步历史辨识端点
+    # ------------------------------------------------------------------
+
+    def test_identify_history_returns_task_id(self, client):
+        """/identify/history 提交异步任务返回 taskId（AUTO 策略）。"""
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-abc123"
+
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery_task.delay.return_value = mock_task
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "AUTO",
+                    "candidateModelTypes": ["FOPDT", "SOPDT"],
+                },
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["taskId"] == "celery-task-abc123"
+        assert data["status"] == "PENDING"
+        # 验证 delay 被调用，参数透传
+        mock_celery_task.delay.assert_called_once()
+        call_kwargs = mock_celery_task.delay.call_args.kwargs
+        assert call_kwargs["loop_id"] == "loop-1"
+        assert call_kwargs["created_by"] == "ic_engineer"
+
+    def test_identify_history_history_only_strategy(self, client):
+        """/identify/history HISTORY_ONLY 策略也走异步任务。"""
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-hist-001"
+
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            mock_celery_task.delay.return_value = mock_task
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "HISTORY_ONLY",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["taskId"] == "celery-task-hist-001"
+
+    def test_identify_history_step_only_sync_path(self, client):
+        """/identify/history STEP_ONLY 策略走同步阶跃路径（不经 Celery）。"""
+        sync_result = {
+            "modelType": "FOPDT",
+            "params": {"K": 2.0, "tau": 30.0, "theta": 5.0},
+            "fittingScore": 90.0,
+            "algorithmVersion": "v1.0",
+            "dataPoints": 600,
+            "fittedCurve": None,
+        }
+
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            # endpoint 函数内 `from app.core.db import AsyncSessionLocal` 懒导入，
+            # 故 patch 源模块而非 endpoint 模块
+            patch("app.core.db.AsyncSessionLocal") as mock_session_local,
+            patch(
+                "app.api.v1.endpoints.tuning.identify_model",
+                AsyncMock(return_value=sync_result),
+            ),
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_session = MagicMock()
+            mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "STEP_ONLY",
+                },
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["modelType"] == "FOPDT"
+        # STEP_ONLY 不经 Celery
+        mock_celery_task.delay.assert_not_called()
+
+    def test_identify_history_requires_auth(self, client):
+        """/identify/history 未登录返回 401/403。"""
+        resp = client.post(
+            "/api/v1/tuning/identify/history",
+            json={
+                "loopId": "loop-1",
+                "startTime": "2026-07-28T00:00:00Z",
+                "endTime": "2026-07-28T01:00:00Z",
+            },
+        )
+        assert resp.status_code in (401, 403)
+
+    # ------------------------------------------------------------------
+    # POST /identify/segments — 可辨识片段预览端点
+    # ------------------------------------------------------------------
+
+    def test_identify_segments_success(self, client):
+        """/identify/segments 返回可辨识片段列表。"""
+        segments_result = {
+            "loopId": "loop-1",
+            "totalSegments": 1,
+            "segments": [
+                {
+                    "startIdx": 0,
+                    "endIdx": 600,
+                    "mode": "AUTO",
+                    "excitationScore": 0.85,
+                    "conditionNumber": 120.5,
+                    "isSufficient": True,
+                }
+            ],
+            "sufficientCount": 1,
+        }
+
+        with (
+            patch(
+                "app.api.v1.endpoints.tuning.preview_identify_segments",
+                AsyncMock(return_value=segments_result),
+            ),
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/tuning/identify/segments",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                },
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["loopId"] == "loop-1"
+        assert data["totalSegments"] == 1
+        assert data["sufficientCount"] == 1
+        assert data["segments"][0]["isSufficient"] is True
+
+    def test_identify_segments_empty_window(self, client):
+        """/identify/segments 数据不足时返回 0 片段。"""
+        segments_result = {
+            "loopId": "loop-2",
+            "totalSegments": 0,
+            "segments": [],
+            "sufficientCount": 0,
+        }
+
+        with (
+            patch(
+                "app.api.v1.endpoints.tuning.preview_identify_segments",
+                AsyncMock(return_value=segments_result),
+            ),
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/tuning/identify/segments",
+                json={
+                    "loopId": "loop-2",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T00:05:00Z",
+                },
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["totalSegments"] == 0
+        assert data["sufficientCount"] == 0
+
+    # ------------------------------------------------------------------
+    # GET /tasks/{taskId}/status — 成功路径
+    # ------------------------------------------------------------------
+
+    def test_task_status_success(self, client):
+        """/tasks/{taskId}/status 成功返回进度数据。"""
+        progress_data = {
+            "task_id": "celery-task-running-001",
+            "task_type": "identify",
+            "loop_id": "loop-1",
+            "status": "RUNNING",
+            "progress": "50.0",
+            "stage": "identify",
+            "message": "参数化辨识中...",
+            "result": "",
+            "error": "",
+            "created_at": "2026-07-28T10:00:00+00:00",
+            "updated_at": "2026-07-28T10:01:00+00:00",
+        }
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_redis.hgetall = AsyncMock(return_value=progress_data)
+            resp = client.get("/api/v1/tuning/tasks/celery-task-running-001/status")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["taskId"] == "celery-task-running-001"
+        assert data["status"] == "RUNNING"
+        assert data["progress"] == 50.0
+        assert data["stage"] == "identify"
+
+    def test_task_status_success_with_result(self, client):
+        """/tasks/{taskId}/status SUCCESS 状态含 result JSON。"""
+        import json
+
+        progress_data = {
+            "task_id": "celery-task-done-001",
+            "task_type": "identify",
+            "loop_id": "loop-1",
+            "status": "SUCCESS",
+            "progress": "100.0",
+            "stage": "discrete_to_continuous",
+            "message": "辨识完成",
+            "result": json.dumps({"recordId": "rec-001", "modelType": "FOPDT"}),
+            "error": "",
+            "created_at": "2026-07-28T10:00:00+00:00",
+            "updated_at": "2026-07-28T10:02:00+00:00",
+        }
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_redis.hgetall = AsyncMock(return_value=progress_data)
+            resp = client.get("/api/v1/tuning/tasks/celery-task-done-001/status")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["status"] == "SUCCESS"
+        assert data["progress"] == 100.0
+        assert data["result"]["recordId"] == "rec-001"
+
+    # ------------------------------------------------------------------
+    # POST /tasks/{taskId}/cancel — 取消任务端点
+    # ------------------------------------------------------------------
+
+    def test_cancel_task_running_state(self, client):
+        """/tasks/{taskId}/cancel 对 RUNNING 状态任务执行 revoke。"""
+        mock_result = MagicMock()
+        mock_result.state = "RUNNING"
+        mock_result.revoke = MagicMock()
+
+        with (
+            # endpoint 函数内 `from celery.result import AsyncResult` 懒导入
+            patch("celery.result.AsyncResult", return_value=mock_result),
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post("/api/v1/tuning/tasks/celery-task-running/cancel")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["status"] == "CANCELLED"
+        mock_result.revoke.assert_called_once_with(terminate=True, signal="SIGTERM")
+
+    def test_cancel_task_pending_state(self, client):
+        """/tasks/{taskId}/cancel 对 PENDING 状态也执行 revoke。"""
+        mock_result = MagicMock()
+        mock_result.state = "PENDING"
+        mock_result.revoke = MagicMock()
+
+        with (
+            patch("celery.result.AsyncResult", return_value=mock_result),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.post("/api/v1/tuning/tasks/celery-task-pending/cancel")
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["status"] == "CANCELLED"
+        mock_result.revoke.assert_called_once()
+
+    def test_cancel_task_already_success(self, client):
+        """/tasks/{taskId}/cancel 对已 SUCCESS 任务不执行 revoke。"""
+        mock_result = MagicMock()
+        mock_result.state = "SUCCESS"
+        mock_result.revoke = MagicMock()
+
+        with (
+            patch("celery.result.AsyncResult", return_value=mock_result),
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post("/api/v1/tuning/tasks/celery-task-done/cancel")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["status"] == "SUCCESS"
+        mock_result.revoke.assert_not_called()
+
+    def test_cancel_task_requires_auth(self, client):
+        """/tasks/{taskId}/cancel 未登录返回 401/403。"""
+        resp = client.post("/api/v1/tuning/tasks/some-task/cancel")
+        assert resp.status_code in (401, 403)
