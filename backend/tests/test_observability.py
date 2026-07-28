@@ -111,6 +111,11 @@ class TestRequestIdMiddleware:
 class TestMetricsEndpoint:
     """测试 /metrics 端点。"""
 
+    @pytest.fixture(autouse=True)
+    def _allow_metrics_access(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """默认放行 /metrics 访问（TestClient 来源 host 为 'testclient'，非 IP）。"""
+        monkeypatch.setattr("app.core.metrics._is_internal_client", lambda host: True)
+
     def test_metrics_returns_200(self, client: TestClient) -> None:
         """GET /metrics 返回 200。"""
         resp = client.get("/metrics")
@@ -124,6 +129,56 @@ class TestMetricsEndpoint:
         assert resp.status_code == 200
         body = resp.text
         assert "http_requests_total" in body
+
+    def test_metrics_forbidden_for_external_client(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """非内网白名单客户端访问 /metrics 返回 403。"""
+        monkeypatch.setattr("app.core.metrics._is_internal_client", lambda host: False)
+        resp = client.get("/metrics")
+        assert resp.status_code == 403
+
+    def test_metrics_label_uses_route_template(self, client: TestClient) -> None:
+        """指标 label 使用路由模板而非原始路径（防基数爆炸）。
+
+        请求 /api/v1/loops/{uuid}（未认证返回 401/403，但路由已匹配），
+        /metrics 中应出现模板 label（/loops/{loop_id}，当前 starlette 分支的
+        _IncludedRouter 延迟包含使 route.path 不含外层 /api/v1 前缀，
+        同一端点所有请求的 label 恒定，基数有界），且原始 UUID 不得作为 label 出现。
+        """
+        loop_uuid = "12345678-1234-1234-1234-1234567890ab"
+        client.get(f"/api/v1/loops/{loop_uuid}")
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+        body = resp.text
+        assert 'path="/loops/{loop_id}"' in body
+        assert loop_uuid not in body
+
+    def test_metrics_label_unknown_for_unmatched_route(self, client: TestClient) -> None:
+        """未匹配路由（404）的指标 label 归一为 'unknown'。"""
+        client.get("/no-such-endpoint-observability-test")
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+        assert 'path="unknown"' in resp.text
+
+
+class TestMetricsInternalClientGuard:
+    """_is_internal_client 内网白名单判定。"""
+
+    @pytest.mark.parametrize(
+        "host",
+        ["127.0.0.1", "::1", "10.1.2.3", "172.16.0.9", "192.168.1.10", "100.64.1.1"],
+    )
+    def test_internal_hosts_allowed(self, host: str) -> None:
+        from app.core.metrics import _is_internal_client
+
+        assert _is_internal_client(host) is True
+
+    @pytest.mark.parametrize("host", ["8.8.8.8", "1.1.1.1", None, "", "not-an-ip"])
+    def test_external_or_invalid_hosts_denied(self, host: str | None) -> None:
+        from app.core.metrics import _is_internal_client
+
+        assert _is_internal_client(host) is False
 
 
 # ===========================================================================

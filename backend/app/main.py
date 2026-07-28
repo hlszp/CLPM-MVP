@@ -13,11 +13,13 @@ v6.1：lifespan 中自动启动 Celery Beat 调度进程和 Celery Worker 任务
 
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TextIO
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -80,6 +82,19 @@ _celery_beat_process: subprocess.Popen | None = None
 # Celery Worker 子进程引用（lifespan 管理）
 _celery_worker_process: subprocess.Popen | None = None
 
+# Beat / Worker 日志文件句柄（lifespan 管理，停止时关闭，避免 fd 泄漏）
+_celery_beat_log_handle: TextIO | None = None
+_celery_worker_log_handle: TextIO | None = None
+
+# pgrep 匹配特征：必须同时包含本项目 Celery 应用入口（-A app.tasks.celery_app），
+# 避免误匹配本机其他项目的 celery 进程导致误判跳过启动
+_BEAT_PGREP_PATTERN = r"celery.*-A app\.tasks\.celery_app.*beat"
+_WORKER_PGREP_PATTERN = r"celery.*-A app\.tasks\.celery_app.*worker"
+
+# 看门狗：worker/beat 进程探活周期（秒）。仅告警不自动拉起，
+# 避免与 _start_celery_* 的单例防护冲突（多实例并发拉起）
+_CELERY_WATCHDOG_INTERVAL = 60
+
 
 def _is_production() -> bool:
     """判断当前是否为生产环境。
@@ -98,7 +113,7 @@ def _any_beat_process_running() -> bool:
     """
     try:
         result = subprocess.run(  # noqa: S603
-            ["pgrep", "-f", "celery.*beat"],
+            ["pgrep", "-f", _BEAT_PGREP_PATTERN],
             capture_output=True,
             text=True,
             timeout=5,
@@ -120,7 +135,7 @@ def _start_celery_beat() -> None:
     PersistentScheduler 使用文件锁（celerybeat-schedule），
     即使多个 Beat 进程启动也只有一个能运行。
     """
-    global _celery_beat_process
+    global _celery_beat_process, _celery_beat_log_handle
 
     # 检查是否已有 Beat 进程在运行（通过 celerybeat.pid 文件）
     pid_file = os.path.join(os.getcwd(), "celerybeat.pid")
@@ -147,23 +162,31 @@ def _start_celery_beat() -> None:
 
     try:
         os.makedirs("logs", exist_ok=True)
-        _celery_beat_process = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "celery",
-                "-A",
-                "app.tasks.celery_app",
-                "beat",
-                "-l",
-                "info",
-                "--pidfile",
-                pid_file,
-            ],
-            cwd=os.getcwd(),
-            stdout=open("logs/celery-beat.log", "a"),
-            stderr=open("logs/celery-beat.log", "a"),
-        )
+        # stderr 合并到 stdout，单句柄减少 fd 占用；句柄存入模块级引用，
+        # 由 _stop_celery_beat 关闭，避免 lifespan 重启泄漏 fd
+        log_handle = open("logs/celery-beat.log", "a")  # noqa: SIM115
+        try:
+            _celery_beat_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "app.tasks.celery_app",
+                    "beat",
+                    "-l",
+                    "info",
+                    "--pidfile",
+                    pid_file,
+                ],
+                cwd=os.getcwd(),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+            )
+        except Exception:
+            log_handle.close()
+            raise
+        _celery_beat_log_handle = log_handle
         logger.info(
             "Celery Beat 调度进程已启动 (PID=%s)，定时任务将自动执行，日志: logs/celery-beat.log",
             _celery_beat_process.pid,
@@ -174,7 +197,7 @@ def _start_celery_beat() -> None:
 
 def _stop_celery_beat() -> None:
     """停止 Celery Beat 调度子进程。"""
-    global _celery_beat_process
+    global _celery_beat_process, _celery_beat_log_handle
     process = _celery_beat_process
     if process is not None:
         logger.info("停止 Celery Beat 调度进程...")
@@ -199,6 +222,11 @@ def _stop_celery_beat() -> None:
         except (FileNotFoundError, ProcessLookupError, ValueError, OSError):
             pass
 
+    # 关闭日志句柄（无论本次是否停止了进程，避免 lifespan 重启泄漏 fd）
+    if _celery_beat_log_handle is not None:
+        _celery_beat_log_handle.close()
+        _celery_beat_log_handle = None
+
 
 def _any_worker_process_running() -> bool:
     """pgrep 扫描是否已有 celery worker 进程在运行（单例兜底检查）。
@@ -208,7 +236,7 @@ def _any_worker_process_running() -> bool:
     """
     try:
         result = subprocess.run(  # noqa: S603
-            ["pgrep", "-f", "celery.*worker"],
+            ["pgrep", "-f", _WORKER_PGREP_PATTERN],
             capture_output=True,
             text=True,
             timeout=5,
@@ -227,7 +255,7 @@ def _start_celery_worker() -> None:
 
     与 Beat 不同，worker 没有 pidfile，使用 pgrep 做单例检查。
     """
-    global _celery_worker_process
+    global _celery_worker_process, _celery_worker_log_handle
 
     if _any_worker_process_running():
         logger.info("检测到已有 Celery Worker 进程在运行，跳过启动")
@@ -235,23 +263,32 @@ def _start_celery_worker() -> None:
 
     try:
         os.makedirs("logs", exist_ok=True)
-        _celery_worker_process = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "celery",
-                "-A",
-                "app.tasks.celery_app",
-                "worker",
-                "-l",
-                "info",
-                "-Q",
-                "default",
-            ],
-            cwd=os.getcwd(),
-            stdout=open("logs/celery-worker.log", "a"),
-            stderr=open("logs/celery-worker.log", "a"),
-        )
+        # 同时消费 default 与 dead_letter 队列（S2-A6 死信由同一 worker 排查，
+        # 否则死信无人消费永久堆积）；stderr 合并到 stdout，句柄由
+        # _stop_celery_worker 关闭，避免 lifespan 重启泄漏 fd
+        log_handle = open("logs/celery-worker.log", "a")  # noqa: SIM115
+        try:
+            _celery_worker_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "celery",
+                    "-A",
+                    "app.tasks.celery_app",
+                    "worker",
+                    "-l",
+                    "info",
+                    "-Q",
+                    "default,dead_letter",
+                ],
+                cwd=os.getcwd(),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+            )
+        except Exception:
+            log_handle.close()
+            raise
+        _celery_worker_log_handle = log_handle
         logger.info(
             "Celery Worker 进程已启动 (PID=%s)，任务队列开始消费，日志: logs/celery-worker.log",
             _celery_worker_process.pid,
@@ -262,7 +299,7 @@ def _start_celery_worker() -> None:
 
 def _stop_celery_worker() -> None:
     """停止 Celery Worker 子进程。"""
-    global _celery_worker_process
+    global _celery_worker_process, _celery_worker_log_handle
     process = _celery_worker_process
     if process is not None:
         logger.info("停止 Celery Worker 进程...")
@@ -278,6 +315,45 @@ def _stop_celery_worker() -> None:
         # lifespan 未创建的 worker（手工启动的）不在此处停止
         logger.debug("无 lifespan 管理的 Worker 进程，跳过停止")
 
+    # 关闭日志句柄（无论本次是否停止了进程，避免 lifespan 重启泄漏 fd）
+    if _celery_worker_log_handle is not None:
+        _celery_worker_log_handle.close()
+        _celery_worker_log_handle = None
+
+
+async def _celery_watchdog_check() -> None:
+    """单次探活：worker/beat 任一缺失时记录 error 级告警日志。
+
+    仅告警不自动拉起：自动拉起会与 _start_celery_* 的单例防护
+    （pidfile/pgrep）竞争，多实例并发拉起风险大于收益；由运维按告警处置。
+    """
+    if not await asyncio.to_thread(_any_beat_process_running):
+        logger.error(
+            "看门狗告警：未检测到 Celery Beat 进程，定时任务将不会触发，"
+            "请检查 logs/celery-beat.log 并重启后端"
+        )
+    if not await asyncio.to_thread(_any_worker_process_running):
+        logger.error(
+            "看门狗告警：未检测到 Celery Worker 进程，任务将不会被消费，"
+            "请检查 logs/celery-worker.log 并重启后端"
+        )
+
+
+async def _celery_watchdog_loop(stop_event: asyncio.Event) -> None:
+    """周期性探活 worker/beat 进程，直至 stop_event 置位（lifespan 关闭）。"""
+    while not stop_event.is_set():
+        # 先等待一个周期再检查：启动初期 worker/beat 可能尚在拉起中
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=_CELERY_WATCHDOG_INTERVAL)
+        except TimeoutError:
+            pass
+        if stop_event.is_set():
+            break
+        try:
+            await _celery_watchdog_check()
+        except Exception:  # noqa: BLE001
+            logger.exception("看门狗探活执行失败")
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -288,9 +364,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     # v6.1：自动启动 Celery Beat 调度进程和 Celery Worker 任务执行进程
     # 生产环境由 docker-compose 独立 celery-beat / celery-worker 容器接管，避免重复启动
+    watchdog_stop: asyncio.Event | None = None
+    watchdog_task: asyncio.Task[None] | None = None
     if not _is_production():
         _start_celery_beat()
         _start_celery_worker()
+        # 看门狗：定期探活 worker/beat 进程，崩溃缺失时 error 级告警
+        # （仅告警不自动拉起，避免与单例防护冲突）
+        watchdog_stop = asyncio.Event()
+        watchdog_task = asyncio.create_task(_celery_watchdog_loop(watchdog_stop))
     else:
         logger.info("生产环境：Celery Beat / Worker 由独立容器接管，跳过 lifespan 启动")
 
@@ -364,8 +446,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     logger.info("Shutting down %s", settings.APP_NAME)
 
-    # 停止 Celery Worker 和 Beat
+    # 停止看门狗、Celery Worker 和 Beat
     if not _is_production():
+        if watchdog_stop is not None and watchdog_task is not None:
+            watchdog_stop.set()
+            try:
+                await asyncio.wait_for(watchdog_task, timeout=5)
+            except TimeoutError:
+                watchdog_task.cancel()
         _stop_celery_worker()
         _stop_celery_beat()
 

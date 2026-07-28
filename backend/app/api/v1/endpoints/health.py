@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -27,7 +28,7 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/health/ready")
-async def health_ready() -> dict[str, object]:
+async def health_ready() -> JSONResponse:
     """Readiness probe — 检查 DB/Redis/TDengine 依赖连通性。
 
     返回 200 + ``status=ok`` 表示所有依赖就绪；
@@ -63,8 +64,11 @@ async def health_ready() -> dict[str, object]:
         checks["tdengine"] = f"fail: {exc.__class__.__name__}"
 
     all_ok = all(v == "ok" for v in checks.values())
-    return {
-        "status": "ok" if all_ok else "degraded",
-        "version": settings.APP_VERSION,
-        "checks": checks,
-    }
+    return JSONResponse(
+        status_code=200 if all_ok else 503,
+        content={
+            "status": "ok" if all_ok else "degraded",
+            "version": settings.APP_VERSION,
+            "checks": checks,
+        },
+    )

@@ -67,6 +67,13 @@ celery_app.conf.update(
     # worker，造成并发执行。设为 9000s（2.5h，> time_limit 留 0.5h 缓冲）。
     broker_transport_options={"visibility_timeout": 9000},
     result_backend_transport_options={"visibility_timeout": 9000},
+    # 任务结果在 Redis 结果后端保留 7 天后过期，避免无限堆积
+    # （与任务状态清扫周期配套，超时未清理的结果由 Redis 自动回收）
+    result_expires=7 * 24 * 3600,
+    # 每个 prefork 子进程处理 50 个任务后回收重建，抑制长驻 worker
+    # 内存只增不减（worker 静默挂死温床），重建时 worker_process_init
+    # 会重新预载 sys_config 配置
+    worker_max_tasks_per_child=50,
 )
 
 # Task modules are explicitly listed in the include parameter above
@@ -77,7 +84,7 @@ class AsyncTask(Task):
     """Base task that runs an async function in a fresh event loop.
 
     S2-A6: on_failure 将耗尽重试的失败任务元数据发送到 dead_letter 队列，
-    供独立 worker（celery worker -Q dead_letter）消费排查。
+    由 lifespan 自动启动的同一 worker（-Q default,dead_letter）消费排查。
     """
 
     abstract = True
