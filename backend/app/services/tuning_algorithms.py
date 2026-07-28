@@ -666,14 +666,20 @@ def simulate_closed_loop(
     sim_step: float = 1.0,
     setpoint_step: float = 1.0,
     disturbance_type: str = "step",
+    pid_candidates: list[tuple[str, PIDParams]] | None = None,
 ) -> dict[str, Any]:
     """闭环仿真。
 
-    使用增量式 PID + FOPDT 被控对象 + 四阶 Runge-Kutta 积分。
+    使用增量式 PID + FOPDT/SOPDT 被控对象 + 四阶 Runge-Kutta 积分。
+
+    Args:
+        pid_candidates: Phase 2 新增 — 多组候选 PID（label + PIDParams），
+            额外仿真每组并返回 candidateResponses（向后兼容，None 时不含）。
 
     Returns:
         包含 timestamps/currentResponse/recommendedResponse/currentMetrics/
-        recommendedMetrics/improvement 六个键的字典。
+        recommendedMetrics/improvement 六个键的字典；
+        pid_candidates 非空时额外含 candidateResponses。
     """
     # 生成时间序列
     n_steps = int(sim_duration / sim_step)
@@ -708,7 +714,7 @@ def simulate_closed_loop(
     # 改善幅度
     improvement = _calc_improvement(current_metrics, recommended_metrics)
 
-    return {
+    result: dict[str, Any] = {
         "timestamps": timestamps,
         "currentResponse": current_response,
         "recommendedResponse": recommended_response,
@@ -716,6 +722,31 @@ def simulate_closed_loop(
         "recommendedMetrics": _metrics_to_dict(recommended_metrics),
         "improvement": improvement,
     }
+
+    # Phase 2：多组候选 PID 仿真对比
+    if pid_candidates:
+        candidate_responses: list[dict[str, Any]] = []
+        for label, pid in pid_candidates:
+            resp = _simulate_pid_response(
+                model_type,
+                model_params,
+                pid,
+                n_steps,
+                sim_step,
+                setpoint_step,
+                disturbance_type,
+            )
+            metrics = _extract_metrics(resp, setpoint_step, sim_step)
+            candidate_responses.append(
+                {
+                    "label": label,
+                    "response": resp,
+                    "metrics": _metrics_to_dict(metrics),
+                }
+            )
+        result["candidateResponses"] = candidate_responses
+
+    return result
 
 
 def _simulate_pid_response(

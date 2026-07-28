@@ -501,8 +501,13 @@ async def run_simulation(
     sim_step: float = 1.0,
     setpoint_step: float = 1.0,
     disturbance_type: str = "step",
+    pid_candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """闭环仿真。"""
+    """闭环仿真（Phase 2 扩展多 PID 对比）。
+
+    Args:
+        pid_candidates: 多组候选 PID（每项含 label/kp/ti/td），向后兼容。
+    """
     current = PIDParams(
         kp=float(current_pid.get("kp", 0)),
         ti=float(current_pid.get("ti", 0)),
@@ -514,6 +519,19 @@ async def run_simulation(
         td=float(recommended_pid.get("td", 0)),
     )
 
+    # Phase 2：转换候选 PID 列表
+    candidates_tuples: list[tuple[str, PIDParams]] | None = None
+    if pid_candidates:
+        candidates_tuples = []
+        for c in pid_candidates:
+            label = c.get("label", "candidate")
+            pid = PIDParams(
+                kp=float(c.get("kp", 0)),
+                ti=float(c.get("ti", 0)),
+                td=float(c.get("td", 0)),
+            )
+            candidates_tuples.append((label, pid))
+
     result = simulate_closed_loop(
         model_type=model_type,
         model_params=model_params,
@@ -523,9 +541,74 @@ async def run_simulation(
         sim_step=sim_step,
         setpoint_step=setpoint_step,
         disturbance_type=disturbance_type,
+        pid_candidates=candidates_tuples,
     )
 
     return result
+
+
+def _simulate_multi_pid(
+    model_type: str,
+    model_params: dict[str, Any],
+    current_pid: dict[str, Any] | None,
+    pid_candidates: list[dict[str, Any]],
+    sim_duration: float = 600.0,
+    sim_step: float = 1.0,
+    setpoint_step: float = 1.0,
+) -> dict[str, Any]:
+    """多 PID 闭环仿真对比（Phase 2.3，供 Celery 任务调用）.
+
+    与 run_simulation 的区别：current_pid 可选，pid_candidates 为必传；
+    返回完整仿真结果含 candidateResponses。
+
+    Args:
+        pid_candidates: 候选 PID 列表（每项含 label/kp/ti/td/algorithm）
+    """
+    # 若无 current_pid，用第一个候选作为"当前"基准
+    if current_pid is None and pid_candidates:
+        current_pid = pid_candidates[0].get("pid", pid_candidates[0])
+
+    # recommended_pid 取第二个候选或第一个
+    recommended_pid = (
+        (
+            pid_candidates[1].get("pid", pid_candidates[1])
+            if len(pid_candidates) > 1
+            else pid_candidates[0].get("pid", pid_candidates[0])
+        )
+        if pid_candidates
+        else {"kp": 0, "ti": 0, "td": 0}
+    )
+
+    # 构造 candidates_tuples（排除已作为 current/recommended 的项）
+    candidates_tuples: list[tuple[str, PIDParams]] = []
+    for c in pid_candidates:
+        label = c.get("label", c.get("algorithm", "candidate"))
+        pid_dict = c.get("pid", c)
+        pid = PIDParams(
+            kp=float(pid_dict.get("kp", 0)),
+            ti=float(pid_dict.get("ti", 0)),
+            td=float(pid_dict.get("td", 0)),
+        )
+        candidates_tuples.append((label, pid))
+
+    return simulate_closed_loop(
+        model_type=model_type,
+        model_params=model_params,
+        current_pid=PIDParams(
+            kp=float(current_pid.get("kp", 0)),
+            ti=float(current_pid.get("ti", 0)),
+            td=float(current_pid.get("td", 0)),
+        ),
+        recommended_pid=PIDParams(
+            kp=float(recommended_pid.get("kp", 0)),
+            ti=float(recommended_pid.get("ti", 0)),
+            td=float(recommended_pid.get("td", 0)),
+        ),
+        sim_duration=sim_duration,
+        sim_step=sim_step,
+        setpoint_step=setpoint_step,
+        pid_candidates=candidates_tuples or None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -740,6 +823,7 @@ __all__ = [
     "identify_model_from_history",
     "tune_pid",
     "run_simulation",
+    "_simulate_multi_pid",
     "create_tuning_task",
     "list_tuning_tasks",
     "get_tuning_task_detail",
