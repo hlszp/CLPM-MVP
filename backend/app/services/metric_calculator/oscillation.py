@@ -100,8 +100,8 @@ class OscillationRateCalculator(MetricCalculatorBase):
                 },
             )
 
-        # 步骤 3：计算相邻零交叉间的 IAE 与持续时间
-        segments = self._compute_iae_segments(errors, zero_crossings, n)
+        # 步骤 3：计算相邻零交叉间的 IAE 与持续时间（首尾残缺半周期已剔除）
+        segments = self._compute_iae_segments(errors, zero_crossings)
         pos_iae = [s[0] for s in segments if s[2] > 0]
         neg_iae = [s[0] for s in segments if s[2] < 0]
         pos_dur = [s[1] for s in segments if s[2] > 0]
@@ -164,37 +164,44 @@ class OscillationRateCalculator(MetricCalculatorBase):
 
     @staticmethod
     def _find_zero_crossings(errors: np.ndarray) -> list[int]:
-        """识别零交叉点（偏差符号变化时刻）— 向量化实现."""
+        """识别零交叉点（偏差符号变化时刻）— 向量化实现.
+
+        零值平台处理：PV 恰好等于 SP 的连续零值段不产生独立符号，
+        归并到前一非零符号（前向填充），避免 "+,0,0,+" 这类零值平台
+        在旧实现（zero_to_nonzero 规则）下产生伪穿越、切出虚假的零值半周期。
+        """
         n = len(errors)
         if n < 2:
             return []
-        # 向量化：符号变化 = sign(e[i-1]) != sign(e[i]) 且至少一个非零
         signs = np.sign(errors)
+        # 前向填充：零值继承前一非零符号（向量化，leading zeros 保持 0）
+        idx = np.where(signs != 0, np.arange(n), 0)
+        np.maximum.accumulate(idx, out=idx)
+        filled = signs[idx]
         # 严格符号变化（一正一负）
-        sign_change = signs[:-1] * signs[1:] < 0
-        # 零后非零（e[i-1]==0 且 e[i]!=0）
-        zero_to_nonzero = (signs[:-1] == 0) & (signs[1:] != 0)
-        crossings_mask = sign_change | zero_to_nonzero
-        return (np.where(crossings_mask)[0] + 1).tolist()
+        sign_change = filled[:-1] * filled[1:] < 0
+        return (np.where(sign_change)[0] + 1).tolist()
 
     @staticmethod
     def _compute_iae_segments(
-        errors: np.ndarray, zero_crossings: list[int], n: int
+        errors: np.ndarray, zero_crossings: list[int]
     ) -> list[tuple[float, float, int]]:
         """计算相邻零交叉间的 IAE 段 — 向量化实现.
+
+        只保留完整半周期段（两个零交叉点之间）；首段（数据起点→首个穿越）
+        与尾段（最后穿越→数据终点）是残缺半周期，其 IAE/时长与完整段不可比，
+        混入会拉低相似率，故剔除出 IAE 列表。
 
         Returns:
             [(iae, duration, sign), ...] 每段的 IAE/时长/符号
         """
-        if not zero_crossings:
-            boundaries = [0, n]
-        else:
-            boundaries = [0] + list(zero_crossings) + [n]
+        if len(zero_crossings) < 2:
+            return []
 
         segments: list[tuple[float, float, int]] = []
-        for i in range(len(boundaries) - 1):
-            prev = boundaries[i]
-            cross = boundaries[i + 1]
+        for i in range(len(zero_crossings) - 1):
+            prev = zero_crossings[i]
+            cross = zero_crossings[i + 1]
             if cross <= prev:
                 continue
             seg = errors[prev:cross]
@@ -217,7 +224,11 @@ class OscillationRateCalculator(MetricCalculatorBase):
             1. 找到使 Σ(v_i - v_j)² 最小的 v_j 作为 avg
             2. 清除不相似数据（|v/avg| < min_ratio 或 > max_ratio）
             3. 重新计算平均值 cleaned_avg
-            4. similarity = 1 - |min(cleaned_avg, avg) - avg| / |avg|
+            4. similarity = 1 - |cleaned_avg - avg| / |avg|
+
+        注：旧实现第 4 步为 1 - |min(cleaned_avg, avg) - avg| / |avg|，
+        单边不对称——cleaned_avg > avg 时 min 恒为 avg、相似率恒 1.0，
+        清洗后均值上偏不被惩罚；改为对称形式对齐设计口径。
         """
         if len(values) < 2:
             return 0.0
@@ -243,7 +254,7 @@ class OscillationRateCalculator(MetricCalculatorBase):
             return 0.0
 
         cleaned_avg = float(np.mean(cleaned))
-        similarity = 1.0 - abs(min(cleaned_avg, avg) - avg) / abs(avg)
+        similarity = 1.0 - abs(cleaned_avg - avg) / abs(avg)
         return max(0.0, min(1.0, similarity))
 
 

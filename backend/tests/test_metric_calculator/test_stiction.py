@@ -2,9 +2,9 @@
 
 测试用例覆盖：
 - 线性关系（无粘滞，b/a 接近 0）
-- 椭圆关系（有粘滞，b/a > 0）
+- 相关椭圆关系（有粘滞，b/a > 0）
+- 圆团/随机散点（低相关门控，不误报 SEVERE）
 - 数据不足（< 100 点）
-- 完全随机散点
 - 粘滞等级判定
 
 设计依据：算法说明 §4.8；GB/T 44693.2-2024 附录 F.2
@@ -38,17 +38,21 @@ class TestStictionIndex:
         assert result.details["stiction_level"] == "NONE"
 
     def test_elliptical_relationship_high_stiction(self):
-        """PV-OP 椭圆关系 → b/a > 0（有粘滞）。"""
+        """圆形散点（cos/sin 正交）→ 低相关门控，不误报 SEVERE。
+
+        圆团散点 λmax≈λmin、b/a≈1，旧实现 St≈100 误报 SEVERE；
+        修复后以 OP-PV 相关系数 R² 门控，|r|≈0 → INCONCLUSIVE。
+        """
         n = 200
-        # PV-OP 形成椭圆（粘滞特征）
+        # PV-OP 形成正圆（无主导方向，非粘滞特征）
         op = [50.0 + 40.0 * math.cos(2 * math.pi * i / n) for i in range(n)]
         pv = [50.0 + 40.0 * math.sin(2 * math.pi * i / n) for i in range(n)]
         bundle = make_bundle({"pv": pv, "op": op}, metric_code="stiction_index")
         calc = StictionIndexCalculator()
         result = calc.calculate(bundle)
-        assert result.value is not None
-        # 圆形 → b/a ≈ 1（100%）
-        assert result.value > 50.0
+        assert result.value is None
+        assert result.details["reason"] == "low_correlation"
+        assert result.details["stiction_level"] == "NONE"
 
     def test_insufficient_data_inconclusive(self):
         """数据不足（< 100 点）→ INCONCLUSIVE。"""
@@ -62,7 +66,7 @@ class TestStictionIndex:
         assert result.details["reason"] == "insufficient_data"
 
     def test_random_scatter(self):
-        """随机散点 → 拟合度可能低。"""
+        """随机散点 → 无相关性，R² 门控拦截 → INCONCLUSIVE。"""
         random.seed(42)
         n = 200
         op = [random.uniform(0, 100) for _ in range(n)]
@@ -70,25 +74,28 @@ class TestStictionIndex:
         bundle = make_bundle({"pv": pv, "op": op}, metric_code="stiction_index")
         calc = StictionIndexCalculator()
         result = calc.calculate(bundle)
-        assert result.value is not None
-        # 随机散点 b/a 应较高（接近 1）
-        assert 0.0 <= result.value <= 100.0
+        assert result.value is None
+        assert result.details["reason"] == "low_correlation"
 
     def test_stiction_level_moderate(self):
-        """中等粘滞 → MODERATE 等级。"""
+        """相关椭圆（倾斜粘滞环）→ b/a ≈ 0.18 → MODERATE 等级。"""
         n = 200
-        # 构造 b/a ≈ 0.2 的椭圆
-        op = [50.0 + 50.0 * math.cos(2 * math.pi * i / n) for i in range(n)]
-        pv = [50.0 + 10.0 * math.sin(2 * math.pi * i / n) for i in range(n)]
+        # x=cos(t)，y=0.8·cos(t)+0.3·sin(t)：强相关（R²≈0.88）且 b/a≈0.18
+        op = [50.0 + 40.0 * math.cos(2 * math.pi * i / n) for i in range(n)]
+        pv = [
+            50.0 + 32.0 * math.cos(2 * math.pi * i / n) + 12.0 * math.sin(2 * math.pi * i / n)
+            for i in range(n)
+        ]
         bundle = make_bundle({"pv": pv, "op": op}, metric_code="stiction_index")
         calc = StictionIndexCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
-        # b/a ≈ 10/50 = 0.2 → 20% → MODERATE
+        assert result.details["fitting_score"] >= 0.5
+        assert 5.0 < result.value < 30.0
         assert result.details["stiction_level"] in ("MILD", "MODERATE")
 
     def test_constant_signal(self):
-        """恒定信号 → 拟合失败，返回 0。"""
+        """恒定信号 → 方差为 0 无相关性，拟合度 0 → INCONCLUSIVE。"""
         n = 200
         op = [50.0] * n
         pv = [50.0] * n
@@ -96,6 +103,6 @@ class TestStictionIndex:
         bundle = make_bundle({"pv": pv, "op": op}, metric_code="stiction_index")
         calc = StictionIndexCalculator()
         result = calc.calculate(bundle)
-        # 恒定信号协方差矩阵为 0，a=0 → 返回 0
-        assert result.value is not None
-        assert result.value == 0.0
+        assert result.value is None
+        assert result.details["reason"] == "low_correlation"
+        assert result.details["fitting_score"] == 0.0

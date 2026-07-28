@@ -23,7 +23,7 @@ class TestSettlingTime:
     """SettlingTimeCalculator 测试。"""
 
     def test_constant_signal_zero_settling(self):
-        """恒定偏差信号 → settling=0（已稳态）。"""
+        """恒定偏差信号 → settling=0（已稳态，reason=already_stable）。"""
         n = 100
         pv = [50.5] * n
         sp = [50.0] * n
@@ -31,7 +31,7 @@ class TestSettlingTime:
         calc = SettlingTimeCalculator()
         result = calc.calculate(bundle)
         assert result.value == 0.0
-        assert result.details["reason"] == "constant_signal"
+        assert result.details["reason"] == "already_stable"
 
     def test_oscillating_signal_positive_settling(self):
         """振荡信号 → settling > 0。"""

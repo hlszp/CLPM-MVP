@@ -22,6 +22,9 @@ from __future__ import annotations
 import math
 import random
 
+import numpy as np
+import pytest
+
 from app.services.metric_calculator.oscillation import OscillationRateCalculator
 
 from .conftest import make_bundle
@@ -208,3 +211,64 @@ class TestOscillationDesignAlignment:
         if result.details["is_oscillating"]:
             # 周期 20s 的正弦波，半周期约 10s
             assert result.details["oscillation_period"] > 0
+
+
+class TestZeroPlateauCrossings:
+    """零值平台伪穿越修复（零值归并前一符号）测试。"""
+
+    def test_zero_plateau_same_sign_no_crossing(self):
+        """零值平台（+,0,0,+）不产生伪穿越（旧实现 zero_to_nonzero 会误报）。"""
+        errors = np.array([1.0, 0.0, 0.0, 1.0, 1.0])
+        crossings = OscillationRateCalculator._find_zero_crossings(errors)
+        assert crossings == []
+
+    def test_zero_plateau_merged_into_previous_sign(self):
+        """零值归并前一符号：（+,0,-,0,+）只在真实符号翻转处穿越。"""
+        errors = np.array([1.0, 0.0, -1.0, 0.0, 1.0])
+        crossings = OscillationRateCalculator._find_zero_crossings(errors)
+        assert crossings == [2, 4]
+
+    def test_leading_zeros_no_crossing(self):
+        """前导零值不产生穿越，归并到随后出现的符号段。"""
+        errors = np.array([0.0, 0.0, 1.0, 1.0])
+        crossings = OscillationRateCalculator._find_zero_crossings(errors)
+        assert crossings == []
+
+
+class TestIncompleteSegmentsExcluded:
+    """首尾残缺半周期段剔除测试。"""
+
+    def test_head_tail_segments_excluded(self):
+        """只保留零交叉点之间的完整半周期，首段/尾段剔除出 IAE 列表。"""
+        # 符号：+ + | - - | + + | - - | + + +（| 为零交叉点 2/4/6/8）
+        errors = np.array([1.0, 2.0, -1.0, -2.0, 1.0, 2.0, -1.0, -2.0, 1.0, 2.0, 3.0])
+        crossings = [2, 4, 6, 8]
+        segments = OscillationRateCalculator._compute_iae_segments(errors, crossings)
+        # 仅 [2:4]、[4:6]、[6:8] 三个完整半周期；[0:2] 与 [8:11] 剔除
+        assert len(segments) == 3
+        assert [s[1] for s in segments] == [2.0, 2.0, 2.0]
+        assert [s[2] for s in segments] == [-1, 1, -1]
+        assert segments[0][0] == 3.0  # |-1| + |-2|
+
+    def test_single_crossing_returns_empty(self):
+        """零交叉点 < 2 时无完整半周期，返回空列表。"""
+        errors = np.array([1.0, -1.0, -1.0])
+        assert OscillationRateCalculator._compute_iae_segments(errors, [1]) == []
+
+
+class TestSymmetricSimilarity:
+    """相似率对称化修复（1-|cleaned_avg-avg|/|avg|）测试。"""
+
+    def test_similarity_penalizes_upward_shift(self):
+        """cleaned_avg > avg 时相似率不再恒 1.0（旧实现 min 取 avg 单边不对称）。
+
+        values=[2.0, 0.01, 3.0]：最小距离点 avg=2.0；0.01 被 min_ratio 过滤后
+        cleaned=[2,3]，cleaned_avg=2.5 > avg → similarity = 1-|2.5-2|/2 = 0.75。
+        """
+        sim = OscillationRateCalculator._similarity_rate([2.0, 0.01, 3.0])
+        assert sim == pytest.approx(0.75)
+
+    def test_similarity_identical_values_still_one(self):
+        """完全一致的数据相似率仍为 1.0（对称化不影响正常情形）。"""
+        sim = OscillationRateCalculator._similarity_rate([3.0, 3.0, 3.0, 3.0])
+        assert sim == pytest.approx(1.0)

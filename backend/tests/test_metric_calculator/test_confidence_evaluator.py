@@ -8,7 +8,8 @@
     - R INCONCLUSIVE（value=None 或可信度 E）→ 评分留空
     - R 缺失 → 视为 INCONCLUSIVE（P1 #18 修正，原为降级 60%）
     - 所有权重为 0 → 0
-    - 核心指标缺失 → 0 计入分子
+    - 核心指标缺失或 E 级 → 整体 INCONCLUSIVE（评审决策口径）
+    - 核心指标 D 级 → 保留评分 + low_confidence_inputs 标注
     - 评分限制在 [0, 100]
     - 可信度取最低等级
 
@@ -226,17 +227,71 @@ class TestComputeCompositeScore:
         assert score.value == 0.0
         assert score.details["reason"] == "zero total weight"
 
-    def test_missing_core_metric_counted_as_zero(self):
-        """核心指标缺失（value=None）→ 按 0 计入分子，权重仍计入分母。"""
+    def test_missing_core_metric_inconclusive(self):
+        """核心指标缺失（value=None）→ 评分整体 INCONCLUSIVE（评审决策口径）。
+
+        废止原"分子计 0、分母留权重"的隐性扣分：fast_rate 无法计算时
+        不以 0 分拉低综合评分，评分留空（score=None）且 confidence=E。
+        """
         results = _make_full_results(a=100.0, f=100.0, s=100.0, r=100.0)
-        # accuracy 缺失
-        results["accuracy_rate"] = _make_metric_result("accuracy_rate", None)
+        # fast_rate 缺失
+        results["fast_rate"] = _make_metric_result("fast_rate", None)
         score = ConfidenceEvaluator.compute_composite_score(results)
-        # v2.1 国标权重 STABLE: a=0.2, f=0.3, s=0.5；A=None 视为 0
-        # 加权和 = 0 + 0.3*1.0 + 0.5*1.0 = 0.8
-        # base = 0.8 / 1.0 * 100 = 80
-        # P = 80 * 100/100 = 80
-        assert score.value == 80.0
+        assert score.value is None
+        assert score.confidence_level == ConfidenceLevel.E.value
+        assert score.details["reason"] == "core metric INCONCLUSIVE"
+        assert score.details["inconclusive_inputs"] == ["fast_rate"]
+
+    def test_absent_core_metric_inconclusive(self):
+        """核心指标结果不存在（不在字典中）→ 评分整体 INCONCLUSIVE。"""
+        results = _make_full_results(a=100.0, f=100.0, s=100.0, r=100.0)
+        del results["fast_rate"]
+        score = ConfidenceEvaluator.compute_composite_score(results)
+        assert score.value is None
+        assert score.confidence_level == ConfidenceLevel.E.value
+        assert "fast_rate" in score.details["inconclusive_inputs"]
+
+    def test_e_level_core_metric_treated_as_missing(self):
+        """核心指标可信度 E 级（即使有值）→ 视同缺失，评分整体 INCONCLUSIVE。"""
+        results = _make_full_results(a=100.0, f=100.0, s=100.0, r=100.0)
+        results["stability_rate"] = _make_metric_result("stability_rate", 88.0, confidence="E")
+        score = ConfidenceEvaluator.compute_composite_score(results)
+        assert score.value is None
+        assert score.confidence_level == ConfidenceLevel.E.value
+        assert score.details["inconclusive_inputs"] == ["stability_rate"]
+
+    def test_inconclusive_score_confidence_not_ab(self):
+        """评分 INCONCLUSIVE 时 confidence 必为 E（不得仍为 A/B）。"""
+        results = _make_full_results(confidence="A")
+        results["accuracy_rate"] = _make_metric_result("accuracy_rate", None, confidence="A")
+        score = ConfidenceEvaluator.compute_composite_score(results)
+        assert score.value is None
+        assert score.confidence_level not in ("A", "B")
+        assert score.confidence_level == ConfidenceLevel.E.value
+
+    def test_zero_weight_core_metric_not_required(self):
+        """权重为 0 的核心指标（如逻辑型 a=0）缺失不影响评分。"""
+        results = _make_full_results(a=100.0, f=100.0, s=100.0, r=100.0)
+        results["accuracy_rate"] = _make_metric_result("accuracy_rate", None)
+        weights = {"accuracy_rate": 0.0, "fast_rate": 0.4, "stability_rate": 0.6}
+        score = ConfidenceEvaluator.compute_composite_score(results, weights=weights)
+        # base = (0.4*1.0 + 0.6*1.0) / 1.0 * 100 = 100，P = 100 * 100/100 = 100
+        assert score.value == 100.0
+
+    def test_d_level_core_keeps_score_with_annotation(self):
+        """核心指标 D 级 → 保留评分，details 标注 low_confidence_inputs。"""
+        results = _make_full_results(a=100.0, f=100.0, s=100.0, r=100.0)
+        results["fast_rate"] = _make_metric_result("fast_rate", 80.0, confidence="D")
+        score = ConfidenceEvaluator.compute_composite_score(results)
+        assert score.value is not None
+        assert score.confidence_level == "D"
+        assert score.details["low_confidence_inputs"] == ["fast_rate"]
+
+    def test_no_low_confidence_annotation_when_all_high(self):
+        """全部高可信度时 details 不含 low_confidence_inputs。"""
+        results = _make_full_results(confidence="A")
+        score = ConfidenceEvaluator.compute_composite_score(results)
+        assert "low_confidence_inputs" not in score.details
 
     def test_custom_weights(self):
         """自定义权重生效。"""

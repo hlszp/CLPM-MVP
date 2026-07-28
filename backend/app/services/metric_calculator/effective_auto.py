@@ -74,7 +74,10 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
         e_max = self._read_e_max(bundle)
 
         # 采用零阶保持模型：每个采样点代表一个时间间隔（最后一个点沿用前段时长）
+        # 数组长度可能不一致（信号与时间戳长度不齐），循环上界取各数组最小长度防止 IndexError
         durations = self._point_durations(masked_ts)
+        bound = min(n, len(durations), len(masked_op), len(masked_pv), len(masked_sp))
+        durations = durations[:bound]
         total_duration = sum(durations)
         if total_duration <= 0:
             return self._make_inconclusive(bundle, "zero_total_duration")
@@ -82,7 +85,7 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
         auto_duration = 0.0
         effective_duration = 0.0
 
-        for i in range(n):
+        for i in range(bound):
             segment = durations[i]
             mode_val = _to_int(masked_mode[i])
             if mode_val not in AUTO_MODES:
@@ -90,12 +93,12 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
             auto_duration += segment
 
             # OP 饱和检查
-            op_val = _to_float(masked_op[i]) if i < len(masked_op) else 0.0
+            op_val = _to_float(masked_op[i])
             is_saturated = (op_val <= op_low + epsilon) or (op_val >= op_high - epsilon)
 
             # 偏差检查
             is_deviation_ok = True
-            if e_max > 0 and i < len(masked_pv) and i < len(masked_sp):
+            if e_max > 0:
                 deviation = abs(_to_float(masked_pv[i]) - _to_float(masked_sp[i]))
                 is_deviation_ok = deviation < e_max
 

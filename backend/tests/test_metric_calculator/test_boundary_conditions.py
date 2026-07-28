@@ -57,11 +57,18 @@ class TestExtremePvValues:
         ],
     )
     def test_extreme_pv_no_crash_and_clamped(self, pv_value, sp_value, desc):
-        """极端 PV 值：准确率不抛异常，值被 _clamp 限制在 [0, 100]."""
+        """极端 PV 值：准确率不抛异常，值被 _clamp 限制在 [0, 100].
+
+        恒定极端 PV 属恒定余差退化分支（e_max=0），需配置 pv_range 才能
+        按量程百分比扣分；此处提供 pv_range=100 验证不溢出、不越界。
+        """
         n = 100
         pv = [pv_value] * n
         sp = [sp_value] * n
-        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="accuracy_rate")
+        bundle = make_bundle(
+            {"pv": pv, "sp": sp, "pv_range": [100.0] * n},
+            metric_code="accuracy_rate",
+        )
         calc = AccuracyRateCalculator()
         result = calc.calculate(bundle)
         # 不抛异常 + 值在 [0, 100]
@@ -96,6 +103,17 @@ class TestExtremePvValues:
         bundle = make_bundle({"mode": mode}, metric_code="auto_mode_rate")
         result = AutoModeRateCalculator().calculate(bundle)
         assert result.value == 0.0
+
+    def test_auto_mode_mismatched_lengths_no_index_error(self):
+        """mode 信号长于时间戳时按最短数组截断，不抛 IndexError."""
+        n = 100
+        mode = [1] * n
+        bundle = make_bundle({"mode": mode}, metric_code="auto_mode_rate")
+        # 时间戳截断到 50 点，模拟数组长度不一致
+        bundle.data_block.timestamps = bundle.data_block.timestamps[:50]
+        result = AutoModeRateCalculator().calculate(bundle)
+        assert result.value == 100.0
+        assert result.details["total_duration_s"] == 50.0
 
 
 # ---------------------------------------------------------------------------

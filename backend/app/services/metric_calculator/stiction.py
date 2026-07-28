@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 import numpy as np
 
@@ -79,33 +80,29 @@ class StictionIndexCalculator(MetricCalculatorBase):
         pv_norm = (pv_vals - np.min(pv_vals)) / (pv_range if pv_range > 0 else 1.0)
         op_norm = (op_vals - np.min(op_vals)) / (op_range if op_range > 0 else 1.0)
 
-        # 椭圆拟合（PCA）
+        # 椭圆拟合（PCA）；fitting_score 为 OP-PV 线性相关系数平方 R²
         a, b, fitting_score = self._fit_ellipse(pv_norm, op_norm)
 
+        # 有效性门控（算法说明 §4.8.4 步骤 8：R² < 0.5 → INCONCLUSIVE）：
+        # 圆团/随机散点 |r|≈0，PCA 椭圆 b/a≈1 会把 St 误报到 ~100（SEVERE），
+        # 低相关意味着散点无主导方向，b/a 宽度比不具备粘滞物理含义，不予检出
         if fitting_score < MIN_FITTING_SCORE:
-            logger.debug("[粘滞系数] 拟合度 %.4f < %.1f，返回 0", fitting_score, MIN_FITTING_SCORE)
-            return self._make_result(
+            logger.debug(
+                "[粘滞系数] 拟合度 R²=%.4f < %.1f（低相关），INCONCLUSIVE",
+                fitting_score,
+                MIN_FITTING_SCORE,
+            )
+            return self._make_inconclusive(
                 bundle,
-                0.0,
+                "low_correlation",
                 {
                     "stiction_level": "NONE",
                     "fitting_score": round(fitting_score, 4),
-                    "reason": "low_fitting",
+                    "sample_count": n,
                 },
             )
 
-        if a <= 0:
-            return self._make_result(
-                bundle,
-                0.0,
-                {
-                    "stiction_level": "NONE",
-                    "fitting_score": round(fitting_score, 4),
-                    "reason": "zero_long_axis",
-                },
-            )
-
-        # 粘滞系数 St = b/a × 100
+        # 粘滞系数 St = b/a × 100（R²≥0.5 隐含方差非零，a>0 必然成立）
         stiction = (b / a) * 100.0
         stiction = self._clamp(stiction)
         level = _determine_level(stiction)
@@ -137,10 +134,15 @@ class StictionIndexCalculator(MetricCalculatorBase):
 
         计算散点协方差矩阵的特征值，sqrt(特征值) 即为椭圆半轴长度。
         长轴 a = sqrt(max(λ))，短轴 b = sqrt(min(λ))。
-        拟合度 R² 用特征值占比近似：R² = max(λ) / sum(λ)。
+        拟合度 R² 取 OP-PV 线性相关系数的平方（对齐算法说明 §4.8.3
+        fitting_score 定义）：R² = r² = cov(x,y)² / (var(x)·var(y))。
+
+        注：旧实现用 λmax/(λmax+λmin) 近似 R²，该比值恒 ≥ 0.5，
+        使 MIN_FITTING_SCORE 门控分支不可达；圆团散点（|r|≈0）因此
+        被误判 St≈100（SEVERE）。改为 r² 后门控真实生效。
 
         Returns:
-            (a, b, fitting_score) — 长轴/短轴/拟合度
+            (a, b, fitting_score) — 长轴/短轴/拟合度 R²
         """
         if len(x) < 2:
             return 0.0, 0.0, 0.0
@@ -154,6 +156,12 @@ class StictionIndexCalculator(MetricCalculatorBase):
         if cov.shape != (2, 2):
             return 0.0, 0.0, 0.0
 
+        var_x = float(cov[0, 0])
+        var_y = float(cov[1, 1])
+        if var_x <= 0 or var_y <= 0:
+            # 恒定信号无相关性可言，拟合度 0
+            return 0.0, 0.0, 0.0
+
         # 特征值分解
         eigenvalues = np.linalg.eigvalsh(cov)
         eigenvalues = np.maximum(eigenvalues, 0.0)  # 数值稳定性
@@ -164,8 +172,8 @@ class StictionIndexCalculator(MetricCalculatorBase):
         a = np.sqrt(lambda_max)
         b = np.sqrt(lambda_min)
 
-        total = lambda_max + lambda_min
-        fitting = (lambda_max / total) if total > 0 else 0.0
+        r = float(cov[0, 1]) / math.sqrt(var_x * var_y)
+        fitting = r * r
 
         return a, b, fitting
 

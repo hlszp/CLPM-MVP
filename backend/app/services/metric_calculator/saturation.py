@@ -63,19 +63,25 @@ class SaturationRateCalculator(MetricCalculatorBase):
         op_low, op_high, epsilon = self._read_op_bounds(bundle)
 
         # 采用零阶保持模型：每个采样点代表一个时间间隔（最后一个点沿用前段时长）
+        # 数组长度可能不一致（信号与时间戳长度不齐），循环上界取各数组最小长度防止 IndexError
         durations = self._point_durations(masked_ts)
+        bound = min(n, len(masked_mode), len(durations))
 
         total_duration = 0.0
         sat_high_duration = 0.0
         sat_low_duration = 0.0
 
-        for i in range(n):
+        for i in range(bound):
             segment = durations[i]
-            mode_val = _to_int(masked_mode[i]) if i < len(masked_mode) else -1
+            mode_val = _to_int(masked_mode[i])
             if mode_val not in AUTO_MODES:
                 continue
-            total_duration += segment
             op_val = _to_float(masked_op[i])
+            if op_val is None:
+                # OP 解析失败跳过该点：不计入分子也不计入分母，
+                # 避免旧实现按 0.0 处理被误计为低限饱和
+                continue
+            total_duration += segment
             if op_val >= op_high - epsilon:
                 sat_high_duration += segment
             elif op_val <= op_low + epsilon:
@@ -146,12 +152,12 @@ def _to_int(val: Any) -> int:
         return -1
 
 
-def _to_float(val: Any) -> float:
-    """安全转换为 float."""
+def _to_float(val: Any) -> float | None:
+    """安全转换为 float；解析失败返回 None（调用方应跳过该点）."""
     try:
         return float(val)
     except (TypeError, ValueError):
-        return 0.0
+        return None
 
 
 def _read_float(signals: dict, key: str, default: float) -> float:

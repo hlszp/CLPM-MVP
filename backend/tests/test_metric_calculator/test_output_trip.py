@@ -94,3 +94,18 @@ class TestOutputTripIndex:
         calc = OutputTripIndexCalculator()
         result = calc.calculate(bundle)
         assert result.details["op_range"] == 200.0
+
+    def test_small_trip_not_rounded_to_zero(self):
+        """小行程值不被默认 2 位精度抹零：trip=0.005 保留（6 位精度）。
+
+        修复前 base._make_result 统一 round(.,2)，0.005 被抹成 0.0/0.01，
+        trip_level 阈值 0.01/0.1/1.0 判定失去意义。
+        """
+        n = 100
+        op = [50.0 + 0.5 * i for i in range(n)]  # 每步 0.5
+        bundle = make_bundle({"op": op}, metric_code="output_trip_index")
+        calc = OutputTripIndexCalculator()
+        result = calc.calculate(bundle)
+        # trip = 49.5 / (99 × 100) = 0.005
+        assert result.value == 0.005
+        assert result.details["trip_level"] == "INACTIVE"

@@ -10,6 +10,11 @@
 
 设计依据：算法说明 §4.5；GB/T 44693.2-2024 附录 B.4
 
+P0-1：settling_time 三语义分流——already_stable（真已稳态）保持 100 分；
+never_settles（窗口内不衰减）以 Green 函数窗口长度作为 actual_t 代入
+指数衰减公式（不再误判满分）；identification_failed（辨识失败）返回
+INCONCLUSIVE。
+
 定位：核心质量指标，参与综合评分加权。
 依赖：settling_time（实际稳态时间）、ideal_settling_time（理想稳态时间）。
 """
@@ -109,24 +114,52 @@ class FastRateCalculator(MetricCalculatorBase):
                 bundle, ideal_t, params, actual_t
             )
 
-        # 实际稳态时间无效（settling_time 返回 INCONCLUSIVE）→ 快速率也 INCONCLUSIVE
+        # 实际稳态时间无效（settling_time 返回 INCONCLUSIVE）→ 按 reason 三语义分流（P0-1）：
+        # - never_settles：窗口内不衰减（持续振荡/近单位根），以 Green 函数窗口长度
+        #   作为 actual_t 代入现有指数衰减公式得分（不再误判满分）
+        # - identification_failed / insufficient_data 等：快速率同样 INCONCLUSIVE
         # 扰动覆盖时跳过（扰动恢复时间是独立有效度量，不依赖 ARMA 辨识）
+        never_settles = False
         if (
             not disturbance_override
             and settling_result is not None
             and settling_result.value is None
         ):
-            return self._make_inconclusive(
-                bundle,
-                "settling_time_inconclusive",
-                {
-                    "actual_settling_time": actual_t,
-                    "ideal_settling_time": round(ideal_t, 2),
-                    **disturbance_details,
-                },
-            )
+            settling_reason = (settling_result.details or {}).get("reason")
+            if settling_reason == "never_settles":
+                window_t = self._extract_settling_time(settling_result)
+                if window_t > 0:
+                    never_settles = True
+                    actual_t = window_t
+                    logger.debug(
+                        "[快速率] settling_time=never_settles，以窗口长度 %.1f 秒代入衰减公式",
+                        actual_t,
+                    )
+                else:
+                    # details 缺少窗口长度，无法代入公式，按辨识失败处理
+                    return self._make_inconclusive(
+                        bundle,
+                        "identification_failed",
+                        {
+                            "ideal_settling_time": round(ideal_t, 2),
+                            **disturbance_details,
+                        },
+                    )
+            else:
+                return self._make_inconclusive(
+                    bundle,
+                    settling_reason or "settling_time_inconclusive",
+                    {
+                        "actual_settling_time": actual_t,
+                        "ideal_settling_time": round(ideal_t, 2),
+                        **disturbance_details,
+                    },
+                )
 
-        # 实际稳态时间 ≤ 0（已稳态或辨识失败）→ 快速率 100%
+        # never_settles 标记（写入 details，注明得分依据为窗口长度下界）
+        never_settles_detail: dict[str, Any] = {"reason": "never_settles"} if never_settles else {}
+
+        # 实际稳态时间 ≤ 0（已稳态）→ 快速率 100%
         if actual_t <= 0:
             logger.debug("[快速率] actual_settling ≤ 0，返回 100")
             return self._make_result(
@@ -151,6 +184,7 @@ class FastRateCalculator(MetricCalculatorBase):
                     "ideal_settling_time": round(ideal_t, 2),
                     "ratio": round(actual_t / ideal_t, 4),
                     **disturbance_details,
+                    **never_settles_detail,
                 },
             )
 
@@ -175,6 +209,7 @@ class FastRateCalculator(MetricCalculatorBase):
                 "ideal_settling_time": round(ideal_t, 2),
                 "ratio": round(ratio, 4),
                 **disturbance_details,
+                **never_settles_detail,
             },
         )
 

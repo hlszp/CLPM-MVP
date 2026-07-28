@@ -19,6 +19,8 @@ ARMA(2,1) 辨识（如 Hannan-Rissanen 两步法）时使用。
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from enum import StrEnum
 
 import numpy as np
 from scipy.linalg import solve_toeplitz, toeplitz
@@ -31,6 +33,39 @@ DEFAULT_MA_ORDER = 1  # q=1，设计文档要求（当前 AR 近似未实现 MA 
 DEFAULT_SETTLING_THRESHOLD = 0.05  # Green 函数衰减阈值（5%）
 MAX_GREEN_FUNC_LENGTH = 3600  # Green 函数最大长度（1 小时 @ 1Hz）
 MIN_DATA_POINTS = 30  # 最少数据点数
+
+
+class SettlingStatus(StrEnum):
+    """稳态时间计算状态（P0-1：区分三种边界语义）.
+
+    - SETTLED：Green 函数在窗口内衰减到阈值以下，稳态时间有效
+    - ALREADY_STABLE：信号恒定，已处于稳态（稳态时间 = 0）
+    - NEVER_SETTLES：Green 函数稳定但窗口内不衰减（持续振荡/近单位根）
+    - IDENTIFICATION_FAILED：数据不足或所有尝试阶数的 Green 函数均发散
+    """
+
+    SETTLED = "settled"
+    ALREADY_STABLE = "already_stable"
+    NEVER_SETTLES = "never_settles"
+    IDENTIFICATION_FAILED = "identification_failed"
+
+
+@dataclass(frozen=True)
+class SettlingTimeResult:
+    """compute_settling_time_detailed 的结构化结果.
+
+    Attributes:
+        status: 计算状态（区分 已稳态/不衰减/辨识失败）
+        value: 实际稳态时间（秒）；仅 SETTLED/ALREADY_STABLE 有值，
+            NEVER_SETTLES/IDENTIFICATION_FAILED 为 None
+        window_length_sec: Green 函数窗口长度（秒）=
+            MAX_GREEN_FUNC_LENGTH × 采样周期，NEVER_SETTLES 时作为
+            快速率计算的 actual_t 下界代入指数衰减公式
+    """
+
+    status: SettlingStatus
+    value: float | None
+    window_length_sec: float
 
 
 def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarray:
@@ -180,19 +215,25 @@ def _green_function_recursive(ar_coeffs: np.ndarray, length: int) -> np.ndarray:
     return g
 
 
-def compute_settling_time(
+def compute_settling_time_detailed(
     signal: np.ndarray,
     sample_interval_sec: float = 1.0,
     threshold: float = DEFAULT_SETTLING_THRESHOLD,
     ar_order: int = DEFAULT_AR_ORDER,
-) -> float:
-    """计算实际稳态时间 — GB/T 44693.2-2024 附录 F.4。
+) -> SettlingTimeResult:
+    """计算实际稳态时间（结构化结果） — GB/T 44693.2-2024 附录 F.4。
 
     算法流程：
         1. AR(p) 模型辨识（Yule-Walker）
         2. Green 函数递推
         3. 找到 |G(k)| 首次持续低于 threshold 的时刻
         4. 实际稳态时间 = k × 采样周期
+
+    P0-1：不再用 0.0 混淆三种边界语义，通过 SettlingTimeResult.status 区分：
+        - ALREADY_STABLE：信号恒定，真已稳态（value=0.0）
+        - NEVER_SETTLES：Green 函数稳定但窗口内不衰减，持续振荡/近单位根
+          回路（value=None，调用方应以 window_length_sec 作为稳态时间下界）
+        - IDENTIFICATION_FAILED：数据不足或所有阶数辨识发散（value=None）
 
     Args:
         signal: PV 偏差序列（已去均值）
@@ -201,12 +242,17 @@ def compute_settling_time(
         ar_order: AR 模型阶数
 
     Returns:
-        实际稳态时间（秒），辨识失败返回 0
+        SettlingTimeResult（status + value + window_length_sec）
     """
+    window_length_sec = float(MAX_GREEN_FUNC_LENGTH * sample_interval_sec)
     n = len(signal)
     if n < MIN_DATA_POINTS:
         logger.warning("[ARMA] 数据点不足（%d < %d），无法辨识稳态时间", n, MIN_DATA_POINTS)
-        return 0.0
+        return SettlingTimeResult(
+            status=SettlingStatus.IDENTIFICATION_FAILED,
+            value=None,
+            window_length_sec=window_length_sec,
+        )
 
     signal = np.asarray(signal, dtype=float)
     signal = signal - np.mean(signal)
@@ -214,7 +260,11 @@ def compute_settling_time(
     std = np.std(signal)
     if std < 1e-9:
         logger.debug("[ARMA] 信号恒定，稳态时间为 0（已处于稳态）")
-        return 0.0
+        return SettlingTimeResult(
+            status=SettlingStatus.ALREADY_STABLE,
+            value=0.0,
+            window_length_sec=window_length_sec,
+        )
 
     # 步骤 1-2：AR(p) 辨识 + Green 函数递推
     # P2 #34 偏差4：默认 ar_order=2（对齐设计文档 ARMA(2,1)），但 AR(2) 对接近单位根的
@@ -257,10 +307,14 @@ def compute_settling_time(
 
     if ar_coeffs is None or green_func is None:
         logger.warning(
-            "[ARMA] 所有尝试阶数 %s 的 Green 函数均发散，模型不稳定，稳态时间返回 0",
+            "[ARMA] 所有尝试阶数 %s 的 Green 函数均发散，模型不稳定，辨识失败",
             retry_orders,
         )
-        return 0.0
+        return SettlingTimeResult(
+            status=SettlingStatus.IDENTIFICATION_FAILED,
+            value=None,
+            window_length_sec=window_length_sec,
+        )
 
     # 步骤 3：找到 |G(k)| 首次持续低于 threshold 的时刻 — 向量化
     n_consecutive = max(3, int(10 / sample_interval_sec))
@@ -283,20 +337,53 @@ def compute_settling_time(
     settling_time = float(settling_index * sample_interval_sec)
 
     if settling_index == 0:
-        logger.debug(
-            "[ARMA] Green 函数未收敛到阈值 %.0f%%（可能为不稳定系统或数据噪声过大），"
-            "稳态时间返回 0",
+        logger.info(
+            "[ARMA] Green 函数在窗口 %.0f 秒内未收敛到阈值 %.0f%%（持续振荡或近单位根），"
+            "标记为 never_settles",
+            window_length_sec,
             threshold * 100,
         )
-    else:
-        logger.debug(
-            "[ARMA] Green 函数稳态时间 = %.1f 秒（阈值 %.0f%%，连续 %d 点）",
-            settling_time,
-            threshold * 100,
-            n_consecutive,
+        return SettlingTimeResult(
+            status=SettlingStatus.NEVER_SETTLES,
+            value=None,
+            window_length_sec=window_length_sec,
         )
 
-    return settling_time
+    logger.debug(
+        "[ARMA] Green 函数稳态时间 = %.1f 秒（阈值 %.0f%%，连续 %d 点）",
+        settling_time,
+        threshold * 100,
+        n_consecutive,
+    )
+    return SettlingTimeResult(
+        status=SettlingStatus.SETTLED,
+        value=settling_time,
+        window_length_sec=window_length_sec,
+    )
+
+
+def compute_settling_time(
+    signal: np.ndarray,
+    sample_interval_sec: float = 1.0,
+    threshold: float = DEFAULT_SETTLING_THRESHOLD,
+    ar_order: int = DEFAULT_AR_ORDER,
+) -> float:
+    """计算实际稳态时间（数值兼容包装） — GB/T 44693.2-2024 附录 F.4。
+
+    向后兼容的历史接口：仅返回数值，无法区分 已稳态/不衰减/辨识失败，
+    失败与不衰减均返回 0.0。新代码请使用 compute_settling_time_detailed
+    获取 SettlingStatus 语义（P0-1）。
+
+    Returns:
+        实际稳态时间（秒），不衰减或辨识失败返回 0.0
+    """
+    result = compute_settling_time_detailed(
+        signal=signal,
+        sample_interval_sec=sample_interval_sec,
+        threshold=threshold,
+        ar_order=ar_order,
+    )
+    return result.value if result.value is not None else 0.0
 
 
 def compute_ideal_settling_time(

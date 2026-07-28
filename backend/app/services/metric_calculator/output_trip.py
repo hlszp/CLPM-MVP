@@ -94,6 +94,9 @@ class OutputTripIndexCalculator(MetricCalculatorBase):
                 "op_range": op_range,
                 "sample_count": n,
             },
+            # 行程指数量级通常 1e-4~1（行程/秒），默认 2 位精度会把
+            # INACTIVE/NORMAL 区间的值抹零成 0.00，使 0.01/0.1/1.0 阈值失去意义
+            precision=6,
         )
 
     @staticmethod

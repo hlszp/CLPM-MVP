@@ -96,8 +96,10 @@ class StabilityRateCalculator(MetricCalculatorBase):
             return self._make_inconclusive(bundle, "zero_pv_range")
 
         # 指数衰减：S = 1/e^(σ/(0.05·U)) × (1-Osc) × 100
+        # 使用 e^(-x) 等价形式：大量程/大 σ 时 x 可达 1e5+，
+        # 直接 math.exp(x) 会 OverflowError，math.exp(-x) 在 x→∞ 时稳定返回 0.0
         normalized_std = std_error / (0.05 * u)
-        stability = (1.0 / math.exp(normalized_std)) * osc_factor * 100.0
+        stability = math.exp(-normalized_std) * osc_factor * 100.0
         stability = self._clamp(stability)
 
         logger.debug(

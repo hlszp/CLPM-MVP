@@ -88,3 +88,29 @@ class TestSaturationRate:
         result = calc.calculate(bundle)
         assert result.value == 100.0
         assert result.details["epsilon"] == 10.0
+
+    def test_unparseable_op_skipped(self):
+        """OP 解析失败跳过该点（不计入分子分母），不按 0.0 误计为低限饱和。"""
+        n = 100
+        mode = [1] * n
+        op = [99.5] * 50 + ["bad"] * 50  # 后半段 OP 无法解析
+        bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
+        calc = SaturationRateCalculator()
+        result = calc.calculate(bundle)
+        # 仅 50 个可解析点计入，全为高限饱和
+        assert result.value == 100.0
+        assert result.details["saturation_type"] == "HIGH"
+        assert result.details["auto_duration_s"] == 50.0
+
+    def test_mismatched_lengths_no_index_error(self):
+        """mode 信号长于时间戳时按最短数组截断，不抛 IndexError。"""
+        n = 100
+        mode = [1] * n
+        op = [50.0] * n
+        bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
+        # 时间戳截断到 50 点，模拟数组长度不一致
+        bundle.data_block.timestamps = bundle.data_block.timestamps[:50]
+        calc = SaturationRateCalculator()
+        result = calc.calculate(bundle)
+        assert result.value == 0.0
+        assert result.details["auto_duration_s"] == 50.0

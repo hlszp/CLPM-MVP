@@ -53,13 +53,16 @@ class AutoModeRateCalculator(MetricCalculatorBase):
             return self._make_inconclusive(bundle, "insufficient_mode_data")
 
         # 采用零阶保持模型：每个采样点代表一个时间间隔（最后一个点沿用前段时长）
+        # 数组长度可能不一致（信号与时间戳长度不齐），循环上界取最小长度防止 IndexError
         durations = self._point_durations(masked_ts)
+        bound = min(n, len(durations))
+        durations = durations[:bound]
         total_duration = sum(durations)
         if total_duration <= 0:
             return self._make_inconclusive(bundle, "zero_total_duration")
 
         auto_duration = 0.0
-        for i in range(n):
+        for i in range(bound):
             segment = durations[i]
             mode_val = self._to_int(masked_mode[i])
             if mode_val in AUTO_MODES:

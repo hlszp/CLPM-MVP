@@ -136,14 +136,17 @@ class MetricCalculatorBase(MetricCalculator):
         value: float,
         details: dict[str, Any] | None = None,
         valid_rate: float | None = None,
+        precision: int = 2,
     ) -> MetricResult:
         """构造正常 MetricResult（含可信度判定）.
 
         Args:
             bundle: 指标数据包
-            value: 指标值（已 round 到 2 位小数）
+            value: 指标值（已 round 到 precision 位小数）
             details: 指标详细信息
             valid_rate: 有效数据率，None 时自动计算
+            precision: value 保留小数位数（默认 2；量级远小于 0.01 的指标
+                如 output_trip_index 应传更大精度避免被抹零）
 
         Returns:
             MetricResult，含 metric_code/value/confidence_level/lineage/details
@@ -162,7 +165,7 @@ class MetricCalculatorBase(MetricCalculator):
 
         return MetricResult(
             metric_code=self.metric_code,
-            value=round(float(value), 2),
+            value=round(float(value), precision),
             confidence_level=confidence.value,
             lineage=lineage,
             details=details or {},

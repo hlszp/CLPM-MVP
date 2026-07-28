@@ -78,22 +78,54 @@ class AccuracyRateCalculator(MetricCalculatorBase):
             if percentile_cap > 0:
                 e_max = min(e_max, percentile_cap)
 
-        # e_max == 0 表示所有偏差相等（无离散度），A = 100%（对齐算法 v2.1 §4.4.4 步骤 8）
+        # e_max == 0 表示所有偏差相等（无离散度，含单点）
         if e_max <= 0:
+            if mean_abs_error <= 0:
+                # 真零偏差 → A = 100%（对齐算法 v2.1 §4.4.4 步骤 8）
+                logger.debug("[准确率] 零偏差，A=100%%")
+                return self._make_result(
+                    bundle,
+                    100.0,
+                    {
+                        "mean_abs_error": 0.0,
+                        "e_max": 0.0,
+                        "r": 0.0,
+                        "decay_factor": 0.0,
+                        "sample_count": n,
+                        "e_max_source": "data_degenerate",
+                    },
+                )
+            # 恒定余差退化：PV 恒定偏离 SP（含单点），数据驱动 e_max=0 使
+            # 指数公式不可归一化，此时禁止给满分，改按量程百分比扣分：
+            # A = max(0, 1 - |Ē|/(0.05·U)) × 100（0.05·U 即量程 5% 余差容限）
+            u = self._read_pv_range(bundle)
+            if u is None or u <= 0:
+                return self._make_inconclusive(
+                    bundle,
+                    "degenerate_offset_missing_pv_range",
+                    {
+                        "mean_abs_error": round(mean_abs_error, 4),
+                        "sample_count": n,
+                        "e_max_source": "data_degenerate",
+                    },
+                )
+            accuracy = self._clamp((1.0 - mean_abs_error / (0.05 * u)) * 100.0)
             logger.debug(
-                "[准确率] e_max=0（所有偏差相等），A=100%%: mean_abs_error=%.4f",
+                "[准确率] 恒定余差退化: mean_abs_error=%.4f, U=%.1f, A=%.2f",
                 mean_abs_error,
+                u,
+                accuracy,
             )
             return self._make_result(
                 bundle,
-                100.0,
+                accuracy,
                 {
                     "mean_abs_error": round(mean_abs_error, 4),
                     "e_max": 0.0,
-                    "r": 0.0,
-                    "decay_factor": 0.0,
+                    "pv_range": u,
                     "sample_count": n,
                     "e_max_source": "data_degenerate",
+                    "accuracy_basis": "constant_offset_range_percent",
                 },
             )
 
@@ -169,6 +201,25 @@ class AccuracyRateCalculator(MetricCalculatorBase):
             e_max,
         )
         return e_max
+
+    @staticmethod
+    def _read_pv_range(bundle: MetricDataBundle) -> float | None:
+        """读取 PV 量程范围 U（恒定余差退化分支扣分基准）.
+
+        仅从 CONFIG 信号读取（pv_range），不做归一化默认：
+        恒定余差按量程百分比扣分时量程是必需基准，缺失应 INCONCLUSIVE。
+
+        Returns:
+            PV 量程；缺失或非法（<= 0 / 解析失败）时返回 None
+        """
+        val = MetricCalculatorBase._read_config_scalar(bundle.data_block.signals, "pv_range")
+        if val is None:
+            return None
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            return None
+        return v if v > 0 else None
 
 
 __all__ = ["AccuracyRateCalculator"]

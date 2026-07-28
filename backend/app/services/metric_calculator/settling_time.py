@@ -12,7 +12,13 @@
 设计依据：算法说明 §4.5；GB/T 44693.2-2024 附录 F.4
 
 定位：辅助诊断指标，为快速率计算提供实际稳态时间。
-复用 app.tasks.arma.compute_settling_time（只读引用，不修改）。
+复用 app.tasks.arma.compute_settling_time_detailed（只读引用，不修改）。
+
+P0-1：通过 details.reason 区分三种边界语义，不再统一返回 0：
+    - already_stable：真已稳态（value=0.0）
+    - never_settles：窗口内不衰减（value=None，
+      details.actual_settling_time = Green 函数窗口长度，供快速率代入衰减公式）
+    - identification_failed：辨识失败（value=None）
 """
 
 from __future__ import annotations
@@ -56,10 +62,12 @@ class SettlingTimeCalculator(MetricCalculatorBase):
             bundle: 指标数据包（需含 pv/sp 信号）
 
         Returns:
-            MetricResult：value 为实际稳态时间（秒），
-            0 表示已处于稳态或辨识失败
+            MetricResult：value 为实际稳态时间（秒）；
+            已稳态时 value=0.0（reason=already_stable）；
+            窗口内不衰减 / 辨识失败时 value=None，
+            由 details.reason（never_settles / identification_failed）区分
         """
-        from app.tasks.arma import compute_settling_time
+        from app.tasks.arma import SettlingStatus, compute_settling_time_detailed
 
         pairs = self._get_masked_pair(bundle, "pv", "sp")
         n = len(pairs)
@@ -83,33 +91,69 @@ class SettlingTimeCalculator(MetricCalculatorBase):
             return self._make_result(
                 bundle,
                 0.0,
-                {"reason": "constant_signal", "std": 0.0},
+                {"reason": "already_stable", "actual_settling_time": 0.0, "std": 0.0},
             )
 
         # 采样周期（秒）
         sample_interval = self._read_sample_interval(bundle)
 
-        # ARMA 辨识 + Green 函数 → 实际稳态时间
-        settling_time = compute_settling_time(
+        # ARMA 辨识 + Green 函数 → 实际稳态时间（含三语义状态）
+        settling = compute_settling_time_detailed(
             signal=errors,
             sample_interval_sec=sample_interval,
             threshold=SETTLING_THRESHOLD,
         )
 
         logger.debug(
-            "[稳态时间] sample_interval=%.2f, settling_time=%.1f 秒",
+            "[稳态时间] sample_interval=%.2f, status=%s, settling_time=%s",
             sample_interval,
-            settling_time,
+            settling.status.value,
+            settling.value,
         )
 
+        base_details = {
+            "sample_interval": sample_interval,
+            "threshold": SETTLING_THRESHOLD,
+            "sample_count": n,
+        }
+
+        # 窗口内不衰减（持续振荡/近单位根）：value=None，details 携带窗口长度
+        # 作为 actual_t 下界，供快速率代入指数衰减公式（P0-1）
+        if settling.status is SettlingStatus.NEVER_SETTLES:
+            return self._make_inconclusive(
+                bundle,
+                "never_settles",
+                {
+                    "actual_settling_time": round(settling.window_length_sec, 2),
+                    **base_details,
+                },
+            )
+
+        # 辨识失败（所有尝试阶数 Green 函数发散）
+        if settling.status is SettlingStatus.IDENTIFICATION_FAILED:
+            return self._make_inconclusive(
+                bundle,
+                "identification_failed",
+                base_details,
+            )
+
+        # 已稳态（arma 层兜底，通常已被上方 std 检查拦截）
+        if settling.status is SettlingStatus.ALREADY_STABLE:
+            return self._make_result(
+                bundle,
+                0.0,
+                {"reason": "already_stable", "actual_settling_time": 0.0, **base_details},
+            )
+
+        # SETTLED：正常稳态时间
+        settling_time = float(settling.value)
         return self._make_result(
             bundle,
             settling_time,
             {
                 "actual_settling_time": round(settling_time, 2),
-                "sample_interval": sample_interval,
-                "threshold": SETTLING_THRESHOLD,
-                "sample_count": n,
+                "reason": "settled",
+                **base_details,
             },
         )
 

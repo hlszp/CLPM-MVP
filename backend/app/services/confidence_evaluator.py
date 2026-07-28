@@ -182,14 +182,19 @@ class ConfidenceEvaluator:
         Returns:
             综合评分 MetricResult：
                 - 有效自控率为 E 级（INCONCLUSIVE）→ value=None
+                - 参与评分的核心指标缺失或 E 级（INCONCLUSIVE）→ value=None
                 - 所有权重为 0 → value=0.0
                 - 正常 → value=round2(基础评分 × R/100)
 
         设计依据：算法说明 §4.10.2, GB/T 44693.2-2024 附录 B.6
 
-        缺失指标处理：
-            核心指标缺失（value=None）时按 0 计入分子，但其权重仍计入分母
-            （对齐 kpi_calc._compute_composite_score_v2 实现）。
+        缺失指标处理（评审决策口径）：
+            参与评分（权重 > 0）的核心指标 accuracy_rate/fast_rate/stability_rate
+            任一缺失（结果不存在或 value=None）或可信度 E 级（视同缺失）
+            → 综合评分整体 INCONCLUSIVE（value=None, confidence=E），
+            不做"分子计 0、分母留权重"的隐性扣分。
+            权重为 0 的核心指标不参与评分公式（如逻辑型 a=0），不要求其存在。
+            核心指标 D 级时保留评分，details 增加 low_confidence_inputs 标注。
         """
         w = weights if weights else DEFAULT_WEIGHTS
         a = float(w.get("accuracy_rate", 0.0))
@@ -246,7 +251,47 @@ class ConfidenceEvaluator:
                 details={"reason": "effective_auto_rate INCONCLUSIVE"},
             )
 
-        # 加权分子：(A*a + F*f + S*s)，缺失指标按 0 计入
+        # 核心指标缺失或可信度 E 级（视同缺失）→ 评分整体 INCONCLUSIVE
+        # 消除原"分子计 0、分母留权重"的隐性惩罚（评审决策口径）
+        inconclusive_core: list[str] = []
+        for code, weight in (("accuracy_rate", a), ("fast_rate", f), ("stability_rate", s)):
+            if weight <= 0:
+                continue
+            result = metric_results.get(code)
+            if (
+                result is None
+                or result.value is None
+                or result.confidence_level == ConfidenceLevel.E.value
+            ):
+                inconclusive_core.append(code)
+
+        if inconclusive_core:
+            logger.info(
+                "[综合评分] 核心指标缺失或 E 级，评分留空（INCONCLUSIVE）: %s",
+                inconclusive_core,
+            )
+            first_missing = metric_results.get(inconclusive_core[0])
+            if first_missing and first_missing.lineage:
+                lineage = first_missing.lineage
+            else:
+                acc_result = metric_results.get("accuracy_rate")
+                lineage = (
+                    acc_result.lineage
+                    if acc_result and acc_result.lineage
+                    else DataLineage(algorithm_version=ALGORITHM_VERSION)
+                )
+            return MetricResult(
+                metric_code="composite_score",
+                value=None,
+                confidence_level=ConfidenceLevel.E.value,
+                lineage=lineage,
+                details={
+                    "reason": "core metric INCONCLUSIVE",
+                    "inconclusive_inputs": inconclusive_core,
+                },
+            )
+
+        # 加权分子：(A*a + F*f + S*s)
         weighted_sum = 0.0
         for code, weight in (("accuracy_rate", a), ("fast_rate", f), ("stability_rate", s)):
             result = metric_results.get(code)
@@ -265,7 +310,7 @@ class ConfidenceEvaluator:
                 )
             else:
                 logger.info(
-                    "[综合评分] 加权项 %s: value=%s weight=%.3f 跳过（值缺失或权重为0）",
+                    "[综合评分] 加权项 %s: value=%s weight=%.3f 跳过（权重为0）",
                     code,
                     val,
                     weight,
@@ -304,6 +349,14 @@ class ConfidenceEvaluator:
         # 可信度取核心指标中最低等级
         confidence = _min_confidence(metric_results)
 
+        # D 级输入保留评分，但标注低可信度输入（评审决策口径）
+        low_confidence_inputs = [
+            code
+            for code in (*CORE_METRIC_CODES, DISCOUNT_METRIC_CODE)
+            if (result := metric_results.get(code)) is not None
+            and result.confidence_level == ConfidenceLevel.D.value
+        ]
+
         # 血缘取准确率的血缘（若存在）
         lineage_ref = metric_results.get("accuracy_rate")
         lineage = (
@@ -320,21 +373,29 @@ class ConfidenceEvaluator:
             confidence,
         )
 
+        details: dict = {
+            "base_score": round(base_score, 2),
+            "effective_auto_rate": r_value,
+            "weights": {"a": a, "f": f, "s": s},
+        }
+        if low_confidence_inputs:
+            details["low_confidence_inputs"] = low_confidence_inputs
+
         return MetricResult(
             metric_code="composite_score",
             value=score,
             confidence_level=confidence,
             lineage=lineage,
-            details={
-                "base_score": round(base_score, 2),
-                "effective_auto_rate": r_value,
-                "weights": {"a": a, "f": f, "s": s},
-            },
+            details=details,
         )
 
 
 def _min_confidence(metric_results: dict[str, MetricResult]) -> str:
     """取核心指标 + R 中最低的可信度等级（A 最高，E 最低）.
+
+    仅在综合评分可计算（非 INCONCLUSIVE）的路径调用——
+    评分 INCONCLUSIVE 时各提前返回路径已显式返回 E 级，
+    保证评分语义与可信度一致（INCONCLUSIVE 评分不会出现 A/B 可信度）。
 
     Args:
         metric_results: 指标结果字典

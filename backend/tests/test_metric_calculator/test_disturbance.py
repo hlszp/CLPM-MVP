@@ -168,3 +168,63 @@ class TestDetectDisturbances:
         assert details["min_recovery_time"] == details["mean_recovery_time"]
         # 单事件 std=0
         assert details["std_recovery_time"] == 0.0
+
+
+class TestCensoredEvents:
+    """删失事件（窗口内未恢复）处理测试。"""
+
+    def test_unrecovered_at_window_end_is_censored(self):
+        """扰动持续到窗口末尾 → censored，不计入恢复时间统计。"""
+        n = 50
+        sp = [50.0] * n
+        # 20 起偏离 30 直到窗口末尾，error_std≈14.7，band≈29.4 < 30
+        pv = [50.0] * 20 + [80.0] * 30
+        result = detect_disturbances(pv, sp, _uniform_durations(n), **_DEFAULTS)
+        assert result.count == 1
+        assert result.censored_count == 1
+        assert result.events[0].censored is True
+        assert result.events[0].recovery_idx == n - 1
+        # 无已恢复事件 → t_disturb 为 None（调用方回落 ARMA）
+        assert result.t_disturb is None
+        details = result.to_details()
+        assert details["disturbance_count"] == 1
+        assert details["censored_count"] == 1
+        assert details["mean_recovery_time"] is None
+        assert details["max_recovery_time"] is None
+        assert details["min_recovery_time"] is None
+        assert details["std_recovery_time"] is None
+
+    def test_normal_recovery_not_censored(self):
+        """正常恢复事件 censored=False，censored_count=0。"""
+        n = 100
+        sp = [50.0] * n
+        pv = [50.0] * 30 + [60.0] * 10 + [50.0] * 60
+        result = detect_disturbances(pv, sp, _uniform_durations(n), **_DEFAULTS)
+        assert result.count == 1
+        assert result.events[0].censored is False
+        assert result.censored_count == 0
+        assert result.t_disturb is not None
+        assert result.to_details()["censored_count"] == 0
+
+    def test_mixed_recovered_and_censored(self):
+        """混合场景：删失事件不拉平已恢复事件的恢复时间统计。"""
+        n = 100
+        sp = [50.0] * n
+        # 事件1：30-39 偏离 15 后恢复；事件2：80-99 偏离 15 直到窗口末尾
+        # error_std≈6.87，band≈13.75 < 15
+        pv = [50.0] * 30 + [65.0] * 10 + [50.0] * 40 + [65.0] * 20
+        result = detect_disturbances(pv, sp, _uniform_durations(n), **_DEFAULTS)
+        assert result.count == 2
+        assert result.censored_count == 1
+        assert result.events[0].censored is False
+        assert result.events[1].censored is True
+        # 均值只统计已恢复事件：onset=30，recovery=44，durations[30:45]=15 秒
+        assert result.t_disturb == 15.0
+        details = result.to_details()
+        assert details["disturbance_count"] == 2
+        assert details["censored_count"] == 1
+        assert details["mean_recovery_time"] == 15.0
+        assert details["max_recovery_time"] == 15.0
+        assert details["min_recovery_time"] == 15.0
+        # 已恢复事件仅 1 个 → std=0
+        assert details["std_recovery_time"] == 0.0

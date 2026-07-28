@@ -9,6 +9,7 @@
 - sigma 带判定扰动（band = disturbance_band_sigma × error_std）
 - 恢复持续点数确认（recovery_persistence 连续点在带内）
 - 最小扰动时长过滤（min_disturbance_duration）
+- 窗口内未恢复事件标记 censored，不纳入恢复时间统计
 
 本模块为纯函数，不依赖 MetricCalculatorBase，便于独立单元测试。
 """
@@ -26,14 +27,18 @@ class DisturbanceEvent:
     Attributes:
         onset_idx: 扰动起始点索引（PV 首次超出 band）
         end_idx: 扰动结束点索引（PV 最后一次超出 band）
-        recovery_idx: 恢复确认点索引（连续 persistence 点回到 band 内的末尾）
-        recovery_time: 从 onset 到 recovery 的时长（秒）
+        recovery_idx: 恢复确认点索引（连续 persistence 点回到 band 内的末尾）；
+            删失事件为观测窗口末尾 n-1
+        recovery_time: 从 onset 到 recovery 的时长（秒）；
+            删失事件为到窗口末尾的时长（真实恢复时间的下界，不计入统计）
+        censored: 窗口内未确认恢复（删失事件），不纳入恢复时间统计
     """
 
     onset_idx: int
     end_idx: int
     recovery_idx: int
     recovery_time: float
+    censored: bool = False
 
 
 @dataclass
@@ -48,33 +53,46 @@ class DisturbanceAnalysis:
 
     @property
     def t_disturb(self) -> float | None:
-        """平均恢复时间（秒）；无事件时 None。"""
-        if not self.events:
+        """平均恢复时间（秒）；仅统计已恢复事件，无已恢复事件时 None。"""
+        recovered = [e for e in self.events if not e.censored]
+        if not recovered:
             return None
-        return stats.mean(e.recovery_time for e in self.events)
+        return stats.mean(e.recovery_time for e in recovered)
 
     @property
     def count(self) -> int:
         return len(self.events)
 
+    @property
+    def censored_count(self) -> int:
+        """删失事件数（观测窗口内未确认恢复）。"""
+        return sum(1 for e in self.events if e.censored)
+
     def to_details(self) -> dict:
-        """序列化为 MetricResult.details 片段（取整 2 位）。"""
+        """序列化为 MetricResult.details 片段（取整 2 位）。
+
+        disturbance_count 为事件总数（含删失），恢复时间统计仅基于已恢复事件；
+        删失事件单列 censored_count。
+        """
         if not self.events:
             return {
                 "disturbance_count": 0,
+                "censored_count": 0,
                 "mean_recovery_time": None,
                 "max_recovery_time": None,
                 "min_recovery_time": None,
                 "std_recovery_time": None,
             }
-        rts = [e.recovery_time for e in self.events]
-        mean_rt = stats.mean(rts)
+        rts = [e.recovery_time for e in self.events if not e.censored]
         return {
-            "disturbance_count": len(rts),
-            "mean_recovery_time": round(mean_rt, 2),
-            "max_recovery_time": round(max(rts), 2),
-            "min_recovery_time": round(min(rts), 2),
-            "std_recovery_time": round(stats.pstdev(rts), 2) if len(rts) >= 2 else 0.0,
+            "disturbance_count": len(self.events),
+            "censored_count": self.censored_count,
+            "mean_recovery_time": round(stats.mean(rts), 2) if rts else None,
+            "max_recovery_time": round(max(rts), 2) if rts else None,
+            "min_recovery_time": round(min(rts), 2) if rts else None,
+            "std_recovery_time": (round(stats.pstdev(rts), 2) if len(rts) >= 2 else 0.0)
+            if rts
+            else None,
         }
 
 
@@ -233,6 +251,13 @@ def _append_event(
 
     # 恢复检测：从 end_idx+1 起找连续 recovery_persistence 个 |error|<=band 的窗口
     recovery_idx = _find_recovery(errors, end_idx + 1, n, band, recovery_persistence)
+    if recovery_idx is None:
+        # 窗口内未确认恢复（含扰动持续到窗口末尾）→ 删失事件，
+        # recovery_time 记到窗口末尾作为下界，不纳入恢复时间统计
+        recovery_idx = n - 1
+        censored = True
+    else:
+        censored = False
     # recovery_time = onset 到恢复确认点的时长
     recovery_time = sum(point_durations[onset_idx : recovery_idx + 1])
     events.append(
@@ -241,6 +266,7 @@ def _append_event(
             end_idx=end_idx,
             recovery_idx=recovery_idx,
             recovery_time=recovery_time,
+            censored=censored,
         )
     )
 
@@ -251,14 +277,14 @@ def _find_recovery(
     n: int,
     band: float,
     persistence: int,
-) -> int:
+) -> int | None:
     """从 start 起找连续 persistence 个 |error|<=band 的窗口末尾索引。
 
     Returns:
-        恢复确认点索引；未找到时返回 n-1（未在观测窗口内恢复）
+        恢复确认点索引；未在观测窗口内恢复时返回 None（删失）
     """
     if start >= n:
-        return n - 1
+        return None
     run = 0
     for i in range(start, n):
         if abs(errors[i]) <= band:
@@ -267,7 +293,7 @@ def _find_recovery(
                 return i
         else:
             run = 0
-    return n - 1
+    return None
 
 
 __all__ = ["DisturbanceEvent", "DisturbanceAnalysis", "detect_disturbances"]

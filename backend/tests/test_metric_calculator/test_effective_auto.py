@@ -121,3 +121,21 @@ class TestEffectiveAutoRate:
         calc = EffectiveAutoRateCalculator()
         result = calc.calculate(bundle)
         assert result.details["auto_mode_rate"] == 100.0
+
+    def test_mismatched_lengths_no_index_error(self):
+        """信号/时间戳长度不齐时按最短数组截断，不抛 IndexError。"""
+        n = 100
+        mode = [1] * n
+        op = [50.0] * n
+        pv = [50.0] * n
+        sp = [50.0] * n
+        bundle = make_bundle(
+            {"mode": mode, "op": op, "pv": pv, "sp": sp},
+            metric_code="effective_auto_rate",
+        )
+        # 时间戳截断到 50 点，模拟数组长度不一致
+        bundle.data_block.timestamps = bundle.data_block.timestamps[:50]
+        calc = EffectiveAutoRateCalculator()
+        result = calc.calculate(bundle)
+        assert result.value == 100.0
+        assert result.details["total_duration_s"] == 50.0

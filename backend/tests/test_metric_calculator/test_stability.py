@@ -118,3 +118,18 @@ class TestStabilityRate:
         calc.with_dependencies({"oscillation_rate": _make_osc_result(0.0)})
         result = calc.calculate(bundle)
         assert 0.0 <= result.value <= 100.0
+
+    def test_huge_std_no_overflow(self):
+        """大量程/大 σ 不溢出：normalized_std≈2e5 时 exp(-x) 稳定返回 0。
+
+        修复前 1.0/math.exp(normalized_std) 在 normalized_std > ~709 时
+        抛 OverflowError；改为 math.exp(-x) 后数学等价且数值稳定。
+        """
+        n = 200
+        sp = [0.0] * n
+        pv = [1e6 * ((-1) ** i) for i in range(n)]  # σ≈1e6，normalized_std≈2e5
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="stability_rate")
+        calc = StabilityRateCalculator()
+        calc.with_dependencies({"oscillation_rate": _make_osc_result(0.0)})
+        result = calc.calculate(bundle)
+        assert result.value == 0.0

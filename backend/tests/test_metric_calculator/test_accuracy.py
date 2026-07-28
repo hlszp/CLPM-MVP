@@ -105,19 +105,81 @@ class TestAccuracyRate:
         assert result.confidence_level == ConfidenceLevel.D.value
 
     def test_value_clamped_to_100(self):
-        """负偏差时值仍限制在 [0, 100]。"""
+        """恒定负余差（有量程）按量程百分比扣分，值仍限制在 [0, 100]。"""
         n = 50
         pv = [50.0] * n
-        sp = [55.0] * n  # 负偏差
-        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="accuracy_rate")
+        sp = [55.0] * n  # 恒定负偏差 |Ē|=5
+        bundle = make_bundle(
+            {"pv": pv, "sp": sp, "pv_range": [100.0] * n},
+            metric_code="accuracy_rate",
+        )
         calc = AccuracyRateCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
         assert 0.0 <= result.value <= 100.0
+        # |Ē|=5 = 0.05·U → A = max(0, 1-5/5)×100 = 0
+        assert result.value == 0.0
 
     def test_single_point(self):
-        """单点数据可计算（不报错）。"""
-        bundle = make_bundle({"pv": [55.0], "sp": [50.0]}, metric_code="accuracy_rate")
+        """单点数据可计算（不报错）；单点属恒定余差退化，不得满分。"""
+        bundle = make_bundle(
+            {"pv": [52.0], "sp": [50.0], "pv_range": [100.0]},
+            metric_code="accuracy_rate",
+        )
         calc = AccuracyRateCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
+        # |Ē|=2，0.05·U=5 → A = (1-2/5)×100 = 60
+        assert result.value == 60.0
+
+
+class TestDegenerateConstantOffset:
+    """恒定余差退化分支（e_max=0 且 mean_abs_error>0）测试。"""
+
+    def test_constant_offset_no_full_score(self):
+        """恒定余差不得满分：按 A = max(0, 1-|Ē|/(0.05·U))×100 扣分。"""
+        n = 100
+        pv = [52.0] * n  # 恒定偏离 SP 2.0
+        sp = [50.0] * n
+        bundle = make_bundle(
+            {"pv": pv, "sp": sp, "pv_range": [100.0] * n},
+            metric_code="accuracy_rate",
+        )
+        calc = AccuracyRateCalculator()
+        result = calc.calculate(bundle)
+        assert result.value is not None
+        assert result.value == 60.0
+        assert result.value < 100.0
+        assert result.details["accuracy_basis"] == "constant_offset_range_percent"
+        assert result.details["e_max_source"] == "data_degenerate"
+
+    def test_constant_offset_missing_range_inconclusive(self):
+        """恒定余差且量程缺失 → INCONCLUSIVE（禁止满分）。"""
+        n = 100
+        pv = [55.0] * n
+        sp = [50.0] * n
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="accuracy_rate")
+        calc = AccuracyRateCalculator()
+        result = calc.calculate(bundle)
+        assert result.value is None
+        assert result.confidence_level == ConfidenceLevel.E.value
+        assert result.details["reason"] == "degenerate_offset_missing_pv_range"
+
+    def test_zero_constant_error_still_100(self, zero_error_bundle):
+        """恒定零偏差（PV=SP）不在退化分支扣分范围，仍为 100。"""
+        calc = AccuracyRateCalculator()
+        result = calc.calculate(zero_error_bundle)
+        assert result.value == 100.0
+
+    def test_constant_offset_exceeds_tolerance_zero(self):
+        """恒定余差超过量程 5% 容限 → A 扣到 0（不出现负值/满分）。"""
+        n = 100
+        pv = [60.0] * n  # |Ē|=10 > 0.05·U=5
+        sp = [50.0] * n
+        bundle = make_bundle(
+            {"pv": pv, "sp": sp, "pv_range": [100.0] * n},
+            metric_code="accuracy_rate",
+        )
+        calc = AccuracyRateCalculator()
+        result = calc.calculate(bundle)
+        assert result.value == 0.0
