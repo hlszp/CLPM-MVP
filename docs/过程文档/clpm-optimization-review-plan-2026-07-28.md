@@ -56,6 +56,8 @@
 
 遗留：存量空 TAG 子表需 ALTER TABLE 治理（低优先）；`_delete_range` 直调路径无防护（仅端点入口暴露 overwrite）；data_link_monitor/health 仍默认降级（监控场景合理）。
 
+**事故修复（2026-07-28 下午，北京时 10:00 起全回路 INCONCLUSIVE 事件）**：①`tdengine_provider` 模块级 `asyncio.Lock` 跨事件循环绑定致全回路取数瘫痪（commit `f45f498a`，7-20 起反复发作的根因，已根治并加结构性回归断言）；②Phase 1 数组长度防护在 `effective_auto_rate` 上对全部 5 数组取 min，MODE_HF tagGroup 无 pv/sp 致上界截断为 0 误报 zero_total_duration（commit `fix(metric): 有效自控率缺 pv/sp 信号时误报`，已修复并加三场景回归）。两轮回填验证：北京时 10:00-14:00 快照恢复 20 SUCCESS/7 INCONCLUSIVE（7 条为基线既有恒 INCONCLUSIVE 回路），平均分 ~61.5。**注意：今日 10:00 前的历史快照均为旧 8h 偏移窗口口径，如需校正历史需按数据留存范围做全面历史重算。**
+
 ---
 
 ## 一、评审结论总览
