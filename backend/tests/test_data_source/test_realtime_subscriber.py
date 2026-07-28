@@ -426,6 +426,18 @@ def _mock_loop_db(loop_ids: list[str]) -> AsyncMock:
     return mock_session_ctx
 
 
+def _all_mapped_loop_data(loop_ids: list[str]) -> dict[str, dict]:
+    """构造 _batch_get_loop_data 返回值：所有回路均有有效 tag 映射."""
+    return {
+        lid: {
+            "role_tag_map": {"PV": f"LIC-{i}.PV"},
+            "unit_id": "unit-1",
+            "subtable": f"t_lic_{i}",
+        }
+        for i, lid in enumerate(loop_ids)
+    }
+
+
 async def _cancel_retry_task(sub: RealtimeSubscriber) -> None:
     """取消补数重试定时器，避免 300s 睡眠任务泄漏到事件循环 teardown."""
     import asyncio
@@ -645,6 +657,10 @@ async def test_run_gap_backfill_calls_import_with_skip_strategy():
             return_value=_mock_loop_db(["loop-1", "loop-2"]),
         ),
         patch(
+            "app.services.data_import._batch_get_loop_data",
+            new=AsyncMock(return_value=_all_mapped_loop_data(["loop-1", "loop-2"])),
+        ),
+        patch(
             "app.services.data_import.import_history_data",
             new=AsyncMock(return_value={"total": 2, "succeeded": 2, "failed": 0, "errors": []}),
         ) as mock_import,
@@ -735,6 +751,10 @@ async def test_run_gap_backfill_partial_failure_keeps_checkpoint():
             return_value=_mock_loop_db(["loop-1", "loop-2"]),
         ),
         patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch(
+            "app.services.data_import._batch_get_loop_data",
+            new=AsyncMock(return_value=_all_mapped_loop_data(["loop-1", "loop-2"])),
+        ),
         patch(
             "app.services.data_import.import_history_data",
             new=AsyncMock(
@@ -1270,3 +1290,258 @@ async def test_watchdog_no_disconnect_when_no_last_data():
 
     # _last_data_at 为 None 时不应触发断开（close 不被看门狗调用）
     # ws.close 可能在循环退出后由外部 stop() 调用，但 _close_ws_safely 未被看门狗触发
+
+
+# ---------------------------------------------------------------------------
+# gap backfill 无映射回路过滤测试（P1：未配置映射回路不得阻塞 checkpoint/告警）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_gap_backfill_excludes_unmapped_loops():
+    """无 tag 映射回路被剔出补数口径：不参与 import、不阻塞 checkpoint、不告警."""
+    import time as _time
+
+    from app.schemas.task import TaskStatus
+
+    fake_redis = _FakeRedis()
+    sub = RealtimeSubscriber()
+    gap_start = _time.time() - 600
+    gap_end = _time.time() - 2
+    sub._last_flushed_at = gap_start
+
+    # loop-1 有映射，loop-2 无映射
+    loop_data_map = {
+        "loop-1": {"role_tag_map": {"PV": "LIC-1.PV"}, "unit_id": "u1", "subtable": "t1"},
+        "loop-2": {"role_tag_map": {}, "unit_id": "", "subtable": ""},
+    }
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch(
+            "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+            return_value=_mock_loop_db(["loop-1", "loop-2"]),
+        ),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch(
+            "app.services.data_import._batch_get_loop_data",
+            new=AsyncMock(return_value=loop_data_map),
+        ),
+        patch(
+            "app.services.data_import.import_history_data",
+            new=AsyncMock(return_value={"total": 1, "succeeded": 1, "failed": 0, "errors": []}),
+        ) as mock_import,
+        patch(
+            "app.services.task_tracker.create_task",
+            new=AsyncMock(return_value="task-1"),
+        ) as mock_create,
+        patch("app.services.task_tracker.update_status", new=AsyncMock()) as mock_update,
+        patch("app.services.alerting.send_alert", new=AsyncMock()) as mock_alert,
+    ):
+        _gap_settings(mock_settings)
+        await sub._run_gap_backfill(gap_start, gap_end)
+
+    # import 只收到有映射的回路
+    assert mock_import.await_args.args[0] == ["loop-1"]
+    # 任务登记 loops_total 只计有映射回路
+    assert mock_create.await_args.kwargs["loops_total"] == 1
+    # failed==0 → checkpoint 推进到窗口末端，不安排重试、不告警
+    assert sub._last_flushed_at == gap_end
+    assert sub._backfill_retry_task is None
+    mock_alert.assert_not_awaited()
+    statuses = [c.args[1] for c in mock_update.await_args_list]
+    assert statuses == [TaskStatus.RUNNING, TaskStatus.SUCCESS]
+
+
+@pytest.mark.asyncio
+async def test_run_gap_backfill_all_unmapped_skips_without_alert():
+    """全部活跃回路都无映射：直接跳过补数（不登记任务、不告警、不安排重试）."""
+    import time as _time
+
+    fake_redis = _FakeRedis()
+    sub = RealtimeSubscriber()
+    gap_start = _time.time() - 600
+    gap_end = _time.time() - 2
+    sub._last_flushed_at = gap_start
+
+    loop_data_map = {
+        "loop-1": {"role_tag_map": {}, "unit_id": "", "subtable": ""},
+    }
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch(
+            "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+            return_value=_mock_loop_db(["loop-1"]),
+        ),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch(
+            "app.services.data_import._batch_get_loop_data",
+            new=AsyncMock(return_value=loop_data_map),
+        ),
+        patch(
+            "app.services.data_import.import_history_data",
+            new=AsyncMock(),
+        ) as mock_import,
+        patch(
+            "app.services.task_tracker.create_task",
+            new=AsyncMock(return_value="task-1"),
+        ) as mock_create,
+        patch("app.services.alerting.send_alert", new=AsyncMock()) as mock_alert,
+    ):
+        _gap_settings(mock_settings)
+        await sub._run_gap_backfill(gap_start, gap_end)
+
+    mock_import.assert_not_awaited()
+    mock_create.assert_not_awaited()
+    mock_alert.assert_not_awaited()
+    assert sub._backfill_retry_task is None
+
+
+# ---------------------------------------------------------------------------
+# 实时写回治理测试（P2：flush TAGS 带真实 loop_id/unit_id；行 ts 取 PV collectTime）
+# ---------------------------------------------------------------------------
+
+
+class _FakePipe:
+    """轻量级 Redis pipeline mock."""
+
+    def __init__(self) -> None:
+        self.ops: list[tuple] = []
+
+    def lpush(self, *args: Any) -> None:
+        self.ops.append(("lpush", *args))
+
+    def ltrim(self, *args: Any) -> None:
+        self.ops.append(("ltrim", *args))
+
+    def expire(self, *args: Any) -> None:
+        self.ops.append(("expire", *args))
+
+    async def execute(self) -> list:
+        return []
+
+
+@pytest.mark.asyncio
+async def test_flush_buffer_writeback_carries_real_loop_id_and_unit_id():
+    """flush 写回 TDengine 时 USING TAGS 携带真实 loop_id/unit_id（非空串）."""
+    fake_redis = _FakeRedis()
+    fake_pipe = _FakePipe()
+    fake_redis.pipeline = lambda: fake_pipe  # type: ignore[attr-defined]
+
+    sub = RealtimeSubscriber()
+    sub._buffer = {
+        "LIC-101": {
+            "PV": {"value": "50.5", "quality": 1, "ts": "2026-07-15T10:00:00Z"},
+        },
+    }
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch(
+            "app.services.data_source.realtime_subscriber.batch_insert_multi",
+            new=AsyncMock(return_value=1),
+        ) as mock_insert,
+        patch.object(
+            sub,
+            "_get_loop_meta_map",
+            new=AsyncMock(return_value={"LIC-101": ("loop-uuid-1", "unit-uuid-1")}),
+        ),
+    ):
+        mock_settings.REALTIME_WRITEBACK_ENABLED = True
+        await sub._flush_buffer()
+
+    mock_insert.assert_awaited_once()
+    tables_rows = mock_insert.await_args.args[0]
+    assert len(tables_rows) == 1
+    assert tables_rows[0]["loop_id"] == "loop-uuid-1"
+    assert tables_rows[0]["unit_id"] == "unit-uuid-1"
+
+
+@pytest.mark.asyncio
+async def test_flush_buffer_writeback_unknown_loop_part_falls_back_to_empty():
+    """未配置映射的 loop_part 查不到 meta 时回退空串，不阻塞 flush."""
+    fake_redis = _FakeRedis()
+    fake_pipe = _FakePipe()
+    fake_redis.pipeline = lambda: fake_pipe  # type: ignore[attr-defined]
+
+    sub = RealtimeSubscriber()
+    sub._buffer = {
+        "UNKNOWN-1": {
+            "PV": {"value": "1.0", "quality": 1, "ts": "2026-07-15T10:00:00Z"},
+        },
+    }
+
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+        patch(
+            "app.services.data_source.realtime_subscriber.batch_insert_multi",
+            new=AsyncMock(return_value=1),
+        ) as mock_insert,
+        patch.object(sub, "_get_loop_meta_map", new=AsyncMock(return_value={})),
+    ):
+        mock_settings.REALTIME_WRITEBACK_ENABLED = True
+        await sub._flush_buffer()
+
+    tables_rows = mock_insert.await_args.args[0]
+    assert tables_rows[0]["loop_id"] == ""
+    assert tables_rows[0]["unit_id"] == ""
+
+
+@pytest.mark.asyncio
+async def test_get_loop_meta_map_builds_cache_from_db():
+    """_get_loop_meta_map 经 _batch_get_loop_data 构建 loop_part → (loop_id, unit_id) 缓存."""
+    sub = RealtimeSubscriber()
+    loop_data_map = {
+        "loop-1": {
+            "role_tag_map": {"PV": "LIC-101.PV", "SP": "LIC-101.SP"},
+            "unit_id": "unit-1",
+            "subtable": "t_lic_101",
+        },
+        "loop-2": {"role_tag_map": {}, "unit_id": "", "subtable": ""},  # 无映射，不入缓存
+    }
+
+    with (
+        patch(
+            "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+            return_value=_mock_loop_db(["loop-1", "loop-2"]),
+        ),
+        patch(
+            "app.services.data_import._batch_get_loop_data",
+            new=AsyncMock(return_value=loop_data_map),
+        ),
+    ):
+        meta = await sub._get_loop_meta_map(["LIC-101", "UNKNOWN"])
+
+    assert meta["LIC-101"] == ("loop-1", "unit-1")
+    assert meta["UNKNOWN"] == ("", "")
+    # 无映射回路不进缓存
+    assert sub._loop_meta_cache == {"LIC-101": ("loop-1", "unit-1")}
+
+
+def test_build_row_ts_prefers_pv_collect_time():
+    """行 ts 统一取 PV 角色 collectTime（PV 高频基准），而非任意角色."""
+    sub = RealtimeSubscriber()
+    roles_data = {
+        # PID_P 先出现且 ts 滞后；PV ts 才是高频基准
+        "PID_P": {"value": "1.2", "quality": 1, "ts": "2026-07-15T09:58:00Z"},
+        "PV": {"value": "50.5", "quality": 1, "ts": "2026-07-15T10:00:00Z"},
+        "SP": {"value": "60.0", "quality": 1, "ts": "2026-07-15T09:59:00Z"},
+    }
+    row = sub._build_row(roles_data)
+    # PV collectTime 10:00:00Z → Asia/Shanghai 18:00:00
+    assert "2026-07-15 18:00:00" in row[0]
+
+
+def test_build_row_ts_falls_back_when_pv_missing():
+    """PV 缺失（或无 ts）时回退到任一角色的时间戳."""
+    sub = RealtimeSubscriber()
+    roles_data = {
+        "SP": {"value": "60.0", "quality": 1, "ts": "2026-07-15T10:00:00Z"},
+    }
+    row = sub._build_row(roles_data)
+    assert "2026-07-15 18:00:00" in row[0]
+    assert row[1] is None  # pv 为 NULL
+    assert row[2] == 60.0  # sp

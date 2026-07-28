@@ -87,6 +87,12 @@ _GAP_BACKFILL_LOCK_KEY = "realtime:gap:backfill:lock"
 # 看门狗 recv 超时（秒）—— 周期性检查消息停滞，超时即断开重连
 _WATCHDOG_RECV_TIMEOUT = 30.0
 
+# loop_part → (loop_id, unit_id) 缓存 TTL（秒）：flush 热路径不每拍查库
+_LOOP_META_CACHE_TTL = 300.0
+# 缓存缺失 loop_part 时的最小刷新间隔（秒）：防止未配置映射的 loop_part
+# 每次 flush 都触发一次 DB 查询
+_LOOP_META_MISS_REFRESH_MIN_INTERVAL = 60.0
+
 # tag_name 后缀 → DDL 列名映射（与 tdengine.py 保持一致）
 _ROLE_COLUMN_MAP: dict[str, str] = {
     "PV": "pv",
@@ -184,6 +190,10 @@ class RealtimeSubscriber:
         self._backfill_retry_task: asyncio.Task | None = None  # 待执行的重试定时器
         self._backfill_retry_count: int = 0  # 连续失败次数（决定指数退避间隔）
         self._retry_window_start: float | None = None  # 待重试缺口起点（多次失败取最早）
+        # loop_part → (loop_id, unit_id) 缓存（实时写回 TDengine 时填充 USING TAGS；
+        # TDengine TAGS 仅子表首次创建生效，实时先行创建的子表 TAG 必须带真实值）
+        self._loop_meta_cache: dict[str, tuple[str, str]] = {}
+        self._loop_meta_cache_at: float = 0.0  # 上次缓存刷新（含失败尝试）的 monotonic 时间
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -565,7 +575,7 @@ class RealtimeSubscriber:
         from app.schemas.task import TaskStatus, TaskType
         from app.services import task_tracker
         from app.services.alerting import send_alert
-        from app.services.data_import import import_history_data
+        from app.services.data_import import _batch_get_loop_data, import_history_data
 
         started = time.monotonic()
         ts_start = datetime.fromtimestamp(gap_start, UTC).isoformat()
@@ -585,8 +595,24 @@ class RealtimeSubscriber:
                     select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
                 )
                 loop_ids = [str(row[0]) for row in result.all()]
+                # 过滤无有效 tag 映射的回路：它们在 import_history_data 内必然失败，
+                # 计入 failed 会导致 checkpoint 不推进 + 每次重试 send_alert，
+                # 一个未配置映射的回路即可造成无限重试告警风暴
+                loop_data_map = await _batch_get_loop_data(db, loop_ids)
+            mapped_loop_ids = [
+                lid for lid in loop_ids if loop_data_map.get(lid, {}).get("role_tag_map")
+            ]
+            unmapped_count = len(loop_ids) - len(mapped_loop_ids)
+            if unmapped_count:
+                mapped_set = set(mapped_loop_ids)
+                logger.debug(
+                    "断点续传剔除 %d 个无 tag 映射回路（不计入失败口径）: %s",
+                    unmapped_count,
+                    [lid for lid in loop_ids if lid not in mapped_set],
+                )
+            loop_ids = mapped_loop_ids
             if not loop_ids:
-                logger.warning("断点续传跳过：无活跃回路")
+                logger.warning("断点续传跳过：无有效 tag 映射的活跃回路")
                 return
 
             # 任务登记：补数进任务列表（来源标记 auto-backfill，系统任务不通知个人）
@@ -856,6 +882,47 @@ class RealtimeSubscriber:
         result.reverse()
         return result
 
+    async def _get_loop_meta_map(self, loop_parts: list[str]) -> dict[str, tuple[str, str]]:
+        """获取 loop_part → (loop_id, unit_id) 映射（带 TTL 缓存，flush 热路径不每拍查库）.
+
+        缓存过期或存在未知 loop_part（距上次刷新超过最小间隔）时刷新；
+        刷新失败时沿用旧缓存，缺失的 loop_part 回退为空串（不阻塞 flush）。
+        """
+        now = time.monotonic()
+        stale = now - self._loop_meta_cache_at > _LOOP_META_CACHE_TTL
+        has_missing = any(lp not in self._loop_meta_cache for lp in loop_parts)
+        miss_due = now - self._loop_meta_cache_at > _LOOP_META_MISS_REFRESH_MIN_INTERVAL
+        if stale or (has_missing and miss_due):
+            try:
+                await self._refresh_loop_meta_cache()
+            except Exception as exc:  # noqa: BLE001
+                self._loop_meta_cache_at = now  # 失败也记时间，避免每拍重试
+                logger.warning("刷新 loop_part→loop_id 映射缓存失败（沿用旧缓存）: %s", exc)
+        return {lp: self._loop_meta_cache.get(lp, ("", "")) for lp in loop_parts}
+
+    async def _refresh_loop_meta_cache(self) -> None:
+        """从数据库重建 loop_part → (loop_id, unit_id) 缓存（仅含活跃且有 tag 映射的回路）."""
+        from sqlalchemy import select
+
+        from app.models.loop import LoopLedger
+        from app.services.data_import import _batch_get_loop_data
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+            loop_ids = [str(row[0]) for row in result.all()]
+            data_map = await _batch_get_loop_data(db, loop_ids) if loop_ids else {}
+
+        cache: dict[str, tuple[str, str]] = {}
+        for lid, meta in data_map.items():
+            role_tag_map = meta.get("role_tag_map") or {}
+            if not role_tag_map:
+                continue
+            first_tag = next(iter(role_tag_map.values()))
+            loop_part = first_tag.rsplit(".", 1)[0] if "." in first_tag else first_tag
+            cache.setdefault(loop_part, (lid, meta.get("unit_id") or ""))
+        self._loop_meta_cache = cache
+        self._loop_meta_cache_at = time.monotonic()
+
     async def _flush_loop(self) -> None:
         """按配置间隔 flush 缓冲区到 TDengine（默认 1 秒）。"""
         while self._running:
@@ -880,6 +947,12 @@ class RealtimeSubscriber:
                 return
             buffer_copy = dict(self._buffer)
             self._buffer.clear()
+
+        # 实时写回需携带真实 loop_id/unit_id（TDengine USING TAGS 仅子表首次创建
+        # 生效，实时先行创建的子表 TAG 必须正确，否则永远为空且无法后续补写）
+        loop_meta: dict[str, tuple[str, str]] = {}
+        if self._writeback_enabled:
+            loop_meta = await self._get_loop_meta_map(list(buffer_copy))
 
         # 1. 写入 Redis 1 小时缓存 (pipeline)
         pipe = redis_client.pipeline()
@@ -908,11 +981,12 @@ class RealtimeSubscriber:
             # 为 TDengine 准备数据
             if self._writeback_enabled:
                 subtable = make_subtable_name(loop_part)
+                loop_id, unit_id = loop_meta.get(loop_part, ("", ""))
                 tables_rows.append(
                     {
                         "subtable": subtable,
-                        "loop_id": "",
-                        "unit_id": "",
+                        "loop_id": loop_id,
+                        "unit_id": unit_id,
                         "rows": [row],
                     }
                 )
@@ -965,12 +1039,14 @@ class RealtimeSubscriber:
         时间戳经显式 astimezone 到目标时区（Asia/Shanghai），
         消除 naive datetime 在 TDengine 侧的 8h 偏移风险。
         """
-        # 获取时间戳（取任意一个角色的时间戳）
-        ts_str = ""
-        for role_data in roles_data.values():
-            ts_str = role_data.get("ts", "")
-            if ts_str:
-                break
+        # 行时间戳统一取 PV 角色的 collectTime（PV 为高频基准，保证行 ts 与 PV 值
+        # 同源，避免取到低频角色（如 PID 参数）的滞后时间戳）；PV 缺失时回退到任一角色
+        ts_str = roles_data.get("PV", {}).get("ts", "")
+        if not ts_str:
+            for role_data in roles_data.values():
+                ts_str = role_data.get("ts", "")
+                if ts_str:
+                    break
         # 显式时区转换：统一到 _TARGET_TZ（Asia/Shanghai），格式化为 naive 字符串
         ts_str = _normalize_ts(ts_str)
 

@@ -10,11 +10,16 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.base import CamelModel
+
+# overwrite 策略的实时行保护余量：远端历史 API 有分钟级延迟，
+# tsEnd 贴近实时边缘时先 DELETE 再拉远端会拉不回窗口右缘的实时行（永久缺口）
+_OVERWRITE_REALTIME_MARGIN_MINUTES = 5
 
 
 class ImportStatus(StrEnum):
@@ -52,6 +57,34 @@ class ImportRequest(CamelModel):
     interval: int = Field(1, ge=1, description="采样间隔（秒）")
     conflictStrategy: ConflictStrategy = Field(ConflictStrategy.OVERWRITE, description="冲突策略")
     triggerBackfill: bool = Field(False, description="导入完成后触发 KPI 回算")
+
+    @model_validator(mode="after")
+    def _overwrite_ts_end_margin(self) -> ImportRequest:
+        """overwrite 策略强制 tsEnd ≤ now−5min.
+
+        overwrite 先 DELETE 目标时段再从远端拉取，远端历史 API 存在分钟级
+        延迟：tsEnd 贴近实时边缘时，窗口右缘的实时行被 DELETE 后远端拉不
+        回来，造成永久数据缺口。skip 策略无 DELETE，不受此限制。
+        """
+        if self.conflictStrategy != ConflictStrategy.OVERWRITE:
+            return self
+        try:
+            end_dt = datetime.fromisoformat(self.tsEnd.replace("Z", "+00:00"))
+        except ValueError:
+            # 格式错误交由端点层 400 处理，此处不重复报错
+            return self
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=UTC)
+        max_end = datetime.now(UTC) - timedelta(minutes=_OVERWRITE_REALTIME_MARGIN_MINUTES)
+        if end_dt > max_end:
+            raise ValueError(
+                f"overwrite 策略会删除目标时段后再拉取，为避免误删远端尚未归档的实时行，"
+                f"tsEnd 不得晚于当前时间前 {_OVERWRITE_REALTIME_MARGIN_MINUTES} 分钟"
+                f"（当前上限约 {max_end.strftime('%Y-%m-%d %H:%M:%S')}Z）；"
+                f"如需补最近 {_OVERWRITE_REALTIME_MARGIN_MINUTES} 分钟内的数据，"
+                f"请改用 skip 策略"
+            )
+        return self
 
 
 class ImportTaskResponse(CamelModel):

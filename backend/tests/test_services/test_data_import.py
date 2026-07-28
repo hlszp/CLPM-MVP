@@ -39,6 +39,23 @@ class TestParseHelpers:
         assert _parse_float_val("") is None
         assert _parse_float_val("abc") is None
 
+    def test_parse_float_val_nan_inf_rejected(self):
+        """NaN/Inf 置 None（写 NULL）：TDengine SQL 文本协议不接受 nan/inf 字面量，
+        原样输出会导致整 chunk 写入失败."""
+        assert _parse_float_val(float("nan")) is None
+        assert _parse_float_val(float("inf")) is None
+        assert _parse_float_val(float("-inf")) is None
+        assert _parse_float_val("nan") is None
+        assert _parse_float_val("NaN") is None
+        assert _parse_float_val("inf") is None
+        assert _parse_float_val("-Infinity") is None
+
+    def test_parse_int_val_nan_inf_rejected(self):
+        """NaN 经 float 转换抛 ValueError、Inf 抛 OverflowError，一并拦截为 None."""
+        assert _parse_int_val("nan") is None
+        assert _parse_int_val("inf") is None
+        assert _parse_int_val(float("inf")) is None
+
     def test_parse_int_val_valid(self):
         assert _parse_int_val("1") == 1
         assert _parse_int_val(1) == 1
@@ -183,6 +200,32 @@ class TestConvertToWideRows:
         assert len(rows) == 1
         _, _, _, _, _, _, _, _, pv_quality = rows[0]
         assert pv_quality == 0
+
+    def test_convert_nan_inf_values_become_null(self):
+        """远端返回 nan/inf 时对应列写 NULL（None），行保留不炸 chunk."""
+        timestamps = ["2026-07-15T10:00:00", "2026-07-15T10:00:01"]
+        series_map = {
+            "LIC-101.PV": {"values": ["nan", "1.5"], "qualities": [1, 1]},
+            "LIC-101.OP": {"values": ["inf", "50.0"], "qualities": [1, 1]},
+            "LIC-101.MODE": {"values": ["inf", "1"], "qualities": [1, 1]},
+        }
+        role_tag_map = {
+            "PV": "LIC-101.PV",
+            "OP": "LIC-101.OP",
+            "MODE": "LIC-101.MODE",
+        }
+        rows = _convert_to_wide_rows((timestamps, series_map), role_tag_map)
+        assert len(rows) == 2
+        # 第一行：nan/inf → None（NULL）
+        _, pv, _, op, mode, *_ = rows[0]
+        assert pv is None
+        assert op is None
+        assert mode is None
+        # 第二行：正常值不受影响
+        _, pv2, _, op2, mode2, *_ = rows[1]
+        assert pv2 == 1.5
+        assert op2 == 50.0
+        assert mode2 == 1
 
 
 class TestTaskResponse:

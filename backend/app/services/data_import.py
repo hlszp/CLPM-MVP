@@ -1028,22 +1028,29 @@ def _get_series_quality(role_series: dict[str, dict], role: str, index: int) -> 
 
 
 def _parse_float_val(value: Any) -> float | None:
-    """安全解析 float."""
+    """安全解析 float.
+
+    NaN/Inf（如远端返回 ``"nan"``/``"inf"`` 字符串）一律置 None（写 NULL）：
+    TDengine SQL 文本协议不接受 nan/inf 字面量，原样输出会导致整 chunk 写入失败。
+    """
     if value is None or value == "":
         return None
     try:
-        return float(value)
+        result = float(value)
     except (ValueError, TypeError):
         return None
+    if not math.isfinite(result):
+        return None
+    return result
 
 
 def _parse_int_val(value: Any) -> int | None:
-    """安全解析 int."""
+    """安全解析 int（NaN/Inf 经 float 转换会抛 ValueError/OverflowError，一并拦截）."""
     if value is None or value == "":
         return None
     try:
         return int(float(value))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
