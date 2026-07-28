@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import math
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -32,12 +32,14 @@ import numpy as np
 # 1. FOPDT 过程对象仿真器（生成"真值"数据用于验证）
 # ============================================================================
 
+
 @dataclass
 class FOPDTTruth:
     """FOPDT 真值参数 G(s) = K * exp(-theta*s) / (tau*s + 1)."""
-    K: float       # 过程增益
-    tau: float     # 时间常数（秒）
-    theta: float   # 纯滞后（秒）
+
+    K: float  # 过程增益
+    tau: float  # 时间常数（秒）
+    theta: float  # 纯滞后（秒）
 
 
 def simulate_fopdt_open_loop(
@@ -95,8 +97,8 @@ def simulate_closed_loop_fopdt(
     b = K * (1 - a)
     d = max(1, round(theta / ts))
     n = len(sp)
-    y = np.zeros(n)   # PV
-    u = np.zeros(n)   # OP
+    y = np.zeros(n)  # PV
+    u = np.zeros(n)  # OP
     e_prev = 0.0
     u_prev = 0.0
     ki = kp * ts / ti
@@ -121,12 +123,14 @@ def simulate_closed_loop_fopdt(
 # 2. ARX 辨识（线性最小二乘）
 # ============================================================================
 
+
 @dataclass
 class ARXResult:
     """ARX 辨识结果：A(z^-1)*y(t) = B(z^-1)*u(t-d) + e(t)."""
-    a1: float          # A 多项式系数（y(t) + a1*y(t-1) = ...）
-    b1: float          # B 多项式系数（... = b1*u(t-d)）
-    d: int             # 纯滞后（采样数）
+
+    a1: float  # A 多项式系数（y(t) + a1*y(t-1) = ...）
+    b1: float  # B 多项式系数（... = b1*u(t-d)）
+    d: int  # 纯滞后（采样数）
     residual_var: float
     n_samples: int
 
@@ -175,6 +179,7 @@ def identify_arx(
 # ============================================================================
 # 3. IV 辨识（工具变量法，处理闭环偏差）
 # ============================================================================
+
 
 def identify_iv(
     u: np.ndarray,
@@ -229,6 +234,7 @@ def identify_iv(
 # 4. ARMAX 辨识（预测误差法，显式建模扰动）
 # ============================================================================
 
+
 def identify_armax(
     u: np.ndarray,
     y: np.ndarray,
@@ -242,7 +248,7 @@ def identify_armax(
     用迭代 PEM：固定 C 估 A/B，固定 A/B 估 C，交替至收敛。
     """
     n = len(y)
-    max_lag = max(1, nb := 1) + d
+    max_lag = max(1, 1) + d
     rows = n - max_lag
 
     # 初始值：ARX
@@ -250,8 +256,10 @@ def identify_armax(
     a1, b1 = arx.a1, arx.b1
     c = np.zeros(nc + 1)
     c[0] = 1.0
+    iterations_done = 0
 
-    for iteration in range(max_iter):
+    for _ in range(max_iter):
+        iterations_done += 1
         # 计算残差 e(t) = y(t) + a1*y(t-1) - b1*u(t-d)
         e = np.zeros(rows)
         for i in range(rows):
@@ -301,13 +309,14 @@ def identify_armax(
         "c": c.tolist(),
         "residual_var": res_var,
         "n_samples": rows,
-        "iterations": iteration + 1,
+        "iterations": iterations_done,
     }
 
 
 # ============================================================================
 # 5. 离散→连续转换
 # ============================================================================
+
 
 def arx_to_fopdt(a1: float, b1: float, d: int, ts: float = 1.0) -> FOPDTTruth:
     """ARX 离散参数转 FOPDT 连续参数.
@@ -326,6 +335,7 @@ def arx_to_fopdt(a1: float, b1: float, d: int, ts: float = 1.0) -> FOPDTTruth:
 # ============================================================================
 # 6. 激励检测（PE 条件）
 # ============================================================================
+
 
 def check_excitation(u: np.ndarray, y: np.ndarray, d: int) -> dict[str, Any]:
     """激励充分性检测.
@@ -367,6 +377,7 @@ def check_excitation(u: np.ndarray, y: np.ndarray, d: int) -> dict[str, Any]:
 # 7. 验证场景
 # ============================================================================
 
+
 def make_step_input(n: int, step_time: int, step_amplitude: float) -> np.ndarray:
     """生成阶跃输入信号."""
     u = np.zeros(n)
@@ -401,7 +412,11 @@ def run_scenario_open_loop_step() -> dict[str, Any]:
     return {
         "scenario": "开环阶跃响应（基线）",
         "truth": {"K": truth.K, "tau": truth.tau, "theta": truth.theta},
-        "identified": {"K": round(identified.K, 4), "tau": round(identified.tau, 4), "theta": round(identified.theta, 4)},
+        "identified": {
+            "K": round(identified.K, 4),
+            "tau": round(identified.tau, 4),
+            "theta": round(identified.theta, 4),
+        },
         "error_pct": {
             "K": round(abs(identified.K - truth.K) / truth.K * 100, 2),
             "tau": round(abs(identified.tau - truth.tau) / truth.tau * 100, 2),
@@ -436,7 +451,9 @@ def run_scenario_closed_loop_sp_step() -> dict[str, Any]:
         "scenario": "闭环 SP 阶跃（ARX vs IV 对比）",
         "truth": {"K": truth.K, "tau": truth.tau, "theta": truth.theta},
         "arx": {
-            "K": round(id_arx.K, 4), "tau": round(id_arx.tau, 4), "theta": round(id_arx.theta, 4),
+            "K": round(id_arx.K, 4),
+            "tau": round(id_arx.tau, 4),
+            "theta": round(id_arx.theta, 4),
             "error_pct": {
                 "K": round(abs(id_arx.K - truth.K) / truth.K * 100, 2),
                 "tau": round(abs(id_arx.tau - truth.tau) / truth.tau * 100, 2),
@@ -444,7 +461,9 @@ def run_scenario_closed_loop_sp_step() -> dict[str, Any]:
             },
         },
         "iv": {
-            "K": round(id_iv.K, 4), "tau": round(id_iv.tau, 4), "theta": round(id_iv.theta, 4),
+            "K": round(id_iv.K, 4),
+            "tau": round(id_iv.tau, 4),
+            "theta": round(id_iv.theta, 4),
             "error_pct": {
                 "K": round(abs(id_iv.K - truth.K) / truth.K * 100, 2),
                 "tau": round(abs(id_iv.tau - truth.tau) / truth.tau * 100, 2),
@@ -535,6 +554,7 @@ def run_scenario_snr_sensitivity() -> dict[str, Any]:
 # 8. 主程序
 # ============================================================================
 
+
 def main() -> int:
     print("=" * 72)
     print("回路整定 Phase 2.0 — 过程对象辨识算法原型验证")
@@ -585,13 +605,14 @@ def main() -> int:
             elif "excitation_check" in result:
                 verdict = result["excitation_check"]["verdict"]
                 if "INCONCLUSIVE" in verdict:
-                    print(f"  ✓ 激励检测正确返回 INCONCLUSIVE")
+                    print("  ✓ 激励检测正确返回 INCONCLUSIVE")
                 else:
                     print(f"  ⚠ 激励检测未返回 INCONCLUSIVE：{verdict}")
                     all_pass = False
         except Exception as exc:
             print(f"  ✗ 场景执行失败：{exc}")
             import traceback
+
             traceback.print_exc()
             report["scenarios"].append({"scenario": name, "error": str(exc)})
             all_pass = False
