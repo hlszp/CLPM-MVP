@@ -535,3 +535,70 @@ class TestPipelineConsecutiveSegments:
         start, end = block.consecutive_segments[0]
         assert start == 11
         assert end == n - 1
+
+
+# ---------------------------------------------------------------------------
+# P1 整改：FROZEN 仅标记 + JUMP/SPIKE 量纲一致
+# ---------------------------------------------------------------------------
+
+
+class TestFrozenMarkOnlyPipeline:
+    """FROZEN 仅标记不置 invalid：平稳良好回路 valid_rate 不被拖零。"""
+
+    def test_steady_loop_frozen_marked_but_valid(self):
+        """控制良好的平稳回路（PV 恒定）→ FROZEN 标记，但全点 valid=True。"""
+        config = _make_config(ControlType.FLOW, range_min=0.0, range_max=100.0)
+        pipeline = PreprocessingPipeline(config)
+        n = 30
+        raw = RawTimeSeries(
+            timestamps=_make_timestamps(n),
+            signals={"pv": [50.0] * n},  # 平稳回路：PV 长期不动
+        )
+        block = pipeline.process(raw, TagGroup.BASE)
+
+        # FROZEN 仍被标记（供仪表故障率复合判据/展示使用）
+        assert any(OutlierReason.FROZEN.value in reasons for reasons in block.outlier_reasons["pv"])
+        # 但不置 invalid：valid_rate 不被拖零，避免全 KPI INCONCLUSIVE
+        assert all(block.validity["pv_valid"])
+        assert block.quality_summary.valid_rate == 1.0
+
+    def test_sensor_stuck_still_marked_frozen(self):
+        """传感器真卡死（PV 死值）仍被 FROZEN 标记（供下游复合判据识别）。"""
+        config = _make_config(ControlType.FLOW, range_min=0.0, range_max=100.0)
+        pipeline = PreprocessingPipeline(config)
+        n = 10
+        raw = RawTimeSeries(
+            timestamps=_make_timestamps(n),
+            signals={"pv": [50.0, 50.1, 50.2] + [66.6] * (n - 3)},  # 后段卡死
+        )
+        block = pipeline.process(raw, TagGroup.BASE)
+
+        frozen_indices = [
+            i
+            for i, reasons in enumerate(block.outlier_reasons["pv"])
+            if OutlierReason.FROZEN.value in reasons
+        ]
+        # 卡死段（index 3 起）被 FROZEN 覆盖
+        assert set(range(3, n)).issubset(set(frozen_indices))
+
+
+class TestJumpSpikePipelineWideRange:
+    """Pipeline 端到端：量程 0~800 下归一化数据的 JUMP/SPIKE 能触发。"""
+
+    def test_jump_and_spike_triggered_with_range_800(self):
+        """量程 0~800：归一化后 diff=85 > 80 → JUMP + SPIKE 触发且置 invalid。"""
+        config = _make_config(ControlType.FLOW, range_min=0.0, range_max=800.0)
+        pipeline = PreprocessingPipeline(config)
+        n = 7
+        raw = RawTimeSeries(
+            timestamps=_make_timestamps(n),
+            # 原始值 780 → 归一化 97.5，与前后 12.5 的 diff=85
+            signals={"pv": [100.0, 100.0, 780.0, 100.0, 100.0, 100.4, 100.8]},
+        )
+        block = pipeline.process(raw, TagGroup.BASE)
+
+        reasons_2 = block.outlier_reasons["pv"][2]
+        assert OutlierReason.JUMP.value in reasons_2
+        assert OutlierReason.SPIKE.value in reasons_2
+        # JUMP/SPIKE 仍置 invalid（非 MARK_ONLY）
+        assert block.validity["pv_valid"][2] is False

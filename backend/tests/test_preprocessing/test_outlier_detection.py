@@ -2,7 +2,7 @@
 
 测试 8 类异常值检测器（算法说明 §3.4.3, PRD §5.5.2）：
     1. OUT_OF_RANGE — 超量程
-    2. FROZEN — 冻结值
+    2. FROZEN — 冻结值（仅标记不置 valid=False，P1 整改）
     3. JUMP — 跳变
     4. SPIKE — 尖峰
     5. NaN — NaN/Inf/NULL
@@ -530,6 +530,91 @@ class TestOutlierDetector:
 
 
 # ---------------------------------------------------------------------------
+# JUMP/SPIKE 量纲一致性（P1 整改：归一化数据必须用 0~100 量程）
+# ---------------------------------------------------------------------------
+
+
+class TestJumpSpikeDimension:
+    """detect_all 中 JUMP/SPIKE 阈值量程与数据量纲一致（修复量纲错配）。
+
+    Pipeline 在归一化后（0~100）数据上检测，若仍按原始工程量程计算
+    阈值（如 0~800），jump_threshold=pct×800 会放大 8 倍，JUMP/SPIKE
+    永不触发。修复后按 is_normalized 选 (0,100) 或原始量程。
+    """
+
+    def test_jump_detected_on_normalized_data_with_wide_range(self):
+        """归一化数据 + 工程量程 0~800：跳变仍按 0~100 阈值触发 JUMP。"""
+        threshold = get_threshold(ControlType.FLOW)  # jump 0.8×100=80
+        detector = OutlierDetector(threshold)
+        base = datetime(2024, 1, 1)
+        timestamps = [base + timedelta(seconds=i) for i in range(3)]
+        # 归一化值 diff=85：按 0~100 量程 85>80 触发；若误用 0~800 阈值=640 永不触发
+        values = [10.0, 95.0, 10.0]
+        results = detector.detect_all(
+            tag_name="pv",
+            values=values,
+            timestamps=timestamps,
+            range_min=0.0,
+            range_max=800.0,
+            is_normalized=True,
+        )
+        assert OutlierReason.JUMP in results.get(1, [])
+
+    def test_spike_detected_on_normalized_data_with_wide_range(self):
+        """归一化数据 + 工程量程 0~800：尖峰仍按 0~100 阈值触发 SPIKE。"""
+        threshold = get_threshold(ControlType.FLOW)  # spike 0.5×100=50
+        detector = OutlierDetector(threshold)
+        base = datetime(2024, 1, 1)
+        timestamps = [base + timedelta(seconds=i) for i in range(3)]
+        values = [10.0, 95.0, 10.0]  # 两侧 diff=85 > 50
+        results = detector.detect_all(
+            tag_name="pv",
+            values=values,
+            timestamps=timestamps,
+            range_min=0.0,
+            range_max=800.0,
+            is_normalized=True,
+        )
+        assert OutlierReason.SPIKE in results.get(1, [])
+
+    def test_jump_uses_raw_range_when_not_normalized(self):
+        """原始数据（is_normalized=False）：按工程量程 0~800 计算阈值。"""
+        threshold = get_threshold(ControlType.FLOW)  # jump 0.8×800=640
+        detector = OutlierDetector(threshold)
+        base = datetime(2024, 1, 1)
+        timestamps = [base + timedelta(seconds=i) for i in range(3)]
+        # diff=660 > 640 → 触发；若误用 0~100 阈值=80，diff=85 的小波动也会误报
+        values = [100.0, 760.0, 100.0]
+        results = detector.detect_all(
+            tag_name="pv",
+            values=values,
+            timestamps=timestamps,
+            range_min=0.0,
+            range_max=800.0,
+            is_normalized=False,
+        )
+        assert OutlierReason.JUMP in results.get(1, [])
+
+    def test_small_normalized_jump_not_detected_with_wide_range(self):
+        """归一化数据小幅波动（diff<80）不触发 JUMP（阈值未被错误放大/缩小）。"""
+        threshold = get_threshold(ControlType.FLOW)
+        detector = OutlierDetector(threshold)
+        base = datetime(2024, 1, 1)
+        timestamps = [base + timedelta(seconds=i) for i in range(3)]
+        values = [50.0, 60.0, 50.0]  # diff=10 < 80
+        results = detector.detect_all(
+            tag_name="pv",
+            values=values,
+            timestamps=timestamps,
+            range_min=0.0,
+            range_max=800.0,
+            is_normalized=True,
+        )
+        assert OutlierReason.JUMP not in results.get(1, [])
+        assert OutlierReason.SPIKE not in results.get(1, [])
+
+
+# ---------------------------------------------------------------------------
 # should_invalidate 判定
 # ---------------------------------------------------------------------------
 
@@ -549,9 +634,9 @@ class TestShouldInvalidate:
         """OUT_OF_RANGE 应置 valid=False。"""
         assert OutlierDetector.should_invalidate([OutlierReason.OUT_OF_RANGE]) is True
 
-    def test_frozen_invalidates(self):
-        """FROZEN 应置 valid=False。"""
-        assert OutlierDetector.should_invalidate([OutlierReason.FROZEN]) is True
+    def test_frozen_mark_only(self):
+        """FROZEN 仅标记不置 valid=False（P1 整改：避免误伤平稳良好回路）。"""
+        assert OutlierDetector.should_invalidate([OutlierReason.FROZEN]) is False
 
     def test_jump_invalidates(self):
         """JUMP 应置 valid=False。"""
@@ -583,11 +668,10 @@ class TestShouldInvalidate:
         """空原因码列表 → 不置 valid=False。"""
         assert OutlierDetector.should_invalidate([]) is False
 
-    def test_all_six_invalidating_reasons(self):
-        """6 类应置 valid=False 的原因码全部测试。"""
+    def test_all_five_invalidating_reasons(self):
+        """5 类应置 valid=False 的原因码全部测试（FROZEN 已改仅标记）。"""
         invalidating = [
             OutlierReason.OUT_OF_RANGE,
-            OutlierReason.FROZEN,
             OutlierReason.JUMP,
             OutlierReason.SPIKE,
             OutlierReason.NAN,
@@ -596,8 +680,8 @@ class TestShouldInvalidate:
         for reason in invalidating:
             assert OutlierDetector.should_invalidate([reason]) is True
 
-    def test_two_mark_only_reasons_not_invalidate(self):
-        """2 类仅标记的原因码全部测试。"""
-        mark_only = [OutlierReason.TS_ANOMALY, OutlierReason.HF_NOISE]
+    def test_three_mark_only_reasons_not_invalidate(self):
+        """3 类仅标记的原因码全部测试。"""
+        mark_only = [OutlierReason.TS_ANOMALY, OutlierReason.HF_NOISE, OutlierReason.FROZEN]
         for reason in mark_only:
             assert OutlierDetector.should_invalidate([reason]) is False

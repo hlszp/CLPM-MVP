@@ -36,6 +36,11 @@ class ControlTypeThreshold:
         spike_threshold_pct: 尖峰阈值（占量程百分比，如 0.5=50%）
         noise_cutoff_hz: 噪声截止频率（Hz）
         min_consecutive_points: 连续有效最短段点数
+        frozen_fault_min_minutes: 仪表故障复合判据的冻结持续最短时间（分钟）；
+            PV 冻结持续 ≥ 该时长且同期 OP 有变化才计为仪表故障
+            （instrument_fault_rate，FROZEN 仅标记不置 invalid 后的误报抑制）。
+            注：暂不纳入 PARAM_FIELDS（sys_config 运行时覆盖不含此项，
+            如需开放覆盖需同步 outlier_params 的 camelCase 映射与 schema）
     """
 
     control_type: ControlType
@@ -46,6 +51,7 @@ class ControlTypeThreshold:
     spike_threshold_pct: float
     noise_cutoff_hz: float
     min_consecutive_points: int
+    frozen_fault_min_minutes: float
 
     @property
     def sampling_freq_label(self) -> str:
@@ -67,6 +73,7 @@ _THRESHOLDS: dict[ControlType, ControlTypeThreshold] = {
         spike_threshold_pct=0.5,  # 0.5×量程
         noise_cutoff_hz=0.2,
         min_consecutive_points=30,
+        frozen_fault_min_minutes=5.0,
     ),
     ControlType.PRESSURE: ControlTypeThreshold(
         control_type=ControlType.PRESSURE,
@@ -77,6 +84,7 @@ _THRESHOLDS: dict[ControlType, ControlTypeThreshold] = {
         spike_threshold_pct=0.3,
         noise_cutoff_hz=0.1,
         min_consecutive_points=20,
+        frozen_fault_min_minutes=5.0,
     ),
     ControlType.TEMPERATURE: ControlTypeThreshold(
         control_type=ControlType.TEMPERATURE,
@@ -87,6 +95,7 @@ _THRESHOLDS: dict[ControlType, ControlTypeThreshold] = {
         spike_threshold_pct=0.2,
         noise_cutoff_hz=0.05,
         min_consecutive_points=15,
+        frozen_fault_min_minutes=5.0,
     ),
     ControlType.LEVEL: ControlTypeThreshold(
         control_type=ControlType.LEVEL,
@@ -97,6 +106,7 @@ _THRESHOLDS: dict[ControlType, ControlTypeThreshold] = {
         spike_threshold_pct=0.2,
         noise_cutoff_hz=0.05,
         min_consecutive_points=15,
+        frozen_fault_min_minutes=5.0,
     ),
     ControlType.COMPOSITION: ControlTypeThreshold(
         control_type=ControlType.COMPOSITION,
@@ -107,6 +117,7 @@ _THRESHOLDS: dict[ControlType, ControlTypeThreshold] = {
         spike_threshold_pct=0.1,
         noise_cutoff_hz=0.02,
         min_consecutive_points=10,
+        frozen_fault_min_minutes=5.0,
     ),
 }
 
@@ -148,6 +159,26 @@ def get_default_threshold(control_type: ControlType) -> ControlTypeThreshold:
     供配置服务构建"默认值 + 覆盖标记"合并视图使用。
     """
     return _THRESHOLDS[control_type]
+
+
+def get_threshold_by_sampling_freq(sampling_freq_label: str) -> ControlTypeThreshold | None:
+    """按采样率标签反查生效阈值（覆盖合并后的值）.
+
+    仪表故障率等计算器只持有 ``DataBlock.sampling_freq``（如 ``"1s"``），
+    无法直接拿到控制类型枚举，用本 helper 反查阈值。
+    ``"5s"`` 同时对应 TEMPERATURE/LEVEL 两类时返回首个匹配项
+    （两者默认阈值一致；若运行时覆盖使两者分叉，以先匹配到的 TEMPERATURE 为准）。
+
+    Args:
+        sampling_freq_label: 采样率标签，如 ``"1s"`` / ``"5s"``
+
+    Returns:
+        匹配的 ControlTypeThreshold；无匹配时返回 None
+    """
+    for threshold in _merged_cache.values():
+        if threshold.sampling_freq_label == sampling_freq_label:
+            return threshold
+    return None
 
 
 # ---------------------------------------------------------------------------

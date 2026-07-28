@@ -5,7 +5,11 @@
 
 关键规则（算法说明 §3.4.3 备注）：
     - TS_ANOMALY（时间戳异常）和 HF_NOISE（高频噪声）仅标记，不置 valid=False
-    - 其余 6 类异常置 valid=False
+    - FROZEN（冻结值）仅标记，不置 valid=False：控制良好的平稳回路 PV 长期
+      低方差属正常现象，置 invalid 会把 valid_rate 拖零导致全 KPI INCONCLUSIVE；
+      真仪表卡死由 instrument_fault_rate 的复合判据（持续≥N 分钟且 OP 有变化）
+      单独识别
+    - 其余 5 类异常置 valid=False
     - KEEP_ALL_WITH_VALIDITY：不删除任何数据点
 
 设计依据：算法说明 §3.4.3-3.4.4, PRD §5.5.2-5.5.3
@@ -32,7 +36,11 @@ from app.services.preprocessing.thresholds import ControlTypeThreshold, is_detec
 logger = logging.getLogger(__name__)
 
 # 标记但不置 valid=False 的原因码
-_MARK_ONLY: frozenset[OutlierReason] = frozenset({OutlierReason.TS_ANOMALY, OutlierReason.HF_NOISE})
+# FROZEN 仅标记：平稳良好回路 PV 低方差会大面积命中冻结检测，
+# 置 invalid 会把 valid_rate 拖零（误伤）；真冻结由仪表故障率复合判据识别
+_MARK_ONLY: frozenset[OutlierReason] = frozenset(
+    {OutlierReason.TS_ANOMALY, OutlierReason.HF_NOISE, OutlierReason.FROZEN}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +198,8 @@ def detect_jump(
     """检测跳变（算法说明 §3.4.3 第3类, §3.4.4 阈值）.
 
     相邻采样点变化幅度超过 jump_threshold_pct × range 时标记为 JUMP。
-    跳变点本身和前一个点都标记（变化是两点间的属性）。
+    仅标记跳变点本身（索引 i，即变化后的点）；前一个点不标记，
+    避免一次跳变双点计数放大故障率/无效率统计。
 
     Args:
         values: 信号值数组
@@ -478,13 +487,14 @@ class OutlierDetector:
             else:
                 _add(detect_frozen_raw(values, self.threshold, range_min, range_max))
 
-        # 4. 跳变
+        # 4. 跳变（与超量程/冻结一致，按 is_normalized 选量程：
+        #    归一化数据用 0~100，原始数据用工程量程，否则量程≠100 时永不触发）
         if is_detector_enabled("jump"):
-            _add(detect_jump(values, self.threshold, range_min, range_max))
+            _add(detect_jump(values, self.threshold, eff_min, eff_max))
 
-        # 5. 尖峰
+        # 5. 尖峰（同跳变，量程需与数据量纲一致）
         if is_detector_enabled("spike"):
-            _add(detect_spike(values, self.threshold, range_min, range_max))
+            _add(detect_spike(values, self.threshold, eff_min, eff_max))
 
         # 6. 时间戳异常（仅标记）
         if is_detector_enabled("ts_anomaly"):
@@ -511,7 +521,8 @@ class OutlierDetector:
     def should_invalidate(reasons: list[OutlierReason]) -> bool:
         """判断一组异常原因码是否应置 valid=False.
 
-        TS_ANOMALY 和 HF_NOISE 仅标记不置 valid=False（算法说明 §3.4.3）。
+        TS_ANOMALY、HF_NOISE、FROZEN 仅标记不置 valid=False
+        （算法说明 §3.4.3 + FROZEN 误伤平稳回路整改）。
 
         Args:
             reasons: 某个点的所有异常原因码

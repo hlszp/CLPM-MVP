@@ -205,7 +205,9 @@ class PreprocessingPipeline:
         规则（算法说明 §3.4.1, §3.4.3）：
             - 质量码为 Bad/Unknown → valid=False（QC_BAD）
             - 非 MARK_ONLY 异常原因 → valid=False
-            - TS_ANOMALY / HF_NOISE → 仅标记，valid 保持 True
+            - TS_ANOMALY / HF_NOISE / FROZEN → 仅标记，valid 保持 True
+              （FROZEN 仅标记：平稳良好回路 PV 低方差不判无效，
+              真仪表卡死由 instrument_fault_rate 复合判据识别）
 
         Returns:
             (validity_dict, outlier_reasons_dict)
