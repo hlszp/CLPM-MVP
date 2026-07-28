@@ -1,7 +1,9 @@
 """Tuning center service (IDS v3.2 §2.5 — S7-TUNE-006).
 
 业务逻辑：
-- 模型辨识：从 TDengine 拉取波形数据 → 调用辨识算法 → 返回模型参数
+- 模型辨识：
+  - 历史数据路径（Phase 2）：DataPlanner → 8 步预处理 → tuning_identification 算法栈
+  - 阶跃实验路径（保留）：get_waveform → identify_fopdt/sopdt/ipdt（兜底）
 - PID 整定：基于模型参数 → 调用整定算法 → 返回推荐 PID 参数
 - 闭环仿真：基于模型 + 当前/推荐 PID → 仿真对比
 - 整定任务管理：CRUD + 历史统计
@@ -10,9 +12,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
+import numpy as np
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,9 +37,228 @@ from app.services.tuning_algorithms import (
     tune_simc,
     tune_zn,
 )
+from app.services.tuning_identification import identify_from_history
+from app.services.tuning_identification.types import ModelType
 from app.services.waveform import get_waveform
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# DataPlanner 集成（Phase 2 历史数据辨识路径）
+# ---------------------------------------------------------------------------
+
+
+async def _build_data_planner(db: AsyncSession):
+    """构造 DataPlanner 实例（复用 kpi_calc 的工厂模式）."""
+    from app.core.redis import redis_client
+    from app.services.cache.l1_datablock import L1DataBlockCache
+    from app.services.data_planner import DataPlanner
+    from app.services.data_source.factory import get_provider
+    from app.services.metric_data_bundle import MetricDataBundleAssembler
+
+    provider = get_provider()
+    query_fn = provider.make_query_fn(db)
+    cache = L1DataBlockCache(redis_client)
+    assembler = MetricDataBundleAssembler()
+    return DataPlanner(
+        cache=cache,
+        tdengine_query_fn=query_fn,
+        assembler=assembler,
+        db=db,
+    )
+
+
+async def _fetch_preprocessed_signals(
+    db: AsyncSession,
+    loop_id: str,
+    start_time: str,
+    end_time: str,
+    control_type_str: str,
+) -> dict[str, list[float]]:
+    """通过 DataPlanner 获取 8 步预处理后的 PV/OP/SP 时序.
+
+    策略：
+    - 请求 valve_linearity（PVOP_HF, 1s 采样）→ 获取 PV+OP 高频时序
+    - 请求 error_mean（BASE, 按控制类型采样）→ 获取 SP 时序
+    - SP 按 PVOP 时间戳线性插值对齐
+
+    Returns:
+        dict with keys: "pv", "op", "sp"（sp 可能为空 list）, "timestamps"（秒）,
+        "valid_rate", "sampling_freq"
+    """
+    from app.contracts.data_types import ControlType, TimeWindow
+
+    try:
+        control_type = ControlType(control_type_str)
+    except ValueError:
+        control_type = ControlType.TEMPERATURE  # 默认温度型
+
+    start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+    end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+    time_window = TimeWindow(start=start_dt, end=end_dt)
+
+    planner = await _build_data_planner(db)
+
+    # 请求 PVOP_HF（PV+OP, 1s）和 BASE（含 SP）
+    bundles = await planner.request_bundles(
+        loop_id=loop_id,
+        metrics=["valve_linearity", "error_mean"],
+        time_window=time_window,
+        control_type=control_type,
+    )
+
+    pv: list[float] = []
+    op: list[float] = []
+    sp: list[float] = []
+    timestamps: list[float] = []
+    valid_rate = 1.0
+    sampling_freq = 1.0
+
+    for bundle in bundles:
+        block = bundle.data_block
+        signals = block.signals
+        ts_list = list(block.timestamps)
+
+        if block.tag_group == "PVOP_HF":
+            # PV+OP 高频（1s）作为主时间轴
+            pv = list(signals.get("pv", []))
+            op = list(signals.get("op", []))
+            # timestamps 是 datetime，转为相对秒
+            if ts_list:
+                t0 = ts_list[0]
+                timestamps = [
+                    (t - t0).total_seconds() if hasattr(t, "total_seconds") else float(i)
+                    for i, t in enumerate(ts_list)
+                ]
+            valid_rate = block.quality_summary.valid_rate if block.quality_summary else 1.0
+            sampling_freq = block.sampling_freq or 1.0
+        elif block.tag_group == "BASE":
+            # SP 在 BASE 中，需对齐到 PVOP 时间轴
+            sp_raw = list(signals.get("sp", []))
+            ts_sp = list(ts_list)
+            if sp_raw and timestamps:
+                sp = _resample_to_grid(sp_raw, ts_sp, ts_list_pvop=block.timestamps)
+            elif sp_raw:
+                sp = sp_raw  # 降级：不对齐
+
+    return {
+        "pv": pv,
+        "op": op,
+        "sp": sp,
+        "timestamps": timestamps,
+        "valid_rate": valid_rate,
+        "sampling_freq": sampling_freq,
+    }
+
+
+def _resample_to_grid(
+    values: list[float],
+    src_timestamps: list,
+    ts_list_pvop: list,
+) -> list[float]:
+    """将 SP 从 BASE 采样率线性插值到 PVOP_HF（1s）时间轴.
+
+    Args:
+        values: SP 原始值
+        src_timestamps: SP 原始时间戳（datetime）
+        ts_list_pvop: PVOP_HF 时间戳（datetime），目标网格
+    """
+    if not values or not src_timestamps or not ts_list_pvop:
+        return []
+
+    # 转为 epoch 秒
+    src_sec = np.array(
+        [
+            t.timestamp() if hasattr(t, "timestamp") else float(i)
+            for i, t in enumerate(src_timestamps)
+        ]
+    )
+    dst_sec = np.array(
+        [t.timestamp() if hasattr(t, "timestamp") else float(i) for i, t in enumerate(ts_list_pvop)]
+    )
+    values_arr = np.array(values, dtype=float)
+
+    # 用 numpy 线性插值（外推用边界值）
+    result = np.interp(dst_sec, src_sec, values_arr, left=values_arr[0], right=values_arr[-1])
+    return result.tolist()
+
+
+async def identify_model_from_history(
+    db: AsyncSession,
+    loop_id: str,
+    start_time: str,
+    end_time: str,
+    candidate_model_types: list[str] | None = None,
+    theta_estimate: float | None = None,
+) -> dict[str, Any]:
+    """基于历史数据辨识过程对象 G_plant = PV/OP（Phase 2 主路径）.
+
+    通过 DataPlanner 获取 8 步预处理后的 PV/OP/SP 时序，
+    调用 tuning_identification 算法栈完成辨识。
+
+    Args:
+        db: 数据库会话
+        loop_id: 回路 ID
+        start_time: 起始时间（ISO 8601）
+        end_time: 结束时间（ISO 8601）
+        candidate_model_types: 候选模型类型列表，默认 ["FOPDT","SOPDT"]
+        theta_estimate: 纯滞后预估值（秒），None 自动估计
+
+    Returns:
+        辨识结果 dict（含 modelType/params/fittingScore/confidenceLevel 等）
+
+    Raises:
+        BizError: ERR_LOOP_NOT_FOUND / ERR_TUNING_DATA_INSUFFICIENT
+    """
+    loop = await _get_loop(db, loop_id)
+    control_type_str = loop.control_type or "TC"
+
+    # 通过 DataPlanner 获取预处理后时序
+    signals = await _fetch_preprocessed_signals(db, loop_id, start_time, end_time, control_type_str)
+
+    pv = signals["pv"]
+    op = signals["op"]
+    sp = signals["sp"]
+    ts = 1.0 / signals["sampling_freq"] if signals["sampling_freq"] > 0 else 1.0
+
+    if len(pv) < 50 or len(op) < 50:
+        raise BizError(
+            code="ERR_TUNING_DATA_INSUFFICIENT",
+            message=f"预处理后数据不足（PV={len(pv)}, OP={len(op)} 点），至少需要 50 个有效数据点",
+            status_code=400,
+        )
+
+    # 候选模型类型
+    candidates = [ModelType(mt) for mt in (candidate_model_types or ["FOPDT", "SOPDT"])]
+
+    # 调用算法栈
+    result = identify_from_history(
+        op=op,
+        pv=pv,
+        sp=sp if sp else None,
+        ts=ts,
+        theta_estimate=theta_estimate,
+        candidate_models=candidates,
+    )
+
+    if not result.success:
+        return {
+            "success": False,
+            "reason": result.reason,
+            "tagName": loop.tag_name,
+            "algorithmVersion": result.algorithm_version,
+            "dataPoints": len(pv),
+            "validRate": signals["valid_rate"],
+        }
+
+    # 转换为 API 响应格式
+    d = result.to_dict()
+    d["tagName"] = loop.tag_name
+    d["dataPoints"] = len(pv)
+    d["validRate"] = signals["valid_rate"]
+    d["samplingFreq"] = signals["sampling_freq"]
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +691,7 @@ def _record_to_dict(
 
 __all__ = [
     "identify_model",
+    "identify_model_from_history",
     "tune_pid",
     "run_simulation",
     "create_tuning_task",
