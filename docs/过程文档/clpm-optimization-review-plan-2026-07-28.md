@@ -94,6 +94,13 @@ Phase 2 遗留：存量空 TAG 子表需 ALTER TABLE 治理（低优先）；`_d
 
 遗留：前端尚未消费 mustChangePassword 做强制跳转（登录后需引导致改密页）；admin 重置密码端点未同步置标志；诊断阈值键前端无可编辑入口（需立项）；CSP script-src unsafe-inline 待 nonce 收紧；pid 饼图口径改服务端 latestOnly（含 INCONCLUSIVE 切片）；loop-performance 平均分卡移除（分布推导替代）；celery_task_total 指标未埋点（告警规则已就位）。
 
+**Phase 6：✅ 完成（GB/T 44693.2 符合性验证，2026-07-28）**
+
+- 套件：`backend/tests/compliance/` **371 用例通过 + 36 xfail（91.1% ≥ 90% 目标）**；附录 B.1-B.6/F.1-F.5 公式级验证全过；整定查表全对；异常检测边界 52 用例全过
+- T1.6 粘滞增强（本阶段唯一生产变更）：θ 补偿（互相关估计+平移配对）+ 振荡段门控（no_limit_cycle），大滞后回路不再误报
+- 报告：`docs/过程文档/gbt44693-compliance-verification-report-2026-07-28.md`
+- **后续立项项**：①3 个诊断标签误报率 100%（OSCILLATION/VALVE_STICTION/EXTERNAL_DISTURBANCE，根因与修复方向见报告 §四 F-1）；②非有限值守护（26 项 xfail，base 层统一修复）；③文档偏差 2 处（§4.3.2 σ 公式、§6.3 IMC 表格）
+
 **事故修复（2026-07-28 下午，北京时 10:00 起全回路 INCONCLUSIVE 事件）**：①`tdengine_provider` 模块级 `asyncio.Lock` 跨事件循环绑定致全回路取数瘫痪（commit `f45f498a`，7-20 起反复发作的根因，已根治并加结构性回归断言）；②Phase 1 数组长度防护在 `effective_auto_rate` 上对全部 5 数组取 min，MODE_HF tagGroup 无 pv/sp 致上界截断为 0 误报 zero_total_duration（commit `fix(metric): 有效自控率缺 pv/sp 信号时误报`，已修复并加三场景回归）。两轮回填验证：北京时 10:00-14:00 快照恢复 20 SUCCESS/7 INCONCLUSIVE（7 条为基线既有恒 INCONCLUSIVE 回路），平均分 ~61.5。**注意：今日 10:00 前的历史快照均为旧 8h 偏移窗口口径，如需校正历史需按数据留存范围做全面历史重算。**
 
 ---
