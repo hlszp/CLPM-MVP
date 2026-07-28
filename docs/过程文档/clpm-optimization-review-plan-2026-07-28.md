@@ -70,7 +70,29 @@ Phase 2 遗留：存量空 TAG 子表需 ALTER TABLE 治理（低优先）；`_d
 | T3.8 限流 | ✅ | PUT 改密限流修复；IP 口径统一 XFF；登录 IP+账号双维度 |
 | T3.10c 进度计数 | ✅ | per-loop 计数器，失败补偿 max(total-loop_done,0) |
 
-遗留：tasks 列表 created_by 越权未收口（tasks.py 需接 metric:view）；`diagnosis:detail` 粒度码缺口（SPONSOR 仅汇总视图的严格收口需新码+前端同步）；tracker 读端点待 IC 映射补齐后收口；WS token query 参数待前端改 subprotocol 两端同批切换；前端需兜住 SPONSOR/PE 直访 403 页面（Phase 4）；登录默认限流 10/分钟（收紧到 5 需联动 3 个 auth 测试）；chunk_hours>1 时导入进度成功路径偏低（一行修法待评估）。
+遗留：tasks 列表 created_by 越权未收口（tasks.py 需接 metric:view）；`diagnosis:detail` 粒度码缺口（SPONSOR 仅汇总视图的严格收口需新码+前端同步）；tracker 读端点待 IC 映射补齐后收口；WS token query 参数待前端改 subprotocol 两端同批切换；登录默认限流 10/分钟（收紧到 5 需联动 3 个 auth 测试）；chunk_hours>1 时导入进度成功路径偏低（一行修法待评估）。
+
+**Phase 4：✅ 完成（两波 7 个子任务 + 清扫，vitest 415 全绿）**
+
+| 任务 | 状态 | 交付摘要 |
+|---|---|---|
+| T4.1 时间语义归一 | ✅ | 13+ 处本地 formatTime/dayjs 直解全部删除统一 utils/format.ts（naive=UTC 补 Z 唯一约定）；task/detail 耗时计算时区偏差顺带修复 |
+| T4.2 权限三方对齐 | ✅ | reports/aas-sync 路由收紧 ADMIN；EXPERT 仅诊断+整定、SPONSOR→/metric 首页落地；v-permission 改 Comment 占位；触发类按钮权限补齐（含 tracker PDF 导出角色错位修复） |
+| T4.3 错误处理收敛 | ✅ | 双重 toast 全清；静默失败补降级态；tag/list 等补 :error+重试 |
+| T4.4 状态呈现 | ✅ | useScoreColor 动态阈值 null 中性灰（INCONCLUSIVE 不再故障红）；badge E 级中文'数据不足'；pid-dashboard/loop-performance/monitor/tuning-stats 裸 hex 清零迁移设计令牌；use-loop-palettes 色板沉淀 |
+| T4.5 轮询治理 | ✅ | usePolling 通用件（防堆积/可见性暂停/熔断）；use-loop-analysis 单次失败永久停轮询修复；data.vue 改按需轮询 |
+| T4.6 性能下推 | ✅ | 后端 /grade-distribution + snapshots grade 参数（真实 PG 集成测试 4/4）；前端统计/筛选/排行全部服务端化 |
+| T4.7 空态引导 | ✅ | ClpmDataCanvas emptyReason+emptyAction；aas.vue 迁移 Clpm 统一组件体系（Popconfirm 清零） |
+| T4.8 manage 拆分 | ✅ | 3323→1814 行 + LoopEditDrawer/use-loop-changes；LoopApi 类型补全消 42 处 any |
+
+**Phase 5：✅ 完成（2 个子任务）**
+
+| 任务 | 状态 | 交付摘要 |
+|---|---|---|
+| T5.1-5.4/5.6/5.7 部署 | ✅ | 迁移一体失败即中止（lib-migrate.sh）；镜像 git SHA+版本 tag 回滚可用；TDengine 备份带凭据硬失败+部署前自动备份；beat 健康检查修复+celery 部署断言；prometheus+grafana monitoring profile+4 条告警；lefthook 真实门禁；ENV=production 校验 |
+| T5.5 安全基线 | ✅ | must_change_password 强制改密全流程（迁移 f6a7b8c9d0e1 已应用）；nginx 20m+CSP；env.example 清理+占位符校验+CORS 幂等 |
+
+遗留：前端尚未消费 mustChangePassword 做强制跳转（登录后需引导致改密页）；admin 重置密码端点未同步置标志；诊断阈值键前端无可编辑入口（需立项）；CSP script-src unsafe-inline 待 nonce 收紧；pid 饼图口径改服务端 latestOnly（含 INCONCLUSIVE 切片）；loop-performance 平均分卡移除（分布推导替代）；celery_task_total 指标未埋点（告警规则已就位）。
 
 **事故修复（2026-07-28 下午，北京时 10:00 起全回路 INCONCLUSIVE 事件）**：①`tdengine_provider` 模块级 `asyncio.Lock` 跨事件循环绑定致全回路取数瘫痪（commit `f45f498a`，7-20 起反复发作的根因，已根治并加结构性回归断言）；②Phase 1 数组长度防护在 `effective_auto_rate` 上对全部 5 数组取 min，MODE_HF tagGroup 无 pv/sp 致上界截断为 0 误报 zero_total_duration（commit `fix(metric): 有效自控率缺 pv/sp 信号时误报`，已修复并加三场景回归）。两轮回填验证：北京时 10:00-14:00 快照恢复 20 SUCCESS/7 INCONCLUSIVE（7 条为基线既有恒 INCONCLUSIVE 回路），平均分 ~61.5。**注意：今日 10:00 前的历史快照均为旧 8h 偏移窗口口径，如需校正历史需按数据留存范围做全面历史重算。**
 

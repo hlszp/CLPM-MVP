@@ -32,7 +32,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.1 是重构后 IA/路�
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
 | v6 交付历史 | `docs/过程文档/v6-delivery-history.md` | Phase 0-6 + 后续全部 PR |
-| 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0（全维度评审 ~90 项问题 + 六阶段方案）；**Phase 0/1/2 已完成**（2026-07-28：算法 P0×3+P1 全修、TDengine 时区修复、综合评分口径、阈值配置化迁移 `c3d4e5f6a7b8`、schema 收敛迁移 `d4e5f6a7b8c9`；pytest 2778 全绿、`alembic check` 退出码 0） |
+| 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0（全维度评审 ~90 项问题 + 六阶段方案）；**Phase 0-5 已完成**（2026-07-28：算法 P0×3+P1 全修、TDengine 时区修复、任务/token/权限/可观测性加固、前端公共件与页面整改、部署迁移一体+监控门禁+强制改密；pytest 2983 / vitest 415 全绿） |
 | **回路整定 Phase 2 技术方案** | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **已执行**（分支 `feat/tuning-phase2`，2026-07-28）：历史数据过程对象辨识（ARX/ARMAX/IV 算法栈）+ 异步任务化 + 多 PID 对比仿真；pytest 2840 全绿、`alembic check` 退出码 0 |
 
 ## v6.0 核心架构组件
