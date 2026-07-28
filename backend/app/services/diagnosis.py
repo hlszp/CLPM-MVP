@@ -78,7 +78,12 @@ ALGORITHM_META_STATIC: dict[str, dict[str, Any]] = {
             "iae_zero_crossing_count",
             "iae_mean_period",
         ],
-        "thresholdKeys": ["similarity_threshold", "min_zero_crossings"],
+        "thresholdKeys": [
+            "similarity_threshold",
+            "min_zero_crossings",
+            "fft_osc_index_threshold",
+            "fft_min_zero_crossings",
+        ],
         "visualizationKey": "spectrum",
     },
     "VALVE_STICTION": {
@@ -98,7 +103,7 @@ ALGORITHM_META_STATIC: dict[str, dict[str, Any]] = {
             "pv_op_correlation",
             "std_ratio",
         ],
-        "thresholdKeys": [],
+        "thresholdKeys": ["choudhury_ngi_threshold", "choudhury_nli_threshold"],
         "visualizationKey": "scatterPlot",
     },
     "OVERAGGRESSIVE": {
@@ -114,7 +119,13 @@ ALGORITHM_META_STATIC: dict[str, dict[str, Any]] = {
             "steady_state_error",
             "harris_index",
         ],
-        "thresholdKeys": ["harris_ar_order", "harris_warn"],
+        "thresholdKeys": [
+            "harris_ar_order",
+            "harris_warn",
+            "step_overshoot_threshold",
+            "step_decay_ratio_threshold",
+            "step_sse_threshold",
+        ],
         "visualizationKey": "stepResponse",
     },
     "OVERCONSERVATIVE": {
@@ -128,7 +139,11 @@ ALGORITHM_META_STATIC: dict[str, dict[str, Any]] = {
             "expected_time_constant",
             "ratio",
         ],
-        "thresholdKeys": [],
+        "thresholdKeys": [
+            "slow_response_ratio_threshold",
+            "slow_no_step_bias_ratio",
+            "slow_expected_tau_seconds",
+        ],
         "visualizationKey": "slowResponse",
     },
     "EXTERNAL_DISTURBANCE": {

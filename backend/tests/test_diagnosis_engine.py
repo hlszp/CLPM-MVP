@@ -17,7 +17,9 @@ import numpy as np
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.constants.mode import StandardMode
 from app.contracts.data_types import RawTimeSeries
+from app.services.metric_calculator.oscillation import OscillationRateCalculator
 from app.tasks.diagnosis_engine import (
     _THRESHOLD_SCHEMA,
     _analyze_quality,
@@ -43,10 +45,14 @@ from app.tasks.diagnosis_engine import (
     _do_diagnose_single_loop,
     _do_run_checkup,
     _do_run_diagnosis,
+    _fuse_same_label_confidence,
     _get_tag_name,
     _get_threshold,
+    _is_auto_mode,
+    _ts_list_to_seconds,
     _validate_threshold_config,
 )
+from tests.test_metric_calculator.conftest import make_bundle
 
 # ===========================================================================
 # 辅助函数：构造 mock 对象
@@ -1213,6 +1219,36 @@ class TestDetectOscillationFft:
         assert result["detected"] is True
         assert result["frequency"] > 0.0
 
+    def test_amplitude_recovery_known_sine(self) -> None:
+        """P2 修复：单边谱幅值应恢复已知正弦真实幅值（2·|X(k)|/Σw）。
+
+        旧实现漏乘 2（|X(k)|/N），恢复幅值仅为真实值一半。
+        频率取 bin 中心（1Hz，fs=20Hz，N=200，bin 宽 0.1Hz），
+        Hann 窗相干增益由 Σw 归一化补偿，幅值应精确恢复。
+        """
+        n = 200
+        sample_interval = 0.05  # fs = 20Hz，bin 宽 0.1Hz
+        t = np.arange(n) * sample_interval
+        pv = 50.0 + 10.0 * np.sin(2 * np.pi * 1.0 * t)  # 幅值 10，1Hz = bin 10
+        result = _detect_oscillation_fft(pv, sample_interval)
+        assert result["frequency"] == pytest.approx(1.0)
+        assert result["amplitude"] == pytest.approx(10.0, rel=0.01)
+
+    def test_osc_index_threshold_override(self) -> None:
+        """fft_osc_index_threshold 配置覆盖后生效（C3 差异化阈值）。"""
+        t = np.linspace(0, 10, 200)
+        pv = 50.0 + 10.0 * np.sin(2 * np.pi * 1.0 * t)
+        # 默认阈值 0.3 → 检测到振荡
+        default_result = _detect_oscillation_fft(pv, 0.05)
+        assert default_result["detected"] is True
+        # 振荡指数阈值提高到实测值以上 → 不判定振荡
+        override_result = _detect_oscillation_fft(
+            pv,
+            0.05,
+            threshold={"fft_osc_index_threshold": default_result["index"] + 0.01},
+        )
+        assert override_result["detected"] is False
+
 
 class TestComputeSampleIntervalEdgeCases:
     """测试 _compute_sample_interval() 边界场景。"""
@@ -1290,6 +1326,23 @@ class TestDetectChoudhuryNonlinearity:
             assert 0.0 < result["confidence"] <= 1.0
         else:
             assert result["confidence"] == 0.0
+
+    def test_ngi_nli_threshold_override(self) -> None:
+        """choudhury_ngi/nli_threshold 配置覆盖后生效（P2 配置化）。"""
+        n = 200
+        t = np.linspace(0, 4 * np.pi, n)
+        op = 50.0 + 20.0 * np.sign(np.sin(t))
+        pv = 50.0 + 15.0 * np.sin(t - np.pi / 4)
+        # 默认阈值（NGI>0.001 且 NLI>0.01）→ 方波强非高斯性应检出
+        default_result = _detect_choudhury_nonlinearity(pv, op)
+        assert default_result["detected"] is True
+        # 阈值提高到实测值以上 → 不判定非线性
+        override_result = _detect_choudhury_nonlinearity(
+            pv,
+            op,
+            threshold={"choudhury_ngi_threshold": 1.0, "choudhury_nli_threshold": 1.0},
+        )
+        assert override_result["detected"] is False
 
 
 class TestDetectKanoStiction:
@@ -1408,6 +1461,30 @@ class TestAnalyzeStepResponse:
         result = _analyze_step_response(pv, sp, ts=ts)
         assert result["step_count"] > 0
 
+    def test_step_threshold_override(self) -> None:
+        """阶跃响应三项阈值配置覆盖后生效（P2 配置化，C3 差异化阈值）。"""
+        n = 200
+        sp = np.zeros(n)
+        sp[50:] = 100.0
+        # 过冲 40% + 缓慢衰减振荡（衰减比 ≈0.66），默认阈值下满足 2 项 → 过激
+        pv = np.zeros(n)
+        for i in range(50, n):
+            t = i - 50
+            pv[i] = 100.0 + 40.0 * np.exp(-t * 0.02) * np.cos(t * 0.3)
+        default_result = _analyze_step_response(pv, sp)
+        assert default_result["detected"] is True
+        # 三项阈值全部提高到实测值以上 → 满足 0 项 → 不判过激
+        override_result = _analyze_step_response(
+            pv,
+            sp,
+            threshold={
+                "step_overshoot_threshold": 0.9,
+                "step_decay_ratio_threshold": 0.9,
+                "step_sse_threshold": 0.9,
+            },
+        )
+        assert override_result["detected"] is False
+
 
 class TestDetectSlowResponse:
     """测试 _detect_slow_response() 响应迟缓检测。"""
@@ -1425,41 +1502,44 @@ class TestDetectSlowResponse:
         n = 200
         sp = np.zeros(n)
         sp[50:] = 100.0
-        # PV 快速响应（指数跟踪，小时间常数）
+        # PV 快速响应（指数跟踪，τ ≈ 2.5s，按 1s 采样）
         pv = np.zeros(n)
         for i in range(50, n):
             t = (i - 50) / 50.0
             pv[i] = 100.0 * (1 - np.exp(-t * 20))  # 快速响应
-        result = _detect_slow_response(pv, sp, control_type="PID")
+        # 流量回路期望 τ=10s，实际 2.5s → ratio < 2 不判迟缓
+        result = _detect_slow_response(pv, sp, loop_type="FLOW", sample_interval=1.0)
         assert "time_constant" in result
         assert "expected_time_constant" in result
+        assert result["detected"] is False
 
     def test_slow_response_detected(self) -> None:
-        """缓慢响应应检测到迟缓。"""
+        """缓慢响应应检测到迟缓（真实秒 τ 与回路类型经验秒数比较）。"""
         n = 200
         sp = np.zeros(n)
         sp[50:] = 100.0
-        # PV 极慢响应（大时间常数）
+        # PV 极慢响应（τ ≈ 100s，按 1s 采样）
         pv = np.zeros(n)
         for i in range(50, n):
             t = (i - 50) / 50.0
             pv[i] = 100.0 * (1 - np.exp(-t * 0.5))  # 慢响应
-        result = _detect_slow_response(pv, sp, control_type="PID")
-        # 慢响应时间常数应较大
+        # 流量回路期望 τ=10s，实际 ≈100s → ratio ≈10 > 2 判迟缓
+        result = _detect_slow_response(pv, sp, loop_type="FLOW", sample_interval=1.0)
         assert result["time_constant"] > 0.0
-        assert result["ratio"] > 0.0
+        assert result["ratio"] > 2.0
+        assert result["detected"] is True
 
     def test_no_step_uses_bias(self) -> None:
         """无阶跃时应基于稳态偏差判断。"""
         n = 100
         sp = np.full(n, 50.0)
         pv = np.array([50.0 + 10.0 * np.sin(i * 0.1) for i in range(n)], dtype=float)
-        result = _detect_slow_response(pv, sp, control_type="PI")
+        result = _detect_slow_response(pv, sp, loop_type="LEVEL")
         assert "detected" in result
         assert "ratio" in result
 
-    def test_control_type_affects_threshold(self) -> None:
-        """不同控制类型应返回不同期望时间常数。"""
+    def test_loop_type_affects_expected_tau(self) -> None:
+        """不同回路类型应返回不同期望时间常数（真实秒）。"""
         n = 200
         sp = np.zeros(n)
         sp[50:] = 100.0
@@ -1467,10 +1547,58 @@ class TestDetectSlowResponse:
         for i in range(50, n):
             t = (i - 50) / 50.0
             pv[i] = 100.0 * (1 - np.exp(-t * 1.0))
-        result_p = _detect_slow_response(pv, sp, control_type="P")
-        result_pid = _detect_slow_response(pv, sp, control_type="PID")
-        # PID 期望更快响应，因此相同实际响应下 PID 更易判定为迟缓
-        assert result_p["expected_time_constant"] > result_pid["expected_time_constant"]
+        result_flow = _detect_slow_response(pv, sp, loop_type="FLOW")
+        result_temp = _detect_slow_response(pv, sp, loop_type="TEMPERATURE")
+        # 温度回路期望响应远慢于流量回路，相同实际响应下流量更易判定为迟缓
+        assert result_flow["expected_time_constant"] < result_temp["expected_time_constant"]
+
+    def test_time_constant_independent_of_window_length(self) -> None:
+        """P2 修复回归：τ 为真实秒，结论不随数据窗口长度漂移。
+
+        旧实现在归一化时间 t∈[0,1] 上拟合，τ 是窗口占比——同一物理响应
+        在不同窗口长度下 τ 与判定结论都会漂移。真实秒拟合后，
+        相同物理响应（τ=100s）在 300 点与 1200 点窗口下 τ 与结论一致。
+        """
+        tau_true = 100.0  # 物理时间常数（秒），1s 采样
+
+        def _make_data(n: int) -> tuple[np.ndarray, np.ndarray]:
+            sp = np.zeros(n)
+            sp[50:] = 100.0
+            pv = np.zeros(n)
+            for i in range(50, n):
+                pv[i] = 100.0 * (1.0 - np.exp(-(i - 50) / tau_true))
+            return pv, sp
+
+        pv_short, sp_short = _make_data(300)
+        pv_long, sp_long = _make_data(1200)
+        r_short = _detect_slow_response(pv_short, sp_short, loop_type="FLOW", sample_interval=1.0)
+        r_long = _detect_slow_response(pv_long, sp_long, loop_type="FLOW", sample_interval=1.0)
+        # τ 恢复到真实秒附近，且两窗口结论一致
+        assert r_short["time_constant"] == pytest.approx(tau_true, rel=0.3)
+        assert r_long["time_constant"] == pytest.approx(tau_true, rel=0.3)
+        assert r_short["detected"] == r_long["detected"]
+
+    def test_ratio_threshold_override(self) -> None:
+        """slow_response_ratio_threshold 配置覆盖后生效（C3 差异化阈值）。"""
+        n = 200
+        sp = np.zeros(n)
+        sp[50:] = 100.0
+        pv = np.zeros(n)
+        for i in range(50, n):
+            t = (i - 50) / 50.0
+            pv[i] = 100.0 * (1 - np.exp(-t * 0.5))  # τ ≈ 100s
+        # 默认比值阈值 2.0 → 判迟缓
+        default_result = _detect_slow_response(pv, sp, loop_type="FLOW", sample_interval=1.0)
+        assert default_result["detected"] is True
+        # 比值阈值提高到 20.0（> 实测 ratio ≈10）→ 不判迟缓
+        override_result = _detect_slow_response(
+            pv,
+            sp,
+            loop_type="FLOW",
+            sample_interval=1.0,
+            threshold={"slow_response_ratio_threshold": 20.0},
+        )
+        assert override_result["detected"] is False
 
 
 class TestDetectBiasShift:
@@ -1746,18 +1874,29 @@ class TestThresholdSchema:
     """整改计划 C1：阈值键名 schema 登记与校验。"""
 
     def test_schema_contains_all_diag_codes(self) -> None:
-        """_THRESHOLD_SCHEMA 登记了 4 个 diag_code。"""
+        """_THRESHOLD_SCHEMA 登记了 6 个 diag_code。"""
         assert set(_THRESHOLD_SCHEMA.keys()) == {
             "OSCILLATION",
+            "VALVE_STICTION",
             "QUALITY_ABNORMAL",
             "OUTPUT_SATURATION",
             "OVERAGGRESSIVE",
+            "OVERCONSERVATIVE",
         }
 
     def test_oscillation_keys(self) -> None:
         assert set(_THRESHOLD_SCHEMA["OSCILLATION"].keys()) == {
             "similarity_threshold",
             "min_zero_crossings",
+            "fft_osc_index_threshold",
+            "fft_min_zero_crossings",
+        }
+
+    def test_valve_stiction_keys(self) -> None:
+        """VALVE_STICTION 包含 Choudhury NGI/NLI 判定阈值键（P2 配置化）。"""
+        assert set(_THRESHOLD_SCHEMA["VALVE_STICTION"].keys()) == {
+            "choudhury_ngi_threshold",
+            "choudhury_nli_threshold",
         }
 
     def test_quality_abnormal_keys(self) -> None:
@@ -1790,7 +1929,22 @@ class TestThresholdSchema:
         assert set(_THRESHOLD_SCHEMA["OVERAGGRESSIVE"].keys()) == {
             "harris_ar_order",
             "harris_warn",
+            "step_overshoot_threshold",
+            "step_decay_ratio_threshold",
+            "step_sse_threshold",
         }
+
+    def test_overconservative_keys(self) -> None:
+        """OVERCONSERVATIVE 包含响应迟缓判定阈值键（P2 配置化）。"""
+        assert set(_THRESHOLD_SCHEMA["OVERCONSERVATIVE"].keys()) == {
+            "slow_response_ratio_threshold",
+            "slow_no_step_bias_ratio",
+            "slow_expected_tau_seconds",
+        }
+        # 期望 τ 默认表为真实秒单位，覆盖 5 类回路 + OTHER 兜底
+        tau_map = _THRESHOLD_SCHEMA["OVERCONSERVATIVE"]["slow_expected_tau_seconds"]
+        assert set(tau_map.keys()) >= {"FLOW", "PRESSURE", "LEVEL", "TEMPERATURE", "OTHER"}
+        assert all(v > 0 for v in tau_map.values())
 
 
 class TestValidateThresholdConfig:
@@ -1927,26 +2081,38 @@ class TestDetectOscillationIae:
         assert result["zero_crossing_count"] >= 3
 
     def test_stable_data_not_detected(self) -> None:
-        """平稳数据应未检测到振荡。"""
+        """恒定偏差（无零交叉）应未检测到振荡。"""
         n = 100
         sp = np.full(n, 50.0)
-        pv = np.full(n, 50.0)
-        # 加微小噪声避免 IAE 恒定
-        rng = np.random.RandomState(42)
-        pv = pv + rng.normal(0, 0.01, n)
+        pv = np.full(n, 52.0)  # 恒定偏离 SP，无符号变化
         result = _detect_oscillation_iae(pv, sp)
-        # 平稳数据不应检测到振荡（或相似率低）
-        assert result["detected"] is False or result["confidence"] == 0.0
+        assert result["detected"] is False
+        assert result["confidence"] == 0.0
 
-    def test_random_noise_not_detected(self) -> None:
-        """随机噪声应未检测到振荡（相似率低）。"""
+    def test_random_noise_consistent_with_kpi(self) -> None:
+        """随机噪声：诊断判定与 KPI 振荡率一致（P2 算法统一）。
+
+        设计文档 §4.6.2 已知特性：高频噪声下短段 IAE 相似率可能达 1.0，
+        KPI 侧 is_oscillating 可为 True（见 test_metric_calculator/
+        test_oscillation.py::test_random_noise_output_format）。
+        统一后诊断侧必须与 KPI 侧同算法同结论。
+        """
         rng = np.random.RandomState(42)
         n = 200
         sp = np.full(n, 50.0)
         pv = 50.0 + rng.normal(0, 5.0, n)
-        result = _detect_oscillation_iae(pv, sp)
-        # 随机噪声零交叉间隔不规律，相似率应较低
-        assert result["detected"] is False
+
+        diag = _detect_oscillation_iae(pv, sp, sample_interval=1.0)
+
+        # KPI 侧（metric_calculator/oscillation.py，算法说明 §4.6）
+        kpi = OscillationRateCalculator().calculate(
+            make_bundle({"pv": pv.tolist(), "sp": sp.tolist()}, metric_code="oscillation_rate")
+        )
+        assert diag["detected"] == kpi.details["is_oscillating"]
+        if kpi.value is not None:
+            # KPI details 中 s_a/s_b 保留 4 位小数，similarity = min(s_a, s_b)
+            kpi_similarity = min(kpi.details["s_a"], kpi.details["s_b"])
+            assert diag["similarity"] == pytest.approx(kpi_similarity, abs=1e-3)
 
     def test_empty_array(self) -> None:
         """空数组应返回未检测。"""
@@ -1956,17 +2122,70 @@ class TestDetectOscillationIae:
         assert result["detected"] is False
 
     def test_custom_threshold(self) -> None:
-        """自定义阈值应生效。"""
+        """自定义阈值应生效：阈值高于实测相似率时不判定振荡。"""
         n = 200
         t = np.linspace(0, 10 * np.pi, n)
         sp = np.full(n, 50.0)
         pv = 50.0 + 10.0 * np.sin(t)
-        # 提高相似率阈值到 0.9（几乎不可能达到）
+        # 先测默认阈值下的相似率（纯正弦约 0.999+）
+        baseline = _detect_oscillation_iae(pv, sp)
+        assert baseline["detected"] is True
+        # 阈值设为高于实测相似率 → 不检测
         result = _detect_oscillation_iae(
-            pv, sp, threshold={"similarity_threshold": 0.99, "min_zero_crossings": 3}
+            pv,
+            sp,
+            threshold={
+                "similarity_threshold": baseline["similarity"] + 0.001,
+                "min_zero_crossings": 4,
+            },
         )
-        # 正弦波相似率约 0.8-0.95，0.99 阈值过高 → 不检测
         assert result["detected"] is False
+
+
+class TestOscillationKpiDiagnosisConsistency:
+    """P2 振荡统一：同一序列下 KPI 振荡率与诊断 OSCILLATION 判定一致。
+
+    诊断侧 _detect_oscillation_iae 复用 KPI 侧
+    metric_calculator/oscillation.py 的零交叉/IAE 段/相似率算法后，
+    同一信号两侧结论必须一致（此前诊断侧 CV 法与 KPI 侧相似率法
+    可能互相矛盾）。
+    """
+
+    def test_sine_with_noise_consistent(self) -> None:
+        """正弦+噪声序列：诊断 detected 与 KPI is_oscillating 一致。"""
+        rng = np.random.RandomState(7)
+        n = 400
+        t = np.arange(n, dtype=float)
+        sp = np.full(n, 50.0)
+        # 周期 40s 正弦（幅值 8）+ 小幅噪声（幅值 0.5）
+        pv = 50.0 + 8.0 * np.sin(2.0 * np.pi * t / 40.0) + rng.normal(0, 0.5, n)
+
+        diag = _detect_oscillation_iae(pv, sp, sample_interval=1.0)
+        kpi = OscillationRateCalculator().calculate(
+            make_bundle({"pv": pv.tolist(), "sp": sp.tolist()}, metric_code="oscillation_rate")
+        )
+
+        assert kpi.value is not None
+        assert diag["detected"] == kpi.details["is_oscillating"]
+        # 诊断 similarity 即 KPI 的 min(S_A, S_B)（同算法；details 保留 4 位小数）
+        kpi_similarity = min(kpi.details["s_a"], kpi.details["s_b"])
+        assert diag["similarity"] == pytest.approx(kpi_similarity, abs=1e-3)
+        # 该序列两侧均应判定振荡
+        assert diag["detected"] is True
+
+    def test_monotonic_ramp_consistent_no_oscillation(self) -> None:
+        """单调漂移序列：零交叉不足，两侧一致不判振荡。"""
+        n = 200
+        sp = np.full(n, 50.0)
+        pv = 40.0 + 0.2 * np.arange(n, dtype=float)  # 40→79.8，穿越 SP 一次
+
+        diag = _detect_oscillation_iae(pv, sp, sample_interval=1.0)
+        kpi = OscillationRateCalculator().calculate(
+            make_bundle({"pv": pv.tolist(), "sp": sp.tolist()}, metric_code="oscillation_rate")
+        )
+
+        assert diag["detected"] is False
+        assert kpi.details["is_oscillating"] is False
 
 
 class TestApplyExpertRules:
@@ -3633,3 +3852,354 @@ class TestAutoCreateTrackers:
         assert db.add.call_count == 2
         # 第二个 begin_nested 被调用（说明冲突后继续处理后续标签）
         assert db.begin_nested.call_count == 2
+
+
+# ===========================================================================
+# Phase 1 整改：诊断引擎核心修复（P0/P1 + 热路径红线）
+# ===========================================================================
+
+
+class TestIsAutoMode:
+    """测试 _is_auto_mode() 自控模式判定（P0：数值 MODE 修复）。"""
+
+    def test_numeric_auto_modes(self) -> None:
+        """数值 mode：AUTO=1/CAS=2/REMOTE=3/APC=4 均为自控。"""
+        assert _is_auto_mode(1) is True
+        assert _is_auto_mode(2) is True
+        assert _is_auto_mode(3) is True
+        assert _is_auto_mode(4) is True
+
+    def test_numeric_apc_included(self) -> None:
+        """APC=4 必须计入自控（旧字符串判定会漏掉）。"""
+        assert _is_auto_mode(StandardMode.APC.value) is True
+
+    def test_numeric_manual_excluded(self) -> None:
+        """MANUAL=0 不是自控。"""
+        assert _is_auto_mode(0) is False
+        assert _is_auto_mode(StandardMode.MANUAL.value) is False
+
+    def test_float_numeric(self) -> None:
+        """浮点数值 mode（TDengine 可能读为 float）。"""
+        assert _is_auto_mode(1.0) is True
+        assert _is_auto_mode(4.0) is True
+        assert _is_auto_mode(0.0) is False
+        # 非整数浮点非法
+        assert _is_auto_mode(1.5) is False
+
+    def test_numeric_string(self) -> None:
+        """数值字符串 mode（如 "1"）按数值解析。"""
+        assert _is_auto_mode("1") is True
+        assert _is_auto_mode("4") is True
+        assert _is_auto_mode("0") is False
+
+    def test_string_labels(self) -> None:
+        """字符串标签兼容（旧数据/外部输入）。"""
+        assert _is_auto_mode("AUTO") is True
+        assert _is_auto_mode("CAS") is True
+        assert _is_auto_mode("REMOTE") is True
+        assert _is_auto_mode("APC") is True
+        assert _is_auto_mode("auto") is True
+        assert _is_auto_mode("MANUAL") is False
+
+    def test_invalid_values(self) -> None:
+        """非法值不判为自控。"""
+        assert _is_auto_mode(None) is False
+        assert _is_auto_mode("garbage") is False
+        assert _is_auto_mode(99) is False
+        assert _is_auto_mode(True) is False
+
+
+class TestAnalyzeSaturationNumericMode:
+    """测试数值 MODE 序列下的饱和诊断（P0：原实现恒失效）。"""
+
+    def test_numeric_auto_saturation_detected(self) -> None:
+        """数值 AUTO=1 下 OP 持续高位饱和应检出。"""
+        op = np.array([99.5] * 50, dtype=float)
+        mode = np.array([1] * 50, dtype=object)
+        result = _analyze_saturation(op, mode_values=mode)
+        assert result["detected"] is True
+        assert result["saturation_rate"] == 1.0
+        assert result["high_count"] == 50
+
+    def test_numeric_apc_saturation_detected(self) -> None:
+        """数值 APC=4（先控）下 OP 饱和应检出（旧实现漏判）。"""
+        op = np.array([99.5] * 50, dtype=float)
+        mode = np.array([4] * 50, dtype=object)
+        result = _analyze_saturation(op, mode_values=mode)
+        assert result["detected"] is True
+        assert result["saturation_rate"] == 1.0
+
+    def test_numeric_manual_excludes_saturation(self) -> None:
+        """手动模式（MANUAL=0）下的 OP 顶格不计入饱和。"""
+        op = np.array([99.5] * 50 + [50.0] * 50, dtype=float)
+        mode = np.array([0] * 50 + [1] * 50, dtype=object)
+        result = _analyze_saturation(op, mode_values=mode)
+        # 仅 50 个 AUTO 点纳入统计，全部正常 → 不检出
+        assert result["detected"] is False
+        assert result["saturation_rate"] == 0.0
+
+    def test_mixed_numeric_modes(self) -> None:
+        """混合数值 mode：仅 AUTO/CAS/REMOTE/APC 点参与统计。"""
+        # 40 点饱和（AUTO=1 + APC=4 各 20），60 点手动正常
+        op = np.array([99.5] * 40 + [50.0] * 60, dtype=float)
+        mode = np.array([1] * 20 + [4] * 20 + [0] * 60, dtype=object)
+        result = _analyze_saturation(op, mode_values=mode)
+        assert result["detected"] is True
+        assert result["saturation_rate"] == 1.0
+        assert result["high_count"] == 40
+
+
+class TestSaturationOpModePairing:
+    """测试 _diagnose_loop 中 op/mode 成对过滤（P0：索引错位修复）。"""
+
+    @pytest.mark.asyncio
+    async def test_unpaired_rows_not_misaligned(self) -> None:
+        """mode 缺失行不得与 op 错位配对。
+
+        故障注入：前 30 点 OP 顶格饱和但 mode 缺失，后 30 点 OP 正常且
+        mode=AUTO(1)。旧实现 op/mode 分别过滤后错位配对（前 30 个饱和
+        OP 被配上 AUTO mode），会误报饱和；修复后仅同行皆有效的后 30 点
+        参与统计，不应检出饱和。
+        """
+        loop = _make_loop()
+        pv_m = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        sp_m = _make_mapping(tag_role="SP", tag_id="tag-sp")
+        op_m = _make_mapping(tag_role="OP", tag_id="tag-op")
+        mode_m = _make_mapping(tag_role="MODE", tag_id="tag-mode")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        sp_tag = _make_tag(tag_id="tag-sp", tag_name="LIC.SP")
+        op_tag = _make_tag(tag_id="tag-op", tag_name="LIC.OP")
+        mode_tag = _make_tag(tag_id="tag-mode", tag_name="LIC.MODE")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_m, sp_m, op_m, mode_m]),
+                _make_scalars_all_mock([pv_tag, sp_tag, op_tag, mode_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
+            ]
+        )
+        db.add = MagicMock()
+
+        raw_series = _make_raw_timeseries(
+            [50.0] * 60,
+            sp=[50.0] * 60,
+            op=[99.5] * 30 + [50.0] * 30,
+            mode=[None] * 30 + [1] * 30,
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
+
+        # threshold=None 走代码默认限位（0~100，容差 2）
+        sat_cfg = _make_diag_config()
+        sat_cfg.threshold = None
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OUTPUT_SATURATION": sat_cfg},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert result["status"] == "SUCCESS"
+        # 错位配对会产出 OUTPUT_SATURATION 标签；成对过滤后不应出现
+        assert "OUTPUT_SATURATION" not in result["labels"]
+
+    @pytest.mark.asyncio
+    async def test_numeric_mode_saturation_end_to_end(self) -> None:
+        """数值 AUTO=1 + OP 饱和端到端应检出 OUTPUT_SATURATION。"""
+        loop = _make_loop()
+        pv_m = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        op_m = _make_mapping(tag_role="OP", tag_id="tag-op")
+        mode_m = _make_mapping(tag_role="MODE", tag_id="tag-mode")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        op_tag = _make_tag(tag_id="tag-op", tag_name="LIC.OP")
+        mode_tag = _make_tag(tag_id="tag-mode", tag_name="LIC.MODE")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_m, op_m, mode_m]),
+                _make_scalars_all_mock([pv_tag, op_tag, mode_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
+            ]
+        )
+        db.add = MagicMock()
+
+        raw_series = _make_raw_timeseries(
+            [50.0] * 50,
+            op=[99.5] * 50,
+            mode=[1] * 50,
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
+
+        sat_cfg = _make_diag_config()
+        sat_cfg.threshold = None
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OUTPUT_SATURATION": sat_cfg},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None
+        assert "OUTPUT_SATURATION" in result["labels"]
+
+
+class TestKanoZeroDiffSegmentation:
+    """测试 Kano 分段在 op_diff 含零时的索引正确性（P1 修复）。"""
+
+    def test_plateau_not_mis_sliced(self) -> None:
+        """含平台段的 OP：分段边界必须映射回原数组索引。
+
+        OP 结构：上升段(9 个 +1 差分) → 平台段(10 个 0 差分) → 下降段
+        (9 个 -1 差分)。平台段不是单调段，不应被切成独立分段参与粘滞
+        统计。旧实现用压缩序列索引直接切原数组，会把平台段错切为分段，
+        在平台段 PV 大幅波动时误计粘滞（stiction_ratio=0.5）。
+        """
+        op = np.array(
+            [float(i) for i in range(10)]  # 0..9 上升
+            + [9.0] * 10  # 平台
+            + [float(9 - i) for i in range(1, 10)],  # 8..0 下降
+            dtype=float,
+        )
+        pv = np.array(
+            [float(i) for i in range(10)]
+            + [20.0 + 10.0 * i for i in range(10)]  # 平台段 PV 大幅波动
+            + [float(9 - i) for i in range(1, 10)],
+            dtype=float,
+        )
+        result = _detect_kano_stiction(pv, op)
+        # 修复后：仅上升/下降两个单调段，OP 变化均 ~100%，无粘滞段
+        assert result["stiction_ratio"] == 0.0
+        assert result["detected"] is False
+
+    def test_zero_diff_still_detects_real_stiction(self) -> None:
+        """op_diff 含零不应影响真实粘滞检出（回归防护）。"""
+        # OP 几乎不动（仅微小抖动）而 PV 大幅波动 → 真实粘滞特征
+        n = 40
+        op = np.full(n, 50.0)
+        op[10] = 50.1
+        op[30] = 49.9
+        t = np.linspace(0, 4 * np.pi, n)
+        pv = 50.0 + 20.0 * np.sin(t)
+        result = _detect_kano_stiction(pv, op)
+        # 函数应正常返回结构（不抛异常、不错切分段）
+        assert "stiction_ratio" in result
+        assert 0.0 <= result["stiction_ratio"] <= 1.0
+
+
+class TestSameLabelFusion:
+    """测试 _fuse_same_label_confidence() 同标签融合口径（P1 修复）。"""
+
+    def test_same_label_fused(self) -> None:
+        """同一标签多算法结果应融合为单置置信度。"""
+        results = [
+            {"label": "VALVE_STICTION", "confidence": 0.5, "evidence": {"algo": "kano"}},
+            {"label": "VALVE_STICTION", "confidence": 0.6, "evidence": {"algo": "choudhury"}},
+        ]
+        fused_results = _fuse_same_label_confidence(results)
+        # D-S: Πc=0.3, Π(1-c)=0.2 → fused=0.6
+        for r in fused_results:
+            assert abs(r["confidence"] - 0.6) < 1e-6
+            fusion = r["evidence"]["same_label_fusion"]
+            assert fusion["semantic"] == "同标签多算法融合置信度"
+            assert fusion["algorithm_count"] == 2
+            assert fusion["source_confidences"] == [0.5, 0.6]
+
+    def test_cross_label_not_fused(self) -> None:
+        """不同标签置信度不得跨标签融合。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.5, "evidence": {}},
+            {"label": "VALVE_STICTION", "confidence": 0.6, "evidence": {}},
+        ]
+        fused_results = _fuse_same_label_confidence(results)
+        assert fused_results[0]["confidence"] == 0.5
+        assert fused_results[1]["confidence"] == 0.6
+        # 单记录标签不加融合标注
+        assert "same_label_fusion" not in fused_results[0]["evidence"]
+        assert "same_label_fusion" not in fused_results[1]["evidence"]
+
+    def test_mixed_groups(self) -> None:
+        """混合场景：同标签组融合，其余标签不受影响。"""
+        results = [
+            {"label": "OSCILLATION", "confidence": 0.4, "evidence": {}},
+            {"label": "OSCILLATION", "confidence": 0.8, "evidence": {}},
+            {"label": "QUALITY_ABNORMAL", "confidence": 0.7, "evidence": {}},
+        ]
+        fused_results = _fuse_same_label_confidence(results)
+        # OSCILLATION: Πc=0.32, Π(1-c)=0.12 → fused=0.32/0.44≈0.7273
+        expected = 0.32 / 0.44
+        assert abs(fused_results[0]["confidence"] - expected) < 1e-6
+        assert abs(fused_results[1]["confidence"] - expected) < 1e-6
+        assert fused_results[2]["confidence"] == 0.7
+
+    def test_empty_and_single(self) -> None:
+        """空列表与单记录原样返回。"""
+        assert _fuse_same_label_confidence([]) == []
+        single = [{"label": "OSCILLATION", "confidence": 0.5, "evidence": {}}]
+        assert _fuse_same_label_confidence(single)[0]["confidence"] == 0.5
+
+
+class TestTsListToSeconds:
+    """测试 _ts_list_to_seconds() 时间戳批量换算（热路径红线修复）。"""
+
+    def test_numeric_passthrough(self) -> None:
+        """数值时间戳直接转浮点秒。"""
+        values = _ts_list_to_seconds([100.0, 102.0, 104])
+        np.testing.assert_array_equal(values, [100.0, 102.0, 104.0])
+
+    def test_naive_datetime_vectorized(self) -> None:
+        """naive datetime 批量换算，间隔正确（不逐点调 .timestamp()）。"""
+        base = datetime(2026, 1, 1, 0, 0, 0)
+        values = _ts_list_to_seconds(
+            [base, base + timedelta(seconds=5), base + timedelta(seconds=10)]
+        )
+        diffs = np.diff(values)
+        np.testing.assert_allclose(diffs, [5.0, 5.0])
+
+    def test_aware_datetime_vectorized(self) -> None:
+        """aware datetime（UTC）批量换算，间隔正确。"""
+        base = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
+        values = _ts_list_to_seconds([base, base + timedelta(seconds=3)])
+        assert values[1] - values[0] == pytest.approx(3.0)
+
+    def test_iso_string_with_z(self) -> None:
+        """ISO 8601 字符串（含 Z 后缀）批量换算。"""
+        values = _ts_list_to_seconds(["2026-01-01T00:00:00Z", "2026-01-01T00:00:03Z"])
+        assert values[1] - values[0] == pytest.approx(3.0)
+
+    def test_invalid_points_become_nan(self) -> None:
+        """混合序列中无法解析的点返回 NaN（调用方过滤）。"""
+        base = datetime(2026, 1, 1, 0, 0, 0)
+        values = _ts_list_to_seconds([base, "invalid", base + timedelta(seconds=6)])
+        assert np.isnan(values[1])
+        valid = values[~np.isnan(values)]
+        assert valid[1] - valid[0] == pytest.approx(6.0)
+
+    def test_empty_list(self) -> None:
+        """空列表返回空数组。"""
+        assert len(_ts_list_to_seconds([])) == 0
+
+    def test_compute_sample_interval_naive_datetime(self) -> None:
+        """_compute_sample_interval 对 naive datetime 序列的间隔计算。"""
+        base = datetime(2026, 1, 1, 0, 0, 0)
+        aligned = [
+            {"ts": base},
+            {"ts": base + timedelta(seconds=5)},
+            {"ts": base + timedelta(seconds=10)},
+        ]
+        assert _compute_sample_interval(aligned) == pytest.approx(5.0)

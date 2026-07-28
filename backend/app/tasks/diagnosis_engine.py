@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import warnings
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -27,6 +28,7 @@ from celery.schedules import crontab
 from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 
+from app.constants.mode import AUTO_MODES, MODE_LABELS_EN
 from app.contracts.data_types import ControlType, QualityStatus, RawTimeSeries
 from app.models.diagnosis import (
     DiagnosisConfig,
@@ -44,6 +46,12 @@ from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.diagnosis_rule import apply_rules as apply_db_rules
 from app.services.diagnosis_rule import get_active_rules
 from app.services.diagnosis_trigger_config import get_trigger_config
+from app.services.metric_calculator.oscillation import (
+    _DEFAULT_MAX_RATIO,
+    _DEFAULT_MIN_RATIO,
+    MIN_ZERO_CROSSINGS,
+    OscillationRateCalculator,
+)
 from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import map_quality_code
 from app.services.preprocessing.quality_summary import compute_quality_summary
@@ -100,13 +108,33 @@ _LOOP_TYPE_TO_CONTROL_TYPE: dict[str, ControlType] = {
     "ANALYSIS": ControlType.COMPOSITION,
 }
 
+#: 响应迟缓期望时间常数默认表（真实秒，按回路类型工业经验值，
+#: _detect_slow_response / _expected_time_constant 的代码回退默认，
+#: 与 _THRESHOLD_SCHEMA["OVERCONSERVATIVE"]["slow_expected_tau_seconds"] 同源）
+_DEFAULT_EXPECTED_TAU_SECONDS: dict[str, float] = {
+    "FLOW": 10.0,
+    "PRESSURE": 30.0,
+    "LEVEL": 120.0,
+    "TEMPERATURE": 600.0,
+    "ANALYSIS": 900.0,
+    "OTHER": 60.0,
+}
+
 # 整改计划 C1：阈值键名 schema 登记（diag_code → {key: default}）
 # 所有算法通过 _get_threshold 读取的阈值键名及其代码默认值集中登记于此，
 # 便于迁移种子数据对齐与运行时缺省告警。
 _THRESHOLD_SCHEMA: dict[str, dict[str, Any]] = {
     "OSCILLATION": {
         "similarity_threshold": 0.4,
-        "min_zero_crossings": 3,
+        "min_zero_crossings": 4,
+        # FFT 频域路径（_detect_oscillation_fft）
+        "fft_osc_index_threshold": 0.3,
+        "fft_min_zero_crossings": 5,
+    },
+    "VALVE_STICTION": {
+        # Choudhury NGI/NLI 非线性判定（ADS §5.2.2）
+        "choudhury_ngi_threshold": 0.001,
+        "choudhury_nli_threshold": 0.01,
     },
     "QUALITY_ABNORMAL": {
         # 质量码规则矩阵 Q001-Q005（_analyze_quality）
@@ -134,6 +162,18 @@ _THRESHOLD_SCHEMA: dict[str, dict[str, Any]] = {
         # Harris 指数模型失配评估（_assess_model_mismatch）
         "harris_ar_order": 10,
         "harris_warn": 2.0,
+        # 阶跃响应过激判定（ADS §5.3.2，满足 2 项及以上）
+        "step_overshoot_threshold": 0.25,
+        "step_decay_ratio_threshold": 0.4,
+        "step_sse_threshold": 0.05,
+    },
+    "OVERCONSERVATIVE": {
+        # 响应迟缓判定（_detect_slow_response）：实际 τ / 期望 τ 超过该比值判迟缓
+        "slow_response_ratio_threshold": 2.0,
+        # 无阶跃场景的稳态偏差占比判定（bias_std / sp_range）
+        "slow_no_step_bias_ratio": 0.2,
+        # 期望时间常数（真实秒，按回路类型工业经验值）
+        "slow_expected_tau_seconds": _DEFAULT_EXPECTED_TAU_SECONDS,
     },
 }
 
@@ -1062,11 +1102,17 @@ async def _diagnose_loop(
     sp_values = np.array([d["sp"] for d in aligned if d.get("sp") is not None], dtype=float)
     op_values = np.array([d["op"] for d in aligned if d.get("op") is not None], dtype=float)
 
-    # 提取 MODE 值数组（P0-3：饱和率分析仅统计自控模式）
-    mode_values = np.array(
-        [d.get("mode") for d in aligned if d.get("mode") is not None],
-        dtype=object,
-    )
+    # OP/MODE 成对提取（P0：饱和率分析仅统计自控模式）
+    # 原实现 op/mode 分别按各自 is not None 过滤，某行只有一个字段缺失时
+    # 两数组索引错位；改同一循环按行成对过滤，同行皆有效才保留
+    sat_op_list: list[Any] = []
+    sat_mode_list: list[Any] = []
+    for d in aligned:
+        if d.get("op") is not None and d.get("mode") is not None:
+            sat_op_list.append(d["op"])
+            sat_mode_list.append(d["mode"])
+    sat_op_values = np.array(sat_op_list, dtype=float)
+    mode_values = np.array(sat_mode_list, dtype=object)
 
     # 计算采样间隔（秒），用于 FFT 频率换算
     sample_interval = _compute_sample_interval(aligned)
@@ -1089,7 +1135,11 @@ async def _diagnose_loop(
 
     # 1. FFT 频域分析（振荡检测）
     if osc_enabled:
-        osc_result = _detect_oscillation_fft(pv_values, sample_interval)
+        osc_result = _detect_oscillation_fft(
+            pv_values,
+            sample_interval,
+            threshold=_get_threshold(diag_configs, "OSCILLATION", None, None),
+        )
 
         # 1b. IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法）
         osc_iae_result = _detect_oscillation_iae(
@@ -1128,9 +1178,10 @@ async def _diagnose_loop(
 
     # 4. OP 饱和率分析（P0-3：仅自控模式 + 绝对工程限位）
     if saturation_enabled:
+        has_mode = len(mode_values) > 0
         saturation_result = _analyze_saturation(
-            op_values,
-            mode_values if len(mode_values) > 0 else None,
+            sat_op_values if has_mode else op_values,
+            mode_values if has_mode else None,
             threshold=_get_threshold(diag_configs, "OUTPUT_SATURATION", None, None),
         )
     else:
@@ -1138,7 +1189,11 @@ async def _diagnose_loop(
 
     # 5. Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测，设计依据：FDS §5.4.6）
     if stiction_enabled:
-        choudhury_result = _detect_choudhury_nonlinearity(pv_values, op_values)
+        choudhury_result = _detect_choudhury_nonlinearity(
+            pv_values,
+            op_values,
+            threshold=_get_threshold(diag_configs, "VALVE_STICTION", None, None),
+        )
     else:
         choudhury_result = _empty_choudhury_result()
 
@@ -1149,24 +1204,35 @@ async def _diagnose_loop(
         kano_result = _empty_kano_result()
 
     # 提取时间戳数组（供阶跃响应/响应迟缓/偏差突变算法使用）
-    ts_values = np.array(
-        [_ts_to_float(d.get("ts")) for d in aligned if d.get("ts") is not None],
-        dtype=float,
-    )
+    # 热路径向量化：批量换算时间戳，禁止逐点 naive datetime .timestamp()
+    # （macOS fork 时区慢路径，项目红线）
+    raw_ts = [d.get("ts") for d in aligned if d.get("ts") is not None]
+    ts_values = _ts_list_to_seconds(raw_ts)
     # 若时间戳数量与 PV 不一致，回退为 None（使用等间隔假设）
     ts_param = ts_values if len(ts_values) == len(pv_values) else None
 
     # 7. 完整阶跃响应分析（过冲/衰减比/稳态误差）
     if overaggressive_enabled:
-        step_response_result = _analyze_step_response(pv_values, sp_values, op_values, ts_param)
+        step_response_result = _analyze_step_response(
+            pv_values,
+            sp_values,
+            op_values,
+            ts_param,
+            threshold=_get_threshold(diag_configs, "OVERAGGRESSIVE", None, None),
+        )
     else:
         step_response_result = _empty_step_response_result()
 
-    # 8. 响应迟缓检测（一阶滞后拟合）
-    # 控制类型从回路扩展属性获取（默认 PI）
+    # 8. 响应迟缓检测（一阶滞后拟合，真实秒单位 τ 与回路类型经验秒数比较）
     if overconservative_enabled:
-        control_type = getattr(loop, "control_type", None) or "PI"
-        slow_response_result = _detect_slow_response(pv_values, sp_values, control_type, ts_param)
+        slow_response_result = _detect_slow_response(
+            pv_values,
+            sp_values,
+            getattr(loop, "loop_type", None),
+            ts_param,
+            sample_interval=sample_interval,
+            threshold=_get_threshold(diag_configs, "OVERCONSERVATIVE", None, None),
+        )
     else:
         slow_response_result = _empty_slow_response_result()
 
@@ -1582,13 +1648,15 @@ async def _diagnose_loop(
     else:
         algorithm_results = _apply_expert_rules(algorithm_results)
 
+    # D-S 证据融合（P1 修复融合口径）：仅对同一标签的多算法结果在去重前融合。
+    # 不同标签代表互斥的故障假设，跨标签置信度不可做赔率乘积，不再跨标签融合
+    algorithm_results = _fuse_same_label_confidence(algorithm_results)
+
     # 标签去重（P1-4：同一标签保留置信度最高的记录）
     algorithm_results = _deduplicate_labels(algorithm_results)
 
-    # 使用 Dempster-Shafer 证据理论融合置信度
-    fused_confidence = _dempster_shafer_fusion(
-        [(r["label"], r["confidence"]) for r in algorithm_results]
-    )
+    # 回路级综合置信度：融合去重后的最高标签置信度（无跨标签融合语义）
+    fused_confidence = max((r["confidence"] for r in algorithm_results), default=0.0)
 
     # 幂等性（S1-C3）：删除同一任务的旧诊断记录，避免重复写入
     # 注意：按 task_id 隔离，避免不同任务互相删除诊断结果
@@ -1645,10 +1713,9 @@ async def _diagnose_loop(
     label_to_diag_id: dict[str, str] = {}
     for idx, result in enumerate(algorithm_results):
         confidence_decimal = Decimal(str(round(result["confidence"] * 100, 2)))
-        evidence_chain = {
-            **result["evidence"],
-            "fused_confidence": fused_confidence,
-        }
+        # P1 修复：evidence_chain 仅承载本标签自身证据与同标签融合标注
+        # （same_label_fusion），不再写入跨标签融合值
+        evidence_chain = dict(result["evidence"])
         # B5：每条记录写入统一可信度等级与有效数据率（回路级，各标签一致）
         own_features = {
             **result.get("feature_values", {}),
@@ -1756,16 +1823,34 @@ def _empty_saturation_result() -> dict[str, Any]:
     }
 
 
-def _detect_oscillation_fft(pv_values: np.ndarray, sample_interval: float = 1.0) -> dict[str, Any]:
+def _detect_oscillation_fft(
+    pv_values: np.ndarray,
+    sample_interval: float = 1.0,
+    threshold: dict | None = None,
+) -> dict[str, Any]:
     """FFT 频域分析检测振荡。
+
+    P2 修复：
+    - 单边谱幅值按 2·|X(k)|/Σw 换算（此前漏乘 2，恢复幅值仅为真实值一半）
+    - 加 Hann 窗抑制频谱泄漏，幅值按窗函数相干增益（Σw）补偿
+    - 振荡指数/零交叉判定阈值走 threshold 配置（fft_osc_index_threshold /
+      fft_min_zero_crossings），不再硬编码 0.3 / 5
 
     Args:
         pv_values: PV 数据数组
         sample_interval: 采样间隔（秒），用于频率换算
+        threshold: 阈值配置，支持键：
+            - fft_osc_index_threshold: 振荡指数阈值（默认 0.3）
+            - fft_min_zero_crossings: 最小零交叉数（默认 5）
 
     Returns:
         {detected, confidence, amplitude, frequency, index}
     """
+    if not isinstance(threshold, dict):
+        threshold = {}
+    osc_index_threshold = float(threshold.get("fft_osc_index_threshold", 0.3))
+    min_zero_crossings = int(threshold.get("fft_min_zero_crossings", 5))
+
     if len(pv_values) < 8:
         return _empty_osc_result()
 
@@ -1774,14 +1859,20 @@ def _detect_oscillation_fft(pv_values: np.ndarray, sample_interval: float = 1.0)
         fs = 1.0 / sample_interval if sample_interval > 0 else 1.0  # 采样频率 (Hz)
         # 去均值
         pv_centered = pv_values - np.mean(pv_values)
+        # Hann 窗抑制频谱泄漏；幅值归一化分母 Σw 同时补偿窗的相干增益
+        window = np.hanning(N)
+        window_sum = float(np.sum(window))
+        if window_sum <= 0:
+            return _empty_osc_result()
         # FFT
-        fft_vals = np.fft.rfft(pv_centered)
+        fft_vals = np.fft.rfft(pv_centered * window)
         fft_magnitude = np.abs(fft_vals)
         # 主频
         if len(fft_magnitude) <= 1:
             return _empty_osc_result()
         peak_idx = int(np.argmax(fft_magnitude[1:])) + 1
-        amplitude = float(fft_magnitude[peak_idx] / N)
+        # 单边谱幅值：2·|X(k)|/Σw（修复此前漏乘 2 导致的幅值减半）
+        amplitude = float(2.0 * fft_magnitude[peak_idx] / window_sum)
         # 频率 = peak_idx * fs / N（标准 FFT 频率换算公式）
         frequency = float(peak_idx * fs / N)
 
@@ -1795,13 +1886,15 @@ def _detect_oscillation_fft(pv_values: np.ndarray, sample_interval: float = 1.0)
         # IAE 零交叉检测
         zero_crossings = int(np.sum(np.diff(np.sign(pv_centered)) != 0))
 
-        # 振荡判定：振荡指数 > 0.3 且零交叉次数 > 5
-        detected = osc_index > 0.3 and zero_crossings > 5
+        # 振荡判定：振荡指数与零交叉次数阈值均来自配置
+        detected = osc_index > osc_index_threshold and zero_crossings > min_zero_crossings
         # 置信度：基于振荡指数
         confidence = min(1.0, osc_index * 1.5) if detected else 0.0
 
         frequencies = np.arange(len(fft_magnitude)) * fs / N
-        amplitudes = fft_magnitude / N
+        # 单边幅值谱：k>0 乘 2，DC 分量（k=0）不乘
+        amplitudes = 2.0 * fft_magnitude / window_sum
+        amplitudes[0] = fft_magnitude[0] / window_sum
 
         max_points = 500
         if len(frequencies) > max_points:
@@ -2300,6 +2393,35 @@ def _assess_model_mismatch(
         return _empty_harris_result()
 
 
+#: 自控模式英文标签集合（与 constants.mode.AUTO_MODES 数值集合对应，
+#: 兼容历史数据/外部输入中的字符串形式 MODE）
+_AUTO_MODE_LABELS: frozenset[str] = frozenset(MODE_LABELS_EN[m] for m in AUTO_MODES)
+
+
+def _is_auto_mode(mode_val: Any) -> bool:
+    """判定 MODE 值是否为自控模式（AUTO/CAS/REMOTE/APC）。
+
+    P0 修复：TDengine 中 MODE 为数值编码（StandardMode：AUTO=1/CAS=2/REMOTE=3/APC=4），
+    原实现 `"AUTO" in str(mode_val)` 对数值 mode 恒为 False，饱和诊断在数值
+    mode 下永久失效。数值按 constants.mode.AUTO_MODES 集合判定（含 APC=4）；
+    字符串按英文标签判定，数值字符串（如 "1"）按数值解析。
+    """
+    if isinstance(mode_val, bool):
+        return False
+    if isinstance(mode_val, (int, np.integer)):
+        return int(mode_val) in AUTO_MODES
+    if isinstance(mode_val, (float, np.floating)):
+        return float(mode_val).is_integer() and int(mode_val) in AUTO_MODES
+    mode_str = str(mode_val).strip().upper()
+    if mode_str in _AUTO_MODE_LABELS:
+        return True
+    try:
+        num = float(mode_str)
+    except (TypeError, ValueError):
+        return False
+    return num.is_integer() and int(num) in AUTO_MODES
+
+
 def _analyze_saturation(
     op_values: np.ndarray,
     mode_values: np.ndarray | None = None,
@@ -2332,21 +2454,14 @@ def _analyze_saturation(
     op_low_limit = float(threshold.get("op_low_limit", 0.0))
     saturation_epsilon = float(threshold.get("saturation_epsilon", 2.0))
 
-    # 若提供 mode_values，仅保留自控模式数据点
+    # 若提供 mode_values，仅保留自控模式数据点（AUTO/CAS/REMOTE/APC）
     if mode_values is not None and len(mode_values) > 0:
         min_len = min(len(op_values), len(mode_values))
-        op_filtered = []
-        for i in range(min_len):
-            mode_val = mode_values[i]
-            # mode_val 可能是数值或字符串
-            try:
-                mode_str = str(mode_val).upper()
-            except Exception:
-                continue
-            # 仅保留 Auto/CAS/RCAS（包含 "AUTO" 或 "CAS"）
-            if "AUTO" in mode_str or "CAS" in mode_str:
-                op_filtered.append(float(op_values[i]))
-        op_arr = np.array(op_filtered, dtype=float) if op_filtered else np.array([], dtype=float)
+        auto_mask = np.array(
+            [_is_auto_mode(mode_values[i]) for i in range(min_len)],
+            dtype=bool,
+        )
+        op_arr = np.asarray(op_values[:min_len], dtype=float)[auto_mask]
     else:
         op_arr = np.asarray(op_values, dtype=float)
 
@@ -2527,7 +2642,11 @@ def _compute_max_bicoherence(signal: np.ndarray, n_seg: int = 4, n_freq: int = 1
         return 0.0
 
 
-def _detect_choudhury_nonlinearity(pv: np.ndarray, op: np.ndarray) -> dict[str, Any]:
+def _detect_choudhury_nonlinearity(
+    pv: np.ndarray,
+    op: np.ndarray,
+    threshold: dict | None = None,
+) -> dict[str, Any]:
     """Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测）。
 
     设计依据：FDS §5.4.6 / ADS §5.2.2
@@ -2535,15 +2654,23 @@ def _detect_choudhury_nonlinearity(pv: np.ndarray, op: np.ndarray) -> dict[str, 
     基于 OP 信号的非高斯性（NGI）和非线性（NLI）指标检测阀门粘滞：
     - NGI = |Kurtosis(x) - 3| / 6 + Skewness(x)² / 24
     - NLI 通过最大双相干性近似（二次相位耦合指标）
-    - 当 NGI > 0.001 且 NLI > 0.01 时判定存在非线性（粘滞）
+    - 当 NGI > ngi_threshold 且 NLI > nli_threshold 时判定存在非线性（粘滞）
 
     Args:
         pv: PV 数据数组
         op: OP 数据数组
+        threshold: 阈值配置，支持键：
+            - choudhury_ngi_threshold: NGI 判定阈值（默认 0.001，ADS §5.2.2）
+            - choudhury_nli_threshold: NLI 判定阈值（默认 0.01，ADS §5.2.2）
 
     Returns:
         {detected, confidence, ngi, nli, stiction_index, fitting_score}
     """
+    if not isinstance(threshold, dict):
+        threshold = {}
+    ngi_threshold = float(threshold.get("choudhury_ngi_threshold", 0.001))
+    nli_threshold = float(threshold.get("choudhury_nli_threshold", 0.01))
+
     min_len = min(len(pv), len(op))
     if min_len < 32:
         return _empty_choudhury_result()
@@ -2575,8 +2702,8 @@ def _detect_choudhury_nonlinearity(pv: np.ndarray, op: np.ndarray) -> dict[str, 
         fitting_score = float(stiction_fit.get("fitting_score", 0.0))
         stiction_index = float(stiction_fit.get("stiction_index", 0.0))
 
-        # 判定规则（ADS §5.2.2: NGI > 0.001 且 NLI > 0.01）
-        detected = bool(ngi > 0.001 and nli > 0.01)
+        # 判定规则（ADS §5.2.2: NGI > 0.001 且 NLI > 0.01，阈值可配置）
+        detected = bool(ngi > ngi_threshold and nli > nli_threshold)
 
         # 置信度：融合 NGI、NLI 和椭圆拟合度（权重和为 1）
         if detected:
@@ -2645,15 +2772,16 @@ def _detect_kano_stiction(
         op_diff = np.diff(op_arr)
         # 方向符号（+1/-1/0）
         signs = np.sign(op_diff)
-        # 方向变化点（忽略 0）
-        nonzero_signs = signs[signs != 0]
-        if len(nonzero_signs) < 2:
+        # 非零方向符号在 op_diff 中的原始索引（P1 修复：原先 signs[signs != 0]
+        # 压缩序列后丢失索引映射，分段边界被错误用于切原 op_arr）
+        nz_idx = np.flatnonzero(signs != 0)
+        if len(nz_idx) < 2:
             return _empty_kano_result()
 
-        # 找到方向变化的索引
-        sign_changes = np.where(np.diff(nonzero_signs) != 0)[0]
-        # 分段边界
-        boundaries = np.concatenate([[-1], sign_changes, [len(nonzero_signs) - 1]])
+        # 方向变化点（压缩序列索引）
+        sign_changes = np.flatnonzero(np.diff(signs[nz_idx]) != 0)
+        # 分段边界（压缩序列索引）
+        boundaries = np.concatenate([[-1], sign_changes, [len(nz_idx) - 1]])
 
         total_segments = len(boundaries) - 1
         if total_segments == 0:
@@ -2665,8 +2793,12 @@ def _detect_kano_stiction(
         pv_range = float(np.max(pv_arr) - np.min(pv_arr)) + 1e-9
 
         for i in range(total_segments):
-            start_idx = int(boundaries[i]) + 1
-            end_idx = int(boundaries[i + 1]) + 1
+            # 压缩边界经 nz_idx 映射回原数组：分段覆盖的差分索引为
+            # nz_idx[boundaries[i]+1 .. boundaries[i+1]]，对应原数组切片
+            # [首差分索引 : 末差分索引 + 2)（差分 j 覆盖 op_arr[j] 与 op_arr[j+1]，
+            # 切片同时包含相邻非零差分之间的零差分平台点）
+            start_idx = int(nz_idx[boundaries[i] + 1])
+            end_idx = int(nz_idx[boundaries[i + 1]]) + 2
             if end_idx <= start_idx:
                 continue
             seg_op = op_arr[start_idx:end_idx]
@@ -2700,6 +2832,7 @@ def _analyze_step_response(
     sp: np.ndarray,
     op: np.ndarray | None = None,
     ts: np.ndarray | list[float] | None = None,
+    threshold: dict | None = None,
 ) -> dict[str, Any]:
     """完整阶跃响应分析（过冲/衰减比/稳态误差）。
 
@@ -2717,10 +2850,20 @@ def _analyze_step_response(
         sp: SP 数据数组
         op: OP 数据数组（可选，用于辅助分析）
         ts: 时间戳数组（可选，用于时间归一化）
+        threshold: 阈值配置，支持键：
+            - step_overshoot_threshold: 过冲阈值（默认 0.25，即 25%）
+            - step_decay_ratio_threshold: 衰减比阈值（默认 0.4）
+            - step_sse_threshold: 稳态误差阈值（默认 0.05，即 5% SP 量程）
 
     Returns:
         {detected, confidence, overshoot, decay_ratio, steady_state_error, step_count}
     """
+    if not isinstance(threshold, dict):
+        threshold = {}
+    overshoot_threshold = float(threshold.get("step_overshoot_threshold", 0.25))
+    decay_ratio_threshold = float(threshold.get("step_decay_ratio_threshold", 0.4))
+    sse_threshold = float(threshold.get("step_sse_threshold", 0.05))
+
     min_len = min(len(pv), len(sp))
     if min_len < 16:
         return _empty_step_response_result()
@@ -2773,11 +2916,7 @@ def _analyze_step_response(
         pv_tail = pv_response[-tail_len:]
         steady_state_error = abs(float(np.mean(pv_tail)) - new_sp) / sp_range
 
-        # 判定规则（ADS §5.3.2: 满足 2 项及以上）
-        overshoot_threshold = 0.25  # 25%
-        decay_ratio_threshold = 0.4
-        sse_threshold = 0.05  # 5% SP 量程
-
+        # 判定规则（ADS §5.3.2: 满足 2 项及以上，阈值均可配置）
         flags = [
             overshoot > overshoot_threshold,
             decay_ratio > decay_ratio_threshold,
@@ -2853,8 +2992,11 @@ def _compute_decay_ratio(pv_response: np.ndarray, new_sp: float, step_size: floa
 def _detect_slow_response(
     pv: np.ndarray,
     sp: np.ndarray,
-    control_type: str = "PI",
+    loop_type: str | None = None,
     ts: np.ndarray | list[float] | None = None,
+    *,
+    sample_interval: float = 1.0,
+    threshold: dict | None = None,
 ) -> dict[str, Any]:
     """响应迟缓检测（Slow Response Detection）。
 
@@ -2863,18 +3005,36 @@ def _detect_slow_response(
     基于 PV 对 SP 变化的响应延迟：
     - 检测 SP 阶跃变化
     - 对 PV 响应拟合一阶滞后模型 PV(t) = K(1 - exp(-t/τ))
-    - 计算响应时间常数 τ
-    - 与期望响应时间（基于控制类型阈值）比较
+    - 计算响应时间常数 τ（真实秒单位）
+    - 与期望响应时间（按回路类型的工业经验秒数）比较
+
+    P2 修复（无量纲 τ 漂移）：旧实现先把响应窗口时间归一化到 t∈[0,1]
+    再拟合，τ 是"窗口占比"而非物理量——同一物理响应在不同窗口长度下
+    τ 与判定结论都会漂移。现改为在真实秒时间轴上拟合，
+    期望 τ 取回路类型经验秒数（FLOW/PRESSURE/LEVEL/TEMPERATURE/ANALYSIS），
+    结论与窗口长度无关。
 
     Args:
         pv: PV 数据数组
         sp: SP 数据数组
-        control_type: 控制类型（P/PI/PID），影响期望响应时间
-        ts: 时间戳数组（秒）
+        loop_type: 回路类型（FLOW/PRESSURE/LEVEL/TEMPERATURE/ANALYSIS），
+            决定期望时间常数；缺省按 OTHER 处理
+        ts: 时间戳数组（秒）；缺省时按 sample_interval 等间隔假设
+        sample_interval: 采样间隔（秒），仅在 ts 缺省时使用
+        threshold: 阈值配置，支持键：
+            - slow_response_ratio_threshold: 迟缓判定比值（默认 2.0）
+            - slow_no_step_bias_ratio: 无阶跃场景稳态偏差占比阈值（默认 0.2）
+            - slow_expected_tau_seconds: 期望时间常数表（秒，按回路类型）
 
     Returns:
         {detected, confidence, time_constant, expected_time_constant, ratio}
     """
+    if not isinstance(threshold, dict):
+        threshold = {}
+    ratio_threshold = float(threshold.get("slow_response_ratio_threshold", 2.0))
+    no_step_bias_ratio = float(threshold.get("slow_no_step_bias_ratio", 0.2))
+    tau_map = threshold.get("slow_expected_tau_seconds")
+
     min_len = min(len(pv), len(sp))
     if min_len < 16:
         return _empty_slow_response_result()
@@ -2883,17 +3043,16 @@ def _detect_slow_response(
         pv_arr = pv[:min_len].astype(float)
         sp_arr = sp[:min_len].astype(float)
 
-        # 时间轴（归一化到 0~1）
+        # 时间轴（真实秒，禁止归一化——否则 τ 随窗口长度漂移）
         if ts is not None and len(ts) >= min_len:
-            ts_arr = np.asarray(ts[:min_len], dtype=float)
-            ts_arr = ts_arr - ts_arr[0]
-            total_time = float(ts_arr[-1] - ts_arr[0])
-            if total_time < 1e-9:
-                t_norm = np.linspace(0, 1, min_len)
-            else:
-                t_norm = (ts_arr - ts_arr[0]) / total_time
+            t_seconds = np.asarray(ts[:min_len], dtype=float)
+            t_seconds = t_seconds - t_seconds[0]
+            if t_seconds[-1] < 1e-9:
+                interval = sample_interval if sample_interval > 0 else 1.0
+                t_seconds = np.arange(min_len, dtype=float) * interval
         else:
-            t_norm = np.linspace(0, 1, min_len)
+            interval = sample_interval if sample_interval > 0 else 1.0
+            t_seconds = np.arange(min_len, dtype=float) * interval
 
         # SP 量程
         sp_range = float(np.max(sp_arr) - np.min(sp_arr))
@@ -2910,10 +3069,10 @@ def _detect_slow_response(
             bias = pv_arr - sp_arr
             bias_std = float(np.std(bias))
             # 稳态偏差大且变化缓慢 → 过保守
-            # 提高阈值，避免误报：偏差标准差超过 SP 量程的 20% 才判定
+            # 偏差标准差超过 SP 量程的 no_step_bias_ratio（默认 20%）才判定
             ratio = bias_std / sp_range
-            detected = bool(ratio > 0.2)
-            expected_tau = _expected_time_constant(control_type)
+            detected = bool(ratio > no_step_bias_ratio)
+            expected_tau = _expected_time_constant(loop_type, tau_map)
             # 降低置信度计算系数，避免轻易达到 100%
             confidence = min(0.8, ratio * 3) if detected else 0.0
             return {
@@ -2936,18 +3095,18 @@ def _detect_slow_response(
         # 响应窗口
         response_end = min(step_idx + 1 + min_len // 2, min_len)
         pv_response = pv_arr[step_idx + 1 : response_end]
-        t_response = t_norm[step_idx + 1 : response_end]
+        t_response = t_seconds[step_idx + 1 : response_end]
         if len(pv_response) < 8:
             return _empty_slow_response_result()
 
         # 一阶滞后拟合：PV(t) = old_sp + step_size * (1 - exp(-t/τ))
-        # 归一化时间到 0~1 范围
-        if t_response[-1] > t_response[0]:
-            t_fit = (t_response - t_response[0]) / (t_response[-1] - t_response[0])
-        else:
-            t_fit = np.linspace(0, 1, len(t_response))
+        # t 为阶跃时刻起算的真实秒数，τ 直接是物理秒
+        t_fit = t_response - t_response[0]
+        window_seconds = float(t_fit[-1]) if len(t_fit) > 0 else 0.0
+        if window_seconds < 1e-9:
+            return _empty_slow_response_result()
 
-        # 使用 scipy 曲线拟合
+        # 使用 scipy 曲线拟合（初值/边界随窗口秒数自适应）
         from scipy.optimize import curve_fit
 
         def _first_order_lag(t: np.ndarray, tau: float) -> np.ndarray:
@@ -2958,13 +3117,13 @@ def _detect_slow_response(
                 _first_order_lag,
                 t_fit,
                 pv_response,
-                p0=[0.3],
-                bounds=([0.001], [10.0]),
+                p0=[max(window_seconds / 3.0, 1e-3)],
+                bounds=([1e-3], [max(window_seconds * 10.0, 1.0)]),
                 maxfev=1000,
             )
             time_constant = float(popt[0])
         except Exception:
-            # 拟合失败：使用 63.2% 响应时间近似
+            # 拟合失败：使用 63.2% 响应时间近似（真实秒）
             target = old_sp + step_size * 0.632
             if step_size > 0:
                 reach_idx = np.where(pv_response >= target)[0]
@@ -2973,14 +3132,14 @@ def _detect_slow_response(
             if len(reach_idx) > 0:
                 time_constant = float(t_fit[reach_idx[0]])
             else:
-                time_constant = 1.0
+                time_constant = window_seconds
 
-        # 期望时间常数（基于控制类型）
-        expected_tau = _expected_time_constant(control_type)
+        # 期望时间常数（真实秒，按回路类型工业经验值）
+        expected_tau = _expected_time_constant(loop_type, tau_map)
 
-        # 响应迟缓判定：实际时间常数 > 期望值
+        # 响应迟缓判定：实际时间常数 > 期望值 × 比值阈值（默认慢 2 倍以上）
         ratio = time_constant / expected_tau if expected_tau > 0 else 0.0
-        detected = bool(ratio > 2.0)  # 实际响应比期望慢 2 倍以上
+        detected = bool(ratio > ratio_threshold)
 
         # 置信度计算：使用更保守的公式，避免轻易达到 100%
         # 拟合时间常数达到上限时，置信度不应直接到 100%
@@ -3002,20 +3161,31 @@ def _detect_slow_response(
         return _empty_slow_response_result()
 
 
-def _expected_time_constant(control_type: str) -> float:
-    """根据控制类型返回期望响应时间常数（归一化值）。
+def _expected_time_constant(
+    loop_type: str | None,
+    tau_map: dict | None = None,
+) -> float:
+    """按回路类型返回期望响应时间常数（真实秒）。
 
-    基于工业实践经验：
-    - P 控制：响应较慢，期望 τ ≈ 0.5
-    - PI 控制：中等响应，期望 τ ≈ 0.3
-    - PID 控制：快速响应，期望 τ ≈ 0.2
+    工业经验值（与 _THRESHOLD_SCHEMA["OVERCONSERVATIVE"]["slow_expected_tau_seconds"]
+    默认值一致，可用 threshold 配置覆盖）：
+    - FLOW 流量：秒级响应，期望 τ ≈ 10s
+    - PRESSURE 压力：数十秒级，期望 τ ≈ 30s
+    - LEVEL 液位：分钟级，期望 τ ≈ 120s
+    - TEMPERATURE 温度：十分钟级，期望 τ ≈ 600s
+    - ANALYSIS 分析：刻钟级，期望 τ ≈ 900s
+    - OTHER/缺省：期望 τ ≈ 60s
+
+    Args:
+        loop_type: 回路类型；None 或未知类型按 OTHER 处理
+        tau_map: 配置覆盖的期望 τ 表；缺省用 schema 默认表
     """
-    defaults = {
-        "P": 0.5,
-        "PI": 0.3,
-        "PID": 0.2,
-    }
-    return defaults.get(control_type.upper(), 0.3)
+    mapping = tau_map if isinstance(tau_map, dict) and tau_map else _DEFAULT_EXPECTED_TAU_SECONDS
+    key = (loop_type or "OTHER").upper()
+    try:
+        return float(mapping.get(key, mapping.get("OTHER", 60.0)))
+    except (TypeError, ValueError):
+        return 60.0
 
 
 def _detect_bias_shift(
@@ -3384,6 +3554,49 @@ def _apply_expert_rules(algorithm_results: list[dict[str, Any]]) -> list[dict[st
         return algorithm_results
 
 
+def _fuse_same_label_confidence(algorithm_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """同标签多算法置信度融合（D-S 证据理论，FDS §5.4.7）。
+
+    P1 修复融合口径：仅对同一标签的多算法结果在去重之前做 D-S 融合；
+    不同标签代表互斥的故障假设，跨标签置信度不做融合。
+
+    融合的标签记录：
+    - confidence 更新为同标签多算法融合置信度
+    - evidence 增加 same_label_fusion 标注，说明融合语义与来源置信度
+
+    Args:
+        algorithm_results: 算法结果列表（可含同标签多条记录）
+
+    Returns:
+        融合后的算法结果列表（单记录标签原样保留）
+    """
+    if not algorithm_results:
+        return algorithm_results
+
+    try:
+        # 按 label 分组
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for r in algorithm_results:
+            groups.setdefault(r["label"], []).append(r)
+
+        for records in groups.values():
+            if len(records) < 2:
+                continue
+            source_confidences = [r["confidence"] for r in records]
+            fused = _dempster_shafer_fusion([(r["label"], r["confidence"]) for r in records])
+            for r in records:
+                r["confidence"] = fused
+                r.setdefault("evidence", {})["same_label_fusion"] = {
+                    "semantic": "同标签多算法融合置信度",
+                    "algorithm_count": len(records),
+                    "source_confidences": source_confidences,
+                }
+        return algorithm_results
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("同标签置信度融合失败: %s", exc)
+        return algorithm_results
+
+
 def _deduplicate_labels(algorithm_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """标签去重（P1-4 修复标签重复写入）。
 
@@ -3459,32 +3672,39 @@ def _detect_oscillation_iae(
     sample_interval: float = 1.0,
     threshold: dict | None = None,
 ) -> dict[str, Any]:
-    """IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法，Thornhill & Hägglund 1999）。
+    """IAE 零交叉相似率法振荡检测（FDS §5.4.6 在线主算法，与 KPI 侧同一算法）。
 
-    算法原理：
+    P2 统一：旧实现是已被 KPI 侧移除的 CV 法（IAE 累积去趋势 +
+    零交叉间隔 1-std/mean），与 KPI 振荡率（metric_calculator/oscillation.py，
+    IAE 段相似率最小距离法，算法说明 §4.6）口径不一致，同一回路可能出现
+    KPI 振荡率与诊断 OSCILLATION 标签互相矛盾。现直接复用
+    OscillationRateCalculator 的零交叉识别、IAE 段计算与相似率静态方法，
+    保证同一信号下两侧结论一致（FFT 路径保留作多算法证据，
+    经 _fuse_same_label_confidence 同标签融合）。
+
+    算法步骤（对齐算法说明 §4.6 / GB/T 44693.2-2024 附录 F.1）：
     1. 计算控制偏差 e(t) = PV - SP
-    2. 对偏差取绝对值后做积分（累积和），得到 IAE 累积曲线
-    3. 对 IAE 累积曲线做一阶差分，找零交叉点（从正变负或从负变正）
-    4. 计算相邻零交叉之间的间隔（采样点数）
-    5. 相似率 = 1 - (std(间隔) / mean(间隔))，值越接近 1 越规律
-    6. 若相似率 > similarity_threshold（默认 0.4）且零交叉数 >= 3，判定为振荡
-    7. 置信度 = min(1.0, similarity * 1.5)
+    2. 识别偏差零交叉点（至少 2 个完整周期）
+    3. 计算相邻零交叉间完整半周期的 IAE 与持续时间
+    4. 分别对正值段/负值段 IAE 计算相似率 S_A/S_B（最小距离法）
+    5. similarity = min(S_A, S_B)；S_A>=阈值 且 S_B>=阈值 判定振荡
+    6. 置信度 = min(1.0, similarity * 1.5)
 
     Args:
         pv: PV 数据数组
         sp: SP 数据数组
-        sample_interval: 采样间隔（秒）
+        sample_interval: 采样间隔（秒），用于平均周期换算
         threshold: 阈值配置，支持键：
             - similarity_threshold: 相似率阈值（默认 0.4）
-            - min_zero_crossings: 最小零交叉数（默认 3）
+            - min_zero_crossings: 最小零交叉数（默认 4，与 KPI 侧一致）
 
     Returns:
         {detected, confidence, similarity, zero_crossing_count, mean_period}
     """
-    if threshold is None:
+    if not isinstance(threshold, dict):
         threshold = {}
     similarity_threshold = float(threshold.get("similarity_threshold", 0.4))
-    min_zero_crossings = int(threshold.get("min_zero_crossings", 3))
+    min_zero_crossings = int(threshold.get("min_zero_crossings", MIN_ZERO_CROSSINGS))
 
     min_len = min(len(pv), len(sp))
     if min_len < 8:
@@ -3497,83 +3717,61 @@ def _detect_oscillation_iae(
         }
 
     try:
-        pv_arr = pv[:min_len].astype(float)
-        sp_arr = sp[:min_len].astype(float)
-
         # 1. 计算控制偏差
-        error = pv_arr - sp_arr
+        error = pv[:min_len].astype(float) - sp[:min_len].astype(float)
 
-        # 2. IAE 累积曲线（绝对值积分 = 累积和，用于振幅参考）
-        iae_cumsum = np.cumsum(np.abs(error))
-
-        # 3. 对 IAE 累积曲线做一阶差分，找零交叉点
-        # 由于 IAE 累积和单调递增，对累积曲线去线性趋势后找零交叉
-        # 线性趋势 = 最小二乘拟合，去除后得到振荡分量
-        n = len(iae_cumsum)
-        x = np.arange(n, dtype=float)
-        # 最小二乘线性拟合
-        A = np.vstack([x, np.ones_like(x)]).T
-        try:
-            slope, intercept = np.linalg.lstsq(A, iae_cumsum, rcond=None)[0]
-            iae_trend = slope * x + intercept
-        except Exception:
-            iae_trend = np.mean(iae_cumsum) * np.ones(n)
-        iae_detrended = iae_cumsum - iae_trend
-
-        # 零交叉：符号变化点
-        signs = np.sign(iae_detrended)
-        # 去除 0 符号（替换为前一非零符号避免误判）
-        for i in range(1, len(signs)):
-            if signs[i] == 0:
-                signs[i] = signs[i - 1]
-
-        zero_crossings = np.where(np.diff(signs) != 0)[0]
-
-        if len(zero_crossings) < max(min_zero_crossings, 2):
+        # 2. 识别零交叉点（复用 KPI 侧向量化实现，含零值平台前向填充）
+        zero_crossings = OscillationRateCalculator._find_zero_crossings(error)
+        n_crossings = len(zero_crossings)
+        if n_crossings < max(min_zero_crossings, 2):
             return {
                 "detected": False,
                 "confidence": 0.0,
                 "similarity": 0.0,
-                "zero_crossing_count": int(len(zero_crossings)),
+                "zero_crossing_count": n_crossings,
                 "mean_period": 0.0,
             }
 
-        # 4. 计算相邻零交叉间隔
-        intervals = np.diff(zero_crossings).astype(float)
-        if len(intervals) < 2:
+        # 3. 计算相邻零交叉间完整半周期的 IAE（首尾残缺半周期已剔除）
+        segments = OscillationRateCalculator._compute_iae_segments(error, zero_crossings)
+        pos_iae = [s[0] for s in segments if s[2] > 0]
+        neg_iae = [s[0] for s in segments if s[2] < 0]
+        if not pos_iae or not neg_iae:
             return {
                 "detected": False,
                 "confidence": 0.0,
                 "similarity": 0.0,
-                "zero_crossing_count": int(len(zero_crossings)),
+                "zero_crossing_count": n_crossings,
                 "mean_period": 0.0,
             }
 
-        mean_interval = float(np.mean(intervals))
-        std_interval = float(np.std(intervals))
-
-        # 5. 相似率 = 1 - (std / mean)，值越接近 1 越规律
-        if mean_interval <= 0:
-            similarity = 0.0
-        else:
-            similarity = max(0.0, 1.0 - std_interval / mean_interval)
-
-        # 6. 振荡判定：相似率 > 阈值 且 零交叉数 >= 最小值
-        detected = bool(
-            similarity > similarity_threshold and len(zero_crossings) >= min_zero_crossings
+        # 4. IAE 相似率 S_A/S_B（最小距离法，min/max_ratio 与 KPI 侧默认值一致）
+        s_a = OscillationRateCalculator._similarity_rate(
+            pos_iae, _DEFAULT_MIN_RATIO, _DEFAULT_MAX_RATIO
         )
+        s_b = OscillationRateCalculator._similarity_rate(
+            neg_iae, _DEFAULT_MIN_RATIO, _DEFAULT_MAX_RATIO
+        )
+        similarity = min(s_a, s_b)
 
-        # 7. 置信度
+        # 5. 振荡判定：双侧相似率均达阈值（与 KPI 侧 is_oscillating 同口径）
+        detected = bool(s_a >= similarity_threshold and s_b >= similarity_threshold)
+
+        # 6. 置信度
         confidence = min(1.0, similarity * 1.5) if detected else 0.0
 
-        # 平均周期（秒）
-        mean_period = mean_interval * sample_interval if sample_interval > 0 else mean_interval
+        # 平均周期 = 2 × 平均半周期（秒）
+        durations = [s[1] for s in segments]
+        mean_period_samples = float(np.mean(durations)) * 2.0 if durations else 0.0
+        mean_period = (
+            mean_period_samples * sample_interval if sample_interval > 0 else mean_period_samples
+        )
 
         return {
             "detected": detected,
             "confidence": confidence,
             "similarity": similarity,
-            "zero_crossing_count": int(len(zero_crossings)),
+            "zero_crossing_count": n_crossings,
             "mean_period": float(mean_period),
         }
     except Exception as exc:  # noqa: BLE001
@@ -3589,6 +3787,10 @@ def _detect_oscillation_iae(
 
 def _dempster_shafer_fusion(evidence: list[tuple[str, float]]) -> float:
     """多算法置信度融合（D-S 证据理论公式，FDS §5.4.7）。
+
+    P1 修复口径：本函数仅用于同一标签的多算法结果融合（由
+    _fuse_same_label_confidence 调用），不得跨标签调用——不同标签代表
+    互斥的故障假设，置信度做赔率乘积没有证据理论意义。
 
     使用 FDS §5.4.7 指定的对数赔率融合公式：
         C_fused = (Π cᵢ) / (Π cᵢ + Π (1-cᵢ))
@@ -3784,34 +3986,74 @@ def _get_tag_name(
     return tag.tag_name
 
 
-def _ts_to_float(ts: Any) -> float | None:
-    """将时间戳转换为浮点数（秒）。
+def _ts_list_to_seconds(ts_list: list[Any]) -> np.ndarray:
+    """批量将时间戳序列转换为浮点秒数组（热路径向量化）。
 
-    支持 int/float、datetime 对象、ISO 8601 字符串。
+    项目红线：禁止对 naive datetime 逐点调 `.timestamp()`（macOS fork
+    时区慢路径）。本函数一次性将 datetime / ISO 字符串序列转为
+    numpy datetime64 再转浮点秒；naive datetime 按 datetime64 默认的
+    UTC 基准解释，仅用于计算相对时间间隔，语义与原实现一致。
+
+    支持 int/float、datetime 对象、ISO 8601 字符串及其混合；
+    无法解析的点返回 NaN，由调用方过滤。
 
     Args:
-        ts: 时间戳（int/float/datetime/str）
+        ts_list: 时间戳列表（int/float/datetime/str）
 
     Returns:
-        浮点秒数，转换失败返回 None
+        浮点秒数组（dtype=float），长度与输入一致
     """
-    if ts is None:
-        return None
-    if isinstance(ts, (int, float)):
-        return float(ts)
-    if hasattr(ts, "timestamp"):
-        return float(ts.timestamp())
-    try:
-        from datetime import datetime
+    if not ts_list:
+        return np.array([], dtype=float)
 
-        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-        return float(dt.timestamp())
-    except (ValueError, TypeError):
-        return None
+    # 全数值：直接转换（视为绝对秒）
+    if all(isinstance(t, (int, float)) and not isinstance(t, bool) for t in ts_list):
+        return np.asarray(ts_list, dtype=float)
+
+    # datetime / ISO 字符串：一次性向量化转换
+    try:
+        with warnings.catch_warnings():
+            # numpy datetime64 无显式时区表示，aware 输入按 UTC 换算（告警可忽略）
+            warnings.simplefilter("ignore", UserWarning)
+            dt_arr = np.asarray(ts_list, dtype="datetime64[us]")
+        return dt_arr.astype("int64").astype(float) / 1e6
+    except (TypeError, ValueError):
+        pass
+
+    # 混合类型或含无法解析元素：逐点解析（非热路径，仅兜底）
+    values = np.full(len(ts_list), np.nan, dtype=float)
+    base: datetime | None = None
+    for i, ts in enumerate(ts_list):
+        if isinstance(ts, bool):
+            continue
+        if isinstance(ts, (int, float)):
+            values[i] = float(ts)
+            continue
+        dt: datetime | None = None
+        if isinstance(ts, datetime):
+            dt = ts
+        else:
+            try:
+                dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+        if base is None:
+            base = dt
+            values[i] = 0.0
+            continue
+        try:
+            values[i] = (dt - base).total_seconds()
+        except TypeError:
+            # naive 与 aware 混排无法相减，该点记为无效
+            continue
+    return values
 
 
 def _compute_sample_interval(aligned: list[dict[str, Any]]) -> float:
     """从对齐后的时序数据计算平均采样间隔（秒）。
+
+    热路径向量化：时间戳经 _ts_list_to_seconds 一次性批量换算，
+    差分用 numpy 向量化计算；禁止逐点 naive datetime .timestamp()。
 
     Args:
         aligned: 对齐后的数据列表，每个元素含 "ts" 字段
@@ -3819,34 +4061,20 @@ def _compute_sample_interval(aligned: list[dict[str, Any]]) -> float:
     Returns:
         平均采样间隔（秒），默认 1.0
     """
-    ts_values: list[float] = []
-    for d in aligned:
-        ts = d.get("ts")
-        if ts is None:
-            continue
-        if isinstance(ts, (int, float)):
-            ts_values.append(float(ts))
-        elif hasattr(ts, "timestamp"):
-            # datetime 对象
-            ts_values.append(float(ts.timestamp()))
-        else:
-            # 尝试解析 ISO 格式字符串
-            try:
-                from datetime import datetime
+    raw_ts = [d.get("ts") for d in aligned if d.get("ts") is not None]
+    if len(raw_ts) < 2:
+        return 1.0
 
-                dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-                ts_values.append(float(dt.timestamp()))
-            except (ValueError, TypeError):
-                continue
-
+    ts_values = _ts_list_to_seconds(raw_ts)
+    ts_values = ts_values[~np.isnan(ts_values)]
     if len(ts_values) < 2:
         return 1.0
 
-    diffs = [ts_values[i + 1] - ts_values[i] for i in range(len(ts_values) - 1)]
-    diffs = [d for d in diffs if d > 0]
-    if not diffs:
+    diffs = np.diff(ts_values)
+    positive = diffs[diffs > 0]
+    if len(positive) == 0:
         return 1.0
-    return sum(diffs) / len(diffs)
+    return float(np.mean(positive))
 
 
 def _build_scatter_plot_data(aligned: list[dict[str, Any]]) -> dict[str, list[float]]:
@@ -3889,8 +4117,11 @@ __all__ = [
     "_detect_kano_stiction",
     "_detect_oscillation_iae",
     "_detect_slow_response",
+    "_fuse_same_label_confidence",
     "_get_threshold",
+    "_is_auto_mode",
     "_THRESHOLD_SCHEMA",
+    "_ts_list_to_seconds",
     "_validate_threshold_config",
     "run_diagnosis_hourly",
     "run_loop_diagnosis",
