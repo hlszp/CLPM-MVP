@@ -6,10 +6,10 @@ import type { RouteRecordRaw } from 'vue-router';
  * 对齐 UI/UX v4.1 §4.2 + §5.2 + PRD §4.6
  * - 用户管理 / 审计日志 / 权限矩阵 / 自动报表
  *
- * 角色权限（PRD §3 + UI/UX §5.2）：
- * - 用户管理 / 审计日志：仅 ADMIN
+ * 角色权限（PRD §3 + 实现契约 §5 + UI/UX §4.2）：
+ * - 用户管理 / 审计日志 / 算法参数配置：仅 ADMIN
  * - 权限矩阵：所有角色可查看
- * - 自动报表：ADMIN + IC_ENGINEER
+ * - 自动报表：仅 ADMIN（后端 reports.py 全端点仅 ADMIN，2026-07-28 收紧对齐）
  */
 const routes: RouteRecordRaw[] = [
   {
@@ -56,7 +56,8 @@ const routes: RouteRecordRaw[] = [
         path: '/system/reports',
         component: () => import('#/views/system/reports.vue'),
         meta: {
-          authority: ['ADMIN', 'IC_ENGINEER'],
+          // 实现契约 §5：后端 reports.py 全端点仅 ADMIN，前端同步收紧
+          authority: ['ADMIN'],
           icon: 'lucide:file-text',
           title: '自动报表',
         },

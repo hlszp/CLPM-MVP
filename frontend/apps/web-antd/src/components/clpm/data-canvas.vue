@@ -6,6 +6,8 @@ defineOptions({ name: 'ClpmDataCanvas' });
 withDefaults(defineProps<Props>(), {
   description: '',
   empty: false,
+  emptyActionText: '',
+  emptyReason: '',
   emptyText: '暂无数据',
   error: false,
   errorText: '数据加载失败，请重试',
@@ -19,6 +21,7 @@ withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
+  emptyAction: [];
   partialDetail: [];
   retry: [];
 }>();
@@ -26,6 +29,13 @@ const emit = defineEmits<{
 interface Props {
   description?: string;
   empty?: boolean;
+  /**
+   * 空态动作按钮文案（如"去导入数据"），配合 emptyAction 事件使用；
+   * 不传时不渲染按钮，行为与旧版完全一致（向后兼容）
+   */
+  emptyActionText?: string;
+  /** 空态原因说明（如"本地 TDengine 暂无该回路历史数据"），不传则不显示 */
+  emptyReason?: string;
   /** 空态文案 */
   emptyText?: string;
   error?: boolean;
@@ -111,6 +121,18 @@ interface Props {
           class="clpm-data-canvas__state-icon"
         />
         <div class="clpm-data-canvas__state-text">{{ emptyText }}</div>
+        <div v-if="emptyReason" class="clpm-data-canvas__empty-reason">
+          {{ emptyReason }}
+        </div>
+        <button
+          v-if="emptyActionText"
+          class="clpm-data-canvas__empty-action"
+          type="button"
+          @click="emit('emptyAction')"
+        >
+          {{ emptyActionText }}
+          <IconifyIcon icon="ant-design:right-outlined" />
+        </button>
       </slot>
     </div>
     <!-- 骨架屏 -->
@@ -281,6 +303,35 @@ interface Props {
   align-items: center;
   justify-content: center;
   font-size: 13px;
+}
+
+/* 空态原因说明 */
+.clpm-data-canvas__empty-reason {
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground) / 80%);
+}
+
+/* 空态动作按钮 */
+.clpm-data-canvas__empty-action {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid hsl(var(--primary) / 50%);
+  border-radius: calc(var(--radius) * 1px);
+}
+
+.clpm-data-canvas__empty-action:hover {
+  background: hsl(var(--primary) / 8%);
+  border-color: hsl(var(--primary));
 }
 
 .clpm-data-canvas__retry {

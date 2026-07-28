@@ -7,7 +7,9 @@ import type { RouteRecordRaw } from 'vue-router';
  * - 性能总览首页：全角色日常作业入口
  * - 聚合性能评估、诊断中心、Action Tracker 多模块数据
  *
- * 角色权限：全部角色可见
+ * 角色权限（实现契约 §5 + UI/UX §4.2）：
+ * - ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR 可见
+ * - EXPERT 不可见（EXPERT 仅诊断中心 + 回路整定，默认首页 /diagnosis）
  */
 const routes: RouteRecordRaw[] = [
   {
@@ -15,6 +17,7 @@ const routes: RouteRecordRaw[] = [
     path: '/dashboard',
     redirect: '/dashboard/workbench',
     meta: {
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:layout-dashboard',
       order: 1,
       title: '工作台',
@@ -26,6 +29,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/metric/pid-dashboard.vue'),
         meta: {
           affixTab: true,
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:layout-dashboard',
           title: '性能总览',
         },

@@ -2,12 +2,15 @@
 /**
  * 可信度徽章组件
  *
- * 对齐 UI/UX §7.15 可信度标识组件规范：
- * - A 级（valid_rate ≥ 95%）：青绿色，可信度高
- * - B 级（80% ≤ valid_rate < 95%）：浅绿色，可信度较好
- * - C 级（60% ≤ valid_rate < 80%）：琥珀色，可信度一般
- * - D 级（20% ≤ valid_rate < 60%）：橙红色，可信度较低
- * - E 级（valid_rate < 20%）：灰色，标记 INCONCLUSIVE，评分留空
+ * 对齐 UI/UX §3.1.6 指标可信度色 + §7.15 可信度标识组件规范：
+ * - A 级（valid_rate ≥ 95%）：青绿 --status-ok，可信度高
+ * - B 级（80% ≤ valid_rate < 95%）：深蓝 --status-info，可信度较好
+ * - C 级（60% ≤ valid_rate < 80%）：琥珀 --status-warning，可信度一般
+ * - D 级（20% ≤ valid_rate < 60%）：警示红 --status-danger，可信度较低
+ * - E 级（valid_rate < 20%）：冷灰 --status-neutral，标记"数据不足"（INCONCLUSIVE），评分留空
+ *
+ * 文案口径（2026-07-28 统一）：E 级中文显示"数据不足"，
+ * 与后端 INCONCLUSIVE 语义及 UI/UX 规范一致，不再显示英文枚举名。
  *
  * P2 #35 UX8 修正：色块圆点不再硬编码 hex 值，改用 useClpmTheme().confidenceColors
  * 响应式色板，暗色模式自动切换为高亮度色值（对齐 §7.15 `--status-*` 语义变量要求）。
@@ -45,7 +48,7 @@ interface Props {
 /** 响应式可信度色板（A/B/C/D/E → 浅/深色自适应） */
 const { confidenceColors } = useClpmTheme();
 
-/** 等级配置：Tag 颜色预设、色块圆点颜色 key、文字、是否为 INCONCLUSIVE */
+/** 等级配置：Tag 颜色预设（对齐 §3.1.6）、色块圆点颜色 key、文字、是否为 INCONCLUSIVE */
 const levelConfig: Record<
   ConfidenceLevel,
   {
@@ -56,13 +59,13 @@ const levelConfig: Record<
   }
 > = {
   A: { color: 'green', dotKey: 'A', label: 'A' },
-  B: { color: 'cyan', dotKey: 'B', label: 'B' },
+  B: { color: 'blue', dotKey: 'B', label: 'B' },
   C: { color: 'gold', dotKey: 'C', label: 'C' },
-  D: { color: 'orange', dotKey: 'D', label: 'D' },
+  D: { color: 'red', dotKey: 'D', label: 'D' },
   E: {
     color: 'default',
     dotKey: 'E',
-    label: 'INCONCLUSIVE',
+    label: '数据不足',
     inconclusive: true,
   },
 };

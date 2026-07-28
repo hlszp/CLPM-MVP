@@ -19,12 +19,21 @@
  * - v-access:code 做精确匹配
  * - v-permission 支持 "*" 通配符 + 角色名，对齐 IDS v3.2 §5.4 权限列表枚举
  *
- * 注意：指令通过 el.remove() 物理移除 DOM，非响应式（角色/权限变化后不会自动恢复）。
- * 需要响应式或条件渲染复杂场景时，优先用 v-if + useUserStore 角色判断。
+ * 隐藏机制（2026-07-28 修复）：
+ * - 无权限时用 **Comment 节点占位替换**原元素（保留原元素引用，权限恢复后
+ *   在 updated 钩子中重新挂载），替代旧的 `el.remove()` 物理移除；
+ * - 旧实现教训（diagnosis/tracker.vue:99-103）：`el.remove()` 会破坏
+ *   Dropdown 等依赖子元素引用的组件内部状态，导致菜单无法展开；
+ * - **选型建议**：对 Dropdown/Popover 等承载内部状态的交互组件，以及需要
+ *   响应式切换的场景，优先使用 `v-if` + useUserStore 角色判断（参考
+ *   tracker.vue 的 canEditStatus 模式）；v-permission 适用于纯按钮/链接的
+ *   静态显隐。
  */
 import type { App, Directive, DirectiveBinding } from 'vue';
 
 import { useAccessStore, useUserStore } from '@vben/stores';
+
+type PermissionValue = string | string[];
 
 /**
  * 判断用户是否拥有指定权限码（支持通配符）
@@ -59,12 +68,12 @@ function getUserRolesSet(): Set<string> {
   }
 }
 
-function isAccessible(
-  el: Element,
-  binding: DirectiveBinding<string | string[]>,
-) {
+/**
+ * 当前用户是否满足 binding 要求的角色/权限（并集，命中任一即可）
+ */
+function checkAccessible(binding: DirectiveBinding<PermissionValue>): boolean {
   const value = binding.value;
-  if (!value) return;
+  if (!value) return true;
 
   const accessStore = useAccessStore();
   const userCodesSet = new Set(accessStore.accessCodes);
@@ -72,21 +81,59 @@ function isAccessible(
 
   const values = Array.isArray(value) ? value : [value];
   // 有任一角色或权限即显示：角色名走精确匹配，权限码走通配匹配
-  const hasAny = values.some(
+  return values.some(
     (v) => userRolesSet.has(v) || hasPermission(userCodesSet, v),
   );
+}
 
-  if (!hasAny) {
-    el?.remove();
+/**
+ * 被 Comment 占位替换的元素 → 占位 Comment 节点（保留重新挂载能力）
+ */
+const placeholderMap = new WeakMap<Element, Comment>();
+
+/**
+ * 用 Comment 节点占位替换元素（幂等：已替换时不重复操作）
+ */
+function detachWithPlaceholder(el: Element, binding: DirectiveBinding) {
+  if (placeholderMap.has(el)) return;
+  const raw = Array.isArray(binding.value)
+    ? binding.value.join(',')
+    : binding.value;
+  const comment = document.createComment(` v-permission: ${String(raw)} `);
+  el.parentNode?.replaceChild(comment, el);
+  placeholderMap.set(el, comment);
+}
+
+/**
+ * 将元素从 Comment 占位处挂载回 DOM（幂等：未替换时无操作）
+ */
+function attachFromPlaceholder(el: Element) {
+  const comment = placeholderMap.get(el);
+  if (!comment) return;
+  comment.parentNode?.replaceChild(el, comment);
+  placeholderMap.delete(el);
+}
+
+/**
+ * 评估权限并同步 DOM 显隐（mounted / updated 共用）
+ */
+function syncVisibility(
+  el: Element,
+  binding: DirectiveBinding<PermissionValue>,
+) {
+  if (checkAccessible(binding)) {
+    attachFromPlaceholder(el);
+  } else {
+    detachWithPlaceholder(el, binding);
   }
 }
 
-const mounted = (el: Element, binding: DirectiveBinding<string | string[]>) => {
-  isAccessible(el, binding);
-};
-
-const permissionDirective: Directive = {
-  mounted,
+const permissionDirective: Directive<HTMLElement, PermissionValue> = {
+  mounted: syncVisibility,
+  updated: syncVisibility,
+  unmounted(el) {
+    placeholderMap.delete(el);
+  },
 };
 
 /**

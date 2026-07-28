@@ -13,6 +13,37 @@ import { defineStore } from 'pinia';
 import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
 import { $t } from '#/locales';
 
+/**
+ * 角色默认首页（实现契约 §5 + UI/UX §4.2 三方对齐基准）
+ *
+ * 后端 auth.py 的 ROLE_DEFAULT_HOME 当前全角色返回 /dashboard（后端归属另一波次整改），
+ * 前端在登录跳转处先行落地本表：角色映射优先于后端 defaultHome 返回值。
+ * 后端波次对齐后，本表与后端同口径，行为不变。
+ *
+ * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis
+ * - SPONSOR：仅汇总视图 → /metric（重定向至 /metric/pid-dashboard）
+ * - 其余角色 → /dashboard
+ */
+const ROLE_DEFAULT_HOME: Record<string, string> = {
+  ADMIN: '/dashboard',
+  EXPERT: '/diagnosis',
+  IC_ENGINEER: '/dashboard',
+  PE_ENGINEER: '/dashboard',
+  SPONSOR: '/metric',
+};
+
+/**
+ * 计算用户默认首页：前端角色映射优先，回退后端 defaultHome，最终兜底 /dashboard
+ */
+function resolveHomePath(
+  role: string,
+  backendDefaultHome?: null | string,
+): string {
+  return ROLE_DEFAULT_HOME[role] ?? backendDefaultHome ?? '/dashboard';
+}
+
+export { resolveHomePath, ROLE_DEFAULT_HOME };
+
 export const useAuthStore = defineStore('auth', () => {
   const accessStore = useAccessStore();
   const userStore = useUserStore();
@@ -53,11 +84,11 @@ export const useAuthStore = defineStore('auth', () => {
           fetchAccessCodes(loginUser.permissions),
         ]);
 
-        // 4. 转换为框架 UserInfo 并存储
+        // 4. 转换为框架 UserInfo 并存储（首页按角色映射，见 ROLE_DEFAULT_HOME）
         userInfo = {
           avatar: '',
           desc: currentUser.email,
-          homePath: currentUser.defaultHome || '/dashboard',
+          homePath: resolveHomePath(currentUser.role, currentUser.defaultHome),
           realName: currentUser.displayName,
           roles: [currentUser.role],
           token: accessToken,
@@ -149,7 +180,7 @@ export const useAuthStore = defineStore('auth', () => {
     const userInfo: UserInfo = {
       avatar: '',
       desc: currentUser.email,
-      homePath: currentUser.defaultHome || '/dashboard',
+      homePath: resolveHomePath(currentUser.role, currentUser.defaultHome),
       realName: currentUser.displayName,
       roles: [currentUser.role],
       token: accessStore.accessToken || '',

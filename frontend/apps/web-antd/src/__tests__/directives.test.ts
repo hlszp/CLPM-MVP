@@ -141,6 +141,47 @@ describe('关键交互逻辑测试', () => {
     expect(wrapper.find('button').exists()).toBe(true);
   });
 
+  // ===== 2026-07-28 修复：Comment 占位替换（替代 el.remove()） =====
+
+  // UT-INTERACT-PERMISSION-PLACEHOLDER-1: 无权限时元素被 Comment 占位替换而非物理删除
+  it('uT-INTERACT-PERMISSION-PLACEHOLDER-1: 无权限时留下 Comment 占位节点', () => {
+    const wrapper = createPermissionTestComponent('loop:delete', ['loop:view']);
+    expect(wrapper.find('button').exists()).toBe(false);
+    // 占位 Comment 保留位置信息（含重新挂载所需的占位锚点）
+    expect(wrapper.html()).toContain('<!-- v-permission: loop:delete -->');
+  });
+
+  // UT-INTERACT-PERMISSION-PLACEHOLDER-2: 绑定值更新后权限满足，元素重新挂载
+  it('uT-INTERACT-PERMISSION-PLACEHOLDER-2: 权限恢复后元素重新挂载', async () => {
+    const accessStore = useAccessStore();
+    accessStore.setAccessCodes(['loop:view']);
+
+    const userStore = useUserStore();
+    userStore.setUserInfo({
+      username: 'tester',
+      realName: 'tester',
+      userId: 'tester',
+      avatar: '',
+      roles: [],
+    });
+
+    const wrapper = mount(
+      defineComponent({
+        directives: { permission: permissionDirective },
+        data() {
+          return { permission: 'loop:delete' };
+        },
+        template: `<div><button v-permission="permission">操作按钮</button></div>`,
+      }),
+    );
+    expect(wrapper.find('button').exists()).toBe(false);
+
+    // 绑定值变为用户拥有的权限 → updated 钩子将元素从占位处挂载回 DOM
+    await wrapper.setData({ permission: 'loop:view' });
+    expect(wrapper.find('button').exists()).toBe(true);
+    expect(wrapper.html()).not.toContain('<!-- v-permission');
+  });
+
   // ===== 表格分页交互测试 =====
 
   // UT-INTERACT-006: 表格分页-页码切换触发 loadList

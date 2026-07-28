@@ -32,7 +32,8 @@ const routes: RouteRecordRaw[] = [
         path: '/loop/aas-sync',
         component: () => import('#/views/loop/aas.vue'),
         meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          // 实现契约 §5：后端 datasource.py/dcs.py 写端点仅 ADMIN，前端同步收紧
+          authority: ['ADMIN'],
           icon: 'lucide:refresh-cw',
           order: 1,
           title: '链路配置',
