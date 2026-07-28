@@ -11,7 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -649,3 +649,128 @@ class TestRolePermissions:
 
         for role in ("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "SPONSOR", "EXPERT"):
             assert get_default_home(role) == "/dashboard"
+
+
+# ===========================================================================
+# S5-AUTH P1: 首次登录强制改密（must_change_password）
+# ===========================================================================
+
+
+def _flagged_user() -> MagicMock:
+    """构造 must_change_password=True 的测试用户（独立副本，不污染共享 TEST_USERS）。"""
+    from tests.conftest import _make_user
+
+    user = _make_user("admin", "ADMIN", user_id="00000000-0000-0000-0000-000000000001")
+    user.must_change_password = True
+    return user
+
+
+class TestForceChangePassword:
+    """强制改密全流程：登录带标志 → 写操作 403 → 改密 → 标志清除 → 正常."""
+
+    def test_login_response_carries_flag(self, client, mock_db, fake_redis) -> None:
+        """标志用户登录响应带 mustChangePassword=True；普通用户为 False."""
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(_flagged_user()))
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["user"]["mustChangePassword"] is True
+
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["user"]["mustChangePassword"] is False
+
+    def test_read_endpoints_allowed(self, client, mock_db, fake_redis) -> None:
+        """标志用户的读端点（GET /me）放行，避免前端死锁."""
+        user = _flagged_user()
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(user))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        access_token = login_resp.json()["data"]["accessToken"]
+
+        resp = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"})
+        assert resp.status_code == 200
+        assert resp.json()["data"]["mustChangePassword"] is True
+
+    def test_write_endpoint_rejected(self, client, mock_db, fake_redis) -> None:
+        """标志用户的写操作端点一律 403 ERR_PASSWORD_CHANGE_REQUIRED."""
+        user = _flagged_user()
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(user))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        access_token = login_resp.json()["data"]["accessToken"]
+
+        resp = client.post(
+            "/api/v1/users",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PASSWORD_CHANGE_REQUIRED"
+
+    def test_logout_exempt(self, client, mock_db, fake_redis) -> None:
+        """登出端点豁免：标志用户可正常登出重新登录."""
+        user = _flagged_user()
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(user))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        access_token = login_resp.json()["data"]["accessToken"]
+
+        resp = client.post(
+            "/api/v1/auth/logout",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        assert resp.status_code == 200
+
+    def test_change_password_exempt_and_clears_flag(self, client, mock_db, fake_redis) -> None:
+        """改密端点豁免，且 UPDATE 语句同时清除 must_change_password 标志."""
+        user = _flagged_user()
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(user))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        access_token = login_resp.json()["data"]["accessToken"]
+
+        resp = client.put(
+            "/api/v1/auth/password",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={"oldPassword": TEST_PASSWORD, "newPassword": "NewPass@2026"},
+        )
+        assert resp.status_code == 200
+
+        # change_password 的 UPDATE 必须同时写 must_change_password=False
+        update_stmt = str(mock_db.execute.call_args[0][0])
+        assert "must_change_password" in update_stmt
+
+    def test_after_flag_cleared_write_allowed(self, client, mock_db, fake_redis) -> None:
+        """标志清除后写操作恢复：守卫放行，进入业务逻辑（旧密码错误 → 400 而非 403）."""
+        user = _flagged_user()
+        user.must_change_password = False  # 模拟改密成功后的状态
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(user))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        access_token = login_resp.json()["data"]["accessToken"]
+
+        resp = client.put(
+            "/api/v1/auth/password",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={"oldPassword": "wrongold", "newPassword": "NewPass@2026"},
+        )
+        # 守卫放行后由业务逻辑返回 ERR_INVALID_CREDENTIALS（400），而非 403
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_INVALID_CREDENTIALS"

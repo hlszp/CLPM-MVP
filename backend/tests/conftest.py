@@ -45,6 +45,7 @@ def _make_user(
     user.email = f"{username}@clpm.local"
     user.role = role
     user.is_active = is_active
+    user.must_change_password = False
     user.last_login_at = datetime.now(UTC)
     return user
 

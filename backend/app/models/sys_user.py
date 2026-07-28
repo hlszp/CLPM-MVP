@@ -26,6 +26,11 @@ class SysUser(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool | None] = mapped_column(Boolean, default=True, nullable=True)
+    # 首次登录强制改密标志（S5-AUTH P1）：种子用户由迁移置 True，
+    # 改密成功后在 change_password 中清除
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

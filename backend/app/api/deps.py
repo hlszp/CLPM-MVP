@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import Depends, status
+from fastapi import Depends, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,8 +31,20 @@ from app.services.auth import ROLE_PERMISSIONS, is_token_blacklisted
 # Token extraction — auto-populates Swagger UI "Authorize" button.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
+# 强制改密豁免路径（S5-AUTH P1）：must_change_password=True 时仅放行
+# 改密与登出写端点（登出放行避免用户无法重新登录）；读端点（GET/HEAD/OPTIONS）
+# 一律放行，前端可正常加载改密页所需数据，避免死锁
+_FORCE_PASSWORD_CHANGE_EXEMPT_PATHS = frozenset(
+    {
+        "/api/v1/auth/password",
+        "/api/v1/auth/logout",
+    }
+)
+_READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
 
 async def get_current_user(
+    request: Request,
     token: str | None = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> SysUser:
@@ -96,6 +108,20 @@ async def get_current_user(
         raise BizError(
             code="ERR_ACCOUNT_DISABLED",
             message="账户已禁用",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    # S5-AUTH P1：首次登录强制改密——标志为 True 时拒绝所有写操作
+    # （改密/登出豁免，读端点放行避免前端死锁）。
+    # ``is True`` 严格判断：真实列为 bool；测试 mock 用户未设置该属性时放行。
+    if (
+        getattr(user, "must_change_password", False) is True
+        and request.method not in _READ_ONLY_METHODS
+        and request.url.path not in _FORCE_PASSWORD_CHANGE_EXEMPT_PATHS
+    ):
+        raise BizError(
+            code="ERR_PASSWORD_CHANGE_REQUIRED",
+            message="首次登录须先修改密码后再执行此操作",
             status_code=status.HTTP_403_FORBIDDEN,
         )
 

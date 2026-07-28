@@ -114,6 +114,8 @@ class UserInfo(CamelModel):
     permissions: list[str]
     defaultHome: str = "/dashboard"
     lastLoginAt: str | None = None
+    # 首次登录强制改密标志（S5-AUTH P1）：True 时前端须引导至改密页
+    mustChangePassword: bool = False
 
 
 class LoginData(CamelModel):

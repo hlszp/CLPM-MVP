@@ -28,14 +28,17 @@
 --   所有 5 个用户均使用同一密码 admin123（bcrypt 哈希，开发/测试环境用）
 --   生产环境部署前请通过应用端修改密码。
 --   哈希通过 app.core.security.hash_password('admin123') 生成（bcrypt cost=12）
+-- 强制改密说明（S5-AUTH P1）：
+--   must_change_password 统一置 TRUE，种子用户首次登录后须先修改密码，
+--   改密成功前除改密/登出外的写操作端点一律 403（读端点放行）。
 -- =============================================================================
 
-INSERT INTO sys_user (id, username, password_hash, display_name, email, role, is_active, created_at, updated_at) VALUES
-('00000000-0000-0000-0000-000000000001', 'admin',       '$2b$12$EmVQ8NwGlB/O8L4vJ0XSluBfxYOlTwBer7vnNFuVL/0qmhSXlfy/u', '系统管理员',     'admin@clpm.local',       'ADMIN',       TRUE, NOW(), NOW()),
-('00000000-0000-0000-0000-000000000002', 'ic_engineer', '$2b$12$3KxnNHH3KmxeEE6AUmQOeuFEccnBLlHxaDBX5BIWCwvKPq1gqLrxy', '仪控工程师',     'ic_engineer@clpm.local', 'IC_ENGINEER', TRUE, NOW(), NOW()),
-('00000000-0000-0000-0000-000000000003', 'pe_engineer', '$2b$12$dLInICVCCkfdsIfs6jJnqeJfR0HDzFbv7yqBWboZQSLRknlQuhOKG', '工艺工程师',     'pe_engineer@clpm.local', 'PE_ENGINEER', TRUE, NOW(), NOW()),
-('00000000-0000-0000-0000-000000000004', 'sponsor',     '$2b$12$lpgnpJwE956RFjcYb4hyOubgVYhf0IDWs0xlBzbCU1RMuT1cmR0sC', '项目发起人',     'sponsor@clpm.local',     'SPONSOR',     TRUE, NOW(), NOW()),
-('00000000-0000-0000-0000-000000000005', 'expert',      '$2b$12$ai8B75As3GLsuFBHayAq2ufsMMmzezF.E9tg.058I/a30V7nTuiTG', '外部专家',       'expert@clpm.local',      'EXPERT',      TRUE, NOW(), NOW());
+INSERT INTO sys_user (id, username, password_hash, display_name, email, role, is_active, must_change_password, created_at, updated_at) VALUES
+('00000000-0000-0000-0000-000000000001', 'admin',       '$2b$12$EmVQ8NwGlB/O8L4vJ0XSluBfxYOlTwBer7vnNFuVL/0qmhSXlfy/u', '系统管理员',     'admin@clpm.local',       'ADMIN',       TRUE, TRUE, NOW(), NOW()),
+('00000000-0000-0000-0000-000000000002', 'ic_engineer', '$2b$12$3KxnNHH3KmxeEE6AUmQOeuFEccnBLlHxaDBX5BIWCwvKPq1gqLrxy', '仪控工程师',     'ic_engineer@clpm.local', 'IC_ENGINEER', TRUE, TRUE, NOW(), NOW()),
+('00000000-0000-0000-0000-000000000003', 'pe_engineer', '$2b$12$dLInICVCCkfdsIfs6jJnqeJfR0HDzFbv7yqBWboZQSLRknlQuhOKG', '工艺工程师',     'pe_engineer@clpm.local', 'PE_ENGINEER', TRUE, TRUE, NOW(), NOW()),
+('00000000-0000-0000-0000-000000000004', 'sponsor',     '$2b$12$lpgnpJwE956RFjcYb4hyOubgVYhf0IDWs0xlBzbCU1RMuT1cmR0sC', '项目发起人',     'sponsor@clpm.local',     'SPONSOR',     TRUE, TRUE, NOW(), NOW()),
+('00000000-0000-0000-0000-000000000005', 'expert',      '$2b$12$ai8B75As3GLsuFBHayAq2ufsMMmzezF.E9tg.058I/a30V7nTuiTG', '外部专家',       'expert@clpm.local',      'EXPERT',      TRUE, TRUE, NOW(), NOW());
 
 -- =============================================================================
 -- 2. 工厂节点 (plant_node)

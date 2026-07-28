@@ -13,6 +13,7 @@
 --   v1.3 2026-06-24: kpi_snapshot_hourly 加 3 个故障诊断指标字段（stiction_coeff/steady_state_time/output_travel_index，nullable 向后兼容）
 --   v1.4 2026-06-24: 新增 kpi_node_snapshot_daily / kpi_node_snapshot_monthly 两表（节点级日/月聚合快照）
 --   v1.5 2026-06-24: plant_node 加 monitor_tag_id/monitor_trigger_value 字段（SVC-10 位号触发监控）
+--   v1.6 2026-07-28: sys_user 加 must_change_password 字段（S5-AUTH P1 首次登录强制改密，NOT NULL DEFAULT FALSE）
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     email           VARCHAR(255),
     role            VARCHAR(20)     NOT NULL,
     is_active       BOOLEAN         DEFAULT TRUE,
+    must_change_password BOOLEAN    NOT NULL DEFAULT FALSE,
     last_login_at   TIMESTAMP,
     created_at      TIMESTAMP       DEFAULT NOW(),
     updated_at      TIMESTAMP       DEFAULT NOW(),
@@ -45,6 +47,7 @@ COMMENT ON COLUMN sys_user.display_name IS '显示名称';
 COMMENT ON COLUMN sys_user.email IS '邮箱（唯一）';
 COMMENT ON COLUMN sys_user.role IS '角色：ADMIN/IC_ENGINEER/PE_ENGINEER/SPONSOR/EXPERT';
 COMMENT ON COLUMN sys_user.is_active IS '是否启用';
+COMMENT ON COLUMN sys_user.must_change_password IS '首次登录强制改密标志（S5-AUTH P1）：TRUE 时除改密/登出外的写操作端点拒绝，改密成功后清除';
 COMMENT ON COLUMN sys_user.last_login_at IS '最后登录时间';
 COMMENT ON COLUMN sys_user.created_at IS '创建时间';
 COMMENT ON COLUMN sys_user.updated_at IS '更新时间';
