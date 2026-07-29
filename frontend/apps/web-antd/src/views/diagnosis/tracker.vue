@@ -67,7 +67,7 @@ import {
 } from '#/constants/diagnosis';
 import { formatTime } from '#/utils/format';
 
-defineOptions({ name: 'DiagnosisTracker' });
+defineOptions({ name: 'DiagnosisTrackerContent' });
 
 const props = withDefaults(
   defineProps<{

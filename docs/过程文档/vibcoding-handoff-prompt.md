@@ -56,7 +56,7 @@
 - **生产部署实弹验证**（192.168.13.111）：R1→R6 抓出 6 个真问题全修（ConfigParser 插值、端口预检、celery 健康检查、PG 缺表、TDengine profile、APP_VERSION），链路终验通过，详见 ops-runbook
 - **诊断中心问题串修复**：详情页版本号竞态白屏、散点数据回退、fusedConfidence 落库、diagnosis_task 时区统一（迁移 h8b9c0d1e2f3）、任务页"显示已归档"开关、刷新轮换竞态幂等窗口
 
-**当前唯一未结问题**：诊断详情页 SPA 导航白屏（仅 tracker 页作为跳转源时复现），排查现场与已排除清单见 `docs/过程文档/ops-runbook.md` §【未结】。
+**诊断详情页 SPA 导航白屏已解决（2026-07-29）**：根因是 tracker 动态组件根直接承接 vben `content.vue` 的 `v-show` 与 `Transition mode="out-in"`；现由 `tracker-page.vue` 提供稳定 DOM 路由根，现场与回归证据见 `docs/过程文档/ops-runbook.md` §【已结】。
 
 ---
 
@@ -184,7 +184,7 @@ PENDING → IN_PROGRESS → IMPLEMENTED
 
 | # | 问题 | 优先级 | 状态 | 说明 |
 |---|---|---|---|---|
-| 1 | **诊断详情页 SPA 导航白屏** | 高 | ⏳ 排查中 | 仅 tracker 页作为跳转源时复现（组件不挂载、零报错），现场与已排除清单：`ops-runbook.md` §【未结】 |
+| 1 | **诊断详情页 SPA 导航白屏** | 高 | ✅ 已解决 | `tracker-page.vue` 提供稳定 DOM 路由根；tracker → detail → records SPA 回归通过，见 `ops-runbook.md` §【已结】 |
 | 2 | E 规范符合性验证 | 高 | ✅ 已完成 | GB/T 44693.2 套件 371 用例 91.1% 通过（2026-07-28，报告见过程文档） |
 | 3 | 公网模式 ping 延迟抖动 | 低 | ⏳ 待优化 | Tailscale 公网模式延迟抖动，仅余此一项 |
 | 4 | 后端细粒度权限码校验 | 中 | ✅ 已落地 | require_perms 三模块读端点收口；剩余：tasks 列表 metric:view、diagnosis:detail 粒度码、tracker 读端点 |
@@ -199,10 +199,10 @@ PENDING → IN_PROGRESS → IMPLEMENTED
 
 | 方向 | 先读 | 关注点 |
 |---|---|---|
-| **白屏排查（最优先）** | `ops-runbook.md` §【未结】诊断详情页 SPA 导航白屏 | 复现脚本已存；方向：tracker 源页 vs records 源页差异、vben content.vue 渲染链 |
+| **白屏回归防护** | `ops-runbook.md` §【已结】诊断详情页 SPA 导航白屏 | 保持 `tracker-page.vue` 稳定 DOM 路由根与 `E2E-DIAG-006` 两段 SPA 导航覆盖 |
 | Bug 修复 / 功能增强 | README → AGENTS → 设计文档 → 代码 | "问题定位→修复实施→测试验证→效果确认"闭环 |
 | 整定 Phase 2.2 | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` + 合并评审 P2 清单 | Phase 2.1 已合并（含返工），P2 项排期 |
-| E2E 测试补充 | `e2e/` → UI/UX v6.1 → 新增页面 | 现有 59 全通过，后续按新页面逐步补 |
+| E2E 测试补充 | `e2e/` → UI/UX v6.1 → 新增页面 | 现有 60 全通过，后续按新页面逐步补 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | 链路已实弹验证（2026-07-29）；监控 profile 待启用；部署脚本补 TDengine 初始化 |
 | 新功能开发 | PRD v6.1 → 实现契约 v2.2 → v4.0 实施方案 → 设计文档 | 模块"配置→运行→分析"三态自包含原则 |
 | 回路整定 Phase 2 | PRD §回路整定（另一会话推进中） | 生产级算法闭环（Phase 1 只输出建议） |
