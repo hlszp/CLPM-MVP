@@ -162,6 +162,51 @@ def _simulate_closed_loop_sopdt(
     return y, u
 
 
+def _simulate_closed_loop_fopdt_biased(
+    sp: np.ndarray,
+    K: float,
+    tau: float,
+    theta: float,
+    kp: float,
+    ti: float,
+    load: float,
+    ts: float = 1.0,
+    noise_std: float = 0.0,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """闭环 FOPDT 带恒定负载偏置仿真：y_ss = K·u_ss + load.
+
+    工业数据形态：PV/OP 均含大直流偏置（如 PV≈450 / OP≈60），
+    用于验证 pipeline 入口去均值（P0-2）。
+    初始条件取稳态工作点 u0 = (sp[0] − load)/K、y0 = sp[0]，无启动瞬态。
+    """
+    rng = np.random.default_rng(seed)
+    n = len(sp)
+    a = math.exp(-ts / tau)
+    b = K * (1 - a)
+    d = max(0, round(theta / ts))
+    u0 = (sp[0] - load) / K
+    y0 = sp[0]
+    y = np.full(n, y0)
+    u = np.zeros(n)
+    e_prev = 0.0
+    u_prev = u0
+    ki = kp * ts / ti
+    for k in range(n):
+        # 真闭环：控制器读取上一拍测量值 y[k-1]（y[k] 本拍末才由对象方程写入）
+        y_meas = y[k - 1] if k > 0 else y0
+        e = sp[k] - y_meas
+        de = e - e_prev
+        u[k] = u_prev + kp * de + ki * e
+        u_prev = u[k]
+        e_prev = e
+        if k >= d:
+            y[k] = a * y[k - 1] + b * u[k - d] + (1 - a) * load
+    if noise_std > 0:
+        y += rng.normal(0, noise_std, n)
+    return y, u
+
+
 def _prbs(n: int, seed: int = 42, levels: int = 2) -> np.ndarray:
     """生成 PRBS 信号（二进制伪随机激励）."""
     rng = np.random.default_rng(seed)
@@ -433,6 +478,17 @@ class TestOrderSelection:
         Q, p = ljung_box_test(residuals, max_lag=10)
         assert p > 0.05
 
+    def test_ljung_box_white_noise_with_dc_offset(self):
+        """P1-4：含直流偏置的白噪声应通过 Ljung-Box（ACF 已中心化）.
+
+        未中心化时 ACF ≈ μ²/(σ²+μ²)（本例 25/26≈0.96，逐 lag 恒定），
+        Q 统计量爆炸、白噪声被误判有色。
+        """
+        rng = np.random.default_rng(42)
+        residuals = rng.normal(0, 1, 1000) + 5.0
+        Q, p = ljung_box_test(residuals, max_lag=10)
+        assert p > 0.05
+
     def test_ljung_box_autocorrelated(self):
         """自相关残差应不通过 Ljung-Box 检验。"""
         rng = np.random.default_rng(42)
@@ -653,6 +709,143 @@ class TestPipelineEndToEnd:
 
 
 # ---------------------------------------------------------------------------
+# P0-2 去均值（偏置消除）测试
+# ---------------------------------------------------------------------------
+
+
+class TestMeanRemovalPipeline:
+    """pipeline 入口去均值（P0-2）：工业偏置数据应恢复增量增益 K.
+
+    手算依据：无截距回归若不去均值，K 按原点割线 ȳ/ū 收敛；
+    PV≈450/OP≈60 时割线增益 = 450/60 = 7.5（真值 2.0，+275%）。
+    去均值后偏差变量满足精确递推 ỹ[k] = a·ỹ[k−1] + b·ũ[k−d]，K 应精确恢复。
+    """
+
+    def test_biased_open_loop_recovers_incremental_gain(self):
+        """开环带偏置（OP≈60, PV≈450, K=2.0/τ=60s）：K 误差 < 10%."""
+        K_true, tau_true, theta_true = 2.0, 60.0, 5.0
+        u = _prbs(1200, seed=123) + 60.0  # OP 55~65
+        # 开环恒偏置与输出加常数严格等价：+L 满足 y+L = a(y+L) + b(u+L·? )
+        # 当 L = K·ū_offset 关系成立时递推不变式逐点成立（此处 L=330, u偏置60, K=2）
+        y = (
+            _simulate_open_loop_fopdt(K_true, tau_true, theta_true, u, noise_std=0.0, seed=123)
+            + 330.0
+        )  # PV ≈ 450
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=theta_true,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        p = result.best_model.params
+        assert p.model_type == ModelType.FOPDT
+        assert abs(p.K - K_true) / K_true < 0.10
+        # 割线增益 7.5 应被排除（去均值后 K 远离原点割线值）
+        assert p.K < 3.0
+
+    def test_biased_closed_loop_recovers_gain(self):
+        """闭环带负载偏置（SP≈450, OP≈60, K=2.0/τ=60s）：SP 阶跃可出结果且 K 误差 < 10%."""
+        K_true, tau_true, theta_true = 2.0, 60.0, 5.0
+        sp = _sp_steps(1800, [(0, 450.0), (300, 455.0), (700, 447.0), (1100, 452.0), (1500, 449.0)])
+        y, u = _simulate_closed_loop_fopdt_biased(
+            sp,
+            K_true,
+            tau_true,
+            theta_true,
+            kp=0.5,
+            ti=30.0,
+            load=330.0,
+            noise_std=0.1,
+            seed=42,
+        )
+        # 工况 sanity check：PV≈450 / OP≈60 的工业偏置形态
+        assert abs(float(np.mean(y)) - 450.0) < 10.0
+        assert abs(float(np.mean(u)) - 60.0) < 10.0
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            sp=sp.tolist(),
+            ts=1.0,
+            theta_estimate=theta_true,
+        )
+        assert result.success
+        p = result.best_model.params
+        assert abs(p.K - K_true) / K_true < 0.10
+        # 偏置量应记录在 best_model.reason（P0-2 details 追溯）
+        assert "去均值偏置" in (result.best_model.reason or "")
+        assert "PV=" in (result.best_model.reason or "")
+
+    def test_zero_mean_data_unaffected(self):
+        """零均值数据去均值前后等价（回归守卫：均值≈0 时 K 仍准确）."""
+        K_true, tau_true, theta_true = 1.5, 20.0, 3.0
+        u = _prbs(1000, seed=123)
+        y = _simulate_open_loop_fopdt(K_true, tau_true, theta_true, u, noise_std=0.1, seed=123)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=theta_true,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        assert abs(result.best_model.params.K - K_true) / K_true < 0.05
+
+
+# ---------------------------------------------------------------------------
+# P1-4 残差白噪声检验（一步预测误差）测试
+# ---------------------------------------------------------------------------
+
+
+class TestResidualWhitenessPipeline:
+    """P1-4：残差白噪声检验用一步预测误差（ARMAX: ε = (A/C)y − (B/C)u）."""
+
+    def test_equation_error_to_prediction_error_recovers_white(self):
+        """e = C·ε 经 1/C 反滤波应还原白噪声 ε（手算构造）."""
+        from app.services.tuning_identification.pipeline import (
+            _equation_error_to_prediction_error,
+        )
+
+        rng = np.random.default_rng(7)
+        eps_true = rng.normal(0, 1, 500)
+        c1 = 0.8
+        # 手算构造方程误差：e(t) = ε(t) + c1·ε(t−1)（C = 1 + 0.8·z⁻¹）
+        e = eps_true.copy()
+        e[1:] += c1 * eps_true[:-1]
+        eps_recovered = _equation_error_to_prediction_error(e, [c1])
+        # 递推 ε(t) = e(t) − c1·ε(t−1) 应精确还原
+        np.testing.assert_allclose(eps_recovered, eps_true, atol=1e-10)
+        # 还原后白性恢复；还原前方程误差显著有色
+        _, p_before = ljung_box_test(e, max_lag=10)
+        _, p_after = ljung_box_test(eps_recovered, max_lag=10)
+        assert p_before < 0.05
+        assert p_after > 0.05
+
+    def test_good_model_confidence_not_capped_at_c(self):
+        """闭环含测量噪声的好模型（R²≈100%）不应被残差检验压到 C.
+
+        旧实现用方程误差（ARMAX 下 = C·ε 天然有色）做白性检验，
+        好模型也过不了 Ljung-Box，可信度永封顶 C；
+        改一步预测误差后 ARMAX 候选应得 A/B。
+        """
+        sp = _sp_steps(1200, [(50, 10.0), (400, 15.0), (800, 8.0)])
+        y, u = _simulate_closed_loop_fopdt(
+            sp, K=2.0, tau=30.0, theta=5.0, kp=2.0, ti=20.0, noise_std=0.5, seed=42
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            sp=sp.tolist(),
+            ts=1.0,
+            theta_estimate=5.0,
+        )
+        assert result.success
+        assert result.best_model.residual_test_passed
+        assert result.best_model.confidence in (ConfidenceLevel.A, ConfidenceLevel.B)
+
+
+# ---------------------------------------------------------------------------
 # Golden 基线对齐测试
 # ---------------------------------------------------------------------------
 
@@ -701,6 +894,49 @@ class TestGoldenBaseline:
         assert abs(p.K - scn["truth"]["K"]) / scn["truth"]["K"] < tol["K_relative_error"]
         assert abs(p.tau - scn["truth"]["tau"]) / scn["truth"]["tau"] < tol["tau_relative_error"]
         assert abs(p.theta - scn["truth"]["theta"]) < tol["theta_absolute_error"]
+
+    def test_closed_loop_fopdt_biased_baseline_alignment(self):
+        """带工业偏置闭环 FOPDT 场景应满足 golden 基线容差（P0-2 场景，K 误差 <10%）."""
+        baseline = self._load_baseline()
+        scn = baseline["scenarios"]["closed_loop_fopdt_biased"]
+        sp_base = scn["bias"]["sp_base"]
+        sp = _sp_steps(
+            scn["n"],
+            [
+                (0, sp_base),
+                (300, sp_base + 5.0),
+                (700, sp_base - 3.0),
+                (1100, sp_base + 2.0),
+                (1500, sp_base - 1.0),
+            ],
+        )
+        y, u = _simulate_closed_loop_fopdt_biased(
+            sp,
+            K=scn["truth"]["K"],
+            tau=scn["truth"]["tau"],
+            theta=scn["truth"]["theta"],
+            kp=0.5,
+            ti=30.0,
+            load=scn["bias"]["load"],
+            noise_std=0.0,
+            seed=scn["seed"],
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            sp=sp.tolist(),
+            ts=1.0,
+            theta_estimate=scn["truth"]["theta"],
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        p = result.best_model.params
+        assert p.model_type == ModelType.FOPDT
+        tol = scn["tolerance"]
+        assert abs(p.K - scn["truth"]["K"]) / scn["truth"]["K"] < tol["K_relative_error"]
+        assert abs(p.tau - scn["truth"]["tau"]) / scn["truth"]["tau"] < tol["tau_relative_error"]
+        assert abs(p.theta - scn["truth"]["theta"]) < tol["theta_absolute_error"]
+        assert result.best_model.fitting_score >= scn["expected"]["min_fitting_score"]
 
     def test_open_loop_fopdt_baseline_alignment(self):
         """开环 FOPDT 场景应满足 golden 基线容差（限定 FOPDT 候选）."""

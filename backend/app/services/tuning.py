@@ -85,7 +85,7 @@ async def _fetch_preprocessed_signals(
 
     Returns:
         dict with keys: "pv", "op", "sp"（sp 可能为空 list）, "timestamps"（秒）,
-        "valid_rate", "sampling_freq"
+        "valid_rate", "sampling_freq"（数值 Hz，已从 DataBlock 标签解析）
     """
     from app.contracts.data_types import ControlType, TimeWindow
 
@@ -132,7 +132,7 @@ async def _fetch_preprocessed_signals(
                     for i, t in enumerate(ts_list)
                 ]
             valid_rate = block.quality_summary.valid_rate if block.quality_summary else 1.0
-            sampling_freq = block.sampling_freq or 1.0
+            sampling_freq = _parse_sampling_freq_hz(block.sampling_freq)
         elif block.tag_group == "BASE":
             # SP 在 BASE 中，需对齐到 PVOP 时间轴
             sp_raw = list(signals.get("sp", []))
@@ -150,6 +150,34 @@ async def _fetch_preprocessed_signals(
         "valid_rate": valid_rate,
         "sampling_freq": sampling_freq,
     }
+
+
+def _parse_sampling_freq_hz(label: object) -> float:
+    """解析 DataBlock.sampling_freq 标签为采样频率（Hz，数值）.
+
+    DataBlock.sampling_freq 是字符串标签（如 ``"1s"`` / ``"10s"``，实际语义为
+    采样周期秒数，见 data_planner ``f"{interval_s}s"``），不是数值；
+    直接参与 ``> 0`` 比较或除法会抛 TypeError（P0-1 修复）。
+    解析方式对齐 metric_calculator/settling_time.py 的 ``_read_sample_interval``：
+    标签去 ``s`` 后转 float 得采样周期（秒），频率 = 1 / 周期；
+    空标签或解析失败回退 1.0 Hz（即 1s 周期，PVOP_HF 默认）。
+
+    Args:
+        label: DataBlock.sampling_freq 原始值（通常是 str，容错任意类型）
+
+    Returns:
+        采样频率 Hz（> 0 的有限浮点数）
+    """
+    if not label:
+        return 1.0
+    s = str(label).strip().lower().replace("s", "")
+    try:
+        interval_s = float(s) if s else 1.0
+    except ValueError:
+        return 1.0
+    if interval_s <= 0:
+        return 1.0
+    return 1.0 / interval_s
 
 
 def _resample_to_grid(

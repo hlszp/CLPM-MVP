@@ -55,6 +55,23 @@
         "min_fitting_score": 90.0
       }
     },
+    "closed_loop_fopdt_biased": {
+      "description": "闭环 FOPDT 带工业偏置、无噪声确定性场景（K=2.0, tau=60, theta=5, 负载 L=330 使 PV≈450/OP≈60；P0-2 去均值验证，对齐评审探针 K=2.000 精确恢复）",
+      "seed": 42,
+      "n": 1800,
+      "truth": {"K": 2.0, "tau": 60.0, "theta": 5.0},
+      "bias": {"sp_base": 450.0, "load": 330.0, "op_steady_state": 60.0},
+      "tolerance": {
+        "K_relative_error": 0.10,
+        "tau_relative_error": 0.30,
+        "theta_absolute_error": 2.0
+      },
+      "expected": {
+        "model_type": "FOPDT",
+        "K_range": [1.80, 2.20],
+        "min_fitting_score": 90.0
+      }
+    },
     "insufficient_excitation": {
       "description": "恒定 OP（无激励）",
       "expected": {

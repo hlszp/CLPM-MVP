@@ -58,12 +58,15 @@ def ljung_box_test(
     n = len(residuals)
     if n < max_lag + 5:
         return 0.0, 1.0
-    acf = np.zeros(max_lag)
-    var = np.var(residuals)
+    # ACF 必须先中心化：np.var 自身会去均值，但乘积项 residuals[k:]*residuals[:-k]
+    # 不会——非零均值 μ 会注入 μ²/σ² 的恒定伪相关，把白噪声误判为有色。
+    r = residuals - np.mean(residuals)
+    var = np.var(r)
     if var < 1e-12:
         return 0.0, 1.0
+    acf = np.zeros(max_lag)
     for k in range(1, max_lag + 1):
-        acf[k - 1] = np.mean(residuals[k:] * residuals[:-k]) / var
+        acf[k - 1] = np.mean(r[k:] * r[:-k]) / var
     # Q 统计量
     Q = n * (n + 2) * sum(acf[k - 1] ** 2 / (n - k) for k in range(1, max_lag + 1))
     # p 值（卡方分布）
