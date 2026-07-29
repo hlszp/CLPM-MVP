@@ -686,6 +686,15 @@ async def get_diagnosis_detail(db: AsyncSession, loop_id: str) -> dict:
     scatter_plot = (
         primary_evidence.get("scatter_plot") if isinstance(primary_evidence, dict) else None
     )
+    # 回退：诊断引擎对每个回路都无条件存储 scatter_plot_x/y 可视化数据
+    # （_diagnose_loop 的 all_visualization_data），主标签非 VALVE_STICTION
+    # 时 evidence 中没有 scatter_plot，但散点数据仍然存在——详情页 PV-OP
+    # 散点图对所有回路都应有数据（2026-07-29 修复散点图空白）。
+    if not scatter_plot:
+        sx = feature_values.get("scatter_plot_x") or []
+        sy = feature_values.get("scatter_plot_y") or []
+        if sx and sy:
+            scatter_plot = {"x": sx, "y": sy}
     reasoning = primary_evidence.get("reasoning") if isinstance(primary_evidence, dict) else None
 
     evidence_chain = {

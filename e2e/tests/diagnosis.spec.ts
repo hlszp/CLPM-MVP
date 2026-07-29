@@ -136,3 +136,18 @@ test.describe('诊断中心 E2E', () => {
     expect(page.url()).toContain('/diagnosis/tracker');
   });
 });
+
+test.describe('诊断详情页（回归：版本号竞态修复 2026-07-29）', () => {
+  test.beforeEach(async ({ page, loginAs }) => {
+    await loginAs('IC_ENGINEER');
+  });
+
+  test('E2E-DIAG-004: 详情页加载完成且标签与散点图渲染', async ({ page }) => {
+    // 回归：loadDetail/loadWaveform 曾共用 requestVersion，并行请求互判过期
+    // 导致 detail 恒被丢弃、页面级 Spin 永不复位、散点图空白
+    await page.goto('/diagnosis/detail/57715824-a786-47f9-91aa-984c84a151cd');
+    await expect(page.locator('.ant-spin-spinning')).toHaveCount(0, { timeout: 15000 });
+    await expect(page.locator('body')).toContainText('振荡', { timeout: 5000 });
+    await expect(page.locator('text=暂无散点数据')).toHaveCount(0);
+  });
+});

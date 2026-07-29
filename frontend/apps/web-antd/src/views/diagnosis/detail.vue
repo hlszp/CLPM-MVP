@@ -55,8 +55,12 @@ const route = useRoute();
 const router = useRouter();
 /** P0-1: loopId 改为 ref，配合 watch 实现路由参数变化时重新加载 */
 const loopId = ref(route.params.loopId as string);
-/** P0-3: 请求版本号，防止 timeWindow 快速切换时旧请求覆盖新数据 */
-let requestVersion = 0;
+/** P0-3: 请求版本号，防止 timeWindow 快速切换时旧请求覆盖新数据。
+ * 注意：loadDetail 与 loadWaveform 必须使用独立计数器——共用计数器时
+ * 并行请求会互相判对方"过期"，导致先自增的一方响应被恒丢弃、loading
+ * 永不复位（2026-07-29 诊断详情页一直转圈+内容半透明+散点空白根因）。 */
+let detailVersion = 0;
+let waveformVersion = 0;
 
 const loading = ref(false);
 const waveformLoading = ref(false);
@@ -304,17 +308,17 @@ function getTimeRange(tw: DiagnosisApi.TimeWindow): [dayjs.Dayjs, dayjs.Dayjs] {
 
 /** 加载诊断详情（P0-3: 版本号保护，丢弃过期响应） */
 async function loadDetail() {
-  const version = ++requestVersion;
+  const version = ++detailVersion;
   loading.value = true;
   try {
     const data = await getDiagnosisDetailApi(loopId.value, timeWindow.value);
-    if (version !== requestVersion) return; // 过期响应丢弃
+    if (version !== detailVersion) return; // 过期响应丢弃
     detail.value = data;
     renderScatterChart();
   } catch {
     // 错误已由拦截器处理
   } finally {
-    if (version === requestVersion) loading.value = false;
+    if (version === detailVersion) loading.value = false;
   }
 }
 
@@ -332,7 +336,7 @@ function loadAll() {
 /** 加载时序波形数据 */
 async function loadWaveform() {
   if (!loopId.value) return;
-  const version = ++requestVersion;
+  const version = ++waveformVersion;
   waveformLoading.value = true;
   try {
     const [start, end] = getTimeRange(timeWindow.value);
@@ -342,12 +346,12 @@ async function loadWaveform() {
       downsample: true,
       maxPoints: 2000,
     });
-    if (version !== requestVersion) return; // 过期响应丢弃
+    if (version !== waveformVersion) return; // 过期响应丢弃
     waveform.value = data;
   } catch {
     // 错误已由拦截器处理
   } finally {
-    if (version === requestVersion) waveformLoading.value = false;
+    if (version === waveformVersion) waveformLoading.value = false;
   }
 }
 
