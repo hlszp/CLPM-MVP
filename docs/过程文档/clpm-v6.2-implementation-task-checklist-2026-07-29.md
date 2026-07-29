@@ -248,9 +248,11 @@ unit_kpi_summary
 ### 4.4 页面与导航减法
 
 - [ ] `V62-P1-017` 工作台变为跨模块待办门户，取消与装置性能的重复心智入口。
-- [ ] `V62-P1-018` 诊断 tasks/records 合并为进行中/历史 Tabs。
+- [x] `V62-P1-018` 诊断 tasks/records 合并为进行中/历史 Tabs。
+  - 新建 `views/diagnosis/task-center.vue`：Tabs 包装 tasks.vue（进行中）/ records.vue（历史）；activeTab 与 URL query 双向同步；不套外层 Page 避免与子页双重嵌套；records 内部 Tabs 作为历史下二级导航保留。
 - [ ] `V62-P1-019` 整定 model→algorithm→simulation 合并为可恢复 stepper。
-- [ ] `V62-P1-020` 旧路由隐藏并兼容重定向至少一个版本。
+- [x] `V62-P1-020` 旧路由隐藏并兼容重定向至少一个版本。
+  - `diagnosis.ts`：DiagnosisTasks → task-center.vue；DiagnosisRecords → redirect `/diagnosis/tasks?tab=history` + hideInMenu，兼容旧书签/深链。提交 `ddf867eb`。
 - [ ] `V62-P1-021` 建立统一 Loop 上下文头，保留回路、时间窗和返回来源。
 - [ ] `V62-P1-022` 配置归属业务模块，高级参数仅管理员可见。
 - [ ] `V62-P1-023` 覆盖 loading、empty、error、partial、success 和权限状态。
@@ -382,3 +384,5 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 1 | P1-007/009/010/011 片段切分与激励门禁改进 | 新建 `segmentation.py`：按 MODE/缺口/饱和/太短事件切片，返回 SegmentSpec（含排除原因/有效样本比例）+ `select_best_segment`；`excitation.py`：OP 量程归一化（op_span 参数）、方向变化死区（过滤微噪声）、回归矩阵列标准化（单位缩放不变）；后端 3498 passed（+23），ruff 全绿 |
 | 2026-07-29 | Phase 1 | P1-008 preview API 返回真实片段 | `preview_identify_segments` 改用 `segment_signals` 真实切分；`IdentifySegment` schema 新增 `exclusionReason`/`validSampleRatio`/`pointCount`（optional）；被排除片段不跑激励检测；`TestV62P1PreviewSegments` 3 测试通过（AUTO+MANUAL/全 AUTO/空窗口） |
 | 2026-07-29 | Phase 1 | P1-012~016 API 与任务合同 | P1-012 typed response（`IdentifyHistoryAsyncResponse`）；P1-013/014 TaskTracker 桥接（TUNING 类型 + 终态同步 + 取消同步 + 桥接失败降级）；P1-015/016 PID 转换（`pid_conversion.py` + 29 往返测试）；后端 3535 passed（+37），ruff/alembic 全绿 |
+| 2026-07-29 | Phase 1 | P1-018/020 诊断 tasks/records 合并 Tabs + 旧路由兼容 | 新建 `task-center.vue`（Tabs 进行中/历史，URL query 双向同步，不套外层 Page）；`diagnosis.ts` Records→redirect+hideInMenu；提交 `ddf867eb`；check:type 通过、vitest 434 passed |
+| 2026-07-29 | Phase 1 | 排雷：`pnpm run format` 破坏测试标题 | `internal/lint-configs/oxlint-config` 启用 `vitest/prefer-lowercase-title:error`，`vsh lint --format` 会把 `describe`/`it` 标题首字母强制小写（`ADMIN`→`aDMIN`、`EXPERT`→`eXPERT`）。对策：不跑 blanket `pnpm run format`，改用 `check:type`+`vitest run` 作真实门禁；新文件按文件单独格式化。已还原被污染的 7 个测试文件 |
