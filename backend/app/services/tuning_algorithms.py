@@ -758,7 +758,13 @@ def _simulate_pid_response(
     setpoint_step: float,
     disturbance_type: str,
 ) -> dict[str, list[float]]:
-    """仿真单组 PID 的阶跃响应。"""
+    """仿真单组 PID 的阶跃响应。
+
+    model_params 契约：
+    - FOPDT: {K, tau, theta}
+    - SOPDT: 优先标准形 {K, T1, T2, theta}（T1/T2 成对出现才生效，
+      与两条辨识路径输出一致）；否则回退旧 τ/ξ 形 {K, tau, xi, theta}
+    """
     pv = [0.0] * (n_steps + 1)
     op = [0.0] * (n_steps + 1)
     sp = [0.0] * (n_steps + 1)
@@ -783,12 +789,31 @@ def _simulate_pid_response(
     if theta < 0:
         theta = 0.0
 
-    # SOPDT 参数：阻尼比 xi（默认 1.0 即临界阻尼）
+    is_sopdt = model_type == "SOPDT"
+
+    # SOPDT 参数契约（P1-3 修复）：优先标准形 {K, T1, T2, theta}
+    #   G(s) = K·e^(-θs) / ((T1·s+1)(T2·s+1))
+    # 两条辨识路径（阶跃 identify_sopdt / 历史 tuning_identification）均输出该形；
+    # 兼容旧 τ/ξ 形 G(s) = K·e^(-θs) / (τ²s²+2τξs+1)。
+    # T1/T2 需成对出现才生效，否则回退 τ/ξ 形。
+    t1_raw = model_params.get("T1") if is_sopdt else None
+    t2_raw = model_params.get("T2") if is_sopdt else None
+    use_t1_t2 = t1_raw is not None and t2_raw is not None
+    sopdt_t1 = 0.0
+    sopdt_t2 = 0.0
+    if use_t1_t2:
+        sopdt_t1 = float(t1_raw)
+        sopdt_t2 = float(t2_raw)
+        if sopdt_t1 <= 0:
+            sopdt_t1 = 1.0
+        if sopdt_t2 <= 0:
+            sopdt_t2 = 1.0
+
+    # SOPDT 旧形参数：阻尼比 xi（默认 1.0 即临界阻尼）
     xi = float(model_params.get("xi", 1.0))
     if xi < 0:
         xi = 0.0
-    is_sopdt = model_type == "SOPDT"
-    # SOPDT 辅助常量（在循环外计算）
+    # SOPDT 旧形辅助常量（在循环外计算）
     tau_sq = tau * tau if is_sopdt else 1.0
 
     # 死区步数
@@ -797,29 +822,41 @@ def _simulate_pid_response(
     op_delay_queue: list[float] = [0.0] * (theta_steps + 1)
 
     # 被控对象状态
-    x1 = 0.0  # SOPDT 第一状态（输出）
-    x2 = 0.0  # SOPDT 第二状态（输出导数）
+    # τ/ξ 旧形：x1=输出，x2=输出导数
+    # T1/T2 标准形：x1=第一惯性环节输出，x2=第二惯性环节输出（即 PV）
+    x1 = 0.0
+    x2 = 0.0
     x = 0.0  # FOPDT 状态变量
 
     # 导数函数在循环外定义（避免 B023 闭包警告）
     def _deriv_sopdt(state1: float, state2: float, u: float) -> tuple[float, float]:
-        """SOPDT 状态空间导数: x1' = x2, x2' = (-x1 - 2τξ*x2 + K*u) / τ²."""
+        """SOPDT 旧形状态空间导数: x1' = x2, x2' = (-x1 - 2τξ*x2 + K*u) / τ²."""
         d1 = state2
         d2 = (-state1 - 2.0 * tau * xi * state2 + K * u) / tau_sq
+        return d1, d2
+
+    def _deriv_sopdt_t1t2(state1: float, state2: float, u: float) -> tuple[float, float]:
+        """SOPDT 标准形导数（双一阶惯性串联）: x1' = (K*u - x1)/T1, x2' = (x1 - x2)/T2."""
+        d1 = (K * u - state1) / sopdt_t1
+        d2 = (state1 - state2) / sopdt_t2
         return d1, d2
 
     def _deriv_fopdt(state: float, u: float) -> float:
         """FOPDT 导数: dx/dt = (-x + K*u) / tau."""
         return (-state + K * u) / tau
 
-    # 积分步长过大时自动细分子步，保证 RK4 精度（子步长 ≤ τ/4）
-    n_sub = max(1, math.ceil(4.0 * sim_step / tau))
+    # SOPDT 按参数形选择状态方程（标准形优先）
+    _deriv_sopdt_active = _deriv_sopdt_t1t2 if use_t1_t2 else _deriv_sopdt
+
+    # 积分步长过大时自动细分子步，保证 RK4 精度（子步长 ≤ 最快时间常数/4）
+    fastest_tc = min(sopdt_t1, sopdt_t2) if use_t1_t2 else tau
+    n_sub = max(1, math.ceil(4.0 * sim_step / fastest_tc))
     h = sim_step / n_sub
     if n_sub > 1:
         logger.warning(
-            "仿真步长 sim_step=%.4f 超过 tau/4=%.4f，RK4 自动细分为 %d 子步",
+            "仿真步长 sim_step=%.4f 超过最快时间常数/4=%.4f，RK4 自动细分为 %d 子步",
             sim_step,
-            tau / 4.0,
+            fastest_tc / 4.0,
             n_sub,
         )
 
@@ -846,16 +883,21 @@ def _simulate_pid_response(
         delayed_op = op_delay_queue[0] if op_delay_queue else op[k]
 
         if is_sopdt:
-            # SOPDT: G(s) = K / (τ²s² + 2τξs + 1) * e^(-θs)
+            # SOPDT 标准形: G(s) = K·e^(-θs) / ((T1·s+1)(T2·s+1))（优先）
+            # SOPDT 旧形:   G(s) = K·e^(-θs) / (τ²s² + 2τξs + 1)（兼容）
             # RK4 积分（必要时细分子步）
             for _ in range(n_sub):
-                k1_1, k1_2 = _deriv_sopdt(x1, x2, delayed_op)
-                k2_1, k2_2 = _deriv_sopdt(x1 + 0.5 * h * k1_1, x2 + 0.5 * h * k1_2, delayed_op)
-                k3_1, k3_2 = _deriv_sopdt(x1 + 0.5 * h * k2_1, x2 + 0.5 * h * k2_2, delayed_op)
-                k4_1, k4_2 = _deriv_sopdt(x1 + h * k3_1, x2 + h * k3_2, delayed_op)
+                k1_1, k1_2 = _deriv_sopdt_active(x1, x2, delayed_op)
+                k2_1, k2_2 = _deriv_sopdt_active(
+                    x1 + 0.5 * h * k1_1, x2 + 0.5 * h * k1_2, delayed_op
+                )
+                k3_1, k3_2 = _deriv_sopdt_active(
+                    x1 + 0.5 * h * k2_1, x2 + 0.5 * h * k2_2, delayed_op
+                )
+                k4_1, k4_2 = _deriv_sopdt_active(x1 + h * k3_1, x2 + h * k3_2, delayed_op)
                 x1 = x1 + h / 6.0 * (k1_1 + 2 * k2_1 + 2 * k3_1 + k4_1)
                 x2 = x2 + h / 6.0 * (k1_2 + 2 * k2_2 + 2 * k3_2 + k4_2)
-            pv[k] = x1
+            pv[k] = x2 if use_t1_t2 else x1
         else:
             # FOPDT: dx/dt = (-x + K*u) / tau
             # RK4 积分（必要时细分子步）

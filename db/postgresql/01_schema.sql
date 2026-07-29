@@ -527,10 +527,27 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     status              VARCHAR(20)     NOT NULL,
     created_by          VARCHAR(50),
     created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
+    -- Phase 2.2 辨识元数据（迁移 e5f6a7b8c9d0）
+    identify_method     VARCHAR(30),
+    data_source         VARCHAR(20),
+    time_window_start   TIMESTAMP,
+    time_window_end     TIMESTAMP,
+    confidence_level    VARCHAR(12),
+    confidence_reason   VARCHAR(200),
+    excitation_score    DECIMAL(5,2),
+    residual_test_passed BOOLEAN,
+    -- Phase 2.3 多 PID 对比（迁移 e5f6a7b8c9d0）
+    pid_candidates      JSON,
+    candidate_results   JSON,
+    -- Phase 2.2 异步任务关联（迁移 e5f6a7b8c9d0）
+    task_id             VARCHAR(64),
+    completed_at        TIMESTAMP,
     CONSTRAINT fk_tuning_record_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_tuning_record_model   CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),
-    CONSTRAINT ck_tuning_record_algo    CHECK (algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON')),
-    CONSTRAINT ck_tuning_record_status  CHECK (status IN ('PENDING', 'IDENTIFIED', 'SIMULATED', 'APPLIED', 'VERIFIED'))
+    CONSTRAINT ck_tuning_record_algo    CHECK (algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC')),
+    CONSTRAINT ck_tuning_record_status  CHECK (status IN ('DRAFT', 'RUNNING', 'IDENTIFIED', 'SIMULATED', 'COMPLETED', 'INCONCLUSIVE', 'ROLLED_BACK', 'PENDING', 'APPLIED', 'VERIFIED')),
+    CONSTRAINT ck_tuning_record_identify_method CHECK (identify_method IS NULL OR identify_method IN ('HISTORICAL_ARX', 'HISTORICAL_ARMAX', 'HISTORICAL_IV', 'STEP_TWO_POINT', 'STEP_AREA', 'STEP_NLS')),
+    CONSTRAINT ck_tuning_record_data_source CHECK (data_source IS NULL OR data_source IN ('HISTORY', 'STEP_EXPERIMENT', 'fallback_step'))
 );
 
 COMMENT ON TABLE  tuning_record IS '整定记录（回路整定任务记录，Phase 1 仅建表，Phase 2 实现算法）';
@@ -538,13 +555,25 @@ COMMENT ON COLUMN tuning_record.id IS '整定记录主键';
 COMMENT ON COLUMN tuning_record.loop_id IS '关联回路 ID';
 COMMENT ON COLUMN tuning_record.model_type IS '模型类型：FOPDT/SOPDT/IPDT';
 COMMENT ON COLUMN tuning_record.model_params IS '模型参数（如：{"K": 1.2, "T": 30.5, "tau": 5.0}）';
-COMMENT ON COLUMN tuning_record.algorithm IS '整定算法：IMC/LAMBDA/ZN/COHEN_COON';
+COMMENT ON COLUMN tuning_record.algorithm IS '整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC';
 COMMENT ON COLUMN tuning_record.recommended_pid IS '推荐 PID 参数（如：{"P": 1.5, "I": 0.8, "D": 0.2}）';
 COMMENT ON COLUMN tuning_record.simulation_result IS '闭环仿真结果（含阶跃响应曲线、性能指标对比）';
 COMMENT ON COLUMN tuning_record.fitting_score IS '模型拟合度评分(0-100)';
-COMMENT ON COLUMN tuning_record.status IS '整定状态：PENDING/IDENTIFIED/SIMULATED/APPLIED/VERIFIED';
+COMMENT ON COLUMN tuning_record.status IS '整定状态：DRAFT/RUNNING/IDENTIFIED/SIMULATED/COMPLETED/INCONCLUSIVE/ROLLED_BACK（兼容旧枚举 PENDING/APPLIED/VERIFIED）';
 COMMENT ON COLUMN tuning_record.created_by IS '创建人';
 COMMENT ON COLUMN tuning_record.created_at IS '创建时间';
+COMMENT ON COLUMN tuning_record.identify_method IS '辨识方法：HISTORICAL_ARX/HISTORICAL_ARMAX/HISTORICAL_IV/STEP_TWO_POINT/STEP_AREA/STEP_NLS';
+COMMENT ON COLUMN tuning_record.data_source IS '数据来源：HISTORY/STEP_EXPERIMENT/fallback_step（AUTO 阶跃兜底）';
+COMMENT ON COLUMN tuning_record.time_window_start IS '辨识数据窗口起始时间';
+COMMENT ON COLUMN tuning_record.time_window_end IS '辨识数据窗口结束时间';
+COMMENT ON COLUMN tuning_record.confidence_level IS '可信度等级：A/B/C/D/E/INCONCLUSIVE';
+COMMENT ON COLUMN tuning_record.confidence_reason IS '可信度评估理由';
+COMMENT ON COLUMN tuning_record.excitation_score IS '激励充分性评分';
+COMMENT ON COLUMN tuning_record.residual_test_passed IS '残差白噪声检验是否通过';
+COMMENT ON COLUMN tuning_record.pid_candidates IS '多组候选 PID 参数（多 PID 对比）';
+COMMENT ON COLUMN tuning_record.candidate_results IS '各候选 PID 仿真结果（多 PID 对比）';
+COMMENT ON COLUMN tuning_record.task_id IS '关联 Celery 异步任务 ID';
+COMMENT ON COLUMN tuning_record.completed_at IS '任务完成时间';
 
 -- =============================================================================
 -- 13. report_record (自动报表记录)

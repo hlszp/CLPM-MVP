@@ -109,7 +109,8 @@ async def identify_history_endpoint(
     """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
 
     提交异步 Celery 任务，返回 taskId 供前端轮询进度。
-    辨识策略 AUTO=优先历史,失败兜底阶跃 / HISTORY_ONLY / STEP_ONLY。
+    辨识策略 AUTO=优先历史,失败兜底阶跃（任务内自动降级并标注
+    dataSource=fallback_step）/ HISTORY_ONLY / STEP_ONLY。
     """
     from app.tasks.tuning import identify_model_task
 
@@ -130,6 +131,7 @@ async def identify_history_endpoint(
         return success(data=data)
 
     # AUTO / HISTORY_ONLY → 异步任务
+    # AUTO 策略由任务侧在历史辨识失败/数据不足时自动降级阶跃实验路径（P1-6）
     task = identify_model_task.delay(
         loop_id=body.loopId,
         start_time=body.startTime,
@@ -137,6 +139,7 @@ async def identify_history_endpoint(
         candidate_model_types=body.candidateModelTypes,
         theta_estimate=body.thetaEstimate,
         created_by=user.username,
+        identify_strategy=body.identifyStrategy,
     )
     return success(data={"taskId": task.id, "status": "PENDING"})
 

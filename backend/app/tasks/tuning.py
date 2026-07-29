@@ -9,6 +9,8 @@
 - 进度通过 ``tuning_progress`` 写入 Redis（自包含，不依赖共享 TaskTracker）
 - 结果落 ``TuningRecord`` 表，通过 ``task_id`` 关联 Celery 任务
 - 失败不自动重试（辨识失败 → INCONCLUSIVE 状态，需用户调整数据窗口）
+- AUTO 策略：历史辨识失败/数据不足自动降级阶跃实验路径
+  （结果标注 dataSource=fallback_step，P1-6）
 """
 
 from __future__ import annotations
@@ -16,12 +18,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from celery import Task
 
+from app.core.exceptions import BizError
 from app.tasks.celery_app import celery_app
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +61,54 @@ def _now_naive() -> datetime:
 # ---------------------------------------------------------------------------
 
 
+async def _step_identify_fallback(
+    db: AsyncSession,
+    loop_id: str,
+    start_time: str,
+    end_time: str,
+    history_result: dict[str, Any],
+) -> dict[str, Any]:
+    """AUTO 策略阶跃兜底（P1-6）：历史辨识失败/数据不足时降级阶跃实验路径.
+
+    调用保留的同步阶跃辨识（FOPDT 两点法）；成功时返回成功形态结果并
+    标注 dataSource=fallback_step；兜底亦失败时合并两条失败原因，
+    维持失败形态（success=False）。
+    """
+    from app.services.tuning import identify_model
+
+    history_reason = history_result.get("reason") or "历史辨识失败"
+    try:
+        step = await identify_model(
+            db=db,
+            loop_id=loop_id,
+            start_time=start_time,
+            end_time=end_time,
+            model_type="FOPDT",
+            method=None,
+        )
+    except Exception as exc:  # 兜底失败（数据不足/回路不存在/数据源异常等）
+        logger.warning("AUTO 阶跃兜底失败: loop_id=%s, err=%s", loop_id, exc)
+        merged = dict(history_result)
+        merged["reason"] = f"{history_reason}；AUTO 阶跃兜底亦失败: {exc}"
+        return merged
+
+    logger.info("AUTO 阶跃兜底成功: loop_id=%s（历史失败原因: %s）", loop_id, history_reason)
+    return {
+        "success": True,
+        "modelType": step["modelType"],
+        "params": step["params"],
+        "fittingScore": step["fittingScore"],
+        "identifyMethod": "STEP_TWO_POINT",
+        "dataSource": "fallback_step",
+        "confidenceReason": f"AUTO 兜底：{history_reason}，已降级阶跃实验路径（FOPDT 两点法）",
+        "algorithmVersion": step["algorithmVersion"],
+        "dataPoints": step["dataPoints"],
+        "validRate": history_result.get("validRate"),
+        "tagName": step.get("tagName"),
+        "fallbackReason": history_reason,
+    }
+
+
 async def _do_identify(
     task_id: str,
     loop_id: str,
@@ -63,8 +117,14 @@ async def _do_identify(
     candidate_model_types: list[str] | None,
     theta_estimate: float | None,
     created_by: str,
+    identify_strategy: str = "HISTORY_ONLY",
 ) -> dict[str, Any]:
-    """执行历史数据辨识的 async 逻辑."""
+    """执行历史数据辨识的 async 逻辑.
+
+    identify_strategy=AUTO 时，历史辨识失败/数据不足自动降级阶跃实验路径
+    （结果标注 dataSource=fallback_step，P1-6）；默认 HISTORY_ONLY
+    与未携带该参数的旧队列任务行为一致。
+    """
     from app.core.db import AsyncSessionLocal
     from app.models.tuning import TuningRecord
     from app.services.tuning import identify_model_from_history
@@ -99,14 +159,24 @@ async def _do_identify(
                 message="激励检测与数据预处理中...",
             )
 
-            result = await identify_model_from_history(
-                db=db,
-                loop_id=loop_id,
-                start_time=start_time,
-                end_time=end_time,
-                candidate_model_types=candidate_model_types,
-                theta_estimate=theta_estimate,
-            )
+            try:
+                result = await identify_model_from_history(
+                    db=db,
+                    loop_id=loop_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                    candidate_model_types=candidate_model_types,
+                    theta_estimate=theta_estimate,
+                )
+            except BizError as exc:
+                # 数据不足/回路不存在等业务失败与算法栈失败同口径：
+                # 转 INCONCLUSIVE 结果形态，供 AUTO 策略兜底判断
+                logger.info("历史辨识业务失败: task_id=%s, %s: %s", task_id, exc.code, exc.message)
+                result = {"success": False, "reason": f"{exc.code}: {exc.message}"}
+
+            # P1-6：AUTO 策略兜底 — 历史辨识失败/数据不足时降级阶跃实验路径
+            if not result.get("success") and identify_strategy == "AUTO":
+                result = await _step_identify_fallback(db, loop_id, start_time, end_time, result)
 
             await update_progress(
                 task_id,
@@ -132,6 +202,9 @@ async def _do_identify(
                 db_record.confidence_reason = result.get("confidenceReason")
                 db_record.excitation_score = result.get("excitationScore")
                 db_record.residual_test_passed = result.get("residualTestPassed")
+                if result.get("dataSource") == "fallback_step":
+                    # AUTO 阶跃兜底结果：标注数据来源（P1-6）
+                    db_record.data_source = "fallback_step"
                 db_record.status = "IDENTIFIED"
                 db_record.completed_at = _now_naive()
             else:
@@ -185,6 +258,7 @@ def identify_model_task(
     candidate_model_types: list[str] | None = None,
     theta_estimate: float | None = None,
     created_by: str = "system",
+    identify_strategy: str = "HISTORY_ONLY",
 ) -> dict[str, Any]:
     """异步历史数据模型辨识任务.
 
@@ -195,6 +269,9 @@ def identify_model_task(
         candidate_model_types: 候选模型类型（默认 FOPDT+SOPDT）
         theta_estimate: 纯滞后预估（秒）
         created_by: 创建人
+        identify_strategy: 辨识策略 AUTO/HISTORY_ONLY（STEP_ONLY 由端点同步拦截，
+            不会进入本任务）；AUTO 时历史辨识失败/数据不足自动降级阶跃实验
+            路径（P1-6）。默认 HISTORY_ONLY，与未携带该参数的旧队列任务行为一致
     """
     task_id = self.request.id
     logger.info("辨识任务开始: task_id=%s, loop_id=%s", task_id, loop_id)
@@ -207,6 +284,7 @@ def identify_model_task(
             candidate_model_types=candidate_model_types,
             theta_estimate=theta_estimate,
             created_by=created_by,
+            identify_strategy=identify_strategy,
         )
     )
 

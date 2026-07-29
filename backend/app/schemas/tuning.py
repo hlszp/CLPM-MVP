@@ -60,8 +60,8 @@ IdentifyMethod = Literal[
     "STEP_NLS",
 ]
 
-# 数据来源
-DataSource = Literal["HISTORY", "STEP_EXPERIMENT"]
+# 数据来源（fallback_step = AUTO 策略历史辨识失败/数据不足后的阶跃兜底标记，P1-6）
+DataSource = Literal["HISTORY", "STEP_EXPERIMENT", "fallback_step"]
 
 # 可信度等级
 ConfidenceLevel = Literal["A", "B", "C", "D", "E", "INCONCLUSIVE"]

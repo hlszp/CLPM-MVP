@@ -91,7 +91,7 @@ class TuningRecord(Base):
             name="ck_tuning_record_identify_method",
         ),
         CheckConstraint(
-            "data_source IS NULL OR data_source IN ('HISTORY', 'STEP_EXPERIMENT')",
+            "data_source IS NULL OR data_source IN ('HISTORY', 'STEP_EXPERIMENT', 'fallback_step')",
             name="ck_tuning_record_data_source",
         ),
     )
