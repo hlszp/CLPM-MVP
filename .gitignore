@@ -52,3 +52,6 @@ __pycache__/
 # Turbo 缓存
 .turbo/
 logs/
+
+# 本地 pnpm 缓存（不应入库）
+.pnpm-store/
