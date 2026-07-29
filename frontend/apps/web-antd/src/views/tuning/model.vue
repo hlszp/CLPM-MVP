@@ -544,8 +544,15 @@ function handleUseForTuning() {
     );
     return;
   }
+  // P1-019：同步模型来源门禁字段到 store，支撑 flow 可恢复
+  tuningStore.setModelSource(
+    provenance.modelSource ?? '',
+    provenance.sourceRecordId ?? '',
+    provenance.riskConfirmed === 'true',
+  );
+  tuningStore.currentStep = 1;
   router.push({
-    path: '/tuning/algorithm',
+    path: '/tuning/flow/algorithm',
     query: {
       modelType: result.modelType,
       modelParams: JSON.stringify(result.params),
@@ -595,8 +602,15 @@ function handleGoSimulation() {
     );
     return;
   }
+  // P1-019：同步模型来源门禁字段到 store，支撑 flow 可恢复
+  tuningStore.setModelSource(
+    provenance.modelSource ?? '',
+    provenance.sourceRecordId ?? '',
+    provenance.riskConfirmed === 'true',
+  );
+  tuningStore.currentStep = 2;
   router.push({
-    path: '/tuning/simulation',
+    path: '/tuning/flow/simulation',
     query: {
       modelType: result.modelType,
       modelParams: JSON.stringify(result.params),

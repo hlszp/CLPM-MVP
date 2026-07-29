@@ -16,6 +16,8 @@ const submitIdentifyMock = vi.fn();
 const tuningStore = reactive({
   identifyResult: null as null | TuningApi.IdentifyHistoryResult,
   setCurrentLoop: vi.fn(),
+  setModelSource: vi.fn(),
+  currentStep: 0,
   startPolling: vi.fn(),
   submitIdentify: submitIdentifyMock,
   taskProgress: null as null | TuningApi.TaskProgress,
@@ -283,7 +285,7 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
       await tuningButton!.trigger('click');
 
       expect(routerPushMock).toHaveBeenCalledWith({
-        path: '/tuning/algorithm',
+        path: '/tuning/flow/algorithm',
         query: expect.objectContaining({
           modelSource: 'IDENTIFICATION_RECORD',
           sourceRecordId: 'record-001',
@@ -312,7 +314,7 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
     await tuningButton!.trigger('click');
 
     expect(routerPushMock).toHaveBeenCalledWith({
-      path: '/tuning/algorithm',
+      path: '/tuning/flow/algorithm',
       query: expect.objectContaining({
         modelSource: 'IDENTIFICATION_RECORD',
         riskConfirmed: 'true',
@@ -376,7 +378,7 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
     expect(tuningButton).toBeDefined();
     await tuningButton!.trigger('click');
     expect(routerPushMock).toHaveBeenCalledWith({
-      path: '/tuning/algorithm',
+      path: '/tuning/flow/algorithm',
       query: expect.objectContaining({
         modelSource: 'STEP_EXPERIMENT',
         sourceRecordId: 'step-record-001',

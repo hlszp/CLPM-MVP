@@ -88,28 +88,14 @@ const statusColorMap: Record<TuningApi.TaskStatus, string> = {
   VERIFIED: 'success',
 };
 
-/** 整定流程导航卡片配置（统一使用 ant-design 图标集） */
+/** 整定流程导航卡片（P1-019：model/algorithm/simulation 合并入 /tuning/flow stepper） */
 const navCards = [
   {
-    key: 'model',
-    title: '模型辨识',
-    description: '基于历史数据辨识回路 FOPDT/SOPDT/IPDT 模型',
+    key: 'flow',
+    title: '整定流程',
+    description: '模型辨识 → 整定算法 → 闭环仿真（可恢复步骤流）',
     icon: 'ant-design:apartment-outlined',
-    path: '/tuning/model',
-  },
-  {
-    key: 'algorithm',
-    title: '整定算法',
-    description: '基于模型参数计算推荐 PID（ZN/Cohen-Coon/IMC/Lambda/SIMC）',
-    icon: 'ant-design:calculator-outlined',
-    path: '/tuning/algorithm',
-  },
-  {
-    key: 'simulation',
-    title: '闭环仿真',
-    description: '对比当前 PID 与推荐 PID 的闭环响应性能',
-    icon: 'ant-design:experiment-outlined',
-    path: '/tuning/simulation',
+    path: '/tuning/flow',
   },
   {
     key: 'stats',
@@ -305,6 +291,16 @@ function handleViewDetail(record: TuningApi.TuningTaskItem) {
   });
 }
 
+/** P1-019：未终态任务可「继续」整定，带 taskId 进入 flow 触发后端回显 */
+function isResumable(status: TuningApi.TaskStatus): boolean {
+  return ['DRAFT', 'RUNNING', 'IDENTIFIED', 'SIMULATED'].includes(status);
+}
+
+/** 继续未完成的整定任务（进入 flow stepper 并按 taskId 回显） */
+function handleContinueTask(record: TuningApi.TuningTaskItem) {
+  router.push({ path: '/tuning/flow', query: { taskId: record.id } });
+}
+
 /** 工具栏：刷新 */
 function handleRefresh() {
   loadHistory();
@@ -314,7 +310,7 @@ function handleRefresh() {
 
 /** 工具栏：新建整定，跳转模型辨识 */
 function handleCreate() {
-  router.push('/tuning/model');
+  router.push('/tuning/flow');
 }
 
 /** 拟合度格式化 */
@@ -386,7 +382,7 @@ onMounted(() => {
       </div>
 
       <ClpmDataCanvas title="整定流程" class="mb-4">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Card
             v-for="item in navCards"
             :key="item.key"
@@ -470,6 +466,15 @@ onMounted(() => {
             </template>
             <template v-else-if="column.key === 'action'">
               <Button
+                v-if="isResumable(record.status as TuningApi.TaskStatus)"
+                type="link"
+                size="small"
+                @click="handleContinueTask(record as TuningApi.TuningTaskItem)"
+              >
+                继续
+              </Button>
+              <Button
+                v-else
                 type="link"
                 size="small"
                 @click="handleViewDetail(record as TuningApi.TuningTaskItem)"

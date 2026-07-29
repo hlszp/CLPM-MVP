@@ -252,7 +252,8 @@ unit_kpi_summary
   - `dashboard.ts`：`DashboardWorkbench` component 改指 `views/dashboard/workbench.vue`，标题改"工作台"；`routes-authority.test.ts` 工作台排除 EXPERT、放行 SPONSOR 断言通过。
 - [x] `V62-P1-018` 诊断 tasks/records 合并为进行中/历史 Tabs。
   - 新建 `views/diagnosis/task-center.vue`：Tabs 包装 tasks.vue（进行中）/ records.vue（历史）；activeTab 与 URL query 双向同步；不套外层 Page 避免与子页双重嵌套；records 内部 Tabs 作为历史下二级导航保留。
-- [ ] `V62-P1-019` 整定 model→algorithm→simulation 合并为可恢复 stepper。
+- [x] `V62-P1-019` 整定 model→algorithm→simulation 合并为可恢复 stepper。
+  - 新建 `views/tuning/flow.vue` stepper 容器（Steps 三步 + 路由推导 currentStep + 步骤门禁 + onMounted 恢复）；`store/tuning.ts` 加 sessionStorage 持久化（`_persist`/`restoreFromSession`）+ `restoreFromTask(taskId)` 后端回显兜底 + `modelSource`/`sourceRecordId`/`riskConfirmed`/`currentStep` ref；`tuning.ts` 路由新增 `/tuning/flow` 嵌套子路由 + 旧三页 redirect+hideInMenu（兼容书签）；三页跳转改指 flow 子路由 + 同步 store；workbench navCards 简化为「整定流程+效果统计」+ 未终态任务「继续」入口；check:type 通过、vitest 125 passed、浏览器验证 Steps/重定向/门禁通过。
 - [x] `V62-P1-020` 旧路由隐藏并兼容重定向至少一个版本。
   - `diagnosis.ts`：DiagnosisTasks → task-center.vue；DiagnosisRecords → redirect `/diagnosis/tasks?tab=history` + hideInMenu，兼容旧书签/深链。提交 `ddf867eb`。
 - [ ] `V62-P1-021` 建立统一 Loop 上下文头，保留回路、时间窗和返回来源。
@@ -388,4 +389,5 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 1 | P1-012~016 API 与任务合同 | P1-012 typed response（`IdentifyHistoryAsyncResponse`）；P1-013/014 TaskTracker 桥接（TUNING 类型 + 终态同步 + 取消同步 + 桥接失败降级）；P1-015/016 PID 转换（`pid_conversion.py` + 29 往返测试）；后端 3535 passed（+37），ruff/alembic 全绿 |
 | 2026-07-29 | Phase 1 | P1-018/020 诊断 tasks/records 合并 Tabs + 旧路由兼容 | 新建 `task-center.vue`（Tabs 进行中/历史，URL query 双向同步，不套外层 Page）；`diagnosis.ts` Records→redirect+hideInMenu；提交 `ddf867eb`；check:type 通过、vitest 434 passed |
 | 2026-07-30 | Phase 1 | P1-017 工作台改造为跨模块待办门户 | 新建 `views/dashboard/workbench.vue`：`ClpmKpiStrip` 跨模块待办计数（诊断待处理/异常跟踪待办/评估待执行/整定任务），计数走真实接口 + 整定卡片按角色条件渲染，复用 `DiagnosisSummaryCard`+`TrackerEffectivenessCard`，装置性能仅留入口卡；`dashboard.ts` 路由改指新页面；check:type 通过、vitest 125 passed（routes-authority 工作台权限断言通过） |
+| 2026-07-30 | Phase 1 | P1-019 整定三页合并为可恢复 stepper | 新建 `flow.vue`（Steps 三步 + 门禁 + onMounted 恢复）；`store/tuning.ts` 加 sessionStorage 持久化 + `restoreFromTask` taskId 回显兜底；`tuning.ts` 嵌套路由 + 旧路由重定向；三页跳转改指 flow 子路由；workbench navCards 简化 + 任务「继续」入口；check:type 通过、vitest 125 passed、浏览器验证 Steps/重定向/门禁通过 |
 | 2026-07-29 | Phase 1 | 排雷：`pnpm run format` 破坏测试标题 | `internal/lint-configs/oxlint-config` 启用 `vitest/prefer-lowercase-title:error`，`vsh lint --format` 会把 `describe`/`it` 标题首字母强制小写（`ADMIN`→`aDMIN`、`EXPERT`→`eXPERT`）。对策：不跑 blanket `pnpm run format`，改用 `check:type`+`vitest run` 作真实门禁；新文件按文件单独格式化。已还原被污染的 7 个测试文件 |

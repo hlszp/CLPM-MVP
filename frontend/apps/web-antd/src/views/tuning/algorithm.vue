@@ -290,8 +290,9 @@ function handleGoSimulation() {
     message.warning(modelUsageGate.value.reason || '必须明确模型来源');
     return;
   }
+  // P1-019：跳转改为 flow 子路由（query 兜底保留，渐进迁移）
   router.push({
-    path: '/tuning/simulation',
+    path: '/tuning/flow/simulation',
     query: {
       modelType: form.modelType,
       modelParams: JSON.stringify(buildModelParams()),
