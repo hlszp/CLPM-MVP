@@ -201,8 +201,15 @@ const summaryItems = computed<SummaryItem[]>(() => {
       key: 'confidence',
       // 后端 Phase 1 起 fusedConfidence 语义为"同标签多算法融合后的最高标签置信度"（不再跨标签融合）
       label: '最高标签置信度',
-      value: Number(detail.value.fusedConfidence).toFixed(2),
-      status: getThresholdStatus(detail.value.fusedConfidence, 0.8, 0.5),
+      // 旧诊断记录（2026-07-29 前）未持久化该值，null 显示占位符而非 0.00
+      value:
+        detail.value.fusedConfidence == null
+          ? '—'
+          : Number(detail.value.fusedConfidence).toFixed(2),
+      status:
+        detail.value.fusedConfidence == null
+          ? undefined
+          : getThresholdStatus(detail.value.fusedConfidence, 0.8, 0.5),
     },
     {
       key: 'confidenceLevel',

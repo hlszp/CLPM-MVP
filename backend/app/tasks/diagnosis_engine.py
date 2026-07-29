@@ -1738,6 +1738,10 @@ async def _diagnose_loop(
         # P1 修复：evidence_chain 仅承载本标签自身证据与同标签融合标注
         # （same_label_fusion），不再写入跨标签融合值
         evidence_chain = dict(result["evidence"])
+        # 回路级综合置信度（= 融合去重后最高标签置信度）随每条记录落库，
+        # 供列表/详情/可视化端点直接读取；此前只出现在任务返回值未持久化，
+        # 导致各端点 fusedConfidence 恒为 null（2026-07-29 修复）
+        evidence_chain["fused_confidence"] = round(fused_confidence, 4)
         # B5：每条记录写入统一可信度等级与有效数据率（回路级，各标签一致）
         own_features = {
             **result.get("feature_values", {}),

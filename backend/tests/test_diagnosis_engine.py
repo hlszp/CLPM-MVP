@@ -4377,3 +4377,65 @@ class TestTsListToSeconds:
             {"ts": base + timedelta(seconds=10)},
         ]
         assert _compute_sample_interval(aligned) == pytest.approx(5.0)
+
+
+class TestFusedConfidencePersisted:
+    """fused_confidence（最高标签置信度）必须随每条记录落库（2026-07-29 修复）。
+
+    修复前：fused_confidence 只出现在任务返回值，未写入 evidence_chain，
+    列表/详情/可视化端点读取 evidence_chain['fused_confidence'] 恒为 null。
+    """
+
+    @pytest.mark.asyncio
+    async def test_fused_confidence_written_to_evidence_chain(self) -> None:
+        loop = _make_loop()
+        pv_m = _make_mapping(tag_role="PV", tag_id="tag-pv")
+        op_m = _make_mapping(tag_role="OP", tag_id="tag-op")
+        mode_m = _make_mapping(tag_role="MODE", tag_id="tag-mode")
+        pv_tag = _make_tag(tag_id="tag-pv", tag_name="LIC.PV")
+        op_tag = _make_tag(tag_id="tag-op", tag_name="LIC.OP")
+        mode_tag = _make_tag(tag_id="tag-mode", tag_name="LIC.MODE")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(loop),
+                _make_scalars_all_mock([pv_m, op_m, mode_m]),
+                _make_scalars_all_mock([pv_tag, op_tag, mode_tag]),
+                MagicMock(),  # delete 结果
+                _make_scalars_all_mock([]),  # 无 ACTIVE 诊断标签
+            ]
+        )
+        db.add = MagicMock()
+
+        raw_series = _make_raw_timeseries(
+            [50.0] * 50,
+            op=[99.5] * 50,
+            mode=[1] * 50,
+        )
+
+        async def _query_fn(**kwargs):
+            return raw_series
+
+        sat_cfg = _make_diag_config()
+        sat_cfg.threshold = None
+
+        result = await _diagnose_loop(
+            db=db,
+            loop_id="loop-001",
+            diag_configs={"OUTPUT_SATURATION": sat_cfg},
+            ts_start=datetime(2026, 1, 1, 0, 0, 0),
+            ts_end=datetime(2026, 1, 1, 1, 0, 0),
+            query_wide_fn=_query_fn,
+        )
+
+        assert result is not None and result["status"] == "SUCCESS"
+        expected = result["fusedConfidence"]
+        assert expected > 0
+        # 每条落库记录的 evidence_chain 都必须携带 fused_confidence
+        from app.models.diagnosis import DiagnosisResult as _DiagResult
+
+        added = [c.args[0] for c in db.add.call_args_list if isinstance(c.args[0], _DiagResult)]
+        assert len(added) >= 1
+        for record in added:
+            assert record.evidence_chain.get("fused_confidence") == round(expected, 4)
