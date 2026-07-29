@@ -17,7 +17,12 @@ const tuningStore = reactive({
   identifyResult: null as null | TuningApi.IdentifyHistoryResult,
   setCurrentLoop: vi.fn(),
   setModelSource: vi.fn(),
+  setLoopTimeRange: vi.fn(),
   currentStep: 0,
+  // P1-021：回路/时间窗由 flow 统一上下文头写入 store，model.vue 从 store 读取
+  currentLoopId: 'loop-1',
+  currentLoopTagName: 'FIC-101',
+  currentLoopTimeRange: null as null | [string, string],
   startPolling: vi.fn(),
   submitIdentify: submitIdentifyMock,
   taskProgress: null as null | TuningApi.TaskProgress,
@@ -200,7 +205,11 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
     submitIdentifyMock.mockReset();
     tuningStore.identifyResult = null;
     tuningStore.taskProgress = null;
+    tuningStore.currentLoopId = 'loop-1';
+    tuningStore.currentLoopTagName = 'FIC-101';
+    tuningStore.currentLoopTimeRange = null;
     tuningStore.setCurrentLoop.mockReset();
+    tuningStore.setLoopTimeRange.mockReset();
     tuningStore.startPolling.mockReset();
 
     getLoopListApiMock.mockResolvedValue({

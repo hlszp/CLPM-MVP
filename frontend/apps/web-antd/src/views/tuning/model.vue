@@ -19,7 +19,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { TuningApi } from '#/api/tuning';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -30,7 +30,6 @@ import {
   Button,
   Card,
   Checkbox,
-  DatePicker,
   Descriptions,
   DescriptionsItem,
   Form,
@@ -44,7 +43,6 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getLoopListApi } from '#/api/loop';
 import { identifyModelApi, previewSegmentsApi } from '#/api/tuning';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
@@ -59,7 +57,6 @@ const { isDark, themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const segmentLoading = ref(false);
-const loopOptions = ref<{ label: string; value: string }[]>([]);
 const riskConfirmed = ref(false);
 
 /** 阶跃实验路径结果（STEP_ONLY 策略，同步返回） */
@@ -76,17 +73,22 @@ const segments = ref<null | TuningApi.IdentifySegmentsResult>(null);
 
 /** 筛选表单状态 */
 const filter = reactive({
-  loopId: '' as string,
-  timeRange: [dayjs().subtract(24, 'hour'), dayjs()] as [
-    dayjs.Dayjs,
-    dayjs.Dayjs,
-  ],
   identifyStrategy: 'AUTO' as TuningApi.IdentifyStrategy,
   candidateModelTypes: ['FOPDT', 'SOPDT'] as TuningApi.HistoryModelType[],
   thetaEstimate: undefined as number | undefined,
   // STEP_ONLY 路径仍用 modelType + method
   modelType: 'FOPDT' as TuningApi.ModelType,
   method: 'TWO_POINT' as TuningApi.IdentifyMethod,
+});
+
+/** P1-021：回路与时间窗由 flow 统一上下文头选择，store 代理 */
+const loopId = computed(() => tuningStore.currentLoopId);
+const timeRange = computed<[dayjs.Dayjs, dayjs.Dayjs]>(() => {
+  const r = tuningStore.currentLoopTimeRange;
+  if (r && r[0] && r[1]) {
+    return [dayjs(r[0]), dayjs(r[1])] as [dayjs.Dayjs, dayjs.Dayjs];
+  }
+  return [dayjs().subtract(24, 'hour'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs];
 });
 
 /** 辨识策略选项 */
@@ -310,46 +312,24 @@ const progressStatus = computed<'active' | 'exception' | 'normal' | 'success'>(
   },
 );
 
-/** 加载回路下拉选项 */
-async function loadLoopOptions() {
-  try {
-    const data = await getLoopListApi({ page: 1, pageSize: 100 });
-    const list = data.items || [];
-    loopOptions.value = list.map((l) => ({
-      label: l.tagName,
-      value: l.loopId,
-    }));
-    if (list.length > 0 && !filter.loopId) {
-      const first = list[0];
-      if (first) {
-        filter.loopId = first.loopId;
-      }
-    }
-  } catch {
-    // 错误已由拦截器处理
-  }
-}
-
 /** 执行模型辨识 */
 async function handleIdentify() {
-  if (!filter.loopId) {
+  if (!loopId.value) {
     message.warning('请选择回路');
     return;
   }
-  if (!filter.timeRange || filter.timeRange.length !== 2) {
+  if (!timeRange.value || timeRange.value.length !== 2) {
     message.warning('请选择时间范围');
     return;
   }
-  const [start, end] = filter.timeRange;
+  const [start, end] = timeRange.value;
   if (!start || !end) {
     message.warning('请选择时间范围');
     return;
   }
 
-  // 同步当前回路到 store
+  // P1-021：回路由统一上下文头选择并同步 store，此处不再 setCurrentLoop
   riskConfirmed.value = false;
-  const selectedLoop = loopOptions.value.find((l) => l.value === filter.loopId);
-  tuningStore.setCurrentLoop(filter.loopId, selectedLoop?.label || '');
 
   if (isStepOnly.value) {
     // STEP_ONLY 走同步阶跃实验路径（向后兼容）
@@ -360,7 +340,7 @@ async function handleIdentify() {
     );
     try {
       const result = await identifyModelApi({
-        loopId: filter.loopId,
+        loopId: loopId.value,
         startTime: start.toISOString(),
         endTime: end.toISOString(),
         modelType: filter.modelType,
@@ -386,7 +366,7 @@ async function handleIdentify() {
   tuningStore.taskProgress = null;
   try {
     const taskId = await tuningStore.submitIdentify({
-      loopId: filter.loopId,
+      loopId: loopId.value,
       startTime: start.toISOString(),
       endTime: end.toISOString(),
       identifyStrategy: filter.identifyStrategy,
@@ -413,17 +393,17 @@ async function handleIdentify() {
 
 /** 预览可辨识片段 */
 async function handlePreviewSegments() {
-  if (!filter.loopId || !filter.timeRange || filter.timeRange.length !== 2) {
+  if (!loopId.value || !timeRange.value || timeRange.value.length !== 2) {
     message.warning('请先选择回路和时间范围');
     return;
   }
-  const [start, end] = filter.timeRange;
+  const [start, end] = timeRange.value;
   if (!start || !end) return;
 
   segmentLoading.value = true;
   try {
     segments.value = await previewSegmentsApi({
-      loopId: filter.loopId,
+      loopId: loopId.value,
       startTime: start.toISOString(),
       endTime: end.toISOString(),
     });
@@ -556,7 +536,7 @@ function handleUseForTuning() {
     query: {
       modelType: result.modelType,
       modelParams: JSON.stringify(result.params),
-      loopId: filter.loopId,
+      loopId: loopId.value,
       ...provenance,
     },
   });
@@ -614,15 +594,11 @@ function handleGoSimulation() {
     query: {
       modelType: result.modelType,
       modelParams: JSON.stringify(result.params),
-      loopId: filter.loopId,
+      loopId: loopId.value,
       ...provenance,
     },
   });
 }
-
-onMounted(() => {
-  loadLoopOptions();
-});
 
 /** 深色模式切换时重绘 ECharts 图表 */
 watch(isDark, () => {
@@ -667,27 +643,6 @@ watch(
 
     <ClpmDataCanvas class="mb-4 mt-4" title="辨识筛选条件">
       <Form layout="inline">
-        <FormItem label="回路选择">
-          <Select
-            v-model:value="filter.loopId"
-            placeholder="请选择回路"
-            style="width: 220px"
-            show-search
-            :options="loopOptions"
-            :filter-option="
-              (input: string, option: any) =>
-                option.label.toLowerCase().includes(input.toLowerCase())
-            "
-          />
-        </FormItem>
-        <FormItem label="时间范围">
-          <DatePicker.RangePicker
-            v-model:value="filter.timeRange"
-            :show-time="{ format: 'HH:mm' }"
-            format="YYYY-MM-DD HH:mm"
-            :placeholder="['开始时间', '结束时间']"
-          />
-        </FormItem>
         <FormItem label="辨识策略">
           <Select
             v-model:value="filter.identifyStrategy"

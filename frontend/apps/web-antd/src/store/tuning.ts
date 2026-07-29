@@ -44,6 +44,9 @@ export const useTuningStore = defineStore('tuning', () => {
   const currentLoopId = ref<string>('');
   const currentLoopTagName = ref<string>('');
 
+  /** 当前回路时间窗（ISO 字符串元组，P1-021 统一上下文头共享） */
+  const currentLoopTimeRange = ref<[string, string] | null>(null);
+
   /** 历史辨识结果（Phase 2 异步任务完成后写入） */
   const identifyResult = ref<TuningApi.IdentifyHistoryResult | null>(null);
 
@@ -81,6 +84,7 @@ export const useTuningStore = defineStore('tuning', () => {
       const snapshot = {
         currentLoopId: currentLoopId.value,
         currentLoopTagName: currentLoopTagName.value,
+        currentLoopTimeRange: currentLoopTimeRange.value,
         identifyResult: identifyResult.value,
         pidCandidates: pidCandidates.value,
         simulationResult: simulationResult.value,
@@ -117,6 +121,7 @@ export const useTuningStore = defineStore('tuning', () => {
       const snap = JSON.parse(raw) as Record<string, any>;
       currentLoopId.value = snap.currentLoopId ?? '';
       currentLoopTagName.value = snap.currentLoopTagName ?? '';
+      currentLoopTimeRange.value = snap.currentLoopTimeRange ?? null;
       identifyResult.value = snap.identifyResult ?? null;
       pidCandidates.value = snap.pidCandidates ?? [];
       simulationResult.value = snap.simulationResult ?? null;
@@ -205,6 +210,7 @@ export const useTuningStore = defineStore('tuning', () => {
     [
       currentLoopId,
       currentLoopTagName,
+      currentLoopTimeRange,
       identifyResult,
       pidCandidates,
       simulationResult,
@@ -224,6 +230,11 @@ export const useTuningStore = defineStore('tuning', () => {
   function setCurrentLoop(loopId: string, tagName = '') {
     currentLoopId.value = loopId;
     currentLoopTagName.value = tagName;
+  }
+
+  /** 设置当前回路时间窗（ISO 字符串元组，P1-021 统一上下文头） */
+  function setLoopTimeRange(range: [string, string] | null) {
+    currentLoopTimeRange.value = range;
   }
 
   /** 设置模型来源（Phase 0 门禁字段） */
@@ -257,6 +268,7 @@ export const useTuningStore = defineStore('tuning', () => {
     stopPolling();
     currentLoopId.value = '';
     currentLoopTagName.value = '';
+    currentLoopTimeRange.value = null;
     identifyResult.value = null;
     taskProgress.value = null;
     pidCandidates.value = [];
@@ -358,6 +370,7 @@ export const useTuningStore = defineStore('tuning', () => {
     // state
     currentLoopId,
     currentLoopTagName,
+    currentLoopTimeRange,
     identifyResult,
     taskProgress,
     pidCandidates,
@@ -369,6 +382,7 @@ export const useTuningStore = defineStore('tuning', () => {
     currentStep,
     // actions
     setCurrentLoop,
+    setLoopTimeRange,
     setModelSource,
     addPidCandidate,
     removePidCandidate,

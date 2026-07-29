@@ -8,13 +8,15 @@
  * - 子页面通过 <router-view> 渲染（三页各自保留 <Page>，本容器不套 Page 避免双重嵌套）
  * - 恢复策略：URL 带 taskId → 后端回显；否则 sessionStorage 恢复；皆无 → 新流程
  *
- * LoopContextHeader（回路/时间窗/返回来源）当前为最小占位，P1-021 将接管为统一组件。
+ * P1-021：LoopContextHeader 统一上下文头（回路/时间窗/返回来源）已接管占位，
+ * 步骤 0（辨识）可编辑选择，步骤 1/2（整定/仿真）只读展示。
  */
 import { computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Steps, message } from 'ant-design-vue';
 
+import { ClpmLoopContextHeader } from '#/components/clpm';
 import { useTuningStore } from '#/store/tuning';
 
 defineOptions({ name: 'TuningFlow' });
@@ -109,17 +111,13 @@ onMounted(async () => {
         />
       </Steps>
 
-      <!-- LoopContextHeader 占位（P1-021 将接管为统一组件） -->
-      <div
-        v-if="store.currentLoopTagName"
-        class="mt-2 flex items-center gap-2 text-xs"
-        style="color: hsl(var(--muted-foreground))"
-      >
-        <span>当前回路：</span>
-        <span class="font-mono font-medium" style="color: hsl(var(--foreground))">
-          {{ store.currentLoopTagName }}
-        </span>
-      </div>
+      <!-- P1-021：统一 Loop 上下文头（回路/时间窗/返回来源） -->
+      <ClpmLoopContextHeader
+        :editable="currentStep === 0"
+        :show-time-window="currentStep === 0"
+        back-to="/tuning/workbench"
+        back-label="返回整定工作台"
+      />
     </div>
 
     <!-- 子页面（model.vue / algorithm.vue / simulation.vue） -->
