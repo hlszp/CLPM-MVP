@@ -22,7 +22,6 @@ from app.services.tuning_identification.excitation import (
     check_excitation,
     excitation_score,
 )
-from app.services.tuning_identification.iv import identify_iv
 from app.services.tuning_identification.nonparametric import correlation_analysis
 from app.services.tuning_identification.order_selection import (
     ljung_box_test,
@@ -33,6 +32,7 @@ from app.services.tuning_identification.types import (
     IdentificationResult,
     IdentifyMethod,
     ModelType,
+    ThetaSource,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,10 +70,10 @@ def identify_from_history(
     Args:
         op: OP 时序（过程对象输入）
         pv: PV 时序（过程对象输出）
-        sp: SP 时序（可选，用于 IV 法工具变量；闭环必需）
+        sp: SP 时序（保留用于后续经验证的闭环辨识方法；Phase 0 不参与生产选模）
         mode: MODE 时序（可选，用于判断 AUTO/MANUAL）
         ts: 采样周期（秒）
-        theta_estimate: 纯滞后预估值（秒），None 则自动估计
+        theta_estimate: 纯滞后预估值（秒），None 时使用 2Ts 启发值并将可信度封顶 C
         candidate_models: 候选模型阶次列表，默认 [FOPDT, SOPDT]
 
     Returns:
@@ -81,18 +81,72 @@ def identify_from_history(
     """
     u_raw = np.array(op, dtype=float)
     y_raw = np.array(pv, dtype=float)
-    sp_raw = np.array(sp, dtype=float) if sp is not None else None
-
+    theta_source = ThetaSource.EXPLICIT if theta_estimate is not None else ThetaSource.HEURISTIC_2TS
     if len(u_raw) != len(y_raw):
         return IdentificationResult(
             success=False,
             reason=f"OP/PV 长度不匹配（{len(u_raw)} vs {len(y_raw)}）",
+            theta_source=theta_source,
         )
     if len(u_raw) < 50:
         return IdentificationResult(
             success=False,
             reason=f"数据不足（{len(u_raw)} 点，需 ≥ 50）",
+            theta_source=theta_source,
         )
+    if not np.all(np.isfinite(u_raw)) or not np.all(np.isfinite(y_raw)):
+        return IdentificationResult(
+            success=False,
+            reason="OP/PV 包含 NaN 或无穷值",
+            theta_source=theta_source,
+        )
+
+    candidates = candidate_models or [ModelType.FOPDT, ModelType.SOPDT]
+    if ModelType.IPDT in candidates:
+        return IdentificationResult(
+            success=False,
+            reason="历史数据辨识暂不支持 IPDT；请使用阶跃实验路径",
+            theta_source=theta_source,
+        )
+    if not math.isfinite(ts) or ts <= 0:
+        return IdentificationResult(
+            success=False,
+            reason="采样周期 ts 必须为有限正数",
+            theta_source=theta_source,
+        )
+    if theta_estimate is not None and (not math.isfinite(theta_estimate) or theta_estimate < 0):
+        return IdentificationResult(
+            success=False,
+            reason="纯滞后预估值必须为有限非负数",
+            theta_source=theta_source,
+        )
+
+    if sp is not None:
+        sp_raw = np.array(sp, dtype=float)
+        if len(sp_raw) != len(u_raw):
+            return IdentificationResult(
+                success=False,
+                reason=f"SP 与 OP/PV 长度不匹配（{len(sp_raw)} vs {len(u_raw)}）",
+                theta_source=theta_source,
+            )
+        if not np.all(np.isfinite(sp_raw)):
+            return IdentificationResult(
+                success=False,
+                reason="SP 包含 NaN 或无穷值",
+                theta_source=theta_source,
+            )
+        sp_range = float(np.ptp(sp_raw))
+        change_threshold = max(1e-9, 0.01 * sp_range)
+        significant_sp_changes = int(np.sum(np.abs(np.diff(sp_raw)) > change_threshold))
+        if significant_sp_changes > 0:
+            return IdentificationResult(
+                success=False,
+                reason=(
+                    "CLOSED_LOOP_METHOD_UNVERIFIED: 检测到动态 SP 闭环激励；"
+                    "现有实验性 IV 不作为发布依据，请使用合格闭环方法或受控阶跃实验"
+                ),
+                theta_source=theta_source,
+            )
 
     # P0-2：入口去均值（偏置消除）。
     # ARX/ARMAX/IV 回归均无截距项，工业数据（如 PV≈450/OP≈60）若不去均值，
@@ -102,13 +156,11 @@ def identify_from_history(
     y_mean = float(np.mean(y_raw))
     u = u_raw - u_mean
     y = y_raw - y_mean
-    # SP 作为 IV 工具变量，同样以增量形式参与，保持口径一致
-    sp_arr = (sp_raw - float(np.mean(sp_raw))) if sp_raw is not None else None
+    # Phase 0：缺省 theta 仅作为显式标注的 2Ts 启发值；不能冒充已估计参数。
+    # 使用 is not None 保留调用方明确给出的 theta=0。
+    theta_seconds = theta_estimate if theta_estimate is not None else 2 * ts
+    d = max(0, round(theta_seconds / ts))
 
-    # 纯滞后估计（若无预估，默认 2 个采样周期）
-    d = max(1, round((theta_estimate or 2 * ts) / ts))
-
-    candidates = candidate_models or [ModelType.FOPDT, ModelType.SOPDT]
     results: list[CandidateModel] = []
 
     # ── 层 1：激励检测 ──
@@ -118,6 +170,7 @@ def identify_from_history(
             success=False,
             reason=f"激励不足：{exc.verdict}",
             segments=[],
+            theta_source=theta_source,
         )
     exc_score = excitation_score(exc.condition_number, exc.significant_changes)
 
@@ -130,23 +183,12 @@ def identify_from_history(
         logger.debug("非参数粗估失败，跳过", exc_info=True)
         K_rough = None
 
-    # ── 层 3：参数化辨识（根据数据场景选择算法）──
-    has_sp = sp_arr is not None and len(sp_arr) == len(u)
-    # SP 外生性检验（简化：SP 变化次数）
-    sp_exogenous = False
-    if has_sp:
-        sp_range = float(np.max(sp_arr) - np.min(sp_arr))
-        sp_threshold = 0.01 * (sp_range + 1e-9)
-        sp_changes = int(np.sum(np.abs(np.diff(sp_arr)) > sp_threshold))
-        sp_exogenous = sp_changes >= 3
-
-    # 选择主算法
+    # ── 层 3：参数化辨识（生产候选）──
+    # IV 实现保留为实验代码，但其工具变量外生性和收敛性尚未完成工业验证，
+    # Phase 0 不允许进入生产候选集或影响最终排名。
     identification_runs: list[tuple[IdentifyMethod, object]] = []
     # 总是跑 ARX（初值 + 基线）
     identification_runs.append((IdentifyMethod.HISTORICAL_ARX, "arx"))
-    # 闭环且有外生 SP → IV
-    if has_sp and sp_exogenous:
-        identification_runs.append((IdentifyMethod.HISTORICAL_IV, "iv"))
     # 总是跑 ARMAX（扰动建模）
     identification_runs.append((IdentifyMethod.HISTORICAL_ARMAX, "armax"))
 
@@ -160,9 +202,6 @@ def identify_from_history(
             try:
                 if algo_key == "arx":
                     res = identify_arx(u, y, d, na=na, nb=nb)
-                    method_used = method
-                elif algo_key == "iv" and has_sp:
-                    res = identify_iv(u, y, sp_arr, d, na=na, nb=nb)
                     method_used = method
                 elif algo_key == "armax":
                     res = identify_armax(u, y, d, na=na, nb=nb, nc=1)
@@ -227,6 +266,8 @@ def identify_from_history(
 
             # 可信度评估
             confidence = _assess_confidence(exc, r2, residual_white, exc_score)
+            if theta_source == ThetaSource.HEURISTIC_2TS:
+                confidence = _cap_confidence(confidence, ConfidenceLevel.C)
 
             candidate = CandidateModel(
                 params=params,
@@ -248,6 +289,7 @@ def identify_from_history(
         return IdentificationResult(
             success=False,
             reason="所有算法/阶次辨识均失败",
+            theta_source=theta_source,
         )
 
     # 选最优模型
@@ -259,6 +301,7 @@ def identify_from_history(
             success=False,
             reason=f"辨识可信度不足：{best.reason}",
             candidates=results,
+            theta_source=theta_source,
         )
 
     # P0-2：记录去均值偏置量（增量模型的零位基准，供结果审计追溯）
@@ -270,6 +313,7 @@ def identify_from_history(
         best_model=best,
         candidates=results,
         reason=f"辨识成功（{offset_note}）",
+        theta_source=theta_source,
     )
 
 
@@ -373,3 +417,21 @@ def _candidate_sort_key(c: CandidateModel) -> tuple:
         ConfidenceLevel.INCONCLUSIVE: 0,
     }
     return (level_order.get(c.confidence, 0), c.fitting_score, c.residual_test_passed)
+
+
+def _cap_confidence(
+    confidence: ConfidenceLevel,
+    maximum: ConfidenceLevel,
+) -> ConfidenceLevel:
+    """将可信度限制在 maximum，不提升原有低可信度结果."""
+    level_order = {
+        ConfidenceLevel.A: 5,
+        ConfidenceLevel.B: 4,
+        ConfidenceLevel.C: 3,
+        ConfidenceLevel.D: 2,
+        ConfidenceLevel.E: 1,
+        ConfidenceLevel.INCONCLUSIVE: 0,
+    }
+    if level_order[confidence] > level_order[maximum]:
+        return maximum
+    return confidence

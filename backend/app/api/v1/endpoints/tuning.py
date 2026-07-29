@@ -47,12 +47,14 @@ from app.schemas.tuning import (
     TuningTaskDetail,
 )
 from app.services.tuning import (
+    authorize_tuning_model,
     create_tuning_task,
     get_tuning_history_stats,
     get_tuning_methods,
     get_tuning_task_detail,
     identify_model,
     list_tuning_tasks,
+    persist_step_identification_record,
     preview_identify_segments,
     run_simulation,
     tune_pid,
@@ -98,12 +100,21 @@ async def identify_model_endpoint(
         model_type=body.modelType,
         method=body.method,
     )
+    record_id = await persist_step_identification_record(
+        db=db,
+        loop_id=body.loopId,
+        result=data,
+        created_by=user.username,
+        requested_method=body.method,
+    )
+    data = {**data, "recordId": record_id}
     return success(data=data)
 
 
 @router.post("/identify/history", response_model=ApiResponse[dict])
 async def identify_history_endpoint(
     body: ModelIdentifyHistoryRequest,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
@@ -116,18 +127,22 @@ async def identify_history_endpoint(
 
     # STEP_ONLY 策略走同步阶跃路径（向后兼容）
     if body.identifyStrategy == "STEP_ONLY":
-        # 委托同步 identify_model，但需要 db
-        from app.core.db import AsyncSessionLocal
-
-        async with AsyncSessionLocal() as db:
-            data = await identify_model(
-                db=db,
-                loop_id=body.loopId,
-                start_time=body.startTime,
-                end_time=body.endTime,
-                model_type="FOPDT",
-                method=None,
-            )
+        data = await identify_model(
+            db=db,
+            loop_id=body.loopId,
+            start_time=body.startTime,
+            end_time=body.endTime,
+            model_type="FOPDT",
+            method=None,
+        )
+        record_id = await persist_step_identification_record(
+            db=db,
+            loop_id=body.loopId,
+            result=data,
+            created_by=user.username,
+            requested_method=None,
+        )
+        data = {**data, "recordId": record_id}
         return success(data=data)
 
     # AUTO / HISTORY_ONLY → 异步任务
@@ -178,13 +193,23 @@ async def tune_pid_endpoint(
 
     基于模型参数，使用 IMC/Lambda/ZN/Cohen-Coon/SIMC 算法计算推荐 PID 参数。
     """
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
     data = await tune_pid(
-        model_type=body.modelType,
-        model_params=body.modelParams.model_dump(exclude_none=True),
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
         algorithm=body.algorithm,
         algorithm_params=body.algorithmParams,
         current_pid=body.currentPid.model_dump() if body.currentPid else None,
-        loop_id=body.loopId,
+        loop_id=source_context.loop_id,
+        source_context=source_context,
     )
     # 审计日志（S1-B7）
     log = SysAuditLog(
@@ -192,8 +217,13 @@ async def tune_pid_endpoint(
         operator=user.username,
         operation_type="TUNE_PID",
         target_type="Loop",
-        target_id=body.loopId,
-        after_value=f"algorithm={body.algorithm}, modelType={body.modelType}",
+        target_id=source_context.loop_id,
+        after_value=(
+            f"algorithm={body.algorithm}, modelType={source_context.model_type}, "
+            f"source={source_context.model_source}, "
+            f"record={source_context.source_record_id or '-'}, "
+            f"riskConfirmed={str(source_context.risk_confirmed).lower()}"
+        ),
         operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
@@ -209,20 +239,31 @@ async def tune_pid_endpoint(
 @router.post("/simulate", response_model=ApiResponse[SimulationResult])
 async def simulate_endpoint(
     body: SimulateRequest,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """闭环仿真（ADMIN/IC_ENGINEER/EXPERT）。
 
     对比当前 PID 与推荐 PID 的阶跃响应（Phase 2 支持多 PID 候选对比）。
     """
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+
     # Phase 2：pid_candidates 转为 dict 列表透传
     pid_candidates_dicts: list[dict] | None = None
     if body.pidCandidates:
         pid_candidates_dicts = [c.model_dump() for c in body.pidCandidates]
 
     data = await run_simulation(
-        model_type=body.modelType,
-        model_params=body.modelParams.model_dump(exclude_none=True),
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
         current_pid=body.currentPid.model_dump(),
         recommended_pid=body.recommendedPid.model_dump(),
         sim_duration=body.simDuration,
@@ -237,6 +278,7 @@ async def simulate_endpoint(
 @router.post("/compare", response_model=ApiResponse[SimulationResult])
 async def compare_pids_endpoint(
     body: SimulateRequest,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
@@ -253,12 +295,22 @@ async def compare_pids_endpoint(
             status_code=400,
         )
 
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+
     from app.services.tuning import _simulate_multi_pid
 
     candidates_dicts = [c.model_dump() for c in body.pidCandidates]
     data = _simulate_multi_pid(
-        model_type=body.modelType,
-        model_params=body.modelParams.model_dump(exclude_none=True),
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
         current_pid=body.currentPid.model_dump() if body.currentPid else None,
         pid_candidates=candidates_dicts,
         sim_duration=body.simDuration,

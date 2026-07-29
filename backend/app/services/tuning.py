@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import logging
+import math
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -42,6 +44,255 @@ from app.services.tuning_identification.types import ModelType
 from app.services.waveform import get_waveform
 
 logger = logging.getLogger(__name__)
+
+_STEP_MIN_POINTS = 20
+
+
+@dataclass(frozen=True)
+class TuningModelAuthorization:
+    """服务端验证后的推荐链模型上下文。
+
+    该对象不从 HTTP 请求直接反序列化；调用方必须通过
+    :func:`authorize_tuning_model` 构造，避免裸模型参数绕过来源门禁。
+    """
+
+    model_type: str
+    model_params: dict[str, Any]
+    loop_id: str | None
+    model_source: str
+    source_record_id: str | None
+    risk_confirmed: bool
+    confidence_level: str | None = None
+    confidence_reason: str | None = None
+    identify_method: str | None = None
+    data_source: str | None = None
+
+
+def _model_params_match(
+    model_type: str,
+    requested: dict[str, Any],
+    persisted: dict[str, Any],
+) -> bool:
+    """按模型必需参数比较请求与持久化值，阻止替换辨识结果。"""
+    required = {
+        "FOPDT": ("K", "tau", "theta"),
+        "SOPDT": ("K", "T1", "T2", "theta"),
+        "IPDT": ("K", "theta"),
+    }.get(model_type, ())
+    if not required:
+        return False
+
+    for key in required:
+        left = requested.get(key)
+        right = persisted.get(key)
+        if isinstance(left, bool) or isinstance(right, bool):
+            return False
+        try:
+            left_number = float(left)
+            right_number = float(right)
+        except (TypeError, ValueError):
+            return False
+        if not (math.isfinite(left_number) and math.isfinite(right_number)):
+            return False
+        if not math.isclose(left_number, right_number, rel_tol=1e-9, abs_tol=1e-12):
+            return False
+    return True
+
+
+async def authorize_tuning_model(
+    *,
+    db: AsyncSession,
+    requested_model_type: str,
+    requested_model_params: dict[str, Any],
+    loop_id: str | None,
+    source_record_id: str | None,
+    model_source: str | None,
+    risk_confirmed: bool,
+    trusted_step_validation: bool = False,
+) -> TuningModelAuthorization:
+    """校验整定/仿真推荐链的模型来源与可信度。
+
+    ``trusted_step_validation`` 仅供同一服务进程内、已经执行真实单阶跃
+    校验的编排链使用；该字段不会暴露到 HTTP schema。
+    """
+    if model_source is None:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_REQUIRED",
+            message="必须明确模型来源并提供可验证凭据；旧版裸模型请求已停止放行",
+            status_code=400,
+        )
+
+    if model_source == "MANUAL":
+        if source_record_id is not None:
+            raise BizError(
+                code="ERR_TUNING_SOURCE_INVALID",
+                message="人工模型不得绑定或伪装成辨识记录",
+                status_code=400,
+            )
+        if not risk_confirmed:
+            raise BizError(
+                code="ERR_TUNING_RISK_CONFIRMATION_REQUIRED",
+                message="人工模型必须显式确认模型与整定风险",
+                status_code=400,
+            )
+        return TuningModelAuthorization(
+            model_type=requested_model_type,
+            model_params=dict(requested_model_params),
+            loop_id=loop_id,
+            model_source="MANUAL",
+            source_record_id=None,
+            risk_confirmed=True,
+        )
+
+    if model_source not in {"IDENTIFICATION_RECORD", "STEP_EXPERIMENT"}:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_INVALID",
+            message=f"不支持的模型来源: {model_source}",
+            status_code=400,
+        )
+
+    if model_source == "STEP_EXPERIMENT" and trusted_step_validation:
+        return TuningModelAuthorization(
+            model_type=requested_model_type,
+            model_params=dict(requested_model_params),
+            loop_id=loop_id,
+            model_source="STEP_EXPERIMENT",
+            source_record_id=source_record_id,
+            risk_confirmed=risk_confirmed,
+        )
+
+    if source_record_id is None:
+        source_name = "阶跃实验" if model_source == "STEP_EXPERIMENT" else "历史辨识"
+        raise BizError(
+            code="ERR_TUNING_SOURCE_REQUIRED",
+            message=f"{source_name}模型必须提供服务端可验证的 sourceRecordId",
+            status_code=400,
+        )
+
+    record = await db.get(TuningRecord, source_record_id)
+    if record is None:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_NOT_FOUND",
+            message="模型来源记录不存在",
+            status_code=404,
+        )
+
+    if not getattr(record, "task_id", None):
+        raise BizError(
+            code="ERR_TUNING_SOURCE_UNVERIFIED",
+            message="模型记录不是由服务端辨识链生成，不能作为推荐依据",
+            status_code=422,
+        )
+    if str(record.status or "") not in {"IDENTIFIED", "SIMULATED", "COMPLETED"}:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_UNVERIFIED",
+            message=f"模型记录状态 {record.status or '空'} 尚未完成辨识验证",
+            status_code=422,
+        )
+
+    persisted_loop_id = str(record.loop_id)
+    if loop_id is not None and str(loop_id) != persisted_loop_id:
+        raise BizError(
+            code="ERR_TUNING_LOOP_MISMATCH",
+            message="请求回路与模型来源记录的回路不一致",
+            status_code=409,
+        )
+
+    persisted_model_type = str(record.model_type)
+    persisted_model_params = record.model_params
+    if (
+        requested_model_type != persisted_model_type
+        or not isinstance(persisted_model_params, dict)
+        or not _model_params_match(
+            persisted_model_type,
+            requested_model_params,
+            persisted_model_params,
+        )
+    ):
+        raise BizError(
+            code="ERR_TUNING_MODEL_MISMATCH",
+            message="请求模型参数与服务端辨识记录不一致",
+            status_code=409,
+        )
+
+    confidence_reason = str(record.confidence_reason or "")
+    if "THETA_SOURCE=HEURISTIC_2TS" in confidence_reason.upper():
+        raise BizError(
+            code="ERR_TUNING_THETA_HEURISTIC_BLOCKED",
+            message="纯滞后参数来自 2Ts 启发估计，不得进入推荐整定/仿真链",
+            status_code=422,
+        )
+
+    identify_method = str(record.identify_method or "")
+    if identify_method == "HISTORICAL_IV":
+        raise BizError(
+            code="ERR_TUNING_EXPERIMENTAL_METHOD",
+            message="HISTORICAL_IV 仍属实验性方法，不得进入生产推荐链",
+            status_code=422,
+        )
+
+    if model_source == "STEP_EXPERIMENT":
+        if not (
+            identify_method.startswith("STEP_")
+            and str(record.data_source or "") in {"STEP_EXPERIMENT", "fallback_step"}
+            and "STEP_VALIDATION_PASSED=TRUE" in confidence_reason.upper()
+        ):
+            raise BizError(
+                code="ERR_TUNING_STEP_EVIDENCE_REQUIRED",
+                message="阶跃实验缺少服务端已验证的单阶跃证据",
+                status_code=422,
+            )
+    else:
+        if identify_method.startswith("STEP_"):
+            raise BizError(
+                code="ERR_TUNING_SOURCE_INVALID",
+                message="阶跃辨识记录必须声明 STEP_EXPERIMENT 来源",
+                status_code=400,
+            )
+        if identify_method not in {"HISTORICAL_ARX", "HISTORICAL_ARMAX"}:
+            raise BizError(
+                code="ERR_TUNING_SOURCE_UNVERIFIED",
+                message="历史辨识记录缺少可放行的服务端算法凭据",
+                status_code=422,
+            )
+        if str(record.data_source or "") != "HISTORY":
+            raise BizError(
+                code="ERR_TUNING_SOURCE_INVALID",
+                message="历史辨识记录的数据来源标记不一致",
+                status_code=400,
+            )
+        confidence_level = str(record.confidence_level or "").upper()
+        if confidence_level in {"A", "B"}:
+            pass
+        elif confidence_level == "C":
+            if not risk_confirmed:
+                raise BizError(
+                    code="ERR_TUNING_RISK_CONFIRMATION_REQUIRED",
+                    message="C 级辨识结果必须显式确认风险后方可进入推荐链",
+                    status_code=400,
+                )
+        else:
+            raise BizError(
+                code="ERR_TUNING_CONFIDENCE_BLOCKED",
+                message=(
+                    f"可信度 {confidence_level or '空'} 不满足推荐链要求；"
+                    "仅 A/B 或经确认的 C 级结果可用"
+                ),
+                status_code=422,
+            )
+
+    return TuningModelAuthorization(
+        model_type=persisted_model_type,
+        model_params=dict(persisted_model_params),
+        loop_id=persisted_loop_id,
+        model_source=model_source,
+        source_record_id=str(record.id),
+        risk_confirmed=risk_confirmed,
+        confidence_level=str(record.confidence_level) if record.confidence_level else None,
+        confidence_reason=str(record.confidence_reason) if record.confidence_reason else None,
+        identify_method=str(record.identify_method) if record.identify_method else None,
+        data_source=str(record.data_source) if record.data_source else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -416,40 +667,55 @@ async def identify_model(
     )
 
     pv_values_raw = waveform.get("pv", [])
+    op_values_raw = waveform.get("op", [])
     timestamps_raw = waveform.get("timestamps", [])
 
-    # 过滤 None 值（Bad 质量码）
+    # 按同一索引过滤 PV/OP/时间，避免分别过滤后信号错位。
     pv_values: list[float] = []
+    op_values: list[float] = []
     timestamps: list[float] = []  # 绝对 Unix 时间戳（秒），用于响应绘图
-    for i, pv in enumerate(pv_values_raw):
-        if pv is not None and i < len(timestamps_raw):
-            pv_values.append(float(pv))
-            # timestamps 是毫秒，转为秒
-            ts_sec = timestamps_raw[i] / 1000.0
-            timestamps.append(ts_sec)
+    point_count = min(len(pv_values_raw), len(op_values_raw), len(timestamps_raw))
+    for i in range(point_count):
+        try:
+            pv = float(pv_values_raw[i])
+            op = float(op_values_raw[i])
+            ts_sec = float(timestamps_raw[i]) / 1000.0
+        except (TypeError, ValueError):
+            continue
+        if not (np.isfinite(pv) and np.isfinite(op) and np.isfinite(ts_sec)):
+            continue
+        pv_values.append(pv)
+        op_values.append(op)
+        timestamps.append(ts_sec)
 
-    if len(pv_values) < 10:
+    if len(pv_values) < _STEP_MIN_POINTS:
         raise BizError(
             code="ERR_TUNING_DATA_INSUFFICIENT",
-            message=f"波形数据不足（{len(pv_values)} 点），至少需要 10 个有效数据点",
+            message=(
+                f"有效 PV/OP 对齐数据不足（{len(pv_values)} 点），"
+                f"至少需要 {_STEP_MIN_POINTS} 个有效数据点"
+            ),
             status_code=400,
         )
 
-    # 辨识算法需要相对时间（从 0 开始），不能用绝对 Unix 时间戳
-    # 否则两点法 theta = t2 - tau ≈ 1.78e9 秒，仿真曲线全为 pv_initial
+    step_validation = _detect_valid_step(op_values, pv_values)
+    if not step_validation["valid"]:
+        raise BizError(
+            code="ERR_TUNING_STEP_INVALID",
+            message=step_validation["reason"],
+            status_code=400,
+        )
+
+    # 以 MV 阶跃时刻为时间零点；阶跃前稳定基线保留为负时间，
+    # 既供算法估算初值，又避免把窗口前置基线时长误算进 theta。
     if timestamps:
-        t0 = timestamps[0]
+        t0 = timestamps[step_validation["step_index"]]
         timestamps_rel = [t - t0 for t in timestamps]
     else:
         timestamps_rel = []
 
-    # 估算 MV 阶跃幅值（从 OP 数据）
-    op_values_raw = waveform.get("op", [])
-    mv_step = _estimate_mv_step(op_values_raw)
-    if mv_step == 0:
-        # 如果无法从 OP 估算，使用 PV 变化范围作为默认
-        mv_step = max(pv_values[-1] - pv_values[0], 1.0)
-        logger.info("无法从 OP 估算 MV 阶跃，使用默认值: %s", mv_step)
+    # 只使用验证通过的真实 MV 单阶跃；禁止以 PV 变化冒充 MV 输入。
+    mv_step = step_validation["mv_step"]
 
     # 调用辨识算法（传入相对时间戳，算法内部期望从 0 开始）
     if model_type == "FOPDT":
@@ -482,16 +748,198 @@ async def identify_model(
             "fitted": result["fitted_pv"],
         }
 
-    return {
+    response = {
         "modelType": model_type,
         "params": params,
         "fittingScore": result["fitting_score"],
+        "stepValidationPassed": True,
+        "stepIndex": step_validation["step_index"],
         "algorithmVersion": TUNING_ALGORITHM_VERSION,
         "dataPoints": len(pv_values),
         "fittedCurve": fitted_curve,
         "tagName": loop.tag_name,
         "mvStep": mv_step,
     }
+    validation_error = validate_step_identification_result(response)
+    if validation_error:
+        raise BizError(
+            code="ERR_TUNING_IDENTIFICATION_FAILED",
+            message=validation_error,
+            status_code=400,
+        )
+    return response
+
+
+def _detect_valid_step(
+    op_values: list[float | None],
+    pv_values: list[float | None],
+) -> dict[str, Any]:
+    """验证窗口是否包含稳定基线、唯一 MV 阶跃、保持段和显著 PV 响应。"""
+
+    aligned: list[tuple[float, float]] = []
+    for op_raw, pv_raw in zip(op_values, pv_values, strict=False):
+        try:
+            op = float(op_raw)
+            pv = float(pv_raw)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(op) and np.isfinite(pv):
+            aligned.append((op, pv))
+
+    if len(aligned) < _STEP_MIN_POINTS:
+        return {
+            "valid": False,
+            "reason": f"有效 MV/PV 对齐数据不足，至少需要 {_STEP_MIN_POINTS} 点",
+        }
+
+    op = np.asarray([pair[0] for pair in aligned], dtype=float)
+    pv = np.asarray([pair[1] for pair in aligned], dtype=float)
+    op_diff = np.abs(np.diff(op))
+    primary_diff_index = int(np.argmax(op_diff))
+    step_index = primary_diff_index + 1
+    primary_jump = float(op_diff[primary_diff_index])
+
+    margin = max(5, len(op) // 10)
+    if step_index < margin or len(op) - step_index < margin:
+        return {"valid": False, "reason": "MV 阶跃位置过近窗口边界，缺少稳定基线或保持段"}
+    if primary_jump <= np.finfo(float).eps:
+        return {"valid": False, "reason": "未检测到真实 MV 阶跃"}
+
+    pre_op = op[:step_index]
+    post_op = op[step_index:]
+    pre_level = float(np.median(pre_op))
+    post_level = float(np.median(post_op))
+    mv_step = post_level - pre_level
+    abs_step = abs(mv_step)
+    op_scale = max(abs(pre_level), abs(post_level), 1.0)
+    if abs_step <= max(op_scale * 1e-6, np.finfo(float).eps):
+        return {"valid": False, "reason": "MV 阶跃幅值不可辨识"}
+
+    # 瞬时跳变必须解释前后平台差，排除缓慢漂移。
+    if primary_jump < 0.8 * abs_step:
+        return {"valid": False, "reason": "MV 仅缓慢漂移，不构成单阶跃"}
+
+    other_jumps = np.delete(op_diff, primary_diff_index)
+    second_jump = float(np.max(other_jumps)) if other_jumps.size else 0.0
+    if second_jump >= 0.2 * primary_jump:
+        return {"valid": False, "reason": "检测到多个显著 MV 变化，不是单阶跃窗口"}
+
+    plateau_tolerance = max(0.1 * abs_step, op_scale * 1e-6)
+    pre_spread = float(np.percentile(pre_op, 95) - np.percentile(pre_op, 5))
+    post_spread = float(np.percentile(post_op, 95) - np.percentile(post_op, 5))
+    if pre_spread > plateau_tolerance or post_spread > plateau_tolerance:
+        return {"valid": False, "reason": "MV 阶跃前基线或阶跃后保持段不稳定"}
+
+    pre_pv = pv[:step_index]
+    post_pv = pv[step_index:]
+    pre_pv_level = float(np.median(pre_pv))
+    tail_count = max(5, min(len(post_pv) // 4, 20))
+    post_pv_level = float(np.median(post_pv[-tail_count:]))
+    pv_response = abs(post_pv_level - pre_pv_level)
+    pv_scale = max(abs(pre_pv_level), abs(post_pv_level), 1.0)
+    pv_floor = pv_scale * 1e-4
+    pre_pv_spread = float(np.percentile(pre_pv, 95) - np.percentile(pre_pv, 5))
+    if pv_response <= max(5.0 * pre_pv_spread, pv_floor):
+        return {"valid": False, "reason": "MV 阶跃后未检测到显著 PV 响应"}
+    if pre_pv_spread > max(0.1 * pv_response, pv_floor):
+        return {"valid": False, "reason": "PV 基线不稳定，无法归因于单次 MV 阶跃"}
+
+    return {
+        "valid": True,
+        "reason": None,
+        "mv_step": mv_step,
+        "step_index": step_index,
+    }
+
+
+def validate_step_identification_result(result: dict[str, Any]) -> str | None:
+    """返回阶跃辨识结果的拒绝原因；验证通过返回 ``None``。"""
+    if result.get("stepValidationPassed") is not True:
+        return "缺少真实单阶跃验证凭据"
+
+    model_type = result.get("modelType")
+    params = result.get("params")
+    if not isinstance(params, dict):
+        return "阶跃辨识参数无效：params 不是对象"
+
+    required = {
+        "FOPDT": ("K", "tau", "theta"),
+        "SOPDT": ("K", "T1", "T2", "theta"),
+        "IPDT": ("K", "theta"),
+    }.get(model_type)
+    if required is None:
+        return f"阶跃辨识参数无效：不支持模型 {model_type}"
+
+    numbers: dict[str, float] = {}
+    for name in required:
+        value = params.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return f"阶跃辨识参数无效：{name} 为空或非数值"
+        number = float(value)
+        if not np.isfinite(number):
+            return f"阶跃辨识参数无效：{name} 不是有限值"
+        numbers[name] = number
+
+    if numbers["K"] == 0:
+        return "阶跃辨识参数无效：K 必须非零"
+    for time_constant in ("tau", "T1", "T2"):
+        if time_constant in numbers and numbers[time_constant] <= 0:
+            return f"阶跃辨识参数无效：{time_constant} 必须大于 0"
+    if numbers["theta"] < 0:
+        return "阶跃辨识参数无效：theta 不得小于 0"
+
+    fitting_score = result.get("fittingScore")
+    if isinstance(fitting_score, bool) or not isinstance(fitting_score, (int, float)):
+        return "阶跃辨识参数无效：拟合分数为空或非数值"
+    if not np.isfinite(float(fitting_score)) or float(fitting_score) <= 0:
+        return "阶跃辨识参数无效：拟合分数必须为正有限值"
+    return None
+
+
+async def persist_step_identification_record(
+    *,
+    db: AsyncSession,
+    loop_id: str,
+    result: dict[str, Any],
+    created_by: str,
+    requested_method: str | None = None,
+) -> str:
+    """持久化服务端已验证的同步阶跃辨识证据，并返回记录 ID。"""
+    validation_error = validate_step_identification_result(result)
+    if validation_error:
+        raise BizError(
+            code="ERR_TUNING_IDENTIFICATION_FAILED",
+            message=validation_error,
+            status_code=400,
+        )
+
+    model_type = str(result["modelType"])
+    method = str(requested_method or "").upper()
+    if model_type == "FOPDT":
+        identify_method = "STEP_AREA" if method == "AREA" else "STEP_TWO_POINT"
+    else:
+        identify_method = "STEP_NLS"
+
+    record_id = str(uuid4())
+    record = TuningRecord(
+        id=record_id,
+        loop_id=loop_id,
+        model_type=model_type,
+        model_params=dict(result["params"]),
+        # 技术债：algorithm 当前为 NOT NULL；辨识记录尚无独立 task kind，暂用 IMC 占位。
+        algorithm="IMC",
+        fitting_score=result.get("fittingScore"),
+        status="IDENTIFIED",
+        created_by=created_by,
+        identify_method=identify_method,
+        data_source="STEP_EXPERIMENT",
+        confidence_reason="step_validation_passed=true",
+        task_id=f"step-sync:{uuid4()}",
+        completed_at=datetime.now(),
+    )
+    db.add(record)
+    await db.commit()
+    return record_id
 
 
 def _estimate_mv_step(op_values: list[float | None]) -> float:
@@ -522,12 +970,23 @@ async def tune_pid(
     algorithm_params: dict[str, Any] | None = None,
     current_pid: dict[str, Any] | None = None,
     loop_id: str | None = None,
+    source_context: TuningModelAuthorization | None = None,
 ) -> dict[str, Any]:
     """PID 整定。
 
     Raises:
         BizError: ERR_INVALID_ALGORITHM / ERR_MODEL_PARAMS_MISSING
     """
+    if source_context is None:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_REQUIRED",
+            message="PID 整定必须使用服务端已验证的模型来源上下文",
+            status_code=400,
+        )
+
+    # 防御性地只使用门禁解析后的模型参数，忽略调用方重复传入的裸参数。
+    model_params = source_context.model_params
+
     K = float(model_params.get("K") or 0)
     tau = float(model_params.get("tau") or 0)
     theta = float(model_params.get("theta") or 0)
@@ -932,6 +1391,8 @@ def _record_to_dict(
 __all__ = [
     "identify_model",
     "identify_model_from_history",
+    "persist_step_identification_record",
+    "authorize_tuning_model",
     "preview_identify_segments",
     "tune_pid",
     "run_simulation",

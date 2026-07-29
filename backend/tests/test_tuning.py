@@ -400,6 +400,8 @@ class TestTuningAPI:
                     "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
                     "algorithm": "IMC",
                     "algorithmParams": {"lambdaRatio": 1.0},
+                    "modelSource": "MANUAL",
+                    "riskConfirmed": True,
                 },
             )
         assert resp.status_code == 200
@@ -425,6 +427,8 @@ class TestTuningAPI:
                     "simDuration": 100.0,
                     "simStep": 1.0,
                     "setpointStep": 1.0,
+                    "modelSource": "MANUAL",
+                    "riskConfirmed": True,
                 },
             )
         assert resp.status_code == 200
@@ -461,6 +465,8 @@ class TestTuningAPI:
                     "modelType": "FOPDT",
                     "modelParams": {"tau": 30.0, "theta": 5.0},
                     "algorithm": "IMC",
+                    "modelSource": "MANUAL",
+                    "riskConfirmed": True,
                 },
             )
         assert resp.status_code == 400

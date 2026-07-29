@@ -25,6 +25,8 @@ import math
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.services.tuning_algorithms import PIDParams, simulate_closed_loop
 from tests.conftest import TEST_USERS, mock_current_user
 
@@ -112,6 +114,7 @@ _STEP_RESULT = {
     "modelType": "FOPDT",
     "params": {"K": 1.5, "tau": 25.0, "theta": 3.0},
     "fittingScore": 88.5,
+    "stepValidationPassed": True,
     "algorithmVersion": "TUNE_ENGINE_v1.0",
     "dataPoints": 300,
     "fittedCurve": None,
@@ -197,6 +200,90 @@ class TestAutoStrategyFallback:
         assert db_record.model_params == {"K": 1.5, "tau": 25.0, "theta": 3.0}
         assert db_record.identify_method == "STEP_TWO_POINT"
         assert "AUTO 兜底" in db_record.confidence_reason
+
+    async def test_auto_rejects_unvalidated_step_result(self):
+        """identify_model 未提供单阶跃验证凭据时，AUTO 必须保持 INCONCLUSIVE。"""
+        from app.tasks.tuning import _do_identify
+
+        db_record = MagicMock()
+        mock_session_local, _ = _make_db_mock(db_record)
+        unvalidated = dict(_STEP_RESULT)
+        unvalidated.pop("stepValidationPassed")
+
+        with (
+            patch("app.core.db.AsyncSessionLocal", mock_session_local),
+            patch("app.services.tuning_progress.init_progress", new=AsyncMock()),
+            patch("app.services.tuning_progress.update_progress", new=AsyncMock()),
+            patch(
+                "app.services.tuning.identify_model_from_history",
+                new=AsyncMock(return_value=dict(_HISTORY_FAILED)),
+            ),
+            patch(
+                "app.services.tuning.identify_model",
+                new=AsyncMock(return_value=unvalidated),
+            ),
+        ):
+            result = await _do_identify(
+                task_id="task-p16-unvalidated",
+                loop_id="loop-1",
+                start_time="2026-07-28T00:00:00Z",
+                end_time="2026-07-28T01:00:00Z",
+                candidate_model_types=None,
+                theta_estimate=None,
+                created_by="tester",
+                identify_strategy="AUTO",
+            )
+
+        assert result["success"] is False
+        assert "单阶跃验证" in result["reason"]
+        assert db_record.status == "INCONCLUSIVE"
+
+    @pytest.mark.parametrize(
+        "params,fitting_score",
+        [
+            ({"K": None, "tau": 25.0, "theta": 3.0}, 88.5),
+            ({"K": math.nan, "tau": 25.0, "theta": 3.0}, 88.5),
+            ({"K": math.inf, "tau": 25.0, "theta": 3.0}, 88.5),
+            ({"K": 1.5, "tau": 0.0, "theta": 3.0}, 88.5),
+            ({"K": 1.5, "tau": 25.0, "theta": -1.0}, 88.5),
+            ({"K": 1.5, "tau": 25.0, "theta": 3.0}, math.nan),
+        ],
+    )
+    async def test_auto_rejects_invalid_step_parameters(self, params, fitting_score):
+        """空值、非有限值或非物理参数不得被 AUTO 包装成成功。"""
+        from app.tasks.tuning import _do_identify
+
+        db_record = MagicMock()
+        mock_session_local, _ = _make_db_mock(db_record)
+        invalid = {**_STEP_RESULT, "params": params, "fittingScore": fitting_score}
+
+        with (
+            patch("app.core.db.AsyncSessionLocal", mock_session_local),
+            patch("app.services.tuning_progress.init_progress", new=AsyncMock()),
+            patch("app.services.tuning_progress.update_progress", new=AsyncMock()),
+            patch(
+                "app.services.tuning.identify_model_from_history",
+                new=AsyncMock(return_value=dict(_HISTORY_FAILED)),
+            ),
+            patch(
+                "app.services.tuning.identify_model",
+                new=AsyncMock(return_value=invalid),
+            ),
+        ):
+            result = await _do_identify(
+                task_id="task-p16-invalid-params",
+                loop_id="loop-1",
+                start_time="2026-07-28T00:00:00Z",
+                end_time="2026-07-28T01:00:00Z",
+                candidate_model_types=None,
+                theta_estimate=None,
+                created_by="tester",
+                identify_strategy="AUTO",
+            )
+
+        assert result["success"] is False
+        assert "参数无效" in result["reason"]
+        assert db_record.status == "INCONCLUSIVE"
 
     async def test_history_only_never_falls_back(self):
         """HISTORY_ONLY 失败 → INCONCLUSIVE，不调用阶跃路径。"""

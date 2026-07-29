@@ -86,6 +86,40 @@ def _simulate_closed_loop_fopdt_biased(
     return y, u
 
 
+def _simulate_open_loop_fopdt_biased(
+    n: int = 1800,
+    K: float = 2.0,
+    tau: float = 60.0,
+    theta: float = 5.0,
+    u0: float = 60.0,
+    load: float = 330.0,
+    ts: float = 1.0,
+    noise_std: float = 0.1,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """开环 FOPDT 带恒定负载偏置：y_ss = K·u_ss + load（PV≈450/OP≈60 工业形态）.
+
+    OP 采用多段阶跃（≥2 次方向变化）以通过激励检测；SP 不参与，
+    pipeline 走开环 ARX/ARMAX 路径，用于在 seam 层验证 P0-1+P0-2。
+    """
+    rng = np.random.default_rng(seed)
+    a = math.exp(-ts / tau)
+    b = K * (1 - a)
+    d = max(0, round(theta / ts))
+    # 多段阶跃 OP：60→65→58→63→60，保证方向变化≥2
+    u = _sp_steps(n, [(0, u0), (300, u0 + 5.0), (700, u0 - 2.0), (1100, u0 + 3.0), (1500, u0)])
+    y_ss0 = K * u0 + load  # 450
+    y = np.full(n, y_ss0)
+    for k in range(1, n):
+        if k >= d:
+            y[k] = a * y[k - 1] + b * u[k - d] + (1 - a) * load
+        else:
+            y[k] = y[k - 1]
+    if noise_std > 0:
+        y += rng.normal(0, noise_std, n)
+    return y, u
+
+
 # ---------------------------------------------------------------------------
 # 接缝桩：真实 DataBlock/MetricDataBundle + 最小 mock
 # ---------------------------------------------------------------------------
@@ -262,8 +296,13 @@ class TestIdentifyFromHistoryMainPathSeam:
     """DataPlanner → 辨识主路径端到端（带偏置工业数据）."""
 
     @pytest.mark.asyncio
-    async def test_biased_closed_loop_identifies_gain(self):
-        """PV≈450/OP≈60 偏置数据：主路径不崩且 K=2.0 误差 <10%（P0-1+P0-2）."""
+    async def test_biased_closed_loop_rejects_unverified_iv(self):
+        """闭环 SP 激励：实验性 IV 不作为发布依据，主路径返回 INCONCLUSIVE（P0-05）.
+
+        PV≈450/OP≈60 偏置闭环数据此前由 IV 路径处理；P0-05 关闭未经验证的
+        闭环辨识后，seam 主路径不得再产出可放行模型，必须带
+        CLOSED_LOOP_METHOD_UNVERIFIED reason 退出。
+        """
         sp, y, u = _biased_signals(n=1800)
         bundles = [
             _make_bundle(
@@ -287,10 +326,45 @@ class TestIdentifyFromHistoryMainPathSeam:
                 theta_estimate=5.0,
             )
 
+        # P0-05：闭环 SP 激励不再走实验性 IV，安全失败
+        assert result["success"] is False
+        assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.get("reason") or "")
+        # seam 失败形态仍保留可追溯字段
+        assert result["tagName"] == "TIC-4501"
+        assert result["dataPoints"] == 1800
+        assert result["validRate"] == 1.0
+        assert result["algorithmVersion"]
+
+    @pytest.mark.asyncio
+    async def test_biased_open_loop_identifies_gain(self):
+        """开环偏置数据：seam 主路径不崩且 K=2.0 误差 <10%（P0-1+P0-2）.
+
+        SP 不参与，pipeline 走开环 ARX/ARMAX；OP 多段阶跃提供足够激励。
+        """
+        y, u = _simulate_open_loop_fopdt_biased(n=1800)
+        bundles = [
+            _make_bundle(
+                "valve_linearity",
+                _make_block("PVOP_HF", {"pv": y.tolist(), "op": u.tolist()}, _START),
+            ),
+        ]
+        planner = _make_planner(bundles)
+        db = _make_db_with_loop(_LOOP)
+
+        with patch("app.services.tuning._build_data_planner", AsyncMock(return_value=planner)):
+            result = await identify_model_from_history(
+                db,
+                "loop-1",
+                "2026-07-28T00:00:00Z",
+                "2026-07-28T00:30:00Z",
+                theta_estimate=5.0,
+            )
+
         # P0-1：主路径不再 TypeError，成功出结果
         assert result["success"] is True
         # P0-2：去均值后增量增益恢复（割线 7.5 已被排除）
         assert abs(result["params"]["K"] - 2.0) / 2.0 < 0.10
+        assert result["params"]["K"] < 3.0
         # samplingFreq 为数值（修复前透传字符串 "1s"）
         assert isinstance(result["samplingFreq"], float)
         assert result["samplingFreq"] == 1.0

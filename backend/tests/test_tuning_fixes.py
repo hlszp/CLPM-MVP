@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import logging
 import math
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
+import pytest
 
+from app.services.tuning import _detect_valid_step, identify_model
 from app.services.tuning_algorithms import (
     PIDParams,
     _fopdt_two_point,
@@ -44,6 +47,95 @@ def _generate_fopdt_step_response(
         else:
             pv_values.append(K * mv_step * (1.0 - math.exp(-(t - theta) / tau)))
     return pv_values, timestamps
+
+
+def _generate_valid_step_window() -> tuple[list[float], list[float]]:
+    """稳定基线、单次 MV 阶跃、稳定保持以及显著一阶 PV 响应。"""
+    n = 180
+    step_idx = 40
+    op = [40.0] * step_idx + [50.0] * (n - step_idx)
+    pv = [100.0] * n
+    for i in range(step_idx + 3, n):
+        pv[i] = 100.0 + 15.0 * (1.0 - math.exp(-(i - step_idx - 3) / 20.0))
+    return op, pv
+
+
+class TestAutoFallbackStepValidation:
+    """AUTO 只接受真实、稳定且唯一的 MV 单阶跃窗口。"""
+
+    def test_stable_single_step_with_response_is_accepted(self):
+        op, pv = _generate_valid_step_window()
+
+        validation = _detect_valid_step(op, pv)
+
+        assert validation["valid"] is True
+        assert validation["mv_step"] == pytest.approx(10.0)
+        assert validation["step_index"] == 40
+
+    async def test_valid_step_window_can_complete_identification(self):
+        """真实稳定单阶跃可完成辨识，且 theta 不包含阶跃前基线时长。"""
+        op, pv = _generate_valid_step_window()
+        loop = MagicMock(tag_name="TIC-101")
+        waveform = {
+            "op": op,
+            "pv": pv,
+            "timestamps": [i * 1000 for i in range(len(op))],
+        }
+
+        with (
+            patch("app.services.tuning._get_loop", new=AsyncMock(return_value=loop)),
+            patch("app.services.tuning.get_waveform", new=AsyncMock(return_value=waveform)),
+        ):
+            result = await identify_model(
+                db=MagicMock(),
+                loop_id="loop-1",
+                start_time="2026-07-28T00:00:00Z",
+                end_time="2026-07-28T01:00:00Z",
+            )
+
+        assert result["stepValidationPassed"] is True
+        assert result["mvStep"] == pytest.approx(10.0)
+        assert result["params"]["K"] == pytest.approx(1.5, rel=0.01)
+        assert result["params"]["theta"] == pytest.approx(3.0, abs=0.2)
+        assert result["fittingScore"] > 95.0
+
+    def test_pv_change_must_not_impersonate_mv_step(self):
+        op = [50.0] * 180
+        pv = [100.0 + 0.1 * i for i in range(180)]
+
+        validation = _detect_valid_step(op, pv)
+
+        assert validation["valid"] is False
+        assert "MV" in validation["reason"]
+
+    @pytest.mark.parametrize(
+        "op,pv",
+        [
+            (
+                np.linspace(40.0, 50.0, 180).tolist(),
+                np.linspace(100.0, 110.0, 180).tolist(),
+            ),
+            (
+                [40.0] * 40 + [50.0] * 50 + [45.0] * 90,
+                [100.0] * 43
+                + [100.0 + 12.0 * (1.0 - math.exp(-(i - 43) / 15.0)) for i in range(43, 180)],
+            ),
+        ],
+        ids=["slow-drift", "multiple-steps"],
+    )
+    def test_non_single_step_windows_are_rejected(self, op, pv):
+        validation = _detect_valid_step(op, pv)
+
+        assert validation["valid"] is False
+
+    def test_step_without_significant_pv_response_is_rejected(self):
+        op = [40.0] * 40 + [50.0] * 140
+        pv = [100.0 + (0.001 if i % 2 else -0.001) for i in range(180)]
+
+        validation = _detect_valid_step(op, pv)
+
+        assert validation["valid"] is False
+        assert "PV" in validation["reason"]
 
 
 # ---------------------------------------------------------------------------

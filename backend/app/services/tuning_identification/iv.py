@@ -1,11 +1,9 @@
-"""IV4 自适应工具变量法（算法栈层 3，处理闭环偏差）.
+"""实验性工具变量原型（不进入生产选模）.
 
-在 AUTO 闭环模式下，OP = PID(SP - PV)，OP 与 PV 测量噪声 ε 通过反馈耦合，
-普通最小二乘（OLS/ARX）有偏。IV 法用外生变量（SP）作工具变量，消除偏差。
-
-一致性条件：
-- E[SP(t-k)·ε(t)] = 0：SP 外生，与测量噪声不相关
-- E[SP(t-k)·OP(t)] ≠ 0：SP 经 PID 影响 OP
+本模块保留早期数值原型，便于后续与合格闭环 IV/OE/PEM 实现做对照。当前
+``identify_iv`` 把内生 OP 回归项同时放入工具变量矩阵，不能证明
+``E[Z·ε] = 0``；``identify_iv4`` 也没有实现噪声模型估计和加权工具更新。
+因此二者不得宣称闭环无偏，不得作为模型发布或 PID 推荐依据。
 """
 
 from __future__ import annotations
@@ -19,10 +17,13 @@ from app.services.tuning_identification.arx import identify_arx
 
 logger = logging.getLogger(__name__)
 
+# 机器可读能力标记：发布与整定门禁不得把本模块视为生产能力。
+IV_CAPABILITY_STATUS = "EXPERIMENTAL"
+
 
 @dataclass
 class IVResult:
-    """IV 辨识结果（结构同 ARXResult）."""
+    """实验性 IV 数值结果（结构同 ARXResult）."""
 
     a_coeffs: list[float]
     b_coeffs: list[float]
@@ -41,7 +42,10 @@ def identify_iv(
     na: int = 1,
     nb: int = 1,
 ) -> IVResult:
-    """IV 辨识：工具变量 z(t) = [sp(t-1), ..., u(t-1), ...].
+    """运行早期 IV 数值原型.
+
+    注意：``u`` 同时出现在回归量和工具变量中，闭环一致性条件尚不成立。
+    此函数只供离线对照测试，生产 pipeline 不调用。
 
     Args:
         u: 输入信号（OP 时序）
@@ -111,12 +115,10 @@ def identify_iv4(
     max_iter: int = 5,
     tol: float = 1e-6,
 ) -> IVResult:
-    """IV4 自适应迭代法（4 步迭代）.
+    """运行早期“IV4”循环原型（非合格 IV4 实现）.
 
-    1. ARX 得初始估计
-    2. 用估计生成残差，估噪声模型
-    3. 构造加权工具变量
-    4. 加权 IV 求解，迭代至收敛
+    当前循环重复同一组未加权法方程，没有估计噪声模型或更新工具变量；
+    名称仅为兼容既有调用。只供离线对照测试，生产 pipeline 不调用。
     """
     # 步骤 1：ARX 初始估计
     arx = identify_arx(u, y, d, na, nb)

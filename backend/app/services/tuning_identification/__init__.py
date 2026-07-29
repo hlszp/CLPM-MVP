@@ -9,7 +9,7 @@
 - ``nonparametric``: 非参数粗估（相关分析、Welch 谱）
 - ``arx``: ARX 线性最小二乘辨识
 - ``armax``: ARMAX 预测误差法辨识
-- ``iv``: IV4 自适应工具变量法（处理闭环偏差）
+- ``iv``: 早期实验性工具变量原型（不进入生产选模）
 - ``order_selection``: 阶次选择（AIC/BIC/Ljung-Box）
 - ``discrete_to_continuous``: 离散→连续参数转换
 - ``pipeline``: 算法栈编排

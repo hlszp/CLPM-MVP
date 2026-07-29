@@ -28,6 +28,9 @@ from app.schemas.base import CamelModel
 # 模型类型：FOPDT/SOPDT/IPDT
 ModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 
+# 历史算法当前仅对 FOPDT/SOPDT 有真实转换链；IPDT 保留在阶跃实验路径。
+HistoryModelType = Literal["FOPDT", "SOPDT"]
+
 # 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC
 TuningAlgorithm = Literal["IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"]
 
@@ -66,6 +69,12 @@ DataSource = Literal["HISTORY", "STEP_EXPERIMENT", "fallback_step"]
 # 可信度等级
 ConfidenceLevel = Literal["A", "B", "C", "D", "E", "INCONCLUSIVE"]
 
+# 纯滞后参数来源
+ThetaSource = Literal["EXPLICIT", "HEURISTIC_2TS"]
+
+# 推荐链模型来源。STEP_EXPERIMENT 只能由服务端验证过的阶跃记录/内部链路放行。
+ModelSource = Literal["IDENTIFICATION_RECORD", "STEP_EXPERIMENT", "MANUAL"]
+
 
 # ---------------------------------------------------------------------------
 # 模型辨识
@@ -93,10 +102,14 @@ class ModelIdentifyHistoryRequest(CamelModel):
     identifyStrategy: IdentifyStrategy = Field(
         "AUTO", description="辨识策略: AUTO(优先历史,失败兜底阶跃)/HISTORY_ONLY/STEP_ONLY"
     )
-    candidateModelTypes: list[ModelType] | None = Field(
+    candidateModelTypes: list[HistoryModelType] | None = Field(
         None, description="候选模型阶次列表，默认 [FOPDT, SOPDT]"
     )
-    thetaEstimate: float | None = Field(None, description="纯滞后预估值（秒），None 自动估计")
+    thetaEstimate: float | None = Field(
+        None,
+        ge=0,
+        description="纯滞后预估值（秒）；None 使用 2Ts 启发值并将可信度封顶 C",
+    )
 
 
 class ModelParams(CamelModel):
@@ -130,6 +143,7 @@ class ModelIdentifyResult(CamelModel):
     fittingScore: float = Field(..., description="拟合度 R²（%）")
     algorithmVersion: str
     dataPoints: int = Field(..., description="参与辨识的数据点数")
+    recordId: str | None = Field(None, description="服务端持久化的阶跃辨识记录 ID")
     # 拟合曲线（用于前端可视化）
     fittedCurve: dict[str, list[Any]] | None = Field(
         None, description="拟合曲线 {timestamps: [], pv: [], fitted: []}"
@@ -148,6 +162,7 @@ class ModelIdentifyHistoryResult(CamelModel):
         None, description="数据质量可信度（基于 valid_rate）"
     )
     confidenceReason: str | None = None
+    thetaSource: ThetaSource | None = Field(None, description="纯滞后参数来源")
     excitationScore: float | None = None
     residualTestPassed: bool | None = None
     identifyMethod: IdentifyMethod | None = None
@@ -193,6 +208,12 @@ class TuneRequest(CamelModel):
     )
     currentPid: PidParams | None = Field(None, description="当前 PID 参数（用于对比）")
     loopId: str | None = Field(None, description="回路 ID（可选，用于记录）")
+    sourceRecordId: str | None = Field(None, description="模型辨识记录 ID")
+    modelSource: ModelSource | None = Field(
+        None,
+        description="模型来源；旧请求可解析但不会绕过服务端安全门禁",
+    )
+    riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
 
 
 class TuneResult(CamelModel):
@@ -225,6 +246,13 @@ class SimulateRequest(CamelModel):
     simStep: float = Field(1.0, description="仿真步长（秒）")
     setpointStep: float = Field(1.0, description="设定值阶跃幅值")
     disturbanceType: str = Field("step", description="扰动类型: step/none")
+    loopId: str | None = Field(None, description="回路 ID（模型记录校验用）")
+    sourceRecordId: str | None = Field(None, description="模型辨识记录 ID")
+    modelSource: ModelSource | None = Field(
+        None,
+        description="模型来源；旧请求可解析但不会绕过服务端安全门禁",
+    )
+    riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
 
 
 class SimulationMetrics(CamelModel):
