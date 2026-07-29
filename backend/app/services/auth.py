@@ -40,6 +40,12 @@ KEY_LOGIN_FAIL = "login_fail:{username}"
 KEY_TOKEN_BLACKLIST = "token_blacklist:{jti}"
 KEY_USER_TOKENS = "user_tokens:{user_id}"
 KEY_TOKEN_PAIR = "token_pair:{access_jti}"
+# 刷新轮换幂等记录：refresh_rotated:{旧 refresh_jti} → 新 token 对（JSON）
+KEY_REFRESH_ROTATED = "refresh_rotated:{jti}"
+
+# 轮换幂等窗口：并发/多标签页用同一旧 refresh token 重复刷新时，
+# 窗口内返回同一新 token 对而非 401（2026-07-29 双刷新竞态修复）
+REFRESH_ROTATION_GRACE_SECONDS = 120
 
 # Blacklist TTL upper bound: the longest possible token lifetime
 # (remember-me refresh token = 30 days).
@@ -173,6 +179,33 @@ async def _track_token_pair(access_jti: str, refresh_jti: str, refresh_ttl: int)
     """
     key = KEY_TOKEN_PAIR.format(access_jti=access_jti)
     await redis_client.setex(key, refresh_ttl, refresh_jti)
+
+
+async def _store_rotated_pair(old_refresh_jti: str, tokens: AuthTokens) -> None:
+    """Persist a refresh-rotation result for idempotent duplicate refreshes."""
+    import json
+
+    key = KEY_REFRESH_ROTATED.format(jti=old_refresh_jti)
+    payload = {
+        "accessToken": tokens.accessToken,
+        "refreshToken": tokens.refreshToken,
+        "accessJti": tokens.accessJti,
+        "refreshJti": tokens.refreshJti,
+        "expiresIn": tokens.expiresIn,
+    }
+    await redis_client.setex(key, REFRESH_ROTATION_GRACE_SECONDS, json.dumps(payload))
+
+
+async def _get_rotated_pair(old_refresh_jti: str) -> AuthTokens | None:
+    """Return the token pair produced by a recent rotation, if within grace."""
+    import json
+
+    key = KEY_REFRESH_ROTATED.format(jti=old_refresh_jti)
+    raw = await redis_client.get(key)
+    if not raw:
+        return None
+    data = json.loads(raw if isinstance(raw, str) else raw.decode())
+    return AuthTokens(**data)
 
 
 async def _revoke_all_user_tokens(user_id: str) -> None:
@@ -379,6 +412,13 @@ async def refresh_tokens(
         )
 
     if await _is_token_blacklisted(jti):
+        # 轮换竞态容忍：该 refresh token 已被吊销，但如果是刚才一次成功
+        # 刷新轮换掉的（多标签页/并行请求同时用同一旧 token 刷新），
+        # 窗口内返回同一份新 token 对而不是 401——否则第二个刷新请求会把
+        # 第一次刚签发的新 token 也误判失效，用户被强制登出。
+        rotated = await _get_rotated_pair(jti)
+        if rotated is not None:
+            return rotated
         raise BizError(
             code="ERR_TOKEN_INVALID",
             message="Token 已被吊销",
@@ -419,6 +459,8 @@ async def refresh_tokens(
 
         # Issue new tokens（继承设备绑定）.
         tokens = await _issue_tokens(user, remember_me=False, device_ip=device_ip)
+        # 记录轮换结果（幂等窗口内重复刷新返回同一对，见 KEY_REFRESH_ROTATED）
+        await _store_rotated_pair(jti, tokens)
         return tokens
 
 

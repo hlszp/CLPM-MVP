@@ -774,3 +774,53 @@ class TestForceChangePassword:
         # 守卫放行后由业务逻辑返回 ERR_INVALID_CREDENTIALS（400），而非 403
         assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_INVALID_CREDENTIALS"
+
+
+class TestRefreshRotationGrace:
+    """刷新轮换幂等窗口（2026-07-29 双刷新竞态修复）.
+
+    场景：多标签页/并行请求同时用同一旧 refresh token 刷新——第一次成功
+    并轮换（旧 token 进黑名单），窗口内第二次不得 401（否则前端会把刚签
+    发的新 token 误判失效，用户被强制登出）。
+    """
+
+    def _login_refresh(self, client, mock_db) -> str:
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        return login_resp.json()["data"]["refreshToken"]
+
+    def _patch_session(self, mock_session_local) -> None:
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["admin"]))
+        mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    def test_duplicate_refresh_within_grace_returns_same_pair(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """窗口内重复刷新返回同一份 token 对（幂等），而非 401。"""
+        refresh_token = self._login_refresh(client, mock_db)
+        with patch("app.core.db.AsyncSessionLocal") as mock_session_local:
+            self._patch_session(mock_session_local)
+            resp1 = client.post("/api/v1/auth/refresh", json={"refreshToken": refresh_token})
+            resp2 = client.post("/api/v1/auth/refresh", json={"refreshToken": refresh_token})
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        d1, d2 = resp1.json()["data"], resp2.json()["data"]
+        assert d1["accessToken"] == d2["accessToken"]
+        assert d1["refreshToken"] == d2["refreshToken"]
+
+    def test_refresh_rejected_after_grace(self, client, mock_db, fake_redis) -> None:
+        """窗口外（轮换记录已过期）重复使用旧 token 仍 401。"""
+        refresh_token = self._login_refresh(client, mock_db)
+        with patch("app.core.db.AsyncSessionLocal") as mock_session_local:
+            self._patch_session(mock_session_local)
+            resp1 = client.post("/api/v1/auth/refresh", json={"refreshToken": refresh_token})
+            assert resp1.status_code == 200
+            # 模拟窗口过期：轮换记录查不到
+            with patch("app.services.auth._get_rotated_pair", new=AsyncMock(return_value=None)):
+                resp2 = client.post("/api/v1/auth/refresh", json={"refreshToken": refresh_token})
+        assert resp2.status_code == 401
