@@ -1249,6 +1249,46 @@ class TestDetectOscillationFft:
         )
         assert override_result["detected"] is False
 
+    def test_slow_drift_not_detected_min_cycles(self) -> None:
+        """任务①：窗口内不足 2 个完整周期的慢漂不判振荡（fft_min_cycles 门控）。
+
+        回归 Phase 6 误报（NORM2 形态）：慢漂能量集中于 1 号 bin，
+        振荡指数 0.66 且噪声使零交叉数超标，旧判据误报；
+        周期数门控（主峰仅 1 个完整周期）将其剔除。
+        """
+        n = 3600
+        t = np.arange(n, dtype=float)
+        rng = np.random.RandomState(7)
+        # 周期 3000s 慢漂（幅 0.5）+ 小噪声：窗口内仅 ~1.2 个周期
+        pv = 50.0 + 0.5 * np.sin(2 * np.pi * t / 3000.0) + rng.normal(0, 0.1, n)
+        result = _detect_oscillation_fft(pv, 1.0)
+        assert result["detected"] is False
+        # 旧判据量（振荡指数）仍超阈值，说明是周期数门控起作用
+        assert result["index"] > 0.3
+
+    def test_min_cycles_override_restores_detection(self) -> None:
+        """fft_min_cycles 配置覆盖后生效：放宽到 1 周期慢漂信号重新判定。"""
+        n = 3600
+        t = np.arange(n, dtype=float)
+        rng = np.random.RandomState(7)
+        pv = 50.0 + 0.5 * np.sin(2 * np.pi * t / 3000.0) + rng.normal(0, 0.1, n)
+        result = _detect_oscillation_fft(pv, 1.0, threshold={"fft_min_cycles": 1.0})
+        assert result["detected"] is True
+
+    def test_snr_threshold_override(self) -> None:
+        """fft_min_snr 配置覆盖后生效：能量门限抬到实测信噪比以上则不判定。"""
+        t = np.linspace(0, 10, 200)
+        pv = 50.0 + 10.0 * np.sin(2 * np.pi * 1.0 * t)
+        default_result = _detect_oscillation_fft(pv, 0.05)
+        assert default_result["detected"] is True
+        # 能量门限设为极大值（超过任何主峰/噪声底比值）→ 不判定振荡
+        override_result = _detect_oscillation_fft(
+            pv,
+            0.05,
+            threshold={"fft_min_snr": 1e12},
+        )
+        assert override_result["detected"] is False
+
 
 class TestComputeSampleIntervalEdgeCases:
     """测试 _compute_sample_interval() 边界场景。"""
@@ -1292,6 +1332,24 @@ class TestDetectChoudhuryNonlinearity:
         # 高斯信号 NGI 应较小
         assert result["ngi"] >= 0.0
         assert "nli" in result
+        # 任务①：高斯 OP 增量近似高斯（NGI << 1.0），不判定粘滞
+        assert result["detected"] is False
+
+    def test_sine_op_no_false_positive(self) -> None:
+        """任务①：正常正弦调节 OP 不判粘滞（回归 Phase 6 NORM1 误报形态）。
+
+        原始 OP 的矩统计量对正弦必然非高斯（excess kurtosis=-1.5 → NGI≈0.25），
+        旧阈值 0.001 必然击穿；增量域下正弦+噪声的 ΔOP 近似高斯（NGI≈0.02），
+        远低于默认阈值 1.0。
+        """
+        n = 3600
+        t = np.arange(n, dtype=float)
+        rng = np.random.RandomState(7)
+        pv = 50.0 + rng.normal(0, 0.3, n)
+        op = 50.0 + 5.0 * np.sin(2 * np.pi * t / 600.0) + rng.normal(0, 0.5, n)
+        result = _detect_choudhury_nonlinearity(pv, op)
+        assert result["ngi"] < 1.0
+        assert result["detected"] is False
 
     def test_nonlinear_signal_detected(self) -> None:
         """非线性信号（含粘滞特征）应检测到非线性。"""
@@ -1333,14 +1391,14 @@ class TestDetectChoudhuryNonlinearity:
         t = np.linspace(0, 4 * np.pi, n)
         op = 50.0 + 20.0 * np.sign(np.sin(t))
         pv = 50.0 + 15.0 * np.sin(t - np.pi / 4)
-        # 默认阈值（NGI>0.001 且 NLI>0.01）→ 方波强非高斯性应检出
+        # 默认阈值（增量域 NGI>1.0 且 NLI>0.01）→ 方波增量重尾应检出
         default_result = _detect_choudhury_nonlinearity(pv, op)
         assert default_result["detected"] is True
         # 阈值提高到实测值以上 → 不判定非线性
         override_result = _detect_choudhury_nonlinearity(
             pv,
             op,
-            threshold={"choudhury_ngi_threshold": 1.0, "choudhury_nli_threshold": 1.0},
+            threshold={"choudhury_ngi_threshold": 100.0, "choudhury_nli_threshold": 1.0},
         )
         assert override_result["detected"] is False
 
@@ -1636,9 +1694,70 @@ class TestDetectBiasShift:
             end = min(shift_time + 100, n)
             pv[shift_time:end] += shift_mag
         result = _detect_bias_shift(pv, sp)
-        # 应检测到多次突变
+        # 应检测到多次突变（确认后计数 ≥5 次/小时 → 判定外扰）
         assert result["shift_count"] > 0
         assert result["max_cusum"] > 0.0
+        assert result["detected"] is True
+        # 确认后计数远小于 CUSUM 原始触发次数（每次真实跳变仅确认 1 次）
+        assert result["raw_shift_count"] > result["shift_count"]
+
+    def test_white_noise_no_false_positive(self) -> None:
+        """任务①：纯白噪声偏差确认后计数为 0，不误报外扰（回归 Phase 6 NORM1）。
+
+        旧判据下白噪声 CUSUM 原始触发 10 次/小时 > 5 即误报；
+        突变确认（前后窗均值跳变 > 1.0×σ 且方向一致）将其全部剔除。
+        """
+        n = 3600
+        sp = np.full(n, 50.0)
+        rng = np.random.RandomState(7)
+        pv = 50.0 + rng.normal(0, 0.3, n)
+        result = _detect_bias_shift(pv, sp, ts=np.arange(n, dtype=float))
+        assert result["shift_count"] == 0
+        assert result["detected"] is False
+
+    def test_slow_drift_no_false_positive(self) -> None:
+        """任务①：慢漂偏差确认后计数为 0，不误报外扰（回归 Phase 6 NORM2）。
+
+        慢漂（周期 3000s 幅 0.5）旧判据下 CUSUM 触发 277 次/小时；
+        确认窗（30 点）内慢漂均值变化 ~0.03 远小于 σ≈0.37，全部被剔除。
+        """
+        n = 3600
+        t = np.arange(n, dtype=float)
+        sp = np.full(n, 50.0)
+        rng = np.random.RandomState(7)
+        pv = 50.0 + 0.5 * np.sin(2 * np.pi * t / 3000.0) + rng.normal(0, 0.1, n)
+        result = _detect_bias_shift(pv, sp, ts=t)
+        assert result["shift_count"] == 0
+        assert result["detected"] is False
+
+    def test_freq_threshold_override(self) -> None:
+        """bias_shift_freq_threshold 配置覆盖后生效（任务①配置化）。"""
+        n = 3600
+        sp = np.full(n, 50.0)
+        pv = np.full(n, 50.0)
+        rng = np.random.RandomState(42)
+        for shift_time in range(0, n, 200):
+            shift_mag = rng.choice([-5.0, 5.0])
+            pv[shift_time : min(shift_time + 100, n)] += shift_mag
+        # 默认阈值（≥5 次/小时）→ 判定外扰
+        assert _detect_bias_shift(pv, sp)["detected"] is True
+        # 频率阈值抬高到确认次数以上 → 不判定
+        override = _detect_bias_shift(pv, sp, threshold={"bias_shift_freq_threshold": 1000.0})
+        assert override["detected"] is False
+
+    def test_amplitude_gate_override(self) -> None:
+        """bias_shift_amplitude_k 配置覆盖后生效：门限抬高到跳变幅度以上则确认失败。"""
+        n = 3600
+        sp = np.full(n, 50.0)
+        pv = np.full(n, 50.0)
+        rng = np.random.RandomState(42)
+        for shift_time in range(0, n, 200):
+            shift_mag = rng.choice([-5.0, 5.0])
+            pv[shift_time : min(shift_time + 100, n)] += shift_mag
+        # 幅度门限抬到极大（跳变幅度不可能超过）→ 确认计数为 0
+        override = _detect_bias_shift(pv, sp, threshold={"bias_shift_amplitude_k": 100.0})
+        assert override["shift_count"] == 0
+        assert override["detected"] is False
 
     def test_with_timestamps(self) -> None:
         """传入时间戳应正确计算突变频率。"""
@@ -1874,7 +1993,7 @@ class TestThresholdSchema:
     """整改计划 C1：阈值键名 schema 登记与校验。"""
 
     def test_schema_contains_all_diag_codes(self) -> None:
-        """_THRESHOLD_SCHEMA 登记了 6 个 diag_code。"""
+        """_THRESHOLD_SCHEMA 登记了 7 个 diag_code。"""
         assert set(_THRESHOLD_SCHEMA.keys()) == {
             "OSCILLATION",
             "VALVE_STICTION",
@@ -1882,22 +2001,31 @@ class TestThresholdSchema:
             "OUTPUT_SATURATION",
             "OVERAGGRESSIVE",
             "OVERCONSERVATIVE",
+            "EXTERNAL_DISTURBANCE",
         }
 
     def test_oscillation_keys(self) -> None:
         assert set(_THRESHOLD_SCHEMA["OSCILLATION"].keys()) == {
             "similarity_threshold",
             "min_zero_crossings",
+            "min_half_period_samples",
             "fft_osc_index_threshold",
             "fft_min_zero_crossings",
+            "fft_min_cycles",
+            "fft_min_snr",
         }
 
     def test_valve_stiction_keys(self) -> None:
-        """VALVE_STICTION 包含 Choudhury NGI/NLI 判定阈值键（P2 配置化）。"""
+        """VALVE_STICTION 包含 Choudhury NGI/NLI 判定阈值键（P2 配置化）。
+
+        任务①：NGI 默认阈值 0.001 → 1.0（统计量改在 OP 增量域计算，
+        1.0 对应增量 excess kurtosis>6 的重尾跳变）。
+        """
         assert set(_THRESHOLD_SCHEMA["VALVE_STICTION"].keys()) == {
             "choudhury_ngi_threshold",
             "choudhury_nli_threshold",
         }
+        assert _THRESHOLD_SCHEMA["VALVE_STICTION"]["choudhury_ngi_threshold"] == 1.0
 
     def test_quality_abnormal_keys(self) -> None:
         """QUALITY_ABNORMAL 包含 Q001-Q005 + 传感器故障 7 键 = 13 键。"""
@@ -1945,6 +2073,14 @@ class TestThresholdSchema:
         tau_map = _THRESHOLD_SCHEMA["OVERCONSERVATIVE"]["slow_expected_tau_seconds"]
         assert set(tau_map.keys()) >= {"FLOW", "PRESSURE", "LEVEL", "TEMPERATURE", "OTHER"}
         assert all(v > 0 for v in tau_map.values())
+
+    def test_external_disturbance_keys(self) -> None:
+        """EXTERNAL_DISTURBANCE 包含 CUSUM 突变确认阈值键（任务①误报修复配置化）。"""
+        assert set(_THRESHOLD_SCHEMA["EXTERNAL_DISTURBANCE"].keys()) == {
+            "bias_shift_freq_threshold",
+            "bias_shift_amplitude_k",
+            "bias_shift_confirm_window",
+        }
 
 
 class TestValidateThresholdConfig:
@@ -2089,13 +2225,16 @@ class TestDetectOscillationIae:
         assert result["detected"] is False
         assert result["confidence"] == 0.0
 
-    def test_random_noise_consistent_with_kpi(self) -> None:
-        """随机噪声：诊断判定与 KPI 振荡率一致（P2 算法统一）。
+    def test_random_noise_similarity_consistent_with_kpi(self) -> None:
+        """随机噪声：相似率与 KPI 侧一致；判定经半周期门控剔除（任务①）。
 
         设计文档 §4.6.2 已知特性：高频噪声下短段 IAE 相似率可能达 1.0，
         KPI 侧 is_oscillating 可为 True（见 test_metric_calculator/
         test_oscillation.py::test_random_noise_output_format）。
-        统一后诊断侧必须与 KPI 侧同算法同结论。
+        P2 统一保持相似率算法一致（min(S_A, S_B) 两侧相等）；
+        任务①在诊断侧判定环节增加平均半周期门控（min_half_period_samples=8），
+        纯白噪声（平均半周期 ~2 采样点）不再误判振荡——此为诊断侧有意增强，
+        KPI 指标口径不变，两侧 detected/is_oscillating 结论在噪声场景可有差异。
         """
         rng = np.random.RandomState(42)
         n = 200
@@ -2108,11 +2247,39 @@ class TestDetectOscillationIae:
         kpi = OscillationRateCalculator().calculate(
             make_bundle({"pv": pv.tolist(), "sp": sp.tolist()}, metric_code="oscillation_rate")
         )
-        assert diag["detected"] == kpi.details["is_oscillating"]
-        if kpi.value is not None:
-            # KPI details 中 s_a/s_b 保留 4 位小数，similarity = min(s_a, s_b)
-            kpi_similarity = min(kpi.details["s_a"], kpi.details["s_b"])
-            assert diag["similarity"] == pytest.approx(kpi_similarity, abs=1e-3)
+        assert kpi.value is not None
+        # 相似率算法两侧一致（P2 统一的核心断言，details 保留 4 位小数）
+        kpi_similarity = min(kpi.details["s_a"], kpi.details["s_b"])
+        assert diag["similarity"] == pytest.approx(kpi_similarity, abs=1e-3)
+        # KPI 侧无门控仍可判振荡（§4.6.2 已知特性）；诊断侧门控后不误判
+        assert kpi.details["is_oscillating"] is True
+        assert diag["detected"] is False
+
+    def test_white_noise_rejected_by_half_period_gate(self) -> None:
+        """任务①：白噪声高相似率但平均半周期不足，不判振荡（回归 Phase 6 NORM1）。
+
+        NORM1 形态（PV=SP+白噪声）：旧判据相似率 0.962 ≥ 0.4 误报；
+        半周期门控（白噪声平均半周期 ~2 采样点 < 8）将其剔除。
+        """
+        n = 3600
+        rng = np.random.RandomState(7)
+        sp = np.full(n, 50.0)
+        pv = 50.0 + rng.normal(0, 0.3, n)
+        result = _detect_oscillation_iae(pv, sp, sample_interval=1.0)
+        assert result["similarity"] >= 0.4  # 相似率仍高（门控前的误报根因）
+        assert result["detected"] is False
+
+    def test_min_half_period_override(self) -> None:
+        """min_half_period_samples 配置覆盖后生效：放宽门限噪声可重新判定。"""
+        rng = np.random.RandomState(42)
+        n = 200
+        sp = np.full(n, 50.0)
+        pv = 50.0 + rng.normal(0, 5.0, n)
+        # 默认门限 8 → 不判定
+        assert _detect_oscillation_iae(pv, sp)["detected"] is False
+        # 门限放宽到 1 个采样点 → 高相似率重新判定振荡
+        override = _detect_oscillation_iae(pv, sp, threshold={"min_half_period_samples": 1})
+        assert override["detected"] is True
 
     def test_empty_array(self) -> None:
         """空数组应返回未检测。"""
@@ -2143,12 +2310,19 @@ class TestDetectOscillationIae:
 
 
 class TestOscillationKpiDiagnosisConsistency:
-    """P2 振荡统一：同一序列下 KPI 振荡率与诊断 OSCILLATION 判定一致。
+    """P2 振荡统一：同一序列下 KPI 振荡率与诊断 OSCILLATION 相似率一致。
 
     诊断侧 _detect_oscillation_iae 复用 KPI 侧
     metric_calculator/oscillation.py 的零交叉/IAE 段/相似率算法后，
-    同一信号两侧结论必须一致（此前诊断侧 CV 法与 KPI 侧相似率法
-    可能互相矛盾）。
+    同一信号两侧相似率（min(S_A, S_B)）一致（此前诊断侧 CV 法与
+    KPI 侧相似率法可能互相矛盾）。
+
+    任务①起判定口径有意差异：诊断侧在相似率判据之上叠加平均半周期
+    门控（min_half_period_samples=8，抗白噪声伪振荡，借鉴 stiction
+    极限环门控）；KPI 指标侧不加门控保持算法说明 §4.6 口径。
+    真实振荡/稳定序列两侧结论仍一致；纯白噪声场景 KPI 侧可能
+    is_oscillating=True 而诊断侧不判（见
+    TestDetectOscillationIae::test_random_noise_similarity_consistent_with_kpi）。
     """
 
     def test_sine_with_noise_consistent(self) -> None:

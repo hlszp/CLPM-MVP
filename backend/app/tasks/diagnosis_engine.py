@@ -52,6 +52,7 @@ from app.services.metric_calculator.oscillation import (
     MIN_ZERO_CROSSINGS,
     OscillationRateCalculator,
 )
+from app.services.metric_calculator.stiction import MIN_HALF_PERIOD_SAMPLES
 from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import map_quality_code
 from app.services.preprocessing.quality_summary import compute_quality_summary
@@ -127,13 +128,21 @@ _THRESHOLD_SCHEMA: dict[str, dict[str, Any]] = {
     "OSCILLATION": {
         "similarity_threshold": 0.4,
         "min_zero_crossings": 4,
+        # 抗噪门控：平均半周期下限（采样点数，借鉴 stiction._detect_limit_cycle，
+        # 剔除白噪声高频伪穿越造成的伪振荡）
+        "min_half_period_samples": MIN_HALF_PERIOD_SAMPLES,
         # FFT 频域路径（_detect_oscillation_fft）
         "fft_osc_index_threshold": 0.3,
         "fft_min_zero_crossings": 5,
+        # FFT 主峰完整性：窗口内完整周期数下限（剔除不足 2 周期的慢漂伪峰）
+        "fft_min_cycles": 2.0,
+        # FFT 能量门限：主峰幅值 / 噪声底（其余频点幅值中位数）下限
+        "fft_min_snr": 6.0,
     },
     "VALVE_STICTION": {
-        # Choudhury NGI/NLI 非线性判定（ADS §5.2.2）
-        "choudhury_ngi_threshold": 0.001,
+        # Choudhury NGI/NLI 非线性判定（ADS §5.2.2；统计量为 OP 增量域，
+        # NGI>1.0 对应增量 excess kurtosis>6 的重尾跳变，见检测器 docstring）
+        "choudhury_ngi_threshold": 1.0,
         "choudhury_nli_threshold": 0.01,
     },
     "QUALITY_ABNORMAL": {
@@ -174,6 +183,14 @@ _THRESHOLD_SCHEMA: dict[str, dict[str, Any]] = {
         "slow_no_step_bias_ratio": 0.2,
         # 期望时间常数（真实秒，按回路类型工业经验值）
         "slow_expected_tau_seconds": _DEFAULT_EXPECTED_TAU_SECONDS,
+    },
+    "EXTERNAL_DISTURBANCE": {
+        # CUSUM 偏差突变检测（_detect_bias_shift）：确认突变频率阈值（次/小时，≥ 判定）
+        "bias_shift_freq_threshold": 5.0,
+        # 突变确认幅度门限系数 k：触发点前后确认窗内偏差均值跳变需 > k×σ
+        "bias_shift_amplitude_k": 1.0,
+        # 突变确认窗长度（采样点数）
+        "bias_shift_confirm_window": 30,
     },
 }
 
@@ -1236,9 +1253,14 @@ async def _diagnose_loop(
     else:
         slow_response_result = _empty_slow_response_result()
 
-    # 9. 偏差突变检测（CUSUM）
+    # 9. 偏差突变检测（CUSUM + 突变确认）
     if disturbance_enabled:
-        bias_shift_result = _detect_bias_shift(pv_values, sp_values, ts_param)
+        bias_shift_result = _detect_bias_shift(
+            pv_values,
+            sp_values,
+            ts_param,
+            threshold=_get_threshold(diag_configs, "EXTERNAL_DISTURBANCE", None, None),
+        )
     else:
         bias_shift_result = _empty_bias_shift_result()
 
@@ -1836,12 +1858,22 @@ def _detect_oscillation_fft(
     - 振荡指数/零交叉判定阈值走 threshold 配置（fft_osc_index_threshold /
       fft_min_zero_crossings），不再硬编码 0.3 / 5
 
+    Phase 6 误报修复（GB/T 符合性验证 F-1）：
+    - 完整周期数门控（fft_min_cycles）：主峰在窗口内不足 2 个完整周期不判振荡。
+      慢漂信号能量集中于 1 号 bin（窗口内仅 ~1 周期），其振荡指数可达 0.66
+      且噪声使零交叉数超标，原判据必然误报；周期数门控将其剔除
+    - 频谱能量门控（fft_min_snr）：主峰幅值需 ≥ snr 阈值 × 噪声底（其余频点
+      幅值中位数）。白噪声主峰 max/median ≈ 3~4（Rayleigh 分布上尾），
+      真实振荡（信噪比数百）远高于此
+
     Args:
         pv_values: PV 数据数组
         sample_interval: 采样间隔（秒），用于频率换算
         threshold: 阈值配置，支持键：
             - fft_osc_index_threshold: 振荡指数阈值（默认 0.3）
             - fft_min_zero_crossings: 最小零交叉数（默认 5）
+            - fft_min_cycles: 窗口内完整周期数下限（默认 2.0）
+            - fft_min_snr: 主峰幅值/噪声底下限（默认 6.0）
 
     Returns:
         {detected, confidence, amplitude, frequency, index}
@@ -1850,6 +1882,8 @@ def _detect_oscillation_fft(
         threshold = {}
     osc_index_threshold = float(threshold.get("fft_osc_index_threshold", 0.3))
     min_zero_crossings = int(threshold.get("fft_min_zero_crossings", 5))
+    min_cycles = float(threshold.get("fft_min_cycles", 2.0))
+    min_snr = float(threshold.get("fft_min_snr", 6.0))
 
     if len(pv_values) < 8:
         return _empty_osc_result()
@@ -1886,8 +1920,20 @@ def _detect_oscillation_fft(
         # IAE 零交叉检测
         zero_crossings = int(np.sum(np.diff(np.sign(pv_centered)) != 0))
 
-        # 振荡判定：振荡指数与零交叉次数阈值均来自配置
-        detected = osc_index > osc_index_threshold and zero_crossings > min_zero_crossings
+        # 主峰完整性：窗口内完整周期数 = peak_idx（频率 = peak_idx·fs/N，
+        # 周期数 = 频率×窗口时长 = peak_idx）；不足 min_cycles 个完整周期不判振荡
+        cycles = float(peak_idx)
+        # 频谱信噪比：主峰幅值 / 噪声底（除主峰外其余频点幅值中位数）
+        noise_floor = float(np.median(np.delete(fft_magnitude[1:], peak_idx - 1)))
+        spectral_snr = float(fft_magnitude[peak_idx]) / (noise_floor + 1e-12)
+
+        # 振荡判定：振荡指数、零交叉次数、完整周期数与频谱信噪比阈值均来自配置
+        detected = bool(
+            osc_index > osc_index_threshold
+            and zero_crossings > min_zero_crossings
+            and cycles >= min_cycles
+            and spectral_snr >= min_snr
+        )
         # 置信度：基于振荡指数
         confidence = min(1.0, osc_index * 1.5) if detected else 0.0
 
@@ -2567,6 +2613,7 @@ def _empty_bias_shift_result() -> dict[str, Any]:
         "detected": False,
         "confidence": 0.0,
         "shift_count": 0,
+        "raw_shift_count": 0,
         "max_cusum": 0.0,
         "shift_magnitude": 0.0,
         "timestamps": [],
@@ -2647,20 +2694,30 @@ def _detect_choudhury_nonlinearity(
     op: np.ndarray,
     threshold: dict | None = None,
 ) -> dict[str, Any]:
-    """Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测）。
+    """Choudhury NGI/NLI 非线性检测（阀门粘滞高级检测，OP 增量域统计量）。
 
     设计依据：FDS §5.4.6 / ADS §5.2.2
 
-    基于 OP 信号的非高斯性（NGI）和非线性（NLI）指标检测阀门粘滞：
-    - NGI = |Kurtosis(x) - 3| / 6 + Skewness(x)² / 24
+    基于 OP 增量（一阶差分）的非高斯性（NGI）和非线性（NLI）指标检测阀门粘滞：
+    - NGI = |Kurtosis(ΔOP) - 3| / 6 + Skewness(ΔOP)² / 24
     - NLI 通过最大双相干性近似（二次相位耦合指标）
     - 当 NGI > ngi_threshold 且 NLI > nli_threshold 时判定存在非线性（粘滞）
+
+    Phase 6 误报修复（GB/T 符合性验证 F-1）：原实现对原始 OP 计算矩统计量，
+    而任何平滑非高斯 OP（如正弦，excess kurtosis=-1.5 → NGI≈0.25）都会击穿
+    0.001 阈值；且实测原始 OP 的 NGI 对正常/粘滞无区分度（正弦 0.24 反而
+    高于粘滞 0.12~0.18，N=3600, seed=7），提阈值会先杀召回。
+    粘滞阀的运动特征是"长时间不动 + 越粘带跳变"，在 OP 增量域表现为
+    重尾尖峰分布；正常调节（平滑正弦/噪声跟随）的增量近似高斯：
+    - 增量 NGI 实测：粘滞 305~521，正弦/高斯噪声 0.02~0.03（4 个数量级分离）
+    - 新默认阈值 1.0 对应增量 excess kurtosis > 6（重尾跳变），
+      正常侧余量 ~50 倍、注入侧余量 ~300 倍
 
     Args:
         pv: PV 数据数组
         op: OP 数据数组
         threshold: 阈值配置，支持键：
-            - choudhury_ngi_threshold: NGI 判定阈值（默认 0.001，ADS §5.2.2）
+            - choudhury_ngi_threshold: NGI 判定阈值（默认 1.0，增量域）
             - choudhury_nli_threshold: NLI 判定阈值（默认 0.01，ADS §5.2.2）
 
     Returns:
@@ -2668,7 +2725,7 @@ def _detect_choudhury_nonlinearity(
     """
     if not isinstance(threshold, dict):
         threshold = {}
-    ngi_threshold = float(threshold.get("choudhury_ngi_threshold", 0.001))
+    ngi_threshold = float(threshold.get("choudhury_ngi_threshold", 1.0))
     nli_threshold = float(threshold.get("choudhury_nli_threshold", 0.01))
 
     min_len = min(len(pv), len(op))
@@ -2687,22 +2744,29 @@ def _detect_choudhury_nonlinearity(
         if op_std < 1e-9:
             return _empty_choudhury_result()
 
-        # 4 阶矩统计量（Fisher 定义，正态分布 excess kurtosis=0）
-        skewness = float(sp_stats.skew(op_centered))
-        kurtosis_excess = float(sp_stats.kurtosis(op_centered, fisher=True))
+        # OP 增量（一阶差分）：粘滞"不动+跳变"特征在增量域呈重尾分布；
+        # 恒定增量（理想斜坡）零方差时无法计算矩统计量，直接返回空结果
+        op_diff = np.diff(op_arr)
+        op_diff_centered = op_diff - np.mean(op_diff)
+        if float(np.std(op_diff_centered)) < 1e-9:
+            return _empty_choudhury_result()
 
-        # NGI: 非高斯指数（ADS §5.2.2 公式）
+        # 4 阶矩统计量（Fisher 定义，正态分布 excess kurtosis=0）
+        skewness = float(sp_stats.skew(op_diff_centered))
+        kurtosis_excess = float(sp_stats.kurtosis(op_diff_centered, fisher=True))
+
+        # NGI: 非高斯指数（ADS §5.2.2 公式，输入为 OP 增量）
         ngi = abs(kurtosis_excess) / 6.0 + (skewness**2) / 24.0
 
-        # NLI: 非线性指数（最大双相干性近似）
-        nli = _compute_max_bicoherence(op_centered)
+        # NLI: 非线性指数（最大双相干性近似，输入为 OP 增量）
+        nli = _compute_max_bicoherence(op_diff_centered)
 
         # PV-OP 椭圆拟合（复用现有 _detect_valve_stiction 拟合度）
         stiction_fit = _detect_valve_stiction(pv_arr, op_arr)
         fitting_score = float(stiction_fit.get("fitting_score", 0.0))
         stiction_index = float(stiction_fit.get("stiction_index", 0.0))
 
-        # 判定规则（ADS §5.2.2: NGI > 0.001 且 NLI > 0.01，阈值可配置）
+        # 判定规则（NGI 与 NLI 均超过各自阈值，阈值可配置）
         detected = bool(ngi > ngi_threshold and nli > nli_threshold)
 
         # 置信度：融合 NGI、NLI 和椭圆拟合度（权重和为 1）
@@ -3192,24 +3256,43 @@ def _detect_bias_shift(
     pv: np.ndarray,
     sp: np.ndarray,
     ts: np.ndarray | list[float] | None = None,
+    threshold: dict | None = None,
 ) -> dict[str, Any]:
-    """偏差突变检测（Bias Shift Detection）。
+    """偏差突变检测（Bias Shift Detection + 突变确认）。
 
     设计依据：FDS §5.4.6 / ADS §5.5.2
 
     检测 PV-SP 偏差的突变点：
     - 使用 CUSUM（累积和）算法检测均值变化
-    - 统计偏差突变频率
-    - 频率 > 5 次/小时 → 外扰频繁
+    - 突变确认（Phase 6 误报修复，GB/T 符合性验证 F-1）：CUSUM 原始触发
+      对噪声/慢漂无区分度（纯白噪声 10 次/小时、慢漂 277 次/小时均超 5 次
+      阈值）。触发点须经确认才计数：触发点前后确认窗内偏差均值的真实跳变
+      幅度 > amplitude_k×σ 且方向与 CUSUM 指示一致（同向连续偏移）。
+      白噪声（过冲后随即回落，窗内均值变化 ~0）与慢漂（窗内幅度变化
+      远小于 σ）均被确认环节剔除，真实阶跃型外扰每次跳变确认 1 次
+    - 确认突变频率 ≥ freq_threshold 次/小时 → 外扰频繁
+      （判定含边界：小时窗下确认次数为整数，≥5 即达"5 次/小时"量级）
 
     Args:
         pv: PV 数据数组
         sp: SP 数据数组
         ts: 时间戳数组（秒）
+        threshold: 阈值配置，支持键：
+            - bias_shift_freq_threshold: 确认突变频率阈值 次/小时（默认 5.0，≥ 判定）
+            - bias_shift_amplitude_k: 突变确认幅度门限系数 k（默认 1.0，跳变 > k×σ）
+            - bias_shift_confirm_window: 突变确认窗长度 采样点（默认 30）
 
     Returns:
-        {detected, confidence, shift_count, max_cusum, shift_magnitude}
+        {detected, confidence, shift_count, max_cusum, shift_magnitude, ...}
+        shift_count 为确认后的突变次数；raw_shift_count 为 CUSUM 原始触发次数；
+        shift_magnitude 为确认突变前后窗内均值跳变的平均绝对值（工程单位）
     """
+    if not isinstance(threshold, dict):
+        threshold = {}
+    freq_threshold = float(threshold.get("bias_shift_freq_threshold", 5.0))
+    amplitude_k = float(threshold.get("bias_shift_amplitude_k", 1.0))
+    confirm_window = int(threshold.get("bias_shift_confirm_window", 30))
+
     min_len = min(len(pv), len(sp))
     if min_len < 16:
         return _empty_bias_shift_result()
@@ -3233,20 +3316,36 @@ def _detect_bias_shift(
         # h = 检测阈值（典型为 5*σ）
         h = 5.0 * bias_std
 
-        # 双边 CUSUM
+        # 双边 CUSUM（raw_shifts 记录原始触发点及方向：+1 上跳 / -1 下跳）
         bias_centered = bias - bias_mean
         cusum_pos = np.zeros(min_len)
         cusum_neg = np.zeros(min_len)
-        shift_points: list[int] = []
+        raw_shifts: list[tuple[int, int]] = []
 
         for i in range(1, min_len):
             cusum_pos[i] = max(0.0, cusum_pos[i - 1] + bias_centered[i] - k)
             cusum_neg[i] = min(0.0, cusum_neg[i - 1] + bias_centered[i] + k)
             if cusum_pos[i] > h or abs(cusum_neg[i]) > h:
-                shift_points.append(i)
+                direction = 1 if cusum_pos[i] > h else -1
+                raw_shifts.append((i, direction))
                 # 重置 CUSUM
                 cusum_pos[i] = 0.0
                 cusum_neg[i] = 0.0
+
+        # 突变确认：触发点前后确认窗内偏差均值的跳变幅度需 > amplitude_k×σ
+        # 且方向与 CUSUM 指示一致（幅度门限 + 方向一致性判据）。
+        # 窗口边界数据不足 5 点时放弃该次确认（不计数）
+        shift_points: list[int] = []
+        shift_changes: list[float] = []
+        for idx, direction in raw_shifts:
+            pre = bias_centered[max(0, idx - confirm_window) : idx]
+            post = bias_centered[idx : min(min_len, idx + confirm_window)]
+            if len(pre) < 5 or len(post) < 5:
+                continue
+            level_change = float(np.mean(post) - np.mean(pre))
+            if level_change * direction > amplitude_k * bias_std:
+                shift_points.append(idx)
+                shift_changes.append(level_change)
 
         # 计算时间窗口（秒）
         if ts is not None and len(ts) >= min_len:
@@ -3263,13 +3362,11 @@ def _detect_bias_shift(
         # 最大 CUSUM 值
         max_cusum = float(max(np.max(cusum_pos), abs(np.min(cusum_neg))))
 
-        # 突变幅度
-        shift_magnitude = 0.0
-        if shift_points:
-            shift_magnitude = float(np.mean(np.abs(bias_centered[shift_points])))
+        # 突变幅度：确认突变前后确认窗内均值跳变的平均绝对值（工程单位）
+        shift_magnitude = float(np.mean(np.abs(shift_changes))) if shift_changes else 0.0
 
-        # 判定规则（ADS §5.5.2: 频率 > 5 次/小时）
-        detected = bool(shift_frequency > 5.0)
+        # 判定规则（确认突变频率 ≥ 阈值 次/小时，默认 5.0）
+        detected = bool(shift_frequency >= freq_threshold)
         # 限制最大置信度为 95%，避免频率很高时置信度直接到 100%
         confidence = min(0.95, shift_frequency / 20.0) if detected else 0.0
 
@@ -3279,6 +3376,7 @@ def _detect_bias_shift(
             "detected": detected,
             "confidence": confidence,
             "shift_count": shift_count,
+            "raw_shift_count": len(raw_shifts),
             "max_cusum": max_cusum,
             "shift_magnitude": shift_magnitude,
             "timestamps": cusum_ts,
@@ -3682,12 +3780,20 @@ def _detect_oscillation_iae(
     保证同一信号下两侧结论一致（FFT 路径保留作多算法证据，
     经 _fuse_same_label_confidence 同标签融合）。
 
+    Phase 6 误报修复（GB/T 符合性验证 F-1）：相似率判据对白噪声不免疫
+    （白噪声每 ~2 点一次伪穿越，短段 IAE 经离群清洗后相似率可达 0.96+）。
+    借鉴 metric_calculator/stiction.py _detect_limit_cycle 的极限环门控，
+    增加平均半周期下限（min_half_period_samples，默认 8 采样点）：
+    真实振荡半周期为数十个采样点，白噪声伪穿越平均半周期 ~2 点，可稳健剔除。
+    注意：此门控为诊断侧增强，KPI 振荡率侧未加（保持指标算法口径不变），
+    纯白噪声场景下两侧 detected/is_oscillating 结论可能不同（相似率仍一致）。
+
     算法步骤（对齐算法说明 §4.6 / GB/T 44693.2-2024 附录 F.1）：
     1. 计算控制偏差 e(t) = PV - SP
     2. 识别偏差零交叉点（至少 2 个完整周期）
     3. 计算相邻零交叉间完整半周期的 IAE 与持续时间
     4. 分别对正值段/负值段 IAE 计算相似率 S_A/S_B（最小距离法）
-    5. similarity = min(S_A, S_B)；S_A>=阈值 且 S_B>=阈值 判定振荡
+    5. similarity = min(S_A, S_B)；S_A>=阈值 且 S_B>=阈值 且平均半周期达标 判定振荡
     6. 置信度 = min(1.0, similarity * 1.5)
 
     Args:
@@ -3697,6 +3803,8 @@ def _detect_oscillation_iae(
         threshold: 阈值配置，支持键：
             - similarity_threshold: 相似率阈值（默认 0.4）
             - min_zero_crossings: 最小零交叉数（默认 4，与 KPI 侧一致）
+            - min_half_period_samples: 最小平均半周期（采样点数，默认 8，
+              与 stiction.MIN_HALF_PERIOD_SAMPLES 一致）
 
     Returns:
         {detected, confidence, similarity, zero_crossing_count, mean_period}
@@ -3705,6 +3813,7 @@ def _detect_oscillation_iae(
         threshold = {}
     similarity_threshold = float(threshold.get("similarity_threshold", 0.4))
     min_zero_crossings = int(threshold.get("min_zero_crossings", MIN_ZERO_CROSSINGS))
+    min_half_period = float(threshold.get("min_half_period_samples", MIN_HALF_PERIOD_SAMPLES))
 
     min_len = min(len(pv), len(sp))
     if min_len < 8:
@@ -3754,15 +3863,22 @@ def _detect_oscillation_iae(
         )
         similarity = min(s_a, s_b)
 
-        # 5. 振荡判定：双侧相似率均达阈值（与 KPI 侧 is_oscillating 同口径）
-        detected = bool(s_a >= similarity_threshold and s_b >= similarity_threshold)
+        # 5. 振荡判定：双侧相似率均达阈值（与 KPI 侧 is_oscillating 同口径），
+        #    且平均半周期不低于 min_half_period_samples（诊断侧抗噪门控：
+        #    白噪声伪穿越平均半周期 ~2 采样点，真实振荡半周期为数十点）
+        durations = [s[1] for s in segments]
+        mean_half_period = float(np.mean(durations)) if durations else 0.0
+        detected = bool(
+            s_a >= similarity_threshold
+            and s_b >= similarity_threshold
+            and mean_half_period >= min_half_period
+        )
 
         # 6. 置信度
         confidence = min(1.0, similarity * 1.5) if detected else 0.0
 
         # 平均周期 = 2 × 平均半周期（秒）
-        durations = [s[1] for s in segments]
-        mean_period_samples = float(np.mean(durations)) * 2.0 if durations else 0.0
+        mean_period_samples = mean_half_period * 2.0
         mean_period = (
             mean_period_samples * sample_interval if sample_interval > 0 else mean_period_samples
         )

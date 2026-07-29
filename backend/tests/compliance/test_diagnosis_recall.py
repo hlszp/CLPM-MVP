@@ -14,6 +14,8 @@
 每类注入 ≥2 例 + 正常对照 2 例；召回率=检出/注入，误报率=误报/正常对照。
 基线断言：召回率 ≥80%、误报率 ≤20%；达不到的用例 xfail 并记录实测值
 （Phase 6 基线数据，非整改任务）。
+任务①（2026-07-28）后：3 个误报标签已修复，xfail 全部移除转为正式断言
+（误报率 0/2），召回率 100% 基线保持。
 
 Phase 6 基线实测摘要（seed=7, 2026-07-28）：
 - 召回率：5 类标签全部 2/2 = 100%（达标）
@@ -26,6 +28,18 @@ Phase 6 基线实测摘要（seed=7, 2026-07-28）：
     CUSUM shift_count=277 误报外扰；Choudhury 同样误报粘滞
   根因：NGI 阈值 0.001 对任何非高斯 OP（正弦 excess kurtosis=-1.5 → NGI≈0.25）
   必然击穿；CUSUM 频率判据对噪声/振荡缺乏区分度；IAE 相似率对白噪声不免疫。
+
+误报修复（2026-07-28 任务①，召回率 100% 基线不破，3 个 xfail 已转正式断言）：
+- OSCILLATION：IAE 路径加平均半周期下限 min_half_period_samples=8
+  （注入 30/47 采样点 vs 白噪声 ~2）；FFT 路径加完整周期数门控
+  fft_min_cycles=2（NORM2 慢漂主峰仅 1 周期）与频谱能量门控
+  fft_min_snr=6（白噪声 max/median≈3.5 vs 注入 700+）
+- VALVE_STICTION：Choudhury 矩统计量改在 OP 增量域计算（原始 OP NGI
+  无区分度：正弦 0.24 > 粘滞 0.12~0.18，提阈值不可行；增量 NGI：
+  粘滞 305~521 vs 正弦/高斯 0.02~0.03），NGI 默认阈值 0.001 → 1.0
+- EXTERNAL_DISTURBANCE：CUSUM 触发点加突变确认（前后确认窗 W=30 内
+  均值跳变 > 1.0×σ 且方向一致才计数），确认频率判定 ≥5 次/小时；
+  注入确认 8/5 次，NORM1/NORM2 确认 0 次
 """
 
 from __future__ import annotations
@@ -118,7 +132,8 @@ def _dist_case_1():
 
 
 def _dist_case_2():
-    """阶跃外扰 2：方波 ±3，周期 1200s → 6 次突变/小时."""
+    """阶跃外扰 2：方波 ±3，周期 1200s → 3 周期/小时（窗口内 5 次跳变，
+    确认逻辑下 5 次确认突变/小时，恰好达 ≥5 次/小时判定阈值）."""
     rng = _rng()
     pv = 50.0 + 3.0 * np.sign(np.sin(2 * np.pi * _T / 1200.0)) + 0.2 * rng.standard_normal(N)
     sp = np.full(N, 50.0)
@@ -281,41 +296,30 @@ class TestFalsePositiveBaseline:
         fps = sum(_analyze_quality([{"quality": "GOOD"}] * N)["abnormal"] for _ in _NORMAL)
         assert fps / len(_NORMAL) <= 0.2
 
-    @pytest.mark.xfail(
-        reason=(
-            "OSCILLATION 误报率 2/2=100%（基线实测）："
-            "NORM1 白噪声下 IAE 相似率 0.962 ≥ 0.4 误报；"
-            "NORM2 慢漂+噪声下 FFT osc_index=0.661 且噪声过零数>5 误报。"
-            "IAE 相似率对白噪声不免疫、FFT 过零计数未抗噪，Phase 6 基线记录。"
-        ),
-        strict=False,
-    )
     def test_oscillation_no_false_positive(self):
+        """OSCILLATION 误报率 0/2（任务①修复后正式断言）.
+
+        修复：IAE 路径平均半周期 ≥8 采样点门控（NORM1 白噪声 ~2 点剔除）；
+        FFT 路径完整周期数 ≥2（NORM2 慢漂主峰仅 1 周期剔除）+ 频谱信噪比 ≥6。
+        """
         fps = sum(_run_detectors(*b())["OSCILLATION"] for b in _NORMAL)
-        assert fps / len(_NORMAL) <= 0.2
+        assert fps == 0
 
-    @pytest.mark.xfail(
-        reason=(
-            "VALVE_STICTION 误报率 2/2=100%（基线实测）："
-            "Choudhury 对正常正弦 OP NGI=0.240 > 0.001 且 NLI=1.0 > 0.01 误报；"
-            "NGI 阈值 0.001 对任何非高斯 OP（正弦 excess kurtosis=-1.5 → NGI≈0.25）"
-            "必然击穿，Phase 6 基线记录。"
-        ),
-        strict=False,
-    )
     def test_stiction_no_false_positive(self):
-        fps = sum(_run_detectors(*b())["VALVE_STICTION"] for b in _NORMAL)
-        assert fps / len(_NORMAL) <= 0.2
+        """VALVE_STICTION 误报率 0/2（任务①修复后正式断言）.
 
-    @pytest.mark.xfail(
-        reason=(
-            "EXTERNAL_DISTURBANCE 误报率 2/2=100%（基线实测）："
-            "NORM1 纯白噪声 CUSUM shift_count=10（10 次/小时 > 5 阈值）误报；"
-            "NORM2 慢漂 shift_count=277 误报。CUSUM 频率判据对噪声/慢漂缺乏区分度，"
-            "Phase 6 基线记录。"
-        ),
-        strict=False,
-    )
+        修复：Choudhury 矩统计量改在 OP 增量域计算（正常正弦/噪声 OP 增量
+        近似高斯，NGI≈0.02 远低于阈值 1.0；原始 OP NGI 对正弦 0.24 必然击穿
+        旧阈值 0.001 且无区分度）。
+        """
+        fps = sum(_run_detectors(*b())["VALVE_STICTION"] for b in _NORMAL)
+        assert fps == 0
+
     def test_disturbance_no_false_positive(self):
+        """EXTERNAL_DISTURBANCE 误报率 0/2（任务①修复后正式断言）.
+
+        修复：CUSUM 触发点须经突变确认（前后确认窗 W=30 内均值跳变 > 1.0×σ
+        且方向一致）才计数；NORM1 白噪声/NORM2 慢漂确认后计数均为 0。
+        """
         fps = sum(_run_detectors(*b())["EXTERNAL_DISTURBANCE"] for b in _NORMAL)
-        assert fps / len(_NORMAL) <= 0.2
+        assert fps == 0
