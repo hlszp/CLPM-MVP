@@ -18,6 +18,7 @@ import { Page } from '@vben/common-ui';
 import {
   Alert,
   Button,
+  Checkbox,
   Descriptions,
   DescriptionsItem,
   Form,
@@ -46,6 +47,48 @@ const loading = ref(false);
 const saving = ref(false);
 const methods = ref<TuningApi.MethodInfo[]>([]);
 const tuneResult = ref<null | TuningApi.TuneResult>(null);
+
+/**
+ * 模型来源门禁（P0-04）
+ * 服务端 /tune、/simulate、/compare 已强制要求 modelSource + 可验证凭据；
+ * 页面控制入口呈现，服务端仍按 sourceRecordId 复核记录。
+ */
+const modelSource = ref<TuningApi.ModelSource | undefined>(undefined);
+const sourceRecordId = ref('');
+const riskConfirmed = ref(false);
+
+const sourceOptions: { label: string; value: TuningApi.ModelSource }[] = [
+  { label: '历史辨识记录', value: 'IDENTIFICATION_RECORD' },
+  { label: '阶跃实验', value: 'STEP_EXPERIMENT' },
+  { label: '人工模型（需确认风险）', value: 'MANUAL' },
+];
+
+const modelUsageGate = computed<{ blocked: boolean; reason: string | null }>(() => {
+  if (!modelSource.value) {
+    return {
+      blocked: true,
+      reason: '必须明确模型来源并提供可验证凭据；旧版裸模型请求已停止放行。',
+    };
+  }
+  if (modelSource.value === 'MANUAL') {
+    if (!riskConfirmed.value) {
+      return {
+        blocked: true,
+        reason: '人工模型必须显式确认模型与整定风险后方可执行。',
+      };
+    }
+    return { blocked: false, reason: null };
+  }
+  if (!sourceRecordId.value) {
+    return {
+      blocked: true,
+      reason: '该来源必须提供服务端可验证的 sourceRecordId。',
+    };
+  }
+  return { blocked: false, reason: null };
+});
+
+const canTune = computed(() => !modelUsageGate.value.blocked);
 
 /** 模型类型选项 */
 const modelTypeOptions: { label: string; value: TuningApi.ModelType }[] = [
@@ -177,6 +220,11 @@ function handleAlgorithmChange(value: any) {
 
 /** 执行 PID 整定 */
 async function handleTune() {
+  // 模型来源门禁（P0-04）：服务端不再放行裸模型请求
+  if (modelUsageGate.value.blocked) {
+    message.warning(modelUsageGate.value.reason || '必须明确模型来源');
+    return;
+  }
   // 校验模型参数
   if (form.K === undefined || form.K === null) {
     message.warning('请输入过程增益 K');
@@ -217,6 +265,12 @@ async function handleTune() {
       algorithmParams: { ...form.algorithmParams },
       currentPid: buildCurrentPid(),
       loopId: form.loopId || undefined,
+      modelSource: modelSource.value,
+      riskConfirmed: riskConfirmed.value,
+      // 人工模型不得绑定 sourceRecordId；记录型来源必须携带可验证凭据
+      ...(modelSource.value && modelSource.value !== 'MANUAL' && sourceRecordId.value
+        ? { sourceRecordId: sourceRecordId.value }
+        : {}),
     });
     tuneResult.value = result;
     hide();
@@ -232,6 +286,10 @@ async function handleTune() {
 /** 跳转闭环仿真页 */
 function handleGoSimulation() {
   if (!tuneResult.value) return;
+  if (modelUsageGate.value.blocked) {
+    message.warning(modelUsageGate.value.reason || '必须明确模型来源');
+    return;
+  }
   router.push({
     path: '/tuning/simulation',
     query: {
@@ -241,6 +299,14 @@ function handleGoSimulation() {
         ? JSON.stringify(tuneResult.value.currentPid)
         : JSON.stringify(buildCurrentPid() || {}),
       recommendedPid: JSON.stringify(tuneResult.value.recommendedPid),
+      // 模型来源契约贯穿到仿真页（P0-04）
+      ...(modelSource.value ? { modelSource: modelSource.value } : {}),
+      ...(modelSource.value && modelSource.value !== 'MANUAL' && sourceRecordId.value
+        ? { sourceRecordId: sourceRecordId.value }
+        : {}),
+      ...(modelSource.value
+        ? { riskConfirmed: riskConfirmed.value ? 'true' : 'false' }
+        : {}),
     },
   });
 }
@@ -315,6 +381,16 @@ function initFromQuery() {
   if (q.loopId) {
     form.loopId = q.loopId as string;
   }
+  // 模型来源门禁（P0-04）：从 model 页/仿真页跳转时携带可验证凭据
+  if (q.modelSource) {
+    modelSource.value = q.modelSource as TuningApi.ModelSource;
+  }
+  if (q.sourceRecordId) {
+    sourceRecordId.value = q.sourceRecordId as string;
+  }
+  if (q.riskConfirmed === 'true') {
+    riskConfirmed.value = true;
+  }
 }
 
 /** 模型类型变更时清空不相关的模型参数 */
@@ -348,6 +424,30 @@ onMounted(() => {
     />
     <Spin :spinning="loading">
       <ClpmDataCanvas class="mb-4 mt-4" title="模型参数">
+        <Alert
+          v-if="modelUsageGate.blocked"
+          type="warning"
+          show-icon
+          banner
+          :closable="false"
+          :message="modelUsageGate.reason || '必须明确模型来源'"
+          style="margin-bottom: 12px"
+        />
+        <Form layout="inline">
+          <FormItem label="模型来源">
+            <Select
+              v-model:value="modelSource"
+              style="width: 240px"
+              :options="sourceOptions"
+              placeholder="必须明确模型来源"
+            />
+          </FormItem>
+          <FormItem v-if="modelSource === 'MANUAL'">
+            <Checkbox v-model:checked="riskConfirmed">
+              已确认人工模型与整定风险
+            </Checkbox>
+          </FormItem>
+        </Form>
         <Form layout="inline">
           <FormItem label="模型类型">
             <Select
@@ -503,6 +603,7 @@ onMounted(() => {
           <Button
             type="primary"
             size="large"
+            :disabled="!canTune"
             :loading="loading"
             @click="handleTune"
           >
@@ -552,7 +653,12 @@ onMounted(() => {
 
         <!-- 操作按钮 -->
         <div class="mt-4 flex gap-2">
-          <Button type="primary" size="large" @click="handleGoSimulation">
+          <Button
+            type="primary"
+            size="large"
+            :disabled="!canTune"
+            @click="handleGoSimulation"
+          >
             进行闭环仿真 →
           </Button>
           <Button size="large" :loading="saving" @click="handleSaveTask">
