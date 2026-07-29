@@ -16,7 +16,6 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
 
 import { Button } from 'ant-design-vue';
 
@@ -29,13 +28,14 @@ import {
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
 
 defineOptions({ name: 'DashboardWorkbench' });
 
 const router = useRouter();
-const userStore = useUserStore();
+const { canAccessTuning } = useClpmRoles();
 
 const loading = ref(false);
 const lastRefresh = ref('');
@@ -43,12 +43,6 @@ const diagnosisPending = ref(0);
 const trackerActive = ref(0);
 const metricPending = ref(0);
 const tuningTotal = ref(0);
-
-/** 整定模块仅 ADMIN/IC_ENGINEER/EXPERT 可见；工作台对 PE_ENGINEER/SPONSOR 可见，故整定卡片条件渲染 */
-const canAccessTuning = computed(() => {
-  const roles = userStore.userInfo?.roles ?? [];
-  return roles.some((r) => ['ADMIN', 'IC_ENGINEER', 'EXPERT'].includes(r));
-});
 
 const todoKpiItems = computed<KpiStripItem[]>(() => {
   const items: KpiStripItem[] = [

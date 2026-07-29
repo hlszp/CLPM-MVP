@@ -30,6 +30,8 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
+  CollapsePanel,
   Descriptions,
   DescriptionsItem,
   Form,
@@ -46,6 +48,7 @@ import dayjs from 'dayjs';
 import { identifyModelApi, previewSegmentsApi } from '#/api/tuning';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useTuningStore } from '#/store/tuning';
 
@@ -54,6 +57,7 @@ defineOptions({ name: 'TuningModel' });
 const router = useRouter();
 const tuningStore = useTuningStore();
 const { isDark, themeColors } = useClpmTheme();
+const { canEditAdvancedParams } = useClpmRoles();
 
 const loading = ref(false);
 const segmentLoading = ref(false);
@@ -667,24 +671,33 @@ watch(
           </FormItem>
         </template>
         <template v-else>
-          <FormItem label="候选模型阶次">
-            <Select
-              v-model:value="filter.candidateModelTypes"
-              mode="multiple"
-              style="width: 280px"
-              :options="historyModelTypeOptions"
-              placeholder="并行辨识多种阶次"
-            />
-          </FormItem>
-          <FormItem label="纯滞后预估 θ (秒)">
-            <InputNumber
-              v-model:value="filter.thetaEstimate"
-              :min="0"
-              :precision="2"
-              placeholder="留空则采用 2Ts 启发值"
-              style="width: 220px"
-            />
-          </FormItem>
+          <!-- P1-022：高级参数仅 ADMIN/EXPERT 可见，IC_ENGINEER 使用默认值 -->
+          <Collapse
+            v-if="canEditAdvancedParams"
+            :bordered="false"
+            class="advanced-params-collapse"
+          >
+            <CollapsePanel key="advanced" header="高级参数">
+              <FormItem label="候选模型阶次">
+                <Select
+                  v-model:value="filter.candidateModelTypes"
+                  mode="multiple"
+                  style="width: 280px"
+                  :options="historyModelTypeOptions"
+                  placeholder="并行辨识多种阶次"
+                />
+              </FormItem>
+              <FormItem label="纯滞后预估 θ (秒)">
+                <InputNumber
+                  v-model:value="filter.thetaEstimate"
+                  :min="0"
+                  :precision="2"
+                  placeholder="留空则采用 2Ts 启发值"
+                  style="width: 220px"
+                />
+              </FormItem>
+            </CollapsePanel>
+          </Collapse>
           <FormItem>
             <Button :loading="segmentLoading" @click="handlePreviewSegments">
               预览可辨识片段

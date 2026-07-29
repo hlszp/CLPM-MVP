@@ -19,6 +19,8 @@ import {
   Alert,
   Button,
   Checkbox,
+  Collapse,
+  CollapsePanel,
   Descriptions,
   DescriptionsItem,
   Form,
@@ -37,11 +39,13 @@ import {
   tunePidApi,
 } from '#/api/tuning';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 
 defineOptions({ name: 'TuningAlgorithm' });
 
 const route = useRoute();
 const router = useRouter();
+const { canEditAdvancedParams } = useClpmRoles();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -571,34 +575,38 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 动态算法参数 -->
-        <Form
-          v-if="currentMethod && currentMethod.params.length > 0"
-          class="mt-3"
-          layout="inline"
+        <!-- P1-022：动态算法参数为高级参数，仅 ADMIN/EXPERT 可见 -->
+        <Collapse
+          v-if="canEditAdvancedParams && currentMethod && currentMethod.params.length > 0"
+          :bordered="false"
+          class="mt-3 advanced-params-collapse"
         >
-          <FormItem
-            v-for="param in currentMethod.params"
-            :key="param.name"
-            :label="param.label"
-          >
-            <Select
-              v-if="param.options && param.options.length > 0"
-              v-model:value="form.algorithmParams[param.name]"
-              style="width: 140px"
-              :options="param.options.map((o) => ({ label: o, value: o }))"
-            />
-            <InputNumber
-              v-else
-              v-model:value="form.algorithmParams[param.name]"
-              :min="param.min"
-              :max="param.max"
-              :step="0.01"
-              :placeholder="param.label"
-              style="width: 140px"
-            />
-          </FormItem>
-        </Form>
+          <CollapsePanel key="algo-advanced" header="高级参数">
+            <Form layout="inline">
+              <FormItem
+                v-for="param in currentMethod.params"
+                :key="param.name"
+                :label="param.label"
+              >
+                <Select
+                  v-if="param.options && param.options.length > 0"
+                  v-model:value="form.algorithmParams[param.name]"
+                  style="width: 140px"
+                  :options="param.options.map((o) => ({ label: o, value: o }))"
+                />
+                <InputNumber
+                  v-else
+                  v-model:value="form.algorithmParams[param.name]"
+                  :min="param.min"
+                  :max="param.max"
+                  :step="0.01"
+                  :placeholder="param.label"
+                  style="width: 140px"
+                />
+              </FormItem>
+            </Form>
+          </CollapsePanel>
+        </Collapse>
 
         <div class="mt-4">
           <Button

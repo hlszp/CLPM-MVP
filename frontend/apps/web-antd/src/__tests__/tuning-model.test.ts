@@ -94,6 +94,13 @@ vi.mock('#/composables/use-clpm-theme', () => ({
   }),
 }));
 
+// P1-022：默认以 ADMIN 身份测试，高级参数可见
+vi.mock('#/composables/use-clpm-roles', () => ({
+  useClpmRoles: () => ({
+    canEditAdvancedParams: { value: true },
+  }),
+}));
+
 vi.mock('ant-design-vue', () => ({
   Alert: {
     props: ['description', 'message'],
@@ -115,6 +122,14 @@ vi.mock('ant-design-vue', () => ({
   Card: {
     props: ['title'],
     template: '<div>{{ title }}<slot /></div>',
+  },
+  Collapse: {
+    props: ['bordered'],
+    template: '<div class="collapse-stub"><slot /></div>',
+  },
+  CollapsePanel: {
+    props: ['header', 'key'],
+    template: '<div class="collapse-panel-stub"><div>{{ header }}</div><slot /></div>',
   },
   DatePicker: {
     RangePicker: { template: '<div />' },
