@@ -33,23 +33,30 @@
 | E2E/单测全量修复 | ✅ 55 E2E + 371 单测全通过 | 2026-07-28 |
 | E 规范符合性验证 | ⏳ 待启动（GB/T 44693.2 用例验证 ≥90%） | — |
 
-### 2.2 全量测试基线（2026-07-28 更新）
+### 2.2 全量测试基线（2026-07-29 更新）
 
 | 测试套件 | 结果 | 命令 |
 |---|---|---|
-| 后端 pytest | ✅ 2983 passed, 1 skipped, 15 deselected | `cd backend && uv run pytest -q` |
+| 后端 pytest | ✅ 3409 passed, 1 skipped, 15 deselected, 33 xfailed | `cd backend && uv run pytest -q` |
 | 前端类型检查 | ✅ 2/2 packages 通过 | `cd frontend && pnpm run check:type` |
-| 前端单元测试 | ✅ 415 passed | `cd frontend && pnpm exec vitest run` |
-| E2E 端到端 | ✅ 57 passed | `cd e2e && pnpm exec playwright test` |
+| 前端单元测试 | ✅ 415 passed（49 文件） | `cd frontend && pnpm exec vitest run` |
+| E2E 端到端 | ✅ 59 passed | `cd e2e && pnpm exec playwright test` |
 | schema 漂移检查 | ✅ 退出码 0 | `cd backend && uv run alembic check` |
 
 **五者全绿是提交门禁**（gitea 侧无 CI；lefthook 已配置 pre-push 自动门禁：ruff + pytest -x + check:type）。
 
-### 2.3 当前状态（2026-07-28 晚）
+### 2.3 当前状态（2026-07-29）
 
-2026-07-28 完成**全维度评审与六阶段优化整改 Phase 0-5**（~90 项问题，35+ commit）：算法 P0×3（振荡满分/饱和诊断失效/TDengine 时区 8h 偏移）与 P1 全修、数据正确性（缓存闭环/schema 收敛迁移 `d4e5f6a7b8c9`/`c3d4e5f6a7b8`）、后端健壮性（任务系统/token 生命周期/权限码落地/可观测性/限流）、前端公共件与页面整改、部署迁移一体+监控门禁+首次登录强制改密（迁移 `f6a7b8c9d0e1`）。当天还根除了全回路 INCONCLUSIVE 事故（模块级 asyncio.Lock 跨事件循环绑定，ops-runbook 已记录）。
+2026-07-28 完成**全维度评审与六阶段优化整改**（~90 项问题，40+ commit）：算法 P0×3（振荡满分/饱和诊断失效/TDengine 时区 8h 偏移）与 P1 全修、数据正确性（缓存闭环/schema 收敛迁移）、后端健壮性（任务系统/token 生命周期/权限码落地/可观测性/限流）、前端公共件与页面整改、部署迁移一体+监控门禁+首次登录强制改密。
 
-全貌与遗留清单：`docs/过程文档/clpm-optimization-review-plan-2026-07-28.md`（持续更新，取代本节历史提交列表）。
+2026-07-28 晚间~29 日连续推进：
+- **Phase 6（GB/T 44693.2 符合性验证）完成**：`backend/tests/compliance/` 371 用例 91.1% 通过，报告 `docs/过程文档/gbt44693-compliance-verification-report-2026-07-28.md`
+- **3 个诊断标签误报修复**（振荡半周期门控/粘滞增量域 NGI/外扰 CUSUM 确认窗），召回率保持 100%
+- **整定 Phase 2.1 合并评审 + P0/P1 返工**（sampling_freq 崩溃、去均值、SOPDT 仿真契约、残差检验、SIMC CHECK、AUTO 兜底）
+- **生产部署实弹验证**（192.168.13.111）：R1→R6 抓出 6 个真问题全修（ConfigParser 插值、端口预检、celery 健康检查、PG 缺表、TDengine profile、APP_VERSION），链路终验通过，详见 ops-runbook
+- **诊断中心问题串修复**：详情页版本号竞态白屏、散点数据回退、fusedConfidence 落库、diagnosis_task 时区统一（迁移 h8b9c0d1e2f3）、任务页"显示已归档"开关、刷新轮换竞态幂等窗口
+
+**当前唯一未结问题**：诊断详情页 SPA 导航白屏（仅 tracker 页作为跳转源时复现），排查现场与已排除清单见 `docs/过程文档/ops-runbook.md` §【未结】。
 
 ---
 
@@ -177,13 +184,14 @@ PENDING → IN_PROGRESS → IMPLEMENTED
 
 | # | 问题 | 优先级 | 状态 | 说明 |
 |---|---|---|---|---|
-| 1 | E 规范符合性验证 | 高 | ⏳ 待启动 | GB/T 44693.2 用例验证 ≥90%，即优化整改 Phase 6（唯一未启动阶段） |
-| 2 | Celery worker 容器 include 参数 | 中 | ✅ 已闭环 | 部署后 celery inspect ping/scheduled 硬断言（2026-07-28 Phase 5） |
+| 1 | **诊断详情页 SPA 导航白屏** | 高 | ⏳ 排查中 | 仅 tracker 页作为跳转源时复现（组件不挂载、零报错），现场与已排除清单：`ops-runbook.md` §【未结】 |
+| 2 | E 规范符合性验证 | 高 | ✅ 已完成 | GB/T 44693.2 套件 371 用例 91.1% 通过（2026-07-28，报告见过程文档） |
 | 3 | 公网模式 ping 延迟抖动 | 低 | ⏳ 待优化 | Tailscale 公网模式延迟抖动，仅余此一项 |
-| 4 | 后端细粒度权限码校验 | 中 | ✅ 已落地 | require_perms 三模块读端点收口（2026-07-28 Phase 3）；剩余：tasks 列表 metric:view、diagnosis:detail 粒度码、tracker 读端点 |
-| 5 | 前端权限矩阵完整实现 | 中 | ✅ 已对齐 | 路由/按钮/后端三方对齐（2026-07-28 Phase 4）；EXPERT→/diagnosis、SPONSOR→/metric 首页已落地 |
+| 4 | 后端细粒度权限码校验 | 中 | ✅ 已落地 | require_perms 三模块读端点收口；剩余：tasks 列表 metric:view、diagnosis:detail 粒度码、tracker 读端点 |
+| 5 | 前端权限矩阵完整实现 | 中 | ✅ 已对齐 | 路由/按钮/后端三方对齐；EXPERT→/diagnosis、SPONSOR→/metric 首页已落地 |
 | 6 | 历史快照 8h 偏移口径 | 中 | ⏳ 待决策 | 2026-07-28 时区修复前的历史快照为旧偏移窗口口径，如需校正按数据留存范围全面历史重算 |
-| 7 | 前端强制改密跳转 | 中 | ⏳ 待实施 | 后端 mustChangePassword 已就绪（Phase 5），前端登录后需引导致改密页 |
+| 7 | 前端强制改密跳转 | 中 | ⏳ 待实施 | 后端 mustChangePassword 已就绪（登录响应带标志、写操作 403），前端登录后需引导致改密页 |
+| 8 | 整定 Phase 2.2 | 中 | ⏳ 待规划 | Phase 2.1 已合并（含评审返工修复）；P2 清单（IV4 正名、阶次选择接线、validity 掩码、性能护栏、TaskTracker 收敛） |
 
 ---
 
@@ -191,11 +199,11 @@ PENDING → IN_PROGRESS → IMPLEMENTED
 
 | 方向 | 先读 | 关注点 |
 |---|---|---|
+| **白屏排查（最优先）** | `ops-runbook.md` §【未结】诊断详情页 SPA 导航白屏 | 复现脚本已存；方向：tracker 源页 vs records 源页差异、vben content.vue 渲染链 |
 | Bug 修复 / 功能增强 | README → AGENTS → 设计文档 → 代码 | "问题定位→修复实施→测试验证→效果确认"闭环 |
-| **优化整改 Phase 6（GB/T 符合性）** | `clpm-optimization-review-plan-2026-07-28.md` §三 Phase 6 + §一算法清单 | 唯一未启动阶段：附录 B/F 用例 ≥90%；含 T1.6 粘滞 θ 补偿增强项 |
-| 诊断整改 Phase E | 同上（已并入 Phase 6） | 原 diagnosis-module-review-rectification-plan §5 已被优化整改计划吸收 |
-| E2E 测试补充 | `e2e/` → UI/UX v6.1 → 新增页面 | 现有 57 全通过，后续按新页面逐步补 |
-| 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | 新链路：迁移强制+部署前备份+celery 断言；monitoring profile 启用验证 |
+| 整定 Phase 2.2 | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` + 合并评审 P2 清单 | Phase 2.1 已合并（含返工），P2 项排期 |
+| E2E 测试补充 | `e2e/` → UI/UX v6.1 → 新增页面 | 现有 59 全通过，后续按新页面逐步补 |
+| 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | 链路已实弹验证（2026-07-29）；监控 profile 待启用；部署脚本补 TDengine 初始化 |
 | 新功能开发 | PRD v6.1 → 实现契约 v2.2 → v4.0 实施方案 → 设计文档 | 模块"配置→运行→分析"三态自包含原则 |
 | 回路整定 Phase 2 | PRD §回路整定（另一会话推进中） | 生产级算法闭环（Phase 1 只输出建议） |
 

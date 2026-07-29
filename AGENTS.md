@@ -32,7 +32,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.2 是重构后 IA/路�
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
 | v6 交付历史 | `docs/过程文档/v6-delivery-history.md` | Phase 0-6 + 后续全部 PR |
-| 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0（全维度评审 ~90 项问题 + 六阶段方案）；**六阶段全部完成**（2026-07-28：算法 P0×3+P1 全修、TDengine 时区修复、任务/token/权限/可观测性加固、前端整改、部署迁移一体+监控门禁+强制改密、GB/T 44693.2 符合性验证 91.1% 通过）；验证报告 `docs/过程文档/gbt44693-compliance-verification-report-2026-07-28.md` |
+| 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0；**六阶段全部完成**（2026-07-28）。后续（07-29）：3 诊断标签误报修复、整定 Phase 2.1 合并+评审返工、生产部署实弹验证（R1-R6，ops-runbook）、诊断中心问题串修复（版本号竞态/散点回退/fusedConfidence 落库/任务时区迁移 `h8b9c0d1e2f3`/任务页已归档开关/刷新轮换幂等窗口）；**未结：诊断详情页 SPA 导航白屏**（ops-runbook §【未结】） |
 | **回路整定 Phase 2 技术方案** | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **已执行**（分支 `feat/tuning-phase2`，2026-07-28）：历史数据过程对象辨识（ARX/ARMAX/IV 算法栈）+ 异步任务化 + 多 PID 对比仿真；pytest 2840 全绿、`alembic check` 退出码 0 |
 
 ## v6.0 核心架构组件

@@ -32,7 +32,7 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
 | v4.0 核心组件 | DataPlanner（统一数据读取，L1/L2 缓存已接入；L3 Feature Cache 预留）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（2983 passed，1 skipped，15 deselected）+ vitest（415 passed）+ Playwright E2E（57 passed） |
+| 测试 | pytest（3409 passed，1 skipped，15 deselected，33 xfailed）+ vitest（415 passed）+ Playwright E2E（59 passed） |
 
 ## 快速开始（开发环境）
 
@@ -328,7 +328,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | 产品文档基线 **v6.1**；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。全量测试基线（2026-07-28）：pytest 2983 passed / vitest 415 passed / E2E 57 passed / `alembic check` 退出码 0 |
+| 当前版本 | 产品文档基线 **v6.1**；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。全量测试基线（2026-07-29）：pytest 3409 passed / vitest 415 passed / E2E 59 passed / `alembic check` 退出码 0 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 工作台门户、回路管理（AAS tag 同步/回路创建/tag 关联/监控）、性能评估（指标配置/引擎规则/看板/排行/统计）、诊断中心（指标配置/诊断/异常跟踪/统计）、系统管理；回路整定原型页面设计 |
 | 模块架构 | 6 模块 + 1 门户：工作台/回路管理/性能评估/诊断中心/回路整定/系统管理（任务管理是性能评估子模块），各模块"配置→运行→分析"三态自包含 |

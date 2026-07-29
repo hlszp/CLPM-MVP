@@ -7,6 +7,7 @@
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
 **v2.1 修订摘要**：同步诊断中心 Batch 4-6 交付成果——A/B 对比已实现（含 `includeDiagnosis` 扩展）；登记 `GET /diagnosis/algorithms/meta`、`GET /diagnosis/statistics/export`、`GET /tracker/effectiveness`、`GET|PATCH /tracker/verification-config`；补全 Tracker 子路由清单；更新诊断中心路由决策（A/B 对比不再返回 501）；登记诊断任务自动归档机制与 D1-D6 功能扩展
 **v2.2 修订摘要**：同步 2026-07-28 全维度优化整改（Phase 0-5）——登记 `GET /performance/grade-distribution` 与 `/loops/snapshots?grade=`；权限码服务端落地（`require_perms`，loop/tuning/diagnosis 读端点收口）替代"待统一"标注；登记首次登录强制改密（`must_change_password`）；前端路由收紧（reports/aas-sync 仅 ADMIN、EXPERT→/diagnosis、SPONSOR→/metric）。整改全貌见 `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md`
+**v2.2 增补（2026-07-29）**：登记 `/diagnosis/tasks?includeArchived=`；诊断任务时间戳默认值统一 UTC（迁移 `h8b9c0d1e2f3`）；refresh 轮换幂等窗口（`refresh_rotated`，120s）；整定 Phase 2.1 合并（`tuning_identification` 算法栈 + 异步辨识任务）
 
 ## 1. 定位
 
@@ -119,6 +120,7 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 | `GET` | `/api/v1/diagnosis/statistics/export` | 诊断统计 CSV 导出（支持 `startDate/endDate/plantNodeId` 筛选） | D5 |
 | `GET` | `/api/v1/performance/grade-distribution` | 等级分布统计下推：窗口函数取每回路最新快照后 SQL 聚合各等级计数（EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE + total），阈值读 `sys_config['grading_thresholds.current']`；参数同 `/loops/snapshots`（2026-07-28 优化整改 Phase 4） | 优化整改 |
 | `GET` | `/api/v1/performance/loops/snapshots?grade=` | 快照列表新增 `grade` 参数：服务端按等级名筛选+分页（在 latestOnly 取最新之后应用，与分布桶计数一致）；不传时行为不变（2026-07-28） | 优化整改 |
+| `GET` | `/api/v1/diagnosis/tasks?includeArchived=` | 诊断任务列表新增 `includeArchived` 参数（默认 false 仅未归档；true 时含已归档历史——SUCCESS 完成即自动归档）（2026-07-29） | 问题修复 |
 
 ## 5. 权限契约
 

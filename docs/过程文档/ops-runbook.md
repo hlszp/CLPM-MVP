@@ -49,6 +49,26 @@ worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspe
 - 诊断：`docker exec clpm-redis redis-cli -n 1 LLEN default`（队列长度）+ `pgrep -P <worker_pid>`（池子进程数）
 - 处置：`kill <主进程pid>`（必要时 -9）后重启 worker；积压消息会在重启后全部追平（导入/回填类重任务注意耗时）
 
+### 【未结】诊断详情页 SPA 导航白屏（2026-07-29 排查记录，现场保留）
+
+**现象**：从「异常跟踪」页（/diagnosis/tracker）点击行内「详情」（或在该页内 `router.push`）跳转 `/diagnosis/detail/:loopId` → 路由正确匹配、标签页已创建、组件 chunk 正常 200 加载，但**组件不挂载**（一个 API 请求都不发）、内容区空白、console 零错误零警告。此后**所有页面均空白**，需硬刷新恢复。直接访问 URL、`/diagnosis/records` 行点击、`/dashboard` pushState 跳转均正常。
+
+**复现**（Playwright 必现）：login admin → `page.goto('/diagnosis/tracker')` → 点击首个「详情」按钮 → body 仅 ~117 字符（应用壳）；`page.goto` 同一 URL → 完整渲染 ~3200 字符。
+
+**已排除**（逐项实测）：
+- 路由过渡动画（preferences 关闭 transition 后仍复现）×
+- `tabbarStore.renderRouteView`（=true）/`excludeCachedTabs`（空）/ KeepAlive include（空）×
+- chunk 加载失败（detail.vue 及 echarts 依赖全部 200）×
+- v-permission 指令（detail.vue 未使用）×
+- Vue errorHandler / pageerror / console 全级别（无任何输出）×
+- 数据形态（INCONCLUSIVE 回路详情页正常）×
+- detail.vue 顶层 await / 循环依赖（无）×
+- 鉴权（401 刷新竞态是独立问题，已修复，见下）×
+
+**方向**：问题在"tracker 页作为跳转源"这一变量上（records 同为表格页却正常）。下一步建议：①对比 tracker.vue 与 records.vue 的 keep-alive/动态根组件（tracker 根是 `<component :is>` 双模式容器）对 vben content.vue 渲染链的影响；②在 `packages/effects/layouts/src/basic/content/content.vue` 的 RouterView slot 内对 `Component` 打日志；③检查 `<Transition mode="out-in">` 与 tracker 根动态组件的 leave 行为。
+
+**同页已修复的独立问题（勿混淆）**：loadDetail/loadWaveform 版本号竞态（已修，改独立计数器）、scatterPlot 仅 VALVE_STICTION 才有（已修，回退 scatter_plot_x/y）、fusedConfidence 未持久化（已修，落库 evidence_chain）、刷新轮换竞态致强制登出（已修，120s 幂等窗口）、诊断任务 triggered_at 时区（已修，UTC 默认值迁移 h8b9c0d1e2f3）。
+
 ### 生产部署实弹验证记录（2026-07-28，R1→R6 六轮）
 
 首次实弹 `build-and-deploy.sh`（含新门禁链路），暴露并修复 6 个真实问题：
