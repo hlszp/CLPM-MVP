@@ -128,19 +128,30 @@ async def _do_identify(
     theta_estimate: float | None,
     created_by: str,
     identify_strategy: str = "HISTORY_ONLY",
+    created_by_id: str = "",
 ) -> dict[str, Any]:
     """执行历史数据辨识的 async 逻辑.
 
     identify_strategy=AUTO 时，历史辨识失败/数据不足自动降级阶跃实验路径
     （结果标注 dataSource=fallback_step，P1-6）；默认 HISTORY_ONLY
     与未携带该参数的旧队列任务行为一致。
+
+    V62-P1-013: created_by_id 传入 init_progress 以桥接 TaskTracker。
     """
     from app.core.db import AsyncSessionLocal
     from app.models.tuning import TuningRecord
     from app.services.tuning import identify_model_from_history
     from app.services.tuning_progress import init_progress, update_progress
 
-    await init_progress(task_id, task_type="identify", loop_id=loop_id)
+    await init_progress(
+        task_id,
+        task_type="identify",
+        loop_id=loop_id,
+        created_by=created_by,
+        created_by_id=created_by_id,
+        ts_start=start_time,
+        ts_end=end_time,
+    )
 
     async with AsyncSessionLocal() as db:
         # 创建占位 TuningRecord（status=RUNNING）
@@ -272,6 +283,7 @@ def identify_model_task(
     theta_estimate: float | None = None,
     created_by: str = "system",
     identify_strategy: str = "HISTORY_ONLY",
+    created_by_id: str = "",
 ) -> dict[str, Any]:
     """异步历史数据模型辨识任务.
 
@@ -285,6 +297,7 @@ def identify_model_task(
         identify_strategy: 辨识策略 AUTO/HISTORY_ONLY（STEP_ONLY 由端点同步拦截，
             不会进入本任务）；AUTO 时历史辨识失败/数据不足自动降级阶跃实验
             路径（P1-6）。默认 HISTORY_ONLY，与未携带该参数的旧队列任务行为一致
+        created_by_id: 创建人用户 ID（V62-P1-013 桥接 TaskTracker 用）
     """
     task_id = self.request.id
     logger.info("辨识任务开始: task_id=%s, loop_id=%s", task_id, loop_id)
@@ -298,6 +311,7 @@ def identify_model_task(
             theta_estimate=theta_estimate,
             created_by=created_by,
             identify_strategy=identify_strategy,
+            created_by_id=created_by_id,
         )
     )
 
@@ -322,8 +336,12 @@ async def _do_tune_and_simulate(
     model_source: str | None = None,
     risk_confirmed: bool = False,
     step_validation_passed: bool = False,
+    created_by_id: str = "",
 ) -> dict[str, Any]:
-    """执行整定 + 仿真的 async 逻辑."""
+    """执行整定 + 仿真的 async 逻辑.
+
+    V62-P1-013: created_by_id 传入 init_progress 以桥接 TaskTracker。
+    """
     from app.core.db import AsyncSessionLocal
     from app.models.tuning import TuningRecord
     from app.services.tuning import (
@@ -333,7 +351,13 @@ async def _do_tune_and_simulate(
     )
     from app.services.tuning_progress import init_progress, update_progress
 
-    await init_progress(task_id, task_type="tune_and_simulate", loop_id=loop_id)
+    await init_progress(
+        task_id,
+        task_type="tune_and_simulate",
+        loop_id=loop_id,
+        created_by=created_by,
+        created_by_id=created_by_id,
+    )
 
     async with AsyncSessionLocal() as db:
         source_context = await authorize_tuning_model(
@@ -498,6 +522,7 @@ def tune_and_simulate_task(
     model_source: str | None = None,
     risk_confirmed: bool = False,
     step_validation_passed: bool = False,
+    created_by_id: str = "",
 ) -> dict[str, Any]:
     """异步 PID 整定 + 多 PID 仿真对比任务.
 
@@ -515,6 +540,7 @@ def tune_and_simulate_task(
         model_source: IDENTIFICATION_RECORD/STEP_EXPERIMENT/MANUAL
         risk_confirmed: C 级或人工模型风险确认
         step_validation_passed: 仅内部已验证阶跃编排可设置
+        created_by_id: 创建人用户 ID（V62-P1-013 桥接 TaskTracker 用）
     """
     task_id = self.request.id
     algorithms = algorithms or ["IMC"]
@@ -535,6 +561,7 @@ def tune_and_simulate_task(
             model_source=model_source,
             risk_confirmed=risk_confirmed,
             step_validation_passed=step_validation_passed,
+            created_by_id=created_by_id,
         )
     )
 

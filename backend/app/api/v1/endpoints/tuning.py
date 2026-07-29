@@ -32,6 +32,7 @@ from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.tuning import (
     CreateTuningTaskRequest,
+    IdentifyHistoryAsyncResponse,
     IdentifySegmentsRequest,
     IdentifySegmentsResult,
     ModelIdentifyHistoryRequest,
@@ -122,6 +123,10 @@ async def identify_history_endpoint(
     提交异步 Celery 任务，返回 taskId 供前端轮询进度。
     辨识策略 AUTO=优先历史,失败兜底阶跃（任务内自动降级并标注
     dataSource=fallback_step）/ HISTORY_ONLY / STEP_ONLY。
+
+    V62-P1-012: 响应使用 typed model 构造——
+    - STEP_ONLY → ``ModelIdentifyResult``（同步辨识结果）
+    - AUTO/HISTORY_ONLY → ``IdentifyHistoryAsyncResponse``（异步任务提交）
     """
     from app.tasks.tuning import identify_model_task
 
@@ -142,11 +147,13 @@ async def identify_history_endpoint(
             created_by=user.username,
             requested_method=None,
         )
-        data = {**data, "recordId": record_id}
-        return success(data=data)
+        # V62-P1-012: 使用 typed model 构造响应，确保 contract 一致
+        typed = ModelIdentifyResult.model_validate({**data, "recordId": record_id})
+        return success(data=typed.model_dump(by_alias=True, exclude_none=True))
 
     # AUTO / HISTORY_ONLY → 异步任务
     # AUTO 策略由任务侧在历史辨识失败/数据不足时自动降级阶跃实验路径（P1-6）
+    # V62-P1-013: 传递 created_by_id 桥接 TaskTracker
     task = identify_model_task.delay(
         loop_id=body.loopId,
         start_time=body.startTime,
@@ -155,8 +162,15 @@ async def identify_history_endpoint(
         theta_estimate=body.thetaEstimate,
         created_by=user.username,
         identify_strategy=body.identifyStrategy,
+        created_by_id=str(user.id),
     )
-    return success(data={"taskId": task.id, "status": "PENDING"})
+    # V62-P1-012: 使用 typed model 构造响应
+    typed = IdentifyHistoryAsyncResponse(
+        taskId=task.id,
+        status="PENDING",
+        identifyStrategy=body.identifyStrategy,
+    )
+    return success(data=typed.model_dump(by_alias=True, exclude_none=True))
 
 
 @router.post("/identify/segments", response_model=ApiResponse[IdentifySegmentsResult])
@@ -389,14 +403,22 @@ async def cancel_task_endpoint(
     """取消异步整定任务（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
     task_id 为 Celery 任务 ID。仅 PENDING/RUNNING 状态可取消。
+    V62-P1-013: 同步 tuning_progress 和 TaskTracker 状态为 CANCELLED。
     """
     from celery.result import AsyncResult
 
+    from app.services.tuning_progress import update_progress
     from app.tasks.celery_app import celery_app
 
     result = AsyncResult(task_id, app=celery_app)
     if result.state in ("PENDING", "RUNNING", "STARTED"):
         result.revoke(terminate=True, signal="SIGTERM")
+        # V62-P1-013: 同步 tuning_progress → TaskTracker
+        await update_progress(
+            task_id,
+            status="CANCELLED",
+            message="用户主动取消",
+        )
         return success(data={"taskId": task_id, "status": "CANCELLED"})
     # 已终态（SUCCESS/FAILED/REVOKED）不可取消
     return success(data={"taskId": task_id, "status": result.state})

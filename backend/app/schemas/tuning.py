@@ -175,6 +175,20 @@ class ModelIdentifyHistoryResult(CamelModel):
     tagName: str | None = None
 
 
+class IdentifyHistoryAsyncResponse(CamelModel):
+    """历史辨识异步任务提交响应（V62-P1-012 typed response）.
+
+    AUTO/HISTORY_ONLY 策略提交异步 Celery 任务后返回此模型；
+    STEP_ONLY 策略走同步路径，返回 ``ModelIdentifyResult``。
+    """
+
+    taskId: str = Field(..., description="Celery 异步任务 ID")
+    status: str = Field("PENDING", description="任务初始状态")
+    identifyStrategy: IdentifyStrategy | None = Field(
+        None, description="辨识策略（AUTO/HISTORY_ONLY）"
+    )
+
+
 # ---------------------------------------------------------------------------
 # PID 整定
 # ---------------------------------------------------------------------------

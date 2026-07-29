@@ -249,6 +249,151 @@ class TestTuningProgress:
 
 
 # ---------------------------------------------------------------------------
+# V62-P1-013/014: TaskTracker 桥接测试
+# ---------------------------------------------------------------------------
+
+
+class TestTuningProgressTaskTrackerBridge:
+    """tuning_progress → TaskTracker 桥接测试（V62-P1-013/014）."""
+
+    @pytest.mark.asyncio
+    async def test_init_progress_bridges_to_task_tracker(self):
+        """created_by_id 非空时，init_progress 在 TaskTracker 创建 TUNING 任务."""
+        from app.services.tuning_progress import init_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch("app.services.task_tracker.redis_client"),
+            patch("app.services.task_tracker.create_task", new_callable=AsyncMock) as mock_create,
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+            mock_create.return_value = "tracker-task-123"
+
+            await init_progress(
+                "celery-task-1",
+                task_type="identify",
+                loop_id="loop-1",
+                created_by="engineer1",
+                created_by_id="user-uuid-1",
+                ts_start="2026-07-28T00:00:00Z",
+                ts_end="2026-07-28T01:00:00Z",
+            )
+
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["created_by"] == "engineer1"
+            assert call_kwargs["created_by_id"] == "user-uuid-1"
+            assert call_kwargs["celery_task_id"] == "celery-task-1"
+            assert call_kwargs["loop_ids"] == ["loop-1"]
+            # 验证 tracker_task_id 写入 tuning_progress hash
+            hset_mapping = mock_redis.hset.call_args.kwargs.get("mapping", {})
+            assert hset_mapping.get("tracker_task_id") == "tracker-task-123"
+
+    @pytest.mark.asyncio
+    async def test_init_progress_without_user_id_skips_bridge(self):
+        """created_by_id 为空时（定时任务/旧调用方），跳过 TaskTracker 桥接."""
+        from app.services.tuning_progress import init_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch("app.services.task_tracker.create_task", new_callable=AsyncMock) as mock_create,
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+
+            await init_progress(
+                "celery-task-2",
+                task_type="identify",
+                loop_id="loop-1",
+                created_by="system",
+                created_by_id="",
+            )
+
+            mock_create.assert_not_called()
+            hset_mapping = mock_redis.hset.call_args.kwargs.get("mapping", {})
+            assert "tracker_task_id" not in hset_mapping
+
+    @pytest.mark.asyncio
+    async def test_terminal_status_syncs_to_task_tracker(self):
+        """update_progress 进入 SUCCESS 终态时同步 TaskTracker."""
+        from app.services.tuning_progress import update_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock) as mock_update,
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+            mock_redis.hgetall = AsyncMock(
+                return_value={
+                    "tracker_task_id": "tracker-task-456",
+                    "stage": "discrete_to_continuous",
+                }
+            )
+
+            await update_progress(
+                "celery-task-3",
+                status="SUCCESS",
+                progress=100.0,
+                message="辨识完成",
+            )
+
+            mock_update.assert_called_once()
+            call_args = mock_update.call_args
+            assert call_args.args[0] == "tracker-task-456"
+            assert call_args.args[1].value == "SUCCESS"
+
+    @pytest.mark.asyncio
+    async def test_non_terminal_status_does_not_sync(self):
+        """RUNNING 状态不同步 TaskTracker（粗粒度状态只在终态同步）."""
+        from app.services.tuning_progress import update_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock) as mock_update,
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+
+            await update_progress(
+                "celery-task-4",
+                status="RUNNING",
+                stage="identify",
+            )
+
+            mock_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bridge_failure_does_not_block_progress(self):
+        """TaskTracker 桥接失败不阻断 tuning_progress 自身初始化."""
+        from app.services.tuning_progress import init_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch(
+                "app.services.task_tracker.create_task",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Redis down"),
+            ),
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+
+            # 不应抛异常
+            await init_progress(
+                "celery-task-5",
+                task_type="identify",
+                loop_id="loop-1",
+                created_by="engineer1",
+                created_by_id="user-uuid-1",
+            )
+
+            # tuning_progress hash 仍被写入（无 tracker_task_id）
+            mock_redis.hset.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # API 端点测试
 # ---------------------------------------------------------------------------
 

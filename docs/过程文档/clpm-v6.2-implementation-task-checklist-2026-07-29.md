@@ -234,11 +234,16 @@ unit_kpi_summary
 
 ### 4.3 API 与任务合同
 
-- [ ] `V62-P1-012` 历史辨识使用 typed response model。
-- [ ] `V62-P1-013` 统一整定异步任务与 TaskTracker 的状态、取消、通知和可观测合同。
-- [ ] `V62-P1-014` 不新增任务实体；保留一版 `tuning_progress` 兼容适配。
-- [ ] `V62-P1-015` 使用现有 DCS PID 结构完成 PB/Kp、秒/分钟、结构和滤波转换。
-- [ ] `V62-P1-016` 增加 PID 转换往返性质测试。
+- [x] `V62-P1-012` 历史辨识使用 typed response model。
+  - 新增 `IdentifyHistoryAsyncResponse` schema（taskId/status/identifyStrategy）；`/identify/history` 端点 STEP_ONLY 路径用 `ModelIdentifyResult.model_validate()` 构造，AUTO/HISTORY_ONLY 路径用 `IdentifyHistoryAsyncResponse` 构造。
+- [x] `V62-P1-013` 统一整定异步任务与 TaskTracker 的状态、取消、通知和可观测合同。
+  - `TaskType` 枚举新增 `TUNING`；`tuning_progress.init_progress` 桥接 `task_tracker.create_task`（TUNING 类型），终态 `update_progress` 同步 `task_tracker.update_status`（含通知）；取消端点同步 CANCELLED；Celery 任务新增 `created_by_id` 参数。
+- [x] `V62-P1-014` 不新增任务实体；保留一版 `tuning_progress` 兼容适配。
+  - `tuning_progress` 保留为兼容适配层（细粒度阶段仍独有），TaskTracker 只跟踪粗粒度状态；桥接失败不阻断整定任务；无 `created_by_id` 时降级为自包含模式。
+- [x] `V62-P1-015` 使用现有 DCS PID 结构完成 PB/Kp、秒/分钟、结构和滤波转换。
+  - 新建 `app/services/pid_conversion.py`：`to_standard_pid`/`from_standard_pid`/`convert_pid_dict`；PB↔Kp（100/Kp）、秒↔分钟（×60/÷60）；微分滤波不影响标准 Td。
+- [x] `V62-P1-016` 增加 PID 转换往返性质测试。
+  - 新建 `tests/test_pid_conversion.py` 29 测试：8 种 p_type×i_unit×d_unit 组合往返、标准→DCS→标准往返、具体数值正确性、边界（Td=0/大增益/小增益/PB=0 除零）、字典便捷转换。
 
 ### 4.4 页面与导航减法
 
@@ -376,3 +381,4 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 1 | P1-001~006 PV/OP/SP/MODE 同轴完成 | `_fetch_preprocessed_signals` 按 tag_group 索引消除顺序依赖；SP 线性插值到 PVOP 网格；MODE 零阶保持重采样（禁线性插值）；`_to_rel_seconds` 去除 naive `.timestamp()`；记录插值/外推/缺口/有效样本质量指标；后端 3475 passed（+19），ruff/alembic 全绿 |
 | 2026-07-29 | Phase 1 | P1-007/009/010/011 片段切分与激励门禁改进 | 新建 `segmentation.py`：按 MODE/缺口/饱和/太短事件切片，返回 SegmentSpec（含排除原因/有效样本比例）+ `select_best_segment`；`excitation.py`：OP 量程归一化（op_span 参数）、方向变化死区（过滤微噪声）、回归矩阵列标准化（单位缩放不变）；后端 3498 passed（+23），ruff 全绿 |
 | 2026-07-29 | Phase 1 | P1-008 preview API 返回真实片段 | `preview_identify_segments` 改用 `segment_signals` 真实切分；`IdentifySegment` schema 新增 `exclusionReason`/`validSampleRatio`/`pointCount`（optional）；被排除片段不跑激励检测；`TestV62P1PreviewSegments` 3 测试通过（AUTO+MANUAL/全 AUTO/空窗口） |
+| 2026-07-29 | Phase 1 | P1-012~016 API 与任务合同 | P1-012 typed response（`IdentifyHistoryAsyncResponse`）；P1-013/014 TaskTracker 桥接（TUNING 类型 + 终态同步 + 取消同步 + 桥接失败降级）；P1-015/016 PID 转换（`pid_conversion.py` + 29 往返测试）；后端 3535 passed（+37），ruff/alembic 全绿 |
