@@ -802,7 +802,7 @@ onBeforeUnmount(() => {
             </Tooltip>
           </template>
           <template v-else-if="column.key === 'status'">
-            <div class="flex flex-col items-center gap-1">
+            <div class="flex items-center justify-center gap-1 whitespace-nowrap">
               <Tag
                 :color="
                   statusConfig[record.status as DiagnosisApi.TaskStatus]
@@ -826,7 +826,7 @@ onBeforeUnmount(() => {
                 size="small"
                 status="active"
                 stroke-color="#1677ff"
-                style="width: 100px"
+                style="width: 60px"
               />
             </div>
           </template>
