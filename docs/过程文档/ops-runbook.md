@@ -49,6 +49,21 @@ worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspe
 - 诊断：`docker exec clpm-redis redis-cli -n 1 LLEN default`（队列长度）+ `pgrep -P <worker_pid>`（池子进程数）
 - 处置：`kill <主进程pid>`（必要时 -9）后重启 worker；积压消息会在重启后全部追平（导入/回填类重任务注意耗时）
 
+### 生产部署实弹验证记录（2026-07-28，R1→R6 六轮）
+
+首次实弹 `build-and-deploy.sh`（含新门禁链路），暴露并修复 6 个真实问题：
+
+| 轮次 | 问题 | 修复 |
+|---|---|---|
+| R1 | alembic env.py `set_main_option` 经 ConfigParser 插值，生产密码含 @（编码 %40）抛 "invalid interpolation syntax"，迁移中止 | env.py 改 `create_async_engine` 直连，URL 不过 ConfigParser（**门禁按设计中止部署，未带病上线**） |
+| R3 | 端口预检 `ss -tlnp` 按进程名排除 docker，非 root 用户看不到 docker-proxy 名 → clpm-frontend 自身被误判冲突 | 预检改容器持有者口径（clpm-frontend 持有=非冲突） |
+| R4 | celery 健康检查 `-d celery@$(hostname)` 定向到服务器主机名而非容器名 → 恒无 pong；且 worker 预载 30-60s 单次探测误判 | 去定向改广播 ping + 6×10s 重试 |
+| R4 | 生产 PG 缺 6 张表（algorithm_parameter/diagnosis_rule 等）——历史某次 `alembic stamp head` 把版本打到 head 但未真正建表 | 从 dev 导出 DDL+种子数据补齐（32→38 表）；**教训：stamp 假设 schema==head，对老库慎用，lib-migrate 的 stamp 分支仅此一类场景** |
+| R5 | `COMPOSE_PROFILE` 按已废止的 DATA_SOURCE_TYPE 分支 → 生产从未启动 TDengine 容器 | 恒启用 `--profile tdengine`；同步修复 env_file 的 APP_VERSION=1.0.0 覆盖镜像 ENV 问题（部署时 sed 同步） |
+| R6 | 全新 TDengine 容器无 `clpm_ts` 库 | 手动 REST 建库+超级表（**后续部署脚本需补 TDengine 初始化步骤，当前无此逻辑**） |
+
+验证终态：7 容器全 healthy、APP_VERSION=v6.2.0-196-g41a7e144（/health 可见）、celery ping/scheduled/beat 全通、部署前自动备份（TDengine 带凭据）首次真实生效、迁移 g7a8b9c0d1e2→head 成功。
+
 ### 全回路 INCONCLUSIVE 瘫痪（"bound to a different event loop"，2026-07-28 定位，已根治）
 
 **症状**：某时刻起所有回路 KPI 快照批量 INCONCLUSIVE/E（valid_rate 与 data_lineage 为 NULL），TDengine 数据实际存在；日志特征 `DataPlanner 取数失败（回路 xxx）: <asyncio.locks.Lock object ... [locked]> is bound to a different event loop`。
