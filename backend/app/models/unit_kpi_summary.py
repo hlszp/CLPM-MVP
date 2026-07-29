@@ -77,7 +77,7 @@ class UnitKpiSummary(Base):
     )
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, server_default=func.now(), nullable=True
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=True
     )
 
     __table_args__ = (

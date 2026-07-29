@@ -55,7 +55,7 @@ class ClpmMetricDataRequirement(Base):
         String(20), server_default=text("'v1'"), nullable=True
     )
     updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime, server_default=func.now(), nullable=True
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=True
     )
 
     __table_args__ = ({"comment": "指标数据需求契约：定义每个指标的数据获取和预处理需求"},)

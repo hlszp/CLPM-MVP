@@ -123,7 +123,7 @@ class DiagnosisTask(Base):
     # 失败时的错误信息
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     triggered_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # 归档相关字段
@@ -178,7 +178,7 @@ class DiagnosisTag(Base):
     # 触发阈值数值
     trigger_value: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     triggered_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=False
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     resolved_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
@@ -328,7 +328,7 @@ class DiagnosisConfigChange(Base):
     # 申请人
     requested_by: Mapped[str] = mapped_column(String(50), nullable=False)
     requested_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), nullable=False
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=False
     )
     # 审批人
     reviewed_by: Mapped[str | None] = mapped_column(String(50), nullable=True)

@@ -184,7 +184,7 @@ class KpiSnapshotCustom(Base):
     valid_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
     data_lineage: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, server_default=func.now(), nullable=True
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=True
     )
     # --- Phase 1 新增指标（与 kpi_snapshot_hourly 对齐，2026-07-23）---
     instrument_fault_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
