@@ -151,3 +151,18 @@ test.describe('诊断详情页（回归：版本号竞态修复 2026-07-29）', 
     await expect(page.locator('text=暂无散点数据')).toHaveCount(0);
   });
 });
+
+test.describe('诊断任务页（显示已归档开关 2026-07-29）', () => {
+  test.beforeEach(async ({ page, loginAs }) => {
+    await loginAs('IC_ENGINEER');
+  });
+
+  test('E2E-DIAG-005: 开启显示已归档后任务列表含历史任务', async ({ page }) => {
+    // SUCCESS 任务完成即自动归档，默认列表仅未归档（通常≈0-1 条）；
+    // 开启开关后应展示含已归档的全量历史（E2E 环境 ≥ 数十条）
+    await page.goto('/diagnosis/tasks');
+    await expect(page.locator('label:has-text("显示已归档")')).toBeVisible();
+    await page.locator('label:has-text("显示已归档")').click();
+    await expect(page.locator('text=已归档').first()).toBeVisible({ timeout: 8000 });
+  });
+});

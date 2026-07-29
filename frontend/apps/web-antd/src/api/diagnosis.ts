@@ -725,6 +725,8 @@ export namespace DiagnosisApi {
     status?: string;
     triggerType?: string;
     timeWindow?: TimeWindow;
+    /** 是否包含已归档任务（SUCCESS 完成即自动归档，2026-07-29） */
+    includeArchived?: boolean;
     page?: number;
     pageSize?: number;
   }

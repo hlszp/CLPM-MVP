@@ -24,6 +24,7 @@ import { IconifyIcon } from '@vben/icons';
 
 import {
   Button,
+  Checkbox,
   DatePicker,
   Input,
   message,
@@ -68,6 +69,8 @@ const query = reactive({
   status: undefined as string | undefined,
   triggerType: undefined as string | undefined,
   timeWindow: undefined as DiagnosisApi.TimeWindow | undefined,
+  // 是否包含已归档任务（SUCCESS 完成即自动归档；开启后任务页含历史）
+  includeArchived: false,
   page: 1,
   pageSize: 20,
 });
@@ -590,6 +593,7 @@ async function loadTasks(silent = false) {
       status: query.status,
       triggerType: query.triggerType,
       timeWindow: query.timeWindow,
+      includeArchived: query.includeArchived,
       page: query.page,
       pageSize: query.pageSize,
     });
@@ -714,6 +718,9 @@ onBeforeUnmount(() => {
           :options="timeWindowOptions"
           @change="handleSearch"
         />
+        <Checkbox v-model:checked="query.includeArchived" @change="handleSearch">
+          显示已归档
+        </Checkbox>
         <Button type="primary" :loading="loading" @click="handleSearch">
           查询
         </Button>
@@ -806,6 +813,10 @@ onBeforeUnmount(() => {
                   statusConfig[record.status as DiagnosisApi.TaskStatus]
                     ?.text ?? record.status
                 }}
+              </Tag>
+              <!-- 已归档标识（开启"显示已归档"后区分历史任务） -->
+              <Tag v-if="record.isArchived" color="default" style="font-size: 11px">
+                已归档
               </Tag>
               <!-- RUNNING 状态显示进度条 -->
               <Progress

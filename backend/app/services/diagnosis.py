@@ -1161,15 +1161,23 @@ async def list_diagnosis_tasks(
     trigger_type: str | None = None,
     loop_id: str | None = None,
     plant_node_id: str | None = None,
+    include_archived: bool = False,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    """诊断任务列表（仅未归档，分页 + 筛选）。
+    """诊断任务列表（分页 + 筛选）。
+
+    Args:
+        include_archived: True 时不做归档过滤（未归档 + 已归档全量返回）；
+            False（默认）仅未归档任务。SUCCESS 任务完成即自动归档，
+            需要"队列+历史"合一视图时传 True（2026-07-29）。
 
     Returns:
         {items, total, page, pageSize}
     """
-    conditions: list[Any] = [DiagnosisTask.is_archived.is_(False)]
+    conditions: list[Any] = []
+    if not include_archived:
+        conditions.append(DiagnosisTask.is_archived.is_(False))
     if status:
         conditions.append(DiagnosisTask.status == status)
     if trigger_type:

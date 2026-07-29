@@ -609,12 +609,15 @@ async def list_tasks_endpoint(
     triggerType: str | None = Query(None, description="触发方式筛选（manual/auto）"),
     loopId: str | None = Query(None, description="按回路 ID 筛选"),
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    includeArchived: bool = Query(
+        False, description="是否包含已归档任务（SUCCESS 完成即自动归档）"
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
-    """诊断任务列表（仅未归档，分页 + 筛选）。
+    """诊断任务列表（默认仅未归档；includeArchived=true 时含历史归档任务）。
 
     设计依据：PRD §5.6 / IDS §2.4 — GET /api/v1/diagnosis/tasks
     """
@@ -624,6 +627,7 @@ async def list_tasks_endpoint(
         trigger_type=triggerType,
         loop_id=loopId,
         plant_node_id=plantNodeId,
+        include_archived=includeArchived,
         page=page,
         page_size=pageSize,
     )
