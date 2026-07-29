@@ -609,7 +609,20 @@ if [ "$DO_DEPLOY" = true ]; then
     fi
 
     log_info "检查 Celery Worker（inspect ping）..."
-    if $SSH_PREFIX "docker exec clpm-celery-worker celery -A app.tasks.celery_app inspect ping -d celery@\$(hostname) --timeout 5" 2>/dev/null | grep -q pong; then
+    # 2026-07-28 R4 实弹教训：①不要用 -d celery@$(hostname) 定向——
+    # $(hostname) 解析为服务器主机名而非 worker 容器主机名，定向必然
+    # 无 pong；②worker 启动后需预载配置（约 30-60s），单次探测会误判，
+    # 加重试等待。
+    CELERY_PING_OK=false
+    for i in 1 2 3 4 5 6; do
+        if $SSH_PREFIX "docker exec clpm-celery-worker celery -A app.tasks.celery_app inspect ping --timeout 10" 2>/dev/null | grep -q pong; then
+            CELERY_PING_OK=true
+            break
+        fi
+        log_info "  等待 Celery Worker 就绪（第 ${i}/6 次）..."
+        sleep 10
+    done
+    if [ "$CELERY_PING_OK" = true ]; then
         log_info "Celery Worker 健康 ✓"
     else
         log_error "Celery Worker 健康检查失败（inspect ping 无 pong）"
