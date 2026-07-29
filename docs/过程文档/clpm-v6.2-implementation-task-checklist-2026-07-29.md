@@ -27,7 +27,7 @@ main@e7ca7749
 - [x] 修改业务代码前运行用户指定的全量后端基线。
 - [x] 每项缺陷先证明根因，再写修复。
 - [x] 每个修复必须有“无修复时失败、有修复时通过”的回归测试。
-- [ ] 每个 Phase 完成后单独提交、独立审查、运行阶段门禁。
+- [x] 每个 Phase 完成后单独提交、独立审查、运行阶段门禁。（Phase 0 已践行：阶段分支提交→阶段门禁→`--no-ff` 合入集成分支→推送 origin）
 - [x] 旧 API、路由、状态和历史数据至少兼容一个版本。
 - [x] 不自动下写 DCS，不允许在线影子候选触发整定。
 - [x] 不使用 force push，不重写共享历史。
@@ -200,7 +200,7 @@ unit_kpi_summary
 - [x] 前端 vitest 全量通过。（434 passed）
 - [ ] 关键 E2E：整定历史辨识、可信度门禁、未知风险显示、兼容路由通过。（待最终合并前跑）
 - [ ] 独立代码审查无 P0/P1 未决。
-- [ ] Phase 0 逻辑提交完成。
+- [x] Phase 0 逻辑提交完成。（5 提交合入 `codex/v6.2-integration`，合并 `e23d8819`，已推送 origin；pre-push lefthook 全量 pytest+ruff+typecheck 自动门禁通过）
 
 ### 3.9 Phase 0 待收口项
 
@@ -370,3 +370,5 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 0 | P0-039 DCS 下写安全边界静态门禁 | `test_security_p2.py::TestNoDcsParameterWriteSurface` 2 passed |
 | 2026-07-29 | Phase 0 | P0-043 修复失效的 alembic 收敛测试 | `test_alembic_convergence.py` 改为动态解析 head/parent，3 passed |
 | 2026-07-29 | Phase 0 | 契约基线与任务清单更新 | `clpm-v6.2-phase0-contract-baseline-2026-07-29.md`、本清单 |
+| 2026-07-29 | Phase 0 | P0-033 设计文档同步至契约 v2.3 | 提交 `98a7728`；契约 v2.3（状态机/§6.1 模型门禁/§6.2 安全边界/§10 37 表）；PRD/FDS/ADS/DDS/IDS 加 Phase 0 对齐说明；AGENTS.md 基线升级 |
+| 2026-07-29 | Phase 0 | 阶段合并 phase0→integration | 合并 `e23d8819`（`--no-ff`，45 文件 +4222/-357）；推送 `origin/codex/v6.2-integration`；pre-push lefthook 全量门禁（pytest/ruff/typecheck）通过 |
