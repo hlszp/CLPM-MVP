@@ -357,9 +357,20 @@ if [ "$DO_DEPLOY" = true ]; then
 
     # 检查 3: 端口 7141 占用检测
     log_info "检查端口 7141 占用..."
+    # 判定口径（2026-07-28 R3 实弹教训）：非 root 用户 ss -tlnp 看不到
+    # docker-proxy 进程名，按进程名排除会误判宿主机占用。改为先看
+    # 容器持有者——clpm-frontend 自身持有属正常（compose up 会替换），
+    # 其他容器或宿主机进程持有才算冲突。
     PORT_7141_PID=$($SSH_PREFIX "
-        # 检查端口 7141 是否被占用（排除 clpm 自身容器）
-        ss -tlnp | grep ':7141 ' | grep -v 'docker\|containerd' | head -1
+        holder=\$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep ':7141' | head -1 || true)
+        if [ -n \"\$holder\" ]; then
+            case \"\$holder\" in
+                clpm-frontend*) : ;;  # 自身容器，非冲突
+                *) echo \"\$holder\" ;;
+            esac
+        else
+            ss -tln | grep ':7141 ' | head -1 || true
+        fi
     " 2>/dev/null || echo "")
 
     if [ -n "$PORT_7141_PID" ]; then
@@ -379,8 +390,11 @@ if [ "$DO_DEPLOY" = true ]; then
             systemctl disable httpd 2>/dev/null || true
         " 2>&1 | while read -r line; do log_info "  $line"; done
 
-        # 再次检查
-        PORT_7141_RECHECK=$($SSH_PREFIX "ss -tlnp | grep ':7141 ' | grep -v 'docker\|containerd'" 2>/dev/null || echo "")
+        # 再次检查（同口径：只看非 clpm 持有者）
+        PORT_7141_RECHECK=$($SSH_PREFIX "
+            holder=\$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep ':7141' | grep -v 'clpm-frontend' | head -1 || true)
+            if [ -n \"\$holder\" ]; then echo \"\$holder\"; else ss -tln | grep ':7141 ' | head -1 || true; fi
+        " 2>/dev/null || echo "")
         if [ -n "$PORT_7141_RECHECK" ]; then
             log_error "端口 7141 仍被占用，无法自动释放:"
             log_error "  $PORT_7141_RECHECK"
