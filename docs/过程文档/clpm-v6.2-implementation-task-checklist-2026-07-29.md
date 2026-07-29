@@ -256,7 +256,8 @@ unit_kpi_summary
   - 新建 `views/tuning/flow.vue` stepper 容器（Steps 三步 + 路由推导 currentStep + 步骤门禁 + onMounted 恢复）；`store/tuning.ts` 加 sessionStorage 持久化（`_persist`/`restoreFromSession`）+ `restoreFromTask(taskId)` 后端回显兜底 + `modelSource`/`sourceRecordId`/`riskConfirmed`/`currentStep` ref；`tuning.ts` 路由新增 `/tuning/flow` 嵌套子路由 + 旧三页 redirect+hideInMenu（兼容书签）；三页跳转改指 flow 子路由 + 同步 store；workbench navCards 简化为「整定流程+效果统计」+ 未终态任务「继续」入口；check:type 通过、vitest 125 passed、浏览器验证 Steps/重定向/门禁通过。
 - [x] `V62-P1-020` 旧路由隐藏并兼容重定向至少一个版本。
   - `diagnosis.ts`：DiagnosisTasks → task-center.vue；DiagnosisRecords → redirect `/diagnosis/tasks?tab=history` + hideInMenu，兼容旧书签/深链。提交 `ddf867eb`。
-- [ ] `V62-P1-021` 建立统一 Loop 上下文头，保留回路、时间窗和返回来源。
+- [x] `V62-P1-021` 建立统一 Loop 上下文头，保留回路、时间窗和返回来源。
+  - 新建 `components/clpm/loop-context-header.vue`（editable/只读双模式：回路 Select + 时间 RangePicker + 返回按钮，数据源 store）；`store/tuning.ts` 新增 `currentLoopTimeRange`（ISO 字符串元组）+ `setLoopTimeRange` + 持久化/恢复/$reset；`flow.vue` 用 `ClpmLoopContextHeader` 替换占位（步骤0可编辑/1-2只读）；`model.vue` 移除回路 Select/时间 RangePicker 与 `loadLoopOptions`，`loopId`/`timeRange` 改为 store 代理 computed；测试 mock 同步补充 `currentLoopId`/`currentLoopTimeRange`；check:type 通过、vitest 125 passed。
 - [ ] `V62-P1-022` 配置归属业务模块，高级参数仅管理员可见。
 - [ ] `V62-P1-023` 覆盖 loading、empty、error、partial、success 和权限状态。
 
@@ -391,3 +392,4 @@ pnpm exec playwright test
 | 2026-07-30 | Phase 1 | P1-017 工作台改造为跨模块待办门户 | 新建 `views/dashboard/workbench.vue`：`ClpmKpiStrip` 跨模块待办计数（诊断待处理/异常跟踪待办/评估待执行/整定任务），计数走真实接口 + 整定卡片按角色条件渲染，复用 `DiagnosisSummaryCard`+`TrackerEffectivenessCard`，装置性能仅留入口卡；`dashboard.ts` 路由改指新页面；check:type 通过、vitest 125 passed（routes-authority 工作台权限断言通过） |
 | 2026-07-30 | Phase 1 | P1-019 整定三页合并为可恢复 stepper | 新建 `flow.vue`（Steps 三步 + 门禁 + onMounted 恢复）；`store/tuning.ts` 加 sessionStorage 持久化 + `restoreFromTask` taskId 回显兜底；`tuning.ts` 嵌套路由 + 旧路由重定向；三页跳转改指 flow 子路由；workbench navCards 简化 + 任务「继续」入口；check:type 通过、vitest 125 passed、浏览器验证 Steps/重定向/门禁通过 |
 | 2026-07-29 | Phase 1 | 排雷：`pnpm run format` 破坏测试标题 | `internal/lint-configs/oxlint-config` 启用 `vitest/prefer-lowercase-title:error`，`vsh lint --format` 会把 `describe`/`it` 标题首字母强制小写（`ADMIN`→`aDMIN`、`EXPERT`→`eXPERT`）。对策：不跑 blanket `pnpm run format`，改用 `check:type`+`vitest run` 作真实门禁；新文件按文件单独格式化。已还原被污染的 7 个测试文件 |
+| 2026-07-30 | Phase 1 | P1-021 统一 Loop 上下文头 | 新建 `ClpmLoopContextHeader`（editable/只读双模式）；store 加 `currentLoopTimeRange`+持久化；`flow.vue` 步骤0可编辑/1-2只读；`model.vue` 移除内联回路/时间窗选择器，改读 store；提交 `1f0e031`；check:type 通过、vitest 125 passed |
