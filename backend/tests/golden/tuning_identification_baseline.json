@@ -13,12 +13,8 @@
         "theta_absolute_error": 2.0
       },
       "expected": {
-        "model_type": "FOPDT",
-        "K_range": [1.90, 2.10],
-        "tau_range": [27.0, 33.0],
-        "theta_range": [3.0, 7.0],
-        "min_fitting_score": 95.0,
-        "min_confidence_order": 3
+        "success": false,
+        "reason_contains": "CLOSED_LOOP_METHOD_UNVERIFIED"
       }
     },
     "open_loop_fopdt": {
@@ -67,9 +63,8 @@
         "theta_absolute_error": 2.0
       },
       "expected": {
-        "model_type": "FOPDT",
-        "K_range": [1.80, 2.20],
-        "min_fitting_score": 90.0
+        "success": false,
+        "reason_contains": "CLOSED_LOOP_METHOD_UNVERIFIED"
       }
     },
     "insufficient_excitation": {

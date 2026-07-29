@@ -381,7 +381,12 @@ async def calculate_tuning(
         PIDParamsSchema,
         SimulationResultSchema,
     )
-    from app.services.tuning import identify_model, run_simulation, tune_pid
+    from app.services.tuning import (
+        authorize_tuning_model,
+        identify_model,
+        run_simulation,
+        tune_pid,
+    )
 
     seg = body.identificationParams.dataSegment
     _parse_time(seg.startTime, seg.endTime)
@@ -419,12 +424,23 @@ async def calculate_tuning(
 
     # 2. PID 整定
     try:
+        source_context = await authorize_tuning_model(
+            db=db,
+            requested_model_type=model_type,
+            requested_model_params=params_dict,
+            loop_id=body.loopId,
+            source_record_id=None,
+            model_source="STEP_EXPERIMENT",
+            risk_confirmed=False,
+            trusted_step_validation=identify_result.get("stepValidationPassed") is True,
+        )
         tune_result = await tune_pid(
             model_type=model_type,
             model_params=params_dict,
             algorithm=body.tuningParams.method,
             algorithm_params=body.tuningParams.params or None,
             loop_id=body.loopId,
+            source_context=source_context,
         )
     except BizError:
         raise

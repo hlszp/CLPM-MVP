@@ -30,7 +30,11 @@ from app.services.tuning_identification.excitation import (
     check_excitation,
     excitation_score,
 )
-from app.services.tuning_identification.iv import identify_iv, identify_iv4
+from app.services.tuning_identification.iv import (
+    IV_CAPABILITY_STATUS,
+    identify_iv,
+    identify_iv4,
+)
 from app.services.tuning_identification.nonparametric import (
     correlation_analysis,
     welch_spectral_analysis,
@@ -44,6 +48,7 @@ from app.services.tuning_identification.order_selection import (
 )
 from app.services.tuning_identification.types import (
     ConfidenceLevel,
+    IdentifyMethod,
     ModelType,
 )
 
@@ -367,25 +372,23 @@ class TestARMAXIdentification:
 
 
 class TestIVIdentification:
-    """IV 辨识（层 3，闭环偏差消除）测试。"""
+    """实验性 IV 数值稳定性测试（不宣称闭环无偏或正式 IV4）."""
 
-    def test_iv_unbiased_closed_loop(self):
-        """闭环下 IV 估计应无偏（优于 ARX）."""
+    def test_experimental_iv_returns_finite_result(self):
+        """实验性 IV 对闭环样本应返回有限数值，不能据此宣称无偏."""
+        assert IV_CAPABILITY_STATUS == "EXPERIMENTAL"
         sp = _sp_steps(1500, [(50, 10.0), (500, 15.0), (1000, 8.0)])
         y, u = _simulate_closed_loop_fopdt(
             sp, K=2.0, tau=30.0, theta=5.0, kp=2.0, ti=20.0, noise_std=0.8, seed=99
         )
-        K_true = 2.0
         d = 5
-        arx_res = identify_arx(u, y, d, na=1, nb=1)
         iv_res = identify_iv(u, y, sp, d, na=1, nb=1)
-        # IV 的 K 估计应更接近真值
-        arx_K = arx_res.b_coeffs[0] / (1 + arx_res.a_coeffs[0])
-        iv_K = iv_res.b_coeffs[0] / (1 + iv_res.a_coeffs[0])
-        assert abs(iv_K - K_true) <= abs(arx_K - K_true) + 0.15  # 容差避免边界抖动
+        assert all(math.isfinite(value) for value in iv_res.a_coeffs)
+        assert all(math.isfinite(value) for value in iv_res.b_coeffs)
+        assert math.isfinite(iv_res.r_squared)
 
-    def test_iv4_convergence(self):
-        """IV4 应在有限步内收敛。"""
+    def test_experimental_iterative_iv_returns_finite_result(self):
+        """实验性迭代 IV 应有限终止并返回有限数值."""
         sp = _sp_steps(1000, [(50, 10.0), (500, 15.0)])
         y, u = _simulate_closed_loop_fopdt(
             sp, K=1.5, tau=20.0, theta=3.0, kp=2.0, ti=15.0, noise_std=0.3, seed=55
@@ -573,7 +576,7 @@ class TestPipelineEndToEnd:
     """算法栈端到端（pipeline.py）测试。"""
 
     def test_closed_loop_fopdt_identification(self):
-        """闭环 FOPDT 仿真数据辨识（核心场景）."""
+        """未验证闭环方法不得把高拟合度结果发布为成功辨识."""
         K_true, tau_true, theta_true = 2.0, 30.0, 5.0
         sp = _sp_steps(1200, [(50, 10.0), (400, 15.0), (800, 8.0)])
         y, u = _simulate_closed_loop_fopdt(
@@ -593,14 +596,9 @@ class TestPipelineEndToEnd:
             ts=1.0,
             theta_estimate=5.0,
         )
-        assert result.success
-        assert result.best_model is not None
-        p = result.best_model.params
-        assert p.model_type == ModelType.FOPDT
-        assert abs(p.K - K_true) / K_true < 0.05
-        assert abs(p.tau - tau_true) / tau_true < 0.10
-        assert abs(p.theta - theta_true) < 2.0
-        assert result.best_model.fitting_score >= 95.0
+        assert not result.success
+        assert result.best_model is None
+        assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.reason or "")
         assert result.algorithm_version == "TUNE_IDENT_v1.0"
 
     def test_open_loop_fopdt_identification(self):
@@ -650,6 +648,96 @@ class TestPipelineEndToEnd:
 
     def test_candidates_include_fopdt_and_sopdt(self):
         """默认候选应包含 FOPDT 与 SOPDT。"""
+        u = _prbs(1200, seed=42)
+        y = _simulate_open_loop_fopdt(
+            K=2.0,
+            tau=30.0,
+            theta=5.0,
+            u=u,
+            noise_std=0.3,
+            seed=42,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=5.0,
+        )
+        assert result.success
+        model_types = {c.params.model_type for c in result.candidates}
+        assert ModelType.FOPDT in model_types
+        assert ModelType.SOPDT in model_types
+
+    def test_explicit_zero_theta_is_preserved(self):
+        """显式 theta=0 不得被缺省启发值覆盖."""
+        u = _prbs(1000, seed=412)
+        y = _simulate_open_loop_fopdt(
+            K=1.2,
+            tau=18.0,
+            theta=0.0,
+            u=u,
+            noise_std=0.05,
+            seed=412,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=0.0,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        assert result.best_model is not None
+        assert result.best_model.params.theta == 0.0
+        assert result.theta_source.value == "EXPLICIT"
+
+    def test_missing_theta_is_marked_heuristic_and_capped_at_c(self):
+        """缺省 theta 仅是 2Ts 启发值，必须标记且可信度最高 C."""
+        u = _prbs(1000, seed=413)
+        y = _simulate_open_loop_fopdt(
+            K=1.2,
+            tau=18.0,
+            theta=2.0,
+            u=u,
+            noise_std=0.01,
+            seed=413,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        assert result.theta_source.value == "HEURISTIC_2TS"
+        assert result.best_model is not None
+        assert result.best_model.confidence.value in {"C", "D", "E", "INCONCLUSIVE"}
+        assert result.to_dict()["thetaSource"] == "HEURISTIC_2TS"
+
+    def test_history_pipeline_rejects_ipdt_candidate(self):
+        """历史 pipeline 不得把 IPDT 静默按 SOPDT 返回."""
+        u = _prbs(800, seed=414)
+        y = _simulate_open_loop_fopdt(
+            K=1.0,
+            tau=20.0,
+            theta=3.0,
+            u=u,
+            noise_std=0.05,
+            seed=414,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=3.0,
+            candidate_models=[ModelType.IPDT],
+        )
+        assert not result.success
+        assert "IPDT" in (result.reason or "")
+
+    def test_production_pipeline_does_not_select_experimental_iv(self):
+        """Phase 0 生产候选不得包含尚未验证的 IV 实现."""
         sp = _sp_steps(1200, [(50, 10.0), (400, 15.0), (800, 8.0)])
         y, u = _simulate_closed_loop_fopdt(
             sp,
@@ -659,7 +747,7 @@ class TestPipelineEndToEnd:
             kp=2.0,
             ti=20.0,
             noise_std=0.3,
-            seed=42,
+            seed=415,
         )
         result = identify_from_history(
             op=u.tolist(),
@@ -668,10 +756,13 @@ class TestPipelineEndToEnd:
             ts=1.0,
             theta_estimate=5.0,
         )
-        assert result.success
-        model_types = {c.params.model_type for c in result.candidates}
-        assert ModelType.FOPDT in model_types
-        assert ModelType.SOPDT in model_types
+        assert not result.success
+        assert result.best_model is None
+        assert all(
+            candidate.identify_method != IdentifyMethod.HISTORICAL_IV
+            for candidate in result.candidates
+        )
+        assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.reason or "")
 
     def test_to_dict_serialization(self):
         """to_dict 应可 JSON 序列化。"""
@@ -746,7 +837,7 @@ class TestMeanRemovalPipeline:
         assert p.K < 3.0
 
     def test_biased_closed_loop_recovers_gain(self):
-        """闭环带负载偏置（SP≈450, OP≈60, K=2.0/τ=60s）：SP 阶跃可出结果且 K 误差 < 10%."""
+        """闭环带负载偏置也必须先通过合格闭环方法门禁."""
         K_true, tau_true, theta_true = 2.0, 60.0, 5.0
         sp = _sp_steps(1800, [(0, 450.0), (300, 455.0), (700, 447.0), (1100, 452.0), (1500, 449.0)])
         y, u = _simulate_closed_loop_fopdt_biased(
@@ -770,12 +861,8 @@ class TestMeanRemovalPipeline:
             ts=1.0,
             theta_estimate=theta_true,
         )
-        assert result.success
-        p = result.best_model.params
-        assert abs(p.K - K_true) / K_true < 0.10
-        # 偏置量应记录在 best_model.reason（P0-2 details 追溯）
-        assert "去均值偏置" in (result.best_model.reason or "")
-        assert "PV=" in (result.best_model.reason or "")
+        assert not result.success
+        assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.reason or "")
 
     def test_zero_mean_data_unaffected(self):
         """零均值数据去均值前后等价（回归守卫：均值≈0 时 K 仍准确）."""
@@ -823,22 +910,27 @@ class TestResidualWhitenessPipeline:
         assert p_after > 0.05
 
     def test_good_model_confidence_not_capped_at_c(self):
-        """闭环含测量噪声的好模型（R²≈100%）不应被残差检验压到 C.
+        """开环含测量噪声的好模型（R²≈100%）不应被残差检验压到 C.
 
         旧实现用方程误差（ARMAX 下 = C·ε 天然有色）做白性检验，
         好模型也过不了 Ljung-Box，可信度永封顶 C；
         改一步预测误差后 ARMAX 候选应得 A/B。
         """
-        sp = _sp_steps(1200, [(50, 10.0), (400, 15.0), (800, 8.0)])
-        y, u = _simulate_closed_loop_fopdt(
-            sp, K=2.0, tau=30.0, theta=5.0, kp=2.0, ti=20.0, noise_std=0.5, seed=42
+        u = _prbs(1200, seed=42)
+        y = _simulate_open_loop_fopdt(
+            K=2.0,
+            tau=30.0,
+            theta=5.0,
+            u=u,
+            noise_std=0.1,
+            seed=42,
         )
         result = identify_from_history(
             op=u.tolist(),
             pv=y.tolist(),
-            sp=sp.tolist(),
             ts=1.0,
             theta_estimate=5.0,
+            candidate_models=[ModelType.FOPDT],
         )
         assert result.success
         assert result.best_model.residual_test_passed
@@ -867,7 +959,7 @@ class TestGoldenBaseline:
         assert "scenarios" in baseline
 
     def test_closed_loop_fopdt_baseline_alignment(self):
-        """闭环 FOPDT 场景应满足 golden 基线容差。"""
+        """闭环 FOPDT 场景在合格方法上线前必须符合拒绝基线."""
         baseline = self._load_baseline()
         scn = baseline["scenarios"]["closed_loop_fopdt"]
         sp = _sp_steps(scn["n"], [(50, 10.0), (400, 15.0), (800, 8.0)])
@@ -888,15 +980,11 @@ class TestGoldenBaseline:
             ts=1.0,
             theta_estimate=5.0,
         )
-        assert result.success
-        p = result.best_model.params
-        tol = scn["tolerance"]
-        assert abs(p.K - scn["truth"]["K"]) / scn["truth"]["K"] < tol["K_relative_error"]
-        assert abs(p.tau - scn["truth"]["tau"]) / scn["truth"]["tau"] < tol["tau_relative_error"]
-        assert abs(p.theta - scn["truth"]["theta"]) < tol["theta_absolute_error"]
+        assert result.success is scn["expected"]["success"]
+        assert scn["expected"]["reason_contains"] in (result.reason or "")
 
     def test_closed_loop_fopdt_biased_baseline_alignment(self):
-        """带工业偏置闭环 FOPDT 场景应满足 golden 基线容差（P0-2 场景，K 误差 <10%）."""
+        """带工业偏置闭环场景也不得绕过未验证方法门禁."""
         baseline = self._load_baseline()
         scn = baseline["scenarios"]["closed_loop_fopdt_biased"]
         sp_base = scn["bias"]["sp_base"]
@@ -929,14 +1017,8 @@ class TestGoldenBaseline:
             theta_estimate=scn["truth"]["theta"],
             candidate_models=[ModelType.FOPDT],
         )
-        assert result.success
-        p = result.best_model.params
-        assert p.model_type == ModelType.FOPDT
-        tol = scn["tolerance"]
-        assert abs(p.K - scn["truth"]["K"]) / scn["truth"]["K"] < tol["K_relative_error"]
-        assert abs(p.tau - scn["truth"]["tau"]) / scn["truth"]["tau"] < tol["tau_relative_error"]
-        assert abs(p.theta - scn["truth"]["theta"]) < tol["theta_absolute_error"]
-        assert result.best_model.fitting_score >= scn["expected"]["min_fitting_score"]
+        assert result.success is scn["expected"]["success"]
+        assert scn["expected"]["reason_contains"] in (result.reason or "")
 
     def test_open_loop_fopdt_baseline_alignment(self):
         """开环 FOPDT 场景应满足 golden 基线容差（限定 FOPDT 候选）."""

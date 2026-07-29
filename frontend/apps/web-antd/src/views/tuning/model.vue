@@ -29,11 +29,13 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   DatePicker,
   Descriptions,
   DescriptionsItem,
   Form,
   FormItem,
+  InputNumber,
   message,
   Progress,
   Select,
@@ -58,6 +60,7 @@ const { isDark, themeColors } = useClpmTheme();
 const loading = ref(false);
 const segmentLoading = ref(false);
 const loopOptions = ref<{ label: string; value: string }[]>([]);
+const riskConfirmed = ref(false);
 
 /** 阶跃实验路径结果（STEP_ONLY 策略，同步返回） */
 const stepResult = ref<null | TuningApi.IdentifyResult>(null);
@@ -79,27 +82,38 @@ const filter = reactive({
     dayjs.Dayjs,
   ],
   identifyStrategy: 'AUTO' as TuningApi.IdentifyStrategy,
-  candidateModelTypes: ['FOPDT', 'SOPDT'] as TuningApi.ModelType[],
+  candidateModelTypes: ['FOPDT', 'SOPDT'] as TuningApi.HistoryModelType[],
+  thetaEstimate: undefined as number | undefined,
   // STEP_ONLY 路径仍用 modelType + method
   modelType: 'FOPDT' as TuningApi.ModelType,
   method: 'TWO_POINT' as TuningApi.IdentifyMethod,
 });
 
 /** 辨识策略选项 */
-const strategyOptions: { label: string; value: TuningApi.IdentifyStrategy }[] = [
-  {
-    label: '自动（优先历史数据，失败兜底阶跃实验）',
-    value: 'AUTO',
-  },
-  { label: '仅历史数据辨识', value: 'HISTORY_ONLY' },
-  { label: '仅阶跃实验（同步）', value: 'STEP_ONLY' },
-];
+const strategyOptions: { label: string; value: TuningApi.IdentifyStrategy }[] =
+  [
+    {
+      label: '自动（优先历史数据，失败兜底阶跃实验）',
+      value: 'AUTO',
+    },
+    { label: '仅历史数据辨识', value: 'HISTORY_ONLY' },
+    { label: '仅阶跃实验（同步）', value: 'STEP_ONLY' },
+  ];
 
-/** 模型类型选项 */
+/** 阶跃实验模型类型选项（保留 IPDT） */
 const modelTypeOptions: { label: string; value: TuningApi.ModelType }[] = [
   { label: 'FOPDT 一阶加纯滞后', value: 'FOPDT' },
   { label: 'SOPDT 二阶加纯滞后', value: 'SOPDT' },
   { label: 'IPDT 积分加纯滞后', value: 'IPDT' },
+];
+
+/** 历史辨识候选类型（当前转换链仅支持 FOPDT/SOPDT） */
+const historyModelTypeOptions: {
+  label: string;
+  value: TuningApi.HistoryModelType;
+}[] = [
+  { label: 'FOPDT 一阶加纯滞后', value: 'FOPDT' },
+  { label: 'SOPDT 二阶加纯滞后', value: 'SOPDT' },
 ];
 
 /** 辨识方法选项（仅 STEP_ONLY 路径使用） */
@@ -163,6 +177,112 @@ const isInconclusive = computed(
       historyResult.value?.success === false),
 );
 
+interface ModelUsageGate {
+  blockedReason: null | string;
+  modelSource: null | TuningApi.ModelSource;
+  requiresRiskConfirmation: boolean;
+}
+
+/**
+ * 依据服务端可审计字段进行 fail-closed 门禁。
+ * 页面仅控制入口呈现，服务端仍需按 sourceRecordId 重新读取记录并复核。
+ */
+const modelUsageGate = computed<ModelUsageGate>(() => {
+  if (!currentResult.value) {
+    return {
+      blockedReason: '尚无可用辨识结果',
+      modelSource: null,
+      requiresRiskConfirmation: false,
+    };
+  }
+
+  if (isStepOnly.value) {
+    if (stepResult.value?.stepValidationPassed !== true) {
+      return {
+        blockedReason: '该结果未通过受控单阶跃验证，不可进入整定或推荐仿真。',
+        modelSource: 'STEP_EXPERIMENT',
+        requiresRiskConfirmation: false,
+      };
+    }
+    if (!stepResult.value.recordId) {
+      return {
+        blockedReason:
+          '受控阶跃结果缺少可审计的记录 ID，不可进入整定或推荐仿真。',
+        modelSource: 'STEP_EXPERIMENT',
+        requiresRiskConfirmation: false,
+      };
+    }
+    return {
+      blockedReason: null,
+      modelSource: 'STEP_EXPERIMENT',
+      requiresRiskConfirmation: false,
+    };
+  }
+
+  const result = historyResult.value;
+  if (!result || result.success === false) {
+    return {
+      blockedReason: '历史辨识结论为 INCONCLUSIVE，不可用于整定或推荐仿真。',
+      modelSource: 'IDENTIFICATION_RECORD',
+      requiresRiskConfirmation: false,
+    };
+  }
+  if (result.thetaSource === 'HEURISTIC_2TS') {
+    return {
+      blockedReason:
+        '纯滞后采用 2Ts 启发值，可信度最高为 C，不可直接用于整定或推荐仿真；请提供明确 θ 后重新辨识。',
+      modelSource: 'IDENTIFICATION_RECORD',
+      requiresRiskConfirmation: false,
+    };
+  }
+  if (result.identifyMethod === 'HISTORICAL_IV') {
+    return {
+      blockedReason: 'IV 辨识当前仍为实验性能力，不可进入整定或推荐仿真。',
+      modelSource: 'IDENTIFICATION_RECORD',
+      requiresRiskConfirmation: false,
+    };
+  }
+
+  const confidence = result.confidenceLevel;
+  if (
+    confidence === 'D' ||
+    confidence === 'E' ||
+    confidence === 'INCONCLUSIVE'
+  ) {
+    return {
+      blockedReason: `可信度 ${confidence} 不允许用于整定或推荐仿真。`,
+      modelSource: 'IDENTIFICATION_RECORD',
+      requiresRiskConfirmation: false,
+    };
+  }
+  if (!confidence || !['A', 'B', 'C'].includes(confidence)) {
+    return {
+      blockedReason: '可信度等级未明确，不可进入整定或推荐仿真。',
+      modelSource: 'IDENTIFICATION_RECORD',
+      requiresRiskConfirmation: false,
+    };
+  }
+  if (!result.recordId) {
+    return {
+      blockedReason: '辨识结果缺少可审计的记录 ID，不可进入整定或推荐仿真。',
+      modelSource: 'IDENTIFICATION_RECORD',
+      requiresRiskConfirmation: false,
+    };
+  }
+
+  return {
+    blockedReason: null,
+    modelSource: 'IDENTIFICATION_RECORD',
+    requiresRiskConfirmation: confidence === 'C',
+  };
+});
+
+const canEnterRecommendedFlow = computed(
+  () =>
+    modelUsageGate.value.blockedReason === null &&
+    (!modelUsageGate.value.requiresRiskConfirmation || riskConfirmed.value),
+);
+
 // ECharts ref
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts: renderChart } = useEcharts(chartRef);
@@ -181,14 +301,14 @@ const progressPercent = computed(() => {
 });
 
 /** 进度状态 */
-const progressStatus = computed<
-  'active' | 'exception' | 'normal' | 'success'
->(() => {
-  if (!taskProgress.value) return 'normal';
-  if (taskProgress.value.status === 'FAILED') return 'exception';
-  if (taskProgress.value.status === 'SUCCESS') return 'success';
-  return 'active';
-});
+const progressStatus = computed<'active' | 'exception' | 'normal' | 'success'>(
+  () => {
+    if (!taskProgress.value) return 'normal';
+    if (taskProgress.value.status === 'FAILED') return 'exception';
+    if (taskProgress.value.status === 'SUCCESS') return 'success';
+    return 'active';
+  },
+);
 
 /** 加载回路下拉选项 */
 async function loadLoopOptions() {
@@ -227,6 +347,7 @@ async function handleIdentify() {
   }
 
   // 同步当前回路到 store
+  riskConfirmed.value = false;
   const selectedLoop = loopOptions.value.find((l) => l.value === filter.loopId);
   tuningStore.setCurrentLoop(filter.loopId, selectedLoop?.label || '');
 
@@ -272,6 +393,7 @@ async function handleIdentify() {
       candidateModelTypes: filter.candidateModelTypes.length
         ? filter.candidateModelTypes
         : undefined,
+      thetaEstimate: filter.thetaEstimate,
     });
     message.info(`异步辨识任务已提交（taskId: ${taskId.slice(0, 8)}…）`);
     // 启动轮询
@@ -415,26 +537,71 @@ function renderFittedCurve() {
 function handleUseForTuning() {
   const result = currentResult.value;
   if (!result) return;
+  const provenance = buildProvenanceQuery();
+  if (!provenance) {
+    message.warning(
+      modelUsageGate.value.blockedReason || '请完成人工风险确认后再进行整定',
+    );
+    return;
+  }
   router.push({
     path: '/tuning/algorithm',
     query: {
       modelType: result.modelType,
       modelParams: JSON.stringify(result.params),
       loopId: filter.loopId,
+      ...provenance,
     },
   });
+}
+
+function buildProvenanceQuery(): null | Record<string, string> {
+  if (!canEnterRecommendedFlow.value) return null;
+
+  if (modelUsageGate.value.modelSource === 'STEP_EXPERIMENT') {
+    const sourceRecordId = stepResult.value?.recordId;
+    if (!sourceRecordId) return null;
+    return {
+      modelSource: 'STEP_EXPERIMENT',
+      sourceRecordId,
+    };
+  }
+
+  const sourceRecordId = historyResult.value?.recordId;
+  if (
+    modelUsageGate.value.modelSource !== 'IDENTIFICATION_RECORD' ||
+    !sourceRecordId
+  ) {
+    return null;
+  }
+
+  return {
+    modelSource: 'IDENTIFICATION_RECORD',
+    sourceRecordId,
+    ...(modelUsageGate.value.requiresRiskConfirmation
+      ? { riskConfirmed: 'true' }
+      : {}),
+  };
 }
 
 /** 跳转闭环仿真页，携带模型参数 + 候选 PID */
 function handleGoSimulation() {
   const result = currentResult.value;
   if (!result) return;
+  const provenance = buildProvenanceQuery();
+  if (!provenance) {
+    message.warning(
+      modelUsageGate.value.blockedReason || '请完成人工风险确认后再进行仿真',
+    );
+    return;
+  }
   router.push({
     path: '/tuning/simulation',
     query: {
       modelType: result.modelType,
       modelParams: JSON.stringify(result.params),
       loopId: filter.loopId,
+      ...provenance,
     },
   });
 }
@@ -452,8 +619,20 @@ watch(isDark, () => {
 
 /** 历史结果变化时重绘 */
 watch(historyResult, () => {
+  riskConfirmed.value = false;
   nextTick(() => renderFittedCurve());
 });
+
+watch(stepResult, () => {
+  riskConfirmed.value = false;
+});
+
+watch(
+  () => filter.identifyStrategy,
+  () => {
+    riskConfirmed.value = false;
+  },
+);
 </script>
 
 <template>
@@ -524,15 +703,21 @@ watch(historyResult, () => {
               v-model:value="filter.candidateModelTypes"
               mode="multiple"
               style="width: 280px"
-              :options="modelTypeOptions"
+              :options="historyModelTypeOptions"
               placeholder="并行辨识多种阶次"
             />
           </FormItem>
+          <FormItem label="纯滞后预估 θ (秒)">
+            <InputNumber
+              v-model:value="filter.thetaEstimate"
+              :min="0"
+              :precision="2"
+              placeholder="留空则采用 2Ts 启发值"
+              style="width: 220px"
+            />
+          </FormItem>
           <FormItem>
-            <Button
-              :loading="segmentLoading"
-              @click="handlePreviewSegments"
-            >
+            <Button :loading="segmentLoading" @click="handlePreviewSegments">
               预览可辨识片段
             </Button>
           </FormItem>
@@ -641,7 +826,11 @@ watch(historyResult, () => {
           <template #description>
             <div class="flex flex-col gap-2">
               <span>
-                原因：{{ historyResult?.confidenceReason || historyResult?.reason || 'OP 激励不充分或数据质量不足' }}
+                原因：{{
+                  historyResult?.confidenceReason ||
+                  historyResult?.reason ||
+                  'OP 激励不充分或数据质量不足'
+                }}
               </span>
               <span>
                 建议：切换为「仅阶跃实验」策略进行主动实验，或扩大时间范围重新辨识。
@@ -665,6 +854,34 @@ watch(historyResult, () => {
         v-if="currentResult && !isInconclusive"
         class="grid grid-cols-1 gap-4 lg:grid-cols-3"
       >
+        <Alert
+          v-if="modelUsageGate.blockedReason"
+          class="lg:col-span-3"
+          type="warning"
+          show-icon
+          :closable="false"
+          message="当前模型仅供审阅"
+          :description="modelUsageGate.blockedReason"
+        />
+        <Alert
+          v-else-if="modelUsageGate.requiresRiskConfirmation"
+          class="lg:col-span-3"
+          type="warning"
+          show-icon
+          :closable="false"
+          message="可信度 C：需人工风险确认"
+        >
+          <template #description>
+            <div class="flex flex-col gap-2">
+              <span>
+                该结果存在较高不确定性。继续前请复核数据窗口、模型参数、回退方案与实施风险。
+              </span>
+              <Checkbox v-model:checked="riskConfirmed">
+                我已完成专业复核，并确认仅生成建议、不直接下写 DCS
+              </Checkbox>
+            </div>
+          </template>
+        </Alert>
         <ClpmDataCanvas title="主模型参数" class="lg:col-span-1">
           <Descriptions :column="1" bordered size="small">
             <DescriptionsItem label="模型类型">
@@ -743,9 +960,7 @@ watch(historyResult, () => {
               v-if="!isStepOnly && historyResult?.residualTestPassed !== null"
               label="残差白噪声检验"
             >
-              <Tag
-                :color="historyResult?.residualTestPassed ? 'green' : 'red'"
-              >
+              <Tag :color="historyResult?.residualTestPassed ? 'green' : 'red'">
                 {{ historyResult?.residualTestPassed ? '通过' : '未通过' }}
               </Tag>
             </DescriptionsItem>
@@ -790,10 +1005,7 @@ watch(historyResult, () => {
                 size="small"
               />
             </DescriptionsItem>
-            <DescriptionsItem
-              v-if="c.identifyMethod"
-              label="辨识方法"
-            >
+            <DescriptionsItem v-if="c.identifyMethod" label="辨识方法">
               {{ c.identifyMethod }}
             </DescriptionsItem>
             <DescriptionsItem
@@ -823,17 +1035,31 @@ watch(historyResult, () => {
 
       <!-- 下一步动作 -->
       <ClpmDataCanvas
-        v-if="currentResult && !isInconclusive"
+        v-if="currentResult && !isInconclusive && !modelUsageGate.blockedReason"
         class="mt-4"
         title="下一步动作"
       >
         <div class="flex items-center justify-between">
           <span class="text-sm text-gray-500">
-            辨识完成，可使用此模型进行 PID 整定或闭环仿真。
+            {{
+              modelUsageGate.requiresRiskConfirmation && !riskConfirmed
+                ? '完成风险复核并勾选确认后，方可进入整定或推荐仿真。'
+                : '辨识完成，可使用此模型进行 PID 整定或闭环仿真。'
+            }}
           </span>
           <div class="flex gap-2">
-            <Button @click="handleGoSimulation">进行闭环仿真</Button>
-            <Button type="primary" size="large" @click="handleUseForTuning">
+            <Button
+              :disabled="!canEnterRecommendedFlow"
+              @click="handleGoSimulation"
+            >
+              进行闭环仿真
+            </Button>
+            <Button
+              type="primary"
+              size="large"
+              :disabled="!canEnterRecommendedFlow"
+              @click="handleUseForTuning"
+            >
               使用此模型进行整定 →
             </Button>
           </div>

@@ -242,30 +242,28 @@ const pendingTuningCount = computed(() => {
 });
 
 /**
- * 风险任务数（高整定风险回路数）
- * 后端暂未直接提供风险标记接口，使用 0 占位，待整定风险接口接入后替换
+ * 后端当前未提供风险统计，必须明确展示“未计算”。
+ * 不得用 0 代替未知；后续只有接口明确返回 calculated=true 且 count=0，
+ * 才能把 0 作为真实统计值展示。
  */
-const highRiskCount = computed(() => 0);
-
-/**
- * 超阈值任务数（PID 参数超推荐范围）
- * 后端暂未直接提供超阈值标记接口，使用 0 占位，待整定风险接口接入后替换
- */
-const overThresholdCount = computed(() => 0);
+const uncalculatedRiskValue = '—';
+const uncalculatedRiskUnit = '未计算';
 
 /** 风险相关 KPI 指标 */
 const riskKpiItems = computed<KpiStripItem[]>(() => [
   {
     key: 'highRisk',
     label: '风险任务数',
-    value: highRiskCount.value,
-    status: 'danger',
+    value: uncalculatedRiskValue,
+    unit: uncalculatedRiskUnit,
+    status: 'neutral',
   },
   {
     key: 'overThreshold',
     label: '超阈值任务数',
-    value: overThresholdCount.value,
-    status: 'warning',
+    value: uncalculatedRiskValue,
+    unit: uncalculatedRiskUnit,
+    status: 'neutral',
   },
   {
     key: 'pending',

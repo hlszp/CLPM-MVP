@@ -74,7 +74,7 @@ async def _step_identify_fallback(
     标注 dataSource=fallback_step；兜底亦失败时合并两条失败原因，
     维持失败形态（success=False）。
     """
-    from app.services.tuning import identify_model
+    from app.services.tuning import identify_model, validate_step_identification_result
 
     history_reason = history_result.get("reason") or "历史辨识失败"
     try:
@@ -92,6 +92,13 @@ async def _step_identify_fallback(
         merged["reason"] = f"{history_reason}；AUTO 阶跃兜底亦失败: {exc}"
         return merged
 
+    validation_error = validate_step_identification_result(step)
+    if validation_error:
+        logger.warning("AUTO 阶跃兜底拒绝: loop_id=%s, reason=%s", loop_id, validation_error)
+        merged = dict(history_result)
+        merged["reason"] = f"{history_reason}；AUTO 阶跃兜底亦失败: {validation_error}"
+        return merged
+
     logger.info("AUTO 阶跃兜底成功: loop_id=%s（历史失败原因: %s）", loop_id, history_reason)
     return {
         "success": True,
@@ -100,7 +107,10 @@ async def _step_identify_fallback(
         "fittingScore": step["fittingScore"],
         "identifyMethod": "STEP_TWO_POINT",
         "dataSource": "fallback_step",
-        "confidenceReason": f"AUTO 兜底：{history_reason}，已降级阶跃实验路径（FOPDT 两点法）",
+        "confidenceReason": (
+            f"AUTO 兜底：{history_reason}，已降级阶跃实验路径（FOPDT 两点法）；"
+            "step_validation_passed=true"
+        ),
         "algorithmVersion": step["algorithmVersion"],
         "dataPoints": step["dataPoints"],
         "validRate": history_result.get("validRate"),
@@ -199,7 +209,10 @@ async def _do_identify(
                 db_record.fitting_score = result.get("fittingScore")
                 db_record.identify_method = result.get("identifyMethod")
                 db_record.confidence_level = result.get("confidenceLevel")
-                db_record.confidence_reason = result.get("confidenceReason")
+                db_record.confidence_reason = _with_theta_source_token(
+                    result.get("confidenceReason"),
+                    result.get("thetaSource"),
+                )
                 db_record.excitation_score = result.get("excitationScore")
                 db_record.residual_test_passed = result.get("residualTestPassed")
                 if result.get("dataSource") == "fallback_step":
@@ -305,16 +318,45 @@ async def _do_tune_and_simulate(
     sim_step: float,
     setpoint_step: float,
     created_by: str,
+    source_record_id: str | None = None,
+    model_source: str | None = None,
+    risk_confirmed: bool = False,
+    step_validation_passed: bool = False,
 ) -> dict[str, Any]:
     """执行整定 + 仿真的 async 逻辑."""
     from app.core.db import AsyncSessionLocal
     from app.models.tuning import TuningRecord
-    from app.services.tuning import _simulate_multi_pid, tune_pid
+    from app.services.tuning import (
+        _simulate_multi_pid,
+        authorize_tuning_model,
+        tune_pid,
+    )
     from app.services.tuning_progress import init_progress, update_progress
 
     await init_progress(task_id, task_type="tune_and_simulate", loop_id=loop_id)
 
     async with AsyncSessionLocal() as db:
+        source_context = await authorize_tuning_model(
+            db=db,
+            requested_model_type=model_type,
+            requested_model_params=model_params,
+            loop_id=loop_id,
+            source_record_id=source_record_id,
+            model_source=model_source,
+            risk_confirmed=risk_confirmed,
+            trusted_step_validation=step_validation_passed,
+        )
+        model_type = source_context.model_type
+        model_params = source_context.model_params
+        loop_id = source_context.loop_id or loop_id
+        provenance = (
+            f"model_source={source_context.model_source};"
+            f"source_record={source_context.source_record_id or '-'};"
+            f"risk_confirmed={str(source_context.risk_confirmed).lower()}"
+        )
+        if source_context.model_source == "STEP_EXPERIMENT":
+            provenance += ";step_validation_passed=true"
+
         record = TuningRecord(
             id=str(uuid4()),
             loop_id=loop_id,
@@ -324,7 +366,16 @@ async def _do_tune_and_simulate(
             status="RUNNING",
             created_by=created_by,
             task_id=task_id,
-            data_source="HISTORY",
+            data_source=(
+                source_context.data_source
+                if source_context.model_source == "IDENTIFICATION_RECORD"
+                else (
+                    "STEP_EXPERIMENT" if source_context.model_source == "STEP_EXPERIMENT" else None
+                )
+            ),
+            confidence_level=source_context.confidence_level,
+            confidence_reason=provenance[:200],
+            identify_method=source_context.identify_method,
         )
         db.add(record)
         await db.commit()
@@ -348,6 +399,7 @@ async def _do_tune_and_simulate(
                     algorithm_params=None,
                     current_pid=current_pid,
                     loop_id=loop_id,
+                    source_context=source_context,
                 )
                 candidates.append(
                     {
@@ -442,6 +494,10 @@ def tune_and_simulate_task(
     sim_step: float = 1.0,
     setpoint_step: float = 1.0,
     created_by: str = "system",
+    source_record_id: str | None = None,
+    model_source: str | None = None,
+    risk_confirmed: bool = False,
+    step_validation_passed: bool = False,
 ) -> dict[str, Any]:
     """异步 PID 整定 + 多 PID 仿真对比任务.
 
@@ -455,6 +511,10 @@ def tune_and_simulate_task(
         sim_step: 仿真步长（秒）
         setpoint_step: 设定值阶跃幅值
         created_by: 创建人
+        source_record_id: 服务端辨识记录 ID
+        model_source: IDENTIFICATION_RECORD/STEP_EXPERIMENT/MANUAL
+        risk_confirmed: C 级或人工模型风险确认
+        step_validation_passed: 仅内部已验证阶跃编排可设置
     """
     task_id = self.request.id
     algorithms = algorithms or ["IMC"]
@@ -471,6 +531,10 @@ def tune_and_simulate_task(
             sim_step=sim_step,
             setpoint_step=setpoint_step,
             created_by=created_by,
+            source_record_id=source_record_id,
+            model_source=model_source,
+            risk_confirmed=risk_confirmed,
+            step_validation_passed=step_validation_passed,
         )
     )
 
@@ -489,6 +553,22 @@ def _serialize_result(result: dict[str, Any]) -> dict[str, Any]:
         return result
     except (TypeError, ValueError):
         return {k: str(v) for k, v in result.items()}
+
+
+def _with_theta_source_token(reason: Any, theta_source: Any) -> str | None:
+    """在既有字段中持久化稳定 theta 来源 token，并保证不超过列长。"""
+    if theta_source not in {"EXPLICIT", "HEURISTIC_2TS"}:
+        return str(reason) if reason is not None else None
+
+    token = f"theta_source={theta_source}"
+    base = str(reason or "")
+    if token in base:
+        return base[:200]
+    if not base:
+        return token
+
+    prefix_limit = 200 - len(token) - 1
+    return f"{base[:prefix_limit]};{token}"
 
 
 __all__ = ["identify_model_task", "tune_and_simulate_task"]

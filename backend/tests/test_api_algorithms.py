@@ -520,6 +520,7 @@ class TestTuningCalculate:
             "modelType": "FOPDT",
             "params": {"K": 1.2, "tau": 30.0, "theta": 5.0},
             "fittingScore": 0.95,
+            "stepValidationPassed": True,
         }
         tune_result = {
             "recommended_pid": {"Kp": 1.5, "Ti": 25.0, "Td": 5.0},
@@ -594,6 +595,7 @@ class TestTuningCalculate:
             "modelType": "FOPDT",
             "params": {"K": 1.0},
             "fittingScore": 0.9,
+            "stepValidationPassed": True,
         }
         with (
             patch(
@@ -620,6 +622,7 @@ class TestTuningCalculate:
             "modelType": "FOPDT",
             "params": {"K": 1.0, "tau": 10.0, "theta": 2.0},
             "fittingScore": 0.9,
+            "stepValidationPassed": True,
         }
         tune_result = {
             "recommended_pid": {"Kp": 1.0, "Ti": 10.0, "Td": 0.0},
@@ -658,6 +661,7 @@ class TestTuningCalculate:
             "modelType": "FOPDT",
             "params": {"K": 1.0, "tau": 10.0},
             "fittingScore": 0.9,
+            "stepValidationPassed": True,
         }
         tune_result = {
             "recommended_pid": {"Kp": 1.0, "Ti": 10.0, "Td": 0.0},
@@ -697,6 +701,7 @@ class TestTuningCalculate:
             "modelType": "FOPDT",
             "params": {},
             "fittingScore": 0.9,
+            "stepValidationPassed": True,
         }
         tune_result = {
             "recommended_pid": {},

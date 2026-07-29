@@ -64,6 +64,7 @@ class TestDoIdentify:
             "identifyMethod": "HISTORICAL_IV",
             "confidenceLevel": "A",
             "confidenceReason": "拟合度高",
+            "thetaSource": "HEURISTIC_2TS",
             "excitationScore": 0.92,
             "residualTestPassed": True,
             "bestModel": {
@@ -99,6 +100,7 @@ class TestDoIdentify:
         assert record.model_type == "FOPDT"
         assert record.confidence_level == "A"
         assert record.identify_method == "HISTORICAL_IV"
+        assert "theta_source=HEURISTIC_2TS" in record.confidence_reason
         assert record.completed_at is not None
         # commit 被调用（创建 + 更新）
         assert session.commit.await_count >= 2
@@ -231,6 +233,8 @@ class TestDoTuneAndSimulate:
                 sim_step=1.0,
                 setpoint_step=1.0,
                 created_by="test_user",
+                model_source="MANUAL",
+                risk_confirmed=True,
             )
 
         # 返回结果
@@ -275,6 +279,8 @@ class TestDoTuneAndSimulate:
                 sim_step=1.0,
                 setpoint_step=1.0,
                 created_by="test_user",
+                model_source="MANUAL",
+                risk_confirmed=True,
             )
 
         assert record.status == "INCONCLUSIVE"
@@ -337,6 +343,8 @@ class TestCeleryTaskWiring:
                     "sim_step": 1.0,
                     "setpoint_step": 1.0,
                     "created_by": "admin",
+                    "model_source": "MANUAL",
+                    "risk_confirmed": True,
                 }
             )
 

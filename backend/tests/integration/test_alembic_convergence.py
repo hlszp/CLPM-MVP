@@ -80,18 +80,36 @@ def _run_alembic(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _head_and_parent() -> tuple[str, str | None]:
+    """动态解析当前 head 及其 parent，避免迁移链增长后断言失效。"""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config(str(_BACKEND_DIR / "alembic.ini")))
+    head = script.get_current_head()
+    parent = script.get_revision(head).down_revision
+    return head, parent
+
+
 def test_convergence_migration_roundtrip() -> None:
-    """upgrade/downgrade 往返无错，结束后回到 head。"""
+    """upgrade/downgrade 往返无错，结束后回到 head。
+
+    断言动态解析 head/parent，不硬编码 revision id：迁移链增长后旧硬编码
+    会误报失败（2026-07-29 v6.2 Phase 0 修复 V62-P0-043 既存失效断言）。
+    """
+    head, parent = _head_and_parent()
+    if parent is None:
+        pytest.skip("仅单个迁移，无法验证 downgrade 往返")
     downgrade = _run_alembic("downgrade", "-1")
     assert downgrade.returncode == 0, f"downgrade 失败: {downgrade.stderr}"
     try:
         current = _run_alembic("current")
-        assert "c3d4e5f6a7b8" in current.stdout, current.stdout
+        assert parent in current.stdout, current.stdout
     finally:
         upgrade = _run_alembic("upgrade", "head")
     assert upgrade.returncode == 0, f"upgrade 失败: {upgrade.stderr}"
     current = _run_alembic("current")
-    assert "d4e5f6a7b8c9" in current.stdout, current.stdout
+    assert head in current.stdout, current.stdout
 
 
 async def test_timestamp_columns_not_null_in_db() -> None:

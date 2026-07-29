@@ -14,6 +14,9 @@ export namespace TuningApi {
   /** 模型类型 */
   export type ModelType = 'FOPDT' | 'IPDT' | 'SOPDT';
 
+  /** 历史辨识当前支持的模型类型（IPDT 仅保留在阶跃实验路径） */
+  export type HistoryModelType = Exclude<ModelType, 'IPDT'>;
+
   /** FOPDT 辨识方法 */
   export type IdentifyMethod = 'AREA' | 'COMBINED' | 'TWO_POINT';
 
@@ -51,23 +54,22 @@ export namespace TuningApi {
     | 'STEP_TWO_POINT';
 
   /** 数据来源（Phase 2） */
-  export type DataSource = 'HISTORY' | 'STEP_EXPERIMENT';
+  export type DataSource = 'fallback_step' | 'HISTORY' | 'STEP_EXPERIMENT';
 
   /** 可信度等级（Phase 2，对齐平台口径） */
-  export type ConfidenceLevel =
-    | 'A'
-    | 'B'
-    | 'C'
-    | 'D'
-    | 'E'
-    | 'INCONCLUSIVE';
+  export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E' | 'INCONCLUSIVE';
+
+  /** 整定模型来源（服务端按来源执行可信度与审计门禁） */
+  export type ModelSource =
+    | 'IDENTIFICATION_RECORD'
+    | 'MANUAL'
+    | 'STEP_EXPERIMENT';
+
+  /** 纯滞后参数来源 */
+  export type ThetaSource = 'EXPLICIT' | 'HEURISTIC_2TS';
 
   /** 异步任务状态 */
-  export type AsyncTaskStatus =
-    | 'FAILED'
-    | 'PENDING'
-    | 'RUNNING'
-    | 'SUCCESS';
+  export type AsyncTaskStatus = 'FAILED' | 'PENDING' | 'RUNNING' | 'SUCCESS';
 
   /** 模型参数 */
   export interface ModelParams {
@@ -114,8 +116,8 @@ export namespace TuningApi {
     startTime: string;
     endTime: string;
     identifyStrategy?: IdentifyStrategy;
-    candidateModelTypes?: ModelType[];
-    /** 纯滞后预估值（秒），null 自动估计 */
+    candidateModelTypes?: HistoryModelType[];
+    /** 纯滞后预估值（秒）；null 时使用 2Ts 启发值，可信度最高 C */
     thetaEstimate?: null | number;
   }
 
@@ -133,6 +135,8 @@ export namespace TuningApi {
 
   /** 模型辨识结果 */
   export interface IdentifyResult {
+    /** 受控阶跃辨识落库后的审计记录 ID */
+    recordId?: null | string;
     modelType: ModelType;
     params: ModelParams;
     /** 拟合度 R²（%） */
@@ -145,20 +149,25 @@ export namespace TuningApi {
       pv: number[];
       timestamps: number[];
     };
+    /** 是否通过稳定基线→单阶跃→保持段→显著响应验证 */
+    stepValidationPassed?: boolean;
   }
 
   /** 历史数据辨识结果（Phase 2） */
   export interface IdentifyHistoryResult {
     success: boolean;
+    recordId?: null | string;
     modelType?: null | string;
     params?: null | ModelParams;
     fittingScore?: null | number;
     confidenceLevel?: null | ConfidenceLevel;
     dataConfidenceLevel?: null | ConfidenceLevel;
     confidenceReason?: null | string;
+    thetaSource?: null | ThetaSource;
     excitationScore?: null | number;
     residualTestPassed?: null | boolean;
     identifyMethod?: null | HistoryIdentifyMethod;
+    dataSource?: null | DataSource;
     candidateModels?: null | CandidateModel[];
     algorithmVersion?: null | string;
     dataPoints?: null | number;
@@ -220,6 +229,15 @@ export namespace TuningApi {
     algorithmParams?: Record<string, number>;
     currentPid?: PidParams;
     loopId?: string;
+    /**
+     * 模型来源。兼容窗口内为可选字段，但新调用方必须显式传入：
+     * 辨识记录 / 受控阶跃 / 手工模型。
+     */
+    modelSource?: ModelSource;
+    /** IDENTIFICATION_RECORD 来源必填 */
+    sourceRecordId?: string;
+    /** C 级或 MANUAL 来源仅在人工确认后传 true */
+    riskConfirmed?: boolean;
   }
 
   /** PID 整定结果 */
@@ -247,6 +265,14 @@ export namespace TuningApi {
     /** 设定值阶跃幅值 */
     setpointStep?: number;
     disturbanceType?: DisturbanceType;
+    /** 回路 ID（模型记录一致性校验） */
+    loopId?: string;
+    /** 模型来源，与 TuneRequest 使用同一门禁口径 */
+    modelSource?: ModelSource;
+    /** IDENTIFICATION_RECORD / STEP_EXPERIMENT 来源必填 */
+    sourceRecordId?: string;
+    /** C 级或 MANUAL 来源仅在人工确认后传 true */
+    riskConfirmed?: boolean;
   }
 
   /** 仿真性能指标 */

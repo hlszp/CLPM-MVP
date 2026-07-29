@@ -271,6 +271,8 @@ class TestPhase2API:
             "simStep": 1.0,
             "setpointStep": 1.0,
             "disturbanceType": "step",
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
         }
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post("/api/v1/tuning/simulate", json=payload)
@@ -311,6 +313,8 @@ class TestPhase2API:
             "simStep": 1.0,
             "setpointStep": 1.0,
             "disturbanceType": "step",
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
         }
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post("/api/v1/tuning/compare", json=payload)
@@ -330,6 +334,8 @@ class TestPhase2API:
             "simStep": 1.0,
             "setpointStep": 1.0,
             "disturbanceType": "step",
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
         }
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post("/api/v1/tuning/simulate", json=payload)
@@ -406,6 +412,71 @@ class TestPhase2API:
         assert resp.status_code == 200
         assert resp.json()["data"]["taskId"] == "celery-task-hist-001"
 
+    def test_identify_history_rejects_ipdt_candidate(self, client):
+        """历史辨识拒绝尚无真实转换链的 IPDT，不得静默按 SOPDT 执行."""
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "HISTORY_ONLY",
+                    "candidateModelTypes": ["IPDT"],
+                },
+            )
+
+        assert resp.status_code == 422
+        mock_celery_task.delay.assert_not_called()
+
+    def test_identify_history_preserves_explicit_zero_theta(self, client):
+        """显式 thetaEstimate=0 必须原样传给异步任务."""
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-zero-theta"
+
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery_task.delay.return_value = mock_task
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "HISTORY_ONLY",
+                    "candidateModelTypes": ["FOPDT"],
+                    "thetaEstimate": 0,
+                },
+            )
+
+        assert resp.status_code == 200
+        assert mock_celery_task.delay.call_args.kwargs["theta_estimate"] == 0
+
+    def test_identify_history_rejects_negative_theta(self, client):
+        """纯滞后预估值不能为负数."""
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "HISTORY_ONLY",
+                    "thetaEstimate": -1,
+                },
+            )
+
+        assert resp.status_code == 422
+        mock_celery_task.delay.assert_not_called()
+
     def test_identify_history_step_only_sync_path(self, client):
         """/identify/history STEP_ONLY 策略走同步阶跃路径（不经 Celery）。"""
         sync_result = {
@@ -415,23 +486,21 @@ class TestPhase2API:
             "algorithmVersion": "v1.0",
             "dataPoints": 600,
             "fittedCurve": None,
+            "stepValidationPassed": True,
         }
 
         with (
             patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
-            # endpoint 函数内 `from app.core.db import AsyncSessionLocal` 懒导入，
-            # 故 patch 源模块而非 endpoint 模块
-            patch("app.core.db.AsyncSessionLocal") as mock_session_local,
             patch(
                 "app.api.v1.endpoints.tuning.identify_model",
                 AsyncMock(return_value=sync_result),
             ),
+            patch(
+                "app.api.v1.endpoints.tuning.persist_step_identification_record",
+                AsyncMock(return_value="step-record-1"),
+            ) as mock_persist,
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
-            mock_session = MagicMock()
-            mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
-
             resp = client.post(
                 "/api/v1/tuning/identify/history",
                 json={
@@ -445,6 +514,8 @@ class TestPhase2API:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["modelType"] == "FOPDT"
+        assert data["recordId"] == "step-record-1"
+        mock_persist.assert_awaited_once()
         # STEP_ONLY 不经 Celery
         mock_celery_task.delay.assert_not_called()
 

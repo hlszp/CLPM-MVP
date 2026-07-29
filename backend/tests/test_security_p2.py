@@ -412,7 +412,62 @@ class TestEnumValidation:
                     "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
                     "algorithm": "IMC",
                     "algorithmParams": {"lambdaRatio": 1.0},
+                    "modelSource": "MANUAL",
+                    "riskConfirmed": True,
                 },
             )
         assert resp.status_code == 200
         assert resp.json()["code"] == "0"
+
+
+class TestNoDcsParameterWriteSurface:
+    """V62-P0-039 / 契约基线 §9：平台不得存在 DCS 运行时 PID 参数下写入口。
+
+    静态扫描 FastAPI 已注册路由，禁止任何路径/方法组合体现 write/apply/
+    deploy/implement 语义指向 DCS 或 PID 参数。DCS vendor/model/PID structure
+    只管理离线适配配置，不连接控制站下写。
+    """
+
+    _FORBIDDEN_TOKENS = ("write", "apply", "deploy", "implement", "download")
+
+    def _all_routes(self) -> list[tuple[str, str]]:
+        from app.main import create_app
+
+        app = create_app()
+        routes: list[tuple[str, str]] = []
+        for route in app.routes:
+            methods = getattr(route, "methods", None) or set()
+            path = getattr(route, "path", "")
+            if not path:
+                continue
+            for method in sorted(methods - {"HEAD", "OPTIONS"}):
+                routes.append((method, path))
+        return routes
+
+    def test_no_dcs_pid_parameter_write_endpoints(self) -> None:
+        """扫描全部路由，不存在 DCS PID 参数 write/apply/deploy/implement 入口。"""
+        violations: list[str] = []
+        for method, path in self._all_routes():
+            path_lower = path.lower()
+            # 仅检查 DCS 或 PID 参数语境下的下写语义
+            is_dcs_or_pid = ("dcs" in path_lower) or ("pid" in path_lower and "param" in path_lower)
+            if not is_dcs_or_pid:
+                continue
+            if any(tok in path_lower for tok in self._FORBIDDEN_TOKENS):
+                violations.append(f"{method} {path}")
+        assert not violations, "发现疑似 DCS/PID 参数下写端点，违反安全边界：\n" + "\n".join(
+            violations
+        )
+
+    def test_no_auto_apply_or_auto_implement_endpoints(self) -> None:
+        """不存在 auto-apply/auto-implement 类自动实施入口。"""
+        violations: list[str] = []
+        for method, path in self._all_routes():
+            path_lower = path.lower()
+            if "auto" in path_lower and any(
+                tok in path_lower for tok in ("apply", "implement", "deploy", "write")
+            ):
+                violations.append(f"{method} {path}")
+        assert not violations, "发现疑似自动实施入口，违反人工实施安全边界：\n" + "\n".join(
+            violations
+        )

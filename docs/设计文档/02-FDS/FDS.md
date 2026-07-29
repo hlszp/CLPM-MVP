@@ -5,6 +5,12 @@
 **发布日期**: 2026-07-06
 **设计依据**: `docs/设计文档/01-PRD/PRD.md` (v6.0)、`docs/设计文档/04-DDS/DDS.md` (v6.0，表名/字段名权威基线)、`docs/设计文档/03-ADS/关键算法设计说明.md` (v2.0)、`docs/设计文档/00-BASELINE/implementation-contract.md` (v2.0)、`docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` (v6.0)、`CLPM后端研发智能体系统提示词与开发指导文档`
 
+> **Phase 0 对齐说明（2026-07-29，v6.2 Truth First）**：本文档以下条目以实现契约 v2.3 与代码为事实源，遇冲突以契约 v2.3 为准：
+> - 回路整定 Phase 2 **已交付**（历史辨识 + 异步任务 + 多 PID 仿真），非原型（DOC-02）；
+> - 指标公式**不再可配置**：`metric_config.formula` 已标为废弃，收敛为"权重/阈值配置"（DOC-09）；
+> - `time_constant` 为 KPI 快照表持久化列但无计算器，状态 `NOT_IMPLEMENTED`，NULL 不得显示为 0 或解释为"无数据"（契约基线 §7）。
+> 完整事实漂移登记见 `docs/过程文档/clpm-v6.2-phase0-contract-baseline-2026-07-29.md`。
+
 ---
 
 ## 1. 文档概述与变更记录

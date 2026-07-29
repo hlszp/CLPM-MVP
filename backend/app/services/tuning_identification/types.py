@@ -37,6 +37,17 @@ class ConfidenceLevel(StrEnum):
     INCONCLUSIVE = "INCONCLUSIVE"
 
 
+class ThetaSource(StrEnum):
+    """纯滞后参数来源.
+
+    EXPLICIT 表示调用方提供并可追溯；HEURISTIC_2TS 表示仅使用 2 个采样周期的
+    保守启发值，不能获得高于 C 的可信度。
+    """
+
+    EXPLICIT = "EXPLICIT"
+    HEURISTIC_2TS = "HEURISTIC_2TS"
+
+
 @dataclass
 class ModelParams:
     """模型参数（对齐 tuning_algorithms.py 的 FOPDTParams/SOPDTParams 字段名）."""
@@ -107,17 +118,21 @@ class IdentificationResult:
     candidates: list[CandidateModel] = field(default_factory=list)
     segments: list[SegmentInfo] = field(default_factory=list)
     reason: str | None = None
+    theta_source: ThetaSource | None = None
     algorithm_version: str = "TUNE_IDENT_v1.0"
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（API 响应）."""
         if not self.success or self.best_model is None:
-            return {
+            result = {
                 "success": False,
                 "reason": self.reason,
                 "algorithmVersion": self.algorithm_version,
             }
-        return {
+            if self.theta_source is not None:
+                result["thetaSource"] = self.theta_source.value
+            return result
+        result = {
             "success": True,
             "modelType": self.best_model.params.model_type.value,
             "params": self.best_model.params.to_dict(),
@@ -138,3 +153,6 @@ class IdentificationResult:
             "algorithmVersion": self.algorithm_version,
             "reason": self.best_model.reason,
         }
+        if self.theta_source is not None:
+            result["thetaSource"] = self.theta_source.value
+        return result
