@@ -26,7 +26,6 @@ from alembic.operations.ops import (
 )
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
@@ -45,9 +44,11 @@ if config.config_file_name is not None:
 # Model metadata used by autogenerate.
 target_metadata = Base.metadata
 
-# Inject the async PostgreSQL URL into the Alembic config so that any
-# helper that reads ``config.get_main_option("sqlalchemy.url")`` also works.
-config.set_main_option("sqlalchemy.url", settings.postgres_dsn)
+# 注意：不要 config.set_main_option("sqlalchemy.url", ...)。ConfigParser
+# 插值会把 URL 编码后的 %（如密码含 @ 编码为 %40）当作插值语法抛出
+# "invalid interpolation syntax"（2026-07-28 生产部署迁移失败教训）。
+# 在线模式直接用 async_create_engine(settings.postgres_dsn)，离线模式
+# 直接传 url=settings.postgres_dsn，URL 一律不经过 ConfigParser。
 
 
 def _is_comment_only_op(op: Any) -> bool:
@@ -141,13 +142,14 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    """Run migrations in 'online' mode using an async engine."""
+    """Run migrations in 'online' mode using an async engine.
 
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    URL 直接来自应用配置（不经过 ConfigParser，避免 % 插值问题，
+    见文件头说明）。
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    connectable = create_async_engine(settings.postgres_dsn, poolclass=pool.NullPool)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
