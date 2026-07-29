@@ -258,7 +258,12 @@ unit_kpi_summary
   - `diagnosis.ts`：DiagnosisTasks → task-center.vue；DiagnosisRecords → redirect `/diagnosis/tasks?tab=history` + hideInMenu，兼容旧书签/深链。提交 `ddf867eb`。
 - [x] `V62-P1-021` 建立统一 Loop 上下文头，保留回路、时间窗和返回来源。
   - 新建 `components/clpm/loop-context-header.vue`（editable/只读双模式：回路 Select + 时间 RangePicker + 返回按钮，数据源 store）；`store/tuning.ts` 新增 `currentLoopTimeRange`（ISO 字符串元组）+ `setLoopTimeRange` + 持久化/恢复/$reset；`flow.vue` 用 `ClpmLoopContextHeader` 替换占位（步骤0可编辑/1-2只读）；`model.vue` 移除回路 Select/时间 RangePicker 与 `loadLoopOptions`，`loopId`/`timeRange` 改为 store 代理 computed；测试 mock 同步补充 `currentLoopId`/`currentLoopTimeRange`；check:type 通过、vitest 125 passed。
-- [ ] `V62-P1-022` 配置归属业务模块，高级参数仅管理员可见。
+- [x] `V62-P1-022` 配置归属业务模块，高级参数仅管理员可见。
+  - 新建 `composables/use-clpm-roles.ts`：可复用角色判断 composable（`hasRole`/`hasAnyRole`/`isAdmin`/`isExpert`/`canAccessTuning`/`canEditAdvancedParams`），替代各组件内联 `userStore.roles.some(...)` 模式；高级参数角色集 = ADMIN/EXPERT（IC_ENGINEER 使用默认参数，避免误调）。
+  - `model.vue`：候选模型阶次 + 纯滞后预估 θ 包裹进 `Collapse`（高级参数），`v-if="canEditAdvancedParams"` 控制可见；IC_ENGINEER 不渲染高级区域，使用默认候选 [FOPDT,SOPDT] 和留空 θ。
+  - `algorithm.vue`：动态算法参数区域同样用 `Collapse` + `canEditAdvancedParams` 门禁。
+  - `workbench.vue`：复用 `useClpmRoles().canAccessTuning` 替代内联 `userStore.roles.some(...)`，移除 `useUserStore` 导入。
+  - 测试 mock 同步补充 `useClpmRoles`（默认 ADMIN）+ `Collapse`/`CollapsePanel` stub；check:type 通过、vitest 434 passed。
 - [ ] `V62-P1-023` 覆盖 loading、empty、error、partial、success 和权限状态。
 
 ### 4.5 Phase 1 门禁
@@ -393,3 +398,4 @@ pnpm exec playwright test
 | 2026-07-30 | Phase 1 | P1-019 整定三页合并为可恢复 stepper | 新建 `flow.vue`（Steps 三步 + 门禁 + onMounted 恢复）；`store/tuning.ts` 加 sessionStorage 持久化 + `restoreFromTask` taskId 回显兜底；`tuning.ts` 嵌套路由 + 旧路由重定向；三页跳转改指 flow 子路由；workbench navCards 简化 + 任务「继续」入口；check:type 通过、vitest 125 passed、浏览器验证 Steps/重定向/门禁通过 |
 | 2026-07-29 | Phase 1 | 排雷：`pnpm run format` 破坏测试标题 | `internal/lint-configs/oxlint-config` 启用 `vitest/prefer-lowercase-title:error`，`vsh lint --format` 会把 `describe`/`it` 标题首字母强制小写（`ADMIN`→`aDMIN`、`EXPERT`→`eXPERT`）。对策：不跑 blanket `pnpm run format`，改用 `check:type`+`vitest run` 作真实门禁；新文件按文件单独格式化。已还原被污染的 7 个测试文件 |
 | 2026-07-30 | Phase 1 | P1-021 统一 Loop 上下文头 | 新建 `ClpmLoopContextHeader`（editable/只读双模式）；store 加 `currentLoopTimeRange`+持久化；`flow.vue` 步骤0可编辑/1-2只读；`model.vue` 移除内联回路/时间窗选择器，改读 store；提交 `1f0e031`；check:type 通过、vitest 125 passed |
+| 2026-07-30 | Phase 1 | P1-022 高级参数权限控制 | 新建 `composables/use-clpm-roles.ts`（`canEditAdvancedParams`=ADMIN/EXPERT）；`model.vue` 候选阶次+θ 包裹 Collapse+权限门禁；`algorithm.vue` 动态算法参数同构；`workbench.vue` 复用 `canAccessTuning` 替代内联；测试 mock 补充 `useClpmRoles`+Collapse stub；check:type 通过、vitest 434 passed |
