@@ -5,6 +5,14 @@
 **发布日期**: 2026-07-22
 **基线来源**: PRD v6.0 + FDS v6.0 + DDS v6.0 + UIUX v6.1 + 实现契约 v2.0 + 当前前后端代码 + GB/T 44693.2-2024
 
+> **Phase 0 对齐说明（2026-07-29，v6.2 Truth First）**：本文档以下条目以实现契约 v2.3 与代码为事实源，遇冲突以契约 v2.3 为准：
+> - 诊断 A/B 对比**已实现**（`GET /diagnosis/ab-compare`，含 `includeDiagnosis` 扩展），不再返回 501（DOC-01）；
+> - 回路整定 Phase 2 **已交付**（历史辨识 + 异步任务 + 多 PID 仿真），非原型（DOC-02）；
+> - 整定状态机固化为 `DRAFT→RUNNING→IDENTIFIED→SIMULATED→COMPLETED` + `INCONCLUSIVE`/`ROLLED_BACK`，旧值 `PENDING/APPLIED/VERIFIED` 只读兼容（DOC-03）；
+> - 模型来源门禁：A/B 放行、C 人工确认、D/E/INCONCLUSIVE/`HEURISTIC_2TS`/实验性 IV 禁止进入整定（详见契约 v2.3 §6.1）；
+> - 安全边界：平台不直接下写 DCS 参数，只输出建议、证据、风险与回退方案（契约 v2.3 §6.2 静态门禁守护）。
+> 完整事实漂移登记见 `docs/过程文档/clpm-v6.2-phase0-contract-baseline-2026-07-29.md`。
+
 ---
 
 ## 0. 文档变更记录

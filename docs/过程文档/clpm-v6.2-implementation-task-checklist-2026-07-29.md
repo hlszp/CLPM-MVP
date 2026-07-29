@@ -155,7 +155,7 @@ uv run pytest -q tests/test_tuning_identification.py tests/test_tuning_history_s
 - [ ] `V62-P0-030` 为 `/compare` 建独立请求 schema，不强制无关 PID 字段。（延后至 Phase 1：当前 `/compare` 复用 `SimulateRequest`，属 P1 范畴）
 - [x] `V62-P0-031` 记录现行生产 bootstrap：`01_schema.sql` 建表后，首次部署直接 `alembic stamp head`。
 - [x] `V62-P0-032` 用 ORM/Alembic 自动核对表清单，确认 ORM 37 张、基础 DDL 21 张、缺 16 张的 RED 基线。
-- [ ] `V62-P0-033` 同步 PRD、实现契约、FDS、ADS、DDS、IDS、UIUX。
+- [x] `V62-P0-033` 同步 PRD、实现契约、FDS、ADS、DDS、IDS、UIUX。（实现契约升至 v2.3 并完整固化状态机/模型门禁/37 表/安全边界；PRD/FDS/ADS/DDS/IDS 各加 Phase 0 对齐说明指向契约 v2.3 为事实源；UIUX 无 Phase 0 漂移项）
 - [ ] `V62-P0-034` 增加 OpenAPI/路由/response contract 检查，防止文档再次漂移。
 - [x] `V62-P0-035` 将 `time_constant` 标为 `NOT_IMPLEMENTED`，决定补算或兼容废弃，不把 NULL 当无数据。（已在契约基线 §7 记录语义；Phase 1 指标语义清单后决定补算或废弃）
 - [x] `V62-P0-036` 生成当前可见菜单、隐藏路由、重定向和角色权限基线。（已固化于契约基线 §5）

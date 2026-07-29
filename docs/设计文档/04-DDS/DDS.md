@@ -5,6 +5,13 @@
 **发布日期**: 2026-07-06
 **设计依据**: PRD (v6.0), FDS (v6.0，表名/字段名权威基线), ADS (v6.0), 关键算法设计说明 (v2.0), 实现契约 (v2.0)
 
+> **Phase 0 对齐说明（2026-07-29，v6.2 Truth First）**：本文档以下条目以实现契约 v2.3 与代码为事实源，遇冲突以契约 v2.3 为准：
+> - ORM 实际 **37 张表**（契约 v2.3 §10 为权威清单），非 31 张；生产 bootstrap DDL 已收敛至 37 张（DOC-04/07/08）；
+> - `tuning_record` 字段与状态以 ORM/Alembic 反向核准为准，不存在旧计划文档声称的 `algorithm_version` 列（DOC-04）；
+> - 整定状态机目标值为 `DRAFT/RUNNING/IDENTIFIED/SIMULATED/COMPLETED/INCONCLUSIVE/ROLLED_BACK`，旧值 `PENDING/APPLIED/VERIFIED` 只读兼容（DOC-03）；
+> - `time_constant` 为 KPI 快照表持久化列但无计算器，状态 `NOT_IMPLEMENTED`（契约基线 §7）。
+> 完整事实漂移登记见 `docs/过程文档/clpm-v6.2-phase0-contract-baseline-2026-07-29.md`。
+
 ---
 
 ## 0. 文档变更记录
