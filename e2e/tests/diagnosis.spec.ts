@@ -5,9 +5,12 @@
  * - E2E-DIAG-001: 诊断列表（/diagnosis/list → 筛选标签）
  * - E2E-DIAG-002: 波形查看（/diagnosis/waveform → ECharts 趋势线）
  * - E2E-DIAG-003: Tracker 处理（/diagnosis/tracker → 更新状态）
+ * - E2E-DIAG-004: 诊断详情（/diagnosis/detail/:loopId → 标签与散点图）
+ * - E2E-DIAG-005: 诊断任务（/diagnosis/tasks → 显示已归档任务）
+ * - E2E-DIAG-006: Tracker SPA 导航（详情挂载 → 后续记录页导航）
  *
  * 页面源码依据：
- *   frontend/apps/web-antd/src/views/diagnosis/{list,waveform,tracker}.vue
+ *   frontend/apps/web-antd/src/views/diagnosis/{list,waveform,tracker,tracker-page,detail,tasks}.vue
  *   - list: 筛选栏（装置/诊断标签/处理状态/时间窗）+ 表格
  *   - waveform: 回路选择 + ECharts 波形图 + 散点图 Tab
  *   - tracker: 表格 + 状态更新下拉（仅 IC_ENGINEER 可操作）
@@ -134,6 +137,32 @@ test.describe('诊断中心 E2E', () => {
     }
 
     expect(page.url()).toContain('/diagnosis/tracker');
+  });
+
+  test('E2E-DIAG-006: Tracker SPA 导航打开诊断详情', async ({ page }) => {
+    await page.goto('/diagnosis/tracker');
+
+    const detailButton = page
+      .locator('.ant-table-tbody tr')
+      .filter({ has: page.getByRole('button', { name: '详情', exact: true }) })
+      .first()
+      .getByRole('button', { name: '详情', exact: true });
+
+    await expect(detailButton).toBeVisible({ timeout: 15_000 });
+    await detailButton.click();
+
+    await expect(page).toHaveURL(/\/diagnosis\/detail\/[\da-f-]+$/);
+    await expect(page.getByText(/^诊断详情 - /)).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // 回归：旧实现会让 content.vue 的 out-in 链停在空节点，
+    // 详情及后续 SPA 页面均白屏。
+    await page.getByRole('menuitem', { name: '诊断记录' }).click();
+    await expect(page).toHaveURL(/\/diagnosis\/records$/);
+    await expect(
+      page.getByText('诊断记录', { exact: true }).first(),
+    ).toBeVisible();
   });
 });
 

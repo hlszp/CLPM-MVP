@@ -116,7 +116,7 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'DiagnosisTracker',
         path: '/diagnosis/tracker',
-        component: () => import('#/views/diagnosis/tracker.vue'),
+        component: () => import('#/views/diagnosis/tracker-page.vue'),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
           icon: 'lucide:clipboard-check',

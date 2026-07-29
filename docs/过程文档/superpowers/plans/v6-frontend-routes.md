@@ -49,7 +49,7 @@
 | DiagnosisList | /diagnosis/list | #/views/diagnosis/list.vue | 诊断列表 | lucide:list | ['ADMIN','EXPERT','IC_ENGINEER','PE_ENGINEER','SPONSOR'] | — | 否 |
 | DiagnosisDetail | /diagnosis/detail/:loopId | #/views/diagnosis/detail.vue | 诊断详情 | — | ['ADMIN','EXPERT','IC_ENGINEER','PE_ENGINEER'] | — | hideInMenu: true |
 | DiagnosisWaveform | /diagnosis/waveform | #/views/diagnosis/waveform.vue | 波形分析 | lucide:activity | ['ADMIN','EXPERT','IC_ENGINEER','PE_ENGINEER'] | — | 否 |
-| DiagnosisTracker | /diagnosis/tracker | #/views/diagnosis/tracker.vue | 异常跟踪 | lucide:clipboard-check | ['ADMIN','IC_ENGINEER','PE_ENGINEER','EXPERT'] | — | 否 |
+| DiagnosisTracker | /diagnosis/tracker | #/views/diagnosis/tracker-page.vue（稳定 DOM 路由根；内容为 tracker.vue） | 异常跟踪 | lucide:clipboard-check | ['ADMIN','IC_ENGINEER','PE_ENGINEER','EXPERT'] | — | 否 |
 | DiagnosisABCompare | /diagnosis/ab-compare | #/views/diagnosis/ab-compare.vue | A/B 对比 | lucide:git-compare | ['ADMIN','IC_ENGINEER','EXPERT'] | — | hideInMenu: true |
 | DiagnosisStatistics | /diagnosis/statistics | #/views/diagnosis/statistics.vue | 统计报表 | lucide:bar-chart-3 | ['ADMIN','EXPERT','IC_ENGINEER','PE_ENGINEER','SPONSOR'] | — | 否 |
 | DiagnosisConfig | /diagnosis/config | #/views/diagnosis/config.vue | 诊断配置 | lucide:settings-2 | ['ADMIN'] | — | 否 |
