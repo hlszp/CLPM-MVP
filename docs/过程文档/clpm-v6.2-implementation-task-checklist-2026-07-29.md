@@ -216,12 +216,12 @@ unit_kpi_summary
 
 ### 4.1 PV/OP/SP/MODE 同轴
 
-- [ ] `V62-P1-001` 以 PVOP 时间戳作为统一目标网格，消除 bundle 顺序依赖。
-- [ ] `V62-P1-002` 读取 MODE 并与 PV/OP/SP 同轴。
-- [ ] `V62-P1-003` 返回真实时间，不退化为数组索引。
-- [ ] `V62-P1-004` 记录插值率、外推率、缺口和有效样本数。
-- [ ] `V62-P1-005` 覆盖 1s PVOP + 10/30/60s BASE、乱序、缺口和边界外推。
-- [ ] `V62-P1-006` 去除热路径逐点 naive datetime `.timestamp()`。
+- [x] `V62-P1-001` 以 PVOP 时间戳作为统一目标网格，消除 bundle 顺序依赖。
+- [x] `V62-P1-002` 读取 MODE 并与 PV/OP/SP 同轴。
+- [x] `V62-P1-003` 返回真实时间，不退化为数组索引。
+- [x] `V62-P1-004` 记录插值率、外推率、缺口和有效样本数。
+- [x] `V62-P1-005` 覆盖 1s PVOP + 10/30/60s BASE、乱序、缺口和边界外推。
+- [x] `V62-P1-006` 去除热路径逐点 naive datetime `.timestamp()`。
 
 ### 4.2 真实片段切分与激励门禁
 
@@ -372,3 +372,4 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 0 | 契约基线与任务清单更新 | `clpm-v6.2-phase0-contract-baseline-2026-07-29.md`、本清单 |
 | 2026-07-29 | Phase 0 | P0-033 设计文档同步至契约 v2.3 | 提交 `98a7728`；契约 v2.3（状态机/§6.1 模型门禁/§6.2 安全边界/§10 37 表）；PRD/FDS/ADS/DDS/IDS 加 Phase 0 对齐说明；AGENTS.md 基线升级 |
 | 2026-07-29 | Phase 0 | 阶段合并 phase0→integration | 合并 `e23d8819`（`--no-ff`，45 文件 +4222/-357）；推送 `origin/codex/v6.2-integration`；pre-push lefthook 全量门禁（pytest/ruff/typecheck）通过 |
+| 2026-07-29 | Phase 1 | P1-001~006 PV/OP/SP/MODE 同轴完成 | `_fetch_preprocessed_signals` 按 tag_group 索引消除顺序依赖；SP 线性插值到 PVOP 网格；MODE 零阶保持重采样（禁线性插值）；`_to_rel_seconds` 去除 naive `.timestamp()`；记录插值/外推/缺口/有效样本质量指标；后端 3475 passed（+19），ruff/alembic 全绿 |

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -338,7 +338,7 @@ async def _fetch_preprocessed_signals(
         dict with keys: "pv", "op", "sp"（sp 可能为空 list）, "timestamps"（秒）,
         "valid_rate", "sampling_freq"（数值 Hz，已从 DataBlock 标签解析）
     """
-    from app.contracts.data_types import ControlType, TimeWindow
+    from app.contracts.data_types import ControlType, DataBlock, TimeWindow
 
     try:
         control_type = ControlType(control_type_str)
@@ -351,55 +351,83 @@ async def _fetch_preprocessed_signals(
 
     planner = await _build_data_planner(db)
 
-    # 请求 PVOP_HF（PV+OP, 1s）和 BASE（含 SP）
+    # 请求 PVOP_HF（PV+OP, 1s）、BASE（含 SP）和 MODE_HF（MODE，从 BASE 派生）。
+    # V62-P1-002: 增加 auto_mode_rate 触发 MODE_HF 派生；DataPlanner 复用 BASE 时
+    # 会把所有 HF 组的 tags 合并进 BASE 查询（见 data_planner._build_query_plan），
+    # 因此 BASE 查询会 SELECT mode 列，派生出的 MODE_HF block 才能携带 mode 信号。
     bundles = await planner.request_bundles(
         loop_id=loop_id,
-        metrics=["valve_linearity", "error_mean"],
+        metrics=["valve_linearity", "error_mean", "auto_mode_rate"],
         time_window=time_window,
         control_type=control_type,
     )
 
+    # V62-P1-001: 按 tag_group 索引收集 block，消除 bundle 迭代顺序依赖
+    pvop_block: DataBlock | None = None
+    base_block: DataBlock | None = None
+    mode_block: DataBlock | None = None
+    for bundle in bundles:
+        block = bundle.data_block
+        if block.tag_group == "PVOP_HF" and pvop_block is None:
+            pvop_block = block
+        elif block.tag_group == "BASE" and base_block is None:
+            base_block = block
+        elif block.tag_group == "MODE_HF" and mode_block is None:
+            mode_block = block
+
     pv: list[float] = []
     op: list[float] = []
     sp: list[float] = []
+    mode: list[int] = []
     timestamps: list[float] = []
     valid_rate = 1.0
     sampling_freq = 1.0
+    resample_quality: dict[str, int] = {}
+    mode_resample_quality: dict[str, int] = {}
 
-    for bundle in bundles:
-        block = bundle.data_block
-        signals = block.signals
-        ts_list = list(block.timestamps)
+    if pvop_block is not None:
+        pvop_signals = pvop_block.signals
+        pv = list(pvop_signals.get("pv", []))
+        op = list(pvop_signals.get("op", []))
+        pvop_ts = list(pvop_block.timestamps)
+        # V62-P1-003/006: 相对秒用 _to_rel_seconds（无 naive .timestamp() 慢路径，
+        # 无数组索引退化）
+        if pvop_ts:
+            timestamps = _to_rel_seconds(pvop_ts, pvop_ts[0])
+        valid_rate = pvop_block.quality_summary.valid_rate if pvop_block.quality_summary else 1.0
+        sampling_freq = _parse_sampling_freq_hz(pvop_block.sampling_freq)
 
-        if block.tag_group == "PVOP_HF":
-            # PV+OP 高频（1s）作为主时间轴
-            pv = list(signals.get("pv", []))
-            op = list(signals.get("op", []))
-            # timestamps 是 datetime，转为相对秒
-            if ts_list:
-                t0 = ts_list[0]
-                timestamps = [
-                    (t - t0).total_seconds() if hasattr(t, "total_seconds") else float(i)
-                    for i, t in enumerate(ts_list)
-                ]
-            valid_rate = block.quality_summary.valid_rate if block.quality_summary else 1.0
-            sampling_freq = _parse_sampling_freq_hz(block.sampling_freq)
-        elif block.tag_group == "BASE":
-            # SP 在 BASE 中，需对齐到 PVOP 时间轴
-            sp_raw = list(signals.get("sp", []))
-            ts_sp = list(ts_list)
-            if sp_raw and timestamps:
-                sp = _resample_to_grid(sp_raw, ts_sp, ts_list_pvop=block.timestamps)
-            elif sp_raw:
-                sp = sp_raw  # 降级：不对齐
+    # V62-P1-001: SP 重采样到 PVOP 网格（修复：目标网格传 PVOP timestamps，
+    # 不再误传 BASE 自身 timestamps）
+    if base_block is not None and pvop_block is not None and timestamps:
+        sp_raw = list(base_block.signals.get("sp", []))
+        ts_sp = list(base_block.timestamps)
+        if sp_raw:
+            sp, resample_quality = _resample_to_grid(
+                sp_raw, ts_sp, dst_timestamps=pvop_block.timestamps
+            )
+
+    # V62-P1-002: MODE 零阶保持重采样到 PVOP 网格。
+    # MODE 是离散状态量（AUTO/MANUAL/CASCADE），禁止线性插值（会产出 1.5 等无意义
+    # 中间值）；用零阶保持：每个 PVOP 时间点取 MODE_HF 中不超过该时间的最近值。
+    if mode_block is not None and pvop_block is not None and timestamps:
+        mode_raw = list(mode_block.signals.get("mode", []))
+        ts_mode = list(mode_block.timestamps)
+        if mode_raw:
+            mode, mode_resample_quality = _resample_mode_to_grid(
+                mode_raw, ts_mode, dst_timestamps=pvop_block.timestamps
+            )
 
     return {
         "pv": pv,
         "op": op,
         "sp": sp,
+        "mode": mode,
         "timestamps": timestamps,
         "valid_rate": valid_rate,
         "sampling_freq": sampling_freq,
+        "resample_quality": resample_quality,
+        "mode_resample_quality": mode_resample_quality,
     }
 
 
@@ -431,36 +459,166 @@ def _parse_sampling_freq_hz(label: object) -> float:
     return 1.0 / interval_s
 
 
+def _to_rel_seconds(ts_list: list, t0: object) -> list[float]:
+    """时间戳列表 → 相对 t0 的秒数（V62-P1-006）.
+
+    纯 ``timedelta`` 算术，不调 naive ``.timestamp()``（macOS fork 时区慢路径，
+    项目红线）；naive datetime 视为 UTC（项目惯例），aware 与 naive 混用时
+    统一补 UTC。非 datetime（int/float epoch）直接转 float，不退化为数组索引。
+    """
+    _utc = UTC
+
+    def _aware(t: datetime) -> datetime:
+        return t if t.tzinfo is not None else t.replace(tzinfo=_utc)
+
+    t0_aware = _aware(t0) if isinstance(t0, datetime) else t0
+    out: list[float] = []
+    for t in ts_list:
+        if isinstance(t, datetime):
+            out.append((_aware(t) - t0_aware).total_seconds())
+        else:
+            out.append(float(t))
+    return out
+
+
 def _resample_to_grid(
     values: list[float],
     src_timestamps: list,
-    ts_list_pvop: list,
-) -> list[float]:
-    """将 SP 从 BASE 采样率线性插值到 PVOP_HF（1s）时间轴.
+    dst_timestamps: list,
+) -> tuple[list[float], dict[str, int]]:
+    """将 values 从 src_timestamps 线性插值到 dst_timestamps 目标网格.
+
+    V62-P1-001/003/004/006:
+    - 目标网格为 ``dst_timestamps``（PVOP 时间戳），不再误传 src 自身时间戳；
+    - datetime → 相对秒用 ``_to_rel_seconds``（无 naive ``.timestamp()``，无数组索引退化）；
+    - src 乱序时先排序（``np.interp`` 要求单调递增，覆盖 V62-P1-005 乱序场景）；
+    - 返回插值/外推/缺口/有效样本质量指标（V62-P1-004）。
 
     Args:
-        values: SP 原始值
-        src_timestamps: SP 原始时间戳（datetime）
-        ts_list_pvop: PVOP_HF 时间戳（datetime），目标网格
-    """
-    if not values or not src_timestamps or not ts_list_pvop:
-        return []
+        values: src 信号值
+        src_timestamps: src 时间戳（datetime 或数值）
+        dst_timestamps: 目标网格时间戳（通常 PVOP_HF）
 
-    # 转为 epoch 秒
-    src_sec = np.array(
-        [
-            t.timestamp() if hasattr(t, "timestamp") else float(i)
-            for i, t in enumerate(src_timestamps)
-        ]
-    )
-    dst_sec = np.array(
-        [t.timestamp() if hasattr(t, "timestamp") else float(i) for i, t in enumerate(ts_list_pvop)]
-    )
+    Returns:
+        (重采样值列表, 质量指标 dict)。质量指标：
+        ``interpolated_count``（src 范围内）、``extrapolated_count``（src 范围外，
+        ``np.interp`` 用边界值）、``gap_count``（src 中 NaN/inf 缺失）、
+        ``effective_samples``（src 有效样本数）。
+    """
+    if not values or not src_timestamps or not dst_timestamps:
+        return [], {
+            "interpolated_count": 0,
+            "extrapolated_count": 0,
+            "gap_count": 0,
+            "effective_samples": 0,
+        }
+
+    t0 = dst_timestamps[0]
+    src_sec = np.array(_to_rel_seconds(src_timestamps, t0), dtype=float)
+    dst_sec = np.array(_to_rel_seconds(dst_timestamps, t0), dtype=float)
     values_arr = np.array(values, dtype=float)
 
-    # 用 numpy 线性插值（外推用边界值）
-    result = np.interp(dst_sec, src_sec, values_arr, left=values_arr[0], right=values_arr[-1])
-    return result.tolist()
+    # 缺口：src 中 NaN/inf 视为缺失
+    finite_mask = np.isfinite(values_arr)
+    gap_count = int((~finite_mask).sum())
+
+    # src 需单调递增供 np.interp；处理乱序（V62-P1-005）
+    sort_idx = np.argsort(src_sec)
+    src_sec_sorted = src_sec[sort_idx]
+    values_sorted = values_arr[sort_idx]
+
+    src_lo = float(src_sec_sorted[0])
+    src_hi = float(src_sec_sorted[-1])
+    in_range = (dst_sec >= src_lo) & (dst_sec <= src_hi)
+    interpolated_count = int(in_range.sum())
+    extrapolated_count = int((~in_range).sum())
+
+    result = np.interp(
+        dst_sec,
+        src_sec_sorted,
+        values_sorted,
+        left=float(values_sorted[0]),
+        right=float(values_sorted[-1]),
+    )
+    return result.tolist(), {
+        "interpolated_count": interpolated_count,
+        "extrapolated_count": extrapolated_count,
+        "gap_count": gap_count,
+        "effective_samples": int(finite_mask.sum()),
+    }
+
+
+def _resample_mode_to_grid(
+    values: list[float],
+    src_timestamps: list,
+    dst_timestamps: list,
+) -> tuple[list[int], dict[str, int]]:
+    """将离散 MODE 信号零阶保持重采样到 dst 网格（V62-P1-002）.
+
+    MODE 是离散状态量（AUTO/MANUAL/CASCADE 等），禁止线性插值——线性插值
+    会产出 1.5、2.3 等无意义中间状态码。采用零阶保持（前向填充）：每个 dst
+    时间点取 src 中不超过该时间的最近有效值，符合 DCS 模式保持语义。
+
+    - dst 早于 src 首点：取 src[0]（前向外推，记 extrapolated_count）
+    - dst 晚于 src 末点：取 src[-1]（后向外推，记 extrapolated_count）
+    - src 中 NaN/inf 视为缺失，跳过（记 gap_count）
+    - 时间戳 → 相对秒用 ``_to_rel_seconds``（无 naive ``.timestamp()``，V62-P1-006）
+
+    Args:
+        values: src MODE 值（int/float，离散状态码）
+        src_timestamps: src 时间戳
+        dst_timestamps: 目标网格时间戳（通常 PVOP_HF）
+
+    Returns:
+        (重采样 MODE int 列表, 质量指标 dict)。质量指标字段与
+        ``_resample_to_grid`` 对齐：``interpolated_count``（src 范围内）、
+        ``extrapolated_count``（src 范围外）、``gap_count``（src 缺失）、
+        ``effective_samples``（src 有效样本数）。
+    """
+    if not values or not src_timestamps or not dst_timestamps:
+        return [], {
+            "interpolated_count": 0,
+            "extrapolated_count": 0,
+            "gap_count": 0,
+            "effective_samples": 0,
+        }
+
+    t0 = dst_timestamps[0]
+    src_sec = np.array(_to_rel_seconds(src_timestamps, t0), dtype=float)
+    dst_sec = np.array(_to_rel_seconds(dst_timestamps, t0), dtype=float)
+    values_arr = np.array(values, dtype=float)
+
+    finite_mask = np.isfinite(values_arr)
+    gap_count = int((~finite_mask).sum())
+    effective_samples = int(finite_mask.sum())
+
+    if effective_samples == 0:
+        # 全部缺失：填 0 并标记为全外推（无有效源可保持）
+        return [0] * len(dst_timestamps), {
+            "interpolated_count": 0,
+            "extrapolated_count": len(dst_timestamps),
+            "gap_count": gap_count,
+            "effective_samples": 0,
+        }
+
+    # 仅用有效样本做零阶保持（缺失点不参与）
+    valid_src = src_sec[finite_mask]
+    valid_vals = values_arr[finite_mask]
+    # searchsorted(side="right") - 1：对每个 dst_sec 找 <= 它的最大 src 索引
+    idx = np.searchsorted(valid_src, dst_sec, side="right") - 1
+    before_mask = idx < 0  # dst 早于 src 首点 → 前向外推
+    idx = np.clip(idx, 0, len(valid_vals) - 1)
+    result = valid_vals[idx]
+    after_mask = dst_sec > valid_src[-1]  # dst 晚于 src 末点 → 后向外推
+    extrapolated_count = int(before_mask.sum() + after_mask.sum())
+    interpolated_count = len(dst_timestamps) - extrapolated_count
+
+    return [int(v) for v in result], {
+        "interpolated_count": interpolated_count,
+        "extrapolated_count": extrapolated_count,
+        "gap_count": gap_count,
+        "effective_samples": effective_samples,
+    }
 
 
 async def identify_model_from_history(
@@ -511,11 +669,12 @@ async def identify_model_from_history(
     # 候选模型类型
     candidates = [ModelType(mt) for mt in (candidate_model_types or ["FOPDT", "SOPDT"])]
 
-    # 调用算法栈
+    # 调用算法栈（V62-P1-002: 传入同轴后的 MODE，供后续片段切分使用）
     result = identify_from_history(
         op=op,
         pv=pv,
         sp=sp if sp else None,
+        mode=signals.get("mode") or None,
         ts=ts,
         theta_estimate=theta_estimate,
         candidate_models=candidates,
