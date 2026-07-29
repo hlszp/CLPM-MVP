@@ -226,7 +226,8 @@ unit_kpi_summary
 ### 4.2 真实片段切分与激励门禁
 
 - [x] `V62-P1-007` 按 MODE、启停、缺口、饱和、人工干预和事件边界切片。
-- [ ] `V62-P1-008` preview API 返回真实片段、排除原因和质量摘要。
+- [x] `V62-P1-008` preview API 返回真实片段、排除原因和质量摘要。
+  - `preview_identify_segments` 改用 `segment_signals` 真实切分（MODE/缺口/饱和/太短），被排除片段标注 `exclusionReason` 且不跑激励检测；`IdentifySegment` schema 新增 `exclusionReason`/`validSampleRatio`/`pointCount`（optional，兼容旧客户端）；新增 `TestV62P1PreviewSegments` 3 测试（AUTO+MANUAL 切分/全 AUTO 激励/空窗口）。
 - [x] `V62-P1-009` OP 激励按量程或噪声归一化，消除 OP/PV 跨量纲比值。
 - [x] `V62-P1-010` 方向变化加入死区，不把零值/微噪声算作有效激励。
 - [x] `V62-P1-011` 回归矩阵标准化并增加单位缩放不变性测试。
@@ -374,3 +375,4 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 0 | 阶段合并 phase0→integration | 合并 `e23d8819`（`--no-ff`，45 文件 +4222/-357）；推送 `origin/codex/v6.2-integration`；pre-push lefthook 全量门禁（pytest/ruff/typecheck）通过 |
 | 2026-07-29 | Phase 1 | P1-001~006 PV/OP/SP/MODE 同轴完成 | `_fetch_preprocessed_signals` 按 tag_group 索引消除顺序依赖；SP 线性插值到 PVOP 网格；MODE 零阶保持重采样（禁线性插值）；`_to_rel_seconds` 去除 naive `.timestamp()`；记录插值/外推/缺口/有效样本质量指标；后端 3475 passed（+19），ruff/alembic 全绿 |
 | 2026-07-29 | Phase 1 | P1-007/009/010/011 片段切分与激励门禁改进 | 新建 `segmentation.py`：按 MODE/缺口/饱和/太短事件切片，返回 SegmentSpec（含排除原因/有效样本比例）+ `select_best_segment`；`excitation.py`：OP 量程归一化（op_span 参数）、方向变化死区（过滤微噪声）、回归矩阵列标准化（单位缩放不变）；后端 3498 passed（+23），ruff 全绿 |
+| 2026-07-29 | Phase 1 | P1-008 preview API 返回真实片段 | `preview_identify_segments` 改用 `segment_signals` 真实切分；`IdentifySegment` schema 新增 `exclusionReason`/`validSampleRatio`/`pointCount`（optional）；被排除片段不跑激励检测；`TestV62P1PreviewSegments` 3 测试通过（AUTO+MANUAL/全 AUTO/空窗口） |

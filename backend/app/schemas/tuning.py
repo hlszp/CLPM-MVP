@@ -379,6 +379,10 @@ class IdentifySegment(CamelModel):
     excitationScore: float | None = None
     conditionNumber: float | None = None
     isSufficient: bool = False
+    # V62-P1-008: 真实片段切分新增字段（optional，兼容旧客户端）
+    exclusionReason: str | None = None
+    validSampleRatio: float | None = None
+    pointCount: int | None = None
 
 
 class IdentifySegmentsRequest(CamelModel):

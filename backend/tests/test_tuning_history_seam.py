@@ -35,6 +35,7 @@ from app.services.tuning import (
     _resample_to_grid,
     _to_rel_seconds,
     identify_model_from_history,
+    preview_identify_segments,
 )
 
 # ---------------------------------------------------------------------------
@@ -793,3 +794,105 @@ class TestV62P1ModeResampleQuality:
         dst_ts = [_START + timedelta(seconds=i) for i in range(3)]
         result, _ = _resample_mode_to_grid(values, src_ts, dst_ts)
         assert all(isinstance(v, int) for v in result)
+
+
+# ---------------------------------------------------------------------------
+# V62-P1-008：preview API 返回真实片段、排除原因和质量摘要
+# ---------------------------------------------------------------------------
+
+
+class TestV62P1PreviewSegments:
+    """V62-P1-008: preview_identify_segments 返回真实事件切片."""
+
+    @pytest.mark.asyncio
+    async def test_preview_returns_real_segments_with_exclusion_reason(self):
+        """AUTO(100点) + MANUAL(100点) → 2 段，MANUAL 段标注 exclusionReason.
+
+        修复前：整窗硬编码成单个 mode="AUTO" 片段，MANUAL 段污染结果。
+        """
+        n = 200
+        pv = [450.0 + 0.01 * i for i in range(n)]
+        op = [60.0 + 0.005 * i for i in range(n)]
+        ts = [_START + timedelta(seconds=i) for i in range(n)]
+        mode = [1] * 100 + [0] * 100  # AUTO → MANUAL
+
+        bundles = [
+            _make_bundle(
+                "valve_linearity", _make_block_ts("PVOP_HF", {"pv": pv, "op": op}, ts, "1s")
+            ),
+            _make_bundle("error_mean", _make_block_ts("BASE", {"sp": [450.0] * n}, ts, "1s")),
+            _make_bundle("auto_mode_rate", _make_block_ts("MODE_HF", {"mode": mode}, ts, "1s")),
+        ]
+        planner = _make_planner(bundles)
+        db = _make_db_with_loop(_LOOP)
+        with patch("app.services.tuning._build_data_planner", AsyncMock(return_value=planner)):
+            result = await preview_identify_segments(
+                db, "loop-1", "2026-07-28T00:00:00Z", "2026-07-28T00:03:20Z"
+            )
+
+        assert result["loopId"] == "loop-1"
+        assert result["totalSegments"] == 2
+        # 第一段 AUTO，可辨识
+        seg0 = result["segments"][0]
+        assert seg0["mode"] == "AUTO"
+        assert seg0["exclusionReason"] is None
+        assert seg0["pointCount"] == 100
+        assert seg0["validSampleRatio"] == 1.0
+        # 第二段 MANUAL，排除
+        seg1 = result["segments"][1]
+        assert seg1["mode"] == "MANUAL"
+        assert seg1["exclusionReason"] == "MANUAL_MODE"
+        assert seg1["isSufficient"] is False
+        assert seg1["excitationScore"] is None
+
+    @pytest.mark.asyncio
+    async def test_preview_all_auto_single_segment_with_excitation(self):
+        """全 AUTO + 方波 OP → 1 段，exclusionReason=None，含激励评分."""
+        n = 200
+        # 方波 OP 提供激励（方向变化 ≥ 1）
+        pv = [450.0 + 0.1 * (i % 20) for i in range(n)]
+        op = [50.0 + 10.0 * ((i // 50) % 2) for i in range(n)]
+        ts = [_START + timedelta(seconds=i) for i in range(n)]
+
+        bundles = [
+            _make_bundle(
+                "valve_linearity", _make_block_ts("PVOP_HF", {"pv": pv, "op": op}, ts, "1s")
+            ),
+        ]
+        planner = _make_planner(bundles)
+        db = _make_db_with_loop(_LOOP)
+        with patch("app.services.tuning._build_data_planner", AsyncMock(return_value=planner)):
+            result = await preview_identify_segments(
+                db, "loop-1", "2026-07-28T00:00:00Z", "2026-07-28T00:03:20Z"
+            )
+
+        assert result["totalSegments"] == 1
+        seg = result["segments"][0]
+        assert seg["exclusionReason"] is None
+        assert seg["excitationScore"] is not None
+        assert seg["conditionNumber"] is not None
+        assert seg["mode"] == "UNKNOWN"  # 无 MODE_HF bundle 时
+
+    @pytest.mark.asyncio
+    async def test_preview_empty_window(self):
+        """数据不足时返回 0 片段."""
+        n = 5
+        pv = [450.0] * n
+        op = [60.0] * n
+        ts = [_START + timedelta(seconds=i) for i in range(n)]
+
+        bundles = [
+            _make_bundle(
+                "valve_linearity", _make_block_ts("PVOP_HF", {"pv": pv, "op": op}, ts, "1s")
+            ),
+        ]
+        planner = _make_planner(bundles)
+        db = _make_db_with_loop(_LOOP)
+        with patch("app.services.tuning._build_data_planner", AsyncMock(return_value=planner)):
+            result = await preview_identify_segments(
+                db, "loop-1", "2026-07-28T00:00:00Z", "2026-07-28T00:00:05Z"
+            )
+
+        assert result["totalSegments"] == 0
+        assert result["segments"] == []
+        assert result["sufficientCount"] == 0

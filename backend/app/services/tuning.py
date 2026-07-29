@@ -747,6 +747,10 @@ async def preview_identify_segments(
 ) -> dict[str, Any]:
     """预览数据窗口内的可辨识片段（只做激励检测，不执行辨识）.
 
+    V62-P1-008: 基于 segment_signals 真实切分片段（按 MODE/缺口/饱和/太短），
+    对可辨识片段（exclusion_reason is None）跑激励检测，被排除片段标注原因。
+    不再把整窗硬编码成单个 AUTO 片段。
+
     Returns:
         dict with loopId/totalSegments/segments/sufficientCount
     """
@@ -757,6 +761,7 @@ async def preview_identify_segments(
 
     pv = signals["pv"]
     op = signals["op"]
+    mode = signals.get("mode") or None
 
     if len(pv) < 10 or len(op) < 10:
         return {
@@ -772,30 +777,58 @@ async def preview_identify_segments(
         check_excitation,
         excitation_score,
     )
+    from app.services.tuning_identification.segmentation import segment_signals
 
-    # Phase 2 初版：将整个数据窗口作为单个片段评估
-    # 后续可按 MODE 变化点切分为多片段
-    u = np.array(op, dtype=float)
-    y = np.array(pv, dtype=float)
-    d = 1  # 默认滞后 1 步
-    exc_result = check_excitation(u, y, d)
+    # V62-P1-007/008: 真实事件切片（MODE/缺口/饱和/太短）
+    specs = segment_signals(pv, op, mode)
 
-    score = excitation_score(exc_result.condition_number, exc_result.significant_changes)
-
-    segment = {
-        "startIdx": 0,
-        "endIdx": len(pv) - 1,
-        "mode": "AUTO",
-        "excitationScore": score,
-        "conditionNumber": exc_result.condition_number,
-        "isSufficient": exc_result.is_sufficient,
-    }
+    segments: list[dict[str, Any]] = []
+    sufficient_count = 0
+    for spec in specs:
+        # endIdx 保持 inclusive 语义（兼容前端），SegmentSpec.end_idx 是 exclusive
+        end_idx_inclusive = spec.end_idx - 1
+        base = {
+            "startIdx": spec.start_idx,
+            "endIdx": end_idx_inclusive,
+            "mode": spec.mode_label,
+            "exclusionReason": spec.exclusion_reason,
+            "validSampleRatio": spec.valid_sample_ratio,
+            "pointCount": spec.point_count,
+        }
+        if spec.exclusion_reason is not None or spec.point_count < 10:
+            # 被排除片段：不跑激励检测
+            base.update(
+                {
+                    "excitationScore": None,
+                    "conditionNumber": None,
+                    "isSufficient": False,
+                }
+            )
+        else:
+            # 可辨识片段：跑激励检测
+            seg_pv = pv[spec.start_idx : spec.end_idx]
+            seg_op = op[spec.start_idx : spec.end_idx]
+            u = np.array(seg_op, dtype=float)
+            y = np.array(seg_pv, dtype=float)
+            d = 1  # 预览用默认滞后，正式辨识由 pipeline 延迟搜索确定
+            exc = check_excitation(u, y, d)
+            score = excitation_score(exc.condition_number, exc.significant_changes)
+            if exc.is_sufficient:
+                sufficient_count += 1
+            base.update(
+                {
+                    "excitationScore": score,
+                    "conditionNumber": exc.condition_number,
+                    "isSufficient": exc.is_sufficient,
+                }
+            )
+        segments.append(base)
 
     return {
         "loopId": loop_id,
-        "totalSegments": 1,
-        "segments": [segment],
-        "sufficientCount": 1 if exc_result.is_sufficient else 0,
+        "totalSegments": len(segments),
+        "segments": segments,
+        "sufficientCount": sufficient_count,
     }
 
 
