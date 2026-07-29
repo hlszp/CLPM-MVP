@@ -247,7 +247,9 @@ unit_kpi_summary
 
 ### 4.4 页面与导航减法
 
-- [ ] `V62-P1-017` 工作台变为跨模块待办门户，取消与装置性能的重复心智入口。
+- [x] `V62-P1-017` 工作台变为跨模块待办门户，取消与装置性能的重复心智入口。
+  - 新建 `views/dashboard/workbench.vue`：顶部 `ClpmKpiStrip` 跨模块待办计数（诊断待处理 / 异常跟踪待办 / 评估待执行 / 整定任务），计数走真实接口（status 过滤 + total + tracker aggregates.statusCounts），整定卡片按角色条件渲染（工作台对 PE_ENGINEER/SPONSOR 可见，整定仅 ADMIN/IC_ENGINEER/EXPERT）；点击跳转对应模块；复用 `DiagnosisSummaryCard` + `TrackerEffectivenessCard`；装置性能完整看板归属 `/metric/pid-dashboard`，此处仅留入口卡。
+  - `dashboard.ts`：`DashboardWorkbench` component 改指 `views/dashboard/workbench.vue`，标题改"工作台"；`routes-authority.test.ts` 工作台排除 EXPERT、放行 SPONSOR 断言通过。
 - [x] `V62-P1-018` 诊断 tasks/records 合并为进行中/历史 Tabs。
   - 新建 `views/diagnosis/task-center.vue`：Tabs 包装 tasks.vue（进行中）/ records.vue（历史）；activeTab 与 URL query 双向同步；不套外层 Page 避免与子页双重嵌套；records 内部 Tabs 作为历史下二级导航保留。
 - [ ] `V62-P1-019` 整定 model→algorithm→simulation 合并为可恢复 stepper。
@@ -385,4 +387,5 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 1 | P1-008 preview API 返回真实片段 | `preview_identify_segments` 改用 `segment_signals` 真实切分；`IdentifySegment` schema 新增 `exclusionReason`/`validSampleRatio`/`pointCount`（optional）；被排除片段不跑激励检测；`TestV62P1PreviewSegments` 3 测试通过（AUTO+MANUAL/全 AUTO/空窗口） |
 | 2026-07-29 | Phase 1 | P1-012~016 API 与任务合同 | P1-012 typed response（`IdentifyHistoryAsyncResponse`）；P1-013/014 TaskTracker 桥接（TUNING 类型 + 终态同步 + 取消同步 + 桥接失败降级）；P1-015/016 PID 转换（`pid_conversion.py` + 29 往返测试）；后端 3535 passed（+37），ruff/alembic 全绿 |
 | 2026-07-29 | Phase 1 | P1-018/020 诊断 tasks/records 合并 Tabs + 旧路由兼容 | 新建 `task-center.vue`（Tabs 进行中/历史，URL query 双向同步，不套外层 Page）；`diagnosis.ts` Records→redirect+hideInMenu；提交 `ddf867eb`；check:type 通过、vitest 434 passed |
+| 2026-07-30 | Phase 1 | P1-017 工作台改造为跨模块待办门户 | 新建 `views/dashboard/workbench.vue`：`ClpmKpiStrip` 跨模块待办计数（诊断待处理/异常跟踪待办/评估待执行/整定任务），计数走真实接口 + 整定卡片按角色条件渲染，复用 `DiagnosisSummaryCard`+`TrackerEffectivenessCard`，装置性能仅留入口卡；`dashboard.ts` 路由改指新页面；check:type 通过、vitest 125 passed（routes-authority 工作台权限断言通过） |
 | 2026-07-29 | Phase 1 | 排雷：`pnpm run format` 破坏测试标题 | `internal/lint-configs/oxlint-config` 启用 `vitest/prefer-lowercase-title:error`，`vsh lint --format` 会把 `describe`/`it` 标题首字母强制小写（`ADMIN`→`aDMIN`、`EXPERT`→`eXPERT`）。对策：不跑 blanket `pnpm run format`，改用 `check:type`+`vitest run` 作真实门禁；新文件按文件单独格式化。已还原被污染的 7 个测试文件 |
