@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 数据库名: clpm
--- 脚本版本: v1.1
+-- 脚本版本: v1.7
 -- 创建日期: 2026-06-20
 -- 对应 DDS 版本: DDS v3.0 (产品化架构重构版)
 -- 设计依据: PRD v3.0, FDS v3.0, ADS v3.0, 关键算法设计说明 v1.0
@@ -14,6 +14,7 @@
 --   v1.4 2026-06-24: 新增 kpi_node_snapshot_daily / kpi_node_snapshot_monthly 两表（节点级日/月聚合快照）
 --   v1.5 2026-06-24: plant_node 加 monitor_tag_id/monitor_trigger_value 字段（SVC-10 位号触发监控）
 --   v1.6 2026-07-28: sys_user 加 must_change_password 字段（S5-AUTH P1 首次登录强制改密，NOT NULL DEFAULT FALSE）
+--   v1.7 2026-07-29: 生产 bootstrap 收敛至 37 张 ORM 表，补齐迁移链新增的 16 张表
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -32,8 +33,8 @@ CREATE TABLE IF NOT EXISTS sys_user (
     is_active       BOOLEAN         DEFAULT TRUE,
     must_change_password BOOLEAN    NOT NULL DEFAULT FALSE,
     last_login_at   TIMESTAMP,
-    created_at      TIMESTAMP       DEFAULT NOW(),
-    updated_at      TIMESTAMP       DEFAULT NOW(),
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_sys_user_username UNIQUE (username),
     CONSTRAINT uk_sys_user_email    UNIQUE (email),
     CONSTRAINT ck_sys_user_role     CHECK (role IN ('ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT'))
@@ -63,17 +64,16 @@ CREATE TABLE IF NOT EXISTS plant_node (
     is_kpi_enabled          BOOLEAN         DEFAULT FALSE,
     monitor_tag_id          UUID,
     monitor_trigger_value   VARCHAR(20),
-    created_at              TIMESTAMP       DEFAULT NOW(),
-    updated_at              TIMESTAMP       DEFAULT NOW(),
+    created_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_plant_node_parent        FOREIGN KEY (parent_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_plant_node_monitor_tag   FOREIGN KEY (monitor_tag_id) REFERENCES tag_registry(id) ON DELETE RESTRICT,
-    CONSTRAINT ck_plant_node_type          CHECK (type IN ('FACTORY', 'UNIT', 'EQUIPMENT'))
+    CONSTRAINT ck_plant_node_type          CHECK (type IN ('FACTORY', 'AREA', 'UNIT'))
 );
 
 COMMENT ON TABLE  plant_node IS '工厂节点（工厂 → 装置 → 单元多级层级树）';
 COMMENT ON COLUMN plant_node.id IS '节点主键';
 COMMENT ON COLUMN plant_node.name IS '节点名称（如：常减压装置）';
-COMMENT ON COLUMN plant_node.type IS '节点类型：FACTORY/UNIT/EQUIPMENT';
+COMMENT ON COLUMN plant_node.type IS '节点类型：FACTORY/AREA/UNIT；回路挂在 UNIT';
 COMMENT ON COLUMN plant_node.parent_id IS '父节点 ID（自引用）';
 COMMENT ON COLUMN plant_node.is_kpi_enabled IS '是否纳入性能评估（TRUE 时生成节点级 KPI 快照）';
 COMMENT ON COLUMN plant_node.monitor_tag_id IS '位号触发监控的位号 ID（NULL 表示默认监控，FK→tag_registry）';
@@ -93,20 +93,34 @@ CREATE TABLE IF NOT EXISTS loop_ledger (
     is_active       BOOLEAN         DEFAULT TRUE,
     last_aas_sync_at TIMESTAMP,
     status          VARCHAR(20)     NOT NULL DEFAULT 'PARTIAL',
-    created_at      TIMESTAMP       DEFAULT NOW(),
-    updated_at      TIMESTAMP       DEFAULT NOW(),
+    loop_type       VARCHAR(20)     DEFAULT 'OTHER',
+    control_type    VARCHAR(20),
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
     created_by      VARCHAR(50),
     score_weights   JSONB,
     remark          VARCHAR(500),
     updated_by      VARCHAR(50),
-    level           SMALLINT       DEFAULT 3,
+    importance_level SMALLINT      NOT NULL DEFAULT 2,
+    include_in_evaluation BOOLEAN  NOT NULL DEFAULT TRUE,
     modeattr_tag_id UUID,
     data_retention_days INTEGER,
+    op_output_lower_limit FLOAT,
+    op_output_upper_limit FLOAT,
+    dcs_model_id    UUID,
+    ideal_settling_time FLOAT,
+    complex_loop_group_id UUID,
+    complex_role    VARCHAR(10),
     CONSTRAINT uk_loop_ledger_tag_name UNIQUE (tag_name),
     CONSTRAINT fk_loop_ledger_unit_id  FOREIGN KEY (unit_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_loop_ledger_modeattr FOREIGN KEY (modeattr_tag_id) REFERENCES tag_registry(id) ON DELETE RESTRICT,
     CONSTRAINT ck_loop_ledger_status   CHECK (status IN ('READY', 'PARTIAL', 'INACTIVE')),
-    CONSTRAINT ck_loop_ledger_level    CHECK (level IS NULL OR level IN (1, 2, 3))
+    CONSTRAINT ck_loop_ledger_loop_type CHECK (loop_type IN ('TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', 'ANALYSIS', 'SPEED', 'OTHER')),
+    CONSTRAINT ck_loop_ledger_importance_level CHECK (importance_level IN (1, 2, 3)),
+    CONSTRAINT ck_loop_ledger_complex_role CHECK (complex_role IS NULL OR complex_role IN ('MAIN', 'SUB')),
+    CONSTRAINT ck_loop_ledger_complex_group_coherence CHECK (
+        (complex_loop_group_id IS NULL AND complex_role IS NULL)
+        OR (complex_loop_group_id IS NOT NULL AND complex_role IS NOT NULL)
+    )
 );
 
 COMMENT ON TABLE  loop_ledger IS '回路台账（系统核心实体）';
@@ -124,7 +138,7 @@ COMMENT ON COLUMN loop_ledger.created_by IS '创建人';
 COMMENT ON COLUMN loop_ledger.score_weights IS '6 大 KPI 评分权重 JSONB（good_value_rate/auto_mode_rate/steady_rate/accuracy_rate/oscillation_rate/saturation_rate）';
 COMMENT ON COLUMN loop_ledger.remark IS '备注（最长 500 字符）';
 COMMENT ON COLUMN loop_ledger.updated_by IS '最后更新人';
-COMMENT ON COLUMN loop_ledger.level IS '回路级别 1/2/3（默认3，对齐 GB/T 44693.2-2024 附表2，用于装置级聚合加权）';
+COMMENT ON COLUMN loop_ledger.importance_level IS '回路重要等级 1/2/3（默认2，对齐 GB/T 44693.2-2024 附表2）';
 COMMENT ON COLUMN loop_ledger.modeattr_tag_id IS 'APC 识别位号 ID（位号值为 program 时算自动控制，影响有效自控率和投用率）';
 COMMENT ON COLUMN loop_ledger.data_retention_days IS '数据保存周期（天），NULL 表示用系统默认';
 
@@ -140,10 +154,43 @@ CREATE TABLE IF NOT EXISTS tag_registry (
     quality         VARCHAR(20),
     last_sync_at    TIMESTAMP       NOT NULL,
     is_linked       BOOLEAN         DEFAULT FALSE,
+    range_min       FLOAT,
+    range_max       FLOAT,
+    unit            VARCHAR(20),
+    measure_type    VARCHAR(20),
+    tdengine_tag_id VARCHAR(100),
     CONSTRAINT uk_tag_registry_tag_name UNIQUE (tag_name),
     CONSTRAINT ck_tag_registry_type     CHECK (tag_type IN ('PV', 'SP', 'OP', 'MODE', 'PID_P', 'PID_I', 'PID_D', 'OTHER')),
-    CONSTRAINT ck_tag_registry_quality  CHECK (quality IS NULL OR quality IN ('GOOD', 'BAD', 'UNCERTAIN'))
+    CONSTRAINT ck_tag_registry_quality  CHECK (quality IS NULL OR quality IN ('GOOD', 'BAD', 'UNCERTAIN')),
+    CONSTRAINT ck_tag_registry_measure_type CHECK (
+        measure_type IS NULL OR measure_type IN ('TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', 'ANALYSIS', 'SPEED', 'OTHER')
+    )
 );
+
+-- plant_node / loop_ledger 在 tag_registry 之前创建；延后添加跨表外键，
+-- 保证空 PostgreSQL 的生产 bootstrap 可顺序执行。
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_plant_node_monitor_tag'
+          AND conrelid = 'plant_node'::regclass
+    ) THEN
+        ALTER TABLE plant_node
+            ADD CONSTRAINT fk_plant_node_monitor_tag
+            FOREIGN KEY (monitor_tag_id) REFERENCES tag_registry(id) ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_loop_ledger_modeattr'
+          AND conrelid = 'loop_ledger'::regclass
+    ) THEN
+        ALTER TABLE loop_ledger
+            ADD CONSTRAINT fk_loop_ledger_modeattr
+            FOREIGN KEY (modeattr_tag_id) REFERENCES tag_registry(id) ON DELETE RESTRICT;
+    END IF;
+END
+$$;
 
 COMMENT ON TABLE  tag_registry IS 'AAS Tag 注册表（AAS 同步的 OPC Tag 位号信息）';
 COMMENT ON COLUMN tag_registry.id IS 'Tag 主键';
@@ -189,6 +236,7 @@ CREATE TABLE IF NOT EXISTS metric_config (
     formula         TEXT,
     weight          DECIMAL(5,2),
     threshold       JSONB,
+    grading_thresholds JSONB,
     control_type    VARCHAR(20)     DEFAULT 'STABLE',
     is_enabled      BOOLEAN         DEFAULT TRUE,
     updated_by      VARCHAR(50),
@@ -282,16 +330,43 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     effective_auto_rate DECIMAL(5,2),
     steady_rate         DECIMAL(5,2),
     accuracy_rate       DECIMAL(5,2),
-    fast_response_rate  DECIMAL(5,2),
+    fast_rate           DECIMAL(5,2),
     oscillation_rate    DECIMAL(5,2),
     saturation_rate     DECIMAL(5,2),
-    stiction_coeff      DECIMAL(5,2),
-    steady_state_time   DECIMAL(8,2),
-    output_travel_index DECIMAL(8,2),
+    stiction_index      DECIMAL(5,2),
+    settling_time       DECIMAL(8,2),
+    output_trip_index   DECIMAL(8,2),
     status              VARCHAR(20)     NOT NULL,
+    ideal_settling_time DECIMAL(8,2),
+    algorithm_version   VARCHAR(50),
+    sampling_freq       VARCHAR(10),
+    quality_policy      VARCHAR(30),
+    valid_rate          DECIMAL(5,4),
+    confidence_level    CHAR(1),
+    data_lineage        JSONB,
+    instrument_fault_rate DECIMAL(5,2),
+    pv_mean             DECIMAL(10,3),
+    pv_std              DECIMAL(10,3),
+    sp_mean             DECIMAL(10,3),
+    sp_std              DECIMAL(10,3),
+    op_mean             DECIMAL(10,3),
+    op_std              DECIMAL(10,3),
+    error_mean          DECIMAL(10,3),
+    error_std           DECIMAL(10,3),
+    valve_linearity     DECIMAL(5,4),
+    valve_nonlinearity  DECIMAL(5,4),
+    valve_op_min        DECIMAL(8,2),
+    valve_op_max        DECIMAL(8,2),
+    oscillation_amplitude DECIMAL(8,2),
+    setpoint_crossing_count DECIMAL(10,0),
+    time_constant       DECIMAL(8,2),
     CONSTRAINT fk_kpi_snapshot_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_snapshot_status  CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
-    CONSTRAINT ck_kpi_snapshot_window  CHECK (ts_end > ts_start)
+    CONSTRAINT ck_kpi_snapshot_window  CHECK (ts_end > ts_start),
+    CONSTRAINT ck_kpi_snapshot_confidence CHECK (
+        confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E')
+    ),
+    CONSTRAINT uq_kpi_snapshot_hourly_loop_ts UNIQUE (loop_id, ts_start)
 );
 
 COMMENT ON TABLE  kpi_snapshot_hourly IS '每小时性能评估快照（好值率基于 PV 质量码统计，对齐 GB/T 44693.2-2024）';
@@ -305,12 +380,12 @@ COMMENT ON COLUMN kpi_snapshot_hourly.auto_mode_rate IS '自控率（%）';
 COMMENT ON COLUMN kpi_snapshot_hourly.effective_auto_rate IS '有效自控率（%），作为综合评分乘数因子';
 COMMENT ON COLUMN kpi_snapshot_hourly.steady_rate IS '平稳率（%）';
 COMMENT ON COLUMN kpi_snapshot_hourly.accuracy_rate IS '准确率(%)';
-COMMENT ON COLUMN kpi_snapshot_hourly.fast_response_rate IS '快速率（%），控制回路对设定值变化的响应速度';
+COMMENT ON COLUMN kpi_snapshot_hourly.fast_rate IS '快速率（%），控制回路对设定值变化的响应速度';
 COMMENT ON COLUMN kpi_snapshot_hourly.oscillation_rate IS '振荡率（%）';
 COMMENT ON COLUMN kpi_snapshot_hourly.saturation_rate IS '饱和率(%)';
-COMMENT ON COLUMN kpi_snapshot_hourly.stiction_coeff IS '黏滞系数（0-100，0=无黏滞）';
-COMMENT ON COLUMN kpi_snapshot_hourly.steady_state_time IS '稳态时间（秒）：PV 与 SP 偏差在 ±2% 内的时长';
-COMMENT ON COLUMN kpi_snapshot_hourly.output_travel_index IS '输出值行程指数（0-100）：OP 总行程归一化指数';
+COMMENT ON COLUMN kpi_snapshot_hourly.stiction_index IS '黏滞指数（0-100，0=无黏滞）';
+COMMENT ON COLUMN kpi_snapshot_hourly.settling_time IS '稳态时间（秒）：PV 与 SP 偏差进入容差带所需时间';
+COMMENT ON COLUMN kpi_snapshot_hourly.output_trip_index IS '输出值行程指数（0-100）：OP 总行程归一化指数';
 COMMENT ON COLUMN kpi_snapshot_hourly.status IS '计算状态：SUCCESS/INCONCLUSIVE/PARTIAL';
 
 -- =============================================================================
@@ -329,15 +404,20 @@ CREATE TABLE IF NOT EXISTS kpi_node_snapshot_hourly (
     effective_auto_rate DECIMAL(5,2),
     steady_rate         DECIMAL(5,2),
     accuracy_rate       DECIMAL(5,2),
-    fast_response_rate  DECIMAL(5,2),
+    fast_rate           DECIMAL(5,2),
     oscillation_rate    DECIMAL(5,2),
     saturation_rate     DECIMAL(5,2),
+    instrument_fault_rate DECIMAL(5,2),
+    stiction_index      DECIMAL(5,2),
+    settling_time       DECIMAL(8,2),
+    output_trip_index   DECIMAL(8,2),
+    ideal_settling_time DECIMAL(8,2),
     auto_loop_ratio     DECIMAL(5,2),
     realtime_auto_rate  DECIMAL(5,2),
     loop_count          INTEGER         NOT NULL DEFAULT 0,
     status              VARCHAR(20)     NOT NULL,
     algorithm_version   VARCHAR(30),
-    created_at          TIMESTAMP       DEFAULT NOW(),
+    created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_kpi_node_snapshot_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_node_snapshot_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
     CONSTRAINT ck_kpi_node_snapshot_window CHECK (ts_end > ts_start)
@@ -354,7 +434,7 @@ COMMENT ON COLUMN kpi_node_snapshot_hourly.auto_mode_rate IS '自控率加权均
 COMMENT ON COLUMN kpi_node_snapshot_hourly.effective_auto_rate IS '有效自控率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_hourly.steady_rate IS '平稳率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_hourly.accuracy_rate IS '准确率加权均值（%）';
-COMMENT ON COLUMN kpi_node_snapshot_hourly.fast_response_rate IS '快速率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_hourly.fast_rate IS '快速率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_hourly.oscillation_rate IS '振荡率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_hourly.saturation_rate IS '饱和率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_hourly.auto_loop_ratio IS '投自动回路占比（%）';
@@ -379,15 +459,20 @@ CREATE TABLE IF NOT EXISTS kpi_node_snapshot_daily (
     effective_auto_rate DECIMAL(5,2),
     steady_rate         DECIMAL(5,2),
     accuracy_rate       DECIMAL(5,2),
-    fast_response_rate  DECIMAL(5,2),
+    fast_rate           DECIMAL(5,2),
     oscillation_rate    DECIMAL(5,2),
     saturation_rate     DECIMAL(5,2),
+    instrument_fault_rate DECIMAL(5,2),
+    stiction_index      DECIMAL(5,2),
+    settling_time       DECIMAL(8,2),
+    output_trip_index   DECIMAL(8,2),
+    ideal_settling_time DECIMAL(8,2),
     auto_loop_ratio     DECIMAL(5,2),
     realtime_auto_rate  DECIMAL(5,2),
     loop_count          INTEGER         NOT NULL DEFAULT 0,
     status              VARCHAR(20)     NOT NULL,
     algorithm_version   VARCHAR(30),
-    created_at          TIMESTAMP       DEFAULT NOW(),
+    created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_kpi_node_snapshot_daily_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_node_snapshot_daily_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
     CONSTRAINT uk_kpi_node_snapshot_daily_node_date UNIQUE (plant_node_id, stat_date)
@@ -403,7 +488,7 @@ COMMENT ON COLUMN kpi_node_snapshot_daily.auto_mode_rate IS '自控率加权均�
 COMMENT ON COLUMN kpi_node_snapshot_daily.effective_auto_rate IS '有效自控率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_daily.steady_rate IS '平稳率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_daily.accuracy_rate IS '准确率加权均值（%）';
-COMMENT ON COLUMN kpi_node_snapshot_daily.fast_response_rate IS '快速率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_daily.fast_rate IS '快速率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_daily.oscillation_rate IS '振荡率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_daily.saturation_rate IS '饱和率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_daily.auto_loop_ratio IS '投自动回路占比加权均值（%）';
@@ -428,15 +513,20 @@ CREATE TABLE IF NOT EXISTS kpi_node_snapshot_monthly (
     effective_auto_rate DECIMAL(5,2),
     steady_rate         DECIMAL(5,2),
     accuracy_rate       DECIMAL(5,2),
-    fast_response_rate  DECIMAL(5,2),
+    fast_rate           DECIMAL(5,2),
     oscillation_rate    DECIMAL(5,2),
     saturation_rate     DECIMAL(5,2),
+    instrument_fault_rate DECIMAL(5,2),
+    stiction_index      DECIMAL(5,2),
+    settling_time       DECIMAL(8,2),
+    output_trip_index   DECIMAL(8,2),
+    ideal_settling_time DECIMAL(8,2),
     auto_loop_ratio     DECIMAL(5,2),
     realtime_auto_rate  DECIMAL(5,2),
     loop_count          INTEGER         NOT NULL DEFAULT 0,
     status              VARCHAR(20)     NOT NULL,
     algorithm_version   VARCHAR(30),
-    created_at          TIMESTAMP       DEFAULT NOW(),
+    created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_kpi_node_snapshot_monthly_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_node_snapshot_monthly_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
     CONSTRAINT uk_kpi_node_snapshot_monthly_node_month UNIQUE (plant_node_id, stat_month)
@@ -452,7 +542,7 @@ COMMENT ON COLUMN kpi_node_snapshot_monthly.auto_mode_rate IS '自控率加权�
 COMMENT ON COLUMN kpi_node_snapshot_monthly.effective_auto_rate IS '有效自控率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_monthly.steady_rate IS '平稳率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_monthly.accuracy_rate IS '准确率加权均值（%）';
-COMMENT ON COLUMN kpi_node_snapshot_monthly.fast_response_rate IS '快速率加权均值（%）';
+COMMENT ON COLUMN kpi_node_snapshot_monthly.fast_rate IS '快速率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_monthly.oscillation_rate IS '振荡率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_monthly.saturation_rate IS '饱和率加权均值（%）';
 COMMENT ON COLUMN kpi_node_snapshot_monthly.auto_loop_ratio IS '投自动回路占比加权均值（%）';
@@ -473,8 +563,24 @@ CREATE TABLE IF NOT EXISTS action_tracker (
     evidence_url    VARCHAR(255),
     updated_by      VARCHAR(50),
     updated_at      TIMESTAMP,
+    created_at      TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    comment         VARCHAR(500),
+    moc_ref         VARCHAR(255),
+    moc_not_applicable BOOLEAN,
+    moc_reason      VARCHAR(500),
+    diagnosis_result_id UUID,
+    trigger_type    VARCHAR(10)     NOT NULL DEFAULT 'manual',
+    triggered_by    VARCHAR(50),
+    severity        VARCHAR(20),
+    effect_verified BOOLEAN,
+    effect_verified_at TIMESTAMP,
+    ab_compare_summary JSONB,
     CONSTRAINT fk_action_tracker_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
-    CONSTRAINT ck_action_tracker_status  CHECK (action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED'))
+    CONSTRAINT ck_action_tracker_status  CHECK (action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED')),
+    CONSTRAINT ck_action_tracker_trigger_type CHECK (trigger_type IN ('auto', 'manual')),
+    CONSTRAINT ck_action_tracker_severity CHECK (
+        severity IS NULL OR severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')
+    )
 );
 
 COMMENT ON TABLE  action_tracker IS '轻量级异常追踪记录（诊断中心子模块）';
@@ -511,6 +617,20 @@ COMMENT ON COLUMN diagnosis_result.feature_values IS '特征值（FFT 主频、�
 COMMENT ON COLUMN diagnosis_result.evidence_chain IS '证据链引用（波形时间段、散点图数据引用等）';
 COMMENT ON COLUMN diagnosis_result.algorithm_version IS '算法版本号';
 COMMENT ON COLUMN diagnosis_result.diagnosed_at IS '诊断时间';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_action_tracker_diagnosis_result'
+          AND conrelid = 'action_tracker'::regclass
+    ) THEN
+        ALTER TABLE action_tracker
+            ADD CONSTRAINT fk_action_tracker_diagnosis_result
+            FOREIGN KEY (diagnosis_result_id) REFERENCES diagnosis_result(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
 
 -- =============================================================================
 -- 12. tuning_record (整定记录) [Phase 2]
@@ -629,7 +749,7 @@ CREATE TABLE IF NOT EXISTS sys_config (
     value           TEXT,
     description     VARCHAR(255),
     updated_by      VARCHAR(50),
-    updated_at      TIMESTAMP       DEFAULT NOW()
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW()
 );
 
 COMMENT ON TABLE  sys_config IS '系统配置 key-value 表（运行时可变配置存储）';
@@ -738,6 +858,379 @@ INSERT INTO loop_level_weight (level, level_name, weight, description) VALUES
 ON CONFLICT (level) DO NOTHING;
 
 -- =============================================================================
+-- 19. kpi_snapshot_custom（自定义评估任务快照）
+-- 证据：ORM app/models/metric.py；迁移 k2f3a4b5c6d7、n7q8r9s0t1u2、
+--       33cee6882ec8、h8b9c0d1e2f3
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS kpi_snapshot_custom (
+    id                      UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    task_id                 UUID            NOT NULL,
+    loop_id                 UUID            NOT NULL,
+    ts_start                TIMESTAMP       NOT NULL,
+    ts_end                  TIMESTAMP       NOT NULL,
+    score                   DECIMAL(5,2),
+    accuracy_rate           DECIMAL(5,2),
+    fast_rate               DECIMAL(5,2),
+    steady_rate             DECIMAL(5,2),
+    effective_auto_rate     DECIMAL(5,2),
+    good_value_rate         DECIMAL(5,2),
+    oscillation_rate        DECIMAL(5,2),
+    saturation_rate         DECIMAL(5,2),
+    stiction_index          DECIMAL(5,2),
+    output_trip_index       DECIMAL(8,2),
+    settling_time           DECIMAL(8,2),
+    ideal_settling_time     DECIMAL(8,2),
+    auto_mode_rate          DECIMAL(5,2),
+    algorithm_version       VARCHAR(50),
+    sampling_freq           VARCHAR(10),
+    quality_policy          VARCHAR(30),
+    status                  VARCHAR(20)     NOT NULL,
+    confidence_level        CHAR(1),
+    valid_rate              DECIMAL(5,4),
+    data_lineage            JSONB,
+    created_at              TIMESTAMP       DEFAULT (timezone('UTC', now())),
+    instrument_fault_rate   DECIMAL(5,2),
+    pv_mean                 DECIMAL(10,3),
+    pv_std                  DECIMAL(10,3),
+    sp_mean                 DECIMAL(10,3),
+    sp_std                  DECIMAL(10,3),
+    op_mean                 DECIMAL(10,3),
+    op_std                  DECIMAL(10,3),
+    error_mean              DECIMAL(10,3),
+    error_std               DECIMAL(10,3),
+    valve_linearity         DECIMAL(5,4),
+    valve_nonlinearity      DECIMAL(5,4),
+    valve_op_min            DECIMAL(8,2),
+    valve_op_max            DECIMAL(8,2),
+    oscillation_amplitude   DECIMAL(8,2),
+    setpoint_crossing_count DECIMAL(10,0),
+    time_constant           DECIMAL(8,2),
+    CONSTRAINT uq_kpi_custom_task_loop UNIQUE (task_id, loop_id),
+    CONSTRAINT fk_kpi_custom_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT ck_kpi_custom_status CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
+    CONSTRAINT ck_kpi_custom_window CHECK (ts_end > ts_start)
+);
+
+-- =============================================================================
+-- 20. clpm_metric_data_requirement（指标数据需求契约）
+-- 证据：ORM app/models/metric_data_requirement.py；迁移 k2f3a4b5c6d7
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS clpm_metric_data_requirement (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    metric_code         VARCHAR(50)     NOT NULL UNIQUE,
+    metric_name         VARCHAR(100)    NOT NULL,
+    tag_group           VARCHAR(20)     NOT NULL,
+    tags                JSONB           NOT NULL,
+    sampling_strategy   VARCHAR(30)     NOT NULL,
+    quality_policy      VARCHAR(30)     NOT NULL,
+    mask_expression     VARCHAR(200),
+    aggregation_policy  VARCHAR(20),
+    depends_on          JSONB,
+    version             VARCHAR(20)     DEFAULT 'v1',
+    updated_at          TIMESTAMP       DEFAULT (timezone('UTC', now()))
+);
+
+-- =============================================================================
+-- 21. diagnosis_tag（诊断标签）
+-- 证据：ORM app/models/diagnosis.py；迁移 k2f3a4b5c6d7、h8b9c0d1e2f3
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS diagnosis_tag (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    loop_id             UUID            NOT NULL,
+    tag_code            VARCHAR(50)     NOT NULL,
+    tag_name            VARCHAR(100),
+    severity            VARCHAR(20)     NOT NULL,
+    source_metric       VARCHAR(50),
+    trigger_condition   JSONB,
+    trigger_value       DECIMAL(10,4),
+    triggered_at        TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    resolved_at         TIMESTAMP,
+    resolved_by         UUID,
+    resolution_note     TEXT,
+    status              VARCHAR(20)     NOT NULL DEFAULT 'ACTIVE',
+    CONSTRAINT fk_diagnosis_tag_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT ck_diag_tag_severity CHECK (severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')),
+    CONSTRAINT ck_diag_tag_status CHECK (status IN ('ACTIVE', 'RESOLVED', 'SUPPRESSED'))
+);
+
+-- =============================================================================
+-- 22. unit_kpi_summary（装置级 KPI 汇总）
+-- 证据：ORM app/models/unit_kpi_summary.py；迁移 k2f3a4b5c6d7、
+--       p9r0s1t2u3v4、e7f8a9b0c1d2、h8b9c0d1e2f3
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS unit_kpi_summary (
+    id                      UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    node_id                 UUID            NOT NULL,
+    snapshot_time           TIMESTAMP       NOT NULL,
+    avg_score               DECIMAL(5,2),
+    auto_mode_rate          DECIMAL(5,2),
+    effective_auto_rate     DECIMAL(5,2),
+    stability_rate          DECIMAL(5,2),
+    accuracy_rate           DECIMAL(5,2),
+    fast_rate               DECIMAL(5,2),
+    good_value_rate         DECIMAL(5,2),
+    oscillation_rate        DECIMAL(5,2),
+    saturation_rate         DECIMAL(5,2),
+    instrument_fault_rate   DECIMAL(5,2),
+    total_loops             INTEGER,
+    evaluated_loops         INTEGER,
+    inconclusive_loops      INTEGER,
+    excluded_loops          INTEGER         NOT NULL DEFAULT 0,
+    status                  VARCHAR(20)     NOT NULL DEFAULT 'SUCCESS',
+    algorithm_version       VARCHAR(50),
+    created_at              TIMESTAMP       DEFAULT (timezone('UTC', now())),
+    CONSTRAINT uq_unit_kpi_summary_node_time UNIQUE (node_id, snapshot_time),
+    CONSTRAINT fk_unit_kpi_summary_node FOREIGN KEY (node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
+    CONSTRAINT ck_unit_kpi_summary_status CHECK (status IN ('SUCCESS', 'PARTIAL', 'EMPTY'))
+);
+
+-- =============================================================================
+-- 23. report_config（自动报表配置）
+-- 证据：ORM app/models/report_config.py
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS report_config (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name                VARCHAR(100)    NOT NULL,
+    report_period       VARCHAR(20)     NOT NULL,
+    recipients          TEXT            NOT NULL,
+    content_template    TEXT,
+    is_enabled          BOOLEAN         DEFAULT TRUE,
+    created_by          VARCHAR(50),
+    updated_by          VARCHAR(50),
+    created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_report_config_period CHECK (report_period IN ('SHIFT', 'DAILY', 'WEEKLY', 'MONTHLY'))
+);
+
+-- =============================================================================
+-- 24-27. DCS 品牌 / 型号 / 标准 MODE / MODE 映射
+-- 证据：ORM app/models/dcs_*.py、mode_definition.py；迁移 v6p1dcs001
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS dcs_vendor (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code            VARCHAR(50)     NOT NULL UNIQUE,
+    name            VARCHAR(100)    NOT NULL,
+    name_en         VARCHAR(100),
+    description     VARCHAR(500),
+    sort_order      INTEGER         NOT NULL DEFAULT 0,
+    is_active       BOOLEAN         NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS dcs_model (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    vendor_id       UUID            NOT NULL,
+    code            VARCHAR(100)    NOT NULL UNIQUE,
+    name            VARCHAR(200)    NOT NULL,
+    description     VARCHAR(500),
+    sort_order      INTEGER         NOT NULL DEFAULT 0,
+    is_active       BOOLEAN         NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_dcs_model_vendor FOREIGN KEY (vendor_id) REFERENCES dcs_vendor(id) ON DELETE RESTRICT
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_loop_ledger_dcs_model'
+          AND conrelid = 'loop_ledger'::regclass
+    ) THEN
+        ALTER TABLE loop_ledger
+            ADD CONSTRAINT fk_loop_ledger_dcs_model
+            FOREIGN KEY (dcs_model_id) REFERENCES dcs_model(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS mode_definition (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    standard_mode   INTEGER         NOT NULL UNIQUE,
+    label_zh        VARCHAR(20)     NOT NULL,
+    label_en        VARCHAR(20)     NOT NULL,
+    is_auto         BOOLEAN         NOT NULL DEFAULT FALSE,
+    color           VARCHAR(20)     NOT NULL DEFAULT '#999999',
+    sort_order      INTEGER         NOT NULL DEFAULT 0,
+    description     VARCHAR(500),
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_mode_definition_standard_mode CHECK (standard_mode IN (0, 1, 2, 3, 4))
+);
+
+CREATE TABLE IF NOT EXISTS dcs_mode_mapping (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    dcs_model_id    UUID,
+    standard_mode   INTEGER         NOT NULL,
+    raw_mode_value  INTEGER         NOT NULL,
+    description     VARCHAR(500),
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_dcs_mode_mapping_model FOREIGN KEY (dcs_model_id) REFERENCES dcs_model(id) ON DELETE CASCADE
+);
+
+-- =============================================================================
+-- 28. diagnosis_task（诊断任务）
+-- 证据：ORM app/models/diagnosis.py；迁移 v6p1diag001、h8b9c0d1e2f3
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS diagnosis_task (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    loop_id             UUID            NOT NULL,
+    trigger_type        VARCHAR(10)     NOT NULL,
+    triggered_by        VARCHAR(50),
+    status              VARCHAR(20)     NOT NULL DEFAULT 'PENDING',
+    time_range_start    TIMESTAMP,
+    time_range_end      TIMESTAMP,
+    error_message       TEXT,
+    triggered_at        TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    completed_at        TIMESTAMP,
+    is_archived         BOOLEAN         NOT NULL DEFAULT FALSE,
+    archived_at         TIMESTAMP,
+    archived_by         VARCHAR(50),
+    CONSTRAINT fk_diagnosis_task_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT ck_diag_task_trigger_type CHECK (trigger_type IN ('manual', 'auto')),
+    CONSTRAINT ck_diag_task_status CHECK (status IN ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED'))
+);
+
+-- diagnosis_result 的 task_id 在 diagnosis_task 创建后补充，避免前向引用。
+ALTER TABLE diagnosis_result
+    ADD COLUMN IF NOT EXISTS threshold_version INTEGER;
+ALTER TABLE diagnosis_result
+    ADD COLUMN IF NOT EXISTS task_id UUID;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_diagnosis_result_task'
+          AND conrelid = 'diagnosis_result'::regclass
+    ) THEN
+        ALTER TABLE diagnosis_result
+            ADD CONSTRAINT fk_diagnosis_result_task
+            FOREIGN KEY (task_id) REFERENCES diagnosis_task(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
+
+-- =============================================================================
+-- 29. dcs_pid_structure（DCS 型号 PID 结构）
+-- 证据：ORM app/models/dcs_pid_structure.py；迁移 a9b0c1d2e3f4
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS dcs_pid_structure (
+    id                      UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    dcs_model_id            UUID            NOT NULL UNIQUE,
+    p_type                  VARCHAR(20)     NOT NULL DEFAULT 'PROPORTION',
+    i_unit                  VARCHAR(10)     NOT NULL DEFAULT 'SECONDS',
+    d_unit                  VARCHAR(10)     NOT NULL DEFAULT 'SECONDS',
+    d_filter_enabled        BOOLEAN         NOT NULL DEFAULT FALSE,
+    d_filter_unit           VARCHAR(10),
+    d_filter_multiplier     BOOLEAN         NOT NULL DEFAULT FALSE,
+    description             VARCHAR(500),
+    created_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_dcs_pid_structure_model FOREIGN KEY (dcs_model_id) REFERENCES dcs_model(id) ON DELETE CASCADE,
+    CONSTRAINT ck_dcs_pid_structure_filter_unit CHECK (d_filter_enabled = FALSE OR d_filter_unit IS NOT NULL)
+);
+
+-- =============================================================================
+-- 30. algorithm_parameter（指标算法参数）
+-- 证据：ORM app/models/algorithm_parameter.py；迁移 f8a9b0c1d2e3
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS algorithm_parameter (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    metric_code     VARCHAR(50)     NOT NULL,
+    control_type    VARCHAR(20)     NOT NULL,
+    params          JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    description     VARCHAR(255),
+    is_enabled      BOOLEAN         NOT NULL DEFAULT TRUE,
+    updated_by      VARCHAR(50),
+    updated_at      TIMESTAMP,
+    version         INTEGER         NOT NULL DEFAULT 1,
+    CONSTRAINT ck_algorithm_parameter_control_type CHECK (control_type IN ('STABLE', 'SLOW', 'FAST', 'LOGIC')),
+    CONSTRAINT uk_algorithm_param_code_type UNIQUE (metric_code, control_type)
+);
+
+-- =============================================================================
+-- 31. diagnosis_rule（诊断专家规则）
+-- 证据：ORM app/models/diagnosis.py；迁移 c3d4e5f6g7h8
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS diagnosis_rule (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rule_code           VARCHAR(20)     NOT NULL,
+    rule_name           VARCHAR(100)    NOT NULL,
+    priority            INTEGER         NOT NULL DEFAULT 100,
+    condition_expr      TEXT            NOT NULL,
+    action_type         VARCHAR(20)     NOT NULL,
+    action_params       JSONB,
+    is_enabled          BOOLEAN         NOT NULL DEFAULT TRUE,
+    version             INTEGER         NOT NULL DEFAULT 1,
+    updated_by          VARCHAR(50),
+    updated_at          TIMESTAMP,
+    CONSTRAINT ck_diag_rule_action_type CHECK (action_type IN ('REMOVE_LABEL', 'ADD_LABEL', 'KEEP_HIGHEST', 'FILTER_ONLY', 'SORT_PRIORITY'))
+);
+
+-- =============================================================================
+-- 32. diagnosis_threshold_override（诊断阈值作用域覆盖）
+-- 证据：ORM app/models/diagnosis.py；迁移 d4e5f6g7h8i9
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS diagnosis_threshold_override (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    diag_code       VARCHAR(50)     NOT NULL,
+    scope_type      VARCHAR(20)     NOT NULL,
+    scope_id        VARCHAR(100)    NOT NULL,
+    threshold       JSONB,
+    version         INTEGER         NOT NULL DEFAULT 1,
+    updated_by      VARCHAR(50),
+    updated_at      TIMESTAMP,
+    CONSTRAINT ck_diag_threshold_override_scope CHECK (scope_type IN ('loop_type', 'plant', 'loop'))
+);
+
+-- =============================================================================
+-- 33. diagnosis_config_change（诊断配置审批留痕）
+-- 证据：ORM app/models/diagnosis.py；迁移 f6g7h8i9j0k1、h8b9c0d1e2f3
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS diagnosis_config_change (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    target_type     VARCHAR(20)     NOT NULL,
+    target_id       VARCHAR(100)    NOT NULL,
+    change_type     VARCHAR(20)     NOT NULL,
+    before_value    TEXT,
+    after_value     TEXT,
+    status          VARCHAR(20)     NOT NULL DEFAULT 'PENDING',
+    requested_by    VARCHAR(50)     NOT NULL,
+    requested_at    TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    reviewed_by     VARCHAR(50),
+    reviewed_at     TIMESTAMP,
+    review_note     TEXT,
+    effective_from  TIMESTAMP,
+    CONSTRAINT ck_diag_config_change_target CHECK (target_type IN ('config', 'rule', 'trigger')),
+    CONSTRAINT ck_diag_config_change_type CHECK (change_type IN ('update', 'enable', 'disable')),
+    CONSTRAINT ck_diag_config_change_status CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'))
+);
+
+-- =============================================================================
+-- 34. loop_confidence_latest（回路最新可信度）
+-- 证据：ORM app/models/metric.py；迁移 z1a2b3c4d5e6
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS loop_confidence_latest (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    loop_id             UUID            NOT NULL,
+    eval_time           TIMESTAMP       NOT NULL,
+    data_ts_start       TIMESTAMP       NOT NULL,
+    data_ts_end         TIMESTAMP       NOT NULL,
+    status              VARCHAR(20)     NOT NULL,
+    score               DECIMAL(5,2),
+    confidence_level    VARCHAR(1),
+    valid_rate          FLOAT,
+    metrics             JSONB,
+    algorithm_version   VARCHAR(50),
+    updated_at          TIMESTAMP,
+    CONSTRAINT fk_loop_confidence_latest_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT ck_loop_confidence_latest_status CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
+    CONSTRAINT ck_loop_confidence_latest_confidence CHECK (confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E'))
+);
+
+-- =============================================================================
 -- 索引（高频查询字段）
 -- =============================================================================
 
@@ -745,6 +1238,9 @@ ON CONFLICT (level) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_unit_id ON loop_ledger (unit_id);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_status  ON loop_ledger (status);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_tag_name ON loop_ledger (tag_name);
+CREATE INDEX IF NOT EXISTS idx_loop_ledger_importance_level ON loop_ledger (importance_level);
+CREATE INDEX IF NOT EXISTS idx_loop_ledger_dcs_model ON loop_ledger (dcs_model_id);
+CREATE INDEX IF NOT EXISTS idx_loop_ledger_complex_group ON loop_ledger (complex_loop_group_id);
 
 -- tag_registry 索引
 CREATE INDEX IF NOT EXISTS idx_tag_registry_tag_name ON tag_registry (tag_name);
@@ -756,13 +1252,47 @@ CREATE INDEX IF NOT EXISTS idx_loop_tag_mapping_loop_id ON loop_tag_mapping (loo
 CREATE INDEX IF NOT EXISTS idx_loop_tag_mapping_tag_id  ON loop_tag_mapping (tag_id);
 -- (loop_id, tag_role) 已由唯一约束 uk_loop_tag_mapping_loop_role 自动创建索引
 
+-- v4.0+ / v6.1 新增表索引
+CREATE INDEX IF NOT EXISTS ix_kpi_snapshot_custom_task ON kpi_snapshot_custom (task_id);
+CREATE INDEX IF NOT EXISTS ix_kpi_snapshot_custom_loop_ts ON kpi_snapshot_custom (loop_id, ts_start);
+CREATE INDEX IF NOT EXISTS ix_diagnosis_tag_loop_status ON diagnosis_tag (loop_id, status);
+CREATE INDEX IF NOT EXISTS ix_diagnosis_tag_severity ON diagnosis_tag (severity, triggered_at);
+CREATE INDEX IF NOT EXISTS ix_unit_kpi_summary_node_time ON unit_kpi_summary (node_id, snapshot_time);
+CREATE INDEX IF NOT EXISTS idx_report_config_period ON report_config (report_period);
+CREATE INDEX IF NOT EXISTS idx_report_config_is_enabled ON report_config (is_enabled);
+CREATE INDEX IF NOT EXISTS idx_dcs_vendor_sort ON dcs_vendor (sort_order);
+CREATE INDEX IF NOT EXISTS idx_dcs_model_vendor ON dcs_model (vendor_id);
+CREATE INDEX IF NOT EXISTS idx_dcs_model_sort ON dcs_model (sort_order);
+CREATE INDEX IF NOT EXISTS idx_mode_definition_sort ON mode_definition (sort_order);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_dcs_mode_mapping_model_mode
+    ON dcs_mode_mapping (dcs_model_id, standard_mode) WHERE dcs_model_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_dcs_mode_mapping_default
+    ON dcs_mode_mapping (standard_mode) WHERE dcs_model_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_dcs_mode_mapping_model_raw
+    ON dcs_mode_mapping (dcs_model_id, raw_mode_value);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_task_loop_id ON diagnosis_task (loop_id);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_task_status ON diagnosis_task (status);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_task_archived ON diagnosis_task (is_archived);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_result_task_id ON diagnosis_result (task_id);
+CREATE INDEX IF NOT EXISTS idx_dcs_pid_structure_model ON dcs_pid_structure (dcs_model_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_diagnosis_rule_code ON diagnosis_rule (rule_code);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_rule_priority ON diagnosis_rule (priority);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_diag_threshold_override
+    ON diagnosis_threshold_override (diag_code, scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_diag_threshold_override_scope
+    ON diagnosis_threshold_override (scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_diag_config_change_target
+    ON diagnosis_config_change (target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_diag_config_change_status ON diagnosis_config_change (status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_loop_confidence_latest_loop_id
+    ON loop_confidence_latest (loop_id);
+
 -- kpi_snapshot_hourly 索引
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_loop_id  ON kpi_snapshot_hourly (loop_id);
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_start ON kpi_snapshot_hourly (ts_start);
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_status   ON kpi_snapshot_hourly (status);
 -- 复合索引（S1-C2）：优化常见查询模式
-CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_loop_ts          ON kpi_snapshot_hourly (loop_id, ts_start);
-CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_status_score  ON kpi_snapshot_hourly (ts_start, status, score);
+CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_loop ON kpi_snapshot_hourly (ts_start, loop_id);
 
 -- kpi_node_snapshot_hourly 索引
 CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_node_id    ON kpi_node_snapshot_hourly (plant_node_id);
@@ -786,6 +1316,16 @@ CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_monthly_node_month ON kpi_node_
 -- action_tracker 索引
 CREATE INDEX IF NOT EXISTS idx_action_tracker_loop_id       ON action_tracker (loop_id);
 CREATE INDEX IF NOT EXISTS idx_action_tracker_action_status ON action_tracker (action_status);
+CREATE INDEX IF NOT EXISTS idx_action_tracker_trigger_type ON action_tracker (trigger_type);
+CREATE INDEX IF NOT EXISTS idx_action_tracker_severity_status ON action_tracker (severity, action_status);
+CREATE INDEX IF NOT EXISTS idx_action_tracker_loop_created ON action_tracker (loop_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_action_tracker_effect_verified ON action_tracker (effect_verified);
+CREATE INDEX IF NOT EXISTS idx_action_tracker_status_updated ON action_tracker (action_status, updated_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_action_tracker_open
+    ON action_tracker (loop_id, diagnosis_label)
+    WHERE action_status IN ('PENDING', 'IN_PROGRESS')
+      AND loop_id IS NOT NULL
+      AND diagnosis_label IS NOT NULL;
 
 -- diagnosis_result 索引
 CREATE INDEX IF NOT EXISTS idx_diagnosis_result_loop_id    ON diagnosis_result (loop_id);
@@ -799,9 +1339,7 @@ CREATE INDEX IF NOT EXISTS idx_sys_audit_log_target_type     ON sys_audit_log (t
 
 -- sys_user 索引（username/email 已由唯一约束自动创建索引）
 CREATE INDEX IF NOT EXISTS idx_sys_user_is_active ON sys_user (is_active);
-
--- loop_ledger 新增字段索引（重构方案 v1.2）
-CREATE INDEX IF NOT EXISTS idx_loop_ledger_level ON loop_ledger (level);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_config_key ON sys_config (key);
 
 -- loop_mode_mapping 索引（重构方案 v1.2）
 CREATE INDEX IF NOT EXISTS idx_loop_mode_mapping_loop_id ON loop_mode_mapping (loop_id);
