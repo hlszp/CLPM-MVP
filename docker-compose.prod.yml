@@ -140,8 +140,8 @@ services:
   # ============================================================
   tdengine:
     # TDengine 3.3.6.6 起 Docker 镜像才支持 TAOS_ROOT_PASSWORD。
-    # remote_api 是生产默认模式，不启动此 profile；deploy.sh 在
-    # DATA_SOURCE_TYPE=tdengine 时会自动启用。
+    # 计算类历史数据一律本地 TDengine（2026-07-20 架构决策），部署
+    # 脚本恒启用 --profile tdengine；DATA_SOURCE_TYPE 已废止。
     profiles: ["tdengine"]
     image: tdengine/tdengine:3.3.6.6
     container_name: clpm-tdengine

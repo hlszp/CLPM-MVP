@@ -505,12 +505,19 @@ if [ "$DO_DEPLOY" = true ]; then
     DEPLOY_OUTPUT=$($SSH_PREFIX "
         set -e
         cd ${SERVER_DEPLOY_DIR}
-        COMPOSE_PROFILE=''
-        if grep -qE '^DATA_SOURCE_TYPE=tdengine$' .env.prod; then
-            COMPOSE_PROFILE='--profile tdengine'
-        fi
+        # 恒启用 tdengine profile（2026-07-20 架构决策：计算类历史数据
+        # 一律本地 TDengine；DATA_SOURCE_TYPE 已废止，不再按它分支，
+        # 2026-07-28 R5 实弹发现旧条件导致生产无 TDengine）
+        COMPOSE_PROFILE='--profile tdengine'
 
         echo '=== 1. 停止旧服务 ==='
+        # 同步 APP_VERSION 到服务器 .env.prod（env_file 会覆盖镜像 ENV，
+        # 不同步则 /health 版本与部署版本脱节，2026-07-28 R5 实弹发现）
+        if grep -qE '^APP_VERSION=' .env.prod; then
+            sed -i 's/^APP_VERSION=.*/APP_VERSION=${APP_VERSION}/' .env.prod
+        else
+            echo APP_VERSION=${APP_VERSION} >> .env.prod
+        fi
         docker compose --env-file .env.prod -f docker-compose.prod.yml \${COMPOSE_PROFILE} down --remove-orphans 2>&1 || echo '[WARN] down 命令有警告（非首次部署可忽略）'
 
         echo '=== 2. 清理残留容器（防止容器名冲突） ==='
@@ -572,10 +579,10 @@ if [ "$DO_DEPLOY" = true ]; then
     log_info "检查容器运行状态..."
     UNHEALTHY_CONTAINERS=$($SSH_PREFIX "
         cd ${SERVER_DEPLOY_DIR}
-        COMPOSE_PROFILE=''
-        if grep -qE '^DATA_SOURCE_TYPE=tdengine$' .env.prod; then
-            COMPOSE_PROFILE='--profile tdengine'
-        fi
+        # 恒启用 tdengine profile（2026-07-20 架构决策：计算类历史数据
+        # 一律本地 TDengine；DATA_SOURCE_TYPE 已废止，不再按它分支，
+        # 2026-07-28 R5 实弹发现旧条件导致生产无 TDengine）
+        COMPOSE_PROFILE='--profile tdengine'
         docker compose --env-file .env.prod -f docker-compose.prod.yml \${COMPOSE_PROFILE} ps --format '{{.Name}} {{.Status}}' | \
         grep -v 'Up' | grep -v 'healthy' || true
     " 2>/dev/null || echo "")
