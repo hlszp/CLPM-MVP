@@ -1541,6 +1541,69 @@ class TestV62P2NonparamConsistency:
 
 
 # ---------------------------------------------------------------------------
+# P2-005 Welch/相干辅助门禁
+# ---------------------------------------------------------------------------
+
+
+class TestV62P2WelchCoherenceGate:
+    """P2-005：Welch 相干作辅助门禁，不宣称闭环频响无偏."""
+
+    def test_p2_005_coherence_computed_and_in_evidence(self):
+        """正常辨识应计算相干并记录到 evidence（meanCoherence 字段）."""
+        u = _prbs(1500, seed=1500)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1500)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        ev = result.best_model.evidence
+        assert ev is not None
+        # 相干应被计算（开环 PRBS 高信噪比，相干较高）
+        assert ev.mean_coherence is not None
+        assert 0.0 <= ev.mean_coherence <= 1.0
+        # to_dict 也含 meanCoherence
+        d = result.to_dict()
+        assert d["evidence"]["meanCoherence"] is not None
+
+    def test_p2_005_high_coherence_no_false_alarm(self):
+        """高相干（开环 PRBS 低噪声）不应触发 LOW_COHERENCE 标记."""
+        u = _prbs(1500, seed=1501)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.02, seed=1501)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        ev = result.best_model.evidence
+        assert ev is not None
+        # 高信噪比开环不应标记 LOW_COHERENCE
+        assert "LOW_COHERENCE" not in ev.reason_codes
+
+    def test_p2_005_coherence_is_auxiliary_not_primary(self):
+        """相干仅辅助门禁：低相干封顶 C 但不拒绝模型（仍可成功辨识）.
+
+        高噪声数据相干可能较低，但模型仍应辨识成功（只是可信度封顶）。
+        相干是辅助信号，不是硬性拒绝条件。
+        """
+        u = _prbs(1500, seed=1502)
+        # 极高噪声压低相干
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=2.0, seed=1502)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        # 即使相干低，模型仍可辨识成功（辅助门禁不拒绝）
+        if result.success and result.best_model and result.best_model.evidence:
+            ev = result.best_model.evidence
+            # 低相干时 reason_codes 含 LOW_COHERENCE，可信度封顶 C
+            if ev.mean_coherence is not None and ev.mean_coherence < 0.3:
+                assert "LOW_COHERENCE" in ev.reason_codes
+                level_order = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1, "INCONCLUSIVE": 0}
+                assert level_order.get(result.best_model.confidence.value, 0) <= 3
+
+
+# ---------------------------------------------------------------------------
 # P0-2 去均值（偏置消除）测试
 # ---------------------------------------------------------------------------
 

@@ -23,7 +23,10 @@ from app.services.tuning_identification.excitation import (
     check_excitation,
     excitation_score,
 )
-from app.services.tuning_identification.nonparametric import correlation_analysis
+from app.services.tuning_identification.nonparametric import (
+    correlation_analysis,
+    welch_spectral_analysis,
+)
 from app.services.tuning_identification.order_selection import (
     compute_aic,
     compute_bic,
@@ -61,6 +64,8 @@ _R2_RESIDUAL_NEGLIGIBLE = 0.999
 # P2-006 Occam 削减：SOPDT 升级门禁
 # SOPDT 优于 FOPDT 当且仅当 R²_val 相对提升 > 5% 且 BIC 下降（更复杂模型须显著更优）
 _OCCAM_R2_RELATIVE_GAIN = 0.05
+# P2-005：Welch 相干辅助门禁阈值（低于此值提示弱线性/低信噪比，封顶可信度 C）
+_LOW_COHERENCE_THRESHOLD = 0.3
 
 
 def identify_from_history(
@@ -217,6 +222,8 @@ def identify_from_history(
     exc_score = excitation_score(exc.condition_number, exc.significant_changes)
 
     # ── 层 2：非参数粗估（用于初值和交叉校验）──
+    # P2-005：Welch 相干仅作辅助门禁，不宣称闭环对象频响无偏——
+    # 闭环下输入与扰动相关，谱估计 Ĝ=S_uy/S_uu 有偏；相干低只作可信度辅助信号。
     try:
         nonparam = correlation_analysis(u, y, ts)
         K_rough = nonparam.gain_estimate
@@ -224,6 +231,15 @@ def identify_from_history(
     except Exception:
         logger.debug("非参数粗估失败，跳过", exc_info=True)
         K_rough = None
+    # P2-005：Welch 相干辅助门禁（低相干 = 弱线性 / 低信噪比，封顶可信度）
+    mean_coherence: float | None = None
+    try:
+        spectrum = welch_spectral_analysis(u, y, ts)
+        coh = spectrum.get("coherence")
+        if coh is not None and len(coh) > 0:
+            mean_coherence = float(np.mean(coh))
+    except Exception:
+        logger.debug("Welch 谱分析失败，跳过相干辅助门禁", exc_info=True)
 
     # ── 层 3：参数化辨识（生产候选）──
     # IV 实现保留为实验代码，但其工具变量外生性和收敛性尚未完成工业验证，
@@ -354,6 +370,12 @@ def identify_from_history(
             # P2-004：非参数一致性未通过封顶 C（符号/量级矛盾，参数化模型可疑）
             if not np_passed:
                 confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+            # P2-005：Welch 相干辅助门禁（低相干 = 弱线性/低信噪比，仅辅助信号不拒绝）
+            low_coherence = (
+                mean_coherence is not None and mean_coherence < _LOW_COHERENCE_THRESHOLD
+            )
+            if low_coherence:
+                confidence = _cap_confidence(confidence, ConfidenceLevel.C)
 
             # P2-006：AIC/BIC 信息准则（训练集残差方差，用于 Occam 削减与证据输出）
             # n_params = na + nb（+ nc for ARMAX），复杂模型须用更小残差补偿参数惩罚
@@ -367,6 +389,8 @@ def identify_from_history(
                 reason_codes.append(feasibility.reason_code)
             if not np_passed:
                 reason_codes.append(np_reason)
+            if low_coherence:
+                reason_codes.append("LOW_COHERENCE")
             if theta_source == ThetaSource.HEURISTIC_2TS:
                 reason_codes.append("HEURISTIC_2TS")
             evidence = ModelEvidence(
@@ -377,6 +401,7 @@ def identify_from_history(
                 r2_train=round(r2_train, 4),
                 nrmse_val=round(nrmse_val, 4),
                 residual_test_note=test_note,
+                mean_coherence=mean_coherence,
                 algorithm_version=ALGORITHM_VERSION,
                 data_hash=data_hash,
                 theta_source=theta_source.value,

@@ -116,6 +116,8 @@ class ModelEvidence:
     nrmse_val: float = 0.0  # 归一化 RMSE = RMSE / range(y_val)
     # P2-014：残差检验摘要
     residual_test_note: str = ""
+    # P2-005：Welch 相干辅助门禁（均值，None 表示未计算；低相干封顶可信度）
+    mean_coherence: float | None = None
     # P2-016：元数据与可追溯性
     algorithm_version: str = ""
     data_hash: str = ""  # 输入 OP/PV 的 SHA256 摘要
@@ -135,6 +137,9 @@ class ModelEvidence:
             "r2Train": round(self.r2_train, 4),
             "nrmseVal": round(self.nrmse_val, 4),
             "residualTest": self.residual_test_note,
+            "meanCoherence": (
+                round(self.mean_coherence, 4) if self.mean_coherence is not None else None
+            ),
             "algorithmVersion": self.algorithm_version,
             "dataHash": self.data_hash,
             "thetaSource": self.theta_source,
