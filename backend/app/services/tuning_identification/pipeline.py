@@ -286,6 +286,11 @@ def identify_from_history(
             feasibility = check_physical_feasibility(params, res.b_coeffs, ts)
             physical_flag = "" if feasibility.passed else f", {feasibility.reason_code}"
 
+            # P2-004：非参数一致性检查（符号 + 量级）—— 与独立的相关分析粗估交叉校验
+            np_passed, np_reason = _check_nonparam_consistency(params.K, K_rough)
+            if not np_passed:
+                physical_flag += f", {np_reason}"
+
             # P2-002：验证集自由仿真 R²（留出集泛化能力，替代训练集方程误差 R²）
             r2_train = max(0.0, min(1.0, res.r_squared))
             y_val_pred, r2_val = _free_run_simulation(
@@ -346,6 +351,9 @@ def identify_from_history(
             if not feasibility.passed:
                 confidence = _cap_confidence(confidence, ConfidenceLevel.C)
                 physical_flag = f", {feasibility.reason_code}({feasibility.details.split(',')[0]})"
+            # P2-004：非参数一致性未通过封顶 C（符号/量级矛盾，参数化模型可疑）
+            if not np_passed:
+                confidence = _cap_confidence(confidence, ConfidenceLevel.C)
 
             # P2-006：AIC/BIC 信息准则（训练集残差方差，用于 Occam 削减与证据输出）
             # n_params = na + nb（+ nc for ARMAX），复杂模型须用更小残差补偿参数惩罚
@@ -357,6 +365,8 @@ def identify_from_history(
             reason_codes: list[str] = []
             if not feasibility.passed:
                 reason_codes.append(feasibility.reason_code)
+            if not np_passed:
+                reason_codes.append(np_reason)
             if theta_source == ThetaSource.HEURISTIC_2TS:
                 reason_codes.append("HEURISTIC_2TS")
             evidence = ModelEvidence(
@@ -439,6 +449,37 @@ def _compute_data_hash(u: np.ndarray, y: np.ndarray, ts: float) -> str:
     """
     buf = u.tobytes() + y.tobytes() + repr(float(ts)).encode()
     return hashlib.sha256(buf).hexdigest()[:16]
+
+
+def _check_nonparam_consistency(
+    k_param: float,
+    k_rough: float | None,
+) -> tuple[bool, str]:
+    """P2-004：非参数一致性检查（符号 + 量级）.
+
+    非参数相关分析给出的 K 粗估独立于 ARX 回归，用于交叉校验参数化结果：
+    - 符号不一致 → 参数化模型可能拟合了错误方向（如闭环有偏）
+    - 量级差超过一个数量级 → 参数化模型可能过拟合或数值病态
+
+    Args:
+        k_param: 参数化辨识增益 K
+        k_rough: 非参数粗估增益（None 时跳过）
+
+    Returns:
+        (passed, reason_code) — reason_code 为空字符串表示通过
+    """
+    if k_rough is None or abs(k_rough) < 1e-9:
+        return True, ""  # 无有效非参数估计，跳过
+    if abs(k_param) < 1e-9:
+        return False, "K_PARAM_ZERO"
+    # 符号一致性
+    if k_param * k_rough < 0:
+        return False, "SIGN_MISMATCH"
+    # 量级一致性（同一数量级，0.1×~10×）
+    ratio = abs(k_param) / abs(k_rough)
+    if ratio < 0.1 or ratio > 10.0:
+        return False, "MAGNITUDE_MISMATCH"
+    return True, ""
 
 
 def _search_delay(

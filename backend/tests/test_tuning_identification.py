@@ -1449,6 +1449,98 @@ class TestV62P2EvidenceOutput:
 
 
 # ---------------------------------------------------------------------------
+# P2-004 非参数结果一致性检查（初值/符号/量级）
+# ---------------------------------------------------------------------------
+
+
+class TestV62P2NonparamConsistency:
+    """P2-004：非参数粗估与参数化结果交叉校验（符号 + 量级）."""
+
+    def test_p2_004_consistency_passes_for_well_identified_model(self):
+        """正常正增益过程：参数化 K 与非参数 K_rough 一致，无误报."""
+        u = _prbs(1500, seed=1400)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1400)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        reason = result.best_model.reason or ""
+        evidence = result.best_model.evidence
+        # 不应触发符号/量级不一致标记
+        assert "SIGN_MISMATCH" not in reason
+        assert "MAGNITUDE_MISMATCH" not in reason
+        if evidence:
+            assert "SIGN_MISMATCH" not in evidence.reason_codes
+            assert "MAGNITUDE_MISMATCH" not in evidence.reason_codes
+
+    def test_p2_004_sign_mismatch_detected_by_helper(self):
+        """helper 直接单测：符号相反应返回 SIGN_MISMATCH."""
+        from app.services.tuning_identification.pipeline import (
+            _check_nonparam_consistency,
+        )
+
+        passed, reason = _check_nonparam_consistency(k_param=1.5, k_rough=-1.2)
+        assert not passed
+        assert reason == "SIGN_MISMATCH"
+
+    def test_p2_004_magnitude_mismatch_detected_by_helper(self):
+        """helper 直接单测：量级差超过 10× 应返回 MAGNITUDE_MISMATCH."""
+        from app.services.tuning_identification.pipeline import (
+            _check_nonparam_consistency,
+        )
+
+        # K_param 比 K_rough 大 100 倍
+        passed, reason = _check_nonparam_consistency(k_param=100.0, k_rough=1.0)
+        assert not passed
+        assert reason == "MAGNITUDE_MISMATCH"
+
+        # K_param 比 K_rough 小 100 倍
+        passed, reason = _check_nonparam_consistency(k_param=0.01, k_rough=1.0)
+        assert not passed
+        assert reason == "MAGNITUDE_MISMATCH"
+
+    def test_p2_004_same_magnitude_passes(self):
+        """helper 直接单测：同符号同量级（0.1×~10×）应通过."""
+        from app.services.tuning_identification.pipeline import (
+            _check_nonparam_consistency,
+        )
+
+        # 同值
+        passed, reason = _check_nonparam_consistency(k_param=1.0, k_rough=1.0)
+        assert passed
+        assert reason == ""
+
+        # 5 倍（在 10× 内）
+        passed, reason = _check_nonparam_consistency(k_param=5.0, k_rough=1.0)
+        assert passed
+        assert reason == ""
+
+        # 0.2 倍（在 0.1× 外以上）
+        passed, reason = _check_nonparam_consistency(k_param=0.2, k_rough=1.0)
+        assert passed
+        assert reason == ""
+
+    def test_p2_004_none_k_rough_skips(self):
+        """helper 直接单测：K_rough=None 时跳过检查（通过）."""
+        from app.services.tuning_identification.pipeline import (
+            _check_nonparam_consistency,
+        )
+
+        passed, reason = _check_nonparam_consistency(k_param=1.0, k_rough=None)
+        assert passed
+        assert reason == ""
+
+        # K_rough 接近零也跳过
+        passed, reason = _check_nonparam_consistency(k_param=1.0, k_rough=1e-12)
+        assert passed
+        assert reason == ""
+
+
+# ---------------------------------------------------------------------------
 # P0-2 去均值（偏置消除）测试
 # ---------------------------------------------------------------------------
 
