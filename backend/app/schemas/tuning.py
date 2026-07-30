@@ -175,6 +175,20 @@ class ModelIdentifyHistoryResult(CamelModel):
     tagName: str | None = None
 
 
+class IdentifyHistoryAsyncResponse(CamelModel):
+    """历史辨识异步任务提交响应（V62-P1-012 typed response）.
+
+    AUTO/HISTORY_ONLY 策略提交异步 Celery 任务后返回此模型；
+    STEP_ONLY 策略走同步路径，返回 ``ModelIdentifyResult``。
+    """
+
+    taskId: str = Field(..., description="Celery 异步任务 ID")
+    status: str = Field("PENDING", description="任务初始状态")
+    identifyStrategy: IdentifyStrategy | None = Field(
+        None, description="辨识策略（AUTO/HISTORY_ONLY）"
+    )
+
+
 # ---------------------------------------------------------------------------
 # PID 整定
 # ---------------------------------------------------------------------------
@@ -379,6 +393,10 @@ class IdentifySegment(CamelModel):
     excitationScore: float | None = None
     conditionNumber: float | None = None
     isSufficient: bool = False
+    # V62-P1-008: 真实片段切分新增字段（optional，兼容旧客户端）
+    exclusionReason: str | None = None
+    validSampleRatio: float | None = None
+    pointCount: int | None = None
 
 
 class IdentifySegmentsRequest(CamelModel):

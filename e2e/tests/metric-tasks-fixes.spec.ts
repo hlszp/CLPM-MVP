@@ -339,19 +339,28 @@ test('F8 手动任务：行内评估 → 删除（普通确认弹框）', async 
     'Content-Type': 'application/json',
   };
 
-  // 清理残留活跃任务（PENDING/RUNNING），避免触发"单用户活跃任务上限"
-  // 之前的测试运行可能遗留未清理的任务，导致新任务无法启动
+  // 清理残留活跃任务，避免触发"单用户活跃任务上限 3"
+  // 之前失败运行可能遗留 PENDING/RUNNING/CANCELLING 任务，cancel 是异步的
+  // 需要轮询重试直到活跃任务清零
+  const activeStatuses = ['PENDING', 'RUNNING', 'CANCELLING', 'QUEUED'];
   try {
-    const listResp = await request.get(`${API_BASE_URL}/tasks?pageSize=50`, { headers });
-    const listData = (await listResp.json()).data;
-    const items = listData?.items ?? listData ?? [];
-    for (const item of items) {
-      const status = item.status ?? item.taskStatus;
-      const taskId = item.taskId ?? item.id;
-      if (taskId && (status === 'PENDING' || status === 'RUNNING')) {
-        await request.post(`${API_BASE_URL}/tasks/${taskId}/cancel`, { headers }).catch(() => {});
-        await request.delete(`${API_BASE_URL}/tasks/${taskId}`, { headers }).catch(() => {});
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const listResp = await request.get(`${API_BASE_URL}/tasks?pageSize=50`, { headers });
+      const listData = (await listResp.json()).data;
+      const items: any[] = (listData?.items ?? listData ?? []).filter(Boolean);
+      const activeItems = items.filter((item) =>
+        activeStatuses.includes(item.status ?? item.taskStatus),
+      );
+      if (activeItems.length === 0) break;
+      for (const item of activeItems) {
+        const taskId = item.taskId ?? item.id;
+        if (taskId) {
+          await request.post(`${API_BASE_URL}/tasks/${taskId}/cancel`, { headers }).catch(() => {});
+          await request.delete(`${API_BASE_URL}/tasks/${taskId}`, { headers }).catch(() => {});
+        }
       }
+      // 等待 cancel 生效，任务转为终态
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   } catch {
     // 清理失败不阻塞测试，可能在创建时才触发上限
@@ -368,7 +377,13 @@ test('F8 手动任务：行内评估 → 删除（普通确认弹框）', async 
       dryRun: false,
     },
   });
-  const taskId = (await createResp.json()).data.taskId as string;
+  const createBody = await createResp.json();
+  if (!createBody?.data?.taskId) {
+    throw new Error(
+      `创建回填任务失败: HTTP ${createResp.status()} ${JSON.stringify(createBody)}`,
+    );
+  }
+  const taskId = createBody.data.taskId as string;
   const shortCode = taskId.slice(-8).toUpperCase();
 
   try {

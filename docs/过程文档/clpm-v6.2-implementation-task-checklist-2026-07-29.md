@@ -216,47 +216,70 @@ unit_kpi_summary
 
 ### 4.1 PV/OP/SP/MODE 同轴
 
-- [ ] `V62-P1-001` 以 PVOP 时间戳作为统一目标网格，消除 bundle 顺序依赖。
-- [ ] `V62-P1-002` 读取 MODE 并与 PV/OP/SP 同轴。
-- [ ] `V62-P1-003` 返回真实时间，不退化为数组索引。
-- [ ] `V62-P1-004` 记录插值率、外推率、缺口和有效样本数。
-- [ ] `V62-P1-005` 覆盖 1s PVOP + 10/30/60s BASE、乱序、缺口和边界外推。
-- [ ] `V62-P1-006` 去除热路径逐点 naive datetime `.timestamp()`。
+- [x] `V62-P1-001` 以 PVOP 时间戳作为统一目标网格，消除 bundle 顺序依赖。
+- [x] `V62-P1-002` 读取 MODE 并与 PV/OP/SP 同轴。
+- [x] `V62-P1-003` 返回真实时间，不退化为数组索引。
+- [x] `V62-P1-004` 记录插值率、外推率、缺口和有效样本数。
+- [x] `V62-P1-005` 覆盖 1s PVOP + 10/30/60s BASE、乱序、缺口和边界外推。
+- [x] `V62-P1-006` 去除热路径逐点 naive datetime `.timestamp()`。
 
 ### 4.2 真实片段切分与激励门禁
 
-- [ ] `V62-P1-007` 按 MODE、启停、缺口、饱和、人工干预和事件边界切片。
-- [ ] `V62-P1-008` preview API 返回真实片段、排除原因和质量摘要。
-- [ ] `V62-P1-009` OP 激励按量程或噪声归一化，消除 OP/PV 跨量纲比值。
-- [ ] `V62-P1-010` 方向变化加入死区，不把零值/微噪声算作有效激励。
-- [ ] `V62-P1-011` 回归矩阵标准化并增加单位缩放不变性测试。
+- [x] `V62-P1-007` 按 MODE、启停、缺口、饱和、人工干预和事件边界切片。
+- [x] `V62-P1-008` preview API 返回真实片段、排除原因和质量摘要。
+  - `preview_identify_segments` 改用 `segment_signals` 真实切分（MODE/缺口/饱和/太短），被排除片段标注 `exclusionReason` 且不跑激励检测；`IdentifySegment` schema 新增 `exclusionReason`/`validSampleRatio`/`pointCount`（optional，兼容旧客户端）；新增 `TestV62P1PreviewSegments` 3 测试（AUTO+MANUAL 切分/全 AUTO 激励/空窗口）。
+- [x] `V62-P1-009` OP 激励按量程或噪声归一化，消除 OP/PV 跨量纲比值。
+- [x] `V62-P1-010` 方向变化加入死区，不把零值/微噪声算作有效激励。
+- [x] `V62-P1-011` 回归矩阵标准化并增加单位缩放不变性测试。
 
 ### 4.3 API 与任务合同
 
-- [ ] `V62-P1-012` 历史辨识使用 typed response model。
-- [ ] `V62-P1-013` 统一整定异步任务与 TaskTracker 的状态、取消、通知和可观测合同。
-- [ ] `V62-P1-014` 不新增任务实体；保留一版 `tuning_progress` 兼容适配。
-- [ ] `V62-P1-015` 使用现有 DCS PID 结构完成 PB/Kp、秒/分钟、结构和滤波转换。
-- [ ] `V62-P1-016` 增加 PID 转换往返性质测试。
+- [x] `V62-P1-012` 历史辨识使用 typed response model。
+  - 新增 `IdentifyHistoryAsyncResponse` schema（taskId/status/identifyStrategy）；`/identify/history` 端点 STEP_ONLY 路径用 `ModelIdentifyResult.model_validate()` 构造，AUTO/HISTORY_ONLY 路径用 `IdentifyHistoryAsyncResponse` 构造。
+- [x] `V62-P1-013` 统一整定异步任务与 TaskTracker 的状态、取消、通知和可观测合同。
+  - `TaskType` 枚举新增 `TUNING`；`tuning_progress.init_progress` 桥接 `task_tracker.create_task`（TUNING 类型），终态 `update_progress` 同步 `task_tracker.update_status`（含通知）；取消端点同步 CANCELLED；Celery 任务新增 `created_by_id` 参数。
+- [x] `V62-P1-014` 不新增任务实体；保留一版 `tuning_progress` 兼容适配。
+  - `tuning_progress` 保留为兼容适配层（细粒度阶段仍独有），TaskTracker 只跟踪粗粒度状态；桥接失败不阻断整定任务；无 `created_by_id` 时降级为自包含模式。
+- [x] `V62-P1-015` 使用现有 DCS PID 结构完成 PB/Kp、秒/分钟、结构和滤波转换。
+  - 新建 `app/services/pid_conversion.py`：`to_standard_pid`/`from_standard_pid`/`convert_pid_dict`；PB↔Kp（100/Kp）、秒↔分钟（×60/÷60）；微分滤波不影响标准 Td。
+- [x] `V62-P1-016` 增加 PID 转换往返性质测试。
+  - 新建 `tests/test_pid_conversion.py` 29 测试：8 种 p_type×i_unit×d_unit 组合往返、标准→DCS→标准往返、具体数值正确性、边界（Td=0/大增益/小增益/PB=0 除零）、字典便捷转换。
 
 ### 4.4 页面与导航减法
 
-- [ ] `V62-P1-017` 工作台变为跨模块待办门户，取消与装置性能的重复心智入口。
-- [ ] `V62-P1-018` 诊断 tasks/records 合并为进行中/历史 Tabs。
-- [ ] `V62-P1-019` 整定 model→algorithm→simulation 合并为可恢复 stepper。
-- [ ] `V62-P1-020` 旧路由隐藏并兼容重定向至少一个版本。
-- [ ] `V62-P1-021` 建立统一 Loop 上下文头，保留回路、时间窗和返回来源。
-- [ ] `V62-P1-022` 配置归属业务模块，高级参数仅管理员可见。
-- [ ] `V62-P1-023` 覆盖 loading、empty、error、partial、success 和权限状态。
+- [x] `V62-P1-017` 工作台变为跨模块待办门户，取消与装置性能的重复心智入口。
+  - 新建 `views/dashboard/workbench.vue`：顶部 `ClpmKpiStrip` 跨模块待办计数（诊断待处理 / 异常跟踪待办 / 评估待执行 / 整定任务），计数走真实接口（status 过滤 + total + tracker aggregates.statusCounts），整定卡片按角色条件渲染（工作台对 PE_ENGINEER/SPONSOR 可见，整定仅 ADMIN/IC_ENGINEER/EXPERT）；点击跳转对应模块；复用 `DiagnosisSummaryCard` + `TrackerEffectivenessCard`；装置性能完整看板归属 `/metric/pid-dashboard`，此处仅留入口卡。
+  - `dashboard.ts`：`DashboardWorkbench` component 改指 `views/dashboard/workbench.vue`，标题改"工作台"；`routes-authority.test.ts` 工作台排除 EXPERT、放行 SPONSOR 断言通过。
+- [x] `V62-P1-018` 诊断 tasks/records 合并为进行中/历史 Tabs。
+  - 新建 `views/diagnosis/task-center.vue`：Tabs 包装 tasks.vue（进行中）/ records.vue（历史）；activeTab 与 URL query 双向同步；不套外层 Page 避免与子页双重嵌套；records 内部 Tabs 作为历史下二级导航保留。
+- [x] `V62-P1-019` 整定 model→algorithm→simulation 合并为可恢复 stepper。
+  - 新建 `views/tuning/flow.vue` stepper 容器（Steps 三步 + 路由推导 currentStep + 步骤门禁 + onMounted 恢复）；`store/tuning.ts` 加 sessionStorage 持久化（`_persist`/`restoreFromSession`）+ `restoreFromTask(taskId)` 后端回显兜底 + `modelSource`/`sourceRecordId`/`riskConfirmed`/`currentStep` ref；`tuning.ts` 路由新增 `/tuning/flow` 嵌套子路由 + 旧三页 redirect+hideInMenu（兼容书签）；三页跳转改指 flow 子路由 + 同步 store；workbench navCards 简化为「整定流程+效果统计」+ 未终态任务「继续」入口；check:type 通过、vitest 125 passed、浏览器验证 Steps/重定向/门禁通过。
+- [x] `V62-P1-020` 旧路由隐藏并兼容重定向至少一个版本。
+  - `diagnosis.ts`：DiagnosisTasks → task-center.vue；DiagnosisRecords → redirect `/diagnosis/tasks?tab=history` + hideInMenu，兼容旧书签/深链。提交 `ddf867eb`。
+- [x] `V62-P1-021` 建立统一 Loop 上下文头，保留回路、时间窗和返回来源。
+  - 新建 `components/clpm/loop-context-header.vue`（editable/只读双模式：回路 Select + 时间 RangePicker + 返回按钮，数据源 store）；`store/tuning.ts` 新增 `currentLoopTimeRange`（ISO 字符串元组）+ `setLoopTimeRange` + 持久化/恢复/$reset；`flow.vue` 用 `ClpmLoopContextHeader` 替换占位（步骤0可编辑/1-2只读）；`model.vue` 移除回路 Select/时间 RangePicker 与 `loadLoopOptions`，`loopId`/`timeRange` 改为 store 代理 computed；测试 mock 同步补充 `currentLoopId`/`currentLoopTimeRange`；check:type 通过、vitest 125 passed。
+- [x] `V62-P1-022` 配置归属业务模块，高级参数仅管理员可见。
+  - 新建 `composables/use-clpm-roles.ts`：可复用角色判断 composable（`hasRole`/`hasAnyRole`/`isAdmin`/`isExpert`/`canAccessTuning`/`canEditAdvancedParams`），替代各组件内联 `userStore.roles.some(...)` 模式；高级参数角色集 = ADMIN/EXPERT（IC_ENGINEER 使用默认参数，避免误调）。
+  - `model.vue`：候选模型阶次 + 纯滞后预估 θ 包裹进 `Collapse`（高级参数），`v-if="canEditAdvancedParams"` 控制可见；IC_ENGINEER 不渲染高级区域，使用默认候选 [FOPDT,SOPDT] 和留空 θ。
+  - `algorithm.vue`：动态算法参数区域同样用 `Collapse` + `canEditAdvancedParams` 门禁。
+  - `workbench.vue`：复用 `useClpmRoles().canAccessTuning` 替代内联 `userStore.roles.some(...)`，移除 `useUserStore` 导入。
+  - 测试 mock 同步补充 `useClpmRoles`（默认 ADMIN）+ `Collapse`/`CollapsePanel` stub；check:type 通过、vitest 434 passed。
+- [x] `V62-P1-023` 覆盖 loading、empty、error、partial、success 和权限状态。
+  - 新建 `components/clpm/state-overlay.vue`：统一状态覆盖组件（loading/empty/error/success 四态），partial 由页面 Alert 处理；props 含 `status`/`emptyDescription`/`errorMessage`/`errorDetail`/`loadingTip`/`retryText`/`retryable`，error 态带重试按钮 emit `retry`。
+  - `model.vue`：STEP_ONLY/异步提交/异步轮询 FAILED 三条 catch 路径设置 `errorState`，模板用 `ClpmStateOverlay` 渲染 error（带重试）+ empty（无结果时）；清理重复的旧文字空状态块。
+  - `algorithm.vue`：`tunePidApi` catch 设置 `errorState`（原已设但模板未渲染 → 补全），旧文字空状态替换为 `ClpmStateOverlay`。
+  - `simulation.vue`：双 PID/多 PID 对比两条 catch 路径设置 `errorState`，仿真图区用 `ClpmStateOverlay` 渲染 error（带重试）+ empty + success（透传 EchartsUI）；reset/toggle 清理 errorState。
+  - `workbench.vue`：`Promise.allSettled` 结果统计 `failedCount`，单项失败不阻断其余计数，失败时 `message.warning` 提示用户刷新。
+  - 新建 `__tests__/state-overlay.test.ts`（7 测试：loading/empty/error/retryable=false/success/retry emit/默认 props）；`tuning-model.test.ts` +5 测试（empty/error×3/retry）；`tuning-algorithm-source.test.ts` +4 测试（empty/error/retry/success）；新建 `tuning-simulation.test.ts`（6 测试：empty/error 双 PID/error 多 PID/retry/success/reset）；check:type 通过、vitest 456 passed（+22）。
 
 ### 4.5 Phase 1 门禁
 
-- [ ] 数据同轴与片段集成测试通过。
-- [ ] 后端全量门禁通过。
-- [ ] 前端 typecheck、组件测试、关键 E2E 通过。
-- [ ] 旧书签/深链兼容验证通过。
-- [ ] UI/UX 独立审查通过。
-- [ ] Phase 1 逻辑提交完成。
+- [x] 数据同轴与片段集成测试通过。（`tests/test_data_planner/` + `tests/test_tuning_phase2.py` 共 105 passed）
+- [x] 后端全量门禁通过。（ruff ✅ / pytest 3535 passed ✅ / `alembic check` 无 schema 漂移 ✅）
+- [x] 前端 typecheck、组件测试、关键 E2E 通过。（check:type ✅ / vitest 456 passed ✅ / tuning+diagnosis 关键 E2E 12/13，TUNE-003 偶发时序问题单独重跑通过）
+- [x] 旧书签/深链兼容验证通过。（tuning 三页 `/tuning/{model,algorithm,simulation}` → redirect `/tuning/flow/*` + hideInMenu；diagnosis records → redirect `/diagnosis/tasks?tab=history` + hideInMenu）
+- [x] UI/UX 独立审查通过。（§14 强制项 8 项全通过：F-01 任务优先 / F-02 不允许空点击 / A-01 IA 以契约为准 / A-03 角色权限驱动 / C-01 颜色来自 token / C-02 状态色语义化 / E-01 空异常一等状态 / P-02 不得下写 DCS）
+- [x] Phase 1 逻辑提交完成。（P1-001~P1-023 全部提交，含 `ecc94c7` P1-023 状态覆盖 + `9ebf613` E2E 稳定性修复）
 
 ## 5. Phase 2：可信辨识
 
@@ -372,3 +395,14 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 0 | 契约基线与任务清单更新 | `clpm-v6.2-phase0-contract-baseline-2026-07-29.md`、本清单 |
 | 2026-07-29 | Phase 0 | P0-033 设计文档同步至契约 v2.3 | 提交 `98a7728`；契约 v2.3（状态机/§6.1 模型门禁/§6.2 安全边界/§10 37 表）；PRD/FDS/ADS/DDS/IDS 加 Phase 0 对齐说明；AGENTS.md 基线升级 |
 | 2026-07-29 | Phase 0 | 阶段合并 phase0→integration | 合并 `e23d8819`（`--no-ff`，45 文件 +4222/-357）；推送 `origin/codex/v6.2-integration`；pre-push lefthook 全量门禁（pytest/ruff/typecheck）通过 |
+| 2026-07-29 | Phase 1 | P1-001~006 PV/OP/SP/MODE 同轴完成 | `_fetch_preprocessed_signals` 按 tag_group 索引消除顺序依赖；SP 线性插值到 PVOP 网格；MODE 零阶保持重采样（禁线性插值）；`_to_rel_seconds` 去除 naive `.timestamp()`；记录插值/外推/缺口/有效样本质量指标；后端 3475 passed（+19），ruff/alembic 全绿 |
+| 2026-07-29 | Phase 1 | P1-007/009/010/011 片段切分与激励门禁改进 | 新建 `segmentation.py`：按 MODE/缺口/饱和/太短事件切片，返回 SegmentSpec（含排除原因/有效样本比例）+ `select_best_segment`；`excitation.py`：OP 量程归一化（op_span 参数）、方向变化死区（过滤微噪声）、回归矩阵列标准化（单位缩放不变）；后端 3498 passed（+23），ruff 全绿 |
+| 2026-07-29 | Phase 1 | P1-008 preview API 返回真实片段 | `preview_identify_segments` 改用 `segment_signals` 真实切分；`IdentifySegment` schema 新增 `exclusionReason`/`validSampleRatio`/`pointCount`（optional）；被排除片段不跑激励检测；`TestV62P1PreviewSegments` 3 测试通过（AUTO+MANUAL/全 AUTO/空窗口） |
+| 2026-07-29 | Phase 1 | P1-012~016 API 与任务合同 | P1-012 typed response（`IdentifyHistoryAsyncResponse`）；P1-013/014 TaskTracker 桥接（TUNING 类型 + 终态同步 + 取消同步 + 桥接失败降级）；P1-015/016 PID 转换（`pid_conversion.py` + 29 往返测试）；后端 3535 passed（+37），ruff/alembic 全绿 |
+| 2026-07-29 | Phase 1 | P1-018/020 诊断 tasks/records 合并 Tabs + 旧路由兼容 | 新建 `task-center.vue`（Tabs 进行中/历史，URL query 双向同步，不套外层 Page）；`diagnosis.ts` Records→redirect+hideInMenu；提交 `ddf867eb`；check:type 通过、vitest 434 passed |
+| 2026-07-30 | Phase 1 | P1-017 工作台改造为跨模块待办门户 | 新建 `views/dashboard/workbench.vue`：`ClpmKpiStrip` 跨模块待办计数（诊断待处理/异常跟踪待办/评估待执行/整定任务），计数走真实接口 + 整定卡片按角色条件渲染，复用 `DiagnosisSummaryCard`+`TrackerEffectivenessCard`，装置性能仅留入口卡；`dashboard.ts` 路由改指新页面；check:type 通过、vitest 125 passed（routes-authority 工作台权限断言通过） |
+| 2026-07-30 | Phase 1 | P1-019 整定三页合并为可恢复 stepper | 新建 `flow.vue`（Steps 三步 + 门禁 + onMounted 恢复）；`store/tuning.ts` 加 sessionStorage 持久化 + `restoreFromTask` taskId 回显兜底；`tuning.ts` 嵌套路由 + 旧路由重定向；三页跳转改指 flow 子路由；workbench navCards 简化 + 任务「继续」入口；check:type 通过、vitest 125 passed、浏览器验证 Steps/重定向/门禁通过 |
+| 2026-07-29 | Phase 1 | 排雷：`pnpm run format` 破坏测试标题 | `internal/lint-configs/oxlint-config` 启用 `vitest/prefer-lowercase-title:error`，`vsh lint --format` 会把 `describe`/`it` 标题首字母强制小写（`ADMIN`→`aDMIN`、`EXPERT`→`eXPERT`）。对策：不跑 blanket `pnpm run format`，改用 `check:type`+`vitest run` 作真实门禁；新文件按文件单独格式化。已还原被污染的 7 个测试文件 |
+| 2026-07-30 | Phase 1 | P1-021 统一 Loop 上下文头 | 新建 `ClpmLoopContextHeader`（editable/只读双模式）；store 加 `currentLoopTimeRange`+持久化；`flow.vue` 步骤0可编辑/1-2只读；`model.vue` 移除内联回路/时间窗选择器，改读 store；提交 `1f0e031`；check:type 通过、vitest 125 passed |
+| 2026-07-30 | Phase 1 | P1-022 高级参数权限控制 | 新建 `composables/use-clpm-roles.ts`（`canEditAdvancedParams`=ADMIN/EXPERT）；`model.vue` 候选阶次+θ 包裹 Collapse+权限门禁；`algorithm.vue` 动态算法参数同构；`workbench.vue` 复用 `canAccessTuning` 替代内联；测试 mock 补充 `useClpmRoles`+Collapse stub；check:type 通过、vitest 434 passed |
+| 2026-07-30 | Phase 1 | P1-023 状态覆盖统一 | 新建 `ClpmStateOverlay` 统一状态覆盖组件（loading/empty/error/success）；`model.vue` 三条 catch 路径 + error/empty 覆盖 + 清理重复空状态；`algorithm.vue` 补全 errorState 模板渲染 + 替换旧空状态；`simulation.vue` 双/多 PID catch + error/empty/success 覆盖；`workbench.vue` allSettled 失败计数 + warning 提示；22 新增测试（state-overlay 7 + model +5 + algorithm +4 + simulation 6）；check:type 通过、vitest 456 passed |

@@ -3,15 +3,19 @@
  *
  * 覆盖用例：
  * - E2E-TUNE-001: 整定工作台（/tuning/workbench → 统计卡片 + 最近任务）
- * - E2E-TUNE-002: 模型辨识（/tuning/model → 选择回路 → 辨识 → 结果）
- * - E2E-TUNE-003: 整定算法（/tuning/algorithm → 模型参数 → 整定 → PID 结果）
- * - E2E-TUNE-004: 闭环仿真（/tuning/simulation → 参数输入 → 仿真 → 图表）
+ * - E2E-TUNE-002: 模型辨识（/tuning/flow/model → 选择回路 → 辨识 → 结果）
+ * - E2E-TUNE-003: 整定算法（/tuning/flow/algorithm → 模型参数 → 整定 → PID 结果）
+ * - E2E-TUNE-004: 闭环仿真（/tuning/flow/simulation → 参数输入 → 仿真 → 图表）
  * - E2E-TUNE-005: 效果统计（/tuning/stats → 统计卡片 + 图表 + 列表）
- * - E2E-TUNE-006: 模型辨识 Phase 2 异步辨识策略（/tuning/model → AUTO 策略 → 进度条）
- * - E2E-TUNE-007: 闭环仿真 Phase 2 多 PID 对比模式（/tuning/simulation → 对比模式 → 多曲线）
+ * - E2E-TUNE-006: 模型辨识 Phase 2 异步辨识策略（/tuning/flow/model → AUTO 策略 → 进度条）
+ * - E2E-TUNE-007: 闭环仿真 Phase 2 多 PID 对比模式（/tuning/flow/simulation → 对比模式 → 多曲线）
+ *
+ * v6.2 P1-019：model/algorithm/simulation 三页合并为 /tuning/flow 嵌套 stepper
+ *   旧 /tuning/{model,algorithm,simulation} 重定向到 /tuning/flow/{model,algorithm,simulation}
+ *   E2E 测试已对齐新 flow 路由
  *
  * 页面源码依据：
- *   frontend/apps/web-antd/src/views/tuning/{workbench,model,algorithm,simulation,stats}.vue
+ *   frontend/apps/web-antd/src/views/tuning/{workbench,model,algorithm,simulation,stats,flow}.vue
  *   - workbench: 4 统计卡片 + 流程导航 + 最近任务表格
  *   - model: 回路选择 + 时间范围 + 辨识策略 + 候选模型阶次 + 异步进度 + 可信度徽章
  *   - algorithm: 模型参数输入 + 5 种算法选择 + 整定按钮 + 推荐 PID 对比
@@ -28,7 +32,7 @@ test.describe('回路整定 E2E', () => {
 
   test('E2E-TUNE-001: 整定工作台', async ({ page }) => {
     await page.goto('/tuning/workbench');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载（统计卡片区域存在）
@@ -60,8 +64,8 @@ test.describe('回路整定 E2E', () => {
   });
 
   test('E2E-TUNE-002: 模型辨识', async ({ page }) => {
-    await page.goto('/tuning/model');
-    await page.waitForLoadState('networkidle');
+    await page.goto('/tuning/flow/model');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载（回路选择器存在）
@@ -70,10 +74,11 @@ test.describe('回路整定 E2E', () => {
       // 页面可能使用不同选择器
     });
 
-    // 验证模型类型选择存在（FOPDT/SOPDT/IPDT）
+    // 验证辨识筛选表单存在（辨识策略/开始辨识按钮）
+    // P1-022：候选模型阶次在 Collapse 折叠面板中，不在 innerText
     const pageText = await page.locator('body').innerText();
-    const hasModelType = /FOPDT|SOPDT|IPDT|模型类型/i.test(pageText);
-    expect(hasModelType).toBeTruthy();
+    const hasFilterForm = /辨识策略|开始辨识|辨识筛选/i.test(pageText);
+    expect(hasFilterForm).toBeTruthy();
 
     // 验证辨识按钮存在
     const identifyBtn = page.getByRole('button', { name: /辨识|开始辨识|执行辨识/i }).first();
@@ -101,12 +106,12 @@ test.describe('回路整定 E2E', () => {
     }
 
     // 核心验证点：模型辨识页面正常加载
-    expect(page.url()).toContain('/tuning/model');
+    expect(page.url()).toContain('/tuning/flow/model');
   });
 
   test('E2E-TUNE-003: 整定算法', async ({ page }) => {
-    await page.goto('/tuning/algorithm');
-    await page.waitForLoadState('networkidle');
+    await page.goto('/tuning/flow/algorithm');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载
@@ -151,12 +156,12 @@ test.describe('回路整定 E2E', () => {
     }
 
     // 核心验证点：整定算法页面正常加载，5 种算法可见
-    expect(page.url()).toContain('/tuning/algorithm');
+    expect(page.url()).toContain('/tuning/flow/algorithm');
   });
 
   test('E2E-TUNE-004: 闭环仿真', async ({ page }) => {
-    await page.goto('/tuning/simulation');
-    await page.waitForLoadState('networkidle');
+    await page.goto('/tuning/flow/simulation');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载
@@ -200,12 +205,12 @@ test.describe('回路整定 E2E', () => {
     }
 
     // 核心验证点：闭环仿真页面正常加载
-    expect(page.url()).toContain('/tuning/simulation');
+    expect(page.url()).toContain('/tuning/flow/simulation');
   });
 
   test('E2E-TUNE-005: 效果统计', async ({ page }) => {
     await page.goto('/tuning/stats');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载（统计卡片区域存在）
@@ -238,8 +243,8 @@ test.describe('回路整定 E2E', () => {
 
   // Phase 2 新增：异步辨识策略与进度条
   test('E2E-TUNE-006: 模型辨识 Phase 2 异步辨识策略', async ({ page }) => {
-    await page.goto('/tuning/model');
-    await page.waitForLoadState('networkidle');
+    await page.goto('/tuning/flow/model');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证辨识策略选择器存在（AUTO/HISTORY_ONLY/STEP_ONLY）
@@ -247,9 +252,9 @@ test.describe('回路整定 E2E', () => {
     const hasStrategy = /自动|历史|阶跃|辨识策略/i.test(pageText);
     expect(hasStrategy).toBeTruthy();
 
-    // 验证候选模型阶次多选存在（非 STEP_ONLY 模式下）
-    const hasCandidateModel = /候选模型|FOPDT|SOPDT|IPDT/i.test(pageText);
-    expect(hasCandidateModel).toBeTruthy();
+    // P1-022：候选模型阶次在 Collapse 折叠面板中，改用"预览/开始辨识"按钮验证 Phase 2 UI
+    const hasPhase2Ui = /预览可辨识片段|开始辨识/i.test(pageText);
+    expect(hasPhase2Ui).toBeTruthy();
 
     // 验证"预览可辨识片段"按钮存在（Phase 2 新增）
     const previewBtn = page.getByRole('button', { name: /预览可辨识片段/i }).first();
@@ -261,13 +266,13 @@ test.describe('回路整定 E2E', () => {
     expect(hasIdentifyBtn).toBeTruthy();
 
     // 核心验证点：Phase 2 辨识策略相关 UI 元素渲染正常
-    expect(page.url()).toContain('/tuning/model');
+    expect(page.url()).toContain('/tuning/flow/model');
   });
 
   // Phase 2 新增：多 PID 对比模式
   test('E2E-TUNE-007: 闭环仿真 Phase 2 多 PID 对比模式', async ({ page }) => {
-    await page.goto('/tuning/simulation');
-    await page.waitForLoadState('networkidle');
+    await page.goto('/tuning/flow/simulation');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证仿真模式切换区域存在
@@ -297,6 +302,6 @@ test.describe('回路整定 E2E', () => {
     }
 
     // 核心验证点：多 PID 对比模式可切换
-    expect(page.url()).toContain('/tuning/simulation');
+    expect(page.url()).toContain('/tuning/flow/simulation');
   });
 });

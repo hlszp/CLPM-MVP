@@ -278,14 +278,19 @@ class TestExcitationDetection:
         assert "数据点不足" in result.verdict
 
     def test_closed_loop_sufficient_excitation(self):
-        """闭环 FOPDT 多 SP 阶跃应判定为激励充分。"""
+        """闭环 FOPDT 多 SP 阶跃应判定为激励充分。
+
+        V62-P1-010: 死区过滤微噪声后，OP 真实方向变化暴露。SP 阶跃
+        0→10→15→8 使 OP 方向为升→升→降，真实变号 1 次（噪声变号被死区
+        过滤）；阈值已降为 1，仍判激励充分。
+        """
         sp = _sp_steps(1200, [(50, 10.0), (400, 15.0), (800, 8.0)])
         y, u = _simulate_closed_loop_fopdt(
             sp, K=2.0, tau=30.0, theta=5.0, kp=2.0, ti=20.0, noise_std=0.5, seed=42
         )
         result = check_excitation(u, y, d=5)
         assert result.is_sufficient
-        assert result.significant_changes >= 2
+        assert result.significant_changes >= 1
 
     def test_excitation_score_range(self):
         """激励得分应在 0-100 区间。"""
@@ -294,6 +299,87 @@ class TestExcitationDetection:
         result = check_excitation(u, y, d=3)
         score = excitation_score(result.condition_number, result.significant_changes)
         assert 0.0 <= score <= 100.0
+
+
+class TestV62P1ExcitationGates:
+    """V62-P1-009/010/011: 激励门禁改进（量程归一化/死区/标准化不变性）."""
+
+    def test_op_span_normalization_passes_when_pv_range_tiny(self):
+        """P1-009: OP 量程归一化——PV range 极小但 OP 走过量程 10% 应通过.
+
+        无 op_span 时回退到 u_range/y_range，PV range 极小会导致比值虚高或
+        误判；提供 op_span 后按物理量程判断，消除跨量纲比值。
+        """
+        # OP 在 [40, 50] 内变化（量程 0-100，走了 10%）
+        u = _prbs(500, seed=7) * 5.0 + 45.0  # range ≈ 5，量程内 5%
+        # PV range 极小（K=0.01，PV 几乎不变）
+        y = _simulate_open_loop_fopdt(K=0.01, tau=20.0, theta=3.0, u=u, noise_std=0.001, seed=7)
+        # 无 op_span：u_range/y_range 可能虚高（y_range 极小）→ 通过但不合理
+        # 有 op_span=100：u_range/100 ≈ 0.05 > 0.01 → 通过（物理正确）
+        result = check_excitation(u, y, d=3, op_span=100.0)
+        assert result.is_sufficient
+
+    def test_op_span_normalization_fails_when_op_range_too_small(self):
+        """P1-009: OP 走过量程 < 1% 应判激励不足（即使 PV range 大）."""
+        # OP 仅在 [50.0, 50.05] 变化（量程 0-100，走了 0.05%）
+        u = np.ones(500) + 0.05 * np.sin(np.arange(500))
+        y = _simulate_open_loop_fopdt(K=10.0, tau=20.0, theta=3.0, u=u, noise_std=0.01, seed=7)
+        # 有 op_span=100：0.05/100 = 0.0005 < 0.01 → 不足
+        result = check_excitation(u, y, d=3, op_span=100.0)
+        assert not result.is_sufficient
+        assert "量程" in result.verdict
+
+    def test_deadband_filters_micro_noise(self):
+        """P1-010: 死区过滤微噪声——纯噪声 OP 不应产生大量方向变化."""
+        # OP = 常值 + 微噪声（量级 1e-8）
+        rng = np.random.default_rng(42)
+        u = np.full(500, 50.0) + rng.normal(0, 1e-8, 500)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.1, seed=42)
+        result = check_excitation(u, y, d=3, op_span=100.0)
+        # 死区 = 0.01 * u_range。u_range ≈ 几个 1e-8，死区 ≈ 1e-10。
+        # 微噪声 du 大多 < 死区 → 方向变化 ≈ 0
+        # 但 u_range 本身 < 1e-9 会在 "OP 无变化" 处被拦
+        assert not result.is_sufficient
+
+    def test_deadband_preserves_real_direction_changes(self):
+        """P1-010: 真实阶跃方向变化不被死区过滤."""
+        # OP 多段阶跃（真实方向变化 ≥ 2）
+        u = np.zeros(500)
+        u[100:] = 10.0
+        u[250:] = 5.0
+        u[400:] = 8.0
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.1, seed=42)
+        result = check_excitation(u, y, d=3, op_span=100.0)
+        assert result.significant_changes >= 2
+        assert result.is_sufficient
+
+    def test_unit_scale_invariance_condition_number(self):
+        """P1-011: 单位缩放不变性——OP/PV 同时缩放后条件数不变.
+
+        标准化前，OP（%）与 PV（温度）量级差异使条件数受单位影响；
+        列标准化后条件数仅反映列相关性，与单位无关。
+        """
+        u = _prbs(500, seed=42)
+        y = _simulate_open_loop_fopdt(K=2.0, tau=30.0, theta=5.0, u=u, noise_std=0.1, seed=42)
+        # 原始单位
+        r1 = check_excitation(u, y, d=5)
+        # OP 放大 100 倍（% → 绝对值），PV 放大 10 倍（温度单位变化）
+        r2 = check_excitation(u * 100.0, y * 10.0, d=5)
+        # 标准化后条件数应几乎相同（浮点容差内）
+        assert math.isclose(r1.condition_number, r2.condition_number, rel_tol=1e-9)
+        # 判定结果一致
+        assert r1.is_sufficient == r2.is_sufficient
+        assert r1.significant_changes == r2.significant_changes
+
+    def test_unit_scale_invariance_verdict_consistent(self):
+        """P1-011: 单位缩放后 verdict 的充分性判定一致."""
+        u = _prbs(300, seed=99) * 5.0 + 50.0
+        y = _simulate_open_loop_fopdt(K=1.5, tau=25.0, theta=2.0, u=u, noise_std=0.2, seed=99)
+        r1 = check_excitation(u, y, d=2, op_span=100.0)
+        # 缩放 OP（仍提供对应缩放后的 op_span）
+        r2 = check_excitation(u * 10.0, y * 100.0, d=2, op_span=1000.0)
+        assert r1.is_sufficient == r2.is_sufficient
+        assert math.isclose(r1.condition_number, r2.condition_number, rel_tol=1e-9)
 
 
 # ---------------------------------------------------------------------------

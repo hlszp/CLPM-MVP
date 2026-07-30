@@ -158,10 +158,11 @@ test.describe('诊断中心 E2E', () => {
 
     // 回归：旧实现会让 content.vue 的 out-in 链停在空节点，
     // 详情及后续 SPA 页面均白屏。
-    await page.getByRole('menuitem', { name: '诊断记录' }).click();
-    await expect(page).toHaveURL(/\/diagnosis\/records$/);
+    // V62-P1-018/020：诊断记录已合并到诊断任务（hideInMenu），改点"诊断任务"
+    await page.getByRole('menuitem', { name: '诊断任务' }).click();
+    await expect(page).toHaveURL(/\/diagnosis\/tasks/);
     await expect(
-      page.getByText('诊断记录', { exact: true }).first(),
+      page.getByText('诊断任务', { exact: true }).first(),
     ).toBeVisible();
   });
 });

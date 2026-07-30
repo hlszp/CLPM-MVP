@@ -15,6 +15,10 @@ import type { RouteRecordRaw } from 'vue-router';
  * - 移除 DiagnosisStatistics 路由（能力已合并入 DiagnosisOverview）
  * - 原 ab-compare.vue 文件保留，便于回退（list.vue/waveform.vue/statistics.vue 已清理）
  *
+ * V62-P1-018/020 IA 减负：
+ * - DiagnosisTasks → task-center.vue（Tabs 合并进行中/历史）
+ * - DiagnosisRecords → redirect /diagnosis/tasks?tab=history（hideInMenu，兼容旧书签）
+ *
  * 角色权限（PRD §3）：
  * - ADMIN：全部（含配置）
  * - IC_ENGINEER：全部（含异常跟踪编辑）
@@ -63,7 +67,7 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'DiagnosisTasks',
         path: '/diagnosis/tasks',
-        component: () => import('#/views/diagnosis/tasks.vue'),
+        component: () => import('#/views/diagnosis/task-center.vue'),
         meta: {
           authority: [
             'ADMIN',
@@ -76,10 +80,11 @@ const routes: RouteRecordRaw[] = [
           title: '诊断任务',
         },
       },
+      // V62-P1-018/020: 诊断记录合并到诊断任务 Tabs，旧路由重定向兼容
       {
         name: 'DiagnosisRecords',
         path: '/diagnosis/records',
-        component: () => import('#/views/diagnosis/records.vue'),
+        redirect: '/diagnosis/tasks?tab=history',
         meta: {
           authority: [
             'ADMIN',
@@ -88,7 +93,7 @@ const routes: RouteRecordRaw[] = [
             'PE_ENGINEER',
             'SPONSOR',
           ],
-          icon: 'lucide:archive',
+          hideInMenu: true,
           title: '诊断记录',
         },
       },

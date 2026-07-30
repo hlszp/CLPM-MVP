@@ -19,7 +19,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { TuningApi } from '#/api/tuning';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -30,7 +30,8 @@ import {
   Button,
   Card,
   Checkbox,
-  DatePicker,
+  Collapse,
+  CollapsePanel,
   Descriptions,
   DescriptionsItem,
   Form,
@@ -44,10 +45,14 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getLoopListApi } from '#/api/loop';
 import { identifyModelApi, previewSegmentsApi } from '#/api/tuning';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmStateOverlay,
+} from '#/components/clpm';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useTuningStore } from '#/store/tuning';
 
@@ -56,11 +61,14 @@ defineOptions({ name: 'TuningModel' });
 const router = useRouter();
 const tuningStore = useTuningStore();
 const { isDark, themeColors } = useClpmTheme();
+const { canEditAdvancedParams } = useClpmRoles();
 
 const loading = ref(false);
 const segmentLoading = ref(false);
-const loopOptions = ref<{ label: string; value: string }[]>([]);
 const riskConfirmed = ref(false);
+
+/** P1-023：错误状态（辨识失败时持久展示，带重试） */
+const errorState = ref<{ detail: string; message: string } | null>(null);
 
 /** 阶跃实验路径结果（STEP_ONLY 策略，同步返回） */
 const stepResult = ref<null | TuningApi.IdentifyResult>(null);
@@ -76,17 +84,22 @@ const segments = ref<null | TuningApi.IdentifySegmentsResult>(null);
 
 /** 筛选表单状态 */
 const filter = reactive({
-  loopId: '' as string,
-  timeRange: [dayjs().subtract(24, 'hour'), dayjs()] as [
-    dayjs.Dayjs,
-    dayjs.Dayjs,
-  ],
   identifyStrategy: 'AUTO' as TuningApi.IdentifyStrategy,
   candidateModelTypes: ['FOPDT', 'SOPDT'] as TuningApi.HistoryModelType[],
   thetaEstimate: undefined as number | undefined,
   // STEP_ONLY 路径仍用 modelType + method
   modelType: 'FOPDT' as TuningApi.ModelType,
   method: 'TWO_POINT' as TuningApi.IdentifyMethod,
+});
+
+/** P1-021：回路与时间窗由 flow 统一上下文头选择，store 代理 */
+const loopId = computed(() => tuningStore.currentLoopId);
+const timeRange = computed<[dayjs.Dayjs, dayjs.Dayjs]>(() => {
+  const r = tuningStore.currentLoopTimeRange;
+  if (r && r[0] && r[1]) {
+    return [dayjs(r[0]), dayjs(r[1])] as [dayjs.Dayjs, dayjs.Dayjs];
+  }
+  return [dayjs().subtract(24, 'hour'), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs];
 });
 
 /** 辨识策略选项 */
@@ -310,46 +323,26 @@ const progressStatus = computed<'active' | 'exception' | 'normal' | 'success'>(
   },
 );
 
-/** 加载回路下拉选项 */
-async function loadLoopOptions() {
-  try {
-    const data = await getLoopListApi({ page: 1, pageSize: 100 });
-    const list = data.items || [];
-    loopOptions.value = list.map((l) => ({
-      label: l.tagName,
-      value: l.loopId,
-    }));
-    if (list.length > 0 && !filter.loopId) {
-      const first = list[0];
-      if (first) {
-        filter.loopId = first.loopId;
-      }
-    }
-  } catch {
-    // 错误已由拦截器处理
-  }
-}
-
 /** 执行模型辨识 */
 async function handleIdentify() {
-  if (!filter.loopId) {
+  if (!loopId.value) {
     message.warning('请选择回路');
     return;
   }
-  if (!filter.timeRange || filter.timeRange.length !== 2) {
+  if (!timeRange.value || timeRange.value.length !== 2) {
     message.warning('请选择时间范围');
     return;
   }
-  const [start, end] = filter.timeRange;
+  const [start, end] = timeRange.value;
   if (!start || !end) {
     message.warning('请选择时间范围');
     return;
   }
 
-  // 同步当前回路到 store
+  // P1-021：回路由统一上下文头选择并同步 store，此处不再 setCurrentLoop
   riskConfirmed.value = false;
-  const selectedLoop = loopOptions.value.find((l) => l.value === filter.loopId);
-  tuningStore.setCurrentLoop(filter.loopId, selectedLoop?.label || '');
+  // P1-023：清空上一次错误状态
+  errorState.value = null;
 
   if (isStepOnly.value) {
     // STEP_ONLY 走同步阶跃实验路径（向后兼容）
@@ -360,7 +353,7 @@ async function handleIdentify() {
     );
     try {
       const result = await identifyModelApi({
-        loopId: filter.loopId,
+        loopId: loopId.value,
         startTime: start.toISOString(),
         endTime: end.toISOString(),
         modelType: filter.modelType,
@@ -372,8 +365,12 @@ async function handleIdentify() {
       nextTick(() => renderFittedCurve());
       hide();
       message.success('阶跃实验辨识完成');
-    } catch {
+    } catch (err) {
       hide();
+      errorState.value = {
+        message: '阶跃实验辨识失败',
+        detail: err instanceof Error ? err.message : '请检查回路数据和时间窗后重试',
+      };
     } finally {
       loading.value = false;
     }
@@ -386,7 +383,7 @@ async function handleIdentify() {
   tuningStore.taskProgress = null;
   try {
     const taskId = await tuningStore.submitIdentify({
-      loopId: filter.loopId,
+      loopId: loopId.value,
       startTime: start.toISOString(),
       endTime: end.toISOString(),
       identifyStrategy: filter.identifyStrategy,
@@ -403,27 +400,34 @@ async function handleIdentify() {
         message.success('历史数据辨识完成');
         nextTick(() => renderFittedCurve());
       } else if (progress.status === 'FAILED') {
-        message.error(`辨识失败：${progress.error || '未知错误'}`);
+        errorState.value = {
+          message: '历史数据辨识失败',
+          detail: progress.error || '未知错误，请检查数据质量后重试',
+        };
       }
     });
-  } catch {
+  } catch (err) {
     loading.value = false;
+    errorState.value = {
+      message: '辨识任务提交失败',
+      detail: err instanceof Error ? err.message : '网络错误，请稍后重试',
+    };
   }
 }
 
 /** 预览可辨识片段 */
 async function handlePreviewSegments() {
-  if (!filter.loopId || !filter.timeRange || filter.timeRange.length !== 2) {
+  if (!loopId.value || !timeRange.value || timeRange.value.length !== 2) {
     message.warning('请先选择回路和时间范围');
     return;
   }
-  const [start, end] = filter.timeRange;
+  const [start, end] = timeRange.value;
   if (!start || !end) return;
 
   segmentLoading.value = true;
   try {
     segments.value = await previewSegmentsApi({
-      loopId: filter.loopId,
+      loopId: loopId.value,
       startTime: start.toISOString(),
       endTime: end.toISOString(),
     });
@@ -544,12 +548,19 @@ function handleUseForTuning() {
     );
     return;
   }
+  // P1-019：同步模型来源门禁字段到 store，支撑 flow 可恢复
+  tuningStore.setModelSource(
+    provenance.modelSource ?? '',
+    provenance.sourceRecordId ?? '',
+    provenance.riskConfirmed === 'true',
+  );
+  tuningStore.currentStep = 1;
   router.push({
-    path: '/tuning/algorithm',
+    path: '/tuning/flow/algorithm',
     query: {
       modelType: result.modelType,
       modelParams: JSON.stringify(result.params),
-      loopId: filter.loopId,
+      loopId: loopId.value,
       ...provenance,
     },
   });
@@ -595,20 +606,23 @@ function handleGoSimulation() {
     );
     return;
   }
+  // P1-019：同步模型来源门禁字段到 store，支撑 flow 可恢复
+  tuningStore.setModelSource(
+    provenance.modelSource ?? '',
+    provenance.sourceRecordId ?? '',
+    provenance.riskConfirmed === 'true',
+  );
+  tuningStore.currentStep = 2;
   router.push({
-    path: '/tuning/simulation',
+    path: '/tuning/flow/simulation',
     query: {
       modelType: result.modelType,
       modelParams: JSON.stringify(result.params),
-      loopId: filter.loopId,
+      loopId: loopId.value,
       ...provenance,
     },
   });
 }
-
-onMounted(() => {
-  loadLoopOptions();
-});
 
 /** 深色模式切换时重绘 ECharts 图表 */
 watch(isDark, () => {
@@ -653,27 +667,6 @@ watch(
 
     <ClpmDataCanvas class="mb-4 mt-4" title="辨识筛选条件">
       <Form layout="inline">
-        <FormItem label="回路选择">
-          <Select
-            v-model:value="filter.loopId"
-            placeholder="请选择回路"
-            style="width: 220px"
-            show-search
-            :options="loopOptions"
-            :filter-option="
-              (input: string, option: any) =>
-                option.label.toLowerCase().includes(input.toLowerCase())
-            "
-          />
-        </FormItem>
-        <FormItem label="时间范围">
-          <DatePicker.RangePicker
-            v-model:value="filter.timeRange"
-            :show-time="{ format: 'HH:mm' }"
-            format="YYYY-MM-DD HH:mm"
-            :placeholder="['开始时间', '结束时间']"
-          />
-        </FormItem>
         <FormItem label="辨识策略">
           <Select
             v-model:value="filter.identifyStrategy"
@@ -698,24 +691,33 @@ watch(
           </FormItem>
         </template>
         <template v-else>
-          <FormItem label="候选模型阶次">
-            <Select
-              v-model:value="filter.candidateModelTypes"
-              mode="multiple"
-              style="width: 280px"
-              :options="historyModelTypeOptions"
-              placeholder="并行辨识多种阶次"
-            />
-          </FormItem>
-          <FormItem label="纯滞后预估 θ (秒)">
-            <InputNumber
-              v-model:value="filter.thetaEstimate"
-              :min="0"
-              :precision="2"
-              placeholder="留空则采用 2Ts 启发值"
-              style="width: 220px"
-            />
-          </FormItem>
+          <!-- P1-022：高级参数仅 ADMIN/EXPERT 可见，IC_ENGINEER 使用默认值 -->
+          <Collapse
+            v-if="canEditAdvancedParams"
+            :bordered="false"
+            class="advanced-params-collapse"
+          >
+            <CollapsePanel key="advanced" header="高级参数">
+              <FormItem label="候选模型阶次">
+                <Select
+                  v-model:value="filter.candidateModelTypes"
+                  mode="multiple"
+                  style="width: 280px"
+                  :options="historyModelTypeOptions"
+                  placeholder="并行辨识多种阶次"
+                />
+              </FormItem>
+              <FormItem label="纯滞后预估 θ (秒)">
+                <InputNumber
+                  v-model:value="filter.thetaEstimate"
+                  :min="0"
+                  :precision="2"
+                  placeholder="留空则采用 2Ts 启发值"
+                  style="width: 220px"
+                />
+              </FormItem>
+            </CollapsePanel>
+          </Collapse>
           <FormItem>
             <Button :loading="segmentLoading" @click="handlePreviewSegments">
               预览可辨识片段
@@ -731,6 +733,28 @@ watch(
     </ClpmDataCanvas>
 
     <Spin :spinning="loading">
+      <!-- P1-023：错误状态覆盖 -->
+      <ClpmDataCanvas v-if="errorState" title="辨识结果" class="mb-4">
+        <ClpmStateOverlay
+          status="error"
+          :error-message="errorState.message"
+          :error-detail="errorState.detail"
+          @retry="handleIdentify"
+        />
+      </ClpmDataCanvas>
+
+      <!-- P1-023：空状态覆盖（无结果/无进度/无错误/无片段时） -->
+      <ClpmDataCanvas
+        v-else-if="!currentResult && !isInconclusive && !taskProgress && !segments"
+        title="辨识结果"
+        class="mb-4"
+      >
+        <ClpmStateOverlay
+          status="empty"
+          empty-description="暂无辨识结果，请选择回路和时间窗后点击「开始辨识」"
+        />
+      </ClpmDataCanvas>
+
       <!-- 异步任务进度条（Phase 2） -->
       <ClpmDataCanvas
         v-if="taskProgress && !isStepOnly"
@@ -1022,16 +1046,6 @@ watch(
           </Descriptions>
         </Card>
       </div>
-
-      <!-- 空状态 -->
-      <ClpmDataCanvas
-        v-if="!currentResult && !isInconclusive && !loading"
-        title="模型辨识结果"
-      >
-        <div class="flex h-64 items-center justify-center text-gray-400">
-          请选择回路和时间范围，点击「开始辨识」进行模型辨识
-        </div>
-      </ClpmDataCanvas>
 
       <!-- 下一步动作 -->
       <ClpmDataCanvas

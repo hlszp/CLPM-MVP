@@ -37,6 +37,24 @@ vi.mock('#/components/clpm', () => ({
     props: ['subtitle', 'title'],
     template: '<header>{{ title }}{{ subtitle }}<slot /></header>',
   },
+  // P1-023：状态覆盖组件 mock
+  ClpmStateOverlay: {
+    props: ['status', 'emptyDescription', 'errorMessage', 'errorDetail'],
+    emits: ['retry'],
+    template: `<div class="state-overlay-stub" :data-status="status">
+      <span v-if="status === 'empty'" class="overlay-empty">{{ emptyDescription }}</span>
+      <span v-else-if="status === 'error'" class="overlay-error">{{ errorMessage }}{{ errorDetail }}</span>
+      <slot v-else />
+      <button v-if="status === 'error'" class="overlay-retry" @click="$emit('retry')">重试</button>
+    </div>`,
+  },
+}));
+
+// P1-022：默认以 ADMIN 身份测试，高级参数可见
+vi.mock('#/composables/use-clpm-roles', () => ({
+  useClpmRoles: () => ({
+    canEditAdvancedParams: { value: true },
+  }),
 }));
 
 vi.mock('ant-design-vue', () => ({
@@ -56,6 +74,14 @@ vi.mock('ant-design-vue', () => ({
     props: ['checked'],
     template:
       '<label><input data-testid="manual-risk-confirmation" type="checkbox" :checked="checked" @change="$emit(\'update:checked\', $event.target.checked)" /><slot /></label>',
+  },
+  Collapse: {
+    props: ['bordered'],
+    template: '<div class="collapse-stub"><slot /></div>',
+  },
+  CollapsePanel: {
+    props: ['header', 'key'],
+    template: '<div class="collapse-panel-stub"><div>{{ header }}</div><slot /></div>',
   },
   Descriptions: { template: '<dl><slot /></dl>' },
   DescriptionsItem: {
@@ -209,7 +235,7 @@ describe('TuningAlgorithm 模型来源门禁', () => {
 
     await findButton(wrapper, '进行闭环仿真')!.trigger('click');
     expect(routerPushMock).toHaveBeenCalledWith({
-      path: '/tuning/simulation',
+      path: '/tuning/flow/simulation',
       query: expect.objectContaining({
         modelSource: 'IDENTIFICATION_RECORD',
         riskConfirmed: 'true',
@@ -218,3 +244,92 @@ describe('TuningAlgorithm 模型来源门禁', () => {
     });
   });
 });
+
+describe('TuningAlgorithm 状态覆盖（V62-P1-023）', () => {
+  beforeEach(() => {
+    setQuery({
+      loopId: 'loop-1',
+      modelParams: JSON.stringify({ K: 1.2, tau: 30, theta: 2 }),
+      modelSource: 'IDENTIFICATION_RECORD',
+      modelType: 'FOPDT',
+      riskConfirmed: 'true',
+      sourceRecordId: 'record-001',
+    });
+    routerPushMock.mockReset();
+    getTuningMethodsApiMock.mockReset();
+    tunePidApiMock.mockReset();
+    createTuningTaskApiMock.mockReset();
+    getTuningMethodsApiMock.mockResolvedValue([
+      {
+        applicableModel: 'FOPDT',
+        code: 'IMC',
+        description: '测试算法',
+        name: 'IMC',
+        params: [],
+      },
+    ]);
+    tunePidApiMock.mockResolvedValue({
+      algorithm: 'IMC',
+      algorithmVersion: 'v1',
+      recommendedPid: { kp: 1, ti: 10, td: 0 },
+    });
+  });
+
+  it('empty：初次进入无结果时显示空状态覆盖', async () => {
+    const wrapper = mount(TuningAlgorithm);
+    await flushPromises();
+
+    const emptyOverlay = wrapper.find('.overlay-empty');
+    expect(emptyOverlay.exists()).toBe(true);
+    expect(emptyOverlay.text()).toContain('请输入模型参数并选择算法');
+  });
+
+  it('error：整定失败时显示错误覆盖和详情', async () => {
+    tunePidApiMock.mockRejectedValue(new Error('模型参数超出物理边界'));
+
+    const wrapper = mount(TuningAlgorithm);
+    await flushPromises();
+
+    await findButton(wrapper, '执行整定')!.trigger('click');
+    await flushPromises();
+
+    const errorOverlay = wrapper.find('.overlay-error');
+    expect(errorOverlay.exists()).toBe(true);
+    expect(errorOverlay.text()).toContain('PID 整定失败');
+    expect(errorOverlay.text()).toContain('模型参数超出物理边界');
+  });
+
+  it('error→retry：点击重试按钮重新触发整定', async () => {
+    tunePidApiMock.mockRejectedValueOnce(new Error('首次整定失败'));
+
+    const wrapper = mount(TuningAlgorithm);
+    await flushPromises();
+
+    await findButton(wrapper, '执行整定')!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.overlay-error').exists()).toBe(true);
+    expect(tunePidApiMock).toHaveBeenCalledTimes(1);
+
+    // 重试按钮存在且可点击
+    const retryButton = wrapper.find('.overlay-retry');
+    expect(retryButton.exists()).toBe(true);
+    await retryButton.trigger('click');
+    await flushPromises();
+
+    expect(tunePidApiMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('success：整定成功后错误覆盖消失，结果正常展示', async () => {
+    const wrapper = mount(TuningAlgorithm);
+    await flushPromises();
+
+    await findButton(wrapper, '执行整定')!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.overlay-error').exists()).toBe(false);
+    expect(wrapper.find('.overlay-empty').exists()).toBe(false);
+    expect(wrapper.text()).toContain('推荐比例增益');
+  });
+});
+

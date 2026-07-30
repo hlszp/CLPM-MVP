@@ -48,14 +48,35 @@ export interface LoginResult {
 }
 
 /**
+ * Token 缓存：同一角色的 JWT 在 TTL 内复用，避免连续 E2E 测试
+ * 触发登录接口速率限制（10 次/分钟/IP + 10 次/分钟/账号）。
+ * JWT 有效期 30 分钟，缓存 TTL 25 分钟（留 5 分钟缓冲）。
+ */
+const _tokenCache = new Map<string, { result: LoginResult; expiresAt: number }>();
+const TOKEN_CACHE_TTL = 25 * 60 * 1000;
+
+/** 清除 token 缓存（登出或测试结束时调用，避免复用失效 token） */
+export function clearTokenCache(username?: string): void {
+  if (username) {
+    _tokenCache.delete(username);
+  } else {
+    _tokenCache.clear();
+  }
+}
+
+/**
  * 通过 UI 操作登录：填写用户名密码 + 点击登录按钮
+ *
+ * v6.2 P1-023：登录等待从 networkidle 改为 domcontentloaded，
+ * 避免 SignalR 实时订阅持续网络活动导致 networkidle 永不触发；
+ * 超时从 15s 提升至 30s 以容忍后端冷启动。
  */
 export async function loginViaUI(
   page: Page,
   username: string,
   password: string,
 ): Promise<void> {
-  await page.goto(LOGIN_PATH, { waitUntil: 'networkidle' });
+  await page.goto(LOGIN_PATH, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1000);
 
   // 填写用户名
@@ -70,35 +91,117 @@ export async function loginViaUI(
   const loginButton = page.getByText('登录', { exact: true });
   await loginButton.click();
 
-  // 等待跳转离开登录页（最多 15 秒）
+  // 等待跳转离开登录页（最多 30 秒，容忍后端冷启动/DB 连接池预热）
   await page.waitForURL((url) => !url.pathname.includes('/auth/login'), {
-    timeout: 15_000,
+    timeout: 30_000,
   });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 }
 
 /**
- * 通过 API 登录获取 token（用于需要 token 的辅助场景）
+ * 混合登录：API 预取 token + 浏览器端 route mock 加速
+ *
+ * v6.2 P1-023：后端在连续 E2E 测试中因 SignalR 订阅/Celery 任务
+ * 逐渐变慢，纯 UI 登录在后期测试中超时。此方案：
+ * 1. 通过 API 直接获取 token（单次 HTTP 请求，比 UI 流程快）
+ * 2. Mock 浏览器端 /auth/login 和 /auth/me 响应（前端正常流程处理 token）
+ * 3. 填写表单并提交（前端走完整鉴权流程，token 持久化由前端管理）
+ */
+export async function loginViaUIWithMock(
+  page: Page,
+  request: APIRequestContext,
+  username: string,
+  password: string,
+): Promise<void> {
+  // 1. API 预取 token（缓存命中直接返回，未命中走 API + 429 重试）
+  const loginResult = await loginViaApi(request, username, password);
+
+  // 2. Mock 浏览器端 API 响应，避免后端慢请求
+  await page.route(/\/api\/v1\/auth\/login/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, message: 'success', data: loginResult }),
+    });
+  });
+  await page.route(/\/api\/v1\/auth\/me/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, message: 'success', data: loginResult.user }),
+    });
+  });
+
+  // 3. 填写表单并提交（前端走完整鉴权流程）
+  await page.goto(LOGIN_PATH, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(500);
+  await page.getByPlaceholder('请输入用户名').fill(username);
+  await page.getByPlaceholder('请输入密码').fill(password);
+  await page.getByText('登录', { exact: true }).click();
+
+  // 等待跳转离开登录页（mock 了 login/me，但菜单/权限等请求仍走后端，需留足时间）
+  await page.waitForURL((url) => !url.pathname.includes('/auth/login'), {
+    timeout: 30_000,
+  });
+}
+
+/**
+ * 通过 API 登录获取 token（带缓存 + 429 重试）
+ *
+ * v6.2 P1-023：后端登录限流 10 次/分钟，60 个 E2E 测试频繁登录会触发 429。
+ * - 同一用户名的 token 在 25 分钟内复用（JWT 有效期 30 分钟）
+ * - 429 速率限制时等待 5s 重试，最多 3 次
+ * - 其他错误（超时等）等待 2s 重试
  */
 export async function loginViaApi(
   request: APIRequestContext,
   username: string,
   password: string,
 ): Promise<LoginResult> {
-  const resp = await request.post(`${API_BASE_URL}/auth/login`, {
-    data: { username, password, rememberMe: false },
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!resp.ok()) {
-    throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+  // 1. 缓存命中直接返回
+  const cached = _tokenCache.get(username);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
   }
 
-  const body = await resp.json();
-  if (body.code !== 0 && body.code !== '0') {
-    throw new Error(`登录失败: ${body.message ?? '未知错误'}`);
+  // 2. API 请求（带重试）
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const resp = await request.post(`${API_BASE_URL}/auth/login`, {
+        data: { username, password, rememberMe: false },
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 15_000,
+      });
+
+      if (resp.status() === 429) {
+        throw new Error('登录接口速率限制 (429)');
+      }
+      if (!resp.ok()) {
+        throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+      }
+
+      const body = await resp.json();
+      if (body.code !== 0 && body.code !== '0') {
+        throw new Error(`登录失败: ${body.message ?? '未知错误'}`);
+      }
+
+      const result = body.data as LoginResult;
+      // 3. 缓存 token（25 分钟 TTL）
+      _tokenCache.set(username, {
+        result,
+        expiresAt: Date.now() + TOKEN_CACHE_TTL,
+      });
+      return result;
+    } catch (e) {
+      lastError = e;
+      if (attempt < 2) {
+        const is429 = e instanceof Error && e.message.includes('429');
+        await new Promise((r) => setTimeout(r, is429 ? 5000 : 2000));
+      }
+    }
   }
-  return body.data;
+  throw lastError;
 }
 
 /**
@@ -113,6 +216,8 @@ export async function clearAccessToken(page: Page): Promise<void> {
     localStorage.clear();
     sessionStorage.clear();
   });
+  // 清除 token 缓存，避免登出后复用失效 token
+  clearTokenCache();
 }
 
 /** AuthFixture 暴露给测试用例的能力 */
@@ -124,10 +229,11 @@ export interface AuthFixture {
 }
 
 export const test = base.extend<AuthFixture>({
-  loginAs: async ({ page }, use) => {
+  loginAs: async ({ page, request }, use) => {
     const loginAs = async (role: ClpmRole): Promise<void> => {
       const account = ACCOUNTS[role];
-      await loginViaUI(page, account.username, account.password);
+      // v6.2 P1-023：使用 mock 登录避免后端在连续 E2E 测试中变慢导致超时
+      await loginViaUIWithMock(page, request, account.username, account.password);
     };
     await use(loginAs);
   },

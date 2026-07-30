@@ -32,11 +32,13 @@ class TaskType(StrEnum):
         STANDARD: 标准评估任务（每小时定时，全量回路覆盖）
         CUSTOM: 自定义评估任务（用户按需触发，选定回路/指标/时间范围）
         BACKFILL: 历史重算任务（按时间窗批量重算，覆盖标准快照）
+        TUNING: 回路整定任务（辨识/整定/仿真异步任务，V62-P1-013 接入 TaskTracker）
     """
 
     STANDARD = "STANDARD"
     CUSTOM = "CUSTOM"
     BACKFILL = "BACKFILL"
+    TUNING = "TUNING"
 
 
 class TaskStatus(StrEnum):

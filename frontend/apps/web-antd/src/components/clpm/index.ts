@@ -4,11 +4,13 @@ export { default as ClpmDataCanvas } from './data-canvas.vue';
 export { default as ClpmKpiCard } from './kpi-card.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
 export type { KpiStripItem } from './kpi-strip.vue';
+export { default as ClpmLoopContextHeader } from './loop-context-header.vue';
 export { default as ClpmNumeric } from './numeric.vue';
 export { default as ClpmObjectSummaryBar } from './object-summary-bar.vue';
 export type { SummaryAction, SummaryItem } from './object-summary-bar.vue';
 export { default as ClpmPageToolbar } from './page-toolbar.vue';
 export { default as ClpmRealtimeStatus } from './realtime-status.vue';
+export { default as ClpmStateOverlay } from './state-overlay.vue';
 export { default as ClpmStatusPanel } from './status-panel.vue';
 
 export { default as ClpmTagAssociationBadge } from './tag-association-badge.vue';
