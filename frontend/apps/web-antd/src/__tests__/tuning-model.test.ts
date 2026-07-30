@@ -71,6 +71,18 @@ vi.mock('#/components/clpm', () => ({
     props: ['subtitle', 'title'],
     template: '<header>{{ title }}{{ subtitle }}<slot /></header>',
   },
+  // P1-023：状态覆盖组件 mock，透传 props 以便断言
+  ClpmStateOverlay: {
+    props: ['status', 'emptyDescription', 'errorMessage', 'errorDetail', 'loadingTip', 'retryText', 'retryable'],
+    emits: ['retry'],
+    template: `<div class="state-overlay-stub" :data-status="status">
+      <span v-if="status === 'empty'" class="overlay-empty">{{ emptyDescription }}</span>
+      <span v-else-if="status === 'error'" class="overlay-error">{{ errorMessage }}{{ errorDetail }}</span>
+      <span v-else-if="status === 'loading'" class="overlay-loading">{{ loadingTip }}</span>
+      <slot v-else />
+      <button v-if="status === 'error' && retryable !== false" class="overlay-retry" @click="$emit('retry')">{{ retryText }}</button>
+    </div>`,
+  },
 }));
 
 vi.mock('#/components/metric/confidence-badge.vue', () => ({
@@ -475,3 +487,140 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
     >();
   });
 });
+
+describe('TuningModel 状态覆盖（V62-P1-023）', () => {
+  beforeEach(() => {
+    getLoopListApiMock.mockReset();
+    identifyModelApiMock.mockReset();
+    previewSegmentsApiMock.mockReset();
+    routerPushMock.mockReset();
+    submitIdentifyMock.mockReset();
+    tuningStore.identifyResult = null;
+    tuningStore.taskProgress = null;
+    tuningStore.currentLoopId = 'loop-1';
+    tuningStore.currentLoopTagName = 'FIC-101';
+    tuningStore.currentLoopTimeRange = [
+      '2026-07-29T00:00:00.000Z',
+      '2026-07-29T12:00:00.000Z',
+    ];
+    tuningStore.setCurrentLoop.mockReset();
+    tuningStore.setLoopTimeRange.mockReset();
+    tuningStore.startPolling.mockReset();
+
+    getLoopListApiMock.mockResolvedValue({
+      items: [{ loopId: 'loop-1', tagName: 'FIC-101' }],
+    });
+    submitIdentifyMock.mockResolvedValue('task-12345678');
+  });
+
+  it('empty：初次进入无结果时显示空状态覆盖', async () => {
+    const wrapper = mountModel();
+    await flushPromises();
+
+    const emptyOverlay = wrapper.find('.overlay-empty');
+    expect(emptyOverlay.exists()).toBe(true);
+    expect(emptyOverlay.text()).toContain('暂无辨识结果');
+  });
+
+  it('error：STEP_ONLY 阶跃辨识失败时显示错误覆盖', async () => {
+    identifyModelApiMock.mockRejectedValue(new Error('回路数据不足'));
+
+    const wrapper = mountModel();
+    await flushPromises();
+
+    // 切换到 STEP_ONLY 策略
+    const strategySelector = wrapper
+      .findAll('.select-stub')
+      .find((node) => node.find('[data-value="STEP_ONLY"]').exists());
+    await strategySelector!.get('[data-value="STEP_ONLY"]').trigger('click');
+    await nextTick();
+
+    await findButtonByText(wrapper, '开始辨识')!.trigger('click');
+    await flushPromises();
+
+    const errorOverlay = wrapper.find('.overlay-error');
+    expect(errorOverlay.exists()).toBe(true);
+    expect(errorOverlay.text()).toContain('阶跃实验辨识失败');
+    expect(errorOverlay.text()).toContain('回路数据不足');
+  });
+
+  it('error：异步辨识任务提交失败时显示错误覆盖', async () => {
+    submitIdentifyMock.mockRejectedValue(new Error('网络连接超时'));
+
+    const wrapper = mountModel();
+    await flushPromises();
+
+    await findButtonByText(wrapper, '开始辨识')!.trigger('click');
+    await flushPromises();
+
+    const errorOverlay = wrapper.find('.overlay-error');
+    expect(errorOverlay.exists()).toBe(true);
+    expect(errorOverlay.text()).toContain('辨识任务提交失败');
+    expect(errorOverlay.text()).toContain('网络连接超时');
+  });
+
+  it('error：异步轮询返回 FAILED 时显示错误覆盖', async () => {
+    submitIdentifyMock.mockResolvedValue('task-fail-001');
+    // startPolling 回调模拟任务失败
+    tuningStore.startPolling.mockImplementation(
+      (_taskId: string, onProgress: (p: TuningApi.TaskProgress) => void) => {
+        onProgress({
+          progress: 50,
+          status: 'FAILED',
+          error: '数据质量不达标',
+        } as TuningApi.TaskProgress);
+      },
+    );
+
+    const wrapper = mountModel();
+    await flushPromises();
+
+    await findButtonByText(wrapper, '开始辨识')!.trigger('click');
+    await flushPromises();
+
+    const errorOverlay = wrapper.find('.overlay-error');
+    expect(errorOverlay.exists()).toBe(true);
+    expect(errorOverlay.text()).toContain('历史数据辨识失败');
+    expect(errorOverlay.text()).toContain('数据质量不达标');
+  });
+
+  it('error→retry：点击重试按钮重新触发辨识', async () => {
+    identifyModelApiMock.mockRejectedValueOnce(new Error('首次失败'));
+
+    const wrapper = mountModel();
+    await flushPromises();
+
+    // 切换到 STEP_ONLY
+    const strategySelector = wrapper
+      .findAll('.select-stub')
+      .find((node) => node.find('[data-value="STEP_ONLY"]').exists());
+    await strategySelector!.get('[data-value="STEP_ONLY"]').trigger('click');
+    await nextTick();
+
+    await findButtonByText(wrapper, '开始辨识')!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.overlay-error').exists()).toBe(true);
+    expect(identifyModelApiMock).toHaveBeenCalledTimes(1);
+
+    // 第二次调用成功
+    identifyModelApiMock.mockResolvedValueOnce({
+      algorithmVersion: 'TUNE_v1.0',
+      dataPoints: 120,
+      fittingScore: 88,
+      modelType: 'FOPDT',
+      params: { K: 1.1, tau: 20, theta: 2 },
+      recordId: 'step-record-001',
+      stepValidationPassed: true,
+    });
+
+    // 点击重试
+    await wrapper.find('.overlay-retry').trigger('click');
+    await flushPromises();
+
+    expect(identifyModelApiMock).toHaveBeenCalledTimes(2);
+    // 重试成功后错误覆盖消失
+    expect(wrapper.find('.overlay-error').exists()).toBe(false);
+  });
+});
+

@@ -46,7 +46,11 @@ import {
 import dayjs from 'dayjs';
 
 import { identifyModelApi, previewSegmentsApi } from '#/api/tuning';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmStateOverlay,
+} from '#/components/clpm';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -62,6 +66,9 @@ const { canEditAdvancedParams } = useClpmRoles();
 const loading = ref(false);
 const segmentLoading = ref(false);
 const riskConfirmed = ref(false);
+
+/** P1-023：错误状态（辨识失败时持久展示，带重试） */
+const errorState = ref<{ detail: string; message: string } | null>(null);
 
 /** 阶跃实验路径结果（STEP_ONLY 策略，同步返回） */
 const stepResult = ref<null | TuningApi.IdentifyResult>(null);
@@ -334,6 +341,8 @@ async function handleIdentify() {
 
   // P1-021：回路由统一上下文头选择并同步 store，此处不再 setCurrentLoop
   riskConfirmed.value = false;
+  // P1-023：清空上一次错误状态
+  errorState.value = null;
 
   if (isStepOnly.value) {
     // STEP_ONLY 走同步阶跃实验路径（向后兼容）
@@ -356,8 +365,12 @@ async function handleIdentify() {
       nextTick(() => renderFittedCurve());
       hide();
       message.success('阶跃实验辨识完成');
-    } catch {
+    } catch (err) {
       hide();
+      errorState.value = {
+        message: '阶跃实验辨识失败',
+        detail: err instanceof Error ? err.message : '请检查回路数据和时间窗后重试',
+      };
     } finally {
       loading.value = false;
     }
@@ -387,11 +400,18 @@ async function handleIdentify() {
         message.success('历史数据辨识完成');
         nextTick(() => renderFittedCurve());
       } else if (progress.status === 'FAILED') {
-        message.error(`辨识失败：${progress.error || '未知错误'}`);
+        errorState.value = {
+          message: '历史数据辨识失败',
+          detail: progress.error || '未知错误，请检查数据质量后重试',
+        };
       }
     });
-  } catch {
+  } catch (err) {
     loading.value = false;
+    errorState.value = {
+      message: '辨识任务提交失败',
+      detail: err instanceof Error ? err.message : '网络错误，请稍后重试',
+    };
   }
 }
 
@@ -713,6 +733,28 @@ watch(
     </ClpmDataCanvas>
 
     <Spin :spinning="loading">
+      <!-- P1-023：错误状态覆盖 -->
+      <ClpmDataCanvas v-if="errorState" title="辨识结果" class="mb-4">
+        <ClpmStateOverlay
+          status="error"
+          :error-message="errorState.message"
+          :error-detail="errorState.detail"
+          @retry="handleIdentify"
+        />
+      </ClpmDataCanvas>
+
+      <!-- P1-023：空状态覆盖（无结果/无进度/无错误/无片段时） -->
+      <ClpmDataCanvas
+        v-else-if="!currentResult && !isInconclusive && !taskProgress && !segments"
+        title="辨识结果"
+        class="mb-4"
+      >
+        <ClpmStateOverlay
+          status="empty"
+          empty-description="暂无辨识结果，请选择回路和时间窗后点击「开始辨识」"
+        />
+      </ClpmDataCanvas>
+
       <!-- 异步任务进度条（Phase 2） -->
       <ClpmDataCanvas
         v-if="taskProgress && !isStepOnly"
@@ -1004,16 +1046,6 @@ watch(
           </Descriptions>
         </Card>
       </div>
-
-      <!-- 空状态 -->
-      <ClpmDataCanvas
-        v-if="!currentResult && !isInconclusive && !loading"
-        title="模型辨识结果"
-      >
-        <div class="flex h-64 items-center justify-center text-gray-400">
-          请选择回路和时间范围，点击「开始辨识」进行模型辨识
-        </div>
-      </ClpmDataCanvas>
 
       <!-- 下一步动作 -->
       <ClpmDataCanvas

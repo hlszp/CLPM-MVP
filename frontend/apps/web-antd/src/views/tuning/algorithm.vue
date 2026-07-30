@@ -38,7 +38,11 @@ import {
   getTuningMethodsApi,
   tunePidApi,
 } from '#/api/tuning';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmStateOverlay,
+} from '#/components/clpm';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 
 defineOptions({ name: 'TuningAlgorithm' });
@@ -49,6 +53,9 @@ const { canEditAdvancedParams } = useClpmRoles();
 
 const loading = ref(false);
 const saving = ref(false);
+
+/** P1-023：错误状态（整定失败时持久展示，带重试） */
+const errorState = ref<{ detail: string; message: string } | null>(null);
 const methods = ref<TuningApi.MethodInfo[]>([]);
 const tuneResult = ref<null | TuningApi.TuneResult>(null);
 
@@ -257,6 +264,7 @@ async function handleTune() {
   }
 
   loading.value = true;
+  errorState.value = null;
   const hide = message.loading(
     `正在使用 ${form.algorithm} 算法进行 PID 整定…`,
     0,
@@ -279,9 +287,12 @@ async function handleTune() {
     tuneResult.value = result;
     hide();
     message.success('PID 整定完成');
-  } catch {
+  } catch (err) {
     hide();
-    // 错误已由拦截器处理
+    errorState.value = {
+      message: 'PID 整定失败',
+      detail: err instanceof Error ? err.message : '请检查模型参数和算法配置后重试',
+    };
   } finally {
     loading.value = false;
   }
@@ -621,8 +632,18 @@ onMounted(() => {
         </div>
       </ClpmDataCanvas>
 
+      <!-- P1-023：错误状态覆盖（整定失败时持久展示，带重试） -->
+      <ClpmDataCanvas v-if="errorState" title="整定结果" class="mb-4">
+        <ClpmStateOverlay
+          status="error"
+          :error-message="errorState.message"
+          :error-detail="errorState.detail"
+          @retry="handleTune"
+        />
+      </ClpmDataCanvas>
+
       <!-- 底部结果区 -->
-      <ClpmDataCanvas v-if="tuneResult" title="整定结果">
+      <ClpmDataCanvas v-else-if="tuneResult" title="整定结果">
         <Descriptions :column="{ xs: 1, sm: 2, md: 3 }" bordered size="small">
           <DescriptionsItem label="算法">
             {{ algorithmNameMap[tuneResult.algorithm] || tuneResult.algorithm }}
@@ -676,11 +697,12 @@ onMounted(() => {
         </div>
       </ClpmDataCanvas>
 
-      <!-- 空状态 -->
+      <!-- P1-023：空状态覆盖 -->
       <ClpmDataCanvas v-else title="整定结果">
-        <div class="flex h-40 items-center justify-center text-gray-400">
-          请输入模型参数并选择算法，点击「执行整定」计算推荐 PID 参数
-        </div>
+        <ClpmStateOverlay
+          status="empty"
+          empty-description="请输入模型参数并选择算法，点击「执行整定」计算推荐 PID 参数"
+        />
       </ClpmDataCanvas>
     </Spin>
   </Page>

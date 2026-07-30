@@ -17,7 +17,7 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button } from 'ant-design-vue';
+import { Button, message } from 'ant-design-vue';
 
 import { getDiagnosisTasksApi, getTrackerListApi } from '#/api/diagnosis';
 import { getTaskListApi } from '#/api/task';
@@ -39,6 +39,8 @@ const { canAccessTuning } = useClpmRoles();
 
 const loading = ref(false);
 const lastRefresh = ref('');
+/** P1-023：单项接口失败计数，用于提示用户部分数据可能不完整 */
+const failedCount = ref(0);
 const diagnosisPending = ref(0);
 const trackerActive = ref(0);
 const metricPending = ref(0);
@@ -97,6 +99,7 @@ function handleTodoClick(item: KpiStripItem) {
 
 async function loadCounts() {
   loading.value = true;
+  failedCount.value = 0;
   try {
     const tasks: Promise<unknown>[] = [
       (async () => {
@@ -133,7 +136,14 @@ async function loadCounts() {
         })(),
       );
     }
-    await Promise.allSettled(tasks);
+    const results = await Promise.allSettled(tasks);
+    // P1-023：统计失败项，单项失败不阻断其余计数展示
+    failedCount.value = results.filter(
+      (r) => r.status === 'rejected',
+    ).length;
+    if (failedCount.value > 0) {
+      message.warning(`部分待办计数加载失败（${failedCount.value} 项），可点击刷新重试`);
+    }
   } finally {
     loading.value = false;
     lastRefresh.value = new Date().toLocaleTimeString('zh-CN', {
