@@ -69,11 +69,12 @@
 | P1-022 配置归属业务模块，高级参数仅管理员可见 | ✅ | 已完成 |
 | P1-023 覆盖 loading/empty/error/partial/success/权限状态 | ✅ | 已完成 |
 
-### 4.5 Phase 1 门禁 — ⬜ 待开始
-- [ ] 数据同轴与片段集成测试通过
-- [ ] 后端全量门禁通过
-- [ ] 前端 typecheck + vitest + E2E 通过
-- [ ] phase1 → integration `--no-ff` 合并
+### 4.5 Phase 1 门禁 — 🟡 验收通过，合并待执行
+- [x] 数据同轴与片段集成测试通过（105 passed）
+- [x] 后端全量门禁通过（ruff + pytest 3535 + alembic check 无漂移）
+- [x] 前端 typecheck + vitest + E2E 通过（typecheck ✅ / vitest 456 ✅ / tuning+diagnosis 关键 E2E 12/13）
+- [x] UI/UX §14 强制项审查通过（8 项全通过）
+- [ ] phase1 → integration `--no-ff` 合并（待执行）
 
 ---
 

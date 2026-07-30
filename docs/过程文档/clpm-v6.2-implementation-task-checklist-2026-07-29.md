@@ -274,12 +274,12 @@ unit_kpi_summary
 
 ### 4.5 Phase 1 门禁
 
-- [ ] 数据同轴与片段集成测试通过。
-- [ ] 后端全量门禁通过。
-- [ ] 前端 typecheck、组件测试、关键 E2E 通过。
-- [ ] 旧书签/深链兼容验证通过。
-- [ ] UI/UX 独立审查通过。
-- [ ] Phase 1 逻辑提交完成。
+- [x] 数据同轴与片段集成测试通过。（`tests/test_data_planner/` + `tests/test_tuning_phase2.py` 共 105 passed）
+- [x] 后端全量门禁通过。（ruff ✅ / pytest 3535 passed ✅ / `alembic check` 无 schema 漂移 ✅）
+- [x] 前端 typecheck、组件测试、关键 E2E 通过。（check:type ✅ / vitest 456 passed ✅ / tuning+diagnosis 关键 E2E 12/13，TUNE-003 偶发时序问题单独重跑通过）
+- [x] 旧书签/深链兼容验证通过。（tuning 三页 `/tuning/{model,algorithm,simulation}` → redirect `/tuning/flow/*` + hideInMenu；diagnosis records → redirect `/diagnosis/tasks?tab=history` + hideInMenu）
+- [x] UI/UX 独立审查通过。（§14 强制项 8 项全通过：F-01 任务优先 / F-02 不允许空点击 / A-01 IA 以契约为准 / A-03 角色权限驱动 / C-01 颜色来自 token / C-02 状态色语义化 / E-01 空异常一等状态 / P-02 不得下写 DCS）
+- [x] Phase 1 逻辑提交完成。（P1-001~P1-023 全部提交，含 `ecc94c7` P1-023 状态覆盖 + `9ebf613` E2E 稳定性修复）
 
 ## 5. Phase 2：可信辨识
 
