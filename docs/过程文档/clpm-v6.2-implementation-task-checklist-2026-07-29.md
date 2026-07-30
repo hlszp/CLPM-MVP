@@ -285,9 +285,12 @@ unit_kpi_summary
 
 ### 5.1 延迟和模型候选
 
-- [ ] `V62-P2-001` 设计并实现 `d=0..d_max` 延迟候选搜索。
-- [ ] `V62-P2-002` 使用时间顺序 validation/test 的 BIC 与自由仿真误差择优。
-- [ ] `V62-P2-003` 覆盖 θ=0、2、5、20、60 Ts，测试不得传入真值。
+- [x] `V62-P2-001` 设计并实现 `d=0..d_max` 延迟候选搜索。
+  - `_search_delay`：对 d=0..d_max 跑 ARX，用 BIC = n·ln(σ²)+k·ln(n) 选最优 d；用户给 θ 时在 d_explicit±3 邻域精搜（EXPLICIT），未给时全域搜索 0..d_max（SEARCHED，可信度不封顶）；新增 `ThetaSource.SEARCHED` 枚举；提交 `aa1ad129`。
+- [x] `V62-P2-002` 使用时间顺序 validation/test 的 BIC 与自由仿真误差择优。
+  - 时间顺序 60/20/20 train/val/test 分割（短数据退化为 70/30 train/val，不随机打乱保留时序自相关）；延迟搜索与参数辨识均改用训练集避免留出集泄漏；新增 `_free_run_simulation` 计算验证集自由仿真 R² 替代训练集方程误差 R²；fitting_score/confidence 改用 R²_val；reason 同时输出 R²_val/R²_train；3 测试通过；提交 `996dc0d`。
+- [x] `V62-P2-003` 覆盖 θ=0、2、5、20、60 Ts，测试不得传入真值。
+  - `test_p2_001_delay_search_recovers_theta` 参数化 θ_true=[0,2,5,20,60]，调用 `identify_from_history(theta_estimate=None)` 不传真值，断言 `theta_source==SEARCHED` 且 |θ_est−θ_true| ≤ 2Ts。
 - [ ] `V62-P2-004` 将非参数结果接入初值、符号和量级一致性检查。
 - [ ] `V62-P2-005` Welch/相干只做辅助门禁，不宣称闭环对象频响无偏。
 
@@ -313,12 +316,12 @@ unit_kpi_summary
 
 > **背景**：Phase 1 E2E 暴露后端连接池耗尽问题——NullPool 不池化，Celery 并发任务 + E2E 连续登录导致 PG `max_connections`（默认 100）逼近上限，新连接建立变慢（15s+），登录 API 超时。Phase 2 Monte Carlo 批量辨识（P2-010）会产生大量 Celery 异步任务，连接池压力远大于 Phase 1，监控是前置基础设施。
 
-- [ ] `V62-P2-018` 连接池监控脚本与告警。
+- [x] `V62-P2-018` 连接池监控脚本与告警。
   - 后端增加 `GET /health/db-connections` 端点：查询 `pg_stat_activity` 按 `application_name` 分组统计活跃连接数，返回 `{total, max, byApp: {clpm-api: N, clpm-celery: N, ...}}`。
   - 独立脚本 `scripts/monitor_db_connections.py`：定时轮询（默认 5s）+ 趋势记录（CSV）+ 阈值告警（活跃连接 >80% `max_connections` 时 `WARN`，>95% 时 `CRITICAL`）。
   - E2E fixture 增强：测试失败时自动输出当前 PG 连接数快照到 `test-results/*/connection-snapshot.json`，辅助区分代码回归 vs 环境问题。
   - metrics 端点：增加 `pg_active_connections` Gauge（`application_name` label），替代 NullPool 下恒 0 的 `db_pool_connections`。
-  - 测试：端点单元测试（mock `pg_stat_activity`）+ 脚本冒烟测试。
+  - 测试：端点单元测试（mock `pg_stat_activity`）+ 脚本冒烟测试。提交 `c0af4db5`。
 
 ### 5.5 Phase 2 门禁
 
@@ -417,3 +420,7 @@ pnpm exec playwright test
 | 2026-07-30 | Phase 1 | P1-021 统一 Loop 上下文头 | 新建 `ClpmLoopContextHeader`（editable/只读双模式）；store 加 `currentLoopTimeRange`+持久化；`flow.vue` 步骤0可编辑/1-2只读；`model.vue` 移除内联回路/时间窗选择器，改读 store；提交 `1f0e031`；check:type 通过、vitest 125 passed |
 | 2026-07-30 | Phase 1 | P1-022 高级参数权限控制 | 新建 `composables/use-clpm-roles.ts`（`canEditAdvancedParams`=ADMIN/EXPERT）；`model.vue` 候选阶次+θ 包裹 Collapse+权限门禁；`algorithm.vue` 动态算法参数同构；`workbench.vue` 复用 `canAccessTuning` 替代内联；测试 mock 补充 `useClpmRoles`+Collapse stub；check:type 通过、vitest 434 passed |
 | 2026-07-30 | Phase 1 | P1-023 状态覆盖统一 | 新建 `ClpmStateOverlay` 统一状态覆盖组件（loading/empty/error/success）；`model.vue` 三条 catch 路径 + error/empty 覆盖 + 清理重复空状态；`algorithm.vue` 补全 errorState 模板渲染 + 替换旧空状态；`simulation.vue` 双/多 PID catch + error/empty/success 覆盖；`workbench.vue` allSettled 失败计数 + warning 提示；22 新增测试（state-overlay 7 + model +5 + algorithm +4 + simulation 6）；check:type 通过、vitest 456 passed |
+| 2026-07-31 | Phase 2 | P2-018 连接池监控基础设施 | `GET /health/db-connections` 端点（`pg_stat_activity` 分组统计 + `pg_active_connections` Gauge）；`scripts/monitor_db_connections.py`（API/直连双模式 + CSV 趋势 + 80%/95% 阈值告警）；E2E fixture 失败快照；`test_health.py` 单测；提交 `c0af4db5` |
+| 2026-07-31 | Phase 2 | P2-001 延迟候选搜索 | `_search_delay`（BIC 准则 d=0..d_max）+ `ThetaSource.SEARCHED` 枚举；用户给 θ 邻域精搜 / 未给全域搜索；提交 `aa1ad129` |
+| 2026-07-31 | Phase 2 | P2-002 留出集 + 自由仿真 R² | 时间顺序 60/20/20 分割 + `_free_run_simulation` 验证集自由仿真 R² 替代训练集方程误差 R²；fitting_score/confidence 改用 R²_val；3 测试通过；提交 `996dc0d` |
+| 2026-07-31 | Phase 2 | P2-003 θ=0/2/5/20/60 覆盖 | `test_p2_001_delay_search_recovers_theta` 参数化 5 个 θ 真值，不传真值，断言 SEARCHED 来源 + ±2Ts 容差 |
