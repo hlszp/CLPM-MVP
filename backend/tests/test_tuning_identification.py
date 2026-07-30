@@ -84,6 +84,34 @@ def _simulate_open_loop_fopdt(
     return y
 
 
+def _simulate_open_loop_ipdt(
+    K: float,
+    theta: float,
+    u: np.ndarray,
+    ts: float = 1.0,
+    noise_std: float = 0.0,
+    seed: int = 42,
+) -> np.ndarray:
+    """开环 IPDT 仿真：G(s) = K*exp(-theta*s)/s.
+
+    积分过程离散化（ZOH 近似）：y(k) = y(k-1) + K*ts*u(k-d)。
+    PV 随输入持续积分，不回归稳态（如液位、累积量）。
+    """
+    rng = np.random.default_rng(seed)
+    n = len(u)
+    d = max(0, round(theta / ts))
+    y = np.zeros(n)
+    for k in range(1, n):
+        idx_u = k - d
+        if idx_u >= 0:
+            y[k] = y[k - 1] + K * ts * u[idx_u]
+        else:
+            y[k] = y[k - 1]
+    if noise_std > 0:
+        y += rng.normal(0, noise_std, n)
+    return y
+
+
 def _simulate_open_loop_sopdt(
     K: float,
     T1: float,
@@ -103,6 +131,7 @@ def _simulate_open_loop_sopdt(
     n = len(u)
     a1 = math.exp(-ts / T1)
     a2 = math.exp(-ts / T2)
+
     d = max(0, round(theta / ts))
     x1 = np.zeros(n)
     y = np.zeros(n)
@@ -833,17 +862,14 @@ class TestPipelineEndToEnd:
         assert result.best_model.confidence.value in {"A", "B", "C", "D", "E"}
         assert result.to_dict()["thetaSource"] == "SEARCHED"
 
-    def test_history_pipeline_rejects_ipdt_candidate(self):
-        """历史 pipeline 不得把 IPDT 静默按 SOPDT 返回."""
+    def test_history_pipeline_supports_ipdt_candidate(self):
+        """P2-008：历史 pipeline 支持 IPDT 候选（不再拒绝）.
+
+        IPDT 走专用差分辨识分支，对自调节过程（FOPDT 数据）应仍能返回结果
+        （只是拟合度低）；对积分过程应正确辨识 K/theta。
+        """
         u = _prbs(800, seed=414)
-        y = _simulate_open_loop_fopdt(
-            K=1.0,
-            tau=20.0,
-            theta=3.0,
-            u=u,
-            noise_std=0.05,
-            seed=414,
-        )
+        y = _simulate_open_loop_ipdt(K=0.5, theta=3.0, u=u, noise_std=0.02, seed=414)
         result = identify_from_history(
             op=u.tolist(),
             pv=y.tolist(),
@@ -851,8 +877,9 @@ class TestPipelineEndToEnd:
             theta_estimate=3.0,
             candidate_models=[ModelType.IPDT],
         )
-        assert not result.success
-        assert "IPDT" in (result.reason or "")
+        assert result.success
+        assert result.best_model is not None
+        assert result.best_model.params.model_type == ModelType.IPDT
 
     def test_production_pipeline_does_not_select_experimental_iv(self):
         """Phase 0 生产候选不得包含尚未验证的 IV 实现."""
@@ -1601,6 +1628,152 @@ class TestV62P2WelchCoherenceGate:
                 assert "LOW_COHERENCE" in ev.reason_codes
                 level_order = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1, "INCONCLUSIVE": 0}
                 assert level_order.get(result.best_model.confidence.value, 0) <= 3
+
+
+# ---------------------------------------------------------------------------
+# P2-008 IPDT 历史辨识测试
+# ---------------------------------------------------------------------------
+
+
+class TestP2008IpdtHistoryIdentification:
+    """P2-008：IPDT 积分过程历史辨识 G(s) = K*exp(-theta*s)/s."""
+
+    def test_p2_008_ipdt_recovers_gain_and_delay(self):
+        """IPDT 开环辨识应恢复 K 和 theta（±2Ts 容差）.
+
+        真值 K=0.5, theta=3s，PRBS 激励，差分回归 b1=K*ts → K=b1/ts。
+        """
+        K_true, theta_true = 0.5, 3.0
+        u = _prbs(1500, seed=800)
+        y = _simulate_open_loop_ipdt(K=K_true, theta=theta_true, u=u, noise_std=0.01, seed=800)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.IPDT],
+        )
+        assert result.success, f"IPDT 辨识失败: {result.reason}"
+        assert result.best_model is not None
+        p = result.best_model.params
+        assert p.model_type == ModelType.IPDT
+        # K 误差 < 15%（差分放大噪声，容差略宽于 FOPDT）
+        assert abs(p.K - K_true) / K_true < 0.15, f"K={p.K}, 真值={K_true}"
+        # theta 误差 ±2Ts
+        assert abs(p.theta - theta_true) <= 2.0, f"theta={p.theta}, 真值={theta_true}"
+
+    def test_p2_008_ipdt_no_longer_rejected(self):
+        """IPDT 不再被拒绝：候选含 IPDT 时应正常辨识而非返回'暂不支持'."""
+        u = _prbs(800, seed=801)
+        y = _simulate_open_loop_ipdt(K=1.0, theta=2.0, u=u, noise_std=0.01, seed=801)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.IPDT],
+        )
+        # 不应返回"暂不支持 IPDT"的拒绝消息
+        assert result.reason is None or "暂不支持" not in result.reason
+        assert result.success
+
+    def test_p2_008_ipdt_evidence_present(self):
+        """IPDT 辨识证据完整：分割/自由仿真 R²/残差检验/数据哈希."""
+        u = _prbs(1200, seed=802)
+        y = _simulate_open_loop_ipdt(K=0.8, theta=5.0, u=u, noise_std=0.02, seed=802)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.IPDT],
+        )
+        assert result.success and result.best_model is not None
+        ev = result.best_model.evidence
+        assert ev is not None
+        assert ev.n_train > 0 and ev.n_val > 0
+        assert ev.r2_val >= 0.0
+        assert ev.algorithm_version != ""
+        assert ev.data_hash != ""
+        assert len(ev.delay_search_trace) > 0
+        assert ev.theta_source == "SEARCHED"
+
+    def test_p2_008_ipdt_selected_over_fopdt_for_integrating_process(self):
+        """真积分过程：IPDT 候选应优于 FOPDT（FOPDT 无法拟合持续斜坡）.
+
+        积分过程 PV 持续斜坡变化，FOPDT（自回归）预测会趋稳态，R² 极低；
+        IPDT 自由仿真跟踪斜坡，R² 高。模型选择应选 IPDT。
+        """
+        K_true, theta_true = 1.0, 2.0
+        u = _prbs(2000, seed=803)
+        y = _simulate_open_loop_ipdt(K=K_true, theta=theta_true, u=u, noise_std=0.02, seed=803)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.FOPDT, ModelType.IPDT],
+        )
+        assert result.success and result.best_model is not None
+        # IPDT 应在候选中且拟合度远高于 FOPDT
+        ipdt_candidates = [
+            c for c in result.candidates if c.params.model_type == ModelType.IPDT
+        ]
+        fopdt_candidates = [
+            c for c in result.candidates if c.params.model_type == ModelType.FOPDT
+        ]
+        assert len(ipdt_candidates) > 0, "IPDT 候选缺失"
+        # FOPDT 对积分过程拟合极差（若存在）
+        if fopdt_candidates:
+            assert ipdt_candidates[0].fitting_score > fopdt_candidates[0].fitting_score
+        # 最优模型应为 IPDT
+        assert result.best_model.params.model_type == ModelType.IPDT
+
+    def test_p2_008_ipdt_fopdt_selected_for_self_regulating_process(self):
+        """自整定过程（FOPDT）不应误选 IPDT：FOPDT 候选应优于 IPDT.
+
+        自调节过程 PV 回归稳态，IPDT 预测持续斜坡会漂移，R² 低；
+        模型选择应选 FOPDT。
+        """
+        u = _prbs(2000, seed=804)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=25.0, theta=3.0, u=u, noise_std=0.02, seed=804)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.FOPDT, ModelType.IPDT],
+        )
+        assert result.success and result.best_model is not None
+        # 自调节过程应选 FOPDT（IPDT 自由仿真会漂移，R² 低）
+        assert result.best_model.params.model_type == ModelType.FOPDT
+
+    def test_p2_008_ipdt_theta_searched_when_not_given(self):
+        """未给 theta 时 IPDT 走延迟搜索，theta_source=SEARCHED."""
+        u = _prbs(1200, seed=805)
+        y = _simulate_open_loop_ipdt(K=0.6, theta=4.0, u=u, noise_std=0.01, seed=805)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.IPDT],
+        )
+        assert result.success
+        assert result.theta_source is not None
+        assert result.theta_source.value == "SEARCHED"
+
+    def test_p2_008_ipdt_negative_gain_flagged(self):
+        """负增益 IPDT 应标记 NEGATIVE_GAIN 并封顶可信度 C."""
+        u = _prbs(1500, seed=806)
+        y = _simulate_open_loop_ipdt(K=-0.5, theta=3.0, u=u, noise_std=0.01, seed=806)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.IPDT],
+        )
+        if result.success and result.best_model:
+            ev = result.best_model.evidence
+            if ev and "NEGATIVE_GAIN" in ev.reason_codes:
+                level_order = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1, "INCONCLUSIVE": 0}
+                assert level_order.get(result.best_model.confidence.value, 0) <= 3
+
+    def test_p2_008_ipdt_to_dict_includes_params(self):
+        """IPDT 结果 to_dict 应输出 K/theta 参数."""
+        u = _prbs(1000, seed=807)
+        y = _simulate_open_loop_ipdt(K=0.7, theta=2.0, u=u, noise_std=0.01, seed=807)
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            candidate_models=[ModelType.IPDT],
+        )
+        assert result.success
+        d = result.to_dict()
+        assert d["success"] is True
+        assert d["modelType"] == "IPDT"
+        assert "K" in d["params"]
+        assert "theta" in d["params"]
+        assert "tau" not in d["params"]
 
 
 # ---------------------------------------------------------------------------

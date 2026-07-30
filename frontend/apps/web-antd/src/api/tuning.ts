@@ -14,8 +14,8 @@ export namespace TuningApi {
   /** 模型类型 */
   export type ModelType = 'FOPDT' | 'IPDT' | 'SOPDT';
 
-  /** 历史辨识当前支持的模型类型（IPDT 仅保留在阶跃实验路径） */
-  export type HistoryModelType = Exclude<ModelType, 'IPDT'>;
+  /** 历史辨识支持的模型类型（P2-008：IPDT 差分辨识链已接入历史路径） */
+  export type HistoryModelType = ModelType;
 
   /** FOPDT 辨识方法 */
   export type IdentifyMethod = 'AREA' | 'COMBINED' | 'TWO_POINT';
@@ -66,7 +66,7 @@ export namespace TuningApi {
     | 'STEP_EXPERIMENT';
 
   /** 纯滞后参数来源 */
-  export type ThetaSource = 'EXPLICIT' | 'HEURISTIC_2TS';
+  export type ThetaSource = 'EXPLICIT' | 'HEURISTIC_2TS' | 'SEARCHED';
 
   /** 异步任务状态 */
   export type AsyncTaskStatus = 'FAILED' | 'PENDING' | 'RUNNING' | 'SUCCESS';

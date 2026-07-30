@@ -28,8 +28,8 @@ from app.schemas.base import CamelModel
 # 模型类型：FOPDT/SOPDT/IPDT
 ModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 
-# 历史算法当前仅对 FOPDT/SOPDT 有真实转换链；IPDT 保留在阶跃实验路径。
-HistoryModelType = Literal["FOPDT", "SOPDT"]
+# 历史辨识支持的模型类型（P2-008：IPDT 差分辨识链已接入历史路径）
+HistoryModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 
 # 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC
 TuningAlgorithm = Literal["IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"]
@@ -69,8 +69,8 @@ DataSource = Literal["HISTORY", "STEP_EXPERIMENT", "fallback_step"]
 # 可信度等级
 ConfidenceLevel = Literal["A", "B", "C", "D", "E", "INCONCLUSIVE"]
 
-# 纯滞后参数来源
-ThetaSource = Literal["EXPLICIT", "HEURISTIC_2TS"]
+# 纯滞后参数来源（P2-001：SEARCHED = BIC 候选搜索数据驱动确定）
+ThetaSource = Literal["EXPLICIT", "HEURISTIC_2TS", "SEARCHED"]
 
 # 推荐链模型来源。STEP_EXPERIMENT 只能由服务端验证过的阶跃记录/内部链路放行。
 ModelSource = Literal["IDENTIFICATION_RECORD", "STEP_EXPERIMENT", "MANUAL"]

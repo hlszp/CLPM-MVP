@@ -245,12 +245,12 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
     submitIdentifyMock.mockResolvedValue('task-12345678');
   });
 
-  it('历史候选排除 IPDT，阶跃实验仍保留 IPDT', async () => {
+  it('历史候选包含 IPDT，阶跃实验亦保留 IPDT（P2-008）', async () => {
     const wrapper = mountModel();
     await flushPromises();
 
     const historicalSelector = wrapper.get('[data-mode="multiple"]');
-    expect(historicalSelector.find('[data-value="IPDT"]').exists()).toBe(false);
+    expect(historicalSelector.find('[data-value="IPDT"]').exists()).toBe(true);
     expect(historicalSelector.find('[data-value="FOPDT"]').exists()).toBe(true);
     expect(historicalSelector.find('[data-value="SOPDT"]').exists()).toBe(true);
 
@@ -475,13 +475,15 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
     expect(wrapper.text()).toContain('记录 ID');
   });
 
-  it('API 类型收紧历史候选并声明 theta 来源', () => {
+  it('API 类型声明历史候选与 theta 来源', () => {
     expectTypeOf<
       TuningApi.IdentifyHistoryRequest['candidateModelTypes']
-    >().toEqualTypeOf<Array<'FOPDT' | 'SOPDT'> | undefined>();
+    >().toEqualTypeOf<Array<'FOPDT' | 'SOPDT' | 'IPDT'> | undefined>();
     expectTypeOf<
       TuningApi.IdentifyHistoryResult['thetaSource']
-    >().toEqualTypeOf<'EXPLICIT' | 'HEURISTIC_2TS' | null | undefined>();
+    >().toEqualTypeOf<
+      'EXPLICIT' | 'HEURISTIC_2TS' | 'SEARCHED' | null | undefined
+    >();
     expectTypeOf<TuningApi.ModelSource>().toEqualTypeOf<
       'IDENTIFICATION_RECORD' | 'MANUAL' | 'STEP_EXPERIMENT'
     >();

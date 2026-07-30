@@ -41,6 +41,7 @@ from app.services.tuning_identification.types import (
     IdentificationResult,
     IdentifyMethod,
     ModelEvidence,
+    ModelParams,
     ModelType,
     ThetaSource,
 )
@@ -118,12 +119,6 @@ def identify_from_history(
         )
 
     candidates = candidate_models or [ModelType.FOPDT, ModelType.SOPDT]
-    if ModelType.IPDT in candidates:
-        return IdentificationResult(
-            success=False,
-            reason="历史数据辨识暂不支持 IPDT；请使用阶跃实验路径",
-            theta_source=theta_source,
-        )
     if not math.isfinite(ts) or ts <= 0:
         return IdentificationResult(
             success=False,
@@ -252,6 +247,29 @@ def identify_from_history(
 
     # ── 层 4-5：阶次选择 + 离散→连续 ──
     for model_type in candidates:
+        # P2-008：IPDT 积分过程走专用差分辨识分支（不与 FOPDT/SOPDT 共用 ARX→连续链）
+        if model_type == ModelType.IPDT:
+            ipdt_candidate = _identify_ipdt_candidate(
+                u_train=u_train,
+                y_train=y_train,
+                u_val=u_val,
+                y_val=y_val,
+                d_search_max=d_search_max,
+                ts=ts,
+                theta_source=theta_source,
+                exc=exc,
+                exc_score=exc_score,
+                K_rough=K_rough,
+                mean_coherence=mean_coherence,
+                n_train=n_train,
+                n_val=n_val,
+                n_test=n_test,
+                data_hash=data_hash,
+            )
+            if ipdt_candidate is not None:
+                results.append(ipdt_candidate)
+            continue
+
         na = 1 if model_type == ModelType.FOPDT else 2
         nb = 1
 
@@ -371,9 +389,7 @@ def identify_from_history(
             if not np_passed:
                 confidence = _cap_confidence(confidence, ConfidenceLevel.C)
             # P2-005：Welch 相干辅助门禁（低相干 = 弱线性/低信噪比，仅辅助信号不拒绝）
-            low_coherence = (
-                mean_coherence is not None and mean_coherence < _LOW_COHERENCE_THRESHOLD
-            )
+            low_coherence = mean_coherence is not None and mean_coherence < _LOW_COHERENCE_THRESHOLD
             if low_coherence:
                 confidence = _cap_confidence(confidence, ConfidenceLevel.C)
 
@@ -602,6 +618,229 @@ def _free_run_simulation(
     ss_tot = float(np.sum((y_val - np.mean(y_val)) ** 2))
     r2_free = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
     return y_pred, max(0.0, min(1.0, r2_free))
+
+
+def _ipdt_regress(
+    u: np.ndarray,
+    y: np.ndarray,
+    d: int,
+) -> tuple[float, float, float, int] | None:
+    """P2-008：IPDT 差分线性回归 dy(k) = b1·u(k-d).
+
+    积分过程 G(s)=K·e^(-θs)/s 离散化（ZOH 近似）：
+        y(k) - y(k-1) = K·ts·u(k-d)
+    差分去积分器后做无截距最小二乘（数据已去均值），b1 = K·ts。
+
+    Args:
+        u: 输入（已去均值）
+        y: 输出（已去均值）
+        d: 延迟（采样数）
+
+    Returns:
+        (b1, residual_var, r2, n_samples) 或 None（数据不足）
+    """
+    dy = np.diff(y)  # dy[i] = y[i+1]-y[i], i=0..n-2
+    n_dy = len(dy)
+    # 对齐：dy[i] = b1·u[i+1-d]，要求 i+1-d >= 0 → i >= d-1（d>=1）或 i>=0（d=0）
+    if d <= 0:
+        y_dep = dy
+        u_indep = u[1 : 1 + n_dy]
+    else:
+        start = d - 1
+        if n_dy - start < 5:
+            return None
+        y_dep = dy[start:]
+        u_indep = u[: len(y_dep)]
+    m = len(y_dep)
+    if m < 5 or len(u_indep) < m:
+        return None
+    denom = float(np.dot(u_indep, u_indep))
+    if denom < 1e-12:
+        return None
+    b1 = float(np.dot(u_indep, y_dep) / denom)
+    residuals = y_dep - b1 * u_indep
+    res_var = float(np.var(residuals)) if m > 1 else 0.0
+    ss_res = float(np.sum(residuals**2))
+    ss_tot = float(np.sum((y_dep - np.mean(y_dep)) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    return b1, res_var, max(0.0, min(1.0, r2)), m
+
+
+def _ipdt_free_run(
+    u: np.ndarray,
+    y: np.ndarray,
+    b1: float,
+    d: int,
+) -> tuple[np.ndarray, float]:
+    """P2-008：IPDT 验证集自由仿真 y_pred(k) = y_pred(k-1) + b1·u(k-d).
+
+    积分过程自由仿真：预测输出累积积分，误差会随时间累积，
+    是 IPDT 泛化能力的严格检验（K 偏差线性放大）。
+
+    Returns:
+        (y_pred, r2_free) — r2_free 为自由仿真 R²（可能为负，预测漂移时）
+    """
+    n = len(y)
+    if n < d + 5:
+        return np.zeros(n), 0.0
+    y_pred = np.zeros(n)
+    y_pred[0] = y[0]  # 初始条件用真实值
+    for k in range(1, n):
+        idx_u = k - d
+        if idx_u >= 0:
+            y_pred[k] = y_pred[k - 1] + b1 * u[idx_u]
+        else:
+            y_pred[k] = y_pred[k - 1]
+    # R² 在全段（除首点）上计算；积分过程 ss_tot 较大，R² 对斜率敏感
+    residuals = y[1:] - y_pred[1:]
+    ss_res = float(np.sum(residuals**2))
+    y_seg = y[1:]
+    ss_tot = float(np.sum((y_seg - np.mean(y_seg)) ** 2))
+    r2_free = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    return y_pred, max(0.0, min(1.0, r2_free))
+
+
+def _identify_ipdt_candidate(
+    u_train: np.ndarray,
+    y_train: np.ndarray,
+    u_val: np.ndarray,
+    y_val: np.ndarray,
+    d_search_max: int,
+    ts: float,
+    theta_source: ThetaSource,
+    exc,
+    exc_score: float,
+    K_rough: float | None,
+    mean_coherence: float | None,
+    n_train: int,
+    n_val: int,
+    n_test: int,
+    data_hash: str,
+) -> CandidateModel | None:
+    """P2-008：IPDT 历史辨识 G(s) = K·exp(-theta·s)/s.
+
+    积分过程（如液位、累积量）PV 不回归稳态而是持续斜坡变化。
+    差分去积分器后线性回归辨识 K 与 theta，复用 BIC 延迟搜索与留出集自由仿真。
+
+    流程：
+    1. 差分 y_train → dy，对 d=0..d_max 回归 dy=b1·u(k-d)，BIC 选最优 d
+    2. K = b1/ts，theta = d·ts
+    3. 验证集自由仿真 R²（积分累积误差）
+    4. 物理可行性（负增益）/相干辅助门禁
+    """
+    # 1. 延迟搜索（BIC 准则，k=1 参数）
+    best_d = 0
+    best_bic = float("inf")
+    delay_search_trace: list[tuple[int, float]] = []
+    for d in range(d_search_max + 1):
+        reg = _ipdt_regress(u_train, y_train, d)
+        if reg is None:
+            delay_search_trace.append((d, float("inf")))
+            continue
+        b1_d, res_var_d, _, n_d = reg
+        bic = n_d * math.log(max(res_var_d, 1e-12)) + 1 * math.log(max(n_d, 2))
+        bic_rounded = round(bic, 2)
+        delay_search_trace.append((d, bic_rounded))
+        if bic < best_bic:
+            best_bic = bic
+            best_d = d
+
+    # 2. 最优延迟下辨识
+    reg = _ipdt_regress(u_train, y_train, best_d)
+    if reg is None:
+        logger.debug("P2-008 IPDT 辨识失败：差分回归数据不足")
+        return None
+    b1, res_var, r2_train, n_samples = reg
+    if abs(b1) < 1e-12:
+        logger.debug("P2-008 IPDT 辨识失败：b1≈0，无积分关系")
+        return None
+    K = b1 / ts
+    theta = best_d * ts
+    params = ModelParams(model_type=ModelType.IPDT, K=K, theta=theta)
+
+    # 3. 验证集自由仿真 R²
+    y_val_pred, r2_val = _ipdt_free_run(u_val, y_val, b1, best_d)
+    residuals_val_arr = y_val - y_val_pred
+    y_val_range = float(np.ptp(y_val))
+    if len(residuals_val_arr):
+        rmse_val = float(np.sqrt(np.mean(residuals_val_arr**2)))
+    else:
+        rmse_val = 0.0
+    nrmse_val = rmse_val / y_val_range if y_val_range > 1e-12 else 0.0
+
+    # 4. 残差检验：IPDT 方程误差 = dy - b1·u(k-d)，检验与输入独立性
+    dy_train = np.diff(y_train)
+    if best_d <= 0:
+        eq_err = dy_train - b1 * u_train[1 : 1 + len(dy_train)]
+    else:
+        eq_err = dy_train[best_d - 1 :] - b1 * u_train[: len(dy_train) - best_d + 1]
+    exceed_ratio = _residual_input_exceed_ratio(eq_err, u_train)
+    residual_white = exceed_ratio <= _XCORR_EXCEED_TOLERANCE
+    test_note = f"xcorr_exceed={exceed_ratio:.3f}"
+
+    # 5. 物理可行性（IPDT 无 NMP 零点概念，仅检负增益）
+    feasibility = check_physical_feasibility(params, [b1], ts)
+    physical_flag = "" if feasibility.passed else f", {feasibility.reason_code}"
+
+    # 6. 可信度评估
+    confidence = _assess_confidence(exc, r2_val, residual_white, exc_score)
+    if theta_source == ThetaSource.HEURISTIC_2TS:
+        confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+    if not feasibility.passed:
+        confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+        physical_flag = f", {feasibility.reason_code}(K={K:.4g})"
+    # P2-005：相干辅助门禁
+    low_coherence = mean_coherence is not None and mean_coherence < _LOW_COHERENCE_THRESHOLD
+    if low_coherence:
+        confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+
+    # 7. AIC/BIC（k=1 参数）
+    aic_val = compute_aic(n_samples, res_var, 1)
+    bic_val = compute_bic(n_samples, res_var, 1)
+
+    # 8. 证据输出
+    reason_codes: list[str] = []
+    if not feasibility.passed:
+        reason_codes.append(feasibility.reason_code)
+    if low_coherence:
+        reason_codes.append("LOW_COHERENCE")
+    if theta_source == ThetaSource.HEURISTIC_2TS:
+        reason_codes.append("HEURISTIC_2TS")
+    evidence = ModelEvidence(
+        n_train=n_train,
+        n_val=n_val,
+        n_test=n_test,
+        r2_val=round(r2_val, 4),
+        r2_train=round(r2_train, 4),
+        nrmse_val=round(nrmse_val, 4),
+        residual_test_note=test_note,
+        mean_coherence=mean_coherence,
+        algorithm_version=ALGORITHM_VERSION,
+        data_hash=data_hash,
+        theta_source=theta_source.value,
+        delay_search_trace=delay_search_trace,
+        reason_codes=reason_codes,
+        y_val_observed=[round(float(v), 6) for v in y_val],
+        y_val_predicted=[round(float(v), 6) for v in y_val_pred],
+        residuals_val=[round(float(v), 6) for v in residuals_val_arr],
+    )
+
+    return CandidateModel(
+        params=params,
+        fitting_score=round(r2_val * 100, 2),
+        confidence=confidence,
+        identify_method=IdentifyMethod.HISTORICAL_ARX,
+        residual_test_passed=residual_white,
+        excitation_score=exc_score,
+        reason=(
+            f"R²_val={r2_val:.3f}, R²_train={r2_train:.3f},"
+            f" {test_note}, AIC={aic_val:.1f}, BIC={bic_val:.1f},"
+            f" K={K:.4g}, θ={theta:.2g}s{physical_flag}"
+        ),
+        aic=round(aic_val, 2),
+        bic=round(bic_val, 2),
+        evidence=evidence,
+    )
 
 
 def _residual_input_exceed_ratio(

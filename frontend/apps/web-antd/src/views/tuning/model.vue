@@ -120,13 +120,14 @@ const modelTypeOptions: { label: string; value: TuningApi.ModelType }[] = [
   { label: 'IPDT 积分加纯滞后', value: 'IPDT' },
 ];
 
-/** 历史辨识候选类型（当前转换链仅支持 FOPDT/SOPDT） */
+/** 历史辨识候选类型（P2-008：IPDT 差分辨识链已接入） */
 const historyModelTypeOptions: {
   label: string;
   value: TuningApi.HistoryModelType;
 }[] = [
   { label: 'FOPDT 一阶加纯滞后', value: 'FOPDT' },
   { label: 'SOPDT 二阶加纯滞后', value: 'SOPDT' },
+  { label: 'IPDT 积分加纯滞后', value: 'IPDT' },
 ];
 
 /** 辨识方法选项（仅 STEP_ONLY 路径使用） */

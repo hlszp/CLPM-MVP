@@ -557,12 +557,15 @@ class TestPhase2API:
         assert resp.status_code == 200
         assert resp.json()["data"]["taskId"] == "celery-task-hist-001"
 
-    def test_identify_history_rejects_ipdt_candidate(self, client):
-        """历史辨识拒绝尚无真实转换链的 IPDT，不得静默按 SOPDT 执行."""
+    def test_identify_history_accepts_ipdt_candidate(self, client):
+        """P2-008：历史辨识接受 IPDT 候选（差分辨识链已接入）."""
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-ipdt-001"
         with (
             patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
+            mock_celery_task.delay.return_value = mock_task
             resp = client.post(
                 "/api/v1/tuning/identify/history",
                 json={
@@ -574,8 +577,9 @@ class TestPhase2API:
                 },
             )
 
-        assert resp.status_code == 422
-        mock_celery_task.delay.assert_not_called()
+        assert resp.status_code == 200
+        assert resp.json()["data"]["taskId"] == "celery-task-ipdt-001"
+        mock_celery_task.delay.assert_called_once()
 
     def test_identify_history_preserves_explicit_zero_theta(self, client):
         """显式 thetaEstimate=0 必须原样传给异步任务."""

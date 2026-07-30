@@ -291,25 +291,34 @@ unit_kpi_summary
   - 时间顺序 60/20/20 train/val/test 分割（短数据退化为 70/30 train/val，不随机打乱保留时序自相关）；延迟搜索与参数辨识均改用训练集避免留出集泄漏；新增 `_free_run_simulation` 计算验证集自由仿真 R² 替代训练集方程误差 R²；fitting_score/confidence 改用 R²_val；reason 同时输出 R²_val/R²_train；3 测试通过；提交 `996dc0d`。
 - [x] `V62-P2-003` 覆盖 θ=0、2、5、20、60 Ts，测试不得传入真值。
   - `test_p2_001_delay_search_recovers_theta` 参数化 θ_true=[0,2,5,20,60]，调用 `identify_from_history(theta_estimate=None)` 不传真值，断言 `theta_source==SEARCHED` 且 |θ_est−θ_true| ≤ 2Ts。
-- [ ] `V62-P2-004` 将非参数结果接入初值、符号和量级一致性检查。
-- [ ] `V62-P2-005` Welch/相干只做辅助门禁，不宣称闭环对象频响无偏。
+- [x] `V62-P2-004` 将非参数结果接入初值、符号和量级一致性检查。
+  - `_check_nonparam_consistency`：相关分析 K_rough 与参数化 K 交叉校验，符号不一致（SIGN_MISMATCH）或量级比 <0.1×/>10×（MAGNITUDE_MISMATCH）封顶 C；提交 `5a286ead`。
+- [x] `V62-P2-005` Welch/相干只做辅助门禁，不宣称闭环对象频响无偏。
+  - `welch_spectral_analysis` 计算相干均值，闭环下 Ĝ=S_uy/S_uu 有偏，仅作辅助：mean_coherence<0.3 封顶 C 并记录 LOW_COHERENCE；证据输出 meanCoherence；3 测试通过；提交 `6bf040c`。
 
 ### 5.2 模型结构与闭环辨识
 
-- [ ] `V62-P2-006` AIC/BIC/CV 接入主 pipeline。
-- [ ] `V62-P2-007` SOPDT 仅在留出集显著优于 FOPDT 时升级。
-- [ ] `V62-P2-008` 实现真实 IPDT 历史辨识并恢复 UI/API 选项。
+- [x] `V62-P2-006` AIC/BIC/CV 接入主 pipeline。
+  - `compute_aic`/`compute_bic`（训练集残差方差）写入 CandidateModel.aic/bic；证据 to_dict 输出；提交 `5e3de333`。
+- [x] `V62-P2-007` SOPDT 仅在留出集显著优于 FOPDT 时升级。
+  - `_select_with_occam`：SOPDT 优于 FOPDT 当且仅当 R²_val 相对提升 >5% 且 BIC 下降；否则 Occam 削减选 FOPDT；提交 `5e3de333`。
+- [x] `V62-P2-008` 实现真实 IPDT 历史辨识并恢复 UI/API 选项。
+  - `_ipdt_regress`/`_ipdt_free_run`/`_identify_ipdt_candidate`：差分去积分器 → dy(k)=b1·u(k-d) 线性回归 → K=b1/ts, θ=d·ts；BIC 延迟搜索 + 留出集自由仿真 R² + 物理可行性/相干门禁 + 证据输出；移除 pipeline IPDT 拒绝；schema `HistoryModelType` 加 IPDT、`ThetaSource` 加 SEARCHED；前端 model.vue 历史候选恢复 IPDT 选项；8 单测 + 2 API/集成测试更新；提交待完成。
 - [ ] `V62-P2-009` 选择并实现可证明的闭环 IV/OE/PEM 方法。
 - [ ] `V62-P2-010` Monte Carlo 覆盖测量噪声、负载扰动、控制器强度和弱 SP 激励。
 - [ ] `V62-P2-011` 报告偏差、方差和弱工具统计量，并与 ARX 对比。
 
 ### 5.3 物理门禁与证据
 
-- [ ] `V62-P2-012` 复极点、负根、不稳定模型不得伪装成稳定工程模型。
-- [ ] `V62-P2-013` 输出 train/validation/test 观测、预测、残差和数据分区。
-- [ ] `V62-P2-014` 输出自由仿真 NRMSE、BIC、残差检验和跨片段稳定性。
+- [x] `V62-P2-012` 复极点、负根、不稳定模型不得伪装成稳定工程模型。
+  - `check_physical_feasibility`：负增益（NEGATIVE_GAIN）/NMP 零点（NMP_ZERO）不拒绝但封顶 C 并标记；提交 `c6080071`。
+- [x] `V62-P2-013` 输出 train/validation/test 观测、预测、残差和数据分区。
+  - `ModelEvidence`：n_train/n_val/n_test + y_val_observed/y_val_predicted/residuals_val；提交 `63a90c64`。
+- [x] `V62-P2-014` 输出自由仿真 NRMSE、BIC、残差检验和跨片段稳定性。
+  - `ModelEvidence`：r2_val/r2_train/nrmse_val/residual_test_note + aic/bic；提交 `63a90c64`。
 - [ ] `V62-P2-015` 输出 bootstrap 或等价不确定度摘要。
-- [ ] `V62-P2-016` 记录算法版本、数据窗口、快照哈希和全部 reason code。
+- [x] `V62-P2-016` 记录算法版本、数据窗口、快照哈希和全部 reason code。
+  - `ModelEvidence`：algorithm_version/data_hash/theta_source/delay_search_trace/reason_codes；提交 `63a90c64`。
 - [ ] `V62-P2-017` 建立 20+ 回路匿名人工标注集。
 
 ### 5.4 连接池监控基础设施（Phase 2 前置）
