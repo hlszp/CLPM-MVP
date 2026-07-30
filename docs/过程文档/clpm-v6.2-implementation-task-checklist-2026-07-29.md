@@ -303,7 +303,7 @@ unit_kpi_summary
 - [x] `V62-P2-007` SOPDT 仅在留出集显著优于 FOPDT 时升级。
   - `_select_with_occam`：SOPDT 优于 FOPDT 当且仅当 R²_val 相对提升 >5% 且 BIC 下降；否则 Occam 削减选 FOPDT；提交 `5e3de333`。
 - [x] `V62-P2-008` 实现真实 IPDT 历史辨识并恢复 UI/API 选项。
-  - `_ipdt_regress`/`_ipdt_free_run`/`_identify_ipdt_candidate`：差分去积分器 → dy(k)=b1·u(k-d) 线性回归 → K=b1/ts, θ=d·ts；BIC 延迟搜索 + 留出集自由仿真 R² + 物理可行性/相干门禁 + 证据输出；移除 pipeline IPDT 拒绝；schema `HistoryModelType` 加 IPDT、`ThetaSource` 加 SEARCHED；前端 model.vue 历史候选恢复 IPDT 选项；8 单测 + 2 API/集成测试更新；提交待完成。
+  - `_ipdt_regress`/`_ipdt_free_run`/`_identify_ipdt_candidate`：差分去积分器 → dy(k)=b1·u(k-d) 线性回归 → K=b1/ts, θ=d·ts；BIC 延迟搜索 + 留出集自由仿真 R² + 物理可行性/相干门禁 + 证据输出；移除 pipeline IPDT 拒绝；schema `HistoryModelType` 加 IPDT、`ThetaSource` 加 SEARCHED；前端 model.vue 历史候选恢复 IPDT 选项；8 单测 + 2 API/集成测试更新；提交 `5031503f`。
 - [x] `V62-P2-009` 选择并实现可证明的闭环 IV/OE/PEM 方法。
   - `identify_clivc`/`identify_clivc4`（`iv.py`）：外生 SP 作工具变量构建 Z 矩阵，满足 E[Z·ε]=0 闭环一致性；θ_IV=(ZᵀΦ)⁻¹Zᵀy；CLIVC4 用无扰预测 ŷ_f 迭代优化工具变量提升效率；数值稳定性保护（发散截断、奇异回退 lstsq）；pipeline 保留所有成功候选（ARX/ARMAX/CLIVC 并列可审计）；提交 `d909a5f7`。
 - [x] `V62-P2-010` Monte Carlo 覆盖测量噪声、负载扰动、控制器强度和弱 SP 激励。
@@ -325,7 +325,7 @@ unit_kpi_summary
   - `ModelEvidence`：algorithm_version/data_hash/theta_source/delay_search_trace/reason_codes；提交 `63a90c64`。
 - [x] `V62-P2-017` 建立 20+ 回路匿名人工标注集。
   - `tests/golden/annotated_loops_dataset.json`：22 回路覆盖温度/流量/压力/液位，FOPDT/SOPDT/IPDT，开环/闭环，不同噪声（0.02~0.8）与激励模式（PRBS/SP 阶跃），含 load 偏置工业工况；容差规则 K±15%/tau±25%/θ±2s/成功率≥85%。
-  - `tests/test_annotated_loops_evaluation.py`：自动评估脚本按真值仿真→辨识→对比，核心门禁（FOPDT+IPDT）17/18=94.4% 通过；SOPDT 结构成功+K 精度门禁（T1/T2 个体精度受 ARX 方程误差病态限制，文档化为已知局限需 SRIVC 后续工作）；提交待完成。
+  - `tests/test_annotated_loops_evaluation.py`：自动评估脚本按真值仿真→辨识→对比，核心门禁（FOPDT+IPDT）17/18=94.4% 通过；SOPDT 结构成功+K 精度门禁（T1/T2 个体精度受 ARX 方程误差病态限制，文档化为已知局限需 SRIVC 后续工作）；提交 `b787c45`。
 
 ### 5.4 连接池监控基础设施（Phase 2 前置）
 
@@ -448,4 +448,4 @@ pnpm exec playwright test
 | 2026-07-31 | Phase 2 | P2-012 物理可行性门禁 | `check_physical_feasibility`：负增益/NMP 零点封顶 C；提交 `c6080071` |
 | 2026-07-31 | Phase 2 | P2-013/014/016 辨识证据 | `ModelEvidence`：留出集分割/自由仿真 R²/NRMSE/残差检验/算法版本/数据哈希/延迟搜索轨迹/reason codes；提交 `63a90c64` |
 | 2026-07-31 | Phase 2 | P2-015 参数不确定度 | `_compute_parameter_uncertainty`：ARX/CLIVC 解析协方差 + 200 次 MC 传播 K/tau/theta 95% CI；`ParameterUncertainty` + 单测；提交 `2049039d` |
-| 2026-07-31 | Phase 2 | P2-017 匿名人工标注集 | `annotated_loops_dataset.json`（22 回路）+ `test_annotated_loops_evaluation.py` 自动评估；核心门禁 FOPDT+IPDT 17/18=94.4%；SOPDT 结构+K 门禁（T1/T2 ARX 病态已知局限，需 SRIVC）；提交待完成 |
+| 2026-07-31 | Phase 2 | P2-017 匿名人工标注集 | `annotated_loops_dataset.json`（22 回路）+ `test_annotated_loops_evaluation.py` 自动评估；核心门禁 FOPDT+IPDT 17/18=94.4%；SOPDT 结构+K 门禁（T1/T2 ARX 病态已知局限，需 SRIVC）；提交 `b787c45` |
