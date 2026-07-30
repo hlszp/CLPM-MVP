@@ -2096,3 +2096,137 @@ class TestGoldenBaseline:
         result = identify_from_history(op=u.tolist(), pv=y.tolist(), ts=1.0)
         assert result.success is scn["expected"]["success"]
         assert scn["expected"]["reason_contains"] in (result.reason or "")
+
+
+# ---------------------------------------------------------------------------
+# P2-015：参数不确定度摘要测试
+# ---------------------------------------------------------------------------
+
+
+class TestP2015ParameterUncertainty:
+    """P2-015：解析协方差 + Monte Carlo 传播的参数 95% 置信区间."""
+
+    def test_arx_candidate_has_uncertainty(self):
+        """ARX 候选应有 parameter_uncertainty（解析协方差可计算）."""
+        u = _prbs(1000, seed=123)
+        y = _simulate_open_loop_fopdt(K=1.5, tau=20.0, theta=3.0, u=u, noise_std=0.1, seed=123)
+        result = identify_from_history(op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=3.0)
+        assert result.success
+        arx_candidates = [
+            c for c in result.candidates if c.identify_method.value == "HISTORICAL_ARX"
+        ]
+        assert len(arx_candidates) > 0
+        pu = arx_candidates[0].evidence.parameter_uncertainty
+        assert pu is not None, "ARX 候选应有 parameter_uncertainty"
+        assert pu.n_mc_samples >= 20, f"有效 MC 采样数应 ≥20，实际 {pu.n_mc_samples}"
+
+    def test_ci_brackets_true_value(self):
+        """95% CI 应包含真值（开环充分激励场景）."""
+        K_true, tau_true, theta_true = 1.5, 20.0, 3.0
+        u = _prbs(1000, seed=123)
+        y = _simulate_open_loop_fopdt(
+            K=K_true, tau=tau_true, theta=theta_true, u=u, noise_std=0.1, seed=123
+        )
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=theta_true
+        )
+        assert result.success
+        pu = result.best_model.evidence.parameter_uncertainty
+        assert pu is not None
+        # K 真值应在 95% CI 内
+        assert pu.K_ci_lower <= K_true <= pu.K_ci_upper, (
+            f"K CI=[{pu.K_ci_lower:.4f}, {pu.K_ci_upper:.4f}] 不含真值 {K_true}"
+        )
+
+    def test_clivc_candidate_has_uncertainty(self):
+        """CLIVC 候选应有 parameter_uncertainty（IV 协方差可计算）."""
+        sp = _sp_steps(1200, [(50, 10.0), (400, 15.0), (800, 8.0)])
+        y, u = _simulate_closed_loop_fopdt(
+            sp, K=2.0, tau=30.0, theta=5.0, kp=2.0, ti=20.0, noise_std=0.5, seed=42
+        )
+        result = identify_from_history(
+            op=u.tolist(), pv=y.tolist(), sp=sp.tolist(), ts=1.0, theta_estimate=5.0
+        )
+        assert result.success
+        iv_candidates = [c for c in result.candidates if c.identify_method.value == "HISTORICAL_IV"]
+        assert len(iv_candidates) > 0
+        # 至少一个 CLIVC 候选应有 uncertainty（FOPDT 的，SOPDT 可能因 MC 不足为 None）
+        has_uncertainty = any(c.evidence.parameter_uncertainty is not None for c in iv_candidates)
+        assert has_uncertainty, "CLIVC FOPDT 候选应有 parameter_uncertainty"
+
+    def test_armax_candidate_uncertainty_is_none(self):
+        """ARMAX 候选 parameter_uncertainty=None（无解析协方差，需 bootstrap）."""
+        u = _prbs(1000, seed=123)
+        y = _simulate_open_loop_fopdt(K=1.5, tau=20.0, theta=3.0, u=u, noise_std=0.1, seed=123)
+        result = identify_from_history(op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=3.0)
+        armax_candidates = [
+            c for c in result.candidates if c.identify_method.value == "HISTORICAL_ARMAX"
+        ]
+        if armax_candidates:
+            assert armax_candidates[0].evidence.parameter_uncertainty is None
+
+    def test_uncertainty_to_dict_serialization(self):
+        """parameter_uncertainty.to_dict() 应输出 CI95 摘要."""
+        from app.services.tuning_identification.types import ParameterUncertainty
+
+        pu = ParameterUncertainty(
+            K_ci_lower=1.3,
+            K_ci_upper=1.7,
+            tau_ci_lower=18.0,
+            tau_ci_upper=22.0,
+            theta_ci_lower=2.5,
+            theta_ci_upper=3.5,
+            n_mc_samples=200,
+        )
+        d = pu.to_dict()
+        assert d["K"]["ci95"] == [1.3, 1.7]
+        assert d["tau"]["ci95"] == [18.0, 22.0]
+        assert d["theta"]["ci95"] == [2.5, 3.5]
+        assert d["nMcSamples"] == 200
+
+    def test_evidence_to_dict_includes_uncertainty(self):
+        """evidence.to_dict() 应包含 parameterUncertainty 字段."""
+        u = _prbs(1000, seed=123)
+        y = _simulate_open_loop_fopdt(K=1.5, tau=20.0, theta=3.0, u=u, noise_std=0.1, seed=123)
+        result = identify_from_history(op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=3.0)
+        assert result.success
+        ev_dict = result.best_model.evidence.to_dict()
+        assert "parameterUncertainty" in ev_dict
+        assert ev_dict["parameterUncertainty"] is not None
+        assert "K" in ev_dict["parameterUncertainty"]
+        assert "ci95" in ev_dict["parameterUncertainty"]["K"]
+
+    def test_higher_noise_widens_ci(self):
+        """噪声增大 → CI 应变宽（不确定度增大）.
+
+        对比 ARX 候选在低噪声 vs 中噪声下的 CI 宽度。
+        不用 best_model（高噪声时 ARMAX 可能胜出，其 uncertainty=None）。
+        """
+        K_true, tau_true, theta_true = 1.5, 20.0, 3.0
+        u = _prbs(2000, seed=123)
+
+        def _get_arx_ci(noise_std: float) -> float | None:
+            y = _simulate_open_loop_fopdt(
+                K=K_true, tau=tau_true, theta=theta_true, u=u, noise_std=noise_std, seed=123
+            )
+            result = identify_from_history(
+                op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=theta_true
+            )
+            if not result.success:
+                return None
+            arx_cands = [
+                c for c in result.candidates if c.identify_method.value == "HISTORICAL_ARX"
+            ]
+            if not arx_cands:
+                return None
+            pu = arx_cands[0].evidence.parameter_uncertainty
+            if pu is None:
+                return None
+            return pu.K_ci_upper - pu.K_ci_lower
+
+        ci_width_low = _get_arx_ci(0.05)
+        ci_width_high = _get_arx_ci(0.5)
+        assert ci_width_low is not None and ci_width_high is not None
+        assert ci_width_high > ci_width_low, (
+            f"高噪声 CI 宽度 {ci_width_high:.4f} 应 > 低噪声 {ci_width_low:.4f}"
+        )

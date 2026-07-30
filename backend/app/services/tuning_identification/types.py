@@ -78,6 +78,32 @@ class ModelParams:
 
 
 @dataclass
+class ParameterUncertainty:
+    """P2-015：参数不确定度摘要（95% 置信区间）.
+
+    通过解析协方差（ARX: σ²(ΦᵀΦ)⁻¹；CLIVC: σ²(ZᵀΦ)⁻¹(ZᵀZ)(ΦᵀZ)⁻¹）
+    + Monte Carlo 传播到连续域参数得到。仅 ARX/CLIVC 有解析协方差；
+    ARMAX/IPDT 暂不输出（需 bootstrap，后续按需补）。
+    """
+
+    K_ci_lower: float = 0.0
+    K_ci_upper: float = 0.0
+    tau_ci_lower: float = 0.0
+    tau_ci_upper: float = 0.0
+    theta_ci_lower: float = 0.0
+    theta_ci_upper: float = 0.0
+    n_mc_samples: int = 0  # 有效 Monte Carlo 采样数（转换成功）
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "K": {"ci95": [round(self.K_ci_lower, 4), round(self.K_ci_upper, 4)]},
+            "tau": {"ci95": [round(self.tau_ci_lower, 4), round(self.tau_ci_upper, 4)]},
+            "theta": {"ci95": [round(self.theta_ci_lower, 4), round(self.theta_ci_upper, 4)]},
+            "nMcSamples": self.n_mc_samples,
+        }
+
+
+@dataclass
 class ExcitationCheckResult:
     """激励检测结果."""
 
@@ -128,6 +154,8 @@ class ModelEvidence:
     y_val_observed: list[float] | None = None
     y_val_predicted: list[float] | None = None
     residuals_val: list[float] | None = None
+    # P2-015：参数不确定度摘要（95% CI，仅 ARX/CLIVC 有解析协方差）
+    parameter_uncertainty: ParameterUncertainty | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（摘要，不含原始序列）."""
@@ -145,6 +173,11 @@ class ModelEvidence:
             "thetaSource": self.theta_source,
             "delaySearchTrace": [{"d": d, "bic": b} for d, b in self.delay_search_trace],
             "reasonCodes": list(self.reason_codes),
+            "parameterUncertainty": (
+                self.parameter_uncertainty.to_dict()
+                if self.parameter_uncertainty is not None
+                else None
+            ),
         }
 
 

@@ -44,6 +44,7 @@ from app.services.tuning_identification.types import (
     ModelEvidence,
     ModelParams,
     ModelType,
+    ParameterUncertainty,
     ThetaSource,
 )
 
@@ -441,6 +442,18 @@ def identify_from_history(
                 y_val_observed=[round(float(v), 6) for v in y_val],
                 y_val_predicted=[round(float(v), 6) for v in y_val_pred],
                 residuals_val=[round(float(v), 6) for v in residuals_val_arr],
+                parameter_uncertainty=_compute_parameter_uncertainty(
+                    a_coeffs=res.a_coeffs,
+                    b_coeffs=res.b_coeffs,
+                    d=d_model,
+                    res_var=res.residual_var,
+                    u_train=u_train,
+                    y_train=y_train,
+                    sp_train=sp_train,
+                    method=method_used,
+                    model_type=model_type,
+                    ts=ts,
+                ),
             )
 
             candidate = CandidateModel(
@@ -504,6 +517,128 @@ def _compute_data_hash(u: np.ndarray, y: np.ndarray, ts: float) -> str:
     """
     buf = u.tobytes() + y.tobytes() + repr(float(ts)).encode()
     return hashlib.sha256(buf).hexdigest()[:16]
+
+
+def _compute_parameter_uncertainty(
+    a_coeffs: list[float],
+    b_coeffs: list[float],
+    d: int,
+    res_var: float,
+    u_train: np.ndarray,
+    y_train: np.ndarray,
+    sp_train: np.ndarray | None,
+    method: IdentifyMethod,
+    model_type: ModelType,
+    ts: float,
+) -> ParameterUncertainty | None:
+    """P2-015：解析协方差 + Monte Carlo 传播计算参数 95% 置信区间.
+
+    ARX:  cov(θ) = σ² · (ΦᵀΦ)⁻¹
+    CLIVC: cov(θ) = σ² · (ZᵀΦ)⁻¹ · (ZᵀZ) · (ΦᵀZ)⁻¹
+    ARMAX/IPDT: 无解析协方差（需 bootstrap），返回 None
+
+    Monte Carlo 传播：从 N(θ̂, cov) 采样 200 次 → 转换为连续域参数 → 取 2.5/97.5 分位。
+    """
+    na = len(a_coeffs)
+    nb = len(b_coeffs)
+    n_params = na + nb
+    max_lag = max(na, nb + d)
+    rows = len(y_train) - max_lag
+    if rows < n_params + 10 or res_var <= 0:
+        return None
+
+    # 构建回归矩阵 Φ（与 ARX/CLIVC 一致）
+    Phi = np.zeros((rows, n_params))
+    y_reg = np.zeros(rows)
+    for i in range(rows):
+        idx = max_lag + i
+        for j in range(na):
+            Phi[i, j] = -y_train[idx - 1 - j]
+        for j in range(nb):
+            Phi[i, na + j] = u_train[idx - d - j]
+        y_reg[i] = y_train[idx]
+
+    theta = np.array(a_coeffs + b_coeffs, dtype=float)
+
+    if method == IdentifyMethod.HISTORICAL_ARX:
+        # ARX: cov(θ) = σ² · (ΦᵀΦ)⁻¹
+        PtP = Phi.T @ Phi
+        try:
+            cov_theta = res_var * np.linalg.inv(PtP)
+        except np.linalg.LinAlgError:
+            return None
+    elif method == IdentifyMethod.HISTORICAL_IV:
+        # CLIVC: cov(θ) = σ² · (ZᵀΦ)⁻¹ · (ZᵀZ) · (ΦᵀZ)⁻¹
+        if sp_train is None:
+            return None
+        Z = np.zeros((rows, n_params))
+        for i in range(rows):
+            idx = max_lag + i
+            for j in range(na):
+                Z[i, j] = -sp_train[idx - 1 - j]
+            for j in range(nb):
+                Z[i, na + j] = sp_train[idx - d - j]
+        ZtPhi = Z.T @ Phi
+        ZtZ = Z.T @ Z
+        try:
+            ZtPhi_inv = np.linalg.inv(ZtPhi)
+            cov_theta = res_var * ZtPhi_inv @ ZtZ @ ZtPhi_inv.T
+        except np.linalg.LinAlgError:
+            return None
+    else:
+        # ARMAX/IPDT/STEP：无解析协方差，需 bootstrap（后续按需补）
+        return None
+
+    # 数值稳定性：确保协方差矩阵正定
+    try:
+        cov_theta = 0.5 * (cov_theta + cov_theta.T)  # 对称化
+        eigvals = np.linalg.eigvalsh(cov_theta)
+        if np.min(eigvals) < 0:
+            cov_theta = cov_theta + np.eye(n_params) * (abs(np.min(eigvals)) + 1e-12)
+    except np.linalg.LinAlgError:
+        return None
+
+    # Monte Carlo 传播：采样 → 转换为连续域 → 置信区间
+    rng = np.random.default_rng(42)
+    n_mc = 200
+    try:
+        samples = rng.multivariate_normal(theta, cov_theta, size=n_mc)
+    except (ValueError, np.linalg.LinAlgError):
+        return None
+
+    K_samples: list[float] = []
+    tau_samples: list[float] = []
+    theta_samples: list[float] = []
+    for s in samples:
+        s_a = s[:na].tolist()
+        s_b = s[na:].tolist()
+        try:
+            if model_type == ModelType.FOPDT:
+                p = arx_to_fopdt(s_a[0], s_b[0], d, ts)
+                K_samples.append(p.K)
+                tau_samples.append(p.tau)
+                theta_samples.append(p.theta)
+            elif model_type == ModelType.SOPDT and na >= 2:
+                p = arx_to_sopdt(s_a[0], s_a[1], s_b[0], d, ts)
+                K_samples.append(p.K)
+                tau_samples.append(p.tau)
+                theta_samples.append(p.theta)
+        except Exception:
+            continue  # 不稳定采样点跳过
+
+    n_valid = len(K_samples)
+    if n_valid < 20:
+        return None
+
+    return ParameterUncertainty(
+        K_ci_lower=float(np.percentile(K_samples, 2.5)),
+        K_ci_upper=float(np.percentile(K_samples, 97.5)),
+        tau_ci_lower=float(np.percentile(tau_samples, 2.5)),
+        tau_ci_upper=float(np.percentile(tau_samples, 97.5)),
+        theta_ci_lower=float(np.percentile(theta_samples, 2.5)),
+        theta_ci_upper=float(np.percentile(theta_samples, 97.5)),
+        n_mc_samples=n_valid,
+    )
 
 
 def _check_nonparam_consistency(
