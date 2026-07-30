@@ -28,6 +28,9 @@ from app.services.tuning_identification.order_selection import (
     compute_bic,
     ljung_box_test,
 )
+from app.services.tuning_identification.physical_feasibility import (
+    check_physical_feasibility,
+)
 from app.services.tuning_identification.types import (
     CandidateModel,
     ConfidenceLevel,
@@ -272,6 +275,10 @@ def identify_from_history(
                 logger.debug("%s 离散→连续转换失败：%s", method, conv_err)
                 continue
 
+            # P2-012：物理可行性门禁 —— 负增益/NMP 零点不拒绝但封顶可信度并标记
+            feasibility = check_physical_feasibility(params, res.b_coeffs, ts)
+            physical_flag = "" if feasibility.passed else f", {feasibility.reason_code}"
+
             # P2-002：验证集自由仿真 R²（留出集泛化能力，替代训练集方程误差 R²）
             r2_train = max(0.0, min(1.0, res.r_squared))
             _, r2_val = _free_run_simulation(u_val, y_val, res.a_coeffs, res.b_coeffs, d_model)
@@ -317,6 +324,10 @@ def identify_from_history(
             confidence = _assess_confidence(exc, r2_val, residual_white, exc_score)
             if theta_source == ThetaSource.HEURISTIC_2TS:
                 confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+            # P2-012：物理可行性未通过（负增益/NMP 零点）封顶 C，需人工复核
+            if not feasibility.passed:
+                confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+                physical_flag = f", {feasibility.reason_code}({feasibility.details.split(',')[0]})"
 
             # P2-006：AIC/BIC 信息准则（训练集残差方差，用于 Occam 削减与证据输出）
             # n_params = na + nb（+ nc for ARMAX），复杂模型须用更小残差补偿参数惩罚
@@ -334,7 +345,7 @@ def identify_from_history(
                 reason=(
                     f"R²_val={r2_val:.3f}, R²_train={r2_train:.3f},"
                     f" {test_note}, AIC={aic_val:.1f}, BIC={bic_val:.1f},"
-                    f" iters={getattr(res, 'iterations', 1)}"
+                    f" iters={getattr(res, 'iterations', 1)}{physical_flag}"
                 ),
                 aic=round(aic_val, 2),
                 bic=round(bic_val, 2),

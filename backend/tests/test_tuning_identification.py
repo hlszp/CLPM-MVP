@@ -1197,6 +1197,102 @@ class TestV62P2OrderSelectionPipeline:
 
 
 # ---------------------------------------------------------------------------
+# P2-012 物理可行性门禁（负根/不稳定/复极点/非最小相位）
+# ---------------------------------------------------------------------------
+
+
+class TestV62P2PhysicalFeasibility:
+    """P2-012：复极点、负根、不稳定模型不得伪装成稳定工程模型."""
+
+    def test_p2_012_sopdt_rejects_complex_poles(self):
+        """复共轭极点（振荡系统）应被拒绝，不得取模伪装为过阻尼 SOPDT.
+
+        构造 disc = a1²−4·a2 < 0 的二阶系统（欠阻尼），arx_to_sopdt 应 raise。
+        """
+        # 欠阻尼二阶：极点模 < 1（稳定）但 disc < 0（复共轭）
+        # z² - 0.6z + 0.5 = 0 → disc = 0.36 - 2.0 = -1.64 < 0，复根
+        # 模 = sqrt(0.5) ≈ 0.707 < 1（稳定）
+        with pytest.raises(ValueError, match="复共轭极点|振荡"):
+            arx_to_sopdt(a1=-0.6, a2=0.5, b1=0.1, d=1, ts=1.0)
+
+    def test_p2_012_negative_gain_flagged_and_confidence_capped(self):
+        """负增益 K 应标记 NEGATIVE_GAIN 并封顶可信度 C.
+
+        用负增益过程仿真（K=-1.0）：辨识应成功但 reason 含 NEGATIVE_GAIN，
+        confidence 不超过 C。
+        """
+        u = _prbs(1500, seed=1200)
+        y = _simulate_open_loop_fopdt(K=-1.0, tau=20.0, theta=3.0, u=u, noise_std=0.02, seed=1200)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        # 负增益不拒绝（逆向过程物理可能），但须标记
+        if result.success and result.best_model:
+            reason = result.best_model.reason or ""
+            assert "NEGATIVE_GAIN" in reason, f"reason 缺少 NEGATIVE_GAIN 标记: {reason}"
+            # 可信度封顶 C
+            level_order = {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1, "INCONCLUSIVE": 0}
+            assert level_order.get(result.best_model.confidence.value, 0) <= 3, (
+                f"负增益模型可信度未封顶 C: {result.best_model.confidence}"
+            )
+
+    def test_p2_012_negative_gain_not_silently_passed(self):
+        """负增益模型不得伪装成正常正增益模型静默放行（to_dict 可见标记）."""
+        u = _prbs(1500, seed=1201)
+        y = _simulate_open_loop_fopdt(K=-1.0, tau=25.0, theta=2.0, u=u, noise_std=0.02, seed=1201)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        if result.success and result.best_model:
+            d = result.to_dict()
+            # reason 字段含 NEGATIVE_GAIN 标记，审计可见
+            assert "NEGATIVE_GAIN" in (d.get("reason") or "")
+
+    def test_p2_012_positive_gain_no_false_alarm(self):
+        """正常正增益过程不应触发物理可行性标记."""
+        u = _prbs(1500, seed=1202)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1202)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        reason = result.best_model.reason or ""
+        assert "NEGATIVE_GAIN" not in reason
+        assert "NMP_ZERO" not in reason
+
+    def test_p2_012_physical_feasibility_module_direct(self):
+        """物理可行性模块直接单测：正增益通过、负增益标记."""
+        from app.services.tuning_identification.physical_feasibility import (
+            check_physical_feasibility,
+        )
+        from app.services.tuning_identification.types import ModelParams
+
+        # 正增益 FOPDT 通过
+        params_ok = ModelParams(model_type=ModelType.FOPDT, K=1.5, tau=20.0, theta=3.0)
+        r1 = check_physical_feasibility(params_ok, b_coeffs=[0.1], ts=1.0)
+        assert r1.passed
+        assert r1.reason_code == "OK"
+
+        # 负增益标记
+        params_neg = ModelParams(model_type=ModelType.FOPDT, K=-1.5, tau=20.0, theta=3.0)
+        r2 = check_physical_feasibility(params_neg, b_coeffs=[0.1], ts=1.0)
+        assert not r2.passed
+        assert r2.reason_code == "NEGATIVE_GAIN"
+
+
+# ---------------------------------------------------------------------------
 # P0-2 去均值（偏置消除）测试
 # ---------------------------------------------------------------------------
 
