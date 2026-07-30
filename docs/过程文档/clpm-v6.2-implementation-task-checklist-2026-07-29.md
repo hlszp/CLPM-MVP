@@ -309,7 +309,18 @@ unit_kpi_summary
 - [ ] `V62-P2-016` 记录算法版本、数据窗口、快照哈希和全部 reason code。
 - [ ] `V62-P2-017` 建立 20+ 回路匿名人工标注集。
 
-### 5.4 Phase 2 门禁
+### 5.4 连接池监控基础设施（Phase 2 前置）
+
+> **背景**：Phase 1 E2E 暴露后端连接池耗尽问题——NullPool 不池化，Celery 并发任务 + E2E 连续登录导致 PG `max_connections`（默认 100）逼近上限，新连接建立变慢（15s+），登录 API 超时。Phase 2 Monte Carlo 批量辨识（P2-010）会产生大量 Celery 异步任务，连接池压力远大于 Phase 1，监控是前置基础设施。
+
+- [ ] `V62-P2-018` 连接池监控脚本与告警。
+  - 后端增加 `GET /health/db-connections` 端点：查询 `pg_stat_activity` 按 `application_name` 分组统计活跃连接数，返回 `{total, max, byApp: {clpm-api: N, clpm-celery: N, ...}}`。
+  - 独立脚本 `scripts/monitor_db_connections.py`：定时轮询（默认 5s）+ 趋势记录（CSV）+ 阈值告警（活跃连接 >80% `max_connections` 时 `WARN`，>95% 时 `CRITICAL`）。
+  - E2E fixture 增强：测试失败时自动输出当前 PG 连接数快照到 `test-results/*/connection-snapshot.json`，辅助区分代码回归 vs 环境问题。
+  - metrics 端点：增加 `pg_active_connections` Gauge（`application_name` label），替代 NullPool 下恒 0 的 `db_pool_connections`。
+  - 测试：端点单元测试（mock `pg_stat_activity`）+ 脚本冒烟测试。
+
+### 5.5 Phase 2 门禁
 
 - [ ] 合成黄金集和 Monte Carlo 报告通过专家复核。
 - [ ] 无留出证据、物理门禁或数据快照的模型无法进入整定。
